@@ -27,6 +27,20 @@ export interface PullRequestRef {
   number: number;
 }
 
+// PO Shadow 회수 전용 경량 상태. `getPullRequest` 는 변경 파일 목록까지 끌어오므로(페이지네이션)
+// "머지됐나 / 닫혔나" 만 필요한 회수 경로에는 과하다.
+//
+// `issues.get` 을 쓴다 — `pulls.get` 은 이슈 번호에 404 를 내는데 회수 키는 이슈일 수 있다
+// (담당 목록이 open issue 와 PR 을 함께 주고 `unplanned:` 사실이 둘을 구분하지 않는다).
+// `issues.get` 은 이슈와 PR 을 모두 반환하고 PR 이면 `pull_request.merged_at` 까지 준다.
+export interface GithubItemLifecycle {
+  state: 'open' | 'closed';
+  // 머지됐으면 ISO 8601, 아니면 null. PR 이 state='closed' 이고 mergedAt=null 이면 "머지 없이 닫힘"(포기).
+  mergedAt: string | null;
+  // 이슈와 PR 을 가른다. 이슈에는 머지 개념이 없어 종결 문구가 달라진다.
+  isPullRequest: boolean;
+}
+
 export interface ReviewThreadReaction {
   content: string;
   userLogin: string | null;
@@ -168,6 +182,9 @@ export interface GithubClientPort {
   ): Promise<AssignedTasks>;
 
   getPullRequest(ref: PullRequestRef): Promise<PullRequestDetail>;
+
+  // 회수 경로 전용 — 변경 파일을 가져오지 않는다. 이슈·PR 모두 받는다. 미존재면 throw.
+  getItemLifecycle(ref: PullRequestRef): Promise<GithubItemLifecycle>;
 
   getPullRequestDiff(
     options: GetPullRequestDiffOptions,

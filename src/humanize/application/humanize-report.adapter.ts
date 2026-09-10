@@ -260,9 +260,10 @@ export const humanizePoShadowReport = async (
     'findings.suggestion',
     report.findings.map((finding) => finding.suggestion),
   );
-  if (report.purposeConflict !== null) {
-    fields.purposeConflict = report.purposeConflict;
-  }
+  // judgments 는 배열이라 그대로 못 넘긴다(HumanizeService 계약이 Record<string,string>).
+  // findings.point 와 같은 방식으로 펼쳤다가 되조립한다 — 빠뜨리면 윤문 안 된 원문이
+  // 다른 필드는 윤문된 카드에 섞여 문체 불일치로 남는다.
+  flattenArray(fields, 'judgments', report.judgments);
 
   const humanized = await humanizer.humanize(fields);
 
@@ -275,10 +276,9 @@ export const humanizePoShadowReport = async (
       suggestion:
         humanized[`findings.suggestion.${index}`] ?? finding.suggestion,
     })),
-    purposeConflict:
-      report.purposeConflict === null
-        ? null
-        : (humanized.purposeConflict ?? report.purposeConflict),
+    judgments: report.judgments.map(
+      (judgment, index) => humanized[`judgments.${index}`] ?? judgment,
+    ),
   };
 };
 

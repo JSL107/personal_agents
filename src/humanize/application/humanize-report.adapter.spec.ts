@@ -270,13 +270,14 @@ describe('humanizePoShadowReport', () => {
         suggestion: '원문 제안 2',
       },
     ],
-    purposeConflict: '원문 목적 충돌',
+    judgments: ['원문 목적 충돌'],
+    recoverySummary: null,
     factSummary: ['#264 리뷰 0건', '새 멘션 1건'],
     droppedFindingCount: 2,
     degradedSources: [],
   };
 
-  it('headline·finding 서술·purposeConflict만 인덱스 키로 윤문한다', async () => {
+  it('headline·finding 서술·judgments만 인덱스 키로 윤문한다', async () => {
     const humanizer = {
       humanize: jest.fn().mockResolvedValue({
         headline: '윤문 헤드라인',
@@ -284,7 +285,8 @@ describe('humanizePoShadowReport', () => {
         'findings.suggestion.0': '윤문 제안 1',
         'findings.point.1': '윤문 지적 2',
         'findings.suggestion.1': '윤문 제안 2',
-        purposeConflict: '윤문 목적 충돌',
+        'judgments.0': '윤문 목적 충돌',
+        recoverySummary: null,
       }),
     } as unknown as HumanizeService;
 
@@ -296,7 +298,7 @@ describe('humanizePoShadowReport', () => {
       'findings.point.1': '원문 지적 2',
       'findings.suggestion.0': '원문 제안 1',
       'findings.suggestion.1': '원문 제안 2',
-      purposeConflict: '원문 목적 충돌',
+      'judgments.0': '원문 목적 충돌',
     });
     expect(result).toEqual({
       ...base,
@@ -313,12 +315,13 @@ describe('humanizePoShadowReport', () => {
           suggestion: '윤문 제안 2',
         },
       ],
-      purposeConflict: '윤문 목적 충돌',
+      judgments: ['윤문 목적 충돌'],
+      recoverySummary: null,
     });
   });
 
-  it('purposeConflict가 null이면 윤문 입력에서 제외하고 bookkeeping을 그대로 보존한다', async () => {
-    const report: PoShadowReport = { ...base, purposeConflict: null };
+  it('judgments가 비면 윤문 입력에 키가 없고 bookkeeping을 그대로 보존한다', async () => {
+    const report: PoShadowReport = { ...base, judgments: [] };
     const humanizer = {
       humanize: jest.fn().mockResolvedValue({}),
     } as unknown as HumanizeService;
@@ -326,7 +329,7 @@ describe('humanizePoShadowReport', () => {
     const result = await humanizePoShadowReport(report, humanizer);
     const fields = (humanizer.humanize as jest.Mock).mock.calls[0][0];
 
-    expect(fields).not.toHaveProperty('purposeConflict');
+    expect(fields).not.toHaveProperty('judgments.0');
     expect(result.schemaVersion).toBe(2);
     expect(result.quiet).toBe(false);
     expect(result.findings.map((finding) => finding.factIds)).toEqual(
@@ -334,6 +337,24 @@ describe('humanizePoShadowReport', () => {
     );
     expect(result.factSummary).toEqual(report.factSummary);
     expect(result.droppedFindingCount).toBe(2);
-    expect(result.purposeConflict).toBeNull();
+    expect(result.judgments).toEqual([]);
+  });
+
+  it('judgments 배열을 펼쳐 윤문하고 되조립한다 — 빠뜨리면 원문이 그대로 남는다', async () => {
+    const report: PoShadowReport = {
+      ...base,
+      judgments: ['원문 판단 하나', '원문 판단 둘'],
+    };
+    const humanizer = {
+      humanize: jest.fn().mockResolvedValue({ 'judgments.0': '윤문된 판단' }),
+    } as unknown as HumanizeService;
+
+    const result = await humanizePoShadowReport(report, humanizer);
+    const fields = (humanizer.humanize as jest.Mock).mock.calls[0][0];
+
+    expect(fields['judgments.0']).toBe('원문 판단 하나');
+    expect(fields['judgments.1']).toBe('원문 판단 둘');
+    // 윤문 결과가 없는 항목은 원문을 유지한다.
+    expect(result.judgments).toEqual(['윤문된 판단', '원문 판단 둘']);
   });
 });

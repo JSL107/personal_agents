@@ -25,7 +25,7 @@ export const guardPoShadowReport = (
   }
 
   const droppedFindingCount = report.droppedFindingCount + removedFindingCount;
-  // headline 과 purposeConflict 에는 인용 근거가 없다. 지적이 전부 근거 없이 버려졌다면
+  // headline 과 judgments 에는 인용 근거가 없다. 지적이 전부 근거 없이 버려졌다면
   // 그 둘만 살아남아 카드의 가장 눈에 띄는 자리에 근거 없는 문장이 남는다 — 같은 환각이
   // "먼저 이것부터" 로 올라가는 셈이라, 근거를 잃은 회차에는 코드가 문장을 도로 가져간다.
   if (findings.length === 0 && removedFindingCount > 0) {
@@ -33,7 +33,9 @@ export const guardPoShadowReport = (
       ...report,
       findings,
       headline: '근거를 확인하지 못해 지적을 내지 않습니다',
-      purposeConflict: null,
+      // judgments 도 함께 비운다 — 이 조건이 참이면 인용이 전부 무효였다는 뜻이라,
+      // 무인용 칸만 남겨두면 근거 없는 문장이 카드 맨 위에 그대로 선다(이 가드가 태어난 사고).
+      judgments: [],
       droppedFindingCount,
     };
   }
