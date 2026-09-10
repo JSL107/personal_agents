@@ -7,19 +7,47 @@ struct CozyAgentAvatarView: View {
     let mood: CozyAgentMood
     let department: Department
     let state: ConsoleAgentState
+    let pose: String
+
+    init(
+        appearance: CozyAgentAppearance,
+        mood: CozyAgentMood,
+        department: Department,
+        state: ConsoleAgentState,
+        pose: String = "idle"
+    ) {
+        self.appearance = appearance
+        self.mood = mood
+        self.department = department
+        self.state = state
+        self.pose = pose
+    }
 
     private let outlineWidth: CGFloat = 1.25
 
     var body: some View {
         GeometryReader { proxy in
             ZStack {
-                if let image = SpriteLoader.cozyCharacterImage(assetIndex: appearance.assetIndex) {
+                if let image = SpriteLoader.cozyCharacterImage(
+                    assetIndex: appearance.assetIndex,
+                    pose: pose
+                ) {
+                    let poseScale: CGFloat = pose == "idle" ? 1 : 1.12
+                    let imageHeight = proxy.size.height * 0.94 * poseScale
+                        * cozyCharacterVisualScale(assetIndex: appearance.assetIndex)
                     Image(nsImage: image)
                         .resizable()
                         .interpolation(.high)
                         .antialiased(true)
                         .scaledToFit()
-                        .frame(width: proxy.size.width, height: proxy.size.height)
+                        // 알파 여백을 자른 실제 캐릭터 높이를 공통 기준으로 맞춘다. 가로·세로
+                        // 양쪽 틀에 동시에 fit하면 머리가 넓은 캐릭터만 전체가 작아진다.
+                        .frame(height: imageHeight)
+                        // Scale around a shared shoe line instead of the image centre.
+                        .position(
+                            x: proxy.size.width / 2,
+                            y: proxy.size.height * 0.99 - imageHeight / 2
+                        )
                 } else {
                     avatarShadow(in: proxy.size)
                     roundedBody(in: proxy.size)
@@ -32,7 +60,9 @@ struct CozyAgentAvatarView: View {
                 stateProp(in: proxy.size)
             }
         }
-        .aspectRatio(0.72, contentMode: .fit)
+        // Square layout envelope guarantees that even the widest hair silhouette is height-bound.
+        // A narrower envelope silently shrinks wide-haired assets before the shared shoe line applies.
+        .aspectRatio(1.0, contentMode: .fit)
         .accessibilityHidden(true)
     }
 

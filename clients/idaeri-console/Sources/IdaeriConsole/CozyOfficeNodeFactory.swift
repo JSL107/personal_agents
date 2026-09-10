@@ -390,6 +390,63 @@ enum CozyOfficeNodeFactory {
         return node
     }
 
+    /// Workstation의 앞판과 다리만 다시 그리는 가림 레이어.
+    ///
+    /// 원본 한 장을 통째로 캐릭터 앞에 두면 모니터가 얼굴을 가리고, 뒤에 두면 하체가 책상을
+    /// 뚫는다. 같은 원본의 아래쪽만 마스킹해 `rear workstation → character → front lip` 순서를
+    /// 만들면 캐릭터 PNG를 훼손하지 않고 실제로 책상에 앉은 깊이를 표현할 수 있다.
+    static func illustratedWorkstationFrontOccluder(
+        texture: SKTexture,
+        tileSize: CGFloat
+    ) -> SKCropNode {
+        let sourceSize = texture.size()
+        let width = tileSize * 2.05
+        let height = width * sourceSize.height / max(1, sourceSize.width)
+
+        let duplicate = SKSpriteNode(texture: texture)
+        duplicate.anchorPoint = CGPoint(x: 0.5, y: 0.08)
+        duplicate.size = CGSize(width: width, height: height)
+        duplicate.texture?.filteringMode = .linear
+
+        let crop = SKCropNode()
+        crop.addChild(duplicate)
+        let visibleHeight = height * 0.54
+        let mask = SKShapeNode(
+            rectOf: CGSize(width: width * 1.04, height: visibleHeight)
+        )
+        mask.fillColor = .white
+        mask.strokeColor = .clear
+        mask.position.y = -height * 0.08 + visibleHeight / 2
+        crop.maskNode = mask
+        return crop
+    }
+
+    /// 부서별 특화 콘솔의 아래쪽 앞판만 다시 그린다. 뒤쪽 전체 이미지와 이 앞판 사이에
+    /// 캐릭터를 놓으면 별도 3D 모델 없이도 실제 콘솔에 앉아 조작하는 깊이가 생긴다.
+    static func illustratedDepartmentFeatureFrontOccluder(
+        texture: SKTexture,
+        tileSize: CGFloat
+    ) -> SKCropNode {
+        let sourceSize = texture.size()
+        let width = tileSize * 2.35
+        let height = width * sourceSize.height / max(1, sourceSize.width)
+
+        let duplicate = SKSpriteNode(texture: texture)
+        duplicate.anchorPoint = CGPoint(x: 0.5, y: 0)
+        duplicate.size = CGSize(width: width, height: height)
+        duplicate.texture?.filteringMode = .linear
+
+        let crop = SKCropNode()
+        crop.addChild(duplicate)
+        let visibleHeight = height * 0.42
+        let mask = SKShapeNode(rectOf: CGSize(width: width * 1.04, height: visibleHeight))
+        mask.fillColor = .white
+        mask.strokeColor = .clear
+        mask.position.y = visibleHeight / 2
+        crop.maskNode = mask
+        return crop
+    }
+
     private static func minimumSize(_ kind: FurnitureKind) -> (width: CGFloat, height: CGFloat) {
         switch kind {
         case .desk: return (0.84, 0.48)

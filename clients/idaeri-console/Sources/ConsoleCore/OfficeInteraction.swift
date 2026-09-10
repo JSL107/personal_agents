@@ -300,6 +300,9 @@ public func nameplateIsVisible(
     // tile size is deliberately ignored: a large window must not turn every employee into a
     // competing label.  The hover/selection and operational attention states remain accessible.
     _ = tileSize
+    if state == .inProgress {
+        return true
+    }
     return nameplateIsEmphasized(state: state, isHovered: isHovered, isSelected: isSelected)
 }
 

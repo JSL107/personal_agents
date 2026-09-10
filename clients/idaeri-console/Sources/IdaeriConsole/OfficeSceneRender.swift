@@ -78,6 +78,15 @@ func renderOfficeScene(
     let renderedRuns = poseDemo || populatedDemo || selectedCapture ? [] : snapshot?.runs ?? []
     let renderedSessions = poseDemo || populatedDemo || selectedCapture ? [] : snapshot?.sessions ?? []
     scene.sync(agents: renderedAgents, approvals: renderedApprovals)
+    if populatedDemo, !scene.applyPopulatedDemoCommonAreas(
+        meetingAgentTypes: [6, 7].map(showcaseAgentType(forAssetIndex:)),
+        loungeAgentType: showcaseAgentType(forAssetIndex: 8)
+    ) {
+        FileHandle.standardError.write(
+            Data("--populated-demo 공용 공간 배치에 필요한 사람 또는 가구가 부족하다\n".utf8)
+        )
+        return false
+    }
 
     // 실제 스냅샷의 청소 실태를 먼저 싣는다. 이것을 데모 안에만 두면 렌더가 실앱과 다른
     // 그림을 그려, 정작 "실서버 상태로 청소기가 보이는가" 를 확인할 방법이 없어진다.
@@ -398,7 +407,7 @@ func poseDemoAgents() -> [ConsoleAgent] {
     ]
     let interactionKinds = FurnitureKind.allCases.filter { $0.interactionPose != nil }
     return interactionKinds.enumerated().map { index, kind in
-        ConsoleAgent(
+        return ConsoleAgent(
             agentType: poseDemoAgentType(for: kind),
             // 이름표가 곧 무엇을 보고 있는지의 설명이 된다 — 가구 이름을 그대로 쓴다.
             displayName: kind.rawValue,
@@ -418,14 +427,26 @@ func populatedDemoAgents() -> [ConsoleAgent] {
     let names = [
         "하루", "모모", "두부", "콩이", "보리", "토리", "라떼", "구름",
         "단추", "호두", "루루", "밤비", "여울", "새봄", "다온", "별하",
+        "준호", "민재", "현우", "도윤",
     ]
     return names.enumerated().map { index, name in
-        ConsoleAgent(
+        let state: ConsoleAgentState
+        switch index {
+        case 0..<6:
+            state = .inProgress
+        case 6..<12:
+            state = .completed
+        case 12..<16:
+            state = .waiting
+        default:
+            state = .awaitingApproval
+        }
+        return ConsoleAgent(
             agentType: showcaseAgentType(forAssetIndex: index),
             displayName: name,
             slashCommands: [],
             description: "",
-            state: [.waiting, .inProgress, .completed, .awaitingApproval][index % 4], bubble: "",
+            state: state, bubble: "",
             department: departments[index % departments.count].rawValue
         )
     }

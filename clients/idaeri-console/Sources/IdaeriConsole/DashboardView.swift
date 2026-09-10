@@ -25,7 +25,13 @@ struct DashboardView: View {
     @State private var isInjecting = false
     @State private var selectedApproval: ConsoleApproval?
 
-    private let columns = [GridItem(.adaptive(minimum: Layout.cardMinWidth), spacing: Spacing.lg)]
+    // Three stable columns keep card widths and character scale consistent. When only one
+    // card remains, a leading spacer places it in the visual centre instead of leaving a
+    // conspicuous two-card hole on the right.
+    private let columns = Array(
+        repeating: GridItem(.flexible(minimum: Layout.cardMinWidth), spacing: Spacing.lg),
+        count: 3
+    )
 
     var body: some View {
         ScrollView {
@@ -40,7 +46,12 @@ struct DashboardView: View {
                     emptyState
                 } else {
                     LazyVGrid(columns: columns, spacing: Spacing.lg) {
-                        ForEach(store.agents) { agent in
+                        ForEach(Array(store.agents.enumerated()), id: \.element.id) { index, agent in
+                            if shouldCenterFinalCard(at: index) {
+                                Color.clear
+                                    .frame(minHeight: 1)
+                                    .accessibilityHidden(true)
+                            }
                             AgentCardView(
                                 agent: agent,
                                 pendingCommands: store.pendingCommands,
@@ -68,6 +79,10 @@ struct DashboardView: View {
         .sheet(item: $injectTarget) { target in
             injectSheet(target: target)
         }
+    }
+
+    private func shouldCenterFinalCard(at index: Int) -> Bool {
+        store.agents.count % columns.count == 1 && index == store.agents.count - 1
     }
 
     // MARK: - 헤더

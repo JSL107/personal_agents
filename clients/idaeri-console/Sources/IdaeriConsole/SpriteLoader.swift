@@ -6,7 +6,9 @@ enum SpriteLoader {
     private static var cache: [String: SKTexture] = [:]
     private static var cozyCharacterCache: [String: NSImage] = [:]
     private static var cozyRoomCache: [String: SKTexture] = [:]
+    private static var cozyRoomImageCache: [String: NSImage] = [:]
     private static var cozyFurnitureCache: [String: SKTexture] = [:]
+    private static var cozyAccentImageCache: [String: NSImage] = [:]
 
     private static func normalizedCozyPose(_ pose: String) -> String {
         let normalized = pose.lowercased().replacingOccurrences(of: "_", with: "-")
@@ -46,11 +48,61 @@ enum SpriteLoader {
                 stderr
             )
         }
-        guard let url = posedURL ?? fallbackURL, let image = NSImage(contentsOf: url) else {
+        guard let url = posedURL ?? fallbackURL, let sourceImage = NSImage(contentsOf: url) else {
             return nil
         }
+        let image = imageByCroppingTransparentMargins(sourceImage)
         cozyCharacterCache[cacheKey] = image
         return image
+    }
+
+    /// 생성 이미지마다 투명 캔버스 여백이 조금씩 달라도 실제 머리/발 경계가 같은 기준으로
+    /// 배치되게 한다. 전체 1145×1374 캔버스를 기준으로 세우면 발 아래 여백까지 몸 높이로
+    /// 계산되어 포즈마다 그림자에서 뜨는 양이 달라진다.
+    private static func imageByCroppingTransparentMargins(_ image: NSImage) -> NSImage {
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
+              let provider = cgImage.dataProvider,
+              let data = provider.data,
+              let bytes = CFDataGetBytePtr(data) else {
+            return image
+        }
+        let bytesPerPixel = cgImage.bitsPerPixel / 8
+        guard bytesPerPixel > 0 else { return image }
+        let alphaInfo = cgImage.alphaInfo
+        guard alphaInfo != .none, alphaInfo != .noneSkipFirst, alphaInfo != .noneSkipLast else {
+            return image
+        }
+        let alphaOffset = alphaInfo == .first || alphaInfo == .premultipliedFirst
+            ? 0
+            : bytesPerPixel - 1
+        var minX = cgImage.width
+        var minY = cgImage.height
+        var maxX = -1
+        var maxY = -1
+        for y in 0..<cgImage.height {
+            let row = y * cgImage.bytesPerRow
+            for x in 0..<cgImage.width {
+                if bytes[row + x * bytesPerPixel + alphaOffset] > 8 {
+                    minX = min(minX, x)
+                    minY = min(minY, y)
+                    maxX = max(maxX, x)
+                    maxY = max(maxY, y)
+                }
+            }
+        }
+        guard maxX >= minX, maxY >= minY else { return image }
+        let padding = 4
+        let crop = CGRect(
+            x: max(0, minX - padding),
+            y: max(0, minY - padding),
+            width: min(cgImage.width - max(0, minX - padding), maxX - minX + 1 + padding * 2),
+            height: min(cgImage.height - max(0, minY - padding), maxY - minY + 1 + padding * 2)
+        ).integral
+        guard let cropped = cgImage.cropping(to: crop) else { return image }
+        return NSImage(
+            cgImage: cropped,
+            size: NSSize(width: cropped.width, height: cropped.height)
+        )
     }
 
     static func cozyCharacterTexture(assetIndex: Int, pose: String = "idle") -> SKTexture? {
@@ -64,6 +116,67 @@ enum SpriteLoader {
 
     static func cozyDepartmentRoomTexture(_ department: Department) -> SKTexture? {
         cozyRoomTexture(named: "\(department.rawValue)-shell")
+    }
+
+    static func cozyDepartmentRoomImage(_ department: Department) -> NSImage? {
+        let name = "\(department.rawValue)-shell"
+        if let cached = cozyRoomImageCache[name] { return cached }
+        guard let url = Bundle.module.url(
+            forResource: name,
+            withExtension: "png",
+            subdirectory: "cozy/rooms"
+        ), let image = NSImage(contentsOf: url) else {
+            return nil
+        }
+        cozyRoomImageCache[name] = image
+        return image
+    }
+
+    static func cozyDashboardAccentImage(
+        agentType: String,
+        department: Department
+    ) -> NSImage? {
+        let roleAsset: String?
+        switch agentType {
+        case "VACATION":
+            roleAsset = "vacation-accent"
+        case "CAREER_MATE":
+            roleAsset = "career-accent"
+        default:
+            roleAsset = nil
+        }
+        if let roleAsset, let image = cozyAccentImage(named: roleAsset) {
+            return image
+        }
+        return cozyDepartmentAccentImage(department)
+    }
+
+    static func cozyDepartmentAccentImage(_ department: Department) -> NSImage? {
+        // The evaluation and internal-ops renders came back with each other's strongest visual
+        // metaphor. Route by meaning: charts belong to evaluation, gear/file tray to operations.
+        let name: String
+        switch department {
+        case .evaluation:
+            name = "internal-ops-accent"
+        case .internalOps:
+            name = "evaluation-accent"
+        default:
+            name = "\(department.rawValue)-accent"
+        }
+        return cozyAccentImage(named: name)
+    }
+
+    private static func cozyAccentImage(named name: String) -> NSImage? {
+        if let cached = cozyAccentImageCache[name] { return cached }
+        guard let url = Bundle.module.url(
+            forResource: name,
+            withExtension: "png",
+            subdirectory: "cozy/props"
+        ), let image = NSImage(contentsOf: url) else {
+            return nil
+        }
+        cozyAccentImageCache[name] = image
+        return image
     }
 
     static func cozyCommonAreaTexture(_ kind: CommonAreaKind) -> SKTexture? {
@@ -90,6 +203,38 @@ enum SpriteLoader {
         }
         guard let assetName else {
             return nil
+        }
+        if let cached = cozyFurnitureCache[assetName] {
+            return cached
+        }
+        guard let url = Bundle.module.url(
+            forResource: assetName,
+            withExtension: "png",
+            subdirectory: "cozy/furniture-3d"
+        ), let image = NSImage(contentsOf: url) else {
+            return nil
+        }
+        let texture = SKTexture(image: image)
+        texture.filteringMode = .linear
+        cozyFurnitureCache[assetName] = texture
+        return texture
+    }
+
+    static func cozyDepartmentFeatureTexture(_ department: Department) -> SKTexture? {
+        let assetName: String
+        switch department {
+        case .planning:
+            assetName = "planning-board-table"
+        case .quality:
+            assetName = "quality-review-station"
+        case .evaluation:
+            assetName = "evaluation-kpi-console"
+        case .treasury:
+            assetName = "treasury-ledger-console"
+        case .content:
+            assetName = "content-storyboard-station"
+        case .internalOps:
+            assetName = "internal-ops-control-desk"
         }
         if let cached = cozyFurnitureCache[assetName] {
             return cached

@@ -6,7 +6,7 @@ import SpriteKit
 final class CozyCharacterArtworkNode: SKNode {
     // Generated mascots should stay more prominent than the former pixel sprites,
     // but still fit inside a department room without covering desks or labels.
-    static let officeScaleFactor: CGFloat = 0.95
+    static let officeScaleFactor: CGFloat = 0.72
     private struct CacheKey: Hashable {
         let appearance: [Int]
         let mood: String
@@ -42,7 +42,7 @@ final class CozyCharacterArtworkNode: SKNode {
         switch pose.lowercased() {
         case "sitting":
             return "sit"
-        case "down", "up", "left", "right", "sit", "reading", "drinking", "writing", "carryingpapers", "tending", "stowing", "default", "idle":
+        case "down", "up", "left", "right", "sit", "typing", "reading", "drinking", "writing", "carryingpapers", "tending", "stowing", "default", "idle":
             return pose.lowercased()
         default:
             return pose.lowercased().contains("walk") ? "walk" : "idle"
@@ -104,26 +104,22 @@ final class CozyCharacterArtworkNode: SKNode {
             // fallback used behind a desk. Keeping the standing asset at full
             // height makes it look as though the employee is standing on the
             // keyboard even when the desk correctly occludes the lower body.
-            let maximumWidth: CGFloat = usesIdleAsSeatedFallback ? 72 : 82
-            let maximumHeight: CGFloat = usesIdleAsSeatedFallback ? 88 : 108
-            let scale = min(
-                maximumWidth / max(textureSize.width, 1),
-                maximumHeight / max(textureSize.height, 1)
-            )
+            let maximumWidth: CGFloat = usesIdleAsSeatedFallback ? 88 : 96
+            let maximumHeight: CGFloat = usesIdleAsSeatedFallback ? 88 : 100
+            let visualScale = cozyCharacterVisualScale(assetIndex: appearance.assetIndex)
+            let heightScale = maximumHeight * visualScale / max(textureSize.height, 1)
+            let scale = min(heightScale, maximumWidth * visualScale / max(textureSize.width, 1))
             sprite.size = CGSize(width: textureSize.width * scale, height: textureSize.height * scale)
             // Place the actual feet on the same baseline as the shared shadow.
-            sprite.position = CGPoint(
-                x: 0,
-                y: 5 + sprite.size.height / 2 - (usesIdleAsSeatedFallback ? 30 : 0)
-            )
+            sprite.position = CGPoint(x: 0, y: 5 + sprite.size.height / 2)
             sprite.texture?.filteringMode = .linear
+            // Pick up a trace of the honey-colored room bounce so the transparent cutout reads as
+            // part of the same lit diorama rather than a sticker placed over the shell.
+            sprite.color = SKColor(red: 1.0, green: 0.86, blue: 0.72, alpha: 1)
+            sprite.colorBlendFactor = 0.035
             root.addChild(sprite)
-            // A seated employee is already paired with the room's interactive workstation.
-            // The old body-centred laptop badge lands over the face after the idle fallback is
-            // lowered behind that desk, so reserve state props for standing/mobile poses.
-            if !usesIdleAsSeatedFallback && !hasDedicatedPose {
-                addStateProp(to: root, pose: pose, state: state, outline: outline)
-            }
+            // Generated characters already carry pose-specific hand props. The old vector badge
+            // looked like a pixel icon pasted beside a 3D mascot and duplicated the status ring.
             return root
         }
         let skin = SKColor(red: 1.00, green: 0.93, blue: 0.82, alpha: 1)

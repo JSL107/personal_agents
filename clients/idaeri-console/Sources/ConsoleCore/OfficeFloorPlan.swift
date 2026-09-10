@@ -56,13 +56,32 @@ public let officeReferenceTileSize: Double = 40
 /// 벽면 가구답게 읽힌다. 더 키우려면 렌더로 겹침을 먼저 확인할 것.
 public let officeFurnitureWidthCapTiles: Double = 1.15
 
-/// 앉은 캐릭터를 책상 쪽으로 내리는 양(타일 크기 배수).
+/// 전용 포즈가 없는 캐릭터를 책상 쪽으로 내리는 양(타일 크기 배수).
 ///
 /// 좌석이 책상 **바로 위 칸**이고 캐릭터·가구 모두 발밑 기준(anchor y = 0)이라, 그냥 두면
 /// 책상 상단(0.8칸)과 사람 발밑(1칸) 사이에 0.2칸 빈틈이 생긴다. 앉은 사람이 책상에 닿지 않고
 /// 공중에 뜬 것처럼 보이는 원인이다. 앉음일 때만 내려 하반신이 책상에 가리게 한다 —
 /// 서 있거나 걷는 캐릭터는 발이 바닥에 닿아야 하므로 오프셋 0 을 유지한다.
 public let officeSeatedSpriteDrop: Double = 0.28
+
+/// 긴 생성형 idle PNG를 축소해 착석 fallback으로 쓸 때의 하강값.
+/// 원화 자체를 88px 봉투로 줄였으므로 벡터/구형 스프라이트용 0.28칸을 또 적용하면 이중 보정된다.
+public let officeGeneratedFallbackSeatedSpriteDrop: Double = 0.12
+
+/// 완성형 3D workstation 이미지 안에서 캐릭터가 앉는 화면 좌표.
+///
+/// `DeskAssignment.seat`는 길찾기와 충돌 판정을 위한 논리 타일이다. 이를 그대로 2.5D 투영하면
+/// 한 칸 전체가 책상 뒤로 벌어져 캐릭터가 모니터 위에 뜬다. 실제 렌더링은 책상 발밑 anchor에서
+/// 이만큼만 뒤로 올려 의자와 상판 사이에 고정한다.
+public let officeWorkstationSeatVisualOffsetTiles: Double = 0.30
+
+/// 서 있는 원화를 축소해 임시 착석으로 쓰는 경우, 실제 착석 PNG보다 머리·어깨 기준이 낮다.
+/// 같은 좌표에 두면 모니터 뒤에서 정수리만 보여 별도 상승 보정을 적용한다.
+public let officeWorkstationFallbackSeatExtraLiftTiles: Double = 0.36
+
+/// 전용 착석 PNG는 이미 몸과 다리가 앉은 형태라 idle fallback의 큰 하강값을 다시 적용하지 않는다.
+/// 작은 하강만 남겨 엉덩이는 의자에, 손은 상판 높이에 맞춘다.
+public let officeDedicatedSeatedSpriteDrop: Double = 0.08
 
 /// 벽에 거는 물건을 발밑에서 벽면 중턱으로 올리는 양(타일 배수).
 ///
