@@ -56,8 +56,12 @@ struct CozyAgentAvatarView: View {
                     hair(in: proxy.size)
                     face(in: proxy.size)
                     accessory(in: proxy.size)
+                    // The vector fallback needs a small state prop to communicate its action.
+                    // Generated pose artwork already holds the relevant cup, document, laptop,
+                    // or map in the character's hands; drawing this overlay again creates a
+                    // style-mismatched object that appears to float beside the character.
+                    stateProp(in: proxy.size)
                 }
-                stateProp(in: proxy.size)
             }
         }
         // Square layout envelope guarantees that even the widest hair silhouette is height-bound.

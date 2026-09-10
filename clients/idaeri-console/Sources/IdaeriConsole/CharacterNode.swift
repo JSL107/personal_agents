@@ -215,13 +215,14 @@ final class CharacterNode: SKNode {
         let palette = agentStatePaletteRGBA(state)
         ring.strokeColor = SKColor(
             red: palette.red, green: palette.green, blue: palette.blue,
-            alpha: (state == .awaitingApproval || state == .failed) ? 0.48 : 0.22
+            // 상태는 보조 정보로 남기고 캐릭터와 가구 접촉을 가리지 않도록 낮춘다.
+            alpha: (state == .awaitingApproval || state == .failed) ? 0.32 : 0.12
         )
         ring.fillColor = SKColor(
             red: palette.red, green: palette.green, blue: palette.blue, alpha: 0.04
         )
         // 상태 링이 이름표보다 먼저 읽혀야 한다. 손이 필요한 두 상태는 선을 더 굵게 준다.
-        ring.lineWidth = (state == .awaitingApproval || state == .failed) ? 1.6 : 0.8
+        ring.lineWidth = (state == .awaitingApproval || state == .failed) ? 1.2 : 0.6
         let opacity = nameplateOpacity(for: state)
         namePlate.alpha = opacity
         nameLabel.alpha = opacity
