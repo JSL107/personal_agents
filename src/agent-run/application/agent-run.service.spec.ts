@@ -249,6 +249,55 @@ describe('AgentRunService', () => {
     });
   });
 
+  // 좀비의 원인은 서버가 내려간 구간이라 코드로 막을 수 없다. 코드로 줄일 수 있는 것은
+  // 재기동 뒤 정각 스윕(매시 50분)까지 최대 한 시간 동안 원장이 "실행 중" 으로 남는 구간이다.
+  it('부팅 시 30분+ IN_PROGRESS 를 한 번 쓸어낸다', async () => {
+    (repository.sweepZombies as jest.Mock).mockResolvedValue(2);
+
+    await service.onApplicationBootstrap();
+
+    expect(repository.sweepZombies).toHaveBeenCalledWith({
+      olderThanMinutes: 30,
+    });
+  });
+
+  // 정리는 정각 스윕이 다시 시도한다 — 부팅을 막는 쪽이 손해가 크다.
+  it('부팅 스윕이 실패해도 예외를 밖으로 던지지 않는다', async () => {
+    (repository.sweepZombies as jest.Mock).mockRejectedValue(
+      new Error('db down'),
+    );
+
+    await expect(service.onApplicationBootstrap()).resolves.toBeUndefined();
+  });
+
+  // LLM 응답 파싱 실패는 raw 응답 앞부분을 cause 에만 담는다. 그 cause 가 로그로만 나가던 동안
+  // 실제로 원인 추적이 막혔다 — 2026-08-14 WORK_REVIEWER, 08-18 BLOG_PUBLISH 의 파싱 실패는
+  // 원장에 문구 한 줄만 남아 모델이 무엇을 돌려줬는지 사후에 복구할 수 없었다.
+  it('cause 가 있으면 원장 output 에 cause 도 남긴다 (상한 1000자)', async () => {
+    const bomb = new Error('모델 응답을 JSON 으로 파싱하지 못했습니다.');
+    (bomb as { cause?: unknown }).cause = new Error(
+      `Unexpected token — raw=${'가'.repeat(1_200)}`,
+    );
+
+    await expect(
+      service.execute({
+        agentType: AgentType.WORK_REVIEWER,
+        triggerType: TriggerType.SLACK_COMMAND_TODAY,
+        inputSnapshot: {},
+        run: async () => {
+          throw bomb;
+        },
+      }),
+    ).rejects.toBe(bomb);
+
+    const [{ output }] = (repository.finish as jest.Mock).mock.calls[0] as [
+      { output: { error: string; cause: string } },
+    ];
+    expect(output.error).toBe('모델 응답을 JSON 으로 파싱하지 못했습니다.');
+    expect(output.cause).toHaveLength(1_000);
+    expect(output.cause.startsWith('Unexpected token — raw=')).toBe(true);
+  });
+
   it('execute 성공 시 episodic recorder.record 를 호출한다 (best-effort 적재)', async () => {
     const recorder = {
       record: jest.fn().mockResolvedValue(undefined),

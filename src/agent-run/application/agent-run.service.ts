@@ -1,4 +1,10 @@
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  OnApplicationBootstrap,
+  Optional,
+} from '@nestjs/common';
 
 import { evaluateContract } from '../../agent-registry/contract-inspector';
 import { DomainException } from '../../common/exception/domain.exception';
@@ -16,6 +22,7 @@ import {
   AgentRunChainNode,
   AgentRunStatus,
   EvidenceInput,
+  STALE_RUN_THRESHOLD_MINUTES,
   TriggerType,
 } from '../domain/agent-run.type';
 import {
@@ -108,7 +115,7 @@ export interface AgentRunOutcome<T> {
 // begin → run → finish(SUCCEEDED|FAILED) 순서를 강제하고 EvidenceRecord 기록까지 캡슐화한다.
 // 기획서 §8 증거 기반 운영 원칙: 모든 에이전트 실행은 DB 에 흔적과 근거를 남겨야 한다.
 @Injectable()
-export class AgentRunService {
+export class AgentRunService implements OnApplicationBootstrap {
   private readonly logger = new Logger(AgentRunService.name);
 
   constructor(
@@ -124,6 +131,29 @@ export class AgentRunService {
     @Optional()
     private readonly consoleEvents?: ConsoleEventBus,
   ) {}
+
+  // 재기동 직후 한 번 쓸어낸다. 좀비의 원인은 코드가 아니라 서버가 내려간 구간이고
+  // (실행 중이던 회차는 finish 를 남기지 못한 채 IN_PROGRESS 로 굳는다), 정리는 매시 50분
+  // run-sweeper 가 맡는다. 그래서 재기동해도 다음 정각 50분까지 최대 한 시간 동안 원장은
+  // "실행 중", 콘솔은 그 워커가 일하는 중으로 보인다 — 2026-09-10 실측: 05:11 에 굳은
+  // CODE_REVIEWER 회차가 09시간 뒤 서버가 다시 뜬 시점에도 IN_PROGRESS 로 남아 있었다.
+  // 30분 임계는 그대로 쓰므로 방금 시작한 회차는 대상이 아니고, 부팅 시점에는 이 프로세스가
+  // 띄운 회차 자체가 없다. 실패해도 부팅을 막지 않는다 — 정리는 정각 스윕이 다시 시도한다.
+  async onApplicationBootstrap(): Promise<void> {
+    try {
+      const swept = await this.sweepZombies({
+        olderThanMinutes: STALE_RUN_THRESHOLD_MINUTES,
+      });
+      if (swept > 0) {
+        this.logger.log(
+          `부팅 스윕 — ${STALE_RUN_THRESHOLD_MINUTES}분+ IN_PROGRESS ${swept}건을 FAILED 로 정리`,
+        );
+      }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`부팅 스윕 실패 — 정각 스윕에 맡긴다: ${message}`);
+    }
+  }
 
   // 콘솔 관제용 ConsoleRun 뷰 조립 — id/시각을 뷰 표현(string/ISO)으로 변환.
   private buildConsoleRun(
@@ -258,12 +288,14 @@ export class AgentRunService {
       };
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      // cause 도 함께 남긴다 — LLM 응답 파싱 실패류는 cause 에만 raw 응답 앞부분이 실려 있는데,
-      // Nest logger 는 message/stack 만 찍고 원장 output 에도 message 만 저장돼 실제 응답이
-      // 어디에도 남지 않았다. 원인 없는 실패 한 줄만 쌓이면 다음 조사도 처음부터 추측이 된다.
-      const causeMessage = buildCauseSuffix(error);
+      // cause 는 로그와 원장 **양쪽**에 남긴다 — LLM 응답 파싱 실패류는 cause 에만 raw 응답
+      // 앞부분이 실려 있다. 로그만 찍던 동안 실제로 원인 추적이 막혔다: 2026-08-14
+      // WORK_REVIEWER 와 08-18 BLOG_PUBLISH 의 파싱 실패는 원장에 문구 한 줄만 남아
+      // (`"모델 응답을 JSON 으로 파싱하지 못했습니다."`) 모델이 무엇을 돌려줬는지 사후에
+      // 복구할 수 없었다. 로그는 프로세스가 재시작하면 사라지고 원장처럼 조회되지도 않는다.
+      const causeText = extractCauseMessage(error);
       this.logger.error(
-        `AgentRun #${id} (${agentType}) 실패: ${message}${causeMessage}`,
+        `AgentRun #${id} (${agentType}) 실패: ${message}${causeText === null ? '' : ` — cause: ${causeText}`}`,
         error instanceof Error ? error.stack : undefined,
       );
 
@@ -280,6 +312,7 @@ export class AgentRunService {
           ...(error instanceof DomainException
             ? { errorCode: error.errorCode }
             : {}),
+          ...(causeText === null ? {} : { cause: causeText }),
         },
         // FAILED 시에도 가능한 만큼 duration 기록 — quota 분석 시 실패 비율도 함께 보임.
         // cliProvider 는 run 콜백이 throw 한 경우 모를 수 있어 옵션 (그 경우 'unknown' 으로 집계됨).
@@ -586,13 +619,22 @@ export class AgentRunService {
   }
 }
 
-// DomainException 계열은 파싱 실패의 raw 응답 앞부분을 cause 에만 담는다. Nest logger 는
-// message/stack 만 찍고 원장 output 에도 message 만 저장돼, 이 한 줄이 없으면 모델이 무엇을
-// 돌려줬는지 어디에도 남지 않는다. tsconfig target 이 ES2022 미만이라 Error.cause 는 타입에 없다.
-const buildCauseSuffix = (error: unknown): string => {
+// 원장 상한 — 파싱 실패 경로의 cause 는 `buildJsonParseCauseMessage` 가 raw 응답 앞 300자로
+// 이미 자르지만, cause 는 그 경로만 쓰는 필드가 아니다(모델 호출 실패·외부 API 오류도 담는다).
+// 상한이 없으면 어느 한 경로가 긴 본문을 실어 보내는 순간 원장 행이 통째로 부풀고, 그 사실은
+// 조회할 때까지 드러나지 않는다.
+const CAUSE_LEDGER_LIMIT = 1_000;
+
+// DomainException 계열은 파싱 실패의 raw 응답 앞부분을 cause 에만 담는다. 문자열을 돌려주는
+// 이유는 소비처가 둘이기 때문이다 — 로그 문장(접미사로 붙는다)과 원장 output.cause.
+// tsconfig target 이 ES2022 미만이라 Error.cause 는 타입에 없다.
+const extractCauseMessage = (error: unknown): string | null => {
   const cause = (error as { cause?: unknown } | null | undefined)?.cause;
   if (cause instanceof Error) {
-    return ` — cause: ${cause.message}`;
+    return cause.message.slice(0, CAUSE_LEDGER_LIMIT);
   }
-  return typeof cause === 'string' ? ` — cause: ${cause}` : '';
+  if (typeof cause === 'string') {
+    return cause.slice(0, CAUSE_LEDGER_LIMIT);
+  }
+  return null;
 };

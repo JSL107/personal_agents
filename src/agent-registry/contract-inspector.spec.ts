@@ -224,6 +224,19 @@ describe('evaluateContract — 점수', () => {
     expect(evaluation.violations).toEqual([]);
   });
 
+  // 의도된 건너뜀이 위반으로 적재되면 "산출물이 실제로 망가진 회차" 를 가리는 신호가 흐려진다.
+  // HUMANIZER 는 필드 수 상한을 넘을 때 모델을 부르지 않고 형태가 다른 기록만 남긴다.
+  it('HUMANIZER 의 건너뜀 형태는 위반 없이 만점이다', () => {
+    const evaluation = evaluateContract(AgentType.HUMANIZER, {
+      skipped: 'FIELD_COUNT_EXCEEDED',
+      fieldCount: 241,
+      limit: 240,
+    });
+
+    expect(evaluation.violations).toEqual([]);
+    expect(evaluation.score).toBe(1);
+  });
+
   it('필드 하나가 비면 부분 점수를 준다 — 위반 유무로는 안 보이는 해상도다', () => {
     const evaluation = evaluateContract(AgentType.PM, {
       topPriority: '오늘의 최우선 과제 #193',

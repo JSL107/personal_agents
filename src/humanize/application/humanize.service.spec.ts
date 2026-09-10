@@ -93,6 +93,84 @@ describe('HumanizeService', () => {
     expect(result).toEqual({ a: '다듬음A', b: '다듬음B' });
   });
 
+  // 큰 입력의 대가는 품질이 아니라 시간으로만 나온다 — 윤문은 실패해도 원본을 내보내는
+  // best-effort 경로라, 캡을 소진하고 원본으로 돌아오나 처음부터 원본을 내주나 결과가 같다.
+  // 실측(agent_run #2090·#2095·#2100): 필드 373~385개 회차가 601초를 태우고 원본을 반환했다.
+  it('필드 수가 상한을 넘으면 모델을 부르지 않고 원본을 그대로 반환한다', async () => {
+    const { service, routeMock } = makeService({ enabled: 'true' });
+    const 많은필드: Record<string, string> = {};
+    for (let index = 0; index < 241; index += 1) {
+      많은필드[`acc.${index}.memo`] = `원본${index}`;
+    }
+
+    const result = await service.humanize(많은필드);
+
+    expect(result).toEqual(많은필드);
+    expect(routeMock).not.toHaveBeenCalled();
+  });
+
+  // 건너뛴 회차가 원장에 안 남으면 "윤문이 며칠째 안 먹는다" 가 겉으로 드러나지 않는다.
+  it('건너뛴 회차도 사유·개수와 함께 원장에 남긴다', async () => {
+    const { service, agentRunService } = makeService({ enabled: 'true' });
+    const 많은필드: Record<string, string> = {};
+    for (let index = 0; index < 241; index += 1) {
+      많은필드[`acc.${index}.memo`] = `원본${index}`;
+    }
+
+    await service.humanize(많은필드);
+
+    expect(agentRunService.lastOutput).toEqual({
+      skipped: 'FIELD_COUNT_EXCEEDED',
+      fieldCount: 241,
+      limit: 240,
+    });
+  });
+
+  // 조건이 `>` 라 240개는 호출해야 한다. 경계를 고정해두지 않으면 나중에 `>=` 로 바뀌어도
+  // 241개 테스트만으로는 통과해, 정상 회차가 조용히 잘리기 시작한다.
+  it('필드 수가 상한과 같으면(240개) 모델을 부른다', async () => {
+    const 경계필드: Record<string, string> = {};
+    for (let index = 0; index < 240; index += 1) {
+      경계필드[`acc.${index}.memo`] = `원본${index}`;
+    }
+    const { service, routeMock } = makeService({
+      enabled: 'true',
+      routeImpl: async () => ({ text: JSON.stringify(경계필드) }),
+    });
+
+    await service.humanize(경계필드);
+
+    expect(routeMock).toHaveBeenCalledTimes(1);
+  });
+
+  // 건너뜀 기록은 부수 효과다 — 그것이 실패해도 결과(원본 유지)는 같아야 한다.
+  it('건너뜀 기록이 실패해도 원본을 반환하고 예외를 던지지 않는다', async () => {
+    const { service, agentRunService } = makeService({ enabled: 'true' });
+    agentRunService.execute = jest
+      .fn()
+      .mockRejectedValue(new Error('원장 기록 실패')) as never;
+    const 많은필드: Record<string, string> = {};
+    for (let index = 0; index < 241; index += 1) {
+      많은필드[`acc.${index}.memo`] = `원본${index}`;
+    }
+
+    const result = await service.humanize(많은필드);
+
+    expect(result).toEqual(많은필드);
+  });
+
+  it('상한 이하이면 평소대로 모델을 부른다', async () => {
+    const { service, routeMock } = makeService({
+      enabled: 'true',
+      routeImpl: async () => ({ text: JSON.stringify({ a: '다듬음A' }) }),
+    });
+
+    const result = await service.humanize({ a: '원본A' });
+
+    expect(result).toEqual({ a: '다듬음A' });
+    expect(routeMock).toHaveBeenCalledTimes(1);
+  });
+
   it('보존 토큰을 바꾼 필드만 원본으로 롤백하고 경고를 한 번 남긴다', async () => {
     const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
     const { service, agentRunService } = makeService({
