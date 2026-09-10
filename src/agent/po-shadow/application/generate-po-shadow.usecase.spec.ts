@@ -1,5 +1,6 @@
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { GithubClientPort } from '../../../github/domain/port/github-client.port';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import {
   AgentType,
@@ -106,7 +107,8 @@ const modelReport = (findings: PoShadowReport['findings']): PoShadowReport => ({
   quiet: false,
   headline: '#264 업로드 차단부터 해소하세요.',
   findings,
-  purposeConflict: null,
+  judgments: [],
+  recoverySummary: null,
   factSummary: [],
   droppedFindingCount: 0,
   degradedSources: [],
@@ -117,6 +119,8 @@ describe('GeneratePoShadowUsecase', () => {
   let agentRunServiceExecute: jest.Mock;
   let agentRunServiceFindLatest: jest.Mock;
   let contextCollectorCollect: jest.Mock;
+  let agentRunServiceFindRecent: jest.Mock;
+  let githubGetLifecycle: jest.Mock;
   let usecase: GeneratePoShadowUsecase;
 
   beforeEach(() => {
@@ -136,15 +140,22 @@ describe('GeneratePoShadowUsecase', () => {
     });
     contextCollectorCollect = jest.fn().mockResolvedValue(emptyContext());
 
+    agentRunServiceFindRecent = jest.fn().mockResolvedValue([]);
+    githubGetLifecycle = jest.fn();
+
     usecase = new GeneratePoShadowUsecase(
       modelRouter as unknown as ModelRouterUsecase,
       {
         execute: agentRunServiceExecute,
         findLatestSucceededRun: agentRunServiceFindLatest,
+        findRecentSucceededRuns: agentRunServiceFindRecent,
       } as unknown as AgentRunService,
       {
         collect: contextCollectorCollect,
       } as unknown as PoShadowContextCollector,
+      {
+        getItemLifecycle: githubGetLifecycle,
+      } as unknown as GithubClientPort,
     );
 
     modelRouter.route.mockResolvedValue({
@@ -269,7 +280,8 @@ describe('GeneratePoShadowUsecase', () => {
         quiet: true,
         headline: '계획대로 진행 중',
         findings: [],
-        purposeConflict: null,
+        judgments: [],
+        recoverySummary: null,
         factSummary: ['릴리즈 체크 — 외부 상태로 자동 확인 불가'],
         droppedFindingCount: 0,
         degradedSources: [],
@@ -552,5 +564,111 @@ describe('GeneratePoShadowUsecase', () => {
       factSummary: [],
     });
     expect(result.modelUsed).toBe('deterministic');
+  });
+
+  // 회수 배선 — 도메인 순수 함수(finding-recovery.spec)와 별개로 usecase 가 원장·GitHub·요약을
+  // 실제로 이어 붙이는지 본다. 커밋 전 검토에서 잡은 결함이 전부 이 배선에 있었다.
+  describe('직전 지적 회수', () => {
+    const priorRun = (factIds: string[], daysAgo: number) => ({
+      id: 77,
+      output: {
+        schemaVersion: 2,
+        quiet: false,
+        headline: '지난 회차',
+        findings: [{ factIds, point: 'p', suggestion: 's' }],
+        judgments: [],
+        recoverySummary: null,
+        factSummary: [],
+        droppedFindingCount: 0,
+        degradedSources: [],
+      },
+      endedAt: new Date(Date.now() - daysAgo * 86_400_000),
+    });
+
+    it('담당에서 사라진 직전 지적을 단건 조회해 회수 요약으로 결합한다', async () => {
+      agentRunServiceFindRecent.mockImplementation(({ agentType }) =>
+        Promise.resolve(
+          agentType === AgentType.PO_SHADOW
+            ? [priorRun(['unplanned:acme/app#999'], 8)]
+            : [],
+        ),
+      );
+      githubGetLifecycle.mockResolvedValue({
+        state: 'closed',
+        mergedAt: '2026-08-20T00:00:00.000Z',
+        isPullRequest: true,
+      });
+
+      const result = await usecase.execute({
+        extraContext: '',
+        slackUserId: 'U1',
+      });
+
+      expect(githubGetLifecycle).toHaveBeenCalledWith({
+        repo: 'acme/app',
+        number: 999,
+      });
+      expect(result.result.recoverySummary).toMatchObject({
+        merged: 1,
+        total: 1,
+        uncomparable: 0,
+      });
+      expect(result.result.factSummary.join('\n')).toContain('머지됨');
+    });
+
+    it('lifecycle 조회가 실패하면 그 키만 대조 불가로 세고 열화 라벨을 남긴다', async () => {
+      agentRunServiceFindRecent.mockImplementation(({ agentType }) =>
+        Promise.resolve(
+          agentType === AgentType.PO_SHADOW
+            ? [priorRun(['unplanned:acme/app#999'], 8)]
+            : [],
+        ),
+      );
+      githubGetLifecycle.mockRejectedValue(new Error('404'));
+
+      const result = await usecase.execute({
+        extraContext: '',
+        slackUserId: 'U1',
+      });
+
+      expect(result.result.recoverySummary).toMatchObject({
+        uncomparable: 1,
+        merged: 0,
+      });
+      expect(result.result.degradedSources).toContain('직전 지적 대조 불가');
+    });
+
+    it('원장 조회가 실패해도 회차는 계속하고 열화 라벨만 남긴다', async () => {
+      agentRunServiceFindRecent.mockImplementation(({ agentType }) =>
+        agentType === AgentType.PO_SHADOW
+          ? Promise.reject(new Error('db down'))
+          : Promise.resolve([]),
+      );
+
+      const result = await usecase.execute({
+        extraContext: '',
+        slackUserId: 'U1',
+      });
+
+      expect(result.result.degradedSources).toContain('직전 PO 보고');
+      expect(githubGetLifecycle).not.toHaveBeenCalled();
+    });
+
+    it('저장분 해석 실패는 지적 없음과 구분해 열화 라벨을 남긴다', async () => {
+      agentRunServiceFindRecent.mockImplementation(({ agentType }) =>
+        Promise.resolve(
+          agentType === AgentType.PO_SHADOW
+            ? [{ id: 77, output: { broken: true }, endedAt: new Date() }]
+            : [],
+        ),
+      );
+
+      const result = await usecase.execute({
+        extraContext: '',
+        slackUserId: 'U1',
+      });
+
+      expect(result.result.degradedSources).toContain('직전 PO 보고');
+    });
   });
 });

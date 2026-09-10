@@ -8,7 +8,7 @@ export const PO_SHADOW_OUTPUT_SCHEMA: OutputJsonSchema = {
     headline: {
       type: 'string',
       minLength: 1,
-      maxLength: 80,
+      maxLength: 120,
       pattern: '.*\\S.*',
     },
     findings: {
@@ -25,13 +25,13 @@ export const PO_SHADOW_OUTPUT_SCHEMA: OutputJsonSchema = {
           point: {
             type: 'string',
             minLength: 1,
-            maxLength: 60,
+            maxLength: 140,
             pattern: '.*\\S.*',
           },
           suggestion: {
             type: 'string',
             minLength: 1,
-            maxLength: 60,
+            maxLength: 140,
             pattern: '.*\\S.*',
           },
         },
@@ -39,24 +39,31 @@ export const PO_SHADOW_OUTPUT_SCHEMA: OutputJsonSchema = {
         additionalProperties: false,
       },
     },
-    purposeConflict: {
-      type: ['string', 'null'],
-      minLength: 1,
-      pattern: '.*\\S.*',
+    judgments: {
+      type: 'array',
+      maxItems: 2,
+      items: {
+        type: 'string',
+        minLength: 1,
+        maxLength: 140,
+        pattern: '.*\\S.*',
+      },
     },
     factSummary: { type: 'array', maxItems: 0, items: { type: 'string' } },
     droppedFindingCount: { type: 'integer', enum: [0] },
     degradedSources: { type: 'array', maxItems: 0, items: { type: 'string' } },
+    recoverySummary: { type: 'null' },
   },
   required: [
     'schemaVersion',
     'quiet',
     'headline',
     'findings',
-    'purposeConflict',
+    'judgments',
     'factSummary',
     'droppedFindingCount',
     'degradedSources',
+    'recoverySummary',
   ],
   additionalProperties: false,
 };

@@ -12,7 +12,8 @@ const base: PoShadowReport = {
       suggestion: '리뷰어를 지정한다',
     },
   ],
-  purposeConflict: '성과 정리보다 업로드 차단 해소가 먼저다.',
+  judgments: ['성과 정리보다 업로드 차단 해소가 먼저다.'],
+  recoverySummary: null,
   factSummary: ['#264 업로드 차단 · 리뷰 0건'],
   droppedFindingCount: 1,
   degradedSources: [],
@@ -25,7 +26,8 @@ describe('formatPoShadowReport — 조회 실패 표시', () => {
       quiet: true,
       headline: '계획대로 진행 중',
       findings: [],
-      purposeConflict: null,
+      judgments: [],
+      recoverySummary: null,
       factSummary: [],
       droppedFindingCount: 0,
       degradedSources: ['GitHub 담당 목록'],
@@ -56,7 +58,8 @@ describe('formatPoShadowReport', () => {
       quiet: true,
       headline: '계획대로 진행 중',
       findings: [],
-      purposeConflict: null,
+      judgments: [],
+      recoverySummary: null,
       factSummary: ['#10 머지 완료', '사용자 입력 일정 확인 불가'],
       droppedFindingCount: 0,
       degradedSources: [],
@@ -73,7 +76,8 @@ describe('formatPoShadowReport', () => {
       quiet: true,
       headline: '계획대로 진행 중',
       findings: [],
-      purposeConflict: null,
+      judgments: [],
+      recoverySummary: null,
       factSummary: [],
       droppedFindingCount: 0,
       degradedSources: [],
@@ -125,17 +129,16 @@ describe('formatPoShadowReport', () => {
     );
   });
 
-  it('purposeConflict는 공백이 아닌 값일 때만 렌더한다', () => {
-    const withConflict = formatPoShadowReport(base);
-    const withoutConflict = formatPoShadowReport({
-      ...base,
-      purposeConflict: '   ',
-    });
-
-    expect(withConflict).toContain(
-      '⚠️ *1순위와 어긋남* 성과 정리보다 업로드 차단 해소가 먼저다.',
+  it('judgments는 추정 접두를 달아 렌더한다 — 근거 없음을 실토한다', () => {
+    const rendered = formatPoShadowReport(base);
+    expect(rendered).toContain(
+      '🤔 _추정_ 성과 정리보다 업로드 차단 해소가 먼저다.',
     );
-    expect(withoutConflict).not.toContain('1순위와 어긋남');
+  });
+
+  it('judgments가 비면 그 블록이 없다', () => {
+    const rendered = formatPoShadowReport({ ...base, judgments: [] });
+    expect(rendered).not.toContain('_추정_');
   });
 
   it('droppedFindingCount는 0보다 클 때만 렌더한다', () => {
@@ -150,7 +153,7 @@ describe('formatPoShadowReport', () => {
     expect(withoutDropped).not.toContain('근거 없는 지적');
   });
 
-  it('headline·finding·purposeConflict·factSummary의 Slack 제어문자를 모두 escape한다', () => {
+  it('headline·finding·judgments·factSummary의 Slack 제어문자를 모두 escape한다', () => {
     const rendered = formatPoShadowReport({
       ...base,
       headline: '<headline> & now',
@@ -161,7 +164,8 @@ describe('formatPoShadowReport', () => {
           suggestion: '<suggestion> & act',
         },
       ],
-      purposeConflict: '<purpose> & conflict',
+      judgments: ['<purpose> & conflict'],
+      recoverySummary: null,
       factSummary: ['<fact> & evidence'],
     });
 
@@ -178,7 +182,8 @@ describe('formatPoShadowReport', () => {
       ...base,
       quiet: true,
       findings: [],
-      purposeConflict: null,
+      judgments: [],
+      recoverySummary: null,
       factSummary: ['<fact> & evidence'],
       droppedFindingCount: 0,
       degradedSources: [],
@@ -187,5 +192,56 @@ describe('formatPoShadowReport', () => {
     expect(rendered).toBe(
       '✅ *PO 검토* — 계획대로 진행 중 (&lt;fact&gt; &amp; evidence)',
     );
+  });
+});
+
+describe('회수 블록 — factSummary 가 아니라 독립 블록으로 낸다', () => {
+  const summary = {
+    merged: 5,
+    unresolved: 6,
+    unmovedFactCount: 4,
+    abandoned: 2,
+    unassigned: 1,
+    uncomparable: 3,
+    total: 15,
+  };
+
+  it('quiet 회차에도 렌더된다 — 모델이 인용하지 않아도 사라지지 않는다', () => {
+    const rendered = formatPoShadowReport({
+      ...base,
+      quiet: true,
+      recoverySummary: summary,
+    });
+    expect(rendered).toContain('🔁 *지난 지적 12건* (대조 불가 3건)');
+    expect(rendered).toContain('머지 5');
+    expect(rendered).toContain('머지 없이 닫힘 2');
+    expect(rendered).toContain('담당에서 빠짐 1');
+  });
+
+  it('미해결에 섞인 7일 미만 건수를 밝힌다 — 숫자와 근거 줄이 어긋나 보이는 것을 막는다', () => {
+    const rendered = formatPoShadowReport({
+      ...base,
+      quiet: true,
+      recoverySummary: summary,
+    });
+    expect(rendered).toContain('미해결 6 (그중 2건은 지적 7일 미만)');
+  });
+
+  it('대조군이 없다는 것을 병기한다 — 맨 숫자를 비율처럼 읽지 않게', () => {
+    const rendered = formatPoShadowReport({
+      ...base,
+      quiet: true,
+      recoverySummary: summary,
+    });
+    expect(rendered).toContain('비교 대상 없음');
+  });
+
+  it('회수할 지적이 없던 회차에는 블록 자체가 없다', () => {
+    const rendered = formatPoShadowReport({
+      ...base,
+      quiet: true,
+      recoverySummary: null,
+    });
+    expect(rendered).not.toContain('🔁');
   });
 });

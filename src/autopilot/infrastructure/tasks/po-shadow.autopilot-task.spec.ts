@@ -17,7 +17,8 @@ const quietReport = (): PoShadowReport => ({
   quiet: true,
   headline: '계획대로 진행 중',
   findings: [],
-  purposeConflict: null,
+  judgments: [],
+  recoverySummary: null,
   factSummary: ['#10 머지 완료'],
   droppedFindingCount: 0,
   degradedSources: [],
@@ -34,7 +35,8 @@ const nonQuietReport = (): PoShadowReport => ({
       suggestion: '원문 제안',
     },
   ],
-  purposeConflict: '원문 목적 충돌',
+  judgments: ['원문 목적 충돌'],
+  recoverySummary: null,
   factSummary: ['#264 원본 사실'],
   droppedFindingCount: 0,
   degradedSources: [],
@@ -96,14 +98,14 @@ describe('PoShadowAutopilotTask', () => {
       headline: '윤문 헤드라인',
       'findings.point.0': '윤문 지적',
       'findings.suggestion.0': '윤문 제안',
-      purposeConflict: '윤문 목적 충돌',
+      'judgments.0': '윤문 목적 충돌',
     });
 
     const result = await task.run(CONTEXT);
 
     expect(result.summaryText).toContain('🎯 *먼저 이것부터* 윤문 헤드라인');
     expect(result.summaryText).toContain('• 윤문 지적 — 윤문 제안');
-    expect(result.summaryText).toContain('⚠️ *1순위와 어긋남* 윤문 목적 충돌');
+    expect(result.summaryText).toContain('🤔 _추정_ 윤문 목적 충돌');
     expect(result.summaryText).toContain('↳ 근거: #264 원본 사실');
     expect(result.summaryText).not.toContain('원문 헤드라인');
   });

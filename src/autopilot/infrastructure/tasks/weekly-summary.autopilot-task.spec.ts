@@ -1,6 +1,7 @@
 import { CeoException } from '../../../agent/ceo/domain/ceo.exception';
 import { CeoErrorCode } from '../../../agent/ceo/domain/ceo-error-code.enum';
 import { DomainStatus } from '../../../common/exception/domain-status.enum';
+import { AgentType } from '../../../model-router/domain/model-router.type';
 import { WeeklySummaryAutopilotTask } from './weekly-summary.autopilot-task';
 
 const CTX = { ownerSlackUserId: 'U1', firedAtKst: '2026-06-17' };
@@ -408,5 +409,126 @@ describe('WeeklySummaryAutopilotTask', () => {
     if (!scenario.author) {
       expect(listAuthorMergedPullRequestsSince).not.toHaveBeenCalled();
     }
+  });
+
+  // 회수 대조 건강도 한 줄 — 회차 합산이 아니라 「대조 불가」 라벨이 뜬 회차 비율이다.
+  const runWithPoShadowRuns = async (
+    poShadowOutputs: unknown[],
+  ): Promise<string> => {
+    const findRecentSucceededRuns = jest
+      .fn()
+      .mockImplementation(({ agentType }: { agentType: AgentType }) =>
+        Promise.resolve(
+          agentType === AgentType.PO_SHADOW
+            ? poShadowOutputs.map((output) => ({
+                output,
+                endedAt: new Date('2026-06-16T00:00:00.000Z'),
+              }))
+            : [],
+        ),
+      );
+    const task = new WeeklySummaryAutopilotTask(
+      { findRecentSucceededRuns } as never,
+      {
+        execute: jest.fn().mockResolvedValue({
+          result: {
+            summary: '이번주 요약',
+            oneLineAchievement: '핵심 성과',
+            impact: { quantitative: [], qualitative: '질적 영향' },
+            improvementBeforeAfter: null,
+            decisions: [],
+            risks: [],
+            nextActions: [],
+          },
+          modelUsed: 'codex-cli',
+          agentRunId: 42,
+        }),
+      } as never,
+      { execute: jest.fn().mockRejectedValue(new Error('ceo down')) } as never,
+      {
+        listAuthorMergedPullRequestsSince: jest
+          .fn()
+          .mockResolvedValue([MERGED_PULL_REQUEST]),
+      } as never,
+      makeHumanizer() as never,
+      makeConfig() as never,
+    );
+
+    const result = await task.run(CTX);
+    if (result.skip || result.summaryText === undefined) {
+      throw new Error('skip 이 아닌 회차를 기대했다');
+    }
+    return result.summaryText;
+  };
+
+  it('PO 회차 3건 중 2건에 대조 불가 라벨 → 비율과 임계 경고를 함께 낸다', async () => {
+    const summaryText = await runWithPoShadowRuns([
+      { findings: [], degradedSources: ['직전 지적 대조 불가'] },
+      { findings: [], degradedSources: ['직전 지적 대조 불가'] },
+      { findings: [], degradedSources: [] },
+    ]);
+
+    expect(summaryText).toContain('3회차 중 2회차 대조 불가 (67%)');
+    expect(summaryText).toContain('임계(40%) 초과');
+  });
+
+  it('대조 불가가 임계 미만이면 경고 없이 비율만 낸다', async () => {
+    const summaryText = await runWithPoShadowRuns([
+      { findings: [], degradedSources: ['직전 지적 대조 불가'] },
+      { findings: [], degradedSources: [] },
+      { findings: [], degradedSources: [] },
+      { findings: [], degradedSources: [] },
+    ]);
+
+    expect(summaryText).toContain('4회차 중 1회차 대조 불가 (25%)');
+    expect(summaryText).not.toContain('임계');
+  });
+
+  it('PO 회차 조회가 실패해도 지표 줄만 생략하고 주간 worklog 는 발송한다', async () => {
+    const findRecentSucceededRuns = jest
+      .fn()
+      .mockImplementation(({ agentType }: { agentType: AgentType }) =>
+        agentType === AgentType.PO_SHADOW
+          ? Promise.reject(new Error('db down'))
+          : Promise.resolve([]),
+      );
+    const task = new WeeklySummaryAutopilotTask(
+      { findRecentSucceededRuns } as never,
+      {
+        execute: jest.fn().mockResolvedValue({
+          result: {
+            summary: '이번주 요약',
+            oneLineAchievement: '핵심 성과',
+            impact: { quantitative: [], qualitative: '질적 영향' },
+            improvementBeforeAfter: null,
+            decisions: [],
+            risks: [],
+            nextActions: [],
+          },
+          modelUsed: 'codex-cli',
+          agentRunId: 42,
+        }),
+      } as never,
+      { execute: jest.fn().mockRejectedValue(new Error('ceo down')) } as never,
+      {
+        listAuthorMergedPullRequestsSince: jest
+          .fn()
+          .mockResolvedValue([MERGED_PULL_REQUEST]),
+      } as never,
+      makeHumanizer() as never,
+      makeConfig() as never,
+    );
+
+    const result = await task.run(CTX);
+
+    expect(result.skip).toBe(false);
+    expect(result.summaryText).toContain('회차 조회 실패로 이번 주 지표 생략');
+    expect(result.summaryText).toContain('이번주 요약');
+  });
+
+  it('이번 주 PO 회차가 없으면 비율 대신 회차 없음을 낸다', async () => {
+    const summaryText = await runWithPoShadowRuns([]);
+
+    expect(summaryText).toContain('이번 주 PO 회차 없음');
   });
 });

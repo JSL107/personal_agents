@@ -40,6 +40,7 @@ const buildPreview = (payload: PmWriteBackPayload): PreviewAction => ({
 const buildGithubMock = (): jest.Mocked<GithubClientPort> => ({
   listMyAssignedTasks: jest.fn(),
   getPullRequest: jest.fn(),
+  getItemLifecycle: jest.fn(),
   getPullRequestDiff: jest.fn(),
   compareCommits: jest.fn(),
   addIssueComment: jest.fn().mockResolvedValue(undefined),

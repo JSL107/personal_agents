@@ -33,6 +33,9 @@ export interface GeneratePoShadowInput {
   slackUserId: string;
   triggerType?: TriggerType;
   enforcePlanFreshness?: boolean;
+  // 회수 창과 sequence 계산의 기준 시각. 선택 인자라 호출부 4곳은 무변경이다.
+  // 주입하지 않으면 순수 함수가 Date.now() 를 부르게 되어 시간 축 테스트가 fake timer 로 떨어진다.
+  now?: Date;
 }
 
 export interface PoShadowFinding {
@@ -41,15 +44,32 @@ export interface PoShadowFinding {
   suggestion: string;
 }
 
+// 회수 결과 요약. 카드의 독립 블록이 이 값을 렌더한다.
+// `unresolved` 에는 7일 미만이라 사실을 만들지 않은 키도 포함되므로
+// `unmovedFactCount` 와 다를 수 있다 — 그 차이를 카드가 밝힌다.
+export interface PoShadowRecoverySummary {
+  merged: number;
+  unresolved: number;
+  unmovedFactCount: number;
+  abandoned: number;
+  unassigned: number;
+  uncomparable: number;
+  total: number;
+}
+
 export interface PoShadowReport {
   schemaVersion: 2;
   quiet: boolean;
   headline: string;
   findings: PoShadowFinding[];
-  purposeConflict: string | null;
+  // 사실표 밖의 판단·추정. 카드에서 "추정" 접두가 붙는다.
+  // 가드는 findings 에만 인용을 강제하므로 이 칸이 판단을 담을 유일한 자리다.
+  judgments: string[];
   factSummary: string[];
   droppedFindingCount: number;
   // 이번 회차에 조회하지 못한 소스. 카드에 그대로 노출한다 — "이상 없음" 이 실은
   // "못 봤음" 이었던 회차를 사용자가 구분할 수 있어야 한다.
   degradedSources: string[];
+  // factSummary·degradedSources 와 같은 자리 — 코드가 채운다. 모델에게는 null 을 요구한다.
+  recoverySummary: PoShadowRecoverySummary | null;
 }

@@ -13,6 +13,7 @@ const buildClientMock = (
 ): jest.Mocked<GithubClientPort> => ({
   listMyAssignedTasks: jest.fn().mockResolvedValue(fixture),
   getPullRequest: jest.fn(),
+  getItemLifecycle: jest.fn(),
   getPullRequestDiff: jest.fn(),
   compareCommits: jest.fn(),
   addIssueComment: jest.fn(),
