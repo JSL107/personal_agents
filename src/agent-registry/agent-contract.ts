@@ -482,18 +482,18 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     // (`ExpandStudyBriefUsecase`)는 애초에 modelRouter 를 거치지 않고 Hermes CLI 를 직접
     // 부르므로 머리말이 닿지도 않는다 — 검사만 켜 두고 주입은 끈다.
     deliverableFields: ['kind', 'whyNow', 'whereItLands', 'minutes'],
+    //
+    // 발행 두 형태에서 공통 키인 `status` 를 뺐다. `pickBestMatch` 는 값이 아니라 충족
+    // **비율**만 비교하므로, status 를 양쪽에 두면 깨진 성공 산출물이 짧은 스킵 형태로
+    // 매칭된다 — `{status:'created', briefId:10}` 은 성공형 5개가 누락됐는데도 스킵형
+    // 기준 1/2 로 채점돼 "message 하나 누락" 으로 기록되고 점수가 2/7 대신 0.5 로 부풀어
+    // 계약 이상 감지가 흐려진다. "형태끼리 키가 겹치면 판별이 흐려지므로 서로 구별되는
+    // 키를 골라 적는다" 는 `deliverableVariants` 규약(위 인터페이스 주석)이 정확히 이 경우다.
+    // status 는 형태를 가르는 표식이지 산출물의 내용도 아니다.
     deliverableVariants: [
       ['kind', 'whatImproves', 'adoptionCost', 'minutes'],
-      [
-        'status',
-        'briefId',
-        'topic',
-        'title',
-        'tags',
-        'bodyLength',
-        'notionUrl',
-      ],
-      ['status', 'message'],
+      ['briefId', 'topic', 'title', 'tags', 'bodyLength', 'notionUrl'],
+      ['message'],
     ],
     // 근거율을 재보지 않았다. LLM 산출물(판정)은 Hermes 조사 전문을 요약할 뿐 URL·PR·
     // 파일:라인 형태의 근거를 담지 않고, 발행 형태는 사람이 읽을 근거 문장이 아니라

@@ -563,6 +563,21 @@ describe('evaluateContract — 점수', () => {
       expect(evaluation.score).toBe(1);
     });
 
+    // pickBestMatch 는 값이 아니라 충족 비율만 비교한다. 두 발행 형태가 status 를 공유하면
+    // 깨진 성공 산출물이 짧은 스킵 형태로 매칭돼 누락 5개가 "message 하나 누락" 으로 기록된다.
+    it('깨진 발행 성공 산출물이 스킵 형태로 매칭되지 않는다', () => {
+      const evaluation = evaluateContract(AgentType.CTO_STUDY, {
+        status: 'created',
+        briefId: 10,
+      });
+
+      // 성공 형태(6개) 기준으로 채점돼야 한다 — briefId 하나만 충족.
+      expect(evaluation.checkedCount).toBe(6);
+      expect(
+        evaluation.violations.map((violation) => violation.detail),
+      ).toEqual(['topic', 'title', 'tags', 'bodyLength', 'notionUrl']);
+    });
+
     it('발행 스킵 형태도 만점으로 인정한다', () => {
       const evaluation = evaluateContract(AgentType.CTO_STUDY, {
         status: 'empty',
