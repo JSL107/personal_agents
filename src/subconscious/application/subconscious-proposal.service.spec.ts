@@ -73,6 +73,7 @@ const buildRepository = (
   findById: jest.fn().mockResolvedValue(record),
   hasPending: jest.fn().mockResolvedValue(false),
   listPending: jest.fn().mockResolvedValue([]),
+  expirePendingOlderThan: jest.fn().mockResolvedValue(0),
   markStatus: jest.fn().mockResolvedValue(undefined),
   transitionFromPending: jest
     .fn()
@@ -607,6 +608,48 @@ describe('SubconsciousProposalService.dismissSweptPending', () => {
     expect(await service.dismissSweptPending(OWNER)).toBe(0);
     expect(agentRunRepository.findLatestSweepReview).not.toHaveBeenCalled();
     expect(repository.transitionFromPending).not.toHaveBeenCalled();
+  });
+
+  it('만료 카드를 판정 전에 일괄 종료한다 — 선두 점유로 뒤쪽이 영구히 안 닫히는 것 방지', async () => {
+    const repository = buildRepository();
+    // 만료분은 updateMany 로 이미 닫혔으므로 listPending 은 TTL 안쪽 카드만 돌려준다.
+    repository.expirePendingOlderThan.mockResolvedValue(22);
+    repository.listPending.mockResolvedValue([buildRecord()]);
+
+    const { service } = buildService({
+      repository,
+      ttlMs: 86_400_000,
+      agentRunRepository: buildAgentRunRepository(SUCCEEDED_PUBLISHED),
+    });
+
+    const closed = await service.dismissSweptPending(OWNER);
+
+    // 만료 22 + 스윕 처리 1. 만료 종료가 상한(50)을 먹지 않으므로 같은 회차에 둘 다 닫힌다.
+    expect(closed).toBe(23);
+    expect(repository.expirePendingOlderThan).toHaveBeenCalledWith(
+      OWNER,
+      expect.any(Date),
+    );
+    expect(repository.transitionFromPending).toHaveBeenCalledTimes(1);
+  });
+
+  it('만료 종료는 listPending 조회보다 먼저 일어난다 (선두 점유 제거가 판정에 반영되도록)', async () => {
+    const repository = buildRepository();
+    const order: string[] = [];
+    repository.expirePendingOlderThan.mockImplementation(() => {
+      order.push('expire');
+      return Promise.resolve(3);
+    });
+    repository.listPending.mockImplementation(() => {
+      order.push('list');
+      return Promise.resolve([]);
+    });
+
+    const { service } = buildService({ repository });
+
+    await service.dismissSweptPending(OWNER);
+
+    expect(order).toEqual(['expire', 'list']);
   });
 
   it('한 회차 판정 상한(50건)을 넘는 카드는 다음 회차로 넘긴다 (tick 이 늘어져 stalled 되는 것 방지)', async () => {

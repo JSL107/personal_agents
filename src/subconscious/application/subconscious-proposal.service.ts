@@ -31,8 +31,12 @@ const DEFAULT_TTL_MS = 86_400_000; // 24시간
 
 // 한 회차에 사후 판정할 카드 수 상한. 카드 1장마다 원장을 한 번 조회하므로 상한이 없으면
 // 쌓인 카드 수만큼 tick 이 길어지고, lockDuration 을 넘기면 BullMQ 가 stalled 로 보고 같은
-// job 을 재큐한다(autopilot.orchestrator 주석의 자기 증폭 루프와 같은 함정). 오래된 카드부터
-// 처리하고 남은 것은 다음 회차로 넘긴다 — 20분 주기면 누적분도 몇 회차 안에 소진된다.
+// job 을 재큐한다(autopilot.orchestrator 주석의 자기 증폭 루프와 같은 함정).
+//
+// 상한은 방어선이지 처리 전략이 아니다 — "남은 것은 다음 회차에" 는 선두가 실제로 닫힐 때만
+// 성립하고, 닫히지 않는 카드가 선두에 있으면 뒤쪽은 어떤 회차에서도 검사되지 않는다. 그래서
+// 닫히지 않는 유일한 부류(만료 카드)를 dismissSweptPending 이 판정 **전에** 일괄로 치운다.
+// 그 뒤 남는 것은 TTL 안쪽 카드뿐이고, 실측 생성률(30일 52건)이면 상한에 닿지 않는다.
 const DISMISS_SCAN_LIMIT = 50;
 
 // review-pr(CODE_REVIEWER) 워커는 dispatch text 에서 PR 참조(owner/repo#num)를
@@ -117,6 +121,19 @@ export class SubconsciousProposalService implements ProposalEmitter {
   // 판정 근거는 shouldEmit 과 동일한 원장 기록이라, 레포 allowlist 로 자를 때 생기는
   // "스윕이 조회하지 않는 PR(남이 작성해 나에게 할당 등)의 리뷰 경로 상실" 이 없다.
   async dismissSweptPending(ownerUserId: string): Promise<number> {
+    // 만료 카드를 먼저 일괄 종료한다. 눌러도 실행되지 않는 죽은 카드인데(assertReadyToResolve)
+    // 스윕 판정으로는 닫히지 않아 createdAt asc 선두를 영구 점유하고, 그러면 뒤쪽의 종료
+    // 대상이 어떤 회차에서도 아래 상한 안에 들어오지 못한다(실측: 만료 22건이 선두 점유).
+    // updateMany 한 번이라 순회가 없어 회차 상한을 먹지 않는다. 이 호출이 먼저이므로
+    // 이어지는 listPending 은 TTL 안쪽 카드만 돌려준다.
+    const expired = await this.repository.expirePendingOlderThan(
+      ownerUserId,
+      new Date(Date.now() - this.ttlMs),
+    );
+    if (expired > 0) {
+      this.logger.log(`만료된 제안 카드 ${expired}건 종료 (TTL 초과)`);
+    }
+
     const pending = await this.repository.listPending(ownerUserId);
     let dismissed = 0;
     for (const proposal of pending.slice(0, DISMISS_SCAN_LIMIT)) {
@@ -141,7 +158,7 @@ export class SubconsciousProposalService implements ProposalEmitter {
         );
       }
     }
-    return dismissed;
+    return expired + dismissed;
   }
 
   // 카드를 만들 이유가 있는지 — 엔진이 예산을 소비하기 전에 호출한다.

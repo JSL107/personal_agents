@@ -63,6 +63,21 @@ export class SubconsciousProposalPrismaRepository implements SubconsciousProposa
     return rows.map(toDomain);
   }
 
+  async expirePendingOlderThan(
+    ownerUserId: string,
+    createdBefore: Date,
+  ): Promise<number> {
+    const { count } = await this.prisma.subconsciousProposal.updateMany({
+      where: {
+        ownerUserId,
+        status: 'PENDING',
+        createdAt: { lt: createdBefore },
+      },
+      data: { status: 'DISMISSED', resolvedAt: new Date() },
+    });
+    return count;
+  }
+
   async markStatus(
     id: number,
     status: Exclude<ProposalStatus, 'PENDING'>,
