@@ -338,6 +338,24 @@ model PreferenceProposal {
   @@map("preference_proposal")
 }
 
+// PREFERENCE_LEARNING 세 번째 신호원 — 사용자가 이대리(봇) 메시지에 👍/👎 를 달면 그 판정과
+// 메시지 본문을 적재해 ReactionSignalSource 가 선호 학습 신호로 읽어가게 한다.
+// 사람이 쓴 메시지에 대한 반응은 handler 가 message.bot_id 유무로 미리 걸러 저장하지 않는다.
+// reaction_added 는 멱등하지 않다(toggle off → on 시 두 번 발화 가능) — unique 로 중복 저장 방지.
+model SlackReactionSignal {
+  id          Int      @id @default(autoincrement())
+  slackUserId String   @map("slack_user_id")
+  channelId   String   @map("channel_id")
+  messageTs   String   @map("message_ts")
+  emoji       String
+  messageText String   @map("message_text") @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@unique([channelId, messageTs, slackUserId, emoji])
+  @@index([slackUserId, createdAt])
+  @@map("slack_reaction_signal")
+}
+
 // 보유 종목 모니터링 — 종목 마스터.
 // 티커는 상장 이전·티커 변경으로 바뀔 수 있어 PK 로 쓰지 않는다.
 // 유니크는 (market, code) — 6자리 코드는 시장이 다르면 중복될 수 있다.

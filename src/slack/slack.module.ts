@@ -14,6 +14,7 @@ import { WorkReviewerModule } from '../agent/work-reviewer/work-reviewer.module'
 import { AgentRunModule } from '../agent-run/agent-run.module';
 import { HumanizeModule } from '../humanize/humanize.module';
 import { PaperTradingModule } from '../paper-trading/paper-trading.module';
+import { PreferenceProfileModule } from '../preference-profile/preference-profile.module';
 import { PushpinTaskModule } from '../pushpin-task/pushpin-task.module';
 import { RouterModule } from '../router/router.module';
 import { SlackInboxModule } from '../slack-inbox/slack-inbox.module';
@@ -28,6 +29,7 @@ import { CareerContextActionHandler } from './handler/career-context-action.hand
 import { DiagnosisHandler } from './handler/diagnosis.handler';
 import { FeedbackCommandHandler } from './handler/feedback-command.handler';
 import { PhaseCommandHandler } from './handler/phase-command.handler';
+import { PreferenceReactionHandler } from './handler/preference-reaction.handler';
 import { PreviewActionHandler } from './handler/preview-action.handler';
 import { RetryRunHandler } from './handler/retry-run.handler';
 import { RouterMessageHandler } from './handler/router-message.handler';
@@ -63,6 +65,8 @@ import { SlackService } from './slack.service';
     SlackInboxModule,
     // 📌 reaction → Notion task 자동 적재 — AppendPushpinTaskService 의존.
     PushpinTaskModule,
+    // 👍/👎 reaction → 선호 학습 신호 저장 — REACTION_SIGNAL_REPOSITORY 의존.
+    PreferenceProfileModule,
     // V3 비전 봇 쪼개기 step 5 — 자연어 진입 (app_mention) 시 IdaeriRouterPort.dispatch 로 위임.
     RouterModule,
     // 휴가 잔여/등록/내역/취소 — 결정론 계산. /휴가 슬래시.
@@ -88,6 +92,7 @@ import { SlackService } from './slack.service';
     RouterMessageHandler,
     SlackInboxReactionHandler,
     SlackPushpinReactionHandler,
+    PreferenceReactionHandler,
     VacationHandler,
     SubconsciousProposalActionHandler,
     {
@@ -106,6 +111,7 @@ import { SlackService } from './slack.service';
         RouterMessageHandler,
         SlackInboxReactionHandler,
         SlackPushpinReactionHandler,
+        PreferenceReactionHandler,
         VacationHandler,
         SubconsciousProposalActionHandler,
       ],
