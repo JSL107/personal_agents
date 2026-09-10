@@ -45,9 +45,15 @@ export class RunDocsAuditUseCase implements DocsAuditPort {
   async runAudit(): Promise<DocsAuditResult> {
     const deterministic = await this.checker.check();
     const files = await this.gitFiles.recentlyChangedSotFiles(this.maxFiles);
+    // 매핑이 없는 SoT 는 판정 루프의 첫 분기에서 빠져 LLM 을 한 번도 부르지 않는다.
+    // 후보 수를 이 필터 **전** 값으로 세면 흔적(AutopilotTaskTrace)이 "후보가 있었으니
+    // LLM 을 불렀다" 고 잘못 적어, 정작 가리려던 원인("판정 대상이 없었다")을 덮는다.
+    const judgeTargets = files.filter(
+      (sotFile) => SOT_TO_DOC[sotFile] !== undefined,
+    );
 
     const proposals: DocsRevisionProposal[] = [];
-    for (const sotFile of files) {
+    for (const sotFile of judgeTargets) {
       const proposal = await this.auditOneFile(sotFile);
       if (proposal) {
         proposals.push(proposal);
@@ -58,7 +64,12 @@ export class RunDocsAuditUseCase implements DocsAuditPort {
       confirmed.length > 0
         ? await this.revisionApplier.buildRevision(confirmed)
         : null;
-    return { deterministic, proposals, revision };
+    return {
+      deterministic,
+      proposals,
+      revision,
+      candidateFileCount: judgeTargets.length,
+    };
   }
 
   // 한 파일에 대한 optimizer↔evaluator 자기수정 루프. 종료조건 3종이 한 함수에 다 보인다:

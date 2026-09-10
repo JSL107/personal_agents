@@ -1064,3 +1064,24 @@ model JobPosting {
   @@index([companyKey])
   @@map("job_posting")
 }
+
+// 주간 판정 계열 autopilot task(knowledge-lint L4 · docs-sync-audit Layer2)의 발화 흔적.
+// AgentType 신설(AGENTS.md §4 체크리스트) 대신 이 얇은 전용 테이블을 쓴다 — 두 task 는 Slack
+// 슬래시·라우터 디스패치가 없는 내부 전용이라 체크리스트 14 항목 대부분이 해당 없고,
+// 필요한 것은 "발화했다/게이트 상태/판정 대상 건수/LLM 호출 여부" 4 값 조회뿐이다.
+// candidateCount·llmCalled 를 nullable 로 둔 이유: 게이트가 꺼져 있으면 애초에 세지 않고,
+// LLM 호출 도중 예외로 중단되면 후보 수를 확정하지 못한 채 남을 수 있다 — 둘 다 "0" 과는
+// 다른 사실이라 null 로 구분한다.
+model AutopilotTaskTrace {
+  id             Int      @id @default(autoincrement())
+  taskId         String   @map("task_id")
+  firedAtKst     String   @map("fired_at_kst")
+  gateEnabled    Boolean  @map("gate_enabled")
+  candidateCount Int?     @map("candidate_count")
+  llmCalled      Boolean? @map("llm_called")
+  detail         String?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([taskId, createdAt])
+  @@map("autopilot_task_trace")
+}

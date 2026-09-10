@@ -108,3 +108,76 @@ it('(d) needsRevision=false → 제안 없음', async () => {
   expect(result.proposals).toHaveLength(0);
   expect(d.judge.evaluate).not.toHaveBeenCalled();
 });
+
+// autopilot task 의 발화 흔적(AutopilotTaskTrace)이 "판정 대상 건수"로 소비한다 — 판정
+// 루프에 실제로 들어가는 파일 수를 노출해야 한다.
+it('candidateFileCount 는 판정 대상이 된 SoT 파일 수를 반영한다', async () => {
+  const d = makeDeps({
+    gitFiles: {
+      recentlyChangedSotFiles: jest
+        .fn()
+        .mockResolvedValue([
+          'src/config/app.config.ts',
+          'src/agent-registry/agent-registry.ts',
+        ]),
+    },
+  });
+  d.judge.optimize.mockResolvedValue({
+    needsRevision: false,
+    filePath: 'README.md',
+    edits: [],
+    rationale: '',
+  });
+  const result = await build(d).runAudit();
+  expect(result.candidateFileCount).toBe(2);
+});
+
+// 매핑이 없는 SoT 는 auditOneFile 의 첫 분기에서 빠져 LLM 을 한 번도 부르지 않는다. 그것을
+// 후보로 세면 흔적이 "LLM 을 불렀다" 고 잘못 적어, 가리려던 원인("판정 대상이 없었다")을 덮는다.
+it('SOT_TO_DOC 매핑이 없는 후보는 candidateFileCount 에서 빠진다', async () => {
+  const d = makeDeps({
+    gitFiles: {
+      recentlyChangedSotFiles: jest
+        .fn()
+        .mockResolvedValue([
+          'src/config/app.config.ts',
+          'src/unmapped/whatever.ts',
+        ]),
+    },
+  });
+  d.judge.optimize.mockResolvedValue({
+    needsRevision: false,
+    filePath: 'README.md',
+    edits: [],
+    rationale: '',
+  });
+
+  const result = await build(d).runAudit();
+
+  expect(result.candidateFileCount).toBe(1);
+  expect(d.judge.optimize).toHaveBeenCalledTimes(1);
+});
+
+it('매핑된 후보가 하나도 없으면 candidateFileCount=0 이고 LLM 을 부르지 않는다', async () => {
+  const d = makeDeps({
+    gitFiles: {
+      recentlyChangedSotFiles: jest
+        .fn()
+        .mockResolvedValue(['src/unmapped/whatever.ts']),
+    },
+  });
+
+  const result = await build(d).runAudit();
+
+  expect(result.candidateFileCount).toBe(0);
+  expect(d.judge.optimize).not.toHaveBeenCalled();
+});
+
+it('후보 파일이 0건이면 candidateFileCount=0 (LLM 미호출)', async () => {
+  const d = makeDeps({
+    gitFiles: { recentlyChangedSotFiles: jest.fn().mockResolvedValue([]) },
+  });
+  const result = await build(d).runAudit();
+  expect(result.candidateFileCount).toBe(0);
+  expect(d.judge.optimize).not.toHaveBeenCalled();
+});
