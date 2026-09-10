@@ -25,6 +25,9 @@ const ACTIVITY_BUBBLE_RULES: Record<string, ActivityBubbleRule> = {
   REPORT_HUMANIZE: '문장 다듬는 중',
   AUTOPILOT_PO_SHADOW_CRON: '기획 검토 중',
   SUBCONSCIOUS_TICK: '변화 훑는 중',
+  // 배정 cron 은 2026-09-07(#479)에 폐지돼 TriggerType 에는 없다. 라벨만 남기는 이유는
+  // 원장의 과거 22회차가 이 문자열로 기록돼 있어서다 — 지우면 그 행들이 콘솔에서 문구를 잃는다
+  // (`SLACK_COMMAND_PLAN_TASK` 도 같은 이유로 남아 있다).
   AUTOPILOT_ASSIGN_CRON: '업무 배정 중',
   SLACK_COMMAND_VACATION: '휴가 계산 중',
   STUDY_BRIEF_CRON: '학습 정리 중',

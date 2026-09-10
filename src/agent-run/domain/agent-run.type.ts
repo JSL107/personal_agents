@@ -29,7 +29,6 @@ export enum TriggerType {
   MANUAL = 'MANUAL',
   FAILURE_REPLAY = 'FAILURE_REPLAY',
   WEBHOOK = 'WEBHOOK',
-  // V3 비전 P2 Assign — CTO worker (/assign 슬래시). PM 직전 plan 의 assignableTaskIds → BE 5종 분배.
   // V3 비전 P4 Evaluate — PO 통합 facade (/po-eval 슬래시). 3 sub-agent snapshot 합성 + careerLog.
   SLACK_COMMAND_PO_EVAL = 'SLACK_COMMAND_PO_EVAL',
   // V3 비전 P5 Meta — CEO worker (/ceo-review 슬래시). PO_EVAL + PM snapshot 합성 → drift/docs review.
@@ -67,7 +66,6 @@ export enum TriggerType {
   // PR 리뷰 루프 — cron 스윕이 발사한 리뷰. 수동 /review-pr(SLACK_COMMAND_REVIEW_PR),
   // webhook(WEBHOOK) 과 구분해 집계·감사한다.
   PR_REVIEW_SWEEP = 'PR_REVIEW_SWEEP',
-  AUTOPILOT_ASSIGN_CRON = 'AUTOPILOT_ASSIGN_CRON',
   AUTOPILOT_PO_SHADOW_CRON = 'AUTOPILOT_PO_SHADOW_CRON',
   // 보유 종목 감시 — 국내/미국 두 cron 이 같은 트리거를 공유하고, 시장 구분은
   // inputSnapshot.marketCountry 로 남긴다(트리거를 시장별로 쪼개면 집계가 흩어진다).

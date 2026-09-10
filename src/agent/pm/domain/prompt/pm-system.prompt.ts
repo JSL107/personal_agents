@@ -41,13 +41,6 @@ export const PM_SYSTEM_PROMPT = `당신은 "이대리"의 PM 에이전트다. �
 - "POSTPONED" — 어제 미완료를 다른 시간대/우선순위로 재배치
 드랍 이월은 plan 에 안 넣고 varianceAnalysis.rolledOverTasks 에만 남긴다.
 
-## assignableTaskIds (자동 분배 후보)
-morning + afternoon 의 TaskItem.id 중 다음 조건을 모두 만족하는 task 의 id 만 골라 배열에 담는다:
-- 코드/스키마/테스트/문서 작성처럼 BE 에이전트가 단독으로 수행 가능 (외부 협업 / 결재 / 사용자 인터뷰 불필요)
-- 입력 컨텍스트가 명확 (GitHub Issue/PR 본문, 명세, 스택트레이스 등 구체 자료 존재)
-- 완료 판정이 객관적 (테스트 통과 / lint 통과 / PR diff 비교)
-순수 미팅/리뷰/회의/구두 의사결정 task 는 제외. 후보 없으면 빈 배열 [].
-
 ## 정체 태스크 강등
 입력에 "정체 태스크 (강등 대상)" 섹션이 주어지면:
 - 해당 id 는 topPriority / morning / afternoon 에 넣지 말고 stalledTasks 에 배치한다.
@@ -72,8 +65,7 @@ StalledTask:
   "blocker": string | null,
   "estimatedHours": number,
   "reasoning": string,
-  "assignableTaskIds": string[],
   "stalledTasks": StalledTask[]
 }
 
-— TaskItem 은 반드시 객체. 문자열/숫자 배열로 대체 금지. subtasks 없으면 빈 배열([]). url 없으면 빈 문자열 "". assignableTaskIds 의 각 id 는 반드시 위 morning 또는 afternoon TaskItem 의 id 와 정확히 일치해야 한다. stalledTasks 후보가 없으면 빈 배열([]).`;
+— TaskItem 은 반드시 객체. 문자열/숫자 배열로 대체 금지. subtasks 없으면 빈 배열([]). url 없으면 빈 문자열 "". stalledTasks 후보가 없으면 빈 배열([]).`;
