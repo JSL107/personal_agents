@@ -49,16 +49,33 @@ export class KnowledgeLintAutopilotTask implements AutopilotTask {
     firedAtKst,
   }: AutopilotTaskContext): Promise<AutopilotTaskResult> {
     const l4Enabled = this.isL4Enabled();
-    const outcome = await this.knowledgeLint.lintIssues({
-      duplicateMaxDistance: DUPLICATE_MAX_DISTANCE,
-      limit: LINT_ISSUE_CAP,
-      l4: {
-        enabled: l4Enabled,
-        maxPairs: this.resolveL4MaxPairs(),
-        minDistance: L4_BAND_MIN,
-        maxDistance: L4_BAND_MAX,
-      },
-    });
+    // 예외 경로에도 흔적을 남긴다. 저장소 오류(임베딩 조회·밴드 쌍 조회)로 lintIssues 가
+    // reject 하면 아래 기록에 도달하지 못해, "발화했지만 실패" 가 "발화하지 않음" 과 같은
+    // 모양(흔적 0건)으로 남는다 — 이 관측이 가리려던 세 후보 중 둘이 합쳐져 버린다.
+    // candidateCount·llmCalled 를 null 로 두는 것이 포트가 정의한 "예외로 중단돼 못 셈" 이다.
+    let outcome: Awaited<ReturnType<KnowledgeLintPort['lintIssues']>>;
+    try {
+      outcome = await this.knowledgeLint.lintIssues({
+        duplicateMaxDistance: DUPLICATE_MAX_DISTANCE,
+        limit: LINT_ISSUE_CAP,
+        l4: {
+          enabled: l4Enabled,
+          maxPairs: this.resolveL4MaxPairs(),
+          minDistance: L4_BAND_MIN,
+          maxDistance: L4_BAND_MAX,
+        },
+      });
+    } catch (error: unknown) {
+      await this.trace.record({
+        taskId: this.id,
+        firedAtKst,
+        gateEnabled: l4Enabled,
+        candidateCount: null,
+        llmCalled: null,
+        detail: `예외로 중단: ${error instanceof Error ? error.message : String(error)}`,
+      });
+      throw error;
+    }
     // Slack digest 발송(summaryText)은 사후 조회가 안 된다 — 이 주가 실제로 돌았는지·
     // 게이트가 켜져 있었는지·판정 대상이 있었는지는 별도로 남겨야 사후에 가릴 수 있다.
     // candidates>0 이면 루프 첫 항목에서 최소 1 회는 judge 를 호출한다(KnowledgeLintService

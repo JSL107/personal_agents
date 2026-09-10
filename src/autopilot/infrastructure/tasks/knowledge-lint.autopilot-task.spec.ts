@@ -240,4 +240,29 @@ describe('KnowledgeLintAutopilotTask', () => {
       }),
     );
   });
+  // 저장소 오류로 lintIssues 가 reject 하면, 흔적이 없으면 "발화했지만 실패" 가 "발화하지 않음"
+  // 과 같은 모양이 된다 — 이 관측이 가리려던 세 후보 중 둘이 합쳐진다.
+  it('lintIssues 가 예외를 던져도 흔적을 남기고 예외를 다시 던진다', async () => {
+    const knowledgeLint = {
+      lintIssues: jest.fn().mockRejectedValue(new Error('임베딩 조회 실패')),
+    };
+    const trace = makeTrace();
+    const task = new KnowledgeLintAutopilotTask(
+      knowledgeLint as never,
+      makeConfig() as never,
+      trace as never,
+    );
+
+    await expect(task.run(context)).rejects.toThrow('임베딩 조회 실패');
+
+    expect(trace.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskId: 'knowledge-lint',
+        gateEnabled: true,
+        candidateCount: null,
+        llmCalled: null,
+        detail: '예외로 중단: 임베딩 조회 실패',
+      }),
+    );
+  });
 });
