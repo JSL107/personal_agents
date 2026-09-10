@@ -54,14 +54,23 @@ const response: CompletionResponse = {
 describe('buildCodexPrompt', () => {
   // `--ephemeral` 세션에서 collab spawn 은 반드시 실패하고, 뒤이은 collab wait 이 hang 해
   // timeout 을 통째로 태운다. CLI 인자로 끌 수 없어 프롬프트로 억제하므로 (provider 주석 참조)
-  // systemPrompt 유무와 무관하게 항상 실려야 한다 — 빠지면 억제가 조용히 사라진다.
-  it('systemPrompt 이 없어도 collab 억제 문구를 실은 [System Instructions] 블록을 만든다', () => {
+  // 억제 문구는 systemPrompt 유무와 무관하게 항상 실려야 한다.
+  //
+  // 축을 셋으로 나눈 이유: 어느 하나가 깨져도 타입·빌드·기존 단언은 그대로 통과하고 억제만
+  // 조용히 죽는다. 실제로 (1)(2) 를 각각 깨뜨렸을 때 이전 단언은 전부 초록이었다.
+  //   (1) 금지 지시 문장 — "collab 도구" 부분 문자열만 보면 지시가 정반대로 뒤집혀도 통과한다
+  //   (2) `[User]` 앞 배치 — 뒤로 밀리면 시스템 지시가 아니라 사용자 입력으로 읽힌다
+  //   (3) systemPrompt 뒤 배치 — 억제가 명시 유도를 이긴 실측 배치가 이 순서다
+  const PROHIBITION = '반드시 실패하므로 호출하지 말고';
+
+  it('systemPrompt 이 없어도 금지 지시를 [User] 앞에 싣는다', () => {
     const built = buildCodexPrompt({ prompt: 'hello' });
-    expect(built).toContain('서브에이전트 spawn(collab 도구)');
+    expect(built).toContain(PROHIBITION);
+    expect(built.indexOf(PROHIBITION)).toBeLessThan(built.indexOf('[User]'));
     expect(built).toContain('[User]\nhello');
   });
 
-  it('systemPrompt 이 있으면 그 뒤에 억제 문구를 붙여 [System Instructions] / [User] 로 합친다', () => {
+  it('systemPrompt 이 있으면 그 뒤 · [User] 앞에 금지 지시를 싣는다', () => {
     const built = buildCodexPrompt({
       prompt: 'user message',
       systemPrompt: 'you are helpful',
@@ -70,10 +79,10 @@ describe('buildCodexPrompt', () => {
       true,
     );
     expect(built).toContain('[User]\nuser message');
-    // 순서 고정: 억제가 명시 유도를 이긴 실측 배치가 systemPrompt → 억제였다 (provider 주석 참조).
     expect(built.indexOf('you are helpful')).toBeLessThan(
-      built.indexOf('서브에이전트 spawn(collab 도구)'),
+      built.indexOf(PROHIBITION),
     );
+    expect(built.indexOf(PROHIBITION)).toBeLessThan(built.indexOf('[User]'));
   });
 });
 
