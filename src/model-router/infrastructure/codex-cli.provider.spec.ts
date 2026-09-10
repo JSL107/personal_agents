@@ -13,6 +13,7 @@ import {
   CodexCliProvider,
   CodexQuotaExceededException,
   CodexQuotaScanner,
+  CodexTimeoutException,
   computeCodexRetryBackoffMs,
   computeQuotaBlockUntilMs,
   detectCodexQuotaExhaustion,
@@ -210,8 +211,24 @@ describe('isRetryableCodexError', () => {
     );
   });
 
+  // 타임아웃은 "일시적 오류" 가 아니라 "이 입력·이 출력량으로는 캡 안에 못 끝난다" 는 결과다.
+  // 같은 입력을 backoff 1~2초 뒤 그대로 다시 넣어 캡을 한 번 더 태우던 것이 실측 601~607초의
+  // 정체였다(2026-08-11~09-10 agent_run 타임아웃 8건 전부).
+  it('CodexTimeoutException 은 재시도하지 않는다', () => {
+    expect(isRetryableCodexError(new CodexTimeoutException(300_000))).toBe(
+      false,
+    );
+  });
+
   it('일반 Error 는 재시도 대상으로 본다', () => {
     expect(isRetryableCodexError(new Error('temporary failure'))).toBe(true);
+  });
+
+  // 문구가 같아도 타입이 아니면 재시도한다 — 판정 근거가 메시지가 아니라 타입임을 고정한다.
+  it('타임아웃과 같은 문구의 일반 Error 는 여전히 재시도 대상이다', () => {
+    expect(
+      isRetryableCodexError(new Error('codex CLI 응답 시간 초과 (300000ms)')),
+    ).toBe(true);
   });
 
   it('문자열과 undefined 도 재시도 대상으로 본다', () => {

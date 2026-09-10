@@ -174,8 +174,31 @@ export class CodexQuotaExceededException extends Error {
   }
 }
 
+// 응답 시간 초과를 일반 실패와 구분하기 위한 전용 예외.
+// 문구(`codex CLI 응답 시간 초과 (...)`)로 판정하지 않는 이유는 이 레포의 다른 판정과 같다 —
+// 소비자가 생산자의 메시지 형식을 들고 있으면 문구가 바뀌는 순간 조용히 오분류된다.
+export class CodexTimeoutException extends Error {
+  constructor(readonly timeoutMs: number) {
+    super(`codex CLI 응답 시간 초과 (${timeoutMs}ms)`);
+    this.name = 'CodexTimeoutException';
+  }
+}
+
+// 타임아웃은 재시도하지 않는다. 재시도가 무엇을 사는지가 기준이다 — spawn 실패나 일시적
+// 오류는 다시 던지면 성공할 수 있지만, 타임아웃은 "이 입력·이 출력량으로는 캡 안에 못 끝난다"
+// 는 결과다. 같은 입력을 backoff 1~2초 뒤에 그대로 다시 넣으면 같은 캡을 한 번 더 태운다.
+//
+// 실측(2026-08-11~09-10 agent_run): 타임아웃 실패 8건의 소요가 전부 601~607초였다 —
+// 300초 캡 × 2회를 소진한 값이다. CAREER_MATE 1건은 primary 소진 뒤 claude 폴백까지 가
+// 902초를 썼다. 관측된 hang 원인(codex `--ephemeral` 환경의 collab 도구 — 같은 파일의
+// CODEX_EPHEMERAL_NOTICE 참고) 역시 재시도로 풀리는 종류가 아니다.
+//
+// 캡(300초) 자체는 그대로 둔다. 이 변경은 방어를 걷어내는 것이 아니라 같은 방어를 두 번
+// 태우지 않는 것이고, 폴백(claude)이 남아 있어 2차 기회도 유지된다.
 export const isRetryableCodexError = (error: unknown): boolean => {
-  const retryable = !(error instanceof CodexQuotaExceededException);
+  const retryable =
+    !(error instanceof CodexQuotaExceededException) &&
+    !(error instanceof CodexTimeoutException);
   return retryable;
 };
 
@@ -416,7 +439,7 @@ export class CodexCliProvider implements ModelProviderPort {
           `codex CLI 응답 시간 초과 (${timeoutMs}ms) — 프로세스 그룹 강제 종료 (pid=${child.pid})`,
         );
         killProcessTree(child.pid);
-        reject(new Error(`codex CLI 응답 시간 초과 (${timeoutMs}ms)`));
+        reject(new CodexTimeoutException(timeoutMs));
       }, timeoutMs);
 
       child.stdout?.on('data', (chunk: Buffer) => {
