@@ -335,9 +335,13 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
   //
   // blocks 를 빈 배열로 덮어써야 버튼이 사라진다. 생략하면 Slack 이 기존 blocks 를 유지해
   // 활성 버튼이 남고, 누른 사용자는 "이미 처리된 제안입니다" 오류만 받는다.
-  // 발송이 성공하지 못해 좌표가 기록되지 않은 카드는 조용히 넘긴다. chat.update 실패도
-  // swallow 한다 — 카드 표시는 부가 효과고, DB 상태 전이가 정본이다
-  // (SlackPreviewCardUpdater 선례).
+  //
+  // **assertAppReady 까지 try 안에 둔다.** 이 메서드는 호출자에게 예외를 주지 않기로 약속한
+  // 자리다(카드 표시는 부가 효과, DB 상태 전이가 정본 — SlackPreviewCardUpdater 선례).
+  // 토큰은 설정됐는데 Socket Mode 기동 실패·재연결 중이면 app 이 없어 assertAppReady 가
+  // 던지는데, 그것을 try 밖에 두면 그 예외가 dismissSweptPending 의 순회를 끊는다. 그 시점에
+  // 레코드는 이미 DISMISSED 로 전이돼 다음 회차 listPending 에 잡히지 않으므로, Slack 이
+  // 복구된 뒤에도 활성 버튼이 영구히 남는다.
   async closeProposalCard({
     channelId,
     messageTs,
@@ -347,8 +351,8 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     messageTs: string;
     text: string;
   }): Promise<void> {
-    const app = this.assertAppReady();
     try {
+      const app = this.assertAppReady();
       await app.client.chat.update({
         channel: channelId,
         ts: messageTs,
