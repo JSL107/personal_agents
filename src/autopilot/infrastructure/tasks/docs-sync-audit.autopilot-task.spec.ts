@@ -1,12 +1,28 @@
 import { DocsSyncAuditTask } from './docs-sync-audit.autopilot-task';
 
-function makeTask(over: any = {}) {
+function makeTrace() {
+  return { record: jest.fn().mockResolvedValue(undefined) };
+}
+
+type TaskOverrides = {
+  result?: unknown;
+  enabled?: string;
+  trace?: { record: jest.Mock };
+};
+
+function makeTask(over: TaskOverrides = {}) {
   const audit = { runAudit: jest.fn().mockResolvedValue(over.result) };
   const config = { get: jest.fn().mockReturnValue(over.enabled) };
+  const trace = over.trace ?? makeTrace();
   return {
-    task: new DocsSyncAuditTask(audit as any, config as any),
+    task: new DocsSyncAuditTask(
+      audit as never,
+      config as never,
+      trace as never,
+    ),
     audit,
     config,
+    trace,
   };
 }
 
@@ -21,6 +37,7 @@ it('드리프트 0건이어도 하트비트를 남긴다 (skip=false)', async ()
       deterministic: { inSync: true, details: [] },
       proposals: [],
       revision: null,
+      candidateFileCount: 0,
     },
   });
   const result = await task.run(ctx);
@@ -35,6 +52,7 @@ it('이슈 있으면 summaryText 포함', async () => {
       deterministic: { inSync: false, details: ['docs:check FAIL'] },
       proposals: [],
       revision: null,
+      candidateFileCount: 1,
     },
   });
   const result = await task.run(ctx);
@@ -63,6 +81,7 @@ it('DOCS_AUDIT_PR_ENABLED=true + revision 있으면 preview 페이로드 반환'
         changedFiles: ['README.md'],
         previewText: '편집 요약',
       },
+      candidateFileCount: 1,
     }),
   };
   const config = {
@@ -76,7 +95,11 @@ it('DOCS_AUDIT_PR_ENABLED=true + revision 있으면 preview 페이로드 반환'
             : undefined,
     ),
   };
-  const task = new DocsSyncAuditTask(audit as any, config as any);
+  const task = new DocsSyncAuditTask(
+    audit as any,
+    config as any,
+    makeTrace() as any,
+  );
   const result = await task.run(ctx);
   expect(result.skip).toBe(false);
   expect(result.preview?.kind).toBe('DOCS_AUDIT_PR');
@@ -94,12 +117,86 @@ it('DOCS_AUDIT_PR_ENABLED 미설정이면 preview 없이 기존 텍스트 경로
       deterministic: { inSync: false, details: ['docs:check FAIL'] },
       proposals: [],
       revision: null,
+      candidateFileCount: 1,
     }),
   };
   const config = { get: jest.fn().mockReturnValue(undefined) };
-  const result = await new DocsSyncAuditTask(audit as any, config as any).run(
-    ctx,
-  );
+  const result = await new DocsSyncAuditTask(
+    audit as any,
+    config as any,
+    makeTrace() as any,
+  ).run(ctx);
   expect(result.preview).toBeUndefined();
   expect(result.summaryText).toContain('docs:check');
+});
+
+// 이 작업의 존재 이유 — 게이트가 꺼져 있으면 runAudit 자체를 안 부르지만(위 테스트),
+// "이 주에 docs-sync-audit 이 발화했고 게이트는 꺼져 있었다" 는 사실은 그래도 남아야 한다.
+it('게이트가 꺼져 있어도 흔적을 남긴다', async () => {
+  const { task, trace } = makeTask({ enabled: 'false' });
+
+  await task.run(ctx);
+
+  expect(trace.record).toHaveBeenCalledWith(
+    expect.objectContaining({
+      taskId: 'docs-sync-audit',
+      firedAtKst: '2026-06-29',
+      gateEnabled: false,
+      candidateCount: null,
+      llmCalled: false,
+    }),
+  );
+});
+
+// 게이트는 켜졌지만 최근 7일간 SoT 파일이 하나도 안 바뀐 회차 — "LLM 호출 자체가 없었다" 가
+// "점검했고 드리프트 0건" 과 같은 결과(드리프트 없음)로 합쳐지지만, 흔적에는
+// candidateCount=0/llmCalled=false 로 남아 구분된다.
+it('판정 대상이 0건이어도 흔적을 남긴다', async () => {
+  const { task, trace } = makeTask({
+    result: {
+      deterministic: { inSync: true, details: [] },
+      proposals: [],
+      revision: null,
+      candidateFileCount: 0,
+    },
+  });
+
+  await task.run(ctx);
+
+  expect(trace.record).toHaveBeenCalledWith(
+    expect.objectContaining({
+      taskId: 'docs-sync-audit',
+      firedAtKst: '2026-06-29',
+      gateEnabled: true,
+      candidateCount: 0,
+      llmCalled: false,
+    }),
+  );
+});
+
+// runAudit 이 예외로 끊기는 회차(codex 쿼터 소진 등) — 후보 수를 확정하지 못한 채로도 흔적은
+// 남아야 하고, 기존 실패 처리(FAILED 기록 등)가 그대로 동작하도록 예외는 그대로 다시 던진다.
+it('runAudit 예외 시 흔적을 남기고 그대로 rethrow 한다', async () => {
+  const trace = makeTrace();
+  const audit = {
+    runAudit: jest.fn().mockRejectedValue(new Error('codex 쿼터 소진')),
+  };
+  const config = { get: jest.fn().mockReturnValue(undefined) };
+  const task = new DocsSyncAuditTask(
+    audit as never,
+    config as never,
+    trace as never,
+  );
+
+  await expect(task.run(ctx)).rejects.toThrow('codex 쿼터 소진');
+
+  expect(trace.record).toHaveBeenCalledWith(
+    expect.objectContaining({
+      taskId: 'docs-sync-audit',
+      firedAtKst: '2026-06-29',
+      gateEnabled: true,
+      candidateCount: null,
+      llmCalled: null,
+    }),
+  );
 });
