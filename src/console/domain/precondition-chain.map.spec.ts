@@ -28,13 +28,9 @@ describe('precondition-chain.map', () => {
     });
   });
 
-  it('CTO assignableTaskIds 부재는 자동해소 불가로 분류한다', () => {
-    expect(resolveChain(CtoErrorCode.INVALID_STUDY_VERDICT)).toEqual({
-      kind: 'UNRESOLVABLE',
-    });
-  });
-
-  it('CTO PM output 형식 오류는 자동해소 불가로 분류한다', () => {
+  // 두 케이스가 같은 단정을 하고 있었다. 이름은 폐지된 배정 워커(/assign, 2026-09-07 #479)의
+  // 에러 코드를 가리키는데 본문은 그 코드가 사라진 뒤 학습 판정 코드로 옮겨졌던 것이라, 하나로 합친다.
+  it('학습 주제 판정 실패는 자동해소 불가로 분류한다', () => {
     expect(resolveChain(CtoErrorCode.INVALID_STUDY_VERDICT)).toEqual({
       kind: 'UNRESOLVABLE',
     });

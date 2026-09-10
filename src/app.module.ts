@@ -102,7 +102,8 @@ import { WebhookModule } from './webhook/webhook.module';
     PaperRecommendModule,
     // V3 SOTA Foundation 1.2 — Docker 격리 실행 환경. BE-Test self-correction 루프(아래)가
     // 소비 — tmpfs 주입으로 호스트 fs 변조 없이 검증.
-    // V3 비전 P2 Assign — /assign 슬래시 (CTO). PM 직전 plan 의 assignableTaskIds → BE 3종 분배.
+    // 학습 주제 판정 — Hermes 딥다이브 주제를 개인 레포와 연결해 학습 필요성을 판정한다(cron 전용).
+    // 원래 있던 /assign 배정 워커는 2026-09-07(#479)에 폐지됐다.
     CtoModule,
     // V3 비전 P4 Evaluate — /po-eval 슬래시 (PO 통합 facade). 3 sub-agent snapshot 합성 + careerLog.
     PoEvalModule,
