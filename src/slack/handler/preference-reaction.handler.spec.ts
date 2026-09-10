@@ -13,8 +13,8 @@ type ReactionAddedEvent = {
 // 걸러내므로 하네스도 실제 호출 형태를 그대로 흉내낸다.
 type EventHandler = (args: {
   event: ReactionAddedEvent;
-  client: { conversations: { history: jest.Mock } };
-  context: { botUserId: string };
+  client: { conversations: { replies: jest.Mock } };
+  context: { botUserId: string; botId: string };
 }) => Promise<void>;
 
 const buildAppMock = (): {
@@ -41,18 +41,19 @@ const buildAppMock = (): {
 
 const buildClient = (message: Record<string, unknown> | undefined) => ({
   conversations: {
-    history: jest
+    replies: jest
       .fn()
       .mockResolvedValue({ messages: message ? [message] : [] }),
   },
 });
 
-const botMessage = (text = '오늘 오전 브리핑 보냅니다') => ({
+const botMessage = (text = '오늘 오전 브리핑 보냅니다', ts = '1.1') => ({
   bot_id: 'B_BOT',
+  ts,
   text,
 });
 
-const humanMessage = (text = '사람이 쓴 메시지') => ({ text });
+const humanMessage = (text = '사람이 쓴 메시지') => ({ ts: '1.1', text });
 
 const buildRepository = (): jest.Mocked<ReactionSignalRepositoryPort> => ({
   record: jest.fn().mockResolvedValue(undefined),
@@ -82,10 +83,10 @@ describe('PreferenceReactionHandler', () => {
         item: { type: 'message', channel: 'C1', ts: '1.1' },
       },
       client,
-      context: { botUserId: 'BOT' },
+      context: { botUserId: 'BOT', botId: 'B_BOT' },
     });
 
-    expect(client.conversations.history).not.toHaveBeenCalled();
+    expect(client.conversations.replies).not.toHaveBeenCalled();
     expect(repository.record).not.toHaveBeenCalled();
   });
 
@@ -102,7 +103,7 @@ describe('PreferenceReactionHandler', () => {
         item: { type: 'file', channel: 'C1', ts: '1.1' },
       },
       client,
-      context: { botUserId: 'BOT' },
+      context: { botUserId: 'BOT', botId: 'B_BOT' },
     });
 
     expect(repository.record).not.toHaveBeenCalled();
@@ -120,7 +121,7 @@ describe('PreferenceReactionHandler', () => {
         item: { type: 'message', channel: 'C1', ts: '1.1' },
       },
       client,
-      context: { botUserId: 'BOT' },
+      context: { botUserId: 'BOT', botId: 'B_BOT' },
     });
 
     expect(repository.record).not.toHaveBeenCalled();
@@ -139,7 +140,7 @@ describe('PreferenceReactionHandler', () => {
         item: { type: 'message', channel: 'C1', ts: '1.1' },
       },
       client,
-      context: { botUserId: 'BOT' },
+      context: { botUserId: 'BOT', botId: 'B_BOT' },
     });
 
     expect(repository.record).not.toHaveBeenCalled();
@@ -149,7 +150,7 @@ describe('PreferenceReactionHandler', () => {
     const { app, getHandler } = buildAppMock();
     const repository = buildRepository();
     new PreferenceReactionHandler(repository).register(app);
-    const client = buildClient({ bot_id: 'B_BOT', text: '' });
+    const client = buildClient({ bot_id: 'B_BOT', ts: '1.1', text: '' });
 
     await getHandler()({
       event: {
@@ -158,7 +159,7 @@ describe('PreferenceReactionHandler', () => {
         item: { type: 'message', channel: 'C1', ts: '1.1' },
       },
       client,
-      context: { botUserId: 'BOT' },
+      context: { botUserId: 'BOT', botId: 'B_BOT' },
     });
 
     expect(repository.record).not.toHaveBeenCalled();
@@ -168,7 +169,9 @@ describe('PreferenceReactionHandler', () => {
     const { app, getHandler } = buildAppMock();
     const repository = buildRepository();
     new PreferenceReactionHandler(repository).register(app);
-    const client = buildClient(botMessage('오늘 오전 브리핑 보냅니다'));
+    const client = buildClient(
+      botMessage('오늘 오전 브리핑 보냅니다', '1700000000.0001'),
+    );
 
     await getHandler()({
       event: {
@@ -177,7 +180,7 @@ describe('PreferenceReactionHandler', () => {
         item: { type: 'message', channel: 'C1', ts: '1700000000.0001' },
       },
       client,
-      context: { botUserId: 'BOT' },
+      context: { botUserId: 'BOT', botId: 'B_BOT' },
     });
 
     expect(repository.record).toHaveBeenCalledWith({
@@ -204,9 +207,70 @@ describe('PreferenceReactionHandler', () => {
           item: { type: 'message', channel: 'C1', ts: '1.1' },
         },
         client,
-        context: { botUserId: 'BOT' },
+        context: { botUserId: 'BOT', botId: 'B_BOT' },
       }),
     ).resolves.toBeUndefined();
+  });
+
+  // bot_id 유무만 보면 워크스페이스의 다른 봇이 쓴 메시지에 남긴 반응까지 이대리 선호로
+  // 저장돼 추론을 오염시킨다.
+  it('다른 봇이 쓴 메시지에 달린 반응은 저장하지 않는다', async () => {
+    const { app, getHandler } = buildAppMock();
+    const repository = buildRepository();
+    new PreferenceReactionHandler(repository).register(app);
+    const client = buildClient({
+      bot_id: 'B_OTHER',
+      ts: '1.1',
+      text: '다른 봇의 알림',
+    });
+
+    await getHandler()({
+      event: {
+        reaction: '+1',
+        user: 'U1',
+        item: { type: 'message', channel: 'C1', ts: '1.1' },
+      },
+      client,
+      context: { botUserId: 'BOT', botId: 'B_BOT' },
+    });
+
+    expect(repository.record).not.toHaveBeenCalled();
+  });
+
+  // 스레드 조회는 반응 대상 외의 메시지도 함께 돌려줄 수 있다. ts 를 맞춰보지 않으면
+  // 엉뚱한 본문이 신호로 저장된다.
+  it('스레드 조회 결과에서 반응 대상 ts 의 메시지만 쓴다', async () => {
+    const { app, getHandler } = buildAppMock();
+    const repository = buildRepository();
+    new PreferenceReactionHandler(repository).register(app);
+    const client = {
+      conversations: {
+        replies: jest.fn().mockResolvedValue({
+          messages: [
+            { bot_id: 'B_BOT', ts: '1.0', text: '스레드 부모 — 대상 아님' },
+            { bot_id: 'B_BOT', ts: '1.5', text: '반응이 달린 답글' },
+          ],
+        }),
+      },
+    };
+
+    await getHandler()({
+      event: {
+        reaction: '+1',
+        user: 'U1',
+        item: { type: 'message', channel: 'C1', ts: '1.5' },
+      },
+      client,
+      context: { botUserId: 'BOT', botId: 'B_BOT' },
+    });
+
+    expect(repository.record).toHaveBeenCalledWith({
+      slackUserId: 'U1',
+      channelId: 'C1',
+      messageTs: '1.5',
+      emoji: '+1',
+      messageText: '반응이 달린 답글',
+    });
   });
 
   // 카드에 👍/👎 를 미리 달아 클릭 한 번으로 받는 방식을 쓰면 그 씨앗이 매번 신호가 된다.
@@ -223,10 +287,10 @@ describe('PreferenceReactionHandler', () => {
         item: { type: 'message', channel: 'C1', ts: '1.1' },
       },
       client,
-      context: { botUserId: 'BOT' },
+      context: { botUserId: 'BOT', botId: 'B_BOT' },
     });
 
-    expect(client.conversations.history).not.toHaveBeenCalled();
+    expect(client.conversations.replies).not.toHaveBeenCalled();
     expect(repository.record).not.toHaveBeenCalled();
   });
 });

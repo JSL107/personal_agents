@@ -48,15 +48,29 @@ export class PreferenceReactionHandler implements SlackHandler {
       }
 
       try {
-        const history = await client.conversations.history({
+        // `conversations.history` 를 쓰지 않는 이유 — 그것은 스레드 답글을 반환하지 않는다.
+        // 이대리의 자연어 멘션 응답은 전부 스레드 답글로 나가므로(`router-message.handler.ts`
+        // 가 thread_ts 를 붙여 게시한다), history 로 조회하면 그 답글 대신 직전 최상위 메시지가
+        // 돌아온다. 가장 많이 쓰는 경로의 반응이 수집되지 않고, 최상위 메시지가 봇 것이면
+        // 엉뚱한 본문이 신호로 저장되기까지 한다.
+        //
+        // `conversations.replies` 는 스레드 답글 ts 로도 조회되고 스레드가 없는 최상위 메시지도
+        // 자기 자신을 돌려주므로 두 경우를 한 경로로 덮는다. 그래도 ts 를 다시 맞춰보는 이유는
+        // 반환이 항상 한 건이라는 보장이 없어서다 — 엉뚱한 본문을 저장하지 않으려면 여기서
+        // 걸러야 한다.
+        const thread = await client.conversations.replies({
           channel: event.item.channel,
-          latest: event.item.ts,
+          ts: event.item.ts,
           inclusive: true,
           limit: 1,
         });
-        const message = history.messages?.[0];
-        // bot_id 가 없으면 사람이 쓴 메시지 — 이대리 산출물에 대한 판정이 아니므로 skip.
-        if (!message?.bot_id) {
+        const message = thread.messages?.find(
+          (candidate) => candidate.ts === event.item.ts,
+        );
+        // 이 앱이 쓴 메시지만 받는다. bot_id 유무만 보면 워크스페이스의 다른 봇이 쓴 메시지에
+        // 남긴 반응까지 이대리 선호로 저장돼 추론을 오염시킨다. context.botId 가 없으면
+        // 판별할 수 없으므로 저장하지 않는다(모르는 채 쌓는 쪽이 더 나쁘다).
+        if (!message?.bot_id || message.bot_id !== context.botId) {
           return;
         }
         if (!message.text) {
