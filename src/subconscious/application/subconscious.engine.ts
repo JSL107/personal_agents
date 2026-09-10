@@ -36,6 +36,23 @@ export class SubconsciousEngine {
   ) {}
 
   async runTick(ownerSlackUserId: string, now: number): Promise<void> {
+    // 이번 회차의 변경을 보기 전에, 지난 회차 카드 중 스윕이 대신 처리한 것을 닫는다.
+    // 실패해도 tick 본체는 진행한다 — 정리는 다음 회차에 다시 시도되고, 못 닫은 카드가
+    // 새 제안을 막지도 않는다(중복 판정은 changeKey 단위라 다른 대상에 영향이 없다).
+    try {
+      const dismissed =
+        await this.proposalEmitter.dismissSweptPending(ownerSlackUserId);
+      if (dismissed > 0) {
+        this.logger.log(
+          `스윕이 대신 처리한 제안 카드 ${dismissed}건 자동 종료`,
+        );
+      }
+    } catch (error) {
+      this.logger.warn(
+        `제안 카드 사후 정리 실패 (tick 은 계속): ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+
     const allChanges: StateChange[] = [];
     const successfulSnapshots = new Map<string, StateSnapshot>();
 

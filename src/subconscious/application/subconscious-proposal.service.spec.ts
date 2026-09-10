@@ -72,6 +72,8 @@ const buildRepository = (
   create: jest.fn().mockImplementation(() => Promise.resolve(buildRecord())),
   findById: jest.fn().mockResolvedValue(record),
   hasPending: jest.fn().mockResolvedValue(false),
+  listPending: jest.fn().mockResolvedValue([]),
+  expirePendingOlderThan: jest.fn().mockResolvedValue(0),
   markStatus: jest.fn().mockResolvedValue(undefined),
   transitionFromPending: jest
     .fn()
@@ -360,6 +362,18 @@ describe('SubconsciousProposalService.apply', () => {
     );
   });
 
+  it('카드 경로는 publish:false 로 dispatch 한다 (협의되지 않은 봇 코멘트 차단)', async () => {
+    const repository = buildRepository(buildRecord(), true);
+    const router = buildRouter();
+    const { service } = buildService({ repository, router });
+
+    await service.apply(1, OWNER, new Date('2026-06-26T09:30:00.000Z'));
+
+    expect(router.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ publish: false }),
+    );
+  });
+
   it('PR 참조가 필요 없는 워커(PM) → dispatch text 는 사람용 요약(summary) 유지 + hint 미전파', async () => {
     const repository = buildRepository(
       buildRecord({ suggestedAgentType: 'PM' as AgentType }),
@@ -518,5 +532,151 @@ describe('SubconsciousProposalService.dismiss', () => {
     await expect(service.dismiss(999, OWNER)).rejects.toMatchObject({
       status: DomainStatus.NOT_FOUND,
     });
+  });
+});
+
+// 카드는 생성 시점엔 중복이 아니었다가 스윕이 같은 PR 을 리뷰하면서 무의미해진다
+// (실측 2026-09-09 PR #149: 15초 차). 생성 시점 판정으로는 못 막는 창을 사후로 닫는지 본다.
+describe('SubconsciousProposalService.dismissSweptPending', () => {
+  const SUCCEEDED_PUBLISHED: LatestSweepReview = {
+    status: 'SUCCEEDED',
+    startedAt: new Date('2026-06-26T08:00:00.000Z'),
+    dryRun: false,
+  };
+
+  it('스윕이 리뷰·게시한 PR 의 미응답 카드를 DISMISSED 로 닫고 닫은 수를 돌려준다', async () => {
+    const repository = buildRepository();
+    repository.listPending.mockResolvedValue([buildRecord()]);
+
+    const { service } = buildService({
+      repository,
+      agentRunRepository: buildAgentRunRepository(SUCCEEDED_PUBLISHED),
+    });
+
+    const dismissed = await service.dismissSweptPending(OWNER);
+
+    expect(dismissed).toBe(1);
+    expect(repository.transitionFromPending).toHaveBeenCalledWith(
+      1,
+      'DISMISSED',
+      expect.any(Date),
+    );
+  });
+
+  it('스윕 기록이 없는 PR 의 카드는 건드리지 않는다 (스윕이 조회하지 않는 PR 의 리뷰 경로 보존)', async () => {
+    const repository = buildRepository();
+    repository.listPending.mockResolvedValue([buildRecord()]);
+
+    const { service } = buildService({
+      repository,
+      agentRunRepository: buildAgentRunRepository(null),
+    });
+
+    const dismissed = await service.dismissSweptPending(OWNER);
+
+    expect(dismissed).toBe(0);
+    expect(repository.transitionFromPending).not.toHaveBeenCalled();
+  });
+
+  it('연습 모드(dryRun)로 끝난 리뷰는 게시가 없었으므로 카드를 유지한다', async () => {
+    const repository = buildRepository();
+    repository.listPending.mockResolvedValue([buildRecord()]);
+
+    const { service } = buildService({
+      repository,
+      agentRunRepository: buildAgentRunRepository({
+        ...SUCCEEDED_PUBLISHED,
+        dryRun: true,
+      }),
+    });
+
+    expect(await service.dismissSweptPending(OWNER)).toBe(0);
+    expect(repository.transitionFromPending).not.toHaveBeenCalled();
+  });
+
+  it('CODE_REVIEWER 가 아닌 제안은 스윕 대상이 아니므로 원장을 조회하지 않는다', async () => {
+    const repository = buildRepository();
+    repository.listPending.mockResolvedValue([
+      buildRecord({ suggestedAgentType: 'WORK_REVIEWER' as AgentType }),
+    ]);
+
+    const { service, agentRunRepository } = buildService({
+      repository,
+      agentRunRepository: buildAgentRunRepository(SUCCEEDED_PUBLISHED),
+    });
+
+    expect(await service.dismissSweptPending(OWNER)).toBe(0);
+    expect(agentRunRepository.findLatestSweepReview).not.toHaveBeenCalled();
+    expect(repository.transitionFromPending).not.toHaveBeenCalled();
+  });
+
+  it('만료 카드를 판정 전에 일괄 종료한다 — 선두 점유로 뒤쪽이 영구히 안 닫히는 것 방지', async () => {
+    const repository = buildRepository();
+    // 만료분은 updateMany 로 이미 닫혔으므로 listPending 은 TTL 안쪽 카드만 돌려준다.
+    repository.expirePendingOlderThan.mockResolvedValue(22);
+    repository.listPending.mockResolvedValue([buildRecord()]);
+
+    const { service } = buildService({
+      repository,
+      ttlMs: 86_400_000,
+      agentRunRepository: buildAgentRunRepository(SUCCEEDED_PUBLISHED),
+    });
+
+    const closed = await service.dismissSweptPending(OWNER);
+
+    // 만료 22 + 스윕 처리 1. 만료 종료가 상한(50)을 먹지 않으므로 같은 회차에 둘 다 닫힌다.
+    expect(closed).toBe(23);
+    expect(repository.expirePendingOlderThan).toHaveBeenCalledWith(
+      OWNER,
+      expect.any(Date),
+    );
+    expect(repository.transitionFromPending).toHaveBeenCalledTimes(1);
+  });
+
+  it('만료 종료는 listPending 조회보다 먼저 일어난다 (선두 점유 제거가 판정에 반영되도록)', async () => {
+    const repository = buildRepository();
+    const order: string[] = [];
+    repository.expirePendingOlderThan.mockImplementation(() => {
+      order.push('expire');
+      return Promise.resolve(3);
+    });
+    repository.listPending.mockImplementation(() => {
+      order.push('list');
+      return Promise.resolve([]);
+    });
+
+    const { service } = buildService({ repository });
+
+    await service.dismissSweptPending(OWNER);
+
+    expect(order).toEqual(['expire', 'list']);
+  });
+
+  it('한 회차 판정 상한(50건)을 넘는 카드는 다음 회차로 넘긴다 (tick 이 늘어져 stalled 되는 것 방지)', async () => {
+    const repository = buildRepository();
+    repository.listPending.mockResolvedValue(
+      Array.from({ length: 60 }, (_, index) => buildRecord({ id: index + 1 })),
+    );
+
+    const { service, agentRunRepository } = buildService({
+      repository,
+      agentRunRepository: buildAgentRunRepository(SUCCEEDED_PUBLISHED),
+    });
+
+    expect(await service.dismissSweptPending(OWNER)).toBe(50);
+    expect(agentRunRepository.findLatestSweepReview).toHaveBeenCalledTimes(50);
+  });
+
+  it('사용자가 방금 눌러 PENDING 을 벗어난 카드는 되돌리지 않는다 (전이 실패는 세지 않는다)', async () => {
+    const repository = buildRepository(buildRecord(), false);
+    repository.listPending.mockResolvedValue([buildRecord()]);
+
+    const { service } = buildService({
+      repository,
+      agentRunRepository: buildAgentRunRepository(SUCCEEDED_PUBLISHED),
+    });
+
+    expect(await service.dismissSweptPending(OWNER)).toBe(0);
+    expect(repository.transitionFromPending).toHaveBeenCalledTimes(1);
   });
 });
