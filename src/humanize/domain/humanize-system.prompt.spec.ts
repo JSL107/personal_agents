@@ -230,6 +230,88 @@ describe('번역투 처방 목록', () => {
     }
   });
 
+  // B~J 그룹은 잰 뒤에 여섯 개만 실었다. 개수를 고정해 두면 "룰북에 있으니 더 넣자" 로
+  // 슬금슬금 늘어나는 것을 막는다 — 효과를 못 보인 줄은 매 호출 비용만 남긴다.
+  const habitLines = (prompt: string): string[] => {
+    const lines = prompt.split('\n');
+    const start = lines.findIndex((line) =>
+      line.startsWith('- AI 글에 흔한 습관도'),
+    );
+    const body = lines.slice(start + 1);
+    const end = body.findIndex((line) => !line.startsWith('  - '));
+    return body.slice(0, end === -1 ? body.length : end);
+  };
+
+  it('AI 습관 목록은 실측으로 남은 네 개이고 모두 처방을 갖는다', () => {
+    const lines = habitLines(HUMANIZE_SYSTEM_PROMPT);
+
+    expect(lines).toHaveLength(4);
+    for (const line of lines) {
+      expect(line).toContain('→');
+      expect(line.split('→')[1].trim().length).toBeGreaterThan(3);
+    }
+  });
+
+  // 개수와 화살표만 보면 처방을 비우거나 반대로 뒤집어도 통과한다(리뷰 지적 — 직전 회차에
+  // 번역투 목록에서 같은 지적을 받고 고쳐 놓고 새 목록에서 되풀이했다). 항목별로 못박는다.
+  it('네 항목의 처방이 각각 그대로 있다', () => {
+    expect(HUMANIZE_SYSTEM_PROMPT).toContain(
+      '숫자 괄호 인덱싱 "(1)·(2)·(3)" → 본문에 녹이거나 줄바꿈으로',
+    );
+    expect(HUMANIZE_SYSTEM_PROMPT).toContain(
+      '"~적 N" 추상 체인("전략적 함의", "실천적 기반") → 명사끼리 붙이거나 풀어써라',
+    );
+    expect(HUMANIZE_SYSTEM_PROMPT).toContain(
+      '연결어미 뒤 쉼표("~하고,", "~지만,", "~어서,") → 쉼표를 빼라',
+    );
+    expect(HUMANIZE_SYSTEM_PROMPT).toContain(
+      '과장 어휘("파격적", "압도적", "강력한", "획기적") → 원문에 있는 구체 사실·수치로 되돌려라',
+    );
+    expect(HUMANIZE_SYSTEM_PROMPT).toContain(
+      '숫자 괄호 인덱싱 "(1)·(2)·(3)" → 본문에 녹이거나 줄바꿈으로',
+    );
+  });
+
+  it('개인 블로그 프롬프트도 습관 목록을 물려받는다', () => {
+    expect(habitLines(HUMANIZE_PERSONAL_BLOG_SYSTEM_PROMPT)).toEqual(
+      habitLines(HUMANIZE_SYSTEM_PROMPT),
+    );
+  });
+
+  it('주장으로 쓰인 수식어는 건드리지 않게 한다 — 지우면 주장이 바뀐다', () => {
+    expect(HUMANIZE_SYSTEM_PROMPT).toContain(
+      '수식어가 그 문장의 주장이면 그대로 둬라',
+    );
+    // 지우는 대상을 좁혀 두지 않으면 "근거가 없으면 지워라" 가 주장까지 삼킨다.
+    expect(HUMANIZE_SYSTEM_PROMPT).toContain(
+      '지우는 것은 평가성 군더더기뿐이다',
+    );
+  });
+
+  // 번호 인덱싱은 예외("그대로 둬라")를 달았다가 잔존이 0 에서 3 으로 되돌아가 뺐고,
+  // 대신 **동시 변환**을 요구한다. 유지 쪽으로 붙지 않으면서 참조도 지킨다.
+  it('번호를 바꿀 때 그것을 가리키는 문장도 같이 바꾸게 한다', () => {
+    expect(HUMANIZE_SYSTEM_PROMPT).toContain('그 문장도 같이 바꿔라');
+    // 「그대로 둬라」 로 돌아가면 지시가 죽는다.
+    expect(HUMANIZE_SYSTEM_PROMPT).not.toContain(
+      '뒤에서 그 번호를 다시 가리키는 문장이 있으면 그대로 둬라',
+    );
+  });
+
+  it('과장 어휘 처방이 없는 수치를 지어내게 하지 않는다', () => {
+    // 룰북 D-4 의 "구체 수치로 환원" 을 그대로 쓰면 원문에 없는 숫자를 만든다.
+    expect(HUMANIZE_SYSTEM_PROMPT).toContain('원문에 있는 구체 사실·수치로');
+    expect(HUMANIZE_SYSTEM_PROMPT).toContain('없는 수치를 지어내지 마라');
+  });
+
+  // 넣어 보고 2회 모두 효과가 0 이라 도로 뺀 둘. 「룰북에 있으니 넣자」 로 되살아나기 쉽다.
+  it('효과가 없어 뺀 두 항목이 다시 들어오지 않는다', () => {
+    // B-1 은 "영문 약어는 한 글자도 바꾸지 마라" 와 반대 방향이라 구조적으로 먹지 않는다.
+    expect(HUMANIZE_SYSTEM_PROMPT).not.toContain('처음 한 번만 병기');
+    // D-6·I-4 는 예외를 달면 모델이 유지 쪽으로 붙고, 예외를 빼면 주장이 바뀐다.
+    expect(HUMANIZE_SYSTEM_PROMPT).not.toContain('지금이야말로');
+  });
+
   it('개인 블로그 프롬프트도 같은 목록을 물려받는다', () => {
     // 블로그 쪽은 보고체 라인만 갈아끼운 파생본이라 목록이 통째로 따라와야 한다.
     expect(prescriptionLines(HUMANIZE_PERSONAL_BLOG_SYSTEM_PROMPT)).toEqual(
