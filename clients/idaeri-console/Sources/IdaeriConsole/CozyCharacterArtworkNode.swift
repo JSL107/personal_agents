@@ -40,7 +40,9 @@ final class CozyCharacterArtworkNode: SKNode {
 
     private static func normalizedPose(_ pose: String) -> String {
         switch pose.lowercased() {
-        case "down", "up", "left", "right", "sit", "sitting", "reading", "drinking", "writing", "carryingpapers", "tending", "stowing", "default", "idle":
+        case "sitting":
+            return "sit"
+        case "down", "up", "left", "right", "sit", "reading", "drinking", "writing", "carryingpapers", "tending", "stowing", "default", "idle":
             return pose.lowercased()
         default:
             return pose.lowercased().contains("walk") ? "walk" : "idle"
@@ -83,13 +85,18 @@ final class CozyCharacterArtworkNode: SKNode {
         shadow.zPosition = -1
         root.addChild(shadow)
 
+        let requestedPose = pose == "default" ? "idle" : pose
+        let hasDedicatedPose = SpriteLoader.cozyCharacterHasDedicatedPose(
+            assetIndex: appearance.assetIndex,
+            pose: requestedPose
+        )
         if let texture = SpriteLoader.cozyCharacterTexture(
             assetIndex: appearance.assetIndex,
-            pose: pose == "default" ? "idle" : pose
+            pose: requestedPose
         ) {
             let sprite = SKSpriteNode(texture: texture)
             let textureSize = texture.size()
-            let usesIdleAsSeatedFallback = pose == "sit" || pose == "sitting"
+            let usesIdleAsSeatedFallback = pose == "sit" && !hasDedicatedPose
             // The source sheets are tall full-body illustrations. Limit their
             // height to the compact office mascot envelope so they do not
             // tower over desks and overhead labels at room scale.
@@ -114,7 +121,7 @@ final class CozyCharacterArtworkNode: SKNode {
             // A seated employee is already paired with the room's interactive workstation.
             // The old body-centred laptop badge lands over the face after the idle fallback is
             // lowered behind that desk, so reserve state props for standing/mobile poses.
-            if !usesIdleAsSeatedFallback {
+            if !usesIdleAsSeatedFallback && !hasDedicatedPose {
                 addStateProp(to: root, pose: pose, state: state, outline: outline)
             }
             return root
@@ -348,7 +355,7 @@ final class CozyCharacterArtworkNode: SKNode {
         case "carryingpapers": addPaperStack(to: root, outline: outline)
         case "tending": addLeaf(to: root, outline: outline)
         case "stowing": addBox(to: root, outline: outline)
-        case "sitting": addSeatCue(to: root, outline: outline)
+        case "sit", "sitting": addSeatCue(to: root, outline: outline)
         case "walk": addWalkCue(to: root, outline: outline)
         default: break
         }

@@ -6,7 +6,7 @@ func runCozyAgentAppearanceTests(_ t: TestRunner) {
     let first = cozyAgentAppearance(agentType: "CODE_REVIEWER", department: .quality)
     let second = cozyAgentAppearance(agentType: "CODE_REVIEWER", department: .quality)
     t.expectEqual(first, second, "same agentType resolves to the same appearance")
-    t.expectEqual(cozyCharacterAssetCount, 12, "cozy character pool exposes twelve production assets")
+    t.expectEqual(cozyCharacterAssetCount, 16, "cozy character pool exposes sixteen production assets")
     let departmentVariant = cozyAgentAppearance(agentType: "CODE_REVIEWER", department: .planning)
     t.expectEqual(first.assetIndex, departmentVariant.assetIndex, "asset identity is independent of department")
     t.expect(first.assetIndex >= 0 && first.assetIndex < cozyCharacterAssetCount, "character asset is in range")
