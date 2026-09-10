@@ -219,10 +219,10 @@ describe('번역투 처방 목록', () => {
     return body.slice(0, end === -1 ? body.length : end);
   };
 
-  it('실측으로 남은 여섯 개이고, 어느 하나도 처방 없이 놓지 않는다', () => {
+  it('실측으로 남은 다섯 개이고, 어느 하나도 처방 없이 놓지 않는다', () => {
     const lines = prescriptionLines(HUMANIZE_SYSTEM_PROMPT);
 
-    expect(lines).toHaveLength(6);
+    expect(lines).toHaveLength(5);
     for (const line of lines) {
       expect(line).toContain('→');
       // 화살표 오른쪽이 비어 있으면 패턴만 있고 처방이 없는 것이다.
@@ -332,6 +332,7 @@ describe('번역투 처방 목록', () => {
       '"~라는 점에서" 반복',
       '"그/그녀/그것/그들" 이 한 문단에',
       '이중 조사 "~에서의',
+      '"~할 수 있다/~필요가 있다" 반복',
     ];
 
     for (const line of removed) {
@@ -350,10 +351,13 @@ describe('번역투 처방 목록', () => {
 
   // 아래 세 단언이 룰북을 통째로 베껴 넣는 것을 막는다. 원본에는 있지만 이 레포와
   // 부딪히는 항목이 있고, 넣으면 지시와 게이트가 반대 방향으로 당긴다.
+  // 룰북 A-10 은 "~할 수 있다" 를 단언으로 바꾸라고 한다. 주장을 고치는 일이라 넣지 않는다.
+  // 그 패턴을 다루던 줄 자체는 효과가 없어 솎아냈고(잔존 9 대 10), 방어선은 상위 절대 규칙이
+  // 이어받는다.
   it('가능성 표현을 단언으로 바꾸라고 하지 않는다 — 주장이 바뀐다', () => {
     expect(HUMANIZE_SYSTEM_PROMPT).not.toContain('단언으로');
     expect(HUMANIZE_SYSTEM_PROMPT).toContain(
-      '가능·의무의 뜻 자체는 지우지 마라',
+      '의미·사실·주장·인과관계를 바꾸지 마라',
     );
   });
 
