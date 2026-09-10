@@ -11,6 +11,10 @@ import {
   AutopilotTaskContext,
   AutopilotTaskResult,
 } from '../../domain/autopilot-task.port';
+import {
+  AUTOPILOT_TASK_TRACE_PORT,
+  AutopilotTaskTracePort,
+} from '../../domain/port/autopilot-task-trace.port';
 
 // 주간 episodic-memory 무결성 점검 — L1 near-duplicate / L2 embedding-null(결정론, LLM 없음)
 // + L4 contradiction(ChatGPT 모순 판정, env 게이트 + 쿼터 가드). 이슈 0건이면 skip. T0_AUTO(읽기 전용).
@@ -37,21 +41,55 @@ export class KnowledgeLintAutopilotTask implements AutopilotTask {
     @Inject(KNOWLEDGE_LINT_PORT)
     private readonly knowledgeLint: KnowledgeLintPort,
     private readonly configService: ConfigService,
+    @Inject(AUTOPILOT_TASK_TRACE_PORT)
+    private readonly trace: AutopilotTaskTracePort,
   ) {}
 
   async run({
     firedAtKst,
   }: AutopilotTaskContext): Promise<AutopilotTaskResult> {
-    const outcome = await this.knowledgeLint.lintIssues({
-      duplicateMaxDistance: DUPLICATE_MAX_DISTANCE,
-      limit: LINT_ISSUE_CAP,
-      l4: {
-        enabled: this.isL4Enabled(),
-        maxPairs: this.resolveL4MaxPairs(),
-        minDistance: L4_BAND_MIN,
-        maxDistance: L4_BAND_MAX,
-      },
+    const l4Enabled = this.isL4Enabled();
+    // 예외 경로에도 흔적을 남긴다. 저장소 오류(임베딩 조회·밴드 쌍 조회)로 lintIssues 가
+    // reject 하면 아래 기록에 도달하지 못해, "발화했지만 실패" 가 "발화하지 않음" 과 같은
+    // 모양(흔적 0건)으로 남는다 — 이 관측이 가리려던 세 후보 중 둘이 합쳐져 버린다.
+    // candidateCount·llmCalled 를 null 로 두는 것이 포트가 정의한 "예외로 중단돼 못 셈" 이다.
+    let outcome: Awaited<ReturnType<KnowledgeLintPort['lintIssues']>>;
+    try {
+      outcome = await this.knowledgeLint.lintIssues({
+        duplicateMaxDistance: DUPLICATE_MAX_DISTANCE,
+        limit: LINT_ISSUE_CAP,
+        l4: {
+          enabled: l4Enabled,
+          maxPairs: this.resolveL4MaxPairs(),
+          minDistance: L4_BAND_MIN,
+          maxDistance: L4_BAND_MAX,
+        },
+      });
+    } catch (error: unknown) {
+      await this.trace.record({
+        taskId: this.id,
+        firedAtKst,
+        gateEnabled: l4Enabled,
+        candidateCount: null,
+        llmCalled: null,
+        detail: `예외로 중단: ${error instanceof Error ? error.message : String(error)}`,
+      });
+      throw error;
+    }
+    // Slack digest 발송(summaryText)은 사후 조회가 안 된다 — 이 주가 실제로 돌았는지·
+    // 게이트가 켜져 있었는지·판정 대상이 있었는지는 별도로 남겨야 사후에 가릴 수 있다.
+    // candidates>0 이면 루프 첫 항목에서 최소 1 회는 judge 를 호출한다(KnowledgeLintService
+    // 의 for-of 구조) — judged=0 이어도(첫 호출이 즉시 쿼터 소진) 호출 자체는 있었으므로
+    // llmCalled 는 judged 가 아니라 candidates 기준으로 판단한다.
+    await this.trace.record({
+      taskId: this.id,
+      firedAtKst,
+      gateEnabled: l4Enabled,
+      candidateCount: outcome.l4?.candidates ?? null,
+      llmCalled: (outcome.l4?.candidates ?? 0) > 0,
+      detail: outcome.l4?.abortedByQuota ? 'L4 쿼터 소진으로 중단' : undefined,
     });
+
     // 이슈 0건에도 skip 하지 않는다 — 주 1회(일 10:00) 발화라 skip 으로 끊으면 그 주에
     // 점검이 돌았는지 자체가 아무 데도 안 남는다(LLM 을 안 쓰는 구간은 agent_run 에도 없다).
     // 하트비트 문구와 점검 범위는 formatter 가 outcome.l4(실행 실태)로 판단한다 —

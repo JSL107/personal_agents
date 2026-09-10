@@ -17,6 +17,7 @@ it('drift + 제안 있으면 mrkdwn 텍스트, 깨끗하면 빈 문자열', () =
         },
       ],
       revision: null,
+      candidateFileCount: 1,
     },
     '2026-06-29',
   );
@@ -28,6 +29,7 @@ it('drift + 제안 있으면 mrkdwn 텍스트, 깨끗하면 빈 문자열', () =
         deterministic: { inSync: true, details: [] },
         proposals: [],
         revision: null,
+        candidateFileCount: 0,
       },
       '2026-06-29',
     ),

@@ -55,6 +55,9 @@ export interface DocsAuditResult {
   deterministic: DeterministicDriftReport;
   proposals: DocsRevisionProposal[];
   revision: DocsRevision | null;
+  // Layer2 판정 대상이 된 SoT 파일 수(최근 7일 변경 + SOT_TO_DOC 매핑 보유). autopilot task 의
+  // 발화 흔적(AutopilotTaskTrace)이 "판정 대상 0건이라 LLM 을 안 불렀다"를 구분하는 데 쓴다.
+  candidateFileCount: number;
 }
 
 export interface DocsAuditPort {
