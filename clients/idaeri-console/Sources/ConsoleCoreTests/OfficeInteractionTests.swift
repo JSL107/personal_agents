@@ -389,7 +389,7 @@ func runOfficeInteractionTests(_ t: TestRunner) {
         ConsoleAgentState.waiting, .completed, .inProgress, .awaitingApproval, .failed,
         .awaitingIntegration,
     ] {
-        let expected = state == .awaitingApproval || state == .failed || state == .awaitingIntegration
+        let expected = state == .inProgress || state == .awaitingApproval || state == .failed || state == .awaitingIntegration
         t.expectEqual(nameplateIsVisible(tileSize: roomy, state: state, isHovered: false, isSelected: false), expected,
                       "넓은 창에서도 \(state.rawValue) 표시=\(expected)")
     }
@@ -399,7 +399,7 @@ func runOfficeInteractionTests(_ t: TestRunner) {
     let keptWhenCramped: [(ConsoleAgentState, Bool, Bool, Bool)] = [
         (.awaitingApproval, false, false, true),
         (.failed, false, false, true),
-        (.inProgress, false, false, false),
+        (.inProgress, false, false, true),
         (.waiting, true, false, true),
         (.waiting, false, true, true),
         (.waiting, false, false, false),

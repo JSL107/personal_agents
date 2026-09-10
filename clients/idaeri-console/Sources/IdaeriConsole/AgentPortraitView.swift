@@ -9,36 +9,76 @@ struct AgentPortraitView: View {
         cozyAgentAppearance(agentType: agent.agentType, department: agent.resolvedDepartment)
     }
 
+    private var portraitPose: String {
+        let rolePose: String
+        switch agent.agentType {
+        case "PM":
+            rolePose = "writing"
+        case "CODE_REVIEWER", "HUMANIZER", "PAPER_TRADE":
+            rolePose = "typing"
+        case "WORK_REVIEWER", "CAREER_MATE":
+            rolePose = "reading"
+        case "VACATION":
+            rolePose = "drinking"
+        default:
+            rolePose = agent.state == .inProgress ? "typing" : "idle"
+        }
+        return SpriteLoader.cozyCharacterHasDedicatedPose(
+            assetIndex: appearance.assetIndex,
+            pose: rolePose
+        ) ? rolePose : "idle"
+    }
+
     var body: some View {
         ZStack(alignment: .bottom) {
             CozyPalette.canvas
-            HStack(alignment: .bottom, spacing: 0) {
-                plant
-                    .frame(width: 42, height: 86)
-                Spacer(minLength: 0)
-                CozyAgentAvatarView(
-                    appearance: appearance,
-                    mood: cozyAgentMood(for: agent.state),
-                    department: agent.resolvedDepartment,
-                    state: agent.state
+            if let roomImage = SpriteLoader.cozyDepartmentRoomImage(agent.resolvedDepartment) {
+                Image(nsImage: roomImage)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFill()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
+                    .opacity(0.86)
+                LinearGradient(
+                    colors: [CozyPalette.canvas.opacity(0.06), CozyPalette.canvas.opacity(0.25)],
+                    startPoint: .top,
+                    endPoint: .bottom
                 )
-                .frame(height: 178)
-                Spacer(minLength: 0)
-                roleObject
-                    .frame(width: 48, height: 78)
             }
-            .padding(.horizontal, Spacing.lg)
+            CozyAgentAvatarView(
+                appearance: appearance,
+                mood: cozyAgentMood(for: agent.state),
+                department: agent.resolvedDepartment,
+                state: agent.state,
+                pose: portraitPose
+            )
+            .frame(height: 178)
             .padding(.bottom, Spacing.sm)
-            lamp
-                .frame(width: 44, height: 72)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.leading, Spacing.xl)
-                .padding(.top, Spacing.md)
-            Rectangle()
-                .fill(CozyPalette.outline.opacity(0.18))
-                .frame(height: 1)
-                .padding(.horizontal, Spacing.lg)
+            if let accentImage = SpriteLoader.cozyDashboardAccentImage(
+                agentType: agent.agentType,
+                department: agent.resolvedDepartment
+            ) {
+                ZStack(alignment: .center) {
+                    // A soft contact shadow anchors the transparent PNG to the room floor.
+                    // Keep it separate from the asset so the generated art retains its alpha edge.
+                    Ellipse()
+                        .fill(Color.black.opacity(0.14))
+                        .frame(width: 38, height: 9)
+                        .blur(radius: 4)
+                        .offset(y: 21)
+                    Image(nsImage: accentImage)
+                        .resizable()
+                        .interpolation(.high)
+                        .antialiased(true)
+                        .scaledToFit()
+                        .shadow(color: .black.opacity(0.10), radius: 3, x: 0, y: 2)
+                }
+                .frame(width: 56, height: 56)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                .padding(.trailing, Spacing.md)
                 .padding(.bottom, Spacing.sm)
+            }
         }
         .frame(maxWidth: .infinity)
         .frame(height: 218)
@@ -47,54 +87,4 @@ struct AgentPortraitView: View {
         .accessibilityLabel("\(agent.roleName)의 초상화, \(agent.state.label), \(agent.bubble)")
     }
 
-    private var lamp: some View {
-        VStack(spacing: 2) {
-            Capsule()
-                .fill(CozyPalette.outline)
-                .frame(width: 2, height: 27)
-            RoundedRectangle(cornerRadius: 6)
-                .fill(CozyPalette.butter)
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(CozyPalette.outline, lineWidth: 1))
-                .frame(width: 34, height: 22)
-            Capsule()
-                .fill(CozyPalette.outline)
-                .frame(width: 28, height: 3)
-        }
-    }
-
-    private var plant: some View {
-        VStack(spacing: 2) {
-            HStack(spacing: 1) {
-                leaf(rotation: -24)
-                leaf(rotation: 24)
-                leaf(rotation: -8)
-            }
-            RoundedRectangle(cornerRadius: 4)
-                .fill(CozyPalette.cocoa)
-                .overlay(RoundedRectangle(cornerRadius: 4).stroke(CozyPalette.outline, lineWidth: 1))
-                .frame(width: 25, height: 23)
-        }
-    }
-
-    private func leaf(rotation: Double) -> some View {
-        Ellipse()
-            .fill(CozyPalette.sage)
-            .overlay(Ellipse().stroke(CozyPalette.outline, lineWidth: 1))
-            .frame(width: 14, height: 30)
-            .rotationEffect(.degrees(rotation))
-    }
-
-    @ViewBuilder
-    private var roleObject: some View {
-        VStack(spacing: Spacing.xs) {
-            Image(systemName: agent.resolvedDepartment.iconSymbolName)
-                .font(.system(size: 23, weight: .medium))
-                .foregroundStyle(CozyPalette.department(agent.resolvedDepartment))
-            RoundedRectangle(cornerRadius: 2)
-                .fill(CozyPalette.surface)
-                .overlay(RoundedRectangle(cornerRadius: 2).stroke(CozyPalette.outline, lineWidth: 1))
-                .frame(width: 40, height: 3)
-        }
-        .accessibilityHidden(true)
-    }
 }

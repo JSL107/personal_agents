@@ -12,6 +12,7 @@ final class CharacterNode: SKNode {
     let sprite = SKSpriteNode()
     private let cozyArtwork = CozyCharacterArtworkNode()
     private let ring = SKShapeNode()
+    private let contactShadow = SKShapeNode()
     /// 선택 하이라이트 — 몸을 감싸는 흰 테두리. 자세·타일 크기가 바뀌면 함께 다시 잡아야 해서
     /// 씬이 아니라 캐릭터가 들고 있는다(씬이 한 번 만들어 붙이면 갱신 경로가 없다).
     private let selectionRing = SKShapeNode()
@@ -33,6 +34,7 @@ final class CharacterNode: SKNode {
     private(set) var isInteracting = false
     private var interactionFacing: Facing?
     private var activeInteractionPose: OfficeInteractionPose?
+    private var activeWorkPose: String?
     /// 라운지 자세로 전체 노드를 옮긴 양. 종료 때 정확히 빼고, 절대 배치는 새 기준에서 재계산한다.
     private var interactionOffset: CGPoint = .zero
 
@@ -105,6 +107,16 @@ final class CharacterNode: SKNode {
         super.init()
         name = agentType
 
+        // Use a warm, low-contrast contact cue that belongs to the honey-toned
+        // floor. A cool black glow reads as a pale sticker/halo once it is
+        // composited over the illustrated room shell, especially beneath the
+        // glossy character PNGs.
+        contactShadow.fillColor = SKColor(red: 0.28, green: 0.20, blue: 0.14, alpha: 0.20)
+        contactShadow.strokeColor = .clear
+        contactShadow.glowWidth = 1.0
+        contactShadow.zPosition = 0.5
+        addChild(contactShadow)
+
         // 발밑 링 — 상태색. 바닥에 눕힌 타원이라 캐릭터를 가리지 않는다.
         //
         // z 는 스프라이트(1)보다 앞이어야 한다. 좌석은 책상보다 한 칸 위라 책상 노드가 더 앞에
@@ -171,6 +183,15 @@ final class CharacterNode: SKNode {
             ),
             transform: nil
         )
+        contactShadow.path = CGPath(
+            ellipseIn: CGRect(
+                x: -tileSize * 0.27,
+                y: -tileSize * 0.075,
+                width: tileSize * 0.54,
+                height: tileSize * 0.13
+            ),
+            transform: nil
+        )
         refreshNameplate()
     }
 
@@ -193,10 +214,14 @@ final class CharacterNode: SKNode {
         refreshCozyArtwork(pose: currentPose())
         let palette = agentStatePaletteRGBA(state)
         ring.strokeColor = SKColor(
-            red: palette.red, green: palette.green, blue: palette.blue, alpha: 0.95
+            red: palette.red, green: palette.green, blue: palette.blue,
+            alpha: (state == .awaitingApproval || state == .failed) ? 0.48 : 0.22
+        )
+        ring.fillColor = SKColor(
+            red: palette.red, green: palette.green, blue: palette.blue, alpha: 0.04
         )
         // 상태 링이 이름표보다 먼저 읽혀야 한다. 손이 필요한 두 상태는 선을 더 굵게 준다.
-        ring.lineWidth = (state == .awaitingApproval || state == .failed) ? 3.2 : 2.2
+        ring.lineWidth = (state == .awaitingApproval || state == .failed) ? 1.6 : 0.8
         let opacity = nameplateOpacity(for: state)
         namePlate.alpha = opacity
         nameLabel.alpha = opacity
@@ -267,7 +292,9 @@ final class CharacterNode: SKNode {
         // detail. At overview scale, persistent black name tags turn the
         // central group into a text pile; reveal them on hover/selection and
         // again in close room views where there is enough spacing.
-        let visible = visibleAtThisScale && (isHovered || isSelected || currentTileSize >= 48)
+        let operationallyImportant = currentState != .waiting && currentState != .completed
+        let visible = visibleAtThisScale
+            && (isHovered || isSelected || operationallyImportant || currentTileSize >= 48)
         nameLabel.isHidden = !visible
         namePlate.isHidden = !visible
         // 문패를 이 글자 위로 올리는 계산이 Core 에 있으므로, 크기도 같은 함수에서 받는다.
@@ -301,7 +328,10 @@ final class CharacterNode: SKNode {
         nameLabel.xScale = 1
         // 앉아서 내려간 만큼 이름표도 함께 내려간다(spriteBaseY) — 안 그러면 앉은 사람만
         // 라벨이 머리에서 한 뼘 떠 있다.
-        let demoLabelBelow = name?.starts(with: "POSE_DEMO_") == true || name?.starts(with: "SHOWCASE_") == true
+        // 포즈 진단은 발과 소품을 가리지 않도록 아래에 두지만, 실제 화면과 같은 쇼케이스
+        // 이름표는 운영 화면처럼 머리 위에 둔다. 쇼케이스만 발밑에 두면 접지 그림자와 겹쳐
+        // 캐릭터가 바닥에서 뜬 것처럼 보이고, 좌표 검수도 실제와 다른 조건이 된다.
+        let demoLabelBelow = name?.starts(with: "POSE_DEMO_") == true
         nameLabel.position = CGPoint(
             x: 0,
             y: demoLabelBelow
@@ -446,6 +476,7 @@ final class CharacterNode: SKNode {
         guard isSeated else {
             return
         }
+        activeWorkPose = nil
         isSeated = false
         apply(facing: facing)
     }
@@ -533,7 +564,15 @@ final class CharacterNode: SKNode {
         sprite.xScale = flipped ? -1 : 1
         // 앉으면 책상 쪽으로 내려 하반신이 책상에 가리게 한다. 안 내리면 좌석이 책상 바로 위 칸이라
         // 사람이 책상 위 허공에 별개로 놓인 물체처럼 보인다(근거는 officeSeatedSpriteDrop).
-        spriteBaseY = isSeated ? -currentTileSize * CGFloat(officeSeatedSpriteDrop) : 0
+        let hasDedicatedSeatedArtwork = isSeated
+            && SpriteLoader.cozyCharacterHasDedicatedPose(
+                assetIndex: cozyAppearance.assetIndex,
+                pose: activeInteractionPose?.rawValue ?? "sit"
+            )
+        let seatedDrop = hasDedicatedSeatedArtwork
+            ? officeDedicatedSeatedSpriteDrop
+            : officeGeneratedFallbackSeatedSpriteDrop
+        spriteBaseY = isSeated ? -currentTileSize * CGFloat(seatedDrop) : 0
         sprite.position = CGPoint(x: 0, y: spriteBaseY)
         cozyArtwork.position = .zero
         cozyArtwork.setReferenceScale(spriteScale * artworkScale)
@@ -591,20 +630,34 @@ final class CharacterNode: SKNode {
         }
         sprite.zRotation = 0
         sprite.yScale = 1
+        if activeWorkPose != nil {
+            activeWorkPose = nil
+            setTexture(isSeated ? "sit" : currentPose())
+        }
         // 기준 y 로 돌린다 — `.zero` 로 되돌리면 앉은 사람이 몸짓을 멈출 때마다 책상 위로 튀어오른다.
         sprite.position = CGPoint(x: 0, y: spriteBaseY)
     }
 
+    func hasDedicatedArtwork(for pose: String) -> Bool {
+        SpriteLoader.cozyCharacterHasDedicatedPose(
+            assetIndex: cozyAppearance.assetIndex,
+            pose: pose
+        )
+    }
+
     /// 작업 중 — 키보드를 두드리듯 짧고 빠르게 위아래로.
     func startTyping() {
-        if shouldReduceMotion() {
-            clearMotion()
-            return
-        }
         guard sprite.action(forKey: "typing") == nil else {
             return
         }
         clearMotion()
+        if isSeated, hasDedicatedArtwork(for: "typing") {
+            activeWorkPose = "typing"
+            setTexture("typing")
+        }
+        if shouldReduceMotion() {
+            return
+        }
         let beat = SKAction.sequence([
             .moveBy(x: 0, y: 1.4, duration: 0.09),
             .moveBy(x: 0, y: -1.4, duration: 0.09),

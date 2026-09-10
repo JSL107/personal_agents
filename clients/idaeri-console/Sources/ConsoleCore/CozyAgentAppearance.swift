@@ -1,7 +1,31 @@
 import Foundation
 
 /// Number of transparent, production-ready character portraits available to the cozy office.
-public let cozyCharacterAssetCount = 16
+public let cozyCharacterAssetCount = 20
+
+/// Small optical correction for the production PNGs after alpha-bound normalization.
+/// Values compensate residual faint-edge padding; the square dashboard envelope prevents
+/// hair width from becoming a second scale constraint.
+public func cozyCharacterVisualScale(assetIndex: Int) -> CGFloat {
+    let normalizedIndex = ((assetIndex % cozyCharacterAssetCount) + cozyCharacterAssetCount)
+        % cozyCharacterAssetCount
+    switch normalizedIndex {
+    case 1, 16:
+        return 0.97
+    case 2:
+        return 1.12
+    case 17:
+        return 0.91
+    case 18:
+        return 1.04
+    case 19:
+        return 1.03
+    case 3:
+        return 1.01
+    default:
+        return 1.00
+    }
+}
 
 /// Deterministic visual traits for an agent's cozy character.
 public struct CozyAgentAppearance: Equatable, Sendable {
@@ -46,8 +70,18 @@ public func cozyAgentAppearance(
     let seed = agentType.utf8.reduce(UInt64(1469598103934665603)) {
         ($0 ^ UInt64($1)) &* 1099511628211
     }
+    let productRosterAssetIndex: [String: Int] = [
+        "PM": 16,
+        "CODE_REVIEWER": 1,
+        "WORK_REVIEWER": 2,
+        "HUMANIZER": 3,
+        "VACATION": 17,
+        "PAPER_TRADE": 18,
+        "CAREER_MATE": 19,
+    ]
     return CozyAgentAppearance(
-        assetIndex: Int(seed % UInt64(cozyCharacterAssetCount)),
+        assetIndex: productRosterAssetIndex[agentType]
+            ?? Int(seed % UInt64(cozyCharacterAssetCount)),
         headShapeIndex: Int(seed % 3),
         hairStyleIndex: Int((seed / 3) % 8),
         outfitStyleIndex: Int((seed / 24) % 6),

@@ -59,8 +59,14 @@ func runCozyAssetCheck() -> Bool {
     // still falls back to the matching idle art for agents without a pose, but
     // the release check must prove that the high-frequency interactions have
     // at least one real seated and one real writing variant.
-    let requiredPoseAssets = [
-        "agent-0-sit", "agent-0-writing", "agent-1-sit", "agent-1-writing",
+    let requiredPoseAssets = (0..<cozyCharacterAssetCount).map { "agent-\($0)-sit" } + [
+        "agent-0-writing", "agent-0-typing", "agent-0-reading", "agent-0-drinking",
+        "agent-1-writing", "agent-1-typing", "agent-1-reading", "agent-1-drinking",
+        "agent-2-typing", "agent-3-typing", "agent-4-typing", "agent-5-typing",
+        "agent-9-typing", "agent-13-typing", "agent-17-typing",
+        "agent-6-writing", "agent-7-reading", "agent-8-drinking",
+        "agent-16-writing", "agent-17-drinking", "agent-18-typing",
+        "agent-19-reading", "agent-2-reading",
     ]
     for name in requiredPoseAssets {
         guard let url = Bundle.module.url(
@@ -119,6 +125,8 @@ func runCozyAssetCheck() -> Bool {
     }
     let furnitureAssets = [
         "workstation", "chair", "sofa", "meeting-table", "bookshelf", "coffee-station",
+        "planning-board-table", "quality-review-station", "evaluation-kpi-console",
+        "treasury-ledger-console", "content-storyboard-station", "internal-ops-control-desk",
     ]
     for name in furnitureAssets {
         guard let url = Bundle.module.url(
@@ -135,8 +143,28 @@ func runCozyAssetCheck() -> Bool {
             valid = false
         }
     }
+    let dashboardAccentAssets = [
+        "planning-accent", "quality-accent", "evaluation-accent",
+        "treasury-accent", "content-accent", "internal-ops-accent",
+        "vacation-accent", "career-accent",
+    ]
+    for name in dashboardAccentAssets {
+        guard let url = Bundle.module.url(
+            forResource: name, withExtension: "png", subdirectory: "cozy/props"
+        ), let image = NSImage(contentsOf: url),
+              let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            fputs("missing or unreadable cozy dashboard accent: \(name).png\n", stderr)
+            valid = false
+            continue
+        }
+        let alphaInfo = cgImage.alphaInfo
+        if alphaInfo == .none || alphaInfo == .noneSkipFirst || alphaInfo == .noneSkipLast {
+            fputs("cozy dashboard accent has no alpha channel: \(name).png\n", stderr)
+            valid = false
+        }
+    }
     if valid {
-        print("cozy asset check passed: 9 modular rooms + 6 interactive furniture assets + \(cozyCharacterAssetCount) transparent characters + 4 pilot pose assets")
+        print("cozy asset check passed: 9 modular rooms + 12 interactive furniture assets + \(dashboardAccentAssets.count) dashboard accents + \(cozyCharacterAssetCount) transparent characters + \(requiredPoseAssets.count) production pose assets")
     }
     return valid
 }
