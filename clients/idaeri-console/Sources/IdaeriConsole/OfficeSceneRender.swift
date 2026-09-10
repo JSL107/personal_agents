@@ -80,7 +80,8 @@ func renderOfficeScene(
     scene.sync(agents: renderedAgents, approvals: renderedApprovals)
     if populatedDemo, !scene.applyPopulatedDemoCommonAreas(
         meetingAgentTypes: [6, 7].map(showcaseAgentType(forAssetIndex:)),
-        loungeAgentType: showcaseAgentType(forAssetIndex: 8)
+        loungeAgentType: showcaseAgentType(forAssetIndex: 8),
+        corridorAgentTypes: [9, 10].map(showcaseAgentType(forAssetIndex:))
     ) {
         FileHandle.standardError.write(
             Data("--populated-demo 공용 공간 배치에 필요한 사람 또는 가구가 부족하다\n".utf8)
@@ -436,7 +437,7 @@ func populatedDemoAgents() -> [ConsoleAgent] {
             state = .inProgress
         case 6..<12:
             state = .completed
-        case 12..<16:
+        case 12..<18:
             state = .waiting
         default:
             state = .awaitingApproval

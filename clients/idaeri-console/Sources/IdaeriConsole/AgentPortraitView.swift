@@ -53,7 +53,7 @@ struct AgentPortraitView: View {
                 state: agent.state,
                 pose: portraitPose
             )
-            .frame(height: 178)
+            .frame(width: 172, height: 172)
             .padding(.bottom, Spacing.sm)
             if let accentImage = SpriteLoader.cozyDashboardAccentImage(
                 agentType: agent.agentType,
@@ -76,7 +76,9 @@ struct AgentPortraitView: View {
                 }
                 .frame(width: 56, height: 56)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                .padding(.trailing, Spacing.md)
+                // Pull the prop into the character's reachable floor area. At the card edge it
+                // reads as a UI badge; beside the coworker it becomes part of the portrait scene.
+                .padding(.trailing, Spacing.xxl + Spacing.lg)
                 .padding(.bottom, Spacing.sm)
             }
         }

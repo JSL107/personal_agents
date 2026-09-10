@@ -111,7 +111,7 @@ final class CharacterNode: SKNode {
         // floor. A cool black glow reads as a pale sticker/halo once it is
         // composited over the illustrated room shell, especially beneath the
         // glossy character PNGs.
-        contactShadow.fillColor = SKColor(red: 0.28, green: 0.20, blue: 0.14, alpha: 0.20)
+        contactShadow.fillColor = SKColor(red: 0.28, green: 0.20, blue: 0.14, alpha: 0.26)
         contactShadow.strokeColor = .clear
         contactShadow.glowWidth = 1.0
         contactShadow.zPosition = 0.5
@@ -185,10 +185,10 @@ final class CharacterNode: SKNode {
         )
         contactShadow.path = CGPath(
             ellipseIn: CGRect(
-                x: -tileSize * 0.27,
-                y: -tileSize * 0.075,
-                width: tileSize * 0.54,
-                height: tileSize * 0.13
+                x: -tileSize * 0.30,
+                y: -tileSize * 0.085,
+                width: tileSize * 0.60,
+                height: tileSize * 0.15
             ),
             transform: nil
         )

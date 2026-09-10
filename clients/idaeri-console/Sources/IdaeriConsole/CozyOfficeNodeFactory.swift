@@ -13,7 +13,10 @@ enum CozyOfficeNodeFactory {
     // Keep the shared circulation floor just a quiet oak tint in the exposed gaps. A thick,
     // high-contrast strip makes the independent room shells look like cards separated by a
     // beige cross instead of adjoining areas of one office.
-    static let walkway = SKColor(red: 0.64, green: 0.50, blue: 0.38, alpha: 0.16)
+    // Keep the shared circulation floor low-saturation and quiet. It must read as the same
+    // oak plane in both the horizontal junction and the vertical runs, not as a bright frame
+    // around the illustrated room modules.
+    static let walkway = SKColor(red: 0.49, green: 0.43, blue: 0.37, alpha: 0.10)
 
     static func accent(for department: Department) -> SKColor {
         let color = agentDepartmentPaletteRGBA(department)
@@ -38,17 +41,42 @@ enum CozyOfficeNodeFactory {
     }
 
     static func walkway(size: CGSize) -> SKShapeNode {
-        let node = SKShapeNode(rectOf: size, cornerRadius: min(size.width, size.height) * 0.18)
+        // The circulation floor runs underneath every room shell. Keep the ends square so a
+        // vertical run reads as one continuous floor plane instead of a rounded card inserted
+        // between three room panels.
+        let node = SKShapeNode(rectOf: size, cornerRadius: min(size.width, size.height) * 0.02)
         node.fillColor = Self.walkway
         node.strokeColor = .clear
         // Below every room/common-area surface; only the exposed gap between modules is visible.
         node.zPosition = -0.8
+
+        // A few nearly invisible plank joints keep the shared strip reading as floor rather
+        // than a solid UI band. Joints run across the short axis, so the horizontal and
+        // vertical runs retain the same direction as the surrounding oak floor.
+        let isHorizontal = size.width >= size.height
+        let jointColor = SKColor.black.withAlphaComponent(0.032)
+        let jointCount = 3
+        for index in 1...jointCount {
+            let fraction = CGFloat(index) / CGFloat(jointCount + 1)
+            let jointSize = isHorizontal
+                ? CGSize(width: max(0.5, size.width * 0.004), height: size.height * 0.78)
+                : CGSize(width: size.width * 0.78, height: max(0.5, size.height * 0.004))
+            let joint = SKShapeNode(rectOf: jointSize)
+            joint.name = "walkway-plank-joint-\(index)"
+            joint.fillColor = jointColor
+            joint.strokeColor = .clear
+            joint.position = isHorizontal
+                ? CGPoint(x: (fraction - 0.5) * size.width, y: 0)
+                : CGPoint(x: 0, y: (fraction - 0.5) * size.height)
+            joint.zPosition = 0.02
+            node.addChild(joint)
+        }
         return node
     }
 
     static func commonAreaSurface(size: CGSize, kind: CommonAreaKind, texture: SKTexture? = nil) -> SKNode {
         if let texture {
-            return illustratedRoom(texture: texture, size: size, cornerRadius: min(size.width, size.height) * 0.045)
+            return illustratedRoom(texture: texture, size: size, cornerRadius: 0)
         }
         let colors: (fill: SKColor, stroke: SKColor)
         switch kind {
@@ -100,7 +128,7 @@ enum CozyOfficeNodeFactory {
             let artwork = illustratedRoom(
                 texture: texture,
                 size: size,
-                cornerRadius: min(size.width, size.height) * 0.035
+                cornerRadius: 0
             )
             artwork.name = "room-artwork"
             root.addChild(artwork)
@@ -148,7 +176,7 @@ enum CozyOfficeNodeFactory {
     ) -> SKNode {
         let root = SKNode()
         let shadow = SKShapeNode(rectOf: size, cornerRadius: cornerRadius)
-        shadow.fillColor = SKColor.black.withAlphaComponent(0.08)
+        shadow.fillColor = SKColor.black.withAlphaComponent(0.025)
         shadow.strokeColor = .clear
         shadow.position = CGPoint(x: 0, y: -max(3, size.height * 0.025))
         shadow.zPosition = -0.2
@@ -170,8 +198,8 @@ enum CozyOfficeNodeFactory {
 
         let border = SKShapeNode(rectOf: size, cornerRadius: cornerRadius)
         border.fillColor = .clear
-        border.strokeColor = SKColor.white.withAlphaComponent(0.30)
-        border.lineWidth = max(1, min(size.width, size.height) * 0.006)
+        border.strokeColor = SKColor.white.withAlphaComponent(0.08)
+        border.lineWidth = max(0.5, min(size.width, size.height) * 0.002)
         border.zPosition = 0.2
         root.addChild(border)
         return root
@@ -687,35 +715,89 @@ enum CozyOfficeNodeFactory {
         let holder = SKNode()
         holder.name = "doorStatusOverlay"
 
-        let portalWidth = tileSize * 0.44
-        let portalHeight = tileSize * 1.02
-        let frame = roundedFurniture(
-            width: portalWidth,
-            height: portalHeight,
-            fill: SKColor(red: 0.78, green: 0.56, blue: 0.35, alpha: 0.98)
-        )
-        frame.name = "doorFrame"
-        frame.lineWidth = max(1, tileSize * 0.018)
-        frame.position.y = portalHeight * 0.48
-        holder.addChild(frame)
+        let portalWidth = tileSize * 0.50
+        // Match the tall chibi body scale: the doorway must be visibly taller than a standing
+        // coworker, otherwise it reads as a decorative wall panel rather than usable architecture.
+        let portalHeight = tileSize * 1.55
 
-        let panel = roundedFurniture(
-            width: portalWidth * 0.72,
-            height: portalHeight * 0.76,
-            fill: SKColor(red: 0.67, green: 0.43, blue: 0.24, alpha: 0.98)
+        let opening = SKShapeNode(
+            rectOf: CGSize(width: portalWidth * 0.82, height: portalHeight * 0.82)
+        )
+        opening.name = "doorOpening"
+        opening.fillColor = SKColor(red: 0.24, green: 0.17, blue: 0.13, alpha: 0.92)
+        opening.strokeColor = .clear
+        opening.position.y = portalHeight * 0.45
+        opening.zPosition = -0.1
+        holder.addChild(opening)
+
+        // Room artwork can contain a baked wall seam at the doorway. Cover only a narrow
+        // margin around the opening so that seam stops at the jamb; this is intentionally just
+        // wider than the opening, never a wall-sized backing plate.
+        let wallCutout = SKShapeNode(
+            rectOf: CGSize(width: portalWidth * 0.90, height: portalHeight * 0.88)
+        )
+        wallCutout.name = "doorWallCutout"
+        wallCutout.fillColor = SKColor(red: 0.22, green: 0.15, blue: 0.11, alpha: 0.96)
+        wallCutout.strokeColor = .clear
+        wallCutout.position.y = portalHeight * 0.45
+        wallCutout.zPosition = -0.12
+        holder.addChild(wallCutout)
+
+        // A shallow reveal sits inside the cut wall. The offset highlight at its top edge gives
+        // the portal a little depth against the illustrated room without pretending this is a
+        // second piece of furniture laid over the artwork.
+        let reveal = SKShapeNode(
+            rectOf: CGSize(width: portalWidth * 0.68, height: portalHeight * 0.72)
+        )
+        reveal.name = "doorReveal"
+        reveal.fillColor = SKColor(red: 0.15, green: 0.11, blue: 0.09, alpha: 0.68)
+        reveal.strokeColor = .clear
+        reveal.position = CGPoint(x: 0, y: portalHeight * 0.44)
+        reveal.zPosition = -0.05
+        holder.addChild(reveal)
+
+        let revealTop = SKShapeNode(
+            rectOf: CGSize(width: portalWidth * 0.72, height: max(1, tileSize * 0.055))
+        )
+        revealTop.name = "doorRevealTop"
+        revealTop.fillColor = SKColor.white.withAlphaComponent(0.12)
+        revealTop.strokeColor = .clear
+        revealTop.position = CGPoint(x: 0, y: portalHeight * 0.79)
+        revealTop.zPosition = 0.05
+        holder.addChild(revealTop)
+
+        let jambColor = SKColor(red: 0.49, green: 0.31, blue: 0.19, alpha: 0.94)
+        let jambWidth = max(1.5, tileSize * 0.055)
+        for side: CGFloat in [-1, 1] {
+            let jamb = SKShapeNode(
+                rectOf: CGSize(width: jambWidth, height: portalHeight * 0.92)
+            )
+            jamb.name = "doorJamb"
+            jamb.fillColor = jambColor
+            jamb.strokeColor = .clear
+            jamb.position = CGPoint(
+                x: side * portalWidth * 0.43,
+                y: portalHeight * 0.47
+            )
+            holder.addChild(jamb)
+        }
+        let lintel = SKShapeNode(
+            rectOf: CGSize(width: portalWidth * 0.96, height: jambWidth)
+        )
+        lintel.name = "doorLintel"
+        lintel.fillColor = jambColor
+        lintel.strokeColor = .clear
+        lintel.position.y = portalHeight * 0.91
+        holder.addChild(lintel)
+
+        let panel = SKShapeNode(
+            rectOf: CGSize(width: portalWidth * 0.66, height: portalHeight * 0.74)
         )
         panel.name = "doorPanel"
-        panel.lineWidth = max(1, tileSize * 0.014)
-        panel.position.y = portalHeight * 0.48
-
-        let inset = roundedFurniture(
-            width: portalWidth * 0.46,
-            height: portalHeight * 0.42,
-            fill: SKColor(red: 0.79, green: 0.56, blue: 0.33, alpha: 0.92)
-        )
-        inset.name = "doorInset"
-        inset.lineWidth = max(0.7, tileSize * 0.010)
-        panel.addChild(inset)
+        panel.fillColor = SKColor(red: 0.67, green: 0.43, blue: 0.24, alpha: 0.98)
+        panel.strokeColor = outline.withAlphaComponent(0.82)
+        panel.lineWidth = max(1, tileSize * 0.012)
+        panel.position.y = portalHeight * 0.43
 
         let knob = SKShapeNode(circleOfRadius: max(1.2, tileSize * 0.035))
         knob.name = "doorKnob"
@@ -727,15 +809,37 @@ enum CozyOfficeNodeFactory {
 
         holder.addChild(panel)
 
-        let threshold = roundedFurniture(
-            width: portalWidth * 1.06,
-            height: tileSize * 0.10,
-            fill: SKColor(red: 0.49, green: 0.31, blue: 0.19, alpha: 0.84)
+        let threshold = SKShapeNode(
+            rectOf: CGSize(width: portalWidth * 1.08, height: tileSize * 0.12)
         )
         threshold.name = "doorThreshold"
-        threshold.lineWidth = max(0.7, tileSize * 0.008)
-        threshold.position.y = -tileSize * 0.015
+        threshold.fillColor = jambColor
+        threshold.strokeColor = .clear
+        threshold.position.y = tileSize * 0.015
         holder.addChild(threshold)
+
+        let thresholdShadow = SKShapeNode(
+            rectOf: CGSize(width: tileSize * 1.28, height: tileSize * 0.17)
+        )
+        thresholdShadow.name = "doorThresholdShadow"
+        thresholdShadow.fillColor = SKColor.black.withAlphaComponent(0.13)
+        thresholdShadow.strokeColor = .clear
+        // Local negative x is always the corridor side; OfficeScene mirrors the holder for
+        // doors on the opposite room edge. Extending this plane into the hall makes the cut
+        // wall and threshold meet the floor instead of floating above it.
+        thresholdShadow.position = CGPoint(x: -tileSize * 0.24, y: -tileSize * 0.055)
+        thresholdShadow.zPosition = -0.02
+        holder.addChild(thresholdShadow)
+
+        let corridorShadow = SKShapeNode(
+            rectOf: CGSize(width: tileSize * 0.70, height: tileSize * 0.14)
+        )
+        corridorShadow.name = "doorCorridorShadow"
+        corridorShadow.fillColor = SKColor(red: 0.16, green: 0.11, blue: 0.08, alpha: 0.24)
+        corridorShadow.strokeColor = .clear
+        corridorShadow.position = CGPoint(x: -tileSize * 0.42, y: -tileSize * 0.035)
+        corridorShadow.zPosition = -0.01
+        holder.addChild(corridorShadow)
 
         let glow = SKShapeNode(
             rectOf: CGSize(width: portalWidth * 0.76, height: portalHeight * 0.70),
@@ -745,7 +849,7 @@ enum CozyOfficeNodeFactory {
         glow.fillColor = SKColor(red: 1.00, green: 0.81, blue: 0.40, alpha: 0.70)
         glow.strokeColor = .clear
         glow.alpha = 0.06
-        glow.position.y = portalHeight * 0.48
+        glow.position.y = portalHeight * 0.45
         glow.zPosition = -0.1
         holder.addChild(glow)
 

@@ -566,6 +566,7 @@ final class OfficeScene: SKScene {
             renderFloor()
             renderZoneLabels()
             renderFurniture()
+            renderMeetingTableProps()
             renderDepartmentFeatureProps()
             renderPresident()
         }
@@ -1168,7 +1169,8 @@ final class OfficeScene: SKScene {
     /// 정적 캡처에는 그 전이가 없어 회의실·탕비실이 늘 비어 보인다.
     func applyPopulatedDemoCommonAreas(
         meetingAgentTypes: [String],
-        loungeAgentType: String
+        loungeAgentType: String,
+        corridorAgentTypes: [String]
     ) -> Bool {
         let meetingSeats = officeMeetingSeats(plan: plan)
         let meetingTable = plan.furniture.first { $0.kind == .meetingTable }?.tile
@@ -1225,7 +1227,47 @@ final class OfficeScene: SKScene {
             node.beginInteraction(pose: .drinking, facing: .down)
             placed += 1
         }
-        return placed == 3
+
+        if let zoneColumns {
+            let columns = officeCorridorColumns(zoneColumns: zoneColumns)
+            let sideDoorRows = Array(
+                Set(doorNodes.keys.compactMap { door -> Int? in
+                    let touchesSideWall = plan.zones.contains { zone in
+                        zone.origin.y <= door.y && door.y < zone.origin.y + zone.height
+                            && (door.x == zone.origin.x || door.x == zone.origin.x + zone.width - 1)
+                    }
+                    return touchesSideWall ? door.y : nil
+                })
+            ).sorted()
+            let corridorMidRow = sideDoorRows.reduce(0, +) / max(1, sideDoorRows.count)
+            for (index, agentType) in corridorAgentTypes.prefix(2).enumerated() {
+                guard index < columns.count, index < sideDoorRows.count,
+                      let node = characters[agentType]
+                else { continue }
+                node.removeAllActions()
+                node.sprite.removeAllActions()
+                node.endInteraction()
+                node.setNameplateSpan(nil)
+                // The corridor tile is horizontally adjacent to both opposing doors, so the normal
+                // proximity rule opens them. The static capture advances the tall chibi body deeper
+                // into the hall; otherwise it hides the very doorway this demo is proving.
+                let direction = sideDoorRows[index] <= corridorMidRow ? 1 : -1
+                let tile = TilePoint(x: columns[index], y: sideDoorRows[index])
+                node.tile = tile
+                let corridorPoint = floorPoint(tile)
+                node.place(
+                    at: CGPoint(
+                        x: corridorPoint.x,
+                        y: corridorPoint.y + tileSize * CGFloat(direction) * 2.15
+                    ),
+                    depth: depth(of: tile) + 0.24
+                )
+                node.apply(facing: direction > 0 ? .up : .down)
+                placed += 1
+            }
+        }
+        refreshDoors()
+        return placed == 5
     }
 
     /// 사람이 문 앞에 왔으면 열린 그림으로, 지나갔으면 닫힌 그림으로 갈아끼운다.
@@ -1515,7 +1557,7 @@ final class OfficeScene: SKScene {
         guard let zoneColumns else {
             return
         }
-        let thickness = tileSize * 0.42
+        let thickness = tileSize * 0.82
         let horizontal = CozyOfficeNodeFactory.walkway(
             size: CGSize(width: CGFloat(plan.columns) * tileSize, height: thickness)
         )
@@ -1935,10 +1977,31 @@ final class OfficeScene: SKScene {
                     // their original walkability and open/close state.
                     let statusNode = CozyOfficeNodeFactory.doorStatusOverlay(tileSize: tileSize)
                     statusNode.name = "cozy:door-status:\(placement.tile.x)-\(placement.tile.y)"
-                    statusNode.position = position
+                    let sideZone = plan.zones.first { zone in
+                        zone.origin.y <= placement.tile.y
+                            && placement.tile.y < zone.origin.y + zone.height
+                            && (placement.tile.x == zone.origin.x
+                                || placement.tile.x == zone.origin.x + zone.width - 1)
+                    }
+                    let opensFromLeftEdge = sideZone?.origin.x == placement.tile.x
+                    let boundaryX = opensFromLeftEdge == true
+                        ? CGFloat(placement.tile.x)
+                        : CGFloat(placement.tile.x + 1)
+                    // Keep the logical doorway on its walkable tile, but seat the visual frame
+                    // just inside the owning room wall. Opposing doors otherwise meet in the
+                    // narrow hall and read as a freestanding double-door prop.
+                    let roomWallInset: CGFloat = opensFromLeftEdge == true ? 0.14 : -0.14
+                    statusNode.position = CGPoint(
+                        x: gridOrigin.x + (boundaryX + roomWallInset) * tileSize,
+                        y: position.y
+                    )
+                    // Opposite rooms share a corridor. Mirror the leaf toward its own room so a
+                    // pair reads as two wall openings facing the hall, not duplicated UI icons.
+                    statusNode.xScale = opensFromLeftEdge == true ? 1 : -1
                     statusNode.zPosition = depth(of: placement.tile) + 0.02
                     objectLayer.addChild(statusNode)
                     doorStateNodes[placement.tile] = statusNode
+
                 }
             }
             if placement.tile == streakBoardTile {
@@ -1992,6 +2055,65 @@ final class OfficeScene: SKScene {
                 objectLayer.addChild(node)
             }
         }
+    }
+
+    /// 회의 테이블은 실제 상판만 제공하므로, 참석자가 보고 만지는 작업물을 상판 위에 둔다.
+    ///
+    /// 회의 참석자의 `writing`·`reading` 포즈와 같은 깊이 층에 배치해, 두 사람이 테이블을
+    /// 가운데 두고 문서와 노트북을 함께 검토하는 장면으로 읽히게 한다. 논리 가구나
+    /// walkable 좌표를 추가하지 않고, 렌더 전용 소품만 만든다.
+    private func renderMeetingTableProps() {
+        objectLayer.children
+            .filter { $0.name == "cozy:meeting-props" }
+            .forEach { $0.removeFromParent() }
+        guard let table = plan.furniture.first(where: { $0.kind == .meetingTable }) else {
+            return
+        }
+
+        let holder = SKNode()
+        holder.name = "cozy:meeting-props"
+        let tablePoint = floorPoint(table.tile, footprintWidth: table.kind.footprint.width)
+        holder.position = CGPoint(x: tablePoint.x, y: tablePoint.y + tileSize * 0.74)
+        holder.zPosition = depth(of: table.tile) + 0.10
+
+        let outline = SKColor(red: 0.35, green: 0.25, blue: 0.19, alpha: 0.72)
+        let paperWidth = tileSize * 0.34
+        let paperHeight = tileSize * 0.25
+        for index in 0..<2 {
+            let paper = SKShapeNode(
+                rectOf: CGSize(width: paperWidth, height: paperHeight),
+                cornerRadius: tileSize * 0.025
+            )
+            paper.fillColor = SKColor(red: 0.98, green: 0.94, blue: 0.82, alpha: 0.96)
+            paper.strokeColor = outline
+            paper.lineWidth = max(0.8, tileSize * 0.018)
+            paper.zRotation = index == 0 ? -0.08 : 0.07
+            paper.position = CGPoint(
+                x: tileSize * CGFloat(index == 0 ? -0.42 : 0.42),
+                y: tileSize * 0.03
+            )
+            holder.addChild(paper)
+        }
+
+        let laptop = SKShapeNode(
+            rectOf: CGSize(width: tileSize * 0.46, height: tileSize * 0.28),
+            cornerRadius: tileSize * 0.035
+        )
+        laptop.fillColor = SKColor(red: 0.18, green: 0.25, blue: 0.29, alpha: 0.96)
+        laptop.strokeColor = outline
+        laptop.lineWidth = max(0.9, tileSize * 0.022)
+        laptop.position = CGPoint(x: 0, y: tileSize * 0.08)
+        holder.addChild(laptop)
+
+        let screen = SKShapeNode(
+            rectOf: CGSize(width: tileSize * 0.30, height: tileSize * 0.17),
+            cornerRadius: tileSize * 0.018
+        )
+        screen.fillColor = SKColor(red: 0.48, green: 0.73, blue: 0.78, alpha: 0.92)
+        screen.strokeColor = .clear
+        screen.position = CGPoint(x: 0, y: tileSize * 0.09)
+        laptop.addChild(screen)
+        objectLayer.addChild(holder)
     }
 
     /// Gives every department one semantic 3D workstation instead of filling the shell with
@@ -2133,17 +2255,35 @@ final class OfficeScene: SKScene {
         let artworkScale = CozyCharacterArtworkNode.officeScaleFactor
         node.size = CGSize(width: 72 * artworkScale * characterScale, height: 100 * artworkScale * characterScale)
         let artwork = CozyCharacterArtworkNode()
+        let workDesk = officeSessionDesks(plan: plan).min {
+            abs($0.x - plan.presidentTile.x) < abs($1.x - plan.presidentTile.x)
+        }
         artwork.update(
             appearance: cozyAgentAppearance(agentType: officeHitTargetPresident, department: .planning),
-            mood: cozyAgentMood(for: .waiting),
+            mood: cozyAgentMood(for: .inProgress),
             department: .planning,
-            state: .waiting,
-            pose: "default"
+            state: .inProgress,
+            pose: workDesk == nil ? "default" : "typing"
         )
         artwork.setReferenceScale(characterScale * artworkScale)
         node.addChild(artwork)
-        node.position = floorPoint(plan.presidentTile)
-        node.zPosition = depth(of: plan.presidentTile)
+        if let workDesk {
+            let deskPoint = floorPoint(
+                workDesk,
+                footprintWidth: FurnitureKind.desk.footprint.width
+            )
+            // Keep the representative's logical approval anchor unchanged, but visually seat
+            // the character at the central workstation so the existing monitor and keyboard
+            // read as the thing being used rather than as background decoration.
+            node.position = CGPoint(
+                x: deskPoint.x,
+                y: deskPoint.y + tileSize * CGFloat(officeWorkstationSeatVisualOffsetTiles)
+            )
+            node.zPosition = depth(of: workDesk) - 0.24
+        } else {
+            node.position = floorPoint(plan.presidentTile)
+            node.zPosition = depth(of: plan.presidentTile)
+        }
         objectLayer.addChild(node)
         president = node
 

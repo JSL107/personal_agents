@@ -32,9 +32,14 @@ struct CozyAgentAvatarView: View {
                     assetIndex: appearance.assetIndex,
                     pose: pose
                 ) {
-                    let poseScale: CGFloat = pose == "idle" ? 1 : 1.12
-                    let imageHeight = proxy.size.height * 0.94 * poseScale
-                        * cozyCharacterVisualScale(assetIndex: appearance.assetIndex)
+                    avatarShadow(in: proxy.size)
+                    // Dashboard portraits are height-bound. The office correction also accounts
+                    // for its width cap, so applying it here made equal cards visibly inconsistent.
+                    let opticalScale = cozyDashboardCharacterVisualScale(
+                        assetIndex: appearance.assetIndex,
+                        pose: pose
+                    )
+                    let imageHeight = proxy.size.height * 0.90 * opticalScale
                     Image(nsImage: image)
                         .resizable()
                         .interpolation(.high)
@@ -75,8 +80,9 @@ struct CozyAgentAvatarView: View {
 
     private func avatarShadow(in size: CGSize) -> some View {
         Ellipse()
-            .fill(CozyPalette.avatarFaceInk.opacity(0.14))
-            .frame(width: size.width * 0.52, height: size.height * 0.055)
+            .fill(CozyPalette.avatarFaceInk.opacity(0.16))
+            .frame(width: size.width * 0.46, height: size.height * 0.050)
+            .blur(radius: size.width * 0.012)
             .position(x: size.width * 0.50, y: size.height * 0.975)
     }
 
