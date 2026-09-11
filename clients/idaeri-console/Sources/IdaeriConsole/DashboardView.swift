@@ -121,7 +121,13 @@ struct DashboardView: View {
     }
 
     private func embedsOperationalPanelsInGrid(columnCount: Int) -> Bool {
-        store.agents.count % columnCount == 1
+        // **3열에서만 성립한다.** 두 패널이 채우는 것은 두 칸이라, 마지막 행에 한 칸이
+        // 남았을 때(`% columnCount == 1`) 카드 1 + 패널 2 = 3칸으로 딱 맞는 것은 3열뿐이다.
+        // 열 수가 창 폭을 따라가게 되면서 2열에서 이 조건이 그대로 참이 됐고(7명 기준
+        // `7 % 2 == 1`), 세 칸이 두 칸짜리 행에 밀려 들어가 세션 패널만 다음 줄 반쪽에
+        // 홀로 남았다. 그 밖의 열 수에서는 아래 별도 섹션으로 온전한 폭을 쓰는 편이 낫다.
+        columnCount == 3
+            && store.agents.count % columnCount == 1
             && !store.approvals.isEmpty
             && !store.sessions.isEmpty
     }

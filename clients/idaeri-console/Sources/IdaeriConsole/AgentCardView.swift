@@ -203,7 +203,12 @@ struct AgentCardView: View {
                             Text(reason)
                                 .font(Typography.captionSmall)
                                 .foregroundStyle(command.phase == .failed ? Color.red : Color.secondary)
-                                .lineLimit(command.phase == .answered ? 12 : 2)
+                                // 카드 안에서는 앞부분만 보여 준다. 전문은 이 배지를 누르면
+                                // 시트로 열리므로 여기서 길게 펼 이유가 없고, 12줄을 그대로
+                                // 두면 카드 높이(470pt)를 넘겨 아래 버튼이 잘려 나간다 —
+                                // 초상화 218 + 머리글·말풍선·직무에 12줄 사유를 더하면
+                                // 600pt 를 넘는다.
+                                .lineLimit(command.phase == .answered ? 3 : 2)
                                 .multilineTextAlignment(.leading)
                         }
                         .buttonStyle(.plain)
