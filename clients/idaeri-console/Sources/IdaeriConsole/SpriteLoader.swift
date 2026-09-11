@@ -10,15 +10,13 @@ enum SpriteLoader {
     private static var cozyFurnitureCache: [String: SKTexture] = [:]
     private static var cozyAccentImageCache: [String: NSImage] = [:]
 
-    private static func normalizedCozyPose(_ pose: String) -> String {
-        let normalized = pose.lowercased().replacingOccurrences(of: "_", with: "-")
-        return normalized == "sitting" ? "sit" : normalized
-    }
+    /// 이미 한 번 알린 결손. 같은 조합이 프레임마다 로그를 다시 찍지 않게 막는다.
+    private static var reportedMissingAssets: Set<String> = []
 
     static func cozyCharacterHasDedicatedPose(assetIndex: Int, pose: String) -> Bool {
         let normalizedIndex = ((assetIndex % cozyCharacterAssetCount) + cozyCharacterAssetCount) % cozyCharacterAssetCount
         let normalizedPose = normalizedCozyPose(pose)
-        guard normalizedPose != "idle" else {
+        guard normalizedPose != cozyIdlePose else {
             return false
         }
         return Bundle.module.url(
@@ -28,7 +26,21 @@ enum SpriteLoader {
         ) != nil
     }
 
-    static func cozyCharacterImage(assetIndex: Int, pose: String = "idle") -> NSImage? {
+    /// 요청 포즈를 실재하는 에셋으로 옮긴다. 계약은 코어(`resolveCozyPose`)가 갖고 여기서는
+    /// "이 파일이 번들에 있는가" 만 대답한다 — 파일 목록을 두 곳에 두면 에셋을 갈 때 어긋난다.
+    static func resolvedCozyPose(assetIndex: Int, pose: String) -> ResolvedCozyPose {
+        resolveCozyPose(requested: pose, assetIndex: assetIndex) { candidate in
+            cozyCharacterHasDedicatedPose(assetIndex: assetIndex, pose: candidate)
+        }
+    }
+
+    /// 캐릭터 그림. `pose` 는 `resolvedCozyPose` 를 지난 이름이어야 한다.
+    ///
+    /// **없는 포즈를 조용히 기본 그림으로 바꿔치는 것은 더 이상 정상 경로가 아니다.** 예전에는
+    /// 도트 시절 이름(`down`·`side`·`-walk1`)이 매번 여기까지 내려와 폴백 로그를 수십 줄씩
+    /// 쏟았다. 이제 대체는 코어의 계약이 미리 끝내므로, 여기까지 와서 파일이 없다면 계약을
+    /// 건너뛴 호출이거나 에셋이 실제로 빠진 것이다 — 둘 다 한 번은 알릴 값어치가 있다.
+    static func cozyCharacterImage(assetIndex: Int, pose: String = cozyIdlePose) -> NSImage? {
         let normalizedIndex = ((assetIndex % cozyCharacterAssetCount) + cozyCharacterAssetCount) % cozyCharacterAssetCount
         let normalizedPose = normalizedCozyPose(pose)
         let posedName = "agent-\(normalizedIndex)-\(normalizedPose)"
@@ -36,24 +48,31 @@ enum SpriteLoader {
         if let cached = cozyCharacterCache[cacheKey] {
             return cached
         }
-        let posedURL = Bundle.module.url(
-            forResource: posedName, withExtension: "png", subdirectory: "cozy/characters"
-        )
+        let posedURL = normalizedPose == cozyIdlePose
+            ? nil
+            : Bundle.module.url(
+                forResource: posedName, withExtension: "png", subdirectory: "cozy/characters"
+            )
         let fallbackURL = Bundle.module.url(
             forResource: "agent-\(normalizedIndex)", withExtension: "png", subdirectory: "cozy/characters"
         )
-        if posedURL == nil, normalizedPose != "idle" {
-            fputs(
-                "cozy character pose fallback: \(posedName).png → agent-\(normalizedIndex).png\n",
-                stderr
-            )
+        if posedURL == nil, normalizedPose != cozyIdlePose {
+            reportMissingAsset("\(posedName).png — 포즈 계약을 거치지 않은 요청")
         }
         guard let url = posedURL ?? fallbackURL, let sourceImage = NSImage(contentsOf: url) else {
+            reportMissingAsset("agent-\(normalizedIndex).png")
             return nil
         }
         let image = imageByCroppingTransparentMargins(sourceImage)
         cozyCharacterCache[cacheKey] = image
         return image
+    }
+
+    private static func reportMissingAsset(_ description: String) {
+        guard reportedMissingAssets.insert(description).inserted else {
+            return
+        }
+        fputs("cozy character asset missing: \(description)\n", stderr)
     }
 
     /// 생성 이미지마다 투명 캔버스 여백이 조금씩 달라도 실제 머리/발 경계가 같은 기준으로
@@ -208,6 +227,17 @@ enum SpriteLoader {
         guard let assetName else {
             return nil
         }
+        return cozyFurnitureTexture(named: assetName)
+    }
+
+    /// 로봇청소기 그림. 없으면 nil 을 돌려 부르는 쪽이 도형 fallback 으로 내려간다 —
+    /// 청소기는 장식이 아니라 "주간 청소가 살아 있다" 는 신호라, 번들이 어긋났다고
+    /// 표시 자체가 사라지면 안 된다.
+    static func cozyVacuumRobotTexture() -> SKTexture? {
+        cozyFurnitureTexture(named: "vacuum-robot")
+    }
+
+    private static func cozyFurnitureTexture(named assetName: String) -> SKTexture? {
         if let cached = cozyFurnitureCache[assetName] {
             return cached
         }
@@ -240,20 +270,7 @@ enum SpriteLoader {
         case .internalOps:
             assetName = "internal-ops-control-desk"
         }
-        if let cached = cozyFurnitureCache[assetName] {
-            return cached
-        }
-        guard let url = Bundle.module.url(
-            forResource: assetName,
-            withExtension: "png",
-            subdirectory: "cozy/furniture-3d"
-        ), let image = NSImage(contentsOf: url) else {
-            return nil
-        }
-        let texture = SKTexture(image: image)
-        texture.filteringMode = .linear
-        cozyFurnitureCache[assetName] = texture
-        return texture
+        return cozyFurnitureTexture(named: assetName)
     }
 
     private static func cozyRoomTexture(named name: String) -> SKTexture? {
@@ -406,22 +423,5 @@ func furnitureSpriteName(_ kind: FurnitureKind) -> String {
         return "furn-rug-beige"
     case .rugNavy:
         return "furn-rug-navy"
-    }
-}
-
-/// 캐릭터 방향 → 포즈 이름과 좌우 반전 여부.
-///
-/// 좌향·우향 스프라이트가 서로 미러 관계(불일치 3.7%)라 한 장만 담고 코드에서 뒤집는다.
-/// 원본 side 는 왼쪽을 보고 있어, 오른쪽을 볼 때만 x 를 뒤집는다.
-func characterSprite(for facing: Facing) -> (pose: String, flipped: Bool) {
-    switch facing {
-    case .down:
-        return ("down", false)
-    case .up:
-        return ("up", false)
-    case .left:
-        return ("side", false)
-    case .right:
-        return ("side", true)
     }
 }
