@@ -2878,6 +2878,14 @@ final class OfficeScene: SKScene {
                 // 그림 교체 위에 얹는 보조 신호. 올라갈 때 빠르고 내려올 때 느리게(0.42/0.58)
                 // 해서 발을 떼는 쪽에 힘이 실린다. 진폭이 작아 "튄다" 가 아니라 걸음의 무게로만
                 // 읽힌다 — 크게 주면 다시 뛰는 것처럼 보인다.
+                // **걸음 그림이 있는 사람에게만 얹는다.** bob 은 그림 위에 더해지는 보조
+                // 신호인데, 그림이 없는 사람(스무 명 중 열셋)에게는 그것이 **유일한 움직임**이
+                // 되어 다리가 멈춘 채 몸만 위아래로 튄다 — 사용자가 "통통 뛰어다닌다" 고
+                // 본 것이 이것이다. 그림이 없으면 bob 없이 미끄러지듯 지나가는 편이
+                // 제자리뛰기보다 덜 어색하다.
+                guard node.hasDedicatedArtwork(for: "walk") else {
+                    return
+                }
                 let stride = SKAction.sequence([
                     .moveBy(x: 0, y: bobHeight, duration: stepDuration * 0.42),
                     .moveBy(x: 0, y: -bobHeight, duration: stepDuration * 0.58),
