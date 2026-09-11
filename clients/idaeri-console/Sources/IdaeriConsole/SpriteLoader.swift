@@ -221,6 +221,8 @@ enum SpriteLoader {
             assetName = "bookshelf"
         case .coffeeMachine, .sinkCounter:
             assetName = "coffee-station"
+        case .trash:
+            assetName = "waste-bin"
         default:
             assetName = nil
         }
@@ -235,6 +237,11 @@ enum SpriteLoader {
     /// 표시 자체가 사라지면 안 된다.
     static func cozyVacuumRobotTexture() -> SKTexture? {
         cozyFurnitureTexture(named: "vacuum-robot")
+    }
+
+    /// 청소기가 못 치우고 남긴 몫. 청소기와 마찬가지로 없으면 nil 을 돌려 도형으로 내려간다.
+    static func cozyPendingDustTexture() -> SKTexture? {
+        cozyFurnitureTexture(named: "dust-pile")
     }
 
     private static func cozyFurnitureTexture(named assetName: String) -> SKTexture? {

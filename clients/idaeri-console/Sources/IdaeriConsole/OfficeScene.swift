@@ -4432,6 +4432,30 @@ final class OfficeScene: SKScene {
         guard level > 0 else {
             return
         }
+        if let texture = SpriteLoader.cozyPendingDustTexture() {
+            let dust = SKSpriteNode(texture: texture)
+            let textureSize = texture.size()
+            // 그림은 이미 "쌓인 더미" 한 덩어리라 점을 여러 개 놓을 필요가 없다. 대신 건수에
+            // 따라 조금씩 넓혀 1건과 3건을 구분한다 — 도형 시절 좌우 어긋내기가 하던 몫이다.
+            // 4건 이상에서 더 키우지 않는 것은 통보다 커지면 "넘쳤다" 가 아니라 "통이 작다" 로
+            // 읽히기 때문이다.
+            let visibleLevel = min(level, 3)
+            let width = tileSize * (0.42 + CGFloat(visibleLevel) * 0.08)
+            dust.size = CGSize(
+                width: width,
+                height: width * textureSize.height / max(textureSize.width, 1)
+            )
+            dust.texture?.filteringMode = .linear
+            // 통 옆 바닥에 두되 **청소기 왕복 구간 밖**이라야 한다. 청소기는 통 앞에서
+            // x -0.31 ~ +0.31 을 오가고 멈춰 설 때도 +0.34 에 서는데, 먼지가 그 구간에
+            // 겹치면 zPosition 이 위인 먼지가 청소기를 덮어 "청소기가 아예 안 보이는"
+            // 그림이 된다(실측 렌더로 확인). 왕복 왼쪽 끝보다 더 왼쪽으로 물린다.
+            dust.position = CGPoint(x: -tileSize * 0.82, y: -tileSize * 0.30)
+            dust.zPosition = 0.02
+            holder.addChild(dust)
+            return
+        }
+        // 번들이 어긋나도 미처리 상태가 사라지지 않도록 점 표시를 남긴다.
         for index in 0..<level {
             let dust = SKShapeNode(circleOfRadius: max(1.4, tileSize * 0.055))
             dust.fillColor = SKColor(red: 0.55, green: 0.51, blue: 0.44, alpha: 0.92)
@@ -4439,8 +4463,6 @@ final class OfficeScene: SKScene {
             // 한 점씩 위로 쌓되 좌우로 어긋낸다 — 자로 맞춰 쌓으면 한 덩이로 뭉쳐 보여
             // 1건과 3건이 구분되지 않는다(책상 서류 더미에서 같은 것을 겪었다).
             let jitter = index % 2 == 0 ? 1.0 : -1.0
-            // 통 아가리 폭 안에서 넘치게 쌓는다 — 통과 떨어뜨려 놓으면 바닥에 흘린 것처럼
-            // 보여, "치우지 못하고 쌓인 몫" 이라는 뜻이 전달되지 않는다.
             dust.position = CGPoint(
                 x: tileSize * CGFloat(0.06 * Double(index + 1)) * CGFloat(jitter),
                 y: tileSize * CGFloat(0.14 + 0.08 * Double(index))

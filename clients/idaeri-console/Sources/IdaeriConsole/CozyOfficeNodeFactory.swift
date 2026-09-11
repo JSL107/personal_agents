@@ -423,6 +423,8 @@ enum CozyOfficeNodeFactory {
         case .coffeeTable: widthInTiles = 1.45
         case .bookshelf, .wallShelf: widthInTiles = 1.35
         case .coffeeMachine, .sinkCounter: widthInTiles = 1.65
+        // 통은 청소기(타일 0.42)보다 커야 "치우는 쪽" 과 "담기는 쪽" 이 구분된다.
+        case .trash: widthInTiles = 0.82
         default: widthInTiles = max(0.9, CGFloat(kind.footprint.width))
         }
         let width = tileSize * widthInTiles
