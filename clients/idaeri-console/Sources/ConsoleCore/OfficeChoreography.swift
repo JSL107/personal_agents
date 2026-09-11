@@ -151,10 +151,13 @@ public func cozyPoseCandidates(_ normalized: String) -> [String] {
     switch normalized {
     case "sit":
         return ["sit"]
-    // 타이핑 그림이 없으면 **앉은 그림**으로 내려간다. `idle`(서 있는 그림)로 내려가면
-    // 책상 좌석에서 그 사람만 책상 위에 올라선 것처럼 보인다.
+    // **앉은 그림을 먼저 본다.** `sit` 원화는 허리 아래가 없고 팔을 앞으로 뻗은 그림으로
+    // 다시 그려졌다 — 책상 뒤에 놓으면 다리가 샐 자리가 없어 "책상을 관통한" 인상이
+    // 사라진다(사용자 보고로 재제작). 그 자세가 이미 타이핑이라 `typing` 원화를 따로
+    // 쓸 이유가 없고, `typing` 은 의자에 앉아 다리를 뻗은 옛 그림이라 3/4 시점 책상과
+    // 원근이 어긋난다. 아직 안 바뀐 인덱스를 위해 `typing` 은 대체로 남긴다.
     case "typing":
-        return ["typing", "sit"]
+        return ["sit", "typing"]
     case "reading":
         return ["reading"]
     case "writing":

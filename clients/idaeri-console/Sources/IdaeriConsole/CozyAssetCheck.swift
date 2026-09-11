@@ -109,7 +109,7 @@ func runCozyAssetCheck() -> Bool {
             valid = false
         }
     }
-    let requiredWalkAssets = [1, 2, 3, 16, 17, 18, 19].map { "agent-\($0)-walk" }
+    let requiredWalkAssets = (0..<cozyCharacterAssetCount).map { "agent-\($0)-walk" }
     for name in requiredWalkAssets {
         guard let url = Bundle.module.url(
             forResource: name, withExtension: "png", subdirectory: "cozy/characters"
@@ -151,7 +151,7 @@ func runCozyAssetCheck() -> Bool {
     // 걸음 그림이 **실제로 화면에 쓰이는지**를 계약 쪽에서 확인한다. 파일이 번들에 들어간
     // 것만 보면, 포즈 계약이 그 이름을 모르는 채여도 초록불이 된다 — 가구가 그려진 원화
     // 셋이 정확히 그 방식으로 조용히 안 쓰이고 있었다.
-    for index in [1, 2, 3, 16, 17, 18, 19] {
+    for index in 0..<cozyCharacterAssetCount {
         let resolved = resolveCozyPose(
             requested: "walk",
             assetIndex: index,
