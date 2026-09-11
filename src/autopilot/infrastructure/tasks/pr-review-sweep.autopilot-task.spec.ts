@@ -213,7 +213,10 @@ describe('PrReviewSweepAutopilotTask', () => {
     expect(result.guardKeySuffix).toBe('contradicted-1');
   });
 
-  it('보류도 쿼터 중단도 없으면 guardKeySuffix 를 주지 않는다 — 종전 가드 동작을 그대로 유지한다', async () => {
+  // 사용자 반응은 카드 게시보다 뒤에 온다. 그날 첫 발송은 보통 게시가 가져가므로, 반응
+  // 건수가 키에 없으면 반응 회차는 구조적으로 늘 "이미 발송됨" 으로 막혀 다음 날까지 묻힌다
+  // (harvest-review-signals.usecase 의 attachAdoption 주석이 같은 현상을 기록하고 있다).
+  it('수확한 반응이 있으면 harvested 건수를 접미사에 싣는다 — 반응 회차가 묻히지 않게', async () => {
     harvestUsecase.execute.mockResolvedValue({
       acked: 1,
       fixed: 0,
@@ -234,7 +237,207 @@ describe('PrReviewSweepAutopilotTask', () => {
     const result = await task.run(CONTEXT);
 
     expect(result.skip).toBe(false);
-    expect(result.guardKeySuffix).toBeUndefined();
+    expect(result.guardKeySuffix).toBe('harvested-2');
+  });
+
+  it('새로 게시한 카드가 있으면 PR 별 지문을 접미사에 싣는다 — 오후에 달린 지적이 묻히지 않게', async () => {
+    sweepUsecase.execute.mockResolvedValue({
+      quotaStopped: false,
+      results: [
+        {
+          prRef: 'JSL107/personal_agents#180',
+          riskLevel: 'high',
+          outcome: {
+            inline: 2,
+            file: 1,
+            issueComment: 0,
+            dryRun: 0,
+            notPosted: 0,
+            dropped: 0,
+            duplicate: 0,
+          },
+        },
+      ],
+    });
+
+    const result = await task.run(CONTEXT);
+
+    expect(result.skip).toBe(false);
+    expect(result.guardKeySuffix).toBe('cards-JSL107/personal_agents#180x3');
+  });
+
+  // 총 건수만 실으면 오전 PR A 1 건과 오후 PR B 1 건이 같은 키로 접혀 후자가 막힌다 —
+  // 이 변경이 없애려던 바로 그 시나리오다.
+  it('건수가 같아도 대상 PR 이 다르면 접미사가 갈린다', async () => {
+    const runWith = async (prRef: string): Promise<string | undefined> => {
+      sweepUsecase.execute.mockResolvedValue({
+        quotaStopped: false,
+        results: [
+          {
+            prRef,
+            riskLevel: 'high',
+            outcome: {
+              inline: 1,
+              file: 0,
+              issueComment: 0,
+              dryRun: 0,
+              notPosted: 0,
+              dropped: 0,
+              duplicate: 0,
+            },
+          },
+        ],
+      });
+      const outcome = await task.run(CONTEXT);
+      return outcome.guardKeySuffix;
+    };
+
+    const first = await runWith('JSL107/personal_agents#180');
+    const second = await runWith('JSL107/personal_agents#181');
+
+    expect(first).not.toBe(second);
+  });
+
+  it('여러 PR 의 지문은 스윕 순서와 무관하게 같은 키가 된다', async () => {
+    const buildSweepResult = (prRef: string, inline: number) => ({
+      prRef,
+      riskLevel: 'high',
+      outcome: {
+        inline,
+        file: 0,
+        issueComment: 0,
+        dryRun: 0,
+        notPosted: 0,
+        dropped: 0,
+        duplicate: 0,
+      },
+    });
+    const first = buildSweepResult('JSL107/personal_agents#180', 2);
+    const second = buildSweepResult('JSL107/personal_agents#181', 1);
+
+    sweepUsecase.execute.mockResolvedValue({
+      quotaStopped: false,
+      results: [first, second],
+    });
+    const forward = (await task.run(CONTEXT)).guardKeySuffix;
+
+    sweepUsecase.execute.mockResolvedValue({
+      quotaStopped: false,
+      results: [second, first],
+    });
+    const reversed = (await task.run(CONTEXT)).guardKeySuffix;
+
+    expect(reversed).toBe(forward);
+  });
+
+  // 🔴 이 회차가 skip 되지 않으면 접미사가 비어 기본 날짜 키로 발송된다. 그날 첫 발송이
+  // 접미사 키를 소비했다면 기본 키는 아직 미소비라 그대로 통과해, 새 내용이 없는데도 요약이
+  // 한 번 더 나간다(실측 2026-09-11 09:06:15 과 같은 형태).
+  it('이미 있는 카드(duplicate)만 나온 회차는 skip 한다 — 기본 날짜 키를 소비하지 않게', async () => {
+    sweepUsecase.execute.mockResolvedValue({
+      quotaStopped: false,
+      results: [
+        {
+          prRef: 'JSL107/personal_agents#180',
+          riskLevel: 'low',
+          outcome: {
+            inline: 0,
+            file: 0,
+            issueComment: 0,
+            dryRun: 0,
+            notPosted: 0,
+            dropped: 0,
+            duplicate: 5,
+          },
+        },
+      ],
+    });
+
+    await expect(task.run(CONTEXT)).resolves.toEqual({ skip: true });
+  });
+
+  // 게시 실패(notPosted)·상한 초과(dropped)는 사람이 봐야 하는 신호다. duplicate 와 함께
+  // 묶어 skip 하면 그 회차가 통째로 사라져 조용한 실패가 된다.
+  it('게시 실패·상한 초과만 있어도 알리고 접미사를 싣는다', async () => {
+    sweepUsecase.execute.mockResolvedValue({
+      quotaStopped: false,
+      results: [
+        {
+          prRef: 'JSL107/personal_agents#180',
+          riskLevel: 'low',
+          outcome: {
+            inline: 0,
+            file: 0,
+            issueComment: 0,
+            dryRun: 0,
+            notPosted: 1,
+            dropped: 2,
+            duplicate: 5,
+          },
+        },
+      ],
+    });
+
+    const result = await task.run(CONTEXT);
+
+    expect(result.skip).toBe(false);
+    expect(result.guardKeySuffix).toBe('cards-JSL107/personal_agents#180x3');
+  });
+
+  // 불변식: 발송하는 회차는 반드시 접미사를 갖는다. 하나라도 비면 기본 날짜 키가 소비되고,
+  // 그 뒤 같은 날 접미사 키를 쓰는 회차와 서로를 막지 못해 중복 발송이 생긴다.
+  it('skip 하지 않는 모든 회차는 접미사를 갖는다', async () => {
+    const cases = [
+      { harvest: { acked: 1 }, sweep: { results: [], quotaStopped: false } },
+      {
+        harvest: { contradicted: 1 },
+        sweep: { results: [], quotaStopped: false },
+      },
+      { harvest: {}, sweep: { results: [], quotaStopped: true } },
+      {
+        harvest: {},
+        sweep: {
+          quotaStopped: false,
+          results: [
+            {
+              prRef: 'JSL107/personal_agents#180',
+              riskLevel: 'high',
+              outcome: {
+                inline: 1,
+                file: 0,
+                issueComment: 0,
+                dryRun: 0,
+                notPosted: 0,
+                dropped: 0,
+                duplicate: 0,
+              },
+            },
+          ],
+        },
+      },
+    ];
+
+    for (const testCase of cases) {
+      harvestUsecase.execute.mockResolvedValue({
+        acked: 0,
+        fixed: 0,
+        rejected: 0,
+        stale: 0,
+        resolved: 0,
+        judged: 0,
+        skipped: 0,
+        contradicted: 0,
+        quotaStopped: false,
+        adoption: [],
+        ...testCase.harvest,
+      });
+      sweepUsecase.execute.mockResolvedValue(testCase.sweep);
+
+      const result = await task.run(CONTEXT);
+
+      expect(result.skip).toBe(false);
+      expect(result.guardKeySuffix).toBeDefined();
+    }
   });
   // 실측(2026-08-07~08): 쿼터 소진으로 26 회차가 연속 실패하는 동안 산출물이 0 이라
   // 전부 skip 으로 빠져, 30 시간짜리 중단이 Slack 에 한 번도 나타나지 않았다.
