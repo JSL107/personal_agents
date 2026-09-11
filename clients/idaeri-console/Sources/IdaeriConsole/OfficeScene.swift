@@ -36,7 +36,7 @@ struct OfficeLightLayer {
     }
 }
 
-/// 픽셀 사무실 씬 — 에이전트를 타일 평면도 위의 사람으로 그리고, 상태 변화를 몸짓으로 옮긴다.
+/// 2D 업무 좌표를 따뜻한 2.5D 공간으로 투영하고, 사원 상태를 위치와 몸짓으로 보여 준다.
 ///
 /// 두 축이 분리돼 있다:
 ///  - **배치**는 `officeFloorPlan`(순수)이 정한다. 이 씬은 타일 좌표를 화면 좌표로 옮겨 그리기만 한다.
@@ -45,6 +45,23 @@ struct OfficeLightLayer {
 /// 자율 배회는 Core가 선발한 waiting 직원에게만 허용하고 실제 이벤트가 오면 즉시 끊는다 —
 /// 정지 화면을 피하되 관제 신호와 충돌하는 순간에는 정보가 연출보다 먼저 보여야 한다.
 final class OfficeScene: SKScene {
+    /// Scene-owned effects share the macOS motion preference with CharacterNode.
+    private var shouldReduceMotion: Bool {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
+    /// Offline renderers can force an appearance without changing the host process appearance.
+    var darkModeOverride: Bool?
+    /// Selected-agent inspector uses the vector scale floor so the remaining office stays legible.
+    var usesVectorMetrics = false
+
+    func setVectorMetricsEnabled(_ enabled: Bool) {
+        guard usesVectorMetrics != enabled else {
+            return
+        }
+        usesVectorMetrics = enabled
+        recalculateMetrics()
+        repositionEveryone()
+    }
     // 원본 타일 스프라이트의 기준 폭. 화면 타일 크기를 이 값으로 나눈 비율이 도트 크기의 기준이다.
     // 가구 폭 상한(`FurnitureKind.sizeBoost`)이 같은 값을 봐야 하므로 ConsoleCore 가 단일 소스다.
     private let referenceTileSize = CGFloat(officeReferenceTileSize)
@@ -92,7 +109,14 @@ final class OfficeScene: SKScene {
     private var deskNodes: [String: SKSpriteNode] = [:]
     /// 문 칸 → 문 스프라이트. 사람이 앞에 오면 열린 그림으로 갈아끼운다(`refreshDoors`).
     private var doorNodes: [TilePoint: SKSpriteNode] = [:]
+    /// Complete room shell 위에 표시하는 문 상태 오버레이. `doorNodes`와 분리해
+    /// 숨긴 top-view fallback 노드가 동적 시각 상태의 부모가 되지 않게 한다.
+    private var doorStateNodes: [TilePoint: SKNode] = [:]
     private var homeSeats: [String: TilePoint] = [:]
+    private var homeDeskAssignments: [String: DeskAssignment] = [:]
+    /// 부서별 대표 업무 스테이션의 시각 좌표. 진행 중인 첫 담당자를 이 자리에 연결해
+    /// 생성 가구가 빈 장식이 아니라 실제 업무 공간으로 읽히게 한다.
+    private var departmentFeatureStations: [Department: TilePoint] = [:]
     /// agentType → 같은 방 사람끼리 겹치지 않게 조정한 외형. `sync` 가 방 단위로 계산한다.
     private var roommateLooks: [String: CharacterLook] = [:]
     /// 직전 pending phase — 완료 순간에만 한 번 튀어오르게 하려면 전이를 알아야 한다.
@@ -155,7 +179,7 @@ final class OfficeScene: SKScene {
     /// 않지만, `perform(_:)`의 `.leave` 케이스가 나중에 실제 이벤트로 발화하면 겹칠 수 있다.
     private var departingAgents: Set<String> = []
     private var windowNodes: [SKSpriteNode] = []
-    private var wallLampNodes: [SKSpriteNode] = []
+    private var wallLampNodes: [SKNode] = []
     private var lightLayers: [OfficeLightLayer] = []
 
     /// 캐릭터 클릭 시 해당 agentType 을 뷰로 올린다(뷰가 지시/승인 UI 를 띄운다).
@@ -179,7 +203,13 @@ final class OfficeScene: SKScene {
     }
 
     override func didMove(to view: SKView) {
-        backgroundColor = SKColor(red: 0.09, green: 0.09, blue: 0.11, alpha: 1)
+        // Keep the letterbox around the floor plan in the same warm neutral family as
+        // the dashboard and trailing inspector; selected captures must not read as a dark canvas.
+        let isDark = darkModeOverride
+            ?? (view.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua)
+        backgroundColor = isDark
+            ? SKColor(red: 0.12, green: 0.10, blue: 0.10, alpha: 1)
+            : SKColor(red: 0.98, green: 0.95, blue: 0.88, alpha: 1)
         view.window?.acceptsMouseMovedEvents = true
         let tracking = NSTrackingArea(
             rect: view.bounds,
@@ -243,6 +273,7 @@ final class OfficeScene: SKScene {
     private func repositionEveryone() {
         // 옛 좌표계 목적지와 머무름 콜백은 새 격자에서 의미가 없으므로 추적을 먼저 비운다.
         strollingAgents.removeAll()
+        let departmentFeatureUsers = departmentFeatureUserTypes(from: lastSyncedAgents)
         for (agentType, node) in characters {
             node.removeAction(forKey: "walk")
             node.removeAction(forKey: "stroll")
@@ -253,11 +284,21 @@ final class OfficeScene: SKScene {
             // 걷던 중이었다면 node.tile 은 경로 중간이라 자리로 못 쓴다.
             // 줄 선 사람은 자기 순번 칸으로, 나머지는 자기 책상으로 확정해 되돌린다.
             if let order = queueOrder.firstIndex(of: agentType), !plan.queueTiles.isEmpty {
-                place(node, at: plan.queueTiles[min(order, plan.queueTiles.count - 1)])
+                let tile = plan.queueTiles[min(order * 2, plan.queueTiles.count - 1)]
+                placeAtQueueLane(node, logicalTile: tile)
                 node.stand()
                 node.apply(facing: .up)
-            } else if let seat = homeSeats[agentType] {
-                place(node, at: seat)
+            } else if departmentFeatureUsers.contains(agentType),
+                      let agent = lastSyncedAgents.first(where: { $0.agentType == agentType }),
+                      let featureTile = departmentFeatureStations[agent.resolvedDepartment] {
+                placeAtDepartmentFeature(
+                    node,
+                    department: agent.resolvedDepartment,
+                    tile: featureTile
+                )
+                node.sit()
+            } else if let assignment = homeDeskAssignments[agentType] {
+                placeAtWorkstation(node, assignment: assignment)
                 node.sit()
             }
         }
@@ -363,13 +404,18 @@ final class OfficeScene: SKScene {
         // 배율 단위는 화면의 실제 픽셀 기준이라 backing scale 을 넘겨야 한다 — 1x 모니터에서
         // 60px 을 쓰면 40px 기준인 캐릭터·가구가 1.5배로 그려져 도트가 불규칙해진다.
         let backingScale = Double(view?.window?.backingScaleFactor ?? 2)
-        let fullMetrics = officeViewMetrics(
+        let fullMetrics = usesVectorMetrics
+            ? officeVectorViewMetrics(
+                viewWidth: Double(size.width), viewHeight: Double(size.height),
+                columns: plan.columns, rows: plan.rows
+            )
+            : officeViewMetrics(
             viewWidth: Double(size.width),
             viewHeight: Double(size.height),
             columns: plan.columns,
             rows: plan.rows,
             backingScale: backingScale
-        )
+            )
         hudTileSize = CGFloat(fullMetrics.tileSize)
         let metrics: OfficeViewMetrics
         if let focusRect {
@@ -392,11 +438,68 @@ final class OfficeScene: SKScene {
     }
 
     /// 타일의 바닥 중앙(캐릭터 발이 닿는 지점).
-    private func floorPoint(_ tile: TilePoint) -> CGPoint {
-        CGPoint(
-            x: gridOrigin.x + (CGFloat(tile.x) + 0.5) * tileSize,
+    ///
+    /// 논리 격자는 2D 그대로 두고 방 안의 표시 좌표만 약한 3/4 원근으로 바꾼다. 캐릭터,
+    /// 가구, 이동 목표가 모두 이 함수를 지나므로 서로 다른 평면에 붙여 놓은 콜라주처럼
+    /// 갈라지지 않는다. 복도는 기존 좌표를 유지해 방 사이 이동 경계를 안정적으로 보존한다.
+    private func floorPoint(_ tile: TilePoint, footprintWidth: Int = 1) -> CGPoint {
+        guard let region = perspectiveRegion(containing: tile) else {
+            return CGPoint(
+                x: gridOrigin.x + (CGFloat(tile.x) + CGFloat(footprintWidth) / 2) * tileSize,
+                y: gridOrigin.y + CGFloat(tile.y) * tileSize
+            )
+        }
+        let point = officeProjectedFloorPoint(
+            tileX: Double(tile.x), tileY: Double(tile.y),
+            footprintWidth: Double(footprintWidth), tileSize: Double(tileSize),
+            gridOriginX: Double(gridOrigin.x), gridOriginY: Double(gridOrigin.y),
+            region: region
+        )
+        // Room shells meet the corridor on a hard logical-grid boundary. The
+        // projection intentionally fades out over the last two rows so the
+        // first object in a corridor does not jump sideways when it crosses
+        // a doorway. Keep the pure metric's edge guarantees intact; this is
+        // only a scene-level seam treatment.
+        let raw = CGPoint(
+            x: gridOrigin.x + (CGFloat(tile.x) + CGFloat(footprintWidth) / 2) * tileSize,
             y: gridOrigin.y + CGFloat(tile.y) * tileSize
         )
+        let topEdge = Double(region.originY + region.height - 1)
+        let edgeDistance = topEdge - Double(tile.y)
+        let blend = min(1, max(0, edgeDistance / 2))
+        let logicalDepth = min(
+            1,
+            max(0, (Double(tile.y) - region.originY) / max(1, region.height - 1))
+        )
+        // Generated shells devote their upper strip to the back wall and built-ins, whereas the
+        // logical room includes that wall row in its rectangular zone. Pull deep floor anchors
+        // down into the visible floor plane; otherwise the rear desk row sits on the wall art.
+        // The small positive front inset keeps foreground feet away from the rounded crop edge.
+        let floorCalibratedY = CGFloat(point.y)
+            + tileSize * CGFloat(0.08 - 0.85 * logicalDepth)
+        return CGPoint(
+            x: raw.x + (CGFloat(point.x) - raw.x) * CGFloat(blend),
+            y: raw.y + (floorCalibratedY - raw.y) * CGFloat(blend)
+        )
+    }
+
+    private func perspectiveRegion(containing tile: TilePoint) -> OfficePerspectiveRegion? {
+        if let zone = plan.zones.first(where: { officeZoneContains($0, tile) }) {
+            return OfficePerspectiveRegion(
+                originX: Double(zone.origin.x), originY: Double(zone.origin.y),
+                width: Double(zone.width), height: Double(zone.height)
+            )
+        }
+        if let area = plan.commonAreas.first(where: { area in
+            tile.x >= area.originX && tile.x < area.originX + area.width
+                && tile.y >= area.labelY
+        }) {
+            return OfficePerspectiveRegion(
+                originX: Double(area.originX), originY: Double(area.labelY),
+                width: Double(area.width), height: Double(max(2, plan.rows - area.labelY))
+            )
+        }
+        return nil
     }
 
     /// 타일 정중앙(바닥 타일용).
@@ -463,19 +566,22 @@ final class OfficeScene: SKScene {
             renderFloor()
             renderZoneLabels()
             renderFurniture()
-            renderDeskProps()
+            renderMeetingTableProps()
+            renderDepartmentFeatureProps()
             renderPresident()
         }
-        // 서류는 오늘 처리량을 말하므로 그림을 다시 그리지 않는 회차에도 갱신한다 — 자체적으로
-        // 기존 장수를 지우고 다시 쌓으므로 책상이 재사용돼도 누적되지 않는다. 책상이 새로
-        // 만들어진 뒤여야 한다(서류는 책상 노드의 자식으로 붙는다).
-        renderDeskPapers(agents: agents)
+        // The illustrated 3D workstation already includes coherent keyboard, plant, books, and
+        // stationery. Legacy pixel props/paper stacks would duplicate those objects and break the
+        // approved glossy visual language, so the cozy scene deliberately leaves them out.
         // 대표·가구가 새로 만들어진 직후여야 한다 — 할 일 말풍선은 대표 노드의 자식이고
         // 연속 도장은 게시판 노드의 자식이라, 순서를 뒤집으면 방금 지워진 부모에 붙는다.
         redrawBriefingSigns()
 
         homeSeats = Dictionary(
             uniqueKeysWithValues: plan.desks.map { ($0.agentType, $0.seat) }
+        )
+        homeDeskAssignments = Dictionary(
+            uniqueKeysWithValues: plan.desks.map { ($0.agentType, $0) }
         )
 
         // 얼굴·머리색은 **방 단위로** 정한다. 사람 하나만 보고 해시로 뽑으면 같은 방에서
@@ -543,6 +649,8 @@ final class OfficeScene: SKScene {
             goHome(agentType)
         }
 
+        let departmentFeatureUsers = departmentFeatureUserTypes(from: agents)
+
         for agent in agents {
             guard let seat = homeSeats[agent.agentType] else {
                 continue  // 구역 정원을 넘어 자리를 못 받은 인원(현재 구성에서는 발생하지 않음)
@@ -570,7 +678,18 @@ final class OfficeScene: SKScene {
                !node.isWalking,
                !strollingAgents.contains(agent.agentType) {
                 node.endInteraction()
-                place(node, at: seat)
+                if departmentFeatureUsers.contains(agent.agentType),
+                   let featureTile = departmentFeatureStations[agent.resolvedDepartment] {
+                    placeAtDepartmentFeature(
+                        node,
+                        department: agent.resolvedDepartment,
+                        tile: featureTile
+                    )
+                } else if let assignment = homeDeskAssignments[agent.agentType] {
+                    placeAtWorkstation(node, assignment: assignment)
+                } else {
+                    place(node, at: seat)
+                }
                 node.sit()
             }
 
@@ -679,6 +798,58 @@ final class OfficeScene: SKScene {
                 continue
             }
         }
+        renderDeskClusters()
+    }
+
+    /// Presentation-only grouping. Seats remain the exact `OfficePlan` anchors; this only places a
+    /// panel behind deterministic pairs/fours so sparse rooms still read as intentional work zones.
+    private func renderDeskClusters() {
+        floorLayer.children.filter { $0.name == "cozy:cluster-panel" }.forEach { $0.removeFromParent() }
+        objectLayer.children.filter { $0.name == "cozy:decor-desk" || $0.name == "cozy:decor-chair" }.forEach { $0.removeFromParent() }
+        for zone in plan.zones {
+            let zoneSeats: [TilePoint] = plan.desks.filter { assignment in officeZoneContains(zone, assignment.seat) }.map { assignment in assignment.seat }
+            let seats: [TilePoint] = zoneSeats.sorted {
+                $0.y == $1.y ? $0.x < $1.x : $0.y < $1.y
+            }
+            if seats.count < 2,
+               let deskTexture = SpriteLoader.furnitureTexture(.desk),
+               let chairTexture = SpriteLoader.furnitureTexture(.chairDown) {
+                let tile = TilePoint(x: zone.origin.x + max(1, zone.width - 3), y: zone.origin.y + max(1, zone.height / 2))
+                let desk = CozyOfficeNodeFactory.desk(texture: deskTexture, scale: spriteScale, tileSize: tileSize)
+                desk.name = "cozy:decor-desk"
+                desk.position = floorPoint(tile)
+                desk.zPosition = depth(of: tile)
+                objectLayer.addChild(desk)
+                let chair = CozyOfficeNodeFactory.chair(texture: chairTexture, kind: .chairDown, scale: spriteScale, tileSize: tileSize)
+                chair.name = "cozy:decor-chair"
+                let chairTile = TilePoint(
+                    x: tile.x,
+                    y: min(zone.origin.y + zone.height - 1, tile.y + 1)
+                )
+                chair.position = floorPoint(chairTile)
+                chair.zPosition = depth(of: chairTile)
+                objectLayer.addChild(chair)
+            }
+            var remaining = seats
+            while let first = remaining.first {
+                let nearby: [TilePoint] = remaining.filter { seat in abs(seat.x - first.x) <= 2 && abs(seat.y - first.y) <= 3 }
+                let four: [TilePoint] = Array(nearby.prefix(4))
+                let pairCandidates: [TilePoint] = remaining.filter { seat in
+                    (seat.y == first.y && abs(seat.x - first.x) <= 2) || (seat.x == first.x && abs(seat.y - first.y) <= 3)
+                }
+                let group: [TilePoint] = four.count >= 4 ? four : Array(pairCandidates.prefix(2))
+                let chosen: [TilePoint] = group.isEmpty ? [first] : group
+                let centerX = chosen.map { $0.x }.reduce(0, +) / chosen.count
+                let centerY = chosen.map { $0.y }.reduce(0, +) / chosen.count
+                let center = CGPoint(x: centerX, y: centerY)
+                let panel = CozyOfficeNodeFactory.rug(size: CGSize(width: tileSize * 2.0, height: tileSize * 0.7), accent: CozyOfficeNodeFactory.accent(for: zone.department))
+                panel.name = "cozy:cluster-panel"
+                panel.position = CGPoint(x: gridOrigin.x + (CGFloat(center.x) + 0.5) * tileSize, y: gridOrigin.y + (CGFloat(center.y) + 0.15) * tileSize)
+                panel.zPosition = 1.12
+                floorLayer.addChild(panel)
+                remaining.removeAll { chosen.contains($0) }
+            }
+        }
     }
 
     /// 출근 등장 간격(초). 26명이 같은 순간에 길찾기를 돌리면 CPU가 튄다 — 자율 배회의 동시
@@ -709,11 +880,18 @@ final class OfficeScene: SKScene {
         guard let node = characters[entry.agentType] else {
             return
         }
-        node.alpha = 0
+        node.alpha = shouldReduceMotion ? 1 : 0
         // 계단식 지연 동안에도 감독관(8초 주기)이 이 사람을 한가한 사람으로 오인하지 않게
         // 미리 "걷는 중" 으로 표시한다. 실제 걸음이 시작되기 전까지는 화면에 안 보이므로
         // (alpha 0) 자세가 걸음 그림으로 보여도 무해하다 — `walk()` 가 시작되면 그대로 이어진다.
         node.isWalking = true
+        if shouldReduceMotion {
+            node.isWalking = false
+            node.tile = entry.seat
+            placeAtWorkstation(node, assignment: entry)
+            node.sit()
+            return
+        }
         node.run(.sequence([
             .wait(forDuration: delay),
             .fadeIn(withDuration: 0.2),
@@ -724,8 +902,10 @@ final class OfficeScene: SKScene {
                 guard !self.queueOrder.contains(entry.agentType) else {
                     return
                 }
-                self.walk(node, to: entry.seat) { [weak node] in
-                    node?.sit()
+                self.walk(node, to: entry.seat) { [weak self, weak node] in
+                    guard let self, let node else { return }
+                    self.placeAtWorkstation(node, assignment: entry)
+                    node.sit()
                 }
             },
         ]))
@@ -751,6 +931,13 @@ final class OfficeScene: SKScene {
         }
         departingAgents.insert(entry.agentType)
         cancelStroll(entry.agentType)
+        if shouldReduceMotion {
+            node.tile = plan.entranceTile
+            node.place(at: floorPoint(plan.entranceTile), depth: depth(of: plan.entranceTile))
+            despawnCharacter(entry.agentType)
+            departingAgents.remove(entry.agentType)
+            return
+        }
         // 계단식 지연 동안에도 감독관이 이 사람을 다시 배회로 뽑을 수 있다 — 위 cancelStroll
         // 은 "지금까지의" 배회만 끊는다. 걷는 중으로 미리 표시해 그 창을 닫는다.
         node.isWalking = true
@@ -818,7 +1005,11 @@ final class OfficeScene: SKScene {
         let node = makeCharacter(for: agent, seat: tile)
         characters[agentType] = node
         objectLayer.addChild(node)
-        place(node, at: tile)
+        if seated, let assignment = homeDeskAssignments[agentType], assignment.seat == tile {
+            placeAtWorkstation(node, assignment: assignment)
+        } else {
+            place(node, at: tile)
+        }
         if seated {
             node.sit()
         }
@@ -973,6 +1164,112 @@ final class OfficeScene: SKScene {
         return placedCount > 0
     }
 
+    /// 전체 쇼케이스에서도 공용 공간의 실제 사용 모습을 고정해 보여 준다. 운영 화면에서는
+    /// 회의 체인과 완료 직후 휴식 이벤트가 같은 좌표·자세를 사용하지만, 단 한 번 동기화하는
+    /// 정적 캡처에는 그 전이가 없어 회의실·탕비실이 늘 비어 보인다.
+    func applyPopulatedDemoCommonAreas(
+        meetingAgentTypes: [String],
+        loungeAgentType: String,
+        corridorAgentTypes: [String]
+    ) -> Bool {
+        let meetingSeats = officeMeetingSeats(plan: plan)
+        let meetingTable = plan.furniture.first { $0.kind == .meetingTable }?.tile
+        var placed = 0
+
+        for (index, pair) in zip(meetingAgentTypes, meetingSeats).enumerated() {
+            let (agentType, seat) = pair
+            guard let node = characters[agentType] else { continue }
+            node.removeAllActions()
+            node.sprite.removeAllActions()
+            node.endInteraction()
+            node.setNameplateSpan(nil)
+            node.tile = seat
+            let meetingPoint = floorPoint(seat)
+            // 두 사람이 같은 테이블을 바라보도록 서로의 좌석 안쪽으로 모은다.
+            // 기존 간격은 두 번째 사람이 테이블에서 떠 보이는 원인이 됐다.
+            let horizontalOffset = tileSize * (index == 0 ? 0.42 : -0.60)
+            node.place(
+                at: CGPoint(
+                    x: meetingPoint.x + horizontalOffset,
+                    y: meetingPoint.y - tileSize * 0.68
+                ),
+                depth: depth(of: seat) + 0.24
+            )
+            let direction = meetingTable.flatMap { facing(from: seat, to: $0) } ?? .down
+            let pose: OfficeInteractionPose = index == 0 ? .writing : .reading
+            node.beginInteraction(pose: pose, facing: direction)
+            placed += 1
+        }
+
+        let pantry = plan.commonAreas.first { $0.kind == .pantry }
+        if let node = characters[loungeAgentType],
+           let spot = officeStrollSpots(plan: plan).first(where: { candidate in
+               let isLoungeFurniture = candidate.kind == .coffeeMachine
+                   || candidate.kind == .sofa3 || candidate.kind == .sofa2
+               guard let pantry else { return false }
+               return isLoungeFurniture
+                   && pantry.originX <= candidate.tile.x
+                   && candidate.tile.x < pantry.originX + pantry.width
+           }) {
+            node.removeAllActions()
+            node.sprite.removeAllActions()
+            node.endInteraction()
+            node.setNameplateSpan(nil)
+            node.tile = spot.tile
+            let loungePoint = floorPoint(spot.tile)
+            node.place(
+                at: CGPoint(
+                    x: loungePoint.x + tileSize * 0.82,
+                    y: loungePoint.y + tileSize * 0.02
+                ),
+                depth: depth(of: spot.tile) + 0.24
+            )
+            node.beginInteraction(pose: .drinking, facing: .down)
+            placed += 1
+        }
+
+        if let zoneColumns {
+            let columns = officeCorridorColumns(zoneColumns: zoneColumns)
+            let sideDoorRows = Array(
+                Set(doorNodes.keys.compactMap { door -> Int? in
+                    let touchesSideWall = plan.zones.contains { zone in
+                        zone.origin.y <= door.y && door.y < zone.origin.y + zone.height
+                            && (door.x == zone.origin.x || door.x == zone.origin.x + zone.width - 1)
+                    }
+                    return touchesSideWall ? door.y : nil
+                })
+            ).sorted()
+            let corridorMidRow = sideDoorRows.reduce(0, +) / max(1, sideDoorRows.count)
+            for (index, agentType) in corridorAgentTypes.prefix(2).enumerated() {
+                guard index < columns.count, index < sideDoorRows.count,
+                      let node = characters[agentType]
+                else { continue }
+                node.removeAllActions()
+                node.sprite.removeAllActions()
+                node.endInteraction()
+                node.setNameplateSpan(nil)
+                // The corridor tile is horizontally adjacent to both opposing doors, so the normal
+                // proximity rule opens them. The static capture advances the tall chibi body deeper
+                // into the hall; otherwise it hides the very doorway this demo is proving.
+                let direction = sideDoorRows[index] <= corridorMidRow ? 1 : -1
+                let tile = TilePoint(x: columns[index], y: sideDoorRows[index])
+                node.tile = tile
+                let corridorPoint = floorPoint(tile)
+                node.place(
+                    at: CGPoint(
+                        x: corridorPoint.x,
+                        y: corridorPoint.y + tileSize * CGFloat(direction) * 2.15
+                    ),
+                    depth: depth(of: tile) + 0.24
+                )
+                node.apply(facing: direction > 0 ? .up : .down)
+                placed += 1
+            }
+        }
+        refreshDoors()
+        return placed == 5
+    }
+
     /// 사람이 문 앞에 왔으면 열린 그림으로, 지나갔으면 닫힌 그림으로 갈아끼운다.
     ///
     /// 문마다 "누가 근처인지" 를 따로 들고 있지 않고 **매번 다시 센다.** 걸음을 중간에 끊고
@@ -987,10 +1284,10 @@ final class OfficeScene: SKScene {
         for (tile, node) in doorNodes {
             let kind: FurnitureKind =
                 officeDoorIsOpen(door: tile, occupied: occupied) ? .doorOpen : .doorClosed
-            guard let texture = SpriteLoader.furnitureTexture(kind), node.texture !== texture else {
-                continue
+            CozyOfficeNodeFactory.setDoor(node, open: kind == .doorOpen)
+            if let stateNode = doorStateNodes[tile] {
+                CozyOfficeNodeFactory.setDoor(stateNode, open: kind == .doorOpen)
             }
-            node.texture = texture
         }
     }
 
@@ -1084,48 +1381,204 @@ final class OfficeScene: SKScene {
         refreshDoors()
     }
 
+    /// 길찾기 좌석과 3D workstation 이미지의 실제 의자 위치를 분리한다.
+    ///
+    /// 논리 좌석은 책상 뒤 한 칸을 유지해 충돌/경로 규칙을 보존하고, 화면에서는 책상 anchor를
+    /// 기준으로 조금만 뒤로 올린다. 방마다 원근 투영량이 달라도 사람이 모니터 위로 튀지 않는다.
+    private func placeAtWorkstation(_ node: CharacterNode, assignment: DeskAssignment) {
+        node.tile = assignment.seat
+        let deskAnchor = floorPoint(
+            assignment.desk,
+            footprintWidth: FurnitureKind.desk.footprint.width
+        )
+        let fallbackLift = node.hasDedicatedArtwork(for: "sit")
+            ? 0
+            : officeWorkstationFallbackSeatExtraLiftTiles
+        node.place(
+            at: CGPoint(
+                x: deskAnchor.x,
+                y: deskAnchor.y + tileSize * CGFloat(
+                    officeWorkstationSeatVisualOffsetTiles + fallbackLift
+                )
+            ),
+            // CharacterNode 내부 몸체가 +1 z를 쓰므로 좌석 타일 깊이를 그대로 주면 책상과
+            // 동률이 되어 삽입 순서에 따라 몸이 모니터 앞에 튄다. 몸은 상판 뒤에 두되 이름판
+            // (+2)과 글자(+3)는 책상 앞에 남는 범위로만 미세하게 뒤로 보낸다.
+            depth: depth(of: assignment.seat) - 0.24
+        )
+        refreshDoors()
+    }
+
+    /// 진행 중인 부서 대표 한 명을 특화 콘솔에 앉힌다. 논리 타일까지 함께 옮겨 호버·문·깊이
+    /// 판정이 화면 위치와 갈라지지 않게 하고, 콘솔 중심보다 약간 위에 두어 하체는 앞판 뒤로,
+    /// 얼굴과 손은 화면 앞에 남긴다.
+    private func placeAtDepartmentFeature(
+        _ node: CharacterNode,
+        department: Department,
+        tile: TilePoint
+    ) {
+        node.tile = tile
+        let anchor = floorPoint(tile, footprintWidth: 2)
+        // 콘솔 한가운데에 숨기지 않고 작업면의 안쪽 모서리에 붙인다. 콘텐츠처럼 가구가
+        // 방 왼쪽에 있는 경우는 오른쪽, 나머지는 왼쪽을 사용해 벽 밖으로 나가지 않는다.
+        let horizontalOffsetTiles: [Department: CGFloat] = [
+            .planning: -1.25,
+            .quality: 0.62,
+            .evaluation: -0.27,
+            .treasury: -0.62,
+            .content: 0.74,
+            .internalOps: 0.19,
+        ]
+        let verticalOffsetTiles: [Department: CGFloat] = [
+            // 각 캐릭터의 손·상체가 작업면에 닿는 지점을 기준으로 보정한다.
+            // 양수 방향은 작업면 안쪽(화면 위쪽)이다.
+            .planning: 0.82,
+            .quality: 0.68,
+            .evaluation: 0.60,
+            .treasury: 0.62,
+            .content: 0.50,
+            .internalOps: 0.72,
+        ]
+        node.place(
+            at: CGPoint(
+                x: anchor.x + tileSize * (horizontalOffsetTiles[department] ?? 0),
+                y: anchor.y + tileSize * (verticalOffsetTiles[department] ?? 0.40)
+            ),
+            depth: depth(of: tile) + 0.24
+        )
+        refreshDoors()
+    }
+
+    /// 한 부서에 진행 중인 사람이 여러 명이어도 특화 콘솔에는 한 명만 앉힌다. 나머지는
+    /// 개인 책상에서 일해야 방 전체가 한 가구 주위로 다시 뭉치지 않는다.
+    private func departmentFeatureUserTypes(from agents: [ConsoleAgent]) -> Set<String> {
+        Set(
+            Dictionary(grouping: agents.filter { $0.state == .inProgress }, by: \.resolvedDepartment)
+                .compactMap { _, members in members.first?.agentType }
+        )
+    }
+
+    /// 승인 대기열의 논리 타일은 대표실 문 앞 복도에 남기되, 완성형 room shell에서는 방 안쪽
+    /// 전면 lane에 그린다. 그렇지 않으면 사람만 shell 아래 회색 gutter에 떠 있는 것처럼 보인다.
+    private func placeAtQueueLane(_ node: CharacterNode, logicalTile: TilePoint) {
+        node.tile = logicalTile
+        let visualTile = TilePoint(x: logicalTile.x, y: logicalTile.y + 1)
+        node.place(at: floorPoint(visualTile), depth: depth(of: visualTile))
+        refreshDoors()
+    }
+
     // MARK: - 바닥·가구
 
     private func renderFloor() {
         floorLayer.removeAllChildren()
-        for row in 0..<plan.rows {
-            for column in 0..<plan.columns {
-                let tile = TilePoint(x: column, y: row)
-                let kind = plan.floor[row][column]
-                guard let texture = SpriteLoader.floorTexture(kind) else {
-                    continue
-                }
-                let node = SKSpriteNode(texture: texture)
-                node.size = CGSize(width: tileSize, height: tileSize)
-                node.position = centerPoint(tile)
-                if kind == .wall {
-                    applyWallShading(node, column: column, row: row)
-                } else {
-                    // 바닥은 배경으로 물러나야 한다. 어두운 색을 섞어 대비·채도를 함께 누른다
-                    // (누르는 세기는 타일 원본 밝기에 따라 다르다 — FloorTile.muteStrength).
-                    //
-                    // 섞는 색에 **부서색을 태운다.** 누르는 세기가 한때 0.54~0.78 로 높아 원본
-                    // 바닥재의 차이가 거의 지워졌는데, 시간대 색막까지 얹히면 여섯 방이 한 색으로
-                    // 보였다("어디가 어느 부서인지 문패를 읽어야 안다"). 벽이 이미 같은 방식으로
-                    // 부서 색조를 띠므로(applyWallShading), 바닥도 같은 규칙을 따르게 해 방 전체가
-                    // 한 색조로 묶이게 한다.
-                    node.color = floorMuteColor(
-                        department: wallDepartment(x: column, y: row, zones: plan.zones)
-                    )
-                    node.colorBlendFactor = CGFloat(kind.muteStrength)
-                    // **뒤집지 않는다.** 한 칸 걸러 뒤집어 깔던 것은 생성 이미지 타일의 좌우·상하
-                    // 끝이 서로 안 맞는(실측 색차 15~22) 문제의 대책이었다. 바닥을 `draw-tiles.py`
-                    // 로 굽는 지금은 이음매가 규칙으로 정해져 원리적으로 맞으므로, 뒤집으면 오히려
-                    // 격자가 어긋난다 — 이음매를 0번 가장자리에만 그리므로 반전 칸에서는 반대편으로
-                    // 옮겨 가고, 맞닿는 자리에서 선이 겹쳐 두꺼워지거나 사라진다.
-                    node.xScale = 1
-                    node.yScale = 1
-                }
-                floorLayer.addChild(node)
-            }
+        let floorSize = CGSize(
+            width: CGFloat(plan.columns) * tileSize,
+            height: CGFloat(plan.rows) * tileSize
+        )
+        let base = SKShapeNode(rectOf: floorSize, cornerRadius: tileSize * 0.18)
+        base.fillColor = SKColor(red: 0.91, green: 0.85, blue: 0.75, alpha: 1)
+        base.strokeColor = .clear
+        base.position = CGPoint(x: gridOrigin.x + CGFloat(plan.columns) * tileSize / 2,
+                                y: gridOrigin.y + CGFloat(plan.rows) * tileSize / 2)
+        base.name = "cozy:base"
+        base.zPosition = -2
+        if let oakTexture = SpriteLoader.cozySharedOakFloorTexture() {
+            let grain = SKShapeNode(rectOf: floorSize, cornerRadius: tileSize * 0.18)
+            grain.fillColor = .white
+            grain.fillTexture = oakTexture
+            grain.strokeColor = .clear
+            // Enough grain must remain visible in the exposed corridor gaps for them to read
+            // as walkable oak floor, not blank spacing between screenshot cards.
+            grain.alpha = 0.46
+            grain.zPosition = 0.1
+            grain.name = "cozy:oak-grain"
+            base.addChild(grain)
         }
-        // 벽 타일을 다 깐 뒤에 얹는다 — 먼저 그리면 같은 레이어의 벽이 창을 덮는다.
-        renderWallFixtures()
+        floorLayer.addChild(base)
+        renderCozyIslands()
+        // Generated room shells already own their windows, walls, and ambient lighting.
+        // Legacy fixtures are only a fallback when the modular architecture is incomplete.
+        if !usesCompleteRoomArchitecture {
+            renderWallFixtures()
+        }
+    }
+
+    private var usesCompleteRoomArchitecture: Bool {
+        plan.zones.allSatisfy { SpriteLoader.cozyDepartmentRoomTexture($0.department) != nil }
+            && plan.commonAreas.allSatisfy { SpriteLoader.cozyCommonAreaTexture($0.kind) != nil }
+    }
+
+    /// 계획의 타일을 바꾸지 않고, 방 바닥 위에만 따뜻한 시각적 섬을 얹는다.
+    private func renderCozyIslands() {
+        floorLayer.children
+            .filter { $0.name == "cozy:island" || $0.name == "cozy:walkway" || $0.name == "cozy:rug" }
+            .forEach { $0.removeFromParent() }
+        renderCozyWalkways()
+        for zone in plan.zones {
+            // Fill the complete logical zone footprint. The earlier one-tile inset on every
+            // edge multiplied into thick beige gutters, so the modular rooms read as a 3×3
+            // screenshot gallery instead of neighboring areas of one office.
+            let size = CGSize(width: CGFloat(max(1, zone.width)) * tileSize,
+                              height: CGFloat(max(1, zone.height)) * tileSize)
+            let room = CozyOfficeNodeFactory.departmentRoomModule(
+                size: size,
+                department: zone.department,
+                tileSize: tileSize,
+                texture: SpriteLoader.cozyDepartmentRoomTexture(zone.department)
+            )
+            room.position = CGPoint(
+                x: gridOrigin.x + (CGFloat(zone.origin.x) + CGFloat(zone.width) / 2) * tileSize,
+                y: gridOrigin.y + (CGFloat(zone.origin.y) + CGFloat(zone.height) / 2) * tileSize
+            )
+            floorLayer.addChild(room)
+        }
+        for area in plan.commonAreas {
+            let surface = CozyOfficeNodeFactory.commonAreaSurface(
+                size: CGSize(
+                    width: tileSize * CGFloat(max(1, area.width)),
+                    height: tileSize * 3.70
+                ),
+                kind: area.kind,
+                texture: SpriteLoader.cozyCommonAreaTexture(area.kind)
+            )
+            surface.name = "cozy:common-surface:\(area.kind.rawValue)"
+            surface.position = CGPoint(
+                x: gridOrigin.x + (CGFloat(area.originX) + CGFloat(area.width) / 2) * tileSize,
+                y: gridOrigin.y + (CGFloat(area.labelY) + 2.35) * tileSize
+            )
+            floorLayer.addChild(surface)
+        }
+    }
+
+    /// Rebuilds the logical corridor as a continuous oak path beneath the independent room
+    /// illustrations. Horizontal and vertical runs overlap deliberately at junctions, producing
+    /// one circulation network without changing collision, doors, or the floor-plan contract.
+    private func renderCozyWalkways() {
+        guard let zoneColumns else {
+            return
+        }
+        let thickness = tileSize * 0.82
+        let horizontal = CozyOfficeNodeFactory.walkway(
+            size: CGSize(width: CGFloat(plan.columns) * tileSize, height: thickness)
+        )
+        horizontal.name = "cozy:walkway"
+        horizontal.position = CGPoint(
+            x: gridOrigin.x + CGFloat(plan.columns) * tileSize / 2,
+            y: gridOrigin.y + (CGFloat(officeCorridorRow(zoneColumns: zoneColumns)) + 0.5) * tileSize
+        )
+        floorLayer.addChild(horizontal)
+
+        for column in officeCorridorColumns(zoneColumns: zoneColumns) {
+            let vertical = CozyOfficeNodeFactory.walkway(
+                size: CGSize(width: thickness, height: CGFloat(plan.rows) * tileSize)
+            )
+            vertical.name = "cozy:walkway"
+            vertical.position = CGPoint(
+                x: gridOrigin.x + (CGFloat(column) + 0.5) * tileSize,
+                y: gridOrigin.y + CGFloat(plan.rows) * tileSize / 2
+            )
+            floorLayer.addChild(vertical)
+        }
     }
 
     /// 바닥 노이즈를 누를 때 섞는 색. 부서 구역 안이면 그 부서 색조를 옅게 태운다.
@@ -1244,7 +1697,7 @@ final class OfficeScene: SKScene {
                 ? CGSize(width: tileSize, height: lineThickness)
                 : CGSize(width: lineThickness, height: tileSize)
             let line = SKSpriteNode(
-                color: SKColor(red: 0.05, green: 0.04, blue: 0.05, alpha: isBottom ? 0.72 : 0.9),
+                color: CozyOfficeNodeFactory.outline.withAlphaComponent(isBottom ? 0.72 : 0.9),
                 size: size
             )
             line.name = "wallEdge"
@@ -1264,7 +1717,6 @@ final class OfficeScene: SKScene {
             .forEach { $0.removeFromParent() }
         var occupiedLabelRanges: [ClosedRange<Double>] = []
         for zone in plan.zones {
-            let palette = agentDepartmentPaletteRGBA(zone.department)
             // 구역 위쪽 경계 줄(칸막이 벽 또는 통로)에 문패처럼 얹는다. 자리 묶음이 구역
             // 맨 아래 줄부터 쌓이므로 아래쪽은 책상·사람과 겹친다.
             let holder = SKNode()
@@ -1286,33 +1738,15 @@ final class OfficeScene: SKScene {
                     ) * tileSize
             )
 
-            let label = SKLabelNode(text: "\(zone.department.icon) \(zone.department.label)")
-            label.fontName = officeLabelFontName
-            label.fontSize = max(
-                officeZoneLabelMinFontSize, tileSize * CGFloat(officeZoneLabelFontTiles)
+            let pill = CozyOfficeNodeFactory.zonePill(
+                text: "\(zone.department.icon) \(zone.department.label)",
+                accent: CozyOfficeNodeFactory.accent(for: zone.department),
+                fontSize: max(officeZoneLabelMinFontSize, tileSize * 0.24)
             )
-            label.fontColor = SKColor(
-                red: palette.red, green: palette.green, blue: palette.blue, alpha: 1
-            )
-            label.horizontalAlignmentMode = .center
-            label.verticalAlignmentMode = .bottom
-            label.zPosition = 1
-
-            // 문패 판 — 벽돌·나무 무늬 위에 글자가 그냥 놓이면 읽히지 않는다.
-            let plate = SKShapeNode(
-                rect: label.frame.insetBy(dx: -6, dy: -3), cornerRadius: 3
-            )
-            plate.fillColor = SKColor(white: 0.07, alpha: 0.78)
-            plate.strokeColor = SKColor(
-                red: palette.red, green: palette.green, blue: palette.blue, alpha: 0.55
-            )
-            plate.lineWidth = 1
-
-            holder.addChild(plate)
-            holder.addChild(label)
+            holder.addChild(pill)
             overlayLayer.addChild(holder)
-            let occupiedLeading = Double(holder.position.x + plate.frame.minX)
-            let occupiedTrailing = Double(holder.position.x + plate.frame.maxX)
+            let occupiedLeading = Double(holder.position.x + pill.calculateAccumulatedFrame().minX)
+            let occupiedTrailing = Double(holder.position.x + pill.calculateAccumulatedFrame().maxX)
             occupiedLabelRanges.append(occupiedLeading...occupiedTrailing)
         }
         renderCommonAreaLabels(occupiedRanges: occupiedLabelRanges)
@@ -1367,17 +1801,17 @@ final class OfficeScene: SKScene {
 
             let label = SKLabelNode(text: "\(area.icon) \(area.label)")
             label.fontName = officeLabelFontName
-            label.fontSize = max(officeZoneLabelMinFontSize, tileSize * 0.32)
-            label.fontColor = SKColor(white: 0.72, alpha: 1)
+            label.fontSize = max(officeZoneLabelMinFontSize, tileSize * 0.24)
+            label.fontColor = CozyOfficeNodeFactory.outline
             label.horizontalAlignmentMode = .left
             label.verticalAlignmentMode = .bottom
             label.zPosition = 1
 
             let plate = SKShapeNode(
-                rect: label.frame.insetBy(dx: -5, dy: -3), cornerRadius: 3
+                rect: label.frame.insetBy(dx: -7, dy: -4), cornerRadius: tileSize * 0.18
             )
-            plate.fillColor = SKColor(white: 0.07, alpha: 0.62)
-            plate.strokeColor = SKColor(white: 0.45, alpha: 0.4)
+            plate.fillColor = CozyOfficeNodeFactory.cream
+            plate.strokeColor = CozyOfficeNodeFactory.outline.withAlphaComponent(0.35)
             plate.lineWidth = 1
 
             let preferredLeading = Double(
@@ -1415,11 +1849,20 @@ final class OfficeScene: SKScene {
         // 바뀔 때마다 깔개가 겹겹이 쌓인다(`renderFloor` 를 거치지 않는 호출 경로가 있다).
         for layer in [objectLayer, floorLayer] {
             layer.children
-                .filter { $0.name?.hasPrefix("furn:") == true }
+                .filter {
+                    $0.name?.hasPrefix("furn:") == true
+                        || $0.name?.hasPrefix("cozy:desk-front:") == true
+                        || $0.name == "cozy:decor-desk"
+                        || $0.name == "cozy:decor-chair"
+                        || $0.name?.hasPrefix("cozy:door-status:") == true
+                        || $0.name == "cozy:streak-anchor"
+                        || $0.name?.hasPrefix("cozy:department-feature:") == true
+                }
                 .forEach { $0.removeFromParent() }
         }
         deskNodes.removeAll()
         doorNodes.removeAll()
+        doorStateNodes.removeAll()
         streakBoardNode = nil
         // 어느 게시판이 대표실 것인지는 배치가 정한다 — 루프 안에서 kind 로 판단하면 목록에서
         // 먼저 나온 남의 방 게시판이 잡힌다.
@@ -1431,41 +1874,178 @@ final class OfficeScene: SKScene {
         let deskOwners = Dictionary(
             uniqueKeysWithValues: plan.desks.map { ($0.desk, $0.agentType) }
         )
+        var visibleRoomKinds: [String: Set<FurnitureKind>] = [:]
+        var visibleDecorCount: [String: Int] = [:]
+        var visibleShelfTiles: [TilePoint] = []
         for placement in plan.furniture {
             guard let texture = SpriteLoader.furnitureTexture(placement.kind) else {
                 continue
             }
-            let node = SKSpriteNode(texture: texture)
+            let furnitureScale = spriteScale * CGFloat(placement.kind.sizeBoost)
+            let zoneKey = plan.zones.first(where: { officeZoneContains($0, placement.tile) })?.department.rawValue ?? "common"
+            let isWallDecor = placement.kind.isWallMounted && !placement.kind.isDoorway
+            let alreadyKind = visibleRoomKinds[zoneKey]?.contains(placement.kind) == true
+            let adjacentShelf = (placement.kind == .bookshelf || placement.kind == .wallShelf)
+                && visibleShelfTiles.contains(where: { abs($0.y - placement.tile.y) <= 1 && abs($0.x - placement.tile.x) <= 1 })
+            let capped = (placement.kind == .filingCabinet || placement.kind == .lockers2 || placement.kind == .printer || placement.kind == .trash) && alreadyKind
+            let decorCapped = isWallDecor && (visibleDecorCount[zoneKey, default: 0] >= 2)
+            // Complete room shells already contain their architecture, wall decor, storage,
+            // plants, doors, and utility fixtures in the same rendered perspective. Drawing the
+            // old top-view fallback sprites over them makes the result look like a collage. Keep
+            // only furniture that employees actively use and that has a matching 3D asset; hidden
+            // doorway nodes remain alive below so path/door interaction state is unchanged.
+            // `.trash` 가 여기 있는 이유는 상호작용 때문이 아니라 **청소 표시의 기준점**이기
+            // 때문이다. `renderHousekeeping` 이 이 통의 자리에 청소기와 먼지를 놓으므로, 방 셸에
+            // 통이 그려져 있지 않은 지금 이것을 셸 소유로 넘기면 그 둘이 기준물 없이 바닥에 뜬다.
+            let interactiveCozyKinds: Set<FurnitureKind> = [
+                .desk, .chairDown, .chairUp, .sofa2, .sofa3,
+                .meetingTable, .coffeeTable, .coffeeMachine, .sinkCounter, .trash,
+            ]
+            let shellOwnsVisual = usesCompleteRoomArchitecture
+                && !interactiveCozyKinds.contains(placement.kind)
+            let present = !adjacentShelf && !capped && !decorCapped && !shellOwnsVisual
+            if present {
+                visibleRoomKinds[zoneKey, default: []].insert(placement.kind)
+                if isWallDecor { visibleDecorCount[zoneKey, default: 0] += 1 }
+                if placement.kind == .bookshelf || placement.kind == .wallShelf { visibleShelfTiles.append(placement.tile) }
+            }
+            let node: SKSpriteNode
+            if let illustratedTexture = SpriteLoader.cozyFurnitureTexture(placement.kind) {
+                node = CozyOfficeNodeFactory.illustratedFurniture(
+                    texture: illustratedTexture,
+                    kind: placement.kind,
+                    tileSize: tileSize,
+                    visible: present
+                )
+            } else {
+              switch placement.kind {
+            case .desk:
+                node = CozyOfficeNodeFactory.desk(texture: texture, scale: furnitureScale, tileSize: tileSize)
+            case .chairDown, .chairUp:
+                node = CozyOfficeNodeFactory.chair(texture: texture, kind: placement.kind, scale: furnitureScale, tileSize: tileSize)
+            case .plantTall, .plantSmall, .wallPlantHanging:
+                node = CozyOfficeNodeFactory.plant(texture: texture, kind: placement.kind, scale: furnitureScale, tileSize: tileSize)
+            case .sofa2, .sofa3:
+                node = CozyOfficeNodeFactory.sofa(texture: texture, kind: placement.kind, scale: furnitureScale)
+            case .meetingTable, .coffeeTable:
+                node = CozyOfficeNodeFactory.meetingSurface(texture: texture, kind: placement.kind, scale: furnitureScale)
+            case .coffeeMachine:
+                node = CozyOfficeNodeFactory.coffeeMachine(texture: texture, scale: furnitureScale, tileSize: tileSize)
+            case .waterCooler:
+                node = CozyOfficeNodeFactory.waterCooler(texture: texture, scale: furnitureScale, tileSize: tileSize)
+            case .vendingMachine:
+                node = CozyOfficeNodeFactory.vendingMachine(texture: texture, scale: furnitureScale, tileSize: tileSize)
+            case .refrigerator:
+                node = CozyOfficeNodeFactory.refrigerator(texture: texture, scale: furnitureScale, tileSize: tileSize)
+            case .sinkCounter:
+                node = CozyOfficeNodeFactory.sinkCounter(texture: texture, scale: furnitureScale, tileSize: tileSize)
+            case .wallWhiteboard, .whiteboard:
+                node = CozyOfficeNodeFactory.whiteboard(texture: texture, kind: placement.kind, scale: furnitureScale, tileSize: tileSize)
+            case .printer:
+                node = CozyOfficeNodeFactory.printer(texture: texture, scale: furnitureScale, tileSize: tileSize, visible: present)
+              default:
+                  node = CozyOfficeNodeFactory.furniture(texture: texture, kind: placement.kind, scale: furnitureScale, tileSize: tileSize, visible: present)
+              }
+            }
             node.name = "furn:\(placement.kind.rawValue)"
+            if !present {
+                node.alpha = 0
+            }
+            // Compute the shared projected anchor before wiring dynamic state overlays. Both the
+            // hidden logical node and visible shell marker must refer to the same floor position.
+            var position = floorPoint(
+                placement.tile, footprintWidth: placement.kind.footprint.width
+            )
+            if placement.kind.isWallMounted {
+                position.y += tileSize * CGFloat(officeWallMountLiftTiles)
+            }
             if placement.kind == .desk, let owner = deskOwners[placement.tile] {
                 deskNodes[owner] = node
             }
             if placement.kind.isDoorway {
                 doorNodes[placement.tile] = node
+                let isCeilingDoor = plan.zones.contains { zone in
+                    placement.tile.y == zone.origin.y + zone.height - 1
+                        && zone.origin.x <= placement.tile.x
+                        && placement.tile.x < zone.origin.x + zone.width
+                }
+                if usesCompleteRoomArchitecture && !isCeilingDoor {
+                    // The fallback sprite remains as a logical/hitbox node, but it is hidden by
+                    // design. The room art already contains its rear wall, so drawing the second
+                    // (ceiling) exit on top of that image looks like a floating door icon. Expose
+                    // live state only at the corridor-facing side portal; both logical exits keep
+                    // their original walkability and open/close state.
+                    let statusNode = CozyOfficeNodeFactory.doorStatusOverlay(tileSize: tileSize)
+                    statusNode.name = "cozy:door-status:\(placement.tile.x)-\(placement.tile.y)"
+                    let sideZone = plan.zones.first { zone in
+                        zone.origin.y <= placement.tile.y
+                            && placement.tile.y < zone.origin.y + zone.height
+                            && (placement.tile.x == zone.origin.x
+                                || placement.tile.x == zone.origin.x + zone.width - 1)
+                    }
+                    let opensFromLeftEdge = sideZone?.origin.x == placement.tile.x
+                    let boundaryX = opensFromLeftEdge == true
+                        ? CGFloat(placement.tile.x)
+                        : CGFloat(placement.tile.x + 1)
+                    // Keep the logical doorway on its walkable tile, but seat the visual frame
+                    // just inside the owning room wall. Opposing doors otherwise meet in the
+                    // narrow hall and read as a freestanding double-door prop.
+                    let roomWallInset: CGFloat = opensFromLeftEdge == true ? 0.14 : -0.14
+                    statusNode.position = CGPoint(
+                        x: gridOrigin.x + (boundaryX + roomWallInset) * tileSize,
+                        y: position.y
+                    )
+                    // Opposite rooms share a corridor. Mirror the leaf toward its own room so a
+                    // pair reads as two wall openings facing the hall, not duplicated UI icons.
+                    statusNode.xScale = opensFromLeftEdge == true ? 1 : -1
+                    statusNode.zPosition = depth(of: placement.tile) + 0.02
+                    objectLayer.addChild(statusNode)
+                    doorStateNodes[placement.tile] = statusNode
+
+                }
             }
             if placement.tile == streakBoardTile {
-                streakBoardNode = node
+                if usesCompleteRoomArchitecture {
+                    // The shell owns the painted pinboard. Use a transparent, independently
+                    // positioned anchor for dynamic stamps so they never disappear with the
+                    // hidden fallback furniture node.
+                    let anchor = SKSpriteNode(
+                        color: .clear,
+                        size: CGSize(width: tileSize * 0.86, height: tileSize * 0.54)
+                    )
+                    anchor.name = "cozy:streak-anchor"
+                    anchor.anchorPoint = CGPoint(x: 0.5, y: 0)
+                    anchor.position = position
+                    anchor.zPosition = depth(of: placement.tile) + 0.03
+                    objectLayer.addChild(anchor)
+                    streakBoardNode = anchor
+                } else {
+                    streakBoardNode = node
+                }
             }
-            node.anchorPoint = CGPoint(x: 0.5, y: 0)
-            let base = texture.size()
-            // 큰 가구만 sizeBoost 로 키운다 — 캐릭터를 한 칸으로 줄인 만큼 책상·소파가
-            // 상대적으로 작아 보이는 것을 되돌린다(배율의 근거는 FurnitureKind.sizeBoost).
-            let scale = spriteScale * CGFloat(placement.kind.sizeBoost)
-            node.size = CGSize(width: base.width * scale, height: base.height * scale)
             // 벽에 거는 물건은 벽면 중턱에 걸린다. 다른 가구와 같은 발밑 기준(anchor y = 0)을
             // 그대로 쓰면 타일 바닥선에 붙어 **벽 앞에 세워 둔 것**처럼 보인다 — 벽시계가
             // 탁상시계가 되고 화이트보드가 이젤이 된다. 창문이 벽 두 줄을 꽉 채워 걸리는 것과
             // 같은 눈높이로 올린다.
-            var position = floorPoint(placement.tile)
-            if placement.kind.isWallMounted {
-                position.y += tileSize * CGFloat(officeWallMountLiftTiles)
-            }
             // 두 칸 이상을 차지하는 가구는 기준 칸 중앙이 아니라 **점유 범위 중앙**에 놓는다.
             // 발밑 기준(anchor x = 0.5)을 그대로 쓰면 2칸 폭 깔개가 좌우로 반 칸씩 삐져나가
             // 옆 칸 바닥까지 물든다.
-            position.x += tileSize * CGFloat(placement.kind.footprint.width - 1) / 2
             node.position = position
-            node.zPosition = depth(of: placement.tile)
+            if placement.kind == .desk,
+               let illustratedTexture = SpriteLoader.cozyFurnitureTexture(.desk),
+               present {
+                let front = CozyOfficeNodeFactory.illustratedWorkstationFrontOccluder(
+                    texture: illustratedTexture,
+                    tileSize: tileSize
+                )
+                front.name = "cozy:desk-front:\(placement.tile.x)-\(placement.tile.y)"
+                front.position = position
+                front.zPosition = depth(of: placement.tile) + 0.15
+                objectLayer.addChild(front)
+                node.zPosition = depth(of: placement.tile) - 0.5
+            } else {
+                node.zPosition = depth(of: placement.tile)
+            }
             // 깔개는 바닥 레이어로 내린다. 앞뒤 순서를 y 로 정하는 구조에서는(아래쪽이 앞)
             // 깔개가 자기보다 위 칸의 소파·테이블을 덮어 버린다 — 깔개 위에 놓인 가구가
             // 깔개 밑으로 사라지는 그림이 된다.
@@ -1474,6 +2054,110 @@ final class OfficeScene: SKScene {
             } else {
                 objectLayer.addChild(node)
             }
+        }
+    }
+
+    /// 회의 테이블은 실제 상판만 제공하므로, 참석자가 보고 만지는 작업물을 상판 위에 둔다.
+    ///
+    /// 회의 참석자의 `writing`·`reading` 포즈와 같은 깊이 층에 배치해, 두 사람이 테이블을
+    /// 가운데 두고 문서와 노트북을 함께 검토하는 장면으로 읽히게 한다. 논리 가구나
+    /// walkable 좌표를 추가하지 않고, 렌더 전용 소품만 만든다.
+    private func renderMeetingTableProps() {
+        objectLayer.children
+            .filter { $0.name == "cozy:meeting-props" }
+            .forEach { $0.removeFromParent() }
+        guard let table = plan.furniture.first(where: { $0.kind == .meetingTable }) else {
+            return
+        }
+
+        let holder = SKNode()
+        holder.name = "cozy:meeting-props"
+        let tablePoint = floorPoint(table.tile, footprintWidth: table.kind.footprint.width)
+        holder.position = CGPoint(x: tablePoint.x, y: tablePoint.y + tileSize * 0.74)
+        holder.zPosition = depth(of: table.tile) + 0.10
+
+        let outline = SKColor(red: 0.35, green: 0.25, blue: 0.19, alpha: 0.72)
+        let paperWidth = tileSize * 0.34
+        let paperHeight = tileSize * 0.25
+        for index in 0..<2 {
+            let paper = SKShapeNode(
+                rectOf: CGSize(width: paperWidth, height: paperHeight),
+                cornerRadius: tileSize * 0.025
+            )
+            paper.fillColor = SKColor(red: 0.98, green: 0.94, blue: 0.82, alpha: 0.96)
+            paper.strokeColor = outline
+            paper.lineWidth = max(0.8, tileSize * 0.018)
+            paper.zRotation = index == 0 ? -0.08 : 0.07
+            paper.position = CGPoint(
+                x: tileSize * CGFloat(index == 0 ? -0.42 : 0.42),
+                y: tileSize * 0.03
+            )
+            holder.addChild(paper)
+        }
+
+        let laptop = SKShapeNode(
+            rectOf: CGSize(width: tileSize * 0.46, height: tileSize * 0.28),
+            cornerRadius: tileSize * 0.035
+        )
+        laptop.fillColor = SKColor(red: 0.18, green: 0.25, blue: 0.29, alpha: 0.96)
+        laptop.strokeColor = outline
+        laptop.lineWidth = max(0.9, tileSize * 0.022)
+        laptop.position = CGPoint(x: 0, y: tileSize * 0.08)
+        holder.addChild(laptop)
+
+        let screen = SKShapeNode(
+            rectOf: CGSize(width: tileSize * 0.30, height: tileSize * 0.17),
+            cornerRadius: tileSize * 0.018
+        )
+        screen.fillColor = SKColor(red: 0.48, green: 0.73, blue: 0.78, alpha: 0.92)
+        screen.strokeColor = .clear
+        screen.position = CGPoint(x: 0, y: tileSize * 0.09)
+        laptop.addChild(screen)
+        objectLayer.addChild(holder)
+    }
+
+    /// Gives every department one semantic 3D workstation instead of filling the shell with
+    /// generic desks. These sit in the deliberately open foreground and preserve walkable/path
+    /// coordinates because they are presentation-only props.
+    private func renderDepartmentFeatureProps() {
+        departmentFeatureStations.removeAll(keepingCapacity: true)
+        let horizontalPosition: [Department: Double] = [
+            .planning: 0.76,
+            .quality: 0.52,
+            .evaluation: 0.50,
+            .treasury: 0.72,
+            .content: 0.28,
+            .internalOps: 0.48,
+        ]
+        for zone in plan.zones {
+            guard let texture = SpriteLoader.cozyDepartmentFeatureTexture(zone.department) else {
+                continue
+            }
+            let fraction = horizontalPosition[zone.department] ?? 0.5
+            let x = zone.origin.x + Int((Double(zone.width - 1) * fraction).rounded())
+            let tile = TilePoint(x: x, y: zone.origin.y + 1)
+            departmentFeatureStations[zone.department] = tile
+            let node = SKSpriteNode(texture: texture)
+            node.name = "cozy:department-feature:\(zone.department.rawValue)"
+            node.anchorPoint = CGPoint(x: 0.5, y: 0)
+            let width = tileSize * 2.35
+            let textureSize = texture.size()
+            node.size = CGSize(
+                width: width,
+                height: width * textureSize.height / max(textureSize.width, 1)
+            )
+            node.position = floorPoint(tile, footprintWidth: 2)
+            node.zPosition = depth(of: tile) - 0.50
+            objectLayer.addChild(node)
+
+            let front = CozyOfficeNodeFactory.illustratedDepartmentFeatureFrontOccluder(
+                texture: texture,
+                tileSize: tileSize
+            )
+            front.name = "cozy:department-feature-front:\(zone.department.rawValue)"
+            front.position = node.position
+            front.zPosition = depth(of: tile) + 0.15
+            objectLayer.addChild(front)
         }
     }
 
@@ -1566,20 +2250,40 @@ final class OfficeScene: SKScene {
     /// "나(대표)" — 승인 줄의 기준점이면서, 담당자를 정하지 않은 지시의 입구다(클릭 가능).
     private func renderPresident() {
         president?.removeFromParent()
-        guard let texture = SpriteLoader.texture("char-down") else {
-            return
-        }
-        let node = SKSpriteNode(texture: texture)
+        let node = SKSpriteNode()
         node.anchorPoint = CGPoint(x: 0.5, y: 0)
-        let base = texture.size()
-        // 대표도 사람이므로 캐릭터 배율을 따른다 — 여기만 빠지면 대표만 거인이 된다.
-        node.size = CGSize(
-            width: base.width * characterScale, height: base.height * characterScale
+        let artworkScale = CozyCharacterArtworkNode.officeScaleFactor
+        node.size = CGSize(width: 72 * artworkScale * characterScale, height: 100 * artworkScale * characterScale)
+        let artwork = CozyCharacterArtworkNode()
+        let workDesk = officeSessionDesks(plan: plan).min {
+            abs($0.x - plan.presidentTile.x) < abs($1.x - plan.presidentTile.x)
+        }
+        artwork.update(
+            appearance: cozyAgentAppearance(agentType: officeHitTargetPresident, department: .planning),
+            mood: cozyAgentMood(for: .inProgress),
+            department: .planning,
+            state: .inProgress,
+            pose: workDesk == nil ? "default" : "typing"
         )
-        node.position = floorPoint(plan.presidentTile)
-        node.zPosition = depth(of: plan.presidentTile)
-        node.color = SKColor(red: 0.95, green: 0.78, blue: 0.30, alpha: 1)
-        node.colorBlendFactor = 0.35
+        artwork.setReferenceScale(characterScale * artworkScale)
+        node.addChild(artwork)
+        if let workDesk {
+            let deskPoint = floorPoint(
+                workDesk,
+                footprintWidth: FurnitureKind.desk.footprint.width
+            )
+            // Keep the representative's logical approval anchor unchanged, but visually seat
+            // the character at the central workstation so the existing monitor and keyboard
+            // read as the thing being used rather than as background decoration.
+            node.position = CGPoint(
+                x: deskPoint.x,
+                y: deskPoint.y + tileSize * CGFloat(officeWorkstationSeatVisualOffsetTiles)
+            )
+            node.zPosition = depth(of: workDesk) - 0.24
+        } else {
+            node.position = floorPoint(plan.presidentTile)
+            node.zPosition = depth(of: plan.presidentTile)
+        }
         objectLayer.addChild(node)
         president = node
 
@@ -1657,6 +2361,10 @@ final class OfficeScene: SKScene {
         // 깜빡임은 느리게 — 빠른 점멸은 종일 켜 두는 관제 화면에서 눈을 피로하게 하고,
         // 접근성상 초당 3회를 넘기면 안 된다. 편도 1.1초 왕복(전체 주기 2.2초)이라
         // 초당 약 0.45회 — 상한의 1/6 수준으로 여유가 크다.
+        if shouldReduceMotion {
+            presidentNode.addChild(alarm)
+            return
+        }
         alarm.run(
             .repeatForever(
                 .sequence([
@@ -1673,6 +2381,9 @@ final class OfficeScene: SKScene {
     /// 틱 단위 반복 하나면 충분해 프레임마다 같은 판정을 되풀이하지 않는다.
     private func startIdleLoop() {
         removeAction(forKey: "idleLoop")
+        guard !shouldReduceMotion else {
+            return
+        }
         let cycle = SKAction.sequence([
             .wait(forDuration: officeStrollTickSeconds),
             .run { [weak self] in self?.runIdleSupervisor() },
@@ -2015,6 +2726,14 @@ final class OfficeScene: SKScene {
             completion?()
             return
         }
+        if shouldReduceMotion {
+            node.stand()
+            node.tile = goal
+            node.place(at: floorPoint(goal), depth: depth(of: goal))
+            node.endWalk()
+            completion?()
+            return
+        }
         node.stand()
         node.isWalking = true
 
@@ -2086,15 +2805,17 @@ final class OfficeScene: SKScene {
 
     /// 자기 자리로 돌아가 앉는다.
     private func goHome(_ agentType: String, then afterArrival: (() -> Void)? = nil) {
-        guard let node = characters[agentType], let seat = homeSeats[agentType] else {
+        guard let node = characters[agentType], let assignment = homeDeskAssignments[agentType] else {
             return
         }
         node.endInteraction()
         queueOrder.removeAll { $0 == agentType }
         layoutQueue()
-        walk(node, to: seat) { [weak node] in
-            node?.apply(facing: .down)
-            node?.sit()
+        walk(node, to: assignment.seat) { [weak self, weak node] in
+            guard let self, let node else { return }
+            self.placeAtWorkstation(node, assignment: assignment)
+            node.apply(facing: .down)
+            node.sit()
             afterArrival?()
         }
     }
@@ -2120,12 +2841,21 @@ final class OfficeScene: SKScene {
                 continue
             }
             // 줄이 자리보다 길면 마지막 칸에 겹쳐 세운다(대기 인원이 많다는 것 자체가 신호).
-            let tile = plan.queueTiles[min(order, plan.queueTiles.count - 1)]
+            // 완성형 chibi 캐릭터는 한 칸보다 어깨 폭이 넓다. 연속 칸에 세우면 다섯 명만
+            // 되어도 대표실 앞에서 얼굴·이름표가 한 덩어리로 뭉친다. 논리 줄은 그대로 두고
+            // 화면 자리만 두 칸 간격으로 써서, 승인 순서와 길찾기는 보존하면서 전신 실루엣을
+            // 분리한다. 수용량을 넘긴 뒤에만 마지막 자리를 공유한다.
+            let visualSlot = min(order * 2, plan.queueTiles.count - 1)
+            let tile = plan.queueTiles[visualSlot]
             if node.tile == tile {
+                placeAtQueueLane(node, logicalTile: tile)
+                node.apply(facing: .up)
                 continue
             }
-            walk(node, to: tile) { [weak node] in
-                node?.apply(facing: .up)  // 대표를 바라본다
+            walk(node, to: tile) { [weak self, weak node] in
+                guard let self, let node else { return }
+                self.placeAtQueueLane(node, logicalTile: tile)
+                node.apply(facing: .up)  // 대표를 바라본다
             }
         }
     }
@@ -2378,14 +3108,16 @@ final class OfficeScene: SKScene {
                     size: .zero
                 )
                 screen.name = "screen"
-                screen.run(
-                    .repeatForever(
-                        .sequence([
-                            .fadeAlpha(to: 0.45, duration: 0.8),
-                            .fadeAlpha(to: 0.9, duration: 0.8),
-                        ])
+                if !shouldReduceMotion {
+                    screen.run(
+                        .repeatForever(
+                            .sequence([
+                                .fadeAlpha(to: 0.45, duration: 0.8),
+                                .fadeAlpha(to: 0.9, duration: 0.8),
+                            ])
+                        )
                     )
-                )
+                }
                 node.addChild(screen)
             }
             // 크기·자리는 재사용할 때도 매번 맞춘다 — 창 크기가 바뀌면 한 칸이 달라진다.
@@ -2502,9 +3234,11 @@ final class OfficeScene: SKScene {
             return
         }
         walk(sender, to: approach) { [weak self] in
-            self?.characters[to]?.sprite.run(
-                .sequence([.scale(to: 1.12, duration: 0.12), .scale(to: 1.0, duration: 0.12)])
-            )
+            if self?.shouldReduceMotion == false {
+                self?.characters[to]?.sprite.run(
+                    .sequence([.scale(to: 1.12, duration: 0.12), .scale(to: 1.0, duration: 0.12)])
+                )
+            }
             self?.goHome(from)
         }
     }
@@ -2518,7 +3252,9 @@ final class OfficeScene: SKScene {
             .moveBy(x: -10, y: 0, duration: 0.1),
             .moveBy(x: 5, y: 0, duration: 0.05),
         ])
-        node.sprite.run(.repeat(shake, count: 2))
+        if !shouldReduceMotion {
+            node.sprite.run(.repeat(shake, count: 2))
+        }
         showBubble(agentType, text: "!")
     }
 
@@ -2586,7 +3322,15 @@ final class OfficeScene: SKScene {
             }
             setChildLabel(
                 node, name: officeInfoBubbleLabelName, text: info.bubble,
-                position: CGPoint(x: 0, y: top + nameplateClearance),
+                position: CGPoint(
+                    x: CGFloat(
+                        officeInfoBubbleOffsetX(
+                            isSelected: selectedAgentType == agent.agentType,
+                            tileSize: Double(tileSize)
+                        )
+                    ),
+                    y: top + nameplateClearance
+                ),
                 fontSize: bubbleFontSize, color: SKColor(white: 1, alpha: 0.95),
                 maxWidth: bubbleMaxWidth(for: agent.agentType)
             )
@@ -2708,7 +3452,8 @@ final class OfficeScene: SKScene {
         // 로 읽히지만 잘린 글자는 못 읽는다. 빛은 판 주변으로 새어 나와 경고 상태도 남는다.
         let titleTop = presidentNode.childNode(withName: "presidentTitlePlate")?.frame.maxY
         label.position = CGPoint(
-            x: 0, y: (titleTop ?? presidentNode.size.height) + tileSize * 0.12
+            x: tileSize * CGFloat(officePresidentBubbleOffsetXTiles),
+            y: (titleTop ?? presidentNode.size.height) + tileSize * 0.12
         )
 
         // 대표 뒤가 밝은 창문이라 맨 글자는 유리에 묻힌다(왕관 라벨이 판을 쓰는 것과 같은 이유).
@@ -3025,7 +3770,9 @@ final class OfficeScene: SKScene {
             .run { label.text = "··" }, .wait(forDuration: 0.32),
             .run { label.text = "···" }, .wait(forDuration: 0.32),
         ])
-        label.run(.repeatForever(cycle), withKey: officeThinkingDotsLabelName)
+        if !shouldReduceMotion {
+            label.run(.repeatForever(cycle), withKey: officeThinkingDotsLabelName)
+        }
     }
 
     private func hideThinkingDots(_ agentType: String) {
@@ -3043,7 +3790,14 @@ final class OfficeScene: SKScene {
     /// 시작을 켜진 상태(alpha 1)로 두고 낮췄다 올린다. 반대로 두면 정지 화면을 굽는
     /// 회귀 렌더(`--render`)가 늘 꺼진 순간을 잡아, 켜지는지 확인할 방법이 없어진다.
     private func startMonitorGlow(_ agentType: String) {
-        guard let desk = deskNodes[agentType], desk.childNode(withName: "monitor") == nil else {
+        // The ratio constants below describe the retired top-view pixel desk. On the illustrated
+        // 3D workstation they produce a flat cyan strip in front of the employee instead of a lit
+        // monitor. The 2.5D rooms already expose progress through the character ring and motion,
+        // so do not layer that incompatible pixel-era cue over the new asset.
+        guard !usesCompleteRoomArchitecture else {
+            return
+        }
+        guard let desk = deskNodes[agentType], desk.childNode(withName: "monitor-glow") == nil else {
             return
         }
         let screen = SKSpriteNode(
@@ -3053,7 +3807,7 @@ final class OfficeScene: SKScene {
                 height: desk.size.height * CGFloat(officeDeskScreenHeightRatio)
             )
         )
-        screen.name = "monitor"
+        screen.name = "monitor-glow"
         // 책상 노드가 발밑 기준(anchor y = 0)이므로 자식 좌표도 발밑에서 잰다.
         screen.anchorPoint = CGPoint(x: 0.5, y: 0)
         screen.position = CGPoint(
@@ -3061,6 +3815,9 @@ final class OfficeScene: SKScene {
         )
         screen.zPosition = 0.1
         desk.addChild(screen)
+        if shouldReduceMotion {
+            return
+        }
         screen.run(
             .repeatForever(
                 .sequence([
@@ -3072,7 +3829,7 @@ final class OfficeScene: SKScene {
     }
 
     private func stopMonitorGlow(_ agentType: String) {
-        deskNodes[agentType]?.childNode(withName: "monitor")?.removeFromParent()
+        deskNodes[agentType]?.childNode(withName: "monitor-glow")?.removeFromParent()
     }
 
     /// 시간대에 따라 창유리 색과 빛 세기만 갈아 끼운다(노드는 그대로 둔다).
@@ -3086,15 +3843,68 @@ final class OfficeScene: SKScene {
         if let texture = OfficeLightTexture.window(light, daylight: daylight) {
             windowNodes.forEach { $0.texture = texture }
         }
-        if let texture = OfficeLightTexture.wallLamp(lit: light.lampLit) {
-            wallLampNodes.forEach { $0.texture = texture }
+        wallLampNodes.forEach { lamp in
+            lamp.childNode(withName: "lampHalo")?.alpha = light.lampLit ? 0.16 : 0
         }
         for layer in lightLayers {
             layer.apply(light)
         }
+        applyCozyShellLighting(daylight: daylight)
+        applyCozyBaseLighting(daylight: daylight)
         // 시각이 바뀔 때마다(창·벽등과 같은 호출부에서) 켜고 끈다 — 여기 한 곳에 두면
         // sync·창 크기 변경·틱 세 경로가 전부 여기를 지나므로 셋을 따로 배선할 필요가 없다.
         updateDeskLamps()
+    }
+
+    /// Generated room artwork has baked daylight. Apply a restrained scene-level tint so
+    /// the same illustration still reads as night (and remains coherent with dark UI mode)
+    /// instead of staying a bright daytime photograph at 22:00.
+    private func applyCozyShellLighting(daylight: OfficeDaylight) {
+        let tint: SKColor
+        let blend: CGFloat
+        switch daylight {
+        case .night:
+            tint = SKColor(red: 0.16, green: 0.22, blue: 0.42, alpha: 1)
+            blend = 0.30
+        case .dawn:
+            tint = SKColor(red: 0.52, green: 0.38, blue: 0.50, alpha: 1)
+            blend = 0.12
+        case .evening:
+            tint = SKColor(red: 0.68, green: 0.40, blue: 0.22, alpha: 1)
+            blend = 0.10
+        case .morning, .day:
+            tint = SKColor(red: 1, green: 0.98, blue: 0.92, alpha: 1)
+            blend = 0.03
+        }
+        if darkModeOverride == true {
+            // Dark appearance is independent of the simulated clock. Keep a light-hour
+            // render legible while still letting the shells belong to the dark UI surface.
+            floorLayer.enumerateChildNodes(withName: "//room-artwork-image") { node, _ in
+                guard let image = node as? SKSpriteNode else {
+                    return
+                }
+                image.color = SKColor(red: 0.36, green: 0.32, blue: 0.42, alpha: 1)
+                image.colorBlendFactor = max(blend, 0.18)
+            }
+            return
+        }
+        floorLayer.enumerateChildNodes(withName: "//room-artwork-image") { node, _ in
+            guard let image = node as? SKSpriteNode else {
+                return
+            }
+            image.color = tint
+            image.colorBlendFactor = blend
+        }
+    }
+
+    private func applyCozyBaseLighting(daylight: OfficeDaylight) {
+        guard let base = floorLayer.childNode(withName: "cozy:base") as? SKShapeNode else {
+            return
+        }
+        let isNight = daylight == .night
+        base.fillColor = isNight
+            ? SKColor(red: 0.34, green: 0.31, blue: 0.30, alpha: 1)
+            : SKColor(red: 0.91, green: 0.85, blue: 0.75, alpha: 1)
     }
 
     /// 앉아 있는 사람 책상에 스탠드 빛을 켠다.
@@ -3162,10 +3972,8 @@ final class OfficeScene: SKScene {
                 )
             }
         }
-        if let texture = OfficeLightTexture.wallLamp(lit: light.lampLit) {
-            for tile in plan.wallLampTiles {
-                wallLampNodes.append(addWallFixture(texture: texture, at: tile))
-            }
+        for tile in plan.wallLampTiles {
+            wallLampNodes.append(addVectorWallLamp(at: tile, lit: light.lampLit))
         }
         addWindowShaft(light)
         addLampHalos(light)
@@ -3190,6 +3998,14 @@ final class OfficeScene: SKScene {
         node.zPosition = 1
         floorLayer.addChild(node)
         return node
+    }
+
+    private func addVectorWallLamp(at tile: TilePoint, lit: Bool) -> SKNode {
+        let holder = CozyOfficeNodeFactory.wallLamp(tileSize: tileSize, lit: lit)
+        holder.position = floorPoint(tile)
+        holder.zPosition = 2
+        floorLayer.addChild(holder)
+        return holder
     }
 
     /// 창에서 바닥으로 떨어지는 빛. 아래로 갈수록 넓어지고 옅어지는 세 단.
@@ -3512,7 +4328,7 @@ final class OfficeScene: SKScene {
             // 순회 액션을 주지 않는다. 도는 그림을 그대로 두면 죽은 스케줄이 살아 있는 것처럼
             // 보여, 이 화면을 만든 이유가 사라진다.
             body.position = CGPoint(x: tileSize * 0.34, y: -tileSize * 0.46)
-            if mode == .stalled {
+            if mode == .stalled && !shouldReduceMotion {
                 led.run(
                     .repeatForever(
                         .sequence([
@@ -3530,6 +4346,9 @@ final class OfficeScene: SKScene {
         // 그래서 통 바로 앞에서 좌우로만 짧게 오간다 — 벽을 넘을 수 없는 폭이다.
         let travel = tileSize * 0.62
         body.position = CGPoint(x: -travel / 2, y: -tileSize * 0.46)
+        if shouldReduceMotion {
+            return
+        }
         body.run(
             .repeatForever(
                 .sequence([

@@ -31,7 +31,7 @@ struct SessionRowView: View {
             }
             Spacer(minLength: 0)
             VStack(alignment: .trailing, spacing: Spacing.tight) {
-                Text(session.state == "active" ? "활동 중" : "유휴")
+                Text(session.isActive ? "활동 중" : "유휴")
                     .font(Typography.captionSmall)
                     .foregroundStyle(.secondary)
                 Button("작업 주입", action: onInject)
@@ -47,7 +47,7 @@ struct SessionRowView: View {
     }
 
     private var stateColor: Color {
-        session.state == "active"
+        session.isActive
             ? Color(red: 0.36, green: 0.78, blue: 0.63) // 민트 = 활동
             : Color(white: 0.6) // 회색 = 유휴
     }

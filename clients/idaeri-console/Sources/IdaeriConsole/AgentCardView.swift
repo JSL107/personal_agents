@@ -30,8 +30,7 @@ struct AgentCardView: View {
     }
 
     private var departmentColor: Color {
-        let color = agentDepartmentPaletteRGBA(agent.resolvedDepartment)
-        return Color(red: color.red, green: color.green, blue: color.blue)
+        CozyPalette.department(agent.resolvedDepartment)
     }
 
     private var primaryActionForeground: Color {
@@ -46,28 +45,41 @@ struct AgentCardView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .center, spacing: Spacing.sm) {
                 VStack(alignment: .leading, spacing: Spacing.tight) {
-                    Text("\(agent.roleName)의 자리")
+                    Text(agent.roleName)
                         .font(Typography.sectionTitle)
                         .lineLimit(1)
                     Text(agent.resolvedDepartment.label)
-                        .font(Typography.captionSmall)
-                        .foregroundStyle(departmentColor)
+                        .font(Typography.captionSmall.weight(.medium))
+                        .foregroundStyle(CozyPalette.ink)
+                        .padding(.horizontal, Spacing.sm)
+                        .padding(.vertical, Spacing.tight)
+                        .background(departmentColor.opacity(0.22), in: Capsule())
                 }
                 Spacer(minLength: 0)
                 statusBadge
             }
             .padding(Spacing.lg)
 
-            AgentRoomView(agent: agent)
+            AgentPortraitView(agent: agent)
+                .padding(.horizontal, Spacing.lg)
+
+            Text(agent.bubble)
+                .font(Typography.caption)
+                .foregroundStyle(CozyPalette.ink)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, Spacing.md)
+                .padding(.vertical, Spacing.sm)
+                .background(CozyPalette.surface, in: RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
+                .padding(.horizontal, Spacing.lg)
+                .padding(.top, Spacing.sm)
 
             VStack(alignment: .leading, spacing: Spacing.md) {
                 HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
                     VStack(alignment: .leading, spacing: Spacing.tight) {
-                        Text(agent.roleName)
-                            .font(Typography.sectionTitle)
                         Text(agent.job ?? agent.description)
-                            .font(Typography.caption)
-                            .foregroundStyle(.secondary)
+                            .font(Typography.body)
+                            .foregroundStyle(CozyPalette.ink.opacity(0.78))
                             .lineLimit(2)
                     }
                     Spacer(minLength: 0)
@@ -84,7 +96,7 @@ struct AgentCardView: View {
                 if !agent.slashCommands.isEmpty {
                     Text(agent.slashCommands.joined(separator: "  "))
                         .font(Typography.metricMono)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(CozyPalette.ink.opacity(0.78))
                         .lineLimit(1)
                 }
 
@@ -95,7 +107,7 @@ struct AgentCardView: View {
                                 .foregroundStyle(primaryActionForeground)
                         }
                         .buttonStyle(.borderedProminent)
-                        .tint(departmentColor)
+                        .tint(CozyPalette.apricot)
                     } else {
                         Label("자동 업무 전용", systemImage: "gearshape.2")
                             .font(Typography.caption)
@@ -109,15 +121,17 @@ struct AgentCardView: View {
             }
             .padding(Spacing.lg)
         }
-        .frame(maxWidth: .infinity, minHeight: 390, alignment: .topLeading)
+        .foregroundStyle(CozyPalette.ink)
+        .frame(maxWidth: .infinity, minHeight: 350, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: Radius.panel, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor))
+                .fill(CozyPalette.surface)
         )
         .overlay(
             RoundedRectangle(cornerRadius: Radius.panel, style: .continuous)
                 .strokeBorder(agent.state.accentColor.opacity(0.55), lineWidth: Stroke.emphasis)
         )
+        .shadow(color: CozyPalette.outline.opacity(0.08), radius: 12, y: 6)
         .clipShape(RoundedRectangle(cornerRadius: Radius.panel, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityDescription)
@@ -154,8 +168,11 @@ struct AgentCardView: View {
                 .frame(width: Stroke.dot, height: Stroke.dot)
             Text(agent.state.label)
                 .font(Typography.captionEmphasis)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(CozyPalette.ink)
         }
+        .padding(.horizontal, Spacing.sm)
+        .padding(.vertical, Spacing.xs)
+        .background(agent.state.tintColor, in: Capsule())
     }
 
     private var pendingBadgeRow: some View {

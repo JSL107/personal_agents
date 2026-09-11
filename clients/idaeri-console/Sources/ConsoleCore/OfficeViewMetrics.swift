@@ -44,6 +44,76 @@ public struct OfficeViewMetrics: Equatable, Sendable {
     }
 }
 
+/// 논리 타일 좌표를 방 이미지의 3/4 원근 바닥에 맞추기 위한 투영 영역.
+///
+/// 길찾기와 충돌 판정은 기존 정사각 격자를 그대로 쓰고, 렌더링 위치만 이 영역 안에서
+/// 완만하게 수렴시킨다. 그래서 여러 사원이 같은 부서에 있어도 좌석 수와 동선은 바뀌지 않고,
+/// 캐릭터·책상·의자가 동일한 바닥면 위에서 함께 움직인다.
+public struct OfficePerspectiveRegion: Equatable, Sendable {
+    public let originX: Double
+    public let originY: Double
+    public let width: Double
+    public let height: Double
+
+    public init(originX: Double, originY: Double, width: Double, height: Double) {
+        self.originX = originX
+        self.originY = originY
+        self.width = width
+        self.height = height
+    }
+}
+
+public struct OfficeProjectedPoint: Equatable, Sendable {
+    public let x: Double
+    public let y: Double
+
+    public init(x: Double, y: Double) {
+        self.x = x
+        self.y = y
+    }
+}
+
+/// 기존 2D 탑뷰 좌표를 약한 2.5D 하이앵글 좌표로 바꾼다(순수).
+///
+/// - 뒤쪽일수록 x 간격을 최대 9% 좁혀 소실점 방향으로 모은다.
+/// - y는 영역의 앞·뒤 경계를 고정한 채 중간 간격만 재분배한다. 방 경계나 문 위치가
+///   떠밀리지 않으면서도 앞쪽 간격이 뒤쪽보다 넓게 보인다.
+/// - `footprintWidth`를 받으므로 두 칸 책상도 캐릭터와 같은 투영 규칙으로 중심이 잡힌다.
+public func officeProjectedFloorPoint(
+    tileX: Double,
+    tileY: Double,
+    footprintWidth: Double = 1,
+    tileSize: Double,
+    gridOriginX: Double,
+    gridOriginY: Double,
+    region: OfficePerspectiveRegion,
+    horizontalConvergence: Double = 0.09,
+    depthCurve: Double = 0.10
+) -> OfficeProjectedPoint {
+    guard tileSize > 0, region.width > 0, region.height > 1 else {
+        return OfficeProjectedPoint(
+            x: gridOriginX + (tileX + footprintWidth / 2) * tileSize,
+            y: gridOriginY + tileY * tileSize
+        )
+    }
+
+    let span = region.height - 1
+    let rawDepth = (tileY - region.originY) / span
+    let depth = min(1, max(0, rawDepth))
+    let centerX = region.originX + region.width / 2
+    let rawCenterX = tileX + footprintWidth / 2
+    let convergence = 1 - min(0.20, max(0, horizontalConvergence)) * depth
+    let projectedX = centerX + (rawCenterX - centerX) * convergence
+    let curve = min(0.20, max(0, depthCurve))
+    let projectedDepth = depth + curve * depth * (1 - depth)
+    let projectedY = region.originY + span * projectedDepth
+
+    return OfficeProjectedPoint(
+        x: gridOriginX + projectedX * tileSize,
+        y: gridOriginY + projectedY * tileSize
+    )
+}
+
 /// 창 크기에 맞는 **정수 배율** 타일 크기와 중앙 정렬 원점을 낸다(순수).
 ///
 /// 창에 들어가는 가장 큰 배수를 고르고, 한 배수도 못 들어가면 절반 단계(16px)까지 내려간다.
@@ -79,6 +149,32 @@ public func officeViewMetrics(
     // 한 배수도 못 들어가면 최소 단위로 둔다. 그 아래로는 내려가지 않는다 — 글자 크기에
     // 하한이 있어 더 줄이면 이름표가 읽히지 않는다.
     let tileSize = max(steps, 1) * unit
+    return OfficeViewMetrics(
+        tileSize: tileSize,
+        originX: (viewWidth - tileSize * Double(columns)) / 2,
+        originY: (viewHeight - tileSize * Double(rows)) / 2
+    )
+}
+
+/// 벡터 캐릭터·가구를 쓰는 좁은 오피스 뷰의 배율을 계산한다.
+///
+/// 픽셀아트 배율(`officeViewMetrics`)은 backing scale에 맞는 정수배만 허용해 작은 창에서
+/// 20px까지 급락할 수 있다. 선택 Inspector가 열린 1100x820 씬에서는 벡터 렌더링을 사용하므로
+/// 도면이 실제 캔버스를 채우도록 10px 단계의 최대 배율을 쓴다. 일반 오피스 크기에서는 기존
+/// 배율을 절대 낮추지 않아 1x/2x 픽셀아트 경로와도 공존한다.
+public func officeVectorViewMetrics(
+    viewWidth: Double,
+    viewHeight: Double,
+    columns: Int,
+    rows: Int,
+    minimumTileSize: Double = 30
+) -> OfficeViewMetrics {
+    guard viewWidth > 0, viewHeight > 0, columns > 0, rows > 0, minimumTileSize > 0 else {
+        return OfficeViewMetrics(tileSize: max(minimumTileSize, 0), originX: 0, originY: 0)
+    }
+    let fitting = min(viewWidth / Double(columns), viewHeight / Double(rows))
+    let stepped = (fitting / 10).rounded(.down) * 10
+    let tileSize = min(fitting, max(minimumTileSize, stepped))
     return OfficeViewMetrics(
         tileSize: tileSize,
         originX: (viewWidth - tileSize * Double(columns)) / 2,

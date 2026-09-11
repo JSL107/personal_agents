@@ -107,6 +107,22 @@ func runModelsTests(_ t: TestRunner) {
         t.fail("Approval 디코딩 실패: \(error)")
     }
 
+    // 백엔드/fixture 의 대소문자 차이가 있어도 세션 활동 상태는 하나의 기준으로 판정한다.
+    for state in ["active", "ACTIVE", "Active"] {
+        let session = ConsoleSession(
+            sessionId: "session-\(state)", pid: 1, source: "codex", name: "작업 세션",
+            cwd: "/tmp", state: state, startedAt: "2026-09-10T00:00:00Z",
+            lastActivityAt: nil
+        )
+        t.expect(session.isActive, "\(state) 세션은 활동 중으로 판정")
+    }
+    let idleSession = ConsoleSession(
+        sessionId: "session-idle", pid: 2, source: "codex", name: "유휴 세션",
+        cwd: "/tmp", state: "idle", startedAt: "2026-09-10T00:00:00Z",
+        lastActivityAt: nil
+    )
+    t.expect(!idleSession.isActive, "idle 세션은 유휴로 판정")
+
     // 기존 상태 5종이 백엔드 rawValue 로 전부 디코딩되는지
     let statePairs: [(String, ConsoleAgentState)] = [
         ("COMPLETED", .completed),

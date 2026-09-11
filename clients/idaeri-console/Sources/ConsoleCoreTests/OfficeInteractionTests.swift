@@ -16,6 +16,24 @@ private func makeInteractionAgent(_ type: String, _ state: ConsoleAgentState) ->
 func runOfficeInteractionTests(_ t: TestRunner) {
     t.suite("OfficeInteraction")
 
+    t.expectEqual(
+        officeInfoBubbleOffsetX(isSelected: true, tileSize: 40), -80,
+        "선택 담당자 말풍선은 주변 이름표에서 분리한다"
+    )
+    t.expectEqual(
+        officeInfoBubbleOffsetX(isSelected: false, tileSize: 40), 0,
+        "일반 담당자 말풍선은 기존 중심 위치를 유지한다"
+    )
+
+    t.expect(
+        reconciledSelectedAgent(current: "present", agents: [makeInteractionAgent("present", .waiting)]) == "present",
+        "existing selection is retained"
+    )
+    t.expect(
+        reconciledSelectedAgent(current: "gone", agents: [makeInteractionAgent("present", .waiting)]) == nil,
+        "selection is cleared when agent disappears"
+    )
+
     // 호버 쪽지 — 이름(누구)이 맨 위, 직무(정체)가 가운데, 활동(지금)이 아래.
     // 하나만 와도 쪽지는 떠야 한다.
     t.expect(
@@ -172,7 +190,11 @@ func runOfficeInteractionTests(_ t: TestRunner) {
         nameplateIsEmphasized(state: .completed, isHovered: false, isSelected: true),
         "선택된 대상은 강조"
     )
-    for quiet in [ConsoleAgentState.waiting, .inProgress, .completed, .awaitingIntegration] {
+    t.expect(
+        nameplateIsEmphasized(state: .awaitingIntegration, isHovered: false, isSelected: false),
+        "통합 대기는 강조"
+    )
+    for quiet in [ConsoleAgentState.waiting, .inProgress, .completed] {
         t.expect(
             !nameplateIsEmphasized(state: quiet, isHovered: false, isSelected: false),
             "\(quiet.rawValue) 는 기본 세기"
@@ -361,19 +383,15 @@ func runOfficeInteractionTests(_ t: TestRunner) {
         "배회자가 없으면 중단 대상도 없음"
     )
 
-    // 창이 좁아 이름표가 겹치는 구간에서만 숨긴다.
-    //
-    // 경계 위(넉넉한 창)에서는 상태와 무관하게 전부 보여야 한다 — 여기서 숨기기 시작하면
-    // 평소 화면에서 사람 이름이 사라진다.
+    // 이름표는 창 크기와 무관하게 보고 있거나 주의가 필요한 사람에게만 표시한다.
     let roomy = officeNameplateCrowdedTileSize + 1
     for state in [
         ConsoleAgentState.waiting, .completed, .inProgress, .awaitingApproval, .failed,
         .awaitingIntegration,
     ] {
-        t.expect(
-            nameplateIsVisible(tileSize: roomy, state: state, isHovered: false, isSelected: false),
-            "넓은 창에서는 \(state.rawValue) 이름표도 보인다"
-        )
+        let expected = state == .inProgress || state == .awaitingApproval || state == .failed || state == .awaitingIntegration
+        t.expectEqual(nameplateIsVisible(tileSize: roomy, state: state, isHovered: false, isSelected: false), expected,
+                      "넓은 창에서도 \(state.rawValue) 표시=\(expected)")
     }
 
     // 좁은 창에서는 손이 필요한 사람·일이 도는 사람·보고 있는 사람만 남는다.
@@ -386,7 +404,7 @@ func runOfficeInteractionTests(_ t: TestRunner) {
         (.waiting, false, true, true),
         (.waiting, false, false, false),
         (.completed, false, false, false),
-        (.awaitingIntegration, false, false, false),
+        (.awaitingIntegration, false, false, true),
     ]
     for (state, hovered, selected, expected) in keptWhenCramped {
         t.expectEqual(

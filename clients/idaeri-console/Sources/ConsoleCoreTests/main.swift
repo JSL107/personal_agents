@@ -4,6 +4,7 @@ import Foundation
 // 실행: `swift run ConsoleCoreTests` — exit 0 = green.
 let runner = TestRunner()
 
+runCozyAgentAppearanceTests(runner)
 runModelsTests(runner)
 runConsoleStoreTests(runner)
 runSessionStoreTests(runner)

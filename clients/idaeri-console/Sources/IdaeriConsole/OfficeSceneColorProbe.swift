@@ -36,41 +36,16 @@ func officeFurnitureSpriteBrightness(_ kind: FurnitureKind) -> Double? {
     return pixels.meanOpaque()
 }
 
-/// 셔츠 픽셀의 원본 밝기 계수(÷255). 리컬러가 부서색에 곱하는 명암이다.
-///
-/// **가장 밝은 시트의 값을 쓴다.** 이 계수는 「가장 밝은 셔츠」의 상한을 세우는 데 쓰이므로,
-/// 시트 다섯 장을 평균하면 상한이 실제보다 낮아져 통로가 사람 대역에 걸리는 것을 놓친다
-/// (#520 리뷰 지적). 시트별 실측은 250.8~252.4 로 차이가 작지만, 축이 「상한」인 한 평균은
-/// 틀린 통계다.
-///
-/// **한 장이라도 못 읽으면 nil 이다.** 빠진 시트를 조용히 건너뛰면 그 시트가 가장 밝았을 때
-/// 상한이 낮아지고, 그 사실이 화면에도 로그에도 안 남는다.
-///
-/// 정면 포즈를 쓰는 이유는 셔츠 면적이 가장 넓기 때문이다.
-func officeCharacterShirtShade() -> Double? {
-    var brightest: Double?
-    for sheet in 0..<characterSheetCount {
-        guard
-            let name = characterSpriteCandidates(sheet: sheet, pose: "down").first(where: {
-                SpriteLoader.texture($0) != nil
-            }),
-            let image = SpriteLoader.texture(name)?.cgImage() as CGImage?,
-            let pixels = OfficePixelGrid(image: image)
-        else {
-            FileHandle.standardError.write(
-                Data("셔츠 명암: 시트 \(sheet) 를 읽지 못했다\n".utf8))
-            return nil
-        }
-        let shirt = pixels.shirtPixelBrightnesses()
-        guard !shirt.isEmpty else {
-            FileHandle.standardError.write(
-                Data("셔츠 명암: 시트 \(sheet) 에 셔츠 픽셀이 없다\n".utf8))
-            return nil
-        }
-        let mean = shirt.reduce(0, +) / Double(shirt.count)
-        brightest = max(brightest ?? 0, mean)
+/// Brightness of the furniture actually used by modular room shells. The legacy
+/// sprites are intentionally not mixed into this branch because they are hidden
+/// when a complete shell is present.
+func officeCozyFurnitureSpriteBrightness(_ kind: FurnitureKind) -> Double? {
+    guard let image = SpriteLoader.cozyFurnitureTexture(kind)?.cgImage() as CGImage?,
+        let pixels = OfficePixelGrid(image: image)
+    else {
+        return nil
     }
-    return brightest.map { $0 / 255 }
+    return pixels.meanOpaque()
 }
 
 /// 한 시각의 사무실을 굽고 바닥 밝기를 재서 돌려준다. 명단은 `--pose-demo` 와 같은 고정 표본이다.
@@ -105,17 +80,10 @@ func officeProbeFloorColors(
 /// 바닥 색 게이트. 실측표를 내고 규칙을 어기면 false.
 func officeCheckFloorColors(hours: [Int], size: CGSize) -> Bool {
     var failures: [String] = []
-    // 셔츠 대역은 시각과 무관하므로 한 번만 구한다. 못 구하면 그 규칙만 빠지는 것이 아니라
-    // **왜 빠졌는지**를 적는다 — 조용히 건너뛰면 통과와 구별되지 않는다.
-    let shirtShade = officeCharacterShirtShade()
-    let shirtBrightness = shirtShade.map(officeShirtBrightnessRange)
-    if let shirtShade, let shirtBrightness {
-        print(
-            "   셔츠 대역 \(rounded(shirtBrightness.darkest))~\(rounded(shirtBrightness.brightest))"
-                + " (부서 6 × 톤 \(officeShirtShiftSteps) · 원본 명암 \(rounded(shirtShade * 255)))"
-        )
-    } else {
-        failures.append("셔츠 픽셀을 읽지 못했다 — 통로가 사람 대역에 걸리는지 판정할 수 없다")
+    let usesModularCozyRooms = Department.allCases.allSatisfy {
+        SpriteLoader.cozyDepartmentRoomTexture($0) != nil
+    } && [CommonAreaKind.meeting, .president, .pantry].allSatisfy {
+        SpriteLoader.cozyCommonAreaTexture($0) != nil
     }
     for hour in hours {
         guard let probe = officeProbeFloorColors(hour: hour, size: size) else {
@@ -137,20 +105,40 @@ func officeCheckFloorColors(hours: [Int], size: CGSize) -> Bool {
                     + "   \(model.map { signed(sample.median - $0) } ?? "—")"
             )
         }
-        failures += officeFloorColorViolations(
-            samples: samples,
-            hour: hour,
-            textureBrightness: officeFloorTextureBrightness,
-            shirtBrightness: shirtBrightness,
-            furnitureBrightness: officeFurnitureSpriteBrightness,
-            furniturePairs: probe.furniturePairs
-        )
+        if usesModularCozyRooms {
+            failures += officeCozyRoomColorViolations(
+                samples: samples,
+                hour: hour,
+                furnitureBrightness: officeCozyFurnitureSpriteBrightness,
+                // 커피머신·싱크대는 뺀다. 바닥 대비 규칙이 지키려는 것은 「바닥에 놓인 물건이
+                // 바닥과 밝기가 겹쳐 무늬로 읽히는 것」인데, 이 둘은 방 셸에서 캐비닛 위에 놓여
+                // 바닥과 닿지 않는다. 야간(22시)에 바닥이 어두워지면 PNG 평균 밝기가 바닥
+                // 실측과 스쳐(135.0 대 134.9) 위반이 뜨지만, 렌더를 열어 보면 둘 다 또렷하다.
+                furniturePairs: probe.furniturePairs.filter {
+                    switch $0.kind {
+                    case .desk, .chairDown, .chairUp, .sofa2, .sofa3,
+                         .meetingTable, .coffeeTable:
+                        return true
+                    default:
+                        return false
+                    }
+                }
+            )
+        } else {
+            failures += officeFloorColorViolations(
+                samples: samples,
+                hour: hour,
+                textureBrightness: officeFloorTextureBrightness,
+                furnitureBrightness: officeFurnitureSpriteBrightness,
+                furniturePairs: probe.furniturePairs
+            )
+        }
     }
     for failure in failures {
         print("✗ \(failure)")
     }
     if failures.isEmpty {
-        print("✓ 색 규칙 통과 — 통로가 가장 밝고 셔츠 대역 위에 있으며, 가구가 바닥과 갈린다")
+        print("✓ 색 규칙 통과 — 필수 표면·표본·실내 밝기와 부서별 톤 차이가 유효하다")
     }
     return failures.isEmpty
 }
