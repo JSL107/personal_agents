@@ -411,7 +411,11 @@ final class CharacterNode: SKNode {
         // 짝수 걸음을 정지 그림에 두는 것이 중요하다 — 걸음이 끝나는 자리(`endWalk` 가
         // `walkStep` 을 0 으로 되돌린다)와 같은 그림이라야 도착 순간에 그림이 튀지 않는다.
         if isWalking, !walkStep.isMultiple(of: 2) {
-            return "walk"
+            // **보는 방향이 그림을 고른다.** 화면 위로 가는 걸음은 뒤통수가 보여야 하고
+            // 아래로 오는 걸음은 얼굴이 보여야 한다 — 한 벌로 둘을 다 쓰면 한쪽이 반드시
+            // 뒷걸음질이 된다(사용자 보고: "뒤로 걷는다"). 좌우 걸음은 앞모습을 쓴다.
+            // 옆모습 원화가 없어 정면이 가장 덜 어색하고, 몸 기울기가 방향을 나른다.
+            return facing == .up ? "walk-up" : "walk"
         }
         return cozyIdlePose
     }
@@ -694,6 +698,12 @@ final class CharacterNode: SKNode {
         }
         // 기준 y 로 돌린다 — `.zero` 로 되돌리면 앉은 사람이 몸짓을 멈출 때마다 책상 위로 튀어오른다.
         sprite.position = CGPoint(x: 0, y: spriteBaseY)
+    }
+
+    /// 지금 걷는 방향의 걸음 그림을 가지고 있는가. 상하 흔들림을 얹을지 고르는 쪽이 쓴다 —
+    /// 방향을 안 보고 앞모습만 물으면 뒷모습만 가진 열세 명이 흔들림을 잃는다.
+    var hasWalkArtworkForCurrentFacing: Bool {
+        hasDedicatedArtwork(for: facing == .up ? "walk-up" : "walk")
     }
 
     func hasDedicatedArtwork(for pose: String) -> Bool {
