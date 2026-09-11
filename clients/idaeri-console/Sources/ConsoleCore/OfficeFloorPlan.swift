@@ -102,6 +102,17 @@ public let officeGeneratedFallbackSeatedSpriteDrop: Double = 0.12
 /// 대표가 책상 옆에 선 것처럼 보인다. 0.12 에서 둘 다 상판 뒤에 앉는다.
 public let officeWorkstationSeatVisualOffsetTiles: Double = 0.12
 
+/// 대표 자리 전용 좌석 오프셋. 담당자 값(`officeWorkstationSeatVisualOffsetTiles`)과 **다르다.**
+///
+/// 대표실은 부서 방과 원근 투영 구역이 달라, 같은 타일 오프셋이 화면에서 같은 거리로 오지
+/// 않는다(`floorPoint` 의 `perspectiveRegion`). 담당자 값 0.12 를 그대로 쓰면 대표만 상판
+/// 앞으로 나와 다리와 신발이 드러난다 — #562 에서 좌석 하강 보정을 더해도 이 값이 그대로라
+/// 증상이 남았다.
+///
+/// 전체 렌더로 0.12·-0.05·-0.22 를 비교했다. `-0.22` 는 반대로 얼굴 절반이 상판에 잠기고,
+/// `-0.05` 에서 하반신만 가려 "책상 앞에서 일하는" 그림이 된다.
+public let officePresidentSeatVisualOffsetTiles: Double = -0.05
+
 /// 서 있는 원화를 축소해 임시 착석으로 쓰는 경우, 실제 착석 PNG보다 머리·어깨 기준이 낮다.
 /// 같은 좌표에 두면 모니터 뒤에서 정수리만 보여 별도 상승 보정을 적용한다.
 public let officeWorkstationFallbackSeatExtraLiftTiles: Double = 0.36
