@@ -214,6 +214,32 @@ func runCozyPoseContractTests(_ t: TestRunner) {
         ResolvedCozyPose(pose: "drinking", posture: .standing),
         "가구를 걷어낸 8번 drinking 은 그대로 쓰인다")
 
+    // 호출자가 자세를 요구하면 그 자세의 그림만 뽑힌다. 대시보드 카드처럼 앉을 자리가
+    // 없는 화면이 쓰는 경로다 — 여기서 앉은 그림이 새면 사람이 허공에 주저앉는다.
+    //
+    // 1번은 `typing` 을 가지고 있지만 **앉은 그림**이라 선 자세 요구에서 제외되고, 18번은
+    // 태블릿을 들고 **서 있는** `typing` 이라 그대로 뽑힌다. 같은 요청·같은 파일 유무인데
+    // 자세 판정 때문에 답이 갈리는 짝이라, 둘을 함께 봐야 분기가 실제로 도는지 알 수 있다.
+    t.expectEqual(
+        resolveCozyPose(
+            requested: "typing", assetIndex: 1, hasAsset: cozyPoseAssetExists(1),
+            posture: .standing
+        ),
+        ResolvedCozyPose(pose: cozyIdlePose, posture: .standing),
+        "선 자세를 요구하면 앉은 타이핑 그림은 쓰지 않는다")
+    t.expectEqual(
+        resolveCozyPose(
+            requested: "typing", assetIndex: 18, hasAsset: cozyPoseAssetExists(18),
+            posture: .standing
+        ),
+        ResolvedCozyPose(pose: "typing", posture: .standing),
+        "서 있는 타이핑 그림은 선 자세 요구에도 그대로 쓰인다")
+    // 인자를 생략하면 예전대로 요청 이름이 자세를 정한다(오피스 좌석 경로가 이 기본값을 쓴다).
+    t.expectEqual(
+        resolveCozyPose(requested: "typing", assetIndex: 1, hasAsset: cozyPoseAssetExists(1)),
+        ResolvedCozyPose(pose: "typing", posture: .seated),
+        "자세를 요구하지 않으면 typing 은 여전히 앉은 그림")
+
     // 걸음 그림 — 가진 사람은 그대로, 없는 사람은 정지 그림으로 접힌다(몸 기울기만 남는다).
     t.expectEqual(
         resolveCozyPose(requested: "walk", assetIndex: 1, hasAsset: cozyPoseAssetExists(1)),
