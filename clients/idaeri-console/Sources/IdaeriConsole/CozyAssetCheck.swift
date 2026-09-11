@@ -109,6 +109,61 @@ func runCozyAssetCheck() -> Bool {
             valid = false
         }
     }
+    let requiredWalkAssets = [1, 2, 3, 16, 17, 18, 19].map { "agent-\($0)-walk" }
+    for name in requiredWalkAssets {
+        guard let url = Bundle.module.url(
+            forResource: name, withExtension: "png", subdirectory: "cozy/characters"
+        ), let image = NSImage(contentsOf: url),
+              let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            fputs("missing or unreadable cozy walk asset: \(name).png\n", stderr)
+            valid = false
+            continue
+        }
+        let alphaInfo = cgImage.alphaInfo
+        if alphaInfo == .none || alphaInfo == .noneSkipFirst || alphaInfo == .noneSkipLast {
+            fputs("cozy walk asset has no alpha channel: \(name).png\n", stderr)
+            valid = false
+        }
+        if cgImage.width != 1145 || cgImage.height != 1374 {
+            fputs("cozy walk asset has unexpected dimensions: \(name).png\n", stderr)
+            valid = false
+        }
+        guard let provider = cgImage.dataProvider, let data = provider.data,
+              let bytes = CFDataGetBytePtr(data) else {
+            fputs("cozy walk asset has no pixel data: \(name).png\n", stderr)
+            valid = false
+            continue
+        }
+        let bytesPerPixel = cgImage.bitsPerPixel / 8
+        let alphaOffset = alphaInfo == .first || alphaInfo == .premultipliedFirst
+            ? 0 : bytesPerPixel - 1
+        let cornerOffsets = [
+            0,
+            (cgImage.width - 1) * bytesPerPixel,
+            (cgImage.height - 1) * cgImage.bytesPerRow,
+            (cgImage.height - 1) * cgImage.bytesPerRow + (cgImage.width - 1) * bytesPerPixel,
+        ]
+        if !cornerOffsets.contains(where: { bytes[$0 + alphaOffset] < 245 }) {
+            fputs("cozy walk asset appears to have an opaque background: \(name).png\n", stderr)
+            valid = false
+        }
+    }
+    // 걸음 그림이 **실제로 화면에 쓰이는지**를 계약 쪽에서 확인한다. 파일이 번들에 들어간
+    // 것만 보면, 포즈 계약이 그 이름을 모르는 채여도 초록불이 된다 — 가구가 그려진 원화
+    // 셋이 정확히 그 방식으로 조용히 안 쓰이고 있었다.
+    for index in [1, 2, 3, 16, 17, 18, 19] {
+        let resolved = resolveCozyPose(
+            requested: "walk",
+            assetIndex: index,
+            hasAsset: { pose in
+                SpriteLoader.cozyCharacterHasDedicatedPose(assetIndex: index, pose: pose)
+            }
+        )
+        if resolved.pose != "walk" {
+            fputs("cozy walk artwork is not wired for agent-\(index)\n", stderr)
+            valid = false
+        }
+    }
     let roomAssets = [
         "planning-shell", "quality-shell", "evaluation-shell",
         "treasury-shell", "content-shell", "internalOps-shell",
@@ -128,6 +183,7 @@ func runCozyAssetCheck() -> Bool {
         "workstation", "chair", "sofa", "meeting-table", "bookshelf", "coffee-station",
         "planning-board-table", "quality-review-station", "evaluation-kpi-console",
         "treasury-ledger-console", "content-storyboard-station", "internal-ops-control-desk",
+        "vacuum-robot", "waste-bin", "dust-pile",
     ]
     for name in furnitureAssets {
         guard let url = Bundle.module.url(
@@ -142,6 +198,26 @@ func runCozyAssetCheck() -> Bool {
         if alphaInfo == .none || alphaInfo == .noneSkipFirst || alphaInfo == .noneSkipLast {
             fputs("cozy furniture asset has no alpha channel: \(name).png\n", stderr)
             valid = false
+        }
+        // 배경이 통째로 불투명하면 바닥 위에 흰 사각형이 얹힌다. 생성형 에셋에서 실제로
+        // 겪은 사고라(먼지 그림이 체크무늬 배경째 들어왔다) 새로 받는 바닥 소품은 전부 검사한다.
+        if ["vacuum-robot", "waste-bin", "dust-pile"].contains(name),
+           let provider = cgImage.dataProvider,
+           let data = provider.data, let bytes = CFDataGetBytePtr(data) {
+            let bytesPerPixel = cgImage.bitsPerPixel / 8
+            let alphaOffset = alphaInfo == .first || alphaInfo == .premultipliedFirst
+                ? 0 : bytesPerPixel - 1
+            let cornerOffsets = [
+                0,
+                (cgImage.width - 1) * bytesPerPixel,
+                (cgImage.height - 1) * cgImage.bytesPerRow,
+                (cgImage.height - 1) * cgImage.bytesPerRow
+                    + (cgImage.width - 1) * bytesPerPixel,
+            ]
+            if !cornerOffsets.contains(where: { bytes[$0 + alphaOffset] < 245 }) {
+                fputs("cozy floor prop appears to have an opaque background: \(name).png\n", stderr)
+                valid = false
+            }
         }
     }
     let dashboardAccentAssets = [
@@ -165,7 +241,7 @@ func runCozyAssetCheck() -> Bool {
         }
     }
     if valid {
-        print("cozy asset check passed: 9 modular rooms + 1 shared oak floor + 12 interactive furniture assets + \(dashboardAccentAssets.count) dashboard accents + \(cozyCharacterAssetCount) transparent characters + \(requiredPoseAssets.count) production pose assets")
+        print("cozy asset check passed: 9 modular rooms + 1 shared oak floor + \(furnitureAssets.count) interactive furniture assets + \(dashboardAccentAssets.count) dashboard accents + \(cozyCharacterAssetCount) transparent characters + \(requiredPoseAssets.count) production pose assets + \(requiredWalkAssets.count) walk assets")
     }
     return valid
 }
