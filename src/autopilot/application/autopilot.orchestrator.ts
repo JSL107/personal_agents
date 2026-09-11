@@ -256,7 +256,16 @@ export class AutopilotOrchestrator {
       // 실패하면 그쪽은 날짜 가드만 롤백하므로, 표식이 남아 재시도가 진입에서 차단된다.
       // → 발송 실패 롤백에서 슬롯 표식도 함께 해제한다(같은 job = 같은 slotKey 라 도달 가능).
       await this.markSlotDone(slotKey);
-      this.logger.warn(
+      // 이 경로는 고장이 아니라 가드가 설계대로 동작한 결과다. 자주 도는 그룹에서는 정상
+      // 회차의 대부분이 여기로 끝난다 — pr-review-sweep(`*/3`)은 하루 480 회차 중 실측
+      // 2026-09-11 기준 발송 2 회, 나머지가 전부 이 줄이다. warn 으로 두면 진짜 경고가 그
+      // 사이에 묻히므로 등급을 내린다. 발송이 실제로 실패한 경우는 아래 롤백 경로가 따로 남긴다.
+      //
+      // ⚠️ 등급만 내린 것이라 **출력 줄 수는 줄지 않는다**. main.ts 가 로그 레벨을 설정하지
+      //    않아 NestJS 기본값대로 debug 도 그대로 찍힌다(2026-09-11 확인). 실제로 조용해지려면
+      //    NestFactory.create 에 logLevels 를 지정해야 하는데, 그러면 다른 debug 8 곳도 함께
+      //    사라지므로 관측성 판단이 따로 필요하다 — 여기서 같이 바꾸지 않는다.
+      this.logger.debug(
         `Autopilot[${groupKey}] — ${firedAtKst} 이미 발송됨, 중복 차단`,
       );
       return;
