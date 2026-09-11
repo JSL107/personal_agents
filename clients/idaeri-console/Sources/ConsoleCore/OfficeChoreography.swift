@@ -182,15 +182,18 @@ public func cozyPoseCandidates(_ normalized: String) -> [String] {
 public func resolveCozyPose(
     requested: String,
     assetIndex: Int,
-    hasAsset: (String) -> Bool
+    hasAsset: (String) -> Bool,
+    posture requiredPosture: CozyPosePosture? = nil
 ) -> ResolvedCozyPose {
     let normalized = normalizedCozyPose(requested)
-    // 앉아야 하는 요청인지는 요청 이름이 정한다 — 책상에서 오는 요청은 `sit`·`typing` 둘뿐이고
-    // 나머지(가구 앞 자세·걷기·기본)는 전부 서 있는 맥락이다. 호출자가 별도 인자로 들고
-    // 다니면 두 곳이 서로 다른 답을 낼 여지가 생긴다.
-    let wanted: CozyPosePosture = (normalized == "sit" || normalized == "typing")
-        ? .seated
-        : .standing
+    // 앉아야 하는 요청인지는 보통 요청 이름이 정한다 — 책상에서 오는 요청은 `sit`·`typing`
+    // 둘뿐이고 나머지(가구 앞 자세·걷기·기본)는 전부 서 있는 맥락이다.
+    //
+    // **앉을 자리가 없는 화면은 그것을 덮어쓸 수 있어야 한다.** 대시보드 카드에는 책상도
+    // 의자도 없는데 `typing` 을 요청하면 앉은 그림이 뽑혀 사람이 공중에 주저앉는다
+    // (사용자 보고). 그런 호출자는 `posture: .standing` 을 넘겨 선 그림만 받는다.
+    let wanted: CozyPosePosture = requiredPosture
+        ?? ((normalized == "sit" || normalized == "typing") ? .seated : .standing)
     for candidate in cozyPoseCandidates(normalized) {
         guard !cozyPoseDrawsOwnFurniture(assetIndex: assetIndex, pose: candidate) else {
             continue

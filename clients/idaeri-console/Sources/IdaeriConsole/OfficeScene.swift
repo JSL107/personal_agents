@@ -1907,6 +1907,9 @@ final class OfficeScene: SKScene {
                 .filter {
                     $0.name?.hasPrefix("furn:") == true
                         || $0.name?.hasPrefix("cozy:desk-front:") == true
+                        // 의자도 책상과 함께 다시 그려지므로 같이 걷는다. 빠뜨리면 창 크기를
+                        // 바꿀 때마다 옛 좌표에 의자가 한 겹씩 쌓인다(앞판이 정확히 그랬다).
+                        || $0.name?.hasPrefix("cozy:desk-chair:") == true
                         || $0.name == "cozy:decor-desk"
                         || $0.name == "cozy:decor-chair"
                         || $0.name?.hasPrefix("cozy:door-status:") == true
@@ -2098,6 +2101,40 @@ final class OfficeScene: SKScene {
                 front.zPosition = depth(of: placement.tile) + 0.15
                 objectLayer.addChild(front)
                 node.zPosition = depth(of: placement.tile) - 0.5
+                // **앉을 것을 놓는다.** 평면도에는 책상이 32개인데 의자가 한 개도 없어
+                // (`FurnitureKind.chairDown` 을 아무도 배치하지 않는다), 앉은 사람이 허공에
+                // 주저앉은 그림이 됐다 — 앞판은 책상 그림 그대로라 다리 사이가 투명해서
+                // 하반신이 그 틈으로 그대로 비쳤다(사용자 보고: "책상을 뚫고 앉아 있다").
+                //
+                // 평면도가 아니라 **화면에만** 놓는 것이 요점이다. 좌석 칸은 사람이 서는
+                // 자리라 통행 가능해야 하는데, 평면도에 가구로 넣으면 그 칸이 막혀 길찾기가
+                // 자기 자리로 못 간다.
+                //
+                // 그리는 순서는 책상 뒤판(-0.5) < 의자 < 사람(-0.24) < 책상 앞판(+0.15)이다.
+                if let chairTexture = SpriteLoader.cozyFurnitureTexture(.chairDown) {
+                    // **크기는 타일에서 직접 잡는다.** `FurnitureKind.sizeBoost` 는 도트
+                    // 스프라이트(수십 px)를 기준으로 계산된 값이라, 1230px 짜리 3D 원화에
+                    // 그대로 곱하면 의자가 화면을 덮는다(실측으로 확인). 책상 폭이 2칸이므로
+                    // 그 앞 의자는 한 칸 남짓이 자연스럽다.
+                    let chair = SKSpriteNode(texture: chairTexture)
+                    let chairSourceSize = chairTexture.size()
+                    let chairWidth = tileSize * 1.05
+                    chair.size = CGSize(
+                        width: chairWidth,
+                        height: chairWidth * chairSourceSize.height
+                            / max(1, chairSourceSize.width)
+                    )
+                    chair.anchorPoint = CGPoint(x: 0.5, y: 0.12)
+                    chair.texture?.filteringMode = .linear
+                    chair.name = "cozy:desk-chair:\(placement.tile.x)-\(placement.tile.y)"
+                    chair.position = CGPoint(
+                        x: position.x,
+                        y: position.y
+                            + tileSize * CGFloat(officeWorkstationSeatVisualOffsetTiles)
+                    )
+                    chair.zPosition = depth(of: placement.tile) - 0.35
+                    objectLayer.addChild(chair)
+                }
             } else {
                 node.zPosition = depth(of: placement.tile)
             }
@@ -2347,7 +2384,7 @@ final class OfficeScene: SKScene {
             // read as the thing being used rather than as background decoration.
             node.position = CGPoint(
                 x: deskPoint.x,
-                y: deskPoint.y + tileSize * CGFloat(officePresidentSeatVisualOffsetTiles)
+                y: deskPoint.y + tileSize * CGFloat(officeWorkstationSeatVisualOffsetTiles)
             )
             node.zPosition = depth(of: workDesk) - 0.24
         } else {
