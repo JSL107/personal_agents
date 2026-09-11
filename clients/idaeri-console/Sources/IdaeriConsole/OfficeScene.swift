@@ -2322,18 +2322,22 @@ final class OfficeScene: SKScene {
             pose: workDesk == nil ? "default" : "typing"
         )
         artwork.setReferenceScale(characterScale * artworkScale)
-        // **대표도 앉은 사람이므로 좌석 보정을 똑같이 받아야 한다.**
-        //
-        // 담당자는 `CharacterNode` 가 이 둘을 해 준다 — 앉으면 스프라이트를
-        // `officeDedicatedSeatedSpriteDrop` 만큼 내려 하반신을 상판 뒤로 넣고
-        // (`applySpriteSize`), 아트워크에 딸린 접지 그림자를 꺼 노드 레벨 그림자 하나만
-        // 남긴다(`groundShadowIsHidden`). 대표는 그 클래스를 쓰지 않는 별도 스프라이트라
-        // 둘 다 빠져 있었고, 그래서 **혼자만 다리와 신발이 책상 앞으로 드러났다**
-        // (전후 렌더로 대조). 배율을 0.85 로 내린 뒤 더 도드라졌다.
-        artwork.groundShadowIsHidden = true
-        artwork.position.y = -tileSize * CGFloat(officeDedicatedSeatedSpriteDrop)
         node.addChild(artwork)
         if let workDesk {
+            // **앉은 자리에서만** 좌석 보정을 건다. 담당자는 `CharacterNode` 가 앉을 때
+            // 스프라이트를 `officeDedicatedSeatedSpriteDrop` 만큼 내려 하반신을 상판 뒤로
+            // 넣는데(`applySpriteSize`), 대표는 그 클래스를 쓰지 않는 별도 스프라이트라
+            // 그 보정이 빠져 혼자만 다리와 신발이 책상 앞으로 드러났다.
+            //
+            // 책상이 없으면 대표는 서 있는 그림(`default`)이므로 이 보정을 걸면 안 된다 —
+            // 착석용 하강을 선 사람에게 주면 발이 바닥에 박힌다.
+            //
+            // **접지 그림자는 끄지 않는다.** 담당자 쪽에서 끄는 이유는 `CharacterNode` 가
+            // 타일 크기에 맞춘 자기 그림자를 따로 그리기 때문인데, 대표 노드는 그냥
+            // `SKSpriteNode` 라 그런 그림자가 없다. 여기서 끄면 한 겹으로 주는 것이 아니라
+            // 접지 신호가 통째로 사라진다(`CozyCharacterArtworkNode.groundShadow` 주석이
+            // 바로 이 경우를 못 박아 두었다).
+            artwork.position.y = -tileSize * CGFloat(officeDedicatedSeatedSpriteDrop)
             let deskPoint = floorPoint(
                 workDesk,
                 footprintWidth: FurnitureKind.desk.footprint.width
@@ -2343,7 +2347,7 @@ final class OfficeScene: SKScene {
             // read as the thing being used rather than as background decoration.
             node.position = CGPoint(
                 x: deskPoint.x,
-                y: deskPoint.y + tileSize * CGFloat(officeWorkstationSeatVisualOffsetTiles)
+                y: deskPoint.y + tileSize * CGFloat(officePresidentSeatVisualOffsetTiles)
             )
             node.zPosition = depth(of: workDesk) - 0.24
         } else {
