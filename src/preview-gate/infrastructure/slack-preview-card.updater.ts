@@ -60,7 +60,10 @@ export class SlackPreviewCardUpdater implements PreviewCardPort {
       //
       // 상한을 걸어 미리 자르지 않는 이유: 지금 값으로는 재현되지 않아 어디를 잘라야 하는지
       // 모른다. 근거 없이 자르면 멀쩡한 승인 카드 본문이 사라진다.
-      const blocksBytes = JSON.stringify(blocks).length;
+      // UTF-8 실바이트로 잰다. `.length` 는 UTF-16 코드 단위라 한글 본문에서 실제 전송량의
+      // 절반 이하로 찍힌다(실측: `{"t":"한글 본문 테스트"}` → length 17 vs utf8 31).
+      // 이 로그의 목적이 Slack 요청 크기를 한도와 비교하는 것이라, 단위가 틀리면 쓸모가 없다.
+      const blocksBytes = Buffer.byteLength(JSON.stringify(blocks), 'utf8');
       this.logger.warn(
         `PreviewCard chat.update 실패(swallow) preview=${preview.id} state=${state} ` +
           `본문=${bodyText.length}자 블록=${blocks.length}개 직렬화=${blocksBytes}B ` +

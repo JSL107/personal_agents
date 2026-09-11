@@ -100,10 +100,14 @@ export class AuditResumeUsecase {
         const completion = await this.modelRouter.route({
           agentType: AgentType.CAREER_MATE,
           request: {
+            // 판정 대상은 창 안 성과지만 jdFindings·rejectionRisks 는 이력서 전체를 보고
+            // 답해야 한다. 전체 목록(제목+bullet)을 따로 넘겨, 공고 요구의 근거가 창 밖에
+            // 있을 때 MISSING 으로 오판하는 것을 막는다.
             prompt: buildResumeAuditPrompt(
               windowedProfile,
               targetJd,
               auditWindow.label,
+              profile.accomplishments,
             ),
             systemPrompt: RESUME_AUDIT_SYSTEM_PROMPT,
           },
@@ -154,6 +158,7 @@ export class AuditResumeUsecase {
         demotedTitles: [],
         droppedTitles: [],
         unjudgedTitles: [],
+        outOfWindowTitles: [],
         forcedMissing: [],
         rewriteMissing: [],
         droppedHighlights: [],

@@ -6,6 +6,7 @@ import {
   CareerProfileData,
   CareerTargetJdData,
   JdFinding,
+  ProfileAccomplishment,
   RejectionRisk,
   ResumeAuditData,
 } from '../career-mate.type';
@@ -65,6 +66,8 @@ export const buildResumeAuditPrompt = (
   // 성과가 많아 이번 회차가 일부만 보는 경우의 범위 표기(selectAuditWindow 참조).
   // 전량을 본 회차는 null 이고, 그때는 절 자체를 넣지 않아 종전 프롬프트와 완전히 같다.
   windowLabel: string | null = null,
+  // 이력서 **전체** 성과. 부분 회차에서 맥락 복원용으로만 쓴다(아래 allTitlesNote).
+  allAccomplishments: readonly ProfileAccomplishment[] = [],
 ): string => {
   const accomplishments = profile.accomplishments
     .map((accomplishment) => {
@@ -96,10 +99,30 @@ export const buildResumeAuditPrompt = (
         '보여준 성과만 items 에 판정한다 — 보이지 않는 것을 추측해 채우지 않는다.',
       ]
     : [];
+  // jdFindings·rejectionRisks 는 "이력서 전체" 를 보고 답해야 하는 항목이다. 창 안만 보면
+  // 창 밖에 근거가 있는 공고 요구를 MISSING 으로 오판하고, 그 결과가 하류에서 실제 요건
+  // 미달로 보고된다. 전체 목록을 제목+bullet 으로만 실어 맥락을 복원한다 — 성과당 ~200 bytes
+  // 라 전문(~1.6KB/건)을 싣는 것과 부담이 다르고, items 판정 대상이 아니라 출력도 안 늘어난다.
+  const allTitlesNote =
+    windowLabel && allAccomplishments.length > 0
+      ? [
+          '',
+          '[이력서 전체 성과 목록 — 판정 대상 아님]',
+          '아래는 이력서에 실린 모든 성과의 제목과 한 줄 요약이다. items 에 판정하지 않는다.',
+          'jdFindings 와 rejectionRisks 를 쓸 때만 "이 사람이 무엇을 했는가" 의 근거로 참고한다.',
+          allAccomplishments
+            .map(
+              (accomplishment) =>
+                `- ${accomplishment.title} :: ${accomplishment.bullet}`,
+            )
+            .join('\n'),
+        ]
+      : [];
   const sections = [
     '[내 이력서 요약]',
     profile.summary,
     ...windowNote,
+    ...allTitlesNote,
     '',
     '[성과]',
     accomplishments || '(없음)',

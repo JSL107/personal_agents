@@ -87,6 +87,46 @@ describe('buildResumeAuditPrompt', () => {
   it('목표 공고가 없으면 공고 섹션을 넣지 않는다', () => {
     expect(buildResumeAuditPrompt(PROFILE, null)).not.toContain('[목표 공고]');
   });
+
+  it('범위 표기가 없으면 범위 절도 전체 목록도 붙이지 않는다 — 종전 프롬프트 그대로', () => {
+    const prompt = buildResumeAuditPrompt(PROFILE, null, null, [
+      ...PROFILE.accomplishments,
+    ]);
+
+    expect(prompt).not.toContain('[이번 회차 범위]');
+    expect(prompt).not.toContain('[이력서 전체 성과 목록');
+  });
+
+  it('범위 표기가 있으면 범위 절을 붙이고 전체 개수를 단정하지 말라고 알린다', () => {
+    const prompt = buildResumeAuditPrompt(
+      PROFILE,
+      null,
+      '1~30번째 / 전체 85건',
+      [],
+    );
+
+    expect(prompt).toContain('[이번 회차 범위]');
+    expect(prompt).toContain('1~30번째 / 전체 85건');
+    expect(prompt).toContain('전체 개수를 단정하지 않는다');
+  });
+
+  // jdFindings·rejectionRisks 는 이력서 전체를 보고 답해야 한다. 창 안만 보면 창 밖에 근거가
+  // 있는 공고 요구를 MISSING 으로 오판하고, 그 결과가 하류에서 실제 요건 미달로 보고된다.
+  it('부분 회차에는 전체 성과 목록을 제목+bullet 으로만 덧붙인다', () => {
+    const prompt = buildResumeAuditPrompt(PROFILE, null, '1~1번째 / 전체 2건', [
+      ...PROFILE.accomplishments,
+      {
+        ...PROFILE.accomplishments[0],
+        title: '창 밖 성과',
+        bullet: '창 밖에서 한 일이다.',
+      },
+    ]);
+
+    expect(prompt).toContain('[이력서 전체 성과 목록 — 판정 대상 아님]');
+    expect(prompt).toContain('- 창 밖 성과 :: 창 밖에서 한 일이다.');
+    // 전문(상황/과제/행동/결과)은 싣지 않는다 — 그러면 창을 좁힌 의미가 사라진다.
+    expect(prompt).not.toContain('### 창 밖 성과');
+  });
 });
 
 describe('parseResumeAuditOutput', () => {

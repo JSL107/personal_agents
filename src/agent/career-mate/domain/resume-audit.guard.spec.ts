@@ -46,6 +46,55 @@ const data = (
 });
 
 describe('applyAuditGuards', () => {
+  // 범위 밖 성과의 원문은 이번 프롬프트에 실리지 않는다. 그런데도 모델이 그 제목을 판정해
+  // 보내면 근거 없이 만들어낸 판정인데, 조회는 전체 profile 로 하므로 제목이 존재해 그대로
+  // 통과한다 — 여기서 걸러야 "보여준 성과만 판정한다" 가 강제된다.
+  it('범위 밖 제목은 모델이 판정해 보내도 받지 않고 UNJUDGED 로 되돌린다', () => {
+    const result = applyAuditGuards(
+      data([
+        {
+          title: '입증 성과',
+          status: 'PROVEN',
+          quote: '결과: 입증 성과 결과 30%',
+          why: '정량 결과가 있다.',
+          rewrite: null,
+        },
+      ]),
+      PROFILE,
+      ['입증 성과'],
+    );
+
+    const judged = result.items.find((item) => item.title === '입증 성과');
+    expect(judged?.status).toBe('UNJUDGED');
+    expect(judged?.why).toContain('이번 회차 범위 밖');
+    expect(result.guard.droppedTitles).toContain('입증 성과');
+    // 범위 밖은 계약 위반이 아니므로 unjudgedTitles 에 섞이지 않는다.
+    expect(result.guard.unjudgedTitles).not.toContain('입증 성과');
+    expect(result.guard.outOfWindowTitles).toContain('입증 성과');
+  });
+
+  // 하류(portfolio-publish hasGuardConcern)가 unjudgedTitles 로 경고 발송을 정한다.
+  // 둘을 섞으면 성과가 상한을 넘는 날마다 ⚠️ 가 뜨고 진짜 계약 위반이 그 안에 묻힌다.
+  it('모델 누락과 범위 밖을 서로 다른 목록에 담는다', () => {
+    const result = applyAuditGuards(
+      data([
+        {
+          title: '입증 성과',
+          status: 'PROVEN',
+          quote: '결과: 입증 성과 결과 30%',
+          why: '정량 결과가 있다.',
+          rewrite: null,
+        },
+      ]),
+      PROFILE,
+      ['약한 성과'],
+    );
+
+    expect(result.guard.outOfWindowTitles).toEqual(['약한 성과']);
+    // '근거 없음' 과 '판정 누락' 은 범위 안인데 모델이 빼먹었다 = 계약 위반.
+    expect(result.guard.unjudgedTitles).toEqual(['근거 없음', '판정 누락']);
+  });
+
   it('입력에 없는 환각 title을 폐기한다', () => {
     const result = applyAuditGuards(
       data([

@@ -219,6 +219,7 @@ describe('AuditResumeUsecase', () => {
         demotedTitles: [],
         droppedTitles: [],
         unjudgedTitles: [],
+        outOfWindowTitles: [],
         forcedMissing: [],
         rewriteMissing: [],
         droppedHighlights: [],
@@ -229,5 +230,55 @@ describe('AuditResumeUsecase', () => {
     expect(fixture.agentRunService.execute.mock.calls[0][0].triggerType).toBe(
       TriggerType.AUTOPILOT_RESUME_AUDIT_CRON,
     );
+  });
+
+  // 창 선택이 usecase 에 실제로 연결됐는지 — 모델 입력은 줄고 결과는 전체를 유지해야 한다.
+  // 둘 중 하나만 되면 각각 다른 사고가 난다: 입력이 안 줄면 타임아웃이 그대로고, 결과가
+  // 줄면 범위 밖 성과가 화면에서 조용히 사라진다.
+  it('성과가 상한을 넘으면 모델 입력만 줄이고 결과에는 전체 성과를 남긴다', async () => {
+    const manyAccomplishments = Array.from({ length: 70 }, (_, index) => ({
+      ...PROFILE.accomplishments[0],
+      title: `성과 ${index + 1}`,
+    }));
+    const fixture = createFixture({
+      profile: { ...PROFILE, accomplishments: manyAccomplishments },
+    });
+
+    const outcome = await fixture.usecase.execute({
+      slackUserId: 'U1',
+      triggerType: TriggerType.AUTOPILOT_RESUME_AUDIT_CRON,
+    });
+
+    const prompt = fixture.modelRouter.route.mock.calls[0][0].request
+      .prompt as string;
+    // 판정 대상([성과] 절의 `### 제목`)은 창 크기를 넘지 않는다. 창이 날짜로 굴러 마지막
+    // 구간은 30 보다 작을 수 있으므로 정확한 수가 아니라 상한과 합으로 검증한다.
+    const judgedHeadings = prompt.match(/^### /gm) ?? [];
+    expect(judgedHeadings.length).toBeLessThanOrEqual(30);
+    expect(prompt).toContain('[이번 회차 범위]');
+    // 보여준 것 + 범위 밖 = 전체. 어느 쪽으로도 새거나 겹치지 않는다.
+    expect(
+      judgedHeadings.length + outcome.result.guard.outOfWindowTitles.length,
+    ).toBe(70);
+    // 결과에는 70 건이 전부 남는다 — 범위 밖도 UNJUDGED 로 화면에 유지된다.
+    expect(outcome.result.items).toHaveLength(70);
+    // 범위 밖은 가드 경고 대상이 아니다(하류 hasGuardConcern 이 매일 울지 않게).
+    for (const title of outcome.result.guard.outOfWindowTitles) {
+      expect(outcome.result.guard.unjudgedTitles).not.toContain(title);
+    }
+  });
+
+  it('성과가 상한 이하면 범위 절도 전체 목록도 붙이지 않는다 — 종전 프롬프트 그대로', async () => {
+    const fixture = createFixture({});
+
+    await fixture.usecase.execute({
+      slackUserId: 'U1',
+      triggerType: TriggerType.AUTOPILOT_RESUME_AUDIT_CRON,
+    });
+
+    const prompt = fixture.modelRouter.route.mock.calls[0][0].request
+      .prompt as string;
+    expect(prompt).not.toContain('[이번 회차 범위]');
+    expect(prompt).not.toContain('[이력서 전체 성과 목록');
   });
 });
