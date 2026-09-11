@@ -62,6 +62,9 @@ jdFindings 규칙:
 export const buildResumeAuditPrompt = (
   profile: CareerProfileData,
   targetJd: CareerTargetJdData | null,
+  // 성과가 많아 이번 회차가 일부만 보는 경우의 범위 표기(selectAuditWindow 참조).
+  // 전량을 본 회차는 null 이고, 그때는 절 자체를 넣지 않아 종전 프롬프트와 완전히 같다.
+  windowLabel: string | null = null,
 ): string => {
   const accomplishments = profile.accomplishments
     .map((accomplishment) => {
@@ -83,9 +86,20 @@ export const buildResumeAuditPrompt = (
   const skills = profile.skills
     .map((skill) => `- ${skill.name} (${skill.category}/${skill.proficiency})`)
     .join('\n');
+  // 범위를 알려야 verdict 가 "이력서 전체 총평" 인 척하지 않는다. 알리지 않으면 모델은
+  // 받은 것이 전부라고 보고 "성과가 40 건뿐" 같은 사실과 다른 총평을 쓴다.
+  const windowNote = windowLabel
+    ? [
+        '',
+        `[이번 회차 범위] 아래 [성과] 는 이력서 전체가 아니라 ${windowLabel} 이다.`,
+        '보이지 않는 성과가 있다는 전제로 판정하고, 총평에 "성과가 N건뿐" 처럼 전체 개수를 단정하지 않는다.',
+        '보여준 성과만 items 에 판정한다 — 보이지 않는 것을 추측해 채우지 않는다.',
+      ]
+    : [];
   const sections = [
     '[내 이력서 요약]',
     profile.summary,
+    ...windowNote,
     '',
     '[성과]',
     accomplishments || '(없음)',

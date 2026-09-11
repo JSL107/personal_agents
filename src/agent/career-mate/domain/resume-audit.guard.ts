@@ -64,7 +64,12 @@ const toQuoteBody = (value: string): string =>
 export const applyAuditGuards = (
   data: ResumeAuditData,
   profile: CareerProfileData,
+  // 이번 회차 범위 밖이라 모델에게 보여주지도 않은 성과 제목(selectAuditWindow 참조).
+  // 판정이 없는 것은 같지만 원인이 다르다 — 모델 계약 위반과 정상적인 범위 분할을 같은
+  // 문구로 묶으면, 매일 수십 건씩 찍히는 후자에 전자가 묻혀 보이지 않는다.
+  outOfWindowTitles: readonly string[] = [],
 ): ResumeAuditResult => {
+  const outOfWindow = new Set(outOfWindowTitles);
   const accomplishmentByTitle = new Map(
     profile.accomplishments.map((accomplishment) => [
       accomplishment.title,
@@ -139,7 +144,9 @@ export const applyAuditGuards = (
       title,
       status: 'UNJUDGED',
       quote: '',
-      why: '모델이 이 성과를 판정하지 않았습니다.',
+      why: outOfWindow.has(title)
+        ? '이번 회차 범위 밖이라 판정하지 않았습니다 — 다음 회차에 돌아옵니다.'
+        : '모델이 이 성과를 판정하지 않았습니다.',
       rewrite: null,
     });
   }
