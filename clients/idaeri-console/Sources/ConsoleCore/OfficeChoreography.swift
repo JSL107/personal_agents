@@ -103,6 +103,8 @@ public func normalizedCozyPose(_ requested: String) -> String {
         return "stowing"
     case "walk":
         return "walk"
+    case "walk-up", "walkup":
+        return "walk-up"
     default:
         return cozyIdlePose
     }
@@ -168,10 +170,16 @@ public func cozyPoseCandidates(_ normalized: String) -> [String] {
         return ["writing", "reading"]
     case "stowing":
         return ["reading"]
-    // 걸음 그림은 대신할 것이 없다 — 없으면 정지 그림으로 내려가고, 그때는 몸 기울기
-    // (`officeWalkLean`)만 남아 걷는 티가 옅어진다. 스무 명 중 일곱만 가지고 있다.
+    // 걸음 그림은 **보는 방향이 다르면 대신할 수 없다.** 뒤통수 그림을 이쪽으로 걸어오는
+    // 사람에게 쓰면 뒷걸음질이 되고, 그 반대도 마찬가지다. 없으면 정지 그림으로 내려가고
+    // 그때는 몸 기울기(`officeWalkLean`)만 남는다.
+    //
+    // 원화가 두 벌로 갈려 있다 — 앞모습 일곱 명(1·2·3·16~19), 뒷모습 열세 명(0·4~15).
+    // 한쪽만 가진 사람은 반대 방향에서 정지 그림으로 걷는다.
     case "walk":
         return ["walk"]
+    case "walk-up":
+        return ["walk-up"]
     default:
         return []
     }

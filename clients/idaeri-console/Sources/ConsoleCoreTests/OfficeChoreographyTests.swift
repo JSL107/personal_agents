@@ -243,15 +243,25 @@ func runCozyPoseContractTests(_ t: TestRunner) {
         ResolvedCozyPose(pose: "sit", posture: .seated),
         "자세를 요구하지 않으면 typing 은 여전히 앉은 자세로 해결된다")
 
-    // 걸음 그림 — 전 캐릭터가 전용 프레임을 가지며, 파일이 실제로 빠진 경우에는 여전히
-    // 정지 그림으로 안전하게 접힌다(몸 기울기만 남는다).
+    // 걸음 그림은 **보는 방향으로 갈린다.** 앞모습은 1·2·3·16~19 일곱 명, 뒷모습은
+    // 0·4~15 열세 명이 가지고 있다. 반대 방향 그림으로 대신하면 뒷걸음질이 되므로
+    // 한쪽만 가진 사람은 그 반대 방향에서 정지 그림으로 접힌다.
     t.expectEqual(
         resolveCozyPose(requested: "walk", assetIndex: 1, hasAsset: cozyPoseAssetExists(1)),
         ResolvedCozyPose(pose: "walk", posture: .standing),
-        "걸음 그림이 있으면 그대로")
+        "앞모습 걸음 그림이 있으면 그대로")
+    t.expectEqual(
+        resolveCozyPose(requested: "walk-up", assetIndex: 10, hasAsset: cozyPoseAssetExists(10)),
+        ResolvedCozyPose(pose: "walk-up", posture: .standing),
+        "뒷모습 걸음 그림이 있으면 그대로")
+    // **반대 방향으로는 새지 않는다.** 10번은 뒷모습만 있으므로 앞모습 요청은 정지 그림으로
+    // 내려가야 한다 — 여기서 `walk-up` 이 뽑히면 이쪽으로 걸어오는 사람이 뒤통수를 보인다.
     t.expectEqual(
         resolveCozyPose(requested: "walk", assetIndex: 10, hasAsset: cozyPoseAssetExists(10)).pose,
-        "walk", "10번도 전용 걸음 그림을 사용")
+        cozyIdlePose, "앞모습이 없으면 뒷모습을 대신 쓰지 않는다")
+    t.expectEqual(
+        resolveCozyPose(requested: "walk-up", assetIndex: 1, hasAsset: cozyPoseAssetExists(1)).pose,
+        cozyIdlePose, "뒷모습이 없으면 앞모습을 대신 쓰지 않는다")
     t.expectEqual(
         resolveCozyPose(requested: "walk", assetIndex: 10, hasAsset: { _ in false }).pose,
         cozyIdlePose, "걸음 그림 파일이 없으면 정지 그림")

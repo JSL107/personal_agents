@@ -2886,7 +2886,7 @@ final class OfficeScene: SKScene {
                 // 지금은 스무 명 전원이 걸음 그림을 가지고 있어 이 검사가 항상 참이지만
                 // 그대로 둔다. 원화가 빠지거나 새 인덱스가 늘어나는 순간 같은 증상이
                 // 조용히 돌아오는 자리이고, 검사 비용은 캐시된 존재 판정 한 번이다.
-                guard node.hasDedicatedArtwork(for: "walk") else {
+                guard node.hasWalkArtworkForCurrentFacing else {
                     return
                 }
                 let stride = SKAction.sequence([
