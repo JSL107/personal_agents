@@ -610,10 +610,27 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
         officeCharacterScaleFactor >= 0.85 && officeCharacterScaleFactor <= 1.0,
         "캐릭터 배율이 0.85~1.0 (실제 \(officeCharacterScaleFactor))"
     )
-    let characterHeight = 54.0 * officeCharacterScaleFactor
+    // **자 두 개를 구분한다.**
+    //
+    // `characterHeight` 는 가구 실측을 화면 픽셀로 옮기는 **자**다(배율 미적용 54px = 170cm).
+    // 아래 검사들이 재는 것은 "가구끼리 축척이 어긋나지 않았는가" 이므로 이 자를 써야 한다 —
+    // 캐릭터 배율을 섞으면 자가 사람과 함께 늘었다 줄었다 해서 무엇을 재는지 알 수 없어진다.
+    //
+    // `characterShownHeight` 는 화면에 실제로 그려지는 사람 키다. 3/4 시점에서는 사람만
+    // 정면 전신이 보이고 가구는 위에서 눌려 보여, 실물 비율을 정확히 지킬수록 사람이 커
+    // 보인다. 그 어긋남을 사람 쪽 배율로 흡수하므로 두 값이 갈린다.
+    let characterHeight = 54.0
+    let characterShownHeight = 54.0 * officeCharacterScaleFactor
     t.expect(
-        characterHeight / 40.0 >= 1.1 && characterHeight / 40.0 <= 1.4,
-        "서 있는 키가 장르 범위 1.1~1.4칸 (실제 \(characterHeight / 40.0))"
+        characterShownHeight / 40.0 >= 1.1 && characterShownHeight / 40.0 <= 1.4,
+        "서 있는 키가 장르 범위 1.1~1.4칸 (실제 \(characterShownHeight / 40.0))"
+    )
+    // 배율을 더 내리면 앉은 사람이 상판에 파묻혀 누가 앉았는지 알아볼 수 없다(0.72 실측).
+    // 책상 상판 높이(112cm 환산)보다는 확실히 높아야 한다.
+    let deskShown = FurnitureKind.desk.nativeHeight * FurnitureKind.desk.sizeBoost
+    t.expect(
+        characterShownHeight > deskShown * 1.15,
+        "화면 사람 키가 책상보다 충분히 높다 (사람 \(Int(characterShownHeight)) vs 책상 \(Int(deskShown)))"
     )
 
     // 축척 환산 데이터가 빠지지 않았는지 — 새 가구를 넣고 실측값을 안 채우면 배율이
