@@ -109,7 +109,12 @@ func runCozyAssetCheck() -> Bool {
             valid = false
         }
     }
-    let requiredWalkAssets = [1, 2, 3, 16, 17, 18, 19].map { "agent-\($0)-walk" }
+    // 걸음 원화는 **보는 방향으로 갈린다.** 앞모습과 뒷모습을 둘 다 가진 캐릭터는 아직
+    // 없으므로, 전원에게 한 쪽을 요구하면 반드시 빨간불이 된다. 각자 가진 쪽을 요구한다.
+    let frontWalkIndices = [1, 2, 3, 16, 17, 18, 19]
+    let backWalkIndices = [0] + Array(4...15)
+    let requiredWalkAssets = frontWalkIndices.map { "agent-\($0)-walk" }
+        + backWalkIndices.map { "agent-\($0)-walk-up" }
     for name in requiredWalkAssets {
         guard let url = Bundle.module.url(
             forResource: name, withExtension: "png", subdirectory: "cozy/characters"
@@ -151,15 +156,17 @@ func runCozyAssetCheck() -> Bool {
     // 걸음 그림이 **실제로 화면에 쓰이는지**를 계약 쪽에서 확인한다. 파일이 번들에 들어간
     // 것만 보면, 포즈 계약이 그 이름을 모르는 채여도 초록불이 된다 — 가구가 그려진 원화
     // 셋이 정확히 그 방식으로 조용히 안 쓰이고 있었다.
-    for index in [1, 2, 3, 16, 17, 18, 19] {
+    for (index, requested) in frontWalkIndices.map({ ($0, "walk") })
+        + backWalkIndices.map({ ($0, "walk-up") })
+    {
         let resolved = resolveCozyPose(
-            requested: "walk",
+            requested: requested,
             assetIndex: index,
             hasAsset: { pose in
                 SpriteLoader.cozyCharacterHasDedicatedPose(assetIndex: index, pose: pose)
             }
         )
-        if resolved.pose != "walk" {
+        if resolved.pose != requested {
             fputs("cozy walk artwork is not wired for agent-\(index)\n", stderr)
             valid = false
         }
