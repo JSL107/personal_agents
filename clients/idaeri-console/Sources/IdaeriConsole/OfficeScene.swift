@@ -2322,6 +2322,16 @@ final class OfficeScene: SKScene {
             pose: workDesk == nil ? "default" : "typing"
         )
         artwork.setReferenceScale(characterScale * artworkScale)
+        // **대표도 앉은 사람이므로 좌석 보정을 똑같이 받아야 한다.**
+        //
+        // 담당자는 `CharacterNode` 가 이 둘을 해 준다 — 앉으면 스프라이트를
+        // `officeDedicatedSeatedSpriteDrop` 만큼 내려 하반신을 상판 뒤로 넣고
+        // (`applySpriteSize`), 아트워크에 딸린 접지 그림자를 꺼 노드 레벨 그림자 하나만
+        // 남긴다(`groundShadowIsHidden`). 대표는 그 클래스를 쓰지 않는 별도 스프라이트라
+        // 둘 다 빠져 있었고, 그래서 **혼자만 다리와 신발이 책상 앞으로 드러났다**
+        // (전후 렌더로 대조). 배율을 0.85 로 내린 뒤 더 도드라졌다.
+        artwork.groundShadowIsHidden = true
+        artwork.position.y = -tileSize * CGFloat(officeDedicatedSeatedSpriteDrop)
         node.addChild(artwork)
         if let workDesk {
             let deskPoint = floorPoint(
