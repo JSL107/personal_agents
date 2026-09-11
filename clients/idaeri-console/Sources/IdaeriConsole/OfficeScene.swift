@@ -3331,7 +3331,8 @@ final class OfficeScene: SKScene {
             position: CGPoint(x: 0, y: node.headTopY + nameplateClearance),
             fontSize: tileSize * 0.28,
             color: SKColor(white: 1, alpha: 1),
-            maxWidth: bubbleMaxWidth(for: agentType)
+            maxWidth: bubbleMaxWidth(for: agentType),
+            withPlate: true
         )
         node.childNode(withName: officeTemporaryBubbleLabelName)?
             .run(
@@ -3388,7 +3389,8 @@ final class OfficeScene: SKScene {
                     y: top + nameplateClearance
                 ),
                 fontSize: bubbleFontSize, color: SKColor(white: 1, alpha: 0.95),
-                maxWidth: bubbleMaxWidth(for: agent.agentType)
+                maxWidth: bubbleMaxWidth(for: agent.agentType),
+                withPlate: true
             )
             setChildLabel(
                 node, name: "elapsed", text: info.elapsed,
@@ -4150,7 +4152,8 @@ final class OfficeScene: SKScene {
         position: CGPoint,
         fontSize: CGFloat,
         color: SKColor,
-        maxWidth: CGFloat? = nil
+        maxWidth: CGFloat? = nil,
+        withPlate: Bool = false
     ) {
         parent.childNode(withName: name)?.removeFromParent()
         guard let text, !text.isEmpty else {
@@ -4199,6 +4202,32 @@ final class OfficeScene: SKScene {
         label.position = position
         label.zPosition = 20
         parent.addChild(label)
+        guard withPlate else {
+            return
+        }
+        // **외곽선만으로는 부족하다.** 말풍선은 방 셸의 게시판·책장·액자 위에 뜨는데, 그
+        // 그림들은 글자와 대비가 비슷한 중간 톤이라 외곽선을 둘러도 글자가 무늬에 섞인다
+        // (사용자 보고). 이름표가 이미 같은 이유로 판을 깔고 있으므로 같은 처리를 쓴다 —
+        // 색과 불투명도를 이름표(`CharacterNode.namePlate`)와 맞춰 두 표시가 한 벌로 읽힌다.
+        // 판은 **라벨의 자식**이라야 한다. 머리 위 라벨은 앉고 설 때마다 다시 배치되는데
+        // (`CharacterNode.layoutHeadLabels`), 형제로 두면 글자만 움직이고 판은 남는다.
+        let frame = label.calculateAccumulatedFrame()
+        let padding = resolvedSize * 0.32
+        let plate = SKShapeNode(
+            rect: CGRect(
+                x: frame.minX - label.position.x - padding,
+                y: frame.minY - label.position.y - padding * 0.5,
+                width: frame.width + padding * 2,
+                height: frame.height + padding
+            ),
+            cornerRadius: resolvedSize * 0.34
+        )
+        plate.name = name + officeLabelPlateSuffix
+        plate.fillColor = SKColor(white: 0.05, alpha: 0.52)
+        plate.strokeColor = .clear
+        // 글자보다 뒤. 라벨 로컬 좌표라 음수면 글자 아래에 깔린다.
+        plate.zPosition = -1
+        label.addChild(plate)
     }
 
     // MARK: - 호버 쪽지(커서 옆 판)
