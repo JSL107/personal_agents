@@ -5,6 +5,34 @@ import Foundation
 func runOfficeViewMetricsTests(_ t: TestRunner) {
     t.suite("OfficeViewMetrics")
 
+    let perspectiveRegion = OfficePerspectiveRegion(originX: 2, originY: 3, width: 10, height: 7)
+    let perspectiveFront = officeProjectedFloorPoint(
+        tileX: 2, tileY: 3, tileSize: 40,
+        gridOriginX: 10, gridOriginY: 20, region: perspectiveRegion
+    )
+    t.expectEqual(perspectiveFront.x, 10 + 2.5 * 40, "2.5D 앞 경계 x는 기존 타일 중심을 유지")
+    t.expectEqual(perspectiveFront.y, 20 + 3 * 40, "2.5D 앞 경계 y는 방 경계를 유지")
+
+    let perspectiveBack = officeProjectedFloorPoint(
+        tileX: 2, tileY: 9, tileSize: 40,
+        gridOriginX: 10, gridOriginY: 20, region: perspectiveRegion
+    )
+    t.expect(perspectiveBack.x > perspectiveFront.x, "방 뒤쪽의 왼쪽 좌석은 소실점 쪽으로 수렴")
+    t.expectEqual(perspectiveBack.y, 20 + 9 * 40, "2.5D 뒤 경계 y도 방 경계를 유지")
+
+    let perspectiveMiddle = officeProjectedFloorPoint(
+        tileX: 6.5, tileY: 6, tileSize: 40,
+        gridOriginX: 10, gridOriginY: 20, region: perspectiveRegion
+    )
+    t.expectEqual(perspectiveMiddle.x, 10 + 7 * 40, "방 중심선은 깊이와 무관하게 고정")
+    t.expect(perspectiveMiddle.y > 20 + 6 * 40, "중간 깊이는 앞쪽 간격을 넓히도록 재분배")
+
+    let wideDesk = officeProjectedFloorPoint(
+        tileX: 2, tileY: 9, footprintWidth: 2, tileSize: 40,
+        gridOriginX: 10, gridOriginY: 20, region: perspectiveRegion
+    )
+    t.expect(wideDesk.x > perspectiveBack.x, "두 칸 가구는 점유 범위 중심을 같은 원근으로 투영")
+
     // 실사용 창. 격자 23x27 에 40px 를 깔면 920x1080 — 가로는 들어가고 세로가 30px 넘친다.
     // 잘리는 것이 맨 아래 바깥벽 한 줄이라 1배를 유지한다.
     let wide = officeViewMetrics(viewWidth: 960, viewHeight: 1050, columns: 23, rows: 27)
@@ -383,4 +411,24 @@ func runOfficeViewMetricsTests(_ t: TestRunner) {
             "방 뷰가 전체 뷰보다 크거나 같다 (창 폭 \(width))"
         )
     }
+
+    // 벡터 캐릭터·가구를 쓰는 선택 Inspector 레이아웃은 전체 평면도를 작은 도트 배율로
+    // 고정하지 않는다. 1100x820 씬에서도 최소 30px 타일을 유지해 실제 오피스가 캔버스를
+    // 채워야 한다(기존 전체 뷰의 20px 대비 1.5배).
+    let selectedVector = officeVectorViewMetrics(
+        viewWidth: 1100, viewHeight: 820, columns: 35, rows: 20
+    )
+    t.expectEqual(selectedVector.tileSize, 30, "선택 Inspector 씬은 벡터 타일을 30px 이상 유지")
+    t.expect(
+        selectedVector.tileSize >= officeViewMetrics(
+            viewWidth: 1100, viewHeight: 820, columns: 35, rows: 20
+        ).tileSize * 1.4,
+        "선택 Inspector 씬은 기존 20px 전체 뷰보다 충분히 크다"
+    )
+    // 일반 1400x820 오피스는 기존 배율을 보존한다 — 선택 레이아웃 정책이 일반 화면을
+    // 키워서 잘라내지 않아야 한다.
+    let standardVector = officeVectorViewMetrics(
+        viewWidth: 1400, viewHeight: 820, columns: 35, rows: 20
+    )
+    t.expectEqual(standardVector.tileSize, 40, "일반 1400x820 오피스 배율은 유지")
 }

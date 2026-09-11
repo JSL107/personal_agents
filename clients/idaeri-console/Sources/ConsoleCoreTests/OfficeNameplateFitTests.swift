@@ -119,10 +119,12 @@ func runOfficeNameplateFitTests(_ t: TestRunner) {
                 // 실제 이름이 그 몫에 들어가는가. 넘치는 몫은 눌러 흡수하지만, 너무 누르면
                 // 읽을 수 없다 — 자리 간격이 아니라 **그려 본 글자**로 판정한다.
                 //
-                // 이름표를 전부 켜는 구간에서만 잰다. 그 아래(`officeNameplateCrowdedTileSize`
-                // 미만)는 자리 한 칸이 20px 남짓이라 다섯 글자가 **어떤 방법으로도** 안 들어가고,
-                // 그래서 읽히는 몇 개만 남기고 솎아 낸다(`nameplateIsVisible`). 거기까지 하한을
-                // 걸면 못 고칠 한계를 붙잡고 빨간불이 켜져 있게 된다.
+                // **모든 타일 크기에서 잰다.** 한때는 좁은 구간(`officeNameplateCrowdedTileSize`
+                // 미만)을 면제했고, 근거는 「거기서는 `nameplateIsVisible` 이 이름표를 솎아 내니
+                // 읽을 일이 없다」였다. 이름표가 창 크기와 무관하게 강조·진행 상태만 띄우도록
+                // 바뀌면서 그 전제가 사라졌다 — 좁은 창에서도 그 이름표들은 그대로 보인다.
+                // 면제를 걷어내고 돌려 보니 전 구간이 하한을 지키므로, 못 고칠 한계를 붙잡고
+                // 빨간불이 켜져 있는 일도 일어나지 않는다.
                 let label = agentRoleLabel(for: desk.agentType) ?? desk.agentType
                 let glyphWidth = nameplateGlyphWidth(label, tileSize: tileSize)
                 let spanLeftPixels = span.left * tileSize
@@ -151,8 +153,7 @@ func runOfficeNameplateFitTests(_ t: TestRunner) {
                         + "\(String(format: "%.1f", spanRightPixels)))을 넘음"
                 )
                 t.expect(
-                    tileSize < officeNameplateCrowdedTileSize
-                        || layout.scaleX >= nameplateMinSqueeze,
+                    layout.scaleX >= nameplateMinSqueeze,
                     "타일 \(tileSize) · \(room) x=\(desk.seat.x) `\(label)` 가"
                         + " \(String(format: "%.2f", layout.scaleX)) 로 눌림"
                         + " (하한 \(nameplateMinSqueeze))"

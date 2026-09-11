@@ -35,6 +35,12 @@ public func approvalFor(agentType: String, in approvals: [ConsoleApproval]) -> C
     approvals.first { $0.agentType == agentType }
 }
 
+/// Keeps a selected agent only while it still exists in the latest snapshot.
+public func reconciledSelectedAgent(current: String?, agents: [ConsoleAgent]) -> String? {
+    guard let current else { return nil }
+    return agents.contains { $0.agentType == current } ? current : nil
+}
+
 /// 스냅샷을 정본으로 삼아 승인 줄을 맞춘다(순수).
 ///
 /// 줄은 이벤트로만 줄어드는데 재연결 경로에는 그 이벤트가 없다. 스냅샷이 "이 사람은 더 이상
@@ -262,8 +268,10 @@ public func nameplateIsEmphasized(
     switch state {
     case .awaitingApproval, .failed:
         return true
-    case .completed, .inProgress, .waiting, .awaitingIntegration:
+    case .completed, .inProgress, .waiting:
         return false
+    case .awaitingIntegration:
+        return true
     }
 }
 
@@ -280,21 +288,22 @@ public let officeNameplateCrowdedTileSize: Double = 27
 /// 이름표를 아예 보여줄지 판정한다(순수).
 ///
 /// 창이 작아 이름표가 서로 겹치는 구간에서는, 겹친 글자 27개보다 **읽히는 몇 개**가 낫다.
-/// 강조 대상(손이 필요한 사람·지금 보고 있는 사람)과 일이 도는 사람만 남기고 나머지는 숨긴다
-/// — 창을 키우면 전부 돌아온다.
+/// 강조 대상(손이 필요한 사람·지금 보고 있는 사람)만 남기고 나머지는 숨긴다. 창 크기는
+/// 이름표 정책에 영향을 주지 않는다.
 public func nameplateIsVisible(
     tileSize: Double,
     state: ConsoleAgentState,
     isHovered: Bool,
     isSelected: Bool
 ) -> Bool {
-    guard tileSize < officeNameplateCrowdedTileSize else {
+    // Nameplates are event-driven identity affordances, not permanent inventory labels.  The
+    // tile size is deliberately ignored: a large window must not turn every employee into a
+    // competing label.  The hover/selection and operational attention states remain accessible.
+    _ = tileSize
+    if state == .inProgress {
         return true
     }
-    if nameplateIsEmphasized(state: state, isHovered: isHovered, isSelected: isSelected) {
-        return true
-    }
-    return state == .inProgress
+    return nameplateIsEmphasized(state: state, isHovered: isHovered, isSelected: isSelected)
 }
 
 /// 화면 좌표가 어느 부서 구역 안인지(순수). 구역 밖이면 `nil`.

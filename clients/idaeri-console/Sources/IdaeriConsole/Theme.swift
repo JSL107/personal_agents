@@ -95,14 +95,16 @@ enum Stroke {
 /// 창·컴포넌트의 최소 치수. 여백이 아니라 레이아웃 뼈대라 따로 둔다.
 enum Layout {
     static let sidebarWidth: CGFloat = 240
-    /// 개인 사무실 장면과 두 줄 직무가 찌그러지지 않는 카드 하한.
-    static let cardMinWidth: CGFloat = 340
+    /// 초상화 장면과 두 줄 직무가 찌그러지지 않는 대시보드 카드 하한.
+    static let cardMinWidth: CGFloat = 300
     static let windowMinWidth: CGFloat = 720
     /// 창 자체의 최소 높이(루트).
     static let windowMinHeight: CGFloat = 560
     /// 탭 안쪽 내용의 최소 높이. 탭 전환 막대만큼 창보다 낮다.
     static let contentMinHeight: CGFloat = 520
     static let officeMinWidth: CGFloat = 640
+    static let officeInspectorWidth: CGFloat = 300
+    static let selectedOfficeMinWidth: CGFloat = officeMinWidth + officeInspectorWidth
     /// 탭 전환 막대가 창 세로에서 가져가는 높이 — 세그먼트 피커(24) + 위아래 여백 + 구분선 1.
     ///
     /// 창 크기를 도면 배율에서 거꾸로 잡을 때 **이만큼을 먼저 빼야 한다.** 오피스 씬은 창이

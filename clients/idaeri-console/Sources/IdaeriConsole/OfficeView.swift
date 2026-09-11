@@ -46,12 +46,27 @@ struct OfficeView: View {
                 // 씬은 보조기술 트리에 이름 없는 이미지 덩어리로만 잡힌다(실측). 자식을 덮고
                 // 한 문장으로 대신 읽게 한다 — 그림 안의 몸짓·자리로만 전하던 정보를
                 // 소리로 듣는 유일한 통로다.
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(
-                    officeAccessibilitySummary(
-                        agents: store.agents, approvals: store.approvals
-                    )
-                )
+                .accessibilityRepresentation {
+                    officeAccessibilityControls
+                }
+                // 선택 패널은 SpriteView 위에 얹지 않고 trailing safe-area에 삽입한다.
+                // SpriteKit 장면의 실제 폭이 줄어들어 사람·가구를 가리지 않는다.
+                .safeAreaInset(edge: .trailing, spacing: 0) {
+                    if let agentType = selectedAgent,
+                        let agent = store.agents.first(where: { $0.agentType == agentType })
+                    {
+                        AgentInspectorView(
+                            agent: agent,
+                            approval: approvalFor(agentType: agent.agentType, in: store.approvals),
+                            commandText: $commandText,
+                            onClose: { selectedAgent = nil; scene.setSelected(nil) },
+                            onSend: { send(to: $0) },
+                            onApprovalDetail: { selectedApproval = $0 },
+                            onApprove: { onApprove($0); selectedAgent = nil; scene.setSelected(nil) },
+                            onReject: { onReject($0); selectedAgent = nil; scene.setSelected(nil) }
+                        )
+                    }
+                }
                 // 창이 가려지거나 최소화되면 씬을 재운다. macOS 는 대신 멈춰주지 않는다(실측).
                 .onReceive(
                     NotificationCenter.default.publisher(
@@ -126,6 +141,12 @@ struct OfficeView: View {
                     scene.applyHousekeeping(next)
                 }
                 .onChange(of: store.agents) { newAgents in
+                    if reconciledSelectedAgent(current: selectedAgent, agents: newAgents) == nil,
+                        selectedAgent != nil
+                    {
+                        selectedAgent = nil
+                        scene.setSelected(nil)
+                    }
                     scene.sync(agents: newAgents, approvals: store.approvals)
                     scene.applyHousekeeping(store.housekeeping)
                     scene.refreshOverlays(
@@ -139,6 +160,7 @@ struct OfficeView: View {
                     scene.reconcileQueue(agents: store.agents, approvals: newApprovals)
                 }
                 .onChange(of: selectedAgent) { newSelection in
+                    scene.setVectorMetricsEnabled(newSelection != nil)
                     scene.setSelected(newSelection)
                 }
                 .onChange(of: isPresidentBarOpen) { isOpen in
@@ -190,19 +212,25 @@ struct OfficeView: View {
                     )
                 }
 
-            if let agentType = selectedAgent {
-                interactionBar(for: agentType)
-            } else if isPresidentBarOpen {
+            if selectedAgent == nil, isPresidentBarOpen {
                 presidentBar
-            } else {
+            } else if selectedAgent == nil {
                 // 배지와 승인 실패 사유는 함께 쌓는다. 하나로 분기하면 담당자 미확정 지시가 도는
                 // 몇 분 동안 승인·거절 실패 사유가 배지에 가려 어디에도 안 보인다.
                 idleBar
             }
         }
         .overlay(alignment: .top) { roomHeader }
+        .frame(minWidth: selectedAgent == nil ? Layout.officeMinWidth : Layout.selectedOfficeMinWidth)
         // 방 뷰에서 나가는 길을 마우스 하나로 두지 않는다.
-        .onExitCommand { scene.setFocus(nil) }
+        .onExitCommand {
+            if selectedAgent != nil {
+                selectedAgent = nil
+                scene.setSelected(nil)
+            } else {
+                scene.setFocus(nil)
+            }
+        }
         // 시트는 항상 살아 있는 루트에 단 한 번 단다 — ZStack 의 세 바는 상호 배타 분기라,
         // 분기 안쪽에 달면 다른 바에서 상태를 켜는 순간 presenter 가 없어 시트가 안 열린다.
         .sheet(isPresented: $showAnswerSheet) {
@@ -223,43 +251,6 @@ struct OfficeView: View {
         }
     }
 
-    @ViewBuilder
-    private func interactionBar(for agentType: String) -> some View {
-        let approval = approvalFor(agentType: agentType, in: store.approvals)
-        VStack(spacing: Spacing.sm) {
-            HStack {
-                Text(agentType).font(Typography.sectionTitle)
-                Spacer()
-                Button("닫기") { selectedAgent = nil }
-            }
-            if let approval {
-                HStack {
-                    Button {
-                        selectedApproval = approval
-                    } label: {
-                        Text("승인 대기: \(approval.title)").lineLimit(1)
-                    }
-                    .buttonStyle(.plain)
-                    Spacer()
-                    Button("승인") { onApprove(approval.id); selectedAgent = nil }
-                        .keyboardShortcut(.defaultAction)
-                    Button("거절") { onReject(approval.id); selectedAgent = nil }
-                }
-            } else {
-                HStack {
-                    TextField("\(agentType)에게 지시…", text: $commandText)
-                        .textFieldStyle(.roundedBorder)
-                        .onSubmit { send(to: agentType) }
-                    Button("전송") { send(to: agentType) }
-                        .disabled(commandText.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-            }
-        }
-        .padding(Spacing.md)
-        .background(.thinMaterial)
-        .cornerRadius(10)
-        .padding(Spacing.md)
-    }
 
     /// 바가 닫혀 있을 때의 자리 — 승인 실패 사유·담당자 미확정 지시 배지. 둘 다 없으면 비어 있다
     /// (사무실을 가리지 않도록 상시 표시하는 것을 두지 않는다).
@@ -283,6 +274,29 @@ struct OfficeView: View {
             }
         }
         .padding(.bottom, Spacing.md)
+    }
+
+    /// SpriteKit is exposed as a picture to VoiceOver, so provide an equivalent keyboard and
+    /// VoiceOver surface without placing visible controls over the office canvas.
+    private var officeAccessibilityControls: some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            Text(officeAccessibilitySummary(agents: store.agents, approvals: store.approvals))
+            Button("대표에게 지시") { openPresidentBar() }
+                .accessibilityHint("담당자를 지정하지 않고 지시 입력")
+            Button("오늘의 리포트") { scene.toggleDailyReportCard(store.briefing) }
+            ForEach(store.agents) { agent in
+                Button("\(agent.roleName) 선택") {
+                    selectedAgent = agent.agentType
+                    isPresidentBarOpen = false
+                    commandText = ""
+                }
+                .accessibilityHint("담당자 상세와 지시 입력 열기")
+            }
+            ForEach(store.approvals) { approval in
+                Button("승인 상세 \(approval.title)") { selectedApproval = approval }
+                    .accessibilityHint("승인 상세 화면 열기")
+            }
+        }
     }
 
     /// 씬 안의 대표를 클릭했을 때. 마우스 말고 지시 바를 여는 길은 메뉴 바의 「지시 ▸ 대표에게

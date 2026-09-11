@@ -25,7 +25,16 @@ struct DashboardView: View {
     @State private var isInjecting = false
     @State private var selectedApproval: ConsoleApproval?
 
-    private let columns = [GridItem(.adaptive(minimum: Layout.cardMinWidth), spacing: Spacing.lg)]
+    // Three stable columns keep card widths and character scale consistent. When the roster leaves
+    // one slot, the real approval/session surfaces complete that row around the final agent.
+    private let columns = Array(
+        repeating: GridItem(
+            .flexible(minimum: Layout.cardMinWidth),
+            spacing: Spacing.lg,
+            alignment: .top
+        ),
+        count: 3
+    )
 
     var body: some View {
         ScrollView {
@@ -41,6 +50,9 @@ struct DashboardView: View {
                 } else {
                     LazyVGrid(columns: columns, spacing: Spacing.lg) {
                         ForEach(store.agents) { agent in
+                            if embedsOperationalPanelsInGrid && agent.id == store.agents.last?.id {
+                                approvalPanel
+                            }
                             AgentCardView(
                                 agent: agent,
                                 pendingCommands: store.pendingCommands,
@@ -49,24 +61,34 @@ struct DashboardView: View {
                                     store.acknowledgeCompletion(agentType: agent.agentType)
                                 }
                             )
+                            if embedsOperationalPanelsInGrid && agent.id == store.agents.last?.id {
+                                sessionPanel
+                            }
                         }
                     }
                 }
 
-                if !store.approvals.isEmpty {
+                if !store.approvals.isEmpty && !embedsOperationalPanelsInGrid {
                     approvalPanel
                 }
 
-                if !store.sessions.isEmpty {
+                if !store.sessions.isEmpty && !embedsOperationalPanelsInGrid {
                     sessionPanel
                 }
             }
             .padding(Spacing.xl)
         }
+        .background(CozyPalette.canvas)
         .frame(minWidth: Layout.windowMinWidth, minHeight: Layout.contentMinHeight)
         .sheet(item: $injectTarget) { target in
             injectSheet(target: target)
         }
+    }
+
+    private var embedsOperationalPanelsInGrid: Bool {
+        store.agents.count % columns.count == 1
+            && !store.approvals.isEmpty
+            && !store.sessions.isEmpty
     }
 
     // MARK: - 헤더
@@ -141,37 +163,85 @@ struct DashboardView: View {
 
     private var approvalPanel: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
-            Text("승인 대기 \(store.approvals.count)건")
-                .font(Typography.sectionTitle)
+            HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
+                Label("승인 대기", systemImage: "checkmark.seal.fill")
+                    .font(Typography.sectionTitle)
+                Spacer(minLength: 0)
+                Text("\(store.approvals.count)건")
+                    .font(Typography.metric)
+                    .foregroundStyle(ConsoleAgentState.awaitingApproval.accentColor)
+            }
+            Text("확인이 필요한 요청을 여기서 처리합니다")
+                .font(Typography.caption)
+                .foregroundStyle(.secondary)
             if let notice = store.approvalNotice {
                 Text(notice)
                     .font(Typography.caption)
                     .foregroundStyle(Color.red)
             }
             ForEach(store.approvals) { approval in
-                HStack(spacing: Spacing.sm) {
-                    Circle()
-                        .fill(ConsoleAgentState.awaitingApproval.accentColor)
-                        .frame(width: Stroke.dot, height: Stroke.dot)
-                    Text(approval.title)
-                        .font(Typography.body)
-                        .lineLimit(2)
-                        .onTapGesture { selectedApproval = approval }
-                    Spacer(minLength: 0)
-                    Text(formatTime(approval.createdAt))
-                        .font(Typography.metricMonoSmall)
-                        .foregroundStyle(.secondary)
-                    HStack(spacing: Spacing.sm) {
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    Button {
+                        selectedApproval = approval
+                    } label: {
+                        HStack(alignment: .top, spacing: Spacing.sm) {
+                            Circle()
+                                .fill(ConsoleAgentState.awaitingApproval.accentColor)
+                                .frame(width: Stroke.dot, height: Stroke.dot)
+                                .padding(.top, 4)
+                            Text(approval.title)
+                                .font(Typography.body)
+                                .lineLimit(3)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("승인 상세 \(approval.title)")
+                    .accessibilityHint("승인 상세 화면 열기")
+
+                    HStack {
+                        Label(formatTime(approval.createdAt), systemImage: "clock")
+                            .font(Typography.metricMonoSmall)
+                            .foregroundStyle(.secondary)
+                        Spacer(minLength: 0)
                         Button("승인") { onApprove(approval.id) }
                         Button("거절") { onReject(approval.id) }
                             .tint(.red)
                     }
                 }
-                .padding(.vertical, Spacing.tight)
+                .padding(Spacing.sm)
+                .background(CozyPalette.surface.opacity(0.72), in: RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
             }
+            HStack(spacing: Spacing.sm) {
+                summaryTile(
+                    icon: "checkmark.seal.fill",
+                    title: "대기",
+                    value: "\(store.approvals.count)건",
+                    detail: "승인 처리 전",
+                    color: ConsoleAgentState.awaitingApproval.accentColor
+                )
+                summaryTile(
+                    icon: "clock.fill",
+                    title: "최근 요청",
+                    value: recentApprovalCreatedAt,
+                    detail: "요청 생성 시각",
+                    color: ConsoleAgentState.awaitingApproval.accentColor
+                )
+                summaryTile(
+                    icon: "hand.raised.fill",
+                    title: "처리 방식",
+                    value: "수동 승인 · 거절",
+                    detail: "선택 버튼 2개",
+                    color: ConsoleAgentState.awaitingApproval.accentColor
+                )
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            Label("항목을 누르면 상세 내용을 볼 수 있습니다", systemImage: "hand.tap")
+                .font(Typography.captionSmall)
+                .foregroundStyle(.secondary)
         }
         .padding(Spacing.lg)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: Radius.panel, style: .continuous)
                 .fill(ConsoleAgentState.awaitingApproval.tintColor)
@@ -189,8 +259,17 @@ struct DashboardView: View {
 
     private var sessionPanel: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
-            Text("내 작업 세션 \(store.sessions.count)개 (로컬 CLI)")
-                .font(Typography.sectionTitle)
+            HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
+                Label("내 작업 세션", systemImage: "terminal.fill")
+                    .font(Typography.sectionTitle)
+                Spacer(minLength: 0)
+                Text("\(store.sessions.count)개")
+                    .font(Typography.metric)
+                    .foregroundStyle(Color(red: 0.36, green: 0.78, blue: 0.63))
+            }
+            Text("로컬 CLI 작업을 이어서 관리합니다")
+                .font(Typography.caption)
+                .foregroundStyle(.secondary)
             if let injectNotice {
                 Text(injectNotice)
                     .font(Typography.caption)
@@ -205,9 +284,36 @@ struct DashboardView: View {
                     }
                 )
             }
+            HStack(spacing: Spacing.sm) {
+                summaryTile(
+                    icon: "bolt.fill",
+                    title: "활동 중",
+                    value: "\(activeSessionCount)개",
+                    detail: "실행 상태",
+                    color: Color(red: 0.28, green: 0.62, blue: 0.49)
+                )
+                summaryTile(
+                    icon: "moon.fill",
+                    title: "유휴",
+                    value: "\(idleSessionCount)개",
+                    detail: "대기 상태",
+                    color: Color(red: 0.28, green: 0.62, blue: 0.49)
+                )
+                summaryTile(
+                    icon: "arrow.turn.down.right",
+                    title: "전달 상태",
+                    value: "다음 턴",
+                    detail: "선택 후 작업 주입",
+                    color: Color(red: 0.28, green: 0.62, blue: 0.49)
+                )
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            Label("작업 주입은 선택한 세션의 다음 턴에 전달됩니다", systemImage: "arrow.turn.down.right")
+                .font(Typography.captionSmall)
+                .foregroundStyle(.secondary)
         }
         .padding(Spacing.lg)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: Radius.panel, style: .continuous)
                 .fill(Color.primary.opacity(0.04))
@@ -219,7 +325,7 @@ struct DashboardView: View {
             Text("\(target.name)에 작업 주입")
                 .font(Typography.sectionTitle)
             Text(
-                target.state == "active"
+                target.isActive
                     ? "현재 작업이 끝나면 다음 턴에 전달됩니다."
                     : "다음에 이 세션을 이어 쓸 때 전달됩니다"
             )
@@ -337,6 +443,52 @@ struct DashboardView: View {
 
     private var bottleneckAgents: [ConsoleAgent] {
         store.agents.filter { $0.state == .awaitingIntegration }
+    }
+
+    private var activeSessionCount: Int {
+        store.sessions.filter(\.isActive).count
+    }
+
+    private var idleSessionCount: Int {
+        store.sessions.filter { !$0.isActive }.count
+    }
+
+    private var recentApprovalCreatedAt: String {
+        guard let createdAt = store.approvals.map(\.createdAt).max() else {
+            return "없음"
+        }
+        return formatTime(createdAt)
+    }
+
+    private func summaryTile(
+        icon: String,
+        title: String,
+        value: String,
+        detail: String,
+        color: Color
+    ) -> some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            Spacer(minLength: 0)
+            Image(systemName: icon)
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(color.opacity(0.58))
+            Text(title)
+                .font(Typography.captionSmall)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(Typography.metric)
+                .foregroundStyle(color)
+                .lineLimit(2)
+                .minimumScaleFactor(0.8)
+            Text(detail)
+                .font(Typography.captionSmall)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+            Spacer(minLength: 0)
+        }
+        .padding(Spacing.sm)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
     }
 
     private func countOf(_ state: ConsoleAgentState) -> Int {
