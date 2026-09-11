@@ -1526,9 +1526,12 @@ final class OfficeScene: SKScene {
             grain.fillColor = .white
             grain.fillTexture = oakTexture
             grain.strokeColor = .clear
-            // Enough grain must remain visible in the exposed corridor gaps for them to read
-            // as walkable oak floor, not blank spacing between screenshot cards.
-            grain.alpha = 0.46
+            // 방 사이로 드러나는 복도는 **밟고 다니는 마루로 읽혀야 한다.** 0.46 에서는
+            // 나뭇결이 바탕 크림색에 묻혀 방과 방 사이를 가르는 빈 띠처럼 보였고, 그
+            // 위를 지나가는 사람이 "막 뒤로 걸어다니는" 것으로 읽혔다(사용자 보고).
+            // 복도 타일은 방 셸의 원근 투영을 타지 않아 격자 좌표 그대로 놓이므로,
+            // 바닥이 흐리면 사람만 허공에 뜬 것처럼 남는다.
+            grain.alpha = 0.85
             grain.zPosition = 0.1
             grain.name = "cozy:oak-grain"
             base.addChild(grain)
