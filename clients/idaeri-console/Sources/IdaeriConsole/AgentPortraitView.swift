@@ -23,10 +23,21 @@ struct AgentPortraitView: View {
         default:
             rolePose = agent.state == .inProgress ? "typing" : "idle"
         }
-        return SpriteLoader.cozyCharacterHasDedicatedPose(
+        // **선 그림만 받는다.** 카드에는 책상도 의자도 없어서, 앉은 그림이 뽑히면 사람이
+        // 허공에 주저앉는다(사용자 보고). 예전에는 파일이 있는지만 보고 그 그림이 앉은
+        // 자세인지 보지 않았는데, `typing` 은 18번을 빼면 전부 앉은 그림이라 코드 리뷰어·
+        // 윤문가 카드가 그렇게 떴다. 자세 판정은 포즈 계약이 이미 갖고 있으므로 그것을 쓴다.
+        return resolveCozyPose(
+            requested: rolePose,
             assetIndex: appearance.assetIndex,
-            pose: rolePose
-        ) ? rolePose : "idle"
+            hasAsset: { pose in
+                SpriteLoader.cozyCharacterHasDedicatedPose(
+                    assetIndex: appearance.assetIndex,
+                    pose: pose
+                )
+            },
+            posture: .standing
+        ).pose
     }
 
     var body: some View {
