@@ -204,6 +204,9 @@ public func officeWrapBubble(
 public let officeInfoBubbleLabelName = "infoBubble"
 public let officeTemporaryBubbleLabelName = "bubble"
 public let officeThinkingDotsLabelName = "dots"
+/// 말풍선 뒤에 까는 판 노드 이름의 접미사. 만드는 쪽과 걷는 쪽이 같은 문자열을 봐야 한다.
+public let officeLabelPlateSuffix = ":plate"
+
 public let officeHeadLabelNames = [
     officeInfoBubbleLabelName, officeTemporaryBubbleLabelName, officeThinkingDotsLabelName,
 ]
