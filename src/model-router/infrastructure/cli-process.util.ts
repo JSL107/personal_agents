@@ -80,6 +80,13 @@ export const buildSafeChildEnv = ({
     env.CLAUDE_CONFIG_DIR = claudeConfigDir;
   }
 
+  // Serena MCP 가 throwaway HOME 에 기본 설정을 새로 만들면서 web dashboard 브라우저 탭을 띄운다.
+  // 실제 `~/.serena` 를 가리켜 사용자의 `web_dashboard: false` 설정이 적용되게 한다.
+  const serenaHome = process.env.SERENA_HOME ?? buildDefaultAuthDir('.serena');
+  if (serenaHome) {
+    env.SERENA_HOME = serenaHome;
+  }
+
   if (additionalEnv) {
     for (const [key, value] of Object.entries(additionalEnv)) {
       if (value !== undefined) {

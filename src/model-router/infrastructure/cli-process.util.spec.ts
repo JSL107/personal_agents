@@ -97,6 +97,16 @@ describe('buildSafeChildEnv', () => {
     expect(env.CODEX_HOME).toBe('/Users/me/.codex');
   });
 
+  it('throwaway HOME 이어도 SERENA_HOME 은 real HOME 기반 (Serena web dashboard 자동 오픈 방지)', () => {
+    process.env.HOME = '/Users/me';
+    delete process.env.SERENA_HOME;
+
+    const env = buildSafeChildEnv({ homeDir: '/tmp/throwaway' });
+
+    expect(env.HOME).toBe('/tmp/throwaway');
+    expect(env.SERENA_HOME).toBe('/Users/me/.serena');
+  });
+
   it('additionalEnv 를 넘기면 자식 env 에 추가 forward 된다 (provider-specific 시크릿 경로)', () => {
     const env = buildSafeChildEnv({
       additionalEnv: { ANTHROPIC_API_KEY: 'sk-test', CLAUDE_CODE_SIMPLE: '1' },
