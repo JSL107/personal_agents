@@ -213,7 +213,10 @@ describe('PrReviewSweepAutopilotTask', () => {
     expect(result.guardKeySuffix).toBe('contradicted-1');
   });
 
-  it('보류도 쿼터 중단도 없으면 guardKeySuffix 를 주지 않는다 — 종전 가드 동작을 그대로 유지한다', async () => {
+  // 사용자 반응은 카드 게시보다 뒤에 온다. 그날 첫 발송은 보통 게시가 가져가므로, 반응
+  // 건수가 키에 없으면 반응 회차는 구조적으로 늘 "이미 발송됨" 으로 막혀 다음 날까지 묻힌다
+  // (harvest-review-signals.usecase 의 attachAdoption 주석이 같은 현상을 기록하고 있다).
+  it('수확한 반응이 있으면 harvested 건수를 접미사에 싣는다 — 반응 회차가 묻히지 않게', async () => {
     harvestUsecase.execute.mockResolvedValue({
       acked: 1,
       fixed: 0,
@@ -229,6 +232,60 @@ describe('PrReviewSweepAutopilotTask', () => {
     sweepUsecase.execute.mockResolvedValue({
       results: [],
       quotaStopped: false,
+    });
+
+    const result = await task.run(CONTEXT);
+
+    expect(result.skip).toBe(false);
+    expect(result.guardKeySuffix).toBe('harvested-2');
+  });
+
+  it('새로 게시한 카드가 있으면 posted 건수를 접미사에 싣는다 — 오후에 달린 지적이 묻히지 않게', async () => {
+    sweepUsecase.execute.mockResolvedValue({
+      quotaStopped: false,
+      results: [
+        {
+          prRef: 'JSL107/personal_agents#180',
+          riskLevel: 'high',
+          outcome: {
+            inline: 2,
+            file: 1,
+            issueComment: 0,
+            dryRun: 0,
+            notPosted: 0,
+            dropped: 0,
+            duplicate: 0,
+          },
+        },
+      ],
+    });
+
+    const result = await task.run(CONTEXT);
+
+    expect(result.skip).toBe(false);
+    expect(result.guardKeySuffix).toBe('posted-3');
+  });
+
+  it('이미 있는 카드(duplicate)만 나온 회차는 접미사를 주지 않는다 — 새 내용이 없으면 하루 1회를 지킨다', async () => {
+    // 이것이 없으면 3 분마다 도는 회차가 같은 상태를 매번 새 키로 만들어, 내용 변화 없이
+    // 하루 종일 재발송된다(가드를 넓히는 변경의 반대편 사고).
+    sweepUsecase.execute.mockResolvedValue({
+      quotaStopped: false,
+      results: [
+        {
+          prRef: 'JSL107/personal_agents#180',
+          riskLevel: 'low',
+          outcome: {
+            inline: 0,
+            file: 0,
+            issueComment: 0,
+            dryRun: 0,
+            notPosted: 1,
+            dropped: 2,
+            duplicate: 5,
+          },
+        },
+      ],
     });
 
     const result = await task.run(CONTEXT);
