@@ -25,58 +25,93 @@ struct DashboardView: View {
     @State private var isInjecting = false
     @State private var selectedApproval: ConsoleApproval?
 
-    // Three stable columns keep card widths and character scale consistent. When the roster leaves
-    // one slot, the real approval/session surfaces complete that row around the final agent.
-    private let columns = Array(
-        repeating: GridItem(
-            .flexible(minimum: Layout.cardMinWidth),
-            spacing: Spacing.lg,
-            alignment: .top
-        ),
-        count: 3
-    )
+    // 열 수를 3으로 고정하면 카드 폭(minimum 300)이 못 들어가는 창에서 카드끼리 겹친다
+    // (300*3 + spacing 16*2 + padding 24*2 = 980, 창 최소폭은 720이라 항상 재현됨).
+    // 실측 폭에서 들어가는 열 수(1~3)를 계산해 카드 폭은 항상 300 이상을 유지한다.
+    // "3열이 카드 폭·캐릭터 배율을 고르게 유지한다"는 원래 의도를 지키기 위해 상한은 3.
+    //
+    // 폭은 GeometryReader 를 body 최상단(ScrollView 바깥)에 둬서 잰다. 처음엔 ScrollView
+    // 안쪽에 `.background(GeometryReader{...}) + onPreferenceChange` 로 재려 했는데, 그건
+    // "실측 → State 갱신 → 재렌더" 두 단계짜리라 화면에서는 결국 맞아도, 시각 회귀 렌더
+    // (`DashboardPreviewRender`처럼 `layoutSubtreeIfNeeded()` 한 번만 부르고 캡처하는 경로)
+    // 에서는 두 번째 재렌더가 일어나기 전에 캡처돼 버려 폭이 좁을 때의 값(최악만 1열)으로
+    // 굳어버렸다 — 1280 너비로 구워도 1열만 나온 것으로 실측 확인. 부모가 이미 폭을 알고
+    // 아래로 내려주는 `GeometryReader` 는 한 번의 레이아웃 패스로 끝나 이 문제가 없다.
+    private func gridColumns(availableWidth: CGFloat) -> [GridItem] {
+        let usableWidth = max(availableWidth - Spacing.xl * 2, Layout.cardMinWidth)
+        // 열 수는 **목표 폭에 가장 가까운 쪽**으로 반올림해 고른다. 하한(`cardMinWidth`)만
+        // 보고 최대한 많이 넣으면 넓은 창에서 카드가 전부 최소폭으로 쪼그라들고, 반대로
+        // 상한을 3으로 묶으면 카드가 800pt 넘게 벌어져 초상화가 바닥만 남는다(`cardTargetWidth`
+        // 주석 참조). 반올림하면 720pt 창은 2열(카드 328), 2560pt 창은 7열(카드 345)이 되어
+        // 양 끝 모두 목표 근처에 선다.
+        let preferredCount = Int(
+            (usableWidth / (Layout.cardTargetWidth + Spacing.lg)).rounded()
+        )
+        var columnCount = max(1, preferredCount)
+        // 반올림이 한 열을 더 밀어 넣어 하한을 깨는 구간이 있다. 그때는 한 열을 뺀다 —
+        // 카드가 하한 아래로 내려가면 두 줄 직무와 버튼이 겹친다.
+        while columnCount > 1,
+            (usableWidth - Spacing.lg * CGFloat(columnCount - 1)) / CGFloat(columnCount)
+                < Layout.cardMinWidth
+        {
+            columnCount -= 1
+        }
+        return Array(
+            repeating: GridItem(
+                .flexible(minimum: Layout.cardMinWidth),
+                spacing: Spacing.lg,
+                alignment: .top
+            ),
+            count: columnCount
+        )
+    }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: Spacing.lg) {
-                header
+        GeometryReader { proxy in
+            let gridColumns = gridColumns(availableWidth: proxy.size.width)
+            let embedsOperationalPanelsInGrid = embedsOperationalPanelsInGrid(columnCount: gridColumns.count)
 
-                if !bottleneckAgents.isEmpty {
-                    bottleneckBanner
-                }
+            ScrollView {
+                VStack(alignment: .leading, spacing: Spacing.lg) {
+                    header
 
-                if store.agents.isEmpty {
-                    emptyState
-                } else {
-                    LazyVGrid(columns: columns, spacing: Spacing.lg) {
-                        ForEach(store.agents) { agent in
-                            if embedsOperationalPanelsInGrid && agent.id == store.agents.last?.id {
-                                approvalPanel
-                            }
-                            AgentCardView(
-                                agent: agent,
-                                pendingCommands: store.pendingCommands,
-                                onSend: onSend,
-                                onAcknowledge: {
-                                    store.acknowledgeCompletion(agentType: agent.agentType)
+                    if !bottleneckAgents.isEmpty {
+                        bottleneckBanner
+                    }
+
+                    if store.agents.isEmpty {
+                        emptyState
+                    } else {
+                        LazyVGrid(columns: gridColumns, spacing: Spacing.lg) {
+                            ForEach(store.agents) { agent in
+                                if embedsOperationalPanelsInGrid && agent.id == store.agents.last?.id {
+                                    approvalPanel
                                 }
-                            )
-                            if embedsOperationalPanelsInGrid && agent.id == store.agents.last?.id {
-                                sessionPanel
+                                AgentCardView(
+                                    agent: agent,
+                                    pendingCommands: store.pendingCommands,
+                                    onSend: onSend,
+                                    onAcknowledge: {
+                                        store.acknowledgeCompletion(agentType: agent.agentType)
+                                    }
+                                )
+                                if embedsOperationalPanelsInGrid && agent.id == store.agents.last?.id {
+                                    sessionPanel
+                                }
                             }
                         }
                     }
-                }
 
-                if !store.approvals.isEmpty && !embedsOperationalPanelsInGrid {
-                    approvalPanel
-                }
+                    if !store.approvals.isEmpty && !embedsOperationalPanelsInGrid {
+                        approvalPanel
+                    }
 
-                if !store.sessions.isEmpty && !embedsOperationalPanelsInGrid {
-                    sessionPanel
+                    if !store.sessions.isEmpty && !embedsOperationalPanelsInGrid {
+                        sessionPanel
+                    }
                 }
+                .padding(Spacing.xl)
             }
-            .padding(Spacing.xl)
         }
         .background(CozyPalette.canvas)
         .frame(minWidth: Layout.windowMinWidth, minHeight: Layout.contentMinHeight)
@@ -85,8 +120,14 @@ struct DashboardView: View {
         }
     }
 
-    private var embedsOperationalPanelsInGrid: Bool {
-        store.agents.count % columns.count == 1
+    private func embedsOperationalPanelsInGrid(columnCount: Int) -> Bool {
+        // **3열에서만 성립한다.** 두 패널이 채우는 것은 두 칸이라, 마지막 행에 한 칸이
+        // 남았을 때(`% columnCount == 1`) 카드 1 + 패널 2 = 3칸으로 딱 맞는 것은 3열뿐이다.
+        // 열 수가 창 폭을 따라가게 되면서 2열에서 이 조건이 그대로 참이 됐고(7명 기준
+        // `7 % 2 == 1`), 세 칸이 두 칸짜리 행에 밀려 들어가 세션 패널만 다음 줄 반쪽에
+        // 홀로 남았다. 그 밖의 열 수에서는 아래 별도 섹션으로 온전한 폭을 쓰는 편이 낫다.
+        columnCount == 3
+            && store.agents.count % columnCount == 1
             && !store.approvals.isEmpty
             && !store.sessions.isEmpty
     }
@@ -95,12 +136,8 @@ struct DashboardView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("이대리 주식회사")
-                    .font(Typography.screenTitle)
-                Spacer()
-                connectionIndicator
-            }
+            Text("이대리 주식회사")
+                .font(Typography.screenTitle)
 
             HStack(spacing: Spacing.lg) {
                 summaryChip(count: countOf(.inProgress), label: "진행 중", color: ConsoleAgentState.inProgress.accentColor)
@@ -118,16 +155,9 @@ struct DashboardView: View {
         }
     }
 
-    private var connectionIndicator: some View {
-        HStack(spacing: Spacing.sm) {
-            Circle()
-                .fill(status.color)
-                .frame(width: Stroke.dot, height: Stroke.dot)
-            Text(status.label)
-                .font(Typography.captionEmphasis)
-                .foregroundStyle(.secondary)
-        }
-    }
+    // 실시간 연결 배지는 AppRootView 헤더(두 탭 공통)에만 둔다. 예전엔 여기도 같은 배지를
+    // 그려서 화면에 "실시간"이 위아래로 두 번 떴다 — 정본은 하나로 줄인다.
+    // (status 는 지워도 되는 값이 아니라 아래 emptyState 문구가 여전히 참조한다.)
 
     private func summaryChip(count: Int, label: String, color: Color) -> some View {
         HStack(spacing: Spacing.sm) {

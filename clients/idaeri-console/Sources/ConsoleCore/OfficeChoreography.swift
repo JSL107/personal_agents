@@ -41,47 +41,201 @@ public func affectedAgentTypes(of intent: VisualIntent) -> [String] {
     }
 }
 
-// MARK: - 걸음 프레임
+// MARK: - 포즈 계약 (요청 포즈 → 실제 에셋)
+//
+// 캐릭터 원화는 **정면 한 벌**뿐이다 — 측면·후면·걸음 프레임이 한 장도 없고, 사람마다
+// 가진 포즈도 다르다(전원 `sit`, 절반쯤 `typing`, 넷 이하의 `reading`·`writing`·`drinking`).
+// 도트 시절에는 `down`/`up`/`side` + `-walk1`·`-walk2` 로 파일을 찾았는데, 그 이름은 이제
+// 어느 것도 실재하지 않아 요청이 전부 "없으면 정면 정지 그림" 한 갈래로 뭉개졌다.
+//
+// 여기서 요청 이름을 실재하는 에셋으로 옮기는 **단일 변환 지점**을 둔다. 렌더러가 아니라
+// 코어에 두는 이유는 대체 선택이 캐릭터마다 다르기 때문이다 — 어느 그림이 어느 그림을
+// 대신할 수 있는지는 그림을 그리는 규칙이 아니라 계약이고, 계약은 테스트가 닿아야 한다.
 
-/// 걸음 프레임 장수. 에셋은 정지 그림에서 파생된 두 장(`-walk1` · `-walk2`)뿐이다.
-public let officeWalkFrameCount = 2
-
-/// 걷는 중 `step` 번째 걸음에 쓸 포즈 이름.
+/// 캐릭터 원화가 앉은 그림인지 선 그림인지.
 ///
-/// 두 프레임을 번갈아 쓰는 것이 "한 칸 = 한 걸음" 과 맞다. 사이에 정지 그림을 끼우는
-/// 네 프레임 사이클(정지→1→정지→2)은 두 칸에 한 번만 다리가 교차해, 한 칸 0.16초인
-/// 지금 속도에서는 걷는다기보다 미끄러지는 것으로 보인다.
-public func officeWalkPose(_ pose: String, step: Int) -> String {
-    // 음수 걸음 인덱스가 들어와도 프레임 번호가 0 이나 음수로 떨어지지 않게 한 번 더 감는다.
-    let frame = ((step % officeWalkFrameCount) + officeWalkFrameCount) % officeWalkFrameCount
-    return "\(pose)-walk\(frame + 1)"
+/// 앉은 그림을 서 있는 자리에 놓으면 공중에 주저앉은 사람이 되고, 선 그림을 책상 좌석에
+/// 놓으면 책상 위에 올라선 사람이 된다. 좌석 하강값(`officeDedicatedSeatedSpriteDrop`)도
+/// 이 구분을 보고 갈린다.
+public enum CozyPosePosture: String, Sendable, Equatable {
+    case standing
+    case seated
 }
 
-/// 걸음 프레임 이름에서 정지 포즈를 되돌린다(`down-walk1` → `down`).
-///
-/// 에셋 파이프라인은 다리 영역을 못 찾으면 걸음 프레임 파생을 건너뛴다(측면처럼 두 다리가
-/// 한 덩어리인 그림이 새로 들어오는 경우). 그때 로더가 정지 그림으로 내려가기 위한 것 —
-/// 없는 파일을 그대로 요청하면 그 사람만 화면에서 사라진다.
-public func officeStillPose(_ pose: String) -> String {
-    guard let marker = pose.range(of: "-walk") else {
-        return pose
+/// 요청 포즈를 실제 에셋으로 옮긴 결과.
+public struct ResolvedCozyPose: Sendable, Equatable {
+    /// 실제로 파일이 있는 포즈 이름(`agent-{index}-{pose}.png`). `idle` 은 접미사 없는 원본.
+    public let pose: String
+    public let posture: CozyPosePosture
+
+    public init(pose: String, posture: CozyPosePosture) {
+        self.pose = pose
+        self.posture = posture
     }
-    return String(pose[pose.startIndex..<marker.lowerBound])
 }
 
-/// 캐릭터 텍스처 파일명 후보를 우선순위대로 만든다(순수). 로더는 이 중 실제로 있는 첫 파일을 쓴다.
+/// 접미사 없는 기본 그림(`agent-{index}.png`). 스무 명 전원이 가지고 있어 최후의 대체가 된다.
+public let cozyIdlePose = "idle"
+
+/// 요청 이름을 에셋 어휘로 접는다.
 ///
-/// **한 시트를 다 소진한 뒤에 기본 시트로 내려간다.** 순서를 뒤집어 기본 시트의 걸음 프레임을
-/// 같은 시트의 정지 그림보다 먼저 고르면, 걸음 프레임이 없는 시트의 사람이 걷는 순간 얼굴·체형이
-/// 기본 캐릭터로 바뀐다 — 사람마다 다른 시트를 배정한 이유가 사라진다. 순서가 곧 규약이라
-/// 로더 안에 두지 않고 여기서 테스트가 닿게 한다.
-public func characterSpriteCandidates(sheet: Int, pose: String) -> [String] {
-    let index = min(max(sheet, 0), characterSheetPrefixes.count - 1)
-    let still = officeStillPose(pose)
-    // 배정된 시트 먼저, 그다음 기본 시트. 배정된 시트가 기본 시트면 중복되지만 호출자가
-    // "있는 첫 파일" 을 고르므로 무해하다.
-    return [characterSheetPrefixes[index], characterSheetPrefixes[0]].flatMap { prefix in
-        still == pose ? ["\(prefix)-\(pose)"] : ["\(prefix)-\(pose)", "\(prefix)-\(still)"]
+/// **방향 이름과 걸음 프레임이 전부 `idle` 로 접히는 것이 이 함수의 요점이다.** `down`·`up`·
+/// `side`·`down-walk1` 같은 도트 시절 이름은 실물이 없는데, 그것을 그대로 파일명으로 조립하면
+/// 로더가 매번 없는 파일을 찾아 헛돈다(정상 실행에서 폴백 로그가 수십 줄 쏟아지던 원인).
+/// 방향은 이제 그림이 아니라 몸짓(`officeWalkLean`)이 표현한다.
+public func normalizedCozyPose(_ requested: String) -> String {
+    switch requested.lowercased().replacingOccurrences(of: "_", with: "-") {
+    case "sit", "sitting":
+        return "sit"
+    case "typing":
+        return "typing"
+    case "reading":
+        return "reading"
+    case "writing":
+        return "writing"
+    case "drinking":
+        return "drinking"
+    case "carryingpapers", "carrying-papers":
+        return "carryingpapers"
+    case "tending":
+        return "tending"
+    case "stowing":
+        return "stowing"
+    case "walk":
+        return "walk"
+    default:
+        return cozyIdlePose
+    }
+}
+
+/// 그림 **안에** 가구가 이미 그려져 있는가(원화 전수 확인).
+///
+/// 한때 셋이 걸려 있었다 — 6번 원형 테이블, 7번 사무용 의자, 8번 사이드 테이블. 사람만
+/// 오려낸 그림이 아니라 가구까지 한 덩어리라, 씬의 책상·소파 앞에 세우면 가구가 이중으로
+/// 보여 "물건을 쓰는" 게 아니라 "물건이 겹친" 그림이 됐다. **셋 다 가구 없는 그림으로
+/// 다시 그려 받아 배제가 필요 없어졌다**(교체본을 직접 열어 확인). 규칙 자체는 남긴다 —
+/// 다음에 같은 방식으로 그려진 원화가 들어오면 여기에 한 줄 추가하는 것으로 막을 수 있고,
+/// 그 자리가 없으면 화면에서 겹친 뒤에야 알게 된다.
+public func cozyPoseDrawsOwnFurniture(assetIndex: Int, pose: String) -> Bool {
+    switch (assetIndex, pose) {
+    default:
+        return false
+    }
+}
+
+/// 그 포즈 그림이 앉은 그림인지(원화 전수 확인).
+///
+/// 같은 포즈라도 사람마다 자세가 다르다 — `typing` 은 18번만 태블릿을 들고 서 있고 나머지는
+/// 앉아 있다. `reading`·`writing` 은 반대로 앉은 쪽이 예외다(7·6번). 이 예외를 모르면
+/// 18번만 자기 책상 앞에 선 채로 일하고, 7번만 복도에서 의자째 책을 읽는다.
+public func cozyPosePosture(assetIndex: Int, pose: String) -> CozyPosePosture {
+    switch pose {
+    case "sit":
+        return .seated
+    case "typing":
+        return assetIndex == 18 ? .standing : .seated
+    // 6번 `writing`·7번 `reading` 은 예전에 앉은 그림이었다(각각 테이블·의자가 함께 그려져
+    // 있었다). 가구 없는 **서 있는** 그림으로 교체돼 이제 예외가 아니다.
+    default:
+        return .standing
+    }
+}
+
+/// 요청 포즈를 대신할 수 있는 에셋 포즈를 우선순위대로 준다(`idle` 은 제외 — 늘 마지막 보루).
+///
+/// 지금까지는 대체가 "없으면 정면 정지 그림" 하나뿐이라 의미가 다 뭉개졌다. 손에 든 물건이
+/// 뜻을 가장 많이 나르므로, 서류를 든 자세(`carryingPapers`)는 쓰는 그림, 물건을 넣고 빼는
+/// 자세(`stowing`)는 책을 든 그림으로 내려간다. 화분 손질(`tending`)은 닮은 그림이 없어
+/// 그냥 서 있는 편이 낫다 — 엉뚱한 소품을 들리면 무엇을 하는지가 오히려 틀리게 읽힌다.
+public func cozyPoseCandidates(_ normalized: String) -> [String] {
+    switch normalized {
+    case "sit":
+        return ["sit"]
+    // 타이핑 그림이 없으면 **앉은 그림**으로 내려간다. `idle`(서 있는 그림)로 내려가면
+    // 책상 좌석에서 그 사람만 책상 위에 올라선 것처럼 보인다.
+    case "typing":
+        return ["typing", "sit"]
+    case "reading":
+        return ["reading"]
+    case "writing":
+        return ["writing", "reading"]
+    case "drinking":
+        return ["drinking"]
+    case "carryingpapers":
+        return ["writing", "reading"]
+    case "stowing":
+        return ["reading"]
+    // 걸음 그림은 대신할 것이 없다 — 없으면 정지 그림으로 내려가고, 그때는 몸 기울기
+    // (`officeWalkLean`)만 남아 걷는 티가 옅어진다. 스무 명 중 일곱만 가지고 있다.
+    case "walk":
+        return ["walk"]
+    default:
+        return []
+    }
+}
+
+/// 요청 포즈 → 실제 에셋. **모든 캐릭터 그림 선택이 지나는 단 하나의 지점.**
+///
+/// `hasAsset` 은 "이 포즈 파일이 실제로 있는가" 를 묻는 창구다. 파일 목록을 코어가 따로
+/// 베껴 두지 않으므로(베끼면 에셋을 갈아끼울 때 조용히 어긋난다) 존재 판정은 번들을 보는
+/// 렌더러가 넘기고, 여기서는 **순서와 배제 규칙**만 갖는다.
+public func resolveCozyPose(
+    requested: String,
+    assetIndex: Int,
+    hasAsset: (String) -> Bool
+) -> ResolvedCozyPose {
+    let normalized = normalizedCozyPose(requested)
+    // 앉아야 하는 요청인지는 요청 이름이 정한다 — 책상에서 오는 요청은 `sit`·`typing` 둘뿐이고
+    // 나머지(가구 앞 자세·걷기·기본)는 전부 서 있는 맥락이다. 호출자가 별도 인자로 들고
+    // 다니면 두 곳이 서로 다른 답을 낼 여지가 생긴다.
+    let wanted: CozyPosePosture = (normalized == "sit" || normalized == "typing")
+        ? .seated
+        : .standing
+    for candidate in cozyPoseCandidates(normalized) {
+        guard !cozyPoseDrawsOwnFurniture(assetIndex: assetIndex, pose: candidate) else {
+            continue
+        }
+        guard cozyPosePosture(assetIndex: assetIndex, pose: candidate) == wanted else {
+            continue
+        }
+        guard hasAsset(candidate) else {
+            continue
+        }
+        return ResolvedCozyPose(pose: candidate, posture: wanted)
+    }
+    return ResolvedCozyPose(pose: cozyIdlePose, posture: .standing)
+}
+
+// MARK: - 걸음 몸짓
+
+/// 한 칸(한 걸음)에 걸리는 시간(초). 씬의 이동 시간(`OfficeScene.walk` 의 `stepDuration`)과
+/// 같아야 몸 기울기가 발과 어긋나지 않는다.
+public let officeWalkStepSeconds: Double = 0.20
+
+/// 진행 방향으로 몸이 기우는 각도(라디안 ≈ 3.4도).
+public let officeWalkLeanRadians: Double = 0.06
+
+/// 걸음마다 좌우로 번갈아 흔들리는 각도(라디안 ≈ 2도).
+public let officeWalkSwayRadians: Double = 0.035
+
+/// `step` 번째 걸음에서 몸을 얼마나 기울일지(라디안, 양수 = 반시계 = 화면 왼쪽으로 기움).
+///
+/// **걸음 그림이 없으므로 몸짓이 그 자리를 대신한다.** 예전에는 `-walk1`·`-walk2` 를 번갈아
+/// 걸었는데 그 파일이 실재하지 않아 매 걸음 같은 정면 그림으로 되돌아왔다 — 다리는 가만히
+/// 있고 몸만 위아래로 떨려 "걷는다" 가 아니라 "제자리에서 통통 튄다" 로 읽힌 원인이다.
+///
+/// 발(스프라이트 anchor)을 축으로 기울이면 디딘 발 위로 무게중심이 넘어가는 것이 보인다.
+/// 진행 방향 기울기는 어디로 가는지를, 좌우 번갈이는 몇 걸음째인지를 나른다. 위·아래로 가는
+/// 걸음에는 화면상 진행 방향이 없어 번갈이만 남긴다.
+public func officeWalkLean(facing: Facing, step: Int) -> Double {
+    let sway = step.isMultiple(of: 2) ? officeWalkSwayRadians : -officeWalkSwayRadians
+    switch facing {
+    case .left:
+        return officeWalkLeanRadians + sway
+    case .right:
+        return -officeWalkLeanRadians + sway
+    case .up, .down:
+        return sway
     }
 }
 

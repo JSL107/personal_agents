@@ -13,15 +13,29 @@ let application = NSApplication.shared
 application.setActivationPolicy(.regular)
 
 // 개인 사무실 카드 대시보드 시각 회귀 렌더. 백엔드 없이 고정 상태 6종을 한 장에 굽는다.
-//   swift run IdaeriConsole --render-dashboard /tmp/dashboard.png [--dark]
+//   swift run IdaeriConsole --render-dashboard /tmp/dashboard.png [--dark] [--size 2560x1600]
 if let renderIndex = CommandLine.arguments.firstIndex(of: "--render-dashboard") {
     let outputPath =
         renderIndex + 1 < CommandLine.arguments.count
         ? CommandLine.arguments[renderIndex + 1] : "dashboard.png"
+    // 좁은 창에서 카드가 겹치는지, 넓은 창(전체화면)에서 캐릭터·소품이 잘리는지는 캔버스가
+    // 한 크기로 고정돼 있으면 확인할 방법이 없다 — 오피스 `--render` 의 `--size` 와 같은
+    // 이유. 값을 읽는 규칙은 여기서도 `officeParseRenderSize`(ConsoleCore)를 그대로 쓴다.
+    let dashboardSizeIndex = CommandLine.arguments.firstIndex(of: "--size")
+    let dashboardRenderSize: CGSize? =
+        dashboardSizeIndex.flatMap { index -> CGSize? in
+            guard index + 1 < CommandLine.arguments.count,
+                let parsed = officeParseRenderSize(CommandLine.arguments[index + 1])
+            else {
+                return nil
+            }
+            return CGSize(width: parsed.width, height: parsed.height)
+        }
     exit(
         renderDashboardPreview(
             path: outputPath,
-            darkMode: CommandLine.arguments.contains("--dark")
+            darkMode: CommandLine.arguments.contains("--dark"),
+            size: dashboardRenderSize
         ) ? 0 : 1
     )
 }

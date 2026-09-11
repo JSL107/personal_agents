@@ -207,7 +207,15 @@ public func officeInteractionNeighbors(
 }
 
 /// 평면도 가구 순서를 보존해 목적지 카탈로그도 실행마다 같은 순서를 유지한다.
-public func officeStrollSpots(plan: OfficeFloorPlan) -> [OfficeStrollSpot] {
+///
+/// `drawnKinds` 를 넘기면 **그 종류의 가구만** 목적지가 된다. 완성형 방 그림을 쓰는 동안
+/// 화면에 나오지 않는 가구를 걸러내는 용도다(`officeCozyDrawnFurnitureKinds`) — 안 보이는
+/// 물건 앞으로 보내면 사람이 빈 바닥에 혼자 서서 말하는 그림이 된다. nil 이면 예전처럼
+/// 놓인 가구를 전부 쓴다(옛 도트 스프라이트 화면·자세 회귀 렌더가 그 경로다).
+public func officeStrollSpots(
+    plan: OfficeFloorPlan,
+    drawnKinds: Set<FurnitureKind>? = nil
+) -> [OfficeStrollSpot] {
     let seatTiles = Set(plan.desks.map(\.seat))
     // 문 칸은 통행 가능하지만 **머물 수는 없다.**
     //
@@ -236,6 +244,12 @@ public func officeStrollSpots(plan: OfficeFloorPlan) -> [OfficeStrollSpot] {
         guard let dwellSeconds = placement.kind.strollDwellSeconds,
               let pose = placement.kind.interactionPose
         else {
+            continue
+        }
+        // 화면에 안 나오는 가구는 목적지가 아니다. **앞자리 점유(`usedTiles`)보다 먼저**
+        // 걸러야 한다 — 나중에 거르면 안 보이는 가구가 앞자리를 먼저 물고, 그 칸을 같이
+        // 노리던 보이는 가구가 조용히 목록에서 빠진다.
+        if let drawnKinds, !drawnKinds.contains(placement.kind) {
             continue
         }
         // **이미 쓰인 칸은 건너뛰고 다음 이웃을 본다.** 예전에는 첫 이웃 하나만 고른 뒤 그
@@ -381,6 +395,22 @@ public func officeStrollSpot(
         agentType: agentType, spots: spots, homeDepartment: homeDepartment
     ) {
         return nil
+    }
+    // 짝지어진 물건이 없는 사람도 **자기 방부터 본다.**
+    //
+    // 예전에는 곧장 전체에서 골랐다. 짝이 없는 사람이 드물던 동안에는 티가 안 났는데,
+    // 완성형 방 그림에서 벽걸이·설비·복합기가 화면에 안 나오게 되면서(`officeCozyDrawnFurnitureKinds`)
+    // 그 물건을 찾던 사람들이 전부 이 경로로 내려왔다 — 서른 명 표본에서 3열 일곱 명,
+    // 2열 열한 명이 매번 남의 방으로 걸어갔다. 방에 어울리는 집기를 두는 이유가
+    // 「저 방 사람은 저기서 저 일을 한다」를 보이게 하는 것인데, 그 연결이 끊긴다.
+    //
+    // 자기 방에 아무것도 없을 때만 예전처럼 전체에서 고른다 — 막으면 목적지를 아예 못 받아
+    // 그 사람만 자리에 굳는다.
+    if let homeDepartment {
+        let mine = candidates.filter { $0.department == homeDepartment }
+        if let picked = officeRotatingPick(from: mine, agentType: agentType, round: round) {
+            return picked
+        }
     }
     return officeRotatingPick(from: candidates, agentType: agentType, round: round)
 }

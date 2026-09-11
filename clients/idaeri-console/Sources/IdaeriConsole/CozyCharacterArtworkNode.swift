@@ -7,15 +7,62 @@ final class CozyCharacterArtworkNode: SKNode {
     // Generated mascots should stay more prominent than the former pixel sprites,
     // but still fit inside a department room without covering desks or labels.
     static let officeScaleFactor: CGFloat = 0.72
+
+    /// 아트워크 좌표에서 **발이 놓이는 높이**. 원점이 아니라 이만큼 위에 세워 발밑에 그림자
+    /// 자리를 남긴다. 바깥에서 접지 그림자를 대신 그리는 쪽(`CharacterNode`)이 같은 값을
+    /// 봐야 그림자가 발보다 아래로 처지지 않는다.
+    static let groundContactInset: CGFloat = 5
     private struct CacheKey: Hashable {
         let appearance: [Int]
         let mood: String
         let department: String
         let state: String
         let pose: String
+        /// 앉아야 하는 자리에 선 그림을 줄여 쓰는 경우. 봉투 크기가 달라 같은 그림이라도 캐시가 갈린다.
+        let seatedFallback: Bool
     }
 
     private static var cache: [CacheKey: SKNode] = [:]
+
+    /// 몸 그림을 담는 그릇. 접지 그림자와 분리해 둬야 그림자가 몸의 세로 움직임을 따라가지 않는다.
+    private let artworkContainer = SKNode()
+
+    /// 발밑 접지 그림자.
+    ///
+    /// **몸이 아니라 노드 자신에게 붙인다.** 예전에는 캐릭터 그림과 한 덩어리라, 걸음 bob·
+    /// 발 구르기·완료 점프로 몸이 뜰 때마다 그림자가 같이 떠올랐다 — 발이 땅을 딛는 신호가
+    /// 사라져 "걷는다" 가 아니라 "스티커가 통통 튄다" 로 읽힌 원인 중 하나다. 여기 두면
+    /// 몸만 오르내리고 그림자는 바닥에 남는다.
+    ///
+    /// 사무실 캐릭터(`CharacterNode`)는 타일 크기에 맞춘 자기 그림자를 이미 그리므로 그쪽에서
+    /// 끈다(`groundShadowIsHidden`). 대표처럼 이 노드만 쓰는 자리에서는 이 그림자가 유일한
+    /// 접지 신호다.
+    private let groundShadow = SKShapeNode(ellipseOf: CGSize(width: 42, height: 9))
+
+    /// 마지막으로 화면에 올린 조합. 같은 그림을 걸음마다 다시 굽지 않기 위한 것 —
+    /// 한 칸 옮길 때마다 `removeAllChildren` + 노드 복제가 도는 것은 순수 낭비였다.
+    private var appliedKey: CacheKey?
+
+    override init() {
+        super.init()
+        groundShadow.position = CGPoint(x: 0, y: Self.groundContactInset)
+        groundShadow.fillColor = SKColor.black.withAlphaComponent(0.14)
+        groundShadow.strokeColor = .clear
+        groundShadow.zPosition = -1
+        addChild(groundShadow)
+        addChild(artworkContainer)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("not supported")
+    }
+
+    var groundShadowIsHidden: Bool {
+        get { groundShadow.isHidden }
+        set { groundShadow.isHidden = newValue }
+    }
+
     func update(
         appearance: CozyAgentAppearance,
         mood: CozyAgentMood,
@@ -23,30 +70,31 @@ final class CozyCharacterArtworkNode: SKNode {
         state: ConsoleAgentState,
         pose: String
     ) {
-        removeAllChildren()
-        let normalizedPose = Self.normalizedPose(pose)
+        // 요청 포즈를 실재하는 에셋으로 옮기는 유일한 지점. 여기를 지난 뒤로는 "없는 그림"이
+        // 없으므로 아래 어디에서도 다시 대체를 고민하지 않는다.
+        let resolved = SpriteLoader.resolvedCozyPose(assetIndex: appearance.assetIndex, pose: pose)
+        // 앉아야 하는 요청인데 선 그림밖에 없는 경우에만 봉투를 줄인다(아래 `makeArtwork`).
+        // 지금 에셋은 스무 명 전원이 `sit` 을 가져 이 경우가 없지만, 에셋을 갈아끼웠을 때
+        // 책상 위에 올라선 사람이 조용히 생기지 않도록 조건은 남긴다.
+        let seatedFallback = normalizedCozyPose(pose) == "sit" && resolved.posture == .standing
         let key = CacheKey(
             appearance: [appearance.assetIndex, appearance.headShapeIndex, appearance.hairStyleIndex, appearance.outfitStyleIndex, appearance.accessoryIndex ?? -1, appearance.paletteIndex],
-            mood: String(describing: mood), department: department.rawValue, state: state.rawValue, pose: normalizedPose
+            mood: String(describing: mood), department: department.rawValue, state: state.rawValue,
+            pose: resolved.pose, seatedFallback: seatedFallback
         )
+        guard appliedKey != key else {
+            return
+        }
+        appliedKey = key
+        artworkContainer.removeAllChildren()
         let artwork = Self.cache[key] ?? makeArtwork(
-            appearance: appearance, mood: mood, department: department, state: state, pose: normalizedPose
+            appearance: appearance, mood: mood, department: department, state: state,
+            pose: resolved.pose, seatedFallback: seatedFallback
         )
         if Self.cache[key] == nil {
             Self.cache[key] = artwork.copy() as? SKNode
         }
-        addChild(artwork.copy() as? SKNode ?? artwork)
-    }
-
-    private static func normalizedPose(_ pose: String) -> String {
-        switch pose.lowercased() {
-        case "sitting":
-            return "sit"
-        case "down", "up", "left", "right", "sit", "typing", "reading", "drinking", "writing", "carryingpapers", "tending", "stowing", "default", "idle":
-            return pose.lowercased()
-        default:
-            return pose.lowercased().contains("walk") ? "walk" : "idle"
-        }
+        artworkContainer.addChild(artwork.copy() as? SKNode ?? artwork)
     }
 
     func update(
@@ -69,34 +117,19 @@ final class CozyCharacterArtworkNode: SKNode {
         mood: CozyAgentMood,
         department: Department,
         state: ConsoleAgentState,
-        pose: String
+        pose: String,
+        seatedFallback: Bool
     ) -> SKNode {
         let root = SKNode()
         let outline = SKColor(red: 0.38, green: 0.29, blue: 0.24, alpha: 1)
 
-        // Keep every artwork grounded on the same floor cue. The generated
-        // PNGs are much more detailed than the fallback vector mascot, so
-        // without this small shadow they read as floating stickers over the
-        // illustrated floor.
-        let shadow = SKShapeNode(ellipseOf: CGSize(width: 42, height: 9))
-        shadow.position = CGPoint(x: 0, y: 5)
-        shadow.fillColor = SKColor.black.withAlphaComponent(0.14)
-        shadow.strokeColor = .clear
-        shadow.zPosition = -1
-        root.addChild(shadow)
-
-        let requestedPose = pose == "default" ? "idle" : pose
-        let hasDedicatedPose = SpriteLoader.cozyCharacterHasDedicatedPose(
-            assetIndex: appearance.assetIndex,
-            pose: requestedPose
-        )
         if let texture = SpriteLoader.cozyCharacterTexture(
             assetIndex: appearance.assetIndex,
-            pose: requestedPose
+            pose: pose
         ) {
             let sprite = SKSpriteNode(texture: texture)
             let textureSize = texture.size()
-            let usesIdleAsSeatedFallback = pose == "sit" && !hasDedicatedPose
+            let usesIdleAsSeatedFallback = seatedFallback
             // The source sheets are tall full-body illustrations. Limit their
             // height to the compact office mascot envelope so they do not
             // tower over desks and overhead labels at room scale.
@@ -111,7 +144,7 @@ final class CozyCharacterArtworkNode: SKNode {
             let scale = min(heightScale, maximumWidth * visualScale / max(textureSize.width, 1))
             sprite.size = CGSize(width: textureSize.width * scale, height: textureSize.height * scale)
             // Place the actual feet on the same baseline as the shared shadow.
-            sprite.position = CGPoint(x: 0, y: 5 + sprite.size.height / 2)
+            sprite.position = CGPoint(x: 0, y: Self.groundContactInset + sprite.size.height / 2)
             sprite.texture?.filteringMode = .linear
             // Pick up a trace of the honey-colored room bounce so the transparent cutout reads as
             // part of the same lit diorama rather than a sticker placed over the shell.
@@ -329,14 +362,15 @@ final class CozyCharacterArtworkNode: SKNode {
         let normalized = pose.lowercased()
         switch state {
         case .waiting:
-            if normalized == "default" || normalized == "idle" || normalized == "down" || normalized == "up" || normalized == "left" || normalized == "right" || normalized == "walk" {
+            // 포즈 계약을 지난 이름만 들어온다 — 방향·걸음 이름은 전부 `idle` 로 접힌다.
+            if normalized == cozyIdlePose {
                 addMug(to: root, outline: outline)
             }
         case .inProgress:
             // Desk interactions already render a full 2.5D workstation. A second flat laptop
             // badge across the torso breaks the shared perspective and can cover the face of the
             // lowered seated fallback.
-            if !["sit", "sitting", "writing", "reading"].contains(normalized) {
+            if !["sit", "writing", "reading"].contains(normalized) {
                 addLaptop(to: root, outline: outline)
             }
         case .awaitingApproval: addDocument(to: root, x: -25, y: 40, outline: outline)
@@ -351,8 +385,7 @@ final class CozyCharacterArtworkNode: SKNode {
         case "carryingpapers": addPaperStack(to: root, outline: outline)
         case "tending": addLeaf(to: root, outline: outline)
         case "stowing": addBox(to: root, outline: outline)
-        case "sit", "sitting": addSeatCue(to: root, outline: outline)
-        case "walk": addWalkCue(to: root, outline: outline)
+        case "sit": addSeatCue(to: root, outline: outline)
         default: break
         }
     }
@@ -369,11 +402,10 @@ final class CozyCharacterArtworkNode: SKNode {
     private func addLeaf(to root: SKNode, outline: SKColor) { let leaf = SKShapeNode(ellipseOf: CGSize(width: 10, height: 5)); leaf.position = CGPoint(x: 25, y: 36); leaf.fillColor = SKColor(red: 0.55, green: 0.72, blue: 0.55, alpha: 1); leaf.strokeColor = outline; leaf.lineWidth = 1; root.addChild(leaf) }
     private func addBox(to root: SKNode, outline: SKColor) { let box = SKShapeNode(rectOf: CGSize(width: 12, height: 10), cornerRadius: 1); box.position = CGPoint(x: -24, y: 24); box.fillColor = SKColor(red: 0.82, green: 0.67, blue: 0.53, alpha: 1); box.strokeColor = outline; box.lineWidth = 1; root.addChild(box) }
     private func addSeatCue(to root: SKNode, outline: SKColor) { let seat = SKShapeNode(rectOf: CGSize(width: 23, height: 4), cornerRadius: 2); seat.position = CGPoint(x: 0, y: 8); seat.fillColor = outline; seat.strokeColor = .clear; root.addChild(seat) }
-    private func addWalkCue(to root: SKNode, outline: SKColor) { for x in [-10.0, 10.0] { let foot = SKShapeNode(ellipseOf: CGSize(width: 8, height: 3)); foot.position = CGPoint(x: x, y: 4); foot.fillColor = outline; foot.strokeColor = .clear; root.addChild(foot) } }
 
     private func poseAngle(_ pose: String, side: CGFloat) -> CGFloat {
         let value = pose.lowercased()
-        if value.contains("walk") || value.contains("carry") || value.contains("tend") { return side * 0.12 }
+        if value.contains("carry") || value.contains("tend") { return side * 0.12 }
         if value.contains("write") || value.contains("read") || value.contains("drink") { return side * 0.2 }
         return 0
     }

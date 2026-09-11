@@ -97,6 +97,15 @@ enum Layout {
     static let sidebarWidth: CGFloat = 240
     /// 초상화 장면과 두 줄 직무가 찌그러지지 않는 대시보드 카드 하한.
     static let cardMinWidth: CGFloat = 300
+    /// 대시보드 카드가 지향하는 폭. 열 수를 이 값으로 나눠 정한다.
+    ///
+    /// 카드 폭이 이 근처를 유지해야 초상화가 **방으로 읽힌다.** 방 일러스트는 1400×900
+    /// (약 1.56:1)인데 초상화 높이는 218pt 로 고정이라, 카드가 넓어질수록 `scaledToFill` 이
+    /// 좌우를 채우느라 벽과 창문을 잘라낸다 — 2560pt 창에서 3열이면 카드 폭이 827pt 까지
+    /// 벌어져 비율이 3.8:1 이 되고, 화면에는 마룻바닥만 남았다(실측 렌더로 확인).
+    /// 360 은 초상화 폭이 좌우 여백(16×2)을 뺀 328pt 가 되는 자리 — 218pt 높이와 짝지으면
+    /// 1.5:1 로 원본 비율에 붙는다.
+    static let cardTargetWidth: CGFloat = 360
     static let windowMinWidth: CGFloat = 720
     /// 창 자체의 최소 높이(루트).
     static let windowMinHeight: CGFloat = 560

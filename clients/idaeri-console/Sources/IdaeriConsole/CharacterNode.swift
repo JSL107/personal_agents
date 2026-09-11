@@ -23,13 +23,14 @@ final class CharacterNode: SKNode {
     /// 지금 서 있는 칸.
     var tile: TilePoint
     private(set) var facing: Facing = .down
-    /// 자리에 앉아 있는가(앉은 스프라이트는 방향 교체를 하지 않는다).
+    /// 자리에 앉아 있는가. 앉은 그림과 선 그림을 가르는 유일한 값이다(`currentPose`).
     var isSeated = false
     /// 걷는 중인가 — 새 지시가 오면 기존 걸음을 끊어야 해서 필요하다.
-    /// 걸음 프레임을 쓸지 정지 그림을 쓸지도 이 값이 가른다(`currentPose`).
     var isWalking = false
-    /// 몇 번째 걸음인가 — 좌우 다리가 번갈아 나가도록 한 칸마다 늘린다.
+    /// 몇 번째 걸음인가 — 몸이 좌우로 번갈아 기울도록 한 칸마다 늘린다.
     private var walkStep = 0
+    /// 마지막으로 요청한 그림 포즈. 그림과 좌석 하강값이 같은 판정을 보게 하려고 들고 있는다.
+    private var requestedArtworkPose = cozyIdlePose
     /// 상호작용 중에는 상태 몸짓을 다시 걸면 자세가 즉시 덮이므로 씬이 이를 판별해야 한다.
     private(set) var isInteracting = false
     private var interactionFacing: Facing?
@@ -131,6 +132,10 @@ final class CharacterNode: SKNode {
         sprite.anchorPoint = CGPoint(x: 0.5, y: 0)
         sprite.zPosition = 1
         sprite.texture = nil
+        // 아트워크가 들고 있는 그림자는 몸과 함께 오르내린다(몸의 자식이므로). 여기서는 타일
+        // 크기에 맞춘 `contactShadow` 가 바닥에 고정돼 있으므로 그쪽 하나만 쓴다 — 둘을 함께
+        // 두면 거의 같은 크기의 그림자가 겹친 채 하나만 몸을 따라 떠올라 스티커처럼 보인다.
+        cozyArtwork.groundShadowIsHidden = true
         sprite.addChild(cozyArtwork)
         addChild(sprite)
 
@@ -183,10 +188,14 @@ final class CharacterNode: SKNode {
             ),
             transform: nil
         )
+        // 아트워크는 발을 자기 좌표 원점이 아니라 조금 위에 세운다(발밑 그림자 자리를 비우려고).
+        // 접지 그림자를 노드 원점에 그대로 깔면 그만큼 발보다 아래로 처져 사람이 바닥에서 떠 보인다.
+        let footLift = CozyCharacterArtworkNode.groundContactInset
+            * spriteScale * CozyCharacterArtworkNode.officeScaleFactor
         contactShadow.path = CGPath(
             ellipseIn: CGRect(
                 x: -tileSize * 0.30,
-                y: -tileSize * 0.085,
+                y: footLift - tileSize * 0.085,
                 width: tileSize * 0.60,
                 height: tileSize * 0.15
             ),
@@ -376,6 +385,10 @@ final class CharacterNode: SKNode {
     }
 
     /// 방향을 바꾼다. 앉아 있는 동안은 앉은 자세를 유지한다.
+    ///
+    /// 방향은 그림을 고르지 않는다(정면 원화 한 벌) — 걸음 기울기(`stepWalkFrame`)와
+    /// 가구 자세 계산이 쓰는 값으로만 남는다. 그림 갱신은 서 있는 기본 자세로 되돌리는
+    /// 경로(`stand()` 등)가 이 함수를 거치기 때문에 함께 둔다.
     func apply(facing newFacing: Facing) {
         facing = newFacing
         guard !isSeated else {
@@ -384,37 +397,68 @@ final class CharacterNode: SKNode {
         setTexture(currentPose())
     }
 
-    /// 지금 써야 할 포즈 — 걷는 중이면 현재 걸음의 프레임, 서 있으면 정지 그림.
+    /// 지금 써야 할 요청 포즈 — 앉았으면 앉은 그림, 서 있으면 기본 그림.
     ///
-    /// 방향 전환도 이 함수를 지나야 한다. 걷다가 코너를 돌 때 정지 그림으로 되돌리면
-    /// 그 한 칸만 다리가 모아져 걸음이 끊겨 보인다.
+    /// **방향은 더 이상 그림을 고르지 않는다.** 원화가 정면 한 벌뿐이라 `down`·`side` 같은
+    /// 이름을 조립해 봐야 없는 파일을 찾을 뿐이었다(로더 폴백 로그의 출처). 어디를 보고
+    /// 걷는 중에는 **걸음 그림과 정지 그림을 번갈아** 쓴다. 두 장을 오가면 다리가 한 번
+    /// 교차하므로, 한 칸에 한 걸음이 실제로 보인다. 걸음 그림이 없는 캐릭터는 포즈 계약이
+    /// 알아서 정지 그림으로 접고(`cozyPoseCandidates`), 그때는 몸 기울기만 남는다.
     private func currentPose() -> String {
-        let pose = characterSprite(for: facing).pose
-        return isWalking ? officeWalkPose(pose, step: walkStep) : pose
+        if isSeated {
+            return "sit"
+        }
+        // 짝수 걸음을 정지 그림에 두는 것이 중요하다 — 걸음이 끝나는 자리(`endWalk` 가
+        // `walkStep` 을 0 으로 되돌린다)와 같은 그림이라야 도착 순간에 그림이 튀지 않는다.
+        if isWalking, !walkStep.isMultiple(of: 2) {
+            return "walk"
+        }
+        return cozyIdlePose
     }
 
-    /// 한 걸음 내디딘다 — 다음 걸음 프레임으로 갈아끼운다.
+    /// 한 걸음 내디딘다 — 발을 축으로 몸을 기울인다.
     ///
-    /// 한 칸마다 한 번 불린다. 두 프레임을 번갈아 쓰므로 한 걸음에 다리가 한 번 교차한다.
+    /// 한 칸마다 한 번 불린다. 예전에는 여기서 걸음 그림을 갈아끼웠는데 그 그림이 실재하지
+    /// 않아 매번 같은 정면 그림으로 되돌아왔다 — 다리는 멈춘 채 몸만 떨려 "제자리에서 통통
+    /// 튄다" 로 읽혔다. 그림 대신 변형을 쓴다: 진행 방향으로 기울고 걸음마다 좌우로 번갈아
+    /// 흔들리면, 디딘 발 위로 무게중심이 넘어가는 것이 보인다.
     func stepWalkFrame() {
         guard !isSeated else {
             return
         }
         walkStep += 1
+        // 그림을 먼저 갈아끼운다. 기울기는 이 그림 위에 얹히는 보조 몸짓이라 순서가 뒤집히면
+        // 한 프레임 동안 옛 그림이 새 각도로 서 있는다.
         setTexture(currentPose())
+        guard !shouldReduceMotion() else {
+            return
+        }
+        let lean = SKAction.rotate(
+            toAngle: CGFloat(officeWalkLean(facing: facing, step: walkStep)),
+            duration: officeWalkStepSeconds * 0.9
+        )
+        lean.timingMode = .easeInEaseOut
+        sprite.run(lean, withKey: "walkLean")
     }
 
     /// 걸음을 마치고 정지 자세로 돌아온다.
     ///
-    /// 걸음 프레임은 한쪽 발이 들린 그림이라, 도착해서 그대로 두면 그 사람만 계속 짝다리로
-    /// 서 있다. 걸음이 끊기는 모든 경로(도착·창 크기 변경으로 인한 강제 재배치)가 이걸 부른다.
+    /// 기운 몸을 세우는 것이 핵심이다 — 도착해서 그대로 두면 그 사람만 계속 비스듬히 서 있다.
+    /// 걸음이 끊기는 모든 경로(도착·취소·창 크기 변경으로 인한 강제 재배치)가 이걸 부른다.
     func endWalk() {
         isWalking = false
         walkStep = 0
+        // 되돌리기도 같은 키로 건다 — `clearMotion` 이 걷어 갈 수 있어야 다음 몸짓과 겹치지 않는다.
+        sprite.removeAction(forKey: "walkLean")
+        if shouldReduceMotion() {
+            sprite.zRotation = 0
+        } else {
+            sprite.run(.rotate(toAngle: 0, duration: 0.12), withKey: "walkLean")
+        }
         guard !isSeated else {
             return
         }
-        setTexture(characterSprite(for: facing).pose)
+        setTexture(currentPose())
     }
 
     /// 다시 배정된 외형을 반영한다. 바뀌었으면 얼굴·머리색을 새로 굽는다.
@@ -545,12 +589,15 @@ final class CharacterNode: SKNode {
     }
 
     private func refreshCozyArtwork(pose: String) {
+        // 그림과 좌석 하강값이 **같은 요청**을 보게 한다. 두 곳이 각자 포즈를 추측하던 동안에는
+        // 타이핑 자세(앉은 그림)인데 하강값만 서 있는 쪽으로 잡히는 조합이 생겼다.
+        requestedArtworkPose = activeInteractionPose?.rawValue ?? pose
         cozyArtwork.update(
             appearance: cozyAppearance,
             mood: cozyAgentMood(for: currentState),
             department: department,
             state: currentState,
-            pose: activeInteractionPose?.rawValue ?? pose
+            pose: requestedArtworkPose
         )
     }
 
@@ -561,19 +608,28 @@ final class CharacterNode: SKNode {
         sprite.size = CGSize(
             width: base.width * artworkScale * spriteScale, height: base.height * artworkScale * spriteScale
         )
-        let flipped = !isSeated && characterSprite(for: facing).flipped
-        sprite.xScale = flipped ? -1 : 1
+        // **좌우 반전은 쓰지 않는다.** 원화가 정면 한 벌이라 뒤집어도 여전히 이쪽을 보고 있고,
+        // 가르마·머리핀·사원증처럼 좌우가 다른 부분만 뒤집혀 걷다가 코너를 돌 때마다 딴 사람이
+        // 된다 — 방향 정보는 없고 잡음만 남는 교환이었다.
+        //
         // 앉으면 책상 쪽으로 내려 하반신이 책상에 가리게 한다. 안 내리면 좌석이 책상 바로 위 칸이라
         // 사람이 책상 위 허공에 별개로 놓인 물체처럼 보인다(근거는 officeSeatedSpriteDrop).
-        let hasDedicatedSeatedArtwork = isSeated
-            && SpriteLoader.cozyCharacterHasDedicatedPose(
+        //
+        // 하강값은 **실제로 쓰이는 그림**이 앉은 그림인지로 갈린다. "전용 포즈가 있는가" 로
+        // 물으면 타이핑 그림이 없어 앉은 그림으로 내려간 사람이 서 있는 쪽 값을 받아, 같은
+        // 책상에서 옆자리와 높이가 어긋났다.
+        if isSeated {
+            let resolvedArtwork = SpriteLoader.resolvedCozyPose(
                 assetIndex: cozyAppearance.assetIndex,
-                pose: activeInteractionPose?.rawValue ?? "sit"
+                pose: requestedArtworkPose
             )
-        let seatedDrop = hasDedicatedSeatedArtwork
-            ? officeDedicatedSeatedSpriteDrop
-            : officeGeneratedFallbackSeatedSpriteDrop
-        spriteBaseY = isSeated ? -currentTileSize * CGFloat(seatedDrop) : 0
+            let seatedDrop = resolvedArtwork.posture == .seated
+                ? officeDedicatedSeatedSpriteDrop
+                : officeGeneratedFallbackSeatedSpriteDrop
+            spriteBaseY = -currentTileSize * CGFloat(seatedDrop)
+        } else {
+            spriteBaseY = 0
+        }
         sprite.position = CGPoint(x: 0, y: spriteBaseY)
         cozyArtwork.position = .zero
         cozyArtwork.setReferenceScale(spriteScale * artworkScale)
@@ -601,11 +657,12 @@ final class CharacterNode: SKNode {
 
     // MARK: - 몸짓 애니메이션
     //
-    // 걷기·타이핑 프레임이 따로 없으므로, 위치·기울기·크기 변형만으로 동작을 만든다.
-    // 도트 캐릭터에서는 이 정도 변형으로도 "무엇을 하는 중인지" 가 읽힌다.
+    // 원화는 자세별 정지 그림뿐이고 동작 프레임이 없으므로, 위치·기울기·크기 변형만으로
+    // 동작을 만든다. 몸을 크게 움직이지 않아도 "무엇을 하는 중인지" 는 읽힌다 — 대신 진폭을
+    // 키우면 사람이 아니라 스티커가 튀는 것으로 보인다.
     // 모든 동작은 서로 배타적이라 하나를 걸 때 나머지를 끊는다.
 
-    private static let motionKeys = ["typing", "breathing", "slump", "waitTap"]
+    private static let motionKeys = ["typing", "breathing", "slump", "waitTap", "walkLean"]
 
     private func refreshInteractionOffset() {
         let nextOffset: CGPoint
@@ -633,7 +690,7 @@ final class CharacterNode: SKNode {
         sprite.yScale = 1
         if activeWorkPose != nil {
             activeWorkPose = nil
-            setTexture(isSeated ? "sit" : currentPose())
+            setTexture(currentPose())
         }
         // 기준 y 로 돌린다 — `.zero` 로 되돌리면 앉은 사람이 몸짓을 멈출 때마다 책상 위로 튀어오른다.
         sprite.position = CGPoint(x: 0, y: spriteBaseY)
@@ -652,7 +709,9 @@ final class CharacterNode: SKNode {
             return
         }
         clearMotion()
-        if isSeated, hasDedicatedArtwork(for: "typing") {
+        if isSeated {
+            // 타이핑 그림이 없는 사람은 포즈 계약이 앉은 그림으로 내려준다 — 여기서 미리
+            // 존재를 따질 필요가 없다(따지던 시절에는 두 곳의 판정이 갈릴 여지가 있었다).
             activeWorkPose = "typing"
             setTexture("typing")
         }

@@ -25,6 +25,12 @@ struct CozyAgentAvatarView: View {
 
     private let outlineWidth: CGFloat = 1.25
 
+    /// 대시보드 캐릭터는 정지 이미지 한 장이라 화면 전체가 죽어 보였다. 상태별로 주기만
+    /// 다른 미세한 호흡(scale)을 얹어 생명감을 준다 — 레이아웃엔 손대지 않는 렌더 트랜스폼이라
+    /// 카드 조판(겹침·높이)과는 무관하다.
+    @State private var isInhaling = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         GeometryReader { proxy in
             ZStack {
@@ -72,7 +78,36 @@ struct CozyAgentAvatarView: View {
         // Square layout envelope guarantees that even the widest hair silhouette is height-bound.
         // A narrower envelope silently shrinks wide-haired assets before the shared shoe line applies.
         .aspectRatio(1.0, contentMode: .fit)
+        // scaleEffect 는 렌더 트랜스폼이라 위 GeometryReader 가 재는 크기·자식 배치엔 영향이
+        // 없다 — 숨 쉬듯 아주 살짝(2~3.5%) 커졌다 작아지는 것만 더한다.
+        .scaleEffect(isInhaling ? 1 + breathingAmplitude : 1)
         .accessibilityHidden(true)
+        .onAppear { startBreathingIfNeeded() }
+        .onChange(of: state) { _ in startBreathingIfNeeded() }
+    }
+
+    /// 진행 중인 사람은 살짝 더 빠르게, 그 외엔 느긋하게 — 상태 자체가 바뀌는 신호를
+    /// 몸짓에도 살짝 얹는다. 폭을 크게 벌리면 코지 톤을 깨므로 둘 다 미세하게만 다르다.
+    private var breathingAmplitude: CGFloat {
+        state == .inProgress ? 0.035 : 0.02
+    }
+
+    /// 오르내리는 한쪽 방향의 시간 — `repeatForever(autoreverses: true)` 가 왕복시키므로
+    /// 실제 한 호흡 주기는 이 값의 두 배(진행 중 ≈2.2초, 그 외 ≈3.6초)로 "2~4초" 요건 안에 든다.
+    private var breathingDuration: Double {
+        state == .inProgress ? 1.1 : 1.8
+    }
+
+    /// 시스템 동작 줄이기가 켜져 있으면 시작하지 않는다(오피스 씬의 `shouldReduceMotion`과
+    /// 같은 이유) — SwiftUI 환경값이라 사용자가 설정을 바꾸면 다음 렌더에서 바로 반영된다.
+    private func startBreathingIfNeeded() {
+        guard !reduceMotion else {
+            isInhaling = false
+            return
+        }
+        withAnimation(.easeInOut(duration: breathingDuration).repeatForever(autoreverses: true)) {
+            isInhaling = true
+        }
     }
 
     private var coatColor: Color { CozyPalette.palette(index: appearance.paletteIndex) }

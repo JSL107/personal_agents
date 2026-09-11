@@ -100,6 +100,11 @@ struct AgentCardView: View {
                         .lineLimit(1)
                 }
 
+                // 배지 행·슬래시 커맨드 줄은 담당자마다 있거나 없다 — 그 차이를 여기서
+                // 흡수해 버튼 행을 카드 바닥에 고정한다. 이게 없으면 짧은 카드는 버튼이
+                // 중간에 뜨고, 카드 높이(아래 고정 height)만큼 자란 빈 공간이 어색하게 남는다.
+                Spacer(minLength: 0)
+
                 HStack(spacing: Spacing.sm) {
                     if agent.canReceiveCommand {
                         Button { showSheet = true } label: {
@@ -122,7 +127,15 @@ struct AgentCardView: View {
             .padding(Spacing.lg)
         }
         .foregroundStyle(CozyPalette.ink)
-        .frame(maxWidth: .infinity, minHeight: 350, alignment: .topLeading)
+        // minHeight 만으로는 안 된다 — 내용이 470 보다 짧은 카드만 그 높이로 늘어나고,
+        // 배지 행·슬래시 줄이 다 붙은 카드는 자기 내용만큼 더 자라 같은 행에서 높이가 갈렸다.
+        // height 를 고정해 모든 카드가 같은 높이를 보고하게 하고(값은 가장 내용이 많은
+        // 카드 기준 실측), 위 Spacer 가 남는 공간을 흡수해 버튼 행을 바닥에 붙인다.
+        //
+        // 420 으로 처음 재봤을 때, pending 배지 행 + 슬래시 커맨드 줄이 함께 붙는 카드는
+        // 버튼 행이 420 아래로 밀려 clipShape 에 그대로 잘려 나갔다(렌더 스크린샷으로 확인,
+        // 지시 버튼 자체가 안 보임) — 그 조합을 담고도 버튼이 남을 값으로 다시 올렸다.
+        .frame(maxWidth: .infinity, minHeight: 470, maxHeight: 470, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: Radius.panel, style: .continuous)
                 .fill(CozyPalette.surface)
@@ -190,7 +203,12 @@ struct AgentCardView: View {
                             Text(reason)
                                 .font(Typography.captionSmall)
                                 .foregroundStyle(command.phase == .failed ? Color.red : Color.secondary)
-                                .lineLimit(command.phase == .answered ? 12 : 2)
+                                // 카드 안에서는 앞부분만 보여 준다. 전문은 이 배지를 누르면
+                                // 시트로 열리므로 여기서 길게 펼 이유가 없고, 12줄을 그대로
+                                // 두면 카드 높이(470pt)를 넘겨 아래 버튼이 잘려 나간다 —
+                                // 초상화 218 + 머리글·말풍선·직무에 12줄 사유를 더하면
+                                // 600pt 를 넘는다.
+                                .lineLimit(command.phase == .answered ? 3 : 2)
                                 .multilineTextAlignment(.leading)
                         }
                         .buttonStyle(.plain)

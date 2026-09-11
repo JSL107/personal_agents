@@ -13,7 +13,11 @@ import SwiftUI
 /// 카드 폭(=열 수)은 1280 그대로라 카드 조판 자체는 실제 창과 같다.
 private let dashboardPreviewSize = CGSize(width: 1280, height: 1500)
 
-func renderDashboardPreview(path: String, darkMode: Bool) -> Bool {
+/// `size` 를 생략하면(nil) 기존 회귀 캡처와 그대로 비교되도록 위 고정값을 쓴다.
+/// 넓은 창에서 카드 안 캐릭터·소품이 잘리는지는 폭을 바꿔 구워야만 눈으로 확인할 수 있어
+/// 호출부(`--render-dashboard --size`)가 넘길 수 있게 열어 둔다.
+func renderDashboardPreview(path: String, darkMode: Bool, size: CGSize? = nil) -> Bool {
+    let dashboardPreviewSize = size ?? dashboardPreviewSize
     let store = ConsoleStore()
     store.apply(
         snapshot: ConsoleSnapshot(

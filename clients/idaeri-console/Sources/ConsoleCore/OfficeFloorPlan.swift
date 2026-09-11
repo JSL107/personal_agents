@@ -73,7 +73,13 @@ public let officeGeneratedFallbackSeatedSpriteDrop: Double = 0.12
 /// `DeskAssignment.seat`는 길찾기와 충돌 판정을 위한 논리 타일이다. 이를 그대로 2.5D 투영하면
 /// 한 칸 전체가 책상 뒤로 벌어져 캐릭터가 모니터 위에 뜬다. 실제 렌더링은 책상 발밑 anchor에서
 /// 이만큼만 뒤로 올려 의자와 상판 사이에 고정한다.
-public let officeWorkstationSeatVisualOffsetTiles: Double = 0.30
+///
+/// **값은 렌더 실측으로 잡는다.** 0.30 은 도트 책상 시절 값이라, 상판만 있고 아래가 뚫린
+/// 3D `workstation` 이미지에서는 앉은 다리가 상판 앞으로 그대로 흘러내려 **책상에 걸터앉은**
+/// 그림이 됐다(사용자 보고: "쓸데없는 곳에 앉아 있다"). 0.30 · 0.55 · 0.80 을 구워 비교한
+/// 결과 0.55 부근에서 무릎 아래가 상판에 가려 앉은 자세로 읽히고, 0.80 은 반대로 발이 상판
+/// 위로 올라온다. 그 사이에서 상판 선에 가장 가까운 0.52 를 쓴다.
+public let officeWorkstationSeatVisualOffsetTiles: Double = 0.52
 
 /// 서 있는 원화를 축소해 임시 착석으로 쓰는 경우, 실제 착석 PNG보다 머리·어깨 기준이 낮다.
 /// 같은 좌표에 두면 모니터 뒤에서 정수리만 보여 별도 상승 보정을 적용한다.
@@ -1150,6 +1156,30 @@ public enum FurnitureKind: String, Codable, Sendable, CaseIterable {
     }
 }
 
+/// 완성형 방 그림(`cozy/rooms/*-shell.png`) 위에서 **실제로 화면에 나오는** 가구.
+///
+/// 방 그림이 벽면·수납·장식·설비를 이미 그려 갖고 있어서, 옛 탑다운 스프라이트를 그 위에
+/// 겹치면 콜라주가 된다. 그래서 씬은 이 목록 밖의 가구를 투명으로 돌린다.
+///
+/// **배회 목적지가 그 사실을 모르고 있었다.** 3열 배치에서 목적지 74곳 중 63곳이 화면에
+/// 없는 물건의 앞자리였다 — 사람이 빈 나무 바닥 한가운데 서서 "지표 좀 보자" 를 말하고,
+/// 그중 열 곳(벽걸이 앞자리)은 아예 방과 방 사이 세로 복도 한복판이었다. 읽는 자세
+/// (`agent-7-reading`)는 그림 안에 사무용 의자가 들어 있어서, 아무것도 없는 바닥에 의자가
+/// 하나 돋아나기까지 했다.
+///
+/// 그리는 쪽과 보내는 쪽이 **같은 목록 하나**를 본다 — 한쪽만 고치면 다시 갈린다.
+///
+/// 벽 선반(`wallShelf`)은 3D 그림이 있는데도 뺐다. 벽걸이라 앞자리가 방과 복도 사이 벽
+/// 바깥, 즉 복도로 잡힌다(`officeInteractionNeighbors`).
+public let officeCozyDrawnFurnitureKinds: Set<FurnitureKind> = [
+    .desk, .chairDown, .chairUp, .bookshelf,
+    .sofa2, .sofa3, .meetingTable, .coffeeTable,
+    .coffeeMachine, .sinkCounter,
+    // 쓰레기통은 상호작용이 아니라 **청소 표시의 기준점**이라 남는다 — 청소기와 먼지가
+    // 이 통의 자리에 놓이므로, 셸 소유로 넘기면 그 둘이 기준물 없이 바닥에 뜬다.
+    .trash,
+]
+
 /// 부서별 바닥재. 문패를 읽지 않아도 방이 구별되는 1차 신호다.
 /// 개발·내부가 같은 어두운 카펫인 것은 의도 — 두 구역은 서로 맞닿지 않고,
 /// 가구 세트(자료 벽 vs 설비)와 벽 색조로 갈린다.
@@ -1358,13 +1388,21 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
         // 실제로 쓸 수 있는 것은 한 칸이다. 벽에 아무도 안 찾는 자리(시계)가 이미 있는데
         // 그 한 칸을 태울 이유가 없고, 두 사람의 1순위도 게시판 쪽이다.
         // 남은 두 칸은 이 방을 더 채울 때를 위해 그대로 둔다.
+        //
+        // **냉장고 자리를 책장에 내줬다.** 완성형 방 그림을 쓰면서 이 방 집기가 한 점도
+        // 화면에 안 나오게 됐고(`officeCozyDrawnFurnitureKinds`), 그래서 배회 목적지가
+        // 여섯 방 중 이 방만 **0개**가 됐다 — 열 명 전원이 매번 방을 나가야 하는 상태다.
+        // 지금 3D 그림이 있는 수납은 책장 하나뿐이라 그것을 세운다. 냉장고는 탕비실에도
+        // 있어 이 방에서 빼도 화면에서 사라지지 않고, 물·음료는 정수기와 자판기가 남는다.
+        // 체크리스트를 보러 오는 둘(`CONTRADICTION_JUDGE`·`DOCS_AUDIT_EVALUATOR`)의
+        // 2순위가 책장이라 목적지 짝짓기도 함께 산다.
         return [
             .printer, .waterCooler, .trash, .lockers2, .vendingMachine,
             .wallPinboard, .wallShelf, .wallMonitor,
             // 가운데 줄에 세운 것 — 설비와 수납이 모이는 방으로.
             // **세로 쌍은 하나만 쓴다.** 두 쌍이 양쪽을 막으면 그 사이의 예비 격자
             // 좌석이 갇힌다 — 인원이 늘어 자리표를 다 쓴 뒤에야 드러난다.
-            .refrigerator, .filingCabinet]
+            .bookshelf, .filingCabinet]
     }
 }
 
@@ -1632,6 +1670,65 @@ public struct DepartmentZone: Equatable, Codable, Sendable {
         self.width = width
         self.height = height
     }
+}
+
+/// 특화 콘솔 그림이 차지하는 가로 폭(칸). 기준 칸에서 오른쪽으로 반 칸 옮긴 자리를 중심으로
+/// 이만큼 그린다 — 렌더와 충돌 판정이 같은 값을 봐야 한다.
+public let officeDepartmentFeatureWidthTiles: Double = 2.35
+
+/// 방마다 하나씩 두는 특화 콘솔의 **원하는** 가로 위치(방 폭에 대한 비율).
+/// 창 쪽·문 쪽을 피해 방마다 손으로 고른 값이라 자동으로 유도되지 않는다.
+private let departmentFeatureFraction: [Department: Double] = [
+    .planning: 0.76,
+    .quality: 0.52,
+    .evaluation: 0.50,
+    .treasury: 0.72,
+    .content: 0.28,
+    .internalOps: 0.48,
+]
+
+/// 특화 콘솔(방마다 하나)을 놓을 칸. 렌더 전용 소품이라 walkable·경로는 건드리지 않는다.
+///
+/// **자리가 씬 안에만 있던 동안 평면도가 그 자리를 몰랐다.** 기획 방 책장이 기획 보드와
+/// 같은 줄·같은 열에 놓여 두 가구가 한 덩어리로 뭉개졌고(rel (9,1) 대 콘솔 rel (8,1)),
+/// 품질 방 책장은 콘솔 뒤에서 윗머리만 삐져나왔다. 충돌 여부가 **명단에 따라 달라지므로**
+/// (인원이 늘면 가구가 다른 칸으로 밀린다) 표에 적어 둔 한 칸으로는 막을 수 없다 —
+/// 원하는 자리에서 시작해 비어 있는 가장 가까운 칸으로 비킨다.
+///
+/// **책상은 충돌로 치지 않는다.** 얇고 낮아 콘솔 옆에 나란히 서도 읽히고, 정원을 채운 방은
+/// 홀수 열이 전부 책상이라 책상까지 피하면 갈 곳이 한 칸도 없다.
+public func officeDepartmentFeatureTile(
+    zone: DepartmentZone,
+    furniture: [FurniturePlacement]
+) -> TilePoint {
+    let row = zone.origin.y + 1
+    let preferred = Int(
+        (Double(zone.width - 1) * (departmentFeatureFraction[zone.department] ?? 0.5)).rounded()
+    )
+    // 콘솔 그림이 덮는 범위 — 기준 칸과 그 오른쪽 한 칸, 자기 줄에서 두 줄 뒤까지.
+    // 뒤로 두 줄을 보는 것은 원근 압축 때문이다. 안쪽 줄일수록 화면에서 바짝 당겨 그려져
+    // (`floorPoint` 의 깊이 보정), 두 줄 뒤 가구가 콘솔 윗머리와 같은 높이에 온다.
+    func collides(_ offset: Int) -> Bool {
+        let x = zone.origin.x + offset
+        return furniture.contains { placement in
+            guard placement.kind != .desk,
+                officeCozyDrawnFurnitureKinds.contains(placement.kind)
+            else {
+                return false
+            }
+            return (placement.tile.x == x || placement.tile.x == x + 1)
+                && placement.tile.y >= row && placement.tile.y <= row + 2
+        }
+    }
+    // 좌우 벽(0 · width - 1)을 비켜 콘솔 두 칸이 방 안에 들어가는 범위만 후보다.
+    // 거리가 같으면 왼쪽 — 실행마다 같은 자리가 나와야 화면이 흔들리지 않는다.
+    let candidates = (1...max(1, zone.width - 3)).sorted {
+        abs($0 - preferred) == abs($1 - preferred)
+            ? $0 < $1 : abs($0 - preferred) < abs($1 - preferred)
+    }
+    // 어느 칸도 비지 않으면 원하는 자리를 그대로 쓴다 — 콘솔이 사라지는 것보다는 겹치는
+    // 편이 낫고, 그때는 「콘솔 발밑에 가구가 없다」 단언이 대신 소리를 낸다.
+    return TilePoint(x: zone.origin.x + (candidates.first { !collides($0) } ?? preferred), y: row)
 }
 
 /// 사무실 평면도 — 바닥·가구·자리·통로가 전부 타일 격자 위에 확정된 값.

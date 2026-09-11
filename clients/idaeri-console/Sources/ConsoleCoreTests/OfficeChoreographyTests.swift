@@ -166,75 +166,167 @@ func runOfficeChoreographyTests(_ t: TestRunner) {
         "퇴근은 그 사람의 배회를 끊는다"
     )
 
-    runOfficeWalkFrameTests(t)
+    runCozyPoseContractTests(t)
+    runOfficeMeetingTests(t)
 }
 
-/// 걸음 프레임 — 이름 조립과 에셋 실물이 서로 맞는지.
-func runOfficeWalkFrameTests(_ t: TestRunner) {
-    t.suite("OfficeWalkFrame")
+/// 포즈 계약 — 요청 이름이 실재하는 에셋으로만 내려가는지, 걸음 몸짓이 걸음을 나르는지.
+func runCozyPoseContractTests(_ t: TestRunner) {
+    t.suite("CozyPoseContract")
 
-    // 한 칸마다 프레임이 번갈아야 한 걸음에 다리가 한 번 교차한다. 같은 프레임이 두 칸
-    // 연속으로 나오면 걷는 게 아니라 한쪽 발만 든 채 미끄러진다.
-    t.expectEqual(officeWalkPose("down", step: 0), "down-walk1", "0번째 걸음 → walk1")
-    t.expectEqual(officeWalkPose("down", step: 1), "down-walk2", "1번째 걸음 → walk2")
-    t.expectEqual(officeWalkPose("down", step: 2), "down-walk1", "2번째 걸음 → 다시 walk1")
+    // 방향·걸음 이름은 전부 기본 그림으로 접혀야 한다. 원화는 정면 한 벌뿐이라 `down`·`side`·
+    // `-walk1` 을 파일명으로 조립하면 매번 없는 파일을 찾는다 — 정상 실행에서 폴백 로그가
+    // 수십 줄씩 쏟아지던 원인이고, 화면에는 어차피 같은 그림이 나왔다.
+    for name in ["down", "up", "side", "left", "right", "down-walk1", "side-walk2", "default"] {
+        t.expectEqual(normalizedCozyPose(name), cozyIdlePose, "\(name) → 기본 그림")
+    }
+    t.expectEqual(normalizedCozyPose("sitting"), "sit", "sitting → sit")
+    t.expectEqual(normalizedCozyPose("carryingPapers"), "carryingpapers", "대문자 요청도 같은 이름")
 
-    // 걸음 인덱스가 음수로 들어와도 프레임 번호는 1·2 안에 있어야 한다 — 0 이나 음수가 나오면
-    // 존재하지 않는 파일명이 조립돼 그 사람만 화면에서 사라진다.
-    t.expectEqual(officeWalkPose("side", step: -1), "side-walk2", "음수 걸음도 유효 프레임")
-    t.expectEqual(officeWalkPose("side", step: -2), "side-walk1", "음수 걸음도 유효 프레임")
-
-    // 정지 포즈 복원 — 로더가 걸음 프레임이 없을 때 내려갈 곳.
-    t.expectEqual(officeStillPose("down-walk1"), "down", "걸음 프레임 → 정지 포즈")
-    t.expectEqual(officeStillPose("up-walk2"), "up", "걸음 프레임 → 정지 포즈")
-    t.expectEqual(officeStillPose("sit"), "sit", "정지 포즈는 그대로")
-    t.expectEqual(officeStillPose("side"), "side", "정지 포즈는 그대로")
-
-    // 폴백 순서 — **같은 시트를 다 소진한 뒤** 기본 시트로 내려가야 한다. 기본 시트의 걸음
-    // 프레임이 같은 시트의 정지 그림보다 앞에 오면, 걸음 프레임이 없는 시트의 사람이 걷는 순간
-    // 얼굴·체형이 기본 캐릭터로 바뀐다. 순서만 뒤집혀도 화면에서는 "걸으면 딴 사람이 된다" 로
-    // 나타나고 파일은 전부 존재하므로, 존재 검사로는 절대 안 잡힌다.
+    // 앉은 요청은 **앉은 그림**으로만 내려간다. 서 있는 그림으로 내려가면 그 사람만 책상 위에
+    // 올라선 것처럼 보인다. 10번은 `typing` 이 없는 캐릭터다.
     t.expectEqual(
-        characterSpriteCandidates(sheet: 1, pose: "down-walk1"),
-        ["charb-down-walk1", "charb-down", "char-down-walk1", "char-down"],
-        "걸음 프레임 폴백은 같은 시트 정지 그림이 기본 시트보다 먼저")
+        resolveCozyPose(requested: "typing", assetIndex: 10, hasAsset: cozyPoseAssetExists(10)),
+        ResolvedCozyPose(pose: "sit", posture: .seated),
+        "타이핑 그림이 없으면 기본 그림이 아니라 앉은 그림")
     t.expectEqual(
-        characterSpriteCandidates(sheet: 2, pose: "sit"),
-        ["charc-sit", "char-sit"],
-        "정지 포즈는 걸음 프레임 후보를 만들지 않는다")
-    // 시트 인덱스가 범위를 넘어도 이름이 조립돼야 한다 — 못 만들면 그 사람이 사라진다.
-    // 검증 대상은 클램프 동작이지 특정 시트명이 아니므로 마지막 시트를 참조한다 —
-    // 시트명을 못박으면 시트를 늘릴 때마다 이 검사가 깨진다.
+        resolveCozyPose(requested: "typing", assetIndex: 0, hasAsset: cozyPoseAssetExists(0)),
+        ResolvedCozyPose(pose: "typing", posture: .seated),
+        "타이핑 그림이 있으면 그대로")
+    // 18번 `typing` 은 태블릿을 들고 **서 있는** 그림이다. 책상 좌석에 쓰면 혼자 선 채로 일한다.
     t.expectEqual(
-        characterSpriteCandidates(sheet: 99, pose: "up").first,
-        "\(characterSheetPrefixes.last ?? "")-up", "시트 인덱스 상한 클램프")
-    t.expectEqual(
-        characterSpriteCandidates(sheet: -1, pose: "up").first, "char-up", "시트 인덱스 하한 클램프")
+        resolveCozyPose(requested: "typing", assetIndex: 18, hasAsset: cozyPoseAssetExists(18)),
+        ResolvedCozyPose(pose: "sit", posture: .seated),
+        "서 있는 타이핑 그림은 좌석에서 쓰지 않는다")
 
-    // 에셋이 실제로 있어야 이름 조립이 의미를 갖는다. 이름만 맞고 파일이 없으면 로더가
-    // 정지 그림으로 조용히 폴백해서, "걷는데 다리가 안 움직인다" 를 아무도 못 잡는다.
-    // 소스 파일 위치에서 경로를 잡으므로 실행 디렉터리와 무관하다.
-    let sprites = URL(fileURLWithPath: #filePath)
-        .deletingLastPathComponent()  // ConsoleCoreTests
-        .deletingLastPathComponent()  // Sources
-        .deletingLastPathComponent()  // 패키지 루트
-        .appendingPathComponent("Sources/IdaeriConsole/Resources/sprites")
-    // 앉은 자세는 걷지 않으므로 걸음 프레임이 없다.
-    let walkPoses = ["down", "up", "side"]
-    let expectedFrames = characterSheetPrefixes.flatMap { prefix in
-        walkPoses.flatMap { pose in
-            (0..<officeWalkFrameCount).map { step in
-                "\(prefix)-\(officeWalkPose(pose, step: step)).png"
+    // 한때 가구가 함께 그려져 배제됐던 셋. 가구 없는 그림으로 교체된 뒤에는 **제 포즈가
+    // 그대로 뽑혀야** 한다 — 배제 규칙이 남아 있으면 새로 그린 그림이 조용히 안 쓰인다.
+    t.expectEqual(
+        resolveCozyPose(requested: "writing", assetIndex: 6, hasAsset: cozyPoseAssetExists(6)),
+        ResolvedCozyPose(pose: "writing", posture: .standing),
+        "가구를 걷어낸 6번 writing 은 그대로 쓰인다")
+    t.expectEqual(
+        resolveCozyPose(requested: "reading", assetIndex: 7, hasAsset: cozyPoseAssetExists(7)),
+        ResolvedCozyPose(pose: "reading", posture: .standing),
+        "가구를 걷어낸 7번 reading 은 그대로 쓰인다")
+    t.expectEqual(
+        resolveCozyPose(requested: "drinking", assetIndex: 8, hasAsset: cozyPoseAssetExists(8)),
+        ResolvedCozyPose(pose: "drinking", posture: .standing),
+        "가구를 걷어낸 8번 drinking 은 그대로 쓰인다")
+
+    // 걸음 그림 — 가진 사람은 그대로, 없는 사람은 정지 그림으로 접힌다(몸 기울기만 남는다).
+    t.expectEqual(
+        resolveCozyPose(requested: "walk", assetIndex: 1, hasAsset: cozyPoseAssetExists(1)),
+        ResolvedCozyPose(pose: "walk", posture: .standing),
+        "걸음 그림이 있으면 그대로")
+    t.expectEqual(
+        resolveCozyPose(requested: "walk", assetIndex: 10, hasAsset: cozyPoseAssetExists(10)).pose,
+        cozyIdlePose, "걸음 그림이 없으면 정지 그림")
+
+    // 손에 든 물건이 뜻을 나르므로 가까운 자세로 옮긴다. 0번은 writing 이 있고, 2번은 writing
+    // 없이 reading 만 있으며, 10번은 둘 다 없다.
+    t.expectEqual(
+        resolveCozyPose(requested: "carryingPapers", assetIndex: 0, hasAsset: cozyPoseAssetExists(0)).pose,
+        "writing", "서류 나르기 → 쓰는 그림")
+    t.expectEqual(
+        resolveCozyPose(requested: "carryingPapers", assetIndex: 2, hasAsset: cozyPoseAssetExists(2)).pose,
+        "reading", "쓰는 그림이 없으면 읽는 그림")
+    t.expectEqual(
+        resolveCozyPose(requested: "carryingPapers", assetIndex: 10, hasAsset: cozyPoseAssetExists(10)).pose,
+        cozyIdlePose, "둘 다 없으면 기본 그림")
+    t.expectEqual(
+        resolveCozyPose(requested: "stowing", assetIndex: 19, hasAsset: cozyPoseAssetExists(19)).pose,
+        "reading", "물건 넣기 → 책을 든 그림")
+    // 화분 손질은 닮은 그림이 없다. 엉뚱한 소품을 들리면 무엇을 하는지가 오히려 틀리게 읽힌다.
+    t.expectEqual(
+        resolveCozyPose(requested: "tending", assetIndex: 0, hasAsset: cozyPoseAssetExists(0)).pose,
+        cozyIdlePose, "화분 손질은 대체 없이 기본 그림")
+
+    // **해결 결과는 반드시 실재해야 한다.** 계약이 없는 파일을 가리키면 그 사람만 화면에서
+    // 사라지거나 로더가 조용히 다른 그림을 끼운다. 에셋 목록을 손으로 베끼지 않고 실제 파일을
+    // 세므로, 에셋을 갈아끼우면 여기서 걸린다.
+    let requests = OfficeInteractionPose.allCases.map(\.rawValue)
+        + ["idle", "default", "down", "side", "down-walk1", "sit", "typing"]
+    var unresolved: [String] = []
+    var furnitureLeaks: [String] = []
+    for assetIndex in 0..<cozyCharacterAssetCount {
+        for request in requests {
+            let resolved = resolveCozyPose(
+                requested: request, assetIndex: assetIndex, hasAsset: cozyPoseAssetExists(assetIndex)
+            )
+            if resolved.pose != cozyIdlePose, !cozyPoseAssetExists(assetIndex)(resolved.pose) {
+                unresolved.append("agent-\(assetIndex)-\(resolved.pose) (요청 \(request))")
+            }
+            if cozyPoseDrawsOwnFurniture(assetIndex: assetIndex, pose: resolved.pose) {
+                furnitureLeaks.append("agent-\(assetIndex)-\(resolved.pose) (요청 \(request))")
+            }
+            if resolved.posture != cozyPosePosture(assetIndex: assetIndex, pose: resolved.pose) {
+                unresolved.append("자세 불일치 agent-\(assetIndex)-\(resolved.pose)")
             }
         }
     }
-    let missing = expectedFrames.filter {
-        !FileManager.default.fileExists(atPath: sprites.appendingPathComponent($0).path)
+    t.expectEqual(unresolved.count, 0, "없는 에셋으로 내려간 조합: \(unresolved)")
+    t.expectEqual(furnitureLeaks.count, 0, "가구가 그려진 에셋이 새어 나온 조합: \(furnitureLeaks)")
+
+    // 기본 그림은 스무 명 전원이 가져야 한다 — 최후의 보루가 비면 대체가 성립하지 않는다.
+    let missingIdle = (0..<cozyCharacterAssetCount).filter { !cozyCharacterAssetFileExists("agent-\($0)") }
+    t.expectEqual(missingIdle.count, 0, "기본 그림이 없는 캐릭터: \(missingIdle)")
+
+    runOfficeWalkLeanTests(t)
+}
+
+/// 걸음 몸짓 — 걸음 그림이 없는 자리를 기울기가 대신한다.
+func runOfficeWalkLeanTests(_ t: TestRunner) {
+    t.suite("OfficeWalkLean")
+
+    // 걸음마다 좌우가 번갈아야 "한 걸음"이 보인다. 같은 값이 이어지면 기울어진 채 미끄러진다.
+    t.expect(
+        officeWalkLean(facing: .down, step: 0) > 0 && officeWalkLean(facing: .down, step: 1) < 0,
+        "위아래로 걸을 때는 좌우 번갈이만 남는다")
+    t.expectEqual(
+        officeWalkLean(facing: .down, step: 0), -officeWalkLean(facing: .down, step: 1),
+        "번갈이는 대칭")
+
+    // 화면 왼쪽으로 갈 때는 몸이 왼쪽(반시계, 양수)으로, 오른쪽으로 갈 때는 그 반대로 기운다.
+    t.expect(
+        officeWalkLean(facing: .left, step: 0) > officeWalkLean(facing: .down, step: 0),
+        "왼쪽으로 걸으면 진행 방향으로 더 기운다")
+    t.expect(
+        officeWalkLean(facing: .right, step: 0) < officeWalkLean(facing: .down, step: 0),
+        "오른쪽으로 걸으면 반대로 기운다")
+
+    // 기울기가 커지면 걷는 게 아니라 넘어지는 그림이 된다. 상한을 못박아 둔다.
+    for facing in [Facing.up, .down, .left, .right] {
+        for step in 0..<4 {
+            t.expect(
+                abs(officeWalkLean(facing: facing, step: step)) < 0.12,
+                "기울기 상한 (\(facing) \(step) = \(officeWalkLean(facing: facing, step: step)))")
+        }
     }
-    t.expectEqual(missing.count, 0, "빠진 걸음 프레임: \(missing)")
-    // 시트 5종 × 3포즈 × 2프레임. 이 숫자는 일부러 못박는다 — 시트를 늘리면 여기서 걸리고,
-    // 그때 위 존재 검사가 "에셋을 실제로 만들었는지" 를 함께 확인하게 된다.
-    t.expectEqual(expectedFrames.count, 30, "걸음 프레임 30장 (실제 \(expectedFrames.count))")
+}
+
+/// 캐릭터 포즈 에셋이 실제로 있는지. 코어는 파일을 못 읽으므로 계약 검사에서는 테스트가
+/// 렌더러 대신 대답한다.
+///
+/// 목록을 손으로 베끼지 않고 **파일을 직접 센다.** 예전 걸음 프레임 검사는 이미 폐기된 도트
+/// 시트를 상대로 통과하고 있었다 — 검사는 초록인데 화면에서는 아무도 걷지 않았다.
+func cozyPoseAssetExists(_ assetIndex: Int) -> (String) -> Bool {
+    { pose in cozyCharacterAssetFileExists("agent-\(assetIndex)-\(pose)") }
+}
+
+func cozyCharacterAssetFileExists(_ name: String) -> Bool {
+    let directory = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()  // ConsoleCoreTests
+        .deletingLastPathComponent()  // Sources
+        .deletingLastPathComponent()  // 패키지 루트
+        .appendingPathComponent("Sources/IdaeriConsole/Resources/cozy/characters")
+    return FileManager.default.fileExists(
+        atPath: directory.appendingPathComponent("\(name).png").path
+    )
+}
+
+func runOfficeMeetingTests(_ t: TestRunner) {
+    t.suite("OfficeChoreography")
 
     // MARK: - 회의 소집
 
