@@ -64,7 +64,12 @@ const toQuoteBody = (value: string): string =>
 export const applyAuditGuards = (
   data: ResumeAuditData,
   profile: CareerProfileData,
+  // 이번 회차 범위 밖이라 모델에게 보여주지도 않은 성과 제목(selectAuditWindow 참조).
+  // 판정이 없는 것은 같지만 원인이 다르다 — 모델 계약 위반과 정상적인 범위 분할을 같은
+  // 문구로 묶으면, 매일 수십 건씩 찍히는 후자에 전자가 묻혀 보이지 않는다.
+  outOfWindowTitles: readonly string[] = [],
 ): ResumeAuditResult => {
+  const outOfWindow = new Set(outOfWindowTitles);
   const accomplishmentByTitle = new Map(
     profile.accomplishments.map((accomplishment) => [
       accomplishment.title,
@@ -78,6 +83,14 @@ export const applyAuditGuards = (
   const guardedItems: AuditItem[] = [];
 
   for (const item of data.items) {
+    // 범위 밖 제목은 판정으로 받지 않는다. 그 성과의 원문은 이번 프롬프트에 실리지 않았으니
+    // 모델이 판정했다면 근거 없이 만들어낸 것인데, 조회는 전체 profile 로 하므로 제목이 존재해
+    // 그대로 통과해 버린다. 여기서 걸러야 "보여준 성과만 판정한다" 가 강제된다 — 걸러진 제목은
+    // 아래에서 UNJUDGED 로 채워져 다음 회차에 제대로 판정된다.
+    if (outOfWindow.has(item.title)) {
+      droppedTitles.push(item.title);
+      continue;
+    }
     const accomplishment = accomplishmentByTitle.get(item.title);
     if (!accomplishment) {
       droppedTitles.push(item.title);
@@ -131,15 +144,27 @@ export const applyAuditGuards = (
   }
 
   const judgedTitles = new Set(guardedItems.map((item) => item.title));
-  const unjudgedTitles = profile.accomplishments
+  const missingTitles = profile.accomplishments
     .filter((accomplishment) => !judgedTitles.has(accomplishment.title))
     .map((accomplishment) => accomplishment.title);
-  for (const title of unjudgedTitles) {
+  // 판정이 없는 이유를 둘로 가른다. 범위 밖은 정상 동작이라 가드 경고 대상이 아니고, 모델이
+  // 빼먹은 것만 계약 위반이다. 합쳐 두면 성과가 상한을 넘는 날마다 수십 건이 unjudgedTitles
+  // 에 쌓여, 이를 보고 경고를 띄우는 하류(portfolio-publish hasGuardConcern)가 매일 ⚠️ 를
+  // 보낸다 — 진짜 계약 위반이 그 안에 묻힌다.
+  const outOfWindowJudged = missingTitles.filter((title) =>
+    outOfWindow.has(title),
+  );
+  const unjudgedTitles = missingTitles.filter(
+    (title) => !outOfWindow.has(title),
+  );
+  for (const title of missingTitles) {
     guardedItems.push({
       title,
       status: 'UNJUDGED',
       quote: '',
-      why: '모델이 이 성과를 판정하지 않았습니다.',
+      why: outOfWindow.has(title)
+        ? '이번 회차 범위 밖이라 판정하지 않았습니다 — 다음 회차에 돌아옵니다.'
+        : '모델이 이 성과를 판정하지 않았습니다.',
       rewrite: null,
     });
   }
@@ -167,6 +192,7 @@ export const applyAuditGuards = (
       demotedTitles,
       droppedTitles,
       unjudgedTitles,
+      outOfWindowTitles: outOfWindowJudged,
       forcedMissing,
       rewriteMissing,
       droppedHighlights: highlights.dropped,

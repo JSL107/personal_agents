@@ -91,7 +91,13 @@ export interface ResumeAuditResult extends ResumeAuditData {
   guard: {
     demotedTitles: string[];
     droppedTitles: string[];
+    // 모델이 판정을 빼먹은 성과 — **계약 위반만** 담는다. 하류(portfolio-publish 의
+    // hasGuardConcern)가 이 배열이 비었는지로 경고 발송을 정하므로, 정상 동작인 범위 분할을
+    // 여기 섞으면 성과가 상한을 넘는 날마다 ⚠️ 경고가 뜬다.
     unjudgedTitles: string[];
+    // 이번 회차 범위 밖이라 애초에 보여주지 않은 성과(selectAuditWindow). 화면에는 UNJUDGED
+    // 로 남지만 가드 경고 대상이 아니다 — 정상 동작이고 다음 회차에 돌아온다.
+    outOfWindowTitles: string[];
     forcedMissing: string[];
     // WEAK/MISSING 인데 모델이 rewrite 를 주지 않은 성과. 파싱을 거부하지 않고 여기서 드러낸다.
     rewriteMissing: string[];

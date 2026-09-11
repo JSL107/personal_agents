@@ -52,10 +52,24 @@ export class SlackPreviewCardUpdater implements PreviewCardPort {
         blocks: blocks as never,
       });
     } catch (error: unknown) {
+      // 크기를 함께 남긴다. 2026-09-11 에 이 경로가 `msg_too_long` 으로 실패해 카드가
+      // "⏳ 처리 중" 에 멈췄는데, 사후에 원인을 좁힐 수 없었다 — 저장된 previewText 는
+      // 2,314 자(섹션 1 개)라 그 한도에 닿을 크기가 아니었고, 로그에는 실패 사실만 있어
+      // "그 순간 무엇을 보냈는지" 를 되짚을 방법이 없었다. 길이·블록 수·출처(resultText 인지
+      // previewText 인지)를 남겨 다음 발생 때 한 줄로 갈리게 한다.
+      //
+      // 상한을 걸어 미리 자르지 않는 이유: 지금 값으로는 재현되지 않아 어디를 잘라야 하는지
+      // 모른다. 근거 없이 자르면 멀쩡한 승인 카드 본문이 사라진다.
+      // UTF-8 실바이트로 잰다. `.length` 는 UTF-16 코드 단위라 한글 본문에서 실제 전송량의
+      // 절반 이하로 찍힌다(실측: `{"t":"한글 본문 테스트"}` → length 17 vs utf8 31).
+      // 이 로그의 목적이 Slack 요청 크기를 한도와 비교하는 것이라, 단위가 틀리면 쓸모가 없다.
+      const blocksBytes = Buffer.byteLength(JSON.stringify(blocks), 'utf8');
       this.logger.warn(
-        `PreviewCard chat.update 실패(swallow) preview=${preview.id} state=${state}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `PreviewCard chat.update 실패(swallow) preview=${preview.id} state=${state} ` +
+          `본문=${bodyText.length}자 블록=${blocks.length}개 직렬화=${blocksBytes}B ` +
+          `출처=${resultText === undefined ? 'previewText' : 'resultText'}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
       );
     }
   }
