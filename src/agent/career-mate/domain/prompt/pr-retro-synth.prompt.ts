@@ -54,6 +54,13 @@ const renderPrBlock = ({
     `- branch: ${detail.headRef} → ${detail.baseRef}`,
     `- additions/deletions: +${detail.additions} / -${detail.deletions}`,
     `- url: ${detail.url}`,
+    // 시스템 프롬프트가 evidence 에 mergedAt 을 요구하는데 이 줄이 없으면 모델이 값을
+    // 만들 길이 없어 GitHub API 를 직접 긁으러 간다. codex 는 read-only 샌드박스(네트워크
+    // 차단)에서 돌아 그 셸 호출이 DNS 부터 실패하고, 재시도로 300s 타임아웃을 통째로
+    // 태운다(실측 2026-09-11: `curl .../pulls/550 | jq -r '.title, .body, .merge_commit_sha'`
+    // → `Could not resolve host: api.github.com`). 값 자체는 reconcileAccomplishmentEvidence
+    // 가 어차피 권위값으로 덮어쓰므로, 여기서 보여주는 목적은 "모델이 밖을 보지 않게" 다.
+    `- mergedAt: ${detail.mergedAt ?? '(미머지)'}`,
     `- changed files${truncatedNote}:`,
     ...detail.changedFiles.map((file) => `  - ${file}`),
     ``,
