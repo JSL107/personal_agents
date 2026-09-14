@@ -711,6 +711,13 @@ enum CozyOfficeNodeFactory {
             guard let sprite = node as? SKSpriteNode else {
                 return
             }
+            // **숨겨 둔 문은 건드리지 않는다.** 좌우 경계에서는 방 셸 그림이 이미 문을
+            // 가지고 있어 이 스프라이트를 `alpha = 0` 으로 감추는데, 여닫기는 보이든
+            // 안 보이든 모든 문 노드에 불린다. 농도를 무조건 바꾸면 감춰 둔 문이 셸의 문
+            // **위에 겹쳐 되살아난다.** 이미 보이는 문(가로 경계)만 농도를 조절한다.
+            guard sprite.alpha > 0.01 else {
+                return
+            }
             sprite.run(
                 .fadeAlpha(to: open ? 0.32 : 1, duration: 0.18),
                 withKey: "doorSwing"
