@@ -263,6 +263,12 @@ func runCozyPoseContractTests(_ t: TestRunner) {
         resolveCozyPose(requested: "walk-up", assetIndex: 10, hasAsset: cozyPoseAssetExists(10)),
         ResolvedCozyPose(pose: "walk-up", posture: .standing),
         "뒷모습 걸음 그림이 있으면 그대로")
+    t.expectEqual(
+        resolveCozyPose(
+            requested: "walk-up-idle", assetIndex: 10, hasAsset: cozyPoseAssetExists(10)
+        ),
+        ResolvedCozyPose(pose: "walk-up-idle", posture: .standing),
+        "뒷모습 정지 그림이 있으면 그대로")
     // **반대 방향으로는 새지 않는다.** 10번은 뒷모습만 있으므로 앞모습 요청은 정지 그림으로
     // 내려가야 한다 — 여기서 `walk-up` 이 뽑히면 이쪽으로 걸어오는 사람이 뒤통수를 보인다.
     t.expectEqual(
