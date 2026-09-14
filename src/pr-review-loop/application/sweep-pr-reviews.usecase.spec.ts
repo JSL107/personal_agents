@@ -462,6 +462,32 @@ describe('SweepPrReviewsUsecase', () => {
     expect(agentRunService.execute).not.toHaveBeenCalled();
   });
 
+  // 머지 skip 이 회차 상한(3건)을 먹으면, 검색 인덱스에 남은 머지 결과 몇 건만으로 그 회차의
+  // 정상 PR 이 통째로 밀린다 — 리뷰를 시작한 적이 없으므로 상한을 돌려줘야 한다.
+  it('앞쪽 머지된 PR 은 회차 상한을 소모하지 않고 뒤의 열린 PR 을 리뷰한다', async () => {
+    github.listOpenPullRequestRefs.mockResolvedValue(
+      Array.from({ length: 6 }, (_, index) => ({
+        ...OPEN_PR,
+        number: 190 + index,
+      })),
+    );
+    const detail = await github.getPullRequest({
+      repo: 'JSL107/personal_agents',
+      number: 180,
+    });
+    const merged = { ...detail, mergedAt: '2026-09-01T00:00:00Z' };
+    // 앞의 3건은 이미 머지된 상태로 돌아오고, 그 뒤부터는 기본 mock(열린 PR)이 쓰인다.
+    github.getPullRequest
+      .mockResolvedValueOnce(merged)
+      .mockResolvedValueOnce(merged)
+      .mockResolvedValueOnce(merged);
+
+    await buildUsecase(ENABLED).execute();
+
+    // 상한을 돌려주지 않으면 머지 3건이 회차를 다 먹어 0건이 된다.
+    expect(reviewUsecase.execute).toHaveBeenCalledTimes(3);
+  });
+
   it('한 PR 의 실패가 다른 PR 을 막지 않는다', async () => {
     github.listOpenPullRequestRefs.mockResolvedValue([
       OPEN_PR,

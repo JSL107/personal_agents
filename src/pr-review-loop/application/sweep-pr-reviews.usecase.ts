@@ -65,6 +65,11 @@ const SWEEP_RETRY_BUDGET_MAX_ATTEMPTS = 3;
 // 만으로는 일시적 장애인지 구조적 한계인지 구분되지 않아 진단이 매번 처음부터 시작된다.
 const GITHUB_DIFF_MAX_LINES = 20_000;
 
+// 리뷰를 시작하기도 전에 대상이 사라진 경우. null 은 "리뷰는 했는데 낼 카드가 없다" 라서
+// 회차 상한을 쓴 것이 맞지만, 이쪽은 모델을 부른 적이 없으므로 호출부가 상한을 돌려줄 수
+// 있게 구분해 알린다.
+const ALREADY_MERGED = 'ALREADY_MERGED';
+
 // 판정 헬퍼의 반환값 — 조회 실패와 "레코드 없음"을 섞지 않기 위해 boolean/null 대신 명시적 열거.
 type SweepDecision = 'REVIEW' | 'SKIP';
 
@@ -129,6 +134,13 @@ export class SweepPrReviewsUsecase {
           pullNumber: pullRequest.number,
           slackUserId,
         });
+        if (result === ALREADY_MERGED) {
+          // 검색 인덱스 지연으로 이미 머지된 PR 이 섞여 들어왔다. 리뷰를 한 적이 없으니
+          // 회차 상한을 돌려주고 다음 PR 로 간다 — 안 돌려주면 머지된 3건이 회차를 통째로
+          // 먹어 그 뒤의 정상 PR 이 다음 회차까지 밀린다.
+          reviewed -= 1;
+          continue;
+        }
         if (result !== null) {
           results.push(result);
         }
@@ -265,7 +277,7 @@ export class SweepPrReviewsUsecase {
     repo: string;
     pullNumber: number;
     slackUserId: string;
-  }): Promise<SweepPullRequestResult | null> {
+  }): Promise<SweepPullRequestResult | null | typeof ALREADY_MERGED> {
     const prRef = `${repo}#${pullNumber}`;
     const dryRun = this.isDryRun();
     // 리뷰 usecase 는 자기 AgentRun 을 열고 실패 시 스스로 FAILED 로 마감한다. 그 지점을 넘은
@@ -292,7 +304,7 @@ export class SweepPrReviewsUsecase {
       // 실패가 아니라 정상 skip 이라 원장에 남기지 않는다(재시도 예산을 깎지 않는다).
       if (detail.mergedAt !== null) {
         this.logger.log(`이미 머지된 PR — 리뷰 skip (${prRef})`);
-        return null;
+        return ALREADY_MERGED;
       }
       if (diffResult.status === 'rejected') {
         const changedLines = detail.additions + detail.deletions;
