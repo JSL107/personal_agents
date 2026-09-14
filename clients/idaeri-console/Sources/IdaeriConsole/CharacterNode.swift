@@ -413,6 +413,10 @@ final class CharacterNode: SKNode {
         }
         // 위로 걸을 때는 두 장 모두 뒤모습을 쓴다. 짝수는 두 발을 모은 후면 정지,
         // 홀수는 한 발을 내딛은 후면 걸음이라 얼굴과 뒤통수가 번갈아 나오지 않는다.
+        //
+        // **좌우는 묶지 않는다.** 화면 y 는 `tileY` 만으로 계산되므로(`officeProjectedFloorPoint`)
+        // 좌우 이동은 화면에서 수평이고, 둘을 뒤모습으로 묶으면 같은 길을 되돌아올 때
+        // 반드시 한쪽이 뒷걸음질이 된다.
         if facing == .up {
             return walkStep.isMultiple(of: 2) ? "walk-up-idle" : "walk-up"
         }
