@@ -1204,6 +1204,24 @@ public let officeCozyDrawnFurnitureKinds: Set<FurnitureKind> = [
     .trash,
 ]
 
+/// 이 칸이 방의 **위쪽 경계**(천장 줄)인가 — 위아래로 붙은 두 방이 만나는 자리.
+///
+/// 좌우로 붙은 방 사이에는 방 셸 그림이 이미 문과 기둥을 그려 두지만, **위아래 경계는
+/// 셸이 아무것도 그리지 않는다.** 방 셸은 자기 방의 뒷벽만 가지고 앞쪽은 시점상 열려
+/// 있어서, 배경도 부서도 다른 두 방이 바닥 띠 하나를 사이에 두고 그냥 이어진다
+/// (사용자 보고: "사진을 넘나드는 게 이상하다").
+///
+/// 평면도에는 그 자리에 이미 문이 서 있다. 화면에 안 나오던 것은 렌더가 "셸이 그리는
+/// 가구" 로 분류해 통째로 숨겼기 때문이다 — 세로 경계에서는 그 판단이 맞지만(셸이 그린다)
+/// 가로 경계에서는 아무도 그리지 않는다. 이 함수가 그 둘을 가른다.
+public func officeIsRoomCeilingDoor(tile: TilePoint, plan: OfficeFloorPlan) -> Bool {
+    plan.zones.contains { zone in
+        tile.y == zone.origin.y + zone.height - 1
+            && tile.x >= zone.origin.x
+            && tile.x <= zone.origin.x + zone.width
+    }
+}
+
 /// 부서별 바닥재. 문패를 읽지 않아도 방이 구별되는 1차 신호다.
 /// 개발·내부가 같은 어두운 카펫인 것은 의도 — 두 구역은 서로 맞닿지 않고,
 /// 가구 세트(자료 벽 vs 설비)와 벽 색조로 갈린다.

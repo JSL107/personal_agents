@@ -762,6 +762,29 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
         "책상이 사람 키의 66% (실제 \(Int(deskShownHeight / characterHeight * 100))%)"
     )
 
+    // 방 위쪽 경계(천장 줄)의 문만 가려낸다 — 좌우 경계 문은 방 셸 그림이 이미 그리므로
+    // 여기서 살리면 이중으로 보인다. 세 방이 가로로 붙어 있으므로 각 줄에 문이 셋 선다.
+    do {
+        let ceilingPlan = officeFloorPlan(agents: [], zoneColumns: 3)
+        let doors = ceilingPlan.furniture.filter {
+            $0.kind == .doorClosed || $0.kind == .doorOpen
+        }
+        let boundary = doors.filter {
+            officeIsRoomCeilingDoor(tile: $0.tile, plan: ceilingPlan)
+        }
+        t.expect(!boundary.isEmpty, "방 위쪽 경계 문이 있다 (실제 \(boundary.count)개)")
+        t.expect(
+            boundary.count < doors.count,
+            "좌우 경계 문은 걸러진다 (경계 \(boundary.count) / 전체 \(doors.count))"
+        )
+        // 걸러진 문은 전부 어느 방의 천장 줄에 있다 — 방 안쪽이나 복도 한가운데가 아니다.
+        let ceilingRows = Set(ceilingPlan.zones.map { $0.origin.y + $0.height - 1 })
+        t.expect(
+            boundary.allSatisfy { ceilingRows.contains($0.tile.y) },
+            "경계 문은 모두 천장 줄에 있다"
+        )
+    }
+
     // 구역 사이에 칸막이 벽이 실제로 서 있어야 한다 — 벽이 없으면 방이 나뉘어 보이지 않는다.
     // 세로 경계를 한 열만 보면 벽 세우는 루프의 범위가 어긋나도 통과하므로 전 경계를 본다.
     //
