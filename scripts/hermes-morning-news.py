@@ -9,8 +9,15 @@ hermes 의 web_search 도구는 Tavily 를 topic 지정 없이 부른다(plugins
 출력(stdout)은 hermes cron 의 --script 경로로 job 프롬프트에 그대로 주입된다.
 따라서 stdout 에는 기사 목록만, 진단 메시지는 stderr 로 보낸다.
 
-이 레포는 정본이고, 실제 실행 경로인 `~/.hermes/scripts/morning-news.py` 는 이 파일을 가리키는
-심볼릭 링크다. hermes cron job `아침신문`(91a2c90c75b8) 이 매일 08:00 에 `--script` 로 호출한다.
+이 레포가 정본이고 `~/.hermes/scripts/morning-news.py` 에 복사본을 둔다. hermes cron job
+`아침신문`(91a2c90c75b8) 이 매일 08:00 에 `--script` 로 그 복사본을 호출한다.
+
+심볼릭 링크로 묶을 수는 없다. `_run_job_script` 가 경로를 resolve 한 뒤 scripts 디렉터리 안인지
+검사해 symlink escape 를 차단한다(`cron/scheduler.py:882-896`). 링크를 걸면 실행 시점에
+`Blocked: script path resolves outside the scripts directory` 로 job 이 죽는다.
+따라서 이 파일을 고치면 복사본도 함께 갱신해야 한다:
+`cp scripts/hermes-morning-news.py ~/.hermes/scripts/morning-news.py`
+
 hermes 본체(`~/.hermes/hermes-agent`)는 업스트림 클론이라 개인 스크립트를 두지 않는다.
 """
 
