@@ -109,10 +109,9 @@ func runCozyAssetCheck() -> Bool {
             valid = false
         }
     }
-    // 걸음 원화는 **보는 방향으로 갈린다.** 뒷모습은 스무 명 전원이 가지고 있고, 앞모습은
-    // 일곱 명(1·2·3·16~19)뿐이다 — 열세 명은 아래로 걸을 때 정지 그림으로 미끄러진다.
-    // 전원에게 앞모습을 요구하면 그 열세 명에서 반드시 빨간불이 되므로 각자 가진 쪽만 본다.
-    let frontWalkIndices = [1, 2, 3, 16, 17, 18, 19]
+    // 정면·후면 걸음 모두 스무 명 전원이 가진다. 후면은 두 발을 모은 정지 프레임까지
+    // 필수로 두어, 어느 방향으로 걸어도 실제 2프레임 걸음이 보이게 한다.
+    let frontWalkIndices = Array(0..<cozyCharacterAssetCount)
     let backWalkIndices = Array(0..<cozyCharacterAssetCount)
     let requiredWalkAssets = frontWalkIndices.map { "agent-\($0)-walk" }
         + backWalkIndices.map { "agent-\($0)-walk-up" }
