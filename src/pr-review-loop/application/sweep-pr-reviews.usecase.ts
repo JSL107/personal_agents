@@ -36,7 +36,11 @@ const emptySweep = (): SweepExecution => ({ results: [], quotaStopped: false });
 const NEW_REVIEW_LIMIT_PER_SWEEP = 3;
 // 열린 PR 조회 기간. 오래 방치된 PR 까지 매번 훑지 않는다.
 const OPEN_PR_LOOKBACK_DAYS = 14;
-const OPEN_PR_FETCH_LIMIT = 20;
+// 한 회차에 훑을 열린 PR 상한. 레포별 20 이던 것이 전체 합계 50 으로 바뀌었다 —
+// 레포를 묶어 한 번에 조회하므로 레포 수에 비례하던 상한이 사라졌다. 리뷰는 어차피
+// 회차당 NEW_REVIEW_LIMIT_PER_SWEEP 건이라 50 이면 후보가 모자라지 않고, 레포가
+// 3개만 넘어도 종전(레포수 x 20)보다 적게 훑어 판정 질의 부담도 함께 준다.
+const OPEN_PR_FETCH_LIMIT = 50;
 const DEFAULT_INLINE_MAX = 4;
 // PR 당 리뷰 1회(쿨다운 재시도) 판정(findLatestSweepReview) 조회 기간. AgentRun.inputSnapshot 의
 // JSON path 필터는 인덱스가 없어 무기한 스캔을 피하려 최근 N일로 제한한다. 단, 열린 PR 조회의
@@ -60,6 +64,11 @@ const SWEEP_RETRY_BUDGET_MAX_ATTEMPTS = 3;
 // 실패 원인을 PR 상세의 additions+deletions 로 판별해 로그에 명시한다 — "diff 조회 실패"
 // 만으로는 일시적 장애인지 구조적 한계인지 구분되지 않아 진단이 매번 처음부터 시작된다.
 const GITHUB_DIFF_MAX_LINES = 20_000;
+
+// 리뷰를 시작하기도 전에 대상이 사라진 경우. null 은 "리뷰는 했는데 낼 카드가 없다" 라서
+// 회차 상한을 쓴 것이 맞지만, 이쪽은 모델을 부른 적이 없으므로 호출부가 상한을 돌려줄 수
+// 있게 구분해 알린다.
+const ALREADY_MERGED = 'ALREADY_MERGED';
 
 // 판정 헬퍼의 반환값 — 조회 실패와 "레코드 없음"을 섞지 않기 위해 boolean/null 대신 명시적 열거.
 type SweepDecision = 'REVIEW' | 'SKIP';
@@ -103,62 +112,77 @@ export class SweepPrReviewsUsecase {
     let reviewed = 0;
     let quotaStopped = false;
 
-    for (const repo of repos) {
+    // 열린 PR 은 레포를 묶어 한 번에 조회한다 — 레포마다 따로 치면 회차마다 짧은 간격의
+    // 연속 검색이 되어 GitHub secondary rate limit 에 걸렸다(실측: 3분마다 403 반복).
+    const pullRequests = await this.listOpenPullRequests({ repos, ownerLogin });
+    for (const pullRequest of pullRequests) {
       if (reviewed >= NEW_REVIEW_LIMIT_PER_SWEEP || quotaStopped) {
         break;
       }
-      const pullRequests = await this.listOpenPullRequests({
-        repo,
-        ownerLogin,
-      });
-      for (const pullRequest of pullRequests) {
-        if (reviewed >= NEW_REVIEW_LIMIT_PER_SWEEP || quotaStopped) {
-          break;
-        }
-        const prRef = `${pullRequest.repo}#${pullRequest.number}`;
-        const decision = await this.decideSweepAction(prRef);
-        if (decision === 'SKIP') {
+      const prRef = `${pullRequest.repo}#${pullRequest.number}`;
+      const decision = await this.decideSweepAction(prRef);
+      if (decision === 'SKIP') {
+        continue;
+      }
+      reviewed += 1;
+      // reviewAndPublish 는 PR 1건의 실패를 스스로 삼키지만 쿼터만은 올려보낸다 —
+      // 남은 PR 도 같은 이유로 실패할 것이 확정이라, 수확 쪽과 같은 판단으로 회차를
+      // 끊는다(이 시점까지의 results 는 살려 보낸다).
+      try {
+        const result = await this.reviewAndPublish({
+          repo: pullRequest.repo,
+          pullNumber: pullRequest.number,
+          slackUserId,
+        });
+        if (result === ALREADY_MERGED) {
+          // 검색 인덱스 지연으로 이미 머지된 PR 이 섞여 들어왔다. 리뷰를 한 적이 없으니
+          // 회차 상한을 돌려주고 다음 PR 로 간다 — 안 돌려주면 머지된 3건이 회차를 통째로
+          // 먹어 그 뒤의 정상 PR 이 다음 회차까지 밀린다.
+          reviewed -= 1;
           continue;
         }
-        reviewed += 1;
-        // reviewAndPublish 는 PR 1건의 실패를 스스로 삼키지만 쿼터만은 올려보낸다 —
-        // 남은 PR 도 같은 이유로 실패할 것이 확정이라, 수확 쪽과 같은 판단으로 회차를
-        // 끊는다(이 시점까지의 results 는 살려 보낸다).
-        try {
-          const result = await this.reviewAndPublish({
-            repo: pullRequest.repo,
-            pullNumber: pullRequest.number,
-            slackUserId,
-          });
-          if (result !== null) {
-            results.push(result);
-          }
-        } catch (error: unknown) {
-          // 올라온 것이 정말 쿼터인지 여기서 다시 확인한다. 무조건 쿼터로 단정하면
-          // 나중에 다른 예외가 이 자리로 새어들어올 때 무관한 장애가 "쿼터 소진"으로
-          // 보고돼, 원인이 아닌 곳을 보게 만든다. 아니면 그대로 올려 orchestrator 의
-          // task 실패 경로(⚠️ 표기)가 받게 둔다.
-          if (!extractCodexQuota(error)) {
-            throw error;
-          }
-          quotaStopped = true;
-          this.logger.warn(
-            `PR 리뷰 스윕 중단 — 모델 쿼터 소진 (${prRef} 이후는 다음 회차에 재시도): ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          );
+        if (result !== null) {
+          results.push(result);
         }
+      } catch (error: unknown) {
+        // 올라온 것이 정말 쿼터인지 여기서 다시 확인한다. 무조건 쿼터로 단정하면
+        // 나중에 다른 예외가 이 자리로 새어들어올 때 무관한 장애가 "쿼터 소진"으로
+        // 보고돼, 원인이 아닌 곳을 보게 만든다. 아니면 그대로 올려 orchestrator 의
+        // task 실패 경로(⚠️ 표기)가 받게 둔다.
+        if (!extractCodexQuota(error)) {
+          throw error;
+        }
+        quotaStopped = true;
+        this.logger.warn(
+          `PR 리뷰 스윕 중단 — 모델 쿼터 소진 (${prRef} 이후는 다음 회차에 재시도): ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
       }
+    }
+
+    // 상한까지 꽉 찬 목록이 한 건도 리뷰되지 않았다면 상한 밖에 미검토 PR 이 남아 있을 수
+    // 있다. 정렬이 updated DESC 라 그런 PR 은 갱신되기 전까지 계속 상한 밖에 머문다.
+    // 페이지를 더 넘기는 대신(줄이려던 호출이 다시 는다) 그 조건이 실제로 오는지부터
+    // 드러낸다 — 조용히 누락되면 알아챌 방법이 없다. 실측 2026-09-14 기준 대상 PR 은
+    // 5건으로 상한의 1/10 이라 아직 닿지 않는다.
+    if (reviewed === 0 && pullRequests.length >= OPEN_PR_FETCH_LIMIT) {
+      this.logger.warn(
+        `열린 PR ${pullRequests.length}건이 모두 skip 됐고 조회가 상한(${OPEN_PR_FETCH_LIMIT})에 닿았다 — 상한 밖에 미검토 PR 이 남아 있을 수 있으니 상한 상향을 검토하라.`,
+      );
     }
 
     return { results, quotaStopped };
   }
 
+  // 스윕은 PR 의 repo 와 number 만 쓴다. 그래서 상세를 함께 받던
+  // listAuthorOpenPullRequests 대신 검색 결과만 돌려주는 조회를 쓴다 — PR 하나마다
+  // 치던 상세 조회가 통째로 사라진다.
   private async listOpenPullRequests({
-    repo,
+    repos,
     ownerLogin,
   }: {
-    repo: string;
+    repos: string[];
     ownerLogin: string;
   }) {
     const since = new Date(
@@ -167,15 +191,15 @@ export class SweepPrReviewsUsecase {
       .toISOString()
       .slice(0, 10);
     try {
-      return await this.githubClient.listAuthorOpenPullRequests({
-        repo,
+      return await this.githubClient.listOpenPullRequestRefs({
+        repos,
         author: ownerLogin,
         sinceIsoDate: since,
         limit: OPEN_PR_FETCH_LIMIT,
       });
     } catch (error: unknown) {
       this.logger.warn(
-        `열린 PR 조회 실패 (${repo}): ${error instanceof Error ? error.message : String(error)}`,
+        `열린 PR 조회 실패 (${repos.join(', ')}): ${error instanceof Error ? error.message : String(error)}`,
       );
       return [];
     }
@@ -264,7 +288,7 @@ export class SweepPrReviewsUsecase {
     repo: string;
     pullNumber: number;
     slackUserId: string;
-  }): Promise<SweepPullRequestResult | null> {
+  }): Promise<SweepPullRequestResult | null | typeof ALREADY_MERGED> {
     const prRef = `${repo}#${pullNumber}`;
     const dryRun = this.isDryRun();
     // 리뷰 usecase 는 자기 AgentRun 을 열고 실패 시 스스로 FAILED 로 마감한다. 그 지점을 넘은
@@ -285,6 +309,14 @@ export class SweepPrReviewsUsecase {
         throw detailResult.reason;
       }
       const detail = detailResult.value;
+      // GitHub 검색 인덱스는 조금 늦어 `is:open` 결과에 방금 머지된 PR 이 남는다. 상세를
+      // 함께 받던 조회가 merged_at 으로 걸러 주던 자리인데, 지금은 식별자만 받으므로 이미
+      // 가져온 상세로 여기서 끊는다 — 머지된 PR 에 리뷰 코멘트가 달리는 것을 막는다.
+      // 실패가 아니라 정상 skip 이라 원장에 남기지 않는다(재시도 예산을 깎지 않는다).
+      if (detail.mergedAt !== null) {
+        this.logger.log(`이미 머지된 PR — 리뷰 skip (${prRef})`);
+        return ALREADY_MERGED;
+      }
       if (diffResult.status === 'rejected') {
         const changedLines = detail.additions + detail.deletions;
         if (changedLines > GITHUB_DIFF_MAX_LINES) {

@@ -27,8 +27,10 @@ import {
   GithubItemLifecycle,
   ListAssignedTasksOptions,
   ListAuthorMergedPullRequestsOptions,
+  ListOpenPullRequestRefsOptions,
   ListReviewThreadsResult,
   OCTOKIT_INSTANCE,
+  OpenPullRequestRef,
   PullRequestRef,
   PushBranchAndOpenPrInput,
   PushBranchAndOpenPrResult,
@@ -976,6 +978,47 @@ export class OctokitGithubClient implements GithubClientPort {
     return details
       .filter((d): d is NonNullable<typeof d> => d !== null)
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
+  // 열린 PR 의 repo#number 만 조회한다 — PR 상세(pulls.get)를 치지 않고 검색 결과만 쓴다.
+  // 레포마다 검색을 따로 치고 PR 마다 상세를 또 치던 경로가 스윕 1회에 GitHub 호출을
+  // (레포 수 + 레포 수 x PR 수) 만큼 쏘아 secondary rate limit 을 유발했다.
+  async listOpenPullRequestRefs({
+    repos,
+    author,
+    sinceIsoDate,
+    limit,
+  }: ListOpenPullRequestRefsOptions): Promise<OpenPullRequestRef[]> {
+    this.assertOctokitConfigured();
+    if (repos.length === 0) {
+      return [];
+    }
+    const perPage = Math.min(Math.max(1, limit), 100);
+    // 같은 qualifier 를 여러 번 쓰면 GitHub 검색이 OR 로 묶어 준다. 문서에 적힌 256자
+    // 쿼리 상한이 걸릴까 싶어 나눠 보내던 것을 실측으로 확인해 걷어냈다 — 2026-09-14
+    // 기준 레포 50개(1769자) 쿼리도 정상 응답한다(레포 5/8/12/20/30/50 전부 200).
+    const repoQualifier = repos.map((item) => `repo:${item}`).join(' ');
+    const q = `${repoQualifier} is:pr is:open draft:false author:${author} updated:>=${sinceIsoDate}`;
+    let searchResponse;
+    try {
+      searchResponse = await this.octokit!.rest.search.issuesAndPullRequests({
+        q,
+        per_page: perPage,
+        sort: 'updated',
+        order: 'desc',
+      });
+    } catch (error: unknown) {
+      throw this.wrapRequestFailed(
+        error,
+        `GitHub open PR 검색 실패 (${repos.length}개 레포)`,
+      );
+    }
+
+    return searchResponse.data.items.slice(0, perPage).map((item) => ({
+      repo: extractRepo(item.repository_url),
+      number: item.number,
+      updatedAt: item.updated_at,
+    }));
   }
 
   private async resolveLogin(): Promise<string | null> {

@@ -8,19 +8,13 @@ import { CodexQuotaExceededException } from '../../model-router/infrastructure/c
 import { PublishFindingsService } from './publish-findings.service';
 import { SweepPrReviewsUsecase } from './sweep-pr-reviews.usecase';
 
+// 스윕이 조회에서 받는 값은 식별자뿐이다 — 상세(title/body/증감)는 받지 않는다.
 const OPEN_PR = {
   number: 180,
-  title: 'feat: 무언가',
-  body: '',
   repo: 'JSL107/personal_agents',
-  url: 'https://github.com/JSL107/personal_agents/pull/180',
-  state: 'open' as const,
-  mergedAt: null,
   updatedAt: '2026-07-31T00:00:00Z',
-  additions: 10,
-  deletions: 2,
-  changedFilesCount: 1,
 };
+const OPEN_PR_URL = 'https://github.com/JSL107/personal_agents/pull/180';
 
 const REVIEW_OUTCOME = {
   agentRunId: 7,
@@ -52,7 +46,7 @@ describe('SweepPrReviewsUsecase', () => {
   let github: jest.Mocked<
     Pick<
       GithubClientPort,
-      | 'listAuthorOpenPullRequests'
+      | 'listOpenPullRequestRefs'
       | 'getPullRequest'
       | 'getPullRequestDiff'
       | 'addIssueComment'
@@ -94,13 +88,13 @@ describe('SweepPrReviewsUsecase', () => {
 
   beforeEach(() => {
     github = {
-      listAuthorOpenPullRequests: jest.fn().mockResolvedValue([OPEN_PR]),
+      listOpenPullRequestRefs: jest.fn().mockResolvedValue([OPEN_PR]),
       getPullRequest: jest.fn().mockResolvedValue({
         number: 180,
         title: 'feat: 무언가',
         body: '',
         repo: 'JSL107/personal_agents',
-        url: OPEN_PR.url,
+        url: OPEN_PR_URL,
         baseRef: 'main',
         headRef: 'feat/x',
         headSha: 'abc1234',
@@ -150,7 +144,7 @@ describe('SweepPrReviewsUsecase', () => {
     }).execute();
 
     expect(results).toEqual([]);
-    expect(github.listAuthorOpenPullRequests).not.toHaveBeenCalled();
+    expect(github.listOpenPullRequestRefs).not.toHaveBeenCalled();
   });
 
   it('owner login 이 없으면 아무것도 하지 않는다', async () => {
@@ -169,7 +163,7 @@ describe('SweepPrReviewsUsecase', () => {
     }).execute();
 
     expect(results).toEqual([]);
-    expect(github.listAuthorOpenPullRequests).not.toHaveBeenCalled();
+    expect(github.listOpenPullRequestRefs).not.toHaveBeenCalled();
   });
 
   it('allowlist 가 비어 있으면 스윕 자체를 하지 않는다', async () => {
@@ -179,7 +173,7 @@ describe('SweepPrReviewsUsecase', () => {
     }).execute();
 
     expect(results).toEqual([]);
-    expect(github.listAuthorOpenPullRequests).not.toHaveBeenCalled();
+    expect(github.listOpenPullRequestRefs).not.toHaveBeenCalled();
   });
 
   it('allowlist 레포의 열린 PR 을 리뷰하고 게시 서비스에 넘긴다 (레코드 없음 → 리뷰함)', async () => {
@@ -402,7 +396,7 @@ describe('SweepPrReviewsUsecase', () => {
       ...OPEN_PR,
       number: 200 + index,
     }));
-    github.listAuthorOpenPullRequests.mockResolvedValue(many);
+    github.listOpenPullRequestRefs.mockResolvedValue(many);
 
     await buildUsecase(ENABLED).execute();
 
@@ -415,11 +409,12 @@ describe('SweepPrReviewsUsecase', () => {
         ...OPEN_PR,
         repo,
         number: 100 + index,
-        url: `https://github.com/${repo}/pull/${100 + index}`,
       }));
-    github.listAuthorOpenPullRequests.mockImplementation((options) =>
-      Promise.resolve(buildPrsForRepo(options.repo as string)),
-    );
+    github.listOpenPullRequestRefs.mockResolvedValue([
+      ...buildPrsForRepo('org/repo-a'),
+      ...buildPrsForRepo('org/repo-b'),
+      ...buildPrsForRepo('org/repo-c'),
+    ]);
 
     await buildUsecase({
       ...ENABLED,
@@ -429,8 +424,102 @@ describe('SweepPrReviewsUsecase', () => {
     expect(reviewUsecase.execute).toHaveBeenCalledTimes(3);
   });
 
+  // 레포마다 검색을 따로 치던 경로가 3 분 주기 스윕에서 GitHub secondary rate limit 을
+  // 불러 열린 PR 조회가 통째로 실패하고 있었다(실측 로그: 332ms 간격 연속 403).
+  it('레포가 여러 개여도 열린 PR 조회는 한 번만 한다', async () => {
+    await buildUsecase({
+      ...ENABLED,
+      PR_REVIEW_INLINE_REPOS: 'org/repo-a,org/repo-b,org/repo-c',
+    }).execute();
+
+    expect(github.listOpenPullRequestRefs).toHaveBeenCalledTimes(1);
+    expect(github.listOpenPullRequestRefs).toHaveBeenCalledWith({
+      repos: ['org/repo-a', 'org/repo-b', 'org/repo-c'],
+      author: 'JSL107',
+      sinceIsoDate: expect.any(String),
+      limit: 50,
+    });
+  });
+
+  // 조회가 식별자만 받게 되면서 merged_at 으로 걸러 주던 자리가 사라졌다. 검색 인덱스
+  // 지연으로 `is:open` 에 남은 머지된 PR 에 리뷰 코멘트가 달리면 되돌릴 수 없다.
+  it('검색 결과에 남은 머지된 PR 은 리뷰하지 않는다', async () => {
+    const detail = await github.getPullRequest({
+      repo: 'JSL107/personal_agents',
+      number: 180,
+    });
+    github.getPullRequest.mockResolvedValue({
+      ...detail,
+      mergedAt: '2026-09-01T00:00:00Z',
+    });
+
+    const { results } = await buildUsecase(ENABLED).execute();
+
+    expect(reviewUsecase.execute).not.toHaveBeenCalled();
+    expect(publishService.publish).not.toHaveBeenCalled();
+    expect(results).toEqual([]);
+    // 실패가 아니므로 원장에 실패로 남기지 않는다 — 재시도 예산이 닳으면 안 된다.
+    expect(agentRunService.execute).not.toHaveBeenCalled();
+  });
+
+  // 머지 skip 이 회차 상한(3건)을 먹으면, 검색 인덱스에 남은 머지 결과 몇 건만으로 그 회차의
+  // 정상 PR 이 통째로 밀린다 — 리뷰를 시작한 적이 없으므로 상한을 돌려줘야 한다.
+  it('앞쪽 머지된 PR 은 회차 상한을 소모하지 않고 뒤의 열린 PR 을 리뷰한다', async () => {
+    github.listOpenPullRequestRefs.mockResolvedValue(
+      Array.from({ length: 6 }, (_, index) => ({
+        ...OPEN_PR,
+        number: 190 + index,
+      })),
+    );
+    const detail = await github.getPullRequest({
+      repo: 'JSL107/personal_agents',
+      number: 180,
+    });
+    const merged = { ...detail, mergedAt: '2026-09-01T00:00:00Z' };
+    // 앞의 3건은 이미 머지된 상태로 돌아오고, 그 뒤부터는 기본 mock(열린 PR)이 쓰인다.
+    github.getPullRequest
+      .mockResolvedValueOnce(merged)
+      .mockResolvedValueOnce(merged)
+      .mockResolvedValueOnce(merged);
+
+    await buildUsecase(ENABLED).execute();
+
+    // 상한을 돌려주지 않으면 머지 3건이 회차를 다 먹어 0건이 된다.
+    expect(reviewUsecase.execute).toHaveBeenCalledTimes(3);
+  });
+
+  // 상한 밖 미검토 PR 은 정렬(updated DESC)상 갱신 전까지 계속 밖에 머물러 조용히 누락된다.
+  // 페이지네이션 대신 그 조건이 실제로 닿았는지를 드러내 상한 상향 시점을 놓치지 않게 한다.
+  it('조회가 상한까지 찼는데 전부 skip 되면 상한 밖 누락 가능성을 경고한다', async () => {
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    github.listOpenPullRequestRefs.mockResolvedValue(
+      Array.from({ length: 50 }, (_, index) => ({
+        ...OPEN_PR,
+        number: 300 + index,
+      })),
+    );
+    agentRunService.findLatestSweepReview.mockResolvedValue({
+      status: 'SUCCEEDED',
+      startedAt: hoursAgo(1),
+      dryRun: false,
+    });
+
+    await buildUsecase(ENABLED).execute();
+
+    expect(reviewUsecase.execute).not.toHaveBeenCalled();
+    expect(
+      warn.mock.calls.some(
+        (call) =>
+          typeof call[0] === 'string' && call[0].includes('상한 상향을 검토'),
+      ),
+    ).toBe(true);
+    warn.mockRestore();
+  });
+
   it('한 PR 의 실패가 다른 PR 을 막지 않는다', async () => {
-    github.listAuthorOpenPullRequests.mockResolvedValue([
+    github.listOpenPullRequestRefs.mockResolvedValue([
       OPEN_PR,
       { ...OPEN_PR, number: 181 },
     ]);
@@ -449,7 +538,7 @@ describe('SweepPrReviewsUsecase', () => {
       title: 'feat: 아주 큰 PR',
       body: '',
       repo: 'JSL107/personal_agents',
-      url: OPEN_PR.url,
+      url: OPEN_PR_URL,
       baseRef: 'main',
       headRef: 'feat/x',
       headSha: 'abc1234',
@@ -492,7 +581,7 @@ describe('SweepPrReviewsUsecase', () => {
               title: 'feat: 무언가',
               body: '',
               repo: 'JSL107/personal_agents',
-              url: OPEN_PR.url,
+              url: OPEN_PR_URL,
               baseRef: 'main',
               headRef: 'feat/x',
               headSha: 'abc1234',
@@ -543,7 +632,7 @@ describe('SweepPrReviewsUsecase', () => {
       title: 'feat: 경계값',
       body: '',
       repo: 'JSL107/personal_agents',
-      url: OPEN_PR.url,
+      url: OPEN_PR_URL,
       baseRef: 'main',
       headRef: 'feat/x',
       headSha: 'abc1234',
@@ -582,7 +671,7 @@ describe('SweepPrReviewsUsecase', () => {
   });
 
   it('스윕 판정 조회 실패는 해당 PR 만 skip 하고 다른 PR 은 막지 않는다', async () => {
-    github.listAuthorOpenPullRequests.mockResolvedValue([
+    github.listOpenPullRequestRefs.mockResolvedValue([
       OPEN_PR,
       { ...OPEN_PR, number: 181 },
     ]);
@@ -755,7 +844,7 @@ describe('SweepPrReviewsUsecase', () => {
   it('쿼터가 소진되면 회차를 끊고 그 사실을 올린다', async () => {
     // PR 은 회차 상한(NEW_REVIEW_LIMIT_PER_SWEEP=3)만큼 둔다. 2 개만 두면 조기 종료를
     // 지워도 호출이 2 회로 끝나 이 단언이 그대로 통과해, 중단 동작을 검증하지 못한다.
-    github.listAuthorOpenPullRequests.mockResolvedValue([
+    github.listOpenPullRequestRefs.mockResolvedValue([
       OPEN_PR,
       { ...OPEN_PR, number: 181 },
       { ...OPEN_PR, number: 182 },
@@ -776,7 +865,7 @@ describe('SweepPrReviewsUsecase', () => {
   });
 
   it('쿼터가 아닌 실패는 종전대로 삼키고 다음 PR 을 계속한다', async () => {
-    github.listAuthorOpenPullRequests.mockResolvedValue([
+    github.listOpenPullRequestRefs.mockResolvedValue([
       OPEN_PR,
       { ...OPEN_PR, number: 181 },
     ]);

@@ -109,6 +109,25 @@ export interface ListAuthorMergedPullRequestsOptions {
   throwOnDetailFailure?: boolean;
 }
 
+// PR 리뷰 스윕처럼 열린 PR 의 식별자만 필요한 호출자용 조회 옵션.
+export interface ListOpenPullRequestRefsOptions {
+  // "owner/repo" 목록. GitHub 검색은 같은 qualifier 를 여러 번 쓰면 OR 로 묶으므로
+  // 레포마다 따로 검색하지 않고 한 번(목록이 길면 쿼리 길이 상한만큼 나눠서)에 친다.
+  repos: string[];
+  author: string;
+  // ISO date (YYYY-MM-DD). 이 시각 이후 갱신된 열린 PR 만.
+  sinceIsoDate: string;
+  // 전체 결과 상한 (레포별이 아니라 합계). updatedAt DESC 로 자른다.
+  limit: number;
+}
+
+// 열린 PR 의 식별자만 담은 참조. 상세(title/body/증감 줄수)를 쓰지 않는 호출자용.
+export interface OpenPullRequestRef {
+  repo: string; // "owner/repo"
+  number: number;
+  updatedAt: string; // ISO 8601
+}
+
 // issues.opened webhook 자동 라벨링 — repo 의 기존 label vocab 조회 + LLM 이 고른 label 부분집합 적용.
 export interface RepoLabel {
   name: string;
@@ -208,6 +227,15 @@ export interface GithubClientPort {
   listAuthorOpenPullRequests(
     options: ListAuthorMergedPullRequestsOptions,
   ): Promise<GithubPullRequestSummary[]>;
+
+  // 열린 PR 의 repo#number 만 필요한 호출자용 — 검색 API 호출로 끝낸다.
+  // listAuthorOpenPullRequests 와 달리 PR 상세(pulls.get)를 치지 않는다: 상세는
+  // title/body/증감 줄수를 채우려는 것인데 스윕은 그 값을 하나도 쓰지 않아, PR 수만큼의
+  // 호출이 통째로 낭비였고 레포별 검색과 겹쳐 GitHub secondary rate limit 을 유발했다.
+  // 반환: updatedAt DESC — 검색을 updated DESC 로 요청해 그 순서를 그대로 넘긴다.
+  listOpenPullRequestRefs(
+    options: ListOpenPullRequestRefsOptions,
+  ): Promise<OpenPullRequestRef[]>;
 
   // issues.opened webhook 자동 라벨링 — repo 의 label vocab (paginated).
   // 새 label 생성은 정책상 안 함 — LLM 이 vocab 안에서만 선택하도록 prompt 단에서 제한.
