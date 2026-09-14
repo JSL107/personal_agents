@@ -662,6 +662,106 @@ describe('OctokitGithubClient', () => {
     });
   });
 
+  describe('listOpenPullRequestRefs — 식별자만 받는 열린 PR 조회', () => {
+    const buildOctokit = (
+      items: Array<{
+        number: number;
+        repository_url: string;
+        updated_at: string;
+      }>,
+    ): { octokit: Octokit; search: jest.Mock; prGet: jest.Mock } => {
+      const search = jest.fn().mockResolvedValue({ data: { items } });
+      const prGet = jest.fn();
+      const octokit = {
+        rest: {
+          search: { issuesAndPullRequests: search },
+          pulls: { get: prGet },
+        },
+      } as unknown as Octokit;
+      return { octokit, search, prGet };
+    };
+
+    const searchedQueries = (search: jest.Mock): string[] =>
+      (search.mock.calls as Array<[{ q: string }]>).map((call) => call[0].q);
+
+    const item = (repo: string, number: number, updatedAt: string) => ({
+      number,
+      repository_url: `https://api.github.com/repos/${repo}`,
+      updated_at: updatedAt,
+    });
+
+    it('레포를 한 쿼리에 묶어 검색 1회로 끝내고 PR 상세는 치지 않는다', async () => {
+      // 검색을 sort=updated&order=desc 로 요청하므로 GitHub 이 이미 정렬해 준다 —
+      // mock 도 그 순서로 둔다(정렬된 척하는 mock 은 거짓 초록불을 만든다).
+      const { octokit, search, prGet } = buildOctokit([
+        item('org/b', 2, '2026-09-02T00:00:00Z'),
+        item('org/a', 1, '2026-09-01T00:00:00Z'),
+      ]);
+      const client = new OctokitGithubClient(octokit);
+
+      const refs = await client.listOpenPullRequestRefs({
+        repos: ['org/a', 'org/b'],
+        author: 'JSL107',
+        sinceIsoDate: '2026-08-31',
+        limit: 50,
+      });
+
+      expect(search).toHaveBeenCalledTimes(1);
+      expect(search).toHaveBeenCalledWith({
+        q: 'repo:org/a repo:org/b is:pr is:open draft:false author:JSL107 updated:>=2026-08-31',
+        per_page: 50,
+        sort: 'updated',
+        order: 'desc',
+      });
+      // 상세 조회가 스윕 GitHub 호출량의 대부분이었다 — 한 건도 치지 않아야 한다.
+      expect(prGet).not.toHaveBeenCalled();
+      expect(refs).toEqual([
+        { repo: 'org/b', number: 2, updatedAt: '2026-09-02T00:00:00Z' },
+        { repo: 'org/a', number: 1, updatedAt: '2026-09-01T00:00:00Z' },
+      ]);
+    });
+
+    // 레포가 늘어도 호출 수가 따라 늘면 이번 수정의 의미가 없다.
+    it('레포가 많아도 검색은 한 번이고 어느 레포도 빠뜨리지 않는다', async () => {
+      const repos = Array.from(
+        { length: 12 },
+        (_, index) => `schoolbell-e/sbe-repo-${index}`,
+      );
+      const { octokit, search, prGet } = buildOctokit([]);
+      const client = new OctokitGithubClient(octokit);
+
+      await client.listOpenPullRequestRefs({
+        repos,
+        author: 'JSL107',
+        sinceIsoDate: '2026-08-31',
+        limit: 50,
+      });
+
+      expect(search).toHaveBeenCalledTimes(1);
+      expect(prGet).not.toHaveBeenCalled();
+      const [query] = searchedQueries(search);
+      const queried = [...query.matchAll(/repo:(\S+)/g)].map(
+        (match) => match[1],
+      );
+      expect(queried).toEqual(repos);
+    });
+
+    it('레포 목록이 비면 검색 자체를 하지 않는다', async () => {
+      const { octokit, search } = buildOctokit([]);
+      const client = new OctokitGithubClient(octokit);
+
+      const refs = await client.listOpenPullRequestRefs({
+        repos: [],
+        author: 'JSL107',
+        sinceIsoDate: '2026-08-31',
+        limit: 50,
+      });
+
+      expect(search).not.toHaveBeenCalled();
+      expect(refs).toEqual([]);
+    });
+  });
+
   describe('listAuthorOpenPullRequests — open PR 조회', () => {
     const buildOpenOctokit = ({
       searchItems,
