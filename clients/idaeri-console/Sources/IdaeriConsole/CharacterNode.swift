@@ -539,7 +539,22 @@ final class CharacterNode: SKNode {
         interactionFacing = facing
         activeInteractionPose = pose
 
-        if pose == .sitting {
+        // **몸 상태는 그림과 같은 판정을 봐야 한다.** 자세 이름만 보고 앉히면, 계약이
+        // 서 있는 그림으로 내려보낸 경우(`sitting` — 가려 줄 가구가 없어 착석 원화를 못
+        // 쓰는 자리)에도 `isSeated` 가 남아 좌석용 변환이 걸린다. 그러면 서 있는 전신이
+        // `officeGeneratedFallbackSeatedSpriteDrop` 만큼 내려가 발이 기준선 아래로 빠지고,
+        // `refreshInteractionOffset` 의 라운지 당김까지 더해져 몸이 가구 안으로 밀린다.
+        let resolvedPosture = resolveCozyPose(
+            requested: pose.rawValue,
+            assetIndex: cozyAppearance.assetIndex,
+            hasAsset: { [cozyAppearance] candidate in
+                SpriteLoader.cozyCharacterHasDedicatedPose(
+                    assetIndex: cozyAppearance.assetIndex,
+                    pose: candidate
+                )
+            }
+        ).posture
+        if resolvedPosture == .seated {
             sit()
         } else {
             // **앉아 있던 사람은 명시적으로 일으켜야 한다.** 자세를 걸기 전 상태가 남으면
