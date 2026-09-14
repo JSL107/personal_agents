@@ -1959,8 +1959,21 @@ final class OfficeScene: SKScene {
             // 목록은 **코어가 갖는다**(`officeCozyDrawnFurnitureKinds`). 여기 따로 적어 두던
             // 동안 배회 목적지 쪽이 이 목록을 몰라서, 사람이 화면에 없는 물건 앞으로 걸어가
             // 빈 바닥에 혼자 서 있었다 — 그리는 쪽과 보내는 쪽은 같은 값을 봐야 한다.
+            // 위아래로 붙은 두 방이 만나는 경계의 문은 **셸이 그리지 않는다.** 좌우 경계는
+            // 셸 그림에 문과 기둥이 들어 있어 숨기는 것이 맞지만, 가로 경계는 그대로 두면
+            // 배경이 다른 두 방이 아무 표시 없이 이어진다.
+            //
+            // **3D 원화가 있을 때만 켠다.** 원화가 없으면 옛 도트 스프라이트가 그려지는데,
+            // 3D 방 배경 위에 평면 사각형이 떠 있는 그림이 된다(실측으로 확인 — 로봇청소기가
+            // 도형이던 시절과 같은 증상이다). 원화가 들어오는 순간 이 조건이 참이 되어
+            // 코드를 더 고치지 않아도 문이 선다.
+            let isBoundaryDoor = officeIsRoomCeilingDoor(
+                kind: placement.kind, tile: placement.tile, plan: plan
+            )
+                && SpriteLoader.cozyFurnitureTexture(placement.kind) != nil
             let shellOwnsVisual = usesCompleteRoomArchitecture
                 && !officeCozyDrawnFurnitureKinds.contains(placement.kind)
+                && !isBoundaryDoor
             let present = !adjacentShelf && !capped && !decorCapped && !shellOwnsVisual
             if present {
                 visibleRoomKinds[zoneKey, default: []].insert(placement.kind)

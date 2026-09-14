@@ -192,7 +192,7 @@ func runCozyAssetCheck() -> Bool {
         "workstation", "chair", "sofa", "meeting-table", "bookshelf", "coffee-station",
         "planning-board-table", "quality-review-station", "evaluation-kpi-console",
         "treasury-ledger-console", "content-storyboard-station", "internal-ops-control-desk",
-        "vacuum-robot", "waste-bin", "dust-pile",
+        "vacuum-robot", "waste-bin", "dust-pile", "door-closed",
     ]
     for name in furnitureAssets {
         guard let url = Bundle.module.url(
@@ -210,7 +210,7 @@ func runCozyAssetCheck() -> Bool {
         }
         // 배경이 통째로 불투명하면 바닥 위에 흰 사각형이 얹힌다. 생성형 에셋에서 실제로
         // 겪은 사고라(먼지 그림이 체크무늬 배경째 들어왔다) 새로 받는 바닥 소품은 전부 검사한다.
-        if ["vacuum-robot", "waste-bin", "dust-pile"].contains(name),
+        if ["vacuum-robot", "waste-bin", "dust-pile", "door-closed"].contains(name),
            let provider = cgImage.dataProvider,
            let data = provider.data, let bytes = CFDataGetBytePtr(data) {
             let bytesPerPixel = cgImage.bitsPerPixel / 8

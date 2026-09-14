@@ -762,6 +762,54 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
         "책상이 사람 키의 66% (실제 \(Int(deskShownHeight / characterHeight * 100))%)"
     )
 
+    // 방 위쪽 경계(천장 줄)의 문만 가려낸다 — 좌우 경계 문은 방 셸 그림이 이미 그리므로
+    // 여기서 살리면 이중으로 보인다. 세 방이 가로로 붙어 있으므로 각 줄에 문이 셋 선다.
+    do {
+        let ceilingPlan = officeFloorPlan(agents: [], zoneColumns: 3)
+        let doors = ceilingPlan.furniture.filter {
+            $0.kind == .doorClosed || $0.kind == .doorOpen
+        }
+        let boundary = doors.filter {
+            officeIsRoomCeilingDoor(kind: $0.kind, tile: $0.tile, plan: ceilingPlan)
+        }
+        // **방마다 정확히 한 짝.** 개수를 세는 것이 요점이다 — "전체보다 적다" 만 보면 좌우
+        // 문이 몇 짝 섞여 들어와도 통과한다.
+        t.expectEqual(
+            boundary.count, ceilingPlan.zones.count,
+            "방 수만큼 경계 문이 잡힌다"
+        )
+        let ceilingRows = Set(ceilingPlan.zones.map { $0.origin.y + $0.height - 1 })
+        for zone in ceilingPlan.zones {
+            let row = zone.origin.y + zone.height - 1
+            let inZone = boundary.filter {
+                $0.tile.y == row
+                    && $0.tile.x >= zone.origin.x
+                    && $0.tile.x <= zone.origin.x + zone.width
+            }
+            t.expectEqual(inZone.count, 1, "\(zone.department.rawValue) 천장에 문 한 짝")
+        }
+        // **문이 아닌 것은 잡히지 않는다.** 판정이 위치만 보던 동안에는 천장 줄에 놓이기만
+        // 하면 무엇이든 참이 되어, 셸이 그리기로 한 가구가 함께 되살아났다.
+        //
+        // 지금 평면도의 천장 줄에는 문과 벽만 있어 **실제 배치로는 이 갈래를 재현할 수 없다.**
+        // 문의 좌표를 그대로 쓰고 종류만 바꿔 넣는다 — 위치는 참인데 종류가 아니라서 거짓이
+        // 되는지를 보는 것이 이 검사의 요점이다.
+        if let sample = boundary.first {
+            for kind in [FurnitureKind.bookshelf, .plantTall, .desk] {
+                t.expect(
+                    !officeIsRoomCeilingDoor(kind: kind, tile: sample.tile, plan: ceilingPlan),
+                    "천장 줄 좌표라도 \(kind.rawValue) 는 경계 문이 아니다"
+                )
+            }
+            t.expect(
+                officeIsRoomCeilingDoor(
+                    kind: .doorOpen, tile: sample.tile, plan: ceilingPlan
+                ),
+                "열린 문도 경계 문으로 잡힌다"
+            )
+        }
+    }
+
     // 구역 사이에 칸막이 벽이 실제로 서 있어야 한다 — 벽이 없으면 방이 나뉘어 보이지 않는다.
     // 세로 경계를 한 열만 보면 벽 세우는 루프의 범위가 어긋나도 통과하므로 전 경계를 본다.
     //
