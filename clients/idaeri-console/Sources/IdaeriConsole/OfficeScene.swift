@@ -2841,6 +2841,18 @@ final class OfficeScene: SKScene {
             completion?()
             return
         }
+        // **걷기 전에 가구 자세를 끊는다.**
+        //
+        // `stand()` 는 앉아 있을 때만 동작하고 `activeInteractionPose` 는 건드리지 않는다.
+        // 그런데 `refreshCozyArtwork` 는 그 값이 남아 있으면 **걸음 포즈 인자를 통째로
+        // 무시한다**(`activeInteractionPose?.rawValue ?? pose`). 그래서 서서 하는 상호작용
+        // (읽기·쓰기·화분 손질 등) 중에 배회를 시작한 사람은 걷는 내내 그 자세 그림을
+        // 유지했고, 그 그림들이 대부분 앞모습이라 **위로 걸어가면서도 얼굴을 보였다** —
+        // 계속 지적받던 "뒤로 걷는다" 의 정체다(화면 녹화 분석으로 확인).
+        //
+        // 방향 판정이나 걸음 원화 쪽을 아무리 고쳐도 닿지 않는 자리였다. 그림을 고르는
+        // 마지막 관문이 자세 값을 먼저 보기 때문이다.
+        node.endInteraction()
         node.stand()
         node.isWalking = true
 
