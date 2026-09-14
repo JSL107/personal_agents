@@ -112,6 +112,8 @@ public func normalizedCozyPose(_ requested: String) -> String {
         return "walk"
     case "walk-up", "walkup":
         return "walk-up"
+    case "walk-up-idle", "walkupidle":
+        return "walk-up-idle"
     default:
         return cozyIdlePose
     }
@@ -192,6 +194,8 @@ public func cozyPoseCandidates(_ normalized: String) -> [String] {
         return ["walk"]
     case "walk-up":
         return ["walk-up"]
+    case "walk-up-idle":
+        return ["walk-up-idle"]
     default:
         return []
     }

@@ -116,6 +116,7 @@ func runCozyAssetCheck() -> Bool {
     let backWalkIndices = Array(0..<cozyCharacterAssetCount)
     let requiredWalkAssets = frontWalkIndices.map { "agent-\($0)-walk" }
         + backWalkIndices.map { "agent-\($0)-walk-up" }
+        + backWalkIndices.map { "agent-\($0)-walk-up-idle" }
     for name in requiredWalkAssets {
         guard let url = Bundle.module.url(
             forResource: name, withExtension: "png", subdirectory: "cozy/characters"
@@ -159,6 +160,7 @@ func runCozyAssetCheck() -> Bool {
     // 셋이 정확히 그 방식으로 조용히 안 쓰이고 있었다.
     for (index, requested) in frontWalkIndices.map({ ($0, "walk") })
         + backWalkIndices.map({ ($0, "walk-up") })
+        + backWalkIndices.map({ ($0, "walk-up-idle") })
     {
         let resolved = resolveCozyPose(
             requested: requested,
