@@ -161,6 +161,17 @@ export class SweepPrReviewsUsecase {
       }
     }
 
+    // 상한까지 꽉 찬 목록이 한 건도 리뷰되지 않았다면 상한 밖에 미검토 PR 이 남아 있을 수
+    // 있다. 정렬이 updated DESC 라 그런 PR 은 갱신되기 전까지 계속 상한 밖에 머문다.
+    // 페이지를 더 넘기는 대신(줄이려던 호출이 다시 는다) 그 조건이 실제로 오는지부터
+    // 드러낸다 — 조용히 누락되면 알아챌 방법이 없다. 실측 2026-09-14 기준 대상 PR 은
+    // 5건으로 상한의 1/10 이라 아직 닿지 않는다.
+    if (reviewed === 0 && pullRequests.length >= OPEN_PR_FETCH_LIMIT) {
+      this.logger.warn(
+        `열린 PR ${pullRequests.length}건이 모두 skip 됐고 조회가 상한(${OPEN_PR_FETCH_LIMIT})에 닿았다 — 상한 밖에 미검토 PR 이 남아 있을 수 있으니 상한 상향을 검토하라.`,
+      );
+    }
+
     return { results, quotaStopped };
   }
 

@@ -488,6 +488,36 @@ describe('SweepPrReviewsUsecase', () => {
     expect(reviewUsecase.execute).toHaveBeenCalledTimes(3);
   });
 
+  // 상한 밖 미검토 PR 은 정렬(updated DESC)상 갱신 전까지 계속 밖에 머물러 조용히 누락된다.
+  // 페이지네이션 대신 그 조건이 실제로 닿았는지를 드러내 상한 상향 시점을 놓치지 않게 한다.
+  it('조회가 상한까지 찼는데 전부 skip 되면 상한 밖 누락 가능성을 경고한다', async () => {
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    github.listOpenPullRequestRefs.mockResolvedValue(
+      Array.from({ length: 50 }, (_, index) => ({
+        ...OPEN_PR,
+        number: 300 + index,
+      })),
+    );
+    agentRunService.findLatestSweepReview.mockResolvedValue({
+      status: 'SUCCEEDED',
+      startedAt: hoursAgo(1),
+      dryRun: false,
+    });
+
+    await buildUsecase(ENABLED).execute();
+
+    expect(reviewUsecase.execute).not.toHaveBeenCalled();
+    expect(
+      warn.mock.calls.some(
+        (call) =>
+          typeof call[0] === 'string' && call[0].includes('상한 상향을 검토'),
+      ),
+    ).toBe(true);
+    warn.mockRestore();
+  });
+
   it('한 PR 의 실패가 다른 PR 을 막지 않는다', async () => {
     github.listOpenPullRequestRefs.mockResolvedValue([
       OPEN_PR,
