@@ -117,7 +117,12 @@ def search_news(api_key: str, query: str) -> list[dict]:
     with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SEC) as response:
         body = json.loads(response.read().decode("utf-8"))
     results = body.get("results")
-    return results if isinstance(results, list) else []
+    if not isinstance(results, list):
+        return []
+    # 원소 타입까지 보는 이유: dict 아닌 값이 하나만 섞여도 아래 .get() 에서 AttributeError 가 나고,
+    # collect_section 의 except 는 그걸 안 잡아 스크립트가 통째로 죽는다(= 그날 브리핑 유실).
+    # 한 건이 이상하다고 나머지 후보까지 버릴 이유는 없으므로 그 원소만 떨군다.
+    return [article for article in results if isinstance(article, dict)]
 
 
 # 네이버 블로그 등 일부 출처는 본문에 제로폭 문자를 박아 넣는다. 그게 스니펫에 실려 오면
