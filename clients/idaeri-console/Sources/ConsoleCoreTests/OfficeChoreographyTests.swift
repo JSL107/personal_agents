@@ -252,9 +252,8 @@ func runCozyPoseContractTests(_ t: TestRunner) {
         ResolvedCozyPose(pose: "sit", posture: .seated),
         "자세를 요구하지 않으면 typing 은 여전히 앉은 자세로 해결된다")
 
-    // 걸음 그림은 **보는 방향으로 갈린다.** 뒷모습은 스무 명 전원, 앞모습은 1·2·3·16~19
-    // 일곱 명이 가지고 있다. 반대 방향 그림으로 대신하면 뒷걸음질이 되므로, 앞모습이
-    // 없는 열세 명은 아래로 걸을 때 정지 그림으로 접힌다.
+    // 걸음 그림은 **보는 방향으로 갈린다.** 스무 명 전원이 정면·후면을 둘 다 가지지만,
+    // 반대 방향 그림으로 대신하면 뒷걸음질이 되므로 포즈 대체는 여전히 막는다.
     t.expectEqual(
         resolveCozyPose(requested: "walk", assetIndex: 1, hasAsset: cozyPoseAssetExists(1)),
         ResolvedCozyPose(pose: "walk", posture: .standing),
@@ -269,12 +268,10 @@ func runCozyPoseContractTests(_ t: TestRunner) {
         ),
         ResolvedCozyPose(pose: "walk-up-idle", posture: .standing),
         "뒷모습 정지 그림이 있으면 그대로")
-    // **반대 방향으로는 새지 않는다.** 10번은 뒷모습만 있으므로 앞모습 요청은 정지 그림으로
-    // 내려가야 한다 — 여기서 `walk-up` 이 뽑히면 이쪽으로 걸어오는 사람이 뒤통수를 보인다.
     t.expectEqual(
-        resolveCozyPose(requested: "walk", assetIndex: 10, hasAsset: cozyPoseAssetExists(10)).pose,
-        cozyIdlePose, "앞모습이 없으면 뒷모습을 대신 쓰지 않는다")
-    // 1번은 이제 앞뒤를 다 가지고 있다 — 요청한 방향이 그대로 뽑혀야 한다.
+        resolveCozyPose(requested: "walk", assetIndex: 10, hasAsset: cozyPoseAssetExists(10)),
+        ResolvedCozyPose(pose: "walk", posture: .standing),
+        "10번도 정면 걸음 그림을 그대로 쓴다")
     t.expectEqual(
         resolveCozyPose(requested: "walk-up", assetIndex: 1, hasAsset: cozyPoseAssetExists(1)),
         ResolvedCozyPose(pose: "walk-up", posture: .standing),
@@ -286,6 +283,11 @@ func runCozyPoseContractTests(_ t: TestRunner) {
             requested: "walk-up", assetIndex: 1, hasAsset: { $0 == "walk" }
         ).pose,
         cozyIdlePose, "뒷모습이 없으면 앞모습을 대신 쓰지 않는다")
+    t.expectEqual(
+        resolveCozyPose(
+            requested: "walk", assetIndex: 10, hasAsset: { $0 == "walk-up" }
+        ).pose,
+        cozyIdlePose, "정면이 없는 가상 상황에서 후면을 대신 쓰지 않는다")
     t.expectEqual(
         resolveCozyPose(requested: "walk", assetIndex: 10, hasAsset: { _ in false }).pose,
         cozyIdlePose, "걸음 그림 파일이 없으면 정지 그림")
