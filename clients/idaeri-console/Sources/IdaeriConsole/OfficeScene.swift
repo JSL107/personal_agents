@@ -566,7 +566,6 @@ final class OfficeScene: SKScene {
             renderFloor()
             renderZoneLabels()
             renderFurniture()
-            renderMeetingTableProps()
             renderDepartmentFeatureProps()
             renderPresident()
         }
@@ -2167,59 +2166,13 @@ final class OfficeScene: SKScene {
     /// 회의 참석자의 `writing`·`reading` 포즈와 같은 깊이 층에 배치해, 두 사람이 테이블을
     /// 가운데 두고 문서와 노트북을 함께 검토하는 장면으로 읽히게 한다. 논리 가구나
     /// walkable 좌표를 추가하지 않고, 렌더 전용 소품만 만든다.
-    private func renderMeetingTableProps() {
-        objectLayer.children
-            .filter { $0.name == "cozy:meeting-props" }
-            .forEach { $0.removeFromParent() }
-        guard let table = plan.furniture.first(where: { $0.kind == .meetingTable }) else {
-            return
-        }
-
-        let holder = SKNode()
-        holder.name = "cozy:meeting-props"
-        let tablePoint = floorPoint(table.tile, footprintWidth: table.kind.footprint.width)
-        holder.position = CGPoint(x: tablePoint.x, y: tablePoint.y + tileSize * 0.74)
-        holder.zPosition = depth(of: table.tile) + 0.10
-
-        let outline = SKColor(red: 0.35, green: 0.25, blue: 0.19, alpha: 0.72)
-        let paperWidth = tileSize * 0.34
-        let paperHeight = tileSize * 0.25
-        for index in 0..<2 {
-            let paper = SKShapeNode(
-                rectOf: CGSize(width: paperWidth, height: paperHeight),
-                cornerRadius: tileSize * 0.025
-            )
-            paper.fillColor = SKColor(red: 0.98, green: 0.94, blue: 0.82, alpha: 0.96)
-            paper.strokeColor = outline
-            paper.lineWidth = max(0.8, tileSize * 0.018)
-            paper.zRotation = index == 0 ? -0.08 : 0.07
-            paper.position = CGPoint(
-                x: tileSize * CGFloat(index == 0 ? -0.42 : 0.42),
-                y: tileSize * 0.03
-            )
-            holder.addChild(paper)
-        }
-
-        let laptop = SKShapeNode(
-            rectOf: CGSize(width: tileSize * 0.46, height: tileSize * 0.28),
-            cornerRadius: tileSize * 0.035
-        )
-        laptop.fillColor = SKColor(red: 0.18, green: 0.25, blue: 0.29, alpha: 0.96)
-        laptop.strokeColor = outline
-        laptop.lineWidth = max(0.9, tileSize * 0.022)
-        laptop.position = CGPoint(x: 0, y: tileSize * 0.08)
-        holder.addChild(laptop)
-
-        let screen = SKShapeNode(
-            rectOf: CGSize(width: tileSize * 0.30, height: tileSize * 0.17),
-            cornerRadius: tileSize * 0.018
-        )
-        screen.fillColor = SKColor(red: 0.48, green: 0.73, blue: 0.78, alpha: 0.92)
-        screen.strokeColor = .clear
-        screen.position = CGPoint(x: 0, y: tileSize * 0.09)
-        laptop.addChild(screen)
-        objectLayer.addChild(holder)
-    }
+    // 회의 테이블 위 소품(서류 두 장·노트북)을 **걷었다.**
+    //
+    // 도형으로 그린 도트 시절 장식이다. 3D 회의 테이블 원화에는 소품이 없어 "회의 중" 느낌을
+    // 주려던 것인데, 평면 도형이 3D 상판 위에서 이질적인 데다 높이가 맞지 않아 테이블 **앞쪽
+    // 다리 사이에 떠 있었다**(사용자 보고). 로봇청소기·쓰레기통이 도형이던 시절과 같은 증상이고,
+    // 그 둘은 원화로 바꿔 해결했다. 테이블 소품은 장식이라 없어도 무방하므로 지운다 —
+    // 필요해지면 상판 위에 놓을 3D 소품 원화를 받아 같은 방식으로 세우면 된다.
 
     /// Gives every department one semantic 3D workstation instead of filling the shell with
     /// generic desks. These sit in the deliberately open foreground and preserve walkable/path
