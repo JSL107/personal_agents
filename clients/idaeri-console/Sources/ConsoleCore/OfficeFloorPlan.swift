@@ -1214,8 +1214,17 @@ public let officeCozyDrawnFurnitureKinds: Set<FurnitureKind> = [
 /// 평면도에는 그 자리에 이미 문이 서 있다. 화면에 안 나오던 것은 렌더가 "셸이 그리는
 /// 가구" 로 분류해 통째로 숨겼기 때문이다 — 세로 경계에서는 그 판단이 맞지만(셸이 그린다)
 /// 가로 경계에서는 아무도 그리지 않는다. 이 함수가 그 둘을 가른다.
-public func officeIsRoomCeilingDoor(tile: TilePoint, plan: OfficeFloorPlan) -> Bool {
-    plan.zones.contains { zone in
+/// **가구 종류까지 본다.** 위치만 보면 천장 줄에 놓인 다른 물건(책장·화분 등)도 참이 되어
+/// 셸 소유 판정을 함께 우회한다 — 이름은 "문" 인데 문이 아닌 것까지 살리는 함수가 된다.
+public func officeIsRoomCeilingDoor(
+    kind: FurnitureKind,
+    tile: TilePoint,
+    plan: OfficeFloorPlan
+) -> Bool {
+    guard kind == .doorClosed || kind == .doorOpen else {
+        return false
+    }
+    return plan.zones.contains { zone in
         tile.y == zone.origin.y + zone.height - 1
             && tile.x >= zone.origin.x
             && tile.x <= zone.origin.x + zone.width

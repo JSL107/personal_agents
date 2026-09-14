@@ -1967,7 +1967,9 @@ final class OfficeScene: SKScene {
             // 3D 방 배경 위에 평면 사각형이 떠 있는 그림이 된다(실측으로 확인 — 로봇청소기가
             // 도형이던 시절과 같은 증상이다). 원화가 들어오는 순간 이 조건이 참이 되어
             // 코드를 더 고치지 않아도 문이 선다.
-            let isBoundaryDoor = officeIsRoomCeilingDoor(tile: placement.tile, plan: plan)
+            let isBoundaryDoor = officeIsRoomCeilingDoor(
+                kind: placement.kind, tile: placement.tile, plan: plan
+            )
                 && SpriteLoader.cozyFurnitureTexture(placement.kind) != nil
             let shellOwnsVisual = usesCompleteRoomArchitecture
                 && !officeCozyDrawnFurnitureKinds.contains(placement.kind)
