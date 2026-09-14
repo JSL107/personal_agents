@@ -180,7 +180,16 @@ func runCozyPoseContractTests(_ t: TestRunner) {
     for name in ["down", "up", "side", "left", "right", "down-walk1", "side-walk2", "default"] {
         t.expectEqual(normalizedCozyPose(name), cozyIdlePose, "\(name) → 기본 그림")
     }
-    t.expectEqual(normalizedCozyPose("sitting"), "sit", "sitting → sit")
+    // `sit`(책상 좌석)과 `sitting`(소파·회의 테이블 앞)은 **다른 요청**이다. 착석 원화가
+    // 허리 아래 없는 그림이라, 상판이 가려 주는 책상에서만 쓸 수 있다.
+    t.expectEqual(normalizedCozyPose("sitting"), "sitting", "sitting 은 sit 으로 합치지 않는다")
+    t.expectEqual(
+        resolveCozyPose(requested: "sitting", assetIndex: 1, hasAsset: cozyPoseAssetExists(1)).pose,
+        cozyIdlePose, "가구 앞 앉기는 서 있는 그림으로 내려간다")
+    t.expectEqual(
+        resolveCozyPose(requested: "sit", assetIndex: 1, hasAsset: cozyPoseAssetExists(1)),
+        ResolvedCozyPose(pose: "sit", posture: .seated),
+        "책상 좌석은 착석 원화를 그대로 쓴다")
     t.expectEqual(normalizedCozyPose("carryingPapers"), "carryingpapers", "대문자 요청도 같은 이름")
 
     // 앉은 요청은 **앉은 그림**으로만 내려간다. 서 있는 그림으로 내려가면 그 사람만 책상 위에
@@ -243,9 +252,9 @@ func runCozyPoseContractTests(_ t: TestRunner) {
         ResolvedCozyPose(pose: "sit", posture: .seated),
         "자세를 요구하지 않으면 typing 은 여전히 앉은 자세로 해결된다")
 
-    // 걸음 그림은 **보는 방향으로 갈린다.** 앞모습은 1·2·3·16~19 일곱 명, 뒷모습은
-    // 0·4~15 열세 명이 가지고 있다. 반대 방향 그림으로 대신하면 뒷걸음질이 되므로
-    // 한쪽만 가진 사람은 그 반대 방향에서 정지 그림으로 접힌다.
+    // 걸음 그림은 **보는 방향으로 갈린다.** 뒷모습은 스무 명 전원, 앞모습은 1·2·3·16~19
+    // 일곱 명이 가지고 있다. 반대 방향 그림으로 대신하면 뒷걸음질이 되므로, 앞모습이
+    // 없는 열세 명은 아래로 걸을 때 정지 그림으로 접힌다.
     t.expectEqual(
         resolveCozyPose(requested: "walk", assetIndex: 1, hasAsset: cozyPoseAssetExists(1)),
         ResolvedCozyPose(pose: "walk", posture: .standing),
@@ -259,8 +268,17 @@ func runCozyPoseContractTests(_ t: TestRunner) {
     t.expectEqual(
         resolveCozyPose(requested: "walk", assetIndex: 10, hasAsset: cozyPoseAssetExists(10)).pose,
         cozyIdlePose, "앞모습이 없으면 뒷모습을 대신 쓰지 않는다")
+    // 1번은 이제 앞뒤를 다 가지고 있다 — 요청한 방향이 그대로 뽑혀야 한다.
     t.expectEqual(
-        resolveCozyPose(requested: "walk-up", assetIndex: 1, hasAsset: cozyPoseAssetExists(1)).pose,
+        resolveCozyPose(requested: "walk-up", assetIndex: 1, hasAsset: cozyPoseAssetExists(1)),
+        ResolvedCozyPose(pose: "walk-up", posture: .standing),
+        "앞뒤를 다 가지면 요청한 방향이 뽑힌다")
+    // 뒷모습만 없는 상황을 합성해 **앞모습이 새지 않는지**를 본다. 실제 원화는 전원
+    // 뒷모습을 가지고 있어 파일만으로는 이 갈래를 재현할 수 없다.
+    t.expectEqual(
+        resolveCozyPose(
+            requested: "walk-up", assetIndex: 1, hasAsset: { $0 == "walk" }
+        ).pose,
         cozyIdlePose, "뒷모습이 없으면 앞모습을 대신 쓰지 않는다")
     t.expectEqual(
         resolveCozyPose(requested: "walk", assetIndex: 10, hasAsset: { _ in false }).pose,

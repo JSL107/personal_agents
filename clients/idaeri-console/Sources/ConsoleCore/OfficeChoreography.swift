@@ -85,8 +85,15 @@ public let cozyIdlePose = "idle"
 /// 방향은 이제 그림이 아니라 몸짓(`officeWalkLean`)이 표현한다.
 public func normalizedCozyPose(_ requested: String) -> String {
     switch requested.lowercased().replacingOccurrences(of: "_", with: "-") {
-    case "sit", "sitting":
+    // **`sit` 과 `sitting` 은 다른 요청이다.** `sit` 은 책상·콘솔 좌석이고, `sitting` 은
+    // 소파·회의 테이블 앞에 앉는 연출이다. 예전에는 한 이름으로 합쳐 뒀는데, `sit` 원화가
+    // 허리 아래 없는 그림으로 다시 그려지면서 갈라야 했다 — 그 그림은 책상 상판이
+    // 하반신을 가려 주는 자리에서만 성립하고, 가려 줄 것이 없는 소파 앞에 놓으면
+    // 상반신만 바닥에 떠 있게 된다(사용자 보고).
+    case "sit":
         return "sit"
+    case "sitting":
+        return "sitting"
     case "typing":
         return "typing"
     case "reading":
@@ -153,6 +160,11 @@ public func cozyPoseCandidates(_ normalized: String) -> [String] {
     switch normalized {
     case "sit":
         return ["sit"]
+    // 가구 앞에 앉는 연출은 **대신할 그림이 없다.** 유일한 착석 원화(`sit`)가 허리 아래
+    // 없는 그림이라 여기 쓰면 바닥에 뜨므로, 서 있는 기본 그림으로 내려간다. 소파 앞에
+    // 서 있는 것이 어색하긴 해도 하반신 없는 사람이 떠 있는 것보다 낫다.
+    case "sitting":
+        return []
     // **앉은 그림을 먼저 본다.** `sit` 원화는 허리 아래가 없고 팔을 앞으로 뻗은 그림으로
     // 다시 그려졌다 — 책상 뒤에 놓으면 다리가 샐 자리가 없어 "책상을 관통한" 인상이
     // 사라진다(사용자 보고로 재제작). 그 자세가 이미 타이핑이라 `typing` 원화를 따로
