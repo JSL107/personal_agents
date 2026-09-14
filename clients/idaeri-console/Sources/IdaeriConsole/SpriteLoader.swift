@@ -223,6 +223,10 @@ enum SpriteLoader {
             assetName = "coffee-station"
         case .trash:
             assetName = "waste-bin"
+        // 방과 방 사이 경계에 세우는 문. 에셋이 없으면 nil 이 돌아가 **아무것도 그려지지
+        // 않는다** — 지금까지와 같은 화면이므로, 원화가 들어오는 순간에만 문이 선다.
+        case .doorClosed, .doorOpen:
+            assetName = "door-closed"
         default:
             assetName = nil
         }

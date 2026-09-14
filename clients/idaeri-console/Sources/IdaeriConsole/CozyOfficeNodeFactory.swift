@@ -694,7 +694,20 @@ enum CozyOfficeNodeFactory {
     }
 
     static func setDoor(_ node: SKNode, open: Bool) {
-        guard let panel = node.childNode(withName: "doorPanel") as? SKShapeNode else { return }
+        guard let panel = node.childNode(withName: "doorPanel") as? SKShapeNode else {
+            // **그림 문은 패널 자식이 없다.** 도트 시절 문은 문짝을 `doorPanel` 도형으로 따로
+            // 그려 여닫았지만, 3D 원화는 스프라이트 한 장이라 이 함수가 그냥 돌아가 버렸다 —
+            // 사람이 다가와도 닫힌 그림 그대로라 **닫힌 문을 통과하는** 그림이 됐다.
+            // 열린 문 원화가 따로 없으므로 문짝을 옆으로 접어(가로로 눌러) 열림을 나타낸다.
+            guard let sprite = node as? SKSpriteNode else {
+                return
+            }
+            sprite.run(
+                .scaleX(to: open ? 0.16 : 1, duration: 0.18),
+                withKey: "doorSwing"
+            )
+            return
+        }
         panel.fillColor = open
             ? SKColor(red: 0.90, green: 0.62, blue: 0.30, alpha: 0.96)
             : SKColor(red: 0.67, green: 0.43, blue: 0.24, alpha: 0.98)
