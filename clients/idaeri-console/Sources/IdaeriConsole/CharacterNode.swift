@@ -700,12 +700,6 @@ final class CharacterNode: SKNode {
         sprite.position = CGPoint(x: 0, y: spriteBaseY)
     }
 
-    /// 지금 걷는 방향의 걸음 그림을 가지고 있는가. 상하 흔들림을 얹을지 고르는 쪽이 쓴다 —
-    /// 방향을 안 보고 앞모습만 물으면 뒷모습만 가진 열세 명이 흔들림을 잃는다.
-    var hasWalkArtworkForCurrentFacing: Bool {
-        hasDedicatedArtwork(for: facing == .up ? "walk-up" : "walk")
-    }
-
     func hasDedicatedArtwork(for pose: String) -> Bool {
         SpriteLoader.cozyCharacterHasDedicatedPose(
             assetIndex: cozyAppearance.assetIndex,
