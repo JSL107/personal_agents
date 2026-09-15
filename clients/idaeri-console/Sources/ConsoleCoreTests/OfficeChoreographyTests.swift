@@ -183,9 +183,22 @@ func runCozyPoseContractTests(_ t: TestRunner) {
     // `sit`(책상 좌석)과 `sitting`(소파·회의 테이블 앞)은 **다른 요청**이다. 착석 원화가
     // 허리 아래 없는 그림이라, 상판이 가려 주는 책상에서만 쓸 수 있다.
     t.expectEqual(normalizedCozyPose("sitting"), "sitting", "sitting 은 sit 으로 합치지 않는다")
+    // 가구 앞 앉기는 **전용 원화**를 쓴다. 책상용 `sit`(허리 아래 없음)과 쓰임이 정반대라
+    // 서로 대신하지 않는다 — 여기서 `sit` 이 새면 소파 위에 상반신만 뜬다.
     t.expectEqual(
-        resolveCozyPose(requested: "sitting", assetIndex: 1, hasAsset: cozyPoseAssetExists(1)).pose,
-        cozyIdlePose, "가구 앞 앉기는 서 있는 그림으로 내려간다")
+        resolveCozyPose(requested: "sitting", assetIndex: 1, hasAsset: cozyPoseAssetExists(1)),
+        ResolvedCozyPose(pose: "sitting", posture: .seated),
+        "가구 앞 앉기는 전용 그림을 쓴다")
+    t.expectEqual(
+        resolveCozyPose(
+            requested: "sitting", assetIndex: 1, hasAsset: { $0 == "sit" }
+        ).pose,
+        cozyIdlePose, "가구 앞 원화가 없으면 책상용으로 대신하지 않는다")
+    t.expectEqual(
+        resolveCozyPose(
+            requested: "sit", assetIndex: 1, hasAsset: { $0 == "sitting" }
+        ).pose,
+        cozyIdlePose, "책상 좌석도 가구 앞 그림으로 대신하지 않는다")
     t.expectEqual(
         resolveCozyPose(requested: "sit", assetIndex: 1, hasAsset: cozyPoseAssetExists(1)),
         ResolvedCozyPose(pose: "sit", posture: .seated),

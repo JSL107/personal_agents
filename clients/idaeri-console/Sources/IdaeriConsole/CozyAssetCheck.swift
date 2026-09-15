@@ -59,7 +59,10 @@ func runCozyAssetCheck() -> Bool {
     // still falls back to the matching idle art for agents without a pose, but
     // the release check must prove that the high-frequency interactions have
     // at least one real seated and one real writing variant.
-    let requiredPoseAssets = (0..<cozyCharacterAssetCount).map { "agent-\($0)-sit" } + [
+    // 가구 앞 착석(`sitting`)도 전원이 가진다. 책상용 `sit` 과 쓰임이 정반대라 서로 대신할
+    // 수 없으므로, 한쪽이 빠지면 그 자리에서 사람이 바닥에 뜨거나 책상을 뚫는다.
+    let requiredPoseAssets = (0..<cozyCharacterAssetCount).map { "agent-\($0)-sit" }
+        + (0..<cozyCharacterAssetCount).map { "agent-\($0)-sitting" } + [
         "agent-0-writing", "agent-0-typing", "agent-0-reading", "agent-0-drinking",
         "agent-1-writing", "agent-1-typing", "agent-1-reading", "agent-1-drinking",
         "agent-2-typing", "agent-3-typing", "agent-4-typing", "agent-5-typing",
@@ -192,7 +195,7 @@ func runCozyAssetCheck() -> Bool {
         "workstation", "chair", "sofa", "meeting-table", "bookshelf", "coffee-station",
         "planning-board-table", "quality-review-station", "evaluation-kpi-console",
         "treasury-ledger-console", "content-storyboard-station", "internal-ops-control-desk",
-        "vacuum-robot", "waste-bin", "dust-pile", "door-closed",
+        "vacuum-robot", "waste-bin", "dust-pile", "door-closed", "desk-items",
     ]
     for name in furnitureAssets {
         guard let url = Bundle.module.url(
@@ -210,7 +213,8 @@ func runCozyAssetCheck() -> Bool {
         }
         // 배경이 통째로 불투명하면 바닥 위에 흰 사각형이 얹힌다. 생성형 에셋에서 실제로
         // 겪은 사고라(먼지 그림이 체크무늬 배경째 들어왔다) 새로 받는 바닥 소품은 전부 검사한다.
-        if ["vacuum-robot", "waste-bin", "dust-pile", "door-closed"].contains(name),
+        if ["vacuum-robot", "waste-bin", "dust-pile", "door-closed", "desk-items"]
+            .contains(name),
            let provider = cgImage.dataProvider,
            let data = provider.data, let bytes = CFDataGetBytePtr(data) {
             let bytesPerPixel = cgImage.bitsPerPixel / 8

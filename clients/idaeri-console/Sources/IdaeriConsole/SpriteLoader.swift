@@ -243,6 +243,12 @@ enum SpriteLoader {
         cozyFurnitureTexture(named: "vacuum-robot")
     }
 
+    /// 회의 테이블 위에 올리는 작업물(노트북·머그·서류). 없으면 nil 을 돌려 상판을 비운다 —
+    /// 도형으로 흉내 내던 시절에는 3D 상판 위에 평면 사각형이 떠 있었다.
+    static func cozyDeskItemsTexture() -> SKTexture? {
+        cozyFurnitureTexture(named: "desk-items")
+    }
+
     /// 청소기가 못 치우고 남긴 몫. 청소기와 마찬가지로 없으면 nil 을 돌려 도형으로 내려간다.
     static func cozyPendingDustTexture() -> SKTexture? {
         cozyFurnitureTexture(named: "dust-pile")
