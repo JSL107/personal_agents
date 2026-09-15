@@ -2048,16 +2048,24 @@ final class OfficeScene: SKScene {
                     // their original walkability and open/close state.
                     let statusNode = CozyOfficeNodeFactory.doorStatusOverlay(tileSize: tileSize)
                     statusNode.name = "cozy:door-status:\(placement.tile.x)-\(placement.tile.y)"
+                    // 문은 방의 **양쪽 벽 좌표**에 놓인다(`openDoor` 가 `wallX` 로 쓰는 값이
+                    // `originX` 와 `originX + zoneWidth` 다). 왼쪽 문은 방 안 첫 칸이지만
+                    // 오른쪽 문은 방 **바깥** 복도 첫 칸이라, 자리 판정이 비대칭이다.
+                    // 한때 오른쪽을 `origin.x + width - 1`(방 안 마지막 칸)로 찾아 늘 빗나갔고,
+                    // 그래서 `sideZone` 이 nil 이 되어 어느 방 문인지 모르는 채 그려졌다.
                     let sideZone = plan.zones.first { zone in
                         zone.origin.y <= placement.tile.y
                             && placement.tile.y < zone.origin.y + zone.height
                             && (placement.tile.x == zone.origin.x
-                                || placement.tile.x == zone.origin.x + zone.width - 1)
+                                || placement.tile.x == zone.origin.x + zone.width)
                     }
                     let opensFromLeftEdge = sideZone?.origin.x == placement.tile.x
-                    let boundaryX = opensFromLeftEdge == true
-                        ? CGFloat(placement.tile.x)
-                        : CGFloat(placement.tile.x + 1)
+                    // **벽 좌표는 양쪽 다 `tile.x` 다.** 왼쪽 벽은 첫 칸의 왼쪽 경계이고,
+                    // 오른쪽 벽은 복도 첫 칸의 왼쪽 경계 — 둘 다 칸 번호와 같다. 오른쪽에만
+                    // `+1` 을 더하던 시절에는 문이 자기 방 벽에서 한 칸 더 복도로 밀려나,
+                    // 마주 본 두 문이 좁은 복도 한가운데서 만나 벽 없이 서 있는 쌍여닫이
+                    // 소품이 됐다(사용자 보고) — 바로 아래 주석이 막으려던 그 그림이다.
+                    let boundaryX = CGFloat(placement.tile.x)
                     // Keep the logical doorway on its walkable tile, but seat the visual frame
                     // just inside the owning room wall. Opposing doors otherwise meet in the
                     // narrow hall and read as a freestanding double-door prop.
@@ -2114,40 +2122,17 @@ final class OfficeScene: SKScene {
                 front.zPosition = depth(of: placement.tile) + 0.15
                 objectLayer.addChild(front)
                 node.zPosition = depth(of: placement.tile) - 0.5
-                // **앉을 것을 놓는다.** 평면도에는 책상이 32개인데 의자가 한 개도 없어
-                // (`FurnitureKind.chairDown` 을 아무도 배치하지 않는다), 앉은 사람이 허공에
-                // 주저앉은 그림이 됐다 — 앞판은 책상 그림 그대로라 다리 사이가 투명해서
-                // 하반신이 그 틈으로 그대로 비쳤다(사용자 보고: "책상을 뚫고 앉아 있다").
+                // **의자는 더 이상 그리지 않는다.** 한때 책상마다 의자를 세웠다 — 그때
+                // 착석 원화는 전신이었고, 책상 앞판의 다리 사이가 투명해서 하반신이 그
+                // 틈으로 비쳤다(사용자 보고: "책상을 뚫고 앉아 있다"). 의자가 그 다리를
+                // 받아 주는 그림이었다.
                 //
-                // 평면도가 아니라 **화면에만** 놓는 것이 요점이다. 좌석 칸은 사람이 서는
-                // 자리라 통행 가능해야 하는데, 평면도에 가구로 넣으면 그 칸이 막혀 길찾기가
-                // 자기 자리로 못 간다.
+                // 그 뒤 착석 원화가 **허리 아래가 없는 그림**으로 다시 그려지면서 전제가
+                // 무너졌다. 가릴 다리가 사라지자 의자를 덮을 것이 없어져, 책상 아래에 빈
+                // 의자만 덩그러니 남고 사람 몸이 두 동강 난 것처럼 보였다(사용자 보고).
                 //
-                // 그리는 순서는 책상 뒤판(-0.5) < 의자 < 사람(-0.24) < 책상 앞판(+0.15)이다.
-                if let chairTexture = SpriteLoader.cozyFurnitureTexture(.chairDown) {
-                    // **크기는 타일에서 직접 잡는다.** `FurnitureKind.sizeBoost` 는 도트
-                    // 스프라이트(수십 px)를 기준으로 계산된 값이라, 1230px 짜리 3D 원화에
-                    // 그대로 곱하면 의자가 화면을 덮는다(실측으로 확인). 책상 폭이 2칸이므로
-                    // 그 앞 의자는 한 칸 남짓이 자연스럽다.
-                    let chair = SKSpriteNode(texture: chairTexture)
-                    let chairSourceSize = chairTexture.size()
-                    let chairWidth = tileSize * 1.05
-                    chair.size = CGSize(
-                        width: chairWidth,
-                        height: chairWidth * chairSourceSize.height
-                            / max(1, chairSourceSize.width)
-                    )
-                    chair.anchorPoint = CGPoint(x: 0.5, y: 0.12)
-                    chair.texture?.filteringMode = .linear
-                    chair.name = "cozy:desk-chair:\(placement.tile.x)-\(placement.tile.y)"
-                    chair.position = CGPoint(
-                        x: position.x,
-                        y: position.y
-                            + tileSize * CGFloat(officeWorkstationSeatVisualOffsetTiles)
-                    )
-                    chair.zPosition = depth(of: placement.tile) - 0.35
-                    objectLayer.addChild(chair)
-                }
+                // 지금은 상판이 하반신을 가리는 구조라 의자가 할 일이 없다. 착석 원화를
+                // 다시 전신으로 되돌린다면 이 블록도 함께 되살려야 한다.
             } else {
                 node.zPosition = depth(of: placement.tile)
             }
