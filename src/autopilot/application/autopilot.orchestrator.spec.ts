@@ -40,8 +40,32 @@ describe('AutopilotOrchestrator', () => {
     expect(task.run).toHaveBeenCalledWith(
       expect.objectContaining({ ownerSlackUserId: 'U1' }),
     );
-    expect(postMessage).toHaveBeenCalledWith({ target: 'C1', text: '본문' });
+    expect(postMessage).toHaveBeenCalledWith({
+      target: 'C1',
+      text: '<@U1>\n본문',
+    });
     expect(acquireOnce).toHaveBeenCalledTimes(1);
+  });
+
+  // 채널 카드는 알림이 없으면 읽히지 않고 흘러간다 — 채널에만 owner 멘션을 붙이고,
+  // 이미 본인에게 가는 DM 에는 붙이지 않는다(같은 알림이 두 번 울린다).
+  it('owner DM 타깃에는 멘션을 붙이지 않는다', async () => {
+    const task = makeTask('daily-eval', { skip: false, summaryText: '본문' });
+    const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
+    const orchestrator = new AutopilotOrchestrator(
+      [task] as never,
+      { postMessage } as never,
+      {
+        acquireOnce: jest.fn().mockResolvedValue(true),
+        isDone: jest.fn().mockResolvedValue(false),
+      } as never,
+      { execute: jest.fn() } as never,
+      { attachSlackMessage: jest.fn() } as never,
+    );
+
+    await orchestrator.runGroup('daily-eval', [T0_ENTRY], 'U1', 'U1');
+
+    expect(postMessage).toHaveBeenCalledWith({ target: 'U1', text: '본문' });
   });
 
   describe('unfurlLinks — 링크가 여러 개인 목록형 카드가 미리보기에 묻히지 않게 한다', () => {
@@ -82,7 +106,10 @@ describe('AutopilotOrchestrator', () => {
 
     it('아무도 요청하지 않으면 옵션을 붙이지 않는다 — 기존 발송은 그대로다', async () => {
       const postMessage = await runWith([{ skip: false, summaryText: '본문' }]);
-      expect(postMessage).toHaveBeenCalledWith({ target: 'C1', text: '본문' });
+      expect(postMessage).toHaveBeenCalledWith({
+        target: 'C1',
+        text: '<@U1>\n본문',
+      });
     });
 
     it('요약이 합쳐질 때 한 항목만 요청해도 끈다 — 설정은 메시지 단위다', async () => {
@@ -183,8 +210,14 @@ describe('AutopilotOrchestrator', () => {
 
     expect(acquireOnce).toHaveBeenCalledTimes(1);
     expect(postMessage).toHaveBeenCalledTimes(2);
-    expect(postMessage).toHaveBeenCalledWith({ target: 'C1', text: '본문' });
-    expect(postMessage).toHaveBeenCalledWith({ target: 'C2', text: '본문' });
+    expect(postMessage).toHaveBeenCalledWith({
+      target: 'C1',
+      text: '<@U1>\n본문',
+    });
+    expect(postMessage).toHaveBeenCalledWith({
+      target: 'C2',
+      text: '<@U1>\n본문',
+    });
   });
 
   it('그룹 내 한 task 가 throw 해도 다른 task 발송 + 그룹 성공 (실패 격리)', async () => {
@@ -528,7 +561,7 @@ describe('AutopilotOrchestrator', () => {
     // 1) 메인: SA + 구분자 + SB
     expect(postMessageMock).toHaveBeenNthCalledWith(1, {
       target: 'C1',
-      text: 'SA\n\n────────\n\nSB',
+      text: '<@U1>\nSA\n\n────────\n\nSB',
     });
     // 2) 스레드: detailText 있는 A 만, threadTs=TS1
     expect(postMessageMock).toHaveBeenNthCalledWith(2, {
@@ -556,7 +589,10 @@ describe('AutopilotOrchestrator', () => {
     await orchestrator.runGroup('daily-eval', [T0_ENTRY], 'U1', 'C1');
 
     expect(postMessage).toHaveBeenCalledTimes(1);
-    expect(postMessage).toHaveBeenCalledWith({ target: 'C1', text: '요약만' });
+    expect(postMessage).toHaveBeenCalledWith({
+      target: 'C1',
+      text: '<@U1>\n요약만',
+    });
   });
 
   // 회귀 방지 — 멱등 가드가 acquireOnce 단계에서 소비된 채 메인 발송이 실패하면,
@@ -1378,11 +1414,11 @@ describe('AutopilotOrchestrator', () => {
     expect(postMessage).toHaveBeenCalledTimes(2);
     expect(postMessage).toHaveBeenNthCalledWith(1, {
       target: 'C1',
-      text: '본문',
+      text: '<@U1>\n본문',
     });
     expect(postMessage).toHaveBeenNthCalledWith(2, {
       target: 'C2',
-      text: '본문',
+      text: '<@U1>\n본문',
     });
   });
 
