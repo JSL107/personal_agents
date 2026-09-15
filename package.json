@@ -48,6 +48,7 @@
     "portfolio:publish": "ts-node scripts/publish-portfolio.ts",
     "review:unlearn": "ts-node scripts/unlearn-review-card.ts",
     "review:dry": "ts-node scripts/review-pr-dry.ts",
+    "review:replay": "ts-node scripts/review-replay.ts",
     "study:diagram": "ts-node scripts/study-diagram.ts"
   },
   "dependencies": {
