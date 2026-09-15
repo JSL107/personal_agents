@@ -228,6 +228,7 @@ export class OctokitGithubClient implements GithubClientPort {
         repo,
         url: prResponse.data.html_url,
         baseRef: prResponse.data.base.ref,
+        baseSha: prResponse.data.base.sha,
         headRef: prResponse.data.head.ref,
         authorLogin: prResponse.data.user?.login ?? 'unknown',
         mergedAt: prResponse.data.merged_at,

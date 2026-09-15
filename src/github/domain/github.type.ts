@@ -34,6 +34,11 @@ export interface PullRequestDetail {
   repo: string;
   url: string;
   baseRef: string; // 예: main
+  // base 브랜치의 커밋 SHA. 브랜치 이름과 달리 이 PR 을 기준으로 고정돼 있어, 과거 회차를
+  // 재현할 때 `compare(baseSha...headSha)` 로 그때의 diff 를 되살릴 수 있다. 브랜치 이름으로
+  // 비교하면 그 사이 base 가 head 를 흡수한 경우(merge 커밋 병합) 빈 diff 가 나온다 —
+  // 실측: schoolbell-e/sbe-api-v5-puppeteer#152 는 브랜치 기준 0 bytes, SHA 기준 6,307 bytes.
+  baseSha: string;
   headRef: string; // 예: feature/xyz
   authorLogin: string;
   // merged/open PR 공통. career-mate 회고의 evidence mergedAt 권위값으로 사용한다.
