@@ -179,4 +179,10 @@ export type ConsoleEvent =
       readonly type: 'command.answered';
       readonly commandId: string;
       readonly message: string;
+      // 이 명령이 직접 부른 worker 가 원장에 남긴 run id(본 실행 → 핸드오프 순).
+      // 다음 경우엔 키가 없다: ① 대화 응답·입력 되묻기처럼 worker 가 돌지 않은 answered,
+      // ② 승인 카드에 "응/아니" 로 답한 경로(적용이 만드는 run 은 여기로 오지 않는다).
+      // 선행 체이닝으로 먼저 돈 worker 의 run 도 빠진다 — 그쪽 answered 는 발행되지 않는다.
+      // 소비자는 "이 명령의 모든 run" 이 아니라 "답을 만든 run" 으로 읽어야 한다.
+      readonly agentRunIds?: readonly number[];
     };
