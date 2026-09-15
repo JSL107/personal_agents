@@ -103,7 +103,7 @@ public let officeGeneratedFallbackSeatedSpriteDrop: Double = 0.12
 /// 아래로 그대로 드러났다(사용자 보고: "책상을 뚫고 앉아 있다"). 배율 0.85 기준으로
 /// 0.12·0.30·0.45 를 다시 구웠다 — 0.45 는 상체만 남아 누구인지 알아보기 어렵고, 0.30 에서
 /// 발끝만 살짝 보이고 종아리는 상판에 가린다.
-public let officeWorkstationSeatVisualOffsetTiles: Double = 0.30
+public let officeWorkstationSeatVisualOffsetTiles: Double = 0.60
 
 /// 서 있는 원화를 축소해 임시 착석으로 쓰는 경우, 실제 착석 PNG보다 머리·어깨 기준이 낮다.
 /// 같은 좌표에 두면 모니터 뒤에서 정수리만 보여 별도 상승 보정을 적용한다.
