@@ -184,6 +184,87 @@ func runOfficeFloorCalibrationTests(_ t: TestRunner) {
         }
     }
 
+    // === `officeCalibratedFloorPoint` 자체를 부른다 ===
+    //
+    // 위 검사들은 u·v 를 손으로 계산해 `officeFloorQuadPoint` 만 불렀다. 그러면 이 함수가
+    // 하는 나머지 — 그림 사각형에 얹기, y 축 뒤집기, 발밑을 가구 폭 가운데로 옮기기 — 의
+    // 회귀를 못 잡는다(리뷰 지적).
+    let imageRect = OfficeRect(x: 10, y: 20, width: 11, height: 7)
+    let floorRect = OfficeRect(x: 11, y: 20, width: 9, height: 6)
+    let mapped = officeCalibratedFloorPoint(
+        tileX: 11, tileY: 20, footprintWidth: 1,
+        floorRect: floorRect, imageRect: imageRect, quad: quad
+    )
+    // 앞줄 왼쪽 끝에서 반 칸 오른쪽(발밑은 가구 폭 가운데) → u = 0.5/9.
+    let expectedFront = officeFloorQuadPoint(u: 0.5 / 9, v: 0, quad: quad)
+    t.expect(
+        abs(mapped.x - (10 + expectedFront.x * 11)) < 1e-9,
+        "그림 사각형의 가로 범위에 얹는다 (\(mapped.x))"
+    )
+    t.expect(
+        abs(mapped.y - (20 + (1 - expectedFront.y) * 7)) < 1e-9,
+        "그림 좌표(아래로 증가)를 격자 좌표(위로 증가)로 뒤집는다 (\(mapped.y))"
+    )
+    // 폭이 2칸인 가구는 그 **가운데**가 기준이다.
+    let wide = officeCalibratedFloorPoint(
+        tileX: 11, tileY: 20, footprintWidth: 2,
+        floorRect: floorRect, imageRect: imageRect, quad: quad
+    )
+    let narrow = officeCalibratedFloorPoint(
+        tileX: 11, tileY: 20, footprintWidth: 1,
+        floorRect: floorRect, imageRect: imageRect, quad: quad
+    )
+    t.expect(wide.x > narrow.x, "폭이 넓은 가구는 기준점이 반 칸 더 오른쪽이다")
+    // 뒤쪽 줄은 화면에서 위로 간다(격자 y 가 커진다).
+    let backRow = officeCalibratedFloorPoint(
+        tileX: 15, tileY: 25, footprintWidth: 1,
+        floorRect: floorRect, imageRect: imageRect, quad: quad
+    )
+    let frontRow = officeCalibratedFloorPoint(
+        tileX: 15, tileY: 20, footprintWidth: 1,
+        floorRect: floorRect, imageRect: imageRect, quad: quad
+    )
+    t.expect(backRow.y > frontRow.y, "뒷줄이 앞줄보다 화면 위에 놓인다")
+    // 사각형이 찌그러졌으면(폭·높이 0) 격자 좌표를 그대로 돌려준다 — 화면에서 사라지지 않는다.
+    let degenerate = officeCalibratedFloorPoint(
+        tileX: 4, tileY: 9, footprintWidth: 1,
+        floorRect: OfficeRect(x: 0, y: 0, width: 0, height: 6),
+        imageRect: imageRect, quad: quad
+    )
+    t.expect(
+        degenerate.x == 4.5 && degenerate.y == 9,
+        "바닥 범위가 비면 격자 좌표를 그대로 쓴다"
+    )
+
+    // === 깊이 배율 ===
+    //
+    // 새 렌더 크기를 정하는 값이라 상한·하한·감소가 모두 지켜져야 한다(리뷰 지적).
+    t.expectEqual(officeFloorDepthScale(v: 0, quad: quad), 1.0, "앞줄은 원래 크기")
+    var previousScale = 1.0
+    for step in 1...10 {
+        let scale = officeFloorDepthScale(v: Double(step) / 10, quad: quad)
+        t.expect(scale <= previousScale + 1e-12, "깊이 \(step)/10 에서 더 커지지 않는다")
+        t.expect(scale >= officeFloorDepthScaleFloor - 1e-12, "하한 아래로 내려가지 않는다")
+        t.expect(scale <= 1.0 + 1e-12, "앞줄보다 커지지 않는다")
+        previousScale = scale
+    }
+    // 뒤쪽이 앞쪽의 절반인 극단적인 사각형에서도 하한에서 멈춘다.
+    let steep = OfficeFloorQuad(
+        backLeft: OfficeNormalizedPoint(0.25, 0.30),
+        backRight: OfficeNormalizedPoint(0.75, 0.30),
+        frontRight: OfficeNormalizedPoint(1.00, 1.00),
+        frontLeft: OfficeNormalizedPoint(0.00, 1.00)
+    )
+    t.expectEqual(
+        officeFloorDepthScale(v: 1, quad: steep), officeFloorDepthScaleFloor,
+        "바닥이 절반으로 좁아져도 하한에서 멈춘다"
+    )
+    // 하한을 풀면 실제 비율(0.5)이 나온다 — 하한이 값을 만드는 것이 아니라 막는 것임을 보인다.
+    t.expect(
+        abs(officeFloorDepthScale(v: 1, quad: steep, floor: 0) - 0.5) < 1e-9,
+        "하한을 풀면 바닥 폭 비율 그대로다"
+    )
+
     // 그림이 덮는 사각형과 렌더가 쓰는 값이 같아야 한다 — 다르면 사람이 그림 밖 바닥에 선다.
     let surface = officeCommonAreaSurfaceRect(originX: 4, width: 8, labelY: 15)
     t.expectEqual(surface.x, 4, "공용 그림은 구역 왼쪽 끝에서 시작한다")

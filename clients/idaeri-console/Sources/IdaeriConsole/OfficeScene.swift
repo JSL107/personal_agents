@@ -549,8 +549,11 @@ final class OfficeScene: SKScene {
             )
         }
         if let area = plan.commonAreas.first(where: { area in
+            // **맨 아래 줄(`labelY`)은 방이 아니라 가로 복도다.** 보정 대상에 넣으면 그 줄이
+            // 바닥 사각형 **밖**(v = -1/3)으로 사영돼, 회의실·대표실·탕비실 앞을 지나는
+            // 사람이 방 경계마다 꺾이거나 튄다(리뷰 지적). 복도는 격자 좌표 그대로 둔다.
             tile.x >= area.originX && tile.x < area.originX + area.width
-                && tile.y >= area.labelY
+                && tile.y >= area.labelY + 1
         }) {
             return (
                 officeCommonAreaFloorRect(
@@ -742,11 +745,8 @@ final class OfficeScene: SKScene {
             guard let node = characters[agent.agentType] else {
                 continue  // 출근 판정이 away — 위 applyAttendance가 이미 걸러냈다.
             }
-            // 뒤쪽 자리는 바닥이 좁아진 만큼 작게 그린다 — 크기가 그대로면 뒷줄 사람이
-            // 앞줄과 같은 덩치로 서서 책상과 겹친다(사용자 보고).
-            node.resize(
-                tileSize: tileSize, spriteScale: characterScale * floorDepthScale(seat)
-            )
+            // 크기는 아래 배치 함수가 **실제로 놓이는 칸** 기준으로 정한다(`applyDepthScale`).
+            node.resize(tileSize: tileSize, spriteScale: characterScale)
             // 이름표가 쓸 수 있는 폭은 자리마다 다르다(옆자리와의 간격·벽까지의 거리).
             // 창 크기가 바뀌면 이 경로를 다시 지나므로 갱신도 여기 한 곳에 둔다.
             node.setNameplateSpan(nameplateSpan(for: seat))
@@ -1478,7 +1478,7 @@ final class OfficeScene: SKScene {
             look: roommateLooks[agent.agentType] ?? characterLook(for: agent.agentType),
             tile: seat
         )
-        node.resize(tileSize: tileSize, spriteScale: characterScale * floorDepthScale(seat))
+        node.resize(tileSize: tileSize, spriteScale: characterScale)
         node.apply(state: agent.state)
         return node
     }
@@ -1496,7 +1496,17 @@ final class OfficeScene: SKScene {
     private func place(_ node: CharacterNode, at tile: TilePoint) {
         node.tile = tile
         node.place(at: floorPoint(tile), depth: depth(of: tile))
+        applyDepthScale(node, at: tile)
         refreshDoors()
+    }
+
+    /// 사람을 **지금 서 있는 칸의 깊이**에 맞춰 키운다/줄인다.
+    ///
+    /// 자리를 정하는 지점마다 함께 부른다. 한때 `sync` 에서 홈 좌석 기준으로 한 번만 줄였는데,
+    /// 그러면 뒷줄 좌석 주인이 앞쪽 대기열이나 특화 콘솔에 서 있는 동안에도 홈 좌석 배율(최대
+    /// 0.75배)로 작아진 채 남는다(리뷰 지적). 배치와 크기는 같은 자리에서 정해야 갈리지 않는다.
+    private func applyDepthScale(_ node: CharacterNode, at tile: TilePoint) {
+        node.resize(tileSize: tileSize, spriteScale: characterScale * floorDepthScale(tile))
     }
 
     /// 길찾기 좌석과 3D workstation 이미지의 실제 의자 위치를 분리한다.
@@ -1526,6 +1536,9 @@ final class OfficeScene: SKScene {
             // (+2)과 글자(+3)는 책상 앞에 남는 범위로만 미세하게 뒤로 보낸다.
             depth: depth(of: assignment.seat) - 0.24
         )
+        // 책상 칸 기준으로 크기를 맞춘다 — 사람이 그 책상에 붙어 앉으므로 좌석 칸이 아니라
+        // 책상 칸의 깊이가 눈에 보이는 크기를 정한다.
+        applyDepthScale(node, at: assignment.desk)
         refreshDoors()
     }
 
@@ -1575,6 +1588,7 @@ final class OfficeScene: SKScene {
             // 그때는 신발이 앞판 위로 다시 나온다.
             depth: depth(of: tile) - 1.00
         )
+        applyDepthScale(node, at: tile)
         refreshDoors()
     }
 
@@ -1593,6 +1607,7 @@ final class OfficeScene: SKScene {
         node.tile = logicalTile
         let visualTile = TilePoint(x: logicalTile.x, y: logicalTile.y + 1)
         node.place(at: floorPoint(visualTile), depth: depth(of: visualTile))
+        applyDepthScale(node, at: visualTile)
         refreshDoors()
     }
 
@@ -2938,6 +2953,9 @@ final class OfficeScene: SKScene {
             node.stand()
             node.tile = goal
             node.place(at: floorPoint(goal), depth: depth(of: goal))
+            // 동작을 줄인 경로도 목적지 깊이로 크기를 맞춘다 — 여기서 빠뜨리면 복도에서
+            // 뒷줄 책상으로 돌아온 사람이 1.0 배율인 채 앉는다(리뷰 지적).
+            applyDepthScale(node, at: goal)
             node.endWalk()
             completion?()
             return
@@ -2988,10 +3006,7 @@ final class OfficeScene: SKScene {
                 node.zPosition = self.depth(of: step)
                 // 한 칸 옮길 때마다 크기도 그 깊이에 맞춘다 — 방 안쪽으로 걸어 들어가면
                 // 작아지고 나오면 커진다.
-                node.resize(
-                    tileSize: self.tileSize,
-                    spriteScale: self.characterScale * self.floorDepthScale(step)
-                )
+                self.applyDepthScale(node, at: step)
                 // 한 칸 옮길 때마다 문을 다시 본다 — 다가서면 열리고 지나가면 닫힌다.
                 self.refreshDoors()
                 // 한 칸에 한 걸음 — 다리가 엇갈린 프레임으로 갈아끼운다. 방향 전환보다 뒤에
