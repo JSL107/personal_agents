@@ -37,6 +37,21 @@ const buildGuardKey = (groupKey: string, firedAtKst: string): string =>
 const buildSlotKey = (groupKey: string, slotId: string): string =>
   `autopilot:slot:${groupKey}:${slotId}`;
 
+// 채널에 올라간 카드는 알림이 울리지 않아 읽히지 않은 채 흘러간다 — 채널 발송에만 owner 멘션을
+// 맨 앞 줄로 붙인다. DM 은 이미 본인에게 가므로 붙이지 않는다(같은 알림이 두 번 울린다).
+//
+// 멘션은 반드시 `<@유저ID>` 형식이어야 한다. `@핸들` 은 그냥 글자로 렌더돼 알림이 가지 않는다.
+// target 이 유저 ID(`U…`, Enterprise Grid 는 `W…`)면 DM, 그 밖(`C…`/`G…`/`#name`)은 채널이다
+// — chat.postMessage 의 channel 인자가 받는 값 규칙 그대로다.
+const DIRECT_MESSAGE_TARGET = /^[UW]/;
+
+const withOwnerMention = (
+  text: string,
+  target: string,
+  ownerSlackUserId: string,
+): string =>
+  DIRECT_MESSAGE_TARGET.test(target) ? text : `<@${ownerSlackUserId}>\n${text}`;
+
 // 플레이북 그룹을 실행 → 비-skip summaryText 를 메인 메시지로 합치고 detailText 는 스레드 댓글로,
 // 멱등 1회 후 다중 타깃 fan-out 발송. T1_PREVIEW task 의 preview 는 CreatePreviewUsecase →
 // postPreviewMessage 로 승인 버튼 발송(메인 텍스트와 별개).
@@ -206,7 +221,7 @@ export class AutopilotOrchestrator {
         try {
           await this.slackNotifier.postMessage({
             target: resolved,
-            text: failureNotice,
+            text: withOwnerMention(failureNotice, resolved, ownerSlackUserId),
           });
         } catch (error: unknown) {
           const message =
@@ -300,7 +315,7 @@ export class AutopilotOrchestrator {
         for (const resolved of targets) {
           const { ts } = await this.slackNotifier.postMessage({
             target: resolved,
-            text: mainText,
+            text: withOwnerMention(mainText, resolved, ownerSlackUserId),
             ...(unfurlLinks === false ? { unfurlLinks: false } : {}),
           });
           if (ts) {
