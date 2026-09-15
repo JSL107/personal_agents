@@ -1,5 +1,9 @@
 /**
  * 사람이 판정한 PR 지적을 당시 headSha로 다시 리뷰한다. 모델 구독 쿼터를 쓴다.
+ * diff는 PR에 고정된 base SHA와 당시 headSha 사이로 재구성한다 — base를 브랜치 이름으로 잡으면
+ * 그 사이 base가 head를 흡수한 PR에서 빈 diff가 나온다(실측: sbe-api-v5-puppeteer#152 0 bytes).
+ * 파일 목록과 증감 줄 수는 그 diff에서 다시 센다. 제목·본문·작성자는 현재 값이다 —
+ * GitHub가 과거 시점의 PR 본문을 주지 않으므로, 그 뒤 수정된 PR은 입력이 완전히 같지는 않다.
  * 학습 규약에는 재생 대상의 기각 사유가 이미 포함될 수 있어, 운영과 같은 조건이지만
  * 오탐 억제 성능을 과대평가할 수 있다. 중요한 변경은 같은 --ids로 두 번 실행한다.
  * 리플레이 run은 CODE_REVIEWER/MANUAL로 원장에 남는다. 스윕 판정은
@@ -114,12 +118,16 @@ const main = async (): Promise<void> => {
           repo: repository,
           number: pullNumber,
         });
-        const detail = { ...currentDetail, headSha };
         const diff = await github.compareCommits({
           repo: repository,
-          baseSha: detail.baseRef,
+          baseSha: currentDetail.baseSha,
           headSha,
         });
+        const detail = {
+          ...currentDetail,
+          headSha,
+          ...summarizeDiff(diff.diff),
+        };
         const outcome = await usecase.execute({
           prRef: `${repository}#${pullNumber}`,
           slackUserId: 'cli-review-replay',
@@ -174,6 +182,45 @@ const main = async (): Promise<void> => {
   } finally {
     await application.close();
   }
+};
+
+// 프롬프트에 실리는 파일 목록·증감 줄 수를 재생 diff에서 다시 센다. 현재 PR 값을 그대로 두면
+// 모델이 보는 diff와 메타데이터가 어긋난다(카드 이후 커밋이 더 붙은 PR).
+interface DiffSummary {
+  changedFiles: string[];
+  changedFilesTotalCount: number;
+  changedFilesTruncated: boolean;
+  additions: number;
+  deletions: number;
+}
+
+const summarizeDiff = (diff: string): DiffSummary => {
+  const changedFiles: string[] = [];
+  let additions = 0;
+  let deletions = 0;
+  for (const line of diff.split('\n')) {
+    if (line.startsWith('+++ b/')) {
+      changedFiles.push(line.slice('+++ b/'.length).trim());
+      continue;
+    }
+    if (line.startsWith('+++') || line.startsWith('---')) {
+      continue;
+    }
+    if (line.startsWith('+')) {
+      additions += 1;
+      continue;
+    }
+    if (line.startsWith('-')) {
+      deletions += 1;
+    }
+  }
+  return {
+    changedFiles,
+    changedFilesTotalCount: changedFiles.length,
+    changedFilesTruncated: false,
+    additions,
+    deletions,
+  };
 };
 
 const selectFindings = async (

@@ -103,6 +103,41 @@ describe('matchReplayedFinding', () => {
   });
 });
 
+describe('scoreReplay — 후보 소진', () => {
+  // 한 재생 지적이 가까운 카드 여러 장을 동시에 채우면 재현 수가 부풀려진다.
+  it('같은 재생 지적을 두 카드가 나눠 갖지 않는다', () => {
+    const replayed: ReplayedFinding[] = [
+      {
+        file: 'src/example.ts',
+        line: 20,
+        category: 'CORRECTNESS',
+        body: '하나뿐',
+      },
+    ];
+    const first: LabeledFinding = { ...LABELED, id: 1, line: 20 };
+    const second: LabeledFinding = { ...LABELED, id: 2, line: 22 };
+
+    const score = scoreReplay([
+      { labeled: first, replayed },
+      { labeled: second, replayed },
+    ]);
+
+    expect(score.results.map((result) => result.reproduced)).toEqual([
+      true,
+      false,
+    ]);
+    expect(score.rejected).toEqual({ total: 2, reproduced: 1, rate: 0.5 });
+  });
+
+  it('이미 매칭된 후보를 넘기면 그 후보는 건너뛴다', () => {
+    const candidate: ReplayedFinding = { ...REPLAYED };
+
+    expect(
+      matchReplayedFinding(LABELED, [candidate], new Set([candidate])),
+    ).toBeUndefined();
+  });
+});
+
 describe('scoreReplay', () => {
   it('표본이 없으면 두 비율 모두 null이다', () => {
     expect(scoreReplay([])).toEqual({
@@ -113,10 +148,15 @@ describe('scoreReplay', () => {
   });
 
   it('REJECTED와 FIXED를 분리 집계하고 각 id와 매칭 결과를 남긴다', () => {
+    // 카드마다 자기 회차의 재생 결과를 본다 — 후보는 회차별로 별개 객체다.
+    const fixedReplayed: ReplayedFinding = { ...REPLAYED };
     const score = scoreReplay([
       { labeled: LABELED, replayed: [REPLAYED] },
       { labeled: { ...LABELED, id: 2 }, replayed: [] },
-      { labeled: { ...LABELED, id: 3, label: 'FIXED' }, replayed: [REPLAYED] },
+      {
+        labeled: { ...LABELED, id: 3, label: 'FIXED' },
+        replayed: [fixedReplayed],
+      },
     ]);
     expect(score).toEqual({
       rejected: { total: 2, reproduced: 1, rate: 0.5 },
@@ -124,7 +164,7 @@ describe('scoreReplay', () => {
       results: [
         { id: 1, label: 'REJECTED', reproduced: true, matched: REPLAYED },
         { id: 2, label: 'REJECTED', reproduced: false },
-        { id: 3, label: 'FIXED', reproduced: true, matched: REPLAYED },
+        { id: 3, label: 'FIXED', reproduced: true, matched: fixedReplayed },
       ],
     });
   });
