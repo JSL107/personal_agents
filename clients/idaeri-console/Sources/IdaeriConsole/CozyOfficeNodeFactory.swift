@@ -704,24 +704,28 @@ enum CozyOfficeNodeFactory {
             // 스프라이트 한 장을 눌러서는 경첩 회전이 표현되지 않는다 — 열린 문은 각도가
             // 바뀌면서 보이는 면 자체가 달라지는데, 그것은 원화가 따로 있어야 한다.
             //
-            // 그래서 **비켜 준다.** 사람이 다가오면 문짝을 옅게 해 지나갈 수 있음을 알리고,
-            // 떠나면 원래 농도로 돌아온다. 문이 사라지지 않으므로 방 경계는 계속 보이고,
-            // 닫힌 문을 뚫고 지나가는 인상도 줄어든다. 열린 문 원화가 들어오면 그때
-            // 텍스처 교체로 바꾸면 된다.
+            // 열린 문 원화와 닫힌 문 원화는 프레임·캔버스가 같으므로, 논리 문 노드의 크기와
+            // 위치를 건드리지 않고 텍스처만 교체하면 사람이 다가올 때 실제 회전한 문짝이 보인다.
             guard let sprite = node as? SKSpriteNode else {
                 return
             }
             // **숨겨 둔 문은 건드리지 않는다.** 좌우 경계에서는 방 셸 그림이 이미 문을
             // 가지고 있어 이 스프라이트를 `alpha = 0` 으로 감추는데, 여닫기는 보이든
-            // 안 보이든 모든 문 노드에 불린다. 농도를 무조건 바꾸면 감춰 둔 문이 셸의 문
-            // **위에 겹쳐 되살아난다.** 이미 보이는 문(가로 경계)만 농도를 조절한다.
+            // 안 보이든 모든 문 노드에 불린다. 아래에서 농도를 1 로 되돌리므로, 이 가드가
+            // 없으면 감춰 둔 문이 셸의 문 **위에 겹쳐 되살아난다.** 이미 보이는 문
+            // (가로 경계)만 그림을 바꾼다.
             guard sprite.alpha > 0.01 else {
                 return
             }
-            sprite.run(
-                .fadeAlpha(to: open ? 0.32 : 1, duration: 0.18),
-                withKey: "doorSwing"
-            )
+            guard let texture = SpriteLoader.cozyFurnitureTexture(
+                open ? .doorOpen : .doorClosed
+            ) else {
+                return
+            }
+            sprite.removeAction(forKey: "doorSwing")
+            sprite.texture = texture
+            sprite.texture?.filteringMode = .linear
+            sprite.alpha = 1
             return
         }
         panel.fillColor = open
