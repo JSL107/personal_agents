@@ -1836,7 +1836,7 @@ public struct OfficeFloorPlan: Codable, Sendable {
 }
 
 /// 공용 구역의 종류. 라벨 문자열로 구역을 찾으면 이름을 다듬는 순간 조용히 어긋난다.
-public enum CommonAreaKind: String, Equatable, Codable, Sendable {
+public enum CommonAreaKind: String, Equatable, Codable, Sendable, CaseIterable {
     case meeting
     case president
     case pantry

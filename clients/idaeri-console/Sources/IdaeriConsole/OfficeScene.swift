@@ -1576,9 +1576,19 @@ final class OfficeScene: SKScene {
     /// 완성형 3D 방 그림을 쓰는 동안은 참이다. 이때는 도트용 정수배 계단에 딸린 보조 장치 —
     /// 창을 스스로 키워 계단에 맞추기(`snapWindowUpToFloorPlanStep`), "최저 배율" 안내 — 가
     /// 할 일이 없어 꺼진다. 계단이 없으니 메울 틈도 없다.
+    ///
+    /// **지금 평면도가 아니라 번들 전체를 본다.** `sync` 는 새 평면도를 만들기 **전에** 배치 열 수를
+    /// 고른다. 평면도로 판정하면 그 순간에는 옛 평면도를 검사하게 되어, 원화가 없는 부서가 새로
+    /// 들어오는 스냅샷에서 열 수는 연속 기준으로·그리기는 계단 기준으로 갈린다(리뷰 지적). 부서·
+    /// 공용 공간 방 그림이 번들에 전부 있는지는 앱 수명 동안 바뀌지 않으므로, 평면도가 언제
+    /// 바뀌든 같은 답을 낸다.
     var usesContinuousScale: Bool {
-        usesCompleteRoomArchitecture
+        Self.bundleHasCompleteRoomArt
     }
+
+    private static let bundleHasCompleteRoomArt: Bool =
+        Department.allCases.allSatisfy { SpriteLoader.cozyDepartmentRoomTexture($0) != nil }
+            && CommonAreaKind.allCases.allSatisfy { SpriteLoader.cozyCommonAreaTexture($0) != nil }
 
     /// 사람을 보낼 수 있는 목적지 — 완성형 방 그림을 쓰는 동안은 **화면에 실제로 그려지는
     /// 가구**만 남긴다. 안 보이는 물건 앞으로 보내면 말풍선이 빈 바닥에서 뜬다
