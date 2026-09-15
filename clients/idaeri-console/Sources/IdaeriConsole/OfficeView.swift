@@ -104,7 +104,13 @@ struct OfficeView: View {
                     // `officeFocusedViewMetrics` 다. 그대로 두면 전체 도면 기준으로 창만
                     // 커지고 방 배율은 그대로여서(11x7 방은 936x904 에서도 이미 80px 이다)
                     // 늘어난 만큼이 전부 여백이 된다.
-                    guard focusedRoom == nil, let window = notification.object as? NSWindow
+                    //
+                    // **연속 배율이면 창에 손대지 않는다.** 이 보조 장치는 도면 배율이 20→40px
+                    // 로 두 배씩 뛰는 계단이라 몇십 px 모자라면 도면이 절반이 되는 것을 메우려고
+                    // 창을 스스로 키웠다. 계단이 없어진 뒤에도 돌면 사용자가 정한 창 크기를
+                    // 앱이 되바꾸는 것만 남는다(사용자 보고: "높이가 바뀔 때마다 창 크기도 다르다").
+                    guard focusedRoom == nil, !scene.usesContinuousScale,
+                        let window = notification.object as? NSWindow
                     else {
                         return
                     }

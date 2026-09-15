@@ -431,4 +431,92 @@ func runOfficeViewMetricsTests(_ t: TestRunner) {
         viewWidth: 1400, viewHeight: 820, columns: 35, rows: 20
     )
     t.expectEqual(standardVector.tileSize, 40, "일반 1400x820 오피스 배율은 유지")
+
+    runOfficeContinuousViewMetricsTests(t)
+}
+
+/// 완성형 3D 방 그림의 연속 배율. 계단 함수이던 시절 1280×800 에서 도면이 20px 로 떨어져
+/// 가운데 조그맣게 줄고, 세로로 긴 창에서는 아래 방이 잘렸다(사용자 보고).
+private func runOfficeContinuousViewMetricsTests(_ t: TestRunner) {
+    let plans = [officePlanSize(zoneColumns: 3), officePlanSize(zoneColumns: 2)]
+    // 실사용에서 나오는 창 크기를 넓게 훑는다 — 한 크기만 보면 그 크기에서만 맞는 공식이 통과한다.
+    let windows: [(Double, Double)] = [
+        (1440, 900), (1280, 800), (1100, 700), (1000, 760), (960, 1050),
+        (1600, 1300), (720, 520), (2560, 1349), (1366, 700), (900, 1400),
+    ]
+    let epsilon = 1e-6
+    for plan in plans {
+        for (width, height) in windows {
+            let metrics = officeContinuousViewMetrics(
+                viewWidth: width, viewHeight: height, columns: plan.columns, rows: plan.rows
+            )
+            let drawnWidth = metrics.tileSize * Double(plan.columns)
+            let drawnHeight = metrics.tileSize * Double(plan.rows)
+            let label = "\(plan.columns)x\(plan.rows) 도면 · \(Int(width))x\(Int(height)) 창"
+            // **어느 축도 넘치지 않는다** — 넘치면 그 축의 방이 잘린다.
+            t.expect(drawnWidth <= width + epsilon, "\(label): 가로가 넘치지 않는다")
+            t.expect(drawnHeight <= height + epsilon, "\(label): 세로가 넘치지 않는다")
+            // **한 축은 꼭 맞는다** — 둘 다 남으면 도면을 더 키울 수 있었는데 안 키운 것이다.
+            t.expect(
+                abs(drawnWidth - width) < epsilon || abs(drawnHeight - height) < epsilon,
+                "\(label): 가로나 세로 한쪽은 창에 꼭 맞는다"
+            )
+            // 가운데 정렬 — 남는 여백이 양쪽으로 같다.
+            t.expect(
+                abs(metrics.originX * 2 + drawnWidth - width) < epsilon
+                    && abs(metrics.originY * 2 + drawnHeight - height) < epsilon,
+                "\(label): 남는 여백을 양쪽에 같게 나눈다"
+            )
+        }
+    }
+
+    // **창을 조금 바꾸면 도면도 조금만 바뀐다.** 계단 함수에서는 1280×800 에서 세로를 10px
+    // 줄이는 것만으로 도면이 절반(40→20px)이 될 수 있었다.
+    let plan = officePlanSize(zoneColumns: 3)
+    let before = officeContinuousViewMetrics(
+        viewWidth: 1280, viewHeight: 800, columns: plan.columns, rows: plan.rows
+    )
+    let after = officeContinuousViewMetrics(
+        viewWidth: 1280, viewHeight: 790, columns: plan.columns, rows: plan.rows
+    )
+    t.expect(
+        abs(after.tileSize - before.tileSize) / before.tileSize < 0.02,
+        "세로 10px 차이는 배율을 2% 안에서만 바꾼다"
+    )
+    // 같은 창에서 옛 계단보다 작아지지 않는다 — 계단은 창 안에 들어가는 값 중 계단 위의 것만
+    // 골랐으니, 제약 없이 꼭 맞춘 값은 그보다 크거나 같아야 한다(세로 초과를 허용하던 경우 제외).
+    let stepped = officeViewMetrics(
+        viewWidth: 1280, viewHeight: 800, columns: plan.columns, rows: plan.rows, backingScale: 2
+    )
+    t.expect(
+        before.tileSize > stepped.tileSize,
+        "1280x800 에서 연속 배율(\(before.tileSize))이 계단 배율(\(stepped.tileSize))보다 크다"
+    )
+
+    // 방 하나 확대 — 그 방이 창 가운데 온전히 들어오고, 전체 도면보다 작아지지는 않는다.
+    let focus = OfficeRect(x: 12, y: 7, width: 11, height: 7)
+    let full = officeContinuousViewMetrics(
+        viewWidth: 1280, viewHeight: 800, columns: plan.columns, rows: plan.rows
+    )
+    let zoomed = officeContinuousViewMetrics(
+        viewWidth: 1280, viewHeight: 800, columns: plan.columns, rows: plan.rows, focus: focus
+    )
+    t.expect(zoomed.tileSize >= full.tileSize, "방 확대 배율은 전체 도면보다 작지 않다")
+    let focusLeft = zoomed.originX + focus.x * zoomed.tileSize
+    let focusBottom = zoomed.originY + focus.y * zoomed.tileSize
+    let focusRight = focusLeft + focus.width * zoomed.tileSize
+    let focusTop = focusBottom + focus.height * zoomed.tileSize
+    t.expect(
+        focusLeft >= -epsilon && focusBottom >= -epsilon
+            && focusRight <= 1280 + epsilon && focusTop <= 800 + epsilon,
+        "확대한 방이 창 밖으로 잘리지 않는다"
+    )
+    t.expect(
+        abs((focusLeft + focusRight) / 2 - 640) < epsilon
+            && abs((focusBottom + focusTop) / 2 - 400) < epsilon,
+        "확대한 방이 창 가운데 온다"
+    )
+
+    let empty = officeContinuousViewMetrics(viewWidth: 0, viewHeight: 800, columns: 35, rows: 20)
+    t.expect(empty.tileSize > 0, "창 크기가 0 이어도 0 으로 나누지 않는다")
 }

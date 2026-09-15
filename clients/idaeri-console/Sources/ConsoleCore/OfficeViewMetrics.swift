@@ -182,6 +182,51 @@ public func officeVectorViewMetrics(
     )
 }
 
+/// 완성형 3D 방 그림을 쓰는 오피스의 배율 — **창에 꼭 맞는 연속값**(순수).
+///
+/// 위의 두 함수가 정수배·10px 계단을 고르는 이유는 전부 도트 그림이다. 도트는 정수배가
+/// 아니면 픽셀 폭이 들쭉날쭉해진다. 지금 방·가구·사람은 선형 필터로 늘리는 3D 원화라 그
+/// 제약이 없는데, 계단은 그대로 남아 창 크기에 대해 계단 함수로 동작했다.
+///
+/// - 1280×800 창에서 40px 계단에 몇십 px 모자라 20px 로 떨어져, 도면이 가운데 조그맣게
+///   쪼그라들고 사방이 비었다(사용자 보고: "높이가 바뀔 때마다 창 크기도 다르고").
+/// - 그걸 막으려던 세로 두 줄 초과 허용 때문에 세로로 긴 창에서는 아래 방이 잘렸다.
+/// - 계단을 메우려고 창을 스스로 키우는 보조 장치까지 붙어, 사용자가 창 크기를 못 정했다.
+///
+/// 여기서는 가로·세로 중 먼저 닿는 쪽에 **정확히** 맞춘다. 어느 축도 넘치지 않으므로 잘리는
+/// 곳이 없고, 창을 조금 바꾸면 도면도 조금만 바뀐다.
+///
+/// `focus` 를 주면 그 방 하나를 화면 가운데 담는다. 확대인데 축소가 되면 안 되므로 전체
+/// 도면의 배율보다 작아지지는 않는다.
+public func officeContinuousViewMetrics(
+    viewWidth: Double,
+    viewHeight: Double,
+    columns: Int,
+    rows: Int,
+    focus: OfficeRect? = nil
+) -> OfficeViewMetrics {
+    guard viewWidth > 0, viewHeight > 0, columns > 0, rows > 0 else {
+        return OfficeViewMetrics(tileSize: 1, originX: 0, originY: 0)
+    }
+    let fullTileSize = min(viewWidth / Double(columns), viewHeight / Double(rows))
+    guard let focus, focus.width > 0, focus.height > 0 else {
+        return OfficeViewMetrics(
+            tileSize: fullTileSize,
+            originX: (viewWidth - fullTileSize * Double(columns)) / 2,
+            originY: (viewHeight - fullTileSize * Double(rows)) / 2
+        )
+    }
+    let focusTileSize = max(
+        fullTileSize,
+        min(viewWidth / focus.width, viewHeight / focus.height)
+    )
+    return OfficeViewMetrics(
+        tileSize: focusTileSize,
+        originX: viewWidth / 2 - (focus.x + focus.width / 2) * focusTileSize,
+        originY: viewHeight / 2 - (focus.y + focus.height / 2) * focusTileSize
+    )
+}
+
 /// 방 하나를 화면 가운데에 담는 정수 배율 값(순수).
 ///
 /// 카메라를 쓰지 않는다. 타일 크기와 원점만 바꿔 기존 재배치 경로를 그대로 태우므로,
