@@ -1195,8 +1195,14 @@ public enum FurnitureKind: String, Codable, Sendable, CaseIterable {
 ///
 /// 벽 선반(`wallShelf`)은 3D 그림이 있는데도 뺐다. 벽걸이라 앞자리가 방과 복도 사이 벽
 /// 바깥, 즉 복도로 잡힌다(`officeInteractionNeighbors`).
+///
+/// **책장(`bookshelf`)도 뺐다.** 3D 그림은 있지만 벽에 등을 대고 서는 물건인데 배치가 주는
+/// 자리는 방 안쪽 바닥이라, 방 한가운데에 책장이 홀로 서 있었다. 게다가 방 셸 그림에 이미
+/// 벽마다 책장과 자료 선반이 그려져 있어 같은 물건이 한 방에 두 번 나오는 콜라주가 됐다
+/// (사용자 보고). 책장을 다시 세우려면 벽에 등을 댄 자리를 따로 잡아야 하고, 그것은 좌석·
+/// 경로와 함께 봐야 하는 별개의 작업이다.
 public let officeCozyDrawnFurnitureKinds: Set<FurnitureKind> = [
-    .desk, .chairDown, .chairUp, .bookshelf,
+    .desk, .chairDown, .chairUp,
     .sofa2, .sofa3, .meetingTable, .coffeeTable,
     .coffeeMachine, .sinkCounter,
     // 쓰레기통은 상호작용이 아니라 **청소 표시의 기준점**이라 남는다 — 청소기와 먼지가
@@ -1224,10 +1230,15 @@ public func officeIsRoomCeilingDoor(
     guard kind == .doorClosed || kind == .doorOpen else {
         return false
     }
+    // **x 는 방 안쪽까지만이다.** 방이 차지하는 칸은 `origin.x ..< origin.x + width` 이므로
+    // 마지막 칸은 `origin.x + width - 1` 이다. 한때 `<= origin.x + width` 로 두어 방 바로
+    // 바깥 한 칸 — 즉 방과 방 사이 세로 복도의 첫 칸 — 까지 참이 됐고, 그 자리의 문이
+    // 셸 소유 판정을 우회해 **벽도 문틀도 없는 복도 바닥에 문짝만 서 있었다**(사용자 보고).
+    // 좌우 경계의 문은 방 셸 그림이 이미 문과 기둥까지 그려 두므로 코드가 겹쳐 그릴 몫이 없다.
     return plan.zones.contains { zone in
         tile.y == zone.origin.y + zone.height - 1
             && tile.x >= zone.origin.x
-            && tile.x <= zone.origin.x + zone.width
+            && tile.x < zone.origin.x + zone.width
     }
 }
 
@@ -1342,7 +1353,12 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
         // 더 채우려면 자리 후보를 늘려야 하고, 그것은 좌석·경로와의 충돌을 함께 봐야 하는
         // 별개의 작업이다. 지금은 자리에 들어가는 만큼만(칸막이 하나 · 큰 화분 하나) 더한다.
         return [
-            .bookshelf, .bookshelf, .partitionGlass, .clock, .wallPinboard, .wallShelf,
+            // **두 번째 자리(가운데 띠 (5,3))가 낮은 테이블이다.** 책장이 셸 소유로
+            // 넘어가면서(`officeCozyDrawnFurnitureKinds`) 이 방에 그려지는 가구가 한 점도
+            // 없어졌고, 방 사람 전원이 배회할 때마다 방을 나갔다. 벽 줄 첫 칸과 맨 아래
+            // (9,0) 은 안 된다 — 앞자리가 벽 밖이거나 **문 칸**이라 목적지에서 빠진다
+            // (`officeStrollSpots` 의 문 칸 주석). 사방이 트인 가운데 띠라야 한다.
+            .bookshelf, .coffeeTable, .partitionGlass, .clock, .wallPinboard, .wallShelf,
             .partitionLow, .plantTall, .filingCabinet, .printer, .plantSmall,
             // 가운데 줄에 세운 것 — 책장을 하나 더 세워 자료를 쌓아 두는 방으로.
             // **세로 쌍은 하나만 쓴다.** 두 쌍이 양쪽을 막으면 그 사이의 예비 격자
@@ -1371,7 +1387,9 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
         // 자리에서는 그쪽 복합기가 여전히 더 가깝다 — 명단이 3열 8→6, 2열 11→10 으로 줄어든
         // 것이 그 차이다. 남은 하나는 목적지 선택이 방을 알아야 풀린다.
         return [
-            .bookshelf, .bookshelf, .filingCabinet, .wallWhiteboard, .wallPinboard,
+            // 첫 자리는 낮은 테이블 — 품질 방과 같은 이유다. 책장이 셸 소유로 넘어가
+            // 이 방에 그려지는 가구가 0이 됐고, 검토한 것을 펼쳐 놓는 테이블이 성격에 맞는다.
+            .coffeeTable, .bookshelf, .filingCabinet, .wallWhiteboard, .wallPinboard,
             .wallPoster,
             // 가운데 한 열에만 — 이 방은 좌우가 통로라 더 넣으면 좌석이 고립된다.
             .filingCabinet, .plantTall,
@@ -1453,7 +1471,9 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
             // 가운데 줄에 세운 것 — 설비와 수납이 모이는 방으로.
             // **세로 쌍은 하나만 쓴다.** 두 쌍이 양쪽을 막으면 그 사이의 예비 격자
             // 좌석이 갇힌다 — 인원이 늘어 자리표를 다 쓴 뒤에야 드러난다.
-            .bookshelf, .filingCabinet]
+            // 낮은 테이블 — 책장이 셸 소유로 넘어가면서 이 방이 다시 목적지 0개가 됐다.
+            // 설비만 모인 방이라 사람이 잠깐 머무를 자리가 하나는 있어야 한다.
+            .coffeeTable, .filingCabinet]
     }
 }
 
