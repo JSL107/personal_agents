@@ -145,6 +145,8 @@ public func cozyPosePosture(assetIndex: Int, pose: String) -> CozyPosePosture {
         return .seated
     case "typing":
         return assetIndex == 18 ? .standing : .seated
+    case "sitting":
+        return .seated
     // 6번 `writing`·7번 `reading` 은 예전에 앉은 그림이었다(각각 테이블·의자가 함께 그려져
     // 있었다). 가구 없는 **서 있는** 그림으로 교체돼 이제 예외가 아니다.
     default:
@@ -162,11 +164,12 @@ public func cozyPoseCandidates(_ normalized: String) -> [String] {
     switch normalized {
     case "sit":
         return ["sit"]
-    // 가구 앞에 앉는 연출은 **대신할 그림이 없다.** 유일한 착석 원화(`sit`)가 허리 아래
-    // 없는 그림이라 여기 쓰면 바닥에 뜨므로, 서 있는 기본 그림으로 내려간다. 소파 앞에
-    // 서 있는 것이 어색하긴 해도 하반신 없는 사람이 떠 있는 것보다 낫다.
+    // 가구 앞에 앉는 연출은 **전용 원화를 쓴다.** 무릎을 굽히고 발이 바닥에 닿은 전신
+    // 그림이라 소파·회의 테이블처럼 가려 줄 것이 없는 자리에서도 성립한다. 책상용
+    // `sit`(허리 아래가 없는 그림)과는 쓰임이 정반대라 서로 대신하지 않는다 — 책상용을
+    // 소파에 놓으면 상반신만 뜨고, 이쪽을 책상에 놓으면 다리가 상판 아래로 샌다.
     case "sitting":
-        return []
+        return ["sitting"]
     // **앉은 그림을 먼저 본다.** `sit` 원화는 허리 아래가 없고 팔을 앞으로 뻗은 그림으로
     // 다시 그려졌다 — 책상 뒤에 놓으면 다리가 샐 자리가 없어 "책상을 관통한" 인상이
     // 사라진다(사용자 보고로 재제작). 그 자세가 이미 타이핑이라 `typing` 원화를 따로
@@ -220,7 +223,7 @@ public func resolveCozyPose(
     // 의자도 없는데 `typing` 을 요청하면 앉은 그림이 뽑혀 사람이 공중에 주저앉는다
     // (사용자 보고). 그런 호출자는 `posture: .standing` 을 넘겨 선 그림만 받는다.
     let wanted: CozyPosePosture = requiredPosture
-        ?? ((normalized == "sit" || normalized == "typing") ? .seated : .standing)
+        ?? (["sit", "sitting", "typing"].contains(normalized) ? .seated : .standing)
     for candidate in cozyPoseCandidates(normalized) {
         guard !cozyPoseDrawsOwnFurniture(assetIndex: assetIndex, pose: candidate) else {
             continue

@@ -566,6 +566,7 @@ final class OfficeScene: SKScene {
             renderFloor()
             renderZoneLabels()
             renderFurniture()
+            renderMeetingTableProps()
             renderDepartmentFeatureProps()
             renderPresident()
         }
@@ -2161,13 +2162,36 @@ final class OfficeScene: SKScene {
         }
     }
 
-    // 회의 테이블 위 소품(서류 두 장·노트북)을 **걷었다.**
-    //
-    // 도형으로 그린 도트 시절 장식이다. 3D 회의 테이블 원화에는 소품이 없어 "회의 중" 느낌을
-    // 주려던 것인데, 평면 도형이 3D 상판 위에서 이질적인 데다 높이가 맞지 않아 테이블 **앞쪽
-    // 다리 사이에 떠 있었다**(사용자 보고). 로봇청소기·쓰레기통이 도형이던 시절과 같은 증상이고,
-    // 그 둘은 원화로 바꿔 해결했다. 테이블 소품은 장식이라 없어도 무방하므로 지운다 —
-    // 필요해지면 상판 위에 놓을 3D 소품 원화를 받아 같은 방식으로 세우면 된다.
+    /// 회의 테이블 위에 작업물을 올린다 — 빈 상판만으로는 "회의실" 로 읽히지 않는다.
+    ///
+    /// 한때 서류와 노트북을 **도형으로** 그렸는데, 평면 도형이 3D 상판 위에서 이질적인 데다
+    /// 높이가 맞지 않아 테이블 앞쪽 다리 사이에 떠 있었다(사용자 보고). 원화로 바꾼다 —
+    /// 로봇청소기·쓰레기통·먼지가 지나온 길과 같다. 원화가 없으면 상판을 비운다.
+    private func renderMeetingTableProps() {
+        objectLayer.children
+            .filter { $0.name == "cozy:meeting-props" }
+            .forEach { $0.removeFromParent() }
+        guard let table = plan.furniture.first(where: { $0.kind == .meetingTable }),
+            let texture = SpriteLoader.cozyDeskItemsTexture()
+        else {
+            return
+        }
+        let sprite = SKSpriteNode(texture: texture)
+        let source = texture.size()
+        // 상판 폭(3칸)의 절반 남짓. 더 키우면 테이블 밖으로 넘치고, 줄이면 뭘 놓았는지 안 보인다.
+        let width = tileSize * 1.5
+        sprite.size = CGSize(
+            width: width,
+            height: width * source.height / max(1, source.width)
+        )
+        sprite.texture?.filteringMode = .linear
+        sprite.name = "cozy:meeting-props"
+        let tablePoint = floorPoint(table.tile, footprintWidth: table.kind.footprint.width)
+        // 상판 위에 놓인 것으로 보이도록 발밑 기준에서 올린다. 값은 렌더 실측으로 잡았다.
+        sprite.position = CGPoint(x: tablePoint.x, y: tablePoint.y + tileSize * 0.62)
+        sprite.zPosition = depth(of: table.tile) + 0.10
+        objectLayer.addChild(sprite)
+    }
 
     /// Gives every department one semantic 3D workstation instead of filling the shell with
     /// generic desks. These sit in the deliberately open foreground and preserve walkable/path
