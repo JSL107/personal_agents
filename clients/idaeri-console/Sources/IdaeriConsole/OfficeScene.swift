@@ -404,21 +404,40 @@ final class OfficeScene: SKScene {
         // 배율 단위는 화면의 실제 픽셀 기준이라 backing scale 을 넘겨야 한다 — 1x 모니터에서
         // 60px 을 쓰면 40px 기준인 캐릭터·가구가 1.5배로 그려져 도트가 불규칙해진다.
         let backingScale = Double(view?.window?.backingScaleFactor ?? 2)
-        let fullMetrics = usesVectorMetrics
-            ? officeVectorViewMetrics(
+        // **완성형 3D 방 그림이면 계단을 쓰지 않는다.** 위 두 주석의 "도트가 불규칙해진다" 는
+        // 도트 그림 이야기인데, 방·가구·사람이 선형 필터로 늘리는 원화로 바뀐 뒤에도 정수배
+        // 계단이 남아 창 크기에 대해 계단 함수로 동작했다 — 1280×800 에서 20px 로 떨어져
+        // 도면이 가운데 조그맣게 줄고, 세로로 긴 창에서는 아래 방이 잘렸다(사용자 보고).
+        // 원화가 빠져 도트 경로로 내려간 경우에만 옛 계단을 쓴다.
+        let continuous = usesContinuousScale
+        let fullMetrics: OfficeViewMetrics
+        if continuous {
+            fullMetrics = officeContinuousViewMetrics(
                 viewWidth: Double(size.width), viewHeight: Double(size.height),
                 columns: plan.columns, rows: plan.rows
             )
-            : officeViewMetrics(
-            viewWidth: Double(size.width),
-            viewHeight: Double(size.height),
-            columns: plan.columns,
-            rows: plan.rows,
-            backingScale: backingScale
+        } else if usesVectorMetrics {
+            fullMetrics = officeVectorViewMetrics(
+                viewWidth: Double(size.width), viewHeight: Double(size.height),
+                columns: plan.columns, rows: plan.rows
             )
+        } else {
+            fullMetrics = officeViewMetrics(
+                viewWidth: Double(size.width),
+                viewHeight: Double(size.height),
+                columns: plan.columns,
+                rows: plan.rows,
+                backingScale: backingScale
+            )
+        }
         hudTileSize = CGFloat(fullMetrics.tileSize)
         let metrics: OfficeViewMetrics
-        if let focusRect {
+        if let focusRect, continuous {
+            metrics = officeContinuousViewMetrics(
+                viewWidth: Double(size.width), viewHeight: Double(size.height),
+                columns: plan.columns, rows: plan.rows, focus: focusRect
+            )
+        } else if let focusRect {
             metrics = officeFocusedViewMetrics(
                 viewWidth: Double(size.width),
                 viewHeight: Double(size.height),
@@ -528,10 +547,12 @@ final class OfficeScene: SKScene {
     ) {
         lastSyncedAgents = agents
         lastSyncedApprovals = approvals
+        // 배치 선택도 화면과 같은 배율 기준을 봐야 한다(`officeZoneColumns` 의 `continuous` 주석).
         let nextZoneColumns = officeZoneColumns(
             width: Double(size.width), height: Double(size.height),
             currentZoneColumns: zoneColumns,
-            backingScale: Double(view?.window?.backingScaleFactor ?? 2)
+            backingScale: Double(view?.window?.backingScaleFactor ?? 2),
+            continuous: usesContinuousScale
         )
         let layoutChanged = nextZoneColumns != zoneColumns
         zoneColumns = nextZoneColumns
@@ -1549,6 +1570,25 @@ final class OfficeScene: SKScene {
         plan.zones.allSatisfy { SpriteLoader.cozyDepartmentRoomTexture($0.department) != nil }
             && plan.commonAreas.allSatisfy { SpriteLoader.cozyCommonAreaTexture($0.kind) != nil }
     }
+
+    /// 배율을 창에 꼭 맞는 연속값으로 잡는가(`officeContinuousViewMetrics`).
+    ///
+    /// 완성형 3D 방 그림을 쓰는 동안은 참이다. 이때는 도트용 정수배 계단에 딸린 보조 장치 —
+    /// 창을 스스로 키워 계단에 맞추기(`snapWindowUpToFloorPlanStep`), "최저 배율" 안내 — 가
+    /// 할 일이 없어 꺼진다. 계단이 없으니 메울 틈도 없다.
+    ///
+    /// **지금 평면도가 아니라 번들 전체를 본다.** `sync` 는 새 평면도를 만들기 **전에** 배치 열 수를
+    /// 고른다. 평면도로 판정하면 그 순간에는 옛 평면도를 검사하게 되어, 원화가 없는 부서가 새로
+    /// 들어오는 스냅샷에서 열 수는 연속 기준으로·그리기는 계단 기준으로 갈린다(리뷰 지적). 부서·
+    /// 공용 공간 방 그림이 번들에 전부 있는지는 앱 수명 동안 바뀌지 않으므로, 평면도가 언제
+    /// 바뀌든 같은 답을 낸다.
+    var usesContinuousScale: Bool {
+        Self.bundleHasCompleteRoomArt
+    }
+
+    private static let bundleHasCompleteRoomArt: Bool =
+        Department.allCases.allSatisfy { SpriteLoader.cozyDepartmentRoomTexture($0) != nil }
+            && CommonAreaKind.allCases.allSatisfy { SpriteLoader.cozyCommonAreaTexture($0) != nil }
 
     /// 사람을 보낼 수 있는 목적지 — 완성형 방 그림을 쓰는 동안은 **화면에 실제로 그려지는
     /// 가구**만 남긴다. 안 보이는 물건 앞으로 보내면 말풍선이 빈 바닥에서 뜬다
@@ -4607,7 +4647,8 @@ final class OfficeScene: SKScene {
         // 창이 없는 경로(오프스크린 회귀 렌더)에서도 그린다 — 창에서만 뜨는 요소는 렌더에
         // "정상" 으로 찍혀, 안 그려지는 것과 구별할 수가 없다.
         let window = view?.window
-        guard focusedDepartment == nil,
+        // 연속 배율이면 "최저 배율" 이라는 상태 자체가 없다 — 도면이 이미 창에 꼭 맞는다.
+        guard !usesContinuousScale, focusedDepartment == nil,
             let visible = (window?.screen ?? NSScreen.main)?.visibleFrame
         else {
             return
