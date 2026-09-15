@@ -112,13 +112,16 @@ func runCozyAssetCheck() -> Bool {
             valid = false
         }
     }
-    // 정면·후면 걸음 모두 스무 명 전원이 가진다. 후면은 두 발을 모은 정지 프레임까지
-    // 필수로 두어, 어느 방향으로 걸어도 실제 2프레임 걸음이 보이게 한다.
+    // 정면·후면·측면 걸음 모두 스무 명 전원이 가진다. 후면과 측면은 두 발을 모은 정지
+    // 프레임까지 필수로 두어, 어느 방향으로 걸어도 실제 2프레임 걸음이 보이게 한다.
     let frontWalkIndices = Array(0..<cozyCharacterAssetCount)
     let backWalkIndices = Array(0..<cozyCharacterAssetCount)
+    let sideWalkIndices = Array(0..<cozyCharacterAssetCount)
     let requiredWalkAssets = frontWalkIndices.map { "agent-\($0)-walk" }
         + backWalkIndices.map { "agent-\($0)-walk-up" }
         + backWalkIndices.map { "agent-\($0)-walk-up-idle" }
+        + sideWalkIndices.map { "agent-\($0)-walk-side" }
+        + sideWalkIndices.map { "agent-\($0)-walk-side-idle" }
     for name in requiredWalkAssets {
         guard let url = Bundle.module.url(
             forResource: name, withExtension: "png", subdirectory: "cozy/characters"
@@ -163,6 +166,8 @@ func runCozyAssetCheck() -> Bool {
     for (index, requested) in frontWalkIndices.map({ ($0, "walk") })
         + backWalkIndices.map({ ($0, "walk-up") })
         + backWalkIndices.map({ ($0, "walk-up-idle") })
+        + sideWalkIndices.map({ ($0, "walk-side") })
+        + sideWalkIndices.map({ ($0, "walk-side-idle") })
     {
         let resolved = resolveCozyPose(
             requested: requested,
