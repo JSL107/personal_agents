@@ -18,7 +18,10 @@ import {
   ConversationalReplyFailedException,
   HandleConversationTurnUsecase,
 } from '../../router/application/handle-conversation-turn.usecase';
-import { buildDispatchReplyText } from '../../router/domain/dispatch-reply.util';
+import {
+  buildDispatchReplyText,
+  collectDispatchRunIds,
+} from '../../router/domain/dispatch-reply.util';
 import { resolveChain } from '../domain/precondition-chain.map';
 import { ConsoleEventBus } from './console-event-bus.service';
 import { PendingConsoleTurnStore } from './pending-console-turn.store';
@@ -119,10 +122,12 @@ export class PreconditionChainOrchestrator {
         });
       }
       if (input.commandId && shouldPublishWorkerAnswer) {
+        const agentRunIds = collectDispatchRunIds(result);
         this.consoleEvents.publish({
           type: 'command.answered',
           commandId: input.commandId,
           message: truncateConsoleAnswer(buildDispatchReplyText(result)),
+          ...(agentRunIds.length > 0 ? { agentRunIds } : {}),
         });
       }
       return { ok: true };

@@ -427,7 +427,66 @@ describe('PreconditionChainOrchestrator', () => {
       type: 'command.answered',
       commandId: 'c1',
       message: expectedMessage,
+      agentRunIds: [1],
     });
+  });
+
+  // 외부 위임자(idaeri-delegate 스킬)가 commandId 로 자기 실행을 정확히 집게 한다. 없으면 원장을
+  // "요청 직전 max(id) 이후" 로 훑어 5분 주기 리뷰 스윕의 run 까지 섞였다.
+  it('worker 응답에 본 실행과 핸드오프의 agentRunIds 를 싣는다', async () => {
+    const { orchestrator, handleConversationTurn, consoleEvents } = make();
+    const outcome = ok('PM');
+    handleConversationTurn.execute.mockResolvedValue({
+      ...outcome,
+      result: {
+        ...outcome.result,
+        agentRunId: 7,
+        handoffResults: [
+          {
+            agentRunId: 8,
+            workerType: 'CTO',
+            output: {},
+            modelUsed: 'codex',
+            formattedText: '핸드오프',
+          },
+        ],
+      },
+    });
+
+    await orchestrator.run({
+      slackUserId: 'U1',
+      text: '계획',
+      commandId: 'c1',
+    });
+
+    expect(consoleEvents.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'command.answered',
+        commandId: 'c1',
+        agentRunIds: [7, 8],
+      }),
+    );
+  });
+
+  // agentRunId 0 은 run 을 남기지 않은 분기(결정론·UNKNOWN)의 sentinel — 조회할 행이 없다.
+  it('run 을 남기지 않은 dispatch 는 agentRunIds 를 싣지 않는다', async () => {
+    const { orchestrator, handleConversationTurn, consoleEvents } = make();
+    const outcome = ok('PM');
+    handleConversationTurn.execute.mockResolvedValue({
+      ...outcome,
+      result: { ...outcome.result, agentRunId: 0 },
+    });
+
+    await orchestrator.run({
+      slackUserId: 'U1',
+      text: '계획',
+      commandId: 'c1',
+    });
+
+    const answered = consoleEvents.publish.mock.calls
+      .map((call) => call[0])
+      .find((event) => event.type === 'command.answered');
+    expect(answered).not.toHaveProperty('agentRunIds');
   });
 
   it('pending preview에 응답한 응은 apply하고 dispatch하지 않는다', async () => {
