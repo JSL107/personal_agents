@@ -3,6 +3,11 @@ import { StudyResearchKind } from './study-research.parser';
 export const STUDY_BRIEF_CRON_QUEUE = 'study-brief-cron';
 export const DEFAULT_STUDY_BRIEF_CRON = '30 9 * * *';
 export const DEFAULT_STUDY_BRIEF_TIMEZONE = 'Asia/Seoul';
+// 주제 선정에서 제외할 최근 브리프의 기간. 30일이던 동안 A2A(8/6→9/7)·AG-UI(8/12→9/13)·
+// Durable Execution(8/9→9/9)이 창을 벗어난 바로 다음 날 다시 뽑혔다. 하루 1건이라 1년이면
+// 제외 목록이 365줄 안쪽이다.
+// ponytail: 고정 창이라 1년 뒤에는 같은 주제가 다시 나올 수 있다. 막아야 하면 전 기간 목록을 요약해 넘긴다.
+export const STUDY_RECENT_TOPIC_DAYS = 365;
 
 export interface StudyBriefCronJobData {
   ownerSlackUserId: string;
@@ -37,7 +42,7 @@ export const buildStudyResearchPrompt = ({
     '[누구인가]',
     identity,
     '',
-    '[최근 30일 제외 목록]',
+    `[최근 ${STUDY_RECENT_TOPIC_DAYS}일 제외 목록]`,
     '아래와 사실상 같은 주제는 제외하라. 표기가 달라도 같은 것으로 취급한다. 예: MCP와 Model Context Protocol.',
     recentTopics.length > 0
       ? recentTopics.map((topic) => `- ${topic}`).join('\n')
