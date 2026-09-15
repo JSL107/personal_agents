@@ -529,10 +529,15 @@ final class CharacterNode: SKNode {
 
     func sit() {
         isSeated = true
+        // **책상에 앉으면 바닥 그림자를 끈다.** 앉은 그림은 허리 아래가 없어 상판 뒤로
+        // 숨는데, 그림자는 좌석 칸 바닥에 그대로 남아 책상 **아래**에 동그랗게 비친다 —
+        // 사람은 책상 뒤에 있는데 그림자만 책상 앞 바닥에 떠 있는 그림이 된다(사용자 보고).
+        contactShadow.isHidden = true
         setTexture("sit")
     }
 
     func stand() {
+        contactShadow.isHidden = false
         guard isSeated else {
             return
         }

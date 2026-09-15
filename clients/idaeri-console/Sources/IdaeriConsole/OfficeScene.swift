@@ -461,7 +461,27 @@ final class OfficeScene: SKScene {
     /// 논리 격자는 2D 그대로 두고 방 안의 표시 좌표만 약한 3/4 원근으로 바꾼다. 캐릭터,
     /// 가구, 이동 목표가 모두 이 함수를 지나므로 서로 다른 평면에 붙여 놓은 콜라주처럼
     /// 갈라지지 않는다. 복도는 기존 좌표를 유지해 방 사이 이동 경계를 안정적으로 보존한다.
-    private func floorPoint(_ tile: TilePoint, footprintWidth: Int = 1) -> CGPoint {
+    private func floorPoint(
+        _ tile: TilePoint, footprintWidth: Int = 1, calibrated: Bool = true
+    ) -> CGPoint {
+        // **방 그림마다 바닥이 다르다.** 아홉 장이 서로 다른 각도로 그려져서, 하나의 원근 공식으로
+        // 맞추면 어떤 방은 뒷줄 좌석이 벽 밑동에 걸린다(사용자 보고). 그림별로 잰 바닥 사각형이
+        // 있으면 그 안으로 옮긴다 — 아래 옛 공식은 그림이 없어 도트로 내려간 경우에만 남는다.
+        //
+        // `calibrated: false` 는 **벽에 있는 것**(문·벽걸이)이다. 바닥으로 끌어오면 안 된다.
+        if calibrated, let calibration = floorCalibration(containing: tile) {
+            let point = officeCalibratedFloorPoint(
+                tileX: Double(tile.x), tileY: Double(tile.y),
+                footprintWidth: Double(footprintWidth),
+                floorRect: calibration.floorRect,
+                imageRect: calibration.imageRect,
+                quad: calibration.quad
+            )
+            return CGPoint(
+                x: gridOrigin.x + CGFloat(point.x) * tileSize,
+                y: gridOrigin.y + CGFloat(point.y) * tileSize
+            )
+        }
         guard let region = perspectiveRegion(containing: tile) else {
             return CGPoint(
                 x: gridOrigin.x + (CGFloat(tile.x) + CGFloat(footprintWidth) / 2) * tileSize,
@@ -500,6 +520,52 @@ final class OfficeScene: SKScene {
             x: raw.x + (CGFloat(point.x) - raw.x) * CGFloat(blend),
             y: raw.y + (floorCalibratedY - raw.y) * CGFloat(blend)
         )
+    }
+
+    /// 이 칸에서 사람·가구를 얼마나 작게 그릴지 — 바닥이 좁아지는 만큼(하한
+    /// `officeFloorDepthScaleFloor`). 보정이 없는 복도·도트 폴백에서는 1 이다.
+    private func floorDepthScale(_ tile: TilePoint) -> CGFloat {
+        guard let calibration = floorCalibration(containing: tile) else {
+            return 1
+        }
+        let v = (Double(tile.y) - calibration.floorRect.y) / calibration.floorRect.height
+        return CGFloat(officeFloorDepthScale(v: v, quad: calibration.quad))
+    }
+
+    /// 이 칸이 속한 방의 바닥 보정값 — 논리 바닥 범위 · 그림이 덮는 범위 · 그림 안 바닥 사각형.
+    ///
+    /// 방 그림이 없으면(도트 폴백) nil 을 돌려 옛 경로로 보낸다.
+    private func floorCalibration(
+        containing tile: TilePoint
+    ) -> (floorRect: OfficeRect, imageRect: OfficeRect, quad: OfficeFloorQuad)? {
+        guard usesContinuousScale else {
+            return nil
+        }
+        if let zone = plan.zones.first(where: { officeZoneContains($0, tile) }) {
+            return (
+                officeRoomFloorRect(zone: zone),
+                officeZoneRect(zone),
+                officeRoomFloorQuad(department: zone.department)
+            )
+        }
+        if let area = plan.commonAreas.first(where: { area in
+            // **맨 아래 줄(`labelY`)은 방이 아니라 가로 복도다.** 보정 대상에 넣으면 그 줄이
+            // 바닥 사각형 **밖**(v = -1/3)으로 사영돼, 회의실·대표실·탕비실 앞을 지나는
+            // 사람이 방 경계마다 꺾이거나 튄다(리뷰 지적). 복도는 격자 좌표 그대로 둔다.
+            tile.x >= area.originX && tile.x < area.originX + area.width
+                && tile.y >= area.labelY + 1
+        }) {
+            return (
+                officeCommonAreaFloorRect(
+                    originX: area.originX, width: area.width, labelY: area.labelY
+                ),
+                officeCommonAreaSurfaceRect(
+                    originX: area.originX, width: area.width, labelY: area.labelY
+                ),
+                officeCommonAreaFloorQuad(kind: area.kind)
+            )
+        }
+        return nil
     }
 
     private func perspectiveRegion(containing tile: TilePoint) -> OfficePerspectiveRegion? {
@@ -679,6 +745,7 @@ final class OfficeScene: SKScene {
             guard let node = characters[agent.agentType] else {
                 continue  // 출근 판정이 away — 위 applyAttendance가 이미 걸러냈다.
             }
+            // 크기는 아래 배치 함수가 **실제로 놓이는 칸** 기준으로 정한다(`applyDepthScale`).
             node.resize(tileSize: tileSize, spriteScale: characterScale)
             // 이름표가 쓸 수 있는 폭은 자리마다 다르다(옆자리와의 간격·벽까지의 거리).
             // 창 크기가 바뀌면 이 경로를 다시 지나므로 갱신도 여기 한 곳에 둔다.
@@ -1429,7 +1496,17 @@ final class OfficeScene: SKScene {
     private func place(_ node: CharacterNode, at tile: TilePoint) {
         node.tile = tile
         node.place(at: floorPoint(tile), depth: depth(of: tile))
+        applyDepthScale(node, at: tile)
         refreshDoors()
+    }
+
+    /// 사람을 **지금 서 있는 칸의 깊이**에 맞춰 키운다/줄인다.
+    ///
+    /// 자리를 정하는 지점마다 함께 부른다. 한때 `sync` 에서 홈 좌석 기준으로 한 번만 줄였는데,
+    /// 그러면 뒷줄 좌석 주인이 앞쪽 대기열이나 특화 콘솔에 서 있는 동안에도 홈 좌석 배율(최대
+    /// 0.75배)로 작아진 채 남는다(리뷰 지적). 배치와 크기는 같은 자리에서 정해야 갈리지 않는다.
+    private func applyDepthScale(_ node: CharacterNode, at tile: TilePoint) {
+        node.resize(tileSize: tileSize, spriteScale: characterScale * floorDepthScale(tile))
     }
 
     /// 길찾기 좌석과 3D workstation 이미지의 실제 의자 위치를 분리한다.
@@ -1448,15 +1525,20 @@ final class OfficeScene: SKScene {
         node.place(
             at: CGPoint(
                 x: deskAnchor.x,
+                // 좌석 보정도 깊이 배율을 함께 탄다 — 뒤쪽 책상은 그림이 작아졌으므로 같은
+                // 칸 수만큼 올리면 사람이 상판 위로 떠오른다.
                 y: deskAnchor.y + tileSize * CGFloat(
                     officeWorkstationSeatVisualOffsetTiles + fallbackLift
-                )
+                ) * floorDepthScale(assignment.desk)
             ),
             // CharacterNode 내부 몸체가 +1 z를 쓰므로 좌석 타일 깊이를 그대로 주면 책상과
             // 동률이 되어 삽입 순서에 따라 몸이 모니터 앞에 튄다. 몸은 상판 뒤에 두되 이름판
             // (+2)과 글자(+3)는 책상 앞에 남는 범위로만 미세하게 뒤로 보낸다.
             depth: depth(of: assignment.seat) - 0.24
         )
+        // 책상 칸 기준으로 크기를 맞춘다 — 사람이 그 책상에 붙어 앉으므로 좌석 칸이 아니라
+        // 책상 칸의 깊이가 눈에 보이는 크기를 정한다.
+        applyDepthScale(node, at: assignment.desk)
         refreshDoors()
     }
 
@@ -1506,6 +1588,7 @@ final class OfficeScene: SKScene {
             // 그때는 신발이 앞판 위로 다시 나온다.
             depth: depth(of: tile) - 1.00
         )
+        applyDepthScale(node, at: tile)
         refreshDoors()
     }
 
@@ -1524,6 +1607,7 @@ final class OfficeScene: SKScene {
         node.tile = logicalTile
         let visualTile = TilePoint(x: logicalTile.x, y: logicalTile.y + 1)
         node.place(at: floorPoint(visualTile), depth: depth(of: visualTile))
+        applyDepthScale(node, at: visualTile)
         refreshDoors()
     }
 
@@ -1628,18 +1712,23 @@ final class OfficeScene: SKScene {
             floorLayer.addChild(room)
         }
         for area in plan.commonAreas {
+            // 그림이 덮는 사각형은 ConsoleCore 가 단일 소스로 갖는다 — 바닥 좌표 보정이 같은
+            // 값을 보고 계산하므로, 여기서 따로 숫자를 적으면 사람이 그림 밖 바닥에 선다.
+            let surfaceRect = officeCommonAreaSurfaceRect(
+                originX: area.originX, width: max(1, area.width), labelY: area.labelY
+            )
             let surface = CozyOfficeNodeFactory.commonAreaSurface(
                 size: CGSize(
-                    width: tileSize * CGFloat(max(1, area.width)),
-                    height: tileSize * 3.70
+                    width: tileSize * CGFloat(surfaceRect.width),
+                    height: tileSize * CGFloat(surfaceRect.height)
                 ),
                 kind: area.kind,
                 texture: SpriteLoader.cozyCommonAreaTexture(area.kind)
             )
             surface.name = "cozy:common-surface:\(area.kind.rawValue)"
             surface.position = CGPoint(
-                x: gridOrigin.x + (CGFloat(area.originX) + CGFloat(area.width) / 2) * tileSize,
-                y: gridOrigin.y + (CGFloat(area.labelY) + 2.35) * tileSize
+                x: gridOrigin.x + CGFloat(surfaceRect.x + surfaceRect.width / 2) * tileSize,
+                y: gridOrigin.y + CGFloat(surfaceRect.y + surfaceRect.height / 2) * tileSize
             )
             floorLayer.addChild(surface)
         }
@@ -2064,11 +2153,21 @@ final class OfficeScene: SKScene {
             }
             // Compute the shared projected anchor before wiring dynamic state overlays. Both the
             // hidden logical node and visible shell marker must refer to the same floor position.
+            // **벽에 붙는 것은 바닥 보정에서 뺀다.** 문과 벽걸이는 바닥이 아니라 벽에 있는데,
+            // 바닥 사각형 안으로 옮기면 문이 방 한가운데 서 있게 된다(실측으로 확인).
             var position = floorPoint(
-                placement.tile, footprintWidth: placement.kind.footprint.width
+                placement.tile,
+                footprintWidth: placement.kind.footprint.width,
+                calibrated: !(placement.kind.isDoorway || placement.kind.isWallMounted)
             )
             if placement.kind.isWallMounted {
                 position.y += tileSize * CGFloat(officeWallMountLiftTiles)
+            }
+            // 가구도 깊이에 맞춰 줄인다. 사람만 줄이면 뒷줄에서 책상이 사람보다 커져
+            // 둘이 겹친다 — 바닥이 좁아진 만큼 위에 놓인 것도 같이 작아져야 한다.
+            // 벽에 붙는 것은 바닥이 아니므로 그대로 둔다.
+            if !(placement.kind.isDoorway || placement.kind.isWallMounted) {
+                node.setScale(floorDepthScale(placement.tile))
             }
             if placement.kind == .desk, let owner = deskOwners[placement.tile] {
                 deskNodes[owner] = node
@@ -2162,6 +2261,9 @@ final class OfficeScene: SKScene {
                     tileSize: tileSize
                 )
                 front.name = "cozy:desk-front:\(placement.tile.x)-\(placement.tile.y)"
+                // 앞판은 책상 그림의 일부라 **본체와 같은 비율**로 줄여야 한다. 따로 두면
+                // 앞판만 커져 앉은 사람의 상반신을 덮거나, 반대로 하반신이 비어져 나온다.
+                front.setScale(floorDepthScale(placement.tile))
                 front.position = position
                 front.zPosition = depth(of: placement.tile) + 0.15
                 objectLayer.addChild(front)
@@ -2851,6 +2953,9 @@ final class OfficeScene: SKScene {
             node.stand()
             node.tile = goal
             node.place(at: floorPoint(goal), depth: depth(of: goal))
+            // 동작을 줄인 경로도 목적지 깊이로 크기를 맞춘다 — 여기서 빠뜨리면 복도에서
+            // 뒷줄 책상으로 돌아온 사람이 1.0 배율인 채 앉는다(리뷰 지적).
+            applyDepthScale(node, at: goal)
             node.endWalk()
             completion?()
             return
@@ -2899,6 +3004,9 @@ final class OfficeScene: SKScene {
                 }
                 node.tile = step
                 node.zPosition = self.depth(of: step)
+                // 한 칸 옮길 때마다 크기도 그 깊이에 맞춘다 — 방 안쪽으로 걸어 들어가면
+                // 작아지고 나오면 커진다.
+                self.applyDepthScale(node, at: step)
                 // 한 칸 옮길 때마다 문을 다시 본다 — 다가서면 열리고 지나가면 닫힌다.
                 self.refreshDoors()
                 // 한 칸에 한 걸음 — 다리가 엇갈린 프레임으로 갈아끼운다. 방향 전환보다 뒤에
