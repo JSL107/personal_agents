@@ -662,9 +662,21 @@ final class CharacterNode: SKNode {
         sprite.position = CGPoint(x: 0, y: spriteBaseY)
         cozyArtwork.position = .zero
         cozyArtwork.setReferenceScale(spriteScale * artworkScale)
-        if isWalking, facing == .left,
-           requestedArtworkPose == "walk-side" || requestedArtworkPose == "walk-side-idle" {
-            cozyArtwork.xScale *= -1
+        // **요청 포즈가 아니라 실제로 걸린 그림을 본다.** 요청은 `walk-side` 인데 그 원화가
+        // 없으면 포즈 계약이 정지 그림으로 내려보낸다(`cozyPoseCandidates` — 방향이 다른
+        // 원화는 서로 대체하지 않으니 정면 걸음도 아니고 정지 그림이다). 요청값으로 판정하면
+        // 그렇게 내려온 **정면 그림까지 뒤집혀**, 가르마·머리핀·사원증만 좌우가 바뀐 딴사람이
+        // 된다. 바로 위 좌석 하강값이 같은 이유로 해석된 포즈를 다시 구하는 것과 같은 함정이다.
+        //
+        // 묻는 것은 왼쪽으로 걷는 순간뿐이다 — 그 외에는 반전 자체가 없어 조회할 이유가 없다.
+        if isWalking, facing == .left {
+            let resolvedWalkPose = SpriteLoader.resolvedCozyPose(
+                assetIndex: cozyAppearance.assetIndex,
+                pose: requestedArtworkPose
+            ).pose
+            if resolvedWalkPose == "walk-side" || resolvedWalkPose == "walk-side-idle" {
+                cozyArtwork.xScale *= -1
+            }
         }
         refreshInteractionOffset()
         // 포즈에 따라 키가 달라진다(앉기 57px · 서기 54px). 이름표가 머리 위에 붙으므로
