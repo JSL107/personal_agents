@@ -31,6 +31,7 @@ import {
   ReplayRate,
   scoreReplay,
 } from '../src/pr-review-loop/domain/review-replay.score';
+import { summarizeDiff } from '../src/pr-review-loop/domain/review-replay-diff';
 import { PrismaModule } from '../src/prisma/prisma.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 
@@ -182,45 +183,6 @@ const main = async (): Promise<void> => {
   } finally {
     await application.close();
   }
-};
-
-// 프롬프트에 실리는 파일 목록·증감 줄 수를 재생 diff에서 다시 센다. 현재 PR 값을 그대로 두면
-// 모델이 보는 diff와 메타데이터가 어긋난다(카드 이후 커밋이 더 붙은 PR).
-interface DiffSummary {
-  changedFiles: string[];
-  changedFilesTotalCount: number;
-  changedFilesTruncated: boolean;
-  additions: number;
-  deletions: number;
-}
-
-const summarizeDiff = (diff: string): DiffSummary => {
-  const changedFiles: string[] = [];
-  let additions = 0;
-  let deletions = 0;
-  for (const line of diff.split('\n')) {
-    if (line.startsWith('+++ b/')) {
-      changedFiles.push(line.slice('+++ b/'.length).trim());
-      continue;
-    }
-    if (line.startsWith('+++') || line.startsWith('---')) {
-      continue;
-    }
-    if (line.startsWith('+')) {
-      additions += 1;
-      continue;
-    }
-    if (line.startsWith('-')) {
-      deletions += 1;
-    }
-  }
-  return {
-    changedFiles,
-    changedFilesTotalCount: changedFiles.length,
-    changedFilesTruncated: false,
-    additions,
-    deletions,
-  };
 };
 
 const selectFindings = async (

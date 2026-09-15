@@ -103,6 +103,34 @@ describe('matchReplayedFinding', () => {
   });
 });
 
+describe('scoreReplay — 최대 매칭', () => {
+  // 앞 카드가 가까운 후보를 먼저 집어가면 뒤 카드가 굶는다. 개수가 최대가 되게 배정한다.
+  it('카드 순서 때문에 잡을 수 있는 재현을 놓치지 않는다', () => {
+    const near: ReplayedFinding = {
+      file: 'src/example.ts',
+      line: 18,
+      category: 'CORRECTNESS',
+      body: '18행',
+    };
+    const far: ReplayedFinding = {
+      file: 'src/example.ts',
+      line: 25,
+      category: 'CORRECTNESS',
+      body: '25행',
+    };
+    const replayed = [near, far];
+
+    const score = scoreReplay([
+      { labeled: { ...LABELED, id: 1, line: 20 }, replayed },
+      { labeled: { ...LABELED, id: 2, line: 15 }, replayed },
+    ]);
+
+    expect(score.rejected).toEqual({ total: 2, reproduced: 2, rate: 1 });
+    expect(score.results[0].matched).toBe(far);
+    expect(score.results[1].matched).toBe(near);
+  });
+});
+
 describe('scoreReplay — 후보 소진', () => {
   // 한 재생 지적이 가까운 카드 여러 장을 동시에 채우면 재현 수가 부풀려진다.
   it('같은 재생 지적을 두 카드가 나눠 갖지 않는다', () => {
