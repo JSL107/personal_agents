@@ -283,13 +283,16 @@ describe('AutopilotOrchestrator', () => {
       ),
     ).rejects.toThrow('Autopilot: 실행한 모든 task 가 실패했습니다.');
     expect(postMessage).toHaveBeenCalledTimes(2);
+    // **멘션 접두사까지 본다.** 본문만 `stringContaining` 으로 확인하면 채널 카드에서
+    // 멘션이 빠져도 통과한다 — 실패 안내는 메인 카드와 다른 발송 경로라, 메인 카드 쪽
+    // 단언으로는 이 경로의 회귀가 잡히지 않는다.
     expect(postMessage).toHaveBeenNthCalledWith(1, {
       target: 'C1',
-      text: expect.stringContaining('daily-eval 자동 생성 실패'),
+      text: expect.stringMatching(/^<@U1>\n[\s\S]*daily-eval 자동 생성 실패/),
     });
     expect(postMessage).toHaveBeenNthCalledWith(2, {
       target: 'C2',
-      text: expect.stringContaining('daily-eval 자동 생성 실패'),
+      text: expect.stringMatching(/^<@U1>\n[\s\S]*daily-eval 자동 생성 실패/),
     });
     expect(acquireOnce).not.toHaveBeenCalled();
   });
@@ -324,9 +327,42 @@ describe('AutopilotOrchestrator', () => {
 
     expect(postMessage).toHaveBeenCalledWith({
       target: 'C1',
-      text: expect.stringContaining('daily-eval 자동 생성 실패'),
+      text: expect.stringMatching(/^<@U1>\n[\s\S]*daily-eval 자동 생성 실패/),
     });
     expect(acquireOnce).not.toHaveBeenCalled();
+  });
+
+  // 메인 카드에 건 「DM 에는 멘션을 붙이지 않는다」 규칙은 실패 안내에도 그대로 걸린다.
+  // 채널 쪽만 단언해 두면 반대 실수 — 본인에게 가는 DM 에 멘션을 붙여 같은 알림이 두 번
+  // 울리는 것 — 를 못 잡는다.
+  it('전멸 실패 안내도 owner DM 타깃에는 멘션을 붙이지 않는다', async () => {
+    const failedTask = {
+      id: 'daily-eval',
+      run: jest.fn().mockRejectedValue(new Error('boom')),
+    };
+    const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
+    const acquireOnce = jest.fn().mockResolvedValue(true);
+    const orchestrator = new AutopilotOrchestrator(
+      [failedTask] as never,
+      { postMessage } as never,
+      { acquireOnce, isDone: jest.fn().mockResolvedValue(false) } as never,
+      { execute: jest.fn() } as never,
+      { attachSlackMessage: jest.fn() } as never,
+    );
+
+    await expect(
+      orchestrator.runGroup(
+        'evening',
+        [makeEntry('daily-eval', 'daily-eval')],
+        'U1',
+        'U1',
+      ),
+    ).rejects.toThrow('Autopilot: 실행한 모든 task 가 실패했습니다.');
+
+    const [[sent]] = postMessage.mock.calls;
+    expect(sent.target).toBe('U1');
+    expect(sent.text).not.toContain('<@U1>');
+    expect(sent.text).toContain('daily-eval 자동 생성 실패');
   });
 
   it('preview 산출물 + task 실패 → preview를 전달하고 그룹은 성공한다', async () => {
