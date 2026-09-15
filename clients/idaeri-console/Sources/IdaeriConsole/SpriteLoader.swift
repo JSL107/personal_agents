@@ -217,6 +217,9 @@ enum SpriteLoader {
             assetName = "sofa"
         case .meetingTable, .coffeeTable:
             assetName = "meeting-table"
+        // 책장 원화는 여기 남는다. **그릴지 말지는 `officeCozyDrawnFurnitureKinds` 가
+        // 정한다** — 이 함수에서 nil 을 돌리면 안 그려지는 것이 아니라 옛 도트 도형
+        // fallback 으로 내려가, 3D 방 배경 위에 납작한 판때기가 뜬다(실측으로 확인).
         case .bookshelf, .wallShelf:
             assetName = "bookshelf"
         case .coffeeMachine, .sinkCounter:
