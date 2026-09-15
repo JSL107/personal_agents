@@ -282,6 +282,18 @@ func runCozyPoseContractTests(_ t: TestRunner) {
         ResolvedCozyPose(pose: "walk-up-idle", posture: .standing),
         "뒷모습 정지 그림이 있으면 그대로")
     t.expectEqual(
+        resolveCozyPose(
+            requested: "walk-side", assetIndex: 10, hasAsset: cozyPoseAssetExists(10)
+        ),
+        ResolvedCozyPose(pose: "walk-side", posture: .standing),
+        "측면 걸음 그림이 있으면 그대로")
+    t.expectEqual(
+        resolveCozyPose(
+            requested: "walk-side-idle", assetIndex: 10, hasAsset: cozyPoseAssetExists(10)
+        ),
+        ResolvedCozyPose(pose: "walk-side-idle", posture: .standing),
+        "측면 정지 그림이 있으면 그대로")
+    t.expectEqual(
         resolveCozyPose(requested: "walk", assetIndex: 10, hasAsset: cozyPoseAssetExists(10)),
         ResolvedCozyPose(pose: "walk", posture: .standing),
         "10번도 정면 걸음 그림을 그대로 쓴다")
@@ -301,6 +313,11 @@ func runCozyPoseContractTests(_ t: TestRunner) {
             requested: "walk", assetIndex: 10, hasAsset: { $0 == "walk-up" }
         ).pose,
         cozyIdlePose, "정면이 없는 가상 상황에서 후면을 대신 쓰지 않는다")
+    t.expectEqual(
+        resolveCozyPose(
+            requested: "walk-side", assetIndex: 10, hasAsset: { $0 == "walk" }
+        ).pose,
+        cozyIdlePose, "측면이 없는 가상 상황에서 정면을 대신 쓰지 않는다")
     t.expectEqual(
         resolveCozyPose(requested: "walk", assetIndex: 10, hasAsset: { _ in false }).pose,
         cozyIdlePose, "걸음 그림 파일이 없으면 정지 그림")
@@ -328,7 +345,10 @@ func runCozyPoseContractTests(_ t: TestRunner) {
     // 사라지거나 로더가 조용히 다른 그림을 끼운다. 에셋 목록을 손으로 베끼지 않고 실제 파일을
     // 세므로, 에셋을 갈아끼우면 여기서 걸린다.
     let requests = OfficeInteractionPose.allCases.map(\.rawValue)
-        + ["idle", "default", "down", "side", "down-walk1", "sit", "typing"]
+        + [
+            "idle", "default", "down", "side", "down-walk1", "sit", "typing",
+            "walk-side", "walk-side-idle",
+        ]
     var unresolved: [String] = []
     var furnitureLeaks: [String] = []
     for assetIndex in 0..<cozyCharacterAssetCount {
