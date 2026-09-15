@@ -386,8 +386,8 @@ final class CharacterNode: SKNode {
 
     /// 방향을 바꾼다. 앉아 있는 동안은 앉은 자세를 유지한다.
     ///
-    /// 방향은 그림을 고르지 않는다(정면 원화 한 벌) — 걸음 기울기(`stepWalkFrame`)와
-    /// 가구 자세 계산이 쓰는 값으로만 남는다. 그림 갱신은 서 있는 기본 자세로 되돌리는
+    /// 방향은 걷는 동안 정면·후면·측면 원화를 고른다. 측면 원화는 오른쪽 한 벌만 두고,
+    /// 왼쪽 이동은 렌더 노드만 좌우 반전한다. 그림 갱신은 서 있는 기본 자세로 되돌리는
     /// 경로(`stand()` 등)가 이 함수를 거치기 때문에 함께 둔다.
     func apply(facing newFacing: Facing) {
         facing = newFacing
@@ -399,9 +399,8 @@ final class CharacterNode: SKNode {
 
     /// 지금 써야 할 요청 포즈 — 앉았으면 앉은 그림, 서 있으면 기본 그림.
     ///
-    /// **방향은 더 이상 그림을 고르지 않는다.** 원화가 정면 한 벌뿐이라 `down`·`side` 같은
-    /// 이름을 조립해 봐야 없는 파일을 찾을 뿐이었다(로더 폴백 로그의 출처). 어디를 보고
-    /// 걷는 중에는 **걸음 그림과 정지 그림을 번갈아** 쓴다. 두 장을 오가면 다리가 한 번
+    /// 방향마다 정면·후면·측면 그림을 고르고, 걷는 중에는 **걸음 그림과 정지 그림을 번갈아**
+    /// 쓴다. 두 장을 오가면 다리가 한 번
     /// 교차하므로, 한 칸에 한 걸음이 실제로 보인다. 걸음 그림이 없는 캐릭터는 포즈 계약이
     /// 알아서 정지 그림으로 접고(`cozyPoseCandidates`), 그때는 몸 기울기만 남는다.
     private func currentPose() -> String {
@@ -420,8 +419,11 @@ final class CharacterNode: SKNode {
         if facing == .up {
             return walkStep.isMultiple(of: 2) ? "walk-up-idle" : "walk-up"
         }
-        // 아래·좌우로 걷는 걸음은 두 그림이 모두 앞모습이라 번갈아 써도 방향이 흔들리지
-        // 않는다. 짝수를 정지 그림에 두는 것은 걸음이 끝나는 자리(`endWalk` 가 `walkStep`
+        if facing == .left || facing == .right {
+            return walkStep.isMultiple(of: 2) ? "walk-side-idle" : "walk-side"
+        }
+        // 아래로 걷는 걸음은 두 그림이 모두 앞모습이라 번갈아 써도 방향이 흔들리지 않는다.
+        // 짝수를 정지 그림에 두는 것은 걸음이 끝나는 자리(`endWalk` 가 `walkStep`
         // 을 0 으로 되돌린다)와 같은 그림이라야 도착 순간에 튀지 않기 때문이다.
         if !walkStep.isMultiple(of: 2) {
             return "walk"
@@ -636,9 +638,8 @@ final class CharacterNode: SKNode {
         sprite.size = CGSize(
             width: base.width * artworkScale * spriteScale, height: base.height * artworkScale * spriteScale
         )
-        // **좌우 반전은 쓰지 않는다.** 원화가 정면 한 벌이라 뒤집어도 여전히 이쪽을 보고 있고,
-        // 가르마·머리핀·사원증처럼 좌우가 다른 부분만 뒤집혀 걷다가 코너를 돌 때마다 딴 사람이
-        // 된다 — 방향 정보는 없고 잡음만 남는 교환이었다.
+        // 측면 원화는 오른쪽 한 벌만 관리한다. 왼쪽 이동 때만 그 원화를 뒤집고, 정면·후면·
+        // 상호작용 원화는 뒤집지 않아 가르마·머리핀·사원증의 좌우가 불필요하게 바뀌지 않게 한다.
         //
         // 앉으면 책상 쪽으로 내려 하반신이 책상에 가리게 한다. 안 내리면 좌석이 책상 바로 위 칸이라
         // 사람이 책상 위 허공에 별개로 놓인 물체처럼 보인다(근거는 officeSeatedSpriteDrop).
@@ -661,6 +662,22 @@ final class CharacterNode: SKNode {
         sprite.position = CGPoint(x: 0, y: spriteBaseY)
         cozyArtwork.position = .zero
         cozyArtwork.setReferenceScale(spriteScale * artworkScale)
+        // **요청 포즈가 아니라 실제로 걸린 그림을 본다.** 요청은 `walk-side` 인데 그 원화가
+        // 없으면 포즈 계약이 정지 그림으로 내려보낸다(`cozyPoseCandidates` — 방향이 다른
+        // 원화는 서로 대체하지 않으니 정면 걸음도 아니고 정지 그림이다). 요청값으로 판정하면
+        // 그렇게 내려온 **정면 그림까지 뒤집혀**, 가르마·머리핀·사원증만 좌우가 바뀐 딴사람이
+        // 된다. 바로 위 좌석 하강값이 같은 이유로 해석된 포즈를 다시 구하는 것과 같은 함정이다.
+        //
+        // 묻는 것은 왼쪽으로 걷는 순간뿐이다 — 그 외에는 반전 자체가 없어 조회할 이유가 없다.
+        if isWalking, facing == .left {
+            let resolvedWalkPose = SpriteLoader.resolvedCozyPose(
+                assetIndex: cozyAppearance.assetIndex,
+                pose: requestedArtworkPose
+            ).pose
+            if resolvedWalkPose == "walk-side" || resolvedWalkPose == "walk-side-idle" {
+                cozyArtwork.xScale *= -1
+            }
+        }
         refreshInteractionOffset()
         // 포즈에 따라 키가 달라진다(앉기 57px · 서기 54px). 이름표가 머리 위에 붙으므로
         // 여기서 함께 다시 잡지 않으면 앉고 설 때마다 라벨이 머리에 파묻히거나 떠오른다.
