@@ -163,6 +163,53 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
     }
     t.expect(disagreements > 0, "계단 기준과 연속 기준이 갈리는 창이 있다 (\(disagreements)곳)")
 
+    // **실제 호출처럼 지금 열 수를 넘긴다.** 씬은 늘 `currentZoneColumns` 를 주는데, 위 검사는
+    // 그걸 빼서 떨림 방지(5%) 분기를 한 번도 타지 않았다(리뷰 지적). 계단 방식에서 이 분기는
+    // 두 배치의 계단이 같을 때만 쓰였지만, 연속 배율에서는 **매번** 쓰인다.
+    func continuousTile(_ zoneColumns: Int, _ width: Double, _ height: Double) -> Double {
+        let planSize = officePlanSize(zoneColumns: zoneColumns)
+        return officeContinuousViewMetrics(
+            viewWidth: width, viewHeight: height, columns: planSize.columns, rows: planSize.rows
+        ).tileSize
+    }
+    // 두 배치가 5% 안으로 붙은 창 — 지금 쓰는 쪽을 유지해야 리사이즈 경계에서 번갈아 재구성되지
+    // 않는다. 1330×1010 에서 3열 38.0 · 2열 37.4 로 1.6% 차이다.
+    t.expect(
+        continuousTile(3, 1330, 1010) > continuousTile(2, 1330, 1010)
+            && continuousTile(3, 1330, 1010) < continuousTile(2, 1330, 1010) * 1.05,
+        "1330x1010 은 두 배치가 5% 안으로 붙은 창이다"
+    )
+    t.expectEqual(
+        officeZoneColumns(width: 1330, height: 1010, currentZoneColumns: 2, continuous: true), 2,
+        "연속 배율 · 5% 안이면 2열을 유지한다 (조금 작아도 번갈아 바꾸지 않는다)"
+    )
+    t.expectEqual(
+        officeZoneColumns(width: 1330, height: 1010, currentZoneColumns: 3, continuous: true), 3,
+        "연속 배율 · 5% 안이면 3열을 유지한다"
+    )
+    // 5% 이상 차이 나면 바꾼다 — 1600×900 에서 3열 45.0 · 2열 33.3.
+    t.expectEqual(
+        officeZoneColumns(width: 1600, height: 900, currentZoneColumns: 2, continuous: true), 3,
+        "연속 배율 · 반대쪽이 5% 이상 크면 바꾼다"
+    )
+    // **떨림 방지가 치르는 대가의 상한.** 지금 열 수가 무엇이든, 고른 배치는 반대쪽보다 5% 넘게
+    // 작을 수 없다 — 넘으면 유지 조건이 망가진 것이다(예: 늘 지금 쪽을 고수).
+    for width in stride(from: 700.0, through: 2800.0, by: 30.0) {
+        for height in stride(from: 500.0, through: 1900.0, by: 30.0) {
+            for current in [2, 3] {
+                let chosen = officeZoneColumns(
+                    width: width, height: height, currentZoneColumns: current, continuous: true
+                )
+                let other = chosen == 2 ? 3 : 2
+                t.expect(
+                    continuousTile(chosen, width, height) * 1.05
+                        >= continuousTile(other, width, height) - 1e-9,
+                    "연속 배율 · 창 \(width)x\(height) · 지금 \(current)열: 고른 \(chosen)열이 5% 넘게 작다"
+                )
+            }
+        }
+    }
+
     // 표본은 **사규 인원 그대로**다. 한때 여기에 내부 부서 두 명을 덧붙여 33명으로 검사했는데,
     // 그러면 내부 부서가 11명이 되어 방 정원(예비 격자 10석)을 넘는다. 그 초과는 자리표가
     // 일부러 거부하는 상태다 — "겹쳐 그려 못 읽게 두는 것보다 방 배치를 손볼 때가 됐다고
