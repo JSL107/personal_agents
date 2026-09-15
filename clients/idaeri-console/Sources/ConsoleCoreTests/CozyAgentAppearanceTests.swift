@@ -7,9 +7,26 @@ func runCozyAgentAppearanceTests(_ t: TestRunner) {
     let second = cozyAgentAppearance(agentType: "CODE_REVIEWER", department: .quality)
     t.expectEqual(first, second, "same agentType resolves to the same appearance")
     t.expectEqual(cozyCharacterAssetCount, 20, "cozy character pool exposes twenty production assets")
-    t.expectEqual(cozyCharacterVisualScale(assetIndex: 2), 1.12, "short alpha silhouette receives optical correction")
-    t.expectEqual(cozyCharacterVisualScale(assetIndex: 17), 0.91, "large alpha silhouette receives optical correction")
-    t.expectEqual(cozyCharacterVisualScale(assetIndex: 22), 1.12, "optical correction wraps asset index")
+    // **오피스 캐릭터는 사람마다 크기가 같아야 한다.** 한때 0.91~1.12 를 손으로 박아 두고
+    // "희미한 가장자리를 보상한다" 고 했는데, 실측하니 그 보상은 필요 없었고 이 값이 키를
+    // 21% 벌리는 유일한 원인이었다(사용자 보고: "사이즈가 너무 들쭉날쭉").
+    //
+    // 인덱스를 하나만 찍어 보면 누가 예외값을 하나 되살렸을 때 통과한다. **스무 명 전원**과
+    // 범위 밖 인덱스까지 훑는다.
+    for assetIndex in 0..<cozyCharacterAssetCount {
+        t.expectEqual(
+            cozyCharacterVisualScale(assetIndex: assetIndex), 1.00,
+            "agent-\(assetIndex) 는 사람별 크기 보정을 받지 않는다"
+        )
+    }
+    t.expectEqual(
+        cozyCharacterVisualScale(assetIndex: cozyCharacterAssetCount + 2), 1.00,
+        "범위를 넘는 인덱스도 접혀서 같은 값을 받는다"
+    )
+    t.expectEqual(
+        cozyCharacterVisualScale(assetIndex: -1), 1.00,
+        "음수 인덱스도 접혀서 같은 값을 받는다"
+    )
     t.expectEqual(
         cozyDashboardCharacterVisualScale(assetIndex: 3, pose: "typing"), 1.025,
         "dashboard typing silhouette receives height-only correction"

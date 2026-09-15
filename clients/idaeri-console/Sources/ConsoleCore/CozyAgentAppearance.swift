@@ -3,28 +3,26 @@ import Foundation
 /// Number of transparent, production-ready character portraits available to the cozy office.
 public let cozyCharacterAssetCount = 20
 
-/// Small optical correction for the production PNGs after alpha-bound normalization.
-/// Values compensate residual faint-edge padding; the square dashboard envelope prevents
-/// hair width from becoming a second scale constraint.
+/// 오피스 캐릭터의 사람별 크기 보정. **지금은 전원 1.00 이고, 그래야 한다.**
+///
+/// 한때 0.91~1.12 를 손으로 박아 두고 "알파 경계로 정규화한 뒤 남는 희미한 가장자리를
+/// 보상한다" 고 적었다. 실측해 보니 그 보상은 필요 없었고, 오히려 **이 값이 사람마다 키가
+/// 다른 유일한 원인**이었다(사용자 보고: "사이즈가 너무 들쭉날쭉").
+///
+/// 근거 — 원화 스무 장의 `alpha > 64` 몸 높이를 재고, 렌더가 쓰는 공식(투명 여백을 자른
+/// 상자를 100pt 에 맞춤)을 그대로 적용한 값이다.
+///
+/// | 상태 | 화면에 그려지는 몸 높이 편차 |
+/// |---|---|
+/// | 크롭만 (이 함수 없이) | 0.5pt · 0.5% |
+/// | 크롭 + 옛 보정값 | 20.9pt · 21% (agent-17 은 90.5, agent-2 는 111.3) |
+///
+/// 여백을 잘라 낸 상자를 정해진 높이에 맞추는 구조라 글로우가 얼마나 붙었든 최종 키는
+/// 스스로 같아진다 — 잘라 내는 임계값을 8 에서 96 까지 바꿔 봐도 편차는 0.5% 안에 머문다.
+/// 그러니 **눈으로 "쟤가 좀 커 보인다" 싶어도 여기에 숫자를 넣지 말 것.** 원화 자체의 인물
+/// 크기가 다르면(실측 4.7%) 그건 원화를 다시 그려 맞출 문제다.
 public func cozyCharacterVisualScale(assetIndex: Int) -> CGFloat {
-    let normalizedIndex = ((assetIndex % cozyCharacterAssetCount) + cozyCharacterAssetCount)
-        % cozyCharacterAssetCount
-    switch normalizedIndex {
-    case 1, 16:
-        return 0.97
-    case 2:
-        return 1.12
-    case 17:
-        return 0.91
-    case 18:
-        return 1.04
-    case 19:
-        return 1.03
-    case 3:
-        return 1.01
-    default:
-        return 1.00
-    }
+    1.00
 }
 
 /// Optical correction for dashboard portraits, whose square SwiftUI envelope is height-bound.

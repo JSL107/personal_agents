@@ -5,6 +5,11 @@ import SpriteKit
 enum SpriteLoader {
     private static var cache: [String: SKTexture] = [:]
     private static var cozyCharacterCache: [String: NSImage] = [:]
+    /// 캐릭터 텍스처. **이미지만 캐시하면 부족하다** — `SKTexture(image:)` 는 만들 때마다
+    /// GPU 로 올라가는 새 텍스처라, 걸음마다 포즈를 갈아끼우는 사람이 여럿이면 1145×1374
+    /// (약 6MB) 업로드가 초당 수십 번 일어난다. 방·가구가 이미 텍스처 단위로 캐시하는데
+    /// (`cozyRoomCache`·`cozyFurnitureCache`) 캐릭터만 빠져 있었다.
+    private static var cozyCharacterTextureCache: [String: SKTexture] = [:]
     private static var cozyRoomCache: [String: SKTexture] = [:]
     private static var cozyRoomImageCache: [String: NSImage] = [:]
     private static var cozyFurnitureCache: [String: SKTexture] = [:]
@@ -125,11 +130,20 @@ enum SpriteLoader {
     }
 
     static func cozyCharacterTexture(assetIndex: Int, pose: String = "idle") -> SKTexture? {
+        // 키는 `cozyCharacterImage` 와 같은 기준으로 잡는다 — 인덱스를 범위 안으로 접고
+        // 포즈 이름을 정규화한 뒤라야, `walkside` 같은 다른 표기가 같은 칸을 쓴다.
+        let normalizedIndex = ((assetIndex % cozyCharacterAssetCount) + cozyCharacterAssetCount)
+            % cozyCharacterAssetCount
+        let cacheKey = "\(normalizedIndex):\(normalizedCozyPose(pose))"
+        if let cached = cozyCharacterTextureCache[cacheKey] {
+            return cached
+        }
         guard let image = cozyCharacterImage(assetIndex: assetIndex, pose: pose) else {
             return nil
         }
         let texture = SKTexture(image: image)
         texture.filteringMode = .linear
+        cozyCharacterTextureCache[cacheKey] = texture
         return texture
     }
 
