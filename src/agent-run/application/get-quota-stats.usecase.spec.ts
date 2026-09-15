@@ -23,6 +23,7 @@ const buildRepo = (
   aggregateContractScores: jest.fn().mockResolvedValue([]),
   aggregateRetryCounts: jest.fn().mockResolvedValue([]),
   aggregateSweptCounts: jest.fn().mockResolvedValue([]),
+  failInProgressRuns: jest.fn(),
   sweepZombies: jest.fn().mockResolvedValue(0),
   findLatestSweepReview: jest.fn().mockResolvedValue(null),
   countUnsuccessfulSweepReviews: jest.fn().mockResolvedValue(0),

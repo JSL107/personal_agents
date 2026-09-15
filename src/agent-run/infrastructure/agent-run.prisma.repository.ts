@@ -41,6 +41,7 @@ import {
   FailedAgentRunSnapshot,
   FailedRunDetail,
   FailedRunSnapshot,
+  FailInProgressRunsInput,
   FindLatestSweepReviewQuery,
   FinishAgentRunInput,
   InputSnapshotEquals,
@@ -726,6 +727,24 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
       // where 절이 endedAt >= cutoff 로 좁혔으니 null 이 나올 수 없다. 타입만 좁힌다.
       endedAt: row.endedAt ?? cutoff,
     }));
+  }
+
+  async failInProgressRuns({
+    ids,
+    output,
+  }: FailInProgressRunsInput): Promise<number> {
+    if (ids.length === 0) {
+      return 0;
+    }
+    const result = await this.prisma.agentRun.updateMany({
+      where: { id: { in: [...ids] }, status: 'IN_PROGRESS' },
+      data: {
+        status: 'FAILED',
+        output: output as Prisma.InputJsonValue,
+        endedAt: new Date(),
+      },
+    });
+    return result.count;
   }
 
   async sweepZombies({
