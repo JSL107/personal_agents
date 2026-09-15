@@ -781,12 +781,47 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
         let ceilingRows = Set(ceilingPlan.zones.map { $0.origin.y + $0.height - 1 })
         for zone in ceilingPlan.zones {
             let row = zone.origin.y + zone.height - 1
+            // 방이 차지하는 칸은 `origin.x ..< origin.x + width` 다. 한때 이 필터가 판정
+            // 함수와 **똑같이** `<= origin.x + width` 로 적혀 있었다 — 판정이 거른 결과를
+            // 같은 조건으로 다시 거르니 상한을 어느 쪽으로 바꿔도 통과하는 검사였다.
             let inZone = boundary.filter {
                 $0.tile.y == row
                     && $0.tile.x >= zone.origin.x
-                    && $0.tile.x <= zone.origin.x + zone.width
+                    && $0.tile.x < zone.origin.x + zone.width
             }
             t.expectEqual(inZone.count, 1, "\(zone.department.rawValue) 천장에 문 한 짝")
+        }
+        // **x 상한을 좌표로 못박는다.** 방 마지막 칸은 참이고 그 오른쪽 첫 칸 — 방과 방
+        // 사이 세로 복도 — 은 거짓이어야 한다. 상한이 `<=` 이던 동안 복도 첫 칸의 문이
+        // 셸 소유 판정을 우회해, 벽도 문틀도 없는 복도 바닥에 문짝만 서 있었다.
+        // 실제 배치에는 그 좌표에 문이 없을 수 있으므로 종류 검사와 같은 방식으로
+        // 좌표를 합성해 판정 함수만 직접 부른다.
+        for zone in ceilingPlan.zones {
+            let row = zone.origin.y + zone.height - 1
+            t.expect(
+                officeIsRoomCeilingDoor(
+                    kind: .doorClosed,
+                    tile: TilePoint(x: zone.origin.x + zone.width - 1, y: row),
+                    plan: ceilingPlan
+                ),
+                "\(zone.department.rawValue) 천장 줄의 방 마지막 칸은 경계 문이다"
+            )
+            t.expect(
+                !officeIsRoomCeilingDoor(
+                    kind: .doorClosed,
+                    tile: TilePoint(x: zone.origin.x + zone.width, y: row),
+                    plan: ceilingPlan
+                ),
+                "\(zone.department.rawValue) 오른쪽 복도 첫 칸은 경계 문이 아니다"
+            )
+            t.expect(
+                officeIsRoomCeilingDoor(
+                    kind: .doorClosed,
+                    tile: TilePoint(x: zone.origin.x, y: row),
+                    plan: ceilingPlan
+                ),
+                "\(zone.department.rawValue) 천장 줄의 방 첫 칸은 경계 문이다"
+            )
         }
         // **문이 아닌 것은 잡히지 않는다.** 판정이 위치만 보던 동안에는 천장 줄에 놓이기만
         // 하면 무엇이든 참이 되어, 셸이 그리기로 한 가구가 함께 되살아났다.
