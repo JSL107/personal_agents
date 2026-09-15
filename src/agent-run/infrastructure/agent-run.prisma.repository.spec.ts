@@ -58,6 +58,53 @@ describe('AgentRunPrismaRepository.sweepZombies', () => {
   });
 });
 
+describe('AgentRunPrismaRepository.failInProgressRuns', () => {
+  // 조건 없이 쓰면 같은 순간 끝난 회차의 SUCCEEDED 를 덮는다 — where 에 IN_PROGRESS 를 고정한다.
+  it('넘긴 id 중 IN_PROGRESS 인 것만 FAILED 로 닫고 건수를 돌려준다', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-09-15T00:00:00.000Z'));
+    const updateMany = jest.fn().mockResolvedValue({ count: 1 });
+    const prismaMock = {
+      agentRun: { updateMany },
+    } as unknown as PrismaService;
+    const repository = new AgentRunPrismaRepository(prismaMock);
+
+    const result = await repository.failInProgressRuns({
+      ids: [7, 8],
+      output: {
+        error: '프로세스 종료로 중단됨',
+        errorCode: 'PROCESS_SHUTDOWN',
+      },
+    });
+
+    expect(result).toBe(1);
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: { in: [7, 8] }, status: 'IN_PROGRESS' },
+      data: {
+        status: 'FAILED',
+        output: {
+          error: '프로세스 종료로 중단됨',
+          errorCode: 'PROCESS_SHUTDOWN',
+        },
+        endedAt: new Date('2026-09-15T00:00:00.000Z'),
+      },
+    });
+    jest.useRealTimers();
+  });
+
+  it('id 가 없으면 질의하지 않는다', async () => {
+    const updateMany = jest.fn();
+    const repository = new AgentRunPrismaRepository({
+      agentRun: { updateMany },
+    } as unknown as PrismaService);
+
+    await expect(
+      repository.failInProgressRuns({ ids: [], output: {} }),
+    ).resolves.toBe(0);
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+});
+
 describe('AgentRunPrismaRepository.findFailedRunsSince', () => {
   // slackUserId 는 agent_run 의 컬럼이 아니다. 스칼라로 얹으면 Prisma 가 런타임에
   // 거부하는데(2026-08-21 PO Shadow 실패) 스프레드로 넣으면 컴파일에서 안 잡혀

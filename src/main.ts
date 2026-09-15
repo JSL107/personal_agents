@@ -3,12 +3,16 @@ import { ConfigService } from '@nestjs/config';
 import { NestFactory, Reflector } from '@nestjs/core';
 import * as express from 'express';
 
+import { interruptRunsOnSignal } from './agent-run/interface/interrupt-runs-on-signal';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filter/all-exceptions.filter';
 import { ResponseInterceptor } from './common/interceptor/response.interceptor';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { rawBody: true });
+  // 신호로 죽을 때 실행 중이던 run 에 중단 사유를 남긴다 — 없으면 원장에 IN_PROGRESS 로 남아
+  // 30분 뒤 원인 불명 스윕으로 닫힌다. 종료 시간은 마감 기록 한 번만큼만 늘어난다.
+  interruptRunsOnSignal(app);
 
   // OPS-2: 두 webhook 엔드포인트 모두 raw body 로 받아 HMAC 검증 + JSON.parse 흐름 유지.
   // express 가 application/json 을 자동 파싱하면 rawBody 가 object 가 되어 HMAC 실패함 (codex P1).
