@@ -60,6 +60,7 @@ import {
   buildStudyResearchPrompt,
   BuildStudyResearchPromptInput,
   STUDY_BRIEF_CRON_QUEUE,
+  STUDY_RECENT_TOPIC_DAYS,
   StudyBriefCronJobData,
   StudyKindBalance,
 } from '../domain/study-brief-cron.type';
@@ -74,7 +75,6 @@ import { formatStudyBrief } from './study-brief.formatter';
 const SENT_GUARD_TTL_SECONDS = 90_000;
 // Hermes(12분) + CTO route 최악 경로(10분)와 context/Slack 여유를 함께 덮는다.
 const PROCESSING_GUARD_TTL_SECONDS = 30 * 60;
-const RECENT_TOPIC_DAYS = 30;
 const KIND_BALANCE_LIMIT = 5;
 const REPORT_WARNING_LENGTH = 3_000;
 
@@ -293,7 +293,7 @@ export class StudyBriefCronConsumer extends WorkerHost {
     ownerSlackUserId: string,
   ): Promise<RecentStudyBrief[]> {
     const since = new Date(
-      Date.now() - RECENT_TOPIC_DAYS * 24 * 60 * 60 * 1000,
+      Date.now() - STUDY_RECENT_TOPIC_DAYS * 24 * 60 * 60 * 1000,
     );
     try {
       return await this.studyBriefRepository.findRecentSince(
