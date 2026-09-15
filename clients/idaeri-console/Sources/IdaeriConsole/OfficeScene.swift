@@ -2048,28 +2048,32 @@ final class OfficeScene: SKScene {
                     // their original walkability and open/close state.
                     let statusNode = CozyOfficeNodeFactory.doorStatusOverlay(tileSize: tileSize)
                     statusNode.name = "cozy:door-status:\(placement.tile.x)-\(placement.tile.y)"
-                    // 문은 방의 **양쪽 벽 좌표**에 놓인다(`openDoor` 가 `wallX` 로 쓰는 값이
-                    // `originX` 와 `originX + zoneWidth` 다). 왼쪽 문은 방 안 첫 칸이지만
-                    // 오른쪽 문은 방 **바깥** 복도 첫 칸이라, 자리 판정이 비대칭이다.
-                    // 한때 오른쪽을 `origin.x + width - 1`(방 안 마지막 칸)로 찾아 늘 빗나갔고,
-                    // 그래서 `sideZone` 이 nil 이 되어 어느 방 문인지 모르는 채 그려졌다.
+                    // 문은 방의 **양쪽 벽 칸**에 놓인다. `openDoor` 가 쓰는 `wallX` 는
+                    // `originX` 와 `originX + zoneWidth` 인데, `DepartmentZone.width` 가
+                    // `zoneWidth + 1` 로 만들어지므로(평면도 생성부) 두 벽 칸은 모두 방 범위
+                    // `origin.x ..< origin.x + width` **안**이다 — 왼쪽은 첫 칸, 오른쪽은
+                    // 마지막 칸(`origin.x + width - 1`)이다. 복도 칸이 아니다.
                     let sideZone = plan.zones.first { zone in
                         zone.origin.y <= placement.tile.y
                             && placement.tile.y < zone.origin.y + zone.height
                             && (placement.tile.x == zone.origin.x
-                                || placement.tile.x == zone.origin.x + zone.width)
+                                || placement.tile.x == zone.origin.x + zone.width - 1)
                     }
                     let opensFromLeftEdge = sideZone?.origin.x == placement.tile.x
-                    // **벽 좌표는 양쪽 다 `tile.x` 다.** 왼쪽 벽은 첫 칸의 왼쪽 경계이고,
-                    // 오른쪽 벽은 복도 첫 칸의 왼쪽 경계 — 둘 다 칸 번호와 같다. 오른쪽에만
-                    // `+1` 을 더하던 시절에는 문이 자기 방 벽에서 한 칸 더 복도로 밀려나,
-                    // 마주 본 두 문이 좁은 복도 한가운데서 만나 벽 없이 서 있는 쌍여닫이
-                    // 소품이 됐다(사용자 보고) — 바로 아래 주석이 막으려던 그 그림이다.
-                    let boundaryX = CGFloat(placement.tile.x)
+                    // 방 바깥으로 향한 경계선. 왼쪽 문은 자기 칸의 왼쪽 모서리이고, 오른쪽
+                    // 문은 자기 칸의 **오른쪽** 모서리라 `+1` 이 붙는다.
+                    let boundaryX = opensFromLeftEdge == true
+                        ? CGFloat(placement.tile.x)
+                        : CGFloat(placement.tile.x + 1)
                     // Keep the logical doorway on its walkable tile, but seat the visual frame
                     // just inside the owning room wall. Opposing doors otherwise meet in the
                     // narrow hall and read as a freestanding double-door prop.
-                    let roomWallInset: CGFloat = opensFromLeftEdge == true ? 0.14 : -0.14
+                    //
+                    // **반 칸을 당긴다.** 0.14 로는 두 방의 문이 좁은 복도를 사이에 두고
+                    // 거의 맞붙어, 벽도 문틀도 없이 서 있는 쌍여닫이 소품으로 읽혔다
+                    // (사용자 보고). 반 칸이면 문짝이 자기 벽 칸의 한가운데에 앉아 방의
+                    // 출입구로 보이고, 두 문 사이에 복도 한 칸이 온전히 남는다.
+                    let roomWallInset: CGFloat = opensFromLeftEdge == true ? 0.5 : -0.5
                     statusNode.position = CGPoint(
                         x: gridOrigin.x + (boundaryX + roomWallInset) * tileSize,
                         y: position.y
