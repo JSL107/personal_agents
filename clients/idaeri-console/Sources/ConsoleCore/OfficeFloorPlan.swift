@@ -1930,8 +1930,14 @@ public func officePlanSize(zoneColumns: Int) -> (columns: Int, rows: Int) {
 ///
 /// 두 배치가 **같은 계단**에 서면 그때 연속값으로 가른다. 계단이 같으면 어느 쪽을 골라도
 /// 타일 크기가 같으므로, 남는 판단은 "어느 쪽이 창에 여유롭게 들어가는가" 뿐이다.
+///
+/// `continuous` 가 참이면(완성형 3D 방 그림 — `officeContinuousViewMetrics`) 계단이 없으므로
+/// 실제로 그려지는 타일이 곧 연속값이다. 계단 비교를 건너뛰고 연속값과 떨림 방지만으로 고른다 —
+/// 화면은 연속 배율로 그리는데 배치만 계단으로 고르면, 계단으로는 이기지만 실제로는 더 작게
+/// 그려지는 배치가 뽑힐 수 있다.
 public func officeZoneColumns(
-    width: Double, height: Double, currentZoneColumns: Int? = nil, backingScale: Double = 2
+    width: Double, height: Double, currentZoneColumns: Int? = nil, backingScale: Double = 2,
+    continuous: Bool = false
 ) -> Int {
     guard width > 0, height > 0 else {
         return currentZoneColumns ?? 3
@@ -1950,12 +1956,14 @@ public func officeZoneColumns(
         ).tileSize
     }
 
-    let twoColumnDrawn = drawnSize(2)
-    let threeColumnDrawn = drawnSize(3)
-    // 계단이 갈리면 그대로 따른다. 떨림 방지(5%)를 여기 걸면 안 된다 — 계단 하나가 2배라,
-    // 유지하는 대가가 "도면이 절반 크기로 남는 것" 이 된다.
-    if twoColumnDrawn != threeColumnDrawn {
-        return twoColumnDrawn > threeColumnDrawn ? 2 : 3
+    if !continuous {
+        let twoColumnDrawn = drawnSize(2)
+        let threeColumnDrawn = drawnSize(3)
+        // 계단이 갈리면 그대로 따른다. 떨림 방지(5%)를 여기 걸면 안 된다 — 계단 하나가 2배라,
+        // 유지하는 대가가 "도면이 절반 크기로 남는 것" 이 된다.
+        if twoColumnDrawn != threeColumnDrawn {
+            return twoColumnDrawn > threeColumnDrawn ? 2 : 3
+        }
     }
     guard let currentZoneColumns else {
         return fittingSize(2) > fittingSize(3) ? 2 : 3

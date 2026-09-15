@@ -136,6 +136,33 @@ func runOfficeFloorPlanTests(_ t: TestRunner) {
         }
     }
 
+    // 완성형 3D 방 그림이면 화면은 창에 꼭 맞는 연속 배율로 그린다(`officeContinuousViewMetrics`).
+    // 배치도 **그 크기로** 골라야 한다 — 위와 같은 창 전체를 훑어, 연속 배율에서 진 배치가
+    // 뽑히는 창이 없는지 본다. 그리고 계단 기준과 답이 실제로 갈리는 창을 센다 — 한 번도 안
+    // 갈리면 `continuous` 는 아무 일도 하지 않는 매개변수라는 뜻이다.
+    var disagreements = 0
+    for width in stride(from: 700.0, through: 2800.0, by: 30.0) {
+        for height in stride(from: 500.0, through: 1900.0, by: 30.0) {
+            let chosen = officeZoneColumns(width: width, height: height, continuous: true)
+            let other = chosen == 2 ? 3 : 2
+            func continuousTile(_ zoneColumns: Int) -> Double {
+                let planSize = officePlanSize(zoneColumns: zoneColumns)
+                return officeContinuousViewMetrics(
+                    viewWidth: width, viewHeight: height,
+                    columns: planSize.columns, rows: planSize.rows
+                ).tileSize
+            }
+            t.expect(
+                continuousTile(chosen) >= continuousTile(other),
+                "연속 배율 · 창 \(width)x\(height): \(chosen)열을 골랐는데 \(other)열이 더 크게 그려진다"
+            )
+            if chosen != officeZoneColumns(width: width, height: height) {
+                disagreements += 1
+            }
+        }
+    }
+    t.expect(disagreements > 0, "계단 기준과 연속 기준이 갈리는 창이 있다 (\(disagreements)곳)")
+
     // 표본은 **사규 인원 그대로**다. 한때 여기에 내부 부서 두 명을 덧붙여 33명으로 검사했는데,
     // 그러면 내부 부서가 11명이 되어 방 정원(예비 격자 10석)을 넘는다. 그 초과는 자리표가
     // 일부러 거부하는 상태다 — "겹쳐 그려 못 읽게 두는 것보다 방 배치를 손볼 때가 됐다고
