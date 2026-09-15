@@ -243,6 +243,11 @@ export interface LedgerRunRow {
   readonly startedAt: Date;
 }
 
+export interface FailInProgressRunsInput {
+  ids: readonly number[];
+  output: Record<string, unknown>;
+}
+
 export interface AgentRunRepositoryPort {
   // 콘솔 원장 집계용 전량 조회. 집계는 SQL이 아니라 console 도메인의 순수 함수가 담당한다.
   findAllRunsForLedger(): Promise<LedgerRunRow[]>;
@@ -252,6 +257,9 @@ export interface AgentRunRepositoryPort {
     inputSnapshot: unknown;
   }): Promise<void>;
   finish(input: FinishAgentRunInput): Promise<void>;
+  // 종료 신호로 끊긴 회차 마감 — 넘긴 id 중 **아직 IN_PROGRESS 인 것만** 닫는다.
+  // 조건 없이 쓰면 같은 순간 끝난 회차의 실제 결과(SUCCEEDED)를 덮는다.
+  failInProgressRuns(input: FailInProgressRunsInput): Promise<number>;
   // Router 의 handoff chain 안 child run 에 parent.id 기록 — chain audit log.
   // (plan: docs/superpowers/plans/2026-05-07-agent-communication-topology.md §4.4)
   // 호출 시점은 child run 의 begin 이후 (finish 와 무관 — 별도 update).

@@ -20,6 +20,7 @@ describe('RetryRunUsecase', () => {
     aggregateContractScores: jest.fn().mockResolvedValue([]),
     aggregateRetryCounts: jest.fn().mockResolvedValue([]),
     aggregateSweptCounts: jest.fn().mockResolvedValue([]),
+    failInProgressRuns: jest.fn(),
     sweepZombies: jest.fn().mockResolvedValue(0),
     aggregatePmContextStats: jest.fn().mockResolvedValue({
       pmRunCount: 0,

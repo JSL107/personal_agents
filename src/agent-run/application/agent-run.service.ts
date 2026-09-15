@@ -51,6 +51,14 @@ import {
 // caller 가 더 큰 값 넘겨도 service 가 clamp 하여 DoS (recursive CTE 깊이 폭발) 차단.
 const DEFAULT_CHAIN_MAX_DEPTH = 16;
 
+// 종료 신호로 끊긴 run 의 마감 사유. errorCode 로 남겨 스위퍼의 'swept: stale IN_PROGRESS'
+// (원인 불명 고착)와 원장에서 가를 수 있게 한다.
+const SHUTDOWN_INTERRUPTED_ERROR = '프로세스 종료로 중단됨';
+const SHUTDOWN_INTERRUPTED_ERROR_CODE = 'PROCESS_SHUTDOWN';
+// 마감 기록에 주는 시간. 신호를 받은 프로세스는 곧 죽어야 하므로 DB 가 느리면 포기한다
+// (남은 행은 스위퍼가 치운다). `pnpm dev` 의 release_port 가 5초 뒤 SIGKILL 하는 것보다 짧게 둔다.
+const SHUTDOWN_MARK_TIMEOUT_MS = 2_000;
+
 // 말풍선 규칙은 `inputSnapshot` 의 키를 읽는다(`#495 리뷰 중` 의 pullNumber 등). execute 가
 // 받는 값은 임의의 JSON 이므로, 객체가 아니면(배열·스칼라·null) null 로 접는다 —
 // `ActiveRunSnapshot.inputSnapshot` 을 만드는 저장소 경계와 같은 규칙이라, 이벤트로 뜬 문구와
@@ -117,6 +125,9 @@ export interface AgentRunOutcome<T> {
 @Injectable()
 export class AgentRunService implements OnApplicationBootstrap {
   private readonly logger = new Logger(AgentRunService.name);
+  // 이 프로세스가 begin 하고 아직 finish 하지 않은 run — id → 시작 시각(ms).
+  // 같은 DB 를 쓰는 다른 프로세스(worktree 백엔드 등)의 run 은 여기 없으므로 종료 훅이 건드리지 않는다.
+  private readonly activeRuns = new Map<number, number>();
 
   constructor(
     @Inject(AGENT_RUN_REPOSITORY_PORT)
@@ -164,6 +175,54 @@ export class AgentRunService implements OnApplicationBootstrap {
     }
   }
 
+  // 종료 신호(SIGTERM·SIGINT)에서 아직 끝나지 않은 run 을 그 자리에서 FAILED 로 닫는다.
+  // 이 표시가 없던 동안 재시작에 걸린 run 은 30분 뒤 스위퍼가 'swept: stale IN_PROGRESS' 로 닫았고,
+  // 그 문구로는 재시작 탓인지 매달림인지 가를 수 없었다(위 부팅 스윕 주석). `pnpm dev` 는 기동할 때
+  // 3099 를 쥔 기존 백엔드에 SIGTERM 을 보내므로(`scripts/console-dev.sh` release_port) 이 경로를
+  // 실제로 자주 탄다. 이제 스윕에 남는 것은 SIGKILL·크래시·진짜 매달림뿐이다.
+  //
+  // **아직 IN_PROGRESS 인 행만** 닫는다. 같은 순간 끝나 가던 회차의 finish 가 우리보다 먼저 닿으면
+  // 그 결과(SUCCEEDED)가 정답이고, 우리 쓰기는 아무 행도 건드리지 않는다.
+  // begin 이 아직 끝나지 않은 회차는 여기에 없다 — 그 행은 종전대로 스위퍼 몫이다.
+  // 실패·지연은 삼킨다. 신호를 받은 프로세스는 곧 죽어야 하고, 남은 행은 스위퍼가 치운다.
+  async interruptActiveRuns(): Promise<void> {
+    const ids = [...this.activeRuns.keys()];
+    if (ids.length === 0) {
+      return;
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const marked = await Promise.race([
+        this.repository.failInProgressRuns({
+          ids,
+          output: {
+            error: SHUTDOWN_INTERRUPTED_ERROR,
+            errorCode: SHUTDOWN_INTERRUPTED_ERROR_CODE,
+          },
+        }),
+        new Promise<null>((resolve) => {
+          timer = setTimeout(() => resolve(null), SHUTDOWN_MARK_TIMEOUT_MS);
+        }),
+      ]);
+      this.logger.warn(
+        marked === null
+          ? `종료 신호 — 실행 중이던 run ${ids.length}건 마감이 ${SHUTDOWN_MARK_TIMEOUT_MS}ms 안에 안 끝나 스위퍼에 맡긴다 (${ids
+              .map((id) => `#${id}`)
+              .join(', ')})`
+          : `종료 신호 — 실행 중이던 run ${ids.length}건 중 ${marked}건을 중단으로 마감 (${ids
+              .map((id) => `#${id}`)
+              .join(', ')})`,
+      );
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `종료 신호 — 중단 마감 실패, 스위퍼에 맡긴다: ${message}`,
+      );
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   // 콘솔 관제용 ConsoleRun 뷰 조립 — id/시각을 뷰 표현(string/ISO)으로 변환.
   private buildConsoleRun(
     id: number,
@@ -199,6 +258,7 @@ export class AgentRunService implements OnApplicationBootstrap {
     // begin 직후 시점부터 측정해 evidence 기록 + run 콜백 + finish 직전까지의 elapsed 가 잡힌다.
     const startMs = Date.now();
     const startedAt = new Date(startMs);
+    this.activeRuns.set(id, startMs);
 
     // 콘솔 관제 — 런 시작 알림(run.started + IN_PROGRESS). emit 은 부가 기능이라 흐름을 막지 않는다.
     this.consoleEvents?.publish({
@@ -348,6 +408,8 @@ export class AgentRunService implements OnApplicationBootstrap {
       });
 
       throw error;
+    } finally {
+      this.activeRuns.delete(id);
     }
   }
 

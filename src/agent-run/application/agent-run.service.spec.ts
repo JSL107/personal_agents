@@ -26,6 +26,7 @@ describe('AgentRunService', () => {
     aggregateRetryCounts: jest.fn().mockResolvedValue([]),
     aggregateSweptCounts: jest.fn().mockResolvedValue([]),
     sweepZombies: jest.fn().mockResolvedValue(0),
+    failInProgressRuns: jest.fn().mockResolvedValue(0),
     aggregatePmContextStats: jest.fn().mockResolvedValue({
       pmRunCount: 0,
       totalInboxItems: 0,
@@ -268,6 +269,101 @@ describe('AgentRunService', () => {
     );
 
     await expect(service.onApplicationBootstrap()).resolves.toBeUndefined();
+  });
+
+  describe('종료 신호 — 도는 중인 run 을 중단 사유로 닫는다', () => {
+    // run 콜백을 밖에서 풀어줄 수 있게 붙잡아 둔다 — "실행 중에 종료 신호가 온" 상태를 만든다.
+    const startPendingRun = (): {
+      settle: () => void;
+      done: Promise<unknown>;
+    } => {
+      let settle: () => void = () => undefined;
+      const gate = new Promise<void>((resolve) => {
+        settle = resolve;
+      });
+      const done = service.execute({
+        agentType: AgentType.CODE_REVIEWER,
+        triggerType: TriggerType.PR_REVIEW_SWEEP,
+        inputSnapshot: {},
+        run: async () => {
+          await gate;
+          return { result: {}, modelUsed: 'mock', output: {} };
+        },
+      });
+      return { settle, done };
+    };
+
+    it('실행 중인 run 만 골라 PROCESS_SHUTDOWN 으로 마감한다', async () => {
+      const pending = startPendingRun();
+      await new Promise((resolve) => setImmediate(resolve));
+
+      await service.interruptActiveRuns();
+
+      // 조건부 갱신이라 같은 순간 끝난 회차의 실제 결과를 덮지 않는다.
+      expect(repository.failInProgressRuns).toHaveBeenCalledWith({
+        ids: [42],
+        output: {
+          error: '프로세스 종료로 중단됨',
+          errorCode: 'PROCESS_SHUTDOWN',
+        },
+      });
+
+      pending.settle();
+      await pending.done;
+    });
+
+    it('끝난 run 은 성공·실패 모두 다시 건드리지 않는다', async () => {
+      await service.execute({
+        agentType: AgentType.PM,
+        triggerType: TriggerType.SLACK_COMMAND_TODAY,
+        inputSnapshot: {},
+        run: async () => ({ result: {}, modelUsed: 'mock', output: {} }),
+      });
+      await expect(
+        service.execute({
+          agentType: AgentType.PM,
+          triggerType: TriggerType.SLACK_COMMAND_TODAY,
+          inputSnapshot: {},
+          run: async () => {
+            throw new Error('boom');
+          },
+        }),
+      ).rejects.toThrow('boom');
+
+      await service.interruptActiveRuns();
+
+      expect(repository.failInProgressRuns).not.toHaveBeenCalled();
+    });
+
+    // 종료를 막으면 프로세스가 신호에 안 죽는다. 남은 행은 스위퍼가 치운다.
+    it('마감 기록이 실패해도 예외를 밖으로 던지지 않는다', async () => {
+      const pending = startPendingRun();
+      await new Promise((resolve) => setImmediate(resolve));
+      repository.failInProgressRuns.mockRejectedValueOnce(new Error('db down'));
+
+      await expect(service.interruptActiveRuns()).resolves.toBeUndefined();
+
+      pending.settle();
+      await pending.done;
+    });
+
+    it('마감 기록이 상한 안에 안 끝나면 기다리지 않고 돌아온다', async () => {
+      const pending = startPendingRun();
+      await new Promise((resolve) => setImmediate(resolve));
+      repository.failInProgressRuns.mockReturnValue(
+        new Promise(() => undefined),
+      );
+      jest.useFakeTimers();
+
+      const interrupted = service.interruptActiveRuns();
+      await jest.advanceTimersByTimeAsync(2_000);
+
+      await expect(interrupted).resolves.toBeUndefined();
+      jest.useRealTimers();
+
+      pending.settle();
+      await pending.done;
+    });
   });
 
   // LLM 응답 파싱 실패는 raw 응답 앞부분을 cause 에만 담는다. 그 cause 가 로그로만 나가던 동안
