@@ -54,9 +54,13 @@ const RULES = {
  *
  * 수사 항목(`sentenceRole`·`question`)은 일부러 뺐다. 이 상수를 쓰는 '오늘의 공부' 경로에는
  * 같은 요구가 파이프라인 맥락까지 붙은 형태로 이미 있다(`study-deepdive.prompt.ts`).
+ *
+ * **`scorecard` 도 뺐다(리뷰 지적).** 그 문장은 「문맥 흐름, 표현 방식, 글 전개, 한국어
+ * 자연스러움, 기술 근거를 모두 챙긴다」로 채점표 **전체**를 가리킨다. 문체 항목을 덜어낸 목록
+ * 맨 앞에 두면 덜어낸 축을 모델이 다시 불러오므로, 분리한 의미가 없어진다. 출처는 이 상수를
+ * 받는 쪽의 블록 제목이 밝힌다.
  */
 export const KOREAN_BLOG_CONTENT_RULES = [
-  RULES.scorecard,
   RULES.opening,
   RULES.concrete,
   RULES.sourceBoundary,

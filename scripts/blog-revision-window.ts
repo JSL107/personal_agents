@@ -22,9 +22,12 @@
 //   node --env-file=.env -r ts-node/register/transpile-only scripts/blog-revision-window.ts --window 14 --since 2026-08-01
 //
 // `DATABASE_URL` 과 블로그 저장소 로컬 클론이 필요하다(`BLOG_LOCAL_PATH`, 기본
-// `~/repos/JSL107.github.io`). 읽기만 하고 아무것도 바꾸지 않는다. 클론이 낡으면 최근 글이
-// 통째로 빠지므로 **실행 전에 `git fetch && git merge --ff-only` 로 맞춰라** — 실제로 7커밋
-// 뒤처진 클론으로 재서 최근 7편이 집계에서 빠진 적이 있다.
+// `~/repos/JSL107.github.io`). 읽기만 하고 아무것도 바꾸지 않는다.
+//
+// **실행 전에 클론을 `git fetch && git merge --ff-only` 로 맞춰라.** 낡은 클론은 두 가지로
+// 망가뜨린다 — 없는 글이 빠지는 것(실제로 7커밋 뒤처진 클론에서 7편이 빠졌다)은 눈에 띄지만,
+// 이미 있는 글에 「발행 직후 커밋」을 N일 후 본으로 돌려주는 쪽은 정상 행으로 집계돼 보이지
+// 않는다. 후자는 `headCommittedAt` 가드가 막는다.
 import { execFileSync } from 'node:child_process';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -70,6 +73,18 @@ const git = (args: readonly string[]): string =>
     },
   ).trim();
 
+/**
+ * 클론이 아는 마지막 커밋 시각.
+ *
+ * **이 값보다 뒤의 `asOf` 는 잴 수 없다.** `git log --until` 은 조건에 맞는 마지막 커밋을
+ * 돌려주므로, 클론이 낡으면 「발행 직후 커밋」을 「N일 후 본」이라고 내놓는다. 파일은 존재하니
+ * `missing` 으로도 걸러지지 않고 정상 행으로 집계되며, 수정률이 조용히 0% 쪽으로 쏠린다.
+ * 그 편향은 「고칠 게 없었다」는 쪽이라 프롬프트 변경을 지지하는 방향으로 기운다 — 조용히
+ * 틀리는 값이 가장 위험하므로 재지 않고 멈춘다(리뷰 지적).
+ */
+const headCommittedAt = (): Date =>
+  new Date(git(['log', '-1', '--format=%cI']));
+
 /** 발행일 + N일 시점의 파일. 그 시점에 파일이 없으면 null. */
 const fileAsOf = (path: string, asOf: Date): string | null => {
   const sha = git([
@@ -90,18 +105,34 @@ const fileAsOf = (path: string, asOf: Date): string | null => {
   }
 };
 
+/** 초안 경로. `unknown` 은 카드에 `notionUrl` 이 없어 가를 수 없는 것이다. */
+type DraftSource = 'deepdive' | 'other' | 'unknown';
+
 interface PublishedPost {
   path: string;
   title: string;
   publishedAt: Date;
   published: string;
-  fromDeepdive: boolean;
+  source: DraftSource;
 }
+
+// 초안은 발행보다 **먼저** 만들어진다. 굶은 초안은 14일까지 큐에 머물 수 있고 그보다 오래
+// 묵기도 하므로, 딥다이브 실행을 `since` 로 그대로 자르면 그 앞에 만들어진 초안이 집합에서
+// 빠져 멀쩡한 글이 '그 외'로 오분류된다. 넉넉한 여유를 두고 자른다(리뷰 지적의 방향은 받되
+// 제안된 경계는 쓰지 않는다).
+const DRAFT_LOOKBACK_DAYS = 90;
 
 const fetchPublished = async (since: string): Promise<PublishedPost[]> => {
   // 딥다이브가 만든 Notion 초안의 주소. 발행 카드와 이 집합을 맞춰 초안 경로를 가른다.
+  const draftSince = new Date(
+    new Date(since).getTime() - DRAFT_LOOKBACK_DAYS * 24 * 60 * 60 * 1_000,
+  );
   const deepdiveRuns = await prisma.agentRun.findMany({
-    where: { agentType: 'CTO_STUDY', status: 'SUCCEEDED' },
+    where: {
+      agentType: 'CTO_STUDY',
+      status: 'SUCCEEDED',
+      startedAt: { gte: draftSince },
+    },
     select: { output: true },
   });
   const deepdiveUrls = new Set<string>();
@@ -138,14 +169,21 @@ const fetchPublished = async (since: string): Promise<PublishedPost[]> => {
       // 이 필드가 없던 시절의 카드. 짝을 못 맞추므로 뺀다.
       continue;
     }
+    // `notionUrl` 이 없으면 '그 외'로 떨어뜨리지 않고 따로 센다. 데이터 결손을 대조군에 섞으면
+    // 그 오염이 숫자에 조용히 남는다 — 위 `path`·`content` 결손을 명시적으로 빼는 것과 같은
+    // 이유다(리뷰 지적).
+    const source: DraftSource =
+      typeof payload.notionUrl !== 'string'
+        ? 'unknown'
+        : deepdiveUrls.has(payload.notionUrl)
+          ? 'deepdive'
+          : 'other';
     posts.push({
       path: payload.path,
       title: typeof payload.title === 'string' ? payload.title : payload.path,
       publishedAt: preview.appliedAt,
       published: payload.content,
-      fromDeepdive:
-        typeof payload.notionUrl === 'string' &&
-        deepdiveUrls.has(payload.notionUrl),
+      source,
     });
   }
   return posts;
@@ -154,9 +192,15 @@ const fetchPublished = async (since: string): Promise<PublishedPost[]> => {
 interface Row {
   title: string;
   publishedAt: Date;
-  fromDeepdive: boolean;
+  source: DraftSource;
   revisionPercent: number;
 }
+
+const SOURCE_LABEL: Record<DraftSource, string> = {
+  deepdive: '오늘의공부',
+  other: '그 외',
+  unknown: '분류불명',
+};
 
 const median = (values: readonly number[]): number => {
   if (values.length === 0) {
@@ -185,6 +229,7 @@ const main = async (): Promise<void> => {
   const posts = await fetchPublished(since);
   const nowMs = Date.now();
   const windowMs = windowDays * 24 * 60 * 60 * 1_000;
+  const headAtMs = headCommittedAt().getTime();
 
   const rows: Row[] = [];
   const tooYoung: string[] = [];
@@ -197,6 +242,15 @@ const main = async (): Promise<void> => {
       tooYoung.push(post.title);
       continue;
     }
+    if (asOf.getTime() > headAtMs) {
+      throw new Error(
+        [
+          `클론이 낡아서 잴 수 없다: "${post.title}" 의 기준 시각은 ${asOf.toISOString()} 인데`,
+          `클론의 마지막 커밋은 ${new Date(headAtMs).toISOString()} 이다.`,
+          `${REPOSITORY_PATH} 에서 git fetch && git merge --ff-only 로 맞춘 뒤 다시 실행하라.`,
+        ].join('\n'),
+      );
+    }
     const after = fileAsOf(post.path, asOf);
     if (after === null) {
       missing.push(post.path);
@@ -205,7 +259,7 @@ const main = async (): Promise<void> => {
     rows.push({
       title: post.title,
       publishedAt: post.publishedAt,
-      fromDeepdive: post.fromDeepdive,
+      source: post.source,
       // 서버·다른 스크립트와 **같은 도메인 함수**를 쓴다. 각자 계산하면 같은 글에 다른 값이 찍힌다.
       revisionPercent: countRevision(post.published, after).percent,
     });
@@ -218,20 +272,21 @@ const main = async (): Promise<void> => {
       [
         row.publishedAt.toISOString().slice(0, 10),
         `${row.revisionPercent}%`,
-        row.fromDeepdive ? '오늘의공부' : '그 외',
+        SOURCE_LABEL[row.source],
         row.title.slice(0, 40),
       ].join('\t'),
     );
   }
 
-  const deepdive = rows.filter((row) => row.fromDeepdive);
-  console.log(`\n${summarize('오늘의 공부', deepdive)}`);
-  console.log(
-    summarize(
-      '그 외',
-      rows.filter((row) => !row.fromDeepdive),
-    ),
-  );
+  const bySource = (source: DraftSource): Row[] =>
+    rows.filter((row) => row.source === source);
+  console.log(`\n${summarize('오늘의 공부', bySource('deepdive'))}`);
+  console.log(summarize('그 외', bySource('other')));
+  const unknown = bySource('unknown');
+  if (unknown.length > 0) {
+    // 0 건이면 줄을 내지 않는다 — 늘 붙는 「0편」은 옆의 실제 수치를 덮는다.
+    console.log(summarize('분류불명(notionUrl 없음)', unknown));
+  }
   console.log(summarize('전체', rows));
 
   if (tooYoung.length > 0) {

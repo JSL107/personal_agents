@@ -65,9 +65,7 @@ describe('buildStudyDeepdivePrompt', () => {
     it('내용·근거·전개 항목을 싣는다', () => {
       const prompt = buildStudyDeepdivePrompt(input);
 
-      expect(prompt).toContain(
-        '한국어 기술 블로그 통합 채점표의 기준을 따른다',
-      );
+      expect(prompt).toContain('도입부에서 독자·문제·글의 범위를 보여 주고');
       expect(prompt).toContain('대안과 트레이드오프');
       expect(prompt).toContain('숫자에는 단위·기간·계산 기준을 붙이고');
     });
@@ -79,7 +77,17 @@ describe('buildStudyDeepdivePrompt', () => {
 
       expect(prompt).not.toContain('문장의 호흡을 무조건 짧게 만들지 않는다');
       expect(prompt).not.toContain(
+        '한 문장 안에서 의미가 이어지는데 임의로 줄바꿈하지 않는다',
+      );
+      expect(prompt).not.toContain(
         '비슷한 생각을 마침표만 붙여 나열하지 않는다',
+      );
+    });
+
+    it('채점표 전체를 가리키는 메타 문장을 싣지 않는다', () => {
+      // 「…한국어 자연스러움…을 모두 챙긴다」는 덜어낸 문체 축을 도로 불러온다.
+      expect(buildStudyDeepdivePrompt(input)).not.toContain(
+        '한국어 자연스러움',
       );
     });
 
