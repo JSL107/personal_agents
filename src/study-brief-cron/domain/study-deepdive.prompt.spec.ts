@@ -59,6 +59,40 @@ describe('buildStudyDeepdivePrompt', () => {
     });
   });
 
+  describe('발행 라인 공통 채점표', () => {
+    // 채점표를 생성 단계에 넣어도 수정률이 줄지 않았다는 기존 판정은 이 경로를 재지 않았다.
+    // 발행 큐 1순위인 '오늘의 공부' 초안은 채점표를 받은 적이 없다.
+    it('내용·근거·전개 항목을 싣는다', () => {
+      const prompt = buildStudyDeepdivePrompt(input);
+
+      expect(prompt).toContain(
+        '한국어 기술 블로그 통합 채점표의 기준을 따른다',
+      );
+      expect(prompt).toContain('대안과 트레이드오프');
+      expect(prompt).toContain('숫자에는 단위·기간·계산 기준을 붙이고');
+    });
+
+    it('문장 호흡 항목은 싣지 않는다', () => {
+      // 이 경로는 생성 뒤 humanizeMarkdownProse 를 지난다. 같은 규칙이 윤문 프롬프트
+      // (humanize-system.prompt.ts:449-451,461) 에 이미 있어, 여기에도 걸면 두 번 적용된다.
+      const prompt = buildStudyDeepdivePrompt(input);
+
+      expect(prompt).not.toContain('문장의 호흡을 무조건 짧게 만들지 않는다');
+      expect(prompt).not.toContain(
+        '비슷한 생각을 마침표만 붙여 나열하지 않는다',
+      );
+    });
+
+    it('미확인 값을 지어내지 말되 밝힐 여지는 남긴다', () => {
+      // 채점표는 「미확인으로 표시하라」, 기존 지시는 「비워라」였다. 나란히 두면 모델이
+      // 한쪽을 버리므로 한 문장으로 합쳤다.
+      const prompt = buildStudyDeepdivePrompt(input);
+
+      expect(prompt).toContain('지어내지 마라');
+      expect(prompt).toContain('미확인이라고 밝히고');
+    });
+  });
+
   it('안 닿으면 안 닿는다고 쓰라고 요구한다', () => {
     // 「어디에 닿는지」만 물으면 모델은 안 닿는 기술도 억지로 이어 붙인다.
     expect(buildStudyDeepdivePrompt(input)).toContain(
