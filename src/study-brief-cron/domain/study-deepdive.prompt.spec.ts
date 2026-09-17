@@ -59,30 +59,64 @@ describe('buildStudyDeepdivePrompt', () => {
     });
   });
 
-  describe('근거 제시 지시 두 겹', () => {
-    // 발행본을 사람이 다시 쓴 양의 무게중심이 근거 층이었다(출처 전수 보강 14편, 2026-09-08).
-    // 두 항목은 그 층에서 채점표(docs/korean-it-tech-blog-scorecard.md)와 이 프롬프트의 차집합이다.
-    it('숫자에 단위와 적용 조건을 붙이라고 요구한다', () => {
-      // 없으면 「30% 빨라졌다」처럼 조건 없는 수치가 나가고, 읽는 사람이 자기 환경에 옮기지 못한다.
+  describe('발행 라인 공통 채점표', () => {
+    // 채점표를 생성 단계에 넣어도 수정률이 줄지 않았다는 기존 판정은 이 경로를 재지 않았다.
+    // 발행 큐 1순위인 '오늘의 공부' 초안은 채점표를 받은 적이 없다.
+    it('내용·근거·전개 항목을 싣는다', () => {
       const prompt = buildStudyDeepdivePrompt(input);
 
-      expect(prompt).toContain('숫자에는 단위·기간·계산 기준을 붙여라');
-      expect(prompt).toContain('어느 조건에서 나온 것인지');
+      expect(prompt).toContain('도입부에서 독자·문제·글의 범위를 보여 주고');
+      expect(prompt).toContain('대안과 트레이드오프');
+      expect(prompt).toContain('숫자에는 단위·기간·계산 기준을 붙이고');
     });
 
+    it('문장 호흡 항목은 싣지 않는다', () => {
+      // 이 경로는 생성 뒤 humanizeMarkdownProse 를 지난다. 같은 규칙이 윤문 프롬프트
+      // (humanize-system.prompt.ts:449-451,461) 에 이미 있어, 여기에도 걸면 두 번 적용된다.
+      const prompt = buildStudyDeepdivePrompt(input);
+
+      expect(prompt).not.toContain('문장의 호흡을 무조건 짧게 만들지 않는다');
+      expect(prompt).not.toContain(
+        '한 문장 안에서 의미가 이어지는데 임의로 줄바꿈하지 않는다',
+      );
+      expect(prompt).not.toContain(
+        '비슷한 생각을 마침표만 붙여 나열하지 않는다',
+      );
+    });
+
+    it('채점표 전체를 가리키는 메타 문장을 싣지 않는다', () => {
+      // 「…한국어 자연스러움…을 모두 챙긴다」는 덜어낸 문체 축을 도로 불러온다.
+      expect(buildStudyDeepdivePrompt(input)).not.toContain(
+        '한국어 자연스러움',
+      );
+    });
+
+    it('미확인 값을 지어내지 말되 밝힐 여지는 남긴다', () => {
+      // 채점표는 「미확인으로 표시하라」, 기존 지시는 「비워라」였다. 나란히 두면 모델이
+      // 한쪽을 버리므로 한 문장으로 합쳤다.
+      const prompt = buildStudyDeepdivePrompt(input);
+
+      expect(prompt).toContain('지어내지 마라');
+      expect(prompt).toContain('미확인이라고 밝히고');
+    });
+  });
+
+  describe('근거 항목의 경계 표시', () => {
+    // 두 항목의 본체는 위 [내용 기준] 의 채점표가 싣는다. 여기 남은 것은 PR #593 이 리뷰를 받아
+    // 얻은 **경계**뿐이다 — 본체까지 다시 적으면 같은 지시가 두 벌이 된다.
     it('숫자의 조건 표기가 출처 표기가 아님을 지시문 안에서 밝힌다', () => {
-      // 이 지시만 두면 「문장마다 출처를 밝히지 마라」와 경계가 겹쳐, 모델이 숫자 옆에
+      // 이 경계가 없으면 「문장마다 출처를 밝히지 마라」와 겹쳐, 모델이 숫자 옆에
       // 「문서에 따르면」을 붙인다. 위 정직성 세 겹과 같은 이유로 관계를 지시문 안에 적는다.
       expect(buildStudyDeepdivePrompt(input)).toContain(
         '숫자의 적용 조건이지 출처 표기가 아니다',
       );
     });
 
-    it('고르지 않은 대안과 트레이드오프를 쓰라고 요구한다', () => {
-      // 선택지 하나만 설명하면 읽는 사람이 자기 조건에서 반대로 골라야 하는지 판단할 수 없다.
+    it('대안·트레이드오프가 「한계와 성숙도」와 다른 것임을 밝힌다', () => {
+      // 갈래 4번과 겹쳐 보이면 모델이 한쪽만 쓴다. 기술 자체의 한계와 선택지 간 비교는 다르다.
       const prompt = buildStudyDeepdivePrompt(input);
 
-      expect(prompt).toContain('**고르지 않은 쪽도 써라.**');
+      expect(prompt).toContain('「한계와 성숙도」 갈래와 다르다');
       expect(prompt).toContain('무엇을 내주고 무엇을 얻는 선택인지');
     });
   });
