@@ -6,8 +6,9 @@ import { homedir } from 'node:os';
 // 격리 전략:
 // 1. `HOME` / `PWD` 는 allowlist 에 포함하지 않고, 호출자가 `homeDir` / `cwd` 를 명시해 **throwaway 임시 경로로 고정** 한다.
 //    → prompt-injected agent 가 `cat ~/.ssh/id_rsa` 같은 공격을 해도 빈 임시 디렉토리만 본다.
-// 2. 단, CLI 자체의 auth 는 `CODEX_HOME` / `CLAUDE_CONFIG_DIR` 로 **실제 경로를 명시 전달** 해 구독 인증을 유지한다.
+// 2. 단, codex 는 인증을 `~/.codex` 아래 **파일**로 두므로 `CODEX_HOME` 으로 실제 경로를 명시 전달해 구독 인증을 유지한다.
 //    envVar 가 이미 있으면 그대로, 없으면 real HOME 기반으로 기본 경로 주입.
+//    claude 는 정반대라 `CLAUDE_CONFIG_DIR` 기본값을 주입하면 오히려 인증이 끊긴다 — 하단 주석 참조.
 //
 // process.env 직접 참조 정책(AGENTS.md §5 / CODE_RULES §9 — ConfigService 우선) 의 예외 격리 위치:
 // 자식 프로세스 환경변수 구성은 NestJS DI 컨텍스트 외부 시스템 호출이라 ConfigService 로 추상화하지 않는다.
@@ -65,17 +66,23 @@ export const buildSafeChildEnv = ({
     env.PWD = cwd;
   }
 
-  // CLI 인증 보존: parent 의 CODEX_HOME / CLAUDE_CONFIG_DIR 를 명시 전달한다.
+  // codex 인증 보존: parent 의 CODEX_HOME 을 명시 전달한다.
   // (HOME 을 throwaway 로 바꿨기 때문에 CLI 가 기본 추론하면 인증 파일을 못 찾는다)
   const codexHome = process.env.CODEX_HOME ?? buildDefaultAuthDir('.codex');
   if (codexHome) {
     env.CODEX_HOME = codexHome;
   }
 
+  // claude 는 `CLAUDE_CONFIG_DIR` **기본값을 주입하면 안 된다** — codex 와 정반대다.
+  // macOS 에서 claude CLI 의 구독 자격증명은 Keychain 에 있고 `~/.claude/.credentials.json` 은 존재하지
+  // 않는다. 그런데 이 env 가 들어오면 CLI 는 keychain 대신 그 디렉토리의 자격증명 파일을 보는 모드로
+  // 전환돼 `Not logged in · Please run /login` + exit=1 로 끊긴다. buildDefaultAuthDir('.claude') 를
+  // 주입하던 동안 OAuth token 이 없는 경로 A (keychain) 는 구조적으로 항상 실패했고, 그 exit=1 은
+  // claude-cli.provider.ts 의 isClaudeAuthSuspect 를 타 "인증 만료 / 쿼터 소진 의심" owner 알람으로
+  // 오진됐다 (2026-09-16 실측: real HOME + SAFE_ENV_KEYS 조합에서 이 변수만 빼면 exit=0 성공).
+  // parent 가 실제로 설정했을 때만 그 의도를 존중해 전달한다 — 없으면 CLI 의 HOME 기반 추론에 맡긴다.
   const claudeConfigDir =
-    process.env.CLAUDE_CONFIG_DIR ??
-    process.env.CLAUDE_HOME ??
-    buildDefaultAuthDir('.claude');
+    process.env.CLAUDE_CONFIG_DIR ?? process.env.CLAUDE_HOME;
   if (claudeConfigDir) {
     env.CLAUDE_CONFIG_DIR = claudeConfigDir;
   }
