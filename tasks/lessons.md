@@ -697,3 +697,30 @@ checkout 을 가로막았다. `~/.claude/CLAUDE.md` 의 <worktree_per_session> �
 - **적용:** 포즈처럼 "요청 이름 → 실재 파일" 변환이 필요한 곳은 **단일 변환 지점**을 둔다
   (이번엔 `OfficeChoreography.swift` 의 포즈 계약). 변환이 흩어져 있으면 에셋이 바뀔 때마다
   호출부를 전부 찾아야 한다.
+
+# 2026-09-17 — 목록에 없다고 존재하지 않는다고 판정했다 (맹반)
+
+블로그 글의 `ollama launch claude-desktop` 명령을 "반증됨"으로 판정했다. 근거는
+`ollama launch --help` 의 **integration 목록**에 `claude-desktop` 이 없다는 것이었다.
+그런데 같은 도움말 출력의 **Examples 절**에 `ollama launch claude-desktop --restore` 가
+그대로 있었고, 바이너리에도 `claude-desktop` 문자열이 있었다. 목록만 보고 아래를 안 읽었다.
+
+이건 `~/.claude/rules/incoming-doc-verification.md` 가 경고하는 **맹반** 그 자체다. 그 규칙을
+"들어온 문서"에만 적용하고 **내 판정에는 적용하지 않은 것**이 문제였다.
+
+- **적용:** "없다 / 지원 안 한다" 는 **출력 전문을 끝까지 읽고** 판정한다. 목록·표·첫 화면은
+  전문이 아니다. 부분 출력으로 부재를 판정하지 않는다.
+- **적용:** 검증 규칙(맹종·맹반 금지)은 남의 문서뿐 아니라 **내가 방금 내린 판정에도** 건다.
+  사용자에게 표로 "반증됨"을 내보내기 전에 근거가 전문인지 되묻는다.
+
+## 같은 회차 — 리스크를 코드 추적 없이 단정했다
+
+"`ollama launch claude` 를 쓰면 이대리 품질까지 같이 떨어진다"고 경고했다. 실제로는 이대리가
+이중 격리돼 있어 영향이 없었다. (1) `.env` 에 `CLAUDE_CODE_OAUTH_TOKEN` 이 있어
+`claude-cli.provider.ts` 의 `isolatedHome` 분기를 타므로 자식 HOME 이 throwaway →
+`~/.claude/settings.json` 을 안 읽는다. (2) `buildSafeChildEnv` allowlist 에
+`ANTHROPIC_BASE_URL` 이 없다. 둘 다 이미 레포에 있던 코드였고 읽기만 하면 됐다.
+
+- **적용:** "이거 쓰면 X 가 깨진다" 는 경고도 주장이다. **파일:라인으로 경로를 추적한 뒤에만**
+  말한다. 추적 안 했으면 경고 대신 "미확인" 으로 적는다 — 틀린 경고는 사용자의 선택지를
+  근거 없이 지운다.
