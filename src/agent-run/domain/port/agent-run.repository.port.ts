@@ -188,6 +188,9 @@ export interface LatestSweepReview {
   // 그 리뷰가 연습 모드(게시 없음)로 돌았는지. inputSnapshot.dryRun 이 없으면(구 레코드·
   // 스윕 외 경로) false. 실게시 전환 후 "연습으로만 끝난 PR"을 다시 리뷰할 근거다.
   dryRun: boolean;
+  // 그 리뷰가 draft 상태의 PR 을 본 것인지. inputSnapshot.isDraft 가 없으면(구 레코드·
+  // 스윕 외 경로) false. ready 전환 후 "draft 때만 리뷰된 PR"을 다시 리뷰할 근거다.
+  isDraft: boolean;
 }
 
 // 콘솔 관제(console 모듈) — 현재 IN_PROGRESS 인 활성 런 1건. deriveAgentState 의

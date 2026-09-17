@@ -69,6 +69,9 @@ export interface ReviewPullRequestInput {
   // PR 리뷰 스윕 전용 — 이 리뷰가 연습 모드(게시 없음)로 돌았는지. inputSnapshot 에 남아
   // "연습 모드로 끝난 리뷰"를 실게시 전환 후 다시 리뷰할지 판정하는 근거가 된다.
   dryRun?: boolean;
+  // PR 리뷰 스윕 전용 — 리뷰 시점에 그 PR 이 draft 였는지. dryRun 과 같은 자리에 같은 이유로
+  // 남는다: draft 때 본 것은 미완성 코드라, ready 로 바뀌면 완성본을 한 번 더 리뷰해야 한다.
+  isDraft?: boolean;
   // 사용자 온디맨드 진입점만 true로 명시한다. 미지정/false면 리뷰 결과만 반환한다.
   publish?: boolean;
 }

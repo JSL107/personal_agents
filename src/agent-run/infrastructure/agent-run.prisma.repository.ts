@@ -591,11 +591,17 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
     }
     // inputSnapshot 은 임의 JSON — dryRun 이 실제 true 일 때만 연습 모드로 본다(누락·타입
     // 불일치는 전부 false = 실게시로 간주해, 판정이 재리뷰 쪽으로 새지 않게 한다).
-    const snapshot = row.inputSnapshot as { dryRun?: unknown } | null;
+    // isDraft 도 같은 규칙이다: 모르는 값을 draft 로 접으면 ready 전환 재리뷰가 한 번 더 돌아
+    // 이미 리뷰가 끝난 PR 에 코멘트가 두 벌 달린다(구 레코드 전체가 그 경로를 탄다).
+    const snapshot = row.inputSnapshot as {
+      dryRun?: unknown;
+      isDraft?: unknown;
+    } | null;
     return {
       status: row.status,
       startedAt: row.startedAt,
       dryRun: snapshot?.dryRun === true,
+      isDraft: snapshot?.isDraft === true,
     };
   }
 

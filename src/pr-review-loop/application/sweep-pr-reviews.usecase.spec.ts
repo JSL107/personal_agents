@@ -13,6 +13,7 @@ const OPEN_PR = {
   number: 180,
   repo: 'JSL107/personal_agents',
   updatedAt: '2026-07-31T00:00:00Z',
+  isDraft: false,
 };
 const OPEN_PR_URL = 'https://github.com/JSL107/personal_agents/pull/180';
 
@@ -224,6 +225,7 @@ describe('SweepPrReviewsUsecase', () => {
       status: 'SUCCEEDED',
       startedAt: hoursAgo(1),
       dryRun: false,
+      isDraft: false,
     });
 
     const { results } = await buildUsecase(ENABLED).execute();
@@ -242,6 +244,7 @@ describe('SweepPrReviewsUsecase', () => {
       status: 'SUCCEEDED',
       startedAt: hoursAgo(1),
       dryRun: true,
+      isDraft: false,
     });
 
     await buildUsecase(ENABLED).execute();
@@ -254,6 +257,7 @@ describe('SweepPrReviewsUsecase', () => {
       status: 'SUCCEEDED',
       startedAt: hoursAgo(1),
       dryRun: false,
+      isDraft: false,
     });
 
     await buildUsecase({
@@ -269,6 +273,7 @@ describe('SweepPrReviewsUsecase', () => {
       status: 'SUCCEEDED',
       startedAt: hoursAgo(1),
       dryRun: true,
+      isDraft: false,
     });
 
     const { results } = await buildUsecase({
@@ -291,6 +296,7 @@ describe('SweepPrReviewsUsecase', () => {
       status: 'SUCCEEDED',
       startedAt: hoursAgo(1),
       dryRun: true,
+      isDraft: false,
     });
 
     await buildUsecase(ENABLED).execute();
@@ -298,11 +304,97 @@ describe('SweepPrReviewsUsecase', () => {
     expect(reviewUsecase.execute).not.toHaveBeenCalled();
   });
 
+  // draft 가 리뷰 대상이 되면서 "PR 당 1회" 와 충돌한다. 이 레포의 PR 은 열린 지 10~20분에
+  // 머지되므로, draft 구간을 스치며 받은 미완성 리뷰가 그 PR 의 유일한 리뷰가 되면 정작
+  // 머지되는 완성본이 검토 없이 나간다 — ready 전환 때 한 번을 더 준다.
+  it('draft 로 끝난 SUCCEEDED 는 ready 로 바뀌면 다시 리뷰한다', async () => {
+    agentRunService.findLatestSweepReview.mockResolvedValue({
+      status: 'SUCCEEDED',
+      startedAt: hoursAgo(1),
+      dryRun: false,
+      isDraft: true,
+    });
+    github.listOpenPullRequestRefs.mockResolvedValue([
+      { ...OPEN_PR, isDraft: false },
+    ]);
+
+    const { results } = await buildUsecase({
+      ...ENABLED,
+      PR_REVIEW_INLINE_DRYRUN: 'false',
+    }).execute();
+
+    // 성공 레코드를 근거로 한 재리뷰라 재시도 예산(실패 경로)은 건드리지 않아야 한다.
+    expect(
+      agentRunService.countUnsuccessfulSweepReviews,
+    ).not.toHaveBeenCalled();
+    expect(reviewUsecase.execute).toHaveBeenCalledTimes(1);
+    expect(results).toHaveLength(1);
+  });
+
+  it('draft 로 끝난 SUCCEEDED 라도 아직 draft 면 재리뷰하지 않는다 — 5분마다 재리뷰 방지', async () => {
+    agentRunService.findLatestSweepReview.mockResolvedValue({
+      status: 'SUCCEEDED',
+      startedAt: hoursAgo(1),
+      dryRun: false,
+      isDraft: true,
+    });
+    github.listOpenPullRequestRefs.mockResolvedValue([
+      { ...OPEN_PR, isDraft: true },
+    ]);
+
+    await buildUsecase({
+      ...ENABLED,
+      PR_REVIEW_INLINE_DRYRUN: 'false',
+    }).execute();
+
+    expect(reviewUsecase.execute).not.toHaveBeenCalled();
+  });
+
+  // 완성본을 이미 리뷰한 PR 을 draft 로 되돌리는 경우. 되돌림은 전환이 아니므로 추가 리뷰가
+  // 없어야 한다 — 성립시키면 draft ↔ ready 왕복만으로 코멘트를 무한히 쌓을 수 있다.
+  it('ready 로 리뷰를 마친 PR 이 draft 로 되돌아가면 재리뷰하지 않는다', async () => {
+    agentRunService.findLatestSweepReview.mockResolvedValue({
+      status: 'SUCCEEDED',
+      startedAt: hoursAgo(1),
+      dryRun: false,
+      isDraft: false,
+    });
+    github.listOpenPullRequestRefs.mockResolvedValue([
+      { ...OPEN_PR, isDraft: true },
+    ]);
+
+    await buildUsecase({
+      ...ENABLED,
+      PR_REVIEW_INLINE_DRYRUN: 'false',
+    }).execute();
+
+    expect(reviewUsecase.execute).not.toHaveBeenCalled();
+  });
+
+  // 위 판정들이 딛고 선 근거다. 원장에 안 남으면 다음 회차가 "draft 때 리뷰했다"를 알 수 없어
+  // ready 전환 재리뷰가 통째로 죽는다(조용히 — 그때는 그냥 SKIP 으로 보인다).
+  it('draft PR 을 리뷰하면 원장에 draft 였음을 남긴다', async () => {
+    agentRunService.findLatestSweepReview.mockResolvedValue(null);
+    github.listOpenPullRequestRefs.mockResolvedValue([
+      { ...OPEN_PR, isDraft: true },
+    ]);
+
+    await buildUsecase({
+      ...ENABLED,
+      PR_REVIEW_INLINE_DRYRUN: 'false',
+    }).execute();
+
+    expect(reviewUsecase.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ isDraft: true }),
+    );
+  });
+
   it('직전이 FAILED + 쿨다운(10분) 안이면 재리뷰하지 않는다', async () => {
     agentRunService.findLatestSweepReview.mockResolvedValue({
       status: 'FAILED',
       startedAt: minutesAgo(5),
       dryRun: false,
+      isDraft: false,
     });
 
     const { results } = await buildUsecase(ENABLED).execute();
@@ -316,6 +408,7 @@ describe('SweepPrReviewsUsecase', () => {
       status: 'FAILED',
       startedAt: minutesAgo(15),
       dryRun: false,
+      isDraft: false,
     });
 
     const { results } = await buildUsecase(ENABLED).execute();
@@ -329,6 +422,7 @@ describe('SweepPrReviewsUsecase', () => {
       status: 'IN_PROGRESS',
       startedAt: minutesAgo(5),
       dryRun: false,
+      isDraft: false,
     });
 
     const { results } = await buildUsecase(ENABLED).execute();
@@ -345,6 +439,7 @@ describe('SweepPrReviewsUsecase', () => {
       status: 'FAILED',
       startedAt: minutesAgo(15),
       dryRun: false,
+      isDraft: false,
     });
     agentRunService.countUnsuccessfulSweepReviews.mockResolvedValue(3);
 
@@ -363,6 +458,7 @@ describe('SweepPrReviewsUsecase', () => {
       status: 'IN_PROGRESS',
       startedAt: minutesAgo(15),
       dryRun: false,
+      isDraft: false,
     });
     agentRunService.countUnsuccessfulSweepReviews.mockResolvedValue(2);
 
@@ -377,6 +473,7 @@ describe('SweepPrReviewsUsecase', () => {
       status: 'FAILED',
       startedAt: minutesAgo(15),
       dryRun: false,
+      isDraft: false,
     });
     agentRunService.countUnsuccessfulSweepReviews.mockRejectedValue(
       new Error('DB 순간 오류'),
@@ -505,6 +602,7 @@ describe('SweepPrReviewsUsecase', () => {
       status: 'SUCCEEDED',
       startedAt: hoursAgo(1),
       dryRun: false,
+      isDraft: false,
     });
 
     await buildUsecase(ENABLED).execute();

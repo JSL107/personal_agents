@@ -126,6 +126,9 @@ export interface OpenPullRequestRef {
   repo: string; // "owner/repo"
   number: number;
   updatedAt: string; // ISO 8601
+  // draft 여부. 리뷰 스윕이 "draft 로 한 번, ready 로 바뀐 뒤 또 한 번" 을 가르는 근거다.
+  // 그 판정은 PR 상세를 조회하기 전에 끝나야 하므로 검색 결과에 실려 온 값을 쓴다.
+  isDraft: boolean;
 }
 
 // issues.opened webhook 자동 라벨링 — repo 의 기존 label vocab 조회 + LLM 이 고른 label 부분집합 적용.
