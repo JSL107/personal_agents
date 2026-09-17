@@ -67,14 +67,37 @@ describe('buildSafeChildEnv', () => {
     expect(env.CODEX_HOME).toBe('/Users/me/.codex');
   });
 
-  it('CLAUDE_CONFIG_DIR 이 없으면 real HOME 기반 기본 경로로 주입한다', () => {
+  // 기본값을 주입하면 claude CLI 가 keychain 대신 그 디렉토리의 자격증명 파일을 보는 모드로 전환돼
+  // `Not logged in` + exit=1 이 된다 (2026-09-16 실측). parent 가 안 정했으면 넘기지 않는다.
+  it('CLAUDE_CONFIG_DIR 이 없으면 기본 경로를 주입하지 않는다 (keychain 인증 경로 보존)', () => {
     process.env.HOME = '/Users/me';
     delete process.env.CLAUDE_CONFIG_DIR;
     delete process.env.CLAUDE_HOME;
 
     const env = buildSafeChildEnv();
 
-    expect(env.CLAUDE_CONFIG_DIR).toBe('/Users/me/.claude');
+    expect(env.CLAUDE_CONFIG_DIR).toBeUndefined();
+  });
+
+  it('throwaway HOME 을 넘겨도 CLAUDE_CONFIG_DIR 을 새로 만들어 넣지 않는다', () => {
+    process.env.HOME = '/Users/me';
+    delete process.env.CLAUDE_CONFIG_DIR;
+    delete process.env.CLAUDE_HOME;
+
+    const env = buildSafeChildEnv({ homeDir: '/tmp/throwaway' });
+
+    expect(env.HOME).toBe('/tmp/throwaway');
+    expect(env.CLAUDE_CONFIG_DIR).toBeUndefined();
+  });
+
+  it('CLAUDE_HOME 만 있으면 그 값을 CLAUDE_CONFIG_DIR 로 전달한다 (parent 의도 존중)', () => {
+    process.env.HOME = '/Users/me';
+    delete process.env.CLAUDE_CONFIG_DIR;
+    process.env.CLAUDE_HOME = '/custom/claude-home';
+
+    const env = buildSafeChildEnv();
+
+    expect(env.CLAUDE_CONFIG_DIR).toBe('/custom/claude-home');
   });
 
   it('CLAUDE_HOME 은 fallback 으로만 쓰고 CLAUDE_CONFIG_DIR 이 우선한다', () => {
