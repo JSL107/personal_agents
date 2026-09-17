@@ -239,6 +239,7 @@ export class OctokitGithubClient implements GithubClientPort {
         additions: prResponse.data.additions,
         deletions: prResponse.data.deletions,
         headSha: prResponse.data.head.sha,
+        isDraft: prResponse.data.draft === true,
       };
     } catch (error: unknown) {
       throw this.wrapRequestFailed(error, `PR #${number} 조회 실패`);
@@ -999,7 +1000,11 @@ export class OctokitGithubClient implements GithubClientPort {
     // 쿼리 상한이 걸릴까 싶어 나눠 보내던 것을 실측으로 확인해 걷어냈다 — 2026-09-14
     // 기준 레포 50개(1769자) 쿼리도 정상 응답한다(레포 5/8/12/20/30/50 전부 200).
     const repoQualifier = repos.map((item) => `repo:${item}`).join(' ');
-    const q = `${repoQualifier} is:pr is:open draft:false author:${author} updated:>=${sinceIsoDate}`;
+    // draft 도 후보에 넣는다 — 이 조회는 리뷰 스윕 전용이고, 작업 중인 PR 도 리뷰를 받는다.
+    // 원래는 `draft:false` 였는데, 그것은 성과 집계(impact-reporter)가 draft 를 노이즈로 걸러
+    // 낸 조건을 스윕이 물려받은 것이었다. 집계 쪽(listAuthorOpenPullRequests)은 그대로 둔다.
+    // 같은 PR 을 draft 때와 ready 때 두 번 리뷰하는 판정은 호출자(judgeLatestReview) 몫이다.
+    const q = `${repoQualifier} is:pr is:open author:${author} updated:>=${sinceIsoDate}`;
     let searchResponse;
     try {
       searchResponse = await this.octokit!.rest.search.issuesAndPullRequests({
@@ -1019,6 +1024,9 @@ export class OctokitGithubClient implements GithubClientPort {
       repo: extractRepo(item.repository_url),
       number: item.number,
       updatedAt: item.updated_at,
+      // 검색 응답의 draft 는 optional 이다. 값이 없으면 ready 로 본다 — 모르는 것을 draft 로
+      // 접으면 ready 전환 재리뷰가 한 번 더 돌아 같은 PR 에 코멘트가 두 벌 달린다.
+      isDraft: item.draft === true,
     }));
   }
 

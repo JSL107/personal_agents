@@ -101,6 +101,26 @@ describe('buildStudyDeepdivePrompt', () => {
     });
   });
 
+  describe('근거 항목의 경계 표시', () => {
+    // 두 항목의 본체는 위 [내용 기준] 의 채점표가 싣는다. 여기 남은 것은 PR #593 이 리뷰를 받아
+    // 얻은 **경계**뿐이다 — 본체까지 다시 적으면 같은 지시가 두 벌이 된다.
+    it('숫자의 조건 표기가 출처 표기가 아님을 지시문 안에서 밝힌다', () => {
+      // 이 경계가 없으면 「문장마다 출처를 밝히지 마라」와 겹쳐, 모델이 숫자 옆에
+      // 「문서에 따르면」을 붙인다. 위 정직성 세 겹과 같은 이유로 관계를 지시문 안에 적는다.
+      expect(buildStudyDeepdivePrompt(input)).toContain(
+        '숫자의 적용 조건이지 출처 표기가 아니다',
+      );
+    });
+
+    it('대안·트레이드오프가 「한계와 성숙도」와 다른 것임을 밝힌다', () => {
+      // 갈래 4번과 겹쳐 보이면 모델이 한쪽만 쓴다. 기술 자체의 한계와 선택지 간 비교는 다르다.
+      const prompt = buildStudyDeepdivePrompt(input);
+
+      expect(prompt).toContain('「한계와 성숙도」 갈래와 다르다');
+      expect(prompt).toContain('무엇을 내주고 무엇을 얻는 선택인지');
+    });
+  });
+
   it('안 닿으면 안 닿는다고 쓰라고 요구한다', () => {
     // 「어디에 닿는지」만 물으면 모델은 안 닿는 기술도 억지로 이어 붙인다.
     expect(buildStudyDeepdivePrompt(input)).toContain(

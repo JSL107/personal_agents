@@ -669,6 +669,7 @@ describe('OctokitGithubClient', () => {
         number: number;
         repository_url: string;
         updated_at: string;
+        draft?: boolean;
       }>,
     ): { octokit: Octokit; search: jest.Mock; prGet: jest.Mock } => {
       const search = jest.fn().mockResolvedValue({ data: { items } });
@@ -685,10 +686,16 @@ describe('OctokitGithubClient', () => {
     const searchedQueries = (search: jest.Mock): string[] =>
       (search.mock.calls as Array<[{ q: string }]>).map((call) => call[0].q);
 
-    const item = (repo: string, number: number, updatedAt: string) => ({
+    const item = (
+      repo: string,
+      number: number,
+      updatedAt: string,
+      draft?: boolean,
+    ) => ({
       number,
       repository_url: `https://api.github.com/repos/${repo}`,
       updated_at: updatedAt,
+      ...(draft === undefined ? {} : { draft }),
     });
 
     it('레포를 한 쿼리에 묶어 검색 1회로 끝내고 PR 상세는 치지 않는다', async () => {
@@ -709,7 +716,7 @@ describe('OctokitGithubClient', () => {
 
       expect(search).toHaveBeenCalledTimes(1);
       expect(search).toHaveBeenCalledWith({
-        q: 'repo:org/a repo:org/b is:pr is:open draft:false author:JSL107 updated:>=2026-08-31',
+        q: 'repo:org/a repo:org/b is:pr is:open author:JSL107 updated:>=2026-08-31',
         per_page: 50,
         sort: 'updated',
         order: 'desc',
@@ -717,9 +724,59 @@ describe('OctokitGithubClient', () => {
       // 상세 조회가 스윕 GitHub 호출량의 대부분이었다 — 한 건도 치지 않아야 한다.
       expect(prGet).not.toHaveBeenCalled();
       expect(refs).toEqual([
-        { repo: 'org/b', number: 2, updatedAt: '2026-09-02T00:00:00Z' },
-        { repo: 'org/a', number: 1, updatedAt: '2026-09-01T00:00:00Z' },
+        {
+          repo: 'org/b',
+          number: 2,
+          updatedAt: '2026-09-02T00:00:00Z',
+          isDraft: false,
+        },
+        {
+          repo: 'org/a',
+          number: 1,
+          updatedAt: '2026-09-01T00:00:00Z',
+          isDraft: false,
+        },
       ]);
+    });
+
+    // 이 조회가 `draft:false` 로 draft 를 걸러내던 동안 draft PR 은 리뷰를 한 번도 못 받았다.
+    // 쿼리에서 그 조건이 사라졌는지, 그리고 draft 여부가 호출자까지 실려 가는지 함께 본다 —
+    // 값이 유실되면 스윕이 ready 전환을 알아보지 못해 미완성 리뷰 한 번으로 끝난다.
+    it('draft PR 도 후보에 넣고 draft 여부를 그대로 실어 보낸다', async () => {
+      const { octokit, search } = buildOctokit([
+        item('org/a', 3, '2026-09-03T00:00:00Z', true),
+        item('org/a', 4, '2026-09-02T00:00:00Z', false),
+      ]);
+      const client = new OctokitGithubClient(octokit);
+
+      const refs = await client.listOpenPullRequestRefs({
+        repos: ['org/a'],
+        author: 'JSL107',
+        sinceIsoDate: '2026-08-31',
+        limit: 50,
+      });
+
+      const [query] = searchedQueries(search);
+      expect(query).not.toContain('draft:false');
+      expect(refs.map((ref) => ref.isDraft)).toEqual([true, false]);
+    });
+
+    // GitHub 검색 응답의 draft 는 optional 이다. 누락을 draft 로 접으면 ready 전환 재리뷰가
+    // 한 번 더 돌아 이미 리뷰가 끝난 PR 에 코멘트가 두 벌 달린다.
+    it('draft 필드가 없는 응답은 ready 로 본다', async () => {
+      const { octokit } = buildOctokit([
+        item('org/a', 5, '2026-09-03T00:00:00Z'),
+      ]);
+      const client = new OctokitGithubClient(octokit);
+
+      const refs = await client.listOpenPullRequestRefs({
+        repos: ['org/a'],
+        author: 'JSL107',
+        sinceIsoDate: '2026-08-31',
+        limit: 50,
+      });
+
+      expect(refs[0].isDraft).toBe(false);
     });
 
     // 레포가 늘어도 호출 수가 따라 늘면 이번 수정의 의미가 없다.

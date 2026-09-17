@@ -120,7 +120,10 @@ export class SweepPrReviewsUsecase {
         break;
       }
       const prRef = `${pullRequest.repo}#${pullRequest.number}`;
-      const decision = await this.decideSweepAction(prRef);
+      const decision = await this.decideSweepAction({
+        prRef,
+        isDraft: pullRequest.isDraft,
+      });
       if (decision === 'SKIP') {
         continue;
       }
@@ -208,10 +211,17 @@ export class SweepPrReviewsUsecase {
   // PR 당 리뷰 1회(쿨다운 재시도) 판정 — AgentRun(triggerType=PR_REVIEW_SWEEP) 원장 기준.
   // 게시 여부·findings 유무와 무관하게 "리뷰 시도" 자체가 근거이므로 연습 모드(카드 미생성)에서도
   // 정확히 동작한다. 레코드가 없으면 REVIEW, SUCCEEDED 면 SKIP(단 연습 모드로 끝난 리뷰는
-  // 실게시 전환 시 한 번 더 REVIEW), 그 외(FAILED/IN_PROGRESS)는 쿨다운이 지났는지로 재시도
-  // 여부를 가른다(순수 로직 — 조회는 조회대로, 판정은 판정대로 분리).
+  // 실게시 전환 시, draft 로 끝난 리뷰는 ready 전환 시 한 번 더 REVIEW), 그 외(FAILED/
+  // IN_PROGRESS)는 쿨다운이 지났는지로 재시도 여부를 가른다(순수 로직 — 조회는 조회대로,
+  // 판정은 판정대로 분리).
   // 조회 자체가 실패하면 오판으로 중복 리뷰하느니 SKIP — 이번 스윕에서 이 PR 만 건너뛴다.
-  private async decideSweepAction(prRef: string): Promise<SweepDecision> {
+  private async decideSweepAction({
+    prRef,
+    isDraft,
+  }: {
+    prRef: string;
+    isDraft: boolean;
+  }): Promise<SweepDecision> {
     let latest: LatestSweepReview | null;
     try {
       latest = await this.agentRunService.findLatestSweepReview({
@@ -224,7 +234,11 @@ export class SweepPrReviewsUsecase {
       );
       return 'SKIP';
     }
-    const decision = this.judgeLatestReview(latest, this.isDryRun());
+    const decision = this.judgeLatestReview({
+      latest,
+      currentDryRun: this.isDryRun(),
+      currentIsDraft: isDraft,
+    });
     if (
       decision === 'REVIEW' &&
       latest !== null &&
@@ -235,19 +249,34 @@ export class SweepPrReviewsUsecase {
     return decision;
   }
 
-  private judgeLatestReview(
-    latest: LatestSweepReview | null,
-    currentDryRun: boolean,
-  ): SweepDecision {
+  private judgeLatestReview({
+    latest,
+    currentDryRun,
+    currentIsDraft,
+  }: {
+    latest: LatestSweepReview | null;
+    currentDryRun: boolean;
+    currentIsDraft: boolean;
+  }): SweepDecision {
     if (latest === null) {
       return 'REVIEW';
     }
     if (latest.status === AgentRunStatus.SUCCEEDED) {
+      // 성공한 리뷰는 원칙적으로 PR 당 1회다. 예외는 "그때는 할 수 없던 리뷰를 지금은 해야
+      // 하는" 상태 전환 둘뿐이고, 둘 다 전환 직후 한 번만 성립한다(전환 뒤의 리뷰가 최신
+      // 레코드가 되면서 조건이 닫힌다).
+      //
       // 연습 모드로 끝난 리뷰는 GitHub 에 아무것도 남기지 않았다. 그 상태를 "리뷰 완료"로
       // 굳히면 실게시로 전환한 뒤에도 같은 PR 이 SWEEP_REVIEW_LOOKBACK_DAYS(30일)간
       // SKIP 되어 영영 게시되지 않는다 — 연습 → 실게시 전환은 기본값이 연습 모드인
       // 이 기능에서 반드시 밟는 경로이므로, 그 한 번은 다시 리뷰해 게시한다.
-      return latest.dryRun && !currentDryRun ? 'REVIEW' : 'SKIP';
+      const publishTransition = latest.dryRun && !currentDryRun;
+      // draft 때 본 것은 작업 중인 코드다. ready 로 바뀌면 완성본을 한 번 더 리뷰한다 —
+      // 이 레포의 PR 은 열린 지 10~20분에 머지되므로, 이 한 번이 없으면 draft 구간을 스치며
+      // 받은 미완성 리뷰가 그 PR 의 유일한 리뷰가 되고 실제 머지되는 코드는 검토 없이 나간다.
+      // 반대 방향(ready → draft 되돌림)은 성립하지 않는다 — 이미 완성본을 리뷰했다.
+      const readyTransition = latest.isDraft && !currentIsDraft;
+      return publishTransition || readyTransition ? 'REVIEW' : 'SKIP';
     }
     const cooldownMs = SWEEP_RETRY_COOLDOWN_MINUTES * 60 * 1000;
     const elapsedMs = Date.now() - latest.startedAt.getTime();
@@ -337,6 +366,11 @@ export class SweepPrReviewsUsecase {
         triggerType: TriggerType.PR_REVIEW_SWEEP,
         snapshot: { detail, diff },
         dryRun,
+        // 후보 선별에 쓴 검색 결과가 아니라 방금 조회한 상세의 값을 남긴다. 검색 인덱스는
+        // 조금 늦어(같은 지연을 위 mergedAt 가드가 이미 전제로 둔다) ready 가 된 PR 이
+        // draft 로 조회될 수 있는데, 그 값을 기록하면 완성본을 리뷰하고도 "draft 때 리뷰함"
+        // 으로 남아 다음 회차에 ready 전환 재리뷰가 한 번 더 돈다 — 같은 코드에 두 벌이다.
+        isDraft: detail.isDraft,
       });
       if (outcome.result.findings.length === 0) {
         // 게시할 카드는 없지만 "지적 없음" 을 단언할 수 있는지는 별개다 — 초안(reviewCommentDrafts)
@@ -399,6 +433,10 @@ export class SweepPrReviewsUsecase {
   // 남는다. 예외는 그 lookback 을 넘겨 재리뷰되는 장수 PR 로, 지적 코멘트와 달리 이 안내에는
   // 지문 중복 방지가 없어 30일에 한 건씩 늘어난다 — 30분 안에 merge 되는 이 레포의 PR 수명상
   // 실사용 영향은 없다고 보고 받아들인다.
+  //
+  // draft → ready 전환도 같은 이유로 두 번 달릴 수 있다(draft 때 한 번, 완성본에 한 번).
+  // 이쪽은 중복이 아니라 서로 다른 시점의 검토 결과라 그대로 둔다 — 지우면 ready 리뷰가
+  // 지적 0건으로 끝났을 때 완성본을 검토했다는 흔적이 사라진다.
   //
   // 실패해도 스윕을 실패로 만들지 않는다. 리뷰 자체는 이미 SUCCEEDED 로 마감됐고, 이 코멘트는
   // 안내일 뿐이라 여기서 throw 하면 성공한 회차가 원장에 실패로 남아 재시도 예산만 닳는다.

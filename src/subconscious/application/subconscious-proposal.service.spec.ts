@@ -179,6 +179,7 @@ describe('SubconsciousProposalService.shouldEmit', () => {
     status: 'SUCCEEDED',
     startedAt: new Date('2026-06-26T08:00:00.000Z'),
     dryRun: false,
+    isDraft: false,
   };
 
   it('스윕이 이미 리뷰·게시한 PR 이면 false', async () => {
@@ -571,6 +572,7 @@ describe('SubconsciousProposalService.dismissSweptPending', () => {
     status: 'SUCCEEDED',
     startedAt: new Date('2026-06-26T08:00:00.000Z'),
     dryRun: false,
+    isDraft: false,
   };
 
   it('스윕이 리뷰·게시한 PR 의 미응답 카드를 DISMISSED 로 닫고 닫은 수를 돌려준다', async () => {
