@@ -155,6 +155,7 @@ describe('GenerateImpactReportUsecase', () => {
         additions: 0,
         deletions: 0,
         headSha: 'sha',
+        isDraft: false,
       });
 
       await usecase.execute({
@@ -192,6 +193,7 @@ describe('GenerateImpactReportUsecase', () => {
         additions: 0,
         deletions: 0,
         headSha: 'sha',
+        isDraft: false,
       });
 
       await usecase.execute({
@@ -226,6 +228,7 @@ describe('GenerateImpactReportUsecase', () => {
         additions: 0,
         deletions: 0,
         headSha: 'sha',
+        isDraft: false,
       });
 
       await usecase.execute({ subject: 'a/b#7', slackUserId: 'U1' });

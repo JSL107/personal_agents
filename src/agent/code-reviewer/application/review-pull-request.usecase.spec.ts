@@ -101,6 +101,7 @@ describe('ReviewPullRequestUsecase', () => {
       additions: 10,
       deletions: 2,
       headSha: 'sha',
+      isDraft: false,
     });
     githubClient.getPullRequestDiff.mockResolvedValue({
       diff: 'diff --git a/src/a.ts ...',
@@ -175,6 +176,7 @@ describe('ReviewPullRequestUsecase', () => {
       additions: 1,
       deletions: 0,
       headSha: 'reviewed-head-sha',
+      isDraft: false,
     };
     const diff = {
       diff: 'reviewed diff string',
@@ -313,6 +315,7 @@ describe('ReviewPullRequestUsecase', () => {
       additions: 1,
       deletions: 0,
       headSha: 'injected-sha',
+      isDraft: false,
     };
 
     await usecase.execute({
@@ -349,6 +352,29 @@ describe('ReviewPullRequestUsecase', () => {
     expect(
       agentRunServiceExecute.mock.calls[0][0].inputSnapshot,
     ).not.toHaveProperty('dryRun');
+  });
+
+  // 이 기록이 스윕의 ready 전환 재리뷰가 딛고 선 유일한 근거다. 스윕 스펙은 이 usecase 에
+  // 무엇을 넘기는지까지만 단언하므로, 여기서 스냅샷에 싣지 않으면 그 기능이 조용히 죽는다
+  // (다음 회차가 "draft 때 리뷰했다"를 알 방법이 없어 그냥 SKIP 으로 보인다).
+  it('isDraft 를 주면 inputSnapshot 에 남긴다 — ready 전환 시 재리뷰 판정 근거', async () => {
+    await usecase.execute({
+      prRef: 'foo/bar#34',
+      slackUserId: 'U123',
+      isDraft: true,
+    });
+
+    expect(agentRunServiceExecute.mock.calls[0][0].inputSnapshot).toEqual(
+      expect.objectContaining({ isDraft: true }),
+    );
+  });
+
+  it('isDraft 미지정(슬래시·웹훅 경로)이면 inputSnapshot 에 키 자체가 없다', async () => {
+    await usecase.execute({ prRef: 'foo/bar#34', slackUserId: 'U123' });
+
+    expect(
+      agentRunServiceExecute.mock.calls[0][0].inputSnapshot,
+    ).not.toHaveProperty('isDraft');
   });
 
   it('publish 를 주면 inputSnapshot 에 남긴다 — /retry-run 이 게시 의도를 재현하는 근거', async () => {
@@ -512,6 +538,7 @@ describe('ReviewPullRequestUsecase — conversationContext', () => {
       additions: 1,
       deletions: 0,
       headSha: 'sha',
+      isDraft: false,
     });
     githubClient.getPullRequestDiff.mockResolvedValue({
       diff: '+const x = 1;',
@@ -584,6 +611,7 @@ describe('ReviewPullRequestUsecase — conversationContext', () => {
       additions: 10,
       deletions: 2,
       headSha: 'sha',
+      isDraft: false,
     });
 
     await usecase.execute({
@@ -631,6 +659,7 @@ describe('buildReviewPrompt', () => {
         additions: 5,
         deletions: 1,
         headSha: 'sha',
+        isDraft: false,
       },
       diff: { diff: '+hello', truncated: false, bytes: 6 },
     });
@@ -664,6 +693,7 @@ describe('buildReviewPrompt', () => {
         additions: 0,
         deletions: 0,
         headSha: 'sha',
+        isDraft: false,
       },
       diff: { diff: '+hello', truncated: false, bytes: 6 },
     });
@@ -696,6 +726,7 @@ describe('buildReviewPrompt', () => {
         additions: 0,
         deletions: 0,
         headSha: 'sha',
+        isDraft: false,
       },
       diff: { diff: '', truncated: false, bytes: 0 },
     });
@@ -721,6 +752,7 @@ describe('buildReviewPrompt', () => {
         additions: 0,
         deletions: 0,
         headSha: 'sha',
+        isDraft: false,
       },
       diff: { diff: 'short', truncated: true, bytes: 10000 },
     });
@@ -781,6 +813,7 @@ describe('ReviewPullRequestUsecase × 학습 규약', () => {
         additions: 1,
         deletions: 0,
         headSha: 'sha',
+        isDraft: false,
       }),
       getPullRequestDiff: jest
         .fn()
@@ -931,6 +964,7 @@ describe('ReviewPullRequestUsecase × 학습 규약', () => {
       additions: 1,
       deletions: 0,
       headSha: 'sha',
+      isDraft: false,
     });
 
     await buildUsecase(deps).execute({

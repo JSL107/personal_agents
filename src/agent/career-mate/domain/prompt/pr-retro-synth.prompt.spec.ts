@@ -50,6 +50,7 @@ describe('pr-retro-synth', () => {
         additions: 10,
         deletions: 2,
         headSha: 'sha',
+        isDraft: false,
       },
       diff: { diff: 'diff-body', truncated: false, bytes: 9 },
     });
@@ -94,6 +95,7 @@ describe('pr-retro-synth', () => {
       additions: 5,
       deletions: 1,
       headSha: 'sha',
+      isDraft: false,
     });
     const prompt = buildMultiPrRetroPrompt({
       items: [
@@ -141,6 +143,7 @@ describe('pr-retro-synth — 작업 맥락', () => {
     additions: 10,
     deletions: 2,
     headSha: 'sha',
+    isDraft: false,
   };
   const DIFF = { diff: 'diff-body', truncated: false, bytes: 9 };
   const CONTEXT = '결제 실패율 3%→0.5%, 월 2,000건 수동 재시도 제거';
