@@ -50,6 +50,10 @@ export interface PullRequestDetail {
   deletions: number;
   // 리뷰 시점 head commit sha — 카드의 커밋 대조 기준선(Phase 2)이자 인라인 코멘트의 commit_id.
   headSha: string;
+  // 리뷰 시점의 draft 여부. 리뷰 스윕이 원장에 남기는 값은 반드시 이쪽(상세)이어야 한다 —
+  // 검색 결과의 draft 는 GitHub 인덱스 지연으로 실제 상태보다 늦을 수 있고, 그 값을 기록하면
+  // 완성본을 리뷰하고도 "draft 때 리뷰함" 으로 남아 ready 전환 재리뷰가 한 번 더 돈다.
+  isDraft: boolean;
 }
 
 export interface PullRequestDiff {

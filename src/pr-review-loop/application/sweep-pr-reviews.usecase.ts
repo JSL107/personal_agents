@@ -136,7 +136,6 @@ export class SweepPrReviewsUsecase {
           repo: pullRequest.repo,
           pullNumber: pullRequest.number,
           slackUserId,
-          isDraft: pullRequest.isDraft,
         });
         if (result === ALREADY_MERGED) {
           // 검색 인덱스 지연으로 이미 머지된 PR 이 섞여 들어왔다. 리뷰를 한 적이 없으니
@@ -314,12 +313,10 @@ export class SweepPrReviewsUsecase {
     repo,
     pullNumber,
     slackUserId,
-    isDraft,
   }: {
     repo: string;
     pullNumber: number;
     slackUserId: string;
-    isDraft: boolean;
   }): Promise<SweepPullRequestResult | null | typeof ALREADY_MERGED> {
     const prRef = `${repo}#${pullNumber}`;
     const dryRun = this.isDryRun();
@@ -369,7 +366,11 @@ export class SweepPrReviewsUsecase {
         triggerType: TriggerType.PR_REVIEW_SWEEP,
         snapshot: { detail, diff },
         dryRun,
-        isDraft,
+        // 후보 선별에 쓴 검색 결과가 아니라 방금 조회한 상세의 값을 남긴다. 검색 인덱스는
+        // 조금 늦어(같은 지연을 위 mergedAt 가드가 이미 전제로 둔다) ready 가 된 PR 이
+        // draft 로 조회될 수 있는데, 그 값을 기록하면 완성본을 리뷰하고도 "draft 때 리뷰함"
+        // 으로 남아 다음 회차에 ready 전환 재리뷰가 한 번 더 돈다 — 같은 코드에 두 벌이다.
+        isDraft: detail.isDraft,
       });
       if (outcome.result.findings.length === 0) {
         // 게시할 카드는 없지만 "지적 없음" 을 단언할 수 있는지는 별개다 — 초안(reviewCommentDrafts)

@@ -17,6 +17,28 @@ const OPEN_PR = {
 };
 const OPEN_PR_URL = 'https://github.com/JSL107/personal_agents/pull/180';
 
+// PR 상세. 원장에 남길 draft 여부는 검색 결과가 아니라 이 상세에서 취하므로, draft 관련
+// 테스트는 이 값을 갈아끼워 검색과 상세가 엇갈리는 상황까지 만든다.
+const DETAIL = {
+  number: 180,
+  title: 'feat: 무언가',
+  body: '',
+  repo: 'JSL107/personal_agents',
+  url: OPEN_PR_URL,
+  baseRef: 'main',
+  baseSha: 'base-sha-main',
+  headRef: 'feat/x',
+  headSha: 'abc1234',
+  authorLogin: 'JSL107',
+  mergedAt: null,
+  changedFiles: ['src/foo.service.ts'],
+  changedFilesTruncated: false,
+  changedFilesTotalCount: 1,
+  additions: 10,
+  deletions: 2,
+  isDraft: false,
+};
+
 const REVIEW_OUTCOME = {
   agentRunId: 7,
   modelUsed: 'gpt-5.4',
@@ -90,24 +112,7 @@ describe('SweepPrReviewsUsecase', () => {
   beforeEach(() => {
     github = {
       listOpenPullRequestRefs: jest.fn().mockResolvedValue([OPEN_PR]),
-      getPullRequest: jest.fn().mockResolvedValue({
-        number: 180,
-        title: 'feat: 무언가',
-        body: '',
-        repo: 'JSL107/personal_agents',
-        url: OPEN_PR_URL,
-        baseRef: 'main',
-        baseSha: 'base-sha-main',
-        headRef: 'feat/x',
-        headSha: 'abc1234',
-        authorLogin: 'JSL107',
-        mergedAt: null,
-        changedFiles: ['src/foo.service.ts'],
-        changedFilesTruncated: false,
-        changedFilesTotalCount: 1,
-        additions: 10,
-        deletions: 2,
-      }),
+      getPullRequest: jest.fn().mockResolvedValue(DETAIL),
       getPullRequestDiff: jest
         .fn()
         .mockResolvedValue({ diff: 'diff', truncated: false, bytes: 4 }),
@@ -378,6 +383,7 @@ describe('SweepPrReviewsUsecase', () => {
     github.listOpenPullRequestRefs.mockResolvedValue([
       { ...OPEN_PR, isDraft: true },
     ]);
+    github.getPullRequest.mockResolvedValue({ ...DETAIL, isDraft: true });
 
     await buildUsecase({
       ...ENABLED,
@@ -386,6 +392,27 @@ describe('SweepPrReviewsUsecase', () => {
 
     expect(reviewUsecase.execute).toHaveBeenCalledWith(
       expect.objectContaining({ isDraft: true }),
+    );
+  });
+
+  // 후보 선별(검색)과 원장 기록(상세)이 서로 다른 시점을 본다. GitHub 검색 인덱스는 조금
+  // 늦어 ready 가 된 PR 이 draft 로 조회될 수 있는데(같은 지연을 mergedAt 가드가 이미 전제로
+  // 둔다), 그 값을 기록하면 완성본을 리뷰하고도 다음 회차에 ready 전환 재리뷰가 또 돌아
+  // 같은 코드에 리뷰가 두 벌 게시된다.
+  it('검색이 draft 로 줘도 상세가 ready 면 원장에는 ready 로 남긴다', async () => {
+    agentRunService.findLatestSweepReview.mockResolvedValue(null);
+    github.listOpenPullRequestRefs.mockResolvedValue([
+      { ...OPEN_PR, isDraft: true },
+    ]);
+    github.getPullRequest.mockResolvedValue({ ...DETAIL, isDraft: false });
+
+    await buildUsecase({
+      ...ENABLED,
+      PR_REVIEW_INLINE_DRYRUN: 'false',
+    }).execute();
+
+    expect(reviewUsecase.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ isDraft: false }),
     );
   });
 
@@ -649,6 +676,7 @@ describe('SweepPrReviewsUsecase', () => {
       changedFilesTotalCount: 127,
       additions: 27_778,
       deletions: 4_696,
+      isDraft: false,
     });
     github.getPullRequestDiff.mockRejectedValue(
       new Error('PR #180 diff 조회 실패: too_large'),
@@ -746,6 +774,7 @@ describe('SweepPrReviewsUsecase', () => {
       // 경계 바로 위 — 20,000 은 통과, 20,001 부터 컷.
       additions: 20_001,
       deletions: 0,
+      isDraft: false,
     });
     github.getPullRequestDiff.mockRejectedValue(
       new Error('PR #180 diff 조회 실패: too_large'),

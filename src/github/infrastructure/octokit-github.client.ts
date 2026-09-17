@@ -239,6 +239,7 @@ export class OctokitGithubClient implements GithubClientPort {
         additions: prResponse.data.additions,
         deletions: prResponse.data.deletions,
         headSha: prResponse.data.head.sha,
+        isDraft: prResponse.data.draft === true,
       };
     } catch (error: unknown) {
       throw this.wrapRequestFailed(error, `PR #${number} 조회 실패`);
