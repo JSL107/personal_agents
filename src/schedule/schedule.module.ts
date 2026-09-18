@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 
+import { LoopbackOnlyGuard } from '../common/guard/loopback-only.guard';
+import { ConsoleReadGuard } from '../console/interface/console-read.guard';
 import { PrismaModule } from '../prisma/prisma.module';
 import { ListSchedulesUsecase } from './application/list-schedules.usecase';
 import { RegisterScheduleUsecase } from './application/register-schedule.usecase';
@@ -7,15 +9,19 @@ import { UpdateScheduleStatusUsecase } from './application/update-schedule-statu
 import { SCHEDULE_REPOSITORY_PORT } from './domain/port/schedule.repository.port';
 import { ScheduleDispatcher } from './infrastructure/schedule.dispatcher';
 import { SchedulePrismaRepository } from './infrastructure/schedule.prisma.repository';
+import { ScheduleConsoleController } from './interface/schedule-console.controller';
 
 @Module({
   imports: [PrismaModule],
+  controllers: [ScheduleConsoleController],
   providers: [
     { provide: SCHEDULE_REPOSITORY_PORT, useClass: SchedulePrismaRepository },
     RegisterScheduleUsecase,
     ListSchedulesUsecase,
     UpdateScheduleStatusUsecase,
     ScheduleDispatcher,
+    ConsoleReadGuard,
+    LoopbackOnlyGuard,
   ],
   exports: [
     RegisterScheduleUsecase,
