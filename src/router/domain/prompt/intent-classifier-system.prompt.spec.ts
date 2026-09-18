@@ -12,4 +12,10 @@ describe('INTENT_CLASSIFIER_SYSTEM_PROMPT', () => {
   it('PM 줄이 등록 요청을 SCHEDULE 로 보내라고 명시한다', () => {
     expect(INTENT_CLASSIFIER_SYSTEM_PROMPT).toMatch(/PM 이 아니라 SCHEDULE/);
   });
+
+  it('되묻기 후속 발화를 SCHEDULE 로 잇는 규칙이 있다 — 없으면 날짜만 답할 때 UNKNOWN 으로 샌다', () => {
+    expect(INTENT_CLASSIFIER_SYSTEM_PROMPT).toMatch(
+      /SCHEDULE\s*\*\*\s*의 후속 입력이다|SCHEDULE\*\* 의 후속 입력이다/,
+    );
+  });
 });
