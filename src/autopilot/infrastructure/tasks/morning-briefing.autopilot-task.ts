@@ -12,9 +12,13 @@ import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { HumanizeService } from '../../../humanize/application/humanize.service';
 import { humanizeDailyPlan } from '../../../humanize/application/humanize-report.adapter';
 import { ListSchedulesUsecase } from '../../../schedule/application/list-schedules.usecase';
-import { formatUpcomingLine } from '../../../schedule/domain/format-upcoming-line';
+import {
+  plainDateToUtcDate,
+  todayInKst,
+} from '../../../schedule/domain/parse-due-date';
 import { formatDailyPlan } from '../../../slack/format/daily-plan.formatter';
 import { formatModelFooter } from '../../../slack/format/model-footer.formatter';
+import { formatUpcomingLine } from '../../../slack/format/schedule-briefing.formatter';
 import { formatWaitingSection } from '../../../slack/format/waiting-section.formatter';
 import {
   AutopilotTask,
@@ -132,15 +136,23 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
     text: string,
     ownerSlackUserId: string,
   ): Promise<string> {
-    const today = new Date();
-    const weekLater = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+    // **KST 달력일의 UTC 자정** 으로 맞춘다. `dueDate` 가 `@db.Date` 라 같은 표현이어야
+    // 두 가지가 동시에 정확해진다.
+    //  - 조회 하한: `new Date()` 를 그대로 쓰면 09:00 KST 이후에 도는 순간 **오늘 마감이
+    //    조회에서 통째로 빠진다**(UTC 자정인 오늘치가 `gte 현재시각` 을 못 넘긴다).
+    //  - 라벨: 시각이 붙어 있으면 반올림이 어긋나 밤에는 내일 마감이 `D-day` 로 찍힌다.
+    // 둘 다 2026-09-18 에 실측한 것이고 뿌리가 같아 한 곳에서 고친다.
+    const todayCalendarDay = plainDateToUtcDate(todayInKst(new Date()));
+    const weekLater = new Date(
+      todayCalendarDay.getTime() + 7 * 24 * 60 * 60 * 1000,
+    );
     try {
       const items = await this.listSchedules.execute({
         slackUserId: ownerSlackUserId,
-        from: today,
+        from: todayCalendarDay,
         to: weekLater,
       });
-      return text + formatUpcomingLine(items, today);
+      return text + formatUpcomingLine(items, todayCalendarDay);
     } catch (error: unknown) {
       this.logger.warn(`마감 줄 생성 실패: ${String(error)}`);
       return text;

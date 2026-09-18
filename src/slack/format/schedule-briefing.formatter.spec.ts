@@ -1,5 +1,8 @@
-import { formatUpcomingLine } from './format-upcoming-line';
-import { ScheduleItemRecord, ScheduleStatus } from './schedule.type';
+import {
+  ScheduleItemRecord,
+  ScheduleStatus,
+} from '../../schedule/domain/schedule.type';
+import { formatUpcomingLine } from './schedule-briefing.formatter';
 
 const TODAY = new Date('2026-09-18T00:00:00.000Z');
 
@@ -48,5 +51,23 @@ describe('formatUpcomingLine', () => {
         TODAY,
       ),
     ).toBe('');
+  });
+
+  it('제목의 제어문자를 이스케이프한다 — 안 하면 Slack 이 링크 태그로 읽어 텍스트가 사라진다', () => {
+    const line = formatUpcomingLine(
+      [item('A&B <미팅>', '2026-09-18T00:00:00.000Z')],
+      TODAY,
+    );
+    expect(line).toContain('A&amp;B &lt;미팅&gt;');
+    expect(line).not.toContain('<미팅>');
+  });
+
+  it('지난 마감은 D+n 으로 표시한다 — 음수가 D--n 으로 새지 않는다', () => {
+    const line = formatUpcomingLine(
+      [item('지난 것', '2026-09-16T00:00:00.000Z')],
+      TODAY,
+    );
+    expect(line).toContain('D+2');
+    expect(line).not.toContain('D--');
   });
 });
