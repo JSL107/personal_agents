@@ -8,7 +8,29 @@ import {
   SubconsciousTickJobData,
 } from '../domain/subconscious-tick.type';
 
-const DEFAULT_SUBCONSCIOUS_SCHEDULE = '*/20 * * * *';
+// 아침 브리핑(08:30) 직후 한 번만 돈다. 전에는 20분마다(하루 72회) 돌며 제안 DM 을 즉시
+// 보냈고, 그래서 업무 시간 내내 불시에 끼어들었다.
+//
+// 실측(2026-09-18)이 그 차이를 보여준다. 같은 사람에게 가는 두 종류의 승인 카드인데 결과가
+// 갈렸다 — 저녁 회고의 승인 카드는 매일 19시에 몰려 오고 85~100% 눌렸고, 자율 제안은
+// 10~17시에 흩어져 와서 72건 중 사람이 무시 버튼을 누른 흔적이 0건이었다(나머지는 만료·스윕
+// 자동 종료). 버튼도 DM 도 양쪽 다 있었으므로 남은 차이는 「예측 가능한 시각에 오는가」다.
+//
+// tick 이 하루 1회가 되면 상태 변화 감지 창도 24시간으로 늘어난다. 그만큼 한 회차에 변화가
+// 여러 건 잡히는데, 여기에 감수할 것이 하나 있다.
+//
+// 승격 예산(SUBCONSCIOUS_PROMOTION_BUDGET_PER_HOUR, 기본 4)은 슬라이딩 1시간 윈도우다
+// (redis-promotion-budget.ts 의 WINDOW_MS = 3_600_000). 20분 주기에서는 시간당 4건이 하루
+// 96건까지 열려 있어 사실상 걸리지 않았지만, 하루 1회가 되면 **그 회차의 4건이 그날 전부**다.
+// 그리고 engine.runTick 은 제안 성사 여부와 무관하게 baseline 을 갱신하므로, 예산에 막힌 변화는
+// 다음 회차에 "이미 본 것" 이 되어 다시 잡히지 않는다 — 조용히 유실된다.
+//
+// 실측(2026-09-18)으로는 30일 72건, 하루 평균 2.4건이라 상한 안쪽이다. PR 을 몰아 올린 날에만
+// 넘칠 수 있고, 그때 놓치는 것은 "리뷰할까요?" 제안이지 리뷰 자체가 아니다(PR 리뷰 스윕이
+// 별도로 돈다). 넘치는 일이 잦아지면 예산을 올리거나 주기를 하루 2회로 나눈다.
+//
+// 더 촘촘한 감지가 필요하면 SUBCONSCIOUS_SCHEDULE 로 되돌릴 수 있다.
+const DEFAULT_SUBCONSCIOUS_SCHEDULE = '0 9 * * *';
 const DEFAULT_SUBCONSCIOUS_TIMEZONE = 'Asia/Seoul';
 
 // 부팅 시 SUBCONSCIOUS_ENABLED='true' + AUTOPILOT_OWNER_SLACK_USER_ID 설정이면
