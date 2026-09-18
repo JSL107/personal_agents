@@ -14,59 +14,21 @@ struct AppRootView: View {
     @State private var status: ConnectionStatus = .connecting
     /// 마지막으로 스냅샷을 다시 받은 시각. 상태 변경이 몰릴 때 요청 폭주를 막는 최소 간격 기준.
     @State private var lastResyncAt: Date?
-    @State private var tab: Tab = .dashboard
+    /// 첫 화면은 캘린더다(2026-09-18 결정) — 마감·신청·예약을 Slack 에 등록한 뒤 이 화면에서
+    /// 확인하는 것이 목표라, 앱을 열자마자 그 확인이 보여야 한다.
+    @State private var tab: ConsoleTab = .calendar
     /// 담당자 미지정 지시 바가 열렸는지. 오피스 탭의 상태지만 여기서 소유한다 — 메뉴에서 열 때는
     /// 탭 전환과 함께 세팅돼야 하고, 그 시점의 `OfficeView` 는 아직 만들어지지 않아 통지를 직접
     /// 받을 수 없다.
     @State private var isPresidentBarOpen = false
 
-    private enum Tab: Hashable {
-        case dashboard
-        case office
-    }
-
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: Spacing.lg) {
-                HStack(spacing: Spacing.sm) {
-                    Circle().fill(Color(red: 0.96, green: 0.33, blue: 0.27)).frame(width: 12, height: 12)
-                    Circle().fill(Color(red: 1.00, green: 0.68, blue: 0.24)).frame(width: 12, height: 12)
-                    Circle().fill(Color(red: 0.27, green: 0.72, blue: 0.43)).frame(width: 12, height: 12)
-                }
-                HStack(spacing: Spacing.sm) {
-                    ZStack {
-                        Circle().fill(CozyPalette.butter.opacity(0.30))
-                        Image(systemName: "sun.max.fill")
-                            .foregroundStyle(CozyPalette.butter)
-                    }
-                    .frame(width: 32, height: 32)
-                    Text("이대리 오피스")
-                        .font(.title3.bold())
-                        .foregroundStyle(CozyPalette.ink)
-                }
-                Picker("보기", selection: $tab) {
-                    Label("대시보드", systemImage: "rectangle.grid.2x2.fill").tag(Tab.dashboard)
-                    Label("오피스", systemImage: "person.3.fill").tag(Tab.office)
-                }
-                .pickerStyle(.segmented)
-                .frame(width: Layout.sidebarWidth)
-                Spacer()
-                HStack(spacing: Spacing.sm) {
-                    Circle().fill(status.color).frame(width: Stroke.dot, height: Stroke.dot)
-                    Text(status.label).font(Typography.captionEmphasis).foregroundStyle(.secondary)
-                }
-                .padding(.horizontal, Spacing.md)
-                .padding(.vertical, Spacing.sm)
-                .background(CozyPalette.canvas, in: Capsule())
-            }
-            .padding(.horizontal, Spacing.lg)
-            .padding(.vertical, Spacing.sm)
-            .background(CozyPalette.surface)
-            .overlay(alignment: .bottom) {
-                Rectangle().fill(CozyPalette.outline.opacity(0.12)).frame(height: 1)
-            }
+            ConsoleHeaderView(tab: $tab, status: status)
 
             switch tab {
+            case .calendar:
+                CalendarView(store: store, client: client)
             case .dashboard:
                 DashboardView(
                     store: store,

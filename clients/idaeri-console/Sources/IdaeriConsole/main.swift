@@ -40,6 +40,22 @@ if let renderIndex = CommandLine.arguments.firstIndex(of: "--render-dashboard") 
     )
 }
 
+// 캘린더 탭 시각 회귀 렌더. 백엔드 없이 고정 표본으로 한 장을 굽는다 — 빈 상태와 항목 있는
+// 상태를 `--empty` 로 가른다(빈 상태가 탭의 초기 기본값이라 그쪽이 더 중요하다).
+//   swift run IdaeriConsole --render-calendar /tmp/calendar.png [--empty] [--dark]
+if let renderIndex = CommandLine.arguments.firstIndex(of: "--render-calendar") {
+    let outputPath =
+        renderIndex + 1 < CommandLine.arguments.count
+        ? CommandLine.arguments[renderIndex + 1] : "calendar.png"
+    exit(
+        renderCalendarPreview(
+            path: outputPath,
+            darkMode: CommandLine.arguments.contains("--dark"),
+            empty: CommandLine.arguments.contains("--empty")
+        ) ? 0 : 1
+    )
+}
+
 if CommandLine.arguments.contains("--asset-check") {
     exit(runCozyAssetCheck() ? 0 : 1)
 }
