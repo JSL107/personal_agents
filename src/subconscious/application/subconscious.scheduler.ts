@@ -17,8 +17,19 @@ import {
 // 자동 종료). 버튼도 DM 도 양쪽 다 있었으므로 남은 차이는 「예측 가능한 시각에 오는가」다.
 //
 // tick 이 하루 1회가 되면 상태 변화 감지 창도 24시간으로 늘어난다. 그만큼 한 회차에 변화가
-// 여러 건 잡히지만, 시간당 상한(SUBCONSCIOUS_PROMOTION_BUDGET_PER_HOUR, 기본 4)이 제안 수를
-// 막아 준다. 더 촘촘한 감지가 필요하면 SUBCONSCIOUS_SCHEDULE 로 되돌릴 수 있다.
+// 여러 건 잡히는데, 여기에 감수할 것이 하나 있다.
+//
+// 승격 예산(SUBCONSCIOUS_PROMOTION_BUDGET_PER_HOUR, 기본 4)은 슬라이딩 1시간 윈도우다
+// (redis-promotion-budget.ts 의 WINDOW_MS = 3_600_000). 20분 주기에서는 시간당 4건이 하루
+// 96건까지 열려 있어 사실상 걸리지 않았지만, 하루 1회가 되면 **그 회차의 4건이 그날 전부**다.
+// 그리고 engine.runTick 은 제안 성사 여부와 무관하게 baseline 을 갱신하므로, 예산에 막힌 변화는
+// 다음 회차에 "이미 본 것" 이 되어 다시 잡히지 않는다 — 조용히 유실된다.
+//
+// 실측(2026-09-18)으로는 30일 72건, 하루 평균 2.4건이라 상한 안쪽이다. PR 을 몰아 올린 날에만
+// 넘칠 수 있고, 그때 놓치는 것은 "리뷰할까요?" 제안이지 리뷰 자체가 아니다(PR 리뷰 스윕이
+// 별도로 돈다). 넘치는 일이 잦아지면 예산을 올리거나 주기를 하루 2회로 나눈다.
+//
+// 더 촘촘한 감지가 필요하면 SUBCONSCIOUS_SCHEDULE 로 되돌릴 수 있다.
 const DEFAULT_SUBCONSCIOUS_SCHEDULE = '0 9 * * *';
 const DEFAULT_SUBCONSCIOUS_TIMEZONE = 'Asia/Seoul';
 
