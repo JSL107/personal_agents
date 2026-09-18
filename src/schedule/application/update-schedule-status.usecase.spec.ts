@@ -1,3 +1,5 @@
+import { ConflictException, NotFoundException } from '@nestjs/common';
+
 import { ScheduleRepositoryPort } from '../domain/port/schedule.repository.port';
 import { ScheduleItemRecord, ScheduleStatus } from '../domain/schedule.type';
 import { UpdateScheduleStatusUsecase } from './update-schedule-status.usecase';
@@ -63,7 +65,7 @@ describe('UpdateScheduleStatusUsecase', () => {
 
     await expect(
       usecase.execute({ id: 1, status: ScheduleStatus.OPEN }),
-    ).rejects.toThrow();
+    ).rejects.toThrow(ConflictException);
     expect(updates).toHaveLength(0);
   });
 
@@ -73,6 +75,6 @@ describe('UpdateScheduleStatusUsecase', () => {
 
     await expect(
       usecase.execute({ id: 99, status: ScheduleStatus.DONE }),
-    ).rejects.toThrow();
+    ).rejects.toThrow(NotFoundException);
   });
 });
