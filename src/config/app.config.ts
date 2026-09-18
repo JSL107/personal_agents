@@ -616,6 +616,35 @@ export class EnvironmentVariables {
   @IsString()
   RESUME_CALIBRATION_TIMEZONE?: string;
 
+  // ====== Hermes Watchdog — 외부 프로세스(Hermes) cron 건강 점검 ======
+  // Hermes 는 이대리와 별개 프로세스라 그 안의 cron 이 죽어도 이대리는 모른다.
+  // ~/.hermes/cron/jobs.json 을 읽어 실행 실패 / 전달 실패 / 스케줄러 멈춤을 찾아
+  // NOTIFICATION_QUEUE 의 CRON_FAILURE 알람으로 올린다.
+  // (2026-09-18 Hermes 아침신문이 codex 쿼터 소진으로 실패했는데 아무 알림도 없었다.
+  //  감시를 Hermes 안에 두면 Hermes 가 죽을 때 같이 죽으므로 밖인 여기에 둔다.)
+  // - HERMES_WATCHDOG_OWNER_SLACK_USER_ID: 점검 주체. 미설정 시 모듈 비활성.
+  //   ⚠️ 실제 DM 수신자는 이 값이 아니라 CRON_FAILURE_ALERT_OWNER_SLACK_USER_ID 다
+  //   (NotificationConsumer 가 알람 종류별 owner 를 그쪽에서 읽는다). 이 값은 모듈 스위치이자
+  //   알람 본문의 `_owner_` 표기다 — 둘 다 설정해야 알림이 실제로 도착한다.
+  // - HERMES_WATCHDOG_CRON: BullMQ cron (default 매일 08:30 — `30 8 * * *`, 아침신문 08:00 직후).
+  // - HERMES_WATCHDOG_TIMEZONE: default Asia/Seoul.
+  // - HERMES_HOME: Hermes 홈 디렉터리. 미설정 시 `~/.hermes`.
+  @IsOptional()
+  @IsString()
+  HERMES_WATCHDOG_OWNER_SLACK_USER_ID?: string;
+
+  @IsOptional()
+  @IsString()
+  HERMES_WATCHDOG_CRON?: string;
+
+  @IsOptional()
+  @IsString()
+  HERMES_WATCHDOG_TIMEZONE?: string;
+
+  @IsOptional()
+  @IsString()
+  HERMES_HOME?: string;
+
   // ====== Job Application Nudge Cron — 매일 지원 넛지 (Phase 3) ======
   // 마감 임박(≤3일)/팔로업 지난 진행 중 지원 건을 SQL 조회 → Slack DM.
   // - JOB_APPLICATION_NUDGE_OWNER_SLACK_USER_ID: 넛지 주체. 미설정 시 모듈 비활성.
