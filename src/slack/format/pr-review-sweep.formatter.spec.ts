@@ -189,7 +189,9 @@ describe('formatPrReviewSweep', () => {
     ).toBe('');
   });
 
-  it('구간 채택률을 카테고리별로 한 줄에 렌더한다', () => {
+  // 이하 채택률 렌더는 "달라진 것만 앞세운다" 규약을 따른다. 전에는 카테고리 전량을 한 줄에
+  // 이어 붙였고, 실제 발송 예(2026-09-18)는 카테고리 7개 · 숫자 15개가 한 줄에 들어갔다.
+  it('전부 정상 범위면 수치 없이 개수로만 묶는다', () => {
     const text = formatPrReviewSweep({
       harvest: harvest({
         acked: 1,
@@ -198,11 +200,14 @@ describe('formatPrReviewSweep', () => {
       results: [],
     });
 
-    expect(text).toContain('CORRECTNESS 94%(17)');
-    expect(text).toContain('TEST 100%(15)');
+    expect(text).toContain('채택률 이상 없음');
+    expect(text).toContain('2종');
+    expect(text).not.toContain('94%');
+    expect(text).not.toContain('100%');
   });
 
-  it('표본이 미달인 카테고리는 비율 대신 표본 수를 보여준다', () => {
+  it('표본이 미달인 카테고리는 본문에도 집계에도 넣지 않는다', () => {
+    // 표본 1~7 건으로 낸 비율은 판단 근거가 못 되고, 그 사실을 매번 알릴 값도 없다.
     const text = formatPrReviewSweep({
       harvest: harvest({
         acked: 1,
@@ -211,57 +216,113 @@ describe('formatPrReviewSweep', () => {
       results: [],
     });
 
-    expect(text).toContain('RELIABILITY 표본 7');
-    expect(text).not.toContain('%');
+    expect(text).not.toContain('RELIABILITY');
+    expect(text).not.toContain('채택률');
   });
 
-  it('직전 구간 대비 변화를 화살표로 붙인다', () => {
+  it('5%p 이상 떨어진 카테고리는 수치로 낸다', () => {
+    const text = formatPrReviewSweep({
+      harvest: harvest({
+        acked: 1,
+        adoption: [adoption('TEST', 69, 94, -5)],
+      }),
+      results: [],
+    });
+
+    expect(text).toContain('TEST 94%(69) ↓5%p');
+    expect(text).not.toContain('이상 없음');
+  });
+
+  it('절대 수준이 80% 미만이면 떨어지지 않았어도 수치로 낸다', () => {
+    // 변화가 없어도 낮은 채택률 자체가 신호다.
+    const text = formatPrReviewSweep({
+      harvest: harvest({
+        acked: 1,
+        adoption: [adoption('CORRECTNESS', 30, 70, 0)],
+      }),
+      results: [],
+    });
+
+    expect(text).toContain('CORRECTNESS 70%(30) →');
+  });
+
+  it('상승·보합은 이상으로 보지 않는다', () => {
     const text = formatPrReviewSweep({
       harvest: harvest({
         acked: 1,
         adoption: [
           adoption('CORRECTNESS', 20, 90, 8),
-          adoption('TEST', 30, 70, -12),
           adoption('RELIABILITY', 12, 83, 0),
         ],
       }),
       results: [],
     });
 
-    expect(text).toContain('CORRECTNESS 90%(20) ↑8%p');
-    expect(text).toContain('TEST 70%(30) ↓12%p');
-    expect(text).toContain('RELIABILITY 83%(12) →');
+    expect(text).toContain('채택률 이상 없음');
+    expect(text).not.toContain('↑8%p');
   });
 
-  it('기준선이 없으면 화살표를 붙이지 않는다', () => {
-    // 직전 구간 표본이 미달이면 변화가 null 로 온다. 없는 기준선으로 그린 화살표는
-    // 추세처럼 보이지만 잡음이다.
+  // 회귀 고정 — 사용자가 실물로 지적한 회차를 그대로 넣는다. 원래는 카테고리 7개가
+  // 한 줄에 나열됐고, 그중 실제로 볼 값은 TEST 의 하락 하나였다.
+  it('실제 발송 회차(2026-09-18)는 하락 1건 + 나머지 개수로 줄어든다', () => {
     const text = formatPrReviewSweep({
       harvest: harvest({
         acked: 1,
-        adoption: [adoption('READABILITY', 11, 91, null)],
+        adoption: [
+          adoption('TEST', 69, 94, -5),
+          adoption('CORRECTNESS', 55, 93, 0),
+          adoption('RELIABILITY', 21, 100, 4),
+          adoption('READABILITY', 16, 100),
+          adoption('SECURITY', 7, null),
+          adoption('ARCHITECTURE', 1, null),
+          adoption('STYLE', 1, null),
+        ],
       }),
       results: [],
     });
 
-    expect(text).toContain('READABILITY 91%(11)');
+    expect(text).toContain('TEST 94%(69) ↓5%p');
+    expect(text).toContain('그 외 3종 이상 없음');
+    // 표본 미달 3종은 어느 형태로도 나오지 않는다.
+    expect(text).not.toContain('SECURITY');
+    expect(text).not.toContain('ARCHITECTURE');
+    expect(text).not.toContain('STYLE');
+  });
+
+  it('기준선이 없으면 화살표를 붙이지 않는다', () => {
+    // 직전 구간 표본이 미달이면 변화가 null 로 온다. 없는 기준선으로 그린 화살표는
+    // 추세처럼 보이지만 잡음이다. 낮은 수준이라 본문에 올라가는 경우로 잡는다.
+    const text = formatPrReviewSweep({
+      harvest: harvest({
+        acked: 1,
+        adoption: [adoption('READABILITY', 11, 61, null)],
+      }),
+      results: [],
+    });
+
+    expect(text).toContain('READABILITY 61%(11)');
     expect(text).not.toContain('↑');
     expect(text).not.toContain('↓');
     expect(text).not.toContain('→');
   });
 
-  it('채택률 줄에 구간 길이와 집계 대상 레포를 밝힌다', () => {
+  it('채택률 줄에 구간 길이와 집계 대상 레포를 밝힌다 — 이상 있을 때와 없을 때 모두', () => {
     // 누적인지 구간인지 안 적으면 읽는 사람이 전체 성적으로 오해한다.
     // 레포도 마찬가지다 — 이 숫자는 학습 규약이 실리는 레포 하나만 센 값이라,
     // 밝히지 않으면 여러 레포를 리뷰하는 사용자가 전체 성적으로 읽는다.
-    const text = formatPrReviewSweep({
+    const window = `최근 ${ADOPTION_WINDOW_DAYS}일 · \`${LEARNING_REPO}\``;
+
+    const quiet = formatPrReviewSweep({
       harvest: harvest({ acked: 1, adoption: [adoption('TEST', 15, 100)] }),
       results: [],
     });
+    expect(quiet).toContain(window);
 
-    expect(text).toContain(
-      `채택률(최근 ${ADOPTION_WINDOW_DAYS}일 · \`${LEARNING_REPO}\`)`,
-    );
+    const noisy = formatPrReviewSweep({
+      harvest: harvest({ acked: 1, adoption: [adoption('TEST', 30, 70, -9)] }),
+      results: [],
+    });
+    expect(noisy).toContain(window);
   });
 
   it('집계가 비면 채택률 줄을 생략한다', () => {

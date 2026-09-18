@@ -130,8 +130,9 @@ describe('PrReviewSweepAutopilotTask', () => {
     expect(result.skip).toBe(false);
     expect(result.summaryText).toContain('👍 2');
     expect(result.summaryText).toContain('👎 1');
-    // 수확 결과와 함께 누적 채택률도 요약에 실린다.
-    expect(result.summaryText).toContain('TEST 94%(17)');
+    // 수확 결과와 함께 구간 채택률도 요약에 실린다. 수치의 렌더 규칙(이상만 수치로, 정상은
+    // 개수로 묶기)은 formatter spec 이 검증하므로, 이 층에서는 채택률 줄이 실리는지만 본다.
+    expect(result.summaryText).toContain('채택률');
   });
 
   it('수확 실패는 경고만 남기고 리뷰 스윕을 계속한다', async () => {
