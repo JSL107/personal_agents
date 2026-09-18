@@ -71,7 +71,9 @@ func renderDashboardPreview(path: String, darkMode: Bool, size: CGSize? = nil) -
     }
 }
 
-private let dashboardPreviewAgents: [ConsoleAgent] = [
+// `private` 이 아닌 것은 워밍 검사(`runCozyPrewarmCheck`)가 이 명단을 재사용하기 때문이다 —
+// `ConsoleAgent` 는 필드가 많아 검사용 인스턴스를 따로 만들면 실제와 어긋나기 쉽다.
+let dashboardPreviewAgents: [ConsoleAgent] = [
     ConsoleAgent(
         agentType: "PM", displayName: "PM", nickname: "김기획",
         slashCommands: ["/today"], description: "오늘 할 일", state: .waiting,
