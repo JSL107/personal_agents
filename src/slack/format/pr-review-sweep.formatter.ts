@@ -1,4 +1,7 @@
-import { ADOPTION_WINDOW_DAYS } from '../../pr-review-loop/domain/adoption-rate';
+import {
+  ADOPTION_WINDOW_DAYS,
+  CategoryAdoption,
+} from '../../pr-review-loop/domain/adoption-rate';
 import { HarvestOutcome } from '../../pr-review-loop/domain/harvest-outcome.type';
 import { LEARNING_REPO } from '../../pr-review-loop/domain/learning-repo';
 import {
@@ -19,6 +22,32 @@ const formatChange = (changePercentPoint: number | null): string => {
   return changePercentPoint > 0
     ? ` ↑${changePercentPoint}%p`
     : ` ↓${Math.abs(changePercentPoint)}%p`;
+};
+
+// 본문에 올릴 카테고리의 기준. 나머지는 "이상 없음" 한 마디로 묶는다.
+//
+// 전에는 카테고리 전량을 한 줄에 이어 붙였다. 실제 발송 예(2026-09-18)는 카테고리 7개 ·
+// 숫자 15개가 한 줄에 들어갔고, 그중 볼 값은 하나였다. 매일 같은 숫자가 오면 줄 전체를
+// 읽지 않게 되므로 달라진 것만 앞세운다.
+//
+// 두 수치는 잠정값이다(설계 §7-3 미결). 5%p 는 사용자가 실물로 지적한 회차의 하락폭이고,
+// 80% 는 그 회차 최저 측정 카테고리(93%)보다 낮게 둬 평시에 걸리지 않게 잡았다.
+const NOTABLE_DROP_PERCENT_POINT = 5;
+const NOTABLE_RATE_PERCENT = 80;
+
+// 표본 미달(ratePercent === null)은 본문에도 "이상 없음" 집계에도 넣지 않는다 — 표본 1~7 건으로
+// 낸 비율은 판단 근거가 못 되고, 그 사실을 매번 알릴 값도 없다.
+const isNotableAdoption = (item: CategoryAdoption): boolean => {
+  if (item.ratePercent === null) {
+    return false;
+  }
+  if (item.ratePercent < NOTABLE_RATE_PERCENT) {
+    return true;
+  }
+  return (
+    item.changePercentPoint !== null &&
+    item.changePercentPoint <= -NOTABLE_DROP_PERCENT_POINT
+  );
 };
 
 const RISK_ICON: Record<string, string> = {
@@ -82,20 +111,34 @@ export const formatPrReviewSweep = ({
   if (harvestCounts.length > 0) {
     lines.push(harvestCounts.join(' · '));
   }
-  // 채택률은 카드 상태가 바뀐 회차에만 채워진다. 표본이 미달인 카테고리는 비율을
-  // 감추고 표본 수만 보여준다 — 4건으로 낸 비율이 판단 근거로 쓰이는 것을 막는다.
-  // 화살표는 직전 같은 길이 구간과의 차이다. 규약이 선 카테고리가 실제로 나아졌는지는
-  // 이 한 칸으로만 보인다 — 없으면 다시 손으로 원장을 뒤져야 한다.
-  if (harvest.adoption.length > 0) {
-    lines.push(
-      `📊 채택률(최근 ${ADOPTION_WINDOW_DAYS}일 · \`${LEARNING_REPO}\`) ${harvest.adoption
-        .map(({ category, total, ratePercent, changePercentPoint }) =>
-          ratePercent === null
-            ? `${escapeSlackMrkdwn(category)} 표본 ${total}`
-            : `${escapeSlackMrkdwn(category)} ${ratePercent}%(${total})${formatChange(changePercentPoint)}`,
+  // 채택률은 카드 상태가 바뀐 회차에만 채워진다. 눈에 걸리는 카테고리만 수치로 내고,
+  // 정상 범위는 개수로만 묶는다. 화살표는 직전 같은 길이 구간과의 차이다.
+  //
+  // 창 길이와 레포는 두 경우 모두 밝힌다 — 누적으로 오해하거나 여러 레포의 전체 성적으로
+  // 읽는 사고가 있었다(이 파일 spec 의 해당 테스트 주석).
+  const measuredAdoption = harvest.adoption.filter(
+    (item) => item.ratePercent !== null,
+  );
+  if (measuredAdoption.length > 0) {
+    const notable = measuredAdoption.filter(isNotableAdoption);
+    if (notable.length === 0) {
+      lines.push(
+        `📊 채택률 이상 없음 (최근 ${ADOPTION_WINDOW_DAYS}일 · \`${LEARNING_REPO}\` ${measuredAdoption.length}종)`,
+      );
+    } else {
+      const quietCount = measuredAdoption.length - notable.length;
+      const notableText = notable
+        .map(
+          ({ category, total, ratePercent, changePercentPoint }) =>
+            `${escapeSlackMrkdwn(category)} ${ratePercent}%(${total})${formatChange(changePercentPoint)}`,
         )
-        .join(' · ')}`,
-    );
+        .join(' · ');
+      const quietText =
+        quietCount > 0 ? ` · 그 외 ${quietCount}종 이상 없음` : '';
+      lines.push(
+        `📊 채택률(최근 ${ADOPTION_WINDOW_DAYS}일 · \`${LEARNING_REPO}\`) ${notableText}${quietText}`,
+      );
+    }
   }
   for (const result of results) {
     const icon = RISK_ICON[result.riskLevel] ?? '⚪';

@@ -1,7 +1,11 @@
 import { getTodayKstDate } from '../../common/util/kst-date.util';
 import { PREVIEW_KIND } from '../../preview-gate/domain/preview-action.type';
+import { AUTOPILOT_PLAYBOOK } from '../domain/autopilot.playbook';
 import { PlaybookEntry } from '../domain/playbook.type';
-import { AutopilotOrchestrator } from './autopilot.orchestrator';
+import {
+  AutopilotOrchestrator,
+  NOTIFY_OWNER_TASK_IDS,
+} from './autopilot.orchestrator';
 
 const T0_ENTRY: PlaybookEntry = {
   id: 'daily-eval',
@@ -23,6 +27,19 @@ const makeTask = (id: string, result: unknown) => ({
 });
 
 describe('AutopilotOrchestrator', () => {
+  // 멘션 대상 목록은 문자열이라, playbook 에서 taskId 가 바뀌거나 오타가 나면 대조 없이는
+  // 에러 하나 없이 그 task 의 멘션만 사라진다 — 시세 알림이 조용해지고 아무도 모른다.
+  // 조용한 실패를 막는 대조다.
+  it('멘션 대상 taskId 는 모두 playbook 에 실재한다', () => {
+    const playbookTaskIds = new Set(
+      AUTOPILOT_PLAYBOOK.map((entry) => entry.taskId),
+    );
+    const missing = [...NOTIFY_OWNER_TASK_IDS].filter(
+      (taskId) => !playbookTaskIds.has(taskId),
+    );
+    expect(missing).toEqual([]);
+  });
+
   it('단일 항목 그룹 정상 → 1 task 실행, 1 발송', async () => {
     const task = makeTask('daily-eval', { skip: false, summaryText: '본문' });
     const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
@@ -42,14 +59,148 @@ describe('AutopilotOrchestrator', () => {
     );
     expect(postMessage).toHaveBeenCalledWith({
       target: 'C1',
-      text: '<@U1>\n본문',
+      text: '본문',
     });
     expect(acquireOnce).toHaveBeenCalledTimes(1);
   });
 
-  // 채널 카드는 알림이 없으면 읽히지 않고 흘러간다 — 채널에만 owner 멘션을 붙이고,
-  // 이미 본인에게 가는 DM 에는 붙이지 않는다(같은 알림이 두 번 울린다).
+  // 채널 카드는 알림이 없으면 읽히지 않고 흘러간다 — 멘션 대상 task 는 채널에 owner 멘션을
+  // 붙이고, 이미 본인에게 가는 DM 에는 붙이지 않는다(같은 알림이 두 번 울린다).
+  // 멘션 대상이 아닌 task 는 채널에서도 붙지 않으므로, DM 구분을 재려면 멘션 대상으로 재야 한다.
   it('owner DM 타깃에는 멘션을 붙이지 않는다', async () => {
+    const task = makeTask('stock-monitor', {
+      skip: false,
+      summaryText: '본문',
+    });
+    const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
+    const orchestrator = new AutopilotOrchestrator(
+      [task] as never,
+      { postMessage } as never,
+      {
+        acquireOnce: jest.fn().mockResolvedValue(true),
+        isDone: jest.fn().mockResolvedValue(false),
+      } as never,
+      { execute: jest.fn() } as never,
+      { attachSlackMessage: jest.fn() } as never,
+    );
+
+    await orchestrator.runGroup(
+      'stock-monitor',
+      [makeEntry('stock-monitor', 'stock-monitor')],
+      'U1',
+      'U1',
+    );
+
+    expect(postMessage).toHaveBeenCalledWith({ target: 'U1', text: '본문' });
+  });
+
+  // 멘션 정책의 두 축을 한 쌍으로 고정한다. 모든 채널 발송에 멘션을 붙이던 동안 알림이
+  // 과해져, 정작 울려야 하는 것까지 함께 무시됐다(최근 7일 실측: 자율 실행 984건 중
+  // 울려야 했던 것 87건 = 8.8%). 늦게 보면 값이 사라지는 task 만 멘션을 남긴다.
+  it('멘션 대상 task 는 채널 발송에 멘션을 붙인다', async () => {
+    const task = makeTask('stock-monitor', {
+      skip: false,
+      summaryText: '급락 감지',
+    });
+    const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
+    const orchestrator = new AutopilotOrchestrator(
+      [task] as never,
+      { postMessage } as never,
+      {
+        acquireOnce: jest.fn().mockResolvedValue(true),
+        isDone: jest.fn().mockResolvedValue(false),
+      } as never,
+      { execute: jest.fn() } as never,
+      { attachSlackMessage: jest.fn() } as never,
+    );
+
+    await orchestrator.runGroup(
+      'stock-monitor',
+      [makeEntry('stock-monitor', 'stock-monitor')],
+      'U1',
+      'C1',
+    );
+
+    expect(postMessage).toHaveBeenCalledWith({
+      target: 'C1',
+      text: '<@U1>\n급락 감지',
+    });
+  });
+
+  // OR 집계가 이번 설계의 핵심 판단이다 — 한 메시지에 여러 task 요약이 합쳐지므로 item 단위로
+  // 멘션을 붙일 자리가 없고, 하나라도 대상이면 메시지 전체에 붙인다. 단일 task 그룹만으로는
+  // 집계 방향이 뒤집혀도(some → every) 통과하므로 섞인 그룹으로 고정한다.
+  it('멘션 대상과 비대상이 한 그룹에 섞이면 멘션을 붙인다', async () => {
+    const quiet = makeTask('daily-eval', { skip: false, summaryText: '조용' });
+    const loud = makeTask('stock-monitor', {
+      skip: false,
+      summaryText: '급락',
+    });
+    const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
+    const orchestrator = new AutopilotOrchestrator(
+      [quiet, loud] as never,
+      { postMessage } as never,
+      {
+        acquireOnce: jest.fn().mockResolvedValue(true),
+        isDone: jest.fn().mockResolvedValue(false),
+      } as never,
+      { execute: jest.fn() } as never,
+      { attachSlackMessage: jest.fn() } as never,
+    );
+
+    await orchestrator.runGroup(
+      'mixed',
+      [
+        makeEntry('daily-eval', 'daily-eval'),
+        makeEntry('stock-monitor', 'stock-monitor'),
+      ],
+      'U1',
+      'C1',
+    );
+
+    expect(postMessage).toHaveBeenCalledWith({
+      target: 'C1',
+      text: '<@U1>\n조용\n\n────────\n\n급락',
+    });
+  });
+
+  // 전멸 실패는 별도 경로가 멘션을 유지하지만, 부분 실패는 성공 요약과 함께 메인 메시지로
+  // 나간다. 실패 item 에 notifyOwner 를 세우지 않으면 멘션 대상이 아닌 task 의 실패가 조용히
+  // 흘러간다 — cron 실패는 멘션 필요로 분류된 부류다.
+  it('부분 실패 회차는 멘션 대상이 아닌 task 여도 멘션을 붙인다', async () => {
+    const ok = makeTask('daily-eval', { skip: false, summaryText: '성공' });
+    const broken = {
+      id: 'po-shadow',
+      run: jest.fn().mockRejectedValue(new Error('모델 응답 파싱 실패')),
+    };
+    const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
+    const orchestrator = new AutopilotOrchestrator(
+      [ok, broken] as never,
+      { postMessage } as never,
+      {
+        acquireOnce: jest.fn().mockResolvedValue(true),
+        isDone: jest.fn().mockResolvedValue(false),
+      } as never,
+      { execute: jest.fn() } as never,
+      { attachSlackMessage: jest.fn() } as never,
+    );
+
+    await orchestrator.runGroup(
+      'partial',
+      [
+        makeEntry('daily-eval', 'daily-eval'),
+        makeEntry('po-shadow', 'po-shadow'),
+      ],
+      'U1',
+      'C1',
+    );
+
+    const [sent] = postMessage.mock.calls[0]!;
+    expect(sent.text).toMatch(/^<@U1>\n/);
+    expect(sent.text).toContain('po-shadow 자동 생성 실패');
+  });
+
+  it('멘션 대상이 아닌 task 는 채널 발송에도 멘션을 붙이지 않는다', async () => {
     const task = makeTask('daily-eval', { skip: false, summaryText: '본문' });
     const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
     const orchestrator = new AutopilotOrchestrator(
@@ -63,9 +214,9 @@ describe('AutopilotOrchestrator', () => {
       { attachSlackMessage: jest.fn() } as never,
     );
 
-    await orchestrator.runGroup('daily-eval', [T0_ENTRY], 'U1', 'U1');
+    await orchestrator.runGroup('daily-eval', [T0_ENTRY], 'U1', 'C1');
 
-    expect(postMessage).toHaveBeenCalledWith({ target: 'U1', text: '본문' });
+    expect(postMessage).toHaveBeenCalledWith({ target: 'C1', text: '본문' });
   });
 
   describe('unfurlLinks — 링크가 여러 개인 목록형 카드가 미리보기에 묻히지 않게 한다', () => {
@@ -108,7 +259,7 @@ describe('AutopilotOrchestrator', () => {
       const postMessage = await runWith([{ skip: false, summaryText: '본문' }]);
       expect(postMessage).toHaveBeenCalledWith({
         target: 'C1',
-        text: '<@U1>\n본문',
+        text: '본문',
       });
     });
 
@@ -212,11 +363,11 @@ describe('AutopilotOrchestrator', () => {
     expect(postMessage).toHaveBeenCalledTimes(2);
     expect(postMessage).toHaveBeenCalledWith({
       target: 'C1',
-      text: '<@U1>\n본문',
+      text: '본문',
     });
     expect(postMessage).toHaveBeenCalledWith({
       target: 'C2',
-      text: '<@U1>\n본문',
+      text: '본문',
     });
   });
 
@@ -597,7 +748,7 @@ describe('AutopilotOrchestrator', () => {
     // 1) 메인: SA + 구분자 + SB
     expect(postMessageMock).toHaveBeenNthCalledWith(1, {
       target: 'C1',
-      text: '<@U1>\nSA\n\n────────\n\nSB',
+      text: 'SA\n\n────────\n\nSB',
     });
     // 2) 스레드: detailText 있는 A 만, threadTs=TS1
     expect(postMessageMock).toHaveBeenNthCalledWith(2, {
@@ -627,7 +778,7 @@ describe('AutopilotOrchestrator', () => {
     expect(postMessage).toHaveBeenCalledTimes(1);
     expect(postMessage).toHaveBeenCalledWith({
       target: 'C1',
-      text: '<@U1>\n요약만',
+      text: '요약만',
     });
   });
 
@@ -1450,11 +1601,11 @@ describe('AutopilotOrchestrator', () => {
     expect(postMessage).toHaveBeenCalledTimes(2);
     expect(postMessage).toHaveBeenNthCalledWith(1, {
       target: 'C1',
-      text: '<@U1>\n본문',
+      text: '본문',
     });
     expect(postMessage).toHaveBeenNthCalledWith(2, {
       target: 'C2',
-      text: '<@U1>\n본문',
+      text: '본문',
     });
   });
 

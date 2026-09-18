@@ -112,10 +112,12 @@ describe('PrReviewSweepAutopilotTask', () => {
       adoption: [
         {
           category: 'TEST',
-          adopted: 16,
-          rejected: 1,
+          // 「이상」 경로로 렌더되게 낮춰 둔다(80% 미만). 정상 범위면 개수로만 묶여
+          // 수치가 사라지고, 그러면 전달 구간을 볼 수 없다.
+          adopted: 10,
+          rejected: 7,
           total: 17,
-          ratePercent: 94,
+          ratePercent: 61,
           changePercentPoint: 3,
         },
       ],
@@ -130,8 +132,10 @@ describe('PrReviewSweepAutopilotTask', () => {
     expect(result.skip).toBe(false);
     expect(result.summaryText).toContain('👍 2');
     expect(result.summaryText).toContain('👎 1');
-    // 수확 결과와 함께 누적 채택률도 요약에 실린다.
-    expect(result.summaryText).toContain('TEST 94%(17)');
+    // 수확 결과와 함께 구간 채택률도 요약에 실린다. formatter spec 은 adoption 을 직접 주입하므로
+    // task → formatter 전달 구간(카테고리·표본·수치가 온전히 넘어가는지)은 이 층에서만 덮인다.
+    // 그래서 개수 표기가 아니라 수치까지 단언한다 — 표본을 낮춰 「이상」 경로로 렌더되게 둔다.
+    expect(result.summaryText).toContain('TEST 61%(17)');
   });
 
   it('수확 실패는 경고만 남기고 리뷰 스윕을 계속한다', async () => {

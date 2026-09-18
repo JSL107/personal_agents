@@ -31,10 +31,13 @@ export interface CreateProposalInput {
 export interface SubconsciousProposalRepository {
   create(input: CreateProposalInput): Promise<SubconsciousProposalRecord>;
   findById(id: number): Promise<SubconsciousProposalRecord | null>;
-  // 같은 대상에 아직 응답하지 않은 카드가 있는지 — 중복 카드 생성을 막는 판정 근거.
-  // createdAfter 는 TTL 하한. 만료된 PENDING 은 눌러도 실행되지 않는 죽은 카드이므로
-  // 중복 판정에서 빼야 한다 (안 그러면 그 대상의 제안이 영구히 막힌다).
-  hasPending(
+  // 같은 대상에 `createdAfter` 이후로 제안한 적이 있는지 — 중복 카드 생성을 막는 판정 근거.
+  // 상태를 가리지 않는다: PENDING 만 세던 동안 카드가 만료·응답으로 PENDING 을 벗어나면
+  // 같은 대상이 다시 통과해, PR 한 건에 제안이 17회까지 쌓였다(2026-09-18 실측, #52).
+  //
+  // 만료 카드를 세지 않으려던 원래 의도는 "그 대상이 영구히 막히는 것" 을 피하려는 것이었다.
+  // 같은 목적을 기간 창(호출부의 재제안 금지 기간)으로 달성한다 — 창을 넘기면 다시 통과한다.
+  hasProposedSince(
     ownerUserId: string,
     changeKey: string,
     createdAfter: Date,
