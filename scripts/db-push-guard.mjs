@@ -29,6 +29,20 @@ function findDestructiveStatements(sql) {
     });
 }
 
+// pnpm 은 exec 가 실패하면 stdout 첫 줄에 문자열 "undefined" 를 찍는다. 그대로 흘리면
+// 이 스크립트가 낸 버그처럼 보여 엉뚱한 곳을 디버깅하게 되므로 걷어낸다.
+function cleanProcessOutput(stdout, stderr) {
+  return [stdout, stderr]
+    .filter(Boolean)
+    .join('\n')
+    .split('\n')
+    .filter((line) => {
+      return line.trim() !== 'undefined';
+    })
+    .join('\n')
+    .trim();
+}
+
 function readDriftSql() {
   return execFileSync(
     'pnpm',
@@ -74,6 +88,12 @@ function selfCheck() {
     'DROP INDEX 는 통과시켜야 한다',
   );
 
+  assert.equal(
+    cleanProcessOutput('undefined\n ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command "prisma" not found\n', ''),
+    'ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command "prisma" not found',
+    'pnpm 이 찍는 undefined 줄은 걷어내야 한다',
+  );
+
   console.log('db-push-guard self-check 통과');
 }
 
@@ -92,7 +112,7 @@ function main() {
   try {
     sql = readDriftSql();
   } catch (error) {
-    const detail = [error.stdout, error.stderr].filter(Boolean).join('\n').trim();
+    const detail = cleanProcessOutput(error.stdout, error.stderr);
     console.error('drift 를 확인할 수 없어 push 를 중단한다. DB 가 떠 있는지(pnpm db:up) 확인할 것.');
     if (detail) {
       console.error(detail);
