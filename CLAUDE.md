@@ -138,6 +138,7 @@ pnpm prisma format  # schema 변경 시
 - **3000 포트 EADDRINUSE**: 이대리는 `PORT=3002`.
 - **PrismaClient regen 누락**: schema 변경 후 `pnpm db:push` 만 하고 build 하면 type 안 맞을 수 있음 → `pnpm prisma:generate` 후 재빌드.
 - **`db:push` 는 수동 생성 인덱스를 지운다**: Prisma 스키마로 표현할 수 없어 `src/prisma/prisma.service.ts` 가 부팅 때 직접 만드는 인덱스가 3종 있다 — `idx_agent_run_output_fts`(GIN), `idx_episodic_memory_embedding`(pgvector HNSW), `idx_strategy_parameter_active`(부분 유니크). **어느 것이 지워질지는 미리 알 수 없다** (2026-09-18 실측: 컬럼 2개 추가에 HNSW 하나만 삭제, 나머지 둘은 생존). push 전후로 `SELECT indexname FROM pg_indexes WHERE schemaname='public'` 을 떠서 대조하고, 사라진 것은 `prisma.service.ts` 의 SQL 을 그대로 실행해 되살린다. 앱 재시작으로도 멱등 재생성되지만 그동안은 인덱스 없이 돈다.
+- **`db:push` 는 파괴적 변경이면 멈춘다**: `scripts/db-push-guard.mjs` 가 push 전에 drift 를 떠서 `DROP TABLE`·`DROP COLUMN` 이 있으면 무엇이 지워지는지 출력하고 끊는다. 로컬 DB 를 worktree 전체가 공유하므로 뒤처진 브랜치에서 돌리면 남의 컬럼이 사라진다 (2026-09-18 실제 사고: `preview_action.last_failed_at` 소실 → `main` 앱의 `/v1/console/snapshot` 500). 컬럼이 비어 있으면 Prisma 내장 확인은 통과시키므로 그것만으로는 안 막힌다. 막히면 리베이스가 먼저고, 정말 지워야 하면 `DB_PUSH_ALLOW_DROP=1 pnpm db:push`. `DROP INDEX` 는 위 항목의 수동 인덱스라 통과시킨다.
 - **worktree 에서 prisma 명령이 안 돈다**: `.env` 가 gitignore 라 worktree 에 따라오지 않아 `DATABASE_URL` 이 없다. 메인 트리에서 `.env` 를 복사한 뒤 실행.
 
 ---
