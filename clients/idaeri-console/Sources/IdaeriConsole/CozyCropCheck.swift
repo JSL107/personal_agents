@@ -23,13 +23,50 @@ func runCozyCropCheck() -> Bool {
     // 프로브를 타는 크기(최장변 > 512)와 타지 않는 크기(≤ 512)를 각각 확인한다. 후자는 현재
     // 에셋 183장 어디에도 없어(전부 1145×1374) 실물로는 한 번도 실행되지 않는 경로다 —
     // 합성 이미지가 아니면 검사할 방법이 없다.
-    let syntheticCases: [(label: String, width: Int, height: Int, body: CGRect)] = [
-        ("프로브 경로 · 실제 시트 크기", 1145, 1374, CGRect(x: 300, y: 400, width: 500, height: 800)),
-        ("프로브 경로 · 가로로 긴 그림", 1400, 600, CGRect(x: 120, y: 90, width: 900, height: 420)),
-        ("프로브 경로 · 여백이 거의 없는 그림", 1145, 1374, CGRect(x: 2, y: 3, width: 1140, height: 1368)),
-        ("직접 경로 · 상한 이하", 400, 380, CGRect(x: 40, y: 50, width: 220, height: 200)),
+    let syntheticCases: [SyntheticCropCase] = [
+        SyntheticCropCase(
+            label: "프로브 경로 · 실제 시트 크기",
+            width: 1145, height: 1374,
+            body: CGRect(x: 300, y: 400, width: 500, height: 800),
+            expectsProbe: true
+        ),
+        SyntheticCropCase(
+            label: "프로브 경로 · 가로로 긴 그림",
+            width: 1400, height: 600,
+            body: CGRect(x: 120, y: 90, width: 900, height: 420),
+            expectsProbe: true
+        ),
+        SyntheticCropCase(
+            label: "프로브 경로 · 여백이 거의 없는 그림",
+            width: 1145, height: 1374,
+            body: CGRect(x: 2, y: 3, width: 1140, height: 1368),
+            expectsProbe: true
+        ),
+        SyntheticCropCase(
+            label: "직접 경로 · 상한 이하",
+            width: 400, height: 380,
+            body: CGRect(x: 40, y: 50, width: 220, height: 200),
+            expectsProbe: false
+        ),
     ]
     for testCase in syntheticCases {
+        // **표본이 의도한 경로를 실제로 타는지 먼저 본다.** 프로브 상한이 커지면 표본이 죄다
+        // 직접 경로로 흐르는데, 그러면 프로브 수식(비율 되돌림·여백 벌림)이 한 번도 실행되지
+        // 않으면서 검사는 그대로 통과한다 — 통과가 곧 검사됐다는 뜻이 아니게 된다.
+        let takesProbe = max(testCase.width, testCase.height) > SpriteLoader.alphaProbeMaxDimension
+        if takesProbe != testCase.expectsProbe {
+            fputs(
+                "crop check: 표본이 의도한 경로를 타지 않는다 — \(testCase.label)"
+                    + " (\(testCase.width)×\(testCase.height),"
+                    + " 프로브 상한 \(SpriteLoader.alphaProbeMaxDimension),"
+                    + " 기대 \(testCase.expectsProbe ? "프로브" : "직접") → 실제"
+                    + " \(takesProbe ? "프로브" : "직접"))."
+                    + " 표본 크기나 상한을 맞춰야 이 경로가 실제로 검사된다\n",
+                stderr
+            )
+            valid = false
+            continue
+        }
         guard let image = syntheticAlphaImage(
             width: testCase.width,
             height: testCase.height,
@@ -65,6 +102,16 @@ func runCozyCropCheck() -> Bool {
         print("✓ 크롭 계약 통과 — 몸 경계 보존·여백 유지·여백 상한이 유효하다")
     }
     return valid
+}
+
+/// 합성 표본 하나. `expectsProbe` 는 이 크기가 축소 사본 경로를 타야 하는지이고, 검사는 그것을
+/// 실제 상한(`SpriteLoader.alphaProbeMaxDimension`)과 대조해 표본이 죽은 표본이 아닌지 먼저 본다.
+private struct SyntheticCropCase {
+    let label: String
+    let width: Int
+    let height: Int
+    let body: CGRect
+    let expectsProbe: Bool
 }
 
 /// 남겨도 되는 여백의 상한(px). 프로브 상한이 512px 일 때 실제 여백은 7px 이고(원래의 4px +
