@@ -749,7 +749,8 @@ export class EnvironmentVariables {
   BRIEFING_WAITING_SECTION_ENABLED?: string;
 
   // Subconscious tick BullMQ cron 표현식 (Asia/Seoul 기준).
-  // 미설정 시 default '*/20 * * * *' (20분마다).
+  // 미설정 시 default '0 9 * * *' (아침 브리핑 08:30 직후 1회).
+  // 제안 DM 이 업무 시간에 불시에 끼어들지 않게 하려는 값이다 — 근거는 subconscious.scheduler.ts.
   @IsOptional()
   @IsString()
   SUBCONSCIOUS_SCHEDULE?: string;
