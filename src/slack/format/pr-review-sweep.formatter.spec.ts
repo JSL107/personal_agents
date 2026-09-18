@@ -200,8 +200,7 @@ describe('formatPrReviewSweep', () => {
       results: [],
     });
 
-    expect(text).toContain('채택률 이상 없음');
-    expect(text).toContain('2종');
+    expect(text).toContain('채택률 2종 모두 정상');
     expect(text).not.toContain('94%');
     expect(text).not.toContain('100%');
   });
@@ -229,8 +228,9 @@ describe('formatPrReviewSweep', () => {
       results: [],
     });
 
-    expect(text).toContain('TEST 94%(69) ↓5%p');
-    expect(text).not.toContain('이상 없음');
+    // 수치는 자기 줄에 선다 — 한 줄에 몰면 화면 폭에 눌려 낱말이 끊긴다.
+    expect(text).toContain('\n• TEST 94%(69) ↓5%p');
+    expect(text).not.toContain('모두 정상');
   });
 
   it('절대 수준이 80% 미만이면 떨어지지 않았어도 수치로 낸다', () => {
@@ -243,7 +243,7 @@ describe('formatPrReviewSweep', () => {
       results: [],
     });
 
-    expect(text).toContain('CORRECTNESS 70%(30) →');
+    expect(text).toContain('\n• CORRECTNESS 70%(30) →');
   });
 
   it('상승·보합은 이상으로 보지 않는다', () => {
@@ -258,7 +258,7 @@ describe('formatPrReviewSweep', () => {
       results: [],
     });
 
-    expect(text).toContain('채택률 이상 없음');
+    expect(text).toContain('채택률 2종 모두 정상');
     expect(text).not.toContain('↑8%p');
   });
 
@@ -281,8 +281,8 @@ describe('formatPrReviewSweep', () => {
       results: [],
     });
 
-    expect(text).toContain('TEST 94%(69) ↓5%p');
-    expect(text).toContain('그 외 3종 이상 없음');
+    expect(text).toContain('\n• TEST 94%(69) ↓5%p');
+    expect(text).toContain('\n• 나머지 3종 정상');
     // 표본 미달 3종은 어느 형태로도 나오지 않는다.
     expect(text).not.toContain('SECURITY');
     expect(text).not.toContain('ARCHITECTURE');
@@ -300,7 +300,7 @@ describe('formatPrReviewSweep', () => {
       results: [],
     });
 
-    expect(text).toContain('READABILITY 61%(11)');
+    expect(text).toContain('\n• READABILITY 61%(11)');
     expect(text).not.toContain('↑');
     expect(text).not.toContain('↓');
     expect(text).not.toContain('→');
@@ -310,7 +310,7 @@ describe('formatPrReviewSweep', () => {
     // 누적인지 구간인지 안 적으면 읽는 사람이 전체 성적으로 오해한다.
     // 레포도 마찬가지다 — 이 숫자는 학습 규약이 실리는 레포 하나만 센 값이라,
     // 밝히지 않으면 여러 레포를 리뷰하는 사용자가 전체 성적으로 읽는다.
-    const window = `최근 ${ADOPTION_WINDOW_DAYS}일 · \`${LEARNING_REPO}\``;
+    const window = `_최근 ${ADOPTION_WINDOW_DAYS}일 · \`${LEARNING_REPO}\`_`;
 
     const quiet = formatPrReviewSweep({
       harvest: harvest({ acked: 1, adoption: [adoption('TEST', 15, 100)] }),

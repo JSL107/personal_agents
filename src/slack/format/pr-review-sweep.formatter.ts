@@ -114,30 +114,41 @@ export const formatPrReviewSweep = ({
   // 채택률은 카드 상태가 바뀐 회차에만 채워진다. 눈에 걸리는 카테고리만 수치로 내고,
   // 정상 범위는 개수로만 묶는다. 화살표는 직전 같은 길이 구간과의 차이다.
   //
+  // 한 줄에 몰지 않고 줄로 나눈다. 쪼개기 유틸(breakProseIntoSentences)은 마침표를 기준으로
+  // 삼으므로 `·` 로 이어 붙인 이 줄은 대상이 되지 않고, 길이 임계(100자)에도 못 미쳐 그대로
+  // 나간다. 실제 발송에서 74자 한 줄이 화면 폭에 눌려 마지막 낱말만 다음 줄로 넘어갔다.
+  //
   // 창 길이와 레포는 두 경우 모두 밝힌다 — 누적으로 오해하거나 여러 레포의 전체 성적으로
-  // 읽는 사고가 있었다(이 파일 spec 의 해당 테스트 주석).
+  // 읽는 사고가 있었다(이 파일 spec 의 해당 테스트 주석). 다만 매 회차 같은 값이므로
+  // 수치 아래 별도 줄로 내려 첫 줄이 결론만 담게 한다.
+  //
+  // 「이상 없음」 대신 「정상」 을 쓴다. `그 외 3종 이상 없음` 이 `3종 이상(以上)` 으로 읽혀
+  // 무슨 뜻인지 되물어 온 표현이다.
   const measuredAdoption = harvest.adoption.filter(
     (item) => item.ratePercent !== null,
   );
   if (measuredAdoption.length > 0) {
     const notable = measuredAdoption.filter(isNotableAdoption);
+    const window = `_최근 ${ADOPTION_WINDOW_DAYS}일 · \`${LEARNING_REPO}\`_`;
     if (notable.length === 0) {
-      lines.push(
-        `📊 채택률 이상 없음 (최근 ${ADOPTION_WINDOW_DAYS}일 · \`${LEARNING_REPO}\` ${measuredAdoption.length}종)`,
-      );
+      lines.push(`📊 채택률 ${measuredAdoption.length}종 모두 정상`, window);
     } else {
       const quietCount = measuredAdoption.length - notable.length;
-      const notableText = notable
-        .map(
-          ({ category, total, ratePercent, changePercentPoint }) =>
-            `${escapeSlackMrkdwn(category)} ${ratePercent}%(${total})${formatChange(changePercentPoint)}`,
-        )
-        .join(' · ');
-      const quietText =
-        quietCount > 0 ? ` · 그 외 ${quietCount}종 이상 없음` : '';
-      lines.push(
-        `📊 채택률(최근 ${ADOPTION_WINDOW_DAYS}일 · \`${LEARNING_REPO}\`) ${notableText}${quietText}`,
-      );
+      lines.push('📊 채택률');
+      for (const {
+        category,
+        total,
+        ratePercent,
+        changePercentPoint,
+      } of notable) {
+        lines.push(
+          `• ${escapeSlackMrkdwn(category)} ${ratePercent}%(${total})${formatChange(changePercentPoint)}`,
+        );
+      }
+      if (quietCount > 0) {
+        lines.push(`• 나머지 ${quietCount}종 정상`);
+      }
+      lines.push(window);
     }
   }
   for (const result of results) {
