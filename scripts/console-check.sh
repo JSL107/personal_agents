@@ -11,6 +11,7 @@
 # 흩어져 있으면 "돌려야 하는 줄 몰랐다" 가 생긴다. 네 게이트가 각각 무엇을 보는지:
 #   swift build             타입·컴파일
 #   ConsoleCoreTests        배치·조판·색 규칙 (단언 9700+)
+#   --crop-check            투명 여백 잘라내기 계약 (몸 경계 보존·여백 유지·여백 상한)
 #   --color-check           오피스 렌더 픽셀의 실제 밝기 (통로·바닥·가구·셔츠 대역)
 #   --render-dashboard      대시보드 카드가 실제로 그려지는지 (라이트·다크 두 장)
 #
@@ -25,6 +26,9 @@ swift build
 
 echo "── ConsoleCoreTests"
 swift run ConsoleCoreTests
+
+echo "── 크롭 계약 (--crop-check)"
+swift run IdaeriConsole --crop-check
 
 echo "── 색 실측 (--color-check)"
 swift run IdaeriConsole --color-check
