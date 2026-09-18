@@ -474,16 +474,15 @@ describe('ApplyPreviewUsecase', () => {
 
     expect(repo.recordApplyFailure).toHaveBeenCalledWith({
       id: 'p-1',
-      reason: 'Notion down',
+      reason: '[apply] Notion down',
       at: fixedNow,
     });
   });
 
-  it('실패 기록 자체가 throw 해도 원래 실패 사유가 그대로 전파된다', async () => {
+  it('transition 실패는 부작용이 반영된 뒤이므로 사유에 단계를 구분해 남긴다', async () => {
     const repo = buildRepo(buildPreview());
-    repo.recordApplyFailure.mockRejectedValue(new Error('db down'));
+    repo.transition.mockRejectedValue(new Error('db write failed'));
     const applier = buildApplier(PREVIEW_KIND.PM_WRITE_BACK);
-    applier.apply.mockRejectedValue(new Error('Notion down'));
     const usecase = new ApplyPreviewUsecase(
       repo,
       [applier],
@@ -494,7 +493,50 @@ describe('ApplyPreviewUsecase', () => {
 
     await expect(
       usecase.execute({ previewId: 'p-1', slackUserId: 'U1', now: fixedNow }),
+    ).rejects.toThrow('db write failed');
+
+    // applier 는 성공했으므로 외부 부작용은 이미 반영됐다 — apply 실패와 구분돼야 한다.
+    expect(applier.apply).toHaveBeenCalled();
+    expect(repo.recordApplyFailure).toHaveBeenCalledWith({
+      id: 'p-1',
+      reason: '[transition] db write failed',
+      at: fixedNow,
+    });
+  });
+
+  it('실패 기록 자체가 throw 해도 원래 실패 사유가 전파되고 카드 갱신도 진행된다', async () => {
+    const repo = buildRepo(buildPreview());
+    repo.recordApplyFailure.mockRejectedValue(new Error('db down'));
+    const applier = buildApplier(PREVIEW_KIND.PM_WRITE_BACK);
+    applier.apply.mockRejectedValue(new Error('Notion down'));
+    const card = buildCard();
+    const usecase = new ApplyPreviewUsecase(repo, [applier], [], [], card);
+
+    await expect(
+      usecase.execute({ previewId: 'p-1', slackUserId: 'U1', now: fixedNow }),
     ).rejects.toThrow('Notion down');
+
+    // 기록이 깨져도 카드는 버튼이 되살아난 상태로 돌아가야 한다.
+    const states = card.update.mock.calls.map((call) => call[0].state);
+    expect(states).toEqual(['APPLYING', 'APPLY_FAILED']);
+  });
+
+  it('실패 기록이 카드 갱신보다 먼저 일어난다', async () => {
+    const repo = buildRepo(buildPreview());
+    const applier = buildApplier(PREVIEW_KIND.PM_WRITE_BACK);
+    applier.apply.mockRejectedValue(new Error('Notion down'));
+    const card = buildCard();
+    const usecase = new ApplyPreviewUsecase(repo, [applier], [], [], card);
+
+    await expect(
+      usecase.execute({ previewId: 'p-1', slackUserId: 'U1', now: fixedNow }),
+    ).rejects.toThrow('Notion down');
+
+    // 카드 갱신은 Slack 왕복이라 느리다. 뒤에 두면 그 시간만큼 기록이 밀리므로 순서를 고정한다.
+    // card.update 의 두 번째 호출이 APPLY_FAILED — 첫 번째(APPLYING)는 실패 전이다.
+    const recordOrder = repo.recordApplyFailure.mock.invocationCallOrder[0];
+    const failedCardOrder = card.update.mock.invocationCallOrder[1];
+    expect(recordOrder).toBeLessThan(failedCardOrder);
   });
 
   it('apply 성공 시 실패 기록을 남기지 않는다', async () => {
