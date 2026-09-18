@@ -51,6 +51,12 @@ const PR_REFERENCE_AGENT_TYPES: ReadonlySet<AgentType> = new Set([
 // 설명과 참조가 모두 필요하므로 text 를 덮어쓰지 않고 prReferenceHint 로 따로 동봉한다.
 const PR_GROUNDING_AGENT_TYPES: ReadonlySet<AgentType> = new Set([]);
 
+// 같은 대상을 다시 제안하지 않는 기간. 카드 TTL(시간 단위)보다 훨씬 길게 잡는다 — 막으려는 것이
+// "미응답 카드 중복" 이 아니라 "같은 PR 을 며칠에 걸쳐 되묻는 것" 이기 때문이다.
+// env 로 빼지 않은 것은 조정 수요가 확인되지 않아서다(설계 §7-2 가 정리되면 그때 검토).
+const REPROPOSE_BLOCK_DAYS = 30;
+const REPROPOSE_BLOCK_MS = REPROPOSE_BLOCK_DAYS * 24 * 60 * 60 * 1000;
+
 const extractPrReference = (changeKey: string): string | null =>
   changeKey.startsWith(GITHUB_PR_KEY_PREFIX)
     ? changeKey.slice(GITHUB_PR_KEY_PREFIX.length)
@@ -217,17 +223,23 @@ export class SubconsciousProposalService implements ProposalEmitter {
       return false;
     }
 
-    // 같은 대상에 아직 응답하지 않은 카드가 있으면 새로 만들지 않는다. PR 이 갱신될 때마다
-    // 카드가 하나씩 늘어 만료 카드가 쌓이던 문제 (2026-08-03: #961 한 건에 카드 4장).
-    // 만료된 카드는 눌러도 실행되지 않으므로 TTL 안쪽만 센다.
-    const pending = await this.repository.hasPending(
+    // 같은 대상을 재제안 금지 기간 안에 이미 물어봤으면 새로 만들지 않는다.
+    //
+    // 전에는 TTL 안쪽의 PENDING 만 셌다. 그래서 카드가 만료되거나 응답되면 같은 대상이 다시
+    // 통과했고, PR 한 건에 제안이 17회까지 갔다(2026-09-18 실측: #52 17회 · #961 6회 · #241 5회.
+    // 상위 3개가 전체 72건의 39%). 같은 기간 사람이 기각 버튼을 누른 흔적은 0건이라, 반복분은
+    // 거절된 것이 아니라 보이지 않은 채 만료됐다.
+    //
+    // PR 이 수정돼 다시 보고 싶은 경우는 슬래시 명령(`/review-pr`)이 담당한다. 자동 재제안을
+    // 허용할지는 아직 정하지 않았으므로(설계 §7-2) 금지 기간을 넉넉히 두고 시작한다.
+    const alreadyProposed = await this.repository.hasProposedSince(
       ownerUserId,
       decision.changeKey,
-      new Date(Date.now() - this.ttlMs),
+      new Date(Date.now() - REPROPOSE_BLOCK_MS),
     );
-    if (pending) {
+    if (alreadyProposed) {
       this.logger.log(
-        `changeKey="${decision.changeKey}" 에 미응답 제안 카드가 이미 있음 — 중복 생성 생략`,
+        `changeKey="${decision.changeKey}" 는 최근 ${REPROPOSE_BLOCK_DAYS}일 안에 이미 제안함 — 중복 생성 생략`,
       );
       return false;
     }
