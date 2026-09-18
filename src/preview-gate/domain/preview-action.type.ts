@@ -37,6 +37,13 @@ export const PREVIEW_KIND = {
   // 다른 세션의 대화 맥락에 작업을 밀어 넣는 구조라 오염 위험이 컸고, 실제 승인율도 0 이었다.
   // kind 상수만 남기는 이유는 DB 에 남은 과거 카드를 콘솔이 조회할 때 매핑이 깨지지 않게 하려는 것.
   SESSION_INJECT: 'SESSION_INJECT',
+  // BE 자율개발(계획 → diff 합성 → sandbox 검증 → PR) — 2026-09-04 폐지(#477).
+  // 수정안을 만드는 CLI provider 가 레포를 못 보는 구조라 diff 가 `git apply` 를 통과할 수 없었다.
+  // 여기도 SESSION_INJECT 와 같은 이유로 kind 상수만 남긴다 — DB 에 종결 카드 2건
+  // (APPLIED 1 · CANCELLED 1, 2026-08-02~03)이 남아 있고, toDomain 이 미등록 kind 를 예외로
+  // 끊으므로(preview-action.prisma.repository.ts) 그 2건을 읽는 조회가 하나라도 생기면 터진다.
+  // 행을 지우지 않는 이유는 승인/거절 원장이고 PreviewDecisionSignalSource 가 그 이력을 읽기 때문.
+  BE_SANDBOX_APPLY: 'BE_SANDBOX_APPLY',
 } as const;
 
 export type PreviewKind = (typeof PREVIEW_KIND)[keyof typeof PREVIEW_KIND];

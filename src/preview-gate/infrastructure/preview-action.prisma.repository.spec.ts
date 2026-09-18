@@ -216,3 +216,48 @@ describe('PreviewActionPrismaRepository.findRecentAppliedByKind', () => {
     });
   });
 });
+
+describe('PreviewActionPrismaRepository.findById — 폐지된 kind', () => {
+  const rowOf = (kind: string) => ({
+    id: 'p1',
+    slackUserId: 'U1',
+    kind,
+    payload: {},
+    status: 'APPLIED',
+    previewText: '옛 카드',
+    expiresAt: new Date('2026-08-03T01:00:00Z'),
+    createdAt: new Date('2026-08-03T00:00:00Z'),
+    appliedAt: new Date('2026-08-03T00:10:00Z'),
+    cancelledAt: null,
+    slackChannelId: null,
+    slackMessageTs: null,
+    lastFailedAt: null,
+    lastFailureReason: null,
+  });
+
+  const repositoryReturning = (kind: string) => {
+    const findUnique = jest.fn().mockResolvedValue(rowOf(kind));
+    const prismaMock = {
+      previewAction: { findUnique },
+    } as unknown as PrismaService;
+    return new PreviewActionPrismaRepository(prismaMock);
+  };
+
+  // 실행 경로는 사라졌지만 원장에 종결 카드가 남아 있는 kind — 상수를 지우면 이 조회가 예외로 끊긴다.
+  it.each(['BE_SANDBOX_APPLY', 'SESSION_INJECT'])(
+    '%s 행을 예외 없이 도메인으로 변환한다',
+    async (kind) => {
+      const preview = await repositoryReturning(kind).findById('p1');
+
+      expect(preview?.kind).toBe(kind);
+    },
+  );
+
+  // BE_SANDBOX_PUSH_PR 은 같은 시점에 폐지됐지만 원장에 행이 없어 되살리지 않은 kind다.
+  // 검증이 상수 목록 자체를 보게 두려는 것 — 미등록이면 조회가 끊긴다는 전제가 여전히 살아 있는지.
+  it('상수에 없는 kind 는 예외로 끊는다', async () => {
+    await expect(
+      repositoryReturning('BE_SANDBOX_PUSH_PR').findById('p1'),
+    ).rejects.toThrow('알 수 없는 PreviewAction kind: BE_SANDBOX_PUSH_PR');
+  });
+});
