@@ -1,3 +1,4 @@
+import { EveningRetroResult } from '../../agent/blog/domain/prompt/evening-retro.prompt';
 import { CalibrationResultData } from '../../agent/career-mate/domain/career-mate.type';
 import { ImpactReport } from '../../agent/impact-reporter/domain/impact-reporter.type';
 import { DailyPlan } from '../../agent/pm/domain/pm-agent.type';
@@ -9,6 +10,7 @@ import {
   humanizeDailyPlan,
   humanizeDailyReview,
   humanizeEvaluationOutput,
+  humanizeEveningRetro,
   humanizeImpactReport,
   humanizeMetaOutput,
   humanizePoShadowReport,
@@ -356,5 +358,86 @@ describe('humanizePoShadowReport', () => {
     expect(fields['judgments.1']).toBe('원문 판단 둘');
     // 윤문 결과가 없는 항목은 원문을 유지한다.
     expect(result.judgments).toEqual(['윤문된 판단', '원문 판단 둘']);
+  });
+});
+
+describe('humanizeEveningRetro', () => {
+  const retroResult = (
+    retrospective: EveningRetroResult['retrospective'],
+  ): EveningRetroResult => ({
+    retrospective,
+    candidates: [],
+    prNotes: [],
+  });
+
+  const humanizerReturning = (
+    humanized: Record<string, string>,
+  ): HumanizeService =>
+    ({
+      humanize: jest.fn().mockResolvedValue(humanized),
+    }) as unknown as HumanizeService;
+
+  it('채워진 칸만 윤문에 넘긴다 — 빈 칸이 윤문 단계에서 되살아나지 않게', async () => {
+    const humanizer = humanizerReturning({});
+
+    await humanizeEveningRetro(
+      retroResult({ keep: '유지할 것', carryOver: '미완인 것' }),
+      humanizer,
+    );
+
+    expect(
+      Object.keys((humanizer.humanize as jest.Mock).mock.calls[0][0]).sort(),
+    ).toEqual(['retrospective.carryOver', 'retrospective.keep']);
+  });
+
+  it('윤문 결과가 빈 문자열·공백이면 그 칸은 원본을 유지한다', async () => {
+    const humanizer = humanizerReturning({
+      'retrospective.keep': '',
+      'retrospective.problem': '   ',
+      'retrospective.tryNext': '윤문된 개선',
+    });
+
+    const result = await humanizeEveningRetro(
+      retroResult({
+        keep: '원본 유지',
+        problem: '원본 문제',
+        tryNext: '원본 개선',
+      }),
+      humanizer,
+    );
+
+    expect(result.retrospective.keep).toBe('원본 유지');
+    expect(result.retrospective.problem).toBe('원본 문제');
+    expect(result.retrospective.tryNext).toBe('윤문된 개선');
+  });
+
+  it('윤문 결과에 키가 없어도 원본을 유지한다', async () => {
+    const result = await humanizeEveningRetro(
+      retroResult({ keep: '원본 유지' }),
+      humanizerReturning({}),
+    );
+
+    expect(result.retrospective.keep).toBe('원본 유지');
+  });
+
+  it('비어 있던 칸은 윤문 결과가 있어도 되살아나지 않는다', async () => {
+    const result = await humanizeEveningRetro(
+      retroResult({ keep: '원본 유지' }),
+      humanizerReturning({ 'retrospective.problem': '모델이 지어낸 문제' }),
+    );
+
+    expect(result.retrospective.problem).toBeUndefined();
+  });
+
+  it('malformed 표식과 원문을 그대로 통과시킨다', async () => {
+    const result = await humanizeEveningRetro(
+      retroResult({ malformed: true, rawText: '옛 평문 회고' }),
+      humanizerReturning({}),
+    );
+
+    expect(result.retrospective).toEqual({
+      malformed: true,
+      rawText: '옛 평문 회고',
+    });
   });
 });

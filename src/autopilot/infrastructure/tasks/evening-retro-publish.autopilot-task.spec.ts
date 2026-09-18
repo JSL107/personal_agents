@@ -7,7 +7,7 @@ const CTX = { ownerSlackUserId: 'U1', firedAtKst: '2026-07-03' };
 
 const RETRO_RESPONSE = {
   text: JSON.stringify({
-    retrospective: 'r',
+    retrospective: { keep: 'r' },
     candidates: [
       {
         title: 'T',
@@ -50,6 +50,8 @@ const makeTask = (opts: {
   authorVal?: string;
   personalRepositoriesVal?: string;
   prs?: (typeof PR_ITEM)[];
+  openPrs?: (typeof PR_ITEM)[];
+  openPrsError?: Error;
   worklogRuns?: { id: number; output: unknown; endedAt: Date }[];
   dailyEvalRuns?: { id: number; output: unknown; endedAt: Date }[];
   routeResult?: { text: string; modelUsed: string; provider: string };
@@ -74,6 +76,13 @@ const makeTask = (opts: {
     listAuthorMergedPullRequestsSince: jest
       .fn()
       .mockResolvedValue(opts.prs ?? []),
+    listAuthorOpenPullRequests: jest
+      .fn()
+      .mockImplementation(() =>
+        opts.openPrsError
+          ? Promise.reject(opts.openPrsError)
+          : Promise.resolve(opts.openPrs ?? []),
+      ),
   };
 
   const agentRunService = {
@@ -398,7 +407,7 @@ describe('EveningRetroPublishTask', () => {
     const routeResult = {
       ...RETRO_RESPONSE,
       text: JSON.stringify({
-        retrospective: 'r',
+        retrospective: { keep: 'r' },
         candidates: [
           {
             title: 'T',
@@ -493,7 +502,7 @@ describe('EveningRetroPublishTask', () => {
       routeResult: {
         ...RETRO_RESPONSE,
         text: JSON.stringify({
-          retrospective: 'r',
+          retrospective: { keep: 'r' },
           candidates: [
             {
               title: 'T',
@@ -569,7 +578,7 @@ describe('EveningRetroPublishTask', () => {
       dailyEvalRuns: [],
       routeResult: RETRO_RESPONSE,
       humanized: {
-        retrospective: '윤문된 회고',
+        'retrospective.keep': '윤문된 회고',
         'candidates.title.0': '윤문된 제목',
         'candidates.reason.0': '윤문된 이유',
         'prNotes.note.0': '윤문된 PR 노트',
@@ -579,13 +588,14 @@ describe('EveningRetroPublishTask', () => {
     const result = await task.run(CTX);
 
     // 윤문에 넘긴 필드 — sourceRefs 가 섞이면 PR 매칭이 조용히 깨지므로 키 집합까지 확인한다.
+    // 빈 회고 칸은 넘기지 않는다: 윤문기가 채워 돌려주면 모델이 비워 둔 칸이 되살아난다.
     expect(
       Object.keys(humanizeService.humanize.mock.calls[0][0]).sort(),
     ).toEqual([
       'candidates.reason.0',
       'candidates.title.0',
       'prNotes.note.0',
-      'retrospective',
+      'retrospective.keep',
     ]);
     expect(result.summaryText).toContain('윤문된 회고');
     expect(result.summaryText).toContain('윤문된 제목');
@@ -596,7 +606,7 @@ describe('EveningRetroPublishTask', () => {
   it('(o) 후보가 상위 정원을 넘으면 요약엔 3건만 세우고 전체는 스레드로 내린다', async () => {
     const manyCandidates = {
       text: JSON.stringify({
-        retrospective: 'r',
+        retrospective: { keep: 'r' },
         candidates: [95, 90, 85, 80].map((score) => ({
           title: `제목${score}`,
           keywords: ['k'],
@@ -629,7 +639,7 @@ describe('EveningRetroPublishTask', () => {
   it('(o-2) 긴 이유는 문장 한복판이 아니라 문장 경계에서 끊는다', async () => {
     const longReason = {
       text: JSON.stringify({
-        retrospective: 'r',
+        retrospective: { keep: 'r' },
         candidates: [
           {
             title: '제목',
@@ -669,7 +679,7 @@ describe('EveningRetroPublishTask', () => {
   it('(p) 메인에서 빠진 것이 하나도 없으면 스레드를 만들지 않는다 (본문 반복 방지)', async () => {
     const nothingHidden = {
       text: JSON.stringify({
-        retrospective: 'r',
+        retrospective: { keep: 'r' },
         candidates: [
           {
             title: '제목',
@@ -713,5 +723,123 @@ describe('EveningRetroPublishTask', () => {
     // 우연히 걸리므로 접미사 형태로 대조한다.
     expect(result.summaryText).not.toContain('— k');
     expect(result.detailText).toContain('— k');
+  });
+
+  // 빈 칸을 숨기면 "오늘 문제가 없었다" 와 "그런 칸이 원래 없다" 가 화면에서 같아진다.
+  // 그러면 모델이 없는 문제를 지어내기 시작해도 사람이 알아챌 표면이 사라진다.
+  it('(q) 채워진 칸만 있어도 네 칸을 모두 찍고 빈 칸은 「없음」 으로 남긴다', async () => {
+    const { task } = makeTask({
+      prs: [PR_ITEM],
+      worklogRuns: [],
+      dailyEvalRuns: [],
+      routeResult: {
+        ...RETRO_RESPONSE,
+        text: JSON.stringify({
+          ...JSON.parse(RETRO_RESPONSE.text),
+          retrospective: { problem: '확인 없이 결론을 썼다' },
+        }),
+      },
+    });
+
+    const result = await task.run(CTX);
+
+    expect(result.summaryText).toContain('*문제* 확인 없이 결론을 썼다');
+    expect(result.summaryText).toContain('*유지* 없음');
+    expect(result.summaryText).toContain('*개선* 없음');
+    expect(result.summaryText).toContain('*미완* 없음');
+  });
+
+  it('(q-2) 모델이 형식을 어기면 「없음」 네 줄 대신 읽지 못했다고 밝힌다', async () => {
+    const { task } = makeTask({
+      prs: [PR_ITEM],
+      worklogRuns: [],
+      dailyEvalRuns: [],
+      routeResult: {
+        ...RETRO_RESPONSE,
+        text: JSON.stringify({
+          ...JSON.parse(RETRO_RESPONSE.text),
+          retrospective: '옛 평문 회고',
+        }),
+      },
+    });
+
+    const result = await task.run(CTX);
+
+    expect(result.summaryText).toContain('회고를 읽지 못했습니다');
+    expect(result.summaryText).not.toContain('*유지* 없음');
+    // 형식만 어겼을 뿐 읽을 수 있는 회고라면 내용까지 버리지 않는다.
+    expect(result.summaryText).toContain('옛 평문 회고');
+    // 회고를 못 읽어도 그날의 발행 후보는 살아남아야 한다.
+    expect(result.previews?.length).toBeGreaterThan(0);
+  });
+
+  it('(r) 열린 PR 을 carryOver 근거로 프롬프트에 넘긴다', async () => {
+    const openPr = { ...PR_ITEM, number: 611, title: '아직 안 끝난 작업' };
+    const { task, modelRouter, githubClient } = makeTask({
+      prs: [PR_ITEM],
+      openPrs: [openPr],
+      worklogRuns: [],
+      dailyEvalRuns: [],
+      routeResult: RETRO_RESPONSE,
+    });
+
+    await task.run(CTX);
+
+    expect(githubClient.listAuthorOpenPullRequests).toHaveBeenCalled();
+    const [call] = (modelRouter.route as jest.Mock).mock.calls;
+    expect(call[0].request.prompt).toContain(
+      '## 아직 열려 있는 내 PR (오늘 업데이트)',
+    );
+    expect(call[0].request.prompt).toContain('아직 안 끝난 작업');
+  });
+
+  it('(r-2) 열린 PR 조회가 깨져도 회고는 계속 돈다', async () => {
+    const { task } = makeTask({
+      prs: [PR_ITEM],
+      openPrsError: new Error('GitHub 429'),
+      worklogRuns: [],
+      dailyEvalRuns: [],
+      routeResult: RETRO_RESPONSE,
+    });
+
+    const result = await task.run(CTX);
+
+    expect(result.skip).toBe(false);
+    expect(result.summaryText).toContain('오늘의 회고');
+  });
+
+  // 조회가 깨지면 목록이 `[]` 라 openPrCount 가 0 이 되는데, 그 0 은 "오늘 다 끝냈다" 와
+  // 생김새가 같다. 로그에만 두면 「미완: 없음」 이 "다 끝냈다" 로 읽힌다.
+  it('(r-3) 열린 PR 조회 실패를 스냅샷과 화면에 함께 남긴다', async () => {
+    const { task, agentRunService } = makeTask({
+      prs: [PR_ITEM],
+      openPrsError: new Error('GitHub 429'),
+      worklogRuns: [],
+      dailyEvalRuns: [],
+      routeResult: RETRO_RESPONSE,
+    });
+
+    const result = await task.run(CTX);
+
+    const [executeArgs] = (agentRunService.execute as jest.Mock).mock.calls[0];
+    expect(executeArgs.inputSnapshot.openPrFetchFailed).toBe(true);
+    expect(executeArgs.inputSnapshot.openPrCount).toBe(0);
+    expect(result.summaryText).toContain('열린 PR 조회가 실패해');
+  });
+
+  it('(r-4) 조회가 성공하면 실패 표식도 경고 줄도 남기지 않는다', async () => {
+    const { task, agentRunService } = makeTask({
+      prs: [PR_ITEM],
+      openPrs: [],
+      worklogRuns: [],
+      dailyEvalRuns: [],
+      routeResult: RETRO_RESPONSE,
+    });
+
+    const result = await task.run(CTX);
+
+    const [executeArgs] = (agentRunService.execute as jest.Mock).mock.calls[0];
+    expect(executeArgs.inputSnapshot.openPrFetchFailed).toBe(false);
+    expect(result.summaryText).not.toContain('열린 PR 조회가 실패해');
   });
 });

@@ -8,8 +8,11 @@ import {
   EveningPrInput,
   EveningPrNote,
   EveningRetroCandidate,
+  EveningRetroReflection,
   EveningRetroResult,
+  formatRetroContext,
   parseEveningRetroOutput,
+  REFLECTION_COLUMNS,
 } from '../../../agent/blog/domain/prompt/evening-retro.prompt';
 import { groupPrRefsByRepo } from '../../../agent/career-mate/domain/group-pr-refs';
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
@@ -20,6 +23,7 @@ import {
   REPO_SOURCE_LABEL,
   RepoSource,
 } from '../../../common/util/repo-source.util';
+import { GithubPullRequestSummary } from '../../../github/domain/github.type';
 import {
   GITHUB_CLIENT_PORT,
   GithubClientPort,
@@ -90,6 +94,21 @@ export class EveningRetroPublishTask implements AutopilotTask {
     // **조용히 0건**을 돌려준다("오늘 머지된 PR 없음"으로 위장됨). 항상 UTC(Z) 표기로 넘긴다.
     const sinceIsoDate = getKstDayStartAsUtc().toISOString();
     const personalRepositories = this.getPersonalRepositories();
+    const toPrInput = (
+      pullRequest: GithubPullRequestSummary,
+    ): EveningPrInput => ({
+      repo: pullRequest.repo,
+      number: pullRequest.number,
+      url: pullRequest.url,
+      title: pullRequest.title,
+      body: pullRequest.body,
+      source: classifyRepoSource(
+        pullRequest.repo,
+        personalRepositories,
+        authorLogin,
+      ),
+    });
+
     const mergedPrs: EveningPrInput[] = authorLogin
       ? (
           await this.githubClient.listAuthorMergedPullRequestsSince({
@@ -98,18 +117,34 @@ export class EveningRetroPublishTask implements AutopilotTask {
             sinceIsoDate,
             limit: RETRO_PR_LIMIT,
           })
-        ).map((pr) => ({
-          repo: pr.repo,
-          number: pr.number,
-          url: pr.url,
-          title: pr.title,
-          body: pr.body,
-          source: classifyRepoSource(
-            pr.repo,
-            personalRepositories,
-            authorLogin,
-          ),
-        }))
+        ).map(toPrInput)
+      : [];
+
+    // carryOver("오늘 못 끝낸 것") 의 근거. 조회가 깨져도 회고는 계속 돈다 — 저녁 보고가
+    // 부가 입력 하나 때문에 통째로 막히는 쪽이 더 나쁘다.
+    //
+    // 실패를 별도로 표시하는 이유: 실패하면 목록이 `[]` 라 `openPrCount` 가 0 이 되는데,
+    // 그 0 은 "오늘 다 끝냈다" 와 생김새가 같다. 실패를 남기지 않으면 carryOver 가 비는 날
+    // 무엇 때문인지 영영 가릴 수 없다.
+    let openPrFetchFailed = false;
+    const openPrs: EveningPrInput[] = authorLogin
+      ? await this.githubClient
+          .listAuthorOpenPullRequests({
+            repo: null,
+            author: authorLogin,
+            sinceIsoDate,
+            limit: RETRO_PR_LIMIT,
+          })
+          .then((pullRequests) => pullRequests.map(toPrInput))
+          .catch((error: unknown) => {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            this.logger.warn(
+              `열린 PR 조회 실패 — 미완 근거 없이 진행: ${message}`,
+            );
+            openPrFetchFailed = true;
+            return [];
+          })
       : [];
 
     const worklogText = await this.readRunText(
@@ -140,6 +175,10 @@ export class EveningRetroPublishTask implements AutopilotTask {
           slackUserId: ownerSlackUserId,
           firedAtKst,
           mergedPrCount: mergedPrs.length,
+          // carryOver 가 매일 비면 "정말 다 끝낸 날" 인지 "이 조회가 0건인지" 를 이 값으로 가른다.
+          // 다만 실패해도 0 이 되므로 그 셋째 경우는 아래 플래그가 가른다.
+          openPrCount: openPrs.length,
+          openPrFetchFailed,
           hasWorklog: worklogText !== null,
           hasDailyEval: dailyEvalText !== null,
         },
@@ -149,6 +188,7 @@ export class EveningRetroPublishTask implements AutopilotTask {
             request: {
               prompt: buildEveningRetroPrompt({
                 mergedPrs,
+                openPrs,
                 worklogText,
                 dailyEvalText,
               }),
@@ -178,11 +218,14 @@ export class EveningRetroPublishTask implements AutopilotTask {
       const scoreLines = summaryCandidates
         .map((candidate) => this.formatCandidateLine(candidate, authorLogin))
         .join('\n');
-      const summaryText = `🌙 *오늘의 회고 — ${firedAtKst}*\n\n${parsed.retrospective}\n\n${this.formatCandidateHeading(
+      const summaryText = `🌙 *오늘의 회고 — ${firedAtKst}*\n\n${this.formatReflectionText(
+        parsed.retrospective,
+      )}\n\n${this.formatCandidateHeading(
         parsed.candidates.length,
       )}\n${scoreLines || '_후보 없음_'}${this.buildEvidenceNotice(
         authorLogin,
         mergedPrs.length,
+        openPrFetchFailed,
       )}`;
       const detailText = this.buildCandidateDetailText(
         parsed.candidates,
@@ -208,7 +251,7 @@ export class EveningRetroPublishTask implements AutopilotTask {
             outline: top.outline,
           },
           sourcePrs,
-          retroContext: parsed.retrospective,
+          retroContext: formatRetroContext(parsed.retrospective),
           slackUserId: ownerSlackUserId,
         };
         const outlineText = this.formatOutlineText(top.outline);
@@ -260,6 +303,30 @@ export class EveningRetroPublishTask implements AutopilotTask {
   }
 
   /**
+   * KPT 회고 네 칸 — 빈 칸도 「없음」 으로 찍는다.
+   *
+   * 빈 칸을 숨기면 "오늘 문제가 없었다" 와 "그런 칸이 원래 없다" 가 화면에서 같아진다. 그러면
+   * 모델이 없는 문제를 지어내기 시작해도 사람이 알아챌 표면이 사라진다. 이 네 줄이 억지 채움을
+   * 감시하는 유일한 장치라, 짧아지는 것보다 보이는 것을 택한다.
+   *
+   * 판정은 사람이 한다 — 칸이 찼다는 사실만으로는 지어낸 것인지 실제로 아쉬웠던 것인지 갈리지
+   * 않는다(개발하는 날 아쉬운 점이 하나도 없는 쪽이 오히려 드물다). 도입 후 7 영업일의 problem
+   * 칸을 사용자가 직접 읽고 지어냄이 3건 이상이면 problem 칸을 걷어낸다.
+   */
+  private formatReflectionText(reflection: EveningRetroReflection): string {
+    if (reflection.malformed) {
+      const notice =
+        '_⚠️ 회고를 읽지 못했습니다(모델이 형식을 어겼습니다). 아래 후보는 정상입니다._';
+      // 형식만 틀렸을 뿐 읽을 수 있는 회고라면 그대로 보여준다. 칸으로 나뉘지 않았다는
+      // 사실은 위 줄이 이미 알리므로, 내용까지 버릴 이유가 없다.
+      return reflection.rawText ? `${notice}\n${reflection.rawText}` : notice;
+    }
+    return REFLECTION_COLUMNS.map(
+      ({ key, label }) => `*${label}* ${reflection[key] ?? '없음'}`,
+    ).join('\n');
+  }
+
+  /**
    * 근거 PR 이 0건이라는 사실 자체를 보고에 남긴다.
    *
    * 근거가 없으면 후보도 따라서 사라지는데, "정말 PR 이 없던 날" 과 "조회가 깨진 날" 은
@@ -273,14 +340,21 @@ export class EveningRetroPublishTask implements AutopilotTask {
   private buildEvidenceNotice(
     authorLogin: string | undefined,
     mergedCount: number,
+    openPrFetchFailed: boolean,
   ): string {
     if (!authorLogin) {
       return '\n\n_⚠️ `IMPACT_REPORT_GITHUB_AUTHOR` 가 없어 머지 PR 을 조회하지 않았습니다 — 근거 없이 쓴 회고입니다._';
     }
+    // 열린 PR 조회가 깨지면 「미완」 칸의 근거가 통째로 없는 채로 회고가 나간다. 그 사실을
+    // 로그에만 두면 「미완: 없음」 이 "다 끝냈다" 로 읽힌다 — 이 보고에서 유일하게 무시되지
+    // 않는 표면이 이 메시지다.
+    const openPrNotice = openPrFetchFailed
+      ? '\n\n_⚠️ 열린 PR 조회가 실패해 「미완」 칸의 근거가 없습니다. 비어 있어도 다 끝냈다는 뜻이 아닙니다._'
+      : '';
     if (mergedCount === 0) {
-      return '\n\n_⚠️ 오늘 머지된 PR 이 0건으로 조회됐습니다. 실제로 없었다면 정상이지만, 며칠 연속이면 GitHub 조회 경로를 확인하세요._';
+      return `\n\n_⚠️ 오늘 머지된 PR 이 0건으로 조회됐습니다. 실제로 없었다면 정상이지만, 며칠 연속이면 GitHub 조회 경로를 확인하세요._${openPrNotice}`;
     }
-    return '';
+    return openPrNotice;
   }
 
   private async readRunText(

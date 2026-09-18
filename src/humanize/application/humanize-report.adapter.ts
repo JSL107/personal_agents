@@ -1,4 +1,9 @@
-import { EveningRetroResult } from '../../agent/blog/domain/prompt/evening-retro.prompt';
+import {
+  EveningRetroReflection,
+  EveningRetroResult,
+  normalizeReflectionColumn,
+  REFLECTION_COLUMNS,
+} from '../../agent/blog/domain/prompt/evening-retro.prompt';
 import { CalibrationResultData } from '../../agent/career-mate/domain/career-mate.type';
 import { MetaOutput } from '../../agent/ceo/domain/ceo.type';
 import { ImpactReport } from '../../agent/impact-reporter/domain/impact-reporter.type';
@@ -294,9 +299,15 @@ export const humanizeEveningRetro = async (
   result: EveningRetroResult,
   humanizer: HumanizeService,
 ): Promise<EveningRetroResult> => {
-  const fields: Record<string, string> = {
-    retrospective: result.retrospective,
-  };
+  const fields: Record<string, string> = {};
+  // 채워진 칸만 넘긴다. 빈 칸을 빈 문자열로 넣으면 윤문기가 무언가를 채워 돌려줄 수 있고,
+  // 그러면 모델이 비워 둔 칸이 윤문 단계에서 되살아난다.
+  for (const { key } of REFLECTION_COLUMNS) {
+    const column = result.retrospective[key];
+    if (column) {
+      fields[`retrospective.${key}`] = column;
+    }
+  }
   flattenArray(
     fields,
     'candidates.title',
@@ -315,9 +326,21 @@ export const humanizeEveningRetro = async (
 
   const humanized = await humanizer.humanize(fields);
 
+  const retrospective: EveningRetroReflection = { ...result.retrospective };
+  for (const { key } of REFLECTION_COLUMNS) {
+    if (retrospective[key] === undefined) {
+      continue;
+    }
+    // 윤문기가 빈 문자열·공백을 돌려주면 그 칸은 원본을 유지한다. 빈 칸이 되살아나는 것은
+    // 위 루프가 채워진 칸만 넘겨서 막고, 여기서는 채워진 칸이 윤문 때문에 비는 것을 막는다.
+    retrospective[key] =
+      normalizeReflectionColumn(humanized[`retrospective.${key}`]) ??
+      retrospective[key];
+  }
+
   return {
     ...result,
-    retrospective: humanized.retrospective ?? result.retrospective,
+    retrospective,
     candidates: result.candidates.map((candidate, index) => ({
       ...candidate,
       title: humanized[`candidates.title.${index}`] ?? candidate.title,
