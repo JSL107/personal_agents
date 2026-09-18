@@ -7,6 +7,10 @@ import {
   chunkMrkdwnText,
   SECTION_MRKDWN_LIMIT,
 } from './preview-message.builder';
+import {
+  recordSlackSendLength,
+  type SlackSendOrigin,
+} from './slack-send-length.recorder';
 
 // Slack 메시지 하나에 넣을 수 있는 block 상한. 초과하면 API 가 invalid_blocks 로 거절한다.
 const SLACK_MAX_BLOCKS = 50;
@@ -118,10 +122,20 @@ export const toReadableMessage = (
 // say / respond / chat.postMessage 인자에 그대로 펼쳐 쓰는 형태.
 // Bolt 의 blocks union(KnownBlock)은 Block Kit JSON 을 그대로 받지 못할 만큼 엄격해 narrow cast 가
 // 필요한데, 발송 지점마다 캐스팅을 흩뿌리지 않도록 여기 한곳에 모은다.
+//
+// 텍스트 발송이 전부 이 한 지점을 지나므로 길이 계측도 여기서 한다(설계서 §7-5). `origin` 은
+// 기본값이 `reply` — 밀어내는 쪽(SlackService.postMessage)만 자기 값을 넘긴다. 그래야 한
+// 메시지가 두 번 기록되지 않고, "사용자가 부른 응답" 과 "먼저 밀어낸 자율 메시지" 가 갈린다.
 export const toReadableSlackArgs = (
   text: string,
+  origin: SlackSendOrigin = 'reply',
 ): { text: string; blocks?: never } => {
   const readable = toReadableMessage(text);
+  recordSlackSendLength({
+    text: readable.text,
+    origin,
+    blocks: readable.blocks?.length ?? 0,
+  });
   return {
     text: readable.text,
     ...(readable.blocks ? { blocks: readable.blocks as never } : {}),

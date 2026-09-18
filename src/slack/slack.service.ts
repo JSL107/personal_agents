@@ -20,6 +20,7 @@ import {
 } from './domain/port/slack-handler.port';
 import { toReadableSlackArgs } from './format/message-blocks.builder';
 import { buildPreviewBlocks } from './format/preview-message.builder';
+import { recordSlackSendLength } from './format/slack-send-length.recorder';
 import { buildSubconsciousProposalBlocks } from './format/subconscious-proposal-message.builder';
 
 const SOCKET_WATCHDOG_INTERVAL_MS = 30_000;
@@ -268,7 +269,9 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
   }): Promise<{ ts: string | undefined }> {
     const response = await this.postChat({
       channel: target,
-      ...toReadableSlackArgs(text),
+      // 이대리가 먼저 밀어내는 경로 — 계측에서 슬래시·멘션 응답과 갈라 본다(설계서 §7-5).
+      // 스레드 댓글은 본문과 길이 성격이 달라 따로 센다(cron 상세가 이 경로다).
+      ...toReadableSlackArgs(text, threadTs ? 'push-thread' : 'push'),
       ...(threadTs ? { thread_ts: threadTs } : {}),
       // 미디어(썸네일)도 함께 꺼야 한다 — unfurl_links 만 끄면 이미지가 딸린 링크는
       // 여전히 펼쳐진다. 값을 안 주면 슬랙 기본값(켜짐)이라 기존 발송은 그대로다.
@@ -289,16 +292,23 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     target: string;
     preview: PreviewCardMessage;
   }): Promise<{ channelId: string; messageTs: string }> {
+    // 카드는 blocks 로만 나가 toReadableSlackArgs 를 지나지 않는다 — 계측이 여기서 따로 붙는다.
+    const blocks = buildPreviewBlocks({
+      previewText: preview.previewText,
+      previewId: preview.id,
+      kind: preview.kind,
+      payload: preview.payload,
+    });
+    recordSlackSendLength({
+      text: preview.previewText,
+      origin: 'card',
+      blocks: blocks.length,
+    });
     const response = await this.postChat({
       channel: target,
       text: preview.previewText,
       // Bolt 의 blocks union 은 매우 엄격 (KnownBlock) — Block Kit JSON 을 그대로 쓰기 위해 narrow cast.
-      blocks: buildPreviewBlocks({
-        previewText: preview.previewText,
-        previewId: preview.id,
-        kind: preview.kind,
-        payload: preview.payload,
-      }) as never,
+      blocks: blocks as never,
     });
     return {
       channelId: String(response.channel ?? target),
@@ -317,13 +327,19 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     proposalText: string;
     proposalId: number;
   }): Promise<{ channelId: string; messageTs: string }> {
+    const blocks = buildSubconsciousProposalBlocks({
+      proposalText,
+      proposalId,
+    });
+    recordSlackSendLength({
+      text: proposalText,
+      origin: 'card',
+      blocks: blocks.length,
+    });
     const response = await this.postChat({
       channel: target,
       text: proposalText,
-      blocks: buildSubconsciousProposalBlocks({
-        proposalText,
-        proposalId,
-      }) as never,
+      blocks: blocks as never,
     });
     return {
       channelId: String(response.channel ?? target),
