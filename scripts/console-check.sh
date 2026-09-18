@@ -12,6 +12,7 @@
 #   swift build             타입·컴파일
 #   ConsoleCoreTests        배치·조판·색 규칙 (단언 9700+)
 #   --crop-check            투명 여백 잘라내기 계약 (몸 경계 보존·여백 유지·여백 상한)
+#   --prewarm-check         워밍이 백그라운드에서 캐시를 채우는지 (중복 접힘 + 적재)
 #   --color-check           오피스 렌더 픽셀의 실제 밝기 (통로·바닥·가구·셔츠 대역)
 #   --render-dashboard      대시보드 카드가 실제로 그려지는지 (라이트·다크 두 장)
 #
@@ -29,6 +30,9 @@ swift run ConsoleCoreTests
 
 echo "── 크롭 계약 (--crop-check)"
 swift run IdaeriConsole --crop-check
+
+echo "── 워밍 계약 (--prewarm-check)"
+swift run IdaeriConsole --prewarm-check
 
 echo "── 색 실측 (--color-check)"
 swift run IdaeriConsole --color-check
