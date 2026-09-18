@@ -71,7 +71,7 @@ const buildRepository = (
 ): jest.Mocked<SubconsciousProposalRepository> => ({
   create: jest.fn().mockImplementation(() => Promise.resolve(buildRecord())),
   findById: jest.fn().mockResolvedValue(record),
-  hasPending: jest.fn().mockResolvedValue(false),
+  hasProposedSince: jest.fn().mockResolvedValue(false),
   listPending: jest.fn().mockResolvedValue([]),
   expirePendingOlderThan: jest.fn().mockResolvedValue(0),
   markStatus: jest.fn().mockResolvedValue(undefined),
@@ -194,7 +194,7 @@ describe('SubconsciousProposalService.shouldEmit', () => {
 
     expect(result).toBe(false);
     // 스윕 판정에서 걸렸으면 중복 조회까지 갈 필요가 없다.
-    expect(repository.hasPending).not.toHaveBeenCalled();
+    expect(repository.hasProposedSince).not.toHaveBeenCalled();
   });
 
   it('스윕이 연습 모드(dryRun)로 끝난 PR 이면 게시가 없었으므로 true', async () => {
@@ -258,9 +258,9 @@ describe('SubconsciousProposalService.shouldEmit', () => {
     expect(agentRunRepository.findLatestSweepReview).not.toHaveBeenCalled();
   });
 
-  it('같은 대상에 미응답 카드가 있으면 false', async () => {
+  it('같은 대상을 금지 기간 안에 이미 제안했으면 false (응답 여부와 무관)', async () => {
     const repository = buildRepository();
-    repository.hasPending.mockResolvedValue(true);
+    repository.hasProposedSince.mockResolvedValue(true);
     const { service } = buildService({ repository });
 
     const result = await service.shouldEmit({
@@ -271,7 +271,11 @@ describe('SubconsciousProposalService.shouldEmit', () => {
     expect(result).toBe(false);
   });
 
-  it('중복 판정은 TTL 안쪽 카드만 센다 — 만료 카드가 제안을 영구히 막지 않게', async () => {
+  // 이 테스트가 고정하는 것은 "판정 창이 카드 TTL 과 분리됐다" 는 사실이다.
+  // TTL 안쪽 PENDING 만 세던 동안 카드가 만료·응답으로 PENDING 을 벗어나면 같은 대상이 다시
+  // 통과했고, PR 한 건에 제안이 17회까지 갔다(2026-09-18 실측 #52). TTL 을 1시간으로 줘도
+  // 판정 창은 재제안 금지 기간을 따라야 한다.
+  it('중복 판정 창은 카드 TTL 이 아니라 재제안 금지 기간(30일)을 쓴다', async () => {
     const repository = buildRepository();
     const { service } = buildService({ repository, ttlMs: 3_600_000 });
 
@@ -280,10 +284,11 @@ describe('SubconsciousProposalService.shouldEmit', () => {
       decision: buildDecision(),
     });
 
-    const [, , createdAfter] = repository.hasPending.mock.calls[0]!;
+    const [, , createdAfter] = repository.hasProposedSince.mock.calls[0]!;
     const elapsedMs = Date.now() - (createdAfter as Date).getTime();
-    expect(elapsedMs).toBeGreaterThanOrEqual(3_600_000);
-    expect(elapsedMs).toBeLessThan(3_600_000 + 5_000);
+    const blockWindowMs = 30 * 24 * 60 * 60 * 1000;
+    expect(elapsedMs).toBeGreaterThanOrEqual(blockWindowMs);
+    expect(elapsedMs).toBeLessThan(blockWindowMs + 5_000);
   });
 });
 

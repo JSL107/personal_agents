@@ -37,16 +37,16 @@ export class SubconsciousProposalPrismaRepository implements SubconsciousProposa
     return found ? toDomain(found) : null;
   }
 
-  async hasPending(
+  async hasProposedSince(
     ownerUserId: string,
     changeKey: string,
     createdAfter: Date,
   ): Promise<boolean> {
+    // status 조건이 없는 것은 의도다 — 응답이 끝난 카드도 "이미 물어본 것" 으로 센다.
     const count = await this.prisma.subconsciousProposal.count({
       where: {
         ownerUserId,
         changeKey,
-        status: 'PENDING',
         createdAt: { gt: createdAfter },
       },
     });
