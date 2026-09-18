@@ -221,6 +221,41 @@ public actor ConsoleClient {
         return envelope.data
     }
 
+    /// `GET /v1/console/schedules`. 캘린더 탭이 열릴 때와 상태 변경 직후에만 부른다 —
+    /// 일정은 초 단위로 변하지 않으므로 SSE 에 싣지 않는다.
+    public func fetchSchedules(from: String, to: String) async throws -> [ScheduleItem] {
+        var components = URLComponents(
+            url: baseURL.appendingPathComponent("v1/console/schedules"),
+            resolvingAgainstBaseURL: false
+        )
+        components?.queryItems = [
+            URLQueryItem(name: "from", value: from),
+            URLQueryItem(name: "to", value: to),
+        ]
+        guard let url = components?.url else {
+            throw ConsoleClientError.notHTTP
+        }
+        let (data, response) = try await session.data(for: authorized(URLRequest(url: url)))
+        guard let http = response as? HTTPURLResponse else {
+            throw ConsoleClientError.notHTTP
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw ConsoleClientError.badStatus(http.statusCode)
+        }
+        let envelope = try JSONDecoder().decode(SchedulesEnvelope.self, from: data)
+        return envelope.data
+    }
+
+    /// `PATCH /v1/console/schedules/:id`. 완료·건너뜀·되돌리기 공통 경로.
+    public func updateSchedule(id: Int, status: ScheduleStatus) async throws {
+        let url = baseURL.appendingPathComponent("v1/console/schedules/\(id)")
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(["status": status.rawValue])
+        try await sendExpectingSuccess(authorized(request))
+    }
+
     /// `GET /v1/console/stream` SSE 구독. 라인 스트림을 버퍼에 누적하며 완성 이벤트를 방출한다.
     /// SSE 는 `@RawResponse` 로 래핑을 건너뛰므로 payload 는 `ConsoleEvent` JSON 그대로다.
     /// 스트림이 끊기거나 취소되면 finish 되며, 재연결·재동기화는 호출자(B5 배선)가 관장한다.
@@ -319,4 +354,8 @@ private struct SnapshotEnvelope: Decodable {
 
 private struct BriefingEnvelope: Decodable {
     let data: ConsoleBriefing
+}
+
+private struct SchedulesEnvelope: Decodable {
+    let data: [ScheduleItem]
 }
