@@ -55,7 +55,9 @@ if CommandLine.arguments.contains("--crop-check") {
 // 그대로이고(준비가 렌더 스레드로 되돌아가 느려질 뿐), 다른 게이트는 그것을 알려주지 않는다.
 //   swift run IdaeriConsole --prewarm-check
 if CommandLine.arguments.contains("--prewarm-check") {
-    exit(runCozyPrewarmCheck() ? 0 : 1)
+    // 검사가 캐시를 만지므로 `@MainActor` 다. `main.swift` 의 top-level 은 Swift 5 모드에서
+    // 논-아이솔레이티드라 그대로는 못 부른다 — 실제로 메인 스레드인 이 자리에서 격리를 명시한다.
+    exit(MainActor.assumeIsolated { runCozyPrewarmCheck() } ? 0 : 1)
 }
 
 // 굽는 크기를 넘길 수 있다 — `--size 980×680`. 회귀 렌더와 스트림이 함께 쓴다.

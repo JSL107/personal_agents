@@ -8,6 +8,16 @@ struct CozyCharacterRequest: Equatable {
     let pose: String
 }
 
+/// 범위 안으로 접은 인덱스와 정규화한 포즈. 캐시 키와 파일명이 이 한 값에서 나온다.
+private struct NormalizedCozyCharacter {
+    let index: Int
+    let pose: String
+
+    var cacheKey: String {
+        "\(index):\(pose)"
+    }
+}
+
 enum SpriteLoader {
     private static var cache: [String: SKTexture] = [:]
     private static var cozyCharacterCache: [String: NSImage] = [:]
@@ -68,12 +78,22 @@ enum SpriteLoader {
         return image
     }
 
-    /// 조회·적재·워밍이 같은 칸을 가리키게 키 계산을 한곳에 둔다. 인덱스를 범위 안으로 접고
-    /// 포즈 이름을 정규화한 뒤라야 `walkside` 같은 다른 표기가 같은 칸을 쓴다.
-    private static func cozyCharacterCacheKey(assetIndex: Int, pose: String) -> String {
+    /// 인덱스를 범위 안으로 접고 포즈 이름을 정규화한 값. 캐시 키와 파일명이 **같은 값에서**
+    /// 나오게 하려고 한곳에 둔다 — 정규화를 양쪽에서 따로 하면 한쪽만 바뀌었을 때 캐시가
+    /// 엉뚱한 파일을 가리키게 된다(리뷰가 잡은 중복이 그 상태였다).
+    private static func normalizedCozyCharacter(
+        assetIndex: Int, pose: String
+    ) -> NormalizedCozyCharacter {
         let normalizedIndex = ((assetIndex % cozyCharacterAssetCount) + cozyCharacterAssetCount)
             % cozyCharacterAssetCount
-        return "\(normalizedIndex):\(normalizedCozyPose(pose))"
+        return NormalizedCozyCharacter(
+            index: normalizedIndex, pose: normalizedCozyPose(pose)
+        )
+    }
+
+    /// 조회·적재·워밍이 같은 칸을 가리키게 키 계산을 한곳에 둔다.
+    private static func cozyCharacterCacheKey(assetIndex: Int, pose: String) -> String {
+        normalizedCozyCharacter(assetIndex: assetIndex, pose: pose).cacheKey
     }
 
     /// 디스크에서 읽어 투명 여백을 잘라내기까지. 장당 약 32ms 가 드는 무거운 쪽이다.
@@ -82,9 +102,10 @@ enum SpriteLoader {
     /// 함수만 쓰고, 캐시 적재는 메인으로 되돌린다 — 캐시 자체에 락을 걸면 렌더 경로(프레임마다
     /// 조회)가 그 락을 매번 지나야 하므로, 무거운 일만 옮기고 캐시는 메인 전용으로 남긴다.
     private static func prepareCozyCharacterImage(assetIndex: Int, pose: String) -> NSImage? {
-        let normalizedIndex = ((assetIndex % cozyCharacterAssetCount) + cozyCharacterAssetCount)
-            % cozyCharacterAssetCount
-        let normalizedPose = normalizedCozyPose(pose)
+        // 캐시 키와 **같은 정규화 결과**에서 파일명을 만든다. 따로 계산하면 둘이 갈린다.
+        let normalized = normalizedCozyCharacter(assetIndex: assetIndex, pose: pose)
+        let normalizedIndex = normalized.index
+        let normalizedPose = normalized.pose
         let posedName = "agent-\(normalizedIndex)-\(normalizedPose)"
         let posedURL = normalizedPose == cozyIdlePose
             ? nil
@@ -116,7 +137,11 @@ enum SpriteLoader {
     /// 시간이 있는 경우다. 전 포즈를 미리 채우면 그 경쟁도 없앨 수 있지만 캐시 메모리가 함께
     /// 늘어나므로(장당 원본 크기) 여기서는 현재 포즈만 맡는다.
     ///
-    /// **메인 스레드에서 부른다** — 캐시와 진행 목록을 읽는다.
+    /// 메인 전용인 것을 **주석이 아니라 `@MainActor` 로 못박는다.** 캐시(`Dictionary`)와 진행
+    /// 목록(`Set`)을 렌더와 동시에 변형하면 오작동이 아니라 자료구조 손상이고, 안전 근거가
+    /// 주석에만 있으면 잘못된 호출을 컴파일러가 막아 주지 못한다 — `View.task` 의 action 처럼
+    /// 아이솔레이션을 상속하지 않는 자리에서 부르는 것이 실제로 있었다(리뷰가 잡았다).
+    @MainActor
     static func prewarmCozyCharacters(_ requests: [CozyCharacterRequest]) {
         var pending: [CozyCharacterRequest] = []
         for request in requests {
@@ -150,7 +175,8 @@ enum SpriteLoader {
 
     /// 그 그림이 이미 캐시에 있는지. 워밍이 실제로 적재까지 했는지 확인하는 검사
     /// (`--prewarm-check`)가 쓴다 — 시간을 재서 "빨라졌으니 됐다"고 판정하면 느린 기계에서
-    /// 흔들리므로, 적재 여부를 직접 본다.
+    /// 흔들리므로, 적재 여부를 직접 본다. 캐시를 읽으므로 위와 같은 이유로 메인 전용이다.
+    @MainActor
     static func isCozyCharacterCached(assetIndex: Int, pose: String) -> Bool {
         cozyCharacterCache[cozyCharacterCacheKey(assetIndex: assetIndex, pose: pose)] != nil
     }

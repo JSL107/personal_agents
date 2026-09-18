@@ -101,6 +101,11 @@ struct AppRootView: View {
         // 탐색)는 장당 32ms 라 여러 명이면 그만큼이 렌더 스레드에서 돌고 그동안 창이 멈춘다.
         // 상태를 먼저 아는 곳은 여기(`store`)이므로, 화면이 그것을 그리기 전에 준비를 시작한다.
         // 두 탭이 같은 캐시를 보므로 탭마다 걸지 않고 공통 부모인 여기에 한 번만 둔다.
+        //
+        // **첫 스냅샷도 이 한 줄이 잡는다.** 빈 목록에서 값이 실리는 것 자체가 변화이기 때문이다.
+        // 한때 `.task` 의 `await connect()` 뒤에 "첫 스냅샷 직후 한 번 더" 를 두었는데, 그
+        // `connect()` 는 스트림을 계속 듣는 무한 루프라(`while !Task.isCancelled`) 그 줄은
+        // 영원히 실행되지 않는 죽은 코드였다 — 리뷰가 잡아 걷어냈다.
         .onChange(of: store.agents) { agents in
             SpriteLoader.prewarmCozyCharacters(cozyDashboardPrewarmRequests(for: agents))
         }
@@ -108,9 +113,6 @@ struct AppRootView: View {
             startPendingJanitor()
             startSnapshotResync()
             await connect()
-            // 첫 스냅샷이 실린 직후 한 번 더 — `onChange` 는 **변화**에만 반응하므로 접속 전에
-            // 이미 채워진 목록(재연결 스냅샷이 같은 값을 주는 경우 포함)은 그것만으로는 놓친다.
-            SpriteLoader.prewarmCozyCharacters(cozyDashboardPrewarmRequests(for: store.agents))
         }
     }
 
