@@ -74,10 +74,15 @@ enum SpriteLoader {
     }
 
     private static func reportMissingAsset(_ description: String) {
-        guard reportedMissingAssets.insert(description).inserted else {
+        reportOnce("cozy character asset missing: \(description)")
+    }
+
+    /// 같은 사유를 프레임마다 다시 찍지 않게 한 번만 알린다.
+    private static func reportOnce(_ message: String) {
+        guard reportedMissingAssets.insert(message).inserted else {
             return
         }
-        fputs("cozy character asset missing: \(description)\n", stderr)
+        fputs("\(message)\n", stderr)
     }
 
     /// 알파 경계를 **재기 위해** 줄이는 크기. 화면에 나가는 그림은 아래에서 원본을 잘라 만들므로
@@ -99,7 +104,11 @@ enum SpriteLoader {
     /// 줄인 사본을 **그대로 반환하면 안 된다.** 방을 확대하면 캐릭터가 440px 넘게 그려지고
     /// 큰 창에서는 더 커져, 512px 사본은 그때 늘려 쓰이며 머리카락 결이 뭉개진다(전후 렌더를
     /// 3배 확대해 대조 확인). 사본은 경계를 찾는 데만 쓰고 화면에 나가는 픽셀은 원본에서 온다.
-    private static func imageByCroppingTransparentMargins(_ image: NSImage) -> NSImage {
+    ///
+    /// `private` 이 아닌 것은 `runCozyCropCheck`(`--crop-check`) 가 이 계약을 고정하기
+    /// 때문이다 — `ConsoleCoreTests` 는 `ConsoleCore` 타깃만 의존해 이 파일을 한 줄도 밟지
+    /// 않으므로, 단언 2만 건이 통과해도 아래 수식의 회귀는 그쪽에서 잡히지 않는다.
+    static func imageByCroppingTransparentMargins(_ image: NSImage) -> NSImage {
         guard let sourceImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
             return image
         }
@@ -118,6 +127,12 @@ enum SpriteLoader {
         // 줄인 사본의 한 칸은 원본 여러 칸을 대표한다. 되돌릴 때 그만큼 바깥으로 벌려 실제 몸
         // 경계를 안쪽으로 자르는 일이 없게 하고, 원래의 여백 4px 을 그 위에 얹는다. 사본을 못
         // 만들어 원본에서 그대로 쟀다면 벌릴 것이 없다.
+        //
+        // 이 벌림은 **방어로 남겨 둔 것**이다. 에셋 183장 전수로 재 보니 벌리지 않아도 몸이
+        // 잘린 장은 0건이고(`.rounded(.down)` 이 이미 바깥으로 보낸다), 벌린 만큼 캐릭터가
+        // 0.37%p 작아진다. 그래도 두는 이유는 축소 평균이 임계값 8 근처의 희박한 알파를 삼키는
+        // 경우를 덮기 때문이다 — 생성 이미지를 픽셀 팩으로 바꾸는 후속이 열려 있어 에셋이
+        // 교체되면 그 경우가 생길 수 있다. 떼려면 `--crop-check` 표본을 전수로 늘려 먼저 확인할 것.
         let padding = 4 + (probe == nil ? 0 : Int(max(ratioX, ratioY).rounded(.up)))
         let minX = max(0, Int((bounds.minX * ratioX).rounded(.down)) - padding)
         let minY = max(0, Int((bounds.minY * ratioY).rounded(.down)) - padding)
@@ -166,8 +181,10 @@ enum SpriteLoader {
 
     /// 경계를 재기 위한 축소 사본. 상한보다 작은 그림은 만들지 않는다(그대로 재면 된다).
     ///
-    /// 색공간은 **원본 것을 그대로 이어받는다**. 여기서 `DeviceRGB` 로 굳히면 프로필이 다른
-    /// 시트가 들어올 때 알파가 실릴 위치가 달라질 수 있고, 굳이 바꿀 이유도 없다.
+    /// 색공간은 원본 것을 그대로 이어받는다 — 사본은 경계를 재는 데만 쓰여 색이 정확할 필요가
+    /// 없지만, 변환을 한 겹 걷어 두면 축소가 그만큼 싸다. **알파가 실릴 위치는 색공간과
+    /// 무관하다** — 그것은 아래 `bitmapInfo` 가 정하고 `alphaBounds` 가 넘겨받은 그림의
+    /// `alphaInfo` 로 다시 읽는다(이 주석은 한때 색공간이 알파 위치를 옮긴다고 적고 있었다).
     private static func downscaledAlphaProbe(_ cgImage: CGImage) -> CGImage? {
         let longestSide = max(cgImage.width, cgImage.height)
         guard longestSide > alphaProbeMaxDimension else { return nil }
@@ -184,6 +201,13 @@ enum SpriteLoader {
             space: cgImage.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else {
+            // 8bpc + premultipliedLast 로 열 수 없는 색공간(그레이스케일·CMYK·인덱스)이면
+            // 여기서 끊긴다. 부르는 쪽은 원본 전수 스캔으로 되돌아가 장당 217ms 를 메인
+            // 스레드에서 쓰므로, 조용히 느려지지 않게 한 번은 알린다.
+            reportOnce(
+                "알파 경계용 축소 사본을 만들지 못했다 — 원본 전수 스캔으로 되돌아간다"
+                    + " (\(cgImage.width)×\(cgImage.height), bpp=\(cgImage.bitsPerPixel))"
+            )
             return nil
         }
         context.interpolationQuality = .high
