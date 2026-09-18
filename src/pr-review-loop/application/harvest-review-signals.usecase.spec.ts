@@ -1142,7 +1142,7 @@ describe('HarvestReviewSignalsUsecase', () => {
     const { usecase, github, repository } = buildDependencies();
     repository.findOpenPostedCards.mockResolvedValue([card()]);
     repository.countAdoptionByCategory.mockResolvedValue([
-      { category: 'TEST', status: 'ACKED', count: 12 },
+      { category: 'TEST', status: 'ACKED', count: 17 },
       { category: 'TEST', status: 'REJECTED', count: 3 },
     ]);
     github.listReviewThreads.mockResolvedValue({
@@ -1165,14 +1165,14 @@ describe('HarvestReviewSignalsUsecase', () => {
     const outcome = await usecase.execute();
 
     expect(outcome.acked).toBe(1);
-    // 12/15 = 80%
+    // 표본 하한이 20 이라 20건으로 맞춘다. 17/20 = 85%
     expect(outcome.adoption).toEqual([
       {
         category: 'TEST',
-        adopted: 12,
+        adopted: 17,
         rejected: 3,
-        total: 15,
-        ratePercent: 80,
+        total: 20,
+        ratePercent: 85,
         // mock 이 최근·직전 두 조회에 같은 값을 돌려주므로 변화는 0 이다.
         changePercentPoint: 0,
       },
@@ -1186,7 +1186,7 @@ describe('HarvestReviewSignalsUsecase', () => {
     const { usecase, github, repository } = buildDependencies();
     repository.findOpenPostedCards.mockResolvedValue([card()]);
     repository.countAdoptionByCategory.mockResolvedValue([
-      { category: 'TEST', status: 'ACKED', count: 12 },
+      { category: 'TEST', status: 'ACKED', count: 17 },
       { category: 'TEST', status: 'REJECTED', count: 3 },
     ]);
     github.listReviewThreads.mockResolvedValue({
@@ -1202,10 +1202,10 @@ describe('HarvestReviewSignalsUsecase', () => {
     expect(outcome.adoption).toEqual([
       {
         category: 'TEST',
-        adopted: 12,
+        adopted: 17,
         rejected: 3,
-        total: 15,
-        ratePercent: 80,
+        total: 20,
+        ratePercent: 85,
         // mock 이 최근·직전 두 조회에 같은 값을 돌려주므로 변화는 0 이다.
         changePercentPoint: 0,
       },
@@ -1216,7 +1216,7 @@ describe('HarvestReviewSignalsUsecase', () => {
     const { usecase, github, repository } = buildDependencies();
     repository.findOpenPostedCards.mockResolvedValue([card()]);
     repository.countAdoptionByCategory.mockResolvedValue([
-      { category: 'TEST', status: 'ACKED', count: 10 },
+      { category: 'TEST', status: 'ACKED', count: 20 },
     ]);
     github.listReviewThreads.mockResolvedValue({
       pullRequestAuthorLogin: null,
@@ -1231,9 +1231,9 @@ describe('HarvestReviewSignalsUsecase', () => {
     expect(outcome.adoption).toEqual([
       {
         category: 'TEST',
-        adopted: 10,
+        adopted: 20,
         rejected: 0,
-        total: 10,
+        total: 20,
         ratePercent: 100,
         changePercentPoint: 0,
       },
