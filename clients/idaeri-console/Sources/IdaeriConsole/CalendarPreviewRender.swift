@@ -39,7 +39,22 @@ private let calendarPreviewSchedules: [ScheduleItem] = [
 
 /// `empty` 가 true 면 표본을 싣지 않는다 — 캘린더 탭의 초기 기본값이 빈 상태이고
 /// 그것이 첫인상이므로, 항목 있는 화면보다 이쪽이 맞는지가 더 중요하다.
-func renderCalendarPreview(path: String, darkMode: Bool, empty: Bool) -> Bool {
+///
+/// `size` 를 생략하면 위 고정값을 쓴다. 폭을 넘길 수 있어야 하는 이유는 머리글이다 — 탭 막대가
+/// 내용 크기로 자리를 잡으므로(`ConsoleHeaderView` 의 `fixedSize`), 좁은 창에서 머리글이 넘치는지는
+/// **그 폭으로 굽지 않으면 확인할 방법이 없다**(코드로는 판정되지 않는다).
+/// 대시보드 렌더(`--render-dashboard --size`)가 같은 이유로 먼저 열어 둔 입구다.
+///
+/// `failure` 는 조회 실패 화면을 굽는다. 이 화면이 빈 상태와 확실히 갈라지는지는 **그려 봐야만**
+/// 알 수 있는데, 굽는 경로는 네트워크 응답을 기다리지 않고 끝나 실패 상태에 자연히 닿지 못한다.
+func renderCalendarPreview(
+    path: String,
+    darkMode: Bool,
+    empty: Bool,
+    failure: Bool = false,
+    size: CGSize? = nil
+) -> Bool {
+    let calendarPreviewSize = size ?? calendarPreviewSize
     let store = ConsoleStore()
     if !empty {
         store.apply(schedules: calendarPreviewSchedules)
@@ -53,9 +68,13 @@ func renderCalendarPreview(path: String, darkMode: Bool, empty: Bool) -> Bool {
         // 항목 있는 렌더는 9월 30일이 이미 선택된 채로 구워, 점만이 아니라 상세 목록·완료/건너뜀
         // 버튼 조판까지 한 장에서 확인한다.
         CalendarView(
-            store: store, client: client,
+            store: store, client: client, baseURLLabel: "http://127.0.0.1:3002",
             initialYear: 2026, initialMonth: 9,
-            initialSelectedDay: empty ? nil : 30
+            initialSelectedDay: empty ? nil : 30,
+            // 백엔드가 꺼져 있을 때 실제로 나오는 문구 그대로 — `failureReason` 의 비-HTTP 분기.
+            initialLoadFailure: failure
+                ? "백엔드에 연결하지 못했습니다. 주소(http://127.0.0.1:3002)와 실행 여부를 확인하세요."
+                : nil
         )
     }
         .environment(\.colorScheme, darkMode ? .dark : .light)

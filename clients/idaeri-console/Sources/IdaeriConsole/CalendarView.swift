@@ -9,27 +9,42 @@ import SwiftUI
 struct CalendarView: View {
     @ObservedObject var store: ConsoleStore
     let client: ConsoleClient
+    /// 연결 실패 안내에 띄울 백엔드 주소. 어디에 못 붙었는지가 없으면 "실행했는지 확인하라"는
+    /// 말이 어느 주소를 두고 하는 말인지 알 수 없다(`AppRootView.approvalFailureReason` 과 같다).
+    let baseURLLabel: String
 
     @State private var year: Int
     @State private var month: Int
     @State private var selectedDay: Int?
+    /// 조회 실패 사유. **빈 상태와 반드시 갈라야 한다** — 에러를 버리면 백엔드가 꺼져 있을 때도
+    /// "등록된 일정이 없습니다 / 슬랙에서 이렇게 등록하세요" 가 뜨고, 사용자는 연결이 끊긴 줄
+    /// 모른 채 슬랙에 다시 등록하러 간다. 하필 이 화면이 앱의 첫 화면이다.
+    @State private var loadFailure: String?
+    /// 완료·건너뜀 실패 사유. 성공하면 비운다 — 남겨 두면 다음 조작까지 실패한 것처럼 읽힌다.
+    @State private var updateFailure: String?
 
-    /// `initialYear`/`initialMonth`/`initialSelectedDay` 는 화면 회귀 렌더 전용이다 — 실제
-    /// 화면 호출부(`AppRootView`)는 항상 기본값(오늘)을 쓴다. 렌더는 특정 날짜가 이미 선택된
-    /// 채로 구워야 상세 목록·완료/건너뜀 버튼까지 한 장에 담긴다(점만으로는 그 조판을 볼 수 없다).
+    /// `initial...` 매개변수는 전부 화면 회귀 렌더 전용이다 — 실제 화면 호출부(`AppRootView`)는
+    /// 항상 기본값(오늘·실패 없음)을 쓴다. 렌더는 특정 날짜가 이미 선택된 채로 구워야 상세
+    /// 목록·완료/건너뜀 버튼까지 한 장에 담기고(점만으로는 그 조판을 볼 수 없다), 조회 실패
+    /// 화면은 **백엔드를 실제로 죽이지 않는 한 렌더로 닿을 수가 없다** — 굽는 경로가 네트워크
+    /// 응답을 기다리지 않고 끝나기 때문이다. 한 번도 그려 본 적 없는 화면은 깨진 채로 남는다.
     init(
         store: ConsoleStore,
         client: ConsoleClient,
+        baseURLLabel: String,
         initialYear: Int? = nil,
         initialMonth: Int? = nil,
-        initialSelectedDay: Int? = nil
+        initialSelectedDay: Int? = nil,
+        initialLoadFailure: String? = nil
     ) {
         self.store = store
         self.client = client
+        self.baseURLLabel = baseURLLabel
         let now = Calendar(identifier: .gregorian)
         _year = State(initialValue: initialYear ?? now.component(.year, from: Date()))
         _month = State(initialValue: initialMonth ?? now.component(.month, from: Date()))
         _selectedDay = State(initialValue: initialSelectedDay)
+        _loadFailure = State(initialValue: initialLoadFailure)
     }
 
     private static let weekdayLabels = ["월", "화", "수", "목", "금", "토", "일"]
@@ -142,9 +157,28 @@ struct CalendarView: View {
         .buttonStyle(.plain)
     }
 
-    @ViewBuilder
     private var detail: some View {
-        if openSchedules.isEmpty {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            if let updateFailure {
+                // 대시보드의 승인 실패 안내(`DashboardView` 의 `store.approvalNotice`)와 같은 처리.
+                Text(updateFailure)
+                    .font(Typography.caption)
+                    .foregroundStyle(Color.red)
+            }
+            detailBody
+        }
+    }
+
+    /// 조회 실패 > 빈 상태 > 선택한 날 순으로 가른다.
+    ///
+    /// **조회에 실패했으면 목록을 보여주지 않는다.** 실패하면 `store.schedules` 에는 직전 달의
+    /// 항목이 그대로 남는데, 화면의 달은 이미 바뀌어 있어(`shiftMonth` 가 먼저 바꾼다) 날짜
+    /// 필터가 0건을 내놓는다 — 그대로 두면 "이 달은 일정이 없다"는 거짓말이 된다.
+    @ViewBuilder
+    private var detailBody: some View {
+        if let loadFailure {
+            loadFailureState(loadFailure)
+        } else if openSchedules.isEmpty {
             emptyState
         } else if let selectedDay {
             let items = itemsOn(day: selectedDay)
@@ -216,6 +250,25 @@ struct CalendarView: View {
         .padding(.horizontal, Spacing.xxl)
     }
 
+    /// 조회 실패 안내. 빈 상태와 **아이콘도 문구도 달라야** 한다 — 둘이 닮으면 연결이 끊긴 것을
+    /// "일정이 0건" 으로 읽고, 있지도 않은 등록을 하러 슬랙으로 간다.
+    private func loadFailureState(_ reason: String) -> some View {
+        VStack(spacing: Spacing.md) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(Typography.emptyStateIcon)
+                .foregroundStyle(.secondary)
+            Text("일정을 불러오지 못했습니다")
+                .font(Typography.emptyStateTitle)
+            Text(reason)
+                .font(Typography.body)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, Spacing.xxl)
+        .padding(.horizontal, Spacing.xxl)
+    }
+
     // MARK: - 동작
 
     private func shiftMonth(_ delta: Int) {
@@ -256,14 +309,60 @@ struct CalendarView: View {
     private func reload() async {
         let from = String(format: "%04d-%02d-01", year, month)
         let to = String(format: "%04d-%02d-%02d", year, month, lastDayOfMonth)
-        guard let items = try? await client.fetchSchedules(from: from, to: to) else {
-            return
+        do {
+            let items = try await client.fetchSchedules(from: from, to: to)
+            await MainActor.run {
+                store.apply(schedules: items)
+                loadFailure = nil
+            }
+        } catch {
+            await MainActor.run { loadFailure = failureReason(error) }
         }
-        await MainActor.run { store.apply(schedules: items) }
     }
 
     private func update(id: Int, status: ScheduleStatus) async {
-        try? await client.updateSchedule(id: id, status: status)
+        do {
+            try await client.updateSchedule(id: id, status: status)
+            await MainActor.run { updateFailure = nil }
+        } catch {
+            let reason = "\(actionLabel(status)) 실패 — \(failureReason(error))"
+            await MainActor.run { updateFailure = reason }
+        }
+        // 실패해도 다시 읽는다. 실패의 상당수는 화면이 낡아 생긴 것(이미 처리된 항목을 누름)이라
+        // 재동기화가 곧 정정이다 — `AppRootView.resolveApproval` 이 같은 이유로 그렇게 한다.
         await reload()
+    }
+
+    /// 실패 문구에 쓸 행동 이름. **버튼 글자와 같아야** 사용자가 무엇이 실패했는지 바로 잇는다.
+    private func actionLabel(_ status: ScheduleStatus) -> String {
+        switch status {
+        case .done:
+            return "완료"
+        case .skipped:
+            return "건너뜀"
+        case .open:
+            return "되돌리기"
+        }
+    }
+
+    /// 실패를 사용자가 다음에 뭘 해야 할지 아는 문장으로 옮긴다.
+    ///
+    /// 구조는 `AppRootView.approvalFailureReason` 을 그대로 따른다 — 같은 `ConsoleClientError`,
+    /// 같은 상태코드 묶음. 문구만 일정에 맞게 쓴다(승인 카드가 아니라 마감·신청·예약이라
+    /// "만료된 요청" 같은 말이 여기서는 맞지 않는다).
+    private func failureReason(_ error: Error) -> String {
+        guard case let ConsoleClientError.badStatus(status) = error else {
+            return "백엔드에 연결하지 못했습니다. 주소(\(baseURLLabel))와 실행 여부를 확인하세요."
+        }
+        switch status {
+        case 404, 409, 412:
+            return "이미 처리됐거나 사라진 일정입니다. 목록을 새로 고쳤습니다."
+        case 401, 403:
+            return "콘솔 접근이 거부됐습니다(토큰/loopback 확인)."
+        case 503:
+            return "백엔드에 CONSOLE_OWNER_SLACK_USER_ID 가 설정되지 않았습니다."
+        default:
+            return "백엔드 오류 (HTTP \(status))."
+        }
     }
 }

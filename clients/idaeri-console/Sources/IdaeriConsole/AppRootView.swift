@@ -28,7 +28,7 @@ struct AppRootView: View {
 
             switch tab {
             case .calendar:
-                CalendarView(store: store, client: client)
+                CalendarView(store: store, client: client, baseURLLabel: baseURLLabel)
             case .dashboard:
                 DashboardView(
                     store: store,
