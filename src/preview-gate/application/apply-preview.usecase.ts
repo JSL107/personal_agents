@@ -99,9 +99,15 @@ export class ApplyPreviewUsecase {
       }
       // 여기부터 실제 apply 단계 — 실패 시에만 APPLY_FAILED 로 카드 복구(버튼 되살림).
       // 검증 단계 실패(만료/미존재/owner/applier 없음)는 이 안쪽 catch 를 타지 않는다.
+      // 이 catch 는 applier 와 transition 을 함께 감싼다. 둘은 실패의 의미가 다르다 —
+      // applier 가 실패하면 외부 부작용이 없고, transition 이 실패하면 부작용은 이미 반영된
+      // 뒤다. 기록만 보고 둘을 가를 수 없으면 "실패 N 건" 이 부작용 없는 실패와 반영된 실패를
+      // 뭉뚱그린다. 어디까지 갔는지를 남겨 사후 조회가 그 둘을 나눌 수 있게 한다.
+      let sideEffectApplied = false;
       try {
         await this.safeUpdateCard({ preview, state: 'APPLYING' });
         const applyResult = await applier.apply(preview);
+        sideEffectApplied = true;
         const transitioned = await this.repository.transition({
           id: preview.id,
           status: PREVIEW_STATUS.APPLIED,
@@ -122,11 +128,56 @@ export class ApplyPreviewUsecase {
         return { preview: transitioned, resultText };
       } catch (applyError: unknown) {
         // applier / transition 실패 — DB 는 PENDING 유지(재시도 가능). 카드는 버튼을 되살린다.
+        //
+        // 실패를 행에 남기는 것이 먼저다. status 가 PENDING 그대로라 상태만으로는 실패를 셀 수
+        // 없고(다시 눌러 성공하면 APPLIED, 포기하면 무응답 만료와 같은 EXPIRED), 카드 갱신은
+        // Slack 왕복이라 뒤에 두면 그 시간만큼 기록이 밀린다.
+        await this.safeRecordFailure({
+          preview,
+          error: applyError,
+          at: now,
+          sideEffectApplied,
+        });
         await this.safeUpdateCard({ preview, state: 'APPLY_FAILED' });
         throw applyError;
       }
     } finally {
       this.applying.delete(previewId);
+    }
+  }
+
+  // 실패 기록도 best-effort — 기록이 실패해도 원래 실패 사유는 사용자에게 그대로 도달해야 한다.
+  // 기록이 알림을 잡아먹는 것은 기록이 없는 것보다 나쁘다.
+  private async safeRecordFailure({
+    preview,
+    error,
+    at,
+    sideEffectApplied,
+  }: {
+    preview: PreviewAction;
+    error: unknown;
+    at: Date;
+    // applier 가 끝난 뒤(= 외부 부작용이 반영된 뒤) 실패했는가. 사유 앞에 단계를 박아
+    // "부작용 없음(apply)" 과 "부작용은 반영됨(transition)" 을 사후 조회가 가를 수 있게 한다.
+    sideEffectApplied: boolean;
+  }): Promise<void> {
+    const stage = sideEffectApplied ? 'transition' : 'apply';
+    try {
+      await this.repository.recordApplyFailure({
+        id: preview.id,
+        reason: `[${stage}] ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        at,
+      });
+    } catch (recordError: unknown) {
+      this.logger.warn(
+        `Preview 실패 기록 실패(무시) preview=${preview.id}: ${
+          recordError instanceof Error
+            ? recordError.message
+            : String(recordError)
+        }`,
+      );
     }
   }
 
