@@ -233,6 +233,28 @@ describe('formatPrReviewSweep', () => {
     expect(text).not.toContain('모두 정상');
   });
 
+  // 종전 구현은 notable 을 `' · '` 로 이어 붙였다. 단일 notable 만 검증하면 그 join 이 남아
+  // 있어도 통과하므로, 고치려던 문제(한 줄 과밀)가 그대로 돌아올 수 있다.
+  it('이상이 여럿이면 각각 자기 줄에 선다', () => {
+    const text = formatPrReviewSweep({
+      harvest: harvest({
+        acked: 1,
+        adoption: [
+          adoption('TEST', 69, 94, -6),
+          adoption('CORRECTNESS', 30, 70, 0),
+          adoption('RELIABILITY', 21, 100, 2),
+        ],
+      }),
+      results: [],
+    });
+
+    expect(text).toContain('\n• TEST 94%(69) ↓6%p');
+    expect(text).toContain('\n• CORRECTNESS 70%(30) →');
+    expect(text).toContain('\n• 나머지 1종 정상');
+    // 한 줄에 이어 붙이지 않는다.
+    expect(text).not.toContain('↓6%p · ');
+  });
+
   it('절대 수준이 80% 미만이면 떨어지지 않았어도 수치로 낸다', () => {
     // 변화가 없어도 낮은 채택률 자체가 신호다.
     const text = formatPrReviewSweep({
@@ -310,7 +332,7 @@ describe('formatPrReviewSweep', () => {
     // 누적인지 구간인지 안 적으면 읽는 사람이 전체 성적으로 오해한다.
     // 레포도 마찬가지다 — 이 숫자는 학습 규약이 실리는 레포 하나만 센 값이라,
     // 밝히지 않으면 여러 레포를 리뷰하는 사용자가 전체 성적으로 읽는다.
-    const window = `_최근 ${ADOPTION_WINDOW_DAYS}일 · \`${LEARNING_REPO}\`_`;
+    const window = `최근 ${ADOPTION_WINDOW_DAYS}일 · \`${LEARNING_REPO}\``;
 
     const quiet = formatPrReviewSweep({
       harvest: harvest({ acked: 1, adoption: [adoption('TEST', 15, 100)] }),

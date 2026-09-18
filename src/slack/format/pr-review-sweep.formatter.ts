@@ -124,12 +124,16 @@ export const formatPrReviewSweep = ({
   //
   // 「이상 없음」 대신 「정상」 을 쓴다. `그 외 3종 이상 없음` 이 `3종 이상(以上)` 으로 읽혀
   // 무슨 뜻인지 되물어 온 표현이다.
+  //
+  // notable 이 여럿이면 각각 자기 줄에 선다 — 한 줄에 이어 붙이면 고치려던 문제가 그대로 돌아온다.
   const measuredAdoption = harvest.adoption.filter(
     (item) => item.ratePercent !== null,
   );
   if (measuredAdoption.length > 0) {
     const notable = measuredAdoption.filter(isNotableAdoption);
-    const window = `_최근 ${ADOPTION_WINDOW_DAYS}일 · \`${LEARNING_REPO}\`_`;
+    // 이탤릭으로 감싸지 않는다 — 코드스팬과 겹치면 Slack 이 밑줄 기호를 그대로 노출할 수 있고,
+    // spec 은 문자열 포함만 보므로 그 렌더 실패를 잡지 못한다. 이 파일의 다른 줄도 코드스팬만 쓴다.
+    const window = `최근 ${ADOPTION_WINDOW_DAYS}일 · \`${LEARNING_REPO}\``;
     if (notable.length === 0) {
       lines.push(`📊 채택률 ${measuredAdoption.length}종 모두 정상`, window);
     } else {
