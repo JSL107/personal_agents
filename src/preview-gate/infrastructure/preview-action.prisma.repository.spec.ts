@@ -253,11 +253,11 @@ describe('PreviewActionPrismaRepository.findById — 폐지된 kind', () => {
     },
   );
 
-  // BE_SANDBOX_PUSH_PR 은 같은 시점에 폐지됐지만 원장에 행이 없어 되살리지 않은 kind다.
-  // 검증이 상수 목록 자체를 보게 두려는 것 — 미등록이면 조회가 끊긴다는 전제가 여전히 살아 있는지.
+  // 미등록이면 조회가 끊긴다는 전제가 여전히 살아 있는지. 재료는 상수로 등록될 일이 없는
+  // 값을 쓴다 — 실재했던 폐지 kind 를 쓰면 그것이 복원되는 날 전제 파기와 무관한 이유로 깨진다.
   it('상수에 없는 kind 는 예외로 끊는다', async () => {
     await expect(
-      repositoryReturning('BE_SANDBOX_PUSH_PR').findById('p1'),
-    ).rejects.toThrow('알 수 없는 PreviewAction kind: BE_SANDBOX_PUSH_PR');
+      repositoryReturning('NOT_A_REGISTERED_KIND').findById('p1'),
+    ).rejects.toThrow('알 수 없는 PreviewAction kind: NOT_A_REGISTERED_KIND');
   });
 });
