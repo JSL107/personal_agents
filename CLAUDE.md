@@ -70,7 +70,7 @@
 5. ORM 은 **Prisma 만**. TypeORM/`@nestjs/typeorm` import 금지.
 6. DB 변경: `prisma/schema.prisma` 수정 → `pnpm db:push` (synchronize 방식, 마이그레이션 파일 X).
 7. 새 env 추가 시 4곳 동기 갱신: `.env.example` + `.env` + `src/config/app.config.ts` (class-validator) + README 표.
-8. 새 슬래시/에이전트 추가 시 [AGENTS.md §4](./AGENTS.md) 의 13개 체크리스트 그대로 (특히 `AGENT_TO_PROVIDER` + `/retry-run` switch + `ResponseCode` enum).
+8. 새 슬래시/에이전트 추가 시 [AGENTS.md §4](./AGENTS.md) 의 14개 체크리스트 그대로 (특히 `AgentType` exhaustive 4곳 + `/retry-run` switch + `ResponseCode` enum).
 
 ---
 
