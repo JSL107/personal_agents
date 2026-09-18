@@ -21,6 +21,8 @@ export const PREVIEW_KIND_TO_AGENT: Record<PreviewKind, AgentType | null> = {
   EVENING_CAREER_REFLECT: AgentType.EVENING_RETRO,
   // 분배를 확정하는 승인이라 카드 주인은 실행될 BE worker 가 아니라 분배자인 CTO 다.
   SESSION_INJECT: null,
+  // 폐지된 kind(#477). 담당 에이전트였던 BE worker 도 함께 사라져 집결 대상이 없다.
+  BE_SANDBOX_APPLY: null,
 };
 
 // PreviewAction → 콘솔 승인 뷰. 스냅샷 조립(ConsoleReadService)과 승인 이벤트 emit(preview-gate)이 공유.
