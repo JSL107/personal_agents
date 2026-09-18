@@ -80,22 +80,68 @@ enum SpriteLoader {
         fputs("cozy character asset missing: \(description)\n", stderr)
     }
 
+    /// 알파 경계를 **재기 위해** 줄이는 크기. 화면에 나가는 그림은 아래에서 원본을 잘라 만들므로
+    /// 이 값은 화질과 무관하고, 정하는 것은 경계의 정밀도뿐이다 — 512px 이면 원본(최대 1374px)
+    /// 기준 오차가 3px 미만이고, 그 몫은 `imageByCroppingTransparentMargins` 가 여백에 더해
+    /// 흡수한다. 줄이지 않고 원본에서 재면 장당 217ms 가 든다(디버그 빌드 실측).
+    private static let alphaProbeMaxDimension = 512
+
     /// 생성 이미지마다 투명 캔버스 여백이 조금씩 달라도 실제 머리/발 경계가 같은 기준으로
     /// 배치되게 한다. 전체 1145×1374 캔버스를 기준으로 세우면 발 아래 여백까지 몸 높이로
     /// 계산되어 포즈마다 그림자에서 뜨는 양이 달라진다.
+    ///
+    /// **경계는 줄인 사본에서 재고, 자르는 것은 원본이다.** 알파 경계 탐색은 픽셀을 하나씩
+    /// 훑는 일이라 원본 해상도(157만 픽셀)에서는 장당 217ms 가 걸리는데, 이 함수는 카드
+    /// 렌더(`CozyAgentAvatarView.body`)와 오피스 씬 구성 도중 메인 스레드에서 불려 그 시간만큼
+    /// 화면이 통째로 멈췄다 — 캐릭터를 채운 오피스 렌더가 7.6초였다. 포즈가 바뀌면 캐시가 비어
+    /// 클릭 직후에도 같은 정지가 났다.
+    ///
+    /// 줄인 사본을 **그대로 반환하면 안 된다.** 방을 확대하면 캐릭터가 440px 넘게 그려지고
+    /// 큰 창에서는 더 커져, 512px 사본은 그때 늘려 쓰이며 머리카락 결이 뭉개진다(전후 렌더를
+    /// 3배 확대해 대조 확인). 사본은 경계를 찾는 데만 쓰고 화면에 나가는 픽셀은 원본에서 온다.
     private static func imageByCroppingTransparentMargins(_ image: NSImage) -> NSImage {
-        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
-              let provider = cgImage.dataProvider,
-              let data = provider.data,
-              let bytes = CFDataGetBytePtr(data) else {
+        guard let sourceImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
             return image
         }
-        let bytesPerPixel = cgImage.bitsPerPixel / 8
-        guard bytesPerPixel > 0 else { return image }
-        let alphaInfo = cgImage.alphaInfo
+        let alphaInfo = sourceImage.alphaInfo
         guard alphaInfo != .none, alphaInfo != .noneSkipFirst, alphaInfo != .noneSkipLast else {
             return image
         }
+        let probe = downscaledAlphaProbe(sourceImage)
+        let measured = probe ?? sourceImage
+        guard let bounds = alphaBounds(of: measured) else { return image }
+        // 되돌리는 비율은 **축마다 따로** 잡는다. 사본 크기는 정수로 반올림해 만들어지므로
+        // 가로·세로 비율이 정확히 같지 않고(1145×1374 → 427×512 이면 2.6815 대 2.6836),
+        // 한쪽 비율로 두 축을 환산하면 반대 축 끝에서 1px 이 밀린다.
+        let ratioX = CGFloat(sourceImage.width) / CGFloat(measured.width)
+        let ratioY = CGFloat(sourceImage.height) / CGFloat(measured.height)
+        // 줄인 사본의 한 칸은 원본 여러 칸을 대표한다. 되돌릴 때 그만큼 바깥으로 벌려 실제 몸
+        // 경계를 안쪽으로 자르는 일이 없게 하고, 원래의 여백 4px 을 그 위에 얹는다. 사본을 못
+        // 만들어 원본에서 그대로 쟀다면 벌릴 것이 없다.
+        let padding = 4 + (probe == nil ? 0 : Int(max(ratioX, ratioY).rounded(.up)))
+        let minX = max(0, Int((bounds.minX * ratioX).rounded(.down)) - padding)
+        let minY = max(0, Int((bounds.minY * ratioY).rounded(.down)) - padding)
+        let maxX = min(sourceImage.width, Int((bounds.maxX * ratioX).rounded(.up)) + padding)
+        let maxY = min(sourceImage.height, Int((bounds.maxY * ratioY).rounded(.up)) + padding)
+        guard maxX > minX, maxY > minY else { return image }
+        let crop = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY).integral
+        guard let cropped = sourceImage.cropping(to: crop) else { return image }
+        return NSImage(
+            cgImage: cropped,
+            size: NSSize(width: cropped.width, height: cropped.height)
+        )
+    }
+
+    /// 알파가 실제로 찍힌 가장 바깥 픽셀의 사각형. 전부 투명하면 nil.
+    private static func alphaBounds(of cgImage: CGImage) -> CGRect? {
+        guard let provider = cgImage.dataProvider,
+              let data = provider.data,
+              let bytes = CFDataGetBytePtr(data) else {
+            return nil
+        }
+        let bytesPerPixel = cgImage.bitsPerPixel / 8
+        guard bytesPerPixel > 0 else { return nil }
+        let alphaInfo = cgImage.alphaInfo
         let alphaOffset = alphaInfo == .first || alphaInfo == .premultipliedFirst
             ? 0
             : bytesPerPixel - 1
@@ -114,19 +160,35 @@ enum SpriteLoader {
                 }
             }
         }
-        guard maxX >= minX, maxY >= minY else { return image }
-        let padding = 4
-        let crop = CGRect(
-            x: max(0, minX - padding),
-            y: max(0, minY - padding),
-            width: min(cgImage.width - max(0, minX - padding), maxX - minX + 1 + padding * 2),
-            height: min(cgImage.height - max(0, minY - padding), maxY - minY + 1 + padding * 2)
-        ).integral
-        guard let cropped = cgImage.cropping(to: crop) else { return image }
-        return NSImage(
-            cgImage: cropped,
-            size: NSSize(width: cropped.width, height: cropped.height)
-        )
+        guard maxX >= minX, maxY >= minY else { return nil }
+        return CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
+    }
+
+    /// 경계를 재기 위한 축소 사본. 상한보다 작은 그림은 만들지 않는다(그대로 재면 된다).
+    ///
+    /// 색공간은 **원본 것을 그대로 이어받는다**. 여기서 `DeviceRGB` 로 굳히면 프로필이 다른
+    /// 시트가 들어올 때 알파가 실릴 위치가 달라질 수 있고, 굳이 바꿀 이유도 없다.
+    private static func downscaledAlphaProbe(_ cgImage: CGImage) -> CGImage? {
+        let longestSide = max(cgImage.width, cgImage.height)
+        guard longestSide > alphaProbeMaxDimension else { return nil }
+        let ratio = CGFloat(alphaProbeMaxDimension) / CGFloat(longestSide)
+        let width = Int((CGFloat(cgImage.width) * ratio).rounded())
+        let height = Int((CGFloat(cgImage.height) * ratio).rounded())
+        guard width > 0, height > 0 else { return nil }
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: cgImage.colorSpace ?? CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return nil
+        }
+        context.interpolationQuality = .high
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return context.makeImage()
     }
 
     static func cozyCharacterTexture(assetIndex: Int, pose: String = "idle") -> SKTexture? {
