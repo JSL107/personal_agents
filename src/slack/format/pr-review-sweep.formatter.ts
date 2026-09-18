@@ -30,9 +30,14 @@ const formatChange = (changePercentPoint: number | null): string => {
 // 숫자 15개가 한 줄에 들어갔고, 그중 볼 값은 하나였다. 매일 같은 숫자가 오면 줄 전체를
 // 읽지 않게 되므로 달라진 것만 앞세운다.
 //
-// 두 수치는 잠정값이다(설계 §7-3 미결). 5%p 는 사용자가 실물로 지적한 회차의 하락폭이고,
-// 80% 는 그 회차 최저 측정 카테고리(93%)보다 낮게 둬 평시에 걸리지 않게 잡았다.
-const NOTABLE_DROP_PERCENT_POINT = 5;
+// 두 수치는 설계 §7-3 에서 확정됐다(2026-09-18).
+// - ±5%p: 표본 하한 20건에서 1건이 정확히 5%p 다(ADOPTION_MIN_SAMPLE). 더 낮추면 한 건마다 울린다.
+// - 80%: 실측 전 카테고리가 93~100% 다. 80% 면 5건 중 1건이 기각된 상태라 볼 값이 있다.
+//
+// 상승도 올린다. 오르는 것은 조치가 필요 없지만, changePercentPoint 는 「규약을 실은 뒤 그
+// 카테고리가 나아졌나」 를 재는 유일한 자리다(adoption-rate.ts 의 필드 주석). 학습이 실제로
+// 효과를 냈다는 신호를 묻어 두면 그 판단을 다시 손으로 원장을 뒤져서 해야 한다.
+const NOTABLE_CHANGE_PERCENT_POINT = 5;
 const NOTABLE_RATE_PERCENT = 80;
 
 // 표본 미달(ratePercent === null)은 본문에도 "이상 없음" 집계에도 넣지 않는다 — 표본 1~7 건으로
@@ -46,7 +51,7 @@ const isNotableAdoption = (item: CategoryAdoption): boolean => {
   }
   return (
     item.changePercentPoint !== null &&
-    item.changePercentPoint <= -NOTABLE_DROP_PERCENT_POINT
+    Math.abs(item.changePercentPoint) >= NOTABLE_CHANGE_PERCENT_POINT
   );
 };
 

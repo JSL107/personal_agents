@@ -33,15 +33,15 @@ describe('summarizeAdoption', () => {
   it('표본이 충분하면 채택률을 정수 퍼센트로 낸다', () => {
     const [summary] = summarizeAdoption(
       [
-        row('TEST', 'ACKED', 14),
+        row('TEST', 'ACKED', 15),
         row('TEST', 'FIXED', 2),
-        row('TEST', 'REJECTED', 1),
+        row('TEST', 'REJECTED', 3),
       ],
       [],
     );
 
-    // 16/17 = 94.1% → 94
-    expect(summary.ratePercent).toBe(94);
+    // 표본 하한이 20 이라 20건으로 맞춘다. 17/20 = 85%
+    expect(summary.ratePercent).toBe(85);
   });
 
   it('표본이 미달이면 채택률 대신 null 을 낸다', () => {

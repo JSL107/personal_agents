@@ -268,20 +268,34 @@ describe('formatPrReviewSweep', () => {
     expect(text).toContain('\n• CORRECTNESS 70%(30) →');
   });
 
-  it('상승·보합은 이상으로 보지 않는다', () => {
+  it('보합은 이상으로 보지 않는다', () => {
     const text = formatPrReviewSweep({
       harvest: harvest({
         acked: 1,
         adoption: [
-          adoption('CORRECTNESS', 20, 90, 8),
-          adoption('RELIABILITY', 12, 83, 0),
+          adoption('CORRECTNESS', 40, 90, 0),
+          adoption('RELIABILITY', 30, 83, 2),
         ],
       }),
       results: [],
     });
 
     expect(text).toContain('채택률 2종 모두 정상');
-    expect(text).not.toContain('↑8%p');
+  });
+
+  // 오르는 것은 조치가 필요 없지만 묻어 두지도 않는다 — changePercentPoint 는 「규약을 실은 뒤
+  // 그 카테고리가 나아졌나」 를 재는 유일한 자리다(adoption-rate.ts 필드 주석).
+  it('5%p 이상 오른 카테고리도 수치로 낸다', () => {
+    const text = formatPrReviewSweep({
+      harvest: harvest({
+        acked: 1,
+        adoption: [adoption('CORRECTNESS', 40, 90, 8)],
+      }),
+      results: [],
+    });
+
+    expect(text).toContain('\n• CORRECTNESS 90%(40) ↑8%p');
+    expect(text).not.toContain('모두 정상');
   });
 
   // 회귀 고정 — 사용자가 실물로 지적한 회차를 그대로 넣는다. 원래는 카테고리 7개가
