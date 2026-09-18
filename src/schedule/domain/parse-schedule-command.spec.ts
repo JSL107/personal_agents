@@ -41,4 +41,33 @@ describe('parseScheduleCommand', () => {
       },
     );
   });
+
+  it('제목에 든 "등록"·"추가" 를 지시어로 오인해 지우지 않는다', () => {
+    expect(parseScheduleCommand('내일 주민등록 등본 발급', TODAY)).toEqual({
+      kind: 'REGISTER',
+      title: '주민등록 등본 발급',
+      dueDate: { year: 2026, month: 9, day: 19 },
+    });
+    expect(parseScheduleCommand('내일 자동이체 추가 신청', TODAY)).toEqual({
+      kind: 'REGISTER',
+      title: '자동이체 추가 신청',
+      dueDate: { year: 2026, month: 9, day: 19 },
+    });
+  });
+
+  it('제목 끝의 낱말을 조사로 오인해 깎지 않는다', () => {
+    expect(parseScheduleCommand('내일 계약 유지', TODAY)).toEqual({
+      kind: 'REGISTER',
+      title: '계약 유지',
+      dueDate: { year: 2026, month: 9, day: 19 },
+    });
+  });
+
+  it('제목 속 분수 표기를 지우지 않는다', () => {
+    expect(parseScheduleCommand('내일 지분 1/2 정리', TODAY)).toEqual({
+      kind: 'REGISTER',
+      title: '지분 1/2 정리',
+      dueDate: { year: 2026, month: 9, day: 19 },
+    });
+  });
 });
