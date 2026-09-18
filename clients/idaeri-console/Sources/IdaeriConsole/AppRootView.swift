@@ -97,10 +97,20 @@ struct AppRootView: View {
             tab = .office
             isPresidentBarOpen = true
         }
+        // 담당자 목록이 바뀌면 그들의 현재 포즈를 미리 준비한다. 준비(디스크 읽기 + 알파 경계
+        // 탐색)는 장당 32ms 라 여러 명이면 그만큼이 렌더 스레드에서 돌고 그동안 창이 멈춘다.
+        // 상태를 먼저 아는 곳은 여기(`store`)이므로, 화면이 그것을 그리기 전에 준비를 시작한다.
+        // 두 탭이 같은 캐시를 보므로 탭마다 걸지 않고 공통 부모인 여기에 한 번만 둔다.
+        .onChange(of: store.agents) { agents in
+            SpriteLoader.prewarmCozyCharacters(cozyDashboardPrewarmRequests(for: agents))
+        }
         .task {
             startPendingJanitor()
             startSnapshotResync()
             await connect()
+            // 첫 스냅샷이 실린 직후 한 번 더 — `onChange` 는 **변화**에만 반응하므로 접속 전에
+            // 이미 채워진 목록(재연결 스냅샷이 같은 값을 주는 경우 포함)은 그것만으로는 놓친다.
+            SpriteLoader.prewarmCozyCharacters(cozyDashboardPrewarmRequests(for: store.agents))
         }
     }
 

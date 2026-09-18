@@ -51,6 +51,13 @@ if CommandLine.arguments.contains("--crop-check") {
     exit(runCozyCropCheck() ? 0 : 1)
 }
 
+// 워밍이 실제로 캐시를 채우는지 본다. 워밍은 눈에 보이지 않는 최적화라 조용히 죽어도 화면은
+// 그대로이고(준비가 렌더 스레드로 되돌아가 느려질 뿐), 다른 게이트는 그것을 알려주지 않는다.
+//   swift run IdaeriConsole --prewarm-check
+if CommandLine.arguments.contains("--prewarm-check") {
+    exit(runCozyPrewarmCheck() ? 0 : 1)
+}
+
 // 굽는 크기를 넘길 수 있다 — `--size 980×680`. 회귀 렌더와 스트림이 함께 쓴다.
 //
 // 타일 한 칸의 크기는 `min(너비 / 열, 높이 / 줄)` 이라 **창 비율에 따라 병목이 가로에서

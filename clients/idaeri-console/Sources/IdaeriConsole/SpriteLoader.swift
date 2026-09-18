@@ -2,6 +2,12 @@ import AppKit
 import ConsoleCore
 import SpriteKit
 
+/// 미리 준비할 캐릭터 그림 하나. 인덱스와 포즈 조합이 캐시의 한 칸이다.
+struct CozyCharacterRequest: Equatable {
+    let assetIndex: Int
+    let pose: String
+}
+
 enum SpriteLoader {
     private static var cache: [String: SKTexture] = [:]
     private static var cozyCharacterCache: [String: NSImage] = [:]
@@ -16,7 +22,12 @@ enum SpriteLoader {
     private static var cozyAccentImageCache: [String: NSImage] = [:]
 
     /// 이미 한 번 알린 결손. 같은 조합이 프레임마다 로그를 다시 찍지 않게 막는다.
+    /// 워밍(백그라운드)과 렌더(메인) 양쪽에서 닿으므로 `reportLock` 으로 감싼다.
     private static var reportedMissingAssets: Set<String> = []
+    private static let reportLock = NSLock()
+
+    /// 워밍이 이미 맡은 칸. 같은 그림을 두 번 읽지 않게 막는다. **메인 스레드에서만 만진다.**
+    private static var prewarmingKeys: Set<String> = []
 
     static func cozyCharacterHasDedicatedPose(assetIndex: Int, pose: String) -> Bool {
         let normalizedIndex = ((assetIndex % cozyCharacterAssetCount) + cozyCharacterAssetCount) % cozyCharacterAssetCount
@@ -46,13 +57,35 @@ enum SpriteLoader {
     /// 쏟았다. 이제 대체는 코어의 계약이 미리 끝내므로, 여기까지 와서 파일이 없다면 계약을
     /// 건너뛴 호출이거나 에셋이 실제로 빠진 것이다 — 둘 다 한 번은 알릴 값어치가 있다.
     static func cozyCharacterImage(assetIndex: Int, pose: String = cozyIdlePose) -> NSImage? {
-        let normalizedIndex = ((assetIndex % cozyCharacterAssetCount) + cozyCharacterAssetCount) % cozyCharacterAssetCount
-        let normalizedPose = normalizedCozyPose(pose)
-        let posedName = "agent-\(normalizedIndex)-\(normalizedPose)"
-        let cacheKey = "\(normalizedIndex):\(normalizedPose)"
+        let cacheKey = cozyCharacterCacheKey(assetIndex: assetIndex, pose: pose)
         if let cached = cozyCharacterCache[cacheKey] {
             return cached
         }
+        guard let image = prepareCozyCharacterImage(assetIndex: assetIndex, pose: pose) else {
+            return nil
+        }
+        cozyCharacterCache[cacheKey] = image
+        return image
+    }
+
+    /// 조회·적재·워밍이 같은 칸을 가리키게 키 계산을 한곳에 둔다. 인덱스를 범위 안으로 접고
+    /// 포즈 이름을 정규화한 뒤라야 `walkside` 같은 다른 표기가 같은 칸을 쓴다.
+    private static func cozyCharacterCacheKey(assetIndex: Int, pose: String) -> String {
+        let normalizedIndex = ((assetIndex % cozyCharacterAssetCount) + cozyCharacterAssetCount)
+            % cozyCharacterAssetCount
+        return "\(normalizedIndex):\(normalizedCozyPose(pose))"
+    }
+
+    /// 디스크에서 읽어 투명 여백을 잘라내기까지. 장당 약 32ms 가 드는 무거운 쪽이다.
+    ///
+    /// **캐시를 건드리지 않으므로 아무 스레드에서나 부를 수 있다.** 워밍이 백그라운드에서 이
+    /// 함수만 쓰고, 캐시 적재는 메인으로 되돌린다 — 캐시 자체에 락을 걸면 렌더 경로(프레임마다
+    /// 조회)가 그 락을 매번 지나야 하므로, 무거운 일만 옮기고 캐시는 메인 전용으로 남긴다.
+    private static func prepareCozyCharacterImage(assetIndex: Int, pose: String) -> NSImage? {
+        let normalizedIndex = ((assetIndex % cozyCharacterAssetCount) + cozyCharacterAssetCount)
+            % cozyCharacterAssetCount
+        let normalizedPose = normalizedCozyPose(pose)
+        let posedName = "agent-\(normalizedIndex)-\(normalizedPose)"
         let posedURL = normalizedPose == cozyIdlePose
             ? nil
             : Bundle.module.url(
@@ -68,9 +101,58 @@ enum SpriteLoader {
             reportMissingAsset("agent-\(normalizedIndex).png")
             return nil
         }
-        let image = imageByCroppingTransparentMargins(sourceImage)
-        cozyCharacterCache[cacheKey] = image
-        return image
+        return imageByCroppingTransparentMargins(sourceImage)
+    }
+
+    /// 화면에 보이는 사람들의 **현재 포즈**를 백그라운드에서 미리 준비해 캐시에 채운다.
+    ///
+    /// 이것이 필요한 이유는 준비가 렌더 스레드에 있다는 것이다. 장당 32ms 라 30명이면 약 1초가
+    /// 프레임 안에서 돌고, 그동안 창 전체가 멈춘다. 상태를 먼저 알려 주는 쪽(`store`)이 있으므로
+    /// 그 시점에 준비를 시작하면 실제 렌더는 캐시를 집어 간다.
+    ///
+    /// **한계를 분명히 해 둔다.** SwiftUI 는 상태가 바뀌면 곧바로 `body` 를 다시 평가하므로,
+    /// 상태 변화 **직후 첫 렌더**는 워밍과 경쟁해서 질 수 있다(그때는 기존처럼 동기 준비를
+    /// 탄다). 확실히 이득인 구간은 탭 전환·스크롤로 새로 보이는 카드·재연결 스냅샷처럼 준비할
+    /// 시간이 있는 경우다. 전 포즈를 미리 채우면 그 경쟁도 없앨 수 있지만 캐시 메모리가 함께
+    /// 늘어나므로(장당 원본 크기) 여기서는 현재 포즈만 맡는다.
+    ///
+    /// **메인 스레드에서 부른다** — 캐시와 진행 목록을 읽는다.
+    static func prewarmCozyCharacters(_ requests: [CozyCharacterRequest]) {
+        var pending: [CozyCharacterRequest] = []
+        for request in requests {
+            let key = cozyCharacterCacheKey(assetIndex: request.assetIndex, pose: request.pose)
+            guard cozyCharacterCache[key] == nil, !prewarmingKeys.contains(key) else {
+                continue
+            }
+            prewarmingKeys.insert(key)
+            pending.append(request)
+        }
+        guard !pending.isEmpty else {
+            return
+        }
+        DispatchQueue.global(qos: .utility).async {
+            for request in pending {
+                let image = prepareCozyCharacterImage(
+                    assetIndex: request.assetIndex, pose: request.pose
+                )
+                let key = cozyCharacterCacheKey(assetIndex: request.assetIndex, pose: request.pose)
+                DispatchQueue.main.async {
+                    prewarmingKeys.remove(key)
+                    // 그 사이 렌더가 같은 칸을 이미 채웠으면 그대로 둔다 — 같은 그림이지만
+                    // 덮어쓰면 이미 화면에 올라간 인스턴스와 다른 객체가 되어 무의미한 교체가 된다.
+                    if let image, cozyCharacterCache[key] == nil {
+                        cozyCharacterCache[key] = image
+                    }
+                }
+            }
+        }
+    }
+
+    /// 그 그림이 이미 캐시에 있는지. 워밍이 실제로 적재까지 했는지 확인하는 검사
+    /// (`--prewarm-check`)가 쓴다 — 시간을 재서 "빨라졌으니 됐다"고 판정하면 느린 기계에서
+    /// 흔들리므로, 적재 여부를 직접 본다.
+    static func isCozyCharacterCached(assetIndex: Int, pose: String) -> Bool {
+        cozyCharacterCache[cozyCharacterCacheKey(assetIndex: assetIndex, pose: pose)] != nil
     }
 
     private static func reportMissingAsset(_ description: String) {
@@ -78,8 +160,14 @@ enum SpriteLoader {
     }
 
     /// 같은 사유를 프레임마다 다시 찍지 않게 한 번만 알린다.
+    ///
+    /// 결손 목록은 워밍(백그라운드)과 렌더(메인) 양쪽에서 닿으므로 락으로 감싼다. `fputs` 는
+    /// 락 밖에서 부른다 — 파일 쓰기를 락 안에 두면 느린 터미널이 렌더를 붙잡는다.
     private static func reportOnce(_ message: String) {
-        guard reportedMissingAssets.insert(message).inserted else {
+        reportLock.lock()
+        let isFirstTime = reportedMissingAssets.insert(message).inserted
+        reportLock.unlock()
+        guard isFirstTime else {
             return
         }
         fputs("\(message)\n", stderr)

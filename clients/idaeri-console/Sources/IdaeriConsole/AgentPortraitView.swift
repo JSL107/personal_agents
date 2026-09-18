@@ -1,6 +1,62 @@
 import ConsoleCore
 import SwiftUI
 
+/// 카드 초상화가 쓸 포즈. **`store` 가 주는 값만으로 정해진다** — 그래서 렌더를 기다리지 않고
+/// 미리 계산해 그림을 워밍할 수 있다(`SpriteLoader.prewarmCozyCharacters`). 뷰 안에 두면 렌더
+/// 도중에야 알 수 있어 워밍이 늘 한 발 늦는다.
+///
+/// **선 그림만 받는다.** 카드에는 책상도 의자도 없어서, 앉은 그림이 뽑히면 사람이 허공에
+/// 주저앉는다(사용자 보고). 예전에는 파일이 있는지만 보고 그 그림이 앉은 자세인지 보지 않았는데,
+/// `typing` 은 18번을 빼면 전부 앉은 그림이라 코드 리뷰어·윤문가 카드가 그렇게 떴다. 자세 판정은
+/// 포즈 계약이 이미 갖고 있으므로 그것을 쓴다.
+func cozyDashboardPortraitPose(
+    agentType: String,
+    state: ConsoleAgentState,
+    assetIndex: Int
+) -> String {
+    let rolePose: String
+    switch agentType {
+    case "PM":
+        rolePose = "writing"
+    case "CODE_REVIEWER", "HUMANIZER", "PAPER_TRADE":
+        rolePose = "typing"
+    case "WORK_REVIEWER", "CAREER_MATE":
+        rolePose = "reading"
+    case "VACATION":
+        rolePose = "drinking"
+    default:
+        rolePose = state == .inProgress ? "typing" : "idle"
+    }
+    return resolveCozyPose(
+        requested: rolePose,
+        assetIndex: assetIndex,
+        hasAsset: { pose in
+            SpriteLoader.cozyCharacterHasDedicatedPose(assetIndex: assetIndex, pose: pose)
+        },
+        posture: .standing
+    ).pose
+}
+
+/// 담당자 목록에서 카드 초상화가 쓸 그림 요청을 만든다. 서로 다른 담당자가 같은 그림을 쓸 수
+/// 있으므로(같은 인덱스·같은 포즈) 중복은 여기서 접는다 — 접지 않으면 같은 파일을 여러 번 읽는다.
+func cozyDashboardPrewarmRequests(for agents: [ConsoleAgent]) -> [CozyCharacterRequest] {
+    var seenKeys: Set<String> = []
+    var requests: [CozyCharacterRequest] = []
+    for agent in agents {
+        let appearance = cozyAgentAppearance(
+            agentType: agent.agentType, department: agent.resolvedDepartment
+        )
+        let pose = cozyDashboardPortraitPose(
+            agentType: agent.agentType, state: agent.state, assetIndex: appearance.assetIndex
+        )
+        guard seenKeys.insert("\(appearance.assetIndex):\(pose)").inserted else {
+            continue
+        }
+        requests.append(CozyCharacterRequest(assetIndex: appearance.assetIndex, pose: pose))
+    }
+    return requests
+}
+
 /// A compact, warm portrait scene for one dashboard card.
 struct AgentPortraitView: View {
     let agent: ConsoleAgent
@@ -10,34 +66,11 @@ struct AgentPortraitView: View {
     }
 
     private var portraitPose: String {
-        let rolePose: String
-        switch agent.agentType {
-        case "PM":
-            rolePose = "writing"
-        case "CODE_REVIEWER", "HUMANIZER", "PAPER_TRADE":
-            rolePose = "typing"
-        case "WORK_REVIEWER", "CAREER_MATE":
-            rolePose = "reading"
-        case "VACATION":
-            rolePose = "drinking"
-        default:
-            rolePose = agent.state == .inProgress ? "typing" : "idle"
-        }
-        // **선 그림만 받는다.** 카드에는 책상도 의자도 없어서, 앉은 그림이 뽑히면 사람이
-        // 허공에 주저앉는다(사용자 보고). 예전에는 파일이 있는지만 보고 그 그림이 앉은
-        // 자세인지 보지 않았는데, `typing` 은 18번을 빼면 전부 앉은 그림이라 코드 리뷰어·
-        // 윤문가 카드가 그렇게 떴다. 자세 판정은 포즈 계약이 이미 갖고 있으므로 그것을 쓴다.
-        return resolveCozyPose(
-            requested: rolePose,
-            assetIndex: appearance.assetIndex,
-            hasAsset: { pose in
-                SpriteLoader.cozyCharacterHasDedicatedPose(
-                    assetIndex: appearance.assetIndex,
-                    pose: pose
-                )
-            },
-            posture: .standing
-        ).pose
+        cozyDashboardPortraitPose(
+            agentType: agent.agentType,
+            state: agent.state,
+            assetIndex: appearance.assetIndex
+        )
     }
 
     var body: some View {
