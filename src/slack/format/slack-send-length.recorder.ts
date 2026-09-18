@@ -24,7 +24,16 @@ export type SlackSendOrigin = 'push' | 'push-thread' | 'reply' | 'card';
 // (`autopilot.orchestrator.ts` 의 `mainText`). 3,000자가 하나짜리인지 넷을 붙인 것인지에 따라
 // 처방이 갈리므로(각 요약을 줄일 일 vs 붙이는 것을 그만둘 일) 조각 수를 함께 센다.
 // orchestrator 를 고치지 않고 최종 문자열만 보고 세려고 구분선을 그대로 재사용한다.
-const DIGEST_SEPARATOR = '────────';
+//
+// **줄 전체가 구분선인 경우만 센다.** 부분일치로 세면 본문에 같은 문자가 섞이거나 모델이
+// 더 긴 가로줄을 그렸을 때 조각 수가 부풀어 오른다 — 그 값이 §4 재판단의 판단 축이라
+// 부풀면 엉뚱한 처방으로 간다.
+//
+// ⚠️ 이 값은 "병합된 task 수" 가 아니라 **구분선으로 나뉜 조각 수**다. 한 task 의 요약이
+// 내부에 같은 구분선을 쓰는 경우가 있다 — `weekly-summary.autopilot-task.ts:167` 이
+// worklog+건강 줄과 CEO 요약을 그 구분선으로 잇는다. 그 task 는 단독 발송인데도 조각이 2다.
+// task 수로 읽으면 틀리고, 조각 수로 읽으면 맞다(붙여 보낸 덩어리가 몇 개인가).
+const DIGEST_SEPARATOR_LINE = /^────────$/gm;
 
 // 목록에서 어느 메시지인지 눈으로 가리는 축. 길게 잡으면 계측 파일이 본문 사본이 된다.
 const HEAD_LENGTH = 60;
@@ -56,7 +65,7 @@ export const buildSlackSendRecord = ({
   at: (at ?? new Date()).toISOString(),
   origin,
   chars: text.length,
-  parts: text.split(DIGEST_SEPARATOR).length,
+  parts: (text.match(DIGEST_SEPARATOR_LINE)?.length ?? 0) + 1,
   blocks: blocks ?? 0,
   head: text.replace(/\s+/g, ' ').trim().slice(0, HEAD_LENGTH),
 });

@@ -288,10 +288,16 @@ Slack 에 남아 있는 과거 메시지를 읽으면 코드 변경 없이 30일
 {"at":"...","origin":"push","chars":3184,"parts":4,"blocks":6,"head":"🌙 어제 운영 장애 2건 수습 —"}
 ```
 
-`parts` 는 `────────` 로 센 **병합된 task 수**다. cron 요약은 `autopilot.orchestrator.ts` 의
-`mainText` 에서 여러 task 요약을 그 구분선으로 이어 붙여 한 메시지로 보내므로, 이 값이 있어야
+`parts` 는 **구분선으로 나뉜 조각 수**다. cron 요약은 `autopilot.orchestrator.ts` 의 `mainText`
+에서 여러 task 요약을 `────────` 로 이어 붙여 한 메시지로 보내므로, 이 값이 있어야
 "3,184자가 하나인지 넷을 붙인 것인지" 가 갈린다. 처방이 거기서 갈린다 — 각 요약을 줄일 일이냐,
 붙이는 것을 그만둘 일이냐.
+
+**조각 수는 task 수가 아니다.** `weekly-summary.autopilot-task.ts:167` 은 한 task 의 요약
+안에서 worklog·건강 줄과 CEO 요약을 같은 구분선으로 잇는다 — 단독 발송인데도 조각이 2다.
+읽을 때 "붙여 보낸 덩어리가 몇 개인가" 로 읽어야 맞고, "몇 개 task 가 합쳐졌나" 로 읽으면 틀린다.
+세는 기준은 **줄 전체가 구분선인 경우만**이다. 부분일치로 세면 본문에 같은 문자가 섞이거나
+모델이 더 긴 가로줄을 그렸을 때 조각 수가 부풀어, 판단 축 자체가 흔들린다.
 
 현재 병합 묶음은 `evening` 4개(work-reviewer · daily-eval · evening-retro-publish ·
 blog-github-publish), `morning` 2개, `noon` 1개이고 나머지 31개 task 는 단독 발송이다.
