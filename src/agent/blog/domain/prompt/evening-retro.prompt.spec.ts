@@ -131,9 +131,22 @@ describe('parseEveningRetroOutput — 회고 칸은 비울 수 있다', () => {
       '{"retrospective":"옛 평문 회고","candidates":[],"prNotes":[{"ref":"a/b#1","note":"n"}]}',
     );
 
-    expect(result.retrospective).toEqual({ malformed: true });
+    // 형식만 어겼을 뿐 읽을 수 있는 회고라 원문을 버리지 않는다 — 원장에는 파싱 결과만
+    // 남으므로 여기서 버리면 그날 회고를 어디서도 읽을 수 없다.
+    expect(result.retrospective).toEqual({
+      malformed: true,
+      rawText: '옛 평문 회고',
+    });
     // 회고를 못 읽어도 그날의 블로그·이력서 재료는 살아남아야 한다.
     expect(result.prNotes).toEqual([{ ref: 'a/b#1', note: 'n' }]);
+  });
+
+  it('형식을 어긴 원문은 블로그 맥락으로도 쓴다', () => {
+    const result = parseEveningRetroOutput(
+      '{"retrospective":"옛 평문 회고","candidates":[]}',
+    );
+
+    expect(formatRetroContext(result.retrospective)).toBe('옛 평문 회고');
   });
 
   it('배열·null 로 와도 malformed 로 표시한다', () => {

@@ -767,6 +767,8 @@ describe('EveningRetroPublishTask', () => {
 
     expect(result.summaryText).toContain('회고를 읽지 못했습니다');
     expect(result.summaryText).not.toContain('*유지* 없음');
+    // 형식만 어겼을 뿐 읽을 수 있는 회고라면 내용까지 버리지 않는다.
+    expect(result.summaryText).toContain('옛 평문 회고');
     // 회고를 못 읽어도 그날의 발행 후보는 살아남아야 한다.
     expect(result.previews?.length).toBeGreaterThan(0);
   });
@@ -804,5 +806,40 @@ describe('EveningRetroPublishTask', () => {
 
     expect(result.skip).toBe(false);
     expect(result.summaryText).toContain('오늘의 회고');
+  });
+
+  // 조회가 깨지면 목록이 `[]` 라 openPrCount 가 0 이 되는데, 그 0 은 "오늘 다 끝냈다" 와
+  // 생김새가 같다. 로그에만 두면 「미완: 없음」 이 "다 끝냈다" 로 읽힌다.
+  it('(r-3) 열린 PR 조회 실패를 스냅샷과 화면에 함께 남긴다', async () => {
+    const { task, agentRunService } = makeTask({
+      prs: [PR_ITEM],
+      openPrsError: new Error('GitHub 429'),
+      worklogRuns: [],
+      dailyEvalRuns: [],
+      routeResult: RETRO_RESPONSE,
+    });
+
+    const result = await task.run(CTX);
+
+    const [executeArgs] = (agentRunService.execute as jest.Mock).mock.calls[0];
+    expect(executeArgs.inputSnapshot.openPrFetchFailed).toBe(true);
+    expect(executeArgs.inputSnapshot.openPrCount).toBe(0);
+    expect(result.summaryText).toContain('열린 PR 조회가 실패해');
+  });
+
+  it('(r-4) 조회가 성공하면 실패 표식도 경고 줄도 남기지 않는다', async () => {
+    const { task, agentRunService } = makeTask({
+      prs: [PR_ITEM],
+      openPrs: [],
+      worklogRuns: [],
+      dailyEvalRuns: [],
+      routeResult: RETRO_RESPONSE,
+    });
+
+    const result = await task.run(CTX);
+
+    const [executeArgs] = (agentRunService.execute as jest.Mock).mock.calls[0];
+    expect(executeArgs.inputSnapshot.openPrFetchFailed).toBe(false);
+    expect(result.summaryText).not.toContain('열린 PR 조회가 실패해');
   });
 });

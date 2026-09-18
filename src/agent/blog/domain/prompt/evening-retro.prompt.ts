@@ -48,6 +48,10 @@ export interface EveningRetroReflection {
   // 과 "형태를 못 읽어 빈 것" 이 같은 「없음」 으로 보이지 않게 한다. 로그로는 부족하다 —
   // 이 저장소에는 관측만 하는 신호가 무시된 전례가 있다.
   malformed?: boolean;
+  // malformed 회차의 모델 원문. 원장에는 파싱 결과만 남으므로(autopilot task 의
+  // `output: parsedOutput`) 여기서 버리면 그날 회고를 어디서도 읽을 수 없다. 형식을 어긴 것과
+  // 내용이 없는 것은 다르다 — 형식만 틀린 회고는 읽을 수 있고, 읽을 수 있으면 보여준다.
+  rawText?: string;
 }
 
 export const REFLECTION_COLUMNS: ReadonlyArray<{
@@ -132,7 +136,8 @@ const parseReflection = (value: unknown): EveningRetroReflection => {
     return {};
   }
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return { malformed: true };
+    const rawText = normalizeReflectionColumn(value);
+    return rawText ? { malformed: true, rawText } : { malformed: true };
   }
   const source = value as Record<string, unknown>;
   const reflection: EveningRetroReflection = {};
@@ -158,7 +163,11 @@ export const formatRetroContext = (
     const column = reflection[key];
     return column ? `${label}: ${column}` : null;
   }).filter((line): line is string => line !== null);
-  return lines.length > 0 ? lines.join('\n') : '(없음)';
+  if (lines.length > 0) {
+    return lines.join('\n');
+  }
+  // 형식을 어긴 회차라도 읽을 수 있는 원문이 있으면 블로그 맥락으로 쓴다.
+  return reflection.rawText ?? '(없음)';
 };
 
 export const parseEveningRetroOutput = (text: string): EveningRetroResult => {

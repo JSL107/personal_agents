@@ -331,7 +331,8 @@ export const humanizeEveningRetro = async (
     if (retrospective[key] === undefined) {
       continue;
     }
-    // 윤문 결과에 같은 정규화를 다시 건다 — 빈 문자열이 돌아와도 칸이 빈 채로 남는다.
+    // 윤문기가 빈 문자열·공백을 돌려주면 그 칸은 원본을 유지한다. 빈 칸이 되살아나는 것은
+    // 위 루프가 채워진 칸만 넘겨서 막고, 여기서는 채워진 칸이 윤문 때문에 비는 것을 막는다.
     retrospective[key] =
       normalizeReflectionColumn(humanized[`retrospective.${key}`]) ??
       retrospective[key];
