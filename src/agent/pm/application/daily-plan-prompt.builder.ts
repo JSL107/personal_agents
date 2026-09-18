@@ -1,5 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 
+import {
+  redactInjectionPhrases,
+  wrapUntrustedInput,
+} from '../../../common/llm/untrusted-input.util';
 import { ConversationContext } from '../../../router/domain/conversation-context.type';
 import { formatGithubTasksAsPromptSection } from '../domain/prompt/github-task-formatter';
 import { formatNotionTasksAsPromptSection } from '../domain/prompt/notion-task-formatter';
@@ -106,9 +110,18 @@ export class DailyPlanPromptBuilder {
     // 라벨에 출처/방식을 명시해 모델이 분리 인식하도록 함 (V3 mid-progress audit B3 D3, v1 §4 항목 5).
     //   - Slack Inbox: 사용자가 직접 :raised_hand: 반응으로 큐잉한 항목 (의도된 task)
     //   - Slack Mentions: @멘션 자동 수집 (참고용 컨텍스트)
+    // 큐잉한 주체는 사용자지만 메시지 본문을 쓴 사람은 남이다 — "의도된 task" 는
+    // 이 항목을 보라는 뜻이지 그 안의 문장을 지시로 받으라는 뜻이 아니다. 라벨만 밖에 두고 감싼다.
     const inboxSection =
       inboxItems && inboxItems.length > 0
-        ? `[Slack Inbox — 사용자가 직접 ✋ 반응으로 큐잉한 항목 (의도된 task)]\n${inboxItems.map((t) => `- ${t}`).join('\n')}`
+        ? [
+            '[Slack Inbox — 사용자가 직접 ✋ 반응으로 큐잉한 항목 (의도된 task)]',
+            wrapUntrustedInput(
+              inboxItems
+                .map((t) => `- ${redactInjectionPhrases(t)}`)
+                .join('\n'),
+            ),
+          ].join('\n')
         : null;
 
     const sections: PromptSections = {
@@ -138,28 +151,7 @@ export class DailyPlanPromptBuilder {
         summaries: recentPlanSummaries,
         thresholdDays: staleDemoteDays,
       }),
-      similarPlans:
-        similarPlans && similarPlans.length > 0
-          ? `[유사 plan (FTS top ${similarPlans.length})]\n` +
-            similarPlans
-              .map((p) => {
-                const plan = coerceToDailyPlan(p.output);
-                if (!plan) {
-                  return null;
-                }
-                const titles = [
-                  plan.topPriority,
-                  ...plan.morning,
-                  ...plan.afternoon,
-                ]
-                  .slice(0, 5)
-                  .map((t) => `  - ${t.title}`)
-                  .join('\n');
-                return `• ${p.endedAt.toISOString().slice(0, 10)} (rank=${p.rank.toFixed(3)})\n${titles}`;
-              })
-              .filter((line): line is string => line !== null)
-              .join('\n')
-          : null,
+      similarPlans: formatSimilarPlansSection(similarPlans),
     };
 
     const droppedSections = this.trimSectionsToFit(sections);
@@ -261,6 +253,8 @@ const formatUserTextSection = (userText: string): string | null => {
   return `[사용자 입력]\n${userText}`;
 };
 
+// 저장된 plan 에서 꺼낸 제목을 다시 싣는 자리 — 원래 출처가 외부다.
+// 마지막 줄은 우리가 모델에게 내리는 지시라 경계 밖에 남긴다 (안에 넣으면 자기 지시를 외부 주장으로 읽는다).
 const formatStaleTasksSection = ({
   summaries,
   thresholdDays,
@@ -283,8 +277,41 @@ const formatStaleTasksSection = ({
 
   return [
     '## 정체 태스크 (강등 대상)',
-    ...lines,
+    wrapUntrustedInput(lines.join('\n')),
     '위 id 는 topPriority/morning/afternoon 에 넣지 말고 stalledTasks 로 배치하십시오. topPriority 는 정체 아닌 신선한 항목에서 고르십시오.',
+  ].join('\n');
+};
+
+// FTS 로 끌어온 과거 plan 의 제목 — 역시 저장을 거쳤을 뿐 출처는 외부다.
+// 읽어낼 plan 이 하나도 없으면 빈 경계만 남기지 않고 섹션을 통째로 버린다.
+const formatSimilarPlansSection = (
+  similarPlans: DailyPlanContext['similarPlans'],
+): string | null => {
+  if (!similarPlans || similarPlans.length === 0) {
+    return null;
+  }
+
+  const entries = similarPlans
+    .map((p) => {
+      const plan = coerceToDailyPlan(p.output);
+      if (!plan) {
+        return null;
+      }
+      const titles = [plan.topPriority, ...plan.morning, ...plan.afternoon]
+        .slice(0, 5)
+        .map((t) => `  - ${t.title}`)
+        .join('\n');
+      return `• ${p.endedAt.toISOString().slice(0, 10)} (rank=${p.rank.toFixed(3)})\n${titles}`;
+    })
+    .filter((line): line is string => line !== null);
+
+  if (entries.length === 0) {
+    return null;
+  }
+
+  return [
+    `[유사 plan (FTS top ${similarPlans.length})]`,
+    wrapUntrustedInput(entries.join('\n')),
   ].join('\n');
 };
 
