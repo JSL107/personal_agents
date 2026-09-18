@@ -44,14 +44,21 @@ const renderStalledTaskLine = (task: StalledTask): string => {
   return `• ${title} (${task.daysStalled}일째) — 종결/위임/보류`;
 };
 
-// summary(메인) = 판단 근거 + 과제 목록 + Blocker + 어제 이월 + 예상 소요, detail(스레드) = 정체 항목.
-// 어제 이월의 `_이월 근거_` 는 이월 리스트와 한 블록이라 summary 에 함께 유지하고,
-// 전체 계획의 `판단 근거`(reasoning) 는 메인 최상단에 둔다.
+// summary(메인) = 오늘 할 일만 — 과제 목록 · Blocker · 예상 소요.
+// detail(스레드) = 왜 그렇게 정했나 — 판단 근거 · 어제 이월 · 정체 항목.
+//
+// 전에는 판단 근거가 메인 최상단에 있었다. 실측(2026-09-18, 실제 산출물을 formatter 에 통과시킨
+// 결과)에서 메인이 2,024자 · 39줄이었고 그중 앞 4줄 330자가 근거였다 — 오늘 무엇을 할지는
+// 6행에야 나왔다. 아직 할 일을 모르는 상태에서 "#2808 을 강등했다" 를 먼저 읽는 구조라
+// 「엥?」 하게 된다는 지적을 받았다.
+//
+// 어제 이월도 내린다. 같은 실측에서 오늘 과제는 3건인데 이월 목록이 11줄이었다 — 오늘 하지
+// 않는 것이 하는 것보다 3배 길었다.
+//
+// 아무것도 버리지 않고 자리만 옮긴다. autopilot 이 detail 을 같은 스레드 댓글로 보내므로
+// (autopilot.orchestrator 의 threadTs 경로) 근거가 궁금하면 스레드를 열면 된다.
 export const formatDailyPlan = (plan: DailyPlan): FormattedReport => {
   const summaryLines: string[] = [
-    ...(plan.reasoning.trim().length > 0
-      ? [`*판단 근거*: ${plan.reasoning}`, '']
-      : []),
     '*오늘의 최우선 과제*',
     renderTaskLine(plan.topPriority),
     '',
@@ -66,31 +73,60 @@ export const formatDailyPlan = (plan: DailyPlan): FormattedReport => {
     summaryLines.push('', `*Blocker*: ${plan.blocker}`);
   }
 
+  summaryLines.push('', `*예상 소요*: ${plan.estimatedHours}시간`);
+
+  const detailSections: string[] = [];
+
+  if (plan.reasoning.trim().length > 0) {
+    detailSections.push(`*판단 근거*\n${plan.reasoning}`);
+  }
+
   // 이월 항목이 없어도 analysisReasoning 이 있으면 "왜 drop 했는지" 설명을 노출 —
   // Rollover 자율권 (Eisenhower 매트릭스) 판단 근거가 사용자에게 보여야 함 (codex review bi531458d P3).
   const { rolledOverTasks, analysisReasoning } = plan.varianceAnalysis;
   if (rolledOverTasks.length > 0 || analysisReasoning.length > 0) {
-    summaryLines.push('', '*어제 이월*');
+    const rolloverLines = ['*어제 이월*'];
     if (rolledOverTasks.length > 0) {
-      summaryLines.push(...rolledOverTasks.map((t) => `• ${t}`));
+      rolloverLines.push(...rolledOverTasks.map((t) => `• ${t}`));
     }
     if (analysisReasoning.length > 0) {
-      summaryLines.push(`_이월 근거_: ${analysisReasoning}`);
+      rolloverLines.push(`_이월 근거_: ${analysisReasoning}`);
     }
+    detailSections.push(rolloverLines.join('\n'));
   }
 
-  summaryLines.push('', `*예상 소요*: ${plan.estimatedHours}시간`);
   const stalledTasks = plan.stalledTasks ?? [];
-  const detail =
-    stalledTasks.length > 0
-      ? [
-          '*정체 항목 (결정 필요)*',
-          ...stalledTasks.map(renderStalledTaskLine),
-        ].join('\n')
-      : '';
+  if (stalledTasks.length > 0) {
+    detailSections.push(
+      [
+        '*정체 항목 (결정 필요)*',
+        ...stalledTasks.map(renderStalledTaskLine),
+      ].join('\n'),
+    );
+  }
+
+  // 스레드에 무엇이 있는지 메인 끝에서 알린다 — 안 그러면 근거가 사라진 것으로 보인다.
+  // 이월은 건수를 함께 적는다. 「11건」 을 보고 열지 말지 정할 수 있어야 한다.
+  const threadHints: string[] = [];
+  if (plan.reasoning.trim().length > 0) {
+    threadHints.push('판단 근거');
+  }
+  if (rolledOverTasks.length > 0) {
+    threadHints.push(`어제 이월 ${rolledOverTasks.length}건`);
+  } else if (analysisReasoning.length > 0) {
+    threadHints.push('이월 근거');
+  }
+  if (stalledTasks.length > 0) {
+    threadHints.push(`정체 항목 ${stalledTasks.length}건`);
+  }
+  if (threadHints.length > 0) {
+    // 목록 뒤에 조사를 붙이지 않는다 — 마지막 항목의 받침에 따라 은/는이 갈리는데
+    // 고정 조사를 쓰면 「정체 항목 1건 는」 처럼 어긋난다.
+    summaryLines.push('', `_👇 스레드: ${threadHints.join(' · ')}_`);
+  }
 
   return {
     summary: summaryLines.join('\n'),
-    detail,
+    detail: detailSections.join('\n\n'),
   };
 };
