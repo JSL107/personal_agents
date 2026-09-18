@@ -37,13 +37,35 @@ const buildGuardKey = (groupKey: string, firedAtKst: string): string =>
 const buildSlotKey = (groupKey: string, slotId: string): string =>
   `autopilot:slot:${groupKey}:${slotId}`;
 
-// 채널에 올라간 카드는 알림이 울리지 않아 읽히지 않은 채 흘러간다 — 채널 발송에만 owner 멘션을
+// 채널에 올라간 카드는 알림이 울리지 않아 읽히지 않은 채 흘러간다 — 채널 발송에 owner 멘션을
 // 맨 앞 줄로 붙인다. DM 은 이미 본인에게 가므로 붙이지 않는다(같은 알림이 두 번 울린다).
+//
+// 붙이는 대상은 아래 NOTIFY_OWNER_TASK_IDS 와 전멸 실패 안내로 한정한다 — 모든 채널 발송에
+// 붙이던 동안 알림이 과해져, 정작 울려야 하는 것까지 함께 무시되는 상태가 됐다.
 //
 // 멘션은 반드시 `<@유저ID>` 형식이어야 한다. `@핸들` 은 그냥 글자로 렌더돼 알림이 가지 않는다.
 // target 이 유저 ID(`U…`, Enterprise Grid 는 `W…`)면 DM, 그 밖(`C…`/`G…`/`#name`)은 채널이다
 // — chat.postMessage 의 channel 인자가 받는 값 규칙 그대로다.
 const DIRECT_MESSAGE_TARGET = /^[UW]/;
+
+// 멘션을 유지하는 task — 늦게 보면 값이 사라지는 것만 남긴다(시세 감시, 장중 손절).
+// 그 밖의 보고는 조용히 보낸다.
+//
+// 근거(최근 7일 실측, 2026-09-18): 자율 실행 984건 중 울려야 했던 것은 실패 73건 +
+// 승인 카드 14건 = 87건(8.8%). 나머지 91%는 알림이 불필요했고, 그 소음이 알림 자체를
+// 무시하게 만들었다.
+//
+// 승인 카드는 postPreviewMessage 가 별도로 내보내며 원래 멘션이 없다 — 승인율 85~100% 로
+// 이미 잘 눌리고 있어 건드리지 않는다. 전멸 실패 안내는 이 집합과 무관하게 항상 멘션한다.
+//
+// 이 목록은 task 의 성격이 아니라 발송 정책이므로 playbook 이 아니라 여기 둔다.
+// 값은 playbook 의 `taskId` 와 같다(`autopilot.playbook.ts`) — 어긋나면 해당 task 의 멘션이
+// 에러 없이 사라지므로, spec 이 playbook 과 대조해 오타·리네임을 잡는다. 그래서 export 한다.
+export const NOTIFY_OWNER_TASK_IDS: ReadonlySet<string> = new Set([
+  'stock-monitor',
+  'stock-monitor-us',
+  'paper-intraday-stop',
+]);
 
 const withOwnerMention = (
   text: string,
@@ -135,6 +157,9 @@ export class AutopilotOrchestrator {
       detail?: string;
       onDelivered?: () => Promise<void>;
       unfurlLinks?: boolean;
+      // 이 item 을 낸 task 가 멘션 대상인지. 그룹의 item 중 하나라도 true 면 메인 메시지에
+      // 멘션을 붙인다 — 한 메시지에 여러 task 의 요약이 합쳐지므로 개별 부착이 불가능하다.
+      notifyOwner?: boolean;
     }[] = [];
     // 카드는 자기를 낸 task 의 item 인덱스를 함께 들고 다닌다. `requiresDetailDelivery` 카드가
     // "내 전문이 실제로 나갔나" 를 아래에서 확인하려면 이 연결선이 필요하다 — items 와 previews 는
@@ -182,6 +207,7 @@ export class AutopilotOrchestrator {
             detail: result.detailText,
             onDelivered: result.onDelivered,
             unfurlLinks: result.unfurlLinks,
+            notifyOwner: NOTIFY_OWNER_TASK_IDS.has(entry.taskId),
           });
         }
         const requestedPreviews = [
@@ -312,10 +338,18 @@ export class AutopilotOrchestrator {
         const unfurlLinks = items.some((item) => item.unfurlLinks === false)
           ? false
           : undefined;
+        // 그룹의 item 중 하나라도 멘션 대상이면 메인 메시지에 멘션을 붙인다.
+        // unfurlLinks 와 같은 집계 방식이다 — 한 메시지에 여러 task 요약이 합쳐지므로
+        // item 단위로 붙일 자리가 없다.
+        const shouldNotifyOwner = items.some(
+          (item) => item.notifyOwner === true,
+        );
         for (const resolved of targets) {
           const { ts } = await this.slackNotifier.postMessage({
             target: resolved,
-            text: withOwnerMention(mainText, resolved, ownerSlackUserId),
+            text: shouldNotifyOwner
+              ? withOwnerMention(mainText, resolved, ownerSlackUserId)
+              : mainText,
             ...(unfurlLinks === false ? { unfurlLinks: false } : {}),
           });
           if (ts) {
