@@ -59,7 +59,7 @@ describe('formatDailyPlan', () => {
     reasoning: 'impact 기준으로 PM Agent 를 오전 최우선으로 배치',
   };
 
-  // formatDailyPlan 은 summary(메인)/detail(스레드=판단 근거) 로 분리 반환 —
+  // formatDailyPlan 은 summary(메인=오늘 할 일)/detail(스레드=판단 근거·이월·정체) 로 분리 반환 —
   // 슬래시 경로처럼 합본 문자열로 렌더해 기존 단일 메시지 기준으로 검증한다.
   const render = (plan: DailyPlan): string => {
     const { summary, detail } = formatDailyPlan(plan);
@@ -77,7 +77,7 @@ describe('formatDailyPlan', () => {
     expect(output).toContain('*오후*');
     expect(output).toContain('• README 보강');
     expect(output).toContain('*예상 소요*: 7시간');
-    expect(output).toContain('*판단 근거*: impact 기준으로');
+    expect(output).toContain('*판단 근거*\nimpact 기준으로');
     expect(output).not.toContain('*Blocker*');
   });
 
