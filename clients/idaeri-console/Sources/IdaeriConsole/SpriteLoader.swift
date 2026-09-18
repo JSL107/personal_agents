@@ -66,6 +66,7 @@ enum SpriteLoader {
     /// 도트 시절 이름(`down`·`side`·`-walk1`)이 매번 여기까지 내려와 폴백 로그를 수십 줄씩
     /// 쏟았다. 이제 대체는 코어의 계약이 미리 끝내므로, 여기까지 와서 파일이 없다면 계약을
     /// 건너뛴 호출이거나 에셋이 실제로 빠진 것이다 — 둘 다 한 번은 알릴 값어치가 있다.
+    @MainActor
     static func cozyCharacterImage(assetIndex: Int, pose: String = cozyIdlePose) -> NSImage? {
         let cacheKey = cozyCharacterCacheKey(assetIndex: assetIndex, pose: pose)
         if let cached = cozyCharacterCache[cacheKey] {
@@ -334,6 +335,7 @@ enum SpriteLoader {
         return context.makeImage()
     }
 
+    @MainActor
     static func cozyCharacterTexture(assetIndex: Int, pose: String = "idle") -> SKTexture? {
         // 키는 `cozyCharacterImage` 와 같은 기준으로 잡는다 — 인덱스를 범위 안으로 접고
         // 포즈 이름을 정규화한 뒤라야, `walkside` 같은 다른 표기가 같은 칸을 쓴다.

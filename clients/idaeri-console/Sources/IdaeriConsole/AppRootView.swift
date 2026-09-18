@@ -106,6 +106,14 @@ struct AppRootView: View {
         // 한때 `.task` 의 `await connect()` 뒤에 "첫 스냅샷 직후 한 번 더" 를 두었는데, 그
         // `connect()` 는 스트림을 계속 듣는 무한 루프라(`while !Task.isCancelled`) 그 줄은
         // 영원히 실행되지 않는 죽은 코드였다 — 리뷰가 잡아 걷어냈다.
+        //
+        // ⚠️ **이 줄이 사라지면 워밍이 조용히 죽고, 어느 게이트도 알려주지 않는다.** 화면은
+        // 똑같이 나오고 준비가 렌더 스레드로 되돌아가 느려질 뿐이다. `--prewarm-check` 는
+        // `prewarmCozyCharacters` 와 요청 생성을 직접 불러 확인하므로 이 **배선**은 밟지 않는다.
+        // 검사로 덮지 못하는 이유는 구조에 있다 — `store` 가 `@StateObject` 로 이 뷰 안에 있어
+        // 밖에서 값을 넣을 수 없고(오프스크린으로 띄워도 `onChange` 를 발동시킬 수 없다),
+        // `ConsoleStore` 는 `ConsoleCore` 에 있어 `SpriteLoader`(IdaeriConsole)를 부를 수도 없다.
+        // 그래서 여기는 **사람이 지키는 자리**다. 옮기거나 지울 때 워밍이 어디서 시작되는지 볼 것.
         .onChange(of: store.agents) { agents in
             SpriteLoader.prewarmCozyCharacters(cozyDashboardPrewarmRequests(for: agents))
         }
