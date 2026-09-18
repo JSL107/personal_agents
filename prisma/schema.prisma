@@ -98,6 +98,12 @@ model PreviewAction {
   // ephemeral(B) / 카드 없음(C) 경로는 null 로 남아 갱신이 조용히 skip 된다.
   slackChannelId String?   @map("slack_channel_id")
   slackMessageTs String?   @map("slack_message_ts")
+  // 승인 후 실행이 실패한 마지막 흔적. 실패해도 status 는 PENDING 을 유지하므로(사용자가 거부한
+  // 것이 아니다) 상태만으로는 실패를 셀 수 없다 — 실패 후 다시 눌러 성공하면 APPLIED 로 끝나고,
+  // 포기하면 무응답 만료와 똑같이 EXPIRED 가 된다. 두 경우를 가르는 유일한 근거가 이 두 값이다.
+  // 마지막 한 번만 남긴다. 지금 답할 질문은 "실패가 나는가, 무엇 때문인가" 이고 횟수는 아직 아니다.
+  lastFailedAt      DateTime? @map("last_failed_at")
+  lastFailureReason String?   @map("last_failure_reason") @db.Text
 
   @@index([slackUserId, status])
   // preview-sweeper 가 만료된 PENDING 을 훑는 조회용.

@@ -66,6 +66,9 @@ export interface PreviewAction {
   // A 경로 카드 좌표 — 없으면(B/C 경로) null. chat.update 대상 판별에 사용.
   slackChannelId: string | null;
   slackMessageTs: string | null;
+  // 승인 후 실행이 실패한 마지막 흔적. 실패해도 status 는 PENDING 이라 상태만으로는 실패를 셀 수 없다.
+  lastFailedAt: Date | null;
+  lastFailureReason: string | null;
 }
 
 // 새 preview 생성 시 호출자가 채워 넘기는 데이터. id / status / createdAt / appliedAt / cancelledAt 은 시스템이 채움.

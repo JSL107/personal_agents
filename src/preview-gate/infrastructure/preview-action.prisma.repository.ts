@@ -204,6 +204,21 @@ export class PreviewActionPrismaRepository implements PreviewActionRepositoryPor
     });
   }
 
+  // status 는 손대지 않는다 — 실행 실패는 거부가 아니므로 PENDING 을 유지해야 재시도가 살아 있다.
+  async recordApplyFailure(input: {
+    id: string;
+    reason: string;
+    at: Date;
+  }): Promise<void> {
+    await this.prisma.previewAction.update({
+      where: { id: input.id },
+      data: {
+        lastFailedAt: input.at,
+        lastFailureReason: input.reason,
+      },
+    });
+  }
+
   async attachSlackMessage(input: {
     id: string;
     slackChannelId: string;
@@ -289,6 +304,8 @@ const toDomain = (row: {
   cancelledAt: Date | null;
   slackChannelId: string | null;
   slackMessageTs: string | null;
+  lastFailedAt: Date | null;
+  lastFailureReason: string | null;
 }): PreviewAction => {
   if (!PREVIEW_KIND_VALUES.has(row.kind as PreviewKind)) {
     throw new PreviewActionException({
@@ -317,5 +334,7 @@ const toDomain = (row: {
     cancelledAt: row.cancelledAt,
     slackChannelId: row.slackChannelId,
     slackMessageTs: row.slackMessageTs,
+    lastFailedAt: row.lastFailedAt,
+    lastFailureReason: row.lastFailureReason,
   };
 };

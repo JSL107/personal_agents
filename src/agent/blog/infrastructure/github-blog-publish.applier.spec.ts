@@ -31,6 +31,8 @@ const buildPreview = (): PreviewAction => ({
   cancelledAt: null,
   slackChannelId: null,
   slackMessageTs: null,
+  lastFailedAt: null,
+  lastFailureReason: null,
 });
 
 const buildConfig = (omitKeys: string[] = []): jest.Mocked<ConfigService> =>

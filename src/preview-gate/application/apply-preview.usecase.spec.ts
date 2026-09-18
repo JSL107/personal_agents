@@ -34,6 +34,8 @@ const buildPreview = (
   cancelledAt: null,
   slackChannelId: null,
   slackMessageTs: null,
+  lastFailedAt: null,
+  lastFailureReason: null,
   ...overrides,
 });
 
@@ -57,6 +59,7 @@ const buildRepo = (
       Promise.resolve(buildPreview({ id, status: to })),
     ),
   attachSlackMessage: jest.fn().mockResolvedValue(undefined),
+  recordApplyFailure: jest.fn().mockResolvedValue(undefined),
   findExpiredPending: jest.fn().mockResolvedValue([]),
   findAllOpen: jest.fn().mockResolvedValue([]),
   findAllDayOutcomes: jest.fn().mockResolvedValue([]),
@@ -451,5 +454,130 @@ describe('ApplyPreviewUsecase', () => {
     });
 
     expect(result.resultText).toBe('완료');
+  });
+
+  it('applier 실패 시 실패 사유와 시각을 행에 기록한다', async () => {
+    const repo = buildRepo(buildPreview());
+    const applier = buildApplier(PREVIEW_KIND.PM_WRITE_BACK);
+    applier.apply.mockRejectedValue(new Error('Notion down'));
+    const usecase = new ApplyPreviewUsecase(
+      repo,
+      [applier],
+      [],
+      [],
+      buildCard(),
+    );
+
+    await expect(
+      usecase.execute({ previewId: 'p-1', slackUserId: 'U1', now: fixedNow }),
+    ).rejects.toThrow('Notion down');
+
+    expect(repo.recordApplyFailure).toHaveBeenCalledWith({
+      id: 'p-1',
+      reason: '[apply] Notion down',
+      at: fixedNow,
+    });
+  });
+
+  it('transition 실패는 부작용이 반영된 뒤이므로 사유에 단계를 구분해 남긴다', async () => {
+    const repo = buildRepo(buildPreview());
+    repo.transition.mockRejectedValue(new Error('db write failed'));
+    const applier = buildApplier(PREVIEW_KIND.PM_WRITE_BACK);
+    const usecase = new ApplyPreviewUsecase(
+      repo,
+      [applier],
+      [],
+      [],
+      buildCard(),
+    );
+
+    await expect(
+      usecase.execute({ previewId: 'p-1', slackUserId: 'U1', now: fixedNow }),
+    ).rejects.toThrow('db write failed');
+
+    // applier 는 성공했으므로 외부 부작용은 이미 반영됐다 — apply 실패와 구분돼야 한다.
+    expect(applier.apply).toHaveBeenCalled();
+    expect(repo.recordApplyFailure).toHaveBeenCalledWith({
+      id: 'p-1',
+      reason: '[transition] db write failed',
+      at: fixedNow,
+    });
+  });
+
+  it('실패 기록 자체가 throw 해도 원래 실패 사유가 전파되고 카드 갱신도 진행된다', async () => {
+    const repo = buildRepo(buildPreview());
+    repo.recordApplyFailure.mockRejectedValue(new Error('db down'));
+    const applier = buildApplier(PREVIEW_KIND.PM_WRITE_BACK);
+    applier.apply.mockRejectedValue(new Error('Notion down'));
+    const card = buildCard();
+    const usecase = new ApplyPreviewUsecase(repo, [applier], [], [], card);
+
+    await expect(
+      usecase.execute({ previewId: 'p-1', slackUserId: 'U1', now: fixedNow }),
+    ).rejects.toThrow('Notion down');
+
+    // 기록이 깨져도 카드는 버튼이 되살아난 상태로 돌아가야 한다.
+    const states = card.update.mock.calls.map((call) => call[0].state);
+    expect(states).toEqual(['APPLYING', 'APPLY_FAILED']);
+  });
+
+  it('실패 기록이 카드 갱신보다 먼저 일어난다', async () => {
+    const repo = buildRepo(buildPreview());
+    const applier = buildApplier(PREVIEW_KIND.PM_WRITE_BACK);
+    applier.apply.mockRejectedValue(new Error('Notion down'));
+    const card = buildCard();
+    const usecase = new ApplyPreviewUsecase(repo, [applier], [], [], card);
+
+    await expect(
+      usecase.execute({ previewId: 'p-1', slackUserId: 'U1', now: fixedNow }),
+    ).rejects.toThrow('Notion down');
+
+    // 카드 갱신은 Slack 왕복이라 느리다. 뒤에 두면 그 시간만큼 기록이 밀리므로 순서를 고정한다.
+    // card.update 의 두 번째 호출이 APPLY_FAILED — 첫 번째(APPLYING)는 실패 전이다.
+    const recordOrder = repo.recordApplyFailure.mock.invocationCallOrder[0];
+    const failedCardOrder = card.update.mock.invocationCallOrder[1];
+    expect(recordOrder).toBeLessThan(failedCardOrder);
+  });
+
+  it('apply 성공 시 실패 기록을 남기지 않는다', async () => {
+    const repo = buildRepo(buildPreview());
+    const applier = buildApplier(PREVIEW_KIND.PM_WRITE_BACK, '완료');
+    const usecase = new ApplyPreviewUsecase(
+      repo,
+      [applier],
+      [],
+      [],
+      buildCard(),
+    );
+
+    await usecase.execute({
+      previewId: 'p-1',
+      slackUserId: 'U1',
+      now: fixedNow,
+    });
+
+    expect(repo.recordApplyFailure).not.toHaveBeenCalled();
+  });
+
+  it('만료로 거절된 카드는 실패 기록을 남기지 않는다 — 실행한 적이 없다', async () => {
+    const repo = buildRepo(
+      buildPreview({ expiresAt: new Date('2026-04-27T11:30:00.000Z') }),
+    );
+    const applier = buildApplier(PREVIEW_KIND.PM_WRITE_BACK);
+    const usecase = new ApplyPreviewUsecase(
+      repo,
+      [applier],
+      [],
+      [],
+      buildCard(),
+    );
+
+    await expect(
+      usecase.execute({ previewId: 'p-1', slackUserId: 'U1', now: fixedNow }),
+    ).rejects.toMatchObject({
+      previewActionErrorCode: PreviewActionErrorCode.EXPIRED,
+    });
+
+    expect(repo.recordApplyFailure).not.toHaveBeenCalled();
   });
 });

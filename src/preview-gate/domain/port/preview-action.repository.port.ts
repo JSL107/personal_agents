@@ -72,6 +72,14 @@ export interface PreviewActionRepositoryPort {
     payloadPath: string[];
     payloadValue: string;
   }): Promise<number>;
+  // 승인 후 실행이 실패한 흔적을 남긴다. status 는 건드리지 않는다 — 실행 실패는 거부가 아니고,
+  // 거부로 기록하면 preview-canceller.port.ts 가 경고한 것과 같은 학습 오염이 된다.
+  // 실패해도 row 는 PENDING 을 유지하므로, 이 두 값이 없으면 실패를 사후에 셀 방법이 없다.
+  recordApplyFailure(input: {
+    id: string;
+    reason: string;
+    at: Date;
+  }): Promise<void>;
   // A 경로 카드 발송 후 좌표 저장. 이후 apply/cancel/만료 시 chat.update 로 이 메시지를 갱신한다.
   attachSlackMessage(input: {
     id: string;

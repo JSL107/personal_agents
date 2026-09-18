@@ -82,6 +82,8 @@ const buildPendingPreview = (
   cancelledAt: null,
   slackChannelId: null,
   slackMessageTs: null,
+  lastFailedAt: null,
+  lastFailureReason: null,
   ...overrides,
 });
 

@@ -137,6 +137,8 @@ pnpm prisma format  # schema 변경 시
 - **`CLAUDE_CONFIG_DIR` 를 자식 env 에 넣으면 keychain fallback 이 죽는다**: 이 env 가 있으면 claude CLI 는 keychain 대신 그 디렉토리의 자격증명 파일을 찾고, macOS 구독 환경엔 `~/.claude/.credentials.json` 이 없어 `Not logged in · Please run /login` + exit=1 로 끊긴다. 그 exit=1 은 `isClaudeAuthSuspect` 를 타 "인증 만료 / 쿼터 소진 의심" owner 알람으로 **오진**된다. `buildSafeChildEnv` 가 기본값(`~/.claude`)을 주입하던 동안 token 없는 경로는 구조적으로 항상 실패했다 (2026-09-16 제거 — 대조군 3/3 실패 vs 제거 후 5/5 성공). codex 는 반대로 `CODEX_HOME` 명시 전달이 **필요**하니 둘을 같이 묶지 말 것.
 - **3000 포트 EADDRINUSE**: 이대리는 `PORT=3002`.
 - **PrismaClient regen 누락**: schema 변경 후 `pnpm db:push` 만 하고 build 하면 type 안 맞을 수 있음 → `pnpm prisma:generate` 후 재빌드.
+- **`db:push` 는 수동 생성 인덱스를 지운다**: Prisma 스키마로 표현할 수 없어 `src/prisma/prisma.service.ts` 가 부팅 때 직접 만드는 인덱스가 3종 있다 — `idx_agent_run_output_fts`(GIN), `idx_episodic_memory_embedding`(pgvector HNSW), `idx_strategy_parameter_active`(부분 유니크). **어느 것이 지워질지는 미리 알 수 없다** (2026-09-18 실측: 컬럼 2개 추가에 HNSW 하나만 삭제, 나머지 둘은 생존). push 전후로 `SELECT indexname FROM pg_indexes WHERE schemaname='public'` 을 떠서 대조하고, 사라진 것은 `prisma.service.ts` 의 SQL 을 그대로 실행해 되살린다. 앱 재시작으로도 멱등 재생성되지만 그동안은 인덱스 없이 돈다.
+- **worktree 에서 prisma 명령이 안 돈다**: `.env` 가 gitignore 라 worktree 에 따라오지 않아 `DATABASE_URL` 이 없다. 메인 트리에서 `.env` 를 복사한 뒤 실행.
 
 ---
 
