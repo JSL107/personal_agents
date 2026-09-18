@@ -5,7 +5,6 @@ const WEEKDAY_NAMES = ['일', '월', '화', '수', '목', '금', '토'];
 
 const ABSOLUTE_ISO = /(\d{4})-(\d{1,2})-(\d{1,2})/;
 const ABSOLUTE_KO = /(\d{1,2})월\s*(\d{1,2})일/;
-const ABSOLUTE_SLASH = /(?:^|\s)(\d{1,2})\/(\d{1,2})(?:\s|$)/;
 const MONTH_END_KO = /(\d{1,2})월\s*말/;
 const NEXT_WEEKDAY_KO = /다음\s*주\s*([일월화수목금토])요일/;
 const THIS_WEEKDAY_KO = /이번\s*주\s*([일월화수목금토])요일/;
@@ -76,6 +75,11 @@ const parseWeekday = (
   const normalizedTarget = targetWeekday === 0 ? 7 : targetWeekday;
   const daysToMonday = 1 - normalizedCurrent;
   const offset = daysToMonday + weekOffset * 7 + (normalizedTarget - 1);
+  // 마감은 과거가 될 수 없다. "이번주 월요일" 을 금요일에 물으면 4일 전이 나오는데,
+  // 그 의도가 지난 월요일인지 다음 월요일인지 알 수 없으므로 추측하지 않고 되묻는다.
+  if (offset < 0) {
+    return null;
+  }
   return addDays(today, offset);
 };
 
@@ -113,14 +117,6 @@ export const parseDueDate = (
   if (koreanMatched) {
     const month = Number(koreanMatched[1]);
     const day = Number(koreanMatched[2]);
-    const candidate = { year: resolveYear(month, day, today), month, day };
-    return isRealDate(candidate) ? candidate : null;
-  }
-
-  const slashMatched = text.match(ABSOLUTE_SLASH);
-  if (slashMatched) {
-    const month = Number(slashMatched[1]);
-    const day = Number(slashMatched[2]);
     const candidate = { year: resolveYear(month, day, today), month, day };
     return isRealDate(candidate) ? candidate : null;
   }

@@ -19,14 +19,6 @@ describe('parseDueDate — 절대 표현', () => {
     });
   });
 
-  it('9/30', () => {
-    expect(parseDueDate('9/30 자동차세', TODAY)).toEqual({
-      year: 2026,
-      month: 9,
-      day: 30,
-    });
-  });
-
   it('이미 지난 월/일은 내년으로 넘긴다', () => {
     expect(parseDueDate('1월 5일 정산', TODAY)).toEqual({
       year: 2027,
@@ -68,6 +60,14 @@ describe('parseDueDate — 상대 표현', () => {
       day: 30,
     });
   });
+
+  it('이번주 금요일 — 오늘이 금요일이면 오늘', () => {
+    expect(parseDueDate('이번주 금요일 제출', TODAY)).toEqual(TODAY);
+  });
+
+  it('이번주 월요일 — 이미 지났으므로 null (마감은 과거가 될 수 없다)', () => {
+    expect(parseDueDate('이번주 월요일 제출', TODAY)).toBeNull();
+  });
 });
 
 describe('parseDueDate — 거부', () => {
@@ -81,6 +81,12 @@ describe('parseDueDate — 거부', () => {
 
   it('13월은 null', () => {
     expect(parseDueDate('13월 1일 정산', TODAY)).toBeNull();
+  });
+
+  it('슬래시 숫자쌍은 날짜로 보지 않는다 — 분수·비율과 구분할 방법이 없다', () => {
+    expect(parseDueDate('9/30 자동차세', TODAY)).toBeNull();
+    expect(parseDueDate('지분 1/2 정리', TODAY)).toBeNull();
+    expect(parseDueDate('3/4 분기 마감', TODAY)).toBeNull();
   });
 });
 
