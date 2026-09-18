@@ -216,3 +216,48 @@ describe('PreviewActionPrismaRepository.findRecentAppliedByKind', () => {
     });
   });
 });
+
+describe('PreviewActionPrismaRepository.findById — 폐지된 kind', () => {
+  const rowOf = (kind: string) => ({
+    id: 'p1',
+    slackUserId: 'U1',
+    kind,
+    payload: {},
+    status: 'APPLIED',
+    previewText: '옛 카드',
+    expiresAt: new Date('2026-08-03T01:00:00Z'),
+    createdAt: new Date('2026-08-03T00:00:00Z'),
+    appliedAt: new Date('2026-08-03T00:10:00Z'),
+    cancelledAt: null,
+    slackChannelId: null,
+    slackMessageTs: null,
+    lastFailedAt: null,
+    lastFailureReason: null,
+  });
+
+  const repositoryReturning = (kind: string) => {
+    const findUnique = jest.fn().mockResolvedValue(rowOf(kind));
+    const prismaMock = {
+      previewAction: { findUnique },
+    } as unknown as PrismaService;
+    return new PreviewActionPrismaRepository(prismaMock);
+  };
+
+  // 실행 경로는 사라졌지만 원장에 종결 카드가 남아 있는 kind — 상수를 지우면 이 조회가 예외로 끊긴다.
+  it.each(['BE_SANDBOX_APPLY', 'SESSION_INJECT'])(
+    '%s 행을 예외 없이 도메인으로 변환한다',
+    async (kind) => {
+      const preview = await repositoryReturning(kind).findById('p1');
+
+      expect(preview?.kind).toBe(kind);
+    },
+  );
+
+  // 미등록이면 조회가 끊긴다는 전제가 여전히 살아 있는지. 재료는 상수로 등록될 일이 없는
+  // 값을 쓴다 — 실재했던 폐지 kind 를 쓰면 그것이 복원되는 날 전제 파기와 무관한 이유로 깨진다.
+  it('상수에 없는 kind 는 예외로 끊는다', async () => {
+    await expect(
+      repositoryReturning('NOT_A_REGISTERED_KIND').findById('p1'),
+    ).rejects.toThrow('알 수 없는 PreviewAction kind: NOT_A_REGISTERED_KIND');
+  });
+});
