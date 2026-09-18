@@ -217,10 +217,12 @@ describe('PrReviewSweepAutopilotTask', () => {
     expect(result.guardKeySuffix).toBe('contradicted-1');
   });
 
-  // 사용자 반응은 카드 게시보다 뒤에 온다. 그날 첫 발송은 보통 게시가 가져가므로, 반응
-  // 건수가 키에 없으면 반응 회차는 구조적으로 늘 "이미 발송됨" 으로 막혀 다음 날까지 묻힌다
-  // (harvest-review-signals.usecase 의 attachAdoption 주석이 같은 현상을 기록하고 있다).
-  it('수확한 반응이 있으면 harvested 건수를 접미사에 싣는다 — 반응 회차가 묻히지 않게', async () => {
+  // 수확 전용 회차는 발송하되 접미사를 비운다 = 기본 날짜 키 = 하루 첫 1 회.
+  // 한때 harvested 건수를 접미사로 실어 회차마다 통과시켰고, 그 결과 2026-09-18 하루 23 회
+  // 발송 중 8 회가 수확 전용이었다(Redis 가드 키 실측). 수확이 알리는 것은 이미 단 반응과
+  // 자동으로 닫힌 카드라 받은 시점에 할 일이 없다 — 즉시성이 필요한 카드 게시·쿼터 중단과
+  // 같은 자격을 주지 않는다.
+  it('수확만 있는 회차는 접미사를 비워 하루 1 회로 접는다', async () => {
     harvestUsecase.execute.mockResolvedValue({
       acked: 1,
       fixed: 0,
@@ -241,7 +243,47 @@ describe('PrReviewSweepAutopilotTask', () => {
     const result = await task.run(CONTEXT);
 
     expect(result.skip).toBe(false);
-    expect(result.guardKeySuffix).toBe('harvested-2');
+    expect(result.guardKeySuffix).toBeUndefined();
+  });
+
+  // 수확이 접미사를 만들지 않아도 **카드·보류·쿼터 회차의 키를 오염시키지는 않는다** —
+  // 그 셋의 접미사에 수확 건수가 섞이면 같은 카드가 수확 건수만 달라진 채 다시 나간다.
+  it('카드와 수확이 함께 있는 회차의 접미사는 카드 지문뿐이다', async () => {
+    harvestUsecase.execute.mockResolvedValue({
+      acked: 2,
+      fixed: 0,
+      rejected: 0,
+      stale: 3,
+      resolved: 0,
+      judged: 0,
+      skipped: 0,
+      contradicted: 0,
+      quotaStopped: false,
+      adoption: [],
+    });
+    sweepUsecase.execute.mockResolvedValue({
+      quotaStopped: false,
+      results: [
+        {
+          prRef: 'JSL107/personal_agents#180',
+          riskLevel: 'high',
+          outcome: {
+            inline: 3,
+            file: 0,
+            issueComment: 0,
+            dryRun: 0,
+            notPosted: 0,
+            dropped: 0,
+            duplicate: 0,
+          },
+        },
+      ],
+    });
+
+    const result = await task.run(CONTEXT);
+
+    expect(result.skip).toBe(false);
+    expect(result.guardKeySuffix).toBe('cards-JSL107/personal_agents#180x3');
   });
 
   it('새로 게시한 카드가 있으면 PR 별 지문을 접미사에 싣는다 — 오후에 달린 지적이 묻히지 않게', async () => {
@@ -388,11 +430,11 @@ describe('PrReviewSweepAutopilotTask', () => {
     expect(result.guardKeySuffix).toBe('cards-JSL107/personal_agents#180x3');
   });
 
-  // 불변식: 발송하는 회차는 반드시 접미사를 갖는다. 하나라도 비면 기본 날짜 키가 소비되고,
-  // 그 뒤 같은 날 접미사 키를 쓰는 회차와 서로를 막지 못해 중복 발송이 생긴다.
-  it('skip 하지 않는 모든 회차는 접미사를 갖는다', async () => {
+  // 불변식: 즉시 알려야 하는 세 부류(카드 게시·보류·쿼터 중단)는 반드시 접미사를 갖는다.
+  // 하나라도 비면 기본 날짜 키를 소비해, 그날의 수확 요약 1 회와 서로를 가로막는다.
+  // (수확 전용 회차가 기본 키를 쓰는 것은 의도다 — 위 「하루 1 회로 접는다」 테스트.)
+  it('카드·보류·쿼터 회차는 접미사를 갖는다', async () => {
     const cases = [
-      { harvest: { acked: 1 }, sweep: { results: [], quotaStopped: false } },
       {
         harvest: { contradicted: 1 },
         sweep: { results: [], quotaStopped: false },
