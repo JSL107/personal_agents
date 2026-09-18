@@ -3,24 +3,21 @@ import {
   Controller,
   Delete,
   Get,
-  Inject,
   Param,
   ParseIntPipe,
   Patch,
   Query,
+  ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { LoopbackOnlyGuard } from '../../common/guard/loopback-only.guard';
 import { ConsoleReadGuard } from '../../console/interface/console-read.guard';
+import { DeleteScheduleUsecase } from '../application/delete-schedule.usecase';
 import { ListSchedulesUsecase } from '../application/list-schedules.usecase';
 import { UpdateScheduleStatusUsecase } from '../application/update-schedule-status.usecase';
 import { parseDateParam } from '../domain/parse-date-param';
-import {
-  SCHEDULE_REPOSITORY_PORT,
-  ScheduleRepositoryPort,
-} from '../domain/port/schedule.repository.port';
 import { ScheduleItemRecord } from '../domain/schedule.type';
 import { UpdateScheduleDto } from './dto/update-schedule.dto';
 
@@ -31,10 +28,24 @@ export class ScheduleConsoleController {
   constructor(
     private readonly listSchedules: ListSchedulesUsecase,
     private readonly updateStatus: UpdateScheduleStatusUsecase,
+    private readonly deleteSchedule: DeleteScheduleUsecase,
     private readonly configService: ConfigService,
-    @Inject(SCHEDULE_REPOSITORY_PORT)
-    private readonly repository: ScheduleRepositoryPort,
   ) {}
+
+  // 이 env 는 `app.config.ts` 에서 optional 이라 미설정 상태로 요청이 들어올 수 있다.
+  // `getOrThrow` 는 HttpException 이 아닌 TypeError 를 던져 전역 필터가 500 으로 뭉갠다.
+  // 콘솔 앱은 이미 503 을 "CONSOLE_OWNER_SLACK_USER_ID 가 설정되지 않았습니다" 안내로 매핑하므로
+  // (`AppRootView.swift:170`) 503 으로 던져야 사용자가 무엇을 고쳐야 할지 안다.
+  // `console-write.service.ts:97` 의 `requireOwner()` 와 같은 처리다.
+  private requireOwner(): string {
+    const owner = this.configService.get<string>('CONSOLE_OWNER_SLACK_USER_ID');
+    if (!owner) {
+      throw new ServiceUnavailableException(
+        'CONSOLE_OWNER_SLACK_USER_ID 가 설정되지 않아 일정을 조회할 수 없습니다.',
+      );
+    }
+    return owner;
+  }
 
   @Get('schedules')
   @UseGuards(ConsoleReadGuard)
@@ -42,11 +53,8 @@ export class ScheduleConsoleController {
     @Query('from') from: string,
     @Query('to') to: string,
   ): Promise<ScheduleItemRecord[]> {
-    const ownerSlackUserId = this.configService.getOrThrow<string>(
-      'CONSOLE_OWNER_SLACK_USER_ID',
-    );
     return await this.listSchedules.execute({
-      slackUserId: ownerSlackUserId,
+      slackUserId: this.requireOwner(),
       from: parseDateParam(from, 'from'),
       to: parseDateParam(to, 'to'),
     });
@@ -64,8 +72,6 @@ export class ScheduleConsoleController {
   @Delete('schedules/:id')
   @UseGuards(LoopbackOnlyGuard)
   async remove(@Param('id', ParseIntPipe) id: number): Promise<void> {
-    // 리포지토리를 직접 쓰지 않고 usecase 를 거치는 편이 낫지만, 삭제는 규칙이 없어
-    // usecase 를 하나 더 만들 이유가 없다. 규칙이 생기면 그때 승격한다.
-    await this.repository.deleteById(id);
+    await this.deleteSchedule.execute({ id });
   }
 }

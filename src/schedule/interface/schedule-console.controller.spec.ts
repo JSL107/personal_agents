@@ -1,8 +1,9 @@
+import { ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { DeleteScheduleUsecase } from '../application/delete-schedule.usecase';
 import { ListSchedulesUsecase } from '../application/list-schedules.usecase';
 import { UpdateScheduleStatusUsecase } from '../application/update-schedule-status.usecase';
-import { ScheduleRepositoryPort } from '../domain/port/schedule.repository.port';
 import { ScheduleItemRecord, ScheduleStatus } from '../domain/schedule.type';
 import { ScheduleConsoleController } from './schedule-console.controller';
 
@@ -19,7 +20,7 @@ describe('ScheduleConsoleController', () => {
     completedAt: null,
   };
 
-  const buildController = () => {
+  const buildController = (ownerConfigValue: string | undefined) => {
     const listSchedules: jest.Mocked<Pick<ListSchedulesUsecase, 'execute'>> = {
       execute: jest.fn().mockResolvedValue([record]),
     };
@@ -28,35 +29,36 @@ describe('ScheduleConsoleController', () => {
     > = {
       execute: jest.fn().mockResolvedValue(record),
     };
-    const repository: jest.Mocked<Pick<ScheduleRepositoryPort, 'deleteById'>> =
+    const deleteSchedule: jest.Mocked<Pick<DeleteScheduleUsecase, 'execute'>> =
       {
-        deleteById: jest.fn().mockResolvedValue(undefined),
+        execute: jest.fn().mockResolvedValue(undefined),
       };
-    const configService: jest.Mocked<Pick<ConfigService, 'getOrThrow'>> = {
-      getOrThrow: jest.fn().mockReturnValue('U123'),
+    const configService: jest.Mocked<Pick<ConfigService, 'get'>> = {
+      get: jest.fn().mockReturnValue(ownerConfigValue),
     };
     const controller = new ScheduleConsoleController(
       listSchedules as unknown as ListSchedulesUsecase,
       updateStatus as unknown as UpdateScheduleStatusUsecase,
+      deleteSchedule as unknown as DeleteScheduleUsecase,
       configService as unknown as ConfigService,
-      repository as unknown as ScheduleRepositoryPort,
     );
     return {
       controller,
       listSchedules,
       updateStatus,
-      repository,
+      deleteSchedule,
       configService,
     };
   };
 
   describe('list', () => {
     it('콘솔 소유자 slackUserId 로 날짜 범위를 조회한다', async () => {
-      const { controller, listSchedules, configService } = buildController();
+      const { controller, listSchedules, configService } =
+        buildController('U123');
 
       const result = await controller.list('2026-09-01', '2026-09-30');
 
-      expect(configService.getOrThrow).toHaveBeenCalledWith(
+      expect(configService.get).toHaveBeenCalledWith(
         'CONSOLE_OWNER_SLACK_USER_ID',
       );
       expect(listSchedules.execute).toHaveBeenCalledWith({
@@ -68,18 +70,27 @@ describe('ScheduleConsoleController', () => {
     });
 
     it('달력에 없는 날짜는 usecase 호출 전에 던진다', async () => {
-      const { controller, listSchedules } = buildController();
+      const { controller, listSchedules } = buildController('U123');
 
       await expect(
         controller.list('2026-02-31', '2026-09-30'),
       ).rejects.toThrow();
       expect(listSchedules.execute).not.toHaveBeenCalled();
     });
+
+    it('CONSOLE_OWNER_SLACK_USER_ID 미설정이면 503 으로 던진다 — getOrThrow 의 500 을 피한다', async () => {
+      const { controller, listSchedules } = buildController(undefined);
+
+      await expect(controller.list('2026-09-01', '2026-09-30')).rejects.toThrow(
+        ServiceUnavailableException,
+      );
+      expect(listSchedules.execute).not.toHaveBeenCalled();
+    });
   });
 
   describe('update', () => {
     it('id·status 를 그대로 usecase 에 넘긴다', async () => {
-      const { controller, updateStatus } = buildController();
+      const { controller, updateStatus } = buildController('U123');
 
       const result = await controller.update(1, {
         status: ScheduleStatus.DONE,
@@ -94,12 +105,12 @@ describe('ScheduleConsoleController', () => {
   });
 
   describe('remove', () => {
-    it('리포지토리 deleteById 를 호출한다', async () => {
-      const { controller, repository } = buildController();
+    it('DeleteScheduleUsecase 에 id 를 위임한다 — 없는 id 의 404 처리를 usecase 가 맡는다', async () => {
+      const { controller, deleteSchedule } = buildController('U123');
 
       await controller.remove(1);
 
-      expect(repository.deleteById).toHaveBeenCalledWith(1);
+      expect(deleteSchedule.execute).toHaveBeenCalledWith({ id: 1 });
     });
   });
 });

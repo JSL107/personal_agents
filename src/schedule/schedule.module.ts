@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { LoopbackOnlyGuard } from '../common/guard/loopback-only.guard';
 import { ConsoleReadGuard } from '../console/interface/console-read.guard';
 import { PrismaModule } from '../prisma/prisma.module';
+import { DeleteScheduleUsecase } from './application/delete-schedule.usecase';
 import { ListSchedulesUsecase } from './application/list-schedules.usecase';
 import { RegisterScheduleUsecase } from './application/register-schedule.usecase';
 import { UpdateScheduleStatusUsecase } from './application/update-schedule-status.usecase';
@@ -19,6 +20,7 @@ import { ScheduleConsoleController } from './interface/schedule-console.controll
     RegisterScheduleUsecase,
     ListSchedulesUsecase,
     UpdateScheduleStatusUsecase,
+    DeleteScheduleUsecase,
     ScheduleDispatcher,
     ConsoleReadGuard,
     LoopbackOnlyGuard,
@@ -27,6 +29,7 @@ import { ScheduleConsoleController } from './interface/schedule-console.controll
     RegisterScheduleUsecase,
     ListSchedulesUsecase,
     UpdateScheduleStatusUsecase,
+    DeleteScheduleUsecase,
     ScheduleDispatcher,
   ],
 })
