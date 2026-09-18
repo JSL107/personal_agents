@@ -105,8 +105,14 @@ export const formatDailyPlan = (plan: DailyPlan): FormattedReport => {
     );
   }
 
-  // 스레드에 무엇이 있는지 메인 끝에서 알린다 — 안 그러면 근거가 사라진 것으로 보인다.
+  // 뒤에 무엇이 오는지 메인 끝에서 알린다 — 안 그러면 근거가 사라진 것으로 보인다.
   // 이월은 건수를 함께 적는다. 「11건」 을 보고 열지 말지 정할 수 있어야 한다.
+  //
+  // 「스레드」 라고 쓰지 않는다. 이 값은 두 경로로 나가는데 한쪽에서만 스레드다 —
+  // cron 은 detail 을 스레드 댓글로 보내지만(autopilot.orchestrator), 슬래시(`/today`)는
+  // ephemeral 응답이라 스레드를 달 수 없어 `summary + detail` 합본으로 나간다
+  // (slack-handler.helper 의 toSlackText). 합본에서 「스레드」 라고 가리키면 바로 아래 이어지는
+  // 본문을 두고 거짓말이 된다. 👇 는 두 경로 모두에서 참이다.
   const threadHints: string[] = [];
   if (plan.reasoning.trim().length > 0) {
     threadHints.push('판단 근거');
@@ -122,7 +128,7 @@ export const formatDailyPlan = (plan: DailyPlan): FormattedReport => {
   if (threadHints.length > 0) {
     // 목록 뒤에 조사를 붙이지 않는다 — 마지막 항목의 받침에 따라 은/는이 갈리는데
     // 고정 조사를 쓰면 「정체 항목 1건 는」 처럼 어긋난다.
-    summaryLines.push('', `_👇 스레드: ${threadHints.join(' · ')}_`);
+    summaryLines.push('', `_👇 ${threadHints.join(' · ')}_`);
   }
 
   return {

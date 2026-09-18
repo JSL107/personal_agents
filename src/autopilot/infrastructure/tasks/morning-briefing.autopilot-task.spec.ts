@@ -72,7 +72,7 @@ describe('MorningBriefingAutopilotTask', () => {
     expect(out.summaryText).toBeTruthy();
     // 판단 근거는 스레드로 내려간다. 메인에는 무엇이 스레드에 있는지 알리는 줄만 남는다.
     expect(out.summaryText).not.toContain('*판단 근거*');
-    expect(out.summaryText).toContain('👇 스레드:');
+    expect(out.summaryText).toContain('👇 판단 근거');
     expect(out.detailText).toContain('*판단 근거*');
     expect(execute).toHaveBeenCalledWith(
       expect.objectContaining({ slackUserId: 'U1', tasksText: '' }),

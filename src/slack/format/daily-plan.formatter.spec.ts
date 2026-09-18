@@ -89,7 +89,7 @@ describe('formatDailyPlan', () => {
     );
 
     expect(result.detail).toBe('');
-    expect(result.summary).not.toContain('👇 스레드:');
+    expect(result.summary).not.toContain('👇');
   });
 
   // 과제 줄의 링크는 이번 재배치와 무관하게 유지된다 — PR·Issue 로 바로 이동하는 경로다.
