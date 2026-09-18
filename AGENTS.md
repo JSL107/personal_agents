@@ -72,7 +72,13 @@ src/
 5. `AppModule` / `SlackModule` 에 모듈 등록
 6. `ResponseCode` enum 에 도메인 ErrorCode 와 1:1 동기화 항목 추가 (AllExceptionsFilter 가 매칭에 씀)
 7. `src/agent-run/domain/agent-run.type.ts` 의 `TriggerType` enum 에 `SLACK_COMMAND_*` 추가
-8. `src/model-router/domain/model-router.type.ts` 의 `AgentType` enum + `src/model-router/domain/agent-provider.map.ts` 의 `AGENT_TO_PROVIDER` 매핑 추가
+8. `src/model-router/domain/model-router.type.ts` 의 `AgentType` enum 추가 → **`AgentType` 을 키로 쓰는 exhaustive 지점 4곳을 전부 채운다**
+   - `src/model-router/domain/agent-provider.map.ts` 의 `AGENT_TO_PROVIDER`
+   - `src/agent-registry/agent-contract.ts` 의 `AGENT_CONTRACTS`
+   - `src/router/domain/agent-safety.map.ts` 의 `AGENT_SAFETY_LEVEL`
+   - `src/agent-registry/agent-registry.ts` 의 `AGENT_REGISTRY` (닉네임 포함)
+
+   앞 셋은 `Record<AgentType, ...>` 라 빠뜨리면 빌드가 끊는다. **`AGENT_REGISTRY` 만 `readonly AgentRegistryEntry[]` 라 컴파일러가 못 잡고 `agent-registry.spec.ts` 가 잡는다.** 이 표를 하나로만 알고 계획하면 작업 범위를 과소 추정한다.
 9. `src/slack/handler/agent-command.handler.ts` 의 `/retry-run` switch 에 새 `case '{AGENT_TYPE}'` 추가 (FAILURE_REPLAY 라우팅) — 새 에이전트가 FAILED 되면 재실행 가능해야 함
 10. spec: parser / usecase / formatter 단위 테스트 (CODE_RULES §5)
 11. README 의 슬래시 커맨드 표 + Slack 봇 설정 단계에 명령 추가
@@ -160,5 +166,5 @@ CLI 응답 latency 10~40초. Slack `ack(body)` 즉시 + `respond(replace_origina
 - ORM 은 Prisma 전용. `@nestjs/typeorm`·TypeORM import 는 금지.
 - `process.env` 직접 참조 금지 → `ConfigService.get(...)` (DI 컨텍스트 밖만 예외).
 - 새 env 추가 시 `.env.example`·`.env`·`src/config/app.config.ts`·README 4곳을 함께 갱신했는지 확인한다.
-- 새 슬래시·에이전트 추가 시 `AGENT_TO_PROVIDER`·`/retry-run` switch·`ResponseCode` enum 이 함께 갱신됐는지 확인한다.
+- 새 슬래시·에이전트 추가 시 `AgentType` exhaustive 4곳(§4 체크리스트 #8)·`/retry-run` switch·`ResponseCode` enum 이 함께 갱신됐는지 확인한다.
 - NestJS 생성자에 기본값 파라미터를 두지 않는다 (`timeoutMs: number = 180_000` → `Number` provider 오류). 기본값은 클래스 필드로.
