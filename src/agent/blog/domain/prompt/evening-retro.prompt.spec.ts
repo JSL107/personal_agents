@@ -2,15 +2,21 @@ import {
   buildEveningBlogBodyPrompt,
   buildEveningRetroPrompt,
   EVENING_BLOG_BODY_SYSTEM_PROMPT,
+  formatRetroContext,
   parseEveningRetroOutput,
 } from './evening-retro.prompt';
 
 describe('parseEveningRetroOutput', () => {
   it('코드펜스로 감싼 JSON 을 파싱한다', () => {
     const text =
-      '```json\n{"retrospective":"오늘 X 함","candidates":[{"title":"T","keywords":["k1"],"blogValueScore":80,"reason":"R","sourceRefs":["schoolbell-e/sbe-api-v5#864"],"outline":["문제","접근","결과"]}],"prNotes":[{"ref":"schoolbell-e/sbe-api-v5#864","note":"정합성 문제를 트랜잭션으로 보강"}]}\n```';
+      '```json\n{"retrospective":{"keep":"가드를 강제조건에서 검증했다","problem":"확인 없이 결론을 썼다","tryNext":"결론 전에 명령을 한 번 돌린다","carryOver":"#605 리베이스가 남았다"},"candidates":[{"title":"T","keywords":["k1"],"blogValueScore":80,"reason":"R","sourceRefs":["schoolbell-e/sbe-api-v5#864"],"outline":["문제","접근","결과"]}],"prNotes":[{"ref":"schoolbell-e/sbe-api-v5#864","note":"정합성 문제를 트랜잭션으로 보강"}]}\n```';
     const result = parseEveningRetroOutput(text);
-    expect(result.retrospective).toBe('오늘 X 함');
+    expect(result.retrospective).toEqual({
+      keep: '가드를 강제조건에서 검증했다',
+      problem: '확인 없이 결론을 썼다',
+      tryNext: '결론 전에 명령을 한 번 돌린다',
+      carryOver: '#605 리베이스가 남았다',
+    });
     expect(result.candidates[0].blogValueScore).toBe(80);
     expect(result.candidates[0].keywords).toEqual(['k1']);
     expect(result.candidates[0].sourceRefs).toEqual([
@@ -31,7 +37,7 @@ describe('parseEveningRetroOutput', () => {
 
   it('candidate sourceRefs 가 배열이 아니면 빈 배열로 방어한다', () => {
     const text =
-      '{"retrospective":"r","candidates":[{"title":"T","keywords":[],"blogValueScore":10,"reason":"R","sourceRefs":"bad"}]}';
+      '{"retrospective":{"keep":"r"},"candidates":[{"title":"T","keywords":[],"blogValueScore":10,"reason":"R","sourceRefs":"bad"}]}';
 
     const result = parseEveningRetroOutput(text);
 
@@ -40,7 +46,7 @@ describe('parseEveningRetroOutput', () => {
 
   it('candidate outline 이 배열이 아니거나 누락되면 빈 배열로 방어한다', () => {
     const text =
-      '{"retrospective":"r","candidates":[{"title":"A","keywords":[],"blogValueScore":10,"reason":"R","sourceRefs":[],"outline":"bad"},{"title":"B","keywords":[],"blogValueScore":9,"reason":"R","sourceRefs":[]}],"prNotes":[]}';
+      '{"retrospective":{"keep":"r"},"candidates":[{"title":"A","keywords":[],"blogValueScore":10,"reason":"R","sourceRefs":[],"outline":"bad"},{"title":"B","keywords":[],"blogValueScore":9,"reason":"R","sourceRefs":[]}],"prNotes":[]}';
 
     const result = parseEveningRetroOutput(text);
 
@@ -49,9 +55,9 @@ describe('parseEveningRetroOutput', () => {
   });
 
   it('prNotes 가 배열이 아니면 빈 배열, ref 가 비면 제외한다', () => {
-    const missingNotesText = '{"retrospective":"r","candidates":[] }';
+    const missingNotesText = '{"retrospective":{"keep":"r"},"candidates":[] }';
     const mixedNotesText =
-      '{"retrospective":"r","candidates":[],"prNotes":[{"ref":"schoolbell-e/sbe-api-v5#864","note":"노트"},{"ref":"","note":"제외"},{"note":"ref 없음"}]}';
+      '{"retrospective":{"keep":"r"},"candidates":[],"prNotes":[{"ref":"schoolbell-e/sbe-api-v5#864","note":"노트"},{"ref":"","note":"제외"},{"note":"ref 없음"}]}';
 
     expect(parseEveningRetroOutput(missingNotesText)).toHaveProperty(
       'prNotes',
@@ -63,12 +69,107 @@ describe('parseEveningRetroOutput', () => {
   });
 
   it('candidates 가 비어도 파싱한다', () => {
-    const text = '{"retrospective":"r","candidates":[]}';
+    const text = '{"retrospective":{"keep":"r"},"candidates":[]}';
     expect(parseEveningRetroOutput(text).candidates).toEqual([]);
   });
 
   it('파싱 불가 텍스트는 throw', () => {
     expect(() => parseEveningRetroOutput('그냥 문장')).toThrow();
+  });
+});
+
+// 이 블록이 이 작업의 요구사항 자체다 — 모델이 근거 없이 칸을 채우는 것을 막으려면
+// 빈 칸이 정상 경로여야 한다. 한 칸이라도 필수가 되면 모델은 그 칸을 지어내서 채운다.
+describe('parseEveningRetroOutput — 회고 칸은 비울 수 있다', () => {
+  const withReflection = (reflectionJson: string): string =>
+    `{"retrospective":${reflectionJson},"candidates":[]}`;
+
+  it('일부 칸만 있으면 나머지는 undefined 로 둔다', () => {
+    const result = parseEveningRetroOutput(
+      withReflection('{"keep":"가드를 강제조건에서 검증했다"}'),
+    );
+
+    expect(result.retrospective).toEqual({
+      keep: '가드를 강제조건에서 검증했다',
+    });
+    expect(result.retrospective.problem).toBeUndefined();
+    expect(result.retrospective.tryNext).toBeUndefined();
+    expect(result.retrospective.carryOver).toBeUndefined();
+  });
+
+  it('네 칸이 모두 없어도 통과한다', () => {
+    expect(parseEveningRetroOutput(withReflection('{}')).retrospective).toEqual(
+      {},
+    );
+  });
+
+  it('retrospective 키 자체가 없어도 통과한다 — malformed 로 치지 않는다', () => {
+    const result = parseEveningRetroOutput('{"candidates":[]}');
+
+    expect(result.retrospective).toEqual({});
+    expect(result.retrospective.malformed).toBeUndefined();
+  });
+
+  it('빈 문자열·공백만 있는 칸은 뺀다', () => {
+    const result = parseEveningRetroOutput(
+      withReflection('{"keep":"","problem":"   ","tryNext":"실제 내용"}'),
+    );
+
+    expect(result.retrospective).toEqual({ tryNext: '실제 내용' });
+  });
+
+  it('문자열 앞뒤 공백은 정리한다', () => {
+    const result = parseEveningRetroOutput(
+      withReflection('{"problem":"  확인 없이 결론을 썼다  "}'),
+    );
+
+    expect(result.retrospective.problem).toBe('확인 없이 결론을 썼다');
+  });
+
+  it('문자열로 퇴행하면 malformed 로 표시하고 던지지 않는다', () => {
+    const result = parseEveningRetroOutput(
+      '{"retrospective":"옛 평문 회고","candidates":[],"prNotes":[{"ref":"a/b#1","note":"n"}]}',
+    );
+
+    expect(result.retrospective).toEqual({ malformed: true });
+    // 회고를 못 읽어도 그날의 블로그·이력서 재료는 살아남아야 한다.
+    expect(result.prNotes).toEqual([{ ref: 'a/b#1', note: 'n' }]);
+  });
+
+  it('배열·null 로 와도 malformed 로 표시한다', () => {
+    expect(parseEveningRetroOutput(withReflection('[]')).retrospective).toEqual(
+      { malformed: true },
+    );
+    expect(
+      parseEveningRetroOutput(withReflection('null')).retrospective,
+    ).toEqual({ malformed: true });
+  });
+
+  it('"없음" 류 문자열은 지우지 않는다 — 관측 전에 목록을 만들지 않는다', () => {
+    // 렌더는 빈 칸을 「없음」 으로 찍으므로 화면상 결과가 같다. 모델이 실제로 쓰는 표현을
+    // 관측하기 전에 목록을 박으면 그 목록이 실측인 척 남는다.
+    const result = parseEveningRetroOutput(
+      withReflection('{"problem":"없음"}'),
+    );
+
+    expect(result.retrospective.problem).toBe('없음');
+  });
+});
+
+describe('formatRetroContext', () => {
+  it('채워진 칸만 라벨과 함께 이어 붙인다', () => {
+    const context = formatRetroContext({
+      keep: '가드를 강제조건에서 검증했다',
+      carryOver: '#605 리베이스가 남았다',
+    });
+
+    expect(context).toBe(
+      '유지: 가드를 강제조건에서 검증했다\n미완: #605 리베이스가 남았다',
+    );
+  });
+
+  it('네 칸이 모두 비면 (없음) 을 준다 — 블로그 프롬프트에 빈 제목만 남지 않게', () => {
+    expect(formatRetroContext({})).toBe('(없음)');
   });
 });
 
@@ -93,12 +194,49 @@ describe('buildEveningRetroPrompt', () => {
           source: 'personal',
         },
       ],
+      openPrs: [],
       worklogText: null,
       dailyEvalText: null,
     });
 
     expect(prompt).toContain('[회사 실무][schoolbell-e/sbe-api-v5#864]');
     expect(prompt).toContain('[개인 프로젝트][JSL107/personal_agents#142]');
+  });
+
+  it('열린 PR 을 별도 섹션으로 넘긴다 — carryOver 의 근거다', () => {
+    const prompt = buildEveningRetroPrompt({
+      mergedPrs: [],
+      openPrs: [
+        {
+          repo: 'JSL107/personal_agents',
+          number: 611,
+          url: 'https://github.com/JSL107/personal_agents/pull/611',
+          title: '아직 안 끝난 작업',
+          body: '열린 PR 의 긴 본문',
+          source: 'personal',
+        },
+      ],
+      worklogText: null,
+      dailyEvalText: null,
+    });
+
+    expect(prompt).toContain('## 아직 열려 있는 내 PR (오늘 업데이트)');
+    expect(prompt).toContain('[개인 프로젝트][JSL107/personal_agents#611]');
+    expect(prompt).toContain('아직 안 끝난 작업');
+    // 본문은 싣지 않는다 — carryOver 는 "무엇이 안 끝났나" 만 알면 되고, 머지 PR 과 같은
+    // 크기로 실으면 프롬프트가 두 배가 된다.
+    expect(prompt).not.toContain('열린 PR 의 긴 본문');
+  });
+
+  it('열린 PR 이 없으면 없다고 명시한다', () => {
+    const prompt = buildEveningRetroPrompt({
+      mergedPrs: [],
+      openPrs: [],
+      worklogText: null,
+      dailyEvalText: null,
+    });
+
+    expect(prompt).toContain('(열려 있는 PR 없음)');
   });
 });
 
