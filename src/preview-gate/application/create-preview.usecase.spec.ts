@@ -16,6 +16,8 @@ const buildCreated = (): PreviewAction => ({
   cancelledAt: null,
   slackChannelId: null,
   slackMessageTs: null,
+  lastFailedAt: null,
+  lastFailureReason: null,
 });
 
 const validInput = {

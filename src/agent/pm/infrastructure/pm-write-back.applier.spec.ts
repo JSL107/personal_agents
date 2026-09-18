@@ -35,6 +35,8 @@ const buildPreview = (payload: PmWriteBackPayload): PreviewAction => ({
   cancelledAt: null,
   slackChannelId: null,
   slackMessageTs: null,
+  lastFailedAt: null,
+  lastFailureReason: null,
 });
 
 const buildGithubMock = (): jest.Mocked<GithubClientPort> => ({

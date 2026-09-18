@@ -18,6 +18,8 @@ const buildPreview = (payload: unknown): PreviewAction => ({
   cancelledAt: new Date('2026-07-01T00:00:00.000Z'),
   slackChannelId: null,
   slackMessageTs: null,
+  lastFailedAt: null,
+  lastFailureReason: null,
 });
 
 describe('PreferenceProfileCanceller', () => {
