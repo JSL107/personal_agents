@@ -728,7 +728,8 @@ checkout 을 가로막았다. `~/.claude/CLAUDE.md` 의 <worktree_per_session> �
 ## 2026-09-18 — "데이터에 없다" 를 "일어나지 않는다" 로 읽었다
 
 승인 실행 실패에 대안을 제안하는 재계획 기능을 설계하며, `preview_action` 을 전수 조회하고
-"`PENDING` 잔류 0건, `EXPIRED` 는 전부 무응답 만료 → 실행 실패는 사실상 없다" 고 판정했다.
+"`PENDING` 잔류 0건, `EXPIRED` 111건 중 100건은 폐지된 `SESSION_INJECT` 이고 나머지 11건은
+`applied_at` 이 비어 있으니 전부 무응답 만료 → 실행 실패는 사실상 없다" 고 판정했다.
 
 틀렸다. **실패를 기록하는 자리가 없었다.** 실패해도 `status` 는 `PENDING` 이라, 다시 눌러
 성공하면 `APPLIED` 로 끝나 흔적이 사라지고, 포기하면 스위퍼가 `EXPIRED` 로 정리하는데 그 행은
