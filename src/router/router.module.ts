@@ -34,6 +34,8 @@ import { ModelRouterModule } from '../model-router/model-router.module';
 import { PaperTradeDispatcher } from '../paper-trading/infrastructure/paper-trade.dispatcher';
 import { PaperTradingModule } from '../paper-trading/paper-trading.module';
 import { PreferenceProfileModule } from '../preference-profile/preference-profile.module';
+import { ScheduleDispatcher } from '../schedule/infrastructure/schedule.dispatcher';
+import { ScheduleModule } from '../schedule/schedule.module';
 import { ConversationMemoryService } from './application/conversation-memory.service';
 import { ConversationalReplyUsecase } from './application/conversational-reply.usecase';
 import { HandleConversationTurnUsecase } from './application/handle-conversation-turn.usecase';
@@ -75,6 +77,7 @@ import {
     JobApplicationModule,
     PaperTradingModule,
     DelayReportModule,
+    ScheduleModule,
   ],
   providers: [
     IntentClassifierUsecase,
@@ -116,6 +119,7 @@ import {
         JobApplicationDispatcher,
         PaperTradeDispatcher,
         DelayReportDispatcher,
+        ScheduleDispatcher,
       ],
     },
   ],

@@ -4,7 +4,8 @@ export const INTENT_CLASSIFIER_SYSTEM_PROMPT = `너는 자연어 메시지를 �
 ⚠️ 표시가 붙은 worker 는 실행하면 **기록이 남거나 밖으로 나간다** (휴가/지원 기록 저장, Notion 초안
 생성, GitHub 발행). 잘못 고르면 사용자가 되돌려야 하므로, 확실할 때만 고르고 애매하면 UNKNOWN 으로
 분류한다 (아래 "UNKNOWN 으로 분류할 케이스" 규칙은 표식과 무관하게 그대로 적용된다).
-- PM: 일정/계획/오늘 할 일 ("오늘 뭐해?", "내일 plan 짜줘", "TODO 정리")
+- PM: 그날 할 업무의 계획 수립 ("오늘 뭐해?", "내일 plan 짜줘", "TODO 정리"). **특정 날짜의 마감·신청·예약을 등록하려는 요청은 PM 이 아니라 SCHEDULE 이다.**
+- SCHEDULE: ⚠️ 마감·신청·예약을 날짜와 함께 등록·조회 ("9월 30일 자동차세", "내일 여권 신청 일정 등록해줘", "10월 5일 건강검진 예약"). 날짜 + 해야 할 일 이름의 조합이면 SCHEDULE 이다.
 - WORK_REVIEWER: 회고/완료 작업 정리 ("오늘 한 일 정리", "worklog")
 - CODE_REVIEWER: PR 리뷰 (PR URL/reference 포함)
 - IMPACT_REPORTER: 변경 영향 분석 ("이 PR 의 영향 분석")

@@ -49,4 +49,7 @@ export const AGENT_TO_PROVIDER: Record<AgentType, ModelProviderName> = {
   [AgentType.DELAY_REPORT]: ModelProviderName.CHATGPT,
   [AgentType.PAPER_RECOMMEND]: ModelProviderName.CHATGPT,
   [AgentType.CTO_STUDY]: ModelProviderName.CHATGPT,
+  // SCHEDULE — 등록 파싱이 순수 함수라 route() 를 거치지 않는다(modelUsed='deterministic').
+  // 이 엔트리는 Record<AgentType,...> exhaustive 타입 충족용 sentinel (INVEST·PAPER_TRADE 선례).
+  [AgentType.SCHEDULE]: ModelProviderName.CHATGPT,
 };
