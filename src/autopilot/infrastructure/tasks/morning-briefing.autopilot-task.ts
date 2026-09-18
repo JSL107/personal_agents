@@ -11,6 +11,8 @@ import { StockMonitorPrismaRepository } from '../../../agent/stock/infrastructur
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { HumanizeService } from '../../../humanize/application/humanize.service';
 import { humanizeDailyPlan } from '../../../humanize/application/humanize-report.adapter';
+import { ListSchedulesUsecase } from '../../../schedule/application/list-schedules.usecase';
+import { formatUpcomingLine } from '../../../schedule/domain/format-upcoming-line';
 import { formatDailyPlan } from '../../../slack/format/daily-plan.formatter';
 import { formatModelFooter } from '../../../slack/format/model-footer.formatter';
 import { formatWaitingSection } from '../../../slack/format/waiting-section.formatter';
@@ -42,6 +44,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
     private readonly generateDailyPlan: GenerateDailyPlanUsecase,
     private readonly humanizeService: HumanizeService,
     private readonly stockRepository: StockMonitorPrismaRepository,
+    private readonly listSchedules: ListSchedulesUsecase,
   ) {}
 
   async run({
@@ -61,9 +64,13 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
       const summaryText =
         formatted.summary + formatWaitingSection(outcome.result.waitingItems);
       const detailText = formatted.detail + formatModelFooter(outcome);
+      const summaryWithPortfolio = await this.appendPortfolioValue(summaryText);
       return {
         skip: false,
-        summaryText: await this.appendPortfolioValue(summaryText),
+        summaryText: await this.appendUpcomingSchedules(
+          summaryWithPortfolio,
+          ownerSlackUserId,
+        ),
         detailText,
       };
     } catch (error) {
@@ -72,11 +79,16 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
         error.pmAgentErrorCode === PmAgentErrorCode.EMPTY_TASKS_INPUT
       ) {
         // 할 일이 없는 날에도 자산은 말해 준다 — 이 목표가 겨냥한 것이 정확히 "아무 일
-        // 없는 날" 이다.
+        // 없는 날" 이다. 마감도 같은 이유로 여기서 붙인다 — 할 일이 없는 날이야말로
+        // 마감 알림이 가장 필요한 날이다.
+        const emptyTasksSummary = await this.appendPortfolioValue(
+          '오늘 자동 수집된 할 일이 없습니다 (GitHub/Notion/Slack 모두 비어있음). 필요하면 `/today <할 일>` 로 직접 입력해주세요.',
+        );
         return {
           skip: false,
-          summaryText: await this.appendPortfolioValue(
-            '오늘 자동 수집된 할 일이 없습니다 (GitHub/Notion/Slack 모두 비어있음). 필요하면 `/today <할 일>` 로 직접 입력해주세요.',
+          summaryText: await this.appendUpcomingSchedules(
+            emptyTasksSummary,
+            ownerSlackUserId,
           ),
         };
       }
@@ -111,6 +123,27 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
     } catch (error) {
       this.logger.warn(`자산 요약 생략 — ${(error as Error).message}`);
       return summaryText;
+    }
+  }
+
+  // 마감 한 줄도 자산 줄과 같은 곁다리다. 조회가 실패해도 브리핑 본체는 나가야 한다 —
+  // 장식이 본체를 죽이면 안 된다.
+  private async appendUpcomingSchedules(
+    text: string,
+    ownerSlackUserId: string,
+  ): Promise<string> {
+    const today = new Date();
+    const weekLater = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+    try {
+      const items = await this.listSchedules.execute({
+        slackUserId: ownerSlackUserId,
+        from: today,
+        to: weekLater,
+      });
+      return text + formatUpcomingLine(items, today);
+    } catch (error: unknown) {
+      this.logger.warn(`마감 줄 생성 실패: ${String(error)}`);
+      return text;
     }
   }
 
