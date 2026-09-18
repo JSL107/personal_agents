@@ -127,6 +127,79 @@ describe('AutopilotOrchestrator', () => {
     });
   });
 
+  // OR 집계가 이번 설계의 핵심 판단이다 — 한 메시지에 여러 task 요약이 합쳐지므로 item 단위로
+  // 멘션을 붙일 자리가 없고, 하나라도 대상이면 메시지 전체에 붙인다. 단일 task 그룹만으로는
+  // 집계 방향이 뒤집혀도(some → every) 통과하므로 섞인 그룹으로 고정한다.
+  it('멘션 대상과 비대상이 한 그룹에 섞이면 멘션을 붙인다', async () => {
+    const quiet = makeTask('daily-eval', { skip: false, summaryText: '조용' });
+    const loud = makeTask('stock-monitor', {
+      skip: false,
+      summaryText: '급락',
+    });
+    const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
+    const orchestrator = new AutopilotOrchestrator(
+      [quiet, loud] as never,
+      { postMessage } as never,
+      {
+        acquireOnce: jest.fn().mockResolvedValue(true),
+        isDone: jest.fn().mockResolvedValue(false),
+      } as never,
+      { execute: jest.fn() } as never,
+      { attachSlackMessage: jest.fn() } as never,
+    );
+
+    await orchestrator.runGroup(
+      'mixed',
+      [
+        makeEntry('daily-eval', 'daily-eval'),
+        makeEntry('stock-monitor', 'stock-monitor'),
+      ],
+      'U1',
+      'C1',
+    );
+
+    expect(postMessage).toHaveBeenCalledWith({
+      target: 'C1',
+      text: '<@U1>\n조용\n\n────────\n\n급락',
+    });
+  });
+
+  // 전멸 실패는 별도 경로가 멘션을 유지하지만, 부분 실패는 성공 요약과 함께 메인 메시지로
+  // 나간다. 실패 item 에 notifyOwner 를 세우지 않으면 멘션 대상이 아닌 task 의 실패가 조용히
+  // 흘러간다 — cron 실패는 멘션 필요로 분류된 부류다.
+  it('부분 실패 회차는 멘션 대상이 아닌 task 여도 멘션을 붙인다', async () => {
+    const ok = makeTask('daily-eval', { skip: false, summaryText: '성공' });
+    const broken = {
+      id: 'po-shadow',
+      run: jest.fn().mockRejectedValue(new Error('모델 응답 파싱 실패')),
+    };
+    const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
+    const orchestrator = new AutopilotOrchestrator(
+      [ok, broken] as never,
+      { postMessage } as never,
+      {
+        acquireOnce: jest.fn().mockResolvedValue(true),
+        isDone: jest.fn().mockResolvedValue(false),
+      } as never,
+      { execute: jest.fn() } as never,
+      { attachSlackMessage: jest.fn() } as never,
+    );
+
+    await orchestrator.runGroup(
+      'partial',
+      [
+        makeEntry('daily-eval', 'daily-eval'),
+        makeEntry('po-shadow', 'po-shadow'),
+      ],
+      'U1',
+      'C1',
+    );
+
+    const [sent] = postMessage.mock.calls[0]!;
+    expect(sent.text).toMatch(/^<@U1>\n/);
+    expect(sent.text).toContain('po-shadow 자동 생성 실패');
+  });
+
   it('멘션 대상이 아닌 task 는 채널 발송에도 멘션을 붙이지 않는다', async () => {
     const task = makeTask('daily-eval', { skip: false, summaryText: '본문' });
     const postMessage = jest.fn().mockResolvedValue({ ts: undefined });

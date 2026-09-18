@@ -1,4 +1,7 @@
-import { ADOPTION_WINDOW_DAYS } from '../../pr-review-loop/domain/adoption-rate';
+import {
+  ADOPTION_WINDOW_DAYS,
+  CategoryAdoption,
+} from '../../pr-review-loop/domain/adoption-rate';
 import { HarvestOutcome } from '../../pr-review-loop/domain/harvest-outcome.type';
 import { LEARNING_REPO } from '../../pr-review-loop/domain/learning-repo';
 import {
@@ -34,10 +37,7 @@ const NOTABLE_RATE_PERCENT = 80;
 
 // 표본 미달(ratePercent === null)은 본문에도 "이상 없음" 집계에도 넣지 않는다 — 표본 1~7 건으로
 // 낸 비율은 판단 근거가 못 되고, 그 사실을 매번 알릴 값도 없다.
-const isNotableAdoption = (item: {
-  ratePercent: number | null;
-  changePercentPoint: number | null;
-}): boolean => {
+const isNotableAdoption = (item: CategoryAdoption): boolean => {
   if (item.ratePercent === null) {
     return false;
   }

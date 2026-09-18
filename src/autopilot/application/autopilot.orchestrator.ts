@@ -225,8 +225,14 @@ export class AutopilotOrchestrator {
           error instanceof Error ? error.stack : undefined,
         );
         // 조용한 실패 방지 — owner digest 에 짧게 표기. message 는 길이 cap.
+        //
+        // notifyOwner 를 task 종류와 무관하게 세운다. 전멸 실패는 아래 failureNotice 경로가 멘션을
+        // 유지하지만, 부분 실패는 성공한 요약과 함께 이 items 를 타고 메인 메시지로 나간다 —
+        // 여기서 세우지 않으면 멘션 대상이 아닌 task 의 실패가 조용히 흘러간다. 설계는 cron 실패를
+        // 멘션 필요로 분류하고, 근거 수치(7일 73건)도 실패 전체를 센 값이다.
         items.push({
           summary: `_⚠️ ${entry.taskId} 자동 생성 실패 — ${message.slice(0, 200)}. 다음 슬롯에 재시도됩니다._`,
+          notifyOwner: true,
         });
       }
     }
