@@ -314,3 +314,59 @@ describe('DailyPlanPromptBuilder — 저장을 거친 외부 제목 경계', () 
     expect(prompt).not.toContain('[유사 plan');
   });
 });
+describe('DailyPlanPromptBuilder — 자르기와 경계', () => {
+  // notion 은 TRIM_ORDER 에 없어 drop 되지 않는다. 그래서 상한을 넘기면 꼬리 자르기가
+  // notion 의 감싼 블록 한가운데에 떨어진다 — 이 PR 이 "잘려도 안전한 방향" 이라고 주장한
+  // 바로 그 지점이다. 마커 있는 섹션이 먼저 drop 되면 이 경로를 못 밟으므로 notion 으로 만든다.
+  const hugeNotionTasks = Array.from({ length: 30 }, (_, index) => ({
+    databaseId: 'db',
+    pageId: `pg${index}`,
+    url: 'https://notion.so/pg',
+    title: `제목${index} ` + '가'.repeat(400),
+    properties: {},
+  }));
+
+  it('감싼 섹션 한가운데에서 잘려도 닫는 표시가 여는 표시보다 많아지지 않는다', () => {
+    const builder = new DailyPlanPromptBuilder();
+
+    const { prompt, truncated } = builder.build(
+      buildBaseContext({ notionTasks: hugeNotionTasks }),
+    );
+
+    const opens = (prompt.match(/<untrusted-input>/g) ?? []).length;
+    const closes = (prompt.match(/<\/untrusted-input>/g) ?? []).length;
+
+    // 꼬리 자르기가 실제로 일어난 회차여야 이 케이스가 의미를 갖는다.
+    expect(truncated.droppedSections).toContain('__TAIL_TRUNCATED__');
+    expect(opens).toBeGreaterThan(0);
+    // 닫히지 않은 여는 표시가 남는 것이 정상이다 — 남은 텍스트를 전부 외부로 읽는 쪽이라 안전하다.
+    // 반대로 닫는 표시가 더 많아지면 신뢰 구간이 새로 생겼다는 뜻이라 방어가 뒤집힌 것이다.
+    expect(closes).toBeLessThan(opens);
+  });
+
+  it('잘리지 않은 회차는 여는 표시와 닫는 표시 개수가 같다', () => {
+    const builder = new DailyPlanPromptBuilder();
+
+    const { prompt, truncated } = builder.build(
+      buildBaseContext({
+        inboxItems: ['배포 확인 부탁드립니다'],
+        notionTasks: [
+          {
+            databaseId: 'db',
+            pageId: 'pg',
+            url: 'https://notion.so/pg',
+            title: '배포 준비',
+            properties: {},
+          },
+        ],
+      }),
+    );
+
+    const opens = (prompt.match(/<untrusted-input>/g) ?? []).length;
+    const closes = (prompt.match(/<\/untrusted-input>/g) ?? []).length;
+
+    expect(truncated.droppedSections).not.toContain('__TAIL_TRUNCATED__');
+    expect(opens).toBeGreaterThan(0);
+    expect(closes).toBe(opens);
+  });
+});

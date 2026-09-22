@@ -195,3 +195,23 @@ describe('formatSlackMentionsAsPromptSection — 외부 입력 경계', () => {
     expect(content).not.toContain('<untrusted-input>');
   });
 });
+
+describe('formatSlackMentionsAsPromptSection — 생략 안내 위치', () => {
+  it('생략 안내는 경계 밖에 둔다', () => {
+    const { content } = formatSlackMentionsAsPromptSection({
+      mentions: Array.from({ length: 3 }, (_, index) => ({
+        channelId: 'C1',
+        channelName: 'general',
+        channelType: 'public_channel' as const,
+        authorUserId: 'U999',
+        ts: `17000000${index}.001`,
+        text: `t${index}`,
+        permalink: undefined,
+      })),
+      sinceHours: 24,
+      maxItems: 1,
+    });
+
+    expect(content).toMatch(/<\/untrusted-input>\n\(\+2건 생략/);
+  });
+});

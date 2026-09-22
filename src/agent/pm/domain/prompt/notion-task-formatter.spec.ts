@@ -148,3 +148,20 @@ describe('formatNotionTasksAsPromptSection — 외부 입력 경계', () => {
     expect(content).not.toContain('<untrusted-input>');
   });
 });
+
+describe('formatNotionTasksAsPromptSection — 생략 안내 위치', () => {
+  it('생략 안내는 경계 밖에 둔다', () => {
+    const { content } = formatNotionTasksAsPromptSection(
+      Array.from({ length: 3 }, (_, index) => ({
+        databaseId: 'db',
+        pageId: `pg${index}`,
+        url: 'https://notion.so/pg',
+        title: `t${index}`,
+        properties: {},
+      })),
+      { maxItems: 1 },
+    );
+
+    expect(content).toMatch(/<\/untrusted-input>\n\(\+2건 생략/);
+  });
+});

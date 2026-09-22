@@ -173,6 +173,12 @@ export class DailyPlanPromptBuilder {
         droppedSections.push('__TAIL_TRUNCATED__');
       }
     }
+    // 자르기와 신뢰 경계의 관계 — 확인한 전제를 적어 둔다.
+    // truncateUtf8 은 꼬리 자르기다(`subarray(0, targetBytes)`). 자른 지점 뒤는 지워지지
+    // 경계 안으로 옮겨지지 않으므로, 감싼 섹션 중간에서 잘려도 신뢰 구간이 새로 생기지 않는다.
+    // 남는 것은 닫히지 않은 여는 마커뿐이고 그건 "더 많이 외부로 읽는" 쪽이라 안전하다
+    // (TRUNCATE_SUFFIX 도 그 안쪽에 들어가지만 우리 문구라 무해하다).
+    // 이 전제는 builder.spec 의 「자르기와 경계」 케이스가 회귀로 지킨다.
     const prompt = needsTruncate
       ? truncateUtf8(joined, MAX_PROMPT_BYTES)
       : joined;
@@ -309,8 +315,10 @@ const formatSimilarPlansSection = (
     return null;
   }
 
+  // 헤더 개수는 조회 건수가 아니라 실제로 실은 건수를 쓴다 — 5건을 끌어왔어도 2건만
+  // 읽히면 본문에는 2건뿐이라, 조회 건수를 적으면 모델이 못 본 3건을 있다고 여긴다.
   return [
-    `[유사 plan (FTS top ${similarPlans.length})]`,
+    `[유사 plan (FTS top ${entries.length})]`,
     wrapUntrustedInput(entries.join('\n')),
   ].join('\n');
 };
