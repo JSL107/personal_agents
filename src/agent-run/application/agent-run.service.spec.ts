@@ -984,7 +984,9 @@ describe('AgentRunService', () => {
     const fakeSlackToken = ['xoxb', '1234567890', 'a'.repeat(22)].join('-');
 
     it('토큰류 시크릿은 마스킹한다', async () => {
-      const fields = await attach({ text: `이 토큰 좀 봐줘 ${fakeSlackToken}` });
+      const fields = await attach({
+        text: `이 토큰 좀 봐줘 ${fakeSlackToken}`,
+      });
 
       expect(fields.routedText).not.toContain(fakeSlackToken);
       expect(fields.routedText).toContain('[REDACTED:slack_token]');
