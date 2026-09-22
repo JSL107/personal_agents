@@ -23,6 +23,10 @@ import {
 // 성립하는 이유이기도 하다). forwardRef 로 뚫는 대신 그대로 두었다 —
 // L4 는 주간 1회·기본 최대 5쌍(DEFAULT_L4_MAX_PAIRS)이라 계측 이득이 순환을 감수할 만큼 크지 않다.
 // 편입하려면 EpisodicMemoryModule 에서 ContradictionJudgeModule 의존을 걷어내는 것이 먼저다.
+// 파싱 실패 메시지에 실을 원문 길이. 무엇을 받았는지 알아야 프롬프트를 고칠 수 있는데,
+// 전문을 실으면 로그가 응답 본문으로 뒤덮인다.
+const PARSE_FAILURE_EXCERPT_LIMIT = 200;
+
 @Injectable()
 export class JudgeContradictionUsecase implements ContradictionJudgePort {
   private readonly logger = new Logger(JudgeContradictionUsecase.name);
@@ -54,20 +58,35 @@ export class JudgeContradictionUsecase implements ContradictionJudgePort {
   private parse(text: string): ContradictionVerdict {
     const match = text.match(/\{[\s\S]*\}/);
     if (!match) {
-      return { contradiction: false, reason: '' };
+      throw new Error(
+        `L4 judge 응답에서 JSON 을 찾지 못했습니다: ${text.slice(0, PARSE_FAILURE_EXCERPT_LIMIT)}`,
+      );
     }
+
+    let parsed: { contradiction?: unknown; reason?: unknown };
     try {
-      const parsed = JSON.parse(match[0]) as {
+      parsed = JSON.parse(match[0]) as {
         contradiction?: unknown;
         reason?: unknown;
       };
-      return {
-        contradiction: parsed.contradiction === true,
-        reason: typeof parsed.reason === 'string' ? parsed.reason : '',
-      };
-    } catch {
-      return { contradiction: false, reason: '' };
+    } catch (error) {
+      throw new Error(
+        `L4 judge 응답 JSON 파싱 실패 (${error instanceof Error ? error.message : String(error)}): ${match[0].slice(0, PARSE_FAILURE_EXCERPT_LIMIT)}`,
+      );
     }
+
+    // boolean 이 아닌 값을 false 로 흘리지 않는다 — 필드 누락·문자열 "true"·null 은 모두
+    // "판정을 못 받았다" 이지 "모순이 없다" 가 아니다.
+    if (typeof parsed.contradiction !== 'boolean') {
+      throw new Error(
+        `L4 judge 응답의 contradiction 이 boolean 이 아닙니다 (${typeof parsed.contradiction}): ${match[0].slice(0, PARSE_FAILURE_EXCERPT_LIMIT)}`,
+      );
+    }
+
+    return {
+      contradiction: parsed.contradiction,
+      reason: typeof parsed.reason === 'string' ? parsed.reason : '',
+    };
   }
 
   // route() 의 ModelRouterException cause 체인(자신/cause/{primaryError,lastError})에서
