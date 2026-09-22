@@ -32,6 +32,27 @@ type SlackSocketConfig = {
   signingSecret: string;
 };
 
+// `filesUploadV2` 응답에서 올라간 파일의 id 를 꺼낸다. 이 메서드는 슬랙의 2단계 업로드
+// (`getUploadURLExternal` → `completeUploadExternal`)를 감싼 것이라 응답이 한 겹 더
+// 중첩돼 올 수 있다(`files[0].files[0]`). 2026-09-22 실측에서 그 형태였고, SDK 타입은
+// 두 형태를 유니온으로 두고 있어 어느 쪽이 올지 컴파일 시점에 좁혀지지 않는다.
+// id 를 못 찾는 것은 실패가 아니다 — 로그용 값이라 undefined 로 물러선다.
+export const firstUploadedFileId = (response: unknown): string | undefined => {
+  const files = (response as { files?: unknown }).files;
+  if (!Array.isArray(files) || files.length === 0) {
+    return undefined;
+  }
+  const first = files[0] as { id?: unknown; files?: unknown };
+  if (typeof first.id === 'string') {
+    return first.id;
+  }
+  if (Array.isArray(first.files) && first.files.length > 0) {
+    const nested = first.files[0] as { id?: unknown };
+    return typeof nested.id === 'string' ? nested.id : undefined;
+  }
+  return undefined;
+};
+
 export const shouldRefreshSocketAfterDrift = (
   elapsedMs: number,
   intervalMs: number,
@@ -280,6 +301,34 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
         : {}),
     });
     return { ts: response.ts };
+  }
+
+  // 이미지 업로드. `chat.postMessage` 와 달리 파일 API 를 쓰므로 `files:write` 스코프가
+  // 필요하고, 없으면 슬랙이 `missing_scope` 로 끊는다.
+  //
+  // 반환하는 file id 는 로그·사후 확인용이다. 이 값이 있어도 그 순간 슬랙이 파일을 아직
+  // 이미지로 처리하지 않았을 수 있다(포트 주석의 실측). 성공 판정은 예외 유무로만 한다.
+  async uploadImage({
+    target,
+    threadTs,
+    png,
+    filename,
+    title,
+  }: {
+    target: string;
+    threadTs?: string;
+    png: Buffer;
+    filename: string;
+    title: string;
+  }): Promise<{ fileId: string | undefined }> {
+    const app = this.assertAppReady();
+    const destination = { channel_id: target, file: png, filename, title };
+    // 호출을 둘로 가르는 이유는 SDK 타입이다 — `thread_ts` 를 실으면 `string` 이어야 하고
+    // `string | undefined` 는 받지 않는다. 조건부 스프레드로 넣으면 그 유니온이 되어 막힌다.
+    const response = threadTs
+      ? await app.client.filesUploadV2({ ...destination, thread_ts: threadTs })
+      : await app.client.filesUploadV2(destination);
+    return { fileId: firstUploadedFileId(response) };
   }
 
   // PO-2: previewId 가 박힌 ✅ apply / ❌ cancel 버튼 Block Kit 메시지 발송.

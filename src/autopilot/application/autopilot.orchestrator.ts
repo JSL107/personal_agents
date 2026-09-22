@@ -16,6 +16,7 @@ import {
   AUTOPILOT_TASKS,
   AutopilotPreviewRequest,
   AutopilotTask,
+  AutopilotTaskImage,
 } from '../domain/autopilot-task.port';
 import { PlaybookEntry } from '../domain/playbook.type';
 
@@ -155,6 +156,8 @@ export class AutopilotOrchestrator {
     const items: {
       summary: string;
       detail?: string;
+      // 스레드에 함께 올릴 이미지. 발송 실패는 요약·상세를 무르지 않는다.
+      image?: AutopilotTaskImage;
       onDelivered?: () => Promise<void>;
       unfurlLinks?: boolean;
       // 이 item 을 낸 task 가 멘션 대상인지. 그룹의 item 중 하나라도 true 면 메인 메시지에
@@ -205,6 +208,7 @@ export class AutopilotOrchestrator {
           items.push({
             summary: result.summaryText,
             detail: result.detailText,
+            image: result.detailImage,
             onDelivered: result.onDelivered,
             unfurlLinks: result.unfurlLinks,
             notifyOwner: NOTIFY_OWNER_TASK_IDS.has(entry.taskId),
@@ -380,6 +384,26 @@ export class AutopilotOrchestrator {
                     error instanceof Error ? error.message : String(error);
                   this.logger.warn(
                     `Autopilot[${groupKey}] 스레드 댓글 발송 실패 (메인 발송 유지): ${message}`,
+                  );
+                }
+              }
+              if (item.image) {
+                try {
+                  await this.slackNotifier.uploadImage({
+                    target: resolved,
+                    threadTs: ts,
+                    png: item.image.png,
+                    filename: item.image.filename,
+                    title: item.image.title,
+                  });
+                } catch (error: unknown) {
+                  // `detailUndelivered` 에 넣지 않는다. 그 집합은 후처리(onDelivered)를
+                  // 건너뛸 대상인데, 그림은 후처리의 근거가 아니다 — 요약이 나갔으면
+                  // 그 task 의 상태는 확정돼야 하고, 그림만 다시 보낼 방법도 없다.
+                  const message =
+                    error instanceof Error ? error.message : String(error);
+                  this.logger.warn(
+                    `Autopilot[${groupKey}] 스레드 이미지 업로드 실패 (요약·상세 발송 유지): ${message}`,
                   );
                 }
               }

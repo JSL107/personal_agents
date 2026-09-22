@@ -31,4 +31,21 @@ export interface SlackNotifierPort {
     target: string;
     preview: PreviewCardMessage;
   }): Promise<{ channelId: string; messageTs: string }>;
+  // 이미지를 채널(또는 스레드)에 올린다. 텍스트로는 못 보여주는 것 — 시간축 위의 곡선,
+  // 분포 — 을 카드에 그림으로 싣기 위한 경로다.
+  //
+  // `files:write` 스코프가 필요하다. 없으면 슬랙이 `missing_scope` 로 끊는데, 그것은
+  // 발송 실패이지 이미지 문제가 아니므로 호출부가 텍스트만이라도 살릴 수 있게 예외로 던진다.
+  //
+  // ⚠️ 업로드 응답은 즉시 오지만 슬랙이 그 파일을 **이미지로 처리하는 것은 비동기**다.
+  // 2026-09-22 실측: 업로드 직후 `files.info` 는 `mimetype: ''` · 썸네일 없음으로 오고,
+  // 3초 뒤에야 `image/png` 와 `thumb_360` 이 채워졌다. 응답의 그 필드로 성공을 판정하면
+  // 정상 업로드를 실패로 읽는다 — 판정은 API 오류 유무로만 한다.
+  uploadImage(input: {
+    target: string;
+    threadTs?: string;
+    png: Buffer;
+    filename: string;
+    title: string;
+  }): Promise<{ fileId: string | undefined }>;
 }
