@@ -289,15 +289,37 @@ describe('AgentRunPrismaRepository.mergeInputSnapshot', () => {
     });
   });
 
-  it('저장된 스냅샷이 객체가 아니면(배열·null) 새 필드만 남긴다', async () => {
-    const { repo, update } = buildRepository(['배열이 저장돼 있던 경우']);
+  it('합치면 true 를 돌려준다', async () => {
+    const { repo } = buildRepository({ slackUserId: 'U1' });
 
-    await repo.mergeInputSnapshot({ id: 7, fields: { routedVia: 'hint' } });
+    await expect(
+      repo.mergeInputSnapshot({ id: 1, fields: { routedVia: 'hint' } }),
+    ).resolves.toBe(true);
+  });
 
-    expect(update).toHaveBeenCalledWith({
-      where: { id: 7 },
-      data: { inputSnapshot: { routedVia: 'hint' } },
-    });
+  // inputSnapshot 은 포트 계약상 unknown 이라 배열·스칼라도 정당한 값이다. 객체로 갈아끼우면
+  // 보조 메타데이터를 붙이려다 원본 입력을 지우게 된다 — 쓰지 않는 쪽이 맞다.
+  it.each([
+    ['배열', ['배열이 저장돼 있던 경우']],
+    ['문자열', '스칼라가 저장돼 있던 경우'],
+    ['숫자', 42],
+    ['null', null],
+  ])('저장된 스냅샷이 %s 이면 아무것도 쓰지 않는다', async (_label, stored) => {
+    const { repo, update } = buildRepository(stored);
+
+    await expect(
+      repo.mergeInputSnapshot({ id: 7, fields: { routedVia: 'hint' } }),
+    ).resolves.toBe(false);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('행이 없으면 아무것도 쓰지 않고 false', async () => {
+    const { repo, update } = buildRepository(undefined);
+
+    await expect(
+      repo.mergeInputSnapshot({ id: 999, fields: { routedVia: 'hint' } }),
+    ).resolves.toBe(false);
+    expect(update).not.toHaveBeenCalled();
   });
 });
 

@@ -3,7 +3,11 @@ import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { ConsoleEventBus } from '../../console/application/console-event-bus.service';
 import { ConsoleAgentState } from '../../console/domain/console.type';
 import { AgentType } from '../../model-router/domain/model-router.type';
-import { AgentRunStatus, TriggerType } from '../domain/agent-run.type';
+import {
+  AgentRunStatus,
+  RoutedVia,
+  TriggerType,
+} from '../domain/agent-run.type';
 import { AgentRunRepositoryPort } from '../domain/port/agent-run.repository.port';
 import { AgentRunService } from './agent-run.service';
 
@@ -922,6 +926,96 @@ describe('AgentRunService', () => {
         sinceHours: 24,
       });
       expect(result).toBe(2);
+    });
+  });
+
+  describe('attachRoutingContext', () => {
+    const attach = async (
+      override: Partial<{
+        text: string;
+        routedTo: string;
+        routedVia: RoutedVia;
+        confidence: number;
+      }> = {},
+    ): Promise<Record<string, unknown>> => {
+      const mergeInputSnapshot = jest.fn().mockResolvedValue(true);
+      repository.mergeInputSnapshot = mergeInputSnapshot;
+      await service.attachRoutingContext({
+        id: 7,
+        text: override.text ?? '오늘 뭐해?',
+        routedTo: override.routedTo ?? AgentType.PM,
+        routedVia: override.routedVia ?? 'classifier',
+        ...(override.confidence !== undefined
+          ? { confidence: override.confidence }
+          : {}),
+      });
+      expect(mergeInputSnapshot).toHaveBeenCalledTimes(1);
+      return mergeInputSnapshot.mock.calls[0][0].fields as Record<
+        string,
+        unknown
+      >;
+    };
+
+    it('원문·대상·경로를 그대로 싣는다', async () => {
+      const fields = await attach({
+        text: '내일 계획 짜줘',
+        routedTo: AgentType.PM,
+        routedVia: 'nickname',
+      });
+
+      expect(fields).toEqual({
+        routedText: '내일 계획 짜줘',
+        routedTo: AgentType.PM,
+        routedVia: 'nickname',
+      });
+    });
+
+    it('confidence 는 주어졌을 때만 싣는다 — 분류기를 타지 않은 경로에 0 이 박히면 안 된다', async () => {
+      const withValue = await attach({ confidence: 0.42 });
+      expect(withValue.routedConfidence).toBe(0.42);
+
+      const without = await attach();
+      expect(without).not.toHaveProperty('routedConfidence');
+    });
+
+    // 토큰 문자열을 리터럴로 두면 GitHub push protection 이 진짜 시크릿으로 보고 push 를 막는다
+    // (실제로 막혔다). 런타임에 조립하면 redactPii 가 보는 값은 같고 정적 스캔에는 걸리지 않는다
+    // — 리터럴로 되돌리지 말 것.
+    const fakeSlackToken = ['xoxb', '1234567890', 'a'.repeat(22)].join('-');
+
+    it('토큰류 시크릿은 마스킹한다', async () => {
+      const fields = await attach({ text: `이 토큰 좀 봐줘 ${fakeSlackToken}` });
+
+      expect(fields.routedText).not.toContain(fakeSlackToken);
+      expect(fields.routedText).toContain('[REDACTED:slack_token]');
+    });
+
+    it('상한을 넘으면 자르고 잘렸다는 표식을 남긴다', async () => {
+      const fields = await attach({ text: 'ㄱ'.repeat(600) });
+
+      const routedText = fields.routedText as string;
+      expect(routedText).toMatch(/…\[잘림\]$/);
+      expect(routedText.replace('…[잘림]', '')).toHaveLength(500);
+    });
+
+    it('상한 이하면 자르지 않고 표식도 안 붙인다', async () => {
+      const fields = await attach({ text: 'ㄱ'.repeat(500) });
+
+      expect(fields.routedText).toHaveLength(500);
+      expect(fields.routedText).not.toContain('[잘림]');
+    });
+
+    it('repository 가 merge 를 지원하지 않으면 조용히 통과한다', async () => {
+      repository.mergeInputSnapshot = undefined;
+
+      await expect(
+        service.attachRoutingContext({
+          id: 7,
+          text: '오늘 뭐해?',
+          routedTo: AgentType.PM,
+          routedVia: 'classifier',
+        }),
+      ).resolves.toBeUndefined();
     });
   });
 });

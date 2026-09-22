@@ -8,6 +8,7 @@ import {
 
 import { evaluateContract } from '../../agent-registry/contract-inspector';
 import { DomainException } from '../../common/exception/domain.exception';
+import { redactPii } from '../../common/util/pii-redaction.util';
 import { bubbleForActiveRun } from '../../console/application/agent-activity-bubble';
 import { ConsoleEventBus } from '../../console/application/console-event-bus.service';
 import { bubbleForState } from '../../console/application/derive-agent-state';
@@ -18,7 +19,6 @@ import {
 import { EPISODIC_MEMORY_PORT } from '../../episodic-memory/domain/port/episodic-memory.port';
 import { EpisodicMemoryPort } from '../../episodic-memory/domain/port/episodic-memory.port';
 import { AgentType } from '../../model-router/domain/model-router.type';
-import { redactPii } from '../../model-router/infrastructure/pii-redaction.util';
 import {
   AgentRunChainNode,
   AgentRunStatus,
@@ -487,7 +487,7 @@ export class AgentRunService implements OnApplicationBootstrap {
       return;
     }
 
-    await this.repository.mergeInputSnapshot({
+    const merged = await this.repository.mergeInputSnapshot({
       id,
       fields: {
         routedText: clipRoutedText(redactPii(text)),
@@ -496,6 +496,12 @@ export class AgentRunService implements OnApplicationBootstrap {
         ...(confidence !== undefined ? { routedConfidence: confidence } : {}),
       },
     });
+    // 조용히 빠지면 "기록이 없다" 와 "기록을 포기했다" 를 나중에 구분할 수 없다.
+    if (!merged) {
+      this.logger.warn(
+        `라우팅 근거 기록 건너뜀 — agentRunId=${id} (inputSnapshot 이 객체가 아니거나 행 없음)`,
+      );
+    }
   }
 
   // 가장 최근 SUCCEEDED AgentRun 1건 조회. slackUserId 옵셔널 — 명시 시 inputSnapshot.slackUserId 매칭.

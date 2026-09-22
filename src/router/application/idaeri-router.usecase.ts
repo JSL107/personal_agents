@@ -136,7 +136,9 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
     // 워커들은 자기 실행 입력만 스냅샷에 담아서 원문이 어디에도 남지 않았고, 그래서 분류
     // 정확도를 사후에 잴 방법이 없었다. setParentId 와 같은 이유로 실패를 삼킨다 —
     // 기록이 빠지는 것보다 사용자 요청이 통째로 실패하는 쪽이 나쁘다.
-    if (input.text && outcome.agentRunId > 0) {
+    // reusedAgentRun 이 서면 그 id 는 과거 실행의 것이다 — 이번 요청으로 덮어쓰면 그 행이
+    // 다른 요청으로 둔갑해, 기록을 남기려다 원장을 망가뜨린다 (codex review #629 P1).
+    if (input.text && outcome.agentRunId > 0 && !outcome.reusedAgentRun) {
       try {
         await this.agentRunService.attachRoutingContext({
           id: outcome.agentRunId,
