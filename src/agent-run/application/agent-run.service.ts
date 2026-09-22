@@ -18,10 +18,12 @@ import {
 import { EPISODIC_MEMORY_PORT } from '../../episodic-memory/domain/port/episodic-memory.port';
 import { EpisodicMemoryPort } from '../../episodic-memory/domain/port/episodic-memory.port';
 import { AgentType } from '../../model-router/domain/model-router.type';
+import { redactPii } from '../../model-router/infrastructure/pii-redaction.util';
 import {
   AgentRunChainNode,
   AgentRunStatus,
   EvidenceInput,
+  RoutedVia,
   STALE_RUN_THRESHOLD_MINUTES,
   TriggerType,
 } from '../domain/agent-run.type';
@@ -456,6 +458,46 @@ export class AgentRunService implements OnApplicationBootstrap {
     await this.repository.updateParentId({ id, parentId });
   }
 
+  /**
+   * dispatch 를 마친 run 에 "무엇을 받아 어디로 보냈는지" 를 덧붙인다.
+   *
+   * 워커들은 자기 실행에 필요한 값만 inputSnapshot 에 담아서, 사용자가 실제로 친 문장이
+   * 원장 어디에도 남지 않았다. 분류가 틀려도 흔적이 없어 사후에 정확도를 잴 수 없고,
+   * 라우팅 프롬프트를 고쳐도 좋아졌는지 나빠졌는지 대조할 기준이 서지 않는다.
+   * (2026-09-22 실측: SLACK_MENTION 109건 전부 원문 없음 — 채점 표본을 만들 수 없었다.)
+   *
+   * 원문은 사용자 입력이라 토큰·키가 섞일 수 있어 redactPii 를 거치고, 원장이 대화 로그로
+   * 부풀지 않도록 길이를 자른다. 자른 사실은 ROUTED_TEXT_TRUNCATION_MARK 로 남겨 "짧은
+   * 입력" 과 "잘린 입력" 을 나중에 구분할 수 있게 한다.
+   */
+  async attachRoutingContext({
+    id,
+    text,
+    routedTo,
+    routedVia,
+    confidence,
+  }: {
+    id: number;
+    text: string;
+    routedTo: string;
+    routedVia: RoutedVia;
+    confidence?: number;
+  }): Promise<void> {
+    if (!this.repository.mergeInputSnapshot) {
+      return;
+    }
+
+    await this.repository.mergeInputSnapshot({
+      id,
+      fields: {
+        routedText: clipRoutedText(redactPii(text)),
+        routedTo,
+        routedVia,
+        ...(confidence !== undefined ? { routedConfidence: confidence } : {}),
+      },
+    });
+  }
+
   // 가장 최근 SUCCEEDED AgentRun 1건 조회. slackUserId 옵셔널 — 명시 시 inputSnapshot.slackUserId 매칭.
   async findLatestSucceededRun({
     agentType,
@@ -699,6 +741,19 @@ const CAUSE_LEDGER_LIMIT = 1_000;
 // DomainException 계열은 파싱 실패의 raw 응답 앞부분을 cause 에만 담는다. 문자열을 돌려주는
 // 이유는 소비처가 둘이기 때문이다 — 로그 문장(접미사로 붙는다)과 원장 output.cause.
 // tsconfig target 이 ES2022 미만이라 Error.cause 는 타입에 없다.
+// 라우팅 원문 상한. 원장은 실행 기록이지 대화 로그가 아니다 — 슬랙 멘션에 로그·스택트레이스를
+// 통째로 붙여 넣는 입력이 있어 상한이 없으면 행 하나가 수십 KB 로 부푼다. 분류 정확도를 채점하는
+// 데는 앞부분이면 충분하다(분류기 자신도 40자만 로그에 남겨 왔다).
+const ROUTED_TEXT_LIMIT = 500;
+// 잘렸다는 사실 자체가 정보다. 이 표식이 없으면 "짧게 친 입력" 과 "길어서 잘린 입력" 이
+// 원장에서 같은 모양이 되어, 분류가 틀렸을 때 모델이 실제로 무엇을 봤는지 되짚을 수 없다.
+const ROUTED_TEXT_TRUNCATION_MARK = '…[잘림]';
+
+const clipRoutedText = (text: string): string =>
+  text.length > ROUTED_TEXT_LIMIT
+    ? `${text.slice(0, ROUTED_TEXT_LIMIT)}${ROUTED_TEXT_TRUNCATION_MARK}`
+    : text;
+
 const extractCauseMessage = (error: unknown): string | null => {
   const cause = (error as { cause?: unknown } | null | undefined)?.cause;
   if (cause instanceof Error) {

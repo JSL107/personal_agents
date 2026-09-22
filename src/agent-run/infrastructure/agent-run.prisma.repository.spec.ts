@@ -232,6 +232,75 @@ describe('AgentRunPrismaRepository.updateParentId', () => {
   });
 });
 
+// mergeInputSnapshot 은 읽고-합치고-쓰는 세 걸음이라 "덮어쓰기" 로 퇴화하기 쉽다.
+// 기존 키가 살아남는지를 검증하지 않으면, 라우팅 근거를 붙이는 순간 워커가 쓴 스냅샷이
+// 통째로 사라져도 아무도 모른다.
+describe('AgentRunPrismaRepository.mergeInputSnapshot', () => {
+  const buildRepository = (
+    stored: unknown,
+  ): {
+    repo: AgentRunPrismaRepository;
+    update: jest.Mock;
+  } => {
+    const update = jest.fn().mockResolvedValue(undefined);
+    const findUnique = jest
+      .fn()
+      .mockResolvedValue(
+        stored === undefined ? null : { inputSnapshot: stored },
+      );
+    const prismaMock = {
+      agentRun: { update, findUnique },
+    } as unknown as PrismaService;
+    return { repo: new AgentRunPrismaRepository(prismaMock), update };
+  };
+
+  it('기존 키를 보존하면서 새 필드만 덧붙인다', async () => {
+    const { repo, update } = buildRepository({
+      slackUserId: 'U123',
+      prs: ['owner/repo#1'],
+    });
+
+    await repo.mergeInputSnapshot({
+      id: 42,
+      fields: { routedText: '오늘 뭐해?', routedVia: 'classifier' },
+    });
+
+    expect(update).toHaveBeenCalledWith({
+      where: { id: 42 },
+      data: {
+        inputSnapshot: {
+          slackUserId: 'U123',
+          prs: ['owner/repo#1'],
+          routedText: '오늘 뭐해?',
+          routedVia: 'classifier',
+        },
+      },
+    });
+  });
+
+  it('같은 키는 새 값이 이긴다', async () => {
+    const { repo, update } = buildRepository({ routedText: '옛 값' });
+
+    await repo.mergeInputSnapshot({ id: 1, fields: { routedText: '새 값' } });
+
+    expect(update).toHaveBeenCalledWith({
+      where: { id: 1 },
+      data: { inputSnapshot: { routedText: '새 값' } },
+    });
+  });
+
+  it('저장된 스냅샷이 객체가 아니면(배열·null) 새 필드만 남긴다', async () => {
+    const { repo, update } = buildRepository(['배열이 저장돼 있던 경우']);
+
+    await repo.mergeInputSnapshot({ id: 7, fields: { routedVia: 'hint' } });
+
+    expect(update).toHaveBeenCalledWith({
+      where: { id: 7 },
+      data: { inputSnapshot: { routedVia: 'hint' } },
+    });
+  });
+});
+
 describe('AgentRunPrismaRepository.findActiveRuns', () => {
   it('객체 inputSnapshot만 보존하고 배열·스칼라·null은 null로 정규화한다', async () => {
     const startedAt = new Date('2026-08-12T00:00:00.000Z');
