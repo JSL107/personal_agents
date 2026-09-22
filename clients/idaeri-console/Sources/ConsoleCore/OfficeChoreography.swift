@@ -96,6 +96,18 @@ public let cozyIdlePose = "idle"
 /// 셋 중 하나만 바꾸면 사람이 상판 위로 떠오르거나 다리가 중간에서 잘린다.
 public let cozyDeskSeatPose = "sit-back"
 
+/// 부서 특화 콘솔에서 쓰는 좌석 포즈 — **정면·상반신**(`sit`).
+///
+/// 뒷모습 원화를 쓰지 않는 이유는 **콘솔 그림이 자기 의자를 이미 그려 놓았기 때문**이다.
+/// 의자까지 그려진 전신을 그 위에 앉히면 의자가 두 개로 보이고, 콘솔 앞판보다 앞에 두면
+/// 사람이 작업면 위에 걸터앉은 그림이 된다(사용자 보고: "공공 에셋과 겹쳐서 이상하게
+/// 보임" — 실제 앱 화면으로 확인). 반대로 뒤에 두면 전신의 다리가 중간에서 잘린다.
+///
+/// 정면 원화는 허리 아래가 없어 두 문제가 함께 사라진다 — 콘솔 앞판이 가려 줄 하반신이
+/// 애초에 없고, 콘솔이 그려 둔 의자가 그 사람의 의자로 읽힌다. 일반 책상(`cozyDeskSeatPose`)
+/// 과 갈라 두는 것이 이 상수의 존재 이유다.
+public let officeFeatureConsoleSeatPose = "sit"
+
 /// 요청 이름을 에셋 어휘로 접는다.
 ///
 /// **방향 이름과 걸음 프레임이 전부 `idle` 로 접히는 것이 이 함수의 요점이다.** `down`·`up`·
@@ -118,6 +130,10 @@ public func normalizedCozyPose(_ requested: String) -> String {
         return "sit-back"
     case "sitting":
         return "sitting"
+    // 의자를 들고 오는 테이블 앞 착석. `OfficeInteractionPose.sittingAtTable` 의 rawValue 가
+    // 그대로 들어오므로 붙여 쓴 형태도 함께 받는다.
+    case "sit-table", "sittable", "sittingattable":
+        return "sit-table"
     case "typing":
         return "typing"
     case "reading":
@@ -173,6 +189,8 @@ public func cozyPosePosture(assetIndex: Int, pose: String) -> CozyPosePosture {
         return .seated
     case "sit-back":
         return .seated
+    case "sit-table":
+        return .seated
     case "typing":
         return assetIndex == 18 ? .standing : .seated
     case "sitting":
@@ -204,6 +222,10 @@ public func cozyPoseCandidates(_ normalized: String) -> [String] {
     // 소파에 놓으면 상반신만 뜨고, 이쪽을 책상에 놓으면 다리가 상판 아래로 샌다.
     case "sitting":
         return ["sitting"]
+    // 테이블용이 없으면 소파용으로 내려간다 — 자리는 맞고 의자만 사라져 공중에 앉은 것처럼
+    // 보이지만, 서 있는 기본 그림으로 떨어지는 것보다는 뜻이 가깝다.
+    case "sit-table":
+        return ["sit-table", "sitting"]
     // **앉은 그림을 먼저 본다.** `sit` 원화는 허리 아래가 없고 팔을 앞으로 뻗은 그림으로
     // 다시 그려졌다 — 책상 뒤에 놓으면 다리가 샐 자리가 없어 "책상을 관통한" 인상이
     // 사라진다(사용자 보고로 재제작). 그 자세가 이미 타이핑이라 `typing` 원화를 따로
@@ -265,7 +287,8 @@ public func resolveCozyPose(
     // `idle`(서 있는 전신)로 떨어진다 — 파일도 있고 계약에도 등록했는데 화면만 안 바뀌어
     // 원인이 늦게 드러난다(`sit-back` 을 넣을 때 실제로 그랬다).
     let wanted: CozyPosePosture = requiredPosture
-        ?? (["sit", "sit-back", "sitting", "typing"].contains(normalized) ? .seated : .standing)
+        ?? (["sit", "sit-back", "sit-table", "sitting", "typing"].contains(normalized)
+            ? .seated : .standing)
     for candidate in cozyPoseCandidates(normalized) {
         guard !cozyPoseDrawsOwnFurniture(assetIndex: assetIndex, pose: candidate) else {
             continue

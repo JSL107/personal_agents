@@ -75,7 +75,11 @@ func runCozyAssetCheck() -> Bool {
     // 정면 착석으로 내려가 혼자 화면 밖을 본다.
     let requiredPoseAssets = (0..<cozyCharacterAssetCount).map { "agent-\($0)-sit" }
         + (0..<cozyCharacterAssetCount).map { "agent-\($0)-sit-back" }
-        + (0..<cozyCharacterAssetCount).map { "agent-\($0)-sitting" } + [
+        + (0..<cozyCharacterAssetCount).map { "agent-\($0)-sitting" }
+        // 테이블 앞 착석(`sit-table`)도 전원이 가진다. 소파용(`sitting`)과 가구가 앉을 면을
+        // 주는지가 정반대라 서로 대신할 수 없다 — 빠지면 그 사람만 상판뿐인 테이블 앞에서
+        // 허공에 앉는다.
+        + (0..<cozyCharacterAssetCount).map { "agent-\($0)-sit-table" } + [
         "agent-0-writing", "agent-0-typing", "agent-0-reading", "agent-0-drinking",
         "agent-1-writing", "agent-1-typing", "agent-1-reading", "agent-1-drinking",
         "agent-2-typing", "agent-3-typing", "agent-4-typing", "agent-5-typing",

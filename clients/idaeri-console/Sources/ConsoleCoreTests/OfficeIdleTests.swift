@@ -185,8 +185,8 @@ func runOfficeIdleTests(_ t: TestRunner) {
     let expectedFurniturePoses: [FurnitureKind: OfficeInteractionPose] = [
         .sofa2: .sitting,
         .sofa3: .sitting,
-        .coffeeTable: .sitting,
-        .meetingTable: .sitting,
+        .coffeeTable: .sittingAtTable,
+        .meetingTable: .sittingAtTable,
         .coffeeMachine: .drinking,
         .waterCooler: .drinking,
         .vendingMachine: .drinking,
@@ -204,6 +204,9 @@ func runOfficeIdleTests(_ t: TestRunner) {
         .plantSmall: .tending,
         .lockers2: .stowing,
     ]
+    // 소파는 그림에 좌판이 있어 의자 없는 착석(`sitting`), 회의·응접 테이블은 상판만 있어
+    // 의자를 함께 들고 오는 착석(`sittingAtTable`)이다. 둘을 같은 값으로 되돌리면 상판뿐인
+    // 테이블 앞에서 사람이 허공에 앉는다(사용자 보고로 갈랐다).
     for (kind, pose) in expectedFurniturePoses {
         t.expectEqual(kind.interactionPose, pose, "\(kind.rawValue) 자세 매핑")
     }
