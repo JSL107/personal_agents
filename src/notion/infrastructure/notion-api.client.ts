@@ -90,6 +90,7 @@ export class NotionApiClient implements NotionClientPort {
     }
 
     const tasks: NotionTask[] = [];
+    let failedDbCount = 0;
     for (const databaseId of targetDbs) {
       const response = await this.queryDbOrNull(
         databaseId,
@@ -97,6 +98,7 @@ export class NotionApiClient implements NotionClientPort {
         lastEditedSinceIsoDateTime,
       );
       if (!response) {
+        failedDbCount += 1;
         continue;
       }
       for (const page of response.results) {
@@ -105,6 +107,19 @@ export class NotionApiClient implements NotionClientPort {
         }
         tasks.push(this.toNotionTask(page, databaseId));
       }
+    }
+
+    // 대상 DB 가 전부 실패하면 호출부에는 "할 일 0건" 으로만 보여 "정말 비었다" 와 구분되지 않는다.
+    // 부분 실패는 살아 있는 DB 결과가 있으니 기존대로 skip + warn 이고, 전량 실패만 예외로 올린다.
+    // 소비처 3곳은 이미 실패 배선을 갖고 있다 — PM / PO Shadow 는 try/catch 로 degrade 하고
+    // (PO Shadow 는 degradedSources 표시까지), 잠재의식은 engine 이 baseline 전진을 건너뛴다.
+    // 예외가 없던 동안에는 권한이 끊겨도 "항목이 전부 사라졌다" 로 읽혀 baseline 이 그대로 전진했다.
+    if (failedDbCount === targetDbs.length) {
+      throw new NotionException({
+        code: NotionErrorCode.REQUEST_FAILED,
+        message: `Notion task DB ${targetDbs.length}건 조회가 모두 실패해 "빈 DB" 와 구분할 수 없다. 통합 연결(Connections) 공유 여부와 DB ID 를 확인할 것.`,
+        status: DomainStatus.BAD_GATEWAY,
+      });
     }
 
     return tasks;

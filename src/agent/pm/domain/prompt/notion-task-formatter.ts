@@ -20,9 +20,12 @@ export const formatNotionTasksAsPromptSection = (
   const header = '[Notion task DB 의 항목]';
   const lines: string[] = [];
 
+  // 대상 DB 조회가 전부 실패하면 client 가 예외로 끊으므로 (권한 미부여 / not_found) 여기 0건은
+  // "조회는 됐는데 컷오프 안에 항목이 없다" 는 뜻이다. DB 가 2개 이상이고 일부만 실패한 경우는
+  // 여전히 skip + warn 이라 이 문구로 합류할 수 있다 — 그 구분은 로그가 들고 있다.
   if (tasks.length === 0) {
     return {
-      content: [header, '(없음 — DB 가 비었거나 권한 부여 안 된 DB)'].join(
+      content: [header, '(없음 — 컷오프 기간 내 편집된 항목이 없음)'].join(
         '\n',
       ),
       truncatedCount: 0,
