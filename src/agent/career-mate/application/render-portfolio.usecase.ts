@@ -49,13 +49,16 @@ export class RenderPortfolioUsecase {
     const latest = await this.repository.findLatestBySlackUser(slackUserId);
     let profile: CareerProfileData;
     let agentRunId: number;
+    let reusedAgentRun: boolean;
     if (latest) {
       profile = latest.profileJson;
       agentRunId = latest.agentRunId ?? 0;
+      reusedAgentRun = true;
     } else {
       const built = await this.buildProfile.execute({ slackUserId });
       profile = built.result;
       agentRunId = built.agentRunId;
+      reusedAgentRun = false;
     }
 
     const page = await this.notionClient.findOrCreateChildPage({
@@ -68,6 +71,6 @@ export class RenderPortfolioUsecase {
       blocks: buildPortfolioBlocks(profile),
     });
 
-    return { url: page.url, pageId: page.pageId, agentRunId };
+    return { url: page.url, pageId: page.pageId, agentRunId, reusedAgentRun };
   }
 }

@@ -40,6 +40,7 @@ const buildClassifierMock = (
 const buildAgentRunServiceMock = (): jest.Mocked<AgentRunService> =>
   ({
     setParentId: jest.fn().mockResolvedValue(undefined),
+    attachRoutingContext: jest.fn().mockResolvedValue(undefined),
   }) as unknown as jest.Mocked<AgentRunService>;
 
 const buildUsecase = (
@@ -549,6 +550,132 @@ describe('IdaeriRouterUsecase', () => {
       ).rejects.toMatchObject({
         routerErrorCode: RouterErrorCode.UNSUPPORTED_AGENT_TYPE,
       });
+    });
+  });
+
+  describe('라우팅 근거 기록', () => {
+    const PM_RUN_ID = 55;
+
+    it('분류기를 탄 경로는 원문·대상·확신도를 classifier 로 기록한다', async () => {
+      const dispatcher = buildDispatcher(AgentType.PM, () => ({
+        agentRunId: PM_RUN_ID,
+      }));
+      const classifier = buildClassifierMock({
+        agentType: AgentType.PM,
+        confidence: 0.93,
+        reason: '계획 수립 요청',
+      });
+      const { usecase, agentRunService } = buildUsecase(
+        [dispatcher],
+        classifier,
+      );
+
+      await usecase.dispatch({
+        source: 'SLACK_MESSAGE',
+        slackUserId: 'U1',
+        text: '내일 뭐부터 하지?',
+      });
+
+      expect(agentRunService.attachRoutingContext).toHaveBeenCalledWith({
+        id: PM_RUN_ID,
+        text: '내일 뭐부터 하지?',
+        routedTo: AgentType.PM,
+        routedVia: 'classifier',
+        confidence: 0.93,
+      });
+    });
+
+    // 슬래시는 분류기를 타지 않는다. confidence 를 실으면 분류기가 낸 값처럼 보여 채점이 오염된다.
+    it('슬래시(agentTypeHint) 경로는 hint 로 기록하고 confidence 를 싣지 않는다', async () => {
+      const dispatcher = buildDispatcher(AgentType.PM, () => ({
+        agentRunId: PM_RUN_ID,
+      }));
+      const { usecase, agentRunService } = buildUsecase([dispatcher]);
+
+      await usecase.dispatch({
+        source: 'SLACK_COMMAND',
+        slackUserId: 'U1',
+        text: '오늘 할 일',
+        agentTypeHint: AgentType.PM,
+      });
+
+      expect(agentRunService.attachRoutingContext).toHaveBeenCalledWith({
+        id: PM_RUN_ID,
+        text: '오늘 할 일',
+        routedTo: AgentType.PM,
+        routedVia: 'hint',
+      });
+    });
+
+    it('text 가 없으면 기록하지 않는다', async () => {
+      const dispatcher = buildDispatcher(AgentType.PM, () => ({
+        agentRunId: PM_RUN_ID,
+      }));
+      const { usecase, agentRunService } = buildUsecase([dispatcher]);
+
+      await usecase.dispatch({
+        source: 'SLACK_COMMAND',
+        slackUserId: 'U1',
+        agentTypeHint: AgentType.PM,
+      });
+
+      expect(agentRunService.attachRoutingContext).not.toHaveBeenCalled();
+    });
+
+    // agentRunId 0 은 "유효 run 없음" sentinel (비동기 BLOG · UNKNOWN 분기).
+    it('agentRunId 가 0 이면 기록하지 않는다', async () => {
+      const dispatcher = buildDispatcher(AgentType.PM, () => ({
+        agentRunId: 0,
+      }));
+      const { usecase, agentRunService } = buildUsecase([dispatcher]);
+
+      await usecase.dispatch({
+        source: 'SLACK_MESSAGE',
+        slackUserId: 'U1',
+        text: '뭐라도 해줘',
+        agentTypeHint: AgentType.PM,
+      });
+
+      expect(agentRunService.attachRoutingContext).not.toHaveBeenCalled();
+    });
+
+    // CAREER_MATE 의 RENDER_RESUME·RENDER_PORTFOLIO 는 저장된 프로필이 있으면 그 프로필을
+    // 만든 과거 실행의 id 를 돌려준다. 거기에 이번 요청을 쓰면 과거 기록이 둔갑한다.
+    it('재사용된 run 에는 기록하지 않는다', async () => {
+      const dispatcher = buildDispatcher(AgentType.CAREER_MATE, () => ({
+        agentRunId: 31,
+        reusedAgentRun: true,
+      }));
+      const { usecase, agentRunService } = buildUsecase([dispatcher]);
+
+      await usecase.dispatch({
+        source: 'SLACK_MESSAGE',
+        slackUserId: 'U1',
+        text: '이력서 렌더해줘',
+        agentTypeHint: AgentType.CAREER_MATE,
+      });
+
+      expect(agentRunService.attachRoutingContext).not.toHaveBeenCalled();
+    });
+
+    it('기록이 실패해도 dispatch 결과는 그대로 돌려준다', async () => {
+      const dispatcher = buildDispatcher(AgentType.PM, () => ({
+        agentRunId: PM_RUN_ID,
+      }));
+      const { usecase, agentRunService } = buildUsecase([dispatcher]);
+      agentRunService.attachRoutingContext.mockRejectedValueOnce(
+        new Error('DB 연결 끊김'),
+      );
+
+      const result = await usecase.dispatch({
+        source: 'SLACK_MESSAGE',
+        slackUserId: 'U1',
+        text: '내일 뭐부터 하지?',
+        agentTypeHint: AgentType.PM,
+      });
+
+      expect(result.agentRunId).toBe(PM_RUN_ID);
+      expect(result.workerType).toBe(AgentType.PM);
     });
   });
 });

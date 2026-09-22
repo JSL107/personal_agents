@@ -7,6 +7,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { LLM_CLI_TIMEOUT_MS } from '../../common/llm/llm-timeout.constant';
+import { redactPii } from '../../common/util/pii-redaction.util';
 import {
   CompletionRequest,
   CompletionResponse,
@@ -18,7 +19,6 @@ import {
   getRealHomeDir,
   killProcessTree,
 } from './cli-process.util';
-import { redactPii } from './pii-redaction.util';
 
 const CLAUDE_EXECUTABLE = 'claude';
 // 공유 상수 — worker lockDuration(common/queue/worker-options.constant.ts) 도 이 값을 참조한다.

@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { resolveAgentTypeByNickname } from '../../agent-registry/agent-registry';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
+import { RoutedVia } from '../../agent-run/domain/agent-run.type';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { ConversationContext } from '../domain/conversation-context.type';
@@ -74,11 +75,25 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
     const nicknameAgentType = input.text
       ? resolveAgentTypeByNickname(input.text, this.dispatcherByType.keys())
       : undefined;
-    const classified = input.agentTypeHint
-      ? { agentType: input.agentTypeHint, userInstruction: undefined }
+    // routedVia 는 원장에 그대로 실린다 — 분류기를 탄 회차만 골라 채점하려면 셋을 구분해야 한다.
+    const classified: {
+      agentType: AgentType;
+      userInstruction?: string | undefined;
+      routedVia: RoutedVia;
+      confidence?: number;
+    } = input.agentTypeHint
+      ? {
+          agentType: input.agentTypeHint,
+          userInstruction: undefined,
+          routedVia: 'hint',
+        }
       : nicknameAgentType
-        ? { agentType: nicknameAgentType, userInstruction: undefined }
-        : await this.classifyOrThrow(input);
+        ? {
+            agentType: nicknameAgentType,
+            userInstruction: undefined,
+            routedVia: 'nickname',
+          }
+        : { ...(await this.classifyOrThrow(input)), routedVia: 'classifier' };
     const agentType = classified.agentType;
 
     const dispatcher = this.dispatcherByType.get(agentType);
@@ -116,6 +131,31 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
     this.logger.log(
       `Router dispatch 완료 — agentType=${agentType} agentRunId=${outcome.agentRunId} model=${outcome.modelUsed} depth=${chain.depth}`,
     );
+
+    // 라우팅 근거를 원장에 붙인다 — 사용자가 친 원문, 고른 worker, 고른 경로, 분류 확신도.
+    // 워커들은 자기 실행 입력만 스냅샷에 담아서 원문이 어디에도 남지 않았고, 그래서 분류
+    // 정확도를 사후에 잴 방법이 없었다. setParentId 와 같은 이유로 실패를 삼킨다 —
+    // 기록이 빠지는 것보다 사용자 요청이 통째로 실패하는 쪽이 나쁘다.
+    // reusedAgentRun 이 서면 그 id 는 과거 실행의 것이다 — 이번 요청으로 덮어쓰면 그 행이
+    // 다른 요청으로 둔갑해, 기록을 남기려다 원장을 망가뜨린다 (codex review #629 P1).
+    if (input.text && outcome.agentRunId > 0 && !outcome.reusedAgentRun) {
+      try {
+        await this.agentRunService.attachRoutingContext({
+          id: outcome.agentRunId,
+          text: input.text,
+          routedTo: agentType,
+          routedVia: classified.routedVia,
+          ...(classified.confidence !== undefined
+            ? { confidence: classified.confidence }
+            : {}),
+        });
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.warn(
+          `Router 라우팅 근거 기록 실패 — agentRunId=${outcome.agentRunId}: ${message}`,
+        );
+      }
+    }
 
     // step 8 — handoff chain audit log. parent.id 가 input.contextRefs 에 실려오면 child run 의
     // parentId 컬럼에 기록. 실패는 audit 누락에 그치므로 chain 진행 자체를 멈추지 않는다.
@@ -203,9 +243,11 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
   // agentTypeHint 가 없을 때만 호출된다. text 도 없으면 분류 불가 → INTENT_HINT_REQUIRED.
   // classifier 가 UNKNOWN 반환 시 INTENT_CLASSIFY_FAILED — 사용자에게 의도 모호 안내.
   // agentType 뿐 아니라 userInstruction(직전 대화 기반 사용자 지시)도 함께 반환 — 워커 전달용.
-  private async classifyOrThrow(
-    input: DispatchInput,
-  ): Promise<{ agentType: AgentType; userInstruction?: string }> {
+  private async classifyOrThrow(input: DispatchInput): Promise<{
+    agentType: AgentType;
+    userInstruction?: string;
+    confidence: number;
+  }> {
     const text = input.text?.trim() ?? '';
     if (text.length === 0) {
       this.logger.warn(
@@ -236,6 +278,7 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
     return {
       agentType: classification.agentType,
       userInstruction: classification.userInstruction,
+      confidence: classification.confidence,
     };
   }
 }

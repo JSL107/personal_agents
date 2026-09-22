@@ -9,6 +9,12 @@ import { DispatchInput } from '../idaeri-router.port';
 // 가 별도 worker 분기 없이 그대로 say. step 7 으로 자연어 → 풍부한 결과 답글이 가능해진다.
 export interface DispatchOutcome {
   agentRunId: number;
+  // agentRunId 가 **이번 요청이 만든 행이 아니라 재사용한 과거 행** 일 때 true.
+  // CAREER_MATE 의 RENDER_RESUME·RENDER_PORTFOLIO 는 저장된 프로필이 있으면 새 실행을
+  // 만들지 않고 그 프로필을 만든 실행의 id 를 돌려준다. manager 가 이번 요청을 근거로
+  // 그 행을 고쳐 쓰면 과거 기록이 다른 요청으로 둔갑하므로, 사후 기록 계열(라우팅 근거)은
+  // 이 플래그가 서면 건너뛴다. 생략하면 "이번에 만든 행" 으로 본다.
+  reusedAgentRun?: boolean;
   output: unknown;
   modelUsed: string;
   formattedText: string;
