@@ -28,16 +28,21 @@ import {
 const MAX_PROMPT_BYTES = 16_000;
 
 // section drop 우선순위 — 인덱스 0 부터 차례로 drop.
-// userText / github / notion 은 절대 drop 하지 않는다 — empty guard 를 통과한 유일한 task source 가 잘려
+// userText / github 은 절대 drop 하지 않는다 — empty guard 를 통과한 유일한 task source 가 잘려
 // 모델이 빈 prompt 로 호출되는 regression (codex review b1309omm0 P2) 방지.
 // V3-1: 새 섹션 recentPlanSummaries 는 7일치 패턴 (참고용) 이라 직전 plan/worklog 보다 먼저 drop.
 // OPS-3: inboxItems 는 reacted Slack 메시지로 context cap 을 단독으로 초과시킬 수 있어 가장 먼저 drop.
 // PM-3': similarPlans 는 FTS 참고용으로 가장 먼저 drop.
+// notion 도 위 절대 보호 대상이었으나 previousWorklog 앞으로 내렸다 — 보호의 근거였던 "빈 prompt"
+// 는 cap 을 넘긴 상황에서는 성립하지 않고(넘겼다는 것 자체가 내용이 많다는 뜻이다), 남은 근거인
+// "유일한 task source" 도 github 이 함께 보호받는 지금은 유효하지 않다. 보호를 유지하면 노션 DB 가
+// 묵은 항목만 들고 있어도 어제 worklog·plan 을 밀어내고 끝까지 살아남는다.
 const TRIM_ORDER: ReadonlyArray<keyof PromptSections> = [
   'similarPlans',
   'inboxItems',
   'slackMentions',
   'recentPlanSummaries',
+  'notion',
   'previousWorklog',
   'previousPlan',
 ];

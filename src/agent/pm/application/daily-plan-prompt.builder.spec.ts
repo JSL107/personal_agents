@@ -184,6 +184,47 @@ describe('DailyPlanPromptBuilder', () => {
     expect(built.prompt).not.toContain('## 지난 7일 plan 패턴');
   });
 
+  // 본 변경의 핵심 — notion 이 절대 보호였을 때는 cap 을 넘기면 어제 worklog·plan 이 먼저 잘리고
+  // 묵은 노션 항목이 끝까지 살아남았다. 저장값이 아니라 최종 prompt 문자열로 대조한다.
+  it('cap 초과 시 notion 이 먼저 drop 되고 어제 worklog / plan 은 살아남는다', () => {
+    // 크기를 노려서 잡는다 — notion 만 버리면 cap 아래로 내려오는 지점. 전부 잘리는 크기로
+    // 만들면 "노션이 먼저 잘렸다" 가 아니라 "다 잘렸다" 가 되어 증명이 안 된다.
+    const moderate = '가'.repeat(200);
+    const notionTasks = Array.from({ length: 10 }, (_, index) => ({
+      databaseId: 'db',
+      pageId: `pg${index}`,
+      url: 'https://notion.so/pg',
+      title: `묵은항목${index} ` + '나'.repeat(400),
+      properties: {},
+    }));
+
+    const built = builder.build(
+      buildBaseContext({
+        userText: '오늘 할 일',
+        notionTasks,
+        previousPlan: {
+          plan: buildDailyPlan(moderate),
+          endedAt: new Date('2026-04-26T05:00:00Z'),
+          agentRunId: 99,
+        },
+        previousWorklog: {
+          review: buildDailyReview(moderate),
+          endedAt: new Date('2026-04-26T05:00:00Z'),
+          agentRunId: 98,
+        },
+      }),
+    );
+
+    expect(built.truncated.droppedSections).toContain('notion');
+    expect(built.truncated.droppedSections).not.toContain('previousWorklog');
+    expect(built.truncated.droppedSections).not.toContain('previousPlan');
+
+    // 저장값이 아니라 최종 prompt 문자열로 대조한다.
+    expect(built.prompt).not.toContain('[Notion task DB 의 항목]');
+    expect(built.prompt).not.toContain('묵은항목0');
+    expect(built.prompt).toContain('어제 한 일 회고');
+  });
+
   it("userText 가 ', ' 로 2개 이상 짧은 항목으로 split 되면 [사용자 명시 TODO] 섹션으로 렌더", () => {
     const built = builder.build(
       buildBaseContext({ userText: 'PR 리뷰, 회의 준비, 문서 보강' }),
@@ -315,22 +356,28 @@ describe('DailyPlanPromptBuilder — 저장을 거친 외부 제목 경계', () 
   });
 });
 describe('DailyPlanPromptBuilder — 자르기와 경계', () => {
-  // notion 은 TRIM_ORDER 에 없어 drop 되지 않는다. 그래서 상한을 넘기면 꼬리 자르기가
-  // notion 의 감싼 블록 한가운데에 떨어진다 — 이 PR 이 "잘려도 안전한 방향" 이라고 주장한
-  // 바로 그 지점이다. 마커 있는 섹션이 먼저 drop 되면 이 경로를 못 밟으므로 notion 으로 만든다.
-  const hugeNotionTasks = Array.from({ length: 30 }, (_, index) => ({
-    databaseId: 'db',
-    pageId: `pg${index}`,
-    url: 'https://notion.so/pg',
-    title: `제목${index} ` + '가'.repeat(400),
-    properties: {},
-  }));
+  // github 은 TRIM_ORDER 에 없어 drop 되지 않는다. 그래서 상한을 넘기면 꼬리 자르기가
+  // github 의 감싼 블록 한가운데에 떨어진다 — 신뢰 경계가 "잘려도 안전한 방향" 인지 보는
+  // 바로 그 지점이다. 마커 있는 섹션이 먼저 drop 되면 이 경로를 못 밟으므로 github 으로 만든다.
+  // (원래 notion 으로 만들던 케이스인데, notion 이 TRIM_ORDER 에 들어가면서 통째로 drop 되어
+  //  꼬리 자르기까지 가지 못하게 됐다. 검사하려는 성질은 그대로라 소재만 바꿨다.)
+  const hugeGithubTasks = {
+    issues: Array.from({ length: 30 }, (_, index) => ({
+      number: index,
+      title: `제목${index} ` + '가'.repeat(400),
+      repo: 'owner/repo',
+      url: 'https://github.com/owner/repo/issues/1',
+      labels: [],
+      updatedAt: '2026-09-18T00:00:00Z',
+    })),
+    pullRequests: [],
+  };
 
   it('감싼 섹션 한가운데에서 잘려도 닫는 표시가 여는 표시보다 많아지지 않는다', () => {
     const builder = new DailyPlanPromptBuilder();
 
     const { prompt, truncated } = builder.build(
-      buildBaseContext({ notionTasks: hugeNotionTasks }),
+      buildBaseContext({ githubTasks: hugeGithubTasks }),
     );
 
     const opens = (prompt.match(/<untrusted-input>/g) ?? []).length;
