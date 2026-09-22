@@ -40,6 +40,9 @@ export interface IncludedStockIndicators {
   tickerId: number;
   code: string;
   name: string;
+  // 보유 종목의 업종. 후보에만 붙이면 모델은 "무엇을 들고 있는지" 를 업종 없이 보게 되어
+  // 분산 판단의 한쪽 축이 비고, 결국 보유분은 이름으로 추측하게 된다.
+  sector: string | null;
   indicators: StockIndicators;
 }
 
@@ -119,6 +122,7 @@ export class ScreenUniverseUsecase {
             code: ticker.code,
             name: ticker.name,
             krxMarket: ticker.krxMarket,
+            sector: ticker.sector,
             indicators,
           },
         });
@@ -151,6 +155,7 @@ export class ScreenUniverseUsecase {
         tickerId: candidate.tickerId,
         code: candidate.code,
         name: candidate.name,
+        sector: candidate.sector,
         indicators: candidate.indicators,
       }));
     const limit = options.limit ?? DEFAULT_SCREEN_LIMIT;

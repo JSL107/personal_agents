@@ -110,6 +110,7 @@ describe('MarketDataPrismaRepository', () => {
         name: true,
         tossSymbol: true,
         krxMarket: true,
+        sector: true,
       },
     });
   });
