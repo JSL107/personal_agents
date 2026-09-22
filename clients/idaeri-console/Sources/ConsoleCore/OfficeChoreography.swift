@@ -130,6 +130,10 @@ public func normalizedCozyPose(_ requested: String) -> String {
         return "sit-back"
     case "sitting":
         return "sitting"
+    // 의자를 들고 오는 테이블 앞 착석. `OfficeInteractionPose.sittingAtTable` 의 rawValue 가
+    // 그대로 들어오므로 붙여 쓴 형태도 함께 받는다.
+    case "sit-table", "sittable", "sittingattable":
+        return "sit-table"
     case "typing":
         return "typing"
     case "reading":
@@ -185,6 +189,8 @@ public func cozyPosePosture(assetIndex: Int, pose: String) -> CozyPosePosture {
         return .seated
     case "sit-back":
         return .seated
+    case "sit-table":
+        return .seated
     case "typing":
         return assetIndex == 18 ? .standing : .seated
     case "sitting":
@@ -216,6 +222,10 @@ public func cozyPoseCandidates(_ normalized: String) -> [String] {
     // 소파에 놓으면 상반신만 뜨고, 이쪽을 책상에 놓으면 다리가 상판 아래로 샌다.
     case "sitting":
         return ["sitting"]
+    // 테이블용이 없으면 소파용으로 내려간다 — 자리는 맞고 의자만 사라져 공중에 앉은 것처럼
+    // 보이지만, 서 있는 기본 그림으로 떨어지는 것보다는 뜻이 가깝다.
+    case "sit-table":
+        return ["sit-table", "sitting"]
     // **앉은 그림을 먼저 본다.** `sit` 원화는 허리 아래가 없고 팔을 앞으로 뻗은 그림으로
     // 다시 그려졌다 — 책상 뒤에 놓으면 다리가 샐 자리가 없어 "책상을 관통한" 인상이
     // 사라진다(사용자 보고로 재제작). 그 자세가 이미 타이핑이라 `typing` 원화를 따로
@@ -277,7 +287,8 @@ public func resolveCozyPose(
     // `idle`(서 있는 전신)로 떨어진다 — 파일도 있고 계약에도 등록했는데 화면만 안 바뀌어
     // 원인이 늦게 드러난다(`sit-back` 을 넣을 때 실제로 그랬다).
     let wanted: CozyPosePosture = requiredPosture
-        ?? (["sit", "sit-back", "sitting", "typing"].contains(normalized) ? .seated : .standing)
+        ?? (["sit", "sit-back", "sit-table", "sitting", "typing"].contains(normalized)
+            ? .seated : .standing)
     for candidate in cozyPoseCandidates(normalized) {
         guard !cozyPoseDrawsOwnFurniture(assetIndex: assetIndex, pose: candidate) else {
             continue

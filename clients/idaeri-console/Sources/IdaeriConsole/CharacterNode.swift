@@ -609,7 +609,7 @@ final class CharacterNode: SKNode {
             ])
             tend.timingMode = .easeInEaseOut
             sprite.run(.repeatForever(tend), withKey: "interaction")
-        case .sitting, .drinking, .carryingPapers, .writing, .stowing:
+        case .sitting, .sittingAtTable, .drinking, .carryingPapers, .writing, .stowing:
             break
         }
     }

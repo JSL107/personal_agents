@@ -19,6 +19,13 @@ public let officeLunchHour: Int = 12
 /// 가구 앞에서 취하는 자세. 서기·앉기 그림만 있는 한계를 소품과 몸짓으로 보완한다.
 public enum OfficeInteractionPose: String, Sendable, CaseIterable {
     case sitting
+    /// 의자가 그려져 있지 않은 테이블 앞에 앉기 — **그림이 자기 의자를 들고 온다.**
+    ///
+    /// `sitting` 과 갈라 두는 이유는 가구가 앉을 면을 주는지가 정반대이기 때문이다. 소파는
+    /// 앉을 면이 그려져 있어 의자 없는 그림(`sitting`)이 맞지만, 회의 테이블·응접 테이블은
+    /// 상판만 있어(`meetingTable` 은 의자 여덟 개를 일부러 지운 재제작본이다) 같은 그림을
+    /// 놓으면 사람이 허공에 앉는다(사용자 보고: "공중에 앉아있음").
+    case sittingAtTable
     case drinking
     case carryingPapers
     case writing
@@ -35,7 +42,7 @@ public enum OfficeInteractionPose: String, Sendable, CaseIterable {
             return "prop-papers"
         case .reading, .stowing:
             return "prop-book-stack"
-        case .sitting, .tending:
+        case .sitting, .sittingAtTable, .tending:
             return nil
         }
     }

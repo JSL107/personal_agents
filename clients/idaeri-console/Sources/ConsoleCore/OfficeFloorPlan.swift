@@ -917,8 +917,15 @@ public enum FurnitureKind: String, Codable, Sendable, CaseIterable {
     /// 머무름이 있는 가구만 자세를 가진다. 두 switch를 나란히 둬 새 종류 추가 시 함께 검토한다.
     public var interactionPose: OfficeInteractionPose? {
         switch self {
-        case .sofa2, .sofa3, .coffeeTable, .meetingTable:
+        // **앉을 면이 그려져 있는 가구와 상판만 있는 가구를 가른다.** 소파는 그림에 좌판이
+        // 있어 의자 없는 착석 그림(`sitting`)이 그대로 성립한다. 회의 테이블·응접 테이블은
+        // 상판만 있어(회의 테이블은 의자 여덟 개를 일부러 지운 재제작본이다) 같은 그림을 놓으면
+        // 앉을 것이 없는 자리에 앉은 사람이 되어 허공에 뜬다(사용자 보고: "공중에 앉아있음.
+        // 기구 시설을 정확하게 이용하지 못함"). 그쪽은 의자를 함께 들고 오는 그림을 쓴다.
+        case .sofa2, .sofa3:
             return .sitting
+        case .coffeeTable, .meetingTable:
+            return .sittingAtTable
         case .coffeeMachine, .waterCooler, .vendingMachine, .refrigerator, .sinkCounter:
             return .drinking
         case .printer, .filingCabinet:
