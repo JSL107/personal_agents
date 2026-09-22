@@ -36,7 +36,11 @@ export class RenderResumeUsecase {
   }: RenderResumeInput): Promise<RenderResumeResult> {
     const latest = await this.repository.findLatestBySlackUser(slackUserId);
     const resolved: RenderResumeResult = latest
-      ? { profile: latest.profileJson, agentRunId: latest.agentRunId ?? 0 }
+      ? {
+          profile: latest.profileJson,
+          agentRunId: latest.agentRunId ?? 0,
+          reusedAgentRun: true,
+        }
       : await this.buildAndWrap(slackUserId);
     await this.mirrorToNotion(resolved.profile);
     return resolved;
@@ -44,7 +48,11 @@ export class RenderResumeUsecase {
 
   private async buildAndWrap(slackUserId: string): Promise<RenderResumeResult> {
     const built = await this.buildProfile.execute({ slackUserId });
-    return { profile: built.result, agentRunId: built.agentRunId };
+    return {
+      profile: built.result,
+      agentRunId: built.agentRunId,
+      reusedAgentRun: false,
+    };
   }
 
   // 이력서를 Notion 날짜별 자식 페이지에 최신본으로 미러 — best-effort.

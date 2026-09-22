@@ -177,7 +177,10 @@ export interface RenderResumeInput {
 
 export interface RenderResumeResult {
   profile: CareerProfileData;
+  // 저장된 프로필을 재사용하면 **그 프로필을 만든 과거 실행**의 id 다. 이번 요청이 만든 행이
+  // 아니므로, 이번 요청을 근거로 그 행을 고쳐 쓰면 과거 기록이 다른 요청으로 둔갑한다.
   agentRunId: number;
+  reusedAgentRun: boolean;
 }
 
 export interface RenderPortfolioInput {
@@ -187,7 +190,9 @@ export interface RenderPortfolioInput {
 export interface RenderPortfolioResult {
   url: string;
   pageId: string;
+  // RenderResumeResult.agentRunId 와 같은 주의 — 재사용이면 과거 실행의 id 다.
   agentRunId: number;
+  reusedAgentRun: boolean;
 }
 
 export interface CalibrationResultData {

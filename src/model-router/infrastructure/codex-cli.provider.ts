@@ -11,6 +11,7 @@ import {
   LLM_CLI_RETRY_BACKOFF_JITTER_MS,
   LLM_CLI_TIMEOUT_MS,
 } from '../../common/llm/llm-timeout.constant';
+import { redactPii } from '../../common/util/pii-redaction.util';
 import {
   CompletionRequest,
   CompletionResponse,
@@ -19,7 +20,6 @@ import {
 } from '../domain/model-router.type';
 import { ModelProviderPort } from '../domain/port/model-provider.port';
 import { buildSafeChildEnv, killProcessTree } from './cli-process.util';
-import { redactPii } from './pii-redaction.util';
 
 const CODEX_EXECUTABLE = 'codex';
 // 공유 상수 — worker lockDuration(common/queue/worker-options.constant.ts) 도 이 값을 참조한다.

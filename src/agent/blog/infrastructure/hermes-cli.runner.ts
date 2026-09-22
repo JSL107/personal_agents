@@ -3,11 +3,11 @@ import { spawn } from 'node:child_process';
 import { Injectable, Logger } from '@nestjs/common';
 
 import { DomainStatus } from '../../../common/exception/domain-status.enum';
+import { redactPii } from '../../../common/util/pii-redaction.util';
 import {
   buildSafeChildEnv,
   getRealHomeDir,
 } from '../../../model-router/infrastructure/cli-process.util';
-import { redactPii } from '../../../model-router/infrastructure/pii-redaction.util';
 import { BlogException } from '../domain/blog.exception';
 import { BlogErrorCode } from '../domain/blog-error-code.enum';
 import {

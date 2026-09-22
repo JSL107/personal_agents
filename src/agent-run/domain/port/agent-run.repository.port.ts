@@ -259,6 +259,17 @@ export interface AgentRunRepositoryPort {
     id: number;
     inputSnapshot: unknown;
   }): Promise<void>;
+  // 이미 저장된 inputSnapshot 에 키 몇 개만 덧붙인다 (전체 교체인 updateInputSnapshot 과 다름).
+  // Router 가 dispatch 를 마친 뒤 라우팅 근거를 붙이는 용도 — 그 시점엔 worker 가 이미
+  // 자기 스냅샷을 다 쓴 뒤라 읽고-합치고-쓰는 사이에 끼어들 쓰기가 없다.
+  //
+  // 반환값은 **실제로 합쳤는지** 다. 저장된 값이 객체가 아니면(배열·스칼라 — 이 필드는
+  // unknown 계약이라 정당한 값이다) 원본을 지우지 않으려고 아무것도 쓰지 않고 false 를
+  // 돌려준다. 행이 없을 때도 false.
+  mergeInputSnapshot?(input: {
+    id: number;
+    fields: Record<string, unknown>;
+  }): Promise<boolean>;
   finish(input: FinishAgentRunInput): Promise<void>;
   // 종료 신호로 끊긴 회차 마감 — 넘긴 id 중 **아직 IN_PROGRESS 인 것만** 닫는다.
   // 조건 없이 쓰면 같은 순간 끝난 회차의 실제 결과(SUCCEEDED)를 덮는다.

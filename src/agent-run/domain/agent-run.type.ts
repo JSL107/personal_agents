@@ -101,6 +101,11 @@ export enum TriggerType {
   AUTOPILOT_JOB_FEED_GAP_CRON = 'AUTOPILOT_JOB_FEED_GAP_CRON',
 }
 
+// worker 를 고른 경로. 셋을 구분하지 않으면 원장에서 분류기 성적을 낼 수 없다 —
+// 슬래시(hint)와 별명(nickname)은 분류기를 아예 타지 않으므로 채점 대상이 아닌데,
+// 함께 섞이면 분류기가 실제보다 잘하거나 못하는 것처럼 보인다.
+export type RoutedVia = 'classifier' | 'hint' | 'nickname';
+
 // payload 는 JSON 직렬화 가능한 임의 데이터 (object / array / primitive).
 // caller 가 domain 객체를 그대로 넘기도록 unknown 으로 두고, Prisma 저장 경계에서만 InputJsonValue 로 cast.
 export interface EvidenceInput {

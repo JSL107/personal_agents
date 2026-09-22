@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
-import { redactPii } from '../../model-router/infrastructure/pii-redaction.util';
+import { redactPii } from '../../common/util/pii-redaction.util';
 import { diffSnapshots } from '../domain/diff-snapshots';
 import type { PromotionBudget } from '../domain/port/promotion-budget.port';
 import { PROMOTION_BUDGET } from '../domain/port/promotion-budget.port';

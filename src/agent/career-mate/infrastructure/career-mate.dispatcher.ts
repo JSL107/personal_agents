@@ -71,21 +71,27 @@ export class CareerMateDispatcher implements AgentDispatcher {
       }
       case 'RENDER_RESUME': {
         const result = await this.renderResume.execute({ slackUserId });
-        return this.toOutcome(
-          result.agentRunId,
-          result.profile,
-          'deterministic',
-          formatResume(result.profile),
-        );
+        return {
+          ...this.toOutcome(
+            result.agentRunId,
+            result.profile,
+            'deterministic',
+            formatResume(result.profile),
+          ),
+          reusedAgentRun: result.reusedAgentRun,
+        };
       }
       case 'RENDER_PORTFOLIO': {
         const result = await this.renderPortfolio.execute({ slackUserId });
-        return this.toOutcome(
-          result.agentRunId,
-          result,
-          'deterministic',
-          formatPortfolioLink({ url: result.url }),
-        );
+        return {
+          ...this.toOutcome(
+            result.agentRunId,
+            result,
+            'deterministic',
+            formatPortfolioLink({ url: result.url }),
+          ),
+          reusedAgentRun: result.reusedAgentRun,
+        };
       }
       case 'ANALYZE_JD_GAP': {
         const outcome = await this.analyzeJdGap.execute({
