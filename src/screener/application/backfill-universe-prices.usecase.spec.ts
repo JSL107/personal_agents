@@ -33,6 +33,7 @@ const ticker = (
   name,
   tossSymbol: code,
   krxMarket: 'KOSPI',
+  sector: '전기전자',
 });
 
 interface FixtureOptions {

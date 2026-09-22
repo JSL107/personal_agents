@@ -39,6 +39,10 @@ export interface UniverseTicker {
   name: string;
   tossSymbol: string;
   krxMarket: string | null;
+  // KRX 상장법인 목록의 업종. 순위 계산에는 쓰이지 않고 추천 프롬프트까지 실려 가
+  // 모델이 업종 분산을 판단하는 재료가 된다. 미분류(null)는 그대로 넘긴다 —
+  // 임의로 채우면 없는 업종이 분산 근거로 쓰인다.
+  sector: string | null;
 }
 
 export interface StoredBarStat {
@@ -352,6 +356,7 @@ export class MarketDataPrismaRepository {
         name: true,
         tossSymbol: true,
         krxMarket: true,
+        sector: true,
       },
     });
     return tickers.map((ticker) => ({

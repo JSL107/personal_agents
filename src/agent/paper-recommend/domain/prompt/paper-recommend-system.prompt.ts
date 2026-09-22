@@ -18,6 +18,8 @@ export const buildPaperRecommendSystemPrompt = ({
 
 LONG_TERM은 중장기 추세와 안정성을, SWING은 단기 모멘텀과 거래량 변화를 우선한다.
 사용자 prompt의 보유 종목은 매도 여부를 판단하고, 후보 종목 안에서만 신규 매수를 추천한다.
+종목명 뒤 대괄호는 업종이다. 업종은 제시된 값만 쓴다 — '미분류'는 업종을 모른다는 뜻이고,
+종목명으로 업종을 추측해 근거로 삼지 않는다.
 
 반드시 아래 JSON 객체 하나만 출력한다. 코드 fence와 설명은 출력하지 않는다.
 {
@@ -41,7 +43,7 @@ export const buildPaperRecommendationPrompt = (
       : input.positions
           .map(
             (position) =>
-              `${position.code} ${position.name} (${position.quantity}주 보유)\n` +
+              `${position.code} ${position.name} [${sectorLabelOf(position.sector)}] (${position.quantity}주 보유)\n` +
               `지표: ${position.indicators === null ? '지표 없음' : JSON.stringify(position.indicators)}`,
           )
           .join('\n');
@@ -51,7 +53,7 @@ export const buildPaperRecommendationPrompt = (
       : input.candidates
           .map(
             (candidate) =>
-              `${candidate.code} ${candidate.name} (screen score ${candidate.score})\n지표: ${JSON.stringify(candidate.indicators)}`,
+              `${candidate.code} ${candidate.name} [${sectorLabelOf(candidate.sector)}] (screen score ${candidate.score})\n지표: ${JSON.stringify(candidate.indicators)}`,
           )
           .join('\n');
 
@@ -70,3 +72,7 @@ ${candidates}
 
 const strategyLabelOf = (strategy: PaperRecommendationStrategy): string =>
   strategy === 'LONG_TERM' ? '장기투자' : '단기매매';
+
+// 업종이 없는 종목은 빈 대괄호가 아니라 '미분류' 로 적는다. 빈칸을 남기면 모델이 앞뒤
+// 종목의 업종으로 메우거나 이름에서 추측하는데, 그건 데이터가 아니라 짐작이다.
+const sectorLabelOf = (sector: string | null): string => sector ?? '미분류';

@@ -53,6 +53,7 @@ describe('ScreenUniverseUsecase', () => {
       name: `종목${index + 1}`,
       tossSymbol: String(index + 1).padStart(6, '0'),
       krxMarket: 'KOSPI',
+      sector: '전기전자',
     }));
     const findBarsForTickers = jest
       .fn()
@@ -77,7 +78,7 @@ describe('ScreenUniverseUsecase', () => {
     expect(findBarsForTickers).toHaveBeenNthCalledWith(2, [201], 200);
     expect(result).toEqual({
       strategy: 'LONG_TERM',
-      ruleVersion: 4,
+      ruleVersion: 5,
       universeCount: 201,
       evaluatedCount: 2,
       staleCount: 1,
@@ -99,6 +100,7 @@ describe('ScreenUniverseUsecase', () => {
           name: '삼성전자',
           tossSymbol: '005930',
           krxMarket: 'KOSPI',
+          sector: '전기전자',
         },
       ]),
       findBarsForTickers: jest.fn().mockResolvedValue(new Map()),
@@ -110,7 +112,7 @@ describe('ScreenUniverseUsecase', () => {
 
     await expect(usecase.execute({ strategy: 'SWING' })).resolves.toEqual({
       strategy: 'SWING',
-      ruleVersion: 4,
+      ruleVersion: 5,
       universeCount: 1,
       evaluatedCount: 0,
       staleCount: 0,
@@ -132,6 +134,7 @@ describe('ScreenUniverseUsecase', () => {
           name: '삼성전자',
           tossSymbol: '005930',
           krxMarket: 'KOSPI',
+          sector: '전기전자',
         },
       ]),
       findBarsForTickers: jest
@@ -168,6 +171,7 @@ describe('ScreenUniverseUsecase', () => {
           name: '삼성전자',
           tossSymbol: '005930',
           krxMarket: 'KOSPI',
+          sector: '전기전자',
         },
         {
           id: 2,
@@ -175,6 +179,7 @@ describe('ScreenUniverseUsecase', () => {
           name: 'SK하이닉스',
           tossSymbol: '000660',
           krxMarket: 'KOSPI',
+          sector: '전기전자',
         },
       ]),
       findBarsForTickers: jest.fn().mockResolvedValue(
@@ -207,6 +212,7 @@ describe('ScreenUniverseUsecase', () => {
           name: '삼성전자',
           tossSymbol: '005930',
           krxMarket: 'KOSPI',
+          sector: '전기전자',
         },
       ]),
       findBarsForTickers: jest
@@ -234,6 +240,7 @@ describe('ScreenUniverseUsecase', () => {
           name: '삼성전자',
           tossSymbol: '005930',
           krxMarket: 'KOSPI',
+          sector: '전기전자',
         },
         {
           id: 2,
@@ -241,6 +248,7 @@ describe('ScreenUniverseUsecase', () => {
           name: 'SK하이닉스',
           tossSymbol: '000660',
           krxMarket: 'KOSPI',
+          sector: '전기전자',
         },
       ]),
       findBarsForTickers: jest.fn().mockResolvedValue(
@@ -274,7 +282,7 @@ describe('ScreenUniverseUsecase', () => {
       expect.objectContaining({
         strategy: 'LONG_TERM',
         asOf: new Date('2026-08-13T00:00:00.000Z'),
-        ruleVersion: 4,
+        ruleVersion: 5,
         // 회차를 만든 실행 id. 이 값이 없으면 추천이 실패한 회차와 정상 회차를
         // 구분할 수 없어, 실린 종목 전부가 "보고도 안 샀다" 로 집계된다.
         agentRunId: 55,
@@ -313,6 +321,7 @@ describe('ScreenUniverseUsecase', () => {
           name: '삼성전자',
           tossSymbol: '005930',
           krxMarket: 'KOSPI',
+          sector: '전기전자',
         },
       ]),
       findBarsForTickers: jest
@@ -338,6 +347,7 @@ describe('ScreenUniverseUsecase', () => {
           name: '삼성전자',
           tossSymbol: '005930',
           krxMarket: 'KOSPI',
+          sector: '전기전자',
         },
       ]),
       findBarsForTickers: jest.fn().mockResolvedValue(new Map()),
@@ -364,6 +374,7 @@ describe('ScreenUniverseUsecase', () => {
           name: '삼성전자',
           tossSymbol: '005930',
           krxMarket: 'KOSPI',
+          sector: '전기전자',
         },
       ]),
       findBarsForTickers: jest
@@ -398,6 +409,7 @@ describe('ScreenUniverseUsecase', () => {
           name: '삼성전자',
           tossSymbol: '005930',
           krxMarket: 'KOSPI',
+          sector: '전기전자',
         },
       ]),
       findBarsForTickers: jest
@@ -424,6 +436,7 @@ describe('ScreenUniverseUsecase', () => {
           name: '삼성전자',
           tossSymbol: '005930',
           krxMarket: 'KOSPI',
+          sector: '전기전자',
         },
       ]),
       findBarsForTickers: jest

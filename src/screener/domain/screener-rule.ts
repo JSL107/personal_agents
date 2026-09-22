@@ -23,7 +23,14 @@ export const DEFAULT_MAXIMUM_DAILY_GAIN_PERCENT = Number.POSITIVE_INFINITY;
 //    달라졌고, 추천 프롬프트가 지표를 통째로 싣기 때문에 모델이 보는 입력도 달라졌다
 //    (버전 3 을 올린 것과 같은 이유다).
 // 앞 버전의 추천과 한 칸에 모으면 이 재편을 성적 변화로 읽게 된다.
-export const SCREENER_RULE_VERSION = 4;
+//
+// 5 로 올린 이유(2026-09-22): 후보를 고르는 조건도 순위 재료도 그대로다. 바뀐 것은
+// **모델이 보는 입력** 하나다 — 후보·보유 종목에 업종(`sector`)이 붙어 프롬프트에 실린다.
+// 그전까지 모델은 업종을 받지 못한 채 종목명으로 추측해 분산을 근거로 들었다(2026-09-21
+// LONG_TERM 매수 사유의 "과열된 반도체·급등 후보보다 … 기존 금융주 중심 보유 구성의
+// 분산에도 유리해"가 그 실례다. 업종은 프롬프트에 없었다). 추측이 데이터로 바뀌면 같은
+// 후보·같은 지표에도 다른 종목이 선택될 수 있으므로, 앞 회차와 성적을 한 칸에 모으면 안 된다.
+export const SCREENER_RULE_VERSION = 5;
 export type ScreenStrategy = 'LONG_TERM' | 'SWING';
 export type RankingWeights = readonly [number, number, number];
 export const SWING_VOLUME_SURGE_MINIMUM = 1.5;
@@ -34,6 +41,9 @@ export interface ScreenCandidate {
   code: string;
   name: string;
   krxMarket: string | null;
+  // 통과 조건에도 순위 재료에도 쓰이지 않는다. 후보를 따라 추천 프롬프트까지 흘러가는
+  // 통로일 뿐이라, 이 값이 바뀌어도 `screenStocks` 의 결과는 같다.
+  sector: string | null;
   indicators: StockIndicators;
 }
 
@@ -42,6 +52,7 @@ export interface ScreenedStock {
   code: string;
   name: string;
   krxMarket: string | null;
+  sector: string | null;
   score: number;
   indicators: StockIndicators;
 }

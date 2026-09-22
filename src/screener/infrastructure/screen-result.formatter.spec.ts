@@ -36,6 +36,7 @@ const result = (strategy: 'LONG_TERM' | 'SWING'): ScreenUniverseResult => ({
       code: '005930',
       name: '삼성전자',
       krxMarket: 'KOSPI',
+      sector: '전기전자',
       score: 91.23,
       indicators,
     },

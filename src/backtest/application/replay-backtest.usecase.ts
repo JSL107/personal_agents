@@ -1249,6 +1249,10 @@ export class ReplayBacktestUsecase {
         code: ticker.code,
         name: ticker.name,
         krxMarket: ticker.krxMarket,
+        // 재생은 모델을 부르지 않고 점수 상위를 기계적으로 고르므로, 업종은 순위에도
+        // 선택에도 쓰이지 않는다. 채우지 않는 쪽이 정확하기도 하다 — `ticker.sector` 는
+        // 지금 시점의 분류라, 과거 회차에 실으면 그날 알 수 없던 값이 섞인다.
+        sector: null,
         indicators,
       });
     }

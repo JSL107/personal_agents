@@ -219,6 +219,9 @@ export class GeneratePaperRecommendationUsecase {
         const indicatorsByTickerId = new Map(
           indicatorSources.map((stock) => [stock.tickerId, stock.indicators]),
         );
+        const sectorsByCode = new Map(
+          indicatorSources.map((stock) => [stock.code, stock.sector]),
+        );
         const scorecard = await this.buildScorecard(strategy, decidedAt);
         // 모델에게는 잔고가 아니라 매수 여력을 보여준다. 배당은 권리락일에 잔고로 잡히지만
         // 지급일까지 쓸 수 없어(코람코더원리츠는 8/28 락, 11/27 지급) 잔고를 그대로 실으면
@@ -241,12 +244,17 @@ export class GeneratePaperRecommendationUsecase {
             positions: positions.map((position) => ({
               code: position.ticker.code,
               name: position.ticker.name,
+              // 보유 종목의 업종은 스크리닝 결과를 통해서만 들어온다(`includeTickerIds` 로
+              // 함께 실어 온 것). 그날 시세가 낡아 후보에서 빠진 종목은 여기서 null 이 되고,
+              // 프롬프트가 '미분류' 로 적는다 — 없는 업종을 지어내는 것보다 낫다.
+              sector: sectorsByCode.get(position.ticker.code) ?? null,
               quantity: Number(position.quantity.toString()),
               indicators: indicatorsByCode.get(position.ticker.code) ?? null,
             })),
             candidates: screen.stocks.map((stock) => ({
               code: stock.code,
               name: stock.name,
+              sector: stock.sector,
               score: stock.score,
               indicators: stock.indicators,
             })),

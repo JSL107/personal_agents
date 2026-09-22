@@ -119,6 +119,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
           code: '000660',
           name: 'SK하이닉스',
           krxMarket: 'KOSPI',
+          sector: '전기전자',
           score: 98,
           indicators,
         },
@@ -323,6 +324,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
           tickerId: 81,
           code: '005930',
           name: '삼성전자',
+          sector: '전기전자',
           indicators: { ...indicators, close: 70_000 },
         },
       ],
@@ -332,6 +334,10 @@ describe('GeneratePaperRecommendationUsecase', () => {
           code: '000660',
           name: 'SK하이닉스',
           krxMarket: 'KOSPI',
+          // 보유(includedIndicators)와 **다른** 업종을 준다. 두 경로에 같은 값을 주면
+          // 프롬프트에 업종이 찍혀도 그것이 후보에서 온 것인지 보유에서 온 것인지 가릴 수
+          // 없어, 한쪽 배선이 끊겨도 단언이 통과한다.
+          sector: '반도체 제조업',
           score: 98,
           indicators,
         },
@@ -344,8 +350,12 @@ describe('GeneratePaperRecommendationUsecase', () => {
     expect(prompt).toContain(JSON.stringify({ ...indicators, close: 70_000 }));
     expect(prompt).toContain('매수 가능 현금: 7000000');
     expect(prompt).toContain('계좌 평가액: 9000000');
-    expect(prompt).toContain('005930 삼성전자');
     expect(prompt).not.toContain('지표 없음');
+    // 업종이 스크리닝 결과에서 프롬프트까지 이어지는지 두 경로를 따로 단언한다.
+    // 종목명까지 붙여 비교하는 이유는 `toContain('005930 삼성전자')` 만으로는 업종이
+    // 빠져도 부분 일치로 통과하기 때문이다.
+    expect(prompt).toContain('005930 삼성전자 [전기전자]');
+    expect(prompt).toContain('000660 SK하이닉스 [반도체 제조업]');
     expect(screenUniverse.execute).toHaveBeenCalledWith({
       strategy: 'LONG_TERM',
       limit: 20,
@@ -419,6 +429,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
           tickerId: 81,
           code: '005930',
           name: '삼성전자',
+          sector: '전기전자',
           indicators: heldIndicators,
         },
       ],
@@ -428,6 +439,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
           code: '000660',
           name: 'SK하이닉스',
           krxMarket: 'KOSPI',
+          sector: '전기전자',
           score: 98,
           indicators,
         },
@@ -541,6 +553,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
           tickerId: 81,
           code: '005930',
           name: '삼성전자',
+          sector: '전기전자',
           indicators: { ...indicators, close: 70_000 },
         },
       ],
@@ -550,6 +563,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
           code: '000660',
           name: 'SK하이닉스',
           krxMarket: 'KOSPI',
+          sector: '전기전자',
           score: 98,
           indicators,
         },
@@ -736,6 +750,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
           code: '035420',
           name: 'NAVER',
           krxMarket: 'KOSPI',
+          sector: '전기전자',
           score: 97,
           indicators,
         },
@@ -821,6 +836,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
           code: '000660',
           name: 'SK하이닉스',
           krxMarket: 'KOSPI',
+          sector: '전기전자',
           score: 98,
           indicators,
         },
@@ -829,6 +845,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
           code: '035420',
           name: 'NAVER',
           krxMarket: 'KOSPI',
+          sector: '전기전자',
           score: 97,
           indicators,
         },
@@ -923,6 +940,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
           code: '000660',
           name: 'SK하이닉스',
           krxMarket: 'KOSPI',
+          sector: '전기전자',
           score: 98,
           indicators,
         },
@@ -931,6 +949,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
           code: '000720',
           name: '현대건설',
           krxMarket: 'KOSPI',
+          sector: '전기전자',
           score: 95,
           indicators,
         },
@@ -939,6 +958,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
           code: '000810',
           name: '삼성화재',
           krxMarket: 'KOSPI',
+          sector: '전기전자',
           score: 92,
           indicators,
         },
@@ -947,6 +967,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
           code: '000880',
           name: '한화',
           krxMarket: 'KOSPI',
+          sector: '전기전자',
           score: 90,
           indicators,
         },
@@ -1150,6 +1171,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
           tickerId: 81,
           code: '005930',
           name: '삼성전자',
+          sector: '전기전자',
           indicators: { ...indicators, close: 70_000 },
         },
       ],
