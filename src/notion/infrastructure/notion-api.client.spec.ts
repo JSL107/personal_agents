@@ -56,8 +56,8 @@ describe('NotionApiClient', () => {
     });
   });
 
-  // listActiveTasks 는 DB 조회 실패를 삼키고 "할 일 0건" 으로 돌려준다 — 로그가 유일한 단서다.
-  it('DB 조회가 막히면 조용히 0건이 되지만 경고 로그에 다음 행동이 남는다', async () => {
+  // 대상 DB 가 전부 막히면 0건과 구분되지 않으므로 예외로 올린다 — 경고 로그는 그대로 남는다.
+  it('대상 DB 가 전부 막히면 0건으로 삼키지 않고 예외를 올린다', async () => {
     const warn = jest
       .spyOn(Logger.prototype, 'warn')
       .mockImplementation(() => undefined);
@@ -72,9 +72,11 @@ describe('NotionApiClient', () => {
       buildConfig({}),
     );
 
-    const tasks = await adapter.listActiveTasks({ databaseIds: ['DB1'] });
-
-    expect(tasks).toEqual([]);
+    await expect(
+      adapter.listActiveTasks({ databaseIds: ['DB1'] }),
+    ).rejects.toMatchObject({
+      notionErrorCode: NotionErrorCode.REQUEST_FAILED,
+    });
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining('연결(Connections)'),
     );
