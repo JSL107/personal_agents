@@ -26,6 +26,7 @@ func renderOfficeScene(
     briefingDemo: Bool = false,
     chatterDemo: Bool = false,
     vacuumDemo: Bool = false,
+    sessionDemo: Bool = false,
     debugLabels: Bool = false,
     room: Department? = nil,
     selectedDemo: Bool = false,
@@ -76,7 +77,10 @@ func renderOfficeScene(
         renderedApprovals.append(alarmDemoApproval())
     }
     let renderedRuns = poseDemo || populatedDemo || selectedCapture ? [] : snapshot?.runs ?? []
-    let renderedSessions = poseDemo || populatedDemo || selectedCapture ? [] : snapshot?.sessions ?? []
+    var renderedSessions = poseDemo || populatedDemo || selectedCapture ? [] : snapshot?.sessions ?? []
+    if sessionDemo {
+        renderedSessions = sessionDemoSessions()
+    }
     scene.sync(agents: renderedAgents, approvals: renderedApprovals)
     if populatedDemo, !scene.applyPopulatedDemoCommonAreas(
         meetingAgentTypes: [6, 7].map(showcaseAgentType(forAssetIndex:)),
@@ -136,6 +140,12 @@ func renderOfficeScene(
     // 세션도 함께 그린다 — 빠뜨리면 실제 앱에만 있는 사람들이 회귀 확인에서 통째로 빠진다
     // (세션 이름표가 서로 겹쳐 못 읽던 문제가 이 구멍으로 렌더 점검을 빠져나갔다).
     scene.syncSessions(renderedSessions)
+    if sessionDemo, scene.sessionMarkerCount() == 0 {
+        FileHandle.standardError.write(
+            Data("--session-demo 가 아무것도 그리지 못했다 — 대표실에 작업 책상이 없다\n".utf8)
+        )
+        return false
+    }
     scene.updateCompanySummary(renderedAgents)
     // 말풍선·경과·승인 배지는 오버레이라 sync 로는 그려지지 않는다. 빼면 이 화면으로
     // 확인할 수 있는 대상에서 "무슨 일 중" 문구가 통째로 빠진다.
@@ -398,6 +408,36 @@ private func alarmDemoApproval() -> ConsoleApproval {
         createdAt: formatter.string(from: createdAt),
         expiresAt: formatter.string(from: expiresAt)
     )
+}
+
+/// 대표실 작업 책상을 채울 데모 세션. **전부 `active`** 로 세운다 — 확인 대상이 활성 세션에만
+/// 붙는 화면 빛이라, 꺼진 세션을 섞으면 그 책상은 원래 아무것도 안 그려 대조가 안 된다.
+///
+/// 개수는 책상 수(`officeSessionDesks`)보다 넉넉히 둔다. 남는 세션은 배정받을 책상이 없어
+/// 조용히 버려지므로(`layoutSessionMarker` 는 배정된 것만 그린다) 많아서 생기는 문제는 없고,
+/// 모자라면 뒤쪽 책상이 빈 채로 남아 "고쳐서 안 보이는 것" 과 "원래 안 그려진 것" 이 섞인다.
+private func sessionDemoSessions() -> [ConsoleSession] {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime]
+    let now = Date()
+    // **활동 시각은 지금이어야 한다.** 화면에 남는 세션은 `state` 뿐 아니라 조용한 시간으로도
+    // 걸러진다(`officeSessionLeaveAfterSeconds` = 15분, `officeVisibleSessions`). 처음에는
+    // 시작·활동 시각을 둘 다 30분 전으로 뒀다가 다섯 개가 전부 퇴근 처리돼 한 칸도 안 그려졌다.
+    let startedAt = formatter.string(from: now.addingTimeInterval(-30 * 60))
+    let lastActivityAt = formatter.string(from: now)
+    let names = ["personal-agents", "sbe-api-v5", "idaeri-console", "sbe-slack-bot", "bini"]
+    return names.enumerated().map { index, name in
+        ConsoleSession(
+            sessionId: "session-demo-\(index)",
+            pid: 40000 + index,
+            source: "session-demo",
+            name: name,
+            cwd: "/tmp/\(name)",
+            state: officeSessionActiveState,
+            startedAt: startedAt,
+            lastActivityAt: lastActivityAt
+        )
+    }
 }
 
 /// 색 실측(`--color-check`)도 같은 표본을 쓴다 — 백엔드 없이 여섯 방이 다 서는 유일한 명단이고,

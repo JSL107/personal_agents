@@ -237,6 +237,12 @@ if let renderIndex = CommandLine.arguments.firstIndex(of: "--render") {
     //   swift run IdaeriConsole --render /tmp/office.png --chatter-demo
     let chatterDemo = CommandLine.arguments.contains("--chatter-demo")
     let vacuumDemo = CommandLine.arguments.contains("--vacuum-demo")
+    // 세션 표시(대표실 책상 위 화면 빛 + 작업 이름표)는 **데모 렌더로 굽는 것이 불가능했다** —
+    // 데모 플래그가 켜지면 `renderedSessions` 를 통째로 비우기 때문이다. 그래서 그 표시가
+    // 일러스트 책상 위에서 파란 조각으로 깜빡이는 것을 실앱에서만 볼 수 있었고, 화면으로
+    // 확인할 방법이 없어 원인을 찾는 데 오래 걸렸다. 백엔드 없이 세션을 세우는 입구를 둔다.
+    //   swift run IdaeriConsole --render /tmp/office.png --populated-demo --session-demo
+    let sessionDemo = CommandLine.arguments.contains("--session-demo")
     let succeeded = renderOfficeScene(
         client: client,
         path: outputPath,
@@ -250,6 +256,7 @@ if let renderIndex = CommandLine.arguments.firstIndex(of: "--render") {
         briefingDemo: briefingDemo,
         chatterDemo: chatterDemo,
         vacuumDemo: vacuumDemo,
+        sessionDemo: sessionDemo,
         debugLabels: debugLabels,
         room: room,
         selectedDemo: selectedDemo,

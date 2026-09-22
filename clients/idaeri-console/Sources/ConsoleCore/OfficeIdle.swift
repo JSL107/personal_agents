@@ -46,6 +46,22 @@ public enum OfficeInteractionPose: String, Sendable, CaseIterable {
             return nil
         }
     }
+
+    /// 이 자세가 **가구에 앉는** 자세인가.
+    ///
+    /// 물어보는 곳이 여럿인데 그동안 각자 이름을 나열하고 있었고, 새 자세를 넣을 때 한 곳을
+    /// 빠뜨리는 사고가 반복됐다 — `sittingAtTable` 을 넣었을 때 정면 칸 제한
+    /// (`officeInteractionNeighbors`)이 `sitting` 만 보고 있어, 테이블 옆·뒤 칸에도 사람이
+    /// 앉아 상판에 가렸다. 나열 대신 여기에 묻게 해 두면 **자세를 추가할 때 컴파일러가
+    /// 이 칸을 채우라고 요구한다**(아래 switch 에 default 를 두지 않는 것이 그 장치다).
+    public var sitsOnFurniture: Bool {
+        switch self {
+        case .sitting, .sittingAtTable:
+            return true
+        case .drinking, .carryingPapers, .writing, .reading, .tending, .stowing:
+            return false
+        }
+    }
 }
 
 /// 자율 배회 후보 한 명의 상태 요약. SpriteKit 상태를 순수 판정 경계 밖으로 밀어낸다.
@@ -171,17 +187,34 @@ public func officeFacing(from tile: TilePoint, to furniture: TilePoint) -> Facin
 
 /// 라운지 자세에서 캐릭터 전체를 가구 쪽으로 옮길 scene 좌표 오프셋.
 /// SpriteKit 자식별로 같은 계산을 복제하지 않도록 Core의 한 순수 경계에서 방향을 정한다.
-public func officeLoungeInteractionOffset(facing: Facing, tileSize: Double) -> OfficePoint {
-    let shift = tileSize * officeLoungeSpriteShift
+///
+/// **거리는 자세가 정한다.** 소파는 좌판 위에 올라앉고 테이블은 앞에 의자를 놓고 앉으므로,
+/// 같은 "앉은 자세" 라도 가구에 들어가는 깊이가 다르다(두 상수의 주석 참조). `pose` 를 안
+/// 넘기면 소파 값을 쓴다 — 이 함수가 생겼을 때 앉는 가구가 소파뿐이었고, 그때 호출부가
+/// 기대하던 동작이 그것이다.
+/// **가로 정렬은 부르는 쪽이 재서 넘긴다**(`alignmentTiles`). 사람이 서는 칸의 화면 x 와
+/// 가구가 놓인 화면 x 는 두 가지 이유로 다르다 — 가구가 여러 칸 폭이면 그림이 자기 폭의
+/// 중앙에 놓이고(3인 소파는 두 칸), 3/4 부감 바닥은 사다리꼴이라 **같은 x 타일이라도 앞줄과
+/// 뒷줄의 화면 x 가 다르다.** 대표실 소파(1칸)가 뒤쪽 원인만으로 어긋나 있었다.
+///
+/// 둘 다 원근 보정을 쥔 씬만 계산할 수 있으므로 여기서는 받아서 쓰기만 한다. 타일 단위로
+/// 받는 것은 창 크기가 바뀌어도 같은 값을 다시 곱하면 되기 때문이다.
+public func officeLoungeInteractionOffset(
+    facing: Facing, tileSize: Double, pose: OfficeInteractionPose = .sitting,
+    alignmentTiles: Double = 0
+) -> OfficePoint {
+    let shift = tileSize * (pose == .sittingAtTable
+        ? officeTableSeatSpriteShift : officeLoungeSpriteShift)
+    let alignment = tileSize * alignmentTiles
     switch facing {
     case .left:
-        return OfficePoint(x: -shift, y: 0)
+        return OfficePoint(x: -shift + alignment, y: 0)
     case .right:
-        return OfficePoint(x: shift, y: 0)
+        return OfficePoint(x: shift + alignment, y: 0)
     case .up:
-        return OfficePoint(x: 0, y: shift)
+        return OfficePoint(x: alignment, y: shift)
     case .down:
-        return OfficePoint(x: 0, y: -shift)
+        return OfficePoint(x: alignment, y: -shift)
     }
 }
 
@@ -202,7 +235,11 @@ public func officeInteractionNeighbors(
     furniture: TilePoint, pose: OfficeInteractionPose
 ) -> [TilePoint] {
     let front = TilePoint(x: furniture.x, y: furniture.y - 1)
-    guard pose != .sitting else {
+    // **앉는 자세 전부**가 정면 칸만 쓴다. 예전에는 `.sitting` 이름 하나로 물어, 뒤에 생긴
+    // `.sittingAtTable` 이 이 제한을 못 받고 옆·뒤 칸에서도 앉았다 — 테이블 뒤에 앉은 사람은
+    // 상판에 가려 상반신만 보인다(사용자 보고: "여전히 에셋에 맞는 움직임을 만들어내지
+    // 못합니다"). 자세 이름 대신 `sitsOnFurniture` 에 물으면 자세가 늘어도 같이 따라온다.
+    guard !pose.sitsOnFurniture else {
         return [front]
     }
     return [

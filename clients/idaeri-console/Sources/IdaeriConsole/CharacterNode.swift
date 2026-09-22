@@ -37,6 +37,9 @@ final class CharacterNode: SKNode {
     /// 상호작용 중에는 상태 몸짓을 다시 걸면 자세가 즉시 덮이므로 씬이 이를 판별해야 한다.
     private(set) var isInteracting = false
     private var interactionFacing: Facing?
+    /// 앉은 그림을 가구 화면 좌표에 맞추는 가로 보정(타일 단위). 씬이 원근까지 반영해 재서
+    /// 넘긴다 — 사람이 서는 칸과 가구가 놓인 칸은 화면 x 가 같지 않다.
+    private var seatAlignmentTiles: Double = 0
     private var activeInteractionPose: OfficeInteractionPose?
     private var activeWorkPose: String?
     /// 라운지 자세로 전체 노드를 옮긴 양. 종료 때 정확히 빼고, 절대 배치는 새 기준에서 재계산한다.
@@ -568,12 +571,15 @@ final class CharacterNode: SKNode {
     }
 
     /// 가구 자세는 몸과 소품을 한 생명주기로 묶어, 취소 경로가 어느 한쪽만 남기지 않게 한다.
-    func beginInteraction(pose: OfficeInteractionPose, facing: Facing) {
+    func beginInteraction(
+        pose: OfficeInteractionPose, facing: Facing, seatAlignmentTiles: Double = 0
+    ) {
         endInteraction()
         apply(facing: facing)
         clearMotion()
         isInteracting = true
         interactionFacing = facing
+        self.seatAlignmentTiles = seatAlignmentTiles
         activeInteractionPose = pose
 
         // **몸 상태는 그림과 같은 판정을 봐야 한다.** 자세 이름만 보고 앉히면, 계약이
@@ -631,6 +637,7 @@ final class CharacterNode: SKNode {
         sprite.removeAction(forKey: "interaction")
         isInteracting = false
         interactionFacing = nil
+        seatAlignmentTiles = 0
         activeInteractionPose = nil
         refreshInteractionOffset()
         stand()
@@ -740,7 +747,11 @@ final class CharacterNode: SKNode {
         if isInteracting, isSeated, let interactionFacing {
             let offset = officeLoungeInteractionOffset(
                 facing: interactionFacing,
-                tileSize: Double(currentTileSize)
+                tileSize: Double(currentTileSize),
+                // 소파와 테이블은 들어가는 깊이가 다르다. 자세를 안 넘기면 둘 다 소파 값을
+                // 받아, 테이블 앞 사람이 의자째 상판을 관통한다.
+                pose: activeInteractionPose ?? .sitting,
+                alignmentTiles: seatAlignmentTiles
             )
             nextOffset = CGPoint(x: offset.x, y: offset.y)
         } else {
