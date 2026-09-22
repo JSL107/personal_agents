@@ -28,6 +28,7 @@ export const formatKstDate = (
 };
 
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 // KST 기준 (오늘 - daysAgo) 일의 00:00 을 가리키는 UTC Date.
 // 서버 timezone 과 무관하게 KST 캘린더일 필터 경계를 만든다.
@@ -39,4 +40,13 @@ export const getKstDayStartAsUtc = (daysAgo = 0): Date => {
     kstNow.getUTCDate() - daysAgo,
   );
   return new Date(kstMidnightAsUtcTs - KST_OFFSET_MS);
+};
+
+// 두 시각 사이의 KST 캘린더일 차이. 같은 날이면 0, 어제 → 오늘이면 1.
+// 시각 차(24시간)가 아니라 자정 경계를 세는 것이 요점이다 — 저녁 23시 회고와 다음 날 아침 9시
+// 브리핑은 10시간 차이지만 사용자에게는 "어제 것" 이고, 그 표현이 모델에게 필요한 값이다.
+export const countKstDaysBetween = (from: Date, to: Date): number => {
+  const toKstDayIndex = (date: Date): number =>
+    Math.floor((date.getTime() + KST_OFFSET_MS) / DAY_MS);
+  return toKstDayIndex(to) - toKstDayIndex(from);
 };
