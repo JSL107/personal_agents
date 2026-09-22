@@ -282,6 +282,16 @@ export const buildPaperReportHtml = ({
     ...(chart.benchmarkOmittedReason === null
       ? []
       : [`지수 대비 없음 — ${chart.benchmarkOmittedReason}`]),
+    // 지수가 계좌보다 이른 날에서 끝났으면 적는다. 장마감(17:40)에는 그날 지수가 아직
+    // 적재되지 않아(유니버스 스윕 18:30) 이것이 상례다 — 안 적으면 끝 라벨의 지수 값을
+    // 계좌와 같은 날의 것으로 읽는다.
+    ...(chart.benchmarkLastTradeDate !== null &&
+    chart.lastTradeDate !== null &&
+    chart.benchmarkLastTradeDate < chart.lastTradeDate
+      ? [
+          `지수는 ${chart.benchmarkLastTradeDate} 까지 (계좌는 ${chart.lastTradeDate}) — 종료일이 다르다`,
+        ]
+      : []),
     ...(chart.truncatedAccounts.length === 0
       ? []
       : [

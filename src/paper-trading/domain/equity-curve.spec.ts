@@ -243,6 +243,44 @@ describe('buildEquityCurveChart', () => {
     }
   });
 
+  // 장마감 평가는 17:40, 지수 적재(유니버스 스윕)는 18:30 에 돈다. 그래서 장마감
+  // 리포트에서 지수는 보통 전 거래일까지다 — 두 선의 종료일이 다르다는 사실을 싣지 않으면
+  // 끝 라벨의 지수 값을 계좌와 같은 날의 것으로 읽는다.
+  it('지수가 계좌보다 이른 날에서 끝나면 그 날짜를 싣는다', () => {
+    const chart = buildEquityCurveChart({
+      series: [
+        accountSeries('LONG_TERM', [
+          ['2026-09-18', 0],
+          ['2026-09-21', 2],
+        ]),
+      ],
+      // 지수는 09-18 까지만 적재됐다(계좌는 09-21 까지 평가됨).
+      benchmark: benchmarkPoints([['2026-09-18', 2000]]),
+      benchmarkLabel: 'KOSPI',
+    });
+
+    expect(chart.lastTradeDate).toBe('2026-09-21');
+    expect(chart.benchmarkLastTradeDate).toBe('2026-09-18');
+  });
+
+  it('지수와 계좌의 종료일이 같으면 같은 날짜를 싣는다', () => {
+    const chart = buildEquityCurveChart({
+      series: [
+        accountSeries('LONG_TERM', [
+          ['2026-09-18', 0],
+          ['2026-09-21', 2],
+        ]),
+      ],
+      benchmark: benchmarkPoints([
+        ['2026-09-18', 2000],
+        ['2026-09-21', 2100],
+      ]),
+      benchmarkLabel: 'KOSPI',
+    });
+
+    expect(chart.benchmarkLastTradeDate).toBe(chart.lastTradeDate);
+  });
+
   // 기준 시점에 시드를 전부 잃은 계좌는 배수가 0 이라 나눌 수 없다. Infinity 로 그리면
   // 축이 통째로 무너져 나머지 곡선까지 못 읽게 된다.
   it('기준일 수익률이 -100% 인 계좌는 곡선에서 뺀다', () => {

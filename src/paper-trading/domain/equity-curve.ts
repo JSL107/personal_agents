@@ -35,6 +35,13 @@ export interface EquityCurveChart {
   // 공통 기준일보다 먼저 시작해 앞부분이 잘린 계좌 이름. 잘랐다는 사실을 안 적으면
   // 그 계좌의 성적이 실제보다 짧은 구간의 것으로 읽힌다.
   truncatedAccounts: string[];
+  // 지수 선이 실제로 끝난 거래일. `lastTradeDate` 보다 이르면 두 선의 종료일이 달라
+  // 끝 라벨의 지수 값이 계좌와 같은 날의 것이 아니다.
+  //
+  // 장마감 리포트에서 이것은 예외가 아니라 상례다 — 장마감 평가는 17:40(`40 17 * * 1-5`)에
+  // 돌고 지수를 적재하는 유니버스 스윕은 18:30(`30 18 * * *`)에 돈다. 즉 그 시점의 지수는
+  // 보통 전 거래일까지다. 안 적으면 "계좌는 오늘, 지수는 어제" 를 같은 날로 읽는다.
+  benchmarkLastTradeDate: string | null;
 }
 
 // 선이 축에 딱 붙으면 꺾이는 지점이 잘려 보인다. 값의 폭에 비례해 띄우되, 폭이 0 에
@@ -147,6 +154,7 @@ export const buildEquityCurveChart = (
       lastTradeDate: null,
       benchmarkOmittedReason: '계좌 평가 스냅샷이 없다',
       truncatedAccounts: [],
+      benchmarkLastTradeDate: null,
     };
   }
 
@@ -187,6 +195,7 @@ export const buildEquityCurveChart = (
       lastTradeDate: null,
       benchmarkOmittedReason: '기준일 수익률로 곡선을 맞출 수 없다',
       truncatedAccounts: [],
+      benchmarkLastTradeDate: null,
     };
   }
   // 지수는 계좌 곡선이 끝난 날까지만 그린다. 계좌 스냅샷보다 최신 종가가 있으면
@@ -226,6 +235,7 @@ export const buildEquityCurveChart = (
     lastTradeDate: lastAccountDate,
     benchmarkOmittedReason: benchmark.omittedReason,
     truncatedAccounts: truncated,
+    benchmarkLastTradeDate: benchmarkLine?.points.at(-1)?.tradeDate ?? null,
   };
 };
 
