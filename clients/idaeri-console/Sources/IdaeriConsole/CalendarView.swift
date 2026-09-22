@@ -4,8 +4,8 @@ import SwiftUI
 /// 캘린더 탭 루트 — 「마감·신청·예약」 일정을 월 격자로 보여준다.
 ///
 /// **등록 입구는 여기가 아니다.** Slack `@이대리 9월 30일 자동차세` 가 유일한 입구이고,
-/// 이 화면은 조회 + 완료·건너뜀만 한다(등록 폼을 두지 않는다 — 백엔드 컨트롤러에도 POST 가
-/// 없다, `ScheduleConsoleController` 주석 참조).
+/// 이 화면은 조회 + 상태 변경(완료·건너뜀·되돌리기)만 한다(등록 폼을 두지 않는다 — 백엔드
+/// 컨트롤러에도 POST 가 없다, `ScheduleConsoleController` 주석 참조).
 struct CalendarView: View {
     @ObservedObject var store: ConsoleStore
     let client: ConsoleClient
@@ -63,16 +63,18 @@ struct CalendarView: View {
         monthGridDays(year: year, month: month)
     }
 
-    /// 완료·건너뜀 항목은 화면에서 걷어낸다 — 완료를 누른 항목이 "사라지는" 동작이 이 필터에서 나온다.
-    /// 백엔드 `findByDateRange` 는 상태로 거르지 않고 기간 안 전 항목을 그대로 내려준다
-    /// (`schedule.prisma.repository.ts`), 그래서 걸러내는 몫은 화면이 진다.
-    private var openSchedules: [ScheduleItem] {
-        store.schedules.filter { $0.status == .open }
+    // 날짜별 목록·점 계산은 `ConsoleCore` 의 순수 함수에 있다(`CalendarDayList.swift`).
+    // 뷰 안에 두면 "완료해도 되돌릴 수 있다" 를 지탱하는 규칙이 테스트 밖에 남는다 —
+    // 실제로 그 규칙이 없어진 것을 화면을 굽기 전까지 아무도 몰랐다.
+    // 백엔드 `findByDateRange` 는 상태로 거르지 않고 기간 안 전 항목을 그대로 내려주므로
+    // (`schedule.prisma.repository.ts`) 상태를 나누는 몫은 화면이 진다.
+
+    private func dayKey(_ day: Int) -> String {
+        calendarDayKey(year: year, month: month, day: day)
     }
 
     private func itemsOn(day: Int) -> [ScheduleItem] {
-        let prefix = String(format: "%04d-%02d-%02d", year, month, day)
-        return openSchedules.filter { $0.dueDay == prefix }
+        daySchedules(items: store.schedules, dayKey: dayKey(day))
     }
 
     var body: some View {
@@ -135,7 +137,7 @@ struct CalendarView: View {
     }
 
     private func dayCell(_ day: Int) -> some View {
-        let hasItems = !itemsOn(day: day).isEmpty
+        let hasItems = hasOpenSchedule(items: store.schedules, dayKey: dayKey(day))
         let isSelected = selectedDay == day
         return Button {
             selectedDay = day
@@ -178,7 +180,9 @@ struct CalendarView: View {
     private var detailBody: some View {
         if let loadFailure {
             loadFailureState(loadFailure)
-        } else if openSchedules.isEmpty {
+        } else if store.schedules.isEmpty {
+            // 미완이 0건이어도 빈 상태로 넘기지 않는다. 마지막 항목을 완료한 순간 목록이
+            // 통째로 "등록된 일정이 없습니다" 로 바뀌면 방금 잘못 누른 것을 되돌릴 수 없다.
             emptyState
         } else if let selectedDay {
             let items = itemsOn(day: selectedDay)
@@ -198,31 +202,51 @@ struct CalendarView: View {
         }
     }
 
+    /// 치운 줄을 흐리게 만드는 정도. 읽을 수는 있되 미완 줄과 한눈에 갈려야 한다 —
+    /// 더 흐리면 되돌릴 대상을 못 찾고, 덜 흐리면 아직 할 일처럼 보인다.
+    private static let closedRowOpacity: Double = 0.5
+
     private func scheduleRow(_ item: ScheduleItem) -> some View {
-        HStack(spacing: Spacing.md) {
+        let isClosed = item.status != .open
+        return HStack(spacing: Spacing.md) {
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 Text(item.title)
                     .font(Typography.bodyEmphasis)
                     .foregroundStyle(CozyPalette.ink)
+                    .strikethrough(isClosed)
                 if let memo = item.memo, !memo.isEmpty {
                     Text(memo)
                         .font(Typography.caption)
                         .foregroundStyle(.secondary)
                 }
             }
+            .opacity(isClosed ? Self.closedRowOpacity : 1)
             Spacer()
-            // 주 행동은 살구색, 보조는 기본 버튼 — `AgentCardView` 의 "업무 맡기기 / 확인"
-            // 짝과 같은 처리다. 시스템 기본 `.borderedProminent` 는 파란색이라 크림·살구
-            // 팔레트 위에서 이 화면만 튄다(앱 어디에도 파란 버튼이 없다).
-            Button {
-                Task { await update(id: item.id, status: .done) }
-            } label: {
-                Text("완료").foregroundStyle(primaryActionForeground)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(CozyPalette.apricot)
-            Button("건너뜀") {
-                Task { await update(id: item.id, status: .skipped) }
+            if isClosed {
+                // 흐림·취소선만으로는 "완료" 와 "건너뜀" 이 구분되지 않는다. 글자는 버튼 이름과
+                // 같은 것을 쓴다(`actionLabel`) — 사용자가 누른 그 말이 그대로 남아야 잇는다.
+                Text(actionLabel(item.status))
+                    .font(Typography.caption)
+                    .foregroundStyle(.secondary)
+                // 되돌리기는 보조 행동으로 둔다. 흐려 놓은 줄 위에 살구색 주 행동 버튼을 얹으면
+                // 아직 남은 항목보다 눈에 띄어 흐림이 무의미해진다(`AgentCardView` 의 "확인" 쪽).
+                Button("되돌리기") {
+                    Task { await update(id: item.id, status: .open) }
+                }
+            } else {
+                // 주 행동은 살구색, 보조는 기본 버튼 — `AgentCardView` 의 "업무 맡기기 / 확인"
+                // 짝과 같은 처리다. 시스템 기본 `.borderedProminent` 는 파란색이라 크림·살구
+                // 팔레트 위에서 이 화면만 튄다(앱 어디에도 파란 버튼이 없다).
+                Button {
+                    Task { await update(id: item.id, status: .done) }
+                } label: {
+                    Text("완료").foregroundStyle(primaryActionForeground)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(CozyPalette.apricot)
+                Button("건너뜀") {
+                    Task { await update(id: item.id, status: .skipped) }
+                }
             }
         }
         .padding(Spacing.md)
@@ -333,7 +357,8 @@ struct CalendarView: View {
         await reload()
     }
 
-    /// 실패 문구에 쓸 행동 이름. **버튼 글자와 같아야** 사용자가 무엇이 실패했는지 바로 잇는다.
+    /// 행동 이름. 실패 문구와 치운 줄의 상태 표시가 함께 쓴다 — **버튼 글자와 같아야**
+    /// 사용자가 무엇이 실패했는지, 자기가 무엇을 눌러 이렇게 됐는지 바로 잇는다.
     private func actionLabel(_ status: ScheduleStatus) -> String {
         switch status {
         case .done:

@@ -16,24 +16,36 @@ private let calendarPreviewSize = CGSize(width: 1000, height: 760)
 
 /// 표본 데이터. 2026-09-30(자동차세)을 포함해 실제 등록 경로(`@이대리 9월 30일 자동차세`)로
 /// 들어온 값처럼 보이게 한다. `--empty` 면 이 표본을 아예 싣지 않는다.
+///
+/// **백엔드가 내려주는 순서 그대로 적는다** — 마감일 오름차순, 같은 날이면 id 오름차순
+/// (`schedule.prisma.repository.ts` 의 `orderBy`). 화면의 정렬(미완 위·치운 것 아래)이
+/// 실제로 먹는지는 표본이 그 순서를 거슬러야만 그림에 드러나므로, 9월 30일 묶음의 맨 앞을
+/// 치운 항목(id 3, 먼저 등록해 이미 처리한 건)으로 둔다. 화면에서는 그것이 아래로 내려가야 맞다.
 private let calendarPreviewSchedules: [ScheduleItem] = [
+    // 완료 항목을 월 격자의 점에서 걷어내는 필터(`hasOpenSchedule`)가 실제로 먹는지도
+    // 같은 렌더에서 드러나야 한다 — 9월 5일엔 점이 찍히지 않아야 맞다.
     ScheduleItem(
-        id: 1, title: "자동차세 납부", dueDate: "2026-09-30T00:00:00.000Z",
+        id: 1, title: "지난달 정산", dueDate: "2026-09-05T00:00:00.000Z",
+        linkUrl: nil, memo: nil, status: .done
+    ),
+    ScheduleItem(
+        id: 2, title: "헬스장 재등록", dueDate: "2026-09-12T00:00:00.000Z",
+        linkUrl: nil, memo: nil, status: .open
+    ),
+    // **선택된 날(9월 30일)에 치운 항목을 하나 둔다.** 되돌리기 버튼과 흐림·취소선 조판은
+    // 완료 항목이 목록에 실제로 남아야만 그림에 나오고, 안 나오면 "되돌릴 수 있다" 는 주장에
+    // 근거가 없다. 미완 두 줄과 나란히 서므로 둘이 한눈에 갈리는지도 같은 장에서 보인다.
+    ScheduleItem(
+        id: 3, title: "여권 재발급 신청", dueDate: "2026-09-30T00:00:00.000Z",
+        linkUrl: nil, memo: "구청 방문 완료", status: .done
+    ),
+    ScheduleItem(
+        id: 4, title: "자동차세 납부", dueDate: "2026-09-30T00:00:00.000Z",
         linkUrl: nil, memo: "9월분, 10월 16일까지 연납 시 할인", status: .open
     ),
     ScheduleItem(
-        id: 2, title: "국민연금 신고", dueDate: "2026-09-30T00:00:00.000Z",
+        id: 5, title: "국민연금 신고", dueDate: "2026-09-30T00:00:00.000Z",
         linkUrl: nil, memo: nil, status: .open
-    ),
-    ScheduleItem(
-        id: 3, title: "헬스장 재등록", dueDate: "2026-09-12T00:00:00.000Z",
-        linkUrl: nil, memo: nil, status: .open
-    ),
-    // 완료 상태는 화면에서 걷어내는 필터(`CalendarView.openSchedules`)가 실제로 먹는지도
-    // 같은 렌더에서 드러나야 한다 — 9월 5일엔 점이 찍히지 않아야 맞다.
-    ScheduleItem(
-        id: 4, title: "지난달 정산", dueDate: "2026-09-05T00:00:00.000Z",
-        linkUrl: nil, memo: nil, status: .done
     ),
 ]
 

@@ -37,5 +37,6 @@ runOfficeAccessibilityTests(runner)
 runPresidentBriefingTests(runner)
 runConsoleClientTests(runner)
 runCalendarGridTests(runner)
+runCalendarDayListTests(runner)
 
 runner.finish()
