@@ -58,8 +58,10 @@ struct CalendarView: View {
         self.client = client
         self.baseURLLabel = baseURLLabel
         let now = Calendar(identifier: .gregorian)
-        _year = State(initialValue: initialYear ?? now.component(.year, from: Date()))
-        _month = State(initialValue: initialMonth ?? now.component(.month, from: Date()))
+        let resolvedYear = initialYear ?? now.component(.year, from: Date())
+        let resolvedMonth = initialMonth ?? now.component(.month, from: Date())
+        _year = State(initialValue: resolvedYear)
+        _month = State(initialValue: resolvedMonth)
         _selectedDay = State(initialValue: initialSelectedDay)
         _loadFailure = State(initialValue: initialLoadFailure)
         _isLoading = State(initialValue: initialLoading)
@@ -149,13 +151,27 @@ struct CalendarView: View {
         calendarDayKey(year: year, month: month, day: day)
     }
 
-    /// 화면이 그리는 일정. **조회에 실패했으면 비운다.** 실패해도 `store.schedules` 에는
-    /// 직전 달 항목이 남는데 화면의 달은 이미 바뀌어 있어(`shiftMonth` 가 먼저 바꾼다),
-    /// 그대로 그리면 격자가 "이 달 이 날에 이 일정이 있다" 는 거짓을 말한다 — 상세 목록이
-    /// 같은 이유로 실패를 먼저 가르는데(`detailBody`) 격자만 낡은 데이터를 계속 들고 있었다.
-    /// 점 하나였을 때는 덜 보였고, 칩에 제목이 실리면서 드러났다(실측 렌더).
+    private var currentMonthKey: String {
+        String(format: "%04d-%02d", year, month)
+    }
+
+    /// 화면이 그리는 일정. **조회에 실패했으면 비우고, 지금 보는 달에 속한 것만 남긴다.**
+    ///
+    /// 실패를 비우는 이유: 실패해도 `store` 에는 직전 성공분이 남고, 그대로 그리면 격자가
+    /// "이 달 이 날에 이 일정이 있다" 는 거짓을 말한다. 상세 목록은 같은 이유로 이미 실패를
+    /// 먼저 갈랐는데 격자만 낡은 데이터를 들고 있었다(점일 때는 덜 보였고 칩에 제목이 실리며
+    /// 드러났다).
+    ///
+    /// 달로 거르는 이유: `shiftMonth` 는 달을 먼저 바꾸고 조회를 비동기로 띄우므로 응답 전까지
+    /// `store` 에는 직전 달 항목이 남는다. 격자·상세는 날짜 전체를 비교해 자연히 걸러지지만
+    /// (`daySchedules`), **건수를 세는 쪽과 "비었나" 를 묻는 쪽은 그 필터를 지나지 않아**
+    /// 새 달 머리글에 이전 달 건수가 찍혔다. 세는 곳마다 달을 다시 확인하게 하지 않고 여기서
+    /// 한 번 거른다 — 한 곳이라도 빠지면 그 자리에서만 조용히 틀린다.
     private var visibleSchedules: [ScheduleItem] {
-        loadFailure == nil ? store.schedules : []
+        guard loadFailure == nil else {
+            return []
+        }
+        return store.schedules.filter { $0.dueDay.hasPrefix(currentMonthKey) }
     }
 
     private func itemsOn(day: Int) -> [ScheduleItem] {
@@ -175,26 +191,28 @@ struct CalendarView: View {
         // (`DashboardView.gridColumns` 주석에 같은 사고가 실측으로 적혀 있다).
         GeometryReader { proxy in
             let isWide = proxy.size.width >= Self.sidePanelBreakpoint
-            Group {
-                if isWide {
-                    HStack(alignment: .top, spacing: Spacing.xl) {
-                        calendarColumn(availableHeight: proxy.size.height)
-                        detailPanel
-                            .frame(width: Self.sidePanelWidth)
-                    }
-                } else {
-                    // 좁은 창에서는 격자와 상세가 세로로 쌓여 창 높이(최소 560)를 넘는다.
-                    // 넘치는 것을 자르는 대신 스크롤로 넘긴다 — 잘리면 마지막 주와 상세가
-                    // 통째로 사라지는데, 그게 화면 밖에 있다는 사실조차 보이지 않는다.
-                    ScrollView {
+            // **두 분기 모두 스크롤 안에 둔다.** 넓은 분기를 스크롤 없이 두었더니 폭은 넓고
+            // 높이는 창 하한(560)인 창에서 마지막 주가 화면 경계에서 잘렸고, 스크롤이 없어
+            // 손댈 수조차 없었다(1100×560 실측). 칸 높이는 아래에서 창 세로로 계산한 고정값이라
+            // 스크롤 안에서도 그대로 서고, 내용이 창에 들어가면 스크롤은 생기지 않는다.
+            ScrollView {
+                Group {
+                    if isWide {
+                        HStack(alignment: .top, spacing: Spacing.xl) {
+                            calendarColumn(availableHeight: proxy.size.height)
+                            detailPanel
+                                .frame(width: Self.sidePanelWidth)
+                        }
+                    } else {
                         VStack(alignment: .leading, spacing: Spacing.lg) {
                             calendarColumn(availableHeight: nil)
                             detailPanel
                         }
                     }
                 }
+                .padding(Spacing.xl)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
-            .padding(Spacing.xl)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(minHeight: Layout.contentMinHeight, alignment: .top)
@@ -550,7 +568,10 @@ struct CalendarView: View {
                 }
                 // 백엔드가 링크를 실어 보내는데도 화면 어디에도 나오지 않았다. 메모 아래
                 // 한 줄로 둔다 — 여는 것 말고 할 일이 없는 값이라 버튼 하나면 족하다.
-                if let linkUrl = item.linkUrl, let url = URL(string: linkUrl) {
+                // **`URL(string:)` 만으로 열지 않는다.** 그것은 `file:`·커스텀 앱 스킴도
+                // 통과시키고, 백엔드엔 스킴 검사가 없어 화면이 유일한 방어선이다
+                // (`safeScheduleLinkURL` 의 주석에 근거를 적었다).
+                if let url = safeScheduleLinkURL(item.linkUrl) {
                     Link(destination: url) {
                         Label("링크 열기", systemImage: "arrow.up.right.square")
                             .font(Typography.caption)
@@ -729,7 +750,14 @@ struct CalendarView: View {
         // 내용만 10월인 상태가 된다 — 오류가 나지 않아 눈치채기 어려운 쪽이다.
         let requestedYear = year
         let requestedMonth = month
-        await MainActor.run { isLoading = true }
+        await MainActor.run {
+            isLoading = true
+            // 묵은 실패 표시를 지운다. 실패가 로딩보다 우선이라, 남겨 두면 실패 후 달을
+            // 옮기거나 다시 읽는 동안에도 끝난 옛 오류가 이번 요청의 결과처럼 보인다.
+            // 격자가 낡은 데이터로 되돌아가지 않는 것은 `visibleSchedules` 가 실패 여부와
+            // **담긴 달** 을 함께 보기 때문이다.
+            loadFailure = nil
+        }
         let from = String(format: "%04d-%02d-01", requestedYear, requestedMonth)
         let to = String(format: "%04d-%02d-%02d", requestedYear, requestedMonth, lastDayOfMonth)
         do {

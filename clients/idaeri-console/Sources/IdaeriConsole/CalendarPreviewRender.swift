@@ -62,12 +62,16 @@ private let calendarPreviewSchedules: [ScheduleItem] = [
 /// `failure` 는 조회 실패 화면을, `loading` 은 조회 중 화면을 굽는다. 두 화면이 빈 상태와
 /// 확실히 갈라지는지는 **그려 봐야만** 알 수 있는데, 굽는 경로는 네트워크 응답을 기다리지 않고
 /// 끝나 둘 중 어느 상태에도 자연히 닿지 못한다.
+/// `month` 는 굽는 달을 바꾼다. **행 수가 달마다 다른 것이 조판 위험이다** — 5주 달은 창
+/// 하한(560)에 들어가지만 6주 달은 같은 창에서 넘친다(78×6 + 간격·머리글·여백 = 616).
+/// 표본은 9월 것이라 다른 달은 빈 격자가 되지만, 확인 대상은 행 수가 늘어난 조판 자체다.
 func renderCalendarPreview(
     path: String,
     darkMode: Bool,
     empty: Bool,
     failure: Bool = false,
     loading: Bool = false,
+    month: Int = 9,
     size: CGSize? = nil
 ) -> Bool {
     let calendarPreviewSize = size ?? calendarPreviewSize
@@ -85,7 +89,7 @@ func renderCalendarPreview(
         // 버튼 조판까지 한 장에서 확인한다.
         CalendarView(
             store: store, client: client, baseURLLabel: "http://127.0.0.1:3002",
-            initialYear: 2026, initialMonth: 9,
+            initialYear: 2026, initialMonth: month,
             initialSelectedDay: empty ? nil : 30,
             // 백엔드가 꺼져 있을 때 실제로 나오는 문구 그대로 — `failureReason` 의 비-HTTP 분기.
             initialLoadFailure: failure
