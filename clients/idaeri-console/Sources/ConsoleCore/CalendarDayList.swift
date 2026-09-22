@@ -10,11 +10,10 @@ public func calendarDayKey(year: Int, month: Int, day: Int) -> String {
     String(format: "%04d-%02d-%02d", year, month, day)
 }
 
-/// 월 격자의 점을 찍을지. **미완 항목만** 센다 — 완료·건너뜀까지 점을 찍으면 남은 날과
-/// 치운 날이 구분되지 않아 격자가 한 달 내내 점으로 덮인다. 점의 뜻은 "여기 아직 할 게 있다" 다.
-public func hasOpenSchedule(items: [ScheduleItem], dayKey: String) -> Bool {
-    items.contains { $0.dueDay == dayKey && $0.status == .open }
-}
+// 월 격자의 점을 찍을지 판정하던 `hasOpenSchedule` 은 2026-09-22 제거했다 — 칸이 점 대신
+// 일정 제목을 칩으로 세우게 되면서 호출부가 0개가 됐고, "미완만 센다" 는 그 규칙은 미완을
+// 위로 올리는 `daySchedules` 의 정렬이 대신 지탱한다(칸에 칩 하나만 들어가도 남은 일정이
+// 먼저 보인다). 안 쓰는 판정을 남겨 두면 다음 사람이 그것도 화면 규칙인 줄 알고 맞춰 고친다.
 
 /// 선택한 날의 목록. **완료·건너뜀도 남기고** 미완을 위로 올린다.
 ///

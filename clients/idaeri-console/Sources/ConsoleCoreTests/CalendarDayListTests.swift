@@ -66,24 +66,9 @@ func runCalendarDayListTests(_ t: TestRunner) {
         t.expectEqual(list.map { $0.id }, [1], "선택한 날만 담는다")
     }
 
-    // 월 격자의 점은 미완만 센다 — 치운 날까지 점이 찍히면 "아직 할 게 있는 날" 이라는
-    // 뜻이 사라져 격자가 한 달 내내 점으로 덮인다.
-    do {
-        let items = [
-            sample(id: 1, title: "치움", day: "2026-09-05", status: .done),
-            sample(id: 2, title: "건너뜀", day: "2026-09-05", status: .skipped),
-            sample(id: 3, title: "남음", day: "2026-09-12", status: .open),
-        ]
-        t.expectEqual(hasOpenSchedule(items: items, dayKey: "2026-09-05"), false, "전부 치운 날엔 점이 없다")
-        t.expectEqual(hasOpenSchedule(items: items, dayKey: "2026-09-12"), true, "미완이 있는 날엔 점이 찍힌다")
-        t.expectEqual(hasOpenSchedule(items: items, dayKey: "2026-09-20"), false, "항목이 없는 날엔 점이 없다")
-    }
-
-    // 점은 없는데 목록은 남는 날 — 두 규칙이 서로 다른 것을 보고 있다는 증거다.
-    // 하나로 합치면 둘 중 하나가 반드시 틀린다(점이 덮이거나, 되돌릴 길이 막히거나).
+    // 치운 항목만 있는 날도 목록은 비지 않는다 — 여기가 비면 되돌릴 입구가 사라진다.
     do {
         let items = [sample(id: 1, title: "치움", day: "2026-09-05", status: .done)]
-        t.expectEqual(hasOpenSchedule(items: items, dayKey: "2026-09-05"), false, "치운 날엔 점이 안 찍히고")
-        t.expectEqual(daySchedules(items: items, dayKey: "2026-09-05").count, 1, "그래도 목록엔 남아 되돌릴 수 있다")
+        t.expectEqual(daySchedules(items: items, dayKey: "2026-09-05").count, 1, "치운 날도 목록엔 남아 되돌릴 수 있다")
     }
 }
