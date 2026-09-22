@@ -1,10 +1,10 @@
-import { ListActiveTasksUsecase } from '../../notion/application/list-active-tasks.usecase';
 import { NotionTask } from '../../notion/domain/notion.type';
+import type { NotionClientPort } from '../../notion/domain/port/notion-client.port';
 import { NotionStateSource } from './notion-state-source';
 
 describe('NotionStateSource', () => {
-  const buildUsecase = (execute: jest.Mock): ListActiveTasksUsecase =>
-    ({ execute }) as unknown as ListActiveTasksUsecase;
+  const buildClient = (listActiveTasks: jest.Mock): NotionClientPort =>
+    ({ listActiveTasks }) as unknown as NotionClientPort;
 
   const buildTask = (overrides: Partial<NotionTask> = {}): NotionTask =>
     ({
@@ -16,20 +16,23 @@ describe('NotionStateSource', () => {
       ...overrides,
     }) as NotionTask;
 
-  // 회귀 방지 본체 — 포트를 직접 부르면 STALE_DATA_CUTOFF_DAYS 가 통째로 우회된다.
-  // usecase 를 거치는지를 호출로 못박아 둔다 (PM / PO Shadow 와 같은 컷오프).
-  it('포트가 아니라 ListActiveTasksUsecase 를 거쳐 조회한다', async () => {
-    const execute = jest.fn().mockResolvedValue([]);
-    const source = new NotionStateSource(buildUsecase(execute));
+  // 회귀 방지 본체 — 컷오프(lastEditedSinceIsoDateTime) 를 걸면 항목이 나이를 먹는 날마다
+  // 조회에서 빠지고 diffSnapshots 가 그것을 removed 로 판정한다. 상태 비교에는 이동 창을 걸지 않는다.
+  it('조회에 stale 컷오프를 걸지 않는다', async () => {
+    const listActiveTasks = jest.fn().mockResolvedValue([]);
+    const source = new NotionStateSource(buildClient(listActiveTasks));
 
     await source.fetchSnapshot();
 
-    expect(execute).toHaveBeenCalledTimes(1);
+    expect(listActiveTasks).toHaveBeenCalledTimes(1);
+    const passedOptions = listActiveTasks.mock.calls[0][0];
+    expect(passedOptions?.lastEditedSinceIsoDateTime).toBeUndefined();
   });
 
   it('task 를 상태+제목 지문으로 접어 snapshot 을 만든다', async () => {
-    const execute = jest.fn().mockResolvedValue([buildTask()]);
-    const source = new NotionStateSource(buildUsecase(execute));
+    const source = new NotionStateSource(
+      buildClient(jest.fn().mockResolvedValue([buildTask()])),
+    );
 
     const snapshot = await source.fetchSnapshot();
 
@@ -39,13 +42,25 @@ describe('NotionStateSource', () => {
     expect(snapshot.items[0].summary).toBe('작업 하나');
   });
 
-  // 상태가 바뀌면 지문이 갈려야 변화로 잡힌다 — 제목만 같아도 같은 지문이면 안 된다.
+  // 묵은 항목이 무해한 근거 — 내용이 그대로면 지문도 그대로라 contentHash 가 같고,
+  // diffSnapshots 가 변화 없음으로 즉시 반환해 gate 를 부르지 않는다.
+  it('내용이 그대로면 회차가 달라도 contentHash 가 같다', async () => {
+    const first = await new NotionStateSource(
+      buildClient(jest.fn().mockResolvedValue([buildTask()])),
+    ).fetchSnapshot();
+    const second = await new NotionStateSource(
+      buildClient(jest.fn().mockResolvedValue([buildTask()])),
+    ).fetchSnapshot();
+
+    expect(second.contentHash).toBe(first.contentHash);
+  });
+
   it('같은 page 라도 상태가 바뀌면 지문이 갈린다', async () => {
     const before = await new NotionStateSource(
-      buildUsecase(jest.fn().mockResolvedValue([buildTask()])),
+      buildClient(jest.fn().mockResolvedValue([buildTask()])),
     ).fetchSnapshot();
     const after = await new NotionStateSource(
-      buildUsecase(
+      buildClient(
         jest
           .fn()
           .mockResolvedValue([buildTask({ properties: { 상태: '완료' } })]),
@@ -58,8 +73,9 @@ describe('NotionStateSource', () => {
   // 조회가 실패하면 삼키지 않고 올린다 — engine 이 baseline 전진을 건너뛰어야
   // 권한 단절이 "항목 전부 사라짐" 으로 읽히지 않는다.
   it('조회 실패를 삼키지 않고 그대로 올린다', async () => {
-    const execute = jest.fn().mockRejectedValue(new Error('조회 실패'));
-    const source = new NotionStateSource(buildUsecase(execute));
+    const source = new NotionStateSource(
+      buildClient(jest.fn().mockRejectedValue(new Error('조회 실패'))),
+    );
 
     await expect(source.fetchSnapshot()).rejects.toThrow('조회 실패');
   });
