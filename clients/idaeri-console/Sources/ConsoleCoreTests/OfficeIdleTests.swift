@@ -37,12 +37,12 @@ func runOfficeIdleTests(_ t: TestRunner) {
     t.expectEqual(officeStrollCooldownSeconds, 90, "재배회 쿨다운")
 
     // 이 검증이 잡는 회귀: 가구 방향과 다른 축/부호로 전체 캐릭터 노드를 밀어 몸과 가구가
-    // 멀어지는 버그. 기대값은 10px 타일 × 0.30칸을 손으로 계산한 literal이다.
+    // 멀어지는 버그. 기대값은 10px 타일 × 0.75칸(3/4)을 손으로 계산한 literal이다.
     let expectedLoungeOffsets: [(Facing, OfficePoint)] = [
-        (.left, OfficePoint(x: -3, y: 0)),
-        (.right, OfficePoint(x: 3, y: 0)),
-        (.up, OfficePoint(x: 0, y: 3)),
-        (.down, OfficePoint(x: 0, y: -3)),
+        (.left, OfficePoint(x: -7.5, y: 0)),
+        (.right, OfficePoint(x: 7.5, y: 0)),
+        (.up, OfficePoint(x: 0, y: 7.5)),
+        (.down, OfficePoint(x: 0, y: -7.5)),
     ]
     for (facing, expected) in expectedLoungeOffsets {
         t.expectEqual(
@@ -51,6 +51,28 @@ func runOfficeIdleTests(_ t: TestRunner) {
             "\(facing.rawValue) lounge 전체 노드 오프셋"
         )
     }
+
+    // **소파와 테이블은 다른 거리를 쓴다.** 한 값으로 묶여 있던 동안 소파는 좌판에 못 닿고
+    // 테이블은 상판을 관통했다 — 둘이 같아지면 그 배치로 되돌아간 것이다.
+    t.expect(
+        officeTableSeatSpriteShift < officeLoungeSpriteShift,
+        "테이블 착석은 소파보다 가구에 덜 들어간다"
+    )
+    t.expectEqual(
+        officeLoungeInteractionOffset(facing: .up, tileSize: 10, pose: .sittingAtTable),
+        OfficePoint(x: 0, y: 1.25),
+        "테이블 착석은 자기 값(1/8 칸)을 쓴다"
+    )
+
+    // 가로 정렬은 부르는 쪽이 재서 넘긴다(가구 폭 + 원근). 방향 이동과 **더해져야** 한다 —
+    // 덮어쓰면 소파에 붙는 몫이 사라지고, 빠지면 가구가 놓인 x 와 어긋난 채로 앉는다.
+    t.expectEqual(
+        officeLoungeInteractionOffset(
+            facing: .up, tileSize: 10, pose: .sitting, alignmentTiles: 0.5
+        ),
+        OfficePoint(x: 5, y: 7.5),
+        "가로 정렬은 방향 이동과 함께 적용된다"
+    )
 
     let now = 1_000.0
     let cooldown = 90.0
@@ -256,11 +278,19 @@ func runOfficeIdleTests(_ t: TestRunner) {
     // 후보 규칙은 **평면도를 거치지 않고 직접** 고정한다. 지금 배치는 앉는 가구의 정면이
     // 모두 열려 있어, 네 방향 탐색으로 되돌려도 목적지 결과가 같다 — 아래 평면도 단언들만
     // 두면 규칙이 통째로 사라져도 전부 통과한다(실측 확인).
-    let sittingNeighbors = officeInteractionNeighbors(
-        furniture: TilePoint(x: 5, y: 5), pose: .sitting
-    )
-    t.expectEqual(sittingNeighbors, [TilePoint(x: 5, y: 4)], "앉는 자리 후보는 정면 한 칸뿐")
-    for pose in OfficeInteractionPose.allCases where pose != .sitting {
+    // **자세 이름이 아니라 `sitsOnFurniture` 로 가른다.** 예전에는 `.sitting` 하나만 예외로
+    // 빼고 나머지를 전부 네 방향으로 단언했는데, 그러다 뒤에 생긴 `.sittingAtTable` 이
+    // "네 방향" 쪽에 휩쓸려 들어갔다 — 규칙(이 함수 주석)은 처음부터 "소파·**테이블** 그림은
+    // 정면도" 라고 둘 다 지목하고 있었으므로, 그 단언은 의도가 아니라 루프가 흘린 것이다.
+    // 새 앉는 자세가 늘어도 같은 실수가 나지 않도록 계약에 물어서 가른다.
+    for pose in OfficeInteractionPose.allCases where pose.sitsOnFurniture {
+        t.expectEqual(
+            officeInteractionNeighbors(furniture: TilePoint(x: 5, y: 5), pose: pose),
+            [TilePoint(x: 5, y: 4)],
+            "\(pose.rawValue) 후보는 정면 한 칸뿐"
+        )
+    }
+    for pose in OfficeInteractionPose.allCases where !pose.sitsOnFurniture {
         t.expectEqual(
             officeInteractionNeighbors(furniture: TilePoint(x: 5, y: 5), pose: pose),
             [
@@ -268,6 +298,34 @@ func runOfficeIdleTests(_ t: TestRunner) {
                 TilePoint(x: 6, y: 5), TilePoint(x: 5, y: 6),
             ],
             "\(pose.rawValue) 는 네 방향 후보를 유지"
+        )
+    }
+    // 양쪽 루프가 **둘 다 비지 않아야** 한다. `sitsOnFurniture` 가 전부 true 나 false 로
+    // 무너지면 위 두 단언 중 하나가 0회 돌면서 초록으로 통과한다.
+    t.expect(
+        OfficeInteractionPose.allCases.contains(where: \.sitsOnFurniture)
+            && OfficeInteractionPose.allCases.contains(where: { !$0.sitsOnFurniture }),
+        "앉는 자세와 서는 자세가 모두 존재한다"
+    )
+    t.expectEqual(
+        Set(OfficeInteractionPose.allCases.filter(\.sitsOnFurniture).map(\.rawValue)),
+        Set(["sitting", "sittingAtTable"]),
+        "가구에 앉는 자세는 소파용과 테이블용 둘"
+    )
+    // **두 자세를 이름으로도 박는다.** 위 루프는 구현과 같은 `sitsOnFurniture` 를 보므로,
+    // 그 속성이 틀리면 검사 대상도 함께 옮겨 가 서로를 가려 준다(대조군으로 실측: 테이블을
+    // 앉는 자세에서 빼자 정면 칸 단언이 조용히 통과했다). 이름으로 고정한 이 둘이 그 회귀를
+    // 실제로 붙잡는 앵커다.
+    for named in ["sitting", "sittingAtTable"] {
+        guard let pose = OfficeInteractionPose(rawValue: named) else {
+            t.expect(false, "\(named) 자세가 사라졌다")
+            continue
+        }
+        t.expect(pose.sitsOnFurniture, "\(named) 은 가구에 앉는 자세")
+        t.expectEqual(
+            officeInteractionNeighbors(furniture: TilePoint(x: 5, y: 5), pose: pose),
+            [TilePoint(x: 5, y: 4)],
+            "\(named) 은 정면 칸에서만 앉는다"
         )
     }
 

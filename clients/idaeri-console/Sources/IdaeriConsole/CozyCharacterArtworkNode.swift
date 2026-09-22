@@ -367,10 +367,9 @@ final class CozyCharacterArtworkNode: SKNode {
                 addMug(to: root, outline: outline)
             }
         case .inProgress:
-            // Desk interactions already render a full 2.5D workstation. A second flat laptop
-            // badge across the torso breaks the shared perspective and can cover the face of the
-            // lowered seated fallback.
-            if !["sit", "writing", "reading"].contains(normalized) {
+            // 어느 포즈가 배지를 거르는지는 계약이 정한다(`cozyPoseSkipsLaptopBadge`).
+            // 여기에 이름을 다시 적어 두었던 동안 `sit-back`·`sit-table` 이 보호를 못 받았다.
+            if !cozyPoseSkipsLaptopBadge(normalized) {
                 addLaptop(to: root, outline: outline)
             }
         case .awaitingApproval: addDocument(to: root, x: -25, y: 40, outline: outline)
@@ -385,8 +384,13 @@ final class CozyCharacterArtworkNode: SKNode {
         case "carryingpapers": addPaperStack(to: root, outline: outline)
         case "tending": addLeaf(to: root, outline: outline)
         case "stowing": addBox(to: root, outline: outline)
-        case "sit": addSeatCue(to: root, outline: outline)
-        default: break
+        default:
+            // 앉은 몸에는 좌석 힌트 막대를 깐다. 위 `sitting` 판정이 이름에 "sit" 이 들어가면
+            // 몸을 앉은 형태로 그리므로, 큐만 `sit` 하나에 묶여 있으면 나머지 착석 포즈는
+            // 앉은 몸인데 앉을 것이 없는 그림이 된다.
+            if cozySeatedPoseNames.contains(normalized) {
+                addSeatCue(to: root, outline: outline)
+            }
         }
     }
 

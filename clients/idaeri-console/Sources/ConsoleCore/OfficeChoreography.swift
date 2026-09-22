@@ -90,8 +90,9 @@ public let cozyIdlePose = "idle"
 /// - `OfficeScene.placeAtWorkstation` 의 `depth` — 전신은 책상 앞판보다 **앞**에 그려야 하고
 ///   (`depth(of: assignment.desk)`), 상반신 그림은 앞판이 하반신을 **가려 주어야** 한다
 ///   (예전 값 `depth(of: assignment.seat) - 0.24`).
-/// - `officeWorkstationSeatVisualOffsetTiles` — 가림이 없어진 만큼 덜 올린다(0.60 → 0.15).
-///   그 상수의 주석에 두 번 잰 기록이 남아 있다.
+/// - `officeWorkstationSeatVisualOffsetTiles` — 가림이 없어진 만큼 덜 올린다. 0.60 에서 시작해
+///   지금은 **음수**(몸을 상판 아래로 내린다)까지 내려왔다. 구체적인 값과 세 번 잰 기록은 그
+///   상수의 주석에 있다 — **여기에 값을 다시 적지 않는다**(한쪽만 갱신돼 어긋난 적이 있다).
 ///
 /// 셋 중 하나만 바꾸면 사람이 상판 위로 떠오르거나 다리가 중간에서 잘린다.
 public let cozyDeskSeatPose = "sit-back"
@@ -107,6 +108,35 @@ public let cozyDeskSeatPose = "sit-back"
 /// 애초에 없고, 콘솔이 그려 둔 의자가 그 사람의 의자로 읽힌다. 일반 책상(`cozyDeskSeatPose`)
 /// 과 갈라 두는 것이 이 상수의 존재 이유다.
 public let officeFeatureConsoleSeatPose = "sit"
+
+/// **앉은 그림으로 취급하는 포즈 이름 전부.** 새 착석 포즈는 여기에만 넣는다.
+///
+/// 이 집합이 있는 이유는 같은 목록이 코드 여러 곳에 흩어져 있었고, 새 포즈를 넣을 때 한 곳을
+/// 빠뜨리면 **파일도 있고 계약도 맞는데 화면만 안 바뀌는** 사고가 반복됐기 때문이다. 지금까지
+/// 세 곳에서 당했다 — `resolveCozyPose` 의 앉은-요청 판정(빠뜨리면 원하는 자세가 `.standing`
+/// 으로 잡혀 후보가 전부 걸러지고 조용히 `idle` 로 떨어진다), `sit()` 호출부, 그리고 도형
+/// 폴백의 노트북 배지 제외(`cozyPoseSkipsLaptopBadge`).
+///
+/// `typing` 이 들어 있는 것은 그 요청이 책상 앞 작업이라 앉은 그림으로 풀리기 때문이다.
+/// 가구 앞 자세(`sitting`·`sit-table`)와 책상 좌석(`sit`·`sit-back`)은 쓰임이 다르지만
+/// "앉아 있는가" 라는 이 질문에는 함께 답한다.
+public let cozySeatedPoseNames: Set<String> = [
+    "sit", "sit-back", "sit-table", "sitting", "typing",
+]
+
+/// 도형으로 그린 캐릭터에 **납작한 노트북 배지를 얹지 않을** 포즈인가.
+///
+/// 배지는 원화가 없어 벡터 도형으로 떨어진 경우에만 붙는다. 그때도 책상 작업 자세에는 붙이면
+/// 안 된다 — 씬이 이미 2.5D 작업대를 그려 두었으므로 납작한 배지가 원근을 깨고, 좌석용으로
+/// 내려앉은 몸에서는 얼굴까지 가린다. 손에 이미 소품이 있는 자세(`writing`·`reading`)도
+/// 같은 이유로 뺀다.
+///
+/// **앉은 포즈 전부가 대상이다.** 예전에는 `["sit", "writing", "reading"]` 으로 이름을 직접
+/// 적어 두어, 뒤에 생긴 `sit-back`·`sit-table` 이 보호를 못 받았다.
+public func cozyPoseSkipsLaptopBadge(_ normalized: String) -> Bool {
+    cozySeatedPoseNames.contains(normalized) || normalized == "writing"
+        || normalized == "reading"
+}
 
 /// 요청 이름을 에셋 어휘로 접는다.
 ///
@@ -282,13 +312,10 @@ public func resolveCozyPose(
     // **앉을 자리가 없는 화면은 그것을 덮어쓸 수 있어야 한다.** 대시보드 카드에는 책상도
     // 의자도 없는데 `typing` 을 요청하면 앉은 그림이 뽑혀 사람이 공중에 주저앉는다
     // (사용자 보고). 그런 호출자는 `posture: .standing` 을 넘겨 선 그림만 받는다.
-    // **새 착석 포즈를 추가하면 이 목록에도 넣어야 한다.** 빠뜨리면 요청은 앉은 그림인데
-    // 원하는 자세가 `.standing` 으로 잡혀, 아래 자세 검사에서 후보가 전부 걸러지고 조용히
-    // `idle`(서 있는 전신)로 떨어진다 — 파일도 있고 계약에도 등록했는데 화면만 안 바뀌어
-    // 원인이 늦게 드러난다(`sit-back` 을 넣을 때 실제로 그랬다).
+    // 앉은 요청인지는 `cozySeatedPoseNames` 한 곳이 정한다 — 예전에는 이 자리에 이름을 직접
+    // 나열했고, 새 포즈를 넣을 때 그 목록을 빠뜨리는 사고가 반복됐다(아래 상수 주석 참조).
     let wanted: CozyPosePosture = requiredPosture
-        ?? (["sit", "sit-back", "sit-table", "sitting", "typing"].contains(normalized)
-            ? .seated : .standing)
+        ?? (cozySeatedPoseNames.contains(normalized) ? .seated : .standing)
     for candidate in cozyPoseCandidates(normalized) {
         guard !cozyPoseDrawsOwnFurniture(assetIndex: assetIndex, pose: candidate) else {
             continue

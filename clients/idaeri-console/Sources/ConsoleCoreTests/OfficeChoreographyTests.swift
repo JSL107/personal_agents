@@ -278,8 +278,8 @@ func runCozyPoseContractTests(_ t: TestRunner) {
             normalizedCozyPose(pose.rawValue) != cozyIdlePose,
             "상호작용 자세 \(pose.rawValue) 가 계약에 등록돼 있어야 한다")
     }
-    // 앉는 자세는 **앉은 것으로** 풀려야 한다. `resolveCozyPose` 안의 앉은-요청 목록에서
-    // 빠지면 원하는 자세가 `.standing` 으로 잡혀 앉은 후보가 전부 걸러진다.
+    // 앉는 자세는 **앉은 것으로** 풀려야 한다. `cozySeatedPoseNames` 에서 빠지면 원하는
+    // 자세가 `.standing` 으로 잡혀 앉은 후보가 전부 걸러진다.
     for pose in OfficeInteractionPose.allCases
     where normalizedCozyPose(pose.rawValue).hasPrefix("sit") {
         t.expectEqual(
@@ -288,6 +288,47 @@ func runCozyPoseContractTests(_ t: TestRunner) {
             ).posture,
             .seated,
             "앉는 자세 \(pose.rawValue) 는 앉은 그림으로 풀린다")
+    }
+
+    // **두 축을 잇는다 — 자세 계약(enum)과 에셋 어휘(문자열).**
+    //
+    // 씬은 `OfficeInteractionPose` 로 말하고 그림 선택은 `cozySeatedPoseNames` 같은 문자열
+    // 집합으로 판정한다. 둘은 따로 적혀 있어 한쪽에만 넣으면 어긋나는데, 그 어긋남이
+    // "앉은 자세인데 앉은 그림이 안 나온다" 로만 드러나 원인을 찾기 어렵다. 가구에 앉는
+    // 자세는 정규화한 이름이 반드시 앉은 포즈 집합에 있어야 한다.
+    for pose in OfficeInteractionPose.allCases where pose.sitsOnFurniture {
+        t.expect(
+            cozySeatedPoseNames.contains(normalizedCozyPose(pose.rawValue)),
+            "\(pose.rawValue) 는 앉은 포즈 집합에 있어야 한다")
+    }
+
+    // 책상 좌석 두 종류도 같은 집합에 있어야 한다. 이 둘은 `OfficeInteractionPose` 에 없는
+    // (가구가 아니라 자기 자리에서 쓰는) 이름이라 위 루프가 못 본다.
+    for named in [cozyDeskSeatPose, officeFeatureConsoleSeatPose] {
+        t.expect(
+            cozySeatedPoseNames.contains(named),
+            "좌석 포즈 \(named) 는 앉은 포즈 집합에 있어야 한다")
+    }
+
+    // 도형 폴백의 노트북 배지는 **앉은 포즈 전부**를 건너뛴다. 이름을 직접 적어 두던 동안
+    // `sit-back`·`sit-table` 이 보호를 못 받아, 원화 없는 인덱스에서 납작한 배지가 원근을
+    // 깨고 얼굴을 가렸다.
+    for named in cozySeatedPoseNames.sorted() {
+        t.expect(
+            cozyPoseSkipsLaptopBadge(named),
+            "\(named) 에는 노트북 배지를 얹지 않는다")
+    }
+    for named in ["writing", "reading"] {
+        t.expect(
+            cozyPoseSkipsLaptopBadge(named),
+            "\(named) 은 손 소품이 있어 배지를 얹지 않는다")
+    }
+    // 반대쪽도 고정한다 — 전부 건너뛰면 배지가 통째로 사라진 것이고, 그래도 위 단언들은
+    // 전부 초록이다.
+    for named in ["idle", "walk", "drinking", "tending"] {
+        t.expect(
+            !cozyPoseSkipsLaptopBadge(named),
+            "\(named) 은 배지 대상이다")
     }
 
     // 앉은 요청은 **앉은 그림**으로만 내려간다. 서 있는 그림으로 내려가면 그 사람만 책상 위에
