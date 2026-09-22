@@ -202,9 +202,14 @@ struct CalendarView: View {
         }
     }
 
-    /// 치운 줄을 흐리게 만드는 정도. 읽을 수는 있되 미완 줄과 한눈에 갈려야 한다 —
+    /// 치운 줄의 **제목만** 흐리게 만드는 정도. 읽을 수는 있되 미완 줄과 한눈에 갈려야 한다 —
     /// 더 흐리면 되돌릴 대상을 못 찾고, 덜 흐리면 아직 할 일처럼 보인다.
-    private static let closedRowOpacity: Double = 0.5
+    ///
+    /// **메모에는 걸지 않는다.** 메모는 이미 `.secondary` 로 한 번 죽인 색이라 거기 0.5 를 또
+    /// 곱하면 어두운 배경에서 대비가 2.34:1 까지 떨어져 읽을 수 없게 된다(다크 렌더 실측).
+    /// 밝은 배경에서는 `.secondary` 가 짙은 회색이라 같은 실수가 드러나지 않아 못 보고 지나갔다.
+    /// 치웠다는 신호는 제목의 흐림 + 취소선과 오른쪽 상태 글자가 이미 충분히 낸다.
+    private static let closedTitleOpacity: Double = 0.5
 
     private func scheduleRow(_ item: ScheduleItem) -> some View {
         let isClosed = item.status != .open
@@ -214,13 +219,13 @@ struct CalendarView: View {
                     .font(Typography.bodyEmphasis)
                     .foregroundStyle(CozyPalette.ink)
                     .strikethrough(isClosed)
+                    .opacity(isClosed ? Self.closedTitleOpacity : 1)
                 if let memo = item.memo, !memo.isEmpty {
                     Text(memo)
                         .font(Typography.caption)
                         .foregroundStyle(.secondary)
                 }
             }
-            .opacity(isClosed ? Self.closedRowOpacity : 1)
             Spacer()
             if isClosed {
                 // 흐림·취소선만으로는 "완료" 와 "건너뜀" 이 구분되지 않는다. 글자는 버튼 이름과

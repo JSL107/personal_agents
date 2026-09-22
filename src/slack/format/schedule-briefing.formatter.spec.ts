@@ -70,4 +70,15 @@ describe('formatUpcomingLine', () => {
     expect(line).toContain('D+2');
     expect(line).not.toContain('D--');
   });
+
+  // 머리글은 「마감」 이다. 「다가오는」 을 되살리면 지난 마감(`D+n`)이 같은 줄에 섞이는 지금
+  // 구조에서 줄의 절반이 거짓이 된다 — 조회 하한을 걷어낸 것과 한 몸인 문구라 여기서 막는다.
+  it('머리글에 "다가오는" 을 쓰지 않는다 — 지난 마감이 같은 줄에 섞이므로 거짓이 된다', () => {
+    const line = formatUpcomingLine(
+      [item('지난 것', '2026-09-16T00:00:00.000Z')],
+      TODAY,
+    );
+    expect(line).toContain('📌 마감 —');
+    expect(line).not.toContain('다가오는');
+  });
 });

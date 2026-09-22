@@ -33,5 +33,8 @@ export const formatUpcomingLine = (
     // 읽어 텍스트가 사라진다 — `schedule.formatter.ts` 와 같은 처리다.
     return `${escapeSlackMrkdwn(item.title)}(${toDayLabel(item.dueDate, today)})`;
   });
-  return `\n📌 다가오는 마감 — ${parts.join(' · ')}`;
+  // 머리글은 **「다가오는」 이 아니라 「마감」** 이다. 조회에 하한이 없어 기한이 지난 미완
+  // 항목(`D+n`)이 같은 줄에 섞이므로, "다가오는" 이라고 쓰면 줄의 절반이 거짓이 된다.
+  // 놓친 마감을 보여주는 것이 이 줄의 목적이라 머리글이 그것을 부정해서는 안 된다.
+  return `\n📌 마감 — ${parts.join(' · ')}`;
 };

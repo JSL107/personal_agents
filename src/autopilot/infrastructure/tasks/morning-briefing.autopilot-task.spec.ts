@@ -323,7 +323,7 @@ describe('MorningBriefingAutopilotTask', () => {
     });
   });
 
-  describe('다가오는 마감 줄', () => {
+  describe('마감 줄', () => {
     const planOutcome = {
       result: { plan: basePlan, sources: [], waitingItems: [] },
       modelUsed: 'codex-cli',
@@ -347,7 +347,7 @@ describe('MorningBriefingAutopilotTask', () => {
     };
 
     // 정상 경로. summaryText 를 만드는 두 지점 중 하나다.
-    it('PM 계획이 성공해도 다가오는 마감을 덧붙인다', async () => {
+    it('PM 계획이 성공해도 마감을 덧붙인다', async () => {
       const task = new MorningBriefingAutopilotTask(
         { execute: jest.fn().mockResolvedValue(planOutcome) } as never,
         humanized as unknown as HumanizeService,
@@ -357,7 +357,7 @@ describe('MorningBriefingAutopilotTask', () => {
 
       const out = await task.run(CTX);
 
-      expect(out.summaryText).toContain('다가오는 마감');
+      expect(out.summaryText).toContain('📌 마감 —');
       expect(out.summaryText).toContain('자동차세');
     });
 
@@ -412,7 +412,7 @@ describe('MorningBriefingAutopilotTask', () => {
 
     // 이 태스크의 최대 함정 — catch(EMPTY_TASKS_INPUT) 경로에서 빠뜨리면
     // 할 일이 없는 날에 마감이 통째로 사라진다. 그날이야말로 마감 알림이 가장 필요한 날이다.
-    it('할 일이 없는 날에도 다가오는 마감을 덧붙인다', async () => {
+    it('할 일이 없는 날에도 마감을 덧붙인다', async () => {
       const execute = jest.fn().mockRejectedValue(
         new PmAgentException({
           code: PmAgentErrorCode.EMPTY_TASKS_INPUT,
@@ -430,7 +430,7 @@ describe('MorningBriefingAutopilotTask', () => {
       const out = await task.run(CTX);
 
       expect(out.summaryText).toContain('자동 수집된 할 일이 없습니다');
-      expect(out.summaryText).toContain('다가오는 마감');
+      expect(out.summaryText).toContain('📌 마감 —');
       expect(out.summaryText).toContain('자동차세');
     });
 
@@ -444,7 +444,7 @@ describe('MorningBriefingAutopilotTask', () => {
 
       const out = await task.run(CTX);
 
-      expect(out.summaryText).not.toContain('다가오는 마감');
+      expect(out.summaryText).not.toContain('📌 마감 —');
     });
 
     // 장식 쿼리 하나가 본체를 죽이면 안 된다 — appendPortfolioValue 와 같은 원칙.
@@ -461,7 +461,7 @@ describe('MorningBriefingAutopilotTask', () => {
       const out = await task.run(CTX);
 
       expect(out.skip).toBe(false);
-      expect(out.summaryText).not.toContain('다가오는 마감');
+      expect(out.summaryText).not.toContain('📌 마감 —');
       expect(out.summaryText?.length).toBeGreaterThan(0);
     });
   });
