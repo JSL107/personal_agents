@@ -38,6 +38,7 @@ import { PaperTradingModule } from '../paper-trading/paper-trading.module';
 import { PrReviewLoopModule } from '../pr-review-loop/pr-review-loop.module';
 import { PreferenceProfileModule } from '../preference-profile/preference-profile.module';
 import { PreviewGateModule } from '../preview-gate/preview-gate.module';
+import { ScheduleModule } from '../schedule/schedule.module';
 import { ScreenerModule } from '../screener/screener.module';
 import { SLACK_NOTIFIER_PORT } from '../slack/domain/port/slack-notifier.port';
 import { SlackModule } from '../slack/slack.module';
@@ -126,6 +127,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     AiCliEnvModule,
     StudyDeepdiveModule,
     JobFeedModule,
+    ScheduleModule,
   ],
   providers: [
     AutopilotScheduler,

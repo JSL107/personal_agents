@@ -52,6 +52,7 @@ import { PreviewGateModule } from './preview-gate/preview-gate.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ResumeCalibrationCronModule } from './resume-calibration-cron/resume-calibration-cron.module';
 import { RouterModule } from './router/router.module';
+import { ScheduleModule } from './schedule/schedule.module';
 import { SlackModule } from './slack/slack.module';
 import { SlackCollectorModule } from './slack-collector/slack-collector.module';
 import { SlackInboxModule } from './slack-inbox/slack-inbox.module';
@@ -170,6 +171,9 @@ import { WebhookModule } from './webhook/webhook.module';
     PrCareerLogModule,
     // 휴가 잔여/등록/내역/취소 — 결정론 계산 (LLM 없음). /휴가 슬래시 핸들러 의존.
     VacationModule,
+    // 마감·신청·예약 일정 — RouterModule 이 dispatcher 용으로 이미 소비하지만, 콘솔
+    // REST(ScheduleConsoleController) 표면을 명시적으로 드러내기 위해 여기도 등록한다.
+    ScheduleModule,
     // BLOG 릴레이 — 자연어 멘션 전용(@이대리 ... 블로그 써줘). Hermes tistory-blog 스킬을 hermes -z 로 호출.
     // RouterModule 도 BlogModule 을 import 하지만(dispatcher inject), 다른 agent 모듈과 동일하게 여기도 등록.
     BlogModule,

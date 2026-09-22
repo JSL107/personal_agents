@@ -20,6 +20,8 @@ public final class ConsoleStore: ObservableObject {
     @Published public private(set) var serverTime: String = ""
     /// 대표 브리핑. 스냅샷과 다른 요청으로 오므로 실패해도 나머지 화면은 그대로다.
     @Published public private(set) var briefing: ConsoleBriefing?
+    /// 캘린더 탭이 조회한 일정 목록. 스냅샷과 무관하게 탭이 열릴 때·상태 변경 직후에만 갱신된다.
+    @Published public private(set) var schedules: [ScheduleItem] = []
     @Published public private(set) var pendingCommands: [PendingCommand] = []
     @Published public private(set) var conversation: [ConsoleTurn] = []
     /// 내가 보낸 command id. pending 은 `run.finished` 로 `.done` 이 되면 janitor 가 TTL 없이
@@ -84,6 +86,11 @@ public final class ConsoleStore: ObservableObject {
     /// SSE 증분 이벤트를 현재 상태 위에 적용한다.
     public func apply(briefing: ConsoleBriefing) {
         self.briefing = briefing
+    }
+
+    /// 일정 조회 결과를 통째로 교체한다.
+    public func apply(schedules: [ScheduleItem]) {
+        self.schedules = schedules
     }
 
     public func apply(event: ConsoleEvent) {

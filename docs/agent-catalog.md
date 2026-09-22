@@ -2,7 +2,7 @@
 
 # 에이전트 카탈로그
 
-이대리의 에이전트 28종. SoT: `src/agent-registry/agent-registry.ts` + `AGENT_TO_PROVIDER`(`src/model-router/domain/agent-provider.map.ts`).
+이대리의 에이전트 29종. SoT: `src/agent-registry/agent-registry.ts` + `AGENT_TO_PROVIDER`(`src/model-router/domain/agent-provider.map.ts`).
 드리프트는 `pnpm docs:check` 가 차단하고, agentType 집합 정합성은 `agent-registry.spec.ts` 가 강제한다.
 
 | 닉네임 | 기술 이름 | AgentType | 슬래시 | 모델 | 진입 usecase | 설명 |
@@ -32,6 +32,7 @@
 | 박보좌 | PO Shadow | `PO_SHADOW` | `/po-shadow` | CHATGPT | `src/agent/po-shadow/application/generate-po-shadow.usecase.ts` | PO 관점 그림자 검토 |
 | 최취향 | Preference Learning | `PREFERENCE_LEARNING` | — (webhook/자동) | CHATGPT | `src/preference-profile/application/preference-inference.adapter.ts` | 주간 선호 학습 — 신호 배치 → 선호 프로필 diff 추론 (슬래시 없음, 내부 전용) |
 | 정판단 | Review Reply Judge | `REVIEW_REPLY_JUDGE` | — (webhook/자동) | CHATGPT | `src/agent/review-reply-judge/application/judge-review-reply.usecase.ts` | PR 리뷰 답변 수용 여부 판정 |
+| 오마감 | Schedule | `SCHEDULE` | — (webhook/자동) | CHATGPT | `src/schedule/application/register-schedule.usecase.ts` | 마감·신청·예약 등록 — 자연어 날짜 표현을 해석해 등록 (자연어 멘션 전용, LLM 미사용) |
 | 제안나 | Subconscious Gate | `SUBCONSCIOUS_GATE` | — (webhook/자동) | CHATGPT | `src/subconscious/infrastructure/llm-subconscious-gate.ts` | 내부 proactive 게이트 — 상태 변화를 promote/drop 분류 (슬래시 없음, 내부 전용) |
 | 오휴가 | Vacation | `VACATION` | `/휴가` | CHATGPT | `src/agent/vacation/application/calculate-balance.usecase.ts` | 휴가 잔여 계산 (자연어 파라미터 추출에만 LLM 사용) |
 | 정리나 | Work Reviewer | `WORK_REVIEWER` | `/worklog` | CHATGPT | `src/agent/work-reviewer/application/generate-worklog.usecase.ts` | 업무 로그 / 주간보고 초안 생성 |

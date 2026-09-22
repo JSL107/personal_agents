@@ -80,6 +80,9 @@ export enum AgentType {
   // 슬래시/dispatcher 없음, autopilot 및 CLI 진입 전용.
   PAPER_RECOMMEND = 'PAPER_RECOMMEND',
   CTO_STUDY = 'CTO_STUDY',
+  // 마감·신청·예약 등록 — 날짜 해석까지 순수 함수로 처리해 route() 를 거치지 않는다.
+  // 등록이 이 기능의 유일한 입구라 모델 쿼터에 걸리면 기능 전체가 죽는다.
+  SCHEDULE = 'SCHEDULE',
 }
 
 // LLM 최종 응답의 형태를 강제하는 JSON Schema. 구조를 타입으로 다시 표현하지 않는 이유는

@@ -326,8 +326,9 @@ public func officeWorkAffinity(agentType: String) -> [FurnitureKind] {
     case "OPS_SUPERVISOR", "SUBCONSCIOUS_GATE", "INVEST", "PAPER_TRADE", "PAPER_RECOMMEND",
         "DELAY_REPORT":
         return [.wallMonitor]
-    // 기록을 넣고 꺼낸다.
-    case "VACATION", "JOB_APPLICATION", "CAREER_MATE", "ISSUE_LABELER":
+    // 기록을 넣고 꺼낸다. 마감·신청 담당(SCHEDULE)도 여기다 — 날짜가 정해진 것을 적어 두고
+    // 때가 되면 꺼내 보이는 일이라, 같은 방의 휴가 신청 담당과 하는 몸짓이 같다.
+    case "VACATION", "JOB_APPLICATION", "CAREER_MATE", "ISSUE_LABELER", "SCHEDULE":
         return [.filingCabinet, .lockers2]
     // 모여서 정하고 나눈다.
     case "PM", "CTO", "CEO", "PO_SHADOW", "IMPACT_REPORTER":
