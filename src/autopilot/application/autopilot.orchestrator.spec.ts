@@ -1884,4 +1884,90 @@ describe('AutopilotOrchestrator', () => {
       expect.objectContaining({ target: 'U1' }),
     );
   });
+
+  // 그림은 메인 메시지가 아니라 그 스레드에 붙는다. 한 메시지에 여러 task 의 요약이
+  // 합쳐지므로, 메인에 올리면 어느 task 의 그림인지 드러나지 않는다.
+  it('detailImage 를 메인 메시지의 스레드에 이미지로 올린다', async () => {
+    const png = Buffer.from('fake-png');
+    const task = {
+      id: 'daily-eval',
+      run: jest.fn().mockResolvedValue({
+        skip: false,
+        summaryText: '요약',
+        detailImage: { png, filename: 'curve.png', title: '수익률 곡선' },
+      }),
+    };
+    const uploadImage = jest.fn().mockResolvedValue({ fileId: 'F1' });
+    const slackNotifier = {
+      postMessage: jest.fn().mockResolvedValue({ ts: '111.222' }),
+      postPreviewMessage: jest.fn(),
+      uploadImage,
+    };
+    const orchestrator = new AutopilotOrchestrator(
+      [task] as never,
+      slackNotifier as never,
+      {
+        acquireOnce: jest.fn().mockResolvedValue(true),
+        isDone: jest.fn().mockResolvedValue(false),
+      } as never,
+      { execute: jest.fn() } as never,
+      { attachSlackMessage: jest.fn() } as never,
+    );
+
+    await orchestrator.runGroup('daily-eval', [T0_ENTRY], 'U1', 'C1');
+
+    expect(uploadImage).toHaveBeenCalledWith({
+      target: 'C1',
+      threadTs: '111.222',
+      png,
+      filename: 'curve.png',
+      title: '수익률 곡선',
+    });
+  });
+
+  // 그림 업로드 실패로 후처리를 건너뛰면, 그 task 의 상태가 확정되지 않아 다음 회차에
+  // 같은 요약이 다시 나간다. 그림은 요약을 보조하는 것이라 그 대가를 치를 값이 없다.
+  it('이미지 업로드가 실패해도 요약 발송과 후처리는 유지한다', async () => {
+    const onDelivered = jest.fn().mockResolvedValue(undefined);
+    const task = {
+      id: 'daily-eval',
+      run: jest.fn().mockResolvedValue({
+        skip: false,
+        summaryText: '요약',
+        detailImage: {
+          png: Buffer.from('x'),
+          filename: 'curve.png',
+          title: '곡선',
+        },
+        onDelivered,
+      }),
+    };
+    const postMessage = jest.fn().mockResolvedValue({ ts: '111.222' });
+    const slackNotifier = {
+      postMessage,
+      postPreviewMessage: jest.fn(),
+      uploadImage: jest
+        .fn()
+        .mockRejectedValue(new Error('missing_scope: files:write')),
+    };
+    const orchestrator = new AutopilotOrchestrator(
+      [task] as never,
+      slackNotifier as never,
+      {
+        acquireOnce: jest.fn().mockResolvedValue(true),
+        isDone: jest.fn().mockResolvedValue(false),
+      } as never,
+      { execute: jest.fn() } as never,
+      { attachSlackMessage: jest.fn() } as never,
+    );
+
+    await expect(
+      orchestrator.runGroup('daily-eval', [T0_ENTRY], 'U1', 'C1'),
+    ).resolves.not.toThrow();
+
+    expect(postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ target: 'C1', text: '요약' }),
+    );
+    expect(onDelivered).toHaveBeenCalledTimes(1);
+  });
 });

@@ -8,6 +8,7 @@ import {
   ApplyExitBandResult,
   ApplyExitBandUsecase,
 } from '../../../paper-trading/application/apply-exit-band.usecase';
+import { BuildPaperReportImageUsecase } from '../../../paper-trading/application/build-paper-report-image.usecase';
 import {
   EvaluateAllAccountsResult,
   EvaluatedAccountEntry,
@@ -120,6 +121,7 @@ export class PaperTradingAutopilotTask implements AutopilotTask {
   constructor(
     private readonly evaluatePaperAccount: EvaluatePaperAccountUsecase,
     private readonly applyExitBand: ApplyExitBandUsecase,
+    private readonly buildPaperReportImage: BuildPaperReportImageUsecase,
     private readonly configService: ConfigService,
     private readonly agentRunService: AgentRunService,
   ) {}
@@ -194,10 +196,23 @@ export class PaperTradingAutopilotTask implements AutopilotTask {
             `가상 계좌 ${evaluations.accounts.length}개 중 ${failedEntries.length}개를 평가하지 못했습니다 — ${detail}${evaluatedText}${exitBandText}`,
           );
         }
+        // 곡선은 방금 적재한 스냅샷까지 포함한다 — 평가 뒤에 부르는 이유가 그것이다.
+        // 그림이 없으면(데이터 부족·렌더 실패) usecase 가 null 을 주고 요약만 나간다.
+        const reportImage =
+          await this.buildPaperReportImage.execute(executedAt);
         const taskResult: AutopilotTaskResult = {
           skip: false,
           summaryText:
             buildSummaryText(evaluations) + buildExitBandText(exitBand),
+          ...(reportImage
+            ? {
+                detailImage: {
+                  png: reportImage.png,
+                  filename: reportImage.filename,
+                  title: reportImage.title,
+                },
+              }
+            : {}),
         };
         return {
           result: taskResult,

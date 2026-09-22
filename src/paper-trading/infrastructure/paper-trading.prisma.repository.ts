@@ -162,6 +162,27 @@ export interface SnapshotRow {
   returnRate: MoneyValue;
 }
 
+export interface EquityCurvePoint {
+  tradeDate: Date;
+  returnRatePercent: number;
+}
+
+export interface EquityCurveSeries {
+  accountName: string;
+  seedAmount: MoneyValue;
+  points: EquityCurvePoint[];
+}
+
+export interface BenchmarkClosePoint {
+  tradeDate: Date;
+  close: MoneyValue;
+}
+
+export interface EquityCurveWithBenchmark {
+  series: EquityCurveSeries[];
+  benchmark: BenchmarkClosePoint[];
+}
+
 export interface PendingPaperOrderInput {
   tickerId: number;
   side: TradeSide;
@@ -353,6 +374,12 @@ export interface RecommendationScoreData {
   snapshots: RecommendationScoreSnapshotRecord[];
 }
 
+// 채점(초과수익)과 리포트 곡선이 같은 지수를 읽어야 한다. 값이 갈리면 조회가 0건이 되고,
+// 0건은 에러가 아니라 "지수 대비를 그릴 수 없다" 로 조용히 넘어간다.
+// 적재하는 쪽은 `screener/application/collect-benchmark-closes.usecase.ts` 다 — 그쪽 심볼을
+// 바꾸면 여기도 함께 바꿔야 한다.
+const BENCHMARK_SYMBOL = 'KOSPI';
+
 const isUniqueConstraintError = (error: unknown): boolean => {
   if (typeof error !== 'object' || error === null || !('code' in error)) {
     return false;
@@ -514,7 +541,7 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
       : [];
     const benchmarkCloses = priceDate
       ? await this.prisma.benchmarkDailyClose.findMany({
-          where: { symbol: 'KOSPI', tradeDate: priceDate },
+          where: { symbol: BENCHMARK_SYMBOL, tradeDate: priceDate },
           select: { tradeDate: true, close: true },
           orderBy: [{ tradeDate: 'asc' }, { id: 'asc' }],
         })
@@ -1802,5 +1829,66 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
         returnRate: true,
       },
     });
+  }
+
+  /**
+   * 리포트 차트용 수익률 곡선과 같은 기간의 벤치마크 종가.
+   *
+   * `isBackfilled: false` 로 좁히는 이유는 채점 쿼리(`findRecommendationScoreInputs`)와 같다 —
+   * 백필 스냅샷은 그날 실제로 평가한 값이 아니라 나중에 채워 넣은 값이라, 곡선에 섞으면
+   * "그날 계좌가 이랬다" 가 아닌 선이 그려진다.
+   *
+   * 벤치마크는 계좌 스냅샷과 **같은 거래일만** 돌려주지 않는다. 지수는 우리 계좌에 스냅샷이
+   * 없는 날(평가 cron 이 실패한 날)에도 값이 있고, 그 구멍을 지수 쪽에서도 지우면 두 선의
+   * 기울기가 같은 이유로 왜곡된다. 어느 날짜를 그릴지는 차트가 정한다.
+   */
+  async findEquityCurveWithBenchmark(input: {
+    accountNames: string[];
+    from: Date;
+    asOf: Date;
+  }): Promise<EquityCurveWithBenchmark> {
+    const accounts = await this.prisma.paperAccount.findMany({
+      where: { name: { in: input.accountNames } },
+      select: { id: true, name: true, seedAmount: true },
+      orderBy: { name: 'asc' },
+    });
+    if (accounts.length === 0) {
+      return { series: [], benchmark: [] };
+    }
+    const snapshots = await this.prisma.paperEquitySnapshot.findMany({
+      where: {
+        accountId: { in: accounts.map((account) => account.id) },
+        tradeDate: { gte: input.from, lte: input.asOf },
+        isBackfilled: false,
+      },
+      select: { accountId: true, tradeDate: true, returnRate: true },
+      orderBy: [{ accountId: 'asc' }, { tradeDate: 'asc' }, { id: 'asc' }],
+    });
+    const benchmark = await this.prisma.benchmarkDailyClose.findMany({
+      where: {
+        symbol: BENCHMARK_SYMBOL,
+        tradeDate: { gte: input.from, lte: input.asOf },
+      },
+      select: { tradeDate: true, close: true },
+      orderBy: [{ tradeDate: 'asc' }, { id: 'asc' }],
+    });
+
+    const pointsByAccountId = new Map<number, EquityCurvePoint[]>();
+    for (const snapshot of snapshots) {
+      const points = pointsByAccountId.get(snapshot.accountId) ?? [];
+      points.push({
+        tradeDate: snapshot.tradeDate,
+        returnRatePercent: Number(snapshot.returnRate.toString()),
+      });
+      pointsByAccountId.set(snapshot.accountId, points);
+    }
+    return {
+      series: accounts.map((account) => ({
+        accountName: account.name,
+        seedAmount: account.seedAmount,
+        points: pointsByAccountId.get(account.id) ?? [],
+      })),
+      benchmark,
+    };
   }
 }
