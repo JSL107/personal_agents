@@ -184,6 +184,88 @@ describe('buildEquityCurveChart', () => {
     });
 
     expect(chart.firstTradeDate).toBe('2026-08-14');
-    expect(lastValueOf(chart.lines[0])).toBe(3);
+    // 재정규화가 나눗셈이라 부동소수점 오차가 남는다(3.0000000000000027).
+    expect(lastValueOf(chart.lines[0])).toBeCloseTo(3, 6);
+  });
+
+  // 계좌 수익률은 시드 대비 누적이라 차트 첫 점이 0% 가 아니다. 그대로 그리면 0% 에서
+  // 출발하는 지수 선과 출발점이 어긋나, 두 선의 간격이 이 기간의 성적 차이가 아니게 된다.
+  it('계좌 곡선을 기준일 0% 로 되맞춰 지수와 출발점을 맞춘다', () => {
+    const chart = buildEquityCurveChart({
+      series: [
+        // 기준일에 이미 +10% 인 계좌. 이후 +21% 까지 올랐으므로 기간 수익률은
+        // 1.21/1.10 - 1 = +10% 다(차로 계산하면 +11%p 로 어긋난다).
+        accountSeries('LONG_TERM', [
+          ['2026-08-14', 10],
+          ['2026-08-15', 21],
+        ]),
+      ],
+      benchmark: benchmarkPoints([
+        ['2026-08-14', 2000],
+        ['2026-08-15', 2100],
+      ]),
+      benchmarkLabel: 'KOSPI',
+    });
+
+    const account = chart.lines.find((line) => line.kind === 'ACCOUNT');
+    const benchmark = chart.lines.find((line) => line.kind === 'BENCHMARK');
+    expect(account?.points[0].valuePercent).toBeCloseTo(0, 6);
+    expect(account?.points[1].valuePercent).toBeCloseTo(10, 6);
+    // 두 선이 같은 날 0% 에서 출발한다 — 그래야 간격이 성적 차이만 담는다.
+    expect(benchmark?.points[0].valuePercent).toBeCloseTo(0, 6);
+    expect(benchmark?.points[1].valuePercent).toBeCloseTo(5, 6);
+  });
+
+  // 지수 선은 하나뿐이라 시작일이 다른 두 계좌에 동시에 맞출 수 없다. 공통 시작일로
+  // 맞추고, 잘린 계좌가 있다는 사실을 결과에 남긴다.
+  it('계좌 시작일이 다르면 공통 시작일로 맞추고 잘린 계좌를 알린다', () => {
+    const chart = buildEquityCurveChart({
+      series: [
+        accountSeries('LONG_TERM', [
+          ['2026-08-14', 5],
+          ['2026-08-20', 8],
+        ]),
+        accountSeries('SWING', [['2026-08-20', -3]]),
+      ],
+      benchmark: benchmarkPoints([
+        ['2026-08-14', 2000],
+        ['2026-08-20', 2200],
+      ]),
+      benchmarkLabel: 'KOSPI',
+    });
+
+    expect(chart.firstTradeDate).toBe('2026-08-20');
+    expect(chart.truncatedAccounts).toEqual(['LONG_TERM']);
+    // 모든 선이 08-20 한 점만 남아 0% 에서 출발한다.
+    for (const line of chart.lines) {
+      expect(line.points[0].tradeDate).toBe('2026-08-20');
+      expect(line.points[0].valuePercent).toBeCloseTo(0, 6);
+    }
+  });
+
+  // 기준 시점에 시드를 전부 잃은 계좌는 배수가 0 이라 나눌 수 없다. Infinity 로 그리면
+  // 축이 통째로 무너져 나머지 곡선까지 못 읽게 된다.
+  it('기준일 수익률이 -100% 인 계좌는 곡선에서 뺀다', () => {
+    const chart = buildEquityCurveChart({
+      series: [
+        accountSeries('LONG_TERM', [
+          ['2026-08-14', -100],
+          ['2026-08-15', -100],
+        ]),
+        accountSeries('SWING', [
+          ['2026-08-14', 2],
+          ['2026-08-15', 4],
+        ]),
+      ],
+      benchmark: [],
+      benchmarkLabel: 'KOSPI',
+    });
+
+    expect(chart.lines.map((line) => line.label)).toEqual(['SWING']);
+    expect(
+      chart.lines.every((line) =>
+        line.points.every((point) => Number.isFinite(point.valuePercent)),
+      ),
+    ).toBe(true);
   });
 });

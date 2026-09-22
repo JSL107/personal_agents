@@ -32,6 +32,9 @@ export interface EquityCurveChart {
   // 지수 선을 못 그린 이유. null 이면 그렸다. 문구로 남기는 이유는 빈 차트와
   // "지수 데이터가 없어서 계좌만 그린 차트" 를 읽는 사람이 구분해야 하기 때문이다.
   benchmarkOmittedReason: string | null;
+  // 공통 기준일보다 먼저 시작해 앞부분이 잘린 계좌 이름. 잘랐다는 사실을 안 적으면
+  // 그 계좌의 성적이 실제보다 짧은 구간의 것으로 읽힌다.
+  truncatedAccounts: string[];
 }
 
 // 선이 축에 딱 붙으면 꺾이는 지점이 잘려 보인다. 값의 폭에 비례해 띄우되, 폭이 0 에
@@ -101,6 +104,22 @@ const findBaseIndex = (
   return candidate;
 };
 
+// 누적 수익률을 기준 시점 대비로 되맞춘다. 두 시점의 시드 대비 배수를 나누는 것이라
+// `r_t - r_0` 가 아니다 — 차를 쓰면 기준값이 클 때 어긋난다(+50% → +60% 는 +10%p 가
+// 아니라 +6.7%).
+const rebase = (points: CurvePoint[], basePercent: number): CurvePoint[] => {
+  const baseMultiple = 1 + basePercent / 100;
+  return points.map((point) => ({
+    tradeDate: point.tradeDate,
+    valuePercent: ((1 + point.valuePercent / 100) / baseMultiple - 1) * 100,
+  }));
+};
+
+// 기준 시점에 시드를 전부 잃은 계좌(-100%)는 배수가 0 이라 나눌 수 없다. 그 계좌를
+// 0 으로 나눈 Infinity 로 그리면 축이 통째로 무너지므로 곡선에서 뺀다.
+const isRebaseable = (basePercent: number): boolean =>
+  Number.isFinite(basePercent) && 1 + basePercent / 100 !== 0;
+
 export const buildEquityCurveChart = (
   input: EquityCurveInput,
 ): EquityCurveChart => {
@@ -127,21 +146,54 @@ export const buildEquityCurveChart = (
       firstTradeDate: null,
       lastTradeDate: null,
       benchmarkOmittedReason: '계좌 평가 스냅샷이 없다',
+      truncatedAccounts: [],
     };
   }
 
-  const accountDates = accountLines.flatMap((line) =>
-    line.points.map((point) => point.tradeDate),
-  );
-  const baseTradeDate = accountDates.reduce((earliest, date) =>
-    date < earliest ? date : earliest,
-  );
+  // 기준일은 **모든 계좌가 데이터를 갖는 가장 늦은 시작일** 이다. 가장 이른 날로 잡으면
+  // 늦게 열린 계좌는 지수와 출발점이 어긋나고, 지수 선은 하나뿐이라 두 계좌에 동시에
+  // 맞출 수가 없다. 비교 그림이므로 공통 구간을 비교한다 — 잘린 구간은 아래에서 적는다.
+  const baseTradeDate = accountLines
+    .map((line) => line.points[0].tradeDate)
+    .reduce((latest, date) => (date > latest ? date : latest));
+  const truncated = accountLines
+    .filter((line) => line.points[0].tradeDate < baseTradeDate)
+    .map((line) => line.label);
   const benchmark = toBenchmarkLine(input, baseTradeDate);
+  // 기준일부터 자르고 그 날을 0% 로 맞춘다. 계좌 수익률(`return_rate`)은 시드 대비
+  // **누적**이라 기준일 값이 0 이 아니다(실측 2026-09-22: 개설 다음 날 LONG_TERM +1.14% ·
+  // SWING +2.70%). 그대로 그리면 0% 에서 출발하는 지수 선과 출발점이 어긋나, 두 선의
+  // 간격이 "이 기간의 성적 차이" 가 아니라 "그 차이 + 시작 시점의 차이" 가 된다.
+  // 리포트 창이 이력을 자르기 시작하면 그 어긋남이 창 밖 손익만큼 커진다.
+  //
+  // 시드 대비 누적은 텍스트 카드가 이미 적는다 — 이 그림의 질문은 "이 기간에 누가 더
+  // 벌었나" 이므로 기간 수익률로 맞추는 것이 맞다.
+  const rebasedAccountLines = accountLines.flatMap((line) => {
+    const points = line.points.filter(
+      (point) => point.tradeDate >= baseTradeDate,
+    );
+    const basePercent = points[0]?.valuePercent;
+    if (basePercent === undefined || !isRebaseable(basePercent)) {
+      return [];
+    }
+    return [{ ...line, points: rebase(points, basePercent) }];
+  });
+  if (rebasedAccountLines.length === 0) {
+    return {
+      lines: [],
+      minPercent: 0,
+      maxPercent: 0,
+      firstTradeDate: null,
+      lastTradeDate: null,
+      benchmarkOmittedReason: '기준일 수익률로 곡선을 맞출 수 없다',
+      truncatedAccounts: [],
+    };
+  }
   // 지수는 계좌 곡선이 끝난 날까지만 그린다. 계좌 스냅샷보다 최신 종가가 있으면
   // 지수 선만 오른쪽으로 더 뻗어, 같은 기간을 비교한 그림이 아니게 된다.
-  const lastAccountDate = accountDates.reduce((latest, date) =>
-    date > latest ? date : latest,
-  );
+  const lastAccountDate = rebasedAccountLines
+    .flatMap((line) => line.points.map((point) => point.tradeDate))
+    .reduce((latest, date) => (date > latest ? date : latest));
   const benchmarkLine =
     benchmark.line === null
       ? null
@@ -152,7 +204,10 @@ export const buildEquityCurveChart = (
           ),
         };
 
-  const lines = [...accountLines, ...(benchmarkLine ? [benchmarkLine] : [])];
+  const lines = [
+    ...rebasedAccountLines,
+    ...(benchmarkLine ? [benchmarkLine] : []),
+  ];
   const values = lines.flatMap((line) =>
     line.points.map((point) => point.valuePercent),
   );
@@ -170,6 +225,7 @@ export const buildEquityCurveChart = (
     firstTradeDate: baseTradeDate,
     lastTradeDate: lastAccountDate,
     benchmarkOmittedReason: benchmark.omittedReason,
+    truncatedAccounts: truncated,
   };
 };
 

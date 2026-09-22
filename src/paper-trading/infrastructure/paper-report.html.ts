@@ -278,10 +278,20 @@ export const buildPaperReportHtml = ({
       : `${chart.firstTradeDate} ~ ${chart.lastTradeDate}`;
   // 지수 선이 빠진 이유를 그림 안에 적는다. 안 적으면 "지수보다 나았다" 를 읽을 수
   // 없는 그림인데도 계좌 곡선만 보고 판단하게 된다.
+  const notices = [
+    ...(chart.benchmarkOmittedReason === null
+      ? []
+      : [`지수 대비 없음 — ${chart.benchmarkOmittedReason}`]),
+    ...(chart.truncatedAccounts.length === 0
+      ? []
+      : [
+          `${chart.truncatedAccounts.join(' · ')} 는 더 이른 이력이 있으나 공통 시작일에 맞춰 잘렸다`,
+        ]),
+  ];
   const notice =
-    chart.benchmarkOmittedReason === null
+    notices.length === 0
       ? ''
-      : `<p class="notice">지수 대비 없음 — ${escapeHtml(chart.benchmarkOmittedReason)}</p>`;
+      : `<p class="notice">${notices.map((text) => escapeHtml(text)).join('<br>')}</p>`;
   const legend = chart.lines
     .map((line, index) => {
       const accountIndex = chart.lines
@@ -319,8 +329,8 @@ export const buildPaperReportHtml = ({
   svg { display: block; margin-left: -4px; }
 </style></head>
 <body><div class="report">
-  <h1>모의투자 수익률 — 시드 대비</h1>
-  <p class="range">${escapeHtml(range)} · 기준일 ${escapeHtml(asOf)}</p>
+  <h1>모의투자 수익률 — 기간 비교</h1>
+  <p class="range">${escapeHtml(range)} · 시작일을 0%로 맞춘 기간 수익률 · 기준일 ${escapeHtml(asOf)}</p>
   <div class="legend">${legend}</div>
   ${renderChartSvg(chart)}
   ${notice}
