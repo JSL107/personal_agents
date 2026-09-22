@@ -1,4 +1,7 @@
-import { countKstDaysBetween } from '../../../../common/util/kst-date.util';
+import {
+  countKstDaysBetween,
+  formatKstDate,
+} from '../../../../common/util/kst-date.util';
 import {
   EveningRetroReflection,
   normalizeReflectionColumn,
@@ -74,8 +77,14 @@ const formatElapsedLabel = (endedAt: Date, now: Date): string => {
   return `${elapsedDays}일 전`;
 };
 
-const formatOrigin = (endedAt: Date, now: Date): string =>
-  `${endedAt.toISOString().slice(0, 10)}, ${formatElapsedLabel(endedAt, now)}`;
+// 날짜와 경과일이 같은 달력(KST)을 봐야 한다. 날짜만 UTC 로 찍으면 KST 00:00~08:59 에 끝난
+// 회고에서 "2026-09-21, 오늘" 처럼 둘이 하루 어긋난 표기가 나온다 — 모델이 읽는 유일한 시간
+// 정보라 어긋나면 그대로 잘못된 판단이 된다.
+const formatOrigin = (endedAt: Date, now: Date): string => {
+  const kstDate =
+    formatKstDate(endedAt.toISOString()) ?? endedAt.toISOString().slice(0, 10);
+  return `${kstDate}, ${formatElapsedLabel(endedAt, now)}`;
+};
 
 /**
  * 「못 끝낸 것」 — 오늘 일정의 직접 재료다.

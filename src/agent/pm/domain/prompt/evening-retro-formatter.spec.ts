@@ -83,6 +83,19 @@ describe('formatRetroCarryOverSection', () => {
     expect(section).toContain('3일 전');
   });
 
+  it('UTC 날짜와 KST 날짜가 갈리는 회차도 KST 로 표기한다 — 날짜와 경과일이 같은 달력을 본다', () => {
+    // 15:30Z = KST 다음 날 00:30. UTC 날짜(9/21)를 그대로 쓰면 "2026-09-21, 오늘" 처럼
+    // 날짜와 라벨이 하루 어긋난다.
+    const section = formatRetroCarryOverSection({
+      reflection: { carryOver: '미완' },
+      endedAt: new Date('2026-09-21T15:30:00Z'),
+      now: new Date('2026-09-22T00:30:00Z'),
+    });
+
+    expect(section).toContain('2026-09-22, 오늘');
+    expect(section).not.toContain('2026-09-21');
+  });
+
   it('carryOver 가 없으면 null', () => {
     expect(
       formatRetroCarryOverSection({
