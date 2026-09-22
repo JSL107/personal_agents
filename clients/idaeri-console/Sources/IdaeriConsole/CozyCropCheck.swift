@@ -21,7 +21,7 @@ func runCozyCropCheck() -> Bool {
     var valid = true
 
     // 프로브를 타는 크기(최장변 > 512)와 타지 않는 크기(≤ 512)를 각각 확인한다. 후자는 현재
-    // 에셋 183장 어디에도 없어(전부 1145×1374) 실물로는 한 번도 실행되지 않는 경로다 —
+    // 에셋 183장 어디에도 없어(전부 750×900) 실물로는 한 번도 실행되지 않는 경로다 —
     // 합성 이미지가 아니면 검사할 방법이 없다.
     let syntheticCases: [SyntheticCropCase] = [
         SyntheticCropCase(
@@ -83,8 +83,15 @@ func runCozyCropCheck() -> Bool {
 
     // 실물 에셋도 몇 장 통과시킨다. 합성 이미지는 경계가 반듯한 직사각형이라, 생성 그림처럼
     // 알파가 흐릿하게 번지는 가장자리를 재현하지 못한다. 장당 전수 스캔이 두 번 드므로
-    // (원본 + 크롭 결과) 표본은 작게 둔다.
-    let assetSamples = ["agent-0", "agent-3-typing", "agent-17-drinking", "agent-19-reading"]
+    // (원본 + 크롭 결과) 상시 표본은 작게 둔다.
+    //
+    // **`--all` 을 붙이면 번들의 캐릭터 전수를 돈다.** 전수가 실제로 필요한 때는 에셋을 갈아
+    // 끼운 회차인데, 그때 이 파일을 손으로 고쳐 돌리고 되돌리면 그 확인이 저장소에 남지 않는다
+    // (#616 이 그렇게 했다). 플래그로 두면 같은 확인을 다음 회차가 그대로 재현할 수 있다.
+    let assetSamples =
+        CommandLine.arguments.contains("--all")
+        ? bundledCozyCharacterNames()
+        : ["agent-0", "agent-3-typing", "agent-17-drinking", "agent-19-reading"]
     for name in assetSamples {
         guard let url = Bundle.module.url(
             forResource: name, withExtension: "png", subdirectory: "cozy/characters"
@@ -99,7 +106,12 @@ func runCozyCropCheck() -> Bool {
     }
 
     if valid {
-        print("✓ 크롭 계약 통과 — 몸 경계 보존·여백 유지·여백 상한이 유효하다")
+        // 몇 장을 봤는지 함께 찍는다 — 전수로 돌렸는지 네 장으로 돌렸는지가 통과 메시지만
+        // 보고는 구분되지 않으면, 전수를 돌린 줄 알고 넘어가는 회차가 생긴다.
+        print(
+            "✓ 크롭 계약 통과 — 몸 경계 보존·여백 유지·여백 상한이 유효하다"
+                + " (실물 에셋 \(assetSamples.count)장)"
+        )
     }
     return valid
 }
@@ -114,9 +126,13 @@ private struct SyntheticCropCase {
     let expectsProbe: Bool
 }
 
-/// 남겨도 되는 여백의 상한(px). 프로브 상한이 512px 일 때 실제 여백은 7px 이고(원래의 4px +
-/// 사본 한 칸이 대표하는 2.68px 을 올림한 3px), 프로브 상한을 128px 까지 낮춰도 15px 이라
+/// 남겨도 되는 여백의 상한(px). 프로브 상한이 512px 일 때 실제 여백은 6px 이고(원래의 4px +
+/// 사본 한 칸이 대표하는 1.76px 을 올림한 2px), 프로브 상한을 128px 까지 낮춰도 12px 이라
 /// 이 값 안에 든다. 여기에 걸린다면 여백 계산이 바뀐 것이므로 눈으로 확인할 값어치가 있다.
+///
+/// 여백이 7px → 6px 로 줄어든 것은 에셋이 1145×1374 에서 750×900 이 되어 사본 한 칸이
+/// 대표하는 원본 픽셀이 2.68 → 1.76 으로 줄었기 때문이다(#616). 벌림이 작아진 만큼 발밑
+/// 기준선의 파일 간 편차는 늘어난다 — 그 수치는 그 PR 의 §4 에 있다.
 private let maximumAllowedMargin = 16
 
 /// 한 장에 대해 계약 셋을 모두 확인한다.
@@ -232,4 +248,15 @@ private func independentAlphaBounds(of cgImage: CGImage) -> CGRect? {
         return nil
     }
     return CGRect(x: left, y: top, width: right - left + 1, height: bottom - top + 1)
+}
+
+/// 번들에 실린 캐릭터 PNG 이름 전부. `--crop-check --all` 이 쓴다.
+///
+/// 파일 목록을 손으로 적지 않는 것은 에셋이 늘거나 줄어도 검사가 따라오게 하기 위해서다 —
+/// 명단을 적어 두면 새로 들어온 장이 검사 밖에 남는다.
+private func bundledCozyCharacterNames() -> [String] {
+    let urls = Bundle.module.urls(
+        forResourcesWithExtension: "png", subdirectory: "cozy/characters"
+    )
+    return (urls ?? []).map { $0.deletingPathExtension().lastPathComponent }.sorted()
 }
