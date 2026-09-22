@@ -17,7 +17,7 @@
 #   --color-check           오피스 렌더 픽셀의 실제 밝기 (통로·바닥·가구·셔츠 대역)
 #   --render-dashboard      대시보드 카드가 실제로 그려지는지 (라이트·다크 두 장)
 #   --render-calendar       캘린더 격자·머리글이 그려지는지 (5주 달·6주 달)
-#   --render-schedule-compose  등록 폼이 그려지는지 (빈 폼·채운 폼+실패)
+#   --render-schedule-compose  등록 폼이 그려지는지 (빈 폼·채운 폼+실패·길이 초과)
 #
 # **개수를 세어 적지 않는다.** 한때 "네 게이트" 라고 적혀 있었는데 그동안 여섯이 되어 있었고,
 # 그 숫자가 낡은 것을 아무도 못 봤다 — 목록에서 빠진 검사도 같은 이유로 눈에 띄지 않았다.
@@ -74,5 +74,7 @@ swift run IdaeriConsole --render-calendar "$RENDER_DIR/calendar-08.png" --month 
 echo "── 등록 폼 렌더 (빈 폼·채운 폼)"
 swift run IdaeriConsole --render-schedule-compose "$RENDER_DIR/compose-empty.png"
 swift run IdaeriConsole --render-schedule-compose "$RENDER_DIR/compose-filled.png" --filled --failure
+# 길이 상한을 넘긴 화면 — 안내가 어느 칸에 붙고 등록이 막히는지는 200 자를 쳐 넣어야 보인다.
+swift run IdaeriConsole --render-schedule-compose "$RENDER_DIR/compose-overflow.png" --overflow
 
 echo "✓ 콘솔 게이트 전부 통과"
