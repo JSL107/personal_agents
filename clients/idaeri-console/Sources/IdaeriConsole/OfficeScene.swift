@@ -1531,10 +1531,13 @@ final class OfficeScene: SKScene {
                     officeWorkstationSeatVisualOffsetTiles + fallbackLift
                 ) * floorDepthScale(assignment.desk)
             ),
-            // CharacterNode 내부 몸체가 +1 z를 쓰므로 좌석 타일 깊이를 그대로 주면 책상과
-            // 동률이 되어 삽입 순서에 따라 몸이 모니터 앞에 튄다. 몸은 상판 뒤에 두되 이름판
-            // (+2)과 글자(+3)는 책상 앞에 남는 범위로만 미세하게 뒤로 보낸다.
-            depth: depth(of: assignment.seat) - 0.24
+            // **몸이 책상 앞판보다 앞에 와야 한다.** 좌석 원화가 뒷모습 전신으로 바뀌면서
+            // 사람은 책상을 등지는 게 아니라 **책상 앞에 앉아 등을 보이는** 그림이 됐다.
+            // 예전 값(`depth(of: seat) - 0.24`)은 몸을 앞판(`depth(desk) + 0.15`)보다 뒤에
+            // 두어 상판이 하반신을 가려 주는 구조였는데, 전신 그림에서는 그 가림이 다리를
+            // 중간에서 잘라 "책상을 관통한" 그림이 된다(사용자 보고). 책상 칸 깊이를 그대로
+            // 주면 몸(+1)이 앞판보다 앞에 서서 모니터와 상판을 가리고 전신이 온전히 보인다.
+            depth: depth(of: assignment.desk)
         )
         // 책상 칸 기준으로 크기를 맞춘다 — 사람이 그 책상에 붙어 앉으므로 좌석 칸이 아니라
         // 책상 칸의 깊이가 눈에 보이는 크기를 정한다.

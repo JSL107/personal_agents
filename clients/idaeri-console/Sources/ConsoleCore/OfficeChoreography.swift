@@ -77,6 +77,14 @@ public struct ResolvedCozyPose: Sendable, Equatable {
 /// 접미사 없는 기본 그림(`agent-{index}.png`). 스무 명 전원이 가지고 있어 최후의 대체가 된다.
 public let cozyIdlePose = "idle"
 
+/// 책상·콘솔 좌석에서 쓰는 포즈.
+///
+/// **등을 보이고 모니터를 향해 앉은 그림이다.** 방은 3/4 부감이라 책상이 사람보다 위(안쪽)에
+/// 있는데, 정면 착석 원화(`sit`)를 쓰면 사람이 모니터를 등지고 화면 밖을 보는 그림이 됐다
+/// (사용자 보고: "이 방향이면 등을 돌리고 모니터를 보는 게 낫지 않을까"). 좌석 포즈를 여기
+/// 한 곳에서 정하므로, 되돌리려면 이 값만 `"sit"` 으로 바꾸면 된다.
+public let cozyDeskSeatPose = "sit-back"
+
 /// 요청 이름을 에셋 어휘로 접는다.
 ///
 /// **방향 이름과 걸음 프레임이 전부 `idle` 로 접히는 것이 이 함수의 요점이다.** `down`·`up`·
@@ -92,6 +100,11 @@ public func normalizedCozyPose(_ requested: String) -> String {
     // 상반신만 바닥에 떠 있게 된다(사용자 보고).
     case "sit":
         return "sit"
+    // 책상 좌석의 뒷모습 그림. `sit` 과 갈라 두는 이유는 위와 같다 — 이쪽은 의자까지 그려진
+    // 전신이라 가려 줄 상판이 없어도 성립하지만, 등을 보이므로 책상을 **향해** 앉는 자리에서만
+    // 뜻이 맞는다. 소파·회의 테이블에 놓으면 손님에게 등을 돌린 그림이 된다.
+    case "sit-back", "sitback":
+        return "sit-back"
     case "sitting":
         return "sitting"
     case "typing":
@@ -147,6 +160,8 @@ public func cozyPosePosture(assetIndex: Int, pose: String) -> CozyPosePosture {
     switch pose {
     case "sit":
         return .seated
+    case "sit-back":
+        return .seated
     case "typing":
         return assetIndex == 18 ? .standing : .seated
     case "sitting":
@@ -168,6 +183,10 @@ public func cozyPoseCandidates(_ normalized: String) -> [String] {
     switch normalized {
     case "sit":
         return ["sit"]
+    // 뒷모습이 없는 인덱스는 정면 착석으로 내려간다. 자리가 틀리지는 않지만(둘 다 책상
+    // 좌석용이다) 그 한 명만 화면 밖을 보게 되므로, 대체가 실제로 걸리면 그림이 빈 것이다.
+    case "sit-back":
+        return ["sit-back", "sit"]
     // 가구 앞에 앉는 연출은 **전용 원화를 쓴다.** 무릎을 굽히고 발이 바닥에 닿은 전신
     // 그림이라 소파·회의 테이블처럼 가려 줄 것이 없는 자리에서도 성립한다. 책상용
     // `sit`(허리 아래가 없는 그림)과는 쓰임이 정반대라 서로 대신하지 않는다 — 책상용을
@@ -180,7 +199,7 @@ public func cozyPoseCandidates(_ normalized: String) -> [String] {
     // 쓸 이유가 없고, `typing` 은 의자에 앉아 다리를 뻗은 옛 그림이라 3/4 시점 책상과
     // 원근이 어긋난다. 아직 안 바뀐 인덱스를 위해 `typing` 은 대체로 남긴다.
     case "typing":
-        return ["sit", "typing"]
+        return ["sit-back", "sit", "typing"]
     case "reading":
         return ["reading"]
     case "writing":
@@ -230,8 +249,12 @@ public func resolveCozyPose(
     // **앉을 자리가 없는 화면은 그것을 덮어쓸 수 있어야 한다.** 대시보드 카드에는 책상도
     // 의자도 없는데 `typing` 을 요청하면 앉은 그림이 뽑혀 사람이 공중에 주저앉는다
     // (사용자 보고). 그런 호출자는 `posture: .standing` 을 넘겨 선 그림만 받는다.
+    // **새 착석 포즈를 추가하면 이 목록에도 넣어야 한다.** 빠뜨리면 요청은 앉은 그림인데
+    // 원하는 자세가 `.standing` 으로 잡혀, 아래 자세 검사에서 후보가 전부 걸러지고 조용히
+    // `idle`(서 있는 전신)로 떨어진다 — 파일도 있고 계약에도 등록했는데 화면만 안 바뀌어
+    // 원인이 늦게 드러난다(`sit-back` 을 넣을 때 실제로 그랬다).
     let wanted: CozyPosePosture = requiredPosture
-        ?? (["sit", "sitting", "typing"].contains(normalized) ? .seated : .standing)
+        ?? (["sit", "sit-back", "sitting", "typing"].contains(normalized) ? .seated : .standing)
     for candidate in cozyPoseCandidates(normalized) {
         guard !cozyPoseDrawsOwnFurniture(assetIndex: assetIndex, pose: candidate) else {
             continue
