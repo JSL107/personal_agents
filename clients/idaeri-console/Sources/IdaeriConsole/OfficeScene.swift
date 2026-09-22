@@ -296,7 +296,7 @@ final class OfficeScene: SKScene {
                     department: agent.resolvedDepartment,
                     tile: featureTile
                 )
-                node.sit(pose: officeFeatureConsoleSeatPose)
+                node.sit()
             } else if let assignment = homeDeskAssignments[agentType] {
                 placeAtWorkstation(node, assignment: assignment)
                 node.sit()
@@ -1496,6 +1496,10 @@ final class OfficeScene: SKScene {
     private func place(_ node: CharacterNode, at tile: TilePoint) {
         node.tile = tile
         node.place(at: floorPoint(tile), depth: depth(of: tile))
+        // 특화 콘솔·책상이 아닌 **임의 칸**이다. 이 자리에서 앉게 되면(호출부가 이어서
+        // `sit()` 을 부르는 경로가 있다) 일반 책상 그림이 기본이 된다 — 콘솔에서 옮겨온
+        // 사람이 콘솔용 그림을 들고 오지 않도록 여기서도 명시한다.
+        node.prepareSeat(pose: cozyDeskSeatPose)
         applyDepthScale(node, at: tile)
         refreshDoors()
     }
@@ -1539,6 +1543,7 @@ final class OfficeScene: SKScene {
             // 주면 몸(+1)이 앞판보다 앞에 서서 모니터와 상판을 가리고 전신이 온전히 보인다.
             depth: depth(of: assignment.desk)
         )
+        node.prepareSeat(pose: cozyDeskSeatPose)
         // 책상 칸 기준으로 크기를 맞춘다 — 사람이 그 책상에 붙어 앉으므로 좌석 칸이 아니라
         // 책상 칸의 깊이가 눈에 보이는 크기를 정한다.
         applyDepthScale(node, at: assignment.desk)
@@ -1594,6 +1599,10 @@ final class OfficeScene: SKScene {
             // 두 좌석 경로가 서로 반대 전제로 갈리면 다음에 고칠 사람이 한쪽만 보고 틀린다.
             depth: depth(of: tile) - 1.00
         )
+        // **자리와 좌석 그림을 같은 곳에서 정한다.** 앉히는 호출부(`node.sit()`)는 일곱 곳이고
+        // 그중 하나는 자리 종류로 분기까지 하므로, 그쪽에 판정을 맡기면 한 곳만 빠뜨려도 다음
+        // 스냅샷이 기본 그림으로 덮는다(codex 리뷰 지적).
+        node.prepareSeat(pose: officeFeatureConsoleSeatPose)
         applyDepthScale(node, at: tile)
         refreshDoors()
     }

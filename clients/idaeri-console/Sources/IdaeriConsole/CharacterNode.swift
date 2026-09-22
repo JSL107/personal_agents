@@ -530,15 +530,23 @@ final class CharacterNode: SKNode {
         }
     }
 
-    /// 앉는다. `pose` 로 좌석 종류를 가른다.
+    /// 이 자리에서 쓸 좌석 그림을 미리 정한다 — **자리에 놓는 쪽이 부른다.**
     ///
-    /// **가구가 자기 의자를 그려 주는 자리에서는 `"sit"`(정면·상반신)을 넘긴다.** 기본값인
-    /// 뒷모습 원화는 의자까지 그려진 전신이라, 특화 콘솔처럼 그림 안에 이미 의자가 있는
-    /// 가구에 앉히면 의자가 두 개로 보이고 사람이 작업면 위에 걸터앉은 그림이 된다
-    /// (사용자 보고: "공공 에셋과 겹쳐서 이상하게 보임").
-    func sit(pose: String = cozyDeskSeatPose) {
-        isSeated = true
+    /// `sit()` 이 인자로 받게 두면 앉히는 호출부마다 자리 종류를 다시 판정해야 하는데, 그
+    /// 호출부가 일곱 곳이고 그중 하나는 자리 종류로 분기까지 한다. 한 곳만 빠뜨려도 다음
+    /// 스냅샷에서 그림이 기본값으로 덮인다(codex 리뷰 지적: 첫 배치는 맞는데 이어지는 `sync`
+    /// 가 되돌려 콘솔 겹침이 재발). **배치 함수가 정하면 앉히는 쪽은 아무것도 몰라도 된다.**
+    func prepareSeat(pose: String) {
         seatPose = pose
+        // 이미 앉아 있는 사람의 자리 종류가 바뀌었으면 그림도 즉시 따라가야 한다 — 콘솔에
+        // 앉아 있다가 자기 책상으로 재배치되는 경로가 그렇다.
+        if isSeated {
+            setTexture(seatPose)
+        }
+    }
+
+    func sit() {
+        isSeated = true
         // **책상에 앉으면 바닥 그림자를 끈다.** 앉은 그림은 허리 아래가 없어 상판 뒤로
         // 숨는데, 그림자는 좌석 칸 바닥에 그대로 남아 책상 **아래**에 동그랗게 비친다 —
         // 사람은 책상 뒤에 있는데 그림자만 책상 앞 바닥에 떠 있는 그림이 된다(사용자 보고).
@@ -553,8 +561,8 @@ final class CharacterNode: SKNode {
         }
         activeWorkPose = nil
         isSeated = false
-        // 다음에 앉을 자리가 어디인지는 그때 `sit(pose:)` 가 정한다. 여기서 되돌려 두지
-        // 않으면 콘솔에서 일어난 사람이 자기 책상으로 돌아가서도 콘솔용 그림을 쓴다.
+        // 다음에 앉을 자리는 그때 `prepareSeat(pose:)` 가 정한다. 여기서 되돌려 두지 않으면
+        // 콘솔에서 일어난 사람이 배치 함수를 안 거치는 경로로 다시 앉을 때 콘솔용 그림을 쓴다.
         seatPose = cozyDeskSeatPose
         apply(facing: facing)
     }
@@ -773,10 +781,13 @@ final class CharacterNode: SKNode {
         }
         clearMotion()
         if isSeated {
-            // 타이핑 그림이 없는 사람은 포즈 계약이 앉은 그림으로 내려준다 — 여기서 미리
-            // 존재를 따질 필요가 없다(따지던 시절에는 두 곳의 판정이 갈릴 여지가 있었다).
+            // **`"typing"` 을 요청하지 않는다.** 포즈 계약의 `typing` 후보는 선두가 책상 좌석
+            // 그림이라(자세가 이미 타이핑이다) 요청해도 결국 그것이 뽑히는데, 그 값은 일반
+            // 책상용이라 특화 콘솔에 앉은 사람의 그림을 덮는다(codex 리뷰 지적). 자리 종류를
+            // 아는 것은 `seatPose` 하나이므로 그것을 그대로 쓴다. `activeWorkPose` 는 몸짓
+            // 정리(`clearMotion`)가 자세 복원을 판단하는 표식으로 남긴다.
             activeWorkPose = "typing"
-            setTexture("typing")
+            setTexture(seatPose)
         }
         if shouldReduceMotion() {
             return
