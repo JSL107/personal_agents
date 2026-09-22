@@ -54,4 +54,74 @@ describe('ScheduleDispatcher', () => {
     expect(usecase.execute).not.toHaveBeenCalled();
     expect(outcome.formattedText).toContain('언제');
   });
+
+  it('되묻기 후속으로 날짜만 오면 직전 SCHEDULE 턴의 제목과 합쳐 등록한다', async () => {
+    const usecase = createUsecase();
+    const dispatcher = new ScheduleDispatcher(usecase);
+
+    const outcome = await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '9월 30일',
+      priorTurns: [
+        {
+          role: 'user',
+          text: '자동차세 등록해줘',
+          agentType: AgentType.SCHEDULE,
+          agentRunId: null,
+          timestampMs: 1,
+        },
+      ],
+    });
+
+    expect(usecase.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ title: '자동차세' }),
+    );
+    expect(outcome.formattedText).toContain('자동차세');
+  });
+
+  it('직전 턴이 다른 워커면 합치지 않는다 — 남의 대화를 제목으로 끌어오지 않는다', async () => {
+    const usecase = createUsecase();
+    const dispatcher = new ScheduleDispatcher(usecase);
+
+    const outcome = await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '9월 30일',
+      priorTurns: [
+        {
+          role: 'user',
+          text: '오늘 뭐해?',
+          agentType: AgentType.PM,
+          agentRunId: null,
+          timestampMs: 1,
+        },
+      ],
+    });
+
+    expect(usecase.execute).not.toHaveBeenCalled();
+    expect(outcome.formattedText.length).toBeGreaterThan(0);
+  });
+
+  it('봇이 한 되묻기 발화는 제목으로 쓰지 않는다 — assistant 턴은 사용자의 말이 아니다', async () => {
+    const usecase = createUsecase();
+    const dispatcher = new ScheduleDispatcher(usecase);
+
+    await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '9월 30일',
+      priorTurns: [
+        {
+          role: 'assistant',
+          text: '언제까지인지 알려주세요',
+          agentType: AgentType.SCHEDULE,
+          agentRunId: null,
+          timestampMs: 1,
+        },
+      ],
+    });
+
+    expect(usecase.execute).not.toHaveBeenCalled();
+  });
 });
