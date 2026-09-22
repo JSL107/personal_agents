@@ -6,10 +6,9 @@ import { ConfigService } from '@nestjs/config';
 
 import { DeleteScheduleUsecase } from '../application/delete-schedule.usecase';
 import { ListSchedulesUsecase } from '../application/list-schedules.usecase';
-import { RegisterScheduleUsecase } from '../application/register-schedule.usecase';
+import { RegisterConsoleScheduleUsecase } from '../application/register-console-schedule.usecase';
 import { UpdateScheduleStatusUsecase } from '../application/update-schedule-status.usecase';
 import { ScheduleItemRecord, ScheduleStatus } from '../domain/schedule.type';
-import { ScheduleSlackNotifier } from '../infrastructure/schedule-slack.notifier';
 import { ScheduleConsoleController } from './schedule-console.controller';
 
 describe('ScheduleConsoleController', () => {
@@ -39,24 +38,18 @@ describe('ScheduleConsoleController', () => {
         execute: jest.fn().mockResolvedValue(undefined),
       };
     const registerSchedule: jest.Mocked<
-      Pick<RegisterScheduleUsecase, 'execute'>
+      Pick<RegisterConsoleScheduleUsecase, 'execute'>
     > = {
       execute: jest.fn().mockResolvedValue(record),
-    };
-    const slackNotifier: jest.Mocked<
-      Pick<ScheduleSlackNotifier, 'notifyRegistered'>
-    > = {
-      notifyRegistered: jest.fn().mockResolvedValue(undefined),
     };
     const configService: jest.Mocked<Pick<ConfigService, 'get'>> = {
       get: jest.fn().mockReturnValue(ownerConfigValue),
     };
     const controller = new ScheduleConsoleController(
       listSchedules as unknown as ListSchedulesUsecase,
-      registerSchedule as unknown as RegisterScheduleUsecase,
+      registerSchedule as unknown as RegisterConsoleScheduleUsecase,
       updateStatus as unknown as UpdateScheduleStatusUsecase,
       deleteSchedule as unknown as DeleteScheduleUsecase,
-      slackNotifier as unknown as ScheduleSlackNotifier,
       configService as unknown as ConfigService,
     );
     return {
@@ -65,7 +58,6 @@ describe('ScheduleConsoleController', () => {
       registerSchedule,
       updateStatus,
       deleteSchedule,
-      slackNotifier,
       configService,
     };
   };
@@ -108,9 +100,8 @@ describe('ScheduleConsoleController', () => {
   });
 
   describe('create', () => {
-    it('제목·날짜·메모를 다듬어 소유자 이름으로 등록하고 Slack 으로 알린다', async () => {
-      const { controller, registerSchedule, slackNotifier } =
-        buildController('U123');
+    it('제목·날짜·메모를 다듬어 소유자 이름으로 등록한다', async () => {
+      const { controller, registerSchedule } = buildController('U123');
 
       const result = await controller.create({
         title: '  분기 보고서 제출  ',
@@ -125,7 +116,6 @@ describe('ScheduleConsoleController', () => {
         dueDate: { year: 2026, month: 9, day: 30 },
         memo: '위택스에서',
       });
-      expect(slackNotifier.notifyRegistered).toHaveBeenCalledWith(record);
       expect(result).toBe(record);
     });
 
@@ -144,14 +134,12 @@ describe('ScheduleConsoleController', () => {
     });
 
     it('공백만 친 제목은 400 으로 끊는다 — MaxLength 만으로는 통과한다', async () => {
-      const { controller, registerSchedule, slackNotifier } =
-        buildController('U123');
+      const { controller, registerSchedule } = buildController('U123');
 
       await expect(
         controller.create({ title: '   ', dueDate: '2026-09-30' }),
       ).rejects.toThrow(BadRequestException);
       expect(registerSchedule.execute).not.toHaveBeenCalled();
-      expect(slackNotifier.notifyRegistered).not.toHaveBeenCalled();
     });
 
     it('달력에 없는 날짜는 400 으로 끊는다 — 조용히 다음 달로 굴러가는 것을 막는다', async () => {

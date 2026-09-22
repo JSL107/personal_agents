@@ -18,14 +18,13 @@ import { LoopbackOnlyGuard } from '../../common/guard/loopback-only.guard';
 import { ConsoleReadGuard } from '../../console/interface/console-read.guard';
 import { DeleteScheduleUsecase } from '../application/delete-schedule.usecase';
 import { ListSchedulesUsecase } from '../application/list-schedules.usecase';
-import { RegisterScheduleUsecase } from '../application/register-schedule.usecase';
+import { RegisterConsoleScheduleUsecase } from '../application/register-console-schedule.usecase';
 import { UpdateScheduleStatusUsecase } from '../application/update-schedule-status.usecase';
 import {
   parseDateParam,
   parsePlainDateParam,
 } from '../domain/parse-date-param';
 import { ScheduleItemRecord } from '../domain/schedule.type';
-import { ScheduleSlackNotifier } from '../infrastructure/schedule-slack.notifier';
 import { CreateScheduleDto } from './dto/create-schedule.dto';
 import { UpdateScheduleDto } from './dto/update-schedule.dto';
 
@@ -38,10 +37,9 @@ import { UpdateScheduleDto } from './dto/update-schedule.dto';
 export class ScheduleConsoleController {
   constructor(
     private readonly listSchedules: ListSchedulesUsecase,
-    private readonly registerSchedule: RegisterScheduleUsecase,
+    private readonly registerSchedule: RegisterConsoleScheduleUsecase,
     private readonly updateStatus: UpdateScheduleStatusUsecase,
     private readonly deleteSchedule: DeleteScheduleUsecase,
-    private readonly slackNotifier: ScheduleSlackNotifier,
     private readonly configService: ConfigService,
   ) {}
 
@@ -83,7 +81,9 @@ export class ScheduleConsoleController {
       throw new BadRequestException('제목을 입력하세요.');
     }
     const memo = dto.memo?.trim();
-    const record = await this.registerSchedule.execute({
+    // 저장과 알림의 조율은 `RegisterConsoleScheduleUsecase` 가 한다 — 컨트롤러는 HTTP
+    // 입력을 usecase 입력으로 옮기는 데까지만 관여한다(`CODE_RULES.md` §7, 의존 방향).
+    return await this.registerSchedule.execute({
       slackUserId: this.requireOwner(),
       title,
       dueDate: parsePlainDateParam(dto.dueDate, 'dueDate'),
@@ -91,11 +91,6 @@ export class ScheduleConsoleController {
       // 메모 줄을 그리고 거기에 아무것도 없다.
       memo: memo ? memo : undefined,
     });
-    // 발송이 실패해도 등록은 유효하므로 notifier 가 안에서 삼킨다(그 주석 참조).
-    // 그래도 `await` 하는 것은 순서를 결정적으로 두기 위해서다 — 버려 두면 응답이 먼저
-    // 나가고 알림은 다음 회차에 뜨거나 안 뜨는데, 어느 쪽인지 밖에서 알 수 없다.
-    await this.slackNotifier.notifyRegistered(record);
-    return record;
   }
 
   @Patch('schedules/:id')
