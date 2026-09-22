@@ -38,7 +38,11 @@ describe('UpdateScheduleStatusUsecase', () => {
     const { repository, updates } = createRepository(baseRecord);
     const usecase = new UpdateScheduleStatusUsecase(repository);
 
-    await usecase.execute({ id: 1, status: ScheduleStatus.DONE });
+    await usecase.execute({
+      id: 1,
+      status: ScheduleStatus.DONE,
+      slackUserId: 'U1',
+    });
 
     expect(updates).toHaveLength(1);
     expect(
@@ -54,7 +58,11 @@ describe('UpdateScheduleStatusUsecase', () => {
     });
     const usecase = new UpdateScheduleStatusUsecase(repository);
 
-    await usecase.execute({ id: 1, status: ScheduleStatus.OPEN });
+    await usecase.execute({
+      id: 1,
+      status: ScheduleStatus.OPEN,
+      slackUserId: 'U1',
+    });
 
     expect((updates[0] as { completedAt: Date | null }).completedAt).toBeNull();
   });
@@ -64,7 +72,11 @@ describe('UpdateScheduleStatusUsecase', () => {
     const usecase = new UpdateScheduleStatusUsecase(repository);
 
     await expect(
-      usecase.execute({ id: 1, status: ScheduleStatus.OPEN }),
+      usecase.execute({
+        id: 1,
+        status: ScheduleStatus.OPEN,
+        slackUserId: 'U1',
+      }),
     ).rejects.toThrow(ConflictException);
     expect(updates).toHaveLength(0);
   });
@@ -74,7 +86,25 @@ describe('UpdateScheduleStatusUsecase', () => {
     const usecase = new UpdateScheduleStatusUsecase(repository);
 
     await expect(
-      usecase.execute({ id: 99, status: ScheduleStatus.DONE }),
+      usecase.execute({
+        id: 99,
+        status: ScheduleStatus.DONE,
+        slackUserId: 'U1',
+      }),
     ).rejects.toThrow(NotFoundException);
+  });
+
+  it('남의 일정이면 바꾸지 않고 404 로 답한다 — 403 으로 구분해 주면 그 id 의 존재가 샌다', async () => {
+    const { repository, updates } = createRepository(baseRecord);
+    const usecase = new UpdateScheduleStatusUsecase(repository);
+
+    await expect(
+      usecase.execute({
+        id: 1,
+        status: ScheduleStatus.DONE,
+        slackUserId: 'U-OTHER',
+      }),
+    ).rejects.toThrow(NotFoundException);
+    expect(updates).toHaveLength(0);
   });
 });

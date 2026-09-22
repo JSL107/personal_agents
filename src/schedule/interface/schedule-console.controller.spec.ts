@@ -89,7 +89,7 @@ describe('ScheduleConsoleController', () => {
   });
 
   describe('update', () => {
-    it('id·status 를 그대로 usecase 에 넘긴다', async () => {
+    it('id·status 와 함께 소유자를 넘긴다 — 변경도 조회와 같은 범위로 묶는다', async () => {
       const { controller, updateStatus } = buildController('U123');
 
       const result = await controller.update(1, {
@@ -99,18 +99,22 @@ describe('ScheduleConsoleController', () => {
       expect(updateStatus.execute).toHaveBeenCalledWith({
         id: 1,
         status: ScheduleStatus.DONE,
+        slackUserId: 'U123',
       });
       expect(result).toBe(record);
     });
   });
 
   describe('remove', () => {
-    it('DeleteScheduleUsecase 에 id 를 위임한다 — 없는 id 의 404 처리를 usecase 가 맡는다', async () => {
+    it('DeleteScheduleUsecase 에 id 와 소유자를 위임한다 — 없는 id 의 404 처리는 usecase 가 맡는다', async () => {
       const { controller, deleteSchedule } = buildController('U123');
 
       await controller.remove(1);
 
-      expect(deleteSchedule.execute).toHaveBeenCalledWith({ id: 1 });
+      expect(deleteSchedule.execute).toHaveBeenCalledWith({
+        id: 1,
+        slackUserId: 'U123',
+      });
     });
   });
 });

@@ -18,6 +18,9 @@ import {
 export interface UpdateScheduleStatusInput {
   id: number;
   status: ScheduleStatus;
+  // 호출자가 자기 일정만 건드리게 하는 소유자 조건. 조회(GET)만 막고 변경을 열어 두면
+  // 루프백에서 남의 행 id 를 찍어 완료·건너뜀 처리할 수 있다.
+  slackUserId: string;
 }
 
 @Injectable()
@@ -29,7 +32,8 @@ export class UpdateScheduleStatusUsecase {
 
   async execute(input: UpdateScheduleStatusInput): Promise<ScheduleItemRecord> {
     const found = await this.repository.findById(input.id);
-    if (!found) {
+    // 남의 일정은 "없음" 으로 답한다. 403 으로 구분해 주면 그 id 가 존재한다는 사실이 샌다.
+    if (!found || found.slackUserId !== input.slackUserId) {
       throw new NotFoundException('해당 일정을 찾을 수 없습니다.');
     }
     if (!canTransition(found.status, input.status)) {

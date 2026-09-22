@@ -66,12 +66,19 @@ export class ScheduleConsoleController {
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateScheduleDto,
   ): Promise<ScheduleItemRecord> {
-    return await this.updateStatus.execute({ id, status: dto.status });
+    return await this.updateStatus.execute({
+      id,
+      status: dto.status,
+      slackUserId: this.requireOwner(),
+    });
   }
 
   @Delete('schedules/:id')
   @UseGuards(LoopbackOnlyGuard)
   async remove(@Param('id', ParseIntPipe) id: number): Promise<void> {
-    await this.deleteSchedule.execute({ id });
+    await this.deleteSchedule.execute({
+      id,
+      slackUserId: this.requireOwner(),
+    });
   }
 }

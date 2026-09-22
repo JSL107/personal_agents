@@ -29,14 +29,31 @@ const createRepository = (
 describe('DeleteScheduleUsecase', () => {
   it('있는 항목이면 지운다', async () => {
     const repository = createRepository(found);
-    await new DeleteScheduleUsecase(repository).execute({ id: 1 });
+    await new DeleteScheduleUsecase(repository).execute({
+      id: 1,
+      slackUserId: 'U1',
+    });
     expect(repository.deleteById).toHaveBeenCalledWith(1);
   });
 
   it('없는 항목이면 404 로 끊는다 — Prisma 예외가 500 으로 새는 것을 막는다', async () => {
     const repository = createRepository(null);
     await expect(
-      new DeleteScheduleUsecase(repository).execute({ id: 99 }),
+      new DeleteScheduleUsecase(repository).execute({
+        id: 99,
+        slackUserId: 'U1',
+      }),
+    ).rejects.toThrow(NotFoundException);
+    expect(repository.deleteById).not.toHaveBeenCalled();
+  });
+
+  it('남의 일정이면 지우지 않고 404 로 답한다 — 403 으로 구분해 주면 그 id 의 존재가 샌다', async () => {
+    const repository = createRepository(found);
+    await expect(
+      new DeleteScheduleUsecase(repository).execute({
+        id: 1,
+        slackUserId: 'U-OTHER',
+      }),
     ).rejects.toThrow(NotFoundException);
     expect(repository.deleteById).not.toHaveBeenCalled();
   });
