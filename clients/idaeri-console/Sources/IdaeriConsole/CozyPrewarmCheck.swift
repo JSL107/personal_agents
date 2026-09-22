@@ -99,15 +99,50 @@ func runCozyPrewarmCheck() -> Bool {
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
     }
 
-    if SpriteLoader.isCozyCharacterCached(assetIndex: target.assetIndex, pose: target.pose) {
-        print("✓ 워밍 계약 통과 — 중복 요청이 접히고 백그라운드 준비가 캐시에 적재된다")
-    } else {
+    if !SpriteLoader.isCozyCharacterCached(assetIndex: target.assetIndex, pose: target.pose) {
         fputs(
             "prewarm check: 워밍이 캐시를 채우지 못했다 —"
                 + " agent-\(target.assetIndex) / \(target.pose) (15초 대기)\n",
             stderr
         )
         valid = false
+    }
+
+    // 3) 렌더가 먼저 채운 칸을 워밍이 덮어쓰지 않는지. 같은 그림이어도 덮어쓰면 화면에 이미
+    //    올라간 것과 다른 객체가 되어 의미 없는 교체가 된다. 완료 블록의 분기 중 하나이고
+    //    어느 검사도 밟지 않던 자리다.
+    if let raceTarget = firstUncachedRequest() {
+        SpriteLoader.prewarmCozyCharacters([raceTarget])
+        // 워밍이 백그라운드에서 준비하는 사이 렌더 경로로 **먼저** 채운다.
+        let renderedFirst = SpriteLoader.cozyCharacterImage(
+            assetIndex: raceTarget.assetIndex, pose: raceTarget.pose
+        )
+        // 워밍이 끝나고도 남을 만큼 기다린다. 짧으면 미검출(통과) 쪽으로 기울 뿐 오탐이 되지는
+        // 않으므로 넉넉히 준다 — 준비 자체는 장당 수십 ms 다.
+        let raceDeadline = Date().addingTimeInterval(5)
+        while Date() < raceDeadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        }
+        let afterPrewarm = SpriteLoader.cozyCharacterImage(
+            assetIndex: raceTarget.assetIndex, pose: raceTarget.pose
+        )
+        if renderedFirst !== afterPrewarm {
+            fputs(
+                "prewarm check: 워밍이 렌더가 먼저 채운 칸을 덮어썼다 —"
+                    + " agent-\(raceTarget.assetIndex) / \(raceTarget.pose)\n",
+                stderr
+            )
+            valid = false
+        }
+    }
+
+    // **준비 실패 분기(`image == nil`)는 검사하지 못한다.** 그 경로로 가려면 번들에서 그림이
+    // 사라져야 하는데, 검사가 에셋을 지웠다 되돌리는 것은 다른 게이트(`--asset-check`·렌더)와
+    // 같은 번들을 건드리는 일이라 하지 않는다. 그 분기가 하는 일은 키 해제뿐이고, 해제가
+    // 빠지면 같은 칸을 다시 워밍할 수 없게 되므로 위 2)·3)이 반복 실행에서 간접적으로 걸린다.
+
+    if valid {
+        print("✓ 워밍 계약 통과 — 중복 접힘 · 적재 · 렌더 선점 보존이 유효하다")
     }
 
     return valid

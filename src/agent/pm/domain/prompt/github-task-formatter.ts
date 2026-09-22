@@ -1,3 +1,4 @@
+import { wrapUntrustedInput } from '../../../../common/llm/untrusted-input.util';
 import { AssignedTasks } from '../../../../github/domain/github.type';
 
 export const MAX_GITHUB_ITEMS = 30;
@@ -15,11 +16,19 @@ export const formatGithubTasksAsPromptSection = (
   options: { maxItems?: number } = {},
 ): GithubFormatResult => {
   const maxItems = options.maxItems ?? MAX_GITHUB_ITEMS;
-  const lines: string[] = ['[GitHub 에서 자동 수집한 assigned 항목]'];
+  // 라벨과 생략 안내는 우리가 만든 문구라 경계 밖에 둔다 — 안에 넣으면 이 섹션이
+  // 무엇인지조차 외부 주장으로 읽힌다. 경계 안에는 남이 쓴 값만 넣는다.
+  const header = '[GitHub 에서 자동 수집한 assigned 항목]';
+  const lines: string[] = [];
 
   if (tasks.issues.length === 0 && tasks.pullRequests.length === 0) {
-    lines.push('(없음 — GitHub 호출은 성공했으나 assigned 항목이 없음)');
-    return { content: lines.join('\n'), truncatedCount: 0 };
+    return {
+      content: [
+        header,
+        '(없음 — GitHub 호출은 성공했으나 assigned 항목이 없음)',
+      ].join('\n'),
+      truncatedCount: 0,
+    };
   }
 
   const total = tasks.issues.length + tasks.pullRequests.length;
@@ -53,11 +62,15 @@ export const formatGithubTasksAsPromptSection = (
     remaining -= 1;
   }
 
-  if (truncatedCount > 0) {
-    lines.push(
-      `(+${truncatedCount}건 생략 — 총 ${total}건 중 ${maxItems}건만 표기)`,
-    );
-  }
+  // issue·PR 의 title 과 label 은 레포 기여자가 정하는 값이다. 제목에 지시를 심어
+  // 경계를 비껴가지 못하게 항목 전체를 감싼다 (code-reviewer 의 PR 메타와 같은 판단).
+  const tail =
+    truncatedCount > 0
+      ? [`(+${truncatedCount}건 생략 — 총 ${total}건 중 ${maxItems}건만 표기)`]
+      : [];
 
-  return { content: lines.join('\n'), truncatedCount };
+  return {
+    content: [header, wrapUntrustedInput(lines.join('\n')), ...tail].join('\n'),
+    truncatedCount,
+  };
 };
