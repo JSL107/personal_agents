@@ -10,8 +10,10 @@ import SwiftUI
 /// 그림에 안 나온다 — 확인할 수 없는 요구는 확인되지 않은 것이다. 실제 앱과 같은 뷰를 쓰므로
 /// 머리글 조판이 갈릴 일도 없다.
 ///
-/// 캘린더는 스크롤이 없는 고정 높이 화면이라 대시보드처럼 콘텐츠 끝에 맞춘 캔버스 계산이
-/// 필요 없다 — 창 폭 하나만 고정하면 된다.
+/// 캘린더는 창 안에서 끝나는 화면이라 대시보드처럼 콘텐츠 끝에 맞춘 캔버스 계산이 필요
+/// 없다. 단 **높이도 조판을 바꾼다** — 넓은 창에서는 칸 높이가 남는 세로를 나눠 갖고(상한
+/// 168), 1020pt 미만에서는 상세가 격자 아래로 내려가며 스크롤이 생긴다. 두 조판을 다 보려면
+/// `--size` 를 양쪽으로 굽는 수밖에 없다.
 private let calendarPreviewSize = CGSize(width: 1000, height: 760)
 
 /// 표본 데이터. 2026-09-30(자동차세)을 포함해 실제 등록 경로(`@이대리 9월 30일 자동차세`)로
@@ -22,8 +24,8 @@ private let calendarPreviewSize = CGSize(width: 1000, height: 760)
 /// 실제로 먹는지는 표본이 그 순서를 거슬러야만 그림에 드러나므로, 9월 30일 묶음의 맨 앞을
 /// 치운 항목(id 3, 먼저 등록해 이미 처리한 건)으로 둔다. 화면에서는 그것이 아래로 내려가야 맞다.
 private let calendarPreviewSchedules: [ScheduleItem] = [
-    // 완료 항목을 월 격자의 점에서 걷어내는 필터(`hasOpenSchedule`)가 실제로 먹는지도
-    // 같은 렌더에서 드러나야 한다 — 9월 5일엔 점이 찍히지 않아야 맞다.
+    // 치운 항목이 칸에서 어떻게 보이는지도 같은 렌더에서 드러나야 한다 — 9월 5일 칸의
+    // 칩은 취소선·회색이어야 하고, 살구색(남은 일정)으로 보이면 안 된다.
     ScheduleItem(
         id: 1, title: "지난달 정산", dueDate: "2026-09-05T00:00:00.000Z",
         linkUrl: nil, memo: nil, status: .done
@@ -57,13 +59,19 @@ private let calendarPreviewSchedules: [ScheduleItem] = [
 /// **그 폭으로 굽지 않으면 확인할 방법이 없다**(코드로는 판정되지 않는다).
 /// 대시보드 렌더(`--render-dashboard --size`)가 같은 이유로 먼저 열어 둔 입구다.
 ///
-/// `failure` 는 조회 실패 화면을 굽는다. 이 화면이 빈 상태와 확실히 갈라지는지는 **그려 봐야만**
-/// 알 수 있는데, 굽는 경로는 네트워크 응답을 기다리지 않고 끝나 실패 상태에 자연히 닿지 못한다.
+/// `failure` 는 조회 실패 화면을, `loading` 은 조회 중 화면을 굽는다. 두 화면이 빈 상태와
+/// 확실히 갈라지는지는 **그려 봐야만** 알 수 있는데, 굽는 경로는 네트워크 응답을 기다리지 않고
+/// 끝나 둘 중 어느 상태에도 자연히 닿지 못한다.
+/// `month` 는 굽는 달을 바꾼다. **행 수가 달마다 다른 것이 조판 위험이다** — 5주 달은 창
+/// 하한(560)에 들어가지만 6주 달은 같은 창에서 넘친다(78×6 + 간격·머리글·여백 = 616).
+/// 표본은 9월 것이라 다른 달은 빈 격자가 되지만, 확인 대상은 행 수가 늘어난 조판 자체다.
 func renderCalendarPreview(
     path: String,
     darkMode: Bool,
     empty: Bool,
     failure: Bool = false,
+    loading: Bool = false,
+    month: Int = 9,
     size: CGSize? = nil
 ) -> Bool {
     let calendarPreviewSize = size ?? calendarPreviewSize
@@ -81,12 +89,16 @@ func renderCalendarPreview(
         // 버튼 조판까지 한 장에서 확인한다.
         CalendarView(
             store: store, client: client, baseURLLabel: "http://127.0.0.1:3002",
-            initialYear: 2026, initialMonth: 9,
+            initialYear: 2026, initialMonth: month,
             initialSelectedDay: empty ? nil : 30,
             // 백엔드가 꺼져 있을 때 실제로 나오는 문구 그대로 — `failureReason` 의 비-HTTP 분기.
             initialLoadFailure: failure
                 ? "백엔드에 연결하지 못했습니다. 주소(http://127.0.0.1:3002)와 실행 여부를 확인하세요."
-                : nil
+                : nil,
+            // 오늘 칸 강조를 고정한다. 실행일을 그대로 쓰면 9월을 굽는 그림에서 오늘 표시가
+            // 10월부터 사라지고, 그 변화가 회귀인지 날짜 탓인지 그림만 보고는 갈리지 않는다.
+            initialToday: "2026-09-22",
+            initialLoading: loading
         )
     }
         .environment(\.colorScheme, darkMode ? .dark : .light)

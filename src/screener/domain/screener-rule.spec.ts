@@ -40,12 +40,13 @@ const candidate = (
   code,
   name: `종목${code}`,
   krxMarket: 'KOSPI',
+  sector: '전기전자',
   indicators: indicators(overrides),
 });
 
 describe('screenStocks', () => {
   it('장투 통과 후보가 하나면 100점이다', () => {
-    expect(SCREENER_RULE_VERSION).toBe(4);
+    expect(SCREENER_RULE_VERSION).toBe(5);
     expect(screenStocks([candidate('000001')], 'LONG_TERM', 20)).toEqual([
       expect.objectContaining({ code: '000001', score: 100 }),
     ]);
