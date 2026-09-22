@@ -5,6 +5,10 @@ import {
   wrapUntrustedInput,
 } from '../../../common/llm/untrusted-input.util';
 import { ConversationContext } from '../../../router/domain/conversation-context.type';
+import {
+  formatRetroCarryOverSection,
+  formatRetroTryNextSection,
+} from '../domain/prompt/evening-retro-formatter';
 import { formatGithubTasksAsPromptSection } from '../domain/prompt/github-task-formatter';
 import { formatNotionTasksAsPromptSection } from '../domain/prompt/notion-task-formatter';
 import {
@@ -37,14 +41,23 @@ const MAX_PROMPT_BYTES = 16_000;
 // 묵은 항목만 들고 있어도 어제 worklog·plan 을 밀어내고 끝까지 살아남기 때문이다.
 // 단 무조건 버리지는 않는다. cap 을 넘긴 내용 자체가 notion 일 수 있어 "넘겼으니 빈 prompt 가 될 리
 // 없다" 는 성립하지 않는다 — notion 이 유일하게 남은 task source 면 trimSectionsToFit 이 건너뛴다.
+// 저녁 회고 2종은 우선순위가 서로 달라 한 섹션으로 묶지 않고 순서의 양 끝에 나눠 둔다.
+//   - retroTryNext(일하는 방식 + 형식을 어긴 회차의 원문): 참고용이라 notion 보다 앞이다 —
+//     notion 은 실제 task source 이고 이쪽은 "이 문장을 할 일로 만들지 말라" 고 못박은 참고다.
+//   - retroCarryOver(어제 못 끝낸 것): 오늘 일정의 직접 재료이자 previousPlan 을 압축한 형태라
+//     맨 끝 — 어제 계획 전체와 둘 중 하나만 남길 수 있다면 짧은 쪽이 남아야 한다.
+// 묶어 두면 절삭이 참고 내용을 버리려다 일정 재료까지 함께 버린다. 목록에서 빼면 반대로
+// 영영 안 잘려, 정작 cap 을 넘긴 날 다른 필수 섹션을 밀어낸다.
 const TRIM_ORDER: ReadonlyArray<keyof PromptSections> = [
   'similarPlans',
   'inboxItems',
   'slackMentions',
   'recentPlanSummaries',
+  'retroTryNext',
   'notion',
   'previousWorklog',
   'previousPlan',
+  'retroCarryOver',
 ];
 
 interface PromptSections {
@@ -53,6 +66,8 @@ interface PromptSections {
   userInstruction: string | null;
   previousPlan: string | null;
   previousWorklog: string | null;
+  retroCarryOver: string | null;
+  retroTryNext: string | null;
   slackMentions: string | null;
   inboxItems: string | null;
   userText: string | null;
@@ -88,6 +103,9 @@ export class DailyPlanPromptBuilder {
     staleDemoteDays = 5,
   ): BuiltPrompt {
     const { userText, githubTasks, previousPlan, previousWorklog } = context;
+    const { eveningRetro } = context;
+    // 두 섹션이 같은 시각을 기준으로 경과일을 적도록 한 번만 읽는다.
+    const now = new Date();
     const {
       slackMentions,
       notionTasks,
@@ -143,6 +161,20 @@ export class DailyPlanPromptBuilder {
         ? formatPreviousDailyReviewSection({
             review: previousWorklog.review,
             endedAt: previousWorklog.endedAt,
+          })
+        : null,
+      retroCarryOver: eveningRetro
+        ? formatRetroCarryOverSection({
+            reflection: eveningRetro.reflection,
+            endedAt: eveningRetro.endedAt,
+            now,
+          })
+        : null,
+      retroTryNext: eveningRetro
+        ? formatRetroTryNextSection({
+            reflection: eveningRetro.reflection,
+            endedAt: eveningRetro.endedAt,
+            now,
           })
         : null,
       slackMentions: slackResult ? slackResult.content : null,

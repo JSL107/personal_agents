@@ -15,8 +15,10 @@ import { NotionTask } from '../../../notion/domain/notion.type';
 import { ListMyMentionsUsecase } from '../../../slack-collector/application/list-my-mentions.usecase';
 import { SlackMention } from '../../../slack-collector/domain/slack-collector.type';
 import { SlackInboxService } from '../../../slack-inbox/application/slack-inbox.service';
+import { EveningRetroReflection } from '../../blog/domain/prompt/evening-retro.prompt';
 import { DailyReview } from '../../work-reviewer/domain/work-reviewer.type';
 import { DailyPlan } from '../domain/pm-agent.type';
+import { coerceToEveningRetroReflection } from '../domain/prompt/evening-retro-formatter';
 import { coerceToDailyPlan } from '../domain/prompt/previous-plan-formatter';
 import { coerceToDailyReview } from '../domain/prompt/previous-worklog-formatter';
 import {
@@ -27,6 +29,11 @@ import {
 export const SLACK_MENTION_SINCE_HOURS = 24;
 export const RECENT_PLAN_LOOKBACK_DAYS = 7;
 export const RECENT_PLAN_LIMIT = 7;
+// 저녁 회고를 며칠 전 것까지 아침에 올릴지. KST 캘린더일 기준이고 cutoff 는 (이 값 - 1)일 전
+// 자정이라, 4 는 "3일 전까지" 를 뜻한다 — 금요일 저녁 회고가 월요일 아침에 닿는 최소값이다.
+// 상한이 없으면 `findLatest...` 계열이 날짜를 안 보고 최신 1건을 주므로, 며칠 쉬고 온 날
+// 오래된 carryOver 가 오늘 할 일로 올라온다.
+export const EVENING_RETRO_LOOKBACK_DAYS = 4;
 
 export interface PreviousPlanContext {
   plan: DailyPlan;
@@ -40,12 +47,20 @@ export interface PreviousWorklogContext {
   agentRunId: number;
 }
 
+export interface EveningRetroContext {
+  reflection: EveningRetroReflection;
+  endedAt: Date;
+  agentRunId: number;
+}
+
 export interface DailyPlanContext {
   userText: string;
   slackUserId: string;
   githubTasks: AssignedTasks | null;
   previousPlan: PreviousPlanContext | null;
   previousWorklog: PreviousWorklogContext | null;
+  // 저녁 KPT 회고 — carryOver(오늘 일정 재료) / tryNext(일하는 방식) 를 아침으로 넘기는 통로.
+  eveningRetro: EveningRetroContext | null;
   slackMentions: SlackMention[];
   notionTasks: NotionTask[];
   recentPlanSummaries: RecentPlanSummary[];
@@ -90,6 +105,7 @@ export class DailyPlanContextCollector {
       githubTasksRaw,
       previousPlan,
       previousWorklog,
+      eveningRetro,
       slackMentionsRaw,
       notionTasks,
       recentPlanSummaries,
@@ -99,6 +115,7 @@ export class DailyPlanContextCollector {
       this.fetchGithubTasksOrNull(),
       this.fetchPreviousPlanOrNull(),
       this.fetchPreviousWorklogOrNull(),
+      this.fetchEveningRetroOrNull({ slackUserId }),
       this.fetchSlackMentionsOrEmpty({ slackUserId }),
       this.fetchNotionTasksOrEmpty(),
       this.fetchRecentPlanSummariesOrEmpty({ slackUserId }),
@@ -157,6 +174,7 @@ export class DailyPlanContextCollector {
       githubTasks,
       previousPlan,
       previousWorklog,
+      eveningRetro,
       slackMentions,
       notionTasks,
       recentPlanSummaries,
@@ -238,6 +256,45 @@ export class DailyPlanContextCollector {
       return null;
     }
     return { review, endedAt: snapshot.endedAt, agentRunId: snapshot.id };
+  }
+
+  // 저녁 회고는 `findLatestRunOrNull` 을 쓰지 않는다 — 그쪽은 날짜를 보지 않아 며칠 전 회고를
+  // 그대로 준다. 여기서만 날짜 상한이 필요하므로 조회 API 자체가 다르다.
+  private async fetchEveningRetroOrNull({
+    slackUserId,
+  }: {
+    slackUserId: string;
+  }): Promise<EveningRetroContext | null> {
+    try {
+      const runs = await this.agentRunService.findRecentSucceededRuns({
+        agentType: AgentType.EVENING_RETRO,
+        slackUserId,
+        sinceDays: EVENING_RETRO_LOOKBACK_DAYS,
+        limit: 1,
+      });
+      const snapshot = runs[0];
+      if (!snapshot) {
+        return null;
+      }
+      const reflection = coerceToEveningRetroReflection(snapshot.output);
+      if (!reflection) {
+        this.logger.warn(
+          `직전 EVENING_RETRO AgentRun #${snapshot.id} 의 output 이 회고 스키마에 안 맞아 무시합니다.`,
+        );
+        return null;
+      }
+      return {
+        reflection,
+        endedAt: snapshot.endedAt,
+        agentRunId: snapshot.id,
+      };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `저녁 회고 수집 실패 (해당 컨텍스트 없이 계속 진행): ${message}`,
+      );
+      return null;
+    }
   }
 
   private async findLatestRunOrNull(
