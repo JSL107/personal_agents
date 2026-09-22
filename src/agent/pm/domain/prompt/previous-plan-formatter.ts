@@ -1,3 +1,4 @@
+import { wrapUntrustedInput } from '../../../../common/llm/untrusted-input.util';
 import { DailyPlan, TaskItem } from '../pm-agent.type';
 import { isDailyPlanShape } from './daily-plan.shape';
 
@@ -10,10 +11,11 @@ export const formatPreviousDailyPlanSection = ({
   plan: DailyPlan;
   endedAt: Date;
 }): string => {
-  const lines: string[] = [
-    `[직전 PM 실행 (${endedAt.toISOString()}) 의 plan]`,
-    `- 최우선: ${renderTaskInline(plan.topPriority)}`,
-  ];
+  // 여기 실리는 제목은 어제 GitHub·Notion·Slack 에서 들어온 외부 문자열이 우리 plan 에
+  // 저장됐다가 돌아온 것이다 — 한 번 저장됐다고 우리 말이 되지 않는다. 항목은 경계 안에,
+  // 헤더와 아래 ※ 지시는 우리가 모델에게 하는 말이라 경계 밖에 둔다.
+  const header = `[직전 PM 실행 (${endedAt.toISOString()}) 의 plan]`;
+  const lines: string[] = [`- 최우선: ${renderTaskInline(plan.topPriority)}`];
 
   if (plan.morning.length > 0) {
     lines.push('- 오전:');
@@ -40,12 +42,12 @@ export const formatPreviousDailyPlanSection = ({
     }
   }
 
-  lines.push(
+  return [
+    header,
+    wrapUntrustedInput(lines.join('\n')),
     '',
     '※ 이 plan 의 항목 중 사용자가 오늘도 다시 언급한 것 / GitHub 에 그대로 남아있는 것은 "전일 미완료" 가능성으로 간주해 오늘 plan 에 반영해도 된다.',
-  );
-
-  return lines.join('\n');
+  ].join('\n');
 };
 
 const renderTaskInline = (task: TaskItem): string => {

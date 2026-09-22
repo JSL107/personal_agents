@@ -1,3 +1,4 @@
+import { wrapUntrustedInput } from '../../../../common/llm/untrusted-input.util';
 import { DailyPlan } from '../pm-agent.type';
 
 const KST_OFFSET_HOURS = 9;
@@ -20,7 +21,9 @@ export const formatRecentPlanSummariesSection = (
     return null;
   }
 
-  const lines: string[] = ['## 지난 7일 plan 패턴 (최근순)'];
+  // topPriorityTitle 은 저장된 plan 에서 꺼낸 값이라 원래 출처가 외부다 (previous-plan-formatter 와 같은 이유).
+  const header = '## 지난 7일 plan 패턴 (최근순)';
+  const lines: string[] = [];
   for (const summary of summaries) {
     const criticalPathNote =
       summary.criticalPathCount > 0 ? ` ⚠${summary.criticalPathCount}건` : '';
@@ -29,12 +32,12 @@ export const formatRecentPlanSummariesSection = (
     );
   }
 
-  lines.push(
+  return [
+    header,
+    wrapUntrustedInput(lines.join('\n')),
     '',
     '※ 같은 태스크가 3일 이상 최우선(topPriority)으로 등장하면 업무 분해 또는 위임을 검토하십시오.',
-  );
-
-  return lines.join('\n');
+  ].join('\n');
 };
 
 export const createRecentPlanSummary = (
