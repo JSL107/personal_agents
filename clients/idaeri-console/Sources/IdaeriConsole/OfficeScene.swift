@@ -1531,10 +1531,13 @@ final class OfficeScene: SKScene {
                     officeWorkstationSeatVisualOffsetTiles + fallbackLift
                 ) * floorDepthScale(assignment.desk)
             ),
-            // CharacterNode 내부 몸체가 +1 z를 쓰므로 좌석 타일 깊이를 그대로 주면 책상과
-            // 동률이 되어 삽입 순서에 따라 몸이 모니터 앞에 튄다. 몸은 상판 뒤에 두되 이름판
-            // (+2)과 글자(+3)는 책상 앞에 남는 범위로만 미세하게 뒤로 보낸다.
-            depth: depth(of: assignment.seat) - 0.24
+            // **몸이 책상 앞판보다 앞에 와야 한다.** 좌석 원화가 뒷모습 전신으로 바뀌면서
+            // 사람은 책상을 등지는 게 아니라 **책상 앞에 앉아 등을 보이는** 그림이 됐다.
+            // 예전 값(`depth(of: seat) - 0.24`)은 몸을 앞판(`depth(desk) + 0.15`)보다 뒤에
+            // 두어 상판이 하반신을 가려 주는 구조였는데, 전신 그림에서는 그 가림이 다리를
+            // 중간에서 잘라 "책상을 관통한" 그림이 된다(사용자 보고). 책상 칸 깊이를 그대로
+            // 주면 몸(+1)이 앞판보다 앞에 서서 모니터와 상판을 가리고 전신이 온전히 보인다.
+            depth: depth(of: assignment.desk)
         )
         // 책상 칸 기준으로 크기를 맞춘다 — 사람이 그 책상에 붙어 앉으므로 좌석 칸이 아니라
         // 책상 칸의 깊이가 눈에 보이는 크기를 정한다.
@@ -1577,16 +1580,19 @@ final class OfficeScene: SKScene {
                 x: anchor.x + tileSize * (horizontalOffsetTiles[department] ?? 0),
                 y: anchor.y + tileSize * (verticalOffsetTiles[department] ?? 0.40)
             ),
-            // **앞판보다 뒤로 보내야 앉은 것으로 읽힌다.** 콘솔은 뒤판과 앞판 두 장으로
+            // **일반 책상과 같은 규칙을 쓴다 — 몸이 앞판보다 앞.** 콘솔은 뒤판과 앞판 두 장으로
             // 그려지는데(`cozy:department-feature-front:`, zPosition `depth + 0.15`),
-            // 예전 값 `+0.24` 는 `CharacterNode` 몸체가 노드 기준 +1 을 쓰는 탓에 몸이
-            // `depth + 1.24` 에 서서 **앞판 위로 올라탔다** — 다리와 신발이 작업면 앞으로
-            // 흘러내려 콘솔에 걸터앉은 그림이 됐다(주석은 "하체는 앞판 뒤로" 라고 적혀
-            // 있었지만 실제 순서는 반대였다).
-            // `-1.00` 이면 몸이 `depth + 0.00` 으로 앞판 아래에 들어가 하반신이 가려지고,
-            // 이름판(+2)·글자(+3)는 여전히 앞판보다 앞에 남는다. `-0.60` 도 구워 봤지만
-            // 그때는 신발이 앞판 위로 다시 나온다.
-            depth: depth(of: tile) - 1.00
+            // 예전 값 `-1.00` 은 몸(`CharacterNode` 가 노드 기준 +1 을 쓴다)을 `depth + 0.00`
+            // 에 두어 앞판이 하반신을 **가리도록** 한 것이었다. 상반신만 있는 착석 원화에서는
+            // 그 가림이 자세를 만들어 줬지만, 좌석 원화가 의자까지 그려진 전신으로 바뀌자
+            // 같은 가림이 다리를 중간에서 잘라 냈다(codex 리뷰 지적). 여섯 방을 구워 비교하니
+            // 평가 방이 가장 뚜렷했다 — 예전 값에서는 사람이 콘솔에 얹힌 것처럼 보이고, 몸을
+            // 앞으로 내면 의자 등받이가 드러나 앉은 자세로 읽힌다.
+            //
+            // 대신 사람이 콘솔의 부서 그림을 더 가린다. 일반 책상에서 모니터를 가리는 쪽을
+            // 고른 것과 같은 판단이다(사용자: "모니터를 가려도 좋으니 정확하게 앉은 자세로").
+            // 두 좌석 경로가 서로 반대 전제로 갈리면 다음에 고칠 사람이 한쪽만 보고 틀린다.
+            depth: depth(of: tile)
         )
         applyDepthScale(node, at: tile)
         refreshDoors()
@@ -2502,7 +2508,13 @@ final class OfficeScene: SKScene {
                 x: deskPoint.x,
                 y: deskPoint.y + tileSize * CGFloat(officeWorkstationSeatVisualOffsetTiles)
             )
-            node.zPosition = depth(of: workDesk) - 0.24
+            // **대표도 몸이 앞판보다 앞에 와야 한다.** 좌석 원화가 전신으로 바뀐 뒤 담당자는
+            // `placeAtWorkstation` 에서 이 규칙을 받았는데, 대표는 별도 경로라 예전 값
+            // `-0.24` 가 남아 혼자 하반신이 책상 앞판(`depth + 0.15`)에 잘렸다(codex 리뷰
+            // 지적, 전체 렌더에서 확인). **담당자와 같은 수식을 그대로 쓸 수 없다** — 대표는
+            // `CharacterNode` 가 아니라 맨 `SKSpriteNode` 라 몸에 +1 이 붙지 않으므로, 앞판을
+            // 넘길 몫을 여기서 직접 준다.
+            node.zPosition = depth(of: workDesk) + 0.5
         } else {
             node.position = floorPoint(plan.presidentTile)
             node.zPosition = depth(of: plan.presidentTile)

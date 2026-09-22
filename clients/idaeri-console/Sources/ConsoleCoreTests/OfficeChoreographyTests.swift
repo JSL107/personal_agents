@@ -205,23 +205,66 @@ func runCozyPoseContractTests(_ t: TestRunner) {
         "책상 좌석은 착석 원화를 그대로 쓴다")
     t.expectEqual(normalizedCozyPose("carryingPapers"), "carryingpapers", "대문자 요청도 같은 이름")
 
+    // MARK: - 책상 좌석 뒷모습(`sit-back`)
+
+    t.expectEqual(normalizedCozyPose("sit-back"), "sit-back", "뒷모습은 sit 으로 합치지 않는다")
+    t.expectEqual(normalizedCozyPose("sitback"), "sit-back", "붙여 쓴 요청도 같은 이름")
+
+    // **씬이 쓰는 좌석 포즈가 계약에 등록돼 있는지.** `cozyDeskSeatPose` 를 새 이름으로 바꾸고
+    // `normalizedCozyPose` 에 넣는 것을 잊으면 요청이 조용히 `idle` 로 접혀, 화면의 전원이 선 채로
+    // 책상에 붙어 선다. 상수만 고치고 계약을 안 고치는 실수를 여기서 끊는다.
+    t.expectEqual(
+        normalizedCozyPose(cozyDeskSeatPose), cozyDeskSeatPose,
+        "씬이 쓰는 좌석 포즈 이름은 계약이 알고 있어야 한다")
+
+    // **좌석 요청이 앉은 자세로 풀리는지.** `resolveCozyPose` 안에는 "어떤 이름이 앉은 요청인가"
+    // 를 정하는 목록이 따로 있어(`wanted`), 후보·자세 표를 다 채워도 그 목록에서 빠지면 원하는
+    // 자세가 `.standing` 으로 잡혀 앉은 후보가 전부 걸러진다. `sit-back` 을 넣을 때 실제로 그렇게
+    // 되어 에셋·계약이 다 맞는데도 화면만 안 바뀌었다 — 그 조합을 이 단언이 잡는다.
+    t.expectEqual(
+        resolveCozyPose(
+            requested: cozyDeskSeatPose, assetIndex: 3, hasAsset: cozyPoseAssetExists(3)
+        ),
+        ResolvedCozyPose(pose: cozyDeskSeatPose, posture: .seated),
+        "책상 좌석 뒷모습 요청은 앉은 자세의 뒷모습 그림으로 풀린다")
+
+    // 뒷모습이 없는 인덱스는 정면 착석으로 내려간다 — 자리는 맞고 방향만 틀리다.
+    t.expectEqual(
+        resolveCozyPose(
+            requested: "sit-back", assetIndex: 1, hasAsset: { $0 == "sit" }
+        ),
+        ResolvedCozyPose(pose: "sit", posture: .seated),
+        "뒷모습이 없으면 정면 착석으로 대신한다")
+    // 가구 앞 그림으로는 내려가지 않는다. 소파용 전신을 책상에 놓으면 다리가 상판 아래로 샌다.
+    t.expectEqual(
+        resolveCozyPose(
+            requested: "sit-back", assetIndex: 1, hasAsset: { $0 == "sitting" }
+        ).pose,
+        cozyIdlePose, "책상 뒷모습은 가구 앞 그림으로 대신하지 않는다")
+    // 반대 방향도 막는다 — 소파 앞에 등을 돌린 그림을 놓으면 손님에게 등을 보이고 앉는다.
+    t.expectEqual(
+        resolveCozyPose(
+            requested: "sitting", assetIndex: 1, hasAsset: { $0 == "sit-back" }
+        ).pose,
+        cozyIdlePose, "가구 앞 앉기는 책상 뒷모습으로 대신하지 않는다")
+
     // 앉은 요청은 **앉은 그림**으로만 내려간다. 서 있는 그림으로 내려가면 그 사람만 책상 위에
     // 올라선 것처럼 보인다. 10번은 `typing` 이 없는 캐릭터다.
     t.expectEqual(
         resolveCozyPose(requested: "typing", assetIndex: 10, hasAsset: cozyPoseAssetExists(10)),
-        ResolvedCozyPose(pose: "sit", posture: .seated),
+        ResolvedCozyPose(pose: cozyDeskSeatPose, posture: .seated),
         "타이핑 그림이 없으면 기본 그림이 아니라 앉은 그림")
-    // 타이핑 요청은 **앉은 그림을 먼저 본다.** `sit` 원화가 허리 아래 없이 팔을 앞으로
-    // 뻗은 그림으로 다시 그려져, 책상 뒤에서 다리가 샐 자리가 없다. 옛 `typing` 원화는
-    // 의자에 앉아 다리를 뻗은 그림이라 3/4 시점 책상과 원근이 어긋난다.
+    // 타이핑 요청은 **책상 좌석 그림을 먼저 본다.** 그 그림이 뒷모습 전신으로 바뀐 뒤에도
+    // 같다 — 책상에서 하는 일은 결국 모니터를 보는 것이라, 자세가 이미 타이핑이다. 옛
+    // `typing` 원화는 의자에 앉아 다리를 뻗은 그림이라 3/4 시점 책상과 원근이 어긋난다.
     t.expectEqual(
         resolveCozyPose(requested: "typing", assetIndex: 0, hasAsset: cozyPoseAssetExists(0)),
-        ResolvedCozyPose(pose: "sit", posture: .seated),
-        "타이핑 요청은 앉은 그림으로 해결한다")
+        ResolvedCozyPose(pose: cozyDeskSeatPose, posture: .seated),
+        "타이핑 요청은 책상 좌석 그림으로 해결한다")
     // 18번 `typing` 은 태블릿을 들고 **서 있는** 그림이다. 책상 좌석에 쓰면 혼자 선 채로 일한다.
     t.expectEqual(
         resolveCozyPose(requested: "typing", assetIndex: 18, hasAsset: cozyPoseAssetExists(18)),
-        ResolvedCozyPose(pose: "sit", posture: .seated),
+        ResolvedCozyPose(pose: cozyDeskSeatPose, posture: .seated),
         "서 있는 타이핑 그림은 좌석에서 쓰지 않는다")
 
     // 한때 가구가 함께 그려져 배제됐던 셋. 가구 없는 그림으로 교체된 뒤에는 **제 포즈가
@@ -262,7 +305,7 @@ func runCozyPoseContractTests(_ t: TestRunner) {
     // 인자를 생략하면 예전대로 요청 이름이 자세를 정한다(오피스 좌석 경로가 이 기본값을 쓴다).
     t.expectEqual(
         resolveCozyPose(requested: "typing", assetIndex: 1, hasAsset: cozyPoseAssetExists(1)),
-        ResolvedCozyPose(pose: "sit", posture: .seated),
+        ResolvedCozyPose(pose: cozyDeskSeatPose, posture: .seated),
         "자세를 요구하지 않으면 typing 은 여전히 앉은 자세로 해결된다")
 
     // 걸음 그림은 **보는 방향으로 갈린다.** 스무 명 전원이 정면·후면을 둘 다 가지지만,
