@@ -98,7 +98,9 @@ if let composeIndex = CommandLine.arguments.firstIndex(of: "--render-schedule-co
             // 긴 제목·여러 줄 메모가 든 폼. 빈 폼만으로는 넘침 조판을 볼 수 없다.
             filled: CommandLine.arguments.contains("--filled"),
             // 등록 실패로 폼이 열린 채 사유를 띄운 화면.
-            failure: CommandLine.arguments.contains("--failure")
+            failure: CommandLine.arguments.contains("--failure"),
+            // 길이 상한을 넘겨 등록이 막힌 화면 — 안내가 어느 칸에 붙는지는 굽어야 보인다.
+            overflow: CommandLine.arguments.contains("--overflow")
         ) ? 0 : 1
     )
 }

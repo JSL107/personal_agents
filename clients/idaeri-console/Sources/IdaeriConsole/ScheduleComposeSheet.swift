@@ -56,9 +56,12 @@ struct ScheduleComposeSheet: View {
 
             VStack(alignment: .leading, spacing: Spacing.md) {
                 field("제목") {
-                    TextField("예: 자동차세 납부", text: $title)
-                        .textFieldStyle(.roundedBorder)
-                        .font(Typography.body)
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        TextField("예: 자동차세 납부", text: $title)
+                            .textFieldStyle(.roundedBorder)
+                            .font(Typography.body)
+                        overflowNotice(title, limit: ScheduleFieldLimit.title)
+                    }
                 }
                 field("날짜") {
                     DatePicker("", selection: $dueDate, displayedComponents: .date)
@@ -66,10 +69,13 @@ struct ScheduleComposeSheet: View {
                         .datePickerStyle(.stepperField)
                 }
                 field("메모") {
-                    TextField("선택 — 어디서·어떻게", text: $memo, axis: .vertical)
-                        .textFieldStyle(.roundedBorder)
-                        .font(Typography.body)
-                        .lineLimit(3...5)
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        TextField("선택 — 어디서·어떻게", text: $memo, axis: .vertical)
+                            .textFieldStyle(.roundedBorder)
+                            .font(Typography.body)
+                            .lineLimit(3...5)
+                        overflowNotice(memo, limit: ScheduleFieldLimit.memo)
+                    }
                 }
             }
 
@@ -87,9 +93,11 @@ struct ScheduleComposeSheet: View {
                     .disabled(isSubmitting)
                 Button(isSubmitting ? "등록 중…" : "등록") { submit() }
                     .keyboardShortcut(.defaultAction)
-                    // 공백만 친 제목은 백엔드가 400 으로 끊는다. 여기서 먼저 막아 두면
-                    // "왜 안 되는지" 를 실패 문구가 아니라 버튼 모양으로 알 수 있다.
-                    .disabled(isSubmitting || !isSubmittableScheduleTitle(title))
+                    // 공백만 친 제목도, 상한을 넘은 칸도 백엔드가 400 으로 끊는다. 여기서
+                    // 먼저 막아 두면 "왜 안 되는지" 를 실패 문구가 아니라 버튼 모양과 칸 아래
+                    // 안내로 알 수 있다 — 400 응답 본문은 클라이언트가 버리므로 서버까지
+                    // 보내고 나면 **무엇이 길어서 막혔는지 알 방법이 없다**.
+                    .disabled(isSubmitting || !isSubmittableScheduleTitle(title) || hasOverflow)
             }
         }
         .padding(Spacing.xl)
@@ -98,6 +106,24 @@ struct ScheduleComposeSheet: View {
         // 폼은 칸 셋이 전부라 넓어져서 좋아질 것이 없고, 넓어지면 실패 문구만 화면 끝에 붙는다.
         .frame(width: Self.sheetWidth)
         .background(CozyPalette.canvas)
+    }
+
+    /// 어느 칸이든 상한을 넘었는지. 넘으면 등록을 막는다.
+    private var hasOverflow: Bool {
+        return scheduleFieldOverflow(title, limit: ScheduleFieldLimit.title) > 0
+            || scheduleFieldOverflow(memo, limit: ScheduleFieldLimit.memo) > 0
+    }
+
+    /// 넘친 칸 아래에 **얼마나 줄여야 하는지** 적는다. "너무 깁니다" 만으로는 어디까지
+    /// 지워야 할지 알 수 없어, 붙여넣은 글을 한 줄씩 지워 보게 된다.
+    @ViewBuilder
+    private func overflowNotice(_ text: String, limit: Int) -> some View {
+        let excess = scheduleFieldOverflow(text, limit: limit)
+        if excess > 0 {
+            Text("\(excess)자 줄여 주세요 (최대 \(limit)자)")
+                .font(Typography.captionSmall)
+                .foregroundStyle(Color.red)
+        }
     }
 
     /// 라벨 + 입력칸 한 줄. 라벨은 입력칸 첫 줄에 맞춰 위로 붙인다 — 메모가 여러 줄로

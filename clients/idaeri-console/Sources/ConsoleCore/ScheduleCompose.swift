@@ -73,3 +73,25 @@ private func normalizedCalendar(_ calendar: Calendar) -> Calendar {
     gregorian.locale = calendar.locale
     return gregorian
 }
+
+/// 제목·메모 길이 상한. 백엔드 `src/schedule/interface/dto/create-schedule.dto.ts` 의
+/// `@MaxLength` 와 **같은 값**이다 — 언어가 달라 상수를 나눠 가질 수 없으므로 양쪽 주석이
+/// 서로를 가리킨다. 한쪽만 늘리면 화면이 통과시킨 입력이 서버에서 400 이 되고, 그 400 은
+/// 무엇이 길어서 막혔는지 말해 주지 않는다(응답 본문을 클라이언트가 버린다).
+public enum ScheduleFieldLimit {
+    public static let title = 200
+    public static let memo = 2_000
+}
+
+/// 상한을 넘은 글자 수(넘지 않으면 0).
+///
+/// **`count` 가 아니라 `utf16.count` 로 센다.** 서버의 `@MaxLength` 는 JS 문자열 길이, 즉
+/// UTF-16 코드 유닛 수를 본다. Swift 의 `count` 는 사람이 세는 글자 수(grapheme)라 이모지
+/// 하나가 여기서는 1, 서버에서는 여럿으로 잡힌다 — 그 차이만큼 화면이 서버보다 관대해지고,
+/// 막으려던 400 이 그대로 난다. 화면이 서버와 같은 자로 재야 한다.
+///
+/// **넘쳐도 자르지 않는다.** 붙여넣은 글이 조용히 잘리면 사용자는 무엇이 사라졌는지 모른 채
+/// 등록하고, 그 일정은 내용이 빠진 채 남는다. 얼마나 줄여야 하는지 알려주고 사용자가 지운다.
+public func scheduleFieldOverflow(_ text: String, limit: Int) -> Int {
+    return max(0, text.utf16.count - limit)
+}

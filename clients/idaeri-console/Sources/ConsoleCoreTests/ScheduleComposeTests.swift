@@ -81,4 +81,34 @@ func runScheduleComposeTests(_ t: TestRunner) {
         "위택스에서",
         "메모는 앞뒤 공백을 떼고 보낸다"
     )
+
+    // 길이 상한. 서버가 400 으로 끊는 것을 화면이 먼저 막아야 한다 — 400 응답 본문은
+    // 클라이언트가 버리므로(`ConsoleClient.sendExpectingSuccess`), 서버까지 보내고 나면
+    // 무엇이 길어서 막혔는지 알 방법이 없다.
+    t.expectEqual(
+        scheduleFieldOverflow(String(repeating: "가", count: 200), limit: ScheduleFieldLimit.title),
+        0,
+        "상한과 같은 길이는 통과한다"
+    )
+    t.expectEqual(
+        scheduleFieldOverflow(String(repeating: "가", count: 203), limit: ScheduleFieldLimit.title),
+        3,
+        "넘친 만큼을 알려준다 — 얼마나 지워야 하는지가 안내의 전부다"
+    )
+    t.expectEqual(scheduleFieldOverflow("", limit: ScheduleFieldLimit.memo), 0, "빈 칸은 통과")
+
+    // **이 단언이 이 묶음의 핵심이다.** 서버의 `@MaxLength` 는 JS 문자열 길이(UTF-16)를 보는데
+    // Swift 의 `count` 는 사람이 세는 글자 수라, 이모지에서 화면이 서버보다 관대해진다.
+    // `count` 로 구현하면 아래가 0 을 내놓고 — 화면은 통과시키는데 서버는 400 을 준다.
+    let family = "👨‍👩‍👧"
+    t.expect(family.count < family.utf16.count, "이모지는 grapheme 수와 UTF-16 길이가 다르다")
+    t.expectEqual(
+        scheduleFieldOverflow(family, limit: 1),
+        family.utf16.count - 1,
+        "서버와 같은 자(UTF-16)로 잰다 — grapheme 으로 재면 화면이 서버보다 관대해진다"
+    )
+
+    // 상한 값 자체가 백엔드 DTO 와 짝이다. 한쪽만 바뀌면 이 숫자가 먼저 눈에 띄어야 한다.
+    t.expectEqual(ScheduleFieldLimit.title, 200, "제목 상한은 create-schedule.dto.ts 와 같다")
+    t.expectEqual(ScheduleFieldLimit.memo, 2_000, "메모 상한은 create-schedule.dto.ts 와 같다")
 }
