@@ -24,6 +24,13 @@ export interface AutopilotPreviewRequest {
   requiresDetailDelivery?: boolean;
 }
 
+export interface AutopilotTaskImage {
+  png: Buffer;
+  // 확장자를 포함한다 — 슬랙이 이 이름으로 파일 형식을 판단한다.
+  filename: string;
+  title: string;
+}
+
 export interface AutopilotTaskResult {
   // 게시할 내용 없으면 skip=true → 오케스트레이터가 전달 안 함(빈 알림 방지).
   skip: boolean;
@@ -31,6 +38,15 @@ export interface AutopilotTaskResult {
   summaryText?: string;
   // 있으면 메인 메시지의 스레드 댓글로 발송될 상세 본문. 없으면 요약만.
   detailText?: string;
+  // 있으면 스레드에 이미지로 올라간다(`detailText` 와 같은 자리). 텍스트로는 못 보여주는
+  // 것 — 시간축 위의 곡선 — 을 실으려는 용도다.
+  //
+  // 메인 메시지가 아니라 스레드에 붙이는 이유: 한 메시지에 여러 task 의 요약이 합쳐지므로
+  // (아래 orchestrator) 메인에 올리면 그림이 어느 task 것인지 드러나지 않는다.
+  //
+  // 이미지 업로드가 실패해도 요약·상세는 그대로 나간다. 그림은 요약을 보조하는 것이라
+  // 그것 하나로 회차를 실패시키지 않는다 — 다만 실패는 로그로 남는다.
+  detailImage?: AutopilotTaskImage;
   // false 면 이 요약이 실린 메시지의 링크 미리보기를 끈다. 한 메시지에 여러 task 의
   // 요약이 합쳐지므로(orchestrator) 설정은 메시지 단위다 — 하나라도 끄기를 요청하면 끈다.
   // 링크를 여러 개 싣는 목록형 카드(job-feed 등)가 미리보기에 파묻히는 것을 막는 용도다.

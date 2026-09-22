@@ -6,6 +6,10 @@ import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { ApplyExitBandUsecase } from '../../../paper-trading/application/apply-exit-band.usecase';
 import {
+  BuildPaperReportImageUsecase,
+  PaperReportImage,
+} from '../../../paper-trading/application/build-paper-report-image.usecase';
+import {
   EvaluateAccountResult,
   EvaluatedAccountEntry,
   EvaluatePaperAccountUsecase,
@@ -75,6 +79,7 @@ const failedEntry = (
 const createFixture = (input?: {
   enabled?: string;
   accounts?: EvaluatedAccountEntry[];
+  reportImage?: PaperReportImage | null;
 }) => {
   const evaluate = {
     executeAll: jest.fn().mockResolvedValue({
@@ -100,15 +105,22 @@ const createFixture = (input?: {
       };
     }),
   };
+  // 기본은 그림 없음(null). 리포트 렌더는 Chromium 을 띄우므로 단위 테스트에서 실제로
+  // 돌리지 않고, 그림이 붙는 회차만 개별 테스트가 이 값을 갈아끼운다.
+  const reportImage = {
+    execute: jest.fn().mockResolvedValue(input?.reportImage ?? null),
+  };
   return {
     task: new PaperTradingAutopilotTask(
       evaluate as unknown as EvaluatePaperAccountUsecase,
       exitBand as unknown as ApplyExitBandUsecase,
+      reportImage as unknown as BuildPaperReportImageUsecase,
       config as unknown as ConfigService,
       agentRun as unknown as AgentRunService,
     ),
     evaluate,
     exitBand,
+    reportImage,
     config,
     agentRun,
   };
@@ -327,5 +339,44 @@ describe('PaperTradingAutopilotTask', () => {
         skipReason: '모든 보유 종목의 시세가 실행일보다 오래되었습니다.',
       }),
     );
+  });
+
+  // 곡선은 그날 스냅샷까지 담아야 의미가 있다. 평가보다 먼저 만들면 어제까지의 그림이
+  // 오늘 카드에 붙는다 — 호출 순서를 계약으로 고정한다.
+  it('리포트 이미지를 평가가 끝난 슬롯 거래일로 만들어 스레드 이미지로 싣는다', async () => {
+    const png = Buffer.from('fake-png');
+    const { task, reportImage, evaluate } = createFixture({
+      reportImage: {
+        png,
+        filename: 'paper-return-2026-08-11.png',
+        title: '모의투자 수익률 — 2026-08-11',
+      },
+    });
+
+    const result = await task.run(context);
+
+    expect(reportImage.execute).toHaveBeenCalledWith(
+      new Date('2026-08-11T08:40:00.000Z'),
+    );
+    expect(evaluate.executeAll.mock.invocationCallOrder[0]).toBeLessThan(
+      reportImage.execute.mock.invocationCallOrder[0],
+    );
+    expect(result.detailImage).toEqual({
+      png,
+      filename: 'paper-return-2026-08-11.png',
+      title: '모의투자 수익률 — 2026-08-11',
+    });
+  });
+
+  // 그림은 요약을 보조하는 것이라, 만들지 못한 회차가 보고를 무르지 않아야 한다.
+  it('리포트 이미지를 만들지 못하면 요약만 싣는다', async () => {
+    // createFixture 의 기본값이 null 이다(그림 없음).
+    const { task } = createFixture();
+
+    const outcome = await task.run(context);
+
+    expect(outcome.skip).toBe(false);
+    expect(outcome.summaryText).toContain('*[LONG_TERM]*');
+    expect(outcome.detailImage).toBeUndefined();
   });
 });

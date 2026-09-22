@@ -6,6 +6,7 @@ import { StrategyParameterModule } from '../strategy-parameter/strategy-paramete
 import { ApplyCorporateActionUsecase } from './application/apply-corporate-action.usecase';
 import { ApplyExitBandUsecase } from './application/apply-exit-band.usecase';
 import { ApplyIntradayStopUsecase } from './application/apply-intraday-stop.usecase';
+import { BuildPaperReportImageUsecase } from './application/build-paper-report-image.usecase';
 import { EvaluatePaperAccountUsecase } from './application/evaluate-paper-account.usecase';
 import { ExecutePaperOrderUsecase } from './application/execute-paper-order.usecase';
 import { FillPendingOrdersUsecase } from './application/fill-pending-orders.usecase';
@@ -14,6 +15,8 @@ import { OpenPaperAccountUsecase } from './application/open-paper-account.usecas
 import { RecordPaperTradeUsecase } from './application/record-paper-trade.usecase';
 import { ScoreRecommendationsUsecase } from './application/score-recommendations.usecase';
 import { PAPER_ORDER_LEDGER_PORT } from './domain/port/paper-order-ledger.port';
+import { REPORT_RENDERER_PORT } from './domain/port/report-renderer.port';
+import { PaperReportRenderer } from './infrastructure/paper-report.renderer';
 import { PaperTradeDispatcher } from './infrastructure/paper-trade.dispatcher';
 import { PaperTradingPrismaRepository } from './infrastructure/paper-trading.prisma.repository';
 
@@ -36,6 +39,9 @@ import { PaperTradingPrismaRepository } from './infrastructure/paper-trading.pri
     ApplyIntradayStopUsecase,
     FillPendingOrdersUsecase,
     ScoreRecommendationsUsecase,
+    BuildPaperReportImageUsecase,
+    // 리포트 렌더 — Chromium 을 띄우는 쪽이라 포트로 갈라 둔다(테스트가 스텁으로 갈아끼운다).
+    { provide: REPORT_RENDERER_PORT, useClass: PaperReportRenderer },
     // 자연어 진입 — RouterModule 의 AGENT_DISPATCHER_PORT useFactory 가 중앙에서 inject 한다.
     PaperTradeDispatcher,
   ],
@@ -50,6 +56,7 @@ import { PaperTradingPrismaRepository } from './infrastructure/paper-trading.pri
     ApplyIntradayStopUsecase,
     FillPendingOrdersUsecase,
     ScoreRecommendationsUsecase,
+    BuildPaperReportImageUsecase,
     PaperTradeDispatcher,
   ],
 })

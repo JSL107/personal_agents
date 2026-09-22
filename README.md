@@ -391,7 +391,9 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 <br>
 
 1. [api.slack.com/apps](https://api.slack.com/apps) 에서 앱 생성 → **Socket Mode** 활성화 → App-Level Token(`connections:write`) = `SLACK_APP_TOKEN`
-2. **OAuth & Permissions** → Bot Token Scopes 에 `commands` `chat:write` `app_mentions:read` `im:history` → install → Bot Token = `SLACK_BOT_TOKEN`
+2. **OAuth & Permissions** → Bot Token Scopes 에 `commands` `chat:write` `app_mentions:read` `im:history` `files:write` → install → Bot Token = `SLACK_BOT_TOKEN`
+   - `files:write` 는 장마감 리포트 차트를 이미지로 올리는 데 쓴다. 없으면 업로드가 `missing_scope` 로 막히는데 요약·상세는 그대로 나가므로 **그림만 조용히 빠진다** — 로그의 `스레드 이미지 업로드 실패` 경고가 유일한 신호다.
+   - 이미 설치한 앱에 스코프를 더했으면 **Reinstall to Workspace** 로 재설치해야 토큰에 반영된다(설정 화면에 추가만 해도 기존 토큰은 그대로다).
 3. **Basic Information** → Signing Secret = `SLACK_SIGNING_SECRET`
 4. **Slash Commands** 에 15종(`/blog-publish` 포함) 등록 (또는 **App Manifest** 의 `slash_commands` 배열로 일괄 선언 후 Reinstall)
 5. **Event Subscriptions** → `app_mention` + `message.im` 구독 → Reinstall
