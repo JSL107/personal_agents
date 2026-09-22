@@ -59,13 +59,15 @@ private let calendarPreviewSchedules: [ScheduleItem] = [
 /// **그 폭으로 굽지 않으면 확인할 방법이 없다**(코드로는 판정되지 않는다).
 /// 대시보드 렌더(`--render-dashboard --size`)가 같은 이유로 먼저 열어 둔 입구다.
 ///
-/// `failure` 는 조회 실패 화면을 굽는다. 이 화면이 빈 상태와 확실히 갈라지는지는 **그려 봐야만**
-/// 알 수 있는데, 굽는 경로는 네트워크 응답을 기다리지 않고 끝나 실패 상태에 자연히 닿지 못한다.
+/// `failure` 는 조회 실패 화면을, `loading` 은 조회 중 화면을 굽는다. 두 화면이 빈 상태와
+/// 확실히 갈라지는지는 **그려 봐야만** 알 수 있는데, 굽는 경로는 네트워크 응답을 기다리지 않고
+/// 끝나 둘 중 어느 상태에도 자연히 닿지 못한다.
 func renderCalendarPreview(
     path: String,
     darkMode: Bool,
     empty: Bool,
     failure: Bool = false,
+    loading: Bool = false,
     size: CGSize? = nil
 ) -> Bool {
     let calendarPreviewSize = size ?? calendarPreviewSize
@@ -91,7 +93,8 @@ func renderCalendarPreview(
                 : nil,
             // 오늘 칸 강조를 고정한다. 실행일을 그대로 쓰면 9월을 굽는 그림에서 오늘 표시가
             // 10월부터 사라지고, 그 변화가 회귀인지 날짜 탓인지 그림만 보고는 갈리지 않는다.
-            initialToday: "2026-09-22"
+            initialToday: "2026-09-22",
+            initialLoading: loading
         )
     }
         .environment(\.colorScheme, darkMode ? .dark : .light)

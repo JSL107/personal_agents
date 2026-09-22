@@ -42,7 +42,7 @@ if let renderIndex = CommandLine.arguments.firstIndex(of: "--render-dashboard") 
 
 // 캘린더 탭 시각 회귀 렌더. 백엔드 없이 고정 표본으로 한 장을 굽는다 — 빈 상태와 항목 있는
 // 상태를 `--empty` 로 가른다(빈 상태가 탭의 초기 기본값이라 그쪽이 더 중요하다).
-//   swift run IdaeriConsole --render-calendar /tmp/calendar.png [--empty] [--failure] [--dark] [--size 720x900]
+//   swift run IdaeriConsole --render-calendar /tmp/calendar.png [--empty] [--failure] [--loading] [--dark] [--size 720x900]
 //
 // `--size` 가 필요한 이유는 머리글이다 — 탭 막대가 고정 폭이 아니라 내용 크기로 자리를 잡으므로,
 // 좁은 창(창 최소 폭 720)에서 머리글이 넘치는지는 그 폭으로 구워 보는 것 말고 확인할 방법이 없다.
@@ -69,6 +69,10 @@ if let renderIndex = CommandLine.arguments.firstIndex(of: "--render-calendar") {
             // 조회 실패 화면은 백엔드를 실제로 죽이지 않는 한 렌더로 닿지 않는다 — 굽는 경로가
             // 응답을 기다리지 않고 끝나기 때문이다. 빈 상태와 갈라지는지 눈으로 보려면 세워야 한다.
             failure: CommandLine.arguments.contains("--failure"),
+            // 조회 중 화면도 같은 이유로 렌더가 자연히 닿지 못한다 — 굽는 경로는 `.task` 의
+            // 조회가 끝나기를 기다리지 않으므로 `isLoading` 은 항상 초기값(false)이다.
+            // 빈 상태·실패와 셋이 갈라지는지는 세워서 구워 봐야 안다.
+            loading: CommandLine.arguments.contains("--loading"),
             size: calendarRenderSize
         ) ? 0 : 1
     )

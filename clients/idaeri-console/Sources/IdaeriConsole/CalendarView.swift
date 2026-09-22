@@ -23,10 +23,20 @@ struct CalendarView: View {
     /// 완료·건너뜀 실패 사유. 성공하면 비운다 — 남겨 두면 다음 조작까지 실패한 것처럼 읽힌다.
     @State private var updateFailure: String?
 
-    /// 오늘 날짜 키(`yyyy-MM-dd`). **주입 가능해야 한다** — 오늘 칸 강조는 시각 회귀 렌더가
-    /// 확인해야 할 조판인데, 실행일에 따라 그림이 달라지면 어제 구운 PNG 와 오늘 구운 PNG 가
-    /// 이유 없이 갈려 회귀인지 날짜 탓인지 구분되지 않는다.
-    private let today: String
+    /// 오늘 날짜 키(`yyyy-MM-dd`). **`let` 이면 안 된다** — 이 앱은 켜 둔 채로 쓰는 상주형이라
+    /// 자정을 넘기면 생성 시점 문자열이 어제로 굳고, 오늘 강조가 어제 칸에 남고 "오늘" 버튼도
+    /// 어제를 고른다. 자정 알림(`NSCalendarDayChanged`)으로 갱신하고, 알림을 놓친 회차까지
+    /// 덮기 위해 `goToToday()` 가 누를 때 다시 계산한다.
+    @State private var today: String
+    /// 주입된 오늘(회귀 렌더 전용). 오늘 칸 강조는 시각 회귀 렌더가 확인해야 할 조판인데,
+    /// 실행일에 따라 그림이 달라지면 어제 구운 PNG 와 오늘 구운 PNG 가 이유 없이 갈려
+    /// 회귀인지 날짜 탓인지 구분되지 않는다. **주입했으면 자정 알림도 이 값을 유지한다.**
+    private let pinnedToday: String?
+    /// 조회가 도는 중인지. **없으면 화면이 "0건" 과 "아직 모른다" 를 같은 모습으로 말한다** —
+    /// 최초 조회 중에 머리글은 "남은 일정 없음", 상세는 "등록된 일정이 없습니다 / 슬랙에서
+    /// 이렇게 등록하세요" 를 띄운다. 백엔드가 느리거나 응답이 늦을수록 오래 보이고, 사용자는
+    /// 있지도 않은 등록을 하러 슬랙으로 간다(조회 실패를 빈 상태와 가르는 것과 같은 이유다).
+    @State private var isLoading: Bool
 
     /// `initial...` 매개변수는 전부 화면 회귀 렌더 전용이다 — 실제 화면 호출부(`AppRootView`)는
     /// 항상 기본값(오늘·실패 없음)을 쓴다. 렌더는 특정 날짜가 이미 선택된 채로 구워야 상세
@@ -41,7 +51,8 @@ struct CalendarView: View {
         initialMonth: Int? = nil,
         initialSelectedDay: Int? = nil,
         initialLoadFailure: String? = nil,
-        initialToday: String? = nil
+        initialToday: String? = nil,
+        initialLoading: Bool = false
     ) {
         self.store = store
         self.client = client
@@ -51,17 +62,29 @@ struct CalendarView: View {
         _month = State(initialValue: initialMonth ?? now.component(.month, from: Date()))
         _selectedDay = State(initialValue: initialSelectedDay)
         _loadFailure = State(initialValue: initialLoadFailure)
-        // 오늘은 **로컬 달력** 기준으로 잡는다. 격자 자체는 UTC 로 계산하지만(`monthGridDays`),
-        // 그건 요일 배치가 타임존에 따라 흔들리지 않게 하려는 것이고, "오늘이 며칠이냐" 는
-        // 화면 앞에 앉은 사람의 날짜여야 한다. 마감일(`dueDay`)도 타임존 없는 순수 날짜라
-        // 문자열끼리 그대로 비교된다.
-        let localCalendar = Calendar.current
-        let localNow = Date()
-        self.today = initialToday ?? calendarDayKey(
-            year: localCalendar.component(.year, from: localNow),
-            month: localCalendar.component(.month, from: localNow),
-            day: localCalendar.component(.day, from: localNow)
+        _isLoading = State(initialValue: initialLoading)
+        pinnedToday = initialToday
+        _today = State(initialValue: initialToday ?? Self.localTodayKey())
+    }
+
+    /// 오늘은 **로컬 달력** 기준으로 잡는다. 격자 자체는 UTC 로 계산하지만(`monthGridDays`),
+    /// 그건 요일 배치가 타임존에 따라 흔들리지 않게 하려는 것이고, "오늘이 며칠이냐" 는
+    /// 화면 앞에 앉은 사람의 날짜여야 한다. 마감일(`dueDay`)도 타임존 없는 순수 날짜라
+    /// 문자열끼리 그대로 비교된다.
+    private static func localTodayKey() -> String {
+        let calendar = Calendar.current
+        let now = Date()
+        return calendarDayKey(
+            year: calendar.component(.year, from: now),
+            month: calendar.component(.month, from: now),
+            day: calendar.component(.day, from: now)
         )
+    }
+
+    /// 지금 기준의 오늘. 렌더가 날짜를 박아 넣었으면 그 값을 지킨다 — 안 그러면 회귀 렌더가
+    /// 자정 알림 한 번에 다른 그림을 낸다.
+    private func resolvedToday() -> String {
+        pinnedToday ?? Self.localTodayKey()
     }
 
     private static let weekdayLabels = ["월", "화", "수", "목", "금", "토", "일"]
@@ -177,6 +200,11 @@ struct CalendarView: View {
         .frame(minHeight: Layout.contentMinHeight, alignment: .top)
         .background(CozyPalette.canvas)
         .task { await reload() }
+        // 자정을 넘기면 오늘이 바뀐다. 타이머로 재는 대신 시스템이 알려 주는 것을 받는다 —
+        // 타이머는 절전·시간대 변경·시각 수동 조정에서 어긋난다.
+        .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in
+            today = resolvedToday()
+        }
     }
 
     /// 머리글 + 요일 줄 + 월 격자. `availableHeight` 가 있으면 격자가 남는 세로를 채운다
@@ -248,6 +276,13 @@ struct CalendarView: View {
     private var summaryLabel: String {
         if loadFailure != nil {
             return "불러오지 못함"
+        }
+        // **조회가 끝나기 전에는 건수를 말하지 않는다.** `shiftMonth` 는 달을 먼저 바꾸고
+        // 조회를 비동기로 띄우므로, 그 사이 `store` 에는 직전 달 항목이 남아 새 달 머리글에
+        // 이전 달 건수가 찍힌다. 최초 조회 중에는 0건이라 "남은 일정 없음" 이 되는데, 그건
+        // 아직 모르는 것을 확정해 말하는 것이다.
+        if isLoading {
+            return "불러오는 중"
         }
         return openCount > 0 ? "남은 일정 \(openCount)건" : "남은 일정 없음"
     }
@@ -456,6 +491,11 @@ struct CalendarView: View {
     private var detailBody: some View {
         if let loadFailure {
             loadFailureState(loadFailure)
+        } else if isLoading, visibleSchedules.isEmpty {
+            // 아직 아무것도 못 받은 회차. 빈 상태 안내(슬랙 등록법)를 여기 띄우면 등록이
+            // 필요 없는데도 등록하러 가게 만든다. 이미 받은 게 있으면(달 안에서 완료를 누른
+            // 직후 등) 목록을 그대로 두고 갱신을 기다린다 — 깜빡임이 오히려 혼란을 만든다.
+            loadingState
         } else if visibleSchedules.isEmpty {
             // 미완이 0건이어도 빈 상태로 넘기지 않는다. 마지막 항목을 완료한 순간 목록이
             // 통째로 "등록된 일정이 없습니다" 로 바뀌면 방금 잘못 누른 것을 되돌릴 수 없다.
@@ -585,6 +625,19 @@ struct CalendarView: View {
         .padding(.vertical, Spacing.xl)
     }
 
+    /// 조회 중 안내. 빈 상태·실패와 **셋이 서로 달라야** 한다 — 닮으면 "없다", "못 받았다",
+    /// "아직 모른다" 가 한 모습으로 보이고, 사용자가 다음에 할 일을 고를 근거가 사라진다.
+    private var loadingState: some View {
+        VStack(spacing: Spacing.sm) {
+            ProgressView()
+            Text("일정을 불러오는 중입니다")
+                .font(Typography.body)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, Spacing.xl)
+    }
+
     /// 조회 실패 안내. 빈 상태와 **아이콘도 문구도 달라야** 한다 — 둘이 닮으면 연결이 끊긴 것을
     /// "일정이 0건" 으로 읽고, 있지도 않은 등록을 하러 슬랙으로 간다.
     private func loadFailureState(_ reason: String) -> some View {
@@ -635,7 +688,11 @@ struct CalendarView: View {
     /// 오늘이 든 달로 돌아가 그 날을 고른다. 달만 바꾸고 선택을 비우면 돌아와서 한 번 더
     /// 눌러야 오늘 일정이 보인다 — 버튼 이름이 "오늘" 이면 오늘이 열려야 맞다.
     private func goToToday() {
-        let parts = today.split(separator: "-").compactMap { Int($0) }
+        // 알림을 놓친 회차(잠들어 있던 사이 자정이 지난 경우 등)까지 여기서 정정한다 —
+        // 버튼 이름이 "오늘" 이면 눌린 순간의 오늘이어야 한다.
+        let key = resolvedToday()
+        today = key
+        let parts = key.split(separator: "-").compactMap { Int($0) }
         guard parts.count == 3 else {
             return
         }
@@ -672,19 +729,24 @@ struct CalendarView: View {
         // 내용만 10월인 상태가 된다 — 오류가 나지 않아 눈치채기 어려운 쪽이다.
         let requestedYear = year
         let requestedMonth = month
+        await MainActor.run { isLoading = true }
         let from = String(format: "%04d-%02d-01", requestedYear, requestedMonth)
         let to = String(format: "%04d-%02d-%02d", requestedYear, requestedMonth, lastDayOfMonth)
         do {
             let items = try await client.fetchSchedules(from: from, to: to)
             await MainActor.run {
+                // 늦게 도착한 옛 요청은 로딩도 끄지 않는다 — 끄면 뒤에 뜬 새 요청이 아직
+                // 도는 중인데 화면은 다 받은 것처럼 보인다.
                 guard requestedYear == year, requestedMonth == month else { return }
                 store.apply(schedules: items)
                 loadFailure = nil
+                isLoading = false
             }
         } catch {
             await MainActor.run {
                 guard requestedYear == year, requestedMonth == month else { return }
                 loadFailure = failureReason(error)
+                isLoading = false
             }
         }
     }
