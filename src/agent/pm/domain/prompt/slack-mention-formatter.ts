@@ -1,5 +1,9 @@
 import { match, P } from 'ts-pattern';
 
+import {
+  redactInjectionPhrases,
+  wrapUntrustedInput,
+} from '../../../../common/llm/untrusted-input.util';
 import { SlackMention } from '../../../../slack-collector/domain/slack-collector.type';
 
 const MAX_TEXT_LENGTH = 240;
@@ -22,13 +26,12 @@ export const formatSlackMentionsAsPromptSection = ({
   sinceHours: number;
   maxItems?: number;
 }): SlackMentionFormatResult => {
-  const lines: string[] = [
-    `[Slack 에서 본인 멘션된 최근 메시지 (${sinceHours}h, blocker 후보)]`,
-  ];
+  // 라벨·생략 안내는 경계 밖, 남이 보낸 메시지만 경계 안 (github-task-formatter 와 같은 규칙).
+  const header = `[Slack 에서 본인 멘션된 최근 메시지 (${sinceHours}h, blocker 후보)]`;
+  const lines: string[] = [];
 
   if (mentions.length === 0) {
-    lines.push('(없음)');
-    return { content: lines.join('\n'), truncatedCount: 0 };
+    return { content: [header, '(없음)'].join('\n'), truncatedCount: 0 };
   }
 
   // ts desc 정렬 후 slice — collector 가 채널 traversal 순서로 누적해 정렬 X 상태로 들어옴.
@@ -40,17 +43,28 @@ export const formatSlackMentionsAsPromptSection = ({
   for (const mention of visible) {
     const channel = formatChannelLabel(mention);
     const author = mention.authorUserId ? `<@${mention.authorUserId}>` : '?';
-    const snippet = truncate(mention.text, MAX_TEXT_LENGTH);
+    // 멘션 본문은 PM 이 받는 입력 중 가장 자유로운 외부 텍스트다 — 워크스페이스의
+    // 누구나 쓸 수 있다. 그래서 code-reviewer 의 PR 본문과 같이 redact 까지 건다.
+    // 부작용으로 "system:" 같은 상용구가 [REDACTED] 로 바뀔 수 있지만, 이 값은
+    // blocker 후보 참고용 스니펫이라 표시가 조금 깎이는 쪽이 낫다.
+    const snippet = truncate(
+      redactInjectionPhrases(mention.text),
+      MAX_TEXT_LENGTH,
+    );
     lines.push(`- [${channel}] ${author}: ${snippet}`);
   }
 
-  if (truncatedCount > 0) {
-    lines.push(
-      `(+${truncatedCount}건 생략 — 총 ${mentions.length}건 중 ${maxItems}건만 표기)`,
-    );
-  }
+  const tail =
+    truncatedCount > 0
+      ? [
+          `(+${truncatedCount}건 생략 — 총 ${mentions.length}건 중 ${maxItems}건만 표기)`,
+        ]
+      : [];
 
-  return { content: lines.join('\n'), truncatedCount };
+  return {
+    content: [header, wrapUntrustedInput(lines.join('\n')), ...tail].join('\n'),
+    truncatedCount,
+  };
 };
 
 const formatChannelLabel = (mention: SlackMention): string =>
