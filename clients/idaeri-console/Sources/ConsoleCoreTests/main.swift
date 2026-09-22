@@ -38,5 +38,6 @@ runPresidentBriefingTests(runner)
 runConsoleClientTests(runner)
 runCalendarGridTests(runner)
 runCalendarDayListTests(runner)
+runScheduleLinkTests(runner)
 
 runner.finish()
