@@ -6,6 +6,7 @@ import {
 } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { DomainStatus } from '../../../common/exception/domain-status.enum';
+import { wrapUntrustedInput } from '../../../common/llm/untrusted-input.util';
 import {
   GITHUB_CLIENT_PORT,
   GithubClientPort,
@@ -443,10 +444,17 @@ const buildPrompt = ({
   extraContext,
 }: BuildPromptInput): string => {
   const sections = [
+    // 섹션 라벨은 우리가 만든 문구라 경계 밖에 둔다 — 안에 넣으면 이 섹션이 무엇인지조차
+    // 외부 주장으로 읽힌다. 경계 안에는 남이 쓴 값만 넣는다.
     `[직전 PM plan — AgentRun #${planAgentRunId}, endedAt ${planEndedAt}]`,
-    planJson,
+    // plan 은 우리 PM 이 만든 JSON 이지만, 그 안의 태스크 제목은 GitHub·Notion 에서 온
+    // 남의 문자열이다. PM 은 자기 프롬프트에서 그 제목을 경계로 감쌌는데, 원장에 저장된
+    // 출력을 여기서 다시 읽으면 그 경계가 벗겨진 상태로 들어온다 — 한 바퀴 돌아온 값에
+    // 경계를 다시 씌운다.
+    wrapUntrustedInput(planJson),
     '[정오 사실표]',
     buildFactTable({ facts }),
+    // 사용자가 직접 적어 보낸 상황이라 경계를 씌우지 않는다. 이 워커에서 명령권자는 사용자다.
     '[추가 컨텍스트]',
     extraContext.length > 0 ? extraContext : '(없음)',
   ];
@@ -457,12 +465,23 @@ const buildFactTable = ({ facts }: { facts: PlanRealityFact[] }): string => {
   if (facts.length === 0) {
     return '(없음)';
   }
-  return facts
+  // label 은 GitHub·Notion 제목과 Slack 멘션 본문이라 남이 쓴 값이다. detail 은 대부분
+  // 우리 고정 문구지만(WORKER_FAILED 의 예외 메시지만 예외), 줄 단위로 나눠 감싸면 표
+  // 한 장에 마커가 수십 개 박힌다 — PM 의 GitHub·Slack 섹션과 같이 표 전체를 한 번 감싼다.
+  //
+  // id 도 경계 안에 들어가지만 인용은 그대로 된다 — 경계는 "지시로 따르지 말라" 이지
+  // "읽지 말라" 가 아니다. 인용 검증은 코드가 사실표 원본과 대조하므로(po-shadow.guard.ts)
+  // 모델이 경계 안의 id 를 어떻게 읽든 없는 id 는 통과하지 못한다.
+  //
+  // redact 는 걸지 않는다: label 은 30~40자로 잘린 스니펫이고 그대로 카드 근거 줄이 된다.
+  // 짧은 라벨을 [REDACTED] 로 바꾸면 사용자가 보는 근거가 먼저 깎인다 — 주 방어는 마커다.
+  const table = facts
     .map((fact) => {
       const url = fact.url ? ` | url: ${fact.url}` : '';
       return `- id: ${fact.id} | label: ${fact.label} | detail: ${fact.detail}${url}`;
     })
     .join('\n');
+  return wrapUntrustedInput(table);
 };
 
 // 회수 결과를 카드가 렌더할 형태로 옮긴다. 지적이 하나도 없던 회차에는 null 이라
