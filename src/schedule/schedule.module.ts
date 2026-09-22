@@ -7,9 +7,11 @@ import { ConsoleReadGuard } from '../console/interface/console-read.guard';
 import { PrismaModule } from '../prisma/prisma.module';
 import { DeleteScheduleUsecase } from './application/delete-schedule.usecase';
 import { ListSchedulesUsecase } from './application/list-schedules.usecase';
+import { RegisterConsoleScheduleUsecase } from './application/register-console-schedule.usecase';
 import { RegisterScheduleUsecase } from './application/register-schedule.usecase';
 import { UpdateScheduleStatusUsecase } from './application/update-schedule-status.usecase';
 import { SCHEDULE_REPOSITORY_PORT } from './domain/port/schedule.repository.port';
+import { SCHEDULE_NOTIFIER_PORT } from './domain/port/schedule-notifier.port';
 import { ScheduleDispatcher } from './infrastructure/schedule.dispatcher';
 import { SchedulePrismaRepository } from './infrastructure/schedule.prisma.repository';
 import {
@@ -25,11 +27,12 @@ import { ScheduleConsoleController } from './interface/schedule-console.controll
   providers: [
     { provide: SCHEDULE_REPOSITORY_PORT, useClass: SchedulePrismaRepository },
     RegisterScheduleUsecase,
+    RegisterConsoleScheduleUsecase,
     ListSchedulesUsecase,
     UpdateScheduleStatusUsecase,
     DeleteScheduleUsecase,
     ScheduleDispatcher,
-    ScheduleSlackNotifier,
+    { provide: SCHEDULE_NOTIFIER_PORT, useClass: ScheduleSlackNotifier },
     ConsoleReadGuard,
     LoopbackOnlyGuard,
     // 토큰이 없으면 null 을 주입하고 notifier 가 발송을 건너뛴다 — 여기서 throw 하면

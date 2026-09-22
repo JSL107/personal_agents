@@ -4,6 +4,7 @@ import { WebClient } from '@slack/web-api';
 import { appendIntegrationHint } from '../../common/domain/integration-failure-hint';
 import { toReadableSlackArgs } from '../../slack/format/message-blocks.builder';
 import { formatScheduleRegisteredFromConsole } from '../../slack/format/schedule.formatter';
+import { ScheduleNotifierPort } from '../domain/port/schedule-notifier.port';
 import { ScheduleItemRecord } from '../domain/schedule.type';
 
 // schedule.module 의 useFactory 가 채우는 WebClient(토큰 미설정 시 null) 주입 토큰.
@@ -40,7 +41,7 @@ export const SCHEDULE_SLACK_CLIENT_OPTIONS = {
  * 안 된 줄 알고 같은 일정을 다시 넣는다.
  */
 @Injectable()
-export class ScheduleSlackNotifier {
+export class ScheduleSlackNotifier implements ScheduleNotifierPort {
   private readonly logger = new Logger(ScheduleSlackNotifier.name);
 
   constructor(

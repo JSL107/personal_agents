@@ -111,4 +111,57 @@ func runScheduleComposeTests(_ t: TestRunner) {
     // 상한 값 자체가 백엔드 DTO 와 짝이다. 한쪽만 바뀌면 이 숫자가 먼저 눈에 띄어야 한다.
     t.expectEqual(ScheduleFieldLimit.title, 200, "제목 상한은 create-schedule.dto.ts 와 같다")
     t.expectEqual(ScheduleFieldLimit.memo, 2_000, "메모 상한은 create-schedule.dto.ts 와 같다")
+
+    // 비그레고리력 기기. **이 분기는 위 케이스들이 한 번도 태우지 않는다** — 전부
+    // `Calendar(identifier: .gregorian)` 을 넘기므로 `normalizedCalendar` 의 이른 반환만 돈다.
+    // 기기를 불교력으로 둔 사용자에게 `dateFormat` 계열이 2569 같은 연도를 내놓는 것을
+    // 막으려고 넣은 코드인데, 막고 있는지를 확인한 적이 없었다.
+    var buddhist = Calendar(identifier: .buddhist)
+    buddhist.timeZone = TimeZone(identifier: "Asia/Seoul") ?? TimeZone(secondsFromGMT: 9 * 3600)!
+
+    // 전제: 불교력으로 그냥 읽으면 연도가 서기 + 543 으로 나온다. 이 줄이 깨지면 아래
+    // 단언이 무엇을 막고 있는지가 사라진 것이다.
+    let sameInstant = kst.date(from: DateComponents(year: 2026, month: 9, day: 30))!
+    t.expectEqual(
+        buddhist.dateComponents([.year], from: sameInstant).year ?? 0,
+        2569,
+        "불교력은 같은 순간을 2569 년으로 읽는다"
+    )
+    t.expectEqual(
+        scheduleDateKey(sameInstant, calendar: buddhist),
+        "2026-09-30",
+        "기기가 불교력이어도 백엔드에는 서기로 보낸다"
+    )
+
+    // 되돌리는 쪽도 같다 — 키를 불교력으로 해석하면 2026 년이 서기 1483 년쯤으로 앉는다.
+    guard let restoredUnderBuddhist = scheduleDate(fromKey: "2026-09-30", calendar: buddhist) else {
+        t.expect(false, "불교력 기기에서 키를 되돌리지 못했다")
+        return
+    }
+    t.expectEqual(
+        scheduleDateKey(restoredUnderBuddhist, calendar: kst),
+        "2026-09-30",
+        "불교력으로 되돌린 Date 도 서기 기준으로 같은 날이다"
+    )
+
+    // 시간대는 기기 것을 지킨다 — 달력만 바꾸고 시간대까지 UTC 로 돌리면 자정 근처가 밀린다.
+    var buddhistNewYork = Calendar(identifier: .buddhist)
+    buddhistNewYork.timeZone = TimeZone(identifier: "America/New_York")!
+    let newYorkMidnight = Calendar(identifier: .gregorian).with(
+        timeZone: TimeZone(identifier: "America/New_York")!
+    ).date(from: DateComponents(year: 2026, month: 9, day: 30))!
+    t.expectEqual(
+        scheduleDateKey(newYorkMidnight, calendar: buddhistNewYork),
+        "2026-09-30",
+        "달력만 바꾸고 기기 시간대는 그대로 쓴다"
+    )
+}
+
+private extension Calendar {
+    /// 시간대만 바꾼 사본. 테스트가 "뉴욕 자정" 같은 순간을 만들 때 쓴다.
+    func with(timeZone: TimeZone) -> Calendar {
+        var copy = self
+        copy.timeZone = timeZone
+        return copy
+    }
 }
