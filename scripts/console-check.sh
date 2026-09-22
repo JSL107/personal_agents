@@ -16,6 +16,8 @@
 #   --prewarm-check         워밍이 백그라운드에서 캐시를 채우는지 (중복 접힘 + 적재)
 #   --color-check           오피스 렌더 픽셀의 실제 밝기 (통로·바닥·가구·셔츠 대역)
 #   --render-dashboard      대시보드 카드가 실제로 그려지는지 (라이트·다크 두 장)
+#   --render-calendar       캘린더 격자·머리글이 그려지는지 (5주 달·6주 달)
+#   --render-schedule-compose  등록 폼이 그려지는지 (빈 폼·채운 폼+실패·길이 초과)
 #
 # **개수를 세어 적지 않는다.** 한때 "네 게이트" 라고 적혀 있었는데 그동안 여섯이 되어 있었고,
 # 그 숫자가 낡은 것을 아무도 못 봤다 — 목록에서 빠진 검사도 같은 이유로 눈에 띄지 않았다.
@@ -56,9 +58,23 @@ swift run IdaeriConsole --color-check
 # 스프라이트가 번들에서 사라지면 여기서 exit 1 이 된다. 산출물은 눈으로 볼 때만 쓰므로
 # 임시 디렉터리에 굽고 지운다.
 echo "── 대시보드 렌더 (라이트·다크)"
-DASHBOARD_RENDER_DIR="$(mktemp -d)"
-trap 'rm -rf "$DASHBOARD_RENDER_DIR"' EXIT
-swift run IdaeriConsole --render-dashboard "$DASHBOARD_RENDER_DIR/dashboard-light.png"
-swift run IdaeriConsole --render-dashboard "$DASHBOARD_RENDER_DIR/dashboard-dark.png" --dark
+RENDER_DIR="$(mktemp -d)"
+trap 'rm -rf "$RENDER_DIR"' EXIT
+swift run IdaeriConsole --render-dashboard "$RENDER_DIR/dashboard-light.png"
+swift run IdaeriConsole --render-dashboard "$RENDER_DIR/dashboard-dark.png" --dark
+
+# 캘린더는 앱의 첫 화면이라 여기서 터지면 아무것도 못 한다. **6주 달을 함께 굽는다** —
+# 행이 하나 늘어 창 하한에서 넘치는 조판은 그 달을 굽지 않으면 드러나지 않는다.
+echo "── 캘린더 렌더 (5주 달·6주 달)"
+swift run IdaeriConsole --render-calendar "$RENDER_DIR/calendar-09.png"
+swift run IdaeriConsole --render-calendar "$RENDER_DIR/calendar-08.png" --month 8
+
+# 등록 폼은 `.sheet` 로 뜨는 별도 표면이라 캘린더 렌더에 담기지 않는다. 채운 폼까지 굽는 건
+# 긴 제목·여러 줄 메모·실패 문구가 조판을 밀어내는지가 빈 폼에는 안 나오기 때문이다.
+echo "── 등록 폼 렌더 (빈 폼·채운 폼)"
+swift run IdaeriConsole --render-schedule-compose "$RENDER_DIR/compose-empty.png"
+swift run IdaeriConsole --render-schedule-compose "$RENDER_DIR/compose-filled.png" --filled --failure
+# 길이 상한을 넘긴 화면 — 안내가 어느 칸에 붙고 등록이 막히는지는 200 자를 쳐 넣어야 보인다.
+swift run IdaeriConsole --render-schedule-compose "$RENDER_DIR/compose-overflow.png" --overflow
 
 echo "✓ 콘솔 게이트 전부 통과"
