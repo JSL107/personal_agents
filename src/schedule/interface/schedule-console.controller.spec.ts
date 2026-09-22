@@ -1,8 +1,12 @@
-import { ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { DeleteScheduleUsecase } from '../application/delete-schedule.usecase';
 import { ListSchedulesUsecase } from '../application/list-schedules.usecase';
+import { RegisterConsoleScheduleUsecase } from '../application/register-console-schedule.usecase';
 import { UpdateScheduleStatusUsecase } from '../application/update-schedule-status.usecase';
 import { ScheduleItemRecord, ScheduleStatus } from '../domain/schedule.type';
 import { ScheduleConsoleController } from './schedule-console.controller';
@@ -33,11 +37,17 @@ describe('ScheduleConsoleController', () => {
       {
         execute: jest.fn().mockResolvedValue(undefined),
       };
+    const registerSchedule: jest.Mocked<
+      Pick<RegisterConsoleScheduleUsecase, 'execute'>
+    > = {
+      execute: jest.fn().mockResolvedValue(record),
+    };
     const configService: jest.Mocked<Pick<ConfigService, 'get'>> = {
       get: jest.fn().mockReturnValue(ownerConfigValue),
     };
     const controller = new ScheduleConsoleController(
       listSchedules as unknown as ListSchedulesUsecase,
+      registerSchedule as unknown as RegisterConsoleScheduleUsecase,
       updateStatus as unknown as UpdateScheduleStatusUsecase,
       deleteSchedule as unknown as DeleteScheduleUsecase,
       configService as unknown as ConfigService,
@@ -45,6 +55,7 @@ describe('ScheduleConsoleController', () => {
     return {
       controller,
       listSchedules,
+      registerSchedule,
       updateStatus,
       deleteSchedule,
       configService,
@@ -85,6 +96,68 @@ describe('ScheduleConsoleController', () => {
         ServiceUnavailableException,
       );
       expect(listSchedules.execute).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('create', () => {
+    it('제목·날짜·메모를 다듬어 소유자 이름으로 등록한다', async () => {
+      const { controller, registerSchedule } = buildController('U123');
+
+      const result = await controller.create({
+        title: '  분기 보고서 제출  ',
+        dueDate: '2026-09-30',
+        memo: '  위택스에서  ',
+      });
+
+      expect(registerSchedule.execute).toHaveBeenCalledWith({
+        slackUserId: 'U123',
+        title: '분기 보고서 제출',
+        // 저장 직전까지 PlainDate 로 옮긴다 — Date 로 바꾸면 타임존이 끼어 하루가 밀린다.
+        dueDate: { year: 2026, month: 9, day: 30 },
+        memo: '위택스에서',
+      });
+      expect(result).toBe(record);
+    });
+
+    it('공백만 남는 메모는 저장하지 않는다 — 빈 메모 줄이 상세에 그려지는 것을 막는다', async () => {
+      const { controller, registerSchedule } = buildController('U123');
+
+      await controller.create({
+        title: '분기 보고서 제출',
+        dueDate: '2026-09-30',
+        memo: '   ',
+      });
+
+      expect(registerSchedule.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ memo: undefined }),
+      );
+    });
+
+    it('공백만 친 제목은 400 으로 끊는다 — MaxLength 만으로는 통과한다', async () => {
+      const { controller, registerSchedule } = buildController('U123');
+
+      await expect(
+        controller.create({ title: '   ', dueDate: '2026-09-30' }),
+      ).rejects.toThrow(BadRequestException);
+      expect(registerSchedule.execute).not.toHaveBeenCalled();
+    });
+
+    it('달력에 없는 날짜는 400 으로 끊는다 — 조용히 다음 달로 굴러가는 것을 막는다', async () => {
+      const { controller, registerSchedule } = buildController('U123');
+
+      await expect(
+        controller.create({ title: '분기 보고서 제출', dueDate: '2026-02-30' }),
+      ).rejects.toThrow(BadRequestException);
+      expect(registerSchedule.execute).not.toHaveBeenCalled();
+    });
+
+    it('CONSOLE_OWNER_SLACK_USER_ID 미설정이면 503 으로 던지고 등록하지 않는다', async () => {
+      const { controller, registerSchedule } = buildController(undefined);
+
+      await expect(
+        controller.create({ title: '분기 보고서 제출', dueDate: '2026-09-30' }),
+      ).rejects.toThrow(ServiceUnavailableException);
+      expect(registerSchedule.execute).not.toHaveBeenCalled();
     });
   });
 
