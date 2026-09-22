@@ -25,6 +25,9 @@ final class CharacterNode: SKNode {
     private(set) var facing: Facing = .down
     /// 자리에 앉아 있는가. 앉은 그림과 선 그림을 가르는 유일한 값이다(`currentPose`).
     var isSeated = false
+    /// 지금 앉아 있는 자리가 어느 좌석 종류인지. `sit(pose:)` 가 정하고 `currentPose` 가 읽는다.
+    /// 옷·부서가 바뀌어 그림을 다시 구울 때도 같은 좌석 그림을 유지하려면 기억해 두어야 한다.
+    private var seatPose = cozyDeskSeatPose
     /// 걷는 중인가 — 새 지시가 오면 기존 걸음을 끊어야 해서 필요하다.
     var isWalking = false
     /// 몇 번째 걸음인가 — 몸이 좌우로 번갈아 기울도록 한 칸마다 늘린다.
@@ -405,7 +408,7 @@ final class CharacterNode: SKNode {
     /// 알아서 정지 그림으로 접고(`cozyPoseCandidates`), 그때는 몸 기울기만 남는다.
     private func currentPose() -> String {
         if isSeated {
-            return cozyDeskSeatPose
+            return seatPose
         }
         guard isWalking else {
             return cozyIdlePose
@@ -502,7 +505,7 @@ final class CharacterNode: SKNode {
             shirtShift = look.shirtShift
         }
         if isSeated {
-            setTexture(cozyDeskSeatPose)
+            setTexture(seatPose)
         } else {
             apply(facing: facing)
         }
@@ -521,9 +524,24 @@ final class CharacterNode: SKNode {
         cozyAppearance = cozyAgentAppearance(agentType: name ?? nameText, department: newDepartment)
         // 새 색으로 다시 굽는다. 걷는 중이면 다음 걸음 프레임이 자연히 새 색으로 그려진다.
         if isSeated {
-            setTexture(cozyDeskSeatPose)
+            setTexture(seatPose)
         } else {
             apply(facing: facing)
+        }
+    }
+
+    /// 이 자리에서 쓸 좌석 그림을 미리 정한다 — **자리에 놓는 쪽이 부른다.**
+    ///
+    /// `sit()` 이 인자로 받게 두면 앉히는 호출부마다 자리 종류를 다시 판정해야 하는데, 그
+    /// 호출부가 일곱 곳이고 그중 하나는 자리 종류로 분기까지 한다. 한 곳만 빠뜨려도 다음
+    /// 스냅샷에서 그림이 기본값으로 덮인다(codex 리뷰 지적: 첫 배치는 맞는데 이어지는 `sync`
+    /// 가 되돌려 콘솔 겹침이 재발). **배치 함수가 정하면 앉히는 쪽은 아무것도 몰라도 된다.**
+    func prepareSeat(pose: String) {
+        seatPose = pose
+        // 이미 앉아 있는 사람의 자리 종류가 바뀌었으면 그림도 즉시 따라가야 한다 — 콘솔에
+        // 앉아 있다가 자기 책상으로 재배치되는 경로가 그렇다.
+        if isSeated {
+            setTexture(seatPose)
         }
     }
 
@@ -533,7 +551,7 @@ final class CharacterNode: SKNode {
         // 숨는데, 그림자는 좌석 칸 바닥에 그대로 남아 책상 **아래**에 동그랗게 비친다 —
         // 사람은 책상 뒤에 있는데 그림자만 책상 앞 바닥에 떠 있는 그림이 된다(사용자 보고).
         contactShadow.isHidden = true
-        setTexture(cozyDeskSeatPose)
+        setTexture(seatPose)
     }
 
     func stand() {
@@ -543,6 +561,9 @@ final class CharacterNode: SKNode {
         }
         activeWorkPose = nil
         isSeated = false
+        // 다음에 앉을 자리는 그때 `prepareSeat(pose:)` 가 정한다. 여기서 되돌려 두지 않으면
+        // 콘솔에서 일어난 사람이 배치 함수를 안 거치는 경로로 다시 앉을 때 콘솔용 그림을 쓴다.
+        seatPose = cozyDeskSeatPose
         apply(facing: facing)
     }
 
@@ -596,7 +617,7 @@ final class CharacterNode: SKNode {
             ])
             tend.timingMode = .easeInEaseOut
             sprite.run(.repeatForever(tend), withKey: "interaction")
-        case .sitting, .drinking, .carryingPapers, .writing, .stowing:
+        case .sitting, .sittingAtTable, .drinking, .carryingPapers, .writing, .stowing:
             break
         }
     }
@@ -760,10 +781,13 @@ final class CharacterNode: SKNode {
         }
         clearMotion()
         if isSeated {
-            // 타이핑 그림이 없는 사람은 포즈 계약이 앉은 그림으로 내려준다 — 여기서 미리
-            // 존재를 따질 필요가 없다(따지던 시절에는 두 곳의 판정이 갈릴 여지가 있었다).
+            // **`"typing"` 을 요청하지 않는다.** 포즈 계약의 `typing` 후보는 선두가 책상 좌석
+            // 그림이라(자세가 이미 타이핑이다) 요청해도 결국 그것이 뽑히는데, 그 값은 일반
+            // 책상용이라 특화 콘솔에 앉은 사람의 그림을 덮는다(codex 리뷰 지적). 자리 종류를
+            // 아는 것은 `seatPose` 하나이므로 그것을 그대로 쓴다. `activeWorkPose` 는 몸짓
+            // 정리(`clearMotion`)가 자세 복원을 판단하는 표식으로 남긴다.
             activeWorkPose = "typing"
-            setTexture("typing")
+            setTexture(seatPose)
         }
         if shouldReduceMotion() {
             return

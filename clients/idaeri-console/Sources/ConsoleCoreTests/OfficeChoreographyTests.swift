@@ -248,6 +248,48 @@ func runCozyPoseContractTests(_ t: TestRunner) {
         ).pose,
         cozyIdlePose, "가구 앞 앉기는 책상 뒷모습으로 대신하지 않는다")
 
+    // MARK: - 테이블 앞 착석(`sit-table`)
+
+    t.expectEqual(normalizedCozyPose("sit-table"), "sit-table", "테이블 착석은 별도 이름")
+    t.expectEqual(
+        resolveCozyPose(
+            requested: "sit-table", assetIndex: 3, hasAsset: cozyPoseAssetExists(3)
+        ),
+        ResolvedCozyPose(pose: "sit-table", posture: .seated),
+        "테이블 착석 요청은 앉은 자세의 전용 그림으로 풀린다")
+    // 전용 그림이 없으면 소파용으로 내려간다 — 의자가 사라져 공중에 앉은 것처럼 보이지만,
+    // 서 있는 기본 그림으로 떨어지는 것보다는 뜻이 가깝다.
+    t.expectEqual(
+        resolveCozyPose(
+            requested: "sit-table", assetIndex: 1, hasAsset: { $0 == "sitting" }
+        ),
+        ResolvedCozyPose(pose: "sitting", posture: .seated),
+        "테이블 그림이 없으면 소파용으로 대신한다")
+
+    // **씬이 쓰는 모든 상호작용 자세가 계약에 등록돼 있는지 — 전수.**
+    //
+    // 이것이 이 블록에서 가장 중요한 단언이다. 자세 이름은 `OfficeInteractionPose` 가 정하고
+    // (`rawValue` 가 그대로 요청으로 들어간다) 계약은 `normalizedCozyPose` 가 정하는데, 둘이
+    // 따로 적혀 있어 **새 자세를 한쪽에만 넣으면 요청이 조용히 `idle` 로 접힌다.** 파일도 있고
+    // 가구 매핑도 맞는데 화면만 안 바뀌어 원인이 늦게 드러난다(`sit-back`·`sit-table` 을 넣을 때
+    // 실제로 그랬다). 케이스를 하나 추가하면 여기서 바로 걸린다.
+    for pose in OfficeInteractionPose.allCases {
+        t.expect(
+            normalizedCozyPose(pose.rawValue) != cozyIdlePose,
+            "상호작용 자세 \(pose.rawValue) 가 계약에 등록돼 있어야 한다")
+    }
+    // 앉는 자세는 **앉은 것으로** 풀려야 한다. `resolveCozyPose` 안의 앉은-요청 목록에서
+    // 빠지면 원하는 자세가 `.standing` 으로 잡혀 앉은 후보가 전부 걸러진다.
+    for pose in OfficeInteractionPose.allCases
+    where normalizedCozyPose(pose.rawValue).hasPrefix("sit") {
+        t.expectEqual(
+            resolveCozyPose(
+                requested: pose.rawValue, assetIndex: 3, hasAsset: cozyPoseAssetExists(3)
+            ).posture,
+            .seated,
+            "앉는 자세 \(pose.rawValue) 는 앉은 그림으로 풀린다")
+    }
+
     // 앉은 요청은 **앉은 그림**으로만 내려간다. 서 있는 그림으로 내려가면 그 사람만 책상 위에
     // 올라선 것처럼 보인다. 10번은 `typing` 이 없는 캐릭터다.
     t.expectEqual(
