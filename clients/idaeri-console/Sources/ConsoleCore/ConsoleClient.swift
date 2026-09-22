@@ -246,6 +246,27 @@ public actor ConsoleClient {
         return envelope.data
     }
 
+    /// `POST /v1/console/schedules`. 캘린더에서 직접 등록한다(Slack 발화와 같은 저장 경로).
+    ///
+    /// `dueDate` 는 `yyyy-MM-dd` 문자열이다 — Date 를 그대로 실으면 인코더가 UTC 로 찍어
+    /// 사용자가 고른 날이 전날로 간다(`scheduleDateKey` 주석). 키를 만드는 책임은 화면에 두고
+    /// 여기서는 받은 문자열을 그대로 보낸다.
+    ///
+    /// 비어 있는 메모는 키째로 뺀다. 빈 문자열을 보내면 백엔드가 그것을 "메모를 지정했다" 로
+    /// 받아 저장하고, 상세 패널에 아무것도 없는 메모 줄이 그려진다.
+    public func createSchedule(title: String, dueDate: String, memo: String?) async throws {
+        let url = baseURL.appendingPathComponent("v1/console/schedules")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var body: [String: String] = ["title": title, "dueDate": dueDate]
+        if let memo, !memo.isEmpty {
+            body["memo"] = memo
+        }
+        request.httpBody = try JSONEncoder().encode(body)
+        try await sendExpectingSuccess(authorized(request))
+    }
+
     /// `PATCH /v1/console/schedules/:id`. 완료·건너뜀·되돌리기 공통 경로.
     public func updateSchedule(id: Int, status: ScheduleStatus) async throws {
         let url = baseURL.appendingPathComponent("v1/console/schedules/\(id)")

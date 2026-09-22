@@ -3,9 +3,9 @@ import SwiftUI
 
 /// 캘린더 탭 루트 — 「마감·신청·예약」 일정을 월 격자로 보여준다.
 ///
-/// **등록 입구는 여기가 아니다.** Slack `@이대리 9월 30일 자동차세` 가 유일한 입구이고,
-/// 이 화면은 조회 + 상태 변경(완료·건너뜀·되돌리기)만 한다(등록 폼을 두지 않는다 — 백엔드
-/// 컨트롤러에도 POST 가 없다, `ScheduleConsoleController` 주석 참조).
+/// 조회 + 상태 변경(완료·건너뜀·되돌리기) + 등록을 한다. 등록 입구는 머리글의 `+` 와 날짜
+/// 칸 우클릭 둘이고, 둘 다 같은 시트(`ScheduleComposeSheet`)를 연다 — Slack
+/// `@이대리 9월 30일 자동차세` 와도 같은 저장 경로(`RegisterScheduleUsecase`)를 지난다.
 struct CalendarView: View {
     @ObservedObject var store: ConsoleStore
     let client: ConsoleClient
@@ -22,6 +22,9 @@ struct CalendarView: View {
     @State private var loadFailure: String?
     /// 완료·건너뜀 실패 사유. 성공하면 비운다 — 남겨 두면 다음 조작까지 실패한 것처럼 읽힌다.
     @State private var updateFailure: String?
+    /// 열려 있는 등록 폼과 그 폼이 채워 둘 날짜. 등록 **실패** 사유는 여기 두지 않는다 —
+    /// 시트가 자기 안에 들고 있어야 폼을 닫지 않고 그 자리에서 다시 누를 수 있다.
+    @State private var compose: ScheduleComposeRequest?
 
     /// 오늘 날짜 키(`yyyy-MM-dd`). **`let` 이면 안 된다** — 이 앱은 켜 둔 채로 쓰는 상주형이라
     /// 자정을 넘기면 생성 시점 문자열이 어제로 굳고, 오늘 강조가 어제 칸에 남고 "오늘" 버튼도
@@ -223,6 +226,16 @@ struct CalendarView: View {
         .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in
             today = resolvedToday()
         }
+        .sheet(item: $compose) { request in
+            ScheduleComposeSheet(
+                // 키가 깨져 날짜를 못 읽으면 오늘로 연다. 폼을 안 여는 것보다 낫다 —
+                // 누른 사람은 자기가 누른 칸을 이미 알고 있고, 날짜는 폼에서 고칠 수 있다.
+                initialDate: scheduleDate(fromKey: request.dayKey) ?? Date(),
+                onSubmit: { title, dayKey, memo in
+                    await create(title: title, dayKey: dayKey, memo: memo)
+                }
+            )
+        }
     }
 
     /// 머리글 + 요일 줄 + 월 격자. `availableHeight` 가 있으면 격자가 남는 세로를 채운다
@@ -270,7 +283,39 @@ struct CalendarView: View {
             monthSummary
             Spacer()
             monthStepper
+            addButton
         }
+    }
+
+    /// 등록 입구. 날짜 칸 우클릭과 같은 폼을 열지만 **항상 보이는 쪽**이 하나는 있어야 한다 —
+    /// 우클릭은 눌러 보기 전에는 있는 줄 모르고, 이 화면은 앱을 열면 가장 먼저 나온다.
+    private var addButton: some View {
+        Button {
+            compose = ScheduleComposeRequest(dayKey: headerComposeDayKey)
+        } label: {
+            Image(systemName: "plus")
+                .font(Typography.captionEmphasis)
+                .foregroundStyle(primaryActionForeground)
+                .frame(width: 28, height: 24)
+                .background(CozyPalette.apricot, in: Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("일정 추가")
+    }
+
+    /// 머리글 `+` 가 폼에 채워 둘 날짜.
+    ///
+    /// 고른 날이 있으면 그 날이다. 없을 때 **오늘로 두면 안 되는 경우가 있다** — 11월을
+    /// 넘겨보다 누른 폼이 9월로 채워져 있으면, 보던 달에 들어가는 줄 알고 그대로 등록해
+    /// 두 달 전에 일정이 꽂힌다. 보고 있는 달에 오늘이 없으면 그 달 1일로 연다.
+    private var headerComposeDayKey: String {
+        if let selectedDay {
+            return dayKey(selectedDay)
+        }
+        if today.hasPrefix(currentMonthKey) {
+            return today
+        }
+        return calendarDayKey(year: year, month: month, day: 1)
     }
 
     /// 이 달의 한 줄 요약. 건수가 0 이어도 "남은 일정 없음" 을 적는다 — 빈칸으로 두면 아직
@@ -420,6 +465,14 @@ struct CalendarView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(month)월 \(day)일, 일정 \(items.count)건")
+        // 누른 칸의 날짜로 폼을 연다 — 달력을 보다 "이 날" 이 떠오른 사람에게 날짜를 다시
+        // 고르게 하지 않는다. 고른 날 표시도 같이 옮겨 폼을 닫았을 때 상세가 그 날을 본다.
+        .contextMenu {
+            Button("\(day)일에 일정 추가") {
+                selectedDay = day
+                compose = ScheduleComposeRequest(dayKey: key)
+            }
+        }
     }
 
     /// 날짜 숫자. 오늘만 살구색 알약 안에 넣는다 — **선택 표시와 겹쳐도 갈려야** 하므로
@@ -776,6 +829,66 @@ struct CalendarView: View {
                 loadFailure = failureReason(error)
                 isLoading = false
             }
+        }
+    }
+
+    /// 등록. **실패 사유를 화면 상태에 넣지 않고 돌려준다** — 여기서 `updateFailure` 에
+    /// 넣으면 그 문구는 시트 뒤 상세 패널에 뜨는데, 시트가 그것을 가려 등록을 눌러도 아무
+    /// 일이 없는 것처럼 보인다. 시트가 받아 자기 안에 띄운다.
+    private func create(title: String, dayKey: String, memo: String?) async -> String? {
+        do {
+            try await client.createSchedule(title: title, dueDate: dayKey, memo: memo)
+        } catch {
+            return "등록 실패 — \(createFailureReason(error))"
+        }
+        await MainActor.run {
+            // 등록한 날로 화면을 옮긴다. 폼의 날짜 선택은 보고 있던 달에 갇히지 않으므로,
+            // 11월로 넣고 9월 격자를 그대로 두면 방금 넣은 일정이 화면 어디에도 없어
+            // 등록이 실패한 줄 안다.
+            moveTo(dayKey: dayKey)
+            // 이전 조작에서 남은 실패 문구를 지운다. 등록에 성공한 화면에 "완료 실패" 가
+            // 그대로 걸려 있으면 방금 등록이 실패한 것으로 읽힌다.
+            updateFailure = nil
+        }
+        await reload()
+        return nil
+    }
+
+    /// 등록한 날로 달과 선택을 옮긴다. 키가 깨졌으면 아무것도 하지 않는다 — 엉뚱한 달로
+    /// 뛰는 것보다 보던 화면을 지키는 쪽이 낫고, 재조회는 어차피 뒤따른다.
+    @MainActor
+    private func moveTo(dayKey: String) {
+        let parts = dayKey.split(separator: "-")
+        guard
+            parts.count == 3,
+            let parsedYear = Int(parts[0]),
+            let parsedMonth = Int(parts[1]),
+            let parsedDay = Int(parts[2])
+        else {
+            return
+        }
+        year = parsedYear
+        month = parsedMonth
+        selectedDay = parsedDay
+    }
+
+    /// 등록 실패 문구. 상태 변경(`failureReason`)과 대부분 같지만 **400·404 는 갈라진다** —
+    /// 거기서 404 는 "이미 처리됐거나 사라진 일정" 인데, 등록에는 아직 일정이 없다.
+    ///
+    /// 404 가 등록에서 뜨는 경우는 하나다: **앱만 새로 빌드하고 백엔드는 옛 프로세스로 떠 있어
+    /// `POST /v1/console/schedules` 가 아직 없는 때.** 이 앱은 상주형이라 실제로 흔하다.
+    /// 그때 "사라진 일정" 을 띄우면 백엔드를 다시 띄울 생각을 못 하고 폼만 다시 누른다.
+    private func createFailureReason(_ error: Error) -> String {
+        guard case let ConsoleClientError.badStatus(status) = error else {
+            return failureReason(error)
+        }
+        switch status {
+        case 400:
+            return "제목이나 날짜를 백엔드가 받지 못했습니다. 달력에 있는 날짜인지 확인하세요."
+        case 404:
+            return "백엔드에 등록 경로가 없습니다. 실행 중인 백엔드가 옛 버전인지 확인하세요."
+        default:
+            return failureReason(error)
         }
     }
 

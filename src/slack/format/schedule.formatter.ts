@@ -24,3 +24,12 @@ export const formatNeedsDate = (title: string): string => {
 export const formatNeedsTitle = (): string => {
   return '무엇을 등록할까요? 날짜와 이름을 같이 적어주세요 (예: 9월 30일 자동차세).';
 };
+
+// 콘솔 캘린더에서 등록한 건. 문장은 Slack 등록과 같게 두되 어디서 들어왔는지 밝힌다 —
+// Slack 에 아무것도 치지 않았는데 "등록했습니다" 만 오면 내가 한 일인지 봇이 한 일인지
+// 구분할 수 없다. 이 앱은 입구가 둘이 되는 순간 그 구분이 기록의 전부가 된다.
+export const formatScheduleRegisteredFromConsole = (
+  record: ScheduleItemRecord,
+): string => {
+  return `${formatScheduleRegistered(record)} _(콘솔 캘린더)_`;
+};
