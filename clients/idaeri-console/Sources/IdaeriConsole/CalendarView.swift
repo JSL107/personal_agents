@@ -336,16 +336,25 @@ struct CalendarView: View {
     }
 
     private func reload() async {
-        let from = String(format: "%04d-%02d-01", year, month)
-        let to = String(format: "%04d-%02d-%02d", year, month, lastDayOfMonth)
+        // 어느 달을 요청했는지 붙들어 둔다. `shiftMonth` 는 이동마다 독립 Task 를 띄우므로
+        // 10월 요청이 11월 요청보다 늦게 도착할 수 있고, 그대로 반영하면 화면은 11월인데
+        // 내용만 10월인 상태가 된다 — 오류가 나지 않아 눈치채기 어려운 쪽이다.
+        let requestedYear = year
+        let requestedMonth = month
+        let from = String(format: "%04d-%02d-01", requestedYear, requestedMonth)
+        let to = String(format: "%04d-%02d-%02d", requestedYear, requestedMonth, lastDayOfMonth)
         do {
             let items = try await client.fetchSchedules(from: from, to: to)
             await MainActor.run {
+                guard requestedYear == year, requestedMonth == month else { return }
                 store.apply(schedules: items)
                 loadFailure = nil
             }
         } catch {
-            await MainActor.run { loadFailure = failureReason(error) }
+            await MainActor.run {
+                guard requestedYear == year, requestedMonth == month else { return }
+                loadFailure = failureReason(error)
+            }
         }
     }
 
