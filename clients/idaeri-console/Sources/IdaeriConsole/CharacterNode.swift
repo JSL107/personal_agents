@@ -405,7 +405,7 @@ final class CharacterNode: SKNode {
     /// 알아서 정지 그림으로 접고(`cozyPoseCandidates`), 그때는 몸 기울기만 남는다.
     private func currentPose() -> String {
         if isSeated {
-            return "sit"
+            return cozyDeskSeatPose
         }
         guard isWalking else {
             return cozyIdlePose
@@ -502,7 +502,7 @@ final class CharacterNode: SKNode {
             shirtShift = look.shirtShift
         }
         if isSeated {
-            setTexture("sit")
+            setTexture(cozyDeskSeatPose)
         } else {
             apply(facing: facing)
         }
@@ -521,7 +521,7 @@ final class CharacterNode: SKNode {
         cozyAppearance = cozyAgentAppearance(agentType: name ?? nameText, department: newDepartment)
         // 새 색으로 다시 굽는다. 걷는 중이면 다음 걸음 프레임이 자연히 새 색으로 그려진다.
         if isSeated {
-            setTexture("sit")
+            setTexture(cozyDeskSeatPose)
         } else {
             apply(facing: facing)
         }
@@ -533,7 +533,7 @@ final class CharacterNode: SKNode {
         // 숨는데, 그림자는 좌석 칸 바닥에 그대로 남아 책상 **아래**에 동그랗게 비친다 —
         // 사람은 책상 뒤에 있는데 그림자만 책상 앞 바닥에 떠 있는 그림이 된다(사용자 보고).
         contactShadow.isHidden = true
-        setTexture("sit")
+        setTexture(cozyDeskSeatPose)
     }
 
     func stand() {

@@ -1,6 +1,15 @@
 import AppKit
 import ConsoleCore
 
+/// 캐릭터 원화의 캔버스 크기.
+///
+/// **이 값은 `scripts/downscale-characters.py` 의 결과와 같아야 한다.** #616 이 원화를
+/// 1145×1374 에서 750×900 으로 줄이면서 이 검사를 함께 고치지 않아, 머지 직후부터
+/// `--asset-check` 가 183장 중 163건을 "unexpected dimensions" 로 떨어뜨리고 있었다
+/// (종료 코드 1). 숫자를 두 곳에 손으로 적어 둔 것이 원인이라 상수 하나로 모은다.
+private let cozyCharacterCanvasWidth = 750
+private let cozyCharacterCanvasHeight = 900
+
 /// Validates the generated character sheets before they are used in a release render.
 func runCozyAssetCheck() -> Bool {
     var valid = true
@@ -61,7 +70,11 @@ func runCozyAssetCheck() -> Bool {
     // at least one real seated and one real writing variant.
     // 가구 앞 착석(`sitting`)도 전원이 가진다. 책상용 `sit` 과 쓰임이 정반대라 서로 대신할
     // 수 없으므로, 한쪽이 빠지면 그 자리에서 사람이 바닥에 뜨거나 책상을 뚫는다.
+    // 책상 좌석의 뒷모습(`sit-back`)도 전원이 가진다. 좌석 배치가 이 그림을 전제로 잡혀 있어
+    // (의자까지 그려진 전신이라 상판이 가려 주지 않아도 된다) 한 명이라도 빠지면 그 사람만
+    // 정면 착석으로 내려가 혼자 화면 밖을 본다.
     let requiredPoseAssets = (0..<cozyCharacterAssetCount).map { "agent-\($0)-sit" }
+        + (0..<cozyCharacterAssetCount).map { "agent-\($0)-sit-back" }
         + (0..<cozyCharacterAssetCount).map { "agent-\($0)-sitting" } + [
         "agent-0-writing", "agent-0-typing", "agent-0-reading", "agent-0-drinking",
         "agent-1-writing", "agent-1-typing", "agent-1-reading", "agent-1-drinking",
@@ -86,7 +99,7 @@ func runCozyAssetCheck() -> Bool {
             valid = false
             continue
         }
-        if cgImage.width != 1145 || cgImage.height != 1374 {
+        if cgImage.width != cozyCharacterCanvasWidth || cgImage.height != cozyCharacterCanvasHeight {
             fputs("cozy pose asset has unexpected dimensions: \(name).png\n", stderr)
             valid = false
         }
@@ -136,7 +149,7 @@ func runCozyAssetCheck() -> Bool {
             fputs("cozy walk asset has no alpha channel: \(name).png\n", stderr)
             valid = false
         }
-        if cgImage.width != 1145 || cgImage.height != 1374 {
+        if cgImage.width != cozyCharacterCanvasWidth || cgImage.height != cozyCharacterCanvasHeight {
             fputs("cozy walk asset has unexpected dimensions: \(name).png\n", stderr)
             valid = false
         }
