@@ -91,15 +91,19 @@ export interface BuildPaperRecommendationPromptInput {
   // 이 회차에 배정될 종목당 비중. 시스템 프롬프트와 같은 값을 써야 한다 — 두 프롬프트가
   // 서로 다른 비중을 말하면 모델이 무엇을 기준으로 골랐는지 사후에 가릴 수 없다.
   maximumWeightPercent: number;
+  // 업종(`sector`)은 지표가 아니라 종목의 속성이라 `indicators` 밖에 둔다. 값이 없으면
+  // null 을 그대로 넘긴다 — 프롬프트가 '미분류' 로 적어 모델이 빈칸을 업종으로 읽지 않게 한다.
   positions: Array<{
     code: string;
     name: string;
+    sector: string | null;
     quantity: number;
     indicators: StockIndicators | null;
   }>;
   candidates: Array<{
     code: string;
     name: string;
+    sector: string | null;
     score: number;
     indicators: StockIndicators;
   }>;
