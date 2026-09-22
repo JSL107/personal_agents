@@ -17,6 +17,7 @@ export class DailyPlanEvidenceBuilder {
       githubTasks,
       previousPlan,
       previousWorklog,
+      eveningRetro,
       slackMentions,
       notionTasks,
     } = context;
@@ -55,6 +56,18 @@ export class DailyPlanEvidenceBuilder {
         payload: {
           review: previousWorklog.review,
           endedAt: previousWorklog.endedAt.toISOString(),
+        },
+      });
+    }
+    // 회고는 오늘 일정의 1차 재료다. 근거로 남기지 않으면 "이 할 일이 어디서 왔나" 를
+    // 되짚을 때 어제 계획·worklog 까지만 추적되고 그 앞이 끊긴다.
+    if (eveningRetro) {
+      evidence.push({
+        sourceType: 'PRIOR_EVENING_RETRO',
+        sourceId: String(eveningRetro.agentRunId),
+        payload: {
+          reflection: eveningRetro.reflection,
+          endedAt: eveningRetro.endedAt.toISOString(),
         },
       });
     }

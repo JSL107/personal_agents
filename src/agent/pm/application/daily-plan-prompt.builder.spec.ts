@@ -1,7 +1,10 @@
 import { DailyReview } from '../../work-reviewer/domain/work-reviewer.type';
 import { DailyPlan, TaskItem } from '../domain/pm-agent.type';
 import { RecentPlanSummary } from '../domain/prompt/recent-plan-summary-formatter';
-import { DailyPlanContext } from './daily-plan-context.collector';
+import {
+  DailyPlanContext,
+  EveningRetroContext,
+} from './daily-plan-context.collector';
 import { DailyPlanPromptBuilder } from './daily-plan-prompt.builder';
 
 const buildTask = (title: string): TaskItem => ({
@@ -41,6 +44,14 @@ const buildSummary = (date: string, title: string): RecentPlanSummary => ({
   agentRunId: 100,
 });
 
+const buildEveningRetro = (
+  reflection: EveningRetroContext['reflection'],
+): EveningRetroContext => ({
+  reflection,
+  endedAt: new Date('2026-04-25T12:00:00Z'),
+  agentRunId: 77,
+});
+
 const buildBaseContext = (
   overrides: Partial<DailyPlanContext> = {},
 ): DailyPlanContext => ({
@@ -49,6 +60,7 @@ const buildBaseContext = (
   githubTasks: null,
   previousPlan: null,
   previousWorklog: null,
+  eveningRetro: null,
   slackMentions: [],
   notionTasks: [],
   recentPlanSummaries: [],
@@ -246,6 +258,111 @@ describe('DailyPlanPromptBuilder', () => {
 
     expect(built.truncated.droppedSections).not.toContain('notion');
     expect(built.prompt).toContain('[Notion task DB 의 항목]');
+  });
+
+  it('저녁 회고의 carryOver / tryNext 가 각각 별도 섹션으로 prompt 에 실린다', () => {
+    const built = builder.build(
+      buildBaseContext({
+        eveningRetro: buildEveningRetro({
+          keep: '오전 집중 블록 유지',
+          problem: '리뷰 대기가 길었다',
+          tryNext: '리뷰 요청을 오전에 먼저 건다',
+          carryOver: '결제 재시도 PR 미완 — 리뷰 대기 중',
+        }),
+      }),
+    );
+
+    expect(built.prompt).toContain('[저녁 회고 — 못 끝낸 것과 그 이유');
+    expect(built.prompt).toContain('결제 재시도 PR 미완 — 리뷰 대기 중');
+    expect(built.prompt).toContain('[저녁 회고 — 다음엔 이렇게');
+    expect(built.prompt).toContain('리뷰 요청을 오전에 먼저 건다');
+    // keep / problem 은 어제의 판단이라 오늘 일정 수립에 넘기지 않는다.
+    expect(built.prompt).not.toContain('오전 집중 블록 유지');
+    expect(built.prompt).not.toContain('리뷰 대기가 길었다');
+    expect(built.truncated.droppedSections).toEqual([]);
+  });
+
+  it('회고가 없거나 네 칸이 비면 저녁 회고 섹션 자체가 prompt 에 없다', () => {
+    expect(builder.build(buildBaseContext()).prompt).not.toContain(
+      '[저녁 회고',
+    );
+    expect(
+      builder.build(buildBaseContext({ eveningRetro: buildEveningRetro({}) }))
+        .prompt,
+    ).not.toContain('[저녁 회고');
+  });
+
+  it('형식을 어긴 회차는 원문을 참고 섹션(tryNext 자리)으로만 싣고 「못 끝낸 것」 자리는 비운다', () => {
+    const built = builder.build(
+      buildBaseContext({
+        eveningRetro: buildEveningRetro({
+          malformed: true,
+          rawText: '오늘은 결제 모듈을 봤고 절반쯤 진행했다',
+        }),
+      }),
+    );
+
+    expect(built.prompt).toContain('[저녁 회고 — 형식을 어긴 회차');
+    expect(built.prompt).toContain('오늘은 결제 모듈을 봤고 절반쯤 진행했다');
+    // 원문에서 무엇이 미완인지는 코드가 가려낼 수 없으므로 가장 늦게 잘리는 자리를 주지 않는다.
+    expect(built.prompt).not.toContain('[저녁 회고 — 못 끝낸 것');
+  });
+
+  it('cap 초과 시 retroTryNext 는 previousPlan/previousWorklog 보다 먼저 drop 되고 retroCarryOver 는 끝까지 남는다', () => {
+    const longTitle = '가'.repeat(2000); // 1 글자 = 3 bytes (UTF-8) → 6KB
+    const built = builder.build(
+      buildBaseContext({
+        userText: longTitle,
+        previousPlan: {
+          plan: buildDailyPlan(longTitle),
+          endedAt: new Date('2026-04-26T05:00:00Z'),
+          agentRunId: 99,
+        },
+        previousWorklog: {
+          review: buildDailyReview(longTitle),
+          endedAt: new Date('2026-04-26T05:00:00Z'),
+          agentRunId: 98,
+        },
+        recentPlanSummaries: Array.from({ length: 30 }, (_, index) =>
+          buildSummary(`2026-04-${10 + index}`, `${longTitle}-${index}`),
+        ),
+        eveningRetro: buildEveningRetro({
+          tryNext: '리뷰 요청을 오전에 먼저 건다',
+          carryOver: '결제 재시도 PR 미완 — 리뷰 대기 중',
+        }),
+      }),
+    );
+
+    const { droppedSections } = built.truncated;
+    expect(droppedSections).toContain('retroTryNext');
+    expect(droppedSections).not.toContain('retroCarryOver');
+    // 오늘 일정의 직접 재료는 어제 계획 전체보다 늦게 잘린다.
+    for (const laterSection of ['previousWorklog', 'previousPlan']) {
+      const laterIndex = droppedSections.indexOf(laterSection);
+      if (laterIndex !== -1) {
+        expect(droppedSections.indexOf('retroTryNext')).toBeLessThan(
+          laterIndex,
+        );
+      }
+    }
+    expect(built.prompt).toContain('결제 재시도 PR 미완 — 리뷰 대기 중');
+    expect(built.prompt).not.toContain('리뷰 요청을 오전에 먼저 건다');
+  });
+
+  it('retroCarryOver 도 TRIM_ORDER 에 있어 cap 을 끝내 못 맞추면 drop 된다 (불멸 섹션 아님)', () => {
+    // TRIM_ORDER 에서 빠지면 절대 안 잘려, cap 을 넘긴 날 다른 필수 섹션을 밀어낸다.
+    // userText 단독으로 cap 을 거의 채워 retroCarryOver 까지 밀려나는지 확인한다.
+    const built = builder.build(
+      buildBaseContext({
+        userText: '가'.repeat(5_300), // ≈ 15.9KB
+        eveningRetro: buildEveningRetro({
+          carryOver: '결제 재시도 PR 미완 — 리뷰 대기 중',
+        }),
+      }),
+    );
+
+    expect(built.truncated.droppedSections).toContain('retroCarryOver');
+    expect(built.prompt).not.toContain('결제 재시도 PR 미완');
   });
 
   it("userText 가 ', ' 로 2개 이상 짧은 항목으로 split 되면 [사용자 명시 TODO] 섹션으로 렌더", () => {

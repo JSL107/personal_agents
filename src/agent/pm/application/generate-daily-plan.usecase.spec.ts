@@ -30,7 +30,10 @@ const task = (title: string, overrides: Partial<TaskItem> = {}): TaskItem => {
   }
   return item;
 };
-import { DailyPlanContextCollector } from './daily-plan-context.collector';
+import {
+  DailyPlanContextCollector,
+  EVENING_RETRO_LOOKBACK_DAYS,
+} from './daily-plan-context.collector';
 import { DailyPlanEvidenceBuilder } from './daily-plan-evidence.builder';
 import { DailyPlanPromptBuilder } from './daily-plan-prompt.builder';
 import { GenerateDailyPlanUsecase } from './generate-daily-plan.usecase';
@@ -1130,6 +1133,114 @@ describe('GenerateDailyPlanUsecase', () => {
       const promptArg = modelRouter.route.mock.calls[0][0].request.prompt;
       expect(promptArg).toContain('## 정체 태스크 (강등 대상)');
       expect(promptArg).toContain('repo/app#1 (5일 연속)');
+    });
+  });
+
+  describe('저녁 회고 → 아침 계획 연결', () => {
+    // 최근 run 조회는 PM(7일 패턴)과 EVENING_RETRO 가 같은 API 를 쓴다. agentType 으로 갈라
+    // 회고만 돌려줘야 "회고가 실려서 통과한 것" 과 "PM 패턴이 대신 실린 것" 이 구분된다.
+    const mockRetroOnly = (retrospective: unknown): void => {
+      agentRunServiceFindRecent.mockImplementation(
+        ({ agentType }: { agentType: string }) =>
+          Promise.resolve(
+            agentType === 'EVENING_RETRO'
+              ? [
+                  {
+                    id: 777,
+                    output: { retrospective, candidates: [], prNotes: [] },
+                    endedAt: new Date('2026-04-25T14:00:00Z'),
+                  },
+                ]
+              : [],
+          ),
+      );
+    };
+
+    it('어제 회고가 있으면 prompt 에 carryOver/tryNext 섹션 + evidence 에 PRIOR_EVENING_RETRO', async () => {
+      mockRetroOnly({
+        keep: '유지할 것',
+        problem: '아쉬운 것',
+        tryNext: '리뷰 요청을 오전에 먼저 건다',
+        carryOver: '결제 재시도 PR 미완',
+      });
+      listAssignedTasksExecute.mockResolvedValue({
+        issues: [],
+        pullRequests: [],
+      });
+
+      await usecase.execute({ tasksText: 'x', slackUserId: 'U123' });
+
+      const promptArg = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(promptArg).toContain('[저녁 회고 — 못 끝낸 것과 그 이유');
+      expect(promptArg).toContain('결제 재시도 PR 미완');
+      expect(promptArg).toContain('리뷰 요청을 오전에 먼저 건다');
+      // 오늘 일정 수립에 쓰이지 않는 두 칸은 넘기지 않는다.
+      expect(promptArg).not.toContain('유지할 것');
+      expect(promptArg).not.toContain('아쉬운 것');
+
+      const call = agentRunServiceExecute.mock.calls[0][0];
+      expect(call.evidence).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            sourceType: 'PRIOR_EVENING_RETRO',
+            sourceId: '777',
+          }),
+        ]),
+      );
+    });
+
+    it('날짜 상한 안에 회고가 없으면 섹션도 evidence 도 없다', async () => {
+      agentRunServiceFindRecent.mockResolvedValue([]);
+      listAssignedTasksExecute.mockResolvedValue({
+        issues: [],
+        pullRequests: [],
+      });
+
+      await usecase.execute({ tasksText: 'x', slackUserId: 'U123' });
+
+      const promptArg = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(promptArg).not.toContain('[저녁 회고');
+      const call = agentRunServiceExecute.mock.calls[0][0];
+      expect(call.evidence).not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ sourceType: 'PRIOR_EVENING_RETRO' }),
+        ]),
+      );
+    });
+
+    it('회고 조회는 날짜 상한을 걸고 최신 1건만 본다', async () => {
+      mockRetroOnly({ carryOver: '미완' });
+      listAssignedTasksExecute.mockResolvedValue({
+        issues: [],
+        pullRequests: [],
+      });
+
+      await usecase.execute({ tasksText: 'x', slackUserId: 'U123' });
+
+      expect(agentRunServiceFindRecent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agentType: 'EVENING_RETRO',
+          sinceDays: EVENING_RETRO_LOOKBACK_DAYS,
+          limit: 1,
+        }),
+      );
+    });
+
+    it('회고 조회가 throw 해도 계획은 나온다 (graceful)', async () => {
+      agentRunServiceFindRecent.mockRejectedValue(new Error('db down'));
+      listAssignedTasksExecute.mockResolvedValue({
+        issues: [],
+        pullRequests: [],
+      });
+
+      const result = await usecase.execute({
+        tasksText: 'x',
+        slackUserId: 'U123',
+      });
+
+      expect(result.result.plan).toEqual(validPlan);
+      const promptArg = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(promptArg).not.toContain('[저녁 회고');
     });
   });
 });
