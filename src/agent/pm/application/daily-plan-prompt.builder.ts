@@ -33,10 +33,10 @@ const MAX_PROMPT_BYTES = 16_000;
 // V3-1: 새 섹션 recentPlanSummaries 는 7일치 패턴 (참고용) 이라 직전 plan/worklog 보다 먼저 drop.
 // OPS-3: inboxItems 는 reacted Slack 메시지로 context cap 을 단독으로 초과시킬 수 있어 가장 먼저 drop.
 // PM-3': similarPlans 는 FTS 참고용으로 가장 먼저 drop.
-// notion 도 위 절대 보호 대상이었으나 previousWorklog 앞으로 내렸다 — 보호의 근거였던 "빈 prompt"
-// 는 cap 을 넘긴 상황에서는 성립하지 않고(넘겼다는 것 자체가 내용이 많다는 뜻이다), 남은 근거인
-// "유일한 task source" 도 github 이 함께 보호받는 지금은 유효하지 않다. 보호를 유지하면 노션 DB 가
-// 묵은 항목만 들고 있어도 어제 worklog·plan 을 밀어내고 끝까지 살아남는다.
+// notion 도 위 절대 보호 대상이었으나 previousWorklog 앞으로 내렸다 — 보호를 유지하면 노션 DB 가
+// 묵은 항목만 들고 있어도 어제 worklog·plan 을 밀어내고 끝까지 살아남기 때문이다.
+// 단 무조건 버리지는 않는다. cap 을 넘긴 내용 자체가 notion 일 수 있어 "넘겼으니 빈 prompt 가 될 리
+// 없다" 는 성립하지 않는다 — notion 이 유일하게 남은 task source 면 trimSectionsToFit 이 건너뛴다.
 const TRIM_ORDER: ReadonlyArray<keyof PromptSections> = [
   'similarPlans',
   'inboxItems',
@@ -208,6 +208,12 @@ export class DailyPlanPromptBuilder {
       if (this.computeJoinedByteLength(sections) <= MAX_PROMPT_BYTES) {
         return dropped;
       }
+      if (key === 'notion' && this.isOnlyTaskSource(sections)) {
+        // assertNonEmptyInput (generate-daily-plan.usecase.ts) 은 userText / github / notion 중
+        // 하나만 있어도 통과시킨다. 노션이 그 하나인 회차에 버리면 할 일이 전혀 없는 prompt 가
+        // 모델에 가므로 여기서는 남긴다. 이때 cap 은 뒤의 tail truncate 가 보장한다.
+        continue;
+      }
       if (sections[key] !== null) {
         sections[key] = null;
         dropped.push(key);
@@ -217,6 +223,15 @@ export class DailyPlanPromptBuilder {
       }
     }
     return dropped;
+  }
+
+  // notion 이 살아 있는 유일한 task source 인가 — userText / github 이 둘 다 비었을 때만 참.
+  private isOnlyTaskSource(sections: PromptSections): boolean {
+    return (
+      sections.notion !== null &&
+      sections.userText === null &&
+      sections.github === null
+    );
   }
 
   // 생략 안내 (없으면 생략) — tail truncate 시 사용자가 "왜 뒷부분이 잘렸는지" 알 수 있도록.

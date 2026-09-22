@@ -225,6 +225,29 @@ describe('DailyPlanPromptBuilder', () => {
     expect(built.prompt).toContain('어제 한 일 회고');
   });
 
+  // PR #618 리뷰 지적 — assertNonEmptyInput 은 notion 하나만으로도 통과하므로, 그 회차에
+  // notion 을 버리면 할 일이 전혀 없는 prompt 가 모델에 간다. cap 은 tail truncate 가 맡는다.
+  it('notion 이 유일한 task source 면 cap 을 넘겨도 drop 하지 않는다', () => {
+    const notionTasks = Array.from({ length: 10 }, (_, index) => ({
+      databaseId: 'db',
+      pageId: `pg${index}`,
+      url: 'https://notion.so/pg',
+      title: `유일항목${index} ` + '나'.repeat(400),
+      properties: {},
+    }));
+
+    const built = builder.build(
+      buildBaseContext({
+        userText: '',
+        githubTasks: null,
+        notionTasks,
+      }),
+    );
+
+    expect(built.truncated.droppedSections).not.toContain('notion');
+    expect(built.prompt).toContain('[Notion task DB 의 항목]');
+  });
+
   it("userText 가 ', ' 로 2개 이상 짧은 항목으로 split 되면 [사용자 명시 TODO] 섹션으로 렌더", () => {
     const built = builder.build(
       buildBaseContext({ userText: 'PR 리뷰, 회의 준비, 문서 보강' }),
