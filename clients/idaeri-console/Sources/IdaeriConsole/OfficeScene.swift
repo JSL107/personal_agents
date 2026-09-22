@@ -1264,7 +1264,10 @@ final class OfficeScene: SKScene {
             node.setNameplateSpan(nil)
             place(node, at: spot.tile)
             node.apply(facing: spot.facing)
-            node.beginInteraction(pose: pose, facing: spot.facing)
+            node.beginInteraction(
+                pose: pose, facing: spot.facing,
+                seatAlignmentTiles: seatAlignmentTiles(for: spot)
+            )
             placedCount += 1
             // 어느 칸에 누구를 무슨 자세로 세웠는지 남긴다. 굽힌 그림만 보면 사람과 가구가
             // 겹치는 자리에서 "이 사람이 그 가구를 보고 있는지" 를 눈으로 확정할 수 없다
@@ -1504,6 +1507,31 @@ final class OfficeScene: SKScene {
         refreshDoors()
     }
 
+    /// 앉은 그림을 **가구가 그려진 화면 x** 에 맞추는 보정(타일 단위).
+    ///
+    /// 논리 타일은 앞 칸에 그대로 두고 그림만 옮긴다 — `placeAtWorkstation` 이 책상 좌석에
+    /// 대해 하는 것과 같은 분리다. 앞 칸 좌표를 그대로 쓰면 두 가지로 어긋난다.
+    ///
+    /// 1. **가구 폭** — 여러 칸을 덮는 가구는 그림이 자기 폭의 중앙에 놓인다. 3인 소파(두 칸)
+    ///    앞에 선 사람은 소파 중심보다 반 칸 왼쪽이라 좌판이 아니라 팔걸이 바깥에 앉았다.
+    /// 2. **원근** — 3/4 부감 바닥은 사다리꼴이라 같은 x 타일이라도 줄이 다르면 화면 x 가
+    ///    다르다. 대표실 소파는 한 칸짜리인데도 이 이유만으로 어긋나, 폭만 고쳤을 때 혼자
+    ///    남아 있었다(사용자 보고: "여전히 소파가 아닌 공중에 앉아있습니다").
+    ///
+    /// **앉는 자세의 목적지는 언제나 가구 정면 칸**이므로(`officeInteractionNeighbors` 가
+    /// 그 자세에 `front` 하나만 준다) 가구 칸은 한 칸 위로 역산한다. 그 불변식이 깨지면 이
+    /// 계산도 함께 틀리므로 `OfficeIdleTests` 가 정면 칸 규칙을 전수로 지킨다.
+    private func seatAlignmentTiles(for spot: OfficeStrollSpot) -> Double {
+        guard spot.pose.sitsOnFurniture, tileSize > 0 else {
+            return 0
+        }
+        let furniture = TilePoint(x: spot.tile.x, y: spot.tile.y + 1)
+        let furnitureAnchor = floorPoint(
+            furniture, footprintWidth: spot.kind.footprint.width
+        )
+        return Double((furnitureAnchor.x - floorPoint(spot.tile).x) / tileSize)
+    }
+
     /// 사람을 **지금 서 있는 칸의 깊이**에 맞춰 키운다/줄인다.
     ///
     /// 자리를 정하는 지점마다 함께 부른다. 한때 `sync` 에서 홈 좌석 기준으로 한 번만 줄였는데,
@@ -1560,15 +1588,26 @@ final class OfficeScene: SKScene {
     ) {
         node.tile = tile
         let anchor = floorPoint(tile, footprintWidth: 2)
-        // 콘솔 한가운데에 숨기지 않고 작업면의 안쪽 모서리에 붙인다. 콘텐츠처럼 가구가
-        // 방 왼쪽에 있는 경우는 오른쪽, 나머지는 왼쪽을 사용해 벽 밖으로 나가지 않는다.
+        // **콘솔 그림마다 빈 작업 자리의 위치가 다르다.** 여섯 장이 서로 다른 원화라,
+        // 앵커 칸 하나로는 어느 방도 맞출 수 없다 — 그래서 부서별 보정이 있다.
+        //
+        // 값은 여섯 방을 2000×1250·14시로 굽고 **콘솔이 그려 둔 빈 의자(스툴)가 사람 옆에
+        // 보이는지**로 판정해 정했다. 그 의자가 몸 옆으로 비어져 나오면 자리를 벗어난 것이고,
+        // 몸 아래로 들어가면 맞은 것이다 — "대충 콘솔 근처" 와 "그 자리에 앉았다" 를 가르는
+        // 유일하게 눈으로 확인 가능한 신호다(기획·자산이 그 신호로 드러났다).
+        //
+        // 예전 값(planning −1.25 · quality 0.62 · treasury −0.62 · content 0.74 · internalOps
+        // 0.19)은 콘솔을 "작업면 안쪽 모서리에 붙인다" 는 전제로 잡혀 있었는데, 실제로는
+        // 기획이 콘솔 **바깥 허공**에 서고 품질·콘텐츠가 오른쪽 칸막이에 걸쳤다(사용자 보고:
+        // "전혀 뜬금없는곳에 앉아서 작업을 하고 잇습니다"). 지금 값은 전부 0 언저리다 —
+        // 콘솔 앵커가 이미 작업면과 거의 맞고, 남은 것은 그림별 미세차라는 뜻이다.
         let horizontalOffsetTiles: [Department: CGFloat] = [
-            .planning: -1.25,
-            .quality: 0.62,
+            .planning: 0.05,
+            .quality: 0.12,
             .evaluation: -0.27,
-            .treasury: -0.62,
-            .content: 0.74,
-            .internalOps: 0.19,
+            .treasury: -0.12,
+            .content: 0.24,
+            .internalOps: 0.02,
         ]
         let verticalOffsetTiles: [Department: CGFloat] = [
             // 각 캐릭터의 손·상체가 작업면에 닿는 지점을 기준으로 보정한다.
@@ -2695,9 +2734,15 @@ final class OfficeScene: SKScene {
         strollingAgents.insert(agentType)
         lastStrollAt[agentType] = Date().timeIntervalSinceReferenceDate
         stopWorking(node)
+        // 도착 클로저 안에서는 씬이 약한 참조라 계산을 미룰 수 없다. 걸음을 거는 지금 재 둔다
+        // — 타일 단위라 도착할 때까지 창 크기가 바뀌어도 그대로 쓸 수 있다.
+        let alignment = seatAlignmentTiles(for: spot)
         walk(node, to: spot.tile) { [weak self, weak node] in
             node?.apply(facing: spot.facing)
-            node?.beginInteraction(pose: spot.pose, facing: spot.facing)
+            node?.beginInteraction(
+                pose: spot.pose, facing: spot.facing,
+                seatAlignmentTiles: alignment
+            )
             self?.speakOnArrival(agentType, spot: spot)
             node?.run(.sequence([
                 .wait(forDuration: spot.dwellSeconds),
@@ -2842,7 +2887,10 @@ final class OfficeScene: SKScene {
         node.setNameplateSpan(nil)
         place(node, at: spot.tile)
         node.apply(facing: spot.facing)
-        node.beginInteraction(pose: spot.pose, facing: spot.facing)
+        node.beginInteraction(
+            pose: spot.pose, facing: spot.facing,
+            seatAlignmentTiles: seatAlignmentTiles(for: spot)
+        )
         // 상대 탐색이 배회자 목록을 보므로 데모도 같은 목록에 들어가야 한다. 되돌리지 않는
         // 것은 이 경로가 렌더 전용이고(`renderOfficeScene`), 굽고 나면 씬이 그대로 버려지기
         // 때문이다 — 실행 중인 앱이 이 함수를 부르는 경로는 없다.
@@ -3183,12 +3231,14 @@ final class OfficeScene: SKScene {
         let interactionSpot = officeStrollSpots(plan: plan).first { $0.tile == loungeTile }
         strollingAgents.insert(agentType)
         stopWorking(node)
+        let loungeAlignment = interactionSpot.map { seatAlignmentTiles(for: $0) } ?? 0
         walk(node, to: loungeTile) { [weak self, weak node] in
             if let interactionSpot {
                 node?.apply(facing: interactionSpot.facing)
                 node?.beginInteraction(
                     pose: interactionSpot.pose,
-                    facing: interactionSpot.facing
+                    facing: interactionSpot.facing,
+                    seatAlignmentTiles: loungeAlignment
                 )
             } else {
                 node?.apply(facing: .down)
@@ -3350,7 +3400,20 @@ final class OfficeScene: SKScene {
         // 책상 스프라이트보다 앞에 와야 화면 빛이 상판에 가리지 않는다.
         node.zPosition = depth(of: desk) + 5
         let isActive = session.state == officeSessionActiveState
-        if isActive {
+        // **일러스트 방에서는 화면 빛을 켜지 않는다.** 이 표시는 위에서 내려다본 도트 책상을
+        // 전제로 만들어졌다 — 상판 위 0.70칸이 그 그림에서는 모니터 화면이지만, 2.5D 작업대
+        // 에서는 모니터보다 위 허공이라 납작한 하늘색 조각이 1.6초 주기로 깜빡인다(사용자
+        // 보고: "대표실 사진에 파란색 깜빡임"). 세션 책상은 전부 대표실에 있어
+        // (`officeSessionDesks`) 그 방에서만 보였다.
+        //
+        // **같은 판단이 옆에 이미 내려져 있다** — `startMonitorGlow` 가 같은 가드로 자신을
+        // 끄고, 그 주석이 이유를 "flat cyan strip" 으로 못박아 두었다. 둘이 한 화면에 나란히
+        // 그려지는 표시인데 한쪽만 꺼져 있던 것이다.
+        //
+        // 이름표는 남긴다. 어느 책상이 어느 작업 것인지는 일러스트 방에서도 필요하고, 그건
+        // 원근과 무관한 글자다 — 빛만 끄고 이름은 남기는 것이 이 함수의 원래 규칙이기도 하다.
+        let showsScreenGlow = isActive && !usesCompleteRoomArchitecture
+        if showsScreenGlow {
             // **이미 켜진 화면은 지우지 않는다.** 이 함수는 세션이 활동할 때마다
             // (`session.updated`) 그리고 30초 스윕마다 다시 불리는데, 매번 새로 만들면
             // 1.6초짜리 숨쉬기가 그때마다 alpha 1 에서 처음부터 재생돼 빛이 뚝뚝 끊긴다 —
@@ -4586,6 +4649,13 @@ final class OfficeScene: SKScene {
             return 0
         }
         return holder.children.count
+    }
+
+    /// 세션 표시가 실제로 씬에 올라갔는지. 위 청소 확인과 같은 이유다 — `--session-demo` 가
+    /// 세션을 넘겨도 대표실에 작업 책상이 하나도 없으면 아무것도 안 그려지는데, 그 그림을
+    /// 성공으로 저장하면 "확인했다" 는 기록만 남고 확인 대상은 화면에 없다.
+    func sessionMarkerCount() -> Int {
+        sessionMarkers.count
     }
 
     private func addVacuumRobot(to holder: SKNode, mode: OfficeVacuumMode) {
