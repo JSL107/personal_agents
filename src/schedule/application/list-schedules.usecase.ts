@@ -8,7 +8,8 @@ import { ScheduleItemRecord } from '../domain/schedule.type';
 
 export interface ListSchedulesInput {
   slackUserId: string;
-  from: Date;
+  // 생략하면 하한 없이 조회한다 — 근거는 `FindByDateRangeInput.from` 주석.
+  from?: Date;
   to: Date;
 }
 

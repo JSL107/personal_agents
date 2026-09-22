@@ -10,7 +10,11 @@ export interface SaveScheduleInput {
 
 export interface FindByDateRangeInput {
   slackUserId: string;
-  from: Date;
+  // **생략하면 하한을 걸지 않는다** — 기한이 지난 미완 항목까지 전부 가져온다.
+  // 아침 브리핑이 이쪽을 쓴다. 하한을 오늘로 두면 어제 놓친 마감이 조회에서 통째로
+  // 빠지는데, 놓친 마감을 알리는 것이 이 기능의 목적이라 하한이 목적을 거스른다.
+  // 특정 달만 보는 콘솔 격자는 반대로 하한이 필요해 그대로 넘긴다.
+  from?: Date;
   to: Date;
 }
 

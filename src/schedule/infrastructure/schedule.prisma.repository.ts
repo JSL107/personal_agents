@@ -21,6 +21,21 @@ interface ScheduleItemRow {
   completedAt: Date | null;
 }
 
+interface DueDateFilter {
+  gte?: Date;
+  lte: Date;
+}
+
+// `from` 이 없으면 `gte` 를 **아예 싣지 않는다**. Prisma 가 `undefined` 를 알아서 빼 주기는
+// 하지만 그 동작에 기대면 읽는 사람이 "하한 없음" 이 의도인지 실수인지 구분할 수 없고,
+// 에폭(`new Date(0)`) 같은 대체 하한을 쓰면 그 숫자의 뜻을 아무도 알 수 없다.
+const buildDueDateFilter = (input: FindByDateRangeInput): DueDateFilter => {
+  if (input.from === undefined) {
+    return { lte: input.to };
+  }
+  return { gte: input.from, lte: input.to };
+};
+
 const toRecord = (row: ScheduleItemRow): ScheduleItemRecord => {
   return {
     id: row.id,
@@ -56,10 +71,12 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
   async findByDateRange(
     input: FindByDateRangeInput,
   ): Promise<ScheduleItemRecord[]> {
+    // 마감일 오름차순 — 기한이 지난 것이 먼저 온다. 브리핑 한 줄(`formatUpcomingLine`)도
+    // 콘솔 목록도 받은 순서를 그대로 쓰므로 "지난 것이 앞" 은 여기 한 곳이 정한다.
     const rows = await this.prisma.scheduleItem.findMany({
       where: {
         slackUserId: input.slackUserId,
-        dueDate: { gte: input.from, lte: input.to },
+        dueDate: buildDueDateFilter(input),
       },
       orderBy: [{ dueDate: 'asc' }, { id: 'asc' }],
     });
