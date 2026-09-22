@@ -296,7 +296,7 @@ final class OfficeScene: SKScene {
                     department: agent.resolvedDepartment,
                     tile: featureTile
                 )
-                node.sit()
+                node.sit(pose: officeFeatureConsoleSeatPose)
             } else if let assignment = homeDeskAssignments[agentType] {
                 placeAtWorkstation(node, assignment: assignment)
                 node.sit()
@@ -1592,7 +1592,7 @@ final class OfficeScene: SKScene {
             // 대신 사람이 콘솔의 부서 그림을 더 가린다. 일반 책상에서 모니터를 가리는 쪽을
             // 고른 것과 같은 판단이다(사용자: "모니터를 가려도 좋으니 정확하게 앉은 자세로").
             // 두 좌석 경로가 서로 반대 전제로 갈리면 다음에 고칠 사람이 한쪽만 보고 틀린다.
-            depth: depth(of: tile)
+            depth: depth(of: tile) - 1.00
         )
         applyDepthScale(node, at: tile)
         refreshDoors()

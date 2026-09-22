@@ -25,6 +25,9 @@ final class CharacterNode: SKNode {
     private(set) var facing: Facing = .down
     /// 자리에 앉아 있는가. 앉은 그림과 선 그림을 가르는 유일한 값이다(`currentPose`).
     var isSeated = false
+    /// 지금 앉아 있는 자리가 어느 좌석 종류인지. `sit(pose:)` 가 정하고 `currentPose` 가 읽는다.
+    /// 옷·부서가 바뀌어 그림을 다시 구울 때도 같은 좌석 그림을 유지하려면 기억해 두어야 한다.
+    private var seatPose = cozyDeskSeatPose
     /// 걷는 중인가 — 새 지시가 오면 기존 걸음을 끊어야 해서 필요하다.
     var isWalking = false
     /// 몇 번째 걸음인가 — 몸이 좌우로 번갈아 기울도록 한 칸마다 늘린다.
@@ -405,7 +408,7 @@ final class CharacterNode: SKNode {
     /// 알아서 정지 그림으로 접고(`cozyPoseCandidates`), 그때는 몸 기울기만 남는다.
     private func currentPose() -> String {
         if isSeated {
-            return cozyDeskSeatPose
+            return seatPose
         }
         guard isWalking else {
             return cozyIdlePose
@@ -502,7 +505,7 @@ final class CharacterNode: SKNode {
             shirtShift = look.shirtShift
         }
         if isSeated {
-            setTexture(cozyDeskSeatPose)
+            setTexture(seatPose)
         } else {
             apply(facing: facing)
         }
@@ -521,19 +524,26 @@ final class CharacterNode: SKNode {
         cozyAppearance = cozyAgentAppearance(agentType: name ?? nameText, department: newDepartment)
         // 새 색으로 다시 굽는다. 걷는 중이면 다음 걸음 프레임이 자연히 새 색으로 그려진다.
         if isSeated {
-            setTexture(cozyDeskSeatPose)
+            setTexture(seatPose)
         } else {
             apply(facing: facing)
         }
     }
 
-    func sit() {
+    /// 앉는다. `pose` 로 좌석 종류를 가른다.
+    ///
+    /// **가구가 자기 의자를 그려 주는 자리에서는 `"sit"`(정면·상반신)을 넘긴다.** 기본값인
+    /// 뒷모습 원화는 의자까지 그려진 전신이라, 특화 콘솔처럼 그림 안에 이미 의자가 있는
+    /// 가구에 앉히면 의자가 두 개로 보이고 사람이 작업면 위에 걸터앉은 그림이 된다
+    /// (사용자 보고: "공공 에셋과 겹쳐서 이상하게 보임").
+    func sit(pose: String = cozyDeskSeatPose) {
         isSeated = true
+        seatPose = pose
         // **책상에 앉으면 바닥 그림자를 끈다.** 앉은 그림은 허리 아래가 없어 상판 뒤로
         // 숨는데, 그림자는 좌석 칸 바닥에 그대로 남아 책상 **아래**에 동그랗게 비친다 —
         // 사람은 책상 뒤에 있는데 그림자만 책상 앞 바닥에 떠 있는 그림이 된다(사용자 보고).
         contactShadow.isHidden = true
-        setTexture(cozyDeskSeatPose)
+        setTexture(seatPose)
     }
 
     func stand() {
@@ -543,6 +553,9 @@ final class CharacterNode: SKNode {
         }
         activeWorkPose = nil
         isSeated = false
+        // 다음에 앉을 자리가 어디인지는 그때 `sit(pose:)` 가 정한다. 여기서 되돌려 두지
+        // 않으면 콘솔에서 일어난 사람이 자기 책상으로 돌아가서도 콘솔용 그림을 쓴다.
+        seatPose = cozyDeskSeatPose
         apply(facing: facing)
     }
 
