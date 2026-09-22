@@ -11,8 +11,14 @@ import { StockMonitorPrismaRepository } from '../../../agent/stock/infrastructur
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { HumanizeService } from '../../../humanize/application/humanize.service';
 import { humanizeDailyPlan } from '../../../humanize/application/humanize-report.adapter';
+import { ListSchedulesUsecase } from '../../../schedule/application/list-schedules.usecase';
+import {
+  plainDateToUtcDate,
+  todayInKst,
+} from '../../../schedule/domain/parse-due-date';
 import { formatDailyPlan } from '../../../slack/format/daily-plan.formatter';
 import { formatModelFooter } from '../../../slack/format/model-footer.formatter';
+import { formatUpcomingLine } from '../../../slack/format/schedule-briefing.formatter';
 import { formatWaitingSection } from '../../../slack/format/waiting-section.formatter';
 import {
   AutopilotTask,
@@ -26,6 +32,10 @@ const MAXIMUM_FX_RATE_AGE_DAYS = 7;
 // 잔고 동기화가 멈춘 채 며칠 지나면 수량 자체가 옛것이다. 평가액은 계산되지만 그것은
 // 지금 자산이 아니다 — 환율에 상한을 둔 것과 같은 이유로 그때는 줄을 내지 않는다.
 const MAXIMUM_HOLDING_AGE_DAYS = 7;
+
+// 마감 줄이 내다보는 앞쪽 폭. 이보다 먼 마감은 오늘 아침에 할 일이 아니다.
+const UPCOMING_WINDOW_DAYS = 7;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 const ageInDaysOf = (date: Date): number =>
   (Date.now() - date.getTime()) / (24 * 60 * 60 * 1000);
@@ -42,6 +52,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
     private readonly generateDailyPlan: GenerateDailyPlanUsecase,
     private readonly humanizeService: HumanizeService,
     private readonly stockRepository: StockMonitorPrismaRepository,
+    private readonly listSchedules: ListSchedulesUsecase,
   ) {}
 
   async run({
@@ -61,9 +72,13 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
       const summaryText =
         formatted.summary + formatWaitingSection(outcome.result.waitingItems);
       const detailText = formatted.detail + formatModelFooter(outcome);
+      const summaryWithPortfolio = await this.appendPortfolioValue(summaryText);
       return {
         skip: false,
-        summaryText: await this.appendPortfolioValue(summaryText),
+        summaryText: await this.appendUpcomingSchedules(
+          summaryWithPortfolio,
+          ownerSlackUserId,
+        ),
         detailText,
       };
     } catch (error) {
@@ -72,11 +87,16 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
         error.pmAgentErrorCode === PmAgentErrorCode.EMPTY_TASKS_INPUT
       ) {
         // 할 일이 없는 날에도 자산은 말해 준다 — 이 목표가 겨냥한 것이 정확히 "아무 일
-        // 없는 날" 이다.
+        // 없는 날" 이다. 마감도 같은 이유로 여기서 붙인다 — 할 일이 없는 날이야말로
+        // 마감 알림이 가장 필요한 날이다.
+        const emptyTasksSummary = await this.appendPortfolioValue(
+          '오늘 자동 수집된 할 일이 없습니다 (GitHub/Notion/Slack 모두 비어있음). 필요하면 `/today <할 일>` 로 직접 입력해주세요.',
+        );
         return {
           skip: false,
-          summaryText: await this.appendPortfolioValue(
-            '오늘 자동 수집된 할 일이 없습니다 (GitHub/Notion/Slack 모두 비어있음). 필요하면 `/today <할 일>` 로 직접 입력해주세요.',
+          summaryText: await this.appendUpcomingSchedules(
+            emptyTasksSummary,
+            ownerSlackUserId,
           ),
         };
       }
@@ -111,6 +131,40 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
     } catch (error) {
       this.logger.warn(`자산 요약 생략 — ${(error as Error).message}`);
       return summaryText;
+    }
+  }
+
+  // 마감 한 줄도 자산 줄과 같은 곁다리다. 조회가 실패해도 브리핑 본체는 나가야 한다 —
+  // 장식이 본체를 죽이면 안 된다.
+  private async appendUpcomingSchedules(
+    text: string,
+    ownerSlackUserId: string,
+  ): Promise<string> {
+    // **하한(`from`)을 넘기지 않는다.** 오늘을 하한으로 두면 어제 놓친 미완 마감이 조회에서
+    // 통째로 빠져, 처리도 건너뜀도 안 한 항목이 조용히 사라진다 — 놓친 마감을 알리는 것이
+    // 이 기능의 목적이라 그 하한이 목적을 거스른다. 포맷터의 `D+n`(지난 마감) 분기가
+    // 프로덕션에서 도달 불가였던 것도 같은 이유다(`schedule-briefing.formatter.ts`).
+    // 임의의 되짚기 폭(예: 90일)을 두지 않은 것은 그 경계 밖에서 같은 실종이 되살아나서다.
+    //
+    // 상한(`to`)은 **KST 달력일의 UTC 자정** 에 맞춘다. `dueDate` 가 `@db.Date` 라 같은
+    // 표현이어야 라벨 반올림이 어긋나지 않는다 — 시각이 붙으면 밤에 내일 마감이 `D-day` 로
+    // 찍힌다(2026-09-18 실측).
+    //
+    // 완료·건너뜀은 여기서 거르지 않는다 — `formatUpcomingLine` 이 `OPEN` 만 남기므로
+    // 거르는 자리를 둘로 늘리면 둘이 갈릴 때 어느 쪽이 정본인지 알 수 없어진다.
+    const todayCalendarDay = plainDateToUtcDate(todayInKst(new Date()));
+    const weekLater = new Date(
+      todayCalendarDay.getTime() + UPCOMING_WINDOW_DAYS * DAY_MS,
+    );
+    try {
+      const items = await this.listSchedules.execute({
+        slackUserId: ownerSlackUserId,
+        to: weekLater,
+      });
+      return text + formatUpcomingLine(items, todayCalendarDay);
+    } catch (error: unknown) {
+      this.logger.warn(`마감 줄 생성 실패: ${String(error)}`);
+      return text;
     }
   }
 

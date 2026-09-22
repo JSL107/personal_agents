@@ -374,6 +374,45 @@ public struct InjectRequestBody: Codable {
     }
 }
 
+/// 일정 항목의 상태 3종. rawValue 는 백엔드 enum 문자열과 1:1.
+public enum ScheduleStatus: String, Codable, Sendable {
+    case open = "OPEN"
+    case done = "DONE"
+    case skipped = "SKIPPED"
+}
+
+/// 일정("마감·신청·예약") 항목 한 건. 화면에 필요한 필드만 받는다 — Codable 은 없는 키를 무시한다.
+public struct ScheduleItem: Codable, Identifiable, Sendable {
+    public let id: Int
+    public let title: String
+    /// 백엔드는 `@db.Date` 를 ISO 문자열로 내보낸다. 날짜만 쓰므로 Date 로 바꾸지 않고
+    /// 앞 10자(`yyyy-MM-dd`)만 떼어 쓴다 — 타임존이 끼면 하루가 밀린다.
+    public let dueDate: String
+    public let linkUrl: String?
+    public let memo: String?
+    public let status: ScheduleStatus
+
+    public var dueDay: String {
+        String(dueDate.prefix(10))
+    }
+
+    public init(
+        id: Int,
+        title: String,
+        dueDate: String,
+        linkUrl: String?,
+        memo: String?,
+        status: ScheduleStatus
+    ) {
+        self.id = id
+        self.title = title
+        self.dueDate = dueDate
+        self.linkUrl = linkUrl
+        self.memo = memo
+        self.status = status
+    }
+}
+
 /// 리모컨 명령의 낙관적 진행 단계.
 public enum PendingPhase: String, Sendable, Equatable {
     case sent      // 전송·접수(202) — codex 준비 대기

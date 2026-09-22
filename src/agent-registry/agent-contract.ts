@@ -318,6 +318,10 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     Department.INTERNAL_OPS,
     '연차 잔여일을 계산하고 사용을 기록한다',
   ),
+  [AgentType.SCHEDULE]: stub(
+    Department.INTERNAL_OPS,
+    '마감·신청·예약을 날짜와 함께 등록하고 상태를 관리한다',
+  ),
   [AgentType.INVEST]: stub(
     Department.TREASURY,
     '보유 종목의 시세 이상을 장 마감 후 점검한다',

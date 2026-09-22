@@ -59,6 +59,8 @@ export const AGENT_SAFETY_LEVEL: Record<AgentType, AgentSafetyLevel> = {
   // --- 사용자 데이터를 기록하는 worker (되돌릴 경로 있음) ---
   // registerLeave / cancelLeave — 잘못 등록해도 취소로 되돌린다.
   [AgentType.VACATION]: AgentSafetyLevel.WRITE,
+  // registerSchedule / updateScheduleStatus — 상태 전이(canTransition)로 되돌릴 수 있다.
+  [AgentType.SCHEDULE]: AgentSafetyLevel.WRITE,
   // addApplication / updateApplication — 상태 변경으로 되돌린다.
   [AgentType.JOB_APPLICATION]: AgentSafetyLevel.WRITE,
   // Notion '블로그 초안' DB 에 페이지를 만들고 상태를 갱신한다.

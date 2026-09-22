@@ -293,6 +293,15 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
     description:
       'Hermes 딥다이브 주제를 개인 레포와 연결해 학습 필요성 판정 (cron 내부 전용)',
   },
+  {
+    agentType: AgentType.SCHEDULE,
+    displayName: 'Schedule',
+    nickname: '오마감',
+    slashCommands: [],
+    usecasePath: 'src/schedule/application/register-schedule.usecase.ts',
+    description:
+      '마감·신청·예약 등록 — 자연어 날짜 표현을 해석해 등록 (자연어 멘션 전용, LLM 미사용)',
+  },
 ];
 
 /**

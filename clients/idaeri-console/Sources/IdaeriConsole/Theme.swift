@@ -94,7 +94,6 @@ enum Stroke {
 
 /// 창·컴포넌트의 최소 치수. 여백이 아니라 레이아웃 뼈대라 따로 둔다.
 enum Layout {
-    static let sidebarWidth: CGFloat = 240
     /// 초상화 장면과 두 줄 직무가 찌그러지지 않는 대시보드 카드 하한.
     static let cardMinWidth: CGFloat = 300
     /// 대시보드 카드가 지향하는 폭. 열 수를 이 값으로 나눠 정한다.
