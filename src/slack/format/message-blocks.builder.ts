@@ -126,6 +126,32 @@ export const toReadableMessage = (
 // 텍스트 발송이 전부 이 한 지점을 지나므로 길이 계측도 여기서 한다(설계서 §7-5). `origin` 은
 // 기본값이 `reply` — 밀어내는 쪽(SlackService.postMessage)만 자기 값을 넘긴다. 그래야 한
 // 메시지가 두 번 기록되지 않고, "사용자가 부른 응답" 과 "먼저 밀어낸 자율 메시지" 가 갈린다.
+// 본문 아래에 이미지 파일 하나를 붙인 발송 인자. 그림을 채널 메시지로 띄우되 그 메시지가
+// 스레드의 뿌리여야 할 때 쓴다 — 파일 업로드 경로(`files.uploadV2`)는 올라간 메시지의 ts 를
+// 주지 않아 그 배치를 만들지 못한다.
+//
+// 본문이 길어 section 여러 장으로 쪼개졌으면 그 뒤에 잇고, 쪼갤 필요가 없던 짧은 본문은
+// section 하나를 만들어 앞에 세운다. 이미지 블록만 보내면 슬랙 알림·검색에 글이 안 남는다.
+export const toImageAttachedSlackArgs = (
+  text: string,
+  image: { fileId: string; altText: string },
+  origin: SlackSendOrigin = 'reply',
+): { text: string; blocks?: never } => {
+  const readable = toReadableMessage(text);
+  const blocks: SlackBlock[] = [
+    ...(readable.blocks ?? [
+      { type: 'section', text: { type: 'mrkdwn', text: readable.text } },
+    ]),
+    {
+      type: 'image',
+      slack_file: { id: image.fileId },
+      alt_text: image.altText,
+    },
+  ];
+  recordSlackSendLength({ text: readable.text, origin, blocks: blocks.length });
+  return { text: readable.text, blocks: blocks as never };
+};
+
 export const toReadableSlackArgs = (
   text: string,
   origin: SlackSendOrigin = 'reply',
