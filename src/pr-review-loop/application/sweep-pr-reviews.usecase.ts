@@ -2,6 +2,8 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { ReviewPullRequestUsecase } from '../../agent/code-reviewer/application/review-pull-request.usecase';
+import { CodeReviewerException } from '../../agent/code-reviewer/domain/code-reviewer.exception';
+import { CodeReviewerErrorCode } from '../../agent/code-reviewer/domain/code-reviewer-error-code.enum';
 import { hasNoReviewFindings } from '../../agent/code-reviewer/domain/review-emptiness';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import {
@@ -278,6 +280,18 @@ export class SweepPrReviewsUsecase {
       const readyTransition = latest.isDraft && !currentIsDraft;
       return publishTransition || readyTransition ? 'REVIEW' : 'SKIP';
     }
+    // 입력이 바뀌지 않는 한 결과가 같은 실패는 쿨다운·예산과 무관하게 재시도하지 않는다.
+    // 변경량 초과가 그렇다 — GitHub 이 diff 자체를 내주지 않아 PR 이 작아지기 전에는 몇 번을
+    // 돌려도 같은 자리에서 끊긴다. 재시도 예산은 이 반복을 늦출 뿐 멈추지 못한다: 24시간
+    // 윈도우가 롤링이라 오늘의 3건이 내일 3건의 허가증이 된다(실측 2026-09-17~23, PR 하나가
+    // 매일 03시대에 3건씩 21회, 전부 같은 사유).
+    //
+    // 대가: PR 이 나중에 한도 아래로 줄어도 이 기록이 lookback(30일) 안에 있는 동안은 스윕이
+    // 다시 집지 않는다. 한도의 3배를 넘는 PR 이 그 아래로 줄어드는 일은 드물고, 필요하면 수동
+    // 멘션(/review-pr)이 이 판정과 무관하게 돈다 — 그 길을 남겨두고 자동 반복만 끊는다.
+    if (latest.errorCode === CodeReviewerErrorCode.DIFF_TOO_LARGE) {
+      return 'SKIP';
+    }
     const cooldownMs = SWEEP_RETRY_COOLDOWN_MINUTES * 60 * 1000;
     const elapsedMs = Date.now() - latest.startedAt.getTime();
     return elapsedMs >= cooldownMs ? 'REVIEW' : 'SKIP';
@@ -349,9 +363,13 @@ export class SweepPrReviewsUsecase {
       if (diffResult.status === 'rejected') {
         const changedLines = detail.additions + detail.deletions;
         if (changedLines > GITHUB_DIFF_MAX_LINES) {
-          throw new Error(
-            `PR 변경량 ${changedLines}줄이 GitHub diff 한도(${GITHUB_DIFF_MAX_LINES}줄)를 넘어 리뷰할 수 없습니다.`,
-          );
+          // 도메인 예외로 던져야 원장 output 에 errorCode 가 함께 남는다
+          // (AgentRunService.execute). 다음 스윕의 재시도 판정이 문구가 아니라 그 코드를
+          // 보고 이 PR 을 영구 실패로 가른다 — 문구 매칭은 메시지를 손대는 순간 깨진다.
+          throw new CodeReviewerException({
+            message: `PR 변경량 ${changedLines}줄이 GitHub diff 한도(${GITHUB_DIFF_MAX_LINES}줄)를 넘어 리뷰할 수 없습니다.`,
+            code: CodeReviewerErrorCode.DIFF_TOO_LARGE,
+          });
         }
         throw diffResult.reason;
       }
