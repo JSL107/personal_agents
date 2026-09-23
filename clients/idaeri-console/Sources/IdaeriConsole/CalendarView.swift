@@ -928,7 +928,7 @@ struct CalendarView: View {
     /// "만료된 요청" 같은 말이 여기서는 맞지 않는다).
     private func failureReason(_ error: Error) -> String {
         guard case let ConsoleClientError.badStatus(status) = error else {
-            return "백엔드에 연결하지 못했습니다. 주소(\(baseURLLabel))와 실행 여부를 확인하세요."
+            return consoleTransportFailureReason(error, baseURLLabel: baseURLLabel)
         }
         switch status {
         case 404, 409, 412:

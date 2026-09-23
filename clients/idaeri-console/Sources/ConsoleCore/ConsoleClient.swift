@@ -402,3 +402,24 @@ private struct BriefingEnvelope: Decodable {
 private struct SchedulesEnvelope: Decodable {
     let data: [ScheduleItem]
 }
+
+/// HTTP 상태코드가 없는 실패(연결 불가·시간 초과)를 사용자가 다음 행동을 아는 문장으로 옮긴다.
+///
+/// 둘을 한 문장으로 뭉치면 안 된다. 연결 불가는 "백엔드를 띄워라" 이고 시간 초과는 "백엔드가
+/// 아직 일하는 중이다" 라 다음에 할 일이 정반대다. 뭉쳐 두었더니 정상으로 돌고 있는 승인을
+/// 보고 백엔드가 죽은 줄 알고 주소를 확인하러 갔다(2026-09-23, 승인 apply 가 60초를 넘긴 건).
+///
+/// 판정은 `isRequestTimeout` 이 한다 — 같은 조건을 두 군데 적으면 한쪽만 고쳐질 때
+/// 화면이 경로에 따라 다른 말을 한다. 여기가 맡는 것은 문구뿐이다.
+///
+/// 상태코드가 있는 실패(`ConsoleClientError.badStatus`)는 화면마다 뜻이 달라 여기서 다루지
+/// 않는다 — 부르는 쪽이 자기 도메인 문구로 가른다.
+///
+/// 승인 경로(`AppRootView.resolveApproval`)는 이 함수를 쓰지 않는다. 거기서는 시간 초과가
+/// 안내 문구만 다른 것이 아니라 **카드를 감춘 채 두는 다른 동작**이라 catch 앞에서 갈린다.
+public func consoleTransportFailureReason(_ error: Error, baseURLLabel: String) -> String {
+    guard isRequestTimeout(error) else {
+        return "백엔드에 연결하지 못했습니다. 주소(\(baseURLLabel))와 실행 여부를 확인하세요."
+    }
+    return "백엔드가 제때 응답하지 않았습니다. 처리는 계속되고 있을 수 있으니 잠시 뒤 목록을 확인하세요."
+}
