@@ -63,6 +63,7 @@ export class ReflectPrUsecase {
     slackUserId,
     prText,
     impactContext,
+    portfolioSync,
   }: ReflectPrInput): Promise<AgentRunOutcome<ReflectPrResult>> {
     const refs = extractPrReferences(prText); // 0건 시 INVALID_PR_REFERENCE
     // 빈 문자열·공백만 들어온 입력은 없는 것과 같게 다룬다. 이후 분기가 전부 이 값을
@@ -186,7 +187,17 @@ export class ReflectPrUsecase {
         });
 
         // 방금 저장한 최신 프로필을 그대로 Notion 포트폴리오에 append (RenderPortfolio 재사용).
-        const portfolio = await this.renderPortfolio.execute({ slackUserId });
+        // 어떻게 다룰지는 호출부가 정한다(ReflectPrInput.portfolioSync). 'skip' 은 아예
+        // 건드리지 않는다 — 한 요청이 이 회차를 여러 번 도는 호출부가 마지막에 한 번만
+        // 반영하려는 것이고, 포트폴리오는 페이지를 통째로 다시 쓰므로 중간 회차의 반영은
+        // 어차피 마지막 회차가 덮는다(묶음 3건이면 2회분이 순수 낭비였다).
+        const portfolio =
+          portfolioSync === 'skip'
+            ? null
+            : await this.renderPortfolio.execute({
+                slackUserId,
+                ...(portfolioSync === 'defer' ? { deferBlockSync: true } : {}),
+              });
 
         this.logger.log(
           `CAREER_MATE REFLECT_PR 완료 — PR ${refs
@@ -197,7 +208,7 @@ export class ReflectPrUsecase {
         const result: ReflectPrResult = {
           accomplishment,
           narrative,
-          portfolioUrl: portfolio.url,
+          ...(portfolio ? { portfolioUrl: portfolio.url } : {}),
           agentRunId: context.agentRunId,
           modelUsed: completion.modelUsed,
         };

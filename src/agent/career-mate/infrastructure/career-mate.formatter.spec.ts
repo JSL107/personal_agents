@@ -420,6 +420,33 @@ describe('career-mate.formatter', () => {
     expect(text).not.toContain('<script>');
     expect(text).toContain('반영한 PR');
     expect(text).toContain('o/r#1692');
+    // 본문 반영은 백그라운드라 이 시점엔 아직 안 끝났다 — "완료" 로 되돌리면 거짓 보고다.
+    expect(text).toContain('갱신 중');
+    expect(text).not.toContain('반영 완료');
+  });
+
+  it('formatPrRetro 는 portfolioUrl 이 없으면 포트폴리오 줄을 통째로 뺀다', () => {
+    const text = formatPrRetro({
+      accomplishment: {
+        title: 'T',
+        bullet: 'B',
+        star: { situation: 's', task: 't', action: 'a', result: 'r' },
+        techTags: ['NestJS'],
+        evidence: [{ repo: 'o/r', pr: 1692, url: 'u', mergedAt: '2026-06-30' }],
+      },
+      narrative: '회고 서술',
+      // portfolioSync: 'skip' 회차에는 이 값이 없다.
+      agentRunId: 1,
+      modelUsed: 'claude',
+    });
+    // 템플릿에 그대로 넣으면 링크 자리에 "undefined" 가 찍히는데, 값이 optional 이라
+    // 타입 검사로는 잡히지 않는다 — 이 단언이 유일한 방어선이다.
+    expect(text).not.toContain('undefined');
+    expect(text).not.toContain('포트폴리오');
+    // 나머지 본문은 그대로 나가야 한다.
+    expect(text).toContain('회고 서술');
+    expect(text).toContain('이력서 bullet');
+    expect(text).toContain('o/r#1692');
   });
 
   it('formatPrRetro 는 여러 evidence PR 을 모두 나열한다', () => {

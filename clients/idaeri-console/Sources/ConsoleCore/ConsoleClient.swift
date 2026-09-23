@@ -158,10 +158,32 @@ public func buildApprovalRequest(
         .appendingPathComponent(action)
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
+    // 기본값 60초로는 짧다. 60초에 클라이언트가 먼저 포기하면 두 번 잘못된다 — 첫 클릭은
+    // 정상으로 돌고 있는데도 연결 실패로 보고되고, 그 카드를 다시 누르면 백엔드가
+    // `ALREADY_APPLYING` 으로 거절해 "이미 처리됐거나 만료" 라는 틀린 안내가 뜬다.
+    //
+    // **180 은 충분한 값이 아니라 덜 나쁜 값이다.** `ApplyPreviewUsecase` 의 "2분 창" 주석은
+    // 실측이 아니다 — 2026-09-23 DB 실측으로 EVENING_CAREER_REFLECT 한 건(preview
+    // 66e8c828, payload.prGroups 4개)이 묶음당 7~14분씩 **순차로** 돌았다(agent_run 4760 =
+    // 13.9분, 4752 = 7.3분, applier 주석 "순차 실행이어야 한다 — lost update"). 묶음이
+    // 여럿이면 apply 한 번이 30분을 넘는다. 그 구간은 어떤 타임아웃 값으로도 못 덮는다 —
+    // write 를 202 접수 + SSE `approval.resolved` 통보로 바꾸는 것이 실제 해법이고(백엔드
+    // 변경), 이 값은 그때까지의 완충이다. 여기서 숫자만 키우며 멈추지 말 것.
+    request.timeoutInterval = 180
     if let token {
         request.setValue(token, forHTTPHeaderField: "x-console-token")
     }
     return request
+}
+
+/// 앱이 먼저 포기한 것인가 — 즉 **서버가 처리했는지 알 수 없는** 오류인가.
+///
+/// 타임아웃은 "실패했다" 가 아니라 "답을 못 들었다" 이다. 승인 반영은 실측 7~14분/묶음이라
+/// 이 경우 서버는 대개 아직 돌고 있다. 그때 카드를 되살리면 진행 중인 요청을 다시 누르게 되고,
+/// 백엔드가 `ALREADY_APPLYING` 으로 거절해 "이미 처리됐거나 만료" 라는 틀린 안내가 뜬다 —
+/// 이 변경이 막으려는 바로 그 경로다. 상태를 받은 실패(4xx·5xx)와는 다르게 다뤄야 한다.
+public func isRequestTimeout(_ error: Error) -> Bool {
+    return (error as? URLError)?.code == .timedOut
 }
 
 /// 콘솔 백엔드에 대한 얇은 클라이언트. 부팅 시 스냅샷 1콜, 이후 SSE 구독 + 리모컨 write(지시/승인/거절).
@@ -379,4 +401,25 @@ private struct BriefingEnvelope: Decodable {
 
 private struct SchedulesEnvelope: Decodable {
     let data: [ScheduleItem]
+}
+
+/// HTTP 상태코드가 없는 실패(연결 불가·시간 초과)를 사용자가 다음 행동을 아는 문장으로 옮긴다.
+///
+/// 둘을 한 문장으로 뭉치면 안 된다. 연결 불가는 "백엔드를 띄워라" 이고 시간 초과는 "백엔드가
+/// 아직 일하는 중이다" 라 다음에 할 일이 정반대다. 뭉쳐 두었더니 정상으로 돌고 있는 승인을
+/// 보고 백엔드가 죽은 줄 알고 주소를 확인하러 갔다(2026-09-23, 승인 apply 가 60초를 넘긴 건).
+///
+/// 판정은 `isRequestTimeout` 이 한다 — 같은 조건을 두 군데 적으면 한쪽만 고쳐질 때
+/// 화면이 경로에 따라 다른 말을 한다. 여기가 맡는 것은 문구뿐이다.
+///
+/// 상태코드가 있는 실패(`ConsoleClientError.badStatus`)는 화면마다 뜻이 달라 여기서 다루지
+/// 않는다 — 부르는 쪽이 자기 도메인 문구로 가른다.
+///
+/// 승인 경로(`AppRootView.resolveApproval`)는 이 함수를 쓰지 않는다. 거기서는 시간 초과가
+/// 안내 문구만 다른 것이 아니라 **카드를 감춘 채 두는 다른 동작**이라 catch 앞에서 갈린다.
+public func consoleTransportFailureReason(_ error: Error, baseURLLabel: String) -> String {
+    guard isRequestTimeout(error) else {
+        return "백엔드에 연결하지 못했습니다. 주소(\(baseURLLabel))와 실행 여부를 확인하세요."
+    }
+    return "백엔드가 제때 응답하지 않았습니다. 처리는 계속되고 있을 수 있으니 잠시 뒤 목록을 확인하세요."
 }

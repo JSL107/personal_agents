@@ -85,9 +85,15 @@ export const diagnoseMemoryIndex = (
   const fileNames = snapshot.files.map((file) => file.fileName);
   const existing = new Set(fileNames);
 
+  // 고아 판정에만 위성 색인을 합친다. brokenLinks·entryCount 까지 합치면 위성의 죽은
+  // 줄을 MEMORY.md 에서 지우려 들어(거기 없으므로) 액션 수가 거짓으로 남는다.
+  const covered = new Set([
+    ...indexed,
+    ...collectIndexedFiles(snapshot.satelliteContent),
+  ]);
   const orphans = fileNames.filter(
     (fileName) =>
-      !indexed.has(fileName) && !isCoveredByFold(fileName, foldedPrefixes),
+      !covered.has(fileName) && !isCoveredByFold(fileName, foldedPrefixes),
   );
   const brokenLinks = [...indexed].filter(
     (fileName) => !existing.has(fileName),

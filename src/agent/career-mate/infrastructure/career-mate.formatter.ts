@@ -365,7 +365,17 @@ export const formatPrRetro = (result: ReflectPrResult): string => {
     `• A: ${escapeSlackMrkdwn(star.action)}`,
     `• R: ${escapeSlackMrkdwn(star.result)}`,
     ``,
-    `*포트폴리오 반영 완료* ✅\n${result.portfolioUrl}`,
+    // "완료" 라고 쓰지 않는다 — REFLECT_PR 은 링크만 확보하고 본문 반영은 백그라운드로
+    // 넘긴다(render-portfolio.usecase.ts 의 deferBlockSync). 성과가 쌓인 페이지는 반영에
+    // 수백 초가 걸려, 방금 회고한 내용이 아직 안 보이는 채로 링크를 열 수 있다.
+    //
+    // URL 이 없는 회차(portfolioSync: 'skip')는 이 줄을 통째로 뺀다. 템플릿에 그대로 넣으면
+    // 링크 자리에 "undefined" 가 찍히는데, 타입 검사로는 잡히지 않는다.
+    ...(result.portfolioUrl
+      ? [
+          `*포트폴리오 갱신 중* ⏳ (본문 반영에 잠시 걸립니다)\n${result.portfolioUrl}`,
+        ]
+      : []),
   ].join('\n');
 };
 

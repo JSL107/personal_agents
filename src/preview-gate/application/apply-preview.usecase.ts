@@ -9,6 +9,7 @@ import {
   PreviewActionRepositoryPort,
 } from '../domain/port/preview-action.repository.port';
 import {
+  ApplyProgress,
   PREVIEW_APPLIERS,
   PreviewApplier,
 } from '../domain/port/preview-applier.port';
@@ -64,7 +65,25 @@ export class ApplyPreviewUsecase {
     return this.applying.has(previewId);
   }
 
-  async execute({
+  // 실행하지 않고 "지금 이 카드를 적용할 수 있는가" 만 판정한다.
+  //
+  // 결과를 기다리지 않고 접수만 하는 호출자(콘솔 앱)를 위한 입구다. 접수한 뒤에 나는 실패는
+  // 지금 구조로는 사용자에게 닿지 않으므로(성공 경로만 `approval.resolved` 를 발행한다),
+  // **버튼을 누른 그 순간에 알 수 있는 거절은 여기서 즉시 던진다** — 없음·남의 것·이미
+  // 처리됨·만료·이미 실행 중. 그래야 접수 응답이 "눌린 것은 확실하다" 를 뜻하게 된다.
+  //
+  // **만료 판정에는 부작용이 있다.** `assertReadyToResolve` 는 만료된 카드를 EXPIRED 로
+  // 전이하고 스위퍼와 같은 후처리를 돌린 뒤 거절한다. 거절되면 호출자가 거기서 멈추므로
+  // `execute` 는 불리지 않는다. 통과한 경우에만 `execute` 가 같은 검증을 한 번 더 도는데,
+  // 그 사이 TTL 이 지났다면 두 번째가 만료로 끊는다 — 접수 응답은 이미 나간 뒤라 그 처리는
+  // 백그라운드에서 끝나고, 카드는 EXPIRED 가 되어 다음 스냅샷에서 사라진다.
+  //
+  // **applier 유무까지 본다.** `CAREER_JD_GAP_BLOG` 처럼 applier 없이 PENDING 카드만 만드는
+  // kind 가 있는데(주제 선택 대기용 — analyze-jd-gap.usecase.ts:133), 그 카드도 콘솔
+  // 승인 목록에는 나온다(console-mappers.ts:15). 여기서 걸러내지 않으면 승인 버튼이 202 를
+  // 받아 "접수됐다" 로 보이고, 실제로는 백그라운드에서 NO_APPLIER_FOR_KIND 로 죽어 로그만
+  // 남는다 — 사용자에게는 카드가 사라졌다가 다음 스냅샷에 되돌아오는 것으로만 보인다.
+  async assertApplicable({
     previewId,
     slackUserId,
     now = new Date(),
@@ -72,14 +91,60 @@ export class ApplyPreviewUsecase {
     previewId: string;
     slackUserId: string;
     now?: Date;
-  }): Promise<{ preview: PreviewAction; resultText: string }> {
-    if (this.applying.has(previewId)) {
+  }): Promise<PreviewAction> {
+    this.assertNotApplying(previewId);
+    const preview = await this.assertReadyToResolve({
+      previewId,
+      slackUserId,
+      now,
+    });
+    this.requireApplier(preview);
+    return preview;
+  }
+
+  // kind 에 맞는 applier 를 찾거나 끊는다. 접수 검증과 실행이 **같은 판정**을 써야 한다 —
+  // 접수가 통과시킨 카드를 실행이 거절하면 그 실패는 응답을 보낸 뒤라 사용자에게 닿지 않는다.
+  private requireApplier(preview: PreviewAction): PreviewApplier {
+    const applier = this.appliers.find(
+      (candidate) => candidate.kind === preview.kind,
+    );
+    if (!applier) {
       throw new PreviewActionException({
-        code: PreviewActionErrorCode.ALREADY_APPLYING,
-        message: 'Preview 가 이미 처리 중입니다. 잠시만 기다려주세요.',
-        status: DomainStatus.PRECONDITION_FAILED,
+        code: PreviewActionErrorCode.NO_APPLIER_FOR_KIND,
+        message: `Preview kind '${preview.kind}' 에 대한 PreviewApplier 가 등록되지 않았습니다.`,
+        status: DomainStatus.INTERNAL,
       });
     }
+    return applier;
+  }
+
+  // 중복 클릭 거절. `execute` 와 `assertApplicable` 이 같은 문장으로 거절해야 화면이
+  // 어느 경로로 막혔는지에 따라 다른 말을 하지 않는다.
+  private assertNotApplying(previewId: string): void {
+    if (!this.applying.has(previewId)) {
+      return;
+    }
+    throw new PreviewActionException({
+      code: PreviewActionErrorCode.ALREADY_APPLYING,
+      message: 'Preview 가 이미 처리 중입니다. 잠시만 기다려주세요.',
+      status: DomainStatus.PRECONDITION_FAILED,
+    });
+  }
+
+  async execute({
+    previewId,
+    slackUserId,
+    now = new Date(),
+    takeOverPid,
+  }: {
+    previewId: string;
+    slackUserId: string;
+    now?: Date;
+    // 중단된 반영을 이어받을 때, **죽은 것을 확인한** 그 프로세스의 pid.
+    // 부팅 훅만 넘긴다 — 사용자 클릭 경로는 남의 활성 반영을 가로채면 안 된다.
+    takeOverPid?: number;
+  }): Promise<{ preview: PreviewAction; resultText: string }> {
+    this.assertNotApplying(previewId);
     // 락은 검증(assertReadyToResolve) 전에 동기적으로 잡는다. async 검증 뒤에 add 하면 첫 클릭이
     // await 에서 suspend 된 사이 두 번째 클릭이 락 체크를 통과해버리는 레이스가 생긴다.
     this.applying.add(previewId);
@@ -89,14 +154,34 @@ export class ApplyPreviewUsecase {
         slackUserId,
         now,
       });
-      const applier = this.appliers.find((a) => a.kind === preview.kind);
-      if (!applier) {
+      const applier = this.requireApplier(preview);
+      // 진행 흔적을 원장에 새긴다. **이 줄 아래에서 프로세스가 죽으면 흔적이 남고**, 다음 부팅의
+      // ResumeInterruptedAppliesUsecase 가 그것을 보고 이어서 돌리거나 실패로 마감해 알린다.
+      // 검증에서 끊긴 경우는 여기 도달하지 않으므로 흔적도 안 남는다 — 시작하지 않은 반영이
+      // 중단으로 보이면 부팅마다 엉뚱한 카드를 되살린다.
+      const progressState = await this.repository.beginApply({
+        id: preview.id,
+        pid: process.pid,
+        at: now,
+        ...(takeOverPid === undefined ? {} : { takeOverPid }),
+      });
+      // 획득 실패 — 아직 끝나지 않은 남의 반영이 있거나, 읽은 뒤 쓰기 전에 다른 쪽이 이 카드를
+      // 잡았다. 그냥 진행하면 같은 반영이 두 프로세스에서 동시에 돈다(`applying` 락은 프로세스
+      // 로컬이고 로컬 DB 는 worktree 백엔드와 공유된다).
+      // 중복 클릭과 같은 문장으로 거절해 화면이 경로마다 다른 말을 하지 않게 한다.
+      if (progressState === null) {
         throw new PreviewActionException({
-          code: PreviewActionErrorCode.NO_APPLIER_FOR_KIND,
-          message: `Preview kind '${preview.kind}' 에 대한 PreviewApplier 가 등록되지 않았습니다.`,
-          status: DomainStatus.INTERNAL,
+          code: PreviewActionErrorCode.ALREADY_APPLYING,
+          message: 'Preview 가 이미 처리 중입니다. 잠시만 기다려주세요.',
+          status: DomainStatus.PRECONDITION_FAILED,
         });
       }
+      const progress: ApplyProgress = {
+        done: progressState.done,
+        record: async (step: string): Promise<void> => {
+          await this.repository.recordApplyStep({ id: preview.id, step });
+        },
+      };
       // 여기부터 실제 apply 단계 — 실패 시에만 APPLY_FAILED 로 카드 복구(버튼 되살림).
       // 검증 단계 실패(만료/미존재/owner/applier 없음)는 이 안쪽 catch 를 타지 않는다.
       // 이 catch 는 applier 와 transition 을 함께 감싼다. 둘은 실패의 의미가 다르다 —
@@ -106,7 +191,7 @@ export class ApplyPreviewUsecase {
       let sideEffectApplied = false;
       try {
         await this.safeUpdateCard({ preview, state: 'APPLYING' });
-        const applyResult = await applier.apply(preview);
+        const applyResult = await applier.apply(preview, progress);
         sideEffectApplied = true;
         const transitioned = await this.repository.transition({
           id: preview.id,
@@ -125,6 +210,9 @@ export class ApplyPreviewUsecase {
           state: 'APPLIED',
           resultText,
         });
+        // 성공했으니 흔적을 통째로 지운다. 카드가 APPLIED 로 끝나 다시 눌릴 일이 없으므로
+        // `done` 을 남겨 둘 이유가 없다.
+        await this.safeClearApplyProgress(previewId);
         return { preview: transitioned, resultText };
       } catch (applyError: unknown) {
         // applier / transition 실패 — DB 는 PENDING 유지(재시도 가능). 카드는 버튼을 되살린다.
@@ -139,10 +227,64 @@ export class ApplyPreviewUsecase {
           sideEffectApplied,
         });
         await this.safeUpdateCard({ preview, state: 'APPLY_FAILED' });
+        // 콘솔 관제 — 실패 통지. 카드는 PENDING 으로 남아 다시 승인할 수 있지만, 화면에 되돌아온
+        // 것만으로는 "안 눌렸다" 와 구분되지 않는다. 그 오해가 재클릭을 부르고, 재클릭이 이미
+        // 반영된 단계를 다시 실행한다 — 사유를 함께 보내 그 고리를 끊는다.
+        this.consoleEvents?.publish({
+          type: 'approval.failed',
+          approval: toConsoleApproval(preview),
+          reason:
+            applyError instanceof Error
+              ? applyError.message
+              : String(applyError),
+        });
+        // **흔적을 지우지 않고 "끝났다" 표시만 남긴다.** 지우면 `done` 이 함께 사라져, 카드는
+        // PENDING 으로 남아 다시 눌릴 수 있는데 다음 승인이 이미 반영된 단계를 처음부터 다시
+        // 실행한다 — 이 클래스가 막으려는 중복 반영이 실패 경로로 되돌아온다.
+        await this.safeEndProgress({ previewId, at: now });
         throw applyError;
       }
     } finally {
       this.applying.delete(previewId);
+    }
+  }
+
+  // 실패로 끝났음을 표시한다. `done` 은 남는다 — 이미 반영된 단계는 이미 반영된 것이다.
+  // 표시가 실패해도 원래 예외는 그대로 올라가야 한다. 표시를 못 남기면 흔적이 "안 끝남" 으로
+  // 남아 다음 부팅이 재개를 시도하는데, 거기서도 `done` 과 시도 횟수 상한이 중복을 막는다.
+  private async safeEndProgress({
+    previewId,
+    at,
+  }: {
+    previewId: string;
+    at: Date;
+  }): Promise<void> {
+    try {
+      await this.repository.endApply({ id: previewId, pid: process.pid, at });
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Preview 진행 종료 표시 실패(무시) preview=${previewId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  // 흔적 지우기도 best-effort — 실패해도 원래 결과(성공이든 예외든)를 막지 않는다.
+  // 지우지 못한 흔적은 다음 부팅이 중단으로 읽지만, 거기서도 `done` 기록과 시도 횟수 상한이
+  // 중복 실행을 막는다. 기록이 결과를 잡아먹는 것이 기록이 없는 것보다 나쁘다.
+  private async safeClearApplyProgress(previewId: string): Promise<void> {
+    try {
+      await this.repository.clearApplyProgress({
+        id: previewId,
+        pid: process.pid,
+      });
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Preview 진행 흔적 정리 실패(무시) preview=${previewId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
   }
 

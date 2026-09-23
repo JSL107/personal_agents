@@ -885,6 +885,7 @@ describe('AgentRunService', () => {
         startedAt: new Date('2026-07-31T00:00:00Z'),
         dryRun: false,
         isDraft: false,
+        errorCode: null,
       };
       repository.findLatestSweepReview.mockResolvedValue(latest);
 

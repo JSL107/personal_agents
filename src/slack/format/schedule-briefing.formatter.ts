@@ -24,7 +24,13 @@ export const formatUpcomingLine = (
   items: ScheduleItemRecord[],
   today: Date,
 ): string => {
-  const open = items.filter((item) => item.status === ScheduleStatus.OPEN);
+  // 공휴일은 여기서만 뺀다. 아무도 「완료」를 누르지 않아 영원히 `OPEN` 으로 남는데, 이 줄은
+  // 하한 없이 지난 미완까지 전부 싣는 것이 목적이라(`morning-briefing.autopilot-task.ts` 가
+  // `from` 을 넘기지 않는다) 거르지 않으면 해가 갈수록 `신정(D+265) · 설날(D+240) · …` 이
+  // 끝없이 쌓인다. 달력에서는 그대로 보이고 완료·건너뜀도 된다 — 브리핑 한 줄에서만 뺀다.
+  const open = items.filter(
+    (item) => item.status === ScheduleStatus.OPEN && !item.isHoliday,
+  );
   if (open.length === 0) {
     return '';
   }

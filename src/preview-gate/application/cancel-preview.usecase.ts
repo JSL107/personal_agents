@@ -70,11 +70,42 @@ export class CancelPreviewUsecase {
         status: DomainStatus.PRECONDITION_FAILED,
       });
     }
+    // 반영이 시작된 뒤의 거절은 반영을 되돌리지 못한다. applier 는 외부 부작용을 끝까지
+    // 수행하고, 그 뒤 `transition(APPLIED)` 가 id 만 보고 덮어쓴다 — 여기서 CANCELLED 로
+    // 바꿔 두면 **거절 후처리(canceller)는 이미 돌았는데 상태만 APPLIED 로 되돌아가** 둘이
+    // 어긋난 채 남는다. 같은 자리를 지키는 `UpdatePreviewPayloadUsecase` 가 수정을 막는 것과
+    // 같은 이유이고, 거절이 수정보다 파괴적이므로 여기가 비어 있을 이유가 없다.
+    //
+    // 판정은 원장의 흔적으로 한다 — `ApplyPreviewUsecase.applying` 은 프로세스 메모리라
+    // 다른 백엔드가 돌리는 반영도, 부팅 훅이 순차 대기시켜 둔 재개도 보지 못한다.
+    if (
+      preview.applyProgress !== null &&
+      preview.applyProgress.endedAt === undefined
+    ) {
+      throw new PreviewActionException({
+        code: PreviewActionErrorCode.ALREADY_APPLYING,
+        message:
+          '이미 반영이 시작돼 지금은 거절할 수 없습니다. 잠시 후 결과를 확인해주세요.',
+        status: DomainStatus.PRECONDITION_FAILED,
+      });
+    }
 
-    const cancelled = await this.repository.transition({
+    // **위 검사만으로는 부족하다.** 읽고 검사한 뒤 조건 없이 전이하면 그 사이로 `beginApply`
+    // 가 끼어든다(TOCTOU) — 검사는 이미 읽어 둔 값만 보므로 통과하고, 막 시작된 반영은 계속
+    // 돌아 나중에 `transition(APPLIED)` 로 덮어쓴다. 읽은 흔적이 그대로일 때만 전이하도록
+    // 검사와 쓰기를 한 조건 안에 넣는다. 비교 키는 `beginApply` 와 같은 `startedAt` 이다.
+    const cancelled = await this.repository.cancelIfProgressUnchanged({
       id: preview.id,
-      status: PREVIEW_STATUS.CANCELLED,
+      expectedStartedAt: preview.applyProgress?.startedAt ?? null,
     });
+    if (cancelled === null) {
+      throw new PreviewActionException({
+        code: PreviewActionErrorCode.ALREADY_APPLYING,
+        message:
+          '방금 반영이 시작돼 거절하지 못했습니다. 잠시 후 결과를 확인해주세요.',
+        status: DomainStatus.PRECONDITION_FAILED,
+      });
+    }
     // 콘솔 관제 — 승인 종결 알림(카드가 스냅샷/스트림에서 사라지도록).
     this.consoleEvents?.publish({
       type: 'approval.resolved',

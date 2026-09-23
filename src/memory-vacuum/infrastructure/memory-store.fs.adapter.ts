@@ -12,6 +12,10 @@ import {
 } from '../domain/port/memory-store.port';
 
 const INDEX_FILE_NAME = 'MEMORY.md';
+// 위성 색인. 색인이 상한에 눌려 주제별 상세 목록을 여기로 뺀 프로젝트가 있다.
+// files 목록에서는 빼지 않는다 — 빼면 색인의 `- [TOPICS](TOPICS.md)` 줄이 가리키는
+// 파일이 없는 것으로 보여 죽은 줄로 지워진다.
+const SATELLITE_FILE_NAME = 'TOPICS.md';
 const MEMORY_DIR_NAME = 'memory';
 // 청소 실태 한 장. 프로젝트 루트 옆에 둔다 — 어느 프로젝트에도 속하지 않는 요약이라
 // 특정 memory 디렉터리 안에 두면 그 프로젝트의 기억으로 오인돼 청소 대상이 된다.
@@ -150,6 +154,13 @@ export class MemoryStoreFsAdapter implements MemoryStorePort {
 
     const indexPath = join(memoryDir, INDEX_FILE_NAME);
     const indexContent = await this.readIndex(indexPath);
+    // 색인 본체와 같은 읽기를 쓴다 — 위성이 없는 프로젝트가 대부분이라 ENOENT 만
+    // 빈 문자열로 받고, 권한·입출력 오류는 전파해 그 프로젝트를 청소에서 뺀다.
+    // 모든 오류를 빈 문자열로 삼키면 위성에 등재된 기억 전부가 고아로 판정되어,
+    // 청소기가 바로 그것을 색인에 도로 싣는다(이 수정이 막으려는 사고 그 자체다).
+    const satelliteContent = await this.readIndex(
+      join(memoryDir, SATELLITE_FILE_NAME),
+    );
     const files = [];
     for (const fileName of fileNames.sort()) {
       files.push({
@@ -157,12 +168,12 @@ export class MemoryStoreFsAdapter implements MemoryStorePort {
         title: await this.readTitle(join(memoryDir, fileName), fileName),
       });
     }
-    return { project, indexPath, indexContent, files };
+    return { project, indexPath, indexContent, satelliteContent, files };
   }
 
-  // 색인 전용. 파일이 없는 것(ENOENT)만 "아직 색인이 없다" 로 보고, 권한·입출력 오류는
-  // 전파한다. 이것을 빈 문자열로 바꾸면 기억 전부가 고아로 판정되어 멀쩡한 색인이
-  // 파일 목록으로 덮어씌워진다 — 되돌릴 백업마저 그 빈 내용으로 저장된다.
+  // 색인 본체와 위성 색인 전용. 파일이 없는 것(ENOENT)만 "아직 없다" 로 보고,
+  // 권한·입출력 오류는 전파한다. 이것을 빈 문자열로 바꾸면 기억 전부가 고아로 판정되어
+  // 멀쩡한 색인이 파일 목록으로 덮어씌워진다 — 되돌릴 백업마저 그 빈 내용으로 저장된다.
   private async readIndex(path: string): Promise<string> {
     try {
       return await fs.readFile(path, 'utf8');

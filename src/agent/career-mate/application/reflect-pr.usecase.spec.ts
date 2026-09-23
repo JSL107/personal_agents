@@ -122,6 +122,7 @@ describe('ReflectPrUsecase', () => {
       number: 1692,
     });
     expect(repository.save).toHaveBeenCalled();
+    // deferPortfolioSync 를 켜지 않은 호출(저녁 승인 경로)은 본문 반영을 기다린다.
     expect(renderPortfolio.execute).toHaveBeenCalledWith({ slackUserId: 'U1' });
     expect(outcome.result.portfolioUrl).toBe('https://notion/p');
     expect(outcome.result.accomplishment.evidence[0].pr).toBe(1692);
@@ -129,6 +130,36 @@ describe('ReflectPrUsecase', () => {
       '2026-06-30T12:00:00Z',
     );
     expect(outcome.result.narrative).toBe('회고 서술');
+  });
+
+  it("portfolioSync: 'defer' 를 RenderPortfolio 의 deferBlockSync 로 전달한다", async () => {
+    const { usecase, renderPortfolio } = makeUsecase();
+    await usecase.execute({
+      slackUserId: 'U1',
+      prText: '이 PR 회고 https://github.com/o/r/pull/1692',
+      portfolioSync: 'defer',
+    });
+
+    expect(renderPortfolio.execute).toHaveBeenCalledWith({
+      slackUserId: 'U1',
+      deferBlockSync: true,
+    });
+  });
+
+  it("portfolioSync: 'skip' 이면 포트폴리오를 아예 건드리지 않고 링크도 내지 않는다", async () => {
+    const { usecase, repository, renderPortfolio } = makeUsecase();
+    const outcome = await usecase.execute({
+      slackUserId: 'U1',
+      prText: '이 PR 회고 https://github.com/o/r/pull/1692',
+      portfolioSync: 'skip',
+    });
+
+    // 성과 저장은 그대로 — 건너뛰는 것은 Notion 반영뿐이다.
+    expect(repository.save).toHaveBeenCalled();
+    expect(renderPortfolio.execute).not.toHaveBeenCalled();
+    // 이 회차는 페이지를 건드리지 않았으므로 줄 링크가 없다. 호출부(저녁 승인)가 루프 뒤에
+    // 한 번 반영하고 그 결과에서 링크를 얻는다.
+    expect(outcome.result.portfolioUrl).toBeUndefined();
   });
 
   it('단일 링크는 maxBytes 없이 기존 diff 호출을 유지한다 (회귀 lock)', async () => {
@@ -197,6 +228,7 @@ describe('ReflectPrUsecase', () => {
     });
     expect(modelRouter.route).toHaveBeenCalledTimes(1);
     expect(repository.save).toHaveBeenCalled();
+    // deferPortfolioSync 를 켜지 않은 호출(저녁 승인 경로)은 본문 반영을 기다린다.
     expect(renderPortfolio.execute).toHaveBeenCalledWith({ slackUserId: 'U1' });
     expect(outcome.result.accomplishment.evidence).toHaveLength(2);
     expect(outcome.result.narrative).toBe('이어진 두 PR 통합 회고');

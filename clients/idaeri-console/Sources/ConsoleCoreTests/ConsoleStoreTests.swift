@@ -148,6 +148,41 @@ func runConsoleStoreTests(_ t: TestRunner) {
     store.apply(event: .approvalResolved(approval))
     t.expectEqual(store.approvals.count, 0, "approval 제거")
 
+    // approval.failed → 누른 직후 감춘 카드를 되살리고 사유를 남긴다.
+    //
+    // 202 접수 뒤에 난 실패는 write 응답으로 돌아오지 않는다. 이 이벤트가 감춤을 풀지 않으면
+    // 그 카드는 앱이 살아 있는 동안 계속 보이지 않고, 사유가 없으면 사용자는 되살아난 카드를
+    // "안 눌렸다" 로 읽고 다시 눌러 이미 반영된 단계를 또 실행한다.
+    let applyFailedStore = ConsoleStore()
+    applyFailedStore.apply(event: .approvalOpened(approval))
+    applyFailedStore.beginResolvingApproval(id: approval.id)
+    t.expectEqual(applyFailedStore.approvals.count, 0, "승인 누른 직후에는 카드가 감춰진다")
+    applyFailedStore.apply(event: .approvalFailed(approval, reason: "반영이 중단됐습니다"))
+    t.expectEqual(applyFailedStore.approvals.count, 1, "approval.failed 가 감춘 카드를 되살린다")
+    t.expectEqual(applyFailedStore.approvalNotice, "반영이 중단됐습니다", "실패 사유를 안내에 싣는다")
+
+    // 부팅 중에 마감된 반영의 사유는 이벤트로 오지 않는다 — 그 이벤트는 서버가 listen 하기
+    // 전에 발행되고 구독 이전 이벤트는 재전달되지 않는다. 스냅샷이 그 구간의 유일한 경로다.
+    let bootFailedStore = ConsoleStore()
+    let failedApproval = ConsoleApproval(
+        id: "p9",
+        agentType: nil,
+        title: "경력 반영",
+        createdAt: "2026-09-23T00:00:00Z",
+        expiresAt: "2026-09-23T10:00:00Z",
+        failureReason: "서버 재시작으로 반영이 중단됐습니다"
+    )
+    bootFailedStore.apply(snapshot: ConsoleSnapshot(
+        agents: [],
+        runs: [],
+        approvals: [failedApproval],
+        sessions: [],
+        serverTime: "2026-09-23T00:30:00Z"
+    ))
+    t.expectEqual(
+        bootFailedStore.approvalNotice, "서버 재시작으로 반영이 중단됐습니다",
+        "스냅샷에 실린 실패 사유를 안내로 올린다")
+
     // 승인이 열린 채 새 런이 시작되면 진행 이벤트를 얹지 않는다.
     //
     // 백엔드 집계는 열린 승인을 활성 런보다 먼저 고른다(`deriveAgentState` 우선순위). 이벤트를
@@ -253,6 +288,42 @@ func runConsoleStoreTests(_ t: TestRunner) {
     )
     writeStore.setApprovalNotice(nil)
     t.expectNil(writeStore.approvalNotice, "성공 시 안내 해제")
+
+    // ===== 승인 write 대기 동안의 감춤 (중복 클릭 차단) =====
+    // 누른 즉시 목록에서 빠져야 같은 카드를 두 번 누를 수 없다.
+    let resolvingStore = ConsoleStore()
+    resolvingStore.apply(event: .approvalOpened(approval))
+    resolvingStore.beginResolvingApproval(id: "p1")
+    t.expectEqual(resolvingStore.approvals.count, 0, "write 대기 중에는 카드가 감춰진다")
+
+    // 실패로 끝나면 되살아나 다시 누를 수 있어야 한다.
+    resolvingStore.endResolvingApproval(id: "p1")
+    t.expectEqual(resolvingStore.approvals.count, 1, "write 실패 시 카드 복귀")
+
+    // 감춘 사이 서버가 카드를 닫았으면(이미 처리/만료) 감춤을 풀어도 돌아오지 않는다.
+    resolvingStore.beginResolvingApproval(id: "p1")
+    resolvingStore.apply(snapshot: ConsoleSnapshot(
+        agents: [], runs: [], approvals: [], sessions: [], serverTime: "t"
+    ))
+    resolvingStore.endResolvingApproval(id: "p1")
+    t.expectEqual(resolvingStore.approvals.count, 0, "서버가 닫은 카드는 복귀하지 않는다")
+
+    // 감춘 사이에도 그 사람은 승인 대기 상태로 남는다 — 카드는 아직 열려 있고 처리 중일 뿐이다.
+    let hiddenStateStore = ConsoleStore()
+    hiddenStateStore.apply(snapshot: snapshot)
+    hiddenStateStore.apply(
+        event: .approvalOpened(
+            ConsoleApproval(
+                id: "p4", agentType: "PM", title: "발행 승인",
+                createdAt: "2026-07-27T00:04:00Z", expiresAt: "2026-07-27T01:04:00Z"
+            )))
+    hiddenStateStore.beginResolvingApproval(id: "p4")
+    hiddenStateStore.apply(
+        event: .stateChanged(agentType: "PM", state: .completed, bubble: "끝"))
+    t.expectEqual(
+        hiddenStateStore.agents.first(where: { $0.agentType == "PM" })?.state, .awaitingApproval,
+        "감춘 카드도 승인 대기 억제를 유지한다"
+    )
 
     // 재동기화 스냅샷이 서버에서 사라진(만료) 카드를 화면에서 걷어낸다.
     let resyncStore = ConsoleStore()

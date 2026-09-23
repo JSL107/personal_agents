@@ -34,6 +34,13 @@ private let calendarPreviewSchedules: [ScheduleItem] = [
         id: 2, title: "헬스장 재등록", dueDate: "2026-09-12T00:00:00.000Z",
         linkUrl: nil, memo: nil, status: .open
     ),
+    // 공휴일 한 건. **이게 없으면 빨간 날짜·빨간 칩이 그림에 안 나와** 색이 실제로 먹는지
+    // 확인할 길이 없다. 2026년 추석은 9월 25일(금)이라 주말과 겹치지 않는 자리에 선다 —
+    // 토요일 파랑·일요일 빨강과 따로 읽히는지도 같은 장에서 보인다.
+    ScheduleItem(
+        id: 6, title: "추석", dueDate: "2026-09-25T00:00:00.000Z",
+        linkUrl: nil, memo: nil, status: .open, isHoliday: true
+    ),
     // **선택된 날(9월 30일)에 치운 항목을 하나 둔다.** 되돌리기 버튼과 흐림·취소선 조판은
     // 완료 항목이 목록에 실제로 남아야만 그림에 나오고, 안 나오면 "되돌릴 수 있다" 는 주장에
     // 근거가 없다. 미완 두 줄과 나란히 서므로 둘이 한눈에 갈리는지도 같은 장에서 보인다.

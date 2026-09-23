@@ -529,6 +529,112 @@ describe('SlackService.postMessage', () => {
   });
 });
 
+// 그림을 메인 메시지로 올리는 경로. 업로드 응답만 보고 메시지를 보내면 슬랙이 아직 파일을
+// 이미지로 처리하기 전이라 빈 블록이 뜬다(2026-09-23 실측 2,218ms) — 그 대기를 여기서 건다.
+describe('SlackService.uploadImageFile', () => {
+  const buildService = (client: {
+    filesUploadV2: jest.Mock;
+    info: jest.Mock;
+  }): SlackService => {
+    const service = new SlackService({} as unknown as ConfigService, []);
+    (service as unknown as { app: unknown }).app = {
+      client: {
+        filesUploadV2: client.filesUploadV2,
+        files: { info: client.info },
+      },
+    };
+    return service;
+  };
+
+  const PNG = Buffer.from('png');
+
+  it('채널에 공유하지 않고 파일만 올린다', async () => {
+    const filesUploadV2 = jest
+      .fn()
+      .mockResolvedValue({ files: [{ id: 'F1' }] });
+    const info = jest
+      .fn()
+      .mockResolvedValue({ file: { mimetype: 'image/png' } });
+    const service = buildService({ filesUploadV2, info });
+
+    const result = await service.uploadImageFile({
+      png: PNG,
+      filename: 'r.png',
+      title: '수익률',
+    });
+
+    expect(filesUploadV2).toHaveBeenCalledWith({
+      file: PNG,
+      filename: 'r.png',
+      title: '수익률',
+    });
+    // channel_id 가 붙으면 업로드 자체가 채널 메시지가 되어 그림이 두 번 뜬다.
+    expect(filesUploadV2.mock.calls[0][0]).not.toHaveProperty('channel_id');
+    expect(result.fileId).toBe('F1');
+  });
+
+  it('이미지로 처리될 때까지 기다린 뒤 돌아온다', async () => {
+    const filesUploadV2 = jest
+      .fn()
+      .mockResolvedValue({ files: [{ id: 'F1' }] });
+    const info = jest
+      .fn()
+      .mockResolvedValueOnce({ file: { mimetype: '' } })
+      .mockResolvedValueOnce({ file: { mimetype: 'image/png' } });
+    const service = buildService({ filesUploadV2, info });
+
+    await service.uploadImageFile({
+      png: PNG,
+      filename: 'r.png',
+      title: '수익률',
+    });
+
+    expect(info).toHaveBeenCalledTimes(2);
+  });
+
+  it('file id 가 없으면 실패로 끊는다 — 그림 없는 메시지가 나가지 않게', async () => {
+    const filesUploadV2 = jest.fn().mockResolvedValue({ files: [] });
+    const info = jest.fn();
+    const service = buildService({ filesUploadV2, info });
+
+    await expect(
+      service.uploadImageFile({ png: PNG, filename: 'r.png', title: '수익률' }),
+    ).rejects.toThrow(/file id/);
+    expect(info).not.toHaveBeenCalled();
+  });
+});
+
+describe('SlackService.postMessage — 이미지 블록', () => {
+  it('image 를 주면 본문 아래에 그 파일을 싣는다', async () => {
+    const postMessageMock = jest.fn().mockResolvedValue({ ts: '111.222' });
+    const service = new SlackService({} as unknown as ConfigService, []);
+    (service as unknown as { app: unknown }).app = {
+      client: { chat: { postMessage: postMessageMock } },
+    };
+
+    await service.postMessage({
+      target: 'C1',
+      text: '헤드라인',
+      image: { fileId: 'F1', altText: '수익률 곡선' },
+    });
+
+    const sent = postMessageMock.mock.calls[0][0] as {
+      text: string;
+      blocks: { type: string }[];
+    };
+    // 이미지 블록만 보내면 슬랙 알림·검색에 글이 남지 않는다 — 본문이 앞에 서야 한다.
+    expect(sent.text).toBe('헤드라인');
+    expect(sent.blocks).toEqual([
+      { type: 'section', text: { type: 'mrkdwn', text: '헤드라인' } },
+      {
+        type: 'image',
+        slack_file: { id: 'F1' },
+        alt_text: '수익률 곡선',
+      },
+    ]);
+  });
+});
+
 describe('SlackService — app 부재 원인 구분 (assertAppReady)', () => {
   it('토큰 미설정(isConfigured=false)이면 "설정 누락"으로 던진다', async () => {
     const service = new SlackService({} as unknown as ConfigService, []);

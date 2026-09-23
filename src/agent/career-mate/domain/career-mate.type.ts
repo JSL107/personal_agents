@@ -185,6 +185,14 @@ export interface RenderResumeResult {
 
 export interface RenderPortfolioInput {
   slackUserId: string;
+  /**
+   * 포트폴리오 본문(Notion block) 반영을 기다리지 않는다. 링크만 받아 즉시 응답해야 하는
+   * 호출부(REFLECT_PR)가 켠다 — 본문은 백그라운드에서 채워진다.
+   *
+   * 기본값(미지정)은 종전대로 기다린다. 사용자가 "포트폴리오 정리해줘" 로 직접 요청한
+   * 경로(RENDER_PORTFOLIO)는 반영 완료 자체가 산출물이라 기다려야 한다.
+   */
+  deferBlockSync?: boolean;
 }
 
 export interface RenderPortfolioResult {
@@ -221,7 +229,28 @@ export interface ReflectPrInput {
   // 선택 입력. 없으면 도입 전과 완전히 같게 동작한다 — 프롬프트에 맥락 절이 붙지 않고
   // 저장되는 성과에도 impactContext 가 생기지 않는다.
   impactContext?: string;
+  /**
+   * 이 회차가 포트폴리오 반영을 어떻게 다룰지. 미지정이면 **끝까지 기다린다**(종전 동작).
+   *
+   * - `defer`: 링크만 받고 본문 반영은 백그라운드로 넘긴다. 사람이 Slack 에서 답을 기다리고,
+   *   **완료를 단정 보고하지 않는** 경로만 쓴다(`CareerMateDispatcher` 의 REFLECT_PR).
+   * - `skip`: 이 회차는 포트폴리오를 건드리지 않는다. 한 번의 요청이 회차를 여러 번 도는
+   *   호출부가, 마지막에 자기가 한 번만 반영하려고 쓴다(`EveningCareerReflectApplier`).
+   *   `portfolioUrl` 이 결과에서 빠지므로 호출부가 직접 얻어야 한다.
+   *
+   * `defer` 를 **완료를 단정 보고하고 일회성 카드를 소비하는** 경로에 쓰면 안 된다. 아직
+   * 반영되지 않았거나 실패한 상태로 "반영했습니다" 가 나가고, 백그라운드에서 삼켜진 실패는
+   * failedGroups 도 잡지 못하며, 카드는 한 번 소비되면 다시 누를 수 없어 되돌릴 수도 없다.
+   *
+   * ⚠️ 그 경로가 **사람을 기다리게 하지 않는다는 뜻이 아니다.** 승인 버튼은
+   * preview-action.handler.ts 에서 ack 를 먼저 보낸 뒤 applier 가 끝나야 "✅ 적용 완료" 를
+   * 덮어쓰므로, 사용자는 그 시간을 그대로 기다린다. 그 경로의 소요는 미루기가 아니라
+   * `skip` + 마지막 1회, 즉 중복 제거로 줄인다.
+   */
+  portfolioSync?: PortfolioSyncMode;
 }
+
+export type PortfolioSyncMode = 'defer' | 'skip';
 
 export interface PrRetroSynth {
   accomplishment: ProfileAccomplishment;
@@ -231,7 +260,9 @@ export interface PrRetroSynth {
 export interface ReflectPrResult {
   accomplishment: ProfileAccomplishment;
   narrative: string;
-  portfolioUrl: string;
+  // portfolioSync: 'skip' 회차에는 없다 — 그 회차는 포트폴리오를 건드리지 않으므로 줄 URL 이
+  // 애초에 없다. 반영을 맡은 호출부가 자기 결과에서 얻는다.
+  portfolioUrl?: string;
   agentRunId: number;
   modelUsed: string;
 }

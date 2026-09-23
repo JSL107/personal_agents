@@ -165,13 +165,27 @@ public struct ConsoleApproval: Codable, Identifiable, Equatable, Sendable {
     public let createdAt: String
     /// 만료 시각(ISO 8601). 방치 압력을 TTL 소진 비율로 재기 위해 받는다.
     public let expiresAt: String
+    /// 직전 반영이 실패했다면 그 사유. 옵셔널인 이유는 둘이다 — 실패한 적 없는 카드가 대부분이고,
+    /// 이 필드를 모르는 옛 서버가 내려도 디코딩이 통째로 깨져서는 안 된다(앱과 서버는 따로 뜬다).
+    ///
+    /// `approval.failed` 이벤트만으로는 부족해서 받는다. 부팅 중 마감은 서버가 listen 하기 전에
+    /// 발행되어 구독자가 없고, 그 구간의 사유는 스냅샷으로만 앱에 닿는다.
+    public let failureReason: String?
 
-    public init(id: String, agentType: String?, title: String, createdAt: String, expiresAt: String) {
+    public init(
+        id: String,
+        agentType: String?,
+        title: String,
+        createdAt: String,
+        expiresAt: String,
+        failureReason: String? = nil
+    ) {
         self.id = id
         self.agentType = agentType
         self.title = title
         self.createdAt = createdAt
         self.expiresAt = expiresAt
+        self.failureReason = failureReason
     }
 }
 
@@ -277,6 +291,12 @@ public enum ConsoleEvent: Decodable, Sendable {
     case runFinished(ConsoleRun)
     case approvalOpened(ConsoleApproval)
     case approvalResolved(ConsoleApproval)
+    /// 승인은 접수됐는데 반영이 실패했다. 카드는 서버에서 PENDING 으로 남아 다시 누를 수 있다.
+    ///
+    /// 이 이벤트가 없던 동안 실패의 유일한 표현은 "카드가 다음 스냅샷에 되돌아온다" 였는데,
+    /// 화면에서 그것은 **안 눌린 것**과 구분되지 않는다. 그래서 사용자는 다시 누르고, 그 재클릭이
+    /// 이미 반영된 단계를 한 번 더 실행한다. `reason` 은 그 오해를 끊기 위한 것이다.
+    case approvalFailed(ConsoleApproval, reason: String)
     /// `bubble` 은 서버가 함께 실어 보내는 말풍선 문구다. 옵셔널인 이유는 버전 스큐 —
     /// 앱은 한 번 빌드해 두고 쓰는데 서버는 따로 재시작하므로, 이 필드를 모르는 옛 서버가
     /// 이벤트를 내려도 디코딩이 통째로 실패해서는 안 된다. 값이 없으면 앱은 예전처럼
@@ -315,6 +335,11 @@ public enum ConsoleEvent: Decodable, Sendable {
             self = .approvalOpened(try container.decode(ConsoleApproval.self, forKey: .approval))
         case "approval.resolved":
             self = .approvalResolved(try container.decode(ConsoleApproval.self, forKey: .approval))
+        case "approval.failed":
+            self = .approvalFailed(
+                try container.decode(ConsoleApproval.self, forKey: .approval),
+                reason: try container.decode(String.self, forKey: .reason)
+            )
         case "state.changed":
             self = .stateChanged(
                 agentType: try container.decode(String.self, forKey: .agentType),
@@ -391,9 +416,19 @@ public struct ScheduleItem: Codable, Identifiable, Sendable {
     public let linkUrl: String?
     public let memo: String?
     public let status: ScheduleStatus
+    /// 공휴일 동기화가 넣은 항목인가. **Optional 이어야 한다** — 이 필드를 내려주지 않는
+    /// 백엔드(앱만 새로 빌드하고 서버는 그대로인 경우)에 붙으면 자동 합성 Codable 이 키
+    /// 없음을 오류로 보고 **디코딩 전체가 실패해 달력이 통째로 빈다.** 비어 있음을 "공휴일
+    /// 아님" 으로 읽는 쪽이(`isHolidayDay`) 화면을 살린다.
+    public let isHoliday: Bool?
 
     public var dueDay: String {
         String(dueDate.prefix(10))
+    }
+
+    /// 화면이 읽는 형태. 비어 있으면 공휴일이 아닌 것으로 본다.
+    public var isHolidayDay: Bool {
+        isHoliday == true
     }
 
     public init(
@@ -402,7 +437,9 @@ public struct ScheduleItem: Codable, Identifiable, Sendable {
         dueDate: String,
         linkUrl: String?,
         memo: String?,
-        status: ScheduleStatus
+        status: ScheduleStatus,
+        // 기본값을 두어 기존 호출부(회귀 렌더 표본·테스트)가 그대로 컴파일된다.
+        isHoliday: Bool? = nil
     ) {
         self.id = id
         self.title = title
@@ -410,6 +447,7 @@ public struct ScheduleItem: Codable, Identifiable, Sendable {
         self.linkUrl = linkUrl
         self.memo = memo
         self.status = status
+        self.isHoliday = isHoliday
     }
 }
 

@@ -104,6 +104,19 @@ model PreviewAction {
   // 마지막 한 번만 남긴다. 지금 답할 질문은 "실패가 나는가, 무엇 때문인가" 이고 횟수는 아직 아니다.
   lastFailedAt      DateTime? @map("last_failed_at")
   lastFailureReason String?   @map("last_failure_reason") @db.Text
+  // 지금 반영이 돌고 있다는 흔적과 어디까지 갔는지. 반영을 시작할 때 채우고 끝나면(성공이든
+  // 실패든) 지운다. **값이 남아 있다는 것 자체가 "그것을 쥐고 있던 프로세스가 끝내지 못하고
+  // 죽었다" 를 뜻한다** — 부팅 훅이 이걸 보고 이어서 돌리거나 실패로 마감하고 알린다.
+  //
+  // 중복 클릭 락(`ApplyPreviewUsecase.applying`)은 프로세스 메모리에 있어 재시작을 넘지 못했다.
+  // 그래서 반영이 죽으면 그 사실이 통째로 사라지고, status 는 PENDING 그대로라 카드가 되살아나
+  // 사용자가 다시 눌렀다 — 이미 반영된 묶음이 한 번 더 반영된다. 2026-09-23 실측: 같은 카드가
+  // 09:02~09:22 와 09:59~10:26 두 번 통째로 실행됐고(`agent_run` CAREER_MATE 체인), 앞 회차에서
+  // 성공한 묶음 2개가 뒤 회차에 다시 반영됐다. `ReflectPrUsecase` 는 "조회 → 병합 → 저장" 이라
+  // 멱등이 아니다.
+  //
+  // 형태는 `ApplyProgressState` — { pid, startedAt, attempts, done[] }.
+  applyProgress     Json?     @map("apply_progress")
 
   @@index([slackUserId, status])
   // preview-sweeper 가 만료된 PENDING 을 훑는 조회용.
@@ -1104,6 +1117,12 @@ model ScheduleItem {
   memo        String?   @db.Text
   status      String
   completedAt DateTime? @map("completed_at")
+
+  // 공휴일 동기화(`holiday-sync` autopilot task)가 넣은 행. 사용자가 직접 등록한 일정과
+  // 갈라야 하는 자리가 셋이다 — 달력이 날짜를 빨갛게 칠할 때, 칩 색을 고를 때, 아침 브리핑이
+  // 「📌 마감」 줄에서 제외할 때(`schedule-briefing.formatter.ts`). 제목 문자열로 알아내면
+  // 사용자가 "추석 선물 보내기" 를 등록한 순간 그것까지 공휴일로 읽힌다.
+  isHoliday Boolean @default(false) @map("is_holiday")
 
   linkVerifiedAt   DateTime? @map("link_verified_at")
   recurrenceHint   String?   @map("recurrence_hint")

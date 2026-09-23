@@ -357,6 +357,7 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 | `AUTOPILOT_INVEST_TARGET` | ⭕ | 투자 라인(주식·모의투자 10항목) 전용 발송 대상. 미설정 시 `AUTOPILOT_TARGET` |
 | `AUTOPILOT_CAREER_TARGET` | ⭕ | 커리어 라인(채용공고 수집·갭 분석) 전용 발송 대상. 미설정 시 `AUTOPILOT_TARGET` |
 | `CONSOLE_OWNER_SLACK_USER_ID` | ❌ | 콘솔 지시·승인 주체 — 없으면 콘솔 쓰기 503 |
+| `KOREAN_HOLIDAY_API_KEY` | ❌ | 공공데이터포털 특일 정보 **디코딩** 서비스키 — 없으면 달력에 공휴일이 안 뜬다 |
 | `CAREER_LOG_NOTION_PAGE_ID` · `CAREER_*_NOTION_PAGE_ID` | ⭕ | careerLog · 이력서/포트폴리오 Notion 적재 대상 |
 | `BLOG_PUBLISH_REPO` · `BLOG_PUBLISH_BRANCH` · `BLOG_MASK_FORBIDDEN_TERMS` · `BLOG_NOTION_STATUS_DRAFT_VALUE` · `BLOG_NOTION_STATUS_HOLD_VALUE` · `BLOG_GITHUB_PUBLISH_ENABLED` | ⭕ | `/blog-publish` 대상 저장소·브랜치·익명화 금지어·Notion 초안/보류 상태값과 저녁 GitHub 발행 승인 카드 스위치. 금지어 목록이 비면 발행 차단. 보류 상태값 기본은 `보류` — 편집 단계가 발행 부적합으로 판정한 초안이 여기로 옮겨져 큐를 막지 않는다 |
 | `PORTFOLIO_SITE_URL` | ⭕ | 포트폴리오 사이트 주소. autopilot 이 08~24시 10분마다 `/backend/health` 를 불러 무료 플랜에서 잠든 API 를 깨운다. 비우면 워밍업 슬롯이 꺼진다 |
@@ -391,8 +392,9 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 <br>
 
 1. [api.slack.com/apps](https://api.slack.com/apps) 에서 앱 생성 → **Socket Mode** 활성화 → App-Level Token(`connections:write`) = `SLACK_APP_TOKEN`
-2. **OAuth & Permissions** → Bot Token Scopes 에 `commands` `chat:write` `app_mentions:read` `im:history` `files:write` → install → Bot Token = `SLACK_BOT_TOKEN`
+2. **OAuth & Permissions** → Bot Token Scopes 에 `commands` `chat:write` `app_mentions:read` `im:history` `files:write` `files:read` → install → Bot Token = `SLACK_BOT_TOKEN`
    - `files:write` 는 장마감 리포트 차트를 이미지로 올리는 데 쓴다. 없으면 업로드가 `missing_scope` 로 막히는데 요약·상세는 그대로 나가므로 **그림만 조용히 빠진다** — 로그의 `스레드 이미지 업로드 실패` 경고가 유일한 신호다.
+   - `files:read` 는 그 차트를 **메인 메시지로 올릴 때** 쓴다. 올린 파일을 슬랙이 이미지로 처리했는지 `files.info` 로 확인한 뒤 메시지를 보내는데(안 기다리면 이미지 자리가 빈 채로 뜬다), 이 스코프가 없으면 그 확인이 `missing_scope` 로 막혀 **매 회차 종전 배치(요약이 메인·그림이 스레드)로 물러선다**. 그림이 나오긴 하므로 겉보기로는 고장이 아니고, 로그의 `그림을 메인에 싣지 못해 종전 배치로 발송` 경고가 유일한 신호다. 채널에 공유되지 않은 파일이 회차마다 하나씩 쌓이는 것도 이때다.
    - 이미 설치한 앱에 스코프를 더했으면 **Reinstall to Workspace** 로 재설치해야 토큰에 반영된다(설정 화면에 추가만 해도 기존 토큰은 그대로다).
 3. **Basic Information** → Signing Secret = `SLACK_SIGNING_SECRET`
 4. **Slash Commands** 에 15종(`/blog-publish` 포함) 등록 (또는 **App Manifest** 의 `slash_commands` 배열로 일괄 선언 후 Reinstall)
