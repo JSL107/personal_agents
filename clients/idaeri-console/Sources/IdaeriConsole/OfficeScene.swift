@@ -167,6 +167,8 @@ final class OfficeScene: SKScene {
     private var lastSyncedPendingCommands: [PendingCommand] = []
     /// 이벤트가 오면 자율 연출을 즉시 끊을 수 있어야 하므로 완료 후 탕비실 이동도 함께 추적한다.
     private var strollingAgents: Set<String> = []
+    /// 배율이 바뀌어도 걸음의 목적지와 도착 후 동작을 이어가기 위한 기록.
+    private var walkDestinations: [String: (goal: TilePoint, completion: (() -> Void)?)] = [:]
     /// 같은 사람이 짧은 간격으로 계속 왕복하지 않게 Core 쿨다운 판정에 넘긴다.
     private var lastStrollAt: [String: Double] = [:]
     /// 사람별 목적지를 회차마다 바꾸되 실행마다 같은 순서가 나오게 정수 회차만 섞는다.
@@ -224,6 +226,11 @@ final class OfficeScene: SKScene {
         )
         view.addTrackingArea(tracking)
 
+        // SpriteView 는 탭 복귀 때 새 SKView 에 같은 씬을 다시 붙인다.
+        // 레이어와 타이머는 씬 수명 동안 한 번만 만든다.
+        guard floorLayer.parent == nil else {
+            return
+        }
         floorLayer.zPosition = -1000
         objectLayer.zPosition = 0
         overlayLayer.zPosition = 1000
@@ -273,6 +280,7 @@ final class OfficeScene: SKScene {
     private func repositionEveryone() {
         // 옛 좌표계 목적지와 머무름 콜백은 새 격자에서 의미가 없으므로 추적을 먼저 비운다.
         strollingAgents.removeAll()
+        walkDestinations.removeAll()
         let departmentFeatureUsers = departmentFeatureUserTypes(from: lastSyncedAgents)
         for (agentType, node) in characters {
             node.removeAction(forKey: "walk")
@@ -359,7 +367,7 @@ final class OfficeScene: SKScene {
         // `sync` 는 배경·가구만 새 배율로 다시 그린다. 이동 중이거나 승인 줄에 선 캐릭터는
         // 논리 좌표가 그대로라 `place` 를 건너뛰어, 확대된 방 위에 이전 배율의 화면 좌표로
         // 남거나 화면 밖으로 사라진다.
-        repositionEveryone()
+        reprojectMovingCharacters()
         // 말풍선·경과 라벨의 위치·글꼴·최대 폭은 여기서만 새 `tileSize` 로 계산된다. 빼면
         // 다음 주기(최대 30초)까지 이전 배율의 크기로 남아 확대된 몸에 겹친다.
         refreshOverlays(
@@ -369,6 +377,22 @@ final class OfficeScene: SKScene {
             now: Date()
         )
         return true
+    }
+
+    /// 포커스는 평면도를 바꾸지 않는다. 이동 중인 사람만 새 좌표계로 옮겨 같은 목적지로 보낸다.
+    private func reprojectMovingCharacters() {
+        for (agentType, node) in characters {
+            if let destination = walkDestinations[agentType] {
+                node.removeAction(forKey: "walk")
+                node.endWalk()
+                place(node, at: node.tile)
+                walk(node, to: destination.goal, completion: destination.completion)
+            } else if node.isWalking || strollingAgents.contains(agentType) {
+                // 출퇴근 지연 중이거나 가구 앞에 머무는 사람도 이전 화면 좌표에 남지 않게 한다.
+                place(node, at: node.tile)
+            }
+        }
+        syncSessions(lastSyncedSessions)
     }
 
     /// 바닥·여백을 눌렀을 때 — 방을 확대하거나 전체로 돌아간다.
@@ -685,6 +709,7 @@ final class OfficeScene: SKScene {
         for (agentType, node) in characters where !incoming.contains(agentType) {
             node.removeFromParent()
             characters[agentType] = nil
+            walkDestinations[agentType] = nil
             queueOrder.removeAll { $0 == agentType }
             lastStates[agentType] = nil
             strollingAgents.remove(agentType)
@@ -1144,6 +1169,7 @@ final class OfficeScene: SKScene {
         }
         node.removeFromParent()
         characters[agentType] = nil
+        walkDestinations[agentType] = nil
         queueOrder.removeAll { $0 == agentType }
         lastStates[agentType] = nil
         strollingAgents.remove(agentType)
@@ -3005,6 +3031,7 @@ final class OfficeScene: SKScene {
         }
         node.removeAction(forKey: "stroll")
         node.removeAction(forKey: "walk")
+        walkDestinations[agentType] = nil
         node.sprite.removeAllActions()
         node.sprite.yScale = 1
         node.sprite.zRotation = 0
@@ -3024,6 +3051,9 @@ final class OfficeScene: SKScene {
         completion: (() -> Void)? = nil
     ) {
         node.removeAction(forKey: "walk")
+        if let agentType = node.name {
+            walkDestinations[agentType] = nil
+        }
         let path = officePath(from: node.tile, to: goal, walkable: plan.walkable)
         guard !path.isEmpty else {
             // 위에서 진행 중이던 걸음을 끊었으므로 상태 표식도 함께 되돌린다. 안 그러면
@@ -3043,6 +3073,9 @@ final class OfficeScene: SKScene {
             node.endWalk()
             completion?()
             return
+        }
+        if let agentType = node.name {
+            walkDestinations[agentType] = (goal, completion)
         }
         // **걷기 전에 가구 자세를 끊는다.**
         //
@@ -3112,6 +3145,9 @@ final class OfficeScene: SKScene {
             // 걸음 프레임(한쪽 발이 들린 그림)도 함께 되돌린다 — 안 하면 도착한 사람이
             // 계속 짝다리로 서 있다. completion 보다 먼저 와야 앉기가 최종 자세를 이긴다.
             node?.endWalk()
+            if let agentType = node?.name {
+                self?.walkDestinations[agentType] = nil
+            }
             completion?()
             // 걷는 동안 들어온 상태 변화는 보류됐다(applyMotion 이 걷는 사람을 건드리지 않는다).
             // 도착했으니 최신 상태를 다시 적용한다 — 안 하면 승인 줄에 도착해도 다음 동기화까지
