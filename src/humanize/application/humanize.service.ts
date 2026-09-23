@@ -1,10 +1,14 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { extractCodexQuota } from '../../agent/review-reply-judge/application/extract-codex-quota';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
 import { ModelRouterUsecase } from '../../model-router/application/model-router.usecase';
-import { AgentType } from '../../model-router/domain/model-router.type';
+import {
+  AgentType,
+  CompletionResponse,
+} from '../../model-router/domain/model-router.type';
 import {
   PREFERENCE_PROFILE_PORT,
   PreferenceProfilePort,
@@ -207,16 +211,49 @@ export class HumanizeService {
           const systemPrompt =
             (injection ? `${basePrompt}\n\n${injection}` : basePrompt) +
             styleFeedback;
-          const completion = await this.modelRouter.route({
-            agentType: AgentType.HUMANIZER,
-            request: {
-              prompt: JSON.stringify(payload),
-              systemPrompt,
-            },
-            // ChatGPT(codex) 전용 — 실패 시 Claude 로 fallback 하지 않는다. 윤문은 best-effort 라
-            // codex 실패 시 Claude 로 새느니 catch 에서 원본을 그대로 반환한다(아래).
-            noFallback: true,
-          });
+          let completion: CompletionResponse;
+          try {
+            completion = await this.modelRouter.route({
+              agentType: AgentType.HUMANIZER,
+              request: {
+                prompt: JSON.stringify(payload),
+                systemPrompt,
+              },
+              // ChatGPT(codex) 전용 — 실패 시 Claude 로 fallback 하지 않는다. 윤문은 best-effort 라
+              // codex 실패 시 Claude 로 새느니 catch 에서 원본을 그대로 반환한다(아래).
+              noFallback: true,
+            });
+          } catch (error: unknown) {
+            const quota = extractCodexQuota(error);
+            if (quota === null) {
+              throw error;
+            }
+            // 쿼터 소진은 윤문의 고장이 아니라 모델을 못 부른 것이다. 그대로 던지면 원장에
+            // FAILED 로 박히는데, 이 경로는 원본을 그대로 내보내 보고가 정상 발송된다 —
+            // 같은 FAILED 가 "보고가 죽었다" 와 "윤문만 빠졌다" 두 뜻을 겸하게 된다.
+            //
+            // 실측(2026-09-23, agent_run): HUMANIZER 실패 15건 중 10건이 이 경로였고, 08-21 과
+            // 09-13 은 그날 시스템 전체 실패가 이 1건뿐이었다. 보고는 멀쩡히 나갔는데 대표·비서실
+            // 브리핑은 실패 1건을 올렸다 — 두 집계 (`countFailedSince` · `findFailedRunsSince`)
+            // 가 agentType 을 가리지 않기 때문이다. 집계 쪽에 예외를 박으면 다른 워커까지
+            // 영향을 받으므로, 뜻이 다른 회차를 여기서 다른 상태로 마감한다.
+            //
+            // 건너뜀은 위 필드 수 상한과 같은 형태로 남긴다(`recordSkippedRun`) — 모델을 부르지
+            // 않았으므로 modelUsed 는 `deterministic`, 사유는 output 에. 쿼터가 아닌 실패
+            // (파싱 깨짐·타임아웃·인증)는 위 `throw` 로 그대로 FAILED 에 남는다.
+            this.logger.warn(
+              `윤문 건너뜀 — codex 쿼터 소진, 원본 유지: ${quota.message}`,
+            );
+            return {
+              result: fields,
+              modelUsed: 'deterministic',
+              output: {
+                skipped: 'CODEX_QUOTA_EXCEEDED',
+                fieldCount: keys.length,
+                reason: quota.message,
+              },
+            };
+          }
           const humanized = parseHumanizeOutput(completion.text, keys);
           const rolledBackKeys: string[] = [];
           const overRewrittenKeys: string[] = [];

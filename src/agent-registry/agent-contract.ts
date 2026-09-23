@@ -397,9 +397,14 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     // `humanizedKeys: []` 를 대신 넣는 방법은 쓰지 않는다. 위 주석이 말하는 이 검사의 유일한
     // 효용이 "윤문 결과를 아예 못 담은 회차" 를 잡는 것인데, 빈 배열을 정상으로 인정하면
     // 그 좁은 검사마저 무력해진다.
+    //
+    // codex 쿼터 소진도 건너뜀이다 — 모델을 못 불렀을 뿐 원본이 그대로 발행된다.
+    // 형태를 `limit` 대신 `reason` 으로 갈라 두 건너뜀을 구별한다(`deliverableVariants`
+    // 규약: 형태끼리 키가 겹치면 판별이 흐려지므로 서로 구별되는 키를 고른다).
     deliverableVariants: [
       ['humanizedKeys'],
       ['skipped', 'fieldCount', 'limit'],
+      ['skipped', 'fieldCount', 'reason'],
     ],
     requireEvidence: false,
     // 두 겹으로 위험하다. (1) `humanize.service.ts` 는 `prompt` 에 윤문 대상 JSON 을
