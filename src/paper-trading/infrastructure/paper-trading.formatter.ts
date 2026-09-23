@@ -105,6 +105,20 @@ export const formatPaperPortfolioStatus = (
   return statuses.map(formatPaperTradingStatus).join('\n\n---\n\n');
 };
 
+// 채널에 한 줄로 남길 계좌 요약. 종목별 내역이 스레드로 내려간 회차에서 채널만 훑는
+// 사람이 보는 유일한 숫자라, 평가액과 수익률만 남기고 나머지는 전부 뺀다. 평가에 실패한
+// 계좌를 빼면 "오늘은 계좌가 하나였나" 로 읽히므로 실패도 한 줄을 차지한다.
+export const formatPaperAccountHeadline = (
+  accountName: string,
+  result: EvaluateAccountResult | null,
+): string => {
+  const name = escapeSlackMrkdwn(accountName);
+  if (!result) {
+    return `• ${name} ⚠️ 평가 실패`;
+  }
+  return `• ${name} ${formatMoney(result.totalValue)} · *${formatRate(result.returnRate)}*`;
+};
+
 export const formatPaperTradingReport = (
   result: EvaluateAccountResult,
 ): string => {

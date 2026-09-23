@@ -343,7 +343,7 @@ describe('PaperTradingAutopilotTask', () => {
 
   // 곡선은 그날 스냅샷까지 담아야 의미가 있다. 평가보다 먼저 만들면 어제까지의 그림이
   // 오늘 카드에 붙는다 — 호출 순서를 계약으로 고정한다.
-  it('리포트 이미지를 평가가 끝난 슬롯 거래일로 만들어 스레드 이미지로 싣는다', async () => {
+  it('리포트 이미지를 평가가 끝난 슬롯 거래일로 만들어 카드에 싣는다', async () => {
     const png = Buffer.from('fake-png');
     const { task, reportImage, evaluate } = createFixture({
       reportImage: {
@@ -366,6 +366,36 @@ describe('PaperTradingAutopilotTask', () => {
       filename: 'paper-return-2026-08-11.png',
       title: '모의투자 수익률 — 2026-08-11',
     });
+  });
+
+  // 그림이 메인으로 올라가면 종목별 내역은 스레드로 내려간다 — 그때 채널에 남는 유일한
+  // 글이 이 헤드라인이다. 비면 채널만 보는 사람에게 그날 계좌가 통째로 사라진다.
+  it('채널에 남길 헤드라인을 계좌별 한 줄로 싣는다', async () => {
+    const { task } = createFixture({
+      reportImage: {
+        png: Buffer.from('fake-png'),
+        filename: 'paper-return-2026-08-11.png',
+        title: '모의투자 수익률 — 2026-08-11',
+      },
+    });
+
+    const result = await task.run(context);
+
+    expect(result.headlineText).toContain(
+      '*모의투자 장마감 평가 — 2026-08-11*',
+    );
+    expect(result.headlineText).toContain('• LONG_TERM');
+    expect(result.headlineText).toContain('• SWING');
+    // 종목별 내역은 헤드라인이 아니라 요약(=스레드로 내려갈 본문)에 남는다.
+    expect(result.headlineText).not.toContain('*[LONG_TERM]*');
+  });
+
+  it('계좌가 0건이면 헤드라인도 없다 — 뒤집을 그림도 그때는 없다', async () => {
+    const { task } = createFixture({ accounts: [] });
+
+    const result = await task.run(context);
+
+    expect(result.headlineText).toBeUndefined();
   });
 
   // 그림은 요약을 보조하는 것이라, 만들지 못한 회차가 보고를 무르지 않아야 한다.

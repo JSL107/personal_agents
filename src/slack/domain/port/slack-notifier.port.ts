@@ -16,11 +16,16 @@ export interface SlackNotifierPort {
   // threadTs 지정 시 해당 메시지의 스레드 댓글로 발송. 반환 ts 는 후속 스레드 발송용.
   // unfurlLinks=false 면 링크 미리보기(카드·썸네일)를 끈다. 링크가 여러 개인 요약
   // 메시지는 미리보기가 붙는 순간 본문보다 길어져 요약 구실을 못 한다. 기본은 종전대로 켜짐.
+  //
+  // image 를 주면 본문 아래에 그 파일을 이미지 블록으로 싣는다(`uploadImageFile` 이 돌려준
+  // id). 파일 업로드로 채널에 그림을 올리는 것과 달리 이쪽은 **일반 메시지**라 `ts` 가
+  // 즉시 돌아오고, 그래서 그 메시지가 스레드의 뿌리가 될 수 있다.
   postMessage(input: {
     target: string;
     text: string;
     threadTs?: string;
     unfurlLinks?: boolean;
+    image?: { fileId: string; altText: string };
   }): Promise<{ ts: string | undefined }>;
   // T1_PREVIEW 승인 카드. 반환된 좌표(channelId/messageTs)로 이후 chat.update(카드 갱신)가 가능.
   //
@@ -48,4 +53,17 @@ export interface SlackNotifierPort {
     filename: string;
     title: string;
   }): Promise<{ fileId: string | undefined }>;
+  // 채널에 공유하지 **않고** 파일만 만든다. 돌려준 id 를 `postMessage` 의 `imageFileId` 로
+  // 넘기면 그림과 글이 한 메시지가 되고, 그 메시지에 스레드를 달 수 있다 — 그림을 메인에
+  // 두고 본문을 댓글로 내리는 배치가 이 조합으로만 가능하다. `uploadImage` 는 업로드가
+  // 곧 채널 메시지라 `ts` 를 돌려줄 수 없어 그 배치를 만들지 못한다.
+  //
+  // 위 ⚠️ 의 비동기 처리 때문에 업로드 직후의 파일은 아직 이미지가 아니다. 이 메서드는
+  // 슬랙이 이미지로 처리할 때까지 기다린 뒤 돌아온다(기다리지 않고 메시지를 보내면 빈
+  // 블록이 뜬다). 시간 안에 처리되지 않으면 예외 — 호출부가 텍스트만이라도 살리게 한다.
+  uploadImageFile(input: {
+    png: Buffer;
+    filename: string;
+    title: string;
+  }): Promise<{ fileId: string }>;
 }

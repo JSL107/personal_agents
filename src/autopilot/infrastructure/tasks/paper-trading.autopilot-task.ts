@@ -14,7 +14,10 @@ import {
   EvaluatedAccountEntry,
   EvaluatePaperAccountUsecase,
 } from '../../../paper-trading/application/evaluate-paper-account.usecase';
-import { formatPaperTradingReport } from '../../../paper-trading/infrastructure/paper-trading.formatter';
+import {
+  formatPaperAccountHeadline,
+  formatPaperTradingReport,
+} from '../../../paper-trading/infrastructure/paper-trading.formatter';
 import {
   AutopilotTask,
   AutopilotTaskContext,
@@ -114,6 +117,26 @@ const buildSummaryText = (result: EvaluateAllAccountsResult): string => {
     .join('\n\n');
 };
 
+// 채널에 남는 한 줄(들). 그림이 메인으로 올라가면 요약 전문은 스레드로 내려가므로,
+// 채널만 훑는 사람이 그날의 결론을 여기서 읽는다 — 계좌별 평가액과 수익률만 싣는다.
+// 계좌가 없으면 헤드라인도 없다: 뒤집을 그림도 그때는 만들어지지 않는다.
+const buildHeadlineText = (
+  result: EvaluateAllAccountsResult,
+): string | undefined => {
+  if (result.accounts.length === 0) {
+    return undefined;
+  }
+  // 거래일은 계좌마다 같지만 평가에 실패한 계좌는 값이 없다 — 성공한 첫 계좌에서 집는다.
+  const tradeDate = result.accounts.find((entry) => entry.evaluation?.tradeDate)
+    ?.evaluation?.tradeDate;
+  return [
+    `*모의투자 장마감 평가 — ${tradeDate ?? '거래일 미확정'}*`,
+    ...result.accounts.map((entry) =>
+      formatPaperAccountHeadline(entry.accountName, entry.evaluation),
+    ),
+  ].join('\n');
+};
+
 @Injectable()
 export class PaperTradingAutopilotTask implements AutopilotTask {
   readonly id = 'paper-trading';
@@ -200,10 +223,13 @@ export class PaperTradingAutopilotTask implements AutopilotTask {
         // 그림이 없으면(데이터 부족·렌더 실패) usecase 가 null 을 주고 요약만 나간다.
         const reportImage =
           await this.buildPaperReportImage.execute(executedAt);
+        const headlineText = buildHeadlineText(evaluations);
         const taskResult: AutopilotTaskResult = {
           skip: false,
           summaryText:
             buildSummaryText(evaluations) + buildExitBandText(exitBand),
+          // 그림이 있는 회차에서만 쓰인다 — orchestrator 가 그림과 짝지어야 배치를 뒤집는다.
+          ...(headlineText ? { headlineText } : {}),
           ...(reportImage
             ? {
                 detailImage: {
