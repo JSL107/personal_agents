@@ -24,6 +24,7 @@ export const humanizeEveningBlogBlocks = async (
   // 블로그 본문은 분량이 곧 내용이라 길이 예산을 걸지 않는다(훑어 읽는 Slack 요약과 반대).
   const humanizedFields = await humanizer.humanize(paragraphFields, {
     longForm: true,
+    voice: 'personal-blog',
   });
 
   return blocks.map((block, blockIndex) => {
