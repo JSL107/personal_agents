@@ -1,4 +1,5 @@
 import ConsoleCore
+import SpriteKit
 import SwiftUI
 
 // 백엔드의 보관된 작업 제안과 앱의 제안 카드를 같은 30분에 만료시킨다.
@@ -21,6 +22,13 @@ struct AppRootView: View {
     /// 탭 전환과 함께 세팅돼야 하고, 그 시점의 `OfficeView` 는 아직 만들어지지 않아 통지를 직접
     /// 받을 수 없다.
     @State private var isPresidentBarOpen = false
+    @State private var selectedOfficeAgent: String?
+    /// 탭을 떠나도 직원의 위치와 진행 중인 연출을 보존한다.
+    @State private var officeScene: OfficeScene = {
+        let scene = OfficeScene(size: CGSize(width: 900, height: 600))
+        scene.scaleMode = .resizeFill
+        return scene
+    }()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -42,10 +50,12 @@ struct AppRootView: View {
             case .office:
                 OfficeView(
                     store: store,
+                    scene: officeScene,
                     onSend: sendCommand,
                     onApprove: approve,
                     onReject: reject,
-                    isPresidentBarOpen: $isPresidentBarOpen
+                    isPresidentBarOpen: $isPresidentBarOpen,
+                    selectedAgent: $selectedOfficeAgent
                 )
             }
         }
