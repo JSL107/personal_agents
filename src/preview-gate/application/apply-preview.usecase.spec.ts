@@ -440,6 +440,77 @@ describe('ApplyPreviewUsecase', () => {
     await first;
   });
 
+  // 접수형 호출자(콘솔)를 위한 판정 전용 입구. 실행 없이 "지금 누를 수 있는가" 만 본다.
+  it('assertApplicable 은 applier 를 돌리지 않고 통과시킨다', async () => {
+    const repo = buildRepo(buildPreview());
+    const applier = buildApplier(PREVIEW_KIND.PM_WRITE_BACK);
+    const card = buildCard();
+    const usecase = new ApplyPreviewUsecase(repo, [applier], [], [], card);
+
+    const preview = await usecase.assertApplicable({
+      previewId: 'p-1',
+      slackUserId: 'U1',
+      now: fixedNow,
+    });
+
+    expect(preview.id).toBe('p-1');
+    expect(applier.apply).not.toHaveBeenCalled();
+    expect(repo.transition).not.toHaveBeenCalled();
+    expect(card.update).not.toHaveBeenCalled();
+  });
+
+  it('assertApplicable 도 처리 중인 카드는 ALREADY_APPLYING 으로 거절', async () => {
+    const repo = buildRepo(buildPreview());
+    const applier = buildApplier(PREVIEW_KIND.PM_WRITE_BACK);
+    let releaseApply: () => void = () => {};
+    const applyGate = new Promise<void>((resolve) => {
+      releaseApply = resolve;
+    });
+    applier.apply.mockReturnValue(
+      applyGate.then(() => ({ message: 'ok', artifacts: [] })),
+    );
+    const card = buildCard();
+    const usecase = new ApplyPreviewUsecase(repo, [applier], [], [], card);
+
+    const first = usecase.execute({
+      previewId: 'p-1',
+      slackUserId: 'U1',
+      now: fixedNow,
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    const error = await usecase
+      .assertApplicable({
+        previewId: 'p-1',
+        slackUserId: 'U1',
+        now: fixedNow,
+      })
+      .catch((caught) => caught);
+
+    expect(error).toMatchObject({
+      previewActionErrorCode: PreviewActionErrorCode.ALREADY_APPLYING,
+    });
+    releaseApply();
+    await first;
+  });
+
+  it('assertApplicable 은 없는 카드를 NOT_FOUND 로 거절', async () => {
+    const repo = buildRepo(null);
+    const card = buildCard();
+    const usecase = new ApplyPreviewUsecase(repo, [], [], [], card);
+
+    const error = await usecase
+      .assertApplicable({
+        previewId: 'p-1',
+        slackUserId: 'U1',
+        now: fixedNow,
+      })
+      .catch((caught) => caught);
+
+    expect(error).toMatchObject({
+      previewActionErrorCode: PreviewActionErrorCode.NOT_FOUND,
+    });
+  });
+
   it('카드 갱신이 throw 해도 apply 결과는 그대로 반환 (best-effort)', async () => {
     const repo = buildRepo(buildPreview());
     const applier = buildApplier(PREVIEW_KIND.PM_WRITE_BACK, '완료');

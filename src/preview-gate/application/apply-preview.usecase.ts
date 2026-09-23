@@ -64,6 +64,44 @@ export class ApplyPreviewUsecase {
     return this.applying.has(previewId);
   }
 
+  // 실행하지 않고 "지금 이 카드를 적용할 수 있는가" 만 판정한다.
+  //
+  // 결과를 기다리지 않고 접수만 하는 호출자(콘솔 앱)를 위한 입구다. 접수한 뒤에 나는 실패는
+  // 지금 구조로는 사용자에게 닿지 않으므로(성공 경로만 `approval.resolved` 를 발행한다),
+  // **버튼을 누른 그 순간에 알 수 있는 거절은 여기서 즉시 던진다** — 없음·남의 것·이미
+  // 처리됨·만료·이미 실행 중. 그래야 접수 응답이 "눌린 것은 확실하다" 를 뜻하게 된다.
+  //
+  // **만료 판정에는 부작용이 있다.** `assertReadyToResolve` 는 만료된 카드를 EXPIRED 로
+  // 전이하고 스위퍼와 같은 후처리를 돌린 뒤 거절한다. 거절되면 호출자가 거기서 멈추므로
+  // `execute` 는 불리지 않는다. 통과한 경우에만 `execute` 가 같은 검증을 한 번 더 도는데,
+  // 그 사이 TTL 이 지났다면 두 번째가 만료로 끊는다 — 접수 응답은 이미 나간 뒤라 그 처리는
+  // 백그라운드에서 끝나고, 카드는 EXPIRED 가 되어 다음 스냅샷에서 사라진다.
+  async assertApplicable({
+    previewId,
+    slackUserId,
+    now = new Date(),
+  }: {
+    previewId: string;
+    slackUserId: string;
+    now?: Date;
+  }): Promise<PreviewAction> {
+    this.assertNotApplying(previewId);
+    return await this.assertReadyToResolve({ previewId, slackUserId, now });
+  }
+
+  // 중복 클릭 거절. `execute` 와 `assertApplicable` 이 같은 문장으로 거절해야 화면이
+  // 어느 경로로 막혔는지에 따라 다른 말을 하지 않는다.
+  private assertNotApplying(previewId: string): void {
+    if (!this.applying.has(previewId)) {
+      return;
+    }
+    throw new PreviewActionException({
+      code: PreviewActionErrorCode.ALREADY_APPLYING,
+      message: 'Preview 가 이미 처리 중입니다. 잠시만 기다려주세요.',
+      status: DomainStatus.PRECONDITION_FAILED,
+    });
+  }
+
   async execute({
     previewId,
     slackUserId,
@@ -73,13 +111,7 @@ export class ApplyPreviewUsecase {
     slackUserId: string;
     now?: Date;
   }): Promise<{ preview: PreviewAction; resultText: string }> {
-    if (this.applying.has(previewId)) {
-      throw new PreviewActionException({
-        code: PreviewActionErrorCode.ALREADY_APPLYING,
-        message: 'Preview 가 이미 처리 중입니다. 잠시만 기다려주세요.',
-        status: DomainStatus.PRECONDITION_FAILED,
-      });
-    }
+    this.assertNotApplying(previewId);
     // 락은 검증(assertReadyToResolve) 전에 동기적으로 잡는다. async 검증 뒤에 add 하면 첫 클릭이
     // await 에서 suspend 된 사이 두 번째 클릭이 락 체크를 통과해버리는 레이스가 생긴다.
     this.applying.add(previewId);
