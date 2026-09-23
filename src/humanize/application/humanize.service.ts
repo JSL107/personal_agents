@@ -1,9 +1,9 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-import { extractCodexQuota } from '../../agent/review-reply-judge/application/extract-codex-quota';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
+import { extractCodexQuota } from '../../model-router/application/extract-codex-quota';
 import { ModelRouterUsecase } from '../../model-router/application/model-router.usecase';
 import {
   AgentType,

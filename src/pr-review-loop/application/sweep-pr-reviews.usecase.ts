@@ -3,7 +3,6 @@ import { ConfigService } from '@nestjs/config';
 
 import { ReviewPullRequestUsecase } from '../../agent/code-reviewer/application/review-pull-request.usecase';
 import { hasNoReviewFindings } from '../../agent/code-reviewer/domain/review-emptiness';
-import { extractCodexQuota } from '../../agent/review-reply-judge/application/extract-codex-quota';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import {
   AgentRunStatus,
@@ -14,6 +13,7 @@ import {
   GITHUB_CLIENT_PORT,
   GithubClientPort,
 } from '../../github/domain/port/github-client.port';
+import { extractCodexQuota } from '../../model-router/application/extract-codex-quota';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { buildNoFindingsCommentBody } from '../domain/finding-comment.body';
 import {
