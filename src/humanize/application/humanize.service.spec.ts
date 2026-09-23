@@ -671,6 +671,58 @@ describe('문체 되먹임', () => {
     ),
   ].join(' ');
 
+  // 건너뜀 회차(`styleGaps` 없음)는 조회에서 자리를 먹기만 하고 표본이 되지 못한다.
+  // 자르기를 거르기보다 먼저 하면, 최근 자리에 꽂힌 건너뜀이 연속될 때 60일 안에 정상
+  // 표본이 있어도 되먹임이 통째로 사라진다 (PR #644 Codex 리뷰 지적).
+  it('건너뜀 회차가 섞여도 정상 표본으로 되먹임을 만든다', async () => {
+    const { service, routeMock, agentRunService } = makeService({
+      enabled: 'true',
+      routeImpl: async () => ({ text: JSON.stringify({ a: '윤문A' }) }),
+    });
+    const skipped = {
+      id: 9,
+      endedAt: new Date(),
+      inputSnapshot: { voice: 'personal-blog' },
+      output: {
+        skipped: 'CODEX_QUOTA_EXCEEDED',
+        fieldCount: 3,
+        reason: '한도 초과',
+      },
+    };
+    // 최근 자리를 건너뜀이 차지하고 그 뒤에 정상 표본이 온다 — 실제 쿼터 창의 모양이다.
+    const rows = [
+      skipped,
+      skipped,
+      skipped,
+      skipped,
+      skipped,
+      runOf(['종결체교대 76%(≤60%)']),
+      runOf(['종결체교대 71%(≤60%)']),
+    ];
+    // 실제 조회처럼 limit 으로 먼저 자른다. mock 이 limit 을 무시하면 "자르고 거르기" 순서가
+    // 시험되지 않아, 수정이 없어도 이 테스트가 통과한다.
+    agentRunService.findRecentSucceededRuns.mockImplementation(
+      async ({ limit }: { limit: number }) => rows.slice(0, limit),
+    );
+
+    await service.humanize({ a: '원본A' }, { voice: 'personal-blog' });
+
+    const systemPrompt = routeMock.mock.calls[0][0].request.systemPrompt;
+    expect(systemPrompt).toContain('종결체교대 76%(≤60%)');
+  });
+
+  it('조회는 표본 수보다 넉넉히 떠서 걸러낼 여유를 둔다', async () => {
+    const { service, agentRunService } = makeService({
+      enabled: 'true',
+      routeImpl: async () => ({ text: JSON.stringify({ a: '윤문A' }) }),
+    });
+
+    await service.humanize({ a: '원본A' }, { voice: 'personal-blog' });
+
+    const query = agentRunService.findRecentSucceededRuns.mock.calls[0][0];
+    expect(query.limit).toBeGreaterThan(5);
+  });
+
   it('개인 글이면 되풀이된 갭을 systemPrompt 에 싣는다', async () => {
     const { service, routeMock, agentRunService } = makeService({
       enabled: 'true',

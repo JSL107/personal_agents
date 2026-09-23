@@ -56,6 +56,20 @@ const STYLE_FEEDBACK_VOICE = 'personal-blog';
 // 표본 수다 — 보고서 윤문이 아무리 많이 끼어도 표본이 밀리지 않는다.
 const STYLE_FEEDBACK_RUNS = 5;
 const STYLE_FEEDBACK_DAYS = 60;
+// 조회 상한은 표본 수와 따로 둔다. 조회가 `take` 를 먼저 걸고 쓸 수 없는 회차는 그 뒤에
+// 걸러지므로(`toStyleFeedbackRun` 이 `styleGaps` 없는 output 에 null 을 돌려준다), 같은 수를
+// 쓰면 갭을 못 담은 회차가 표본 자리를 그대로 차지한다.
+//
+// 자리를 먹는 회차는 셋이다 — 건너뜀 두 종류(필드 수 상한 · codex 쿼터 소진)와 `styleGaps`
+// 이전의 옛 회차다. 실측(2026-09-23): 개인 글 성공 96건 중 21건이 `styleGaps` 가 없다
+// (2026-08-24~25). 이 21건은 오래돼 최근 5건에 들지 않지만, 건너뜀은 **가장 최근 자리**에
+// 꽂히므로 연속되면 60일 안에 정상 표본이 있어도 되먹임이 통째로 사라진다.
+//
+// 4배로 넉넉히 떠서 거른 뒤 앞에서 `STYLE_FEEDBACK_RUNS` 편을 취한다. 이 값은 보장이 아니라
+// 상한이다 — 연속 15편이 전부 건너뜀이면 여전히 모자란다. 그 지경이 되면 조회 자체에
+// `styleGaps` 유무 조건을 내리는 쪽으로 옮겨야 한다(지금 하지 않는 이유는 그 조건이 JSON
+// 경로 검사라 옛 회차까지 한 번에 거르지 못하고, 지금 규모에서는 과설계라서다).
+const STYLE_FEEDBACK_FETCH_LIMIT = STYLE_FEEDBACK_RUNS * 4;
 
 // 윤문에 넣을 필드 수 상한. 값의 근거는 실측이다 — 2026-08-11~09-10 agent_run 에서 성공한
 // 397 회차의 최대가 217 개였고, 상한을 넘긴 3 회차(373·385·385 개)는 전부 codex 캡(300초)을
@@ -406,13 +420,15 @@ export class HumanizeService {
         // 보고서 윤문이 상한을 채우는 순간 개인 글 이력이 있어도 표본이 빈다.
         inputSnapshotEquals: { path: ['voice'], value: STYLE_FEEDBACK_VOICE },
         sinceDays: STYLE_FEEDBACK_DAYS,
-        limit: STYLE_FEEDBACK_RUNS,
+        limit: STYLE_FEEDBACK_FETCH_LIMIT,
       });
+      // 자르는 것은 거른 **뒤**다. 순서를 뒤집으면 쓸 수 없는 회차가 표본 자리를 먹는다.
       const samples = runs
         .map((run) => toStyleFeedbackRun(run.output))
         .filter(
           (sample): sample is NonNullable<typeof sample> => sample !== null,
-        );
+        )
+        .slice(0, STYLE_FEEDBACK_RUNS);
       const block = renderStyleFeedback(samples);
       if (block.length > 0) {
         this.logger.log(`문체 되먹임 주입 — 최근 ${samples.length}편 기준`);
