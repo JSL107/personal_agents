@@ -773,7 +773,7 @@ export class EnvironmentVariables {
   // Jev API 호출 timeout (밀리초).
   @IsOptional()
   @IsString()
-  @Matches(/^\d+$/, {
+  @Matches(/^0*[1-9]\d*$/, {
     message: 'SUBCONSCIOUS_JEV_TIMEOUT_MS 는 양의 정수여야 합니다.',
   })
   SUBCONSCIOUS_JEV_TIMEOUT_MS?: string;
@@ -781,7 +781,7 @@ export class EnvironmentVariables {
   // Jev가 자동 승격할 최소 promote 확률 (0보다 크고 1 이하).
   @IsOptional()
   @IsString()
-  @Matches(/^0?\.\d+$|^1(?:\.0+)?$/, {
+  @Matches(/^(?:0?\.\d*[1-9]\d*|1(?:\.0+)?)$/, {
     message:
       'SUBCONSCIOUS_JEV_PROMOTE_THRESHOLD 는 0보다 크고 1 이하인 소수여야 합니다.',
   })
@@ -790,7 +790,7 @@ export class EnvironmentVariables {
   // Jev가 담당 에이전트를 선택했다고 볼 최소 confidence (0보다 크고 1 이하).
   @IsOptional()
   @IsString()
-  @Matches(/^0?\.\d+$|^1(?:\.0+)?$/, {
+  @Matches(/^(?:0?\.\d*[1-9]\d*|1(?:\.0+)?)$/, {
     message:
       'SUBCONSCIOUS_JEV_CONFIDENCE_THRESHOLD 는 0보다 크고 1 이하인 소수여야 합니다.',
   })
