@@ -219,8 +219,8 @@ describe('CareerMateDispatcher', () => {
       slackUserId: 'U1',
       prText: 'https://github.com/o/r/pull/1692 회고',
       // 사람이 Slack 에서 기다리는 경로만 본문 반영을 미룬다 — 저녁 승인 경로
-      // (EveningCareerReflectApplier)는 켜지 않는다.
-      deferPortfolioSync: true,
+      // (EveningCareerReflectApplier)는 'skip' 을 쓴다.
+      portfolioSync: 'defer',
     });
     expect(outcome.formattedText).toContain('https://notion/pr');
   });

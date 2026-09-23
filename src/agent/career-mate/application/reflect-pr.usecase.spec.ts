@@ -132,18 +132,34 @@ describe('ReflectPrUsecase', () => {
     expect(outcome.result.narrative).toBe('회고 서술');
   });
 
-  it('deferPortfolioSync 를 켜면 그대로 RenderPortfolio 에 전달한다', async () => {
+  it("portfolioSync: 'defer' 를 RenderPortfolio 의 deferBlockSync 로 전달한다", async () => {
     const { usecase, renderPortfolio } = makeUsecase();
     await usecase.execute({
       slackUserId: 'U1',
       prText: '이 PR 회고 https://github.com/o/r/pull/1692',
-      deferPortfolioSync: true,
+      portfolioSync: 'defer',
     });
 
     expect(renderPortfolio.execute).toHaveBeenCalledWith({
       slackUserId: 'U1',
       deferBlockSync: true,
     });
+  });
+
+  it("portfolioSync: 'skip' 이면 포트폴리오를 아예 건드리지 않고 링크도 내지 않는다", async () => {
+    const { usecase, repository, renderPortfolio } = makeUsecase();
+    const outcome = await usecase.execute({
+      slackUserId: 'U1',
+      prText: '이 PR 회고 https://github.com/o/r/pull/1692',
+      portfolioSync: 'skip',
+    });
+
+    // 성과 저장은 그대로 — 건너뛰는 것은 Notion 반영뿐이다.
+    expect(repository.save).toHaveBeenCalled();
+    expect(renderPortfolio.execute).not.toHaveBeenCalled();
+    // 이 회차는 페이지를 건드리지 않았으므로 줄 링크가 없다. 호출부(저녁 승인)가 루프 뒤에
+    // 한 번 반영하고 그 결과에서 링크를 얻는다.
+    expect(outcome.result.portfolioUrl).toBeUndefined();
   });
 
   it('단일 링크는 maxBytes 없이 기존 diff 호출을 유지한다 (회귀 lock)', async () => {
