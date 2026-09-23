@@ -95,12 +95,17 @@ export class ConsoleWriteService {
   // 실패는 지금 SSE 로 나가지 않으므로, 이 await 가 통과했다는 것이 사용자에게 "눌린 것은
   // 확실하다" 를 뜻해야 한다. 진행 결과는 `approval.resolved` 로 따라온다.
   //
-  // **접수 판정은 락을 잡지 않는다.** 거의 동시에 들어온 두 요청이 둘 다 판정을 통과해 둘 다
-  // 202 를 받을 수 있다. 그래도 실행은 하나뿐이다 — `execute` 가 락을 동기적으로 잡으므로
-  // 뒤엣것은 그 안에서 ALREADY_APPLYING 으로 끊기고, 그 거절은 아래 catch 가 받는다.
+  // **접수 판정은 락을 잡지 않는다 — 중복 클릭이 항상 4xx 로 돌아오지는 않는다.**
+  // 시간차를 두고 누른 두 번째 클릭은 첫 요청이 이미 락을 잡았으므로 412 를 받는다. 그러나
+  // 거의 동시에 도착한 둘은 판정을 모두 통과해 **둘 다 202** 를 받는다. 그래도 실행은
+  // 하나뿐이다 — `execute` 가 락을 동기적으로 잡으므로 뒤엣것은 그 안에서 ALREADY_APPLYING
+  // 으로 끊기고, 그 거절은 아래 catch 가 받는다(apply-preview.usecase.spec.ts 가 applier 가
+  // 한 번만 도는 것으로 고정한다).
+  //
   // 판정 단계에서 락까지 잡으려면 잠근 주체가 실행까지 책임져야 해서 `execute` 시그니처가
-  // 바뀌고, 그러면 슬랙 경로 두 곳이 함께 흔들린다. 중복 실행은 이미 막히므로 그 값을 치르지
-  // 않는다.
+  // 바뀌고, 그러면 슬랙 경로 두 곳이 함께 흔들린다. 잃는 것은 응답 코드의 정확성뿐이고 —
+  // 중복 실행도, 카드 상태의 어긋남도 생기지 않는다 — 앱은 누른 즉시 카드를 감춰 두 번째
+  // 클릭 자체를 보내지 않는다. 그 값을 치르지 않는다.
   async applyApproval(previewId: string): Promise<void> {
     const slackUserId = this.requireOwner();
     await this.applyPreview.assertApplicable({ previewId, slackUserId });

@@ -76,6 +76,12 @@ export class ApplyPreviewUsecase {
   // `execute` 는 불리지 않는다. 통과한 경우에만 `execute` 가 같은 검증을 한 번 더 도는데,
   // 그 사이 TTL 이 지났다면 두 번째가 만료로 끊는다 — 접수 응답은 이미 나간 뒤라 그 처리는
   // 백그라운드에서 끝나고, 카드는 EXPIRED 가 되어 다음 스냅샷에서 사라진다.
+  //
+  // **applier 유무까지 본다.** `CAREER_JD_GAP_BLOG` 처럼 applier 없이 PENDING 카드만 만드는
+  // kind 가 있는데(주제 선택 대기용 — analyze-jd-gap.usecase.ts:133), 그 카드도 콘솔
+  // 승인 목록에는 나온다(console-mappers.ts:15). 여기서 걸러내지 않으면 승인 버튼이 202 를
+  // 받아 "접수됐다" 로 보이고, 실제로는 백그라운드에서 NO_APPLIER_FOR_KIND 로 죽어 로그만
+  // 남는다 — 사용자에게는 카드가 사라졌다가 다음 스냅샷에 되돌아오는 것으로만 보인다.
   async assertApplicable({
     previewId,
     slackUserId,
@@ -86,7 +92,29 @@ export class ApplyPreviewUsecase {
     now?: Date;
   }): Promise<PreviewAction> {
     this.assertNotApplying(previewId);
-    return await this.assertReadyToResolve({ previewId, slackUserId, now });
+    const preview = await this.assertReadyToResolve({
+      previewId,
+      slackUserId,
+      now,
+    });
+    this.requireApplier(preview);
+    return preview;
+  }
+
+  // kind 에 맞는 applier 를 찾거나 끊는다. 접수 검증과 실행이 **같은 판정**을 써야 한다 —
+  // 접수가 통과시킨 카드를 실행이 거절하면 그 실패는 응답을 보낸 뒤라 사용자에게 닿지 않는다.
+  private requireApplier(preview: PreviewAction): PreviewApplier {
+    const applier = this.appliers.find(
+      (candidate) => candidate.kind === preview.kind,
+    );
+    if (!applier) {
+      throw new PreviewActionException({
+        code: PreviewActionErrorCode.NO_APPLIER_FOR_KIND,
+        message: `Preview kind '${preview.kind}' 에 대한 PreviewApplier 가 등록되지 않았습니다.`,
+        status: DomainStatus.INTERNAL,
+      });
+    }
+    return applier;
   }
 
   // 중복 클릭 거절. `execute` 와 `assertApplicable` 이 같은 문장으로 거절해야 화면이
@@ -121,14 +149,7 @@ export class ApplyPreviewUsecase {
         slackUserId,
         now,
       });
-      const applier = this.appliers.find((a) => a.kind === preview.kind);
-      if (!applier) {
-        throw new PreviewActionException({
-          code: PreviewActionErrorCode.NO_APPLIER_FOR_KIND,
-          message: `Preview kind '${preview.kind}' 에 대한 PreviewApplier 가 등록되지 않았습니다.`,
-          status: DomainStatus.INTERNAL,
-        });
-      }
+      const applier = this.requireApplier(preview);
       // 여기부터 실제 apply 단계 — 실패 시에만 APPLY_FAILED 로 카드 복구(버튼 되살림).
       // 검증 단계 실패(만료/미존재/owner/applier 없음)는 이 안쪽 catch 를 타지 않는다.
       // 이 catch 는 applier 와 transition 을 함께 감싼다. 둘은 실패의 의미가 다르다 —
