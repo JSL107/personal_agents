@@ -283,6 +283,7 @@ export class HumanizeService {
             const violations = findPreservationViolations(
               fields[key],
               humanized[key],
+              options?.voice === 'personal-blog' ? 'personal-blog' : 'report',
             );
             addViolationsToSummary(preservationViolations, violations);
             if (shouldRollbackField(violations)) {
@@ -494,6 +495,13 @@ const buildRollbackWarning = (
 const formatViolationTokenForLog = (
   violation: PreservationViolation,
 ): string => {
+  if (
+    violation.kind === 'quote' ||
+    violation.kind === 'date' ||
+    violation.kind === 'legal'
+  ) {
+    return '[redacted]';
+  }
   const token =
     violation.kind === 'url'
       ? redactUrlForLog(violation.token)
