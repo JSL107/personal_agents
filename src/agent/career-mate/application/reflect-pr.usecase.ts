@@ -186,7 +186,12 @@ export class ReflectPrUsecase {
         });
 
         // 방금 저장한 최신 프로필을 그대로 Notion 포트폴리오에 append (RenderPortfolio 재사용).
-        const portfolio = await this.renderPortfolio.execute({ slackUserId });
+        // 링크만 받고 본문 반영은 기다리지 않는다(deferBlockSync) — 그 구간이 이 실행의 78%
+        // 였다. 근거는 render-portfolio.usecase.ts 의 해당 분기 주석.
+        const portfolio = await this.renderPortfolio.execute({
+          slackUserId,
+          deferBlockSync: true,
+        });
 
         this.logger.log(
           `CAREER_MATE REFLECT_PR 완료 — PR ${refs

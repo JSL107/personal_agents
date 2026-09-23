@@ -185,6 +185,14 @@ export interface RenderResumeResult {
 
 export interface RenderPortfolioInput {
   slackUserId: string;
+  /**
+   * 포트폴리오 본문(Notion block) 반영을 기다리지 않는다. 링크만 받아 즉시 응답해야 하는
+   * 호출부(REFLECT_PR)가 켠다 — 본문은 백그라운드에서 채워진다.
+   *
+   * 기본값(미지정)은 종전대로 기다린다. 사용자가 "포트폴리오 정리해줘" 로 직접 요청한
+   * 경로(RENDER_PORTFOLIO)는 반영 완료 자체가 산출물이라 기다려야 한다.
+   */
+  deferBlockSync?: boolean;
 }
 
 export interface RenderPortfolioResult {

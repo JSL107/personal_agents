@@ -122,7 +122,10 @@ describe('ReflectPrUsecase', () => {
       number: 1692,
     });
     expect(repository.save).toHaveBeenCalled();
-    expect(renderPortfolio.execute).toHaveBeenCalledWith({ slackUserId: 'U1' });
+    expect(renderPortfolio.execute).toHaveBeenCalledWith({
+      slackUserId: 'U1',
+      deferBlockSync: true,
+    });
     expect(outcome.result.portfolioUrl).toBe('https://notion/p');
     expect(outcome.result.accomplishment.evidence[0].pr).toBe(1692);
     expect(outcome.result.accomplishment.evidence[0].mergedAt).toBe(
@@ -197,7 +200,10 @@ describe('ReflectPrUsecase', () => {
     });
     expect(modelRouter.route).toHaveBeenCalledTimes(1);
     expect(repository.save).toHaveBeenCalled();
-    expect(renderPortfolio.execute).toHaveBeenCalledWith({ slackUserId: 'U1' });
+    expect(renderPortfolio.execute).toHaveBeenCalledWith({
+      slackUserId: 'U1',
+      deferBlockSync: true,
+    });
     expect(outcome.result.accomplishment.evidence).toHaveLength(2);
     expect(outcome.result.narrative).toBe('이어진 두 PR 통합 회고');
   });
