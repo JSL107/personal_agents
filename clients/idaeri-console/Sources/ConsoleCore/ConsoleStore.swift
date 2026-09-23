@@ -15,7 +15,22 @@ public final class ConsoleStore: ObservableObject {
     /// 세션 기억 청소 실태. 서버 구버전이면 nil 이라 화면에 청소기를 그리지 않는다.
     @Published public private(set) var housekeeping: ConsoleHousekeeping?
     @Published public private(set) var runs: [ConsoleRun] = []
-    @Published public private(set) var approvals: [ConsoleApproval] = []
+    /// 서버가 아직 열려 있다고 보는 승인 카드 전부. 화면이 보는 목록은 `approvals` 다.
+    @Published private var openApprovals: [ConsoleApproval] = []
+    /// 승인/거절 write 의 응답을 기다리는 카드 id.
+    ///
+    /// 승인 반영은 백엔드 왕복이 길다(codex·Notion 왕복이 수십 초). 그동안 카드가 그대로
+    /// 남아 있으면 안 눌린 줄 알고 다시 누르게 되고, 두 번째 클릭은 백엔드가
+    /// `ALREADY_APPLYING` 으로 거절한다 — 그 412 는 화면에서 "이미 처리됐거나 만료된 요청"
+    /// 으로 읽혀, 정상으로 돌고 있는 요청이 실패한 것처럼 보였다. 눌린 순간 감춰 두 번째
+    /// 클릭 자체를 없앤다. 실패하면 호출자가 `endResolvingApproval` 로 되돌린다.
+    @Published private var resolvingApprovalIds: Set<String> = []
+
+    /// 화면이 그리는 승인 목록 — 처리 중인 카드는 빠져 있다.
+    /// 목록·건수·오피스 줄서기가 모두 이 값을 보므로 감춤이 화면 전체에서 한 번에 맞는다.
+    public var approvals: [ConsoleApproval] {
+        openApprovals.filter { !resolvingApprovalIds.contains($0.id) }
+    }
     @Published public private(set) var sessions: [ConsoleSession] = []
     @Published public private(set) var serverTime: String = ""
     /// 대표 브리핑. 스냅샷과 다른 요청으로 오므로 실패해도 나머지 화면은 그대로다.
@@ -51,7 +66,10 @@ public final class ConsoleStore: ObservableObject {
     public func apply(snapshot: ConsoleSnapshot) {
         agents = snapshot.agents.map(demoteIfAcknowledged)
         runs = snapshot.runs
-        approvals = snapshot.approvals
+        openApprovals = snapshot.approvals
+        // 서버가 이미 닫은 카드의 감춤 표시는 남겨둘 이유가 없다(여기서 정리하지 않으면
+        // 실패한 write 가 끊긴 뒤 id 가 영원히 남는다).
+        resolvingApprovalIds.formIntersection(snapshot.approvals.map(\.id))
         sessions = snapshot.sessions
         serverTime = snapshot.serverTime
         housekeeping = snapshot.housekeeping
@@ -106,7 +124,7 @@ public final class ConsoleStore: ObservableObject {
             upsertApproval(approval)
             markAwaitingApproval(agentType: approval.agentType)
         case let .approvalResolved(approval):
-            approvals.removeAll { $0.id == approval.id }
+            resolveApprovalLocally(id: approval.id)
         case let .stateChanged(agentType, state, bubble):
             changeAgentState(agentType: agentType, state: state, bubble: bubble)
         case let .sessionOpened(session):
@@ -143,11 +161,11 @@ public final class ConsoleStore: ObservableObject {
     }
 
     private func upsertApproval(_ approval: ConsoleApproval) {
-        if let index = approvals.firstIndex(where: { $0.id == approval.id }) {
-            approvals[index] = approval
+        if let index = openApprovals.firstIndex(where: { $0.id == approval.id }) {
+            openApprovals[index] = approval
             return
         }
-        approvals.append(approval)
+        openApprovals.append(approval)
     }
 
     private func upsertSession(_ session: ConsoleSession) {
@@ -214,7 +232,7 @@ public final class ConsoleStore: ObservableObject {
     /// 종료 이벤트가 와서 저절로 회복되지만, 승인 억제는 재발행이 없다. 그래서 승인이 닫힐 때
     /// 정본을 다시 받는다(`AppRootView` 의 `approval.resolved` 처리).
     private func hasOpenApproval(agentType: String) -> Bool {
-        approvals.contains { $0.agentType == agentType }
+        openApprovals.contains { $0.agentType == agentType }
     }
 
     /// 이 사람에게 아직 안 끝난 런이 남아 있는가.
@@ -329,7 +347,21 @@ public final class ConsoleStore: ObservableObject {
     /// 승인/거절 성공을 SSE 도착 전에 낙관적으로 반영한다.
     /// 뒤이어 오는 `approval.resolved` 는 같은 건을 다시 지우려 하므로 멱등하다.
     public func resolveApprovalLocally(id: String) {
-        approvals.removeAll { $0.id == id }
+        openApprovals.removeAll { $0.id == id }
+        resolvingApprovalIds.remove(id)
+    }
+
+    /// 승인/거절 write 를 보낸 직후 그 카드를 목록에서 감춘다 — 응답이 올 때까지 같은 카드를
+    /// 다시 누르지 못하게 하는 것이 목적이다. 성공하면 `resolveApprovalLocally`,
+    /// 실패하면 `endResolvingApproval` 이 이 상태를 푼다.
+    public func beginResolvingApproval(id: String) {
+        resolvingApprovalIds.insert(id)
+    }
+
+    /// write 가 실패해 감춤을 푼다. 그 사이 서버가 카드를 닫았으면 원본에 없으므로 아무것도
+    /// 돌아오지 않는다 — 되살아나는 것은 아직 처리할 수 있는 카드뿐이다.
+    public func endResolvingApproval(id: String) {
+        resolvingApprovalIds.remove(id)
     }
 
     /// 승인/거절 안내 갱신. 성공 시 nil 을 넣어 이전 실패 문구를 지운다.

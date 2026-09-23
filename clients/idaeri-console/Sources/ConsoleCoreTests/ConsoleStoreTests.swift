@@ -254,6 +254,42 @@ func runConsoleStoreTests(_ t: TestRunner) {
     writeStore.setApprovalNotice(nil)
     t.expectNil(writeStore.approvalNotice, "성공 시 안내 해제")
 
+    // ===== 승인 write 대기 동안의 감춤 (중복 클릭 차단) =====
+    // 누른 즉시 목록에서 빠져야 같은 카드를 두 번 누를 수 없다.
+    let resolvingStore = ConsoleStore()
+    resolvingStore.apply(event: .approvalOpened(approval))
+    resolvingStore.beginResolvingApproval(id: "p1")
+    t.expectEqual(resolvingStore.approvals.count, 0, "write 대기 중에는 카드가 감춰진다")
+
+    // 실패로 끝나면 되살아나 다시 누를 수 있어야 한다.
+    resolvingStore.endResolvingApproval(id: "p1")
+    t.expectEqual(resolvingStore.approvals.count, 1, "write 실패 시 카드 복귀")
+
+    // 감춘 사이 서버가 카드를 닫았으면(이미 처리/만료) 감춤을 풀어도 돌아오지 않는다.
+    resolvingStore.beginResolvingApproval(id: "p1")
+    resolvingStore.apply(snapshot: ConsoleSnapshot(
+        agents: [], runs: [], approvals: [], sessions: [], serverTime: "t"
+    ))
+    resolvingStore.endResolvingApproval(id: "p1")
+    t.expectEqual(resolvingStore.approvals.count, 0, "서버가 닫은 카드는 복귀하지 않는다")
+
+    // 감춘 사이에도 그 사람은 승인 대기 상태로 남는다 — 카드는 아직 열려 있고 처리 중일 뿐이다.
+    let hiddenStateStore = ConsoleStore()
+    hiddenStateStore.apply(snapshot: snapshot)
+    hiddenStateStore.apply(
+        event: .approvalOpened(
+            ConsoleApproval(
+                id: "p4", agentType: "PM", title: "발행 승인",
+                createdAt: "2026-07-27T00:04:00Z", expiresAt: "2026-07-27T01:04:00Z"
+            )))
+    hiddenStateStore.beginResolvingApproval(id: "p4")
+    hiddenStateStore.apply(
+        event: .stateChanged(agentType: "PM", state: .completed, bubble: "끝"))
+    t.expectEqual(
+        hiddenStateStore.agents.first(where: { $0.agentType == "PM" })?.state, .awaitingApproval,
+        "감춘 카드도 승인 대기 억제를 유지한다"
+    )
+
     // 재동기화 스냅샷이 서버에서 사라진(만료) 카드를 화면에서 걷어낸다.
     let resyncStore = ConsoleStore()
     resyncStore.apply(event: .approvalOpened(approval))
