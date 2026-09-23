@@ -4,10 +4,12 @@ import { MemoryIndexSnapshot } from './memory-index.type';
 const buildSnapshot = (
   indexContent: string,
   fileNames: string[],
+  satelliteContent = '',
 ): MemoryIndexSnapshot => ({
   project: 'test-project',
   indexPath: '/tmp/MEMORY.md',
   indexContent,
+  satelliteContent,
   files: fileNames.map((fileName) => ({ fileName, title: fileName })),
 });
 
@@ -30,6 +32,34 @@ describe('diagnoseMemoryIndex', () => {
     const diagnosis = diagnoseMemoryIndex(snapshot);
 
     expect(diagnosis.dust.orphans).toEqual([]);
+  });
+
+  it('위성 색인(TOPICS.md)에 등재된 파일은 고아가 아니다', () => {
+    // 이 판정이 없으면 위성에 옮겨 둔 기억 전부가 매 회차 고아로 잡혀 「개별」로
+    // 도로 실린다 — 2026-09-20 실측: 50줄 색인이 300줄이 되어 뒤 100줄이 잘렸다.
+    const snapshot = buildSnapshot(
+      '- [TOPICS](TOPICS.md)\n',
+      ['TOPICS.md', 'feedback_pipe_swallows_exit_code.md'],
+      '## 셸·환경·프로세스\n- [파이프가 exit code를 삼킨다](feedback_pipe_swallows_exit_code.md)\n',
+    );
+
+    const diagnosis = diagnoseMemoryIndex(snapshot);
+
+    expect(diagnosis.dust.orphans).toEqual([]);
+  });
+
+  it('위성 색인의 죽은 링크는 깨진 링크에 섞이지 않는다', () => {
+    // 깨진 링크는 MEMORY.md 에서 지울 줄의 목록이다. 위성 것까지 합치면 거기 없는
+    // 줄을 지우려 들어 액션 수만 거짓으로 남는다.
+    const snapshot = buildSnapshot(
+      '- [있음](a.md)\n',
+      ['a.md'],
+      '- [위성이 가리키는 사라진 파일](satellite_gone.md)\n',
+    );
+
+    const diagnosis = diagnoseMemoryIndex(snapshot);
+
+    expect(diagnosis.dust.brokenLinks).toEqual([]);
   });
 
   it('파일이 없는 링크를 깨진 링크로 집는다', () => {
