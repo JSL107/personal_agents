@@ -263,6 +263,36 @@ describe('HumanizeService', () => {
     },
   );
 
+  it('블로그의 덧붙인 직접 인용이 바뀌면 원문 필드를 복구한다', async () => {
+    const original = '김 대표는 "계획"이라고 덧붙였습니다.';
+    const rewritten = '김 대표는 "취소"라고 덧붙였습니다.';
+    const { service, agentRunService } = makeService({
+      enabled: 'true',
+      routeImpl: async () => ({ text: JSON.stringify({ body: rewritten }) }),
+    });
+
+    expect(
+      await service.humanize({ body: original }, { voice: 'personal-blog' }),
+    ).toEqual({ body: original });
+    expect(agentRunService.lastOutput).toMatchObject({
+      rolledBackKeys: ['body'],
+    });
+  });
+
+  it('블로그의 날짜·법조문 표기만 바뀌면 윤문본을 유지한다', async () => {
+    const original = '2026-09-23에 제15조 제1항을 확인했습니다.';
+    const rewritten = '2026년 9월 23일에 제 15 조 제 1 항을 확인했습니다.';
+    const { service, agentRunService } = makeService({
+      enabled: 'true',
+      routeImpl: async () => ({ text: JSON.stringify({ body: rewritten }) }),
+    });
+
+    expect(
+      await service.humanize({ body: original }, { voice: 'personal-blog' }),
+    ).toEqual({ body: rewritten });
+    expect(agentRunService.lastOutput).toMatchObject({ rolledBackKeys: [] });
+  });
+
   it('직접 인용 위반을 기록할 때 원문과 윤문본을 로그에 노출하지 않는다', async () => {
     const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
     const original = '김 대표는 "API_KEY=original-secret"이라고 밝혔습니다.';

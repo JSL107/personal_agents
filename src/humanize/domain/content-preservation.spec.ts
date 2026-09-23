@@ -135,6 +135,8 @@ describe('content preservation', () => {
 
   it.each([
     '김 대표는 "다음 주에 공개하겠다"고 밝혔다.',
+    '김 대표는 "다음 주에 공개하겠다"고 덧붙였습니다.',
+    '김 대표는 "다음 주에 공개하겠다"고 덧붙였다.',
     '김 대표는 말했다. "다음 주에 공개합니다."',
     '김 대표는 다음과 같이 말했다:\n"다음 주에 공개합니다."',
   ])('발화 도입·후행 표지의 인용 변조를 감지한다: %s', (original) => {
@@ -164,6 +166,38 @@ describe('content preservation', () => {
       expect.arrayContaining([
         expect.objectContaining({ kind: 'quote', direction: 'lost' }),
         expect.objectContaining({ kind: 'quote', direction: 'injected' }),
+      ]),
+    );
+  });
+
+  it.each([
+    ['2026-09-23', '2026년 09월 23일'],
+    ['2026-09-23', '2026.9.23'],
+    ['9월 3일', '09월 03일'],
+  ])('같은 날짜의 표기 변경은 허용한다: %s → %s', (from, to) => {
+    expect(
+      findPreservationViolations(
+        `발행일은 ${from}입니다.`,
+        `발행일은 ${to}입니다.`,
+        'personal-blog',
+      ),
+    ).toEqual([]);
+  });
+
+  it('법조문 참조의 띄어쓰기만 바뀌면 허용하고 항 번호 변경은 막는다', () => {
+    const original = '개인정보보호법 제15조 제1항을 적용합니다.';
+    const equivalent = '개인정보보호법 제 15 조 제 1 항을 적용합니다.';
+    const changed = '개인정보보호법 제 15 조 제 2 항을 적용합니다.';
+
+    expect(
+      findPreservationViolations(original, equivalent, 'personal-blog'),
+    ).toEqual([]);
+    expect(
+      findPreservationViolations(original, changed, 'personal-blog'),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'legal', direction: 'lost' }),
+        expect.objectContaining({ kind: 'legal', direction: 'injected' }),
       ]),
     );
   });
@@ -277,6 +311,98 @@ describe('content preservation', () => {
     expect(shouldRollbackField(violations)).toBe(true);
   });
 
+  it.each([
+    [
+      '날짜',
+      '출시일 2026-09-23, 종료일 2026-09-24',
+      '출시일 2026-09-24, 종료일 2026-09-23',
+      'date',
+    ],
+    [
+      '법조문',
+      '의무는 제15조, 예외는 제16조',
+      '의무는 제16조, 예외는 제15조',
+      'legal',
+    ],
+  ] as const)(
+    '%s의 순서를 맞바꿔 의미가 달라지면 롤백한다',
+    (_label, original, rewritten, kind) => {
+      const violations = findPreservationViolations(
+        original,
+        rewritten,
+        'personal-blog',
+      );
+
+      expect(violations).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ kind, direction: 'lost' }),
+          expect.objectContaining({ kind, direction: 'injected' }),
+        ]),
+      );
+      expect(shouldRollbackField(violations)).toBe(true);
+    },
+  );
+
+  it('날짜·법조문이 붙은 문장만 재배열하면 허용한다', () => {
+    expect(
+      findPreservationViolations(
+        '출시일은 2026-09-23입니다. 종료일은 2026-09-24입니다. 의무는 제15조입니다. 예외는 제16조입니다.',
+        '예외는 제16조입니다. 종료일은 2026-09-24입니다. 의무는 제15조입니다. 출시일은 2026-09-23입니다.',
+        'personal-blog',
+      ),
+    ).toEqual([]);
+  });
+
+  it('같은 항목명을 쓰는 두 팀의 날짜를 맞바꾸면 감지한다', () => {
+    const violations = findPreservationViolations(
+      'A팀의 출시일은 2026-09-23입니다. B팀의 출시일은 2026-09-24입니다.',
+      'A팀의 출시일은 2026-09-24입니다. B팀의 출시일은 2026-09-23입니다.',
+      'personal-blog',
+    );
+
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'date', direction: 'lost' }),
+        expect.objectContaining({ kind: 'date', direction: 'injected' }),
+      ]),
+    );
+  });
+
+  it('A와 B의 출시일을 맞바꾸면 항목명이 같아도 감지한다', () => {
+    const violations = findPreservationViolations(
+      'A의 출시일은 2026-09-23, B의 출시일은 2026-09-24',
+      'A의 출시일은 2026-09-24, B의 출시일은 2026-09-23',
+      'personal-blog',
+    );
+
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'date', direction: 'lost' }),
+        expect.objectContaining({ kind: 'date', direction: 'injected' }),
+      ]),
+    );
+  });
+
+  it('날짜가 문장 맨 앞에 있어도 사건 문장만 재배열하면 허용한다', () => {
+    expect(
+      findPreservationViolations(
+        '2026-09-23에 출시했습니다. 2026-09-24에 종료했습니다.',
+        '2026-09-24에 종료했습니다. 2026-09-23에 출시했습니다.',
+        'personal-blog',
+      ),
+    ).toEqual([]);
+  });
+
+  it('출시일·종료일을 사건 문장으로 바꾸어 재배열해도 허용한다', () => {
+    expect(
+      findPreservationViolations(
+        '출시일은 2026-09-23입니다. 종료일은 2026-09-24입니다.',
+        '2026-09-24에 종료했습니다. 2026-09-23에 출시했습니다.',
+        'personal-blog',
+      ),
+    ).toEqual([]);
+  });
+
   it('기본 보고서에서는 블로그 전용 인용 검사를 적용하지 않는다', () => {
     const violations = findPreservationViolations(
       '김 대표는 "계획"이라고 밝혔습니다.',
@@ -297,6 +423,177 @@ describe('content preservation', () => {
     );
 
     expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'quote', direction: 'lost' }),
+        expect.objectContaining({ kind: 'quote', direction: 'injected' }),
+      ]),
+    );
+  });
+
+  it('같은 직접 인용이 남아 있으면 발화 도입 문체만 바뀌어도 허용한다', () => {
+    expect(
+      findPreservationViolations(
+        '김 대표는 말했다. "다음 주에 공개합니다."',
+        '김 대표는 말했어요. "다음 주에 공개합니다."',
+        'personal-blog',
+      ),
+    ).toEqual([]);
+  });
+
+  it('실제 발언과 일반 용어의 인용 내용을 맞바꾸면 감지한다', () => {
+    const violations = findPreservationViolations(
+      '김 대표는 "계획"이라고 밝혔다. 문서 이름은 "취소"입니다.',
+      '김 대표는 "취소"라고 밝혔다. 문서 이름은 "계획"입니다.',
+      'personal-blog',
+    );
+
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'quote', direction: 'lost' }),
+        expect.objectContaining({ kind: 'quote', direction: 'injected' }),
+      ]),
+    );
+  });
+
+  it('동일한 용어 인용이 남아 있어도 발언 인용 하나를 삭제하면 감지한다', () => {
+    const violations = findPreservationViolations(
+      '김 대표는 "계획"이라고 밝혔다. 제목은 "계획"이다.',
+      '김 대표는 철회했다. 제목은 "계획"이다.',
+      'personal-blog',
+    );
+
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'quote', direction: 'lost' }),
+      ]),
+    );
+  });
+
+  it('발언 인용이 용어 이름으로 바뀌면 감지한다', () => {
+    const violations = findPreservationViolations(
+      '김 대표는 "계획"이라고 밝혔다.',
+      '이 기능은 "계획"이라는 이름이다.',
+      'personal-blog',
+    );
+
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'quote', direction: 'lost' }),
+      ]),
+    );
+  });
+
+  it('발언 인용을 없애고 다른 문장에 같은 일반 인용을 넣어도 감지한다', () => {
+    const violations = findPreservationViolations(
+      '김 대표는 "계획"이라고 밝혔다. 제목은 새로 정했다.',
+      '김 대표는 계획이라고 밝혔다. 제목은 "계획"이다.',
+      'personal-blog',
+    );
+
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'quote', direction: 'lost' }),
+      ]),
+    );
+  });
+
+  it('날짜가 든 직접 인용도 발화 도입 문체만 바뀌면 허용한다', () => {
+    expect(
+      findPreservationViolations(
+        '김 대표는 말했다. "2026-09-23에 공개합니다."',
+        '김 대표는 말했어요. "2026-09-23에 공개합니다."',
+        'personal-blog',
+      ),
+    ).toEqual([]);
+  });
+
+  it('숫자가 든 동일 직접 인용도 발화 도입 문체만 바뀌면 허용한다', () => {
+    expect(
+      findPreservationViolations(
+        '김 대표는 말했다. "3회 재시도합니다."',
+        '김 대표는 말했어요. "3회 재시도합니다."',
+        'personal-blog',
+      ),
+    ).toEqual([]);
+  });
+
+  it('인용문 속 숫자는 바깥 본문의 숫자 변경을 가리지 않는다', () => {
+    const violations = findPreservationViolations(
+      '김 대표는 "3회 재시도합니다."라고 밝혔다. 실제로는 5회 실패했다.',
+      '김 대표는 "3회 재시도합니다."라고 밝혔다. 실제로는 3회 실패했다.',
+      'personal-blog',
+    );
+
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'number', direction: 'injected' }),
+      ]),
+    );
+    expect(shouldRollbackField(violations)).toBe(true);
+  });
+
+  it('일반 용어 따옴표 속 숫자도 바깥 본문 숫자의 증가를 가리지 않는다', () => {
+    const violations = findPreservationViolations(
+      '절차 이름은 "3단계"입니다. 실제로는 5회 실패했습니다.',
+      '절차 이름은 "3단계"입니다. 실제로는 3회 실패했습니다.',
+      'personal-blog',
+    );
+
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'number',
+          token: '3',
+          direction: 'injected',
+        }),
+      ]),
+    );
+    expect(shouldRollbackField(violations)).toBe(true);
+  });
+
+  it('용어 따옴표를 벗겨도 같은 숫자면 윤문본을 유지한다', () => {
+    expect(
+      findPreservationViolations(
+        '응답 코드 "429"는 요청 제한을 뜻합니다.',
+        '응답 코드 429는 요청 제한을 뜻해요.',
+        'personal-blog',
+      ),
+    ).toEqual([]);
+  });
+
+  it('발언을 명사형으로 다시 써도 직접 인용 내용이 같으면 허용한다', () => {
+    expect(
+      findPreservationViolations(
+        '김 대표는 "다음 주에 공개합니다"라고 밝혔습니다.',
+        '김 대표의 말은 "다음 주에 공개합니다"였어요.',
+        'personal-blog',
+      ),
+    ).toEqual([]);
+  });
+
+  it('발언이 아닌 따옴표 안의 날짜도 실제 변경은 감지한다', () => {
+    const violations = findPreservationViolations(
+      '일정표에 "2026-09-23"으로 표시했습니다.',
+      '일정표에 "2026-09-24"로 표시했습니다.',
+      'personal-blog',
+    );
+
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'date', direction: 'lost' }),
+        expect.objectContaining({ kind: 'date', direction: 'injected' }),
+      ]),
+    );
+  });
+
+  it('작은따옴표로 쓴 직접 인용의 내용 변경을 감지한다', () => {
+    expect(
+      findPreservationViolations(
+        '김 대표는 ‘내일 공개합니다’라고 밝혔다.',
+        '김 대표는 ‘다음 주 공개합니다’라고 밝혔다.',
+        'personal-blog',
+      ),
+    ).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ kind: 'quote', direction: 'lost' }),
         expect.objectContaining({ kind: 'quote', direction: 'injected' }),
