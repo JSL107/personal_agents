@@ -445,8 +445,24 @@ export class HumanizeService {
 
 const createViolationSummary = (): PreservationViolationSummary => {
   return {
-    injected: { code: 0, url: 0, pr: 0, number: 0 },
-    lost: { code: 0, url: 0, pr: 0, number: 0 },
+    injected: {
+      code: 0,
+      url: 0,
+      pr: 0,
+      number: 0,
+      date: 0,
+      quote: 0,
+      legal: 0,
+    },
+    lost: {
+      code: 0,
+      url: 0,
+      pr: 0,
+      number: 0,
+      date: 0,
+      quote: 0,
+      legal: 0,
+    },
   };
 };
 

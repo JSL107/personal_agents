@@ -1,4 +1,11 @@
-export type PreservedTokenKind = 'number' | 'pr' | 'url' | 'code';
+export type PreservedTokenKind =
+  | 'number'
+  | 'pr'
+  | 'url'
+  | 'code'
+  | 'date'
+  | 'quote'
+  | 'legal';
 
 export type PreservationViolation = {
   kind: PreservedTokenKind;
@@ -8,7 +15,15 @@ export type PreservationViolation = {
 
 type PreservedTokens = Record<PreservedTokenKind, Set<string>>;
 
-const TOKEN_KINDS: PreservedTokenKind[] = ['code', 'url', 'pr', 'number'];
+const TOKEN_KINDS: PreservedTokenKind[] = [
+  'code',
+  'url',
+  'pr',
+  'date',
+  'quote',
+  'legal',
+  'number',
+];
 const URL_TRAILING_PUNCTUATION = new Set([
   '.',
   ',',
@@ -64,11 +79,17 @@ const extractPreservedTokens = (text: string): PreservedTokens => {
     url: new Set<string>(),
     pr: new Set<string>(),
     number: new Set<string>(),
+    date: new Set<string>(),
+    quote: new Set<string>(),
+    legal: new Set<string>(),
   };
 
   let remaining = extractAndMask(text, /`[^`]+`/g, tokens.code);
   remaining = extractUrlsAndMask(remaining, tokens.url);
   remaining = extractAndMask(remaining, /#[0-9]+/g, tokens.pr);
+  remaining = extractAndMask(remaining, DATE_PATTERN, tokens.date);
+  remaining = extractDirectQuotesAndMask(remaining, tokens.quote);
+  remaining = extractAndMask(remaining, LEGAL_REFERENCE_PATTERN, tokens.legal);
   extractAndMask(
     remaining,
     /(?<![0-9])[-+]?[$₩€£]?(?:[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?|\.[0-9]+)%?/g,
@@ -76,6 +97,36 @@ const extractPreservedTokens = (text: string): PreservedTokens => {
   );
 
   return tokens;
+};
+
+const DATE_PATTERN =
+  /\b\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\b|(?<!\d)\d{4}년\s*\d{1,2}월\s*\d{1,2}일(?!\d)|(?<!\d)\d{1,2}월\s*\d{1,2}일(?!\d)/g;
+
+const LEGAL_REFERENCE_PATTERN =
+  /제\s*\d+\s*조(?:의\s*\d+)?(?:\s*제\s*\d+\s*항)?(?:\s*제\s*\d+\s*호)?/g;
+
+const DIRECT_QUOTE_PATTERN =
+  /"[^"\n]{1,500}"|“[^”\n]{1,500}”|「[^」\n]{1,500}」|『[^』\n]{1,500}』/g;
+
+const SPEECH_MARKER_PATTERN =
+  /(?:말했|밝혔|전했|설명했|지적했|주장했|언급했|따르면|라고|라며|이라는 설명)/;
+
+const extractDirectQuotesAndMask = (
+  text: string,
+  tokens: Set<string>,
+): string => {
+  return text.replace(DIRECT_QUOTE_PATTERN, (quote, offset, source) => {
+    const contextStart = Math.max(0, offset - 40);
+    const contextEnd = Math.min(source.length, offset + quote.length + 40);
+    const context =
+      source.slice(contextStart, offset) +
+      source.slice(offset + quote.length, contextEnd);
+    if (!SPEECH_MARKER_PATTERN.test(context)) {
+      return quote;
+    }
+    tokens.add(quote);
+    return ' '.repeat(quote.length);
+  });
 };
 
 const URL_PATTERN = /https?:\/\/[^\s]+/g;
