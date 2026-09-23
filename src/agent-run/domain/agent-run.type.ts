@@ -60,6 +60,9 @@ export enum TriggerType {
   SLACK_MENTION_JOB_APPLICATION = 'SLACK_MENTION_JOB_APPLICATION',
   // Code Reviewer 자연어 멘션 진입 — 수동 slash command와 구분해 집계·감사한다.
   SLACK_MENTION_CODE_REVIEWER = 'SLACK_MENTION_CODE_REVIEWER',
+  // 라우터가 담당자를 고르지 못해 dispatch 이전에 끊긴 요청. 워커별 멘션 트리거와 나누는
+  // 이유는 집계 때문이다 — 워커 실패와 섞이면 "분류가 안 되는 비율" 을 따로 셀 수 없다.
+  ROUTING_FAILED = 'ROUTING_FAILED',
   // 같은 dispatcher 를 콘솔(REMOTE_CONSOLE)도 탄다. 멘션과 한 값으로 묶으면 경로별
   // 집계가 콘솔 실행에서 어긋나므로 분리한다.
   REMOTE_CONSOLE_CODE_REVIEWER = 'REMOTE_CONSOLE_CODE_REVIEWER',

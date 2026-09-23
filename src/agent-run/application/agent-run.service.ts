@@ -23,10 +23,10 @@ import {
   AgentRunChainNode,
   AgentRunStatus,
   EvidenceInput,
-  RoutedVia,
   STALE_RUN_THRESHOLD_MINUTES,
   TriggerType,
 } from '../domain/agent-run.type';
+import { classifyFailure } from '../domain/failure-kind';
 import {
   ActiveRunSnapshot,
   AGENT_RUN_REPOSITORY_PORT,
@@ -46,6 +46,7 @@ import {
   SimilarPlanRow,
   SucceededAgentRunSnapshot,
 } from '../domain/port/agent-run.repository.port';
+import { claimRoutingContext, RoutingContext } from './routing-context';
 
 // V3 chain (PM → CTO → BE × N → PO_EVAL → CEO) 의 worst-case 가 5-6 단계 — 16 은 사이클
 // 안전망 + 미래 확장 여유. 본 상수가 변경되면 chain 회복 결과 크기 (Slack message / DB I/O) 도
@@ -250,10 +251,21 @@ export class AgentRunService implements OnApplicationBootstrap {
     evidence,
     run,
   }: ExecuteAgentRunInput<T>): Promise<AgentRunOutcome<T>> {
+    // 라우터가 스코프에 놓아 둔 근거를 **행을 만드는 순간** 집어 담는다.
+    // begin 은 try 블록보다 먼저라, 이후 워커가 어떻게 죽든(예외·타임아웃·프로세스 종료)
+    // 라우팅 근거는 이미 행에 있다 — 되받기가 끊겨 실패 표본이 통째로 빠지던 구멍의 수리.
+    // 스코프 밖(cron·슬래시 직접 호출)이면 undefined 이고, 그때는 근거 없이 기록하는 게 맞다.
+    const routing = claimRoutingContext();
+    // 조용히 빠지면 "라우터를 안 거쳤다" 와 "거쳤는데 못 적었다" 를 나중에 구분할 수 없다.
+    if (routing !== undefined && !isMergeableSnapshot(inputSnapshot)) {
+      this.logger.warn(
+        `라우팅 근거 기록 건너뜀 — ${agentType} (inputSnapshot 이 객체가 아님: ${Array.isArray(inputSnapshot) ? 'array' : typeof inputSnapshot})`,
+      );
+    }
     const { id } = await this.repository.begin({
       agentType,
       triggerType,
-      inputSnapshot,
+      inputSnapshot: withRoutingContext(inputSnapshot, routing),
     });
 
     // OPS-1 Quota Pane — execute 소요 시간을 finish 호출 시 함께 기록.
@@ -292,11 +304,14 @@ export class AgentRunService implements OnApplicationBootstrap {
 
       const execution = await run({
         agentRunId: id,
+        // 이 콜백은 스냅샷을 **통째로 교체**한다(부분 병합이 아니다). 라우팅 근거를 다시
+        // 얹지 않으면 begin 에 심어 둔 값이 지워진다 — BLOG_PUBLISH 처럼 라우터가
+        // dispatch 하면서 이 콜백도 쓰는 워커가 실제로 있다.
         updateInputSnapshot: async (nextInputSnapshot: unknown) => {
           if (this.repository.updateInputSnapshot) {
             await this.repository.updateInputSnapshot({
               id,
-              inputSnapshot: nextInputSnapshot,
+              inputSnapshot: withRoutingContext(nextInputSnapshot, routing),
             });
           }
         },
@@ -384,6 +399,10 @@ export class AgentRunService implements OnApplicationBootstrap {
             ? { errorCode: error.errorCode }
             : {}),
           ...(causeText === null ? {} : { cause: causeText }),
+          // 실패가 "이 워커에 안 맞는 입력" 때문인지 "워커·환경" 때문인지의 갈래.
+          // errorCode 만으로는 24개 enum 을 전수로 훑어야 가려지고, 그 판정표는 코드가
+          // 늘 때마다 낡는다. 던지는 자리가 이미 고른 DomainStatus 에서 파생한다.
+          failureKind: classifyFailure(error),
         },
         // FAILED 시에도 가능한 만큼 duration 기록 — quota 분석 시 실패 비율도 함께 보임.
         // cliProvider 는 run 콜백이 throw 한 경우 모를 수 있어 옵션 (그 경우 'unknown' 으로 집계됨).
@@ -456,52 +475,6 @@ export class AgentRunService implements OnApplicationBootstrap {
     parentId: number;
   }): Promise<void> {
     await this.repository.updateParentId({ id, parentId });
-  }
-
-  /**
-   * dispatch 를 마친 run 에 "무엇을 받아 어디로 보냈는지" 를 덧붙인다.
-   *
-   * 워커들은 자기 실행에 필요한 값만 inputSnapshot 에 담아서, 사용자가 실제로 친 문장이
-   * 원장 어디에도 남지 않았다. 분류가 틀려도 흔적이 없어 사후에 정확도를 잴 수 없고,
-   * 라우팅 프롬프트를 고쳐도 좋아졌는지 나빠졌는지 대조할 기준이 서지 않는다.
-   * (2026-09-22 실측: SLACK_MENTION 109건 전부 원문 없음 — 채점 표본을 만들 수 없었다.)
-   *
-   * 원문은 사용자 입력이라 토큰·키가 섞일 수 있어 redactPii 를 거치고, 원장이 대화 로그로
-   * 부풀지 않도록 길이를 자른다. 자른 사실은 ROUTED_TEXT_TRUNCATION_MARK 로 남겨 "짧은
-   * 입력" 과 "잘린 입력" 을 나중에 구분할 수 있게 한다.
-   */
-  async attachRoutingContext({
-    id,
-    text,
-    routedTo,
-    routedVia,
-    confidence,
-  }: {
-    id: number;
-    text: string;
-    routedTo: string;
-    routedVia: RoutedVia;
-    confidence?: number;
-  }): Promise<void> {
-    if (!this.repository.mergeInputSnapshot) {
-      return;
-    }
-
-    const merged = await this.repository.mergeInputSnapshot({
-      id,
-      fields: {
-        routedText: clipRoutedText(redactPii(text)),
-        routedTo,
-        routedVia,
-        ...(confidence !== undefined ? { routedConfidence: confidence } : {}),
-      },
-    });
-    // 조용히 빠지면 "기록이 없다" 와 "기록을 포기했다" 를 나중에 구분할 수 없다.
-    if (!merged) {
-      this.logger.warn(
-        `라우팅 근거 기록 건너뜀 — agentRunId=${id} (inputSnapshot 이 객체가 아니거나 행 없음)`,
-      );
-    }
   }
 
   // 가장 최근 SUCCEEDED AgentRun 1건 조회. slackUserId 옵셔널 — 명시 시 inputSnapshot.slackUserId 매칭.
@@ -759,6 +732,41 @@ const clipRoutedText = (text: string): string =>
   text.length > ROUTED_TEXT_LIMIT
     ? `${text.slice(0, ROUTED_TEXT_LIMIT)}${ROUTED_TEXT_TRUNCATION_MARK}`
     : text;
+
+const isMergeableSnapshot = (
+  inputSnapshot: unknown,
+): inputSnapshot is Record<string, unknown> =>
+  typeof inputSnapshot === 'object' &&
+  inputSnapshot !== null &&
+  !Array.isArray(inputSnapshot);
+
+/**
+ * 워커의 inputSnapshot 위에 라우팅 근거를 얹는다.
+ *
+ * 스냅샷이 객체가 아니면(배열·스칼라 — 포트 계약이 `unknown` 이라 정당한 값이다) **원본을
+ * 그대로 돌려준다.** 객체로 갈아끼우면 보조 메타데이터를 붙이려다 워커의 실제 입력을 지우게
+ * 된다 — 기록이 빠지는 것보다 나쁘다 (이대리 자동 리뷰 #629 CORRECTNESS 의 판단을 그대로 승계).
+ *
+ * 원문은 사용자 입력이라 토큰·키가 섞일 수 있어 redactPii 를 거치고, 원장이 대화 로그로
+ * 부풀지 않도록 길이를 자른다.
+ */
+const withRoutingContext = (
+  inputSnapshot: unknown,
+  routing: RoutingContext | undefined,
+): unknown => {
+  if (routing === undefined || !isMergeableSnapshot(inputSnapshot)) {
+    return inputSnapshot;
+  }
+  return {
+    ...inputSnapshot,
+    routedText: clipRoutedText(redactPii(routing.text)),
+    routedTo: routing.routedTo,
+    routedVia: routing.routedVia,
+    ...(routing.confidence !== undefined
+      ? { routedConfidence: routing.confidence }
+      : {}),
+  };
+};
 
 const extractCauseMessage = (error: unknown): string | null => {
   const cause = (error as { cause?: unknown } | null | undefined)?.cause;

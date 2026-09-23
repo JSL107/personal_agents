@@ -2,6 +2,20 @@ import Foundation
 
 @testable import ConsoleCore
 
+/// 도트 스프라이트가 실제로 있는지. 전용 그림은 **없어도 렌더가 안 멈춘다** — 기본 캐릭터로
+/// 조용히 떨어질 뿐이라, 이름이 어긋나도 오류 한 줄 없이 "그냥 평범한 직원" 으로 보인다.
+/// (실제로 겪었다: 표에는 `mech`, 파일은 `mechanic-sit.png` 였다.)
+func pixelSpriteFileExists(_ name: String) -> Bool {
+    let directory = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()  // ConsoleCoreTests
+        .deletingLastPathComponent()  // Sources
+        .deletingLastPathComponent()  // 패키지 루트
+        .appendingPathComponent("Sources/IdaeriConsole/Resources/sprites")
+    return FileManager.default.fileExists(
+        atPath: directory.appendingPathComponent("\(name).png").path
+    )
+}
+
 private func planAgent(_ type: String, _ department: Department) -> ConsoleAgent {
     ConsoleAgent(
         agentType: type, displayName: type, slashCommands: [],
@@ -54,7 +68,7 @@ let sampleAgents: [ConsoleAgent] =
         [
             "OPS_SUPERVISOR", "SUBCONSCIOUS_GATE", "CONTRADICTION_JUDGE",
             "DOCS_AUDIT_OPTIMIZER", "DOCS_AUDIT_EVALUATOR", "PREFERENCE_LEARNING",
-            "VACATION", "SCHEDULE",
+            "VACATION", "SCHEDULE", "ROUTER",
         ]
     )
 
@@ -1476,9 +1490,18 @@ func runAgentRoleTests(_ t: TestRunner) {
     // 성장방에 나란히 앉아, 이름표를 읽기 전엔 같은 사람으로 보였다. 방마다 사람이 몇이든
     // 조합이 겹치지 않아야 이름표가 가려졌을 때도 서로 구별된다.
     for (department, members) in Dictionary(grouping: sampleAgents, by: \.resolvedDepartment) {
-        let types = members.map(\.agentType)
-        let looks = officeCharacterLooks(forRoommates: types)
-        t.expectEqual(looks.count, types.count, "\(department.label) 방 인원 전원에게 외형 배정")
+        let allTypes = members.map(\.agentType)
+        let looks = officeCharacterLooks(forRoommates: allTypes)
+        t.expectEqual(
+            looks.count, allTypes.count, "\(department.label) 방 인원 전원에게 외형 배정")
+        // 전용 그림을 쓰는 사람은 **공용 외형 체계에 참여하지 않는다**(`officeCharacterLooks`
+        // 가 배정에서 빼낸다). 그림 자체가 달라 이미 구별되고, 작업복은 채도가 있어 부서색
+        // 셔츠로 갈아입혀지지도 않는다 — 색을 나눠 갖는 계산에 넣으면 한 자리를 헛되이 잡아
+        // 동료들의 분산 여유만 줄인다. 아래 단언들은 그래서 공용 외형인 사람만 본다.
+        let types = allTypes.filter { designatedCharacterSheets[$0] == nil }
+        if types.isEmpty {
+            continue
+        }
         let faces = types.compactMap { looks[$0] }
             .map { $0.sheetIndex * hairPalette.count + $0.hairIndex }
         t.expectEqual(
@@ -1540,6 +1563,42 @@ func runAgentRoleTests(_ t: TestRunner) {
         unchanged.count * 2 > withoutNewcomer.count,
         "한 명 추가에도 과반은 같은 얼굴 (유지 \(unchanged.count) / \(withoutNewcomer.count))"
     )
+
+    // 전용 그림을 쓰는 사람은 **배정에 아예 참여하지 않는다.** 위 단언이 허용한 "과반 유지"
+    // 조차 여기서는 필요 없다 — 색 슬롯을 집어 가지 않으므로 동료는 **한 명도** 안 밀린다.
+    // (설비 담당자가 늘 때마다 외워 둔 얼굴이 흔들리면 복장으로 역할을 알리려던 뜻이 상한다.)
+    let designatedType = "ROUTER"
+    t.expect(
+        designatedCharacterSheets[designatedType] != nil,
+        "\(designatedType) 은 전용 그림 대상이다"
+    )
+    // 표본은 **전용 그림 담당자가 사전순 중간에 끼는** 조합이어야 한다. 뒤에 아무도 없으면
+    // 배정에 참여하든 말든 결과가 같아 테스트가 통과로 위장된다(가드를 꺼도 초록불이었다).
+    // 아래 넷은 가드를 끄면 실제로 셋이 밀리는 것을 확인하고 고른 조합이다.
+    let roommatesBefore = [
+        "SCHEDULE", "SUBCONSCIOUS_GATE", "VACATION", "WORK_REVIEWER",
+    ]
+    let roommatesAfter = roommatesBefore + [designatedType]
+    let looksBefore = officeCharacterLooks(forRoommates: roommatesBefore)
+    let looksAfter = officeCharacterLooks(forRoommates: roommatesAfter)
+    let shifted = roommatesBefore.filter { looksBefore[$0] != looksAfter[$0] }
+    t.expectEqual(shifted, [], "전용 그림 담당자가 들어와도 동료 얼굴은 그대로")
+
+    // 전용 그림은 시트 목록에 없어야 한다 — 들어가면 자동 배정이 다른 동료에게도 나눠 주고,
+    // 정비사가 둘이 되는 순간 복장이 역할을 뜻하지 못한다.
+    for (agentType, sheet) in designatedCharacterSheets {
+        t.expect(
+            !characterSheetPrefixes.contains(sheet),
+            "\(agentType) 의 전용 그림 \(sheet) 이 공용 시트 목록에 없다"
+        )
+        // **이름만 적어 두고 파일을 안 넣으면 아무 신호 없이 기본 캐릭터가 된다.**
+        // 자세를 다 그릴 필요는 없지만(나머지는 폴백이 정상 동작이다) 앉은 자세 한 장은
+        // 있어야 한다 — 사무실 사람들은 대부분 자기 자리에 앉아 있다.
+        t.expect(
+            pixelSpriteFileExists("\(sheet)-sit"),
+            "\(agentType) 의 전용 그림 \(sheet)-sit.png 이 실제로 있다"
+        )
+    }
 
     // 바지색도 한 색에 몰리지 않아야 한다. 이름표를 약하게 만든 만큼 사람을 구별하는 몫이
     // 모습으로 옮겨왔으므로, 축을 늘려 놓고 실제로는 갈리지 않으면 의미가 없다.
