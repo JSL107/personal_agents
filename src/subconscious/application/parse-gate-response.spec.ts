@@ -59,6 +59,21 @@ describe('parseGateResponse', () => {
     expect(parseGateResponse(raw, valid)).toEqual([]);
   });
 
+  it('같은 changeKey 중복 판정은 첫 번째만 남긴다', () => {
+    const raw = JSON.stringify([
+      { changeKey: 'github:pr:o/r#1', promote: true, reason: '첫 판정' },
+      { changeKey: 'github:pr:o/r#1', promote: false, reason: '중복 판정' },
+    ]);
+
+    expect(parseGateResponse(raw, valid)).toEqual([
+      expect.objectContaining({
+        changeKey: 'github:pr:o/r#1',
+        promote: true,
+        reason: '첫 판정',
+      }),
+    ]);
+  });
+
   it('알 수 없는 suggestedAgentType 은 undefined 로', () => {
     const raw = JSON.stringify([
       {
