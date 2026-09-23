@@ -197,8 +197,12 @@ describe('HumanizeService', () => {
     });
     expect(warnSpy).toHaveBeenCalledTimes(1);
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('changed'));
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('#275'));
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('#278'));
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('lost pr'));
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('injected pr'),
+    );
+    expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('#275'));
+    expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('#278'));
     expect(agentRunService.lastOutput).toEqual({
       humanizedKeys: ['changed', 'safe'],
       rolledBackKeys: ['changed'],
@@ -443,7 +447,7 @@ describe('HumanizeService', () => {
     });
   });
 
-  it('URL 롤백 경고에서 userinfo와 query, fragment를 제거한다', async () => {
+  it('URL 롤백 경고에는 토큰 값을 남기지 않는다', async () => {
     const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
     const sensitiveUrl =
       'https://user:password@example.com/private/report?credential=secret#fragment';
@@ -459,13 +463,14 @@ describe('HumanizeService', () => {
     expect(result).toEqual({ link: sensitiveUrl });
     expect(warnSpy).toHaveBeenCalledTimes(1);
     const warning = String(warnSpy.mock.calls[0][0]);
-    expect(warning).toContain('https://example.com/private/report');
+    expect(warning).toContain('lost url');
+    expect(warning).not.toContain('https://example.com/private/report');
     expect(warning).not.toContain('user:password');
     expect(warning).not.toContain('credential=secret');
     expect(warning).not.toContain('#fragment');
   });
 
-  it('파싱할 수 없는 URL 경고도 userinfo와 query를 제거한다', async () => {
+  it('파싱할 수 없는 URL 경고에도 토큰 값을 남기지 않는다', async () => {
     const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
     const sensitiveUrl =
       'https://user@password@[invalid/private?credential=secret#fragment';
@@ -479,7 +484,8 @@ describe('HumanizeService', () => {
     await service.humanize({ link: sensitiveUrl });
 
     const warning = String(warnSpy.mock.calls[0][0]);
-    expect(warning).toContain('https://[invalid/private');
+    expect(warning).toContain('lost url');
+    expect(warning).not.toContain('https://[invalid/private');
     expect(warning).not.toContain('user@password');
     expect(warning).not.toContain('password@');
     expect(warning).not.toContain('credential=secret');

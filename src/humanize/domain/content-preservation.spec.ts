@@ -133,6 +133,41 @@ describe('content preservation', () => {
     expect(shouldRollbackField(violations)).toBe(true);
   });
 
+  it.each([
+    '김 대표는 "다음 주에 공개하겠다"고 밝혔다.',
+    '김 대표는 말했다. "다음 주에 공개합니다."',
+    '김 대표는 다음과 같이 말했다:\n"다음 주에 공개합니다."',
+  ])('발화 도입·후행 표지의 인용 변조를 감지한다: %s', (original) => {
+    const violations = findPreservationViolations(
+      original,
+      original.replace('다음 주에', '이번 주에'),
+      'personal-blog',
+    );
+
+    expect(violations.filter(({ kind }) => kind === 'quote')).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ direction: 'lost' }),
+        expect.objectContaining({ direction: 'injected' }),
+      ]),
+    );
+  });
+
+  it('인용문 안의 날짜와 본문 날짜를 맞바꾸어도 변조를 감지한다', () => {
+    const original =
+      '김 대표는 "2026-09-23에 공개합니다"라고 밝혔다. 일정표에는 2026-09-24로 기록했다.';
+    const rewritten =
+      '김 대표는 "2026-09-24에 공개합니다"라고 밝혔다. 일정표에는 2026-09-23으로 기록했다.';
+
+    expect(
+      findPreservationViolations(original, rewritten, 'personal-blog'),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'quote', direction: 'lost' }),
+        expect.objectContaining({ kind: 'quote', direction: 'injected' }),
+      ]),
+    );
+  });
+
   it('강조용 따옴표는 직접 인용 보존 대상으로 오인하지 않는다', () => {
     const violations = findPreservationViolations(
       '이 기능은 "자동화"라는 이름으로 소개됐습니다.',
@@ -142,6 +177,45 @@ describe('content preservation', () => {
 
     expect(violations).toEqual([]);
     expect(shouldRollbackField(violations)).toBe(false);
+  });
+
+  it('기능 설명의 따옴표는 사람의 발언으로 오인하지 않는다', () => {
+    expect(
+      findPreservationViolations(
+        '이 기능은 "자동화"라고 설명했습니다.',
+        '이 기능은 자동화라고 설명했습니다.',
+        'personal-blog',
+      ),
+    ).toEqual([]);
+  });
+
+  it('세 글자 일반 명사의 용어 설명은 발언으로 오인하지 않는다', () => {
+    expect(
+      findPreservationViolations(
+        '문제점은 "중복 호출"이라고 설명했습니다.',
+        '문제점은 중복 호출이라고 설명했습니다.',
+        'personal-blog',
+      ),
+    ).toEqual([]);
+  });
+
+  it.each([
+    '김 대표는 "계획"이라고 설명했습니다.',
+    '김민수는 "다음 주에 공개합니다"라고 설명했습니다.',
+    '교육부는 "다음 주에 공개합니다"라고 설명했습니다.',
+  ])('사람·기관의 설명은 직접 인용으로 보존한다: %s', (original) => {
+    expect(
+      findPreservationViolations(
+        original,
+        original.replace('계획', '변경').replace('다음 주에', '이번 주에'),
+        'personal-blog',
+      ),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'quote', direction: 'lost' }),
+        expect.objectContaining({ kind: 'quote', direction: 'injected' }),
+      ]),
+    );
   });
 
   it('인용문 안의 발화 표현은 직접 인용 표지로 오인하지 않는다', () => {
