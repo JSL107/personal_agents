@@ -207,8 +207,12 @@ struct CalendarView: View {
 
     /// 이 달에 아직 남은 건수. 머리글의 한 줄 요약이 쓴다 — 달을 넘길 때마다 격자를 눈으로
     /// 훑지 않고도 "이 달은 할 게 있나" 를 알 수 있어야 한다.
+    ///
+    /// **공휴일은 빼고 센다.** 완료할 수 있는 일이 아니므로(상세에 완료·건너뜀 버튼이 없다)
+    /// "남은 일정" 에 들어가면 추석이 있는 달은 영영 3건이 남아 있는 것처럼 보인다.
+    /// 아침 브리핑의 「📌 마감」 줄이 공휴일을 빼는 것과 같은 규칙이다.
     private var openCount: Int {
-        visibleSchedules.filter { $0.status == .open }.count
+        visibleSchedules.filter { $0.status == .open && !$0.isHolidayDay }.count
     }
 
     var body: some View {
@@ -694,7 +698,15 @@ struct CalendarView: View {
                 }
             }
             HStack(spacing: Spacing.sm) {
-                if isClosed {
+                if item.isHolidayDay {
+                    // 공휴일은 **완료할 수 있는 일이 아니다.** 버튼을 두면 "추석을 완료" 를
+                    // 누를 수 있게 되는데, 눌러도 달라지는 것은 취소선뿐이라 무엇을 한 것인지
+                    // 설명할 수 없다. 쉬는 날이라는 사실만 한 줄로 남긴다.
+                    Text("쉬는 날")
+                        .font(Typography.caption)
+                        .foregroundStyle(CozyPalette.holidayRed)
+                    Spacer()
+                } else if isClosed {
                     // 흐림·취소선만으로는 "완료" 와 "건너뜀" 이 구분되지 않는다. 글자는 버튼 이름과
                     // 같은 것을 쓴다(`actionLabel`) — 사용자가 누른 그 말이 그대로 남아야 잇는다.
                     Text(actionLabel(item.status))

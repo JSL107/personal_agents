@@ -19,6 +19,22 @@ const ROWS_PER_MONTH = 100;
 // 오류 본문을 예외 메시지에 실을 때의 상한. 사유 한 줄을 살리되 문서 전체를 쏟지 않는다.
 const ERROR_BODY_PREVIEW_LENGTH = 200;
 
+// 포털은 서비스키를 「인코딩」·「디코딩」 두 벌로 준다. **어느 쪽을 넣어도 동작하도록** 한 번
+// 디코딩해 정규화한다. 인코딩 키를 그대로 `URLSearchParams` 에 넘기면 `%2B` 가 `%252B` 로
+// 두 번 인코딩되어 서비스키 불일치로 떨어지는데, 돌아오는 말이 "등록되지 않은 서비스키" 라
+// 멀쩡한 키를 의심해 다시 발급받는 쪽으로 헤매게 된다(2026-09-23 실측 — 실제로 그랬다).
+//
+// 디코딩 키는 base64(`A-Za-z0-9+/=`)라 `%` 를 담지 않으므로 이 변환이 그것을 망가뜨리지 않는다.
+const normalizeServiceKey = (key: string): string => {
+  try {
+    return decodeURIComponent(key);
+  } catch {
+    // `%` 가 올바른 이스케이프 시퀀스가 아닌 형태로 섞여 있으면 디코딩이 던진다. 그런 키는
+    // 인코딩된 것이 아니므로 원문을 그대로 쓴다.
+    return key;
+  }
+};
+
 @Injectable()
 export class KoreanHolidayApiClient implements KoreanHolidayClientPort {
   constructor(private readonly configService: ConfigService) {}
@@ -37,11 +53,8 @@ export class KoreanHolidayApiClient implements KoreanHolidayClientPort {
       );
     }
     const url = new URL(ENDPOINT);
-    // 공공데이터포털은 키를 「인코딩」·「디코딩」 두 벌로 준다. `URLSearchParams` 가 값을
-    // 한 번 인코딩하므로 여기에는 **디코딩 키** 를 넣어야 한다 — 인코딩 키를 넣으면
-    // `%2B` 가 `%252B` 로 이중 인코딩되어 서비스키 불일치(SERVICE_KEY_IS_NOT_REGISTERED_ERROR)
-    // 로 떨어진다. 증상이 "키가 등록 안 됨" 이라 키를 다시 발급받는 쪽으로 헤매기 쉽다.
-    url.searchParams.set('serviceKey', serviceKey);
+    // 인코딩·디코딩 어느 키가 들어와도 같은 값이 실리도록 정규화한다(`normalizeServiceKey`).
+    url.searchParams.set('serviceKey', normalizeServiceKey(serviceKey));
     url.searchParams.set('solYear', String(year));
     url.searchParams.set('solMonth', String(month).padStart(2, '0'));
     url.searchParams.set('numOfRows', String(ROWS_PER_MONTH));
