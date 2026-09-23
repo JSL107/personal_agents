@@ -291,10 +291,12 @@ describe('AutopilotOrchestrator', () => {
       uploadImageFile,
       results,
       target = 'C1',
+      postMessage = jest.fn().mockResolvedValue({ ts: '111.222' }),
     }: {
       uploadImageFile: jest.Mock;
       results?: unknown[];
       target?: string;
+      postMessage?: jest.Mock;
     }) => {
       const taskResults = results ?? [
         {
@@ -310,7 +312,6 @@ describe('AutopilotOrchestrator', () => {
       const entries = taskResults.map((_, index) =>
         index === 0 ? T0_ENTRY : makeEntry(`task-${index}`, `task-${index}`),
       );
-      const postMessage = jest.fn().mockResolvedValue({ ts: '111.222' });
       const uploadImage = jest.fn().mockResolvedValue({ fileId: undefined });
       const orchestrator = new AutopilotOrchestrator(
         tasks as never,
@@ -318,6 +319,7 @@ describe('AutopilotOrchestrator', () => {
         {
           acquireOnce: jest.fn().mockResolvedValue(true),
           isDone: jest.fn().mockResolvedValue(false),
+          release: jest.fn().mockResolvedValue(undefined),
         } as never,
         { execute: jest.fn() } as never,
         { attachSlackMessage: jest.fn() } as never,
@@ -389,6 +391,86 @@ describe('AutopilotOrchestrator', () => {
       });
       expect(uploadImage).toHaveBeenCalledWith(
         expect.objectContaining({ target: 'C1', threadTs: '111.222' }),
+      );
+    });
+
+    // 업로드가 성공해도 슬랙이 이미지 블록을 거부할 수 있다(`invalid_blocks`, 파일 접근
+    // 불가 등). 그때 보고 전체가 실패하면 그림 하나 때문에 그날 수익률을 잃는다 —
+    // 업로드 실패에 둔 것과 같은 원칙을 발송에도 건다.
+    it('그림을 실은 메인 발송이 실패하면 그림 없이 다시 보낸다', async () => {
+      const uploadImageFile = jest.fn().mockResolvedValue({ fileId: 'F1' });
+      const postMessage = jest
+        .fn()
+        .mockRejectedValueOnce(new Error('invalid_blocks'))
+        .mockResolvedValue({ ts: '111.222' });
+      const { uploadImage } = await runWith({ uploadImageFile, postMessage });
+
+      expect(postMessage).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          image: { fileId: 'F1', altText: IMAGE.title },
+        }),
+      );
+      // 그림을 빼고 종전 배치(요약이 메인)로 다시 보낸다.
+      expect(postMessage).toHaveBeenNthCalledWith(2, {
+        target: 'C1',
+        text: '종목별 내역',
+      });
+      // 배치가 되돌아갔으므로 그림은 스레드로 간다 — 요약도 스레드로 내리면 중복이 된다.
+      expect(uploadImage).toHaveBeenCalledWith(
+        expect.objectContaining({ threadTs: '111.222' }),
+      );
+      expect(postMessage).toHaveBeenCalledTimes(2);
+    });
+
+    // 그림이 메인인 회차의 요약은 스레드가 유일한 자리다. 멱등 가드는 메인 발송 성공으로
+    // 이미 소비돼 재시도가 오지 않으므로, 삼키면 종목별 내역이 그날 통째로 사라진다.
+    it('스레드 요약이 실패하면 채널에 대신 붙인다 — 유실 대신 중복', async () => {
+      const uploadImageFile = jest.fn().mockResolvedValue({ fileId: 'F1' });
+      const postMessage = jest
+        .fn()
+        .mockResolvedValueOnce({ ts: '111.222' })
+        .mockRejectedValueOnce(new Error('rate_limited'))
+        .mockResolvedValue({ ts: '333.444' });
+
+      await runWith({ uploadImageFile, postMessage });
+
+      // 1) 헤드라인+그림 메인 2) 스레드 요약(실패) 3) 같은 요약을 채널로
+      expect(postMessage).toHaveBeenNthCalledWith(3, {
+        target: 'C1',
+        text: '종목별 내역',
+      });
+      expect(postMessage).toHaveBeenCalledTimes(3);
+    });
+
+    // 뒤집지 않은 회차의 상세는 종전대로 삼킨다 — 요약이 이미 메인으로 나가 있어
+    // 채널에 같은 글을 또 붙일 이유가 없다.
+    it('뒤집지 않은 회차의 상세 실패는 채널로 재발송하지 않는다', async () => {
+      const uploadImageFile = jest.fn();
+      const postMessage = jest
+        .fn()
+        .mockResolvedValueOnce({ ts: '111.222' })
+        .mockRejectedValueOnce(new Error('rate_limited'));
+
+      await runWith({
+        uploadImageFile,
+        postMessage,
+        results: [
+          { skip: false, summaryText: '요약', detailText: '상세 전문' },
+        ],
+      });
+
+      expect(postMessage).toHaveBeenCalledTimes(2);
+    });
+
+    it('그림 없이 보낸 재시도까지 실패하면 발송 실패로 올린다', async () => {
+      const uploadImageFile = jest.fn().mockResolvedValue({ fileId: 'F1' });
+      const postMessage = jest
+        .fn()
+        .mockRejectedValue(new Error('channel_not_found'));
+
+      await expect(runWith({ uploadImageFile, postMessage })).rejects.toThrow(
+        'channel_not_found',
       );
     });
 

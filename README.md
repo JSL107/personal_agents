@@ -391,8 +391,9 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 <br>
 
 1. [api.slack.com/apps](https://api.slack.com/apps) 에서 앱 생성 → **Socket Mode** 활성화 → App-Level Token(`connections:write`) = `SLACK_APP_TOKEN`
-2. **OAuth & Permissions** → Bot Token Scopes 에 `commands` `chat:write` `app_mentions:read` `im:history` `files:write` → install → Bot Token = `SLACK_BOT_TOKEN`
+2. **OAuth & Permissions** → Bot Token Scopes 에 `commands` `chat:write` `app_mentions:read` `im:history` `files:write` `files:read` → install → Bot Token = `SLACK_BOT_TOKEN`
    - `files:write` 는 장마감 리포트 차트를 이미지로 올리는 데 쓴다. 없으면 업로드가 `missing_scope` 로 막히는데 요약·상세는 그대로 나가므로 **그림만 조용히 빠진다** — 로그의 `스레드 이미지 업로드 실패` 경고가 유일한 신호다.
+   - `files:read` 는 그 차트를 **메인 메시지로 올릴 때** 쓴다. 올린 파일을 슬랙이 이미지로 처리했는지 `files.info` 로 확인한 뒤 메시지를 보내는데(안 기다리면 이미지 자리가 빈 채로 뜬다), 이 스코프가 없으면 그 확인이 `missing_scope` 로 막혀 **매 회차 종전 배치(요약이 메인·그림이 스레드)로 물러선다**. 그림이 나오긴 하므로 겉보기로는 고장이 아니고, 로그의 `그림을 메인에 싣지 못해 종전 배치로 발송` 경고가 유일한 신호다. 채널에 공유되지 않은 파일이 회차마다 하나씩 쌓이는 것도 이때다.
    - 이미 설치한 앱에 스코프를 더했으면 **Reinstall to Workspace** 로 재설치해야 토큰에 반영된다(설정 화면에 추가만 해도 기존 토큰은 그대로다).
 3. **Basic Information** → Signing Secret = `SLACK_SIGNING_SECRET`
 4. **Slash Commands** 에 15종(`/blog-publish` 포함) 등록 (또는 **App Manifest** 의 `slash_commands` 배열로 일괄 선언 후 Reinstall)
