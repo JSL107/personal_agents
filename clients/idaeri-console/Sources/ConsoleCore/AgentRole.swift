@@ -191,7 +191,7 @@ public let pantsPalette: [(red: Double, green: Double, blue: Double)] = [
 /// 반대로 머리카락은 무채색으로 그려야 머리색 배정이 살아난다.
 public let designatedCharacterSheets: [String: String] = [
     // ROUTER — 요청을 담당자에게 넘기는 설비. 넘기지 못한 요청만 자기 이름으로 기록한다.
-    "ROUTER": "mech"
+    "ROUTER": "mechanic"
 ]
 
 /// agentType 으로 외형을 정한다(순수·결정론적).

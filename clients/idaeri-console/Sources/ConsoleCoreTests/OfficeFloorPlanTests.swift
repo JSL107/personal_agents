@@ -2,6 +2,20 @@ import Foundation
 
 @testable import ConsoleCore
 
+/// 도트 스프라이트가 실제로 있는지. 전용 그림은 **없어도 렌더가 안 멈춘다** — 기본 캐릭터로
+/// 조용히 떨어질 뿐이라, 이름이 어긋나도 오류 한 줄 없이 "그냥 평범한 직원" 으로 보인다.
+/// (실제로 겪었다: 표에는 `mech`, 파일은 `mechanic-sit.png` 였다.)
+func pixelSpriteFileExists(_ name: String) -> Bool {
+    let directory = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()  // ConsoleCoreTests
+        .deletingLastPathComponent()  // Sources
+        .deletingLastPathComponent()  // 패키지 루트
+        .appendingPathComponent("Sources/IdaeriConsole/Resources/sprites")
+    return FileManager.default.fileExists(
+        atPath: directory.appendingPathComponent("\(name).png").path
+    )
+}
+
 private func planAgent(_ type: String, _ department: Department) -> ConsoleAgent {
     ConsoleAgent(
         agentType: type, displayName: type, slashCommands: [],
@@ -1576,6 +1590,13 @@ func runAgentRoleTests(_ t: TestRunner) {
         t.expect(
             !characterSheetPrefixes.contains(sheet),
             "\(agentType) 의 전용 그림 \(sheet) 이 공용 시트 목록에 없다"
+        )
+        // **이름만 적어 두고 파일을 안 넣으면 아무 신호 없이 기본 캐릭터가 된다.**
+        // 자세를 다 그릴 필요는 없지만(나머지는 폴백이 정상 동작이다) 앉은 자세 한 장은
+        // 있어야 한다 — 사무실 사람들은 대부분 자기 자리에 앉아 있다.
+        t.expect(
+            pixelSpriteFileExists("\(sheet)-sit"),
+            "\(agentType) 의 전용 그림 \(sheet)-sit.png 이 실제로 있다"
         )
     }
 
