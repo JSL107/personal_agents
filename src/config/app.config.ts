@@ -805,6 +805,14 @@ export class EnvironmentVariables {
   @IsString()
   CONSOLE_OWNER_SLACK_USER_ID?: string;
 
+  // 공공데이터포털 「한국천문연구원 특일 정보」 서비스키(**디코딩 키**).
+  // 주 1회 공휴일 동기화(`holiday-sync`)가 이 키로 조회해 달력에 공휴일을 넣는다.
+  // 미설정이면 동기화가 조용히 건너뛰고(로그만) 달력에 공휴일이 한 건도 뜨지 않는다 —
+  // 앱 부팅과 나머지 일정 기능에는 영향이 없다.
+  @IsOptional()
+  @IsString()
+  KOREAN_HOLIDAY_API_KEY?: string;
+
   // 콘솔 인증 토큰. 두 가드가 같은 값을 본다 (헤더는 x-console-token).
   // - write(LoopbackOnlyGuard): loopback 만 받으므로 토큰은 선택.
   // - read(ConsoleReadGuard): loopback 은 통과, **원격은 이 토큰이 있어야만** 통과.

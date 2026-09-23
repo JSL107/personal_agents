@@ -19,6 +19,7 @@ interface ScheduleItemRow {
   memo: string | null;
   status: string;
   completedAt: Date | null;
+  isHoliday: boolean;
 }
 
 interface DueDateFilter {
@@ -47,6 +48,7 @@ const toRecord = (row: ScheduleItemRow): ScheduleItemRecord => {
     memo: row.memo,
     status: row.status as ScheduleStatus,
     completedAt: row.completedAt,
+    isHoliday: row.isHoliday,
   };
 };
 
@@ -63,6 +65,7 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
         dueTime: input.dueTime ?? null,
         memo: input.memo ?? null,
         status: ScheduleStatus.OPEN,
+        isHoliday: input.isHoliday ?? false,
       },
     });
     return toRecord(created);
@@ -95,6 +98,16 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
     const updated = await this.prisma.scheduleItem.update({
       where: { id: input.id },
       data: { status: input.status, completedAt: input.completedAt },
+    });
+    return toRecord(updated);
+  }
+
+  async markAsHoliday(id: number): Promise<ScheduleItemRecord> {
+    // `status` 와 `completedAt` 은 건드리지 않는다 — 사용자가 이미 완료를 눌러 둔 줄이면
+    // 그 기록이 승격으로 지워지면 안 된다.
+    const updated = await this.prisma.scheduleItem.update({
+      where: { id },
+      data: { isHoliday: true },
     });
     return toRecord(updated);
   }

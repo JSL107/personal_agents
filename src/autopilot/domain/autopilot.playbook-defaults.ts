@@ -194,3 +194,9 @@ export const DEFAULT_JOB_FEED_GAP_TIMEZONE = 'Asia/Seoul';
 // 뒤에 둔다. 같은 아침에 함께 읽히되 슬롯을 나눠 그룹 잠금 시간을 다투지 않는다.
 export const DEFAULT_BLOG_REVISION_REPORT_CRON = '30 9 * * 1';
 export const DEFAULT_BLOG_REVISION_REPORT_TIMEZONE = 'Asia/Seoul';
+
+// 공휴일 동기화 기본 스케줄 — 매주 월 05:00 KST. 아무도 보지 않는 시각에 둔다(알림을 내는
+// 작업이 아니고, 같은 월요일의 Run Retro 09:00 과 겹치지 않는다). 주 1회인 것은 임시공휴일이
+// 중간에 지정되기 때문이다 — 연 1회면 그 해의 임시공휴일이 다음 해까지 달력에 안 뜬다.
+export const DEFAULT_HOLIDAY_SYNC_CRON = '0 5 * * 1';
+export const DEFAULT_HOLIDAY_SYNC_TIMEZONE = 'Asia/Seoul';

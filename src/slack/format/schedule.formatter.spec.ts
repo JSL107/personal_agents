@@ -15,6 +15,7 @@ const recordWithTitle = (title: string): ScheduleItemRecord => ({
   memo: null,
   status: ScheduleStatus.OPEN,
   completedAt: null,
+  isHoliday: false,
 });
 
 describe('schedule.formatter', () => {

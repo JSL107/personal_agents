@@ -12,6 +12,7 @@ export interface RegisterScheduleInput {
   title: string;
   dueDate: PlainDate;
   memo?: string;
+  isHoliday?: boolean;
 }
 
 @Injectable()
@@ -27,6 +28,7 @@ export class RegisterScheduleUsecase {
       title: input.title,
       dueDate: plainDateToUtcDate(input.dueDate),
       memo: input.memo,
+      isHoliday: input.isHoliday,
     });
   }
 }

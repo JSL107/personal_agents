@@ -391,9 +391,19 @@ public struct ScheduleItem: Codable, Identifiable, Sendable {
     public let linkUrl: String?
     public let memo: String?
     public let status: ScheduleStatus
+    /// 공휴일 동기화가 넣은 항목인가. **Optional 이어야 한다** — 이 필드를 내려주지 않는
+    /// 백엔드(앱만 새로 빌드하고 서버는 그대로인 경우)에 붙으면 자동 합성 Codable 이 키
+    /// 없음을 오류로 보고 **디코딩 전체가 실패해 달력이 통째로 빈다.** 비어 있음을 "공휴일
+    /// 아님" 으로 읽는 쪽이(`isHolidayDay`) 화면을 살린다.
+    public let isHoliday: Bool?
 
     public var dueDay: String {
         String(dueDate.prefix(10))
+    }
+
+    /// 화면이 읽는 형태. 비어 있으면 공휴일이 아닌 것으로 본다.
+    public var isHolidayDay: Bool {
+        isHoliday == true
     }
 
     public init(
@@ -402,7 +412,9 @@ public struct ScheduleItem: Codable, Identifiable, Sendable {
         dueDate: String,
         linkUrl: String?,
         memo: String?,
-        status: ScheduleStatus
+        status: ScheduleStatus,
+        // 기본값을 두어 기존 호출부(회귀 렌더 표본·테스트)가 그대로 컴파일된다.
+        isHoliday: Bool? = nil
     ) {
         self.id = id
         self.title = title
@@ -410,6 +422,7 @@ public struct ScheduleItem: Codable, Identifiable, Sendable {
         self.linkUrl = linkUrl
         self.memo = memo
         self.status = status
+        self.isHoliday = isHoliday
     }
 }
 
