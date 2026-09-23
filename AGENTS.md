@@ -27,6 +27,14 @@
 
 **모든 코드 변경 후 lint:check + test + build 3중 green 확인 필수.** 하나라도 실패하면 PR 불가.
 
+### 브랜치 / worktree 격리
+
+- 새 기능, 다파일 리팩터링, 또는 PR로 낼 작업은 올바른 base 브랜치에서 만든 전용 `git worktree`에서 진행한다.
+- 착수 전 `git branch --show-current`, `git status --short`, `git worktree list`로 현재 브랜치·변경·동시 작업을 확인한다. 현재 트리에 무관한 변경이 있거나 다른 세션이 사용 중이면 그 트리를 수정하지 않는다.
+- Codex가 사용할 worktree는 `codex exec`의 non-ASCII 절대경로 문제를 피하도록 `/private/tmp` 등 ASCII 경로에 만든다.
+- 오탈자·설정·한두 줄의 casual 변경은 현재 트리가 clean이고 대상 브랜치가 맞을 때만 직접 수정한다. 커밋이나 PR 범위로 커지면 전용 worktree로 옮긴다.
+- 충돌이 예상되면 자동으로 해소하지 않는다. push가 non-fast-forward로 거부되어도 force push하지 말고, 원격 후속 커밋을 보존한 채 충돌 근거와 안전한 통합 방안을 보고한다.
+
 ### 자주 쓰는 코드 진입점
 
 관련 경로에서 탐색을 시작하고, 실제 동작은 현재 코드로 확인한다.
