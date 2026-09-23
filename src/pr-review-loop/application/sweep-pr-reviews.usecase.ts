@@ -125,6 +125,7 @@ export class SweepPrReviewsUsecase {
       const decision = await this.decideSweepAction({
         prRef,
         isDraft: pullRequest.isDraft,
+        updatedAt: pullRequest.updatedAt,
       });
       if (decision === 'SKIP') {
         continue;
@@ -220,9 +221,11 @@ export class SweepPrReviewsUsecase {
   private async decideSweepAction({
     prRef,
     isDraft,
+    updatedAt,
   }: {
     prRef: string;
     isDraft: boolean;
+    updatedAt: string;
   }): Promise<SweepDecision> {
     let latest: LatestSweepReview | null;
     try {
@@ -240,6 +243,7 @@ export class SweepPrReviewsUsecase {
       latest,
       currentDryRun: this.isDryRun(),
       currentIsDraft: isDraft,
+      currentUpdatedAt: updatedAt,
     });
     if (
       decision === 'REVIEW' &&
@@ -255,10 +259,14 @@ export class SweepPrReviewsUsecase {
     latest,
     currentDryRun,
     currentIsDraft,
+    currentUpdatedAt,
   }: {
     latest: LatestSweepReview | null;
     currentDryRun: boolean;
     currentIsDraft: boolean;
+    // 검색 결과에 실려 온 PR 갱신 시각(OpenPullRequestRef.updatedAt). 상세를 조회하기 전에
+    // 판정이 끝나야 하므로 isDraft 와 같은 자리에서 온 값을 쓴다.
+    currentUpdatedAt: string;
   }): SweepDecision {
     if (latest === null) {
       return 'REVIEW';
@@ -286,10 +294,21 @@ export class SweepPrReviewsUsecase {
     // 윈도우가 롤링이라 오늘의 3건이 내일 3건의 허가증이 된다(실측 2026-09-17~23, PR 하나가
     // 매일 03시대에 3건씩 21회, 전부 같은 사유).
     //
-    // 대가: PR 이 나중에 한도 아래로 줄어도 이 기록이 lookback(30일) 안에 있는 동안은 스윕이
-    // 다시 집지 않는다. 한도의 3배를 넘는 PR 이 그 아래로 줄어드는 일은 드물고, 필요하면 수동
-    // 멘션(/review-pr)이 이 판정과 무관하게 돈다 — 그 길을 남겨두고 자동 반복만 끊는다.
-    if (latest.errorCode === CodeReviewerErrorCode.DIFF_TOO_LARGE) {
+    // 단, 차단은 "입력이 그대로일 때" 로 한정한다. 실패 이후 PR 이 갱신됐다면 변경량이 한도
+    // 아래로 줄었을 수 있어 결과가 같다고 단정할 수 없다. 갱신 시각은 검색 결과에 이미 실려
+    // 오므로(OpenPullRequestRef.updatedAt) 이 확인에 추가 조회가 들지 않는다 — 여기서 PR
+    // 상세를 새로 조회하면 이 변경이 없애려던 회차당 호출이 그대로 되살아난다.
+    //
+    // 갱신 뒤에도 여전히 한도를 넘으면 그 실패가 최신 기록이 되어 다시 차단되므로, 반복은
+    // "PR 갱신당 1회" 로 수렴한다. 갱신 시각을 읽을 수 없으면(빈 값·깨진 형식) 갱신되지 않은
+    // 것으로 보고 차단한다 — 모를 때 재시도 쪽으로 열어두면 막으려던 무한 반복이 되돌아온다.
+    const updatedAtMs = new Date(currentUpdatedAt).getTime();
+    const updatedAfterFailure =
+      Number.isFinite(updatedAtMs) && updatedAtMs > latest.startedAt.getTime();
+    if (
+      latest.errorCode === CodeReviewerErrorCode.DIFF_TOO_LARGE &&
+      !updatedAfterFailure
+    ) {
       return 'SKIP';
     }
     const cooldownMs = SWEEP_RETRY_COOLDOWN_MINUTES * 60 * 1000;

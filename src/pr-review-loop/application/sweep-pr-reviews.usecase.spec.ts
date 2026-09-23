@@ -508,7 +508,8 @@ describe('SweepPrReviewsUsecase', () => {
     expect(results).toHaveLength(1);
   });
 
-  it('직전이 변경량 초과로 끝났으면 쿨다운이 지나도 재리뷰하지 않는다 — PR 이 작아지지 않는 한 결과가 같다', async () => {
+  it('변경량 초과로 끝났고 그 뒤 PR 갱신이 없으면 쿨다운이 지나도 재리뷰하지 않는다', async () => {
+    // OPEN_PR.updatedAt 은 2026-07-31 로 실패 시각(15분 전)보다 앞선다 = 입력이 그대로다.
     agentRunService.findLatestSweepReview.mockResolvedValue({
       status: 'FAILED',
       startedAt: minutesAgo(15),
@@ -524,6 +525,43 @@ describe('SweepPrReviewsUsecase', () => {
     expect(
       agentRunService.countUnsuccessfulSweepReviews,
     ).not.toHaveBeenCalled();
+    expect(reviewUsecase.execute).not.toHaveBeenCalled();
+    expect(results).toEqual([]);
+  });
+
+  it('변경량 초과로 실패했어도 그 뒤 PR 이 갱신됐으면 한 번 더 리뷰한다 — 한도 아래로 줄었을 수 있다', async () => {
+    github.listOpenPullRequestRefs.mockResolvedValue([
+      { ...OPEN_PR, updatedAt: minutesAgo(5).toISOString() },
+    ]);
+    agentRunService.findLatestSweepReview.mockResolvedValue({
+      status: 'FAILED',
+      startedAt: minutesAgo(15),
+      dryRun: false,
+      isDraft: false,
+      errorCode: 'CODE_REVIEWER_DIFF_TOO_LARGE',
+    });
+
+    const { results } = await buildUsecase(ENABLED).execute();
+
+    expect(reviewUsecase.execute).toHaveBeenCalledTimes(1);
+    expect(results).toHaveLength(1);
+  });
+
+  it('갱신 시각을 읽을 수 없으면 갱신되지 않은 것으로 보고 차단을 유지한다', async () => {
+    // 모를 때 재시도 쪽으로 열어두면 막으려던 무한 반복이 그대로 되돌아온다.
+    github.listOpenPullRequestRefs.mockResolvedValue([
+      { ...OPEN_PR, updatedAt: '' },
+    ]);
+    agentRunService.findLatestSweepReview.mockResolvedValue({
+      status: 'FAILED',
+      startedAt: minutesAgo(15),
+      dryRun: false,
+      isDraft: false,
+      errorCode: 'CODE_REVIEWER_DIFF_TOO_LARGE',
+    });
+
+    const { results } = await buildUsecase(ENABLED).execute();
+
     expect(reviewUsecase.execute).not.toHaveBeenCalled();
     expect(results).toEqual([]);
   });
