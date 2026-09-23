@@ -68,7 +68,17 @@ export class LlmSubconsciousGate implements SubconsciousGate {
             agentType: AgentType.SUBCONSCIOUS_GATE,
             request: { prompt: userPrompt, systemPrompt: SYSTEM_PROMPT },
           });
-          const decisions = parseGateResponse(response.text, validKeys);
+          // `null` 은 응답에서 JSON 배열을 못 뽑았다는 뜻이다 — 빈 배열(= 읽었는데 승격할
+          // 것이 없었다)과 결과는 같지만 원인이 정반대라, 아래 catch 와 같은 무게로 남긴다.
+          // 모델을 함께 적는다: 2026-09-17~19 유실 86 건은 provider 축으로 깨끗이 갈렸다
+          // (claude 폴백 86/86 실패 · codex 0/86).
+          const parsed = parseGateResponse(response.text, validKeys);
+          if (parsed === null) {
+            this.logger.error(
+              `잠재의식 게이트 응답을 JSON 배열로 읽지 못함 — 변화 ${changes.length}건을 제안 0건으로 처리 (model=${response.modelUsed})`,
+            );
+          }
+          const decisions = parsed ?? [];
           return {
             result: decisions,
             modelUsed: response.modelUsed,
