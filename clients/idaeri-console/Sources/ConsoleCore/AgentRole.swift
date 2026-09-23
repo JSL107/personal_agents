@@ -171,6 +171,26 @@ public let pantsPalette: [(red: Double, green: Double, blue: Double)] = [
     (0.20, 0.28, 0.26),  // 짙은 청록
 ]
 
+/// 자동 배정을 쓰지 않고 **전용 그림**을 쓰는 사람.
+///
+/// 동료들은 같은 실루엣에 머리·셔츠·바지 색만 갈아끼워 구별한다(`recoloredCharacter`).
+/// 그 방식이 통하는 것은 모두가 "같은 종류의 사람" 이기 때문인데, 설비 성격의 담당자는
+/// 옆자리와 같은 사무복을 입으면 역할이 읽히지 않는다.
+///
+/// **시트 목록(`characterSheetPrefixes`)에 넣지 않는다.** 넣으면 자동 배정이 이 그림을
+/// 다른 동료에게도 나눠 준다 — 정비사가 둘이 되는 순간 복장이 역할을 뜻하지 못한다.
+///
+/// 그림 파일이 없으면 렌더가 기본 캐릭터(`char-*`)로 떨어지므로(`characterSpriteCandidates`),
+/// 자세를 전부 그리지 않아도 된다. 앉은 그림 한 장(`<시트>-sit.png`)부터 시작할 수 있다.
+///
+/// 작업복은 **채도가 있는 색으로 그린다.** 색치환이 무채색 픽셀만 부서색으로 갈아끼우므로
+/// (채도 26 이상은 건너뛴다), 채도가 있으면 부서색에 덮이지 않고 그대로 남는다.
+/// 반대로 머리카락은 무채색으로 그려야 머리색 배정이 살아난다.
+public let designatedCharacterSheets: [String: String] = [
+    // ROUTER — 요청을 담당자에게 넘기는 설비. 넘기지 못한 요청만 자기 이름으로 기록한다.
+    "ROUTER": "mech"
+]
+
 /// agentType 으로 외형을 정한다(순수·결정론적).
 public func characterLook(for agentType: String) -> CharacterLook {
     // 문자열 해시는 프로세스마다 값이 달라질 수 있어(Swift Hasher 시드) 직접 합산한다.
@@ -229,6 +249,13 @@ public func officeCharacterLooks(forRoommates agentTypes: [String]) -> [String: 
     var looks: [String: CharacterLook] = [:]
     // 배정 순서가 입력 순서에 흔들리면 스냅샷마다 얼굴이 뒤바뀐다.
     for agentType in agentTypes.sorted() {
+        // 전용 그림을 쓰는 사람은 **배정에 참여하지 않는다.** 색 슬롯을 하나 집어 가면
+        // 사전순으로 뒤에 있는 동료들의 머리색·얼굴이 한 칸씩 밀려, 외워 둔 얼굴이 무너진다.
+        // 겹칠 일도 없다 — 그림 자체가 달라 이미 구별된다.
+        if designatedCharacterSheets[agentType] != nil {
+            looks[agentType] = characterLook(for: agentType)
+            continue
+        }
         let base = characterLook(for: agentType)
         var sheet = base.sheetIndex
         var hair = base.hairIndex

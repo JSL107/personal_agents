@@ -1541,6 +1541,35 @@ func runAgentRoleTests(_ t: TestRunner) {
         "한 명 추가에도 과반은 같은 얼굴 (유지 \(unchanged.count) / \(withoutNewcomer.count))"
     )
 
+    // 전용 그림을 쓰는 사람은 **배정에 아예 참여하지 않는다.** 위 단언이 허용한 "과반 유지"
+    // 조차 여기서는 필요 없다 — 색 슬롯을 집어 가지 않으므로 동료는 **한 명도** 안 밀린다.
+    // (설비 담당자가 늘 때마다 외워 둔 얼굴이 흔들리면 복장으로 역할을 알리려던 뜻이 상한다.)
+    let designatedType = "ROUTER"
+    t.expect(
+        designatedCharacterSheets[designatedType] != nil,
+        "\(designatedType) 은 전용 그림 대상이다"
+    )
+    // 표본은 **전용 그림 담당자가 사전순 중간에 끼는** 조합이어야 한다. 뒤에 아무도 없으면
+    // 배정에 참여하든 말든 결과가 같아 테스트가 통과로 위장된다(가드를 꺼도 초록불이었다).
+    // 아래 넷은 가드를 끄면 실제로 셋이 밀리는 것을 확인하고 고른 조합이다.
+    let roommatesBefore = [
+        "SCHEDULE", "SUBCONSCIOUS_GATE", "VACATION", "WORK_REVIEWER",
+    ]
+    let roommatesAfter = roommatesBefore + [designatedType]
+    let looksBefore = officeCharacterLooks(forRoommates: roommatesBefore)
+    let looksAfter = officeCharacterLooks(forRoommates: roommatesAfter)
+    let shifted = roommatesBefore.filter { looksBefore[$0] != looksAfter[$0] }
+    t.expectEqual(shifted, [], "전용 그림 담당자가 들어와도 동료 얼굴은 그대로")
+
+    // 전용 그림은 시트 목록에 없어야 한다 — 들어가면 자동 배정이 다른 동료에게도 나눠 주고,
+    // 정비사가 둘이 되는 순간 복장이 역할을 뜻하지 못한다.
+    for (agentType, sheet) in designatedCharacterSheets {
+        t.expect(
+            !characterSheetPrefixes.contains(sheet),
+            "\(agentType) 의 전용 그림 \(sheet) 이 공용 시트 목록에 없다"
+        )
+    }
+
     // 바지색도 한 색에 몰리지 않아야 한다. 이름표를 약하게 만든 만큼 사람을 구별하는 몫이
     // 모습으로 옮겨왔으므로, 축을 늘려 놓고 실제로는 갈리지 않으면 의미가 없다.
     let pants = Set(sampleAgents.map { characterLook(for: $0.agentType).pantsIndex })
