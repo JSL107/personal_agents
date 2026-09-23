@@ -798,6 +798,43 @@ describe('AgentRunPrismaRepository.findLatestSweepReview', () => {
     expect(result?.dryRun).toBe(false);
   });
 
+  it('output.errorCode 를 읽어 올린다 — 영구 실패를 쿨다운 재시도에서 빼는 근거', async () => {
+    const { repository } = buildRepository({
+      status: 'FAILED',
+      startedAt: new Date('2026-07-31T00:00:00.000Z'),
+      inputSnapshot: { prRef: query.prRef },
+      output: { errorCode: 'CODE_REVIEWER_DIFF_TOO_LARGE' },
+    });
+
+    const result = await repository.findLatestSweepReview(query);
+
+    expect(result?.errorCode).toBe('CODE_REVIEWER_DIFF_TOO_LARGE');
+  });
+
+  it('errorCode 누락·비문자열은 null — 모르는 값을 영구 실패로 접으면 일시 장애 PR 이 영영 리뷰되지 않는다', async () => {
+    const missing = buildRepository({
+      status: 'FAILED',
+      startedAt: new Date('2026-07-31T00:00:00.000Z'),
+      inputSnapshot: { prRef: query.prRef },
+      output: { error: '모델 호출에 실패했습니다.' },
+    });
+    // output 은 임의 JSON 이라 문자열이 아닌 값도 들어올 수 있다. 그것까지 null 로 닫아야
+    // `errorCode === DIFF_TOO_LARGE` 비교가 의도치 않게 참이 되는 경로가 남지 않는다.
+    const nonString = buildRepository({
+      status: 'FAILED',
+      startedAt: new Date('2026-07-31T00:00:00.000Z'),
+      inputSnapshot: { prRef: query.prRef },
+      output: { errorCode: 500 },
+    });
+
+    expect(
+      (await missing.repository.findLatestSweepReview(query))?.errorCode,
+    ).toBeNull();
+    expect(
+      (await nonString.repository.findLatestSweepReview(query))?.errorCode,
+    ).toBeNull();
+  });
+
   it('레코드가 없으면 null', async () => {
     const { repository } = buildRepository(null);
 

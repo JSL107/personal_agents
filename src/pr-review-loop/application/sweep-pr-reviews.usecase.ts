@@ -2,6 +2,8 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { ReviewPullRequestUsecase } from '../../agent/code-reviewer/application/review-pull-request.usecase';
+import { CodeReviewerException } from '../../agent/code-reviewer/domain/code-reviewer.exception';
+import { CodeReviewerErrorCode } from '../../agent/code-reviewer/domain/code-reviewer-error-code.enum';
 import { hasNoReviewFindings } from '../../agent/code-reviewer/domain/review-emptiness';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import {
@@ -123,6 +125,7 @@ export class SweepPrReviewsUsecase {
       const decision = await this.decideSweepAction({
         prRef,
         isDraft: pullRequest.isDraft,
+        updatedAt: pullRequest.updatedAt,
       });
       if (decision === 'SKIP') {
         continue;
@@ -218,9 +221,11 @@ export class SweepPrReviewsUsecase {
   private async decideSweepAction({
     prRef,
     isDraft,
+    updatedAt,
   }: {
     prRef: string;
     isDraft: boolean;
+    updatedAt: string;
   }): Promise<SweepDecision> {
     let latest: LatestSweepReview | null;
     try {
@@ -238,6 +243,7 @@ export class SweepPrReviewsUsecase {
       latest,
       currentDryRun: this.isDryRun(),
       currentIsDraft: isDraft,
+      currentUpdatedAt: updatedAt,
     });
     if (
       decision === 'REVIEW' &&
@@ -253,10 +259,14 @@ export class SweepPrReviewsUsecase {
     latest,
     currentDryRun,
     currentIsDraft,
+    currentUpdatedAt,
   }: {
     latest: LatestSweepReview | null;
     currentDryRun: boolean;
     currentIsDraft: boolean;
+    // 검색 결과에 실려 온 PR 갱신 시각(OpenPullRequestRef.updatedAt). 상세를 조회하기 전에
+    // 판정이 끝나야 하므로 isDraft 와 같은 자리에서 온 값을 쓴다.
+    currentUpdatedAt: string;
   }): SweepDecision {
     if (latest === null) {
       return 'REVIEW';
@@ -277,6 +287,29 @@ export class SweepPrReviewsUsecase {
       // 반대 방향(ready → draft 되돌림)은 성립하지 않는다 — 이미 완성본을 리뷰했다.
       const readyTransition = latest.isDraft && !currentIsDraft;
       return publishTransition || readyTransition ? 'REVIEW' : 'SKIP';
+    }
+    // 입력이 바뀌지 않는 한 결과가 같은 실패는 쿨다운·예산과 무관하게 재시도하지 않는다.
+    // 변경량 초과가 그렇다 — GitHub 이 diff 자체를 내주지 않아 PR 이 작아지기 전에는 몇 번을
+    // 돌려도 같은 자리에서 끊긴다. 재시도 예산은 이 반복을 늦출 뿐 멈추지 못한다: 24시간
+    // 윈도우가 롤링이라 오늘의 3건이 내일 3건의 허가증이 된다(실측 2026-09-17~23, PR 하나가
+    // 매일 03시대에 3건씩 21회, 전부 같은 사유).
+    //
+    // 단, 차단은 "입력이 그대로일 때" 로 한정한다. 실패 이후 PR 이 갱신됐다면 변경량이 한도
+    // 아래로 줄었을 수 있어 결과가 같다고 단정할 수 없다. 갱신 시각은 검색 결과에 이미 실려
+    // 오므로(OpenPullRequestRef.updatedAt) 이 확인에 추가 조회가 들지 않는다 — 여기서 PR
+    // 상세를 새로 조회하면 이 변경이 없애려던 회차당 호출이 그대로 되살아난다.
+    //
+    // 갱신 뒤에도 여전히 한도를 넘으면 그 실패가 최신 기록이 되어 다시 차단되므로, 반복은
+    // "PR 갱신당 1회" 로 수렴한다. 갱신 시각을 읽을 수 없으면(빈 값·깨진 형식) 갱신되지 않은
+    // 것으로 보고 차단한다 — 모를 때 재시도 쪽으로 열어두면 막으려던 무한 반복이 되돌아온다.
+    const updatedAtMs = new Date(currentUpdatedAt).getTime();
+    const updatedAfterFailure =
+      Number.isFinite(updatedAtMs) && updatedAtMs > latest.startedAt.getTime();
+    if (
+      latest.errorCode === CodeReviewerErrorCode.DIFF_TOO_LARGE &&
+      !updatedAfterFailure
+    ) {
+      return 'SKIP';
     }
     const cooldownMs = SWEEP_RETRY_COOLDOWN_MINUTES * 60 * 1000;
     const elapsedMs = Date.now() - latest.startedAt.getTime();
@@ -349,9 +382,13 @@ export class SweepPrReviewsUsecase {
       if (diffResult.status === 'rejected') {
         const changedLines = detail.additions + detail.deletions;
         if (changedLines > GITHUB_DIFF_MAX_LINES) {
-          throw new Error(
-            `PR 변경량 ${changedLines}줄이 GitHub diff 한도(${GITHUB_DIFF_MAX_LINES}줄)를 넘어 리뷰할 수 없습니다.`,
-          );
+          // 도메인 예외로 던져야 원장 output 에 errorCode 가 함께 남는다
+          // (AgentRunService.execute). 다음 스윕의 재시도 판정이 문구가 아니라 그 코드를
+          // 보고 이 PR 을 영구 실패로 가른다 — 문구 매칭은 메시지를 손대는 순간 깨진다.
+          throw new CodeReviewerException({
+            message: `PR 변경량 ${changedLines}줄이 GitHub diff 한도(${GITHUB_DIFF_MAX_LINES}줄)를 넘어 리뷰할 수 없습니다.`,
+            code: CodeReviewerErrorCode.DIFF_TOO_LARGE,
+          });
         }
         throw diffResult.reason;
       }

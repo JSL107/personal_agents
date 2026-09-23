@@ -231,6 +231,7 @@ describe('SweepPrReviewsUsecase', () => {
       startedAt: hoursAgo(1),
       dryRun: false,
       isDraft: false,
+      errorCode: null,
     });
 
     const { results } = await buildUsecase(ENABLED).execute();
@@ -250,6 +251,7 @@ describe('SweepPrReviewsUsecase', () => {
       startedAt: hoursAgo(1),
       dryRun: true,
       isDraft: false,
+      errorCode: null,
     });
 
     await buildUsecase(ENABLED).execute();
@@ -263,6 +265,7 @@ describe('SweepPrReviewsUsecase', () => {
       startedAt: hoursAgo(1),
       dryRun: false,
       isDraft: false,
+      errorCode: null,
     });
 
     await buildUsecase({
@@ -279,6 +282,7 @@ describe('SweepPrReviewsUsecase', () => {
       startedAt: hoursAgo(1),
       dryRun: true,
       isDraft: false,
+      errorCode: null,
     });
 
     const { results } = await buildUsecase({
@@ -302,6 +306,7 @@ describe('SweepPrReviewsUsecase', () => {
       startedAt: hoursAgo(1),
       dryRun: true,
       isDraft: false,
+      errorCode: null,
     });
 
     await buildUsecase(ENABLED).execute();
@@ -318,6 +323,7 @@ describe('SweepPrReviewsUsecase', () => {
       startedAt: hoursAgo(1),
       dryRun: false,
       isDraft: true,
+      errorCode: null,
     });
     github.listOpenPullRequestRefs.mockResolvedValue([
       { ...OPEN_PR, isDraft: false },
@@ -342,6 +348,7 @@ describe('SweepPrReviewsUsecase', () => {
       startedAt: hoursAgo(1),
       dryRun: false,
       isDraft: true,
+      errorCode: null,
     });
     github.listOpenPullRequestRefs.mockResolvedValue([
       { ...OPEN_PR, isDraft: true },
@@ -363,6 +370,7 @@ describe('SweepPrReviewsUsecase', () => {
       startedAt: hoursAgo(1),
       dryRun: false,
       isDraft: false,
+      errorCode: null,
     });
     github.listOpenPullRequestRefs.mockResolvedValue([
       { ...OPEN_PR, isDraft: true },
@@ -422,6 +430,7 @@ describe('SweepPrReviewsUsecase', () => {
       startedAt: minutesAgo(5),
       dryRun: false,
       isDraft: false,
+      errorCode: null,
     });
 
     const { results } = await buildUsecase(ENABLED).execute();
@@ -436,6 +445,7 @@ describe('SweepPrReviewsUsecase', () => {
       startedAt: minutesAgo(15),
       dryRun: false,
       isDraft: false,
+      errorCode: null,
     });
 
     const { results } = await buildUsecase(ENABLED).execute();
@@ -450,6 +460,7 @@ describe('SweepPrReviewsUsecase', () => {
       startedAt: minutesAgo(5),
       dryRun: false,
       isDraft: false,
+      errorCode: null,
     });
 
     const { results } = await buildUsecase(ENABLED).execute();
@@ -467,6 +478,7 @@ describe('SweepPrReviewsUsecase', () => {
       startedAt: minutesAgo(15),
       dryRun: false,
       isDraft: false,
+      errorCode: null,
     });
     agentRunService.countUnsuccessfulSweepReviews.mockResolvedValue(3);
 
@@ -486,8 +498,85 @@ describe('SweepPrReviewsUsecase', () => {
       startedAt: minutesAgo(15),
       dryRun: false,
       isDraft: false,
+      errorCode: null,
     });
     agentRunService.countUnsuccessfulSweepReviews.mockResolvedValue(2);
+
+    const { results } = await buildUsecase(ENABLED).execute();
+
+    expect(reviewUsecase.execute).toHaveBeenCalledTimes(1);
+    expect(results).toHaveLength(1);
+  });
+
+  it('변경량 초과로 끝났고 그 뒤 PR 갱신이 없으면 쿨다운이 지나도 재리뷰하지 않는다', async () => {
+    // OPEN_PR.updatedAt 은 2026-07-31 로 실패 시각(15분 전)보다 앞선다 = 입력이 그대로다.
+    agentRunService.findLatestSweepReview.mockResolvedValue({
+      status: 'FAILED',
+      startedAt: minutesAgo(15),
+      dryRun: false,
+      isDraft: false,
+      errorCode: 'CODE_REVIEWER_DIFF_TOO_LARGE',
+    });
+
+    const { results } = await buildUsecase(ENABLED).execute();
+
+    // 예산 조회까지 가지 않는다. 예산은 반복 속도만 늦출 뿐 멈추지 못한다 — 24시간 윈도우가
+    // 롤링이라 오늘 쓴 3건이 내일 3건을 그대로 허가한다(실측 2026-09-17~23, 같은 PR 21회).
+    expect(
+      agentRunService.countUnsuccessfulSweepReviews,
+    ).not.toHaveBeenCalled();
+    expect(reviewUsecase.execute).not.toHaveBeenCalled();
+    expect(results).toEqual([]);
+  });
+
+  it('변경량 초과로 실패했어도 그 뒤 PR 이 갱신됐으면 한 번 더 리뷰한다 — 한도 아래로 줄었을 수 있다', async () => {
+    github.listOpenPullRequestRefs.mockResolvedValue([
+      { ...OPEN_PR, updatedAt: minutesAgo(5).toISOString() },
+    ]);
+    agentRunService.findLatestSweepReview.mockResolvedValue({
+      status: 'FAILED',
+      startedAt: minutesAgo(15),
+      dryRun: false,
+      isDraft: false,
+      errorCode: 'CODE_REVIEWER_DIFF_TOO_LARGE',
+    });
+
+    const { results } = await buildUsecase(ENABLED).execute();
+
+    expect(reviewUsecase.execute).toHaveBeenCalledTimes(1);
+    expect(results).toHaveLength(1);
+  });
+
+  it('갱신 시각을 읽을 수 없으면 갱신되지 않은 것으로 보고 차단을 유지한다', async () => {
+    // 모를 때 재시도 쪽으로 열어두면 막으려던 무한 반복이 그대로 되돌아온다.
+    github.listOpenPullRequestRefs.mockResolvedValue([
+      { ...OPEN_PR, updatedAt: '' },
+    ]);
+    agentRunService.findLatestSweepReview.mockResolvedValue({
+      status: 'FAILED',
+      startedAt: minutesAgo(15),
+      dryRun: false,
+      isDraft: false,
+      errorCode: 'CODE_REVIEWER_DIFF_TOO_LARGE',
+    });
+
+    const { results } = await buildUsecase(ENABLED).execute();
+
+    expect(reviewUsecase.execute).not.toHaveBeenCalled();
+    expect(results).toEqual([]);
+  });
+
+  it('변경량 초과가 아닌 실패는 코드가 남아 있어도 쿨다운 재시도를 유지한다', async () => {
+    // 영구 실패 차단이 실패 전체로 번지면 일시 장애(모델 출력 깨짐·쿼터·타임아웃)로 실패한
+    // PR 까지 영영 리뷰되지 않는다. 차단 대상은 변경량 초과 하나뿐임을 고정한다.
+    agentRunService.findLatestSweepReview.mockResolvedValue({
+      status: 'FAILED',
+      startedAt: minutesAgo(15),
+      dryRun: false,
+      isDraft: false,
+      errorCode: 'CODE_REVIEWER_INVALID_MODEL_OUTPUT',
+    });
+    agentRunService.countUnsuccessfulSweepReviews.mockResolvedValue(0);
 
     const { results } = await buildUsecase(ENABLED).execute();
 
@@ -501,6 +590,7 @@ describe('SweepPrReviewsUsecase', () => {
       startedAt: minutesAgo(15),
       dryRun: false,
       isDraft: false,
+      errorCode: null,
     });
     agentRunService.countUnsuccessfulSweepReviews.mockRejectedValue(
       new Error('DB 순간 오류'),
@@ -630,6 +720,7 @@ describe('SweepPrReviewsUsecase', () => {
       startedAt: hoursAgo(1),
       dryRun: false,
       isDraft: false,
+      errorCode: null,
     });
 
     await buildUsecase(ENABLED).execute();
@@ -693,7 +784,12 @@ describe('SweepPrReviewsUsecase', () => {
       (recordedError as { run: (context: unknown) => Promise<unknown> }).run({
         agentRunId: 1,
       }),
-    ).rejects.toThrow(/변경량 32474줄/);
+    ).rejects.toMatchObject({
+      message: expect.stringContaining('변경량 32474줄'),
+      // 코드까지 실려야 다음 스윕이 문구가 아니라 코드로 영구 실패를 가른다. 평범한 Error 로
+      // 던지면 원장 output 에 errorCode 가 빠져(AgentRunService.execute) 차단이 통째로 풀린다.
+      errorCode: 'CODE_REVIEWER_DIFF_TOO_LARGE',
+    });
   });
 
   it('상세와 diff 는 병렬로 조회한다 — 두 응답 사이의 push 창을 넓히지 않는다', async () => {
