@@ -206,6 +206,22 @@ func runModelsTests(_ t: TestRunner) {
         t.fail("approval.opened 디코딩 실패: \(error)")
     }
 
+    // ConsoleEvent 유니온 — approval.failed (반영 실패 통지)
+    do {
+        let json = """
+        {"type":"approval.failed","approval":{"id":"p1","agentType":null,"title":"경력 반영","createdAt":"2026-09-23T00:00:00Z","expiresAt":"2026-09-23T10:00:00Z"},"reason":"서버 재시작으로 반영이 중단됐습니다"}
+        """.data(using: .utf8)!
+        let event = try JSONDecoder().decode(ConsoleEvent.self, from: json)
+        if case let .approvalFailed(approval, reason) = event {
+            t.expectEqual(approval.id, "p1", "approval.failed approval.id")
+            t.expectEqual(reason, "서버 재시작으로 반영이 중단됐습니다", "approval.failed reason")
+        } else {
+            t.fail("approval.failed 로 디코딩되어야 함")
+        }
+    } catch {
+        t.fail("approval.failed 디코딩 실패: \(error)")
+    }
+
     // ConsoleEvent 유니온 — command.rejected
     do {
         let json = """

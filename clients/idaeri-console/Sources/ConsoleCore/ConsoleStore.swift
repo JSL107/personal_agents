@@ -73,6 +73,15 @@ public final class ConsoleStore: ObservableObject {
         sessions = snapshot.sessions
         serverTime = snapshot.serverTime
         housekeeping = snapshot.housekeeping
+        // 서버 재시작 중에 마감된 반영의 사유는 `approval.failed` 로 오지 않는다 — 그 이벤트는
+        // 서버가 listen 하기 전에 발행되고 구독 이전 이벤트는 재전달되지 않는다. 스냅샷이 그
+        // 구간의 유일한 경로이므로 여기서 집지 않으면 안내가 화면에 영영 뜨지 않는다.
+        //
+        // 이미 떠 있는 안내는 덮지 않는다. 그쪽이 방금 누른 것에 대한 응답이라 더 급하다.
+        if approvalNotice == nil,
+            let failed = snapshot.approvals.first(where: { $0.failureReason != nil }) {
+            approvalNotice = failed.failureReason
+        }
     }
 
     /// 이 에이전트의 현재 완료를 "확인했다" 로 표시해 대기로 내린다.
@@ -125,6 +134,16 @@ public final class ConsoleStore: ObservableObject {
             markAwaitingApproval(agentType: approval.agentType)
         case let .approvalResolved(approval):
             resolveApprovalLocally(id: approval.id)
+        case let .approvalFailed(approval, reason):
+            // 누른 직후 감춰 둔 카드를 되살린다. 202 접수 뒤에 난 실패는 write 응답으로 돌아오지
+            // 않으므로 `endResolvingApproval` 이 호출될 자리가 여기밖에 없다 — 없으면 그 카드는
+            // 앱이 살아 있는 동안 계속 감춰진 채로 남는다.
+            endResolvingApproval(id: approval.id)
+            upsertApproval(approval)
+            markAwaitingApproval(agentType: approval.agentType)
+            // 되살리기만 하면 사용자는 그것을 "안 눌렸다" 로 읽고 다시 누른다. 그 재클릭이 이미
+            // 반영된 단계를 한 번 더 실행하므로, 왜 되살아났는지를 반드시 함께 말한다.
+            setApprovalNotice(reason)
         case let .stateChanged(agentType, state, bubble):
             changeAgentState(agentType: agentType, state: state, bubble: bubble)
         case let .sessionOpened(session):

@@ -29,6 +29,7 @@ const preview = (overrides: Partial<PreviewAction> = {}): PreviewAction => ({
   slackMessageTs: null,
   lastFailedAt: null,
   lastFailureReason: null,
+  applyProgress: null,
   ...overrides,
 });
 

@@ -18,6 +18,7 @@ const buildPreview = (
   slackMessageTs: '111.222',
   lastFailedAt: null,
   lastFailureReason: null,
+  applyProgress: null,
   ...overrides,
 });
 
