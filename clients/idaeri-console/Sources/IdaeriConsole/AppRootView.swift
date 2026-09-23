@@ -138,14 +138,27 @@ struct AppRootView: View {
                     store.setApprovalNotice(nil)
                 }
             } catch {
-                let reason = approvalFailureReason(error)
-                await MainActor.run { store.setApprovalNotice("\(action) 실패 — \(reason)") }
+                // **타임아웃은 실패가 아니다.** 앱이 먼저 포기했을 뿐 서버의 apply 는 계속 돈다
+                // (실측 7~14분/묶음, 묶음이 여럿이면 30분 초과). 그 카드를 되살리면 아직 돌고
+                // 있는 요청을 다시 누르게 되고 `ALREADY_APPLYING` 이 뜬다 — 이 변경이 막으려는
+                // 바로 그 경로가 180초 뒤에 되살아난다. 그래서 감춘 채 두고 SSE
+                // `approval.resolved` 나 다음 스냅샷이 카드를 걷어가기를 기다린다.
+                let isStillRunning = isRequestTimeout(error)
+                await MainActor.run {
+                    store.setApprovalNotice(
+                        isStillRunning
+                            ? "\(action) 처리가 길어지고 있습니다 — 서버에서 계속 진행 중입니다. 끝나면 목록에서 사라집니다."
+                            : "\(action) 실패 — \(approvalFailureReason(error))"
+                    )
+                }
                 // 정본을 **먼저** 받고 그다음 감춤을 푼다. 순서를 뒤집으면 이미 처리됐거나
                 // 만료된 카드가 버튼과 함께 잠깐 돌아왔다가 사라진다. 재동기화 뒤에도 카드가
                 // 남아 있으면(백엔드가 죽어 조회 자체가 실패한 경우 포함) 버튼이 되살아나
                 // 다시 누를 수 있다.
                 await resyncSnapshot()
-                await MainActor.run { store.endResolvingApproval(id: id) }
+                if !isStillRunning {
+                    await MainActor.run { store.endResolvingApproval(id: id) }
+                }
             }
         }
     }

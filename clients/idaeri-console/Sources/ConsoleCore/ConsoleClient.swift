@@ -176,6 +176,16 @@ public func buildApprovalRequest(
     return request
 }
 
+/// 앱이 먼저 포기한 것인가 — 즉 **서버가 처리했는지 알 수 없는** 오류인가.
+///
+/// 타임아웃은 "실패했다" 가 아니라 "답을 못 들었다" 이다. 승인 반영은 실측 7~14분/묶음이라
+/// 이 경우 서버는 대개 아직 돌고 있다. 그때 카드를 되살리면 진행 중인 요청을 다시 누르게 되고,
+/// 백엔드가 `ALREADY_APPLYING` 으로 거절해 "이미 처리됐거나 만료" 라는 틀린 안내가 뜬다 —
+/// 이 변경이 막으려는 바로 그 경로다. 상태를 받은 실패(4xx·5xx)와는 다르게 다뤄야 한다.
+public func isRequestTimeout(_ error: Error) -> Bool {
+    return (error as? URLError)?.code == .timedOut
+}
+
 /// 콘솔 백엔드에 대한 얇은 클라이언트. 부팅 시 스냅샷 1콜, 이후 SSE 구독 + 리모컨 write(지시/승인/거절).
 /// 앱에는 LLM 로직이 없다 — write 는 백엔드에 그대로 위임하고 진행은 SSE 로 받는다.
 public actor ConsoleClient {
