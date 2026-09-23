@@ -866,6 +866,8 @@ describe('IdaeriRouterUsecase', () => {
         text: '음 그거 있잖아',
         routedTo: 'UNKNOWN',
         routedVia: 'classifier',
+        // 0 으로 고정된 계약이 아니다 — 실어야 "낮은 확신으로 포기" 와 "높은데도 못 고름" 이 갈린다.
+        confidence: 0,
       });
     });
 
@@ -900,17 +902,12 @@ describe('IdaeriRouterUsecase', () => {
       });
     });
 
-    // 원문이 없는 갈래는 채점할 것이 없다. 행은 남되 근거는 비운다.
-    it('text 가 없으면 행만 남기고 근거는 두지 않는다', async () => {
-      let seen: RoutingContext | undefined;
-      let called = false;
+    // 원문도 hint 도 없는 요청은 아예 남기지 않는다. 채점할 문장이 없어 표본 가치가 0 이고
+    // 분류기를 타지도 않았다 — 남겨 봐야 무엇을 잘못 분류했는지 되짚을 수 없다.
+    it('text 도 hint 도 없으면 원장에 남기지 않는다', async () => {
       const agentRunService = {
         setParentId: jest.fn().mockResolvedValue(undefined),
-        execute: jest.fn(async ({ run }: { run: () => unknown }) => {
-          called = true;
-          seen = claimRoutingContext();
-          await run();
-        }),
+        execute: jest.fn(),
       } as unknown as jest.Mocked<AgentRunService>;
       const { usecase } = buildUsecase([], undefined, agentRunService);
 
@@ -920,8 +917,68 @@ describe('IdaeriRouterUsecase', () => {
         routerErrorCode: RouterErrorCode.INTENT_HINT_REQUIRED,
       });
 
-      expect(called).toBe(true);
-      expect(seen).toBeUndefined();
+      expect(agentRunService.execute).not.toHaveBeenCalled();
+    });
+
+    // 이 PR 의 P1 수정 — 분류기 UNKNOWN 은 운영 실패가 아니다. 시스템은 그걸 잡담으로 보고
+    // ConversationalReply 로 정상 응답한다. FAILED 로 적으면 인사 한 마디가 24시간 동안
+    // 지연 보고에 "ROUTER 실행 실패" 로 뜬다 — findFailedRunsSince 는 status·endedAt 만 본다.
+    it('UNKNOWN 은 정상 종료로 남긴다 — 잡담이 실패 집계를 오염시키면 안 된다', async () => {
+      const classifier = buildClassifierMock({
+        agentType: 'UNKNOWN',
+        confidence: 0.2,
+        reason: '인사말',
+      });
+      let ranWithoutThrowing = false;
+      const agentRunService = {
+        setParentId: jest.fn().mockResolvedValue(undefined),
+        execute: jest.fn(async ({ run }: { run: () => Promise<unknown> }) => {
+          // execute 는 run 이 정상 반환하면 SUCCEEDED, 던지면 FAILED 로 마감한다.
+          await run();
+          ranWithoutThrowing = true;
+        }),
+      } as unknown as jest.Mocked<AgentRunService>;
+      const { usecase } = buildUsecase([], classifier, agentRunService);
+
+      await expect(
+        usecase.dispatch({
+          source: 'SLACK_MESSAGE',
+          slackUserId: 'U1',
+          text: '안녕하세요',
+        }),
+      ).rejects.toMatchObject({
+        routerErrorCode: RouterErrorCode.INTENT_CLASSIFY_FAILED,
+      });
+
+      expect(ranWithoutThrowing).toBe(true);
+    });
+
+    // 반대쪽 — 미등록 dispatcher 는 진짜 결함이다. 그 워커로 가야 할 요청이 전부 막히므로
+    // 실패로 남아 지연 보고에 떠야 한다.
+    it('미등록 담당자는 실패로 남긴다', async () => {
+      let runRejected = false;
+      const agentRunService = {
+        setParentId: jest.fn().mockResolvedValue(undefined),
+        execute: jest.fn(async ({ run }: { run: () => Promise<unknown> }) => {
+          await run().catch(() => {
+            runRejected = true;
+          });
+        }),
+      } as unknown as jest.Mocked<AgentRunService>;
+      const { usecase } = buildUsecase([], undefined, agentRunService);
+
+      await expect(
+        usecase.dispatch({
+          source: 'SLACK_MESSAGE',
+          slackUserId: 'U1',
+          text: '오늘 할 일',
+          agentTypeHint: AgentType.PM,
+        }),
+      ).rejects.toMatchObject({
+        routerErrorCode: RouterErrorCode.UNSUPPORTED_AGENT_TYPE,
+      });
+
+      expect(runRejected).toBe(true);
     });
 
     // 기록은 부수 효과다 — 원장이 죽었다고 사용자에게 다른 오류를 보이면 안 된다.

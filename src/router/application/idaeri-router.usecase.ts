@@ -33,6 +33,10 @@ import { IntentClassifierUsecase } from './intent-classifier.usecase';
 // (DispatchResult 의 handoffResults 필드 확장은 follow-up plan 에서 검토).
 const MAX_HANDOFF_DEPTH = 3;
 
+// 라우터가 담당자를 고르지 못한 두 갈래. 원장에 적는 status 가 갈리므로 하나로 뭉뚱그리지 않는다.
+// UNCLASSIFIED 는 정상 종료(잡담으로 응답된다), NO_DISPATCHER 는 실패(그 워커로 갈 요청이 전부 막힌다).
+type RoutingMissOutcome = 'UNCLASSIFIED' | 'NO_DISPATCHER';
+
 interface HandoffChainState {
   depth: number;
   visited: AgentType[];
@@ -108,14 +112,21 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
       );
       // 분류기가 dispatcher 없는 워커를 골랐을 수 있다(파서가 AgentType 전체를 허용한다).
       // 그건 명백한 오분류 표본이라 원장에 남긴다 — 고른 대상까지 함께.
-      return this.failRouting(
+      return this.recordRoutingMiss(
         new RouterException({
           code: RouterErrorCode.UNSUPPORTED_AGENT_TYPE,
           message: `Router 가 agentType=${agentType} dispatcher 를 알지 못합니다. 해당 agent module 이 AGENT_DISPATCHER_PORT 에 등록됐는지 확인하세요.`,
           status: DomainStatus.BAD_REQUEST,
         }),
         input,
-        { routedTo: agentType, routedVia: classified.routedVia },
+        {
+          routedTo: agentType,
+          routedVia: classified.routedVia,
+          ...(classified.confidence !== undefined
+            ? { confidence: classified.confidence }
+            : {}),
+        },
+        'NO_DISPATCHER',
       );
     }
 
@@ -263,25 +274,36 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
   }
 
   /**
-   * 담당자를 고르지 못해 dispatch 이전에 끊긴 요청을 원장에 남기고, 원래 예외를 그대로 던진다.
+   * 담당자를 고르지 못한 요청을 원장에 남기고, 원래 예외를 그대로 던진다.
    *
-   * 이 세 갈래(분류 실패·미등록 담당자·입력 없음)는 워커를 한 번도 부르지 않으므로 AgentRun
-   * 이 아예 만들어지지 않았다. 그래서 **분류가 실패한 표본이 원장에 0건**이었다 — 정확도를
+   * 이 갈래들은 워커를 한 번도 부르지 않으므로 AgentRun 이 아예 만들어지지 않았다 — 정확도를
    * 재려는 쪽에서 가장 필요한 회차가 통째로 빠진 것이다. 여기서 `AgentType.ROUTER` 로 한 줄을
    * 남긴다(라우터는 워커가 아니라 설비이고, 고르지 못한 회차만 자기 이름으로 기록한다).
    *
-   * 기록은 부수 효과다 — 실패해도 사용자에게 돌려줄 오류는 원래 예외 그대로다. `execute` 가
-   * 되던지는 것은 우리가 넘긴 그 예외이므로 삼키고, 그 외(DB 장애 등)만 로그로 남긴다.
+   * **`status` 를 갈라 적는 것이 이 함수의 요점이다.**
+   * 분류기가 UNKNOWN 을 낸 것은 운영 실패가 아니다 — 시스템은 그걸 잡담으로 보고
+   * `ConversationalReply` 로 정상 응답한다(`router-message.handler.ts` 의 UNKNOWN 분기).
+   * 그 회차를 FAILED 로 적으면 인사 한 마디가 24시간 동안 지연 보고에 "ROUTER 실행 실패" 로
+   * 뜬다 — `findFailedRunsSince` 는 `status`·`endedAt` 만 보고 triggerType 을 거르지 않기
+   * 때문이다(codex review #640 P1). 그래서 UNKNOWN 은 **정상 종료**로 남기고, 무엇이
+   * 일어났는지는 `output.outcome` 과 `routedTo` 로 읽게 한다.
    *
-   * `run` 이 곧바로 거절하므로 이 실행은 반드시 FAILED 로 마감되고, `execute` 의 실패 경로가
-   * errorCode 와 failureKind 를 함께 적는다 — 기록 형식을 여기서 따로 만들지 않는다.
+   * 소비처(지연 보고·브리핑·실패율)를 고치지 않는 이유도 같다 — 생산자가 사실을 정확히
+   * 적으면 소비처가 예외 목록을 들고 다닐 필요가 없다. 목록은 새 소비처가 생길 때마다 빠진다.
+   *
+   * 기록은 부수 효과다 — 실패해도 사용자에게 돌려줄 오류는 원래 예외 그대로다.
    */
-  private async failRouting(
+  private async recordRoutingMiss(
     exception: RouterException,
     input: DispatchInput,
-    attempted: { routedTo: string; routedVia: RoutedVia } | undefined,
+    attempted: {
+      routedTo: string;
+      routedVia: RoutedVia;
+      confidence?: number;
+    },
+    outcome: RoutingMissOutcome,
   ): Promise<never> {
-    const recordFailure = (): Promise<unknown> =>
+    const record = (): Promise<unknown> =>
       this.agentRunService.execute({
         agentType: AgentType.ROUTER,
         triggerType: TriggerType.ROUTING_FAILED,
@@ -289,21 +311,26 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
           source: input.source,
           slackUserId: input.slackUserId,
         },
-        run: () => Promise.reject(exception),
+        run:
+          outcome === 'UNCLASSIFIED'
+            ? // 정상 종료. reason 은 분류기가 왜 못 골랐는지의 유일한 단서라 함께 싣는다.
+              () =>
+                Promise.resolve({
+                  result: undefined,
+                  modelUsed: 'deterministic',
+                  output: { outcome, reason: exception.message },
+                })
+            : // 미등록 dispatcher 는 진짜 결함이다 — 그 워커로 가야 할 요청이 전부 막힌다.
+              () => Promise.reject(exception),
       });
     try {
-      // 원문이 없는 갈래(INTENT_HINT_REQUIRED)는 채점할 것이 없어 근거를 두지 않는다 —
-      // 그 경우에도 행은 남으므로 "왜 끊겼는지" 는 errorCode 로 읽을 수 있다.
-      await (input.text && attempted !== undefined
-        ? runWithRoutingContext(
-            { text: input.text, ...attempted },
-            recordFailure,
-          )
-        : recordFailure());
+      await (input.text
+        ? runWithRoutingContext({ text: input.text, ...attempted }, record)
+        : record());
     } catch (error: unknown) {
       if (error !== exception) {
         const message = error instanceof Error ? error.message : String(error);
-        this.logger.warn(`Router 라우팅 실패 기록 실패 — ${message}`);
+        this.logger.warn(`Router 라우팅 미스 기록 실패 — ${message}`);
       }
     }
     throw exception;
@@ -322,16 +349,14 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
       this.logger.warn(
         `Router dispatch — agentTypeHint 누락 + text 비어 있음 (source=${input.source}, user=${input.slackUserId}).`,
       );
-      return this.failRouting(
-        new RouterException({
-          code: RouterErrorCode.INTENT_HINT_REQUIRED,
-          message:
-            'agentTypeHint 도 자연어 text 도 없어 intent 분류가 불가합니다.',
-          status: DomainStatus.BAD_REQUEST,
-        }),
-        input,
-        undefined,
-      );
+      // 원문도 hint 도 없는 요청은 원장에 남기지 않는다. 채점할 문장이 없어 표본 가치가 0 이고,
+      // 분류기를 타지도 않았다 — 남겨 봐야 "무엇을 잘못 분류했는지" 를 되짚을 수 없다.
+      throw new RouterException({
+        code: RouterErrorCode.INTENT_HINT_REQUIRED,
+        message:
+          'agentTypeHint 도 자연어 text 도 없어 intent 분류가 불가합니다.',
+        status: DomainStatus.BAD_REQUEST,
+      });
     }
 
     const classification = await this.intentClassifier.classify(
@@ -345,14 +370,23 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
       // 분류기가 아무도 고르지 못한 회차 — 정확도 분석에 가장 값진 표본이다.
       // routedTo 는 분류기 자신의 어휘를 그대로 쓴다('UNKNOWN'). 없는 담당자 이름을
       // 지어내면 나중에 "그 워커로 보냈다" 와 구분되지 않는다.
-      return this.failRouting(
+      //
+      // confidence 도 함께 싣는다. UNKNOWN 이 0 으로 고정된 계약이 아니라서, 실으면
+      // "0.2 로 포기한 회차" 와 "0.7 인데도 못 고른 회차" 를 가를 수 있다 — 임계값을
+      // 정하려면 그 분포가 있어야 한다(codex review #640 P2).
+      return this.recordRoutingMiss(
         new RouterException({
           code: RouterErrorCode.INTENT_CLASSIFY_FAILED,
           message: `사용자 의도를 10개 worker 중 하나로 분류하지 못했습니다. reason: ${classification.reason || '(없음)'}`,
           status: DomainStatus.BAD_REQUEST,
         }),
         input,
-        { routedTo: 'UNKNOWN', routedVia: 'classifier' },
+        {
+          routedTo: 'UNKNOWN',
+          routedVia: 'classifier',
+          confidence: classification.confidence,
+        },
+        'UNCLASSIFIED',
       );
     }
     return {

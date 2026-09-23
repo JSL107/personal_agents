@@ -366,9 +366,11 @@ public func officeWorkAffinity(agentType: String) -> [FurnitureKind] {
     // 맞고, 지표 화면은 개발실에 없어서 넣으면 성장방까지 걸어간다(벽 자리가 이미 셋 다 찼다).
     case "BE", "BE_SCHEMA", "BE_TEST", "BE_SRE":
         return [.wallWhiteboard, .whiteboard, .bookshelf]
-    // 상태를 지켜본다 — 벽에 걸린 지표 화면.
+    // 상태를 지켜본다 — 벽에 걸린 지표 화면. 요청을 받아 담당자를 고르는 설비(ROUTER)도
+    // 여기다. 들어오는 것을 지켜보다 넘기는 일이라 같은 방 운영 감시와 몸짓이 같고,
+    // 그 가구가 총무 방에 이미 있어 걸어갈 거리도 검증돼 있다.
     case "OPS_SUPERVISOR", "SUBCONSCIOUS_GATE", "INVEST", "PAPER_TRADE", "PAPER_RECOMMEND",
-        "DELAY_REPORT":
+        "DELAY_REPORT", "ROUTER":
         return [.wallMonitor]
     // 기록을 넣고 꺼낸다. 마감·신청 담당(SCHEDULE)도 여기다 — 날짜가 정해진 것을 적어 두고
     // 때가 되면 꺼내 보이는 일이라, 같은 방의 휴가 신청 담당과 하는 몸짓이 같다.

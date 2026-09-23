@@ -107,6 +107,9 @@ public func agentRoleLabel(for agentType: String) -> String? {
         return "하루미"
     case "OPS_SUPERVISOR":
         return "안정민"
+    // 워커가 아니라 설비다 — 요청을 받아 담당자에게 넘기는 일만 한다.
+    case "ROUTER":
+        return "길잡이"
     default:
         return nil
     }
