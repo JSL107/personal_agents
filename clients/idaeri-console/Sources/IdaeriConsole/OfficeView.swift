@@ -116,9 +116,16 @@ struct OfficeView: View {
                     // 통지는 상태가 "바뀔 때" 만 온다. 이미 가려지거나 최소화된 창에서 탭이
                     // 열리면 다음 통지까지 씬이 계속 돌므로, 나타나는 시점에 한 번 맞춘다.
                     applySceneSleep()
-                    focusedRoom = scene.focusedDepartment
+                    let validSelection = isPresidentBarOpen
+                        ? nil
+                        : reconciledSelectedAgent(current: selectedAgent, agents: store.agents)
+                    selectedAgent = validSelection
+                    scene.setVectorMetricsEnabled(validSelection != nil)
+                    scene.onFocusChange = { focusedRoom = $0 }
                     scene.syncSessions(store.sessions)
                     scene.sync(agents: store.agents, approvals: store.approvals)
+                    scene.setSelected(validSelection)
+                    focusedRoom = scene.focusedDepartment
                     scene.applyHousekeeping(store.housekeeping)
                     scene.refreshOverlays(
                         agents: store.agents, runs: store.runs,
@@ -130,7 +137,6 @@ struct OfficeView: View {
                         commandText = ""
                     }
                     scene.onPresidentClick = { openPresidentBar() }
-                    scene.onFocusChange = { focusedRoom = $0 }
                     scene.onDailyReportClick = {
                         scene.toggleDailyReportCard(store.briefing)
                     }
