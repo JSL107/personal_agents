@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { AgentRunService } from '../../agent-run/application/agent-run.service';
+import { TriggerType } from '../../agent-run/domain/agent-run.type';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { GateDecision, RedactedChange } from '../domain/subconscious.type';
 
@@ -54,9 +56,21 @@ const readPositiveNumber = (
   return Number.isFinite(value) && value > 0 ? value : fallback;
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const isProbability = (value: unknown): value is number =>
+  typeof value === 'number' &&
+  Number.isFinite(value) &&
+  value >= 0 &&
+  value <= 1;
+
 @Injectable()
 export class JevSubconsciousGate {
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly agentRunService: AgentRunService,
+  ) {}
 
   async evaluate(changes: RedactedChange[]): Promise<JevEvaluation> {
     if (changes.length === 0) {
@@ -68,11 +82,37 @@ export class JevSubconsciousGate {
       };
     }
 
-    const response = await this.request(changes);
+    const outcome = await this.agentRunService.execute<JevEvaluation>({
+      agentType: AgentType.SUBCONSCIOUS_GATE,
+      triggerType: TriggerType.SUBCONSCIOUS_TICK,
+      inputSnapshot: {
+        changeCount: changes.length,
+        sourceIds: [...new Set(changes.map((change) => change.sourceId))],
+        gate: 'jev',
+        model: this.model,
+      },
+      run: async () => {
+        const evaluation = await this.evaluateWithJev(changes);
+        return {
+          result: evaluation,
+          modelUsed: evaluation.model,
+          output: {
+            gate: 'jev',
+            decisions: evaluation.decisions,
+            promotedCount: evaluation.confidentDecisions.length,
+            fallbackCount: evaluation.fallbackChanges.length,
+          },
+        };
+      },
+    });
+    return outcome.result;
+  }
+
+  private async evaluateWithJev(
+    changes: RedactedChange[],
+  ): Promise<JevEvaluation> {
+    const response = this.parseResponse(await this.request(changes));
     const answers = response.answers;
-    if (!answers) {
-      throw new Error('Jev response did not contain answers');
-    }
 
     const decisions: GateDecision[] = [];
     const confidentDecisions: GateDecision[] = [];
@@ -86,8 +126,10 @@ export class JevSubconsciousGate {
       const suggestedAgentType = this.toAgentType(agent?.choice);
 
       if (
-        typeof promoteProbability !== 'number' ||
-        typeof agentConfidence !== 'number' ||
+        promote?.type !== 'noul' ||
+        !isProbability(promoteProbability) ||
+        agent?.type !== 'choice' ||
+        !isProbability(agentConfidence) ||
         suggestedAgentType === undefined
       ) {
         fallbackChanges.push(change);
@@ -121,7 +163,7 @@ export class JevSubconsciousGate {
     };
   }
 
-  private async request(changes: RedactedChange[]): Promise<JevResponse> {
+  private async request(changes: RedactedChange[]): Promise<unknown> {
     const apiKey = this.configService.get<string>('TYPESAFE_API_KEY')?.trim();
     if (!apiKey) {
       throw new Error('TYPESAFE_API_KEY is not configured');
@@ -171,10 +213,26 @@ export class JevSubconsciousGate {
       if (!response.ok) {
         throw new Error(`Jev API returned HTTP ${response.status}`);
       }
-      return (await response.json()) as JevResponse;
+      return await response.json();
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  private parseResponse(value: unknown): Required<JevResponse> {
+    if (!isRecord(value)) {
+      throw new Error('Jev response was not an object');
+    }
+    if (value.model !== this.model) {
+      throw new Error('Jev response model did not match request');
+    }
+    if (!isRecord(value.answers)) {
+      throw new Error('Jev response did not contain answers');
+    }
+    return {
+      model: value.model,
+      answers: value.answers as Record<string, JevAnswer>,
+    };
   }
 
   private toAgentType(value: string | undefined): AgentType | undefined {
