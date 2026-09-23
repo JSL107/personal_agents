@@ -27,6 +27,18 @@
 
 **모든 코드 변경 후 lint:check + test + build 3중 green 확인 필수.** 하나라도 실패하면 PR 불가.
 
+### 자주 쓰는 코드 진입점
+
+관련 경로에서 탐색을 시작하고, 실제 동작은 현재 코드로 확인한다.
+
+| 작업 | 먼저 볼 곳 |
+|---|---|
+| 슬래시 명령·재시도 | `src/slack/handler/agent-command.handler.ts` · `src/slack/handler/retry-run.handler.ts` |
+| 자연어 멘션·워커 라우팅 | `src/slack/handler/router-message.handler.ts` → `src/router/application/idaeri-router.usecase.ts` → `src/router/router.module.ts` |
+| 모델 선택·CLI 호출 | `src/model-router/application/model-router.usecase.ts` → `src/model-router/infrastructure/codex-cli.provider.ts` · `src/model-router/infrastructure/claude-cli.provider.ts` → `src/model-router/infrastructure/cli-process.util.ts` |
+| 환경변수·DB | `src/config/app.config.ts` · `prisma/schema.prisma` |
+| 데스크톱 콘솔 | `clients/idaeri-console/Sources/ConsoleCore/` |
+
 ## 2. DDD 폴더 구조 (이대리 컨벤션)
 
 ```
@@ -54,7 +66,7 @@ src/
 | 도메인 | 책임 | 진입점 |
 |---|---|---|
 | `agent-run/` | 모든 에이전트 실행의 라이프사이클 (begin → run → finish) + EvidenceRecord 기록 | `AgentRunService.execute({...})` |
-| `model-router/` | AgentType → 모델 라우팅 (2026-07-02 전체 ChatGPT 단일 provider, fallback 없음), CLI provider 어댑터 | `ModelRouterUsecase.route({ agentType, request })` |
+| `model-router/` | AgentType → ChatGPT primary 라우팅 + 일부 요청을 제외한 Claude 단방향 fallback, CLI provider 어댑터 | `ModelRouterUsecase.route({ agentType, request })` |
 | `github/` | Octokit 기반 read-only GitHub 클라이언트 (assigned issues/PRs, PR detail/diff) | `ListAssignedTasksUsecase`, `OctokitGithubClient` |
 | `agent/pm/` | PM Agent — `/today` 슬래시 커맨드. 사용자 입력 + GitHub assigned + 전일 plan → DailyPlan | `GenerateDailyPlanUsecase` |
 | `agent/work-reviewer/` | Work Reviewer — `/worklog` 슬래시 커맨드. 정량 근거 강제 | `GenerateWorklogUsecase` |
@@ -79,7 +91,7 @@ src/
    - `src/agent-registry/agent-registry.ts` 의 `AGENT_REGISTRY` (닉네임 포함)
 
    앞 셋은 `Record<AgentType, ...>` 라 빠뜨리면 빌드가 끊는다. **`AGENT_REGISTRY` 만 `readonly AgentRegistryEntry[]` 라 컴파일러가 못 잡고 `agent-registry.spec.ts` 가 잡는다.** 이 표를 하나로만 알고 계획하면 작업 범위를 과소 추정한다.
-9. `src/slack/handler/agent-command.handler.ts` 의 `/retry-run` switch 에 새 `case '{AGENT_TYPE}'` 추가 (FAILURE_REPLAY 라우팅) — 새 에이전트가 FAILED 되면 재실행 가능해야 함
+9. `src/slack/handler/retry-run.handler.ts` 의 `/retry-run` switch 에 새 `case '{AGENT_TYPE}'` 추가 (FAILURE_REPLAY 라우팅) — 새 에이전트가 FAILED 되면 재실행 가능해야 함
 10. spec: parser / usecase / formatter 단위 테스트 (CODE_RULES §5)
 11. README 의 슬래시 커맨드 표 + Slack 봇 설정 단계에 명령 추가
 12. 새 환경변수가 필요하면 `.env.example` + `.env` + `src/config/app.config.ts` (class-validator) + README 표 4곳 동기 갱신 (§5 환경변수 규칙)
@@ -90,7 +102,7 @@ src/
 
 ### CLI Provider 격리
 - `CodexCliProvider` / `ClaudeCliProvider` 는 **반드시** `cli-process.util.ts` 의 `buildSafeChildEnv({ cwd, homeDir })` 로 자식 프로세스 env 를 만든다.
-- HOME 은 `mkdtemp` 로 throwaway 임시 디렉토리에 고정. CODEX_HOME / CLAUDE_CONFIG_DIR 는 실제 경로로 명시 (인증 보존).
+- Codex 는 `mkdtemp` 로 만든 throwaway HOME 을 쓰고, 인증은 실제 `CODEX_HOME` 을 전달해 보존한다. Claude 는 OAuth token 이 있으면 throwaway HOME 을 쓰고, 없으면 Keychain 인증을 위해 실제 HOME 을 쓴다. `CLAUDE_CONFIG_DIR` 는 기본값을 주입하지 않고 부모가 `CLAUDE_CONFIG_DIR` 또는 `CLAUDE_HOME` 을 명시했을 때만 전달한다.
 - 단 현재 `SAFE_ENV_KEYS` 에는 `XDG_CONFIG_HOME` / `XDG_DATA_HOME` / `XDG_CACHE_HOME` 도 부모 값 그대로 forward 된다 — XDG 가 export 된 환경에서는 자식 CLI 가 그 디렉토리들도 읽을 수 있다. 시크릿이 들어 있을 가능성이 있으면 allowlist 에서 제외하거나 throwaway 경로로 override 할 것.
 - prompt 는 **argv 가 아니라 stdin** 으로 전달. `ps aux` 로 prompt 노출되면 안 됨.
 - spawn 에 `cwd: workDir` 필수 — codex agent 가 repo 파일 못 읽도록.

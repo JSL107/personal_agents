@@ -23,6 +23,24 @@ describe('validateEnv AI_CLI_ENV_SYNC_REPO', () => {
   });
 });
 
+describe('validateEnv SUBCONSCIOUS_JEV_* 양수 경계', () => {
+  it.each([
+    ['SUBCONSCIOUS_JEV_TIMEOUT_MS', '0'],
+    ['SUBCONSCIOUS_JEV_PROMOTE_THRESHOLD', '0.0'],
+    ['SUBCONSCIOUS_JEV_CONFIDENCE_THRESHOLD', '0.000'],
+  ])('%s 가 %s 이면 거부한다', (key, value) => {
+    expect(() => validateEnv({ ...requiredEnv, [key]: value })).toThrow();
+  });
+
+  it.each([
+    ['SUBCONSCIOUS_JEV_TIMEOUT_MS', '01'],
+    ['SUBCONSCIOUS_JEV_PROMOTE_THRESHOLD', '.1'],
+    ['SUBCONSCIOUS_JEV_CONFIDENCE_THRESHOLD', '.1'],
+  ])('%s 의 기존 양수 표현 %s 은 허용한다', (key, value) => {
+    expect(() => validateEnv({ ...requiredEnv, [key]: value })).not.toThrow();
+  });
+});
+
 describe('validateEnv JOB_FEED_* 빈 문자열 — @Type(() => Number) 이 0 으로 바꾸는 것을 막는다', () => {
   // @IsOptional 은 null/undefined 만 건너뛴다. 빈 문자열은 @Type(() => Number) 가
   // plainToInstance 단계에서 먼저 Number('')=0 으로 바꿔버려, "미설정(중립)"과
