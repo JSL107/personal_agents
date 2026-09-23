@@ -2,7 +2,11 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { resolveAgentTypeByNickname } from '../../agent-registry/agent-registry';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
-import { RoutedVia } from '../../agent-run/domain/agent-run.type';
+import {
+  RoutingContext,
+  runWithRoutingContext,
+} from '../../agent-run/application/routing-context';
+import { RoutedVia, TriggerType } from '../../agent-run/domain/agent-run.type';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { ConversationContext } from '../domain/conversation-context.type';
@@ -14,6 +18,7 @@ import {
 import {
   AGENT_DISPATCHER_PORT,
   AgentDispatcher,
+  DispatchOutcome,
 } from '../domain/port/agent-dispatcher.port';
 import { RouterException } from '../domain/router.exception';
 import { RouterErrorCode } from '../domain/router-error-code.enum';
@@ -101,11 +106,17 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
       this.logger.warn(
         `Router dispatch — agentType=${agentType} 미등록 dispatcher (등록된 worker: ${[...this.dispatcherByType.keys()].join(', ') || '(없음)'}).`,
       );
-      throw new RouterException({
-        code: RouterErrorCode.UNSUPPORTED_AGENT_TYPE,
-        message: `Router 가 agentType=${agentType} dispatcher 를 알지 못합니다. 해당 agent module 이 AGENT_DISPATCHER_PORT 에 등록됐는지 확인하세요.`,
-        status: DomainStatus.BAD_REQUEST,
-      });
+      // 분류기가 dispatcher 없는 워커를 골랐을 수 있다(파서가 AgentType 전체를 허용한다).
+      // 그건 명백한 오분류 표본이라 원장에 남긴다 — 고른 대상까지 함께.
+      return this.failRouting(
+        new RouterException({
+          code: RouterErrorCode.UNSUPPORTED_AGENT_TYPE,
+          message: `Router 가 agentType=${agentType} dispatcher 를 알지 못합니다. 해당 agent module 이 AGENT_DISPATCHER_PORT 에 등록됐는지 확인하세요.`,
+          status: DomainStatus.BAD_REQUEST,
+        }),
+        input,
+        { routedTo: agentType, routedVia: classified.routedVia },
+      );
     }
 
     // 대화 맥락을 워커 실행 입력까지 전달 — classifier 가 추출한 사용자 지시(userInstruction)
@@ -120,49 +131,60 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
         : {}),
       ...input.conversationContext,
     };
-    // input.replyContext(비동기 회신 컨텍스트)는 `...input` spread 로 root dispatch 에만
-    // 통과된다 — 비동기 worker(BLOG)가 백그라운드 완료 후 같은 스레드에 답장하는 데 쓴다.
-    // handoff chain 자식(followUpInput)에는 의도적으로 미전달(아래 followUpInput 구성부 참조).
-    const outcome = await dispatcher.dispatch({
-      ...input,
-      agentTypeHint: agentType,
-      conversationContext,
-    });
-    this.logger.log(
-      `Router dispatch 완료 — agentType=${agentType} agentRunId=${outcome.agentRunId} model=${outcome.modelUsed} depth=${chain.depth}`,
-    );
-
-    // 라우팅 근거를 원장에 붙인다 — 사용자가 친 원문, 고른 worker, 고른 경로, 분류 확신도.
-    // 워커들은 자기 실행 입력만 스냅샷에 담아서 원문이 어디에도 남지 않았고, 그래서 분류
-    // 정확도를 사후에 잴 방법이 없었다. setParentId 와 같은 이유로 실패를 삼킨다 —
-    // 기록이 빠지는 것보다 사용자 요청이 통째로 실패하는 쪽이 나쁘다.
-    // reusedAgentRun 이 서면 그 id 는 과거 실행의 것이다 — 이번 요청으로 덮어쓰면 그 행이
-    // 다른 요청으로 둔갑해, 기록을 남기려다 원장을 망가뜨린다 (codex review #629 P1).
-    if (input.text && outcome.agentRunId > 0 && !outcome.reusedAgentRun) {
-      try {
-        await this.agentRunService.attachRoutingContext({
-          id: outcome.agentRunId,
+    // 라우팅 근거를 dispatch 를 감싼 스코프에 놓아 둔다 — 이 아래에서 열리는 **첫 AgentRun**
+    // 이 그걸 집어 자기 inputSnapshot 에 담는다(AgentRunService.execute).
+    //
+    // 예전에는 dispatch 가 끝난 뒤 outcome.agentRunId 로 되돌아가 붙였는데, 워커가 예외로
+    // 끝나면 그 되받기가 통째로 끊겼다 — 하필 **분류가 틀려서 죽은 회차**, 즉 정확도 분석에
+    // 가장 필요한 표본이 빠졌다. 행은 예외보다 먼저 만들어지므로 여기서 미리 넘기면 성공·실패를
+    // 가리지 않는다. `void` 로 띄우는 비동기 워커(BLOG)도 스코프를 물려받아 같이 해결된다
+    // (그쪽은 agentRunId 0 sentinel 을 반환해 예전 방식으로는 성공해도 기록되지 않았다).
+    //
+    // 과거 실행 id 를 재사용하는 경로(CAREER_MATE 의 RENDER_*)는 새 행을 열지 않으므로
+    // 이 근거가 그 행에 닿을 길이 없다 — 라우팅 근거 쪽은 구조적으로 안전해졌다.
+    // (parentId 쪽은 여전히 outcome.agentRunId 를 직접 쓰므로 아래에서 따로 막는다.)
+    //
+    // 원문이 없으면(handoff passthrough 가 비는 경우) 채점할 것이 없으니 근거도 두지 않는다 —
+    // #629 의 `if (input.text && …)` 가드를 그대로 승계한다.
+    const routing: RoutingContext | undefined = input.text
+      ? {
           text: input.text,
           routedTo: agentType,
           routedVia: classified.routedVia,
           ...(classified.confidence !== undefined
             ? { confidence: classified.confidence }
             : {}),
-        });
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        this.logger.warn(
-          `Router 라우팅 근거 기록 실패 — agentRunId=${outcome.agentRunId}: ${message}`,
-        );
-      }
-    }
+        }
+      : undefined;
+    // input.replyContext(비동기 회신 컨텍스트)는 `...input` spread 로 root dispatch 에만
+    // 통과된다 — 비동기 worker(BLOG)가 백그라운드 완료 후 같은 스레드에 답장하는 데 쓴다.
+    // handoff chain 자식(followUpInput)에는 의도적으로 미전달(아래 followUpInput 구성부 참조).
+    const runDispatch = (): Promise<DispatchOutcome> =>
+      dispatcher.dispatch({
+        ...input,
+        agentTypeHint: agentType,
+        conversationContext,
+      });
+    const outcome =
+      routing === undefined
+        ? await runDispatch()
+        : await runWithRoutingContext(routing, runDispatch);
+    this.logger.log(
+      `Router dispatch 완료 — agentType=${agentType} agentRunId=${outcome.agentRunId} model=${outcome.modelUsed} depth=${chain.depth}`,
+    );
 
     // step 8 — handoff chain audit log. parent.id 가 input.contextRefs 에 실려오면 child run 의
     // parentId 컬럼에 기록. 실패는 audit 누락에 그치므로 chain 진행 자체를 멈추지 않는다.
     const parentAgentRunId = input.contextRefs?.agentRunId;
     // agentRunId 0 은 "유효 run 없음" sentinel (deterministic/UNKNOWN 분기) — setParentId(id:0) 가
     // Prisma P2025 를 던지므로 가드한다 (career-mate UNKNOWN · vacation LIST 등 공통).
-    if (parentAgentRunId !== undefined && outcome.agentRunId > 0) {
+    // reusedAgentRun 이 서면 그 id 는 **과거 실행**의 것이다 — 이번 chain 의 부모를 적어 넣으면
+    // 그 행이 다른 요청의 자식으로 둔갑한다 (#629 가 라우팅 근거 쪽에만 걸어 둔 가드를 이쪽에도 건다).
+    if (
+      parentAgentRunId !== undefined &&
+      outcome.agentRunId > 0 &&
+      !outcome.reusedAgentRun
+    ) {
       try {
         await this.agentRunService.setParentId({
           id: outcome.agentRunId,
@@ -240,6 +262,53 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
     };
   }
 
+  /**
+   * 담당자를 고르지 못해 dispatch 이전에 끊긴 요청을 원장에 남기고, 원래 예외를 그대로 던진다.
+   *
+   * 이 세 갈래(분류 실패·미등록 담당자·입력 없음)는 워커를 한 번도 부르지 않으므로 AgentRun
+   * 이 아예 만들어지지 않았다. 그래서 **분류가 실패한 표본이 원장에 0건**이었다 — 정확도를
+   * 재려는 쪽에서 가장 필요한 회차가 통째로 빠진 것이다. 여기서 `AgentType.ROUTER` 로 한 줄을
+   * 남긴다(라우터는 워커가 아니라 설비이고, 고르지 못한 회차만 자기 이름으로 기록한다).
+   *
+   * 기록은 부수 효과다 — 실패해도 사용자에게 돌려줄 오류는 원래 예외 그대로다. `execute` 가
+   * 되던지는 것은 우리가 넘긴 그 예외이므로 삼키고, 그 외(DB 장애 등)만 로그로 남긴다.
+   *
+   * `run` 이 곧바로 거절하므로 이 실행은 반드시 FAILED 로 마감되고, `execute` 의 실패 경로가
+   * errorCode 와 failureKind 를 함께 적는다 — 기록 형식을 여기서 따로 만들지 않는다.
+   */
+  private async failRouting(
+    exception: RouterException,
+    input: DispatchInput,
+    attempted: { routedTo: string; routedVia: RoutedVia } | undefined,
+  ): Promise<never> {
+    const recordFailure = (): Promise<unknown> =>
+      this.agentRunService.execute({
+        agentType: AgentType.ROUTER,
+        triggerType: TriggerType.ROUTING_FAILED,
+        inputSnapshot: {
+          source: input.source,
+          slackUserId: input.slackUserId,
+        },
+        run: () => Promise.reject(exception),
+      });
+    try {
+      // 원문이 없는 갈래(INTENT_HINT_REQUIRED)는 채점할 것이 없어 근거를 두지 않는다 —
+      // 그 경우에도 행은 남으므로 "왜 끊겼는지" 는 errorCode 로 읽을 수 있다.
+      await (input.text && attempted !== undefined
+        ? runWithRoutingContext(
+            { text: input.text, ...attempted },
+            recordFailure,
+          )
+        : recordFailure());
+    } catch (error: unknown) {
+      if (error !== exception) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.warn(`Router 라우팅 실패 기록 실패 — ${message}`);
+      }
+    }
+    throw exception;
+  }
+
   // agentTypeHint 가 없을 때만 호출된다. text 도 없으면 분류 불가 → INTENT_HINT_REQUIRED.
   // classifier 가 UNKNOWN 반환 시 INTENT_CLASSIFY_FAILED — 사용자에게 의도 모호 안내.
   // agentType 뿐 아니라 userInstruction(직전 대화 기반 사용자 지시)도 함께 반환 — 워커 전달용.
@@ -253,12 +322,16 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
       this.logger.warn(
         `Router dispatch — agentTypeHint 누락 + text 비어 있음 (source=${input.source}, user=${input.slackUserId}).`,
       );
-      throw new RouterException({
-        code: RouterErrorCode.INTENT_HINT_REQUIRED,
-        message:
-          'agentTypeHint 도 자연어 text 도 없어 intent 분류가 불가합니다.',
-        status: DomainStatus.BAD_REQUEST,
-      });
+      return this.failRouting(
+        new RouterException({
+          code: RouterErrorCode.INTENT_HINT_REQUIRED,
+          message:
+            'agentTypeHint 도 자연어 text 도 없어 intent 분류가 불가합니다.',
+          status: DomainStatus.BAD_REQUEST,
+        }),
+        input,
+        undefined,
+      );
     }
 
     const classification = await this.intentClassifier.classify(
@@ -269,11 +342,18 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
       this.logger.warn(
         `Router intent classifier UNKNOWN — text="${text.slice(0, 60)}" reason="${classification.reason}"`,
       );
-      throw new RouterException({
-        code: RouterErrorCode.INTENT_CLASSIFY_FAILED,
-        message: `사용자 의도를 10개 worker 중 하나로 분류하지 못했습니다. reason: ${classification.reason || '(없음)'}`,
-        status: DomainStatus.BAD_REQUEST,
-      });
+      // 분류기가 아무도 고르지 못한 회차 — 정확도 분석에 가장 값진 표본이다.
+      // routedTo 는 분류기 자신의 어휘를 그대로 쓴다('UNKNOWN'). 없는 담당자 이름을
+      // 지어내면 나중에 "그 워커로 보냈다" 와 구분되지 않는다.
+      return this.failRouting(
+        new RouterException({
+          code: RouterErrorCode.INTENT_CLASSIFY_FAILED,
+          message: `사용자 의도를 10개 worker 중 하나로 분류하지 못했습니다. reason: ${classification.reason || '(없음)'}`,
+          status: DomainStatus.BAD_REQUEST,
+        }),
+        input,
+        { routedTo: 'UNKNOWN', routedVia: 'classifier' },
+      );
     }
     return {
       agentType: classification.agentType,

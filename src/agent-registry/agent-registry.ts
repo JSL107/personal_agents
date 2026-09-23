@@ -302,6 +302,18 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
     description:
       '마감·신청·예약 등록 — 자연어 날짜 표현을 해석해 등록 (자연어 멘션 전용, LLM 미사용)',
   },
+  {
+    agentType: AgentType.ROUTER,
+    displayName: 'Router',
+    // 동료가 아니라 설비다 — 요청을 받아 담당자에게 넘기는 일만 한다. 닉네임으로 불릴 일이
+    // 없지만(dispatcher 미등록이라 resolveAgentTypeByNickname 후보에서 걸러진다) 콘솔이
+    // 사람 이름으로 표시하므로 비워 둘 수 없다.
+    nickname: '길잡이',
+    slashCommands: [],
+    usecasePath: 'src/router/application/idaeri-router.usecase.ts',
+    description:
+      '요청을 담당자에게 넘기는 설비 — 넘기지 못한 요청(분류 실패·미등록 담당자)만 기록한다',
+  },
 ];
 
 /**
