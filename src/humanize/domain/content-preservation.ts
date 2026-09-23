@@ -16,7 +16,11 @@ export type PreservationViolation = {
 export type PreservationProfile = 'report' | 'personal-blog';
 
 type TokenCounts = Map<string, number>;
-type PreservedTokens = Record<PreservedTokenKind, TokenCounts>;
+type OrderedTokenKind = 'date' | 'legal';
+type OrderedToken = { token: string; label: string | null };
+type PreservedTokens = Record<PreservedTokenKind, TokenCounts> & {
+  ordered: Record<OrderedTokenKind, OrderedToken[]>;
+};
 
 const BLOG_TOKEN_KINDS = new Set<PreservedTokenKind>([
   'date',
@@ -59,9 +63,12 @@ export const findPreservationViolations = (
   const violations: PreservationViolation[] = [];
 
   for (const kind of TOKEN_KINDS) {
+    const compareCounts =
+      BLOG_TOKEN_KINDS.has(kind) ||
+      (profile === 'personal-blog' && kind === 'number');
     for (const [token, count] of rewrittenTokens[kind]) {
       const previousCount = originalTokens[kind].get(token) ?? 0;
-      const injectedCount = BLOG_TOKEN_KINDS.has(kind)
+      const injectedCount = compareCounts
         ? count - previousCount
         : Number(previousCount === 0);
       for (let index = 0; index < injectedCount; index += 1) {
@@ -70,7 +77,7 @@ export const findPreservationViolations = (
     }
     for (const [token, count] of originalTokens[kind]) {
       const rewrittenCount = rewrittenTokens[kind].get(token) ?? 0;
-      const lostCount = BLOG_TOKEN_KINDS.has(kind)
+      const lostCount = compareCounts
         ? count - rewrittenCount
         : Number(rewrittenCount === 0);
       for (let index = 0; index < lostCount; index += 1) {
@@ -79,8 +86,59 @@ export const findPreservationViolations = (
     }
   }
 
+  if (profile === 'personal-blog') {
+    for (const kind of ['date', 'legal'] as const) {
+      const originalOrder = originalTokens.ordered[kind];
+      const rewrittenOrder = rewrittenTokens.ordered[kind];
+      if (
+        originalOrder.length !== rewrittenOrder.length ||
+        violations.some((violation) => violation.kind === kind)
+      ) {
+        continue;
+      }
+      const originalLabels = originalOrder.map(({ label }) => label).sort();
+      const rewrittenLabels = rewrittenOrder.map(({ label }) => label).sort();
+      const sameLabels =
+        originalLabels.every((label) => label !== null) &&
+        originalLabels.every(
+          (label, index) => label === rewrittenLabels[index],
+        );
+      const originalComparable = sameLabels
+        ? [...originalOrder].sort(compareOrderedTokens)
+        : originalOrder;
+      const rewrittenComparable = sameLabels
+        ? [...rewrittenOrder].sort(compareOrderedTokens)
+        : rewrittenOrder;
+      const firstDifference = originalComparable.findIndex(
+        ({ token, label }, index) =>
+          token !== rewrittenComparable[index].token ||
+          (sameLabels && label !== rewrittenComparable[index].label),
+      );
+      if (firstDifference >= 0) {
+        violations.push({
+          kind,
+          token: rewrittenComparable[firstDifference].token,
+          direction: 'injected',
+        });
+        violations.push({
+          kind,
+          token: originalComparable[firstDifference].token,
+          direction: 'lost',
+        });
+      }
+    }
+  }
+
   return violations;
 };
+
+const compareOrderedTokens = (
+  left: OrderedToken,
+  right: OrderedToken,
+): number =>
+  `${left.label}\u0000${left.token}`.localeCompare(
+    `${right.label}\u0000${right.token}`,
+  );
 
 export const shouldRollbackField = (
   violations: PreservationViolation[],
@@ -103,49 +161,79 @@ const extractPreservedTokens = (
     date: new Map<string, number>(),
     quote: new Map<string, number>(),
     legal: new Map<string, number>(),
+    ordered: { date: [], legal: [] },
   };
 
   let remaining = extractAndMask(text, /`[^`]+`/g, tokens.code);
   remaining = extractUrlsAndMask(remaining, tokens.url);
   remaining = extractAndMask(remaining, /#[0-9]+/g, tokens.pr);
   if (profile === 'personal-blog') {
-    remaining = extractDirectQuotesAndMask(remaining, tokens.quote);
-    remaining = extractAndMask(remaining, DATE_PATTERN, tokens.date);
-    remaining = extractAndMask(
+    const directQuoteMasked = extractDirectQuotesAndMask(
+      remaining,
+      tokens.quote,
+    );
+    extractAndMask(
+      remaining,
+      DATE_PATTERN,
+      tokens.date,
+      normalizeDateToken,
+      tokens.ordered.date,
+    );
+    extractAndMask(
       remaining,
       LEGAL_REFERENCE_PATTERN,
       tokens.legal,
+      normalizeLegalReference,
+      tokens.ordered.legal,
     );
+    remaining = directQuoteMasked
+      .replace(DATE_PATTERN, (token) => ' '.repeat(token.length))
+      .replace(LEGAL_REFERENCE_PATTERN, (token) => ' '.repeat(token.length));
   }
-  extractAndMask(
-    remaining,
-    /(?<![0-9])[-+]?[$₩€£]?(?:[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?|\.[0-9]+)%?/g,
-    tokens.number,
-  );
+  extractAndMask(remaining, NUMBER_PATTERN, tokens.number);
 
   return tokens;
 };
 
 const DATE_PATTERN =
   /\b\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\b|(?<!\d)\d{4}년\s*\d{1,2}월\s*\d{1,2}일(?!\d)|(?<!\d)\d{1,2}월\s*\d{1,2}일(?!\d)/g;
+const NUMBER_PATTERN =
+  /(?<![0-9])[-+]?[$₩€£]?(?:[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?|\.[0-9]+)%?/g;
+
+const normalizeDateToken = (token: string): string => {
+  const parts = token.match(/\d+/g);
+  if (!parts || parts.length < 2) {
+    return token;
+  }
+  const month = String(Number(parts[parts.length - 2])).padStart(2, '0');
+  const day = String(Number(parts[parts.length - 1])).padStart(2, '0');
+  return parts.length === 3
+    ? `${parts[0]}-${month}-${day}`
+    : `--${month}-${day}`;
+};
 
 const LEGAL_REFERENCE_PATTERN =
   /제\s*\d+\s*조(?:의\s*\d+)?(?:\s*제\s*\d+\s*항)?(?:\s*제\s*\d+\s*호)?/g;
 
-const DIRECT_QUOTE_PATTERN = /"[^"]+"|“[^”]+”|「[^」]+」|『[^』]+』/g;
+const normalizeLegalReference = (token: string): string =>
+  token.replace(/\s+/g, '');
+
+const DIRECT_QUOTE_PATTERN = /"[^"]+"|“[^”]+”|‘[^’]+’|「[^」]+」|『[^』]+』/g;
 
 const QUOTE_INTRO_PATTERN =
-  /(?:(?:말했|밝혔|전했|설명했|지적했|주장했|언급했)(?:습니다|다)?|(?:말했다|밝혔다|전했다|설명했다|지적했다|주장했다|언급했다)|(?:발언|답변|설명|입장|말)(?:은|는|이|가)?\s*다음과\s*같습니다)\s*[:：.!?]?\s*$/;
+  /(?:(?:말했|밝혔|전했|설명했|지적했|주장했|언급했|덧붙였)(?:습니다|어요|죠|다)?|말해요|(?:말했다|밝혔다|전했다|설명했다|지적했다|주장했다|언급했다|덧붙였다)|(?:발언|답변|설명|입장|말)(?:은|는|이|가)?\s*다음과\s*같습니다)\s*[:：.!?]?\s*$/;
+const NOMINAL_QUOTE_INTRO_PATTERN =
+  /(?:^|\s)[가-힣]{1,20}\s+(?:대표|교수|장관|기자|관계자|대변인|위원장|담당자)의\s*(?:말|발언)(?:은|는)\s*$/;
 const ROLE_SPEAKER_PATTERN =
-  /(?:^|\s)(?:[가-힣]{1,20}\s+)?(?:대표|교수|장관|기자|관계자|대변인|위원장|연구원|담당자|씨)(?:은|는|이|가)[^"“”「」『』\n.!?]{0,40}$/;
+  /(?:^|\s)(?:[가-힣]{1,20}\s+)?(?:대표|교수|장관|기자|관계자|대변인|위원장|연구원|담당자|씨)(?:은|는|이|가)[^"“”‘’「」『』\n.!?]{0,40}$/;
 const NAMED_SPEAKER_PATTERN =
-  /(?:^|\s)(?:(?:김|이|박|최|정|강|조|윤|장|임|한|오|서|신|권|황|안|송|전|홍|유|문|양|손|배|백|허|남|심|노|하|곽|성)[가-힣]{2}|[가-힣]{1,15}(?:부|청|처|위원회|협회|공사|재단|연구소|대학교|대학|병원|언론사|기업|회사|정부|지자체))(?<!에)(?:은|는|이|가)[^"“”「」『』\n.!?]{0,40}$/;
+  /(?:^|\s)(?:(?:김|이|박|최|정|강|조|윤|장|임|한|오|서|신|권|황|안|송|전|홍|유|문|양|손|배|백|허|남|심|노|하|곽|성)[가-힣]{2}|[가-힣]{1,15}(?:부|청|처|위원회|협회|공사|재단|연구소|대학교|대학|병원|언론사|기업|회사|정부|지자체))(?<!에)(?:은|는|이|가)[^"“”‘’「」『』\n.!?]{0,40}$/;
 const SENTENCE_QUOTE_PATTERN =
   /(?:[.!?]|합니다|했습니다|하겠습니다|하겠다|한다|했다|됩니다|됐다|이다|였다|가요|요)$/;
 const DIRECT_ATTRIBUTION_PATTERN =
-  /^\s*(?:이라고|라고|라며|고)[^"“”「」『』\n.!?]{0,40}(?:말했|밝혔|전했|주장했|언급했|답했|\s했)/;
+  /^\s*(?:이라고|라고|라며|고)[^"“”‘’「」『』\n.!?]{0,40}(?:말했|밝혔|전했|주장했|언급했|답했|덧붙였|덧붙였다|\s했)/;
 const EXPLANATION_ATTRIBUTION_PATTERN =
-  /^\s*(?:이라고|라고|라며|고)[^"“”「」『』\n.!?]{0,40}(?:설명했|지적했)/;
+  /^\s*(?:이라고|라고|라며|고)[^"“”‘’「」『』\n.!?]{0,40}(?:설명했|지적했)/;
 
 const extractDirectQuotesAndMask = (
   text: string,
@@ -159,6 +247,7 @@ const extractDirectQuotesAndMask = (
     );
     if (
       !QUOTE_INTRO_PATTERN.test(before) &&
+      !NOMINAL_QUOTE_INTRO_PATTERN.test(before) &&
       !DIRECT_ATTRIBUTION_PATTERN.test(attribution) &&
       !(
         (ROLE_SPEAKER_PATTERN.test(before) ||
@@ -266,11 +355,63 @@ const extractAndMask = (
   text: string,
   pattern: RegExp,
   tokens: TokenCounts,
+  normalizeToken?: (token: string) => string,
+  orderedTokens?: OrderedToken[],
 ): string => {
-  return text.replace(pattern, (token) => {
-    addToken(tokens, token);
+  return text.replace(pattern, (token, offset: number) => {
+    const normalized = normalizeToken ? normalizeToken(token) : token;
+    addToken(tokens, normalized);
+    orderedTokens?.push({
+      token: normalized,
+      label: extractTokenLabel(text, offset, token.length),
+    });
     return ' '.repeat(token.length);
   });
+};
+
+const extractTokenLabel = (
+  text: string,
+  offset: number,
+  tokenLength: number,
+): string | null => {
+  const before = text.slice(Math.max(0, offset - 80), offset);
+  const segment = before.slice(
+    Math.max(
+      before.lastIndexOf('.'),
+      before.lastIndexOf('!'),
+      before.lastIndexOf('?'),
+      before.lastIndexOf(','),
+      before.lastIndexOf(';'),
+      before.lastIndexOf('\n'),
+    ) + 1,
+  );
+  const words = segment.match(/[가-힣A-Za-z][가-힣A-Za-z0-9]*/g) ?? [];
+  const item = words.at(-1);
+  if (!item) {
+    const after = text.slice(offset + tokenLength, offset + tokenLength + 40);
+    return (
+      after.match(
+        /^(?:에|부터|까지)?\s*([가-힣]{1,20}?)(?:했|합니다|됩니다|됐다)/,
+      )?.[1] ?? null
+    );
+  }
+  const normalizeWord = (word: string): string =>
+    word
+      .replace(/(?:은|는|이|가|의)$/, '')
+      .replace(/^(출시|종료|발행|공개|시작|마감|적용|시행)일$/, '$1');
+  const subject = words
+    .slice(-4, -1)
+    .reverse()
+    .find(
+      (word) =>
+        word.endsWith('의') ||
+        /(?:팀|그룹|회사|부서|기관|프로젝트|서비스|상품|제품|학교|센터|조직|법인)$/.test(
+          normalizeWord(word),
+        ),
+    );
+  return subject
+    ? `${normalizeWord(subject)}:${normalizeWord(item)}`
+    : normalizeWord(item);
 };
 
 const addToken = (tokens: TokenCounts, token: string): void => {
