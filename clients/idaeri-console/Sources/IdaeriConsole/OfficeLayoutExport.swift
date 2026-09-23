@@ -236,9 +236,12 @@ func exportOfficeLayout(client: ConsoleClient, path: String, zoneColumns: Int) -
         )
         let pants = pantsPalette[look.pantsIndex]
         agentLooks[agent.agentType] = AgentLookInfo(
-            sheet: characterSheetPrefixes[
-                min(max(look.sheetIndex, 0), characterSheetPrefixes.count - 1)
-            ],
+            // 전용 그림을 쓰는 사람은 그 이름을 그대로 싣는다. 시트 목록에 없는 이름이라
+            // 인덱스로는 표현할 수 없고, 받는 쪽은 파일이 없으면 기본 캐릭터로 떨어진다.
+            sheet: designatedCharacterSheets[agent.agentType]
+                ?? characterSheetPrefixes[
+                    min(max(look.sheetIndex, 0), characterSheetPrefixes.count - 1)
+                ],
             hair: [hair.red, hair.green, hair.blue],
             shirt: [shirt.red, shirt.green, shirt.blue],
             pants: [pants.red, pants.green, pants.blue],
