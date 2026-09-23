@@ -12,7 +12,8 @@ const toAgentType = (value: unknown): AgentType | undefined => {
 };
 
 // LLM 원응답(JSON 배열 기대)을 GateDecision[] 으로 매핑하는 순수 함수.
-// validKeys 밖 key 는 제거(fail-closed).
+// validKeys 밖 key 와 같은 changeKey 의 중복 판정은 제거(fail-closed). 한 변화에 판정은
+// 하나만 있어야 하므로, 호출부의 누락 집계가 고유 changeKey 기준으로 동작하게 한다.
 //
 // 본문 추출은 `extractJsonArrayText` 에 맡긴다 — 예전에는 `JSON.parse(raw.trim())` 로
 // 바로 읽어, 모델이 응답을 코드펜스로 감싸거나 앞뒤에 설명을 붙이면 통째로 터졌다.
@@ -43,6 +44,7 @@ export const parseGateResponse = (
   }
 
   const decisions: GateDecision[] = [];
+  const seenKeys = new Set<string>();
   for (const entry of parsed) {
     if (typeof entry !== 'object' || entry === null) {
       continue;
@@ -52,6 +54,10 @@ export const parseGateResponse = (
     if (typeof changeKey !== 'string' || !validKeys.has(changeKey)) {
       continue;
     }
+    if (seenKeys.has(changeKey)) {
+      continue;
+    }
+    seenKeys.add(changeKey);
     decisions.push({
       changeKey,
       promote: record.promote === true,
