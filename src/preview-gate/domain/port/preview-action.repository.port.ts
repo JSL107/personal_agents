@@ -98,6 +98,18 @@ export interface PreviewActionRepositoryPort {
     at: Date;
     takeOverPid?: number;
   }): Promise<ApplyProgressState | null>;
+  // 읽은 진행 흔적이 그대로일 때만 거절(CANCELLED)로 전이한다. PENDING 검증도 함께 건다.
+  //
+  // 활성 여부를 usecase 가 검사하고 전이는 조건 없이 하면 그 사이로 `beginApply` 가 끼어든다
+  // — 검사는 이미 읽어 둔 값만 보므로 통과하고, 막 시작된 반영은 계속 돌아 나중에
+  // `transition(APPLIED)` 로 덮어쓴다. 거절 후처리는 이미 돈 뒤라 둘이 어긋난다.
+  //
+  // `null` 은 전이를 얻지 못했다는 뜻 — 그 사이 반영이 시작됐거나 상태가 바뀌었다.
+  cancelIfProgressUnchanged(input: {
+    id: string;
+    // 호출자가 읽은 시점의 `applyProgress.startedAt`. 흔적이 없었으면 null.
+    expectedStartedAt: string | null;
+  }): Promise<PreviewAction | null>;
   // 이 시도가 끝났음을 표시한다(실패·마감 경로). `done` 은 남긴다 — 이미 반영된 단계를 지우면
   // 다음 승인이 그것을 처음부터 다시 실행한다.
   //

@@ -283,6 +283,40 @@ export class PreviewActionPrismaRepository implements PreviewActionRepositoryPor
     return count === 0 ? null : next;
   }
 
+  // 읽은 진행 흔적이 그대로일 때만 거절로 전이한다.
+  //
+  // 가드(활성 여부 확인)와 전이가 따로 있으면 그 사이로 `beginApply` 가 끼어든다 — 가드는
+  // 이미 읽어 둔 값만 보고 통과하고 전이는 조건 없이 덮어쓴다. 그러면 사용자의 거절과 막
+  // 시작된 반영이 충돌해, **canceller 는 돌았는데 상태는 나중에 `transition(APPLIED)` 가
+  // 덮어써** 둘이 어긋난다. 검사와 쓰기가 같은 조건 안에 있어야 한다.
+  //
+  // 비교 키는 `beginApply` 와 같은 `startedAt` 이다 — 새 시도가 시작되면 반드시 바뀐다.
+  // 상태도 함께 걸어 PENDING 검증까지 이 한 번의 쓰기 안으로 들인다.
+  async cancelIfProgressUnchanged({
+    id,
+    expectedStartedAt,
+  }: {
+    id: string;
+    expectedStartedAt: string | null;
+  }): Promise<PreviewAction | null> {
+    const { count } = await this.prisma.previewAction.updateMany({
+      where: {
+        id,
+        status: PREVIEW_STATUS.PENDING,
+        applyProgress:
+          expectedStartedAt === null
+            ? { equals: Prisma.DbNull }
+            : { path: ['startedAt'], equals: expectedStartedAt },
+      },
+      data: { status: PREVIEW_STATUS.CANCELLED, cancelledAt: new Date() },
+    });
+    if (count === 0) {
+      return null;
+    }
+    const row = await this.prisma.previewAction.findUnique({ where: { id } });
+    return row === null ? null : toDomain(row);
+  }
+
   // 이 시도가 끝났음을 표시한다. `done` 은 그대로 둔다 — 실패했든 마감했든 이미 반영된 단계는
   // 이미 반영된 것이고, 그것을 지우면 다음 승인이 처음부터 다시 실행한다.
   //

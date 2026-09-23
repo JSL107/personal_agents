@@ -63,6 +63,7 @@ const buildRepo = (
   recordApplyStep: jest.fn().mockResolvedValue(undefined),
   clearApplyProgress: jest.fn().mockResolvedValue(undefined),
   endApply: jest.fn().mockResolvedValue(undefined),
+  cancelIfProgressUnchanged: jest.fn(),
   findApplyInterrupted: jest.fn().mockResolvedValue([]),
   findExpiredPending: jest.fn().mockResolvedValue(expired),
   findAllOpen: jest.fn().mockResolvedValue([]),

@@ -491,4 +491,49 @@ describe('EveningCareerReflectApplier', () => {
 
     expect(reflectPr.execute).toHaveBeenCalledTimes(2);
   });
+
+  it('(p) 기록만 실패하면 그 묶음을 실패로 분류하지 않는다 — 반영은 이미 끝났다', async () => {
+    // 반영과 기록을 한 try 로 묶으면 프로필 저장이 끝난 뒤 기록만 DB 오류로 실패했을 때
+    // 이미 반영된 묶음이 `failedGroups` 로 간다. 단일 묶음이면 "모두 실패" 를 던져 카드가
+    // PENDING 으로 남고, 사용자가 다시 누르면 비멱등 회고가 한 번 더 반영된다.
+    const reflectPr = okReflectPr();
+    const applier = new EveningCareerReflectApplier(
+      reflectPr as never,
+      renderPortfolio() as never,
+    );
+    const record = jest.fn().mockRejectedValue(new Error('DB 연결 끊김'));
+
+    const result = await applier.apply(
+      makePreview({ prGroups: [['o/company#1']], slackUserId: 'U1' }),
+      { done: [], record },
+    );
+
+    // 던지지 않는다 — 반영은 성공했다.
+    expect(result.message).toContain('o/company 1건');
+    expect(result.message).not.toContain('반영 실패');
+    // 다만 재시도 시 중복될 수 있다는 사실은 말해야 한다.
+    expect(result.message).toContain('진행 기록 실패');
+  });
+
+  it('(q) 기록이 실패해도 다음 묶음은 계속 반영한다', async () => {
+    const reflectPr = okReflectPr();
+    const applier = new EveningCareerReflectApplier(
+      reflectPr as never,
+      renderPortfolio() as never,
+    );
+    const record = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('DB 연결 끊김'))
+      .mockResolvedValue(undefined);
+
+    await applier.apply(
+      makePreview({
+        prGroups: [['o/company#1'], ['o/personal#9']],
+        slackUserId: 'U1',
+      }),
+      { done: [], record },
+    );
+
+    expect(reflectPr.execute).toHaveBeenCalledTimes(2);
+  });
 });

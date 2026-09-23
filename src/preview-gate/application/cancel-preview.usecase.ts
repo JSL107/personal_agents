@@ -90,10 +90,22 @@ export class CancelPreviewUsecase {
       });
     }
 
-    const cancelled = await this.repository.transition({
+    // **위 검사만으로는 부족하다.** 읽고 검사한 뒤 조건 없이 전이하면 그 사이로 `beginApply`
+    // 가 끼어든다(TOCTOU) — 검사는 이미 읽어 둔 값만 보므로 통과하고, 막 시작된 반영은 계속
+    // 돌아 나중에 `transition(APPLIED)` 로 덮어쓴다. 읽은 흔적이 그대로일 때만 전이하도록
+    // 검사와 쓰기를 한 조건 안에 넣는다. 비교 키는 `beginApply` 와 같은 `startedAt` 이다.
+    const cancelled = await this.repository.cancelIfProgressUnchanged({
       id: preview.id,
-      status: PREVIEW_STATUS.CANCELLED,
+      expectedStartedAt: preview.applyProgress?.startedAt ?? null,
     });
+    if (cancelled === null) {
+      throw new PreviewActionException({
+        code: PreviewActionErrorCode.ALREADY_APPLYING,
+        message:
+          '방금 반영이 시작돼 거절하지 못했습니다. 잠시 후 결과를 확인해주세요.',
+        status: DomainStatus.PRECONDITION_FAILED,
+      });
+    }
     // 콘솔 관제 — 승인 종결 알림(카드가 스냅샷/스트림에서 사라지도록).
     this.consoleEvents?.publish({
       type: 'approval.resolved',
