@@ -36,6 +36,7 @@ const buildPreview = (
   slackMessageTs: null,
   lastFailedAt: null,
   lastFailureReason: null,
+  applyProgress: null,
   ...overrides,
 });
 
@@ -60,6 +61,17 @@ const buildRepo = (
     ),
   attachSlackMessage: jest.fn().mockResolvedValue(undefined),
   recordApplyFailure: jest.fn().mockResolvedValue(undefined),
+  beginApply: jest.fn().mockResolvedValue({
+    pid: process.pid,
+    startedAt: new Date().toISOString(),
+    attempts: 1,
+    done: [],
+  }),
+  recordApplyStep: jest.fn().mockResolvedValue(undefined),
+  clearApplyProgress: jest.fn().mockResolvedValue(undefined),
+  endApply: jest.fn().mockResolvedValue(undefined),
+  cancelIfProgressUnchanged: jest.fn(),
+  findApplyInterrupted: jest.fn().mockResolvedValue([]),
   findExpiredPending: jest.fn().mockResolvedValue([]),
   findAllOpen: jest.fn().mockResolvedValue([]),
   findAllDayOutcomes: jest.fn().mockResolvedValue([]),
@@ -101,12 +113,193 @@ describe('ApplyPreviewUsecase', () => {
       now: fixedNow,
     });
 
-    expect(applier.apply).toHaveBeenCalledWith(preview);
+    // 두 번째 인자는 진행 기록 통로다 — applier 가 단계 완료를 남기는 자리(ApplyProgress).
+    expect(applier.apply).toHaveBeenCalledWith(
+      preview,
+      expect.objectContaining({ done: [] }),
+    );
     expect(repo.transition).toHaveBeenCalledWith({
       id: 'p-1',
       status: PREVIEW_STATUS.APPLIED,
     });
     expect(result.resultText).toBe('PR #707 코멘트 추가');
+  });
+
+  it('반영 시작에 진행 흔적을 새기고 끝나면 지운다 — 남아 있으면 다음 부팅이 중단으로 읽는다', async () => {
+    const preview = buildPreview();
+    const repo = buildRepo(preview);
+    const applier = buildApplier(PREVIEW_KIND.PM_WRITE_BACK);
+    const usecase = new ApplyPreviewUsecase(
+      repo,
+      [applier],
+      [],
+      [],
+      buildCard(),
+    );
+
+    await usecase.execute({
+      previewId: 'p-1',
+      slackUserId: 'U1',
+      now: fixedNow,
+    });
+
+    expect(repo.beginApply).toHaveBeenCalledWith({
+      id: 'p-1',
+      pid: process.pid,
+      at: fixedNow,
+    });
+    expect(repo.clearApplyProgress).toHaveBeenCalledWith({
+      id: 'p-1',
+      pid: process.pid,
+    });
+  });
+
+  it('반영이 실패하면 흔적을 지우지 않고 끝났다고만 표시한다 — 지우면 done 이 함께 사라져 재시도가 중복 반영이 된다', async () => {
+    const preview = buildPreview();
+    const repo = buildRepo(preview);
+    const applier: PreviewApplier = {
+      kind: PREVIEW_KIND.PM_WRITE_BACK,
+      apply: jest.fn().mockRejectedValue(new Error('GitHub 500')),
+    };
+    const usecase = new ApplyPreviewUsecase(
+      repo,
+      [applier],
+      [],
+      [],
+      buildCard(),
+    );
+
+    await expect(
+      usecase.execute({ previewId: 'p-1', slackUserId: 'U1', now: fixedNow }),
+    ).rejects.toThrow('GitHub 500');
+
+    expect(repo.endApply).toHaveBeenCalledWith({
+      id: 'p-1',
+      pid: process.pid,
+      at: fixedNow,
+    });
+    expect(repo.clearApplyProgress).not.toHaveBeenCalled();
+  });
+
+  it('소유권 획득에 실패하면(다른 프로세스가 먼저 잡음) applier 를 돌리지 않는다', async () => {
+    // `applying` 락은 프로세스 로컬이라 worktree 백엔드가 같은 카드를 동시에 집을 수 있다.
+    // 조건부 획득이 막지 않으면 같은 비멱등 반영이 두 번 돈다.
+    const preview = buildPreview();
+    const repo = buildRepo(preview);
+    repo.beginApply.mockResolvedValue(null);
+    const applier = buildApplier(PREVIEW_KIND.PM_WRITE_BACK);
+    const usecase = new ApplyPreviewUsecase(
+      repo,
+      [applier],
+      [],
+      [],
+      buildCard(),
+    );
+
+    await expect(
+      usecase.execute({ previewId: 'p-1', slackUserId: 'U1', now: fixedNow }),
+    ).rejects.toThrow('이미 처리 중');
+
+    expect(applier.apply).not.toHaveBeenCalled();
+    expect(repo.transition).not.toHaveBeenCalled();
+  });
+
+  it('완료 단계를 기록한 뒤 상태 전이가 실패해도 그 기록은 남는다 — 재승인이 같은 단계를 다시 실행하지 않게', async () => {
+    // 이 순서가 실제 사고 경로다. applier 가 외부 부작용을 마치고 `done` 을 남긴 뒤
+    // `transition` 이 깨지면 카드는 PENDING 으로 남아 다시 눌린다. 그때 `done` 이 지워져
+    // 있으면 이미 반영된 단계가 처음부터 다시 실행된다.
+    const preview = buildPreview();
+    const repo = buildRepo(preview);
+    repo.transition.mockRejectedValue(new Error('DB 연결 끊김'));
+    const applier: PreviewApplier = {
+      kind: PREVIEW_KIND.PM_WRITE_BACK,
+      resumable: true,
+      apply: jest.fn().mockImplementation(async (_preview, progress) => {
+        await progress?.record('0:owner/repo#1');
+        return { message: 'ok', artifacts: [] };
+      }),
+    };
+    const usecase = new ApplyPreviewUsecase(
+      repo,
+      [applier],
+      [],
+      [],
+      buildCard(),
+    );
+
+    await expect(
+      usecase.execute({ previewId: 'p-1', slackUserId: 'U1', now: fixedNow }),
+    ).rejects.toThrow('DB 연결 끊김');
+
+    expect(repo.recordApplyStep).toHaveBeenCalledWith({
+      id: 'p-1',
+      step: '0:owner/repo#1',
+    });
+    // 기록을 지우는 경로를 타지 않아야 한다. 지우면 그 단계가 다음 승인에서 되살아난다.
+    expect(repo.clearApplyProgress).not.toHaveBeenCalled();
+    expect(repo.endApply).toHaveBeenCalled();
+  });
+
+  it('이전 시도가 남긴 done 을 applier 에 물려준다 — 물려주지 않으면 재개가 처음부터 다시 돈다', async () => {
+    const preview = buildPreview();
+    const repo = buildRepo(preview);
+    repo.beginApply.mockResolvedValue({
+      pid: process.pid,
+      startedAt: fixedNow.toISOString(),
+      attempts: 2,
+      done: ['0:owner/repo#1'],
+    });
+    const applier = buildApplier(PREVIEW_KIND.PM_WRITE_BACK);
+    const usecase = new ApplyPreviewUsecase(
+      repo,
+      [applier],
+      [],
+      [],
+      buildCard(),
+    );
+
+    await usecase.execute({
+      previewId: 'p-1',
+      slackUserId: 'U1',
+      now: fixedNow,
+    });
+
+    expect(applier.apply).toHaveBeenCalledWith(
+      preview,
+      expect.objectContaining({ done: ['0:owner/repo#1'] }),
+    );
+  });
+
+  it('반영 실패 시 approval.failed 를 발행한다 — 카드가 돌아온 것만으로는 "안 눌림" 과 구분되지 않는다', async () => {
+    const preview = buildPreview();
+    const repo = buildRepo(preview);
+    const applier: PreviewApplier = {
+      kind: PREVIEW_KIND.PM_WRITE_BACK,
+      apply: jest.fn().mockRejectedValue(new Error('Notion 권한 없음')),
+    };
+    const bus = {
+      publish: jest.fn(),
+      stream: jest.fn(),
+    } as unknown as ConsoleEventBus;
+    const usecase = new ApplyPreviewUsecase(
+      repo,
+      [applier],
+      [],
+      [],
+      buildCard(),
+      bus,
+    );
+
+    await expect(
+      usecase.execute({ previewId: 'p-1', slackUserId: 'U1', now: fixedNow }),
+    ).rejects.toThrow('Notion 권한 없음');
+
+    expect(bus.publish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'approval.failed',
+        reason: 'Notion 권한 없음',
+      }),
+    );
   });
 
   it('apply 성공 시 approval.resolved 이벤트를 발행한다', async () => {

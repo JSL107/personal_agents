@@ -35,6 +35,14 @@ export const resolveCareerPrGroups = (
 export const careerGroupRepo = (refs: string[]): string =>
   refs[0]?.split('#')[0] ?? '(알 수 없음)';
 
+// 중단된 반영을 이어서 돌릴 때 "이 묶음은 이미 끝났는가" 를 묻는 열쇠.
+//
+// 인덱스를 앞에 붙이는 이유: 같은 PR 묶음이 두 번 들어와도 서로 다른 단계로 세어야 한다.
+// refs 를 함께 붙이는 이유: 카드 payload 가 바뀌면 같은 인덱스가 다른 묶음을 가리키는데,
+// 인덱스만으로는 옛 기록이 엉뚱한 묶음을 "이미 반영됨" 으로 만들어 그 성과를 통째로 건너뛴다.
+export const careerGroupStepKey = (index: number, refs: string[]): string =>
+  `${index}:${refs.join(' ')}`;
+
 // 묶음 하나에 적힌 맥락. 공백만 있으면 없는 것으로 본다 — 빈 문자열을 그대로 흘리면
 // 회고 프롬프트가 빈 맥락 절을 달게 된다.
 export const readImpactContext = (

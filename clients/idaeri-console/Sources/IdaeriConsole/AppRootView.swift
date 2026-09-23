@@ -259,6 +259,12 @@ struct AppRootView: View {
         if case .approvalOpened = event {
             await resyncBriefing()
         }
+        if case .approvalFailed = event {
+            // 반영이 실패해 카드가 되돌아왔다 — 보드 첫 줄이 다시 승인 대기여야 한다.
+            // 카드를 걷어가는 `approvalResolved` 와 달리 스냅샷까지 당길 필요는 없다.
+            // 서버는 그 행을 PENDING 으로 그대로 두었고, 이벤트가 카드를 이미 실어 왔다.
+            await resyncBriefing()
+        }
         if case .approvalResolved = event {
             // 브리핑만으로는 부족하다 — 승인이 열린 동안 억제한 `IN_PROGRESS` 는 재발행되지
             // 않으므로(`ConsoleStore.hasOpenApproval`), 카드가 닫힐 때 정본을 다시 받아야

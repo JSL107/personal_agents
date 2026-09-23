@@ -20,6 +20,7 @@ const buildPreview = (payload: unknown): PreviewAction => ({
   slackMessageTs: null,
   lastFailedAt: null,
   lastFailureReason: null,
+  applyProgress: null,
 });
 
 describe('PreferenceProfileCanceller', () => {

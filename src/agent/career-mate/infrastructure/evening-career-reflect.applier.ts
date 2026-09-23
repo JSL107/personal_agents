@@ -1,7 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 
 import { ApplyResult } from '../../../preview-gate/domain/apply-result.type';
-import { PreviewApplier } from '../../../preview-gate/domain/port/preview-applier.port';
+import {
+  ApplyProgress,
+  PreviewApplier,
+} from '../../../preview-gate/domain/port/preview-applier.port';
 import {
   PREVIEW_KIND,
   PreviewAction,
@@ -10,6 +13,7 @@ import { ReflectPrUsecase } from '../application/reflect-pr.usecase';
 import { RenderPortfolioUsecase } from '../application/render-portfolio.usecase';
 import {
   careerGroupRepo,
+  careerGroupStepKey,
   EveningCareerPayload,
   readImpactContext,
   resolveCareerPrGroups,
@@ -18,6 +22,12 @@ import {
 @Injectable()
 export class EveningCareerReflectApplier implements PreviewApplier {
   readonly kind = PREVIEW_KIND.EVENING_CAREER_REFLECT;
+  // 묶음 하나가 끝날 때마다 원장에 기록하므로 중단된 뒤 이어서 돌릴 수 있다.
+  //
+  // 이 플래그가 없던 동안 재시작은 승인 전체를 처음부터 다시 돌게 만들었다. `ReflectPrUsecase`
+  // 는 "조회 → 병합 → 저장" 이라 멱등이 아니어서, 이미 반영된 묶음이 프로필에 두 번 들어갔다
+  // (2026-09-23 실측).
+  readonly resumable = true;
   private readonly logger = new Logger(EveningCareerReflectApplier.name);
 
   constructor(
@@ -25,21 +35,39 @@ export class EveningCareerReflectApplier implements PreviewApplier {
     private readonly renderPortfolio: RenderPortfolioUsecase,
   ) {}
 
-  async apply(preview: PreviewAction): Promise<ApplyResult> {
+  async apply(
+    preview: PreviewAction,
+    progress?: ApplyProgress,
+  ): Promise<ApplyResult> {
     const payload = preview.payload as EveningCareerPayload;
     const groups = resolveCareerPrGroups(payload);
     if (groups.length === 0) {
       throw new Error('EVENING_CAREER_REFLECT: payload.prGroups/prRefs 누락');
     }
 
+    // 중단 전에 이미 끝난 묶음. `progress` 가 없으면(단위 테스트·옛 호출부) 빈 집합이라
+    // 종전처럼 전부 실행한다.
+    const alreadyDone = new Set(progress?.done ?? []);
+
     // 순차 실행이어야 한다 — ReflectPrUsecase 는 "최신 프로필 조회 → 병합 → 저장" 이라
     // 병렬로 돌리면 뒤에 저장한 회차가 앞 회차의 성과를 덮어쓴다(lost update).
     const messages: string[] = [];
     const failedGroups: FailedGroup[] = [];
     for (const [index, refs] of groups.entries()) {
+      const stepKey = careerGroupStepKey(index, refs);
+      // 이미 반영된 묶음은 건너뛴다. 이것이 재개의 전부다 — 건너뛰지 않으면 재개가 중복 반영이
+      // 되어 애초에 막으려던 사고를 그대로 다시 낸다.
+      if (alreadyDone.has(stepKey)) {
+        messages.push(`${careerGroupRepo(refs)} ${refs.length}건(이미 반영됨)`);
+        continue;
+      }
       // 맥락은 묶음마다 따로 받는다 — 카드 전체에 한 줄만 받으면 회사 저장소의 수치가
       // 개인 프로젝트 성과에도 실린다.
       const impactContext = readImpactContext(payload, index);
+      // **반영과 기록을 한 try 로 묶지 않는다.** 묶으면 프로필 저장이 끝난 뒤 기록만 DB 오류로
+      // 실패했을 때 아래 catch 가 이미 반영된 묶음을 `failedGroups` 로 분류한다 — 한 묶음뿐이면
+      // "모두 실패" 를 던져 카드가 PENDING 으로 남고, 여러 묶음이면 이미 반영된 PR 을 다시
+      // 요청하라고 안내한다. 어느 쪽이든 사용자를 중복 반영으로 밀어 넣는다.
       try {
         await this.reflectPr.execute({
           slackUserId: payload.slackUserId,
@@ -50,11 +78,6 @@ export class EveningCareerReflectApplier implements PreviewApplier {
           // 2~5묶음(중앙값 3)이라 회차당 수백 초를 그렇게 썼다. 루프 뒤에 한 번만 반영한다.
           portfolioSync: 'skip',
         });
-        // 맥락이 실렸는지를 결과 문구에 남긴다. 입력칸은 승인과 함께 사라지므로, 여기서
-        // 말하지 않으면 "적은 게 반영됐는지" 를 확인할 화면이 어디에도 없다.
-        messages.push(
-          `${careerGroupRepo(refs)} ${refs.length}건${impactContext ? '(맥락 반영)' : ''}`,
-        );
       } catch (error) {
         // 그룹 하나가 실패해도 나머지는 반영한다 — 한 저장소의 PR 접근 실패로 그날 성과가
         // 통째로 사라지면, 승인 카드는 이미 소비돼 다시 누를 수 없다.
@@ -63,7 +86,35 @@ export class EveningCareerReflectApplier implements PreviewApplier {
         this.logger.warn(
           `EVENING_CAREER_REFLECT 그룹 실패 — ${careerGroupRepo(refs)}: ${message}`,
         );
+        continue;
       }
+
+      // 여기부터는 **부작용이 확실히 반영된 뒤**다. 기록이 실패해도 반영은 되돌아가지 않으므로
+      // 실패로 보고하지 않는다. 다음 묶음을 시작하기 **전에** 기록해야 그 사이에 죽었을 때
+      // 끝난 묶음이 안 끝난 것으로 남지 않는다.
+      //
+      // 포트폴리오 반영은 이 기록에 들어가지 않는다 — 루프 뒤에 한 번만 돌고, 페이지를 통째로
+      // 다시 쓰므로 재개가 그것을 한 번 더 실행해도 결과가 같다. 재개가 건너뛰어야 하는 것은
+      // 비멱등인 묶음별 회고(`ReflectPrUsecase`) 쪽이다.
+      let checkpointed = true;
+      try {
+        await progress?.record(stepKey);
+      } catch (error) {
+        // 기록만 놓쳤다는 사실은 결과 문구에 남긴다. 이 묶음은 재개·재시도에서 다시 실행될 수
+        // 있는데, 아무 말도 없으면 사용자가 그 중복을 예상할 방법이 없다.
+        checkpointed = false;
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.warn(
+          `EVENING_CAREER_REFLECT 진행 기록 실패 (반영은 완료) — ${careerGroupRepo(refs)}: ${message}`,
+        );
+      }
+      // 맥락이 실렸는지를 결과 문구에 남긴다. 입력칸은 승인과 함께 사라지므로, 여기서
+      // 말하지 않으면 "적은 게 반영됐는지" 를 확인할 화면이 어디에도 없다.
+      messages.push(
+        `${careerGroupRepo(refs)} ${refs.length}건${impactContext ? '(맥락 반영)' : ''}${
+          checkpointed ? '' : '(진행 기록 실패 — 재시도 시 중복될 수 있음)'
+        }`,
+      );
     }
 
     if (messages.length === 0) {

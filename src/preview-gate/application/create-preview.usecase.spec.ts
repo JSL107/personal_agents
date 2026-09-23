@@ -18,6 +18,7 @@ const buildCreated = (): PreviewAction => ({
   slackMessageTs: null,
   lastFailedAt: null,
   lastFailureReason: null,
+  applyProgress: null,
 });
 
 const validInput = {

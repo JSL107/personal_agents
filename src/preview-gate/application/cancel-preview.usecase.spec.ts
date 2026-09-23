@@ -30,6 +30,7 @@ const buildPreview = (
   slackMessageTs: null,
   lastFailedAt: null,
   lastFailureReason: null,
+  applyProgress: null,
   ...overrides,
 });
 
@@ -53,6 +54,25 @@ const buildRepo = (
     ),
   attachSlackMessage: jest.fn().mockResolvedValue(undefined),
   recordApplyFailure: jest.fn().mockResolvedValue(undefined),
+  beginApply: jest.fn().mockResolvedValue({
+    pid: process.pid,
+    startedAt: new Date().toISOString(),
+    attempts: 1,
+    done: [],
+  }),
+  recordApplyStep: jest.fn().mockResolvedValue(undefined),
+  clearApplyProgress: jest.fn().mockResolvedValue(undefined),
+  endApply: jest.fn().mockResolvedValue(undefined),
+  cancelIfProgressUnchanged: jest
+    .fn()
+    .mockImplementation(() =>
+      Promise.resolve(
+        preview === null
+          ? null
+          : { ...preview, status: PREVIEW_STATUS.CANCELLED },
+      ),
+    ),
+  findApplyInterrupted: jest.fn().mockResolvedValue([]),
   findExpiredPending: jest.fn().mockResolvedValue([]),
   findAllOpen: jest.fn().mockResolvedValue([]),
   findAllDayOutcomes: jest.fn().mockResolvedValue([]),
@@ -70,9 +90,11 @@ describe('CancelPreviewUsecase', () => {
 
     await usecase.execute({ previewId: 'p-1', slackUserId: 'U1' });
 
-    expect(repo.transition).toHaveBeenCalledWith({
+    // 읽은 흔적이 그대로일 때만 전이한다 — 검사와 쓰기가 한 조건 안에 있어야 그 사이
+    // `beginApply` 가 끼어들어도 거절이 돌고 있는 반영을 덮지 않는다.
+    expect(repo.cancelIfProgressUnchanged).toHaveBeenCalledWith({
       id: 'p-1',
-      status: PREVIEW_STATUS.CANCELLED,
+      expectedStartedAt: null,
     });
   });
 
@@ -143,9 +165,11 @@ describe('CancelPreviewUsecase', () => {
 
     await usecase.execute({ previewId: 'p-1', slackUserId: 'U1' });
 
-    expect(repo.transition).toHaveBeenCalledWith({
+    // 읽은 흔적이 그대로일 때만 전이한다 — 검사와 쓰기가 한 조건 안에 있어야 그 사이
+    // `beginApply` 가 끼어들어도 거절이 돌고 있는 반영을 덮지 않는다.
+    expect(repo.cancelIfProgressUnchanged).toHaveBeenCalledWith({
       id: 'p-1',
-      status: PREVIEW_STATUS.CANCELLED,
+      expectedStartedAt: null,
     });
     expect(canceller.onCancel).toHaveBeenCalledTimes(1);
     expect(canceller.onCancel.mock.calls[0][0].kind).toBe(
@@ -212,5 +236,67 @@ describe('CancelPreviewUsecase', () => {
     });
 
     expect(result.status).toBe(PREVIEW_STATUS.CANCELLED);
+  });
+
+  it('반영이 돌고 있는 카드는 거절할 수 없다 — CANCELLED 로 바꿔도 applier 는 멈추지 않는다', async () => {
+    // applier 가 외부 부작용을 끝내고 `transition(APPLIED)` 로 덮어쓰면, 거절 후처리는 이미
+    // 돌았는데 상태만 APPLIED 로 돌아가 둘이 어긋난 채 남는다.
+    const repo = buildRepo(
+      buildPreview({
+        applyProgress: {
+          pid: 4242,
+          startedAt: '2026-09-23T09:50:00.000Z',
+          attempts: 1,
+          done: [],
+        },
+      }),
+    );
+    const usecase = new CancelPreviewUsecase(repo, [], buildCard());
+
+    await expect(
+      usecase.execute({ previewId: 'p-1', slackUserId: 'U1' }),
+    ).rejects.toThrow('이미 반영이 시작돼');
+
+    expect(repo.cancelIfProgressUnchanged).not.toHaveBeenCalled();
+  });
+
+  it('끝났다고 표시된 흔적이면 거절할 수 있다 — 실패로 닫힌 카드는 사용자가 접을 수 있어야 한다', async () => {
+    const repo = buildRepo(
+      buildPreview({
+        applyProgress: {
+          pid: 4242,
+          startedAt: '2026-09-23T09:50:00.000Z',
+          attempts: 1,
+          done: ['0:owner/repo#1'],
+          endedAt: '2026-09-23T09:55:00.000Z',
+        },
+      }),
+    );
+    const usecase = new CancelPreviewUsecase(repo, [], buildCard());
+
+    const result = await usecase.execute({
+      previewId: 'p-1',
+      slackUserId: 'U1',
+    });
+
+    expect(result.status).toBe(PREVIEW_STATUS.CANCELLED);
+  });
+
+  it('검사를 통과한 뒤 반영이 시작되면 전이를 얻지 못하고 거절이 실패한다 (TOCTOU)', async () => {
+    // 검사와 쓰기가 따로면 그 사이 `beginApply` 가 끼어든다. 조건부 전이가 0행을 돌려주는
+    // 것이 그 상황이고, 여기서 멈추지 않으면 canceller 만 돌고 상태는 나중에 APPLIED 가 된다.
+    const repo = buildRepo(buildPreview());
+    repo.cancelIfProgressUnchanged.mockResolvedValue(null);
+    const canceller = {
+      kind: PREVIEW_KIND.PREFERENCE_PROFILE,
+      onCancel: jest.fn(),
+    };
+    const usecase = new CancelPreviewUsecase(repo, [canceller], buildCard());
+
+    await expect(
+      usecase.execute({ previewId: 'p-1', slackUserId: 'U1' }),
+    ).rejects.toThrow('방금 반영이 시작돼');
+
+    expect(canceller.onCancel).not.toHaveBeenCalled();
   });
 });

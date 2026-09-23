@@ -390,4 +390,150 @@ describe('EveningCareerReflectApplier', () => {
     expect(result.message).not.toContain('\\n');
     expect(result.message.split('\n').length).toBeGreaterThan(1);
   });
+
+  it('(l) 이미 반영된 묶음은 건너뛴다 — 재개가 중복 반영이 되면 막으려던 사고를 그대로 다시 낸다', async () => {
+    const reflectPr = okReflectPr();
+    const applier = new EveningCareerReflectApplier(
+      reflectPr as never,
+      renderPortfolio() as never,
+    );
+
+    const result = await applier.apply(
+      makePreview({
+        prGroups: [['o/company#1'], ['o/personal#9']],
+        slackUserId: 'U1',
+      }),
+      { done: ['0:o/company#1'], record: jest.fn() },
+    );
+
+    expect(reflectPr.execute).toHaveBeenCalledTimes(1);
+    expect(reflectPr.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ prText: 'o/personal#9' }),
+    );
+    // 건너뛴 묶음도 결과에 남겨야 한다 — 빠지면 사용자는 그 성과가 유실된 줄 안다.
+    expect(result.message).toContain('이미 반영됨');
+  });
+
+  it('(m) 묶음이 끝날 때마다, 다음 묶음을 시작하기 전에 기록한다 — 기록이 밀리면 그 사이 중단에 유실된다', async () => {
+    const order: string[] = [];
+    const reflectPr = {
+      execute: jest
+        .fn()
+        .mockImplementation(async ({ prText }: { prText: string }) => {
+          order.push(`실행:${prText}`);
+          return { result: { portfolioUrl: 'https://notion.so/p' } };
+        }),
+    };
+    const applier = new EveningCareerReflectApplier(
+      reflectPr as never,
+      renderPortfolio() as never,
+    );
+    const record = jest.fn().mockImplementation(async (step: string) => {
+      order.push(`기록:${step}`);
+    });
+
+    await applier.apply(
+      makePreview({
+        prGroups: [['o/company#1'], ['o/personal#9']],
+        slackUserId: 'U1',
+      }),
+      { done: [], record },
+    );
+
+    expect(order).toEqual([
+      '실행:o/company#1',
+      '기록:0:o/company#1',
+      '실행:o/personal#9',
+      '기록:1:o/personal#9',
+    ]);
+  });
+
+  it('(n) 실패한 묶음은 기록하지 않는다 — 기록하면 재개가 그 묶음을 끝난 것으로 보고 건너뛴다', async () => {
+    const reflectPr = {
+      execute: jest
+        .fn()
+        .mockRejectedValueOnce(new Error('PR 접근 불가'))
+        .mockResolvedValueOnce({
+          result: { portfolioUrl: 'https://notion.so/portfolio' },
+        }),
+    };
+    const applier = new EveningCareerReflectApplier(
+      reflectPr as never,
+      renderPortfolio() as never,
+    );
+    const record = jest.fn().mockResolvedValue(undefined);
+
+    await applier.apply(
+      makePreview({
+        prGroups: [['o/company#1'], ['o/personal#9']],
+        slackUserId: 'U1',
+      }),
+      { done: [], record },
+    );
+
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(record).toHaveBeenCalledWith('1:o/personal#9');
+  });
+
+  it('(o) progress 가 없어도 종전처럼 전부 실행한다 — 옛 호출부와 단위 테스트가 그대로 돈다', async () => {
+    const reflectPr = okReflectPr();
+    const applier = new EveningCareerReflectApplier(
+      reflectPr as never,
+      renderPortfolio() as never,
+    );
+
+    await applier.apply(
+      makePreview({
+        prGroups: [['o/company#1'], ['o/personal#9']],
+        slackUserId: 'U1',
+      }),
+    );
+
+    expect(reflectPr.execute).toHaveBeenCalledTimes(2);
+  });
+
+  it('(p) 기록만 실패하면 그 묶음을 실패로 분류하지 않는다 — 반영은 이미 끝났다', async () => {
+    // 반영과 기록을 한 try 로 묶으면 프로필 저장이 끝난 뒤 기록만 DB 오류로 실패했을 때
+    // 이미 반영된 묶음이 `failedGroups` 로 간다. 단일 묶음이면 "모두 실패" 를 던져 카드가
+    // PENDING 으로 남고, 사용자가 다시 누르면 비멱등 회고가 한 번 더 반영된다.
+    const reflectPr = okReflectPr();
+    const applier = new EveningCareerReflectApplier(
+      reflectPr as never,
+      renderPortfolio() as never,
+    );
+    const record = jest.fn().mockRejectedValue(new Error('DB 연결 끊김'));
+
+    const result = await applier.apply(
+      makePreview({ prGroups: [['o/company#1']], slackUserId: 'U1' }),
+      { done: [], record },
+    );
+
+    // 던지지 않는다 — 반영은 성공했다.
+    expect(result.message).toContain('o/company 1건');
+    expect(result.message).not.toContain('반영 실패');
+    // 다만 재시도 시 중복될 수 있다는 사실은 말해야 한다.
+    expect(result.message).toContain('진행 기록 실패');
+  });
+
+  it('(q) 기록이 실패해도 다음 묶음은 계속 반영한다', async () => {
+    const reflectPr = okReflectPr();
+    const applier = new EveningCareerReflectApplier(
+      reflectPr as never,
+      renderPortfolio() as never,
+    );
+    const record = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('DB 연결 끊김'))
+      .mockResolvedValue(undefined);
+
+    await applier.apply(
+      makePreview({
+        prGroups: [['o/company#1'], ['o/personal#9']],
+        slackUserId: 'U1',
+      }),
+      { done: [], record },
+    );
+
+    expect(reflectPr.execute).toHaveBeenCalledTimes(2);
+  });
 });

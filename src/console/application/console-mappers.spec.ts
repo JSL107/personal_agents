@@ -101,6 +101,7 @@ describe('toConsoleApproval', () => {
       slackMessageTs: null,
       lastFailedAt: null,
       lastFailureReason: null,
+      applyProgress: null,
     });
 
     // 화면은 이 두 값의 간격으로 방치 압력을 계산한다. 하나라도 빠지면 TTL 을 알 수 없어

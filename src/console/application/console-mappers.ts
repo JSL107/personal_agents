@@ -33,6 +33,18 @@ export function toConsoleApproval(preview: PreviewAction): ConsoleApproval {
     title: preview.previewText,
     createdAt: preview.createdAt.toISOString(),
     expiresAt: preview.expiresAt.toISOString(),
+    // 사후 조회용 단계 표식(`[apply]` / `[transition]` / `[interrupted]`)은 벗긴다 —
+    // 화면에서는 읽을 값이 아니고, 그대로 두면 안내 첫 글자가 대괄호로 시작한다.
+    // `null` 만이 아니라 falsy 전부를 거른다. 도메인 타입은 `string | null` 이지만 이 함수는
+    // 부분 객체를 캐스팅해 넘기는 호출부에서도 불리고, 빈 문자열은 화면에 띄울 값이 아니다.
+    ...(preview.lastFailureReason
+      ? {
+          failureReason: preview.lastFailureReason.replace(
+            /^\[[^\]]*\]\s*/,
+            '',
+          ),
+        }
+      : {}),
   };
 }
 
