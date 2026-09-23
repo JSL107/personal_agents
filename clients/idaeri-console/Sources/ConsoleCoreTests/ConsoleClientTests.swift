@@ -54,6 +54,16 @@ func runConsoleClientTests(_ t: TestRunner) {
         "http://127.0.0.1:3002/v1/console/approvals/p1/apply",
         "apply 경로"
     )
+    // 승인 반영은 백엔드가 codex·Notion 을 왕복해 2분까지 걸린다. 기본 60초로 두면 정상
+    // 처리 중인 요청을 클라이언트가 먼저 포기한다.
+    t.expectEqual(applyRequest.timeoutInterval, 180, "apply 타임아웃 여유")
+
+    // 타임아웃은 "답을 못 들었다" 이고 서버는 계속 돌고 있을 수 있다 — 상태를 받은 실패와
+    // 같게 다루면 아직 진행 중인 카드를 되살려 재클릭을 부른다.
+    t.expectEqual(isRequestTimeout(URLError(.timedOut)), true, "타임아웃 식별")
+    t.expectEqual(isRequestTimeout(URLError(.cannotConnectToHost)), false, "연결 실패는 타임아웃이 아니다")
+    t.expectEqual(isRequestTimeout(ConsoleClientError.badStatus(412)), false, "상태를 받은 실패는 타임아웃이 아니다")
+
     let cancelRequest = buildApprovalRequest(baseURL: base, previewId: "p2", action: "cancel", token: nil)
     t.expectEqual(
         cancelRequest.url?.absoluteString,
