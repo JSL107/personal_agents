@@ -2,7 +2,7 @@
 
 # 환경변수 카탈로그
 
-SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 157개.
+SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 163개.
 설명은 각 변수 주석의 첫 문장 발췌 — 상세는 app.config.ts 주석 참조. `.env.example` 동기는 `pnpm check:env`.
 
 ## 인프라 (앱 부팅 필수)
@@ -187,6 +187,11 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `EPISODIC_EMBED_DIM` | ❌ | Episodic Memory 임베딩 차원 (기본 384). 모델 변경 시 함께 갱신 + embedding 컬럼/인덱스 재생성. |
 | `SUBCONSCIOUS_PROPOSAL_TTL_MS` | ❌ | Subconscious Proposal TTL — 사용자가 DM 버튼(✅실행/❌무시)을 누를 수 있는 유효 시간 (ms). |
 | `SUBCONSCIOUS_ENABLED` | ❌ | Subconscious proactive engine 활성 게이트. 'true' 문자열일 때만 활성. |
+| `SUBCONSCIOUS_GATE_MODE` | ❌ | Subconscious 판단기 모드. legacy(기존 LLM), shadow(Jev 비교), hybrid(확신 높은 Jev 우선). |
+| `SUBCONSCIOUS_JEV_MODEL` | ❌ | Jev 모델 버전. 임계값을 튜닝할 때 결과 재현성을 위해 고정한다. |
+| `SUBCONSCIOUS_JEV_TIMEOUT_MS` | ❌ | Jev API 호출 timeout (밀리초). |
+| `SUBCONSCIOUS_JEV_PROMOTE_THRESHOLD` | ❌ | Jev가 자동 승격할 최소 promote 확률 (0보다 크고 1 이하). |
+| `SUBCONSCIOUS_JEV_CONFIDENCE_THRESHOLD` | ❌ | Jev가 담당 에이전트를 선택했다고 볼 최소 confidence (0보다 크고 1 이하). |
 | `PREFERENCE_PROFILE_INJECTION_ENABLED` | ❌ | 학습된 프로필을 브리핑/윤문/라우팅에 주입(미설정=OFF). |
 | `HUMANIZE_REPORTS_ENABLED` | ❌ | 'false' 면 자동 보고서 윤문 OFF(기존 동작). 미설정 시 활성(기본 ON). |
 | `SUBCONSCIOUS_SCHEDULE` | ❌ | Subconscious tick BullMQ cron 표현식 (Asia/Seoul 기준). |
@@ -235,6 +240,7 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `CRON_FAILURE_ALERT_OWNER_SLACK_USER_ID` | ❌ | Daily Eval / Impact Report Recent / CEO Meta Cron 등 cron consumer 가 graceful skip (NO_xxx) 외 throw 직전에 owner 에게 DM 으로 알릴 Slack user ID (`U...`). |
 | `PERSONAL_REPOS` | ❌ | Optional override CSV of owner/repo \| owner/* \| owner. 기본은 repo owner 가 IMPACT_REPORT_GITHUB_AUTHOR 본인이면 개인 프로젝트로 자동 라벨, 조직 소유 개인 프로젝트 등 예외만 추가. |
 | `VACATION_HIRE_DATE` | ❌ | 휴가 계산기 — 본인 입사일 (YYYY-MM-DD). 미설정 시 /휴가 명령에서 친절한 에러. |
+| `TYPESAFE_API_KEY` | ❌ | TypeSafe Jev API 인증키. 게이트 모드가 legacy이면 필요하지 않다. |
 | `BRIEFING_WAITING_SECTION_ENABLED` | ❌ | 'false' 면 아침 브리핑 완료/대기 PR 분류 섹션 OFF. 미설정 시 활성(기본 ON). |
 | `KOREAN_HOLIDAY_API_KEY` | ❌ | 공공데이터포털 「한국천문연구원 특일 정보」 서비스키(**디코딩 키**). |
 | `STUDY_BRIEF_OWNER_SLACK_USER_ID` | ❌ | 학습 주체. 미설정 시 모듈 비활성. |
