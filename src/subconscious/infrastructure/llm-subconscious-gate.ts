@@ -68,17 +68,31 @@ export class LlmSubconsciousGate implements SubconsciousGate {
             agentType: AgentType.SUBCONSCIOUS_GATE,
             request: { prompt: userPrompt, systemPrompt: SYSTEM_PROMPT },
           });
-          // `null` 은 응답에서 JSON 배열을 못 뽑았다는 뜻이다 — 빈 배열(= 읽었는데 승격할
-          // 것이 없었다)과 결과는 같지만 원인이 정반대라, 아래 catch 와 같은 무게로 남긴다.
+          const parsed = parseGateResponse(response.text, validKeys);
+          const decisions = parsed ?? [];
+          // **입력 변화마다 판정이 하나씩 나와야 한다.** 승격하지 않기로 한 변화는 빠지는 게
+          // 아니라 `promote: false` 로 남는다(`SYSTEM_PROMPT`). 그래서 판정 수가 입력 수에
+          // 미달하면 그만큼이 조용히 유실된 것이고, 아래 catch 와 같은 무게로 남긴다.
+          //
+          // 실측(`agent_run`): 정상 회차 569 건은 **전건** 판정 수 = 입력 수였고 부분 판정은
+          // 0 건이다. 미달을 정상으로 볼 근거가 없다.
+          //
+          // 조건을 길이로 잡으면 세 경우가 한 번에 걸린다 — 응답을 못 읽음(`null`),
+          // 모델이 빈 배열을 반환, `validKeys` 밖 key 라 전량·일부가 걸러짐. 셋 다 "판정이
+          // 온전하지 않다" 는 같은 사실이고, 원인만 문구로 가른다. `changes.length > 0` 은
+          // 이 메서드 진입부에서 보장된다.
+          //
           // 모델을 함께 적는다: 2026-09-17~19 유실 86 건은 provider 축으로 깨끗이 갈렸다
           // (claude 폴백 86/86 실패 · codex 0/86).
-          const parsed = parseGateResponse(response.text, validKeys);
-          if (parsed === null) {
+          if (decisions.length < changes.length) {
+            const reason =
+              parsed === null
+                ? '응답을 JSON 배열로 읽지 못함'
+                : `변화 ${changes.length}건 중 ${decisions.length}건만 판정됨`;
             this.logger.error(
-              `잠재의식 게이트 응답을 JSON 배열로 읽지 못함 — 변화 ${changes.length}건을 제안 0건으로 처리 (model=${response.modelUsed})`,
+              `잠재의식 게이트 판정 누락 — ${reason}, 나머지 ${changes.length - decisions.length}건을 제안 0건으로 처리 (model=${response.modelUsed})`,
             );
           }
-          const decisions = parsed ?? [];
           return {
             result: decisions,
             modelUsed: response.modelUsed,
