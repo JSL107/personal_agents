@@ -64,30 +64,26 @@ func runCozyAssetCheck() -> Bool {
         fputs("cozy showcase roster does not cover every character asset exactly once\n", stderr)
         valid = false
     }
-    // Pose art is introduced in a small, quality-controlled pilot. The loader
-    // still falls back to the matching idle art for agents without a pose, but
-    // the release check must prove that the high-frequency interactions have
-    // at least one real seated and one real writing variant.
-    // 가구 앞 착석(`sitting`)도 전원이 가진다. 책상용 `sit` 과 쓰임이 정반대라 서로 대신할
-    // 수 없으므로, 한쪽이 빠지면 그 자리에서 사람이 바닥에 뜨거나 책상을 뚫는다.
-    // 책상 좌석의 뒷모습(`sit-back`)도 전원이 가진다. 좌석 배치가 이 그림을 전제로 잡혀 있어
-    // (의자까지 그려진 전신이라 상판이 가려 주지 않아도 된다) 한 명이라도 빠지면 그 사람만
-    // 정면 착석으로 내려가 혼자 화면 밖을 본다.
-    let requiredPoseAssets = (0..<cozyCharacterAssetCount).map { "agent-\($0)-sit" }
-        + (0..<cozyCharacterAssetCount).map { "agent-\($0)-sit-back" }
-        + (0..<cozyCharacterAssetCount).map { "agent-\($0)-sitting" }
-        // 테이블 앞 착석(`sit-table`)도 전원이 가진다. 소파용(`sitting`)과 가구가 앉을 면을
-        // 주는지가 정반대라 서로 대신할 수 없다 — 빠지면 그 사람만 상판뿐인 테이블 앞에서
-        // 허공에 앉는다.
-        + (0..<cozyCharacterAssetCount).map { "agent-\($0)-sit-table" } + [
-        "agent-0-writing", "agent-0-typing", "agent-0-reading", "agent-0-drinking",
-        "agent-1-writing", "agent-1-typing", "agent-1-reading", "agent-1-drinking",
-        "agent-2-typing", "agent-3-typing", "agent-4-typing", "agent-5-typing",
-        "agent-9-typing", "agent-13-typing", "agent-17-typing",
-        "agent-6-writing", "agent-7-reading", "agent-8-drinking",
-        "agent-16-writing", "agent-17-drinking", "agent-18-typing",
-        "agent-19-reading", "agent-2-reading",
+    // **포즈 열한 종을 전원분 건다.** 한때는 포즈 원화가 몇 명분뿐이라 "적어도 한 장은
+    // 있는지" 를 이름으로 하나씩 적어 확인했는데, 그 목록은 사람이 늘 때 조용히 빠진다 —
+    // 적어 둔 인덱스만 보고 새로 생긴 인덱스는 아무도 안 본다. 이제 전원분이 들어왔으므로
+    // 포즈 × 인덱스로 걸어, 한 장이라도 없으면 게이트가 그 이름을 그대로 말한다.
+    //
+    // 한 장이 빠지면 그 사람만 다른 그림으로 떨어진다. 자리는 틀리지 않지만 혼자 다른
+    // 자세를 하고 있어, 화면을 봐도 "그림이 빠졌다" 가 아니라 "저 사람만 이상하다" 로
+    // 보인다 — 그래서 눈이 아니라 게이트가 잡아야 한다.
+    //
+    // 착석 넷은 서로 대신할 수 없다. 책상 정면(`sit`)은 허리 아래가 없고, 책상 뒷모습
+    // (`sit-back`)은 의자까지 그려진 전신이며, 소파용(`sitting`)은 가구가 앉을 면을 주는
+    // 자리에, 테이블용(`sit-table`)은 상판뿐인 자리에 쓴다.
+    let requiredPoses = [
+        "sit", "sit-back", "sitting", "sit-table",
+        "typing", "reading", "writing", "drinking",
+        "tending", "carryingpapers", "stowing",
     ]
+    let requiredPoseAssets = requiredPoses.flatMap { pose in
+        (0..<cozyCharacterAssetCount).map { "agent-\($0)-\(pose)" }
+    }
     for name in requiredPoseAssets {
         guard let url = Bundle.module.url(
             forResource: name, withExtension: "png", subdirectory: "cozy/characters"
@@ -214,7 +210,8 @@ func runCozyAssetCheck() -> Bool {
         }
     }
     let furnitureAssets = [
-        "workstation", "chair", "sofa", "meeting-table", "bookshelf", "coffee-station",
+        "workstation", "chair", "sofa", "meeting-table", "coffee-table",
+        "bookshelf", "coffee-station",
         "planning-board-table", "quality-review-station", "evaluation-kpi-console",
         "treasury-ledger-console", "content-storyboard-station", "internal-ops-control-desk",
         "vacuum-robot", "waste-bin", "dust-pile",
