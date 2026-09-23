@@ -229,6 +229,16 @@ export interface ReflectPrInput {
   // 선택 입력. 없으면 도입 전과 완전히 같게 동작한다 — 프롬프트에 맥락 절이 붙지 않고
   // 저장되는 성과에도 impactContext 가 생기지 않는다.
   impactContext?: string;
+  /**
+   * 포트폴리오 본문 반영을 기다리지 않는다(RenderPortfolioInput.deferBlockSync 로 전달).
+   *
+   * 사람이 Slack 에서 답을 기다리는 경로만 켠다. 기본값(미지정)은 기다린다 — 저녁 승인
+   * (EveningCareerReflectApplier)처럼 **반영 완료를 단정 보고하고 일회성 카드를 소비하는**
+   * 경로에서 켜면, 아직 반영되지 않았거나 실패한 상태로 "반영했습니다" 가 나가고 그 실패를
+   * failedGroups 도 잡지 못한다(백그라운드에서 삼켜지므로). 그 경로는 사람이 대기하지도
+   * 않으므로 미루어 얻을 것이 없다.
+   */
+  deferPortfolioSync?: boolean;
 }
 
 export interface PrRetroSynth {

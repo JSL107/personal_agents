@@ -122,16 +122,28 @@ describe('ReflectPrUsecase', () => {
       number: 1692,
     });
     expect(repository.save).toHaveBeenCalled();
-    expect(renderPortfolio.execute).toHaveBeenCalledWith({
-      slackUserId: 'U1',
-      deferBlockSync: true,
-    });
+    // deferPortfolioSync 를 켜지 않은 호출(저녁 승인 경로)은 본문 반영을 기다린다.
+    expect(renderPortfolio.execute).toHaveBeenCalledWith({ slackUserId: 'U1' });
     expect(outcome.result.portfolioUrl).toBe('https://notion/p');
     expect(outcome.result.accomplishment.evidence[0].pr).toBe(1692);
     expect(outcome.result.accomplishment.evidence[0].mergedAt).toBe(
       '2026-06-30T12:00:00Z',
     );
     expect(outcome.result.narrative).toBe('회고 서술');
+  });
+
+  it('deferPortfolioSync 를 켜면 그대로 RenderPortfolio 에 전달한다', async () => {
+    const { usecase, renderPortfolio } = makeUsecase();
+    await usecase.execute({
+      slackUserId: 'U1',
+      prText: '이 PR 회고 https://github.com/o/r/pull/1692',
+      deferPortfolioSync: true,
+    });
+
+    expect(renderPortfolio.execute).toHaveBeenCalledWith({
+      slackUserId: 'U1',
+      deferBlockSync: true,
+    });
   });
 
   it('단일 링크는 maxBytes 없이 기존 diff 호출을 유지한다 (회귀 lock)', async () => {
@@ -200,10 +212,8 @@ describe('ReflectPrUsecase', () => {
     });
     expect(modelRouter.route).toHaveBeenCalledTimes(1);
     expect(repository.save).toHaveBeenCalled();
-    expect(renderPortfolio.execute).toHaveBeenCalledWith({
-      slackUserId: 'U1',
-      deferBlockSync: true,
-    });
+    // deferPortfolioSync 를 켜지 않은 호출(저녁 승인 경로)은 본문 반영을 기다린다.
+    expect(renderPortfolio.execute).toHaveBeenCalledWith({ slackUserId: 'U1' });
     expect(outcome.result.accomplishment.evidence).toHaveLength(2);
     expect(outcome.result.narrative).toBe('이어진 두 PR 통합 회고');
   });
