@@ -182,6 +182,78 @@ func runOfficeStrollReachTests(_ t: TestRunner) {
     }
 }
 
+/// 콘솔 자리를 고르는 규칙 자체를 **인공 배치로 직접** 건다.
+///
+/// 평면도로만 재면 "지금 이 명단에서 겹치지 않더라" 까지만 알 수 있다. 더 나은 칸을 두고
+/// 나쁜 칸을 고르는 회귀는 겹침 상한을 그대로 통과하므로(이대리 리뷰 지적), 규칙이 실제로
+/// 도는지는 가구를 손으로 놓아 물어야 한다.
+func runOfficeFeatureTilePolicyTests(_ t: TestRunner) {
+    // 폭 11(내부 10칸) · 높이 7 — 실제 부서 구역과 같은 크기.
+    let zone = DepartmentZone(
+        department: .quality, origin: TilePoint(x: 0, y: 0), width: 11, height: 7
+    )
+    let row = zone.origin.y + 1
+    let preferred = officeDepartmentFeaturePreferredOffset(
+        zone.department, zoneInnerWidth: zone.width - 1
+    )
+    func desks(_ offsets: [Int]) -> [FurniturePlacement] {
+        offsets.map { FurniturePlacement(kind: .desk, tile: TilePoint(x: $0, y: row)) }
+    }
+    func coverage(_ tile: TilePoint, _ furniture: [FurniturePlacement]) -> Int {
+        officeDepartmentFeatureCoverage(furniture: furniture, tile: tile).count
+    }
+
+    // 1) 비어 있으면 선호 칸을 그대로 쓴다.
+    t.expectEqual(
+        officeDepartmentFeatureTile(zone: zone, furniture: []).x,
+        zone.origin.x + preferred,
+        "가구가 없으면 콘솔은 선호 칸에 선다")
+
+    // 2) **겹치지 않는 칸이 하나라도 있으면 반드시 그 칸이다.** 선호 칸에서 멀더라도
+    //    겹침 0 이 우선한다 — 이 순서가 뒤집히면 콘솔이 남의 좌석 위에 선다.
+    //    선호 칸 둘레를 모두 막고 왼쪽 끝 두 칸만 비운다.
+    let crowded = desks(Array(3...9))
+    let chosen = officeDepartmentFeatureTile(zone: zone, furniture: crowded)
+    t.expectEqual(
+        coverage(chosen, crowded), 0,
+        "빈 칸이 있으면 겹치지 않는 자리를 고른다 (고른 칸 \(chosen.x))")
+
+    // 3) **어느 칸도 비지 않으면 겹침이 가장 적은 칸.** 홀수 칸을 전부 채우면 어느 두 칸을
+    //    잡아도 최소 하나는 물리는데, 오른쪽 끝(9)만 비워 그쪽이 유일한 최소가 되게 한다.
+    let packed = desks([1, 2, 3, 4, 5, 6, 7, 8])
+    let leastTile = officeDepartmentFeatureTile(zone: zone, furniture: packed)
+    let leastCover = coverage(leastTile, packed)
+    let bestPossible = (1...(zone.width - 3))
+        .map { coverage(TilePoint(x: zone.origin.x + $0, y: row), packed) }
+        .min() ?? 0
+    t.expectEqual(
+        leastCover, bestPossible,
+        "다 막히면 겹침이 가장 적은 칸을 고른다 (고른 칸 \(leastTile.x), 겹침 \(leastCover))")
+
+    // 4) **겹침 수가 같으면 선호 칸에 가까운 쪽.** 모든 칸을 똑같이 막아 전부 동률로 만든다 —
+    //    이때 자리가 흔들리면 같은 명단인데도 실행마다 콘솔이 옮겨 다닌다.
+    let uniform = desks(Array(1...9))
+    let tie = officeDepartmentFeatureTile(zone: zone, furniture: uniform)
+    let tieCovers = Set(
+        (1...(zone.width - 3)).map { coverage(TilePoint(x: zone.origin.x + $0, y: row), uniform) }
+    )
+    t.expect(tieCovers.count == 1, "동률 검사의 전제: 모든 후보가 같은 겹침 수 \(tieCovers)")
+    t.expectEqual(
+        tie.x, zone.origin.x + preferred,
+        "동률이면 선호 칸이 그대로 뽑힌다")
+
+    // 5) 자리를 비워 주는 쪽과 고르는 쪽이 **같은 칸**을 본다. 따로 세면 한쪽만 바뀐다.
+    let reserved = officeDepartmentFeatureReservedDeskLocals(
+        zone.department, zoneInnerWidth: zone.width - 1
+    )
+    t.expectEqual(
+        reserved.map(\.x).sorted(), [preferred, preferred + 1],
+        "예약 칸은 콘솔이 덮는 두 칸과 같다")
+    t.expect(
+        reserved.allSatisfy { $0.y == 1 },
+        "예약은 책상이 쓰는 아래 줄(y=1) 하나다 — 위 줄 좌석은 콘솔 범위 밖이다")
+}
+
 /// 방마다 정원(10명)을 채운 명단. 좌석이 다 차야 가구가 뒤쪽 후보로 밀려, 인원이 적을 때는
 /// 안 보이던 충돌이 드러난다.
 private func strollReachFullRoster() -> [ConsoleAgent] {

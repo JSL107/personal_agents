@@ -1818,7 +1818,7 @@ private let departmentFeatureFraction: [Department: Double] = [
 
 /// 콘솔이 **처음 노리는 칸**(구역 원점 기준 x 오프셋). 자리를 고르는 쪽과 그 자리를 비워
 /// 주는 쪽이 같은 값을 봐야 하므로 여기 한 곳에서 센다.
-func officeDepartmentFeaturePreferredOffset(
+public func officeDepartmentFeaturePreferredOffset(
     _ department: Department, zoneInnerWidth: Int
 ) -> Int {
     Int((Double(zoneInnerWidth) * (departmentFeatureFraction[department] ?? 0.5)).rounded())

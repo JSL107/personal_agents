@@ -10,6 +10,11 @@ struct AgentCardView: View {
     /// 완료를 눈으로 확인했다는 표시. 서버 창이 만료되기를 기다리지 않고 카드를 대기로 내린다.
     let onAcknowledge: () -> Void
 
+    /// 동작 줄이기가 켜져 있으면 카드가 더하는 전환을 전부 끈다. `ConsoleStatusDot` 안에서만
+    /// 보던 동안 말풍선 페이드와 배지 색 전환은 그대로 돌았다 — 설정을 켠 사람은 카드가
+    /// 갱신될 때마다 그 둘을 계속 보게 된다(Codex 리뷰 지적).
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     @State private var showSheet = false
     @State private var showAnswerSheet = false
     @State private var selectedAnswer = ""
@@ -68,8 +73,8 @@ struct AgentCardView: View {
                 .foregroundStyle(CozyPalette.ink)
                 // 말풍선 문구는 일이 진행되는 동안 계속 갈린다. 글자가 한 프레임에 통째로
                 // 바뀌면 깜빡임으로 읽히므로 짧게 넘긴다.
-                .contentTransition(.opacity)
-                .animation(.easeInOut(duration: 0.22), value: agent.bubble)
+                .contentTransition(reduceMotion ? .identity : .opacity)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: agent.bubble)
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, Spacing.md)
@@ -190,7 +195,7 @@ struct AgentCardView: View {
         .background(agent.state.tintColor, in: Capsule())
         // 상태가 바뀌면 배지 색이 **건너뛰지 않고 넘어간다.** 스냅샷은 몇 초에 한 번 통째로
         // 갈리므로, 색만 즉시 바뀌면 무엇이 달라졌는지 눈이 못 따라간다.
-        .animation(.easeInOut(duration: 0.28), value: agent.state)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.28), value: agent.state)
     }
 
     private var pendingBadgeRow: some View {
@@ -286,6 +291,11 @@ private struct ConsoleStatusDot: View {
             }
             .onAppear { start() }
             .onChange(of: live) { _ in start() }
+            // **설정 변화도 따라간다.** 동작 줄이기가 켜진 채 카드가 나타났다가 사용자가
+            // 설정을 끄면 `onAppear` 는 다시 불리지 않아 맥박이 영영 시작되지 않는다
+            // (이대리 리뷰 지적). 반대 방향은 `if live, !reduceMotion` 가 겹을 걷어내므로
+            // 저절로 멎는다.
+            .onChange(of: reduceMotion) { _ in start() }
     }
 
     private func start() {
