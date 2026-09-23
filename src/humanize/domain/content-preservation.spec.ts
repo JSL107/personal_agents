@@ -90,6 +90,79 @@ describe('content preservation', () => {
     expect(shouldRollbackField(violations)).toBe(true);
   });
 
+  it.each([
+    [
+      '날짜가 바뀌면 롤백한다',
+      '2026-09-23에 발행합니다.',
+      '2026-09-24에 발행합니다.',
+    ],
+    [
+      '한국어 날짜가 바뀌면 롤백한다',
+      '2026년 9월 23일에 발행합니다.',
+      '2026년 9월 24일에 발행합니다.',
+    ],
+  ])('%s', (_label, original, rewritten) => {
+    const violations = findPreservationViolations(original, rewritten);
+
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'date', direction: 'lost' }),
+        expect.objectContaining({ kind: 'date', direction: 'injected' }),
+      ]),
+    );
+    expect(shouldRollbackField(violations)).toBe(true);
+  });
+
+  it('발화 표지가 있는 직접 인용이 바뀌면 롤백한다', () => {
+    const violations = findPreservationViolations(
+      '김 대표는 "다음 주에 공개합니다"라고 밝혔습니다.',
+      '김 대표는 "이번 주에 공개합니다"라고 밝혔습니다.',
+    );
+
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'quote', direction: 'lost' }),
+        expect.objectContaining({ kind: 'quote', direction: 'injected' }),
+      ]),
+    );
+    expect(shouldRollbackField(violations)).toBe(true);
+  });
+
+  it('강조용 따옴표는 직접 인용 보존 대상으로 오인하지 않는다', () => {
+    const violations = findPreservationViolations(
+      '이 기능은 "자동화"라는 이름으로 소개됐습니다.',
+      '이 기능은 자동화라는 이름으로 소개됐습니다.',
+    );
+
+    expect(violations).toEqual([]);
+    expect(shouldRollbackField(violations)).toBe(false);
+  });
+
+  it('인용문 안의 발화 표현은 직접 인용 표지로 오인하지 않는다', () => {
+    const violations = findPreservationViolations(
+      '문장은 "이 표현을 뭐라고 할까요"로 소개됐습니다.',
+      '문장은 이 표현을 뭐라고 할까요로 소개됐습니다.',
+    );
+
+    expect(violations).toEqual([]);
+    expect(shouldRollbackField(violations)).toBe(false);
+  });
+
+  it('법조문 참조가 바뀌면 롤백한다', () => {
+    const violations = findPreservationViolations(
+      '개인정보보호법 제15조 제1항을 적용합니다.',
+      '개인정보보호법 제16조 제1항을 적용합니다.',
+    );
+
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'legal', direction: 'lost' }),
+        expect.objectContaining({ kind: 'legal', direction: 'injected' }),
+      ]),
+    );
+    expect(shouldRollbackField(violations)).toBe(true);
+  });
+
   it('같은 토큰의 등장 횟수만 줄어들면 집합 비교로 통과한다', () => {
     const violations = findPreservationViolations(
       '3회 점검했고 3건을 처리했습니다.',
@@ -292,7 +365,7 @@ describe('content preservation', () => {
     expect(shouldRollbackField(violations)).toBe(false);
   });
 
-  it('날짜 일부가 바뀌면 하이픈 없는 숫자 토큰으로 진단한다', () => {
+  it('날짜 일부가 바뀌면 날짜 토큰으로 진단한다', () => {
     const violations = findPreservationViolations(
       '기준일은 2026-08-25입니다.',
       '기준일은 2026-09-25입니다.',
@@ -300,8 +373,8 @@ describe('content preservation', () => {
 
     expect(violations).toEqual(
       expect.arrayContaining([
-        { kind: 'number', token: '09', direction: 'injected' },
-        { kind: 'number', token: '08', direction: 'lost' },
+        { kind: 'date', token: '2026-09-25', direction: 'injected' },
+        { kind: 'date', token: '2026-08-25', direction: 'lost' },
       ]),
     );
     expect(violations).toHaveLength(2);
