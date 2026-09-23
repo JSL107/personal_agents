@@ -29,6 +29,18 @@ import { ApplyPreviewUsecase } from './apply-preview.usecase';
 // 죽는 이유가 그 작업이라면 두 번째에도 같은 결말이므로, 그때는 사람에게 넘긴다.
 const MAX_APPLY_ATTEMPTS = 2;
 
+// 흔적이 이만큼 늙으면 pid 생존 판정을 더 믿지 않는다.
+//
+// **pid 는 재사용된다.** 재부팅 뒤 다른 프로세스가 같은 번호를 받거나, 컨테이너마다 다른 PID
+// namespace 에서 새 백엔드가 또 1번을 받는다. 그때 `process.kill(pid, 0)` 은 성공하므로 실제
+// 소유자가 죽었는데도 매 부팅마다 건너뛰고, **복구도 통지도 영영 돌지 않은 채** 카드만 흔적과
+// 함께 남는다. 생존 판정 하나에 종착점이 걸려 있으면 안 된다.
+//
+// 하루로 잡은 근거: 실측에서 가장 긴 반영이 30분대다(EVENING_CAREER_REFLECT 4묶음, 7~14분 ×4).
+// 하루를 넘겨 살아 있는 반영은 없으므로 이 나이를 넘긴 흔적은 판정을 계속 이어 간다 —
+// 그 뒤의 TTL·시도 상한이 마감과 통지를 책임진다.
+const STALE_OWNER_HOURS = 24;
+
 // pid 가 아직 살아 있는가. 죽은 프로세스의 흔적만 중단으로 판정하기 위한 것이다.
 //
 // 로컬 DB 는 worktree 백엔드와 공유되므로 "흔적이 남아 있다" 만으로는 중단을 단정할 수 없다 —
@@ -190,7 +202,12 @@ export class ResumeInterruptedAppliesUsecase implements OnApplicationBootstrap {
     if (progress.endedAt !== undefined) {
       return { kind: 'SKIP', why: '이미 끝난 시도' };
     }
-    if (isProcessAlive(progress.pid)) {
+    // 생존 판정은 흔적이 젊을 때만 믿는다(위 STALE_OWNER_HOURS). 파싱되지 않는 `startedAt`
+    // 도 늙은 것으로 친다 — 나이를 모르면 판정을 멈추는 쪽이 아니라 이어 가는 쪽이 안전하다.
+    const ageMs = now.getTime() - Date.parse(progress.startedAt);
+    const ownerJudgable =
+      Number.isFinite(ageMs) && ageMs < STALE_OWNER_HOURS * 60 * 60 * 1000;
+    if (ownerJudgable && isProcessAlive(progress.pid)) {
       return {
         kind: 'SKIP',
         why: `pid ${progress.pid} 가 살아 있음 — 다른 백엔드가 반영 중`,

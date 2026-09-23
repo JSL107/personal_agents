@@ -224,4 +224,48 @@ describe('CancelPreviewUsecase', () => {
 
     expect(result.status).toBe(PREVIEW_STATUS.CANCELLED);
   });
+
+  it('반영이 돌고 있는 카드는 거절할 수 없다 — CANCELLED 로 바꿔도 applier 는 멈추지 않는다', async () => {
+    // applier 가 외부 부작용을 끝내고 `transition(APPLIED)` 로 덮어쓰면, 거절 후처리는 이미
+    // 돌았는데 상태만 APPLIED 로 돌아가 둘이 어긋난 채 남는다.
+    const repo = buildRepo(
+      buildPreview({
+        applyProgress: {
+          pid: 4242,
+          startedAt: '2026-09-23T09:50:00.000Z',
+          attempts: 1,
+          done: [],
+        },
+      }),
+    );
+    const usecase = new CancelPreviewUsecase(repo, [], buildCard());
+
+    await expect(
+      usecase.execute({ previewId: 'p-1', slackUserId: 'U1' }),
+    ).rejects.toThrow('이미 반영이 시작돼');
+
+    expect(repo.transition).not.toHaveBeenCalled();
+  });
+
+  it('끝났다고 표시된 흔적이면 거절할 수 있다 — 실패로 닫힌 카드는 사용자가 접을 수 있어야 한다', async () => {
+    const repo = buildRepo(
+      buildPreview({
+        applyProgress: {
+          pid: 4242,
+          startedAt: '2026-09-23T09:50:00.000Z',
+          attempts: 1,
+          done: ['0:owner/repo#1'],
+          endedAt: '2026-09-23T09:55:00.000Z',
+        },
+      }),
+    );
+    const usecase = new CancelPreviewUsecase(repo, [], buildCard());
+
+    const result = await usecase.execute({
+      previewId: 'p-1',
+      slackUserId: 'U1',
+    });
+
+    expect(result.status).toBe(PREVIEW_STATUS.CANCELLED);
+  });
 });

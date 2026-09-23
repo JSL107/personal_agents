@@ -366,4 +366,45 @@ describe('ResumeInterruptedAppliesUsecase', () => {
     expect(findApplyInterrupted).toHaveBeenCalled();
     await moduleRef.close();
   });
+
+  it('(a-2) 흔적이 하루를 넘겼으면 pid 가 살아 있어도 판정을 이어 간다 — pid 는 재사용된다', async () => {
+    // 재부팅 뒤 다른 프로세스가 같은 번호를 받거나 컨테이너가 또 1번을 주면 생존 판정이
+    // 성공한다. 그 판정 하나에 종착점이 걸려 있으면 복구도 통지도 영영 돌지 않는다.
+    const { usecase, repository } = build({
+      interrupted: [
+        buildPreview({
+          // TTL 도 지난 상태라 마감으로 떨어져야 한다.
+          expiresAt: new Date('2026-09-22T00:00:00.000Z'),
+          applyProgress: buildProgress({
+            pid: process.pid, // 확실히 살아 있는 pid
+            startedAt: '2026-09-21T09:00:00.000Z', // 이틀 전
+          }),
+        }),
+      ],
+    });
+
+    await usecase.sweep(fixedNow);
+    await flush();
+
+    expect(repository.recordApplyFailure).toHaveBeenCalledTimes(1);
+  });
+
+  it('(a-3) 하루가 안 된 흔적은 pid 가 살아 있으면 그대로 둔다', async () => {
+    const { usecase, repository, applyPreview } = build({
+      interrupted: [
+        buildPreview({
+          applyProgress: buildProgress({
+            pid: process.pid,
+            startedAt: '2026-09-23T09:22:00.000Z',
+          }),
+        }),
+      ],
+    });
+
+    await usecase.sweep(fixedNow);
+    await flush();
+
+    expect(applyPreview.execute).not.toHaveBeenCalled();
+    expect(repository.recordApplyFailure).not.toHaveBeenCalled();
+  });
 });

@@ -70,6 +70,25 @@ export class CancelPreviewUsecase {
         status: DomainStatus.PRECONDITION_FAILED,
       });
     }
+    // 반영이 시작된 뒤의 거절은 반영을 되돌리지 못한다. applier 는 외부 부작용을 끝까지
+    // 수행하고, 그 뒤 `transition(APPLIED)` 가 id 만 보고 덮어쓴다 — 여기서 CANCELLED 로
+    // 바꿔 두면 **거절 후처리(canceller)는 이미 돌았는데 상태만 APPLIED 로 되돌아가** 둘이
+    // 어긋난 채 남는다. 같은 자리를 지키는 `UpdatePreviewPayloadUsecase` 가 수정을 막는 것과
+    // 같은 이유이고, 거절이 수정보다 파괴적이므로 여기가 비어 있을 이유가 없다.
+    //
+    // 판정은 원장의 흔적으로 한다 — `ApplyPreviewUsecase.applying` 은 프로세스 메모리라
+    // 다른 백엔드가 돌리는 반영도, 부팅 훅이 순차 대기시켜 둔 재개도 보지 못한다.
+    if (
+      preview.applyProgress !== null &&
+      preview.applyProgress.endedAt === undefined
+    ) {
+      throw new PreviewActionException({
+        code: PreviewActionErrorCode.ALREADY_APPLYING,
+        message:
+          '이미 반영이 시작돼 지금은 거절할 수 없습니다. 잠시 후 결과를 확인해주세요.',
+        status: DomainStatus.PRECONDITION_FAILED,
+      });
+    }
 
     const cancelled = await this.repository.transition({
       id: preview.id,
