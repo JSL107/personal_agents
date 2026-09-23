@@ -76,6 +76,14 @@ export const AGENT_SAFETY_LEVEL: Record<AgentType, AgentSafetyLevel> = {
   [AgentType.BLOG_PUBLISH]: AgentSafetyLevel.IRREVERSIBLE,
   // issues.addLabels — 남의 레포 이슈에 라벨을 단다.
   [AgentType.ISSUE_LABELER]: AgentSafetyLevel.IRREVERSIBLE,
+
+  // --- 설비 ---
+  // ROUTER 는 워커가 아니라 라우터 자신이다. 하는 일은 "넘기지 못한 요청을 원장에 한 줄
+  // 남기는 것" 뿐이라 READ_ONLY 정의(원장 기록 외에 남기는 것이 없다)에 정확히 들어맞는다.
+  // UNAUDITED 를 쓰지 않는 이유: 그 등급은 "행동을 아직 실측하지 못했다" 는 뜻인데, 이쪽은
+  // 기록 경로가 라우터 코드 한 곳뿐이라 무엇을 남기는지가 구조적으로 확정돼 있다.
+  // dispatcher 가 없어 자연어 분류 후보로도 올라오지 않는다(⚠️ 표식 동기화 비대상).
+  [AgentType.ROUTER]: AgentSafetyLevel.READ_ONLY,
 };
 
 // ponytail: 등급은 지금 분류 프롬프트의 ⚠️ 표식(+ 동기화 테스트)으로만 소비된다.

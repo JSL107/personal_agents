@@ -103,43 +103,6 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
     });
   }
 
-  // 기존 스냅샷을 읽어 fields 만 덮어쓴다. Prisma 는 Json 컬럼의 부분 갱신을 지원하지 않아
-  // 읽고-합치고-쓰는 수밖에 없다.
-  //
-  // 저장된 값이 객체가 아니면(배열·스칼라) **아무것도 쓰지 않고 false 를 돌려준다.**
-  // 포트 계약상 inputSnapshot 은 unknown 이라 배열·스칼라도 정당한 값인데, 객체로 갈아끼우면
-  // 보조 메타데이터를 붙이려다 원본 입력을 지우게 된다 — 기록이 빠지는 것보다 나쁘다
-  // (이대리 자동 리뷰 #629 CORRECTNESS). 호출자가 이 값으로 건너뛴 사실을 로그에 남긴다.
-  async mergeInputSnapshot(input: {
-    id: number;
-    fields: Record<string, unknown>;
-  }): Promise<boolean> {
-    const found = await this.prisma.agentRun.findUnique({
-      where: { id: input.id },
-      select: { inputSnapshot: true },
-    });
-    if (found === null) {
-      return false;
-    }
-    const stored: unknown = found.inputSnapshot;
-    const mergeable =
-      typeof stored === 'object' && stored !== null && !Array.isArray(stored);
-    if (!mergeable) {
-      return false;
-    }
-
-    await this.prisma.agentRun.update({
-      where: { id: input.id },
-      data: {
-        inputSnapshot: {
-          ...(stored as Record<string, unknown>),
-          ...input.fields,
-        } as Prisma.InputJsonValue,
-      },
-    });
-    return true;
-  }
-
   async finish({
     id,
     status,

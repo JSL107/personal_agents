@@ -1,6 +1,11 @@
 import { Logger } from '@nestjs/common';
 
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
+import {
+  claimRoutingContext,
+  RoutingContext,
+} from '../../agent-run/application/routing-context';
+import { TriggerType } from '../../agent-run/domain/agent-run.type';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { DispatchInput } from '../domain/idaeri-router.port';
 import { IntentClassification } from '../domain/intent-classification.type';
@@ -37,10 +42,22 @@ const buildClassifierMock = (
     classify: jest.fn().mockResolvedValue(classification),
   }) as unknown as jest.Mocked<IntentClassifierUsecase>;
 
+// execute 는 진짜와 같은 모양으로 둔다 — run 콜백을 실제로 돌리고 그 거절을 되던진다.
+// jest.fn() 만 두면 라우팅 실패 기록이 "불렸다" 까지만 확인되고, 그 안에서 근거를 집어
+// 가는지(스코프가 살아 있는지)는 영영 검증되지 않는다.
 const buildAgentRunServiceMock = (): jest.Mocked<AgentRunService> =>
   ({
     setParentId: jest.fn().mockResolvedValue(undefined),
-    attachRoutingContext: jest.fn().mockResolvedValue(undefined),
+    execute: jest.fn(
+      async ({
+        run,
+      }: {
+        run: (context: { agentRunId: number }) => unknown;
+      }) => {
+        await run({ agentRunId: 999 });
+        return { result: undefined, modelUsed: 'mock', agentRunId: 999 };
+      },
+    ),
   }) as unknown as jest.Mocked<AgentRunService>;
 
 const buildUsecase = (
@@ -553,11 +570,36 @@ describe('IdaeriRouterUsecase', () => {
     });
   });
 
-  describe('라우팅 근거 기록', () => {
+  describe('라우팅 근거를 dispatch 스코프에 싣는다', () => {
     const PM_RUN_ID = 55;
 
-    it('분류기를 탄 경로는 원문·대상·확신도를 classifier 로 기록한다', async () => {
-      const dispatcher = buildDispatcher(AgentType.PM, () => ({
+    // 워커가 자기 AgentRun 을 여는 시점에 무엇을 보게 되는지를 본다. 라우터가 dispatch 를
+    // 끝낸 뒤 되돌아가 붙이는 방식이었다면 워커가 예외로 끝나는 순간 이 값이 사라졌다.
+    const buildSpyDispatcher = (
+      agentType: AgentType,
+      outcomeFn: (input: DispatchInput) => Partial<DispatchOutcome>,
+    ): {
+      dispatcher: AgentDispatcher;
+      seen: () => RoutingContext | undefined;
+    } => {
+      let captured: RoutingContext | undefined;
+      const dispatcher: AgentDispatcher = {
+        agentType,
+        dispatch: jest.fn(async (input: DispatchInput) => {
+          captured = claimRoutingContext();
+          return {
+            output: {},
+            modelUsed: 'mock-model',
+            formattedText: `mock formatted text for ${agentType}`,
+            ...outcomeFn(input),
+          } as DispatchOutcome;
+        }),
+      };
+      return { dispatcher, seen: () => captured };
+    };
+
+    it('분류기를 탄 경로는 원문·대상·확신도를 classifier 로 싣는다', async () => {
+      const { dispatcher, seen } = buildSpyDispatcher(AgentType.PM, () => ({
         agentRunId: PM_RUN_ID,
       }));
       const classifier = buildClassifierMock({
@@ -565,10 +607,7 @@ describe('IdaeriRouterUsecase', () => {
         confidence: 0.93,
         reason: '계획 수립 요청',
       });
-      const { usecase, agentRunService } = buildUsecase(
-        [dispatcher],
-        classifier,
-      );
+      const { usecase } = buildUsecase([dispatcher], classifier);
 
       await usecase.dispatch({
         source: 'SLACK_MESSAGE',
@@ -576,8 +615,7 @@ describe('IdaeriRouterUsecase', () => {
         text: '내일 뭐부터 하지?',
       });
 
-      expect(agentRunService.attachRoutingContext).toHaveBeenCalledWith({
-        id: PM_RUN_ID,
+      expect(seen()).toEqual({
         text: '내일 뭐부터 하지?',
         routedTo: AgentType.PM,
         routedVia: 'classifier',
@@ -586,11 +624,11 @@ describe('IdaeriRouterUsecase', () => {
     });
 
     // 슬래시는 분류기를 타지 않는다. confidence 를 실으면 분류기가 낸 값처럼 보여 채점이 오염된다.
-    it('슬래시(agentTypeHint) 경로는 hint 로 기록하고 confidence 를 싣지 않는다', async () => {
-      const dispatcher = buildDispatcher(AgentType.PM, () => ({
+    it('슬래시(agentTypeHint) 경로는 hint 로 싣고 confidence 를 싣지 않는다', async () => {
+      const { dispatcher, seen } = buildSpyDispatcher(AgentType.PM, () => ({
         agentRunId: PM_RUN_ID,
       }));
-      const { usecase, agentRunService } = buildUsecase([dispatcher]);
+      const { usecase } = buildUsecase([dispatcher]);
 
       await usecase.dispatch({
         source: 'SLACK_COMMAND',
@@ -599,19 +637,18 @@ describe('IdaeriRouterUsecase', () => {
         agentTypeHint: AgentType.PM,
       });
 
-      expect(agentRunService.attachRoutingContext).toHaveBeenCalledWith({
-        id: PM_RUN_ID,
+      expect(seen()).toEqual({
         text: '오늘 할 일',
         routedTo: AgentType.PM,
         routedVia: 'hint',
       });
     });
 
-    it('text 가 없으면 기록하지 않는다', async () => {
-      const dispatcher = buildDispatcher(AgentType.PM, () => ({
+    it('text 가 없으면 스코프를 열지 않는다 — 채점할 원문이 없다', async () => {
+      const { dispatcher, seen } = buildSpyDispatcher(AgentType.PM, () => ({
         agentRunId: PM_RUN_ID,
       }));
-      const { usecase, agentRunService } = buildUsecase([dispatcher]);
+      const { usecase } = buildUsecase([dispatcher]);
 
       await usecase.dispatch({
         source: 'SLACK_COMMAND',
@@ -619,63 +656,292 @@ describe('IdaeriRouterUsecase', () => {
         agentTypeHint: AgentType.PM,
       });
 
-      expect(agentRunService.attachRoutingContext).not.toHaveBeenCalled();
+      expect(seen()).toBeUndefined();
     });
 
-    // agentRunId 0 은 "유효 run 없음" sentinel (비동기 BLOG · UNKNOWN 분기).
-    it('agentRunId 가 0 이면 기록하지 않는다', async () => {
-      const dispatcher = buildDispatcher(AgentType.PM, () => ({
-        agentRunId: 0,
-      }));
-      const { usecase, agentRunService } = buildUsecase([dispatcher]);
+    // 이 수리의 핵심 — 예전에는 dispatch 가 반환해야만 기록이 붙어서, 분류가 틀려 워커가 죽은
+    // 회차(정확도 분석에 가장 필요한 표본)가 통째로 빠졌다.
+    it('워커가 예외로 끝나도 근거는 이미 스코프 안에서 전달돼 있다', async () => {
+      let captured: RoutingContext | undefined;
+      const dispatcher: AgentDispatcher = {
+        agentType: AgentType.PM,
+        dispatch: jest.fn(async () => {
+          captured = claimRoutingContext();
+          throw new Error('워커가 입력을 거절했다');
+        }),
+      };
+      const { usecase } = buildUsecase([dispatcher]);
+
+      await expect(
+        usecase.dispatch({
+          source: 'SLACK_MESSAGE',
+          slackUserId: 'U1',
+          text: 'PR 리뷰 좀',
+          agentTypeHint: AgentType.PM,
+        }),
+      ).rejects.toThrow('워커가 입력을 거절했다');
+
+      expect(captured).toEqual({
+        text: 'PR 리뷰 좀',
+        routedTo: AgentType.PM,
+        routedVia: 'hint',
+      });
+    });
+
+    // BLOG 는 즉시 ack 하고 실제 실행을 `void` 로 띄운다. 예전 방식(outcome.agentRunId 로
+    // 되돌아가 붙이기)에서는 sentinel 0 이 반환돼 **성공해도** 기록되지 않았다.
+    it('dispatch 가 반환한 뒤 도는 백그라운드 실행도 같은 근거를 본다', async () => {
+      let backgroundSeen: RoutingContext | undefined;
+      let settleBackground: (() => void) | undefined;
+      const background = new Promise<void>((resolve) => {
+        settleBackground = resolve;
+      });
+      const dispatcher: AgentDispatcher = {
+        agentType: AgentType.BLOG,
+        dispatch: jest.fn(async () => {
+          void (async () => {
+            await Promise.resolve();
+            backgroundSeen = claimRoutingContext();
+            settleBackground?.();
+          })();
+          return {
+            agentRunId: 0,
+            output: {},
+            modelUsed: 'mock-model',
+            formattedText: 'ack',
+          } as DispatchOutcome;
+        }),
+      };
+      const { usecase } = buildUsecase([dispatcher]);
 
       await usecase.dispatch({
         source: 'SLACK_MESSAGE',
         slackUserId: 'U1',
-        text: '뭐라도 해줘',
+        text: '블로그 초안 써줘',
+        agentTypeHint: AgentType.BLOG,
+      });
+      await background;
+
+      expect(backgroundSeen).toEqual({
+        text: '블로그 초안 써줘',
+        routedTo: AgentType.BLOG,
+        routedVia: 'hint',
+      });
+    });
+
+    // 스코프당 한 번만 — 한 dispatch 가 run 을 둘 열면 같은 발화가 여러 행에 복사돼
+    // 분류 정확도의 분모가 부풀어 오른다.
+    it('한 스코프에서 두 번째로 집으려 하면 빈손이다', async () => {
+      const captured: (RoutingContext | undefined)[] = [];
+      const dispatcher: AgentDispatcher = {
+        agentType: AgentType.PM,
+        dispatch: jest.fn(async () => {
+          captured.push(claimRoutingContext(), claimRoutingContext());
+          return {
+            agentRunId: PM_RUN_ID,
+            output: {},
+            modelUsed: 'mock-model',
+            formattedText: 'ok',
+          } as DispatchOutcome;
+        }),
+      };
+      const { usecase } = buildUsecase([dispatcher]);
+
+      await usecase.dispatch({
+        source: 'SLACK_MESSAGE',
+        slackUserId: 'U1',
+        text: '오늘 뭐해',
         agentTypeHint: AgentType.PM,
       });
 
-      expect(agentRunService.attachRoutingContext).not.toHaveBeenCalled();
+      expect(captured[0]).toBeDefined();
+      expect(captured[1]).toBeUndefined();
     });
 
-    // CAREER_MATE 의 RENDER_RESUME·RENDER_PORTFOLIO 는 저장된 프로필이 있으면 그 프로필을
-    // 만든 과거 실행의 id 를 돌려준다. 거기에 이번 요청을 쓰면 과거 기록이 둔갑한다.
-    it('재사용된 run 에는 기록하지 않는다', async () => {
-      const dispatcher = buildDispatcher(AgentType.CAREER_MATE, () => ({
-        agentRunId: 31,
-        reusedAgentRun: true,
+    it('handoff chain 의 자식은 자기 원문으로 새 스코프를 연다', async () => {
+      const { dispatcher: parent } = buildSpyDispatcher(AgentType.PM, () => ({
+        agentRunId: PM_RUN_ID,
+        followUp: {
+          toWorker: AgentType.WORK_REVIEWER,
+          reason: '후속 정리',
+          passthroughInput: { text: '오늘 한 일 정리해줘' },
+        },
       }));
-      const { usecase, agentRunService } = buildUsecase([dispatcher]);
+      const { dispatcher: child, seen: childSeen } = buildSpyDispatcher(
+        AgentType.WORK_REVIEWER,
+        () => ({ agentRunId: 56 }),
+      );
+      const { usecase } = buildUsecase([parent, child]);
 
       await usecase.dispatch({
-        source: 'SLACK_MESSAGE',
-        slackUserId: 'U1',
-        text: '이력서 렌더해줘',
-        agentTypeHint: AgentType.CAREER_MATE,
-      });
-
-      expect(agentRunService.attachRoutingContext).not.toHaveBeenCalled();
-    });
-
-    it('기록이 실패해도 dispatch 결과는 그대로 돌려준다', async () => {
-      const dispatcher = buildDispatcher(AgentType.PM, () => ({
-        agentRunId: PM_RUN_ID,
-      }));
-      const { usecase, agentRunService } = buildUsecase([dispatcher]);
-      agentRunService.attachRoutingContext.mockRejectedValueOnce(
-        new Error('DB 연결 끊김'),
-      );
-
-      const result = await usecase.dispatch({
         source: 'SLACK_MESSAGE',
         slackUserId: 'U1',
         text: '내일 뭐부터 하지?',
         agentTypeHint: AgentType.PM,
       });
 
-      expect(result.agentRunId).toBe(PM_RUN_ID);
-      expect(result.workerType).toBe(AgentType.PM);
+      expect(childSeen()).toEqual({
+        text: '오늘 한 일 정리해줘',
+        routedTo: AgentType.WORK_REVIEWER,
+        routedVia: 'hint',
+      });
+    });
+  });
+
+  // 과거 실행 id 를 돌려주는 경로(CAREER_MATE 의 RENDER_*)에 이번 chain 의 부모를 적으면
+  // 그 행이 다른 요청의 자식으로 둔갑한다.
+  it('재사용된 run 에는 parentId 를 쓰지 않는다', async () => {
+    const dispatcher = buildDispatcher(AgentType.CAREER_MATE, () => ({
+      agentRunId: 31,
+      reusedAgentRun: true,
+    }));
+    const { usecase, agentRunService } = buildUsecase([dispatcher]);
+
+    await usecase.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '이력서 렌더해줘',
+      agentTypeHint: AgentType.CAREER_MATE,
+      contextRefs: { agentRunId: 12 },
+    });
+
+    expect(agentRunService.setParentId).not.toHaveBeenCalled();
+  });
+
+  // 이 세 갈래는 워커를 한 번도 부르지 않아 AgentRun 이 아예 없었다 — 분류가 실패한 표본이
+  // 원장에 0건이었다는 뜻이고, 정확도를 재려는 쪽에서 가장 필요한 회차가 빠진 것이다.
+  describe('담당자를 고르지 못한 요청도 원장에 남긴다', () => {
+    it('분류기가 UNKNOWN 이면 ROUTER 이름으로 실패 행을 남긴다', async () => {
+      const classifier = buildClassifierMock({
+        agentType: 'UNKNOWN',
+        confidence: 0,
+        reason: '의도 불명',
+      });
+      const { usecase, agentRunService } = buildUsecase([], classifier);
+
+      await expect(
+        usecase.dispatch({
+          source: 'SLACK_MESSAGE',
+          slackUserId: 'U1',
+          text: '음 그거 있잖아',
+        }),
+      ).rejects.toMatchObject({
+        routerErrorCode: RouterErrorCode.INTENT_CLASSIFY_FAILED,
+      });
+
+      expect(agentRunService.execute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agentType: AgentType.ROUTER,
+          triggerType: TriggerType.ROUTING_FAILED,
+        }),
+      );
+    });
+
+    // 없는 담당자 이름을 지어내면 나중에 "그 워커로 보냈다" 와 구분되지 않는다.
+    it('UNKNOWN 회차의 routedTo 는 분류기 어휘 그대로 UNKNOWN 이다', async () => {
+      let seen: RoutingContext | undefined;
+      const classifier = buildClassifierMock({
+        agentType: 'UNKNOWN',
+        confidence: 0,
+        reason: '의도 불명',
+      });
+      const agentRunService = {
+        setParentId: jest.fn().mockResolvedValue(undefined),
+        execute: jest.fn(async ({ run }: { run: () => unknown }) => {
+          seen = claimRoutingContext();
+          await run();
+        }),
+      } as unknown as jest.Mocked<AgentRunService>;
+      const { usecase } = buildUsecase([], classifier, agentRunService);
+
+      await expect(
+        usecase.dispatch({
+          source: 'SLACK_MESSAGE',
+          slackUserId: 'U1',
+          text: '음 그거 있잖아',
+        }),
+      ).rejects.toBeDefined();
+
+      expect(seen).toEqual({
+        text: '음 그거 있잖아',
+        routedTo: 'UNKNOWN',
+        routedVia: 'classifier',
+      });
+    });
+
+    // 분류기 파서는 AgentType 전체를 허용하므로 dispatcher 없는 워커가 나올 수 있다.
+    // 그건 명백한 오분류 표본이라 고른 대상까지 남겨야 한다.
+    it('미등록 담당자를 골랐으면 그 이름을 routedTo 로 남긴다', async () => {
+      let seen: RoutingContext | undefined;
+      const agentRunService = {
+        setParentId: jest.fn().mockResolvedValue(undefined),
+        execute: jest.fn(async ({ run }: { run: () => unknown }) => {
+          seen = claimRoutingContext();
+          await run();
+        }),
+      } as unknown as jest.Mocked<AgentRunService>;
+      const { usecase } = buildUsecase([], undefined, agentRunService);
+
+      await expect(
+        usecase.dispatch({
+          source: 'SLACK_MESSAGE',
+          slackUserId: 'U1',
+          text: '오늘 할 일',
+          agentTypeHint: AgentType.PM,
+        }),
+      ).rejects.toMatchObject({
+        routerErrorCode: RouterErrorCode.UNSUPPORTED_AGENT_TYPE,
+      });
+
+      expect(seen).toEqual({
+        text: '오늘 할 일',
+        routedTo: AgentType.PM,
+        routedVia: 'hint',
+      });
+    });
+
+    // 원문이 없는 갈래는 채점할 것이 없다. 행은 남되 근거는 비운다.
+    it('text 가 없으면 행만 남기고 근거는 두지 않는다', async () => {
+      let seen: RoutingContext | undefined;
+      let called = false;
+      const agentRunService = {
+        setParentId: jest.fn().mockResolvedValue(undefined),
+        execute: jest.fn(async ({ run }: { run: () => unknown }) => {
+          called = true;
+          seen = claimRoutingContext();
+          await run();
+        }),
+      } as unknown as jest.Mocked<AgentRunService>;
+      const { usecase } = buildUsecase([], undefined, agentRunService);
+
+      await expect(
+        usecase.dispatch({ source: 'SLACK_MESSAGE', slackUserId: 'U1' }),
+      ).rejects.toMatchObject({
+        routerErrorCode: RouterErrorCode.INTENT_HINT_REQUIRED,
+      });
+
+      expect(called).toBe(true);
+      expect(seen).toBeUndefined();
+    });
+
+    // 기록은 부수 효과다 — 원장이 죽었다고 사용자에게 다른 오류를 보이면 안 된다.
+    it('기록이 실패해도 사용자에게는 원래 라우팅 오류가 간다', async () => {
+      const agentRunService = {
+        setParentId: jest.fn().mockResolvedValue(undefined),
+        execute: jest.fn().mockRejectedValue(new Error('DB 연결 끊김')),
+      } as unknown as jest.Mocked<AgentRunService>;
+      const { usecase } = buildUsecase([], undefined, agentRunService);
+
+      await expect(
+        usecase.dispatch({
+          source: 'SLACK_MESSAGE',
+          slackUserId: 'U1',
+          text: '오늘 할 일',
+          agentTypeHint: AgentType.PM,
+        }),
+      ).rejects.toMatchObject({
+        routerErrorCode: RouterErrorCode.UNSUPPORTED_AGENT_TYPE,
+      });
     });
   });
 });

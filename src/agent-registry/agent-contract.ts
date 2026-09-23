@@ -322,6 +322,13 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     Department.INTERNAL_OPS,
     '마감·신청·예약을 날짜와 함께 등록하고 상태를 관리한다',
   ),
+  // 산출물을 내지 않는 설비 타입이라 검사 항목이 없다(stub). LLM 을 거치지 않으므로
+  // 프롬프트 머리말도 소비되지 않는다 — 이 항목은 Record 전수 강제를 채우고 콘솔이
+  // 부서·직무를 표시하게 하는 용도다.
+  [AgentType.ROUTER]: stub(
+    Department.INTERNAL_OPS,
+    '요청을 알맞은 담당자에게 넘기고, 넘기지 못한 요청을 기록한다',
+  ),
   [AgentType.INVEST]: stub(
     Department.TREASURY,
     '보유 종목의 시세 이상을 장 마감 후 점검한다',

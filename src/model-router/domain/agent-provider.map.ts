@@ -52,4 +52,7 @@ export const AGENT_TO_PROVIDER: Record<AgentType, ModelProviderName> = {
   // SCHEDULE — 등록 파싱이 순수 함수라 route() 를 거치지 않는다(modelUsed='deterministic').
   // 이 엔트리는 Record<AgentType,...> exhaustive 타입 충족용 sentinel (INVEST·PAPER_TRADE 선례).
   [AgentType.SCHEDULE]: ModelProviderName.CHATGPT,
+  // ROUTER — 라우팅 실패를 원장에 남기기만 하는 설비 타입이라 route() 를 거치지 않는다.
+  // 이 엔트리는 Record<AgentType,...> exhaustive 타입 충족용 sentinel (INVEST·SCHEDULE 선례).
+  [AgentType.ROUTER]: ModelProviderName.CHATGPT,
 };
