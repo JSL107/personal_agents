@@ -165,13 +165,27 @@ public struct ConsoleApproval: Codable, Identifiable, Equatable, Sendable {
     public let createdAt: String
     /// 만료 시각(ISO 8601). 방치 압력을 TTL 소진 비율로 재기 위해 받는다.
     public let expiresAt: String
+    /// 직전 반영이 실패했다면 그 사유. 옵셔널인 이유는 둘이다 — 실패한 적 없는 카드가 대부분이고,
+    /// 이 필드를 모르는 옛 서버가 내려도 디코딩이 통째로 깨져서는 안 된다(앱과 서버는 따로 뜬다).
+    ///
+    /// `approval.failed` 이벤트만으로는 부족해서 받는다. 부팅 중 마감은 서버가 listen 하기 전에
+    /// 발행되어 구독자가 없고, 그 구간의 사유는 스냅샷으로만 앱에 닿는다.
+    public let failureReason: String?
 
-    public init(id: String, agentType: String?, title: String, createdAt: String, expiresAt: String) {
+    public init(
+        id: String,
+        agentType: String?,
+        title: String,
+        createdAt: String,
+        expiresAt: String,
+        failureReason: String? = nil
+    ) {
         self.id = id
         self.agentType = agentType
         self.title = title
         self.createdAt = createdAt
         self.expiresAt = expiresAt
+        self.failureReason = failureReason
     }
 }
 

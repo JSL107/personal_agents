@@ -49,9 +49,6 @@ import {
     FindPreviewDayOutcomesUsecase,
     CountPreviewsByPayloadUsecase,
     UpdatePreviewPayloadUsecase,
-    // 부팅 훅 — 재시작으로 중단된 반영을 이어 돌리거나 실패로 마감하고 알린다.
-    // `forRoot` 가 PREVIEW_APPLIERS 를 실제 목록으로 덮어쓰므로 여기 있어도 그 배열을 받는다.
-    ResumeInterruptedAppliesUsecase,
     {
       provide: PREVIEW_ACTION_REPOSITORY_PORT,
       useClass: PreviewActionPrismaRepository,
@@ -128,6 +125,14 @@ export class PreviewGateModule {
         ...appliers,
         ...verifiers,
         ...cancellers,
+        // 부팅 훅 — 재시작으로 중단된 반영을 이어 돌리거나 실패로 마감하고 알린다.
+        //
+        // **`forRoot` 안에만 둔다.** 이 모듈은 bare 로도 import 된다(`autopilot.module.ts`,
+        // `delay-report.module.ts`). NestJS 에서 static import 와 `forRoot` 는 서로 다른 모듈
+        // 인스턴스이므로, 위쪽 `@Module` providers 에 두면 **applier 목록이 빈 인스턴스에서도
+        // 훅이 돈다.** 그쪽은 모든 중단 카드를 "반영할 수단이 없습니다" 로 마감해 버려 재개가
+        // 아예 성립하지 않는다.
+        ResumeInterruptedAppliesUsecase,
         {
           provide: PREVIEW_APPLIERS,
           useFactory: (...resolved: PreviewApplier[]) => resolved,

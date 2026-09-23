@@ -68,6 +68,7 @@ const buildRepo = (
     | 'findApplyInterrupted'
     | 'recordApplyFailure'
     | 'clearApplyProgress'
+    | 'endApply'
     | 'transition'
   >
 > =>
@@ -75,6 +76,7 @@ const buildRepo = (
     findApplyInterrupted: jest.fn().mockResolvedValue(interrupted),
     recordApplyFailure: jest.fn().mockResolvedValue(undefined),
     clearApplyProgress: jest.fn().mockResolvedValue(undefined),
+    endApply: jest.fn().mockResolvedValue(undefined),
     transition: jest.fn(),
   }) as never;
 
@@ -209,15 +211,96 @@ describe('ResumeInterruptedAppliesUsecase', () => {
     await flush();
 
     const [[recorded]] = repository.recordApplyFailure.mock.calls;
-    expect(recorded.reason).toContain('2단계까지 이미 반영');
+    expect(recorded.reason).toContain('2단계까지 반영된 것이 확인됩니다');
     expect(recorded.reason).toContain('0:owner/repo#1');
+    // 기록이 보존되므로 재승인이 그 단계를 건너뛴다는 것까지 말해야 한다.
+    expect(recorded.reason).toContain('건너뛰고');
     // 같은 경고가 콘솔 화면에도 닿아야 한다 — 원장에만 남으면 사용자는 끝까지 모른다.
     expect(published).toEqual([
       expect.objectContaining({
         type: 'approval.failed',
-        reason: expect.stringContaining('2단계까지 이미 반영') as string,
+        reason: expect.stringContaining('2단계까지 반영된 것이 확인') as string,
       }),
     ]);
+  });
+
+  it('(f-2) 마감 안내는 슬랙 카드 본문에도 실린다 — 부팅 중에는 SSE 구독자가 아직 없다', async () => {
+    // 이 훅은 `app.listen()` 보다 먼저 돌고 ConsoleEventBus 는 구독 이전 이벤트를 재전달하지
+    // 않는다. 카드에 싣지 않으면 부팅 중 마감은 사용자에게 도달할 경로가 없다.
+    const { usecase, card } = build({
+      interrupted: [
+        buildPreview({
+          expiresAt: new Date('2026-09-23T09:00:00.000Z'),
+          applyProgress: buildProgress({ done: ['0:owner/repo#1'] }),
+        }),
+      ],
+    });
+
+    await usecase.sweep(fixedNow);
+    await flush();
+
+    const [[updated]] = card.update.mock.calls;
+    expect(updated.state).toBe('APPLY_FAILED');
+    expect(updated.resultText).toContain('1단계까지 반영된 것이 확인됩니다');
+  });
+
+  it('(f-3) 단계 기록을 남기지 않는 applier 는 "반영된 것이 없다" 고 단정하지 않는다', async () => {
+    // 비재개형에서 빈 `done` 은 외부 호출이 안 갔다는 증거가 아니다. 없다고 단정하고 재시도를
+    // 권하면 이미 나간 발행이 한 번 더 나간다.
+    const { usecase, repository } = build({
+      interrupted: [
+        buildPreview({ applyProgress: buildProgress({ done: [] }) }),
+      ],
+      appliers: [buildApplier(false)],
+    });
+
+    await usecase.sweep(fixedNow);
+    await flush();
+
+    const [[recorded]] = repository.recordApplyFailure.mock.calls;
+    expect(recorded.reason).toContain('원장으로는 알 수 없습니다');
+    expect(recorded.reason).not.toContain('반영된 것은 없습니다');
+  });
+
+  it('(f-4) 마감은 진행 기록을 지우지 않고 끝났다고만 표시한다 — done 을 지우면 재승인이 같은 단계를 다시 실행한다', async () => {
+    const { usecase, repository } = build({
+      interrupted: [
+        buildPreview({
+          expiresAt: new Date('2026-09-23T09:00:00.000Z'),
+          applyProgress: buildProgress({ done: ['0:owner/repo#1'] }),
+        }),
+      ],
+    });
+
+    await usecase.sweep(fixedNow);
+    await flush();
+
+    expect(repository.endApply).toHaveBeenCalledWith({
+      id: 'p-1',
+      pid: DEAD_PID,
+      at: fixedNow,
+    });
+    expect(repository.clearApplyProgress).not.toHaveBeenCalled();
+  });
+
+  it('(f-5) 이미 끝났다고 표시된 흔적은 다시 집지 않는다 — 같은 안내가 부팅마다 반복되지 않게', async () => {
+    const { usecase, repository, applyPreview } = build({
+      interrupted: [
+        buildPreview({
+          applyProgress: buildProgress({
+            done: ['0:owner/repo#1'],
+            endedAt: '2026-09-23T09:30:00.000Z',
+          }),
+        }),
+      ],
+    });
+
+    await usecase.sweep(fixedNow);
+    await flush();
+
+    expect(applyPreview.execute).not.toHaveBeenCalled();
+    expect(repository.recordApplyFailure).not.toHaveBeenCalled();
+    expect(repository.endApply).not.toHaveBeenCalled();
   });
 
   it('(g) 마감은 status 를 바꾸지 않는다 — 실행 실패는 사용자의 거부가 아니다', async () => {
@@ -237,7 +320,7 @@ describe('ResumeInterruptedAppliesUsecase', () => {
     );
   });
 
-  it('(h) 마감한 흔적은 죽은 프로세스의 pid 로 지운다 — 남겨 두면 다음 부팅이 같은 안내를 반복한다', async () => {
+  it('(h) 마감 표시는 죽은 프로세스의 pid 로 남긴다 — 그 사이 다른 쪽이 새 시도를 시작했다면 건드리지 않게', async () => {
     const { usecase, repository } = build({
       interrupted: [
         buildPreview({ expiresAt: new Date('2026-09-23T09:00:00.000Z') }),
@@ -247,9 +330,10 @@ describe('ResumeInterruptedAppliesUsecase', () => {
     await usecase.sweep(fixedNow);
     await flush();
 
-    expect(repository.clearApplyProgress).toHaveBeenCalledWith({
+    expect(repository.endApply).toHaveBeenCalledWith({
       id: 'p-1',
       pid: DEAD_PID,
+      at: fixedNow,
     });
   });
 

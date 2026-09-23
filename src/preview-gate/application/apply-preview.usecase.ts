@@ -160,6 +160,16 @@ export class ApplyPreviewUsecase {
         pid: process.pid,
         at: now,
       });
+      // 획득 실패 — 읽은 뒤 쓰기 전에 다른 쪽이 이 카드를 잡았다. 그냥 진행하면 같은 반영이
+      // 두 프로세스에서 동시에 돈다(`applying` 락은 프로세스 로컬이고 로컬 DB 는 worktree
+      // 백엔드와 공유된다). 중복 클릭과 같은 문장으로 거절해 화면이 경로마다 다른 말을 하지 않게 한다.
+      if (progressState === null) {
+        throw new PreviewActionException({
+          code: PreviewActionErrorCode.ALREADY_APPLYING,
+          message: 'Preview 가 이미 처리 중입니다. 잠시만 기다려주세요.',
+          status: DomainStatus.PRECONDITION_FAILED,
+        });
+      }
       const progress: ApplyProgress = {
         done: progressState.done,
         record: async (step: string): Promise<void> => {
@@ -194,6 +204,9 @@ export class ApplyPreviewUsecase {
           state: 'APPLIED',
           resultText,
         });
+        // 성공했으니 흔적을 통째로 지운다. 카드가 APPLIED 로 끝나 다시 눌릴 일이 없으므로
+        // `done` 을 남겨 둘 이유가 없다.
+        await this.safeClearApplyProgress(previewId);
         return { preview: transitioned, resultText };
       } catch (applyError: unknown) {
         // applier / transition 실패 — DB 는 PENDING 유지(재시도 가능). 카드는 버튼을 되살린다.
@@ -219,14 +232,35 @@ export class ApplyPreviewUsecase {
               ? applyError.message
               : String(applyError),
         });
+        // **흔적을 지우지 않고 "끝났다" 표시만 남긴다.** 지우면 `done` 이 함께 사라져, 카드는
+        // PENDING 으로 남아 다시 눌릴 수 있는데 다음 승인이 이미 반영된 단계를 처음부터 다시
+        // 실행한다 — 이 클래스가 막으려는 중복 반영이 실패 경로로 되돌아온다.
+        await this.safeEndProgress({ previewId, at: now });
         throw applyError;
       }
     } finally {
-      // 흔적 지우기가 락 풀기보다 먼저다 — 흔적이 남으면 다음 부팅이 **이미 끝난 반영**을
-      // 중단으로 보고 되살린다. 검증 단계에서 끊긴 회차는 새긴 적이 없으므로 아무 행도
-      // 건드리지 않는다(내 pid 로만 지운다).
-      await this.safeClearApplyProgress(previewId);
       this.applying.delete(previewId);
+    }
+  }
+
+  // 실패로 끝났음을 표시한다. `done` 은 남는다 — 이미 반영된 단계는 이미 반영된 것이다.
+  // 표시가 실패해도 원래 예외는 그대로 올라가야 한다. 표시를 못 남기면 흔적이 "안 끝남" 으로
+  // 남아 다음 부팅이 재개를 시도하는데, 거기서도 `done` 과 시도 횟수 상한이 중복을 막는다.
+  private async safeEndProgress({
+    previewId,
+    at,
+  }: {
+    previewId: string;
+    at: Date;
+  }): Promise<void> {
+    try {
+      await this.repository.endApply({ id: previewId, pid: process.pid, at });
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Preview 진행 종료 표시 실패(무시) preview=${previewId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
   }
 

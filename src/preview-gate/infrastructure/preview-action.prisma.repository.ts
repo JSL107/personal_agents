@@ -220,6 +220,14 @@ export class PreviewActionPrismaRepository implements PreviewActionRepositoryPor
     });
   }
 
+  // 소유권을 **조건부로** 획득한다. 읽은 값이 그대로일 때만 쓰고, 아니면 아무것도 쓰지 않고
+  // null 을 돌려준다(= 그 사이 다른 쪽이 잡았다).
+  //
+  // 조건 없는 `update` 로 두면 두 백엔드가 같은 죽은 흔적을 동시에 스윕할 때 **둘 다 성공하고
+  // 각자 applier 를 돌린다.** `applying` 락은 프로세스 로컬이고 로컬 DB 는 worktree 백엔드와
+  // 공유되므로, 재개 경로가 스스로 같은 비멱등 반영을 두 번 실행하게 된다.
+  //
+  // 비교 키는 `attempts` 다 — 시도마다 반드시 증가하므로 jsonb 전체를 비교하지 않아도 된다.
   async beginApply({
     id,
     pid,
@@ -228,7 +236,7 @@ export class PreviewActionPrismaRepository implements PreviewActionRepositoryPor
     id: string;
     pid: number;
     at: Date;
-  }): Promise<ApplyProgressState> {
+  }): Promise<ApplyProgressState | null> {
     const row = await this.prisma.previewAction.findUnique({
       where: { id },
       select: { applyProgress: true },
@@ -236,17 +244,58 @@ export class PreviewActionPrismaRepository implements PreviewActionRepositoryPor
     const previous = row === null ? null : toApplyProgress(row.applyProgress);
     // `done` 은 물려받고 `attempts` 만 올린다 — 물려받지 않으면 재개가 처음부터 다시 돌아
     // 이어붙이는 의미가 없고, 세지 않으면 크래시를 일으키는 반영이 부팅마다 되살아난다.
+    // `endedAt` 은 싣지 않는다. 새 시도가 시작됐으므로 "끝났다" 표시는 지워져야 한다.
     const next: ApplyProgressState = {
       pid,
       startedAt: at.toISOString(),
       attempts: (previous?.attempts ?? 0) + 1,
       done: previous?.done ?? [],
     };
-    await this.prisma.previewAction.update({
-      where: { id },
+    const { count } = await this.prisma.previewAction.updateMany({
+      where: {
+        id,
+        applyProgress:
+          previous === null
+            ? { equals: Prisma.DbNull }
+            : { path: ['attempts'], equals: previous.attempts },
+      },
       data: { applyProgress: next as unknown as Prisma.InputJsonValue },
     });
-    return next;
+    return count === 0 ? null : next;
+  }
+
+  // 이 시도가 끝났음을 표시한다. `done` 은 그대로 둔다 — 실패했든 마감했든 이미 반영된 단계는
+  // 이미 반영된 것이고, 그것을 지우면 다음 승인이 처음부터 다시 실행한다.
+  //
+  // 성공 경로는 이걸 쓰지 않고 `clearApplyProgress` 로 통째로 지운다. 카드가 APPLIED 로 끝나
+  // 다시 눌릴 일이 없으므로 남겨 둘 이유가 없다.
+  async endApply({
+    id,
+    pid,
+    at,
+  }: {
+    id: string;
+    pid: number;
+    at: Date;
+  }): Promise<void> {
+    const row = await this.prisma.previewAction.findUnique({
+      where: { id },
+      select: { applyProgress: true },
+    });
+    const current = row === null ? null : toApplyProgress(row.applyProgress);
+    // 내 흔적이 아니면 건드리지 않는다 — 다른 프로세스가 이미 새 시도를 시작했다는 뜻이다.
+    if (current === null || current.pid !== pid) {
+      return;
+    }
+    await this.prisma.previewAction.updateMany({
+      where: { id, applyProgress: { path: ['pid'], equals: pid } },
+      data: {
+        applyProgress: {
+          ...current,
+          endedAt: at.toISOString(),
+        } as unknown as Prisma.InputJsonValue,
+      },
+    });
   }
 
   // 읽고 고쳐 쓴다. jsonb 를 제자리에서 이어붙이려면 raw SQL 이 필요한데 이 레포는 쓰지 않고,
@@ -440,7 +489,10 @@ const toApplyProgress = (
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     return null;
   }
-  const { pid, startedAt, attempts, done } = value as Record<string, unknown>;
+  const { pid, startedAt, attempts, done, endedAt } = value as Record<
+    string,
+    unknown
+  >;
   if (
     typeof pid !== 'number' ||
     typeof startedAt !== 'string' ||
@@ -450,5 +502,11 @@ const toApplyProgress = (
   ) {
     return null;
   }
-  return { pid, startedAt, attempts, done };
+  return {
+    pid,
+    startedAt,
+    attempts,
+    done,
+    ...(typeof endedAt === 'string' ? { endedAt } : {}),
+  };
 };

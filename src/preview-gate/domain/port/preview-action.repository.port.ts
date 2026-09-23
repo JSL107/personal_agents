@@ -81,15 +81,22 @@ export interface PreviewActionRepositoryPort {
     reason: string;
     at: Date;
   }): Promise<void>;
-  // 반영 시작을 원장에 새긴다. 재개면 직전 `done` 을 물려받고 시도 횟수만 올린다 — 물려받지
-  // 않으면 재개가 처음부터 다시 돌아 이어붙이는 의미가 없다.
+  // 반영 소유권을 **조건부로** 획득한다. 재개면 직전 `done` 을 물려받고 시도 횟수만 올린다 —
+  // 물려받지 않으면 재개가 처음부터 다시 돌아 이어붙이는 의미가 없다.
   //
-  // 반환값이 이번 시도의 진행 상태다. 호출자는 여기 담긴 `done` 을 applier 에 그대로 넘긴다.
+  // 반환값이 이번 시도의 진행 상태이고, 호출자는 여기 담긴 `done` 을 applier 에 그대로 넘긴다.
+  // **`null` 은 획득 실패다** — 읽은 뒤 쓰기 전에 다른 쪽이 먼저 잡았다는 뜻이므로 호출자는
+  // 거기서 멈춰야 한다. 그냥 진행하면 같은 반영이 두 프로세스에서 동시에 돈다.
   beginApply(input: {
     id: string;
     pid: number;
     at: Date;
-  }): Promise<ApplyProgressState>;
+  }): Promise<ApplyProgressState | null>;
+  // 이 시도가 끝났음을 표시한다(실패·마감 경로). `done` 은 남긴다 — 이미 반영된 단계를 지우면
+  // 다음 승인이 그것을 처음부터 다시 실행한다.
+  //
+  // 성공 경로는 `clearApplyProgress` 로 통째로 지운다. 카드가 APPLIED 로 끝나 다시 눌릴 일이 없다.
+  endApply(input: { id: string; pid: number; at: Date }): Promise<void>;
   // 단계 하나가 끝났음을 덧붙인다. 같은 단계가 두 번 들어오면 무시한다 — 재개가 기록을
   // 물려받으므로 중복 호출이 실제로 일어날 수 있고, 중복이 쌓이면 `done` 이 진행을 과장한다.
   recordApplyStep(input: { id: string; step: string }): Promise<void>;

@@ -69,6 +69,7 @@ const buildRepo = (
   }),
   recordApplyStep: jest.fn().mockResolvedValue(undefined),
   clearApplyProgress: jest.fn().mockResolvedValue(undefined),
+  endApply: jest.fn().mockResolvedValue(undefined),
   findApplyInterrupted: jest.fn().mockResolvedValue([]),
   findExpiredPending: jest.fn().mockResolvedValue([]),
   findAllOpen: jest.fn().mockResolvedValue([]),
@@ -152,7 +153,7 @@ describe('ApplyPreviewUsecase', () => {
     });
   });
 
-  it('반영이 실패해도 진행 흔적은 지운다 — 실패는 다시 누를 수 있고 중단과는 다르다', async () => {
+  it('반영이 실패하면 흔적을 지우지 않고 끝났다고만 표시한다 — 지우면 done 이 함께 사라져 재시도가 중복 반영이 된다', async () => {
     const preview = buildPreview();
     const repo = buildRepo(preview);
     const applier: PreviewApplier = {
@@ -171,10 +172,71 @@ describe('ApplyPreviewUsecase', () => {
       usecase.execute({ previewId: 'p-1', slackUserId: 'U1', now: fixedNow }),
     ).rejects.toThrow('GitHub 500');
 
-    expect(repo.clearApplyProgress).toHaveBeenCalledWith({
+    expect(repo.endApply).toHaveBeenCalledWith({
       id: 'p-1',
       pid: process.pid,
+      at: fixedNow,
     });
+    expect(repo.clearApplyProgress).not.toHaveBeenCalled();
+  });
+
+  it('소유권 획득에 실패하면(다른 프로세스가 먼저 잡음) applier 를 돌리지 않는다', async () => {
+    // `applying` 락은 프로세스 로컬이라 worktree 백엔드가 같은 카드를 동시에 집을 수 있다.
+    // 조건부 획득이 막지 않으면 같은 비멱등 반영이 두 번 돈다.
+    const preview = buildPreview();
+    const repo = buildRepo(preview);
+    repo.beginApply.mockResolvedValue(null);
+    const applier = buildApplier(PREVIEW_KIND.PM_WRITE_BACK);
+    const usecase = new ApplyPreviewUsecase(
+      repo,
+      [applier],
+      [],
+      [],
+      buildCard(),
+    );
+
+    await expect(
+      usecase.execute({ previewId: 'p-1', slackUserId: 'U1', now: fixedNow }),
+    ).rejects.toThrow('이미 처리 중');
+
+    expect(applier.apply).not.toHaveBeenCalled();
+    expect(repo.transition).not.toHaveBeenCalled();
+  });
+
+  it('완료 단계를 기록한 뒤 상태 전이가 실패해도 그 기록은 남는다 — 재승인이 같은 단계를 다시 실행하지 않게', async () => {
+    // 이 순서가 실제 사고 경로다. applier 가 외부 부작용을 마치고 `done` 을 남긴 뒤
+    // `transition` 이 깨지면 카드는 PENDING 으로 남아 다시 눌린다. 그때 `done` 이 지워져
+    // 있으면 이미 반영된 단계가 처음부터 다시 실행된다.
+    const preview = buildPreview();
+    const repo = buildRepo(preview);
+    repo.transition.mockRejectedValue(new Error('DB 연결 끊김'));
+    const applier: PreviewApplier = {
+      kind: PREVIEW_KIND.PM_WRITE_BACK,
+      resumable: true,
+      apply: jest.fn().mockImplementation(async (_preview, progress) => {
+        await progress?.record('0:owner/repo#1');
+        return { message: 'ok', artifacts: [] };
+      }),
+    };
+    const usecase = new ApplyPreviewUsecase(
+      repo,
+      [applier],
+      [],
+      [],
+      buildCard(),
+    );
+
+    await expect(
+      usecase.execute({ previewId: 'p-1', slackUserId: 'U1', now: fixedNow }),
+    ).rejects.toThrow('DB 연결 끊김');
+
+    expect(repo.recordApplyStep).toHaveBeenCalledWith({
+      id: 'p-1',
+      step: '0:owner/repo#1',
+    });
+    // 기록을 지우는 경로를 타지 않아야 한다. 지우면 그 단계가 다음 승인에서 되살아난다.
+    expect(repo.clearApplyProgress).not.toHaveBeenCalled();
+    expect(repo.endApply).toHaveBeenCalled();
   });
 
   it('이전 시도가 남긴 done 을 applier 에 물려준다 — 물려주지 않으면 재개가 처음부터 다시 돈다', async () => {

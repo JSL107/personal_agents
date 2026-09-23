@@ -45,6 +45,28 @@ const isProcessAlive = (pid: number): boolean => {
   }
 };
 
+// 마감 안내에서 "무엇이 이미 반영됐는가" 를 말하는 부분.
+//
+// **어느 경우에도 "반영된 것이 없다" 고 단정하지 않는다.** 원장이 증명하는 것은 "이 단계는
+// 끝났다" 뿐이고, 그 반대(= 기록이 없으니 반영도 없었다)는 증명되지 않는다. 단계가 끝난 직후
+// 기록이 커밋되기 전에 죽었을 수 있고, 단계 기록을 아예 남기지 않는 applier 는 외부 호출이
+// 상대에게 닿았는지조차 알 수 없다. 단정했다가 그 말을 믿고 다시 누르면 중복 반영이다.
+const buildPartialNotice = ({
+  done,
+  sideEffectUncertain,
+}: {
+  done: readonly string[];
+  sideEffectUncertain: boolean;
+}): string => {
+  if (sideEffectUncertain) {
+    return ' 이 작업은 단계별 기록을 남기지 않아 어디까지 반영됐는지 원장으로는 알 수 없습니다. 결과를 먼저 확인한 뒤 다시 누를지 판단해주세요.';
+  }
+  if (done.length > 0) {
+    return ` ${done.length}단계까지 반영된 것이 확인됩니다(${done.join(', ')}). 다시 누르면 그 단계는 건너뛰고 나머지만 이어서 반영합니다.`;
+  }
+  return ' 반영이 확인된 단계는 없습니다. 다만 마지막 작업이 반영된 직후 기록 전에 끊겼을 수 있으니 결과를 먼저 확인해주세요.';
+};
+
 /**
  * 재시작으로 중단된 반영을 부팅 때 이어서 돌리거나, 돌릴 수 없으면 실패로 마감하고 알린다.
  *
@@ -114,7 +136,12 @@ export class ResumeInterruptedAppliesUsecase implements OnApplicationBootstrap {
         continue;
       }
       if (decision.kind === 'ABANDON') {
-        await this.abandon({ preview, reason: decision.why, at: now });
+        await this.abandon({
+          preview,
+          reason: decision.why,
+          sideEffectUncertain: decision.sideEffectUncertain === true,
+          at: now,
+        });
         continue;
       }
       resumable.push(preview);
@@ -139,14 +166,29 @@ export class ResumeInterruptedAppliesUsecase implements OnApplicationBootstrap {
   }
 
   // 재개할지 마감할지 건너뛸지. 판정 근거를 문장으로 함께 돌려 로그·사용자 안내에 그대로 쓴다.
+  //
+  // `sideEffectUncertain` 은 "어디까지 반영됐는지 원장으로 알 수 없다" 는 뜻이다. 단계 기록을
+  // 남기지 않는 applier 가 그렇다 — 그 경우 빈 `done` 은 **반영이 없었다는 증거가 아니다.**
+  // 이것을 구분하지 않으면 안내가 "반영된 것은 없다" 고 단정해 재시도를 권하고, 그 재시도가
+  // 중복 발행이 된다.
   private decide(
     preview: PreviewAction,
     now: Date,
-  ): { kind: 'SKIP' | 'ABANDON' | 'RESUME'; why: string } {
+  ): {
+    kind: 'SKIP' | 'ABANDON' | 'RESUME';
+    why: string;
+    sideEffectUncertain?: boolean;
+  } {
     const progress = preview.applyProgress;
     // 흔적을 읽지 못한 행(형태 파손)은 중단인지 알 수 없다. 건드리지 않는다.
     if (progress === null) {
       return { kind: 'SKIP', why: '진행 흔적을 읽을 수 없음' };
+    }
+    // 끝났다고 표시된 시도는 중단이 아니다 — 실패로 닫혔거나 이미 마감된 것이고, `done` 을
+    // 남겨 두기 위해 흔적만 보존한 상태다. 이것을 집으면 사용자가 포기한 반영이 부팅마다
+    // 되살아나고 같은 안내가 반복된다.
+    if (progress.endedAt !== undefined) {
+      return { kind: 'SKIP', why: '이미 끝난 시도' };
     }
     if (isProcessAlive(progress.pid)) {
       return {
@@ -154,25 +196,38 @@ export class ResumeInterruptedAppliesUsecase implements OnApplicationBootstrap {
         why: `pid ${progress.pid} 가 살아 있음 — 다른 백엔드가 반영 중`,
       };
     }
+    const applier = this.appliers.find(
+      (candidate) => candidate.kind === preview.kind,
+    );
+    // 단계 기록이 없는 경로는 무엇이 반영됐는지 원장이 말해 주지 못한다. 마감 사유가
+    // 무엇이든 이 사실은 안내에 함께 실려야 한다.
+    const sideEffectUncertain = applier?.resumable !== true;
     if (preview.expiresAt.getTime() <= now.getTime()) {
-      return { kind: 'ABANDON', why: '승인 유효기간(TTL)이 지났습니다' };
+      return {
+        kind: 'ABANDON',
+        why: '승인 유효기간(TTL)이 지났습니다',
+        sideEffectUncertain,
+      };
     }
     if (progress.attempts >= MAX_APPLY_ATTEMPTS) {
       return {
         kind: 'ABANDON',
         why: `${progress.attempts}번 시도했으나 모두 중단됐습니다`,
+        sideEffectUncertain,
       };
     }
-    const applier = this.appliers.find(
-      (candidate) => candidate.kind === preview.kind,
-    );
     if (!applier) {
-      return { kind: 'ABANDON', why: '이 카드를 반영할 수단이 없습니다' };
+      return {
+        kind: 'ABANDON',
+        why: '이 카드를 반영할 수단이 없습니다',
+        sideEffectUncertain: true,
+      };
     }
     if (applier.resumable !== true) {
       return {
         kind: 'ABANDON',
         why: '중단 지점을 알 수 없어 이어서 실행할 수 없습니다',
+        sideEffectUncertain: true,
       };
     }
     return { kind: 'RESUME', why: '' };
@@ -208,20 +263,22 @@ export class ResumeInterruptedAppliesUsecase implements OnApplicationBootstrap {
   private async abandon({
     preview,
     reason,
+    sideEffectUncertain,
     at,
   }: {
     preview: PreviewAction;
     reason: string;
+    // 원장이 "어디까지 반영됐는지" 를 말해 주지 못하는 경로인가(단계 기록 없는 applier).
+    sideEffectUncertain: boolean;
     at: Date;
   }): Promise<void> {
     const done = preview.applyProgress?.done ?? [];
-    // 어디까지 갔는지를 안내에 반드시 싣는다. 이것이 없으면 사용자는 아무 것도 모른 채 다시
-    // 누르고, 이미 반영된 단계가 한 번 더 실행된다 — 이 클래스가 막으려는 바로 그 사고다.
-    const partial =
-      done.length > 0
-        ? ` ${done.length}단계까지 이미 반영됐습니다(${done.join(', ')}) — 다시 누르면 그 부분이 중복 반영될 수 있으니 확인 후 진행해주세요.`
-        : ' 반영된 것은 없습니다 — 다시 눌러주세요.';
-    const message = `서버 재시작으로 반영이 중단됐습니다. ${reason}.${partial}`;
+    const message = `서버 재시작으로 반영이 중단됐습니다. ${reason}.${buildPartialNotice(
+      {
+        done,
+        sideEffectUncertain,
+      },
+    )}`;
 
     try {
       await this.repository.recordApplyFailure({
@@ -229,11 +286,13 @@ export class ResumeInterruptedAppliesUsecase implements OnApplicationBootstrap {
         reason: `[interrupted] ${message}`,
         at,
       });
-      // 흔적은 **죽은 프로세스의 pid 로** 지운다. 지우지 않으면 다음 부팅이 같은 카드를 또
-      // 마감하며 같은 안내를 반복한다.
-      await this.repository.clearApplyProgress({
+      // **흔적을 지우지 않고 "끝났다" 표시만 남긴다.** 지우면 `done` 이 함께 사라지는데, 카드는
+      // PENDING 이라 다시 눌릴 수 있으므로 다음 승인이 이미 반영된 단계를 처음부터 다시 실행한다.
+      // 표시만 남기면 `done` 은 살아 있고 다음 부팅도 이 카드를 다시 집지 않는다.
+      await this.repository.endApply({
         id: preview.id,
         pid: preview.applyProgress?.pid ?? process.pid,
+        at,
       });
     } catch (error: unknown) {
       const detail = error instanceof Error ? error.message : String(error);
@@ -241,8 +300,17 @@ export class ResumeInterruptedAppliesUsecase implements OnApplicationBootstrap {
     }
 
     // 카드 갱신·통지는 best-effort — 실패해도 마감 자체는 원장에 남았다.
+    //
+    // **사유를 카드 본문에 실어 보내는 것이 여기서는 필수다.** 이 훅은 `app.listen()` 보다 먼저
+    // 돌아 SSE 구독자가 아직 없고, `ConsoleEventBus` 는 구독 이전 이벤트를 재전달하지 않는다.
+    // 아래 `approval.failed` 는 부팅 시점에는 사실상 허공으로 나간다 — 슬랙 카드가 이 안내가
+    // 사용자에게 닿는 유일한 즉시 경로다(콘솔은 스냅샷의 `failureReason` 으로 뒤따라 받는다).
     try {
-      await this.card.update({ preview, state: 'APPLY_FAILED' });
+      await this.card.update({
+        preview,
+        state: 'APPLY_FAILED',
+        resultText: message,
+      });
     } catch (error: unknown) {
       const detail = error instanceof Error ? error.message : String(error);
       this.logger.warn(

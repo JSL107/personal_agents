@@ -393,7 +393,10 @@ describe('EveningCareerReflectApplier', () => {
 
   it('(l) 이미 반영된 묶음은 건너뛴다 — 재개가 중복 반영이 되면 막으려던 사고를 그대로 다시 낸다', async () => {
     const reflectPr = okReflectPr();
-    const applier = new EveningCareerReflectApplier(reflectPr as never);
+    const applier = new EveningCareerReflectApplier(
+      reflectPr as never,
+      renderPortfolio() as never,
+    );
 
     const result = await applier.apply(
       makePreview({
@@ -421,7 +424,10 @@ describe('EveningCareerReflectApplier', () => {
           return { result: { portfolioUrl: 'https://notion.so/p' } };
         }),
     };
-    const applier = new EveningCareerReflectApplier(reflectPr as never);
+    const applier = new EveningCareerReflectApplier(
+      reflectPr as never,
+      renderPortfolio() as never,
+    );
     const record = jest.fn().mockImplementation(async (step: string) => {
       order.push(`기록:${step}`);
     });
@@ -451,7 +457,10 @@ describe('EveningCareerReflectApplier', () => {
           result: { portfolioUrl: 'https://notion.so/portfolio' },
         }),
     };
-    const applier = new EveningCareerReflectApplier(reflectPr as never);
+    const applier = new EveningCareerReflectApplier(
+      reflectPr as never,
+      renderPortfolio() as never,
+    );
     const record = jest.fn().mockResolvedValue(undefined);
 
     await applier.apply(
@@ -468,7 +477,10 @@ describe('EveningCareerReflectApplier', () => {
 
   it('(o) progress 가 없어도 종전처럼 전부 실행한다 — 옛 호출부와 단위 테스트가 그대로 돈다', async () => {
     const reflectPr = okReflectPr();
-    const applier = new EveningCareerReflectApplier(reflectPr as never);
+    const applier = new EveningCareerReflectApplier(
+      reflectPr as never,
+      renderPortfolio() as never,
+    );
 
     await applier.apply(
       makePreview({

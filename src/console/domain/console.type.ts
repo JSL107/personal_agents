@@ -99,6 +99,17 @@ export interface ConsoleApproval {
    * 이 필드는 그 값을 화면까지 통과시키는 것뿐이라 스키마 변경이 없다.
    */
   readonly expiresAt: string;
+  /**
+   * 직전 반영이 실패했다면 그 사유. 성공했거나 아직 시도한 적이 없으면 없다.
+   *
+   * **`approval.failed` SSE 만으로는 이 안내가 닿지 않는 구간이 있다.** 부팅 정리는
+   * `app.listen()` 보다 먼저 돌아 구독자가 아직 없고, `ConsoleEventBus` 는 구독 이전 이벤트를
+   * 재전달하지 않는다(`console-event-bus.service.ts`). 연결 직후 상태는 스냅샷으로만 오므로,
+   * 그 경로에도 사유가 실려야 재시작 중에 마감된 카드의 이유를 사용자가 볼 수 있다.
+   *
+   * 사후 조회용 단계 표식(`[apply]` / `[interrupted]`)은 화면에 쓸모가 없어 벗겨서 싣는다.
+   */
+  readonly failureReason?: string;
 }
 
 /** 로컬에서 실행 중인 CLI 세션 한 건(관제 뷰 표현). 읽기 전용. */

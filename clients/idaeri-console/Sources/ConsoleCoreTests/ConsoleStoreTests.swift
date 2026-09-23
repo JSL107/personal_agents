@@ -161,6 +161,28 @@ func runConsoleStoreTests(_ t: TestRunner) {
     t.expectEqual(applyFailedStore.approvals.count, 1, "approval.failed 가 감춘 카드를 되살린다")
     t.expectEqual(applyFailedStore.approvalNotice, "반영이 중단됐습니다", "실패 사유를 안내에 싣는다")
 
+    // 부팅 중에 마감된 반영의 사유는 이벤트로 오지 않는다 — 그 이벤트는 서버가 listen 하기
+    // 전에 발행되고 구독 이전 이벤트는 재전달되지 않는다. 스냅샷이 그 구간의 유일한 경로다.
+    let bootFailedStore = ConsoleStore()
+    let failedApproval = ConsoleApproval(
+        id: "p9",
+        agentType: nil,
+        title: "경력 반영",
+        createdAt: "2026-09-23T00:00:00Z",
+        expiresAt: "2026-09-23T10:00:00Z",
+        failureReason: "서버 재시작으로 반영이 중단됐습니다"
+    )
+    bootFailedStore.apply(snapshot: ConsoleSnapshot(
+        agents: [],
+        runs: [],
+        approvals: [failedApproval],
+        sessions: [],
+        serverTime: "2026-09-23T00:30:00Z"
+    ))
+    t.expectEqual(
+        bootFailedStore.approvalNotice, "서버 재시작으로 반영이 중단됐습니다",
+        "스냅샷에 실린 실패 사유를 안내로 올린다")
+
     // 승인이 열린 채 새 런이 시작되면 진행 이벤트를 얹지 않는다.
     //
     // 백엔드 집계는 열린 승인을 활성 런보다 먼저 고른다(`deriveAgentState` 우선순위). 이벤트를
