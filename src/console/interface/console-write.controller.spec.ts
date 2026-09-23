@@ -38,7 +38,7 @@ describe('ConsoleWriteController', () => {
     const { controller, service } = makeController();
     const result = await controller.apply('p1');
     expect(service.applyApproval).toHaveBeenCalledWith('p1');
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({ accepted: true });
   });
 
   it('cancel 은 service.cancelApproval 위임', async () => {

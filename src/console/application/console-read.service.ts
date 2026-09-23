@@ -14,6 +14,7 @@ import {
   MEMORY_VACUUM_PORT,
   MemoryVacuumPort,
 } from '../../memory-vacuum/domain/port/memory-vacuum.port';
+import { ApplyPreviewUsecase } from '../../preview-gate/application/apply-preview.usecase';
 import { FindAllOpenPreviewsUsecase } from '../../preview-gate/application/find-all-open-previews.usecase';
 import {
   AGENT_DISPATCHER_PORT,
@@ -50,6 +51,8 @@ export class ConsoleReadService {
   constructor(
     private readonly agentRunService: AgentRunService,
     private readonly findAllOpenPreviews: FindAllOpenPreviewsUsecase,
+    // 반영이 돌고 있는 카드를 목록에서 빼기 위해서만 쓴다(`isApplying`). 조회 전용이다.
+    private readonly applyPreview: ApplyPreviewUsecase,
     private readonly localSessions: LocalSessionService,
     @Inject(MEMORY_VACUUM_PORT)
     private readonly memoryVacuum: MemoryVacuumPort,
@@ -103,7 +106,16 @@ export class ConsoleReadService {
     const activeAgentTypes = new Set(latestActiveRunByAgentType.keys());
 
     // kind→agentType 매핑으로 승인 카드를 담당 에이전트에 연결한다(Phase 4 보완).
-    const approvals: ConsoleApproval[] = openPreviews.map(toConsoleApproval);
+    //
+    // **반영이 돌고 있는 카드는 뺀다.** 이 목록이 뜻하는 바는 "지금 누를 수 있는 승인" 인데,
+    // 이미 눌려 실행 중인 것은 누를 수 없다(다시 누르면 ALREADY_APPLYING 으로 막힌다).
+    // DB 만으로는 그 구분이 안 된다 — status 는 applier 가 끝날 때까지 PENDING 이고 그
+    // 구간이 실측 30분을 넘는다. 걸러내지 않으면 30초 스냅샷 재동기화가 이미 누른 카드를
+    // 되돌려 놓고, 사용자는 그것을 "안 눌렸다" 로 읽어 다시 누른다.
+    // 실패해서 PENDING 으로 남으면 락이 풀리므로 다음 스냅샷에 자연히 돌아온다(= 재시도 가능).
+    const approvals: ConsoleApproval[] = openPreviews
+      .filter((preview) => !this.applyPreview.isApplying(preview.id))
+      .map(toConsoleApproval);
     // approval.agentType 이 kind→agentType 매핑으로 채워져 AWAITING_APPROVAL 파생에 사용된다.
     const openApprovalAgentTypes = new Set(
       approvals

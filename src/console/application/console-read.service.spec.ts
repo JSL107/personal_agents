@@ -4,6 +4,7 @@ import { getKstDayStartAsUtc } from '../../common/util/kst-date.util';
 import { LocalSessionService } from '../../local-sessions/application/local-session.service';
 import { MemoryVacuumPort } from '../../memory-vacuum/domain/port/memory-vacuum.port';
 import { AgentType } from '../../model-router/domain/model-router.type';
+import { ApplyPreviewUsecase } from '../../preview-gate/application/apply-preview.usecase';
 import { FindAllOpenPreviewsUsecase } from '../../preview-gate/application/find-all-open-previews.usecase';
 import { PREVIEW_KIND } from '../../preview-gate/domain/preview-action.type';
 import { ConsoleReadService } from './console-read.service';
@@ -18,6 +19,7 @@ describe('ConsoleReadService', () => {
   let findAllOpenPreviews: jest.Mocked<
     Pick<FindAllOpenPreviewsUsecase, 'execute'>
   >;
+  let applyPreview: jest.Mocked<Pick<ApplyPreviewUsecase, 'isApplying'>>;
   let localSessions: jest.Mocked<Pick<LocalSessionService, 'list'>>;
   let service: ConsoleReadService;
   // 최근 종료 창(60분) 안에 끝난 런의 id. 콘솔이 "이 완료는 확인했다" 를 식별하는 키로
@@ -37,10 +39,12 @@ describe('ConsoleReadService', () => {
       countSucceededSince: jest.fn().mockResolvedValue([]),
     };
     findAllOpenPreviews = { execute: jest.fn().mockResolvedValue([]) };
+    applyPreview = { isApplying: jest.fn().mockReturnValue(false) };
     localSessions = { list: jest.fn().mockReturnValue([]) };
     service = new ConsoleReadService(
       agentRunService as unknown as AgentRunService,
       findAllOpenPreviews as unknown as FindAllOpenPreviewsUsecase,
+      applyPreview as unknown as ApplyPreviewUsecase,
       localSessions as unknown as LocalSessionService,
       memoryVacuum as unknown as MemoryVacuumPort,
       [{ agentType: AgentType.PM }, { agentType: AgentType.CODE_REVIEWER }],
@@ -78,6 +82,7 @@ describe('ConsoleReadService', () => {
         new ConsoleReadService(
           agentRunService as unknown as AgentRunService,
           findAllOpenPreviews as unknown as FindAllOpenPreviewsUsecase,
+          applyPreview as unknown as ApplyPreviewUsecase,
           localSessions as unknown as LocalSessionService,
           memoryVacuum as unknown as MemoryVacuumPort,
           { agentType: AgentType.PM } as unknown as { agentType: AgentType }[],
@@ -363,6 +368,55 @@ describe('ConsoleReadService', () => {
     expect(
       snapshot.agents.find((agent) => agent.agentType === 'PM')?.bubble,
     ).toBe('확인해주세요');
+  });
+
+  // 이 계약이 깨지면 이미 누른 카드가 30초마다 되살아나고, 그걸 다시 누른 클릭은
+  // ALREADY_APPLYING 으로 막혀 "이미 처리됐거나 만료된 요청" 이라는 틀린 안내가 뜬다.
+  it('반영이 돌고 있는 승인은 스냅샷 목록에서 뺀다', async () => {
+    findAllOpenPreviews.execute.mockResolvedValue([
+      {
+        id: 'prev-applying',
+        kind: PREVIEW_KIND.PM_WRITE_BACK,
+        previewText: '진행 중',
+        createdAt: new Date('2026-07-27T01:00:00Z'),
+        expiresAt: new Date('2026-07-27T02:00:00Z'),
+      } as never,
+      {
+        id: 'prev-idle',
+        kind: PREVIEW_KIND.PM_WRITE_BACK,
+        previewText: '아직 안 누름',
+        createdAt: new Date('2026-07-27T01:00:00Z'),
+        expiresAt: new Date('2026-07-27T02:00:00Z'),
+      } as never,
+    ]);
+    applyPreview.isApplying.mockImplementation((id) => id === 'prev-applying');
+
+    const snapshot = await service.getSnapshot();
+
+    expect(snapshot.approvals.map((approval) => approval.id)).toEqual([
+      'prev-idle',
+    ]);
+  });
+
+  // 반영이 실패하면 락이 풀리고 row 는 PENDING 으로 남는다. 그때는 다시 보여야 한다 —
+  // 안 보이면 사용자는 실패한 승인을 다시 누를 방법이 없다.
+  it('반영이 끝나 락이 풀린 승인은 다시 목록에 나온다', async () => {
+    findAllOpenPreviews.execute.mockResolvedValue([
+      {
+        id: 'prev-failed',
+        kind: PREVIEW_KIND.PM_WRITE_BACK,
+        previewText: '반영 실패로 남은 카드',
+        createdAt: new Date('2026-07-27T01:00:00Z'),
+        expiresAt: new Date('2026-07-27T02:00:00Z'),
+      } as never,
+    ]);
+    applyPreview.isApplying.mockReturnValue(false);
+
+    const snapshot = await service.getSnapshot();
+
+    expect(snapshot.approvals.map((approval) => approval.id)).toEqual([
+      'prev-failed',
+    ]);
   });
 
   // 오피스 책상의 서류 더미 높이가 이 값에서 나온다. 창의 시작이 자정이어야 하는 이유는

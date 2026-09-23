@@ -440,6 +440,153 @@ describe('ApplyPreviewUsecase', () => {
     await first;
   });
 
+  // 접수형 호출자(콘솔)를 위한 판정 전용 입구. 실행 없이 "지금 누를 수 있는가" 만 본다.
+  it('assertApplicable 은 applier 를 돌리지 않고 통과시킨다', async () => {
+    const repo = buildRepo(buildPreview());
+    const applier = buildApplier(PREVIEW_KIND.PM_WRITE_BACK);
+    const card = buildCard();
+    const usecase = new ApplyPreviewUsecase(repo, [applier], [], [], card);
+
+    const preview = await usecase.assertApplicable({
+      previewId: 'p-1',
+      slackUserId: 'U1',
+      now: fixedNow,
+    });
+
+    expect(preview.id).toBe('p-1');
+    expect(applier.apply).not.toHaveBeenCalled();
+    expect(repo.transition).not.toHaveBeenCalled();
+    expect(card.update).not.toHaveBeenCalled();
+  });
+
+  it('assertApplicable 도 처리 중인 카드는 ALREADY_APPLYING 으로 거절', async () => {
+    const repo = buildRepo(buildPreview());
+    const applier = buildApplier(PREVIEW_KIND.PM_WRITE_BACK);
+    let releaseApply: () => void = () => {};
+    const applyGate = new Promise<void>((resolve) => {
+      releaseApply = resolve;
+    });
+    applier.apply.mockReturnValue(
+      applyGate.then(() => ({ message: 'ok', artifacts: [] })),
+    );
+    const card = buildCard();
+    const usecase = new ApplyPreviewUsecase(repo, [applier], [], [], card);
+
+    const first = usecase.execute({
+      previewId: 'p-1',
+      slackUserId: 'U1',
+      now: fixedNow,
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    const error = await usecase
+      .assertApplicable({
+        previewId: 'p-1',
+        slackUserId: 'U1',
+        now: fixedNow,
+      })
+      .catch((caught) => caught);
+
+    expect(error).toMatchObject({
+      previewActionErrorCode: PreviewActionErrorCode.ALREADY_APPLYING,
+    });
+    releaseApply();
+    await first;
+  });
+
+  // applier 가 없는 kind(CAREER_JD_GAP_BLOG 등)를 접수에서 거른다. 여기서 통과시키면
+  // 202 를 받은 뒤 백그라운드에서 죽어, 사용자에게는 "눌렀는데 카드만 돌아오는" 것으로 보인다.
+  it('assertApplicable 은 applier 가 없는 kind 를 NO_APPLIER_FOR_KIND 로 거절', async () => {
+    const repo = buildRepo(
+      buildPreview({ kind: PREVIEW_KIND.CAREER_JD_GAP_BLOG }),
+    );
+    const card = buildCard();
+    // applier 목록에 그 kind 가 없다.
+    const usecase = new ApplyPreviewUsecase(
+      repo,
+      [buildApplier(PREVIEW_KIND.PM_WRITE_BACK)],
+      [],
+      [],
+      card,
+    );
+
+    const error = await usecase
+      .assertApplicable({
+        previewId: 'p-1',
+        slackUserId: 'U1',
+        now: fixedNow,
+      })
+      .catch((caught) => caught);
+
+    expect(error).toMatchObject({
+      previewActionErrorCode: PreviewActionErrorCode.NO_APPLIER_FOR_KIND,
+    });
+  });
+
+  // 접수 판정은 락을 잡지 않아, 거의 동시에 들어온 둘이 모두 통과할 수 있다. 그래도 **실행은
+  // 한 번뿐**이라는 것이 이 구조가 기대는 계약이다 — `execute` 가 락을 동기적으로 잡으므로
+  // 뒤엣것이 그 안에서 끊긴다. 이 단언이 없으면 접수와 실행 사이의 check-then-act 경계가
+  // 고정되지 않아, 나중에 락 획득 시점을 옮겨도 아무도 모른다.
+  it('접수를 둘 다 통과해도 applier 는 한 번만 돈다', async () => {
+    const repo = buildRepo(buildPreview());
+    const applier = buildApplier(PREVIEW_KIND.PM_WRITE_BACK);
+    let releaseApply: () => void = () => {};
+    const applyGate = new Promise<void>((resolve) => {
+      releaseApply = resolve;
+    });
+    applier.apply.mockReturnValue(
+      applyGate.then(() => ({ message: 'ok', artifacts: [] })),
+    );
+    const card = buildCard();
+    const usecase = new ApplyPreviewUsecase(repo, [applier], [], [], card);
+
+    // 두 요청이 모두 접수 판정을 통과한 상태를 만든다(아직 아무도 락을 잡지 않았다).
+    await usecase.assertApplicable({
+      previewId: 'p-1',
+      slackUserId: 'U1',
+      now: fixedNow,
+    });
+    await usecase.assertApplicable({
+      previewId: 'p-1',
+      slackUserId: 'U1',
+      now: fixedNow,
+    });
+
+    const first = usecase.execute({
+      previewId: 'p-1',
+      slackUserId: 'U1',
+      now: fixedNow,
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    const secondError = await usecase
+      .execute({ previewId: 'p-1', slackUserId: 'U1', now: fixedNow })
+      .catch((error) => error);
+
+    expect(secondError).toMatchObject({
+      previewActionErrorCode: PreviewActionErrorCode.ALREADY_APPLYING,
+    });
+    expect(applier.apply).toHaveBeenCalledTimes(1);
+    releaseApply();
+    await first;
+  });
+
+  it('assertApplicable 은 없는 카드를 NOT_FOUND 로 거절', async () => {
+    const repo = buildRepo(null);
+    const card = buildCard();
+    const usecase = new ApplyPreviewUsecase(repo, [], [], [], card);
+
+    const error = await usecase
+      .assertApplicable({
+        previewId: 'p-1',
+        slackUserId: 'U1',
+        now: fixedNow,
+      })
+      .catch((caught) => caught);
+
+    expect(error).toMatchObject({
+      previewActionErrorCode: PreviewActionErrorCode.NOT_FOUND,
+    });
+  });
+
   it('카드 갱신이 throw 해도 apply 결과는 그대로 반환 (best-effort)', async () => {
     const repo = buildRepo(buildPreview());
     const applier = buildApplier(PREVIEW_KIND.PM_WRITE_BACK, '완료');

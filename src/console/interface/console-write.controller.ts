@@ -16,8 +16,12 @@ import { ConsoleWriteService } from '../application/console-write.service';
 import { ConsoleCommandDto } from './dto/console-command.dto';
 import { SessionInjectDto } from './dto/session-inject.dto';
 
-// 콘솔 리모컨 write 표면 — 지시(fire-and-forget 202) + 승인/거절(await 200).
+// 콘솔 리모컨 write 표면 — 지시·승인(접수 202) + 거절(await 200).
 // 모든 경로는 LoopbackOnlyGuard(loopback+토큰) 뒤에 있다.
+//
+// 승인이 202 인 것은 반영이 분 단위로 길기 때문이다(ConsoleWriteService.applyApproval 주석).
+// 다만 지시와 달리 **접수 자체는 동기로 검증한다** — 없는 카드·남의 것·만료·중복 클릭은
+// 이 응답에서 4xx 로 돌아오고, 202 는 "검증을 통과해 실행에 들어갔다" 를 뜻한다.
 @Controller('v1/console')
 @UseGuards(LoopbackOnlyGuard)
 export class ConsoleWriteController {
@@ -38,9 +42,10 @@ export class ConsoleWriteController {
   }
 
   @Post('approvals/:id/apply')
-  async apply(@Param('id') id: string): Promise<{ ok: true }> {
+  @HttpCode(202)
+  async apply(@Param('id') id: string): Promise<{ accepted: true }> {
     await this.consoleWrite.applyApproval(id);
-    return { ok: true };
+    return { accepted: true };
   }
 
   @Post('approvals/:id/cancel')
