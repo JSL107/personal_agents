@@ -354,6 +354,8 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 | `GITHUB_TOKEN` · `NOTION_TOKEN` / `NOTION_TASK_DB_IDS` | ⭕ | 미설정 시 해당 연동 skip |
 | `*_WEBHOOK_SECRET` · `GITHUB_WEBHOOK_*` | ⭕ | webhook 검증 · 자동 발화 가드 |
 | `AUTOPILOT_OWNER_SLACK_USER_ID` · `AUTOPILOT_TARGET` | ⭕ | cron 전체 게이트 · 발송 대상(콤마 다중) |
+| `SUBCONSCIOUS_GATE_MODE` | ❌ | `legacy`(기존 LLM) · `shadow`(Jev 비교만) · `hybrid`(확신 높은 Jev 우선). 기본 `legacy` |
+| `TYPESAFE_API_KEY` · `SUBCONSCIOUS_JEV_MODEL` | ⭕ | Jev 게이트를 켤 때 필요한 TypeSafe 인증키와 모델 버전 |
 | `AUTOPILOT_INVEST_TARGET` | ⭕ | 투자 라인(주식·모의투자 10항목) 전용 발송 대상. 미설정 시 `AUTOPILOT_TARGET` |
 | `AUTOPILOT_CAREER_TARGET` | ⭕ | 커리어 라인(채용공고 수집·갭 분석) 전용 발송 대상. 미설정 시 `AUTOPILOT_TARGET` |
 | `CONSOLE_OWNER_SLACK_USER_ID` | ❌ | 콘솔 지시·승인 주체 — 없으면 콘솔 쓰기 503 |
