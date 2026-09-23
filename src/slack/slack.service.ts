@@ -18,13 +18,22 @@ import {
   SLACK_HANDLER_PORT,
   SlackHandler,
 } from './domain/port/slack-handler.port';
-import { toReadableSlackArgs } from './format/message-blocks.builder';
+import {
+  toImageAttachedSlackArgs,
+  toReadableSlackArgs,
+} from './format/message-blocks.builder';
 import { buildPreviewBlocks } from './format/preview-message.builder';
 import { recordSlackSendLength } from './format/slack-send-length.recorder';
 import { buildSubconsciousProposalBlocks } from './format/subconscious-proposal-message.builder';
 
 const SOCKET_WATCHDOG_INTERVAL_MS = 30_000;
 const SOCKET_DRIFT_THRESHOLD_MS = 90_000;
+
+// 올린 파일을 슬랙이 이미지로 처리할 때까지 기다리는 상한과 간격. 2026-09-23 실측으로
+// 업로드 시작에서 `mimetype: 'image/png'` 까지 2,218ms 였다 — 상한은 그 3배 남짓을 둔다.
+// 이 대기를 건너뛰고 메시지를 보내면 이미지 블록이 빈 자리로 뜬다.
+const IMAGE_READY_TIMEOUT_MS = 8_000;
+const IMAGE_READY_POLL_INTERVAL_MS = 400;
 
 type SlackSocketConfig = {
   botToken: string;
@@ -282,17 +291,22 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     text,
     threadTs,
     unfurlLinks,
+    image,
   }: {
     target: string;
     text: string;
     threadTs?: string;
     unfurlLinks?: boolean;
+    image?: { fileId: string; altText: string };
   }): Promise<{ ts: string | undefined }> {
+    const origin = threadTs ? 'push-thread' : 'push';
     const response = await this.postChat({
       channel: target,
       // 이대리가 먼저 밀어내는 경로 — 계측에서 슬래시·멘션 응답과 갈라 본다(설계서 §7-5).
       // 스레드 댓글은 본문과 길이 성격이 달라 따로 센다(cron 상세가 이 경로다).
-      ...toReadableSlackArgs(text, threadTs ? 'push-thread' : 'push'),
+      ...(image
+        ? toImageAttachedSlackArgs(text, image, origin)
+        : toReadableSlackArgs(text, origin)),
       ...(threadTs ? { thread_ts: threadTs } : {}),
       // 미디어(썸네일)도 함께 꺼야 한다 — unfurl_links 만 끄면 이미지가 딸린 링크는
       // 여전히 펼쳐진다. 값을 안 주면 슬랙 기본값(켜짐)이라 기존 발송은 그대로다.
@@ -329,6 +343,58 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
       ? await app.client.filesUploadV2({ ...destination, thread_ts: threadTs })
       : await app.client.filesUploadV2(destination);
     return { fileId: firstUploadedFileId(response) };
+  }
+
+  // 채널 공유 없이 파일만 올린다(`channel_id` 를 주지 않는다). 공유는 이 id 를 이미지
+  // 블록으로 실은 `postMessage` 가 대신 하고, 그 메시지의 ts 로 스레드를 연다.
+  //
+  // 여기서는 file id 가 없으면 실패다 — `uploadImage` 와 달리 로그용이 아니라 메시지를
+  // 만들 재료라, 없으면 그림 없는 메시지가 나가게 된다.
+  async uploadImageFile({
+    png,
+    filename,
+    title,
+  }: {
+    png: Buffer;
+    filename: string;
+    title: string;
+  }): Promise<{ fileId: string }> {
+    const app = this.assertAppReady();
+    const response = await app.client.filesUploadV2({
+      file: png,
+      filename,
+      title,
+    });
+    const fileId = firstUploadedFileId(response);
+    if (!fileId) {
+      throw new Error(
+        `Slack 이미지 업로드 응답에 file id 가 없습니다 — filename=${filename}`,
+      );
+    }
+    await this.waitUntilImageReady(fileId);
+    return { fileId };
+  }
+
+  // 슬랙이 올라온 파일을 이미지로 처리했는지 `files.info` 로 확인한다. 업로드 응답만으로는
+  // 알 수 없다(포트 주석의 실측). 상한까지 기다려도 안 되면 던져서, 호출부가 그림 없이
+  // 텍스트만이라도 보내게 한다 — 빈 이미지 블록이 붙은 메시지보다 낫다.
+  private async waitUntilImageReady(fileId: string): Promise<void> {
+    const app = this.assertAppReady();
+    const deadline = Date.now() + IMAGE_READY_TIMEOUT_MS;
+    for (;;) {
+      const info = await app.client.files.info({ file: fileId });
+      if (info.file?.mimetype?.startsWith('image/')) {
+        return;
+      }
+      if (Date.now() >= deadline) {
+        throw new Error(
+          `Slack 이 이미지로 처리하기를 ${IMAGE_READY_TIMEOUT_MS}ms 기다렸으나 끝나지 않았습니다 — fileId=${fileId}`,
+        );
+      }
+      await new Promise((resolve) =>
+        setTimeout(resolve, IMAGE_READY_POLL_INTERVAL_MS),
+      );
+    }
   }
 
   // PO-2: previewId 가 박힌 ✅ apply / ❌ cancel 버튼 Block Kit 메시지 발송.
