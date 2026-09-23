@@ -109,8 +109,8 @@ const extractPreservedTokens = (
   remaining = extractUrlsAndMask(remaining, tokens.url);
   remaining = extractAndMask(remaining, /#[0-9]+/g, tokens.pr);
   if (profile === 'personal-blog') {
-    remaining = extractAndMask(remaining, DATE_PATTERN, tokens.date);
     remaining = extractDirectQuotesAndMask(remaining, tokens.quote);
+    remaining = extractAndMask(remaining, DATE_PATTERN, tokens.date);
     remaining = extractAndMask(
       remaining,
       LEGAL_REFERENCE_PATTERN,
@@ -135,13 +135,17 @@ const LEGAL_REFERENCE_PATTERN =
 const DIRECT_QUOTE_PATTERN = /"[^"]+"|“[^”]+”|「[^」]+」|『[^』]+』/g;
 
 const QUOTE_INTRO_PATTERN =
-  /(?:(?:말했|밝혔|전했|설명했|지적했|주장했|언급했)(?:습니다|다)?|(?:발언|답변|설명|입장|말)(?:은|는|이|가)?\s*다음과\s*같습니다)\s*[:：]?\s*$/;
-const SPEAKER_PATTERN =
-  /(?:^|\s)(?:[가-힣]{1,20}\s+)?[가-힣]{1,20}(?<!에)(?:은|는|이|가)[^"“”「」『』\n.!?]{0,40}$/;
+  /(?:(?:말했|밝혔|전했|설명했|지적했|주장했|언급했)(?:습니다|다)?|(?:말했다|밝혔다|전했다|설명했다|지적했다|주장했다|언급했다)|(?:발언|답변|설명|입장|말)(?:은|는|이|가)?\s*다음과\s*같습니다)\s*[:：.!?]?\s*$/;
+const ROLE_SPEAKER_PATTERN =
+  /(?:^|\s)(?:[가-힣]{1,20}\s+)?(?:대표|교수|장관|기자|관계자|대변인|위원장|연구원|담당자|씨)(?:은|는|이|가)[^"“”「」『』\n.!?]{0,40}$/;
+const NAMED_SPEAKER_PATTERN =
+  /(?:^|\s)(?:(?:김|이|박|최|정|강|조|윤|장|임|한|오|서|신|권|황|안|송|전|홍|유|문|양|손|배|백|허|남|심|노|하|곽|성)[가-힣]{2}|[가-힣]{1,15}(?:부|청|처|위원회|협회|공사|재단|연구소|대학교|대학|병원|언론사|기업|회사|정부|지자체))(?<!에)(?:은|는|이|가)[^"“”「」『』\n.!?]{0,40}$/;
+const SENTENCE_QUOTE_PATTERN =
+  /(?:[.!?]|합니다|했습니다|하겠습니다|하겠다|한다|했다|됩니다|됐다|이다|였다|가요|요)$/;
 const DIRECT_ATTRIBUTION_PATTERN =
-  /^\s*(?:이라고|라고|라며)[^"“”「」『』\n.!?]{0,40}(?:말했|밝혔|전했|주장했|언급했|답했|\s했)/;
+  /^\s*(?:이라고|라고|라며|고)[^"“”「」『』\n.!?]{0,40}(?:말했|밝혔|전했|주장했|언급했|답했|\s했)/;
 const EXPLANATION_ATTRIBUTION_PATTERN =
-  /^\s*(?:이라고|라고|라며)[^"“”「」『』\n.!?]{0,40}(?:설명했|지적했)/;
+  /^\s*(?:이라고|라고|라며|고)[^"“”「」『』\n.!?]{0,40}(?:설명했|지적했)/;
 
 const extractDirectQuotesAndMask = (
   text: string,
@@ -149,22 +153,17 @@ const extractDirectQuotesAndMask = (
 ): string => {
   return text.replace(DIRECT_QUOTE_PATTERN, (quote, offset, source) => {
     const before = source.slice(Math.max(0, offset - 80), offset);
-    const sentenceStart = Math.max(
-      before.lastIndexOf('.'),
-      before.lastIndexOf('!'),
-      before.lastIndexOf('?'),
-      before.lastIndexOf('\n'),
-    );
-    const introduction = before.slice(sentenceStart + 1);
     const attribution = source.slice(
       offset + quote.length,
       offset + quote.length + 80,
     );
     if (
-      !QUOTE_INTRO_PATTERN.test(introduction) &&
+      !QUOTE_INTRO_PATTERN.test(before) &&
       !DIRECT_ATTRIBUTION_PATTERN.test(attribution) &&
       !(
-        SPEAKER_PATTERN.test(introduction) &&
+        (ROLE_SPEAKER_PATTERN.test(before) ||
+          (NAMED_SPEAKER_PATTERN.test(before) &&
+            SENTENCE_QUOTE_PATTERN.test(quote.slice(1, -1).trim()))) &&
         EXPLANATION_ATTRIBUTION_PATTERN.test(attribution)
       )
     ) {
