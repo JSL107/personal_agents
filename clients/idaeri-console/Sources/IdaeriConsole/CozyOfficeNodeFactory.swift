@@ -743,10 +743,27 @@ enum CozyOfficeNodeFactory {
         node.childNode(withName: "doorGlow")?.alpha = open ? 0.48 : 0.06
     }
 
-    /// Complete room shells cannot expose a live door state because their architecture is baked
-    /// into the room image. Draw a compact 2.5D portal on the real logical doorway instead: the
-    /// frame stays fixed while the leaf narrows toward its hinge when an employee approaches.
+    /// 복도 쪽(좌우 경계) 문. 방 셸 그림은 자기 뒷벽만 가지고 있어 출입구를 그려 주지 않으므로,
+    /// 논리 문 칸 위에 이 노드를 따로 세운다. 사람이 다가오면 `setDoor` 가 열린 그림으로 바꾼다.
+    ///
+    /// 그림은 **가로 경계 문과 같은 원화**를 쓴다(아래 본문 첫 분기). 원화가 없을 때만 예전
+    /// 벡터 도형으로 떨어지는데, 그 그림은 문틀이 고정된 채 문짝만 경첩 쪽으로 좁아진다.
     static func doorStatusOverlay(tileSize: CGFloat) -> SKNode {
+        // **가로 경계 문과 같은 원화를 쓴다.** 아래 벡터 도형은 3D 원화가 들어오기 전의
+        // 그림이라, 원화 문(아치형 크림 문틀)과 한 화면에 서면 같은 사무실의 문 두 짝이
+        // 서로 다른 물건으로 읽힌다 — 벡터 쪽은 문이 아니라 벽에 붙은 갈색 기둥으로 보였다
+        // (사용자 보고, 실앱 화면). 그리는 함수까지 같은 것을 써야 크기 규칙(`minimumSize`·
+        // 원근 보정)이 한쪽만 바뀌는 일이 없다.
+        //
+        // 원화가 없으면 아래 벡터로 떨어진다. 그때는 가로 경계 문도 함께 사라지므로
+        // (`isBoundaryDoor` 가 텍스처 존재를 확인한다) 두 문이 어긋나지 않는다.
+        if let texture = SpriteLoader.cozyFurnitureTexture(.doorClosed) {
+            let door = illustratedFurniture(
+                texture: texture, kind: .doorClosed, tileSize: tileSize, visible: true
+            )
+            door.name = "doorStatusOverlay"
+            return door
+        }
         let holder = SKNode()
         holder.name = "doorStatusOverlay"
 

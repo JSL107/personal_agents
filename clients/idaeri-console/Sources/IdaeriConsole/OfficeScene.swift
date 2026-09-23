@@ -1305,14 +1305,23 @@ final class OfficeScene: SKScene {
             node.endInteraction()
             node.setNameplateSpan(nil)
             node.tile = seat
-            let meetingPoint = floorPoint(seat)
-            // 두 사람이 같은 테이블을 바라보도록 서로의 좌석 안쪽으로 모은다.
-            // 기존 간격은 두 번째 사람이 테이블에서 떠 보이는 원인이 됐다.
-            let horizontalOffset = tileSize * (index == 0 ? 0.42 : -0.60)
+            // **기준을 좌석 칸이 아니라 테이블 자신으로 잡는다.** 회의 테이블 그림은 세 칸
+            // 폭인데 논리 발자국은 한 칸이라, 좌석 칸(테이블 옆 한 칸)에서 재면 사람이 그림
+            // 바깥으로 한 칸 가까이 밀려난다 — 테이블이 의자를 되찾은 뒤로는 그 어긋남이
+            // "빈 의자를 두고 옆 바닥에 선 두 사람" 으로 보였다(이 연출의 자세는 자료를
+            // 보는 `writing`·`reading` 이라 앉지 않는다).
+            //
+            // 앞쪽 의자 두 짝은 그림 중심에서 **좌우 0.42칸**에 있다(원화에 타일 격자를
+            // 겹쳐 실측). 세로는 그림이 앞으로 내민 만큼만 내린다 — 좌석 칸까지 내리면
+            // 의자를 지나쳐 다시 바닥에 앉는다.
+            let meetingPoint = meetingTable.map {
+                floorPoint($0, footprintWidth: FurnitureKind.meetingTable.footprint.width)
+            } ?? floorPoint(seat)
+            let horizontalOffset = tileSize * (index == 0 ? -0.42 : 0.42)
             node.place(
                 at: CGPoint(
                     x: meetingPoint.x + horizontalOffset,
-                    y: meetingPoint.y - tileSize * 0.68
+                    y: meetingPoint.y - tileSize * 0.40
                 ),
                 depth: depth(of: seat) + 0.24
             )
@@ -1372,6 +1381,12 @@ final class OfficeScene: SKScene {
                 // The corridor tile is horizontally adjacent to both opposing doors, so the normal
                 // proximity rule opens them. The static capture advances the tall chibi body deeper
                 // into the hall; otherwise it hides the very doorway this demo is proving.
+                // **서 있는 그림으로 되돌린다.** `endInteraction()` 은 가구 자세만 풀고
+                // 좌석 여부(`isSeated`)는 그대로 두므로, 직전까지 자기 책상에 앉아 있던
+                // 사람은 좌석 원화(의자까지 그려진 뒷모습)를 단 채 복도로 옮겨진다 —
+                // 회귀 렌더마다 복도 한가운데에 사무용 의자를 끌고 앉은 사람이 찍혔고,
+                // 실앱 버그로 오인됐다.
+                node.stand()
                 let direction = sideDoorRows[index] <= corridorMidRow ? 1 : -1
                 let tile = TilePoint(x: columns[index], y: sideDoorRows[index])
                 node.tile = tile

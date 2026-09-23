@@ -255,8 +255,11 @@ func runCozyPoseContractTests(_ t: TestRunner) {
         resolveCozyPose(
             requested: "sit-table", assetIndex: 3, hasAsset: cozyPoseAssetExists(3)
         ),
-        ResolvedCozyPose(pose: "sit-table", posture: .seated),
-        "테이블 착석 요청은 앉은 자세의 전용 그림으로 풀린다")
+        ResolvedCozyPose(pose: "sitting", posture: .seated),
+        // 전용 그림(`sit-table`)은 **의자까지 그려져 있어** 배제된다
+        // (`cozyPoseDrawsOwnFurniture`). 테이블 원화가 의자를 되찾은 뒤로는 같은 자리에
+        // 의자가 둘이 되기 때문이다. 자리는 그대로이고 그림만 의자 없는 쪽으로 간다.
+        "테이블 착석 요청은 의자가 그려지지 않은 그림으로 풀린다")
     // 전용 그림이 없으면 소파용으로 내려간다 — 의자가 사라져 공중에 앉은 것처럼 보이지만,
     // 서 있는 기본 그림으로 떨어지는 것보다는 뜻이 가깝다.
     t.expectEqual(
@@ -368,23 +371,30 @@ func runCozyPoseContractTests(_ t: TestRunner) {
     // 호출자가 자세를 요구하면 그 자세의 그림만 뽑힌다. 대시보드 카드처럼 앉을 자리가
     // 없는 화면이 쓰는 경로다 — 여기서 앉은 그림이 새면 사람이 허공에 주저앉는다.
     //
-    // 1번은 `typing` 을 가지고 있지만 **앉은 그림**이라 선 자세 요구에서 제외되고, 18번은
-    // 태블릿을 들고 **서 있는** `typing` 이라 그대로 뽑힌다. 같은 요청·같은 파일 유무인데
-    // 자세 판정 때문에 답이 갈리는 짝이라, 둘을 함께 봐야 분기가 실제로 도는지 알 수 있다.
+    // `typing` 원화는 **전원이 앉은 그림**이다. 한때 18번만 태블릿을 들고 서 있어 그 하나만
+    // 선 자세 요구에 그대로 뽑혔는데, 전원분 교체본이 들어오면서 그 예외가 사라졌다.
+    //
+    // 그래서 두 인덱스가 같은 답을 낸다 — 앉은 `typing` 이 걸러지고 뜻이 가장 가까운
+    // `writing`(손에 든 것만 다른 "일하는 중")으로 내려간다. **답이 `writing` 이라는 사실
+    // 자체가 앉은 그림이 걸러졌다는 증거**다. 기본 그림(`idle`)까지 떨어지면 카드에서
+    // 무엇을 하는 중인지가 통째로 사라지므로, 그 아래로 내려가지 않는 것도 함께 고정한다.
+    for assetIndex in [1, 18] {
+        t.expectEqual(
+            resolveCozyPose(
+                requested: "typing", assetIndex: assetIndex,
+                hasAsset: cozyPoseAssetExists(assetIndex), posture: .standing
+            ),
+            ResolvedCozyPose(pose: "writing", posture: .standing),
+            "선 자세를 요구하면 앉은 타이핑 대신 쓰는 그림(\(assetIndex)번)")
+    }
+    // 대체까지 없으면 기본 그림으로 떨어진다 — 허공에 주저앉는 것보다는 서 있는 편이 낫다.
     t.expectEqual(
         resolveCozyPose(
-            requested: "typing", assetIndex: 1, hasAsset: cozyPoseAssetExists(1),
-            posture: .standing
+            requested: "typing", assetIndex: 1,
+            hasAsset: { $0 != "writing" && cozyPoseAssetExists(1)($0) }, posture: .standing
         ),
         ResolvedCozyPose(pose: cozyIdlePose, posture: .standing),
-        "선 자세를 요구하면 앉은 타이핑 그림은 쓰지 않는다")
-    t.expectEqual(
-        resolveCozyPose(
-            requested: "typing", assetIndex: 18, hasAsset: cozyPoseAssetExists(18),
-            posture: .standing
-        ),
-        ResolvedCozyPose(pose: "typing", posture: .standing),
-        "서 있는 타이핑 그림은 선 자세 요구에도 그대로 쓰인다")
+        "선 자세 후보가 하나도 없으면 기본 그림")
     // 인자를 생략하면 예전대로 요청 이름이 자세를 정한다(오피스 좌석 경로가 이 기본값을 쓴다).
     t.expectEqual(
         resolveCozyPose(requested: "typing", assetIndex: 1, hasAsset: cozyPoseAssetExists(1)),
@@ -448,23 +458,39 @@ func runCozyPoseContractTests(_ t: TestRunner) {
         resolveCozyPose(requested: "walk", assetIndex: 10, hasAsset: { _ in false }).pose,
         cozyIdlePose, "걸음 그림 파일이 없으면 정지 그림")
 
-    // 손에 든 물건이 뜻을 나르므로 가까운 자세로 옮긴다. 0번은 writing 이 있고, 2번은 writing
-    // 없이 reading 만 있으며, 10번은 둘 다 없다.
+    // 서류 나르기·정리·화분 손질은 **전용 원화가 전원분 들어왔다.** 자기 그림이 먼저다.
     t.expectEqual(
         resolveCozyPose(requested: "carryingPapers", assetIndex: 0, hasAsset: cozyPoseAssetExists(0)).pose,
-        "writing", "서류 나르기 → 쓰는 그림")
-    t.expectEqual(
-        resolveCozyPose(requested: "carryingPapers", assetIndex: 2, hasAsset: cozyPoseAssetExists(2)).pose,
-        "reading", "쓰는 그림이 없으면 읽는 그림")
-    t.expectEqual(
-        resolveCozyPose(requested: "carryingPapers", assetIndex: 10, hasAsset: cozyPoseAssetExists(10)).pose,
-        cozyIdlePose, "둘 다 없으면 기본 그림")
+        "carryingpapers", "서류 나르기 → 전용 그림")
     t.expectEqual(
         resolveCozyPose(requested: "stowing", assetIndex: 19, hasAsset: cozyPoseAssetExists(19)).pose,
-        "reading", "물건 넣기 → 책을 든 그림")
-    // 화분 손질은 닮은 그림이 없다. 엉뚱한 소품을 들리면 무엇을 하는지가 오히려 틀리게 읽힌다.
+        "stowing", "물건 넣기 → 전용 그림")
     t.expectEqual(
         resolveCozyPose(requested: "tending", assetIndex: 0, hasAsset: cozyPoseAssetExists(0)).pose,
+        "tending", "화분 손질 → 전용 그림")
+
+    // **대체 규칙은 그대로 살아 있어야 한다.** 새 인덱스가 늘어 전용 그림이 빠지는 일은
+    // 실제로 반복됐고(사람이 늘 때마다 원화는 뒤따라 들어온다), 그때 손에 든 물건이 뜻을
+    // 가장 많이 나른다. 전용만 없다고 가정해 순서가 살아 있는지 본다.
+    func withoutOwnArt(_ index: Int, _ pose: String) -> (String) -> Bool {
+        { candidate in candidate != pose && cozyPoseAssetExists(index)(candidate) }
+    }
+    t.expectEqual(
+        resolveCozyPose(
+            requested: "carryingPapers", assetIndex: 0,
+            hasAsset: withoutOwnArt(0, "carryingpapers")
+        ).pose,
+        "writing", "전용이 없으면 쓰는 그림")
+    t.expectEqual(
+        resolveCozyPose(
+            requested: "stowing", assetIndex: 19, hasAsset: withoutOwnArt(19, "stowing")
+        ).pose,
+        "reading", "전용이 없으면 책을 든 그림")
+    // 화분 손질은 닮은 그림이 없다. 엉뚱한 소품을 들리면 무엇을 하는지가 오히려 틀리게 읽힌다.
+    t.expectEqual(
+        resolveCozyPose(
+            requested: "tending", assetIndex: 0, hasAsset: withoutOwnArt(0, "tending")
+        ).pose,
         cozyIdlePose, "화분 손질은 대체 없이 기본 그림")
 
     // **해결 결과는 반드시 실재해야 한다.** 계약이 없는 파일을 가리키면 그 사람만 화면에서

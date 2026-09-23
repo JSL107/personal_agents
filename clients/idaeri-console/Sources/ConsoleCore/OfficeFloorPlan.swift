@@ -1669,16 +1669,24 @@ public func departmentFurnitureSpots(_ department: Department) -> [TilePoint] {
         // 뒤 세 자리는 빈 오른쪽·아래를 메우는 몫이다. 좌석이 앉는 칸과 그 위(이름표가 뜨는
         // 높이)를 피해, 오른쪽 벽면과 맨 아래 줄에 붙인다.
         //
-        // **커피테이블은 소파와 같은 줄 옆 칸(3,4)이다.** 자리 세 개를 함께 만족해야 한다 —
-        // 소파 정면(4,3)은 앉는 자리라 비워 두고(앉는 자리는 가구 정면 칸뿐이다), 테이블은
-        // 깔개 안에 있어야 하고, 소파와 관계가 보여야 한다.
+        // **커피테이블은 소파의 대각선 아래(3,3)다.** 한때는 같은 줄 옆 칸(3,4)이었다 —
+        // 깔개 한 장이 소파·테이블·앉는 자리를 모두 담고, 소파 옆에 사이드 테이블이 놓인
+        // 응접 세트로 읽힌다는 이유였다.
         //
-        // 두 가지를 먼저 시도했고 렌더에서 각각 어긋났다. 대각선 아래(3,3)는 소파는 깔개
-        // 중앙, 테이블은 모서리로 흩어져 **둘이 아무 관계가 없었다.** 정면 한 칸 더 앞(4,2)은
-        // 세로로 줄은 섰지만 깔개(2×2)가 세로 세 칸을 못 덮어 **테이블만 깔개 밖에** 남았다.
+        // **그 자리는 소파와 겹친다.** 2인 소파는 그림이 두 칸 가까이(실효 1.78칸) 퍼지므로
+        // 옆 칸에는 무엇을 놓아도 0.5칸 넘게 물린다. 테이블만 있던 시절에는 물린 자리가
+        // 상판이라 "소파 앞에 놓인 테이블" 로 넘어갔는데, 테이블이 안락의자 두 짝을 갖게
+        // 되면서 그 의자가 소파에 파묻혔다(사용자 보고, 실앱 화면).
         //
-        // 같은 줄 옆 칸이면 깔개 한 장이 소파·테이블·앉는 자리를 모두 담는다. 소파 옆에
-        // 사이드 테이블이 놓인 응접 세트로 읽히고, 테이블 자신의 앉는 자리(3,3)도 깔개 안이다.
+        // 대각선으로 내리면 줄이 달라져 화면에서 세로로 벌어지고 겹침이 사라진다. 예전에
+        // 이 자리를 물렸던 이유("둘이 아무 관계가 없다")는 **민 테이블이었기 때문**이다 —
+        // 지금은 의자가 함께 그려져 그 자체로 응접 세트라 소파와 나란할 필요가 없다.
+        // 소파 정면(4,3)은 그대로 앉는 자리로 비워 둔다.
+        //
+        // **깔개는 자리를 고르는 기준이 아니다.** 옛 판단이 "테이블은 깔개 안에 있어야
+        // 한다" 를 제약으로 들고 있었는데, 깔개는 `officeCozyDrawnFurnitureKinds` 에 없어
+        // 완성형 방 셸에서는 **아예 그려지지 않는다** — 화면에 없는 것에 배치를 맞추고
+        // 있었다. 놓는 것 자체는 남겨 둔다(도트 배경으로 되돌릴 때 쓰인다).
         //
         // **서가는 (9,4) 가 아니라 (7,4) 다 — 벽 자리 앞칸을 비워 두려고 옮겼다.** 이 방
         // 오른쪽 벽 rel(10,4) 에 걸린 지표 모니터는 방 안쪽 이웃이 (9,4) 인데, 거기 서가가
@@ -1690,7 +1698,7 @@ public func departmentFurnitureSpots(_ department: Department) -> [TilePoint] {
         // 사람 셋이 자기 방에서 화면을 보게 되는 것까지 함께 나아진다. 원장은 이 결함을
         // 「바닥 가구를 옮겨야 하고 그건 자리표를 다시 세는 별개의 작업」으로 미뤄 뒀는데,
         // 이 방은 좌석이 넷뿐이라 서가를 한 칸 옮기는 것으로 끝났다.
-        return spots([(4, 4), (3, 4), (8, 1), (7, 4), (9, 1), (9, 2), (4, 1), (1, 0), (3, 3), (3, 2), (5, 3), (5, 2)])
+        return spots([(4, 4), (3, 3), (8, 1), (7, 4), (9, 1), (9, 2), (4, 1), (1, 0), (3, 2), (5, 3), (5, 2)])
     case .content:
         // 어긋난 자리 사이를 파티션으로 나누고, 아래 벽에 자료·발행 라인을 붙인다.
         //
@@ -1808,6 +1816,61 @@ private let departmentFeatureFraction: [Department: Double] = [
     .internalOps: 0.48,
 ]
 
+/// 콘솔이 **처음 노리는 칸**(구역 원점 기준 x 오프셋). 자리를 고르는 쪽과 그 자리를 비워
+/// 주는 쪽이 같은 값을 봐야 하므로 여기 한 곳에서 센다.
+public func officeDepartmentFeaturePreferredOffset(
+    _ department: Department, zoneInnerWidth: Int
+) -> Int {
+    Int((Double(zoneInnerWidth) * (departmentFeatureFraction[department] ?? 0.5)).rounded())
+}
+
+/// 콘솔에게 **먼저 내주는 책상 칸**(구역 원점 기준 상대 좌표).
+///
+/// 콘솔 자리는 책상이 다 놓인 뒤에 고르는데, 자리표가 꽉 찬 방은 그때 이미 갈 곳이 없어
+/// 남의 좌석 위에 선다. 그렇다고 책상 쪽에서 콘솔 자리를 **막아 버리면** 정원을 채운 방
+/// (운영실 열 명)에서 한 사람이 배정을 못 받아 화면에서 사라진다 — 겹치는 것보다 나쁘다.
+///
+/// 그래서 막지 않고 **뒤로 미룬다**(`spotCandidates` 의 순서). 자리가 남는 방은 이 칸을
+/// 건너뛰어 콘솔이 깨끗한 자리를 얻고, 모자라는 방은 그대로 앉혀 전원 배정을 지킨다.
+///
+/// 두 칸인 것은 콘솔 그림이 기준 칸과 그 오른쪽 한 칸을 함께 덮기 때문이고, 줄이 하나인
+/// 것은 **책상이 쓰는 줄이 y = 1 과 4 둘뿐**이어서다(`fallbackDeskSpots` 도 같은 줄을 쓴다).
+/// y = 4 의 좌석은 y = 5 라 콘솔이 덮는 범위(자기 줄부터 두 줄 뒤) 밖으로 나간다.
+public func officeDepartmentFeatureReservedDeskLocals(
+    _ department: Department, zoneInnerWidth: Int
+) -> [TilePoint] {
+    let preferred = officeDepartmentFeaturePreferredOffset(
+        department, zoneInnerWidth: zoneInnerWidth
+    )
+    return [TilePoint(x: preferred, y: 1), TilePoint(x: preferred + 1, y: 1)]
+}
+
+/// 콘솔을 `tile` 에 놓았을 때 그 그림이 덮는, **화면에 그려지는 가구**.
+///
+/// 범위는 기준 칸과 그 오른쪽 한 칸, 자기 줄에서 두 줄 뒤까지다. 뒤로 두 줄을 보는 것은
+/// 원근 압축 때문이다 — 안쪽 줄일수록 화면에서 바짝 당겨 그려져(`floorPoint` 의 깊이 보정)
+/// 두 줄 뒤 가구가 콘솔 윗머리와 같은 높이에 온다.
+///
+/// **책상을 빼지 않는다.** 한때 책상만 예외로 두어 콘솔이 책상 위에 겹쳐도 통과시켰는데,
+/// 책상에는 **사람이 앉는다.** 좌석은 책상 칸의 한 줄 앞(`desk.y + 1`)이라 콘솔이 덮는
+/// 범위 안으로 들어오고, 그러면 콘솔에 앉은 사람과 그 책상에 앉은 사람이 한 덩어리로
+/// 겹친다(사용자 보고, 실앱 콘텐츠 방 화면). 가구는 콘솔 뒤로 가려도 그림이 성립하지만
+/// 사람은 성립하지 않는다.
+///
+/// 자리를 고르는 쪽(`officeDepartmentFeatureTile`)과 그 결과를 재는 쪽(검증)이 **같은 이
+/// 함수**를 쓴다. 범위 수식을 양쪽이 따로 적어 두던 동안 검증도 코드와 똑같이 책상을
+/// 빼고 있어서, 구멍이 있다는 사실 자체가 드러나지 않았다.
+public func officeDepartmentFeatureCoverage(
+    furniture: [FurniturePlacement],
+    tile: TilePoint
+) -> [FurniturePlacement] {
+    furniture.filter { placement in
+        officeCozyDrawnFurnitureKinds.contains(placement.kind)
+            && (placement.tile.x == tile.x || placement.tile.x == tile.x + 1)
+            && placement.tile.y >= tile.y && placement.tile.y <= tile.y + 2
+    }
+}
+
 /// 특화 콘솔(방마다 하나)을 놓을 칸. 렌더 전용 소품이라 walkable·경로는 건드리지 않는다.
 ///
 /// **자리가 씬 안에만 있던 동안 평면도가 그 자리를 몰랐다.** 기획 방 책장이 기획 보드와
@@ -1816,30 +1879,25 @@ private let departmentFeatureFraction: [Department: Double] = [
 /// (인원이 늘면 가구가 다른 칸으로 밀린다) 표에 적어 둔 한 칸으로는 막을 수 없다 —
 /// 원하는 자리에서 시작해 비어 있는 가장 가까운 칸으로 비킨다.
 ///
-/// **책상은 충돌로 치지 않는다.** 얇고 낮아 콘솔 옆에 나란히 서도 읽히고, 정원을 채운 방은
-/// 홀수 열이 전부 책상이라 책상까지 피하면 갈 곳이 한 칸도 없다.
+/// **책상도 피한다.** 한때는 얇고 낮다는 이유로 책상만 예외로 뒀는데, 그 판단이 본 것은
+/// 가구뿐이고 **거기 앉는 사람**이 빠져 있었다(좌석은 책상 칸의 한 줄 앞이다). 범위와
+/// 이유는 `officeDepartmentFeatureCoverage` 에 있다.
+///
+/// 정원을 채운 방(운영실)은 홀수 열이 전부 책상이라 빈 두 칸이 아예 없다. 그런 방은
+/// **겹침이 가장 적은 칸**으로 가고, 남은 겹침은 검증이 목록으로 들고 있는다 — 못 고친
+/// 것을 0으로 적어 두면 다음 사람이 이미 해결된 줄 안다.
 public func officeDepartmentFeatureTile(
     zone: DepartmentZone,
     furniture: [FurniturePlacement]
 ) -> TilePoint {
     let row = zone.origin.y + 1
-    let preferred = Int(
-        (Double(zone.width - 1) * (departmentFeatureFraction[zone.department] ?? 0.5)).rounded()
+    let preferred = officeDepartmentFeaturePreferredOffset(
+        zone.department, zoneInnerWidth: zone.width - 1
     )
-    // 콘솔 그림이 덮는 범위 — 기준 칸과 그 오른쪽 한 칸, 자기 줄에서 두 줄 뒤까지.
-    // 뒤로 두 줄을 보는 것은 원근 압축 때문이다. 안쪽 줄일수록 화면에서 바짝 당겨 그려져
-    // (`floorPoint` 의 깊이 보정), 두 줄 뒤 가구가 콘솔 윗머리와 같은 높이에 온다.
-    func collides(_ offset: Int) -> Bool {
-        let x = zone.origin.x + offset
-        return furniture.contains { placement in
-            guard placement.kind != .desk,
-                officeCozyDrawnFurnitureKinds.contains(placement.kind)
-            else {
-                return false
-            }
-            return (placement.tile.x == x || placement.tile.x == x + 1)
-                && placement.tile.y >= row && placement.tile.y <= row + 2
-        }
+    func collisionCount(_ offset: Int) -> Int {
+        officeDepartmentFeatureCoverage(
+            furniture: furniture, tile: TilePoint(x: zone.origin.x + offset, y: row)
+        ).count
     }
     // 좌우 벽(0 · width - 1)을 비켜 콘솔 두 칸이 방 안에 들어가는 범위만 후보다.
     // 거리가 같으면 왼쪽 — 실행마다 같은 자리가 나와야 화면이 흔들리지 않는다.
@@ -1847,9 +1905,16 @@ public func officeDepartmentFeatureTile(
         abs($0 - preferred) == abs($1 - preferred)
             ? $0 < $1 : abs($0 - preferred) < abs($1 - preferred)
     }
-    // 어느 칸도 비지 않으면 원하는 자리를 그대로 쓴다 — 콘솔이 사라지는 것보다는 겹치는
-    // 편이 낫고, 그때는 「콘솔 발밑에 가구가 없다」 단언이 대신 소리를 낸다.
-    return TilePoint(x: zone.origin.x + (candidates.first { !collides($0) } ?? preferred), y: row)
+    // 어느 칸도 비지 않으면 **가장 덜 겹치는 칸**을 쓴다 — 콘솔이 사라지는 것보다는 겹치는
+    // 편이 낫고, 그때는 「콘솔 발밑에 가구가 없다」 단언이 대신 소리를 낸다. 자리가 꽉 찬
+    // 방(운영실은 열 자리가 홀수 칸을 모두 쓴다)에서는 빈 두 칸이 아예 없으므로, 그런 방도
+    // 겹침이 가장 적은 쪽으로는 가게 둔다. `candidates` 가 이미 원하는 자리 순이라 개수가
+    // 같으면 원래 자리가 그대로 뽑힌다.
+    let fallback = candidates.min { collisionCount($0) < collisionCount($1) } ?? preferred
+    return TilePoint(
+        x: zone.origin.x + (candidates.first { collisionCount($0) == 0 } ?? fallback),
+        y: row
+    )
 }
 
 /// 사무실 평면도 — 바닥·가구·자리·통로가 전부 타일 격자 위에 확정된 값.
@@ -2469,7 +2534,17 @@ public func officeFloorPlan(agents: [ConsoleAgent], zoneColumns: Int = 3) -> Off
             .sorted()
         // 부서 배치표를 먼저 쓰고, 다 쓰면 예비 격자로 이어 채운다. 배치표만 두면 에이전트가
         // 늘었을 때 자리를 못 받은 사람이 화면에서 조용히 사라진다.
-        let spotCandidates = departmentDeskSpots(zoneDepartment) + fallbackDeskSpots
+        // 콘솔이 노리는 두 칸은 **뒤로 민다**(막지 않는다 — 막으면 정원을 채운 방에서 한
+        // 사람이 자리를 못 받는다). 자리가 남으면 건너뛰어 콘솔이 남의 좌석을 덮지 않고,
+        // 모자라면 그대로 앉아 전원 배정이 유지된다.
+        let reservedForFeature = Set(
+            officeDepartmentFeatureReservedDeskLocals(
+                zoneDepartment, zoneInnerWidth: zoneWidth
+            )
+        )
+        let allSpots = departmentDeskSpots(zoneDepartment) + fallbackDeskSpots
+        let spotCandidates = allSpots.filter { !reservedForFeature.contains($0) }
+            + allSpots.filter { reservedForFeature.contains($0) }
         var usedLocals: Set<TilePoint> = []
         for agentType in members {
             // 좌석은 책상 바로 위 칸이므로 책상 y 는 천장 벽 아래(zoneHeight - 2)까지만 유효하다.
