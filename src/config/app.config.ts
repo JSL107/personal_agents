@@ -755,6 +755,47 @@ export class EnvironmentVariables {
   @IsString()
   SUBCONSCIOUS_ENABLED?: string;
 
+  // Subconscious 판단기 모드. legacy(기존 LLM), shadow(Jev 비교), hybrid(확신 높은 Jev 우선).
+  @IsOptional()
+  @IsString()
+  SUBCONSCIOUS_GATE_MODE?: string;
+
+  // TypeSafe Jev API 인증키. 게이트 모드가 legacy이면 필요하지 않다.
+  @IsOptional()
+  @IsString()
+  TYPESAFE_API_KEY?: string;
+
+  // Jev 모델 버전. 임계값을 튜닝할 때 결과 재현성을 위해 고정한다.
+  @IsOptional()
+  @IsString()
+  SUBCONSCIOUS_JEV_MODEL?: string;
+
+  // Jev API 호출 timeout (밀리초).
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d+$/, {
+    message: 'SUBCONSCIOUS_JEV_TIMEOUT_MS 는 양의 정수여야 합니다.',
+  })
+  SUBCONSCIOUS_JEV_TIMEOUT_MS?: string;
+
+  // Jev가 자동 승격할 최소 promote 확률 (0보다 크고 1 이하).
+  @IsOptional()
+  @IsString()
+  @Matches(/^0?\.\d+$|^1(?:\.0+)?$/, {
+    message:
+      'SUBCONSCIOUS_JEV_PROMOTE_THRESHOLD 는 0보다 크고 1 이하인 소수여야 합니다.',
+  })
+  SUBCONSCIOUS_JEV_PROMOTE_THRESHOLD?: string;
+
+  // Jev가 담당 에이전트를 선택했다고 볼 최소 confidence (0보다 크고 1 이하).
+  @IsOptional()
+  @IsString()
+  @Matches(/^0?\.\d+$|^1(?:\.0+)?$/, {
+    message:
+      'SUBCONSCIOUS_JEV_CONFIDENCE_THRESHOLD 는 0보다 크고 1 이하인 소수여야 합니다.',
+  })
+  SUBCONSCIOUS_JEV_CONFIDENCE_THRESHOLD?: string;
+
   // 선호 프로필 자가학습 — 주간 학습 cron 게이트(미설정=OFF).
   // 'true' 일 때만 PreferenceLearningAutopilotTask 가 실행되고, 미설정/false 시 task 가 skip.
   @IsOptional()
