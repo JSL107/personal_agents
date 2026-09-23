@@ -14,6 +14,7 @@ const found: ScheduleItemRecord = {
   memo: null,
   status: ScheduleStatus.OPEN,
   completedAt: null,
+  isHoliday: false,
 };
 
 const createRepository = (
@@ -23,6 +24,7 @@ const createRepository = (
   findByDateRange: jest.fn(),
   findById: jest.fn().mockResolvedValue(record),
   updateStatus: jest.fn(),
+  markAsHoliday: jest.fn(),
   deleteById: jest.fn().mockResolvedValue(undefined),
 });
 

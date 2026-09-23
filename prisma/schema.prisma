@@ -1105,6 +1105,12 @@ model ScheduleItem {
   status      String
   completedAt DateTime? @map("completed_at")
 
+  // 공휴일 동기화(`holiday-sync` autopilot task)가 넣은 행. 사용자가 직접 등록한 일정과
+  // 갈라야 하는 자리가 셋이다 — 달력이 날짜를 빨갛게 칠할 때, 칩 색을 고를 때, 아침 브리핑이
+  // 「📌 마감」 줄에서 제외할 때(`schedule-briefing.formatter.ts`). 제목 문자열로 알아내면
+  // 사용자가 "추석 선물 보내기" 를 등록한 순간 그것까지 공휴일로 읽힌다.
+  isHoliday Boolean @default(false) @map("is_holiday")
+
   linkVerifiedAt   DateTime? @map("link_verified_at")
   recurrenceHint   String?   @map("recurrence_hint")
   checklist        Json?

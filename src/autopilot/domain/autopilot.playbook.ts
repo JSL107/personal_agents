@@ -11,6 +11,8 @@ import {
   DEFAULT_DAILY_EVAL_TIMEZONE,
   DEFAULT_DOCS_AUDIT_CRON,
   DEFAULT_DOCS_AUDIT_TIMEZONE,
+  DEFAULT_HOLIDAY_SYNC_CRON,
+  DEFAULT_HOLIDAY_SYNC_TIMEZONE,
   DEFAULT_IMPACT_REPORT_CRON,
   DEFAULT_IMPACT_REPORT_TIMEZONE,
   DEFAULT_JOB_FEED_CRON,
@@ -408,6 +410,20 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       kind: 'CRON',
       schedule: DEFAULT_MEMORY_VACUUM_CRON,
       timezone: DEFAULT_MEMORY_VACUUM_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
+  },
+  // Holiday Sync — 주간 한국 공휴일 동기화(공공데이터포털 특일 정보 → schedule_item).
+  // 쓰기 작업이지만 T0_AUTO 다: 넣는 값이 정부 고시 날짜 그대로이고 사람의 판단이 들어갈
+  // 여지가 없으며, 같은 날·같은 이름이면 건너뛰므로 회차를 거듭해도 줄이 늘지 않는다.
+  // API 키가 없으면 조회조차 하지 않고 건너뛴다(로그만) — 그 회차는 실패가 아니다.
+  {
+    id: 'holiday-sync',
+    taskId: 'holiday-sync',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_HOLIDAY_SYNC_CRON,
+      timezone: DEFAULT_HOLIDAY_SYNC_TIMEZONE,
     },
     riskTier: 'T0_AUTO',
   },

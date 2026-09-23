@@ -261,4 +261,47 @@ func runModelsTests(_ t: TestRunner) {
         """.data(using: .utf8)!
         _ = try JSONDecoder().decode(ConsoleEvent.self, from: json)
     }
+
+    // 일정에 `isHoliday` 가 **없는** 응답도 디코딩돼야 한다. 이 필드를 내려주지 않는
+    // 백엔드(앱만 새로 빌드하고 서버는 그대로인 경우)에 붙었을 때, 자동 합성 Codable 이
+    // 키 없음을 오류로 보면 `[ScheduleItem]` 디코딩 전체가 실패해 **달력이 통째로 빈다.**
+    // `canReceiveCommand` 와 같은 처리다 — 구버전 서버에서는 기존 동작을 유지한다.
+    do {
+        let json = """
+        {"id":4,"title":"자동차세 납부","dueDate":"2026-09-30T00:00:00.000Z","linkUrl":null,"memo":null,"status":"OPEN"}
+        """.data(using: .utf8)!
+        let item = try JSONDecoder().decode(ScheduleItem.self, from: json)
+        t.expectEqual(item.title, "자동차세 납부", "제목")
+        t.expectEqual(item.dueDay, "2026-09-30", "dueDay 는 ISO 앞 10자")
+        t.expectEqual(
+            item.isHolidayDay, false,
+            "isHoliday 가 없는 응답은 공휴일 아님으로 읽는다"
+        )
+    } catch {
+        t.fail("isHoliday 없는 일정 디코딩 실패: \(error)")
+    }
+
+    // 필드가 실린 응답은 그대로 읽는다 — 달력의 빨간 날과 브리핑 제외가 이 값에 달려 있다.
+    do {
+        let json = """
+        {"id":6,"title":"추석","dueDate":"2026-09-25T00:00:00.000Z","linkUrl":null,"memo":null,"status":"OPEN","isHoliday":true}
+        """.data(using: .utf8)!
+        let item = try JSONDecoder().decode(ScheduleItem.self, from: json)
+        t.expectEqual(item.isHolidayDay, true, "isHoliday=true 를 그대로 읽는다")
+    } catch {
+        t.fail("공휴일 일정 디코딩 실패: \(error)")
+    }
+
+    // 백엔드는 화면이 안 쓰는 필드(slackUserId·dueTime·completedAt)도 함께 내려준다.
+    // 그것들이 섞여 있어도 디코딩이 깨지지 않아야 한다.
+    do {
+        let json = """
+        {"id":7,"slackUserId":"U1","title":"건강검진","dueDate":"2026-10-02T00:00:00.000Z","dueTime":null,"linkUrl":null,"memo":null,"status":"DONE","completedAt":"2026-10-02T09:00:00.000Z","isHoliday":false}
+        """.data(using: .utf8)!
+        let item = try JSONDecoder().decode(ScheduleItem.self, from: json)
+        t.expectEqual(item.status, .done, "status 디코딩")
+        t.expectEqual(item.isHolidayDay, false, "isHoliday=false")
+    } catch {
+        t.fail("전체 필드 일정 디코딩 실패: \(error)")
+    }
 }

@@ -92,8 +92,32 @@ struct CalendarView: View {
         pinnedToday ?? Self.localTodayKey()
     }
 
-    private static let weekdayLabels = ["월", "화", "수", "목", "금", "토", "일"]
-    private static let weekdayNames = ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"]
+    // 일요일 시작 — 한국에서 쓰는 종이 달력에 맞춘다(`monthGridDays` 의 배치와 같은 순서여야
+    // 한다. 둘이 어긋나면 머리글과 숫자가 한 칸씩 밀린 채로 아무 오류 없이 그려진다).
+    private static let weekdayLabels = ["일", "월", "화", "수", "목", "금", "토"]
+    private static let weekdayNames = ["일요일", "월요일", "화요일", "수요일", "목요일", "금요일", "토요일"]
+    /// 요일 머리글의 색. 숫자와 같은 규칙을 쓰되 한 단 낮춘다 — 머리글은 일곱 칸에 계속
+    /// 떠 있어서 같은 진하기로 두면 정작 빨간 **날짜** 가 묻힌다.
+    private static func weekdayHeaderColor(index: Int) -> Color {
+        // 머리글에는 공휴일 개념이 없다(요일 줄이라 날짜가 없다) — 요일 자리만 넘긴다.
+        switch calendarDayTone(weekdayIndex: index, isHoliday: false) {
+        case .holiday: return CozyPalette.holidayRed.opacity(0.75)
+        case .saturday: return CozyPalette.weekendBlue.opacity(0.75)
+        case .weekday: return Color.secondary
+        }
+    }
+
+    /// 날짜 숫자의 색. 어느 날이 빨간 날인가 하는 **규칙은 `calendarDayTone`(ConsoleCore)**
+    /// 이 쥐고 있고 여기서는 색만 입힌다 — 규칙을 뷰에 두면 단위 테스트가 닿지 않아, 깨진
+    /// 것을 그림을 굽고 사람이 들여다볼 때까지 아무도 모른다.
+    /// 오늘 강조는 이 판정보다 앞서므로(호출부) 여기 들어오지 않는다.
+    private static func dayNumberColor(weekdayIndex: Int, isHoliday: Bool) -> Color {
+        switch calendarDayTone(weekdayIndex: weekdayIndex, isHoliday: isHoliday) {
+        case .holiday: return CozyPalette.holidayRed
+        case .saturday: return CozyPalette.weekendBlue
+        case .weekday: return CozyPalette.ink
+        }
+    }
 
     // MARK: - 조판 상수
 
@@ -392,10 +416,16 @@ struct CalendarView: View {
             ForEach(Array(Self.weekdayLabels.enumerated()), id: \.offset) { index, label in
                 Text(label)
                     .font(Typography.captionEmphasis)
-                    // 주말은 한 단 낮춰 평일과 가른다. 색(빨강·파랑)으로 가르지 않는 건
-                    // 이 앱의 빨강이 이미 "실패" 신호라서다(`agentStatePaletteRGBA(.failed)`) —
-                    // 같은 색이 두 뜻을 가지면 어느 쪽이 위급한지 읽는 쪽이 판단해야 한다.
-                    .foregroundStyle(index >= 5 ? Color.secondary.opacity(0.7) : Color.secondary)
+                    // 일요일 빨강·토요일 파랑 — 종이 달력의 관행이다(2026-09-23 변경).
+                    // 그전에는 주말을 회색 한 단으로만 낮췄는데, 이 앱의 빨강이 이미 "실패"
+                    // 신호라서 뜻이 겹치는 것을 피한 것이었다. 그 우려는 **색이 아니라 자리**
+                    // 로 푼다: 실패 빨강은 상세 패널의 문장(`updateFailure`)과 오피스 탭의
+                    // 경고등(`agentStatePaletteRGBA(.failed)`)에 서고, 공휴일 빨강은 격자 안
+                    // 숫자에만 선다 — 둘은 한 자리에 나란히 놓이지 않는다. 색상값 자체는
+                    // 가까우므로(코랄 레드 0.90/0.30/0.24 대 `holidayRed` 0.78/0.24/0.20)
+                    // 색만으로 갈린다고 기대하면 안 된다.
+                    // 이 주석을 지우면 다음 사람이 옛 규칙만 보고 색을 도로 걷어낸다.
+                    .foregroundStyle(Self.weekdayHeaderColor(index: index))
                     // 칸 안 날짜 숫자가 왼쪽 위에 서므로 요일도 같은 축에 세운다. 가운데
                     // 정렬로 두면 요일과 그 아래 숫자가 칸마다 어긋나 두 줄이 따로 읽힌다.
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -412,7 +442,7 @@ struct CalendarView: View {
                 HStack(spacing: Spacing.xs) {
                     ForEach(Array(week.enumerated()), id: \.offset) { index, day in
                         if let day {
-                            dayCell(day, isWeekend: index >= 5, chipLimit: chipCount(rowHeight: rowHeight))
+                            dayCell(day, weekdayIndex: index, chipLimit: chipCount(rowHeight: rowHeight))
                         } else {
                             // 앞뒤 달 자리. 바탕을 깔지 않아 이 달이 어디서 시작하고
                             // 끝나는지가 면으로 보인다.
@@ -425,16 +455,19 @@ struct CalendarView: View {
         }
     }
 
-    private func dayCell(_ day: Int, isWeekend: Bool, chipLimit: Int) -> some View {
+    private func dayCell(_ day: Int, weekdayIndex: Int, chipLimit: Int) -> some View {
         let key = dayKey(day)
         let items = daySchedules(items: visibleSchedules, dayKey: key)
         let isSelected = selectedDay == day
         let isToday = key == today
+        // 공휴일은 그날 일정 중 하나라도 공휴일 표식을 달고 있으면 성립한다 — 공휴일을 일반
+        // 일정과 같은 목록에 넣기로 했으므로(백엔드 `schedule_item.is_holiday`) 별도 조회가 없다.
+        let isHoliday = items.contains { $0.isHolidayDay }
         return Button {
             selectedDay = day
         } label: {
             VStack(alignment: .leading, spacing: Spacing.tight) {
-                dayNumber(day, isToday: isToday, isWeekend: isWeekend)
+                dayNumber(day, isToday: isToday, weekdayIndex: weekdayIndex, isHoliday: isHoliday)
                 // 점 하나로는 "뭔가 있다" 까지만 전해진다. 제목을 칸 안에 세우면 달력을
                 // 훑는 것만으로 이 달에 무엇이 걸려 있는지 읽힌다 — 상세를 열어야만
                 // 알 수 있던 것을 격자로 끌어올린 자리다.
@@ -464,7 +497,11 @@ struct CalendarView: View {
             }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(month)월 \(day)일, 일정 \(items.count)건")
+        .accessibilityLabel(
+            isHoliday
+                ? "\(month)월 \(day)일, 공휴일, 일정 \(items.count)건"
+                : "\(month)월 \(day)일, 일정 \(items.count)건"
+        )
         // 누른 칸의 날짜로 폼을 연다 — 달력을 보다 "이 날" 이 떠오른 사람에게 날짜를 다시
         // 고르게 하지 않는다. 고른 날 표시도 같이 옮겨 폼을 닫았을 때 상세가 그 날을 본다.
         .contextMenu {
@@ -478,13 +515,18 @@ struct CalendarView: View {
     /// 날짜 숫자. 오늘만 살구색 알약 안에 넣는다 — **선택 표시와 겹쳐도 갈려야** 하므로
     /// 선택은 칸 전체(바탕+테두리), 오늘은 숫자 하나로 신호를 나눠 가진다. 둘을 같은 방식으로
     /// 칠하면 오늘을 고른 순간 "오늘이라서 칠해진 것" 과 "내가 골라서 칠해진 것" 이 섞인다.
-    private func dayNumber(_ day: Int, isToday: Bool, isWeekend: Bool) -> some View {
+    private func dayNumber(
+        _ day: Int,
+        isToday: Bool,
+        weekdayIndex: Int,
+        isHoliday: Bool
+    ) -> some View {
         Text("\(day)")
             .font(isToday ? Typography.bodyEmphasis : Typography.body)
             .foregroundStyle(
                 isToday
                     ? primaryActionForeground
-                    : (isWeekend ? Color.secondary : CozyPalette.ink)
+                    : Self.dayNumberColor(weekdayIndex: weekdayIndex, isHoliday: isHoliday)
             )
             .frame(width: 24, height: 21)
             .background(isToday ? CozyPalette.apricot : Color.clear, in: Capsule())
@@ -495,6 +537,10 @@ struct CalendarView: View {
     /// 달력만 보고는 되짚을 수 없다.
     private func scheduleChip(_ item: ScheduleItem) -> some View {
         let isClosed = item.status != .open
+        // 공휴일 칩은 **바탕만** 빨강으로 세운다. 글자까지 빨강으로 칠했더니 다크 모드에서
+        // 붉은 바탕 위 붉은 글자가 되어 대비가 무너졌다(실측 렌더). 종이 달력도 날짜만
+        // 빨갛고 글자는 검정이다 — 구별은 바탕이 맡고 가독은 글자가 맡는다.
+        let isHoliday = item.isHolidayDay
         return Text(item.title)
             .font(Typography.captionSmall)
             .lineLimit(1)
@@ -505,11 +551,25 @@ struct CalendarView: View {
             .padding(.vertical, 1)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                // 고른 칸의 바탕도 살구색이라, 칩이 그 위에서 도드라지려면 더 진해야 한다
-                // (0.30 은 선택 칸 안에서 배경과 거의 같은 색으로 읽혔다 — 실측 렌더).
-                isClosed ? CozyPalette.outline.opacity(0.14) : CozyPalette.apricot.opacity(0.42),
+                chipBackground(isClosed: isClosed, isHoliday: isHoliday),
                 in: RoundedRectangle(cornerRadius: Radius.badge, style: .continuous)
             )
+    }
+
+    /// 칩 바탕. 고른 칸의 바탕도 살구색이라, 칩이 그 위에서 도드라지려면 더 진해야 한다
+    /// (0.30 은 선택 칸 안에서 배경과 거의 같은 색으로 읽혔다 — 실측 렌더).
+    ///
+    /// 치운 항목의 회색이 공휴일 빨강보다 우선한다 — 완료를 눌렀으면 그 사실이 먼저 보여야
+    /// 하고, 빨간 바탕에 취소선만 그으면 처리한 것인지 쉬는 날인지가 한눈에 갈리지 않는다.
+    private func chipBackground(isClosed: Bool, isHoliday: Bool) -> Color {
+        if isClosed {
+            return CozyPalette.outline.opacity(0.14)
+        }
+        if isHoliday {
+            // 0.20 은 살구색(0.42)과 비슷한 무게로 읽혀 두 칩이 한눈에 갈리지 않았다 — 실측 렌더.
+            return CozyPalette.holidayRed.opacity(0.28)
+        }
+        return CozyPalette.apricot.opacity(0.42)
     }
 
     // MARK: - 상세

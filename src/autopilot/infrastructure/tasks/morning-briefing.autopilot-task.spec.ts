@@ -344,6 +344,7 @@ describe('MorningBriefingAutopilotTask', () => {
       memo: null,
       status: ScheduleStatus.OPEN,
       completedAt: null,
+      isHoliday: false,
     };
 
     // 정상 경로. summaryText 를 만드는 두 지점 중 하나다.

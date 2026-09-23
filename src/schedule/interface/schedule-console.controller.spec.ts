@@ -22,6 +22,7 @@ describe('ScheduleConsoleController', () => {
     memo: null,
     status: ScheduleStatus.OPEN,
     completedAt: null,
+    isHoliday: false,
   };
 
   const buildController = (ownerConfigValue: string | undefined) => {

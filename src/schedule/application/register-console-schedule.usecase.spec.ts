@@ -16,6 +16,7 @@ describe('RegisterConsoleScheduleUsecase', () => {
     memo: null,
     status: ScheduleStatus.OPEN,
     completedAt: null,
+    isHoliday: false,
   };
   const input = {
     slackUserId: 'U123',
