@@ -262,3 +262,122 @@ describe('PreviewActionPrismaRepository.findById — 폐지된 kind', () => {
     ).rejects.toThrow('알 수 없는 PreviewAction kind: NOT_A_REGISTERED_KIND');
   });
 });
+
+describe('PreviewActionPrismaRepository.beginApply', () => {
+  const at = new Date('2026-09-23T10:00:00.000Z');
+
+  const build = ({
+    stored,
+    updated = 1,
+  }: {
+    stored: unknown;
+    updated?: number;
+  }): {
+    repository: PreviewActionPrismaRepository;
+    updateMany: jest.Mock;
+  } => {
+    const findUnique = jest.fn().mockResolvedValue({ applyProgress: stored });
+    const updateMany = jest.fn().mockResolvedValue({ count: updated });
+    const prismaMock = {
+      previewAction: { findUnique, updateMany },
+    } as unknown as PrismaService;
+    return {
+      repository: new PreviewActionPrismaRepository(prismaMock),
+      updateMany,
+    };
+  };
+
+  // 이 케이스가 이 describe 의 이유다. CAS 만으로는 못 막는다 — 뒤에 온 쪽이 앞선 쪽이 방금
+  // 쓴 값을 읽어 같은 값을 조건에 걸면 통과하므로, 아직 돌고 있는 반영을 탈취해 둘 다 applier
+  // 를 실행한다. 활성 소유자를 코드에서 먼저 걸러야 한다.
+  it('아직 끝나지 않은 남의 반영이 있으면 아무것도 쓰지 않고 null 을 돌려준다', async () => {
+    const { repository, updateMany } = build({
+      stored: {
+        pid: 111,
+        startedAt: '2026-09-23T09:50:00.000Z',
+        attempts: 1,
+        done: [],
+      },
+    });
+
+    const result = await repository.beginApply({ id: 'p-1', pid: 222, at });
+
+    expect(result).toBeNull();
+    expect(updateMany).not.toHaveBeenCalled();
+  });
+
+  it('죽은 것을 확인한 pid 를 명시하면 그 반영을 이어받는다 — done 은 물려받고 시도만 올린다', async () => {
+    const { repository, updateMany } = build({
+      stored: {
+        pid: 111,
+        startedAt: '2026-09-23T09:50:00.000Z',
+        attempts: 1,
+        done: ['0:owner/repo#1'],
+      },
+    });
+
+    const result = await repository.beginApply({
+      id: 'p-1',
+      pid: 222,
+      at,
+      takeOverPid: 111,
+    });
+
+    expect(result).toEqual({
+      pid: 222,
+      startedAt: at.toISOString(),
+      attempts: 2,
+      done: ['0:owner/repo#1'],
+    });
+    // 읽은 그 시도 위에만 쓴다.
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: 'p-1',
+          applyProgress: {
+            path: ['startedAt'],
+            equals: '2026-09-23T09:50:00.000Z',
+          },
+        },
+      }),
+    );
+  });
+
+  it('끝났다고 표시된 흔적 위에는 그냥 획득한다 — 실패한 시도를 다시 누르는 경로다', async () => {
+    const { repository } = build({
+      stored: {
+        pid: 111,
+        startedAt: '2026-09-23T09:50:00.000Z',
+        attempts: 1,
+        done: ['0:owner/repo#1'],
+        endedAt: '2026-09-23T09:55:00.000Z',
+      },
+    });
+
+    const result = await repository.beginApply({ id: 'p-1', pid: 222, at });
+
+    expect(result?.attempts).toBe(2);
+    expect(result?.done).toEqual(['0:owner/repo#1']);
+    // 새 시도이므로 "끝났다" 표시는 따라오지 않는다.
+    expect(result?.endedAt).toBeUndefined();
+  });
+
+  it('흔적이 없으면 없음을 조건으로 쓴다 — 동시에 읽은 둘 중 하나만 통과한다', async () => {
+    const { repository, updateMany } = build({ stored: null });
+
+    const result = await repository.beginApply({ id: 'p-1', pid: 222, at });
+
+    expect(result?.attempts).toBe(1);
+    const [[call]] = updateMany.mock.calls;
+    expect(call.where.id).toBe('p-1');
+    expect(call.where.applyProgress).toHaveProperty('equals');
+  });
+
+  it('갱신 행이 0 이면 null — 읽은 뒤 쓰기 전에 다른 쪽이 먼저 잡았다', async () => {
+    const { repository } = build({ stored: null, updated: 0 });
+
+    const result = await repository.beginApply({ id: 'p-1', pid: 222, at });
+
+    expect(result).toBeNull();
+  });
+});

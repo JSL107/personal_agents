@@ -220,28 +220,46 @@ export class PreviewActionPrismaRepository implements PreviewActionRepositoryPor
     });
   }
 
-  // 소유권을 **조건부로** 획득한다. 읽은 값이 그대로일 때만 쓰고, 아니면 아무것도 쓰지 않고
-  // null 을 돌려준다(= 그 사이 다른 쪽이 잡았다).
+  // 소유권을 획득한다. 잡지 못하면 아무것도 쓰지 않고 null 을 돌려준다.
   //
-  // 조건 없는 `update` 로 두면 두 백엔드가 같은 죽은 흔적을 동시에 스윕할 때 **둘 다 성공하고
-  // 각자 applier 를 돌린다.** `applying` 락은 프로세스 로컬이고 로컬 DB 는 worktree 백엔드와
-  // 공유되므로, 재개 경로가 스스로 같은 비멱등 반영을 두 번 실행하게 된다.
+  // 막아야 하는 것이 둘이고 수단도 둘이다.
   //
-  // 비교 키는 `attempts` 다 — 시도마다 반드시 증가하므로 jsonb 전체를 비교하지 않아도 된다.
+  // **① 활성 소유자 배제(가드).** 끝나지 않은 흔적(`endedAt` 없음)이 있으면 그 반영은 지금
+  // 누군가 돌리고 있다는 뜻이므로 잡지 않는다. 이 가드가 없으면 CAS 만으로는 못 막는다 —
+  // B 가 A 의 `updateMany` **직후** 읽으면 A 가 방금 쓴 값을 `previous` 로 들고 같은 값을
+  // 조건에 걸어 통과하므로, 아직 돌고 있는 A 의 반영을 탈취해 둘 다 applier 를 실행한다.
+  // CAS 는 동시에 읽은 경우만 가르는 도구이지 상호 배제가 아니다.
+  //
+  // 예외는 `takeOverPid` 다. 부팅 훅이 그 프로세스의 죽음을 확인한 경우에만 명시해서 넘기고,
+  // 그때만 활성으로 보이는 흔적을 이어받는다(죽은 프로세스는 스스로 `endedAt` 을 못 남긴다).
+  //
+  // **② read-modify-write 레이스(CAS).** 둘이 같은 상태를 동시에 읽으면 가드는 둘 다
+  // 통과시키므로, 쓰기 조건으로 한쪽만 남긴다. 비교 키는 `startedAt` — 시도마다 새로 찍혀
+  // 그 시도를 유일하게 특정한다.
   async beginApply({
     id,
     pid,
     at,
+    takeOverPid,
   }: {
     id: string;
     pid: number;
     at: Date;
+    takeOverPid?: number;
   }): Promise<ApplyProgressState | null> {
     const row = await this.prisma.previewAction.findUnique({
       where: { id },
       select: { applyProgress: true },
     });
     const previous = row === null ? null : toApplyProgress(row.applyProgress);
+    // ① 아직 끝나지 않은 남의 반영은 건드리지 않는다.
+    if (
+      previous !== null &&
+      previous.endedAt === undefined &&
+      previous.pid !== takeOverPid
+    ) {
+      return null;
+    }
     // `done` 은 물려받고 `attempts` 만 올린다 — 물려받지 않으면 재개가 처음부터 다시 돌아
     // 이어붙이는 의미가 없고, 세지 않으면 크래시를 일으키는 반영이 부팅마다 되살아난다.
     // `endedAt` 은 싣지 않는다. 새 시도가 시작됐으므로 "끝났다" 표시는 지워져야 한다.
@@ -251,13 +269,14 @@ export class PreviewActionPrismaRepository implements PreviewActionRepositoryPor
       attempts: (previous?.attempts ?? 0) + 1,
       done: previous?.done ?? [],
     };
+    // ② 읽은 그 시도 위에만 쓴다.
     const { count } = await this.prisma.previewAction.updateMany({
       where: {
         id,
         applyProgress:
           previous === null
             ? { equals: Prisma.DbNull }
-            : { path: ['attempts'], equals: previous.attempts },
+            : { path: ['startedAt'], equals: previous.startedAt },
       },
       data: { applyProgress: next as unknown as Prisma.InputJsonValue },
     });

@@ -148,9 +148,13 @@ describe('ResumeInterruptedAppliesUsecase', () => {
     await usecase.sweep(fixedNow);
     await flush();
 
+    // 죽은 pid 를 명시해야 이어받을 수 있다. 중단된 흔적에는 "끝났다" 표시가 없어(죽은
+    // 프로세스는 그것을 남기지 못한다) 소유권 획득이 기본적으로 거절되기 때문이다 —
+    // 이 값을 빠뜨리면 재개가 매번 `ALREADY_APPLYING` 으로 튕긴다.
     expect(applyPreview.execute).toHaveBeenCalledWith({
       previewId: 'p-1',
       slackUserId: 'U1',
+      takeOverPid: DEAD_PID,
     });
   });
 

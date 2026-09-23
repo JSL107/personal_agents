@@ -241,6 +241,12 @@ export class ResumeInterruptedAppliesUsecase implements OnApplicationBootstrap {
         await this.applyPreview.execute({
           previewId: preview.id,
           slackUserId: preview.slackUserId,
+          // 이 흔적은 아직 "끝났다" 표시가 없어 소유권 획득이 기본적으로 거절된다 — 죽은
+          // 프로세스는 스스로 그 표시를 남기지 못하기 때문이다. `decide` 가 그 pid 의 죽음을
+          // 이미 확인했으므로(`isProcessAlive`) 여기서만 명시해 이어받는다.
+          ...(preview.applyProgress === null
+            ? {}
+            : { takeOverPid: preview.applyProgress.pid }),
         });
         this.logger.log(`중단된 반영 재개 성공 preview=${preview.id}`);
       } catch (error: unknown) {

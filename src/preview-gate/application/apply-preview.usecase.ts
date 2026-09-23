@@ -135,10 +135,14 @@ export class ApplyPreviewUsecase {
     previewId,
     slackUserId,
     now = new Date(),
+    takeOverPid,
   }: {
     previewId: string;
     slackUserId: string;
     now?: Date;
+    // 중단된 반영을 이어받을 때, **죽은 것을 확인한** 그 프로세스의 pid.
+    // 부팅 훅만 넘긴다 — 사용자 클릭 경로는 남의 활성 반영을 가로채면 안 된다.
+    takeOverPid?: number;
   }): Promise<{ preview: PreviewAction; resultText: string }> {
     this.assertNotApplying(previewId);
     // 락은 검증(assertReadyToResolve) 전에 동기적으로 잡는다. async 검증 뒤에 add 하면 첫 클릭이
@@ -159,10 +163,12 @@ export class ApplyPreviewUsecase {
         id: preview.id,
         pid: process.pid,
         at: now,
+        ...(takeOverPid === undefined ? {} : { takeOverPid }),
       });
-      // 획득 실패 — 읽은 뒤 쓰기 전에 다른 쪽이 이 카드를 잡았다. 그냥 진행하면 같은 반영이
-      // 두 프로세스에서 동시에 돈다(`applying` 락은 프로세스 로컬이고 로컬 DB 는 worktree
-      // 백엔드와 공유된다). 중복 클릭과 같은 문장으로 거절해 화면이 경로마다 다른 말을 하지 않게 한다.
+      // 획득 실패 — 아직 끝나지 않은 남의 반영이 있거나, 읽은 뒤 쓰기 전에 다른 쪽이 이 카드를
+      // 잡았다. 그냥 진행하면 같은 반영이 두 프로세스에서 동시에 돈다(`applying` 락은 프로세스
+      // 로컬이고 로컬 DB 는 worktree 백엔드와 공유된다).
+      // 중복 클릭과 같은 문장으로 거절해 화면이 경로마다 다른 말을 하지 않게 한다.
       if (progressState === null) {
         throw new PreviewActionException({
           code: PreviewActionErrorCode.ALREADY_APPLYING,
