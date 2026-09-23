@@ -74,6 +74,25 @@ describe('KoreanHolidayApiClient', () => {
     expect(new URL(requested).searchParams.get('serviceKey')).toBe(DECODED_KEY);
   });
 
+  // 포털은 같은 키를 「인코딩」·「디코딩」 두 벌로 준다. 인코딩 키를 그대로 넘기면
+  // `URLSearchParams` 가 한 번 더 인코딩해 `%2B` 가 `%252B` 가 되고, 서버는
+  // SERVICE_KEY_IS_NOT_REGISTERED_ERROR 로 답한다 — 멀쩡한 키를 의심하게 만드는 증상이라
+  // 2026-09-23 실제로 그 함정에 빠졌다. 어느 쪽을 넣어도 같은 값이 실려야 한다.
+  it('인코딩 키를 넣어도 디코딩 키와 같은 값이 실린다', async () => {
+    let requested = '';
+    global.fetch = jest.fn((input: URL | RequestInfo): Promise<Response> => {
+      requested = String(input);
+      return Promise.resolve(
+        jsonResponse({ response: { body: { items: '' } } }),
+      );
+    }) as unknown as typeof fetch;
+
+    // `ab+cd/ef==` 의 인코딩 형태.
+    await buildClient('ab%2Bcd%2Fef%3D%3D').client.fetchMonth(2026, 1);
+
+    expect(new URL(requested).searchParams.get('serviceKey')).toBe(DECODED_KEY);
+  });
+
   it('키가 없는데 호출하면 던진다 — 빈 배열로 돌려주면 "공휴일 없는 해" 로 보인다', async () => {
     await expect(
       buildClient(undefined).client.fetchMonth(2026, 1),
