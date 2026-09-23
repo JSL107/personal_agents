@@ -67,12 +67,24 @@ export class KoreanHolidayApiClient implements KoreanHolidayClientPort {
     // 볼 수 없다. `_type=json` 을 주면 오류도 JSON 으로 오지만(위 실측), 트래픽 초과 회차에
     // XML 이 돌아온다는 보고가 있어 그 경우에도 본문이 단서로 남게 둔다.
     const text = await response.text();
+    let payload: unknown;
     try {
-      return parseHolidayResponse(JSON.parse(text) as unknown);
+      payload = JSON.parse(text) as unknown;
     } catch (error: unknown) {
       throw new Error(
         `특일 정보 응답을 JSON 으로 읽지 못했습니다 (${label}): ` +
           `${String(error)} — 본문: ${text.slice(0, ERROR_BODY_PREVIEW_LENGTH)}`,
+      );
+    }
+    // 해석 실패를 위 JSON 실패와 **같은 메시지로 뭉개지 않는다** — "JSON 이 아니다" 와
+    // "JSON 은 맞는데 형태가 다르다" 는 고칠 곳이 다르다(전자는 인증·트래픽, 후자는 파서).
+    try {
+      return parseHolidayResponse(payload);
+    } catch (error: unknown) {
+      throw new Error(
+        `특일 정보 응답을 해석하지 못했습니다 (${label}): ` +
+          `${error instanceof Error ? error.message : String(error)}` +
+          ` — 본문: ${text.slice(0, ERROR_BODY_PREVIEW_LENGTH)}`,
       );
     }
   }

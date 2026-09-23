@@ -35,6 +35,7 @@ describe('HolidaySyncAutopilotTask', () => {
     const { task, inputs } = build({
       created: 0,
       alreadyPresent: 0,
+      promoted: 0,
       years: [2026, 2027],
       skippedReason: null,
     });
@@ -49,6 +50,7 @@ describe('HolidaySyncAutopilotTask', () => {
     const { task, inputs } = build({
       created: 0,
       alreadyPresent: 0,
+      promoted: 0,
       years: [],
       skippedReason: null,
     });
@@ -62,6 +64,7 @@ describe('HolidaySyncAutopilotTask', () => {
     const { task } = build({
       created: 3,
       alreadyPresent: 30,
+      promoted: 0,
       years: [2026, 2027],
       skippedReason: null,
     });
@@ -77,6 +80,7 @@ describe('HolidaySyncAutopilotTask', () => {
     const { task } = build({
       created: 0,
       alreadyPresent: 33,
+      promoted: 0,
       years: [2026, 2027],
       skippedReason: null,
     });
@@ -84,11 +88,29 @@ describe('HolidaySyncAutopilotTask', () => {
     expect((await task.run(CONTEXT)).skip).toBe(true);
   });
 
+  // 승격만 일어난 회차도 알린다. 남의 줄(사용자가 손으로 넣은 일정)을 고친 것이라
+  // 조용히 지나가면 무엇이 바뀌었는지 알 길이 없다.
+  it('승격만 있어도 알리고 건수를 따로 밝힌다', async () => {
+    const { task } = build({
+      created: 0,
+      alreadyPresent: 30,
+      promoted: 2,
+      years: [2026, 2027],
+      skippedReason: null,
+    });
+
+    const result = await task.run(CONTEXT);
+
+    expect(result.skip).toBe(false);
+    expect(result.summaryText).toContain('2건 승격');
+  });
+
   // 키를 아직 안 붙인 것은 고장이 아니다 — 매주 같은 실패 알람을 내지 않는다.
   it('API 키가 없으면 알림 없이 건너뛴다', async () => {
     const { task } = build({
       created: 0,
       alreadyPresent: 0,
+      promoted: 0,
       years: [],
       skippedReason: 'KOREAN_HOLIDAY_API_KEY 가 설정되지 않았습니다.',
     });

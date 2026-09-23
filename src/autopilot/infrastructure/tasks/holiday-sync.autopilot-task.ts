@@ -41,13 +41,18 @@ export class HolidaySyncAutopilotTask implements AutopilotTask {
       this.logger.warn(`공휴일 동기화를 건너뜁니다: ${result.skippedReason}`);
       return { skip: true };
     }
-    if (result.created === 0) {
+    const changed = result.created + result.promoted;
+    if (changed === 0) {
       // 두 번째 회차부터는 이것이 정상이다. 「신규 0건」 을 매주 보낼 이유가 없다.
       return { skip: true };
     }
+    // 승격(사용자가 손으로 넣어 둔 줄을 공휴일로 바꾼 것)은 남의 줄을 고친 것이라 건수를
+    // 따로 밝힌다 — 뭉뚱그리면 새로 넣은 것과 구분되지 않는다.
+    const promotedNote =
+      result.promoted > 0 ? ` (기존 일정 ${result.promoted}건 승격 포함)` : '';
     return {
       skip: false,
-      summaryText: `🗓️ 공휴일 ${result.created}건을 달력에 넣었습니다 (${years.join('·')}년).`,
+      summaryText: `🗓️ 공휴일 ${changed}건을 달력에 반영했습니다 (${years.join('·')}년)${promotedNote}.`,
     };
   }
 }

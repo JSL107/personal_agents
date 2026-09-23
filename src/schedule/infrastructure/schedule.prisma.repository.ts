@@ -102,6 +102,16 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
     return toRecord(updated);
   }
 
+  async markAsHoliday(id: number): Promise<ScheduleItemRecord> {
+    // `status` 와 `completedAt` 은 건드리지 않는다 — 사용자가 이미 완료를 눌러 둔 줄이면
+    // 그 기록이 승격으로 지워지면 안 된다.
+    const updated = await this.prisma.scheduleItem.update({
+      where: { id },
+      data: { isHoliday: true },
+    });
+    return toRecord(updated);
+  }
+
   async deleteById(id: number): Promise<void> {
     await this.prisma.scheduleItem.delete({ where: { id } });
   }

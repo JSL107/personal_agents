@@ -104,10 +104,55 @@ describe('parseHolidayResponse', () => {
     ).toEqual([]);
   });
 
-  it('응답 껍데기가 어긋나면 빈 배열 — 던지지 않는다', () => {
-    expect(parseHolidayResponse(null)).toEqual([]);
-    expect(parseHolidayResponse({})).toEqual([]);
-    expect(parseHolidayResponse({ response: {} })).toEqual([]);
-    expect(parseHolidayResponse('<OpenAPI_ServiceResponse>')).toEqual([]);
+  it('공휴일이 없는 달의 빈 객체 items 도 빈 배열로 읽는다', () => {
+    expect(parseHolidayResponse(envelope({}))).toEqual([]);
+  });
+
+  // ⚠️ 이 묶음이 이 파서의 핵심 계약이다. 어긋난 응답을 빈 배열로 돌려주면 그것이 "그 달에
+  // 공휴일이 없다"(2월·6월 등 실제로 흔하다)와 같은 값이 되어, 스키마가 바뀌거나 오류 본문이
+  // 와도 정상적인 0건으로 확정된다. 그러면 그 해가 통째로 비어도 작업은 성공으로 끝나
+  // 재시도도 알림도 일어나지 않는다.
+  describe('어긋난 응답은 빈 배열이 아니라 예외', () => {
+    it('객체가 아니면 던진다', () => {
+      expect(() => parseHolidayResponse(null)).toThrow();
+      expect(() => parseHolidayResponse('<OpenAPI_ServiceResponse>')).toThrow();
+    });
+
+    // 키가 틀리면 `response` 대신 이 껍데기가 온다(2026-09-23 실측).
+    it('response 가 없으면 최상위 키를 담아 던진다', () => {
+      expect(() =>
+        parseHolidayResponse({
+          OpenAPI_ServiceResponse: {
+            cmmMsgHeader: { errMsg: 'SERVICE_KEY_IS_NOT_REGISTERED_ERROR' },
+          },
+        }),
+      ).toThrow('OpenAPI_ServiceResponse');
+    });
+
+    it('body 가 없으면 던진다', () => {
+      expect(() => parseHolidayResponse({ response: {} })).toThrow('body');
+    });
+
+    // 200 이어도 결과 코드가 정상이 아니면 조회 실패다.
+    it('resultCode 가 00 이 아니면 코드와 메시지를 담아 던진다', () => {
+      expect(() =>
+        parseHolidayResponse({
+          response: {
+            header: {
+              resultCode: '22',
+              resultMsg: 'LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS_ERROR',
+            },
+            body: { items: '' },
+          },
+        }),
+      ).toThrow('resultCode=22');
+    });
+
+    it('items 가 모르는 형태면 던진다 — 0건과 구분되지 않는다', () => {
+      expect(() => parseHolidayResponse(envelope(42))).toThrow('items');
+      expect(() => parseHolidayResponse(envelope({ item: 'oops' }))).toThrow(
+        'items.item',
+      );
+    });
   });
 });

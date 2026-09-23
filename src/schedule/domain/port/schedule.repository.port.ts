@@ -32,6 +32,10 @@ export interface ScheduleRepositoryPort {
   findByDateRange(input: FindByDateRangeInput): Promise<ScheduleItemRecord[]>;
   findById(id: number): Promise<ScheduleItemRecord | null>;
   updateStatus(input: UpdateStatusInput): Promise<ScheduleItemRecord>;
+  // 이미 있는 줄을 공휴일로 승격한다. 사용자가 손으로 넣어 둔 같은 날·같은 이름의 일정을
+  // 그냥 건너뛰면 그 날은 빨갛게 서지도, 아침 브리핑에서 빠지지도 않아 **그 날만 기능이
+  // 통째로 안 먹는다.** 새 줄을 만들지 않는 것은 달력에 같은 이름이 두 줄로 서기 때문이다.
+  markAsHoliday(id: number): Promise<ScheduleItemRecord>;
   deleteById(id: number): Promise<void>;
 }
 

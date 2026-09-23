@@ -29,6 +29,7 @@ const createRepository = (
       updates.push(input);
       return Promise.resolve({ ...baseRecord, status: ScheduleStatus.DONE });
     }),
+    markAsHoliday: jest.fn(),
     deleteById: jest.fn(),
   };
   return { repository, updates };

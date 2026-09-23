@@ -24,6 +24,7 @@ const createRepository = (
   findByDateRange: jest.fn(),
   findById: jest.fn().mockResolvedValue(record),
   updateStatus: jest.fn(),
+  markAsHoliday: jest.fn(),
   deleteById: jest.fn().mockResolvedValue(undefined),
 });
 

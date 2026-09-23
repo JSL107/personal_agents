@@ -1,4 +1,5 @@
 import { ListSchedulesUsecase } from '../../schedule/application/list-schedules.usecase';
+import { MarkScheduleAsHolidayUsecase } from '../../schedule/application/mark-schedule-as-holiday.usecase';
 import { RegisterScheduleUsecase } from '../../schedule/application/register-schedule.usecase';
 import {
   ScheduleItemRecord,
@@ -17,8 +18,13 @@ const holiday = (
   year = 2026,
 ): KoreanHoliday => ({ name, date: { year, month, day } });
 
-const record = (title: string, isoDate: string): ScheduleItemRecord => ({
-  id: 1,
+const record = (
+  title: string,
+  isoDate: string,
+  isHoliday = true,
+  id = 1,
+): ScheduleItemRecord => ({
+  id,
   slackUserId: OWNER,
   title,
   dueDate: new Date(isoDate),
@@ -27,7 +33,7 @@ const record = (title: string, isoDate: string): ScheduleItemRecord => ({
   memo: null,
   status: ScheduleStatus.OPEN,
   completedAt: null,
-  isHoliday: true,
+  isHoliday,
 });
 
 // 달(1~12)별 응답을 미리 정해 두는 가짜 클라이언트. 12번 호출되는 것 자체가 계약이라
@@ -50,8 +56,10 @@ const build = (
 ): {
   usecase: SyncKoreanHolidaysUsecase;
   saved: Array<{ title: string; isHoliday?: boolean }>;
+  promotedIds: number[];
 } => {
   const saved: Array<{ title: string; isHoliday?: boolean }> = [];
+  const promotedIds: number[] = [];
   const list = {
     execute: (): Promise<ScheduleItemRecord[]> => Promise.resolve(existing),
   } as unknown as ListSchedulesUsecase;
@@ -64,9 +72,21 @@ const build = (
       return Promise.resolve(record(input.title, '2026-01-01T00:00:00.000Z'));
     },
   } as unknown as RegisterScheduleUsecase;
+  const markAsHoliday = {
+    execute: (id: number): Promise<ScheduleItemRecord> => {
+      promotedIds.push(id);
+      return Promise.resolve(record('승격됨', '2026-01-01T00:00:00.000Z'));
+    },
+  } as unknown as MarkScheduleAsHolidayUsecase;
   return {
-    usecase: new SyncKoreanHolidaysUsecase(client, list, register),
+    usecase: new SyncKoreanHolidaysUsecase(
+      client,
+      list,
+      register,
+      markAsHoliday,
+    ),
     saved,
+    promotedIds,
   };
 };
 
@@ -94,16 +114,47 @@ describe('SyncKoreanHolidaysUsecase', () => {
   });
 
   // 매주 도는 작업이라 멱등하지 않으면 같은 공휴일이 주마다 한 줄씩 쌓인다.
-  it('이미 같은 날·같은 제목이 있으면 넣지 않는다', async () => {
+  it('이미 공휴일로 들어간 줄이 있으면 아무것도 하지 않는다', async () => {
     const client = stubClient({ 9: [holiday('추석', 9, 25)] });
-    const { usecase, saved } = build(client, [
+    const { usecase, saved, promotedIds } = build(client, [
       record('추석', '2026-09-25T00:00:00.000Z'),
     ]);
 
     const result = await usecase.execute({ slackUserId: OWNER, years: [2026] });
 
     expect(saved).toEqual([]);
+    expect(promotedIds).toEqual([]);
     expect(result.created).toBe(0);
+    expect(result.alreadyPresent).toBe(1);
+  });
+
+  // 건너뛰기만 하면 그 줄은 `isHoliday=false` 로 남아 달력에서 빨갛게 서지도, 아침
+  // 브리핑에서 빠지지도 않는다 — 그 날만 이 기능이 통째로 안 먹는다.
+  it('사용자가 손으로 넣어 둔 같은 날·같은 이름의 일정은 공휴일로 승격한다', async () => {
+    const client = stubClient({ 9: [holiday('추석', 9, 25)] });
+    const { usecase, saved, promotedIds } = build(client, [
+      record('추석', '2026-09-25T00:00:00.000Z', false, 77),
+    ]);
+
+    const result = await usecase.execute({ slackUserId: OWNER, years: [2026] });
+
+    // 새 줄을 만들지 않는다 — 달력에 같은 이름이 두 줄로 서면 안 된다.
+    expect(saved).toEqual([]);
+    expect(promotedIds).toEqual([77]);
+    expect(result.promoted).toBe(1);
+    expect(result.created).toBe(0);
+  });
+
+  it('같은 날 같은 제목이 두 줄이면 이미 공휴일인 쪽을 남기고 승격하지 않는다', async () => {
+    const client = stubClient({ 9: [holiday('추석', 9, 25)] });
+    const { usecase, promotedIds } = build(client, [
+      record('추석', '2026-09-25T00:00:00.000Z', false, 10),
+      record('추석', '2026-09-25T00:00:00.000Z', true, 11),
+    ]);
+
+    const result = await usecase.execute({ slackUserId: OWNER, years: [2026] });
+
+    expect(promotedIds).toEqual([]);
     expect(result.alreadyPresent).toBe(1);
   });
 
