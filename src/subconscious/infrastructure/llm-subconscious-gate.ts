@@ -28,6 +28,21 @@ const SYSTEM_PROMPT = [
   '출력은 JSON 배열만: [{changeKey, promote, reason, suggestedAgentType?, proposalText?}]',
 ].join('\n');
 
+/**
+ * 판정이 온전하지 않은 회차에만 `output.undecided` 로 남기는 사유.
+ *
+ * **문구가 아니라 코드로 남긴다.** 로그 문구는 생산자가 언제든 다듬고, 그 순간 문구
+ * 패턴으로 세던 집계가 조용히 어긋난다 — `agent-run.service.ts` 가 `output.error` 옆에
+ * `errorCode` 를 따로 둔 것과 같은 이유다.
+ */
+type UndecidedReason = 'UNREADABLE_RESPONSE' | 'PARTIAL_DECISIONS';
+
+interface GateUndecided {
+  /** 판정이 나오지 않은 변화 수 = 입력 수 - 판정 수. */
+  readonly count: number;
+  readonly reason: UndecidedReason;
+}
+
 @Injectable()
 export class LlmSubconsciousGate implements SubconsciousGate {
   private readonly logger = new Logger(LlmSubconsciousGate.name);
@@ -79,18 +94,33 @@ export class LlmSubconsciousGate implements SubconsciousGate {
           //
           // 조건을 길이로 잡으면 세 경우가 한 번에 걸린다 — 응답을 못 읽음(`null`),
           // 모델이 빈 배열을 반환, `validKeys` 밖 key 라 전량·일부가 걸러짐. 셋 다 "판정이
-          // 온전하지 않다" 는 같은 사실이고, 원인만 문구로 가른다. `changes.length > 0` 은
-          // 이 메서드 진입부에서 보장된다.
+          // 온전하지 않다" 는 같은 사실이다. `changes.length > 0` 은 이 메서드 진입부에서
+          // 보장된다.
+          //
+          // `reason` 은 셋을 **둘로** 가른다. 첫째만 `UNREADABLE_RESPONSE` 이고 뒤 둘은
+          // `PARTIAL_DECISIONS` 로 합친다 — 그 둘을 가르려면 파서가 버린 entry 수까지
+          // 돌려줘야 하는데, 실측 569 정상 회차에 부분 판정이 0 건이라 아직 가를 대상이
+          // 없다. 실제로 관측되면 그때 `parseGateResponse` 의 반환을 넓힌다.
           //
           // 모델을 함께 적는다: 2026-09-17~19 유실 86 건은 provider 축으로 깨끗이 갈렸다
           // (claude 폴백 86/86 실패 · codex 0/86).
-          if (decisions.length < changes.length) {
+          const undecided: GateUndecided | null =
+            decisions.length < changes.length
+              ? {
+                  count: changes.length - decisions.length,
+                  reason:
+                    parsed === null
+                      ? 'UNREADABLE_RESPONSE'
+                      : 'PARTIAL_DECISIONS',
+                }
+              : null;
+          if (undecided !== null) {
             const reason =
-              parsed === null
+              undecided.reason === 'UNREADABLE_RESPONSE'
                 ? '응답을 JSON 배열로 읽지 못함'
                 : `변화 ${changes.length}건 중 ${decisions.length}건만 판정됨`;
             this.logger.error(
-              `잠재의식 게이트 판정 누락 — ${reason}, 나머지 ${changes.length - decisions.length}건을 제안 0건으로 처리 (model=${response.modelUsed})`,
+              `잠재의식 게이트 판정 누락 — ${reason}, 나머지 ${undecided.count}건을 제안 0건으로 처리 (model=${response.modelUsed})`,
             );
           }
           return {
@@ -100,6 +130,15 @@ export class LlmSubconsciousGate implements SubconsciousGate {
               promotedCount: decisions.filter((decision) => decision.promote)
                 .length,
               decisions,
+              // **누락이 있을 때만 키를 넣는다** — 조회 술어가 `output ? 'undecided'` 하나로
+              // 끝나고, 정상 회차의 형태가 그대로라 계약 검수도 움직이지 않는다. 필수 필드로
+              // 올리면 반대가 된다: 정상 회차 전건이 `missingField` 로 잡힌다.
+              //
+              // 남기는 것은 사실상 **사유**다. 건수는 원장에서 이미 파생된다
+              // (`input_snapshot->>'changeCount'` 대 `jsonb_array_length(output->'decisions')`
+              // 가 위 86 회차를 정확히 집는다). 파생되지 않는 것이 왜 비었는가이고, 그게
+              // 고칠 곳을 가른다 — 86 건은 파서였다.
+              ...(undecided === null ? {} : { undecided }),
             },
           };
         },
