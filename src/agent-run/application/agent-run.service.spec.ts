@@ -3,13 +3,10 @@ import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { ConsoleEventBus } from '../../console/application/console-event-bus.service';
 import { ConsoleAgentState } from '../../console/domain/console.type';
 import { AgentType } from '../../model-router/domain/model-router.type';
-import {
-  AgentRunStatus,
-  RoutedVia,
-  TriggerType,
-} from '../domain/agent-run.type';
+import { AgentRunStatus, TriggerType } from '../domain/agent-run.type';
 import { AgentRunRepositoryPort } from '../domain/port/agent-run.repository.port';
 import { AgentRunService } from './agent-run.service';
+import { RoutingContext, runWithRoutingContext } from './routing-context';
 
 describe('AgentRunService', () => {
   const createRepoMock = (): jest.Mocked<AgentRunRepositoryPort> => ({
@@ -195,7 +192,7 @@ describe('AgentRunService', () => {
     expect(repository.finish).toHaveBeenCalledWith({
       id: 42,
       status: AgentRunStatus.FAILED,
-      output: { error: 'evidence persist 실패' },
+      output: { error: 'evidence persist 실패', failureKind: 'UNCLASSIFIED' },
       // FAILED 경로도 가능한 만큼 duration 기록 — quota 분석 시 실패 비율 확인용.
       durationMs: expect.any(Number),
     });
@@ -220,7 +217,7 @@ describe('AgentRunService', () => {
     expect(repository.finish).toHaveBeenCalledWith({
       id: 42,
       status: AgentRunStatus.FAILED,
-      output: { error: 'boom' },
+      output: { error: 'boom', failureKind: 'UNCLASSIFIED' },
       durationMs: expect.any(Number),
     });
   });
@@ -249,7 +246,11 @@ describe('AgentRunService', () => {
     expect(repository.finish).toHaveBeenCalledWith({
       id: 42,
       status: AgentRunStatus.FAILED,
-      output: { error: '초안이 깨졌습니다.', errorCode: 'TEST_DRAFT_BROKEN' },
+      output: {
+        error: '초안이 깨졌습니다.',
+        errorCode: 'TEST_DRAFT_BROKEN',
+        failureKind: 'WORKER_FAULT',
+      },
       durationMs: expect.any(Number),
     });
   });
@@ -930,41 +931,50 @@ describe('AgentRunService', () => {
     });
   });
 
-  describe('attachRoutingContext', () => {
-    const attach = async (
-      override: Partial<{
-        text: string;
-        routedTo: string;
-        routedVia: RoutedVia;
-        confidence: number;
-      }> = {},
+  describe('라우팅 근거를 실행 기록에 심는다', () => {
+    // 라우터가 열어 둔 스코프 안에서 execute 를 돌리고, begin 에 넘어간 스냅샷을 본다.
+    const executeInScope = async (
+      context: Partial<RoutingContext> & { text: string },
+      options: {
+        run?: () => Promise<{
+          result: unknown;
+          modelUsed: string;
+          output: unknown;
+        }>;
+        inputSnapshot?: unknown;
+      } = {},
     ): Promise<Record<string, unknown>> => {
-      const mergeInputSnapshot = jest.fn().mockResolvedValue(true);
-      repository.mergeInputSnapshot = mergeInputSnapshot;
-      await service.attachRoutingContext({
-        id: 7,
-        text: override.text ?? '오늘 뭐해?',
-        routedTo: override.routedTo ?? AgentType.PM,
-        routedVia: override.routedVia ?? 'classifier',
-        ...(override.confidence !== undefined
-          ? { confidence: override.confidence }
-          : {}),
-      });
-      expect(mergeInputSnapshot).toHaveBeenCalledTimes(1);
-      return mergeInputSnapshot.mock.calls[0][0].fields as Record<
+      const execution =
+        options.run ??
+        (async () => ({ result: 'ok', modelUsed: 'mock', output: {} }));
+      await runWithRoutingContext(
+        {
+          routedTo: AgentType.PM,
+          routedVia: 'classifier',
+          ...context,
+        },
+        () =>
+          service.execute({
+            agentType: AgentType.PM,
+            triggerType: TriggerType.SLACK_COMMAND_TODAY,
+            inputSnapshot: options.inputSnapshot ?? { slackUserId: 'U1' },
+            run: execution,
+          }),
+      );
+      return repository.begin.mock.calls[0][0].inputSnapshot as Record<
         string,
         unknown
       >;
     };
 
-    it('원문·대상·경로를 그대로 싣는다', async () => {
-      const fields = await attach({
+    it('원문·대상·경로를 워커 스냅샷 위에 얹는다 (워커 입력은 그대로 남는다)', async () => {
+      const snapshot = await executeInScope({
         text: '내일 계획 짜줘',
-        routedTo: AgentType.PM,
         routedVia: 'nickname',
       });
 
-      expect(fields).toEqual({
+      expect(snapshot).toEqual({
+        slackUserId: 'U1',
         routedText: '내일 계획 짜줘',
         routedTo: AgentType.PM,
         routedVia: 'nickname',
@@ -972,11 +982,94 @@ describe('AgentRunService', () => {
     });
 
     it('confidence 는 주어졌을 때만 싣는다 — 분류기를 타지 않은 경로에 0 이 박히면 안 된다', async () => {
-      const withValue = await attach({ confidence: 0.42 });
+      const withValue = await executeInScope({
+        text: '오늘 뭐해?',
+        confidence: 0.42,
+      });
       expect(withValue.routedConfidence).toBe(0.42);
 
-      const without = await attach();
+      repository.begin.mockClear();
+      const without = await executeInScope({ text: '오늘 뭐해?' });
       expect(without).not.toHaveProperty('routedConfidence');
+    });
+
+    // 이 수리의 핵심 — 예전에는 라우터가 dispatch 결과를 되받아 붙여서, 분류가 틀려 워커가
+    // 죽은 회차(정확도 분석에 가장 필요한 표본)가 통째로 빠졌다. 행은 예외보다 먼저 열린다.
+    it('워커가 예외로 끝나도 FAILED 행에 근거가 남는다', async () => {
+      await expect(
+        executeInScope(
+          { text: 'PR 리뷰 좀' },
+          {
+            run: async () => {
+              throw new Error('워커가 입력을 거절했다');
+            },
+          },
+        ),
+      ).rejects.toThrow('워커가 입력을 거절했다');
+
+      const snapshot = repository.begin.mock.calls[0][0]
+        .inputSnapshot as Record<string, unknown>;
+      expect(snapshot.routedText).toBe('PR 리뷰 좀');
+      expect(snapshot.routedTo).toBe(AgentType.PM);
+      expect(repository.finish).toHaveBeenCalledWith(
+        expect.objectContaining({ status: AgentRunStatus.FAILED }),
+      );
+    });
+
+    // updateInputSnapshot 은 부분 병합이 아니라 전체 교체다. 다시 얹지 않으면 근거가 지워진다
+    // (BLOG_PUBLISH 처럼 라우터가 dispatch 하면서 이 콜백도 쓰는 워커가 실제로 있다).
+    it('워커가 스냅샷을 통째로 교체해도 근거는 살아남는다', async () => {
+      const updateInputSnapshot = jest.fn().mockResolvedValue(undefined);
+      repository.updateInputSnapshot = updateInputSnapshot;
+
+      await runWithRoutingContext(
+        {
+          text: '블로그 발행해줘',
+          routedTo: AgentType.BLOG_PUBLISH,
+          routedVia: 'hint',
+        },
+        () =>
+          service.execute({
+            agentType: AgentType.BLOG_PUBLISH,
+            triggerType: TriggerType.SLACK_MENTION_BLOG_PUBLISH,
+            inputSnapshot: { slackUserId: 'U1' },
+            run: async ({ updateInputSnapshot: update }) => {
+              await update({ pageId: 'p-1' });
+              return { result: 'ok', modelUsed: 'mock', output: {} };
+            },
+          }),
+      );
+
+      expect(updateInputSnapshot).toHaveBeenCalledTimes(1);
+      expect(updateInputSnapshot.mock.calls[0][0].inputSnapshot).toEqual({
+        pageId: 'p-1',
+        routedText: '블로그 발행해줘',
+        routedTo: AgentType.BLOG_PUBLISH,
+        routedVia: 'hint',
+      });
+    });
+
+    // 스냅샷이 객체가 아니면(포트 계약이 unknown 이라 정당한 값이다) 원본을 지키는 쪽을 고른다.
+    it('스냅샷이 배열이면 덮어쓰지 않고 원본을 그대로 둔다', async () => {
+      const snapshot = await executeInScope(
+        { text: '뭐라도 해줘' },
+        { inputSnapshot: ['a', 'b'] },
+      );
+
+      expect(snapshot).toEqual(['a', 'b']);
+    });
+
+    it('라우터를 거치지 않은 실행(cron·슬래시)은 근거 없이 기록된다', async () => {
+      await service.execute({
+        agentType: AgentType.PM,
+        triggerType: TriggerType.SLACK_COMMAND_TODAY,
+        inputSnapshot: { slackUserId: 'U1' },
+        run: async () => ({ result: 'ok', modelUsed: 'mock', output: {} }),
+      });
+
+      expect(repository.begin.mock.calls[0][0].inputSnapshot).toEqual({
+        slackUserId: 'U1',
+      });
     });
 
     // 토큰 문자열을 리터럴로 두면 GitHub push protection 이 진짜 시크릿으로 보고 push 를 막는다
@@ -985,40 +1078,79 @@ describe('AgentRunService', () => {
     const fakeSlackToken = ['xoxb', '1234567890', 'a'.repeat(22)].join('-');
 
     it('토큰류 시크릿은 마스킹한다', async () => {
-      const fields = await attach({
+      const snapshot = await executeInScope({
         text: `이 토큰 좀 봐줘 ${fakeSlackToken}`,
       });
 
-      expect(fields.routedText).not.toContain(fakeSlackToken);
-      expect(fields.routedText).toContain('[REDACTED:slack_token]');
+      expect(snapshot.routedText).not.toContain(fakeSlackToken);
+      expect(snapshot.routedText).toContain('[REDACTED:slack_token]');
     });
 
     it('상한을 넘으면 자르고 잘렸다는 표식을 남긴다', async () => {
-      const fields = await attach({ text: 'ㄱ'.repeat(600) });
+      const snapshot = await executeInScope({ text: 'ㄱ'.repeat(600) });
 
-      const routedText = fields.routedText as string;
+      const routedText = snapshot.routedText as string;
       expect(routedText).toMatch(/…\[잘림\]$/);
       expect(routedText.replace('…[잘림]', '')).toHaveLength(500);
     });
 
     it('상한 이하면 자르지 않고 표식도 안 붙인다', async () => {
-      const fields = await attach({ text: 'ㄱ'.repeat(500) });
+      const snapshot = await executeInScope({ text: 'ㄱ'.repeat(500) });
 
-      expect(fields.routedText).toHaveLength(500);
-      expect(fields.routedText).not.toContain('[잘림]');
+      expect(snapshot.routedText).toHaveLength(500);
+      expect(snapshot.routedText).not.toContain('[잘림]');
+    });
+  });
+
+  describe('실패 사유 분류(failureKind)', () => {
+    const failWith = async (error: unknown): Promise<string> => {
+      await expect(
+        service.execute({
+          agentType: AgentType.PM,
+          triggerType: TriggerType.SLACK_COMMAND_TODAY,
+          inputSnapshot: {},
+          run: async () => {
+            throw error;
+          },
+        }),
+      ).rejects.toBeDefined();
+      const output = repository.finish.mock.calls[0][0].output as Record<
+        string,
+        unknown
+      >;
+      return output.failureKind as string;
+    };
+
+    class TestException extends DomainException {
+      readonly errorCode = 'TEST';
+      constructor(readonly status: DomainStatus) {
+        super('테스트 실패');
+      }
+    }
+
+    // "PR 리뷰해줘" 가 PM 으로 잘못 가면 PM 은 할 일 목록이 없어 BAD_REQUEST 로 죽는다.
+    it('워커가 입력을 거절하면 INPUT_REJECTED — 라우팅을 의심할 표본', async () => {
+      expect(await failWith(new TestException(DomainStatus.BAD_REQUEST))).toBe(
+        'INPUT_REJECTED',
+      );
     });
 
-    it('repository 가 merge 를 지원하지 않으면 조용히 통과한다', async () => {
-      repository.mergeInputSnapshot = undefined;
+    // 선행 데이터·설정 문제는 라우팅 신호가 아니다. 섞이면 표본 풀이 눈으로 볼 수 없는 크기가 된다.
+    it('선행 조건·외부 오류는 WORKER_FAULT', async () => {
+      expect(
+        await failWith(new TestException(DomainStatus.PRECONDITION_FAILED)),
+      ).toBe('WORKER_FAULT');
+      repository.finish.mockClear();
+      expect(await failWith(new TestException(DomainStatus.BAD_GATEWAY))).toBe(
+        'WORKER_FAULT',
+      );
+    });
 
-      await expect(
-        service.attachRoutingContext({
-          id: 7,
-          text: '오늘 뭐해?',
-          routedTo: AgentType.PM,
-          routedVia: 'classifier',
-        }),
-      ).resolves.toBeUndefined();
+    // 모르는 것을 WORKER_FAULT 로 적으면 원인을 안다고 위장하는 것이다.
+    it('도메인 예외가 아니면 UNCLASSIFIED', async () => {
+      expect(await failWith(new TypeError('undefined 읽기'))).toBe(
+        'UNCLASSIFIED',
+      );
     });
   });
 });
