@@ -6,6 +6,9 @@ export interface SaveScheduleInput {
   dueDate: Date;
   dueTime?: string;
   memo?: string;
+  // 생략하면 false — 사람이 등록한 일정이 기본이고, 공휴일은 `SyncKoreanHolidaysUsecase`
+  // 하나만 true 로 넣는다.
+  isHoliday?: boolean;
 }
 
 export interface FindByDateRangeInput {

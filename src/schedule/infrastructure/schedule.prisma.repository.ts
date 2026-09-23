@@ -19,6 +19,7 @@ interface ScheduleItemRow {
   memo: string | null;
   status: string;
   completedAt: Date | null;
+  isHoliday: boolean;
 }
 
 interface DueDateFilter {
@@ -47,6 +48,7 @@ const toRecord = (row: ScheduleItemRow): ScheduleItemRecord => {
     memo: row.memo,
     status: row.status as ScheduleStatus,
     completedAt: row.completedAt,
+    isHoliday: row.isHoliday,
   };
 };
 
@@ -63,6 +65,7 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
         dueTime: input.dueTime ?? null,
         memo: input.memo ?? null,
         status: ScheduleStatus.OPEN,
+        isHoliday: input.isHoliday ?? false,
       },
     });
     return toRecord(created);

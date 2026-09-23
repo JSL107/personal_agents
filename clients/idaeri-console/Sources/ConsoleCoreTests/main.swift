@@ -38,6 +38,7 @@ runPresidentBriefingTests(runner)
 runConsoleClientTests(runner)
 runCalendarGridTests(runner)
 runCalendarDayListTests(runner)
+runCalendarDayToneTests(runner)
 runScheduleComposeTests(runner)
 runScheduleLinkTests(runner)
 

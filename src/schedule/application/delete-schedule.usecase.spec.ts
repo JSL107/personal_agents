@@ -14,6 +14,7 @@ const found: ScheduleItemRecord = {
   memo: null,
   status: ScheduleStatus.OPEN,
   completedAt: null,
+  isHoliday: false,
 };
 
 const createRepository = (

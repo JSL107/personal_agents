@@ -23,6 +23,7 @@ import { SystemWakeGuard } from '../common/system/system-wake-guard.service';
 import { DocsAuditModule } from '../docs-audit/docs-audit.module';
 import { EpisodicMemoryModule } from '../episodic-memory/episodic-memory.module';
 import { GithubModule } from '../github/github.module';
+import { HolidayModule } from '../holiday/holiday.module';
 import { HumanizeModule } from '../humanize/humanize.module';
 import { JobFeedModule } from '../job-feed/job-feed.module';
 import {
@@ -58,6 +59,7 @@ import { BlogRevisionReportAutopilotTask } from './infrastructure/tasks/blog-rev
 import { CeoMetaAutopilotTask } from './infrastructure/tasks/ceo-meta.autopilot-task';
 import { DocsSyncAuditTask } from './infrastructure/tasks/docs-sync-audit.autopilot-task';
 import { EveningRetroPublishTask } from './infrastructure/tasks/evening-retro-publish.autopilot-task';
+import { HolidaySyncAutopilotTask } from './infrastructure/tasks/holiday-sync.autopilot-task';
 import { ImpactReportAutopilotTask } from './infrastructure/tasks/impact-report.autopilot-task';
 import { JobFeedAutopilotTask } from './infrastructure/tasks/job-feed.autopilot-task';
 import { JobFeedGapAutopilotTask } from './infrastructure/tasks/job-feed-gap.autopilot-task';
@@ -114,6 +116,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     AgentRunModule,
     EpisodicMemoryModule,
     MemoryVacuumModule,
+    HolidayModule,
     HumanizeModule,
     DocsAuditModule,
     PreferenceProfileModule,
@@ -154,6 +157,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     PreviewSweeperAutopilotTask,
     KnowledgeLintAutopilotTask,
     MemoryVacuumAutopilotTask,
+    HolidaySyncAutopilotTask,
     DocsSyncAuditTask,
     PreferenceLearningAutopilotTask,
     EveningRetroPublishTask,
@@ -254,6 +258,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         previewSweeper: PreviewSweeperAutopilotTask,
         knowledgeLint: KnowledgeLintAutopilotTask,
         memoryVacuum: MemoryVacuumAutopilotTask,
+        holidaySync: HolidaySyncAutopilotTask,
         docsSyncAudit: DocsSyncAuditTask,
         preferenceLearning: PreferenceLearningAutopilotTask,
         eveningRetro: EveningRetroPublishTask,
@@ -293,6 +298,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         previewSweeper,
         knowledgeLint,
         memoryVacuum,
+        holidaySync,
         docsSyncAudit,
         preferenceLearning,
         eveningRetro,
@@ -333,6 +339,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         PreviewSweeperAutopilotTask,
         KnowledgeLintAutopilotTask,
         MemoryVacuumAutopilotTask,
+        HolidaySyncAutopilotTask,
         DocsSyncAuditTask,
         PreferenceLearningAutopilotTask,
         EveningRetroPublishTask,

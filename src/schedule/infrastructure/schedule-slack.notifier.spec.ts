@@ -20,6 +20,7 @@ describe('ScheduleSlackNotifier', () => {
     memo: null,
     status: ScheduleStatus.OPEN,
     completedAt: null,
+    isHoliday: false,
   };
 
   it('등록한 소유자에게 DM 으로 보낸다 — 문구에 콘솔에서 들어왔음이 드러난다', async () => {
