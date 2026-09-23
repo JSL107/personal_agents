@@ -8,19 +8,15 @@ import SwiftUI
 /// 대표(나) 클릭 시 담당자를 정하지 않는 지시 바를 띄운다.
 struct OfficeView: View {
     @ObservedObject var store: ConsoleStore
+    let scene: OfficeScene
     let onSend: (String, String?) -> Void
     let onApprove: (String) -> Void
     let onReject: (String) -> Void
     /// 대표에게 지시하는 바가 열렸는지. 담당자를 지정하지 않는 지시라 대상 상태가 따로 없다.
     /// 소유자는 `AppRootView` — 메뉴에서 열 때 탭 전환과 함께 세팅돼야 한다.
     @Binding var isPresidentBarOpen: Bool
+    @Binding var selectedAgent: String?
 
-    @State private var scene: OfficeScene = {
-        let scene = OfficeScene(size: CGSize(width: 900, height: 600))
-        scene.scaleMode = .resizeFill
-        return scene
-    }()
-    @State private var selectedAgent: String?
     /// 리사이즈가 **시작될 때**의 창 크기. 키운 것인지 줄인 것인지 가르는 유일한 근거다 —
     /// 줄이는 쪽까지 보정하면 계단 바로 아래에서 창이 되튕겨 크기를 정할 수 없게 된다.
     @State private var liveResizeStartSize: NSSize?
@@ -120,21 +116,27 @@ struct OfficeView: View {
                     // 통지는 상태가 "바뀔 때" 만 온다. 이미 가려지거나 최소화된 창에서 탭이
                     // 열리면 다음 통지까지 씬이 계속 돌므로, 나타나는 시점에 한 번 맞춘다.
                     applySceneSleep()
+                    let validSelection = isPresidentBarOpen
+                        ? nil
+                        : reconciledSelectedAgent(current: selectedAgent, agents: store.agents)
+                    selectedAgent = validSelection
+                    scene.setVectorMetricsEnabled(validSelection != nil)
+                    scene.onFocusChange = { focusedRoom = $0 }
                     scene.syncSessions(store.sessions)
                     scene.sync(agents: store.agents, approvals: store.approvals)
+                    scene.setSelected(validSelection)
+                    focusedRoom = scene.focusedDepartment
                     scene.applyHousekeeping(store.housekeeping)
                     scene.refreshOverlays(
                         agents: store.agents, runs: store.runs,
                         pendingCommands: store.pendingCommands, now: Date()
                     )
-                    replayInitialChoreography()
                     scene.onAgentClick = { agentType in
                         selectedAgent = agentType
                         isPresidentBarOpen = false
                         commandText = ""
                     }
                     scene.onPresidentClick = { openPresidentBar() }
-                    scene.onFocusChange = { focusedRoom = $0 }
                     scene.onDailyReportClick = {
                         scene.toggleDailyReportCard(store.briefing)
                     }
@@ -142,6 +144,14 @@ struct OfficeView: View {
                         store.briefing,
                         hour: Calendar.current.component(.hour, from: Date())
                     )
+                }
+                .onDisappear {
+                    // 다른 탭에서는 씬의 시간도 멈춘다. 복귀하면 같은 위치에서 이어진다.
+                    scene.isPaused = true
+                    scene.onAgentClick = nil
+                    scene.onPresidentClick = nil
+                    scene.onFocusChange = nil
+                    scene.onDailyReportClick = nil
                 }
                 .onChange(of: store.housekeeping) { next in
                     scene.applyHousekeeping(next)
@@ -496,15 +506,4 @@ struct OfficeView: View {
         scene.isPaused = !visible
     }
 
-    /// 탭이 처음 나타날 때 현재 상태로 연출을 재구성한다(닫혀 있던 동안 놓친 이벤트 보완).
-    private func replayInitialChoreography() {
-        for run in store.runs where run.finishedAt == nil {
-            scene.perform([.working(agentType: run.agentType)])
-        }
-        for approval in store.approvals {
-            if let agentType = approval.agentType {
-                scene.perform([.summonToBand(agentType: agentType)])
-            }
-        }
-    }
 }
