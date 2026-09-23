@@ -450,6 +450,18 @@ public func visualIntents(for event: ConsoleEvent, context: ChoreographyContext)
         }
         return [.returnHome(agentType: agentType)]
 
+    case let .approvalFailed(approval, _):
+        guard let agentType = approval.agentType, knows(agentType) else {
+            return []
+        }
+        // 카드가 다시 열린 것과 같은 상태다. `approvalOpened` 와 같은 연출을 주지 않으면
+        // 승인 목록에는 카드가 돌아왔는데 오피스에서는 그 사람이 자리로 돌아가 있어, 화면 둘이
+        // 서로 다른 말을 한다.
+        return [
+            .summonToBand(agentType: agentType),
+            .recolor(agentType: agentType, state: .awaitingApproval),
+        ]
+
     case let .stateChanged(agentType, state, _):
         guard knows(agentType) else {
             return []

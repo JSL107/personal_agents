@@ -12,6 +12,7 @@ import {
 } from '../domain/port/preview-action.repository.port';
 import { PreviewActionException } from '../domain/preview-action.exception';
 import {
+  ApplyProgressState,
   CreatePreviewInput,
   PREVIEW_KIND,
   PREVIEW_STATUS,
@@ -219,6 +220,92 @@ export class PreviewActionPrismaRepository implements PreviewActionRepositoryPor
     });
   }
 
+  async beginApply({
+    id,
+    pid,
+    at,
+  }: {
+    id: string;
+    pid: number;
+    at: Date;
+  }): Promise<ApplyProgressState> {
+    const row = await this.prisma.previewAction.findUnique({
+      where: { id },
+      select: { applyProgress: true },
+    });
+    const previous = row === null ? null : toApplyProgress(row.applyProgress);
+    // `done` 은 물려받고 `attempts` 만 올린다 — 물려받지 않으면 재개가 처음부터 다시 돌아
+    // 이어붙이는 의미가 없고, 세지 않으면 크래시를 일으키는 반영이 부팅마다 되살아난다.
+    const next: ApplyProgressState = {
+      pid,
+      startedAt: at.toISOString(),
+      attempts: (previous?.attempts ?? 0) + 1,
+      done: previous?.done ?? [],
+    };
+    await this.prisma.previewAction.update({
+      where: { id },
+      data: { applyProgress: next as unknown as Prisma.InputJsonValue },
+    });
+    return next;
+  }
+
+  // 읽고 고쳐 쓴다. jsonb 를 제자리에서 이어붙이려면 raw SQL 이 필요한데 이 레포는 쓰지 않고,
+  // 한 카드의 단계는 applier 가 순차로 돌려 같은 순간에 둘이 기록하는 일이 없다. 두 프로세스가
+  // 같은 카드를 동시에 반영하는 경우라면 기록이 겹치기 전에 그 자체가 이미 사고다.
+  async recordApplyStep({
+    id,
+    step,
+  }: {
+    id: string;
+    step: string;
+  }): Promise<void> {
+    const row = await this.prisma.previewAction.findUnique({
+      where: { id },
+      select: { applyProgress: true },
+    });
+    const current = row === null ? null : toApplyProgress(row.applyProgress);
+    // 흔적이 없으면 이 반영은 이미 끝난 것으로 마감됐다는 뜻이다. 되살리지 않는다.
+    // 같은 단계가 두 번 들어오는 것은 재개가 기록을 물려받아 정상적으로 생길 수 있다.
+    if (current === null || current.done.includes(step)) {
+      return;
+    }
+    await this.prisma.previewAction.update({
+      where: { id },
+      data: {
+        applyProgress: {
+          ...current,
+          done: [...current.done, step],
+        } as unknown as Prisma.InputJsonValue,
+      },
+    });
+  }
+
+  async clearApplyProgress({
+    id,
+    pid,
+  }: {
+    id: string;
+    pid: number;
+  }): Promise<void> {
+    // pid 를 where 에 걸어 **내가 새긴 흔적만** 지운다. 다른 프로세스가 같은 카드를 쥐고
+    // 있으면 그쪽 기록이 정본이고, 그것까지 지우면 그 반영이 죽었을 때 중단을 알아볼 수 없다.
+    await this.prisma.previewAction.updateMany({
+      where: { id, applyProgress: { path: ['pid'], equals: pid } },
+      data: { applyProgress: Prisma.DbNull },
+    });
+  }
+
+  async findApplyInterrupted(): Promise<PreviewAction[]> {
+    const rows = await this.prisma.previewAction.findMany({
+      where: {
+        status: PREVIEW_STATUS.PENDING,
+        applyProgress: { not: Prisma.DbNull },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    return rows.map(toDomain);
+  }
+
   async attachSlackMessage(input: {
     id: string;
     slackChannelId: string;
@@ -306,6 +393,7 @@ const toDomain = (row: {
   slackMessageTs: string | null;
   lastFailedAt: Date | null;
   lastFailureReason: string | null;
+  applyProgress: Prisma.JsonValue;
 }): PreviewAction => {
   if (!PREVIEW_KIND_VALUES.has(row.kind as PreviewKind)) {
     throw new PreviewActionException({
@@ -336,5 +424,31 @@ const toDomain = (row: {
     slackMessageTs: row.slackMessageTs,
     lastFailedAt: row.lastFailedAt,
     lastFailureReason: row.lastFailureReason,
+    applyProgress: toApplyProgress(row.applyProgress),
   };
+};
+
+// jsonb → ApplyProgressState. 형태가 맞지 않으면 null 로 떨어뜨린다.
+//
+// kind/status 와 달리 **예외로 끊지 않는다.** 이 값은 카드의 내용이 아니라 진행 흔적이고,
+// 깨진 흔적 하나 때문에 조회가 통째로 실패하면 그 카드는 승인도 취소도 할 수 없게 된다.
+// null 로 떨어지면 부팅 훅이 그 행을 중단 후보로 보지 않을 뿐이다 — 최악이 "재개를 놓친다"
+// 이므로, 읽기를 막는 쪽보다 낫다.
+const toApplyProgress = (
+  value: Prisma.JsonValue,
+): ApplyProgressState | null => {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  const { pid, startedAt, attempts, done } = value as Record<string, unknown>;
+  if (
+    typeof pid !== 'number' ||
+    typeof startedAt !== 'string' ||
+    typeof attempts !== 'number' ||
+    !Array.isArray(done) ||
+    !done.every((step): step is string => typeof step === 'string')
+  ) {
+    return null;
+  }
+  return { pid, startedAt, attempts, done };
 };

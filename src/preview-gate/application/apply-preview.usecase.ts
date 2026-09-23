@@ -9,6 +9,7 @@ import {
   PreviewActionRepositoryPort,
 } from '../domain/port/preview-action.repository.port';
 import {
+  ApplyProgress,
   PREVIEW_APPLIERS,
   PreviewApplier,
 } from '../domain/port/preview-applier.port';
@@ -150,6 +151,21 @@ export class ApplyPreviewUsecase {
         now,
       });
       const applier = this.requireApplier(preview);
+      // 진행 흔적을 원장에 새긴다. **이 줄 아래에서 프로세스가 죽으면 흔적이 남고**, 다음 부팅의
+      // ResumeInterruptedAppliesUsecase 가 그것을 보고 이어서 돌리거나 실패로 마감해 알린다.
+      // 검증에서 끊긴 경우는 여기 도달하지 않으므로 흔적도 안 남는다 — 시작하지 않은 반영이
+      // 중단으로 보이면 부팅마다 엉뚱한 카드를 되살린다.
+      const progressState = await this.repository.beginApply({
+        id: preview.id,
+        pid: process.pid,
+        at: now,
+      });
+      const progress: ApplyProgress = {
+        done: progressState.done,
+        record: async (step: string): Promise<void> => {
+          await this.repository.recordApplyStep({ id: preview.id, step });
+        },
+      };
       // 여기부터 실제 apply 단계 — 실패 시에만 APPLY_FAILED 로 카드 복구(버튼 되살림).
       // 검증 단계 실패(만료/미존재/owner/applier 없음)는 이 안쪽 catch 를 타지 않는다.
       // 이 catch 는 applier 와 transition 을 함께 감싼다. 둘은 실패의 의미가 다르다 —
@@ -159,7 +175,7 @@ export class ApplyPreviewUsecase {
       let sideEffectApplied = false;
       try {
         await this.safeUpdateCard({ preview, state: 'APPLYING' });
-        const applyResult = await applier.apply(preview);
+        const applyResult = await applier.apply(preview, progress);
         sideEffectApplied = true;
         const transitioned = await this.repository.transition({
           id: preview.id,
@@ -192,10 +208,43 @@ export class ApplyPreviewUsecase {
           sideEffectApplied,
         });
         await this.safeUpdateCard({ preview, state: 'APPLY_FAILED' });
+        // 콘솔 관제 — 실패 통지. 카드는 PENDING 으로 남아 다시 승인할 수 있지만, 화면에 되돌아온
+        // 것만으로는 "안 눌렸다" 와 구분되지 않는다. 그 오해가 재클릭을 부르고, 재클릭이 이미
+        // 반영된 단계를 다시 실행한다 — 사유를 함께 보내 그 고리를 끊는다.
+        this.consoleEvents?.publish({
+          type: 'approval.failed',
+          approval: toConsoleApproval(preview),
+          reason:
+            applyError instanceof Error
+              ? applyError.message
+              : String(applyError),
+        });
         throw applyError;
       }
     } finally {
+      // 흔적 지우기가 락 풀기보다 먼저다 — 흔적이 남으면 다음 부팅이 **이미 끝난 반영**을
+      // 중단으로 보고 되살린다. 검증 단계에서 끊긴 회차는 새긴 적이 없으므로 아무 행도
+      // 건드리지 않는다(내 pid 로만 지운다).
+      await this.safeClearApplyProgress(previewId);
       this.applying.delete(previewId);
+    }
+  }
+
+  // 흔적 지우기도 best-effort — 실패해도 원래 결과(성공이든 예외든)를 막지 않는다.
+  // 지우지 못한 흔적은 다음 부팅이 중단으로 읽지만, 거기서도 `done` 기록과 시도 횟수 상한이
+  // 중복 실행을 막는다. 기록이 결과를 잡아먹는 것이 기록이 없는 것보다 나쁘다.
+  private async safeClearApplyProgress(previewId: string): Promise<void> {
+    try {
+      await this.repository.clearApplyProgress({
+        id: previewId,
+        pid: process.pid,
+      });
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Preview 진행 흔적 정리 실패(무시) preview=${previewId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
   }
 

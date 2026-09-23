@@ -11,6 +11,7 @@ import { FindAllOpenPreviewsUsecase } from './application/find-all-open-previews
 import { FindLatestPendingPreviewUsecase } from './application/find-latest-pending-preview.usecase';
 import { FindPreviewDayOutcomesUsecase } from './application/find-preview-day-outcomes.usecase';
 import { FindRecentAppliedPreviewsUsecase } from './application/find-recent-applied-previews.usecase';
+import { ResumeInterruptedAppliesUsecase } from './application/resume-interrupted-applies.usecase';
 import { UpdatePreviewPayloadUsecase } from './application/update-preview-payload.usecase';
 import { PREVIEW_ACTION_REPOSITORY_PORT } from './domain/port/preview-action.repository.port';
 import {
@@ -48,6 +49,9 @@ import {
     FindPreviewDayOutcomesUsecase,
     CountPreviewsByPayloadUsecase,
     UpdatePreviewPayloadUsecase,
+    // 부팅 훅 — 재시작으로 중단된 반영을 이어 돌리거나 실패로 마감하고 알린다.
+    // `forRoot` 가 PREVIEW_APPLIERS 를 실제 목록으로 덮어쓰므로 여기 있어도 그 배열을 받는다.
+    ResumeInterruptedAppliesUsecase,
     {
       provide: PREVIEW_ACTION_REPOSITORY_PORT,
       useClass: PreviewActionPrismaRepository,

@@ -1,4 +1,5 @@
 import {
+  ApplyProgressState,
   CreatePreviewInput,
   PreviewAction,
   PreviewKind,
@@ -80,6 +81,27 @@ export interface PreviewActionRepositoryPort {
     reason: string;
     at: Date;
   }): Promise<void>;
+  // 반영 시작을 원장에 새긴다. 재개면 직전 `done` 을 물려받고 시도 횟수만 올린다 — 물려받지
+  // 않으면 재개가 처음부터 다시 돌아 이어붙이는 의미가 없다.
+  //
+  // 반환값이 이번 시도의 진행 상태다. 호출자는 여기 담긴 `done` 을 applier 에 그대로 넘긴다.
+  beginApply(input: {
+    id: string;
+    pid: number;
+    at: Date;
+  }): Promise<ApplyProgressState>;
+  // 단계 하나가 끝났음을 덧붙인다. 같은 단계가 두 번 들어오면 무시한다 — 재개가 기록을
+  // 물려받으므로 중복 호출이 실제로 일어날 수 있고, 중복이 쌓이면 `done` 이 진행을 과장한다.
+  recordApplyStep(input: { id: string; step: string }): Promise<void>;
+  // 반영이 끝났다(성공이든 실패든) — 흔적을 지운다. 지우지 않으면 다음 부팅이 중단으로 오인해
+  // 끝난 반영을 되살린다.
+  //
+  // **내가 새긴 흔적만 지운다.** 다른 프로세스가 같은 카드를 쥐고 있으면 그쪽 기록이 정본이고,
+  // 그것까지 지우면 그 반영이 죽었을 때 부팅 훅이 중단을 알아보지 못한다.
+  clearApplyProgress(input: { id: string; pid: number }): Promise<void>;
+  // 흔적이 남은 채 아직 PENDING 인 카드 전부 — 부팅 훅의 입력이다.
+  // 살아 있는 프로세스의 것도 함께 나오므로, 중단 판정은 호출자가 pid 생존으로 가른다.
+  findApplyInterrupted(): Promise<PreviewAction[]>;
   // A 경로 카드 발송 후 좌표 저장. 이후 apply/cancel/만료 시 chat.update 로 이 메시지를 갱신한다.
   attachSlackMessage(input: {
     id: string;

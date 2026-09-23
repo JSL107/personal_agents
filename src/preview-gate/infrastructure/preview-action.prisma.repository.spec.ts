@@ -233,6 +233,7 @@ describe('PreviewActionPrismaRepository.findById — 폐지된 kind', () => {
     slackMessageTs: null,
     lastFailedAt: null,
     lastFailureReason: null,
+    applyProgress: null,
   });
 
   const repositoryReturning = (kind: string) => {

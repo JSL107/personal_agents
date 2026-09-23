@@ -125,6 +125,16 @@ public final class ConsoleStore: ObservableObject {
             markAwaitingApproval(agentType: approval.agentType)
         case let .approvalResolved(approval):
             resolveApprovalLocally(id: approval.id)
+        case let .approvalFailed(approval, reason):
+            // 누른 직후 감춰 둔 카드를 되살린다. 202 접수 뒤에 난 실패는 write 응답으로 돌아오지
+            // 않으므로 `endResolvingApproval` 이 호출될 자리가 여기밖에 없다 — 없으면 그 카드는
+            // 앱이 살아 있는 동안 계속 감춰진 채로 남는다.
+            endResolvingApproval(id: approval.id)
+            upsertApproval(approval)
+            markAwaitingApproval(agentType: approval.agentType)
+            // 되살리기만 하면 사용자는 그것을 "안 눌렸다" 로 읽고 다시 누른다. 그 재클릭이 이미
+            // 반영된 단계를 한 번 더 실행하므로, 왜 되살아났는지를 반드시 함께 말한다.
+            setApprovalNotice(reason)
         case let .stateChanged(agentType, state, bubble):
             changeAgentState(agentType: agentType, state: state, bubble: bubble)
         case let .sessionOpened(session):

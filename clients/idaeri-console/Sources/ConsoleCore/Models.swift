@@ -277,6 +277,12 @@ public enum ConsoleEvent: Decodable, Sendable {
     case runFinished(ConsoleRun)
     case approvalOpened(ConsoleApproval)
     case approvalResolved(ConsoleApproval)
+    /// 승인은 접수됐는데 반영이 실패했다. 카드는 서버에서 PENDING 으로 남아 다시 누를 수 있다.
+    ///
+    /// 이 이벤트가 없던 동안 실패의 유일한 표현은 "카드가 다음 스냅샷에 되돌아온다" 였는데,
+    /// 화면에서 그것은 **안 눌린 것**과 구분되지 않는다. 그래서 사용자는 다시 누르고, 그 재클릭이
+    /// 이미 반영된 단계를 한 번 더 실행한다. `reason` 은 그 오해를 끊기 위한 것이다.
+    case approvalFailed(ConsoleApproval, reason: String)
     /// `bubble` 은 서버가 함께 실어 보내는 말풍선 문구다. 옵셔널인 이유는 버전 스큐 —
     /// 앱은 한 번 빌드해 두고 쓰는데 서버는 따로 재시작하므로, 이 필드를 모르는 옛 서버가
     /// 이벤트를 내려도 디코딩이 통째로 실패해서는 안 된다. 값이 없으면 앱은 예전처럼
@@ -315,6 +321,11 @@ public enum ConsoleEvent: Decodable, Sendable {
             self = .approvalOpened(try container.decode(ConsoleApproval.self, forKey: .approval))
         case "approval.resolved":
             self = .approvalResolved(try container.decode(ConsoleApproval.self, forKey: .approval))
+        case "approval.failed":
+            self = .approvalFailed(
+                try container.decode(ConsoleApproval.self, forKey: .approval),
+                reason: try container.decode(String.self, forKey: .reason)
+            )
         case "state.changed":
             self = .stateChanged(
                 agentType: try container.decode(String.self, forKey: .agentType),

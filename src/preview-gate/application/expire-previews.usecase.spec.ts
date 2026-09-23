@@ -30,6 +30,7 @@ const buildPreview = (
   slackMessageTs: '111.222',
   lastFailedAt: null,
   lastFailureReason: null,
+  applyProgress: null,
 });
 
 const buildRepo = (
@@ -53,6 +54,15 @@ const buildRepo = (
     ),
   attachSlackMessage: jest.fn(),
   recordApplyFailure: jest.fn(),
+  beginApply: jest.fn().mockResolvedValue({
+    pid: process.pid,
+    startedAt: new Date().toISOString(),
+    attempts: 1,
+    done: [],
+  }),
+  recordApplyStep: jest.fn().mockResolvedValue(undefined),
+  clearApplyProgress: jest.fn().mockResolvedValue(undefined),
+  findApplyInterrupted: jest.fn().mockResolvedValue([]),
   findExpiredPending: jest.fn().mockResolvedValue(expired),
   findAllOpen: jest.fn().mockResolvedValue([]),
   findAllDayOutcomes: jest.fn().mockResolvedValue([]),

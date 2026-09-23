@@ -148,6 +148,19 @@ func runConsoleStoreTests(_ t: TestRunner) {
     store.apply(event: .approvalResolved(approval))
     t.expectEqual(store.approvals.count, 0, "approval 제거")
 
+    // approval.failed → 누른 직후 감춘 카드를 되살리고 사유를 남긴다.
+    //
+    // 202 접수 뒤에 난 실패는 write 응답으로 돌아오지 않는다. 이 이벤트가 감춤을 풀지 않으면
+    // 그 카드는 앱이 살아 있는 동안 계속 보이지 않고, 사유가 없으면 사용자는 되살아난 카드를
+    // "안 눌렸다" 로 읽고 다시 눌러 이미 반영된 단계를 또 실행한다.
+    let applyFailedStore = ConsoleStore()
+    applyFailedStore.apply(event: .approvalOpened(approval))
+    applyFailedStore.beginResolvingApproval(id: approval.id)
+    t.expectEqual(applyFailedStore.approvals.count, 0, "승인 누른 직후에는 카드가 감춰진다")
+    applyFailedStore.apply(event: .approvalFailed(approval, reason: "반영이 중단됐습니다"))
+    t.expectEqual(applyFailedStore.approvals.count, 1, "approval.failed 가 감춘 카드를 되살린다")
+    t.expectEqual(applyFailedStore.approvalNotice, "반영이 중단됐습니다", "실패 사유를 안내에 싣는다")
+
     // 승인이 열린 채 새 런이 시작되면 진행 이벤트를 얹지 않는다.
     //
     // 백엔드 집계는 열린 승인을 활성 런보다 먼저 고른다(`deriveAgentState` 우선순위). 이벤트를

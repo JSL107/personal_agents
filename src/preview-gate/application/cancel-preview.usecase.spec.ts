@@ -30,6 +30,7 @@ const buildPreview = (
   slackMessageTs: null,
   lastFailedAt: null,
   lastFailureReason: null,
+  applyProgress: null,
   ...overrides,
 });
 
@@ -53,6 +54,15 @@ const buildRepo = (
     ),
   attachSlackMessage: jest.fn().mockResolvedValue(undefined),
   recordApplyFailure: jest.fn().mockResolvedValue(undefined),
+  beginApply: jest.fn().mockResolvedValue({
+    pid: process.pid,
+    startedAt: new Date().toISOString(),
+    attempts: 1,
+    done: [],
+  }),
+  recordApplyStep: jest.fn().mockResolvedValue(undefined),
+  clearApplyProgress: jest.fn().mockResolvedValue(undefined),
+  findApplyInterrupted: jest.fn().mockResolvedValue([]),
   findExpiredPending: jest.fn().mockResolvedValue([]),
   findAllOpen: jest.fn().mockResolvedValue([]),
   findAllDayOutcomes: jest.fn().mockResolvedValue([]),

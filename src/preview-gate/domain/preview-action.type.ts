@@ -58,6 +58,24 @@ export const PREVIEW_STATUS = {
 export type PreviewStatus =
   (typeof PREVIEW_STATUS)[keyof typeof PREVIEW_STATUS];
 
+// 반영이 진행 중이라는 흔적. `preview_action.apply_progress` 에 이 형태 그대로 담긴다.
+//
+// 반영을 시작할 때 새기고 끝나면 지우므로, **남아 있다는 것 자체가 중단의 증거**다.
+// 부팅 훅(ResumeInterruptedAppliesUsecase)이 이것만 보고 이어서 돌릴지 마감할지 정한다.
+export interface ApplyProgressState {
+  // 이 반영을 쥐고 있는(있던) 프로세스. 부팅 훅이 생존을 확인해 "아직 도는 중" 과 "죽어서 남은
+  // 것" 을 가른다 — 로컬 DB 를 worktree 백엔드와 공유하므로 남이 돌리는 중일 수 있고,
+  // 그것을 중단으로 오인해 재개하면 같은 반영이 둘이 된다.
+  pid: number;
+  // 이번 시도가 시작된 시각(ISO). 사후 조회가 "얼마나 돌다 죽었는지" 를 읽는 유일한 값이다.
+  startedAt: string;
+  // 재개를 포함한 누적 시도 횟수. 상한이 없으면 **그 반영 자체가 크래시 원인일 때 부팅마다
+  // 되살아나 무한 루프가 된다** — 부팅 훅이 이 값으로 끊는다.
+  attempts: number;
+  // applier 가 끝냈다고 기록한 단계들. 재개는 여기 있는 단계를 건너뛴다.
+  done: string[];
+}
+
 // repository / usecase 가 도메인 객체로 다룰 단위. payload 는 kind 별 자유 JSON.
 export interface PreviewAction {
   id: string;
@@ -76,6 +94,8 @@ export interface PreviewAction {
   // 승인 후 실행이 실패한 마지막 흔적. 실패해도 status 는 PENDING 이라 상태만으로는 실패를 셀 수 없다.
   lastFailedAt: Date | null;
   lastFailureReason: string | null;
+  // 반영이 지금 돌고 있다는 흔적. 끝나면 지워지므로 null 이 정상이다 — 남아 있으면 중단됐다는 뜻.
+  applyProgress: ApplyProgressState | null;
 }
 
 // 새 preview 생성 시 호출자가 채워 넘기는 데이터. id / status / createdAt / appliedAt / cancelledAt 은 시스템이 채움.

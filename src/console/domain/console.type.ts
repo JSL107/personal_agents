@@ -147,6 +147,23 @@ export type ConsoleEvent =
       readonly approval: ConsoleApproval;
     }
   | {
+      /**
+       * 승인은 접수됐는데 반영이 실패했다.
+       *
+       * 이 이벤트가 없던 동안 실패의 유일한 표현은 "카드가 다음 스냅샷에 되돌아온다" 였다.
+       * 사용자에게는 그것이 실패가 아니라 **안 눌린 것**으로 보이므로 다시 누르게 되고, 그때
+       * 이미 반영된 단계가 한 번 더 실행된다(2026-09-23 실측: 같은 승인이 두 번 통째로 실행).
+       * 카드를 되돌리는 것만으로는 그 오해를 끊을 수 없어 사유를 함께 실어 보낸다.
+       *
+       * 카드는 `status` 가 PENDING 으로 남아 여전히 승인 가능하다 — 이 이벤트는 카드를 걷어가는
+       * `approval.resolved` 와 반대로, **되살리면서 왜 되살아났는지를 말하는** 쪽이다.
+       */
+      readonly type: 'approval.failed';
+      readonly approval: ConsoleApproval;
+      /** 사용자에게 그대로 보일 한 줄. 재시도 전에 무엇을 확인해야 하는지가 여기 담긴다. */
+      readonly reason: string;
+    }
+  | {
       readonly type: 'state.changed';
       readonly agentType: string;
       readonly state: ConsoleAgentState;
