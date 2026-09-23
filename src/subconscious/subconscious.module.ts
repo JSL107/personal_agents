@@ -24,6 +24,8 @@ import { SUBCONSCIOUS_GATE } from './domain/port/subconscious-gate.port';
 import { SUBCONSCIOUS_PROPOSAL_REPOSITORY } from './domain/port/subconscious-proposal.repository.port';
 import { SUBCONSCIOUS_TICK_QUEUE } from './domain/subconscious-tick.type';
 import { GithubStateSource } from './infrastructure/github-state-source';
+import { HybridSubconsciousGate } from './infrastructure/hybrid-subconscious-gate';
+import { JevSubconsciousGate } from './infrastructure/jev-subconscious-gate';
 import { LlmSubconsciousGate } from './infrastructure/llm-subconscious-gate';
 import { NotionStateSource } from './infrastructure/notion-state-source';
 import { RedisPromotionBudget } from './infrastructure/redis-promotion-budget';
@@ -74,9 +76,11 @@ import { SubconsciousProposalPrismaRepository } from './infrastructure/subconsci
     },
     // ── Gate ─────────────────────────────────────────────────────────────────
     LlmSubconsciousGate,
+    JevSubconsciousGate,
+    HybridSubconsciousGate,
     {
       provide: SUBCONSCIOUS_GATE,
-      useExisting: LlmSubconsciousGate,
+      useExisting: HybridSubconsciousGate,
     },
     // ── Promotion Budget (Redis sliding-window) ───────────────────────────────
     {
