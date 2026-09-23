@@ -420,6 +420,9 @@ describe('career-mate.formatter', () => {
     expect(text).not.toContain('<script>');
     expect(text).toContain('반영한 PR');
     expect(text).toContain('o/r#1692');
+    // 본문 반영은 백그라운드라 이 시점엔 아직 안 끝났다 — "완료" 로 되돌리면 거짓 보고다.
+    expect(text).toContain('갱신 중');
+    expect(text).not.toContain('반영 완료');
   });
 
   it('formatPrRetro 는 여러 evidence PR 을 모두 나열한다', () => {

@@ -63,6 +63,7 @@ export class ReflectPrUsecase {
     slackUserId,
     prText,
     impactContext,
+    deferPortfolioSync,
   }: ReflectPrInput): Promise<AgentRunOutcome<ReflectPrResult>> {
     const refs = extractPrReferences(prText); // 0건 시 INVALID_PR_REFERENCE
     // 빈 문자열·공백만 들어온 입력은 없는 것과 같게 다룬다. 이후 분기가 전부 이 값을
@@ -186,7 +187,13 @@ export class ReflectPrUsecase {
         });
 
         // 방금 저장한 최신 프로필을 그대로 Notion 포트폴리오에 append (RenderPortfolio 재사용).
-        const portfolio = await this.renderPortfolio.execute({ slackUserId });
+        // 사람이 Slack 에서 기다리는 경로만 본문 반영을 미룬다 — 그 구간이 이 실행의 78%
+        // 였다(근거는 render-portfolio.usecase.ts 의 해당 분기 주석). 켤지 말지는 호출부가
+        // 정한다: 완료를 단정 보고하는 경로에서 미루면 거짓 보고가 된다(ReflectPrInput 주석).
+        const portfolio = await this.renderPortfolio.execute({
+          slackUserId,
+          ...(deferPortfolioSync ? { deferBlockSync: true } : {}),
+        });
 
         this.logger.log(
           `CAREER_MATE REFLECT_PR 완료 — PR ${refs

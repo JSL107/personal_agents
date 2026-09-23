@@ -218,6 +218,9 @@ describe('CareerMateDispatcher', () => {
     expect(d.reflectPr.execute).toHaveBeenCalledWith({
       slackUserId: 'U1',
       prText: 'https://github.com/o/r/pull/1692 회고',
+      // 사람이 Slack 에서 기다리는 경로만 본문 반영을 미룬다 — 저녁 승인 경로
+      // (EveningCareerReflectApplier)는 켜지 않는다.
+      deferPortfolioSync: true,
     });
     expect(outcome.formattedText).toContain('https://notion/pr');
   });

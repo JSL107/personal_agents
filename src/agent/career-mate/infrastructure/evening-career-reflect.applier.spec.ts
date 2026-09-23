@@ -46,6 +46,15 @@ describe('EveningCareerReflectApplier', () => {
       slackUserId: 'U1',
       prText: 'JSL107/personal_agents#400',
     });
+    // deferPortfolioSync 를 켜지 않는다. 이 경로는 "이력서/포트폴리오에 반영했습니다" 로
+    // 단정 보고하고 일회성 승인 카드를 소비하는데, 본문 반영을 백그라운드로 미루면 아직
+    // 반영되지 않았거나 실패한 상태로 그 문구가 나가고 failedGroups 도 그 실패를 잡지
+    // 못한다(백그라운드에서 삼켜지므로). 카드는 한 번 소비되면 다시 누를 수 없다.
+    // (이 경로도 사용자를 기다리게 한다 — 승인 버튼은 applier 가 끝나야 "적용 완료" 를
+    //  띄운다. 다만 그 소요는 미루기가 아니라 중복 재작성 제거로 줄일 몫이다.)
+    for (const call of reflectPr.execute.mock.calls) {
+      expect(call[0].deferPortfolioSync).toBeUndefined();
+    }
   });
 
   it('(b) 묶음을 순차로 실행한다 — 병렬이면 뒤 저장이 앞 성과를 덮어쓴다(lost update)', async () => {
