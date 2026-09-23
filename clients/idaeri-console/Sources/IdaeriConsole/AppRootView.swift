@@ -66,6 +66,7 @@ struct AppRootView: View {
         ) { _ in
             // 지시 바는 오피스 탭에만 있다. 대시보드를 보고 있을 때 눌렸다면 탭까지 옮겨 준다 —
             // 안 그러면 메뉴를 눌러도 아무 일도 일어나지 않는다.
+            selectedOfficeAgent = nil
             tab = .office
             isPresidentBarOpen = true
         }
