@@ -116,14 +116,20 @@ struct AppRootView: View {
         resolveApproval(id: id, action: "거절") { try await client.cancelApproval(id: id) }
     }
 
-    /// 승인/거절 공통 경로. 성공하면 SSE 를 기다리지 않고 카드를 즉시 걷어내고,
-    /// 실패하면 사유를 화면에 남긴 뒤 스냅샷으로 재동기화한다.
+    /// 승인/거절 공통 경로. 누른 즉시 카드를 감추고, 성공하면 그대로 걷어낸다.
+    /// 실패하면 사유를 화면에 남기고 정본을 다시 받은 뒤 감춤을 푼다.
     /// 실패의 상당수는 화면이 낡아 생긴 것(TTL 만료된 카드를 누름)이라 재동기화가 곧 정정이다.
+    ///
+    /// **누른 즉시 감추는 이유**는 백엔드 왕복이 길어서다(승인 반영은 codex·Notion 왕복).
+    /// 화면이 그대로면 안 눌린 줄 알고 다시 누르게 되는데, 그 두 번째 클릭은 백엔드가
+    /// `ALREADY_APPLYING` 으로 거절하고 여기서는 "이미 처리됐거나 만료된 요청" 으로 읽힌다 —
+    /// 실제로는 첫 클릭이 정상으로 돌고 있는데도 실패한 것처럼 보였다.
     private func resolveApproval(
         id: String,
         action: String,
         perform: @escaping () async throws -> Void
     ) {
+        store.beginResolvingApproval(id: id)
         Task {
             do {
                 try await perform()
@@ -134,7 +140,12 @@ struct AppRootView: View {
             } catch {
                 let reason = approvalFailureReason(error)
                 await MainActor.run { store.setApprovalNotice("\(action) 실패 — \(reason)") }
+                // 정본을 **먼저** 받고 그다음 감춤을 푼다. 순서를 뒤집으면 이미 처리됐거나
+                // 만료된 카드가 버튼과 함께 잠깐 돌아왔다가 사라진다. 재동기화 뒤에도 카드가
+                // 남아 있으면(백엔드가 죽어 조회 자체가 실패한 경우 포함) 버튼이 되살아나
+                // 다시 누를 수 있다.
                 await resyncSnapshot()
+                await MainActor.run { store.endResolvingApproval(id: id) }
             }
         }
     }

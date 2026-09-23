@@ -158,6 +158,18 @@ public func buildApprovalRequest(
         .appendingPathComponent(action)
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
+    // 기본값 60초로는 짧다. 60초에 클라이언트가 먼저 포기하면 두 번 잘못된다 — 첫 클릭은
+    // 정상으로 돌고 있는데도 연결 실패로 보고되고, 그 카드를 다시 누르면 백엔드가
+    // `ALREADY_APPLYING` 으로 거절해 "이미 처리됐거나 만료" 라는 틀린 안내가 뜬다.
+    //
+    // **180 은 충분한 값이 아니라 덜 나쁜 값이다.** `ApplyPreviewUsecase` 의 "2분 창" 주석은
+    // 실측이 아니다 — 2026-09-23 DB 실측으로 EVENING_CAREER_REFLECT 한 건(preview
+    // 66e8c828, payload.prGroups 4개)이 묶음당 7~14분씩 **순차로** 돌았다(agent_run 4760 =
+    // 13.9분, 4752 = 7.3분, applier 주석 "순차 실행이어야 한다 — lost update"). 묶음이
+    // 여럿이면 apply 한 번이 30분을 넘는다. 그 구간은 어떤 타임아웃 값으로도 못 덮는다 —
+    // write 를 202 접수 + SSE `approval.resolved` 통보로 바꾸는 것이 실제 해법이고(백엔드
+    // 변경), 이 값은 그때까지의 완충이다. 여기서 숫자만 키우며 멈추지 말 것.
+    request.timeoutInterval = 180
     if let token {
         request.setValue(token, forHTTPHeaderField: "x-console-token")
     }

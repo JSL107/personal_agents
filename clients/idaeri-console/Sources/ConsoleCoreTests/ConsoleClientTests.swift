@@ -54,6 +54,10 @@ func runConsoleClientTests(_ t: TestRunner) {
         "http://127.0.0.1:3002/v1/console/approvals/p1/apply",
         "apply 경로"
     )
+    // 승인 반영은 백엔드가 codex·Notion 을 왕복해 2분까지 걸린다. 기본 60초로 두면 정상
+    // 처리 중인 요청을 클라이언트가 먼저 포기한다.
+    t.expectEqual(applyRequest.timeoutInterval, 180, "apply 타임아웃 여유")
+
     let cancelRequest = buildApprovalRequest(baseURL: base, previewId: "p2", action: "cancel", token: nil)
     t.expectEqual(
         cancelRequest.url?.absoluteString,
