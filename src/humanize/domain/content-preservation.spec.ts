@@ -102,7 +102,11 @@ describe('content preservation', () => {
       '2026년 9월 24일에 발행합니다.',
     ],
   ])('%s', (_label, original, rewritten) => {
-    const violations = findPreservationViolations(original, rewritten);
+    const violations = findPreservationViolations(
+      original,
+      rewritten,
+      'personal-blog',
+    );
 
     expect(violations).toEqual(
       expect.arrayContaining([
@@ -117,6 +121,7 @@ describe('content preservation', () => {
     const violations = findPreservationViolations(
       '김 대표는 "다음 주에 공개합니다"라고 밝혔습니다.',
       '김 대표는 "이번 주에 공개합니다"라고 밝혔습니다.',
+      'personal-blog',
     );
 
     expect(violations).toEqual(
@@ -132,6 +137,7 @@ describe('content preservation', () => {
     const violations = findPreservationViolations(
       '이 기능은 "자동화"라는 이름으로 소개됐습니다.',
       '이 기능은 자동화라는 이름으로 소개됐습니다.',
+      'personal-blog',
     );
 
     expect(violations).toEqual([]);
@@ -142,6 +148,7 @@ describe('content preservation', () => {
     const violations = findPreservationViolations(
       '문장은 "이 표현을 뭐라고 할까요"로 소개됐습니다.',
       '문장은 이 표현을 뭐라고 할까요로 소개됐습니다.',
+      'personal-blog',
     );
 
     expect(violations).toEqual([]);
@@ -152,6 +159,7 @@ describe('content preservation', () => {
     const violations = findPreservationViolations(
       '개인정보보호법 제15조 제1항을 적용합니다.',
       '개인정보보호법 제16조 제1항을 적용합니다.',
+      'personal-blog',
     );
 
     expect(violations).toEqual(
@@ -171,6 +179,120 @@ describe('content preservation', () => {
 
     expect(violations).toEqual([]);
     expect(shouldRollbackField(violations)).toBe(false);
+  });
+
+  it('블로그에서는 동일한 날짜·인용·법조문 참조의 등장 횟수 감소를 감지한다', () => {
+    const original =
+      '2026-09-23에 제15조를 확인했습니다. 김 대표는 "공개합니다"라고 밝혔습니다. 2026-09-23에 제15조를 다시 확인했습니다. 김 대표는 "공개합니다"라고 밝혔습니다.';
+    const rewritten =
+      '2026-09-23에 제15조를 확인했습니다. 김 대표는 "공개합니다"라고 밝혔습니다.';
+
+    const violations = findPreservationViolations(
+      original,
+      rewritten,
+      'personal-blog',
+    );
+
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        { kind: 'date', token: '2026-09-23', direction: 'lost' },
+        { kind: 'quote', token: '"공개합니다"', direction: 'lost' },
+        { kind: 'legal', token: '제15조', direction: 'lost' },
+      ]),
+    );
+    expect(shouldRollbackField(violations)).toBe(true);
+  });
+
+  it('기본 보고서에서는 블로그 전용 인용 검사를 적용하지 않는다', () => {
+    const violations = findPreservationViolations(
+      '김 대표는 "계획"이라고 밝혔습니다.',
+      '김 대표는 계획이라고 밝혔습니다.',
+    );
+
+    expect(violations).toEqual([]);
+  });
+
+  it('줄바꿈·500자 초과·콜론으로 도입한 직접 인용의 내용 변경을 감지한다', () => {
+    const original = `김 대표의 발언은 다음과 같습니다: "${'계획을 설명합니다. '.repeat(40)}\n다음 주에 공개합니다."`;
+    const rewritten = original.replace('다음 주에', '이번 주에');
+
+    const violations = findPreservationViolations(
+      original,
+      rewritten,
+      'personal-blog',
+    );
+
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'quote', direction: 'lost' }),
+        expect.objectContaining({ kind: 'quote', direction: 'injected' }),
+      ]),
+    );
+  });
+
+  it('근처 발언 뒤의 용어 따옴표 제거는 인용 소실로 오인하지 않는다', () => {
+    const violations = findPreservationViolations(
+      '김 대표는 "계획"이라고 밝혔습니다. 이후 "자동화"라는 이름을 썼습니다.',
+      '김 대표는 "계획"이라고 밝혔습니다. 이후 자동화라는 이름을 썼습니다.',
+      'personal-blog',
+    );
+
+    expect(violations).toEqual([]);
+  });
+
+  it('절차 소개 뒤의 용어 따옴표는 발언으로 오인하지 않는다', () => {
+    const violations = findPreservationViolations(
+      '절차는 다음과 같습니다: "자동화" 단계를 실행합니다.',
+      '절차는 다음과 같습니다: 자동화 단계를 실행합니다.',
+      'personal-blog',
+    );
+
+    expect(violations).toEqual([]);
+  });
+
+  it('같은 문장 안에서 용어 따옴표 뒤에 발언 인용이 나와도 용어 변경은 허용한다', () => {
+    const violations = findPreservationViolations(
+      '문서에는 "용어"라고 설명했고, 이어서 "발언"이라고 밝혔다.',
+      '문서에는 용어라고 설명했고, 이어서 "발언"이라고 밝혔다.',
+      'personal-blog',
+    );
+
+    expect(violations).toEqual([]);
+  });
+
+  it.each([
+    '김 대표는 "계획"이라고 했습니다.',
+    '김 대표는 "계획"이라고 답했습니다.',
+    '김민수는 "계획"이라고 밝혔습니다.',
+    '교육부는 "계획"이라고 밝혔습니다.',
+  ])('이름·기관·일반 발언 동사도 직접 인용으로 보존한다: %s', (original) => {
+    const violations = findPreservationViolations(
+      original,
+      original.replace('"계획"', '"변경"'),
+      'personal-blog',
+    );
+
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        { kind: 'quote', token: '"계획"', direction: 'lost' },
+        { kind: 'quote', token: '"변경"', direction: 'injected' },
+      ]),
+    );
+  });
+
+  it('같은 문장의 뒤쪽 실제 발언 변경은 보존 위반으로 감지한다', () => {
+    const violations = findPreservationViolations(
+      '문서에는 "용어"라고 설명했고, 이어서 "발언"이라고 밝혔다.',
+      '문서에는 "용어"라고 설명했고, 이어서 "변경"이라고 밝혔다.',
+      'personal-blog',
+    );
+
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        { kind: 'quote', token: '"발언"', direction: 'lost' },
+        { kind: 'quote', token: '"변경"', direction: 'injected' },
+      ]),
+    );
   });
 
   it('URL 안 숫자는 number로 중복 계산하지 않는다', () => {
@@ -369,6 +491,7 @@ describe('content preservation', () => {
     const violations = findPreservationViolations(
       '기준일은 2026-08-25입니다.',
       '기준일은 2026-09-25입니다.',
+      'personal-blog',
     );
 
     expect(violations).toEqual(

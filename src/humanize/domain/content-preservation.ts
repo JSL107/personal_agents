@@ -13,7 +13,16 @@ export type PreservationViolation = {
   direction: 'injected' | 'lost';
 };
 
-type PreservedTokens = Record<PreservedTokenKind, Set<string>>;
+export type PreservationProfile = 'report' | 'personal-blog';
+
+type TokenCounts = Map<string, number>;
+type PreservedTokens = Record<PreservedTokenKind, TokenCounts>;
+
+const BLOG_TOKEN_KINDS = new Set<PreservedTokenKind>([
+  'date',
+  'quote',
+  'legal',
+]);
 
 const TOKEN_KINDS: PreservedTokenKind[] = [
   'code',
@@ -43,19 +52,28 @@ const URL_CLOSER_TO_OPENER: Record<string, string> = {
 export const findPreservationViolations = (
   original: string,
   rewritten: string,
+  profile: PreservationProfile = 'report',
 ): PreservationViolation[] => {
-  const originalTokens = extractPreservedTokens(original);
-  const rewrittenTokens = extractPreservedTokens(rewritten);
+  const originalTokens = extractPreservedTokens(original, profile);
+  const rewrittenTokens = extractPreservedTokens(rewritten, profile);
   const violations: PreservationViolation[] = [];
 
   for (const kind of TOKEN_KINDS) {
-    for (const token of rewrittenTokens[kind]) {
-      if (!originalTokens[kind].has(token)) {
+    for (const [token, count] of rewrittenTokens[kind]) {
+      const previousCount = originalTokens[kind].get(token) ?? 0;
+      const injectedCount = BLOG_TOKEN_KINDS.has(kind)
+        ? count - previousCount
+        : Number(previousCount === 0);
+      for (let index = 0; index < injectedCount; index += 1) {
         violations.push({ kind, token, direction: 'injected' });
       }
     }
-    for (const token of originalTokens[kind]) {
-      if (!rewrittenTokens[kind].has(token)) {
+    for (const [token, count] of originalTokens[kind]) {
+      const rewrittenCount = rewrittenTokens[kind].get(token) ?? 0;
+      const lostCount = BLOG_TOKEN_KINDS.has(kind)
+        ? count - rewrittenCount
+        : Number(rewrittenCount === 0);
+      for (let index = 0; index < lostCount; index += 1) {
         violations.push({ kind, token, direction: 'lost' });
       }
     }
@@ -73,23 +91,32 @@ export const shouldRollbackField = (
   );
 };
 
-const extractPreservedTokens = (text: string): PreservedTokens => {
+const extractPreservedTokens = (
+  text: string,
+  profile: PreservationProfile,
+): PreservedTokens => {
   const tokens: PreservedTokens = {
-    code: new Set<string>(),
-    url: new Set<string>(),
-    pr: new Set<string>(),
-    number: new Set<string>(),
-    date: new Set<string>(),
-    quote: new Set<string>(),
-    legal: new Set<string>(),
+    code: new Map<string, number>(),
+    url: new Map<string, number>(),
+    pr: new Map<string, number>(),
+    number: new Map<string, number>(),
+    date: new Map<string, number>(),
+    quote: new Map<string, number>(),
+    legal: new Map<string, number>(),
   };
 
   let remaining = extractAndMask(text, /`[^`]+`/g, tokens.code);
   remaining = extractUrlsAndMask(remaining, tokens.url);
   remaining = extractAndMask(remaining, /#[0-9]+/g, tokens.pr);
-  remaining = extractAndMask(remaining, DATE_PATTERN, tokens.date);
-  remaining = extractDirectQuotesAndMask(remaining, tokens.quote);
-  remaining = extractAndMask(remaining, LEGAL_REFERENCE_PATTERN, tokens.legal);
+  if (profile === 'personal-blog') {
+    remaining = extractAndMask(remaining, DATE_PATTERN, tokens.date);
+    remaining = extractDirectQuotesAndMask(remaining, tokens.quote);
+    remaining = extractAndMask(
+      remaining,
+      LEGAL_REFERENCE_PATTERN,
+      tokens.legal,
+    );
+  }
   extractAndMask(
     remaining,
     /(?<![0-9])[-+]?[$₩€£]?(?:[0-9]+(?:,[0-9]{3})*(?:\.[0-9]+)?|\.[0-9]+)%?/g,
@@ -105,38 +132,57 @@ const DATE_PATTERN =
 const LEGAL_REFERENCE_PATTERN =
   /제\s*\d+\s*조(?:의\s*\d+)?(?:\s*제\s*\d+\s*항)?(?:\s*제\s*\d+\s*호)?/g;
 
-const DIRECT_QUOTE_PATTERN =
-  /"[^"\n]{1,500}"|“[^”\n]{1,500}”|「[^」\n]{1,500}」|『[^』\n]{1,500}』/g;
+const DIRECT_QUOTE_PATTERN = /"[^"]+"|“[^”]+”|「[^」]+」|『[^』]+』/g;
 
-const SPEECH_MARKER_PATTERN =
-  /(?:말했|밝혔|전했|설명했|지적했|주장했|언급했|따르면|라고|라며|이라는 설명)/;
+const QUOTE_INTRO_PATTERN =
+  /(?:(?:말했|밝혔|전했|설명했|지적했|주장했|언급했)(?:습니다|다)?|(?:발언|답변|설명|입장|말)(?:은|는|이|가)?\s*다음과\s*같습니다)\s*[:：]?\s*$/;
+const SPEAKER_PATTERN =
+  /(?:^|\s)(?:[가-힣]{1,20}\s+)?[가-힣]{1,20}(?<!에)(?:은|는|이|가)[^"“”「」『』\n.!?]{0,40}$/;
+const DIRECT_ATTRIBUTION_PATTERN =
+  /^\s*(?:이라고|라고|라며)[^"“”「」『』\n.!?]{0,40}(?:말했|밝혔|전했|주장했|언급했|답했|\s했)/;
+const EXPLANATION_ATTRIBUTION_PATTERN =
+  /^\s*(?:이라고|라고|라며)[^"“”「」『』\n.!?]{0,40}(?:설명했|지적했)/;
 
 const extractDirectQuotesAndMask = (
   text: string,
-  tokens: Set<string>,
+  tokens: TokenCounts,
 ): string => {
   return text.replace(DIRECT_QUOTE_PATTERN, (quote, offset, source) => {
-    const contextStart = Math.max(0, offset - 40);
-    const contextEnd = Math.min(source.length, offset + quote.length + 40);
-    const context =
-      source.slice(contextStart, offset) +
-      source.slice(offset + quote.length, contextEnd);
-    if (!SPEECH_MARKER_PATTERN.test(context)) {
+    const before = source.slice(Math.max(0, offset - 80), offset);
+    const sentenceStart = Math.max(
+      before.lastIndexOf('.'),
+      before.lastIndexOf('!'),
+      before.lastIndexOf('?'),
+      before.lastIndexOf('\n'),
+    );
+    const introduction = before.slice(sentenceStart + 1);
+    const attribution = source.slice(
+      offset + quote.length,
+      offset + quote.length + 80,
+    );
+    if (
+      !QUOTE_INTRO_PATTERN.test(introduction) &&
+      !DIRECT_ATTRIBUTION_PATTERN.test(attribution) &&
+      !(
+        SPEAKER_PATTERN.test(introduction) &&
+        EXPLANATION_ATTRIBUTION_PATTERN.test(attribution)
+      )
+    ) {
       return quote;
     }
-    tokens.add(quote);
+    addToken(tokens, quote);
     return ' '.repeat(quote.length);
   });
 };
 
 const URL_PATTERN = /https?:\/\/[^\s]+/g;
 
-const extractUrlsAndMask = (text: string, tokens: Set<string>): string => {
+const extractUrlsAndMask = (text: string, tokens: TokenCounts): string => {
   return text.replace(URL_PATTERN, (matched) => {
     // 문장 구두점과 균형 밖 닫는 괄호만 URL에서 빼고 후속 추출용 원문에는 남긴다.
     const url = trimTrailingUrlPunctuation(matched);
     const punctuation = matched.slice(url.length);
-    tokens.add(url);
+    addToken(tokens, url);
     return `${' '.repeat(url.length)}${punctuation}`;
   });
 };
@@ -220,10 +266,14 @@ const hasUnmatchedClosingBracket = (
 const extractAndMask = (
   text: string,
   pattern: RegExp,
-  tokens: Set<string>,
+  tokens: TokenCounts,
 ): string => {
   return text.replace(pattern, (token) => {
-    tokens.add(token);
+    addToken(tokens, token);
     return ' '.repeat(token.length);
   });
+};
+
+const addToken = (tokens: TokenCounts, token: string): void => {
+  tokens.set(token, (tokens.get(token) ?? 0) + 1);
 };
