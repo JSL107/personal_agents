@@ -1816,6 +1816,35 @@ private let departmentFeatureFraction: [Department: Double] = [
     .internalOps: 0.48,
 ]
 
+/// 콘솔이 **처음 노리는 칸**(구역 원점 기준 x 오프셋). 자리를 고르는 쪽과 그 자리를 비워
+/// 주는 쪽이 같은 값을 봐야 하므로 여기 한 곳에서 센다.
+func officeDepartmentFeaturePreferredOffset(
+    _ department: Department, zoneInnerWidth: Int
+) -> Int {
+    Int((Double(zoneInnerWidth) * (departmentFeatureFraction[department] ?? 0.5)).rounded())
+}
+
+/// 콘솔에게 **먼저 내주는 책상 칸**(구역 원점 기준 상대 좌표).
+///
+/// 콘솔 자리는 책상이 다 놓인 뒤에 고르는데, 자리표가 꽉 찬 방은 그때 이미 갈 곳이 없어
+/// 남의 좌석 위에 선다. 그렇다고 책상 쪽에서 콘솔 자리를 **막아 버리면** 정원을 채운 방
+/// (운영실 열 명)에서 한 사람이 배정을 못 받아 화면에서 사라진다 — 겹치는 것보다 나쁘다.
+///
+/// 그래서 막지 않고 **뒤로 미룬다**(`spotCandidates` 의 순서). 자리가 남는 방은 이 칸을
+/// 건너뛰어 콘솔이 깨끗한 자리를 얻고, 모자라는 방은 그대로 앉혀 전원 배정을 지킨다.
+///
+/// 두 칸인 것은 콘솔 그림이 기준 칸과 그 오른쪽 한 칸을 함께 덮기 때문이고, 줄이 하나인
+/// 것은 **책상이 쓰는 줄이 y = 1 과 4 둘뿐**이어서다(`fallbackDeskSpots` 도 같은 줄을 쓴다).
+/// y = 4 의 좌석은 y = 5 라 콘솔이 덮는 범위(자기 줄부터 두 줄 뒤) 밖으로 나간다.
+public func officeDepartmentFeatureReservedDeskLocals(
+    _ department: Department, zoneInnerWidth: Int
+) -> [TilePoint] {
+    let preferred = officeDepartmentFeaturePreferredOffset(
+        department, zoneInnerWidth: zoneInnerWidth
+    )
+    return [TilePoint(x: preferred, y: 1), TilePoint(x: preferred + 1, y: 1)]
+}
+
 /// 콘솔을 `tile` 에 놓았을 때 그 그림이 덮는, **화면에 그려지는 가구**.
 ///
 /// 범위는 기준 칸과 그 오른쪽 한 칸, 자기 줄에서 두 줄 뒤까지다. 뒤로 두 줄을 보는 것은
@@ -1862,8 +1891,8 @@ public func officeDepartmentFeatureTile(
     furniture: [FurniturePlacement]
 ) -> TilePoint {
     let row = zone.origin.y + 1
-    let preferred = Int(
-        (Double(zone.width - 1) * (departmentFeatureFraction[zone.department] ?? 0.5)).rounded()
+    let preferred = officeDepartmentFeaturePreferredOffset(
+        zone.department, zoneInnerWidth: zone.width - 1
     )
     func collisionCount(_ offset: Int) -> Int {
         officeDepartmentFeatureCoverage(
@@ -2505,7 +2534,17 @@ public func officeFloorPlan(agents: [ConsoleAgent], zoneColumns: Int = 3) -> Off
             .sorted()
         // 부서 배치표를 먼저 쓰고, 다 쓰면 예비 격자로 이어 채운다. 배치표만 두면 에이전트가
         // 늘었을 때 자리를 못 받은 사람이 화면에서 조용히 사라진다.
-        let spotCandidates = departmentDeskSpots(zoneDepartment) + fallbackDeskSpots
+        // 콘솔이 노리는 두 칸은 **뒤로 민다**(막지 않는다 — 막으면 정원을 채운 방에서 한
+        // 사람이 자리를 못 받는다). 자리가 남으면 건너뛰어 콘솔이 남의 좌석을 덮지 않고,
+        // 모자라면 그대로 앉아 전원 배정이 유지된다.
+        let reservedForFeature = Set(
+            officeDepartmentFeatureReservedDeskLocals(
+                zoneDepartment, zoneInnerWidth: zoneWidth
+            )
+        )
+        let allSpots = departmentDeskSpots(zoneDepartment) + fallbackDeskSpots
+        let spotCandidates = allSpots.filter { !reservedForFeature.contains($0) }
+            + allSpots.filter { reservedForFeature.contains($0) }
         var usedLocals: Set<TilePoint> = []
         for agentType in members {
             // 좌석은 책상 바로 위 칸이므로 책상 y 는 천장 벽 아래(zoneHeight - 2)까지만 유효하다.
