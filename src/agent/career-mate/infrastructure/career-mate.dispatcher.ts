@@ -131,6 +131,9 @@ export class CareerMateDispatcher implements AgentDispatcher {
         const outcome = await this.reflectPr.execute({
           slackUserId,
           prText: input.text ?? '',
+          // 사람이 Slack 에서 답을 기다리는 경로 — 포트폴리오 본문 반영은 링크를 준 뒤
+          // 백그라운드로 마저 한다. 응답 문구(formatPrRetro)도 "갱신 중" 으로 맞춰 뒀다.
+          deferPortfolioSync: true,
         });
         return this.toOutcome(
           outcome.agentRunId,

@@ -365,7 +365,10 @@ export const formatPrRetro = (result: ReflectPrResult): string => {
     `• A: ${escapeSlackMrkdwn(star.action)}`,
     `• R: ${escapeSlackMrkdwn(star.result)}`,
     ``,
-    `*포트폴리오 반영 완료* ✅\n${result.portfolioUrl}`,
+    // "완료" 라고 쓰지 않는다 — REFLECT_PR 은 링크만 확보하고 본문 반영은 백그라운드로
+    // 넘긴다(render-portfolio.usecase.ts 의 deferBlockSync). 성과가 쌓인 페이지는 반영에
+    // 수백 초가 걸려, 방금 회고한 내용이 아직 안 보이는 채로 링크를 열 수 있다.
+    `*포트폴리오 갱신 중* ⏳ (본문 반영에 잠시 걸립니다)\n${result.portfolioUrl}`,
   ].join('\n');
 };
 
