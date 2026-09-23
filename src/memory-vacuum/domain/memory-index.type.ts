@@ -23,6 +23,11 @@ export interface MemoryIndexSnapshot {
   project: string; // 프로젝트 디렉터리명
   indexPath: string;
   indexContent: string; // MEMORY.md 원문 (없으면 빈 문자열)
+  // 위성 색인(TOPICS.md) 원문. 색인이 상한에 눌려 주제별 상세 목록을 옆 파일로 뺀
+  // 프로젝트가 있다. 그 목록도 엄연한 커버리지라, 이것을 읽지 않으면 거기 등재된
+  // 기억 전부가 고아로 판정된다 — 2026-09-20 실측: 50줄 색인에 250줄이 도로 실려
+  // 300줄이 됐고, 뒷부분 100줄이 다시 잘렸다. 없으면 빈 문자열.
+  satelliteContent: string;
   files: MemoryFile[]; // memory/*.md 중 MEMORY.md 제외
 }
 

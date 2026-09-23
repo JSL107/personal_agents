@@ -9,6 +9,7 @@ const buildSnapshot = (
   project: 'test-project',
   indexPath: '/tmp/MEMORY.md',
   indexContent,
+  satelliteContent: '',
   files,
 });
 

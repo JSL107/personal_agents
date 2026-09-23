@@ -6,6 +6,7 @@ const snapshot: MemoryIndexSnapshot = {
   project: 'p',
   indexPath: '/tmp/p/MEMORY.md',
   indexContent: '- [있음](a.md)\n',
+  satelliteContent: '',
   files: [
     { fileName: 'a.md', title: '있음' },
     { fileName: 'b.md', title: '고아' },

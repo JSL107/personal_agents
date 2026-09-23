@@ -81,6 +81,7 @@ describe('MemoryStoreFsAdapter', () => {
       project: 'p',
       indexPath: join(dir, 'MEMORY.md'),
       indexContent: '원본',
+      satelliteContent: '',
       files: [],
     };
 
@@ -88,6 +89,7 @@ describe('MemoryStoreFsAdapter', () => {
     const second = await adapter.backup({
       ...snapshot,
       indexContent: '청소된 뒤 내용',
+      satelliteContent: '',
     });
 
     expect(second).toBe(first);
@@ -134,6 +136,51 @@ describe('MemoryStoreFsAdapter', () => {
     ]);
   });
 
+  it('위성 색인(TOPICS.md)을 스냅샷에 싣는다', async () => {
+    await writeProject('sat', {
+      'MEMORY.md': '- [TOPICS](TOPICS.md)\n',
+      'TOPICS.md': '- [주제 상세](a.md)\n',
+      'a.md': 'x',
+    });
+
+    const { snapshots } = await buildAdapter(root).loadSnapshots();
+
+    expect(snapshots[0].satelliteContent).toContain('주제 상세');
+  });
+
+  it('위성 색인을 읽을 수 없으면 빈 값으로 삼키지 않고 실패로 낸다', async () => {
+    // 빈 문자열로 물러서면 위성에 등재된 기억 전부가 고아로 판정되어, 청소기가
+    // 그것을 색인에 도로 싣는다 — 이 위성 인식이 막으려던 사고 그 자체다.
+    const dir = join(root, 'broken-sat', 'memory');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(join(dir, 'MEMORY.md'), '- [있음](a.md)\n', 'utf8');
+    await fs.writeFile(join(dir, 'a.md'), 'x', 'utf8');
+    await fs.mkdir(join(dir, 'TOPICS.md'), { recursive: true });
+
+    const { snapshots, unreadable } = await buildAdapter(root).loadSnapshots();
+
+    expect(snapshots).toEqual([]);
+    expect(unreadable).toEqual([
+      {
+        project: 'broken-sat',
+        reason: expect.stringContaining('색인 읽기 실패'),
+      },
+    ]);
+  });
+
+  it('위성 색인이 없는 것은 실패가 아니다', async () => {
+    // 위성을 쓰는 프로젝트가 소수라 이것이 실패면 나머지 전부가 청소에서 빠진다.
+    await writeProject('no-sat', {
+      'MEMORY.md': '- [있음](a.md)\n',
+      'a.md': 'x',
+    });
+
+    const { snapshots, unreadable } = await buildAdapter(root).loadSnapshots();
+
+    expect(unreadable).toEqual([]);
+    expect(snapshots[0].satelliteContent).toBe('');
+  });
+
   it('색인 파일이 아직 없는 것은 실패가 아니다', async () => {
     // 첫 회차에는 색인이 없다. 이것까지 실패로 세면 새 프로젝트가 영영 청소되지 않는다.
     await writeProject('fresh', { 'a.md': 'x' });
@@ -153,6 +200,7 @@ describe('MemoryStoreFsAdapter', () => {
       project: 'p',
       indexPath: join(dir, 'MEMORY.md'),
       indexContent: '원본',
+      satelliteContent: '',
       files: [],
     };
     await fs.writeFile(
@@ -176,6 +224,7 @@ describe('MemoryStoreFsAdapter', () => {
       project: 'p',
       indexPath: join(dir, 'MEMORY.md'),
       indexContent: '원본',
+      satelliteContent: '',
       files: [],
     };
 
