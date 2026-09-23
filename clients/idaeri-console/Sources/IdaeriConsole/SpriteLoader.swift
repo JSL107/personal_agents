@@ -436,8 +436,12 @@ enum SpriteLoader {
             assetName = "chair"
         case .sofa2, .sofa3:
             assetName = "sofa"
-        case .meetingTable, .coffeeTable:
+        case .meetingTable:
             assetName = "meeting-table"
+        // 응접 테이블은 전용 원화가 생겼다. 예전에는 회의 테이블 그림을 같이 썼는데, 여섯
+        // 사람이 둘러앉는 큰 타원이 소파 앞 낮은 탁자 자리에 들어가 방의 뜻이 바뀌었다.
+        case .coffeeTable:
+            assetName = "coffee-table"
         // 책장 원화는 여기 남는다. **그릴지 말지는 `officeCozyDrawnFurnitureKinds` 가
         // 정한다** — 이 함수에서 nil 을 돌리면 안 그려지는 것이 아니라 옛 도트 도형
         // fallback 으로 내려가, 3D 방 배경 위에 납작한 판때기가 뜬다(실측으로 확인).

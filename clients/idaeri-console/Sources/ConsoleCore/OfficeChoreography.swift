@@ -203,6 +203,15 @@ public func normalizedCozyPose(_ requested: String) -> String {
 /// 그 자리가 없으면 화면에서 겹친 뒤에야 알게 된다.
 public func cozyPoseDrawsOwnFurniture(assetIndex: Int, pose: String) -> Bool {
     switch (assetIndex, pose) {
+    // **테이블 앞 착석은 전원이 의자째 그려져 있다.** 회의·응접 테이블 원화에서 의자를
+    // 지웠던 동안에는 사람 쪽이 의자를 들고 오는 것이 유일한 해법이었지만, 의자가 함께
+    // 그려진 테이블 원화가 들어오면서 전제가 뒤집혔다 — 이제 같은 자리에 의자가 둘이다
+    // (사용자 보고: "앉는 이벤트에서 사무실의자를 가져와서 앉는 행위를 함").
+    //
+    // 파일은 지우지 않고 여기서 막는다. 되돌릴 때 이 한 줄만 지우면 되고, 테이블 원화를
+    // 다시 의자 없는 것으로 바꾸는 판단이 생기면 그때 되살릴 그림이 남아 있어야 한다.
+    case (_, "sit-table"):
+        return true
     default:
         return false
     }
@@ -221,8 +230,11 @@ public func cozyPosePosture(assetIndex: Int, pose: String) -> CozyPosePosture {
         return .seated
     case "sit-table":
         return .seated
+    // 18번만 태블릿을 들고 **서 있던** 예외가 있었다. 전원분 `typing` 원화가 다시 들어오면서
+    // 18번도 앉은 그림이 됐으므로(교체본을 직접 열어 확인) 예외를 걷는다 — 남겨 두면 그
+    // 사람만 자기 책상 앞에 선 채로 일한다.
     case "typing":
-        return assetIndex == 18 ? .standing : .seated
+        return .seated
     case "sitting":
         return .seated
     // 6번 `writing`·7번 `reading` 은 예전에 앉은 그림이었다(각각 테이블·의자가 함께 그려져
@@ -261,18 +273,28 @@ public func cozyPoseCandidates(_ normalized: String) -> [String] {
     // 사라진다(사용자 보고로 재제작). 그 자세가 이미 타이핑이라 `typing` 원화를 따로
     // 쓸 이유가 없고, `typing` 은 의자에 앉아 다리를 뻗은 옛 그림이라 3/4 시점 책상과
     // 원근이 어긋난다. 아직 안 바뀐 인덱스를 위해 `typing` 은 대체로 남긴다.
+    // 맨 뒤 `writing` 은 **선 자세를 요구하는 화면**을 위한 것이다. 대시보드 카드에는 책상도
+    // 의자도 없어 앉은 그림을 쓸 수 없는데(`posture: .standing`), 전원분 `typing` 이 앉은
+    // 그림으로 통일되면서 앞의 셋이 전부 걸러져 기본 그림으로 떨어졌다. 타이핑과 쓰기는
+    // 손에 든 것이 다를 뿐 둘 다 "일하는 중" 이라 뜻이 가장 가깝다.
     case "typing":
-        return ["sit-back", "sit", "typing"]
+        return ["sit-back", "sit", "typing", "writing"]
     case "reading":
         return ["reading"]
     case "writing":
         return ["writing", "reading"]
     case "drinking":
         return ["drinking"]
+    // 전용 원화가 전원분 들어왔다(서류 뭉치를 안고 걷기·선반에 파일 꽂기·화분에 물 주기).
+    // 닮은 그림으로 내려가던 대체는 뒤에 남겨 둔다 — 그림이 빠진 인덱스가 생기면 뜻이
+    // 가장 가까운 쪽으로 떨어져야 한다.
     case "carryingpapers":
-        return ["writing", "reading"]
+        return ["carryingpapers", "writing", "reading"]
     case "stowing":
-        return ["reading"]
+        return ["stowing", "reading"]
+    // 화분 손질은 닮은 그림이 없어 예전에는 그냥 서 있었다. 이제 전용 원화가 있다.
+    case "tending":
+        return ["tending"]
     // 걸음 그림은 **보는 방향이 다르면 대신할 수 없다.** 뒤통수 그림을 이쪽으로 걸어오는
     // 사람에게 쓰면 뒷걸음질이 되고, 그 반대도 마찬가지다. 없으면 정지 그림으로 내려가고
     // 그때는 몸 기울기(`officeWalkLean`)만 남는다.
