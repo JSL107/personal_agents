@@ -12,7 +12,10 @@ function makeService(owner?: string) {
       key === 'CONSOLE_OWNER_SLACK_USER_ID' ? owner : undefined,
   } as unknown as ConfigService;
   const chainOrchestrator = { run: jest.fn().mockResolvedValue(undefined) };
-  const applyPreview = { execute: jest.fn().mockResolvedValue(undefined) };
+  const applyPreview = {
+    assertApplicable: jest.fn().mockResolvedValue(undefined),
+    execute: jest.fn().mockResolvedValue(undefined),
+  };
   const cancelPreview = { execute: jest.fn().mockResolvedValue(undefined) };
   const pendingTurns = {
     peek: jest.fn().mockReturnValue(null),
@@ -155,10 +158,53 @@ describe('ConsoleWriteService', () => {
   it('applyApproval 은 owner 를 slackUserId 로 usecase 에 위임한다', async () => {
     const { service, applyPreview } = makeService(OWNER);
     await service.applyApproval('p1');
+    expect(applyPreview.assertApplicable).toHaveBeenCalledWith({
+      previewId: 'p1',
+      slackUserId: OWNER,
+    });
     expect(applyPreview.execute).toHaveBeenCalledWith({
       previewId: 'p1',
       slackUserId: OWNER,
     });
+  });
+
+  // 이 계약이 깨지면 증상이 조용히 돌아온다 — 응답이 반영이 끝날 때까지 늦어지고,
+  // 클라이언트가 먼저 끊어 정상 승인이 실패로 보인다.
+  it('applyApproval 은 반영이 안 끝나도 접수에서 먼저 반환한다', async () => {
+    const { service, applyPreview } = makeService(OWNER);
+    let finishApply: () => void = () => undefined;
+    applyPreview.execute.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishApply = resolve;
+      }),
+    );
+
+    let accepted = false;
+    const pending = service.applyApproval('p1').then(() => {
+      accepted = true;
+    });
+    await pending;
+
+    expect(accepted).toBe(true);
+    expect(applyPreview.execute).toHaveBeenCalled();
+    finishApply();
+  });
+
+  it('접수 검증이 거절하면 반영을 시작하지 않고 사유를 그대로 올린다', async () => {
+    const { service, applyPreview } = makeService(OWNER);
+    applyPreview.assertApplicable.mockRejectedValue(new Error('이미 처리 중'));
+
+    await expect(service.applyApproval('p1')).rejects.toThrow('이미 처리 중');
+    expect(applyPreview.execute).not.toHaveBeenCalled();
+  });
+
+  // 접수 뒤의 실패는 이미 접수 응답을 보낸 뒤라 호출자에게 돌려줄 곳이 없다. 삼키되
+  // 로그로 남긴다 — 여기서 reject 하면 처리되지 않은 프로미스 거부가 된다.
+  it('반영이 실패해도 접수는 성공으로 끝난다', async () => {
+    const { service, applyPreview } = makeService(OWNER);
+    applyPreview.execute.mockRejectedValue(new Error('applier 실패'));
+
+    await expect(service.applyApproval('p1')).resolves.toBeUndefined();
   });
 
   it('cancelApproval 은 owner 를 slackUserId 로 usecase 에 위임한다', async () => {
