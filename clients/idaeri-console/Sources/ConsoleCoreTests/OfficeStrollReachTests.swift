@@ -138,16 +138,31 @@ func runOfficeStrollReachTests(_ t: TestRunner) {
             let plan = officeFloorPlan(agents: roster, zoneColumns: columns)
             for zone in plan.zones {
                 let station = officeDepartmentFeatureTile(zone: zone, furniture: plan.furniture)
-                let covered = plan.furniture.filter { placement in
-                    placement.kind != .desk
-                        && officeCozyDrawnFurnitureKinds.contains(placement.kind)
-                        && (placement.tile.x == station.x || placement.tile.x == station.x + 1)
-                        && placement.tile.y >= station.y && placement.tile.y <= station.y + 2
-                }
+                let covered = officeDepartmentFeatureCoverage(
+                    furniture: plan.furniture, tile: station
+                )
+                // 책상이 아닌 가구는 **한 점도** 겹치면 안 된다. 책장·보드처럼 키가 큰 물건은
+                // 콘솔과 한 덩어리로 뭉개져 둘 다 무엇인지 읽히지 않는다.
+                let tallCover = covered.filter { $0.kind != .desk }
                 t.expect(
-                    covered.isEmpty,
+                    tallCover.isEmpty,
                     "\(label)/\(columns)열: \(zone.department.rawValue) 콘솔(\(station.x),\(station.y))"
-                        + " 발밑에 \(covered.map { "\($0.kind.rawValue)@\($0.tile.x),\($0.tile.y)" })"
+                        + " 발밑에 \(tallCover.map { "\($0.kind.rawValue)@\($0.tile.x),\($0.tile.y)" })"
+                )
+                // 책상은 **거기 앉는 사람** 때문에 겹치면 안 된다(좌석은 책상 칸의 한 줄 앞).
+                //
+                // 실제 조직 규모(표본)에서는 0 이어야 한다 — 사용자가 신고한 콘텐츠 방 겹침이
+                // 이 조건이 깨진 모습이었다. 방마다 정원 열 명을 채운 명단은 자리표가 모자라
+                // 예비 격자까지 쓰는데, 그 격자가 콘솔 자리를 물어 방 세 개에서 한 칸씩 남는다
+                // (evaluation·content·internalOps). **0 으로 적어 두지 않는 이유**는 못 고친
+                // 것을 고쳐진 것처럼 남기면 다음 사람이 이미 해결된 줄 알기 때문이다. 자리표와
+                // 예비 격자가 콘솔 자리를 미리 비켜 주도록 고치면 이 상한도 0 으로 내려간다.
+                let deskCoverLimit = label == "정원" ? 1 : 0
+                t.expect(
+                    covered.count <= deskCoverLimit,
+                    "\(label)/\(columns)열: \(zone.department.rawValue) 콘솔(\(station.x),\(station.y))"
+                        + " 가 좌석 \(covered.count)개를 덮는다(상한 \(deskCoverLimit)) "
+                        + "\(covered.map { "\($0.kind.rawValue)@\($0.tile.x),\($0.tile.y)" })"
                 )
                 // 콘솔 두 칸이 방 안(좌우 벽 사이)에 들어간다 — 벽을 넘으면 옆방·복도까지 물든다.
                 t.expect(

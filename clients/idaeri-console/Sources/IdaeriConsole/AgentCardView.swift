@@ -66,6 +66,10 @@ struct AgentCardView: View {
             Text(agent.bubble)
                 .font(Typography.caption)
                 .foregroundStyle(CozyPalette.ink)
+                // 말풍선 문구는 일이 진행되는 동안 계속 갈린다. 글자가 한 프레임에 통째로
+                // 바뀌면 깜빡임으로 읽히므로 짧게 넘긴다.
+                .contentTransition(.opacity)
+                .animation(.easeInOut(duration: 0.22), value: agent.bubble)
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, Spacing.md)
@@ -176,9 +180,7 @@ struct AgentCardView: View {
 
     private var statusBadge: some View {
         HStack(spacing: Spacing.xs) {
-            Circle()
-                .fill(agent.state.accentColor)
-                .frame(width: Stroke.dot, height: Stroke.dot)
+            ConsoleStatusDot(color: agent.state.accentColor, live: agent.state.showsActivityPulse)
             Text(agent.state.label)
                 .font(Typography.captionEmphasis)
                 .foregroundStyle(CozyPalette.ink)
@@ -186,6 +188,9 @@ struct AgentCardView: View {
         .padding(.horizontal, Spacing.sm)
         .padding(.vertical, Spacing.xs)
         .background(agent.state.tintColor, in: Capsule())
+        // 상태가 바뀌면 배지 색이 **건너뛰지 않고 넘어간다.** 스냅샷은 몇 초에 한 번 통째로
+        // 갈리므로, 색만 즉시 바뀌면 무엇이 달라졌는지 눈이 못 따라간다.
+        .animation(.easeInOut(duration: 0.28), value: agent.state)
     }
 
     private var pendingBadgeRow: some View {
@@ -247,5 +252,51 @@ struct AgentCardView: View {
         }
         .padding(Spacing.xl)
         .frame(minWidth: Layout.sheetMinWidth)
+    }
+}
+
+/// 상태 배지의 점. **일이 돌고 있는 상태에서만** 파문이 한 겹 퍼진다.
+///
+/// 대시보드는 몇 초에 한 번 통째로 갈리는 정지 화면이라, 보고 있는 사이에 무엇이 살아 있는지
+/// 알 수 없었다(사용자 요청: "대시보드에서도 간단한 애니메이션이 있으면 좋겠음"). 색은 이미
+/// 상태를 말하고 있으므로 여기서 더하는 것은 **움직임뿐**이다 — 새 정보를 만들지 않는다.
+///
+/// 파문은 점 위에 겹치는 테두리 한 겹이라 글자 폭·배지 크기를 건드리지 않는다. 바탕 점을
+/// 키우면 배지가 함께 흔들려 옆 글자가 밀린다.
+///
+/// 동작 줄이기가 켜져 있으면 점만 남는다(`CozyAgentAvatarView` 의 숨쉬기와 같은 규칙).
+private struct ConsoleStatusDot: View {
+    let color: Color
+    let live: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var expanded = false
+
+    var body: some View {
+        Circle()
+            .fill(color)
+            .frame(width: Stroke.dot, height: Stroke.dot)
+            .overlay {
+                if live, !reduceMotion {
+                    Circle()
+                        .stroke(color, lineWidth: 1.2)
+                        .scaleEffect(expanded ? 2.4 : 1)
+                        .opacity(expanded ? 0 : 0.65)
+                }
+            }
+            .onAppear { start() }
+            .onChange(of: live) { _ in start() }
+    }
+
+    private func start() {
+        guard live, !reduceMotion else {
+            expanded = false
+            return
+        }
+        // 한 번 퍼지고 1.4초 쉰다. 쉬는 틈이 없으면 점이 계속 번쩍여 카드 스무 장이 깜빡이는
+        // 화면이 된다 — 주기의 절반 이상은 멈춰 있어야 "가끔 뛰는 맥박" 으로 읽힌다.
+        withAnimation(.easeOut(duration: 1.0).repeatForever(autoreverses: false).delay(0.4)) {
+            expanded = true
+        }
     }
 }

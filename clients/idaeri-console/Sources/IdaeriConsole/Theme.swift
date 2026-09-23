@@ -183,6 +183,21 @@ extension ConsoleAgentState {
         accentColor.opacity(0.14)
     }
 
+    /// 상태 배지의 점이 **맥박을 칠 상태인가.**
+    ///
+    /// 둘만 움직인다 — 지금 돌고 있는 일(`inProgress`)과 사람이 손을 대 주기를 기다리는 일
+    /// (`awaitingApproval`). 나머지는 멈춰 있는 상태라 움직이면 뜻이 틀린다. 실패는 눈에
+    /// 띄어야 하지만 **끝난** 일이므로 빨간색이 말하게 두고, 움직임은 주지 않는다 — 멈춘
+    /// 것이 뛰고 있으면 아직 진행 중인 줄 안다.
+    var showsActivityPulse: Bool {
+        switch self {
+        case .inProgress, .awaitingApproval:
+            return true
+        case .completed, .awaitingIntegration, .waiting, .failed:
+            return false
+        }
+    }
+
     /// 카드 하단·범례용 한글 상태 라벨.
     var label: String {
         switch self {
