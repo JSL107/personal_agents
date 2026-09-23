@@ -54,7 +54,7 @@ let sampleAgents: [ConsoleAgent] =
         [
             "OPS_SUPERVISOR", "SUBCONSCIOUS_GATE", "CONTRADICTION_JUDGE",
             "DOCS_AUDIT_OPTIMIZER", "DOCS_AUDIT_EVALUATOR", "PREFERENCE_LEARNING",
-            "VACATION", "SCHEDULE",
+            "VACATION", "SCHEDULE", "ROUTER",
         ]
     )
 
@@ -1476,9 +1476,18 @@ func runAgentRoleTests(_ t: TestRunner) {
     // 성장방에 나란히 앉아, 이름표를 읽기 전엔 같은 사람으로 보였다. 방마다 사람이 몇이든
     // 조합이 겹치지 않아야 이름표가 가려졌을 때도 서로 구별된다.
     for (department, members) in Dictionary(grouping: sampleAgents, by: \.resolvedDepartment) {
-        let types = members.map(\.agentType)
-        let looks = officeCharacterLooks(forRoommates: types)
-        t.expectEqual(looks.count, types.count, "\(department.label) 방 인원 전원에게 외형 배정")
+        let allTypes = members.map(\.agentType)
+        let looks = officeCharacterLooks(forRoommates: allTypes)
+        t.expectEqual(
+            looks.count, allTypes.count, "\(department.label) 방 인원 전원에게 외형 배정")
+        // 전용 그림을 쓰는 사람은 **공용 외형 체계에 참여하지 않는다**(`officeCharacterLooks`
+        // 가 배정에서 빼낸다). 그림 자체가 달라 이미 구별되고, 작업복은 채도가 있어 부서색
+        // 셔츠로 갈아입혀지지도 않는다 — 색을 나눠 갖는 계산에 넣으면 한 자리를 헛되이 잡아
+        // 동료들의 분산 여유만 줄인다. 아래 단언들은 그래서 공용 외형인 사람만 본다.
+        let types = allTypes.filter { designatedCharacterSheets[$0] == nil }
+        if types.isEmpty {
+            continue
+        }
         let faces = types.compactMap { looks[$0] }
             .map { $0.sheetIndex * hairPalette.count + $0.hairIndex }
         t.expectEqual(
