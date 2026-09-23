@@ -237,6 +237,43 @@ describe('evaluateContract — 점수', () => {
     expect(evaluation.score).toBe(1);
   });
 
+  // codex 쿼터 소진도 건너뜀이다 — 모델을 못 불렀을 뿐 원본이 그대로 발행된다.
+  // 형태가 `limit` 대신 `reason` 이라, 후보로 등록하지 않으면 전건이 missingField 로 쌓인다.
+  it('HUMANIZER 의 쿼터 건너뜀 형태도 위반 없이 만점이다', () => {
+    const evaluation = evaluateContract(AgentType.HUMANIZER, {
+      skipped: 'CODEX_QUOTA_EXCEEDED',
+      fieldCount: 32,
+      reason:
+        'codex(ChatGPT) 사용량 한도 초과 — Sep 19th, 2026 5:20 PM 에 리셋됩니다.',
+    });
+
+    expect(evaluation.violations).toEqual([]);
+    expect(evaluation.score).toBe(1);
+  });
+
+  // 건너뜀 후보가 늘어도 "윤문 결과를 아예 못 담은 회차" 를 잡는 좁은 검사는 살아 있어야 한다.
+  // 후보가 많아지면 깨진 산출물이 짧은 형태에 얻어걸려 만점을 받는 것이 이 계열의 알려진
+  // 함정이다 (CTO_STUDY 의 "깨진 발행 성공 산출물이 스킵 형태로 매칭되지 않는다" 와 같은 축).
+  it('건너뜀 후보가 늘어도 어느 형태에도 맞지 않는 산출물은 여전히 위반이다', () => {
+    const evaluation = evaluateContract(AgentType.HUMANIZER, {
+      note: '윤문 결과도 건너뜀 사유도 담지 못한 산출물',
+    });
+
+    expect(evaluation.violations).not.toEqual([]);
+    expect(evaluation.score).toBe(0);
+  });
+
+  // 표식만 있고 나머지가 빈 건너뜀은 정상 건너뜀이 아니다 — 만점을 주면 "왜 건너뛰었나" 를
+  // 잃은 회차가 의도된 건너뜀과 같은 점수로 쌓인다.
+  it('쿼터 건너뜀 표식만 있고 사유·개수가 없으면 만점이 아니다', () => {
+    const evaluation = evaluateContract(AgentType.HUMANIZER, {
+      skipped: 'CODEX_QUOTA_EXCEEDED',
+    });
+
+    expect(evaluation.violations).not.toEqual([]);
+    expect(evaluation.score).toBeLessThan(1);
+  });
+
   it('필드 하나가 비면 부분 점수를 준다 — 위반 유무로는 안 보이는 해상도다', () => {
     const evaluation = evaluateContract(AgentType.PM, {
       topPriority: '오늘의 최우선 과제 #193',

@@ -3,7 +3,10 @@ import { ConfigService } from '@nestjs/config';
 
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
 import { ModelRouterUsecase } from '../../model-router/application/model-router.usecase';
+import { ModelRouterException } from '../../model-router/domain/model-router.exception';
 import { AgentType } from '../../model-router/domain/model-router.type';
+import { ModelRouterErrorCode } from '../../model-router/domain/model-router-error-code.enum';
+import { CodexQuotaExceededException } from '../../model-router/infrastructure/codex-cli.provider';
 import { PreferenceProfilePort } from '../../preference-profile/domain/port/preference-profile.port';
 import {
   HUMANIZE_CONCISE_RULES,
@@ -418,6 +421,59 @@ describe('HumanizeService', () => {
     expect(agentRunService.execute).toHaveBeenCalledTimes(1);
   });
 
+  // 쿼터 소진은 윤문이 고장난 것이 아니라 모델을 못 부른 것이다. 실패로 마감하면 원장의
+  // FAILED 가 "보고가 죽었다" 와 "윤문만 빠졌다" 두 뜻을 겸해, agentType 을 가리지 않는
+  // 집계(countFailedSince·findFailedRunsSince)가 정상 발송된 보고를 실패로 올린다.
+  // 실측(2026-09-23): 08-21·09-13 은 그날 시스템 전체 실패가 이 회차 1건뿐이었다.
+  it('codex 쿼터 소진이면 실패가 아니라 건너뜀으로 마감하고 원본을 반환한다', async () => {
+    const quota = new CodexQuotaExceededException('Sep 19th, 2026 5:20 PM');
+    const { service, agentRunService } = makeService({
+      enabled: 'true',
+      routeImpl: async () => {
+        // 실제 경로와 같은 모양으로 감싼다 — 라우터는 원형을 cause 에 넣어 올린다
+        // (model-router.usecase.ts 의 wrapCompletionFailed).
+        throw new ModelRouterException({
+          code: ModelRouterErrorCode.COMPLETION_FAILED,
+          message: '모델 호출 실패 (CHATGPT, 1s 소요)',
+          cause: quota,
+        });
+      },
+    });
+
+    const result = await service.humanize({ a: '원본A', b: '원본B' });
+
+    expect(result).toEqual({ a: '원본A', b: '원본B' });
+    // run 이 정상 반환해야 execute 가 SUCCEEDED 로 마감한다 — lastOutput 이 채워진 것이 그 증거다.
+    expect(agentRunService.lastOutput).toEqual({
+      skipped: 'CODEX_QUOTA_EXCEEDED',
+      fieldCount: 2,
+      reason: quota.message,
+    });
+    // 모델을 부르지 않았으므로 필드 수 상한 건너뜀과 같은 표기를 쓴다.
+    const outcome = await agentRunService.execute.mock.results[0].value;
+    expect(outcome.modelUsed).toBe('deterministic');
+  });
+
+  // 건너뜀 분기가 넓어지면 진짜 고장이 초록불로 묻힌다. 쿼터가 아닌 실패는 그대로 FAILED 다.
+  it('쿼터가 아닌 실패는 건너뜀으로 바꾸지 않고 그대로 실패시킨다', async () => {
+    const { service, agentRunService } = makeService({
+      enabled: 'true',
+      routeImpl: async () => {
+        throw new ModelRouterException({
+          code: ModelRouterErrorCode.COMPLETION_FAILED,
+          message: '모델 호출 실패 (CHATGPT, 300s 소요)',
+          cause: new Error('codex CLI 응답 시간 초과 (300000ms)'),
+        });
+      },
+    });
+
+    const result = await service.humanize({ a: '원본A' });
+
+    expect(result).toEqual({ a: '원본A' });
+    // run 이 던졌으므로 output 이 채워지지 않는다 — 실제 execute 는 이 경로를 FAILED 로 마감한다.
+    expect(agentRunService.lastOutput).toBeUndefined();
+  });
+
   it('윤문을 실행 원장으로 감싸고 본문은 원장에 담지 않는다', async () => {
     const { service, agentRunService } = makeService({
       enabled: 'true',
@@ -614,6 +670,58 @@ describe('문체 되먹임', () => {
         `${index}번째 문장은 목표를 벗어나도록 길게 늘여 쓴 서술입니다.`,
     ),
   ].join(' ');
+
+  // 건너뜀 회차(`styleGaps` 없음)는 조회에서 자리를 먹기만 하고 표본이 되지 못한다.
+  // 자르기를 거르기보다 먼저 하면, 최근 자리에 꽂힌 건너뜀이 연속될 때 60일 안에 정상
+  // 표본이 있어도 되먹임이 통째로 사라진다 (PR #644 Codex 리뷰 지적).
+  it('건너뜀 회차가 섞여도 정상 표본으로 되먹임을 만든다', async () => {
+    const { service, routeMock, agentRunService } = makeService({
+      enabled: 'true',
+      routeImpl: async () => ({ text: JSON.stringify({ a: '윤문A' }) }),
+    });
+    const skipped = {
+      id: 9,
+      endedAt: new Date(),
+      inputSnapshot: { voice: 'personal-blog' },
+      output: {
+        skipped: 'CODEX_QUOTA_EXCEEDED',
+        fieldCount: 3,
+        reason: '한도 초과',
+      },
+    };
+    // 최근 자리를 건너뜀이 차지하고 그 뒤에 정상 표본이 온다 — 실제 쿼터 창의 모양이다.
+    const rows = [
+      skipped,
+      skipped,
+      skipped,
+      skipped,
+      skipped,
+      runOf(['종결체교대 76%(≤60%)']),
+      runOf(['종결체교대 71%(≤60%)']),
+    ];
+    // 실제 조회처럼 limit 으로 먼저 자른다. mock 이 limit 을 무시하면 "자르고 거르기" 순서가
+    // 시험되지 않아, 수정이 없어도 이 테스트가 통과한다.
+    agentRunService.findRecentSucceededRuns.mockImplementation(
+      async ({ limit }: { limit: number }) => rows.slice(0, limit),
+    );
+
+    await service.humanize({ a: '원본A' }, { voice: 'personal-blog' });
+
+    const systemPrompt = routeMock.mock.calls[0][0].request.systemPrompt;
+    expect(systemPrompt).toContain('종결체교대 76%(≤60%)');
+  });
+
+  it('조회는 표본 수보다 넉넉히 떠서 걸러낼 여유를 둔다', async () => {
+    const { service, agentRunService } = makeService({
+      enabled: 'true',
+      routeImpl: async () => ({ text: JSON.stringify({ a: '윤문A' }) }),
+    });
+
+    await service.humanize({ a: '원본A' }, { voice: 'personal-blog' });
+
+    const query = agentRunService.findRecentSucceededRuns.mock.calls[0][0];
+    expect(query.limit).toBeGreaterThan(5);
+  });
 
   it('개인 글이면 되풀이된 갭을 systemPrompt 에 싣는다', async () => {
     const { service, routeMock, agentRunService } = makeService({

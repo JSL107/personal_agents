@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { extractCodexQuota } from '../../../model-router/application/extract-codex-quota';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import {
@@ -14,7 +15,6 @@ import {
   ReviewReplyJudgment,
 } from '../domain/review-reply-judge.type';
 import { parseVerdictBatch } from '../domain/verdict-batch.parser';
-import { extractCodexQuota } from './extract-codex-quota';
 
 const VALID_VERDICTS: ReadonlySet<string> = new Set([
   'ACCEPTED',

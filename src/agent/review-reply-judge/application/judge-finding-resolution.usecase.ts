@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
+import { extractCodexQuota } from '../../../model-router/application/extract-codex-quota';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import {
@@ -12,7 +13,6 @@ import {
   FINDING_RESOLUTION_SYSTEM_PROMPT,
 } from '../domain/prompt/finding-resolution.prompt';
 import { parseVerdictBatch } from '../domain/verdict-batch.parser';
-import { extractCodexQuota } from './extract-codex-quota';
 
 const VALID_VERDICTS: ReadonlySet<string> = new Set([
   'FIXED',

@@ -3,7 +3,6 @@ import { createHash } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-import { extractCodexQuota } from '../../agent/review-reply-judge/application/extract-codex-quota';
 import { JudgeFindingResolutionUsecase } from '../../agent/review-reply-judge/application/judge-finding-resolution.usecase';
 import { JudgeReviewReplyUsecase } from '../../agent/review-reply-judge/application/judge-review-reply.usecase';
 import { FindingResolutionItem } from '../../agent/review-reply-judge/domain/finding-resolution.type';
@@ -13,6 +12,7 @@ import {
   GithubClientPort,
   ReviewThread,
 } from '../../github/domain/port/github-client.port';
+import { extractCodexQuota } from '../../model-router/application/extract-codex-quota';
 import {
   ADOPTION_WINDOW_DAYS,
   summarizeAdoption,
