@@ -275,6 +275,166 @@ describe('AutopilotOrchestrator', () => {
     });
   });
 
+  // 채널에 종목별 내역이 먼저 쌓이면 그날의 결론이 스크롤 아래로 밀린다. 그림과 헤드라인을
+  // 앞에 세우고 본문을 답글로 내리는 배치를 순서까지 고정한다 — 순서가 뒤집히면 채널에
+  // 남는 것이 달라지는데, 그 차이는 발송이 성공하는 한 어떤 에러로도 드러나지 않는다.
+  describe('그림을 메인으로, 본문을 스레드로', () => {
+    const IMAGE = {
+      png: Buffer.from('png'),
+      filename: 'paper-return-2026-09-22.png',
+      title: '모의투자 수익률 — 2026-09-22',
+    };
+    const HEADLINE =
+      '*모의투자 장마감 평가 — 2026-09-22*\n• LONG_TERM 100원 · *-1.25%*';
+
+    const runWith = async ({
+      uploadImageFile,
+      results,
+      target = 'C1',
+    }: {
+      uploadImageFile: jest.Mock;
+      results?: unknown[];
+      target?: string;
+    }) => {
+      const taskResults = results ?? [
+        {
+          skip: false,
+          summaryText: '종목별 내역',
+          headlineText: HEADLINE,
+          detailImage: IMAGE,
+        },
+      ];
+      const tasks = taskResults.map((result, index) =>
+        makeTask(index === 0 ? 'daily-eval' : `task-${index}`, result),
+      );
+      const entries = taskResults.map((_, index) =>
+        index === 0 ? T0_ENTRY : makeEntry(`task-${index}`, `task-${index}`),
+      );
+      const postMessage = jest.fn().mockResolvedValue({ ts: '111.222' });
+      const uploadImage = jest.fn().mockResolvedValue({ fileId: undefined });
+      const orchestrator = new AutopilotOrchestrator(
+        tasks as never,
+        { postMessage, uploadImage, uploadImageFile } as never,
+        {
+          acquireOnce: jest.fn().mockResolvedValue(true),
+          isDone: jest.fn().mockResolvedValue(false),
+        } as never,
+        { execute: jest.fn() } as never,
+        { attachSlackMessage: jest.fn() } as never,
+      );
+      await orchestrator.runGroup('daily-eval', entries, 'U1', target);
+      return { postMessage, uploadImage };
+    };
+
+    it('헤드라인과 그림이 메인, 요약은 스레드 댓글로 내려간다', async () => {
+      const uploadImageFile = jest.fn().mockResolvedValue({ fileId: 'F1' });
+      const { postMessage, uploadImage } = await runWith({ uploadImageFile });
+
+      expect(uploadImageFile).toHaveBeenCalledWith({
+        png: IMAGE.png,
+        filename: IMAGE.filename,
+        title: IMAGE.title,
+      });
+      expect(postMessage).toHaveBeenNthCalledWith(1, {
+        target: 'C1',
+        text: HEADLINE,
+        image: { fileId: 'F1', altText: IMAGE.title },
+      });
+      expect(postMessage).toHaveBeenNthCalledWith(2, {
+        target: 'C1',
+        text: '종목별 내역',
+        threadTs: '111.222',
+      });
+      // 메인에 실린 그림을 스레드에 또 올리면 같은 그림이 두 번 뜬다.
+      expect(uploadImage).not.toHaveBeenCalled();
+    });
+
+    // 슬랙 파일의 접근 권한은 그 파일이 공유된 대화를 따라간다 — 한 번 올린 id 를 다른
+    // 채널 메시지에 실으면 그 채널 사람들에게는 빈 자리가 뜬다. 에러가 나지 않는 유실이라
+    // 테스트로만 잡힌다.
+    it('target 이 여럿이면 채널마다 파일을 따로 올린다', async () => {
+      const uploadImageFile = jest
+        .fn()
+        .mockResolvedValueOnce({ fileId: 'F1' })
+        .mockResolvedValueOnce({ fileId: 'F2' });
+      const { postMessage } = await runWith({
+        uploadImageFile,
+        target: 'C1,C2',
+      });
+
+      expect(uploadImageFile).toHaveBeenCalledTimes(2);
+      expect(postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          target: 'C1',
+          image: { fileId: 'F1', altText: IMAGE.title },
+        }),
+      );
+      expect(postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          target: 'C2',
+          image: { fileId: 'F2', altText: IMAGE.title },
+        }),
+      );
+    });
+
+    it('업로드가 실패하면 종전 배치로 물러서고 보고는 그대로 나간다', async () => {
+      const uploadImageFile = jest
+        .fn()
+        .mockRejectedValue(new Error('missing_scope'));
+      const { postMessage, uploadImage } = await runWith({ uploadImageFile });
+
+      expect(postMessage).toHaveBeenNthCalledWith(1, {
+        target: 'C1',
+        text: '종목별 내역',
+      });
+      expect(uploadImage).toHaveBeenCalledWith(
+        expect.objectContaining({ target: 'C1', threadTs: '111.222' }),
+      );
+    });
+
+    it('헤드라인이 없으면 뒤집지 않는다 — 그림은 종전대로 스레드', async () => {
+      const uploadImageFile = jest.fn();
+      const { postMessage, uploadImage } = await runWith({
+        uploadImageFile,
+        results: [
+          { skip: false, summaryText: '종목별 내역', detailImage: IMAGE },
+        ],
+      });
+
+      expect(uploadImageFile).not.toHaveBeenCalled();
+      expect(postMessage).toHaveBeenNthCalledWith(1, {
+        target: 'C1',
+        text: '종목별 내역',
+      });
+      expect(uploadImage).toHaveBeenCalledTimes(1);
+    });
+
+    // 여러 task 요약이 한 메시지로 합쳐지는 회차에서 뒤집으면, 채널에 남는 헤드라인이
+    // 한 task 의 것뿐이라 나머지 task 의 요약이 답글로 숨는다.
+    it('요약이 둘 이상인 그룹은 뒤집지 않는다', async () => {
+      const uploadImageFile = jest.fn();
+      const { postMessage, uploadImage } = await runWith({
+        uploadImageFile,
+        results: [
+          {
+            skip: false,
+            summaryText: '종목별 내역',
+            headlineText: HEADLINE,
+            detailImage: IMAGE,
+          },
+          { skip: false, summaryText: '다른 워커 요약' },
+        ],
+      });
+
+      expect(uploadImageFile).not.toHaveBeenCalled();
+      expect(postMessage).toHaveBeenNthCalledWith(1, {
+        target: 'C1',
+        text: '종목별 내역\n\n────────\n\n다른 워커 요약',
+      });
+      expect(uploadImage).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('2항목 그룹 → task 2개 실행, postMessage 1회(구분자 포함)', async () => {
     const taskA = makeTask('daily-eval', { skip: false, summaryText: 'A' });
     const taskB = makeTask('work-reviewer', { skip: false, summaryText: 'B' });

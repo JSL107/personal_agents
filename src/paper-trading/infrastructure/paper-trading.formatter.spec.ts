@@ -1,6 +1,7 @@
 import { EvaluateAccountResult } from '../application/evaluate-paper-account.usecase';
 import { PaperTradingStatusResult } from '../application/get-paper-trading-status.usecase';
 import {
+  formatPaperAccountHeadline,
   formatPaperPortfolioStatus,
   formatPaperTradingReport,
   formatPaperTradingStatus,
@@ -58,6 +59,32 @@ const RESULT: EvaluateAccountResult = {
   invariantViolations: [],
   suspiciousJumps: [],
 };
+
+// 그림이 메인으로 올라간 회차에서 채널에 남는 유일한 숫자다 — 여기가 비거나 틀리면
+// 채널만 보는 사람은 그날 계좌가 어떻게 됐는지 알 방법이 없다.
+describe('formatPaperAccountHeadline', () => {
+  it('계좌명·평가액·수익률만 한 줄로 낸다', () => {
+    expect(formatPaperAccountHeadline('LONG_TERM', RESULT)).toBe(
+      '• LONG_TERM 1,040,000원 · *+4%*',
+    );
+  });
+
+  it('평가에 실패한 계좌도 한 줄을 차지한다 — 빠지면 계좌가 없던 것처럼 보인다', () => {
+    expect(formatPaperAccountHeadline('SWING', null)).toBe(
+      '• SWING ⚠️ 평가 실패',
+    );
+  });
+
+  it('평가액이 없으면 숫자 자리를 비운다', () => {
+    expect(
+      formatPaperAccountHeadline('LONG_TERM', {
+        ...RESULT,
+        totalValue: null,
+        returnRate: null,
+      }),
+    ).toBe('• LONG_TERM - · *-*');
+  });
+});
 
 describe('formatPaperTradingReport', () => {
   it('종목 행과 계좌 요약을 Slack mrkdwn으로 출력하고 종목명을 escape한다', () => {

@@ -156,6 +156,9 @@ export class AutopilotOrchestrator {
     const items: {
       summary: string;
       detail?: string;
+      // 그림을 메인으로 올릴 때 채널에 남길 한 줄. 이 자리가 채워지고 그림이 있으며 그룹에
+      // 요약이 이것 하나뿐일 때만 배치가 뒤집힌다(아래 imageFirstItem).
+      headline?: string;
       // 스레드에 함께 올릴 이미지. 발송 실패는 요약·상세를 무르지 않는다.
       image?: AutopilotTaskImage;
       onDelivered?: () => Promise<void>;
@@ -208,6 +211,7 @@ export class AutopilotOrchestrator {
           items.push({
             summary: result.summaryText,
             detail: result.detailText,
+            headline: result.headlineText,
             image: result.detailImage,
             onDelivered: result.onDelivered,
             unfurlLinks: result.unfurlLinks,
@@ -339,7 +343,14 @@ export class AutopilotOrchestrator {
 
     try {
       if (items.length > 0) {
-        const mainText = items
+        // 그림을 채널의 얼굴로 세울 수 있는 회차인가. 요약이 하나뿐일 때만 뒤집는다 —
+        // 여러 task 가 합쳐진 메인에서는 헤드라인을 하나로 정할 수 없고, 그림이 어느
+        // 요약의 것인지도 드러나지 않는다(그것이 원래 그림을 스레드에 둔 이유다).
+        const imageFirstItem =
+          items.length === 1 && items[0].headline && items[0].image
+            ? items[0]
+            : undefined;
+        const joinedSummary = items
           .map((item) => item.summary)
           .join('\n\n────────\n\n');
         // 요약이 한 메시지로 합쳐지므로 미리보기 설정도 메시지 단위다. 한 항목이라도
@@ -355,20 +366,60 @@ export class AutopilotOrchestrator {
           (item) => item.notifyOwner === true,
         );
         for (const resolved of targets) {
+          // 파일은 target 마다 새로 올린다. 슬랙 파일의 접근 권한은 그 파일이 공유된
+          // 대화를 따라가므로, 한 번 올린 id 를 다른 채널의 메시지에 실으면 그 채널
+          // 사람들에게는 그림이 안 보일 수 있다 — 업로드 한 번을 아끼려다 조용히 빈
+          // 자리를 만드는 쪽이 비싸다. 단일 target 운영에서는 종전과 같은 한 번이다.
+          //
+          // 업로드나 이미지 처리 대기가 실패하면 `mainImage` 가 비고, 그 target 의
+          // 발송만 종전 배치(요약이 메인, 그림이 스레드)로 돌아간다. 그림 하나 때문에
+          // 그날 수익률 보고를 잃지 않게 하는 갈림길이다.
+          let mainImage: { fileId: string; altText: string } | undefined;
+          if (imageFirstItem?.image) {
+            try {
+              const uploaded = await this.slackNotifier.uploadImageFile({
+                png: imageFirstItem.image.png,
+                filename: imageFirstItem.image.filename,
+                title: imageFirstItem.image.title,
+              });
+              mainImage = {
+                fileId: uploaded.fileId,
+                altText: imageFirstItem.image.title,
+              };
+            } catch (error: unknown) {
+              const message =
+                error instanceof Error ? error.message : String(error);
+              // 폴백이 상습화되면 "그림이 메인" 이라는 설계가 조용히 죽는다 — 회차마다 남긴다.
+              this.logger.warn(
+                `Autopilot[${groupKey}] ${resolved} 그림을 메인에 싣지 못해 종전 배치로 발송: ${message}`,
+              );
+            }
+          }
+          const mainText = mainImage
+            ? (imageFirstItem?.headline ?? '')
+            : joinedSummary;
           const { ts } = await this.slackNotifier.postMessage({
             target: resolved,
             text: shouldNotifyOwner
               ? withOwnerMention(mainText, resolved, ownerSlackUserId)
               : mainText,
             ...(unfurlLinks === false ? { unfurlLinks: false } : {}),
+            ...(mainImage ? { image: mainImage } : {}),
           });
           if (ts) {
             for (const [index, item] of items.entries()) {
-              if (item.detail) {
+              // 그림이 메인으로 간 회차는 요약도 스레드로 내려간다 — 채널에 남는 것은
+              // 헤드라인과 그림뿐이고, 종목별 내역은 답글을 펼쳐야 보인다. 상세가 따로
+              // 있으면 요약 다음에 잇는다(요약 → 상세 순서는 읽는 순서 그대로다).
+              const threadTexts = [
+                ...(mainImage && item === imageFirstItem ? [item.summary] : []),
+                ...(item.detail ? [item.detail] : []),
+              ];
+              for (const threadText of threadTexts) {
                 try {
                   await this.slackNotifier.postMessage({
                     target: resolved,
-                    text: item.detail,
+                    text: threadText,
                     threadTs: ts,
                     // 미리보기 설정은 스레드 댓글에도 걸어야 한다 — 링크를 여럿 싣는
                     // 목록형 카드(job-feed)는 그 링크가 detail 에 있으므로, 메인에만
@@ -387,7 +438,8 @@ export class AutopilotOrchestrator {
                   );
                 }
               }
-              if (item.image) {
+              // 그림이 메인으로 올라간 회차는 스레드에 같은 그림을 또 올리지 않는다.
+              if (item.image && !mainImage) {
                 try {
                   await this.slackNotifier.uploadImage({
                     target: resolved,
@@ -412,17 +464,21 @@ export class AutopilotOrchestrator {
             // 메인 메시지 ts 미반환(Slack API 이상 등) — 스레드 상세를 붙일 수 없어 skip.
             // 메인 요약은 나갔으니 발송 자체는 실패가 아니다. 다만 상세에 실린 내용은 유실되므로
             // (job-feed 는 공고 목록 전체가 상세에 있다) 그 task 의 후처리는 아래에서 건너뛴다.
+            // 그림이 메인으로 간 회차는 요약도 스레드 몫이라 함께 유실된다 — 채널에는
+            // 헤드라인과 그림만 남고 종목별 내역이 사라지므로, 세는 대상에 포함한다.
+            const isThreadBound = (item: (typeof items)[number]): boolean =>
+              Boolean(item.detail) ||
+              (Boolean(mainImage) && item === imageFirstItem);
             for (const [index, item] of items.entries()) {
-              if (item.detail) {
+              if (isThreadBound(item)) {
                 detailUndelivered.add(index);
               }
             }
-            const skippedDetailCount = items.filter(
-              (item) => item.detail,
-            ).length;
+            const skippedDetailCount = items.filter(isThreadBound).length;
             if (skippedDetailCount > 0) {
               this.logger.warn(
-                `Autopilot[${groupKey}] ${resolved} 메인 메시지 ts 미반환 — 스레드 상세 ${skippedDetailCount}건 skip`,
+                `Autopilot[${groupKey}] ${resolved} 메인 메시지 ts 미반환 — 스레드 ${skippedDetailCount}건 skip` +
+                  (mainImage ? ' (그림이 메인이라 요약 본문까지 유실)' : ''),
               );
             }
           }
