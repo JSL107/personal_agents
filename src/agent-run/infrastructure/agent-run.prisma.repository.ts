@@ -621,7 +621,12 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
         inputSnapshot: { path: ['prRef'], equals: prRef },
       },
       orderBy: { startedAt: 'desc' },
-      select: { status: true, startedAt: true, inputSnapshot: true },
+      select: {
+        status: true,
+        startedAt: true,
+        inputSnapshot: true,
+        output: true,
+      },
     });
     if (!row) {
       return null;
@@ -634,11 +639,17 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
       dryRun?: unknown;
       isDraft?: unknown;
     } | null;
+    // output 도 임의 JSON 이다. errorCode 가 문자열일 때만 코드로 인정하고 나머지(성공 런·
+    // 코드를 남기지 않는 비도메인 예외·구 레코드)는 null 로 닫는다 — 모르는 값을 영구 실패
+    // 쪽으로 접으면 일시 장애로 실패한 PR 이 재시도 없이 영영 리뷰되지 않는다.
+    const output = row.output as { errorCode?: unknown } | null;
     return {
       status: row.status,
       startedAt: row.startedAt,
       dryRun: snapshot?.dryRun === true,
       isDraft: snapshot?.isDraft === true,
+      errorCode:
+        typeof output?.errorCode === 'string' ? output.errorCode : null,
     };
   }
 

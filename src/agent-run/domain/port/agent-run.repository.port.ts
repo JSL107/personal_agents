@@ -191,6 +191,11 @@ export interface LatestSweepReview {
   // 그 리뷰가 draft 상태의 PR 을 본 것인지. inputSnapshot.isDraft 가 없으면(구 레코드·
   // 스윕 외 경로) false. ready 전환 후 "draft 때만 리뷰된 PR"을 다시 리뷰할 근거다.
   isDraft: boolean;
+  // 실패로 끝난 리뷰의 원인 코드(output.errorCode). 재시도해도 결과가 같은 영구 실패를
+  // 쿨다운 재시도에서 빼는 근거다. 성공한 리뷰·코드를 남기지 않은 구 레코드는 null.
+  // 문구가 아니라 코드로 판정한다 — 메시지 패턴에 기대면 생산자가 문구를 바꾸는 순간
+  // 조용히 오분류된다(AgentRunService.execute 가 errorCode 를 남기는 이유와 같다).
+  errorCode: string | null;
 }
 
 // 콘솔 관제(console 모듈) — 현재 IN_PROGRESS 인 활성 런 1건. deriveAgentState 의
