@@ -1305,14 +1305,23 @@ final class OfficeScene: SKScene {
             node.endInteraction()
             node.setNameplateSpan(nil)
             node.tile = seat
-            let meetingPoint = floorPoint(seat)
-            // 두 사람이 같은 테이블을 바라보도록 서로의 좌석 안쪽으로 모은다.
-            // 기존 간격은 두 번째 사람이 테이블에서 떠 보이는 원인이 됐다.
-            let horizontalOffset = tileSize * (index == 0 ? 0.42 : -0.60)
+            // **기준을 좌석 칸이 아니라 테이블 자신으로 잡는다.** 회의 테이블 그림은 세 칸
+            // 폭인데 논리 발자국은 한 칸이라, 좌석 칸(테이블 옆 한 칸)에서 재면 사람이 그림
+            // 바깥으로 한 칸 가까이 밀려난다 — 테이블이 의자를 되찾은 뒤로는 그 어긋남이
+            // "빈 의자를 두고 옆 바닥에 선 두 사람" 으로 보였다(이 연출의 자세는 자료를
+            // 보는 `writing`·`reading` 이라 앉지 않는다).
+            //
+            // 앞쪽 의자 두 짝은 그림 중심에서 **좌우 0.42칸**에 있다(원화에 타일 격자를
+            // 겹쳐 실측). 세로는 그림이 앞으로 내민 만큼만 내린다 — 좌석 칸까지 내리면
+            // 의자를 지나쳐 다시 바닥에 앉는다.
+            let meetingPoint = meetingTable.map {
+                floorPoint($0, footprintWidth: FurnitureKind.meetingTable.footprint.width)
+            } ?? floorPoint(seat)
+            let horizontalOffset = tileSize * (index == 0 ? -0.42 : 0.42)
             node.place(
                 at: CGPoint(
                     x: meetingPoint.x + horizontalOffset,
-                    y: meetingPoint.y - tileSize * 0.68
+                    y: meetingPoint.y - tileSize * 0.40
                 ),
                 depth: depth(of: seat) + 0.24
             )
