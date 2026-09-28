@@ -216,6 +216,12 @@ public struct OfficeShellFixture: Equatable, Sendable {
 ///
 /// 그림을 바꾸면 여기도 같이 바꾼다 — 어긋나면 사람이 물건 옆 빈 벽 앞에 선다.
 /// 평가 방 뒷벽 차트 액자는 게시판이 아니라 뺐다. 자산·총무 방 그림에는 게시판이 없다.
+///
+/// **차트 액자를 지표 화면(`wallMonitor`)으로도 보지 않는다.** 지표 화면을 찾는 일곱 명
+/// (`officeWorkAffinity`)은 기획·자산·총무 방 사람이고 평가 방에는 한 명도 없다. 그 세 방
+/// 그림에는 지표 화면이 없어서, 평가 방 액자만 목적지가 되면 일곱 명 모두 자기 방에 같은
+/// 종류가 없으니 가장 가까운 평가 방으로 매번 걸어간다 — 지금은 자기 방 안에서 돈다.
+/// 벽에 인쇄해 건 차트는 들여다보며 상태를 지켜보는 화면이라는 뜻과도 맞지 않는다.
 public func officeRoomShellFixtures(department: Department) -> [OfficeShellFixture] {
     switch department {
     case .planning:
@@ -239,6 +245,24 @@ public func officeRoomShellFixtures(department: Department) -> [OfficeShellFixtu
         ]
     case .internalOps:
         return [OfficeShellFixture(kind: .bookshelf, imageX: 0.24)]
+    }
+}
+
+/// 공용 공간 그림이 그려 둔 목적지 소품(`cozy/rooms/{meeting,president,pantry}-shell.png`).
+///
+/// 탕비실 냉장고만 있다. 평면도 냉장고는 화면에 안 나오는 가구라(`officeCozyDrawnFurnitureKinds`)
+/// 목적지에서 빠지는데, 그림에는 뒷벽 오른쪽에 냉장고가 서 있다.
+///
+/// 나머지는 넣지 않았다. 회의실 뒷벽은 추상화 액자와 흡음 패널이라 화이트보드로 볼 수 없고,
+/// 대표실은 풍경 액자뿐이다(책장 없음). 탕비실 그릇·유리병 선반은 읽을 자료가 아니라 책장으로
+/// 두면 자료 담당이 탕비실로 걸어간다. 커피 머신·싱크대는 평면도 가구가 이미 목적지다.
+/// 대표실 게시판(`officeStreakBoardTile`)은 도장 표시 자리라 여기서 다루지 않는다.
+public func officeCommonAreaShellFixtures(kind: CommonAreaKind) -> [OfficeShellFixture] {
+    switch kind {
+    case .pantry:
+        return [OfficeShellFixture(kind: .refrigerator, imageX: 0.72)]
+    case .meeting, .president:
+        return []
     }
 }
 
