@@ -756,8 +756,11 @@ export class EnvironmentVariables {
   SUBCONSCIOUS_ENABLED?: string;
 
   // Subconscious 판단기 모드. legacy(기존 LLM), shadow(Jev 비교), hybrid(확신 높은 Jev 우선).
+  // 판정부는 모르는 값을 legacy 로 접고 legacy 경로는 모드를 로그에 안 찍으므로, 오타가
+  // "켠 줄 알았는데 안 켜진" 상태로 숨는다 — 부팅에서 막는다. 빈 값은 미설정(legacy)으로 둔다.
   @IsOptional()
-  @IsString()
+  @ValidateIf((_, value: unknown) => value !== '')
+  @IsIn(['legacy', 'shadow', 'hybrid'])
   SUBCONSCIOUS_GATE_MODE?: string;
 
   // TypeSafe Jev API 인증키. 게이트 모드가 legacy이면 필요하지 않다.

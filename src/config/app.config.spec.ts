@@ -85,3 +85,20 @@ describe('validateEnv JOB_FEED_* 빈 문자열 — @Type(() => Number) 이 0 으
     expect(validated.JOB_FEED_YEARS).toBe(5);
   });
 });
+
+describe('validateEnv SUBCONSCIOUS_GATE_MODE', () => {
+  it.each(['legacy', 'shadow', 'hybrid', ''])('%p 는 허용한다', (mode) => {
+    expect(() =>
+      validateEnv({ ...requiredEnv, SUBCONSCIOUS_GATE_MODE: mode }),
+    ).not.toThrow();
+  });
+
+  it.each(['hybird', 'Hybrid'])(
+    '오타·대소문자 차이 %p 는 legacy 로 조용히 접히지 않게 부팅에서 거부한다',
+    (mode) => {
+      expect(() =>
+        validateEnv({ ...requiredEnv, SUBCONSCIOUS_GATE_MODE: mode }),
+      ).toThrow();
+    },
+  );
+});
