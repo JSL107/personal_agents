@@ -17,6 +17,25 @@ const PROBE_TIMEOUT_MS = 60_000;
 // 비어 있을 수 있다. 연속 2회(=20분) 실패면 사람이 열어도 안 열리는 상태다.
 const FAILURE_ALERT_THRESHOLD = 2;
 
+const FAILURE_BODY_PREVIEW_CHARS = 120;
+
+// 상태 코드만으로는 어느 층(Vercel·Cloudflare·Render·앱)이 막았는지 모른다 — 2026-09-27 429 알림이
+// 하루 가까이 이어졌는데 "HTTP 429" 한 줄뿐이라 원인을 좁힐 수 없었다. 응답 본문 앞부분과
+// retry-after 를 함께 실어 알림만 보고도 막은 쪽을 짐작하게 한다.
+async function describeFailedResponse(response: Response): Promise<string> {
+  const parts = [`HTTP ${response.status}`];
+  const retryAfter = response.headers.get('retry-after');
+  if (retryAfter) {
+    parts.push(`retry-after=${retryAfter}`);
+  }
+  const body = await response.text().catch(() => '');
+  const preview = body.replace(/\s+/g, ' ').trim();
+  if (preview.length > 0) {
+    parts.push(preview.slice(0, FAILURE_BODY_PREVIEW_CHARS));
+  }
+  return parts.join(' · ');
+}
+
 interface ProbeOutcome {
   ok: boolean;
   // 실패 사유를 함께 싣는다 — boolean 하나만 돌려주면 "왜 실패했는지"가 사라져서
@@ -91,7 +110,11 @@ export class PortfolioWarmupAutopilotTask implements AutopilotTask {
       });
       const elapsedMs = Date.now() - startedAt;
       if (!response.ok) {
-        return { ok: false, reason: `HTTP ${response.status}`, elapsedMs };
+        return {
+          ok: false,
+          reason: await describeFailedResponse(response),
+          elapsedMs,
+        };
       }
       return { ok: true, elapsedMs };
     } catch (error) {
