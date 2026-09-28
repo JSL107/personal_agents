@@ -313,6 +313,114 @@ describe('RouterMessageHandler — app_mention', () => {
     );
   });
 
+  it('스레드 첫 멘션이면 부모 메시지(봇 알림)를 직전 턴으로 넘긴다', async () => {
+    const { app, getHandler } = buildAppMock();
+    const dispatch = jest.fn().mockRejectedValue(
+      new RouterException({
+        code: RouterErrorCode.INTENT_CLASSIFY_FAILED,
+        message: 'unknown',
+        status: DomainStatus.BAD_REQUEST,
+      }),
+    );
+    const reply = jest.fn().mockResolvedValue('429 는 요청 과다 응답입니다');
+    const conversationMemory = new ConversationMemoryService();
+    buildHandler(
+      { dispatch },
+      {
+        conversationMemory,
+        conversationalReply: { reply } as unknown as ConversationalReplyUsecase,
+      },
+    ).register(app);
+    const replies = jest.fn().mockResolvedValue({
+      messages: [
+        {
+          ts: '1730000000.000100',
+          bot_id: 'B_IDAERI',
+          text: '⚠️ 포트폴리오 사이트 응답 없음 — 사유: HTTP 429',
+        },
+      ],
+    });
+    const client = {
+      reactions: {
+        add: jest.fn().mockResolvedValue({ ok: true }),
+        remove: jest.fn().mockResolvedValue({ ok: true }),
+      },
+      conversations: { replies },
+    };
+    const handler = getHandler('app_mention') as unknown as (args: {
+      event: Record<string, unknown>;
+      say: jest.Mock;
+      client: unknown;
+    }) => Promise<void>;
+    const event = {
+      type: 'app_mention',
+      user: 'U_USER',
+      text: '<@UBOT> 이거 왜 오류인지 확인해줄래?',
+      ts: '1730000000.000200',
+      thread_ts: '1730000000.000100',
+      channel: 'C_CHANNEL',
+    };
+
+    await handler({ event, say: jest.fn(), client });
+    // 두 번째 턴은 스레드 메모리에 쌓인 부모를 그대로 쓰므로 다시 조회하지 않는다.
+    await handler({
+      event: { ...event, ts: '1730000000.000300', text: '<@UBOT> 더 알려줘' },
+      say: jest.fn(),
+      client,
+    });
+
+    expect(replies).toHaveBeenCalledTimes(1);
+    expect(replies).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: 'C_CHANNEL',
+        ts: '1730000000.000100',
+      }),
+    );
+    const firstTurns = reply.mock.calls[0][0].priorTurns as ConversationTurn[];
+    expect(firstTurns).toEqual([
+      // 봇이 쓴 부모라도 assistant(=이대리 자신의 발화)로 올리지 않고 원문 표식을 단 user 턴으로 싣는다.
+      expect.objectContaining({
+        role: 'user',
+        text: expect.stringMatching(
+          /^\[스레드 원문[^\n]*\]\n⚠️ 포트폴리오 사이트 응답 없음 — 사유: HTTP 429$/,
+        ),
+      }),
+    ]);
+    const secondTurns = reply.mock.calls[1][0].priorTurns as ConversationTurn[];
+    expect(secondTurns[0]).toEqual(
+      expect.objectContaining({ text: expect.stringContaining('HTTP 429') }),
+    );
+  });
+
+  it('스레드 부모 조회가 실패해도 부모 없이 답한다', async () => {
+    const { app, getHandler } = buildAppMock();
+    const dispatch = jest.fn().mockResolvedValue({
+      agentRunId: 1,
+      workerType: AgentType.PM,
+      output: {},
+      modelUsed: 'mock',
+      formattedText: 'mock body',
+    });
+    buildHandler({ dispatch }).register(app);
+
+    // invokeHandler 의 client 에는 conversations 가 없어 조회가 throw 한다.
+    const { say } = await invokeHandler(getHandler('app_mention'), {
+      type: 'app_mention',
+      user: 'U_USER',
+      text: '<@UBOT> 이거 뭐야',
+      ts: '1730000000.000200',
+      thread_ts: '1730000000.000100',
+      channel: 'C_CHANNEL',
+    });
+
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ priorTurns: [] }),
+    );
+    expect(say).toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining('mock body') }),
+    );
+  });
+
   it('text 가 멘션 prefix 만이면 비어 있다고 안내 + router.dispatch 미호출', async () => {
     const { app, getHandler } = buildAppMock();
     const dispatch = jest.fn();
@@ -817,6 +925,67 @@ describe('RouterMessageHandler — message (DM)', () => {
     );
     // 직전 worker run 도 이어져야 한다 (같은 대화의 후속 실행 컨텍스트).
     expect(secondCall.contextRefs).toEqual({ agentRunId: 5 });
+  });
+
+  // 부모 조회가 성공하는 운영 환경에서도 같은 흐름이 뒤틀리지 않아야 한다 — 부모(1턴 발화)가
+  // 이미 channel 키에 있으므로 다시 붙이면 user → assistant → 같은 user 순서가 된다.
+  it('DM 스레드 부모가 이미 channel 메모리에 있으면 중복해 싣지 않는다', async () => {
+    const dispatch = jest.fn().mockResolvedValue({
+      agentRunId: 5,
+      workerType: AgentType.PM,
+      output: {},
+      modelUsed: 'mock',
+      formattedText: 'DM body',
+    });
+    const { handler } = buildWithRouter(dispatch);
+    const replies = jest.fn().mockResolvedValue({
+      messages: [{ ts: '1730000000.000001', text: '가상 계좌 수익률 어때' }],
+    });
+    const client = {
+      reactions: {
+        add: jest.fn().mockResolvedValue({ ok: true }),
+        remove: jest.fn().mockResolvedValue({ ok: true }),
+      },
+      conversations: { replies },
+    };
+    const invoke = handler as unknown as (args: {
+      event: Record<string, unknown>;
+      say: jest.Mock;
+      client: unknown;
+    }) => Promise<void>;
+
+    await invoke({
+      event: {
+        type: 'message',
+        user: 'U_USER',
+        text: '가상 계좌 수익률 어때',
+        ts: '1730000000.000001',
+        channel: 'D_DMCHANNEL',
+        channel_type: 'im',
+      },
+      say: jest.fn(),
+      client,
+    });
+    await invoke({
+      event: {
+        type: 'message',
+        user: 'U_USER',
+        text: '로컬에 있는 가상계좌',
+        ts: '1730000000.000002',
+        thread_ts: '1730000000.000001',
+        channel: 'D_DMCHANNEL',
+        channel_type: 'im',
+      },
+      say: jest.fn(),
+      client,
+    });
+
+    expect(replies).toHaveBeenCalledTimes(1);
+    const secondCall = dispatch.mock.calls[1][0] as DispatchInput;
+    expect(secondCall.priorTurns?.map((turn) => turn.role)).toEqual([
+      'user',
+      'assistant',
+    ]);
   });
 
   // 회귀: 스레드가 아니라 DM 입력창에서 연달아 말하는 흐름. 두 이벤트 모두 thread_ts 가

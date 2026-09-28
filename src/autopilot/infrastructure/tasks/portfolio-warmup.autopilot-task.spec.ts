@@ -60,14 +60,14 @@ describe('PortfolioWarmupAutopilotTask', () => {
 
   it('1회 실패로는 알리지 않는다 (콜드스타트·재배포 흡수)', async () => {
     const { task } = createFixture(SITE_URL);
-    mockFetch(jest.fn().mockResolvedValue({ ok: false, status: 502 }));
+    mockFetch(jest.fn().mockResolvedValue(new Response('', { status: 502 })));
 
     await expect(task.run(context)).resolves.toEqual({ skip: true });
   });
 
   it('연속 2회 실패하면 사유를 담아 알린다', async () => {
     const { task } = createFixture(SITE_URL);
-    mockFetch(jest.fn().mockResolvedValue({ ok: false, status: 502 }));
+    mockFetch(jest.fn().mockResolvedValue(new Response('', { status: 502 })));
 
     await task.run(context);
     const result = await task.run(context);
@@ -76,6 +76,26 @@ describe('PortfolioWarmupAutopilotTask', () => {
     expect(result.summaryText).toContain('2회 연속 실패');
     expect(result.summaryText).toContain('HTTP 502');
     expect(result.summaryText).toContain(SITE_URL);
+  });
+
+  it('실패 사유에 retry-after 와 응답 본문 앞부분을 싣는다 (막은 층을 알리기 위해)', async () => {
+    const { task } = createFixture(SITE_URL);
+    mockFetch(
+      jest.fn().mockImplementation(
+        async () =>
+          new Response('Too Many Requests\n  rate limited', {
+            status: 429,
+            headers: { 'retry-after': '60' },
+          }),
+      ),
+    );
+
+    await task.run(context);
+    const result = await task.run(context);
+
+    expect(result.summaryText).toContain(
+      'HTTP 429 · retry-after=60 · Too Many Requests rate limited',
+    );
   });
 
   it('네트워크 예외도 사유로 옮겨 담는다', async () => {
@@ -95,9 +115,9 @@ describe('PortfolioWarmupAutopilotTask', () => {
     const fetchMock = mockFetch(
       jest
         .fn()
-        .mockResolvedValueOnce({ ok: false, status: 503 })
+        .mockResolvedValueOnce(new Response('', { status: 503 }))
         .mockResolvedValueOnce({ ok: true })
-        .mockResolvedValueOnce({ ok: false, status: 503 }),
+        .mockResolvedValueOnce(new Response('', { status: 503 })),
     );
 
     await task.run(context);
