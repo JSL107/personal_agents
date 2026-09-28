@@ -197,7 +197,7 @@ describe('EveningBlogPublishApplier', () => {
         '1': '첫 문단',
         '3': '둘째 문단',
       },
-      { longForm: true },
+      { longForm: true, voice: 'personal-blog' },
     );
     expect(notionClient.appendBlocks).toHaveBeenCalledWith({
       pageId: 'p1',
