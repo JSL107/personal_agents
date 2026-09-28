@@ -378,9 +378,12 @@ describe('RouterMessageHandler — app_mention', () => {
     );
     const firstTurns = reply.mock.calls[0][0].priorTurns as ConversationTurn[];
     expect(firstTurns).toEqual([
+      // 봇이 쓴 부모라도 assistant(=이대리 자신의 발화)로 올리지 않고 원문 표식을 단 user 턴으로 싣는다.
       expect.objectContaining({
-        role: 'assistant',
-        text: '⚠️ 포트폴리오 사이트 응답 없음 — 사유: HTTP 429',
+        role: 'user',
+        text: expect.stringMatching(
+          /^\[스레드 원문[^\n]*\]\n⚠️ 포트폴리오 사이트 응답 없음 — 사유: HTTP 429$/,
+        ),
       }),
     ]);
     const secondTurns = reply.mock.calls[1][0].priorTurns as ConversationTurn[];
@@ -922,6 +925,67 @@ describe('RouterMessageHandler — message (DM)', () => {
     );
     // 직전 worker run 도 이어져야 한다 (같은 대화의 후속 실행 컨텍스트).
     expect(secondCall.contextRefs).toEqual({ agentRunId: 5 });
+  });
+
+  // 부모 조회가 성공하는 운영 환경에서도 같은 흐름이 뒤틀리지 않아야 한다 — 부모(1턴 발화)가
+  // 이미 channel 키에 있으므로 다시 붙이면 user → assistant → 같은 user 순서가 된다.
+  it('DM 스레드 부모가 이미 channel 메모리에 있으면 중복해 싣지 않는다', async () => {
+    const dispatch = jest.fn().mockResolvedValue({
+      agentRunId: 5,
+      workerType: AgentType.PM,
+      output: {},
+      modelUsed: 'mock',
+      formattedText: 'DM body',
+    });
+    const { handler } = buildWithRouter(dispatch);
+    const replies = jest.fn().mockResolvedValue({
+      messages: [{ ts: '1730000000.000001', text: '가상 계좌 수익률 어때' }],
+    });
+    const client = {
+      reactions: {
+        add: jest.fn().mockResolvedValue({ ok: true }),
+        remove: jest.fn().mockResolvedValue({ ok: true }),
+      },
+      conversations: { replies },
+    };
+    const invoke = handler as unknown as (args: {
+      event: Record<string, unknown>;
+      say: jest.Mock;
+      client: unknown;
+    }) => Promise<void>;
+
+    await invoke({
+      event: {
+        type: 'message',
+        user: 'U_USER',
+        text: '가상 계좌 수익률 어때',
+        ts: '1730000000.000001',
+        channel: 'D_DMCHANNEL',
+        channel_type: 'im',
+      },
+      say: jest.fn(),
+      client,
+    });
+    await invoke({
+      event: {
+        type: 'message',
+        user: 'U_USER',
+        text: '로컬에 있는 가상계좌',
+        ts: '1730000000.000002',
+        thread_ts: '1730000000.000001',
+        channel: 'D_DMCHANNEL',
+        channel_type: 'im',
+      },
+      say: jest.fn(),
+      client,
+    });
+
+    expect(replies).toHaveBeenCalledTimes(1);
+    const secondCall = dispatch.mock.calls[1][0] as DispatchInput;
+    expect(secondCall.priorTurns?.map((turn) => turn.role)).toEqual([
+      'user',
+      'assistant',
+    ]);
   });
 
   // 회귀: 스레드가 아니라 DM 입력창에서 연달아 말하는 흐름. 두 이벤트 모두 thread_ts 가

@@ -28,12 +28,27 @@ async function describeFailedResponse(response: Response): Promise<string> {
   if (retryAfter) {
     parts.push(`retry-after=${retryAfter}`);
   }
-  const body = await response.text().catch(() => '');
-  const preview = body.replace(/\s+/g, ' ').trim();
+  const preview = (await readFirstChunk(response)).replace(/\s+/g, ' ').trim();
   if (preview.length > 0) {
     parts.push(preview.slice(0, FAILURE_BODY_PREVIEW_CHARS));
   }
   return parts.join(' · ');
+}
+
+// 앞 120자만 쓰므로 본문 전체를 버퍼링하지 않는다 — 첫 청크만 읽고 나머지는 취소한다.
+async function readFirstChunk(response: Response): Promise<string> {
+  // 본문은 진단용 부가 정보라, 읽기 실패가 "HTTP <status>" 사유 자체를 덮지 않게 전부 삼킨다.
+  try {
+    const reader = response.body?.getReader();
+    if (!reader) {
+      return '';
+    }
+    const { value } = await reader.read();
+    await reader.cancel().catch(() => undefined);
+    return value ? new TextDecoder().decode(value) : '';
+  } catch {
+    return '';
+  }
 }
 
 interface ProbeOutcome {
