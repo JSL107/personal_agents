@@ -1260,6 +1260,59 @@ public let officeCozyDrawnFurnitureKinds: Set<FurnitureKind> = [
     .trash,
 ]
 
+/// 완성형 방 그림 위에서 쓰는 평면도 — **화면에 안 나오는 가구가 막던 칸을 연다.**
+///
+/// 씬은 `drawnKinds` 밖의 가구를 투명으로 돌리는데, walkable 은 그 칸을 여전히 막힌 칸으로
+/// 쳤다. 화면에서는 빈 바닥인데 사람이 못 지나가고 못 섰다 — 3열 표본에서 54칸이었다.
+/// 품질 방 오른쪽 구석(21,12~13)의 서류함·책장이 그래서 구석을 막았고, 셸 그림 속 책장 앞자리가
+/// 한 칸 왼쪽으로 밀렸다. 정원 명단에서는 탁자·소파 네 개가 투명 가구에 둘러싸여 목적지에서
+/// 아예 빠졌다.
+///
+/// **배치는 건드리지 않는다.** 가구를 아예 안 놓으면 뒤 가구가 앞 가구의 빈 후보 칸을 물어
+/// 보이는 가구 자리까지 연쇄로 바뀌고, 모든 가구를 쓰는 자세 데모(`applyPoseDemo`)도 깨진다.
+/// 칸을 여러 가구가 함께 덮으면 **하나라도 그려지는 가구면** 막힌 채 둔다.
+public func officeShellFloorPlan(
+    _ plan: OfficeFloorPlan,
+    drawnKinds: Set<FurnitureKind> = officeCozyDrawnFurnitureKinds
+) -> OfficeFloorPlan {
+    var hiddenCover: Set<TilePoint> = []
+    var drawnCover: Set<TilePoint> = []
+    for placement in plan.furniture where !placement.kind.isWalkThrough {
+        let size = placement.kind.footprint
+        for offsetY in 0..<size.height {
+            for offsetX in 0..<size.width {
+                let tile = TilePoint(x: placement.tile.x + offsetX, y: placement.tile.y + offsetY)
+                if drawnKinds.contains(placement.kind) {
+                    drawnCover.insert(tile)
+                } else {
+                    hiddenCover.insert(tile)
+                }
+            }
+        }
+    }
+    // 벽 칸은 가구와 상관없이 막혀 있다 — 벽에 붙여 놓인 가구를 걷어도 벽은 남는다.
+    let opened = hiddenCover.subtracting(drawnCover).filter { tile in
+        tile.y >= 0 && tile.y < plan.rows && tile.x >= 0 && tile.x < plan.columns
+            && plan.floor[tile.y][tile.x] != .wall
+    }
+    return OfficeFloorPlan(
+        columns: plan.columns,
+        rows: plan.rows,
+        floor: plan.floor,
+        furniture: plan.furniture,
+        desks: plan.desks,
+        walkable: plan.walkable.union(opened),
+        queueTiles: plan.queueTiles,
+        loungeTiles: plan.loungeTiles,
+        presidentTile: plan.presidentTile,
+        entranceTile: plan.entranceTile,
+        zones: plan.zones,
+        commonAreas: plan.commonAreas,
+        windowTiles: plan.windowTiles,
+        wallLampTiles: plan.wallLampTiles
+    )
+}
+
 /// 이 칸이 방의 **위쪽 경계**(천장 줄)인가 — 위아래로 붙은 두 방이 만나는 자리.
 ///
 /// 좌우로 붙은 방 사이에는 방 셸 그림이 이미 문과 기둥을 그려 두지만, **위아래 경계는
