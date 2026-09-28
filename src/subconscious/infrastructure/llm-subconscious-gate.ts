@@ -138,6 +138,12 @@ export class LlmSubconsciousGate implements SubconsciousGate {
               // (`input_snapshot->>'changeCount'` 대 `jsonb_array_length(output->'decisions')`
               // 가 위 86 회차를 정확히 집는다). 파생되지 않는 것이 왜 비었는가이고, 그게
               // 고칠 곳을 가른다 — 86 건은 파서였다.
+              //
+              // 그 파생 집계는 **`AND output->>'gate' IS NULL` 로 이 게이트의 행만** 세야 한다.
+              // `JevSubconsciousGate` 도 같은 agentType 으로 행을 쓰고(`output.gate = 'jev'`),
+              // 거기서 `decisions` 가 `changeCount` 보다 적은 것은 유실이 아니라 Jev 답을 못
+              // 읽어 이 게이트로 넘긴 몫이다 — 넘긴 몫의 유실은 이 게이트 행이 `undecided` 로
+              // 남긴다. 그래서 Jev 행에는 `undecided` 를 두지 않는다.
               ...(undecided === null ? {} : { undecided }),
             },
           };
