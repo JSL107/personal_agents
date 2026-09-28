@@ -26,7 +26,7 @@ GitHub · Notion · Slack · 증권 시세를 연결해 **회사 롤플레이 �
 
 | | |
 |---|---|
-| 🗣️ **두 가지 진입** | Slack slash command 19개, 또는 `@이대리 오늘 plan 짜줘` 자연어 멘션·DM |
+| 🗣️ **두 가지 진입** | Slack slash command, 또는 `@이대리 오늘 plan 짜줘` 자연어 멘션·DM |
 | 🎭 **회사 롤플레이** | 한 사람이 PM · BE · 리뷰어 · CTO · PO · CEO 역할을 LLM 워커로 분담 |
 | ⚡ **자동 실행** | 출근/퇴근/주간 cron 33슬롯 + GitHub webhook 으로 사용자 입력 없이 돈다 — 대부분은 Slack 으로 보고하고, 뒷정리·폴링 성격의 4슬롯은 처리한 게 있을 때만 알린다 |
 | 📈 **투자 라인** | KRX 전종목을 훑어 후보를 추리고, 가상 계좌로 사고팔아 추천 규칙의 성적을 남긴다 |
@@ -44,7 +44,7 @@ GitHub · Notion · Slack · 증권 시세를 연결해 **회사 롤플레이 �
 flowchart TD
     subgraph IN["진입점"]
         direction LR
-        S["슬래시 15종"]
+        S["슬래시 커맨드"]
         M["@이대리 멘션·DM"]
         W["GitHub Webhook"]
         C["Autopilot Cron"]
@@ -191,14 +191,14 @@ pnpm dev              # watch 모드 기동
 
 | 진입 | 무엇 | 인증·게이트 |
 |---|---|---|
-| **슬래시 커맨드** | 15종 (에이전트 호출 · 휴가 · 운영) | Slack Socket Mode |
+| **슬래시 커맨드** | 에이전트 호출 · 휴가 · 운영 | Slack Socket Mode |
 | **자연어 멘션·DM** | Router 가 19개 워커 중 하나로 분류·dispatch | `app_mention` + `message.im` 구독 |
 | **GitHub Webhook** | issue/PR 이벤트로 자동 발화 | HMAC 서명 검증 |
 | **Autopilot cron** | 출근·퇴근·주간 정기 실행 | `AUTOPILOT_OWNER_SLACK_USER_ID` |
 | **macOS 콘솔 앱** | Slack 없이 회사 전체를 보고 조작 | `CONSOLE_OWNER_SLACK_USER_ID` |
 
 <details>
-<summary><b>슬래시 커맨드 19개</b></summary>
+<summary><b>슬래시 커맨드</b></summary>
 
 <br>
 
