@@ -57,9 +57,14 @@ func runOfficeStrollReachTests(_ t: TestRunner) {
         // 한가운데 서서 혼잣말하는 그림이고, 읽는 자세는 그림에 의자가 붙어 있어 아무것도
         // 없는 바닥에 의자까지 돋아났다.
         let drawnSpots = officeStrollSpots(
-            plan: plan, drawnKinds: officeCozyDrawnFurnitureKinds
+            plan: plan, drawnKinds: officeCozyDrawnFurnitureKinds, shellFixtures: true
         )
-        let notDrawn = drawnSpots.filter { !officeCozyDrawnFurnitureKinds.contains($0.kind) }
+        // 방 그림이 직접 그린 게시판·책장(`officeRoomShellFixtures`)은 화면에 있는 물건이다.
+        let notDrawn = drawnSpots.filter { spot in
+            !officeCozyDrawnFurnitureKinds.contains(spot.kind)
+                && !(spot.department.map { officeRoomShellFixtures(department: $0) } ?? [])
+                    .contains { $0.kind == spot.kind }
+        }
         t.expect(notDrawn.isEmpty, "\(columns)열: 안 그려지는 가구가 목적지에 남았다 \(notDrawn.map(\.kind.rawValue))")
 
         // **방마다 하나는 남아야 한다.** 0이 되면 그 방 사람 전원이 배회할 때마다 방을
@@ -176,6 +181,69 @@ func runOfficeStrollReachTests(_ t: TestRunner) {
                 t.expect(
                     station.x > zone.origin.x && station.x + 1 < zone.origin.x + zone.width - 1,
                     "\(label)/\(columns)열: \(zone.department.rawValue) 콘솔이 벽을 넘었다 (\(station.x))"
+                )
+            }
+        }
+    }
+}
+
+/// 방 그림이 직접 그린 게시판·책장(`officeRoomShellFixtures`)이 목적지가 되는가.
+///
+/// 완성형 방 그림에서는 평면도의 게시판·책장 스프라이트를 투명으로 돌려서, 게시판을 찾는
+/// 판정 담당과 책장을 찾는 자료 담당이 **그림에 물건이 있는데도** 갈 곳이 없었다(#658 리뷰).
+func runOfficeShellFixtureTests(_ t: TestRunner) {
+    t.suite("ShellFixture")
+    for (label, roster) in [("표본", sampleAgents), ("정원", strollReachFullRoster())] {
+        for columns in [2, 3] {
+            let plan = officeFloorPlan(agents: roster, zoneColumns: columns)
+            let spots = officeStrollSpots(
+                plan: plan, drawnKinds: officeCozyDrawnFurnitureKinds, shellFixtures: true
+            )
+            let seats = Set(plan.desks.map(\.seat))
+            for zone in plan.zones {
+                let mine = spots.filter { $0.department == zone.department }
+                for fixture in officeRoomShellFixtures(department: zone.department) {
+                    // 그림에 있는 물건은 **빠짐없이** 목적지가 된다 — 조용히 빠지면 그 방
+                    // 사람만 다시 남의 방으로 걸어간다.
+                    // **정원에서는 빠질 수 있다.** 방마다 열 명이 차면 뒷줄이 전부 좌석이라
+                    // 게시판 앞에 설 칸이 실제로 없다(기획 방). 앉은 사람 자리에 겹쳐 세우는
+                    // 것보다 빼는 것이 맞으므로, 실제 조직 규모(표본)에서만 빠짐없음을 건다.
+                    guard let spot = mine.first(where: { $0.kind == fixture.kind }) else {
+                        t.expect(
+                            label == "정원",
+                            "\(label)/\(columns)열: \(zone.department.rawValue) 그림의"
+                                + " \(fixture.kind.rawValue) 앞자리가 없다"
+                        )
+                        continue
+                    }
+                    // 방 안 바닥, 뒷벽에 붙은 두 줄에 선다 — 복도·좌석·앞쪽 바닥이면
+                    // 물건과 떨어져 빈 바닥을 보고 서는 그림이 된다.
+                    let backRow = zone.origin.y + zone.height - 2
+                    t.expect(
+                        spot.tile.x > zone.origin.x && spot.tile.x < zone.origin.x + zone.width - 1
+                            && (spot.tile.y == backRow || spot.tile.y == backRow - 1)
+                            && !seats.contains(spot.tile) && spot.facing == fixture.facing,
+                        "\(label)/\(columns)열: \(zone.department.rawValue) \(fixture.kind.rawValue)"
+                            + " 앞자리가 뒷벽 앞이 아니다 (\(spot.tile.x),\(spot.tile.y)) \(spot.facing)"
+                    )
+                }
+            }
+            // 품질 방 판정 담당 둘은 **자기 방 게시판**으로 간다. 이 둘이 게시판을 찾는데
+            // 방에 없어서 기획 방까지 걸어가던 것이 게시판을 이 방에 둔 이유였다.
+            for agentType in ["CODE_REVIEWER", "REVIEW_REPLY_JUDGE"] {
+                guard let seat = plan.desks.first(where: { $0.agentType == agentType })?.seat,
+                      let zone = plan.zones.first(where: { officeZoneContains($0, seat) })
+                else {
+                    continue
+                }
+                let spot = officeStrollSpot(
+                    for: agentType, round: 1, spots: spots, occupied: [], hour: 14,
+                    home: seat, homeDepartment: zone.department
+                )
+                t.expect(
+                    spot?.kind == .wallPinboard && spot?.department == zone.department,
+                    "\(label)/\(columns)열: \(agentType) 가 자기 방 게시판으로 가지 않는다"
+                        + " (\(spot?.kind.rawValue ?? "nil")@\(spot?.department?.rawValue ?? "nil"))"
                 )
             }
         }

@@ -1773,12 +1773,16 @@ final class OfficeScene: SKScene {
     /// 가구**만 남긴다. 안 보이는 물건 앞으로 보내면 말풍선이 빈 바닥에서 뜬다
     /// (`officeCozyDrawnFurnitureKinds` 의 주석에 실측이 있다).
     ///
+    /// 방 그림이 직접 그린 게시판·책장 앞자리도 함께 쓴다(`officeRoomShellFixtures`) — 걸러낸
+    /// 스프라이트 대신 그림 속 물건 앞으로 보낸다.
+    ///
     /// 자세 회귀 렌더(`applyPoseDemo`)는 가구 종류마다 한 명씩 세워 자세 누락을 잡는 입구라
     /// 이 걸름을 쓰지 않는다 — 거기까지 좁히면 확인 대상이 사라진다.
     private var strollSpots: [OfficeStrollSpot] {
         officeStrollSpots(
             plan: plan,
-            drawnKinds: usesCompleteRoomArchitecture ? officeCozyDrawnFurnitureKinds : nil
+            drawnKinds: usesCompleteRoomArchitecture ? officeCozyDrawnFurnitureKinds : nil,
+            shellFixtures: usesCompleteRoomArchitecture
         )
     }
 
