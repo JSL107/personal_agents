@@ -213,7 +213,7 @@ const normalizeDateToken = (token: string): string => {
 };
 
 const LEGAL_REFERENCE_PATTERN =
-  /제\s*\d+\s*조(?:의\s*\d+)?(?:\s*제\s*\d+\s*항)?(?:\s*제\s*\d+\s*호)?/g;
+  /(?:(?:[가-힣]+\s+(?:보호법|기본법|관리법|지원법|촉진법|특별법)|[가-힣]*(?:법률|법|시행령|시행규칙|조례))\s+)?(?:제\s*\d+\s*조(?:의\s*\d+)?(?:\s*제\s*\d+\s*항)?(?:\s*제\s*\d+\s*호)?|같은\s*조\s*제\s*\d+\s*(?:항|호))(?:\s*(?:및|또는|과|와|,)\s*제\s*\d+\s*(?:항|호))*/g;
 
 const normalizeLegalReference = (token: string): string =>
   token.replace(/\s+/g, '');
