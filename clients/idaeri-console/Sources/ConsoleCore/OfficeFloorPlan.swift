@@ -1394,7 +1394,7 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
         // 두 걸음씩 늘었다 — 한 방을 고치면서 옆방을 나쁘게 만든 셈이라 함께 고친다.
         //
         // 벽에 거는 판(`wallWhiteboard`)은 설계를 그리는 BE 계열이 찾던 물건인데 그 5종은
-        // 2026-09-04 에 폐지돼 이 방에 아무도 안 남았다. 평가·콘텐츠 방에도 걸려 있어
+        // 2026-09-04 에 폐지돼 이 방에 아무도 안 남았다. 평가 방에도 걸려 있어
         // 내려도 화면에서 사라지지 않는다. 코드와 답변을 판정하는 방이라 체크리스트를 붙여
         // 두는 판이 성격에도 맞는다.
         //
@@ -1470,8 +1470,11 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
     case .content:
         // 밝고 트인 방 — 지표 모니터를 걸고 자유석을 낮은 파티션으로만 나눈다.
         //
-        // 판도 벽에 건다(리뷰방과 같은 이유). 이동식 보드는 후보 (7,1) 을 받아 **아래 줄
-        // 책상 사이에 끼어** 있었다 — 자유석 사이를 나누는 것은 파티션의 몫이다.
+        // 벽 첫 칸은 판 대신 포스터다. 2열에서 여기의 벽 화이트보드가 복도 앞칸을
+        // 선점하면 맞은편 총무 게시판은 정면이 문, 안쪽이 책상이라 목적지가 사라진다.
+        // 콘텐츠 담당자는 이 화이트보드를 찾지 않고, 판은 평가 방에도 남아 있다.
+        // 이동식 보드는 후보 (7,1) 을 받아 **아래 줄 책상 사이에 끼어** 있었다 —
+        // 자유석 사이를 나누는 것은 파티션의 몫이다.
         //
         // 넷뿐이라 여섯 방 중 가장 휑했다. 자리표는 문제가 아니었다 — **후보 목록이 짧고
         // 그중 둘이 죽은 자리였다**(`departmentFurnitureSpots` 참조). 자리를 그대로 두고
@@ -1484,7 +1487,7 @@ public func departmentFurniture(_ department: Department) -> [FurnitureKind] {
         return [
             .partitionLow, .partitionLow, .sofa2, .plantTall, .plantSmall,
             .bookshelf, .bookshelf, .printer, .filingCabinet,
-            .wallWhiteboard, .wallMonitor, .wallPlantHanging,
+            .wallPoster, .wallMonitor, .wallPlantHanging,
         ]
     case .internalOps:
         // 설비가 모인 방 — 사물함과 비품 선반, 그리고 자판기.
