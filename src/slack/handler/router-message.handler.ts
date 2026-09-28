@@ -206,6 +206,8 @@ export class RouterMessageHandler implements SlackHandler {
       slackUserId,
       channelId,
       memoryThreadTs,
+      messageTs,
+      client,
     });
     let unresolvedStreak = 0;
     for (const turn of [...priorTurns].reverse()) {
@@ -404,11 +406,15 @@ export class RouterMessageHandler implements SlackHandler {
     slackUserId,
     channelId,
     memoryThreadTs,
+    messageTs,
+    client,
   }: {
     memoryKey: string;
     slackUserId: string;
     channelId: string;
     memoryThreadTs: string | undefined;
+    messageTs: string | undefined;
+    client: WebClient;
   }): Promise<ConversationTurn[]> {
     const turns = await this.conversationMemory.getRecentTurns(memoryKey);
     if (turns.length > 0 || memoryThreadTs === undefined) {
@@ -418,7 +424,69 @@ export class RouterMessageHandler implements SlackHandler {
       slackUserId,
       channelId,
     });
-    return await this.conversationMemory.getRecentTurns(channelKey);
+    const channelTurns =
+      await this.conversationMemory.getRecentTurns(channelKey);
+    const rootTurn = await this.fetchThreadRootTurn({
+      client,
+      channelId,
+      threadTs: memoryThreadTs,
+      messageTs,
+    });
+    if (rootTurn === null) {
+      return channelTurns;
+    }
+    // 스레드 키에 적재해 두 번째 턴부터도 "이거"가 무엇인지 남게 한다.
+    await this.conversationMemory.appendTurn(memoryKey, rootTurn);
+    return [...channelTurns, rootTurn];
+  }
+
+  // 스레드 부모 본문을 대화 턴으로 가져온다.
+  //
+  // autopilot 알림처럼 대화 메모리를 거치지 않고 push 된 메시지에 사용자가 스레드로
+  // "이거 왜 오류야?" 라고 물으면, 메모리에는 그 알림이 없어 "이거"가 가리킬 대상이 사라진다
+  // (2026-09-27 포트폴리오 429 알림 스레드에서 이대리가 "에러 메시지를 보내달라"고 되물었다).
+  // 조회 실패는 기존 동작(부모 없이 진행)으로 넘긴다 — 맥락 보강 때문에 답변 자체를 막지 않는다.
+  private async fetchThreadRootTurn({
+    client,
+    channelId,
+    threadTs,
+    messageTs,
+  }: {
+    client: WebClient;
+    channelId: string;
+    threadTs: string;
+    messageTs: string | undefined;
+  }): Promise<ConversationTurn | null> {
+    // 스레드를 여는 최상위 메시지 자신이면 부모가 따로 없다.
+    if (threadTs === messageTs) {
+      return null;
+    }
+    try {
+      const thread = await client.conversations.replies({
+        channel: channelId,
+        ts: threadTs,
+        inclusive: true,
+        limit: 1,
+      });
+      const root = thread.messages?.find(
+        (candidate) => candidate.ts === threadTs,
+      );
+      if (!root?.text) {
+        return null;
+      }
+      return {
+        role: root.bot_id ? 'assistant' : 'user',
+        text: root.text,
+        agentType: null,
+        agentRunId: null,
+        timestampMs: Date.now(),
+      };
+    } catch (error: unknown) {
+      this.logger.warn(
+        `스레드 부모 조회 실패 — 부모 없이 진행 (channel=${channelId} ts=${threadTs}): ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return null;
+    }
   }
 
   // 자연어 Y/N 응답 인터셉트 — 사용자가 직전 PreviewGate preview 에 "응 / 아니" 로 답한 경우만.
