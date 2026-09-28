@@ -283,6 +283,7 @@ export class HumanizeService {
             const violations = findPreservationViolations(
               fields[key],
               humanized[key],
+              options?.voice === 'personal-blog' ? 'personal-blog' : 'report',
             );
             addViolationsToSummary(preservationViolations, violations);
             if (shouldRollbackField(violations)) {
@@ -445,8 +446,24 @@ export class HumanizeService {
 
 const createViolationSummary = (): PreservationViolationSummary => {
   return {
-    injected: { code: 0, url: 0, pr: 0, number: 0 },
-    lost: { code: 0, url: 0, pr: 0, number: 0 },
+    injected: {
+      code: 0,
+      url: 0,
+      pr: 0,
+      number: 0,
+      date: 0,
+      quote: 0,
+      legal: 0,
+    },
+    lost: {
+      code: 0,
+      url: 0,
+      pr: 0,
+      number: 0,
+      date: 0,
+      quote: 0,
+      legal: 0,
+    },
   };
 };
 
@@ -465,32 +482,9 @@ const buildRollbackWarning = (
 ): string => {
   const details = rolledBackKeys.map((key) => {
     const violations = violationsByKey[key]
-      .map(
-        (violation) =>
-          `${violation.direction} ${violation.kind} ${formatViolationTokenForLog(violation)}`,
-      )
+      .map((violation) => `${violation.direction} ${violation.kind}`)
       .join(', ');
     return `${key}: ${violations}`;
   });
   return `윤문 내용 보존 롤백 — ${details.join('; ')}`;
-};
-
-const formatViolationTokenForLog = (
-  violation: PreservationViolation,
-): string => {
-  const token =
-    violation.kind === 'url'
-      ? redactUrlForLog(violation.token)
-      : violation.token;
-  return JSON.stringify(token);
-};
-
-const redactUrlForLog = (token: string): string => {
-  try {
-    const url = new URL(token);
-    return `${url.origin}${url.pathname}`;
-  } catch {
-    const urlWithoutQueryOrFragment = token.split(/[?#]/)[0];
-    return urlWithoutQueryOrFragment.replace(/^(https?:\/\/)[^/?#]*@/i, '$1');
-  }
 };
