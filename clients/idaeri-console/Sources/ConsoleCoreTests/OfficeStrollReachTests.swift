@@ -59,11 +59,16 @@ func runOfficeStrollReachTests(_ t: TestRunner) {
         let drawnSpots = officeStrollSpots(
             plan: plan, drawnKinds: officeCozyDrawnFurnitureKinds, shellFixtures: true
         )
-        // 방 그림이 직접 그린 게시판·책장(`officeRoomShellFixtures`)은 화면에 있는 물건이다.
+        // 방 그림이 직접 그린 게시판·책장·냉장고(`officeRoomShellFixtures` ·
+        // `officeCommonAreaShellFixtures`)는 화면에 있는 물건이다.
+        let commonShellKinds = Set(
+            CommonAreaKind.allCases.flatMap { officeCommonAreaShellFixtures(kind: $0) }.map(\.kind)
+        )
         let notDrawn = drawnSpots.filter { spot in
             !officeCozyDrawnFurnitureKinds.contains(spot.kind)
                 && !(spot.department.map { officeRoomShellFixtures(department: $0) } ?? [])
                     .contains { $0.kind == spot.kind }
+                && !(spot.department == nil && commonShellKinds.contains(spot.kind))
         }
         t.expect(notDrawn.isEmpty, "\(columns)열: 안 그려지는 가구가 목적지에 남았다 \(notDrawn.map(\.kind.rawValue))")
 
@@ -227,6 +232,59 @@ func runOfficeShellFixtureTests(_ t: TestRunner) {
                             + " 앞자리가 뒷벽 앞이 아니다 (\(spot.tile.x),\(spot.tile.y)) \(spot.facing)"
                     )
                 }
+            }
+            // 공용 공간 그림 속 소품(탕비실 냉장고)도 목적지가 된다. 설 칸은 복도(`labelY`)가
+            // 아니라 그 위 두 줄 — 복도에 세우면 오가는 사람이 그 사람을 통과해 지나간다.
+            //
+            // **2열에서는 빠진다.** 탕비실이 7칸 폭이라 한 칸이 그림 폭의 0.19 인데, 냉장고
+            // 바로 앞 칸 하나를 평면도 싱크대 목적지가 먼저 쓴다. 양옆 칸은 한 칸 반 넘게
+            // 비켜 있어 빈 벽 앞에 서는 그림이 되므로 빼는 것이 맞다.
+            for area in plan.commonAreas {
+                for fixture in officeCommonAreaShellFixtures(kind: area.kind) {
+                    let spot = spots.first { spot in
+                        spot.department == nil && spot.kind == fixture.kind
+                            && spot.tile.x > area.originX
+                            && spot.tile.x < area.originX + area.width - 1
+                    }
+                    if spot == nil, columns == 2 {
+                        continue
+                    }
+                    t.expect(
+                        spot.map {
+                            ($0.tile.y == area.labelY + 1 || $0.tile.y == area.labelY + 2)
+                                && $0.facing != .down
+                        } ?? false,
+                        "\(label)/\(columns)열: \(area.kind.rawValue) 그림의 \(fixture.kind.rawValue)"
+                            + " 앞자리가 뒷벽 앞이 아니다 \(spot.map { "(\($0.tile.x),\($0.tile.y)) \($0.facing)" } ?? "없음")"
+                    )
+                }
+            }
+            // **지표 화면을 찾는 사람은 자기 방 안에서 돈다.** 방 그림 어디에도 지표 화면이
+            // 없으므로 목적지가 없어야 하고, 그러면 자기 방 목적지로 내려간다. 평가 방 차트
+            // 액자를 지표 화면으로 넣으면 이 일곱 명이 매번 평가 방으로 걸어간다
+            // (`officeRoomShellFixtures` 주석).
+            t.expect(
+                !spots.contains { $0.kind == .wallMonitor },
+                "\(label)/\(columns)열: 방 그림에 없는 지표 화면이 목적지에 있다"
+            )
+            for agentType in [
+                "OPS_SUPERVISOR", "SUBCONSCIOUS_GATE", "ROUTER", "INVEST", "PAPER_TRADE",
+                "PAPER_RECOMMEND", "DELAY_REPORT",
+            ] {
+                guard let seat = plan.desks.first(where: { $0.agentType == agentType })?.seat,
+                      let zone = plan.zones.first(where: { officeZoneContains($0, seat) })
+                else {
+                    continue
+                }
+                let spot = officeStrollSpot(
+                    for: agentType, round: 1, spots: spots, occupied: [], hour: 14,
+                    home: seat, homeDepartment: zone.department
+                )
+                t.expect(
+                    spot?.department == zone.department,
+                    "\(label)/\(columns)열: \(agentType) 가 자기 방 밖으로 간다"
+                        + " (\(spot?.kind.rawValue ?? "nil")@\(spot?.department?.rawValue ?? "공용"))"
+                )
             }
             // 품질 방 판정 담당 둘은 **자기 방 게시판**으로 간다. 이 둘이 게시판을 찾는데
             // 방에 없어서 기획 방까지 걸어가던 것이 게시판을 이 방에 둔 이유였다.

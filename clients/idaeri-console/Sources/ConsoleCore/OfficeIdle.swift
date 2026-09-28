@@ -258,7 +258,7 @@ public func officeInteractionNeighbors(
 /// 놓인 가구를 전부 쓴다(옛 도트 스프라이트 화면·자세 회귀 렌더가 그 경로다).
 ///
 /// `shellFixtures` 가 참이면 방 그림이 **직접 그린** 게시판·책장 앞자리도 더한다
-/// (`officeRoomShellFixtures`). 평면도 가구를 다 등록한 **뒤에** 더하므로 기존 목적지의
+/// (`officeRoomShellFixtures` · 공용 공간은 `officeCommonAreaShellFixtures`). 평면도 가구를 다 등록한 **뒤에** 더하므로 기존 목적지의
 /// 앞자리를 빼앗지 않는다.
 public func officeStrollSpots(
     plan: OfficeFloorPlan,
@@ -340,12 +340,17 @@ public func officeStrollSpots(
     guard shellFixtures else {
         return spots
     }
-    for zone in plan.zones {
-        for fixture in officeRoomShellFixtures(department: zone.department) {
+    // 방 하나(부서 방·공용 공간)의 그림 속 물건들을 목적지로 더한다. 둘은 바닥 보정과
+    // 뒷벽 앞 두 줄의 위치만 다르다.
+    func addShellFixtures(
+        _ fixtures: [OfficeShellFixture], floor: OfficeShellFixtureFloor,
+        department: Department?
+    ) {
+        for fixture in fixtures {
             guard let dwellSeconds = fixture.kind.strollDwellSeconds,
                   let pose = fixture.kind.interactionPose,
                   let tile = officeShellFixtureStandTile(
-                      fixture: fixture, zone: zone, isFree: { candidate in
+                      fixture: fixture, floor: floor, isFree: { candidate in
                           plan.walkable.contains(candidate) && !seatTiles.contains(candidate)
                               && !doorTiles.contains(candidate)
                               && (reachable?.contains(candidate) ?? true)
@@ -363,10 +368,39 @@ public func officeStrollSpots(
                     dwellSeconds: dwellSeconds,
                     facing: fixture.facing,
                     pose: pose,
-                    department: zone.department
+                    department: department
                 )
             )
         }
+    }
+    for zone in plan.zones {
+        let backRow = zone.origin.y + zone.height - 2
+        addShellFixtures(
+            officeRoomShellFixtures(department: zone.department),
+            floor: OfficeShellFixtureFloor(
+                floorRect: officeRoomFloorRect(zone: zone),
+                quad: officeRoomFloorQuad(department: zone.department),
+                rows: [backRow, backRow - 1],
+                columns: (zone.origin.x + 1)...(zone.origin.x + zone.width - 2)
+            ),
+            department: zone.department
+        )
+    }
+    // 공용 공간은 맨 아래 줄(`labelY`)이 가로 복도라 그 위 두 줄(`labelY + 1`·`+ 2`)이
+    // 뒷벽 앞 바닥이다. 보정도 렌더(`floorCalibration`)와 같은 공용 공간 값을 쓴다.
+    for area in plan.commonAreas where area.width > 2 {
+        addShellFixtures(
+            officeCommonAreaShellFixtures(kind: area.kind),
+            floor: OfficeShellFixtureFloor(
+                floorRect: officeCommonAreaFloorRect(
+                    originX: area.originX, width: area.width, labelY: area.labelY
+                ),
+                quad: officeCommonAreaFloorQuad(kind: area.kind),
+                rows: [area.labelY + 2, area.labelY + 1],
+                columns: (area.originX + 1)...(area.originX + area.width - 2)
+            ),
+            department: nil
+        )
     }
     return spots
 }
@@ -375,22 +409,26 @@ public func officeStrollSpots(
 /// 앞자리가 다 막혀 먼 칸으로 밀리면 물건 없는 벽을 보고 서는 그림이 되므로 목적지에서 뺀다.
 let officeShellFixtureMaxOffset: Double = 0.15
 
+/// 그림 속 물건 앞 칸을 찾을 바닥 — 사람 그리기와 같은 보정값, 뒷벽에 붙은 줄(뒤부터), 열 범위.
+struct OfficeShellFixtureFloor {
+    let floorRect: OfficeRect
+    let quad: OfficeFloorQuad
+    let rows: [Int]
+    let columns: ClosedRange<Int>
+}
+
 /// 방 그림 속 물건 앞에 설 칸. 뒷벽에 붙은 바닥 두 줄에서, 그림에 찍히는 가로 위치가 물건과
 /// 가장 가까운 빈 칸을 고른다 — 사람을 그리는 쪽과 같은 보정(`officeCalibratedFloorPoint`)으로
 /// 재므로 원근으로 좁아진 뒷줄에서도 물건 바로 앞에 선다.
 func officeShellFixtureStandTile(
-    fixture: OfficeShellFixture, zone: DepartmentZone, isFree: (TilePoint) -> Bool
+    fixture: OfficeShellFixture, floor: OfficeShellFixtureFloor, isFree: (TilePoint) -> Bool
 ) -> TilePoint? {
-    let floorRect = officeRoomFloorRect(zone: zone)
-    let quad = officeRoomFloorQuad(department: zone.department)
     let unit = OfficeRect(x: 0, y: 0, width: 1, height: 1)
-    let backRow = zone.origin.y + zone.height - 2
-    let columns = (zone.origin.x + 1)...(zone.origin.x + zone.width - 2)
-    for y in [backRow, backRow - 1] {
-        let ranked = columns.map { x -> (tile: TilePoint, offset: Double) in
+    for y in floor.rows {
+        let ranked = floor.columns.map { x -> (tile: TilePoint, offset: Double) in
             let point = officeCalibratedFloorPoint(
                 tileX: Double(x), tileY: Double(y), footprintWidth: 1,
-                floorRect: floorRect, imageRect: unit, quad: quad
+                floorRect: floor.floorRect, imageRect: unit, quad: floor.quad
             )
             return (TilePoint(x: x, y: y), abs(point.x - fixture.imageX))
         }
