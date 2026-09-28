@@ -256,9 +256,14 @@ public func officeInteractionNeighbors(
 /// 화면에 나오지 않는 가구를 걸러내는 용도다(`officeCozyDrawnFurnitureKinds`) — 안 보이는
 /// 물건 앞으로 보내면 사람이 빈 바닥에 혼자 서서 말하는 그림이 된다. nil 이면 예전처럼
 /// 놓인 가구를 전부 쓴다(옛 도트 스프라이트 화면·자세 회귀 렌더가 그 경로다).
+///
+/// `shellFixtures` 가 참이면 방 그림이 **직접 그린** 게시판·책장 앞자리도 더한다
+/// (`officeRoomShellFixtures`). 평면도 가구를 다 등록한 **뒤에** 더하므로 기존 목적지의
+/// 앞자리를 빼앗지 않는다.
 public func officeStrollSpots(
     plan: OfficeFloorPlan,
-    drawnKinds: Set<FurnitureKind>? = nil
+    drawnKinds: Set<FurnitureKind>? = nil,
+    shellFixtures: Bool = false
 ) -> [OfficeStrollSpot] {
     let seatTiles = Set(plan.desks.map(\.seat))
     // 문 칸은 통행 가능하지만 **머물 수는 없다.**
@@ -332,7 +337,84 @@ public func officeStrollSpots(
             )
         )
     }
+    guard shellFixtures else {
+        return spots
+    }
+    for zone in plan.zones {
+        for fixture in officeRoomShellFixtures(department: zone.department) {
+            guard let dwellSeconds = fixture.kind.strollDwellSeconds,
+                  let pose = fixture.kind.interactionPose,
+                  let stand = officeShellFixtureStandTile(
+                      fixture: fixture, zone: zone, isFree: { candidate in
+                          plan.walkable.contains(candidate) && !seatTiles.contains(candidate)
+                              && !doorTiles.contains(candidate)
+                              && (reachable?.contains(candidate) ?? true)
+                              && !usedTiles.contains(candidate)
+                      }
+                  )
+            else {
+                continue
+            }
+            usedTiles.insert(stand.tile)
+            spots.append(
+                OfficeStrollSpot(
+                    kind: fixture.kind,
+                    tile: stand.tile,
+                    dwellSeconds: dwellSeconds,
+                    // 물건이 바로 앞이면 뒷벽(위)을 보고, 옆벽 책장처럼 반 칸 넘게 비켜 있으면
+                    // 그쪽으로 돌아선다 — 빈 벽을 보고 서지 않게.
+                    facing: abs(stand.offset) <= officeShellFixtureFacingSlack
+                        ? .up : (stand.offset > 0 ? .right : .left),
+                    pose: pose,
+                    department: zone.department
+                )
+            )
+        }
+    }
     return spots
+}
+
+/// 그림 속 물건과 이만큼(그림 폭 비율, 한 칸 ≈ 0.085) 넘게 떨어진 칸에는 세우지 않는다.
+/// 앞자리가 다 막혀 먼 칸으로 밀리면 물건 없는 벽을 보고 서는 그림이 되므로 목적지에서 뺀다.
+let officeShellFixtureMaxOffset: Double = 0.15
+
+/// 물건이 이 안쪽이면 정면(뒷벽)을 본다. 반 칸 남짓.
+let officeShellFixtureFacingSlack: Double = 0.05
+
+/// 서는 칸과, 물건이 그 칸에서 그림 폭 비율로 얼마나 오른쪽(+)·왼쪽(-)에 있는지.
+struct OfficeShellFixtureStand {
+    let tile: TilePoint
+    let offset: Double
+}
+
+/// 방 그림 속 물건 앞에 설 칸. 뒷벽에 붙은 바닥 두 줄에서, 그림에 찍히는 가로 위치가 물건과
+/// 가장 가까운 빈 칸을 고른다 — 사람을 그리는 쪽과 같은 보정(`officeCalibratedFloorPoint`)으로
+/// 재므로 원근으로 좁아진 뒷줄에서도 물건 바로 앞에 선다.
+func officeShellFixtureStandTile(
+    fixture: OfficeShellFixture, zone: DepartmentZone, isFree: (TilePoint) -> Bool
+) -> OfficeShellFixtureStand? {
+    let floorRect = officeRoomFloorRect(zone: zone)
+    let quad = officeRoomFloorQuad(department: zone.department)
+    let unit = OfficeRect(x: 0, y: 0, width: 1, height: 1)
+    let backRow = zone.origin.y + zone.height - 2
+    let columns = (zone.origin.x + 1)...(zone.origin.x + zone.width - 2)
+    for y in [backRow, backRow - 1] {
+        let ranked = columns.map { x -> OfficeShellFixtureStand in
+            let point = officeCalibratedFloorPoint(
+                tileX: Double(x), tileY: Double(y), footprintWidth: 1,
+                floorRect: floorRect, imageRect: unit, quad: quad
+            )
+            return OfficeShellFixtureStand(
+                tile: TilePoint(x: x, y: y), offset: fixture.imageX - point.x
+            )
+        }
+        .filter { abs($0.offset) <= officeShellFixtureMaxOffset }
+        .sorted { abs($0.offset) < abs($1.offset) }
+        if let free = ranked.first(where: { isFree($0.tile) }) {
+            return free
+        }
+    }
+    return nil
 }
 
 /// 이 사람의 일과 어울리는 가구(우선순위 순). 배회 목적지를 여기서 먼저 고른다.

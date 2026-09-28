@@ -188,6 +188,55 @@ public func officeRoomFloorQuad(department: Department) -> OfficeFloorQuad {
     }
 }
 
+/// 방 그림이 **직접 그려 갖고 있는** 물건 하나 — 종류와 그림 속 가로 위치(0~1).
+///
+/// 완성형 방 그림을 쓰는 동안 벽걸이·책장은 평면도 스프라이트를 투명으로 돌린다
+/// (`officeCozyDrawnFurnitureKinds`). 그러자 그 물건이 화면에 **그림으로는 있는데** 목적지가
+/// 없어, 게시판을 찾는 판정 담당 일곱 명과 책장을 찾는 자료 담당이 갈 곳을 잃었다.
+/// 평면도는 그림 속 물건의 자리를 모르므로, 여기서 원화를 한 장씩 재서 알려준다.
+public struct OfficeShellFixture: Equatable, Sendable {
+    public let kind: FurnitureKind
+    public let imageX: Double
+
+    public init(kind: FurnitureKind, imageX: Double) {
+        self.kind = kind
+        self.imageX = imageX
+    }
+}
+
+/// 부서 방 그림이 그려 둔 게시판·책장(`cozy/rooms/*-shell.png` 를 한 장씩 재서 넣은 값).
+///
+/// 뒷벽 물건은 가운데를, **옆벽·구석 책장은 바닥 쪽 가장자리**를 잰다. 옆벽 책장의 가운데는
+/// 바닥 사각형(`officeRoomFloorQuad`) 밖이라, 가운데로 재면 설 칸이 하나도 안 잡힌다.
+///
+/// 그림을 바꾸면 여기도 같이 바꾼다 — 어긋나면 사람이 물건 옆 빈 벽 앞에 선다.
+/// 평가 방 뒷벽 차트 액자는 게시판이 아니라 뺐다. 자산·총무 방 그림에는 게시판이 없다.
+public func officeRoomShellFixtures(department: Department) -> [OfficeShellFixture] {
+    switch department {
+    case .planning:
+        return [
+            OfficeShellFixture(kind: .wallPinboard, imageX: 0.52),
+            OfficeShellFixture(kind: .bookshelf, imageX: 0.77),
+        ]
+    case .quality:
+        return [
+            OfficeShellFixture(kind: .wallPinboard, imageX: 0.49),
+            OfficeShellFixture(kind: .bookshelf, imageX: 0.83),
+        ]
+    case .evaluation:
+        return [OfficeShellFixture(kind: .bookshelf, imageX: 0.79)]
+    case .treasury:
+        return [OfficeShellFixture(kind: .bookshelf, imageX: 0.47)]
+    case .content:
+        return [
+            OfficeShellFixture(kind: .wallPinboard, imageX: 0.60),
+            OfficeShellFixture(kind: .bookshelf, imageX: 0.28),
+        ]
+    case .internalOps:
+        return [OfficeShellFixture(kind: .bookshelf, imageX: 0.24)]
+    }
+}
+
 /// 위쪽 공용 공간 그림의 바닥 사각형.
 public func officeCommonAreaFloorQuad(kind: CommonAreaKind) -> OfficeFloorQuad {
     switch kind {
