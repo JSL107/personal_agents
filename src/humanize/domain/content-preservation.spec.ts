@@ -279,6 +279,77 @@ describe('content preservation', () => {
     expect(shouldRollbackField(violations)).toBe(true);
   });
 
+  it('조항 번호가 같아도 법률명이 바뀌면 롤백한다', () => {
+    const violations = findPreservationViolations(
+      '개인정보보호법 제15조 제1항을 적용합니다.',
+      '정보통신망법 제15조 제1항을 적용합니다.',
+      'personal-blog',
+    );
+
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'legal', direction: 'lost' }),
+        expect.objectContaining({ kind: 'legal', direction: 'injected' }),
+      ]),
+    );
+    expect(shouldRollbackField(violations)).toBe(true);
+  });
+
+  it('법률명 앞의 일반 수식어만 바뀌면 롤백하지 않는다', () => {
+    expect(
+      findPreservationViolations(
+        '해당 개인정보보호법 제15조를 확인합니다.',
+        '관련 개인정보보호법 제15조를 확인합니다.',
+        'personal-blog',
+      ),
+    ).toEqual([]);
+  });
+
+  it('띄어 쓴 법률명의 핵심어가 바뀌면 롤백한다', () => {
+    const violations = findPreservationViolations(
+      '개인정보 보호법 제15조를 확인합니다.',
+      '정보통신망 보호법 제15조를 확인합니다.',
+      'personal-blog',
+    );
+
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'legal', direction: 'lost' }),
+        expect.objectContaining({ kind: 'legal', direction: 'injected' }),
+      ]),
+    );
+  });
+
+  it('연결된 독립 항이 삭제되면 롤백한다', () => {
+    const violations = findPreservationViolations(
+      '제15조 제1항 및 제2항을 확인합니다.',
+      '제15조 제1항을 확인합니다.',
+      'personal-blog',
+    );
+
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'legal', direction: 'lost' }),
+      ]),
+    );
+    expect(shouldRollbackField(violations)).toBe(true);
+  });
+
+  it('같은 조로 연결된 항이 삭제되면 롤백한다', () => {
+    const violations = findPreservationViolations(
+      '제15조를 적용하고 같은 조 제1항을 확인합니다.',
+      '제15조를 적용합니다.',
+      'personal-blog',
+    );
+
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'legal', direction: 'lost' }),
+      ]),
+    );
+    expect(shouldRollbackField(violations)).toBe(true);
+  });
+
   it('같은 토큰의 등장 횟수만 줄어들면 집합 비교로 통과한다', () => {
     const violations = findPreservationViolations(
       '3회 점검했고 3건을 처리했습니다.',
