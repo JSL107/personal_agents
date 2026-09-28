@@ -344,7 +344,7 @@ public func officeStrollSpots(
         for fixture in officeRoomShellFixtures(department: zone.department) {
             guard let dwellSeconds = fixture.kind.strollDwellSeconds,
                   let pose = fixture.kind.interactionPose,
-                  let stand = officeShellFixtureStandTile(
+                  let tile = officeShellFixtureStandTile(
                       fixture: fixture, zone: zone, isFree: { candidate in
                           plan.walkable.contains(candidate) && !seatTiles.contains(candidate)
                               && !doorTiles.contains(candidate)
@@ -355,16 +355,13 @@ public func officeStrollSpots(
             else {
                 continue
             }
-            usedTiles.insert(stand.tile)
+            usedTiles.insert(tile)
             spots.append(
                 OfficeStrollSpot(
                     kind: fixture.kind,
-                    tile: stand.tile,
+                    tile: tile,
                     dwellSeconds: dwellSeconds,
-                    // 물건이 바로 앞이면 뒷벽(위)을 보고, 옆벽 책장처럼 반 칸 넘게 비켜 있으면
-                    // 그쪽으로 돌아선다 — 빈 벽을 보고 서지 않게.
-                    facing: abs(stand.offset) <= officeShellFixtureFacingSlack
-                        ? .up : (stand.offset > 0 ? .right : .left),
+                    facing: fixture.facing,
                     pose: pose,
                     department: zone.department
                 )
@@ -378,40 +375,29 @@ public func officeStrollSpots(
 /// 앞자리가 다 막혀 먼 칸으로 밀리면 물건 없는 벽을 보고 서는 그림이 되므로 목적지에서 뺀다.
 let officeShellFixtureMaxOffset: Double = 0.15
 
-/// 물건이 이 안쪽이면 정면(뒷벽)을 본다. 반 칸 남짓.
-let officeShellFixtureFacingSlack: Double = 0.05
-
-/// 서는 칸과, 물건이 그 칸에서 그림 폭 비율로 얼마나 오른쪽(+)·왼쪽(-)에 있는지.
-struct OfficeShellFixtureStand {
-    let tile: TilePoint
-    let offset: Double
-}
-
 /// 방 그림 속 물건 앞에 설 칸. 뒷벽에 붙은 바닥 두 줄에서, 그림에 찍히는 가로 위치가 물건과
 /// 가장 가까운 빈 칸을 고른다 — 사람을 그리는 쪽과 같은 보정(`officeCalibratedFloorPoint`)으로
 /// 재므로 원근으로 좁아진 뒷줄에서도 물건 바로 앞에 선다.
 func officeShellFixtureStandTile(
     fixture: OfficeShellFixture, zone: DepartmentZone, isFree: (TilePoint) -> Bool
-) -> OfficeShellFixtureStand? {
+) -> TilePoint? {
     let floorRect = officeRoomFloorRect(zone: zone)
     let quad = officeRoomFloorQuad(department: zone.department)
     let unit = OfficeRect(x: 0, y: 0, width: 1, height: 1)
     let backRow = zone.origin.y + zone.height - 2
     let columns = (zone.origin.x + 1)...(zone.origin.x + zone.width - 2)
     for y in [backRow, backRow - 1] {
-        let ranked = columns.map { x -> OfficeShellFixtureStand in
+        let ranked = columns.map { x -> (tile: TilePoint, offset: Double) in
             let point = officeCalibratedFloorPoint(
                 tileX: Double(x), tileY: Double(y), footprintWidth: 1,
                 floorRect: floorRect, imageRect: unit, quad: quad
             )
-            return OfficeShellFixtureStand(
-                tile: TilePoint(x: x, y: y), offset: fixture.imageX - point.x
-            )
+            return (TilePoint(x: x, y: y), abs(point.x - fixture.imageX))
         }
-        .filter { abs($0.offset) <= officeShellFixtureMaxOffset }
-        .sorted { abs($0.offset) < abs($1.offset) }
+        .filter { $0.offset <= officeShellFixtureMaxOffset }
+        .sorted { $0.offset < $1.offset }
         if let free = ranked.first(where: { isFree($0.tile) }) {
-            return free
+            return free.tile
         }
     }
     return nil

@@ -222,7 +222,7 @@ func runOfficeShellFixtureTests(_ t: TestRunner) {
                     t.expect(
                         spot.tile.x > zone.origin.x && spot.tile.x < zone.origin.x + zone.width - 1
                             && (spot.tile.y == backRow || spot.tile.y == backRow - 1)
-                            && !seats.contains(spot.tile) && spot.facing != .down,
+                            && !seats.contains(spot.tile) && spot.facing == fixture.facing,
                         "\(label)/\(columns)열: \(zone.department.rawValue) \(fixture.kind.rawValue)"
                             + " 앞자리가 뒷벽 앞이 아니다 (\(spot.tile.x),\(spot.tile.y)) \(spot.facing)"
                     )

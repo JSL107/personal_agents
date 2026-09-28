@@ -197,17 +197,22 @@ public func officeRoomFloorQuad(department: Department) -> OfficeFloorQuad {
 public struct OfficeShellFixture: Equatable, Sendable {
     public let kind: FurnitureKind
     public let imageX: Double
+    /// 앞에 선 사람이 바라볼 방향 — **물건이 붙은 벽**이 정한다. 서는 칸과의 가로 오차로
+    /// 추정하면 폭이 넓은 뒷벽 게시판 앞에서 옆을 보고, 뒷벽 책장 앞에서 빈 벽을 본다.
+    public let facing: Facing
 
-    public init(kind: FurnitureKind, imageX: Double) {
+    public init(kind: FurnitureKind, imageX: Double, facing: Facing = .up) {
         self.kind = kind
         self.imageX = imageX
+        self.facing = facing
     }
 }
 
 /// 부서 방 그림이 그려 둔 게시판·책장(`cozy/rooms/*-shell.png` 를 한 장씩 재서 넣은 값).
 ///
-/// 뒷벽 물건은 가운데를, **옆벽·구석 책장은 바닥 쪽 가장자리**를 잰다. 옆벽 책장의 가운데는
-/// 바닥 사각형(`officeRoomFloorQuad`) 밖이라, 가운데로 재면 설 칸이 하나도 안 잡힌다.
+/// 뒷벽 물건은 가운데를, **오른쪽 구석·옆벽 책장은 바닥 쪽 가장자리**를 잰다. 그 책장들의
+/// 가운데는 바닥 사각형(`officeRoomFloorQuad`) 밖이라, 가운데로 재면 설 칸이 하나도 안 잡힌다.
+/// 그 책장 앞 사람은 바닥 오른쪽 끝에 서서 오른쪽(책장)을 본다.
 ///
 /// 그림을 바꾸면 여기도 같이 바꾼다 — 어긋나면 사람이 물건 옆 빈 벽 앞에 선다.
 /// 평가 방 뒷벽 차트 액자는 게시판이 아니라 뺐다. 자산·총무 방 그림에는 게시판이 없다.
@@ -221,10 +226,10 @@ public func officeRoomShellFixtures(department: Department) -> [OfficeShellFixtu
     case .quality:
         return [
             OfficeShellFixture(kind: .wallPinboard, imageX: 0.49),
-            OfficeShellFixture(kind: .bookshelf, imageX: 0.83),
+            OfficeShellFixture(kind: .bookshelf, imageX: 0.83, facing: .right),
         ]
     case .evaluation:
-        return [OfficeShellFixture(kind: .bookshelf, imageX: 0.79)]
+        return [OfficeShellFixture(kind: .bookshelf, imageX: 0.79, facing: .right)]
     case .treasury:
         return [OfficeShellFixture(kind: .bookshelf, imageX: 0.47)]
     case .content:
