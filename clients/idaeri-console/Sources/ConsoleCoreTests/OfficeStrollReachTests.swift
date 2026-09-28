@@ -56,8 +56,10 @@ func runOfficeStrollReachTests(_ t: TestRunner) {
         // 카탈로그가 그 사실을 몰라 74곳 중 63곳이 없는 물건 앞자리였다 — 빈 나무 바닥
         // 한가운데 서서 혼잣말하는 그림이고, 읽는 자세는 그림에 의자가 붙어 있어 아무것도
         // 없는 바닥에 의자까지 돋아났다.
+        // 씬과 같은 평면도로 잰다 — 셸 모드는 숨긴 가구 칸을 연 평면도(`officeShellFloorPlan`)를 쓴다.
         let drawnSpots = officeStrollSpots(
-            plan: plan, drawnKinds: officeCozyDrawnFurnitureKinds, shellFixtures: true
+            plan: officeShellFloorPlan(plan), drawnKinds: officeCozyDrawnFurnitureKinds,
+            shellFixtures: true
         )
         // 방 그림이 직접 그린 게시판·책장·냉장고(`officeRoomShellFixtures` ·
         // `officeCommonAreaShellFixtures`)는 화면에 있는 물건이다.
@@ -200,7 +202,7 @@ func runOfficeShellFixtureTests(_ t: TestRunner) {
     t.suite("ShellFixture")
     for (label, roster) in [("표본", sampleAgents), ("정원", strollReachFullRoster())] {
         for columns in [2, 3] {
-            let plan = officeFloorPlan(agents: roster, zoneColumns: columns)
+            let plan = officeShellFloorPlan(officeFloorPlan(agents: roster, zoneColumns: columns))
             let spots = officeStrollSpots(
                 plan: plan, drawnKinds: officeCozyDrawnFurnitureKinds, shellFixtures: true
             )
@@ -284,6 +286,18 @@ func runOfficeShellFixtureTests(_ t: TestRunner) {
                     spot?.department == zone.department,
                     "\(label)/\(columns)열: \(agentType) 가 자기 방 밖으로 간다"
                         + " (\(spot?.kind.rawValue ?? "nil")@\(spot?.department?.rawValue ?? "공용"))"
+                )
+            }
+            // **숨긴 가구가 셸 책장 앞자리를 밀어내지 않는다.** 품질 방 셸 책장(그림 x≈0.83)은
+            // 방 오른쪽 끝 칸 앞이 제자리인데, 투명 서류함·책장이 그 구석을 막던 동안 한 칸
+            // 왼쪽으로 밀렸다. 정원은 뒷줄이 좌석으로 차서 자리가 달라질 수 있어 표본만 건다.
+            if label == "표본",
+               let zone = plan.zones.first(where: { $0.department == .quality }),
+               let spot = spots.first(where: { $0.department == .quality && $0.kind == .bookshelf })
+            {
+                t.expectEqual(
+                    spot.tile.x, zone.origin.x + zone.width - 2,
+                    "\(columns)열: 품질 방 셸 책장 앞자리가 오른쪽 끝 칸이 아니다 (\(spot.tile.x),\(spot.tile.y))"
                 )
             }
             // 품질 방 판정 담당 둘은 **자기 방 게시판**으로 간다. 이 둘이 게시판을 찾는데
@@ -394,5 +408,59 @@ private func strollReachFullRoster() -> [ConsoleAgent] {
             bubble: "",
             department: departments[index % departments.count].rawValue
         )
+    }
+}
+
+/// 완성형 방 그림 모드의 평면도(`officeShellFloorPlan`)에 **안 보이는데 막는 칸**이 없는가.
+///
+/// 씬은 `officeCozyDrawnFurnitureKinds` 밖의 가구를 투명으로 돌리는데 walkable 은 그 칸을
+/// 막힌 칸으로 쳐서, 화면에서는 빈 바닥인 자리를 사람이 못 지나가고 못 섰다(3열 표본 54칸).
+func runOfficeShellWalkableTests(_ t: TestRunner) {
+    t.suite("ShellWalkable")
+    for (label, roster) in [("표본", sampleAgents), ("정원", strollReachFullRoster())] {
+        for columns in [2, 3] {
+            let base = officeFloorPlan(agents: roster, zoneColumns: columns)
+            let shell = officeShellFloorPlan(base)
+            var drawnCover: Set<TilePoint> = []
+            var hiddenCover: Set<TilePoint> = []
+            for placement in base.furniture where !placement.kind.isWalkThrough {
+                for dy in 0..<placement.kind.footprint.height {
+                    for dx in 0..<placement.kind.footprint.width {
+                        let tile = TilePoint(x: placement.tile.x + dx, y: placement.tile.y + dy)
+                        if officeCozyDrawnFurnitureKinds.contains(placement.kind) {
+                            drawnCover.insert(tile)
+                        } else {
+                            hiddenCover.insert(tile)
+                        }
+                    }
+                }
+            }
+            // 1) 숨긴 가구만 덮은 바닥 칸은 전부 열린다. 이 검사가 없으면 새 가구 종류가
+            //    투명으로 넘어갈 때 같은 구멍이 조용히 돌아온다.
+            let stillBlocked = hiddenCover.subtracting(drawnCover).filter {
+                base.floor[$0.y][$0.x] != .wall && !shell.walkable.contains($0)
+            }
+            t.expect(
+                stillBlocked.isEmpty,
+                "\(label)/\(columns)열: 안 보이는데 막는 칸 \(stillBlocked.count)칸"
+                    + " \(stillBlocked.prefix(4).map { "(\($0.x),\($0.y))" })"
+            )
+            // 2) 여는 것만 한다 — 원래 통로는 그대로이고, 벽·그려지는 가구 칸은 열리지 않는다.
+            let opened = shell.walkable.subtracting(base.walkable)
+            t.expect(base.walkable.isSubset(of: shell.walkable), "\(label)/\(columns)열: 원래 통로가 닫혔다")
+            t.expect(
+                opened.allSatisfy { base.floor[$0.y][$0.x] != .wall && !drawnCover.contains($0) },
+                "\(label)/\(columns)열: 벽이나 그려지는 가구 칸이 열렸다"
+            )
+            // 3) 좌석·줄·휴식 자리는 여전히 전부 닿는다.
+            if let anchor = shell.desks.first?.seat {
+                let reach = officeReachableTiles(from: anchor, walkable: shell.walkable)
+                let targets = shell.desks.map(\.seat) + shell.queueTiles + shell.loungeTiles
+                t.expect(
+                    targets.allSatisfy(reach.contains),
+                    "\(label)/\(columns)열: 셸 평면도에서 못 가는 좌석·줄·휴식 자리가 있다"
+                )
+            }
+        }
     }
 }

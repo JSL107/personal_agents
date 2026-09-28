@@ -648,6 +648,11 @@ final class OfficeScene: SKScene {
         zoneColumns = nextZoneColumns
         if rebuildPlan || layoutChanged {
             plan = officeFloorPlan(agents: agents, zoneColumns: nextZoneColumns)
+            // 셸이 숨긴 가구는 칸도 막지 않는다(`officeShellFloorPlan`). 판정이 새 평면도의
+            // 구역을 보므로 대입한 **뒤에** 묻는다.
+            if usesCompleteRoomArchitecture {
+                plan = officeShellFloorPlan(plan)
+            }
         }
         // 포커스한 방이 이번 평면도에서 사라졌으면(그 부서에 사람이 하나도 남지 않으면 구역이
         // 만들어지지 않는다) 포커스를 푼다. 배율만 전체 뷰로 돌아가고 상태와 머리글이 남으면
