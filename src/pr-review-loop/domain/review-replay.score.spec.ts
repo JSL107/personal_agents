@@ -2,6 +2,7 @@ import {
   compareMissedIntactWithBaseline,
   compareWithBaseline,
   FindingReplayResult,
+  intactMissedIdsOf,
   isSameSample,
   LabeledFinding,
   matchReplayedFinding,
@@ -302,6 +303,7 @@ describe('compareWithBaseline', () => {
     ['FIXED', [0.3, 0.4], '좋은 쪽'],
     ['FIXED', [0.0, 0.05], '나쁜 쪽'],
     ['MISSED', [0.0, 0.05], '나쁜 쪽'],
+    ['MISSED', [0.3, 0.4], '좋은 쪽'],
   ] as const)('%s 가 %j 로 벗어나면 %s', (label, rates, direction) => {
     expect(
       compareWithBaseline(summaryOf([...rates]), summaryOf([0.1, 0.2]), label)
@@ -355,15 +357,17 @@ describe('compareMissedIntactWithBaseline', () => {
       compareMissedIntactWithBaseline(
         summaryOf([0.2, 0.3]),
         summaryOf([0.46, 0.69, 0.62]),
+        true,
       ),
     ).toMatchObject({ verdict: '변동 범위 밖', direction: '나쁜 쪽' });
   });
 
   // 합친 값으로 대신 비교하면 잘림 0% 가 섞여 기준이 달라진다.
-  it('기준선이 분리 집계 전 보고서면 판단 불가', () => {
+  it('기준선에 분리 집계가 없으면 판단 불가', () => {
     const comparison = compareMissedIntactWithBaseline(
       summaryOf([0.5, 0.6]),
       undefined,
+      true,
     );
 
     expect(comparison).toMatchObject({
@@ -372,6 +376,40 @@ describe('compareMissedIntactWithBaseline', () => {
       currentMean: 0.55,
     });
     expect(comparison.reason).toContain('byDiffTruncation');
+  });
+
+  // 잘림 판정이 바뀌면 전체 카드가 같아도 안 잘린 카드가 다르다.
+  it('안 잘린 미탐 카드가 기준선과 다르면 판단 불가', () => {
+    const comparison = compareMissedIntactWithBaseline(
+      summaryOf([0.2, 0.3]),
+      summaryOf([0.46, 0.69, 0.62]),
+      false,
+    );
+
+    expect(comparison.verdict).toBe('판단 불가');
+    expect(comparison.direction).toBeUndefined();
+    expect(comparison.reason).toContain('안 잘린 미탐 카드가 다르다');
+  });
+});
+
+describe('intactMissedIdsOf', () => {
+  it('diff 안 잘린 그룹의 MISSED id 만 정렬해 모은다', () => {
+    const report = {
+      groups: [
+        {
+          diffTruncated: false,
+          results: [
+            { id: -2, label: 'MISSED' },
+            { id: 7, label: 'FIXED' },
+          ],
+        },
+        { diffTruncated: true, results: [{ id: -3, label: 'MISSED' }] },
+        { diffTruncated: false, results: [{ id: -5, label: 'MISSED' }] },
+        { diffTruncated: false, results: [{ id: -2, label: 'MISSED' }] },
+      ],
+    };
+
+    expect(intactMissedIdsOf(report)).toEqual([-5, -2]);
   });
 });
 

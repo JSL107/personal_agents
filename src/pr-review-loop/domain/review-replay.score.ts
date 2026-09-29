@@ -371,21 +371,63 @@ export const compareWithBaseline = (
 
 // 미탐은 diff 안 잘린 그룹으로 판정한다 — 잘린 그룹은 지적 줄이 입력에서 빠져 늘 0% 라 움직이지 않고,
 // 합친 값에 섞이면 모델 쪽 변화가 묽어진다(2026-09-29 미탐: 안 잘림 59% · 잘림 0%).
-// 분리 집계 전 보고서를 기준선으로 쓰면 비교할 값이 없으므로 합친 값으로 대신하지 않고 판단 불가로 둔다.
+// 기준선에 분리 집계가 없으면(미탐 없이 잰 기준선·분리 집계 전 보고서) 합친 값으로 대신하지 않고 판단 불가로 둔다.
+// 전체 카드가 같아도 잘림 판정이 바뀌면 안 잘린 카드 부분집합이 달라지므로, 그 집합이 같을 때만 비교한다.
+const unjudgeableMissedIntact = (
+  current: TrialSummary,
+  reason: string,
+): BaselineComparison => ({
+  baselineMean: null,
+  currentMean: current.meanRate,
+  delta: null,
+  verdict: '판단 불가',
+  reason,
+});
+
 export const compareMissedIntactWithBaseline = (
   current: TrialSummary,
   baseline: TrialSummary | undefined,
-): BaselineComparison =>
-  baseline === undefined
-    ? {
-        baselineMean: null,
-        currentMean: current.meanRate,
-        delta: null,
-        verdict: '판단 불가',
-        reason:
-          '기준선 보고서에 diff 잘림 분리 집계(trials.byDiffTruncation)가 없다 — 분리 집계가 있는 보고서로 기준선을 다시 잴 것',
+  sameIntactSample: boolean,
+): BaselineComparison => {
+  if (baseline === undefined) {
+    return unjudgeableMissedIntact(
+      current,
+      '기준선 보고서에 미탐 diff 잘림 분리 집계(trials.byDiffTruncation.missed)가 없다 — 미탐을 포함해 분리 집계가 있는 보고서로 기준선을 다시 잴 것',
+    );
+  }
+  if (!sameIntactSample) {
+    return unjudgeableMissedIntact(
+      current,
+      '기준선과 diff 안 잘린 미탐 카드가 다르다 — 잘림 판정이 바뀌었으면 기준선을 다시 잴 것',
+    );
+  }
+  return compareWithBaseline(current, baseline, 'MISSED');
+};
+
+// 보고서에서 diff 안 잘린 그룹의 미탐 id. 합친 표본(sampleIdsOf)이 같아도 이 집합은 다를 수 있다.
+export const intactMissedIdsOf = (report: unknown): number[] => {
+  if (typeof report !== 'object' || report === null) {
+    return [];
+  }
+  const { groups } = report as {
+    groups?: {
+      diffTruncated?: unknown;
+      results?: { id?: unknown; label?: unknown }[];
+    }[];
+  };
+  const ids = new Set<number>();
+  for (const group of groups ?? []) {
+    if (group.diffTruncated !== false) {
+      continue;
+    }
+    for (const result of group.results ?? []) {
+      if (result.label === 'MISSED' && typeof result.id === 'number') {
+        ids.add(result.id);
       }
-    : compareWithBaseline(current, baseline, 'MISSED');
+    }
+  }
+  return Array.from(ids).sort((left, right) => left - right);
+};
 
 // 기준선 보고서에서 라벨별 요약을 꺼낸다. 반복 측정 전의 보고서(`score` 만 있는 것)는 1회차로 읽는다 —
 // 그래야 지금까지 쌓인 보고서와도 비교가 끊기지 않는다. 형태를 알 수 없으면 null.

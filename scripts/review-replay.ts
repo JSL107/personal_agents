@@ -39,6 +39,7 @@ import {
   compareMissedIntactWithBaseline,
   compareWithBaseline,
   FindingReplayResult,
+  intactMissedIdsOf,
   isSameSample,
   LabeledFinding,
   readBaselineSummaries,
@@ -357,13 +358,17 @@ const main = async (): Promise<void> => {
                 : {
                     missed: compareWithBaseline(trials.missed, baselineMissed),
                   }),
-              ...(trials.byDiffTruncation.missed === undefined ||
-              baselineMissed === undefined
+              // 기준선에 미탐이 없어도 이 줄은 낸다 — 빠지면 미탐 판정 기준이 콘솔에서 조용히 사라진다.
+              ...(trials.byDiffTruncation.missed === undefined
                 ? {}
                 : {
                     missedIntact: compareMissedIntactWithBaseline(
                       trials.byDiffTruncation.missed.intact,
                       baselineReport.summaries.missedIntact,
+                      isSameSample(
+                        baselineReport.intactMissedIds,
+                        intactMissedIdsOf({ groups: reportGroups }),
+                      ),
                     ),
                   }),
             },
@@ -411,12 +416,15 @@ const main = async (): Promise<void> => {
               formatBaselineLine(
                 '오탐 재발',
                 report.baseline.rejected,
-                passRuleNote(report.baseline.rejected),
+                passRuleNote(
+                  report.baseline.rejected,
+                  report.baseline.sameSample,
+                ),
               ),
               formatBaselineLine(
                 '정탐 유지',
                 report.baseline.fixed,
-                passRuleNote(report.baseline.fixed),
+                passRuleNote(report.baseline.fixed, report.baseline.sameSample),
               ),
               ...(report.baseline.missed === undefined
                 ? []
@@ -427,7 +435,10 @@ const main = async (): Promise<void> => {
                     formatBaselineLine(
                       '미탐 재현(diff 안 잘림, 판정 기준)',
                       report.baseline.missedIntact,
-                      passRuleNote(report.baseline.missedIntact),
+                      passRuleNote(
+                        report.baseline.missedIntact,
+                        report.baseline.sameSample,
+                      ),
                     ),
                   ]),
             ]),
@@ -458,6 +469,7 @@ const readBaseline = (
 ): {
   summaries: BaselineSummaries;
   sampleIds: number[];
+  intactMissedIds: number[];
   skipped: number;
 } => {
   const report: unknown = JSON.parse(readFileSync(path, 'utf8'));
@@ -470,6 +482,7 @@ const readBaseline = (
   return {
     summaries,
     sampleIds: sampleIdsOf(report),
+    intactMissedIds: intactMissedIdsOf(report),
     skipped: skippedCountOf(report),
   };
 };
@@ -499,8 +512,12 @@ const formatBaselineLine = (
 
 // 통과 규칙(docs/superpowers/plans/2026-09-29-review-replay-trials.md §6-2)에서 이 줄이 뜻하는 것.
 // 판정 기준인 줄에만 붙인다 — 합친 미탐 값은 참고용이라 붙이지 않는다.
-const passRuleNote = (comparison: BaselineComparison): string => {
-  if (comparison.verdict === '판단 불가') {
+// 표본이 다르면 위에 경고가 나가므로 결론을 안내하지 않는다.
+const passRuleNote = (
+  comparison: BaselineComparison,
+  sameSample: boolean,
+): string => {
+  if (!sameSample || comparison.verdict === '판단 불가') {
     return '';
   }
   if (comparison.verdict === '변동 범위 안') {
