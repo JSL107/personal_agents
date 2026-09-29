@@ -247,6 +247,45 @@ export const summarizeTrials = (
   };
 };
 
+// ── diff 잘림 분리 ─────────────────────────────────────────────────────────
+// diff 가 잘린 그룹은 잘린 지점 뒤 파일이 모델 입력에서 빠진다. 그 그룹의 미재현은 모델이 놓친 것과
+// 입력에 없던 것이 섞이므로, 한 점수로 합치면 두 효과를 가를 수 없다(2026-09-29 미탐: 전체 31% =
+// 안 잘린 14건 55% + 잘린 11건 0%). 합친 값은 그대로 두고 나눈 값을 따로 낸다.
+
+export interface TrialGroupResults {
+  trial: number;
+  diffTruncated: boolean;
+  results: readonly FindingReplayResult[];
+}
+
+export interface TruncationSplit {
+  truncated: TrialSummary;
+  intact: TrialSummary;
+}
+
+export const summarizeTrialsByTruncation = (
+  groups: readonly TrialGroupResults[],
+  trials: number,
+  label: ReplayLabel,
+): TruncationSplit => {
+  const resultsOf = (truncated: boolean): FindingReplayResult[][] => {
+    const byTrial: FindingReplayResult[][] = Array.from(
+      { length: trials },
+      () => [],
+    );
+    for (const group of groups) {
+      if (group.diffTruncated === truncated) {
+        byTrial[group.trial - 1].push(...group.results);
+      }
+    }
+    return byTrial;
+  };
+  return {
+    truncated: summarizeTrials(resultsOf(true), label),
+    intact: summarizeTrials(resultsOf(false), label),
+  };
+};
+
 // ── 기준선 비교 ────────────────────────────────────────────────────────────
 // 두 실행의 회차별 재현율 범위(최소~최대)가 겹치면 차이를 회차 변동과 구분할 수 없다고 본다.
 // 어느 쪽이든 1회뿐이면 변동 폭을 모르므로 판정하지 않는다 — 점 하나끼리의 차이는 무엇이든 될 수 있다.
