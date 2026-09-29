@@ -280,6 +280,62 @@ describe('OctokitGithubClient', () => {
       expect(result.bytes).toBe(200);
     });
 
+    // 판정은 바이트, 절단은 글자로 하던 때는 #1005(56,814 B / 49,462자)가
+    // truncated=true 인데 전문이 들어갔다. 판정과 절단이 같은 바이트 기준인지 본다.
+    it('한글 diff 는 바이트 기준으로 잘리고, 글자 수가 한도 안이어도 truncated 면 실제로 잘린다', async () => {
+      const big = '+한글'.repeat(20); // 20 × 7 B = 140 B, 60자
+      const get = jest.fn().mockResolvedValue({ data: big });
+      const octokit = {
+        rest: { pulls: { get } },
+      } as unknown as Octokit;
+      const client = new OctokitGithubClient(octokit);
+
+      const result = await client.getPullRequestDiff({
+        repo: 'foo/bar',
+        number: 1,
+        maxBytes: 100, // 글자(60)는 안 넘고 바이트(140)는 넘는다
+      });
+
+      expect(result.truncated).toBe(true);
+      expect(result.bytes).toBe(140);
+      expect(Buffer.byteLength(result.diff, 'utf-8')).toBeLessThanOrEqual(100);
+      expect(result.diff.length).toBeLessThan(big.length);
+      expect(big.startsWith(result.diff)).toBe(true);
+    });
+
+    it('멀티바이트 문자 중간에서 잘려도 끝에 U+FFFD 를 남기지 않는다', async () => {
+      const get = jest.fn().mockResolvedValue({ data: 'ab한글' }); // 2 + 3 + 3 = 8 B
+      const octokit = {
+        rest: { pulls: { get } },
+      } as unknown as Octokit;
+      const client = new OctokitGithubClient(octokit);
+
+      const result = await client.getPullRequestDiff({
+        repo: 'foo/bar',
+        number: 1,
+        maxBytes: 6, // '한' 뒤 '글' 의 첫 바이트에서 잘린다
+      });
+
+      expect(result.diff).toBe('ab한');
+      expect(result.truncated).toBe(true);
+    });
+
+    it('바이트가 한도와 같으면 자르지 않는다', async () => {
+      const get = jest.fn().mockResolvedValue({ data: '한글' }); // 6 B
+      const octokit = {
+        rest: { pulls: { get } },
+      } as unknown as Octokit;
+      const client = new OctokitGithubClient(octokit);
+
+      const result = await client.getPullRequestDiff({
+        repo: 'foo/bar',
+        number: 1,
+        maxBytes: 6,
+      });
+
+      expect(result).toEqual({ diff: '한글', truncated: false, bytes: 6 });
+    });
+
     it('Octokit 인스턴스가 null 이면 TOKEN_NOT_CONFIGURED 예외', async () => {
       const client = new OctokitGithubClient(null);
 
@@ -288,6 +344,30 @@ describe('OctokitGithubClient', () => {
       ).rejects.toMatchObject({
         githubErrorCode: GithubErrorCode.TOKEN_NOT_CONFIGURED,
       });
+    });
+  });
+
+  describe('compareCommits', () => {
+    it('getPullRequestDiff 와 같은 바이트 기준으로 판정·절단한다', async () => {
+      const big = '+한글'.repeat(20); // 140 B, 60자
+      const compareCommits = jest.fn().mockResolvedValue({ data: big });
+      const octokit = {
+        rest: { repos: { compareCommits } },
+      } as unknown as Octokit;
+      const client = new OctokitGithubClient(octokit);
+
+      const result = await client.compareCommits({
+        repo: 'foo/bar',
+        baseSha: 'a'.repeat(40),
+        headSha: 'b'.repeat(40),
+        maxBytes: 100,
+      });
+
+      expect(result.truncated).toBe(true);
+      expect(result.bytes).toBe(140);
+      expect(Buffer.byteLength(result.diff, 'utf-8')).toBeLessThanOrEqual(100);
+      expect(result.diff).not.toMatch(/�$/);
+      expect(big.startsWith(result.diff)).toBe(true);
     });
   });
 
