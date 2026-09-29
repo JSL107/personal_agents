@@ -20,6 +20,8 @@ import {
   CommitFileToBranchInput,
   CommitFileToBranchResult,
   CompareCommitsOptions,
+  CreatedIssue,
+  CreateIssueInput,
   GetFileFromBranchInput,
   GetFileFromBranchResult,
   GetPullRequestDiffOptions,
@@ -414,6 +416,28 @@ export class OctokitGithubClient implements GithubClientPort {
         error,
         `GitHub ${repo}#${number} 코멘트 추가 실패`,
       );
+    }
+  }
+
+  async createIssue({
+    repo,
+    title,
+    body,
+    assignees,
+  }: CreateIssueInput): Promise<CreatedIssue> {
+    this.assertOctokitConfigured();
+    const [owner, repoName] = parseRepo(repo);
+    try {
+      const { data } = await this.octokit!.rest.issues.create({
+        owner,
+        repo: repoName,
+        title,
+        body,
+        ...(assignees && assignees.length > 0 ? { assignees } : {}),
+      });
+      return { number: data.number, url: data.html_url };
+    } catch (error: unknown) {
+      throw this.wrapRequestFailed(error, `GitHub ${repo} issue 생성 실패`);
     }
   }
 

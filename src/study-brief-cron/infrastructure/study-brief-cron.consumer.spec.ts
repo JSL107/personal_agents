@@ -81,10 +81,15 @@ const makeConsumer = ({
   };
   const studyBriefRepository = {
     findRecentSince: jest.fn().mockResolvedValue([]),
+    findTopicsByIds: jest.fn().mockResolvedValue(new Map()),
     save: jest.fn().mockResolvedValue({ id: 7 }),
     updateNotionUrl: notionUrlUpdateError
       ? jest.fn().mockRejectedValue(notionUrlUpdateError)
       : jest.fn().mockResolvedValue(undefined),
+  };
+  const previewRepository = {
+    findRecentAppliedByKind: jest.fn().mockResolvedValue([]),
+    findRecentCancelledByKind: jest.fn().mockResolvedValue([]),
   };
   const installedTools = { collect: jest.fn().mockResolvedValue(['serena']) };
   const repoContext = {
@@ -146,6 +151,7 @@ const makeConsumer = ({
     cronIdempotency as never,
     configService as never,
     agentRunService as never,
+    previewRepository as never,
     notificationPublisher as never,
   );
 
@@ -156,6 +162,7 @@ const makeConsumer = ({
     profileRepository,
     hermesRunner,
     studyBriefRepository,
+    previewRepository,
     installedTools,
     repoContext,
     studyBriefPublisher,
@@ -185,6 +192,7 @@ describe('StudyBriefCronConsumer', () => {
         agentRunId: 41,
         ownerUserId: 'U1',
         topic: 'durable execution',
+        keywords: [],
       }),
     );
     expect(dependencies.slackNotifier.postMessage).toHaveBeenCalledTimes(2);
@@ -196,6 +204,20 @@ describe('StudyBriefCronConsumer', () => {
     expect(dependencies.slackNotifier.postMessage.mock.calls[1][0]).toEqual(
       expect.objectContaining({ target: 'C1', threadTs: 'T1' }),
     );
+  });
+
+  it('채택 이력 조회가 실패해도 조사는 진행한다', async () => {
+    const dependencies = makeConsumer({});
+    dependencies.previewRepository.findRecentAppliedByKind.mockRejectedValue(
+      new Error('db down'),
+    );
+
+    await dependencies.consumer.process(JOB as never);
+
+    expect(
+      dependencies.previewRepository.findRecentAppliedByKind,
+    ).toHaveBeenCalled();
+    expect(dependencies.hermesRunner.run).toHaveBeenCalledTimes(1);
   });
 
   it('NO_TOPIC이면 CTO·저장·발송 없이 정상 종료한다', async () => {

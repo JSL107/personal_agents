@@ -21,6 +21,7 @@ describe('WebhookIssueLabelConsumer', () => {
       getPullRequestDiff: jest.fn(),
       compareCommits: jest.fn(),
       addIssueComment: jest.fn(),
+      createIssue: jest.fn(),
       listAuthorMergedPullRequestsSince: jest.fn(),
       listAuthorOpenPullRequests: jest.fn(),
       listOpenPullRequestRefs: jest.fn(),

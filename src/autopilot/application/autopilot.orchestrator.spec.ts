@@ -960,6 +960,57 @@ describe('AutopilotOrchestrator', () => {
     });
   });
 
+  it('preview 요청의 개별 TTL을 orchestrator 에 전달한다', async () => {
+    const task = {
+      id: 'study-applicability',
+      run: jest.fn().mockResolvedValue({
+        skip: false,
+        preview: {
+          kind: 'STUDY_APPLY_ISSUE',
+          payload: {},
+          previewText: 'pv',
+          ttlMs: 7 * 24 * 60 * 60 * 1000,
+        },
+      }),
+    };
+    const createPreview = {
+      execute: jest.fn().mockResolvedValue({ id: 'PV1' }),
+    };
+    const orchestrator = new AutopilotOrchestrator(
+      [task] as any,
+      {
+        postMessage: jest.fn(),
+        postPreviewMessage: jest.fn().mockResolvedValue({}),
+      } as any,
+      {
+        acquireOnce: jest.fn().mockResolvedValue(true),
+        isDone: jest.fn().mockResolvedValue(false),
+      } as any,
+      createPreview as any,
+      { attachSlackMessage: jest.fn() } as any,
+    );
+    await orchestrator.runGroup(
+      'study-applicability',
+      [
+        {
+          id: 'study-applicability',
+          taskId: 'study-applicability',
+          riskTier: 'T1_PREVIEW',
+          trigger: {
+            kind: 'CRON',
+            schedule: '30 10 * * *',
+            timezone: 'Asia/Seoul',
+          },
+        },
+      ] as any,
+      'U1',
+      'U1',
+    );
+    expect(createPreview.execute.mock.calls[0][0].ttlMs).toBe(
+      7 * 24 * 60 * 60 * 1000,
+    );
+  });
+
   it('요약은 메인 메시지로, 상세는 같은 스레드 댓글로 발송한다', async () => {
     const taskA = {
       id: 'a',

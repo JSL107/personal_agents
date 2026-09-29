@@ -69,14 +69,23 @@ class Repository<T extends { id: string }> {
     expect(chunks.find((c) => c.kind === 'method')?.name).toBe('findById');
   });
 
-  it('arrow function 으로 export 된 const 는 function chunk 로 추출되지 않는다 (현재 한계)', () => {
-    // tree-sitter 의 function_declaration 은 명시적 function 키워드만 인식.
-    // const foo = () => {} 는 lexical_declaration 이라 추출 X — 단계 2/3 에서 보강 가능 (한계 명시).
+  it('화살표 함수·함수 표현식 상수를 function chunk 로 추출한다', () => {
     const chunks = parser.parseFile({
       filePath: 'foo.ts',
-      source: `export const foo = () => 42;`,
+      source: [
+        'export const buildArgs = (model: string): string[] => [',
+        "  '-p',",
+        '  model,',
+        '];',
+        'const legacy = function () { return 1; };',
+        'const LIMIT = 3;',
+      ].join('\n'),
     });
-    expect(chunks.find((c) => c.kind === 'function')).toBeUndefined();
+    const functions = chunks.filter((c) => c.kind === 'function');
+    expect(functions.map((c) => c.name)).toEqual(['buildArgs', 'legacy']);
+    expect(functions[0]).toMatchObject({ startLine: 1, endLine: 4 });
+    expect(functions[0].source).toContain("'-p'");
+    expect(chunks.find((c) => c.name === 'LIMIT')).toBeUndefined();
   });
 
   it('여러 chunk 가 한 파일에서 추출된다', () => {
