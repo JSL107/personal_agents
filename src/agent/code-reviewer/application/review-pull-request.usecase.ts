@@ -280,7 +280,7 @@ export const buildReviewPrompt = ({
     ? ` (잘림: 전체 ${detail.changedFilesTotalCount}개 중 ${detail.changedFiles.length}개만 노출)`
     : '';
   const diffNote = diff.truncated
-    ? `\n\n(diff 가 ${diff.bytes} bytes 라 ${diff.diff.length} bytes 까지만 잘려서 전달됨 — 잘린 뒷부분은 모를 수 있음)`
+    ? `\n\n(diff 가 ${diff.bytes} bytes 라 ${Buffer.byteLength(diff.diff, 'utf-8')} bytes 까지만 잘려서 전달됨 — 잘린 뒷부분은 모를 수 있음)`
     : '';
   // diff 는 그대로 두고, 안 보이는 문자가 있다는 사실만 diff 앞에 알린다.
   const hiddenChars = findHiddenUnicode(diff.diff);
