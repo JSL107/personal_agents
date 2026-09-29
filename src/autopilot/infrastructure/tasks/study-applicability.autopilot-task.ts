@@ -109,10 +109,12 @@ export class StudyApplicabilityAutopilotTask implements AutopilotTask {
           firedAtKst,
         });
       } catch (error: unknown) {
-        // 아무것도 못 한 회차는 그대로 던져 orchestrator 가 실패로 알리게 한다. 앞에서 처리한 것이
-        // 있으면 그 결과는 이미 저장됐으니 보고하고 멈춘다 — 실패한 브리프는 applicability 가 비어
-        // 다음 회차에 다시 잡힌다.
-        if (attempt === 0 && collected.lines.length === 0) {
+        // 판정을 한 건도 끝내지 못한 회차는 그대로 던져 orchestrator 가 실패로 알리게 한다(owner 멘션·
+        // 실패 집계). 앞에서 다시 모은 누락 카드는 판정 진행이 아니므로 이 판단에 넣지 않는다 — 던지면
+        // 그 카드는 이번 회차에 안 나가지만 카드 행이 없으니 다음 회차에 다시 잡혀 잃지 않는다.
+        // 앞 판정이 끝난 뒤의 실패는 그 결과가 이미 저장됐으니 보고하고 멈춘다 — 실패한 브리프는
+        // applicability 가 비어 다음 회차에 다시 잡힌다.
+        if (attempt === 0) {
           throw error;
         }
         const message = error instanceof Error ? error.message : String(error);

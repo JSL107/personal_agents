@@ -231,6 +231,23 @@ describe('StudyApplicabilityAutopilotTask', () => {
       await expect(task.run(context)).rejects.toThrow('codex down');
     });
 
+    it('누락 카드를 다시 모은 회차여도 첫 판정이 실패하면 던진다', async () => {
+      const { task, execute } = setupWith({
+        applied: [
+          {
+            id: 3,
+            topic: '어제 주제',
+            notionUrl: null,
+            judgement: judgement('APPLY'),
+          },
+        ],
+      });
+      execute.mockReset();
+      execute.mockRejectedValue(new Error('codex down'));
+      // 던지면 카드 3 은 이번에 안 나가지만 카드 행이 없으니 다음 회차에 다시 잡힌다.
+      await expect(task.run(context)).rejects.toThrow('codex down');
+    });
+
     it('앞의 판정이 끝난 뒤 실패하면 던지지 않고 실패를 적는다', async () => {
       const { task, execute } = setupWith({});
       execute.mockReset();
