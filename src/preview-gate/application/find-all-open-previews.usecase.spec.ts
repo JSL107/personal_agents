@@ -8,6 +8,7 @@ describe('FindAllOpenPreviewsUsecase', () => {
       findAllOpen: jest.fn().mockResolvedValue(rows),
       findAllDayOutcomes: jest.fn().mockResolvedValue([]),
       findRecentAppliedByKind: jest.fn().mockResolvedValue([]),
+      findRecentCancelledByKind: jest.fn().mockResolvedValue([]),
       countByPayloadValue: jest.fn().mockResolvedValue(0),
     } as unknown as jest.Mocked<PreviewActionRepositoryPort>;
     const usecase = new FindAllOpenPreviewsUsecase(repository);

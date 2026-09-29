@@ -83,21 +83,21 @@ model EvidenceRecord {
 // kind 별 strategy (PreviewApplier) 가 payload 를 해석해 실제 부작용 (Notion/GitHub write 등) 을 수행.
 // expiresAt 이후 PENDING 인 row 는 EXPIRED 로 자연 만료 (별도 cron 스윕 가능 — 현재는 in-place 검증).
 model PreviewAction {
-  id             String    @id
-  slackUserId    String    @map("slack_user_id")
-  kind           String
-  payload        Json
-  status         String
+  id                String    @id
+  slackUserId       String    @map("slack_user_id")
+  kind              String
+  payload           Json
+  status            String
   // 생성 시점 사용자에게 보여진 "preview text" — apply 결과 메시지에서 다시 노출하기 위해 그대로 저장.
-  previewText    String    @map("preview_text") @db.Text
-  expiresAt      DateTime  @map("expires_at")
-  createdAt      DateTime  @default(now()) @map("created_at")
-  appliedAt      DateTime? @map("applied_at")
-  cancelledAt    DateTime? @map("cancelled_at")
+  previewText       String    @map("preview_text") @db.Text
+  expiresAt         DateTime  @map("expires_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  appliedAt         DateTime? @map("applied_at")
+  cancelledAt       DateTime? @map("cancelled_at")
   // A 경로(chat.postMessage) 카드의 좌표 — apply/cancel/만료 시 chat.update 로 이 메시지를 다시 그린다.
   // ephemeral(B) / 카드 없음(C) 경로는 null 로 남아 갱신이 조용히 skip 된다.
-  slackChannelId String?   @map("slack_channel_id")
-  slackMessageTs String?   @map("slack_message_ts")
+  slackChannelId    String?   @map("slack_channel_id")
+  slackMessageTs    String?   @map("slack_message_ts")
   // 승인 후 실행이 실패한 마지막 흔적. 실패해도 status 는 PENDING 을 유지하므로(사용자가 거부한
   // 것이 아니다) 상태만으로는 실패를 셀 수 없다 — 실패 후 다시 눌러 성공하면 APPLIED 로 끝나고,
   // 포기하면 무응답 만료와 똑같이 EXPIRED 가 된다. 두 경우를 가르는 유일한 근거가 이 두 값이다.
@@ -564,20 +564,24 @@ model DailyFxRate {
 // 매일 학습 브리핑 — 보낸 주제의 원장. 다음 회차의 "제외 목록"이자 kind 균형 재료.
 // reportMd 는 Hermes 조사 전문. Notion 발행 성공 여부와 무관하게 DB가 원문 정본이다.
 model StudyBrief {
-  id              Int       @id @default(autoincrement())
-  agentRunId      Int?      @map("agent_run_id")
-  agentRun        AgentRun? @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
-  ownerUserId     String    @map("owner_user_id")
-  kind            String
-  topic           String
-  verdictJson     Json      @map("verdict_json")
-  reportMd        String    @map("report_md") @db.Text
-  sourceUrls      Json      @map("source_urls")
-  notionUrl       String?   @map("notion_url")
+  id                Int       @id @default(autoincrement())
+  agentRunId        Int?      @map("agent_run_id")
+  agentRun          AgentRun? @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
+  ownerUserId       String    @map("owner_user_id")
+  kind              String
+  topic             String
+  verdictJson       Json      @map("verdict_json")
+  reportMd          String    @map("report_md") @db.Text
+  sourceUrls        Json      @map("source_urls")
+  notionUrl         String?   @map("notion_url")
   // 딥다이브 확장으로 만들어진 블로그 초안 Notion page id. 값이 있으면 이미 확장한 브리프다 —
   // 같은 브리프로 두 번째 초안을 만들지 않기 위한 유일한 근거(초안 DB 는 제목이 바뀔 수 있다).
-  blogDraftPageId String?   @map("blog_draft_page_id")
-  createdAt       DateTime  @default(now()) @map("created_at")
+  blogDraftPageId   String?   @map("blog_draft_page_id")
+  // 조사 출력 KEYWORDS 와 적용 판정 결과 및 근거.
+  studyKeywords     Json?     @map("study_keywords")
+  applicability     String?   @map("applicability")
+  applicabilityJson Json?     @map("applicability_json")
+  createdAt         DateTime  @default(now()) @map("created_at")
 
   @@index([ownerUserId, createdAt])
   @@map("study_brief")

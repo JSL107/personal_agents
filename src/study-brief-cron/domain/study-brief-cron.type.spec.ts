@@ -7,6 +7,7 @@ describe('buildStudyResearchPrompt', () => {
       recentTopics: ['Model Context Protocol'],
       kindBalance: { CONCEPT: 4, TOOL: 1 },
       installedTools: ['context7', 'serena'],
+      adoptionHistory: [],
     });
 
     expect(prompt).toContain('TypeScript(EXPERT)');
@@ -28,8 +29,39 @@ describe('buildStudyResearchPrompt', () => {
       recentTopics: [],
       kindBalance: { CONCEPT: 0, TOOL: 0 },
       installedTools: [],
+      adoptionHistory: [],
     });
 
     expect(prompt).toContain('TypeScript·NestJS 백엔드 개발자');
+  });
+
+  it('명시 결정이 3건 미만이면 되먹임 블록을 넣지 않는다', () => {
+    const prompt = buildStudyResearchPrompt({
+      profileSkills: undefined,
+      recentTopics: [],
+      kindBalance: { CONCEPT: 0, TOOL: 0 },
+      installedTools: [],
+      adoptionHistory: [
+        { topic: 'A', outcome: 'ADOPTED' },
+        { topic: 'B', outcome: 'REJECTED' },
+      ],
+    });
+    expect(prompt).not.toContain('[실제로 코드에 반영하기로 한 방향]');
+  });
+
+  it('3건 이상이면 채택·거절 블록을 나눠 넣는다', () => {
+    const prompt = buildStudyResearchPrompt({
+      profileSkills: undefined,
+      recentTopics: [],
+      kindBalance: { CONCEPT: 0, TOOL: 0 },
+      installedTools: [],
+      adoptionHistory: [
+        { topic: 'A', outcome: 'ADOPTED' },
+        { topic: 'B', outcome: 'REJECTED' },
+        { topic: 'C', outcome: 'ADOPTED' },
+      ],
+    });
+    expect(prompt).toContain('[실제로 코드에 반영하기로 한 방향]\n- A\n- C');
+    expect(prompt).toContain('[제안했으나 채택하지 않은 방향]\n- B');
   });
 });

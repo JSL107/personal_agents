@@ -12,6 +12,8 @@ export interface AutopilotPreviewRequest {
   kind: PreviewKind;
   payload: unknown;
   previewText: string;
+  // 개별 카드 보존 기간. 미지정이면 orchestrator 기본값(24시간)을 사용한다.
+  ttlMs?: number;
   // 승인 근거가 카드 밖(같은 task 의 `detailText` = 스레드 전문)에 있는 카드만 켠다.
   // 켜면 그 전문이 실제로 전달된 회차에만 카드를 만든다 — 전문이 유실됐는데 카드만 뜨면
   // 사용자는 확인할 것이 없는 채로 ✅ 를 누른다(blog-github-publish 카드는 본문에

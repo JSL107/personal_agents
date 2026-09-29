@@ -516,6 +516,8 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
       ['kind', 'whatImproves', 'adoptionCost', 'minutes'],
       ['briefId', 'topic', 'title', 'tags', 'bodyLength', 'notionUrl'],
       ['message'],
+      // 적용 판정(AUTOPILOT_STUDY_APPLICABILITY_CRON) 요약. 전문은 study_brief 에 저장.
+      ['applicability', 'rawVerdict', 'citationCount'],
     ],
     // 근거율을 재보지 않았다. LLM 산출물(판정)은 Hermes 조사 전문을 요약할 뿐 URL·PR·
     // 파일:라인 형태의 근거를 담지 않고, 발행 형태는 사람이 읽을 근거 문장이 아니라

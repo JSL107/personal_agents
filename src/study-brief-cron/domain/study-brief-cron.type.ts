@@ -16,11 +16,20 @@ export interface StudyBriefCronJobData {
 
 export type StudyKindBalance = Record<StudyResearchKind, number>;
 
+export interface StudyAdoption {
+  topic: string;
+  outcome: 'ADOPTED' | 'REJECTED';
+}
+
+export const MIN_ADOPTION_SAMPLES = 3;
+export const ADOPTION_WINDOW_DAYS = 90;
+
 export interface BuildStudyResearchPromptInput {
   profileSkills: readonly string[] | undefined;
   recentTopics: readonly string[];
   kindBalance: StudyKindBalance;
   installedTools: readonly string[];
+  adoptionHistory: readonly StudyAdoption[];
 }
 
 export const buildStudyResearchPrompt = ({
@@ -28,6 +37,7 @@ export const buildStudyResearchPrompt = ({
   recentTopics,
   kindBalance,
   installedTools,
+  adoptionHistory,
 }: BuildStudyResearchPromptInput): string => {
   const identity =
     profileSkills !== undefined && profileSkills.length > 0
@@ -56,6 +66,7 @@ export const buildStudyResearchPrompt = ({
     '',
     `[최근 5건 kind 분포] CONCEPT=${kindBalance.CONCEPT}, TOOL=${kindBalance.TOOL}`,
     balanceInstruction,
+    ...buildAdoptionBlock(adoptionHistory),
     '',
     '[조사 깊이]',
     '공식 문서·공식 레포·신뢰할 기술 글을 실제로 열어 읽어라. 헤드라인 요약은 금지한다.',
@@ -79,13 +90,38 @@ export const buildStudyResearchPrompt = ({
     'KIND: CONCEPT',
     'TOPIC: 주제명',
     'SOURCES: https://a.example/doc, https://b.example/post',
+    'KEYWORDS: hook, settings, spawn',
     '---',
     '<조사 본문 마크다운>',
     '',
     'KIND는 CONCEPT 또는 TOOL만 허용한다.',
+    'KEYWORDS는 이 주제가 TypeScript 코드에 닿는다면 함수·클래스 이름에 나올 영어 단어 3~8개다. 쉼표로 구분한다.',
+    '일반어(agent, run, data 등)보다 주제에 고유한 단어를 고른다.',
     '소재가 없으면 첫 줄 하나만 출력한다:',
     'NO_TOPIC: <왜 없는지 한 문장>',
   ].join('\n');
+};
+
+const buildAdoptionBlock = (
+  adoptionHistory: readonly StudyAdoption[],
+): string[] => {
+  if (adoptionHistory.length < MIN_ADOPTION_SAMPLES) {
+    return [];
+  }
+  const list = (outcome: StudyAdoption['outcome']): string =>
+    adoptionHistory
+      .filter((item) => item.outcome === outcome)
+      .map((item) => `- ${item.topic}`)
+      .join('\n') || '(없음)';
+  return [
+    '',
+    '[실제로 코드에 반영하기로 한 방향]',
+    list('ADOPTED'),
+    '',
+    '[제안했으나 채택하지 않은 방향]',
+    list('REJECTED'),
+    '채택된 방향과 인접한 다음 단계를 우선하고, 거절된 방향과 같은 결의 주제는 피하라. 단 강제하지 않는다.',
+  ];
 };
 
 const buildBalanceInstruction = (kindBalance: StudyKindBalance): string => {

@@ -1,6 +1,7 @@
 // PO-2 Preview Gate — 외부 부작용 명령 (Notion/GitHub write 등) 이 사용자 confirm 후에만 실행되도록 한다.
 // kind 는 preview 의 의미 종류 — PreviewApplier strategy 가 같은 kind 를 implement 해 실제 부작용을 수행한다.
 export const PREVIEW_KIND = {
+  STUDY_APPLY_ISSUE: 'STUDY_APPLY_ISSUE',
   // PM-2: PM Agent 가 만든 DailyPlan 의 task subtasks 를 GitHub Issue 코멘트 / Notion page 로 write-back.
   PM_WRITE_BACK: 'PM_WRITE_BACK',
   // V3 §P4 careerLog: PoEval output 의 careerLog 섹션을 사용자가 지정한 Notion 페이지에

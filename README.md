@@ -379,6 +379,7 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 | `JOB_FEED_DETAIL_LIMIT` | ❌ | 실행당 상세 페이지를 가져올 최대 건수(1~100, 기본 20) |
 | `JOB_FEED_AVOID_SKILLS` | ❌ | 기피 기술(쉼표 구분). 사전에서 빼지 않고 저장은 그대로 두되, 하나라도 요구하는 공고를 알림 후보에서만 뺀다(설정을 바꾸면 다시 보인다) |
 | `STUDY_DIAGRAM_WIDTH_PX` · `STUDY_DIAGRAM_MIN_FONT_PX` · `STUDY_DIAGRAM_MAX_HEIGHT_PX` | ❌ | 오늘의 공부 그림(`STUDY_DIAGRAM_ENABLED`)의 캔버스 폭 · 최소 글자 높이 · 세로 상한(px). 실측으로 확정한 값을 넣는다 |
+| `STUDY_APPLY_ISSUE_REPO` | ❌ | 오늘의 공부 적용 판정(매일 10:30)이 APPLY 일 때 승인 카드 → issue 를 만들 레포(`owner/repo`). 미설정이면 판정만 저장한다 |
 
 **기본 OFF 인 기능 스위치** — `'true'` 로 켠다. `STOCK_MONITOR_ENABLED`(보유 종목 모니터링) · `PAPER_TRADING_ENABLED`(모의투자 평가) · `SCREENER_ENABLED`(KRX 유니버스·시세 수집) · `SUBCONSCIOUS_ENABLED`(proactive engine) · `PR_REVIEW_LOOP_ENABLED`(PR 리뷰 스윕) · `AUTOPILOT_PREFERENCE_LEARNING_ENABLED`(주간 선호 학습) · `PREFERENCE_PROFILE_INJECTION_ENABLED`(학습 프로필 주입) · `JOB_FEED_ENABLED`(채용공고 자동 수집) · `STUDY_DIAGRAM_ENABLED`(오늘의 공부 그림 첨부).
 

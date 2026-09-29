@@ -1,4 +1,5 @@
 import { PrismaService } from '../../prisma/prisma.service';
+import { ApplicabilityJudgement } from '../domain/study-applicability.type';
 import { StudyBriefPrismaRepository } from './study-brief.prisma.repository';
 
 describe('StudyBriefPrismaRepository', () => {
@@ -22,6 +23,7 @@ describe('StudyBriefPrismaRepository', () => {
         },
         reportMd: 'report',
         sourceUrls: ['https://example.com'],
+        keywords: ['hook', 'settings'],
       }),
     ).resolves.toEqual({ id: 7 });
 
@@ -30,8 +32,131 @@ describe('StudyBriefPrismaRepository', () => {
         agentRunId: 41,
         ownerUserId: 'U1',
         topic: 'durable execution',
+        studyKeywords: ['hook', 'settings'],
       }),
       select: { id: true },
+    });
+  });
+
+  it('미판정 브리프를 오래된 것부터 1건 고르고 키워드를 문자열 배열로 돌려준다', async () => {
+    const findFirst = jest.fn().mockResolvedValue({
+      id: 5,
+      kind: 'CONCEPT',
+      topic: 'Hooks',
+      verdictJson: {},
+      reportMd: 'r',
+      sourceUrls: ['https://a'],
+      createdAt: new Date('2026-09-29T00:30:00Z'),
+      notionUrl: null,
+      studyKeywords: ['hook', 3],
+    });
+    const repository = new StudyBriefPrismaRepository({
+      studyBrief: { findFirst },
+    } as unknown as PrismaService);
+    const since = new Date('2026-09-27T01:30:00Z');
+
+    const found = await repository.findOldestUnjudgedSince('U1', since);
+
+    expect(findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          ownerUserId: 'U1',
+          createdAt: { gte: since },
+          applicability: null,
+        },
+        orderBy: { createdAt: 'asc' },
+      }),
+    );
+    expect(found).toMatchObject({ id: 5, keywords: ['hook'], notionUrl: null });
+  });
+
+  it('applicability 가 null 일 때만 판정을 저장한다', async () => {
+    const updateMany = jest
+      .fn()
+      .mockResolvedValueOnce({ count: 1 })
+      .mockResolvedValueOnce({ count: 0 });
+    const repository = new StudyBriefPrismaRepository({
+      studyBrief: { updateMany },
+    } as unknown as PrismaService);
+    const judgement: ApplicabilityJudgement = {
+      verdict: 'NOT_APPLICABLE',
+      rawVerdict: null,
+      reason: 'r',
+      citations: [],
+      droppedCitations: [],
+      downgradeReason: null,
+      proposal: null,
+      candidateCount: 0,
+    };
+
+    await expect(repository.saveApplicability(5, judgement)).resolves.toBe(
+      true,
+    );
+    await expect(repository.saveApplicability(5, judgement)).resolves.toBe(
+      false,
+    );
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: 5, applicability: null },
+      data: expect.objectContaining({ applicability: 'NOT_APPLICABLE' }),
+    });
+  });
+
+  it('findTopicsByIds 는 id 와 주제의 map 을 돌려준다', async () => {
+    const findMany = jest.fn().mockResolvedValue([
+      { id: 5, topic: 'Hooks' },
+      { id: 8, topic: 'Agents' },
+    ]);
+    const repository = new StudyBriefPrismaRepository({
+      studyBrief: { findMany },
+    } as unknown as PrismaService);
+    await expect(repository.findTopicsByIds([5, 8])).resolves.toEqual(
+      new Map([
+        [5, 'Hooks'],
+        [8, 'Agents'],
+      ]),
+    );
+  });
+
+  it('판정 분포·강등·48시간 초과 미판정을 집계한다', async () => {
+    const now = new Date('2026-09-29T12:00:00Z');
+    const findMany = jest.fn().mockResolvedValue([
+      {
+        applicability: 'APPLY',
+        applicabilityJson: { rawVerdict: 'APPLY', downgradeReason: null },
+        createdAt: new Date('2026-09-29T00:00:00Z'),
+      },
+      {
+        applicability: 'REFERENCE',
+        applicabilityJson: {
+          rawVerdict: 'APPLY',
+          downgradeReason: 'NO_VALID_CITATION',
+        },
+        createdAt: new Date('2026-09-28T00:00:00Z'),
+      },
+      {
+        applicability: null,
+        applicabilityJson: null,
+        createdAt: new Date('2026-09-26T12:00:00Z'),
+      },
+      {
+        applicability: null,
+        applicabilityJson: null,
+        createdAt: new Date('2026-09-29T11:00:00Z'),
+      },
+    ]);
+    const repository = new StudyBriefPrismaRepository({
+      studyBrief: { findMany },
+    } as unknown as PrismaService);
+    const since = new Date('2026-08-30T12:00:00Z');
+
+    await expect(
+      repository.countApplicabilitySince(since, now),
+    ).resolves.toMatchObject({
+      apply: 1,
+      reference: 1,
+      rawApply: 2,
+      downgradeNoValidCitation: 1,
+      unjudgedExpired: 1,
     });
   });
 
@@ -203,5 +328,46 @@ describe('StudyBriefPrismaRepository', () => {
       where: { id: 42 },
       data: { blogDraftPageId: 'notion-page-1' },
     });
+  });
+
+  it('findApplyJudgedSince 는 APPLY 행 중 제안이 남아 있는 판정만 돌려준다', async () => {
+    const applyJudgement = {
+      verdict: 'APPLY',
+      rawVerdict: 'APPLY',
+      reason: 'r',
+      citations: [],
+      droppedCitations: [],
+      downgradeReason: null,
+      proposal: { title: 't', problem: 'p', change: 'c', verify: 'v' },
+      candidateCount: 1,
+    };
+    const findMany = jest.fn().mockResolvedValue([
+      { id: 1, topic: 'A', notionUrl: null, applicabilityJson: applyJudgement },
+      {
+        id: 2,
+        topic: 'B',
+        notionUrl: null,
+        applicabilityJson: { ...applyJudgement, proposal: null },
+      },
+      { id: 3, topic: 'C', notionUrl: null, applicabilityJson: null },
+    ]);
+    const repository = new StudyBriefPrismaRepository({
+      studyBrief: { findMany },
+    } as unknown as PrismaService);
+    const since = new Date('2026-09-22T00:00:00Z');
+
+    const found = await repository.findApplyJudgedSince('U1', since);
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          ownerUserId: 'U1',
+          createdAt: { gte: since },
+          applicability: 'APPLY',
+        },
+        orderBy: { createdAt: 'asc' },
+      }),
+    );
+    expect(found.map((brief) => brief.id)).toEqual([1]);
   });
 });

@@ -195,7 +195,7 @@ export class PreviewActionPrismaRepository implements PreviewActionRepositoryPor
   }: {
     kind: string;
     payloadPath: string[];
-    payloadValue: string;
+    payloadValue: string | number;
   }): Promise<number> {
     return this.prisma.previewAction.count({
       where: {
@@ -461,6 +461,27 @@ export class PreviewActionPrismaRepository implements PreviewActionRepositoryPor
         appliedAt: { gte: since },
       },
       orderBy: { appliedAt: 'desc' },
+      take: limit,
+    });
+    return rows.map(toDomain);
+  }
+
+  async findRecentCancelledByKind({
+    kind,
+    since,
+    limit,
+  }: {
+    kind: PreviewKind;
+    since: Date;
+    limit: number;
+  }): Promise<PreviewAction[]> {
+    const rows = await this.prisma.previewAction.findMany({
+      where: {
+        kind,
+        status: PREVIEW_STATUS.CANCELLED,
+        cancelledAt: { gte: since },
+      },
+      orderBy: { cancelledAt: 'desc' },
       take: limit,
     });
     return rows.map(toDomain);

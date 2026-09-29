@@ -10,6 +10,7 @@ import { ConsoleApproval, ConsoleSession } from '../domain/console.type';
 // Record 타입이라 새 kind 추가 시 컴파일 에러로 매핑 누락을 막는다.
 // null 은 특정 에이전트의 승인이 아닌 kind(예: 세션 주입) — 오피스 집결 대상이 아니다.
 export const PREVIEW_KIND_TO_AGENT: Record<PreviewKind, AgentType | null> = {
+  STUDY_APPLY_ISSUE: AgentType.CTO_STUDY,
   PM_WRITE_BACK: AgentType.PM,
   PO_EVAL_CAREERLOG: AgentType.PO_EVAL,
   CAREER_JD_GAP_BLOG: AgentType.CAREER_MATE,

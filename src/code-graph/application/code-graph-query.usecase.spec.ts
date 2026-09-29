@@ -1,3 +1,4 @@
+import { CodeChunk } from '../domain/code-chunk.type';
 import {
   CODE_GRAPH_SNAPSHOT_VERSION,
   CodeGraphSnapshot,
@@ -172,5 +173,102 @@ describe('CodeGraphQueryUsecase', () => {
     expect(
       usecase.findFilesAffectedByImport({ snapshot, importPath: 'x' }),
     ).toEqual([]);
+  });
+
+  describe('findChunksByKeywords', () => {
+    const chunk = (
+      name: string,
+      kind: CodeChunk['kind'] = 'function',
+      source = '',
+    ): CodeChunk => ({
+      filePath: `src/${name}.ts`,
+      kind,
+      name,
+      startLine: 1,
+      endLine: 2,
+      source,
+    });
+    const snapshotOf = (chunks: CodeChunk[]): CodeGraphSnapshot => ({
+      version: CODE_GRAPH_SNAPSHOT_VERSION,
+      rootDir: '/repo',
+      builtAt: '2026-09-29T00:00:00.000Z',
+      chunks,
+      relations: [],
+    });
+    const filler = (count: number): CodeChunk[] =>
+      Array.from({ length: count }, (_, index) => chunk(`filler${index}`));
+
+    it('토큰 단위로 비교해 hook 이 webhook 에 걸리지 않는다', () => {
+      const result = usecase.findChunksByKeywords({
+        snapshot: snapshotOf([
+          chunk('installStopHook'),
+          chunk('handleWebhook'),
+          ...filler(100),
+        ]),
+        keywords: ['hook'],
+        limit: 12,
+      });
+      expect(result.map((candidate) => candidate.name)).toEqual([
+        'installStopHook',
+      ]);
+      expect(result[0].id).toBe('c1');
+    });
+
+    it('전체 조각의 2% 이상 이름에 나오는 키워드는 점수에서 뺀다', () => {
+      const result = usecase.findChunksByKeywords({
+        snapshot: snapshotOf([
+          chunk('runA'),
+          chunk('runB'),
+          chunk('runC'),
+          chunk('buildClaudeArgs'),
+          ...filler(96),
+        ]),
+        keywords: ['run', 'claude'],
+        limit: 12,
+      });
+      expect(result.map((candidate) => candidate.name)).toEqual([
+        'buildClaudeArgs',
+      ]);
+    });
+
+    it('같은 점수면 method·function 을 class 보다 앞에 두고 limit 로 자른다', () => {
+      const result = usecase.findChunksByKeywords({
+        snapshot: snapshotOf([
+          chunk('ClaudeProvider', 'class'),
+          chunk('spawnClaude', 'method'),
+          chunk('buildClaudeArgs', 'function'),
+          ...filler(200),
+        ]),
+        keywords: ['claude'],
+        limit: 2,
+      });
+      expect(result.map((candidate) => candidate.kind)).toEqual([
+        'method',
+        'function',
+      ]);
+      expect(result.map((candidate) => candidate.id)).toEqual(['c1', 'c2']);
+    });
+
+    it('이름에 없어도 원문에 단어로 나오면 낮은 점수로 잡는다', () => {
+      const result = usecase.findChunksByKeywords({
+        snapshot: snapshotOf([
+          chunk('buildArgs', 'function', "['--setting-sources']"),
+          ...filler(100),
+        ]),
+        keywords: ['setting'],
+        limit: 12,
+      });
+      expect(result.map((candidate) => candidate.name)).toEqual(['buildArgs']);
+    });
+
+    it('키워드가 비면 빈 배열', () => {
+      expect(
+        usecase.findChunksByKeywords({
+          snapshot: snapshotOf([chunk('a')]),
+          keywords: [],
+          limit: 12,
+        }),
+      ).toEqual([]);
+    });
   });
 });

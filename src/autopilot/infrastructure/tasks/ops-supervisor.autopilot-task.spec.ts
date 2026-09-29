@@ -2,6 +2,7 @@ import { AgentRunService } from '../../../agent-run/application/agent-run.servic
 import { CodexQuotaExceededException } from '../../../model-router/infrastructure/codex-cli.provider';
 import { OpsSupervisorAdvisorPort } from '../../../ops-supervisor/domain/port/ops-supervisor-advisor.port';
 import { PreviewActionRepositoryPort } from '../../../preview-gate/domain/port/preview-action.repository.port';
+import { ApplicabilityStats } from '../../../study-brief-cron/domain/port/study-brief.repository.port';
 import { OpsSupervisorAutopilotTask } from './ops-supervisor.autopilot-task';
 
 const context = { ownerSlackUserId: 'U1', firedAtKst: '2026-08-01' };
@@ -22,6 +23,22 @@ const makePreviewRepository = (
 ) => ({
   countOutcomesByKind: jest.fn().mockResolvedValue(outcomes),
   countByPayloadValue: jest.fn().mockResolvedValue(0),
+  findRecentAppliedByKind: jest.fn().mockResolvedValue([]),
+  findRecentCancelledByKind: jest.fn().mockResolvedValue([]),
+});
+
+const EMPTY_APPLICABILITY_STATS: ApplicabilityStats = {
+  apply: 0,
+  reference: 0,
+  notApplicable: 0,
+  rawApply: 0,
+  downgradeNoValidCitation: 0,
+  downgradeNoProposal: 0,
+  unjudgedExpired: 0,
+};
+
+const makeStudyBriefRepository = (stats = EMPTY_APPLICABILITY_STATS) => ({
+  countApplicabilitySince: jest.fn().mockResolvedValue(stats),
 });
 
 describe('OpsSupervisorAutopilotTask', () => {
@@ -45,6 +62,7 @@ describe('OpsSupervisorAutopilotTask', () => {
       service as unknown as AgentRunService,
       previewRepository as unknown as PreviewActionRepositoryPort,
       makeHumanizer() as never,
+      makeStudyBriefRepository() as never,
       advisor as OpsSupervisorAdvisorPort,
     );
 
@@ -74,6 +92,7 @@ describe('OpsSupervisorAutopilotTask', () => {
       service as unknown as AgentRunService,
       makePreviewRepository() as unknown as PreviewActionRepositoryPort,
       humanizer as never,
+      makeStudyBriefRepository() as never,
       { advise: jest.fn() } as OpsSupervisorAdvisorPort,
     );
 
@@ -104,6 +123,7 @@ describe('OpsSupervisorAutopilotTask', () => {
       service as unknown as AgentRunService,
       previewRepository as unknown as PreviewActionRepositoryPort,
       makeHumanizer() as never,
+      makeStudyBriefRepository() as never,
       advisor,
     );
 
@@ -135,6 +155,7 @@ describe('OpsSupervisorAutopilotTask', () => {
       service as unknown as AgentRunService,
       previewRepository as unknown as PreviewActionRepositoryPort,
       makeHumanizer() as never,
+      makeStudyBriefRepository() as never,
       advisor,
     );
 
@@ -154,6 +175,7 @@ describe('OpsSupervisorAutopilotTask', () => {
       service as unknown as AgentRunService,
       previewRepository as unknown as PreviewActionRepositoryPort,
       makeHumanizer() as never,
+      makeStudyBriefRepository() as never,
       undefined,
     );
 
@@ -173,6 +195,7 @@ describe('OpsSupervisorAutopilotTask', () => {
       service as unknown as AgentRunService,
       previewRepository as unknown as PreviewActionRepositoryPort,
       makeHumanizer() as never,
+      makeStudyBriefRepository() as never,
       undefined,
     );
 
@@ -180,5 +203,31 @@ describe('OpsSupervisorAutopilotTask', () => {
 
     expect(result.skip).toBe(false);
     expect(result.summaryText).toContain('이상 없음');
+  });
+
+  it('다른 운영 지표가 없어도 적용 판정 통계가 있으면 월간 섹션을 낸다', async () => {
+    const service = {
+      aggregateRunStats: jest.fn().mockResolvedValue([]),
+      aggregateRetryCounts: jest.fn().mockResolvedValue([]),
+      aggregateSweptCounts: jest.fn().mockResolvedValue([]),
+    };
+    const stats: ApplicabilityStats = {
+      ...EMPTY_APPLICABILITY_STATS,
+      apply: 2,
+      rawApply: 2,
+    };
+    const task = new OpsSupervisorAutopilotTask(
+      service as unknown as AgentRunService,
+      makePreviewRepository() as unknown as PreviewActionRepositoryPort,
+      makeHumanizer() as never,
+      makeStudyBriefRepository(stats) as never,
+      undefined,
+    );
+
+    const result = await task.run(context);
+
+    expect(result.skip).toBe(false);
+    expect(result.summaryText).toContain('적용 2');
+    expect(result.summaryText).toContain('재검토 기준');
   });
 });

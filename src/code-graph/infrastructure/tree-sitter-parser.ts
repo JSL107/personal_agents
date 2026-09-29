@@ -20,6 +20,9 @@ const NODE_TYPE_TO_KIND: Record<string, CodeChunkKind> = {
   type_alias_declaration: 'type-alias',
 };
 
+// 함수 값을 가진 변수만 함수 조각으로 추출한다. lexical_declaration 전체를 보존한다.
+const FUNCTION_VALUE_TYPES = new Set(['arrow_function', 'function_expression']);
+
 // tree-sitter 의 SyntaxNode type 이 패키지 default export 의 nested type 으로만 노출돼 import 가 까다로움.
 // 본 모듈에서만 쓰는 minimal shape 으로 alias.
 type SyntaxNode = Parser.SyntaxNode;
@@ -45,6 +48,13 @@ export class TreeSitterParser implements CodeParserPort {
     const tree = this.parser.parse(source);
     const chunks: CodeChunk[] = [];
     walk(tree.rootNode, (node) => {
+      if (node.type === 'variable_declarator') {
+        const chunk = toFunctionValueChunk(node, filePath);
+        if (chunk) {
+          chunks.push(chunk);
+        }
+        return;
+      }
       const kind = NODE_TYPE_TO_KIND[node.type];
       if (!kind) {
         return;
@@ -65,6 +75,29 @@ export class TreeSitterParser implements CodeParserPort {
     return chunks;
   }
 }
+
+const toFunctionValueChunk = (
+  node: SyntaxNode,
+  filePath: string,
+): CodeChunk | null => {
+  const value = node.childForFieldName('value');
+  const nameNode = node.childForFieldName('name');
+  if (!value || !FUNCTION_VALUE_TYPES.has(value.type)) {
+    return null;
+  }
+  if (nameNode?.type !== 'identifier') {
+    return null;
+  }
+  const declaration = node.parent ?? node;
+  return {
+    filePath,
+    kind: 'function',
+    name: nameNode.text,
+    startLine: declaration.startPosition.row + 1,
+    endLine: declaration.endPosition.row + 1,
+    source: declaration.text,
+  };
+};
 
 const walk = (node: SyntaxNode, visit: (n: SyntaxNode) => void): void => {
   visit(node);
