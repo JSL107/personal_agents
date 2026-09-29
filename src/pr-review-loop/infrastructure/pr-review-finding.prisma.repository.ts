@@ -126,6 +126,7 @@ export class PrReviewFindingPrismaRepository implements PrReviewFindingRepositor
     id,
     status,
     rejectReason,
+    acceptReply,
     githubThreadNodeId,
     resolveThread,
   }: MarkDecidedInput): Promise<void> {
@@ -134,6 +135,7 @@ export class PrReviewFindingPrismaRepository implements PrReviewFindingRepositor
       data: {
         status,
         rejectReason: status === 'REJECTED' ? rejectReason : null,
+        acceptReply: status === 'ACKED' ? (acceptReply ?? null) : null,
         githubThreadNodeId,
         decidedAt: new Date(),
         // 한 번의 쓰기로 확정한다. 나눠 쓰면 첫 쓰기 직후 실패했을 때 조회 대상에서

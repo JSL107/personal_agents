@@ -258,6 +258,7 @@ describe('PrReviewFindingPrismaRepository', () => {
       data: {
         status: 'REJECTED',
         rejectReason: '지적이 틀림',
+        acceptReply: null,
         githubThreadNodeId: 'PRRT_thread',
         decidedAt: expect.any(Date),
       },
@@ -279,6 +280,55 @@ describe('PrReviewFindingPrismaRepository', () => {
         data: expect.objectContaining({ rejectReason: null }),
       }),
     );
+  });
+
+  it('ACKED 결정에만 수용 답글을 저장한다', async () => {
+    prisma.prReviewFinding.update.mockResolvedValue({});
+
+    await repository.markDecided({
+      id: 1,
+      status: 'ACKED',
+      rejectReason: null,
+      acceptReply: '맞는 지적이라 수정했습니다',
+      githubThreadNodeId: 'PRRT_thread',
+    });
+    await repository.markDecided({
+      id: 2,
+      status: 'REJECTED',
+      rejectReason: '지적이 틀림',
+      acceptReply: '잘못 전달된 값',
+      githubThreadNodeId: 'PRRT_thread',
+    });
+
+    expect(prisma.prReviewFinding.update).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        data: expect.objectContaining({
+          acceptReply: '맞는 지적이라 수정했습니다',
+          rejectReason: null,
+        }),
+      }),
+    );
+    expect(prisma.prReviewFinding.update).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        data: expect.objectContaining({ acceptReply: null }),
+      }),
+    );
+  });
+
+  it('규약 조회는 수용 답글을 읽지 않는다', async () => {
+    // 🔴 안전핀 — 규약 블록은 통째로 억제문이다. 수용 답글이 섞이면 정탐을 피하도록 역학습한다.
+    prisma.prReviewFinding.findMany.mockResolvedValue([]);
+
+    await repository.findRejectionsForConventions({
+      repo: 'JSL107/personal_agents',
+      since: new Date('2026-05-28T00:00:00Z'),
+    });
+
+    const [query] = prisma.prReviewFinding.findMany.mock.calls[0];
+    expect(query.where.status).toBe('REJECTED');
+    expect(query.select).not.toHaveProperty('acceptReply');
   });
 
   it.each(['ACKED', 'REJECTED'] as const)(
