@@ -34,6 +34,11 @@ import {
   PullRequestReview,
   ReviewPullRequestInput,
 } from '../domain/code-reviewer.type';
+import {
+  findHiddenUnicode,
+  formatHiddenUnicodeList,
+  formatHiddenUnicodeWarning,
+} from '../domain/hidden-unicode';
 import { parsePrReference } from '../domain/pr-reference.parser';
 import {
   buildRepoConventions,
@@ -271,6 +276,12 @@ export const buildReviewPrompt = ({
   const diffNote = diff.truncated
     ? `\n\n(diff 가 ${diff.bytes} bytes 라 ${diff.diff.length} bytes 까지만 잘려서 전달됨 — 잘린 뒷부분은 모를 수 있음)`
     : '';
+  // diff 는 그대로 두고, 안 보이는 문자가 있다는 사실만 diff 앞에 알린다.
+  const hiddenChars = findHiddenUnicode(diff.diff);
+  const hiddenCharNote =
+    hiddenChars.length > 0
+      ? `\n\n${formatHiddenUnicodeWarning(hiddenChars.length)}\n${wrapUntrustedInput(formatHiddenUnicodeList(hiddenChars))}`
+      : '';
 
   const lines: string[] = [];
 
@@ -308,7 +319,7 @@ export const buildReviewPrompt = ({
       ? wrapUntrustedInput(redactInjectionPhrases(detail.body))
       : '(없음)',
     '',
-    `[diff]${diffNote}`,
+    `[diff]${diffNote}${hiddenCharNote}`,
     wrapUntrustedInput(['```diff', diff.diff, '```'].join('\n')),
   );
 
