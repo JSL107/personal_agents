@@ -27,6 +27,7 @@ const DEFAULT_RETRY_OPTIONS = {
 const LINE_TARGET_ENV_KEYS: Record<PlaybookLine, string> = {
   invest: 'AUTOPILOT_INVEST_TARGET',
   career: 'AUTOPILOT_CAREER_TARGET',
+  review: 'AUTOPILOT_REVIEW_TARGET',
 };
 
 const isFixedCronField = (field: string): boolean => {

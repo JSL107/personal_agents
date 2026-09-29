@@ -222,6 +222,8 @@ export class EnvironmentVariables {
   //   미설정 시 AUTOPILOT_TARGET. 주식·모의투자 알림만 전용 채널로 뺄 때 쓴다.
   // - AUTOPILOT_CAREER_TARGET: 커리어 라인(line: 'career' — job-feed, job-feed-gap) 전용
   //   발송 대상. 미설정 시 AUTOPILOT_TARGET. 채용공고 카드만 전용 채널로 뺄 때 쓴다.
+  // - AUTOPILOT_REVIEW_TARGET: 리뷰 라인(line: 'review' — pr-review-sweep) 전용 발송 대상.
+  //   미설정 시 AUTOPILOT_TARGET. PR 리뷰 스윕 요약만 전용 채널로 뺄 때 쓴다.
   // 스케줄 override (각 항목): AUTOPILOT_<ID>_SCHEDULE / _TIMEZONE.
   //   ID = 플레이북 entry id 대문자 + 언더스코어 변환:
   //     daily-eval → DAILY_EVAL, morning-briefing → MORNING_BRIEFING,
@@ -242,6 +244,10 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   AUTOPILOT_CAREER_TARGET?: string;
+
+  @IsOptional()
+  @IsString()
+  AUTOPILOT_REVIEW_TARGET?: string;
 
   // AI CLI 환경 스냅샷 동기화. AI_CLI_ENV_SYNC_REPO 미설정 시 export/apply task 모두 skip.
   @IsOptional()
