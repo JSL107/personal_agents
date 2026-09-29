@@ -320,6 +320,22 @@ describe('OctokitGithubClient', () => {
       expect(result.truncated).toBe(true);
     });
 
+    it('원본에 있던 U+FFFD 는 경계 직후에서 잘려도 지우지 않는다', async () => {
+      const get = jest.fn().mockResolvedValue({ data: 'ab�x' }); // 2 + 3 + 1 = 6 B
+      const octokit = {
+        rest: { pulls: { get } },
+      } as unknown as Octokit;
+      const client = new OctokitGithubClient(octokit);
+
+      const result = await client.getPullRequestDiff({
+        repo: 'foo/bar',
+        number: 1,
+        maxBytes: 5,
+      });
+
+      expect(result.diff).toBe('ab�');
+    });
+
     it('바이트가 한도와 같으면 자르지 않는다', async () => {
       const get = jest.fn().mockResolvedValue({ data: '한글' }); // 6 B
       const octokit = {
