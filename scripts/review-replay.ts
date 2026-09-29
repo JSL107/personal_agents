@@ -47,7 +47,9 @@ import {
   scoreReplay,
   skippedCountOf,
   summarizeTrials,
+  summarizeTrialsByTruncation,
   TrialSummary,
+  TruncationSplit,
 } from '../src/pr-review-loop/domain/review-replay.score';
 import { summarizeDiff } from '../src/pr-review-loop/domain/review-replay-diff';
 import {
@@ -130,6 +132,12 @@ interface ReplayReport {
     rejected: TrialSummary;
     fixed: TrialSummary;
     missed?: TrialSummary;
+    // 위 값을 diff 잘림 여부로 나눈 것. 잘린 그룹은 입력 누락과 모델 미탐이 섞인다.
+    byDiffTruncation: {
+      rejected: TruncationSplit;
+      fixed: TruncationSplit;
+      missed?: TruncationSplit;
+    };
   };
   baseline?: {
     path: string;
@@ -291,6 +299,27 @@ const main = async (): Promise<void> => {
       rejected: summarizeTrials(trialResults, 'REJECTED'),
       fixed: summarizeTrials(trialResults, 'FIXED'),
       ...(hasMisses ? { missed: summarizeTrials(trialResults, 'MISSED') } : {}),
+      byDiffTruncation: {
+        rejected: summarizeTrialsByTruncation(
+          reportGroups,
+          options.trials,
+          'REJECTED',
+        ),
+        fixed: summarizeTrialsByTruncation(
+          reportGroups,
+          options.trials,
+          'FIXED',
+        ),
+        ...(hasMisses
+          ? {
+              missed: summarizeTrialsByTruncation(
+                reportGroups,
+                options.trials,
+                'MISSED',
+              ),
+            }
+          : {}),
+      },
     };
     const baselineMissed = baselineReport?.summaries.missed;
     const report: ReplayReport = {
@@ -340,10 +369,15 @@ const main = async (): Promise<void> => {
       [
         `회차 ${options.trials}${options.holdout ? ' · holdout' : ''}`,
         formatTrialLine('오탐 재발', trials.rejected),
+        ...formatSplitLines(trials.byDiffTruncation.rejected),
         formatTrialLine('정탐 유지', trials.fixed),
+        ...formatSplitLines(trials.byDiffTruncation.fixed),
         ...(trials.missed === undefined
           ? []
           : [formatTrialLine('미탐 재현', trials.missed)]),
+        ...(trials.byDiffTruncation.missed === undefined
+          ? []
+          : formatSplitLines(trials.byDiffTruncation.missed)),
         ...(unresolvedMisses.length === 0
           ? []
           : [`미탐 중 리뷰 커밋을 못 찾아 뺀 것 ${unresolvedMisses.length}`]),
@@ -414,6 +448,16 @@ const percent = (rate: number | null): string =>
 
 const formatTrialLine = (label: string, summary: TrialSummary): string =>
   `${label} 평균 ${percent(summary.meanRate)} (범위 ${percent(summary.minRate)}~${percent(summary.maxRate)}) · 카드 ${summary.total} · 한 번이라도 ${summary.anyTrial} · 매번 ${summary.everyTrial}`;
+
+// 카드가 없는 쪽은 줄을 내지 않는다 — 잘린 그룹이 없는 실행에서 "잘림 카드 0" 줄이 매번 붙지 않게.
+const formatSplitLines = (split: TruncationSplit): string[] => [
+  ...(split.intact.total === 0
+    ? []
+    : [formatTrialLine('  └ diff 안 잘림', split.intact)]),
+  ...(split.truncated.total === 0
+    ? []
+    : [formatTrialLine('  └ diff 잘림', split.truncated)]),
+];
 
 const formatBaselineLine = (
   label: string,
