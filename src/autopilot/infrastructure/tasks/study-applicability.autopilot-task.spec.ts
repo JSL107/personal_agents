@@ -7,7 +7,10 @@ import {
   StudyBriefRepositoryPort,
 } from '../../../study-brief-cron/domain/port/study-brief.repository.port';
 import { ApplicabilityJudgement } from '../../../study-brief-cron/domain/study-applicability.type';
-import { StudyApplicabilityAutopilotTask } from './study-applicability.autopilot-task';
+import {
+  MAX_MODEL_JUDGEMENTS_PER_RUN,
+  StudyApplicabilityAutopilotTask,
+} from './study-applicability.autopilot-task';
 
 const judgement = (
   verdict: ApplicabilityJudgement['verdict'],
@@ -38,16 +41,22 @@ const judgement = (
 
 const setupWith = ({
   result,
+  results,
   repo = 'JSL107/personal_agents',
   applied = [],
   cardBriefIds = [],
 }: {
-  result: unknown;
+  result?: unknown;
+  // 회차 안에서 판정을 반복하므로 순서대로 한 번씩 돌려주고, 다 쓰면 "대상 없음" 을 돌려준다.
+  results?: unknown[];
   repo?: string;
   applied?: JudgedApplyStudyBrief[];
   cardBriefIds?: number[];
 }) => {
-  const execute = jest.fn().mockResolvedValue(result);
+  const execute = jest.fn().mockResolvedValue({ status: 'empty' });
+  for (const next of results ?? (result === undefined ? [] : [result])) {
+    execute.mockResolvedValueOnce(next);
+  }
   const findApplyJudgedSince = jest.fn().mockResolvedValue(applied);
   const countByPayloadValue = jest.fn(
     async ({ payloadValue }: { payloadValue: string | number }) =>
@@ -94,24 +103,24 @@ describe('StudyApplicabilityAutopilotTask', () => {
 
   it('APPLY 면 7일 TTL 카드와 escape 된 본문을 낸다', async () => {
     const result = await setup(judged('APPLY')).run(context);
-    expect(result.preview).toMatchObject({
+    expect(result.previews?.[0]).toMatchObject({
       kind: 'STUDY_APPLY_ISSUE',
       ttlMs: 7 * 24 * 60 * 60 * 1000,
       payload: { studyBriefId: 5, repo: 'JSL107/personal_agents' },
     });
-    expect(result.preview?.previewText).not.toContain('<!channel>');
+    expect(result.previews?.[0]?.previewText).not.toContain('<!channel>');
     expect(result.summaryText).toContain('Hooks');
   });
 
   it('레포 env 가 없으면 APPLY 여도 카드 없이 요약만', async () => {
     const result = await setup(judged('APPLY'), '').run(context);
-    expect(result.preview).toBeUndefined();
+    expect(result.previews).toBeUndefined();
     expect(result.skip).toBe(false);
   });
 
   it('레포 env 가 owner/repo 형식이 아니면 카드를 만들지 않는다', async () => {
     const result = await setup(judged('APPLY'), 'not a repo').run(context);
-    expect(result.preview).toBeUndefined();
+    expect(result.previews).toBeUndefined();
     expect(result.summaryText).toContain('owner/repo 형식이 아님');
   });
 
@@ -129,19 +138,26 @@ describe('StudyApplicabilityAutopilotTask', () => {
       judgement: judgement('APPLY'),
     };
 
-    it('카드 행이 없으면 새로 판정하지 않고 저장된 판정으로 카드를 다시 낸다', async () => {
+    it('카드 행이 없으면 저장된 판정으로 카드를 다시 내고, 새 판정도 이어서 한다', async () => {
       const { task, execute, countByPayloadValue } = setupWith({
         result: judged('APPLY'),
         applied: [pendingBrief],
       });
       const result = await task.run(context);
-      expect(execute).not.toHaveBeenCalled();
+      // 새 판정이 모델을 불러 상한(1)에 닿으면 그 회차는 거기서 멈춘다.
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(
+        result.previews?.map(
+          (preview) =>
+            (preview.payload as { studyBriefId: number }).studyBriefId,
+        ),
+      ).toEqual([3, 5]);
       expect(countByPayloadValue).toHaveBeenCalledWith({
         kind: 'STUDY_APPLY_ISSUE',
         payloadPath: ['studyBriefId'],
         payloadValue: 3,
       });
-      expect(result.preview).toMatchObject({
+      expect(result.previews?.[0]).toMatchObject({
         kind: 'STUDY_APPLY_ISSUE',
         payload: { studyBriefId: 3 },
       });
@@ -167,6 +183,65 @@ describe('StudyApplicabilityAutopilotTask', () => {
       await task.run(context);
       expect(findApplyJudgedSince).not.toHaveBeenCalled();
       expect(execute).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('한 회차에 밀린 판정을 따라잡는다', () => {
+    const judgedBrief = (
+      briefId: number,
+      verdict: ApplicabilityJudgement['verdict'],
+      viaModel = true,
+    ) => ({
+      ...judged(verdict),
+      briefId,
+      judgement: {
+        ...judgement(verdict),
+        rawVerdict: viaModel ? verdict : null,
+      },
+    });
+
+    it('모델 없이 끝난 판정 뒤의 APPLY 까지 같은 회차에 처리한다', async () => {
+      const { task, execute } = setupWith({
+        results: [
+          judgedBrief(51, 'NOT_APPLICABLE', false),
+          judgedBrief(52, 'APPLY'),
+        ],
+      });
+      const result = await task.run(context);
+      // 모델 없이 끝난 51 은 상한에 들지 않고, 모델을 부른 52 에서 상한에 닿아 멈춘다.
+      expect(execute).toHaveBeenCalledTimes(2);
+      expect(result.previews).toHaveLength(1);
+      expect(result.previews?.[0]).toMatchObject({
+        payload: { studyBriefId: 52 },
+      });
+    });
+
+    it(`모델을 부르는 판정은 한 회차에 ${MAX_MODEL_JUDGEMENTS_PER_RUN}건에서 멈춘다`, async () => {
+      const { task, execute } = setupWith({
+        results: [1, 2, 3, 4].map((id) => judgedBrief(id, 'REFERENCE')),
+      });
+      await task.run(context);
+      expect(execute).toHaveBeenCalledTimes(MAX_MODEL_JUDGEMENTS_PER_RUN);
+    });
+
+    it('첫 판정부터 실패하면 그대로 던진다', async () => {
+      const { task, execute } = setupWith({});
+      execute.mockReset();
+      execute.mockRejectedValue(new Error('codex down'));
+      await expect(task.run(context)).rejects.toThrow('codex down');
+    });
+
+    it('앞의 판정이 끝난 뒤 실패하면 던지지 않고 실패를 적는다', async () => {
+      const { task, execute } = setupWith({});
+      execute.mockReset();
+      // 모델 없이 끝난 판정은 상한에 들지 않아 다음 판정으로 넘어가고, 거기서 실패한다.
+      execute
+        .mockResolvedValueOnce(judgedBrief(51, 'NOT_APPLICABLE', false))
+        .mockRejectedValueOnce(new Error('codex down'));
+      const result = await task.run(context);
+      expect(result.skip).toBe(false);
+      expect(result.summaryText).toContain('1건 실패');
+      expect(execute).toHaveBeenCalledTimes(2);
     });
   });
 });
