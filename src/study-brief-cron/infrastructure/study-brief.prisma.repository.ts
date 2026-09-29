@@ -3,11 +3,14 @@ import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import {
+  ApplicabilityStats,
   ExpandableStudyBrief,
+  JudgeableStudyBrief,
   RecentStudyBrief,
   SaveStudyBriefInput,
   StudyBriefRepositoryPort,
 } from '../domain/port/study-brief.repository.port';
+import { ApplicabilityJudgement } from '../domain/study-applicability.type';
 import { StudyBriefVerdict } from '../domain/study-brief.type';
 import { StudyResearchKind } from '../domain/study-research.parser';
 
@@ -72,6 +75,101 @@ export class StudyBriefPrismaRepository implements StudyBriefRepositoryPort {
     return row ? toExpandableStudyBrief(row) : undefined;
   }
 
+  async findOldestUnjudgedSince(
+    ownerUserId: string,
+    since: Date,
+  ): Promise<JudgeableStudyBrief | undefined> {
+    const row = await this.prisma.studyBrief.findFirst({
+      where: { ownerUserId, createdAt: { gte: since }, applicability: null },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        kind: true,
+        topic: true,
+        verdictJson: true,
+        reportMd: true,
+        sourceUrls: true,
+        createdAt: true,
+        notionUrl: true,
+        studyKeywords: true,
+      },
+    });
+    if (!row) {
+      return undefined;
+    }
+    return {
+      ...toExpandableStudyBrief(row),
+      keywords: toStringArray(row.studyKeywords),
+      notionUrl: row.notionUrl,
+    };
+  }
+
+  async saveApplicability(
+    id: number,
+    judgement: ApplicabilityJudgement,
+  ): Promise<boolean> {
+    const { count } = await this.prisma.studyBrief.updateMany({
+      where: { id, applicability: null },
+      data: {
+        applicability: judgement.verdict,
+        applicabilityJson: judgement as unknown as Prisma.InputJsonValue,
+      },
+    });
+    return count > 0;
+  }
+
+  async findTopicsByIds(ids: readonly number[]): Promise<Map<number, string>> {
+    if (ids.length === 0) {
+      return new Map();
+    }
+    const rows = await this.prisma.studyBrief.findMany({
+      where: { id: { in: [...ids] } },
+      select: { id: true, topic: true },
+    });
+    return new Map(rows.map((row) => [row.id, row.topic]));
+  }
+
+  async countApplicabilitySince(
+    since: Date,
+    now: Date,
+  ): Promise<ApplicabilityStats> {
+    const rows = await this.prisma.studyBrief.findMany({
+      where: { createdAt: { gte: since } },
+      select: { applicability: true, applicabilityJson: true, createdAt: true },
+    });
+    const expiredBefore = now.getTime() - 48 * 60 * 60 * 1_000;
+    const stats: ApplicabilityStats = {
+      apply: 0,
+      reference: 0,
+      notApplicable: 0,
+      rawApply: 0,
+      downgradeNoValidCitation: 0,
+      downgradeNoProposal: 0,
+      unjudgedExpired: 0,
+    };
+    for (const row of rows) {
+      if (row.applicability === null) {
+        if (row.createdAt.getTime() < expiredBefore) {
+          stats.unjudgedExpired += 1;
+        }
+        continue;
+      }
+      stats.apply += row.applicability === 'APPLY' ? 1 : 0;
+      stats.reference += row.applicability === 'REFERENCE' ? 1 : 0;
+      stats.notApplicable += row.applicability === 'NOT_APPLICABLE' ? 1 : 0;
+      const json = (row.applicabilityJson ?? {}) as {
+        rawVerdict?: unknown;
+        downgradeReason?: unknown;
+      };
+      stats.rawApply += json.rawVerdict === 'APPLY' ? 1 : 0;
+      stats.downgradeNoValidCitation +=
+        json.downgradeReason === 'NO_VALID_CITATION' ? 1 : 0;
+      stats.downgradeNoProposal +=
+        json.downgradeReason === 'NO_PROPOSAL' ? 1 : 0;
+    }
+    return stats;
+  }
+
   async save(input: SaveStudyBriefInput): Promise<{ id: number }> {
     const row = await this.prisma.studyBrief.create({
       data: {
@@ -82,6 +180,7 @@ export class StudyBriefPrismaRepository implements StudyBriefRepositoryPort {
         verdictJson: input.verdict as unknown as Prisma.InputJsonValue,
         reportMd: input.reportMd,
         sourceUrls: input.sourceUrls as Prisma.InputJsonValue,
+        studyKeywords: input.keywords as Prisma.InputJsonValue,
       },
       select: { id: true },
     });

@@ -27,6 +27,11 @@ import {
   NotionFileUploadPort,
 } from '../../notion/domain/port/notion-file-upload.port';
 import {
+  PREVIEW_ACTION_REPOSITORY_PORT,
+  PreviewActionRepositoryPort,
+} from '../../preview-gate/domain/port/preview-action.repository.port';
+import { PREVIEW_KIND } from '../../preview-gate/domain/preview-action.type';
+import {
   SLACK_NOTIFIER_PORT,
   SlackNotifierPort,
 } from '../../slack/domain/port/slack-notifier.port';
@@ -54,8 +59,16 @@ import {
   STUDY_BRIEF_PUBLISHER_PORT,
   StudyBriefPublisherPort,
 } from '../domain/port/study-brief-publisher.port';
+import {
+  isStudyApplyIssuePayload,
+  StudyApplyIssuePayload,
+} from '../domain/study-apply-issue.payload';
 import { StudyBriefException } from '../domain/study-brief.exception';
 import { StudyBriefVerdict } from '../domain/study-brief.type';
+import {
+  ADOPTION_WINDOW_DAYS,
+  StudyAdoption,
+} from '../domain/study-brief-cron.type';
 import {
   buildStudyResearchPrompt,
   BuildStudyResearchPromptInput,
@@ -83,6 +96,7 @@ interface StudyMaterials {
   recentBriefs: RecentStudyBrief[];
   installedTools: string[];
   repoModules: RepoModuleSummary[];
+  adoptionHistory: StudyAdoption[];
 }
 
 interface DeliverStudyBriefInput {
@@ -126,6 +140,8 @@ export class StudyBriefCronConsumer extends WorkerHost {
     private readonly cronIdempotency: CronIdempotencyService,
     private readonly configService: ConfigService,
     private readonly agentRunService: AgentRunService,
+    @Inject(PREVIEW_ACTION_REPOSITORY_PORT)
+    private readonly previewRepository: PreviewActionRepositoryPort,
     @Optional()
     private readonly notificationPublisher?: NotificationPublisher,
   ) {
@@ -201,6 +217,7 @@ export class StudyBriefCronConsumer extends WorkerHost {
         verdict,
         reportMd: research.reportMd,
         sourceUrls: research.sourceUrls,
+        keywords: research.keywords,
       });
       // 노션 발행 대상이 없는 Slack-only 구성에서는 그림을 만들 이유가 없다 — 어차피
       // publishToNotionOrNull() 이 결과를 버린다. codex 를 최대 두 번 돌리고 파일까지
@@ -258,14 +275,26 @@ export class StudyBriefCronConsumer extends WorkerHost {
   private async collectMaterials(
     ownerSlackUserId: string,
   ): Promise<StudyMaterials> {
-    const [profile, recentBriefs, installedTools, repoModules] =
-      await Promise.all([
-        this.collectProfile(ownerSlackUserId),
-        this.collectRecentBriefs(ownerSlackUserId),
-        this.collectInstalledTools(),
-        this.collectRepoModules(),
-      ]);
-    return { profile, recentBriefs, installedTools, repoModules };
+    const [
+      profile,
+      recentBriefs,
+      installedTools,
+      repoModules,
+      adoptionHistory,
+    ] = await Promise.all([
+      this.collectProfile(ownerSlackUserId),
+      this.collectRecentBriefs(ownerSlackUserId),
+      this.collectInstalledTools(),
+      this.collectRepoModules(),
+      this.collectAdoptionHistory(),
+    ]);
+    return {
+      profile,
+      recentBriefs,
+      installedTools,
+      repoModules,
+      adoptionHistory,
+    };
   }
 
   private async collectProfile(
@@ -442,11 +471,53 @@ export class StudyBriefCronConsumer extends WorkerHost {
       recentTopics: materials.recentBriefs.map((brief) => brief.topic),
       kindBalance: calculateKindBalance(materials.recentBriefs),
       installedTools: materials.installedTools,
+      adoptionHistory: materials.adoptionHistory,
     };
     const result = await this.hermesRunner.run(
       buildStudyResearchPrompt(promptInput),
     );
     return parseStudyResearch(result.stdout);
+  }
+
+  private async collectAdoptionHistory(): Promise<StudyAdoption[]> {
+    try {
+      const since = new Date(
+        Date.now() - ADOPTION_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+      );
+      const query = {
+        kind: PREVIEW_KIND.STUDY_APPLY_ISSUE,
+        since,
+        limit: 30,
+      };
+      const [applied, cancelled] = await Promise.all([
+        this.previewRepository.findRecentAppliedByKind(query),
+        this.previewRepository.findRecentCancelledByKind(query),
+      ]);
+      const decisions = [
+        ...applied.map((preview) => ({ preview, outcome: 'ADOPTED' as const })),
+        ...cancelled.map((preview) => ({
+          preview,
+          outcome: 'REJECTED' as const,
+        })),
+      ].filter(({ preview }) => isStudyApplyIssuePayload(preview.payload));
+      const topics = await this.studyBriefRepository.findTopicsByIds(
+        decisions.map(
+          ({ preview }) =>
+            (preview.payload as StudyApplyIssuePayload).studyBriefId,
+        ),
+      );
+      return decisions.flatMap(({ preview, outcome }) => {
+        const topic = topics.get(
+          (preview.payload as StudyApplyIssuePayload).studyBriefId,
+        );
+        return topic ? [{ topic, outcome }] : [];
+      });
+    } catch (error: unknown) {
+      this.logger.warn(
+        `적용 제안 채택 이력 수집 실패 — 되먹임 없이 진행: ${formatError(error)}`,
+      );
+      return [];
+    }
   }
 
   private async deliverOnce({

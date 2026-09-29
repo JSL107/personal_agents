@@ -138,6 +138,11 @@ export interface PreviewActionRepositoryPort {
     now: Date;
     limit: number;
   }): Promise<PreviewAction[]>;
+  findRecentCancelledByKind(input: {
+    kind: PreviewKind;
+    since: Date;
+    limit: number;
+  }): Promise<PreviewAction[]>;
   // 콘솔 관제 — 아직 열려 있는(PENDING & 미만료) preview 전체. 사용자 구분 없이 모두 조회.
   findAllOpen(input: { now: Date }): Promise<PreviewAction[]>;
   // 대표 브리핑 연속 기록 — 카드가 언제 떠서 언제 결말이 났는지만 전건 조회.

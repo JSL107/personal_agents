@@ -77,6 +77,7 @@ const buildRepo = (
   findAllOpen: jest.fn().mockResolvedValue([]),
   findAllDayOutcomes: jest.fn().mockResolvedValue([]),
   findRecentAppliedByKind: jest.fn().mockResolvedValue([]),
+  findRecentCancelledByKind: jest.fn().mockResolvedValue([]),
 });
 
 const buildCard = (): jest.Mocked<PreviewCardPort> => ({

@@ -73,8 +73,9 @@ describe('AutopilotScheduler', () => {
     //   + screening-scorecard(주간 성적 카드, 단독 그룹)
     //   + blog-revision-report(주간 블로그 수정률, 단독 그룹)
     //   + memory-vacuum(주간 세션 기억 색인 청소, 단독 그룹)
-    //   + holiday-sync(주간 한국 공휴일 동기화, 단독 그룹) = 35그룹.
-    expect(queue.add).toHaveBeenCalledTimes(35);
+    //   + holiday-sync(주간 한국 공휴일 동기화, 단독 그룹)
+    //   + study-applicability(오늘의 공부 적용 판정, 단독 그룹) = 36그룹.
+    expect(queue.add).toHaveBeenCalledTimes(36);
     expect(addCalls).toContain('memory-vacuum');
     expect(addCalls).toContain('holiday-sync');
     expect(addCalls).toContain('screening-outcome-scoring');
@@ -83,6 +84,7 @@ describe('AutopilotScheduler', () => {
     expect(addCalls).toContain('portfolio-warmup');
     expect(addCalls).toContain('portfolio-publish');
     expect(addCalls).toContain('study-deepdive');
+    expect(addCalls).toContain('study-applicability');
     expect(addCalls).toContain('morning');
     expect(addCalls).toContain('noon');
     expect(addCalls).toContain('weekly-summary');

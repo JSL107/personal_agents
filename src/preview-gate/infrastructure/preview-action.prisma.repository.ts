@@ -466,6 +466,27 @@ export class PreviewActionPrismaRepository implements PreviewActionRepositoryPor
     return rows.map(toDomain);
   }
 
+  async findRecentCancelledByKind({
+    kind,
+    since,
+    limit,
+  }: {
+    kind: PreviewKind;
+    since: Date;
+    limit: number;
+  }): Promise<PreviewAction[]> {
+    const rows = await this.prisma.previewAction.findMany({
+      where: {
+        kind,
+        status: PREVIEW_STATUS.CANCELLED,
+        cancelledAt: { gte: since },
+      },
+      orderBy: { cancelledAt: 'desc' },
+      take: limit,
+    });
+    return rows.map(toDomain);
+  }
+
   async findAllDayOutcomes(): Promise<PreviewDayOutcomeRow[]> {
     const rows = await this.prisma.previewAction.findMany({
       select: { createdAt: true, appliedAt: true, cancelledAt: true },

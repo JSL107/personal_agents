@@ -44,6 +44,7 @@ import { ScreenerModule } from '../screener/screener.module';
 import { SLACK_NOTIFIER_PORT } from '../slack/domain/port/slack-notifier.port';
 import { SlackModule } from '../slack/slack.module';
 import { SlackService } from '../slack/slack.service';
+import { StudyApplicabilityModule } from '../study-brief-cron/study-applicability.module';
 import { StudyDeepdiveModule } from '../study-brief-cron/study-deepdive.module';
 import { AutopilotOrchestrator } from './application/autopilot.orchestrator';
 import { AutopilotScheduler } from './application/autopilot.scheduler';
@@ -86,6 +87,7 @@ import { ScreeningScorecardAutopilotTask } from './infrastructure/tasks/screenin
 import { SecretariatAutopilotTask } from './infrastructure/tasks/secretariat.autopilot-task';
 import { StockAlertScoringAutopilotTask } from './infrastructure/tasks/stock-alert-scoring.autopilot-task';
 import { StockMonitorAutopilotTask } from './infrastructure/tasks/stock-monitor.autopilot-task';
+import { StudyApplicabilityAutopilotTask } from './infrastructure/tasks/study-applicability.autopilot-task';
 import { StudyDeepdiveAutopilotTask } from './infrastructure/tasks/study-deepdive.autopilot-task';
 import { UniverseSweepAutopilotTask } from './infrastructure/tasks/universe-sweep.autopilot-task';
 import { WeeklySummaryAutopilotTask } from './infrastructure/tasks/weekly-summary.autopilot-task';
@@ -129,6 +131,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     ScreenerModule,
     AiCliEnvModule,
     StudyDeepdiveModule,
+    StudyApplicabilityModule,
     JobFeedModule,
     ScheduleModule,
   ],
@@ -177,6 +180,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     AiCliEnvSnapshotAutopilotTask,
     AiCliEnvApplyAutopilotTask,
     StudyDeepdiveAutopilotTask,
+    StudyApplicabilityAutopilotTask,
     JobFeedAutopilotTask,
     JobFeedGapAutopilotTask,
     {
@@ -280,6 +284,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         aiCliEnvSnapshot: AiCliEnvSnapshotAutopilotTask,
         aiCliEnvApply: AiCliEnvApplyAutopilotTask,
         studyDeepdive: StudyDeepdiveAutopilotTask,
+        studyApplicability: StudyApplicabilityAutopilotTask,
         jobFeed: JobFeedAutopilotTask,
         jobFeedGap: JobFeedGapAutopilotTask,
       ) => [
@@ -320,6 +325,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         aiCliEnvSnapshot,
         aiCliEnvApply,
         studyDeepdive,
+        studyApplicability,
         jobFeed,
         jobFeedGap,
       ],
@@ -361,6 +367,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         AiCliEnvSnapshotAutopilotTask,
         AiCliEnvApplyAutopilotTask,
         StudyDeepdiveAutopilotTask,
+        StudyApplicabilityAutopilotTask,
         JobFeedAutopilotTask,
         JobFeedGapAutopilotTask,
       ],

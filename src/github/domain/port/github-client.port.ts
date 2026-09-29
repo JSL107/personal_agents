@@ -91,6 +91,18 @@ export interface AddIssueCommentInput {
   body: string;
 }
 
+export interface CreateIssueInput {
+  repo: string;
+  title: string;
+  body: string;
+  assignees?: string[];
+}
+
+export interface CreatedIssue {
+  number: number;
+  url: string;
+}
+
 // `/impact-report --recent <N>d` 다중 PR 종합 조회 옵션.
 export interface ListAuthorMergedPullRequestsOptions {
   // "owner/repo" — env IMPACT_REPORT_GITHUB_REPO 에서 가져옴. null 이면 author 의 모든 repo
@@ -217,6 +229,8 @@ export interface GithubClientPort {
   // PM-2: 사용자 ✅ apply 후 Issue/PR 코멘트로 WBS subtask checklist 등을 append.
   // GitHub PAT 가 `repo` 또는 fine-grained `Issues: Read+Write` scope 가 있어야 동작.
   addIssueComment(input: AddIssueCommentInput): Promise<void>;
+
+  createIssue(input: CreateIssueInput): Promise<CreatedIssue>;
 
   // `/impact-report --recent <N>d` — 지정 author 가 sinceIsoDate 이후 merge 한 PR 들의
   // lightweight summary (정량 stat + body cap 포함). limit 상한 이내 (mergedAt DESC).
