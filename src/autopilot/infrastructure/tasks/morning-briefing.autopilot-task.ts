@@ -68,7 +68,10 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
         outcome.result.plan,
         this.humanizeService,
       );
-      const formatted = formatDailyPlan(humanizedPlan);
+      const formatted = formatDailyPlan(
+        humanizedPlan,
+        outcome.result.inputTruncation,
+      );
       const summaryText =
         formatted.summary + formatWaitingSection(outcome.result.waitingItems);
       const detailText = formatted.detail + formatModelFooter(outcome);

@@ -91,11 +91,23 @@ export interface DailyPlanSource {
   url?: string;
 }
 
+// 프롬프트 상한 때문에 모델이 보지 못한 입력. 숫자는 source 별로 생략된 항목 수,
+// droppedSections 는 통째로 빠진 섹션 이름(꼬리 절단은 `__TAIL_TRUNCATED__`).
+export interface PlanInputTruncation {
+  github: number;
+  notion: number;
+  slackMentions: number;
+  inboxItems: number;
+  droppedSections: string[];
+}
+
 export interface DailyPlanResult {
   plan: DailyPlan;
   sources: DailyPlanSource[];
   // 아침 브리핑 완료/대기 강등 항목 (cron + 토글 ON 일 때만 채워짐. /today 는 빈 배열).
   waitingItems: WaitingItem[];
+  // 모델은 잘린 줄 모르고 답하므로 받는 사람에게 알리려고 결과까지 싣는다.
+  inputTruncation: PlanInputTruncation;
 }
 
 // PM Agent `/today` 한 번 실행에 대해 AgentRun.inputSnapshot 으로 저장되는 메트릭/메타 집합.

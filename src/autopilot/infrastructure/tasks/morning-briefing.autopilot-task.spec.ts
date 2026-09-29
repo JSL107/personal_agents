@@ -12,6 +12,14 @@ import {
 } from '../../../schedule/domain/schedule.type';
 import { MorningBriefingAutopilotTask } from './morning-briefing.autopilot-task';
 
+const NO_TRUNCATION = {
+  github: 0,
+  notion: 0,
+  slackMentions: 0,
+  inboxItems: 0,
+  droppedSections: [],
+};
+
 const CTX = { ownerSlackUserId: 'U1', firedAtKst: '2026-06-17' };
 
 const mockTask = {
@@ -63,6 +71,7 @@ describe('MorningBriefingAutopilotTask', () => {
         plan: basePlan,
         sources: [],
         waitingItems: [],
+        inputTruncation: NO_TRUNCATION,
       },
       modelUsed: 'codex-cli',
       agentRunId: 10,
@@ -100,6 +109,7 @@ describe('MorningBriefingAutopilotTask', () => {
         waitingItems: [
           { title: 'PR1', url: 'https://x/1', reason: '머지만 남음' },
         ],
+        inputTruncation: NO_TRUNCATION,
       },
       modelUsed: 'chatgpt',
       agentRunId: 1,
@@ -164,7 +174,12 @@ describe('MorningBriefingAutopilotTask', () => {
 
   describe('자산 한 줄', () => {
     const planOutcome = {
-      result: { plan: basePlan, sources: [], waitingItems: [] },
+      result: {
+        plan: basePlan,
+        sources: [],
+        waitingItems: [],
+        inputTruncation: NO_TRUNCATION,
+      },
       modelUsed: 'codex-cli',
       agentRunId: 10,
     };
@@ -325,7 +340,12 @@ describe('MorningBriefingAutopilotTask', () => {
 
   describe('마감 줄', () => {
     const planOutcome = {
-      result: { plan: basePlan, sources: [], waitingItems: [] },
+      result: {
+        plan: basePlan,
+        sources: [],
+        waitingItems: [],
+        inputTruncation: NO_TRUNCATION,
+      },
       modelUsed: 'codex-cli',
       agentRunId: 10,
     };
