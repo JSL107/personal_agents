@@ -41,6 +41,7 @@ import {
   ReplayRate,
   sampleIdsOf,
   scoreReplay,
+  skippedCountOf,
   summarizeTrials,
   TrialSummary,
 } from '../src/pr-review-loop/domain/review-replay.score';
@@ -96,7 +97,7 @@ interface ReplayReport {
   trials: { rejected: TrialSummary; fixed: TrialSummary };
   baseline?: {
     path: string;
-    // 두 보고서가 같은 카드를 재생했는가. 다르면 차이는 프롬프트가 아니라 문제지 탓일 수 있다.
+    // 두 보고서가 같은 카드를 스킵 없이 쟀는가. 아니면 차이는 프롬프트가 아니라 문제지 탓일 수 있다.
     sameSample: boolean;
     rejected: BaselineComparison;
     fixed: BaselineComparison;
@@ -227,10 +228,13 @@ const main = async (): Promise<void> => {
         : {
             baseline: {
               path: options.baseline,
-              sameSample: isSameSample(
-                baselineReport.sampleIds,
-                sampleIdsOf({ groups: reportGroups, skipped }),
-              ),
+              sameSample:
+                baselineReport.skipped === 0 &&
+                skipped.length === 0 &&
+                isSameSample(
+                  baselineReport.sampleIds,
+                  sampleIdsOf({ groups: reportGroups }),
+                ),
               rejected: compareWithBaseline(
                 trials.rejected,
                 baselineReport.summaries.rejected,
@@ -260,7 +264,7 @@ const main = async (): Promise<void> => {
               ...(report.baseline.sameSample
                 ? []
                 : [
-                    '경고: 기준선과 재생한 카드가 다르다 — 차이는 문제지 탓일 수 있다. 같은 --ids 로 다시 돌릴 것',
+                    '경고: 기준선과 측정한 카드가 다르거나 어느 쪽에 스킵이 있다 — 차이는 문제지 탓일 수 있다. 같은 --ids 로 스킵 없이 다시 돌릴 것',
                   ]),
               formatBaselineLine('오탐 재발', report.baseline.rejected),
               formatBaselineLine('정탐 유지', report.baseline.fixed),
@@ -292,6 +296,7 @@ const readBaseline = (
 ): {
   summaries: { rejected: TrialSummary; fixed: TrialSummary };
   sampleIds: number[];
+  skipped: number;
 } => {
   const report: unknown = JSON.parse(readFileSync(path, 'utf8'));
   const summaries = readBaselineSummaries(report);
@@ -300,7 +305,11 @@ const readBaseline = (
       `--baseline ${path} 는 review:replay 보고서 형식이 아닙니다.`,
     );
   }
-  return { summaries, sampleIds: sampleIdsOf(report) };
+  return {
+    summaries,
+    sampleIds: sampleIdsOf(report),
+    skipped: skippedCountOf(report),
+  };
 };
 
 const percent = (rate: number | null): string =>

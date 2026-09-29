@@ -241,6 +241,9 @@ export interface BaselineComparison {
   reason: string;
 }
 
+const measuredTrials = (summary: TrialSummary): number =>
+  summary.rates.filter((rate) => rate !== null).length;
+
 export const compareWithBaseline = (
   current: TrialSummary,
   baseline: TrialSummary,
@@ -257,12 +260,14 @@ export const compareWithBaseline = (
   if (delta === null) {
     return { ...base, verdict: '판단 불가', reason: '한쪽에 재현율이 없다' };
   }
-  if (current.trials < 2 || baseline.trials < 2) {
+  // 요청한 회차(trials)가 아니라 실제로 값이 나온 회차를 센다. 한 회차가 통째로 스킵되면
+  // 관측 하나로 범위를 삼게 되어, 근거 없이 "범위 안/밖" 을 확정한다.
+  if (measuredTrials(current) < 2 || measuredTrials(baseline) < 2) {
     return {
       ...base,
       verdict: '판단 불가',
       reason:
-        '회차가 1번인 쪽이 있어 변동 폭을 모른다 — 양쪽 모두 --trials 2 이상으로 돌릴 것',
+        '실제로 측정된 회차가 2번 미만인 쪽이 있어 변동 폭을 모른다 — 양쪽 모두 스킵 없이 --trials 2 이상으로 돌릴 것',
     };
   }
   // meanRate 가 있으면 min/max 도 있다.
@@ -306,17 +311,40 @@ export const readBaselineSummaries = (
   return null;
 };
 
-const isTrialSummary = (value: unknown): value is TrialSummary =>
-  typeof value === 'object' &&
-  value !== null &&
-  typeof (value as TrialSummary).trials === 'number' &&
-  Array.isArray((value as TrialSummary).rates);
+// 필드 하나라도 빠지거나 타입이 틀리면 거부한다 — 받아들이면 비교에 NaN·undefined 가 섞여
+// "형식이 틀리면 모델을 부르기 전에 실패한다" 는 약속이 깨진다.
+const isRateValue = (value: unknown): boolean =>
+  value === null || typeof value === 'number';
 
-const isReplayRate = (value: unknown): value is ReplayRate =>
-  typeof value === 'object' &&
-  value !== null &&
-  typeof (value as ReplayRate).total === 'number' &&
-  typeof (value as ReplayRate).reproduced === 'number';
+const isTrialSummary = (value: unknown): value is TrialSummary => {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const summary = value as Record<keyof TrialSummary, unknown>;
+  return (
+    typeof summary.trials === 'number' &&
+    typeof summary.total === 'number' &&
+    Array.isArray(summary.rates) &&
+    summary.rates.every(isRateValue) &&
+    isRateValue(summary.meanRate) &&
+    isRateValue(summary.minRate) &&
+    isRateValue(summary.maxRate) &&
+    typeof summary.anyTrial === 'number' &&
+    typeof summary.everyTrial === 'number'
+  );
+};
+
+const isReplayRate = (value: unknown): value is ReplayRate => {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const rate = value as Record<keyof ReplayRate, unknown>;
+  return (
+    typeof rate.total === 'number' &&
+    typeof rate.reproduced === 'number' &&
+    isRateValue(rate.rate)
+  );
+};
 
 const fromSingleRate = (rate: ReplayRate): TrialSummary => ({
   trials: 1,
@@ -329,16 +357,15 @@ const fromSingleRate = (rate: ReplayRate): TrialSummary => ({
   everyTrial: rate.reproduced,
 });
 
-// 보고서가 다룬 카드 id. 재생된 것과 스킵된 것을 모두 센다 — 표본이 무엇이었는지가 목적이다.
-// `--ids` 없이 돌리면 표본은 "최근 카드 N건" 이라 새 카드가 쌓이면 바뀐다. 다른 문제지끼리의
-// 비교를 막지는 않되 알린다.
+// 보고서에서 실제로 측정된 카드 id. 스킵된 카드는 넣지 않는다 — 선택한 표본이 같아도 서로 다른
+// 그룹이 실패하면 재현율은 다른 카드 부분집합으로 계산되기 때문이다. 스킵 여부는 따로 센다.
+// `--ids` 없이 돌리면 표본은 "최근 카드 N건" 이라 새 카드가 쌓이면 바뀐다. 비교를 막지는 않되 알린다.
 export const sampleIdsOf = (report: unknown): number[] => {
   if (typeof report !== 'object' || report === null) {
     return [];
   }
-  const { groups, skipped } = report as {
+  const { groups } = report as {
     groups?: { results?: { id?: unknown }[] }[];
-    skipped?: { findingIds?: unknown[] }[];
   };
   const ids = new Set<number>();
   for (const group of groups ?? []) {
@@ -348,14 +375,16 @@ export const sampleIdsOf = (report: unknown): number[] => {
       }
     }
   }
-  for (const skip of skipped ?? []) {
-    for (const id of skip.findingIds ?? []) {
-      if (typeof id === 'number') {
-        ids.add(id);
-      }
-    }
-  }
   return Array.from(ids).sort((left, right) => left - right);
+};
+
+// 스킵이 하나라도 있으면 회차마다 측정한 카드가 달랐을 수 있다.
+export const skippedCountOf = (report: unknown): number => {
+  if (typeof report !== 'object' || report === null) {
+    return 0;
+  }
+  const { skipped } = report as { skipped?: unknown[] };
+  return Array.isArray(skipped) ? skipped.length : 0;
 };
 
 export const isSameSample = (

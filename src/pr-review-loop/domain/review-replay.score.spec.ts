@@ -8,6 +8,7 @@ import {
   ReplayedFinding,
   sampleIdsOf,
   scoreReplay,
+  skippedCountOf,
   summarizeTrials,
   TrialSummary,
 } from './review-replay.score';
@@ -291,6 +292,20 @@ describe('compareWithBaseline', () => {
     ).toBe('변동 범위 밖');
   });
 
+  // 요청은 2회였어도 한 회차가 통째로 스킵되면 관측은 하나뿐이다.
+  it('스킵으로 실제 측정 회차가 1번뿐이면 판단 불가', () => {
+    const current: TrialSummary = {
+      ...summaryOf([0.4]),
+      trials: 2,
+      rates: [0.4, null],
+    };
+
+    const comparison = compareWithBaseline(current, summaryOf([0.1, 0.12]));
+
+    expect(comparison.verdict).toBe('판단 불가');
+    expect(comparison.reason).toContain('실제로 측정된 회차');
+  });
+
   // 1회끼리의 차이는 회차 변동일 수 있어 어떤 결론도 낼 수 없다.
   it('어느 쪽이든 1회면 판단 불가', () => {
     const comparison = compareWithBaseline(
@@ -331,6 +346,37 @@ describe('readBaselineSummaries', () => {
     expect(summaries?.fixed.anyTrial).toBe(2);
   });
 
+  // 필드가 빠진 요약을 받으면 비교에 NaN·undefined 가 섞인다.
+  it('필드가 빠지거나 타입이 틀린 요약은 거부한다', () => {
+    const withoutMean: Partial<TrialSummary> = summaryOf([0.2, 0.3]);
+    delete withoutMean.meanRate;
+
+    expect(
+      readBaselineSummaries({
+        trials: { rejected: withoutMean, fixed: summaryOf([0.5, 0.6]) },
+      }),
+    ).toBeNull();
+    expect(
+      readBaselineSummaries({
+        trials: {
+          rejected: { ...summaryOf([0.2]), rates: ['0.2'] },
+          fixed: summaryOf([0.5]),
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it('반복 측정 전 보고서에서 rate 가 빠지면 거부한다', () => {
+    expect(
+      readBaselineSummaries({
+        score: {
+          rejected: { total: 4, reproduced: 1 },
+          fixed: { total: 2, reproduced: 2, rate: 1 },
+        },
+      }),
+    ).toBeNull();
+  });
+
   it('형식을 모르면 null', () => {
     expect(readBaselineSummaries({ foo: 1 })).toBeNull();
     expect(readBaselineSummaries(null)).toBeNull();
@@ -338,17 +384,19 @@ describe('readBaselineSummaries', () => {
 });
 
 describe('sampleIdsOf · isSameSample', () => {
-  // 회차마다 같은 카드가 반복되고, 스킵된 카드도 표본에 들어간다.
-  it('재생·스킵된 카드 id 를 중복 없이 정렬해 낸다', () => {
-    const ids = sampleIdsOf({
+  // 스킵된 카드는 재현율 계산에 안 들어가므로 측정 표본이 아니다. 스킵은 따로 센다.
+  it('실제로 측정된 카드 id 만 중복 없이 정렬해 내고, 스킵은 따로 센다', () => {
+    const report = {
       groups: [
         { results: [{ id: 5 }, { id: 2 }] },
         { results: [{ id: 5 }, { id: 2 }] },
       ],
       skipped: [{ findingIds: [9] }],
-    });
+    };
 
-    expect(ids).toEqual([2, 5, 9]);
+    expect(sampleIdsOf(report)).toEqual([2, 5]);
+    expect(skippedCountOf(report)).toBe(1);
+    expect(skippedCountOf({ groups: [] })).toBe(0);
   });
 
   it('같은 카드 집합일 때만 같은 표본이다', () => {
