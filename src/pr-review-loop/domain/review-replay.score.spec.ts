@@ -179,6 +179,7 @@ describe('scoreReplay', () => {
     expect(scoreReplay([])).toEqual({
       rejected: { total: 0, reproduced: 0, rate: null },
       fixed: { total: 0, reproduced: 0, rate: null },
+      missed: { total: 0, reproduced: 0, rate: null },
       results: [],
     });
   });
@@ -197,6 +198,7 @@ describe('scoreReplay', () => {
     expect(score).toEqual({
       rejected: { total: 2, reproduced: 1, rate: 0.5 },
       fixed: { total: 1, reproduced: 1, rate: 1 },
+      missed: { total: 0, reproduced: 0, rate: null },
       results: [
         { id: 1, label: 'REJECTED', reproduced: true, matched: REPLAYED },
         { id: 2, label: 'REJECTED', reproduced: false },
@@ -403,5 +405,78 @@ describe('sampleIdsOf · isSameSample', () => {
     expect(isSameSample([2, 5], [2, 5])).toBe(true);
     expect(isSameSample([2, 5], [2, 6])).toBe(false);
     expect(isSameSample([2], [2, 5])).toBe(false);
+  });
+});
+
+describe('scoreReplay — 미탐', () => {
+  const missed: LabeledFinding = {
+    id: -1,
+    label: 'MISSED',
+    filePath: 'BannerModel.ts',
+    line: 258,
+    category: '',
+    body: '정렬 비교가 NaN',
+  };
+
+  // 외부 리뷰 요약표는 파일 이름만 적는다 — 재생 지적의 전체 경로와 마지막 조각으로 맞춘다.
+  it('파일 이름만 있는 미탐을 전체 경로의 재생 지적과 매칭하고 미탐 재현율을 낸다', () => {
+    const score = scoreReplay([
+      {
+        labeled: missed,
+        replayed: [
+          {
+            file: 'src/models/BannerModel.ts',
+            line: 260,
+            category: 'X',
+            body: '',
+          },
+        ],
+      },
+    ]);
+
+    expect(score.missed).toEqual({ total: 1, reproduced: 1, rate: 1 });
+    expect(score.rejected.total).toBe(0);
+  });
+
+  // 둘 다 전체 경로면 종전처럼 전체를 비교한다 — 이름만 같은 다른 파일을 잡지 않게.
+  it('둘 다 경로가 있으면 디렉터리가 다를 때 매칭하지 않는다', () => {
+    const score = scoreReplay([
+      {
+        labeled: { ...LABELED, filePath: 'src/a/index.ts', line: 10 },
+        replayed: [
+          { file: 'src/b/index.ts', line: 10, category: 'X', body: '' },
+        ],
+      },
+    ]);
+
+    expect(score.rejected.reproduced).toBe(0);
+  });
+});
+
+describe('readBaselineSummaries — 미탐', () => {
+  it('미탐 요약이 있으면 함께 읽는다', () => {
+    const missed = summaryOf([0.3, 0.4]);
+
+    expect(
+      readBaselineSummaries({
+        trials: {
+          rejected: summaryOf([0.2, 0.3]),
+          fixed: summaryOf([0.8, 0.9]),
+          missed,
+        },
+      })?.missed,
+    ).toEqual(missed);
+  });
+
+  it('미탐 요약의 형식이 틀리면 거부한다', () => {
+    expect(
+      readBaselineSummaries({
+        trials: {
+          rejected: summaryOf([0.2, 0.3]),
+          fixed: summaryOf([0.8, 0.9]),
+          missed: { trials: 2 },
+        },
+      }),
+    ).toBeNull();
   });
 });

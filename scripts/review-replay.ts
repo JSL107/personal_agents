@@ -8,6 +8,9 @@
  * 오탐 억제 성능을 과대평가할 수 있다. --holdout 은 재생 대상 카드를 규약 재료에서 빼고 돈다.
  * 모델 출력은 회차마다 흔들리므로 비교는 --trials 2 이상으로, 이전 보고서는 --baseline 으로 붙인다.
  * 한 번 실행의 모델 호출 수는 (PR·headSha 그룹 수) × trials 다.
+ * --misses <json> 은 카드가 없는 미탐(외부 리뷰가 잡고 이대리는 놓친 결함)을 함께 재생해 미탐 재현율을 잰다.
+ * 형식은 `src/pr-review-loop/domain/review-replay-misses.ts`. 회사 저장소 위치가 담기므로 저장소에 커밋하지 않는다.
+ * 미탐만 재려면 --rejected 0 --fixed 0 을 함께 준다.
  * 리플레이 run은 CODE_REVIEWER/MANUAL로 원장에 남는다. 스윕 판정은
  * PR_REVIEW_SWEEP만 조회하므로 스윕 쿨다운에는 영향이 없다.
  * AppModule 대신 리뷰 모듈만 부팅해 BullMQ repeatable job 재등록을 피한다.
@@ -32,6 +35,7 @@ import {
 } from '../src/github/domain/port/github-client.port';
 import {
   BaselineComparison,
+  BaselineSummaries,
   compareWithBaseline,
   FindingReplayResult,
   isSameSample,
@@ -46,6 +50,33 @@ import {
   TrialSummary,
 } from '../src/pr-review-loop/domain/review-replay.score';
 import { summarizeDiff } from '../src/pr-review-loop/domain/review-replay-diff';
+import {
+  MissedFindingEntry,
+  parseMissedFindings,
+  resolveMissPath,
+  toMissedLabeledFinding,
+} from '../src/pr-review-loop/domain/review-replay-misses';
+
+// 미탐을 어느 커밋으로 재생했는지. 원장의 리뷰 실행 기록(agent_run)에는 리뷰한 커밋이 남지 않아,
+// 입력에 없으면 그 PR 의 가장 최근 카드 커밋을 쓴다. 이대리가 마지막 리뷰에서 지적을 하나도 안
+// 냈다면 그 커밋은 카드가 없어 이전 커밋이 잡힌다 — 그래서 출처를 보고서에 남긴다.
+interface ResolvedMiss {
+  id: number;
+  repo: string;
+  pullNumber: number;
+  headSha: string;
+  headShaSource: 'input' | 'latest-card';
+}
+
+// 파일 이름만 있던 미탐 중 전체 경로로 바꾸지 못한 것
+interface MissPathNote {
+  id: number;
+  repo: string;
+  pullNumber: number;
+  filePath: string;
+  kind: 'not-in-diff' | 'ambiguous';
+  candidates?: string[];
+}
 import { PrismaModule } from '../src/prisma/prisma.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 
@@ -59,6 +90,7 @@ interface ReplayOptions {
   trials: number;
   holdout: boolean;
   baseline?: string;
+  misses?: string;
 }
 
 interface ReplayGroup {
@@ -93,15 +125,24 @@ interface ReplayReport {
   generatedAt: string;
   options: ReplayOptions;
   // 모든 회차를 합친 값. trials=1 이면 종전 보고서와 같다.
-  score: { rejected: ReplayRate; fixed: ReplayRate };
-  trials: { rejected: TrialSummary; fixed: TrialSummary };
+  score: { rejected: ReplayRate; fixed: ReplayRate; missed: ReplayRate };
+  trials: {
+    rejected: TrialSummary;
+    fixed: TrialSummary;
+    missed?: TrialSummary;
+  };
   baseline?: {
     path: string;
     // 두 보고서가 같은 카드를 스킵 없이 쟀는가. 아니면 차이는 프롬프트가 아니라 문제지 탓일 수 있다.
     sameSample: boolean;
     rejected: BaselineComparison;
     fixed: BaselineComparison;
+    missed?: BaselineComparison;
   };
+  // 리뷰한 커밋을 원장에서 찾지 못해 재생하지 못한 미탐
+  unresolvedMisses: MissedFindingEntry[];
+  resolvedMisses: ResolvedMiss[];
+  missPathNotes: MissPathNote[];
   groups: ReplayGroupReport[];
   skipped: SkippedGroup[];
 }
@@ -138,10 +179,18 @@ const main = async (): Promise<void> => {
       options.baseline === undefined
         ? undefined
         : readBaseline(options.baseline);
+    const misses =
+      options.misses === undefined ? [] : readMisses(options.misses);
     const rows = await selectFindings(prisma, options);
     const groups = groupFindings(rows);
+    const { unresolved: unresolvedMisses, resolved: resolvedMisses } =
+      await addMisses(prisma, groups, misses);
+    const missPathNotes: MissPathNote[] = [];
+    // 미탐은 카드가 없어(음수 id) 규약 재료가 아니다 — 카드 id 만 뺀다.
     const holdoutIds = options.holdout
-      ? groups.flatMap((group) => group.findings.map((finding) => finding.id))
+      ? groups.flatMap((group) =>
+          group.findings.map((finding) => finding.id).filter((id) => id > 0),
+        )
       : undefined;
     const reportGroups: ReplayGroupReport[] = [];
     const skipped: SkippedGroup[] = [];
@@ -169,6 +218,29 @@ const main = async (): Promise<void> => {
           detail: { ...currentDetail, headSha, ...summarizeDiff(diff.diff) },
           diff,
         };
+        const changedFiles = snapshot.detail.changedFiles;
+        group.findings = group.findings.map((finding) => {
+          if (finding.label !== 'MISSED' || finding.filePath === null) {
+            return finding;
+          }
+          const resolution = resolveMissPath(finding.filePath, changedFiles);
+          if (
+            resolution.kind === 'not-in-diff' ||
+            resolution.kind === 'ambiguous'
+          ) {
+            missPathNotes.push({
+              id: finding.id,
+              repo: repository,
+              pullNumber,
+              filePath: finding.filePath,
+              kind: resolution.kind,
+              ...(resolution.kind === 'ambiguous'
+                ? { candidates: resolution.candidates }
+                : {}),
+            });
+          }
+          return { ...finding, filePath: resolution.filePath };
+        });
       } catch (error: unknown) {
         for (let trial = 1; trial <= options.trials; trial += 1) {
           skipped.push(toSkipped(group, trial, error));
@@ -213,15 +285,18 @@ const main = async (): Promise<void> => {
       }
     }
 
-    const { rejected, fixed } = scoreReplay(pairs);
+    const { rejected, fixed, missed } = scoreReplay(pairs);
+    const hasMisses = misses.length > 0;
     const trials = {
       rejected: summarizeTrials(trialResults, 'REJECTED'),
       fixed: summarizeTrials(trialResults, 'FIXED'),
+      ...(hasMisses ? { missed: summarizeTrials(trialResults, 'MISSED') } : {}),
     };
+    const baselineMissed = baselineReport?.summaries.missed;
     const report: ReplayReport = {
       generatedAt: new Date().toISOString(),
       options,
-      score: { rejected, fixed },
+      score: { rejected, fixed, missed },
       trials,
       ...(baselineReport === undefined || options.baseline === undefined
         ? {}
@@ -243,8 +318,16 @@ const main = async (): Promise<void> => {
                 trials.fixed,
                 baselineReport.summaries.fixed,
               ),
+              ...(trials.missed === undefined || baselineMissed === undefined
+                ? {}
+                : {
+                    missed: compareWithBaseline(trials.missed, baselineMissed),
+                  }),
             },
           }),
+      unresolvedMisses,
+      resolvedMisses,
+      missPathNotes,
       groups: reportGroups,
       skipped,
     };
@@ -258,6 +341,17 @@ const main = async (): Promise<void> => {
         `회차 ${options.trials}${options.holdout ? ' · holdout' : ''}`,
         formatTrialLine('오탐 재발', trials.rejected),
         formatTrialLine('정탐 유지', trials.fixed),
+        ...(trials.missed === undefined
+          ? []
+          : [formatTrialLine('미탐 재현', trials.missed)]),
+        ...(unresolvedMisses.length === 0
+          ? []
+          : [`미탐 중 리뷰 커밋을 못 찾아 뺀 것 ${unresolvedMisses.length}`]),
+        ...(missPathNotes.length === 0
+          ? []
+          : [
+              `미탐 중 전체 경로를 못 정한 것 ${missPathNotes.length} (보고서 missPathNotes — 이름만으로 매칭된다)`,
+            ]),
         ...(report.baseline === undefined
           ? []
           : [
@@ -268,6 +362,9 @@ const main = async (): Promise<void> => {
                   ]),
               formatBaselineLine('오탐 재발', report.baseline.rejected),
               formatBaselineLine('정탐 유지', report.baseline.fixed),
+              ...(report.baseline.missed === undefined
+                ? []
+                : [formatBaselineLine('미탐 재현', report.baseline.missed)]),
             ]),
         `스킵 ${skipped.length}`,
         '',
@@ -294,7 +391,7 @@ const toSkipped = (
 const readBaseline = (
   path: string,
 ): {
-  summaries: { rejected: TrialSummary; fixed: TrialSummary };
+  summaries: BaselineSummaries;
   sampleIds: number[];
   skipped: number;
 } => {
@@ -373,23 +470,12 @@ const selectFindings = async (
 };
 
 const groupFindings = (rows: readonly PrReviewFinding[]): ReplayGroup[] => {
-  const groups = new Map<string, ReplayGroup>();
+  const groups: ReplayGroup[] = [];
   for (const row of rows) {
     if (row.status !== 'REJECTED' && row.status !== 'FIXED') {
       continue;
     }
-    const key = JSON.stringify([row.repo, row.pullNumber, row.headSha]);
-    let group = groups.get(key);
-    if (group === undefined) {
-      group = {
-        repo: row.repo,
-        pullNumber: row.pullNumber,
-        headSha: row.headSha,
-        findings: [],
-      };
-      groups.set(key, group);
-    }
-    group.findings.push({
+    addToGroup(groups, row, {
       id: row.id,
       label: row.status,
       filePath: row.filePath,
@@ -398,7 +484,89 @@ const groupFindings = (rows: readonly PrReviewFinding[]): ReplayGroup[] => {
       body: row.body,
     });
   }
-  return Array.from(groups.values());
+  return groups;
+};
+
+// 같은 PR·headSha 면 한 그룹 — 카드와 미탐이 같은 커밋이면 리뷰 한 번으로 함께 잰다.
+const addToGroup = (
+  groups: ReplayGroup[],
+  key: { repo: string; pullNumber: number; headSha: string },
+  finding: LabeledFinding,
+): void => {
+  const found = groups.find(
+    (group) =>
+      group.repo.toLowerCase() === key.repo.toLowerCase() &&
+      group.pullNumber === key.pullNumber &&
+      group.headSha === key.headSha,
+  );
+  if (found !== undefined) {
+    found.findings.push(finding);
+    return;
+  }
+  groups.push({
+    repo: key.repo,
+    pullNumber: key.pullNumber,
+    headSha: key.headSha,
+    findings: [finding],
+  });
+};
+
+// 미탐 파일은 모델을 부르기 전에 읽고, 형식이 틀린 항목이 하나라도 있으면 멈춘다.
+const readMisses = (path: string): MissedFindingEntry[] => {
+  const { entries, errors } = parseMissedFindings(
+    JSON.parse(readFileSync(path, 'utf8')),
+  );
+  if (errors.length > 0) {
+    throw new Error(`--misses ${path} 형식 오류:\n${errors.join('\n')}`);
+  }
+  return entries;
+};
+
+// headSha 가 없는 미탐은 그 PR 의 가장 최근 카드 커밋으로 재생한다(한계는 ResolvedMiss 참조).
+// 외부 리뷰가 본 커밋과 다를 수 있어 줄 번호가 조금 어긋날 수 있다(매칭 허용 오차 안이면 잡힌다).
+const addMisses = async (
+  prisma: PrismaService,
+  groups: ReplayGroup[],
+  misses: readonly MissedFindingEntry[],
+): Promise<{ unresolved: MissedFindingEntry[]; resolved: ResolvedMiss[] }> => {
+  const unresolved: MissedFindingEntry[] = [];
+  const resolved: ResolvedMiss[] = [];
+  for (const [index, entry] of misses.entries()) {
+    const headSha =
+      entry.headSha ??
+      (
+        await prisma.prReviewFinding.findFirst({
+          where: {
+            repo: { equals: entry.repo, mode: 'insensitive' },
+            pullNumber: entry.pullNumber,
+            headSha: { not: '' },
+          },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          select: { headSha: true },
+        })
+      )?.headSha;
+    if (headSha === undefined) {
+      process.stderr.write(
+        `경고: 미탐 ${index}번(${entry.repo}#${entry.pullNumber}) 제외 — 이대리가 리뷰한 커밋을 원장에서 못 찾음\n`,
+      );
+      unresolved.push(entry);
+      continue;
+    }
+    const labeled = toMissedLabeledFinding(entry);
+    resolved.push({
+      id: labeled.id,
+      repo: entry.repo,
+      pullNumber: entry.pullNumber,
+      headSha,
+      headShaSource: entry.headSha === undefined ? 'latest-card' : 'input',
+    });
+    addToGroup(
+      groups,
+      { repo: entry.repo, pullNumber: entry.pullNumber, headSha },
+      labeled,
+    );
+  }
+  return { unresolved, resolved };
 };
 
 const readOptions = (): ReplayOptions => {
@@ -424,6 +592,7 @@ const readOptions = (): ReplayOptions => {
     trials: readInteger(readOption('trials') ?? '1', 'trials', 1),
     holdout: process.argv.includes('--holdout'),
     baseline: readOption('baseline'),
+    misses: readOption('misses'),
   };
   if (ids !== undefined) {
     return { ids, ...common };
