@@ -322,17 +322,7 @@ export class OctokitGithubClient implements GithubClientPort {
         pull_number: number,
         mediaType: { format: 'diff' },
       });
-      const diff = response.data as unknown as string;
-      const bytes = Buffer.byteLength(diff, 'utf-8');
-
-      if (bytes > maxBytes) {
-        return {
-          diff: diff.slice(0, maxBytes),
-          truncated: true,
-          bytes,
-        };
-      }
-      return { diff, truncated: false, bytes };
+      return truncateDiff(response.data as unknown as string, maxBytes);
     } catch (error: unknown) {
       throw this.wrapRequestFailed(error, `PR #${number} diff 조회 실패`);
     }
@@ -355,13 +345,7 @@ export class OctokitGithubClient implements GithubClientPort {
         head: headSha,
         mediaType: { format: 'diff' },
       });
-      const diff = response.data as unknown as string;
-      const bytes = Buffer.byteLength(diff, 'utf-8');
-
-      if (bytes > maxBytes) {
-        return { diff: diff.slice(0, maxBytes), truncated: true, bytes };
-      }
-      return { diff, truncated: false, bytes };
+      return truncateDiff(response.data as unknown as string, maxBytes);
     } catch (error: unknown) {
       throw this.wrapRequestFailed(
         error,
@@ -1438,4 +1422,24 @@ const computeLatestOtherActivityMs = (
     }
   }
   return times.length > 0 ? Math.max(...times) : null;
+};
+
+// 판정과 절단을 같은 단위(UTF-8 바이트)로 한다. 예전에는 바이트로 판정하고 글자 수로 잘라
+// 한글이 많은 diff 는 truncated=true 인데 전문이 들어가거나 50KB 를 훌쩍 넘겼다.
+// 멀티바이트 문자 중간에서 자르면 U+FFFD 가 남으므로, 절단 지점이 연속 바이트(10xxxxxx)면
+// 문자 경계까지 물린다. 디코딩 후 끝의 U+FFFD 를 지우면 원본에 있던 U+FFFD 까지 지운다.
+const truncateDiff = (diff: string, maxBytes: number): PullRequestDiff => {
+  const buffer = Buffer.from(diff, 'utf-8');
+  if (buffer.byteLength <= maxBytes) {
+    return { diff, truncated: false, bytes: buffer.byteLength };
+  }
+  let end = maxBytes;
+  while (end > 0 && (buffer[end] & 0xc0) === 0x80) {
+    end--;
+  }
+  return {
+    diff: buffer.subarray(0, end).toString('utf-8'),
+    truncated: true,
+    bytes: buffer.byteLength,
+  };
 };
