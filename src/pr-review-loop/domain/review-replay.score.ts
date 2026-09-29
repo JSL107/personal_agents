@@ -161,3 +161,206 @@ export const matchReplayedFinding = (
 const normalizePath = (path: string): string => {
   return path.trim().replace(/^(?:(?:\.\/)+)?(?:[ab]\/)?/, '');
 };
+
+// ── 반복 측정 ──────────────────────────────────────────────────────────────
+// 같은 표본을 여러 번 재생한 결과를 묶는다. 모델 출력은 회차마다 달라서, 한 번의 비교로는
+// 프롬프트 개선과 회차 변동을 가를 수 없다(다른 과제에서 같은 프롬프트 4회가 6.9~38% 로 흔들렸다).
+
+export interface TrialSummary {
+  trials: number;
+  // 이 라벨의 카드 수(회차 사이에 스킵된 카드도 한 번 보였으면 센다)
+  total: number;
+  // 회차별 재현율 — 그 회차에 스킵 없이 재생된 카드 기준. 카드가 없던 회차는 null
+  rates: (number | null)[];
+  meanRate: number | null;
+  minRate: number | null;
+  maxRate: number | null;
+  // 한 번이라도 재현된 카드 수(pass@k)
+  anyTrial: number;
+  // 모든 회차에서 재현된 카드 수(pass^k). 어느 회차에서 스킵된 카드는 들지 않는다
+  everyTrial: number;
+}
+
+export const summarizeTrials = (
+  trialResults: readonly (readonly FindingReplayResult[])[],
+  label: ReplayLabel,
+): TrialSummary => {
+  const reproducedCount = new Map<number, number>();
+  const seenCount = new Map<number, number>();
+  const rates = trialResults.map((results) => {
+    const ofLabel = results.filter((result) => result.label === label);
+    for (const result of ofLabel) {
+      seenCount.set(result.id, (seenCount.get(result.id) ?? 0) + 1);
+      if (result.reproduced) {
+        reproducedCount.set(
+          result.id,
+          (reproducedCount.get(result.id) ?? 0) + 1,
+        );
+      }
+    }
+    if (ofLabel.length === 0) {
+      return null;
+    }
+    return (
+      ofLabel.filter((result) => result.reproduced).length / ofLabel.length
+    );
+  });
+  const measured = rates.filter((rate): rate is number => rate !== null);
+  const trials = trialResults.length;
+  return {
+    trials,
+    total: seenCount.size,
+    rates,
+    meanRate:
+      measured.length === 0
+        ? null
+        : measured.reduce((sum, rate) => sum + rate, 0) / measured.length,
+    minRate: measured.length === 0 ? null : Math.min(...measured),
+    maxRate: measured.length === 0 ? null : Math.max(...measured),
+    anyTrial: Array.from(reproducedCount.values()).filter((count) => count > 0)
+      .length,
+    everyTrial: Array.from(reproducedCount.entries()).filter(
+      ([id, count]) => count === trials && seenCount.get(id) === trials,
+    ).length,
+  };
+};
+
+// ── 기준선 비교 ────────────────────────────────────────────────────────────
+// 두 실행의 회차별 재현율 범위(최소~최대)가 겹치면 차이를 회차 변동과 구분할 수 없다고 본다.
+// 어느 쪽이든 1회뿐이면 변동 폭을 모르므로 판정하지 않는다 — 점 하나끼리의 차이는 무엇이든 될 수 있다.
+// 좋고 나쁨은 라벨마다 반대다(REJECTED 재현=오탐 재발은 낮을수록, FIXED 재현=정탐 유지는 높을수록 좋다)
+// 그래서 방향은 판정하지 않고 차이와 범위만 낸다.
+
+export type BaselineVerdict = '변동 범위 안' | '변동 범위 밖' | '판단 불가';
+
+export interface BaselineComparison {
+  baselineMean: number | null;
+  currentMean: number | null;
+  delta: number | null;
+  verdict: BaselineVerdict;
+  reason: string;
+}
+
+export const compareWithBaseline = (
+  current: TrialSummary,
+  baseline: TrialSummary,
+): BaselineComparison => {
+  const delta =
+    current.meanRate === null || baseline.meanRate === null
+      ? null
+      : current.meanRate - baseline.meanRate;
+  const base = {
+    baselineMean: baseline.meanRate,
+    currentMean: current.meanRate,
+    delta,
+  };
+  if (delta === null) {
+    return { ...base, verdict: '판단 불가', reason: '한쪽에 재현율이 없다' };
+  }
+  if (current.trials < 2 || baseline.trials < 2) {
+    return {
+      ...base,
+      verdict: '판단 불가',
+      reason:
+        '회차가 1번인 쪽이 있어 변동 폭을 모른다 — 양쪽 모두 --trials 2 이상으로 돌릴 것',
+    };
+  }
+  // meanRate 가 있으면 min/max 도 있다.
+  const overlaps =
+    (current.minRate as number) <= (baseline.maxRate as number) &&
+    (baseline.minRate as number) <= (current.maxRate as number);
+  return overlaps
+    ? {
+        ...base,
+        verdict: '변동 범위 안',
+        reason: '두 실행의 회차별 범위가 겹친다',
+      }
+    : {
+        ...base,
+        verdict: '변동 범위 밖',
+        reason: '두 실행의 회차별 범위가 겹치지 않는다',
+      };
+};
+
+// 기준선 보고서에서 라벨별 요약을 꺼낸다. 반복 측정 전의 보고서(`score` 만 있는 것)는 1회차로 읽는다 —
+// 그래야 지금까지 쌓인 보고서와도 비교가 끊기지 않는다. 형태를 알 수 없으면 null.
+export const readBaselineSummaries = (
+  report: unknown,
+): { rejected: TrialSummary; fixed: TrialSummary } | null => {
+  if (typeof report !== 'object' || report === null) {
+    return null;
+  }
+  const { trials, score } = report as {
+    trials?: { rejected?: TrialSummary; fixed?: TrialSummary };
+    score?: { rejected?: ReplayRate; fixed?: ReplayRate };
+  };
+  if (isTrialSummary(trials?.rejected) && isTrialSummary(trials?.fixed)) {
+    return { rejected: trials.rejected, fixed: trials.fixed };
+  }
+  if (isReplayRate(score?.rejected) && isReplayRate(score?.fixed)) {
+    return {
+      rejected: fromSingleRate(score.rejected),
+      fixed: fromSingleRate(score.fixed),
+    };
+  }
+  return null;
+};
+
+const isTrialSummary = (value: unknown): value is TrialSummary =>
+  typeof value === 'object' &&
+  value !== null &&
+  typeof (value as TrialSummary).trials === 'number' &&
+  Array.isArray((value as TrialSummary).rates);
+
+const isReplayRate = (value: unknown): value is ReplayRate =>
+  typeof value === 'object' &&
+  value !== null &&
+  typeof (value as ReplayRate).total === 'number' &&
+  typeof (value as ReplayRate).reproduced === 'number';
+
+const fromSingleRate = (rate: ReplayRate): TrialSummary => ({
+  trials: 1,
+  total: rate.total,
+  rates: [rate.rate],
+  meanRate: rate.rate,
+  minRate: rate.rate,
+  maxRate: rate.rate,
+  anyTrial: rate.reproduced,
+  everyTrial: rate.reproduced,
+});
+
+// 보고서가 다룬 카드 id. 재생된 것과 스킵된 것을 모두 센다 — 표본이 무엇이었는지가 목적이다.
+// `--ids` 없이 돌리면 표본은 "최근 카드 N건" 이라 새 카드가 쌓이면 바뀐다. 다른 문제지끼리의
+// 비교를 막지는 않되 알린다.
+export const sampleIdsOf = (report: unknown): number[] => {
+  if (typeof report !== 'object' || report === null) {
+    return [];
+  }
+  const { groups, skipped } = report as {
+    groups?: { results?: { id?: unknown }[] }[];
+    skipped?: { findingIds?: unknown[] }[];
+  };
+  const ids = new Set<number>();
+  for (const group of groups ?? []) {
+    for (const result of group.results ?? []) {
+      if (typeof result.id === 'number') {
+        ids.add(result.id);
+      }
+    }
+  }
+  for (const skip of skipped ?? []) {
+    for (const id of skip.findingIds ?? []) {
+      if (typeof id === 'number') {
+        ids.add(id);
+      }
+    }
+  }
+  return Array.from(ids).sort((left, right) => left - right);
+};
+
+export const isSameSample = (
+  left: readonly number[],
+  right: readonly number[],
+): boolean =>
+  left.length === right.length &&
+  left.every((id, index) => id === right[index]);

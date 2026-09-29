@@ -214,6 +214,9 @@ export class PrReviewFindingPrismaRepository implements PrReviewFindingRepositor
         // 이유 없는 기각(👎 만 누른 경우)은 학습 재료가 아니다 — 무엇이 틀렸는지가 없다.
         rejectReason: { not: null },
         decidedAt: { gte: input.since },
+        ...(input.excludeFindingIds === undefined
+          ? {}
+          : { id: { notIn: input.excludeFindingIds } }),
       },
       select: { category: true, rejectReason: true, decidedAt: true },
       orderBy: { decidedAt: 'desc' },

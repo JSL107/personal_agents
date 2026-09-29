@@ -5,12 +5,14 @@
  * 파일 목록과 증감 줄 수는 그 diff에서 다시 센다. 제목·본문·작성자는 현재 값이다 —
  * GitHub가 과거 시점의 PR 본문을 주지 않으므로, 그 뒤 수정된 PR은 입력이 완전히 같지는 않다.
  * 학습 규약에는 재생 대상의 기각 사유가 이미 포함될 수 있어, 운영과 같은 조건이지만
- * 오탐 억제 성능을 과대평가할 수 있다. 중요한 변경은 같은 --ids로 두 번 실행한다.
+ * 오탐 억제 성능을 과대평가할 수 있다. --holdout 은 재생 대상 카드를 규약 재료에서 빼고 돈다.
+ * 모델 출력은 회차마다 흔들리므로 비교는 --trials 2 이상으로, 이전 보고서는 --baseline 으로 붙인다.
+ * 한 번 실행의 모델 호출 수는 (PR·headSha 그룹 수) × trials 다.
  * 리플레이 run은 CODE_REVIEWER/MANUAL로 원장에 남는다. 스윕 판정은
  * PR_REVIEW_SWEEP만 조회하므로 스윕 쿨다운에는 영향이 없다.
  * AppModule 대신 리뷰 모듈만 부팅해 BullMQ repeatable job 재등록을 피한다.
  */
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
@@ -21,15 +23,26 @@ import { ReviewPullRequestUsecase } from '../src/agent/code-reviewer/application
 import { CodeReviewerModule } from '../src/agent/code-reviewer/code-reviewer.module';
 import { TriggerType } from '../src/agent-run/domain/agent-run.type';
 import {
+  PullRequestDetail,
+  PullRequestDiff,
+} from '../src/github/domain/github.type';
+import {
   GITHUB_CLIENT_PORT,
   GithubClientPort,
 } from '../src/github/domain/port/github-client.port';
 import {
+  BaselineComparison,
+  compareWithBaseline,
   FindingReplayResult,
+  isSameSample,
   LabeledFinding,
+  readBaselineSummaries,
   ReplayPair,
   ReplayRate,
+  sampleIdsOf,
   scoreReplay,
+  summarizeTrials,
+  TrialSummary,
 } from '../src/pr-review-loop/domain/review-replay.score';
 import { summarizeDiff } from '../src/pr-review-loop/domain/review-replay-diff';
 import { PrismaModule } from '../src/prisma/prisma.module';
@@ -42,6 +55,9 @@ interface ReplayOptions {
   ids?: number[];
   repo?: string;
   out?: string;
+  trials: number;
+  holdout: boolean;
+  baseline?: string;
 }
 
 interface ReplayGroup {
@@ -52,6 +68,7 @@ interface ReplayGroup {
 }
 
 interface ReplayGroupReport {
+  trial: number;
   repo: string;
   pullNumber: number;
   headSha: string;
@@ -63,6 +80,7 @@ interface ReplayGroupReport {
 }
 
 interface SkippedGroup {
+  trial: number;
   repo: string;
   pullNumber: number;
   headSha: string;
@@ -73,7 +91,16 @@ interface SkippedGroup {
 interface ReplayReport {
   generatedAt: string;
   options: ReplayOptions;
+  // 모든 회차를 합친 값. trials=1 이면 종전 보고서와 같다.
   score: { rejected: ReplayRate; fixed: ReplayRate };
+  trials: { rejected: TrialSummary; fixed: TrialSummary };
+  baseline?: {
+    path: string;
+    // 두 보고서가 같은 카드를 재생했는가. 다르면 차이는 프롬프트가 아니라 문제지 탓일 수 있다.
+    sameSample: boolean;
+    rejected: BaselineComparison;
+    fixed: BaselineComparison;
+  };
   groups: ReplayGroupReport[];
   skipped: SkippedGroup[];
 }
@@ -105,15 +132,28 @@ const main = async (): Promise<void> => {
     const prisma = application.get(PrismaService);
     const github = application.get<GithubClientPort>(GITHUB_CLIENT_PORT);
     const usecase = application.get(ReviewPullRequestUsecase);
+    // 기준선은 모델을 부르기 전에 읽는다 — 경로가 틀려 쿼터만 쓰고 끝나지 않게.
+    const baselineReport =
+      options.baseline === undefined
+        ? undefined
+        : readBaseline(options.baseline);
     const rows = await selectFindings(prisma, options);
     const groups = groupFindings(rows);
+    const holdoutIds = options.holdout
+      ? groups.flatMap((group) => group.findings.map((finding) => finding.id))
+      : undefined;
     const reportGroups: ReplayGroupReport[] = [];
     const skipped: SkippedGroup[] = [];
     const pairs: ReplayPair[] = [];
+    const trialResults: FindingReplayResult[][] = Array.from(
+      { length: options.trials },
+      () => [],
+    );
 
     for (const group of groups) {
       const { repo: repository, pullNumber, headSha } = group;
-      const startedAt = Date.now();
+      // diff 는 회차가 달라도 같으므로 그룹마다 한 번만 가져온다.
+      let snapshot: { detail: PullRequestDetail; diff: PullRequestDiff };
       try {
         const currentDetail = await github.getPullRequest({
           repo: repository,
@@ -124,51 +164,83 @@ const main = async (): Promise<void> => {
           baseSha: currentDetail.baseSha,
           headSha,
         });
-        const detail = {
-          ...currentDetail,
-          headSha,
-          ...summarizeDiff(diff.diff),
+        snapshot = {
+          detail: { ...currentDetail, headSha, ...summarizeDiff(diff.diff) },
+          diff,
         };
-        const outcome = await usecase.execute({
-          prRef: `${repository}#${pullNumber}`,
-          slackUserId: 'cli-review-replay',
-          triggerType: TriggerType.MANUAL,
-          snapshot: { detail, diff },
-        });
-        const groupPairs = group.findings.map(
-          (labeled): ReplayPair => ({
-            labeled,
-            replayed: outcome.result.findings,
-          }),
-        );
-        const groupScore = scoreReplay(groupPairs);
-        reportGroups.push({
-          repo: repository,
-          pullNumber,
-          headSha,
-          agentRunId: outcome.agentRunId,
-          modelUsed: outcome.modelUsed,
-          elapsedMs: Date.now() - startedAt,
-          diffTruncated: diff.truncated,
-          results: groupScore.results,
-        });
-        pairs.push(...groupPairs);
       } catch (error: unknown) {
-        skipped.push({
-          repo: repository,
-          pullNumber,
-          headSha,
-          findingIds: group.findings.map((finding) => finding.id),
-          reason: error instanceof Error ? error.message : String(error),
-        });
+        for (let trial = 1; trial <= options.trials; trial += 1) {
+          skipped.push(toSkipped(group, trial, error));
+        }
+        continue;
+      }
+      for (let trial = 1; trial <= options.trials; trial += 1) {
+        const startedAt = Date.now();
+        try {
+          const outcome = await usecase.execute({
+            prRef: `${repository}#${pullNumber}`,
+            slackUserId: 'cli-review-replay',
+            triggerType: TriggerType.MANUAL,
+            snapshot,
+            ...(holdoutIds === undefined
+              ? {}
+              : { excludeConventionFindingIds: holdoutIds }),
+          });
+          const groupPairs = group.findings.map(
+            (labeled): ReplayPair => ({
+              labeled,
+              replayed: outcome.result.findings,
+            }),
+          );
+          const groupScore = scoreReplay(groupPairs);
+          reportGroups.push({
+            trial,
+            repo: repository,
+            pullNumber,
+            headSha,
+            agentRunId: outcome.agentRunId,
+            modelUsed: outcome.modelUsed,
+            elapsedMs: Date.now() - startedAt,
+            diffTruncated: snapshot.diff.truncated,
+            results: groupScore.results,
+          });
+          pairs.push(...groupPairs);
+          trialResults[trial - 1].push(...groupScore.results);
+        } catch (error: unknown) {
+          skipped.push(toSkipped(group, trial, error));
+        }
       }
     }
 
     const { rejected, fixed } = scoreReplay(pairs);
+    const trials = {
+      rejected: summarizeTrials(trialResults, 'REJECTED'),
+      fixed: summarizeTrials(trialResults, 'FIXED'),
+    };
     const report: ReplayReport = {
       generatedAt: new Date().toISOString(),
       options,
       score: { rejected, fixed },
+      trials,
+      ...(baselineReport === undefined || options.baseline === undefined
+        ? {}
+        : {
+            baseline: {
+              path: options.baseline,
+              sameSample: isSameSample(
+                baselineReport.sampleIds,
+                sampleIdsOf({ groups: reportGroups, skipped }),
+              ),
+              rejected: compareWithBaseline(
+                trials.rejected,
+                baselineReport.summaries.rejected,
+              ),
+              fixed: compareWithBaseline(
+                trials.fixed,
+                baselineReport.summaries.fixed,
+              ),
+            },
+          }),
       groups: reportGroups,
       skipped,
     };
@@ -178,12 +250,70 @@ const main = async (): Promise<void> => {
     }
     process.stdout.write(`${serialized}\n`);
     process.stderr.write(
-      `오탐 재발 ${rejected.reproduced}/${rejected.total}\n정탐 유지 ${fixed.reproduced}/${fixed.total}\n스킵 ${skipped.length}\n`,
+      [
+        `회차 ${options.trials}${options.holdout ? ' · holdout' : ''}`,
+        formatTrialLine('오탐 재발', trials.rejected),
+        formatTrialLine('정탐 유지', trials.fixed),
+        ...(report.baseline === undefined
+          ? []
+          : [
+              ...(report.baseline.sameSample
+                ? []
+                : [
+                    '경고: 기준선과 재생한 카드가 다르다 — 차이는 문제지 탓일 수 있다. 같은 --ids 로 다시 돌릴 것',
+                  ]),
+              formatBaselineLine('오탐 재발', report.baseline.rejected),
+              formatBaselineLine('정탐 유지', report.baseline.fixed),
+            ]),
+        `스킵 ${skipped.length}`,
+        '',
+      ].join('\n'),
     );
   } finally {
     await application.close();
   }
 };
+
+const toSkipped = (
+  group: ReplayGroup,
+  trial: number,
+  error: unknown,
+): SkippedGroup => ({
+  trial,
+  repo: group.repo,
+  pullNumber: group.pullNumber,
+  headSha: group.headSha,
+  findingIds: group.findings.map((finding) => finding.id),
+  reason: error instanceof Error ? error.message : String(error),
+});
+
+const readBaseline = (
+  path: string,
+): {
+  summaries: { rejected: TrialSummary; fixed: TrialSummary };
+  sampleIds: number[];
+} => {
+  const report: unknown = JSON.parse(readFileSync(path, 'utf8'));
+  const summaries = readBaselineSummaries(report);
+  if (summaries === null) {
+    throw new Error(
+      `--baseline ${path} 는 review:replay 보고서 형식이 아닙니다.`,
+    );
+  }
+  return { summaries, sampleIds: sampleIdsOf(report) };
+};
+
+const percent = (rate: number | null): string =>
+  rate === null ? '-' : `${(rate * 100).toFixed(1)}%`;
+
+const formatTrialLine = (label: string, summary: TrialSummary): string =>
+  `${label} 평균 ${percent(summary.meanRate)} (범위 ${percent(summary.minRate)}~${percent(summary.maxRate)}) · 카드 ${summary.total} · 한 번이라도 ${summary.anyTrial} · 매번 ${summary.everyTrial}`;
+
+const formatBaselineLine = (
+  label: string,
+  comparison: BaselineComparison,
+): string =>
+  `기준선 대비 ${label} ${percent(comparison.baselineMean)} → ${percent(comparison.currentMean)} · ${comparison.verdict} (${comparison.reason})`;
 
 const selectFindings = async (
   prisma: PrismaService,
@@ -278,14 +408,21 @@ const readOptions = (): ReplayOptions => {
   if (repository !== undefined && !/^[^/\s]+\/[^/\s]+$/.test(repository)) {
     throw new Error('--repo는 owner/repo 형식이어야 합니다.');
   }
+  const common = {
+    repo: repository,
+    out: readOption('out'),
+    // 기본 1회 — 종전 사용법과 쿼터 소비를 바꾸지 않는다.
+    trials: readInteger(readOption('trials') ?? '1', 'trials', 1),
+    holdout: process.argv.includes('--holdout'),
+    baseline: readOption('baseline'),
+  };
   if (ids !== undefined) {
-    return { ids, repo: repository, out: readOption('out') };
+    return { ids, ...common };
   }
   return {
     rejected: readInteger(readOption('rejected') ?? '5', 'rejected', 0),
     fixed: readInteger(readOption('fixed') ?? '5', 'fixed', 0),
-    repo: repository,
-    out: readOption('out'),
+    ...common,
   };
 };
 

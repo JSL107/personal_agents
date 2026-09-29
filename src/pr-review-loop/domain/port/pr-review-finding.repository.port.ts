@@ -48,6 +48,8 @@ export interface FindRejectionsForConventionsInput {
    * 영구히 빠진다. 결정의 정본은 `decidedAt` 이다.
    */
   since: Date;
+  /** 규약 재료에서 뺄 카드 id — 리뷰 재생 평가가 자기 정답을 프롬프트에 싣지 않게 한다. */
+  excludeFindingIds?: number[];
 }
 
 // 대표 브리핑 — 미회수 지적이 남은 PR 하나.

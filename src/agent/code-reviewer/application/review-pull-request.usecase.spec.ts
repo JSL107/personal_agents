@@ -904,6 +904,26 @@ describe('ReviewPullRequestUsecase × 학습 규약', () => {
     expect(windowDays).toBeLessThan(91);
   });
 
+  // 운영 경로는 제외 목록을 넘기지 않으므로 조회 조건이 종전과 같아야 한다.
+  it('제외 카드 id 는 넘겼을 때만 규약 조회에 전달한다', async () => {
+    const deps = makeDeps();
+
+    await buildUsecase(deps).execute({
+      prRef: 'JSL107/personal_agents#1',
+      slackUserId: 'U1',
+    });
+    await buildUsecase(deps).execute({
+      prRef: 'JSL107/personal_agents#1',
+      slackUserId: 'U1',
+      excludeConventionFindingIds: [11, 12],
+    });
+
+    const calls =
+      deps.findingRepository.findRejectionsForConventions.mock.calls;
+    expect(calls[0][0]).not.toHaveProperty('excludeFindingIds');
+    expect(calls[1][0].excludeFindingIds).toEqual([11, 12]);
+  });
+
   it('카드 저장소가 없으면 규약 없이 리뷰한다 — 미주입 회귀 0', async () => {
     const deps = makeDeps();
 

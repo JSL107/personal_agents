@@ -358,4 +358,21 @@ describe('PrReviewFindingPrismaRepository', () => {
       orderBy: { decidedAt: 'desc' },
     });
   });
+
+  // 리뷰 재생 --holdout — 재생 대상의 기각 사유가 규약으로 프롬프트에 섞이지 않게 뺀다.
+  it('제외 id 가 오면 규약 재료에서 뺀다', async () => {
+    prisma.prReviewFinding.findMany.mockResolvedValue([]);
+
+    await repository.findRejectionsForConventions({
+      repo: 'JSL107/personal_agents',
+      since: new Date('2026-05-28T00:00:00Z'),
+      excludeFindingIds: [3, 7],
+    });
+
+    expect(prisma.prReviewFinding.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: { notIn: [3, 7] } }),
+      }),
+    );
+  });
 });
