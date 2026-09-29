@@ -24,7 +24,11 @@ jest.mock('@slack/bolt', () => ({
 
 import { PullRequestReview } from '../agent/code-reviewer/domain/code-reviewer.type';
 import { ContextSummary } from '../agent/pm/application/sync-context.usecase';
-import { DailyPlan, TaskItem } from '../agent/pm/domain/pm-agent.type';
+import {
+  DailyPlan,
+  PlanInputTruncation,
+  TaskItem,
+} from '../agent/pm/domain/pm-agent.type';
 import { DailyReview } from '../agent/work-reviewer/domain/work-reviewer.type';
 import { QuotaStatsResult } from '../agent-run/application/get-quota-stats.usecase';
 import { formatContextSummary } from './format/context-summary.formatter';
@@ -34,6 +38,15 @@ import { formatModelFooter } from './format/model-footer.formatter';
 import { formatPullRequestReview } from './format/pull-request-review.formatter';
 import { formatQuotaStats } from './format/quota-stats.formatter';
 import { shouldRefreshSocketAfterDrift, SlackService } from './slack.service';
+
+const NO_TRUNCATION: PlanInputTruncation = {
+  github: 0,
+  notion: 0,
+  slackMentions: 0,
+  inboxItems: 0,
+  droppedSections: [],
+};
+const format = (target: DailyPlan) => formatDailyPlan(target, NO_TRUNCATION);
 
 const task = (title: string, overrides: Partial<TaskItem> = {}): TaskItem => ({
   id: overrides.id ?? `user:${title}`,
@@ -62,7 +75,7 @@ describe('formatDailyPlan', () => {
   // formatDailyPlan 은 summary(메인=오늘 할 일)/detail(스레드=판단 근거·이월·정체) 로 분리 반환 —
   // 슬래시 경로처럼 합본 문자열로 렌더해 기존 단일 메시지 기준으로 검증한다.
   const render = (plan: DailyPlan): string => {
-    const { summary, detail } = formatDailyPlan(plan);
+    const { summary, detail } = format(plan);
     return `${summary}\n\n${detail}`;
   };
 
@@ -331,7 +344,7 @@ describe('formatDailyPlan — lineage 라벨 (PRO-2)', () => {
   };
 
   it('NEW / CARRIED / POSTPONED 라벨이 각 task 앞에 prefix 로 붙는다', () => {
-    const output = formatDailyPlan(planWithLineage).summary;
+    const output = format(planWithLineage).summary;
     expect(output).toContain('🆕');
     expect(output).toContain('🔁');
     expect(output).toContain('⏭');
@@ -344,7 +357,7 @@ describe('formatDailyPlan — lineage 라벨 (PRO-2)', () => {
       morning: [task('legacy morning')],
       afternoon: [task('legacy afternoon')],
     };
-    const output = formatDailyPlan(legacyPlan).summary;
+    const output = format(legacyPlan).summary;
     expect(output).not.toContain('🆕');
     expect(output).not.toContain('🔁');
     expect(output).not.toContain('⏭');
@@ -368,7 +381,7 @@ describe('formatDailyPlan — url 링크 (PRO-2+ 이슈 A)', () => {
       estimatedHours: 1,
       reasoning: 'r',
     };
-    const output = formatDailyPlan(plan).summary;
+    const output = format(plan).summary;
     expect(output).toContain(
       '<https://github.com/foo/bar/pull/707|PR #707 리뷰>',
     );
@@ -387,7 +400,7 @@ describe('formatDailyPlan — url 링크 (PRO-2+ 이슈 A)', () => {
       estimatedHours: 1,
       reasoning: 'r',
     };
-    const output = formatDailyPlan(plan).summary;
+    const output = format(plan).summary;
     expect(output).toContain('• 자유 텍스트 task');
     expect(output).toContain('• 빈 url');
     expect(output).not.toContain('<|');
@@ -406,7 +419,7 @@ describe('formatDailyPlan — url 링크 (PRO-2+ 이슈 A)', () => {
       estimatedHours: 1,
       reasoning: 'r',
     };
-    const output = formatDailyPlan(plan).summary;
+    const output = format(plan).summary;
     expect(output).not.toContain('</pull/707|');
     expect(output).not.toContain('<javascript:');
     expect(output).toContain('• fragment 만 반환');
@@ -428,7 +441,7 @@ describe('formatDailyPlan — url 링크 (PRO-2+ 이슈 A)', () => {
       estimatedHours: 1,
       reasoning: 'r',
     };
-    const output = formatDailyPlan(plan).summary;
+    const output = format(plan).summary;
     const linkMatch = output.match(/<https:\/\/example\.com[^>]+\|[^>]+>/);
     expect(linkMatch).not.toBeNull();
     expect(linkMatch?.[0]).not.toContain('<bad>');

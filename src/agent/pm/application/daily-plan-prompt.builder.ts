@@ -5,6 +5,7 @@ import {
   wrapUntrustedInput,
 } from '../../../common/llm/untrusted-input.util';
 import { ConversationContext } from '../../../router/domain/conversation-context.type';
+import { PlanInputTruncation } from '../domain/pm-agent.type';
 import {
   formatRetroCarryOverSection,
   formatRetroTryNextSection,
@@ -78,17 +79,9 @@ interface PromptSections {
   similarPlans: string | null;
 }
 
-export interface TruncationMeta {
-  github: number;
-  notion: number;
-  slackMentions: number;
-  inboxItems: number;
-  droppedSections: string[];
-}
-
 export interface BuiltPrompt {
   prompt: string;
-  truncated: TruncationMeta;
+  truncated: PlanInputTruncation;
 }
 
 // DailyPlanContext → 최종 prompt string + truncation meta.

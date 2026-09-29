@@ -1,10 +1,61 @@
 import {
   DailyPlan,
+  PlanInputTruncation,
   StalledTask,
   TaskItem,
 } from '../../agent/pm/domain/pm-agent.type';
 import { FormattedReport } from './formatted-report.type';
 import { isSafeHttpUrl, sanitizeForSlackLink } from './mrkdwn.util';
+
+// daily-plan-prompt.builder 의 TRIM_ORDER 섹션 키 → 사람이 읽는 이름.
+// 모르는 키가 오면 키를 그대로 보인다 — 숨기는 것보다 어색한 편이 낫다.
+const DROPPED_SECTION_LABEL: Record<string, string> = {
+  similarPlans: '비슷한 과거 계획',
+  inboxItems: 'Slack 인박스',
+  slackMentions: 'Slack 멘션',
+  recentPlanSummaries: '최근 계획 요약',
+  retroTryNext: '회고 Try',
+  notion: 'Notion 태스크',
+  previousWorklog: '어제 업무일지',
+  previousPlan: '어제 계획',
+  retroCarryOver: '회고 이월',
+  __TAIL_TRUNCATED__: '입력 끝부분',
+};
+
+// 프롬프트 상한에 걸려 모델이 못 본 입력을 한 줄로 알린다. 잘린 것이 없으면 null.
+// 모델은 잘린 줄 모르고 답하므로, 알리지 않으면 받는 사람은 계획이 입력 전체를 본 결과라고 믿는다.
+export const formatInputTruncationNotice = (
+  truncation: PlanInputTruncation,
+): string | null => {
+  // 섹션이 통째로 빠졌으면 그 섹션의 생략 건수는 뺀다 — 같은 이름이 두 번 나오지 않게.
+  const omitted = [
+    { section: 'github', label: 'GitHub', count: truncation.github },
+    { section: 'notion', label: 'Notion', count: truncation.notion },
+    {
+      section: 'slackMentions',
+      label: 'Slack 멘션',
+      count: truncation.slackMentions,
+    },
+    {
+      section: 'inboxItems',
+      label: 'Slack 인박스',
+      count: truncation.inboxItems,
+    },
+  ]
+    .filter(
+      ({ section, count }) =>
+        count > 0 && !truncation.droppedSections.includes(section),
+    )
+    .map(({ label, count }) => `${label} ${count}건`);
+  const dropped = truncation.droppedSections.map(
+    (key) => DROPPED_SECTION_LABEL[key] ?? key,
+  );
+  const parts = [...omitted, ...dropped];
+  if (parts.length === 0) {
+    return null;
+  }
+  return `_ℹ️ 입력 한도로 보지 못하고 만든 계획입니다: ${parts.join(' · ')}_`;
+};
 
 // lineage 라벨 prefix — PRO-2 의 어제↔오늘 추적성을 한눈에 보여줌. 라벨 없는 구버전 plan 은 prefix 생략.
 const LINEAGE_LABEL: Record<NonNullable<TaskItem['lineage']>, string> = {
@@ -57,7 +108,10 @@ const renderStalledTaskLine = (task: StalledTask): string => {
 //
 // 아무것도 버리지 않고 자리만 옮긴다. autopilot 이 detail 을 같은 스레드 댓글로 보내므로
 // (autopilot.orchestrator 의 threadTs 경로) 근거가 궁금하면 스레드를 열면 된다.
-export const formatDailyPlan = (plan: DailyPlan): FormattedReport => {
+export const formatDailyPlan = (
+  plan: DailyPlan,
+  inputTruncation: PlanInputTruncation,
+): FormattedReport => {
   const summaryLines: string[] = [
     '*오늘의 최우선 과제*',
     renderTaskLine(plan.topPriority),
@@ -74,6 +128,12 @@ export const formatDailyPlan = (plan: DailyPlan): FormattedReport => {
   }
 
   summaryLines.push('', `*예상 소요*: ${plan.estimatedHours}시간`);
+
+  // 스레드가 아니라 메인에 둔다 — 계획을 얼마나 믿을지에 관한 정보라 계획과 함께 보여야 한다.
+  const truncationNotice = formatInputTruncationNotice(inputTruncation);
+  if (truncationNotice) {
+    summaryLines.push('', truncationNotice);
+  }
 
   const detailSections: string[] = [];
 

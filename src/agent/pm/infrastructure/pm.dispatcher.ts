@@ -29,7 +29,10 @@ export class PmDispatcher implements AgentDispatcher {
         ? { conversationContext: input.conversationContext }
         : {}),
     });
-    const formatted = formatDailyPlan(outcome.result.plan);
+    const formatted = formatDailyPlan(
+      outcome.result.plan,
+      outcome.result.inputTruncation,
+    );
     return {
       agentRunId: outcome.agentRunId,
       output: outcome.result,
