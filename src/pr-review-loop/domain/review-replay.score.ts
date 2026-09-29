@@ -185,21 +185,20 @@ interface BodyEvidence {
   sharedIdentifiers: number;
 }
 
-// 흔해서 같은 결함의 근거가 되지 못하는 영문 낱말
-const COMMON_WORDS = new Set([
-  'the',
-  'and',
-  'for',
-  'pr',
-  'diff',
-  'api',
-  'null',
-  'true',
-  'false',
-  'main',
-  'test',
-  'tests',
-]);
+// 흔해서 같은 결함의 근거가 되지 못하는 영문 낱말. 언어 키워드와 리뷰 본문에 흔한 낱말(`return`·`error` 등)이
+// 남아 있으면, 5줄 안의 다른 결함 지적 둘이 그 낱말 하나만 공유해도 식별자 근거로 재현 판정된다.
+// (식별자 모양 — 백틱·camelCase·점 — 으로 좁히는 방법도 실측 결과가 같았지만, `compose` 처럼 평범한
+// 이름의 식별자가 정탐 근거인 경우가 있어 목록으로 뺐다.)
+const COMMON_WORDS = new Set(
+  (
+    'the and for pr diff api null true false main test tests ' +
+    'return error errors catch try throw const let var await async function ' +
+    'string number boolean undefined class import export this value values ' +
+    'type types object array new if else while case default void any ' +
+    'public private static interface with from not all set get key keys ' +
+    'data result response request code file line method'
+  ).split(' '),
+);
 
 // 백틱 안 코드와 영문 식별자. PR 번호 같은 숫자 조각은 뺀다.
 const identifiersOf = (body: string): Set<string> => {
