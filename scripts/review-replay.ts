@@ -43,10 +43,12 @@ import {
   isSameSample,
   LabeledFinding,
   readBaselineSummaries,
+  REPLAY_SCORER_VERSION,
   ReplayPair,
   ReplayRate,
   sampleIdsOf,
   scoreReplay,
+  scorerVersionOf,
   skippedCountOf,
   summarizeTrials,
   summarizeTrialsByTruncation,
@@ -127,6 +129,8 @@ interface SkippedGroup {
 
 interface ReplayReport {
   generatedAt: string;
+  // 재현 판정 규칙의 버전. 규칙이 다른 보고서끼리는 재현율을 비교할 수 없다.
+  scorerVersion: number;
   options: ReplayOptions;
   // 모든 회차를 합친 값. trials=1 이면 종전 보고서와 같다.
   score: { rejected: ReplayRate; fixed: ReplayRate; missed: ReplayRate };
@@ -143,8 +147,10 @@ interface ReplayReport {
   };
   baseline?: {
     path: string;
-    // 두 보고서가 같은 카드를 스킵 없이 쟀는가. 아니면 차이는 프롬프트가 아니라 문제지 탓일 수 있다.
+    // 두 보고서가 같은 카드를 스킵 없이, 같은 판정 규칙으로 쟀는가. 아니면 차이는 프롬프트가 아니라
+    // 문제지나 채점 탓일 수 있다.
     sameSample: boolean;
+    sameScorer: boolean;
     rejected: BaselineComparison;
     fixed: BaselineComparison;
     missed?: BaselineComparison;
@@ -326,8 +332,13 @@ const main = async (): Promise<void> => {
       },
     };
     const baselineMissed = baselineReport?.summaries.missed;
+    const latestCardMisses = resolvedMisses.filter(
+      (miss) => miss.headShaSource === 'latest-card',
+    ).length;
+    const sameScorer = baselineReport?.scorerVersion === REPLAY_SCORER_VERSION;
     const report: ReplayReport = {
       generatedAt: new Date().toISOString(),
+      scorerVersion: REPLAY_SCORER_VERSION,
       options,
       score: { rejected, fixed, missed },
       trials,
@@ -336,7 +347,9 @@ const main = async (): Promise<void> => {
         : {
             baseline: {
               path: options.baseline,
+              sameScorer,
               sameSample:
+                sameScorer &&
                 baselineReport.skipped === 0 &&
                 skipped.length === 0 &&
                 isSameSample(
@@ -400,6 +413,11 @@ const main = async (): Promise<void> => {
         ...(unresolvedMisses.length === 0
           ? []
           : [`미탐 중 리뷰 커밋을 못 찾아 뺀 것 ${unresolvedMisses.length}`]),
+        ...(latestCardMisses === 0
+          ? []
+          : [
+              `경고: 미탐 ${latestCardMisses}건은 headSha 가 없어 마지막 카드 커밋으로 재생했다 — 외부 리뷰 뒤에 결함이 고쳐졌으면 잡을 대상이 없다. original_commit_id 를 넣을 것`,
+            ]),
         ...(missPathNotes.length === 0
           ? []
           : [
@@ -408,6 +426,11 @@ const main = async (): Promise<void> => {
         ...(report.baseline === undefined
           ? []
           : [
+              ...(report.baseline.sameScorer
+                ? []
+                : [
+                    `경고: 기준선은 판정 규칙 v${baselineReport?.scorerVersion} 로, 이번은 v${REPLAY_SCORER_VERSION} 로 채점했다 — 재현율을 비교할 수 없다. 기준선을 다시 돌릴 것`,
+                  ]),
               ...(report.baseline.sameSample
                 ? []
                 : [
@@ -471,6 +494,7 @@ const readBaseline = (
   sampleIds: number[];
   intactMissedIds: number[];
   skipped: number;
+  scorerVersion: number;
 } => {
   const report: unknown = JSON.parse(readFileSync(path, 'utf8'));
   const summaries = readBaselineSummaries(report);
@@ -484,6 +508,7 @@ const readBaseline = (
     sampleIds: sampleIdsOf(report),
     intactMissedIds: intactMissedIdsOf(report),
     skipped: skippedCountOf(report),
+    scorerVersion: scorerVersionOf(report),
   };
 };
 

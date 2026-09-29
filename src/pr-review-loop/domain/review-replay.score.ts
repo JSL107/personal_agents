@@ -42,7 +42,20 @@ export interface ReplayScore {
   results: FindingReplayResult[];
 }
 
+// 줄 거리만으로 재현을 판정하면 두 방향으로 틀린다(2026-09-29 실측, 사람 판정과 13회 어긋남 — 놓침 8·잘못 셈 5).
+// 5줄 안의 다른 결함 지적을 재현으로 세고, 같은 결함을 원인 줄이 아닌 곳(수십 줄 떨어진 함수 입구 등)에
+// 적으면 놓친다. 그래서 가까운 후보도 본문 근거를 요구하고, 먼 후보는 본문이 많이 겹칠 때만 받는다.
+// 기준값은 사람이 판정한 후보 쌍 124개로 골랐고, 기준선·미탐 한쪽에서 고른 값을 다른 쪽에 적용해도
+// 줄 거리만 볼 때보다 나빠지지 않는 것을 확인했다(오판 13 → 5). 표본이 작아 기준값은 잠정이다.
 export const REPLAY_LINE_TOLERANCE = 5;
+// 본문 겹침 = 한글 두 글자 조각 중 짧은 쪽 기준 공통 비율. 허용폭 안의 후보는 NEAR 이상이거나 코드
+// 식별자가 하나라도 같으면, 같은 파일의 나머지 후보는 거리와 관계없이 FAR 이상이면 같은 결함으로 본다.
+// (먼 거리 상한은 60·100·무제한이 실측에서 같은 결과라 두지 않았다.)
+export const REPLAY_NEAR_TEXT_OVERLAP = 0.05;
+export const REPLAY_FAR_TEXT_OVERLAP = 0.25;
+// 위 판정 규칙의 버전. 1 = 줄 거리만(±5), 2 = 줄 거리 + 본문 근거. 규칙을 바꾸면 올린다 —
+// 버전이 다른 기준선과의 비교는 채점 차이를 프롬프트 효과로 오인하게 만든다.
+export const REPLAY_SCORER_VERSION = 2;
 
 export const scoreReplay = (pairs: readonly ReplayPair[]): ReplayScore => {
   const matched = assignMatches(pairs);
@@ -151,9 +164,112 @@ const matchDistance = (
   }
   if (labeled.line !== null && candidate.line !== undefined) {
     const distance = Math.abs(labeled.line - candidate.line);
-    return distance > REPLAY_LINE_TOLERANCE ? null : distance;
+    const evidence = compareBodies(labeled.body, candidate.body);
+    // 한쪽 본문에 비교할 단서가 없으면 본문으로 판정할 수 없다 — 종전처럼 줄 거리만 본다.
+    if (evidence === null) {
+      return distance > REPLAY_LINE_TOLERANCE ? null : distance;
+    }
+    if (distance <= REPLAY_LINE_TOLERANCE) {
+      return evidence.overlap >= REPLAY_NEAR_TEXT_OVERLAP ||
+        evidence.sharedIdentifiers > 0
+        ? distance
+        : null;
+    }
+    return evidence.overlap >= REPLAY_FAR_TEXT_OVERLAP ? distance : null;
   }
   return labeled.category === candidate.category ? Infinity : null;
+};
+
+interface BodyEvidence {
+  overlap: number;
+  sharedIdentifiers: number;
+}
+
+// 흔해서 같은 결함의 근거가 되지 못하는 영문 낱말. 언어 키워드와 리뷰 본문에 흔한 낱말(`return`·`error` 등)이
+// 남아 있으면, 5줄 안의 다른 결함 지적 둘이 그 낱말 하나만 공유해도 식별자 근거로 재현 판정된다.
+// (식별자 모양 — 백틱·camelCase·점 — 으로 좁히는 방법도 실측 결과가 같았지만, `compose` 처럼 평범한
+// 이름의 식별자가 정탐 근거인 경우가 있어 목록으로 뺐다.)
+const COMMON_WORDS = new Set(
+  (
+    'the and for pr diff api null true false main test tests ' +
+    'return error errors catch try throw const let var await async function ' +
+    'string number boolean undefined class import export this value values ' +
+    'type types object array new if else while case default void any ' +
+    'public private static interface with from not all set get key keys ' +
+    'data result response request code file line method'
+  ).split(' '),
+);
+
+// 백틱 안 코드와 영문 식별자. PR 번호 같은 숫자 조각은 뺀다.
+const identifiersOf = (body: string): Set<string> => {
+  const found = [
+    ...[...body.matchAll(/`([^`]{2,60})`/g)].map((match) => match[1]),
+    ...(body.match(/[A-Za-z_][A-Za-z0-9_.]{2,}/g) ?? []),
+  ].map((token) => token.toLowerCase());
+  return new Set(
+    found.filter((token) => !COMMON_WORDS.has(token) && !/^#?\d+$/.test(token)),
+  );
+};
+
+// 거의 모든 지적 본문에 들어가는 어미·조사 조각. 이것까지 세면 전혀 다른 결함끼리도 겹침이
+// 10% 를 넘는다(실측 본문 148개 중 143개에 `니다`).
+const COMMON_BIGRAMS = new Set([
+  '니다',
+  '습니',
+  '합니',
+  '지않',
+  '수있',
+  '으로',
+  '있습',
+  '에서',
+  '하지',
+  '므로',
+  '되지',
+  '할수',
+  '됩니',
+  '하는',
+  '지만',
+  '않습',
+  '본문',
+]);
+
+// 한글만 남겨 이웃한 두 글자 조각으로 쪼갠다. 띄어쓰기·조사 차이에 덜 흔들리게 하려는 것이다.
+const hangulBigramsOf = (body: string): Set<string> => {
+  const hangul = body.replace(/[^가-힣]/g, '');
+  const bigrams = new Set<string>();
+  for (let index = 0; index + 1 < hangul.length; index += 1) {
+    const bigram = hangul.slice(index, index + 2);
+    if (!COMMON_BIGRAMS.has(bigram)) {
+      bigrams.add(bigram);
+    }
+  }
+  return bigrams;
+};
+
+const countShared = (left: Set<string>, right: Set<string>): number =>
+  [...left].filter((token) => right.has(token)).length;
+
+// 두 본문 중 어느 쪽이든 한글 조각도 식별자도 없으면 null — 비교할 단서가 없다.
+export const compareBodies = (
+  left: string,
+  right: string,
+): BodyEvidence | null => {
+  const leftBigrams = hangulBigramsOf(left);
+  const rightBigrams = hangulBigramsOf(right);
+  const leftIdentifiers = identifiersOf(left);
+  const rightIdentifiers = identifiersOf(right);
+  if (
+    (leftBigrams.size === 0 && leftIdentifiers.size === 0) ||
+    (rightBigrams.size === 0 && rightIdentifiers.size === 0)
+  ) {
+    return null;
+  }
+  const shorter = Math.min(leftBigrams.size, rightBigrams.size);
+  return {
+    overlap:
+      shorter === 0 ? 0 : countShared(leftBigrams, rightBigrams) / shorter,
+    sharedIdentifiers: countShared(leftIdentifiers, rightIdentifiers),
+  };
 };
 
 // 단건 조회용 — 이미 다른 카드가 가져간 후보는 제외한다.
@@ -553,6 +669,15 @@ export const skippedCountOf = (report: unknown): number => {
   }
   const { skipped } = report as { skipped?: unknown[] };
   return Array.isArray(skipped) ? skipped.length : 0;
+};
+
+// 버전 칸이 없는 보고서는 칸이 생기기 전(줄 거리만 보던 규칙 1)에 만든 것이다.
+export const scorerVersionOf = (report: unknown): number => {
+  if (typeof report !== 'object' || report === null) {
+    return 1;
+  }
+  const { scorerVersion } = report as { scorerVersion?: unknown };
+  return typeof scorerVersion === 'number' ? scorerVersion : 1;
 };
 
 export const isSameSample = (
