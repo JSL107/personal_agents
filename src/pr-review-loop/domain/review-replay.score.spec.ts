@@ -1,8 +1,16 @@
 import {
+  compareWithBaseline,
+  FindingReplayResult,
+  isSameSample,
   LabeledFinding,
   matchReplayedFinding,
+  readBaselineSummaries,
   ReplayedFinding,
+  sampleIdsOf,
   scoreReplay,
+  skippedCountOf,
+  summarizeTrials,
+  TrialSummary,
 } from './review-replay.score';
 
 const LABELED: LabeledFinding = {
@@ -201,5 +209,199 @@ describe('scoreReplay', () => {
     const score = scoreReplay([{ labeled: LABELED, replayed: [] }]);
     expect(score.rejected).toEqual({ total: 1, reproduced: 0, rate: 0 });
     expect(score.fixed).toEqual({ total: 0, reproduced: 0, rate: null });
+  });
+});
+
+const result = (
+  id: number,
+  label: 'REJECTED' | 'FIXED',
+  reproduced: boolean,
+): FindingReplayResult => ({ id, label, reproduced });
+
+describe('summarizeTrials', () => {
+  it('회차별 재현율과 한 번이라도 · 매번 재현된 카드 수를 낸다', () => {
+    const summary = summarizeTrials(
+      [
+        [result(1, 'REJECTED', true), result(2, 'REJECTED', false)],
+        [result(1, 'REJECTED', true), result(2, 'REJECTED', true)],
+        [result(1, 'REJECTED', true), result(2, 'REJECTED', false)],
+      ],
+      'REJECTED',
+    );
+
+    expect(summary).toMatchObject({
+      trials: 3,
+      total: 2,
+      rates: [0.5, 1, 0.5],
+      minRate: 0.5,
+      maxRate: 1,
+      anyTrial: 2,
+      everyTrial: 1,
+    });
+    expect(summary.meanRate).toBeCloseTo(2 / 3);
+  });
+
+  it('다른 라벨은 세지 않는다', () => {
+    const summary = summarizeTrials(
+      [[result(1, 'REJECTED', true), result(2, 'FIXED', false)]],
+      'FIXED',
+    );
+
+    expect(summary).toMatchObject({ total: 1, rates: [0], anyTrial: 0 });
+  });
+
+  // 어느 회차에서 스킵된 카드는 그 회차에 재현됐는지 모르므로 "매번" 으로 세지 않는다.
+  it('스킵된 회차가 있는 카드는 매번 재현으로 세지 않는다', () => {
+    const summary = summarizeTrials(
+      [[result(1, 'FIXED', true)], [], [result(1, 'FIXED', true)]],
+      'FIXED',
+    );
+
+    expect(summary.rates).toEqual([1, null, 1]);
+    expect(summary.everyTrial).toBe(0);
+    expect(summary.anyTrial).toBe(1);
+  });
+});
+
+const summaryOf = (rates: number[]): TrialSummary => ({
+  trials: rates.length,
+  total: 10,
+  rates,
+  meanRate: rates.reduce((sum, rate) => sum + rate, 0) / rates.length,
+  minRate: Math.min(...rates),
+  maxRate: Math.max(...rates),
+  anyTrial: 0,
+  everyTrial: 0,
+});
+
+describe('compareWithBaseline', () => {
+  it('회차별 범위가 겹치면 변동 범위 안', () => {
+    const comparison = compareWithBaseline(
+      summaryOf([0.3, 0.4, 0.2]),
+      summaryOf([0.35, 0.5, 0.45]),
+    );
+
+    expect(comparison.verdict).toBe('변동 범위 안');
+    expect(comparison.delta).toBeCloseTo(0.3 - 13 / 30);
+  });
+
+  it('범위가 겹치지 않으면 변동 범위 밖', () => {
+    expect(
+      compareWithBaseline(summaryOf([0.1, 0.15]), summaryOf([0.4, 0.5]))
+        .verdict,
+    ).toBe('변동 범위 밖');
+  });
+
+  // 요청은 2회였어도 한 회차가 통째로 스킵되면 관측은 하나뿐이다.
+  it('스킵으로 실제 측정 회차가 1번뿐이면 판단 불가', () => {
+    const current: TrialSummary = {
+      ...summaryOf([0.4]),
+      trials: 2,
+      rates: [0.4, null],
+    };
+
+    const comparison = compareWithBaseline(current, summaryOf([0.1, 0.12]));
+
+    expect(comparison.verdict).toBe('판단 불가');
+    expect(comparison.reason).toContain('실제로 측정된 회차');
+  });
+
+  // 1회끼리의 차이는 회차 변동일 수 있어 어떤 결론도 낼 수 없다.
+  it('어느 쪽이든 1회면 판단 불가', () => {
+    const comparison = compareWithBaseline(
+      summaryOf([0.1, 0.12]),
+      summaryOf([0.5]),
+    );
+
+    expect(comparison.verdict).toBe('판단 불가');
+    expect(comparison.reason).toContain('--trials 2');
+  });
+});
+
+describe('readBaselineSummaries', () => {
+  it('반복 측정 보고서는 trials 를 그대로 읽는다', () => {
+    const rejected = summaryOf([0.2, 0.3]);
+    const fixed = summaryOf([0.8, 0.9]);
+
+    expect(readBaselineSummaries({ trials: { rejected, fixed } })).toEqual({
+      rejected,
+      fixed,
+    });
+  });
+
+  // 지금까지 쌓인 보고서와도 비교가 끊기지 않게, score 만 있는 보고서는 1회차로 읽는다.
+  it('반복 측정 전 보고서는 score 를 1회차로 읽는다', () => {
+    const summaries = readBaselineSummaries({
+      score: {
+        rejected: { total: 4, reproduced: 1, rate: 0.25 },
+        fixed: { total: 2, reproduced: 2, rate: 1 },
+      },
+    });
+
+    expect(summaries?.rejected).toMatchObject({
+      trials: 1,
+      rates: [0.25],
+      meanRate: 0.25,
+    });
+    expect(summaries?.fixed.anyTrial).toBe(2);
+  });
+
+  // 필드가 빠진 요약을 받으면 비교에 NaN·undefined 가 섞인다.
+  it('필드가 빠지거나 타입이 틀린 요약은 거부한다', () => {
+    const withoutMean: Partial<TrialSummary> = summaryOf([0.2, 0.3]);
+    delete withoutMean.meanRate;
+
+    expect(
+      readBaselineSummaries({
+        trials: { rejected: withoutMean, fixed: summaryOf([0.5, 0.6]) },
+      }),
+    ).toBeNull();
+    expect(
+      readBaselineSummaries({
+        trials: {
+          rejected: { ...summaryOf([0.2]), rates: ['0.2'] },
+          fixed: summaryOf([0.5]),
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it('반복 측정 전 보고서에서 rate 가 빠지면 거부한다', () => {
+    expect(
+      readBaselineSummaries({
+        score: {
+          rejected: { total: 4, reproduced: 1 },
+          fixed: { total: 2, reproduced: 2, rate: 1 },
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it('형식을 모르면 null', () => {
+    expect(readBaselineSummaries({ foo: 1 })).toBeNull();
+    expect(readBaselineSummaries(null)).toBeNull();
+  });
+});
+
+describe('sampleIdsOf · isSameSample', () => {
+  // 스킵된 카드는 재현율 계산에 안 들어가므로 측정 표본이 아니다. 스킵은 따로 센다.
+  it('실제로 측정된 카드 id 만 중복 없이 정렬해 내고, 스킵은 따로 센다', () => {
+    const report = {
+      groups: [
+        { results: [{ id: 5 }, { id: 2 }] },
+        { results: [{ id: 5 }, { id: 2 }] },
+      ],
+      skipped: [{ findingIds: [9] }],
+    };
+
+    expect(sampleIdsOf(report)).toEqual([2, 5]);
+    expect(skippedCountOf(report)).toBe(1);
+    expect(skippedCountOf({ groups: [] })).toBe(0);
+  });
+
+  it('같은 카드 집합일 때만 같은 표본이다', () => {
+    expect(isSameSample([2, 5], [2, 5])).toBe(true);
+    expect(isSameSample([2, 5], [2, 6])).toBe(false);
+    expect(isSameSample([2], [2, 5])).toBe(false);
   });
 });

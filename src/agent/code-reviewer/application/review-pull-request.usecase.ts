@@ -81,6 +81,7 @@ export class ReviewPullRequestUsecase {
     dryRun,
     isDraft,
     publish,
+    excludeConventionFindingIds,
   }: ReviewPullRequestInput): Promise<AgentRunOutcome<PullRequestReview>> {
     // INVALID_PR_REFERENCE 는 파싱 시점에 즉시 예외.
     const ref = parsePrReference(prRef);
@@ -124,6 +125,7 @@ export class ReviewPullRequestUsecase {
 
         const learnedConventions = await this.buildLearnedConventions(
           detail.repo,
+          excludeConventionFindingIds,
         );
 
         // 규약은 diff 뒤에 붙인다 — "이건 지적하지 말라" 류 지시는 diff 를 다 읽은 뒤
@@ -221,7 +223,10 @@ export class ReviewPullRequestUsecase {
    * 예시가 아니라 규약인 이유는 `learned-conventions.ts` 머리말 참조 — 프롬프트 끝에 예시로
    * 덧붙이던 이전 방식은 같은 지적이 3연속 기각되고도 계속 나왔다.
    */
-  private async buildLearnedConventions(repo: string): Promise<string> {
+  private async buildLearnedConventions(
+    repo: string,
+    excludeFindingIds?: number[],
+  ): Promise<string> {
     // owner 저장소로 한정한다. 기각 이유는 owner 뿐 아니라 **PR 작성자**도 남길 수 있어
     // (`harvest-review-signals.usecase.ts` 의 `decisionLogins`), 남의 저장소에서는 제3자가
     // 쓴 문장이 규약으로 굳는다. 손으로 적은 규약(`buildRepoConventions`)과 같은 경계다.
@@ -243,6 +248,7 @@ export class ReviewPullRequestUsecase {
       const rows = await this.findingRepository.findRejectionsForConventions({
         repo,
         since,
+        ...(excludeFindingIds === undefined ? {} : { excludeFindingIds }),
       });
       const { block, categories } = renderLearnedConventions(rows);
       if (categories.length > 0) {
