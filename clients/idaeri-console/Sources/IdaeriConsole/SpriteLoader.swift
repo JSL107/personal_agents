@@ -40,13 +40,16 @@ enum SpriteLoader {
     private static var prewarmingKeys: Set<String> = []
 
     static func cozyCharacterHasDedicatedPose(assetIndex: Int, pose: String) -> Bool {
-        let normalizedIndex = ((assetIndex % cozyCharacterAssetCount) + cozyCharacterAssetCount) % cozyCharacterAssetCount
+        let normalizedIndex = normalizedCozyAssetIndex(assetIndex)
         let normalizedPose = normalizedCozyPose(pose)
         guard normalizedPose != cozyIdlePose else {
             return false
         }
+        let assetPrefix = normalizedIndex == cozyMechanicAssetIndex
+            ? "mechanic"
+            : "agent-\(normalizedIndex)"
         return Bundle.module.url(
-            forResource: "agent-\(normalizedIndex)-\(normalizedPose)",
+            forResource: "\(assetPrefix)-\(normalizedPose)",
             withExtension: "png",
             subdirectory: "cozy/characters"
         ) != nil
@@ -85,11 +88,16 @@ enum SpriteLoader {
     private static func normalizedCozyCharacter(
         assetIndex: Int, pose: String
     ) -> NormalizedCozyCharacter {
-        let normalizedIndex = ((assetIndex % cozyCharacterAssetCount) + cozyCharacterAssetCount)
-            % cozyCharacterAssetCount
+        let normalizedIndex = normalizedCozyAssetIndex(assetIndex)
         return NormalizedCozyCharacter(
             index: normalizedIndex, pose: normalizedCozyPose(pose)
         )
+    }
+
+    private static func normalizedCozyAssetIndex(_ assetIndex: Int) -> Int {
+        assetIndex == cozyMechanicAssetIndex
+            ? cozyMechanicAssetIndex
+            : ((assetIndex % cozyCharacterAssetCount) + cozyCharacterAssetCount) % cozyCharacterAssetCount
     }
 
     /// 조회·적재·워밍이 같은 칸을 가리키게 키 계산을 한곳에 둔다.
@@ -107,20 +115,24 @@ enum SpriteLoader {
         let normalized = normalizedCozyCharacter(assetIndex: assetIndex, pose: pose)
         let normalizedIndex = normalized.index
         let normalizedPose = normalized.pose
-        let posedName = "agent-\(normalizedIndex)-\(normalizedPose)"
-        let posedURL = normalizedPose == cozyIdlePose
+        let isMechanic = normalizedIndex == cozyMechanicAssetIndex
+        let assetPrefix = isMechanic ? "mechanic" : "agent-\(normalizedIndex)"
+        let posedName = normalizedPose == cozyIdlePose
+            ? assetPrefix
+            : "\(assetPrefix)-\(normalizedPose)"
+        let posedURL = normalizedPose == cozyIdlePose && !isMechanic
             ? nil
             : Bundle.module.url(
                 forResource: posedName, withExtension: "png", subdirectory: "cozy/characters"
             )
-        let fallbackURL = Bundle.module.url(
-            forResource: "agent-\(normalizedIndex)", withExtension: "png", subdirectory: "cozy/characters"
+        let fallbackURL = isMechanic ? nil : Bundle.module.url(
+            forResource: assetPrefix, withExtension: "png", subdirectory: "cozy/characters"
         )
         if posedURL == nil, normalizedPose != cozyIdlePose {
             reportMissingAsset("\(posedName).png — 포즈 계약을 거치지 않은 요청")
         }
         guard let url = posedURL ?? fallbackURL, let sourceImage = NSImage(contentsOf: url) else {
-            reportMissingAsset("agent-\(normalizedIndex).png")
+            reportMissingAsset("\(assetPrefix).png")
             return nil
         }
         return imageByCroppingTransparentMargins(sourceImage)
@@ -339,8 +351,7 @@ enum SpriteLoader {
     static func cozyCharacterTexture(assetIndex: Int, pose: String = "idle") -> SKTexture? {
         // 키는 `cozyCharacterImage` 와 같은 기준으로 잡는다 — 인덱스를 범위 안으로 접고
         // 포즈 이름을 정규화한 뒤라야, `walkside` 같은 다른 표기가 같은 칸을 쓴다.
-        let normalizedIndex = ((assetIndex % cozyCharacterAssetCount) + cozyCharacterAssetCount)
-            % cozyCharacterAssetCount
+        let normalizedIndex = normalizedCozyAssetIndex(assetIndex)
         let cacheKey = "\(normalizedIndex):\(normalizedCozyPose(pose))"
         if let cached = cozyCharacterTextureCache[cacheKey] {
             return cached

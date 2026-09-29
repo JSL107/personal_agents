@@ -3,6 +3,16 @@ import Foundation
 /// Number of transparent, production-ready character portraits available to the cozy office.
 public let cozyCharacterAssetCount = 20
 
+/// Dedicated asset outside the twenty-person automatic assignment pool.
+public let cozyMechanicAssetIndex = cozyCharacterAssetCount
+
+/// Every required drawing for the dedicated mechanic character, including the idle base image.
+public let cozyMechanicPoses = [
+    "idle", "sit", "sitting", "sit-back", "sit-table", "typing", "writing", "reading",
+    "drinking", "carryingpapers", "stowing", "tending", "walk", "walk-side",
+    "walk-side-idle", "walk-up", "walk-up-idle",
+]
+
 /// 오피스 캐릭터의 사람별 크기 보정. **지금은 전원 1.00 이고, 그래야 한다.**
 ///
 /// 한때 0.91~1.12 를 손으로 박아 두고 "알파 경계로 정규화한 뒤 남는 희미한 가장자리를
@@ -34,6 +44,9 @@ public func cozyCharacterVisualScale(assetIndex: Int) -> CGFloat {
 public func cozyDashboardCharacterVisualScale(assetIndex: Int, pose: String) -> CGFloat {
     let normalizedIndex = ((assetIndex % cozyCharacterAssetCount) + cozyCharacterAssetCount)
         % cozyCharacterAssetCount
+    if assetIndex == cozyMechanicAssetIndex {
+        return 1.00
+    }
     switch (normalizedIndex, pose) {
     case (3, "typing"):
         return 1.025
@@ -63,7 +76,9 @@ public struct CozyAgentAppearance: Equatable, Sendable {
         accessoryIndex: Int?,
         paletteIndex: Int
     ) {
-        self.assetIndex = ((assetIndex % cozyCharacterAssetCount) + cozyCharacterAssetCount) % cozyCharacterAssetCount
+        self.assetIndex = assetIndex == cozyMechanicAssetIndex
+            ? cozyMechanicAssetIndex
+            : ((assetIndex % cozyCharacterAssetCount) + cozyCharacterAssetCount) % cozyCharacterAssetCount
         self.headShapeIndex = headShapeIndex
         self.hairStyleIndex = hairStyleIndex
         self.outfitStyleIndex = outfitStyleIndex
@@ -90,6 +105,7 @@ public func cozyAgentAppearance(
         ($0 ^ UInt64($1)) &* 1099511628211
     }
     let productRosterAssetIndex: [String: Int] = [
+        "ROUTER": cozyMechanicAssetIndex,
         "PM": 16,
         "CODE_REVIEWER": 1,
         "WORK_REVIEWER": 2,

@@ -7,6 +7,27 @@ func runCozyAgentAppearanceTests(_ t: TestRunner) {
     let second = cozyAgentAppearance(agentType: "CODE_REVIEWER", department: .quality)
     t.expectEqual(first, second, "same agentType resolves to the same appearance")
     t.expectEqual(cozyCharacterAssetCount, 20, "cozy character pool exposes twenty production assets")
+    let router = cozyAgentAppearance(agentType: "ROUTER", department: .planning)
+    t.expectEqual(router.assetIndex, cozyMechanicAssetIndex, "ROUTER uses the reserved mechanic asset")
+    t.expectEqual(cozyMechanicAssetIndex, cozyCharacterAssetCount, "mechanic stays outside the automatic pool")
+    for pose in cozyMechanicPoses {
+        let name = pose == cozyIdlePose ? "mechanic" : "mechanic-\(pose)"
+        t.expect(
+            cozyCharacterAssetFileExists(name),
+            "designated cozy mechanic pose exists: \(name).png"
+        )
+    }
+    let coworkerIndices: [String: Int] = [
+        "PM": 16, "CODE_REVIEWER": 1, "WORK_REVIEWER": 2, "HUMANIZER": 3,
+        "VACATION": 17, "PAPER_TRADE": 18, "CAREER_MATE": 19,
+    ]
+    for (agentType, expectedIndex) in coworkerIndices {
+        t.expectEqual(
+            cozyAgentAppearance(agentType: agentType, department: .planning).assetIndex,
+            expectedIndex,
+            "ROUTER mechanic reservation does not shift \(agentType)'s face"
+        )
+    }
     // **오피스 캐릭터는 사람마다 크기가 같아야 한다.** 한때 0.91~1.12 를 손으로 박아 두고
     // "희미한 가장자리를 보상한다" 고 했는데, 실측하니 그 보상은 필요 없었고 이 값이 키를
     // 21% 벌리는 유일한 원인이었다(사용자 보고: "사이즈가 너무 들쭉날쭉").

@@ -1592,13 +1592,18 @@ func runAgentRoleTests(_ t: TestRunner) {
             !characterSheetPrefixes.contains(sheet),
             "\(agentType) 의 전용 그림 \(sheet) 이 공용 시트 목록에 없다"
         )
-        // **이름만 적어 두고 파일을 안 넣으면 아무 신호 없이 기본 캐릭터가 된다.**
-        // 자세를 다 그릴 필요는 없지만(나머지는 폴백이 정상 동작이다) 앉은 자세 한 장은
-        // 있어야 한다 — 사무실 사람들은 대부분 자기 자리에 앉아 있다.
-        t.expect(
-            pixelSpriteFileExists("\(sheet)-sit"),
-            "\(agentType) 의 전용 그림 \(sheet)-sit.png 이 실제로 있다"
-        )
+        // 지정된 시트는 웹 Office 와 평면도 export 가 자세별 파일을 직접 참조한다.
+        // 한 파일이라도 없으면 기본 캐릭터로 조용히 떨어지므로 전부 존재해야 한다.
+        let requiredPoses = [
+            "sit", "down", "up", "side", "down-walk1", "down-walk2",
+            "up-walk1", "up-walk2", "side-walk1", "side-walk2",
+        ]
+        for pose in requiredPoses {
+            t.expect(
+                pixelSpriteFileExists("\(sheet)-\(pose)"),
+                "\(agentType) 의 전용 그림 \(sheet)-\(pose).png 이 실제로 있다"
+            )
+        }
     }
 
     // 바지색도 한 색에 몰리지 않아야 한다. 이름표를 약하게 만든 만큼 사람을 구별하는 몫이
