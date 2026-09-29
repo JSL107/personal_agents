@@ -1,6 +1,8 @@
 import {
+  compareMissedIntactWithBaseline,
   compareWithBaseline,
   FindingReplayResult,
+  intactMissedIdsOf,
   isSameSample,
   LabeledFinding,
   matchReplayedFinding,
@@ -295,6 +297,34 @@ describe('compareWithBaseline', () => {
     ).toBe('변동 범위 밖');
   });
 
+  it.each([
+    ['REJECTED', [0.3, 0.4], '나쁜 쪽'],
+    ['REJECTED', [0.0, 0.05], '좋은 쪽'],
+    ['FIXED', [0.3, 0.4], '좋은 쪽'],
+    ['FIXED', [0.0, 0.05], '나쁜 쪽'],
+    ['MISSED', [0.0, 0.05], '나쁜 쪽'],
+    ['MISSED', [0.3, 0.4], '좋은 쪽'],
+  ] as const)('%s 가 %j 로 벗어나면 %s', (label, rates, direction) => {
+    expect(
+      compareWithBaseline(summaryOf([...rates]), summaryOf([0.1, 0.2]), label)
+        .direction,
+    ).toBe(direction);
+  });
+
+  it('범위 안이거나 라벨이 없으면 방향을 붙이지 않는다', () => {
+    expect(
+      compareWithBaseline(
+        summaryOf([0.1, 0.3]),
+        summaryOf([0.2, 0.25]),
+        'FIXED',
+      ).direction,
+    ).toBeUndefined();
+    expect(
+      compareWithBaseline(summaryOf([0.5, 0.6]), summaryOf([0.1, 0.2]))
+        .direction,
+    ).toBeUndefined();
+  });
+
   // 요청은 2회였어도 한 회차가 통째로 스킵되면 관측은 하나뿐이다.
   it('스킵으로 실제 측정 회차가 1번뿐이면 판단 불가', () => {
     const current: TrialSummary = {
@@ -321,7 +351,97 @@ describe('compareWithBaseline', () => {
   });
 });
 
+describe('compareMissedIntactWithBaseline', () => {
+  it('기준선에 안 잘림 집계가 있으면 범위 겹침으로 판정한다', () => {
+    expect(
+      compareMissedIntactWithBaseline(
+        summaryOf([0.2, 0.3]),
+        summaryOf([0.46, 0.69, 0.62]),
+        true,
+      ),
+    ).toMatchObject({ verdict: '변동 범위 밖', direction: '나쁜 쪽' });
+  });
+
+  // 합친 값으로 대신 비교하면 잘림 0% 가 섞여 기준이 달라진다.
+  it('기준선에 분리 집계가 없으면 판단 불가', () => {
+    const comparison = compareMissedIntactWithBaseline(
+      summaryOf([0.5, 0.6]),
+      undefined,
+      true,
+    );
+
+    expect(comparison).toMatchObject({
+      verdict: '판단 불가',
+      baselineMean: null,
+      currentMean: 0.55,
+    });
+    expect(comparison.reason).toContain('byDiffTruncation');
+  });
+
+  // 잘림 판정이 바뀌면 전체 카드가 같아도 안 잘린 카드가 다르다.
+  it('안 잘린 미탐 카드가 기준선과 다르면 판단 불가', () => {
+    const comparison = compareMissedIntactWithBaseline(
+      summaryOf([0.2, 0.3]),
+      summaryOf([0.46, 0.69, 0.62]),
+      false,
+    );
+
+    expect(comparison.verdict).toBe('판단 불가');
+    expect(comparison.direction).toBeUndefined();
+    expect(comparison.reason).toContain('안 잘린 미탐 카드가 다르다');
+  });
+});
+
+describe('intactMissedIdsOf', () => {
+  it('diff 안 잘린 그룹의 MISSED id 만 정렬해 모은다', () => {
+    const report = {
+      groups: [
+        {
+          diffTruncated: false,
+          results: [
+            { id: -2, label: 'MISSED' },
+            { id: 7, label: 'FIXED' },
+          ],
+        },
+        { diffTruncated: true, results: [{ id: -3, label: 'MISSED' }] },
+        { diffTruncated: false, results: [{ id: -5, label: 'MISSED' }] },
+        { diffTruncated: false, results: [{ id: -2, label: 'MISSED' }] },
+      ],
+    };
+
+    expect(intactMissedIdsOf(report)).toEqual([-5, -2]);
+  });
+});
+
 describe('readBaselineSummaries', () => {
+  it('미탐 안 잘림 집계를 byDiffTruncation 에서 읽는다', () => {
+    const intact = summaryOf([0.46, 0.69, 0.62]);
+    const summaries = readBaselineSummaries({
+      trials: {
+        rejected: summaryOf([0.1]),
+        fixed: summaryOf([0.5]),
+        missed: summaryOf([0.24, 0.36, 0.32]),
+        byDiffTruncation: {
+          missed: { intact, truncated: summaryOf([0, 0, 0]) },
+        },
+      },
+    });
+
+    expect(summaries?.missedIntact).toEqual(intact);
+  });
+
+  it('안 잘림 집계의 형식이 틀리면 거부한다', () => {
+    expect(
+      readBaselineSummaries({
+        trials: {
+          rejected: summaryOf([0.1]),
+          fixed: summaryOf([0.5]),
+          byDiffTruncation: { missed: { intact: { total: 3 } } },
+        },
+      }),
+    ).toBeNull();
+  });
+
   it('반복 측정 보고서는 trials 를 그대로 읽는다', () => {
     const rejected = summaryOf([0.2, 0.3]);
     const fixed = summaryOf([0.8, 0.9]);

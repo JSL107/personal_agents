@@ -289,10 +289,12 @@ export const summarizeTrialsByTruncation = (
 // ── 기준선 비교 ────────────────────────────────────────────────────────────
 // 두 실행의 회차별 재현율 범위(최소~최대)가 겹치면 차이를 회차 변동과 구분할 수 없다고 본다.
 // 어느 쪽이든 1회뿐이면 변동 폭을 모르므로 판정하지 않는다 — 점 하나끼리의 차이는 무엇이든 될 수 있다.
-// 좋고 나쁨은 라벨마다 반대다(REJECTED 재현=오탐 재발은 낮을수록, FIXED 재현=정탐 유지는 높을수록 좋다)
-// 그래서 방향은 판정하지 않고 차이와 범위만 낸다.
+// 좋고 나쁨은 라벨마다 반대다(REJECTED 재현=오탐 재발은 낮을수록, FIXED·MISSED 재현은 높을수록 좋다).
+// 라벨을 넘기면 범위 밖일 때 어느 쪽으로 벗어났는지 붙인다. 통과 여부는 재실행까지 봐야 하므로 여기서 내지 않는다.
 
 export type BaselineVerdict = '변동 범위 안' | '변동 범위 밖' | '판단 불가';
+
+export type BaselineDirection = '좋은 쪽' | '나쁜 쪽';
 
 export interface BaselineComparison {
   baselineMean: number | null;
@@ -300,7 +302,15 @@ export interface BaselineComparison {
   delta: number | null;
   verdict: BaselineVerdict;
   reason: string;
+  // 변동 범위 밖이고 라벨을 알 때만 있다.
+  direction?: BaselineDirection;
 }
+
+const LOWER_IS_BETTER: Record<ReplayLabel, boolean> = {
+  REJECTED: true,
+  FIXED: false,
+  MISSED: false,
+};
 
 const measuredTrials = (summary: TrialSummary): number =>
   summary.rates.filter((rate) => rate !== null).length;
@@ -308,6 +318,7 @@ const measuredTrials = (summary: TrialSummary): number =>
 export const compareWithBaseline = (
   current: TrialSummary,
   baseline: TrialSummary,
+  label?: ReplayLabel,
 ): BaselineComparison => {
   const delta =
     current.meanRate === null || baseline.meanRate === null
@@ -335,17 +346,87 @@ export const compareWithBaseline = (
   const overlaps =
     (current.minRate as number) <= (baseline.maxRate as number) &&
     (baseline.minRate as number) <= (current.maxRate as number);
-  return overlaps
-    ? {
-        ...base,
-        verdict: '변동 범위 안',
-        reason: '두 실행의 회차별 범위가 겹친다',
+  if (overlaps) {
+    return {
+      ...base,
+      verdict: '변동 범위 안',
+      reason: '두 실행의 회차별 범위가 겹친다',
+    };
+  }
+  const outOfRange: BaselineComparison = {
+    ...base,
+    verdict: '변동 범위 밖',
+    reason: '두 실행의 회차별 범위가 겹치지 않는다',
+  };
+  if (label === undefined) {
+    return outOfRange;
+  }
+  // 범위가 겹치지 않으면 평균 차이의 부호가 벗어난 쪽이다.
+  const wentLower = delta < 0;
+  return {
+    ...outOfRange,
+    direction: wentLower === LOWER_IS_BETTER[label] ? '좋은 쪽' : '나쁜 쪽',
+  };
+};
+
+// 미탐은 diff 안 잘린 그룹으로 판정한다 — 잘린 그룹은 지적 줄이 입력에서 빠져 늘 0% 라 움직이지 않고,
+// 합친 값에 섞이면 모델 쪽 변화가 묽어진다(2026-09-29 미탐: 안 잘림 59% · 잘림 0%).
+// 기준선에 분리 집계가 없으면(미탐 없이 잰 기준선·분리 집계 전 보고서) 합친 값으로 대신하지 않고 판단 불가로 둔다.
+// 전체 카드가 같아도 잘림 판정이 바뀌면 안 잘린 카드 부분집합이 달라지므로, 그 집합이 같을 때만 비교한다.
+const unjudgeableMissedIntact = (
+  current: TrialSummary,
+  reason: string,
+): BaselineComparison => ({
+  baselineMean: null,
+  currentMean: current.meanRate,
+  delta: null,
+  verdict: '판단 불가',
+  reason,
+});
+
+export const compareMissedIntactWithBaseline = (
+  current: TrialSummary,
+  baseline: TrialSummary | undefined,
+  sameIntactSample: boolean,
+): BaselineComparison => {
+  if (baseline === undefined) {
+    return unjudgeableMissedIntact(
+      current,
+      '기준선 보고서에 미탐 diff 잘림 분리 집계(trials.byDiffTruncation.missed)가 없다 — 미탐을 포함해 분리 집계가 있는 보고서로 기준선을 다시 잴 것',
+    );
+  }
+  if (!sameIntactSample) {
+    return unjudgeableMissedIntact(
+      current,
+      '기준선과 diff 안 잘린 미탐 카드가 다르다 — 잘림 판정이 바뀌었으면 기준선을 다시 잴 것',
+    );
+  }
+  return compareWithBaseline(current, baseline, 'MISSED');
+};
+
+// 보고서에서 diff 안 잘린 그룹의 미탐 id. 합친 표본(sampleIdsOf)이 같아도 이 집합은 다를 수 있다.
+export const intactMissedIdsOf = (report: unknown): number[] => {
+  if (typeof report !== 'object' || report === null) {
+    return [];
+  }
+  const { groups } = report as {
+    groups?: {
+      diffTruncated?: unknown;
+      results?: { id?: unknown; label?: unknown }[];
+    }[];
+  };
+  const ids = new Set<number>();
+  for (const group of groups ?? []) {
+    if (group.diffTruncated !== false) {
+      continue;
+    }
+    for (const result of group.results ?? []) {
+      if (result.label === 'MISSED' && typeof result.id === 'number') {
+        ids.add(result.id);
       }
-    : {
-        ...base,
-        verdict: '변동 범위 밖',
-        reason: '두 실행의 회차별 범위가 겹치지 않는다',
-      };
+    }
+  }
+  return Array.from(ids).sort((left, right) => left - right);
 };
 
 // 기준선 보고서에서 라벨별 요약을 꺼낸다. 반복 측정 전의 보고서(`score` 만 있는 것)는 1회차로 읽는다 —
@@ -355,6 +436,8 @@ export interface BaselineSummaries {
   rejected: TrialSummary;
   fixed: TrialSummary;
   missed?: TrialSummary;
+  // 미탐의 diff 안 잘린 그룹. 분리 집계 전 보고서에는 없다.
+  missedIntact?: TrialSummary;
 }
 
 export const readBaselineSummaries = (
@@ -368,6 +451,7 @@ export const readBaselineSummaries = (
       rejected?: TrialSummary;
       fixed?: TrialSummary;
       missed?: unknown;
+      byDiffTruncation?: { missed?: { intact?: unknown } };
     };
     score?: { rejected?: ReplayRate; fixed?: ReplayRate };
   };
@@ -375,10 +459,15 @@ export const readBaselineSummaries = (
     if (trials.missed !== undefined && !isTrialSummary(trials.missed)) {
       return null;
     }
+    const missedIntact = trials.byDiffTruncation?.missed?.intact;
+    if (missedIntact !== undefined && !isTrialSummary(missedIntact)) {
+      return null;
+    }
     return {
       rejected: trials.rejected,
       fixed: trials.fixed,
       ...(trials.missed === undefined ? {} : { missed: trials.missed }),
+      ...(missedIntact === undefined ? {} : { missedIntact }),
     };
   }
   if (isReplayRate(score?.rejected) && isReplayRate(score?.fixed)) {
