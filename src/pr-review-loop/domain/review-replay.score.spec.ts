@@ -1,4 +1,5 @@
 import {
+  compareBodies,
   compareMissedIntactWithBaseline,
   compareWithBaseline,
   FindingReplayResult,
@@ -7,9 +8,11 @@ import {
   LabeledFinding,
   matchReplayedFinding,
   readBaselineSummaries,
+  REPLAY_SCORER_VERSION,
   ReplayedFinding,
   sampleIdsOf,
   scoreReplay,
+  scorerVersionOf,
   skippedCountOf,
   summarizeTrials,
   summarizeTrialsByTruncation,
@@ -51,11 +54,16 @@ describe('matchReplayedFinding', () => {
     },
   );
 
-  it.each([14, 26])('줄 차이가 6이면 매칭하지 않는다: %s', (line) => {
-    expect(
-      matchReplayedFinding(LABELED, [{ ...REPLAYED, line }]),
-    ).toBeUndefined();
-  });
+  it.each([14, 26])(
+    '줄 차이가 6이고 본문이 다르면 매칭하지 않는다: %s',
+    (line) => {
+      expect(
+        matchReplayedFinding(LABELED, [
+          { ...REPLAYED, line, body: '전혀 다른 결함' },
+        ]),
+      ).toBeUndefined();
+    },
+  );
 
   it.each(['other.ts', undefined])(
     '파일이 다르거나 없으면 매칭하지 않는다: %s',
@@ -114,6 +122,96 @@ describe('matchReplayedFinding', () => {
   });
 });
 
+describe('matchReplayedFinding — 본문 근거', () => {
+  const card: LabeledFinding = {
+    ...LABELED,
+    line: 160,
+    body: '기존 행의 placement 를 조회하기 전에 content 누락만으로 400 을 반환해 이미 로고인 배너의 수정이 실패합니다.',
+  };
+
+  it('가까운 줄이어도 본문이 전혀 다른 결함이면 매칭하지 않는다', () => {
+    const unrelated = {
+      ...REPLAYED,
+      line: 158,
+      body: '날짜 파싱이 존재하지 않는 달력 날짜를 허용합니다.',
+    };
+    expect(matchReplayedFinding(card, [unrelated])).toBeUndefined();
+  });
+
+  it('가까운 줄이고 코드 식별자가 같으면 문장이 달라도 매칭한다', () => {
+    const sameIdentifier = {
+      ...REPLAYED,
+      line: 158,
+      body: '`placement` 재전송 요청이 거부됩니다.',
+    };
+    expect(matchReplayedFinding(card, [sameIdentifier])).toBe(sameIdentifier);
+  });
+
+  it('줄이 멀어도 본문이 많이 겹치면 같은 결함으로 매칭한다', () => {
+    const farButSame = {
+      ...REPLAYED,
+      line: 132,
+      body: '기존 행을 조회하기 전에 content 누락만으로 400 을 반환해 이미 로고인 행의 부분 수정이 실패합니다.',
+    };
+    expect(matchReplayedFinding(card, [farButSame])).toBe(farButSame);
+  });
+
+  it('줄이 멀고 본문 겹침이 적으면 매칭하지 않는다', () => {
+    const farAndWeak = {
+      ...REPLAYED,
+      line: 132,
+      body: '로고 URL 이 http 를 허용해 혼합 콘텐츠로 차단됩니다.',
+    };
+    expect(matchReplayedFinding(card, [farAndWeak])).toBeUndefined();
+  });
+
+  it('같은 파일이면 줄이 아주 멀어도 본문이 많이 겹칠 때 매칭한다', () => {
+    const veryFar = { ...REPLAYED, line: 900, body: card.body };
+    expect(matchReplayedFinding(card, [veryFar])).toBe(veryFar);
+  });
+
+  it('가까운 후보와 먼 후보가 모두 맞으면 가까운 쪽을 고른다', () => {
+    const near = { ...REPLAYED, line: 161, body: card.body };
+    const far = { ...REPLAYED, line: 130, body: card.body };
+    expect(matchReplayedFinding(card, [far, near])).toBe(near);
+  });
+});
+
+describe('compareBodies', () => {
+  it('한쪽에 한글 조각도 식별자도 없으면 판정할 수 없다', () => {
+    expect(compareBodies('18행', '같은 결함 설명')).toBeNull();
+  });
+
+  it('짧은 쪽 기준으로 한글 두 글자 조각의 공통 비율을 잰다', () => {
+    // 가나다 → 가나·나다, 가나라 → 가나·나라 — 짧은 쪽 2개 중 1개 공통
+    expect(compareBodies('가나다', '가나라')?.overlap).toBe(0.5);
+  });
+
+  it('흔한 영문 낱말과 PR 번호는 공통 식별자로 세지 않는다', () => {
+    expect(
+      compareBodies('PR #12 의 diff 에서 `null`', 'PR #12 diff null 확인')
+        ?.sharedIdentifiers,
+    ).toBe(0);
+    expect(
+      compareBodies('`inputByRawId` 덮어쓰기', 'inputByRawId 가 한 키만 저장')
+        ?.sharedIdentifiers,
+    ).toBe(1);
+  });
+});
+
+describe('scorerVersionOf', () => {
+  it('버전 칸이 없는 보고서는 규칙 1 로 읽는다', () => {
+    expect(scorerVersionOf({ groups: [] })).toBe(1);
+    expect(scorerVersionOf(null)).toBe(1);
+  });
+
+  it('버전 칸이 있으면 그 값을 읽는다', () => {
+    expect(scorerVersionOf({ scorerVersion: REPLAY_SCORER_VERSION })).toBe(
+      REPLAY_SCORER_VERSION,
+    );
+  });
+});
+
 describe('scoreReplay — 최대 매칭', () => {
   // 앞 카드가 가까운 후보를 먼저 집어가면 뒤 카드가 굶는다. 개수가 최대가 되게 배정한다.
   it('카드 순서 때문에 잡을 수 있는 재현을 놓치지 않는다', () => {
@@ -150,7 +248,7 @@ describe('scoreReplay — 후보 소진', () => {
         file: 'src/example.ts',
         line: 20,
         category: 'CORRECTNESS',
-        body: '하나뿐',
+        body: '원래 지적',
       },
     ];
     const first: LabeledFinding = { ...LABELED, id: 1, line: 20 };

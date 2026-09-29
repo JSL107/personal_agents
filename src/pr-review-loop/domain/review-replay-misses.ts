@@ -2,7 +2,12 @@ import { LabeledFinding } from './review-replay.score';
 
 // 이대리가 놓친 결함(미탐) 목록. 카드가 없으므로 원장에서 뽑을 수 없고 파일로 받는다.
 // 외부 리뷰(gemini 등)와 대조한 조사 결과를 사람이 옮겨 적는 형식이라, 경로는 파일 이름만 있어도 된다.
-// headSha 를 비우면 원장에서 그 PR 을 가장 최근에 리뷰한 커밋을 찾는다.
+// 외부 리뷰가 PR 인라인 코멘트라면 세 칸을 코멘트에서 그대로 옮긴다 —
+// headSha = `original_commit_id`, line = `original_line`, body = 코멘트 원문.
+// 코멘트의 `line` 은 PR 최신 커밋 기준으로 옮겨진 줄이라 리뷰 당시 커밋과 어긋나고(실측 25건 중 3건이 5줄 초과),
+// 한 줄 요약 본문은 채점기의 본문 대조에 쓸 말이 거의 없다(docs/superpowers/plans/2026-09-29-review-replay-trials.md §8-2-2).
+// headSha 를 비우면 원장에서 그 PR 을 가장 최근에 리뷰한 커밋을 찾는데, 그 사이 결함이 고쳐졌으면
+// 잡을 대상이 없는 문제가 된다(실측 25건 중 4건).
 export interface MissedFindingEntry {
   repo: string;
   pullNumber: number;
