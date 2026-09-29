@@ -108,6 +108,8 @@ export interface CompletionRequest {
   // 사후 수습이 아니라 이중 안전망이 된다. 지원하지 않는 provider 는 무시한다 —
   // 그 경우 기존과 동일하게 프롬프트 지시에만 의존한다 (§ClaudeCliProvider 주석).
   outputSchema?: OutputJsonSchema;
+  // codex 전용 로컬 절대경로 이미지. 지원하지 않는 provider 는 요청을 거부한다.
+  imagePaths?: readonly string[];
 }
 
 export interface CompletionResponse {

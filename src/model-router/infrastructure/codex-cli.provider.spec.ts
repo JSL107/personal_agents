@@ -88,6 +88,44 @@ describe('buildCodexPrompt', () => {
 });
 
 describe('buildCodexArgs', () => {
+  it('이미지가 없거나 빈 배열이면 기존 argv 를 그대로 유지한다', () => {
+    const expected = [
+      'exec',
+      '--skip-git-repo-check',
+      '--sandbox',
+      'read-only',
+      '--ephemeral',
+      '--ignore-user-config',
+      '-c',
+      `model="${CODEX_MODEL}"`,
+      '-c',
+      `model_reasoning_effort="${CODEX_REASONING_EFFORT}"`,
+      '--color',
+      'never',
+      '-o',
+      '/tmp/out.txt',
+    ];
+    expect(buildCodexArgs({ outputFile: '/tmp/out.txt' })).toEqual(expected);
+    expect(
+      buildCodexArgs({ outputFile: '/tmp/out.txt', imagePaths: [] }),
+    ).toEqual(expected);
+  });
+
+  it('이미지 두 장을 전달 순서대로 -o 앞에 붙인다', () => {
+    const args = buildCodexArgs({
+      outputFile: '/tmp/out.txt',
+      imagePaths: ['/tmp/a.jpg', '/tmp/b.png'],
+    });
+    expect(args.slice(-6)).toEqual([
+      '--image',
+      '/tmp/a.jpg',
+      '--image',
+      '/tmp/b.png',
+      '-o',
+      '/tmp/out.txt',
+    ]);
+  });
+
   it('read-only 샌드박스 / ephemeral / 출력 파일 경로 플래그를 포함한다', () => {
     const args = buildCodexArgs({ outputFile: '/tmp/out.txt' });
     expect(args[0]).toBe('exec');
@@ -355,6 +393,42 @@ describe('computeQuotaBlockUntilMs', () => {
     expect(computeQuotaBlockUntilMs('Aug 10th, 2026 7:00 PM', nowMs)).toBe(
       nowMs + maximumMs,
     );
+  });
+});
+
+describe('CodexCliProvider image forwarding', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('completeOnce 가 요청 이미지를 실제 spawn argv 에 전달한다', async () => {
+    const provider = new CodexCliProvider();
+    const providerWithPrivateMethods =
+      provider as unknown as ProviderWithSpawnCodex;
+    const spawnCodexSpy = jest
+      .spyOn(providerWithPrivateMethods, 'spawnCodex')
+      .mockImplementation(async ({ args }) => {
+        const outputFile = args[args.indexOf('-o') + 1];
+        await writeFile(outputFile, 'world');
+        return { quotaDetection: { exhausted: false } };
+      });
+
+    await expect(
+      providerWithPrivateMethods.completeOnce({
+        prompt: 'hello',
+        imagePaths: ['/tmp/a.jpg', '/tmp/b.png'],
+      }),
+    ).resolves.toMatchObject({ text: 'world' });
+
+    const args = spawnCodexSpy.mock.calls[0][0].args;
+    expect(args.slice(-6)).toEqual([
+      '--image',
+      '/tmp/a.jpg',
+      '--image',
+      '/tmp/b.png',
+      '-o',
+      expect.stringMatching(/response\.txt$/),
+    ]);
   });
 });
 

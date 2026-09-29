@@ -123,7 +123,12 @@ export class ModelRouterUsecase {
       // 남는다. 호출자는 "스키마를 걸었으니 파싱은 안전하다" 는 전제로 결과를 다루므로, 형태가
       // 무너진 응답을 조용히 돌려주느니 primary 실패를 그대로 올린다.
       // (해당 호출: work-reviewer · po-shadow · blog 계열 · intent-classifier)
-      if (noFallback || request.outputSchema !== undefined) {
+      // 이미지도 Claude CLI 가 받을 수 없으므로 Codex 실패를 그대로 전파한다.
+      if (
+        noFallback ||
+        request.outputSchema !== undefined ||
+        request.imagePaths?.length
+      ) {
         throw this.wrapCompletionFailed({
           attempted: [primaryName],
           lastError: primaryError,
