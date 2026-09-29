@@ -2,7 +2,7 @@
 
 # 환경변수 카탈로그
 
-SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 164개.
+SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 165개.
 설명은 각 변수 주석의 첫 문장 발췌 — 상세는 app.config.ts 주석 참조. `.env.example` 동기는 `pnpm check:env`.
 
 ## 인프라 (앱 부팅 필수)
@@ -219,6 +219,7 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 
 | 키 | 필수 | 설명 |
 |---|---|---|
+| `WATCH_SCRIPT_PATH` | ❌ | Video Watch 외부 분석 스크립트 경로. 미설정 또는 파일 없음이면 해당 워커만 비활성화된다. |
 | `PORTFOLIO_SITE_URL` | ❌ | — |
 | `PORTFOLIO_AUTOMATION_TOKEN` | ❌ | — |
 | `PORTFOLIO_ANONYMIZED_OWNERS` | ❌ | — |

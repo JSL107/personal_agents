@@ -4,9 +4,21 @@ import {
   buildClaudeExitErrorMessage,
   buildClaudePrompt,
   ClaudeAuthSuspectException,
+  ClaudeCliProvider,
   isClaudeAuthSuspect,
   parseClaudeJsonOutput,
 } from './claude-cli.provider';
+
+describe('ClaudeCliProvider image rejection', () => {
+  it('이미지 요청은 CLI 호출 전에 명시적으로 거부한다', async () => {
+    const provider = new ClaudeCliProvider(
+      {} as ConstructorParameters<typeof ClaudeCliProvider>[0],
+    );
+    await expect(
+      provider.complete({ prompt: 'x', imagePaths: ['/tmp/frame.jpg'] }),
+    ).rejects.toThrow(/claude CLI.*이미지/);
+  });
+});
 
 describe('buildClaudeArgs', () => {
   it('기본 플래그는 print / output-format json / no-session-persistence / model opus 를 포함한다', () => {

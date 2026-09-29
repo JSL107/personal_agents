@@ -225,6 +225,21 @@ describe('ModelRouterUsecase', () => {
     });
   });
 
+  describe('이미지 요청 폴백', () => {
+    it('imagePaths 가 있으면 Codex 실패 후 Claude 로 넘어가지 않는다', async () => {
+      chatgptProvider.complete.mockRejectedValue(new Error('codex down'));
+
+      await expect(
+        usecase.route({
+          agentType: AgentType.WORK_REVIEWER,
+          request: { prompt: 'x', imagePaths: ['/tmp/frame.jpg'] },
+        }),
+      ).rejects.toMatchObject({ errorCode: 'MODEL_COMPLETION_FAILED' });
+
+      expect(claudeProvider.complete).not.toHaveBeenCalled();
+    });
+  });
+
   describe('EVENING_RETRO 라우팅', () => {
     it('EVENING_RETRO 는 ChatGPT(codex) 로 라우팅된다', () => {
       // AGENT_TO_PROVIDER 는 모듈 내부 const 이므로 route() 가 chatgptProvider 를 호출하는지로 검증.

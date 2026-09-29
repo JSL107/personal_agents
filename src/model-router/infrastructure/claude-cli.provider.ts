@@ -188,6 +188,10 @@ export class ClaudeCliProvider implements ModelProviderPort {
   constructor(private readonly configService: ConfigService) {}
 
   async complete(request: CompletionRequest): Promise<CompletionResponse> {
+    if (request.imagePaths?.length) {
+      throw new Error('claude CLI 는 이미지 첨부를 지원하지 않습니다.');
+    }
+
     // claude CLI 에는 codex 의 `--output-schema` 에 해당하는 인자가 없다. 호출자가 스키마를
     // 걸었는데 여기로 라우팅되면 형태 강제 없이 프롬프트 지시만 남으므로, 그 사실을 소리내어
     // 남긴다 — 조용히 무시하면 "스키마를 걸었으니 파싱은 안전하다" 는 잘못된 전제가 선다.

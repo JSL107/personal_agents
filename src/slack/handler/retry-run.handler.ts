@@ -9,6 +9,10 @@ import { GeneratePaperRecommendationUsecase } from '../../agent/paper-recommend/
 import { GenerateDailyPlanUsecase } from '../../agent/pm/application/generate-daily-plan.usecase';
 import { GeneratePoEvaluationUsecase } from '../../agent/po-eval/application/generate-po-evaluation.usecase';
 import { GeneratePoShadowUsecase } from '../../agent/po-shadow/application/generate-po-shadow.usecase';
+import {
+  WatchVideoOutcome,
+  WatchVideoUsecase,
+} from '../../agent/video-watch/application/watch-video.usecase';
 import { GenerateWorklogUsecase } from '../../agent/work-reviewer/application/generate-worklog.usecase';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { RetryRunUsecase } from '../../agent-run/application/retry-run.usecase';
@@ -25,6 +29,7 @@ import { formatImpactReport } from '../format/impact-report.formatter';
 import { formatEvaluationOutput } from '../format/po-evaluation.formatter';
 import { formatPoShadowReport } from '../format/po-shadow.formatter';
 import { formatPullRequestReview } from '../format/pull-request-review.formatter';
+import { formatVideoWatch } from '../format/video-watch.formatter';
 import { respondBlogPublishOutcome } from './blog-publish.handler';
 import {
   runAgentCommand,
@@ -55,6 +60,7 @@ export class RetryRunHandler implements SlackHandler {
     private readonly paperTradingRepository: PaperTradingPrismaRepository,
     private readonly agentRunService: AgentRunService,
     private readonly humanizeService: HumanizeService,
+    private readonly watchVideoUsecase: WatchVideoUsecase,
   ) {}
 
   // 재시도로 만들어진 새 run 을 원본 FAILED run 의 자식으로 연결한다. 이렇게 해야 "이 실행은
@@ -267,6 +273,48 @@ export class RetryRunHandler implements SlackHandler {
             text: `AgentRun #${id} (DELAY_REPORT) 는 실시간 조회라 재실행 개념이 없습니다. 현재 진행 현황을 다시 물어봐주세요.`,
           });
           return;
+        }
+        // 실패는 대부분 다운로드 차단·codex 일시 실패라 같은 입력으로 다시 돌릴 가치가 있다.
+        // 링크 원문은 저장하지 않으므로 검증된 videoId 로 요청 문장을 복원한다.
+        case 'VIDEO_WATCH': {
+          if (typeof snapshot.videoId !== 'string') {
+            await respond({
+              response_type: 'ephemeral',
+              replace_original: true,
+              text: `AgentRun #${id} (VIDEO_WATCH) 는 영상 정보가 남아 있지 않아 재실행할 수 없습니다. 영상 링크와 질문을 다시 멘션해 주세요.`,
+            });
+            return;
+          }
+          const videoId = snapshot.videoId;
+          const question =
+            typeof snapshot.question === 'string' ? snapshot.question : '';
+          let report: WatchVideoOutcome['report'] | null = null;
+          await runAgentCommand({
+            respond,
+            logger: this.logger,
+            commandLabel: '/retry-run(VIDEO_WATCH)',
+            execute: async () => {
+              const outcome = await this.watchVideoUsecase.execute({
+                slackUserId,
+                text: `${question} https://www.youtube.com/watch?v=${videoId}`,
+                triggerType: TriggerType.FAILURE_REPLAY,
+              });
+              report = outcome.report;
+              return outcome;
+            },
+            format: (result) =>
+              formatVideoWatch(
+                result,
+                report ?? {
+                  title: null,
+                  videoId,
+                  frameCount: 0,
+                  transcriptSource: null,
+                },
+              ),
+            onOutcome: this.linkRetryLineage(id),
+          });
+          break;
         }
         // 28일을 되짚는 누적 집계라 회차가 실패해도 데이터가 남지 않는다 — 다음 주 회차가
         // 같은 범위를 통째로 다시 본다. 지금 당장 수치를 봐야 하면 읽기 전용 스크립트가 있다.

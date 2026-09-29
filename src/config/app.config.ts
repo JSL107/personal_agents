@@ -76,6 +76,11 @@ export class EnvironmentVariables {
   @IsString()
   GITHUB_TOKEN?: string;
 
+  // Video Watch 외부 분석 스크립트 경로. 미설정 또는 파일 없음이면 해당 워커만 비활성화된다.
+  @IsOptional()
+  @IsString()
+  WATCH_SCRIPT_PATH?: string;
+
   // Notion integration token + 조회할 task DB ID 콤마 구분 리스트.
   // 미설정 시 Notion 커넥터 호출 시 친절한 예외 (앱 부팅엔 영향 없음).
   @IsOptional()
