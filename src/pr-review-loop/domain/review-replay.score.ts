@@ -1,4 +1,5 @@
-export type ReplayLabel = 'REJECTED' | 'FIXED';
+// MISSED 는 카드가 아니라 외부 리뷰(예: gemini)가 잡고 이대리는 놓친 결함이다. 재현되면 좋은 쪽이다.
+export type ReplayLabel = 'REJECTED' | 'FIXED' | 'MISSED';
 
 export interface LabeledFinding {
   id: number;
@@ -37,6 +38,7 @@ export interface ReplayRate {
 export interface ReplayScore {
   rejected: ReplayRate;
   fixed: ReplayRate;
+  missed: ReplayRate;
   results: FindingReplayResult[];
 }
 
@@ -46,9 +48,15 @@ export const scoreReplay = (pairs: readonly ReplayPair[]): ReplayScore => {
   const matched = assignMatches(pairs);
   const rejected: ReplayRate = { total: 0, reproduced: 0, rate: null };
   const fixed: ReplayRate = { total: 0, reproduced: 0, rate: null };
+  const missed: ReplayRate = { total: 0, reproduced: 0, rate: null };
+  const rateOf: Record<ReplayLabel, ReplayRate> = {
+    REJECTED: rejected,
+    FIXED: fixed,
+    MISSED: missed,
+  };
   const results = pairs.map((pair, index): FindingReplayResult => {
     const claimedCandidate = matched[index];
-    const rate = pair.labeled.label === 'REJECTED' ? rejected : fixed;
+    const rate = rateOf[pair.labeled.label];
     rate.total += 1;
     if (claimedCandidate !== undefined) {
       rate.reproduced += 1;
@@ -60,12 +68,12 @@ export const scoreReplay = (pairs: readonly ReplayPair[]): ReplayScore => {
       ...(claimedCandidate === undefined ? {} : { matched: claimedCandidate }),
     };
   });
-  for (const rate of [rejected, fixed]) {
+  for (const rate of [rejected, fixed, missed]) {
     if (rate.total > 0) {
       rate.rate = rate.reproduced / rate.total;
     }
   }
-  return { rejected, fixed, results };
+  return { rejected, fixed, missed, results };
 };
 
 // 카드와 재생 지적을 일대일로, 그러면서 **최대 개수**로 잇는다(Kuhn 증대경로).
@@ -137,7 +145,7 @@ const matchDistance = (
   }
   if (
     candidate.file === undefined ||
-    normalizePath(labeled.filePath) !== normalizePath(candidate.file)
+    !isSameFile(labeled.filePath, candidate.file)
   ) {
     return null;
   }
@@ -160,6 +168,20 @@ export const matchReplayedFinding = (
 
 const normalizePath = (path: string): string => {
   return path.trim().replace(/^(?:(?:\.\/)+)?(?:[ab]\/)?/, '');
+};
+
+// 경로가 같으면 같은 파일. 한쪽이 파일 이름만 있으면(외부 리뷰 요약표처럼) 다른 쪽의 마지막
+// 경로 조각과 비교한다 — 전체 경로를 모르는 표본도 매칭되게. 둘 다 경로가 있으면 종전처럼 전체를 비교한다.
+const isSameFile = (left: string, right: string): boolean => {
+  const normalizedLeft = normalizePath(left);
+  const normalizedRight = normalizePath(right);
+  if (normalizedLeft === normalizedRight) {
+    return true;
+  }
+  if (normalizedLeft.includes('/') && normalizedRight.includes('/')) {
+    return false;
+  }
+  return normalizedLeft.split('/').pop() === normalizedRight.split('/').pop();
 };
 
 // ── 반복 측정 ──────────────────────────────────────────────────────────────
@@ -289,18 +311,36 @@ export const compareWithBaseline = (
 
 // 기준선 보고서에서 라벨별 요약을 꺼낸다. 반복 측정 전의 보고서(`score` 만 있는 것)는 1회차로 읽는다 —
 // 그래야 지금까지 쌓인 보고서와도 비교가 끊기지 않는다. 형태를 알 수 없으면 null.
+// 미탐(missed)은 선택 항목이다 — 미탐 없이 돈 보고서와 그 전 보고서에는 없다.
+export interface BaselineSummaries {
+  rejected: TrialSummary;
+  fixed: TrialSummary;
+  missed?: TrialSummary;
+}
+
 export const readBaselineSummaries = (
   report: unknown,
-): { rejected: TrialSummary; fixed: TrialSummary } | null => {
+): BaselineSummaries | null => {
   if (typeof report !== 'object' || report === null) {
     return null;
   }
   const { trials, score } = report as {
-    trials?: { rejected?: TrialSummary; fixed?: TrialSummary };
+    trials?: {
+      rejected?: TrialSummary;
+      fixed?: TrialSummary;
+      missed?: unknown;
+    };
     score?: { rejected?: ReplayRate; fixed?: ReplayRate };
   };
   if (isTrialSummary(trials?.rejected) && isTrialSummary(trials?.fixed)) {
-    return { rejected: trials.rejected, fixed: trials.fixed };
+    if (trials.missed !== undefined && !isTrialSummary(trials.missed)) {
+      return null;
+    }
+    return {
+      rejected: trials.rejected,
+      fixed: trials.fixed,
+      ...(trials.missed === undefined ? {} : { missed: trials.missed }),
+    };
   }
   if (isReplayRate(score?.rejected) && isReplayRate(score?.fixed)) {
     return {
