@@ -13,6 +13,21 @@ private let cozyCharacterCanvasHeight = 900
 /// Validates the generated character sheets before they are used in a release render.
 func runCozyAssetCheck() -> Bool {
     var valid = true
+    for pose in cozyMechanicPoses {
+        let name = pose == cozyIdlePose ? "mechanic" : "mechanic-\(pose)"
+        guard let url = Bundle.module.url(
+            forResource: name, withExtension: "png", subdirectory: "cozy/characters"
+        ), let image = NSImage(contentsOf: url),
+              let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            fputs("missing or unreadable designated cozy character asset: \(name).png\n", stderr)
+            valid = false
+            continue
+        }
+        if cgImage.width != cozyCharacterCanvasWidth || cgImage.height != cozyCharacterCanvasHeight {
+            fputs("designated cozy character asset has unexpected dimensions: \(name).png\n", stderr)
+            valid = false
+        }
+    }
     for index in 0..<cozyCharacterAssetCount {
         guard let url = Bundle.module.url(
             forResource: "agent-\(index)", withExtension: "png", subdirectory: "cozy/characters"
@@ -276,7 +291,7 @@ func runCozyAssetCheck() -> Bool {
         }
     }
     if valid {
-        print("cozy asset check passed: 9 modular rooms + 1 shared oak floor + \(furnitureAssets.count) interactive furniture assets + \(dashboardAccentAssets.count) dashboard accents + \(cozyCharacterAssetCount) transparent characters + \(requiredPoseAssets.count) production pose assets + \(requiredWalkAssets.count) walk assets")
+        print("cozy asset check passed: 9 modular rooms + 1 shared oak floor + \(furnitureAssets.count) interactive furniture assets + \(dashboardAccentAssets.count) dashboard accents + \(cozyCharacterAssetCount) transparent characters + \(cozyMechanicPoses.count) designated mechanic poses + \(requiredPoseAssets.count) production pose assets + \(requiredWalkAssets.count) walk assets")
     }
     return valid
 }

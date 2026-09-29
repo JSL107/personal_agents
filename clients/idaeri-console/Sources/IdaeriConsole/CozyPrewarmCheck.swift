@@ -102,7 +102,7 @@ func runCozyPrewarmCheck() -> Bool {
     if !SpriteLoader.isCozyCharacterCached(assetIndex: target.assetIndex, pose: target.pose) {
         fputs(
             "prewarm check: 워밍이 캐시를 채우지 못했다 —"
-                + " agent-\(target.assetIndex) / \(target.pose) (15초 대기)\n",
+                + " \(cozyAssetName(target.assetIndex)) / \(target.pose) (15초 대기)\n",
             stderr
         )
         valid = false
@@ -129,7 +129,7 @@ func runCozyPrewarmCheck() -> Bool {
         if renderedFirst !== afterPrewarm {
             fputs(
                 "prewarm check: 워밍이 렌더가 먼저 채운 칸을 덮어썼다 —"
-                    + " agent-\(raceTarget.assetIndex) / \(raceTarget.pose)\n",
+                    + " \(cozyAssetName(raceTarget.assetIndex)) / \(raceTarget.pose)\n",
                 stderr
             )
             valid = false
@@ -151,7 +151,7 @@ func runCozyPrewarmCheck() -> Bool {
 /// 캐시가 비어 있는 첫 조합. 검사가 "이미 채워진 칸"으로 재서 헛통과하는 것을 막는다.
 @MainActor
 private func firstUncachedRequest() -> CozyCharacterRequest? {
-    for index in 0..<cozyCharacterAssetCount {
+    for index in [cozyMechanicAssetIndex] + Array(0..<cozyCharacterAssetCount) {
         let pose = cozyIdlePose
         if !SpriteLoader.isCozyCharacterCached(assetIndex: index, pose: pose) {
             return CozyCharacterRequest(assetIndex: index, pose: pose)
@@ -160,3 +160,6 @@ private func firstUncachedRequest() -> CozyCharacterRequest? {
     return nil
 }
 
+private func cozyAssetName(_ assetIndex: Int) -> String {
+    assetIndex == cozyMechanicAssetIndex ? "mechanic" : "agent-\(assetIndex)"
+}
