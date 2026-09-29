@@ -53,8 +53,30 @@ import { summarizeDiff } from '../src/pr-review-loop/domain/review-replay-diff';
 import {
   MissedFindingEntry,
   parseMissedFindings,
+  resolveMissPath,
   toMissedLabeledFinding,
 } from '../src/pr-review-loop/domain/review-replay-misses';
+
+// 미탐을 어느 커밋으로 재생했는지. 원장의 리뷰 실행 기록(agent_run)에는 리뷰한 커밋이 남지 않아,
+// 입력에 없으면 그 PR 의 가장 최근 카드 커밋을 쓴다. 이대리가 마지막 리뷰에서 지적을 하나도 안
+// 냈다면 그 커밋은 카드가 없어 이전 커밋이 잡힌다 — 그래서 출처를 보고서에 남긴다.
+interface ResolvedMiss {
+  id: number;
+  repo: string;
+  pullNumber: number;
+  headSha: string;
+  headShaSource: 'input' | 'latest-card';
+}
+
+// 파일 이름만 있던 미탐 중 전체 경로로 바꾸지 못한 것
+interface MissPathNote {
+  id: number;
+  repo: string;
+  pullNumber: number;
+  filePath: string;
+  kind: 'not-in-diff' | 'ambiguous';
+  candidates?: string[];
+}
 import { PrismaModule } from '../src/prisma/prisma.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 
@@ -119,6 +141,8 @@ interface ReplayReport {
   };
   // 리뷰한 커밋을 원장에서 찾지 못해 재생하지 못한 미탐
   unresolvedMisses: MissedFindingEntry[];
+  resolvedMisses: ResolvedMiss[];
+  missPathNotes: MissPathNote[];
   groups: ReplayGroupReport[];
   skipped: SkippedGroup[];
 }
@@ -159,7 +183,9 @@ const main = async (): Promise<void> => {
       options.misses === undefined ? [] : readMisses(options.misses);
     const rows = await selectFindings(prisma, options);
     const groups = groupFindings(rows);
-    const unresolvedMisses = await addMisses(prisma, groups, misses);
+    const { unresolved: unresolvedMisses, resolved: resolvedMisses } =
+      await addMisses(prisma, groups, misses);
+    const missPathNotes: MissPathNote[] = [];
     // 미탐은 카드가 없어(음수 id) 규약 재료가 아니다 — 카드 id 만 뺀다.
     const holdoutIds = options.holdout
       ? groups.flatMap((group) =>
@@ -192,6 +218,29 @@ const main = async (): Promise<void> => {
           detail: { ...currentDetail, headSha, ...summarizeDiff(diff.diff) },
           diff,
         };
+        const changedFiles = snapshot.detail.changedFiles;
+        group.findings = group.findings.map((finding) => {
+          if (finding.label !== 'MISSED' || finding.filePath === null) {
+            return finding;
+          }
+          const resolution = resolveMissPath(finding.filePath, changedFiles);
+          if (
+            resolution.kind === 'not-in-diff' ||
+            resolution.kind === 'ambiguous'
+          ) {
+            missPathNotes.push({
+              id: finding.id,
+              repo: repository,
+              pullNumber,
+              filePath: finding.filePath,
+              kind: resolution.kind,
+              ...(resolution.kind === 'ambiguous'
+                ? { candidates: resolution.candidates }
+                : {}),
+            });
+          }
+          return { ...finding, filePath: resolution.filePath };
+        });
       } catch (error: unknown) {
         for (let trial = 1; trial <= options.trials; trial += 1) {
           skipped.push(toSkipped(group, trial, error));
@@ -277,6 +326,8 @@ const main = async (): Promise<void> => {
             },
           }),
       unresolvedMisses,
+      resolvedMisses,
+      missPathNotes,
       groups: reportGroups,
       skipped,
     };
@@ -296,6 +347,11 @@ const main = async (): Promise<void> => {
         ...(unresolvedMisses.length === 0
           ? []
           : [`미탐 중 리뷰 커밋을 못 찾아 뺀 것 ${unresolvedMisses.length}`]),
+        ...(missPathNotes.length === 0
+          ? []
+          : [
+              `미탐 중 전체 경로를 못 정한 것 ${missPathNotes.length} (보고서 missPathNotes — 이름만으로 매칭된다)`,
+            ]),
         ...(report.baseline === undefined
           ? []
           : [
@@ -466,14 +522,15 @@ const readMisses = (path: string): MissedFindingEntry[] => {
   return entries;
 };
 
-// headSha 가 없는 미탐은 이대리가 그 PR 을 가장 최근에 리뷰한 커밋으로 재생한다.
+// headSha 가 없는 미탐은 그 PR 의 가장 최근 카드 커밋으로 재생한다(한계는 ResolvedMiss 참조).
 // 외부 리뷰가 본 커밋과 다를 수 있어 줄 번호가 조금 어긋날 수 있다(매칭 허용 오차 안이면 잡힌다).
 const addMisses = async (
   prisma: PrismaService,
   groups: ReplayGroup[],
   misses: readonly MissedFindingEntry[],
-): Promise<MissedFindingEntry[]> => {
+): Promise<{ unresolved: MissedFindingEntry[]; resolved: ResolvedMiss[] }> => {
   const unresolved: MissedFindingEntry[] = [];
+  const resolved: ResolvedMiss[] = [];
   for (const [index, entry] of misses.entries()) {
     const headSha =
       entry.headSha ??
@@ -495,13 +552,21 @@ const addMisses = async (
       unresolved.push(entry);
       continue;
     }
+    const labeled = toMissedLabeledFinding(entry);
+    resolved.push({
+      id: labeled.id,
+      repo: entry.repo,
+      pullNumber: entry.pullNumber,
+      headSha,
+      headShaSource: entry.headSha === undefined ? 'latest-card' : 'input',
+    });
     addToGroup(
       groups,
       { repo: entry.repo, pullNumber: entry.pullNumber, headSha },
-      toMissedLabeledFinding(entry, index),
+      labeled,
     );
   }
-  return unresolved;
+  return { unresolved, resolved };
 };
 
 const readOptions = (): ReplayOptions => {

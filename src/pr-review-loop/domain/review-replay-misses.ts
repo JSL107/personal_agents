@@ -7,7 +7,8 @@ export interface MissedFindingEntry {
   repo: string;
   pullNumber: number;
   filePath: string;
-  line: number | null;
+  // 필수다 — 미탐은 분류(category)가 없어 줄 없이는 재생 지적과 맞출 근거가 없다.
+  line: number;
   body: string;
   headSha?: string;
 }
@@ -39,9 +40,7 @@ export const parseMissedFindings = (raw: unknown): ParsedMisses => {
       typeof entry.filePath === 'string' && entry.filePath.trim() !== ''
         ? null
         : 'filePath 가 비었다',
-      entry.line === null || isPositiveInteger(entry.line)
-        ? null
-        : 'line 은 양의 정수 또는 null',
+      isPositiveInteger(entry.line) ? null : 'line 은 양의 정수',
       typeof entry.body === 'string' ? null : 'body 는 문자열',
       entry.headSha === undefined ||
       (typeof entry.headSha === 'string' && entry.headSha !== '')
@@ -56,7 +55,7 @@ export const parseMissedFindings = (raw: unknown): ParsedMisses => {
       repo: entry.repo as string,
       pullNumber: entry.pullNumber as number,
       filePath: entry.filePath as string,
-      line: entry.line as number | null,
+      line: entry.line as number,
       body: entry.body as string,
       ...(entry.headSha === undefined
         ? {}
@@ -66,15 +65,60 @@ export const parseMissedFindings = (raw: unknown): ParsedMisses => {
   return { entries, errors };
 };
 
-// 미탐은 카드 id 가 없으므로 음수로 번호를 붙인다 — 카드 id(양수)와 섞여도 겹치지 않게.
+// 미탐은 카드 id 가 없어 내용에서 고정 id 를 만든다(음수 — 카드 id 와 겹치지 않게).
+// 목록 순서로 번호를 매기면 순서를 바꾸거나 다른 항목을 넣었을 때 다른 결함이 같은 id 를 받아,
+// 기준선의 표본 동일성 판정이 틀린다. 같은 결함이면 목록이 바뀌어도 같은 id 가 나온다.
+export const missedFindingId = (entry: MissedFindingEntry): number => {
+  const key = [
+    entry.repo.toLowerCase(),
+    entry.pullNumber,
+    entry.filePath,
+    entry.line,
+    entry.body,
+  ].join('\u0000');
+  // FNV-1a 32bit
+  let hash = 0x811c9dc5;
+  for (const char of key) {
+    hash ^= char.codePointAt(0) ?? 0;
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return -((hash % 0x7fffffff) + 1);
+};
+
 export const toMissedLabeledFinding = (
   entry: MissedFindingEntry,
-  index: number,
 ): LabeledFinding => ({
-  id: -(index + 1),
+  id: missedFindingId(entry),
   label: 'MISSED',
   filePath: entry.filePath,
   line: entry.line,
   category: '',
   body: entry.body,
 });
+
+export type MissPathResolution =
+  | { kind: 'full'; filePath: string }
+  | { kind: 'resolved'; filePath: string }
+  | { kind: 'not-in-diff'; filePath: string }
+  | { kind: 'ambiguous'; filePath: string; candidates: string[] };
+
+// 파일 이름만 있는 미탐을 그 PR diff 의 변경 파일에서 찾아 전체 경로로 바꾼다. 이름만으로 매칭하면
+// 같은 PR 의 다른 디렉터리 동명 파일(index.ts 등)을 잡는다. 후보가 하나일 때만 바꾸고,
+// 없거나 여럿이면 이름 그대로 두되 호출자가 보고서에 남기도록 종류를 돌려준다.
+export const resolveMissPath = (
+  filePath: string,
+  changedFiles: readonly string[],
+): MissPathResolution => {
+  if (filePath.includes('/')) {
+    return { kind: 'full', filePath };
+  }
+  const candidates = changedFiles.filter(
+    (changed) => changed.split('/').pop() === filePath,
+  );
+  if (candidates.length === 1) {
+    return { kind: 'resolved', filePath: candidates[0] };
+  }
+  return candidates.length === 0
+    ? { kind: 'not-in-diff', filePath }
+    : { kind: 'ambiguous', filePath, candidates };
+};
