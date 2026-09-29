@@ -10,6 +10,7 @@ import {
   scoreReplay,
   skippedCountOf,
   summarizeTrials,
+  summarizeTrialsByTruncation,
   TrialSummary,
 } from './review-replay.score';
 
@@ -478,5 +479,59 @@ describe('readBaselineSummaries — 미탐', () => {
         },
       }),
     ).toBeNull();
+  });
+});
+
+describe('summarizeTrialsByTruncation', () => {
+  it('diff 잘림 여부로 그룹을 나눠 회차별로 요약한다', () => {
+    const split = summarizeTrialsByTruncation(
+      [
+        {
+          trial: 1,
+          diffTruncated: false,
+          results: [result(1, 'REJECTED', true)],
+        },
+        {
+          trial: 1,
+          diffTruncated: true,
+          results: [result(2, 'REJECTED', false)],
+        },
+        {
+          trial: 2,
+          diffTruncated: false,
+          results: [result(1, 'REJECTED', false)],
+        },
+        {
+          trial: 2,
+          diffTruncated: true,
+          results: [result(2, 'REJECTED', false)],
+        },
+      ],
+      2,
+      'REJECTED',
+    );
+
+    expect(split.intact).toMatchObject({
+      total: 1,
+      rates: [1, 0],
+      anyTrial: 1,
+      everyTrial: 0,
+    });
+    expect(split.truncated).toMatchObject({
+      total: 1,
+      rates: [0, 0],
+      anyTrial: 0,
+    });
+  });
+
+  it('한쪽에 그룹이 없으면 그쪽은 카드 0 · 재현율 null 이다', () => {
+    const split = summarizeTrialsByTruncation(
+      [{ trial: 1, diffTruncated: false, results: [result(1, 'FIXED', true)] }],
+      1,
+      'FIXED',
+    );
+
+    expect(split.truncated).toMatchObject({ total: 0, meanRate: null });
+    expect(split.intact).toMatchObject({ total: 1, meanRate: 1 });
   });
 });
