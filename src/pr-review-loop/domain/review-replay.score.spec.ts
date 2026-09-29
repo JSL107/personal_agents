@@ -197,6 +197,20 @@ describe('compareBodies', () => {
         ?.sharedIdentifiers,
     ).toBe(1);
   });
+
+  it('가까운 다른 결함이 언어 키워드만 공유하면 재현으로 세지 않는다', () => {
+    const card: LabeledFinding = {
+      ...LABELED,
+      body: '만료된 토큰을 거부하지 않고 return 해 인증이 우회됩니다.',
+    };
+    const other = {
+      ...REPLAYED,
+      line: 22,
+      body: '날짜 포맷 error 를 삼켜 return 값이 비어 버립니다.',
+    };
+    expect(compareBodies(card.body, other.body)?.sharedIdentifiers).toBe(0);
+    expect(matchReplayedFinding(card, [other])).toBeUndefined();
+  });
 });
 
 describe('scorerVersionOf', () => {
