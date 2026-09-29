@@ -36,6 +36,7 @@ import {
 import {
   BaselineComparison,
   BaselineSummaries,
+  compareMissedIntactWithBaseline,
   compareWithBaseline,
   FindingReplayResult,
   isSameSample,
@@ -146,6 +147,8 @@ interface ReplayReport {
     rejected: BaselineComparison;
     fixed: BaselineComparison;
     missed?: BaselineComparison;
+    // 미탐 통과 판정은 이 값으로 한다(diff 안 잘린 그룹). 위 missed 는 합친 값이라 참고용.
+    missedIntact?: BaselineComparison;
   };
   // 리뷰한 커밋을 원장에서 찾지 못해 재생하지 못한 미탐
   unresolvedMisses: MissedFindingEntry[];
@@ -342,15 +345,26 @@ const main = async (): Promise<void> => {
               rejected: compareWithBaseline(
                 trials.rejected,
                 baselineReport.summaries.rejected,
+                'REJECTED',
               ),
               fixed: compareWithBaseline(
                 trials.fixed,
                 baselineReport.summaries.fixed,
+                'FIXED',
               ),
               ...(trials.missed === undefined || baselineMissed === undefined
                 ? {}
                 : {
                     missed: compareWithBaseline(trials.missed, baselineMissed),
+                  }),
+              ...(trials.byDiffTruncation.missed === undefined ||
+              baselineMissed === undefined
+                ? {}
+                : {
+                    missedIntact: compareMissedIntactWithBaseline(
+                      trials.byDiffTruncation.missed.intact,
+                      baselineReport.summaries.missedIntact,
+                    ),
                   }),
             },
           }),
@@ -394,11 +408,28 @@ const main = async (): Promise<void> => {
                 : [
                     '경고: 기준선과 측정한 카드가 다르거나 어느 쪽에 스킵이 있다 — 차이는 문제지 탓일 수 있다. 같은 --ids 로 스킵 없이 다시 돌릴 것',
                   ]),
-              formatBaselineLine('오탐 재발', report.baseline.rejected),
-              formatBaselineLine('정탐 유지', report.baseline.fixed),
+              formatBaselineLine(
+                '오탐 재발',
+                report.baseline.rejected,
+                passRuleNote(report.baseline.rejected),
+              ),
+              formatBaselineLine(
+                '정탐 유지',
+                report.baseline.fixed,
+                passRuleNote(report.baseline.fixed),
+              ),
               ...(report.baseline.missed === undefined
                 ? []
                 : [formatBaselineLine('미탐 재현', report.baseline.missed)]),
+              ...(report.baseline.missedIntact === undefined
+                ? []
+                : [
+                    formatBaselineLine(
+                      '미탐 재현(diff 안 잘림, 판정 기준)',
+                      report.baseline.missedIntact,
+                      passRuleNote(report.baseline.missedIntact),
+                    ),
+                  ]),
             ]),
         `스킵 ${skipped.length}`,
         '',
@@ -462,8 +493,24 @@ const formatSplitLines = (split: TruncationSplit): string[] => [
 const formatBaselineLine = (
   label: string,
   comparison: BaselineComparison,
+  note = '',
 ): string =>
-  `기준선 대비 ${label} ${percent(comparison.baselineMean)} → ${percent(comparison.currentMean)} · ${comparison.verdict} (${comparison.reason})`;
+  `기준선 대비 ${label} ${percent(comparison.baselineMean)} → ${percent(comparison.currentMean)} · ${comparison.verdict} (${comparison.reason})${note}`;
+
+// 통과 규칙(docs/superpowers/plans/2026-09-29-review-replay-trials.md §6-2)에서 이 줄이 뜻하는 것.
+// 판정 기준인 줄에만 붙인다 — 합친 미탐 값은 참고용이라 붙이지 않는다.
+const passRuleNote = (comparison: BaselineComparison): string => {
+  if (comparison.verdict === '판단 불가') {
+    return '';
+  }
+  if (comparison.verdict === '변동 범위 안') {
+    return ' → 효과 없음 또는 측정 불가';
+  }
+  if (comparison.direction === '나쁜 쪽') {
+    return ' → 나쁜 쪽: 반려';
+  }
+  return ' → 좋은 쪽: 재실행 1회로 확인, 두 번 다 범위 밖이어야 통과';
+};
 
 const selectFindings = async (
   prisma: PrismaService,

@@ -1,4 +1,5 @@
 import {
+  compareMissedIntactWithBaseline,
   compareWithBaseline,
   FindingReplayResult,
   isSameSample,
@@ -295,6 +296,33 @@ describe('compareWithBaseline', () => {
     ).toBe('변동 범위 밖');
   });
 
+  it.each([
+    ['REJECTED', [0.3, 0.4], '나쁜 쪽'],
+    ['REJECTED', [0.0, 0.05], '좋은 쪽'],
+    ['FIXED', [0.3, 0.4], '좋은 쪽'],
+    ['FIXED', [0.0, 0.05], '나쁜 쪽'],
+    ['MISSED', [0.0, 0.05], '나쁜 쪽'],
+  ] as const)('%s 가 %j 로 벗어나면 %s', (label, rates, direction) => {
+    expect(
+      compareWithBaseline(summaryOf([...rates]), summaryOf([0.1, 0.2]), label)
+        .direction,
+    ).toBe(direction);
+  });
+
+  it('범위 안이거나 라벨이 없으면 방향을 붙이지 않는다', () => {
+    expect(
+      compareWithBaseline(
+        summaryOf([0.1, 0.3]),
+        summaryOf([0.2, 0.25]),
+        'FIXED',
+      ).direction,
+    ).toBeUndefined();
+    expect(
+      compareWithBaseline(summaryOf([0.5, 0.6]), summaryOf([0.1, 0.2]))
+        .direction,
+    ).toBeUndefined();
+  });
+
   // 요청은 2회였어도 한 회차가 통째로 스킵되면 관측은 하나뿐이다.
   it('스킵으로 실제 측정 회차가 1번뿐이면 판단 불가', () => {
     const current: TrialSummary = {
@@ -321,7 +349,61 @@ describe('compareWithBaseline', () => {
   });
 });
 
+describe('compareMissedIntactWithBaseline', () => {
+  it('기준선에 안 잘림 집계가 있으면 범위 겹침으로 판정한다', () => {
+    expect(
+      compareMissedIntactWithBaseline(
+        summaryOf([0.2, 0.3]),
+        summaryOf([0.46, 0.69, 0.62]),
+      ),
+    ).toMatchObject({ verdict: '변동 범위 밖', direction: '나쁜 쪽' });
+  });
+
+  // 합친 값으로 대신 비교하면 잘림 0% 가 섞여 기준이 달라진다.
+  it('기준선이 분리 집계 전 보고서면 판단 불가', () => {
+    const comparison = compareMissedIntactWithBaseline(
+      summaryOf([0.5, 0.6]),
+      undefined,
+    );
+
+    expect(comparison).toMatchObject({
+      verdict: '판단 불가',
+      baselineMean: null,
+      currentMean: 0.55,
+    });
+    expect(comparison.reason).toContain('byDiffTruncation');
+  });
+});
+
 describe('readBaselineSummaries', () => {
+  it('미탐 안 잘림 집계를 byDiffTruncation 에서 읽는다', () => {
+    const intact = summaryOf([0.46, 0.69, 0.62]);
+    const summaries = readBaselineSummaries({
+      trials: {
+        rejected: summaryOf([0.1]),
+        fixed: summaryOf([0.5]),
+        missed: summaryOf([0.24, 0.36, 0.32]),
+        byDiffTruncation: {
+          missed: { intact, truncated: summaryOf([0, 0, 0]) },
+        },
+      },
+    });
+
+    expect(summaries?.missedIntact).toEqual(intact);
+  });
+
+  it('안 잘림 집계의 형식이 틀리면 거부한다', () => {
+    expect(
+      readBaselineSummaries({
+        trials: {
+          rejected: summaryOf([0.1]),
+          fixed: summaryOf([0.5]),
+          byDiffTruncation: { missed: { intact: { total: 3 } } },
+        },
+      }),
+    ).toBeNull();
+  });
+
   it('반복 측정 보고서는 trials 를 그대로 읽는다', () => {
     const rejected = summaryOf([0.2, 0.3]);
     const fixed = summaryOf([0.8, 0.9]);
