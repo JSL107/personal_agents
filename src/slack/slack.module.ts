@@ -10,6 +10,7 @@ import { PmAgentModule } from '../agent/pm/pm-agent.module';
 import { PoEvalModule } from '../agent/po-eval/po-eval.module';
 import { PoShadowModule } from '../agent/po-shadow/po-shadow.module';
 import { VacationModule } from '../agent/vacation/vacation.module';
+import { VideoWatchModule } from '../agent/video-watch/video-watch.module';
 import { WorkReviewerModule } from '../agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from '../agent-run/agent-run.module';
 import { HumanizeModule } from '../humanize/humanize.module';
@@ -71,6 +72,8 @@ import { SlackService } from './slack.service';
     RouterModule,
     // 휴가 잔여/등록/내역/취소 — 결정론 계산. /휴가 슬래시.
     VacationModule,
+    // /retry-run 의 VIDEO_WATCH 재실행 — WatchVideoUsecase 주입.
+    VideoWatchModule,
     // Subconscious Proposal — ProposalEmitter 구현체 + 제안 리포지토리.
     // forwardRef: SubconsciousModule 이 SlackModule(SlackService) 을 import 하므로 순환 해소.
     forwardRef(() => SubconsciousModule),

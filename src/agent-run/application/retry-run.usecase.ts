@@ -44,6 +44,8 @@ export interface AgentRetryInputSnapshot {
   publishedAt?: string;
   prompt?: string;
   ruleVersion?: number;
+  videoId?: string; // VIDEO_WATCH — 검증된 11자 ID (링크 원문은 저장하지 않는다)
+  question?: string; // VIDEO_WATCH
 }
 
 export interface RetryRunPayload {

@@ -33,6 +33,8 @@ import {
 export interface WatchVideoInput {
   slackUserId: string;
   text: string;
+  // /retry-run 은 FAILURE_REPLAY 로 부른다. 생략하면 자연어 멘션.
+  triggerType?: TriggerType;
 }
 
 export interface WatchVideoOutcome extends AgentRunOutcome<VideoWatchResult> {
@@ -60,6 +62,7 @@ export class WatchVideoUsecase {
   async execute({
     slackUserId,
     text,
+    triggerType = TriggerType.SLACK_MENTION_VIDEO_WATCH,
   }: WatchVideoInput): Promise<WatchVideoOutcome> {
     const extracted = extractYoutubeVideo(text);
     if (!extracted) {
@@ -84,8 +87,10 @@ export class WatchVideoUsecase {
     let reportSummary: WatchVideoOutcome['report'] | null = null;
     const outcome = await this.agentRunService.execute<VideoWatchResult>({
       agentType: AgentType.VIDEO_WATCH,
-      triggerType: TriggerType.SLACK_MENTION_VIDEO_WATCH,
+      triggerType,
+      // slackUserId 는 /retry-run 이 "본인 실행인가" 를 가리는 데 쓴다.
       inputSnapshot: {
+        slackUserId,
         videoId: extracted.videoId,
         question,
       },
