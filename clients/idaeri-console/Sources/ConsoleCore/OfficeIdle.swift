@@ -458,8 +458,9 @@ func officeShellFixtureStandTile(
 /// 추가할 때 이 표도 함께 보는 것이 맞다.
 public func officeWorkAffinity(agentType: String) -> [FurnitureKind] {
     switch agentType {
-    // 자료를 찾아 읽는다.
-    case "CTO_STUDY", "PREFERENCE_LEARNING", "DOCS_AUDIT_OPTIMIZER":
+    // 자료를 찾아 읽는다. 영상을 보고 답하는 담당(VIDEO_WATCH)도 여기다 — 자료를 훑어 필요한
+    // 대목을 뽑는 일이라 몸짓이 같고, 책장·벽 선반이 제 방(품질)에 이미 있다.
+    case "CTO_STUDY", "PREFERENCE_LEARNING", "DOCS_AUDIT_OPTIMIZER", "VIDEO_WATCH":
         return [.bookshelf, .wallShelf]
     // 글을 써서 내보낸다.
     case "BLOG", "BLOG_PUBLISH", "WORK_REVIEWER", "EVENING_RETRO", "HUMANIZER":
