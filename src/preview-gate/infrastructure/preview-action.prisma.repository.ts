@@ -195,7 +195,7 @@ export class PreviewActionPrismaRepository implements PreviewActionRepositoryPor
   }: {
     kind: string;
     payloadPath: string[];
-    payloadValue: string;
+    payloadValue: string | number;
   }): Promise<number> {
     return this.prisma.previewAction.count({
       where: {
