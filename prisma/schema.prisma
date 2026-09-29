@@ -200,6 +200,10 @@ model PrReviewFinding {
   githubCommentId    BigInt?   @map("github_comment_id")
   githubThreadNodeId String?   @map("github_thread_node_id")
   rejectReason       String?   @db.Text
+  // ACKED 카드의 owner 답글 원문(왜 정탐인지·원인·수정). rejectReason 과 컬럼을 나눈 이유:
+  // 규약 조회(findRejectionsForConventions)가 rejectReason 을 억제문으로 싣고,
+  // review:unlearn 이 rejectReason 을 비운다 — 같은 컬럼이면 정탐이 억제되거나 재료가 지워진다.
+  acceptReply        String?   @map("accept_reply") @db.Text
   decidedAt          DateTime? @map("decided_at")
   resolvedAt         DateTime? @map("resolved_at")
   createdAt          DateTime  @default(now()) @map("created_at")

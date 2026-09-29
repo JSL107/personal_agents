@@ -312,6 +312,8 @@ export class HarvestReviewSignalsUsecase {
             thread,
             status: 'ACKED',
             rejectReason: null,
+            // 수용 답글 원문. 규약(억제문)으로는 흐르지 않는다 — 저장소 주석 참조.
+            acceptReply: signal.ownerReplyBody,
             outcome,
           });
           break;
@@ -709,6 +711,9 @@ export class HarvestReviewSignalsUsecase {
         // 두 경로가 같은 것을 저장하게 맞춘다.
         rejectReason:
           judgment.verdict === 'REJECTED' ? pending.ownerReplyBody : null,
+        // 리액션 경로(case 'ACKED')와 같은 것을 남긴다 — owner 가 쓴 답글 원문.
+        acceptReply:
+          judgment.verdict === 'ACCEPTED' ? pending.ownerReplyBody : null,
         outcome,
       });
       // DB 확정이 끝난 뒤에 기록한다. 배치 전체를 미리 찍으면 첫 카드의 쓰기 실패가
@@ -723,18 +728,22 @@ export class HarvestReviewSignalsUsecase {
     thread,
     status,
     rejectReason,
+    acceptReply,
     outcome,
   }: {
     card: PrReviewFindingRecord;
     thread: ReviewThread;
     status: Extract<FindingStatus, 'ACKED' | 'REJECTED' | 'FIXED'>;
     rejectReason: string | null;
+    acceptReply?: string | null;
     outcome: HarvestOutcome;
   }): Promise<void> {
     await this.repository.markDecided({
       id: card.id,
       status,
       rejectReason,
+      // ACKED 가 아니면 키를 싣지 않는다 — 수용 답글은 채택 카드에만 의미가 있다.
+      ...(status === 'ACKED' ? { acceptReply } : {}),
       githubThreadNodeId: thread.threadId,
     });
     if (status === 'ACKED') {

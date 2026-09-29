@@ -5,7 +5,12 @@ import {
 import { IDAERI_REVIEW_MARKER } from './finding-comment.body';
 
 export type HarvestSignal =
-  | { kind: 'ACKED'; source: 'REACTION'; replyBody: string | null }
+  | {
+      kind: 'ACKED';
+      source: 'REACTION';
+      replyBody: string | null;
+      ownerReplyBody: string | null;
+    }
   | {
       kind: 'REJECTED';
       source: 'REACTION';
@@ -109,7 +114,7 @@ export const resolveHarvestSignal = ({
     }
 
     if (latestReaction?.content === 'THUMBS_UP') {
-      return { kind: 'ACKED', source: 'REACTION', replyBody };
+      return { kind: 'ACKED', source: 'REACTION', replyBody, ownerReplyBody };
     }
     if (latestReaction?.content === 'THUMBS_DOWN') {
       return {

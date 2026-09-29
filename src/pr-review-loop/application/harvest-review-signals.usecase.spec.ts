@@ -185,6 +185,7 @@ describe('HarvestReviewSignalsUsecase', () => {
       id: 1,
       status: 'ACKED',
       rejectReason: null,
+      acceptReply: null,
       githubThreadNodeId: 'PRRT_555',
     });
     expect(repository.markDecided).toHaveBeenCalledWith({
@@ -231,6 +232,7 @@ describe('HarvestReviewSignalsUsecase', () => {
       id: 1,
       status: 'ACKED',
       rejectReason: null,
+      acceptReply: null,
       githubThreadNodeId: 'PRRT_555',
     });
   });
@@ -1019,6 +1021,54 @@ describe('HarvestReviewSignalsUsecase', () => {
       status: 'REJECTED',
       rejectReason: LONG_REJECT_REPLY,
       githubThreadNodeId: 'PRRT_556',
+    });
+    // 수용 쪽도 판정기 요약('수정함')이 아니라 답글 원문을 남긴다 — 리액션 경로와 같은 것.
+    expect(repository.markDecided).toHaveBeenCalledWith({
+      id: 1,
+      status: 'ACKED',
+      rejectReason: null,
+      acceptReply: '수정했습니다',
+      githubThreadNodeId: 'PRRT_555',
+    });
+  });
+
+  it('THUMBS_UP 과 owner 답글이 함께 있으면 답글 원문을 수용 답글로 남긴다', async () => {
+    const { usecase, github, repository } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: null,
+      pullRequestState: 'OPEN',
+      truncated: false,
+      threads: [
+        reviewThread({
+          reactions: [
+            {
+              content: 'THUMBS_UP',
+              userLogin: 'owner',
+              createdAt: '2026-07-31T01:00:00Z',
+            },
+          ],
+          replies: [
+            {
+              databaseId: 600,
+              authorLogin: 'owner',
+              body: '정탐입니다. 경계값에서 off-by-one 이 나서 수정했습니다.',
+              createdAt: '2026-07-31T01:00:00Z',
+              reactions: [],
+            },
+          ],
+        }),
+      ],
+    });
+
+    await usecase.execute();
+
+    expect(repository.markDecided).toHaveBeenCalledWith({
+      id: 1,
+      status: 'ACKED',
+      rejectReason: null,
+      acceptReply: '정탐입니다. 경계값에서 off-by-one 이 나서 수정했습니다.',
+      githubThreadNodeId: 'PRRT_555',
     });
   });
 
