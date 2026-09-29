@@ -16,6 +16,7 @@ import { ListMyMentionsUsecase } from '../../../slack-collector/application/list
 import { PmAgentException } from '../domain/pm-agent.exception';
 import { DailyPlan, TaskItem } from '../domain/pm-agent.type';
 import { PmAgentErrorCode } from '../domain/pm-agent-error-code.enum';
+import { MAX_SLACK_MENTIONS } from '../domain/prompt/slack-mention-formatter';
 
 const task = (title: string, overrides: Partial<TaskItem> = {}): TaskItem => {
   const item: TaskItem = {
@@ -800,6 +801,32 @@ describe('GenerateDailyPlanUsecase', () => {
             sourceId: 'U123',
           }),
         ]),
+      );
+    });
+
+    // 절단 정보는 스냅샷뿐 아니라 결과에도 실려야 네 Slack 경로가 카드에 안내를 낸다.
+    // 포매터 테스트는 메타를 직접 넘기므로 이 매핑이 빠지는 회귀를 못 잡는다.
+    it('mention 이 상한을 넘으면 생략 건수가 스냅샷과 결과 양쪽에 같게 실린다', async () => {
+      listMyMentionsExecute.mockResolvedValue(
+        Array.from({ length: MAX_SLACK_MENTIONS + 3 }, (_, index) => ({
+          ...mention,
+          ts: `${index + 1}.0`,
+        })),
+      );
+      listAssignedTasksExecute.mockResolvedValue({
+        issues: [],
+        pullRequests: [],
+      });
+
+      const outcome = await usecase.execute({
+        tasksText: 'x',
+        slackUserId: 'U123',
+      });
+
+      const call = agentRunServiceExecute.mock.calls[0][0];
+      expect(call.inputSnapshot.truncated.slackMentions).toBe(3);
+      expect(outcome.result.inputTruncation).toEqual(
+        call.inputSnapshot.truncated,
       );
     });
 

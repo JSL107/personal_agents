@@ -55,7 +55,8 @@ export class AgentCommandHandler implements SlackHandler {
             tasksText,
             slackUserId: command.user_id,
           }),
-        format: (result) => formatDailyPlan(result.plan),
+        format: (result) =>
+          formatDailyPlan(result.plan, result.inputTruncation),
       });
     });
 

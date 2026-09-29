@@ -134,7 +134,8 @@ export class RetryRunHandler implements SlackHandler {
                 slackUserId,
                 triggerType: TriggerType.FAILURE_REPLAY,
               }),
-            format: (result) => formatDailyPlan(result.plan),
+            format: (result) =>
+              formatDailyPlan(result.plan, result.inputTruncation),
             onOutcome: this.linkRetryLineage(id),
           });
           break;
