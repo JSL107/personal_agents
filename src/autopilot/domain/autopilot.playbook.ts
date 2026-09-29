@@ -474,6 +474,7 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       timezone: DEFAULT_PR_REVIEW_SWEEP_TIMEZONE,
     },
     riskTier: 'T0_AUTO',
+    line: 'review',
   },
   {
     id: 'ai-cli-env-snapshot',
