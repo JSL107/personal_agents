@@ -94,12 +94,6 @@ enum SpriteLoader {
         )
     }
 
-    private static func normalizedCozyAssetIndex(_ assetIndex: Int) -> Int {
-        assetIndex == cozyMechanicAssetIndex
-            ? cozyMechanicAssetIndex
-            : ((assetIndex % cozyCharacterAssetCount) + cozyCharacterAssetCount) % cozyCharacterAssetCount
-    }
-
     /// 조회·적재·워밍이 같은 칸을 가리키게 키 계산을 한곳에 둔다.
     private static func cozyCharacterCacheKey(assetIndex: Int, pose: String) -> String {
         normalizedCozyCharacter(assetIndex: assetIndex, pose: pose).cacheKey
