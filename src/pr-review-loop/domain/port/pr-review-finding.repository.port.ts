@@ -30,6 +30,8 @@ export interface MarkDecidedInput {
   id: number;
   status: Extract<FindingStatus, 'ACKED' | 'REJECTED' | 'FIXED' | 'STALE'>;
   rejectReason: string | null;
+  // ACKED 일 때만 저장된다(나머지 상태는 저장소가 null 로 덮는다). 규약 조회는 이 값을 읽지 않는다.
+  acceptReply?: string | null;
   githubThreadNodeId: string | null;
   // 스레드가 이미 닫혀 있어 결론과 닫힘을 함께 확정할 때 true.
   // 두 번의 쓰기로 나누면 첫 쓰기 뒤 실패했을 때 status 가 OPEN 이 아니게 되어

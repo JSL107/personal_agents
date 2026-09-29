@@ -75,6 +75,7 @@ describe('resolveHarvestSignal', () => {
       kind: 'ACKED',
       source: 'REACTION',
       replyBody: null,
+      ownerReplyBody: null,
     });
   });
 
@@ -125,6 +126,7 @@ describe('resolveHarvestSignal', () => {
       kind: 'ACKED',
       source: 'REACTION',
       replyBody: null,
+      ownerReplyBody: null,
     });
   });
 
@@ -330,6 +332,48 @@ describe('resolveHarvestSignal', () => {
       kind: 'ACKED',
       source: 'REACTION',
       replyBody: '수정했습니다',
+      ownerReplyBody: '수정했습니다',
+    });
+  });
+
+  it('ACKED 의 ownerReplyBody 에는 owner 가 쓴 답글만 담는다', () => {
+    // 수용 답글도 기각 이유와 같은 규칙 — 저장될 문장은 owner 것뿐이다(`ownerLogin` 주석).
+    const targetThread = thread({
+      comments: [
+        {
+          ...thread().comments[0],
+          reactions: [
+            {
+              content: 'THUMBS_UP',
+              userLogin: 'owner',
+              createdAt: '2026-07-31T01:00:00Z',
+            },
+          ],
+        },
+        {
+          databaseId: 556,
+          authorLogin: 'pr-author',
+          body: '제3자 답글',
+          createdAt: '2026-07-31T02:00:00Z',
+          reactions: [],
+        },
+        {
+          databaseId: 557,
+          authorLogin: 'owner',
+          body: '맞는 지적입니다',
+          createdAt: '2026-07-31T03:00:00Z',
+          reactions: [],
+        },
+      ],
+    });
+
+    expect(
+      resolve({ targetThread, decisionLogins: ['owner', 'pr-author'] }),
+    ).toEqual({
+      kind: 'ACKED',
+      source: 'REACTION',
+      replyBody: '제3자 답글\n맞는 지적입니다',
+      ownerReplyBody: '맞는 지적입니다',
     });
   });
 
