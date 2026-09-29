@@ -977,3 +977,52 @@ describe('ReviewPullRequestUsecase × 학습 규약', () => {
     ).not.toHaveBeenCalled();
   });
 });
+
+describe('buildReviewPrompt — 숨은 유니코드 안내', () => {
+  const detail = {
+    number: 1,
+    title: 't',
+    body: '',
+    repo: 'a/b',
+    url: 'u',
+    baseRef: 'main',
+    baseSha: 'base',
+    headRef: 'h',
+    authorLogin: 'm',
+    mergedAt: null,
+    changedFiles: [],
+    changedFilesTotalCount: 0,
+    changedFilesTruncated: false,
+    additions: 1,
+    deletions: 0,
+    headSha: 'sha',
+    isDraft: false,
+  };
+
+  it('diff 는 바꾸지 않고 위치 목록을 경계 안에 담아 알린다', () => {
+    // 포매터가 이스케이프를 실제 문자로 바꾸지 않도록 코드 포인트로 만든다.
+    const rlo = String.fromCodePoint(0x202e);
+    const raw = `+++ b/src/x.ts\n@@ -1 +1 @@\n+a${rlo}b`;
+    const text = buildReviewPrompt({
+      detail,
+      diff: { diff: raw, truncated: false, bytes: raw.length },
+    });
+
+    expect(text).toContain('안 보이는 문자 1개');
+    // 경로는 PR 작성자가 정한 값이라 신뢰 경계 안에 있어야 한다.
+    expect(text).toMatch(
+      /<untrusted-input>\n- src\/x\.ts:1 U\+202E \(방향 제어\)\n<\/untrusted-input>/,
+    );
+    // 리뷰 대상 코드는 원문 그대로 — 지우면 리뷰어가 공격을 못 본다.
+    expect(text).toContain(`+a${rlo}b`);
+  });
+
+  it('숨은 문자가 없으면 안내가 없다', () => {
+    const text = buildReviewPrompt({
+      detail,
+      diff: { diff: '+hello', truncated: false, bytes: 6 },
+    });
+
+    expect(text).not.toContain('안 보이는 문자');
+  });
+});
