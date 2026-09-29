@@ -6,11 +6,15 @@ import {
   ApplicabilityStats,
   ExpandableStudyBrief,
   JudgeableStudyBrief,
+  JudgedApplyStudyBrief,
   RecentStudyBrief,
   SaveStudyBriefInput,
   StudyBriefRepositoryPort,
 } from '../domain/port/study-brief.repository.port';
-import { ApplicabilityJudgement } from '../domain/study-applicability.type';
+import {
+  APPLICABILITY_VERDICT,
+  ApplicabilityJudgement,
+} from '../domain/study-applicability.type';
 import { StudyBriefVerdict } from '../domain/study-brief.type';
 import { StudyResearchKind } from '../domain/study-research.parser';
 
@@ -116,6 +120,45 @@ export class StudyBriefPrismaRepository implements StudyBriefRepositoryPort {
       },
     });
     return count > 0;
+  }
+
+  async findApplyJudgedSince(
+    ownerUserId: string,
+    since: Date,
+  ): Promise<JudgedApplyStudyBrief[]> {
+    const rows = await this.prisma.studyBrief.findMany({
+      where: {
+        ownerUserId,
+        createdAt: { gte: since },
+        applicability: APPLICABILITY_VERDICT.APPLY,
+      },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        topic: true,
+        notionUrl: true,
+        applicabilityJson: true,
+      },
+    });
+    return rows.flatMap((row) => {
+      const judgement = row.applicabilityJson as ApplicabilityJudgement | null;
+      // 카드 본문을 만들 재료(제안)가 없으면 다시 내보낼 수 없다 — 뺀다.
+      if (
+        judgement?.verdict !== APPLICABILITY_VERDICT.APPLY ||
+        !judgement.proposal ||
+        !Array.isArray(judgement.citations)
+      ) {
+        return [];
+      }
+      return [
+        {
+          id: row.id,
+          topic: row.topic,
+          notionUrl: row.notionUrl,
+          judgement,
+        },
+      ];
+    });
   }
 
   async findTopicsByIds(ids: readonly number[]): Promise<Map<number, string>> {

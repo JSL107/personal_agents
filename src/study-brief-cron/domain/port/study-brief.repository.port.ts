@@ -39,6 +39,15 @@ export interface JudgeableStudyBrief extends ExpandableStudyBrief {
   notionUrl: string | null;
 }
 
+// 이미 APPLY 로 저장된 판정. 카드가 만들어지지 못한 회차를 다시 내보낼 때 쓴다 — 판정을 다시
+// 돌리지 않고 저장된 제안을 그대로 쓴다(모델을 또 부르면 결과가 달라질 수 있다).
+export interface JudgedApplyStudyBrief {
+  id: number;
+  topic: string;
+  notionUrl: string | null;
+  judgement: ApplicabilityJudgement;
+}
+
 export interface ApplicabilityStats {
   apply: number;
   reference: number;
@@ -71,6 +80,11 @@ export interface StudyBriefRepositoryPort {
     id: number,
     judgement: ApplicabilityJudgement,
   ): Promise<boolean>;
+  // 창 안에서 APPLY 로 저장된 브리프(오래된 것부터). 저장된 판정이 형태를 잃었으면 뺀다.
+  findApplyJudgedSince(
+    ownerUserId: string,
+    since: Date,
+  ): Promise<JudgedApplyStudyBrief[]>;
   findTopicsByIds(ids: readonly number[]): Promise<Map<number, string>>;
   countApplicabilitySince(since: Date, now: Date): Promise<ApplicabilityStats>;
   save(input: SaveStudyBriefInput): Promise<{ id: number }>;

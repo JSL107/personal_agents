@@ -71,7 +71,8 @@ export interface PreviewActionRepositoryPort {
   countByPayloadValue(input: {
     kind: string;
     payloadPath: string[];
-    payloadValue: string;
+    // JSON 안의 값과 타입까지 같아야 일치한다 — 숫자로 저장된 id 는 숫자로 넘긴다.
+    payloadValue: string | number;
   }): Promise<number>;
   // 승인 후 실행이 실패한 흔적을 남긴다. status 는 건드리지 않는다 — 실행 실패는 거부가 아니고,
   // 거부로 기록하면 preview-canceller.port.ts 가 경고한 것과 같은 학습 오염이 된다.

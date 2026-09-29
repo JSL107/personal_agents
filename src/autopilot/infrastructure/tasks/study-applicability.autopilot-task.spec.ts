@@ -1,6 +1,11 @@
 import { ConfigService } from '@nestjs/config';
 
+import { PreviewActionRepositoryPort } from '../../../preview-gate/domain/port/preview-action.repository.port';
 import { JudgeStudyApplicabilityUsecase } from '../../../study-brief-cron/application/judge-study-applicability.usecase';
+import {
+  JudgedApplyStudyBrief,
+  StudyBriefRepositoryPort,
+} from '../../../study-brief-cron/domain/port/study-brief.repository.port';
 import { ApplicabilityJudgement } from '../../../study-brief-cron/domain/study-applicability.type';
 import { StudyApplicabilityAutopilotTask } from './study-applicability.autopilot-task';
 
@@ -31,18 +36,36 @@ const judgement = (
   candidateCount: 1,
 });
 
+const setupWith = ({
+  result,
+  repo = 'JSL107/personal_agents',
+  applied = [],
+  cardBriefIds = [],
+}: {
+  result: unknown;
+  repo?: string;
+  applied?: JudgedApplyStudyBrief[];
+  cardBriefIds?: number[];
+}) => {
+  const execute = jest.fn().mockResolvedValue(result);
+  const findApplyJudgedSince = jest.fn().mockResolvedValue(applied);
+  const countByPayloadValue = jest.fn(
+    async ({ payloadValue }: { payloadValue: string | number }) =>
+      cardBriefIds.includes(Number(payloadValue)) ? 1 : 0,
+  );
+  const task = new StudyApplicabilityAutopilotTask(
+    { execute } as unknown as JudgeStudyApplicabilityUsecase,
+    { get: jest.fn().mockReturnValue(repo) } as unknown as ConfigService,
+    { findApplyJudgedSince } as unknown as StudyBriefRepositoryPort,
+    { countByPayloadValue } as unknown as PreviewActionRepositoryPort,
+  );
+  return { task, execute, findApplyJudgedSince, countByPayloadValue };
+};
+
 const setup = (
   result: unknown,
   repo: string | undefined = 'JSL107/personal_agents',
-) => {
-  const judge = {
-    execute: jest.fn().mockResolvedValue(result),
-  } as unknown as JudgeStudyApplicabilityUsecase;
-  const config = {
-    get: jest.fn().mockReturnValue(repo),
-  } as unknown as ConfigService;
-  return new StudyApplicabilityAutopilotTask(judge, config);
-};
+) => setupWith({ result, repo }).task;
 const context = { ownerSlackUserId: 'U1', firedAtKst: '2026-09-30' };
 const judged = (verdict: ApplicabilityJudgement['verdict'], saved = true) => ({
   status: 'judged',
@@ -95,6 +118,55 @@ describe('StudyApplicabilityAutopilotTask', () => {
   it('조건부 저장이 거부된 회차는 카드를 만들지 않는다', async () => {
     await expect(setup(judged('APPLY', false)).run(context)).resolves.toEqual({
       skip: true,
+    });
+  });
+
+  describe('저장됐지만 카드가 안 만들어진 APPLY', () => {
+    const pendingBrief: JudgedApplyStudyBrief = {
+      id: 3,
+      topic: '어제 주제',
+      notionUrl: null,
+      judgement: judgement('APPLY'),
+    };
+
+    it('카드 행이 없으면 새로 판정하지 않고 저장된 판정으로 카드를 다시 낸다', async () => {
+      const { task, execute, countByPayloadValue } = setupWith({
+        result: judged('APPLY'),
+        applied: [pendingBrief],
+      });
+      const result = await task.run(context);
+      expect(execute).not.toHaveBeenCalled();
+      expect(countByPayloadValue).toHaveBeenCalledWith({
+        kind: 'STUDY_APPLY_ISSUE',
+        payloadPath: ['studyBriefId'],
+        payloadValue: 3,
+      });
+      expect(result.preview).toMatchObject({
+        kind: 'STUDY_APPLY_ISSUE',
+        payload: { studyBriefId: 3 },
+      });
+      expect(result.summaryText).toContain('다시 올립니다');
+    });
+
+    it('카드 행이 한 번이라도 있으면(상태 무관) 다시 내지 않고 새 판정으로 넘어간다', async () => {
+      const { task, execute } = setupWith({
+        result: { status: 'empty' },
+        applied: [pendingBrief],
+        cardBriefIds: [3],
+      });
+      await expect(task.run(context)).resolves.toEqual({ skip: true });
+      expect(execute).toHaveBeenCalledTimes(1);
+    });
+
+    it('레포 설정이 없으면 다시 집지 않아 새 브리프 판정을 막지 않는다', async () => {
+      const { task, execute, findApplyJudgedSince } = setupWith({
+        result: { status: 'empty' },
+        repo: '',
+        applied: [pendingBrief],
+      });
+      await task.run(context);
+      expect(findApplyJudgedSince).not.toHaveBeenCalled();
+      expect(execute).toHaveBeenCalledTimes(1);
     });
   });
 });

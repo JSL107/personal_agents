@@ -329,4 +329,45 @@ describe('StudyBriefPrismaRepository', () => {
       data: { blogDraftPageId: 'notion-page-1' },
     });
   });
+
+  it('findApplyJudgedSince 는 APPLY 행 중 제안이 남아 있는 판정만 돌려준다', async () => {
+    const applyJudgement = {
+      verdict: 'APPLY',
+      rawVerdict: 'APPLY',
+      reason: 'r',
+      citations: [],
+      droppedCitations: [],
+      downgradeReason: null,
+      proposal: { title: 't', problem: 'p', change: 'c', verify: 'v' },
+      candidateCount: 1,
+    };
+    const findMany = jest.fn().mockResolvedValue([
+      { id: 1, topic: 'A', notionUrl: null, applicabilityJson: applyJudgement },
+      {
+        id: 2,
+        topic: 'B',
+        notionUrl: null,
+        applicabilityJson: { ...applyJudgement, proposal: null },
+      },
+      { id: 3, topic: 'C', notionUrl: null, applicabilityJson: null },
+    ]);
+    const repository = new StudyBriefPrismaRepository({
+      studyBrief: { findMany },
+    } as unknown as PrismaService);
+    const since = new Date('2026-09-22T00:00:00Z');
+
+    const found = await repository.findApplyJudgedSince('U1', since);
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          ownerUserId: 'U1',
+          createdAt: { gte: since },
+          applicability: 'APPLY',
+        },
+        orderBy: { createdAt: 'asc' },
+      }),
+    );
+    expect(found.map((brief) => brief.id)).toEqual([1]);
+  });
 });
