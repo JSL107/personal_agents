@@ -66,6 +66,9 @@ export interface ReviewPullRequestInput {
     detail: PullRequestDetail;
     diff: PullRequestDiff;
   };
+  // 리뷰 재생 평가(`pnpm review:replay --holdout`) 전용 — 이 카드들의 기각 사유를 학습 규약에서 뺀다.
+  // 재생 대상의 정답이 프롬프트에 섞이면 오탐 억제 성능이 부풀려진다. 운영 경로는 넘기지 않는다.
+  excludeConventionFindingIds?: number[];
   // PR 리뷰 스윕 전용 — 이 리뷰가 연습 모드(게시 없음)로 돌았는지. inputSnapshot 에 남아
   // "연습 모드로 끝난 리뷰"를 실게시 전환 후 다시 리뷰할지 판정하는 근거가 된다.
   dryRun?: boolean;
