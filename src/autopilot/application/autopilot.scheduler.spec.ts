@@ -368,6 +368,36 @@ describe('AutopilotScheduler', () => {
     expect(morningCall?.[1]).toMatchObject({ target: 'U1' });
   });
 
+  it('AUTOPILOT_REVIEW_TARGET → PR 리뷰 스윕만 채널로, 공통은 유지', async () => {
+    const queue = makeQueue();
+    const config = {
+      get: jest.fn((key: string) => {
+        if (key === 'AUTOPILOT_OWNER_SLACK_USER_ID') {
+          return 'U1';
+        }
+        if (key === 'AUTOPILOT_TARGET') {
+          return 'C0COMMON';
+        }
+        if (key === 'AUTOPILOT_REVIEW_TARGET') {
+          return 'C0REVIEW';
+        }
+        return undefined;
+      }),
+    };
+    const scheduler = new AutopilotScheduler(queue as never, config as never);
+
+    await scheduler.onApplicationBootstrap();
+
+    const sweepCall = queue.add.mock.calls.find(
+      (call: unknown[]) => call[0] === 'pr-review-sweep',
+    );
+    const morningCall = queue.add.mock.calls.find(
+      (call: unknown[]) => call[0] === 'morning',
+    );
+    expect(sweepCall?.[1]).toMatchObject({ target: 'C0REVIEW' });
+    expect(morningCall?.[1]).toMatchObject({ target: 'C0COMMON' });
+  });
+
   it('AUTOPILOT_CAREER_TARGET 미설정이면 커리어 라인도 공통 TARGET 을 쓴다', async () => {
     const queue = makeQueue();
     const config = {

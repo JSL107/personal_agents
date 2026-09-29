@@ -298,7 +298,7 @@ Slack 설정: Event Subscriptions 에 `app_mention` + `message.im`, Bot scope �
 
 > 주식·모의투자 알림은 플레이북에서 `line: 'invest'` 로 묶여 있어 `AUTOPILOT_INVEST_TARGET` 하나로 전용 채널에 보낼 수 있다. 미설정 시 `AUTOPILOT_TARGET`(없으면 owner DM)을 그대로 쓴다. 채널로 보내려면 봇이 그 채널에 초대돼 있어야 한다.
 >
-> 채용공고 카드(`job-feed`)와 갭 분석(`job-feed-gap`)은 같은 방식으로 `line: 'career'` 이며 `AUTOPILOT_CAREER_TARGET` 을 쓴다.
+> 채용공고 카드(`job-feed`)와 갭 분석(`job-feed-gap`)은 같은 방식으로 `line: 'career'` 이며 `AUTOPILOT_CAREER_TARGET` 을 쓴다. PR 리뷰 스윕 요약(`pr-review-sweep`)은 `line: 'review'` 로 `AUTOPILOT_REVIEW_TARGET` 을 쓴다.
 
 </details>
 
@@ -358,6 +358,7 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 | `TYPESAFE_API_KEY` · `SUBCONSCIOUS_JEV_MODEL` | ⭕ | Jev 게이트를 켤 때 필요한 TypeSafe 인증키와 모델 버전 |
 | `AUTOPILOT_INVEST_TARGET` | ⭕ | 투자 라인(주식·모의투자 10항목) 전용 발송 대상. 미설정 시 `AUTOPILOT_TARGET` |
 | `AUTOPILOT_CAREER_TARGET` | ⭕ | 커리어 라인(채용공고 수집·갭 분석) 전용 발송 대상. 미설정 시 `AUTOPILOT_TARGET` |
+| `AUTOPILOT_REVIEW_TARGET` | ⭕ | 리뷰 라인(PR 리뷰 스윕 요약) 전용 발송 대상. 미설정 시 `AUTOPILOT_TARGET` |
 | `CONSOLE_OWNER_SLACK_USER_ID` | ❌ | 콘솔 지시·승인 주체 — 없으면 콘솔 쓰기 503 |
 | `KOREAN_HOLIDAY_API_KEY` | ❌ | 공공데이터포털 특일 정보 **디코딩** 서비스키 — 없으면 달력에 공휴일이 안 뜬다 |
 | `CAREER_LOG_NOTION_PAGE_ID` · `CAREER_*_NOTION_PAGE_ID` | ⭕ | careerLog · 이력서/포트폴리오 Notion 적재 대상 |
