@@ -1,8 +1,9 @@
 import { AgentType, ModelProviderName } from './model-router.type';
 
 /**
- * 에이전트 → 모델 매핑. 2026-07-02 정책: 이대리 전체를 ChatGPT(codex) 단일 provider 로 전환.
- * Claude 는 primary·fallback 어디서도 사용하지 않는다(ClaudeCliProvider 코드는 롤백 대비 보존).
+ * 에이전트 → primary 모델 매핑. 2026-07-02 정책으로 전 에이전트의 primary 는 ChatGPT(codex) 다.
+ * Claude 는 primary 로는 쓰지 않지만, 2026-09-09 부터 codex 실패 시 한 번 폴백한다 —
+ * 폴백 규칙은 이 표가 아니라 `model-router.usecase.ts` 의 `FALLBACK_OF` 에 있다.
  *
  * usecase(NestJS DI 클래스)가 아니라 domain 의 순수 상수로 두는 이유:
  * `scripts/sync-docs.ts` 가 docs/agent-catalog.md 를 생성할 때 이 표를 import 로 읽는다.
