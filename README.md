@@ -216,7 +216,9 @@ pnpm dev              # watch 모드 기동
 
 <br>
 
-`@이대리 …`(채널) 또는 DM 으로 보내면 Router 가 19개 워커 중 하나로 분류해 dispatch 한다. 결과는 thread 답글로 오고 푸터에 `agentRunId` 가 붙는다.
+`@이대리 …`(채널) 또는 DM 으로 보내면 Router 가 워커 중 하나로 분류해 dispatch 한다. 결과는 thread 답글로 오고 푸터에 `agentRunId` 가 붙는다.
+
+- **VIDEO_WATCH** — `@이대리 이 영상의 핵심을 설명해줘 https://youtu.be/<video-id>`처럼 유튜브 URL과 질문을 함께 보내면 자막·화면 프레임을 분석하고 근거 시각 링크를 답한다. 준비: `brew install yt-dlp ffmpeg`, `git clone --branch v0.3.2 --depth 1 https://github.com/bradautomates/claude-video.git ~/.idaeri/vendor/claude-video`, 그리고 `.env`의 `WATCH_SCRIPT_PATH`를 해당 `skills/watch/scripts/watch.py` 절대 경로로 설정한다. 실행은 로컬 엔진과 `--no-whisper`만 사용한다.
 
 - **BLOG · 이직 메이트 · 지원 추적** — 자연어 전용. 기존 Notion 초안 발행은 `BLOG_PUBLISH`가 자연어와 `/blog-publish`를 모두 지원
 - **VACATION** — `/휴가` 와 자연어 둘 다 지원
@@ -352,6 +354,7 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 | `DATABASE_URL` · `REDIS_HOST` / `REDIS_PORT` | ✅ | PostgreSQL(5434) · Redis(6381) |
 | `SLACK_BOT_TOKEN` / `_APP_TOKEN` / `_SIGNING_SECRET` | ⭕ | 3개 모두 있어야 봇 활성 (Socket Mode) |
 | `GITHUB_TOKEN` · `NOTION_TOKEN` / `NOTION_TASK_DB_IDS` | ⭕ | 미설정 시 해당 연동 skip |
+| `WATCH_SCRIPT_PATH` | ⭕ | Video Watch의 `watch.py` 경로. 미설정 시 유튜브 분석 워커 비활성화 |
 | `*_WEBHOOK_SECRET` · `GITHUB_WEBHOOK_*` | ⭕ | webhook 검증 · 자동 발화 가드 |
 | `AUTOPILOT_OWNER_SLACK_USER_ID` · `AUTOPILOT_TARGET` | ⭕ | cron 전체 게이트 · 발송 대상(콤마 다중) |
 | `SUBCONSCIOUS_GATE_MODE` | ❌ | `legacy`(기존 LLM) · `shadow`(Jev 비교만) · `hybrid`(확신 높은 Jev 우선). 기본 `legacy` |

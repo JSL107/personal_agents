@@ -359,6 +359,12 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     Department.PLANNING,
     '승인 대기·진행 중 작업·미해소 실패를 조회해 지연 원인을 귀속한다',
   ),
+  [AgentType.VIDEO_WATCH]: {
+    department: Department.QUALITY,
+    job: '유튜브 영상의 자막과 화면을 분석해 질문에 답한다',
+    deliverableFields: ['answer', 'highlights'],
+    requireEvidence: false,
+  },
   [AgentType.PAPER_RECOMMEND]: {
     department: Department.TREASURY,
     job: '모의투자 후보와 보유 종목을 검토해 매수와 전량 매도를 추천한다',

@@ -267,6 +267,14 @@ export class RetryRunHandler implements SlackHandler {
           });
           return;
         }
+        case 'VIDEO_WATCH': {
+          await respond({
+            response_type: 'ephemeral',
+            replace_original: true,
+            text: `AgentRun #${id} (VIDEO_WATCH) 는 영상 링크와 질문을 다시 멘션해 주세요.`,
+          });
+          return;
+        }
         // 28일을 되짚는 누적 집계라 회차가 실패해도 데이터가 남지 않는다 — 다음 주 회차가
         // 같은 범위를 통째로 다시 본다. 지금 당장 수치를 봐야 하면 읽기 전용 스크립트가 있다.
         case 'BLOG_REVISION': {

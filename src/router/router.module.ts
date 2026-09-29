@@ -26,6 +26,8 @@ import { PoShadowDispatcher } from '../agent/po-shadow/infrastructure/po-shadow.
 import { PoShadowModule } from '../agent/po-shadow/po-shadow.module';
 import { VacationDispatcher } from '../agent/vacation/infrastructure/vacation.dispatcher';
 import { VacationModule } from '../agent/vacation/vacation.module';
+import { VideoWatchDispatcher } from '../agent/video-watch/infrastructure/video-watch.dispatcher';
+import { VideoWatchModule } from '../agent/video-watch/video-watch.module';
 import { WorkReviewerDispatcher } from '../agent/work-reviewer/infrastructure/work-reviewer.dispatcher';
 import { WorkReviewerModule } from '../agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from '../agent-run/agent-run.module';
@@ -78,6 +80,7 @@ import {
     PaperTradingModule,
     DelayReportModule,
     ScheduleModule,
+    VideoWatchModule,
   ],
   providers: [
     IntentClassifierUsecase,
@@ -120,6 +123,7 @@ import {
         PaperTradeDispatcher,
         DelayReportDispatcher,
         ScheduleDispatcher,
+        VideoWatchDispatcher,
       ],
     },
   ],

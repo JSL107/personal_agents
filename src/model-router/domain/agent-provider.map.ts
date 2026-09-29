@@ -55,4 +55,5 @@ export const AGENT_TO_PROVIDER: Record<AgentType, ModelProviderName> = {
   // ROUTER — 라우팅 실패를 원장에 남기기만 하는 설비 타입이라 route() 를 거치지 않는다.
   // 이 엔트리는 Record<AgentType,...> exhaustive 타입 충족용 sentinel (INVEST·SCHEDULE 선례).
   [AgentType.ROUTER]: ModelProviderName.CHATGPT,
+  [AgentType.VIDEO_WATCH]: ModelProviderName.CHATGPT,
 };
