@@ -496,7 +496,8 @@ ARCHITECTURE 1. 기각 재료(39건 중 이유 있는 33건)보다 **3.5배 많�
 
 ## 목표 7 — 수용 답글을 원장에 남긴다 (재료 ①)
 
-- [ ] **상태**: 미착수
+- [ ] **상태**: 코드 완료(2026-09-29, 브랜치 `feat/pr-review-accept-reply`) — **머지·재기동 후 실저장 확인이 남았다.**
+  체크박스를 채우지 않는 이유는 목표 5 와 같다: 목표 8 을 여는 세션이 결과란의 남은 확인을 건너뛰지 않게.
 - **전제**: 목표 5 **완료(실행 확인까지)**. 머지만으로는 부족하다 — `review:dry` 가 정말
   게시를 막는지 모르는 상태에서 이 작업을 검증하면 그 검증이 실제 코멘트를 단다.
 - **왜**: ACKED 분기가 `rejectReason: null` 로 저장해 **owner 답글을 통째로 버린다.**
@@ -518,7 +519,29 @@ ARCHITECTURE 1. 기각 재료(39건 중 이유 있는 33건)보다 **3.5배 많�
 🔴 여기가 핵심 안전핀이다 — 수용 답글이 억제 블록에 섞이면 정탐을 피하도록 역학습한다(함정 1과 같은 사고).
 **저장까지만 하고 멈춘다.** 주입 형태(어떤 문장을 어떻게 규약으로 올릴지)는 목표 10 에서 정한다.
 
-- **결과**: (미기재)
+- **결과**: **코드 완료 — 브랜치 `feat/pr-review-accept-reply`**. 목표 5 전제는 이 날 두 세션이 각각
+  실측했다(#643·#641 dry 재리뷰 — 게시·카드 0, 같은 시각 스윕 #668 실게시 4건).
+  - **착수 전 실측 — 유예 장치가 필요한가**: 최근 10일 ACKED 60건을 GitHub 과 대조하니 owner 답글이
+    카드 확정 **전에** 이미 달려 있던 것이 **60/60**(나중에 달린 것 0, 답글 없음 0). 기각 쪽의
+    `REJECTION_REPLY_GRACE_MS` 같은 대기는 두지 않았다 — 👍 가 답글보다 먼저 수확돼 재료를 잃는 경우가
+    실데이터에 없다.
+  - **컬럼**: `accept_reply TEXT` (Prisma `acceptReply`). 🔴 **`db:push` 를 쓰지 않았다** — 전문 diff 가
+    `ADD COLUMN` 과 함께 `DROP INDEX "idx_episodic_memory_embedding"`(pgvector HNSW)을 냈다(CLAUDE.md §6 함정).
+    그 한 줄만 `psql` 로 적용했다: `ALTER TABLE "pr_review_finding" ADD COLUMN IF NOT EXISTS "accept_reply" TEXT;`.
+    공유 로컬 DB 에는 **이미 들어가 있다**(적용 전후 인덱스 115개 동일). nullable 이라 옛 코드와 공존한다.
+    머지 전까지 이 컬럼을 모르는 다른 브랜치에서 `db:push` 를 돌리면 `DROP COLUMN accept_reply` 가 나온다 —
+    `db-push-guard` 가 막으니 **`DB_PUSH_ALLOW_DROP=1` 로 넘기지 말 것.**
+  - **할 일 1~4**: ① 위 컬럼 ② 저장소 `markDecided` 가 `status === 'ACKED'` 일 때만 저장(나머지 null)
+    ③ 신호 `ACKED` 에 `ownerReplyBody` 를 싣고(owner 답글만 — 함정 7 규칙 그대로), 리액션 경로와
+    판정기 ACCEPTED 경로가 둘 다 그 값을 넘긴다 ④ `review:unlearn` 은 `status`·`rejectReason` 만 쓰므로
+    **코드 변경 없이** 이 컬럼을 건드리지 않는다.
+  - **안전핀 테스트**: `규약 조회는 수용 답글을 읽지 않는다` — 규약 조회 `select` 에 일부러
+    `acceptReply` 를 넣으면 실패함을 확인했다(기존 정확-일치 테스트와 함께 2건이 깨진다).
+  - 게이트: lint 0 errors(warning 38) / test 540 suites·6024 + 5·40 / build 0. 신규·갱신 테스트 4건.
+  - 🔴 **미검증 — 머지 후 할 것**: 백엔드(`PORT=3099`) 재기동 뒤 첫 ACKED 카드에서
+    `select id, length(accept_reply) from pr_review_finding where status='ACKED' and decided_at > '<재기동 시각>';`
+    가 비지 않는지 본다. 재기동 전 확정된 카드는 옛 코드라 null 이다 — 그건 목표 8(백필) 몫이다.
+  - 목표 8 은 이 컬럼이 있어야 하므로 이 브랜치 머지 뒤에 연다.
 
 ---
 
