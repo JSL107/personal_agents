@@ -23,6 +23,7 @@ import {
   DailyPlanResult,
   DailyPlanSource,
   GenerateDailyPlanInput,
+  PlanInputTruncation,
 } from '../domain/pm-agent.type';
 import { PmAgentErrorCode } from '../domain/pm-agent-error-code.enum';
 import { parseDailyPlan } from '../domain/prompt/daily-plan.parser';
@@ -38,10 +39,7 @@ import {
   SLACK_MENTION_SINCE_HOURS,
 } from './daily-plan-context.collector';
 import { DailyPlanEvidenceBuilder } from './daily-plan-evidence.builder';
-import {
-  DailyPlanPromptBuilder,
-  TruncationMeta,
-} from './daily-plan-prompt.builder';
+import { DailyPlanPromptBuilder } from './daily-plan-prompt.builder';
 import { applyStaleDemotion } from './stale-demotion.util';
 
 const KST_OFFSET_HOURS = 9;
@@ -199,6 +197,7 @@ export class GenerateDailyPlanUsecase {
         plan: outcome.result,
         sources: extractSources(context),
         waitingItems: context.waitingItems,
+        inputTruncation: truncated,
       },
       modelUsed: outcome.modelUsed,
       agentRunId: outcome.agentRunId,
@@ -277,7 +276,7 @@ export class GenerateDailyPlanUsecase {
   }: {
     context: DailyPlanContext;
     combinedPrompt: string;
-    truncated: TruncationMeta;
+    truncated: PlanInputTruncation;
   }): DailyPlanInputSnapshot {
     const {
       userText,
