@@ -48,7 +48,7 @@ private func planAgents(_ department: Department, _ types: [String]) -> [Console
 // 통째로 놓쳤다(문 칸이 배회 목적지가 되는 결함이 실제로 그렇게 빠져나갔다).
 let sampleAgents: [ConsoleAgent] =
     planAgents(.planning, ["PM", "PO_SHADOW", "DELAY_REPORT"])
-    + planAgents(.quality, ["CODE_REVIEWER", "REVIEW_REPLY_JUDGE", "ISSUE_LABELER"])
+    + planAgents(.quality, ["CODE_REVIEWER", "REVIEW_REPLY_JUDGE", "ISSUE_LABELER", "VIDEO_WATCH"])
     + planAgents(
         .evaluation,
         [
@@ -1451,6 +1451,7 @@ func runAgentRoleTests(_ t: TestRunner) {
     t.expectEqual(agentRoleLabel(for: "CODE_REVIEWER"), "박꼼꼼", "품질 닉네임")
     t.expectEqual(agentRoleLabel(for: "HUMANIZER"), "윤다정", "콘텐츠 닉네임")
     t.expectEqual(agentRoleLabel(for: "OPS_SUPERVISOR"), "안정민", "총무 닉네임")
+    t.expectEqual(agentRoleLabel(for: "VIDEO_WATCH"), "영상봄", "영상 분석 닉네임")
 
     // 운영 28종 전부에 한글 닉네임이 있어야 한다. 하나라도 빠지면 그 사람만 영문 displayName 으로
     // 폴백해 이름표가 뒤섞인다(agentType 과 displayName 을 혼동하면 조용히 빠진다).

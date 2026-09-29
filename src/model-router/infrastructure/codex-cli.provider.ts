@@ -264,12 +264,14 @@ export const buildCodexPrompt = ({
 export const buildCodexArgs = ({
   outputFile,
   schemaFile,
+  imagePaths,
 }: {
   outputFile: string;
   // 지정 시 codex 가 이 스키마를 벗어난 최종 응답을 만들지 못한다.
   // 파일이 없거나 JSON 으로 안 읽히면 codex 는 모델 호출 전에 exit 1 로 끊는다(실측) —
   // 스키마를 걸었다고 믿는데 조용히 안 걸리는 상태는 생기지 않는다.
   schemaFile?: string;
+  imagePaths?: readonly string[];
 }): string[] => [
   'exec',
   '--skip-git-repo-check',
@@ -293,6 +295,7 @@ export const buildCodexArgs = ({
   '--color',
   'never',
   ...(schemaFile === undefined ? [] : ['--output-schema', schemaFile]),
+  ...(imagePaths?.flatMap((path) => ['--image', path]) ?? []),
   '-o',
   outputFile,
 ];
@@ -378,7 +381,11 @@ export class CodexCliProvider implements ModelProviderPort {
         workDir,
         request.outputSchema,
       );
-      const args = buildCodexArgs({ outputFile, schemaFile });
+      const args = buildCodexArgs({
+        outputFile,
+        schemaFile,
+        imagePaths: request.imagePaths,
+      });
       // OPS-4: 외부 CLI 로 흘려보내기 직전 토큰 류 시크릿을 redact —
       // GitHub issue body / Slack mention / Notion property 가 prompt 에 inline 으로 들어가는 surface 차단.
       const stdinPayload = redactPii(buildCodexPrompt(request));

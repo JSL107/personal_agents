@@ -93,6 +93,8 @@ export enum AgentType {
   // 슬래시/ResponseCode/retry-run 비대상 (사용자가 직접 부르지 않는 내부 타입 —
   // SUBCONSCIOUS_GATE 선례). dispatcher 도 없어 자연어·별명으로 도달할 수 없다.
   ROUTER = 'ROUTER',
+  // Slack 자연어 멘션으로 유튜브 영상 자막과 화면 프레임을 분석한다.
+  VIDEO_WATCH = 'VIDEO_WATCH',
 }
 
 // LLM 최종 응답의 형태를 강제하는 JSON Schema. 구조를 타입으로 다시 표현하지 않는 이유는
@@ -108,6 +110,8 @@ export interface CompletionRequest {
   // 사후 수습이 아니라 이중 안전망이 된다. 지원하지 않는 provider 는 무시한다 —
   // 그 경우 기존과 동일하게 프롬프트 지시에만 의존한다 (§ClaudeCliProvider 주석).
   outputSchema?: OutputJsonSchema;
+  // codex 전용 로컬 절대경로 이미지. 지원하지 않는 provider 는 요청을 거부한다.
+  imagePaths?: readonly string[];
 }
 
 export interface CompletionResponse {

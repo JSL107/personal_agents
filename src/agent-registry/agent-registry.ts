@@ -275,6 +275,14 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
       '회사 진행 현황·지연 원인 조회 (승인 대기·진행 중 작업·미해소 실패, 결정론)',
   },
   {
+    agentType: AgentType.VIDEO_WATCH,
+    displayName: 'Video Watch',
+    nickname: '영상봄',
+    slashCommands: [],
+    usecasePath: 'src/agent/video-watch/application/watch-video.usecase.ts',
+    description: '유튜브 영상 자막과 화면 프레임 분석 (자연어 멘션)',
+  },
+  {
     agentType: AgentType.PAPER_RECOMMEND,
     displayName: 'Paper Recommend',
     nickname: '추천호',
