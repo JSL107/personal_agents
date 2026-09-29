@@ -1,7 +1,13 @@
 import { Injectable } from '@nestjs/common';
 
+import { CodeChunk } from '../domain/code-chunk.type';
 import { CodeGraphSnapshot } from '../domain/code-graph.type';
 import { CodeRelation } from '../domain/code-relation.type';
+import {
+  COMMON_TOKEN_RATIO,
+  KeywordCandidate,
+  tokenizeIdentifier,
+} from '../domain/keyword-candidate.type';
 
 // V3 SOTA Foundation 1.1 단계 4 — CodeGraphSnapshot 위에서 도는 4종 query.
 // caller (BE-3 / BE-1 / BE-2) 가 snapshot 을 별도 빌드/로드해 인자로 전달. usecase 자체는 stateless.
@@ -16,6 +22,60 @@ export interface CallSite {
 
 @Injectable()
 export class CodeGraphQueryUsecase {
+  findChunksByKeywords({
+    snapshot,
+    keywords,
+    limit,
+  }: {
+    snapshot: CodeGraphSnapshot;
+    keywords: readonly string[];
+    limit: number;
+  }): KeywordCandidate[] {
+    const nameTokens = snapshot.chunks.map(
+      (chunk) => new Set(tokenizeIdentifier(chunk.name)),
+    );
+    const commonThreshold = snapshot.chunks.length * COMMON_TOKEN_RATIO;
+    const usable = uniq(
+      keywords.map((keyword) => keyword.toLowerCase()),
+    ).filter(
+      (keyword) =>
+        nameTokens.filter((tokens) => tokens.has(keyword)).length <
+        Math.max(commonThreshold, 2),
+    );
+    if (usable.length === 0) {
+      return [];
+    }
+    const sourcePatterns = usable.map(
+      (keyword) => new RegExp(`\\b${escapeRegExp(keyword)}\\b`, 'i'),
+    );
+
+    return snapshot.chunks
+      .map((chunk, index) => ({
+        chunk,
+        score: usable.reduce(
+          (sum, keyword, keywordIndex) =>
+            sum +
+            (nameTokens[index].has(keyword) ? 10 : 0) +
+            (sourcePatterns[keywordIndex].test(chunk.source) ? 1 : 0),
+          0,
+        ),
+      }))
+      .filter(({ score }) => score > 0)
+      .sort(
+        (left, right) =>
+          right.score - left.score ||
+          KIND_PRIORITY[left.chunk.kind] - KIND_PRIORITY[right.chunk.kind] ||
+          left.chunk.filePath.localeCompare(right.chunk.filePath) ||
+          left.chunk.startLine - right.chunk.startLine,
+      )
+      .slice(0, limit)
+      .map(({ chunk, score }, index) => ({
+        ...chunk,
+        id: `c${index + 1}`,
+        score,
+      }));
+  }
+
   // Port 인터페이스를 구현하는 Adapter class 이름들.
   // 이대리 컨벤션 (Symbol Port + class XxxAdapter implements XxxPort) 에서 portName='XxxPort'.
   findImplementersOf({
@@ -77,6 +137,17 @@ export class CodeGraphQueryUsecase {
     );
   }
 }
+
+const KIND_PRIORITY: Record<CodeChunk['kind'], number> = {
+  method: 0,
+  function: 1,
+  'type-alias': 2,
+  interface: 2,
+  class: 3,
+};
+
+const escapeRegExp = (text: string): string =>
+  text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const filterImplements = (
   relations: readonly CodeRelation[],

@@ -16,7 +16,13 @@ import {
   PREVIEW_ACTION_REPOSITORY_PORT,
   PreviewActionRepositoryPort,
 } from '../../../preview-gate/domain/port/preview-action.repository.port';
+import { PREVIEW_KIND } from '../../../preview-gate/domain/preview-action.type';
 import { formatOpsSupervisor } from '../../../slack/format/ops-supervisor.formatter';
+import { formatStudyApplicabilityStats } from '../../../slack/format/study-applicability-stats.formatter';
+import {
+  STUDY_BRIEF_REPOSITORY_PORT,
+  StudyBriefRepositoryPort,
+} from '../../../study-brief-cron/domain/port/study-brief.repository.port';
 import {
   AutopilotTask,
   AutopilotTaskContext,
@@ -37,6 +43,8 @@ export class OpsSupervisorAutopilotTask implements AutopilotTask {
     @Inject(PREVIEW_ACTION_REPOSITORY_PORT)
     private readonly previewRepository: PreviewActionRepositoryPort,
     private readonly humanizeService: HumanizeService,
+    @Inject(STUDY_BRIEF_REPOSITORY_PORT)
+    private readonly studyBriefRepository: StudyBriefRepositoryPort,
     @Optional()
     @Inject(OPS_SUPERVISOR_ADVISOR_PORT)
     private readonly advisor?: OpsSupervisorAdvisorPort,
@@ -56,13 +64,33 @@ export class OpsSupervisorAutopilotTask implements AutopilotTask {
       }),
     ]);
 
+    const since = new Date(now.getTime() - WINDOW_DAYS * 24 * 60 * 60 * 1000);
+    const [applicabilityStats, adopted, rejected] = await Promise.all([
+      this.studyBriefRepository.countApplicabilitySince(since, now),
+      this.previewRepository.findRecentAppliedByKind({
+        kind: PREVIEW_KIND.STUDY_APPLY_ISSUE,
+        since,
+        limit: 100,
+      }),
+      this.previewRepository.findRecentCancelledByKind({
+        kind: PREVIEW_KIND.STUDY_APPLY_ISSUE,
+        since,
+        limit: 100,
+      }),
+    ]);
+    const applicabilitySection = formatStudyApplicabilityStats(
+      applicabilityStats,
+      { adopted: adopted.length, rejected: rejected.length },
+    );
+
     const profiles = buildQualityProfiles({ base, retries, swept, previews });
     const anomalies = detectQualityAnomalies(profiles);
 
     if (
       profiles.agents.length === 0 &&
       profiles.previews.length === 0 &&
-      anomalies.length === 0
+      anomalies.length === 0 &&
+      applicabilitySection.length === 0
     ) {
       return { skip: true };
     }
@@ -90,12 +118,17 @@ export class OpsSupervisorAutopilotTask implements AutopilotTask {
 
     return {
       skip: false,
-      summaryText: formatOpsSupervisor(
-        profiles,
-        anomalies,
-        humanizedSuggestion,
-        firedAtKst,
-      ),
+      summaryText: [
+        formatOpsSupervisor(
+          profiles,
+          anomalies,
+          humanizedSuggestion,
+          firedAtKst,
+        ),
+        applicabilitySection,
+      ]
+        .filter((part) => part.length > 0)
+        .join('\n\n'),
     };
   }
 }

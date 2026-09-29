@@ -14,6 +14,7 @@ describe('parseStudyResearch', () => {
       topic,
       sourceUrls: ['https://a.example/doc', 'https://b.example/post'],
       reportMd: '깊이 있는 조사 본문',
+      keywords: [],
     });
   });
 
@@ -23,6 +24,29 @@ describe('parseStudyResearch', () => {
     );
 
     expect(result).toMatchObject({ sourceUrls: [] });
+  });
+
+  it('KEYWORDS 를 정규화해 읽는다', () => {
+    const result = parseStudyResearch(
+      'KIND: CONCEPT\nTOPIC: Hooks\nSOURCES: https://a.example\nKEYWORDS: Hook, settings, hook, 훅, spawn-args, a b, x1, x2, x3, x4, x5\n---\n본문',
+    );
+    expect(result).toMatchObject({
+      keywords: [
+        'hook',
+        'settings',
+        'spawn-args',
+        'x1',
+        'x2',
+        'x3',
+        'x4',
+        'x5',
+      ],
+    });
+  });
+
+  it('KEYWORDS 가 없으면 빈 배열이고 결과는 유효하다', () => {
+    const result = parseStudyResearch('KIND: TOOL\nTOPIC: t\n---\n본문');
+    expect(result).toMatchObject({ keywords: [] });
   });
 
   it('Hermes 진행 로그를 버리고 첫 KIND 줄부터 파싱한다', () => {

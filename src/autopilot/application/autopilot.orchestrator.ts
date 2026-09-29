@@ -621,7 +621,7 @@ export class AutopilotOrchestrator {
           kind: preview.kind,
           payload: preview.payload,
           previewText: preview.previewText,
-          ttlMs: PREVIEW_TTL_MS,
+          ttlMs: preview.ttlMs ?? PREVIEW_TTL_MS,
         });
         let coordinateSaved = false;
         for (const resolved of targets) {

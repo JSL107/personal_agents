@@ -9,7 +9,11 @@ export interface StudyResearchResult {
   topic: string;
   sourceUrls: string[];
   reportMd: string;
+  keywords: string[];
 }
+
+const MAX_KEYWORDS = 8;
+const KEYWORD_PATTERN = /^[a-z0-9_-]+$/;
 
 export interface StudyResearchSkipped {
   skippedReason: string;
@@ -64,6 +68,10 @@ export const parseStudyResearch = (
     line.trim().startsWith('SOURCES:'),
   );
   const sourceUrls = parseSourceUrls(sourceLine);
+  const keywordLine = headerLines.find((line) =>
+    line.trim().startsWith('KEYWORDS:'),
+  );
+  const keywords = parseKeywords(keywordLine);
   const reportMd = relevantLines
     .slice(separatorIndex + 1)
     .join('\n')
@@ -72,7 +80,20 @@ export const parseStudyResearch = (
     return invalidResearch('--- 구분선 뒤 조사 본문이 비어 있습니다.');
   }
 
-  return { kind: kindValue, topic, sourceUrls, reportMd };
+  return { kind: kindValue, topic, sourceUrls, reportMd, keywords };
+};
+
+const parseKeywords = (keywordLine: string | undefined): string[] => {
+  if (!keywordLine) {
+    return [];
+  }
+  const normalized = keywordLine
+    .trim()
+    .slice('KEYWORDS:'.length)
+    .split(',')
+    .map((keyword) => keyword.trim().toLowerCase())
+    .filter((keyword) => KEYWORD_PATTERN.test(keyword));
+  return [...new Set(normalized)].slice(0, MAX_KEYWORDS);
 };
 
 const parseSourceUrls = (sourceLine: string | undefined): string[] => {
@@ -86,7 +107,7 @@ const parseSourceUrls = (sourceLine: string | undefined): string[] => {
     .filter((source) => source.startsWith('http'));
 };
 
-const stripCodeFence = (text: string): string =>
+export const stripCodeFence = (text: string): string =>
   text
     .replace(/^```(?:[a-z0-9_-]+)?\s*/i, '')
     .replace(/\s*```$/i, '')

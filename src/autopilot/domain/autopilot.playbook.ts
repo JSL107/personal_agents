@@ -63,6 +63,8 @@ import {
   DEFAULT_STOCK_MONITOR_TIMEZONE,
   DEFAULT_STOCK_MONITOR_US_CRON,
   DEFAULT_STOCK_MONITOR_US_TIMEZONE,
+  DEFAULT_STUDY_APPLICABILITY_CRON,
+  DEFAULT_STUDY_APPLICABILITY_TIMEZONE,
   DEFAULT_STUDY_DEEPDIVE_CRON,
   DEFAULT_STUDY_DEEPDIVE_TIMEZONE,
   DEFAULT_UNIVERSE_SWEEP_CRON,
@@ -131,10 +133,18 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
     riskTier: 'T1_PREVIEW',
     digestGroup: 'evening',
   },
-  // 오늘의 공부 딥다이브 확장 — 그날 아침 브리프를 블로그 초안으로 펼친다.
-  // digestGroup 없음(단독) — 다른 그룹과 시각이 다르고, 자기 스케줄 env 키를 갖는다.
-  // T0_AUTO: Notion 초안 DB 에만 적재하고 공개 발행은 하지 않는다. 발행은 저녁 블로그
-  // 카드(blog-github-publish)가 사용자 승인을 받아서 한다.
+  // 오늘의 공부 적용 판정 — APPLY 면 승인 카드로 issue 를 만든다.
+  {
+    id: 'study-applicability',
+    taskId: 'study-applicability',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_STUDY_APPLICABILITY_CRON,
+      timezone: DEFAULT_STUDY_APPLICABILITY_TIMEZONE,
+    },
+    riskTier: 'T1_PREVIEW',
+  },
+  // 오늘의 공부 딥다이브 확장 — Notion 초안 DB 에만 적재하고 공개 발행은 하지 않는다.
   {
     id: 'study-deepdive',
     taskId: 'study-deepdive',

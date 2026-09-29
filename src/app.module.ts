@@ -56,6 +56,7 @@ import { ScheduleModule } from './schedule/schedule.module';
 import { SlackModule } from './slack/slack.module';
 import { SlackCollectorModule } from './slack-collector/slack-collector.module';
 import { SlackInboxModule } from './slack-inbox/slack-inbox.module';
+import { StudyApplyIssueApplier } from './study-brief-cron/infrastructure/study-apply-issue.applier';
 import { StudyBriefCronModule } from './study-brief-cron/study-brief-cron.module';
 import { SubconsciousModule } from './subconscious/subconscious.module';
 import { WebhookModule } from './webhook/webhook.module';
@@ -126,6 +127,7 @@ import { WebhookModule } from './webhook/webhook.module';
         AiCliEnvApplyPreviewApplier,
         EveningBlogPublishApplier,
         GithubBlogPublishApplier,
+        StudyApplyIssueApplier,
         EveningCareerReflectApplier,
       ],
       // 레버 3b: apply 후 결과 검증 — DOCS_AUDIT_PR 의 PR open 을 getPullRequest 로 재확인.

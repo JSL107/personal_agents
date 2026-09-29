@@ -217,6 +217,32 @@ describe('PreviewActionPrismaRepository.findRecentAppliedByKind', () => {
   });
 });
 
+describe('PreviewActionPrismaRepository.findRecentCancelledByKind', () => {
+  it('CANCELLED 만 cancelledAt 기준으로 고른다(EXPIRED 제외)', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const repository = new PreviewActionPrismaRepository({
+      previewAction: { findMany },
+    } as unknown as PrismaService);
+    const since = new Date('2026-07-01T00:00:00Z');
+
+    await repository.findRecentCancelledByKind({
+      kind: 'STUDY_APPLY_ISSUE',
+      since,
+      limit: 20,
+    });
+
+    expect(findMany).toHaveBeenCalledWith({
+      where: {
+        kind: 'STUDY_APPLY_ISSUE',
+        status: 'CANCELLED',
+        cancelledAt: { gte: since },
+      },
+      orderBy: { cancelledAt: 'desc' },
+      take: 20,
+    });
+  });
+});
+
 describe('PreviewActionPrismaRepository.findById — 폐지된 kind', () => {
   const rowOf = (kind: string) => ({
     id: 'p1',

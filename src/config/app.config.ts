@@ -164,6 +164,11 @@ export class EnvironmentVariables {
   @IsString()
   STUDY_DEEPDIVE_ENABLED?: string;
 
+  // 오늘의 공부 적용 제안 승인 시 issue 를 만들 레포(owner/repo).
+  @IsOptional()
+  @IsString()
+  STUDY_APPLY_ISSUE_REPO?: string;
+
   // OPS-6 stale data filter — GitHub assigned issue / Notion task DB 의 컷오프 (일 단위).
   // 미설정 시 default 60일. 사용자가 archive 안 한 long-tail 데이터가 매일 prompt 에 누적되는 것을 차단.
   @IsOptional()
