@@ -31,6 +31,8 @@ import {
 import { buildFurniture, missingKinds } from "./furniture3d/index.js";
 import { makeCharacter, makeStatusRing, poseCharacter, seatOffset } from "./character.js";
 import { Overlay3D } from "./overlay3d.js";
+import { frameSignature, shouldRender } from "./frame-pace.js";
+import { mergeStatic } from "./static-merge.js";
 
 /**
  * 카메라 각. 방위는 남쪽(+z)에서 동쪽으로 돈 각, 고도는 바닥에서 올려본 각.
@@ -163,6 +165,7 @@ export class Office3DRenderer {
     // 배치가 바뀌면 옛 방 확대는 뜻이 없다(방 좌표가 다르다) — 전체로 곧바로 되돌린다.
     this.viewBounds = this.focusBounds();
     this.tween = null;
+    // 장면을 새로 지었다 — `measure` 가 다음 프레임을 그리게 한다.
     this.measure();
   }
 
@@ -215,6 +218,9 @@ export class Office3DRenderer {
     // 외곽선은 장면을 다 만든 뒤 한 번에 — 가구·벽·창을 만드는 곳마다 붙이면 빠뜨린다.
     // 사람은 만들 때 스스로 붙인다(`makeCharacter`).
     addOutlines(this.scene);
+    // 사람은 아직 장면에 없다(`draw` 가 넣는다) — 지금 있는 것은 전부 멈춘 물체다.
+    // 나중에 움직일 물체(문·로봇 등)를 들이려면 이 줄 **뒤에** 넣어야 한다 — 앞에 넣으면 한 덩어리로 굳는다.
+    mergeStatic(this.scene);
   }
 
   zoneAt(x, y) {
@@ -626,6 +632,9 @@ export class Office3DRenderer {
    * 범위의 모서리 여덟 개를 카메라 좌표로 옮겨, 그것이 다 들어가는 가장 작은 직교 범위를 쓴다.
    */
   applyCamera(bounds) {
+    // 카메라가 바뀌면 바뀐 것이 없어도 다음 프레임을 그려야 한다. 카메라를 만지는 길이 전부 여기를
+    // 지나므로(`measure` — 백버퍼 크기를 바꿔 그림이 지워진다 — 와 방 확대 전환) 여기 한 곳에 둔다.
+    this.dirty = true;
     const width = this.canvas.width;
     const height = this.canvas.height;
     const { left, right, bottom, top, halfWidth, halfHeight } = frameBounds(this.camera, bounds, width, height);
@@ -697,7 +706,10 @@ export class Office3DRenderer {
 
   /** @param {object} view live.js 가 주는 것 — `agents`·`bodies`·`now` 등(office.js 와 같다). */
   draw(view) {
-    this.stepTween(performance.now());
+    const frameAt = performance.now();
+    // 전환의 마지막 걸음은 `stepTween` 이 `tween` 을 비운다 — 그 프레임도 그려야 하므로 먼저 본다.
+    const tweening = Boolean(this.tween);
+    this.stepTween(frameAt);
     this.applyDaylight(view.hour ?? 12);
     // 출근 지연 중이라 문 앞에서 기다리는 사람은 그리지 않는다(`office.js` 와 같은 규칙).
     const bodies = Object.fromEntries(
@@ -729,7 +741,34 @@ export class Office3DRenderer {
     if (this.presidentAlarm) {
       this.presidentAlarm.visible = Boolean(view.presidentAlarm);
     }
-    this.overlay.setHud(this.summaryText(view.summary));
+    const hud = this.summaryText(view.summary);
+    this.overlay.setHud(hud);
+    // 위에서 옮긴 자세·글자는 그리지 않아도 장면에 남는다 — 건너뛴 프레임의 변화는 다음에 그릴 때 함께 나온다.
+    const { signature, moving } = frameSignature({
+      scene: [
+        this.hoveredAgent,
+        Boolean(hovered?.president),
+        this.selectedAgent,
+        this.lightHour,
+        Boolean(view.presidentAlarm),
+        hud,
+      ],
+      bodies,
+      agents: view.agents,
+      sessions: view.sessions,
+    });
+    const render = shouldRender({
+      changed: this.dirty || signature !== this.renderedSignature,
+      smooth: tweening,
+      moving,
+      elapsedMs: frameAt - (this.renderedAt ?? -Infinity),
+    });
+    if (!render) {
+      return;
+    }
+    this.dirty = false;
+    this.renderedSignature = signature;
+    this.renderedAt = frameAt;
     this.webgl.render(this.scene, this.camera);
     this.overlay.render(this.scene, this.camera);
   }
