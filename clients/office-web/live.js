@@ -186,7 +186,10 @@ function chooseZoneColumns(width, height, current) {
       : Math.min(width / plan.columns, height / plan.rows);
   };
   if (!current) {
-    return sizeFor(2) > sizeFor(3) ? 2 : 3;
+    // 3D 에서는 어느 비율이든 2열이 조금은 크다(넓은 창에서 1~3%, 세로로 긴 창에서 17% 이상).
+    // 몇 % 때문에 익숙한 3열을 버리지 않도록, 첫 선택에도 전환과 같은 5% 문턱을 건다.
+    const bias = use3d ? 1.05 : 1;
+    return sizeFor(2) > sizeFor(3) * bias ? 2 : 3;
   }
   const candidate = current === 2 ? 3 : 2;
   return sizeFor(candidate) >= sizeFor(current) * 1.05 ? candidate : current;
