@@ -103,6 +103,31 @@ describe('SubconsciousEngine', () => {
     );
   });
 
+  it('케이스 2-1: 목록에서 빠지기만 한 항목(머지·닫힘)은 gate 에 넘기지 않고 baseline 만 전진한다', async () => {
+    const prevSnapshot = makeSnapshot('github', 'hash-OLD');
+    const currSnapshot: StateSnapshot = {
+      sourceId: 'github',
+      contentHash: 'hash-EMPTY',
+      items: [],
+    };
+    const source = {
+      id: 'github',
+      fetchSnapshot: jest.fn().mockResolvedValue(currSnapshot),
+    };
+    fakeBaselineRepository.findBySource.mockResolvedValue(prevSnapshot);
+
+    engine = buildEngine([source]);
+    await engine.runTick(OWNER, NOW);
+
+    expect(fakeGate.judge).not.toHaveBeenCalled();
+    expect(fakeProposalEmitter.emit).not.toHaveBeenCalled();
+    expect(fakeBaselineRepository.upsert).toHaveBeenCalledWith(
+      OWNER,
+      'github',
+      currSnapshot,
+    );
+  });
+
   it('케이스 3: budget.tryConsume=false → emit 0건', async () => {
     const prevSnapshot = makeSnapshot('github', 'hash-OLD');
     const currSnapshot = makeSnapshot('github', 'hash-NEW');
