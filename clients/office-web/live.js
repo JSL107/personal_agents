@@ -110,6 +110,23 @@ const queueDemo = query.has("queue") ? Number(query.get("queue")) : 1;
  * 영영 오지 않는다. 지금 시각이 근무 시간이면 출근을, 아니면 퇴근을 그린다.
  */
 const commuteSeconds = query.has("commute") ? Number(query.get("commute")) : 0;
+/**
+ * `?renderer=3d` — three.js 3D 렌더러로 그린다(시험 단계, 기본은 2D).
+ *
+ * 걷기·출퇴근·줄서기는 이 파일이 그대로 정하고, 렌더러만 바뀐다. three.js 는 3D 를 고른
+ * 경우에만 불러온다 — 2D 로 쓰는 사람까지 1MB 넘는 라이브러리를 받게 할 이유가 없다.
+ */
+const use3d = query.get("renderer") === "3d";
+/** 3D 렌더러 클래스. `main()` 이 필요할 때만 불러와 채운다. */
+let Office3DRenderer = null;
+/**
+ * 그릴 준비가 끝났는가(2D 는 그림을 다 받은 뒤, 3D 는 렌더러를 만든 뒤).
+ *
+ * 정지 렌더는 창 크기가 정해지는 순간에도 한 판 그리는데, 그때 준비 전이면 스냅샷도 받기 전의
+ * **빈 사무실**이 "다 그렸다" 표식을 달고 캡처된다. 2D 는 그림 장수로 이것을 막았는데 3D 는
+ * 받을 그림이 없어 같은 구멍이 열렸다(첫 캡처에 사람이 0명이었다).
+ */
+let rendererReady = false;
 
 /** 지금 화면에 놓인 사람들. agentType → 위치·자세. */
 const bodies = {};
@@ -211,8 +228,13 @@ function resize() {
     canvas.style.height = `${cssHeight}px`;
   }
   if (layoutChanged || !renderer) {
-    renderer = renderer ?? new OfficeRenderer(canvas, layouts[zoneColumns]);
-    renderer.setLayout(layouts[zoneColumns]);
+    if (renderer) {
+      renderer.setLayout(layouts[zoneColumns]);
+    } else {
+      renderer = use3d
+        ? new Office3DRenderer(canvas, layouts[zoneColumns])
+        : new OfficeRenderer(canvas, layouts[zoneColumns]);
+    }
     // 배치가 통째로 바뀌었으므로 걷던 사람도 자기 새 자리로 돌려보낸다 — 옛 좌표에 남으면
     // 방 한가운데 떠 있게 된다.
     for (const agentType of Object.keys(bodies)) {
@@ -221,7 +243,7 @@ function resize() {
   } else if (sizeChanged) {
     renderer.measure();
   }
-  if (isStatic && (sizeChanged || layoutChanged) && loadedSpriteCount > 0) {
+  if (isStatic && (sizeChanged || layoutChanged) && rendererReady) {
     renderOnce();
   }
 }
@@ -1181,7 +1203,10 @@ function summary() {
     ` · 진행 ${counts.IN_PROGRESS ?? 0} · 승인 ${counts.AWAITING_APPROVAL ?? 0}` +
     ` · 쉬는 중 ${counts.WAITING ?? 0} · 세션 ${sessions.length}` +
     ` · ${renderer.plan.columns}×${renderer.plan.rows} 칸 · 타일 ${renderer.tileSize.toFixed(1)}px` +
-    ` · 그림 ${loadedSpriteCount}장${stale}`
+    (use3d
+      ? ` · 3D · 빌더 없는 가구 ${renderer.missingFurniture().length}종`
+      : ` · 그림 ${loadedSpriteCount}장`) +
+    stale
   );
 }
 
@@ -1221,17 +1246,24 @@ async function main() {
       );
     }
   }
+  if (use3d) {
+    ({ Office3DRenderer } = await import("./three/renderer3d.js"));
+  }
   resize();
 
-  setStatus("그림을 받는 중…");
-  // 두 배치가 쓰는 그림은 같다 — 한쪽 기준으로 받아 두면 창을 돌려도 다시 안 받는다.
-  const wanted = renderer.spriteNames();
-  loadedSpriteCount = await preloadSprites(wanted);
-  // 한 장도 못 받으면 화면이 **아무 오류 없이** 텅 빈다 — 그리는 쪽이 없는 그림을 조용히
-  // 건너뛰기 때문이다. 빈 사무실과 구별되지 않으므로 여기서 끊는다.
-  if (loadedSpriteCount === 0) {
-    throw new Error(`그림을 한 장도 못 받았다 (${wanted.length}장 요청)`);
+  // 3D 는 도형으로 만들어 받을 그림이 없다.
+  if (!use3d) {
+    setStatus("그림을 받는 중…");
+    // 두 배치가 쓰는 그림은 같다 — 한쪽 기준으로 받아 두면 창을 돌려도 다시 안 받는다.
+    const wanted = renderer.spriteNames();
+    loadedSpriteCount = await preloadSprites(wanted);
+    // 한 장도 못 받으면 화면이 **아무 오류 없이** 텅 빈다 — 그리는 쪽이 없는 그림을 조용히
+    // 건너뛰기 때문이다. 빈 사무실과 구별되지 않으므로 여기서 끊는다.
+    if (loadedSpriteCount === 0) {
+      throw new Error(`그림을 한 장도 못 받았다 (${wanted.length}장 요청)`);
+    }
   }
+  rendererReady = true;
 
   await refreshSnapshot();
   window.addEventListener("resize", resize);

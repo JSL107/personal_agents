@@ -111,6 +111,8 @@ pnpm capture   # 사무실을 한 판 그려 /tmp/idaeri-office.png 로 저장�
 | `?hour=12` | 창밖 빛을 그 시각으로 고정. 맥 앱의 `--render --hour` 와 같은 화면을 만든다 |
 | `?walk=3` | 산책을 강제로 일으키고 그 초만큼 진행시킨 뒤 그린다. 걷기는 시간이 지나야 나타나 정지 화면에 안 잡힌다 |
 | `?commute=3` | 출퇴근 걷기를 일으키고 그 초만큼 진행시킨다. `hour` 가 근무 시간이면 출근, 아니면 퇴근. 출퇴근은 **시각 경계를 넘는 순간에만** 일어나 고정 시각 화면에는 영영 안 나타난다 |
+| `?renderer=3d` | three.js 3D 화면으로 그린다(시험 단계, 기본은 2D). 아래 「3D 화면」 참조 |
+| `?room=<부서>` | 3D 에서 그 방으로 확대한 채 연다(`planning`·`quality`·`evaluation`·`treasury`·`content`·`internalOps`) |
 | `?pressure=3` | 승인 카드 하나를 그 단계(1 줄 · 2 서류 · 3 발 구르기 · 4 대표 경고등)까지 방치된 것으로 꾸며 넣는다. 실 백엔드는 승인 대기가 0건인 날이 대부분이라 이 입구 없이는 네 표현이 한 번도 안 뜬다 |
 
 걷기·출퇴근 화면은 `data-walk-report` · `data-commute-report` 로 **누가 어디에 섰는지**를 함께
@@ -118,6 +120,30 @@ pnpm capture   # 사무실을 한 판 그려 /tmp/idaeri-office.png 로 저장�
 
 맥 앱과 대조하려면 두 화면을 같은 크기로 맞춘다 — 캔버스는 창에서 가로 24px·세로 52px 을
 뺀 크기이므로, `--size 1400x820` 에 맞추려면 브라우저 창을 1424×872 로 연다.
+
+## 3D 화면 (시험)
+
+2D 와 같은 평면도·같은 움직임(`live.js`)을 쓰고 **그리는 쪽만** three.js 로 바꾼 것이다. 브라우저는
+`?renderer=3d`, 윈도우 앱은 메뉴 「사무실 ▸ 3D 화면 (시험)」(설정 파일의 `renderer`)으로 고른다.
+캡처는 `electron . --renderer=3d --capture=<파일>` — 저장된 선택을 이번 실행에서만 덮어쓴다.
+
+- **조감 + 방 확대** — 방을 누르면 카메라가 그 방으로 다가가고, `esc`·방 밖 클릭으로 돌아온다.
+  사람을 누르면 `office:agent-click`, 대표는 `office:president-click`, 확대가 바뀌면 `office:focus`
+  사건을 `window` 에 낸다(맥 앱이 WKWebView 로 얹을 때 받는 자리).
+- **이름표** — 일하는 중·승인 대기·실패인 사람만 늘 띄우고, 나머지는 마우스를 올릴 때 이름·상태·
+  하는 일을 함께 보인다. 서른 명 이름이 다 뜨면 활성 신호가 묻힌다.
+- **그림체는 코드가 강제한다** — 색은 `three/style.js` 의 `PALETTE` 이름으로만, 형태는 둥근 상자·
+  원기둥·구 도우미로만 조립한다. 외곽선(원본 스프라이트의 또렷함)은 렌더러가 모든 물체에 붙인다.
+  가구 하나 = `three/furniture3d/<kind>.js` 파일 하나, 디자인 기준은 원본 `sprites/furn-*.png`.
+
+```bash
+pnpm check:style                          # 팔레트·크기·벽걸이 규칙
+node scripts-check-style.mjs --require-all # + 평면도의 모든 가구가 제 빌더를 가졌는지
+pnpm vendor:three                          # three.js 버전을 올린 뒤 vendor/three 를 다시 채운다
+```
+
+`character-preview.html`·`furniture-preview.html` 은 캐릭터·가구를 한 줄로 세워 찍는 개발용 페이지다
+(설치본에는 안 들어간다). 원본 스프라이트와 나란히 놓고 대조하는 데 쓴다.
 
 ## 배치 규칙을 여기서 다시 짜지 않는다
 
@@ -137,7 +163,10 @@ pnpm capture   # 사무실을 한 판 그려 /tmp/idaeri-office.png 로 저장�
 
 ## 파일
 
-- `office.js` — 그리기 전부(바닥·벽·창문·가구·사람·라벨). 색 치환도 여기
+- `office.js` — 2D 그리기 전부(바닥·벽·창문·가구·사람·라벨). 색 치환도 여기
+- `three/` — 3D 그리기. `renderer3d.js`(장면·카메라·입력) · `overlay3d.js`(글자 겹침층) ·
+  `character.js`(직원) · `style.js`(그림체 규칙) · `furniture3d/`(가구 빌더)
+- `vendor/three/` — 동봉한 three.js(번들러가 없어 `index.html` 의 import map 이 이리로 잇는다)
 - `live.js` — 백엔드에서 상태를 받아 오고 사람을 걷게 한다
 - `serve.py` — 브라우저로 볼 때 쓰는 개발용 서버. 백엔드가 CORS 를 열지 않아 프록시가 필요하다
 - `main.js` — 윈도우 앱의 껍데기. 서버 주소를 기억하고, 창과 같은 출처로 백엔드를 넘겨준다
