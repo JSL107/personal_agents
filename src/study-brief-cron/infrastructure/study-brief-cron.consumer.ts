@@ -1,7 +1,7 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Inject, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Job } from 'bullmq';
+import { DelayedError, Job } from 'bullmq';
 
 import {
   HERMES_RUNNER_PORT,
@@ -148,7 +148,10 @@ export class StudyBriefCronConsumer extends WorkerHost {
     super();
   }
 
-  async process(job: Job<StudyBriefCronJobData>): Promise<void> {
+  async process(
+    job: Job<StudyBriefCronJobData>,
+    token?: string,
+  ): Promise<void> {
     const { ownerSlackUserId, target } = job.data;
     const dateKey = getTodayKstDate();
     // owner 를 키에 포함 — 잡은 owner 별로 등록되므로(scheduler jobId 참조),
@@ -174,8 +177,18 @@ export class StudyBriefCronConsumer extends WorkerHost {
         PROCESSING_GUARD_TTL_SECONDS,
       );
       if (!ownsProcessingGuard) {
-        this.logger.warn(`Study Brief Cron 동시 처리 차단 — ${dateKey}`);
-        return;
+        // 성공으로 끝내면 안 된다. 멈춘(stall) 시도의 재시도도 그 시도가 건 잠금에 막히는데,
+        // 여기서 return 하면 그날 브리프가 알림 없이 빠진다(2026-09-30 실측: stall 뒤 재시도가
+        // 12ms 만에 completed). 잠금 만료 뒤로 미뤄 다시 본다 — 앞 시도가 완주했으면 위 isDone 이
+        // 건너뛰고, 죽었으면 잠금이 풀려 새로 처리한다. DelayedError 는 재시도 횟수를 쓰지 않는다.
+        this.logger.warn(
+          `Study Brief Cron 동시 처리 — 잠금 만료 뒤로 미룬다 (${dateKey})`,
+        );
+        await job.moveToDelayed(
+          Date.now() + PROCESSING_GUARD_TTL_SECONDS * 1_000,
+          token,
+        );
+        throw new DelayedError();
       }
 
       const materials = await this.collectMaterials(ownerSlackUserId);
@@ -256,6 +269,9 @@ export class StudyBriefCronConsumer extends WorkerHost {
         guardKey,
       });
     } catch (error) {
+      if (error instanceof DelayedError) {
+        throw error;
+      }
       this.logger.error(
         `Study Brief Cron 실패 (owner=${ownerSlackUserId})`,
         error,
