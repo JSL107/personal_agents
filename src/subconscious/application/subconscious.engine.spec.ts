@@ -128,6 +128,27 @@ describe('SubconsciousEngine', () => {
     );
   });
 
+  it('케이스 2-2: 빠진 항목과 새 항목이 같은 회차에 섞이면 새 항목만 gate 에 넘긴다', async () => {
+    const prevSnapshot = makeSnapshot('github', 'hash-OLD');
+    const currSnapshot: StateSnapshot = {
+      sourceId: 'github',
+      contentHash: 'hash-NEW',
+      items: [{ key: 'github:item-2', fingerprint: 'fp-2', summary: 'new PR' }],
+    };
+    const source = {
+      id: 'github',
+      fetchSnapshot: jest.fn().mockResolvedValue(currSnapshot),
+    };
+    fakeBaselineRepository.findBySource.mockResolvedValue(prevSnapshot);
+
+    engine = buildEngine([source]);
+    await engine.runTick(OWNER, NOW);
+
+    expect(fakeGate.judge).toHaveBeenCalledWith([
+      expect.objectContaining({ kind: 'added', key: 'github:item-2' }),
+    ]);
+  });
+
   it('케이스 3: budget.tryConsume=false → emit 0건', async () => {
     const prevSnapshot = makeSnapshot('github', 'hash-OLD');
     const currSnapshot = makeSnapshot('github', 'hash-NEW');
