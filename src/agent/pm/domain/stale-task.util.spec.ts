@@ -132,9 +132,22 @@ describe('stale-task.util', () => {
     });
 
     it('오늘 목록에서 닫힌 작업은 이어 세지도 정체로 올리지도 않는다', () => {
-      expect(computeConsecutiveDaysById(history, new Set()).get(pr52)).toBe(2);
+      expect(computeConsecutiveDaysById(history, new Set()).get(pr52)).toBe(
+        undefined,
+      );
       const stalledOnly = [day('2026-09-12', [], [pr52]), ...history.slice(1)];
       expect(computeStaleTaskIds(stalledOnly, 2, new Set()).size).toBe(0);
+    });
+
+    it('어제까지 일정에 있다 오늘 닫힌 작업도 정체로 올리지 않는다', () => {
+      const scheduledOnly = ['12', '11', '10', '09', '08'].map((date) =>
+        day(`2026-09-${date}`, [pr52]),
+      );
+
+      expect(computeStaleTaskIds(scheduledOnly, 5, new Set()).size).toBe(0);
+      expect(computeStaleTaskIds(scheduledOnly, 5, new Set([pr52]))).toEqual(
+        new Set([pr52]),
+      );
     });
 
     it('GitHub 조회에 실패한 날(null)은 닫혔다고 단정하지 않고 이어 센다', () => {

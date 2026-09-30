@@ -1133,8 +1133,18 @@ describe('GenerateDailyPlanUsecase', () => {
           endedAt: new Date('2026-07-04T05:00:00Z'),
         },
       ]);
+      // 정체는 오늘도 열려 있는 GitHub 작업에만 매긴다 — 닫힌 작업은 끝난 일이다.
       listAssignedTasksExecute.mockResolvedValue({
-        issues: [],
+        issues: [
+          {
+            number: 1,
+            title: '학교 채팅방',
+            repo: 'repo/app',
+            url: 'https://github.com/repo/app/issues/1',
+            labels: [],
+            updatedAt: '2026-07-07T00:00:00Z',
+          },
+        ],
         pullRequests: [],
       });
 

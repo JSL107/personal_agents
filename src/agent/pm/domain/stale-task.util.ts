@@ -91,14 +91,23 @@ const countConsecutiveDays = (id: string, days: Set<string>[]): number => {
 // (2026-09 원장: #52 가 09-07 부터 매일 있었는데 정체 일수는 매번 5).
 // 다만 이어 세는 것은 오늘 GitHub 목록에 열려 있는 작업뿐이다 — 정체 목록은 프롬프트로 모델에
 // 넘어가 다시 stalledTasks 로 돌아오므로, 확인 없이 이으면 닫힌 작업이 영영 따라다닌다.
+// 일정에 있던 id 에도 같은 확인을 건다. 어제까지 일정에 있다 오늘 닫힌 작업이 정체로 잡히면
+// 끝난 일이 "정체" 로 하루 더 뜬다.
 const getCountableTaskIds = (
   summary: RecentPlanSummary,
   openIds: OpenTaskIds,
 ): string[] => {
-  const carriedIds = (summary.stalledTaskIds ?? []).filter(
-    (id) => GITHUB_ID_PATTERN.test(id) && (openIds === null || openIds.has(id)),
+  const carriedIds = (summary.stalledTaskIds ?? []).filter((id) =>
+    GITHUB_ID_PATTERN.test(id),
   );
   return [...(summary.taskIds ?? []), ...carriedIds].filter(
-    (id) => id.length > 0 && !POSITIONAL_ID_PATTERN.test(id),
+    (id) =>
+      id.length > 0 &&
+      !POSITIONAL_ID_PATTERN.test(id) &&
+      !isClosedGithubTask(id, openIds),
   );
 };
+
+// 조회에 실패한 날(null)은 닫혔다고 단정하지 않는다.
+const isClosedGithubTask = (id: string, openIds: OpenTaskIds): boolean =>
+  openIds !== null && GITHUB_ID_PATTERN.test(id) && !openIds.has(id);
