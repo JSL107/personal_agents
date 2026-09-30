@@ -517,7 +517,10 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
       ['briefId', 'topic', 'title', 'tags', 'bodyLength', 'notionUrl'],
       ['message'],
       // 적용 판정(AUTOPILOT_STUDY_APPLICABILITY_CRON) 요약. 전문은 study_brief 에 저장.
-      ['applicability', 'rawVerdict', 'citationCount'],
+      // rawVerdict 는 뺐다 — 후보가 없어 모델을 부르지 않은 회차는 설계상 null 이고
+      // (`notApplicableWithoutModel`), `isEmptyValue` 가 null 을 누락으로 봐 정상 회차가
+      // 위반으로 쌓였다(run 5901). PO_SHADOW 의 purposeConflict 와 같은 이유다.
+      ['applicability', 'citationCount'],
     ],
     // 근거율을 재보지 않았다. LLM 산출물(판정)은 Hermes 조사 전문을 요약할 뿐 URL·PR·
     // 파일:라인 형태의 근거를 담지 않고, 발행 형태는 사람이 읽을 근거 문장이 아니라

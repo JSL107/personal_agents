@@ -2,10 +2,16 @@ import { wrapUntrustedInput } from '../../../../common/llm/untrusted-input.util'
 import { DailyPlan } from '../pm-agent.type';
 
 const KST_OFFSET_HOURS = 9;
+// 정체 일수 때문에 이력은 더 길게 받지만, 모델에게 보여줄 패턴은 최근 7회로 둔다.
+const RECENT_PLAN_DISPLAY_LIMIT = 7;
 
 export interface RecentPlanSummary {
   date: string; // YYYY-MM-DD
   taskIds: string[];
+  // 강등돼 stalledTasks 에 있던 id — 정체 일수를 강등 뒤에도 이어 세는 데 쓴다(stale-task.util).
+  stalledTaskIds: string[];
+  // 정체 목록이 id 마다 제 제목을 달게 한다 — 최우선 제목 하나로 모든 id 를 덮으면 엉뚱한 제목이 나간다.
+  taskTitleById: Record<string, string>;
   topPriorityTitle: string;
   estimatedHours: number;
   criticalPathCount: number;
@@ -24,7 +30,7 @@ export const formatRecentPlanSummariesSection = (
   // topPriorityTitle 은 저장된 plan 에서 꺼낸 값이라 원래 출처가 외부다 (previous-plan-formatter 와 같은 이유).
   const header = '## 지난 7일 plan 패턴 (최근순)';
   const lines: string[] = [];
-  for (const summary of summaries) {
+  for (const summary of summaries.slice(0, RECENT_PLAN_DISPLAY_LIMIT)) {
     const criticalPathNote =
       summary.criticalPathCount > 0 ? ` ⚠${summary.criticalPathCount}건` : '';
     lines.push(
@@ -46,7 +52,15 @@ export const createRecentPlanSummary = (
   agentRunId: number,
 ): RecentPlanSummary => {
   const allTasks = [plan.topPriority, ...plan.morning, ...plan.afternoon];
-  const taskIds = allTasks.map((task) => task.id).filter((id) => id.length > 0);
+  const namedTasks = allTasks.filter((task) => task.id.length > 0);
+  const taskIds = namedTasks.map((task) => task.id);
+  const stalledTasks = (plan.stalledTasks ?? []).filter(
+    (task) => task.id.length > 0,
+  );
+  const stalledTaskIds = stalledTasks.map((task) => task.id);
+  const taskTitleById = Object.fromEntries(
+    [...stalledTasks, ...namedTasks].map((task) => [task.id, task.title]),
+  );
   const criticalPathCount = allTasks.filter(
     (task) => task.isCriticalPath,
   ).length;
@@ -59,6 +73,8 @@ export const createRecentPlanSummary = (
   return {
     date: kstDate,
     taskIds,
+    stalledTaskIds,
+    taskTitleById,
     topPriorityTitle: plan.topPriority.title,
     estimatedHours: plan.estimatedHours,
     criticalPathCount,
