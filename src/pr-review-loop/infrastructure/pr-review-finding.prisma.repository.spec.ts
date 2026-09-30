@@ -225,7 +225,8 @@ describe('PrReviewFindingPrismaRepository', () => {
     }));
     prisma.prReviewFinding.groupBy
       .mockResolvedValueOnce(selectedPullRequests)
-      .mockResolvedValueOnce(allPullRequests);
+      .mockResolvedValueOnce(allPullRequests)
+      .mockResolvedValueOnce([]);
     prisma.prReviewFinding.findMany.mockResolvedValue([]);
     const warn = jest.spyOn(
       (
@@ -241,6 +242,44 @@ describe('PrReviewFindingPrismaRepository', () => {
     expect(warn).toHaveBeenCalledWith(
       'PR 리뷰 수확 대상 PR 23건 중 최근 20건만 처리합니다. 이번 회차 제외: 3건.',
     );
+  });
+
+  it('보류 카드가 있는 PR 은 최근 20개 밖이어도 조회에 넣는다 — 72시간 확정 분기가 돌게 한다', async () => {
+    const recent = Array.from({ length: 20 }, (_, index) => ({
+      repo: 'JSL107/personal_agents',
+      pullNumber: 100 + index,
+      _max: { createdAt: new Date('2026-09-30T00:00:00Z') },
+    }));
+    prisma.prReviewFinding.groupBy
+      .mockResolvedValueOnce(recent)
+      .mockResolvedValueOnce([
+        ...recent.map(({ repo, pullNumber }) => ({ repo, pullNumber })),
+        { repo: 'JSL107/personal_agents', pullNumber: 7 },
+      ])
+      .mockResolvedValueOnce([
+        { repo: 'JSL107/personal_agents', pullNumber: 7 },
+      ]);
+    prisma.prReviewFinding.findMany.mockResolvedValue([]);
+
+    await repository.findOpenPostedCards();
+
+    expect(prisma.prReviewFinding.groupBy).toHaveBeenNthCalledWith(3, {
+      by: ['repo', 'pullNumber'],
+      where: {
+        status: 'OPEN',
+        resolvedAt: null,
+        githubCommentId: { not: null },
+        heldAt: { not: null },
+      },
+    });
+    const [{ where }] = prisma.prReviewFinding.findMany.mock.calls[0] as [
+      { where: { OR: { repo: string; pullNumber: number }[] } },
+    ];
+    expect(where.OR).toHaveLength(21);
+    expect(where.OR).toContainEqual({
+      repo: 'JSL107/personal_agents',
+      pullNumber: 7,
+    });
   });
 
   it('markDecided는 결정 시각과 교정된 PRRT id를 저장한다', async () => {
@@ -261,7 +300,26 @@ describe('PrReviewFindingPrismaRepository', () => {
         acceptReply: null,
         githubThreadNodeId: 'PRRT_thread',
         decidedAt: expect.any(Date),
+        heldReplyHash: null,
+        heldAt: null,
       },
+    });
+  });
+
+  it('markContradictionHeld 는 상태를 건드리지 않고 보류 지문과 시각만 남긴다', async () => {
+    // status 를 바꾸면 OPEN 전용 조회에서 빠져, 사람이 답글을 고쳐도 다시 수확되지 않는다.
+    prisma.prReviewFinding.update.mockResolvedValue({});
+    const heldAt = new Date('2026-09-30T00:00:00Z');
+
+    await repository.markContradictionHeld({
+      id: 1,
+      replyHash: 'a'.repeat(64),
+      heldAt,
+    });
+
+    expect(prisma.prReviewFinding.update).toHaveBeenCalledWith({
+      where: { id: 1 },
+      data: { heldReplyHash: 'a'.repeat(64), heldAt },
     });
   });
 

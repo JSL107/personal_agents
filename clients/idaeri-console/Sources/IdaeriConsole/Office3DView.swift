@@ -145,6 +145,7 @@ final class Office3DController: NSObject, ObservableObject, WKScriptMessageHandl
     private var layoutKey: String?
     private var isReady = false
     private var latestSnapshot: String?
+    private var latestPending: String?
     private var pendingSnapshot: ConsoleSnapshot?
     private var snapshotScheduled = false
     private var sleeping = false
@@ -201,6 +202,9 @@ final class Office3DController: NSObject, ObservableObject, WKScriptMessageHandl
             if let latestSnapshot {
                 send(latestSnapshot)
             }
+            if let latestPending {
+                send(latestPending)
+            }
             setSleeping(sleeping)
             setSelected(selectedAgent)
             return
@@ -240,6 +244,24 @@ final class Office3DController: NSObject, ObservableObject, WKScriptMessageHandl
         if let message = officeHostedEventMessage(event) {
             send(message)
         }
+    }
+
+    /// 인계·거절 연출. 나머지 지시는 `officeHostedIntentMessage` 가 걸러 보내지 않는다.
+    func pushIntents(_ intents: [VisualIntent]) {
+        for intent in intents {
+            if let message = officeHostedIntentMessage(intent) {
+                send(message)
+            }
+        }
+    }
+
+    /// 내가 보낸 지시의 단계. 화면이 서기 전에 온 값은 들고 있다가 `ready` 에 보낸다.
+    func pushPending(_ pendingCommands: [PendingCommand]) {
+        guard let message = officeHostedPendingMessage(pendingCommands) else {
+            return
+        }
+        latestPending = message
+        send(message)
     }
 
     func setSleeping(_ value: Bool) {

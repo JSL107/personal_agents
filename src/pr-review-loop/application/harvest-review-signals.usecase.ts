@@ -49,6 +49,13 @@ interface PullRequestCardGroup {
 // 순서가 뒤집히면 기각 이유가 유실된다. 사람이 반박을 적는 데 걸리는 시간이라 넉넉히 잡는다.
 const REJECTION_REPLY_GRACE_MS = 24 * 60 * 60 * 1000;
 
+// 👎 와 답글 판정(수용)이 어긋난 카드를 사람 몫으로 두는 기간. 지나면 리액션대로 기각을 확정한다.
+// 같은 답글을 다시 물어 결론을 뒤집는 대신 사람의 명시적 신호(👎 + 답글)를 따른다 — 확인된
+// 두 건(#1118·#860)은 모두 판정기가 반박 답글을 수용으로 읽었고 👎 쪽이 맞았다. 반대로 👎 를
+// 잘못 누른 경우(카드 57)는 이 기간 안에 👎 를 지우면 된다. 주말을 넘길 수 있는 최소값이다.
+// (설계: docs/superpowers/specs/2026-09-30-undecided-verdict-design.md §3-1)
+const CONTRADICTION_HOLD_MS = 72 * 60 * 60 * 1000;
+
 // 답글 판정 체크포인트의 키. 같은 답글을 다시 물어보지 않기 위한 것이라 답글 본문만 본다.
 const replyFingerprint = (replyBody: string): string =>
   createHash('sha256').update(replyBody).digest('hex');
@@ -92,6 +99,8 @@ const emptyOutcome = (): HarvestOutcome => ({
   judged: 0,
   skipped: 0,
   contradicted: 0,
+  newlyHeld: [],
+  heldCardIds: [],
   quotaStopped: false,
   adoption: [],
 });
@@ -117,11 +126,9 @@ export class HarvestReviewSignalsUsecase {
   // 같은 판단으로 컬럼까지는 만들지 않는다.
   private readonly replyJudgmentCheckpoints = new Map<number, string>();
 
-  // 카드 id → 마지막으로 모순 판정에 넣은 답글 원문. 보류(contradicted)로 남은 카드는
-  // OPEN 인 채 다음 회차에도 같은 signal 로 다시 걸린다 — 답글이 그대로면 재판정은
-  // 매번 같은 결론만 확인하면서 쿼터만 태운다(스윕 */3, 카드 1건이 하루 최대 480회).
-  // 위 resolutionCheckpoints 와 같은 패턴 — 답글이 바뀌면(사람이 정정) 그때만 다시 묻는다.
-  private readonly contradictionCheckpoints = new Map<number, string>();
+  // 모순 보류(👎 + 수용 판정)의 체크포인트는 메모리가 아니라 카드 행(heldReplyHash·heldAt)에
+  // 있다. 메모리에 두던 동안 재시작마다 같은 답글이 다시 판정돼 결론이 표본 운으로 정해졌다
+  // (카드 #1118 14회·#860 8회, 두 건 모두 마지막 1회로 확정).
 
   constructor(
     private readonly configService: ConfigService,
@@ -341,10 +348,30 @@ export class HarvestReviewSignalsUsecase {
             // ownerReplyBody 가 있으면 그 문장은 항상 replyBody 에도 포함돼 있다
             // (도메인 불변식) — 그래도 타입은 별개라 null 대비 fallback 을 둔다.
             const replyBody = signal.replyBody ?? signal.ownerReplyBody;
-            if (this.contradictionCheckpoints.get(card.id) === replyBody) {
-              // 지난 회차에 이미 같은 답글로 모순 판정을 받았다. 답글이 안 바뀌었으면
-              // 다시 물어도 같은 결론이라 재확인은 사람 몫으로 남긴다.
+            if (card.heldReplyHash === replyFingerprint(replyBody)) {
+              // 지난 회차(재시작 전 포함)에 이미 같은 답글로 모순 판정을 받았다. 다시 물으면
+              // 결론이 표본 편차로 뒤집힐 뿐이라 판정기를 부르지 않는다. 기한 안에는 사람
+              // 몫으로 두고, 지나면 리액션대로 확정한다(CONTRADICTION_HOLD_MS).
+              // heldAt 이 없으면 NaN 이라 비교가 false — 기한을 모르면 확정하지 않는다.
+              const heldMs =
+                card.heldAt === null
+                  ? Number.NaN
+                  : Date.now() - card.heldAt.getTime();
+              if (heldMs >= CONTRADICTION_HOLD_MS) {
+                this.logger.log(
+                  `PR 리뷰 기각 확정: 카드 ${card.id} — 👎 와 답글 판정이 어긋난 채 보류 기한이 지나 리액션대로 확정한다.`,
+                );
+                await this.markDecisionAndResolve({
+                  card,
+                  thread,
+                  status: 'REJECTED',
+                  rejectReason: signal.ownerReplyBody,
+                  outcome,
+                });
+                break;
+              }
               outcome.contradicted += 1;
+              outcome.heldCardIds.push(card.id);
               break;
             }
             pendingJudgments.push({
@@ -645,8 +672,20 @@ export class HarvestReviewSignalsUsecase {
         // 좋은 지적을 억제한다(카드 57) — 사람이 볼 때까지 OPEN 으로 둔다.
         if (judgment?.verdict === 'ACCEPTED') {
           outcome.contradicted += 1;
-          // 같은 답글로 다음 회차가 다시 걸리면 재판정 없이 이 결론을 재사용한다.
-          this.contradictionCheckpoints.set(pending.card.id, pending.replyBody);
+          outcome.heldCardIds.push(pending.card.id);
+          // 같은 답글로 다음 회차가 다시 걸리면(재시작 후 포함) 재판정 없이 이 결론을 재사용한다.
+          // 답글이 바뀌어 여기 다시 왔으면 새 답글 기준으로 기한을 새로 센다.
+          await this.repository.markContradictionHeld({
+            id: pending.card.id,
+            replyHash: replyFingerprint(pending.replyBody),
+            heldAt: new Date(),
+          });
+          outcome.newlyHeld.push({
+            id: pending.card.id,
+            repo: pending.card.repo,
+            pullNumber: pending.card.pullNumber,
+            githubCommentId: pending.card.githubCommentId,
+          });
           this.logger.warn(
             `PR 리뷰 기각 보류: 카드 ${pending.card.id} — 👎 리액션과 답글이 어긋난다 (${flattenForLog(judgment.reason)})`,
           );

@@ -810,6 +810,97 @@ describe('IdaeriRouterUsecase', () => {
 
   // 이 세 갈래는 워커를 한 번도 부르지 않아 AgentRun 이 아예 없었다 — 분류가 실패한 표본이
   // 원장에 0건이었다는 뜻이고, 정확도를 재려는 쪽에서 가장 필요한 회차가 빠진 것이다.
+  // 담당자를 골랐는데 새 AgentRun 이 열리지 않는 회차(캐시 재사용·결정론 워커)는 라우팅 근거를
+  // 집어 갈 행이 없어 원장 어디에도 남지 않았다 — 2026-09 조사에서 DELAY_REPORT 는 agentRunId 0
+  // 고정이라 사용 여부조차 확인할 수 없었다.
+  describe('새 AgentRun 이 열리지 않은 dispatch 는 routing_no_run 에 남긴다', () => {
+    const build = (
+      dispatcher: AgentDispatcher,
+    ): { usecase: IdaeriRouterUsecase; noRun: { record: jest.Mock } } => {
+      jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+      const noRun = { record: jest.fn().mockResolvedValue(undefined) };
+      const usecase = new IdaeriRouterUsecase(
+        [dispatcher],
+        buildClassifierMock({
+          agentType: AgentType.DELAY_REPORT,
+          confidence: 0.9,
+          reason: '지연 문의',
+        }),
+        buildAgentRunServiceMock(),
+        noRun,
+      );
+      return { usecase, noRun };
+    };
+
+    it('근거를 아무도 집어 가지 않으면 한 건 남긴다 (0 sentinel · 결정론)', async () => {
+      const { usecase, noRun } = build(
+        buildDispatcher(AgentType.DELAY_REPORT, () => ({
+          agentRunId: 0,
+          modelUsed: 'deterministic',
+        })),
+      );
+
+      await usecase.dispatch({
+        source: 'SLACK_MESSAGE',
+        slackUserId: 'U1',
+        text: '오늘 왜 늦었어?',
+      });
+
+      expect(noRun.record).toHaveBeenCalledWith({
+        routedTo: AgentType.DELAY_REPORT,
+        routedVia: 'classifier',
+        confidence: 0.9,
+        routedText: '오늘 왜 늦었어?',
+        agentRunId: 0,
+        reusedAgentRun: false,
+        modelUsed: 'deterministic',
+      });
+    });
+
+    it('재사용한 과거 run 이면 reusedAgentRun 과 그 id 를 남긴다', async () => {
+      const { usecase, noRun } = build(
+        buildDispatcher(AgentType.DELAY_REPORT, () => ({
+          agentRunId: 321,
+          reusedAgentRun: true,
+        })),
+      );
+
+      await usecase.dispatch({
+        source: 'SLACK_MESSAGE',
+        slackUserId: 'U1',
+        text: '이력서 보여줘',
+      });
+
+      expect(noRun.record).toHaveBeenCalledWith(
+        expect.objectContaining({ agentRunId: 321, reusedAgentRun: true }),
+      );
+    });
+
+    it('워커가 AgentRun 을 열어 근거를 집어 갔으면 남기지 않는다', async () => {
+      const dispatcher: AgentDispatcher = {
+        agentType: AgentType.DELAY_REPORT,
+        dispatch: jest.fn(async () => {
+          claimRoutingContext();
+          return {
+            agentRunId: 7,
+            output: {},
+            modelUsed: 'codex-cli',
+            formattedText: 'ok',
+          } as DispatchOutcome;
+        }),
+      };
+      const { usecase, noRun } = build(dispatcher);
+
+      await usecase.dispatch({
+        source: 'SLACK_MESSAGE',
+        slackUserId: 'U1',
+        text: '오늘 왜 늦었어?',
+      });
+
+      expect(noRun.record).not.toHaveBeenCalled();
+    });
+  });
+
   describe('담당자를 고르지 못한 요청도 원장에 남긴다', () => {
     it('분류기가 UNKNOWN 이면 ROUTER 이름으로 실패 행을 남긴다', async () => {
       const classifier = buildClassifierMock({

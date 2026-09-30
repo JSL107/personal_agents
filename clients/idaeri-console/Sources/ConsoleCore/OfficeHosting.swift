@@ -41,6 +41,50 @@ public func officeHostedEventMessage(_ event: ConsoleEvent) -> String? {
     return #"{"type":"event","data":"# + json + "}"
 }
 
+private struct HostedIntent: Encodable {
+    let kind: String
+    var from: String?
+    var to: String?
+    var agentType: String?
+}
+
+/// 연출 지시 메시지. **인계와 거절만** 옮긴다 — 어느 사건이 어느 연출인지는 `visualIntents` 가 이미
+/// 정했고, 화면은 그 결과만 받아 걷게 한다(판정을 웹에 다시 적으면 규칙이 두 벌이 된다).
+/// 나머지 연출은 nil: 상태 색·말풍선은 이벤트·스냅샷으로, 줄서기·출퇴근은 화면이 스스로 한다.
+public func officeHostedIntentMessage(_ intent: VisualIntent) -> String? {
+    let hosted: HostedIntent
+    switch intent {
+    case let .handoff(from, to):
+        hosted = HostedIntent(kind: "handoff", from: from, to: to)
+    case let .reject(agentType):
+        hosted = HostedIntent(kind: "reject", agentType: agentType)
+    default:
+        return nil
+    }
+    guard let data = try? JSONEncoder().encode(hosted),
+        let json = String(data: data, encoding: .utf8)
+    else {
+        return nil
+    }
+    return #"{"type":"intent","data":"# + json + "}"
+}
+
+/// 내가 보낸 지시의 진행 단계 메시지(`agentType → 단계`). 화면이 접수 대기 점·완료 튀어오름·실패
+/// 자세에 쓴다. 한 사람에게 지시가 여럿이면 가장 최근 것(`pendingBadge` — 2D 와 같은 규칙).
+/// 담당자가 아직 안 정해진 지시는 싣지 않는다(머리 위에 띄울 사람이 없다).
+public func officeHostedPendingMessage(_ pendingCommands: [PendingCommand]) -> String? {
+    var phases: [String: String] = [:]
+    for agentType in Set(pendingCommands.compactMap(\.effectiveAgentType)) {
+        phases[agentType] = pendingBadge(for: agentType, pendingCommands: pendingCommands)?.rawValue
+    }
+    guard let data = try? JSONEncoder().encode(phases),
+        let json = String(data: data, encoding: .utf8)
+    else {
+        return nil
+    }
+    return #"{"type":"pending","data":"# + json + "}"
+}
+
 /// 화면이 요청한 경로(`idaeri-office://app/<경로>`)를 루트 안의 파일로 옮긴다. 루트 밖이면 nil.
 ///
 /// 웹뷰가 부르는 것은 우리 파일뿐이지만, 이 핸들러는 **앱 권한으로 디스크를 읽는 입구**다.

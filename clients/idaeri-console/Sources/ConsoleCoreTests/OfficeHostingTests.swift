@@ -53,6 +53,46 @@ func runOfficeHostingTests(_ t: TestRunner) {
         t.fail("이벤트 메시지를 읽지 못했다: \(error)")
     }
 
+    // 연출 지시는 인계·거절만 옮긴다 — 화면(`live.js` performIntent)이 읽는 이름 그대로.
+    do {
+        let handoff = officeHostedIntentMessage(.handoff(from: "PM", to: "CEO")) ?? ""
+        let object = try JSONSerialization.jsonObject(with: Data(handoff.utf8)) as? [String: Any]
+        let data = object?["data"] as? [String: Any]
+        t.expectEqual(object?["type"] as? String, "intent", "메시지 종류")
+        t.expectEqual(data?["kind"] as? String, "handoff", "인계")
+        t.expectEqual(data?["from"] as? String, "PM", "넘기는 사람")
+        t.expectEqual(data?["to"] as? String, "CEO", "받는 사람")
+        let reject = officeHostedIntentMessage(.reject(agentType: "PM")) ?? ""
+        let rejected = (try JSONSerialization.jsonObject(with: Data(reject.utf8)) as? [String: Any])?["data"] as? [String: Any]
+        t.expectEqual(rejected?["kind"] as? String, "reject", "거절")
+        t.expectEqual(rejected?["agentType"] as? String, "PM", "거절당한 사람")
+        t.expect(
+            officeHostedIntentMessage(.working(agentType: "PM")) == nil,
+            "나머지 연출은 보내지 않는다(이벤트·스냅샷이 옮긴다)"
+        )
+    } catch {
+        t.fail("연출 지시 메시지를 읽지 못했다: \(error)")
+    }
+
+    // 지시 단계는 사람별로 가장 최근 지시의 것 하나. 담당자가 안 정해진 지시는 빠진다.
+    do {
+        let early = Date(timeIntervalSince1970: 100)
+        let commands = [
+            PendingCommand(id: UUID(), text: "a", agentTypeHint: "PM", sentAt: early, phase: .done),
+            PendingCommand(id: UUID(), text: "b", agentTypeHint: "PM", sentAt: early.addingTimeInterval(5), phase: .sent),
+            PendingCommand(id: UUID(), text: "c", agentTypeHint: nil, sentAt: early, phase: .sent),
+        ]
+        let message = officeHostedPendingMessage(commands) ?? ""
+        let object = try JSONSerialization.jsonObject(with: Data(message.utf8)) as? [String: Any]
+        let data = object?["data"] as? [String: String]
+        t.expectEqual(object?["type"] as? String, "pending", "메시지 종류")
+        t.expectEqual(data ?? [:], ["PM": "sent"], "가장 최근 지시의 단계만")
+        let empty = officeHostedPendingMessage([]) ?? ""
+        t.expect(empty.contains(#""data":{}"#), "지시가 없으면 빈 묶음 — 화면이 점을 지운다")
+    } catch {
+        t.fail("지시 단계 메시지를 읽지 못했다: \(error)")
+    }
+
     // 경로는 루트 안에 가둔다 — 이 핸들러는 앱 권한으로 디스크를 읽는 입구다.
     let root = URL(fileURLWithPath: "/tmp/office-web")
     t.expectEqual(

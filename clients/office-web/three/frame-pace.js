@@ -32,17 +32,21 @@ export const IDLE_INTERVAL_MS = 1000;
  * @param {object} input.bodies   그릴 사람들(`live.js` 의 몸 — 숨긴 사람은 빼고)
  * @param {object} [input.agents] 사람별 상태·말풍선
  * @param {Array}  [input.sessions]
+ * @param {object} [input.pending] 사람별 지시 진행 단계(맥 앱만 준다) — 접수 대기 점·어깨 처짐을 정한다
  * @returns {{signature: string, moving: boolean}}
  */
-export function frameSignature({ scene, bodies, agents, sessions }) {
+export function frameSignature({ scene, bodies, agents, sessions, pending }) {
   let moving = false;
   const parts = [...scene];
   for (const [agentType, body] of Object.entries(bodies)) {
     const agent = agents?.[agentType];
     parts.push(agentType, agent?.state, agent?.bubble, agent?.job, agent?.nickname, agent?.displayName);
+    // 잠깐 뜨는 말풍선(`!`)과 지시 단계는 걷는 중에도 글자를 바꾼다.
+    parts.push(pending?.[agentType], body.flash);
     const pressure = body.seated ? 0 : (body.pressure ?? 0);
     const walking = Boolean(body.path) || (typeof body.pose === "string" && body.pose.includes("walk"));
-    if (walking || pressure >= 3) {
+    // 짧은 몸짓(튀어오름·흔들림)도 그동안은 매 프레임 자세가 달라진다.
+    if (walking || pressure >= 3 || body.cueRemaining > 0) {
       moving = true;
       parts.push("moving");
     } else {
@@ -59,7 +63,7 @@ export function frameSignature({ scene, bodies, agents, sessions }) {
  * @param {object} frame
  * @param {boolean} frame.changed   그려진 것과 지금 상태가 다르다(상태·말풍선·hover·선택·창 크기 등)
  * @param {boolean} frame.smooth    카메라가 옮겨 가는 중 — 짧고 드물어 매 프레임 그린다
- * @param {boolean} frame.moving    걷거나 발을 구르는 사람이 있다
+ * @param {boolean} frame.moving    걷거나 발을 구르거나 짧은 몸짓 중인 사람이 있다
  * @param {number}  frame.elapsedMs 마지막으로 그린 뒤 지난 시간
  */
 export function shouldRender({ changed, smooth, moving, elapsedMs }) {

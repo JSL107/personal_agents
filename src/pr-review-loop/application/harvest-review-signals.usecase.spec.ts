@@ -31,6 +31,8 @@ const card = (
   postMode: 'INLINE',
   githubCommentId: '555',
   githubThreadNodeId: 'PRRC_wrong_comment_node',
+  heldReplyHash: null,
+  heldAt: null,
   createdAt: new Date('2026-07-31T00:00:00Z'),
   ...overrides,
 });
@@ -95,6 +97,7 @@ const buildDependencies = ({
     findOpenPostedCards: jest.fn(),
     markDecided: jest.fn().mockResolvedValue(undefined),
     markThreadResolved: jest.fn().mockResolvedValue(undefined),
+    markContradictionHeld: jest.fn().mockResolvedValue(undefined),
     countOpenPostedByPullRequest: jest.fn().mockResolvedValue([]),
     countAdoptionByCategory: jest.fn().mockResolvedValue([]),
     findRejectionsForConventions: jest.fn().mockResolvedValue([]),
@@ -136,6 +139,8 @@ describe('HarvestReviewSignalsUsecase', () => {
       judged: 0,
       skipped: 0,
       contradicted: 0,
+      newlyHeld: [],
+      heldCardIds: [],
       quotaStopped: false,
       adoption: [],
     });
@@ -570,17 +575,12 @@ describe('HarvestReviewSignalsUsecase', () => {
     expect(outcome.contradicted).toBe(0);
   });
 
-  it('같은 답글로 모순이 반복되면 다음 회차는 판정기를 다시 부르지 않는다', async () => {
-    // 보류(contradicted)로 남은 카드는 OPEN 인 채 다음 회차에도 같은 signal 로 다시
-    // 걸린다. 답글이 안 바뀌었으면 재판정은 매번 같은 결론만 확인하며 쿼터만 태운다.
-    const { usecase, github, repository, judge } = buildDependencies();
-    repository.findOpenPostedCards.mockResolvedValue([card()]);
-    judge.execute.mockResolvedValue([
-      { id: 1, verdict: 'ACCEPTED', reason: '수정했다고 답했다' },
-    ]);
-    github.listReviewThreads.mockResolvedValue({
+  describe('👎 + 수용 판정 모순 보류', () => {
+    // 수용으로 읽히는 답글 + owner 👎 — 판정기가 ACCEPTED 를 내면 모순이다.
+    const ACCEPTING_REPLY = '타당합니다. 8e0d19ad 에 테스트를 추가했습니다.';
+    const contradictedThreads = (replyBody = ACCEPTING_REPLY) => ({
       pullRequestAuthorLogin: null,
-      pullRequestState: 'OPEN',
+      pullRequestState: 'OPEN' as const,
       truncated: false,
       threads: [
         reviewThread({
@@ -595,7 +595,7 @@ describe('HarvestReviewSignalsUsecase', () => {
             {
               databaseId: 556,
               authorLogin: 'owner',
-              body: '타당합니다. 8e0d19ad 에 테스트를 추가했습니다.',
+              body: replyBody,
               createdAt: '2026-08-04T02:03:13Z',
               reactions: [],
             },
@@ -603,14 +603,165 @@ describe('HarvestReviewSignalsUsecase', () => {
         }),
       ],
     });
+    const HOUR_MS = 60 * 60 * 1000;
 
-    const first = await usecase.execute();
-    const second = await usecase.execute();
+    // 1회차: 판정기가 수용으로 읽어 보류가 걸린다. 저장소에 남은 지문을 돌려준다.
+    const holdOnce = async (): Promise<string> => {
+      const { usecase, github, repository, judge } = buildDependencies();
+      repository.findOpenPostedCards.mockResolvedValue([card()]);
+      github.listReviewThreads.mockResolvedValue(contradictedThreads());
+      judge.execute.mockResolvedValue([
+        { id: 1, verdict: 'ACCEPTED', reason: '수정했다고 답했다' },
+      ]);
 
-    expect(judge.execute).toHaveBeenCalledTimes(1);
-    expect(first.contradicted).toBe(1);
-    expect(second.contradicted).toBe(1);
-    expect(repository.markDecided).not.toHaveBeenCalled();
+      const outcome = await usecase.execute();
+
+      expect(outcome.contradicted).toBe(1);
+      expect(outcome.heldCardIds).toEqual([1]);
+      expect(outcome.newlyHeld).toEqual([
+        {
+          id: 1,
+          repo: 'JSL107/personal_agents',
+          pullNumber: 180,
+          githubCommentId: '555',
+        },
+      ]);
+      expect(repository.markDecided).not.toHaveBeenCalled();
+      expect(repository.markContradictionHeld).toHaveBeenCalledTimes(1);
+      const [{ id, replyHash, heldAt }] =
+        repository.markContradictionHeld.mock.calls[0];
+      expect(id).toBe(1);
+      expect(replyHash).toMatch(/^[0-9a-f]{64}$/);
+      expect(heldAt).toBeInstanceOf(Date);
+      return replyHash;
+    };
+
+    it('보류를 저장소에 남겨 재시작 뒤에도 같은 답글로는 판정기를 다시 부르지 않는다', async () => {
+      // 보류를 프로세스 메모리에 두던 동안 재시작마다 같은 답글이 다시 판정됐다 —
+      // 카드 #1118 은 같은 입력으로 14회 불려 마지막 1회의 다른 답이 결론이 됐다.
+      // 새 인스턴스(= 재시작)가 저장소의 보류 표식만 보고 판정기를 건너뛰는지 확인한다.
+      const replyHash = await holdOnce();
+
+      const restarted = buildDependencies();
+      restarted.repository.findOpenPostedCards.mockResolvedValue([
+        card({
+          heldReplyHash: replyHash,
+          heldAt: new Date(Date.now() - HOUR_MS),
+        }),
+      ]);
+      restarted.github.listReviewThreads.mockResolvedValue(
+        contradictedThreads(),
+      );
+
+      const outcome = await restarted.usecase.execute();
+
+      expect(restarted.judge.execute).not.toHaveBeenCalled();
+      expect(outcome.contradicted).toBe(1);
+      // 이어진 보류도 보류 집합에 들어간다 — 발송 키가 첫 회차와 같아지는 근거다.
+      expect(outcome.heldCardIds).toEqual([1]);
+      // 이미 알린 보류는 다시 알리지 않는다.
+      expect(outcome.newlyHeld).toEqual([]);
+      expect(restarted.repository.markDecided).not.toHaveBeenCalled();
+      expect(restarted.repository.markContradictionHeld).not.toHaveBeenCalled();
+    });
+
+    it('보류 기한(72시간)이 지나면 판정기 없이 리액션대로 기각을 확정하고 owner 답글을 이유로 남긴다', async () => {
+      const replyHash = await holdOnce();
+
+      const later = buildDependencies();
+      later.repository.findOpenPostedCards.mockResolvedValue([
+        card({
+          heldReplyHash: replyHash,
+          heldAt: new Date(Date.now() - 73 * HOUR_MS),
+        }),
+      ]);
+      later.github.listReviewThreads.mockResolvedValue(contradictedThreads());
+
+      const outcome = await later.usecase.execute();
+
+      expect(later.judge.execute).not.toHaveBeenCalled();
+      expect(outcome.rejected).toBe(1);
+      expect(outcome.contradicted).toBe(0);
+      expect(later.repository.markDecided).toHaveBeenCalledWith({
+        id: 1,
+        status: 'REJECTED',
+        rejectReason: ACCEPTING_REPLY,
+        githubThreadNodeId: 'PRRT_555',
+      });
+    });
+
+    it('기한이 지났어도 👎 를 지웠으면 리액션대로 확정하지 않는다', async () => {
+      // 👎 오조작(카드 57)은 사람이 👎 를 지우는 것으로 되돌린다는 것이 72시간 규칙의 전제다.
+      // 저장된 보류 표식이 남아 있어도 최신 리액션이 없으면 기각 확정 분기로 가면 안 된다.
+      const replyHash = await holdOnce();
+
+      const undone = buildDependencies();
+      undone.repository.findOpenPostedCards.mockResolvedValue([
+        card({
+          heldReplyHash: replyHash,
+          heldAt: new Date(Date.now() - 73 * HOUR_MS),
+        }),
+      ]);
+      const threads = contradictedThreads();
+      threads.threads[0].comments[0].reactions = [];
+      undone.github.listReviewThreads.mockResolvedValue(threads);
+      undone.judge.execute.mockResolvedValue([
+        { id: 1, verdict: 'ACCEPTED', reason: '수정했다고 답했다' },
+      ]);
+
+      const outcome = await undone.usecase.execute();
+
+      expect(outcome.rejected).toBe(0);
+      expect(undone.repository.markDecided).not.toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'REJECTED' }),
+      );
+    });
+
+    it('기한 직전(71시간)이면 아직 확정하지 않는다', async () => {
+      const replyHash = await holdOnce();
+
+      const later = buildDependencies();
+      later.repository.findOpenPostedCards.mockResolvedValue([
+        card({
+          heldReplyHash: replyHash,
+          heldAt: new Date(Date.now() - 71 * HOUR_MS),
+        }),
+      ]);
+      later.github.listReviewThreads.mockResolvedValue(contradictedThreads());
+
+      const outcome = await later.usecase.execute();
+
+      expect(later.repository.markDecided).not.toHaveBeenCalled();
+      expect(outcome.contradicted).toBe(1);
+    });
+
+    it('답글이 바뀌면 보류 표식이 있어도 다시 판정하고 기한을 새로 센다', async () => {
+      const replyHash = await holdOnce();
+
+      const edited = buildDependencies();
+      edited.repository.findOpenPostedCards.mockResolvedValue([
+        card({
+          heldReplyHash: replyHash,
+          heldAt: new Date(Date.now() - 73 * HOUR_MS),
+        }),
+      ]);
+      edited.github.listReviewThreads.mockResolvedValue(
+        contradictedThreads(`${ACCEPTING_REPLY} 추가로 주석도 달았습니다.`),
+      );
+      edited.judge.execute.mockResolvedValue([
+        { id: 1, verdict: 'ACCEPTED', reason: '수정했다고 답했다' },
+      ]);
+
+      const outcome = await edited.usecase.execute();
+
+      expect(edited.judge.execute).toHaveBeenCalledTimes(1);
+      // 옛 기한(73시간 전)으로 확정하지 않는다 — 새 답글 기준으로 다시 보류.
+      expect(edited.repository.markDecided).not.toHaveBeenCalled();
+      const [{ replyHash: newHash }] =
+        edited.repository.markContradictionHeld.mock.calls[0];
+      expect(newHash).not.toBe(replyHash);
+      expect(outcome.newlyHeld).toHaveLength(1);
+    });
   });
 
   it('답글만 있던 회차에 지문이 찍혀도 뒤늦게 달린 👎 는 확정된다', async () => {
