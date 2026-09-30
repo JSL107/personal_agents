@@ -22,6 +22,7 @@ const harvest = (overrides = {}) => ({
   judged: 0,
   skipped: 0,
   contradicted: 0,
+  newlyHeld: [],
   quotaStopped: false,
   adoption: [],
   ...overrides,
@@ -48,6 +49,39 @@ const adoption = (
 };
 
 describe('formatPrReviewSweep', () => {
+  it('새로 보류된 카드를 푸는 방법과 스레드 링크로 알린다 — 건수만으로는 사람이 결론을 못 낸다', () => {
+    const text = formatPrReviewSweep({
+      harvest: harvest({
+        contradicted: 1,
+        newlyHeld: [
+          {
+            id: 1118,
+            repo: 'JSL107/personal_agents',
+            pullNumber: 613,
+            githubCommentId: '4044844006',
+          },
+        ],
+      }),
+      results: [],
+    });
+
+    expect(text).toContain('보류 1');
+    expect(text).toContain('72시간 뒤 기각 확정');
+    expect(text).toContain(
+      '• <https://github.com/JSL107/personal_agents/pull/613#discussion_r4044844006|JSL107/personal_agents#613 카드 1118>',
+    );
+  });
+
+  it('보류가 이어지기만 하는 회차는 안내를 반복하지 않는다', () => {
+    const text = formatPrReviewSweep({
+      harvest: harvest({ contradicted: 1 }),
+      results: [],
+    });
+
+    expect(text).toContain('보류 1');
+    expect(text).not.toContain('판정 보류 —');
+  });
+
   it('PR 별 게시 결과를 한 줄씩 렌더한다', () => {
     const text = formatPrReviewSweep({
       harvest: harvest(),

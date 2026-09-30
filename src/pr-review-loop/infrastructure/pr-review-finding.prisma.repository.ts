@@ -11,6 +11,7 @@ import {
   AdoptionWindowInput,
   FindRejectionsForConventionsInput,
   HasAnyForPullRequestInput,
+  MarkContradictionHeldInput,
   MarkDecidedInput,
   OpenPostedPullRequestRow,
   PrReviewFindingRepositoryPort,
@@ -138,10 +139,24 @@ export class PrReviewFindingPrismaRepository implements PrReviewFindingRepositor
         acceptReply: status === 'ACKED' ? (acceptReply ?? null) : null,
         githubThreadNodeId,
         decidedAt: new Date(),
+        // 결론이 났으면 보류는 끝났다. 남겨 두면 카드가 되살아날 일은 없어도 "보류 중" 조회가 틀린다.
+        heldReplyHash: null,
+        heldAt: null,
         // 한 번의 쓰기로 확정한다. 나눠 쓰면 첫 쓰기 직후 실패했을 때 조회 대상에서
         // 빠져(status 가 OPEN 이 아니게 된다) 나머지 갱신을 재시도할 길이 없다.
         ...(resolveThread === true ? { resolvedAt: new Date() } : {}),
       },
+    });
+  }
+
+  async markContradictionHeld({
+    id,
+    replyHash,
+    heldAt,
+  }: MarkContradictionHeldInput): Promise<void> {
+    await this.prisma.prReviewFinding.update({
+      where: { id },
+      data: { heldReplyHash: replyHash, heldAt },
     });
   }
 
@@ -262,6 +277,8 @@ export class PrReviewFindingPrismaRepository implements PrReviewFindingRepositor
     postMode: string;
     githubCommentId: bigint | null;
     githubThreadNodeId: string | null;
+    heldReplyHash: string | null;
+    heldAt: Date | null;
     createdAt: Date;
   }): PrReviewFindingRecord {
     return {
@@ -281,6 +298,8 @@ export class PrReviewFindingPrismaRepository implements PrReviewFindingRepositor
       githubCommentId:
         row.githubCommentId === null ? null : row.githubCommentId.toString(),
       githubThreadNodeId: row.githubThreadNodeId,
+      heldReplyHash: row.heldReplyHash,
+      heldAt: row.heldAt,
       createdAt: row.createdAt,
     };
   }
