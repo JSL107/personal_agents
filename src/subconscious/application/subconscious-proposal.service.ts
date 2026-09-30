@@ -18,6 +18,7 @@ import { SlackService } from '../../slack/slack.service';
 import type { ProposalEmitter } from '../domain/port/proposal-emitter.port';
 import { PROPOSAL_EMITTER } from '../domain/port/proposal-emitter.port';
 import {
+  ProposalStatus,
   SUBCONSCIOUS_PROPOSAL_REPOSITORY,
   SubconsciousProposalRecord,
   SubconsciousProposalRepository,
@@ -29,6 +30,15 @@ import { GateDecision, StateChange } from '../domain/subconscious.type';
 // 한 시간 안에 Slack 을 보지 못하면 그 기회가 사라진다. 게시를 하지 않게 바뀐 뒤(apply 의
 // publish:false)로는 카드가 오래 살아도 외부에 흔적을 남기지 않으므로 하루로 늘린다.
 const DEFAULT_TTL_MS = 86_400_000; // 24시간
+
+// 버튼을 누른 사람에게 보이는 상태 이름. 코드값(EXPIRED 등)을 그대로 찍으면 왜 안 눌리는지 모른다.
+const PROPOSAL_STATUS_LABEL: Record<ProposalStatus, string> = {
+  PENDING: '응답 대기',
+  DISPATCHED: '이미 실행한 제안',
+  DISMISSED: '무시한 제안',
+  EXPIRED: '만료된 제안',
+  SUPERSEDED: 'PR 리뷰 스윕이 이미 처리한 제안',
+};
 
 // 한 회차에 사후 판정할 카드 수 상한. 카드 1장마다 원장을 한 번 조회하므로 상한이 없으면
 // 쌓인 카드 수만큼 tick 이 길어지고, lockDuration 을 넘기면 BullMQ 가 stalled 로 보고 같은
@@ -155,7 +165,7 @@ export class SubconsciousProposalService implements ProposalEmitter {
       // 이긴다(카드를 되돌리지 않는다).
       const moved = await this.repository.transitionFromPending(
         proposal.id,
-        'DISMISSED',
+        'SUPERSEDED',
         new Date(),
       );
       if (moved) {
@@ -368,7 +378,7 @@ export class SubconsciousProposalService implements ProposalEmitter {
     }
     if (found.status !== 'PENDING') {
       throw new SubconsciousProposalException(
-        `Proposal 이 이미 ${found.status} 상태입니다.`,
+        `Proposal 이 이미 처리됐습니다 (${PROPOSAL_STATUS_LABEL[found.status]}).`,
         DomainStatus.PRECONDITION_FAILED,
       );
     }
@@ -425,7 +435,7 @@ export class SubconsciousProposalService implements ProposalEmitter {
     }
     if (found.status !== 'PENDING') {
       throw new SubconsciousProposalException(
-        `Proposal 이 이미 ${found.status} 상태입니다.`,
+        `Proposal 이 이미 처리됐습니다 (${PROPOSAL_STATUS_LABEL[found.status]}).`,
         DomainStatus.PRECONDITION_FAILED,
       );
     }
