@@ -1015,7 +1015,7 @@ describe('GenerateDailyPlanUsecase', () => {
       expect(promptArg).toContain('그제의 최우선');
 
       const call = agentRunServiceExecute.mock.calls[0][0];
-      expect(call.inputSnapshot.recentPlanLookbackDays).toBe(7);
+      expect(call.inputSnapshot.recentPlanLookbackDays).toBe(30);
       expect(call.inputSnapshot.recentPlanSampleCount).toBe(2);
     });
 

@@ -29,6 +29,7 @@ import { PmAgentErrorCode } from '../domain/pm-agent-error-code.enum';
 import { parseDailyPlan } from '../domain/prompt/daily-plan.parser';
 import { PM_SYSTEM_PROMPT } from '../domain/prompt/pm-system.prompt';
 import {
+  collectOpenGithubTaskIds,
   computeConsecutiveDaysById,
   computeStaleTaskIds,
 } from '../domain/stale-task.util';
@@ -151,12 +152,15 @@ export class GenerateDailyPlanUsecase {
           request: { prompt, systemPrompt },
         });
         const parsedPlan = parseDailyPlan(completion.text);
+        const openIds = collectOpenGithubTaskIds(context.githubTasks);
         const staleIds = computeStaleTaskIds(
           context.recentPlanSummaries,
           staleDemoteDays,
+          openIds,
         );
         const daysById = computeConsecutiveDaysById(
           context.recentPlanSummaries,
+          openIds,
         );
         const innerPlan = applyStaleDemotion({
           plan: parsedPlan,
