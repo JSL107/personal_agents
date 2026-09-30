@@ -38,6 +38,8 @@ const buildDailyReview = (note: string): DailyReview => ({
 const buildSummary = (date: string, title: string): RecentPlanSummary => ({
   date,
   taskIds: [`github/repo#${title}`],
+  stalledTaskIds: [],
+  taskTitleById: { [`github/repo#${title}`]: title },
   topPriorityTitle: title,
   estimatedHours: 6,
   criticalPathCount: 1,
@@ -128,6 +130,7 @@ describe('DailyPlanPromptBuilder', () => {
           {
             ...buildSummary('2026-07-07', '학교 채팅방'),
             taskIds: ['repo/app#1', 'repo/app#2'],
+            taskTitleById: { 'repo/app#1': '학교 채팅방' },
           },
           {
             ...buildSummary('2026-07-06', '학교 채팅방'),
@@ -151,6 +154,31 @@ describe('DailyPlanPromptBuilder', () => {
     expect(built.prompt).toContain('repo/app#1 (5일 연속) : 학교 채팅방');
     expect(built.prompt).toContain('stalledTasks');
     expect(built.prompt).not.toContain('repo/app#2 (');
+  });
+
+  // run 3690·5799 재현 — 최우선이 아니던 정체 작업이 그날 최우선 제목을 달고 나갔다.
+  it('정체 태스크 제목은 그날 최우선 제목이 아니라 그 id 자신의 제목을 쓴다', () => {
+    const summaryOf = (date: string): RecentPlanSummary => ({
+      ...buildSummary(date, 'PR #277 설문 제외'),
+      taskIds: ['r/api#277', 'r/pup#52'],
+      taskTitleById: {
+        'r/api#277': 'PR #277 설문 제외',
+        'r/pup#52': 'PR #52 PDF 렌더',
+      },
+    });
+
+    const built = builder.build(
+      buildBaseContext({
+        recentPlanSummaries: ['07-07', '07-06', '07-05', '07-04'].map((day) =>
+          summaryOf(`2026-${day}`),
+        ),
+      }),
+      undefined,
+      5,
+    );
+
+    expect(built.prompt).toContain('r/pup#52 (5일 연속) : PR #52 PDF 렌더');
+    expect(built.prompt).not.toContain('r/pup#52 (5일 연속) : PR #277');
   });
 
   it('cap 초과 시 TRIM_ORDER 우선순위대로 drop — recentPlanSummaries 가 previousPlan / previousWorklog 보다 먼저 drop 된다', () => {

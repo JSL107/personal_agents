@@ -1,7 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import {
+  HOLIDAY_CALENDAR_PORT,
+  HolidayCalendarPort,
+} from '../../../holiday/domain/port/holiday-calendar.port';
 import { MoneyValue } from '../../../market-data/domain/market-data.type';
 import { StockIndicators } from '../../../market-data/domain/stock-indicator';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
@@ -13,7 +17,7 @@ import {
   summarizePendingDividends,
 } from '../../../paper-trading/domain/paper-valuation';
 import { PaperAccountRecord } from '../../../paper-trading/domain/port/paper-order-ledger.port';
-import { nextWeekday } from '../../../paper-trading/domain/trade-calendar';
+import { targetTradeDateOf } from '../../../paper-trading/domain/trade-calendar';
 import {
   InvariantCorporateActionRow,
   LockedPaperRecommendationState,
@@ -136,6 +140,8 @@ export class GeneratePaperRecommendationUsecase {
     private readonly modelRouter: ModelRouterUsecase,
     private readonly agentRunService: AgentRunService,
     private readonly strategyParameters: ResolveStrategyParametersUsecase,
+    @Inject(HOLIDAY_CALENDAR_PORT)
+    private readonly holidayCalendar: HolidayCalendarPort,
   ) {}
 
   async execute(
@@ -187,6 +193,14 @@ export class GeneratePaperRecommendationUsecase {
         // 이 회차가 쓸 값을 한 번만 해소한다. 아래 스크리닝·프롬프트·비중 배정이 모두
         // 이 한 벌을 쓴다 — 회차 도중에 값이 갈리면 "무엇으로 판단했나" 가 남지 않는다.
         const parameters = await this.strategyParameters.execute(strategy);
+        // 달력은 run 안에서 읽는다. 밖에서 읽으면 조회 실패가 실행 원장에 남지 않고 회차가
+        // 통째로 사라진다. 전략마다 읽지만 같은 `decidedAt` 과 같은 공휴일 행에서 나오므로
+        // 전략 간 목표일은 갈리지 않는다 — 카드가 한 날짜만 적는 전제
+        // (`paper-recommend.autopilot-task.ts`)가 그대로 선다.
+        const targetTradeDate = targetTradeDateOf(
+          decidedAt,
+          await this.holidayCalendar.load(),
+        );
         const systemPrompt = buildPaperRecommendSystemPrompt({
           maximumWeightPercent: parameters.maximumWeightPercent,
         });
@@ -290,6 +304,7 @@ export class GeneratePaperRecommendationUsecase {
             const lockedRecommendation = this.constrainLockedRecommendation({
               strategy,
               decidedAt,
+              targetTradeDate,
               screen,
               indicatorsByTickerId,
               agentRunId,
@@ -396,6 +411,7 @@ export class GeneratePaperRecommendationUsecase {
   private constrainLockedRecommendation({
     strategy,
     decidedAt,
+    targetTradeDate,
     screen,
     indicatorsByTickerId,
     agentRunId,
@@ -405,6 +421,7 @@ export class GeneratePaperRecommendationUsecase {
   }: {
     strategy: PaperRecommendationStrategy;
     decidedAt: Date;
+    targetTradeDate: Date;
     screen: ScreenUniverseResult;
     indicatorsByTickerId: Map<number, StockIndicators>;
     agentRunId: number;
@@ -502,6 +519,7 @@ export class GeneratePaperRecommendationUsecase {
     const orders = this.toPendingOrders({
       strategy,
       decidedAt,
+      targetTradeDate,
       screen,
       indicatorsByTickerId,
       agentRunId,
@@ -594,6 +612,7 @@ export class GeneratePaperRecommendationUsecase {
   private toPendingOrders({
     strategy,
     decidedAt,
+    targetTradeDate,
     screen,
     indicatorsByTickerId,
     agentRunId,
@@ -601,6 +620,7 @@ export class GeneratePaperRecommendationUsecase {
   }: {
     strategy: PaperRecommendationStrategy;
     decidedAt: Date;
+    targetTradeDate: Date;
     screen: ScreenUniverseResult;
     indicatorsByTickerId: Map<number, StockIndicators>;
     agentRunId: number;
@@ -610,7 +630,6 @@ export class GeneratePaperRecommendationUsecase {
       return [];
     }
     const dataAsOf = new Date(`${screen.asOf}T00:00:00.000Z`);
-    const targetTradeDate = nextWeekday(decidedAt);
     return [...constrained.sells, ...constrained.buys].map((order) => ({
       tickerId: order.tickerId,
       side: order.side,

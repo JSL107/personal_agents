@@ -27,8 +27,12 @@ import {
 } from '../domain/prompt/recent-plan-summary-formatter';
 
 export const SLACK_MENTION_SINCE_HOURS = 24;
-export const RECENT_PLAN_LOOKBACK_DAYS = 7;
-export const RECENT_PLAN_LIMIT = 7;
+// 정체 일수를 세는 이력 창. 7일로 두면 연속 일수가 창에 막혀 8일을 못 넘는다.
+// ponytail: 30일 넘게 쌓인 작업은 30 으로 멈춘다 — 더 길게 세야 하면 최초 등장일을 저장한다.
+export const RECENT_PLAN_LOOKBACK_DAYS = 30;
+// 건수 상한은 날짜로 합치기 전에 걸린다. 날짜 수와 같게 두면 하루 여러 번 돈 날만큼 창이
+// 짧아진다(2026-09 실측 하루 최대 9회). 하루 평균 1.1회라 3배면 30일을 채운다.
+export const RECENT_PLAN_LIMIT = RECENT_PLAN_LOOKBACK_DAYS * 3;
 // 저녁 회고를 며칠 전 것까지 아침에 올릴지. KST 캘린더일 기준이고 cutoff 는 (이 값 - 1)일 전
 // 자정이라, 4 는 "3일 전까지" 를 뜻한다 — 금요일 저녁 회고가 월요일 아침에 닿는 최소값이다.
 // 상한이 없으면 `findLatest...` 계열이 날짜를 안 보고 최신 1건을 주므로, 며칠 쉬고 온 날

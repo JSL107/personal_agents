@@ -184,14 +184,21 @@ let agentsWithoutSeat = [];
  *
  * 두 배치를 오갈 때 5% 이득이 있어야 바꾸는 이유는 **경계에서 떨리기 때문**이다 —
  * 창을 조금만 끌어도 배치가 왕복하면 사무실이 통째로 다시 그려진다.
+ *
+ * 3D 는 사무실을 비스듬히 돌려 담으므로 위 산식이 안 맞는다 — 렌더러가 실제 카메라 계산으로 잰다.
  */
 function chooseZoneColumns(width, height, current) {
   const sizeFor = (columns) => {
     const plan = layouts[columns].plan;
-    return Math.min(width / plan.columns, height / plan.rows);
+    return use3d
+      ? Office3DRenderer.tileSizeFor(plan, width, height)
+      : Math.min(width / plan.columns, height / plan.rows);
   };
   if (!current) {
-    return sizeFor(2) > sizeFor(3) ? 2 : 3;
+    // 3D 에서는 어느 비율이든 2열이 조금은 크다(넓은 창에서 1~3%, 세로로 긴 창에서 17% 이상).
+    // 몇 % 때문에 익숙한 3열을 버리지 않도록, 첫 선택에도 전환과 같은 5% 문턱을 건다.
+    const bias = use3d ? 1.05 : 1;
+    return sizeFor(2) > sizeFor(3) * bias ? 2 : 3;
   }
   const candidate = current === 2 ? 3 : 2;
   return sizeFor(candidate) >= sizeFor(current) * 1.05 ? candidate : current;

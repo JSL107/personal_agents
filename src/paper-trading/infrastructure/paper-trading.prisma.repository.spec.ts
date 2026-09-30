@@ -25,6 +25,8 @@ describe('PaperTradingPrismaRepository pending orders', () => {
   };
   const prisma = {
     $transaction: jest.fn(),
+    // 결제일 계산이 읽는 공휴일 달력. 기본은 공휴일 없음.
+    scheduleItem: { findMany: jest.fn() },
     paperAccount: { findMany: jest.fn() },
     paperTrade: { findMany: jest.fn() },
     dailyPrice: { findMany: jest.fn() },
@@ -40,6 +42,7 @@ describe('PaperTradingPrismaRepository pending orders', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
+    prisma.scheduleItem.findMany.mockResolvedValue([]);
     prisma.$transaction.mockImplementation(async (callback) =>
       callback(transaction),
     );
@@ -1017,6 +1020,7 @@ describe('PaperTradingPrismaRepository 기업행동·결제일', () => {
           ]),
         update,
       },
+      scheduleItem: { findMany: jest.fn().mockResolvedValue([]) },
       $transaction: jest.fn().mockResolvedValue([]),
     };
     const repository = new PaperTradingPrismaRepository(
@@ -1029,6 +1033,43 @@ describe('PaperTradingPrismaRepository 기업행동·결제일', () => {
     expect(update).toHaveBeenCalledWith({
       where: { id: 71 },
       data: { settlementDate: new Date('2026-08-18T00:00:00.000Z') },
+    });
+  });
+
+  // 거래 122(2026-09-23 매수)의 결제일이 주말만 건너뛴 09-25(추석)로 적힌 회차의 재현.
+  it('결제일은 공휴일 달력의 휴장일을 건너뛴다', async () => {
+    const update = jest.fn();
+    const findHolidays = jest.fn().mockResolvedValue(
+      ['2026-09-24', '2026-09-25', '2026-09-26'].map((dateText) => ({
+        dueDate: new Date(`${dateText}T00:00:00.000Z`),
+      })),
+    );
+    const prisma = {
+      paperTrade: {
+        findMany: jest
+          .fn()
+          .mockResolvedValue([
+            { id: 122, tradeDate: new Date('2026-09-23T00:00:00.000Z') },
+          ]),
+        update,
+      },
+      scheduleItem: { findMany: findHolidays },
+      $transaction: jest.fn().mockResolvedValue([]),
+    };
+    const repository = new PaperTradingPrismaRepository(
+      prisma as unknown as PrismaService,
+    );
+
+    await repository.backfillSettlementDates();
+
+    // 소유자·상태로 거르지 않는다 — 공휴일 칩을 완료 처리했다고 장이 열리지는 않는다.
+    expect(findHolidays).toHaveBeenCalledWith({
+      where: { isHoliday: true },
+      select: { dueDate: true },
+    });
+    expect(update).toHaveBeenCalledWith({
+      where: { id: 122 },
+      data: { settlementDate: new Date('2026-09-29T00:00:00.000Z') },
     });
   });
 });

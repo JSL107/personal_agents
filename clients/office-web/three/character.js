@@ -9,10 +9,37 @@
 // 방향별 그림이 따로 필요 없다 — 몸 하나를 돌리고 팔다리만 움직인다.
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
-import { addOutlines, mat, toneMat, SCALE } from "./style.js";
+import { addOutlines, mat, tone, toneMat, SCALE } from "./style.js";
 
 /** 방향 → y축 회전. 정면(down)이 카메라 쪽(+z)이다. */
 const FACING_ROTATION = { down: 0, up: Math.PI, left: -Math.PI / 2, right: Math.PI / 2 };
+const OPPOSITE = { down: "up", up: "down", left: "right", right: "left" };
+/** 방향 → 평면도 칸 한 걸음(y 는 북쪽이 +). */
+const FACING_STEP = { down: [0, -1], up: [0, 1], left: [-1, 0], right: [1, 0] };
+
+/**
+ * 소파 좌석에서 몸을 소파 쪽으로 옮기는 거리(칸). 좌석은 소파 **앞 칸**이라 그 자리에 앉히면
+ * 빈 바닥 위 허공에 앉는다(사용자 보고: "공중에 앉아있음"). 2D 의 `loungeSpriteShift` 와 같은
+ * 자리지만 값은 3D 소파의 방석 위치(소파 칸 중심에서 좌석 쪽으로 0.04~0.06)에서 쟀다.
+ */
+const LOUNGE_SHIFT = 0.8;
+
+/** 가구에 앉은 것인가(소파) — 책상 의자 착석(`sendHome`)과 구별한다. */
+function isLounging(body) {
+  return body.seated && body.interactionPose === "sitting";
+}
+
+/**
+ * 몸이 좌석 칸에서 옮겨 간 양(평면도 칸 단위, y 는 북쪽이 +). 렌더러가 몸과 발밑 링에 같이 쓴다 —
+ * 한쪽만 옮기면 링이 빈 바닥에 남는다(2D `groundOffset` 과 같은 규칙).
+ */
+export function seatOffset(body) {
+  if (!isLounging(body)) {
+    return { x: 0, y: 0 };
+  }
+  const [x, y] = FACING_STEP[body.facing] ?? [0, 0];
+  return { x: x * LOUNGE_SHIFT, y: y * LOUNGE_SHIFT };
+}
 
 /** 걸음 한 번에 다리가 흔들리는 각도(라디안)와 빠르기. */
 const STRIDE = 0.5;
@@ -47,6 +74,47 @@ function mesh(geometry, material, x = 0, y = 0, z = 0) {
 /** 원래 색보다 조금 어두운 같은 색 — 셔츠 단추선·칼라 그림자. */
 function darker(rgb, factor = 0.82) {
   return rgb.map((value) => value * factor);
+}
+
+/** 피부색(`PALETTE.skin` 0xf5d2b6). 셔츠가 이 색과 붙으면 맨살로 읽힌다. */
+const SKIN_RGB = [0xf5 / 255, 0xd2 / 255, 0xb6 / 255];
+/** 셔츠와 피부가 이만큼(RGB 유클리드 거리)은 떨어져야 한다. 0.25 는 한 단계만 눌러 여전히 살색으로 읽혔다. */
+export const SHIRT_SKIN_MIN_DISTANCE = 0.35;
+/** 셔츠 재질이 크림색 쪽으로 섞이는 몫(`toneMat(shirt, SHIRT_TONE)`). 대비는 섞은 **뒤** 색으로 잰다. */
+const SHIRT_TONE = 0.12;
+
+/** 실제로 칠해지는 셔츠 색(sRGB)과 피부의 거리. */
+export function shirtSkinDistance(rgb) {
+  const painted = {};
+  tone(rgb, SHIRT_TONE).getRGB(painted, THREE.SRGBColorSpace);
+  return Math.hypot(painted.r - SKIN_RGB[0], painted.g - SKIN_RGB[1], painted.b - SKIN_RGB[2]);
+}
+
+/**
+ * 셔츠가 피부와 구별되게 — 너무 가까우면 같은 색조로 진하게 누른다.
+ *
+ * 콘텐츠 부서 셔츠(살구·분홍 계열, 예: 0.97·0.73·0.67)는 피부와 거리 0.1 남짓이라 셔츠를 안 입은
+ * 사람처럼 보였다(사용자 보고). 2D 는 스프라이트 외곽선이 칼라·소매를 갈라 줘서 덜 드러났다.
+ * 부서 색조는 지키려고 색상을 바꾸지 않고 밝기만 내린다.
+ *
+ * **피부와 같은 난색(빨강 > 초록 > 파랑)만** 누른다. RGB 거리만 보면 흰·회색·하늘색 셔츠도
+ * 0.2~0.33 으로 "가깝다" 에 걸리는데, 색조가 달라 눈으로는 이미 갈린다 — 누르면 흰 셔츠가 회색이 된다.
+ */
+export function distinctShirt(rgb) {
+  const [red, green, blue] = rgb;
+  if (!(red > green && green > blue)) {
+    return rgb;
+  }
+  let shirt = rgb;
+  for (let step = 0; step < 6; step += 1) {
+    // 재질이 크림색 쪽으로 12% 섞이며 피부에 다시 가까워진다 — 섞기 전 색으로 재면 기준을 넘긴
+    // 셔츠가 칠해진 뒤에는 기준 안으로 돌아온다(리뷰 지적: 0.368 → 0.301).
+    if (shirtSkinDistance(shirt) >= SHIRT_SKIN_MIN_DISTANCE) {
+      break;
+    }
+    shirt = darker(shirt, 0.86);
+  }
+  return shirt;
 }
 
 // MARK: - 머리 모양 (시트별)
@@ -143,9 +211,9 @@ const HAIR_STYLES = {
 export function makeCharacter(look) {
   const root = new THREE.Group();
   const body = new THREE.Group();
-  const shirtRgb = look.shirt ?? [0.95, 0.95, 0.94];
-  const shirt = toneMat(shirtRgb, 0.12);
-  const shirtShade = toneMat(darker(shirtRgb), 0.12);
+  const shirtRgb = distinctShirt(look.shirt ?? [0.95, 0.95, 0.94]);
+  const shirt = toneMat(shirtRgb, SHIRT_TONE);
+  const shirtShade = toneMat(darker(shirtRgb), SHIRT_TONE);
   const pants = toneMat(look.pants, 0.12);
   const hair = toneMat(look.hair, 0.05);
   const skin = mat("skin");
@@ -274,10 +342,13 @@ export function poseCharacter(character, body, now) {
   if (papers) {
     papers.visible = pressure >= 2;
   }
-  character.rotation.y = FACING_ROTATION[body.seated ? "down" : body.facing] ?? 0;
+  const lounging = isLounging(body);
+  // 소파는 바라보는 쪽(`facing`)에 있다 — 등을 소파에 대야 하므로 반대로 돌린다.
+  const facing = lounging ? OPPOSITE[body.facing] : body.seated ? "down" : body.facing;
+  character.rotation.y = FACING_ROTATION[facing] ?? 0;
   if (body.seated) {
-    // 엉덩이를 의자 좌판 높이로 내리고, 허벅지는 앞으로·정강이는 아래로. 손은 책상 쪽으로.
-    figure.position.y = SCALE.chairSeat + 0.03 - BODY.hip;
+    // 엉덩이를 좌판 높이로 내리고, 허벅지는 앞으로·정강이는 아래로. 손은 책상(무릎) 쪽으로.
+    figure.position.y = (lounging ? SCALE.sofaSeat : SCALE.chairSeat) + 0.03 - BODY.hip;
     for (const leg of legs) {
       leg.hip.rotation.x = -Math.PI / 2;
       leg.knee.rotation.x = Math.PI / 2;
