@@ -5,6 +5,7 @@
     ?view=front|iso      정면(스프라이트와 같은 각) 또는 게임 화면 각
     &colors=neutral|real 흰 셔츠(원본 시트 색) 또는 평면도의 실제 직원 색
     &seated=1            앉은 자세
+    &assets=0,1,2        cozy 원화 번호로 세운다(-1 = 정비사). 주면 colors 는 무시한다
 -->
 <html lang="ko">
   <head>
@@ -30,7 +31,8 @@
       const view = query.get("view") ?? "front";
       const colors = query.get("colors") ?? "neutral";
       const seated = query.get("seated") === "1";
-      const sheets = ["char", "charb", "charc", "chard", "chare"];
+      const assets = query.get("assets")?.split(",").map(Number);
+      const sheets = assets ?? ["char", "charb", "charc", "chard", "chare"];
       const neutral = { shirt: [0.96, 0.96, 0.95], pants: [0.3, 0.3, 0.32], hair: [0.15, 0.14, 0.14] };
       const layout = await fetch("layout-3.json").then((response) => response.json());
       const looks = Object.values(layout.agentLooks);
@@ -44,8 +46,9 @@
       scene.background = new THREE.Color(BACKGROUND);
       const spacing = 0.7;
       sheets.forEach((sheet, index) => {
-        const look =
-          colors === "real"
+        const look = assets
+          ? { cozyAsset: sheet }
+          : colors === "real"
             ? { ...(looks.find((entry) => entry.sheet === sheet) ?? neutral), sheet }
             : { ...neutral, sheet };
         const figure = makeCharacter(look);

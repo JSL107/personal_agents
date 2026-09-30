@@ -20,6 +20,7 @@ import {
   shirtSkinDistance,
 } from "./three/character.js";
 import { Office3DRenderer } from "./three/renderer3d.js";
+import { COZY_LOOKS } from "./three/cozy-looks.js";
 
 /** 부품 수 상한 — 이보다 많으면 레퍼런스의 뭉툭한 톤을 벗어나 잔손질이 된다. */
 const MAX_PARTS = 24;
@@ -72,10 +73,16 @@ for (const [kind, builder] of Object.entries(BUILDERS)) {
   checked += 1;
 }
 
-// 캐릭터 — 시트 다섯 종 모두. 옷·머리 색은 사람마다 달라 팔레트 밖에서 들어오지만, 그때도
+// 캐릭터 — cozy 원화 21종(직원 20 + 정비사)과, 원화 번호가 없는 옛 평면도의 시트 다섯 종. 옷·머리 색은 사람마다 달라 팔레트 밖에서 들어오지만, 그때도
 // 반드시 `toneMat`(톤 보정 문)을 거쳐야 한다. 직접 만든 재질은 톤 보정을 건너뛴 것이다.
-for (const sheet of ["char", "charb", "charc", "chard", "chare"]) {
-  const figure = makeCharacter({ sheet, shirt: [0.9, 0.5, 0.4], pants: [0.2, 0.2, 0.3], hair: [0.3, 0.2, 0.1] });
+const characterLooks = [
+  ...COZY_LOOKS.map((_, index) => ({ cozyAsset: index })),
+  { cozyAsset: -1 },
+  ...["char", "charb", "charc", "chard", "chare"].map((sheet) => ({ sheet, shirt: [0.9, 0.5, 0.4], pants: [0.2, 0.2, 0.3], hair: [0.3, 0.2, 0.1] })),
+];
+for (const look of characterLooks) {
+  const sheet = look.sheet ?? `cozy ${look.cozyAsset}`;
+  const figure = makeCharacter(look);
   figure.traverse((node) => {
     if (!node.isMesh || node.userData.isOutline) {
       return;
