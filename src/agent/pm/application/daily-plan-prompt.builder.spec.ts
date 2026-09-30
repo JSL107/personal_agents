@@ -196,7 +196,16 @@ describe('DailyPlanPromptBuilder', () => {
     const built = builder.build(
       buildBaseContext({
         githubTasks: {
-          issues: [],
+          issues: [
+            {
+              number: 153,
+              title: 'letters.within group 불일치 재현',
+              repo: 'r/api',
+              url: 'https://github.com/r/api/issues/153',
+              labels: [],
+              updatedAt: '2026-10-01T00:00:00Z',
+            },
+          ],
           pullRequests: [
             {
               number: 52,
@@ -222,6 +231,10 @@ describe('DailyPlanPromptBuilder', () => {
       'r/pup#52 (5일 연속) : PR #52 PDF 렌더 경로 정리',
     );
     expect(built.prompt).not.toContain('PR #1149');
+    // Issue 도 같은 규칙 — 과거 제목("group 불일치")이 아니라 오늘 GitHub 제목을 쓴다.
+    expect(built.prompt).toContain(
+      'r/api#153 (5일 연속) : Issue #153 letters.within group 불일치 재현',
+    );
   });
 
   it('cap 초과 시 TRIM_ORDER 우선순위대로 drop — recentPlanSummaries 가 previousPlan / previousWorklog 보다 먼저 drop 된다', () => {
