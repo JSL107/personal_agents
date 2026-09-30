@@ -48,6 +48,8 @@ import {
   AGENT_DISPATCHER_PORT,
   AgentDispatcher,
 } from './domain/port/agent-dispatcher.port';
+import { ROUTING_NO_RUN_PORT } from './domain/port/routing-no-run.port';
+import { RoutingNoRunPrismaRepository } from './infrastructure/routing-no-run.prisma.repository';
 
 // V3 비전 봇 쪼개기 — Hierarchical Manager Pattern 진입점.
 // (plan: docs/superpowers/plans/2026-05-07-agent-communication-topology.md §4 / §6.1)
@@ -104,6 +106,7 @@ import {
       inject: [ConfigService],
     },
     { provide: IDAERI_ROUTER_PORT, useClass: IdaeriRouterUsecase },
+    { provide: ROUTING_NO_RUN_PORT, useClass: RoutingNoRunPrismaRepository },
     {
       provide: AGENT_DISPATCHER_PORT,
       useFactory: (...resolved: AgentDispatcher[]) => resolved,

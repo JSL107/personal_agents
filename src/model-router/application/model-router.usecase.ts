@@ -2,7 +2,9 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
 import { buildContractPreamble } from '../../agent-registry/agent-contract';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
+import { getActiveAgentRunId } from '../../common/llm/active-agent-run.context';
 import { MODEL_ROUTER_WORST_CASE_MS } from '../../common/llm/llm-timeout.constant';
+import { redactPii } from '../../common/util/pii-redaction.util';
 import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
 import { AGENT_TO_PROVIDER } from '../domain/agent-provider.map';
 import { ModelRouterException } from '../domain/model-router.exception';
@@ -13,6 +15,11 @@ import {
   ModelProviderName,
 } from '../domain/model-router.type';
 import { ModelRouterErrorCode } from '../domain/model-router-error-code.enum';
+import {
+  MODEL_CALL_LOG_PORT,
+  ModelCallLogInput,
+  ModelCallLogPort,
+} from '../domain/port/model-call-log.port';
 import {
   MODEL_PROVIDER_TOKENS,
   ModelProviderPort,
@@ -30,6 +37,12 @@ const FALLBACK_OF: Partial<Record<ModelProviderName, ModelProviderName>> = {
   [ModelProviderName.CHATGPT]: ModelProviderName.CLAUDE,
 };
 
+// model_call 오류 문자열 상한 — agent_run.output.cause 의 CAUSE_LEDGER_LIMIT 과 같은 값.
+const CALL_LOG_ERROR_LIMIT = 1_000;
+// 사용자 노출 문구에 싣는 fallback 실패 요지 길이. CLI stderr 는 여러 줄로 길어질 수 있어
+// 첫 줄만, 짧게 싣는다 — 전문은 model_call·원장 cause 에 있다.
+const FALLBACK_REASON_NOTICE_LIMIT = 120;
+
 @Injectable()
 export class ModelRouterUsecase {
   private readonly logger = new Logger(ModelRouterUsecase.name);
@@ -42,6 +55,10 @@ export class ModelRouterUsecase {
     // NotificationQueueModule 미연결 (테스트 / 부분 부팅) 환경 대비 — undefined 시 알람 skip.
     @Optional()
     private readonly notificationPublisher?: NotificationPublisher,
+    // 모델 호출 기록 — 미주입(단위 테스트·부분 부팅) 시 skip.
+    @Optional()
+    @Inject(MODEL_CALL_LOG_PORT)
+    private readonly callLog?: ModelCallLogPort,
   ) {}
 
   // 절전 직후 autopilot 실행 게이트용 — 현재 primary provider(CHATGPT/codex)가 지금 호출을
@@ -104,6 +121,15 @@ export class ModelRouterUsecase {
         providerName: primaryName,
         elapsedMs: Date.now() - startedAtMs,
       });
+      this.recordCall({
+        agentType,
+        status: 'SUCCEEDED',
+        provider: completion.provider,
+        fallbackUsed: false,
+        primaryError: null,
+        fallbackError: null,
+        durationMs: Date.now() - startedAtMs,
+      });
       return completion;
     } catch (primaryError: unknown) {
       const primaryMessage =
@@ -130,6 +156,7 @@ export class ModelRouterUsecase {
         request.imagePaths?.length
       ) {
         throw this.wrapCompletionFailed({
+          agentType,
           attempted: [primaryName],
           lastError: primaryError,
           elapsedMs: Date.now() - startedAtMs,
@@ -140,6 +167,7 @@ export class ModelRouterUsecase {
       // 대칭 매핑이라 정상적으론 발생하지 않지만, 매핑이 깨져 primary == fallback 이면 재시도 무의미 — 즉시 전파.
       if (!fallbackName || fallbackName === primaryName) {
         throw this.wrapCompletionFailed({
+          agentType,
           attempted: [primaryName],
           lastError: primaryError,
           elapsedMs: Date.now() - startedAtMs,
@@ -158,6 +186,15 @@ export class ModelRouterUsecase {
           providerName: fallbackName,
           elapsedMs: Date.now() - startedAtMs,
         });
+        this.recordCall({
+          agentType,
+          status: 'SUCCEEDED',
+          provider: completion.provider,
+          fallbackUsed: true,
+          primaryError: primaryMessage,
+          fallbackError: null,
+          durationMs: Date.now() - startedAtMs,
+        });
         return completion;
       } catch (fallbackError: unknown) {
         const fallbackMessage =
@@ -171,6 +208,7 @@ export class ModelRouterUsecase {
         // 이 경우 Claude 인증 의심도 owner 알람 대상 — primary 뿐 아니라 fallback 실패도 검사.
         this.maybeNotifyClaudeAuthSuspect(fallbackError);
         throw this.wrapCompletionFailed({
+          agentType,
           attempted: [primaryName, fallbackName],
           lastError: fallbackError,
           primaryError,
@@ -202,12 +240,15 @@ export class ModelRouterUsecase {
     );
   }
 
+  // 실패 3갈래(noFallback·fallback 없음·양쪽 실패)가 전부 이 함수를 지나므로 실패 기록도 여기서 한다.
   private wrapCompletionFailed({
+    agentType,
     attempted,
     lastError,
     primaryError,
     elapsedMs,
   }: {
+    agentType: AgentType;
     attempted: ModelProviderName[];
     lastError: unknown;
     primaryError?: unknown;
@@ -222,12 +263,57 @@ export class ModelRouterUsecase {
         : `모델 호출 실패 — primary ${attempted[0]} → fallback ${attempted[1]} 모두 실패 (${elapsed})`;
     // codex 쿼터 소진이 원인이면 "모델 호출 실패" 대신 reset 시각을 친절히 덧붙인다 (Slack 노출용).
     const quotaNotice = this.describeQuotaExhaustion([primaryError, lastError]);
+    const lastMessage = toErrorMessage(lastError);
+    const fallbackUsed = attempted.length > 1;
+    this.recordCall({
+      agentType,
+      status: 'FAILED',
+      provider: attempted[attempted.length - 1],
+      fallbackUsed,
+      primaryError: fallbackUsed ? toErrorMessage(primaryError) : lastMessage,
+      fallbackError: fallbackUsed ? lastMessage : null,
+      durationMs: elapsedMs,
+    });
+    // 쿼터 안내만 있으면 fallback(Claude) 이 왜 실패했는지가 사용자에게 안 보인다 — 2026-09-16~18
+    // 폴백 양쪽 실패 85건이 전부 "ChatGPT 한도 초과" 로만 읽혔다. 요지 한 줄을 덧붙인다.
+    // CLI 출력이 이 문구째 Slack 으로 이스케이프 없이 나가므로(slack-handler.helper) `<!channel>`
+    // 같은 제어 구문이 되지 않게 꺾쇠를 뺀다. 원장보다 노출 범위가 넓으므로 토큰·키 마스킹도
+    // 원장과 같은 규칙(redactPii)으로 건다.
+    const fallbackReason = fallbackUsed
+      ? `${attempted[1]} 실패 사유: ${redactPii(lastMessage.split('\n')[0])
+          .replace(/[<>]/g, '')
+          .slice(0, FALLBACK_REASON_NOTICE_LIMIT)}`
+      : null;
+    // 쿼터 안내는 마침표로 끝나므로 뒤에 붙일 때 마침표를 겹치지 않는다.
+    const withQuota = quotaNotice ? `${summary}. ${quotaNotice}` : summary;
+    const message =
+      fallbackReason === null
+        ? withQuota
+        : `${withQuota}${withQuota.endsWith('.') ? '' : '.'} ${fallbackReason}`;
     return new ModelRouterException({
       code: ModelRouterErrorCode.COMPLETION_FAILED,
-      message: quotaNotice ? `${summary}. ${quotaNotice}` : summary,
+      message,
       status: DomainStatus.BAD_GATEWAY,
       cause: primaryError ? { primaryError, lastError } : lastError,
     });
+  }
+
+  // 모델 호출 한 번을 model_call 에 남긴다. 기다리지 않는다 — 기록이 응답을 늦추거나 실패로
+  // 바꾸면 안 된다. 구현체가 이미 삼키지만 unhandled rejection 을 막으려 여기서도 받는다.
+  private recordCall(input: Omit<ModelCallLogInput, 'agentRunId'>): void {
+    if (!this.callLog) {
+      return;
+    }
+    void this.callLog
+      .record({
+        ...input,
+        agentRunId: getActiveAgentRunId() ?? null,
+        primaryError:
+          input.primaryError?.slice(0, CALL_LOG_ERROR_LIMIT) ?? null,
+        fallbackError:
+          input.fallbackError?.slice(0, CALL_LOG_ERROR_LIMIT) ?? null,
+      })
+      .catch(() => undefined);
   }
 
   // primary / fallback 에러 중 codex 쿼터 소진(CodexQuotaExceededException) 이 있으면 친절 안내 문구를 만든다.
@@ -272,6 +358,9 @@ export class ModelRouterUsecase {
     }
   }
 }
+
+const toErrorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
 
 // 지연 분석은 초 단위면 충분하다 (ms 는 노이즈). 1초 미만 실패도 0s 로 뭉개지 않게 올림.
 const toElapsedSeconds = (elapsedMs: number): number =>

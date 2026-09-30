@@ -8,7 +8,7 @@ import {
 
 import { evaluateContract } from '../../agent-registry/contract-inspector';
 import { DomainException } from '../../common/exception/domain.exception';
-import { redactPii } from '../../common/util/pii-redaction.util';
+import { runWithActiveAgentRun } from '../../common/llm/active-agent-run.context';
 import { bubbleForActiveRun } from '../../console/application/agent-activity-bubble';
 import { ConsoleEventBus } from '../../console/application/console-event-bus.service';
 import { bubbleForState } from '../../console/application/derive-agent-state';
@@ -46,7 +46,11 @@ import {
   SimilarPlanRow,
   SucceededAgentRunSnapshot,
 } from '../domain/port/agent-run.repository.port';
-import { claimRoutingContext, RoutingContext } from './routing-context';
+import {
+  claimRoutingContext,
+  RoutingContext,
+  toLedgerRoutedText,
+} from './routing-context';
 
 // V3 chain (PM → CTO → BE × N → PO_EVAL → CEO) 의 worst-case 가 5-6 단계 — 16 은 사이클
 // 안전망 + 미래 확장 여유. 본 상수가 변경되면 chain 회복 결과 크기 (Slack message / DB I/O) 도
@@ -302,20 +306,24 @@ export class AgentRunService implements OnApplicationBootstrap {
         await this.repository.recordEvidence({ agentRunId: id, ...entry });
       }
 
-      const execution = await run({
-        agentRunId: id,
-        // 이 콜백은 스냅샷을 **통째로 교체**한다(부분 병합이 아니다). 라우팅 근거를 다시
-        // 얹지 않으면 begin 에 심어 둔 값이 지워진다 — BLOG_PUBLISH 처럼 라우터가
-        // dispatch 하면서 이 콜백도 쓰는 워커가 실제로 있다.
-        updateInputSnapshot: async (nextInputSnapshot: unknown) => {
-          if (this.repository.updateInputSnapshot) {
-            await this.repository.updateInputSnapshot({
-              id,
-              inputSnapshot: withRoutingContext(nextInputSnapshot, routing),
-            });
-          }
-        },
-      });
+      // run 콜백 아래의 모델 호출이 model_call 에 이 run id 를 붙이게 한다 — 그게 없는 호출이
+      // "원장 밖에서 불렸다" 로 읽힌다(common/llm/active-agent-run.context.ts).
+      const execution = await runWithActiveAgentRun(id, () =>
+        run({
+          agentRunId: id,
+          // 이 콜백은 스냅샷을 **통째로 교체**한다(부분 병합이 아니다). 라우팅 근거를 다시
+          // 얹지 않으면 begin 에 심어 둔 값이 지워진다 — BLOG_PUBLISH 처럼 라우터가
+          // dispatch 하면서 이 콜백도 쓰는 워커가 실제로 있다.
+          updateInputSnapshot: async (nextInputSnapshot: unknown) => {
+            if (this.repository.updateInputSnapshot) {
+              await this.repository.updateInputSnapshot({
+                id,
+                inputSnapshot: withRoutingContext(nextInputSnapshot, routing),
+              });
+            }
+          },
+        }),
+      );
 
       // 직무 계약 검수 — LLM 을 쓰지 않는 결정론 검사라 비용·지연이 없다.
       // 1단계는 관측 모드다: 위반이 있어도 SUCCEEDED 를 유지하고 기록만 남긴다.
@@ -716,22 +724,9 @@ export class AgentRunService implements OnApplicationBootstrap {
 // 상한이 없으면 어느 한 경로가 긴 본문을 실어 보내는 순간 원장 행이 통째로 부풀고, 그 사실은
 // 조회할 때까지 드러나지 않는다.
 const CAUSE_LEDGER_LIMIT = 1_000;
-
-// DomainException 계열은 파싱 실패의 raw 응답 앞부분을 cause 에만 담는다. 문자열을 돌려주는
-// 이유는 소비처가 둘이기 때문이다 — 로그 문장(접미사로 붙는다)과 원장 output.cause.
-// tsconfig target 이 ES2022 미만이라 Error.cause 는 타입에 없다.
-// 라우팅 원문 상한. 원장은 실행 기록이지 대화 로그가 아니다 — 슬랙 멘션에 로그·스택트레이스를
-// 통째로 붙여 넣는 입력이 있어 상한이 없으면 행 하나가 수십 KB 로 부푼다. 분류 정확도를 채점하는
-// 데는 앞부분이면 충분하다(분류기 자신도 40자만 로그에 남겨 왔다).
-const ROUTED_TEXT_LIMIT = 500;
-// 잘렸다는 사실 자체가 정보다. 이 표식이 없으면 "짧게 친 입력" 과 "길어서 잘린 입력" 이
-// 원장에서 같은 모양이 되어, 분류가 틀렸을 때 모델이 실제로 무엇을 봤는지 되짚을 수 없다.
-const ROUTED_TEXT_TRUNCATION_MARK = '…[잘림]';
-
-const clipRoutedText = (text: string): string =>
-  text.length > ROUTED_TEXT_LIMIT
-    ? `${text.slice(0, ROUTED_TEXT_LIMIT)}${ROUTED_TEXT_TRUNCATION_MARK}`
-    : text;
+// 폴백 양쪽 사유를 한 줄로 합칠 때 한쪽이 쓸 수 있는 길이. 라벨("primary: " 등)을 더해도
+// CAUSE_LEDGER_LIMIT 안에 들어오게 절반보다 조금 작게 잡는다.
+const CAUSE_SIDE_LIMIT = 480;
 
 const isMergeableSnapshot = (
   inputSnapshot: unknown,
@@ -747,7 +742,7 @@ const isMergeableSnapshot = (
  * 그대로 돌려준다.** 객체로 갈아끼우면 보조 메타데이터를 붙이려다 워커의 실제 입력을 지우게
  * 된다 — 기록이 빠지는 것보다 나쁘다 (이대리 자동 리뷰 #629 CORRECTNESS 의 판단을 그대로 승계).
  *
- * 원문은 사용자 입력이라 토큰·키가 섞일 수 있어 redactPii 를 거치고, 원장이 대화 로그로
+ * 원문은 사용자 입력이라 토큰·키가 섞일 수 있어 toLedgerRoutedText 로 마스킹하고, 원장이 대화 로그로
  * 부풀지 않도록 길이를 자른다.
  */
 const withRoutingContext = (
@@ -759,7 +754,7 @@ const withRoutingContext = (
   }
   return {
     ...inputSnapshot,
-    routedText: clipRoutedText(redactPii(routing.text)),
+    routedText: toLedgerRoutedText(routing.text),
     routedTo: routing.routedTo,
     routedVia: routing.routedVia,
     ...(routing.confidence !== undefined
@@ -768,13 +763,39 @@ const withRoutingContext = (
   };
 };
 
-const extractCauseMessage = (error: unknown): string | null => {
-  const cause = (error as { cause?: unknown } | null | undefined)?.cause;
+// DomainException 계열은 파싱 실패의 raw 응답 앞부분을 cause 에만 담는다. 문자열을 돌려주는
+// 이유는 소비처가 둘이기 때문이다 — 로그 문장(접미사로 붙는다)과 원장 output.cause.
+// tsconfig target 이 ES2022 미만이라 Error.cause 는 타입에 없다.
+const describeCause = (cause: unknown): string | null => {
   if (cause instanceof Error) {
-    return cause.message.slice(0, CAUSE_LEDGER_LIMIT);
+    return cause.message;
   }
   if (typeof cause === 'string') {
-    return cause.slice(0, CAUSE_LEDGER_LIMIT);
+    return cause;
+  }
+  // 모델 라우터의 폴백 양쪽 실패는 `{ primaryError, lastError }` 일반 객체로 온다
+  // (model-router.usecase.ts wrapCompletionFailed). 생산자 형태를 바꾸지 않는 이유는 쿼터 탐지
+  // 3곳(extract-codex-quota 등)이 이 키를 순회하기 때문이다 — 원장 쪽에서 풀어 적는다.
+  if (typeof cause === 'object' && cause !== null && 'lastError' in cause) {
+    const { primaryError, lastError } = cause as {
+      primaryError?: unknown;
+      lastError?: unknown;
+    };
+    const primary = describeCause(primaryError);
+    const fallback = describeCause(lastError);
+    if (primary === null) {
+      return fallback;
+    }
+    // 양쪽을 각각 자른 뒤 합친다. 합친 뒤에 자르면 primary 가 길 때 fallback 사유가 통째로
+    // 잘려 나가, 폴백 양쪽 사유를 남긴다는 목적이 그 회차에서 깨진다.
+    return `primary: ${primary.slice(0, CAUSE_SIDE_LIMIT)} / fallback: ${(
+      fallback ?? '(사유 없음)'
+    ).slice(0, CAUSE_SIDE_LIMIT)}`;
   }
   return null;
+};
+
+const extractCauseMessage = (error: unknown): string | null => {
+  const cause = (error as { cause?: unknown } | null | undefined)?.cause;
+  return describeCause(cause)?.slice(0, CAUSE_LEDGER_LIMIT) ?? null;
 };
