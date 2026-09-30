@@ -130,8 +130,8 @@ pnpm capture   # 사무실을 한 판 그려 /tmp/idaeri-office.png 로 저장�
 함께 줄 수 있다. `?walk=` 보고(누가 어느 가구에 어떤 자세로 섰는지)는 캡처 출력의 `보고:` 줄에 찍힌다.
 
 - **조감 + 방 확대** — 방을 누르면 카메라가 그 방으로 다가가고, `esc`·방 밖 클릭으로 돌아온다.
-  사람을 누르면 `office:agent-click`, 대표는 `office:president-click`, 확대가 바뀌면 `office:focus`
-  사건을 `window` 에 낸다(맥 앱이 WKWebView 로 얹을 때 받는 자리).
+  사람을 누르면 `office:agent-click`, 대표는 `office:president-click`, 확대가 바뀌면 `office:focus`,
+  바닥을 눌러 선택이 풀리면 `office:deselect` 사건을 `window` 에 낸다(맥 앱이 WKWebView 로 얹을 때 받는 자리).
 - **이름표** — 전원 늘 띄운다. 일하는 중·승인 대기·실패인 사람은 또렷하게, 나머지는 흐린 판으로
   둬서 활성 신호가 묻히지 않게 한다. 마우스를 올리면 이름 옆에 상태·하는 일까지 보인다.
 - **배치 고르기** — 3열·2열 중 무엇을 쓸지 3D 카메라로 실제 담기는 크기를 재서 고른다. 2D 산식

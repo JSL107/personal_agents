@@ -11,6 +11,7 @@
 //   office:agent-click     {agentType}   사람을 눌렀다
 //   office:president-click {}            대표를 눌렀다
 //   office:focus           {department}  방 확대가 바뀌었다(null = 전체)
+//   office:deselect        {}            바닥·배경을 눌러 선택이 풀렸다
 
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
@@ -571,7 +572,11 @@ export class Office3DRenderer {
       this.emit("office:president-click", {});
       return;
     }
-    this.selectedAgent = null;
+    if (this.selectedAgent) {
+      // 링만 풀고 끝내면 화면을 얹은 앱(맥 콘솔)의 인스펙터가 열린 채 남는다.
+      this.selectedAgent = null;
+      this.emit("office:deselect", {});
+    }
     const zone = target?.tile ? this.zoneAt(target.tile.x, target.tile.y) : null;
     // 방을 누르면 그 방으로, 방 밖(복도·공용 공간·배경)을 누르면 전체로.
     this.setFocus(zone && zone.department !== this.focusDepartment ? zone.department : zone ? this.focusDepartment : null);
