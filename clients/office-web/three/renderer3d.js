@@ -31,6 +31,8 @@ import {
 import { buildFurniture, missingKinds } from "./furniture3d/index.js";
 import { makeCharacter, makeStatusRing, poseCharacter, seatOffset } from "./character.js";
 import { Overlay3D } from "./overlay3d.js";
+import { shouldRender } from "./frame-pace.js";
+import { mergeStatic } from "./static-merge.js";
 
 /**
  * 카메라 각. 방위는 남쪽(+z)에서 동쪽으로 돈 각, 고도는 바닥에서 올려본 각.
@@ -163,6 +165,7 @@ export class Office3DRenderer {
     // 배치가 바뀌면 옛 방 확대는 뜻이 없다(방 좌표가 다르다) — 전체로 곧바로 되돌린다.
     this.viewBounds = this.focusBounds();
     this.tween = null;
+    // 장면을 새로 지었다 — `measure` 가 다음 프레임을 그리게 한다.
     this.measure();
   }
 
@@ -215,6 +218,9 @@ export class Office3DRenderer {
     // 외곽선은 장면을 다 만든 뒤 한 번에 — 가구·벽·창을 만드는 곳마다 붙이면 빠뜨린다.
     // 사람은 만들 때 스스로 붙인다(`makeCharacter`).
     addOutlines(this.scene);
+    // 사람은 아직 장면에 없다(`draw` 가 넣는다) — 지금 있는 것은 전부 멈춘 물체다.
+    // 나중에 움직일 물체(문·로봇 등)를 들이려면 이 줄 **뒤에** 넣어야 한다 — 앞에 넣으면 한 덩어리로 굳는다.
+    mergeStatic(this.scene);
   }
 
   zoneAt(x, y) {
@@ -617,6 +623,8 @@ export class Office3DRenderer {
 
   /** 캔버스 크기가 바뀌었다 — 백버퍼·겹침층을 맞추고 지금 범위로 카메라를 다시 잡는다. */
   measure() {
+    // 백버퍼 크기를 바꾸면 그려 둔 그림이 지워진다 — 다음 프레임은 바뀐 것이 없어도 그려야 한다.
+    this.dirty = true;
     this.webgl.setSize(this.canvas.width, this.canvas.height, false);
     this.overlay.place(this.canvas);
     this.applyCamera(this.viewBounds);
@@ -697,7 +705,10 @@ export class Office3DRenderer {
 
   /** @param {object} view live.js 가 주는 것 — `agents`·`bodies`·`now` 등(office.js 와 같다). */
   draw(view) {
-    this.stepTween(performance.now());
+    const frameAt = performance.now();
+    // 전환의 마지막 걸음은 `stepTween` 이 `tween` 을 비운다 — 그 프레임도 그려야 하므로 먼저 본다.
+    const tweening = Boolean(this.tween);
+    this.stepTween(frameAt);
     this.applyDaylight(view.hour ?? 12);
     // 출근 지연 중이라 문 앞에서 기다리는 사람은 그리지 않는다(`office.js` 와 같은 규칙).
     const bodies = Object.fromEntries(
@@ -729,9 +740,60 @@ export class Office3DRenderer {
     if (this.presidentAlarm) {
       this.presidentAlarm.visible = Boolean(view.presidentAlarm);
     }
-    this.overlay.setHud(this.summaryText(view.summary));
+    const hud = this.summaryText(view.summary);
+    this.overlay.setHud(hud);
+    // 위에서 옮긴 자세·글자는 그리지 않아도 장면에 남는다 — 건너뛴 프레임의 변화는 다음에 그릴 때 함께 나온다.
+    const { signature, moving } = this.frameState(view, bodies, hovered, hud);
+    const render = shouldRender({
+      changed: this.dirty || signature !== this.renderedSignature,
+      smooth: tweening,
+      moving,
+      elapsedMs: frameAt - (this.renderedAt ?? -Infinity),
+    });
+    if (!render) {
+      return;
+    }
+    this.dirty = false;
+    this.renderedSignature = signature;
+    this.renderedAt = frameAt;
     this.webgl.render(this.scene, this.camera);
     this.overlay.render(this.scene, this.camera);
+  }
+
+  /**
+   * 이 프레임에 **그림을 정하는 입력 전부**를 한 줄로 — 앞서 그린 것과 같으면 다시 그리지 않는다
+   * (`frame-pace.js`). `draw` 가 읽는 값을 늘리면 여기에도 넣어야 한다. 빠뜨리면 그 변화는 안전망
+   * (1초)까지 늦게 나타난다.
+   *
+   * 걷는 사람·발 구르는 사람은 매 프레임 자리·자세가 달라지므로 값 대신 `moving` 으로 알린다 —
+   * 값을 넣으면 매 프레임이 "바뀌었다" 가 되어 30fps 제한이 걸리지 않는다.
+   */
+  frameState(view, bodies, hovered, hud) {
+    let moving = false;
+    const parts = [
+      this.hoveredAgent,
+      Boolean(hovered?.president),
+      this.selectedAgent,
+      this.lightHour,
+      Boolean(view.presidentAlarm),
+      hud,
+    ];
+    for (const [agentType, body] of Object.entries(bodies)) {
+      const agent = view.agents?.[agentType];
+      parts.push(agentType, agent?.state, agent?.bubble, agent?.job, agent?.nickname, agent?.displayName);
+      const pressure = body.seated ? 0 : (body.pressure ?? 0);
+      const walking = Boolean(body.path) || (typeof body.pose === "string" && body.pose.includes("walk"));
+      if (walking || pressure >= 3) {
+        moving = true;
+        parts.push("moving");
+      } else {
+        parts.push(body.x, body.y, body.seated, body.facing, body.pose, body.interactionPose, pressure);
+      }
+    }
+    for (const session of view.sessions ?? []) {
+      parts.push(session.label, session.active);
+    }
+    return { signature: parts.join("|"), moving };
   }
 
   characterEntry(agentType) {

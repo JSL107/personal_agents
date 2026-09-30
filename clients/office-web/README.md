@@ -139,9 +139,15 @@ pnpm capture   # 사무실을 한 판 그려 /tmp/idaeri-office.png 로 저장�
 - **그림체는 코드가 강제한다** — 색은 `three/style.js` 의 `PALETTE` 이름으로만, 형태는 둥근 상자·
   원기둥·구 도우미로만 조립한다. 외곽선(원본 스프라이트의 또렷함)은 렌더러가 모든 물체에 붙인다.
   가구 하나 = `three/furniture3d/<kind>.js` 파일 하나, 디자인 기준은 원본 `sprites/furn-*.png`.
+- **바뀐 것이 없으면 그리지 않는다** — 앉은 사람은 움직이지 않으므로 사무실은 대부분 멈춘 그림이다.
+  상태·말풍선·hover·선택·창 크기가 바뀔 때만 그리고(안전망으로 1초에 한 번), 걷는 사람이 있는 동안은
+  30fps 로 그린다(`three/frame-pace.js`). 벽·가구는 재질마다 한 덩어리로 합쳐 그리기 호출을 줄인다
+  (`three/static-merge.js`). `draw` 가 읽는 입력을 늘리면 `frameState` 에도 넣어야 그 변화가 바로 보인다.
 
 ```bash
 pnpm check:style                          # 팔레트·크기·벽걸이 규칙
+pnpm check:pace                           # 프레임 건너뛰기(멈춤 1fps · 걷기 30fps · 변화는 즉시)
+pnpm check:merge                          # 합친 뒤에도 삼각형 수·경계 상자가 그대로인지
 node scripts-check-style.mjs --require-all # + 평면도의 모든 가구가 제 빌더를 가졌는지
 pnpm vendor:three                          # three.js 버전을 올린 뒤 vendor/three 를 다시 채운다
 ```
@@ -169,7 +175,8 @@ pnpm vendor:three                          # three.js 버전을 올린 뒤 vendo
 
 - `office.js` — 2D 그리기 전부(바닥·벽·창문·가구·사람·라벨). 색 치환도 여기
 - `three/` — 3D 그리기. `renderer3d.js`(장면·카메라·입력) · `overlay3d.js`(글자 겹침층) ·
-  `character.js`(직원) · `style.js`(그림체 규칙) · `furniture3d/`(가구 빌더)
+  `character.js`(직원) · `style.js`(그림체 규칙) · `furniture3d/`(가구 빌더) ·
+  `frame-pace.js`(언제 다시 그릴지) · `static-merge.js`(멈춘 물체 합치기)
 - `vendor/three/` — 동봉한 three.js(번들러가 없어 `index.html` 의 import map 이 이리로 잇는다)
 - `live.js` — 백엔드에서 상태를 받아 오고 사람을 걷게 한다
 - `serve.py` — 브라우저로 볼 때 쓰는 개발용 서버. 백엔드가 CORS 를 열지 않아 프록시가 필요하다
