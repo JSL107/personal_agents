@@ -47,19 +47,47 @@ function settingsPath() {
   return path.join(app.getPath("userData"), "settings.json");
 }
 
-/** 저장된 서버 주소와 토큰. 첫 실행이면 빈 주소를 돌려준다(오류가 아니다). */
+/**
+ * 저장된 서버 주소·토큰·화면 방식. 첫 실행이면 빈 주소를 돌려준다(오류가 아니다).
+ * `renderer` 는 `"2d"`(기본) 또는 `"3d"`(시험 중인 three.js 화면).
+ */
 function readSettings() {
   try {
     const parsed = JSON.parse(fs.readFileSync(settingsPath(), "utf8"));
-    return { url: String(parsed.url ?? ""), token: String(parsed.token ?? "") };
+    return {
+      url: String(parsed.url ?? ""),
+      token: String(parsed.token ?? ""),
+      renderer: parsed.renderer === "3d" ? "3d" : "2d",
+    };
   } catch {
-    return { url: "", token: "" };
+    return { url: "", token: "", renderer: "2d" };
   }
 }
 
+/**
+ * 설정의 **일부만** 받아 기존 값 위에 덮어 쓴다. 통째로 쓰면 서버 설정 화면(주소·토큰만 보냄)이
+ * 저장할 때마다 화면 방식 선택을 지운다.
+ */
 function writeSettings(next) {
   fs.mkdirSync(path.dirname(settingsPath()), { recursive: true });
-  fs.writeFileSync(settingsPath(), JSON.stringify(next, null, 2), "utf8");
+  fs.writeFileSync(settingsPath(), JSON.stringify({ ...readSettings(), ...next }, null, 2), "utf8");
+}
+
+/** 사무실 화면 주소. 3D 를 골랐으면 `renderer=3d` 를 붙인다 — live.js 가 이것 하나로 렌더러를 고른다. */
+function officePage(renderer, extra = "") {
+  const params = new URLSearchParams(extra);
+  if (renderer === "3d") {
+    params.set("renderer", "3d");
+  }
+  const query = params.toString();
+  return query === "" ? "index.html" : `index.html?${query}`;
+}
+
+/** `--renderer=3d` — 캡처·확인용으로 저장된 선택을 이번 실행에서만 덮어쓴다. */
+function rendererFromArgv(fallback) {
+  const flag = process.argv.find((argument) => argument.startsWith("--renderer="));
+  const value = flag?.slice("--renderer=".length);
+  return value === "3d" || value === "2d" ? value : fallback;
 }
 
 /**
@@ -400,6 +428,15 @@ async function captureOnce(window, target) {
     }
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
+  // **표식이 선 뒤 화면이 실제로 다시 칠해질 때까지 기다린다.** 표식은 그리기 명령을 마친
+  // 순간 서지만 합성기가 그 프레임을 내보내는 것은 그다음이다. 3D 는 장면을 짓느라 메인
+  // 스레드를 오래 붙잡아, 바로 찍으면 "평면도를 읽는 중…" 의 첫 화면이 성공 판정과 함께
+  // 저장됐다(상태 줄 문자열은 최신인데 그림만 옛것). 두 프레임이면 칠한 결과가 나온다.
+  if (rendered) {
+    await window.webContents.executeJavaScript(
+      "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))"
+    );
+  }
   // 상태 줄을 함께 남긴다 — 못 그렸을 때 그 이유(스냅샷 실패·그림 0장)가 거기 찍혀 있다.
   const status = await window.webContents.executeJavaScript(
     "document.getElementById('status')?.textContent ?? ''"
@@ -432,6 +469,9 @@ async function selfCheck() {
   expect("앞뒤 공백을 떼낸다", normalizeServerUrl(" 100.1.2.3:3099 "), "http://100.1.2.3:3099");
 
   expect("앱 안 파일은 그 경로", resolveStaticPath("/index.html"), path.join(__dirname, "index.html"));
+  expect("2D 는 쿼리 없이", officePage("2d"), "index.html");
+  expect("3D 는 renderer=3d", officePage("3d"), "index.html?renderer=3d");
+  expect("캡처 쿼리와 함께", officePage("3d", "static=1&hour=12"), "index.html?static=1&hour=12&renderer=3d");
   expect("스프라이트는 스프라이트 뿌리", resolveStaticPath("/sprites/char-down.png"), path.join(spritesRoot(), "char-down.png"));
   expect("상위로 올라가는 경로는 거절", resolveStaticPath("/../main.js"), null);
   expect("스프라이트에서 빠져나가는 경로는 거절", resolveStaticPath("/sprites/../../main.js"), null);
@@ -475,6 +515,7 @@ async function selfCheck() {
 
 function createWindow() {
   const settings = readSettings();
+  const renderer = rendererFromArgv(settings.renderer);
   const captureTarget = captureTargetFromArgv();
   mainWindow = new BrowserWindow({
     // 2단계에서 맥 앱(`--size 1400x820`) 과 칸 단위로 대조한 창 크기다. 캔버스는 창에서
@@ -491,7 +532,7 @@ function createWindow() {
     // 사무실은 정지 렌더로 연다 — 실시간 스트림을 열면 "다 그렸다" 에 도달하지 않아 영영
     // 기다린다. 서버 주소를 아직 안 정했으면 그때 실제로 열리는 화면(설정)을 찍는다.
     mainWindow.loadURL(
-      pageUrl(settings.url === "" ? "setup.html" : "index.html?static=1&hour=12")
+      pageUrl(settings.url === "" ? "setup.html" : officePage(renderer, "static=1&hour=12"))
     );
     mainWindow.webContents.once("did-finish-load", async () => {
       const rendered = await captureOnce(mainWindow, captureTarget);
@@ -504,7 +545,7 @@ function createWindow() {
     });
     return;
   }
-  mainWindow.loadURL(pageUrl(settings.url === "" ? "setup.html" : "index.html"));
+  mainWindow.loadURL(pageUrl(settings.url === "" ? "setup.html" : officePage(renderer)));
   mainWindow.on("closed", () => {
     mainWindow = null;
   });
@@ -522,6 +563,18 @@ function buildMenu() {
             click: () => mainWindow?.loadURL(pageUrl("setup.html")),
           },
           { label: "새로 고침", accelerator: "CmdOrCtrl+R", click: () => mainWindow?.reload() },
+          {
+            label: "3D 화면 (시험)",
+            type: "checkbox",
+            checked: readSettings().renderer === "3d",
+            click: (item) => {
+              const renderer = item.checked ? "3d" : "2d";
+              writeSettings({ renderer });
+              if (readSettings().url !== "") {
+                mainWindow?.loadURL(pageUrl(officePage(renderer)));
+              }
+            },
+          },
           {
             label: "개발자 도구",
             accelerator: "CmdOrCtrl+Alt+I",
