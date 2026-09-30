@@ -69,6 +69,15 @@ const STATE_LABELS = {
  * 대표 외형 — 평면도에 대표 몫 `agentLooks` 가 없다. 2D 는 색을 입히지 않은 `char-down`
  * (흰 셔츠·회색 바지·검은 머리)으로 그리므로 같은 사람으로 맞춘다.
  */
+/**
+ * 로봇청소기 — 쓰레기통 앞(남쪽)을 좌우로 오간다. 자리는 2D `addVacuumRobot`·`addPendingDust` 와 같은
+ * 칸 비율이다. 멈춰 설 때(충전 대기·고장)는 왕복 구간 오른쪽 끝 바깥에 선다.
+ */
+const VACUUM = { front: 0.46, travel: 0.62, legSeconds: 7, parkedX: 0.34, dustX: -0.82, dustFront: 0.3 };
+/** 움직임 줄이기 설정이면 청소기를 세워 둔다(2D `addVacuumRobot` 과 같다). */
+const REDUCE_MOTION = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+const VACUUM_LED = { sweeping: 0x5cdb70, docked: 0x669ef0, stalled: 0xf0574f };
+
 const PRESIDENT_LOOK = { sheet: "char", shirt: [0.96, 0.96, 0.95], pants: [0.3, 0.3, 0.32], hair: [0.15, 0.14, 0.14] };
 const FALLBACK_LOOK = { sheet: "char", shirt: [0.8, 0.8, 0.8], pants: [0.3, 0.3, 0.3], hair: [0.3, 0.22, 0.16] };
 
@@ -221,6 +230,125 @@ export class Office3DRenderer {
     // 사람은 아직 장면에 없다(`draw` 가 넣는다) — 지금 있는 것은 전부 멈춘 물체다.
     // 나중에 움직일 물체(문·로봇 등)를 들이려면 이 줄 **뒤에** 넣어야 한다 — 앞에 넣으면 한 덩어리로 굳는다.
     mergeStatic(this.scene);
+    this.buildDeskLamps();
+    this.buildHousekeeping();
+  }
+
+  /**
+   * 책상 스탠드 불빛 — 저녁·밤에 **자리에 앉은 사람의** 책상만 밝힌다(2D `updateDeskLamps`).
+   * 빈 자리까지 켜면 누가 남아 있는지가 안 읽힌다. 켜고 끄는 물체라 합친 뒤에 넣는다.
+   */
+  buildDeskLamps() {
+    const canvas = document.createElement("canvas");
+    canvas.width = 64;
+    canvas.height = 64;
+    const context = canvas.getContext("2d");
+    const gradient = context.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gradient.addColorStop(0, "rgba(255, 214, 140, 1)");
+    gradient.addColorStop(1, "rgba(255, 214, 140, 0)");
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, 64, 64);
+    const material = new THREE.MeshBasicMaterial({
+      map: new THREE.CanvasTexture(canvas),
+      transparent: true,
+      opacity: 0.7,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const geometry = new THREE.PlaneGeometry(1.15, 1.15);
+    this.deskGlows = new Map();
+    for (const desk of this.plan.desks) {
+      const glow = new THREE.Mesh(geometry, material);
+      glow.rotation.x = -Math.PI / 2;
+      // 상판 바로 위 — 모니터·키보드보다 낮아야 그 위로 빛이 번지지 않는다.
+      glow.position.copy(this.world(desk.desk.x, desk.desk.y, SCALE.deskTop + 0.004));
+      glow.visible = false;
+      glow.userData.noOutline = true;
+      this.deskGlows.set(desk.agentType, glow);
+      this.scene.add(glow);
+    }
+  }
+
+  /**
+   * 로봇청소기와 못 치운 먼지 — 장식이 아니라 "주간 기억 청소가 살아 있는가" 의 신호다(2D 와 같다).
+   * 쓰레기통이 평면도에 없으면 설 자리가 없어 만들지 않는다. 움직이는 물체라 합친 뒤에 넣는다.
+   */
+  buildHousekeeping() {
+    this.vacuum = null;
+    this.housekeepingKey = null;
+    const trash = this.plan.furniture.find((placement) => placement.kind === "trash");
+    if (!trash) {
+      return;
+    }
+    const home = this.world(trash.tile.x, trash.tile.y);
+    const robot = new THREE.Group();
+    const shell = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.16, 0.07, 24), mat("cabinetCharcoal"));
+    shell.position.y = 0.045;
+    shell.castShadow = true;
+    const led = new THREE.Mesh(new THREE.SphereGeometry(0.035, 12, 8), new THREE.MeshBasicMaterial());
+    led.position.set(0, 0.085, 0.06);
+    led.userData.noOutline = true;
+    robot.add(shell, led);
+    robot.position.set(home.x, 0, home.z + VACUUM.front);
+    // 먼지 — 건수만큼 덩이를 더한다. 세 덩이를 넘기지 않는 것은 통보다 커지면 "통이 작다" 로 읽혀서다.
+    const dust = [
+      [0, 0.06, 0],
+      [0.1, 0.05, 0.05],
+      [0.04, 0.045, -0.09],
+    ].map(([x, radius, z]) => {
+      const blob = new THREE.Mesh(new THREE.SphereGeometry(radius, 12, 8), mat("metalDark"));
+      blob.scale.y = 0.6;
+      blob.position.set(home.x + VACUUM.dustX + x, radius * 0.6, home.z + VACUUM.dustFront + z);
+      return blob;
+    });
+    const holder = new THREE.Group();
+    holder.add(robot, ...dust);
+    holder.visible = false;
+    addOutlines(holder);
+    this.scene.add(holder);
+    this.vacuum = { holder, robot, led, dust, homeX: home.x };
+  }
+
+  /**
+   * @param {object|null} housekeeping 스냅샷의 `housekeeping`({ranAt, pendingProjects}).
+   *
+   * 서버가 이 필드를 모르거나(구버전) 평면도에 판정 기준이 없으면(옛 `layout-*.json`) 그리지 않는다 —
+   * 모르는 것을 "청소가 죽었다" 로 그리면 멀쩡한 배포가 고장으로 보인다.
+   *
+   * 순회는 **따로 그리기를 일으키지 않는다.** 7초에 0.62칸이라 느리고, 걷는 사람이 있는 동안(30fps)과
+   * 안전망(1fps)에 얹혀 자리만 옮긴다 — 여기서 움직임을 알리면 멈춘 사무실이 다시 매 프레임 그려진다.
+   */
+  updateHousekeeping(housekeeping, now) {
+    if (!this.vacuum) {
+      return;
+    }
+    const healthyDays = this.metrics.vacuumHealthyIntervalDays;
+    const { holder, robot, led, dust, homeX } = this.vacuum;
+    holder.visible = Boolean(housekeeping) && typeof healthyDays === "number";
+    if (!holder.visible) {
+      this.housekeepingKey = null;
+      return;
+    }
+    const ranAt = housekeeping.ranAt ? Date.parse(housekeeping.ranAt) : NaN;
+    // 미래 시각(시계 어긋남)은 방금 돈 것으로 본다(`officeVacuumMode` 와 같은 판정).
+    const mode = Number.isNaN(ranAt)
+      ? "docked"
+      : (Date.now() - ranAt) / 86_400_000 <= healthyDays
+        ? "sweeping"
+        : "stalled";
+    const level = Math.max(0, Math.min(housekeeping.pendingProjects ?? 0, this.metrics.trashMaxLevel ?? dust.length));
+    led.material.color.set(VACUUM_LED[mode]);
+    dust.forEach((blob, index) => {
+      blob.visible = index < level;
+    });
+    // 2D 와 같은 자리 — 순회 중이면 왕복 왼쪽 끝, 멈췄으면 오른쪽 바깥.
+    let x = mode === "sweeping" ? -VACUUM.travel / 2 : VACUUM.parkedX;
+    if (mode === "sweeping" && !REDUCE_MOTION) {
+      const leg = (now / VACUUM.legSeconds) % 2;
+      x = (leg < 1 ? leg : 2 - leg) * VACUUM.travel - VACUUM.travel / 2;
+    }
+    robot.position.x = homeX + x;
+    this.housekeepingKey = `${mode}:${level}`;
   }
 
   zoneAt(x, y) {
@@ -681,6 +809,7 @@ export class Office3DRenderer {
       return;
     }
     this.lightHour = normalized;
+    this.lampLit = false;
     const band =
       Object.values(this.layout.daylight ?? {}).find((info) => info.hours.includes(normalized)) ??
       this.layout.daylight?.day;
@@ -700,6 +829,7 @@ export class Office3DRenderer {
     const lamp = mat("lampWarm");
     lamp.emissive.set(band.lampLit ? 0xffc46b : 0x000000);
     lamp.emissiveIntensity = band.lampLit ? 1.2 : 0;
+    this.lampLit = Boolean(band.lampLit);
   }
 
   // MARK: - 한 판 그리기
@@ -728,16 +858,25 @@ export class Office3DRenderer {
     if (this.presidentName) {
       this.presidentName.visible = Boolean(hovered?.president);
     }
+    for (const [agentType, glow] of this.deskGlows) {
+      const body = bodies[agentType];
+      const seat = this.seatsByAgent.get(agentType);
+      glow.visible = Boolean(this.lampLit && body?.seated && body.x === seat.x && body.y === seat.y);
+    }
     for (const [agentType, body] of Object.entries(bodies)) {
       const entry = this.characterEntry(agentType);
       const offset = seatOffset(body);
       const position = this.world(body.x + offset.x, body.y + offset.y);
       entry.figure.position.copy(position);
-      poseCharacter(entry.figure, body, view.now ?? 0);
+      // 내가 방금 보낸 지시의 단계가 있으면 그쪽이 우선한다(2D `applyMotion`) — 지금 눈으로 좇는 대상이다.
+      const phase = view.pending?.[agentType];
+      const slump = phase ? phase === "failed" : view.agents?.[agentType]?.state === "FAILED";
+      poseCharacter(entry.figure, body, view.now ?? 0, { slump });
       this.updateRing(entry, agentType, view, position);
-      this.updateLabels(entry, agentType, view);
+      this.updateLabels(entry, agentType, view, body);
     }
     this.updateSessions(view.sessions ?? []);
+    this.updateHousekeeping(view.housekeeping ?? null, view.now ?? 0);
     if (this.presidentAlarm) {
       this.presidentAlarm.visible = Boolean(view.presidentAlarm);
     }
@@ -752,10 +891,12 @@ export class Office3DRenderer {
         this.lightHour,
         Boolean(view.presidentAlarm),
         hud,
+        this.housekeepingKey,
       ],
       bodies,
       agents: view.agents,
       sessions: view.sessions,
+      pending: view.pending,
     });
     const render = shouldRender({
       changed: this.dirty || signature !== this.renderedSignature,
@@ -804,7 +945,7 @@ export class Office3DRenderer {
     entry.ring.position.set(position.x, 0.012, position.z);
   }
 
-  updateLabels(entry, agentType, view) {
+  updateLabels(entry, agentType, view, body) {
     const agent = view.agents?.[agentType];
     const state = agent?.state ?? "WAITING";
     const focused = agentType === this.hoveredAgent || agentType === this.selectedAgent;
@@ -822,11 +963,14 @@ export class Office3DRenderer {
     Overlay3D.set(entry.name, text, className);
     entry.name.visible = true;
     entry.name.position.set(0, LABEL_HEIGHT, 0);
-    const bubbleText = agent?.bubble;
-    entry.bubble.visible = Boolean(bubbleText) && state !== "WAITING";
+    // 머리 위 한 자리를 셋이 나눠 쓴다 — 잠깐 뜨는 말풍선(거절 `!`)이 먼저, 다음이 하는 일, 둘 다 없고
+    // 지시가 접수만 된 상태면 점.
+    const bubbleText = body.flash ?? (state !== "WAITING" ? agent?.bubble : null);
+    const dots = !bubbleText && view.pending?.[agentType] === "sent";
+    entry.bubble.visible = Boolean(bubbleText) || dots;
     if (entry.bubble.visible) {
       // 이름표가 늘 떠 있으므로 말풍선은 늘 그 위로 올린다.
-      Overlay3D.set(entry.bubble, bubbleText, "office3d-bubble raised");
+      Overlay3D.set(entry.bubble, dots ? "" : bubbleText, dots ? "office3d-dots" : "office3d-bubble raised");
       entry.bubble.position.set(0, LABEL_HEIGHT, 0);
     }
   }
