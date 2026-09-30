@@ -2,6 +2,10 @@ import { Injectable } from '@nestjs/common';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { isIntradayCapture } from '../domain/intraday-guard';
+import {
+  InvestorFlowPriceTarget,
+  InvestorFlowRow,
+} from '../domain/investor-flow.type';
 import { IndicatorBar } from '../domain/stock-indicator';
 import { KrxDelisting, pickLatestByCode } from './krx/krx-delisting.mapper';
 import { KrxListing } from './krx/krx-listing.mapper';
@@ -31,6 +35,11 @@ export interface DailyPriceWriteResult {
   written: number;
   // 장중 차단을 조용한 0건과 구분해야 호출자가 운영 로그로 원인을 남길 수 있다.
   blockedIntraday: number;
+}
+
+export interface InvestorFlowBackfillTicker {
+  id: number;
+  code: string;
 }
 
 export interface UniverseTicker {
@@ -87,6 +96,9 @@ export class MarketDataPrismaRepository {
         high: true,
         low: true,
         volume: true,
+        foreignNetBuy: true,
+        institutionNetBuy: true,
+        flowVolume: true,
       },
     });
     const grouped = new Map<number, IndicatorBar[]>();
@@ -101,6 +113,9 @@ export class MarketDataPrismaRepository {
           high: price.high,
           low: price.low,
           volume: price.volume,
+          foreignNetBuy: price.foreignNetBuy,
+          institutionNetBuy: price.institutionNetBuy,
+          flowVolume: price.flowVolume,
         });
         grouped.set(price.tickerId, bars);
       }
@@ -109,6 +124,81 @@ export class MarketDataPrismaRepository {
       bars.reverse();
     }
     return grouped;
+  }
+
+  async updateInvestorFlow(
+    tickerId: number,
+    rows: InvestorFlowRow[],
+  ): Promise<number> {
+    if (rows.length === 0) {
+      return 0;
+    }
+    const results = await this.prisma.$transaction(
+      rows.map((row) =>
+        this.prisma.dailyPrice.updateMany({
+          where: { tickerId, tradeDate: row.tradeDate },
+          data: {
+            foreignNetBuy: row.foreignNetBuy,
+            institutionNetBuy: row.institutionNetBuy,
+            flowVolume: row.flowVolume,
+          },
+        }),
+      ),
+    );
+    return results.reduce((sum, result) => sum + result.count, 0);
+  }
+
+  async findOldestPriceFlowTargets(
+    startDate: Date,
+  ): Promise<Map<number, InvestorFlowPriceTarget>> {
+    const oldestRows = await this.prisma.dailyPrice.groupBy({
+      by: ['tickerId'],
+      where: { tradeDate: { gte: startDate } },
+      _min: { tradeDate: true },
+    });
+    const targets = new Map<number, InvestorFlowPriceTarget>();
+    const datedRows = oldestRows.flatMap((row) =>
+      row._min.tradeDate === null
+        ? []
+        : [{ tickerId: row.tickerId, tradeDate: row._min.tradeDate }],
+    );
+    for (
+      let offset = 0;
+      offset < datedRows.length;
+      offset += WRITE_CHUNK_SIZE
+    ) {
+      const chunk = datedRows.slice(offset, offset + WRITE_CHUNK_SIZE);
+      const prices = await this.prisma.dailyPrice.findMany({
+        where: {
+          OR: chunk.map(({ tickerId, tradeDate }) => ({ tickerId, tradeDate })),
+        },
+        select: {
+          tickerId: true,
+          tradeDate: true,
+          foreignNetBuy: true,
+          institutionNetBuy: true,
+          flowVolume: true,
+        },
+      });
+      const byTickerId = new Map(
+        prices.map((price) => [price.tickerId, price]),
+      );
+      for (const target of chunk) {
+        const price = byTickerId.get(target.tickerId);
+        targets.set(target.tickerId, {
+          tickerId: target.tickerId,
+          oldestTradeDate: target.tradeDate.toISOString().slice(0, 10),
+          hasFlow:
+            price?.foreignNetBuy !== null &&
+            price?.foreignNetBuy !== undefined &&
+            price.institutionNetBuy !== null &&
+            price.institutionNetBuy !== undefined &&
+            price.flowVolume !== null &&
+            price.flowVolume !== undefined,
+        });
+      }
+    }
+    return targets;
   }
 
   async upsertDailyPrice(
@@ -338,6 +428,19 @@ export class MarketDataPrismaRepository {
       );
     }
     return changes.length;
+  }
+
+  // 수급 백필 대상은 운영 유니버스가 아니라 백테스트 유니버스와 같아야 한다(폐지 종목 포함 —
+  // `backtest.prisma.repository.ts` 의 `findUniverse`). 폐지 종목만 수급이 비면 수급 재료에서
+  // 맨 뒤로 밀려 절대 뽑히지 않고, 그 결과 수급 교체 회차만 폐지 손실을 피하는 생존 편향이 된다.
+  async findInvestorFlowBackfillTickers(): Promise<
+    InvestorFlowBackfillTicker[]
+  > {
+    return await this.prisma.ticker.findMany({
+      where: { market: 'KR', krxMarket: { not: null } },
+      orderBy: { code: 'asc' },
+      select: { id: true, code: true },
+    });
   }
 
   async findUniverseTickers(): Promise<UniverseTicker[]> {

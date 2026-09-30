@@ -18,6 +18,7 @@ export const BACKTEST_CLI_USAGE =
   '                [--take-profit <익절%> --stop-loss <손절%>]\n' +
   '                [--delisting-recovery <폐지청산 회수율, 기본 1>]\n' +
   '                [--volatility close-to-close|parkinson, 기본 close-to-close]\n' +
+  '                [--flow-slot 1|2|3]\n' +
   '                [--slippage <체결가를 불리하게 밀 %, 기본 0>]';
 
 // 그림자 성적(shadow-performance)과 같은 값을 쓴다. 기준이 같아야 두 숫자를 나란히 놓을 수 있다.
@@ -216,6 +217,19 @@ const readSlippagePercent = (argv: string[]): number => {
   return value;
 };
 
+const readFlowSlot = (argv: string[]): 1 | 2 | 3 | null => {
+  const raw = readOption(argv, 'flow-slot');
+  if (raw === undefined) {
+    return null;
+  }
+  if (raw !== '1' && raw !== '2' && raw !== '3') {
+    throw new Error(
+      `--flow-slot 은 1, 2, 3 중 하나여야 합니다. 받은 값: ${raw}\n${BACKTEST_CLI_USAGE}`,
+    );
+  }
+  return Number(raw) as 1 | 2 | 3;
+};
+
 export const parseBacktestCliArguments = (
   argv: string[],
 ): BacktestCliOptions => {
@@ -252,6 +266,7 @@ export const parseBacktestCliArguments = (
       SWING_VOLUME_SURGE_MINIMUM,
     ),
     rankingWeights: readRankingWeights(argv),
+    flowSlot: readFlowSlot(argv),
     maximumPositions: readPositiveNumber(
       argv,
       'max-positions',

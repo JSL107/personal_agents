@@ -19,6 +19,7 @@ const indicators: StockIndicators = {
   turnover60: 650_000_000,
   highFallbackBarCount: 0,
   barCount: 200,
+  investorFlow20: null,
 };
 
 const result = (strategy: 'LONG_TERM' | 'SWING'): ScreenUniverseResult => ({

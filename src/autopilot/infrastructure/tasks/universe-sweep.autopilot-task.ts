@@ -9,6 +9,10 @@ import {
   CollectBenchmarkResult,
 } from '../../../screener/application/collect-benchmark-closes.usecase';
 import {
+  CollectInvestorFlowResult,
+  CollectInvestorFlowUsecase,
+} from '../../../screener/application/collect-investor-flow.usecase';
+import {
   CollectPricesResult,
   CollectUniversePricesUsecase,
 } from '../../../screener/application/collect-universe-prices.usecase';
@@ -27,10 +31,15 @@ interface UniverseSweepAudit {
   sync: SyncUniverseResult;
   collection: CollectPricesResult;
   benchmark: CollectBenchmarkResult | BenchmarkFailureAudit;
+  investorFlow: CollectInvestorFlowResult | InvestorFlowFailureAudit;
 }
 
 interface BenchmarkFailureAudit {
   symbol: 'KOSPI';
+  error: string;
+}
+
+interface InvestorFlowFailureAudit {
   error: string;
 }
 
@@ -65,7 +74,10 @@ const formatSummary = (audit: UniverseSweepAudit): string => {
     `429 재시도 성공 ${formatCount(collection.retried)}종목, ` +
     `장중 차단 ${formatCount(collection.blockedIntraday)}봉, 실패 ${formatCount(collection.failed)}종목, ` +
     formatDormant(collection.dormant) +
-    benchmarkText
+    benchmarkText +
+    ('error' in audit.investorFlow
+      ? ` · 수급 수집 실패(${audit.investorFlow.error})`
+      : ` · 수급 ${formatCount(audit.investorFlow.succeeded)}/${formatCount(audit.investorFlow.targetCount)}종목, 저장 ${formatCount(audit.investorFlow.written)}건, 실패 ${formatCount(audit.investorFlow.failed)}종목`)
   );
 };
 
@@ -77,6 +89,7 @@ export class UniverseSweepAutopilotTask implements AutopilotTask {
     private readonly syncUniverse: SyncUniverseUsecase,
     private readonly collectPrices: CollectUniversePricesUsecase,
     private readonly collectBenchmark: CollectBenchmarkClosesUsecase,
+    private readonly collectInvestorFlow: CollectInvestorFlowUsecase,
     private readonly configService: ConfigService,
     private readonly agentRunService: AgentRunService,
   ) {}
@@ -107,15 +120,24 @@ export class UniverseSweepAutopilotTask implements AutopilotTask {
             error instanceof Error ? error.message : String(error);
           benchmark = { symbol: 'KOSPI', error: message };
         }
-        const audit: UniverseSweepAudit = { sync, collection, benchmark };
+        let investorFlow: CollectInvestorFlowResult | InvestorFlowFailureAudit;
+        try {
+          investorFlow = await this.collectInvestorFlow.execute();
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          investorFlow = { error: message };
+        }
+        const audit: UniverseSweepAudit = {
+          sync,
+          collection,
+          benchmark,
+          investorFlow,
+        };
         const taskResult: AutopilotTaskResult = {
           skip: false,
           summaryText: formatSummary(audit),
-          detailText:
-            formatPriceCollectionFailures(
-              collection.failed,
-              collection.failures,
-            ) ?? undefined,
+          detailText: this.formatFailureDetails(collection, investorFlow),
         };
         return {
           result: taskResult,
@@ -126,5 +148,27 @@ export class UniverseSweepAutopilotTask implements AutopilotTask {
     });
 
     return outcome.result;
+  }
+
+  private formatFailureDetails(
+    collection: CollectPricesResult,
+    investorFlow: CollectInvestorFlowResult | InvestorFlowFailureAudit,
+  ): string | undefined {
+    const details: string[] = [];
+    const priceDetails = formatPriceCollectionFailures(
+      collection.failed,
+      collection.failures,
+    );
+    if (priceDetails !== null) {
+      details.push(priceDetails);
+    }
+    if ('error' in investorFlow) {
+      details.push(`수급 수집 단계 실패\n- ${investorFlow.error}`);
+    } else if (investorFlow.failed > 0) {
+      details.push(
+        `수급 수집 실패 상세\n${investorFlow.failures.map((failure) => `- ${failure}`).join('\n')}`,
+      );
+    }
+    return details.length === 0 ? undefined : details.join('\n\n');
   }
 }

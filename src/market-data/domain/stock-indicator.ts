@@ -16,6 +16,9 @@ export interface IndicatorBar {
   high: DecimalValue | null;
   low: DecimalValue | null;
   volume: bigint;
+  foreignNetBuy?: bigint | null;
+  institutionNetBuy?: bigint | null;
+  flowVolume?: bigint | null;
 }
 
 export interface StockIndicators {
@@ -42,7 +45,40 @@ export interface StockIndicators {
   volatility20: number | null;
   turnover60: number | null;
   barCount: number;
+  investorFlow20: number | null;
 }
+
+// 마지막 봉(당일)을 빼고 그 직전 20봉으로 잰다. 네이버의 당일 수급은 장 마감 뒤에도 한참
+// 비어 있다(2026-09-30 실측: 17:47 까지 09-30 행 없음, 대체거래소 애프터마켓이 20:00 까지
+// 열린다). 19:30 추천 시각에 당일 값이 없으면 당일을 포함한 창은 매일 전 종목이 null 이 되고,
+// 백테스트가 당일 값을 쓰면 실전에서 볼 수 없는 정보로 성적을 매기게 된다. 한 곳에서 하루를
+// 늦춰 운영과 재생이 같은 정보만 보게 한다.
+const calculateInvestorFlow20 = (bars: IndicatorBar[]): number | null => {
+  const selected = bars.slice(-21, -1);
+  if (selected.length < 20) {
+    return null;
+  }
+  if (
+    selected.some(
+      (bar) =>
+        bar.foreignNetBuy == null ||
+        bar.institutionNetBuy == null ||
+        bar.flowVolume == null,
+    )
+  ) {
+    return null;
+  }
+  const netBuy = selected.reduce(
+    (sum, bar) =>
+      sum + (bar.foreignNetBuy as bigint) + (bar.institutionNetBuy as bigint),
+    0n,
+  );
+  const volume = selected.reduce(
+    (sum, bar) => sum + (bar.flowVolume as bigint),
+    0n,
+  );
+  return volume === 0n ? null : Number(netBuy) / Number(volume);
+};
 
 const averageLast = (values: number[], count: number): number | null => {
   if (values.length < count) {
@@ -201,5 +237,6 @@ export const calculateIndicators = (
     // 수집이 미조정 계열로 바뀌면 이 계산은 별도 변경 없이 원본 종가를 사용하게 된다.
     turnover60: calculateTurnover60(bars),
     barCount: bars.length,
+    investorFlow20: calculateInvestorFlow20(bars),
   };
 };

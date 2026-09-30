@@ -91,6 +91,30 @@ describe('parseScreenerCliArguments', () => {
     });
   });
 
+  it('collect-flow와 backfill-flow 옵션을 허용하고 알 수 없는 값을 거부한다', () => {
+    expect(parseScreenerCliArguments(['collect-flow', '--limit', '5'])).toEqual(
+      {
+        subcommand: 'collect-flow',
+        options: { limit: 5 },
+      },
+    );
+    expect(
+      parseScreenerCliArguments([
+        'backfill-flow',
+        '--years',
+        '3',
+        '--limit',
+        '5',
+      ]),
+    ).toEqual({
+      subcommand: 'backfill-flow',
+      options: { years: 3, limit: 5 },
+    });
+    expect(() =>
+      parseScreenerCliArguments(['collect-flow', '--years', '1']),
+    ).toThrow('사용법');
+  });
+
   // 값을 받지 않는 플래그라 다음 토큰을 소비하면 뒤 옵션이 통째로 밀린다.
   it('backfill-prices의 --recheck는 값 없는 플래그로 읽고 뒤 옵션을 밀지 않는다', () => {
     expect(parseScreenerCliArguments(['backfill-prices', '--recheck'])).toEqual(

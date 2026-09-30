@@ -78,7 +78,7 @@ describe('ScreenUniverseUsecase', () => {
     expect(findBarsForTickers).toHaveBeenNthCalledWith(2, [201], 200);
     expect(result).toEqual({
       strategy: 'LONG_TERM',
-      ruleVersion: 5,
+      ruleVersion: 6,
       universeCount: 201,
       evaluatedCount: 2,
       staleCount: 1,
@@ -112,7 +112,7 @@ describe('ScreenUniverseUsecase', () => {
 
     await expect(usecase.execute({ strategy: 'SWING' })).resolves.toEqual({
       strategy: 'SWING',
-      ruleVersion: 5,
+      ruleVersion: 6,
       universeCount: 1,
       evaluatedCount: 0,
       staleCount: 0,
@@ -282,7 +282,7 @@ describe('ScreenUniverseUsecase', () => {
       expect.objectContaining({
         strategy: 'LONG_TERM',
         asOf: new Date('2026-08-13T00:00:00.000Z'),
-        ruleVersion: 5,
+        ruleVersion: 6,
         // 회차를 만든 실행 id. 이 값이 없으면 추천이 실패한 회차와 정상 회차를
         // 구분할 수 없어, 실린 종목 전부가 "보고도 안 샀다" 로 집계된다.
         agentRunId: 55,
