@@ -9,7 +9,7 @@
 // 방향별 그림이 따로 필요 없다 — 몸 하나를 돌리고 팔다리만 움직인다.
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
-import { addOutlines, mat, toneMat, SCALE } from "./style.js";
+import { addOutlines, mat, tone, toneMat, SCALE } from "./style.js";
 
 /** 방향 → y축 회전. 정면(down)이 카메라 쪽(+z)이다. */
 const FACING_ROTATION = { down: 0, up: Math.PI, left: -Math.PI / 2, right: Math.PI / 2 };
@@ -79,7 +79,16 @@ function darker(rgb, factor = 0.82) {
 /** 피부색(`PALETTE.skin` 0xf5d2b6). 셔츠가 이 색과 붙으면 맨살로 읽힌다. */
 const SKIN_RGB = [0xf5 / 255, 0xd2 / 255, 0xb6 / 255];
 /** 셔츠와 피부가 이만큼(RGB 유클리드 거리)은 떨어져야 한다. 0.25 는 한 단계만 눌러 여전히 살색으로 읽혔다. */
-const SHIRT_SKIN_MIN_DISTANCE = 0.35;
+export const SHIRT_SKIN_MIN_DISTANCE = 0.35;
+/** 셔츠 재질이 크림색 쪽으로 섞이는 몫(`toneMat(shirt, SHIRT_TONE)`). 대비는 섞은 **뒤** 색으로 잰다. */
+const SHIRT_TONE = 0.12;
+
+/** 실제로 칠해지는 셔츠 색(sRGB)과 피부의 거리. */
+export function shirtSkinDistance(rgb) {
+  const painted = {};
+  tone(rgb, SHIRT_TONE).getRGB(painted, THREE.SRGBColorSpace);
+  return Math.hypot(painted.r - SKIN_RGB[0], painted.g - SKIN_RGB[1], painted.b - SKIN_RGB[2]);
+}
 
 /**
  * 셔츠가 피부와 구별되게 — 너무 가까우면 같은 색조로 진하게 누른다.
@@ -97,9 +106,10 @@ export function distinctShirt(rgb) {
     return rgb;
   }
   let shirt = rgb;
-  for (let step = 0; step < 4; step += 1) {
-    const distance = Math.hypot(...shirt.map((value, index) => value - SKIN_RGB[index]));
-    if (distance >= SHIRT_SKIN_MIN_DISTANCE) {
+  for (let step = 0; step < 6; step += 1) {
+    // 재질이 크림색 쪽으로 12% 섞이며 피부에 다시 가까워진다 — 섞기 전 색으로 재면 기준을 넘긴
+    // 셔츠가 칠해진 뒤에는 기준 안으로 돌아온다(리뷰 지적: 0.368 → 0.301).
+    if (shirtSkinDistance(shirt) >= SHIRT_SKIN_MIN_DISTANCE) {
       break;
     }
     shirt = darker(shirt, 0.86);
@@ -202,8 +212,8 @@ export function makeCharacter(look) {
   const root = new THREE.Group();
   const body = new THREE.Group();
   const shirtRgb = distinctShirt(look.shirt ?? [0.95, 0.95, 0.94]);
-  const shirt = toneMat(shirtRgb, 0.12);
-  const shirtShade = toneMat(darker(shirtRgb), 0.12);
+  const shirt = toneMat(shirtRgb, SHIRT_TONE);
+  const shirtShade = toneMat(darker(shirtRgb), SHIRT_TONE);
   const pants = toneMat(look.pants, 0.12);
   const hair = toneMat(look.hair, 0.05);
   const skin = mat("skin");

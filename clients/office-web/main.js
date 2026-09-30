@@ -425,9 +425,28 @@ function captureTargetFromArgv() {
  * `--query=room=planning` — 캡처 주소에 쿼리를 덧붙인다. 조감도 한 장에서는 사람이 몇 px 이라
  * 자세·얼굴·책상 위 물건이 뒤집혀도 안 보인다 — 방을 확대해 찍는 입구다.
  */
-function captureQueryFromArgv() {
-  const flag = process.argv.find((argument) => argument.startsWith("--query="));
+function captureQueryFromArgv(argv) {
+  const flag = argv.find((argument) => argument.startsWith("--query="));
   return flag === undefined ? "" : flag.slice("--query=".length);
+}
+
+/** 기본 창 크기 — 2단계에서 맥 앱(`--size 1400x820`)과 칸 단위로 대조한 값. */
+const DEFAULT_WINDOW = { width: 1424, height: 872 };
+
+/**
+ * `--window=1107x804` — 창 크기를 바꿔 연다. 배치 선택(3열·2열)과 빈 여백은 창 비율에 따라
+ * 달라져 기본 크기 한 장으로는 사용자의 창에서 보이는 그림을 재현하지 못한다.
+ * 형식이 틀리거나 너무 작으면 기본값으로 — 0·NaN 창은 Electron 이 조용히 최소 크기로 연다.
+ */
+function windowSizeFromArgv(argv) {
+  const flag = argv.find((argument) => argument.startsWith("--window="));
+  const match = flag?.slice("--window=".length).match(/^(\d+)x(\d+)$/);
+  if (!match) {
+    return DEFAULT_WINDOW;
+  }
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  return width >= 320 && height >= 240 ? { width, height } : DEFAULT_WINDOW;
 }
 
 /**
@@ -502,6 +521,18 @@ async function selfCheck() {
   expect("2D 는 쿼리 없이", officePage("2d"), "index.html");
   expect("3D 는 renderer=3d", officePage("3d"), "index.html?renderer=3d");
   expect("캡처 쿼리와 함께", officePage("3d", "static=1&hour=12"), "index.html?static=1&hour=12&renderer=3d");
+  expect("--query 는 그대로 꺼낸다", captureQueryFromArgv(["x", "--query=room=planning&walk=3"]), "room=planning&walk=3");
+  expect("--query 가 없으면 빈 값", captureQueryFromArgv(["x"]), "");
+  expect(
+    "--query 가 캡처 쿼리 뒤에 붙는다",
+    officePage("3d", `static=1&hour=12&${captureQueryFromArgv(["--query=room=planning"])}`),
+    "index.html?static=1&hour=12&room=planning&renderer=3d"
+  );
+  expect("빈 --query 는 주소를 바꾸지 않는다", officePage("3d", "static=1&hour=12&"), "index.html?static=1&hour=12&renderer=3d");
+  expect("--window 를 읽는다", JSON.stringify(windowSizeFromArgv(["--window=1107x804"])), '{"width":1107,"height":804}');
+  expect("--window 가 없으면 기본", windowSizeFromArgv([]), DEFAULT_WINDOW);
+  expect("형식이 틀리면 기본", windowSizeFromArgv(["--window=1107*804"]), DEFAULT_WINDOW);
+  expect("너무 작으면 기본", windowSizeFromArgv(["--window=10x10"]), DEFAULT_WINDOW);
   expect("--renderer=3d 는 3d", rendererFromArgv(["electron", ".", "--renderer=3d"], "2d"), "3d");
   expect("--renderer=2d 는 저장값 3d 를 덮는다", rendererFromArgv(["--renderer=2d"], "3d"), "2d");
   expect("인자가 없으면 저장값", rendererFromArgv(["electron", "."], "3d"), "3d");
@@ -553,15 +584,12 @@ function createWindow() {
   const captureTarget = captureTargetFromArgv();
   // `--window=1107x804` — 창 크기를 바꿔 연다. 배치 선택(3열·2열)과 빈 여백은 창 비율에 따라
   // 달라져 기본 크기 한 장으로는 사용자의 창에서 보이는 그림을 재현하지 못한다.
-  const windowFlag = process.argv.find((argument) => argument.startsWith("--window="));
-  const [windowWidth, windowHeight] = (windowFlag?.slice("--window=".length) ?? "1424x872")
-    .split("x")
-    .map(Number);
+  const windowSize = windowSizeFromArgv(process.argv);
   mainWindow = new BrowserWindow({
     // 2단계에서 맥 앱(`--size 1400x820`) 과 칸 단위로 대조한 창 크기다. 캔버스는 창에서
     // 가로 24px·세로 52px 을 뺀 크기라, 이 값이 맥 화면과 같은 배치를 만든다.
-    width: windowWidth || 1424,
-    height: windowHeight || 872,
+    width: windowSize.width,
+    height: windowSize.height,
     minWidth: 960,
     minHeight: 563,
     backgroundColor: "#17151a",
@@ -575,7 +603,7 @@ function createWindow() {
       pageUrl(
         settings.url === ""
           ? "setup.html"
-          : officePage(renderer, `static=1&hour=12&${captureQueryFromArgv()}`)
+          : officePage(renderer, `static=1&hour=12&${captureQueryFromArgv(process.argv)}`)
       )
     );
     mainWindow.webContents.once("did-finish-load", async () => {
