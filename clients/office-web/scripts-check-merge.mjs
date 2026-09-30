@@ -46,7 +46,14 @@ holder.position.set(-6, 0.2, 4);
 const hitBox = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ visible: false }));
 hitBox.userData.noOutline = true;
 holder.add(hitBox);
-scene.add(wall, mirrored, hidden, holder);
+// 무늬를 쓰는 재질은 합치지 않는다 — 굽는 것은 자리와 법선뿐이라 uv 가 사라진다.
+const textured = new THREE.Mesh(
+  new THREE.BoxGeometry(1, 1, 1),
+  new THREE.MeshStandardMaterial({ map: new THREE.Texture() })
+);
+textured.userData.noOutline = true;
+textured.position.set(-9, 0.5, 4);
+scene.add(wall, mirrored, hidden, holder, textured);
 addOutlines(scene);
 
 const before = stats(scene);
@@ -56,7 +63,8 @@ const elapsed = performance.now() - startedAt;
 const after = stats(scene);
 
 assert.equal(after.triangles, before.triangles, "합친 뒤 삼각형 수가 달라졌다 — 빠진 물체가 있다");
-assert.equal(after.meshes, batches, "합친 덩어리 말고 그려지는 메시가 남았다");
+assert.equal(after.meshes, batches + 1, "합친 덩어리와 무늬 물체 말고 그려지는 메시가 남았다");
+assert.ok(textured.parent === scene && textured.geometry.getAttribute("uv"), "무늬를 쓰는 물체를 합쳤다");
 assert.ok(batches < before.meshes / 10, `덩어리 ${batches}개 — 거의 안 합쳐졌다(전 ${before.meshes}개)`);
 for (const axis of ["x", "y", "z"]) {
   assert.ok(Math.abs(after.box.min[axis] - before.box.min[axis]) < 1e-4, `경계 상자 ${axis} 최소가 어긋났다`);

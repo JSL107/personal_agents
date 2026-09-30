@@ -31,7 +31,7 @@ import {
 import { buildFurniture, missingKinds } from "./furniture3d/index.js";
 import { makeCharacter, makeStatusRing, poseCharacter, seatOffset } from "./character.js";
 import { Overlay3D } from "./overlay3d.js";
-import { shouldRender } from "./frame-pace.js";
+import { frameSignature, shouldRender } from "./frame-pace.js";
 import { mergeStatic } from "./static-merge.js";
 
 /**
@@ -623,8 +623,6 @@ export class Office3DRenderer {
 
   /** 캔버스 크기가 바뀌었다 — 백버퍼·겹침층을 맞추고 지금 범위로 카메라를 다시 잡는다. */
   measure() {
-    // 백버퍼 크기를 바꾸면 그려 둔 그림이 지워진다 — 다음 프레임은 바뀐 것이 없어도 그려야 한다.
-    this.dirty = true;
     this.webgl.setSize(this.canvas.width, this.canvas.height, false);
     this.overlay.place(this.canvas);
     this.applyCamera(this.viewBounds);
@@ -634,6 +632,9 @@ export class Office3DRenderer {
    * 범위의 모서리 여덟 개를 카메라 좌표로 옮겨, 그것이 다 들어가는 가장 작은 직교 범위를 쓴다.
    */
   applyCamera(bounds) {
+    // 카메라가 바뀌면 바뀐 것이 없어도 다음 프레임을 그려야 한다. 카메라를 만지는 길이 전부 여기를
+    // 지나므로(`measure` — 백버퍼 크기를 바꿔 그림이 지워진다 — 와 방 확대 전환) 여기 한 곳에 둔다.
+    this.dirty = true;
     const width = this.canvas.width;
     const height = this.canvas.height;
     const { left, right, bottom, top, halfWidth, halfHeight } = frameBounds(this.camera, bounds, width, height);
@@ -743,7 +744,19 @@ export class Office3DRenderer {
     const hud = this.summaryText(view.summary);
     this.overlay.setHud(hud);
     // 위에서 옮긴 자세·글자는 그리지 않아도 장면에 남는다 — 건너뛴 프레임의 변화는 다음에 그릴 때 함께 나온다.
-    const { signature, moving } = this.frameState(view, bodies, hovered, hud);
+    const { signature, moving } = frameSignature({
+      scene: [
+        this.hoveredAgent,
+        Boolean(hovered?.president),
+        this.selectedAgent,
+        this.lightHour,
+        Boolean(view.presidentAlarm),
+        hud,
+      ],
+      bodies,
+      agents: view.agents,
+      sessions: view.sessions,
+    });
     const render = shouldRender({
       changed: this.dirty || signature !== this.renderedSignature,
       smooth: tweening,
@@ -758,42 +771,6 @@ export class Office3DRenderer {
     this.renderedAt = frameAt;
     this.webgl.render(this.scene, this.camera);
     this.overlay.render(this.scene, this.camera);
-  }
-
-  /**
-   * 이 프레임에 **그림을 정하는 입력 전부**를 한 줄로 — 앞서 그린 것과 같으면 다시 그리지 않는다
-   * (`frame-pace.js`). `draw` 가 읽는 값을 늘리면 여기에도 넣어야 한다. 빠뜨리면 그 변화는 안전망
-   * (1초)까지 늦게 나타난다.
-   *
-   * 걷는 사람·발 구르는 사람은 매 프레임 자리·자세가 달라지므로 값 대신 `moving` 으로 알린다 —
-   * 값을 넣으면 매 프레임이 "바뀌었다" 가 되어 30fps 제한이 걸리지 않는다.
-   */
-  frameState(view, bodies, hovered, hud) {
-    let moving = false;
-    const parts = [
-      this.hoveredAgent,
-      Boolean(hovered?.president),
-      this.selectedAgent,
-      this.lightHour,
-      Boolean(view.presidentAlarm),
-      hud,
-    ];
-    for (const [agentType, body] of Object.entries(bodies)) {
-      const agent = view.agents?.[agentType];
-      parts.push(agentType, agent?.state, agent?.bubble, agent?.job, agent?.nickname, agent?.displayName);
-      const pressure = body.seated ? 0 : (body.pressure ?? 0);
-      const walking = Boolean(body.path) || (typeof body.pose === "string" && body.pose.includes("walk"));
-      if (walking || pressure >= 3) {
-        moving = true;
-        parts.push("moving");
-      } else {
-        parts.push(body.x, body.y, body.seated, body.facing, body.pose, body.interactionPose, pressure);
-      }
-    }
-    for (const session of view.sessions ?? []) {
-      parts.push(session.label, session.active);
-    }
-    return { signature: parts.join("|"), moving };
   }
 
   characterEntry(agentType) {

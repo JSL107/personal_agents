@@ -20,6 +20,42 @@ export const MOVING_INTERVAL_MS = 30;
 export const IDLE_INTERVAL_MS = 1000;
 
 /**
+ * 이 프레임에 **그림을 정하는 입력 전부**를 한 줄로 — 앞서 그린 것과 같으면 다시 그리지 않는다.
+ * 렌더러의 `draw` 가 읽는 값을 늘리면 여기에도 넣어야 한다. 빠뜨리면 그 변화는 안전망(1초)까지
+ * 늦게 나타난다.
+ *
+ * 걷는 사람·발 구르는 사람은 매 프레임 자리·자세가 달라지므로 값 대신 `moving` 으로 알린다 —
+ * 값을 넣으면 매 프레임이 "바뀌었다" 가 되어 30fps 제한이 걸리지 않는다.
+ *
+ * @param {object} input
+ * @param {Array}  input.scene    사람 밖의 것(hover·선택·시간대·경고등·요약 글자 등)
+ * @param {object} input.bodies   그릴 사람들(`live.js` 의 몸 — 숨긴 사람은 빼고)
+ * @param {object} [input.agents] 사람별 상태·말풍선
+ * @param {Array}  [input.sessions]
+ * @returns {{signature: string, moving: boolean}}
+ */
+export function frameSignature({ scene, bodies, agents, sessions }) {
+  let moving = false;
+  const parts = [...scene];
+  for (const [agentType, body] of Object.entries(bodies)) {
+    const agent = agents?.[agentType];
+    parts.push(agentType, agent?.state, agent?.bubble, agent?.job, agent?.nickname, agent?.displayName);
+    const pressure = body.seated ? 0 : (body.pressure ?? 0);
+    const walking = Boolean(body.path) || (typeof body.pose === "string" && body.pose.includes("walk"));
+    if (walking || pressure >= 3) {
+      moving = true;
+      parts.push("moving");
+    } else {
+      parts.push(body.x, body.y, body.seated, body.facing, body.pose, body.interactionPose, pressure);
+    }
+  }
+  for (const session of sessions ?? []) {
+    parts.push(session.label, session.active);
+  }
+  return { signature: parts.join("|"), moving };
+}
+
+/**
  * @param {object} frame
  * @param {boolean} frame.changed   그려진 것과 지금 상태가 다르다(상태·말풍선·hover·선택·창 크기 등)
  * @param {boolean} frame.smooth    카메라가 옮겨 가는 중 — 짧고 드물어 매 프레임 그린다

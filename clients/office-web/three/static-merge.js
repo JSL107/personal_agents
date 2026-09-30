@@ -18,6 +18,9 @@ function mergeable(node) {
     !Array.isArray(node.material) &&
     node.material.visible &&
     !node.material.transparent &&
+    // 굽는 것은 자리와 법선뿐이다. 무늬(uv)나 꼭짓점 색을 쓰는 재질을 합치면 그림이 달라진다.
+    !node.material.map &&
+    !node.material.vertexColors &&
     Boolean(node.geometry.getAttribute("position")) &&
     Boolean(node.geometry.getAttribute("normal"))
   );

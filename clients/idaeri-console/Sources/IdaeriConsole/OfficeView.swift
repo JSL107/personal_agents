@@ -120,6 +120,12 @@ struct OfficeView: View {
                     snapWindowUpToFloorPlanStep(window, grownFrom: startSize)
                 }
                 .onAppear {
+                    // 다른 탭에 있는 동안 메뉴로 2D 로 바꾸면 아래 `onChange(of: officeRenderer)` 가 돌지
+                    // 않는다(이 뷰가 없다). 남은 웹뷰를 여기서 놓지 않으면 바로 아래 `applySceneSleep` 이
+                    // 안 보이는 3D 화면을 깨워 계속 돌린다.
+                    if !uses3D {
+                        office3D.releaseWebView()
+                    }
                     // 통지는 상태가 "바뀔 때" 만 온다. 이미 가려지거나 최소화된 창에서 탭이
                     // 열리면 다음 통지까지 씬이 계속 돌므로, 나타나는 시점에 한 번 맞춘다.
                     applySceneSleep()

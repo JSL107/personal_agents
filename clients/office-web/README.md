@@ -142,7 +142,7 @@ pnpm capture   # 사무실을 한 판 그려 /tmp/idaeri-office.png 로 저장�
 - **바뀐 것이 없으면 그리지 않는다** — 앉은 사람은 움직이지 않으므로 사무실은 대부분 멈춘 그림이다.
   상태·말풍선·hover·선택·창 크기가 바뀔 때만 그리고(안전망으로 1초에 한 번), 걷는 사람이 있는 동안은
   30fps 로 그린다(`three/frame-pace.js`). 벽·가구는 재질마다 한 덩어리로 합쳐 그리기 호출을 줄인다
-  (`three/static-merge.js`). `draw` 가 읽는 입력을 늘리면 `frameState` 에도 넣어야 그 변화가 바로 보인다.
+  (`three/static-merge.js`). `draw` 가 읽는 입력을 늘리면 `frameSignature` 에도 넣어야 그 변화가 바로 보인다.
 
 ```bash
 pnpm check:style                          # 팔레트·크기·벽걸이 규칙
