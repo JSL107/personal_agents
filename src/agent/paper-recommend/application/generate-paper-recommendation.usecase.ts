@@ -148,12 +148,6 @@ export class GeneratePaperRecommendationUsecase {
     command: GeneratePaperRecommendationCommand = {},
   ): Promise<GeneratePaperRecommendationResult> {
     const decidedAt = command.decidedAt ?? new Date();
-    // 전략이 여럿이어도 목표 거래일은 회차당 한 번만 정한다 — 전략 간 날짜가 갈리면 카드가
-    // 한 날짜만 적는 것(`paper-recommend.autopilot-task.ts`)이 거짓이 된다.
-    const targetTradeDate = targetTradeDateOf(
-      decidedAt,
-      await this.holidayCalendar.load(),
-    );
     const strategies = command.strategies ?? DEFAULT_STRATEGIES;
     const completed: PaperRecommendationSuccess[] = [];
     const failed: PaperRecommendationFailure[] = [];
@@ -163,7 +157,6 @@ export class GeneratePaperRecommendationUsecase {
         const outcome = await this.generateForStrategy({
           strategy,
           decidedAt,
-          targetTradeDate,
           triggerType:
             command.triggerType ?? TriggerType.AUTOPILOT_PAPER_RECOMMEND_CRON,
         });
@@ -178,12 +171,10 @@ export class GeneratePaperRecommendationUsecase {
   private async generateForStrategy({
     strategy,
     decidedAt,
-    targetTradeDate,
     triggerType,
   }: {
     strategy: PaperRecommendationStrategy;
     decidedAt: Date;
-    targetTradeDate: Date;
     triggerType: TriggerType;
   }): Promise<PaperRecommendationSuccess> {
     const outcome = await this.agentRunService.execute({
@@ -202,6 +193,14 @@ export class GeneratePaperRecommendationUsecase {
         // 이 회차가 쓸 값을 한 번만 해소한다. 아래 스크리닝·프롬프트·비중 배정이 모두
         // 이 한 벌을 쓴다 — 회차 도중에 값이 갈리면 "무엇으로 판단했나" 가 남지 않는다.
         const parameters = await this.strategyParameters.execute(strategy);
+        // 달력은 run 안에서 읽는다. 밖에서 읽으면 조회 실패가 실행 원장에 남지 않고 회차가
+        // 통째로 사라진다. 전략마다 읽지만 같은 `decidedAt` 과 같은 공휴일 행에서 나오므로
+        // 전략 간 목표일은 갈리지 않는다 — 카드가 한 날짜만 적는 전제
+        // (`paper-recommend.autopilot-task.ts`)가 그대로 선다.
+        const targetTradeDate = targetTradeDateOf(
+          decidedAt,
+          await this.holidayCalendar.load(),
+        );
         const systemPrompt = buildPaperRecommendSystemPrompt({
           maximumWeightPercent: parameters.maximumWeightPercent,
         });
