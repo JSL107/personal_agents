@@ -1,3 +1,5 @@
+import { DelayedError } from 'bullmq';
+
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { StudyBriefCronConsumer } from './study-brief-cron.consumer';
@@ -466,12 +468,41 @@ describe('StudyBriefCronConsumer', () => {
       cronIdempotency,
     });
 
+    const overlapped = { ...JOB, moveToDelayed: jest.fn() };
+
     await dependencies.consumer.process(JOB as never);
-    await dependencies.consumer.process(JOB as never);
+    await expect(
+      dependencies.consumer.process(overlapped as never, 'token-1'),
+    ).rejects.toBeInstanceOf(DelayedError);
 
     expect(dependencies.hermesRunner.run).toHaveBeenCalledTimes(1);
     expect(dependencies.studyBriefRepository.save).toHaveBeenCalledTimes(1);
     expect(dependencies.slackNotifier.postMessage).toHaveBeenCalledTimes(2);
+    expect(overlapped.moveToDelayed).toHaveBeenCalledWith(
+      expect.any(Number),
+      'token-1',
+    );
+  });
+
+  it('잠금에 막힌 재시도는 성공으로 끝내지 않고 실패 알림 없이 잠금 만료 뒤로 미룬다', async () => {
+    const cronIdempotency = makeCronIdempotencyFake();
+    cronIdempotency.acquireOnce.mockResolvedValueOnce(false);
+    const dependencies = makeConsumer({ cronIdempotency });
+    const stalledRetry = { ...JOB, moveToDelayed: jest.fn() };
+    const before = Date.now();
+
+    await expect(
+      dependencies.consumer.process(stalledRetry as never, 'token-1'),
+    ).rejects.toBeInstanceOf(DelayedError);
+
+    const [delayedUntil] = stalledRetry.moveToDelayed.mock.calls[0] as [number];
+    expect(delayedUntil).toBeGreaterThanOrEqual(before + 30 * 60 * 1_000);
+    expect(dependencies.hermesRunner.run).not.toHaveBeenCalled();
+    expect(
+      dependencies.notificationPublisher.publishCronFailure,
+    ).not.toHaveBeenCalled();
+    expect(dependencies.agentRunService.execute).not.toHaveBeenCalled();
+    expect(cronIdempotency.release).not.toHaveBeenCalled();
   });
 
   it('Slack 발송 실패 알림에 놓친 주제명을 포함한다', async () => {
