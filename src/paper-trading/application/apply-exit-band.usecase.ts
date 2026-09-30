@@ -1,5 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 
+import {
+  HOLIDAY_CALENDAR_PORT,
+  HolidayCalendarPort,
+} from '../../holiday/domain/port/holiday-calendar.port';
 import { ResolveStrategyParametersUsecase } from '../../strategy-parameter/application/resolve-strategy-parameters.usecase';
 import {
   decideExitBandOrders,
@@ -8,7 +12,7 @@ import {
   ExitBandThreshold,
 } from '../domain/exit-band';
 import { TradeStrategy } from '../domain/paper-account.type';
-import { nextWeekday } from '../domain/trade-calendar';
+import { targetTradeDateOf } from '../domain/trade-calendar';
 import { PaperTradingPrismaRepository } from '../infrastructure/paper-trading.prisma.repository';
 import { EvaluatedAccountEntry } from './evaluate-paper-account.usecase';
 
@@ -49,9 +53,16 @@ export class ApplyExitBandUsecase {
   constructor(
     private readonly repository: PaperTradingPrismaRepository,
     private readonly strategyParameters: ResolveStrategyParametersUsecase,
+    @Inject(HOLIDAY_CALENDAR_PORT)
+    private readonly holidayCalendar: HolidayCalendarPort,
   ) {}
 
   async execute(command: ApplyExitBandCommand): Promise<ApplyExitBandResult> {
+    // 모든 계좌가 같은 목표일을 쓴다 — 회차 도중에 달력을 다시 읽어 날짜가 갈리지 않게 한 번만.
+    const targetTradeDate = targetTradeDateOf(
+      command.executedAt,
+      await this.holidayCalendar.load(),
+    );
     // 밴드는 계좌마다 다를 수 있다 — 계좌 이름이 곧 전략이고 파라미터는 전략별이다.
     // 전략당 한 번만 해소해 같은 회차가 같은 값을 쓰게 한다.
     const thresholdByStrategy = new Map<TradeStrategy, ExitBandThreshold>();
@@ -112,7 +123,7 @@ export class ApplyExitBandUsecase {
           tradeDate === null
             ? command.executedAt
             : new Date(`${tradeDate}T00:00:00.000Z`),
-        targetTradeDate: nextWeekday(command.executedAt),
+        targetTradeDate,
         agentRunId: command.agentRunId ?? null,
         threshold,
         orders: decisions.map((decision) => ({

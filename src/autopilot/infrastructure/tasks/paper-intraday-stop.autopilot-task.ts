@@ -1,8 +1,13 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { isKrxTradingDay } from '../../../holiday/domain/business-calendar';
+import {
+  HOLIDAY_CALENDAR_PORT,
+  HolidayCalendarPort,
+} from '../../../holiday/domain/port/holiday-calendar.port';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import {
   ApplyIntradayStopResult,
@@ -194,11 +199,25 @@ export class PaperIntradayStopAutopilotTask implements AutopilotTask {
     private readonly applyIntradayStop: ApplyIntradayStopUsecase,
     private readonly configService: ConfigService,
     private readonly agentRunService: AgentRunService,
+    @Inject(HOLIDAY_CALENDAR_PORT)
+    private readonly holidayCalendar: HolidayCalendarPort,
   ) {}
 
   async run(context: AutopilotTaskContext): Promise<AutopilotTaskResult> {
     const enabled = this.configService.get<string>('PAPER_TRADING_ENABLED');
     if (enabled !== 'true') {
+      return { skip: true };
+    }
+    // 달력상 휴장일이면 시세를 조회하기 전에 끝낸다. 5분 주기라 그대로 두면 휴장일 하루에
+    // 전 종목 시세 조회가 70회 헛돈다. 아래 `holidayLike` 는 지우지 않는다 — 달력에 없는
+    // 임시 휴장·거래정지·공급자 무응답처럼 달력이 모르는 경우의 카드 억제용이다.
+    const calendar = await this.holidayCalendar.load();
+    if (
+      !isKrxTradingDay(
+        new Date(`${context.firedAtKst}T00:00:00.000Z`),
+        calendar,
+      )
+    ) {
       return { skip: true };
     }
 
