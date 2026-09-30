@@ -1,0 +1,72 @@
+<!doctype html>
+<!--
+  가구 미리보기 — 빌더 전부를 격자로 세워 한 장에 찍는다(개발용, 설치본 제외).
+  원본 2D 가구 그림과 나란히 놓고 형태·주조색을 대조하는 데 쓴다.
+
+    ?kinds=desk,sofa2   일부만(생략하면 전부) · &cols=8 한 줄 개수
+-->
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>가구 미리보기</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #f7efe4; overflow: hidden; }
+      canvas { width: 100%; height: 100%; display: block; }
+    </style>
+    <script type="importmap">
+      { "imports": { "three": "./vendor/three/three.module.js", "three/addons/": "./vendor/three/addons/" } }
+    </script>
+  </head>
+  <body>
+    <canvas id="stage"></canvas>
+    <script type="module">
+      import * as THREE from "three";
+      import { BUILDERS, buildFurniture } from "./three/furniture3d/index.js";
+      import { makeLights, BACKGROUND, OUTLINE, addOutlines, setOutlineWidth } from "./three/style.js";
+
+      const query = new URLSearchParams(location.search);
+      const kinds = query.get("kinds")?.split(",") ?? Object.keys(BUILDERS);
+      const cols = Number(query.get("cols") ?? 8);
+      const canvas = document.getElementById("stage");
+      const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+      renderer.setPixelRatio(window.devicePixelRatio);
+      renderer.setSize(innerWidth, innerHeight, false);
+      renderer.shadowMap.enabled = true;
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(BACKGROUND);
+      const spacing = 2.2;
+      const rows = Math.ceil(kinds.length / cols);
+      kinds.forEach((kind, index) => {
+        const builder = BUILDERS[kind];
+        const piece = buildFurniture(kind, builder?.spec.footprint ?? [1, 1]);
+        if (!piece) {
+          return;
+        }
+        piece.position.set((index % cols) * spacing, 0, Math.floor(index / cols) * spacing);
+        scene.add(piece);
+      });
+      for (const light of makeLights(new THREE.Vector3(cols, 0, rows), cols * 2)) {
+        scene.add(light);
+      }
+      addOutlines(scene);
+      // 각 가구를 정면에 가깝게(방위 20°) 비스듬히 — 원본 그림의 3/4 시점과 비슷한 각.
+      const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 500);
+      const center = new THREE.Vector3(((cols - 1) * spacing) / 2, 0.4, ((rows - 1) * spacing) / 2);
+      const azimuth = THREE.MathUtils.degToRad(20);
+      const elevation = THREE.MathUtils.degToRad(30);
+      camera.position.set(center.x + Math.sin(azimuth) * 100, 0.4 + Math.sin(elevation) * 100, center.z + Math.cos(azimuth) * 100);
+      camera.lookAt(center);
+      const aspect = innerWidth / innerHeight;
+      const halfWidth = (cols * spacing) / 2 + 0.3;
+      camera.left = -halfWidth;
+      camera.right = halfWidth;
+      camera.top = halfWidth / aspect;
+      camera.bottom = -halfWidth / aspect;
+      camera.updateProjectionMatrix();
+      setOutlineWidth((OUTLINE.pixels * halfWidth * 2) / innerWidth);
+      renderer.render(scene, camera);
+      document.body.dataset.kinds = kinds.join(",");
+      document.body.dataset.rendered = "1";
+    </script>
+  </body>
+</html>
