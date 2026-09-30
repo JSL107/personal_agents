@@ -64,6 +64,9 @@ export interface PrReviewFindingRecord {
   postMode: FindingPostMode;
   githubCommentId: string | null;
   githubThreadNodeId: string | null;
+  // 모순 보류 중인 답글의 지문과 보류 시작 시각. 보류가 아니면 둘 다 null.
+  heldReplyHash: string | null;
+  heldAt: Date | null;
   createdAt: Date;
 }
 
