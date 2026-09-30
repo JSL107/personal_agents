@@ -149,8 +149,8 @@ private final class OfficeWebSchemeHandler: NSObject, WKURLSchemeHandler {
 
 /// 앱 ↔ 3D 화면 통로. `OfficeView` 가 소유한다(탭을 떠나면 웹뷰와 함께 새로 만들어진다).
 ///
-/// **화면이 `ready` 를 보내기 전에는 아무것도 밀지 않는다.** 그 전에는 `window.idaeri` 가 없어
-/// 호출이 조용히 버려진다. 대신 마지막 스냅샷·잠·선택을 들고 있다가 `ready` 에 한꺼번에 보낸다 —
+/// **화면이 `ready` 를 보내기 전에는 아무것도 밀지 않는다.** 그 전에는 렌더러가 서지 않아
+/// 선택·상태 변화가 조용히 버려진다(화면은 렌더러를 세운 뒤에 `ready` 를 보낸다). 대신 마지막 스냅샷·잠·선택을 들고 있다가 `ready` 에 한꺼번에 보낸다 —
 /// 안 그러면 첫 화면이 다음 변화(길면 30초 재동기화)까지 빈 사무실로 남는다.
 final class Office3DController: NSObject, ObservableObject, WKScriptMessageHandler {
     /// 화면이 보낸 사건(`office:agent-click` · `office:president-click` · `office:focus` · `escape`).
