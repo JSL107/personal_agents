@@ -149,7 +149,7 @@ const main = async (): Promise<void> => {
         .get(CollectInvestorFlowUsecase)
         .execute(parsed.options);
       console.log(
-        `수급 수집 완료 — 성공 ${result.succeeded}/${result.targetCount}종목, 실패 ${result.failed}종목, 저장 ${result.written}건`,
+        `수급 수집 완료 — 성공 ${result.succeeded}/${result.targetCount}종목, 실패 ${result.failed}종목, 공급자 장애로 건너뜀 ${result.abortedCount}종목, 저장 ${result.written}건`,
       );
       for (const failure of result.failures) {
         console.log(failure);

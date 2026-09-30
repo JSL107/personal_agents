@@ -84,11 +84,45 @@ describe('BackfillInvestorFlowUsecase', () => {
     expect(fetchRows).toHaveBeenNthCalledWith(2, '005930', '2024-08-31');
   });
 
-  it('커서가 뒤로 움직이지 않으면 stalled로 분류하고 다른 종목 실패와 분리한다', async () => {
+  // 2026-09-30 실측: 234030(싸이닉솔루션)은 마지막 페이지가 상장일(= 커서 당일) 한 행만 돌려줬는데,
+  // 커서와 같은 날짜를 미진전으로 판정해 그 행을 저장하지 못하고 멈췄다.
+  it('마지막 페이지가 커서 당일 한 행만 돌려줘도 저장하고 끝낸다', async () => {
+    const fetchRows = jest
+      .fn()
+      .mockResolvedValueOnce([row('2025-07-10'), row('2025-07-08')])
+      .mockResolvedValueOnce([row('2025-07-07')]);
+    const updateInvestorFlow = jest.fn().mockResolvedValue(1);
+    const usecase = new BackfillInvestorFlowUsecase(
+      { fetchRows } as unknown as NaverInvestorFlowClient,
+      {
+        findInvestorFlowBackfillTickers: jest.fn().mockResolvedValue([ticker]),
+        findOldestPriceFlowTargets: jest
+          .fn()
+          .mockResolvedValue(
+            new Map([
+              [
+                1,
+                { tickerId: 1, oldestTradeDate: '2025-07-07', hasFlow: false },
+              ],
+            ]),
+          ),
+        updateInvestorFlow,
+      } as unknown as MarketDataPrismaRepository,
+    );
+
+    await expect(usecase.execute({ years: 5 })).resolves.toMatchObject({
+      succeeded: 1,
+      stalled: 0,
+    });
+    expect(fetchRows).toHaveBeenNthCalledWith(2, '005930', '2025-07-07');
+    expect(updateInvestorFlow).toHaveBeenLastCalledWith(1, [row('2025-07-07')]);
+  });
+
+  it('직전 페이지보다 과거로 가지 못하면 stalled로 분류하고 다른 종목 실패와 분리한다', async () => {
     const fetchRows = jest
       .fn()
       .mockResolvedValueOnce([row('2026-09-30')])
-      .mockResolvedValueOnce([row('2026-09-29')])
+      .mockResolvedValueOnce([row('2026-09-30')])
       .mockRejectedValueOnce(new Error('네트워크 오류'));
     const tickers = [ticker, { ...ticker, id: 2, code: '000001' }];
     const usecase = new BackfillInvestorFlowUsecase(

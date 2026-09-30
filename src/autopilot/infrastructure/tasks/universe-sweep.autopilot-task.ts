@@ -77,7 +77,7 @@ const formatSummary = (audit: UniverseSweepAudit): string => {
     benchmarkText +
     ('error' in audit.investorFlow
       ? ` · 수급 수집 실패(${audit.investorFlow.error})`
-      : ` · 수급 ${formatCount(audit.investorFlow.succeeded)}/${formatCount(audit.investorFlow.targetCount)}종목, 저장 ${formatCount(audit.investorFlow.written)}건, 실패 ${formatCount(audit.investorFlow.failed)}종목`)
+      : ` · 수급 ${formatCount(audit.investorFlow.succeeded)}/${formatCount(audit.investorFlow.targetCount)}종목, 저장 ${formatCount(audit.investorFlow.written)}건, 실패 ${formatCount(audit.investorFlow.failed)}종목${audit.investorFlow.abortedCount > 0 ? `, 공급자 장애로 ${formatCount(audit.investorFlow.abortedCount)}종목 건너뜀` : ''}`)
   );
 };
 

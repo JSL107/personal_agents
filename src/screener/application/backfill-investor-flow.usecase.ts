@@ -115,7 +115,9 @@ export class BackfillInvestorFlowUsecase {
   ): Promise<void> {
     let cursor = getTodayKstDate();
     let shouldContinue = true;
-    let hasPaged = false;
+    // 진전 판정은 요청 커서가 아니라 직전 페이지의 가장 오래된 날짜와 비교한다. 커서는 그날을
+    // 포함하므로, 마지막 페이지가 커서 당일 한 행(상장일 등)만 돌려주는 것은 정상 진전이다.
+    let previousOldestDate: string | null = null;
     while (shouldContinue) {
       const rows = await this.client.fetchRows(ticker.code, cursor);
       result.pagesFetched += 1;
@@ -128,12 +130,15 @@ export class BackfillInvestorFlowUsecase {
         row.tradeDate < oldest.tradeDate ? row : oldest,
       );
       const oldestReturnedDate = dateTextOf(oldestReturned.tradeDate);
-      if (hasPaged && oldestReturnedDate >= cursor) {
+      if (
+        previousOldestDate !== null &&
+        oldestReturnedDate >= previousOldestDate
+      ) {
         result.stalled += 1;
         shouldContinue = false;
         continue;
       }
-      hasPaged = true;
+      previousOldestDate = oldestReturnedDate;
       result.written += await this.repository.updateInvestorFlow(
         ticker.id,
         rowsInTargetRange(rows, targetStartDate),
