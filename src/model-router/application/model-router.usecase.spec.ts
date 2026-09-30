@@ -527,6 +527,41 @@ describe('ModelRouterUsecase', () => {
       });
     });
 
+    it('사용자 문구의 fallback 사유는 첫 줄만, 꺾쇠를 빼고, 120자로 자른다', async () => {
+      chatgptProvider.complete.mockRejectedValue(new Error('codex 실패'));
+      claudeProvider.complete.mockRejectedValue(
+        new Error(`<!channel> ${'가'.repeat(200)}\n둘째 줄 stack trace`),
+      );
+
+      const caught = await usecase
+        .route({ agentType: AgentType.PM, request: { prompt: 'x' } })
+        .catch((error: Error) => error);
+      const message = (caught as Error).message;
+      const reason = message.slice(
+        message.indexOf('CLAUDE 실패 사유: ') + 'CLAUDE 실패 사유: '.length,
+      );
+
+      expect(reason).not.toMatch(/[<>]/);
+      expect(reason).not.toContain('둘째 줄');
+      expect(reason.startsWith('!channel ')).toBe(true);
+      expect(reason.length).toBe(120);
+    });
+
+    it('사용자 문구의 fallback 사유는 토큰을 마스킹한다', async () => {
+      chatgptProvider.complete.mockRejectedValue(new Error('codex 실패'));
+      claudeProvider.complete.mockRejectedValue(
+        new Error('auth failed token=ghp_abcdefghijklmnopqrstuvwxyz0123456789'),
+      );
+
+      const caught = await usecase
+        .route({ agentType: AgentType.PM, request: { prompt: 'x' } })
+        .catch((error: Error) => error);
+
+      expect((caught as Error).message).not.toContain(
+        'ghp_abcdefghijklmnopqrstuvwxyz0123456789',
+      );
+    });
+
     it('폴백 양쪽 실패는 두 사유를 모두 남기고, 사용자 문구에도 Claude 실패 요지를 싣는다', async () => {
       chatgptProvider.complete.mockRejectedValue(
         new CodexQuotaExceededException('Sep 19th, 2026 5:20 PM'),

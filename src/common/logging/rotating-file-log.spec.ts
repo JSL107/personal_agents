@@ -1,4 +1,11 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -28,6 +35,27 @@ describe('RotatingFileLog', () => {
     expect(readFileSync(`${filePath}.1`, 'utf8')).toBe('cccccccc\n');
     expect(readFileSync(`${filePath}.2`, 'utf8')).toBe('bbbbbbbb\n');
     expect(existsSync(`${filePath}.3`)).toBe(false);
+  });
+
+  it('로그 파일과 디렉터리를 소유자 전용으로 만들고, 회전 뒤 새 파일도 그렇다', () => {
+    const filePath = join(dir, 'logs', 'server.log');
+    const log = new RotatingFileLog(filePath, 10, 3);
+
+    log.write('aaaaaaaa\n');
+    log.write('bbbbbbbb\n'); // 회전
+
+    expect(statSync(filePath).mode & 0o777).toBe(0o600);
+    expect(statSync(`${filePath}.1`).mode & 0o777).toBe(0o600);
+    expect(statSync(join(dir, 'logs')).mode & 0o777).toBe(0o700);
+  });
+
+  it('이미 있던 느슨한 권한의 파일도 소유자 전용으로 맞춘다', () => {
+    const filePath = join(dir, 'server.log');
+    writeFileSync(filePath, 'old\n', { mode: 0o644 });
+
+    new RotatingFileLog(filePath, 1_000, 2).write('new\n');
+
+    expect(statSync(filePath).mode & 0o777).toBe(0o600);
   });
 
   it('색상 코드는 걷어내고 적는다', () => {

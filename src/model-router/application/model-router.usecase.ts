@@ -4,6 +4,7 @@ import { buildContractPreamble } from '../../agent-registry/agent-contract';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { getActiveAgentRunId } from '../../common/llm/active-agent-run.context';
 import { MODEL_ROUTER_WORST_CASE_MS } from '../../common/llm/llm-timeout.constant';
+import { redactPii } from '../../common/util/pii-redaction.util';
 import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
 import { AGENT_TO_PROVIDER } from '../domain/agent-provider.map';
 import { ModelRouterException } from '../domain/model-router.exception';
@@ -276,10 +277,10 @@ export class ModelRouterUsecase {
     // 쿼터 안내만 있으면 fallback(Claude) 이 왜 실패했는지가 사용자에게 안 보인다 — 2026-09-16~18
     // 폴백 양쪽 실패 85건이 전부 "ChatGPT 한도 초과" 로만 읽혔다. 요지 한 줄을 덧붙인다.
     // CLI 출력이 이 문구째 Slack 으로 이스케이프 없이 나가므로(slack-handler.helper) `<!channel>`
-    // 같은 제어 구문이 되지 않게 꺾쇠를 뺀다.
+    // 같은 제어 구문이 되지 않게 꺾쇠를 뺀다. 원장보다 노출 범위가 넓으므로 토큰·키 마스킹도
+    // 원장과 같은 규칙(redactPii)으로 건다.
     const fallbackReason = fallbackUsed
-      ? `${attempted[1]} 실패 사유: ${lastMessage
-          .split('\n')[0]
+      ? `${attempted[1]} 실패 사유: ${redactPii(lastMessage.split('\n')[0])
           .replace(/[<>]/g, '')
           .slice(0, FALLBACK_REASON_NOTICE_LIMIT)}`
       : null;

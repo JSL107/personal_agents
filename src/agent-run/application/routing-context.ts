@@ -53,7 +53,13 @@ export const runWithRoutingContext = async <T>(
   const slot: RoutingContextSlot = { context, claimed: false };
   const result = await storage.run(slot, run);
   if (!slot.claimed) {
-    onUnclaimed?.(result);
+    // 부수 기록이다 — 콜백이 던져도 성공한 dispatch 결과를 예외로 바꾸지 않는다.
+    // 실패를 알리는 것(로그)은 콜백 몫이다.
+    try {
+      onUnclaimed?.(result);
+    } catch {
+      // 의도적으로 삼킨다.
+    }
   }
   return result;
 };
