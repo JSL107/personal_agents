@@ -53,6 +53,15 @@ func installMainMenu(on application: NSApplication) -> MainMenuBridge {
     fitMenuItem.toolTip =
         "이 화면에서 사무실 도면이 가장 큰 배율로 그려지는 크기로 창을 맞춥니다."
     viewMenu.addItem(fitMenuItem)
+    // 3D 오피스(시험). 기본은 2D — 안정되면 기본값을 바꾸고 2D 를 걷어낸다(계획 4단계).
+    let office3DMenuItem = NSMenuItem(
+        title: "3D 오피스",
+        action: #selector(MainMenuBridge.toggleOffice3D),
+        keyEquivalent: ""
+    )
+    office3DMenuItem.target = bridge
+    office3DMenuItem.toolTip = "오피스 화면을 3D(시험)로 그립니다. 다시 누르면 2D 로 돌아갑니다."
+    viewMenu.addItem(office3DMenuItem)
     viewMenuItem.submenu = viewMenu
     mainMenu.addItem(viewMenuItem)
 
@@ -63,7 +72,7 @@ func installMainMenu(on application: NSApplication) -> MainMenuBridge {
 /// 메뉴 항목에서 앱 쪽으로 넘어가는 통로. `NSMenuItem` 은 `@objc` 셀렉터만 부를 수 있어
 /// SwiftUI 상태를 직접 만지지 못하므로, 통지를 한 번 쏘고 `AppRootView` 가 받아 오피스 탭의
 /// 지시 바를 연다. 창 크기는 SwiftUI 를 거치지 않으므로 여기서 바로 만진다.
-final class MainMenuBridge: NSObject {
+final class MainMenuBridge: NSObject, NSMenuItemValidation {
     @objc func openPresidentCommand() {
         NotificationCenter.default.post(name: .idaeriOpenPresidentCommand, object: nil)
     }
@@ -75,6 +84,24 @@ final class MainMenuBridge: NSObject {
             return
         }
         fitWindowToFloorPlan(window)
+    }
+}
+
+extension MainMenuBridge {
+    /// UserDefaults 만 바꾼다 — `OfficeView` 의 `@AppStorage` 가 그 변화를 받아 화면을 갈아 끼운다.
+    @objc func toggleOffice3D() {
+        let defaults = UserDefaults.standard
+        let next = defaults.string(forKey: officeRendererDefaultsKey) == "3d" ? "2d" : "3d"
+        defaults.set(next, forKey: officeRendererDefaultsKey)
+    }
+
+    /// 체크 표시는 메뉴를 열 때마다 저장값에서 읽는다 — 상태를 따로 들고 있으면 둘이 갈린다.
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(toggleOffice3D) {
+            let on = UserDefaults.standard.string(forKey: officeRendererDefaultsKey) == "3d"
+            menuItem.state = on ? .on : .off
+        }
+        return true
     }
 }
 
