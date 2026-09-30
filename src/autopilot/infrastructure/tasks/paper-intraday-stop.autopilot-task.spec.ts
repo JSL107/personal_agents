@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { evaluateContract } from '../../../agent-registry/contract-inspector';
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { holidayCalendarOf } from '../../../holiday/domain/business-calendar';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import {
   ApplyIntradayStopResult,
@@ -63,6 +64,11 @@ const createFixture = (input?: {
       applyIntradayStop as unknown as ApplyIntradayStopUsecase,
       config as unknown as ConfigService,
       agentRun as unknown as AgentRunService,
+      // 추석 연휴가 든 실제 달력. 기존 케이스(평일 08-11)는 이 달력 아래에서도 그대로여야 한다.
+      {
+        load: async () =>
+          holidayCalendarOf(['2026-09-24', '2026-09-25', '2026-09-26']),
+      },
     ),
     applyIntradayStop,
     agentRun,
@@ -83,6 +89,27 @@ describe('PaperIntradayStopAutopilotTask', () => {
     await expect(task.run(context)).resolves.toEqual({ skip: true });
     expect(applyIntradayStop.execute).not.toHaveBeenCalled();
     expect(agentRun.execute).not.toHaveBeenCalled();
+  });
+
+  it.each(['2026-09-24', '2026-09-25'])(
+    '달력상 휴장일(%s)이면 시세 조회도 AgentRun 도 하지 않는다',
+    async (firedAtKst) => {
+      const { task, applyIntradayStop, agentRun } = createFixture();
+
+      await expect(
+        task.run({ ownerSlackUserId: 'U1', firedAtKst }),
+      ).resolves.toEqual({ skip: true });
+      expect(applyIntradayStop.execute).not.toHaveBeenCalled();
+      expect(agentRun.execute).not.toHaveBeenCalled();
+    },
+  );
+
+  it('연휴 뒤 첫 거래일(09-28)은 평소대로 손절을 판정한다', async () => {
+    const { task, applyIntradayStop } = createFixture();
+
+    await task.run({ ownerSlackUserId: 'U1', firedAtKst: '2026-09-28' });
+
+    expect(applyIntradayStop.execute).toHaveBeenCalledTimes(1);
   });
 
   it('장 시작 전이면 의도적 skip 사유를 반환한다', async () => {

@@ -12,7 +12,14 @@ import { existsSync, readFileSync } from "node:fs";
 import { BUILDERS, buildFurniture, missingKinds } from "./three/furniture3d/index.js";
 import * as sharedWallArt from "./three/furniture3d/wallArt.js";
 import { PALETTE, WALL_MOUNT } from "./three/style.js";
-import { makeCharacter } from "./three/character.js";
+import {
+  SHIRT_SKIN_MIN_DISTANCE,
+  distinctShirt,
+  makeCharacter,
+  seatOffset,
+  shirtSkinDistance,
+} from "./three/character.js";
+import { Office3DRenderer } from "./three/renderer3d.js";
 
 /** 부품 수 상한 — 이보다 많으면 레퍼런스의 뭉툭한 톤을 벗어나 잔손질이 된다. */
 const MAX_PARTS = 24;
@@ -101,6 +108,75 @@ if (process.argv.includes("--require-all")) {
     if (BUILDERS[kind] === sharedWallArt) {
       failures.push(`${kind}: 공용 액자(wallArt)를 쓴다 — 종류별 벽걸이 빌더가 필요하다`);
     }
+  }
+}
+
+// 소파 착석 — 좌석은 소파 앞 칸이고 사람은 소파를 바라본다(`facing`). 몸은 **그 방향으로** 옮겨야
+// 소파 위에 앉는다. 부호가 뒤집히면 소파 반대편 바닥에 앉는데, 그림으로는 "허공에 앉음" 과 같은 버그다.
+const shifts = {
+  up: [0, 1],
+  down: [0, -1],
+  left: [-1, 0],
+  right: [1, 0],
+};
+for (const [facing, [x, y]] of Object.entries(shifts)) {
+  const offset = seatOffset({ seated: true, interactionPose: "sitting", facing });
+  if (Math.sign(offset.x) !== x || Math.sign(offset.y) !== y) {
+    failures.push(`소파 착석 ${facing}: 몸이 (${offset.x}, ${offset.y}) 로 옮겨진다 — 소파 쪽이 아니다`);
+  }
+}
+for (const body of [
+  { seated: true, interactionPose: null, facing: "up" },
+  { seated: false, interactionPose: "sitting", facing: "up" },
+  { seated: false, interactionPose: null, facing: "left" },
+]) {
+  const offset = seatOffset(body);
+  if (offset.x !== 0 || offset.y !== 0) {
+    failures.push(`소파 착석이 아닌데 몸을 옮긴다: ${JSON.stringify(body)}`);
+  }
+}
+
+// 셔츠와 피부 — 평면도의 모든 셔츠가 칠해진 뒤에도 피부와 갈려야 한다. 피부와 다른 색조(흰·회·파랑)는
+// 손대지 않아야 한다 — 누르면 흰 셔츠가 회색이 된다.
+const shirts = ["layout-3.json", "layout-2.json"]
+  .filter((name) => existsSync(name))
+  .flatMap((name) => Object.values(JSON.parse(readFileSync(name, "utf8")).agentLooks ?? {}))
+  .map((look) => look.shirt)
+  // 평면도가 없어도 대표 난색 몇 개로 잰다(콘텐츠·자산 부서 실측값).
+  .concat([
+    [0.97, 0.78, 0.72],
+    [0.98, 0.82, 0.78],
+    [0.97, 0.73, 0.67],
+    [0.91, 0.79, 0.58],
+  ]);
+for (const shirt of shirts) {
+  const [red, green, blue] = shirt;
+  const warm = red > green && green > blue;
+  const adjusted = distinctShirt(shirt);
+  if (warm && shirtSkinDistance(adjusted) < SHIRT_SKIN_MIN_DISTANCE) {
+    failures.push(`셔츠 ${shirt}: 칠한 뒤 피부와 거리 ${shirtSkinDistance(adjusted).toFixed(3)}`);
+  }
+  if (!warm && adjusted !== shirt) {
+    failures.push(`셔츠 ${shirt}: 피부와 다른 색조인데 색을 바꿨다`);
+  }
+}
+
+// 배치 고르기 — live.js `chooseZoneColumns` 는 3D 에서 2열이 3열보다 **5% 넘게** 클 때만 2열을 쓴다.
+// 세로로 긴 창(사용자 창 1083×752 가 그랬다)은 그 문턱을 넘어야 하고, 넓은 창은 넘지 않아야 한다 —
+// 넓은 창까지 2열로 바뀌면 몇 % 를 얻자고 익숙한 배치가 통째로 바뀐다.
+const threeColumns = { columns: 35, rows: 20 };
+const twoColumns = { columns: 23, rows: 27 };
+for (const [width, height, prefersTwo] of [
+  [1083, 752, true],
+  [1107, 1100, true],
+  [1400, 820, false],
+  [2400, 900, false],
+]) {
+  const ratio =
+    Office3DRenderer.tileSizeFor(twoColumns, width, height) /
+    Office3DRenderer.tileSizeFor(threeColumns, width, height);
+  if (ratio > 1.05 !== prefersTwo) {
+    failures.push(`${width}×${height}: 2열/3열 = ${ratio.toFixed(3)} — ${prefersTwo ? "2열" : "3열"}이어야 한다`);
   }
 }
 

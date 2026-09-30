@@ -20,8 +20,10 @@ import { formatPreviousDailyReviewSection } from '../domain/prompt/previous-work
 import { formatRecentPlanSummariesSection } from '../domain/prompt/recent-plan-summary-formatter';
 import { formatSlackMentionsAsPromptSection } from '../domain/prompt/slack-mention-formatter';
 import {
+  collectOpenGithubTaskIds,
   computeConsecutiveDaysById,
   computeStaleTaskIds,
+  OpenTaskIds,
 } from '../domain/stale-task.util';
 import {
   DailyPlanContext,
@@ -180,6 +182,7 @@ export class DailyPlanPromptBuilder {
       staleTasks: formatStaleTasksSection({
         summaries: recentPlanSummaries,
         thresholdDays: staleDemoteDays,
+        openIds: collectOpenGithubTaskIds(githubTasks),
       }),
       similarPlans: formatSimilarPlansSection(similarPlans),
     };
@@ -309,16 +312,18 @@ const formatUserTextSection = (userText: string): string | null => {
 const formatStaleTasksSection = ({
   summaries,
   thresholdDays,
+  openIds,
 }: {
   summaries: DailyPlanContext['recentPlanSummaries'];
   thresholdDays: number;
+  openIds: OpenTaskIds;
 }): string | null => {
-  const staleIds = computeStaleTaskIds(summaries, thresholdDays);
+  const staleIds = computeStaleTaskIds(summaries, thresholdDays, openIds);
   if (staleIds.size === 0) {
     return null;
   }
 
-  const daysById = computeConsecutiveDaysById(summaries);
+  const daysById = computeConsecutiveDaysById(summaries, openIds);
   const latestTitleById = buildLatestTitleById(summaries);
   const lines = [...staleIds].map((id) => {
     const days = (daysById.get(id) ?? 0) + 1;
@@ -375,10 +380,7 @@ const buildLatestTitleById = (
     right.date.localeCompare(left.date),
   );
   const entries = sortedSummaries.flatMap((summary) =>
-    (summary.taskIds ?? []).map((id): [string, string] => [
-      id,
-      summary.topPriorityTitle,
-    ]),
+    Object.entries(summary.taskTitleById ?? {}),
   );
   return new Map(entries.reverse());
 };

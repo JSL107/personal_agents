@@ -1,6 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 
 import { getTodayKstDate } from '../../common/util/kst-date.util';
+import { latestKrxTradingDayOnOrBefore } from '../../holiday/domain/business-calendar';
+import {
+  HOLIDAY_CALENDAR_PORT,
+  HolidayCalendarPort,
+} from '../../holiday/domain/port/holiday-calendar.port';
 import { summarizeExitBandUsage } from '../domain/exit-band';
 import { TradeStrategy } from '../domain/paper-account.type';
 import {
@@ -123,13 +128,25 @@ const countClassifications = (
 
 @Injectable()
 export class ScoreRecommendationsUsecase {
-  constructor(private readonly repository: PaperTradingPrismaRepository) {}
+  constructor(
+    private readonly repository: PaperTradingPrismaRepository,
+    @Inject(HOLIDAY_CALENDAR_PORT)
+    private readonly holidayCalendar: HolidayCalendarPort,
+  ) {}
 
   async execute(
     command: ScoreRecommendationsCommand,
   ): Promise<ScoreRecommendationsResult> {
-    const today = new Date(`${getTodayKstDate()}T00:00:00.000Z`);
-    const asOf = command.asOf ?? today;
+    // 기준일은 거래일로 맞춘다. 휴장일에는 평가일 지수가 없어 아래 가드에 걸려 저장되지 않고,
+    // 과거 기준일은 다시 채점할 수 없으니 그 주 성적이 원장에서 영구히 빠진다 — 금요일이
+    // 추석이던 2026-09-25 회차가 그렇게 빠졌다(최신 as_of=09-18). 휴장일에는 체결도 가격도
+    // 움직이지 않으므로 직전 거래일의 채점이 곧 "오늘의 성적" 이다.
+    const calendar = await this.holidayCalendar.load();
+    const today = latestKrxTradingDayOnOrBefore(
+      new Date(`${getTodayKstDate()}T00:00:00.000Z`),
+      calendar,
+    );
+    const asOf = latestKrxTradingDayOnOrBefore(command.asOf ?? today, calendar);
     const data = await this.repository.loadRecommendationScoreData({
       asOf,
       from: command.from,
@@ -295,7 +312,8 @@ export class ScoreRecommendationsUsecase {
     // 과거 기준일 재채점도 남기지 않는다. 거래는 tradeDate 로 잘라 시점이 복원되지만
     // 주문 상태(PaperOrder.status)는 이력이 없어 현재값을 읽는다. 그날 대기 중이던 주문이
     // 지금은 만료로 잡히므로, 뒤늦게 과거 날짜를 다시 채점하면 "그날의 성적" 이 아닌 숫자가
-    // 그날 행을 덮어쓴다. 상태 이력이 생기기 전까지는 오늘 기준일만 정본으로 인정한다.
+    // 그날 행을 덮어쓴다. 상태 이력이 생기기 전까지는 오늘 기준일만 정본으로 인정한다
+    // (오늘이 휴장일이면 직전 거래일이 오늘 기준일이다 — 위 `today` 계산).
     //
     // 평가일 지수가 없는 회차도 남기지 않는다. 초과수익은 진입일과 청산일 지수를 모두
     // 요구하고 보유 중인 추천은 청산일이 곧 평가일이라, 지수가 하루 비면 그 회차 전건이

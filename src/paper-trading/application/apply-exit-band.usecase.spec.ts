@@ -1,3 +1,4 @@
+import { holidayCalendarOf } from '../../holiday/domain/business-calendar';
 import { ResolveStrategyParametersUsecase } from '../../strategy-parameter/application/resolve-strategy-parameters.usecase';
 import { PaperTradingPrismaRepository } from '../infrastructure/paper-trading.prisma.repository';
 import { ApplyExitBandUsecase } from './apply-exit-band.usecase';
@@ -72,9 +73,16 @@ describe('ApplyExitBandUsecase', () => {
   const strategyParameters = {
     execute: jest.fn(),
   };
+  // 추석 연휴(2026-09-24~26). 8월 케이스에는 영향이 없다. `jest.fn` 이 아니라서
+  // `resetAllMocks` 에 지워지지 않는다.
+  const holidayCalendar = {
+    load: async () =>
+      holidayCalendarOf(['2026-09-24', '2026-09-25', '2026-09-26']),
+  };
   const usecase = new ApplyExitBandUsecase(
     repository as unknown as PaperTradingPrismaRepository,
     strategyParameters as unknown as ResolveStrategyParametersUsecase,
+    holidayCalendar,
   );
   const executedAt = new Date('2026-08-18T08:40:00.000Z');
 
@@ -190,6 +198,19 @@ describe('ApplyExitBandUsecase', () => {
     expect(repository.createExitBandOrders).toHaveBeenCalledWith(
       expect.objectContaining({
         targetTradeDate: new Date('2026-08-17T00:00:00.000Z'),
+      }),
+    );
+  });
+
+  it('추석 전날 실행은 연휴를 건너뛴 첫 거래일을 목표로 적는다', async () => {
+    await usecase.execute({
+      accounts: [entry('LONG_TERM', evaluation({ positions: [position()] }))],
+      executedAt: new Date('2026-09-23T08:40:00.000Z'),
+    });
+
+    expect(repository.createExitBandOrders).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targetTradeDate: new Date('2026-09-28T00:00:00.000Z'),
       }),
     );
   });

@@ -76,8 +76,14 @@ const mergeStalledTasks = ({
   daysById: Map<string, number>;
 }): StalledTask[] => {
   const byId = new Map<string, StalledTask>();
+  // 모델이 스스로 stalledTasks 에 둔 항목도 일수는 코드가 센 값으로 덮는다 — 모델은 프롬프트의
+  // 숫자를 옮겨 적을 뿐이라, 그대로 두면 코드가 고친 일수와 카드의 일수가 따로 논다.
   for (const task of current) {
-    byId.set(task.id, task);
+    const days = daysById.get(task.id);
+    byId.set(
+      task.id,
+      days === undefined ? task : { ...task, daysStalled: days + 1 },
+    );
   }
   for (const task of movedTasks) {
     byId.set(task.id, {
