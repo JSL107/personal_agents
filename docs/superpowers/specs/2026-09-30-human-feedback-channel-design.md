@@ -179,14 +179,19 @@ model AgentRunVerdict {
   note        String?  @db.Text
   slackUserId String   @map("slack_user_id")
   source      String   // 'button' | 'reaction'
-  createdAt   DateTime @default(now()) @map("created_at")
+  createdAt   DateTime @default(now()) @map("created_at")   // 처음 판정한 시각
+  updatedAt   DateTime @updatedAt @map("updated_at")        // 마지막으로 바꾼 시각
 
-  @@unique([agentRunId, facet, slackUserId])  // 다시 누르면 덮어쓴다 (마지막 판정이 유효)
+  @@unique([agentRunId, facet, slackUserId])  // 한 사람·한 실행·한 축에 판정 하나
   @@index([agentRunId])
   @@map("agent_run_verdict")
 }
 ```
 
+- **다시 누르면 덮어쓴다.** 저장은 `(agentRunId, facet, slackUserId)` 기준 `upsert` 로 한다 — 유일 제약만 두고
+  `create` 로 넣으면 두 번째 클릭이 실패한다. 덮어쓸 때 `verdict`·`note`·`source` 를 새 값으로 바꾸고
+  `createdAt` 은 유지한다. 채점은 마지막 판정(`updatedAt` 기준 최신 값)만 쓴다. 판정 변경 이력은 남기지 않는다
+  (필요해지면 별도 이력 테이블로 뺀다).
 - `facet`·`verdict` 값은 코드 상수 한 곳에 두고 버튼 빌더와 핸들러가 함께 읽는다. 버튼에서 받은 값은
   핸들러가 허용 목록으로 다시 검사한다(버튼 값은 클라이언트에서 온 입력이다).
 - 선호 학습에는 다섯 번째 신호원(`SignalSource`에 `'run_verdict'`)으로 잇는다. 기존 신호원과 같이
