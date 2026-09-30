@@ -223,7 +223,7 @@ pnpm dev              # watch 모드 기동
 - **BLOG · 이직 메이트 · 지원 추적** — 자연어 전용. 기존 Notion 초안 발행은 `BLOG_PUBLISH`가 자연어와 `/blog-publish`를 모두 지원
 - **VACATION** — `/휴가` 와 자연어 둘 다 지원
 
-Slack 설정: Event Subscriptions 에 `app_mention` + `message.im`, Bot scope 에 `app_mentions:read` + `im:history`. 채널 알림 스레드에서 멘션했을 때 부모 메시지를 맥락으로 읽으려면 `channels:history`(비공개 채널은 `groups:history`)도 필요하다.
+Slack 설정: Event Subscriptions 에 `app_mention` + `message.im` + `reaction_added`, Bot scope 에 `app_mentions:read` + `im:history` + `reactions:read`. 채널 알림 스레드에서 멘션했을 때 부모 메시지를 맥락으로 읽으려면 `channels:history`(비공개 채널은 `groups:history`)도 필요하다.
 
 </details>
 
@@ -399,14 +399,15 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 <br>
 
 1. [api.slack.com/apps](https://api.slack.com/apps) 에서 앱 생성 → **Socket Mode** 활성화 → App-Level Token(`connections:write`) = `SLACK_APP_TOKEN`
-2. **OAuth & Permissions** → Bot Token Scopes 에 `commands` `chat:write` `app_mentions:read` `im:history` `files:write` `files:read` → install → Bot Token = `SLACK_BOT_TOKEN`
+2. **OAuth & Permissions** → Bot Token Scopes 에 `commands` `chat:write` `app_mentions:read` `im:history` `files:write` `files:read` `reactions:read` → install → Bot Token = `SLACK_BOT_TOKEN`
    - `files:write` 는 장마감 리포트 차트를 이미지로 올리는 데 쓴다. 없으면 업로드가 `missing_scope` 로 막히는데 요약·상세는 그대로 나가므로 **그림만 조용히 빠진다** — 로그의 `스레드 이미지 업로드 실패` 경고가 유일한 신호다.
    - `files:read` 는 그 차트를 **메인 메시지로 올릴 때** 쓴다. 올린 파일을 슬랙이 이미지로 처리했는지 `files.info` 로 확인한 뒤 메시지를 보내는데(안 기다리면 이미지 자리가 빈 채로 뜬다), 이 스코프가 없으면 그 확인이 `missing_scope` 로 막혀 **매 회차 종전 배치(요약이 메인·그림이 스레드)로 물러선다**. 그림이 나오긴 하므로 겉보기로는 고장이 아니고, 로그의 `그림을 메인에 싣지 못해 종전 배치로 발송` 경고가 유일한 신호다. 채널에 공유되지 않은 파일이 회차마다 하나씩 쌓이는 것도 이때다.
    - `channels:history` · `groups:history` 는 채널 알림 스레드에서 이대리를 불렀을 때 부모 메시지(알림 본문)를 읽는 데 쓴다. 없으면 `missing_scope` 로 조회가 실패해 **"이거"가 무엇인지 모른 채 답한다** — 로그의 `스레드 부모 조회 실패` 경고가 유일한 신호다. DM 스레드는 `im:history` 로 충분하다.
+   - `reactions:read` 는 이모지 반응(👍/👎 선호 신호, ✋ 수집함, 📌 할 일)을 받는 데 쓴다. 5번의 `reaction_added` 구독과 **둘 다** 있어야 이벤트가 들어온다. 빠져 있어도 에러는 나지 않는다. 다만 `slack_reaction_signal`·`slack_inbox_item` 이 0행인 것만으로 이 설정이 빠졌다고 단정할 수는 없다 — 둘 다 있어도 0행인 경우가 있었다.
    - 이미 설치한 앱에 스코프를 더했으면 **Reinstall to Workspace** 로 재설치해야 토큰에 반영된다(설정 화면에 추가만 해도 기존 토큰은 그대로다).
 3. **Basic Information** → Signing Secret = `SLACK_SIGNING_SECRET`
 4. **Slash Commands** 에 15종(`/blog-publish` 포함) 등록 (또는 **App Manifest** 의 `slash_commands` 배열로 일괄 선언 후 Reinstall)
-5. **Event Subscriptions** → `app_mention` + `message.im` 구독 → Reinstall
+5. **Event Subscriptions** → `app_mention` + `message.im` + `reaction_added` 구독 → Reinstall
 6. `.env` 채운 뒤 `pnpm dev` → `이대리 Slack 봇이 Socket Mode 로 기동되었습니다.` 로그 확인
 
 > Socket Mode 라 Request URL 은 불필요(UI 가 요구하면 더미 값). 채널 멘션만/DM만 필요하면 해당 이벤트만 켜도 된다.
