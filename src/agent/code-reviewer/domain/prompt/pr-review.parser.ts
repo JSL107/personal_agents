@@ -1,4 +1,8 @@
 import { DomainStatus } from '../../../../common/exception/domain-status.enum';
+import {
+  buildJsonParseCauseMessage,
+  extractJsonObjectText,
+} from '../../../../common/util/llm-json-extract.util';
 import { CodeReviewerException } from '../code-reviewer.exception';
 import {
   ApprovalRecommendation,
@@ -11,8 +15,6 @@ import {
 } from '../code-reviewer.type';
 import { CodeReviewerErrorCode } from '../code-reviewer-error-code.enum';
 
-const CODE_FENCE_PATTERN = /^```(?:json)?\s*([\s\S]*?)\s*```$/;
-
 const RISK_LEVELS: ReadonlySet<RiskLevel> = new Set(['low', 'medium', 'high']);
 const APPROVAL_RECOMMENDATIONS: ReadonlySet<ApprovalRecommendation> = new Set([
   'approve',
@@ -20,10 +22,10 @@ const APPROVAL_RECOMMENDATIONS: ReadonlySet<ApprovalRecommendation> = new Set([
   'comment',
 ]);
 
-// LLM 응답을 PullRequestReview 구조로 파싱한다. 코드 펜스가 감싸 있어도 벗긴다.
+// LLM 응답을 PullRequestReview 구조로 파싱한다. 코드 펜스·앞뒤 설명문은 extractJsonObjectText 가 벗긴다.
 export const parsePullRequestReview = (text: string): PullRequestReview => {
-  const cleaned = stripCodeFence(text.trim());
-  const parsed = parseJson(cleaned);
+  const cleaned = extractJsonObjectText(text);
+  const parsed = parseJson(cleaned, text);
 
   if (!isPullRequestReviewShape(parsed)) {
     throw new CodeReviewerException({
@@ -52,12 +54,7 @@ export const parsePullRequestReview = (text: string): PullRequestReview => {
   return { ...parsed, findings };
 };
 
-const stripCodeFence = (text: string): string => {
-  const match = text.match(CODE_FENCE_PATTERN);
-  return match ? match[1].trim() : text;
-};
-
-const parseJson = (text: string): unknown => {
+const parseJson = (text: string, rawText: string): unknown => {
   try {
     return JSON.parse(text);
   } catch (error: unknown) {
@@ -65,7 +62,8 @@ const parseJson = (text: string): unknown => {
       code: CodeReviewerErrorCode.INVALID_MODEL_OUTPUT,
       message: '모델 응답을 JSON 으로 파싱하지 못했습니다.',
       status: DomainStatus.BAD_GATEWAY,
-      cause: error,
+      // raw 앞부분을 남겨야 원장·로그만으로 어디서 깨졌는지 본다 — 없으면 재현 불가.
+      cause: new Error(buildJsonParseCauseMessage(error, rawText)),
     });
   }
 };
