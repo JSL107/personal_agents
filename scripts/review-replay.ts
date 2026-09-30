@@ -80,6 +80,9 @@ interface ResolvedMiss {
   pullNumber: number;
   headSha: string;
   headShaSource: 'input' | 'latest-card';
+  // diff 에서 해석한 전체 경로. 재채점이 파일 이름만으로 다시 매칭하지 않게 남긴다 — 이름만 비교하면
+  // 다른 디렉터리의 동명 파일 지적까지 재현으로 센다. 해석하지 못했거나 이 칸이 생기기 전 보고서면 없다.
+  filePath?: string;
 }
 
 // 파일 이름만 있던 미탐 중 전체 경로로 바꾸지 못한 것
@@ -299,6 +302,14 @@ const replay = async (
               : {}),
           });
         }
+        if (resolution.kind === 'full' || resolution.kind === 'resolved') {
+          const resolved = resolvedMisses.find(
+            (miss) => miss.id === finding.id,
+          );
+          if (resolved !== undefined) {
+            resolved.filePath = resolution.filePath;
+          }
+        }
         return { ...finding, filePath: resolution.filePath };
       });
     } catch (error: unknown) {
@@ -400,9 +411,26 @@ const rescore = async (
     }
     const original = readMisses(saved.options.misses);
     if (replacementPath === undefined) {
+      // 재생 때 해석한 전체 경로를 되살린다. 없으면(해석 실패·옛 보고서) 이름만으로 매칭되므로 알린다.
+      const resolvedPathOf = new Map(
+        saved.resolvedMisses.map((miss) => [miss.id, miss.filePath]),
+      );
+      let nameOnly = 0;
       for (const entry of original) {
         const labeled = toMissedLabeledFinding(entry);
-        labeledById.set(labeled.id, labeled);
+        const resolvedPath = resolvedPathOf.get(labeled.id);
+        if (resolvedPath === undefined && !entry.filePath.includes('/')) {
+          nameOnly += 1;
+        }
+        labeledById.set(labeled.id, {
+          ...labeled,
+          filePath: resolvedPath ?? labeled.filePath,
+        });
+      }
+      if (nameOnly > 0) {
+        notes.push(
+          `주의: 미탐 ${nameOnly}건은 재생 때 해석한 경로가 보고서에 없어 파일 이름만으로 매칭했다 — 다른 디렉터리 동명 파일 지적도 재현으로 셀 수 있다. 전체 경로를 담은 --misses 로 다시 매길 것`,
+        );
       }
     } else {
       const replacement = readMisses(replacementPath);
