@@ -1,8 +1,55 @@
 import { GeneratePaperRecommendationUsecase } from '../../../agent/paper-recommend/application/generate-paper-recommendation.usecase';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { holidayCalendarOf } from '../../../holiday/domain/business-calendar';
 import { PaperRecommendAutopilotTask } from './paper-recommend.autopilot-task';
 
+const NO_HOLIDAYS = { load: async () => holidayCalendarOf([]) };
+
 describe('PaperRecommendAutopilotTask', () => {
+  describe('휴장일', () => {
+    // 2026-09-30 `schedule_item.is_holiday` 의 추석 행.
+    const chuseok = {
+      load: async () =>
+        holidayCalendarOf(['2026-09-24', '2026-09-25', '2026-09-26']),
+    };
+
+    it.each(['2026-09-24', '2026-09-25'])(
+      '휴장일(%s)에는 추천 판단을 돌리지 않는다',
+      async (firedAtKst) => {
+        const recommendation = { execute: jest.fn() };
+        const task = new PaperRecommendAutopilotTask(
+          recommendation as unknown as GeneratePaperRecommendationUsecase,
+          chuseok,
+        );
+
+        await expect(
+          task.run({ ownerSlackUserId: 'U1', firedAtKst }),
+        ).resolves.toEqual({
+          skip: true,
+          summaryText: `휴장일(${firedAtKst}) — 모의투자 추천 판단 건너뜀`,
+        });
+        expect(recommendation.execute).not.toHaveBeenCalled();
+      },
+    );
+
+    it('연휴 직전 거래일(09-23)은 평소대로 판단한다', async () => {
+      const recommendation = {
+        execute: jest.fn().mockResolvedValue({ completed: [], failed: [] }),
+      };
+      const task = new PaperRecommendAutopilotTask(
+        recommendation as unknown as GeneratePaperRecommendationUsecase,
+        chuseok,
+      );
+
+      await task.run({ ownerSlackUserId: 'U1', firedAtKst: '2026-09-23' });
+
+      expect(recommendation.execute).toHaveBeenCalledWith({
+        decidedAt: new Date('2026-09-23T19:30:00+09:00'),
+        triggerType: TriggerType.AUTOPILOT_PAPER_RECOMMEND_CRON,
+      });
+    });
+  });
+
   it('스케줄 날짜의 19:30 KST 판단 시각과 autopilot trigger로 추천 usecase를 실행한다', async () => {
     const recommendation = {
       execute: jest.fn().mockResolvedValue({
@@ -51,6 +98,7 @@ describe('PaperRecommendAutopilotTask', () => {
     };
     const task = new PaperRecommendAutopilotTask(
       recommendation as unknown as GeneratePaperRecommendationUsecase,
+      NO_HOLIDAYS,
     );
 
     await expect(
@@ -90,6 +138,7 @@ describe('PaperRecommendAutopilotTask', () => {
     };
     const task = new PaperRecommendAutopilotTask(
       recommendation as unknown as GeneratePaperRecommendationUsecase,
+      NO_HOLIDAYS,
     );
 
     await expect(
@@ -148,6 +197,7 @@ describe('PaperRecommendAutopilotTask', () => {
     };
     const task = new PaperRecommendAutopilotTask(
       recommendation as unknown as GeneratePaperRecommendationUsecase,
+      NO_HOLIDAYS,
     );
 
     const result = await task.run({
@@ -206,6 +256,7 @@ describe('PaperRecommendAutopilotTask', () => {
     };
     const task = new PaperRecommendAutopilotTask(
       recommendation as unknown as GeneratePaperRecommendationUsecase,
+      NO_HOLIDAYS,
     );
 
     const result = await task.run({
@@ -245,6 +296,7 @@ describe('PaperRecommendAutopilotTask', () => {
     };
     const task = new PaperRecommendAutopilotTask(
       recommendation as unknown as GeneratePaperRecommendationUsecase,
+      NO_HOLIDAYS,
     );
 
     const result = await task.run({
@@ -279,6 +331,7 @@ describe('PaperRecommendAutopilotTask', () => {
     };
     const task = new PaperRecommendAutopilotTask(
       recommendation as unknown as GeneratePaperRecommendationUsecase,
+      NO_HOLIDAYS,
     );
 
     const result = await task.run({
@@ -316,6 +369,7 @@ describe('PaperRecommendAutopilotTask', () => {
     };
     const task = new PaperRecommendAutopilotTask(
       recommendation as unknown as GeneratePaperRecommendationUsecase,
+      NO_HOLIDAYS,
     );
 
     const result = await task.run({
@@ -359,6 +413,7 @@ describe('PaperRecommendAutopilotTask', () => {
     };
     const task = new PaperRecommendAutopilotTask(
       recommendation as unknown as GeneratePaperRecommendationUsecase,
+      NO_HOLIDAYS,
     );
 
     const result = await task.run({
@@ -408,6 +463,7 @@ describe('PaperRecommendAutopilotTask', () => {
     };
     const task = new PaperRecommendAutopilotTask(
       recommendation as unknown as GeneratePaperRecommendationUsecase,
+      NO_HOLIDAYS,
     );
 
     const result = await task.run({
@@ -456,6 +512,7 @@ describe('PaperRecommendAutopilotTask', () => {
     };
     const task = new PaperRecommendAutopilotTask(
       recommendation as unknown as GeneratePaperRecommendationUsecase,
+      NO_HOLIDAYS,
     );
 
     const result = await task.run({
@@ -507,6 +564,7 @@ describe('PaperRecommendAutopilotTask', () => {
     };
     const task = new PaperRecommendAutopilotTask(
       recommendation as unknown as GeneratePaperRecommendationUsecase,
+      NO_HOLIDAYS,
     );
 
     const result = await task.run({

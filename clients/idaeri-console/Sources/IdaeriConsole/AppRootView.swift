@@ -29,6 +29,8 @@ struct AppRootView: View {
         scene.scaleMode = .resizeFill
         return scene
     }()
+    /// 3D 화면도 같은 이유로 여기서 붙든다(웹뷰째로).
+    @StateObject private var office3D = Office3DController()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -55,7 +57,8 @@ struct AppRootView: View {
                     onApprove: approve,
                     onReject: reject,
                     isPresidentBarOpen: $isPresidentBarOpen,
-                    selectedAgent: $selectedOfficeAgent
+                    selectedAgent: $selectedOfficeAgent,
+                    office3D: office3D
                 )
             }
         }

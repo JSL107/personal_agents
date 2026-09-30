@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 
 import { ScheduleRepositoryPort } from '../domain/port/schedule.repository.port';
 import { ScheduleItemRecord, ScheduleStatus } from '../domain/schedule.type';
@@ -36,6 +36,22 @@ describe('DeleteScheduleUsecase', () => {
       slackUserId: 'U1',
     });
     expect(repository.deleteById).toHaveBeenCalledWith(1);
+  });
+
+  // 공휴일 행은 영업일 달력의 정본이다. 지우면 다음 주간 동기화까지 그 날이 거래일로 계산된다.
+  it('공휴일 행은 지우지 않는다', async () => {
+    const repository = createRepository({
+      ...found,
+      title: '추석',
+      isHoliday: true,
+    });
+    await expect(
+      new DeleteScheduleUsecase(repository).execute({
+        id: 1,
+        slackUserId: 'U1',
+      }),
+    ).rejects.toThrow(BadRequestException);
+    expect(repository.deleteById).not.toHaveBeenCalled();
   });
 
   it('없는 항목이면 404 로 끊는다 — Prisma 예외가 500 으로 새는 것을 막는다', async () => {

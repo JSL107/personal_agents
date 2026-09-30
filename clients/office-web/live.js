@@ -117,6 +117,15 @@ const commuteSeconds = query.has("commute") ? Number(query.get("commute")) : 0;
  * 경우에만 불러온다 — 2D 로 쓰는 사람까지 1MB 넘는 라이브러리를 받게 할 이유가 없다.
  */
 const use3d = query.get("renderer") === "3d";
+/**
+ * `?hosted=1` — 맥 콘솔 앱의 WKWebView 안에서 돈다(`Office3DView.swift`).
+ *
+ * 데이터를 스스로 받지 않고 **앱이 먹여 준다.** 평면도는 앱이 실행 시점에 계산해 문서가 뜨기 전에
+ * `window.idaeriLayouts` 로 넣고, 스냅샷·실시간 변화는 앱의 기존 연결이 받아 `window.idaeri.push`
+ * 로 밀어 준다. 그래서 낡은 `layout-*.json` 도, 토큰·프록시도 필요 없다. 클릭·방 확대·esc 는
+ * `webkit.messageHandlers.idaeri` 로 앱에 되돌려 보낸다(인스펙터·지시 바는 앱 몫).
+ */
+const hosted = query.get("hosted") === "1";
 /** 3D 렌더러 클래스. `main()` 이 필요할 때만 불러와 채운다. */
 let Office3DRenderer = null;
 /**
@@ -175,22 +184,30 @@ let agentsWithoutSeat = [];
  *
  * 두 배치를 오갈 때 5% 이득이 있어야 바꾸는 이유는 **경계에서 떨리기 때문**이다 —
  * 창을 조금만 끌어도 배치가 왕복하면 사무실이 통째로 다시 그려진다.
+ *
+ * 3D 는 사무실을 비스듬히 돌려 담으므로 위 산식이 안 맞는다 — 렌더러가 실제 카메라 계산으로 잰다.
  */
 function chooseZoneColumns(width, height, current) {
   const sizeFor = (columns) => {
     const plan = layouts[columns].plan;
-    return Math.min(width / plan.columns, height / plan.rows);
+    return use3d
+      ? Office3DRenderer.tileSizeFor(plan, width, height)
+      : Math.min(width / plan.columns, height / plan.rows);
   };
   if (!current) {
-    return sizeFor(2) > sizeFor(3) ? 2 : 3;
+    // 3D 에서는 어느 비율이든 2열이 조금은 크다(넓은 창에서 1~3%, 세로로 긴 창에서 17% 이상).
+    // 몇 % 때문에 익숙한 3열을 버리지 않도록, 첫 선택에도 전환과 같은 5% 문턱을 건다.
+    const bias = use3d ? 1.05 : 1;
+    return sizeFor(2) > sizeFor(3) * bias ? 2 : 3;
   }
   const candidate = current === 2 ? 3 : 2;
   return sizeFor(candidate) >= sizeFor(current) * 1.05 ? candidate : current;
 }
 
 function resize() {
-  const width = Math.max(320, window.innerWidth - 24);
-  const height = Math.max(240, window.innerHeight - 52);
+  // 가로 24·세로 52 는 본문 여백과 아래 상태 줄 몫이다. 앱 안에서는 둘 다 없다(앱에 자기 머리줄이 있다).
+  const width = Math.max(320, window.innerWidth - (hosted ? 0 : 24));
+  const height = Math.max(240, window.innerHeight - (hosted ? 0 : 52));
   // **캔버스 크기를 대입하면 그려 둔 그림이 지워진다 — 같은 값을 다시 넣어도 그렇다.**
   // 움직이는 화면은 다음 프레임이 다시 채우지만 정지 렌더는 한 번만 그리므로, 창 크기가
   // 뒤늦게 확정되면(캡처 도구가 그렇다) 화면이 통째로 빈 채 남는다 — 오류도 없이 텅 빈
@@ -964,6 +981,9 @@ function strollTick(now) {
 // MARK: - 백엔드
 
 async function fetchSnapshot() {
+  if (hosted) {
+    return hostedSnapshot();
+  }
   const response = await fetch("/v1/console/snapshot");
   if (!response.ok) {
     throw new Error(`스냅샷 실패 (HTTP ${response.status})`);
@@ -1093,24 +1113,7 @@ function subscribe() {
     } catch {
       return;
     }
-    const payload = event.data ?? event;
-    const agentType = payload.agentType ?? payload.agent?.agentType;
-    if (agentType && agents[agentType]) {
-      if (payload.state) {
-        agents[agentType] = { ...agents[agentType], state: payload.state };
-      }
-      if (payload.bubble) {
-        agents[agentType] = { ...agents[agentType], bubble: payload.bubble };
-      }
-      // 일이 시작되면 자리로 돌아온다 — 복도에 선 채 "진행 중" 인 화면은 읽히지 않는다.
-      if (payload.state === "IN_PROGRESS" && strolling.has(agentType)) {
-        const seat = seatOf(agentType);
-        strolling.delete(agentType);
-        if (seat) {
-          walkTo(agentType, seat, { onArrive: () => sendHome(agentType) });
-        }
-      }
-    }
+    applyStreamPayload(event.data ?? event);
     // **이벤트만으로는 화면을 다 채울 수 없다.** `state.changed` 는 상태만 싣고 활동
     // 문구를 주지 않으며, 승인 열림·해소는 그 사람의 파생 상태를 담지 않는다. 그대로 두면
     // "지금 무슨 일 중" 이 다음 폴링(20초)까지 옛 값으로 남고, 그보다 짧게 끝나는 실행은
@@ -1120,6 +1123,109 @@ function subscribe() {
   stream.onerror = () => {
     setStatus("실시간 연결이 끊겼다 — 다시 붙는 중", true);
   };
+}
+
+/** 상태가 바뀐 사람만 바로 반영한다. 브라우저 스트림과 앱이 밀어 준 이벤트가 같은 길을 탄다. */
+function applyStreamPayload(payload) {
+  const agentType = payload.agentType ?? payload.agent?.agentType;
+  if (agentType && agents[agentType]) {
+    if (payload.state) {
+      agents[agentType] = { ...agents[agentType], state: payload.state };
+    }
+    if (payload.bubble) {
+      agents[agentType] = { ...agents[agentType], bubble: payload.bubble };
+    }
+    // 일이 시작되면 자리로 돌아온다 — 복도에 선 채 "진행 중" 인 화면은 읽히지 않는다.
+    if (payload.state === "IN_PROGRESS" && strolling.has(agentType)) {
+      const seat = seatOf(agentType);
+      strolling.delete(agentType);
+      if (seat) {
+        walkTo(agentType, seat, { onArrive: () => sendHome(agentType) });
+      }
+    }
+  }
+}
+
+// MARK: - 앱 안에서 (hosted)
+
+/** 앱이 마지막으로 밀어 준 스냅샷. 첫 값이 오기 전에 부르면 올 때까지 기다린다. */
+let latestHostedSnapshot = null;
+let hostedSnapshotWaiters = [];
+/** 창이 가려져 앱이 재웠는가. 자는 동안은 프레임을 예약하지 않는다(`applySceneSleep` 과 같은 판정). */
+let sleeping = false;
+/** 자는 동안 멈춘 프레임 루프를 다시 거는 함수. `main()` 이 루프를 만들 때 채운다. */
+let resumeFrames = null;
+
+function hostedSnapshot() {
+  if (latestHostedSnapshot) {
+    return Promise.resolve(latestHostedSnapshot);
+  }
+  return new Promise((resolve) => hostedSnapshotWaiters.push(resolve));
+}
+
+function postToHost(message) {
+  window.webkit?.messageHandlers?.idaeri?.postMessage(message);
+}
+
+/**
+ * 앱 → 화면. 앱은 `ready`(렌더러가 선 뒤 `main()` 이 보낸다)를 받은 뒤에만 부른다.
+ *
+ * - `snapshot` 지금 상태 전부(백엔드 스냅샷과 같은 모양 — 앱이 받은 것을 그대로 다시 싣는다)
+ * - `event`    상태가 바뀐 사람 한 명(`{agentType, state, bubble}`)
+ * - `sleep`    창이 가려졌다/다시 보인다
+ * - `select`   앱에서 인스펙터가 닫혔다(null) 등 — 발밑 선택 링을 맞춘다
+ * - `focus`    앱의 esc 가 방 확대를 풀었다(null)
+ */
+function receiveFromHost(message) {
+  switch (message?.type) {
+    case "snapshot":
+      latestHostedSnapshot = message.data;
+      for (const resolve of hostedSnapshotWaiters) {
+        resolve(message.data);
+      }
+      hostedSnapshotWaiters = [];
+      // 시작 전(`rendererReady` 전)에는 `main()` 이 이 값을 직접 가져가 적용한다.
+      if (rendererReady) {
+        refreshSnapshot();
+      }
+      break;
+    case "event":
+      if (rendererReady) {
+        applyStreamPayload(message.data ?? {});
+      }
+      break;
+    case "sleep":
+      sleeping = Boolean(message.value);
+      if (!sleeping) {
+        resumeFrames?.();
+      }
+      break;
+    case "select":
+      if (renderer) {
+        renderer.selectedAgent = message.value ?? null;
+      }
+      break;
+    case "focus":
+      renderer?.setFocus?.(message.value ?? null);
+      break;
+    default:
+      break;
+  }
+}
+
+if (hosted) {
+  window.idaeri = { push: receiveFromHost };
+  document.body.classList.add("hosted");
+  for (const name of ["office:agent-click", "office:president-click", "office:focus", "office:deselect"]) {
+    window.addEventListener(name, (event) => postToHost({ type: name, ...(event.detail ?? {}) }));
+  }
+  // esc 는 렌더러가 먼저 한 겹(선택 → 방 확대) 푼다. 앱에는 인스펙터를 닫으라고만 알린다 —
+  // 방 확대가 풀리는 것은 렌더러가 내는 `office:focus` 가 따로 알린다.
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      postToHost({ type: "escape" });
+    }
+  });
 }
 
 /**
@@ -1224,10 +1330,15 @@ function setStatus(text, isError = false) {
 
 async function main() {
   setStatus("평면도를 읽는 중…");
-  const [three, two] = await Promise.all([
-    fetch("layout-3.json").then((response) => response.json()),
-    fetch("layout-2.json").then((response) => response.json()),
-  ]);
+  const [three, two] = hosted
+    ? [window.idaeriLayouts?.[3], window.idaeriLayouts?.[2]]
+    : await Promise.all([
+        fetch("layout-3.json").then((response) => response.json()),
+        fetch("layout-2.json").then((response) => response.json()),
+      ]);
+  if (!three || !two) {
+    throw new Error("앱이 평면도를 넣어 주지 않았다 (window.idaeriLayouts)");
+  }
   layouts = { 3: three, 2: two };
   // 옛 평면도는 출퇴근 시각을 싣고 오지 않는다. 그대로 두면 첫 출근 판정에서 죽는데, 화면에는
   // **아무 오류 없이 빈 사무실**이 남아 "백엔드가 꺼졌다" 와 구별되지 않는다. 설치본은 평면도를
@@ -1264,6 +1375,11 @@ async function main() {
     }
   }
   rendererReady = true;
+  // 앱은 `ready` 를 받자마자 스냅샷·잠·선택을 한꺼번에 민다. 렌더러가 서기 전에 알리면 선택은
+  // 받을 곳이 없어 버려지고(`receiveFromHost`) 다시 오지 않는다 — 그래서 여기서 알린다.
+  if (hosted) {
+    postToHost({ type: "ready" });
+  }
 
   await refreshSnapshot();
   window.addEventListener("resize", resize);
@@ -1370,8 +1486,11 @@ async function main() {
     return;
   }
 
-  subscribe();
-  setInterval(refreshSnapshot, SNAPSHOT_INTERVAL_SECONDS * 1000);
+  // 앱 안에서는 앱의 연결이 스냅샷·변화를 밀어 준다 — 여기서 따로 열면 같은 백엔드에 연결이 둘이 된다.
+  if (!hosted) {
+    subscribe();
+    setInterval(refreshSnapshot, SNAPSHOT_INTERVAL_SECONDS * 1000);
+  }
 
   let previous = performance.now();
   const frame = (timestamp) => {
@@ -1409,6 +1528,21 @@ async function main() {
       presidentAlarm,
       summary: summaryCounts(),
     });
+    if (sleeping) {
+      // 창이 가려졌다 — 예약을 끊어 계산도 그리기도 멈춘다. 깨면 `resumeFrames` 가 다시 건다.
+      frameScheduled = false;
+      return;
+    }
+    requestAnimationFrame(frame);
+  };
+  let frameScheduled = true;
+  resumeFrames = () => {
+    if (frameScheduled) {
+      return;
+    }
+    frameScheduled = true;
+    // 자던 시간을 한 프레임에 몰아 흘리지 않는다 — 사람이 벽을 건너뛴다(`advanceVirtually` 참조).
+    previous = performance.now();
     requestAnimationFrame(frame);
   };
   requestAnimationFrame(frame);

@@ -2,6 +2,10 @@ import { Prisma } from '@prisma/client';
 
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import {
+  HolidayCalendar,
+  holidayCalendarOf,
+} from '../../../holiday/domain/business-calendar';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { ModelProviderName } from '../../../model-router/domain/model-router.type';
 import { OpenPaperAccountUsecase } from '../../../paper-trading/application/open-paper-account.usecase';
@@ -58,6 +62,10 @@ describe('GeneratePaperRecommendationUsecase', () => {
   const strategyParameters = {
     execute: jest.fn(),
   } as unknown as jest.Mocked<ResolveStrategyParametersUsecase>;
+  // 공휴일 없는 달력. `jest.fn` 이 아니라서 `resetAllMocks` 에 지워지지 않는다.
+  const loadNoHolidays = async (): Promise<HolidayCalendar> =>
+    holidayCalendarOf([]);
+  const holidayCalendar = { load: loadNoHolidays };
   // 실제 시스템 프롬프트는 run 안의 갱신으로만 남으므로, 그 인자를 볼 수 있게 참조를 둔다.
   const updateInputSnapshot = jest.fn();
 
@@ -75,6 +83,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
       modelRouter,
       agentRunService,
       strategyParameters,
+      holidayCalendar,
     );
     // 활성 행이 코드 상수와 같은 상태가 기본이다 — 이 PR 은 값을 옮긴 것이지 바꾼 것이 아니다.
     strategyParameters.execute.mockResolvedValue({
@@ -285,6 +294,26 @@ describe('GeneratePaperRecommendationUsecase', () => {
     expect(result.failed).toEqual([
       { strategy: 'LONG_TERM', message: 'screen failed' },
     ]);
+  });
+
+  // 달력을 run 밖에서 읽으면 조회 실패가 실행 원장에 남지 않고 회차가 통째로 사라진다.
+  it('달력 조회 실패도 AgentRun 내부에서 FAILED 처리되도록 run callback 안에서 읽는다', async () => {
+    holidayCalendar.load = async () => {
+      throw new Error('달력 조회 실패');
+    };
+    try {
+      const result = await usecase.execute({
+        strategies: ['LONG_TERM'],
+        decidedAt,
+      });
+
+      expect(agentRunService.execute).toHaveBeenCalledTimes(1);
+      expect(result.failed).toEqual([
+        { strategy: 'LONG_TERM', message: '달력 조회 실패' },
+      ]);
+    } finally {
+      holidayCalendar.load = loadNoHolidays;
+    }
   });
 
   it('후보 밖 보유 종목도 includedIndicators 지표를 모델 prompt에 포함한다', async () => {

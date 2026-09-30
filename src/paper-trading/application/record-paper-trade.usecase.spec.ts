@@ -40,6 +40,7 @@ interface RepositoryFixture {
       upsert: jest.Mock;
     };
     paperTrade: { findUnique: jest.Mock; create: jest.Mock };
+    scheduleItem: { findMany: jest.Mock };
     $transaction: jest.Mock;
   };
 }
@@ -115,6 +116,8 @@ const createFixture = (input?: {
       findUnique: jest.fn(),
       create: jest.fn(),
     },
+    // 결제일 계산이 읽는 공휴일 달력. 공휴일 없음.
+    scheduleItem: { findMany: jest.fn().mockResolvedValue([]) },
     $transaction: jest.fn(
       async (callback: (client: typeof transaction) => Promise<unknown>) =>
         callback(transaction),

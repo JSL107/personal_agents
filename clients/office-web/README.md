@@ -126,18 +126,28 @@ pnpm capture   # 사무실을 한 판 그려 /tmp/idaeri-office.png 로 저장�
 2D 와 같은 평면도·같은 움직임(`live.js`)을 쓰고 **그리는 쪽만** three.js 로 바꾼 것이다. 브라우저는
 `?renderer=3d`, 윈도우 앱은 메뉴 「사무실 ▸ 3D 화면 (시험)」(설정 파일의 `renderer`)으로 고른다.
 캡처는 `electron . --renderer=3d --capture=<파일>` — 저장된 선택을 이번 실행에서만 덮어쓴다.
+`--query=room=planning`(주소에 쿼리 덧붙이기 — 방 확대·`walk` 등), `--window=1107x804`(창 크기)를
+함께 줄 수 있다. `?walk=` 보고(누가 어느 가구에 어떤 자세로 섰는지)는 캡처 출력의 `보고:` 줄에 찍힌다.
 
 - **조감 + 방 확대** — 방을 누르면 카메라가 그 방으로 다가가고, `esc`·방 밖 클릭으로 돌아온다.
-  사람을 누르면 `office:agent-click`, 대표는 `office:president-click`, 확대가 바뀌면 `office:focus`
-  사건을 `window` 에 낸다(맥 앱이 WKWebView 로 얹을 때 받는 자리).
-- **이름표** — 일하는 중·승인 대기·실패인 사람만 늘 띄우고, 나머지는 마우스를 올릴 때 이름·상태·
-  하는 일을 함께 보인다. 서른 명 이름이 다 뜨면 활성 신호가 묻힌다.
+  사람을 누르면 `office:agent-click`, 대표는 `office:president-click`, 확대가 바뀌면 `office:focus`,
+  바닥을 눌러 선택이 풀리면 `office:deselect` 사건을 `window` 에 낸다(맥 앱이 WKWebView 로 얹을 때 받는 자리).
+- **이름표** — 전원 늘 띄운다. 일하는 중·승인 대기·실패인 사람은 또렷하게, 나머지는 흐린 판으로
+  둬서 활성 신호가 묻히지 않게 한다. 마우스를 올리면 이름 옆에 상태·하는 일까지 보인다.
+- **배치 고르기** — 3열·2열 중 무엇을 쓸지 3D 카메라로 실제 담기는 크기를 재서 고른다. 2D 산식
+  (`폭/열 · 높이/행`)은 비스듬히 돌린 조감에 안 맞아 세로로 긴 창에서 빈 여백이 커졌다.
 - **그림체는 코드가 강제한다** — 색은 `three/style.js` 의 `PALETTE` 이름으로만, 형태는 둥근 상자·
   원기둥·구 도우미로만 조립한다. 외곽선(원본 스프라이트의 또렷함)은 렌더러가 모든 물체에 붙인다.
   가구 하나 = `three/furniture3d/<kind>.js` 파일 하나, 디자인 기준은 원본 `sprites/furn-*.png`.
+- **바뀐 것이 없으면 그리지 않는다** — 앉은 사람은 움직이지 않으므로 사무실은 대부분 멈춘 그림이다.
+  상태·말풍선·hover·선택·창 크기가 바뀔 때만 그리고(안전망으로 1초에 한 번), 걷는 사람이 있는 동안은
+  30fps 로 그린다(`three/frame-pace.js`). 벽·가구는 재질마다 한 덩어리로 합쳐 그리기 호출을 줄인다
+  (`three/static-merge.js`). `draw` 가 읽는 입력을 늘리면 `frameSignature` 에도 넣어야 그 변화가 바로 보인다.
 
 ```bash
 pnpm check:style                          # 팔레트·크기·벽걸이 규칙
+pnpm check:pace                           # 프레임 건너뛰기(멈춤 1fps · 걷기 30fps · 변화는 즉시)
+pnpm check:merge                          # 합친 뒤에도 삼각형 수·경계 상자가 그대로인지
 node scripts-check-style.mjs --require-all # + 평면도의 모든 가구가 제 빌더를 가졌는지
 pnpm vendor:three                          # three.js 버전을 올린 뒤 vendor/three 를 다시 채운다
 ```
@@ -165,7 +175,8 @@ pnpm vendor:three                          # three.js 버전을 올린 뒤 vendo
 
 - `office.js` — 2D 그리기 전부(바닥·벽·창문·가구·사람·라벨). 색 치환도 여기
 - `three/` — 3D 그리기. `renderer3d.js`(장면·카메라·입력) · `overlay3d.js`(글자 겹침층) ·
-  `character.js`(직원) · `style.js`(그림체 규칙) · `furniture3d/`(가구 빌더)
+  `character.js`(직원) · `style.js`(그림체 규칙) · `furniture3d/`(가구 빌더) ·
+  `frame-pace.js`(언제 다시 그릴지) · `static-merge.js`(멈춘 물체 합치기)
 - `vendor/three/` — 동봉한 three.js(번들러가 없어 `index.html` 의 import map 이 이리로 잇는다)
 - `live.js` — 백엔드에서 상태를 받아 오고 사람을 걷게 한다
 - `serve.py` — 브라우저로 볼 때 쓰는 개발용 서버. 백엔드가 CORS 를 열지 않아 프록시가 필요하다

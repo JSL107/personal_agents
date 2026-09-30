@@ -11,6 +11,7 @@
 //   office:agent-click     {agentType}   사람을 눌렀다
 //   office:president-click {}            대표를 눌렀다
 //   office:focus           {department}  방 확대가 바뀌었다(null = 전체)
+//   office:deselect        {}            바닥·배경을 눌러 선택이 풀렸다
 
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
@@ -28,8 +29,10 @@ import {
   tone,
 } from "./style.js";
 import { buildFurniture, missingKinds } from "./furniture3d/index.js";
-import { makeCharacter, makeStatusRing, poseCharacter } from "./character.js";
+import { makeCharacter, makeStatusRing, poseCharacter, seatOffset } from "./character.js";
 import { Overlay3D } from "./overlay3d.js";
+import { frameSignature, shouldRender } from "./frame-pace.js";
+import { mergeStatic } from "./static-merge.js";
 
 /**
  * 카메라 각. 방위는 남쪽(+z)에서 동쪽으로 돈 각, 고도는 바닥에서 올려본 각.
@@ -46,7 +49,11 @@ const WALL_MID = 0.5;
  */
 const WALL_THICKNESS = 0.22;
 
-/** 이름표를 늘 띄우는 상태. 나머지(쉬는 중·완료)는 hover·선택 때만 — 서른 개가 다 뜨면 활성이 묻힌다. */
+/**
+ * 이름표를 또렷하게 띄우는 상태. 나머지(쉬는 중·완료)도 이름은 늘 띄우되 흐린 판(`.idle`)으로 —
+ * 처음엔 hover 때만 띄웠는데 "이름 태그가 없어졌다" 가 됐다(2D 는 전원 이름이 늘 보인다).
+ * 흐리게 두는 것은 서른 개가 같은 세기로 뜨면 일하는 사람이 묻히기 때문이다.
+ */
 const NAMED_STATES = new Set(["IN_PROGRESS", "AWAITING_APPROVAL", "FAILED"]);
 const ALERT_STATES = new Set(["AWAITING_APPROVAL", "FAILED"]);
 const STATE_LABELS = {
@@ -68,7 +75,60 @@ const FALLBACK_LOOK = { sheet: "char", shirt: [0.8, 0.8, 0.8], pants: [0.3, 0.3,
 /** 이름표·말풍선 높이(사람 발 기준). 이름표가 떠 있으면 말풍선은 화면 픽셀로 그 위에 선다(`.raised`). */
 const LABEL_HEIGHT = SCALE.characterHeight + 0.14;
 
+/**
+ * 카메라를 범위 중심에 세우고, 범위의 모서리 여덟 개(바닥·벽 높이)가 다 들어가는 직교 범위를 잰다.
+ * 렌더러와 배치 고르기(`Office3DRenderer.tileSizeFor`)가 같은 계산을 쓴다.
+ */
+function frameBounds(camera, bounds, width, height) {
+  const center = new THREE.Vector3((bounds.minX + bounds.maxX) / 2, 0, -(bounds.minY + bounds.maxY) / 2);
+  const azimuth = THREE.MathUtils.degToRad(CAMERA.azimuthDegrees);
+  const elevation = THREE.MathUtils.degToRad(CAMERA.elevationDegrees);
+  const distance = 200;
+  camera.position.set(
+    center.x + Math.sin(azimuth) * Math.cos(elevation) * distance,
+    Math.sin(elevation) * distance,
+    center.z + Math.cos(azimuth) * Math.cos(elevation) * distance
+  );
+  camera.lookAt(center);
+  camera.updateMatrixWorld();
+  const inverse = camera.matrixWorldInverse;
+  let left = Infinity;
+  let right = -Infinity;
+  let bottom = Infinity;
+  let top = -Infinity;
+  for (const x of [bounds.minX, bounds.maxX]) {
+    for (const y of [bounds.minY, bounds.maxY]) {
+      for (const h of [0, SCALE.wallTall]) {
+        const point = new THREE.Vector3(x, h, -y).applyMatrix4(inverse);
+        left = Math.min(left, point.x);
+        right = Math.max(right, point.x);
+        bottom = Math.min(bottom, point.y);
+        top = Math.max(top, point.y);
+      }
+    }
+  }
+  // 화면 비율을 지키며 넓은 쪽에 맞춘다 — 늘이면 가구가 찌그러진다.
+  const spanX = (right - left) * (1 + CAMERA.margin * 2);
+  const spanY = (top - bottom) * (1 + CAMERA.margin * 2);
+  const aspect = width / Math.max(1, height);
+  const halfWidth = Math.max(spanX, spanY * aspect) / 2;
+  return { left, right, bottom, top, halfWidth, halfHeight: halfWidth / aspect };
+}
+
 export class Office3DRenderer {
+  /**
+   * 이 창에 이 평면도를 조감으로 담았을 때 타일 한 칸의 화면 크기(캔버스 px).
+   *
+   * 3열(35×20)·2열(23×27) 중 무엇을 쓸지 live.js 가 이것으로 고른다. 2D 기준(`폭/열 · 높이/행`)은
+   * 비스듬히 돌린 조감에 안 맞는다 — 2190×1556 창에서 2D 기준은 3열을 고르는데 3D 로는 2열이
+   * 타일 60px 대 50px 로 더 크다(사용자 보고: "빈 화면이 너무 많다").
+   */
+  static tileSizeFor(plan, width, height) {
+    const bounds = { minX: 0, maxX: plan.columns, minY: 0, maxY: plan.rows };
+    const { halfWidth } = frameBounds(new THREE.OrthographicCamera(), bounds, width, height);
+    return width / (halfWidth * 2);
+  }
+
   constructor(canvas, layout) {
     this.canvas = canvas;
     // 2D 캔버스용 도트 보존 설정을 풀어 준다 — 3D 는 부드럽게 보간돼야 한다.
@@ -105,6 +165,7 @@ export class Office3DRenderer {
     // 배치가 바뀌면 옛 방 확대는 뜻이 없다(방 좌표가 다르다) — 전체로 곧바로 되돌린다.
     this.viewBounds = this.focusBounds();
     this.tween = null;
+    // 장면을 새로 지었다 — `measure` 가 다음 프레임을 그리게 한다.
     this.measure();
   }
 
@@ -157,6 +218,9 @@ export class Office3DRenderer {
     // 외곽선은 장면을 다 만든 뒤 한 번에 — 가구·벽·창을 만드는 곳마다 붙이면 빠뜨린다.
     // 사람은 만들 때 스스로 붙인다(`makeCharacter`).
     addOutlines(this.scene);
+    // 사람은 아직 장면에 없다(`draw` 가 넣는다) — 지금 있는 것은 전부 멈춘 물체다.
+    // 나중에 움직일 물체(문·로봇 등)를 들이려면 이 줄 **뒤에** 넣어야 한다 — 앞에 넣으면 한 덩어리로 굳는다.
+    mergeStatic(this.scene);
   }
 
   zoneAt(x, y) {
@@ -514,7 +578,11 @@ export class Office3DRenderer {
       this.emit("office:president-click", {});
       return;
     }
-    this.selectedAgent = null;
+    if (this.selectedAgent) {
+      // 링만 풀고 끝내면 화면을 얹은 앱(맥 콘솔)의 인스펙터가 열린 채 남는다.
+      this.selectedAgent = null;
+      this.emit("office:deselect", {});
+    }
     const zone = target?.tile ? this.zoneAt(target.tile.x, target.tile.y) : null;
     // 방을 누르면 그 방으로, 방 밖(복도·공용 공간·배경)을 누르면 전체로.
     this.setFocus(zone && zone.department !== this.focusDepartment ? zone.department : zone ? this.focusDepartment : null);
@@ -564,41 +632,12 @@ export class Office3DRenderer {
    * 범위의 모서리 여덟 개를 카메라 좌표로 옮겨, 그것이 다 들어가는 가장 작은 직교 범위를 쓴다.
    */
   applyCamera(bounds) {
+    // 카메라가 바뀌면 바뀐 것이 없어도 다음 프레임을 그려야 한다. 카메라를 만지는 길이 전부 여기를
+    // 지나므로(`measure` — 백버퍼 크기를 바꿔 그림이 지워진다 — 와 방 확대 전환) 여기 한 곳에 둔다.
+    this.dirty = true;
     const width = this.canvas.width;
     const height = this.canvas.height;
-    const center = new THREE.Vector3((bounds.minX + bounds.maxX) / 2, 0, -(bounds.minY + bounds.maxY) / 2);
-    const azimuth = THREE.MathUtils.degToRad(CAMERA.azimuthDegrees);
-    const elevation = THREE.MathUtils.degToRad(CAMERA.elevationDegrees);
-    const distance = 200;
-    this.camera.position.set(
-      center.x + Math.sin(azimuth) * Math.cos(elevation) * distance,
-      Math.sin(elevation) * distance,
-      center.z + Math.cos(azimuth) * Math.cos(elevation) * distance
-    );
-    this.camera.lookAt(center);
-    this.camera.updateMatrixWorld();
-    const inverse = this.camera.matrixWorldInverse;
-    let left = Infinity;
-    let right = -Infinity;
-    let bottom = Infinity;
-    let top = -Infinity;
-    for (const x of [bounds.minX, bounds.maxX]) {
-      for (const y of [bounds.minY, bounds.maxY]) {
-        for (const h of [0, SCALE.wallTall]) {
-          const point = new THREE.Vector3(x, h, -y).applyMatrix4(inverse);
-          left = Math.min(left, point.x);
-          right = Math.max(right, point.x);
-          bottom = Math.min(bottom, point.y);
-          top = Math.max(top, point.y);
-        }
-      }
-    }
-    // 화면 비율을 지키며 넓은 쪽에 맞춘다 — 늘이면 가구가 찌그러진다.
-    const spanX = (right - left) * (1 + CAMERA.margin * 2);
-    const spanY = (top - bottom) * (1 + CAMERA.margin * 2);
-    const aspect = width / Math.max(1, height);
-    const halfWidth = Math.max(spanX, spanY * aspect) / 2;
-    const halfHeight = halfWidth / aspect;
+    const { left, right, bottom, top, halfWidth, halfHeight } = frameBounds(this.camera, bounds, width, height);
     const midX = (left + right) / 2;
     const midY = (bottom + top) / 2;
     this.camera.left = midX - halfWidth;
@@ -667,7 +706,10 @@ export class Office3DRenderer {
 
   /** @param {object} view live.js 가 주는 것 — `agents`·`bodies`·`now` 등(office.js 와 같다). */
   draw(view) {
-    this.stepTween(performance.now());
+    const frameAt = performance.now();
+    // 전환의 마지막 걸음은 `stepTween` 이 `tween` 을 비운다 — 그 프레임도 그려야 하므로 먼저 본다.
+    const tweening = Boolean(this.tween);
+    this.stepTween(frameAt);
     this.applyDaylight(view.hour ?? 12);
     // 출근 지연 중이라 문 앞에서 기다리는 사람은 그리지 않는다(`office.js` 와 같은 규칙).
     const bodies = Object.fromEntries(
@@ -688,7 +730,8 @@ export class Office3DRenderer {
     }
     for (const [agentType, body] of Object.entries(bodies)) {
       const entry = this.characterEntry(agentType);
-      const position = this.world(body.x, body.y);
+      const offset = seatOffset(body);
+      const position = this.world(body.x + offset.x, body.y + offset.y);
       entry.figure.position.copy(position);
       poseCharacter(entry.figure, body, view.now ?? 0);
       this.updateRing(entry, agentType, view, position);
@@ -698,7 +741,34 @@ export class Office3DRenderer {
     if (this.presidentAlarm) {
       this.presidentAlarm.visible = Boolean(view.presidentAlarm);
     }
-    this.overlay.setHud(this.summaryText(view.summary));
+    const hud = this.summaryText(view.summary);
+    this.overlay.setHud(hud);
+    // 위에서 옮긴 자세·글자는 그리지 않아도 장면에 남는다 — 건너뛴 프레임의 변화는 다음에 그릴 때 함께 나온다.
+    const { signature, moving } = frameSignature({
+      scene: [
+        this.hoveredAgent,
+        Boolean(hovered?.president),
+        this.selectedAgent,
+        this.lightHour,
+        Boolean(view.presidentAlarm),
+        hud,
+      ],
+      bodies,
+      agents: view.agents,
+      sessions: view.sessions,
+    });
+    const render = shouldRender({
+      changed: this.dirty || signature !== this.renderedSignature,
+      smooth: tweening,
+      moving,
+      elapsedMs: frameAt - (this.renderedAt ?? -Infinity),
+    });
+    if (!render) {
+      return;
+    }
+    this.dirty = false;
+    this.renderedSignature = signature;
+    this.renderedAt = frameAt;
     this.webgl.render(this.scene, this.camera);
     this.overlay.render(this.scene, this.camera);
   }
@@ -744,14 +814,19 @@ export class Office3DRenderer {
     const text = focused
       ? [name, STATE_LABELS[state] ?? state, agent?.job].filter(Boolean).join(" · ")
       : name;
-    const className = ALERT_STATES.has(state) ? "office3d-label alert" : "office3d-label";
+    const className = ALERT_STATES.has(state)
+      ? "office3d-label alert"
+      : named
+        ? "office3d-label"
+        : "office3d-label idle";
     Overlay3D.set(entry.name, text, className);
-    entry.name.visible = named;
+    entry.name.visible = true;
     entry.name.position.set(0, LABEL_HEIGHT, 0);
     const bubbleText = agent?.bubble;
     entry.bubble.visible = Boolean(bubbleText) && state !== "WAITING";
     if (entry.bubble.visible) {
-      Overlay3D.set(entry.bubble, bubbleText, named ? "office3d-bubble raised" : "office3d-bubble");
+      // 이름표가 늘 떠 있으므로 말풍선은 늘 그 위로 올린다.
+      Overlay3D.set(entry.bubble, bubbleText, "office3d-bubble raised");
       entry.bubble.position.set(0, LABEL_HEIGHT, 0);
     }
   }

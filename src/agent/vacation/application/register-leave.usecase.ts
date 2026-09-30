@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import {
@@ -6,6 +6,10 @@ import {
   AgentRunService,
 } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import {
+  HOLIDAY_CALENDAR_PORT,
+  HolidayCalendarPort,
+} from '../../../holiday/domain/port/holiday-calendar.port';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { computeBalance } from '../domain/balance-calculator';
 import { countBusinessDays } from '../domain/business-day-counter';
@@ -32,6 +36,8 @@ export class RegisterLeaveUsecase {
     private readonly config: ConfigService,
     private readonly repository: LeaveUsagePrismaRepository,
     private readonly agentRunService: AgentRunService,
+    @Inject(HOLIDAY_CALENDAR_PORT)
+    private readonly holidayCalendar: HolidayCalendarPort,
   ) {}
 
   async execute({
@@ -43,9 +49,13 @@ export class RegisterLeaveUsecase {
     fraction,
   }: RegisterLeaveCommand): Promise<AgentRunOutcome<RegisterLeaveResult>> {
     const hireDate = resolveHireDate(this.config);
+    // 휴가는 법정 공휴일만 뺀다 — KRX 연말 휴장일(12/31)은 출근하는 날이라 센다.
+    const calendar = await this.holidayCalendar.load();
     // 범위 역전 시 여기서 throw (저장 전).
     const businessDays =
-      countBusinessDays(startDate, endDate) * (fraction ?? 1);
+      countBusinessDays(startDate, endDate, {
+        isHoliday: (date) => calendar.holidayDates.has(plainDateToIso(date)),
+      }) * (fraction ?? 1);
 
     return this.agentRunService.execute({
       agentType: AgentType.VACATION,

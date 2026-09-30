@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { AgentRunModule } from '../../agent-run/agent-run.module';
+import { HolidayModule } from '../../holiday/holiday.module';
 import { ModelRouterModule } from '../../model-router/model-router.module';
 import { CalculateBalanceUsecase } from './application/calculate-balance.usecase';
 import { CancelLeaveUsecase } from './application/cancel-leave.usecase';
@@ -12,7 +13,7 @@ import { VacationDispatcher } from './infrastructure/vacation.dispatcher';
 // PrismaModule 은 @Global() — 별도 import 불필요.
 // ConfigModule 은 AppModule 에서 isGlobal: true — 별도 import 불필요.
 @Module({
-  imports: [AgentRunModule, ModelRouterModule],
+  imports: [AgentRunModule, HolidayModule, ModelRouterModule],
   providers: [
     LeaveUsagePrismaRepository,
     CalculateBalanceUsecase,

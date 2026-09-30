@@ -183,6 +183,31 @@ func exportOfficeLayout(client: ConsoleClient, path: String, zoneColumns: Int) -
         )
         return false
     }
+    let export = makeOfficeLayoutExport(agents: agents, zoneColumns: zoneColumns)
+    let plan = export.plan
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    do {
+        let data = try encoder.encode(export)
+        try data.write(to: URL(fileURLWithPath: path))
+        FileHandle.standardOutput.write(
+            Data(
+                "평면도 저장: \(path) — \(plan.columns)x\(plan.rows) 칸, 자리 \(plan.desks.count)개,"
+                    .appending(" 가구 \(plan.furniture.count)개, \(data.count) bytes\n").utf8
+            )
+        )
+        return true
+    } catch {
+        FileHandle.standardError.write(Data("평면도 저장 실패: \(error)\n".utf8))
+        return false
+    }
+}
+
+/// 평면도 내보내기 본체 — CLI(`--layout-json`)와 앱 안 3D 화면(`Office3DView`)이 같이 쓴다.
+///
+/// 앱 안에서는 파일로 굽지 않고 **지금 받은 직원 명단으로 그 자리에서** 만든다. 파일로 구운
+/// `layout-*.json` 은 명단이 바뀌면 낡는데(자리 없는 사람이 생긴다), 실행 시점에 만들면 그 문제가 없다.
+func makeOfficeLayoutExport(agents: [ConsoleAgent], zoneColumns: Int) -> OfficeLayoutExport {
     let plan = officeFloorPlan(agents: agents, zoneColumns: zoneColumns)
     var floorSprites: [String: String] = [:]
     var floorMute: [String: Double] = [:]
@@ -268,7 +293,7 @@ func exportOfficeLayout(client: ConsoleClient, path: String, zoneColumns: Int) -
             hours: hours
         )
     }
-    let export = OfficeLayoutExport(
+    return OfficeLayoutExport(
         plan: plan,
         floorSprites: floorSprites,
         floorMute: floorMute,
@@ -333,20 +358,4 @@ func exportOfficeLayout(client: ConsoleClient, path: String, zoneColumns: Int) -
             sessionLeaveAfterSeconds: officeSessionLeaveAfterSeconds
         )
     )
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys]
-    do {
-        let data = try encoder.encode(export)
-        try data.write(to: URL(fileURLWithPath: path))
-        FileHandle.standardOutput.write(
-            Data(
-                "평면도 저장: \(path) — \(plan.columns)x\(plan.rows) 칸, 자리 \(plan.desks.count)개,"
-                    .appending(" 가구 \(plan.furniture.count)개, \(data.count) bytes\n").utf8
-            )
-        )
-        return true
-    } catch {
-        FileHandle.standardError.write(Data("평면도 저장 실패: \(error)\n".utf8))
-        return false
-    }
 }

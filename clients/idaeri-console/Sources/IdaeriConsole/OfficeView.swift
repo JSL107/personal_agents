@@ -26,6 +26,12 @@ struct OfficeView: View {
     @State private var selectedApproval: ConsoleApproval?
     /// 방 뷰로 확대해 보고 있는 부서. 씬이 알려준다(`OfficeScene.onFocusChange`).
     @State private var focusedRoom: Department?
+    /// 2D(SpriteKit) · 3D(웹 렌더러) 선택. 메뉴 「보기 ▸ 3D 오피스」가 바꾼다. 기본은 2D.
+    @AppStorage(officeRendererDefaultsKey) private var officeRenderer = "2d"
+    /// 3D 화면의 웹뷰와 통로. 소유자는 `AppRootView` — 탭을 떠나도 걷던 사람의 위치가 남는다(`scene` 과 같다).
+    let office3D: Office3DController
+
+    private var uses3D: Bool { officeRenderer == "3d" }
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -37,7 +43,7 @@ struct OfficeView: View {
             // 막으려 했지만 그 콜백은 90초에 0~2회만 불려 게이트가 되지 못했다(#183). 여기서
             // 쓰는 것은 다른 레버(`scene.isPaused`)이고, 판정도 로그가 아니라 CPU 로 한다 —
             // 그 로그는 같은 조건에서도 90초당 0~7회로 요동쳐 효과 판정에 쓸 수 없다.
-            SpriteView(scene: scene)
+            officeCanvas
                 .frame(minWidth: Layout.officeMinWidth, minHeight: 480)
                 // 씬은 보조기술 트리에 이름 없는 이미지 덩어리로만 잡힌다(실측). 자식을 덮고
                 // 한 문장으로 대신 읽게 한다 — 그림 안의 몸짓·자리로만 전하던 정보를
@@ -105,7 +111,8 @@ struct OfficeView: View {
                     // 로 두 배씩 뛰는 계단이라 몇십 px 모자라면 도면이 절반이 되는 것을 메우려고
                     // 창을 스스로 키웠다. 계단이 없어진 뒤에도 돌면 사용자가 정한 창 크기를
                     // 앱이 되바꾸는 것만 남는다(사용자 보고: "높이가 바뀔 때마다 창 크기도 다르다").
-                    guard focusedRoom == nil, !scene.usesContinuousScale,
+                    // 3D 는 카메라가 창에 맞춰 연속으로 담는다 — 배율 계단이 없다.
+                    guard focusedRoom == nil, !uses3D, !scene.usesContinuousScale,
                         let window = notification.object as? NSWindow
                     else {
                         return
@@ -113,6 +120,12 @@ struct OfficeView: View {
                     snapWindowUpToFloorPlanStep(window, grownFrom: startSize)
                 }
                 .onAppear {
+                    // 다른 탭에 있는 동안 메뉴로 2D 로 바꾸면 아래 `onChange(of: officeRenderer)` 가 돌지
+                    // 않는다(이 뷰가 없다). 남은 웹뷰를 여기서 놓지 않으면 바로 아래 `applySceneSleep` 이
+                    // 안 보이는 3D 화면을 깨워 계속 돌린다.
+                    if !uses3D {
+                        office3D.releaseWebView()
+                    }
                     // 통지는 상태가 "바뀔 때" 만 온다. 이미 가려지거나 최소화된 창에서 탭이
                     // 열리면 다음 통지까지 씬이 계속 돌므로, 나타나는 시점에 한 번 맞춘다.
                     applySceneSleep()
@@ -125,7 +138,7 @@ struct OfficeView: View {
                     scene.syncSessions(store.sessions)
                     scene.sync(agents: store.agents, approvals: store.approvals)
                     scene.setSelected(validSelection)
-                    focusedRoom = scene.focusedDepartment
+                    focusedRoom = uses3D ? office3D.focusedDepartment : scene.focusedDepartment
                     scene.applyHousekeeping(store.housekeeping)
                     scene.refreshOverlays(
                         agents: store.agents, runs: store.runs,
@@ -137,6 +150,8 @@ struct OfficeView: View {
                         commandText = ""
                     }
                     scene.onPresidentClick = { openPresidentBar() }
+                    office3D.onMessage = { handleOffice3DMessage($0) }
+                    office3D.pushSnapshot(currentSnapshot)
                     scene.onDailyReportClick = {
                         scene.toggleDailyReportCard(store.briefing)
                     }
@@ -152,6 +167,16 @@ struct OfficeView: View {
                     scene.onPresidentClick = nil
                     scene.onFocusChange = nil
                     scene.onDailyReportClick = nil
+                    office3D.onMessage = nil
+                    // 웹뷰는 창에서 떨어져도 살아 있다 — 재우지 않으면 안 보이는 화면이 계속 돈다.
+                    office3D.setSleeping(true)
+                }
+                .onChange(of: officeRenderer) { _ in
+                    // 두 화면은 방 확대 상태를 따로 가진다. 바꾼 쪽의 것을 머리줄에 맞춘다.
+                    focusedRoom = uses3D ? nil : scene.focusedDepartment
+                    if !uses3D {
+                        office3D.releaseWebView()
+                    }
                 }
                 .onChange(of: store.housekeeping) { next in
                     scene.applyHousekeeping(next)
@@ -164,6 +189,7 @@ struct OfficeView: View {
                         scene.setSelected(nil)
                     }
                     scene.sync(agents: newAgents, approvals: store.approvals)
+                    office3D.pushSnapshot(currentSnapshot)
                     scene.applyHousekeeping(store.housekeeping)
                     scene.refreshOverlays(
                         agents: newAgents, runs: store.runs,
@@ -174,10 +200,12 @@ struct OfficeView: View {
                     // 승인만 바뀐 경우는 줄만 맞춘다. 여기서 sync 를 부르면 승인 알림이 오갈
                     // 때마다 바닥·가구·사람이 통째로 다시 그려진다.
                     scene.reconcileQueue(agents: store.agents, approvals: newApprovals)
+                    office3D.pushSnapshot(currentSnapshot)
                 }
                 .onChange(of: selectedAgent) { newSelection in
                     scene.setVectorMetricsEnabled(newSelection != nil)
                     scene.setSelected(newSelection)
+                    office3D.setSelected(newSelection)
                 }
                 .onChange(of: isPresidentBarOpen) { isOpen in
                     // 메뉴에서 열린 경우는 `openPresidentBar` 를 거치지 않는다. 선택된 사람이 남아
@@ -192,6 +220,7 @@ struct OfficeView: View {
                     // 세션은 사규가 배정한 자리가 없어 사무실을 다시 그릴 필요가 없다.
                     // sync 를 부르면 세션 하나 뜰 때마다 바닥·가구·29명이 통째로 다시 그려진다.
                     scene.syncSessions(newSessions)
+                    office3D.pushSnapshot(currentSnapshot)
                 }
                 .onChange(of: store.briefing) { newBriefing in
                     // 이게 없으면 브리핑을 새로 받아도 화면은 부팅 때 그린 판 그대로다 —
@@ -208,6 +237,7 @@ struct OfficeView: View {
                     )
                 }
                 .onChange(of: store.runs) { _ in
+                    office3D.pushSnapshot(currentSnapshot)
                     // 재연결 스냅샷은 이벤트를 방출하지 않으므로, agents 불변인데 runs 만 바뀐
                     // 경우(같은 에이전트의 새 run)에도 경과 오버레이를 갱신한다.
                     scene.refreshOverlays(
@@ -222,6 +252,7 @@ struct OfficeView: View {
                         pendingCommands: store.pendingCommands
                     )
                     scene.perform(visualIntents(for: event, context: context))
+                    office3D.pushEvent(event)
                     scene.refreshOverlays(
                         agents: store.agents, runs: store.runs,
                         pendingCommands: store.pendingCommands, now: Date()
@@ -245,6 +276,7 @@ struct OfficeView: View {
                 scene.setSelected(nil)
             } else {
                 scene.setFocus(nil)
+                office3D.setFocus(nil)
             }
         }
         // 시트는 항상 살아 있는 루트에 단 한 번 단다 — ZStack 의 세 바는 상호 배타 분기라,
@@ -267,6 +299,54 @@ struct OfficeView: View {
         }
     }
 
+
+    /// 사무실 그림 자리. 둘 중 무엇을 그려도 아래 수식어(인스펙터 자리·가림 통지·상태 반영)는 같다.
+    @ViewBuilder
+    private var officeCanvas: some View {
+        if uses3D {
+            Office3DCanvas(agents: store.agents, controller: office3D)
+        } else {
+            SpriteView(scene: scene)
+        }
+    }
+
+    /// 3D 화면에 밀 지금 상태 — 백엔드 스냅샷과 같은 모양으로 다시 싣는다. 승인은 누른 즉시 감춘 것을
+    /// 뺀 목록(`store.approvals`)이라 2D 와 같은 줄이 선다.
+    private var currentSnapshot: ConsoleSnapshot {
+        ConsoleSnapshot(
+            agents: store.agents,
+            runs: store.runs,
+            approvals: store.approvals,
+            sessions: store.sessions,
+            serverTime: store.serverTime,
+            housekeeping: store.housekeeping
+        )
+    }
+
+    /// 3D 화면이 보낸 사건 — 2D 씬의 `onAgentClick`·`onPresidentClick`·`onFocusChange` 와 같은 자리.
+    private func handleOffice3DMessage(_ body: [String: Any]) {
+        switch body["type"] as? String {
+        case "office:agent-click":
+            guard let agentType = body["agentType"] as? String else {
+                return
+            }
+            selectedAgent = agentType
+            isPresidentBarOpen = false
+            commandText = ""
+        case "office:president-click":
+            openPresidentBar()
+        case "office:focus":
+            focusedRoom = (body["department"] as? String).flatMap(Department.init(rawValue:))
+        case "escape", "office:deselect":
+            // 화면이 선택 링을 이미 풀었다(esc 또는 바닥 클릭). 인스펙터만 닫는다(방 확대는 `office:focus` 가 따로 온다).
+            if selectedAgent != nil {
+                selectedAgent = nil
+                scene.setSelected(nil)
+            }
+        default:
+            break
+        }
+    }
 
     /// 바가 닫혀 있을 때의 자리 — 승인 실패 사유·담당자 미확정 지시 배지. 둘 다 없으면 비어 있다
     /// (사무실을 가리지 않도록 상시 표시하는 것을 두지 않는다).
@@ -504,6 +584,7 @@ struct OfficeView: View {
         // 그 대가로 아끼는 것은 기계 전체 CPU 의 1% 미만이다.
         let visible = window.occlusionState.contains(.visible) && !window.isMiniaturized
         scene.isPaused = !visible
+        office3D.setSleeping(!visible)
     }
 
 }

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { readHolidayCalendar } from '../../holiday/infrastructure/holiday-calendar.prisma.reader';
 import { MoneyValue } from '../../market-data/domain/market-data.type';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -869,6 +870,8 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
     input: ApplyTradeInput,
   ): Promise<ApplyTradeResult> {
     try {
+      // 결제일 계산용. 계좌 잠금을 쥔 채 읽을 이유가 없어 트랜잭션 밖에서 먼저 읽는다.
+      const calendar = await readHolidayCalendar(this.prisma);
       return await this.prisma.$transaction(async (transaction) => {
         // 모든 거래가 같은 계좌 행을 먼저 잠근 뒤 최신 현금·포지션을 읽는다. 계좌 단위로
         // 직렬화하므로 포지션 행이 아직 없는 동시 매수도 첫 transaction이 생성한 행을
@@ -947,7 +950,7 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
             tax: mutation.tax,
             realizedPnl: mutation.realizedPnl,
             tradeDate: input.tradeDate,
-            settlementDate: settlementDateOf(input.tradeDate),
+            settlementDate: settlementDateOf(input.tradeDate, calendar),
             fingerprint,
           },
           select: { id: true },
@@ -1089,6 +1092,8 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
     input: FillPendingOrderInput,
   ): Promise<PendingOrderFillResult> {
     try {
+      // 결제일 계산용. `applyTradeAtomically` 와 같은 이유로 트랜잭션 밖에서 읽는다.
+      const calendar = await readHolidayCalendar(this.prisma);
       return await this.prisma.$transaction(async (transaction) => {
         // 수동 체결과 같은 계좌 lock 순서를 써서 최신 현금·보유량으로 수량을 확정한다.
         // 주문 상태 변경과 장부 반영도 이 transaction 안에서 끝내 부분 체결 상태를 막는다.
@@ -1207,7 +1212,7 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
             tax: decision.tax,
             realizedPnl: decision.realizedPnl,
             tradeDate: input.tradeDate,
-            settlementDate: settlementDateOf(input.tradeDate),
+            settlementDate: settlementDateOf(input.tradeDate, calendar),
             fingerprint,
           },
         });
@@ -1340,11 +1345,12 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
     if (trades.length === 0) {
       return { updated: 0 };
     }
+    const calendar = await readHolidayCalendar(this.prisma);
     await this.prisma.$transaction(
       trades.map((trade) =>
         this.prisma.paperTrade.update({
           where: { id: trade.id },
-          data: { settlementDate: settlementDateOf(trade.tradeDate) },
+          data: { settlementDate: settlementDateOf(trade.tradeDate, calendar) },
         }),
       ),
     );

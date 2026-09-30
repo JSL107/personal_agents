@@ -45,5 +45,6 @@ runCalendarDayListTests(runner)
 runCalendarDayToneTests(runner)
 runScheduleComposeTests(runner)
 runScheduleLinkTests(runner)
+runOfficeHostingTests(runner)
 
 runner.finish()
