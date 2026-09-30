@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   closeSync,
   existsSync,
   mkdirSync,
@@ -22,6 +23,9 @@ import { dirname } from 'node:path';
 // eslint-disable-next-line no-control-regex
 const ANSI_COLOR_PATTERN = /\x1b\[[0-9;]*m/g;
 
+const LOG_FILE_MODE = 0o600;
+const LOG_DIR_MODE = 0o700;
+
 export class RotatingFileLog {
   private fd: number;
   private size: number;
@@ -32,9 +36,12 @@ export class RotatingFileLog {
     // 현재 파일 포함 보관 개수. 5 면 server.log + server.log.1~4.
     private readonly maxFiles: number,
   ) {
-    mkdirSync(dirname(filePath), { recursive: true });
+    // 로그에는 provider stderr·모델 응답 앞부분 같은 업무 내용이 들어간다. 같은 호스트의 다른
+    // 계정이 읽지 못하게 소유자 전용으로 만든다. 이미 있던 파일·디렉터리의 권한도 맞춘다.
+    mkdirSync(dirname(filePath), { recursive: true, mode: LOG_DIR_MODE });
+    chmodSync(dirname(filePath), LOG_DIR_MODE);
     this.size = existsSync(filePath) ? statSync(filePath).size : 0;
-    this.fd = openSync(filePath, 'a');
+    this.fd = this.openOwnerOnly();
   }
 
   write(chunk: string | Uint8Array): void {
@@ -61,8 +68,15 @@ export class RotatingFileLog {
       }
     }
     renameSync(this.filePath, `${this.filePath}.1`);
-    this.fd = openSync(this.filePath, 'a');
+    this.fd = this.openOwnerOnly();
     this.size = 0;
+  }
+
+  // openSync 의 mode 는 새로 만들 때만 적용되고 umask 의 영향도 받는다 — chmod 로 확정한다.
+  private openOwnerOnly(): number {
+    const fd = openSync(this.filePath, 'a', LOG_FILE_MODE);
+    chmodSync(this.filePath, LOG_FILE_MODE);
+    return fd;
   }
 }
 

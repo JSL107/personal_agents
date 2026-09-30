@@ -290,17 +290,25 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
     if (!this.routingNoRun) {
       return;
     }
-    void this.routingNoRun
-      .record({
-        routedTo: routing.routedTo,
-        routedVia: routing.routedVia,
-        confidence: routing.confidence ?? null,
-        routedText: toLedgerRoutedText(routing.text),
-        agentRunId: outcome.agentRunId,
-        reusedAgentRun: outcome.reusedAgentRun === true,
-        modelUsed: outcome.modelUsed,
-      })
-      .catch(() => undefined);
+    // 입력을 조립하다 동기로 던지는 경우(마스킹 등)도 여기서 잡아 경고로 남긴다 —
+    // runWithRoutingContext 가 삼키기 전에 흔적을 남겨야 기록이 왜 빠졌는지 알 수 있다.
+    try {
+      void this.routingNoRun
+        .record({
+          routedTo: routing.routedTo,
+          routedVia: routing.routedVia,
+          confidence: routing.confidence ?? null,
+          routedText: toLedgerRoutedText(routing.text),
+          agentRunId: outcome.agentRunId,
+          reusedAgentRun: outcome.reusedAgentRun === true,
+          modelUsed: outcome.modelUsed,
+        })
+        .catch(() => undefined);
+    } catch (error: unknown) {
+      this.logger.warn(
+        `routing_no_run 기록 준비 실패 — ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   /**

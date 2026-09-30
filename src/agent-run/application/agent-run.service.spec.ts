@@ -449,6 +449,50 @@ describe('AgentRunService', () => {
     );
   });
 
+  const causeOf = async (cause: unknown): Promise<string | undefined> => {
+    const bomb = new Error('모델 호출 실패');
+    (bomb as { cause?: unknown }).cause = cause;
+    await expect(
+      service.execute({
+        agentType: AgentType.CAREER_MATE,
+        triggerType: TriggerType.SLACK_MENTION_CAREER_MATE,
+        inputSnapshot: {},
+        run: async () => {
+          throw bomb;
+        },
+      }),
+    ).rejects.toBe(bomb);
+    const [{ output }] = (repository.finish as jest.Mock).mock.calls[0] as [
+      { output: { cause?: string } },
+    ];
+    return output.cause;
+  };
+
+  it('primary 사유가 길어도 fallback 사유가 잘려 나가지 않는다 (양쪽을 각각 자른다)', async () => {
+    const cause = await causeOf({
+      primaryError: new Error('P'.repeat(3_000)),
+      lastError: new Error('Not logged in · Please run /login'),
+    });
+
+    expect(cause).toContain('fallback: Not logged in · Please run /login');
+    expect((cause ?? '').length).toBeLessThanOrEqual(1_000);
+  });
+
+  it('primaryError 가 없는 객체면 lastError 사유만 남긴다', async () => {
+    const cause = await causeOf({ lastError: new Error('claude 실패') });
+
+    expect(cause).toBe('claude 실패');
+  });
+
+  it('lastError 를 풀 수 없으면 fallback 자리에 (사유 없음) 을 적는다', async () => {
+    const cause = await causeOf({
+      primaryError: new Error('codex 실패'),
+      lastError: undefined,
+    });
+
+    expect(cause).toBe('primary: codex 실패 / fallback: (사유 없음)');
+  });
+
   it('execute 성공 시 episodic recorder.record 를 호출한다 (best-effort 적재)', async () => {
     const recorder = {
       record: jest.fn().mockResolvedValue(undefined),

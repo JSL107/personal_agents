@@ -724,6 +724,9 @@ export class AgentRunService implements OnApplicationBootstrap {
 // 상한이 없으면 어느 한 경로가 긴 본문을 실어 보내는 순간 원장 행이 통째로 부풀고, 그 사실은
 // 조회할 때까지 드러나지 않는다.
 const CAUSE_LEDGER_LIMIT = 1_000;
+// 폴백 양쪽 사유를 한 줄로 합칠 때 한쪽이 쓸 수 있는 길이. 라벨("primary: " 등)을 더해도
+// CAUSE_LEDGER_LIMIT 안에 들어오게 절반보다 조금 작게 잡는다.
+const CAUSE_SIDE_LIMIT = 480;
 
 const isMergeableSnapshot = (
   inputSnapshot: unknown,
@@ -783,7 +786,11 @@ const describeCause = (cause: unknown): string | null => {
     if (primary === null) {
       return fallback;
     }
-    return `primary: ${primary} / fallback: ${fallback ?? '(사유 없음)'}`;
+    // 양쪽을 각각 자른 뒤 합친다. 합친 뒤에 자르면 primary 가 길 때 fallback 사유가 통째로
+    // 잘려 나가, 폴백 양쪽 사유를 남긴다는 목적이 그 회차에서 깨진다.
+    return `primary: ${primary.slice(0, CAUSE_SIDE_LIMIT)} / fallback: ${(
+      fallback ?? '(사유 없음)'
+    ).slice(0, CAUSE_SIDE_LIMIT)}`;
   }
   return null;
 };
