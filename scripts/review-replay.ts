@@ -11,13 +11,16 @@
  * --misses <json> 은 카드가 없는 미탐(외부 리뷰가 잡고 이대리는 놓친 결함)을 함께 재생해 미탐 재현율을 잰다.
  * 형식은 `src/pr-review-loop/domain/review-replay-misses.ts`. 회사 저장소 위치가 담기므로 저장소에 커밋하지 않는다.
  * 미탐만 재려면 --rejected 0 --fixed 0 을 함께 준다.
+ * --rescore <보고서> 는 모델을 부르지 않고, 그 보고서의 모델 출력(원장 agent_run.output)을 현재 판정 규칙으로
+ * 다시 매긴다. 판정 규칙이 바뀐 뒤 기준선을 쿼터 없이 다시 만드는 용도다. --baseline 과 함께 쓸 수 있고,
+ * --misses 를 주면 미탐 본문·줄·경로를 그 파일(보고서가 쓴 미탐 파일과 같은 순서)로 바꿔 채점한다.
  * 리플레이 run은 CODE_REVIEWER/MANUAL로 원장에 남는다. 스윕 판정은
  * PR_REVIEW_SWEEP만 조회하므로 스윕 쿨다운에는 영향이 없다.
  * AppModule 대신 리뷰 모듈만 부팅해 BullMQ repeatable job 재등록을 피한다.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 
-import { Module } from '@nestjs/common';
+import { INestApplicationContext, Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { PrReviewFinding } from '@prisma/client';
@@ -44,6 +47,9 @@ import {
   LabeledFinding,
   readBaselineSummaries,
   REPLAY_SCORER_VERSION,
+  ReplayedFinding,
+  replayedFindingsOf,
+  ReplayLabel,
   ReplayPair,
   ReplayRate,
   sampleIdsOf,
@@ -58,6 +64,8 @@ import {
 import { summarizeDiff } from '../src/pr-review-loop/domain/review-replay-diff';
 import {
   MissedFindingEntry,
+  missedFindingId,
+  pairReplacementMisses,
   parseMissedFindings,
   resolveMissPath,
   toMissedLabeledFinding,
@@ -97,6 +105,10 @@ interface ReplayOptions {
   holdout: boolean;
   baseline?: string;
   misses?: string;
+  // 재채점한 원래 보고서. 있으면 모델을 부르지 않은 보고서다.
+  rescore?: string;
+  // 재채점에서 미탐 본문·줄·경로를 바꿔 끼운 파일. id 는 misses 파일로 맞춘다.
+  missesReplacement?: string;
 }
 
 interface ReplayGroup {
@@ -174,10 +186,30 @@ interface ReplayReport {
 })
 class ReviewReplayModule {}
 
+// 재채점은 모델도 GitHub 도 부르지 않는다 — 원장만 읽으므로 리뷰 모듈을 띄우지 않는다.
+@Module({
+  imports: [ConfigModule.forRoot({ isGlobal: true }), PrismaModule],
+})
+class ReviewRescoreModule {}
+
+// 재생 또는 재채점이 모은 것. 보고서 집계·비교·출력은 둘이 같은 길을 탄다.
+interface ReplayRun {
+  options: ReplayOptions;
+  groups: ReplayGroupReport[];
+  skipped: SkippedGroup[];
+  unresolvedMisses: MissedFindingEntry[];
+  resolvedMisses: ResolvedMiss[];
+  missPathNotes: MissPathNote[];
+  // 합친 점수(score)용. 회차별 결과를 모두 이은 것이다.
+  pairs: ReplayPair[];
+  hasMisses: boolean;
+  notes: string[];
+}
+
 const main = async (): Promise<void> => {
   const options = readOptions();
   const application = await NestFactory.createApplicationContext(
-    ReviewReplayModule,
+    options.rescore === undefined ? ReviewReplayModule : ReviewRescoreModule,
     {
       logger: {
         log: () => undefined,
@@ -190,288 +222,469 @@ const main = async (): Promise<void> => {
   );
   try {
     const prisma = application.get(PrismaService);
-    const github = application.get<GithubClientPort>(GITHUB_CLIENT_PORT);
-    const usecase = application.get(ReviewPullRequestUsecase);
     // 기준선은 모델을 부르기 전에 읽는다 — 경로가 틀려 쿼터만 쓰고 끝나지 않게.
     const baselineReport =
       options.baseline === undefined
         ? undefined
         : readBaseline(options.baseline);
-    const misses =
-      options.misses === undefined ? [] : readMisses(options.misses);
-    const rows = await selectFindings(prisma, options);
-    const groups = groupFindings(rows);
-    const { unresolved: unresolvedMisses, resolved: resolvedMisses } =
-      await addMisses(prisma, groups, misses);
-    const missPathNotes: MissPathNote[] = [];
-    // 미탐은 카드가 없어(음수 id) 규약 재료가 아니다 — 카드 id 만 뺀다.
-    const holdoutIds = options.holdout
-      ? groups.flatMap((group) =>
-          group.findings.map((finding) => finding.id).filter((id) => id > 0),
-        )
-      : undefined;
-    const reportGroups: ReplayGroupReport[] = [];
-    const skipped: SkippedGroup[] = [];
-    const pairs: ReplayPair[] = [];
-    const trialResults: FindingReplayResult[][] = Array.from(
-      { length: options.trials },
-      () => [],
-    );
-
-    for (const group of groups) {
-      const { repo: repository, pullNumber, headSha } = group;
-      // diff 는 회차가 달라도 같으므로 그룹마다 한 번만 가져온다.
-      let snapshot: { detail: PullRequestDetail; diff: PullRequestDiff };
-      try {
-        const currentDetail = await github.getPullRequest({
-          repo: repository,
-          number: pullNumber,
-        });
-        const diff = await github.compareCommits({
-          repo: repository,
-          baseSha: currentDetail.baseSha,
-          headSha,
-        });
-        snapshot = {
-          detail: { ...currentDetail, headSha, ...summarizeDiff(diff.diff) },
-          diff,
-        };
-        const changedFiles = snapshot.detail.changedFiles;
-        group.findings = group.findings.map((finding) => {
-          if (finding.label !== 'MISSED' || finding.filePath === null) {
-            return finding;
-          }
-          const resolution = resolveMissPath(finding.filePath, changedFiles);
-          if (
-            resolution.kind === 'not-in-diff' ||
-            resolution.kind === 'ambiguous'
-          ) {
-            missPathNotes.push({
-              id: finding.id,
-              repo: repository,
-              pullNumber,
-              filePath: finding.filePath,
-              kind: resolution.kind,
-              ...(resolution.kind === 'ambiguous'
-                ? { candidates: resolution.candidates }
-                : {}),
-            });
-          }
-          return { ...finding, filePath: resolution.filePath };
-        });
-      } catch (error: unknown) {
-        for (let trial = 1; trial <= options.trials; trial += 1) {
-          skipped.push(toSkipped(group, trial, error));
-        }
-        continue;
-      }
-      for (let trial = 1; trial <= options.trials; trial += 1) {
-        const startedAt = Date.now();
-        try {
-          const outcome = await usecase.execute({
-            prRef: `${repository}#${pullNumber}`,
-            slackUserId: 'cli-review-replay',
-            triggerType: TriggerType.MANUAL,
-            snapshot,
-            ...(holdoutIds === undefined
-              ? {}
-              : { excludeConventionFindingIds: holdoutIds }),
-          });
-          const groupPairs = group.findings.map(
-            (labeled): ReplayPair => ({
-              labeled,
-              replayed: outcome.result.findings,
-            }),
-          );
-          const groupScore = scoreReplay(groupPairs);
-          reportGroups.push({
-            trial,
-            repo: repository,
-            pullNumber,
-            headSha,
-            agentRunId: outcome.agentRunId,
-            modelUsed: outcome.modelUsed,
-            elapsedMs: Date.now() - startedAt,
-            diffTruncated: snapshot.diff.truncated,
-            results: groupScore.results,
-          });
-          pairs.push(...groupPairs);
-          trialResults[trial - 1].push(...groupScore.results);
-        } catch (error: unknown) {
-          skipped.push(toSkipped(group, trial, error));
-        }
-      }
-    }
-
-    const { rejected, fixed, missed } = scoreReplay(pairs);
-    const hasMisses = misses.length > 0;
-    const trials = {
-      rejected: summarizeTrials(trialResults, 'REJECTED'),
-      fixed: summarizeTrials(trialResults, 'FIXED'),
-      ...(hasMisses ? { missed: summarizeTrials(trialResults, 'MISSED') } : {}),
-      byDiffTruncation: {
-        rejected: summarizeTrialsByTruncation(
-          reportGroups,
-          options.trials,
-          'REJECTED',
-        ),
-        fixed: summarizeTrialsByTruncation(
-          reportGroups,
-          options.trials,
-          'FIXED',
-        ),
-        ...(hasMisses
-          ? {
-              missed: summarizeTrialsByTruncation(
-                reportGroups,
-                options.trials,
-                'MISSED',
-              ),
-            }
-          : {}),
-      },
-    };
-    const baselineMissed = baselineReport?.summaries.missed;
-    const latestCardMisses = resolvedMisses.filter(
-      (miss) => miss.headShaSource === 'latest-card',
-    ).length;
-    const sameScorer = baselineReport?.scorerVersion === REPLAY_SCORER_VERSION;
-    const report: ReplayReport = {
-      generatedAt: new Date().toISOString(),
-      scorerVersion: REPLAY_SCORER_VERSION,
-      options,
-      score: { rejected, fixed, missed },
-      trials,
-      ...(baselineReport === undefined || options.baseline === undefined
-        ? {}
-        : {
-            baseline: {
-              path: options.baseline,
-              sameScorer,
-              sameSample:
-                sameScorer &&
-                baselineReport.skipped === 0 &&
-                skipped.length === 0 &&
-                isSameSample(
-                  baselineReport.sampleIds,
-                  sampleIdsOf({ groups: reportGroups }),
-                ),
-              rejected: compareWithBaseline(
-                trials.rejected,
-                baselineReport.summaries.rejected,
-                'REJECTED',
-              ),
-              fixed: compareWithBaseline(
-                trials.fixed,
-                baselineReport.summaries.fixed,
-                'FIXED',
-              ),
-              ...(trials.missed === undefined || baselineMissed === undefined
-                ? {}
-                : {
-                    missed: compareWithBaseline(trials.missed, baselineMissed),
-                  }),
-              // 기준선에 미탐이 없어도 이 줄은 낸다 — 빠지면 미탐 판정 기준이 콘솔에서 조용히 사라진다.
-              ...(trials.byDiffTruncation.missed === undefined
-                ? {}
-                : {
-                    missedIntact: compareMissedIntactWithBaseline(
-                      trials.byDiffTruncation.missed.intact,
-                      baselineReport.summaries.missedIntact,
-                      isSameSample(
-                        baselineReport.intactMissedIds,
-                        intactMissedIdsOf({ groups: reportGroups }),
-                      ),
-                    ),
-                  }),
-            },
-          }),
-      unresolvedMisses,
-      resolvedMisses,
-      missPathNotes,
-      groups: reportGroups,
-      skipped,
-    };
-    const serialized = JSON.stringify(report, null, 2);
-    if (options.out !== undefined) {
-      writeFileSync(options.out, `${serialized}\n`, 'utf8');
-    }
-    process.stdout.write(`${serialized}\n`);
-    process.stderr.write(
-      [
-        `회차 ${options.trials}${options.holdout ? ' · holdout' : ''}`,
-        formatTrialLine('오탐 재발', trials.rejected),
-        ...formatSplitLines(trials.byDiffTruncation.rejected),
-        formatTrialLine('정탐 유지', trials.fixed),
-        ...formatSplitLines(trials.byDiffTruncation.fixed),
-        ...(trials.missed === undefined
-          ? []
-          : [formatTrialLine('미탐 재현', trials.missed)]),
-        ...(trials.byDiffTruncation.missed === undefined
-          ? []
-          : formatSplitLines(trials.byDiffTruncation.missed)),
-        ...(unresolvedMisses.length === 0
-          ? []
-          : [`미탐 중 리뷰 커밋을 못 찾아 뺀 것 ${unresolvedMisses.length}`]),
-        ...(latestCardMisses === 0
-          ? []
-          : [
-              `경고: 미탐 ${latestCardMisses}건은 headSha 가 없어 마지막 카드 커밋으로 재생했다 — 외부 리뷰 뒤에 결함이 고쳐졌으면 잡을 대상이 없다. original_commit_id 를 넣을 것`,
-            ]),
-        ...(missPathNotes.length === 0
-          ? []
-          : [
-              `미탐 중 전체 경로를 못 정한 것 ${missPathNotes.length} (보고서 missPathNotes — 이름만으로 매칭된다)`,
-            ]),
-        ...(report.baseline === undefined
-          ? []
-          : [
-              ...(report.baseline.sameScorer
-                ? []
-                : [
-                    `경고: 기준선은 판정 규칙 v${baselineReport?.scorerVersion} 로, 이번은 v${REPLAY_SCORER_VERSION} 로 채점했다 — 재현율을 비교할 수 없다. 기준선을 다시 돌릴 것`,
-                  ]),
-              ...(report.baseline.sameSample
-                ? []
-                : [
-                    '경고: 기준선과 측정한 카드가 다르거나 어느 쪽에 스킵이 있다 — 차이는 문제지 탓일 수 있다. 같은 --ids 로 스킵 없이 다시 돌릴 것',
-                  ]),
-              formatBaselineLine(
-                '오탐 재발',
-                report.baseline.rejected,
-                passRuleNote(
-                  report.baseline.rejected,
-                  report.baseline.sameSample,
-                ),
-              ),
-              formatBaselineLine(
-                '정탐 유지',
-                report.baseline.fixed,
-                passRuleNote(report.baseline.fixed, report.baseline.sameSample),
-              ),
-              ...(report.baseline.missed === undefined
-                ? []
-                : [formatBaselineLine('미탐 재현', report.baseline.missed)]),
-              ...(report.baseline.missedIntact === undefined
-                ? []
-                : [
-                    formatBaselineLine(
-                      '미탐 재현(diff 안 잘림, 판정 기준)',
-                      report.baseline.missedIntact,
-                      passRuleNote(
-                        report.baseline.missedIntact,
-                        report.baseline.sameSample,
-                      ),
-                    ),
-                  ]),
-            ]),
-        `스킵 ${skipped.length}`,
-        '',
-      ].join('\n'),
-    );
+    const run =
+      options.rescore === undefined
+        ? await replay(application, prisma, options)
+        : await rescore(prisma, options, options.rescore);
+    writeReport(run, baselineReport);
   } finally {
     await application.close();
   }
+};
+
+const replay = async (
+  application: INestApplicationContext,
+  prisma: PrismaService,
+  options: ReplayOptions,
+): Promise<ReplayRun> => {
+  const github = application.get<GithubClientPort>(GITHUB_CLIENT_PORT);
+  const usecase = application.get(ReviewPullRequestUsecase);
+  const misses = options.misses === undefined ? [] : readMisses(options.misses);
+  const rows = await selectFindings(prisma, options);
+  const groups = groupFindings(rows);
+  const { unresolved: unresolvedMisses, resolved: resolvedMisses } =
+    await addMisses(prisma, groups, misses);
+  const missPathNotes: MissPathNote[] = [];
+  // 미탐은 카드가 없어(음수 id) 규약 재료가 아니다 — 카드 id 만 뺀다.
+  const holdoutIds = options.holdout
+    ? groups.flatMap((group) =>
+        group.findings.map((finding) => finding.id).filter((id) => id > 0),
+      )
+    : undefined;
+  const reportGroups: ReplayGroupReport[] = [];
+  const skipped: SkippedGroup[] = [];
+  const pairs: ReplayPair[] = [];
+
+  for (const group of groups) {
+    const { repo: repository, pullNumber, headSha } = group;
+    // diff 는 회차가 달라도 같으므로 그룹마다 한 번만 가져온다.
+    let snapshot: { detail: PullRequestDetail; diff: PullRequestDiff };
+    try {
+      const currentDetail = await github.getPullRequest({
+        repo: repository,
+        number: pullNumber,
+      });
+      const diff = await github.compareCommits({
+        repo: repository,
+        baseSha: currentDetail.baseSha,
+        headSha,
+      });
+      snapshot = {
+        detail: { ...currentDetail, headSha, ...summarizeDiff(diff.diff) },
+        diff,
+      };
+      const changedFiles = snapshot.detail.changedFiles;
+      group.findings = group.findings.map((finding) => {
+        if (finding.label !== 'MISSED' || finding.filePath === null) {
+          return finding;
+        }
+        const resolution = resolveMissPath(finding.filePath, changedFiles);
+        if (
+          resolution.kind === 'not-in-diff' ||
+          resolution.kind === 'ambiguous'
+        ) {
+          missPathNotes.push({
+            id: finding.id,
+            repo: repository,
+            pullNumber,
+            filePath: finding.filePath,
+            kind: resolution.kind,
+            ...(resolution.kind === 'ambiguous'
+              ? { candidates: resolution.candidates }
+              : {}),
+          });
+        }
+        return { ...finding, filePath: resolution.filePath };
+      });
+    } catch (error: unknown) {
+      for (let trial = 1; trial <= options.trials; trial += 1) {
+        skipped.push(toSkipped(group, trial, error));
+      }
+      continue;
+    }
+    for (let trial = 1; trial <= options.trials; trial += 1) {
+      const startedAt = Date.now();
+      try {
+        const outcome = await usecase.execute({
+          prRef: `${repository}#${pullNumber}`,
+          slackUserId: 'cli-review-replay',
+          triggerType: TriggerType.MANUAL,
+          snapshot,
+          ...(holdoutIds === undefined
+            ? {}
+            : { excludeConventionFindingIds: holdoutIds }),
+        });
+        const groupPairs = group.findings.map(
+          (labeled): ReplayPair => ({
+            labeled,
+            replayed: outcome.result.findings,
+          }),
+        );
+        const groupScore = scoreReplay(groupPairs);
+        pairs.push(...groupPairs);
+        reportGroups.push({
+          trial,
+          repo: repository,
+          pullNumber,
+          headSha,
+          agentRunId: outcome.agentRunId,
+          modelUsed: outcome.modelUsed,
+          elapsedMs: Date.now() - startedAt,
+          diffTruncated: snapshot.diff.truncated,
+          results: groupScore.results,
+        });
+      } catch (error: unknown) {
+        skipped.push(toSkipped(group, trial, error));
+      }
+    }
+  }
+  return {
+    options,
+    groups: reportGroups,
+    skipped,
+    unresolvedMisses,
+    resolvedMisses,
+    missPathNotes,
+    pairs,
+    hasMisses: misses.length > 0,
+    notes: [],
+  };
+};
+
+// 저장된 보고서의 모델 출력(원장 agent_run.output)을 현재 판정 규칙으로 다시 매긴다. 모델 호출 0.
+// 판정 규칙이 바뀔 때마다 쿼터를 들여 기준선을 다시 돌리지 않으려는 것이다 — 규칙 v1 → v2 에서
+// 저장된 보고서 3종이 한꺼번에 기준선 자격을 잃었다(docs/superpowers/plans/2026-09-29-review-replay-trials.md §8-7).
+// 표본은 보고서의 결과 id 그대로다. 카드는 원장에서 본문을 다시 읽고, 미탐은 보고서가 쓴 미탐 파일로
+// id 를 맞춘다. --misses 를 주면 그 파일의 본문·줄·경로로 바꿔 채점한다(pairReplacementMisses).
+// diff 는 다시 받지 않으므로 잘림 여부·스킵·미탐 경로 메모는 원래 보고서 것을 쓴다.
+const rescore = async (
+  prisma: PrismaService,
+  options: ReplayOptions,
+  path: string,
+): Promise<ReplayRun> => {
+  const saved = readSavedReport(path);
+  const replacementPath = options.misses ?? saved.options.missesReplacement;
+  const labeledById = new Map<number, LabeledFinding>();
+  const results = saved.groups.flatMap((group) => group.results);
+
+  const cardIds = [
+    ...new Set(results.map((result) => result.id).filter((id) => id > 0)),
+  ];
+  const labelOf = new Map(results.map((result) => [result.id, result.label]));
+  const rows = await prisma.prReviewFinding.findMany({
+    where: { id: { in: cardIds } },
+  });
+  for (const row of rows) {
+    // 라벨은 보고서 것을 쓴다 — 그 뒤 카드 상태가 바뀌었어도 표본은 원래 실행과 같아야 한다.
+    labeledById.set(row.id, {
+      id: row.id,
+      label: labelOf.get(row.id) as ReplayLabel,
+      filePath: row.filePath,
+      line: row.line,
+      category: row.category,
+      body: row.body,
+    });
+  }
+
+  const notes: string[] = [];
+  if (results.some((result) => result.id < 0)) {
+    if (saved.options.misses === undefined) {
+      throw new Error(
+        `--rescore ${path} 에 미탐 결과가 있는데 보고서에 미탐 파일 경로(options.misses)가 없다.`,
+      );
+    }
+    const original = readMisses(saved.options.misses);
+    if (replacementPath === undefined) {
+      for (const entry of original) {
+        const labeled = toMissedLabeledFinding(entry);
+        labeledById.set(labeled.id, labeled);
+      }
+    } else {
+      const replacement = readMisses(replacementPath);
+      const { labeled, errors } = pairReplacementMisses(original, replacement);
+      if (errors.length > 0) {
+        throw new Error(
+          `--misses ${replacementPath} 를 ${saved.options.misses} 와 짝지을 수 없다:\n${errors.join('\n')}`,
+        );
+      }
+      for (const finding of labeled) {
+        labeledById.set(finding.id, finding);
+      }
+      // 교체 목록의 줄은 외부 리뷰가 본 커밋 기준이다. 재생 커밋이 그와 다르면 줄이 어긋나 있을 수 있다.
+      const replayedShaOf = new Map(
+        saved.resolvedMisses.map((miss) => [miss.id, miss.headSha]),
+      );
+      const shifted = original.filter((entry, index) => {
+        const anchorSha = replacement[index].headSha;
+        const replayedSha = replayedShaOf.get(missedFindingId(entry));
+        return (
+          anchorSha !== undefined &&
+          replayedSha !== undefined &&
+          anchorSha !== replayedSha
+        );
+      }).length;
+      if (shifted > 0) {
+        notes.push(
+          `주의: 교체 미탐 ${shifted}건은 외부 리뷰 커밋과 재생 커밋이 달라 줄이 어긋나 있을 수 있다 — 본문 겹침으로만 잡힐 수 있다`,
+        );
+      }
+    }
+  }
+
+  const missing = [...new Set(results.map((result) => result.id))].filter(
+    (id) => !labeledById.has(id),
+  );
+  if (missing.length > 0) {
+    throw new Error(
+      `--rescore ${path} 의 결과 id ${missing.join(', ')} 를 원장이나 미탐 파일에서 찾지 못했다 — 표본이 달라지므로 멈춘다.`,
+    );
+  }
+
+  const agentRunIds = [
+    ...new Set(saved.groups.map((group) => group.agentRunId)),
+  ];
+  const outputs = await prisma.agentRun.findMany({
+    where: { id: { in: agentRunIds } },
+    select: { id: true, output: true },
+  });
+  const replayedByRun = new Map<number, ReplayedFinding[]>();
+  for (const run of outputs) {
+    const findings = replayedFindingsOf(run.output);
+    if (findings !== null) {
+      replayedByRun.set(run.id, findings);
+    }
+  }
+  const unreadable = agentRunIds.filter((id) => !replayedByRun.has(id));
+  if (unreadable.length > 0) {
+    throw new Error(
+      `agent_run ${unreadable.join(', ')} 의 리뷰 결과를 읽지 못했다(없거나 형식이 다름) — 모델 출력이 없으면 재채점할 수 없다.`,
+    );
+  }
+
+  const pairs: ReplayPair[] = [];
+  const groups = saved.groups.map((group): ReplayGroupReport => {
+    const replayed = replayedByRun.get(group.agentRunId) ?? [];
+    const groupPairs = group.results.map(
+      (result): ReplayPair => ({
+        labeled: labeledById.get(result.id) as LabeledFinding,
+        replayed,
+      }),
+    );
+    pairs.push(...groupPairs);
+    return { ...group, results: scoreReplay(groupPairs).results };
+  });
+  return {
+    options: {
+      ...saved.options,
+      rescore: path,
+      ...(replacementPath === undefined
+        ? {}
+        : { missesReplacement: replacementPath }),
+      out: options.out,
+      baseline: options.baseline,
+    },
+    groups,
+    skipped: saved.skipped,
+    unresolvedMisses: saved.unresolvedMisses,
+    resolvedMisses: saved.resolvedMisses,
+    missPathNotes: saved.missPathNotes,
+    pairs,
+    hasMisses: saved.options.misses !== undefined,
+    notes: [
+      `재채점: ${path} 의 모델 출력을 판정 규칙 v${REPLAY_SCORER_VERSION} 로 다시 매겼다 (모델 호출 없음)`,
+      ...notes,
+    ],
+  };
+};
+
+const writeReport = (
+  run: ReplayRun,
+  baselineReport: ReturnType<typeof readBaseline> | undefined,
+): void => {
+  const {
+    options,
+    groups: reportGroups,
+    skipped,
+    unresolvedMisses,
+    resolvedMisses,
+    missPathNotes,
+  } = run;
+  const trialResults: FindingReplayResult[][] = Array.from(
+    { length: options.trials },
+    () => [],
+  );
+  for (const group of reportGroups) {
+    trialResults[group.trial - 1].push(...group.results);
+  }
+  const { rejected, fixed, missed } = scoreReplay(run.pairs);
+  const trials = {
+    rejected: summarizeTrials(trialResults, 'REJECTED'),
+    fixed: summarizeTrials(trialResults, 'FIXED'),
+    ...(run.hasMisses
+      ? { missed: summarizeTrials(trialResults, 'MISSED') }
+      : {}),
+    byDiffTruncation: {
+      rejected: summarizeTrialsByTruncation(
+        reportGroups,
+        options.trials,
+        'REJECTED',
+      ),
+      fixed: summarizeTrialsByTruncation(reportGroups, options.trials, 'FIXED'),
+      ...(run.hasMisses
+        ? {
+            missed: summarizeTrialsByTruncation(
+              reportGroups,
+              options.trials,
+              'MISSED',
+            ),
+          }
+        : {}),
+    },
+  };
+  const baselineMissed = baselineReport?.summaries.missed;
+  const latestCardMisses = resolvedMisses.filter(
+    (miss) => miss.headShaSource === 'latest-card',
+  ).length;
+  const sameScorer = baselineReport?.scorerVersion === REPLAY_SCORER_VERSION;
+  const report: ReplayReport = {
+    generatedAt: new Date().toISOString(),
+    scorerVersion: REPLAY_SCORER_VERSION,
+    options,
+    score: { rejected, fixed, missed },
+    trials,
+    ...(baselineReport === undefined || options.baseline === undefined
+      ? {}
+      : {
+          baseline: {
+            path: options.baseline,
+            sameScorer,
+            sameSample:
+              sameScorer &&
+              baselineReport.skipped === 0 &&
+              skipped.length === 0 &&
+              isSameSample(
+                baselineReport.sampleIds,
+                sampleIdsOf({ groups: reportGroups }),
+              ),
+            rejected: compareWithBaseline(
+              trials.rejected,
+              baselineReport.summaries.rejected,
+              'REJECTED',
+            ),
+            fixed: compareWithBaseline(
+              trials.fixed,
+              baselineReport.summaries.fixed,
+              'FIXED',
+            ),
+            ...(trials.missed === undefined || baselineMissed === undefined
+              ? {}
+              : {
+                  missed: compareWithBaseline(trials.missed, baselineMissed),
+                }),
+            // 기준선에 미탐이 없어도 이 줄은 낸다 — 빠지면 미탐 판정 기준이 콘솔에서 조용히 사라진다.
+            ...(trials.byDiffTruncation.missed === undefined
+              ? {}
+              : {
+                  missedIntact: compareMissedIntactWithBaseline(
+                    trials.byDiffTruncation.missed.intact,
+                    baselineReport.summaries.missedIntact,
+                    isSameSample(
+                      baselineReport.intactMissedIds,
+                      intactMissedIdsOf({ groups: reportGroups }),
+                    ),
+                  ),
+                }),
+          },
+        }),
+    unresolvedMisses,
+    resolvedMisses,
+    missPathNotes,
+    groups: reportGroups,
+    skipped,
+  };
+  const serialized = JSON.stringify(report, null, 2);
+  if (options.out !== undefined) {
+    writeFileSync(options.out, `${serialized}\n`, 'utf8');
+  }
+  process.stdout.write(`${serialized}\n`);
+  process.stderr.write(
+    [
+      ...run.notes,
+      `회차 ${options.trials}${options.holdout ? ' · holdout' : ''}`,
+      formatTrialLine('오탐 재발', trials.rejected),
+      ...formatSplitLines(trials.byDiffTruncation.rejected),
+      formatTrialLine('정탐 유지', trials.fixed),
+      ...formatSplitLines(trials.byDiffTruncation.fixed),
+      ...(trials.missed === undefined
+        ? []
+        : [formatTrialLine('미탐 재현', trials.missed)]),
+      ...(trials.byDiffTruncation.missed === undefined
+        ? []
+        : formatSplitLines(trials.byDiffTruncation.missed)),
+      ...(unresolvedMisses.length === 0
+        ? []
+        : [`미탐 중 리뷰 커밋을 못 찾아 뺀 것 ${unresolvedMisses.length}`]),
+      ...(latestCardMisses === 0
+        ? []
+        : [
+            `경고: 미탐 ${latestCardMisses}건은 headSha 가 없어 마지막 카드 커밋으로 재생했다 — 외부 리뷰 뒤에 결함이 고쳐졌으면 잡을 대상이 없다. original_commit_id 를 넣을 것`,
+          ]),
+      ...(missPathNotes.length === 0
+        ? []
+        : [
+            `미탐 중 전체 경로를 못 정한 것 ${missPathNotes.length} (보고서 missPathNotes — 이름만으로 매칭된다)`,
+          ]),
+      ...(report.baseline === undefined
+        ? []
+        : [
+            ...(report.baseline.sameScorer
+              ? []
+              : [
+                  `경고: 기준선은 판정 규칙 v${baselineReport?.scorerVersion} 로, 이번은 v${REPLAY_SCORER_VERSION} 로 채점했다 — 재현율을 비교할 수 없다. 기준선을 다시 돌릴 것`,
+                ]),
+            ...(report.baseline.sameSample
+              ? []
+              : [
+                  '경고: 기준선과 측정한 카드가 다르거나 어느 쪽에 스킵이 있다 — 차이는 문제지 탓일 수 있다. 같은 --ids 로 스킵 없이 다시 돌릴 것',
+                ]),
+            formatBaselineLine(
+              '오탐 재발',
+              report.baseline.rejected,
+              passRuleNote(
+                report.baseline.rejected,
+                report.baseline.sameSample,
+              ),
+            ),
+            formatBaselineLine(
+              '정탐 유지',
+              report.baseline.fixed,
+              passRuleNote(report.baseline.fixed, report.baseline.sameSample),
+            ),
+            ...(report.baseline.missed === undefined
+              ? []
+              : [formatBaselineLine('미탐 재현', report.baseline.missed)]),
+            ...(report.baseline.missedIntact === undefined
+              ? []
+              : [
+                  formatBaselineLine(
+                    '미탐 재현(diff 안 잘림, 판정 기준)',
+                    report.baseline.missedIntact,
+                    passRuleNote(
+                      report.baseline.missedIntact,
+                      report.baseline.sameSample,
+                    ),
+                  ),
+                ]),
+          ]),
+      `스킵 ${skipped.length}`,
+      '',
+    ].join('\n'),
+  );
 };
 
 const toSkipped = (
@@ -509,6 +722,54 @@ const readBaseline = (
     intactMissedIds: intactMissedIdsOf(report),
     skipped: skippedCountOf(report),
     scorerVersion: scorerVersionOf(report),
+  };
+};
+
+// 재채점할 보고서. 표본(결과 id)과 모델 출력 위치(agentRunId)만 있으면 되지만, 형식이 틀린 채로 읽으면
+// 일부 그룹이 조용히 빠진 재현율이 나오므로 그룹마다 확인한다.
+const readSavedReport = (
+  path: string,
+): Pick<
+  ReplayReport,
+  | 'options'
+  | 'groups'
+  | 'skipped'
+  | 'unresolvedMisses'
+  | 'resolvedMisses'
+  | 'missPathNotes'
+> => {
+  const report = JSON.parse(
+    readFileSync(path, 'utf8'),
+  ) as Partial<ReplayReport>;
+  const labels: readonly unknown[] = ['REJECTED', 'FIXED', 'MISSED'];
+  const valid =
+    typeof report.options?.trials === 'number' &&
+    Array.isArray(report.groups) &&
+    report.groups.every(
+      (group) =>
+        typeof group.agentRunId === 'number' &&
+        Number.isInteger(group.trial) &&
+        group.trial >= 1 &&
+        group.trial <= (report.options?.trials ?? 0) &&
+        typeof group.diffTruncated === 'boolean' &&
+        Array.isArray(group.results) &&
+        group.results.every(
+          (result) =>
+            typeof result.id === 'number' && labels.includes(result.label),
+        ),
+    );
+  if (!valid || report.options === undefined || report.groups === undefined) {
+    throw new Error(
+      `--rescore ${path} 는 review:replay 보고서 형식이 아닙니다.`,
+    );
+  }
+  return {
+    options: report.options,
+    groups: report.groups,
+    skipped: report.skipped ?? [],
+    unresolvedMisses: report.unresolvedMisses ?? [],
+    resolvedMisses: report.resolvedMisses ?? [],
+    missPathNotes: report.missPathNotes ?? [],
   };
 };
 
@@ -726,6 +987,7 @@ const readOptions = (): ReplayOptions => {
     holdout: process.argv.includes('--holdout'),
     baseline: readOption('baseline'),
     misses: readOption('misses'),
+    rescore: readOption('rescore'),
   };
   if (ids !== undefined) {
     return { ids, ...common };
