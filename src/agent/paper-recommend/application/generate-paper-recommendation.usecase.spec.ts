@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { holidayCalendarOf } from '../../../holiday/domain/business-calendar';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { ModelProviderName } from '../../../model-router/domain/model-router.type';
 import { OpenPaperAccountUsecase } from '../../../paper-trading/application/open-paper-account.usecase';
@@ -58,6 +59,8 @@ describe('GeneratePaperRecommendationUsecase', () => {
   const strategyParameters = {
     execute: jest.fn(),
   } as unknown as jest.Mocked<ResolveStrategyParametersUsecase>;
+  // 공휴일 없는 달력. `jest.fn` 이 아니라서 `resetAllMocks` 에 지워지지 않는다.
+  const holidayCalendar = { load: async () => holidayCalendarOf([]) };
   // 실제 시스템 프롬프트는 run 안의 갱신으로만 남으므로, 그 인자를 볼 수 있게 참조를 둔다.
   const updateInputSnapshot = jest.fn();
 
@@ -75,6 +78,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
       modelRouter,
       agentRunService,
       strategyParameters,
+      holidayCalendar,
     );
     // 활성 행이 코드 상수와 같은 상태가 기본이다 — 이 PR 은 값을 옮긴 것이지 바꾼 것이 아니다.
     strategyParameters.execute.mockResolvedValue({

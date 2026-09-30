@@ -1,7 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import {
+  HOLIDAY_CALENDAR_PORT,
+  HolidayCalendarPort,
+} from '../../../holiday/domain/port/holiday-calendar.port';
 import { MoneyValue } from '../../../market-data/domain/market-data.type';
 import { StockIndicators } from '../../../market-data/domain/stock-indicator';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
@@ -13,7 +17,7 @@ import {
   summarizePendingDividends,
 } from '../../../paper-trading/domain/paper-valuation';
 import { PaperAccountRecord } from '../../../paper-trading/domain/port/paper-order-ledger.port';
-import { nextWeekday } from '../../../paper-trading/domain/trade-calendar';
+import { targetTradeDateOf } from '../../../paper-trading/domain/trade-calendar';
 import {
   InvariantCorporateActionRow,
   LockedPaperRecommendationState,
@@ -136,12 +140,20 @@ export class GeneratePaperRecommendationUsecase {
     private readonly modelRouter: ModelRouterUsecase,
     private readonly agentRunService: AgentRunService,
     private readonly strategyParameters: ResolveStrategyParametersUsecase,
+    @Inject(HOLIDAY_CALENDAR_PORT)
+    private readonly holidayCalendar: HolidayCalendarPort,
   ) {}
 
   async execute(
     command: GeneratePaperRecommendationCommand = {},
   ): Promise<GeneratePaperRecommendationResult> {
     const decidedAt = command.decidedAt ?? new Date();
+    // 전략이 여럿이어도 목표 거래일은 회차당 한 번만 정한다 — 전략 간 날짜가 갈리면 카드가
+    // 한 날짜만 적는 것(`paper-recommend.autopilot-task.ts`)이 거짓이 된다.
+    const targetTradeDate = targetTradeDateOf(
+      decidedAt,
+      await this.holidayCalendar.load(),
+    );
     const strategies = command.strategies ?? DEFAULT_STRATEGIES;
     const completed: PaperRecommendationSuccess[] = [];
     const failed: PaperRecommendationFailure[] = [];
@@ -151,6 +163,7 @@ export class GeneratePaperRecommendationUsecase {
         const outcome = await this.generateForStrategy({
           strategy,
           decidedAt,
+          targetTradeDate,
           triggerType:
             command.triggerType ?? TriggerType.AUTOPILOT_PAPER_RECOMMEND_CRON,
         });
@@ -165,10 +178,12 @@ export class GeneratePaperRecommendationUsecase {
   private async generateForStrategy({
     strategy,
     decidedAt,
+    targetTradeDate,
     triggerType,
   }: {
     strategy: PaperRecommendationStrategy;
     decidedAt: Date;
+    targetTradeDate: Date;
     triggerType: TriggerType;
   }): Promise<PaperRecommendationSuccess> {
     const outcome = await this.agentRunService.execute({
@@ -290,6 +305,7 @@ export class GeneratePaperRecommendationUsecase {
             const lockedRecommendation = this.constrainLockedRecommendation({
               strategy,
               decidedAt,
+              targetTradeDate,
               screen,
               indicatorsByTickerId,
               agentRunId,
@@ -396,6 +412,7 @@ export class GeneratePaperRecommendationUsecase {
   private constrainLockedRecommendation({
     strategy,
     decidedAt,
+    targetTradeDate,
     screen,
     indicatorsByTickerId,
     agentRunId,
@@ -405,6 +422,7 @@ export class GeneratePaperRecommendationUsecase {
   }: {
     strategy: PaperRecommendationStrategy;
     decidedAt: Date;
+    targetTradeDate: Date;
     screen: ScreenUniverseResult;
     indicatorsByTickerId: Map<number, StockIndicators>;
     agentRunId: number;
@@ -502,6 +520,7 @@ export class GeneratePaperRecommendationUsecase {
     const orders = this.toPendingOrders({
       strategy,
       decidedAt,
+      targetTradeDate,
       screen,
       indicatorsByTickerId,
       agentRunId,
@@ -594,6 +613,7 @@ export class GeneratePaperRecommendationUsecase {
   private toPendingOrders({
     strategy,
     decidedAt,
+    targetTradeDate,
     screen,
     indicatorsByTickerId,
     agentRunId,
@@ -601,6 +621,7 @@ export class GeneratePaperRecommendationUsecase {
   }: {
     strategy: PaperRecommendationStrategy;
     decidedAt: Date;
+    targetTradeDate: Date;
     screen: ScreenUniverseResult;
     indicatorsByTickerId: Map<number, StockIndicators>;
     agentRunId: number;
@@ -610,7 +631,6 @@ export class GeneratePaperRecommendationUsecase {
       return [];
     }
     const dataAsOf = new Date(`${screen.asOf}T00:00:00.000Z`);
-    const targetTradeDate = nextWeekday(decidedAt);
     return [...constrained.sells, ...constrained.buys].map((order) => ({
       tickerId: order.tickerId,
       side: order.side,
