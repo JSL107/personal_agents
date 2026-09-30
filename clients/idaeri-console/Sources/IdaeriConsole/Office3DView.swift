@@ -90,31 +90,13 @@ private struct Office3DWebView: NSViewRepresentable {
     let root: URL
     let controller: Office3DController
 
+    /// 웹뷰는 여기서 만들지 않고 `controller` 에게 받는다 — 탭을 떠났다 돌아오면 이 뷰는 새로
+    /// 만들어지지만 웹뷰는 같은 것이어야 걷던 사람이 그 자리에 있다.
     func makeNSView(context: Context) -> WKWebView {
-        let configuration = WKWebViewConfiguration()
-        configuration.setURLSchemeHandler(OfficeWebSchemeHandler(root: root), forURLScheme: "idaeri-office")
-        configuration.userContentController.addUserScript(
-            WKUserScript(
-                source: officeLayoutsScript(agents: agents),
-                injectionTime: .atDocumentStart,
-                forMainFrameOnly: true
-            )
-        )
-        configuration.userContentController.add(controller, name: "idaeri")
-        let webView = WKWebView(frame: .zero, configuration: configuration)
-        controller.attach(webView)
-        if let url = URL(string: "idaeri-office://app/index.html?renderer=3d&hosted=1") {
-            webView.load(URLRequest(url: url))
-        }
-        return webView
+        controller.webView(agents: agents, root: root)
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {}
-
-    static func dismantleNSView(_ webView: WKWebView, coordinator: ()) {
-        // 메시지 처리기는 웹뷰 설정이 **강하게** 붙든다. 떼지 않으면 웹뷰를 새로 만들 때마다 옛 문서가 남는다.
-        webView.configuration.userContentController.removeScriptMessageHandler(forName: "idaeri")
-    }
 }
 
 /// `idaeri-office://app/<경로>` → office-web 파일. 경로 가두기는 `officeWebResourceURL`(ConsoleCore, 테스트됨).
@@ -147,7 +129,9 @@ private final class OfficeWebSchemeHandler: NSObject, WKURLSchemeHandler {
     func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {}
 }
 
-/// 앱 ↔ 3D 화면 통로. `OfficeView` 가 소유한다(탭을 떠나면 웹뷰와 함께 새로 만들어진다).
+/// 앱 ↔ 3D 화면 통로이자 웹뷰의 주인. `AppRootView` 가 소유한다 — 2D 씬(`officeScene`)과 같은
+/// 자리다. `OfficeView` 는 탭을 떠나면 사라지므로, 거기에 두면 돌아올 때마다 문서가 새로 떠 걷던
+/// 사람이 전부 제자리로 돌아간다.
 ///
 /// **화면이 `ready` 를 보내기 전에는 아무것도 밀지 않는다.** 그 전에는 렌더러가 서지 않아
 /// 선택·상태 변화가 조용히 버려진다(화면은 렌더러를 세운 뒤에 `ready` 를 보낸다). 대신 마지막 스냅샷·잠·선택을 들고 있다가 `ready` 에 한꺼번에 보낸다 —
@@ -156,17 +140,53 @@ final class Office3DController: NSObject, ObservableObject, WKScriptMessageHandl
     /// 화면이 보낸 사건(`office:agent-click` · `office:president-click` · `office:focus` · `escape`).
     var onMessage: (([String: Any]) -> Void)?
 
-    private weak var webView: WKWebView?
+    private var webView: WKWebView?
+    /// 지금 웹뷰가 어느 명단의 평면도로 떴는지(`officeLayoutKey`). 명단이 바뀌면 새로 띄운다.
+    private var layoutKey: String?
     private var isReady = false
     private var latestSnapshot: String?
     private var pendingSnapshot: ConsoleSnapshot?
     private var snapshotScheduled = false
     private var sleeping = false
     private var selectedAgent: String?
+    /// 화면이 마지막으로 알린 방 확대. 탭에 돌아온 `OfficeView` 가 머리줄을 여기에 맞춘다 —
+    /// 웹뷰는 확대한 채 남아 있는데 머리줄만 "전체" 로 돌아가면 나가는 길 안내가 사라진다.
+    private(set) var focusedDepartment: Department?
 
-    func attach(_ webView: WKWebView) {
+    /// 이 명단의 3D 화면. 같은 명단이면 앞서 띄운 웹뷰를 그대로 돌려준다(탭 복귀).
+    func webView(agents: [ConsoleAgent], root: URL) -> WKWebView {
+        let key = officeLayoutKey(agents)
+        if let webView, layoutKey == key {
+            return webView
+        }
+        releaseWebView()
+        let configuration = WKWebViewConfiguration()
+        configuration.setURLSchemeHandler(OfficeWebSchemeHandler(root: root), forURLScheme: "idaeri-office")
+        configuration.userContentController.addUserScript(
+            WKUserScript(
+                source: officeLayoutsScript(agents: agents),
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: true
+            )
+        )
+        configuration.userContentController.add(self, name: "idaeri")
+        let webView = WKWebView(frame: .zero, configuration: configuration)
         self.webView = webView
+        layoutKey = key
+        if let url = URL(string: "idaeri-office://app/index.html?renderer=3d&hosted=1") {
+            webView.load(URLRequest(url: url))
+        }
+        return webView
+    }
+
+    /// 웹뷰를 놓는다 — 명단이 바뀌어 새로 띄울 때와 2D 로 돌아갈 때(안 보는 화면의 프로세스를 남기지 않는다).
+    func releaseWebView() {
+        // 메시지 처리기는 웹뷰 설정이 **강하게** 붙든다. 떼지 않으면 옛 문서가 이 객체와 서로 붙들고 남는다.
+        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "idaeri")
+        webView = nil
+        layoutKey = nil
         isReady = false
+        focusedDepartment = nil
     }
 
     func userContentController(
@@ -184,6 +204,9 @@ final class Office3DController: NSObject, ObservableObject, WKScriptMessageHandl
             setSleeping(sleeping)
             setSelected(selectedAgent)
             return
+        }
+        if type == "office:focus" {
+            focusedDepartment = (body["department"] as? String).flatMap(Department.init(rawValue:))
         }
         onMessage?(body)
     }

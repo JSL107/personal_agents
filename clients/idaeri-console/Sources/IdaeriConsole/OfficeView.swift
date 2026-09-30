@@ -28,7 +28,8 @@ struct OfficeView: View {
     @State private var focusedRoom: Department?
     /// 2D(SpriteKit) · 3D(웹 렌더러) 선택. 메뉴 「보기 ▸ 3D 오피스」가 바꾼다. 기본은 2D.
     @AppStorage(officeRendererDefaultsKey) private var officeRenderer = "2d"
-    @StateObject private var office3D = Office3DController()
+    /// 3D 화면의 웹뷰와 통로. 소유자는 `AppRootView` — 탭을 떠나도 걷던 사람의 위치가 남는다(`scene` 과 같다).
+    let office3D: Office3DController
 
     private var uses3D: Bool { officeRenderer == "3d" }
 
@@ -119,6 +120,12 @@ struct OfficeView: View {
                     snapWindowUpToFloorPlanStep(window, grownFrom: startSize)
                 }
                 .onAppear {
+                    // 다른 탭에 있는 동안 메뉴로 2D 로 바꾸면 아래 `onChange(of: officeRenderer)` 가 돌지
+                    // 않는다(이 뷰가 없다). 남은 웹뷰를 여기서 놓지 않으면 바로 아래 `applySceneSleep` 이
+                    // 안 보이는 3D 화면을 깨워 계속 돌린다.
+                    if !uses3D {
+                        office3D.releaseWebView()
+                    }
                     // 통지는 상태가 "바뀔 때" 만 온다. 이미 가려지거나 최소화된 창에서 탭이
                     // 열리면 다음 통지까지 씬이 계속 돌므로, 나타나는 시점에 한 번 맞춘다.
                     applySceneSleep()
@@ -131,7 +138,7 @@ struct OfficeView: View {
                     scene.syncSessions(store.sessions)
                     scene.sync(agents: store.agents, approvals: store.approvals)
                     scene.setSelected(validSelection)
-                    focusedRoom = scene.focusedDepartment
+                    focusedRoom = uses3D ? office3D.focusedDepartment : scene.focusedDepartment
                     scene.applyHousekeeping(store.housekeeping)
                     scene.refreshOverlays(
                         agents: store.agents, runs: store.runs,
@@ -161,10 +168,15 @@ struct OfficeView: View {
                     scene.onFocusChange = nil
                     scene.onDailyReportClick = nil
                     office3D.onMessage = nil
+                    // 웹뷰는 창에서 떨어져도 살아 있다 — 재우지 않으면 안 보이는 화면이 계속 돈다.
+                    office3D.setSleeping(true)
                 }
                 .onChange(of: officeRenderer) { _ in
                     // 두 화면은 방 확대 상태를 따로 가진다. 바꾼 쪽의 것을 머리줄에 맞춘다.
                     focusedRoom = uses3D ? nil : scene.focusedDepartment
+                    if !uses3D {
+                        office3D.releaseWebView()
+                    }
                 }
                 .onChange(of: store.housekeeping) { next in
                     scene.applyHousekeeping(next)
