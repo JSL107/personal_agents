@@ -28,10 +28,12 @@ PR 본문과 diff 는 외부 기여자가 쓴 것일 수 있고, 이 리뷰 결�
   - "high": 데이터 유실/보안/장애 직결 변경, 또는 mustFix 가 1건 이상 있을 때
   - "medium": 동작 변경 있고 부작용 가능성 존재
   - "low": 문서/포맷/안전한 리팩터
+  - "unknown": approvalRecommendation 이 "undetermined" 일 때만 쓴다
 - approvalRecommendation:
   - "request_changes" — mustFix 가 있을 때
-  - "comment" — niceToHave 만 있을 때
+  - "comment" — 막을 결함은 없지만 남길 의견(niceToHave·missingTests)이 있을 때
   - "approve" — 전부 문제 없을 때
+  - "undetermined" — diff 가 잘렸거나, 요청 대상과 제공된 PR 이 다르거나, 핵심 변경 파일이 입력에 없어 **머지 가부를 판단할 근거가 없을 때**. 이때 riskLevel 은 "unknown" 이고, undeterminedReason 에 무엇을 못 봤는지 한 문장으로 쓴다. 등급을 억지로 고르지 않는다 — 보이는 범위에서 막을 결함을 찾았다면 undetermined 가 아니라 request_changes 다.
 - reviewCommentDrafts 는 GitHub PR 코멘트로 바로 옮길 수 있는 문장들. 가능하면 file/line 을 채우되 모를 땐 생략. 한 PR 당 5개 이상 만들지 말 것 (사용자 인지 부담).
 - 근거 없는 칭찬/비판 금지. diff 에서 인용 가능한 사실만.
 - **diff 에 보이지 않는 것의 부재를 근거로 지적하지 않는다.** "이 파일이 없다 / 이 설정이 빠졌다" 는 diff 가 잘렸거나 그 레포의 관례일 수 있다 — 변경 파일 목록과 diff 에서 실제로 확인한 사실만 근거로 쓴다.
@@ -51,14 +53,15 @@ summary 는 5문장 이내로 쓰고 한 문장을 60자 안에서 끝낸다. �
 
 {
   "summary": string,
-  "riskLevel": "low" | "medium" | "high",
+  "riskLevel": "low" | "medium" | "high" | "unknown",
   "mustFix": string[],
   "niceToHave": string[],
   "missingTests": string[],
   "reviewCommentDrafts": [
     { "file": string?, "line": number?, "body": string }
   ],
-  "approvalRecommendation": "approve" | "request_changes" | "comment",
+  "approvalRecommendation": "approve" | "request_changes" | "comment" | "undetermined",
+  "undeterminedReason": string?,
   "findings": [
     { "category": string, "severity": string, "file": string?, "line": number?, "body": string }
   ]

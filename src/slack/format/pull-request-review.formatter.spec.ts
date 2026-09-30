@@ -26,6 +26,23 @@ const finding = (body: string): ReviewFinding => ({
 });
 
 describe('formatPullRequestReview', () => {
+  it('판단 보류면 보류 라벨과 이유를 내고 "지적 사항 없음" 을 붙이지 않는다 — 못 본 것이지 안전한 게 아니다', () => {
+    const text = formatPullRequestReview({
+      prRef: 'owner/repo#1',
+      review: {
+        ...baseReview(),
+        riskLevel: 'unknown',
+        approvalRecommendation: 'undetermined',
+        undeterminedReason: '핵심 파일이 잘린 diff 에 없다',
+      },
+    });
+
+    expect(text).toContain('위험도: ⚪ UNKNOWN · 권고: ⏸️ 판단 보류');
+    expect(text).toContain('*판단 보류 이유*');
+    expect(text).toContain('핵심 파일이 잘린 diff 에 없다');
+    expect(text).not.toContain(NO_FINDING_NOTICE);
+  });
+
   it('지적이 하나도 없으면 지적 없음을 명시한다', () => {
     const text = formatPullRequestReview({
       prRef: 'owner/repo#1',

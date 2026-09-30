@@ -1,6 +1,10 @@
 import { CodeReviewerException } from '../code-reviewer.exception';
 import { PullRequestReview } from '../code-reviewer.type';
-import { parsePullRequestReview } from './pr-review.parser';
+import {
+  parsePullRequestReview,
+  UNDETERMINED_REASON_MISSING,
+  UNDETERMINED_REASON_UNKNOWN_RISK,
+} from './pr-review.parser';
 
 describe('parsePullRequestReview', () => {
   const valid: PullRequestReview = {
@@ -297,5 +301,147 @@ describe('parsePullRequestReview — findings', () => {
     const parsed = parsePullRequestReview(text);
 
     expect(parsed.findings[0].body).toBe('본문 공백');
+  });
+});
+
+// 보류 값이 없던 동안 잘린 diff 를 본 리뷰가 스스로 "판단 보류" 라고 쓰고도 medium/comment 로
+// 채워졌다(run 1421·1970·5320·5331·5478·5515·5599). 판단 보류와 등급의 짝은 코드가 강제한다.
+describe('parsePullRequestReview — 판단 보류(undetermined)', () => {
+  const blank = {
+    summary: 'diff 가 50,000바이트에서 잘려 핵심 변경을 보지 못했다.',
+    mustFix: [],
+    niceToHave: [],
+    missingTests: [],
+    reviewCommentDrafts: [],
+    findings: [],
+  };
+  const parse = (overrides: Record<string, unknown>) =>
+    parsePullRequestReview(JSON.stringify({ ...blank, ...overrides }));
+
+  it('모델이 등급을 채워 보내도 판단 보류면 riskLevel 을 unknown 으로 덮어쓴다', () => {
+    const review = parse({
+      riskLevel: 'medium',
+      approvalRecommendation: 'undetermined',
+      undeterminedReason: '  EntriesService 변경이 잘린 뒷부분에 있다  ',
+    });
+
+    expect(review.riskLevel).toBe('unknown');
+    expect(review.approvalRecommendation).toBe('undetermined');
+    expect(review.undeterminedReason).toBe(
+      'EntriesService 변경이 잘린 뒷부분에 있다',
+    );
+  });
+
+  // 짝이 틀렸다고 리뷰 전체를 실패시키면 같은 응답의 지적까지 잃는다 — 보정하고 알린다.
+  it.each([
+    ['누락', {}],
+    ['공백', { undeterminedReason: '   ' }],
+  ])(
+    '판단 보류인데 이유가 %s 이면 예외 대신 사유 미기재로 채우고 보정을 알린다',
+    (_label, reason) => {
+      const onCorrection = jest.fn();
+      const review = parsePullRequestReview(
+        JSON.stringify({
+          ...blank,
+          riskLevel: 'unknown',
+          approvalRecommendation: 'undetermined',
+          ...reason,
+        }),
+        onCorrection,
+      );
+
+      expect(review.approvalRecommendation).toBe('undetermined');
+      expect(review.riskLevel).toBe('unknown');
+      expect(review.undeterminedReason).toBe(UNDETERMINED_REASON_MISSING);
+      expect(onCorrection).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('보류가 아닌데 riskLevel 이 unknown 이면 예외 대신 판단 보류로 올리고 보정을 알린다', () => {
+    const onCorrection = jest.fn();
+    const review = parsePullRequestReview(
+      JSON.stringify({
+        ...blank,
+        riskLevel: 'unknown',
+        approvalRecommendation: 'comment',
+        niceToHave: ['주석 보강'],
+      }),
+      onCorrection,
+    );
+
+    expect(review.approvalRecommendation).toBe('undetermined');
+    expect(review.riskLevel).toBe('unknown');
+    expect(review.undeterminedReason).toBe(UNDETERMINED_REASON_UNKNOWN_RISK);
+    // 보정은 판정 칸만 고친다 — 같은 응답의 지적은 그대로 남는다.
+    expect(review.niceToHave).toEqual(['주석 보강']);
+    expect(review.findings).toHaveLength(1);
+    expect(onCorrection).toHaveBeenCalledTimes(1);
+  });
+
+  it('riskLevel unknown 이면서 막을 결함이 있으면 request_changes·high 로 올린다', () => {
+    const review = parse({
+      riskLevel: 'unknown',
+      approvalRecommendation: 'approve',
+      mustFix: ['널 검사 누락'],
+    });
+
+    expect(review.approvalRecommendation).toBe('request_changes');
+    expect(review.riskLevel).toBe('high');
+  });
+
+  it('짝이 맞는 응답은 보정 알림을 내지 않는다', () => {
+    const onCorrection = jest.fn();
+    parsePullRequestReview(
+      JSON.stringify({
+        ...blank,
+        riskLevel: 'unknown',
+        approvalRecommendation: 'undetermined',
+        undeterminedReason: '핵심 파일이 잘렸다',
+      }),
+      onCorrection,
+    );
+    parsePullRequestReview(
+      JSON.stringify({
+        ...blank,
+        riskLevel: 'low',
+        approvalRecommendation: 'approve',
+      }),
+      onCorrection,
+    );
+
+    expect(onCorrection).not.toHaveBeenCalled();
+  });
+
+  it('판단 보류인데 막을 결함(mustFix)을 찾았으면 request_changes·high 로 올린다', () => {
+    const review = parse({
+      riskLevel: 'unknown',
+      approvalRecommendation: 'undetermined',
+      undeterminedReason: '뒷부분 미확인',
+      mustFix: ['트랜잭션 밖에서 저장한다'],
+    });
+
+    expect(review.approvalRecommendation).toBe('request_changes');
+    expect(review.riskLevel).toBe('high');
+    expect(review.undeterminedReason).toBeUndefined();
+  });
+
+  it('보류가 아닌 리뷰에 붙은 이유 필드는 버린다', () => {
+    const review = parse({
+      riskLevel: 'low',
+      approvalRecommendation: 'approve',
+      undeterminedReason: '잘못 붙은 값',
+    });
+
+    expect(review.undeterminedReason).toBeUndefined();
+  });
+
+  it('undeterminedReason 이 문자열이 아니면 스키마 위반', () => {
+    expect(() =>
+      parse({
+        riskLevel: 'unknown',
+        approvalRecommendation: 'undetermined',
+        undeterminedReason: 42,
+      }),
+    ).toThrow(CodeReviewerException);
   });
 });

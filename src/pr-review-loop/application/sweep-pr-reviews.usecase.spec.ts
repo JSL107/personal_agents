@@ -962,6 +962,33 @@ describe('SweepPrReviewsUsecase', () => {
       expect(body).toContain('> 요약 첫 줄 요약 둘째 줄');
     });
 
+    it('판단 보류로 끝난 리뷰는 "지적 없음" 대신 판단 보류와 이유를 단다 — 잘린 diff 를 안전하다고 알리지 않는다', async () => {
+      reviewUsecase.execute.mockResolvedValue({
+        ...REVIEW_OUTCOME,
+        result: {
+          ...REVIEW_OUTCOME.result,
+          riskLevel: 'unknown',
+          approvalRecommendation: 'undetermined',
+          undeterminedReason: '핵심 reports diff 가 잘렸다',
+          mustFix: [],
+          niceToHave: [],
+          missingTests: [],
+          reviewCommentDrafts: [],
+          findings: [],
+        },
+      });
+
+      await buildUsecase({
+        ...ENABLED,
+        PR_REVIEW_INLINE_DRYRUN: 'false',
+      }).execute();
+
+      const [{ body }] = github.addIssueComment.mock.calls[0];
+      expect(body).toContain('판단 보류');
+      expect(body).toContain('핵심 reports diff 가 잘렸다');
+      expect(body).not.toContain('지적 사항 없음');
+    });
+
     it('연습 모드에서는 코멘트를 달지 않는다', async () => {
       noFindings();
 
