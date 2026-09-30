@@ -65,9 +65,8 @@ const STATE_LABELS = {
 const PRESIDENT_LOOK = { sheet: "char", shirt: [0.96, 0.96, 0.95], pants: [0.3, 0.3, 0.32], hair: [0.15, 0.14, 0.14] };
 const FALLBACK_LOOK = { sheet: "char", shirt: [0.8, 0.8, 0.8], pants: [0.3, 0.3, 0.3], hair: [0.3, 0.22, 0.16] };
 
-/** 이름표·말풍선 높이(사람 발 기준). 말풍선은 이름표가 떠 있으면 그 위로 한 칸 더 올린다. */
+/** 이름표·말풍선 높이(사람 발 기준). 이름표가 떠 있으면 말풍선은 화면 픽셀로 그 위에 선다(`.raised`). */
 const LABEL_HEIGHT = SCALE.characterHeight + 0.14;
-const BUBBLE_STEP = 0.24;
 
 export class Office3DRenderer {
   constructor(canvas, layout) {
@@ -397,13 +396,11 @@ export class Office3DRenderer {
     if (!tile) {
       return;
     }
-    const desk = buildFurniture("desk");
-    desk.position.copy(this.world(tile.x, tile.y - 1));
-    const chair = buildFurniture("chairDown");
-    chair.position.copy(this.world(tile.x, tile.y));
+    // 대표는 **서 있다**(2D·맥 앱과 같다). 앞 칸(y-1)은 평면도가 면담 공간으로 비워 둔 통행 칸이라
+    // 책상을 놓으면 줄 선 사람이 가려지고 걷는 사람이 책상을 뚫는다 — 평면도에 없는 가구는 만들지 않는다.
     const president = makeCharacter(PRESIDENT_LOOK);
     president.position.copy(this.world(tile.x, tile.y));
-    poseCharacter(president, { seated: true, facing: "down" }, 0);
+    poseCharacter(president, { seated: false, facing: "down", pose: "down" }, 0);
     president.add(this.hitBox({ president: true }));
     this.presidentAlarm = this.overlay.label("office3d-alarm", "🚨");
     this.presidentAlarm.position.set(0, LABEL_HEIGHT + 0.2, 0);
@@ -413,7 +410,7 @@ export class Office3DRenderer {
     this.presidentName.position.set(0, LABEL_HEIGHT, 0);
     this.presidentName.visible = false;
     president.add(this.presidentAlarm, this.presidentName);
-    this.scene.add(desk, chair, president);
+    this.scene.add(president);
   }
 
   /** 부서 문패·공용 공간 이름·세션 책상 이름 — 움직이지 않는 글자. */
@@ -754,8 +751,8 @@ export class Office3DRenderer {
     const bubbleText = agent?.bubble;
     entry.bubble.visible = Boolean(bubbleText) && state !== "WAITING";
     if (entry.bubble.visible) {
-      Overlay3D.set(entry.bubble, bubbleText);
-      entry.bubble.position.set(0, LABEL_HEIGHT + (named ? BUBBLE_STEP : 0), 0);
+      Overlay3D.set(entry.bubble, bubbleText, named ? "office3d-bubble raised" : "office3d-bubble");
+      entry.bubble.position.set(0, LABEL_HEIGHT, 0);
     }
   }
 

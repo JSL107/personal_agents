@@ -219,8 +219,18 @@ export function makeCharacter(look) {
   (HAIR_STYLES[look.sheet] ?? HAIR_STYLES.char)(head, hair);
   body.add(head);
 
+  // 결재 서류 — 방치 2단계부터 오른손 옆에 세워 든다(2D `drawHandPapers` 와 같은 신호). 평소에는 숨긴다.
+  // 몸 앞에 들면 줄 선 사람(대표 쪽 = 화면 안쪽을 본다)의 등에 가려 안 보였다 — 옆에 세우면
+  // 앞·뒤·옆 어느 방향에서도 보인다.
+  const papers = new THREE.Group();
+  papers.add(mesh(roundedBox(0.025, 0.22, 0.17), mat("paper"), 0, 0, 0));
+  papers.add(mesh(roundedBox(0.012, 0.2, 0.15), mat("bookBlue"), 0.018, 0, 0));
+  papers.position.set(BODY.torsoWidth / 2 + 0.07, BODY.hip + 0.02, 0.03);
+  papers.visible = false;
+  body.add(papers);
+
   root.add(body);
-  root.userData = { body, legs, arms };
+  root.userData = { body, legs, arms, papers };
   return addOutlines(root);
 }
 
@@ -241,8 +251,29 @@ export function makeStatusRing() {
  * 한 프레임 자세를 입힌다. `body` 는 live.js 가 정한 {x, y, pose, facing, seated}.
  * 걷는 중인지는 pose 이름(`down-walk1` 등)으로 안다 — live.js 가 2D 그림 이름을 그대로 쓴다.
  */
+/**
+ * 발 구르기 높이(타일) — 2D `waitTapOffset` 과 같은 리듬: 1.34초마다 0.22초 들었다 0.22초 내린다.
+ * 사인파로 계속 흔들면 "걷는 중" 과 구별되지 않는다 — 한 번 구르고 쉬는 박자가 조바심으로 읽힌다.
+ */
+function tapLift(now) {
+  const phase = ((now % 1.34) + 1.34) % 1.34;
+  if (phase < 0.22) {
+    return phase / 0.22;
+  }
+  if (phase < 0.44) {
+    return 1 - (phase - 0.22) / 0.22;
+  }
+  return 0;
+}
+
 export function poseCharacter(character, body, now) {
-  const { body: figure, legs, arms } = character.userData;
+  const { body: figure, legs, arms, papers } = character.userData;
+  // 방치 단계(live.js 의 `body.pressure`) — 2 서류 들기 · 3 발 구르기. 앉아 있으면 표현하지 않는다
+  // (줄에 선 사람에게만 붙는 값이다).
+  const pressure = body.seated ? 0 : (body.pressure ?? 0);
+  if (papers) {
+    papers.visible = pressure >= 2;
+  }
   character.rotation.y = FACING_ROTATION[body.seated ? "down" : body.facing] ?? 0;
   if (body.seated) {
     // 엉덩이를 의자 좌판 높이로 내리고, 허벅지는 앞으로·정강이는 아래로. 손은 책상 쪽으로.
@@ -259,9 +290,16 @@ export function poseCharacter(character, body, now) {
   const walking = typeof body.pose === "string" && body.pose.includes("walk");
   const phase = now * STRIDE_SPEED;
   figure.position.y = walking ? Math.abs(Math.sin(phase)) * 0.02 : 0;
+  const tap = !walking && pressure >= 3 ? tapLift(now) : 0;
+  figure.position.y += tap * 0.03;
   legs.forEach((leg, index) => {
     leg.hip.rotation.x = walking ? Math.sin(phase + index * Math.PI) * STRIDE : 0;
     leg.knee.rotation.x = walking ? Math.max(0, Math.sin(phase + index * Math.PI + 0.6)) * 0.4 : 0;
+    // 발 구르기는 오른발만 — 무릎을 굽혀 발끝을 든다.
+    if (index === 1 && tap > 0) {
+      leg.hip.rotation.x = -0.25 * tap;
+      leg.knee.rotation.x = 0.5 * tap;
+    }
   });
   arms.forEach((arm, index) => {
     arm.rotation.x = walking ? Math.sin(phase + (index + 1) * Math.PI) * STRIDE * 0.6 : 0;

@@ -83,9 +83,12 @@ function officePage(renderer, extra = "") {
   return query === "" ? "index.html" : `index.html?${query}`;
 }
 
-/** `--renderer=3d` — 캡처·확인용으로 저장된 선택을 이번 실행에서만 덮어쓴다. */
-function rendererFromArgv(fallback) {
-  const flag = process.argv.find((argument) => argument.startsWith("--renderer="));
+/**
+ * `--renderer=3d` — 캡처·확인용으로 저장된 선택을 이번 실행에서만 덮어쓴다.
+ * 인자 배열을 받는 이유는 `--self-check` 가 `process.argv` 를 건드리지 않고 분기를 확인하게 하려는 것.
+ */
+function rendererFromArgv(argv, fallback) {
+  const flag = argv.find((argument) => argument.startsWith("--renderer="));
   const value = flag?.slice("--renderer=".length);
   return value === "3d" || value === "2d" ? value : fallback;
 }
@@ -385,8 +388,19 @@ async function handleRequest(request, response) {
     return;
   }
   // 첫 실행은 어느 맥에 붙을지 모른다 — 사무실 대신 설정 화면을 연다.
-  const wanted = pathname === "/" ? (settings.url === "" ? "/setup.html" : "/index.html") : pathname;
-  serveStatic(wanted, response);
+  if (pathname === "/" && settings.url === "") {
+    serveStatic("/setup.html", response);
+    return;
+  }
+  // `/` 는 **저장된 화면 방식의 사무실로 넘겨준다.** 설정 화면이 저장 뒤 여기로 오는데, 쿼리 없는
+  // `index.html` 로 바로 가면 live.js 가 `renderer=3d` 를 못 봐 3D 를 고른 사람에게 2D 가 열렸다.
+  // 사무실로 들어오는 길을 여기 하나로 모아 두면 새 입구가 생겨도 선택이 빠지지 않는다.
+  if (pathname === "/") {
+    response.writeHead(302, { Location: `/${officePage(settings.renderer)}` });
+    response.end();
+    return;
+  }
+  serveStatic(pathname, response);
 }
 
 // MARK: - 창
@@ -472,6 +486,10 @@ async function selfCheck() {
   expect("2D 는 쿼리 없이", officePage("2d"), "index.html");
   expect("3D 는 renderer=3d", officePage("3d"), "index.html?renderer=3d");
   expect("캡처 쿼리와 함께", officePage("3d", "static=1&hour=12"), "index.html?static=1&hour=12&renderer=3d");
+  expect("--renderer=3d 는 3d", rendererFromArgv(["electron", ".", "--renderer=3d"], "2d"), "3d");
+  expect("--renderer=2d 는 저장값 3d 를 덮는다", rendererFromArgv(["--renderer=2d"], "3d"), "2d");
+  expect("인자가 없으면 저장값", rendererFromArgv(["electron", "."], "3d"), "3d");
+  expect("모르는 값이면 저장값", rendererFromArgv(["--renderer=4d"], "2d"), "2d");
   expect("스프라이트는 스프라이트 뿌리", resolveStaticPath("/sprites/char-down.png"), path.join(spritesRoot(), "char-down.png"));
   expect("상위로 올라가는 경로는 거절", resolveStaticPath("/../main.js"), null);
   expect("스프라이트에서 빠져나가는 경로는 거절", resolveStaticPath("/sprites/../../main.js"), null);
@@ -515,7 +533,7 @@ async function selfCheck() {
 
 function createWindow() {
   const settings = readSettings();
-  const renderer = rendererFromArgv(settings.renderer);
+  const renderer = rendererFromArgv(process.argv, settings.renderer);
   const captureTarget = captureTargetFromArgv();
   mainWindow = new BrowserWindow({
     // 2단계에서 맥 앱(`--size 1400x820`) 과 칸 단위로 대조한 창 크기다. 캔버스는 창에서

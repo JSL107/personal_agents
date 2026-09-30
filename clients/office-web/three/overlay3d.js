@@ -21,6 +21,8 @@ const STYLE = `
 }
 .office3d-label.idle { background: rgba(38, 30, 25, 0.45); color: rgba(251, 246, 238, 0.7); }
 .office3d-label.alert { background: rgba(150, 38, 62, 0.9); }
+/* 이름표가 함께 떠 있으면 그 위로 — 간격을 3D 거리로 잡으면 확대 배율에 따라 겹친다. */
+.office3d-bubble.raised { margin-top: -30px; }
 .office3d-bubble {
   font: 500 12px/1.35 "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
   max-width: 220px; white-space: normal; text-align: center;
