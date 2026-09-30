@@ -23,7 +23,12 @@ const normalizeForQuote = (value: string): string =>
 // 다만 그 대조만으로는 라벨 하나("결과: ")나 원문의 단어 몇 글자("결과")도 부분문자열 검사를
 // 그냥 통과한다 — 근거를 하나도 담지 않은 채 PROVEN 이 유지되는, 이 가드가 막으려던 관대한
 // 판정의 정확히 그 형태다. 그래서 길이는 라벨을 벗긴 본문으로 따로 잰다(줄마다 합산).
-const QUOTE_LABEL_PATTERN = /^(상황|과제|행동|결과|기술|근거)\s*:\s*/;
+const QUOTE_LABELS = '상황|과제|행동|결과|기술|근거';
+const QUOTE_LABEL_PATTERN = new RegExp(`^(${QUOTE_LABELS})\\s*:\\s*`);
+// 모델은 줄을 나누지 않고 "상황: … 행동: …" 처럼 라벨 여러 개를 한 줄에 이어 인용하기도 한다.
+// 그 사이 줄(과제 등)을 건너뛰었으니 한 줄 통째로는 원문의 부분문자열이 아니다 — 줄 단위로만
+// 자르면 정당한 인용이 강등된다(run 5789: 강등 29건 전부가 이 형태, 라벨별 조각은 모두 원문).
+const QUOTE_LABEL_BOUNDARY = new RegExp(`\\s(?=(?:${QUOTE_LABELS})\\s*:)`);
 const MIN_QUOTE_BODY_LENGTH = 6;
 const MAX_HIGHLIGHTS = 3;
 
@@ -109,9 +114,11 @@ export const applyAuditGuards = (
       );
       // 모델은 원문의 필요한 줄만 골라 개행으로 이어 붙여 인용한다(실측 25건 중 13건).
       // quote 를 한 덩어리로 원문과 대조하면 중간에 건너뛴 줄 때문에 정당한 인용이 전부
-      // 강등된다(실측: PROVEN 11건 전원). 그래서 줄 단위로 쪼개 각 줄을 대조한다.
+      // 강등된다(실측: PROVEN 11건 전원). 그래서 줄 단위로, 한 줄 안에서는 라벨 경계로 쪼개
+      // 각 조각을 대조한다.
       const quoteLines = guarded.quote
         .split(/\r?\n/)
+        .flatMap((line) => normalizeForQuote(line).split(QUOTE_LABEL_BOUNDARY))
         .map((line) => normalizeForQuote(line))
         .filter((line) => line.length > 0);
       const quoteBodyLength = quoteLines.reduce(

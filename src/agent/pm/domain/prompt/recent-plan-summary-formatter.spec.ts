@@ -46,6 +46,8 @@ describe('formatRecentPlanSummariesSection — 저장을 거친 외부 제목 �
   const summary = (topPriorityTitle: string): RecentPlanSummary => ({
     date: '2026-07-07',
     taskIds: ['repo/app#1'],
+    stalledTaskIds: [],
+    taskTitleById: {},
     topPriorityTitle,
     estimatedHours: 6,
     criticalPathCount: 1,

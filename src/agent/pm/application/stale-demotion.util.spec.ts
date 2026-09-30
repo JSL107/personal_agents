@@ -138,4 +138,27 @@ describe('applyStaleDemotion', () => {
       },
     ]);
   });
+
+  it('모델이 stalledTasks 에 옮겨 적은 일수는 코드가 센 일수로 덮는다', () => {
+    const result = applyStaleDemotion({
+      plan: plan({
+        topPriority: task('repo/app#2', 'fresh'),
+        morning: [],
+        afternoon: [],
+        stalledTasks: [
+          { id: 'repo/app#52', title: 'PR #52', daysStalled: 5, url: '' },
+          { id: 'notion:x', title: '모델 판단', daysStalled: 2, url: '' },
+        ],
+      }),
+      staleIds: new Set(['repo/app#52']),
+      daysById: new Map([['repo/app#52', 20]]),
+    });
+
+    expect(
+      result.stalledTasks?.map((stalled) => [stalled.id, stalled.daysStalled]),
+    ).toEqual([
+      ['repo/app#52', 21],
+      ['notion:x', 2],
+    ]);
+  });
 });

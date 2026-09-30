@@ -251,6 +251,47 @@ describe('applyAuditGuards', () => {
     expect(result.guard.demotedTitles).toEqual([]);
   });
 
+  // run 5789 재현 — 강등 29건 전부가 줄바꿈 없이 "상황: … 행동: …" 로 이어 붙인 인용이었다.
+  it('한 줄에 라벨 여러 개를 이어 붙여 인용해도 조각마다 원문이면 PROVEN을 유지한다', () => {
+    const result = applyAuditGuards(
+      data([
+        {
+          title: '입증 성과',
+          status: 'PROVEN',
+          quote:
+            '상황: 입증 성과 상황 행동: 입증 성과 행동 결과: 입증 성과 결과 30%',
+          why: '정량 결과가 있다.',
+          rewrite: null,
+        },
+      ]),
+      PROFILE,
+    );
+
+    expect(
+      result.items.find((item) => item.title === '입증 성과')?.status,
+    ).toBe('PROVEN');
+    expect(result.guard.demotedTitles).toEqual([]);
+  });
+
+  it('한 줄에 이어 붙인 인용도 조각 하나가 원문에 없으면 강등한다', () => {
+    const result = applyAuditGuards(
+      data([
+        {
+          title: '입증 성과',
+          status: 'PROVEN',
+          quote: '상황: 입증 성과 상황 결과: 지어낸 수치 99%',
+          why: '정량 결과가 있다.',
+          rewrite: null,
+        },
+      ]),
+      PROFILE,
+    );
+
+    expect(
+      result.items.find((item) => item.title === '입증 성과')?.status,
+    ).toBe('WEAK');
+  });
+
   it('여러 줄 인용 중 한 줄이라도 원문에 없으면 강등한다', () => {
     const result = applyAuditGuards(
       data([
