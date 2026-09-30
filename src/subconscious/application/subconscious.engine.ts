@@ -63,7 +63,15 @@ export class SubconsciousEngine {
           ownerSlackUserId,
           source.id,
         );
-        const changes = diffSnapshots(previousSnapshot, currentSnapshot);
+        // 사라진 항목은 판정에 넘기지 않는다. 소스가 돌려주는 것은 「나에게 걸린 열린 일」뿐이라
+        // (GitHub 담당 open PR·이슈, Notion 진행 중 태스크) 목록에서 빠졌다는 것은 머지·닫힘·완료·
+        // 담당 해제를 뜻하고, 스냅샷만으로는 그중 무엇인지 구분할 수 없다. gate 는 그 구분 없이
+        // "제거됐다" 만 보고 "의도된 대체인지 정리할까요?" 류 제안을 지어낸다(2026-09-30, 전날 머지한
+        // PR 3건이 기능 누락 의심 카드로 뜸 — 역대 removed 제안은 이 1건뿐이었다). baseline 은 아래에서
+        // 그대로 전진하므로 같은 항목이 다음 회차에 다시 잡히지도 않는다.
+        const changes = diffSnapshots(previousSnapshot, currentSnapshot).filter(
+          (change) => change.kind !== 'removed',
+        );
         allChanges.push(...changes);
         successfulSnapshots.set(source.id, currentSnapshot);
       } catch (error) {
