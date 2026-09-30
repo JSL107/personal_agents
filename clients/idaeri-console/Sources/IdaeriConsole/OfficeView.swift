@@ -181,6 +181,8 @@ struct OfficeView: View {
                 }
                 .onChange(of: store.housekeeping) { next in
                     scene.applyHousekeeping(next)
+                    // 청소 실태만 바뀐 재동기화에서는 다른 onChange 가 스냅샷을 밀지 않는다.
+                    office3D.pushSnapshot(currentSnapshot)
                 }
                 .onChange(of: store.agents) { newAgents in
                     if reconciledSelectedAgent(current: selectedAgent, agents: newAgents) == nil,

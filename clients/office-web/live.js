@@ -834,7 +834,8 @@ function cue(agentType, kind) {
  */
 function handoff(from, to) {
   const seat = seatOf(to);
-  if (!bodies[from] || !seat || departing.has(from)) {
+  // 동작 줄이기면 걷지 않는다 — 2D 는 목적지로 즉시 옮기는데, 인계는 갔다 돌아오므로 결과가 제자리다.
+  if (reduceMotion || !bodies[from] || !seat || departing.has(from)) {
     return;
   }
   const approach = [

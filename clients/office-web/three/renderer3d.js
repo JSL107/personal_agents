@@ -74,6 +74,8 @@ const STATE_LABELS = {
  * 칸 비율이다. 멈춰 설 때(충전 대기·고장)는 왕복 구간 오른쪽 끝 바깥에 선다.
  */
 const VACUUM = { front: 0.46, travel: 0.62, legSeconds: 7, parkedX: 0.34, dustX: -0.82, dustFront: 0.3 };
+/** 움직임 줄이기 설정이면 청소기를 세워 둔다(2D `addVacuumRobot` 과 같다). */
+const REDUCE_MOTION = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 const VACUUM_LED = { sweeping: 0x5cdb70, docked: 0x669ef0, stalled: 0xf0574f };
 
 const PRESIDENT_LOOK = { sheet: "char", shirt: [0.96, 0.96, 0.95], pants: [0.3, 0.3, 0.32], hair: [0.15, 0.14, 0.14] };
@@ -339,8 +341,9 @@ export class Office3DRenderer {
     dust.forEach((blob, index) => {
       blob.visible = index < level;
     });
-    let x = VACUUM.parkedX;
-    if (mode === "sweeping") {
+    // 2D 와 같은 자리 — 순회 중이면 왕복 왼쪽 끝, 멈췄으면 오른쪽 바깥.
+    let x = mode === "sweeping" ? -VACUUM.travel / 2 : VACUUM.parkedX;
+    if (mode === "sweeping" && !REDUCE_MOTION) {
       const leg = (now / VACUUM.legSeconds) % 2;
       x = (leg < 1 ? leg : 2 - leg) * VACUUM.travel - VACUUM.travel / 2;
     }
