@@ -55,6 +55,26 @@ describe('parsePullRequestReview', () => {
     );
   });
 
+  it('JSON 파싱 실패 시 raw 응답 앞부분을 cause 에 남긴다', () => {
+    // 문자열 값 안의 따옴표를 이스케이프하지 않아 뒤따르는 "a" 가 키로 읽히는 형태 —
+    // 운영 실패(Expected ':' after property name)와 같은 에러를 낸다.
+    const broken = '{"summary": "이 PR 은 ", "a" 를 추가"}';
+    expect.assertions(1);
+    try {
+      parsePullRequestReview(broken);
+    } catch (error: unknown) {
+      const cause = (error as { cause?: unknown }).cause;
+      expect(cause instanceof Error ? cause.message : '').toContain(
+        `raw=${broken}`,
+      );
+    }
+  });
+
+  it('앞뒤 설명문이 붙은 응답도 JSON 본문만 골라 파싱', () => {
+    const noisy = `리뷰 결과입니다.\n${JSON.stringify(valid)}\n이상입니다.`;
+    expect(parsePullRequestReview(noisy)).toEqual(valid);
+  });
+
   it('riskLevel 이 enum 외 값이면 예외', () => {
     const broken = { ...valid, riskLevel: 'critical' };
     expect(() => parsePullRequestReview(JSON.stringify(broken))).toThrow(
