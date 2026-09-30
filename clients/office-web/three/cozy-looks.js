@@ -279,7 +279,15 @@ export const PRESIDENT_COZY_LOOK = {
  */
 const SHEET_FALLBACK = { char: 9, charb: 1, charc: 12, chard: 7, chare: 6 };
 
-/** 평면도의 외형 한 줄 → 생김새. */
+/** 표에 없는 원화 번호. 한 번씩만 알린다(사람마다 매 장면 되풀이하지 않게). */
+const reportedUnknown = new Set();
+
+/**
+ * 평면도의 외형 한 줄 → 생김새.
+ *
+ * 표 밖의 번호는 **접어서 쓰지 않는다.** 맥이 원화를 늘렸는데 이 표를 안 고치면, 접은 번호는 오류 없이
+ * 다른 직원의 얼굴이 된다. 시트 대체로 그리고 콘솔에 번호를 남겨 표가 낡았음을 드러낸다.
+ */
 export function cozyLookFor(look) {
   if (look?.cozy) {
     return look.cozy;
@@ -288,8 +296,12 @@ export function cozyLookFor(look) {
   if (asset === -1) {
     return MECHANIC_LOOK;
   }
-  if (Number.isInteger(asset)) {
-    return COZY_LOOKS[((asset % COZY_LOOKS.length) + COZY_LOOKS.length) % COZY_LOOKS.length];
+  if (Number.isInteger(asset) && asset >= 0 && asset < COZY_LOOKS.length) {
+    return COZY_LOOKS[asset];
+  }
+  if (asset !== undefined && !reportedUnknown.has(asset)) {
+    reportedUnknown.add(asset);
+    console.warn(`cozy-looks.js 에 없는 원화 번호 ${asset} — 표를 원화와 맞춰야 한다(시트 대체로 그린다)`);
   }
   return COZY_LOOKS[SHEET_FALLBACK[look?.sheet] ?? 9];
 }
