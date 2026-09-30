@@ -422,6 +422,15 @@ function captureTargetFromArgv() {
 }
 
 /**
+ * `--query=room=planning` — 캡처 주소에 쿼리를 덧붙인다. 조감도 한 장에서는 사람이 몇 px 이라
+ * 자세·얼굴·책상 위 물건이 뒤집혀도 안 보인다 — 방을 확대해 찍는 입구다.
+ */
+function captureQueryFromArgv() {
+  const flag = process.argv.find((argument) => argument.startsWith("--query="));
+  return flag === undefined ? "" : flag.slice("--query=".length);
+}
+
+/**
  * 다 그려지길 기다렸다가 찍는다. 그리는 중에 찍으면 반쯤 빈 화면이 저장된다.
  *
  * **다 그렸다는 표식만 보면 부족하다.** 화면은 스냅샷을 못 받아도 방과 가구를 그려 내므로,
@@ -455,10 +464,17 @@ async function captureOnce(window, target) {
   const status = await window.webContents.executeJavaScript(
     "document.getElementById('status')?.textContent ?? ''"
   );
+  // `?walk=`·`?commute=` 가 남긴 "누가 어디에 섰는지" 보고. 콘솔 로그는 여기까지 안 온다.
+  const reports = await window.webContents.executeJavaScript(
+    "[document.body.dataset.walkReport, document.body.dataset.commuteReport].filter(Boolean).join(' / ')"
+  );
   fs.writeFileSync(target, (await window.webContents.capturePage()).toPNG());
   const succeeded = rendered && !failed;
   console.log(`${succeeded ? "그렸다" : "다 그리지 못했다"} → ${target}`);
   console.log(`상태: ${status}`);
+  if (reports) {
+    console.log(`보고: ${reports}`);
+  }
   return succeeded;
 }
 
@@ -535,11 +551,17 @@ function createWindow() {
   const settings = readSettings();
   const renderer = rendererFromArgv(process.argv, settings.renderer);
   const captureTarget = captureTargetFromArgv();
+  // `--window=1107x804` — 창 크기를 바꿔 연다. 배치 선택(3열·2열)과 빈 여백은 창 비율에 따라
+  // 달라져 기본 크기 한 장으로는 사용자의 창에서 보이는 그림을 재현하지 못한다.
+  const windowFlag = process.argv.find((argument) => argument.startsWith("--window="));
+  const [windowWidth, windowHeight] = (windowFlag?.slice("--window=".length) ?? "1424x872")
+    .split("x")
+    .map(Number);
   mainWindow = new BrowserWindow({
     // 2단계에서 맥 앱(`--size 1400x820`) 과 칸 단위로 대조한 창 크기다. 캔버스는 창에서
     // 가로 24px·세로 52px 을 뺀 크기라, 이 값이 맥 화면과 같은 배치를 만든다.
-    width: 1424,
-    height: 872,
+    width: windowWidth || 1424,
+    height: windowHeight || 872,
     minWidth: 960,
     minHeight: 563,
     backgroundColor: "#17151a",
@@ -550,7 +572,11 @@ function createWindow() {
     // 사무실은 정지 렌더로 연다 — 실시간 스트림을 열면 "다 그렸다" 에 도달하지 않아 영영
     // 기다린다. 서버 주소를 아직 안 정했으면 그때 실제로 열리는 화면(설정)을 찍는다.
     mainWindow.loadURL(
-      pageUrl(settings.url === "" ? "setup.html" : officePage(renderer, "static=1&hour=12"))
+      pageUrl(
+        settings.url === ""
+          ? "setup.html"
+          : officePage(renderer, `static=1&hour=12&${captureQueryFromArgv()}`)
+      )
     );
     mainWindow.webContents.once("did-finish-load", async () => {
       const rendered = await captureOnce(mainWindow, captureTarget);
