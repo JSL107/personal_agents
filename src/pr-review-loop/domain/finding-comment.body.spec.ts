@@ -26,6 +26,19 @@ describe('buildNoFindingsCommentBody', () => {
     ).toBe(true);
   });
 
+  it('판단 보류면 "지적 사항 없음" 대신 판단 보류와 이유를 남긴다', () => {
+    const body = buildNoFindingsCommentBody(
+      '요약',
+      '  diff 가\n잘려 핵심 변경을 못 봤다 ',
+    );
+
+    expect(body.startsWith(IDAERI_REVIEW_MARKER)).toBe(true);
+    expect(body).toContain('판단 보류');
+    expect(body).toContain('diff 가 잘려 핵심 변경을 못 봤다');
+    expect(body).not.toContain('지적 사항 없음');
+    expect(body).not.toContain('찾지 못했습니다');
+  });
+
   it('요약이 비면 인용 줄을 붙이지 않는다', () => {
     expect(buildNoFindingsCommentBody('   ')).not.toContain('>');
   });

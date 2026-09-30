@@ -5,9 +5,16 @@ import {
 } from '../../../github/domain/github.type';
 import { ConversationContext } from '../../../router/domain/conversation-context.type';
 
-export type RiskLevel = 'low' | 'medium' | 'high';
+// 'unknown' 은 판단 보류(approvalRecommendation 'undetermined') 전용이다 — 파서가 둘을 짝으로 강제한다.
+// 보류 값이 없던 동안 잘린 diff 를 본 리뷰가 스스로 "판단 보류" 라고 쓰고도 medium/comment 로
+// 채워졌다(run 1421·1970·5320·5331·5478·5515·5599).
+export type RiskLevel = 'low' | 'medium' | 'high' | 'unknown';
 
-export type ApprovalRecommendation = 'approve' | 'request_changes' | 'comment';
+export type ApprovalRecommendation =
+  | 'approve'
+  | 'request_changes'
+  | 'comment'
+  | 'undetermined';
 
 export interface ReviewCommentDraft {
   file?: string;
@@ -45,6 +52,8 @@ export interface PullRequestReview {
   missingTests: string[];
   reviewCommentDrafts: ReviewCommentDraft[];
   approvalRecommendation: ApprovalRecommendation;
+  // approvalRecommendation === 'undetermined' 일 때만 있다 — 무엇을 못 봐서 판단할 수 없었는지 한 문장.
+  undeterminedReason?: string;
   // 지적 낱개 목록 — 카드(PrReviewFinding)의 원본. 파서가 항상 채운다.
   // 구버전 모델 응답(findings 없음)은 mustFix/niceToHave/missingTests 에서 변환된다.
   findings: ReviewFinding[];
