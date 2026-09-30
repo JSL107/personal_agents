@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { HolidayModule } from '../holiday/holiday.module';
 import { MarketDataModule } from '../market-data/market-data.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { StrategyParameterModule } from '../strategy-parameter/strategy-parameter.module';
@@ -21,7 +22,12 @@ import { PaperTradeDispatcher } from './infrastructure/paper-trade.dispatcher';
 import { PaperTradingPrismaRepository } from './infrastructure/paper-trading.prisma.repository';
 
 @Module({
-  imports: [MarketDataModule, PrismaModule, StrategyParameterModule],
+  imports: [
+    HolidayModule,
+    MarketDataModule,
+    PrismaModule,
+    StrategyParameterModule,
+  ],
   providers: [
     PaperTradingPrismaRepository,
     // 체결 원장 — 운영·모의는 DB 장부를 쓴다. 백테스트는 같은 포트의 메모리 구현을 직접 끼운다.

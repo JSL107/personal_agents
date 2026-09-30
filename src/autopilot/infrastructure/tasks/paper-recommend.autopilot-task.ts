@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 
 import {
   GeneratePaperRecommendationResult,
@@ -12,6 +12,11 @@ import {
   PaperRecommendationStrategy,
 } from '../../../agent/paper-recommend/domain/paper-recommendation.type';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { isKrxTradingDay } from '../../../holiday/domain/business-calendar';
+import {
+  HOLIDAY_CALENDAR_PORT,
+  HolidayCalendarPort,
+} from '../../../holiday/domain/port/holiday-calendar.port';
 import { escapeSlackMrkdwn } from '../../../slack/format/mrkdwn.util';
 import {
   AutopilotTask,
@@ -78,9 +83,9 @@ const formatResult = (
   // `decidedAt` 에서 목표일을 계산하므로(`generate-paper-recommendation.usecase.ts:140`)
   // 전략 간 날짜가 갈리지 않는다.
   //
-  // "체결" 이 아니라 "체결 예정" 인 이유: 목표일은 `nextWeekday` 가 주말만 건너뛴 값이라
-  // (`trade-calendar.ts` — 공휴일 테이블이 없다) 평일 휴장일이면 그날 봉이 없어 주문이
-  // PENDING 으로 남고 다음 개장일에 체결된다. 확정처럼 적으면 휴장일에 카드가 거짓이 된다.
+  // "체결" 이 아니라 "체결 예정" 인 이유: 목표일은 공휴일 달력(`holiday-sync`)으로 정한
+  // 값이라, 달력에 없는 임시 휴장이 생기면 그날 봉이 없어 주문이 PENDING 으로 남고 다음
+  // 개장일에 체결된다. 확정처럼 적으면 그런 날 카드가 거짓이 된다.
   const targetTradeDate =
     result.completed.find((completed) => completed.targetTradeDate !== null)
       ?.targetTradeDate ?? null;
@@ -213,9 +218,26 @@ export class PaperRecommendAutopilotTask implements AutopilotTask {
 
   constructor(
     private readonly generateRecommendation: GeneratePaperRecommendationUsecase,
+    @Inject(HOLIDAY_CALENDAR_PORT)
+    private readonly holidayCalendar: HolidayCalendarPort,
   ) {}
 
   async run(context: AutopilotTaskContext): Promise<AutopilotTaskResult> {
+    // 휴장일에는 새 시세가 없다. 그대로 돌면 직전 거래일 저녁 회차와 같은 데이터로 한 번 더
+    // 판단해 주문을 또 만든다(2026-09-24 추석 회차 — dataAsOf=09-23 으로 주문 2건).
+    // 수동 재실행(`/retry-run`)은 사람이 고른 것이라 막지 않는다.
+    const calendar = await this.holidayCalendar.load();
+    if (
+      !isKrxTradingDay(
+        new Date(`${context.firedAtKst}T00:00:00.000Z`),
+        calendar,
+      )
+    ) {
+      return {
+        skip: true,
+        summaryText: `휴장일(${context.firedAtKst}) — 모의투자 추천 판단 건너뜀`,
+      };
+    }
     const result = await this.generateRecommendation.execute({
       decidedAt: new Date(`${context.firedAtKst}T19:30:00+09:00`),
       triggerType: TriggerType.AUTOPILOT_PAPER_RECOMMEND_CRON,
