@@ -1,5 +1,6 @@
 import {
   missedFindingId,
+  pairReplacementMisses,
   parseMissedFindings,
   resolveMissPath,
   toMissedLabeledFinding,
@@ -109,5 +110,49 @@ describe('resolveMissPath', () => {
       kind: 'full',
       filePath: 'src/x/Banner.ts',
     });
+  });
+});
+
+describe('pairReplacementMisses', () => {
+  const replacement = {
+    ...valid,
+    filePath: 'src/x/Banner.ts',
+    line: 256,
+    body: '외부 리뷰 원문',
+    headSha: 'abc123',
+  };
+
+  // id 를 새 내용으로 다시 만들면 저장된 보고서의 결과와 짝이 끊긴다.
+  it('본문·줄·경로는 교체 목록에서, id 는 원래 목록에서 가져온다', () => {
+    const { labeled, errors } = pairReplacementMisses([valid], [replacement]);
+
+    expect(errors).toEqual([]);
+    expect(labeled).toEqual([
+      {
+        id: missedFindingId(valid),
+        label: 'MISSED',
+        filePath: 'src/x/Banner.ts',
+        line: 256,
+        category: '',
+        body: '외부 리뷰 원문',
+      },
+    ]);
+  });
+
+  it('항목 수가 다르면 짝짓지 않는다', () => {
+    const { labeled, errors } = pairReplacementMisses([valid, valid], [valid]);
+
+    expect(labeled).toEqual([]);
+    expect(errors).toHaveLength(1);
+  });
+
+  it('같은 순서의 PR 이 다르면 번호와 함께 거부한다', () => {
+    const { labeled, errors } = pairReplacementMisses(
+      [valid],
+      [{ ...replacement, pullNumber: 13 }],
+    );
+
+    expect(labeled).toEqual([]);
+    expect(errors[0]).toContain('0번');
   });
 });

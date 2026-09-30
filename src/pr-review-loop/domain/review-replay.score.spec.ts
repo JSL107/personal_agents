@@ -10,6 +10,7 @@ import {
   readBaselineSummaries,
   REPLAY_SCORER_VERSION,
   ReplayedFinding,
+  replayedFindingsOf,
   sampleIdsOf,
   scoreReplay,
   scorerVersionOf,
@@ -765,5 +766,30 @@ describe('summarizeTrialsByTruncation', () => {
 
     expect(split.truncated).toMatchObject({ total: 0, meanRate: null });
     expect(split.intact).toMatchObject({ total: 1, meanRate: 1 });
+  });
+});
+
+describe('replayedFindingsOf', () => {
+  it('원장의 리뷰 결과에서 재생 지적을 꺼내고 없는 칸은 싣지 않는다', () => {
+    expect(
+      replayedFindingsOf({
+        summary: '요약',
+        findings: [
+          REPLAYED,
+          { category: 'TEST', body: '파일 없는 지적', severity: 'NIT' },
+        ],
+      }),
+    ).toEqual([REPLAYED, { category: 'TEST', body: '파일 없는 지적' }]);
+  });
+
+  // 틀린 지적만 버리면 원래 실행과 다른 입력으로 재현율이 계산된다.
+  it.each([
+    null,
+    {},
+    { findings: 'x' },
+    { findings: [{ ...REPLAYED, line: '20' }] },
+    { findings: [{ ...REPLAYED, body: undefined }] },
+  ])('형식이 틀리면 null: %j', (output) => {
+    expect(replayedFindingsOf(output)).toBeNull();
   });
 });

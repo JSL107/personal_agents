@@ -101,6 +101,43 @@ export const toMissedLabeledFinding = (
   body: entry.body,
 });
 
+// 재채점에서 미탐의 본문·줄·경로만 바꿔 끼운다. 보고서의 미탐 id 는 원래 파일 내용의 해시라,
+// 새 파일(예: 외부 리뷰 원문과 original_line 을 담은 것)로 id 를 다시 만들면 저장된 결과와 짝이 끊긴다.
+// 그래서 두 목록을 순서대로 짝짓고 id 는 원래 것을 쓴다. 같은 결함을 옮겨 적은 목록이어야 하므로,
+// 길이나 순서별 저장소·PR 이 하나라도 다르면 사유를 돌려주고 호출자가 멈춘다.
+export const pairReplacementMisses = (
+  original: readonly MissedFindingEntry[],
+  replacement: readonly MissedFindingEntry[],
+): { labeled: LabeledFinding[]; errors: string[] } => {
+  if (original.length !== replacement.length) {
+    return {
+      labeled: [],
+      errors: [
+        `항목 수가 다르다 (원래 ${original.length}, 교체 ${replacement.length})`,
+      ],
+    };
+  }
+  const errors = original.flatMap((entry, index) => {
+    const other = replacement[index];
+    return entry.repo.toLowerCase() === other.repo.toLowerCase() &&
+      entry.pullNumber === other.pullNumber
+      ? []
+      : [
+          `${index}번 항목의 PR 이 다르다 (${entry.repo}#${entry.pullNumber} ↔ ${other.repo}#${other.pullNumber})`,
+        ];
+  });
+  if (errors.length > 0) {
+    return { labeled: [], errors };
+  }
+  return {
+    labeled: original.map((entry, index) => ({
+      ...toMissedLabeledFinding(replacement[index]),
+      id: missedFindingId(entry),
+    })),
+    errors: [],
+  };
+};
+
 export type MissPathResolution =
   | { kind: 'full'; filePath: string }
   | { kind: 'resolved'; filePath: string }
