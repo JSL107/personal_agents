@@ -442,25 +442,29 @@ model Ticker {
 // raw close 와 조정가(adjClose)를 모두 보관하고 지표 계산은 adjClose 를 쓴다.
 // 재시도·휴장일 재수집으로 같은 거래일이 다시 들어올 수 있어 (tickerId, tradeDate) 로 upsert 한다.
 model DailyPrice {
-  id             Int       @id @default(autoincrement())
-  tickerId       Int       @map("ticker_id")
-  ticker         Ticker    @relation(fields: [tickerId], references: [id], onDelete: Cascade)
-  tradeDate      DateTime  @map("trade_date") @db.Date
+  id                Int       @id @default(autoincrement())
+  tickerId          Int       @map("ticker_id")
+  ticker            Ticker    @relation(fields: [tickerId], references: [id], onDelete: Cascade)
+  tradeDate         DateTime  @map("trade_date") @db.Date
   // 백테스트가 실전과 같은 "다음 영업일 시가 체결"을 재현하려면 시가가 필요하다.
   // 기존 행을 보존해야 하므로 nullable 이다. 재수집이 끝나면 사실상 전 행이 채워진다.
-  open           Decimal?  @db.Decimal(18, 4)
+  open              Decimal?  @db.Decimal(18, 4)
   // 장중 고가·저가. 종가만 있으면 하루 안의 진폭이 통째로 사라져,
   // (1) `high200Position` 이 이름과 달리 최고 *종가* 기준이 되고
   // (2) 장중 손절(5분 주기 현재가 관측)을 과거 봉으로 재현할 수 없다.
   // open 과 같은 이유로 nullable 이다. 값 계열은 close·adjClose 와 같아서,
   // `adjusted=false` 로 받은 봉의 high 는 조정 고가가 아니라 미조정 실제 고가다.
-  high           Decimal?  @db.Decimal(18, 4)
-  low            Decimal?  @db.Decimal(18, 4)
-  close          Decimal   @db.Decimal(18, 4)
-  adjClose       Decimal   @map("adj_close") @db.Decimal(18, 4)
-  volume         BigInt
-  fetchedAt      DateTime  @default(now()) @map("fetched_at")
-  lastResyncedAt DateTime? @map("last_resynced_at")
+  high              Decimal?  @db.Decimal(18, 4)
+  low               Decimal?  @db.Decimal(18, 4)
+  close             Decimal   @db.Decimal(18, 4)
+  adjClose          Decimal   @map("adj_close") @db.Decimal(18, 4)
+  volume            BigInt
+  // 외국인·기관 순매수와 네이버 누적 거래량. 기존 가격 행에만 수집해 시세 행 수는 늘리지 않는다.
+  foreignNetBuy     BigInt?   @map("foreign_net_buy")
+  institutionNetBuy BigInt?   @map("institution_net_buy")
+  flowVolume        BigInt?   @map("flow_volume")
+  fetchedAt         DateTime  @default(now()) @map("fetched_at")
+  lastResyncedAt    DateTime? @map("last_resynced_at")
 
   @@unique([tickerId, tradeDate])
   @@index([tickerId, tradeDate])
