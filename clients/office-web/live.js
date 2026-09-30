@@ -1161,7 +1161,7 @@ function postToHost(message) {
 }
 
 /**
- * 앱 → 화면. 앱은 `ready` 를 받은 뒤에만 부른다.
+ * 앱 → 화면. 앱은 `ready`(렌더러가 선 뒤 `main()` 이 보낸다)를 받은 뒤에만 부른다.
  *
  * - `snapshot` 지금 상태 전부(백엔드 스냅샷과 같은 모양 — 앱이 받은 것을 그대로 다시 싣는다)
  * - `event`    상태가 바뀐 사람 한 명(`{agentType, state, bubble}`)
@@ -1219,7 +1219,6 @@ if (hosted) {
       postToHost({ type: "escape" });
     }
   });
-  postToHost({ type: "ready" });
 }
 
 /**
@@ -1369,6 +1368,11 @@ async function main() {
     }
   }
   rendererReady = true;
+  // 앱은 `ready` 를 받자마자 스냅샷·잠·선택을 한꺼번에 민다. 렌더러가 서기 전에 알리면 선택은
+  // 받을 곳이 없어 버려지고(`receiveFromHost`) 다시 오지 않는다 — 그래서 여기서 알린다.
+  if (hosted) {
+    postToHost({ type: "ready" });
+  }
 
   await refreshSnapshot();
   window.addEventListener("resize", resize);
