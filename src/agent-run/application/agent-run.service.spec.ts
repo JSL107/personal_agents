@@ -1,5 +1,6 @@
 import { DomainException } from '../../common/exception/domain.exception';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
+import { getActiveAgentRunId } from '../../common/llm/active-agent-run.context';
 import { ConsoleEventBus } from '../../console/application/console-event-bus.service';
 import { ConsoleAgentState } from '../../console/domain/console.type';
 import { AgentType } from '../../model-router/domain/model-router.type';
@@ -397,6 +398,55 @@ describe('AgentRunService', () => {
     expect(output.error).toBe('모델 응답을 JSON 으로 파싱하지 못했습니다.');
     expect(output.cause).toHaveLength(1_000);
     expect(output.cause.startsWith('Unexpected token — raw=')).toBe(true);
+  });
+
+  // 모델 라우터가 model_call 에 run id 를 붙이는 통로. 스코프 밖이면 undefined(원장 밖 호출).
+  it('run 콜백 안에서는 활성 AgentRun id 가 보이고, 밖에서는 보이지 않는다', async () => {
+    let seen: number | undefined;
+
+    await service.execute({
+      agentType: AgentType.PM,
+      triggerType: TriggerType.SLACK_COMMAND_TODAY,
+      inputSnapshot: {},
+      run: async () => {
+        seen = getActiveAgentRunId();
+        return { result: 'r', modelUsed: 'codex-cli', output: {} };
+      },
+    });
+
+    expect(seen).toBe(42);
+    expect(getActiveAgentRunId()).toBeUndefined();
+  });
+
+  // 폴백(ChatGPT→Claude)이 둘 다 실패하면 모델 라우터는 cause 에 { primaryError, lastError }
+  // 일반 객체를 싣는다. Error·string 만 받던 동안 2026-09-16~18 폴백 실패 85건 전부 cause 가
+  // 비어 Claude 가 왜 실패했는지 원장에서 알 수 없었다.
+  it('폴백 양쪽 실패 cause({ primaryError, lastError })는 두 사유를 모두 문자열로 남긴다', async () => {
+    const bomb = new Error(
+      '모델 호출 실패 — primary CHATGPT → fallback CLAUDE 모두 실패',
+    );
+    (bomb as { cause?: unknown }).cause = {
+      primaryError: new Error('codex 사용량 한도 초과'),
+      lastError: new Error('Not logged in · Please run /login'),
+    };
+
+    await expect(
+      service.execute({
+        agentType: AgentType.CAREER_MATE,
+        triggerType: TriggerType.SLACK_MENTION_CAREER_MATE,
+        inputSnapshot: {},
+        run: async () => {
+          throw bomb;
+        },
+      }),
+    ).rejects.toBe(bomb);
+
+    const [{ output }] = (repository.finish as jest.Mock).mock.calls[0] as [
+      { output: { cause: string } },
+    ];
+    expect(output.cause).toBe(
+      'primary: codex 사용량 한도 초과 / fallback: Not logged in · Please run /login',
+    );
   });
 
   it('execute 성공 시 episodic recorder.record 를 호출한다 (best-effort 적재)', async () => {
