@@ -137,8 +137,15 @@ const buildGuardKeySuffix = ({
   if (cardSignature) {
     parts.push(cardSignature);
   }
-  if (harvest.contradicted > 0) {
-    parts.push(`contradicted-${harvest.contradicted}`);
+  // 보류는 "지금 보류 중인 카드 집합" 으로 싣는다. 집합이 그대로면 키도 그대로라 같은 날 다시
+  // 보내지 않고, 새 카드가 보류되면(건수가 같아도) 키가 바뀌어 알린다. 새 보류만 실으면 첫 회차
+  // (held-7) 와 3분 뒤 회차(접미사 없음) 키가 달라 같은 요약이 한 번 더 나갔다.
+  if (harvest.heldCardIds.length > 0) {
+    parts.push(
+      `held-${[...new Set(harvest.heldCardIds)]
+        .sort((a, b) => a - b)
+        .join('.')}`,
+    );
   }
   if (quotaStopped) {
     parts.push('quota-stopped');
@@ -190,6 +197,8 @@ const emptyHarvestOutcome = (): HarvestOutcome => ({
   judged: 0,
   skipped: 0,
   contradicted: 0,
+  newlyHeld: [],
+  heldCardIds: [],
   quotaStopped: false,
   adoption: [],
 });

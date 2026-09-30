@@ -11,6 +11,7 @@ import {
   AdoptionWindowInput,
   FindRejectionsForConventionsInput,
   HasAnyForPullRequestInput,
+  MarkContradictionHeldInput,
   MarkDecidedInput,
   OpenPostedPullRequestRow,
   PrReviewFindingRepositoryPort,
@@ -82,23 +83,40 @@ export class PrReviewFindingPrismaRepository implements PrReviewFindingRepositor
       resolvedAt: null,
       githubCommentId: { not: null },
     } as const;
-    const [pullRequests, allPullRequests] = await Promise.all([
-      this.prisma.prReviewFinding.groupBy({
-        by: ['repo', 'pullNumber'],
-        where,
-        _max: { createdAt: true },
-        orderBy: [
-          { _max: { createdAt: 'desc' } },
-          { repo: 'asc' },
-          { pullNumber: 'asc' },
-        ],
-        take: OPEN_CARD_PULL_REQUEST_LIMIT,
-      }),
-      this.prisma.prReviewFinding.groupBy({
-        by: ['repo', 'pullNumber'],
-        where,
-      }),
-    ]);
+    const [recentPullRequests, allPullRequests, heldPullRequests] =
+      await Promise.all([
+        this.prisma.prReviewFinding.groupBy({
+          by: ['repo', 'pullNumber'],
+          where,
+          _max: { createdAt: true },
+          orderBy: [
+            { _max: { createdAt: 'desc' } },
+            { repo: 'asc' },
+            { pullNumber: 'asc' },
+          ],
+          take: OPEN_CARD_PULL_REQUEST_LIMIT,
+        }),
+        this.prisma.prReviewFinding.groupBy({
+          by: ['repo', 'pullNumber'],
+          where,
+        }),
+        // 보류 카드가 있는 PR 은 상한과 무관하게 넣는다. 상한 밖으로 밀리면 72시간 확정 분기가
+        // 다시 돌지 않아 카드가 영구히 OPEN 으로 남는다(보류는 사람을 기다리는 동안 새 PR 이 쌓인다).
+        this.prisma.prReviewFinding.groupBy({
+          by: ['repo', 'pullNumber'],
+          where: { ...where, heldAt: { not: null } },
+        }),
+      ]);
+    const pullRequests = [
+      ...new Map(
+        [...recentPullRequests, ...(heldPullRequests ?? [])].map(
+          ({ repo, pullNumber }) => [
+            `${repo}#${pullNumber}`,
+            { repo, pullNumber },
+          ],
+        ),
+      ).values(),
+    ];
     if (allPullRequests.length > pullRequests.length) {
       this.logger.warn(
         `PR 리뷰 수확 대상 PR ${allPullRequests.length}건 중 최근 ${OPEN_CARD_PULL_REQUEST_LIMIT}건만 처리합니다. 이번 회차 제외: ${
@@ -138,10 +156,24 @@ export class PrReviewFindingPrismaRepository implements PrReviewFindingRepositor
         acceptReply: status === 'ACKED' ? (acceptReply ?? null) : null,
         githubThreadNodeId,
         decidedAt: new Date(),
+        // 결론이 났으면 보류는 끝났다. 남겨 두면 카드가 되살아날 일은 없어도 "보류 중" 조회가 틀린다.
+        heldReplyHash: null,
+        heldAt: null,
         // 한 번의 쓰기로 확정한다. 나눠 쓰면 첫 쓰기 직후 실패했을 때 조회 대상에서
         // 빠져(status 가 OPEN 이 아니게 된다) 나머지 갱신을 재시도할 길이 없다.
         ...(resolveThread === true ? { resolvedAt: new Date() } : {}),
       },
+    });
+  }
+
+  async markContradictionHeld({
+    id,
+    replyHash,
+    heldAt,
+  }: MarkContradictionHeldInput): Promise<void> {
+    await this.prisma.prReviewFinding.update({
+      where: { id },
+      data: { heldReplyHash: replyHash, heldAt },
     });
   }
 
@@ -262,6 +294,8 @@ export class PrReviewFindingPrismaRepository implements PrReviewFindingRepositor
     postMode: string;
     githubCommentId: bigint | null;
     githubThreadNodeId: string | null;
+    heldReplyHash: string | null;
+    heldAt: Date | null;
     createdAt: Date;
   }): PrReviewFindingRecord {
     return {
@@ -281,6 +315,8 @@ export class PrReviewFindingPrismaRepository implements PrReviewFindingRepositor
       githubCommentId:
         row.githubCommentId === null ? null : row.githubCommentId.toString(),
       githubThreadNodeId: row.githubThreadNodeId,
+      heldReplyHash: row.heldReplyHash,
+      heldAt: row.heldAt,
       createdAt: row.createdAt,
     };
   }

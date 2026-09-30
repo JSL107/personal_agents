@@ -20,6 +20,8 @@ describe('PrReviewSweepAutopilotTask', () => {
         judged: 0,
         skipped: 0,
         contradicted: 0,
+        newlyHeld: [],
+        heldCardIds: [],
         quotaStopped: false,
         adoption: [],
       }),
@@ -84,6 +86,8 @@ describe('PrReviewSweepAutopilotTask', () => {
         judged: 0,
         skipped: 0,
         contradicted: 0,
+        newlyHeld: [],
+        heldCardIds: [],
         quotaStopped: false,
         adoption: [],
       };
@@ -108,6 +112,8 @@ describe('PrReviewSweepAutopilotTask', () => {
       judged: 0,
       skipped: 0,
       contradicted: 0,
+      newlyHeld: [],
+      heldCardIds: [],
       quotaStopped: false,
       adoption: [
         {
@@ -176,6 +182,8 @@ describe('PrReviewSweepAutopilotTask', () => {
       judged: 2,
       skipped: 1,
       contradicted: 0,
+      newlyHeld: [],
+      heldCardIds: [],
       quotaStopped: false,
       adoption: [],
     });
@@ -199,6 +207,8 @@ describe('PrReviewSweepAutopilotTask', () => {
       judged: 1,
       skipped: 0,
       contradicted: 1,
+      newlyHeld: [],
+      heldCardIds: [7],
       quotaStopped: false,
       adoption: [],
     });
@@ -214,7 +224,71 @@ describe('PrReviewSweepAutopilotTask', () => {
     // 하루 1회 발송 가드(그룹×날짜)는 그날 첫 회차만 통과시킨다 — 뒤 회차에 새로
     // 생긴 보류가 묻히지 않도록 건수를 접미사로 실어 orchestrator 의 가드 키에
     // 반영한다(autopilot-task.port.ts AutopilotTaskResult.guardKeySuffix 참조).
-    expect(result.guardKeySuffix).toBe('contradicted-1');
+    expect(result.guardKeySuffix).toBe('held-7');
+  });
+
+  it('새로 보류된 카드가 있으면 id 를 접미사에 실어 같은 날 같은 건수의 새 보류도 묻히지 않게 한다', async () => {
+    // 건수만 실으면 오전 보류 1건이 풀리고 오후에 다른 카드가 보류돼도 키가 같아 묻힌다.
+    // 새 보류는 사람이 72시간 안에 봐야 하는 카드다.
+    harvestUsecase.execute.mockResolvedValue({
+      acked: 0,
+      fixed: 0,
+      rejected: 0,
+      stale: 0,
+      resolved: 0,
+      judged: 1,
+      skipped: 0,
+      contradicted: 2,
+      newlyHeld: [
+        { id: 12, repo: 'o/r', pullNumber: 3, githubCommentId: '9' },
+        { id: 4, repo: 'o/r', pullNumber: 3, githubCommentId: '8' },
+      ],
+      heldCardIds: [12, 4],
+      quotaStopped: false,
+      adoption: [],
+    });
+    sweepUsecase.execute.mockResolvedValue({
+      results: [],
+      quotaStopped: false,
+    });
+
+    const result = await task.run(CONTEXT);
+
+    expect(result.guardKeySuffix).toBe('held-4.12');
+  });
+
+  it('보류가 처음 생긴 회차와 이어진 다음 회차는 같은 접미사다 — 같은 보류 요약을 두 번 보내지 않는다', async () => {
+    const outcome = (newlyHeld: { id: number }[]) => ({
+      acked: 0,
+      fixed: 0,
+      rejected: 0,
+      stale: 0,
+      resolved: 0,
+      judged: 0,
+      skipped: 0,
+      contradicted: 1,
+      newlyHeld: newlyHeld.map(({ id }) => ({
+        id,
+        repo: 'o/r',
+        pullNumber: 3,
+        githubCommentId: '9',
+      })),
+      heldCardIds: [7],
+      quotaStopped: false,
+      adoption: [],
+    });
+    sweepUsecase.execute.mockResolvedValue({
+      results: [],
+      quotaStopped: false,
+    });
+
+    harvestUsecase.execute.mockResolvedValueOnce(outcome([{ id: 7 }]));
+    const first = await task.run(CONTEXT);
+    harvestUsecase.execute.mockResolvedValueOnce(outcome([]));
+    const next = await task.run(CONTEXT);
+
+    expect(first.guardKeySuffix).toBe('held-7');
+    expect(next.guardKeySuffix).toBe(first.guardKeySuffix);
   });
 
   // 수확 전용 회차는 발송하되 접미사를 비운다 = 기본 날짜 키 = 하루 첫 1 회.
@@ -232,6 +306,8 @@ describe('PrReviewSweepAutopilotTask', () => {
       judged: 0,
       skipped: 0,
       contradicted: 0,
+      newlyHeld: [],
+      heldCardIds: [],
       quotaStopped: false,
       adoption: [],
     });
@@ -258,6 +334,8 @@ describe('PrReviewSweepAutopilotTask', () => {
       judged: 0,
       skipped: 0,
       contradicted: 0,
+      newlyHeld: [],
+      heldCardIds: [],
       quotaStopped: false,
       adoption: [],
     });
@@ -436,7 +514,7 @@ describe('PrReviewSweepAutopilotTask', () => {
   it('카드·보류·쿼터 회차는 접미사를 갖는다', async () => {
     const cases = [
       {
-        harvest: { contradicted: 1 },
+        harvest: { contradicted: 1, heldCardIds: [9] },
         sweep: { results: [], quotaStopped: false },
       },
       { harvest: {}, sweep: { results: [], quotaStopped: true } },
@@ -473,6 +551,8 @@ describe('PrReviewSweepAutopilotTask', () => {
         judged: 0,
         skipped: 0,
         contradicted: 0,
+        newlyHeld: [],
+        heldCardIds: [],
         quotaStopped: false,
         adoption: [],
         ...testCase.harvest,
@@ -497,6 +577,8 @@ describe('PrReviewSweepAutopilotTask', () => {
       judged: 0,
       skipped: 7,
       contradicted: 0,
+      newlyHeld: [],
+      heldCardIds: [],
       quotaStopped: true,
       adoption: [],
     });
@@ -541,6 +623,8 @@ describe('PrReviewSweepAutopilotTask', () => {
       judged: 1,
       skipped: 4,
       contradicted: 2,
+      newlyHeld: [],
+      heldCardIds: [3, 5],
       quotaStopped: true,
       adoption: [],
     });
@@ -551,6 +635,6 @@ describe('PrReviewSweepAutopilotTask', () => {
 
     const result = await task.run(CONTEXT);
 
-    expect(result.guardKeySuffix).toBe('contradicted-2+quota-stopped');
+    expect(result.guardKeySuffix).toBe('held-3.5+quota-stopped');
   });
 });

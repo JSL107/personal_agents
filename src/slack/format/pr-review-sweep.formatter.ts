@@ -2,7 +2,10 @@ import {
   ADOPTION_WINDOW_DAYS,
   CategoryAdoption,
 } from '../../pr-review-loop/domain/adoption-rate';
-import { HarvestOutcome } from '../../pr-review-loop/domain/harvest-outcome.type';
+import {
+  HarvestOutcome,
+  HeldFinding,
+} from '../../pr-review-loop/domain/harvest-outcome.type';
 import { LEARNING_REPO } from '../../pr-review-loop/domain/learning-repo';
 import {
   PublishOutcome,
@@ -92,6 +95,19 @@ const HARVEST_COUNT_LABELS: {
   { key: 'contradicted', label: '보류' },
 ];
 
+const formatHeldFinding = ({
+  id,
+  repo,
+  pullNumber,
+  githubCommentId,
+}: HeldFinding): string => {
+  const label = `${escapeSlackMrkdwn(repo)}#${pullNumber} 카드 ${id}`;
+  if (githubCommentId === null) {
+    return `• ${label}`;
+  }
+  return `• <https://github.com/${repo}/pull/${pullNumber}#discussion_r${githubCommentId}|${label}>`;
+};
+
 // 스윕 결과 요약. 게시할 게 없으면 빈 문자열 — 호출자가 skip 처리한다.
 export const formatPrReviewSweep = ({
   harvest,
@@ -115,6 +131,14 @@ export const formatPrReviewSweep = ({
   }
   if (harvestCounts.length > 0) {
     lines.push(harvestCounts.join(' · '));
+  }
+  // 새 보류는 어느 카드인지와 어떻게 풀리는지를 함께 낸다. 건수만 내면 사람이 결론을 낼 길이 없어
+  // 보류가 조용한 영구 미결이 된다(9/8 설계 1단계가 정한 "Slack 으로 한 건 알린다").
+  if (harvest.newlyHeld.length > 0) {
+    lines.push(
+      '⏸️ 판정 보류 — 👎 와 답글 판정이 어긋남. 👎 가 맞으면 그대로 두면 72시간 뒤 기각 확정, 수용이면 👎 를 지운다.',
+      ...harvest.newlyHeld.map(formatHeldFinding),
+    );
   }
   // 채택률은 카드 상태가 바뀐 회차에만 채워진다. 눈에 걸리는 카테고리만 수치로 내고,
   // 정상 범위는 개수로만 묶는다. 화살표는 직전 같은 길이 구간과의 차이다.
