@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 
+import { runWithActiveAgentRun } from '../../common/llm/active-agent-run.context';
 import {
   LLM_CLI_MAX_ATTEMPTS,
   LLM_CLI_RETRY_BACKOFF_BASE_MS,
@@ -443,6 +444,159 @@ describe('ModelRouterUsecase', () => {
 
       expect(warnSpy).not.toHaveBeenCalled();
       warnSpy.mockRestore();
+    });
+  });
+
+  // route() 는 모든 LLM 호출이 지나는 유일한 관문이다. 여기서 남기지 않으면 AgentRun 을 거치지
+  // 않는 호출(문서 감사·모순 판정 등)은 흔적이 없다 — 2026-09 조사에서 DOCS_AUDIT_* ·
+  // CONTRADICTION_JUDGE 는 agent_run 0건인데 autopilot trace 에는 llm_called=true 였다.
+  describe('모델 호출 기록 (model_call)', () => {
+    let callLog: { record: jest.Mock };
+
+    beforeEach(() => {
+      callLog = { record: jest.fn().mockResolvedValue(undefined) };
+      usecase = new ModelRouterUsecase(
+        chatgptProvider,
+        claudeProvider,
+        undefined,
+        callLog,
+      );
+    });
+
+    const recorded = (): Record<string, unknown> =>
+      callLog.record.mock.calls[0][0] as Record<string, unknown>;
+
+    it('원장 밖 호출도 성공 1행을 남긴다 (agentRunId null, 프롬프트·응답 본문 없음)', async () => {
+      chatgptProvider.complete.mockResolvedValue({
+        text: '응답 본문',
+        modelUsed: 'codex-cli',
+        provider: ModelProviderName.CHATGPT,
+      });
+
+      await usecase.route({
+        agentType: AgentType.DOCS_AUDIT_OPTIMIZER,
+        request: { prompt: '비밀 프롬프트' },
+      });
+
+      expect(callLog.record).toHaveBeenCalledTimes(1);
+      expect(recorded()).toEqual({
+        agentType: AgentType.DOCS_AUDIT_OPTIMIZER,
+        agentRunId: null,
+        status: 'SUCCEEDED',
+        provider: ModelProviderName.CHATGPT,
+        fallbackUsed: false,
+        primaryError: null,
+        fallbackError: null,
+        durationMs: expect.any(Number),
+      });
+    });
+
+    it('AgentRun 스코프 안이면 그 run id 를 붙인다', async () => {
+      chatgptProvider.complete.mockResolvedValue({
+        text: 'ok',
+        modelUsed: 'codex-cli',
+        provider: ModelProviderName.CHATGPT,
+      });
+
+      await runWithActiveAgentRun(77, () =>
+        usecase.route({ agentType: AgentType.PM, request: { prompt: 'x' } }),
+      );
+
+      expect(recorded().agentRunId).toBe(77);
+    });
+
+    it('폴백으로 성공하면 응답한 provider 와 primary 실패 사유를 남긴다', async () => {
+      chatgptProvider.complete.mockRejectedValue(new Error('codex down'));
+      claudeProvider.complete.mockResolvedValue({
+        text: 'ok',
+        modelUsed: 'claude-cli',
+        provider: ModelProviderName.CLAUDE,
+      });
+
+      await usecase.route({
+        agentType: AgentType.PM,
+        request: { prompt: 'x' },
+      });
+
+      expect(recorded()).toMatchObject({
+        status: 'SUCCEEDED',
+        provider: ModelProviderName.CLAUDE,
+        fallbackUsed: true,
+        primaryError: 'codex down',
+        fallbackError: null,
+      });
+    });
+
+    it('폴백 양쪽 실패는 두 사유를 모두 남기고, 사용자 문구에도 Claude 실패 요지를 싣는다', async () => {
+      chatgptProvider.complete.mockRejectedValue(
+        new CodexQuotaExceededException('Sep 19th, 2026 5:20 PM'),
+      );
+      claudeProvider.complete.mockRejectedValue(
+        new Error('Not logged in · Please run /login'),
+      );
+
+      const caught = await usecase
+        .route({ agentType: AgentType.PM, request: { prompt: 'x' } })
+        .catch((error: Error) => error);
+
+      expect((caught as Error).message).toContain(
+        '다시 시도해주세요. CLAUDE 실패 사유: Not logged in · Please run /login',
+      );
+
+      expect(recorded()).toMatchObject({
+        status: 'FAILED',
+        provider: ModelProviderName.CLAUDE,
+        fallbackUsed: true,
+        primaryError: expect.stringContaining('codex'),
+        fallbackError: 'Not logged in · Please run /login',
+      });
+    });
+
+    it('폴백을 타지 않는 실패는 primary 사유만 남긴다', async () => {
+      chatgptProvider.complete.mockRejectedValue(new Error('codex down'));
+
+      await expect(
+        usecase.route({
+          agentType: AgentType.HUMANIZER,
+          request: { prompt: 'x' },
+          noFallback: true,
+        }),
+      ).rejects.toThrow();
+
+      expect(recorded()).toMatchObject({
+        status: 'FAILED',
+        provider: ModelProviderName.CHATGPT,
+        fallbackUsed: false,
+        primaryError: 'codex down',
+        fallbackError: null,
+      });
+    });
+
+    it('오류 문자열은 1000자에서 자른다', async () => {
+      chatgptProvider.complete.mockRejectedValue(new Error('x'.repeat(1_500)));
+
+      await expect(
+        usecase.route({
+          agentType: AgentType.PM,
+          request: { prompt: 'x' },
+          noFallback: true,
+        }),
+      ).rejects.toThrow();
+
+      expect(recorded().primaryError).toHaveLength(1_000);
+    });
+
+    it('기록이 실패해도 모델 응답은 그대로 돌려준다', async () => {
+      callLog.record.mockRejectedValue(new Error('db down'));
+      chatgptProvider.complete.mockResolvedValue({
+        text: 'ok',
+        modelUsed: 'codex-cli',
+        provider: ModelProviderName.CHATGPT,
+      });
+
+      await expect(
+        usecase.route({ agentType: AgentType.PM, request: { prompt: 'x' } }),
+      ).resolves.toMatchObject({ text: 'ok' });
     });
   });
 });

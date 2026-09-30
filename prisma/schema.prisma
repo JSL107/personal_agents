@@ -1117,6 +1117,51 @@ model AutopilotTaskTrace {
   @@map("autopilot_task_trace")
 }
 
+// 모델 호출 한 번 = 한 행. ModelRouterUsecase.route() 한 곳에서 남기므로 AgentRun 을 거치지
+// 않는 호출(분류기·문서 감사·모순 판정 등)도 빠지지 않는다. agent_run 에 넣지 않는 이유:
+// 분류기·대화 응답은 provider 선택용으로 PM agentType 을 빌려 쓰는데, 그 호출이 PM 행이 되면
+// "전날 계획" 조회(findLatestSucceededRun)·실행 통계·오피스 서류 카운트가 오염된다.
+// 프롬프트·응답 본문은 저장하지 않는다 — 대화 로그가 아니라 호출 사실과 실패 사유의 기록이다.
+model ModelCall {
+  id            Int      @id @default(autoincrement())
+  agentType     String   @map("agent_type")
+  // AgentRunService.execute 안에서 불렸으면 그 run id, 밖이면 null (원장 밖 호출의 표식).
+  agentRunId    Int?     @map("agent_run_id")
+  status        String
+  // 성공이면 응답한 provider, 실패면 마지막으로 시도한 provider.
+  provider      String
+  fallbackUsed  Boolean  @map("fallback_used")
+  primaryError  String?  @map("primary_error")
+  fallbackError String?  @map("fallback_error")
+  durationMs    Int      @map("duration_ms")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@index([agentType, createdAt])
+  @@map("model_call")
+}
+
+// 라우터가 담당자를 골라 dispatch 했는데 새 AgentRun 이 열리지 않은 회차(캐시 재사용·결정론
+// 워커·0 sentinel). 이 흔적이 없으면 "라우터를 안 거쳤다" 와 "거쳤는데 기록할 행이 없었다" 가
+// 원장에서 같은 모양이 된다. agent_run 에 ROUTER 행으로 넣지 않는 이유: 콘솔 doneToday·
+// 대표 브리핑 완료 합계·비서실 완료 목록이 agentType 필터 없이 SUCCEEDED 를 세서 오염된다.
+model RoutingNoRun {
+  id             Int      @id @default(autoincrement())
+  routedTo       String   @map("routed_to")
+  routedVia      String   @map("routed_via")
+  confidence     Float?
+  // agent_run.input_snapshot.routedText 와 같은 규칙(PII 마스킹 + 500자 상한).
+  routedText     String   @map("routed_text")
+  // dispatcher 가 돌려준 id — 0 은 run 없음, 양수면 재사용한 과거 run.
+  agentRunId     Int      @map("agent_run_id")
+  reusedAgentRun Boolean  @map("reused_agent_run")
+  modelUsed      String   @map("model_used")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@map("routing_no_run")
+}
+
 // 마감·신청·예약 항목. 등록 입구는 Slack 자연어 하나이고, 콘솔은 읽기와 상태 변경만 한다.
 // 2단계(자동 채움) 필드를 미리 둬서 스키마를 두 번 고치지 않는다 — 1단계에서는 전부 비어 있다.
 model ScheduleItem {

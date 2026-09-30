@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 
+import { redactPii } from '../../common/util/pii-redaction.util';
 import { RoutedVia } from '../domain/agent-run.type';
 
 /**
@@ -36,11 +37,26 @@ interface RoutingContextSlot {
 
 const storage = new AsyncLocalStorage<RoutingContextSlot>();
 
-/** 라우터 전용 — 이 콜백 아래에서 열리는 첫 AgentRun 이 근거를 가져간다. */
-export const runWithRoutingContext = <T>(
+/**
+ * 라우터 전용 — 이 콜백 아래에서 열리는 첫 AgentRun 이 근거를 가져간다.
+ *
+ * `onUnclaimed` 는 run 이 **정상 종료했는데** 아무도 근거를 집어 가지 않았을 때 결과와 함께
+ * 불린다(캐시 재사용·결정론 워커 등 새 행을 열지 않는 경로). 판정 시점은 run 이 끝난 직후다 —
+ * `void` 로 띄우는 백그라운드 워커(BLOG)는 execute 진입까지 동기로 이어져 그 전에 claim 한다.
+ * run 이 await 뒤에 execute 를 띄우는 백그라운드 워커가 생기면 여기서 NO_RUN 으로 오판한다.
+ */
+export const runWithRoutingContext = async <T>(
   context: RoutingContext,
   run: () => Promise<T>,
-): Promise<T> => storage.run({ context, claimed: false }, run);
+  onUnclaimed?: (result: T) => void,
+): Promise<T> => {
+  const slot: RoutingContextSlot = { context, claimed: false };
+  const result = await storage.run(slot, run);
+  if (!slot.claimed) {
+    onUnclaimed?.(result);
+  }
+  return result;
+};
 
 /**
  * 스코프당 **한 번만** 근거를 돌려준다. 두 번째 호출부터는 undefined.
@@ -56,4 +72,23 @@ export const claimRoutingContext = (): RoutingContext | undefined => {
   }
   slot.claimed = true;
   return slot.context;
+};
+
+// 라우팅 원문 상한. 원장은 실행 기록이지 대화 로그가 아니다 — 슬랙 멘션에 로그·스택트레이스를
+// 통째로 붙여 넣는 입력이 있어 상한이 없으면 행 하나가 수십 KB 로 부푼다. 분류 정확도를 채점하는
+// 데는 앞부분이면 충분하다(분류기 자신도 40자만 로그에 남겨 왔다).
+const ROUTED_TEXT_LIMIT = 500;
+// 잘렸다는 사실 자체가 정보다. 이 표식이 없으면 "짧게 친 입력" 과 "길어서 잘린 입력" 이
+// 원장에서 같은 모양이 되어, 분류가 틀렸을 때 모델이 실제로 무엇을 봤는지 되짚을 수 없다.
+const ROUTED_TEXT_TRUNCATION_MARK = '…[잘림]';
+
+/**
+ * 원장에 싣는 라우팅 원문. 사용자 입력이라 토큰·키가 섞일 수 있어 마스킹하고 길이를 자른다.
+ * agent_run.input_snapshot.routedText 와 routing_no_run.routed_text 가 같은 규칙을 쓰도록 한 곳에 둔다.
+ */
+export const toLedgerRoutedText = (text: string): string => {
+  const redacted = redactPii(text);
+  return redacted.length > ROUTED_TEXT_LIMIT
+    ? `${redacted.slice(0, ROUTED_TEXT_LIMIT)}${ROUTED_TEXT_TRUNCATION_MARK}`
+    : redacted;
 };

@@ -1,10 +1,11 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
 import { resolveAgentTypeByNickname } from '../../agent-registry/agent-registry';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import {
   RoutingContext,
   runWithRoutingContext,
+  toLedgerRoutedText,
 } from '../../agent-run/application/routing-context';
 import { RoutedVia, TriggerType } from '../../agent-run/domain/agent-run.type';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
@@ -20,6 +21,10 @@ import {
   AgentDispatcher,
   DispatchOutcome,
 } from '../domain/port/agent-dispatcher.port';
+import {
+  ROUTING_NO_RUN_PORT,
+  RoutingNoRunPort,
+} from '../domain/port/routing-no-run.port';
 import { RouterException } from '../domain/router.exception';
 import { RouterErrorCode } from '../domain/router-error-code.enum';
 import { IntentClassifierUsecase } from './intent-classifier.usecase';
@@ -52,6 +57,10 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
     private readonly dispatchers: AgentDispatcher[],
     private readonly intentClassifier: IntentClassifierUsecase,
     private readonly agentRunService: AgentRunService,
+    // 새 AgentRun 이 열리지 않은 dispatch 의 흔적 — 미주입(단위 테스트) 시 skip.
+    @Optional()
+    @Inject(ROUTING_NO_RUN_PORT)
+    private readonly routingNoRun?: RoutingNoRunPort,
   ) {
     // 회귀 방지 안전망 (commit cbef813 의 root cause 재발 차단) — NestJS 의 multi-provider 가
     // module 경계를 넘어 합쳐지지 않아 dispatchers 가 single 객체로 inject 된 경우 즉시 명시 에러.
@@ -179,7 +188,9 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
     const outcome =
       routing === undefined
         ? await runDispatch()
-        : await runWithRoutingContext(routing, runDispatch);
+        : await runWithRoutingContext(routing, runDispatch, (unclaimed) =>
+            this.recordNoRun(routing, unclaimed),
+          );
     this.logger.log(
       `Router dispatch 완료 — agentType=${agentType} agentRunId=${outcome.agentRunId} model=${outcome.modelUsed} depth=${chain.depth}`,
     );
@@ -271,6 +282,25 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
         ...(nestedResult.handoffResults ?? []),
       ],
     };
+  }
+
+  // 담당자는 골랐는데 새 AgentRun 이 열리지 않은 회차(캐시 재사용 RENDER_*·결정론 DELAY_REPORT·
+  // 0 sentinel)를 남긴다. 없으면 이 발화는 원장 어디에도 없다. 기다리지 않는다 — 부수 기록이다.
+  private recordNoRun(routing: RoutingContext, outcome: DispatchOutcome): void {
+    if (!this.routingNoRun) {
+      return;
+    }
+    void this.routingNoRun
+      .record({
+        routedTo: routing.routedTo,
+        routedVia: routing.routedVia,
+        confidence: routing.confidence ?? null,
+        routedText: toLedgerRoutedText(routing.text),
+        agentRunId: outcome.agentRunId,
+        reusedAgentRun: outcome.reusedAgentRun === true,
+        modelUsed: outcome.modelUsed,
+      })
+      .catch(() => undefined);
   }
 
   /**
