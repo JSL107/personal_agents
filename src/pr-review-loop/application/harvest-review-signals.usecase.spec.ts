@@ -140,6 +140,7 @@ describe('HarvestReviewSignalsUsecase', () => {
       skipped: 0,
       contradicted: 0,
       newlyHeld: [],
+      heldCardIds: [],
       quotaStopped: false,
       adoption: [],
     });
@@ -616,6 +617,7 @@ describe('HarvestReviewSignalsUsecase', () => {
       const outcome = await usecase.execute();
 
       expect(outcome.contradicted).toBe(1);
+      expect(outcome.heldCardIds).toEqual([1]);
       expect(outcome.newlyHeld).toEqual([
         {
           id: 1,
@@ -655,6 +657,8 @@ describe('HarvestReviewSignalsUsecase', () => {
 
       expect(restarted.judge.execute).not.toHaveBeenCalled();
       expect(outcome.contradicted).toBe(1);
+      // 이어진 보류도 보류 집합에 들어간다 — 발송 키가 첫 회차와 같아지는 근거다.
+      expect(outcome.heldCardIds).toEqual([1]);
       // 이미 알린 보류는 다시 알리지 않는다.
       expect(outcome.newlyHeld).toEqual([]);
       expect(restarted.repository.markDecided).not.toHaveBeenCalled();
@@ -684,6 +688,33 @@ describe('HarvestReviewSignalsUsecase', () => {
         rejectReason: ACCEPTING_REPLY,
         githubThreadNodeId: 'PRRT_555',
       });
+    });
+
+    it('기한이 지났어도 👎 를 지웠으면 리액션대로 확정하지 않는다', async () => {
+      // 👎 오조작(카드 57)은 사람이 👎 를 지우는 것으로 되돌린다는 것이 72시간 규칙의 전제다.
+      // 저장된 보류 표식이 남아 있어도 최신 리액션이 없으면 기각 확정 분기로 가면 안 된다.
+      const replyHash = await holdOnce();
+
+      const undone = buildDependencies();
+      undone.repository.findOpenPostedCards.mockResolvedValue([
+        card({
+          heldReplyHash: replyHash,
+          heldAt: new Date(Date.now() - 73 * HOUR_MS),
+        }),
+      ]);
+      const threads = contradictedThreads();
+      threads.threads[0].comments[0].reactions = [];
+      undone.github.listReviewThreads.mockResolvedValue(threads);
+      undone.judge.execute.mockResolvedValue([
+        { id: 1, verdict: 'ACCEPTED', reason: '수정했다고 답했다' },
+      ]);
+
+      const outcome = await undone.usecase.execute();
+
+      expect(outcome.rejected).toBe(0);
+      expect(undone.repository.markDecided).not.toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'REJECTED' }),
+      );
     });
 
     it('기한 직전(71시간)이면 아직 확정하지 않는다', async () => {

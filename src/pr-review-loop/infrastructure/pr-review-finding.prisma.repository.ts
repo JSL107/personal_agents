@@ -83,23 +83,40 @@ export class PrReviewFindingPrismaRepository implements PrReviewFindingRepositor
       resolvedAt: null,
       githubCommentId: { not: null },
     } as const;
-    const [pullRequests, allPullRequests] = await Promise.all([
-      this.prisma.prReviewFinding.groupBy({
-        by: ['repo', 'pullNumber'],
-        where,
-        _max: { createdAt: true },
-        orderBy: [
-          { _max: { createdAt: 'desc' } },
-          { repo: 'asc' },
-          { pullNumber: 'asc' },
-        ],
-        take: OPEN_CARD_PULL_REQUEST_LIMIT,
-      }),
-      this.prisma.prReviewFinding.groupBy({
-        by: ['repo', 'pullNumber'],
-        where,
-      }),
-    ]);
+    const [recentPullRequests, allPullRequests, heldPullRequests] =
+      await Promise.all([
+        this.prisma.prReviewFinding.groupBy({
+          by: ['repo', 'pullNumber'],
+          where,
+          _max: { createdAt: true },
+          orderBy: [
+            { _max: { createdAt: 'desc' } },
+            { repo: 'asc' },
+            { pullNumber: 'asc' },
+          ],
+          take: OPEN_CARD_PULL_REQUEST_LIMIT,
+        }),
+        this.prisma.prReviewFinding.groupBy({
+          by: ['repo', 'pullNumber'],
+          where,
+        }),
+        // 보류 카드가 있는 PR 은 상한과 무관하게 넣는다. 상한 밖으로 밀리면 72시간 확정 분기가
+        // 다시 돌지 않아 카드가 영구히 OPEN 으로 남는다(보류는 사람을 기다리는 동안 새 PR 이 쌓인다).
+        this.prisma.prReviewFinding.groupBy({
+          by: ['repo', 'pullNumber'],
+          where: { ...where, heldAt: { not: null } },
+        }),
+      ]);
+    const pullRequests = [
+      ...new Map(
+        [...recentPullRequests, ...(heldPullRequests ?? [])].map(
+          ({ repo, pullNumber }) => [
+            `${repo}#${pullNumber}`,
+            { repo, pullNumber },
+          ],
+        ),
+      ).values(),
+    ];
     if (allPullRequests.length > pullRequests.length) {
       this.logger.warn(
         `PR 리뷰 수확 대상 PR ${allPullRequests.length}건 중 최근 ${OPEN_CARD_PULL_REQUEST_LIMIT}건만 처리합니다. 이번 회차 제외: ${
