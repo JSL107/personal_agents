@@ -47,6 +47,37 @@ describe('EpisodicMemoryService', () => {
     ).resolves.toBeUndefined();
   });
 
+  it('onModuleDestroy: 기다리지 않고 던진 적재가 끝날 때까지 기다린다 — Prisma 연결이 닫히기 전에', async () => {
+    const repository = createRepositoryMock();
+    let finishInsert: () => void = () => undefined;
+    repository.insert.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishInsert = resolve;
+      }),
+    );
+    const service = new EpisodicMemoryService(
+      new MockEmbedder(384),
+      repository as never,
+    );
+
+    void service.record({
+      kind: 'agent_run',
+      content: '늦게 끝나는 적재',
+      occurredAt: new Date(),
+    });
+    let destroyed = false;
+    const destroy = service.onModuleDestroy().then(() => {
+      destroyed = true;
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(repository.insert).toHaveBeenCalledTimes(1);
+    expect(destroyed).toBe(false);
+
+    finishInsert();
+    await destroy;
+    expect(destroyed).toBe(true);
+  });
+
   it('searchRelevant: distance→similarity 변환 + 최신 가중으로 정렬', async () => {
     const repository = createRepositoryMock();
     const now = Date.now();
