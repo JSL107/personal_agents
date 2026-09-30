@@ -100,6 +100,7 @@ const emptyOutcome = (): HarvestOutcome => ({
   skipped: 0,
   contradicted: 0,
   newlyHeld: [],
+  heldCardIds: [],
   quotaStopped: false,
   adoption: [],
 });
@@ -370,6 +371,7 @@ export class HarvestReviewSignalsUsecase {
                 break;
               }
               outcome.contradicted += 1;
+              outcome.heldCardIds.push(card.id);
               break;
             }
             pendingJudgments.push({
@@ -670,6 +672,7 @@ export class HarvestReviewSignalsUsecase {
         // 좋은 지적을 억제한다(카드 57) — 사람이 볼 때까지 OPEN 으로 둔다.
         if (judgment?.verdict === 'ACCEPTED') {
           outcome.contradicted += 1;
+          outcome.heldCardIds.push(pending.card.id);
           // 같은 답글로 다음 회차가 다시 걸리면(재시작 후 포함) 재판정 없이 이 결론을 재사용한다.
           // 답글이 바뀌어 여기 다시 왔으면 새 답글 기준으로 기한을 새로 센다.
           await this.repository.markContradictionHeld({

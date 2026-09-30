@@ -23,6 +23,7 @@ const harvest = (overrides = {}) => ({
   skipped: 0,
   contradicted: 0,
   newlyHeld: [],
+  heldCardIds: [],
   quotaStopped: false,
   adoption: [],
   ...overrides,
