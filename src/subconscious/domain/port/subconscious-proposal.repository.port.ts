@@ -2,7 +2,14 @@ export const SUBCONSCIOUS_PROPOSAL_REPOSITORY = Symbol(
   'SUBCONSCIOUS_PROPOSAL_REPOSITORY',
 );
 
-export type ProposalStatus = 'PENDING' | 'DISPATCHED' | 'DISMISSED';
+// 닫힌 이유를 값으로 가른다. 전부 DISMISSED 로 쓰던 동안 사용자 거절·만료·스윕 대체가 구분되지
+// 않아, 만료 53건이 거절로 읽혔다(2026-09-30 실측, DISMISSED 62건 중).
+export type ProposalStatus =
+  | 'PENDING'
+  | 'DISPATCHED'
+  | 'DISMISSED' // 사용자가 ❌ 를 눌렀다 — 이 뜻으로만 쓴다
+  | 'EXPIRED' // TTL 이 지나 코드가 닫았다
+  | 'SUPERSEDED'; // PR 리뷰 스윕이 같은 PR 을 이미 리뷰해 코드가 닫았다
 
 export interface SubconsciousProposalRecord {
   id: number;
