@@ -140,6 +140,16 @@ const buildGuardKeySuffix = ({
   if (harvest.contradicted > 0) {
     parts.push(`contradicted-${harvest.contradicted}`);
   }
+  // 새로 보류된 카드는 id 로 싣는다. 건수만으로는 같은 날 같은 수의 보류가 다시 생기면 묻히는데,
+  // 새 보류는 사람이 72시간 안에 봐야 하는 카드라 묻히면 안 된다.
+  if (harvest.newlyHeld.length > 0) {
+    parts.push(
+      `held-${harvest.newlyHeld
+        .map(({ id }) => id)
+        .sort((a, b) => a - b)
+        .join('.')}`,
+    );
+  }
   if (quotaStopped) {
     parts.push('quota-stopped');
   }
@@ -190,6 +200,7 @@ const emptyHarvestOutcome = (): HarvestOutcome => ({
   judged: 0,
   skipped: 0,
   contradicted: 0,
+  newlyHeld: [],
   quotaStopped: false,
   adoption: [],
 });

@@ -261,7 +261,26 @@ describe('PrReviewFindingPrismaRepository', () => {
         acceptReply: null,
         githubThreadNodeId: 'PRRT_thread',
         decidedAt: expect.any(Date),
+        heldReplyHash: null,
+        heldAt: null,
       },
+    });
+  });
+
+  it('markContradictionHeld 는 상태를 건드리지 않고 보류 지문과 시각만 남긴다', async () => {
+    // status 를 바꾸면 OPEN 전용 조회에서 빠져, 사람이 답글을 고쳐도 다시 수확되지 않는다.
+    prisma.prReviewFinding.update.mockResolvedValue({});
+    const heldAt = new Date('2026-09-30T00:00:00Z');
+
+    await repository.markContradictionHeld({
+      id: 1,
+      replyHash: 'a'.repeat(64),
+      heldAt,
+    });
+
+    expect(prisma.prReviewFinding.update).toHaveBeenCalledWith({
+      where: { id: 1 },
+      data: { heldReplyHash: 'a'.repeat(64), heldAt },
     });
   });
 

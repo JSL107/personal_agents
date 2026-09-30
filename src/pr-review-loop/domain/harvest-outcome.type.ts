@@ -1,5 +1,13 @@
 import { CategoryAdoption } from './adoption-rate';
 
+// 이번 회차에 새로 보류가 걸린 카드. 사람이 어느 스레드를 보면 되는지 Slack 에 링크로 낸다.
+export interface HeldFinding {
+  id: number;
+  repo: string;
+  pullNumber: number;
+  githubCommentId: string | null;
+}
+
 export interface HarvestOutcome {
   acked: number;
   rejected: number;
@@ -16,6 +24,11 @@ export interface HarvestOutcome {
    * 되어 좋은 지적을 억제한다(실제 사고: 카드 57). 확정하지 않고 사람에게 넘긴다.
    */
   contradicted: number;
+  /**
+   * `contradicted` 중 **이번 회차에 처음 보류된** 카드. 건수만 내면 어느 카드인지 몰라 사람이
+   * 결론을 낼 수 없다. 이미 알린 보류(지난 회차부터 이어진 것)는 싣지 않는다.
+   */
+  newlyHeld: HeldFinding[];
   // 이번 회차가 모델 쿼터 소진으로 중간에 끊겼나. `skipped` 만으로는 구분되지 않는다 —
   // 변경과 안 겹쳐 판정 대상이 아니었던 카드도 같은 카운터로 세기 때문에, 값이 커도
   // "정상적으로 볼 게 없었다" 와 "못 봤다" 가 섞인다. 조용한 중단을 Slack 에 드러내는

@@ -73,6 +73,8 @@ describe('PublishFindingsService', () => {
       postMode: input.postMode,
       githubCommentId: null,
       githubThreadNodeId: null,
+      heldReplyHash: null,
+      heldAt: null,
       createdAt: new Date(),
     }));
     service = new PublishFindingsService(

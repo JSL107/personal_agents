@@ -39,6 +39,13 @@ export interface MarkDecidedInput {
   resolveThread?: boolean;
 }
 
+export interface MarkContradictionHeldInput {
+  id: number;
+  // 보류를 건 답글 본문의 sha256. 다음 회차가 같은 답글인지 이 값으로 가른다.
+  replyHash: string;
+  heldAt: Date;
+}
+
 export interface FindRejectionsForConventionsInput {
   repo: string;
   /**
@@ -79,6 +86,10 @@ export interface PrReviewFindingRepositoryPort {
   markDecided(input: MarkDecidedInput): Promise<void>;
 
   markThreadResolved(id: number): Promise<void>;
+
+  // 👎 와 답글 판정이 어긋난 카드를 OPEN 그대로 두고 보류 표식만 남긴다.
+  // 결론(markDecided)이 나면 표식은 저장소가 지운다.
+  markContradictionHeld(input: MarkContradictionHeldInput): Promise<void>;
 
   /**
    * 아직 반응이 없는 **게시된** 지적을 PR 단위로 집계한다. 상한 없이 전건이다.

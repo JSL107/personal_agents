@@ -20,6 +20,7 @@ describe('PrReviewSweepAutopilotTask', () => {
         judged: 0,
         skipped: 0,
         contradicted: 0,
+        newlyHeld: [],
         quotaStopped: false,
         adoption: [],
       }),
@@ -84,6 +85,7 @@ describe('PrReviewSweepAutopilotTask', () => {
         judged: 0,
         skipped: 0,
         contradicted: 0,
+        newlyHeld: [],
         quotaStopped: false,
         adoption: [],
       };
@@ -108,6 +110,7 @@ describe('PrReviewSweepAutopilotTask', () => {
       judged: 0,
       skipped: 0,
       contradicted: 0,
+      newlyHeld: [],
       quotaStopped: false,
       adoption: [
         {
@@ -176,6 +179,7 @@ describe('PrReviewSweepAutopilotTask', () => {
       judged: 2,
       skipped: 1,
       contradicted: 0,
+      newlyHeld: [],
       quotaStopped: false,
       adoption: [],
     });
@@ -199,6 +203,7 @@ describe('PrReviewSweepAutopilotTask', () => {
       judged: 1,
       skipped: 0,
       contradicted: 1,
+      newlyHeld: [],
       quotaStopped: false,
       adoption: [],
     });
@@ -217,6 +222,35 @@ describe('PrReviewSweepAutopilotTask', () => {
     expect(result.guardKeySuffix).toBe('contradicted-1');
   });
 
+  it('새로 보류된 카드가 있으면 id 를 접미사에 실어 같은 날 같은 건수의 새 보류도 묻히지 않게 한다', async () => {
+    // 건수만 실으면 오전 보류 1건이 풀리고 오후에 다른 카드가 보류돼도 키가 같아 묻힌다.
+    // 새 보류는 사람이 72시간 안에 봐야 하는 카드다.
+    harvestUsecase.execute.mockResolvedValue({
+      acked: 0,
+      fixed: 0,
+      rejected: 0,
+      stale: 0,
+      resolved: 0,
+      judged: 1,
+      skipped: 0,
+      contradicted: 2,
+      newlyHeld: [
+        { id: 12, repo: 'o/r', pullNumber: 3, githubCommentId: '9' },
+        { id: 4, repo: 'o/r', pullNumber: 3, githubCommentId: '8' },
+      ],
+      quotaStopped: false,
+      adoption: [],
+    });
+    sweepUsecase.execute.mockResolvedValue({
+      results: [],
+      quotaStopped: false,
+    });
+
+    const result = await task.run(CONTEXT);
+
+    expect(result.guardKeySuffix).toBe('contradicted-2+held-4.12');
+  });
+
   // 수확 전용 회차는 발송하되 접미사를 비운다 = 기본 날짜 키 = 하루 첫 1 회.
   // 한때 harvested 건수를 접미사로 실어 회차마다 통과시켰고, 그 결과 2026-09-18 하루 23 회
   // 발송 중 8 회가 수확 전용이었다(Redis 가드 키 실측). 수확이 알리는 것은 이미 단 반응과
@@ -232,6 +266,7 @@ describe('PrReviewSweepAutopilotTask', () => {
       judged: 0,
       skipped: 0,
       contradicted: 0,
+      newlyHeld: [],
       quotaStopped: false,
       adoption: [],
     });
@@ -258,6 +293,7 @@ describe('PrReviewSweepAutopilotTask', () => {
       judged: 0,
       skipped: 0,
       contradicted: 0,
+      newlyHeld: [],
       quotaStopped: false,
       adoption: [],
     });
@@ -473,6 +509,7 @@ describe('PrReviewSweepAutopilotTask', () => {
         judged: 0,
         skipped: 0,
         contradicted: 0,
+        newlyHeld: [],
         quotaStopped: false,
         adoption: [],
         ...testCase.harvest,
@@ -497,6 +534,7 @@ describe('PrReviewSweepAutopilotTask', () => {
       judged: 0,
       skipped: 7,
       contradicted: 0,
+      newlyHeld: [],
       quotaStopped: true,
       adoption: [],
     });
@@ -541,6 +579,7 @@ describe('PrReviewSweepAutopilotTask', () => {
       judged: 1,
       skipped: 4,
       contradicted: 2,
+      newlyHeld: [],
       quotaStopped: true,
       adoption: [],
     });
