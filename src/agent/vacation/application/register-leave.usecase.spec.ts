@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
+import { holidayCalendarOf } from '../../../holiday/domain/business-calendar';
 import { VacationException } from '../domain/vacation.exception';
 import { LeaveUsagePrismaRepository } from '../infrastructure/leave-usage.prisma.repository';
 import { RegisterLeaveUsecase } from './register-leave.usecase';
@@ -32,6 +33,22 @@ describe('RegisterLeaveUsecase', () => {
       { get: configGet } as unknown as ConfigService,
       { save, findActiveByUser } as unknown as LeaveUsagePrismaRepository,
       { execute } as unknown as AgentRunService,
+      {
+        load: async () =>
+          holidayCalendarOf(['2026-09-24', '2026-09-25', '2026-09-26']),
+      },
+    );
+  });
+
+  it('공휴일은 휴가 일수에서 뺀다 (추석 주 9/23~9/29 = 23·28·29 3영업일)', async () => {
+    await usecase.execute({
+      slackUserId: 'U1',
+      startDate: { year: 2026, month: 9, day: 23 },
+      endDate: { year: 2026, month: 9, day: 29 },
+      asOf: { year: 2026, month: 9, day: 1 },
+    });
+    expect(save).toHaveBeenCalledWith(
+      expect.objectContaining({ businessDays: 3 }),
     );
   });
 

@@ -70,6 +70,18 @@ cp "$EXECUTABLE" "$APP/Contents/MacOS/$APP_NAME"
 # 함정 1 — 접근자가 `.app` 루트를 본다. Contents/Resources 에 두면 못 찾는다.
 cp -R "$SOURCE_BUNDLE" "$APP/$RESOURCE_BUNDLE"
 
+# 3D 오피스 화면(웹 렌더러). 이것은 `Bundle.module` 이 아니라 앱이 직접 `Bundle.main.resourceURL`
+# (= Contents/Resources)에서 찾는다(`Office3DView.swift` `officeWebRoot`) — 함정 1 과 반대로 표준
+# 위치가 맞다. 폴더째 복사하지 않는 이유는 `node_modules`·`layout-*.json`·개발용 미리보기까지 딸려
+# 오기 때문이다. 필요한 것만 고른다. 빠뜨려도 **이 기계에서는 뜬다** — 못 찾으면 저장소의
+# `clients/office-web` 로 물러서기 때문이라, 아래 검증이 파일로 확인한다.
+OFFICE_WEB_SOURCE="$CONSOLE_DIR/../office-web"
+OFFICE_WEB="$APP/Contents/Resources/office-web"
+mkdir -p "$OFFICE_WEB"
+for item in index.html live.js office.js canvas-size.js three vendor; do
+  cp -R "$OFFICE_WEB_SOURCE/$item" "$OFFICE_WEB/"
+done
+
 # `CFBundleVersion` 은 점으로 구분한 숫자여야 한다(Apple 규격) — 짧은 해시를 넣으면
 # 규격 밖이고 Launch Services 가 버전을 견줄 때 기댈 것이 없어진다. 커밋 수는 숫자이면서
 # 단조 증가라 「어느 시점 빌드인가」를 그대로 답한다.
@@ -161,7 +173,11 @@ for required in \
   "$APP/Contents/Info.plist" \
   "$APP/Contents/Resources/AppIcon.icns" \
   "$APP/$RESOURCE_BUNDLE/appicon.png" \
-  "$APP/$RESOURCE_BUNDLE/sprites"; do
+  "$APP/$RESOURCE_BUNDLE/sprites" \
+  "$APP/Contents/Resources/office-web/index.html" \
+  "$APP/Contents/Resources/office-web/live.js" \
+  "$APP/Contents/Resources/office-web/three/renderer3d.js" \
+  "$APP/Contents/Resources/office-web/vendor/three/three.module.js"; do
   [ -e "$required" ] || { echo "✗ 빠졌다: $required" >&2; exit 1; }
 done
 # 접근자가 보는 경로가 바뀌었는지 — 툴체인이 규칙을 바꾸면 여기서 걸린다.

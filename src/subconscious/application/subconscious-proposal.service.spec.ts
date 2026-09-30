@@ -561,6 +561,29 @@ describe('SubconsciousProposalService.dismiss', () => {
     expect(repository.markStatus).not.toHaveBeenCalled();
   });
 
+  // 버튼을 누른 사람에게 그대로 보이는 문구다. 코드값(EXPIRED 등)이 찍히면 왜 안 눌리는지 알 수 없다.
+  it.each([
+    ['DISPATCHED', '이미 실행한 제안'],
+    ['DISMISSED', '무시한 제안'],
+    ['EXPIRED', '만료된 제안'],
+    ['SUPERSEDED', 'PR 리뷰 스윕이 이미 처리한 제안'],
+  ] as const)(
+    '이미 %s 인 proposal 은 실행·무시 모두 상태별 한국어 안내를 낸다',
+    async (status, label) => {
+      const repository = buildRepository(buildRecord({ status }));
+      const { service } = buildService({ repository });
+      const expected = {
+        status: DomainStatus.PRECONDITION_FAILED,
+        message: `Proposal 이 이미 처리됐습니다 (${label}).`,
+      };
+
+      await expect(service.dismiss(1, OWNER)).rejects.toMatchObject(expected);
+      await expect(service.apply(1, OWNER, NOW)).rejects.toMatchObject(
+        expected,
+      );
+    },
+  );
+
   it('proposal 미존재 → NOT_FOUND', async () => {
     const repository = buildRepository(null);
     const { service } = buildService({ repository });

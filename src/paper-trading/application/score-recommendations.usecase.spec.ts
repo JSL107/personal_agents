@@ -1,7 +1,10 @@
 import { Prisma } from '@prisma/client';
 
+import { holidayCalendarOf } from '../../holiday/domain/business-calendar';
 import { PaperTradingPrismaRepository } from '../infrastructure/paper-trading.prisma.repository';
 import { ScoreRecommendationsUsecase } from './score-recommendations.usecase';
+
+const NO_HOLIDAYS = { load: async () => holidayCalendarOf([]) };
 
 const decimal = (value: string): Prisma.Decimal => new Prisma.Decimal(value);
 
@@ -109,6 +112,7 @@ describe('ScoreRecommendationsUsecase', () => {
     });
     const usecase = new ScoreRecommendationsUsecase(
       repository as unknown as PaperTradingPrismaRepository,
+      NO_HOLIDAYS,
     );
 
     const result = await usecase.execute({ asOf });
@@ -228,6 +232,7 @@ describe('ScoreRecommendationsUsecase', () => {
     });
     const usecase = new ScoreRecommendationsUsecase(
       repository as unknown as PaperTradingPrismaRepository,
+      NO_HOLIDAYS,
     );
 
     const result = await usecase.execute({ asOf });
@@ -329,6 +334,7 @@ describe('ScoreRecommendationsUsecase', () => {
     });
     const usecase = new ScoreRecommendationsUsecase(
       repository as unknown as PaperTradingPrismaRepository,
+      NO_HOLIDAYS,
     );
 
     const result = await usecase.execute({ asOf });
@@ -438,6 +444,7 @@ describe('ScoreRecommendationsUsecase', () => {
     });
     const usecase = new ScoreRecommendationsUsecase(
       repository as unknown as PaperTradingPrismaRepository,
+      NO_HOLIDAYS,
     );
 
     const result = await usecase.execute({ asOf });
@@ -480,6 +487,7 @@ describe('ScoreRecommendationsUsecase', () => {
     );
     const usecase = new ScoreRecommendationsUsecase(
       repository as unknown as PaperTradingPrismaRepository,
+      NO_HOLIDAYS,
     );
 
     await expect(usecase.execute({ asOf })).rejects.toThrow('원장 저장 실패');
@@ -529,6 +537,7 @@ describe('ScoreRecommendationsUsecase', () => {
     });
     const usecase = new ScoreRecommendationsUsecase(
       repository as unknown as PaperTradingPrismaRepository,
+      NO_HOLIDAYS,
     );
 
     const result = await usecase.execute({ asOf });
@@ -536,6 +545,80 @@ describe('ScoreRecommendationsUsecase', () => {
     expect(result.evaluationBenchmarkMissing).toBe(true);
     expect(result.persisted).toBe(false);
     expect(repository.saveRecommendationScores).not.toHaveBeenCalled();
+    jest.useRealTimers();
+  });
+
+  // 주간 채점(금 20:10)의 금요일이 추석(2026-09-25)이던 회차의 재현. 휴장일에는 지수가 없어
+  // 기준일을 그 날로 두면 위 가드에 걸려 저장되지 않고, 과거 기준일 재채점도 막혀 있어
+  // 그 주 성적이 원장에서 영구히 빠졌다(최신 as_of=09-18).
+  it('채점일이 휴장이면 직전 거래일을 기준일로 채점해 원장에 남긴다', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-09-25T11:10:00.000Z'));
+    repository.loadRecommendationScoreData.mockResolvedValue({
+      sellOrders: [],
+      accounts: [{ id: 7, name: 'LONG_TERM', seedAmount: decimal('1000') }],
+      orders: [
+        {
+          id: 1,
+          accountId: 7,
+          tickerId: 100,
+          side: 'BUY',
+          strategy: 'LONG_TERM',
+          status: 'FILLED',
+          quantity: decimal('1'),
+          ruleVersion: 2,
+        },
+      ],
+      recommendationTrades: [
+        {
+          id: 11,
+          orderId: 1,
+          accountId: 7,
+          tickerId: 100,
+          side: 'BUY',
+          quantity: decimal('1'),
+          price: decimal('100'),
+          fee: decimal('0'),
+          tax: decimal('0'),
+          realizedPnl: null,
+          tradeDate: new Date('2026-09-01T00:00:00.000Z'),
+        },
+      ],
+      portfolioTrades: [],
+      dailyPrices: [],
+      // 지수는 거래일에만 있다 — 휴장일(09-24·25)에는 행이 없다.
+      benchmarkCloses: [
+        {
+          tradeDate: new Date('2026-09-01T00:00:00.000Z'),
+          close: decimal('2500'),
+        },
+        {
+          tradeDate: new Date('2026-09-23T00:00:00.000Z'),
+          close: decimal('2600'),
+        },
+      ],
+      snapshots: [],
+    });
+    const usecase = new ScoreRecommendationsUsecase(
+      repository as unknown as PaperTradingPrismaRepository,
+      {
+        load: async () =>
+          holidayCalendarOf(['2026-09-24', '2026-09-25', '2026-09-26']),
+      },
+    );
+    const lastTradingDay = new Date('2026-09-23T00:00:00.000Z');
+
+    // 자동 경로(`paper-score.autopilot-task.ts`)는 발화일을 그대로 기준일로 넘긴다.
+    const result = await usecase.execute({
+      asOf: new Date('2026-09-25T00:00:00.000Z'),
+    });
+
+    expect(result.asOf).toEqual(lastTradingDay);
+    expect(repository.loadRecommendationScoreData).toHaveBeenCalledWith(
+      expect.objectContaining({ asOf: lastTradingDay }),
+    );
+    expect(result.evaluationBenchmarkMissing).toBe(false);
+    expect(result.persisted).toBe(true);
+    expect(repository.saveRecommendationScores).toHaveBeenCalledTimes(1);
     jest.useRealTimers();
   });
 
@@ -611,6 +694,7 @@ describe('ScoreRecommendationsUsecase', () => {
     });
     const usecase = new ScoreRecommendationsUsecase(
       repository as unknown as PaperTradingPrismaRepository,
+      NO_HOLIDAYS,
     );
 
     const result = await usecase.execute({ asOf });
@@ -638,6 +722,7 @@ describe('ScoreRecommendationsUsecase', () => {
     });
     const usecase = new ScoreRecommendationsUsecase(
       repository as unknown as PaperTradingPrismaRepository,
+      NO_HOLIDAYS,
     );
 
     const result = await usecase.execute({
@@ -666,6 +751,7 @@ describe('ScoreRecommendationsUsecase', () => {
     });
     const usecase = new ScoreRecommendationsUsecase(
       repository as unknown as PaperTradingPrismaRepository,
+      NO_HOLIDAYS,
     );
 
     const result = await usecase.execute({
@@ -693,6 +779,7 @@ describe('ScoreRecommendationsUsecase', () => {
     });
     const usecase = new ScoreRecommendationsUsecase(
       repository as unknown as PaperTradingPrismaRepository,
+      NO_HOLIDAYS,
     );
 
     const result = await usecase.execute({
@@ -723,6 +810,7 @@ describe('ScoreRecommendationsUsecase', () => {
     });
     const usecase = new ScoreRecommendationsUsecase(
       repository as unknown as PaperTradingPrismaRepository,
+      NO_HOLIDAYS,
     );
 
     const result = await usecase.execute({});

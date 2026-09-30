@@ -77,6 +77,8 @@ const ROUGHNESS = 0.85;
 export const SCALE = Object.freeze({
   deskTop: 0.46,
   chairSeat: 0.26,
+  /** 소파 방석 윗면(`sofa2`·`sofa3` 의 방석 y 0.22 + 두께 0.08~0.11). */
+  sofaSeat: 0.3,
   characterHeight: 0.92,
   wallTall: 1.7,
   wallLow: 0.22,

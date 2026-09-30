@@ -33,6 +33,22 @@
       #status.error {
         color: #ff8f7a;
       }
+      /* 맥 앱 안(`?hosted=1`) — 앱에 머리줄이 있어 여백·상태 줄을 뺀다. 오류만은 위에 띄운다. */
+      body.hosted {
+        padding: 0;
+        gap: 0;
+      }
+      body.hosted #status {
+        display: none;
+      }
+      body.hosted #status.error {
+        display: block;
+        position: fixed;
+        bottom: 8px;
+        padding: 4px 10px;
+        border-radius: 6px;
+        background: rgba(23, 21, 26, 0.85);
+      }
     </style>
   </head>
   <body>

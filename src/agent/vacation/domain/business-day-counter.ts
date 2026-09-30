@@ -3,11 +3,13 @@ import { addDays, comparePlainDate, dayOfWeek, PlainDate } from './plain-date';
 import { VacationException } from './vacation.exception';
 import { VacationErrorCode } from './vacation-error-code.enum';
 
-// 공휴일 제외 확장 훅. 현재는 no-op (주말만 제외). 추후 KR 공휴일 소스 주입.
+// 공휴일 판정. 운영 경로는 `register-leave.usecase.ts` 가 공휴일 달력(`holiday-sync`)을 넣는다.
 export interface HolidayProvider {
   isHoliday(date: PlainDate): boolean;
 }
 
+// 공휴일을 모르는 판정. 주말만 다루는 테스트용이다. `countBusinessDays` 의 기본값으로 두지
+// 않는다 — 기본값이 있으면 호출부가 달력을 빠뜨려도 조용히 공휴일까지 휴가 일수로 센다.
 export class NoopHolidayProvider implements HolidayProvider {
   isHoliday(): boolean {
     return false;
@@ -18,7 +20,7 @@ export class NoopHolidayProvider implements HolidayProvider {
 export const countBusinessDays = (
   start: PlainDate,
   end: PlainDate,
-  holidays: HolidayProvider = new NoopHolidayProvider(),
+  holidays: HolidayProvider,
 ): number => {
   if (comparePlainDate(start, end) > 0) {
     throw new VacationException({
