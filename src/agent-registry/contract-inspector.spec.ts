@@ -625,6 +625,30 @@ describe('evaluateContract — 점수', () => {
       expect(evaluation.score).toBe(1);
     });
 
+    // run 5901 재현 — 후보가 없어 모델을 부르지 않은 회차는 rawVerdict 가 설계상 null 이다
+    // (study-applicability.validator.ts 의 notApplicableWithoutModel).
+    it('모델 없이 NOT_APPLICABLE 로 끝난 적용 판정을 위반으로 기록하지 않는다', () => {
+      const evaluation = evaluateContract(AgentType.CTO_STUDY, {
+        rawVerdict: null,
+        applicability: 'NOT_APPLICABLE',
+        citationCount: 0,
+      });
+
+      expect(evaluation.violations).toEqual([]);
+      expect(evaluation.score).toBe(1);
+    });
+
+    it('적용 판정에서 판정 결과가 빠지면 여전히 위반이다', () => {
+      const evaluation = evaluateContract(AgentType.CTO_STUDY, {
+        rawVerdict: 'APPLY',
+        citationCount: 2,
+      });
+
+      expect(
+        evaluation.violations.map((violation) => violation.detail),
+      ).toEqual(['applicability']);
+    });
+
     it('어느 형태에도 맞지 않으면 그대로 위반이다', () => {
       const evaluation = evaluateContract(AgentType.CTO_STUDY, {
         somethingElse: 1,
