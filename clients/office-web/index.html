@@ -38,6 +38,10 @@
   <body>
     <canvas id="office"></canvas>
     <div id="status">평면도를 읽는 중…</div>
+    <!-- 번들러가 없어 import map 으로 three.js 를 동봉본에 잇는다(`scripts-vendor-three.mjs`). -->
+    <script type="importmap">
+      { "imports": { "three": "./vendor/three/three.module.js", "three/addons/": "./vendor/three/addons/" } }
+    </script>
     <script type="module" src="live.js"></script>
   </body>
 </html>

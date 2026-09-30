@@ -1,0 +1,786 @@
+// 3D 오피스 렌더러 — `office.js` 의 `OfficeRenderer` 와 같은 자리에 꽂힌다.
+//
+// live.js 는 렌더러에게 두 가지만 기대한다. ① 평면도를 읽어 좌석·통행 칸을 알려 줄 것
+// (`plan`·`seatsByAgent`·`walkable`), ② 매 프레임 `draw(view)` 로 그릴 것. 누가 어디로
+// 걷는지는 여전히 live.js 가 정하고, 여기서는 받은 좌표를 3D 로 옮겨 그리기만 한다.
+//
+// 좌표: 평면도 칸 (x, y) 는 y 가 위(북쪽)로 증가한다. 3D 에서는 칸 한 변 = 1, 북쪽 = -z.
+// 칸 중심 = (x + 0.5, 0, -(y + 0.5)). 변환은 `world()` 한 곳에서만 한다.
+//
+// 바깥으로 내보내는 사건(맥 앱이 WKWebView 에서 받는다):
+//   office:agent-click     {agentType}   사람을 눌렀다
+//   office:president-click {}            대표를 눌렀다
+//   office:focus           {department}  방 확대가 바뀌었다(null = 전체)
+
+import * as THREE from "three";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import {
+  BACKGROUND,
+  FLOOR_COLORS,
+  FLOOR_TINT,
+  OUTLINE,
+  SCALE,
+  WALL_MOUNT,
+  addOutlines,
+  makeLights,
+  mat,
+  setOutlineWidth,
+  tone,
+} from "./style.js";
+import { buildFurniture, missingKinds } from "./furniture3d/index.js";
+import { makeCharacter, makeStatusRing, poseCharacter } from "./character.js";
+import { Overlay3D } from "./overlay3d.js";
+
+/**
+ * 카메라 각. 방위는 남쪽(+z)에서 동쪽으로 돈 각, 고도는 바닥에서 올려본 각.
+ * 45° 정아이소메트릭은 가로로 긴 사무실(35×20)을 마름모로 세워 화면 위아래가 빈다 —
+ * 방위를 줄여 가로 폭을 살린다. (2026-09-30 사용자 확정)
+ */
+const CAMERA = { azimuthDegrees: 32, elevationDegrees: 38, margin: 0.04, focusSeconds: 0.35 };
+
+/** 방 사이 벽 높이. 완전히 낮추면 벽걸이가 뜨고, 높이면 뒤쪽 방을 가린다 — 허리 높이. */
+const WALL_MID = 0.5;
+/**
+ * 벽 두께. 평면도의 벽은 한 칸(=1)이지만 그대로 세우면 방 사이가 두꺼운 덩어리로 읽힌다
+ * (첫 캡처). 칸 가운데에 얇게 세우고 나머지는 바닥으로 깐다.
+ */
+const WALL_THICKNESS = 0.22;
+
+/** 이름표를 늘 띄우는 상태. 나머지(쉬는 중·완료)는 hover·선택 때만 — 서른 개가 다 뜨면 활성이 묻힌다. */
+const NAMED_STATES = new Set(["IN_PROGRESS", "AWAITING_APPROVAL", "FAILED"]);
+const ALERT_STATES = new Set(["AWAITING_APPROVAL", "FAILED"]);
+const STATE_LABELS = {
+  IN_PROGRESS: "일하는 중",
+  AWAITING_APPROVAL: "승인 대기",
+  AWAITING_INTEGRATION: "반영 대기",
+  COMPLETED: "완료",
+  FAILED: "실패",
+  WAITING: "쉬는 중",
+};
+
+/**
+ * 대표 외형 — 평면도에 대표 몫 `agentLooks` 가 없다. 2D 는 색을 입히지 않은 `char-down`
+ * (흰 셔츠·회색 바지·검은 머리)으로 그리므로 같은 사람으로 맞춘다.
+ */
+const PRESIDENT_LOOK = { sheet: "char", shirt: [0.96, 0.96, 0.95], pants: [0.3, 0.3, 0.32], hair: [0.15, 0.14, 0.14] };
+const FALLBACK_LOOK = { sheet: "char", shirt: [0.8, 0.8, 0.8], pants: [0.3, 0.3, 0.3], hair: [0.3, 0.22, 0.16] };
+
+/** 이름표·말풍선 높이(사람 발 기준). 이름표가 떠 있으면 말풍선은 화면 픽셀로 그 위에 선다(`.raised`). */
+const LABEL_HEIGHT = SCALE.characterHeight + 0.14;
+
+export class Office3DRenderer {
+  constructor(canvas, layout) {
+    this.canvas = canvas;
+    // 2D 캔버스용 도트 보존 설정을 풀어 준다 — 3D 는 부드럽게 보간돼야 한다.
+    canvas.style.imageRendering = "auto";
+    this.webgl = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      // 정지 렌더 캡처가 그린 직후 버퍼를 읽는다. 끄면 캡처가 빈 화면을 받는 브라우저가 있다.
+      preserveDrawingBuffer: true,
+    });
+    this.webgl.setPixelRatio(1);
+    this.webgl.shadowMap.enabled = true;
+    this.webgl.shadowMap.type = THREE.PCFShadowMap;
+    this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 400);
+    this.overlay = new Overlay3D();
+    this.raycaster = new THREE.Raycaster();
+    this.pointer = null;
+    this.hoveredAgent = null;
+    this.selectedAgent = null;
+    const query = new URLSearchParams(window.location.search);
+    this.focusDepartment = query.get("room");
+    this.listen();
+    this.setLayout(layout);
+  }
+
+  setLayout(layout) {
+    this.layout = layout;
+    this.plan = layout.plan;
+    this.metrics = layout.metrics;
+    this.seatsByAgent = new Map(this.plan.desks.map((desk) => [desk.agentType, desk.seat]));
+    this.deskByAgent = new Map(this.plan.desks.map((desk) => [desk.agentType, desk.desk]));
+    this.walkable = new Set(this.plan.walkable.map((tile) => `${tile.x},${tile.y}`));
+    this.buildScene();
+    // 배치가 바뀌면 옛 방 확대는 뜻이 없다(방 좌표가 다르다) — 전체로 곧바로 되돌린다.
+    this.viewBounds = this.focusBounds();
+    this.tween = null;
+    this.measure();
+  }
+
+  /** 2D 렌더러는 그림 파일을 미리 받는다. 3D 는 도형으로 만들어 받을 것이 없다. */
+  spriteNames() {
+    return [];
+  }
+
+  /** 빌더가 아직 없는 가구 종류(상태 줄 표시용). */
+  missingFurniture() {
+    return missingKinds(this.plan.furniture.map((placement) => placement.kind));
+  }
+
+  world(x, y, height = 0) {
+    return new THREE.Vector3(x + 0.5, height, -(y + 0.5));
+  }
+
+  isWall(x, y) {
+    return this.plan.floor[y]?.[x] === "wall";
+  }
+
+  // MARK: - 장면 만들기
+
+  buildScene() {
+    if (this.scene) {
+      this.overlay.clear(this.scene);
+      this.scene.traverse((node) => node.geometry?.dispose());
+    }
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(BACKGROUND);
+    this.characters = new Map();
+    // 클릭 판정 대상 — 매 프레임 장면 전체(외곽선 포함 수천 개)를 훑지 않게 따로 들고 있는다.
+    this.hitTargets = [];
+    this.buildFloor();
+    this.buildWalls();
+    this.buildFurniturePieces();
+    this.buildPresident();
+    this.buildPlates();
+    const { columns, rows } = this.plan;
+    const center = new THREE.Vector3(columns / 2, 0, -rows / 2);
+    const [hemisphere, sun, sunTarget, fill, fillTarget] = makeLights(center, Math.max(columns, rows) * 0.75);
+    this.lights = {
+      hemisphere,
+      sun,
+      fill,
+      base: { hemisphere: hemisphere.intensity, sun: sun.intensity, fill: fill.intensity },
+    };
+    this.scene.add(hemisphere, sun, sunTarget, fill, fillTarget);
+    this.lightHour = null;
+    // 외곽선은 장면을 다 만든 뒤 한 번에 — 가구·벽·창을 만드는 곳마다 붙이면 빠뜨린다.
+    // 사람은 만들 때 스스로 붙인다(`makeCharacter`).
+    addOutlines(this.scene);
+  }
+
+  zoneAt(x, y) {
+    return (this.plan.zones ?? []).find(
+      (zone) =>
+        x >= zone.origin.x &&
+        x < zone.origin.x + zone.width &&
+        y >= zone.origin.y &&
+        y < zone.origin.y + zone.height
+    );
+  }
+
+  /** 바닥 — 칸마다 얇은 판 하나. 한 번에 그리려고 인스턴스로 묶고 색만 칸마다 준다. */
+  buildFloor() {
+    const { columns, rows, floor } = this.plan;
+    const tiles = [];
+    for (let y = 0; y < rows; y += 1) {
+      for (let x = 0; x < columns; x += 1) {
+        if (floor[y][x] !== "wall") {
+          tiles.push({ x, y, kind: floor[y][x] });
+        } else if (this.touchesFloor(x, y)) {
+          // 얇은 벽 양옆에 드러나는 자리 — 복도 색으로 깐다.
+          tiles.push({ x, y, kind: "corridor" });
+        }
+      }
+    }
+    const geometry = new THREE.BoxGeometry(1, SCALE.floorThickness, 1);
+    const mesh = new THREE.InstancedMesh(geometry, mat("floorBase"), tiles.length);
+    const matrix = new THREE.Matrix4();
+    const color = new THREE.Color();
+    tiles.forEach((tile, index) => {
+      const position = this.world(tile.x, tile.y, -SCALE.floorThickness / 2);
+      matrix.makeTranslation(position.x, position.y, position.z);
+      mesh.setMatrixAt(index, matrix);
+      color.set(FLOOR_COLORS[tile.kind] ?? FLOOR_COLORS.corridor);
+      const zone = this.zoneAt(tile.x, tile.y);
+      if (zone && tile.kind !== "corridor") {
+        color.lerp(tone(this.layout.departmentColors[zone.department]), FLOOR_TINT);
+      }
+      // 칸 경계가 읽히도록 한 칸 걸러 아주 조금만 어둡게 — 격자선 대신이다.
+      if ((tile.x + tile.y) % 2 === 1) {
+        color.multiplyScalar(0.975);
+      }
+      mesh.setColorAt(index, color);
+    });
+    mesh.receiveShadow = true;
+    // 클릭이 어느 칸에 떨어졌는지 인스턴스 번호로 되찾는다(방 확대).
+    mesh.userData.tiles = tiles;
+    this.floorMesh = mesh;
+    this.scene.add(mesh);
+  }
+
+  /**
+   * 벽 — 레퍼런스처럼 **뒤쪽 두 면(북·서)만 높게**, 방 사이는 허리 높이, 앞쪽(남·동)은 낮은 턱.
+   * 카메라가 남동쪽에서 내려다보므로 높은 벽이 앞에 오면 방을 가린다.
+   */
+  buildWalls() {
+    const { columns, rows } = this.plan;
+    const outerRows = this.metrics.outerWallRows ?? 2;
+    this.wallHeights = new Map();
+    for (let y = 0; y < rows; y += 1) {
+      for (let x = 0; x < columns; x += 1) {
+        if (this.isWall(x, y) && this.touchesFloor(x, y)) {
+          let height = WALL_MID;
+          if (y >= rows - outerRows || x === 0) {
+            height = SCALE.wallTall;
+          } else if (y === 0 || x === columns - 1) {
+            height = SCALE.wallLow;
+          }
+          this.wallHeights.set(`${x},${y}`, height);
+        }
+      }
+    }
+    // 같은 높이로 곧게 이어진 벽 칸을 **한 덩어리**로 세운다. 칸마다 따로 세우면 외곽선이
+    // 칸 경계마다 그어져 벽이 벽돌처럼 토막 나 보인다(첫 외곽선 캡처).
+    // 둥근 모서리 상자 — 각진 상자는 외곽선이 모서리에서 갈라진다(`character.js` 의 roundedBox 와 같은 이유).
+    const geometry = new RoundedBoxGeometry(1, 1, 1, 2, 0.04);
+    const add = (height, fromX, toX, fromZ, toZ) => {
+      const wall = new THREE.Mesh(geometry, mat(height === SCALE.wallTall ? "wallCream" : "wallLow"));
+      wall.scale.set(toX - fromX, height, toZ - fromZ);
+      wall.position.set((fromX + toX) / 2, height / 2, (fromZ + toZ) / 2);
+      wall.castShadow = true;
+      wall.receiveShadow = true;
+      this.scene.add(wall);
+    };
+    const half = WALL_THICKNESS / 2;
+    const heightAt = (x, y) => this.wallHeights.get(`${x},${y}`);
+    const covered = new Set();
+    for (const horizontal of [true, false]) {
+      const [outer, inner] = horizontal ? [rows, columns] : [columns, rows];
+      for (let line = 0; line < outer; line += 1) {
+        let start = 0;
+        while (start < inner) {
+          const at = (step) => (horizontal ? [step, line] : [line, step]);
+          const height = heightAt(...at(start));
+          if (height === undefined) {
+            start += 1;
+            continue;
+          }
+          let end = start;
+          while (end + 1 < inner && heightAt(...at(end + 1)) === height) {
+            end += 1;
+          }
+          // 한 칸짜리 토막은 반대 방향 줄이 세운다 — 기둥만 남는 칸은 아래에서 따로 세운다.
+          if (end > start) {
+            // 끝이 **더 높은** 벽과 만나면 그 칸 가운데까지 뻗어 틈을 메운다. 낮은 쪽과
+            // 만나면 그쪽 줄이 이쪽으로 뻗어 온다.
+            const reach = (step) => {
+              const neighbor = heightAt(...at(step));
+              return neighbor !== undefined && neighbor > height ? 0.5 : half;
+            };
+            const [sx, sy] = at(start);
+            const [ex, ey] = at(end);
+            const from = this.world(sx, sy);
+            const to = this.world(ex, ey);
+            if (horizontal) {
+              add(height, from.x - reach(start - 1), to.x + reach(end + 1), from.z - half, from.z + half);
+            } else {
+              // 세로 줄은 y 가 커질수록 z 가 작아진다(북쪽 = -z).
+              add(height, from.x - half, from.x + half, to.z - reach(end + 1), from.z + reach(start - 1));
+            }
+            for (let step = start; step <= end; step += 1) {
+              covered.add(at(step).join(","));
+            }
+          }
+          start = end + 1;
+        }
+      }
+    }
+    // 어느 줄에도 안 속한 외톨이 벽 칸(문 옆 기둥 등).
+    for (const [tile, height] of this.wallHeights) {
+      if (!covered.has(tile)) {
+        const [x, y] = tile.split(",").map(Number);
+        const center = this.world(x, y);
+        add(height, center.x - half, center.x + half, center.z - half, center.z + half);
+      }
+    }
+    this.buildWindows();
+  }
+
+  /** 여덟 이웃 중 바닥이 하나라도 있으면 보이는 벽이다. 벽에 둘러싸인 벽은 그리지 않는다. */
+  touchesFloor(x, y) {
+    for (let dy = -1; dy <= 1; dy += 1) {
+      for (let dx = -1; dx <= 1; dx += 1) {
+        const kind = this.plan.floor[y + dy]?.[x + dx];
+        if (kind !== undefined && kind !== "wall") {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /**
+   * 창·벽등 — 평면도가 정한 벽 칸의 남쪽 면에 붙인다(창은 모두 북쪽 바깥벽에 있다).
+   * 창 유리는 시간대 하늘색을 받으므로 팔레트 재질(공유)이 아니라 렌더러 전용 재질을 쓴다 —
+   * 공유 재질을 바꾸면 유리 칸막이까지 밤하늘색이 된다.
+   */
+  buildWindows() {
+    const frame = mat("woodLight");
+    this.windowGlass = new THREE.MeshBasicMaterial({ color: 0xcfe6ee });
+    for (const tile of this.plan.windowTiles ?? []) {
+      const face = this.world(tile.x, tile.y);
+      face.z += WALL_THICKNESS / 2;
+      const outer = new THREE.Mesh(new RoundedBoxGeometry(0.96, 0.7, 0.06, 2, 0.02), frame);
+      outer.position.set(face.x, 0.95, face.z + 0.02);
+      const pane = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.58, 0.02), this.windowGlass);
+      pane.position.set(face.x, 0.95, face.z + 0.05);
+      pane.userData.noOutline = true;
+      this.scene.add(outer, pane);
+    }
+    for (const tile of this.plan.wallLampTiles ?? []) {
+      const face = this.world(tile.x, tile.y);
+      const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.09, 16, 10), mat("lampWarm"));
+      lamp.position.set(face.x, 1.3, face.z + WALL_THICKNESS / 2 + 0.05);
+      this.scene.add(lamp);
+    }
+  }
+
+  buildFurniturePieces() {
+    for (const placement of this.plan.furniture) {
+      const info = this.layout.furniture[placement.kind] ?? {};
+      const footprint = [info.footprintWidth ?? 1, info.footprintHeight ?? 1];
+      const piece = buildFurniture(placement.kind, footprint);
+      if (!piece) {
+        continue;
+      }
+      const { x, y } = placement.tile;
+      if (info.wallMounted) {
+        if (!this.hangOnWall(piece, x, y)) {
+          continue;
+        }
+      } else {
+        // 두 칸 이상 차지하면 점유 범위 중심에 놓는다(기준 칸은 왼쪽 아래).
+        piece.position.set(x + footprint[0] / 2, 0, -(y + footprint[1] / 2));
+      }
+      this.scene.add(piece);
+    }
+    // 좌석마다 의자. 2D 에서는 책상 그림에 의자가 들어 있어 평면도에 따로 없다.
+    for (const desk of this.plan.desks) {
+      const chair = buildFurniture("chairDown");
+      chair.position.copy(this.world(desk.seat.x, desk.seat.y));
+      this.scene.add(chair);
+    }
+  }
+
+  /**
+   * 벽걸이는 벽 칸 위에 놓여 있다. 맞닿은 바닥 칸 쪽 면에 건다 — 빌더는 등판을
+   * `WALL_MOUNT.backZ` 에 만들므로, 원점을 벽 면에서 바닥 쪽으로 그만큼 물린 곳에 두고 -z 가
+   * 벽을 향하게 돌린다.
+   */
+  hangOnWall(piece, x, y) {
+    const sides = [
+      { dx: 0, dy: -1, rotation: 0 },
+      { dx: 1, dy: 0, rotation: Math.PI / 2 },
+      { dx: -1, dy: 0, rotation: -Math.PI / 2 },
+      { dx: 0, dy: 1, rotation: Math.PI },
+    ];
+    const side = sides.find(({ dx, dy }) => {
+      const kind = this.plan.floor[y + dy]?.[x + dx];
+      return kind !== undefined && kind !== "wall";
+    });
+    if (!side) {
+      return false;
+    }
+    const wallHeight = this.wallHeights.get(`${x},${y}`) ?? WALL_MID;
+    const reach = WALL_THICKNESS / 2 - WALL_MOUNT.backZ;
+    piece.position.copy(
+      this.world(x + side.dx * reach, y + side.dy * reach, Math.max(0.02, Math.min(0.75, wallHeight - WALL_MOUNT.maxHeight)))
+    );
+    piece.rotation.y = side.rotation;
+    return true;
+  }
+
+  buildPresident() {
+    const tile = this.plan.presidentTile;
+    if (!tile) {
+      return;
+    }
+    // 대표는 **서 있다**(2D·맥 앱과 같다). 앞 칸(y-1)은 평면도가 면담 공간으로 비워 둔 통행 칸이라
+    // 책상을 놓으면 줄 선 사람이 가려지고 걷는 사람이 책상을 뚫는다 — 평면도에 없는 가구는 만들지 않는다.
+    const president = makeCharacter(PRESIDENT_LOOK);
+    president.position.copy(this.world(tile.x, tile.y));
+    poseCharacter(president, { seated: false, facing: "down", pose: "down" }, 0);
+    president.add(this.hitBox({ president: true }));
+    this.presidentAlarm = this.overlay.label("office3d-alarm", "🚨");
+    this.presidentAlarm.position.set(0, LABEL_HEIGHT + 0.2, 0);
+    this.presidentAlarm.visible = false;
+    // 대표 이름도 다른 사람과 같은 규칙 — hover 때만. 늘 띄우면 바로 뒤 세션 책상 이름과 겹친다.
+    this.presidentName = this.overlay.label("office3d-label", "나 (대표)");
+    this.presidentName.position.set(0, LABEL_HEIGHT, 0);
+    this.presidentName.visible = false;
+    president.add(this.presidentAlarm, this.presidentName);
+    this.scene.add(president);
+  }
+
+  /** 부서 문패·공용 공간 이름·세션 책상 이름 — 움직이지 않는 글자. */
+  buildPlates() {
+    for (const zone of this.plan.zones ?? []) {
+      const [icon, label] = this.layout.departmentLabels?.[zone.department] ?? ["", zone.department];
+      const plate = this.overlay.label("office3d-plate", `${icon} ${label}`);
+      const color = this.layout.departmentColors?.[zone.department];
+      if (color) {
+        plate.element.style.color = `#${tone(color, 0.1).getHexString()}`;
+      }
+      // 방 북쪽 벽(허리 높이) 위에 세운다 — 방 안 가구·사람을 가리지 않는 자리.
+      plate.position.set(zone.origin.x + zone.width / 2, WALL_MID + 0.22, -(zone.origin.y + zone.height + 0.5));
+      this.scene.add(plate);
+    }
+    const outerRows = this.metrics.outerWallRows ?? 2;
+    for (const area of this.plan.commonAreas ?? []) {
+      const plate = this.overlay.label("office3d-plate common", `${area.icon} ${area.label}`);
+      // 공용 공간은 북쪽 높은 벽의 창 위 — 부서 문패보다 뒤로 물러난 자리.
+      plate.position.set(area.originX + area.width / 2, 1.5, -(this.plan.rows - outerRows + 0.5) + WALL_THICKNESS);
+      this.scene.add(plate);
+    }
+    this.sessionLabels = (this.layout.sessionDesks ?? []).map((tile) => {
+      const label = this.overlay.label("office3d-session");
+      // 책상 **뒤 벽면**에 붙인다. 2D 는 위가 바깥벽이라 책상 아래에 적었지만, 3D 에서 아래는
+      // 대표실과 품질 방 사이 복도라 부서 문패와 겹친다(첫 캡처). 3D 의 뒤쪽은 높은 벽이라 빈 면이다.
+      label.position.copy(this.world(tile.x, tile.y, 0.78));
+      label.position.z -= 0.55;
+      label.visible = false;
+      this.scene.add(label);
+      return label;
+    });
+  }
+
+  /** 클릭 판정용 보이지 않는 상자. 외곽선·머리카락 조각까지 훑지 않고 이것 하나만 맞힌다. */
+  hitBox(userData) {
+    const box = new THREE.Mesh(
+      new THREE.BoxGeometry(0.5, SCALE.characterHeight, 0.45),
+      new THREE.MeshBasicMaterial({ visible: false })
+    );
+    box.position.y = SCALE.characterHeight / 2;
+    box.userData = { ...userData, noOutline: true };
+    this.hitTargets.push(box);
+    return box;
+  }
+
+  // MARK: - 입력
+
+  listen() {
+    const canvas = this.canvas;
+    canvas.addEventListener("pointermove", (event) => {
+      this.pointer = this.toPointer(event);
+    });
+    canvas.addEventListener("pointerleave", () => {
+      this.pointer = null;
+    });
+    canvas.addEventListener("click", (event) => this.handleClick(this.toPointer(event)));
+    window.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      // 한 번에 한 겹씩 — 선택이 있으면 선택만 풀고, 다음 esc 에 방 확대를 푼다.
+      if (this.selectedAgent) {
+        this.selectedAgent = null;
+      } else {
+        this.setFocus(null);
+      }
+    });
+  }
+
+  toPointer(event) {
+    const rect = this.canvas.getBoundingClientRect();
+    return new THREE.Vector2(
+      ((event.clientX - rect.left) / rect.width) * 2 - 1,
+      -((event.clientY - rect.top) / rect.height) * 2 + 1
+    );
+  }
+
+  /** 포인터 아래 가장 앞의 것. 사람이 바닥보다 우선이다. */
+  pick(pointer) {
+    this.raycaster.setFromCamera(pointer, this.camera);
+    const person = this.raycaster.intersectObjects(this.hitTargets, false)[0];
+    if (person) {
+      return person.object.userData;
+    }
+    const floor = this.raycaster.intersectObject(this.floorMesh, false)[0];
+    if (floor && floor.instanceId !== undefined) {
+      return { tile: this.floorMesh.userData.tiles[floor.instanceId] };
+    }
+    return null;
+  }
+
+  handleClick(pointer) {
+    const target = this.pick(pointer);
+    if (target?.agentType) {
+      this.selectedAgent = target.agentType;
+      this.emit("office:agent-click", { agentType: target.agentType });
+      return;
+    }
+    if (target?.president) {
+      this.emit("office:president-click", {});
+      return;
+    }
+    this.selectedAgent = null;
+    const zone = target?.tile ? this.zoneAt(target.tile.x, target.tile.y) : null;
+    // 방을 누르면 그 방으로, 방 밖(복도·공용 공간·배경)을 누르면 전체로.
+    this.setFocus(zone && zone.department !== this.focusDepartment ? zone.department : zone ? this.focusDepartment : null);
+  }
+
+  emit(name, detail) {
+    window.dispatchEvent(new CustomEvent(name, { detail }));
+  }
+
+  // MARK: - 카메라
+
+  setFocus(department) {
+    if (department === this.focusDepartment) {
+      return;
+    }
+    this.focusDepartment = department;
+    this.tween = {
+      from: { ...this.viewBounds },
+      to: this.focusBounds(),
+      startedAt: performance.now(),
+    };
+    this.emit("office:focus", { department });
+  }
+
+  /** 카메라가 담을 범위(평면도 칸 단위). 방 확대면 그 방과 둘레 벽 한 칸. */
+  focusBounds() {
+    const zone = (this.plan.zones ?? []).find((entry) => entry.department === this.focusDepartment);
+    if (zone) {
+      return {
+        minX: zone.origin.x - 1,
+        maxX: zone.origin.x + zone.width + 1,
+        minY: zone.origin.y - 1,
+        maxY: zone.origin.y + zone.height + 1,
+      };
+    }
+    return { minX: 0, maxX: this.plan.columns, minY: 0, maxY: this.plan.rows };
+  }
+
+  /** 캔버스 크기가 바뀌었다 — 백버퍼·겹침층을 맞추고 지금 범위로 카메라를 다시 잡는다. */
+  measure() {
+    this.webgl.setSize(this.canvas.width, this.canvas.height, false);
+    this.overlay.place(this.canvas);
+    this.applyCamera(this.viewBounds);
+  }
+
+  /**
+   * 범위의 모서리 여덟 개를 카메라 좌표로 옮겨, 그것이 다 들어가는 가장 작은 직교 범위를 쓴다.
+   */
+  applyCamera(bounds) {
+    const width = this.canvas.width;
+    const height = this.canvas.height;
+    const center = new THREE.Vector3((bounds.minX + bounds.maxX) / 2, 0, -(bounds.minY + bounds.maxY) / 2);
+    const azimuth = THREE.MathUtils.degToRad(CAMERA.azimuthDegrees);
+    const elevation = THREE.MathUtils.degToRad(CAMERA.elevationDegrees);
+    const distance = 200;
+    this.camera.position.set(
+      center.x + Math.sin(azimuth) * Math.cos(elevation) * distance,
+      Math.sin(elevation) * distance,
+      center.z + Math.cos(azimuth) * Math.cos(elevation) * distance
+    );
+    this.camera.lookAt(center);
+    this.camera.updateMatrixWorld();
+    const inverse = this.camera.matrixWorldInverse;
+    let left = Infinity;
+    let right = -Infinity;
+    let bottom = Infinity;
+    let top = -Infinity;
+    for (const x of [bounds.minX, bounds.maxX]) {
+      for (const y of [bounds.minY, bounds.maxY]) {
+        for (const h of [0, SCALE.wallTall]) {
+          const point = new THREE.Vector3(x, h, -y).applyMatrix4(inverse);
+          left = Math.min(left, point.x);
+          right = Math.max(right, point.x);
+          bottom = Math.min(bottom, point.y);
+          top = Math.max(top, point.y);
+        }
+      }
+    }
+    // 화면 비율을 지키며 넓은 쪽에 맞춘다 — 늘이면 가구가 찌그러진다.
+    const spanX = (right - left) * (1 + CAMERA.margin * 2);
+    const spanY = (top - bottom) * (1 + CAMERA.margin * 2);
+    const aspect = width / Math.max(1, height);
+    const halfWidth = Math.max(spanX, spanY * aspect) / 2;
+    const halfHeight = halfWidth / aspect;
+    const midX = (left + right) / 2;
+    const midY = (bottom + top) / 2;
+    this.camera.left = midX - halfWidth;
+    this.camera.right = midX + halfWidth;
+    this.camera.top = midY + halfHeight;
+    this.camera.bottom = midY - halfHeight;
+    this.camera.updateProjectionMatrix();
+    // 상태 줄이 "타일 N px" 를 찍는다 — 화면 폭 대비 타일 한 칸의 대략적인 크기.
+    const pixelRatio = window.devicePixelRatio || 1;
+    this.tileSize = width / pixelRatio / (halfWidth * 2);
+    setOutlineWidth(OUTLINE.pixels / this.tileSize);
+  }
+
+  /** 방 확대 전환 — 범위를 부드럽게 옮긴다. 끝나면 null. */
+  stepTween(now) {
+    if (!this.tween) {
+      return;
+    }
+    const progress = Math.min(1, (now - this.tween.startedAt) / 1000 / CAMERA.focusSeconds);
+    const eased = 1 - (1 - progress) ** 3;
+    const { from, to } = this.tween;
+    this.viewBounds = Object.fromEntries(
+      Object.keys(to).map((key) => [key, from[key] + (to[key] - from[key]) * eased])
+    );
+    this.applyCamera(this.viewBounds);
+    if (progress >= 1) {
+      this.tween = null;
+    }
+  }
+
+  // MARK: - 시간대
+
+  /**
+   * 창밖 빛 — 평면도의 `daylight` 띠(새벽·아침·낮·저녁·밤)를 그대로 쓴다. 2D 와 같은 띠라 두
+   * 화면이 같은 시각에 같은 분위기다. 해·하늘빛 세기는 띠의 `glowStrength` 로 누르고, 밤에는
+   * 벽등이 켜진다(`lampLit`).
+   */
+  applyDaylight(hour) {
+    const normalized = ((Math.floor(hour) % 24) + 24) % 24;
+    if (normalized === this.lightHour) {
+      return;
+    }
+    this.lightHour = normalized;
+    const band =
+      Object.values(this.layout.daylight ?? {}).find((info) => info.hours.includes(normalized)) ??
+      this.layout.daylight?.day;
+    if (!band) {
+      return;
+    }
+    const strength = THREE.MathUtils.clamp(0.45 + band.glowStrength * 2.6, 0.5, 1);
+    const { hemisphere, sun, fill, base } = this.lights;
+    hemisphere.intensity = base.hemisphere * strength;
+    sun.intensity = base.sun * strength;
+    fill.intensity = base.fill * Math.max(0.7, strength);
+    const glow = new THREE.Color().setRGB(...band.glow, THREE.SRGBColorSpace);
+    sun.color.set(0xfff1dc).lerp(glow, 0.5);
+    const sky = new THREE.Color().setRGB(...band.skyHigh, THREE.SRGBColorSpace);
+    this.scene.background.set(BACKGROUND).lerp(sky, (1 - strength) * 0.7);
+    this.windowGlass.color.setRGB(...band.skyLow, THREE.SRGBColorSpace);
+    const lamp = mat("lampWarm");
+    lamp.emissive.set(band.lampLit ? 0xffc46b : 0x000000);
+    lamp.emissiveIntensity = band.lampLit ? 1.2 : 0;
+  }
+
+  // MARK: - 한 판 그리기
+
+  /** @param {object} view live.js 가 주는 것 — `agents`·`bodies`·`now` 등(office.js 와 같다). */
+  draw(view) {
+    this.stepTween(performance.now());
+    this.applyDaylight(view.hour ?? 12);
+    // 출근 지연 중이라 문 앞에서 기다리는 사람은 그리지 않는다(`office.js` 와 같은 규칙).
+    const bodies = Object.fromEntries(
+      Object.entries(view.bodies ?? {}).filter(([, body]) => !body.hidden)
+    );
+    for (const [agentType, entry] of this.characters) {
+      if (!bodies[agentType]) {
+        this.scene.remove(entry.figure, entry.ring);
+        this.hitTargets = this.hitTargets.filter((target) => target.parent !== entry.figure);
+        this.characters.delete(agentType);
+      }
+    }
+    const hovered = this.pointer ? this.pick(this.pointer) : null;
+    this.hoveredAgent = hovered?.agentType ?? null;
+    this.canvas.style.cursor = this.hoveredAgent || hovered?.president ? "pointer" : "";
+    if (this.presidentName) {
+      this.presidentName.visible = Boolean(hovered?.president);
+    }
+    for (const [agentType, body] of Object.entries(bodies)) {
+      const entry = this.characterEntry(agentType);
+      const position = this.world(body.x, body.y);
+      entry.figure.position.copy(position);
+      poseCharacter(entry.figure, body, view.now ?? 0);
+      this.updateRing(entry, agentType, view, position);
+      this.updateLabels(entry, agentType, view);
+    }
+    this.updateSessions(view.sessions ?? []);
+    if (this.presidentAlarm) {
+      this.presidentAlarm.visible = Boolean(view.presidentAlarm);
+    }
+    this.overlay.setHud(this.summaryText(view.summary));
+    this.webgl.render(this.scene, this.camera);
+    this.overlay.render(this.scene, this.camera);
+  }
+
+  characterEntry(agentType) {
+    let entry = this.characters.get(agentType);
+    if (!entry) {
+      const look = this.layout.agentLooks?.[agentType] ?? FALLBACK_LOOK;
+      const figure = makeCharacter(look);
+      figure.add(this.hitBox({ agentType }));
+      const name = this.overlay.label("office3d-label");
+      const bubble = this.overlay.label("office3d-bubble");
+      figure.add(name, bubble);
+      entry = { figure, ring: makeStatusRing(), name, bubble, look };
+      this.scene.add(figure, entry.ring);
+      this.characters.set(agentType, entry);
+    }
+    return entry;
+  }
+
+  updateRing(entry, agentType, view, position) {
+    const state = view.agents?.[agentType]?.state;
+    const color = state ? this.layout.stateColors?.[state] : null;
+    const selected = agentType === this.selectedAgent;
+    entry.ring.visible = Boolean(color) || selected;
+    if (color) {
+      entry.ring.material.color.setRGB(color[0], color[1], color[2], THREE.SRGBColorSpace);
+    } else if (selected) {
+      entry.ring.material.color.set(0xffffff);
+    }
+    // 선택한 사람은 링을 키워 어느 사람이 인스펙터에 떠 있는지 화면에서도 짚이게 한다.
+    entry.ring.scale.setScalar(selected ? 1.35 : 1);
+    entry.ring.position.set(position.x, 0.012, position.z);
+  }
+
+  updateLabels(entry, agentType, view) {
+    const agent = view.agents?.[agentType];
+    const state = agent?.state ?? "WAITING";
+    const focused = agentType === this.hoveredAgent || agentType === this.selectedAgent;
+    const named = focused || NAMED_STATES.has(state);
+    const name = entry.look.roleLabel ?? agent?.nickname ?? agent?.displayName ?? agentType;
+    // hover·선택이면 이름 옆에 상태와 하는 일까지 — 이것이 툴팁이다.
+    const text = focused
+      ? [name, STATE_LABELS[state] ?? state, agent?.job].filter(Boolean).join(" · ")
+      : name;
+    const className = ALERT_STATES.has(state) ? "office3d-label alert" : "office3d-label";
+    Overlay3D.set(entry.name, text, className);
+    entry.name.visible = named;
+    entry.name.position.set(0, LABEL_HEIGHT, 0);
+    const bubbleText = agent?.bubble;
+    entry.bubble.visible = Boolean(bubbleText) && state !== "WAITING";
+    if (entry.bubble.visible) {
+      Overlay3D.set(entry.bubble, bubbleText, named ? "office3d-bubble raised" : "office3d-bubble");
+      entry.bubble.position.set(0, LABEL_HEIGHT, 0);
+    }
+  }
+
+  updateSessions(sessions) {
+    // 세션 이름은 디렉터리명이라 길다. 책상 두 칸 폭을 넘기면 옆 책상·부서 문패와 겹친다
+    // (첫 캡처에서 "품질" 문패를 덮었다) — 폭을 화면 배율에 묶고 넘치면 말줄임표로 자른다.
+    const maxWidth = `${Math.round(this.tileSize * 1.9)}px`;
+    this.sessionLabels.forEach((label, index) => {
+      if (label.element.style.maxWidth !== maxWidth) {
+        label.element.style.maxWidth = maxWidth;
+      }
+      const session = sessions[index];
+      label.visible = Boolean(session);
+      if (session) {
+        Overlay3D.set(label, session.label, session.active ? "office3d-session active" : "office3d-session");
+      }
+    });
+  }
+
+  summaryText(summary) {
+    if (!summary) {
+      return "";
+    }
+    let text = `진행 ${summary.inProgress} · 승인 ${summary.awaitingApproval} · 쉬는 중 ${summary.waiting}`;
+    if (summary.sessions > 0) {
+      // 대표 앞 세션 책상은 넷뿐이라, 그 수가 곧 전체라고 오해하지 않게 총계를 적는다.
+      text += ` · 내 세션 ${summary.sessions}(도는 중 ${summary.activeSessions})`;
+    }
+    return text;
+  }
+}

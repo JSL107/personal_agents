@@ -1,0 +1,91 @@
+<!doctype html>
+<!--
+  캐릭터 미리보기 — 3D 캐릭터를 기존 2D 스프라이트와 대조하려고 한 줄로 세워 찍는다(개발용, 설치본 제외).
+
+    ?view=front|iso      정면(스프라이트와 같은 각) 또는 게임 화면 각
+    &colors=neutral|real 흰 셔츠(원본 시트 색) 또는 평면도의 실제 직원 색
+    &seated=1            앉은 자세
+-->
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>캐릭터 미리보기</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #f7efe4; overflow: hidden; }
+      canvas { width: 100%; height: 100%; display: block; }
+    </style>
+    <script type="importmap">
+      { "imports": { "three": "./vendor/three/three.module.js", "three/addons/": "./vendor/three/addons/" } }
+    </script>
+  </head>
+  <body>
+    <canvas id="stage"></canvas>
+    <script type="module">
+      import * as THREE from "three";
+      import { makeCharacter, poseCharacter } from "./three/character.js";
+      import { makeLights, BACKGROUND, OUTLINE, addOutlines, setOutlineWidth } from "./three/style.js";
+      import { buildFurniture } from "./three/furniture3d/index.js";
+
+      const query = new URLSearchParams(location.search);
+      const view = query.get("view") ?? "front";
+      const colors = query.get("colors") ?? "neutral";
+      const seated = query.get("seated") === "1";
+      const sheets = ["char", "charb", "charc", "chard", "chare"];
+      const neutral = { shirt: [0.96, 0.96, 0.95], pants: [0.3, 0.3, 0.32], hair: [0.15, 0.14, 0.14] };
+      const layout = await fetch("layout-3.json").then((response) => response.json());
+      const looks = Object.values(layout.agentLooks);
+
+      const canvas = document.getElementById("stage");
+      const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+      renderer.setPixelRatio(window.devicePixelRatio);
+      renderer.setSize(innerWidth, innerHeight, false);
+      renderer.shadowMap.enabled = true;
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(BACKGROUND);
+      const spacing = 0.7;
+      sheets.forEach((sheet, index) => {
+        const look =
+          colors === "real"
+            ? { ...(looks.find((entry) => entry.sheet === sheet) ?? neutral), sheet }
+            : { ...neutral, sheet };
+        const figure = makeCharacter(look);
+        const x = (index - (sheets.length - 1) / 2) * spacing;
+        figure.position.set(x, 0, 0);
+        poseCharacter(figure, { seated, facing: "down", pose: "down" }, 0);
+        scene.add(figure);
+        if (seated) {
+          const chair = buildFurniture("chairDown");
+          chair.position.set(x, 0, 0);
+          scene.add(chair);
+        }
+      });
+      const floor = new THREE.Mesh(new THREE.PlaneGeometry(6, 3), new THREE.MeshStandardMaterial({ color: 0xeadcc6, roughness: 0.9 }));
+      floor.rotation.x = -Math.PI / 2;
+      floor.receiveShadow = true;
+      floor.userData.noOutline = true;
+      scene.add(floor);
+      for (const light of makeLights(new THREE.Vector3(0, 0, 0), 3)) {
+        scene.add(light);
+      }
+      const aspect = innerWidth / innerHeight;
+      // 다섯 명이 양옆 여백까지 들어가는 높이. 창이 좁으면 폭에 맞춰 키운다.
+      // 비스듬한 각에서는 줄이 대각선으로 서서 세로로 더 차지한다 — 조금 물린다.
+      const halfHeight = Math.max(0.58, (spacing * sheets.length) / 2 / aspect) * (view === "iso" ? 1.35 : 1);
+      const camera = new THREE.OrthographicCamera(-halfHeight * aspect, halfHeight * aspect, halfHeight, -halfHeight, 0.1, 100);
+      if (view === "iso") {
+        const azimuth = THREE.MathUtils.degToRad(32);
+        const elevation = THREE.MathUtils.degToRad(38);
+        camera.position.set(Math.sin(azimuth) * Math.cos(elevation) * 20, Math.sin(elevation) * 20, Math.cos(azimuth) * Math.cos(elevation) * 20);
+        camera.lookAt(0, 0.35, 0);
+      } else {
+        camera.position.set(0, 0.46, 20);
+        camera.lookAt(0, 0.46, 0);
+      }
+      addOutlines(scene);
+      // 픽셀당 월드 길이 = 카메라 세로 폭 / 캔버스 세로 CSS 픽셀.
+      setOutlineWidth((OUTLINE.pixels * (halfHeight * 2)) / innerHeight);
+      renderer.render(scene, camera);
+      document.body.dataset.rendered = "1";
+    </script>
+  </body>
+</html>
