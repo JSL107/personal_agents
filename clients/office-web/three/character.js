@@ -298,7 +298,7 @@ export function makeCharacter(look) {
   body.add(papers);
 
   root.add(body);
-  root.userData = { body, legs, arms, papers };
+  root.userData = { body, legs, arms, papers, head };
   return addOutlines(root);
 }
 
@@ -334,8 +334,43 @@ function tapLift(now) {
   return 0;
 }
 
-export function poseCharacter(character, body, now) {
-  const { body: figure, legs, arms, papers } = character.userData;
+/**
+ * 짧은 몸짓(`live.js` 의 `body.cue`) — 끝나면 제자리로 돌아오는 한 번짜리다. 2D 의 `playHop`·
+ * 인계받는 사람의 부풀기·거절 흔들림을 같은 박자·같은 폭(타일 40px 기준)으로 옮겼다.
+ * 돌려주는 값은 몸을 들어 올릴 높이(타일).
+ */
+function applyCue(character, figure, body) {
+  figure.position.x = 0;
+  character.scale.setScalar(1);
+  if (!(body.cueRemaining > 0)) {
+    return 0;
+  }
+  const swing = Math.sin((1 - body.cueRemaining / body.cueSeconds) * Math.PI);
+  if (body.cue === "hop") {
+    return swing * 0.17;
+  }
+  if (body.cue === "pulse") {
+    character.scale.setScalar(1 + swing * 0.12);
+  } else if (body.cue === "shake") {
+    // 좌우로 두 번 — 한 번 오가는 사인을 네 배로 접는다.
+    figure.position.x = Math.sin((1 - body.cueRemaining / body.cueSeconds) * Math.PI * 4) * 0.12;
+  }
+  return 0;
+}
+
+/**
+ * @param {object} [options]
+ * @param {boolean} [options.slump] 실패 — 고개를 떨구고 손을 책상에서 내린다(2D `startSlump`). 멈춘 자세라
+ *   다시 그릴 일이 없다.
+ */
+export function poseCharacter(character, body, now, { slump = false } = {}) {
+  const { body: figure, legs, arms, papers, head } = character.userData;
+  const walking = typeof body.pose === "string" && body.pose.includes("walk");
+  const slumped = slump && !walking;
+  head.rotation.x = slumped ? 0.55 : 0;
+  head.position.set(0, BODY.headCenter - (slumped ? 0.025 : 0), slumped ? 0.035 : 0);
+  figure.rotation.x = slumped ? 0.1 : 0;
+  const lift = applyCue(character, figure, body);
   // 방치 단계(live.js 의 `body.pressure`) — 2 서류 들기 · 3 발 구르기. 앉아 있으면 표현하지 않는다
   // (줄에 선 사람에게만 붙는 값이다).
   const pressure = body.seated ? 0 : (body.pressure ?? 0);
@@ -348,19 +383,18 @@ export function poseCharacter(character, body, now) {
   character.rotation.y = FACING_ROTATION[facing] ?? 0;
   if (body.seated) {
     // 엉덩이를 좌판 높이로 내리고, 허벅지는 앞으로·정강이는 아래로. 손은 책상(무릎) 쪽으로.
-    figure.position.y = (lounging ? SCALE.sofaSeat : SCALE.chairSeat) + 0.03 - BODY.hip;
+    figure.position.y = (lounging ? SCALE.sofaSeat : SCALE.chairSeat) + 0.03 - BODY.hip + lift;
     for (const leg of legs) {
       leg.hip.rotation.x = -Math.PI / 2;
       leg.knee.rotation.x = Math.PI / 2;
     }
     for (const arm of arms) {
-      arm.rotation.x = -0.7;
+      arm.rotation.x = slumped ? -0.15 : -0.7;
     }
     return;
   }
-  const walking = typeof body.pose === "string" && body.pose.includes("walk");
   const phase = now * STRIDE_SPEED;
-  figure.position.y = walking ? Math.abs(Math.sin(phase)) * 0.02 : 0;
+  figure.position.y = (walking ? Math.abs(Math.sin(phase)) * 0.02 : 0) + lift;
   const tap = !walking && pressure >= 3 ? tapLift(now) : 0;
   figure.position.y += tap * 0.03;
   legs.forEach((leg, index) => {

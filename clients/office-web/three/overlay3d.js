@@ -30,6 +30,23 @@ const STYLE = `
   border: 1.5px solid #33271f; box-shadow: 0 2px 0 rgba(51, 39, 31, 0.25);
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
+/* 접수 대기 점 — 글자는 그대로 두고 가림막만 옮긴다(글자를 바꾸려면 3D 장면까지 다시 그려야 한다).
+   흰 점만 띄우면 밝은 바닥에서 안 보여 이름표와 같은 어두운 판 위에 올린다. */
+.office3d-dots {
+  position: relative; width: 36px; height: 16px; margin-top: -28px; border-radius: 8px;
+  background: rgba(38, 30, 25, 0.82); border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.office3d-dots::after {
+  content: "•••"; position: absolute; inset: 0; text-align: center; color: #fbf6ee;
+  font: 700 15px/16px "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; letter-spacing: 2px; text-indent: 2px;
+  animation: office3d-dots 0.96s step-end infinite;
+}
+@keyframes office3d-dots {
+  0% { clip-path: inset(0 66% 0 0); }
+  33% { clip-path: inset(0 33% 0 0); }
+  66% { clip-path: inset(0 0 0 0); }
+}
+@media (prefers-reduced-motion: reduce) { .office3d-dots::after { animation: none; } }
 .office3d-plate {
   font: 700 13px/1.3 "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
   padding: 3px 10px; border-radius: 8px; background: rgba(255, 253, 248, 0.88);

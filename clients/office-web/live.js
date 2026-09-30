@@ -79,7 +79,8 @@ const canvas = document.getElementById("office");
  */
 const query = new URLSearchParams(window.location.search);
 const isStatic = query.get("static") === "1";
-const fixedHour = query.has("hour") ? Number(query.get("hour")) : null;
+// 같은 이름이 여럿이면 마지막 것 — 캡처가 `hour=12` 를 먼저 붙이므로 `--query=hour=21` 이 그것을 덮는다.
+const fixedHour = query.has("hour") ? Number(query.getAll("hour").at(-1)) : null;
 /**
  * `?walk=3` — 정지 렌더에서 산책을 강제로 일으키고 그 초만큼 진행시킨 뒤 그린다.
  *
@@ -110,6 +111,14 @@ const queueDemo = query.has("queue") ? Number(query.get("queue")) : 1;
  * 영영 오지 않는다. 지금 시각이 근무 시간이면 출근을, 아니면 퇴근을 그린다.
  */
 const commuteSeconds = query.has("commute") ? Number(query.get("commute")) : 0;
+/**
+ * `?motion=1` — 실패 자세·접수 대기 점·거절·완료 튀어오름·인계를 앞쪽 좌석 여섯 명에게 하나씩 일으킨다.
+ *
+ * 뒤의 넷은 맥 앱이 밀어 줘야만 일어나고(`intent`·`pending`), 실패도 평소에는 0건이라 이 입구 없이는
+ * 브라우저·캡처에서 **한 번도 뜨지 않는다**(`?pressure=` 와 같은 자리). 누가 무엇을 맡았는지는
+ * `data-motion-report` 에 남긴다.
+ */
+const motionDemo = query.has("motion");
 /**
  * `?renderer=3d` — three.js 3D 렌더러로 그린다(시험 단계, 기본은 2D).
  *
@@ -173,6 +182,20 @@ let loadedSpriteCount = 0;
  * 조용히 사라진다** — 여기 모아 상태 줄에 찍어 "평면도를 다시 뽑아야 한다" 를 드러낸다.
  */
 let agentsWithoutSeat = [];
+/** 기억 청소 실태(스냅샷의 `housekeeping`). 3D 가 로봇청소기·먼지로 그린다. 서버가 모르면 null. */
+let housekeeping = null;
+/**
+ * agentType → 내가 보낸 지시의 진행 단계(`sent`·`running`·`done`·`answered`·`failed`).
+ * **맥 앱만 준다** — 지시 바가 앱에 있고, 단계도 앱이 자기 지시를 추적해 만든 값이라 백엔드에는 없다.
+ * 윈도우 앱·브라우저에서는 늘 비어 있어 접수 대기 점과 완료 튀어오름이 나오지 않는다.
+ */
+let pendingPhases = {};
+/** 움직임 줄이기 설정. 짧은 몸짓을 건너뛴다(맥 앱 `shouldReduceMotion` 과 같은 자리). */
+const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+/** 짧은 몸짓의 길이(초). 2D 와 같은 박자 — 튀어오름 0.14×2, 받는 사람 부풀기 0.12×2, 흔들림 0.2×2. */
+const CUE_SECONDS = { hop: 0.28, pulse: 0.24, shake: 0.4 };
+/** 잠깐 뜨는 말풍선이 떠 있는 시간(초). 2D `showBubble` 의 2.5초 + 사라지는 0.5초. */
+const FLASH_SECONDS = 3;
 
 // MARK: - 평면도
 
@@ -280,6 +303,8 @@ function renderOnce() {
     now: pressureDemo >= 3 ? 0.22 : 0,
     presidentAlarm,
     summary: summaryCounts(),
+    pending: pendingPhases,
+    housekeeping,
   });
   setStatus(summary(), hasStaleLayout());
   document.body.dataset.rendered = "1";
@@ -711,6 +736,15 @@ function walkTo(agentType, goal, options = {}) {
  */
 function advanceBodies(deltaSeconds) {
   for (const [agentType, body] of Object.entries(bodies)) {
+    if (body.cueRemaining > 0) {
+      body.cueRemaining = Math.max(0, body.cueRemaining - deltaSeconds);
+    }
+    if (body.flashRemaining > 0) {
+      body.flashRemaining -= deltaSeconds;
+      if (body.flashRemaining <= 0) {
+        body.flash = null;
+      }
+    }
     // 출퇴근 계단식 지연. `setTimeout` 대신 여기서 세는 이유는 두 가지다 — 정지 렌더의 가상
     // 시간에서 돌지 않아 **걷는 중을 그림으로 확인할 방법이 없어지고**, 창이 뒤에 깔리면
     // 브라우저가 타이머를 늦춰 사람마다 도착 간격이 제멋대로가 된다.
@@ -781,6 +815,79 @@ function advanceBodies(deltaSeconds) {
     const still = characterSpriteFor(body.facing).pose;
     body.pose = `${still}-walk${(body.walkStep % 2) + 1}`;
   }
+}
+
+/** 한 번짜리 몸짓을 건다. 길이가 다 되면 `advanceBodies` 가 끝낸다. */
+function cue(agentType, kind) {
+  const body = bodies[agentType];
+  if (!body || reduceMotion) {
+    return;
+  }
+  body.cue = kind;
+  body.cueSeconds = CUE_SECONDS[kind];
+  body.cueRemaining = CUE_SECONDS[kind];
+}
+
+/**
+ * 인계 — 넘기는 사람이 받는 사람 책상 앞까지 걸어가 건네고 돌아온다(2D `handoff`).
+ * 책상 앞 칸이 막혀 있으면 좌우 옆 칸으로 간다.
+ */
+function handoff(from, to) {
+  const seat = seatOf(to);
+  if (!bodies[from] || !seat || departing.has(from)) {
+    return;
+  }
+  const approach = [
+    { x: seat.x, y: seat.y - 2 },
+    { x: seat.x - 1, y: seat.y },
+    { x: seat.x + 1, y: seat.y },
+  ].find((tile) => renderer.walkable.has(`${tile.x},${tile.y}`));
+  if (!approach) {
+    return;
+  }
+  strolling.delete(from);
+  walkTo(from, approach, {
+    onArrive: () => {
+      cue(to, "pulse");
+      const home = seatOf(from);
+      if (!home || !walkTo(from, home, { onArrive: () => sendHome(from) })) {
+        sendHome(from);
+      }
+    },
+  });
+}
+
+/** 거절 — 좌우로 흔들리고 머리 위에 `!` 가 잠깐 뜬다(2D `reject`). */
+function reject(agentType) {
+  const body = bodies[agentType];
+  if (!body) {
+    return;
+  }
+  cue(agentType, "shake");
+  body.flash = "!";
+  body.flashRemaining = FLASH_SECONDS;
+}
+
+/**
+ * 앱이 계산해 넘긴 연출 지시. **어느 사건이 어느 연출인지는 앱이 정한다**(`OfficeChoreography.swift`) —
+ * 그 판정을 여기 다시 적으면 규칙이 두 벌이 된다. 그래서 윈도우 앱·브라우저에는 이 연출이 없다.
+ */
+function performIntent(intent) {
+  if (intent.kind === "handoff") {
+    handoff(intent.from, intent.to);
+  } else if (intent.kind === "reject") {
+    reject(intent.agentType);
+  }
+}
+
+/** 지시 단계가 바뀌었다. 막 끝난 사람은 한 번 튀어오른다(2D `playHop`). */
+function applyPending(next) {
+  for (const [agentType, phase] of Object.entries(next)) {
+    if (phase === "done" && pendingPhases[agentType] !== "done") {
+      cue(agentType, "hop");
+    }
+  }
+  pendingPhases = next;
 }
 
 function facingBetween(from, to) {
@@ -1003,6 +1110,7 @@ function applySnapshot(data) {
       active: session.state === "active",
     }));
   approvals = data.approvals ?? [];
+  housekeeping = data.housekeeping ?? null;
   if (pressureDemo > 0) {
     const demos = demoApprovals();
     approvals = [...approvals, ...demos];
@@ -1172,6 +1280,8 @@ function postToHost(message) {
  *
  * - `snapshot` 지금 상태 전부(백엔드 스냅샷과 같은 모양 — 앱이 받은 것을 그대로 다시 싣는다)
  * - `event`    상태가 바뀐 사람 한 명(`{agentType, state, bubble}`)
+ * - `intent`   연출 지시 하나(`{kind: "handoff", from, to}` · `{kind: "reject", agentType}`)
+ * - `pending`  내가 보낸 지시의 단계 전부(`{agentType: 단계}`)
  * - `sleep`    창이 가려졌다/다시 보인다
  * - `select`   앱에서 인스펙터가 닫혔다(null) 등 — 발밑 선택 링을 맞춘다
  * - `focus`    앱의 esc 가 방 확대를 풀었다(null)
@@ -1193,6 +1303,14 @@ function receiveFromHost(message) {
       if (rendererReady) {
         applyStreamPayload(message.data ?? {});
       }
+      break;
+    case "intent":
+      if (rendererReady) {
+        performIntent(message.data ?? {});
+      }
+      break;
+    case "pending":
+      applyPending(message.data ?? {});
       break;
     case "sleep":
       sleeping = Boolean(message.value);
@@ -1466,6 +1584,24 @@ async function main() {
       // 그 결과가 도구에서 안 보이면 사람이 브라우저를 여는 것 말고는 확인할 방법이 없다.
       document.body.dataset.walkReport = report;
     }
+    if (motionDemo) {
+      const [failed, sent, rejected, done, giver, receiver] = renderer.plan.desks
+        .map((desk) => desk.agentType)
+        .filter((agentType) => bodies[agentType]);
+      if (receiver) {
+        agents[failed] = { ...agents[failed], state: "FAILED" };
+        applyPending({ [sent]: "sent", [done]: "done" });
+        reject(rejected);
+        handoff(giver, receiver);
+        // 튀어오름이 가장 높은 순간에 세운다 — 끝까지 흘리면 전원이 제자리로 돌아온 그림이 된다.
+        advanceVirtually(CUE_SECONDS.hop / 2);
+        const report =
+          `실패 ${failed} · 접수 대기 ${sent} · 거절 ${rejected}(${bodies[rejected].cue}) · 완료 ${done}(${bodies[done].cue})` +
+          ` · 인계 ${giver}→${receiver}(${bodies[giver].path ? "걷는 중" : "제자리"})`;
+        console.log(report);
+        document.body.dataset.motionReport = report;
+      }
+    }
     // 인원을 숫자로도 남긴다. 그림만 보면 출근 규칙이 통째로 빠져도 새벽 화면은 원래
     // 빈 사무실과 구분되지 않아 통과한다(맥 앱이 시각별 착석 인원을 직접 세는 것과 같은 이유).
     // 줄 명단에 있으면서 실제로는 자기 책상에 앉아 있는 사람을 따로 센다. 그림만 보면 그 사람은
@@ -1527,6 +1663,8 @@ async function main() {
       now,
       presidentAlarm,
       summary: summaryCounts(),
+      pending: pendingPhases,
+      housekeeping,
     });
     if (sleeping) {
       // 창이 가려졌다 — 예약을 끊어 계산도 그리기도 멈춘다. 깨면 `resumeFrames` 가 다시 건다.

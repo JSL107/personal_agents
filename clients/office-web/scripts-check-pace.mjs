@@ -68,6 +68,9 @@ const changes = {
   퇴근: { bodies: { CEO: base.bodies.CEO } },
   "세션 활성": { sessions: [{ label: "repo", active: true }] },
   "세션 이름": { sessions: [{ label: "other", active: false }] },
+  "지시 단계": { pending: { PM: "sent" } },
+  "잠깐 말풍선": { bodies: { ...base.bodies, PM: { ...seated, flash: "!" } } },
+  "청소기 상태": { scene: [...base.scene, "stalled:2"] },
 };
 for (const [name, patch] of Object.entries(changes)) {
   assert.notEqual(sign(patch).signature, sign({}).signature, `${name} 이(가) 바뀌어도 다시 그리지 않는다`);
@@ -84,5 +87,11 @@ assert.equal(sign(arrived).moving, false);
 // 발 구르기(3단계)는 서 있을 때만 움직임이다 — 앉은 사람에게는 표현하지 않는다.
 assert.equal(sign({ bodies: { PM: { ...seated, seated: false, pressure: 3 } } }).moving, true);
 assert.equal(sign({ bodies: { PM: { ...seated, pressure: 3 } } }).moving, false);
+// 짧은 몸짓(완료 튀어오름·거절 흔들림)은 앉은 사람도 움직임이다 — 끝나면 줄이 달라져 제자리 그림을 바로 그린다.
+const hopping = { bodies: { ...base.bodies, PM: { ...seated, cue: "hop", cueSeconds: 0.28, cueRemaining: 0.1 } } };
+assert.equal(sign(hopping).moving, true);
+const landed = { bodies: { ...base.bodies, PM: { ...seated, cue: "hop", cueSeconds: 0.28, cueRemaining: 0 } } };
+assert.equal(sign(landed).moving, false);
+assert.notEqual(sign(hopping).signature, sign(landed).signature);
 
 console.log("✅ 3D 프레임 건너뛰기 검증 통과");

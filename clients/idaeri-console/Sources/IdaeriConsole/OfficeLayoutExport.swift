@@ -80,6 +80,10 @@ struct OfficeRenderMetrics: Codable {
 
     /// 자리를 비운 지 이만큼 지난 세션은 사무실에서 지운다(초).
     let sessionLeaveAfterSeconds: Double
+    /// 기억 청소가 이 일수 안에 돌았으면 청소기가 순회한다. 넘기면 멈춘 것으로 그린다.
+    let vacuumHealthyIntervalDays: Int
+    /// 쓰레기통 옆 먼지의 최대 단계.
+    let trashMaxLevel: Int
 }
 
 /// 사람 한 명의 외형. 누가 어떤 얼굴·머리·옷을 쓰는지는 **방 구성에 따라** 정해지므로
@@ -355,7 +359,9 @@ func makeOfficeLayoutExport(agents: [ConsoleAgent], zoneColumns: Int) -> OfficeL
             deskScreenWidthRatio: officeDeskScreenWidthRatio,
             deskScreenHeightRatio: officeDeskScreenHeightRatio,
             deskScreenBottomRatio: officeDeskScreenBottomRatio,
-            sessionLeaveAfterSeconds: officeSessionLeaveAfterSeconds
+            sessionLeaveAfterSeconds: officeSessionLeaveAfterSeconds,
+            vacuumHealthyIntervalDays: officeVacuumHealthyIntervalDays,
+            trashMaxLevel: officeTrashMaxLevel
         )
     )
 }

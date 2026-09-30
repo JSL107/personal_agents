@@ -152,6 +152,7 @@ struct OfficeView: View {
                     scene.onPresidentClick = { openPresidentBar() }
                     office3D.onMessage = { handleOffice3DMessage($0) }
                     office3D.pushSnapshot(currentSnapshot)
+                    office3D.pushPending(store.pendingCommands)
                     scene.onDailyReportClick = {
                         scene.toggleDailyReportCard(store.briefing)
                     }
@@ -231,6 +232,7 @@ struct OfficeView: View {
                     )
                 }
                 .onChange(of: store.pendingCommands) { _ in
+                    office3D.pushPending(store.pendingCommands)
                     scene.refreshOverlays(
                         agents: store.agents, runs: store.runs,
                         pendingCommands: store.pendingCommands, now: Date()
@@ -251,7 +253,9 @@ struct OfficeView: View {
                         runs: store.runs,
                         pendingCommands: store.pendingCommands
                     )
-                    scene.perform(visualIntents(for: event, context: context))
+                    let intents = visualIntents(for: event, context: context)
+                    scene.perform(intents)
+                    office3D.pushIntents(intents)
                     office3D.pushEvent(event)
                     scene.refreshOverlays(
                         agents: store.agents, runs: store.runs,
