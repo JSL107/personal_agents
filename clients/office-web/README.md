@@ -128,8 +128,8 @@ pnpm capture   # 사무실을 한 판 그려 /tmp/idaeri-office.png 로 저장�
 캡처는 `electron . --renderer=3d --capture=<파일>` — 저장된 선택을 이번 실행에서만 덮어쓴다.
 
 - **조감 + 방 확대** — 방을 누르면 카메라가 그 방으로 다가가고, `esc`·방 밖 클릭으로 돌아온다.
-  사람을 누르면 `office:agent-click`, 대표는 `office:president-click`, 확대가 바뀌면 `office:focus`
-  사건을 `window` 에 낸다(맥 앱이 WKWebView 로 얹을 때 받는 자리).
+  사람을 누르면 `office:agent-click`, 대표는 `office:president-click`, 확대가 바뀌면 `office:focus`,
+  바닥을 눌러 선택이 풀리면 `office:deselect` 사건을 `window` 에 낸다(맥 앱이 WKWebView 로 얹을 때 받는 자리).
 - **이름표** — 일하는 중·승인 대기·실패인 사람만 늘 띄우고, 나머지는 마우스를 올릴 때 이름·상태·
   하는 일을 함께 보인다. 서른 명 이름이 다 뜨면 활성 신호가 묻힌다.
 - **그림체는 코드가 강제한다** — 색은 `three/style.js` 의 `PALETTE` 이름으로만, 형태는 둥근 상자·
