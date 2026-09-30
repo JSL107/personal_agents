@@ -662,6 +662,42 @@ export const sampleIdsOf = (report: unknown): number[] => {
   return Array.from(ids).sort((left, right) => left - right);
 };
 
+// 원장(agent_run.output)에 남은 리뷰 결과에서 재생 지적을 꺼낸다 — 재채점은 모델을 다시 부르지 않고 이것을 쓴다.
+// 형식이 하나라도 틀리면 null. 틀린 지적만 버리면 재현율이 원래 실행과 다른 입력으로 계산된다.
+export const replayedFindingsOf = (
+  output: unknown,
+): ReplayedFinding[] | null => {
+  if (typeof output !== 'object' || output === null) {
+    return null;
+  }
+  const { findings } = output as { findings?: unknown };
+  if (!Array.isArray(findings)) {
+    return null;
+  }
+  const parsed: ReplayedFinding[] = [];
+  for (const item of findings as unknown[]) {
+    if (typeof item !== 'object' || item === null) {
+      return null;
+    }
+    const { file, line, category, body } = item as Record<string, unknown>;
+    if (
+      typeof category !== 'string' ||
+      typeof body !== 'string' ||
+      (file !== undefined && typeof file !== 'string') ||
+      (line !== undefined && typeof line !== 'number')
+    ) {
+      return null;
+    }
+    parsed.push({
+      category,
+      body,
+      ...(file === undefined ? {} : { file }),
+      ...(line === undefined ? {} : { line }),
+    });
+  }
+  return parsed;
+};
+
 // 스킵이 하나라도 있으면 회차마다 측정한 카드가 달랐을 수 있다.
 export const skippedCountOf = (report: unknown): number => {
   if (typeof report !== 'object' || report === null) {
