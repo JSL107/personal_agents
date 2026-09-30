@@ -47,6 +47,75 @@ describe('EpisodicMemoryService', () => {
     ).resolves.toBeUndefined();
   });
 
+  it('onModuleDestroy: 기다리지 않고 던진 적재가 끝날 때까지 기다린다 — Prisma 연결이 닫히기 전에', async () => {
+    const repository = createRepositoryMock();
+    let finishInsert: () => void = () => undefined;
+    repository.insert.mockReturnValue(
+      new Promise<void>((resolve) => {
+        finishInsert = resolve;
+      }),
+    );
+    const service = new EpisodicMemoryService(
+      new MockEmbedder(384),
+      repository as never,
+    );
+
+    void service.record({
+      kind: 'agent_run',
+      content: '늦게 끝나는 적재',
+      occurredAt: new Date(),
+    });
+    let destroyed = false;
+    const destroy = service.onModuleDestroy().then(() => {
+      destroyed = true;
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(repository.insert).toHaveBeenCalledTimes(1);
+    expect(destroyed).toBe(false);
+
+    finishInsert();
+    await destroy;
+    expect(destroyed).toBe(true);
+  });
+
+  it('onModuleDestroy: 동시에 걸린 적재가 여럿이면 먼저 끝난 것과 무관하게 전부 기다린다', async () => {
+    const repository = createRepositoryMock();
+    const finishers: Array<() => void> = [];
+    repository.insert.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishers.push(resolve);
+        }),
+    );
+    const service = new EpisodicMemoryService(
+      new MockEmbedder(384),
+      repository as never,
+    );
+
+    for (const content of ['첫 적재', '둘째 적재']) {
+      void service.record({
+        kind: 'agent_run',
+        content,
+        occurredAt: new Date(),
+      });
+    }
+    let destroyed = false;
+    const destroy = service.onModuleDestroy().then(() => {
+      destroyed = true;
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(repository.insert).toHaveBeenCalledTimes(2);
+
+    // 나중에 건 것이 먼저 끝나도 앞의 것이 남아 있으면 종료하지 않는다.
+    finishers[1]();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(destroyed).toBe(false);
+
+    finishers[0]();
+    await destroy;
+    expect(destroyed).toBe(true);
+  });
+
   it('searchRelevant: distance→similarity 변환 + 최신 가중으로 정렬', async () => {
     const repository = createRepositoryMock();
     const now = Date.now();
