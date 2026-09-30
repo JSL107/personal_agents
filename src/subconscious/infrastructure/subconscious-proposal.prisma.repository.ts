@@ -73,7 +73,7 @@ export class SubconsciousProposalPrismaRepository implements SubconsciousProposa
         status: 'PENDING',
         createdAt: { lt: createdBefore },
       },
-      data: { status: 'DISMISSED', resolvedAt: new Date() },
+      data: { status: 'EXPIRED', resolvedAt: new Date() },
     });
     return count;
   }

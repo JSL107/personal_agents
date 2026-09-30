@@ -582,7 +582,7 @@ describe('SubconsciousProposalService.dismissSweptPending', () => {
     errorCode: null,
   };
 
-  it('스윕이 리뷰·게시한 PR 의 미응답 카드를 DISMISSED 로 닫고 닫은 수를 돌려준다', async () => {
+  it('스윕이 리뷰·게시한 PR 의 미응답 카드를 SUPERSEDED 로 닫고 닫은 수를 돌려준다 — 사용자 거절(DISMISSED)과 구분한다', async () => {
     const repository = buildRepository();
     repository.listPending.mockResolvedValue([buildRecord()]);
 
@@ -596,7 +596,7 @@ describe('SubconsciousProposalService.dismissSweptPending', () => {
     expect(dismissed).toBe(1);
     expect(repository.transitionFromPending).toHaveBeenCalledWith(
       1,
-      'DISMISSED',
+      'SUPERSEDED',
       expect.any(Date),
     );
   });
