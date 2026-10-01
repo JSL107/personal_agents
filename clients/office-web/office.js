@@ -12,14 +12,6 @@
 // 좌표계가 둘이라는 점만 주의하면 된다 — 평면도는 SpriteKit 기준이라 y 가 **위로** 증가하고,
 // Canvas 는 아래로 증가한다. 변환은 `toCanvasY` 한 곳에서만 한다.
 
-// MARK: 머리 위 글자 층 계산
-//
-// **클래스 밖에 두는 이유는 검사 때문이다.** 이름표 판 위끝과 말풍선 판 아래끝은 서로 다른
-// 그리기 경로에서 나오는데(`drawPlateLabel` 의 박스 높이 ↔ `drawAgentLabels` 의 clearance),
-// 한쪽만 고치면 두 글자가 겹친다 — 맥 앱에서 실제로 그렇게 6주를 갔다. 두 값을 창 없이
-// 부를 수 있어야 `--self-check` 가 그 어긋남을 잡는다.
-
-/** 라벨 글자 상자의 실제 높이(px). 글자 크기에 외곽선 몫을 더한다. */
 /**
  * 말풍선(하는 일)을 띄우는 상태 — 일하는 중·승인 대기만. 맥 2D 의 `agentTokenInfo`(`isActive`)와 같은 규칙이다.
  * 예전 웹은 "쉬는 중" 만 뺐는데, 그러면 일을 마친 사람의 "완료했어요!" 가 상태가 바뀔 때까지 남아
@@ -29,6 +21,14 @@ export function showsBubble(state) {
   return state === "IN_PROGRESS" || state === "AWAITING_APPROVAL";
 }
 
+// MARK: 머리 위 글자 층 계산
+//
+// **클래스 밖에 두는 이유는 검사 때문이다.** 이름표 판 위끝과 말풍선 판 아래끝은 서로 다른
+// 그리기 경로에서 나오는데(`drawPlateLabel` 의 박스 높이 ↔ `drawAgentLabels` 의 clearance),
+// 한쪽만 고치면 두 글자가 겹친다 — 맥 앱에서 실제로 그렇게 6주를 갔다. 두 값을 창 없이
+// 부를 수 있어야 `--self-check` 가 그 어긋남을 잡는다.
+
+/** 라벨 글자 상자의 실제 높이(px). 글자 크기에 외곽선 몫을 더한다. */
 export function labelBoxHeight(metrics, fontSize) {
   return fontSize + metrics.labelBoxOverhead;
 }
