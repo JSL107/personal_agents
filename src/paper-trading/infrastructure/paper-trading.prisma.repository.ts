@@ -24,6 +24,7 @@ import {
   PendingOrderFillResult,
 } from '../domain/port/paper-order-ledger.port';
 import {
+  RecommendationCashEventInput,
   RecommendationOrderInput,
   RecommendationScoreSummary,
   RecommendationTradeInput,
@@ -369,6 +370,8 @@ export interface RecommendationScoreData {
   orders: RecommendationOrderInput[];
   sellOrders: RecommendationScoreSellOrderRecord[];
   recommendationTrades: RecommendationTradeInput[];
+  // 매수~매도 사이에 권리락일이 든 배당 등. 채점이 사이클 손익에 더한다.
+  cashEvents: RecommendationCashEventInput[];
   portfolioTrades: RecommendationScorePortfolioTradeRecord[];
   dailyPrices: RecommendationScoreDailyPriceRecord[];
   benchmarkCloses: Array<{ tradeDate: Date; close: MoneyValue }>;
@@ -508,6 +511,24 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
             },
             orderBy: [{ tradeDate: 'asc' }, { id: 'asc' }],
           });
+    const cashEvents =
+      earliestBuyTradeDate === null
+        ? []
+        : await this.prisma.paperCorporateAction.findMany({
+            where: {
+              accountId: { in: accountIds },
+              tickerId: { in: tickerIds },
+              exDate: { gt: earliestBuyTradeDate, lte: input.asOf },
+            },
+            select: {
+              accountId: true,
+              tickerId: true,
+              exDate: true,
+              cashDelta: true,
+              eligibleQuantity: true,
+            },
+            orderBy: { id: 'asc' },
+          });
     const portfolioTradeDate = input.from
       ? { gte: input.from, lte: input.asOf }
       : { lte: input.asOf };
@@ -589,6 +610,7 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
           return dateDifference === 0 ? left.id - right.id : dateDifference;
         })
         .map((trade) => ({ ...trade, side: trade.side as TradeSide })),
+      cashEvents,
       portfolioTrades,
       dailyPrices: dailyPrices.map((dailyPrice) => ({
         tickerId: dailyPrice.tickerId,
