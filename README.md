@@ -52,7 +52,7 @@ flowchart TD
 
     R["Router<br/>Intent Classifier"]
     MR["Model Router<br/>codex CLI · 격리 spawn"]
-    WK["19 Dispatch Workers (자연어·슬래시)<br/>32 AgentTypes 전체 — 내부 자동화 포함<br/>PM · BE · Reviewer · CTO · PO · CEO<br/>이직 메이트 · 지원 추적 · 휴가 · 블로그"]
+    WK["16 Dispatch Workers (자연어·슬래시)<br/>32 AgentTypes 전체 — 내부 자동화 포함<br/>PM · BE · Reviewer · CTO · PO · CEO<br/>이직 메이트 · 지원 추적 · 휴가 · 블로그"]
     IV["투자 라인<br/>screener · market-data<br/>paper-trading · backtest"]
     PG{"Preview Gate<br/>✅ / ❌"}
     EXT["Slack · Notion · GitHub"]
@@ -124,7 +124,7 @@ NestJS 11 + DDD/Hexagonal · Prisma 6 + PostgreSQL · Redis/BullMQ · Slack Bolt
 
 **🔀 자연어 라우터 (V3 Hierarchical Manager)**
 
-멘션 하나가 워커에 닿기까지 LLM 호출은 한 번뿐이다. Intent Classifier 가 의도를 분류해 19개 워커 중 하나로 넘긴다.
+멘션 하나가 워커에 닿기까지 LLM 호출은 한 번뿐이다. Intent Classifier 가 의도를 분류해 16개 워커 중 하나로 넘긴다.
 
 직전 대화를 기억한다 — 사용자·채널·스레드 단위로 5턴, TTL 30분(Redis, 실패 시 in-memory fallback). 그래서 "그거 분배해" 같은 지시대명사가 직전 실행을 자동으로 가리킨다.
 
@@ -192,7 +192,7 @@ pnpm dev              # watch 모드 기동
 | 진입 | 무엇 | 인증·게이트 |
 |---|---|---|
 | **슬래시 커맨드** | 에이전트 호출 · 휴가 · 운영 | Slack Socket Mode |
-| **자연어 멘션·DM** | Router 가 19개 워커 중 하나로 분류·dispatch | `app_mention` + `message.im` 구독 |
+| **자연어 멘션·DM** | Router 가 16개 워커 중 하나로 분류·dispatch | `app_mention` + `message.im` 구독 |
 | **GitHub Webhook** | issue/PR 이벤트로 자동 발화 | HMAC 서명 검증 |
 | **Autopilot cron** | 출근·퇴근·주간 정기 실행 | `AUTOPILOT_OWNER_SLACK_USER_ID` |
 | **macOS 콘솔 앱** | Slack 없이 회사 전체를 보고 조작 | `CONSOLE_OWNER_SLACK_USER_ID` |
