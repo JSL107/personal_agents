@@ -301,4 +301,17 @@ describe('AnalyzeJdGapUsecase — 자동 수집 경로', () => {
     };
     expect(call.triggerType).toBe(TriggerType.SLACK_MENTION_CAREER_MATE);
   });
+
+  it('허브 없으면 자기 triggerType 으로 프로필을 만든다', async () => {
+    const d = makeDeps(null);
+    await build(d).execute({
+      slackUserId: 'U1',
+      jdText: 'K8s 필수',
+      triggerType: TriggerType.AUTOPILOT_JOB_FEED_GAP_CRON,
+    });
+    expect(d.buildProfile.execute).toHaveBeenCalledWith({
+      slackUserId: 'U1',
+      triggerType: TriggerType.AUTOPILOT_JOB_FEED_GAP_CRON,
+    });
+  });
 });

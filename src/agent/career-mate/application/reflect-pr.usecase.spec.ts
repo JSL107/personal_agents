@@ -108,7 +108,14 @@ describe('ReflectPrUsecase', () => {
       humanizer,
       renderPortfolio,
     );
-    return { usecase, github, repository, renderPortfolio, modelRouter };
+    return {
+      usecase,
+      github,
+      repository,
+      renderPortfolio,
+      modelRouter,
+      agentRunService,
+    };
   };
 
   it('PR fetch→합성→편입 저장→포폴 append 를 수행한다', async () => {
@@ -334,5 +341,25 @@ describe('ReflectPrUsecase', () => {
     expect(prompt.indexOf('[작업 맥락')).toBeLessThan(
       prompt.indexOf('[이어진 PR'),
     );
+  });
+
+  // 저녁 회고 카드 승인 경로 — 회고 원장과 뒤이은 포트폴리오 반영(프로필 생성 시)이 같은 출처를 써야 한다.
+  it('넘겨받은 triggerType 을 원장과 포트폴리오 반영에 함께 넘긴다', async () => {
+    const { usecase, renderPortfolio, agentRunService } = makeUsecase();
+    await usecase.execute({
+      slackUserId: 'U1',
+      prText: 'https://github.com/o/r/pull/1692',
+      triggerType: TriggerType.EVENING_CAREER_REFLECT_APPROVAL,
+    });
+
+    expect(agentRunService.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        triggerType: TriggerType.EVENING_CAREER_REFLECT_APPROVAL,
+      }),
+    );
+    expect(renderPortfolio.execute).toHaveBeenCalledWith({
+      slackUserId: 'U1',
+      triggerType: TriggerType.EVENING_CAREER_REFLECT_APPROVAL,
+    });
   });
 });
