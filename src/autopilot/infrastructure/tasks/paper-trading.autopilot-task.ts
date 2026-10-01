@@ -1,8 +1,13 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { isKrxTradingDay } from '../../../holiday/domain/business-calendar';
+import {
+  HOLIDAY_CALENDAR_PORT,
+  HolidayCalendarPort,
+} from '../../../holiday/domain/port/holiday-calendar.port';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import {
   ApplyExitBandResult,
@@ -147,12 +152,26 @@ export class PaperTradingAutopilotTask implements AutopilotTask {
     private readonly buildPaperReportImage: BuildPaperReportImageUsecase,
     private readonly configService: ConfigService,
     private readonly agentRunService: AgentRunService,
+    @Inject(HOLIDAY_CALENDAR_PORT)
+    private readonly holidayCalendar: HolidayCalendarPort,
   ) {}
 
   async run(context: AutopilotTaskContext): Promise<AutopilotTaskResult> {
     const enabled = this.configService.get<string>('PAPER_TRADING_ENABLED');
     // 의도적으로 꺼둔 실행은 실패율 통계를 오염시키지 않도록 원장 밖에서 막는다.
     if (enabled !== 'true') {
+      return { skip: true };
+    }
+    // 달력상 휴장일이면 아무것도 하지 않는다 — 평가는 "시세가 실행일보다 오래됨" 으로
+    // 전부 건너뛰고(2026-09-24·25 추석 실측) 밴드는 지난 종가로 판정하게 된다. 돌리면 빈
+    // 장마감 평가 카드만 채널에 남는다. paper-intraday-stop 과 같은 판정이다.
+    const calendar = await this.holidayCalendar.load();
+    if (
+      !isKrxTradingDay(
+        new Date(`${context.firedAtKst}T00:00:00.000Z`),
+        calendar,
+      )
+    ) {
       return { skip: true };
     }
 

@@ -1,3 +1,4 @@
+import { holidayCalendarOf } from '../../../holiday/domain/business-calendar';
 import {
   FillPendingOrdersResult,
   FillPendingOrdersUsecase,
@@ -21,22 +22,26 @@ const detail = (
 
 const makeTask = (
   result: Partial<FillPendingOrdersResult>,
+  holidays: string[] = [],
 ): PaperOrderFillAutopilotTask =>
-  new PaperOrderFillAutopilotTask({
-    execute: jest.fn().mockResolvedValue({
-      window: 'TRADING',
-      // 2026-08-19(수) 09:30 KST — 체결 회차의 첫 시각.
-      asOf: new Date('2026-08-19T00:30:00.000Z'),
-      attempted: 0,
-      filled: 0,
-      expired: 0,
-      lookupFailure: 0,
-      notYetTraded: 0,
-      details: [],
-      bulkExpired: 0,
-      ...result,
-    }),
-  } as unknown as FillPendingOrdersUsecase);
+  new PaperOrderFillAutopilotTask(
+    {
+      execute: jest.fn().mockResolvedValue({
+        window: 'TRADING',
+        // 2026-08-19(수) 09:30 KST — 체결 회차의 첫 시각.
+        asOf: new Date('2026-08-19T00:30:00.000Z'),
+        attempted: 0,
+        filled: 0,
+        expired: 0,
+        lookupFailure: 0,
+        notYetTraded: 0,
+        details: [],
+        bulkExpired: 0,
+        ...result,
+      }),
+    } as unknown as FillPendingOrdersUsecase,
+    { load: jest.fn().mockResolvedValue(holidayCalendarOf(holidays)) },
+  );
 
 const context = { ownerSlackUserId: 'U1', firedAtKst: '2026-08-19' };
 
@@ -178,5 +183,11 @@ describe('PaperOrderFillAutopilotTask', () => {
       skip: true,
       summaryText: '모의투자 체결 시간 창 이전 — 주문 미처리',
     });
+  });
+
+  // 휴장일엔 체결할 시세가 없다 — 돌리면 "체결 0건·처리 못 함" 카드만 남는다.
+  it('달력상 휴장일이면 체결을 시도하지 않고 건너뛴다', async () => {
+    const task = makeTask({}, ['2026-08-19']);
+    await expect(task.run(context)).resolves.toEqual({ skip: true });
   });
 });

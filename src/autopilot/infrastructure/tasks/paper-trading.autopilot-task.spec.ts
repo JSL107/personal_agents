@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { evaluateContract } from '../../../agent-registry/contract-inspector';
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { holidayCalendarOf } from '../../../holiday/domain/business-calendar';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { ApplyExitBandUsecase } from '../../../paper-trading/application/apply-exit-band.usecase';
 import {
@@ -80,6 +81,7 @@ const createFixture = (input?: {
   enabled?: string;
   accounts?: EvaluatedAccountEntry[];
   reportImage?: PaperReportImage | null;
+  holidays?: string[];
 }) => {
   const evaluate = {
     executeAll: jest.fn().mockResolvedValue({
@@ -117,6 +119,11 @@ const createFixture = (input?: {
       reportImage as unknown as BuildPaperReportImageUsecase,
       config as unknown as ConfigService,
       agentRun as unknown as AgentRunService,
+      {
+        load: jest
+          .fn()
+          .mockResolvedValue(holidayCalendarOf(input?.holidays ?? [])),
+      },
     ),
     evaluate,
     exitBand,
@@ -161,6 +168,18 @@ describe('PaperTradingAutopilotTask', () => {
   // 회귀 방지 — 평가 대상을 'DEFAULT' 로 지목하던 동안 추천이 실제로 매매하는 전략 계좌
   // (LONG_TERM / SWING) 의 스냅샷이 한 건도 적재되지 않았다. 계좌 이름을 task 가 알지 못하고
   // 전체를 훑는지(executeAll) 를 계약으로 고정한다.
+  // 휴장일엔 평가가 전부 "시세 오래됨" 으로 건너뛰고 밴드는 지난 종가로 판정한다 — 빈 카드만 남는다.
+  it('달력상 휴장일이면 평가·밴드·원장을 호출하지 않는다', async () => {
+    const { task, evaluate, exitBand, agentRun } = createFixture({
+      holidays: [context.firedAtKst],
+    });
+
+    await expect(task.run(context)).resolves.toEqual({ skip: true });
+    expect(evaluate.executeAll).not.toHaveBeenCalled();
+    expect(exitBand.execute).not.toHaveBeenCalled();
+    expect(agentRun.execute).not.toHaveBeenCalled();
+  });
+
   it('계좌 이름을 지정하지 않고 전체 계좌를 슬롯 거래일로 평가한다', async () => {
     const { task, evaluate } = createFixture();
 
