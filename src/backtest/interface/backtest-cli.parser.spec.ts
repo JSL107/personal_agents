@@ -35,7 +35,17 @@ describe('parseBacktestCliArguments', () => {
       delistingRecoveryRate: 1,
       volatilityEstimator: 'CLOSE_TO_CLOSE',
       slippagePercent: 0,
+      flowSlot: null,
     });
+  });
+
+  it('수급 순위 칸 1~3을 파싱하고 다른 값은 사용법과 함께 거부한다', () => {
+    expect(
+      parseBacktestCliArguments([...required, '--flow-slot', '2']).flowSlot,
+    ).toBe(2);
+    expect(() =>
+      parseBacktestCliArguments([...required, '--flow-slot', '4']),
+    ).toThrow('사용법');
   });
 
   it('파라미터 두 값을 명시하면 그 값이 그대로 남는다', () => {

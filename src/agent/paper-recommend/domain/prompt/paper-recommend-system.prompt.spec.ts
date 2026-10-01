@@ -20,6 +20,7 @@ const indicators = {
   turnover60: 800_000_000,
   highFallbackBarCount: 0,
   barCount: 200,
+  investorFlow20: null,
 };
 
 describe('buildPaperRecommendationPrompt', () => {

@@ -26,7 +26,7 @@ export const formatBacktestResult = (result: ReplayBacktestResult): string => {
   }
 
   lines.push(
-    `기간 ${result.from} ~ ${result.to} (${result.tradeDateCount} 거래일) · 전략 ${result.strategy}`,
+    `기간 ${result.from} ~ ${result.to} (${result.tradeDateCount} 거래일) · 전략 ${result.strategy} · 수급 순위 칸 ${result.flowSlot ?? '미사용'}`,
   );
   lines.push('─'.repeat(60));
 

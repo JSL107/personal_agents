@@ -32,6 +32,33 @@ describe('calculateIndicators', () => {
     expect(calculateIndicators([])).toBeNull();
   });
 
+  it('마지막 봉을 뺀 직전 20봉 수급 비율을 계산하고 창이 짧거나 결측 또는 분모 0이면 null이다', () => {
+    const flowBars = (
+      count: number,
+      missingIndex: number | null = null,
+      volume = 10n,
+    ): IndicatorBar[] =>
+      barsFromCloses(
+        Array.from({ length: count }, (_, index) => index + 1),
+      ).map((bar, index) => ({
+        ...bar,
+        foreignNetBuy: index === missingIndex ? null : 2n,
+        institutionNetBuy: 1n,
+        flowVolume: volume,
+      }));
+
+    expect(calculateIndicators(flowBars(20))?.investorFlow20).toBeNull();
+    expect(calculateIndicators(flowBars(21, 19))?.investorFlow20).toBeNull();
+    expect(
+      calculateIndicators(flowBars(21, null, 0n))?.investorFlow20,
+    ).toBeNull();
+    expect(calculateIndicators(flowBars(21))?.investorFlow20).toBeCloseTo(0.3);
+    // 당일 수급이 아직 없는(추천 시각에 미확정) 마지막 봉은 창 밖이라 값이 나온다.
+    expect(calculateIndicators(flowBars(21, 20))?.investorFlow20).toBeCloseTo(
+      0.3,
+    );
+  });
+
   it.each([
     {
       count: 4,

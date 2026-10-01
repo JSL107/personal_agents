@@ -4,6 +4,13 @@ import { BenchmarkCloseInput } from '../../paper-trading/domain/shadow-performan
 import { PrismaService } from '../../prisma/prisma.service';
 import { BacktestBar, BacktestTicker } from '../domain/backtest-bar.type';
 
+// 전 종목 5년치를 한 쿼리로 읽으면 Prisma 엔진이 결과를 문자열 하나로 넘기다 한도를 넘긴다
+// (`Failed to convert rust String into napi string`). 2026-09-30 실측: 2021-11-01~2026-09-29
+// 재생이 수급 열을 붙이기 전(main)에도 같은 오류로 죽었다. 종목을 나눠 읽어 한 번의 결과
+// 크기를 묶는다. 이 구간은 봉 객체만으로 기본 힙도 넘기므로 `NODE_OPTIONS=--max-old-space-size`
+// 를 함께 올려야 돈다.
+const BAR_READ_TICKER_CHUNK_SIZE = 300;
+
 @Injectable()
 export class BacktestPrismaRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -46,7 +53,38 @@ export class BacktestPrismaRepository {
     if (tickerIds.length === 0) {
       return bars;
     }
-    const rows = await this.prisma.dailyPrice.findMany({
+    for (
+      let offset = 0;
+      offset < tickerIds.length;
+      offset += BAR_READ_TICKER_CHUNK_SIZE
+    ) {
+      const rows = await this.findBarRows(
+        tickerIds.slice(offset, offset + BAR_READ_TICKER_CHUNK_SIZE),
+        from,
+        to,
+      );
+      for (const row of rows) {
+        const list = bars.get(row.tickerId) ?? [];
+        list.push({
+          tradeDate: row.tradeDate,
+          open: row.open === null ? null : Number(row.open.toString()),
+          close: row.close,
+          adjClose: row.adjClose,
+          high: row.high,
+          low: row.low,
+          volume: row.volume,
+          foreignNetBuy: row.foreignNetBuy,
+          institutionNetBuy: row.institutionNetBuy,
+          flowVolume: row.flowVolume,
+        });
+        bars.set(row.tickerId, list);
+      }
+    }
+    return bars;
+  }
+
+  private async findBarRows(tickerIds: number[], from: Date, to: Date) {
+    return await this.prisma.dailyPrice.findMany({
       where: {
         tickerId: { in: tickerIds },
         tradeDate: { gte: from, lte: to },
@@ -61,22 +99,11 @@ export class BacktestPrismaRepository {
         high: true,
         low: true,
         volume: true,
+        foreignNetBuy: true,
+        institutionNetBuy: true,
+        flowVolume: true,
       },
     });
-    for (const row of rows) {
-      const list = bars.get(row.tickerId) ?? [];
-      list.push({
-        tradeDate: row.tradeDate,
-        open: row.open === null ? null : Number(row.open.toString()),
-        close: row.close,
-        adjClose: row.adjClose,
-        high: row.high,
-        low: row.low,
-        volume: row.volume,
-      });
-      bars.set(row.tickerId, list);
-    }
-    return bars;
   }
 
   // calculateBenchmarkPerformance 가 그대로 먹을 수 있는 형태로 돌려준다.
