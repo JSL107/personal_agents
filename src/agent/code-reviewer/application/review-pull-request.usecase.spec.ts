@@ -73,6 +73,7 @@ describe('ReviewPullRequestUsecase', () => {
       resolveReviewThread: jest.fn(),
       commitFileToBranch: jest.fn(),
       getFileFromBranch: jest.fn(),
+      searchCode: jest.fn(),
     };
     configGet = jest.fn();
     publishFindings = jest.fn().mockResolvedValue({});
@@ -544,6 +545,7 @@ describe('ReviewPullRequestUsecase — conversationContext', () => {
       resolveReviewThread: jest.fn(),
       commitFileToBranch: jest.fn(),
       getFileFromBranch: jest.fn(),
+      searchCode: jest.fn(),
     };
 
     usecase = new ReviewPullRequestUsecase(
@@ -863,6 +865,7 @@ describe('ReviewPullRequestUsecase × 학습 규약', () => {
       resolveReviewThread: jest.fn(),
       commitFileToBranch: jest.fn(),
       getFileFromBranch: jest.fn(),
+      searchCode: jest.fn(),
     };
     const findingRepository = {
       findRejectionsForConventions: jest.fn().mockResolvedValue([]),
@@ -1076,5 +1079,228 @@ describe('buildReviewPrompt — 숨은 유니코드 안내', () => {
     });
 
     expect(text).not.toContain('안 보이는 문자');
+  });
+});
+
+describe('ReviewPullRequestUsecase × diff 밖 맥락', () => {
+  const validReview: PullRequestReview = {
+    summary: 's',
+    riskLevel: 'low',
+    mustFix: [],
+    niceToHave: [],
+    missingTests: [],
+    reviewCommentDrafts: [],
+    approvalRecommendation: 'approve',
+    findings: [],
+  };
+  const diffText = [
+    'diff --git a/src/rule.ts b/src/rule.ts',
+    '--- a/src/rule.ts',
+    '+++ b/src/rule.ts',
+    '@@ -2,1 +2,1 @@',
+    '-export const RULE_VERSION = 6;',
+    '+export const RULE_VERSION = 7;',
+  ].join('\n');
+
+  const headFiles: Record<string, string> = {
+    'src/rule.ts':
+      '// head\nexport const RULE_VERSION = 7;\nconst flowSlot = 1;',
+    'src/use.ts': 'import x;\nrecord(RULE_VERSION);',
+  };
+
+  const makeUsecase = (repo: string) => {
+    const route = jest.fn().mockResolvedValue({
+      text: JSON.stringify(validReview),
+      modelUsed: 'codex-cli',
+      provider: ModelProviderName.CHATGPT,
+    });
+    const githubClient = {
+      getPullRequest: jest.fn().mockResolvedValue({
+        number: 707,
+        title: 't',
+        body: '',
+        repo,
+        url: 'u',
+        baseRef: 'main',
+        baseSha: 'base',
+        headRef: 'h',
+        authorLogin: 'a',
+        mergedAt: null,
+        changedFiles: ['src/rule.ts'],
+        changedFilesTotalCount: 1,
+        changedFilesTruncated: false,
+        additions: 1,
+        deletions: 1,
+        headSha: 'head-sha',
+        isDraft: false,
+      }),
+      getPullRequestDiff: jest
+        .fn()
+        .mockResolvedValue({ diff: diffText, truncated: false, bytes: 10 }),
+      getFileFromBranch: jest.fn(async ({ path }: { path: string }) => ({
+        fileUrl: '',
+        content: headFiles[path],
+      })),
+      searchCode: jest.fn().mockResolvedValue(['src/rule.ts', 'src/use.ts']),
+    };
+    const usecase = new ReviewPullRequestUsecase(
+      { route } as never,
+      {
+        execute: jest.fn(async (input) => {
+          const execution = await input.run({ agentRunId: 1 });
+          return { ...execution, agentRunId: 1 };
+        }),
+      } as never,
+      githubClient as never,
+    );
+    const promptOf = (): string => route.mock.calls[0][0].request.prompt;
+    return { usecase, githubClient, promptOf };
+  };
+
+  it('이 레포면 바뀐 파일 head 전문과 다른 파일 사용처를 [related code] 로 감싸 싣는다', async () => {
+    const { usecase, githubClient, promptOf } = makeUsecase(
+      'JSL107/personal_agents',
+    );
+
+    await usecase.execute({
+      prRef: 'JSL107/personal_agents#707',
+      slackUserId: 'U',
+    });
+
+    expect(githubClient.getFileFromBranch).toHaveBeenCalledWith({
+      repo: 'JSL107/personal_agents',
+      branch: 'head-sha',
+      path: 'src/rule.ts',
+    });
+    expect(githubClient.searchCode).toHaveBeenCalledWith({
+      repo: 'JSL107/personal_agents',
+      query: 'RULE_VERSION',
+      limit: 10,
+    });
+    const prompt = promptOf();
+    const related = prompt.slice(prompt.indexOf('[related code]'));
+    expect(related).toContain('<untrusted-input>');
+    // diff 밖 줄(3행)까지 head 본문으로 들어온다.
+    expect(related).toContain('3: const flowSlot = 1;');
+    expect(related).toContain('src/use.ts — `RULE_VERSION` 사용처');
+    expect(related).toContain('2: record(RULE_VERSION);');
+    // 바뀐 파일은 사용처 구간으로 중복해 싣지 않는다.
+    expect(related).not.toContain('src/rule.ts — `RULE_VERSION` 사용처');
+  });
+
+  it('다른 레포면 조회도 검색도 하지 않고 프롬프트에 블록이 없다', async () => {
+    const { usecase, githubClient, promptOf } = makeUsecase('foo/bar');
+
+    await usecase.execute({ prRef: 'foo/bar#707', slackUserId: 'U' });
+
+    expect(githubClient.getFileFromBranch).not.toHaveBeenCalled();
+    expect(githubClient.searchCode).not.toHaveBeenCalled();
+    expect(promptOf()).not.toContain('[related code]');
+  });
+
+  it('조회·검색이 실패해도 리뷰는 계속되고, 빠진 사실을 warn 으로 남긴다', async () => {
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    const { usecase, githubClient, promptOf } = makeUsecase(
+      'JSL107/personal_agents',
+    );
+    githubClient.getFileFromBranch.mockRejectedValue(new Error('404'));
+    githubClient.searchCode.mockRejectedValue(new Error('rate limited'));
+
+    const outcome = await usecase.execute({
+      prRef: 'JSL107/personal_agents#707',
+      slackUserId: 'U',
+    });
+
+    expect(outcome.result.approvalRecommendation).toBe('approve');
+    expect(promptOf()).not.toContain('[related code]');
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('src/rule.ts 조회 실패: 404'),
+    );
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('`RULE_VERSION` 사용처 검색 실패: rate limited'),
+    );
+    warn.mockRestore();
+  });
+
+  const manyFilesDiff = (count: number): string =>
+    Array.from({ length: count }, (_, index) =>
+      [
+        `diff --git a/src/f${index}.ts b/src/f${index}.ts`,
+        `--- a/src/f${index}.ts`,
+        `+++ b/src/f${index}.ts`,
+        '@@ -1,1 +1,1 @@',
+        '-a',
+        '+b',
+      ].join('\n'),
+    ).join('\n');
+
+  it('작은 파일이 많아도 조회는 30회에서 멈춘다 — 바이트 예산만으로는 호출 수가 안 묶인다', async () => {
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    const { usecase, githubClient } = makeUsecase('JSL107/personal_agents');
+    githubClient.getPullRequestDiff.mockResolvedValue({
+      diff: manyFilesDiff(50),
+      truncated: false,
+      bytes: 1,
+    });
+    githubClient.getFileFromBranch.mockResolvedValue({
+      fileUrl: '',
+      content: 'b',
+    });
+
+    await usecase.execute({
+      prRef: 'JSL107/personal_agents#707',
+      slackUserId: 'U',
+    });
+
+    expect(githubClient.getFileFromBranch).toHaveBeenCalledTimes(30);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('조회 중단'));
+    warn.mockRestore();
+  });
+
+  it('조회가 3번 실패하면 남은 파일도 사용처 조회도 더 치지 않는다', async () => {
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    const { usecase, githubClient } = makeUsecase('JSL107/personal_agents');
+    githubClient.getPullRequestDiff.mockResolvedValue({
+      diff: `${manyFilesDiff(10)}\n+export const RULE_VERSION = 7;`,
+      truncated: false,
+      bytes: 1,
+    });
+    githubClient.getFileFromBranch.mockRejectedValue(
+      new Error('403 rate limit'),
+    );
+
+    const outcome = await usecase.execute({
+      prRef: 'JSL107/personal_agents#707',
+      slackUserId: 'U',
+    });
+
+    expect(outcome.result.approvalRecommendation).toBe('approve');
+    expect(githubClient.getFileFromBranch).toHaveBeenCalledTimes(3);
+    expect(githubClient.searchCode).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('snapshot 경로(스윕)에도 같은 맥락이 붙는다', async () => {
+    const { usecase, githubClient, promptOf } = makeUsecase(
+      'JSL107/personal_agents',
+    );
+    const detail = await githubClient.getPullRequest();
+    const diff = await githubClient.getPullRequestDiff();
+    githubClient.getPullRequest.mockClear();
+
+    await usecase.execute({
+      prRef: 'JSL107/personal_agents#707',
+      slackUserId: 'U',
+      snapshot: { detail, diff },
+    });
+
+    expect(githubClient.getPullRequest).not.toHaveBeenCalled();
+    expect(promptOf()).toContain('3: const flowSlot = 1;');
   });
 });
