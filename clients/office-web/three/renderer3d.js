@@ -30,7 +30,8 @@ import {
 } from "./style.js";
 import { buildFurniture, missingKinds } from "./furniture3d/index.js";
 import { makeCharacter, makeStatusRing, poseCharacter, seatOffset } from "./character.js";
-import { Overlay3D } from "./overlay3d.js";
+import { BUBBLE_RAISE_PX, DOTS_RAISE_PX, Overlay3D } from "./overlay3d.js";
+import { separateLabels } from "./label-separation.js";
 import { PRESIDENT_COZY_LOOK } from "./cozy-looks.js";
 import { showsBubble } from "../office.js";
 import { frameSignature, shouldRender } from "./frame-pace.js";
@@ -104,6 +105,8 @@ const FALLBACK_LOOK = { sheet: "char", shirt: [0.8, 0.8, 0.8], pants: [0.3, 0.3,
 
 /** 이름표·말풍선 높이(사람 발 기준). 이름표가 떠 있으면 말풍선은 화면 픽셀로 그 위에 선다(`.raised`). */
 const LABEL_HEIGHT = SCALE.characterHeight + 0.14;
+/** 겹침을 풀 때 판 사이에 두는 간격(px). */
+const LABEL_GAP_PX = 2;
 
 /**
  * 카메라를 범위 중심에 세우고, 범위의 모서리 여덟 개(바닥·벽 높이)가 다 들어가는 직교 범위를 잰다.
@@ -628,6 +631,8 @@ export class Office3DRenderer {
 
   /** 부서 문패·공용 공간 이름·세션 책상 이름 — 움직이지 않는 글자. */
   buildPlates() {
+    // 사람 이름표가 피해 갈 움직이지 않는 글자(`separatePersonLabels`).
+    this.plates = [];
     for (const zone of this.plan.zones ?? []) {
       const [icon, label] = this.layout.departmentLabels?.[zone.department] ?? ["", zone.department];
       const plate = this.overlay.label("office3d-plate", `${icon} ${label}`);
@@ -638,6 +643,7 @@ export class Office3DRenderer {
       // 방 북쪽 벽(허리 높이) 위에 세운다 — 방 안 가구·사람을 가리지 않는 자리.
       plate.position.set(zone.origin.x + zone.width / 2, WALL_MID + 0.22, -(zone.origin.y + zone.height + 0.5));
       this.scene.add(plate);
+      this.plates.push(plate);
     }
     const outerRows = this.metrics.outerWallRows ?? 2;
     for (const area of this.plan.commonAreas ?? []) {
@@ -645,6 +651,7 @@ export class Office3DRenderer {
       // 공용 공간은 북쪽 높은 벽의 창 위 — 부서 문패보다 뒤로 물러난 자리.
       plate.position.set(area.originX + area.width / 2, 1.5, -(this.plan.rows - outerRows + 0.5) + WALL_THICKNESS);
       this.scene.add(plate);
+      this.plates.push(plate);
     }
     this.sessionLabels = (this.layout.sessionDesks ?? []).map((tile) => {
       const label = this.overlay.label("office3d-session");
@@ -933,6 +940,63 @@ export class Office3DRenderer {
     this.renderedAt = frameAt;
     this.webgl.render(this.scene, this.camera);
     this.overlay.render(this.scene, this.camera);
+    this.separatePersonLabels();
+  }
+
+  /**
+   * 사람 이름표(+말풍선)가 서로·문패와 포개지면 뒤에 선 사람의 판을 가장 가까운 빈 자리로 옮긴다(`label-separation.js`).
+   *
+   * 회의석은 한 칸 간격이라 넷이 모이면 이름표가 한 덩어리로 겹쳐 아무 이름도 안 읽혔다. 위치는
+   * CSS2DRenderer 가 방금 정했으므로, 같은 투영으로 화면 좌표를 다시 재고 **비킬 양만** `translate` 로
+   * 얹는다 — 렌더러가 매 프레임 덮어쓰는 `transform` 과 따로 합쳐지는 속성이라 서로 지우지 않는다.
+   */
+  separatePersonLabels() {
+    const { width, height } = this.overlay.css.getSize();
+    const point = new THREE.Vector3();
+    const screen = (object) => {
+      point.setFromMatrixPosition(object.matrixWorld).project(this.camera);
+      return { x: (point.x * 0.5 + 0.5) * width, y: (-point.y * 0.5 + 0.5) * height };
+    };
+    const rect = (object, raise = 0) => {
+      const { x, y } = screen(object);
+      const element = object.element;
+      const center = y - raise;
+      return {
+        left: x - element.offsetWidth / 2,
+        right: x + element.offsetWidth / 2,
+        top: center - element.offsetHeight / 2,
+        bottom: center + element.offsetHeight / 2,
+      };
+    };
+    const labels = [];
+    for (const [agentType, entry] of this.characters) {
+      if (!entry.name.visible) {
+        continue;
+      }
+      const box = rect(entry.name);
+      if (entry.bubble.visible) {
+        const dots = entry.bubble.element.classList.contains("office3d-dots");
+        const bubble = rect(entry.bubble, dots ? DOTS_RAISE_PX : BUBBLE_RAISE_PX);
+        box.left = Math.min(box.left, bubble.left);
+        box.right = Math.max(box.right, bubble.right);
+        box.top = Math.min(box.top, bubble.top);
+      }
+      labels.push({ key: agentType, ...box });
+    }
+    const obstacles = this.plates.filter((plate) => plate.visible).map((plate) => rect(plate));
+    const offsets = separateLabels(labels, obstacles, LABEL_GAP_PX);
+    for (const [agentType, entry] of this.characters) {
+      const offset = offsets.get(agentType);
+      const translate =
+        offset && (offset.dx !== 0 || offset.dy !== 0)
+          ? `${Math.round(offset.dx)}px ${Math.round(offset.dy)}px`
+          : "";
+      for (const element of [entry.name.element, entry.bubble.element]) {
+        if (element.style.translate !== translate) {
+          element.style.translate = translate;
+        }
+      }
+    }
   }
 
   characterEntry(agentType) {
