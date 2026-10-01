@@ -10,7 +10,9 @@ import {
   OfficeRenderer,
   preloadSprites,
   characterSpriteFor,
+  showsBubble,
 } from "./office.js";
+import { chatterExchange, chatterLine, chatterPartner, chatterSeed, tileDistance } from "./chatter.js";
 import { canvasSizes } from "./canvas-size.js";
 
 /** 유휴 산책 규칙 — 맥 앱 `OfficeIdle` 과 같은 값. */
@@ -119,6 +121,12 @@ const commuteSeconds = query.has("commute") ? Number(query.get("commute")) : 0;
  * `data-motion-report` 에 남긴다.
  */
 const motionDemo = query.has("motion");
+/**
+ * `?chatter=1` — 쉬는 사람을 배회 목적지마다 하나씩 세워 도착 대사를 한꺼번에 띄운다(맥 `--chatter-demo`).
+ * 마주친 두 사람의 대화는 둘이 동시에 2칸 안에 멈춰야 생겨 정지 화면에 우연히는 잡히지 않는다.
+ * 누가 혼잣말·대화를 했는지는 `data-chatter-report`.
+ */
+const chatterDemo = query.has("chatter");
 /**
  * `?renderer=3d` — three.js 3D 렌더러로 그린다(시험 단계, 기본은 2D).
  *
@@ -739,6 +747,26 @@ function advanceBodies(deltaSeconds) {
     if (body.cueRemaining > 0) {
       body.cueRemaining = Math.max(0, body.cueRemaining - deltaSeconds);
     }
+    // 마주친 상대의 답 — 말을 건 뒤 조금 있다 뜬다. 그사이 둘 중 하나가 배회를 접었거나
+    // 멀어졌으면 답하지 않는다(맥 `speakOnArrival` 의 지연 확인과 같은 조건).
+    if (body.reply) {
+      body.reply.remaining -= deltaSeconds;
+      if (body.reply.remaining <= 0) {
+        const { partner, text } = body.reply;
+        body.reply = null;
+        const other = bodies[partner];
+        if (
+          other &&
+          strolling.has(agentType) &&
+          strolling.has(partner) &&
+          canChatter(agentType) &&
+          canChatter(partner) &&
+          tileDistance(roundedTile(body), roundedTile(other)) <= renderer.layout.chatter.partnerMaxDistance
+        ) {
+          flash(partner, text);
+        }
+      }
+    }
     if (body.flashRemaining > 0) {
       body.flashRemaining -= deltaSeconds;
       if (body.flashRemaining <= 0) {
@@ -799,6 +827,9 @@ function advanceBodies(deltaSeconds) {
           // 그 사람만 바닥에 주저앉은 그림이 된다.
           body.interactionPose = body.arrivePose ?? null;
           body.seated = body.interactionPose === "sitting";
+          if (strolling.has(agentType)) {
+            speakOnArrival(agentType);
+          }
         } else if (body.onArrive) {
           const arrive = body.onArrive;
           body.onArrive = null;
@@ -858,6 +889,69 @@ function handoff(from, to) {
   });
 }
 
+/** 머리 위에 잠깐 뜨는 한 마디(거절 `!`·배회 대사가 같은 자리를 쓴다). */
+function flash(agentType, text) {
+  const body = bodies[agentType];
+  if (!body || !text) {
+    return;
+  }
+  body.flash = text;
+  body.flashRemaining = FLASH_SECONDS;
+}
+
+function roundedTile(body) {
+  return { x: Math.round(body.x), y: Math.round(body.y) };
+}
+
+/**
+ * 잡담을 얹어도 되는 사람인지 — 머리 위에 "하는 일" 말풍선이 떠 있으면 아니다. 같은 자리를 쓰는 두 글자가
+ * 겹치면 관제 정보를 못 읽는다(맥 `canChatter`). 잠깐 뜬 한 마디는 막지 않는다 — 맥도 막지 않고 덮어쓴다.
+ * 막으면 먼저 와서 한 마디 한 사람이 3초 동안 대화 상대에서 빠져, 맥보다 대화가 드물어진다.
+ */
+function canChatter(agentType) {
+  const agent = agents[agentType];
+  return Boolean(bodies[agentType]) && !(showsBubble(agent?.state) && agent?.bubble);
+}
+
+/** 배회 회차. 같은 사람이 회차마다 다른 말을 하게 한다. */
+let strollRound = 0;
+
+/**
+ * 배회 목적지에 도착한 사람의 한 마디. 근처에 멈춰 선 다른 배회자가 있으면 두 마디를 주고받는다
+ * (맥 `speakOnArrival`). 상대는 **매번 다시 센다** — 걷는 중인 사람·좌석에 앉은 사람은 빼야
+ * 사무실이 수다판이 되지 않는다. 평면도에 `chatter` 가 없으면(옛 평면도) 아무 말도 하지 않는다.
+ */
+function speakOnArrival(agentType) {
+  const chatter = renderer.layout.chatter;
+  const body = bodies[agentType];
+  if (!chatter || !body || !canChatter(agentType)) {
+    return;
+  }
+  const others = [...strolling]
+    .filter((other) => other !== agentType)
+    .map((other) => [other, bodies[other]])
+    .filter(([other, otherBody]) => otherBody && !otherBody.path && otherBody.dwellRemaining > 0 && canChatter(other))
+    .map(([other, otherBody]) => ({ agentType: other, tile: roundedTile(otherBody) }));
+  const partner = chatterPartner(roundedTile(body), others, chatter.partnerMaxDistance);
+  if (!partner) {
+    const seat = seatOf(agentType);
+    flash(
+      agentType,
+      chatterLine(chatter, {
+        kind: body.arriveKind,
+        department: agents[agentType]?.department ?? (seat ? zoneOf(seat)?.department : null),
+        agentType,
+        round: strollRound,
+      })
+    );
+    return;
+  }
+  const exchange = chatterExchange(chatter, strollRound, chatterSeed(agentType, strollRound));
+  flash(agentType, exchange.opener);
+  body.talkedWith = partner;
+  body.reply = { partner, text: exchange.reply, remaining: isStatic ? 0 : chatter.replyDelaySeconds };
+}
+
 /** 거절 — 좌우로 흔들리고 머리 위에 `!` 가 잠깐 뜬다(2D `reject`). */
 function reject(agentType) {
   const body = bodies[agentType];
@@ -865,8 +959,7 @@ function reject(agentType) {
     return;
   }
   cue(agentType, "shake");
-  body.flash = "!";
-  body.flashRemaining = FLASH_SECONDS;
+  flash(agentType, "!");
 }
 
 /**
@@ -997,6 +1090,7 @@ function affinitySpot(agentType, free) {
 }
 
 function strollTick(now) {
+  strollRound += 1;
   const remaining = STROLL_CONCURRENCY - strolling.size;
   if (remaining <= 0) {
     return;
@@ -1017,7 +1111,9 @@ function strollTick(now) {
       if (queueOrder.includes(agentType) || commuting.has(agentType)) {
         return false;
       }
-      if (state === "IN_PROGRESS" || state === "AWAITING_APPROVAL") {
+      // 쉬는 사람만, 그리고 내가 보낸 지시가 걸려 있지 않은 사람만(맥 `officeIsIdle`). 완료·실패·반영 대기인
+      // 사람까지 내보내면 실패 자세를 보여야 할 사람이 복도에서 잡담을 해 상태 신호가 흐려진다.
+      if (state !== "WAITING" || pendingPhases[agentType]) {
         return false;
       }
       const last = lastStrollAt[agentType];
@@ -1576,7 +1672,8 @@ async function main() {
         .map(
           ([agentType, body]) =>
             `${agentType}:${body.interactionPose ?? "서기"}@${body.arriveKind}` +
-            `(${Math.round(body.x)},${Math.round(body.y)})→${body.facing}`
+            `(${Math.round(body.x)},${Math.round(body.y)})→${body.facing}` +
+            (body.flash ? ` "${body.flash}"` : "")
         );
       const walking = Object.values(bodies).filter((body) => body.path).length;
       const report = `걷는 중 ${walking}명 · 도착 ${posed.length}명 [${posed.join(", ")}]`;
@@ -1584,6 +1681,41 @@ async function main() {
       // 콘솔은 화면 캡처 도구가 가져가지 못한다. 어디에 누가 섰는지 확인하려고 띄운 입구인데
       // 그 결과가 도구에서 안 보이면 사람이 브라우저를 여는 것 말고는 확인할 방법이 없다.
       document.body.dataset.walkReport = report;
+    }
+    if (chatterDemo) {
+      const idle = renderer.plan.desks
+        .map((desk) => desk.agentType)
+        .filter((agentType) => bodies[agentType] && !showsBubble(agents[agentType]?.state));
+      const placed = (renderer.layout.strollSpots ?? []).slice(0, idle.length).map((spot, index) => {
+        const agentType = idle[index];
+        Object.assign(bodies[agentType], {
+          x: spot.tile.x,
+          y: spot.tile.y,
+          path: null,
+          facing: spot.facing,
+          seated: spot.pose === "sitting",
+          interactionPose: spot.pose,
+          arriveKind: spot.kind,
+          dwellRemaining: spot.dwellSeconds,
+        });
+        strolling.add(agentType);
+        return agentType;
+      });
+      for (const agentType of placed) {
+        speakOnArrival(agentType);
+      }
+      // 답은 지연 없이(정지 렌더) 바로 걸리므로 한 걸음만 흘려 띄운다.
+      advanceVirtually(1 / 60);
+      const report =
+        `배회 대사 ${placed.filter((agentType) => bodies[agentType].flash).length}/${placed.length}명` +
+        ` · 말을 건 사람 ${placed.filter((agentType) => bodies[agentType].talkedWith).length}명 [` +
+        placed
+          .filter((agentType) => bodies[agentType].flash)
+          .map((agentType) => `${agentType}:"${bodies[agentType].flash}"${bodies[agentType].talkedWith ? `↔${bodies[agentType].talkedWith}` : ""}`)
+          .join(", ") +
+        "]";
+      console.log(report);
+      document.body.dataset.chatterReport = report;
     }
     if (motionDemo) {
       const [failed, sent, rejected, done, giver, receiver] = renderer.plan.desks

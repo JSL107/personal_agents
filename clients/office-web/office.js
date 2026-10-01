@@ -1407,10 +1407,13 @@ export class OfficeRenderer {
     const state = agent?.state ?? "WAITING";
     const emphasized = state === "AWAITING_APPROVAL" || state === "FAILED";
     // 창이 작아 이름표가 서로 겹치는 구간에서는 겹친 글자 서른 개보다 **읽히는 몇 개**가 낫다.
+    // 잠깐 뜬 한 마디(배회 대사·`!`)가 있으면 건너뛰지 않는다 — 대사는 대부분 쉬는 사람이 해서, 여기서 끊으면
+    // 좁은 창에서는 한 번도 안 보인다.
     if (
       this.tileSize < this.metrics.nameplateCrowdedTileSize &&
       !emphasized &&
-      state !== "IN_PROGRESS"
+      state !== "IN_PROGRESS" &&
+      !body.flash
     ) {
       return;
     }
@@ -1439,8 +1442,9 @@ export class OfficeRenderer {
 
     // 말풍선은 이름표보다 한 층 더 위다. 아래를 고정하고 위로 자라게 해야 두 줄이 될 때
     // 사람 머리와 이름표를 덮지 않는다.
-    const bubble = agent?.bubble;
-    if (!bubble || !showsBubble(state)) {
+    // 잠깐 뜨는 한 마디(배회 대사·거절 `!`)가 먼저다 — 3D(`renderer3d.js` 의 `body.flash`)와 같은 순서.
+    const bubble = body.flash ?? (showsBubble(state) ? agent?.bubble : null);
+    if (!bubble) {
       return;
     }
     const clearance = bubbleBottomOffset(this.metrics, this.tileSize, fontSize);
