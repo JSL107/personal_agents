@@ -59,6 +59,7 @@ const isNotableAdoption = (item: CategoryAdoption): boolean => {
 };
 
 const RISK_ICON: Record<string, string> = {
+  unknown: '⏸️',
   low: '🟢',
   medium: '🟡',
   high: '🔴',

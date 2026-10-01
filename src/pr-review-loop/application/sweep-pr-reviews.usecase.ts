@@ -419,6 +419,7 @@ export class SweepPrReviewsUsecase {
             prRef,
             dryRun,
             summary: outcome.result.summary,
+            undeterminedReason: outcome.result.undeterminedReason,
           });
         }
         return null;
@@ -483,12 +484,14 @@ export class SweepPrReviewsUsecase {
     prRef,
     dryRun,
     summary,
+    undeterminedReason,
   }: {
     repo: string;
     pullNumber: number;
     prRef: string;
     dryRun: boolean;
     summary: string;
+    undeterminedReason?: string;
   }): Promise<void> {
     // 연습 모드는 GitHub 에 아무것도 남기지 않는 것이 정의다.
     if (dryRun) {
@@ -501,7 +504,7 @@ export class SweepPrReviewsUsecase {
       await this.githubClient.addIssueComment({
         repo,
         number: pullNumber,
-        body: buildNoFindingsCommentBody(summary),
+        body: buildNoFindingsCommentBody(summary, undeterminedReason),
       });
     } catch (error: unknown) {
       this.logger.warn(

@@ -15,15 +15,27 @@ import {
 } from '../code-reviewer.type';
 import { CodeReviewerErrorCode } from '../code-reviewer-error-code.enum';
 
-const RISK_LEVELS: ReadonlySet<RiskLevel> = new Set(['low', 'medium', 'high']);
+const RISK_LEVELS: ReadonlySet<RiskLevel> = new Set([
+  'low',
+  'medium',
+  'high',
+  'unknown',
+]);
 const APPROVAL_RECOMMENDATIONS: ReadonlySet<ApprovalRecommendation> = new Set([
   'approve',
   'request_changes',
   'comment',
+  'undetermined',
 ]);
 
 // LLM 응답을 PullRequestReview 구조로 파싱한다. 코드 펜스·앞뒤 설명문은 extractJsonObjectText 가 벗긴다.
-export const parsePullRequestReview = (text: string): PullRequestReview => {
+// 모델 출력을 코드가 보정했을 때 알릴 곳. domain 계층이라 로거를 직접 두지 않고 호출부가 받는다.
+export type VerdictCorrectionListener = (message: string) => void;
+
+export const parsePullRequestReview = (
+  text: string,
+  onCorrection?: VerdictCorrectionListener,
+): PullRequestReview => {
   const cleaned = extractJsonObjectText(text);
   const parsed = parseJson(cleaned, text);
 
@@ -51,7 +63,78 @@ export const parsePullRequestReview = (text: string): PullRequestReview => {
       ? cleanedFindings
       : findingsFromLegacyArrays(parsed);
 
-  return { ...parsed, findings };
+  return enforceVerdictConsistency({ ...parsed, findings }, onCorrection);
+};
+
+// 판단 보류와 등급의 짝을 코드가 강제한다. 프롬프트 설명만으로는 모델이 보류라고 쓰고도 등급을
+// 채우는 회차가 남는다 — 그 등급이 Slack 카드에 "위험도 중간" 으로 그대로 찍혀 나갔다.
+//
+// 짝이 틀린 응답은 예외로 끊지 않고 보정한다. 끊으면 같은 응답의 지적(findings)까지 통째로 잃는데,
+// 새 값을 들인 직후라 모델이 짝을 틀리는 회차가 나올 수 있다 — 억지 등급 하나를 막으려다 리뷰
+// 전체를 버리는 쪽이 손실이 크다. 보정했다는 사실은 onCorrection 으로 남긴다.
+export const UNDETERMINED_REASON_MISSING = '사유 미기재(모델 응답에 없음)';
+export const UNDETERMINED_REASON_UNKNOWN_RISK = '등급을 정하지 못함(모델 응답)';
+
+const enforceVerdictConsistency = (
+  review: PullRequestReview,
+  onCorrection?: VerdictCorrectionListener,
+): PullRequestReview => {
+  const { undeterminedReason, ...rest } = review;
+  const hasBlockingFinding =
+    rest.mustFix.length > 0 ||
+    rest.findings.some(({ severity }) => severity === 'MUST_FIX');
+  const claimsUndetermined =
+    rest.approvalRecommendation === 'undetermined' ||
+    rest.riskLevel === 'unknown';
+
+  if (!claimsUndetermined) {
+    // 보류가 아닌 리뷰의 이유 필드는 버린다 — 소비자가 "이유가 있으면 보류" 로 읽지 않게.
+    return rest;
+  }
+
+  // 보이는 범위에서 막을 결함을 찾았다면 그것이 결론이다 — 판단 보류로 덮으면 머지 필수 지적이
+  // "판단 보류" 뒤에 묻힌다. 프롬프트 규칙(mustFix → high)에 맞춰 등급도 올린다.
+  if (hasBlockingFinding) {
+    onCorrection?.(
+      `판단 보류 응답(${rest.approvalRecommendation}/${rest.riskLevel})에 머지 필수 지적이 있어 request_changes/high 로 보정했다.`,
+    );
+    return {
+      ...rest,
+      approvalRecommendation: 'request_changes',
+      riskLevel: 'high',
+    };
+  }
+
+  if (rest.approvalRecommendation !== 'undetermined') {
+    // riskLevel 'unknown' 은 보류 전용이다. 등급을 모른다면서 판정을 낸 응답은 판정 쪽을 믿지 않는다.
+    onCorrection?.(
+      `riskLevel "unknown" 인데 권고가 ${rest.approvalRecommendation} 이라 판단 보류로 보정했다.`,
+    );
+    return {
+      ...rest,
+      approvalRecommendation: 'undetermined',
+      riskLevel: 'unknown',
+      undeterminedReason: UNDETERMINED_REASON_UNKNOWN_RISK,
+    };
+  }
+
+  const reason =
+    typeof undeterminedReason === 'string' ? undeterminedReason.trim() : '';
+  if (reason.length === 0) {
+    onCorrection?.('판단 보류 응답에 이유가 없어 사유 미기재로 채웠다.');
+  }
+  if (rest.riskLevel !== 'unknown') {
+    // 모델이 medium 등을 적어도 저장하지 않는다 — 판단하지 못한 리뷰의 등급은 모른다.
+    onCorrection?.(
+      `판단 보류 응답의 riskLevel "${rest.riskLevel}" 을 unknown 으로 보정했다.`,
+    );
+  }
+  return {
+    ...rest,
+    riskLevel: 'unknown',
+    undeterminedReason:
+      reason.length > 0 ? reason : UNDETERMINED_REASON_MISSING,
+  };
 };
 
 const parseJson = (text: string, rawText: string): unknown => {
@@ -86,7 +169,9 @@ const isPullRequestReviewShape = (
     typeof record.approvalRecommendation === 'string' &&
     APPROVAL_RECOMMENDATIONS.has(
       record.approvalRecommendation as ApprovalRecommendation,
-    )
+    ) &&
+    (record.undeterminedReason === undefined ||
+      typeof record.undeterminedReason === 'string')
   );
 };
 
