@@ -76,27 +76,49 @@ describe('screenStocks', () => {
     ]);
   });
 
-  // 운영 SWING 은 백테스트에서 `--flow-slot 1` 로 잰 규칙과 같아야 한다 — 다르면 측정한 성적이 운영 성적이 아니다.
-  it('단타 기본 순위는 1번 칸을 수급으로 교체한 순위와 같다', () => {
-    const candidates = [
-      candidate('000001', { investorFlow20: 0.1, return1m: 30 }),
-      candidate('000002', { investorFlow20: 0.3, high200Position: 0.5 }),
-      candidate('000003', { investorFlow20: -0.2, return1m: 50 }),
-      candidate('000004', { investorFlow20: null, high200Position: 1 }),
-    ];
+  // SWING 은 1순위가 이미 수급이라 칸을 또 바꾸면 수급이 두 칸의 가중치를 차지한다.
+  // 교체 실험이 조용히 다른 전략을 재지 않도록 거부한다.
+  it.each([1, 2, 3] as const)(
+    '이미 수급을 쓰는 단타에 수급 칸 %i 교체를 요구하면 거부한다',
+    (flowSlot) => {
+      expect(() =>
+        screenStocks(
+          [candidate('000001', { investorFlow20: 0.1 })],
+          'SWING',
+          10,
+          MINIMUM_TURNOVER60,
+          undefined,
+          undefined,
+          undefined,
+          flowSlot,
+        ),
+      ).toThrow('이미 수급');
+    },
+  );
 
-    expect(screenStocks(candidates, 'SWING', 10)).toEqual(
-      screenStocks(
-        candidates,
-        'SWING',
-        10,
-        MINIMUM_TURNOVER60,
-        undefined,
-        undefined,
-        undefined,
-        1,
-      ),
+  // 수집 장애로 수급이 전부 비면 그 재료의 순위가 종목 코드 순서가 되어, 점수의 1/3 을 코드가 정했다.
+  it('값이 없는 후보끼리는 같은 최하위 순위를 받아 코드가 점수를 가르지 않는다', () => {
+    const result = screenStocks(
+      [
+        candidate('000003', { investorFlow20: null }),
+        candidate('000001', { investorFlow20: null }),
+        candidate('000002', { investorFlow20: 0.2 }),
+        candidate('000004', { investorFlow20: null }),
+      ],
+      'SWING',
+      10,
+      MINIMUM_TURNOVER60,
+      undefined,
+      undefined,
+      [1, 0, 0],
     );
+
+    expect(result.map(({ code, score }) => ({ code, score }))).toEqual([
+      { code: '000002', score: 100 },
+      { code: '000001', score: 66.67 },
+      { code: '000003', score: 66.67 },
+      { code: '000004', score: 66.67 },
+    ]);
   });
 
   it('수급 순위 칸만 교체하고 지정하지 않으면 기존 순위를 유지한다', () => {
