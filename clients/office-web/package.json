@@ -31,6 +31,7 @@
       "setup.html",
       "office.js",
       "live.js",
+      "chatter.js",
       "layout-2.json",
       "layout-3.json",
       "three/**",

@@ -5,6 +5,13 @@ import Foundation
 func runOfficeChatterTests(_ t: TestRunner) {
     t.suite("OfficeChatter")
 
+    // 웹(`clients/office-web/chatter.js`)이 같은 씨앗을 옮겨 쓴다. 이 숫자는 그쪽 `scripts-check-pace.mjs` 에도
+    // 똑같이 박혀 있다 — 한쪽만 바뀌면 두 화면의 같은 사람이 다른 말을 한다.
+    t.expectEqual(officeChatterSeed(agentType: "PM", round: 3), 2578, "씨앗 — 웹과 같은 값")
+    t.expectEqual(officeChatterSeed(agentType: "PM", round: 0), 2557, "씨앗 — 회차 0")
+    t.expectEqual(officeChatterSeed(agentType: "QA", round: 2), 2590, "씨앗 — 다른 사람")
+    t.expectEqual(officeChatterIndex(-7, count: 5), 3, "음수 씨앗")
+
     // 목적지 대사가 비어 있으면 그 가구로 간 사람만 말없이 걷는다 — 대사를 안 쓴 것과
     // 가구를 새로 추가한 것이 화면에서 똑같이 보이므로 전수로 막는다.
     for kind in FurnitureKind.allCases where kind.interactionPose != nil {

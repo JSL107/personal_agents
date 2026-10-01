@@ -1439,8 +1439,9 @@ export class OfficeRenderer {
 
     // 말풍선은 이름표보다 한 층 더 위다. 아래를 고정하고 위로 자라게 해야 두 줄이 될 때
     // 사람 머리와 이름표를 덮지 않는다.
-    const bubble = agent?.bubble;
-    if (!bubble || !showsBubble(state)) {
+    // 잠깐 뜨는 한 마디(배회 대사·거절 `!`)가 먼저다 — 3D(`renderer3d.js` 의 `body.flash`)와 같은 순서.
+    const bubble = body.flash ?? (showsBubble(state) ? agent?.bubble : null);
+    if (!bubble) {
       return;
     }
     const clearance = bubbleBottomOffset(this.metrics, this.tileSize, fontSize);

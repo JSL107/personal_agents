@@ -78,7 +78,7 @@ cp -R "$SOURCE_BUNDLE" "$APP/$RESOURCE_BUNDLE"
 OFFICE_WEB_SOURCE="$CONSOLE_DIR/../office-web"
 OFFICE_WEB="$APP/Contents/Resources/office-web"
 mkdir -p "$OFFICE_WEB"
-for item in index.html live.js office.js canvas-size.js three vendor; do
+for item in index.html live.js office.js chatter.js canvas-size.js three vendor; do
   cp -R "$OFFICE_WEB_SOURCE/$item" "$OFFICE_WEB/"
 done
 
@@ -176,6 +176,7 @@ for required in \
   "$APP/$RESOURCE_BUNDLE/sprites" \
   "$APP/Contents/Resources/office-web/index.html" \
   "$APP/Contents/Resources/office-web/live.js" \
+  "$APP/Contents/Resources/office-web/chatter.js" \
   "$APP/Contents/Resources/office-web/three/renderer3d.js" \
   "$APP/Contents/Resources/office-web/vendor/three/three.module.js"; do
   [ -e "$required" ] || { echo "✗ 빠졌다: $required" >&2; exit 1; }
