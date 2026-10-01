@@ -31,6 +31,11 @@ import { toUserFacingErrorMessage } from './slack-handler.helper';
 @Injectable()
 export class RunVerdictActionHandler implements SlackHandler {
   private readonly logger = new Logger(RunVerdictActionHandler.name);
+  // 실행별 "조회 → 댓글 갱신" 줄. 둘을 겹쳐 돌리면 먼저 읽은 오래된 목록이 나중에 도착해
+  // 댓글을 덮어쓴다 — 원장은 맞는데 화면에서 다른 사람 판정이 사라진다. 줄을 세우면 뒤 차례는
+  // 앞 차례의 저장이 끝난 뒤에 읽으므로 마지막 갱신이 항상 최신이다.
+  // ponytail: 프로세스 안 직렬화라 앱을 여러 개 띄우면 다시 겹칠 수 있다 — 그때는 메시지 단위 버전 검사로.
+  private readonly redrawChains = new Map<number, Promise<void>>();
 
   constructor(
     @Inject(AGENT_RUN_VERDICT_REPOSITORY_PORT)
@@ -84,31 +89,36 @@ export class RunVerdictActionHandler implements SlackHandler {
 
         // 저장은 끝났다. 다시 그리기가 실패해도 판정은 남아 있으므로 알리기만 한다.
         try {
-          const rows = await this.verdictRepository.findByRun(agentRunId);
-          const verdicts: Partial<
-            Record<RunVerdictFacet, { slackUserId: string; verdict: string }[]>
-          > = {};
-          for (const row of rows) {
-            if (isRunVerdictFacet(row.facet)) {
-              (verdicts[row.facet] ??= []).push({
-                slackUserId: row.slackUserId,
-                verdict: row.verdict,
-              });
+          await this.serializeByRun(agentRunId, async () => {
+            const rows = await this.verdictRepository.findByRun(agentRunId);
+            const verdicts: Partial<
+              Record<
+                RunVerdictFacet,
+                { slackUserId: string; verdict: string }[]
+              >
+            > = {};
+            for (const row of rows) {
+              if (isRunVerdictFacet(row.facet)) {
+                (verdicts[row.facet] ??= []).push({
+                  slackUserId: row.slackUserId,
+                  verdict: row.verdict,
+                });
+              }
             }
-          }
-          const messageRef = extractActionMessageRef(body);
-          if (!messageRef) {
-            throw new Error('댓글 좌표를 읽지 못했습니다');
-          }
-          await client.chat.update({
-            channel: messageRef.channel,
-            ts: messageRef.ts,
-            text: RUN_VERDICT_FALLBACK_TEXT,
-            blocks: buildRunVerdictBlocks({
-              agentRunId,
-              facets,
-              verdicts,
-            }) as never,
+            const messageRef = extractActionMessageRef(body);
+            if (!messageRef) {
+              throw new Error('댓글 좌표를 읽지 못했습니다');
+            }
+            await client.chat.update({
+              channel: messageRef.channel,
+              ts: messageRef.ts,
+              text: RUN_VERDICT_FALLBACK_TEXT,
+              blocks: buildRunVerdictBlocks({
+                agentRunId,
+                facets,
+                verdicts,
+              }) as never,
+            });
           });
         } catch (error: unknown) {
           const message =
@@ -124,5 +134,22 @@ export class RunVerdictActionHandler implements SlackHandler {
         }
       },
     );
+  }
+
+  private serializeByRun(
+    agentRunId: number,
+    task: () => Promise<void>,
+  ): Promise<void> {
+    const previous = this.redrawChains.get(agentRunId) ?? Promise.resolve();
+    const current = previous.then(task);
+    // 앞 차례가 실패해도 뒤 차례는 돌아야 한다 — 줄에는 실패를 삼킨 꼬리만 남긴다.
+    const tail = current.catch(() => undefined);
+    this.redrawChains.set(agentRunId, tail);
+    void tail.then(() => {
+      if (this.redrawChains.get(agentRunId) === tail) {
+        this.redrawChains.delete(agentRunId);
+      }
+    });
+    return current;
   }
 }
