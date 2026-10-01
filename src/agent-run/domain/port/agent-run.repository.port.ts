@@ -17,6 +17,13 @@ export interface BeginAgentRunInput {
   parentId?: number;
 }
 
+export interface BeginAgentRunResult {
+  id: number;
+  // **실제로 저장된** 부모. 요청한 부모가 없어 부모 없이 만들었으면 비어 있다 —
+  // 시작 알림은 이 값을 실어야 DB 와 다른 계보를 화면에 그리지 않는다.
+  parentId?: number;
+}
+
 export interface FinishAgentRunInput {
   id: number;
   status: AgentRunStatus;
@@ -261,7 +268,7 @@ export interface FailInProgressRunsInput {
 export interface AgentRunRepositoryPort {
   // 콘솔 원장 집계용 전량 조회. 집계는 SQL이 아니라 console 도메인의 순수 함수가 담당한다.
   findAllRunsForLedger(): Promise<LedgerRunRow[]>;
-  begin(input: BeginAgentRunInput): Promise<{ id: number }>;
+  begin(input: BeginAgentRunInput): Promise<BeginAgentRunResult>;
   updateInputSnapshot?(input: {
     id: number;
     inputSnapshot: unknown;

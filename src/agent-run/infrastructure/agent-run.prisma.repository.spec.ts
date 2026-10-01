@@ -214,7 +214,7 @@ describe('AgentRunPrismaRepository.begin', () => {
 
     await expect(
       repository.begin({ ...baseInput, parentId: 3 }),
-    ).resolves.toEqual({ id: 7 });
+    ).resolves.toEqual({ id: 7, parentId: 3 });
     expect(create.mock.calls[0][0].data).toMatchObject({ parentId: 3 });
   });
 
@@ -232,6 +232,7 @@ describe('AgentRunPrismaRepository.begin', () => {
       agentRun: { create },
     } as unknown as PrismaService);
 
+    // 부모 없이 만들었다는 사실을 돌려준다 — 시작 알림이 저장 안 된 계보를 그리지 않게.
     await expect(
       repository.begin({ ...baseInput, parentId: 999 }),
     ).resolves.toEqual({ id: 8 });
