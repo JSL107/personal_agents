@@ -71,7 +71,7 @@ function shoeGeometry() {
 }
 
 /** A curved hair ribbon with a pointed end rather than stacked spherical beads. */
-function taperedLock(points, radii, steps = 7, sides = 6) {
+function taperedLock(points, radii, steps = 10, sides = 10) {
   const curve = new THREE.CatmullRomCurve3(points.map((point) => new THREE.Vector3(...point)));
   const frames = curve.computeFrenetFrames(steps, false);
   const vertices = [];
@@ -79,7 +79,8 @@ function taperedLock(points, radii, steps = 7, sides = 6) {
   for (let step = 0; step <= steps; step += 1) {
     const progress = step / steps;
     const segment = Math.min(radii.length - 2, Math.floor(progress * (radii.length - 1)));
-    const blend = progress * (radii.length - 1) - segment;
+    const linear = progress * (radii.length - 1) - segment;
+    const blend = linear * linear * (3 - 2 * linear);
     const radius = THREE.MathUtils.lerp(radii[segment], radii[segment + 1], blend);
     const center = curve.getPointAt(progress);
     for (let side = 0; side < sides; side += 1) {
@@ -157,10 +158,11 @@ export function distinctShirt(rgb) {
 // MARK: - 얼굴
 
 const R = BODY.headRadius;
-const FACE_SCALE = [1.02, 0.95, 0.92];
+const FACE_SCALE = [1.14, 0.84, 0.92];
+const FACE_Y = -0.018;
 
 function faceZ(x, y) {
-  const inside = R * R - (x / FACE_SCALE[0]) ** 2 - (y / FACE_SCALE[1]) ** 2;
+  const inside = R * R - (x / FACE_SCALE[0]) ** 2 - ((y - FACE_Y) / FACE_SCALE[1]) ** 2;
   return FACE_SCALE[2] * Math.sqrt(Math.max(0, inside));
 }
 
@@ -174,19 +176,26 @@ function detail(geometry, material, x = 0, y = 0, z = 0) {
 
 function buildFace(head, look) {
   const skin = mat("skinCozy");
-  const face = mesh(new THREE.SphereGeometry(R, 14, 9), skin);
+  const face = mesh(new THREE.SphereGeometry(R, 20, 12), skin, 0, FACE_Y, 0);
+  face.userData.characterPart = "face";
   face.scale.set(...FACE_SCALE);
   head.add(face);
-  // The transparent artwork follows the same curvature as the head. Its edge dissolves into skin.
-  const decal = detail(
-    new THREE.SphereGeometry(R + 0.0018, 12, 8, Math.PI * 0.17, Math.PI * 0.66, Math.PI * 0.17, Math.PI * 0.68),
-    artMat(look.smile === "open" ? "face-open" : "face-soft")
-  );
+  // 같은 월드 길이에 같은 UV 길이를 준다. 볼을 넓혀도 눈·입을 가로로 늘리지 않는다.
+  const decalGeometry = new THREE.SphereGeometry(R + 0.004, 16, 12,
+    Math.PI * 0.08, Math.PI * 0.84, Math.PI * 0.08, Math.PI * 0.84);
+  const positions = decalGeometry.attributes.position;
+  const coordinates = decalGeometry.attributes.uv;
+  for (let index = 0; index < positions.count; index += 1) {
+    coordinates.setXY(index,
+      0.5 + positions.getX(index) * FACE_SCALE[0] / 0.4,
+      0.5 + (positions.getY(index) * FACE_SCALE[1] + FACE_Y + 0.038) / 0.4);
+  }
+  const decal = detail(decalGeometry, artMat(look.smile === "open" ? "face-open" : "face-soft"), 0, FACE_Y, 0);
   decal.scale.set(...FACE_SCALE);
   decal.renderOrder = 2;
   head.add(decal);
   for (const side of [-1, 1]) {
-    const ear = mesh(new THREE.SphereGeometry(0.043, 8, 6), skin, side * R * 0.98, -0.035, -0.012);
+    const ear = mesh(new THREE.SphereGeometry(0.043, 8, 6), skin, side * R * 1.1, -0.035, -0.012);
     ear.scale.set(0.58, 1, 0.8);
     head.add(ear);
   }
@@ -196,7 +205,7 @@ function buildFace(head, look) {
 function hairShell(head, hair, length = 0, curly = false) {
   // The crown ends above the forehead, while its sides and back fall behind the cheeks.
   // Remapping the latitude keeps that edge continuous instead of cutting triangles away.
-  const shell = new THREE.SphereGeometry(R * 1.1, curly ? 20 : 16, 12);
+  const shell = new THREE.SphereGeometry(R * 1.1, 20, 12);
   const position = shell.attributes.position;
   for (let index = 0; index < position.count; index += 1) {
     const x = position.getX(index);
@@ -215,7 +224,7 @@ function hairShell(head, hair, length = 0, curly = false) {
   }
   shell.computeVertexNormals();
   const cap = mesh(shell, hair, 0, 0.022, -0.015);
-  cap.scale.set(1.08, 1.02 + length, 1.01);
+  cap.scale.set(1.12, 1.02 + length, 1.01);
   head.add(cap);
 }
 
@@ -225,49 +234,26 @@ function strand(head, hair, points, radii, shade = hair) {
   head.add(lock);
 }
 
-/** A broad swept strip lies on the forehead, then narrows into a loose painted tip. */
-function hairRibbon(head, hair, points, widths) {
-  const curve = new THREE.CatmullRomCurve3(points.map((point) => new THREE.Vector3(...point)));
-  const vertices = [];
-  const indices = [];
-  const steps = 10;
-  for (let step = 0; step <= steps; step += 1) {
-    const progress = step / steps;
-    const center = curve.getPoint(progress);
-    const tangent = curve.getTangent(progress);
-    const normal = new THREE.Vector2(tangent.y, -tangent.x).normalize();
-    const segment = Math.min(widths.length - 2, Math.floor(progress * (widths.length - 1)));
-    const blend = progress * (widths.length - 1) - segment;
-    const width = THREE.MathUtils.lerp(widths[segment], widths[segment + 1], blend);
-    for (const side of [-1, 1]) {
-      vertices.push(center.x + normal.x * width * side, center.y + normal.y * width * side, center.z);
-    }
-    if (step < steps) {
-      const current = step * 2;
-      indices.push(current, current + 1, current + 2, current + 1, current + 3, current + 2);
-    }
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
-  geometry.setIndex(indices);
-  geometry.computeVertexNormals();
-  const lock = mesh(geometry, hair);
-  lock.castShadow = false;
-  lock.userData.noOutline = true;
-  head.add(lock);
-}
-
+/** 두께가 있는 매끈한 앞머리. 뿌리는 두피에 묻고 끝만 가늘게 뺀다. */
 function fringe(head, hair, swept = false) {
-  hairRibbon(head, hair, [[-0.025, 0.21, 0.08], [-0.09, 0.145, 0.16], [-0.165, 0.09, 0.14]], [0.027, 0.05, 0.004]);
-  hairRibbon(head, hair, [[-0.005, 0.22, 0.085], [0.025, 0.145, 0.19], [0.085, 0.066, 0.184]], [0.03, 0.058, 0.004]);
-  hairRibbon(head, hair, [[0.025, 0.21, 0.07], [0.115, 0.15, 0.155], [0.18, 0.095, 0.11]], [0.025, swept ? 0.052 : 0.045, 0.003]);
+  const paths = [
+    [[0.015, 0.2, 0.06], [-0.045, 0.165, 0.13], [-0.12, 0.09, 0.17], [-0.175, 0.065, 0.12]],
+    [[0.015, 0.205, 0.055], [0.095, 0.16, 0.13], [0.15, 0.08, 0.16], [0.185, 0.04, 0.105]],
+  ];
+  for (const points of paths) {
+    const lock = mesh(taperedLock(points, [0.01, swept ? 0.058 : 0.05, 0.037, 0.003], 12, 8), hair);
+    lock.castShadow = false;
+    // 머리 껍질에 닿는 가닥의 내부 경계에는 검은 선을 두르지 않는다.
+    lock.userData.noOutline = true;
+    head.add(lock);
+  }
 }
 
 function cheekLocks(head, hair, length = 0.12) {
   for (const side of [-1, 1]) {
     strand(head, hair,
-      [[side * 0.19, 0.11, 0.025], [side * 0.217, -0.035, 0.055], [side * 0.172, -length, 0.08]],
-      [0.037, 0.043, 0.004]);
+      [[side * 0.205, 0.10, 0.005], [side * 0.231, -0.018, 0.045], [side * 0.191, -length, 0.055]],
+      [0.025, 0.048, 0.003]);
   }
 }
 
@@ -286,11 +272,42 @@ function tie(head, color, x, y, z, bow) {
 
 function trailingHair(head, hair, side, length, wave = 0) {
   const lock = mesh(taperedLock(
-    [[side * 0.16, -0.07, -0.09], [side * (0.22 + wave), -0.17, -0.06],
-      [side * (0.19 - wave), -length + 0.07, -0.01], [side * (0.22 + wave), -length, 0.01]],
-    [0.064, 0.071, 0.05, 0.004], 8, 7), hair);
+    [[side * 0.19, 0.015, -0.10], [side * (0.23 + wave), -0.10, -0.08],
+      [side * (0.20 - wave), -length + 0.10, -0.055], [side * (0.235 + wave), -length, -0.005]],
+    [0.035, 0.073, 0.055, 0.002], 16, 10), hair);
   lock.castShadow = false;
   head.add(lock);
+}
+
+/** 곱슬은 구의 표면/법선/인덱스를 직접 이어 한 번에 그린다. */
+function curlCluster(head, hair) {
+  const vertices = [];
+  const normals = [];
+  const indices = [];
+  const curls = [
+    [-0.20, 0.10, 0.015], [-0.16, 0.19, 0.03], [-0.075, 0.232, 0.02],
+    [0.025, 0.235, 0.015], [0.12, 0.205, 0.005], [0.205, 0.13, 0.015],
+    [-0.23, -0.015, -0.005], [0.23, 0.015, -0.015],
+    [-0.12, 0.15, -0.155], [0.075, 0.175, -0.145],
+  ];
+  curls.forEach(([x, y, z], curlIndex) => {
+    const geometry = new THREE.SphereGeometry(0.062 + (curlIndex % 3) * 0.004, 8, 6);
+    geometry.scale(1.08, 0.83, 0.92);
+    geometry.rotateZ(curlIndex * 0.61);
+    geometry.translate(x, y, z);
+    const offset = vertices.length / 3;
+    vertices.push(...geometry.attributes.position.array);
+    normals.push(...geometry.attributes.normal.array);
+    indices.push(...Array.from(geometry.index.array, (index) => index + offset));
+    geometry.dispose();
+  });
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+  geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+  geometry.setIndex(indices);
+  const cluster = mesh(geometry, hair);
+  cluster.userData.characterPart = "curls";
+  head.add(cluster);
 }
 
 const HAIR_STYLES = {
@@ -302,23 +319,19 @@ const HAIR_STYLES = {
   curly(head, hair) {
     hairShell(head, hair, 0, true);
     fringe(head, hair);
-    cheekLocks(head, hair, 0.1);
+    curlCluster(head, hair);
   },
   bob(head, hair) {
     hairShell(head, hair, 0.08);
     fringe(head, hair, true);
-    cheekLocks(head, hair, 0.19);
-    for (const side of [-1, 1]) {
-      trailingHair(head, hair, side, 0.17, 0.01);
-    }
+    cheekLocks(head, hair, 0.18);
   },
   long(head, hair) {
     hairShell(head, hair, 0.04);
     fringe(head, hair, true);
     cheekLocks(head, hair, 0.2);
     for (const side of [-1, 1]) {
-      trailingHair(head, hair, side, 0.36, 0.01);
-      trailingHair(head, hair, side, 0.32, -0.025);
+      trailingHair(head, hair, side, 0.36, 0.012);
     }
   },
   ponytail(head, hair, look) {
@@ -361,14 +374,14 @@ function headExtras(head, extras) {
     const lens = mat("lens");
     for (const side of [-1, 1]) {
       const x = side * 0.08;
-      const z = faceZ(x, 0.04) + 0.018;
-      head.add(detail(new THREE.TorusGeometry(0.056, 0.007, 5, 12), frame, x, 0.04, z));
-      const glass = detail(new THREE.CircleGeometry(0.054, 20), lens, x, 0.04, z - 0.002);
+      const z = faceZ(x, 0.002) + 0.018;
+      head.add(detail(new THREE.TorusGeometry(0.056, 0.007, 5, 12), frame, x, 0.002, z));
+      const glass = detail(new THREE.CircleGeometry(0.054, 20), lens, x, 0.002, z - 0.002);
       glass.material = lens;
       glass.visible = false;
       head.add(glass);
     }
-    head.add(detail(new THREE.BoxGeometry(0.05, 0.008, 0.008), frame, 0, 0.045, faceZ(0, 0.045) + 0.02));
+    head.add(detail(new THREE.BoxGeometry(0.05, 0.008, 0.008), frame, 0, 0.007, faceZ(0, 0.007) + 0.02));
   }
   if (extras.clip) {
     const clip = detail(new THREE.BoxGeometry(0.07, 0.022, 0.022), toneMat(extras.clip, 0.05), 0.13, 0.1, faceZ(0.13, 0.1) + 0.02);

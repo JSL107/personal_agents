@@ -84,6 +84,9 @@ const characterLooks = [
   ...["char", "charb", "charc", "chard", "chare"].map((sheet) => ({ sheet, shirt: [0.9, 0.5, 0.4], pants: [0.2, 0.2, 0.3], hair: [0.3, 0.2, 0.1] })),
 ];
 const characterCosts = [];
+const faceRatios = [];
+const characterSource = readFileSync(new URL("./three/character.js", import.meta.url), "utf8");
+assert.ok(!/from\s+["']three\/addons\//.test(characterSource), "캐릭터는 브라우저에 없는 three/addons 모듈을 import 하면 안 된다");
 for (const name of ["face-open", "face-soft"]) {
   const material = artMat(name);
   assert.equal(material, artMat(name), "표정별 재질은 공유해야 한다");
@@ -116,8 +119,25 @@ for (const look of characterLooks) {
     if (key.startsWith("art:") && (!node.userData.noOutline || node.userData.hasOutline)) {
       failures.push(`캐릭터 ${sheet}: 얼굴 데칼에 외곽선이 있다`);
     }
+    if (key.startsWith("art:")) {
+      // 볼을 넓힌 뒤에도 동일한 UV 길이가 같은 x/y 길이에 대응해야 눈이 늘어나지 않는다.
+      const position = node.geometry.attributes.position;
+      const coordinates = node.geometry.attributes.uv;
+      const lengths = ["x", "y"].map((axis) => {
+        const values = [];
+        const textureValues = [];
+        for (let index = 0; index < position.count; index += 1) {
+          values.push((axis === "x" ? position.getX(index) : position.getY(index)) * node.scale[axis]);
+          textureValues.push(axis === "x" ? coordinates.getX(index) : coordinates.getY(index));
+        }
+        return (Math.max(...values) - Math.min(...values)) /
+          (Math.max(...textureValues) - Math.min(...textureValues));
+      });
+      assert.ok(lengths.every(Number.isFinite) && Math.abs(lengths[0] - lengths[1]) < 0.00001,
+        `${sheet}: 얼굴 데칼의 가로·세로 배율이 다르다`);
+    }
   });
-  for (const [metric, maximum] of [["meshes", 80], ["shadows", 30], ["triangles", 6000]]) {
+  for (const [metric, maximum] of [["meshes", 80], ["shadows", 30], ["triangles", 8000]]) {
     if (cost[metric] > maximum) {
       failures.push(`캐릭터 ${sheet}: ${metric} ${cost[metric]} (상한 ${maximum})`);
     }
@@ -134,6 +154,37 @@ for (const look of characterLooks) {
   assert.equal(arms.length, 2);
   const standing = { seated: false, facing: "down", pose: "down" };
   poseCharacter(figure, standing, 0);
+  figure.updateMatrixWorld(true);
+  const faces = [];
+  figure.traverse((node) => {
+    if (node.isMesh && node.userData.characterPart === "face") {
+      faces.push(node);
+    }
+  });
+  if (faces.length !== 1) {
+    failures.push(`캐릭터 ${sheet}: 얼굴 메시 ${faces.length}개 (정확히 1개 필요)`);
+  } else {
+    const position = faces[0].geometry.attributes.position;
+    const vertex = new THREE.Vector3();
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (let index = 0; index < position.count; index += 1) {
+      vertex.fromBufferAttribute(position, index).applyMatrix4(faces[0].matrixWorld);
+      minX = Math.min(minX, vertex.x);
+      maxX = Math.max(maxX, vertex.x);
+      minY = Math.min(minY, vertex.y);
+      maxY = Math.max(maxY, vertex.y);
+    }
+    const ratio = (maxX - minX) / (maxY - minY);
+    if (look.cozyAsset !== undefined) {
+      faceRatios.push(ratio);
+    }
+    if (!Number.isFinite(ratio) || ratio < 1.05) {
+      failures.push(`캐릭터 ${sheet}: 얼굴 폭÷높이 ${ratio.toFixed(3)} (최소 1.05)`);
+    }
+  }
   const headHome = head.position.clone();
   for (const [interactionPose, seat] of [[null, SCALE.chairSeat], ["sitting", SCALE.sofaSeat]]) {
     poseCharacter(figure, { ...standing, seated: true, interactionPose }, 0);
@@ -164,6 +215,9 @@ console.log(`원화 21종 비용: ${["meshes", "shadows", "triangles"].map((metr
   const values = characterCosts.map((cost) => cost[metric]);
   return `${metric} 평균 ${(values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(1)} 최대 ${Math.max(...values)}`;
 }).join(" / ")}`);
+if (faceRatios.length > 0) {
+  console.log(`원화 21종 얼굴 폭÷높이: 평균 ${(faceRatios.reduce((sum, ratio) => sum + ratio, 0) / faceRatios.length).toFixed(3)} / 최소 ${Math.min(...faceRatios).toFixed(3)} / 최대 ${Math.max(...faceRatios).toFixed(3)}`);
+}
 
 // 카메라 방위 — 가로로 넓은 창은 확정 각(32°), 정사각형 이하는 15°, 사이는 선형. 높이 0 도 터지지 않아야 한다.
 const near = (actual, expected) => Math.abs(actual - expected) < 1e-9;
