@@ -64,6 +64,11 @@ export class GenerateCeoMetaUsecase {
         pmRunId: refs.pmRunId,
       },
       evidence: this.toEvidence(refs),
+      // 주간 CEO 회의 참석자 — PO_EVAL 은 필수 입력이라 늘 있고, PM 은 읽어 왔을 때만.
+      participants: [
+        AgentType.PO_EVAL,
+        ...(refs.pmRunId !== undefined ? [AgentType.PM] : []),
+      ],
       run: async () => {
         const prompt = buildPrompt({ snapshots, range });
         const completion = await this.modelRouter.route({

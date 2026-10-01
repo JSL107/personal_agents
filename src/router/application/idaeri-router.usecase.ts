@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
 import { resolveAgentTypeByNickname } from '../../agent-registry/agent-registry';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
+import { runWithParentRun } from '../../agent-run/application/parent-run-context';
 import {
   RoutingContext,
   runWithRoutingContext,
@@ -162,7 +163,6 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
     //
     // 과거 실행 id 를 재사용하는 경로(CAREER_MATE 의 RENDER_*)는 새 행을 열지 않으므로
     // 이 근거가 그 행에 닿을 길이 없다 — 라우팅 근거 쪽은 구조적으로 안전해졌다.
-    // (parentId 쪽은 여전히 outcome.agentRunId 를 직접 쓰므로 아래에서 따로 막는다.)
     //
     // 원문이 없으면(handoff passthrough 가 비는 경우) 채점할 것이 없으니 근거도 두지 않는다 —
     // #629 의 `if (input.text && …)` 가드를 그대로 승계한다.
@@ -179,12 +179,24 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
     // input.replyContext(비동기 회신 컨텍스트)는 `...input` spread 로 root dispatch 에만
     // 통과된다 — 비동기 worker(BLOG)가 백그라운드 완료 후 같은 스레드에 답장하는 데 쓴다.
     // handoff chain 자식(followUpInput)에는 의도적으로 미전달(아래 followUpInput 구성부 참조).
-    const runDispatch = (): Promise<DispatchOutcome> =>
+    //
+    // 부모 run(handoff 의 앞 워커 · 대화의 직전 턴)도 같은 방식으로 넘긴다 — 행을 만드는 순간
+    // parentId 가 적혀 시작 알림(run.started)에 실린다. 예전처럼 끝난 뒤 outcome.agentRunId 로
+    // 되돌아가 적으면 시작 순간엔 비어 있었고, 워커가 예외로 끝나면 아예 안 적혔다.
+    // 과거 실행 id 를 재사용하는 경로(CAREER_MATE 의 RENDER_*)는 새 행을 열지 않으니 claim 할
+    // 일이 없다 — 그 행이 남의 자식으로 둔갑하던 위험(#629)도 구조적으로 사라진다.
+    // 0 은 "유효 run 없음" sentinel 이다(슬랙 대화 메모리가 그대로 넘겨준다) — 부모로 쓰지 않는다.
+    const parentAgentRunId = input.contextRefs?.agentRunId;
+    const dispatchOnce = (): Promise<DispatchOutcome> =>
       dispatcher.dispatch({
         ...input,
         agentTypeHint: agentType,
         conversationContext,
       });
+    const runDispatch = (): Promise<DispatchOutcome> =>
+      parentAgentRunId !== undefined && parentAgentRunId > 0
+        ? runWithParentRun(parentAgentRunId, dispatchOnce)
+        : dispatchOnce();
     const outcome =
       routing === undefined
         ? await runDispatch()
@@ -194,31 +206,6 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
     this.logger.log(
       `Router dispatch 완료 — agentType=${agentType} agentRunId=${outcome.agentRunId} model=${outcome.modelUsed} depth=${chain.depth}`,
     );
-
-    // step 8 — handoff chain audit log. parent.id 가 input.contextRefs 에 실려오면 child run 의
-    // parentId 컬럼에 기록. 실패는 audit 누락에 그치므로 chain 진행 자체를 멈추지 않는다.
-    const parentAgentRunId = input.contextRefs?.agentRunId;
-    // agentRunId 0 은 "유효 run 없음" sentinel (deterministic/UNKNOWN 분기) — setParentId(id:0) 가
-    // Prisma P2025 를 던지므로 가드한다 (career-mate UNKNOWN · vacation LIST 등 공통).
-    // reusedAgentRun 이 서면 그 id 는 **과거 실행**의 것이다 — 이번 chain 의 부모를 적어 넣으면
-    // 그 행이 다른 요청의 자식으로 둔갑한다 (#629 가 라우팅 근거 쪽에만 걸어 둔 가드를 이쪽에도 건다).
-    if (
-      parentAgentRunId !== undefined &&
-      outcome.agentRunId > 0 &&
-      !outcome.reusedAgentRun
-    ) {
-      try {
-        await this.agentRunService.setParentId({
-          id: outcome.agentRunId,
-          parentId: parentAgentRunId,
-        });
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : String(error);
-        this.logger.warn(
-          `Router parentId 기록 실패 — childRunId=${outcome.agentRunId} parentRunId=${parentAgentRunId}: ${message}`,
-        );
-      }
-    }
 
     const currentResult: DispatchResult = {
       agentRunId: outcome.agentRunId,
