@@ -30,6 +30,7 @@ const buildClientMock = (
   resolveReviewThread: jest.fn(),
   commitFileToBranch: jest.fn(),
   getFileFromBranch: jest.fn(),
+  searchCode: jest.fn(),
 });
 
 describe('ListAssignedTasksUsecase', () => {
