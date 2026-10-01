@@ -11,16 +11,17 @@ import * as THREE from "three";
 import { existsSync, readFileSync } from "node:fs";
 import { BUILDERS, buildFurniture, missingKinds } from "./three/furniture3d/index.js";
 import * as sharedWallArt from "./three/furniture3d/wallArt.js";
-import { PALETTE, WALL_MOUNT } from "./three/style.js";
+import { PALETTE, WALL_MOUNT, SCALE, artMat } from "./three/style.js";
 import {
   SHIRT_SKIN_MIN_DISTANCE,
   distinctShirt,
   makeCharacter,
+  poseCharacter,
   seatOffset,
   shirtSkinDistance,
 } from "./three/character.js";
 import { Office3DRenderer } from "./three/renderer3d.js";
-import { COZY_LOOKS, cozyLookFor } from "./three/cozy-looks.js";
+import { COZY_LOOKS, PRESIDENT_COZY_LOOK, cozyLookFor } from "./three/cozy-looks.js";
 import { azimuthFor } from "./three/renderer3d.js";
 
 /** 부품 수 상한 — 이보다 많으면 레퍼런스의 뭉툭한 톤을 벗어나 잔손질이 된다. */
@@ -79,26 +80,90 @@ for (const [kind, builder] of Object.entries(BUILDERS)) {
 const characterLooks = [
   ...COZY_LOOKS.map((_, index) => ({ cozyAsset: index })),
   { cozyAsset: -1 },
+  { sheet: "president", cozy: PRESIDENT_COZY_LOOK },
   ...["char", "charb", "charc", "chard", "chare"].map((sheet) => ({ sheet, shirt: [0.9, 0.5, 0.4], pants: [0.2, 0.2, 0.3], hair: [0.3, 0.2, 0.1] })),
 ];
+const characterCosts = [];
+for (const name of ["face-open", "face-soft"]) {
+  const material = artMat(name);
+  assert.equal(material, artMat(name), "표정별 재질은 공유해야 한다");
+  assert.equal(material.map, null, "Node에서 텍스처를 읽으면 안 된다");
+  assert.equal(material.userData.paletteKey, `art:${name}`);
+  const png = readFileSync(new URL(`./three/textures/${name}.png`, import.meta.url));
+  assert.equal(png.subarray(1, 4).toString(), "PNG");
+  assert.ok(png.readUInt32BE(16) <= 512 && png.readUInt32BE(20) <= 512, "얼굴 데칼은 512px 이하");
+  assert.equal(png[25], 6, "얼굴 데칼에는 RGBA 투명 채널이 필요하다");
+}
 for (const look of characterLooks) {
   const sheet = look.sheet ?? `cozy ${look.cozyAsset}`;
   const figure = makeCharacter(look);
+  const cost = { sheet, meshes: 0, shadows: 0, triangles: 0 };
   figure.traverse((node) => {
-    if (!node.isMesh || node.userData.isOutline) {
+    if (!node.isMesh) {
+      return;
+    }
+    // 숨긴 서류와 외곽선도 포함: 자세 전환으로 보이게 되어도 비용 상한을 지킨다.
+    cost.meshes += 1;
+    cost.shadows += Number(node.castShadow);
+    cost.triangles += (node.geometry.index?.count ?? node.geometry.attributes.position.count) / 3;
+    if (node.userData.isOutline) {
       return;
     }
     const key = node.material.userData.paletteKey ?? "";
-    if (!(key in PALETTE) && !key.startsWith("tone:")) {
+    if (!(key in PALETTE) && !key.startsWith("tone:") && !key.startsWith("art:")) {
       failures.push(`캐릭터 ${sheet}: 톤 보정을 거치지 않은 재질(${key || "직접 만든 재질"})`);
     }
+    if (key.startsWith("art:") && (!node.userData.noOutline || node.userData.hasOutline)) {
+      failures.push(`캐릭터 ${sheet}: 얼굴 데칼에 외곽선이 있다`);
+    }
   });
+  for (const [metric, maximum] of [["meshes", 80], ["shadows", 30], ["triangles", 6000]]) {
+    if (cost[metric] > maximum) {
+      failures.push(`캐릭터 ${sheet}: ${metric} ${cost[metric]} (상한 ${maximum})`);
+    }
+  }
+  if (look.cozyAsset !== undefined) {
+    characterCosts.push(cost);
+  }
   const box = new THREE.Box3().setFromObject(figure, true);
   if (Math.abs(box.max.y - 0.92) > 0.05) {
     failures.push(`캐릭터 ${sheet}: 키 ${box.max.y.toFixed(3)} 가 기준 0.92 에서 벗어난다`);
   }
+  const { body, legs, arms, head, papers } = figure.userData;
+  assert.equal(legs.length, 2);
+  assert.equal(arms.length, 2);
+  const standing = { seated: false, facing: "down", pose: "down" };
+  poseCharacter(figure, standing, 0);
+  const headHome = head.position.clone();
+  for (const [interactionPose, seat] of [[null, SCALE.chairSeat], ["sitting", SCALE.sofaSeat]]) {
+    poseCharacter(figure, { ...standing, seated: true, interactionPose }, 0);
+    figure.updateMatrixWorld(true);
+    for (const leg of legs) {
+      assert.equal(leg.hip.rotation.x, -Math.PI / 2);
+      assert.equal(leg.knee.rotation.x, Math.PI / 2);
+      assert.ok(Math.abs(leg.hip.getWorldPosition(new THREE.Vector3()).y - seat - 0.03) < EPSILON,
+        `${sheet}: 착석 엉덩이 피벗이 좌판에 맞지 않는다`);
+      assert.ok(new THREE.Box3().setFromObject(leg.knee, true).min.y >= -EPSILON,
+        `${sheet}: 착석 발이 바닥 아래로 내려간다`);
+    }
+  }
+  poseCharacter(figure, { ...standing, pose: "down-walk1" }, 0.1);
+  assert.ok(legs[0].hip.rotation.x * legs[1].hip.rotation.x < 0, `${sheet}: 걷기 좌우 다리 교대`);
+  poseCharacter(figure, { ...standing, pressure: 2 }, 0, { slump: true });
+  assert.ok(papers.visible && head.rotation.x > 0, `${sheet}: 서류·실패 자세`);
+  poseCharacter(figure, { ...standing, cue: "pulse", cueSeconds: 1, cueRemaining: 0.5 }, 0);
+  assert.ok(figure.scale.x > 1, `${sheet}: pulse 몸짓`);
+  poseCharacter(figure, standing, 0);
+  assert.ok(!papers.visible && head.position.equals(headHome) && figure.scale.x === 1,
+    `${sheet}: 평상시 복귀`);
+  assert.ok(legs.every((leg) => leg.hip.rotation.x === 0 && leg.knee.rotation.x === 0));
+  assert.equal(body.position.y, 0);
   checked += 1;
 }
+console.log(`원화 21종 비용: ${["meshes", "shadows", "triangles"].map((metric) => {
+  const values = characterCosts.map((cost) => cost[metric]);
+  return `${metric} 평균 ${(values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(1)} 최대 ${Math.max(...values)}`;
+}).join(" / ")}`);
 
 // 카메라 방위 — 가로로 넓은 창은 확정 각(32°), 정사각형 이하는 15°, 사이는 선형. 높이 0 도 터지지 않아야 한다.
 const near = (actual, expected) => Math.abs(actual - expected) < 1e-9;

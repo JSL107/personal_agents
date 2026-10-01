@@ -96,6 +96,42 @@ export const WALL_MOUNT = Object.freeze({ backZ: -0.45, maxDepth: 0.14, maxHeigh
 
 const materials = new Map();
 
+// 미리보기는 한 프레임만 그린다. 모듈 준비가 끝나기 전에 두 표정을 읽어 두면
+// 렌더러 수정 없이도 첫 프레임에 얼굴이 나오고, 모든 직원이 같은 텍스처를 공유한다.
+// Node 스타일 검사는 DOM 없이 같은 재질 계약을 사용한다.
+const artTextures = new Map();
+const artMaterials = new Map();
+const faceArtNames = ["face-open", "face-soft"];
+if (typeof document !== "undefined") {
+  const loader = new THREE.TextureLoader();
+  await Promise.all(faceArtNames.map(async (name) => {
+    const texture = await loader.loadAsync(new URL(`./textures/${name}.png`, import.meta.url).href);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    artTextures.set(name, texture);
+  }));
+}
+
+/** 원화에서 추출한 얼굴 데칼. 원화 색을 유지하고 머리 표면 위에 투명하게 합성한다. */
+export function artMat(name) {
+  if (!faceArtNames.includes(name)) {
+    throw new Error(`등록되지 않은 얼굴 원화: ${name}`);
+  }
+  if (!artMaterials.has(name)) {
+    const material = new THREE.MeshBasicMaterial({
+      map: artTextures.get(name) ?? null,
+      transparent: true,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+      toneMapped: false,
+    });
+    material.userData.paletteKey = `art:${name}`;
+    artMaterials.set(name, material);
+  }
+  return artMaterials.get(name);
+}
+
 /** 팔레트 이름 → 재질. 같은 이름은 같은 재질 객체를 돌려준다(그릴 때 묶이기 쉽다). */
 export function mat(key) {
   if (!(key in PALETTE)) {
