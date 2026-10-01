@@ -103,6 +103,23 @@ describe('parsePullRequestReview', () => {
     );
   });
 
+  it('summary 가 문장 배열이면 빈 문장을 빼고 줄바꿈으로 이어 문자열로 돌려준다', () => {
+    const sentences = {
+      ...valid,
+      summary: [' 첫 문장이다.', '', '둘째 문장이다. '],
+    };
+    expect(parsePullRequestReview(JSON.stringify(sentences)).summary).toBe(
+      '첫 문장이다.\n둘째 문장이다.',
+    );
+  });
+
+  it('summary 배열에 문자열이 아닌 원소가 있으면 예외', () => {
+    const broken = { ...valid, summary: ['문장', 1] };
+    expect(() => parsePullRequestReview(JSON.stringify(broken))).toThrow(
+      CodeReviewerException,
+    );
+  });
+
   it('mustFix 가 string[] 가 아니면 예외', () => {
     const broken = { ...valid, mustFix: [1, 2] };
     expect(() => parsePullRequestReview(JSON.stringify(broken))).toThrow(
