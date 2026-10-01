@@ -11,6 +11,7 @@
     "check:style": "node scripts-check-style.mjs",
     "check:pace": "node scripts-check-pace.mjs",
     "check:merge": "node scripts-check-merge.mjs",
+    "check:labels": "node scripts-check-labels.mjs",
     "vendor:three": "node scripts-vendor-three.mjs",
     "check:layouts": "node -e \"for (const name of ['layout-3.json', 'layout-2.json']) { if (!require('fs').existsSync(name)) { throw new Error(name + ' 이 없다 — README 의 평면도 뽑기를 먼저 하라. 없는 채로 빌드하면 텅 빈 사무실이 설치된다.'); } }\"",
     "check": "env -u ELECTRON_RUN_AS_NODE electron . --self-check",

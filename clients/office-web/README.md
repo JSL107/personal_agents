@@ -139,6 +139,8 @@ pnpm capture   # 사무실을 한 판 그려 /tmp/idaeri-office.png 로 저장�
   바닥을 눌러 선택이 풀리면 `office:deselect` 사건을 `window` 에 낸다(맥 앱이 WKWebView 로 얹을 때 받는 자리).
 - **이름표** — 전원 늘 띄운다. 일하는 중·승인 대기·실패인 사람은 또렷하게, 나머지는 흐린 판으로
   둬서 활성 신호가 묻히지 않게 한다. 마우스를 올리면 이름 옆에 상태·하는 일까지 보인다.
+  회의석처럼 붙어 선 사람들의 판이 서로·문패와 포개지면, 앞에 선 사람 판은 두고 뒤의 판만 가장 가까운
+  빈 자리(옆·위)로 비킨다(`three/label-separation.js`). 포개지지 않은 판은 움직이지 않는다.
 - **배치 고르기** — 3열·2열 중 무엇을 쓸지 3D 카메라로 실제 담기는 크기를 재서 고른다. 2D 산식
   (`폭/열 · 높이/행`)은 비스듬히 돌린 조감에 안 맞아 세로로 긴 창에서 빈 여백이 커졌다.
 - **그림체는 코드가 강제한다** — 색은 `three/style.js` 의 `PALETTE` 이름으로만, 형태는 둥근 상자·
@@ -165,6 +167,7 @@ pnpm capture   # 사무실을 한 판 그려 /tmp/idaeri-office.png 로 저장�
 pnpm check:style                          # 팔레트·크기·벽걸이 규칙
 pnpm check:pace                           # 프레임 건너뛰기(멈춤 1fps · 걷기 30fps · 변화는 즉시)
 pnpm check:merge                          # 합친 뒤에도 삼각형 수·경계 상자가 그대로인지
+pnpm check:labels                         # 이름표 겹침 풀기(회의석 넷·문패 피하기·스친 판은 그대로)
 node scripts-check-style.mjs --require-all # + 평면도의 모든 가구가 제 빌더를 가졌는지
 pnpm vendor:three                          # three.js 버전을 올린 뒤 vendor/three 를 다시 채운다
 ```
