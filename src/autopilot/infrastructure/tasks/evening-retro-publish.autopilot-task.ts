@@ -17,6 +17,7 @@ import {
 import { groupPrRefsByRepo } from '../../../agent/career-mate/domain/group-pr-refs';
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { RunVerdictFacet } from '../../../agent-run/domain/run-verdict';
 import { getKstDayStartAsUtc } from '../../../common/util/kst-date.util';
 import {
   classifyRepoSource,
@@ -291,7 +292,20 @@ export class EveningRetroPublishTask implements AutopilotTask {
         });
       }
 
-      return { skip: false, summaryText, detailText, previews };
+      // 판정 버튼 — 문제 칸이 빈 날은 「지어냈나」 를 물을 대상이 없어 그 축을 내지 않는다
+      // (KPT 설계 §3-2 의 사람 판정 자리. 형식이 깨진 회차도 문제 칸이 없으니 같다).
+      const verdictFacets: RunVerdictFacet[] =
+        parsed.retrospective.problem?.trim()
+          ? ['retro_problem', 'overall']
+          : ['overall'];
+
+      return {
+        skip: false,
+        summaryText,
+        detailText,
+        previews,
+        runVerdict: { agentRunId: outcome.agentRunId, facets: verdictFacets },
+      };
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(`저녁 회고 생성 실패 — 텍스트 fallback: ${message}`);

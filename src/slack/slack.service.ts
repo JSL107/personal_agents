@@ -12,6 +12,7 @@ import {
   ChatPostMessageResponse,
 } from '@slack/web-api';
 
+import { RunVerdictFacet } from '../agent-run/domain/run-verdict';
 import { appendIntegrationHint } from '../common/domain/integration-failure-hint';
 import { PreviewCardMessage } from '../preview-gate/domain/preview-action.type';
 import {
@@ -23,6 +24,7 @@ import {
   toReadableSlackArgs,
 } from './format/message-blocks.builder';
 import { buildPreviewBlocks } from './format/preview-message.builder';
+import { buildRunVerdictBlocks } from './format/run-verdict-message.builder';
 import { recordSlackSendLength } from './format/slack-send-length.recorder';
 import { buildSubconsciousProposalBlocks } from './format/subconscious-proposal-message.builder';
 
@@ -292,21 +294,32 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     threadTs,
     unfurlLinks,
     image,
+    runVerdict,
   }: {
     target: string;
     text: string;
     threadTs?: string;
     unfurlLinks?: boolean;
     image?: { fileId: string; altText: string };
+    runVerdict?: { agentRunId: number; facets: RunVerdictFacet[] };
   }): Promise<{ ts: string | undefined }> {
     const origin = threadTs ? 'push-thread' : 'push';
     const response = await this.postChat({
       channel: target,
       // 이대리가 먼저 밀어내는 경로 — 계측에서 슬래시·멘션 응답과 갈라 본다(설계서 §7-5).
       // 스레드 댓글은 본문과 길이 성격이 달라 따로 센다(cron 상세가 이 경로다).
-      ...(image
-        ? toImageAttachedSlackArgs(text, image, origin)
-        : toReadableSlackArgs(text, origin)),
+      ...(runVerdict
+        ? {
+            text,
+            blocks: buildRunVerdictBlocks({
+              agentRunId: runVerdict.agentRunId,
+              facets: runVerdict.facets,
+              verdicts: {},
+            }) as never,
+          }
+        : image
+          ? toImageAttachedSlackArgs(text, image, origin)
+          : toReadableSlackArgs(text, origin)),
       ...(threadTs ? { thread_ts: threadTs } : {}),
       // 미디어(썸네일)도 함께 꺼야 한다 — unfurl_links 만 끄면 이미지가 딸린 링크는
       // 여전히 펼쳐진다. 값을 안 주면 슬랙 기본값(켜짐)이라 기존 발송은 그대로다.
