@@ -128,6 +128,12 @@ const motionDemo = query.has("motion");
  */
 const chatterDemo = query.has("chatter");
 /**
+ * `?meeting=1` — 회의 지시(일일 평가 회의 구성)를 흘려 참석자가 전원 회의 자리에 선 뒤 그 초만큼 더 진행시킨다.
+ * 회의는 맥 앱이 `intent` 로 밀어 줘야만 열려 브라우저·캡처에서는 안 뜬다. `?meeting=12` 처럼 머무는
+ * 시간보다 길게 주면 흩어져 자리로 돌아간 뒤를 그린다. 누가 어디 섰는지는 `data-meeting-report`.
+ */
+const meetingDemo = query.has("meeting") ? Number(query.get("meeting")) || 0 : null;
+/**
  * `?renderer=3d` — three.js 3D 렌더러로 그린다(시험 단계, 기본은 2D).
  *
  * 걷기·출퇴근·줄서기는 이 파일이 그대로 정하고, 렌더러만 바뀐다. three.js 는 3D 를 고른
@@ -165,6 +171,14 @@ let zoneColumns = 3;
 /** 마지막으로 산책을 나간 시각(초). 같은 사람이 연달아 나가지 않게 한다. */
 const lastStrollAt = {};
 const strolling = new Set();
+/**
+ * 회의 자리에 가 있는 참석자 — **회의를 연 사람(`thenWorking`)은 뺀다.**
+ *
+ * 실제 일이 들어오면 배회처럼 회의도 끊어야 하는데(관제 신호가 연출을 이긴다), 회의를 연 사람에게는
+ * 백엔드가 `run.started` 직후 `IN_PROGRESS` 를 보낸다. 그 사람까지 여기 넣으면 회의가 열리자마자
+ * 주최자만 자리로 돌아간다. 걸음을 새로 지시하는 `walkTo` 가 지운다.
+ */
+const meeting = new Set();
 let lastTickAt = 0;
 /** 백엔드가 준 승인 카드. 줄 세우기와 방치 압력의 입력이다. */
 let approvals = [];
@@ -339,6 +353,7 @@ function sendHome(agentType) {
     path: null,
   };
   strolling.delete(agentType);
+  meeting.delete(agentType);
 }
 
 /**
@@ -350,6 +365,7 @@ function sendHome(agentType) {
 function despawn(agentType) {
   delete bodies[agentType];
   strolling.delete(agentType);
+  meeting.delete(agentType);
   commuting.delete(agentType);
   departing.delete(agentType);
 }
@@ -734,6 +750,7 @@ function walkTo(agentType, goal, options = {}) {
   // 들어와 복귀). 맥 앱은 배회가 액션이라 `cancelStroll` 이 통째로 지우는데, 이쪽은 상태값이라
   // 걸음을 지시하는 이 한 곳에서 끊어야 한 군데만 고쳐도 셋이 같이 낫는다.
   body.dwellRemaining = 0;
+  meeting.delete(agentType);
   return true;
 }
 
@@ -889,6 +906,47 @@ function handoff(from, to) {
   });
 }
 
+/**
+ * 회의 — 참석자가 회의실 테이블 둘레에 모였다가 흩어진다(2D `holdMeeting`).
+ *
+ * 누가 오는지는 앱이 정해 넘긴 순서 그대로다(`visualIntents` — 바쁜 사람·3명 미만 판정은 거기 있다).
+ * 자리는 평면도가 싣고 온 `meetingSeats` 를 앞에서부터 채운다. 머무름이 끝나면 `advanceBodies` 가
+ * 각자 자리로 돌려보내고, 회의를 연 사람은 자리에 앉아 `IN_PROGRESS` 로 일하는 모습이 된다.
+ * 줄·출퇴근 중인 사람은 그 걸음이 우선이라 부르지 않는다.
+ */
+function holdMeeting(agentTypes, thenWorking) {
+  const seats = renderer.layout.meetingSeats ?? [];
+  // 동작 줄이기면 걷지 않는다 — 인계와 같다. 모였다 흩어지면 결과가 제자리다.
+  if (reduceMotion || seats.length === 0) {
+    return;
+  }
+  const table = renderer.plan.furniture.find((placement) => placement.kind === "meetingTable")?.tile;
+  let assigned = 0;
+  for (const agentType of agentTypes) {
+    if (assigned >= seats.length) {
+      break;
+    }
+    if (queueOrder.includes(agentType) || commuting.has(agentType) || departing.has(agentType)) {
+      continue;
+    }
+    const seat = seats[assigned];
+    strolling.delete(agentType);
+    if (
+      !walkTo(agentType, seat, {
+        dwellSeconds: renderer.layout.meetingDwellSeconds,
+        facing: table ? facingBetween(seat, table) : null,
+        kind: "회의",
+      })
+    ) {
+      continue;
+    }
+    assigned += 1;
+    if (agentType !== thenWorking) {
+      meeting.add(agentType);
+    }
+  }
+}
+
 /** 머리 위에 잠깐 뜨는 한 마디(거절 `!`·배회 대사가 같은 자리를 쓴다). */
 function flash(agentType, text) {
   const body = bodies[agentType];
@@ -969,6 +1027,8 @@ function reject(agentType) {
 function performIntent(intent) {
   if (intent.kind === "handoff") {
     handoff(intent.from, intent.to);
+  } else if (intent.kind === "meeting") {
+    holdMeeting(intent.agentTypes ?? [], intent.thenWorking);
   } else if (intent.kind === "reject") {
     reject(intent.agentType);
   }
@@ -1341,7 +1401,8 @@ function applyStreamPayload(payload) {
       agents[agentType] = { ...agents[agentType], bubble: payload.bubble };
     }
     // 일이 시작되면 자리로 돌아온다 — 복도에 선 채 "진행 중" 인 화면은 읽히지 않는다.
-    if (payload.state === "IN_PROGRESS" && strolling.has(agentType)) {
+    // 회의 참석자도 같다(회의를 연 사람은 `meeting` 에 없어 회의를 마치고 돌아간다).
+    if (payload.state === "IN_PROGRESS" && (strolling.has(agentType) || meeting.has(agentType))) {
       const seat = seatOf(agentType);
       strolling.delete(agentType);
       if (seat) {
@@ -1377,7 +1438,8 @@ function postToHost(message) {
  *
  * - `snapshot` 지금 상태 전부(백엔드 스냅샷과 같은 모양 — 앱이 받은 것을 그대로 다시 싣는다)
  * - `event`    상태가 바뀐 사람 한 명(`{agentType, state, bubble}`)
- * - `intent`   연출 지시 하나(`{kind: "handoff", from, to}` · `{kind: "reject", agentType}`)
+ * - `intent`   연출 지시 하나(`{kind: "handoff", from, to}` · `{kind: "meeting", agentTypes, thenWorking}` ·
+ *              `{kind: "reject", agentType}`)
  * - `pending`  내가 보낸 지시의 단계 전부(`{agentType: 단계}`)
  * - `sleep`    창이 가려졌다/다시 보인다
  * - `select`   앱에서 인스펙터가 닫혔다(null) 등 — 발밑 선택 링을 맞춘다
@@ -1734,6 +1796,41 @@ async function main() {
         console.log(report);
         document.body.dataset.motionReport = report;
       }
+    }
+    if (meetingDemo !== null) {
+      // 실제 회의 하나(매일 19시 일일 평가)와 같은 구성. 평면도에 없으면 앞쪽 좌석 넷으로 대신한다.
+      const real = ["WORK_REVIEWER", "PO_SHADOW", "IMPACT_REPORTER", "PO_EVAL"];
+      const attendees = real.every((agentType) => bodies[agentType])
+        ? real
+        : renderer.plan.desks.map((desk) => desk.agentType).filter((agentType) => bodies[agentType]).slice(0, 4);
+      const host = attendees[attendees.length - 1];
+      performIntent({ kind: "meeting", agentTypes: attendees, thenWorking: host });
+      // 앱이 실제로 보내는 순서 그대로 — `run.started` 의 회의 지시 뒤에 주최자의 `IN_PROGRESS` 가 온다.
+      applyStreamPayload({ agentType: host, state: "IN_PROGRESS" });
+      const step = 1 / 60;
+      let elapsed = 0;
+      while (elapsed < 60 && !attendees.every((agentType) => bodies[agentType]?.dwellRemaining > 0)) {
+        advanceBodies(step);
+        elapsed += step;
+      }
+      const arrivedAt = elapsed;
+      advanceVirtually(meetingDemo);
+      const seats = renderer.layout.meetingSeats ?? [];
+      const placed = attendees.map((agentType) => {
+        const body = bodies[agentType];
+        const tile = roundedTile(body);
+        const where = seats.some((seat) => seat.x === tile.x && seat.y === tile.y)
+          ? "회의석"
+          : body.seated
+            ? "자기 자리"
+            : body.path
+              ? "걷는 중"
+              : "기타";
+        return `${agentType}${agentType === host ? "(주최)" : ""}:${where}(${tile.x},${tile.y})→${body.facing}`;
+      });
+      const report = `회의 ${attendees.length}명 · 모이는 데 ${arrivedAt.toFixed(1)}초 · 그 뒤 ${meetingDemo}초 [${placed.join(", ")}]`;
+      console.log(report);
+      document.body.dataset.meetingReport = report;
     }
     // 인원을 숫자로도 남긴다. 그림만 보면 출근 규칙이 통째로 빠져도 새벽 화면은 원래
     // 빈 사무실과 구분되지 않아 통과한다(맥 앱이 시각별 착석 인원을 직접 세는 것과 같은 이유).
