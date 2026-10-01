@@ -20,6 +20,15 @@
 // 부를 수 있어야 `--self-check` 가 그 어긋남을 잡는다.
 
 /** 라벨 글자 상자의 실제 높이(px). 글자 크기에 외곽선 몫을 더한다. */
+/**
+ * 말풍선(하는 일)을 띄우는 상태 — 일하는 중·승인 대기만. 맥 2D 의 `agentTokenInfo`(`isActive`)와 같은 규칙이다.
+ * 예전 웹은 "쉬는 중" 만 뺐는데, 그러면 일을 마친 사람의 "완료했어요!" 가 상태가 바뀔 때까지 남아
+ * 조감 화면에 말풍선이 여덟 개씩 떠 있었다(사용자 보고). 3D(`renderer3d.js`)도 이 함수를 쓴다.
+ */
+export function showsBubble(state) {
+  return state === "IN_PROGRESS" || state === "AWAITING_APPROVAL";
+}
+
 export function labelBoxHeight(metrics, fontSize) {
   return fontSize + metrics.labelBoxOverhead;
 }
@@ -1431,7 +1440,7 @@ export class OfficeRenderer {
     // 말풍선은 이름표보다 한 층 더 위다. 아래를 고정하고 위로 자라게 해야 두 줄이 될 때
     // 사람 머리와 이름표를 덮지 않는다.
     const bubble = agent?.bubble;
-    if (!bubble || state === "WAITING") {
+    if (!bubble || !showsBubble(state)) {
       return;
     }
     const clearance = bubbleBottomOffset(this.metrics, this.tileSize, fontSize);

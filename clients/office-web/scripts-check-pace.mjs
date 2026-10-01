@@ -94,4 +94,10 @@ const landed = { bodies: { ...base.bodies, PM: { ...seated, cue: "hop", cueSecon
 assert.equal(sign(landed).moving, false);
 assert.notEqual(sign(hopping).signature, sign(landed).signature);
 
+// 말풍선 규칙 — 맥 2D(`agentTokenInfo`)와 같이 일하는 중·승인 대기만. 완료·실패에 띄우면 조감 화면이 말풍선으로 덮인다.
+const { showsBubble } = await import("./office.js");
+for (const [state, expected] of [["IN_PROGRESS", true], ["AWAITING_APPROVAL", true], ["COMPLETED", false], ["FAILED", false], ["WAITING", false], ["AWAITING_INTEGRATION", false]]) {
+  assert.equal(showsBubble(state), expected, `${state} 의 말풍선`);
+}
+
 console.log("✅ 3D 프레임 건너뛰기 검증 통과");
