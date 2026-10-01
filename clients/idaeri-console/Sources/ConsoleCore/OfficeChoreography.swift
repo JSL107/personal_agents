@@ -438,10 +438,15 @@ public func visualIntents(for event: ConsoleEvent, context: ChoreographyContext)
         if participants.count >= officeMeetingMinimumParticipants {
             return [.meeting(agentTypes: participants, thenWorking: run.agentType)]
         }
-        if let parentId = run.parentId,
-           let parent = context.runs.first(where: { $0.id == parentId }),
-           knows(parent.agentType) {
-            return [.handoff(from: parent.agentType, to: run.agentType), .working(agentType: run.agentType)]
+        // 둘뿐이면 1:1 전달. 넘긴 사람은 부모(위임)가 우선이고, 없으면 읽어 간 결과의 주인이다
+        // (PO 가 PM 계획을 읽어 점검하는 것 — 결과를 건네받는 모양이 같다).
+        let parentAgentType = run.parentId
+            .flatMap { parentId in context.runs.first(where: { $0.id == parentId }) }
+            .map(\.agentType)
+            .flatMap { knows($0) ? $0 : nil }
+        let sourceAgentType = run.participants.last { $0 != run.agentType && knows($0) }
+        if let from = parentAgentType ?? sourceAgentType {
+            return [.handoff(from: from, to: run.agentType), .working(agentType: run.agentType)]
         }
         return [.working(agentType: run.agentType)]
 

@@ -144,6 +144,30 @@ func runModelsTests(_ t: TestRunner) {
     // FAILED rawValue 가 .failed 로 디코딩된다.
     t.expectEqual(ConsoleAgentState(rawValue: "FAILED"), .failed, "FAILED rawValue 디코딩")
 
+    // run.started 의 participants — 실려 오면 그대로, 없는 옛 백엔드 이벤트면 빈 목록.
+    // 없는 필드에서 디코딩이 실패하면 이벤트가 통째로 버려져 사람이 자리로도 안 간다.
+    do {
+        let withParticipants = """
+        {"type":"run.started","run":{"id":"9","agentType":"PO_EVAL","status":"IN_PROGRESS","parentId":"3","participants":["WORK_REVIEWER","PO_SHADOW"],"startedAt":"t","finishedAt":null}}
+        """.data(using: .utf8)!
+        let legacy = """
+        {"type":"run.started","run":{"id":"9","agentType":"PM","status":"IN_PROGRESS","parentId":null,"startedAt":"t","finishedAt":null}}
+        """.data(using: .utf8)!
+        if case let .runStarted(run) = try JSONDecoder().decode(ConsoleEvent.self, from: withParticipants) {
+            t.expectEqual(run.participants, ["WORK_REVIEWER", "PO_SHADOW"], "participants 디코딩")
+            t.expectEqual(run.parentId, "3", "parentId 디코딩")
+        } else {
+            t.fail("run.started 로 디코딩되어야 함")
+        }
+        if case let .runStarted(run) = try JSONDecoder().decode(ConsoleEvent.self, from: legacy) {
+            t.expectEqual(run.participants, [], "participants 없는 이벤트는 빈 목록")
+        } else {
+            t.fail("participants 없는 run.started 도 디코딩되어야 함")
+        }
+    } catch {
+        t.fail("run.started participants 디코딩 실패: \(error)")
+    }
+
     // ConsoleEvent 유니온 — state.changed
     do {
         let json = """

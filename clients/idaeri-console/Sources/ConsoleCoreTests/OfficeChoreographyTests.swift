@@ -637,6 +637,84 @@ func runOfficeMeetingTests(_ t: TestRunner) {
         "같은 사람이 체인에 두 번 나와도 한 번만"
     )
 
+    // MARK: 읽어 간 사람(participants)으로 여는 회의 — 일일 평가·주간 CEO·아침 계획
+
+    // 일일 평가는 부모 없이 출처 셋을 읽는다. 출처는 몇 시간 전 실행이라 runs 에 없다 —
+    // 그래도 사람(agentType)이 실려 오므로 회의가 열려야 한다.
+    let evalAgents = [
+        makeAgent("WORK_REVIEWER", .completed), makeAgent("PO_SHADOW", .completed),
+        makeAgent("IMPACT_REPORTER", .completed), makeAgent("PO_EVAL", .waiting),
+        makeAgent("PM", .completed), makeAgent("CEO", .waiting),
+    ]
+    let evalContext = ChoreographyContext(agents: evalAgents, runs: [], pendingCommands: [])
+    let evalRun = ConsoleRun(
+        id: "e1", agentType: "PO_EVAL", status: "IN_PROGRESS", parentId: nil,
+        participants: ["WORK_REVIEWER", "PO_SHADOW", "IMPACT_REPORTER"],
+        startedAt: "t", finishedAt: nil
+    )
+    t.expectEqual(
+        visualIntents(for: .runStarted(evalRun), context: evalContext),
+        [.meeting(agentTypes: ["WORK_REVIEWER", "PO_SHADOW", "IMPACT_REPORTER", "PO_EVAL"], thenWorking: "PO_EVAL")],
+        "일일 평가 — 읽어 간 셋 + 본인이 회의실에 모인다"
+    )
+
+    let ceoRun = ConsoleRun(
+        id: "w1", agentType: "CEO", status: "IN_PROGRESS", parentId: nil,
+        participants: ["PO_EVAL", "PM"], startedAt: "t", finishedAt: nil
+    )
+    t.expectEqual(
+        visualIntents(for: .runStarted(ceoRun), context: evalContext),
+        [.meeting(agentTypes: ["PO_EVAL", "PM", "CEO"], thenWorking: "CEO")],
+        "주간 CEO — PO_EVAL·PM 과 회의"
+    )
+
+    // 둘뿐이면 회의 대신 1:1 전달 — 결과 주인이 넘겨주는 모양(PO 가 PM 계획을 점검).
+    let shadowRun = ConsoleRun(
+        id: "s1", agentType: "PO_SHADOW", status: "IN_PROGRESS", parentId: nil,
+        participants: ["PM"], startedAt: "t", finishedAt: nil
+    )
+    t.expectEqual(
+        visualIntents(for: .runStarted(shadowRun), context: evalContext),
+        [.handoff(from: "PM", to: "PO_SHADOW"), .working(agentType: "PO_SHADOW")],
+        "읽어 간 사람이 하나면 그 사람이 넘겨주는 1:1 전달"
+    )
+
+    // 화면에 없는 사람은 회의에 못 온다 — 빼고 세면 둘이라 1:1 전달.
+    let ghostEvalRun = ConsoleRun(
+        id: "e2", agentType: "PO_EVAL", status: "IN_PROGRESS", parentId: nil,
+        participants: ["GHOST", "WORK_REVIEWER"], startedAt: "t", finishedAt: nil
+    )
+    t.expectEqual(
+        visualIntents(for: .runStarted(ghostEvalRun), context: evalContext),
+        [.handoff(from: "WORK_REVIEWER", to: "PO_EVAL"), .working(agentType: "PO_EVAL")],
+        "미지의 참여자를 빼고 둘이면 1:1 전달"
+    )
+
+    // 위임 계보와 읽어 간 사람은 합쳐서 센다. 자신이 participants 에 섞여 와도 맨 뒤 한 번만.
+    let mixedRuns = [makeRun("m0", "PM")]
+    let mixedRun = ConsoleRun(
+        id: "m1", agentType: "PO_EVAL", status: "IN_PROGRESS", parentId: "m0",
+        participants: ["PO_EVAL", "WORK_REVIEWER"], startedAt: "t", finishedAt: nil
+    )
+    t.expectEqual(
+        officeChainParticipants(run: mixedRun, runs: mixedRuns),
+        ["WORK_REVIEWER", "PM", "PO_EVAL"],
+        "읽어 간 사람 → 조상 → 자신 순, 자신은 맨 뒤 한 번"
+    )
+
+    // 부모가 있으면 1:1 전달은 부모가 넘긴 것으로 그린다(위임이 읽기보다 직접적이다).
+    t.expectEqual(
+        visualIntents(
+            for: .runStarted(ConsoleRun(
+                id: "m2", agentType: "PO_SHADOW", status: "IN_PROGRESS", parentId: "m0",
+                participants: ["PM"], startedAt: "t", finishedAt: nil
+            )),
+            context: ChoreographyContext(agents: evalAgents, runs: mixedRuns, pendingCommands: [])
+        ),
+        [.handoff(from: "PM", to: "PO_SHADOW"), .working(agentType: "PO_SHADOW")],
+        "부모와 출처가 같은 사람이면 둘로 세고 1:1 전달"
+    )
+
     // 순환 parentId 에서 멈춘다. 여기서 무한 루프에 빠지면 스냅샷 적용이 멈춰
     // 관제 화면 전체가 얼어붙는다.
     let cyclic = [
