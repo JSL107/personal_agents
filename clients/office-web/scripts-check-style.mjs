@@ -20,6 +20,8 @@ import {
   shirtSkinDistance,
 } from "./three/character.js";
 import { Office3DRenderer } from "./three/renderer3d.js";
+import { COZY_LOOKS, cozyLookFor } from "./three/cozy-looks.js";
+import { azimuthFor } from "./three/renderer3d.js";
 
 /** 부품 수 상한 — 이보다 많으면 레퍼런스의 뭉툭한 톤을 벗어나 잔손질이 된다. */
 const MAX_PARTS = 24;
@@ -72,10 +74,16 @@ for (const [kind, builder] of Object.entries(BUILDERS)) {
   checked += 1;
 }
 
-// 캐릭터 — 시트 다섯 종 모두. 옷·머리 색은 사람마다 달라 팔레트 밖에서 들어오지만, 그때도
+// 캐릭터 — cozy 원화 21종(직원 20 + 정비사)과, 원화 번호가 없는 옛 평면도의 시트 다섯 종. 옷·머리 색은 사람마다 달라 팔레트 밖에서 들어오지만, 그때도
 // 반드시 `toneMat`(톤 보정 문)을 거쳐야 한다. 직접 만든 재질은 톤 보정을 건너뛴 것이다.
-for (const sheet of ["char", "charb", "charc", "chard", "chare"]) {
-  const figure = makeCharacter({ sheet, shirt: [0.9, 0.5, 0.4], pants: [0.2, 0.2, 0.3], hair: [0.3, 0.2, 0.1] });
+const characterLooks = [
+  ...COZY_LOOKS.map((_, index) => ({ cozyAsset: index })),
+  { cozyAsset: -1 },
+  ...["char", "charb", "charc", "chard", "chare"].map((sheet) => ({ sheet, shirt: [0.9, 0.5, 0.4], pants: [0.2, 0.2, 0.3], hair: [0.3, 0.2, 0.1] })),
+];
+for (const look of characterLooks) {
+  const sheet = look.sheet ?? `cozy ${look.cozyAsset}`;
+  const figure = makeCharacter(look);
   figure.traverse((node) => {
     if (!node.isMesh || node.userData.isOutline) {
       return;
@@ -91,6 +99,41 @@ for (const sheet of ["char", "charb", "charc", "chard", "chare"]) {
   }
   checked += 1;
 }
+
+// 카메라 방위 — 가로로 넓은 창은 확정 각(32°), 정사각형 이하는 15°, 사이는 선형. 높이 0 도 터지지 않아야 한다.
+const near = (actual, expected) => Math.abs(actual - expected) < 1e-9;
+for (const [width, height, expected] of [
+  [1500, 1000, 32],
+  [1920, 1080, 32],
+  [1000, 1000, 15],
+  [900, 1200, 15],
+  [1250, 1000, 23.5],
+  [1000, 0, 32],
+]) {
+  const actual = azimuthFor(width, height);
+  if (!near(actual, expected)) {
+    failures.push(`방위 ${width}×${height}: ${actual} (기대 ${expected})`);
+  }
+}
+
+// 원화 번호 — 표 안은 그 번호, 정비사(-1)는 정비사, 표 밖은 접지 않고 시트 대체로.
+const warn = console.warn;
+console.warn = () => {};
+if (cozyLookFor({ cozyAsset: 3 }) !== COZY_LOOKS[3]) {
+  failures.push("원화 3 이 표의 3 이 아니다");
+}
+if (cozyLookFor({ cozyAsset: COZY_LOOKS.length, sheet: "charc" }) === COZY_LOOKS[0]) {
+  failures.push("표 밖 번호가 0 번 직원으로 접혔다 — 다른 사람 얼굴이 된다");
+}
+if (cozyLookFor({ cozyAsset: -7 }) === cozyLookFor({ cozyAsset: -1 })) {
+  failures.push("손상된 음수가 정비사로 그려진다");
+}
+for (const asset of [COZY_LOOKS.length, -7, 2.5, undefined]) {
+  if (!cozyLookFor({ cozyAsset: asset, sheet: "char" })?.hair) {
+    failures.push(`원화 번호 ${asset}: 생김새를 못 돌려준다`);
+  }
+}
+console.warn = warn;
 
 // `--require-all` — 평면도에 나오는 가구가 전부 제 빌더를 가졌는지. 빌더가 없으면 자리 표시
 // 상자로, 벽걸이가 공용 액자(`wallArt`)를 쓰면 전부 같은 그림으로 그려진다 — 둘 다 미완성이다.
