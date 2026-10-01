@@ -32,7 +32,11 @@ export const DEFAULT_MAXIMUM_DAILY_GAIN_PERCENT = Number.POSITIVE_INFINITY;
 // 후보·같은 지표에도 다른 종목이 선택될 수 있으므로, 앞 회차와 성적을 한 칸에 모으면 안 된다.
 // 6 으로 올린 이유(2026-09-30): 추천 프롬프트가 전체 지표를 직렬화하므로 investorFlow20 추가로 모델 입력이 달라진다.
 // 운영 순위 재료는 그대로이며, 수급 재료는 백테스트에서만 선택한다.
-export const SCREENER_RULE_VERSION = 6;
+//
+// 7 로 올린 이유(2026-10-01): **순위 재료**가 바뀌었다. SWING 1순위 재료가 `volumeSurge` 에서
+// `investorFlow20` 으로 바뀌어 같은 날·같은 후보에서도 다른 종목이 상위에 온다. 통과 조건(거래량
+// 급증 1.5배 이상)은 그대로라 후보 집합은 같다. LONG_TERM 은 바뀌지 않았지만 버전은 전략 공용이다.
+export const SCREENER_RULE_VERSION = 7;
 export type ScreenStrategy = 'LONG_TERM' | 'SWING';
 export type RankingWeights = readonly [number, number, number];
 export const SWING_VOLUME_SURGE_MINIMUM = 1.5;
@@ -119,9 +123,13 @@ const materialsByStrategy: Record<ScreenStrategy, RankingMaterials> = {
       descending: true,
     },
   ],
+  // 1순위가 거래량 급증이던 것을 수급으로 바꿨다(2026-10-01). 5년 재생(2021-11-01~2026-09-29)에서
+  // 거래량 급증 순위는 승률 34.05%·거래당 평균 -1.50% 로 역방향이었고, 그 칸을 직전 20봉 수급으로
+  // 채우면 46.68%·+0.14%, 앞뒤 두 구간 모두 개선됐다(비우기만 하면 39.60%·-0.72%). 거래량 급증은
+  // 통과 조건으로는 남는다. 측정 상세: docs/superpowers/plans/2026-09-30-investor-flow-ranking-material.md
   SWING: [
     {
-      select: (candidate) => candidate.indicators.volumeSurge,
+      select: (candidate) => candidate.indicators.investorFlow20,
       descending: true,
     },
     { select: (candidate) => candidate.indicators.return1m, descending: true },

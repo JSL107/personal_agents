@@ -47,10 +47,56 @@ const candidate = (
 
 describe('screenStocks', () => {
   it('장투 통과 후보가 하나면 100점이다', () => {
-    expect(SCREENER_RULE_VERSION).toBe(6);
+    expect(SCREENER_RULE_VERSION).toBe(7);
     expect(screenStocks([candidate('000001')], 'LONG_TERM', 20)).toEqual([
       expect.objectContaining({ code: '000001', score: 100 }),
     ]);
+  });
+
+  it('단타의 첫 순위 재료는 거래량 급증이 아니라 수급이다', () => {
+    const weights: [number, number, number] = [1, 0, 0];
+    const result = screenStocks(
+      [
+        candidate('000001', { volumeSurge: 5, investorFlow20: -0.1 }),
+        candidate('000002', { volumeSurge: 2, investorFlow20: 0.3 }),
+        candidate('000003', { volumeSurge: 3, investorFlow20: null }),
+      ],
+      'SWING',
+      3,
+      MINIMUM_TURNOVER60,
+      undefined,
+      undefined,
+      weights,
+    );
+
+    expect(result.map((stock) => stock.code)).toEqual([
+      '000002',
+      '000001',
+      '000003',
+    ]);
+  });
+
+  // 운영 SWING 은 백테스트에서 `--flow-slot 1` 로 잰 규칙과 같아야 한다 — 다르면 측정한 성적이 운영 성적이 아니다.
+  it('단타 기본 순위는 1번 칸을 수급으로 교체한 순위와 같다', () => {
+    const candidates = [
+      candidate('000001', { investorFlow20: 0.1, return1m: 30 }),
+      candidate('000002', { investorFlow20: 0.3, high200Position: 0.5 }),
+      candidate('000003', { investorFlow20: -0.2, return1m: 50 }),
+      candidate('000004', { investorFlow20: null, high200Position: 1 }),
+    ];
+
+    expect(screenStocks(candidates, 'SWING', 10)).toEqual(
+      screenStocks(
+        candidates,
+        'SWING',
+        10,
+        MINIMUM_TURNOVER60,
+        undefined,
+        undefined,
+        undefined,
+        1,
+      ),
+    );
   });
 
   it('수급 순위 칸만 교체하고 지정하지 않으면 기존 순위를 유지한다', () => {
