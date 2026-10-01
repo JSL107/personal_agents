@@ -167,6 +167,14 @@ final class OfficeScene: SKScene {
     private var lastSyncedPendingCommands: [PendingCommand] = []
     /// 이벤트가 오면 자율 연출을 즉시 끊을 수 있어야 하므로 완료 후 탕비실 이동도 함께 추적한다.
     private var strollingAgents: Set<String> = []
+    /// 회의를 열고, 끝나면 자리에서 일을 시작할 사람.
+    ///
+    /// 백엔드는 `run.started` 직후 같은 사람의 `IN_PROGRESS` 를 보내고 그것이 `.working` 이 된다.
+    /// 그 `.working` 은 회의가 끝날 때 `endMeeting` 이 대신하므로 여기 있는 동안은 받지 않는다 —
+    /// 받으면 회의가 열리자마자 주최자만 책상으로 돌아간다. 같은 이유로 `sync` 의 배회 끊기에서도
+    /// 뺀다(상태가 바뀌면 앱이 `sync` 를 다시 부른다). 다른 사건이 그 사람의 연출을 끊으면
+    /// (`cancelStroll`) 함께 빠진다.
+    private var meetingHosts: Set<String> = []
     /// 배율이 바뀌어도 걸음의 목적지와 도착 후 동작을 이어가기 위한 기록.
     private var walkDestinations: [String: (goal: TilePoint, completion: (() -> Void)?)] = [:]
     /// 같은 사람이 짧은 간격으로 계속 왕복하지 않게 Core 쿨다운 판정에 넘긴다.
@@ -761,7 +769,10 @@ final class OfficeScene: SKScene {
 
         // 재연결처럼 이벤트 없이 스냅샷만 갱신되는 경로에는 cancelStroll 훅이 없다.
         // 상태가 대기에서 벗어난 배회자는 여기서 끊고 자리로 돌려보낸다.
-        for agentType in strollersToStop(strolling: strollingAgents, agents: agents) {
+        // 회의를 연 사람은 뺀다 — 그 사람의 진행 상태는 회의가 끝나면 시작할 일이다(`meetingHosts`).
+        for agentType in strollersToStop(
+            strolling: strollingAgents.subtracting(meetingHosts), agents: agents
+        ) {
             cancelStroll(agentType)
             goHome(agentType)
         }
@@ -3032,6 +3043,7 @@ final class OfficeScene: SKScene {
 
     /// 관제 이벤트가 장식 연출보다 우선하므로 이동 중간 위치에서라도 즉시 제어권을 넘긴다.
     private func cancelStroll(_ agentType: String) {
+        meetingHosts.remove(agentType)
         guard strollingAgents.remove(agentType) != nil else {
             return
         }
@@ -3317,6 +3329,9 @@ final class OfficeScene: SKScene {
 
     func perform(_ intents: [VisualIntent]) {
         for intent in intents {
+            if case let .working(agentType) = intent, meetingHosts.contains(agentType) {
+                continue
+            }
             for agentType in affectedAgentTypes(of: intent) {
                 cancelStroll(agentType)
             }
@@ -3331,6 +3346,9 @@ final class OfficeScene: SKScene {
                     }
                 }
             case let .working(agentType):
+                guard !meetingHosts.contains(agentType) else {
+                    continue
+                }
                 startWorking(agentType)
             case let .handoff(from, to):
                 handoff(from: from, to: to)
@@ -3566,6 +3584,9 @@ final class OfficeScene: SKScene {
             assigned += 1
             cancelStroll(agentType)
             strollingAgents.insert(agentType)
+            if agentType == thenWorking {
+                meetingHosts.insert(agentType)
+            }
             stopWorking(node)
             walk(node, to: seat) { [weak self, weak node] in
                 if let tableTile, let direction = facing(from: seat, to: tableTile) {
@@ -3585,6 +3606,20 @@ final class OfficeScene: SKScene {
         }
     }
 
+    /// `--meeting-check` 가 읽는 한 사람의 지금 모습. 걷는 중이면 목적지, 아니면 서 있는 칸을 본다.
+    func meetingProbe(_ agentType: String) -> OfficeMeetingProbe? {
+        guard let node = characters[agentType] else {
+            return nil
+        }
+        let destination = walkDestinations[agentType]?.goal ?? node.tile
+        return OfficeMeetingProbe(
+            destination: destination,
+            onMeetingSeat: officeMeetingSeats(plan: plan).contains(destination),
+            headingHome: destination == homeDeskAssignments[agentType]?.seat,
+            tracked: strollingAgents.contains(agentType)
+        )
+    }
+
     /// 회의가 끝나면 각자 자리로. 이 일을 이어받은 사람은 자리에 앉아 곧바로 일을 시작한다.
     private func endMeeting(_ agentType: String, thenWorking: String) {
         guard strollingAgents.contains(agentType) else {
@@ -3595,6 +3630,7 @@ final class OfficeScene: SKScene {
             return
         }
         strollingAgents.remove(agentType)
+        meetingHosts.remove(agentType)
         startWorking(agentType)
     }
 
