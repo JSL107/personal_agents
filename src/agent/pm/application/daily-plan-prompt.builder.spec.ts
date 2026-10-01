@@ -181,6 +181,62 @@ describe('DailyPlanPromptBuilder', () => {
     expect(built.prompt).not.toContain('r/pup#52 (5일 연속) : PR #277');
   });
 
+  // 2026-10-01 아침 plan 재현 — 옛 매핑 버그가 PR #52 에 "PR #1149 …" 를 써 넣었고, 과거 plan 제목을
+  // 이어 쓰는 동안 그 틀린 제목이 정체 목록을 거쳐 매일 다시 저장됐다.
+  it('정체 태스크 제목은 과거 plan 에 저장된 제목보다 오늘 GitHub 제목을 먼저 쓴다', () => {
+    const summaryOf = (date: string): RecentPlanSummary => ({
+      ...buildSummary(date, 'Issue #153 group 불일치'),
+      taskIds: ['r/api#153', 'r/pup#52'],
+      taskTitleById: {
+        'r/api#153': 'Issue #153 group 불일치',
+        'r/pup#52': 'PR #1149 SMS 콘텐츠 필터',
+      },
+    });
+
+    const built = builder.build(
+      buildBaseContext({
+        githubTasks: {
+          issues: [
+            {
+              number: 153,
+              title: 'letters.within group 불일치 재현',
+              repo: 'r/api',
+              url: 'https://github.com/r/api/issues/153',
+              labels: [],
+              updatedAt: '2026-10-01T00:00:00Z',
+            },
+          ],
+          pullRequests: [
+            {
+              number: 52,
+              title: 'PDF 렌더 경로 정리',
+              repo: 'r/pup',
+              url: 'https://github.com/r/pup/pull/52',
+              draft: false,
+              updatedAt: '2026-10-01T00:00:00Z',
+              requestedReviewers: [],
+              isApproved: false,
+            },
+          ],
+        },
+        recentPlanSummaries: ['07-07', '07-06', '07-05', '07-04'].map((day) =>
+          summaryOf(`2026-${day}`),
+        ),
+      }),
+      undefined,
+      5,
+    );
+
+    expect(built.prompt).toContain(
+      'r/pup#52 (5일 연속) : PR #52 PDF 렌더 경로 정리',
+    );
+    expect(built.prompt).not.toContain('PR #1149');
+    // Issue 도 같은 규칙 — 과거 제목("group 불일치")이 아니라 오늘 GitHub 제목을 쓴다.
+    expect(built.prompt).toContain(
+      'r/api#153 (5일 연속) : Issue #153 letters.within group 불일치 재현',
+    );
+  });
+
   it('cap 초과 시 TRIM_ORDER 우선순위대로 drop — recentPlanSummaries 가 previousPlan / previousWorklog 보다 먼저 drop 된다', () => {
     // recentPlanSummaries 와 previousPlan/Worklog 모두 채워서 합쳐 16KB 초과 강제.
     // recentPlanSummaries 자체 byte 가 cap 가까이 차도록 30 entry 로 부풀린다 (한 줄당 ~70 bytes × 30 ≈ 2KB
