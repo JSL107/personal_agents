@@ -28,7 +28,8 @@ private func planAgents(_ department: Department, _ types: [String]) -> [Console
     types.map { planAgent($0, department) }
 }
 
-// 운영 스냅샷(GET /v1/console/snapshot)의 실제 28종을 그대로 옮긴 표본.
+// 운영 스냅샷(GET /v1/console/snapshot)의 실제 인원을 그대로 옮긴 표본. 인원 수는 여기 적지 않는다 —
+// 사규(`AGENT_REGISTRY`)와 같아야 하고, 어긋나면 `pnpm docs:check` 가 막는다.
 //
 // **부서는 백엔드 사규(`agent-registry/agent-contract.ts` 의 `AGENT_CONTRACTS`)가 정본이다.**
 // 예전에는 agentType 만 적고 앱의 하드코딩 매핑이 부서를 유도했는데, 그 매핑이 사규와 어긋나
