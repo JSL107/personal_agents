@@ -32,6 +32,7 @@ import { buildFurniture, missingKinds } from "./furniture3d/index.js";
 import { makeCharacter, makeStatusRing, poseCharacter, seatOffset } from "./character.js";
 import { Overlay3D } from "./overlay3d.js";
 import { PRESIDENT_COZY_LOOK } from "./cozy-looks.js";
+import { showsBubble } from "../office.js";
 import { frameSignature, shouldRender } from "./frame-pace.js";
 import { mergeStatic } from "./static-merge.js";
 
@@ -985,7 +986,7 @@ export class Office3DRenderer {
     entry.name.position.set(0, LABEL_HEIGHT, 0);
     // 머리 위 한 자리를 셋이 나눠 쓴다 — 잠깐 뜨는 말풍선(거절 `!`)이 먼저, 다음이 하는 일, 둘 다 없고
     // 지시가 접수만 된 상태면 점.
-    const bubbleText = body.flash ?? (state !== "WAITING" ? agent?.bubble : null);
+    const bubbleText = body.flash ?? (showsBubble(state) ? agent?.bubble : null);
     const dots = !bubbleText && view.pending?.[agentType] === "sent";
     entry.bubble.visible = Boolean(bubbleText) || dots;
     if (entry.bubble.visible) {
