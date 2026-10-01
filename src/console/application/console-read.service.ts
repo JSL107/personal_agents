@@ -174,6 +174,7 @@ export class ConsoleReadService {
       agentType: run.agentType,
       status: run.status,
       parentId: run.parentId === null ? null : String(run.parentId),
+      participants: [],
       startedAt: run.startedAt.toISOString(),
       finishedAt: run.endedAt === null ? null : run.endedAt.toISOString(),
     }));

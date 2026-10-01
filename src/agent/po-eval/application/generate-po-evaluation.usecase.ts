@@ -84,6 +84,7 @@ export class GeneratePoEvaluationUsecase {
         impactReporterRunId: refs.impactReporterRunId,
       },
       evidence: this.toEvidence(refs),
+      participants: toParticipants(refs),
       run: async () => {
         const prompt = buildPrompt({ snapshots, range });
         const completion = await this.modelRouter.route({
@@ -180,6 +181,15 @@ export class GeneratePoEvaluationUsecase {
     return evidence;
   }
 }
+
+// 일일 평가 회의 참석자 — 이번에 실제로 읽어 간 sub-agent 만. 기간 안에 실행이 없던 사람은 부르지 않는다.
+const toParticipants = (refs: SubAgentRunRefs): AgentType[] => [
+  ...(refs.workReviewerRunId !== undefined ? [AgentType.WORK_REVIEWER] : []),
+  ...(refs.poShadowRunId !== undefined ? [AgentType.PO_SHADOW] : []),
+  ...(refs.impactReporterRunId !== undefined
+    ? [AgentType.IMPACT_REPORTER]
+    : []),
+];
 
 const buildPrompt = ({
   snapshots,

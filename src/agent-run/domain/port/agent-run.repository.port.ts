@@ -13,6 +13,8 @@ export interface BeginAgentRunInput {
   triggerType: TriggerType;
   // JSON 직렬화 가능한 임의 데이터. Prisma 저장 경계에서만 InputJsonValue 로 cast.
   inputSnapshot: unknown;
+  // 라우터가 위임한 실행이면 부모 run id. 행을 만드는 순간 함께 적어야 시작 알림에 실린다.
+  parentId?: number;
 }
 
 export interface FinishAgentRunInput {

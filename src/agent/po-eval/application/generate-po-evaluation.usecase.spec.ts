@@ -155,6 +155,29 @@ describe('GeneratePoEvaluationUsecase', () => {
     expect(outcome.agentRunId).toBe(51);
   });
 
+  // 일일 평가 회의 참석자 — 오피스가 run.started 순간 이 사람들을 회의실로 모은다.
+  it('참석자는 실제로 읽어 간 sub-agent 3명', async () => {
+    await usecase.execute({ slackUserId: 'U1', range: 'WEEK' });
+    expect(agentRunServiceExecute.mock.calls[0][0].participants).toEqual([
+      AgentType.WORK_REVIEWER,
+      AgentType.PO_SHADOW,
+      AgentType.IMPACT_REPORTER,
+    ]);
+  });
+
+  it('기간 안에 실행이 없던 sub-agent 는 참석자에서 빠진다', async () => {
+    agentRunServiceFindRecent.mockImplementation(async ({ agentType }) =>
+      agentType === AgentType.PO_SHADOW
+        ? []
+        : [baseRun(agentType === AgentType.WORK_REVIEWER ? 101 : 103, {})],
+    );
+    await usecase.execute({ slackUserId: 'U1', range: 'WEEK' });
+    expect(agentRunServiceExecute.mock.calls[0][0].participants).toEqual([
+      AgentType.WORK_REVIEWER,
+      AgentType.IMPACT_REPORTER,
+    ]);
+  });
+
   it('AgentRunService 에 PO_EVAL + SLACK_COMMAND_PO_EVAL + 3 evidence 전달', async () => {
     await usecase.execute({ slackUserId: 'U1', range: 'WEEK' });
     const call = agentRunServiceExecute.mock.calls[0][0];
