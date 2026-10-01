@@ -6,6 +6,7 @@ const RISK_LEVEL_LABEL: Record<PullRequestReview['riskLevel'], string> = {
   low: '🟢 LOW',
   medium: '🟡 MEDIUM',
   high: '🔴 HIGH',
+  unknown: '⚪ UNKNOWN',
 };
 
 const APPROVAL_LABEL: Record<
@@ -15,6 +16,7 @@ const APPROVAL_LABEL: Record<
   approve: '✅ Approve',
   request_changes: '✋ Request changes',
   comment: '💬 Comment',
+  undetermined: '⏸️ 판단 보류',
 };
 
 // /review-pr 결과 — PullRequestReview 를 한국어 Slack 마크다운으로 렌더.
@@ -32,6 +34,14 @@ export const formatPullRequestReview = ({
     '*요약*',
     escapeSlackMrkdwn(review.summary),
   ];
+
+  if (review.undeterminedReason !== undefined) {
+    lines.push(
+      '',
+      '*판단 보류 이유*',
+      escapeSlackMrkdwn(review.undeterminedReason),
+    );
+  }
 
   if (review.mustFix.length > 0) {
     lines.push(
@@ -60,7 +70,11 @@ export const formatPullRequestReview = ({
   // 지적이 하나도 없으면 섹션이 통째로 빠져 요약만 남는다 — "리뷰가 잘렸나"로 읽히므로
   // 지적 없음을 명시한다. 다섯 목록을 모두 보는 판정은 스윕의 PR 코멘트와 공유한다
   // (hasNoReviewFindings) — 한쪽만 목록을 빠뜨리면 무증상으로 갈린다.
-  if (hasNoReviewFindings(review)) {
+  // 판단 보류는 "고칠 것을 찾지 못했다" 가 아니라 "보지 못했다" 다 — 지적 없음 문구를 붙이지 않는다.
+  if (
+    hasNoReviewFindings(review) &&
+    review.approvalRecommendation !== 'undetermined'
+  ) {
     lines.push(
       '',
       '*지적 사항 없음* — 이번 diff 에서 고칠 것을 찾지 못했습니다.',

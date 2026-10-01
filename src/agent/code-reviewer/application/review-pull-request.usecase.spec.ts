@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
@@ -114,6 +115,35 @@ describe('ReviewPullRequestUsecase', () => {
       modelUsed: 'claude-cli',
       provider: ModelProviderName.CLAUDE,
     } satisfies CompletionResponse);
+  });
+
+  it('판정 짝이 틀린 응답은 실패시키지 않고 보정하며, 보정 사실을 경고 로그로 남긴다', async () => {
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    modelRouter.route.mockResolvedValue({
+      text: JSON.stringify({
+        ...validReview,
+        mustFix: [],
+        findings: [],
+        riskLevel: 'unknown',
+        approvalRecommendation: 'comment',
+      }),
+      modelUsed: 'claude-cli',
+      provider: ModelProviderName.CLAUDE,
+    } satisfies CompletionResponse);
+
+    const result = await usecase.execute({
+      prRef: 'https://github.com/foo/bar/pull/34',
+      slackUserId: 'U123',
+    });
+
+    expect(result.result.approvalRecommendation).toBe('undetermined');
+    expect(result.result.riskLevel).toBe('unknown');
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('PR 리뷰 판정 보정 (foo/bar#34)'),
+    );
+    warn.mockRestore();
   });
 
   it('PR URL 파싱 → GitHub fetch → Claude 호출 → 리뷰 반환 전체 경로', async () => {

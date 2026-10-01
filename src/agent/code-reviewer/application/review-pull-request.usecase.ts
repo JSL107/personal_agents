@@ -144,7 +144,12 @@ export class ReviewPullRequestUsecase {
           },
         });
 
-        const review = parsePullRequestReview(completion.text);
+        // 짝이 틀린 판정(보류·등급)은 파서가 보정한다 — 모델 출력을 코드가 고쳤다는 사실은 남긴다.
+        const review = parsePullRequestReview(completion.text, (message) => {
+          this.logger.warn(
+            `PR 리뷰 판정 보정 (${ref.repo}#${ref.number}): ${message}`,
+          );
+        });
 
         return {
           result: review,

@@ -27,8 +27,19 @@ export const buildFindingCommentBody = ({
 // 요약은 한 줄로 눌러 인용한다. 모델이 줄바꿈을 섞으면 두 번째 줄부터 인용 밖으로 나가
 // 코멘트가 두 문단으로 갈라진다. 스키마 검사는 summary 가 문자열이기만 하면 통과시키므로
 // (pr-review.parser.ts:81) 빈 값이 올 수 있다 — 그때는 인용 줄째로 뺀다.
-export const buildNoFindingsCommentBody = (summary: string): string => {
+//
+// 판단 보류(undeterminedReason 있음)면 "지적 없음" 이라고 쓰지 않는다. 잘린 diff 를 본 리뷰가
+// "머지 전에 고칠 것을 찾지 못했다" 고 남기면 읽는 사람은 안전하다는 뜻으로 받는다 — 실제로는
+// 못 본 것이다. 마커로 시작하는 것은 같다(수확기가 자기 글로 거르는 기준).
+export const buildNoFindingsCommentBody = (
+  summary: string,
+  undeterminedReason?: string,
+): string => {
   const flattened = summary.trim().replace(/\s*\n+\s*/g, ' ');
   const quoted = flattened.length > 0 ? `\n\n> ${flattened}` : '';
+  if (undeterminedReason !== undefined) {
+    const reason = undeterminedReason.trim().replace(/\s*\n+\s*/g, ' ');
+    return `${IDAERI_REVIEW_MARKER} · 판단 보류\n\n머지 가부를 판단할 근거가 부족해 판단하지 않았습니다 — ${reason}${quoted}`;
+  }
   return `${IDAERI_REVIEW_MARKER} · 지적 사항 없음\n\n이번 diff 에서 머지 전에 고쳐야 할 것을 찾지 못했습니다.${quoted}`;
 };
