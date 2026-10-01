@@ -31,15 +31,38 @@ import {
 import { buildFurniture, missingKinds } from "./furniture3d/index.js";
 import { makeCharacter, makeStatusRing, poseCharacter, seatOffset } from "./character.js";
 import { Overlay3D } from "./overlay3d.js";
+import { PRESIDENT_COZY_LOOK } from "./cozy-looks.js";
 import { frameSignature, shouldRender } from "./frame-pace.js";
 import { mergeStatic } from "./static-merge.js";
 
 /**
  * 카메라 각. 방위는 남쪽(+z)에서 동쪽으로 돈 각, 고도는 바닥에서 올려본 각.
  * 45° 정아이소메트릭은 가로로 긴 사무실(35×20)을 마름모로 세워 화면 위아래가 빈다 —
- * 방위를 줄여 가로 폭을 살린다. (2026-09-30 사용자 확정)
+ * 방위를 줄여 가로 폭을 살린다. (2026-09-30 사용자 확정: 32°·38°)
+ *
+ * 방위는 **창 비율을 따른다**(`azimuthFor`). 32° 로 돌린 마름모는 가로로 넓은 창에는 맞지만 세로로 긴
+ * 창에서는 폭에 맞춰 줄어들어 위아래가 비었다(사용자 보고: "화면에 비해 사무실이 너무 작다").
+ * 960×1050 창에서 15° 는 타일이 25.6→29.7px 로 16% 커진다. 0° 까지 내리면 더 크지만 비스듬한
+ * 조감이 사라져 평면도처럼 보인다 — 15° 에서 멈춘다.
  */
-const CAMERA = { azimuthDegrees: 32, elevationDegrees: 38, margin: 0.04, focusSeconds: 0.35 };
+const CAMERA = {
+  /** 가로÷세로가 `wideAspect` 이상이면 이 방위. */
+  azimuthWide: 32,
+  /** 가로÷세로가 `tallAspect` 이하면 이 방위. 사이는 선형으로 잇는다(창을 끌 때 튀지 않게). */
+  azimuthTall: 15,
+  wideAspect: 1.5,
+  tallAspect: 1.0,
+  elevationDegrees: 38,
+  margin: 0.04,
+  focusSeconds: 0.35,
+};
+
+/** 이 창에서 쓸 방위(도). 배치 고르기·방 확대 모두 같은 창이면 같은 값이라 전환 중에 흔들리지 않는다. */
+export function azimuthFor(width, height) {
+  const aspect = width / Math.max(1, height);
+  const t = THREE.MathUtils.clamp((aspect - CAMERA.tallAspect) / (CAMERA.wideAspect - CAMERA.tallAspect), 0, 1);
+  return CAMERA.azimuthTall + (CAMERA.azimuthWide - CAMERA.azimuthTall) * t;
+}
 
 /** 방 사이 벽 높이. 완전히 낮추면 벽걸이가 뜨고, 높이면 뒤쪽 방을 가린다 — 허리 높이. */
 const WALL_MID = 0.5;
@@ -66,10 +89,6 @@ const STATE_LABELS = {
 };
 
 /**
- * 대표 외형 — 평면도에 대표 몫 `agentLooks` 가 없다. 2D 는 색을 입히지 않은 `char-down`
- * (흰 셔츠·회색 바지·검은 머리)으로 그리므로 같은 사람으로 맞춘다.
- */
-/**
  * 로봇청소기 — 쓰레기통 앞(남쪽)을 좌우로 오간다. 자리는 2D `addVacuumRobot`·`addPendingDust` 와 같은
  * 칸 비율이다. 멈춰 설 때(충전 대기·고장)는 왕복 구간 오른쪽 끝 바깥에 선다.
  */
@@ -78,7 +97,8 @@ const VACUUM = { front: 0.46, travel: 0.62, legSeconds: 7, parkedX: 0.34, dustX:
 const REDUCE_MOTION = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 const VACUUM_LED = { sweeping: 0x5cdb70, docked: 0x669ef0, stalled: 0xf0574f };
 
-const PRESIDENT_LOOK = { sheet: "char", shirt: [0.96, 0.96, 0.95], pants: [0.3, 0.3, 0.32], hair: [0.15, 0.14, 0.14] };
+/** 대표 외형 — 평면도에 대표 몫 `agentLooks` 가 없어 `cozy-looks.js` 의 대표 몫을 쓴다. */
+const PRESIDENT_LOOK = { cozy: PRESIDENT_COZY_LOOK };
 const FALLBACK_LOOK = { sheet: "char", shirt: [0.8, 0.8, 0.8], pants: [0.3, 0.3, 0.3], hair: [0.3, 0.22, 0.16] };
 
 /** 이름표·말풍선 높이(사람 발 기준). 이름표가 떠 있으면 말풍선은 화면 픽셀로 그 위에 선다(`.raised`). */
@@ -90,7 +110,7 @@ const LABEL_HEIGHT = SCALE.characterHeight + 0.14;
  */
 function frameBounds(camera, bounds, width, height) {
   const center = new THREE.Vector3((bounds.minX + bounds.maxX) / 2, 0, -(bounds.minY + bounds.maxY) / 2);
-  const azimuth = THREE.MathUtils.degToRad(CAMERA.azimuthDegrees);
+  const azimuth = THREE.MathUtils.degToRad(azimuthFor(width, height));
   const elevation = THREE.MathUtils.degToRad(CAMERA.elevationDegrees);
   const distance = 200;
   camera.position.set(

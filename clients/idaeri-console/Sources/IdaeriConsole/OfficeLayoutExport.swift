@@ -104,6 +104,9 @@ struct AgentLookInfo: Codable {
     /// 워커가 늘 때마다 바뀌는 표라, 두 곳에 적으면 새 워커가 한쪽에서만 제 일을 한다.
     /// 빈 배열이면 받는 쪽은 기존 방식(무작위)으로 고른다.
     let workAffinity: [String]
+    /// 이 사람의 cozy 원화 번호(`cozyAgentAppearance` 의 `assetIndex`, 정비사 -1). 3D 가 같은 번호의
+    /// 생김새(`three/cozy-looks.js`)로 그려 2D 와 같은 사람이 된다.
+    let cozyAsset: Int
 }
 
 /// 내보내는 한 덩어리 — 평면도 + 그리는 데 필요한 이름표.
@@ -276,7 +279,10 @@ func makeOfficeLayoutExport(agents: [ConsoleAgent], zoneColumns: Int) -> OfficeL
             pants: [pants.red, pants.green, pants.blue],
             roleLabel: agent.roleName,
             deskProp: officeDeskProp(agentType: agent.agentType),
-            workAffinity: officeWorkAffinity(agentType: agent.agentType).map(\.rawValue)
+            workAffinity: officeWorkAffinity(agentType: agent.agentType).map(\.rawValue),
+            cozyAsset: cozyAgentAppearance(
+                agentType: agent.agentType, department: agent.resolvedDepartment
+            ).assetIndex
         )
     }
     var daylight: [String: DaylightInfo] = [:]

@@ -48,6 +48,8 @@ export const PALETTE = Object.freeze({
   lampWarm: 0xffe2a8,
   // 사람
   skin: 0xf5d2b6,
+  /** 직원 피부 — cozy 원화의 밝은 살구색. 가구 쪽 `skin` 보다 밝아야 같은 조명에서 원화 톤이 된다. */
+  skinCozy: 0xfde3d1,
   eye: 0x3a2e2a,
   shoe: 0x4b3a30,
   belt: 0x3d352f,
