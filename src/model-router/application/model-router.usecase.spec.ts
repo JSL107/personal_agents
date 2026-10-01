@@ -43,7 +43,6 @@ describe('ModelRouterUsecase', () => {
       [AgentType.PO_EVAL],
       [AgentType.CEO],
       [AgentType.CAREER_MATE],
-      [AgentType.ISSUE_LABELER],
       [AgentType.WORK_REVIEWER],
     ])('%s → CHATGPT (Claude 호출 0)', async (agentType) => {
       chatgptProvider.complete.mockResolvedValue({

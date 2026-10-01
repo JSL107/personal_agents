@@ -2,7 +2,7 @@
 
 # 환경변수 카탈로그
 
-SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 166개.
+SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 164개.
 설명은 각 변수 주석의 첫 문장 발췌 — 상세는 app.config.ts 주석 참조. `.env.example` 동기는 `pnpm check:env`.
 
 ## 인프라 (앱 부팅 필수)
@@ -47,8 +47,6 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | 키 | 필수 | 설명 |
 |---|---|---|
 | `GITHUB_TOKEN` | ❌ | GitHub Personal Access Token. 미설정 시 GitHub 커넥터 호출 시점에 친절한 예외로 빠진다 (앱 부팅엔 영향 없음). |
-| `GITHUB_ISSUE_AUTO_LABEL_ENABLED` | ❌ | issues.opened webhook 자동 라벨링 — `true` (string) 일 때만 활성. |
-| `GITHUB_ISSUE_AUTO_LABEL_REPOS` | ❌ | 자동 라벨링 대상 repo allowlist (콤마 구분 "owner/repo"). 미설정/빈 값 → enable 만으로 모든 repo 적용. |
 
 ## Autopilot cron
 

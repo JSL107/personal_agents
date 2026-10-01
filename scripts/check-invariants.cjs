@@ -7,7 +7,6 @@ const { execFileSync } = require('node:child_process');
 
 const AUTO_FLAGS = [
   'SESSION_DISPATCH_ENABLED',
-  'GITHUB_ISSUE_AUTO_LABEL_ENABLED',
   'PR_CAREERLOG_AUTO_ENABLED',
   'PR_REVIEW_HARVEST_ENABLED',
   'JOB_FEED_ENABLED',

@@ -236,7 +236,7 @@ Slack 설정: Event Subscriptions 에 `app_mention` + `message.im` + `reaction_a
 
 | 이벤트 | 발화 | 추가 활성 env |
 |---|---|---|
-| `issues.opened` | Impact Reporter / Auto-Label | `GITHUB_ISSUE_AUTO_LABEL_ENABLED` |
+| `issues.opened` | Impact Reporter | — |
 | `pull_request.opened` | Impact Reporter / (조건부) Code Reviewer | `GITHUB_WEBHOOK_OWNER_LOGIN` |
 | `pull_request.closed` (merged) | PR careerLog → Notion | `PR_CAREERLOG_AUTO_ENABLED` + `CAREER_LOG_NOTION_PAGE_ID` |
 

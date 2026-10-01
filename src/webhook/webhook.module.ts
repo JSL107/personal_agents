@@ -3,18 +3,14 @@ import { Module } from '@nestjs/common';
 
 import { CodeReviewerModule } from '../agent/code-reviewer/code-reviewer.module';
 import { ImpactReporterModule } from '../agent/impact-reporter/impact-reporter.module';
-import { IssueLabelerModule } from '../agent/issue-labeler/issue-labeler.module';
-import { GithubModule } from '../github/github.module';
 import { SlackModule } from '../slack/slack.module';
 import {
   CODE_REVIEWER_QUEUE,
   IMPACT_REPORT_QUEUE,
-  ISSUE_LABEL_QUEUE,
   PR_CAREERLOG_QUEUE,
 } from './domain/webhook.type';
 import { WebhookCodeReviewerConsumer } from './infrastructure/code-reviewer.consumer';
 import { WebhookImpactReportConsumer } from './infrastructure/impact-report.consumer';
-import { WebhookIssueLabelConsumer } from './infrastructure/issue-label.consumer';
 import { WebhookController } from './interface/webhook.controller';
 
 @Module({
@@ -24,22 +20,12 @@ import { WebhookController } from './interface/webhook.controller';
     // pull_request.closed (merged=true) → 본인 PR careerLog 자동 적재 (Notion).
     // consumer 본체는 PrCareerLogModule 의 책임 — webhook 은 큐 등록 + controller 에서 enqueue 만.
     BullModule.registerQueue({ name: PR_CAREERLOG_QUEUE }),
-    // issues.opened → repo label vocab 안에서 LLM 분류 → octokit addLabels.
-    BullModule.registerQueue({ name: ISSUE_LABEL_QUEUE }),
     ImpactReporterModule,
     // pull_request.opened webhook 자동 review — ReviewPullRequestUsecase + SlackService.postMessage.
     CodeReviewerModule,
-    // issues.opened webhook 자동 라벨링 — InferIssueLabelsUsecase.
-    IssueLabelerModule,
-    // listRepoLabels / addLabelsToIssue 호출용.
-    GithubModule,
     SlackModule,
   ],
   controllers: [WebhookController],
-  providers: [
-    WebhookImpactReportConsumer,
-    WebhookCodeReviewerConsumer,
-    WebhookIssueLabelConsumer,
-  ],
+  providers: [WebhookImpactReportConsumer, WebhookCodeReviewerConsumer],
 })
 export class WebhookModule {}

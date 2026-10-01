@@ -53,9 +53,9 @@ describe('inspectContract', () => {
     });
 
     it('계약이 스텁이면 산출물이 객체가 아니어도 검사를 건너뛴다', () => {
-      // ISSUE_LABELER 는 배열을 그대로 내보낸다 — 계약이 없으니 형식 오류가 아니다.
-      expect(inspectContract(AgentType.ISSUE_LABELER, ['a', 'b'])).toEqual([]);
-      expect(inspectContract(AgentType.ISSUE_LABELER, null)).toEqual([]);
+      // CAREER_MATE 는 스텁 계약이다 — 요구하는 것이 없으니 형식 오류가 아니다.
+      expect(inspectContract(AgentType.CAREER_MATE, ['a', 'b'])).toEqual([]);
+      expect(inspectContract(AgentType.CAREER_MATE, null)).toEqual([]);
     });
 
     it('계약이 요구하는 것이 있는데 객체가 아니면 전부 누락으로 보고한다', () => {

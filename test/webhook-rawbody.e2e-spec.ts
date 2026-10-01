@@ -11,7 +11,6 @@ import { ResponseInterceptor } from './../src/common/interceptor/response.interc
 import {
   CODE_REVIEWER_QUEUE,
   IMPACT_REPORT_QUEUE,
-  ISSUE_LABEL_QUEUE,
   PR_CAREERLOG_QUEUE,
 } from './../src/webhook/domain/webhook.type';
 import { WebhookController } from './../src/webhook/interface/webhook.controller';
@@ -39,7 +38,6 @@ describe('Webhook rawBody (e2e)', () => {
         { provide: getQueueToken(IMPACT_REPORT_QUEUE), useValue: queue },
         { provide: getQueueToken(CODE_REVIEWER_QUEUE), useValue: queue },
         { provide: getQueueToken(PR_CAREERLOG_QUEUE), useValue: queue },
-        { provide: getQueueToken(ISSUE_LABEL_QUEUE), useValue: queue },
         {
           provide: ConfigService,
           useValue: {

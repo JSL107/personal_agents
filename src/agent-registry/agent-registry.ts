@@ -97,15 +97,6 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
     description: '메타 회고 (PO_EVAL + PM 합성)',
   },
   {
-    agentType: AgentType.ISSUE_LABELER,
-    displayName: 'Issue Labeler',
-    nickname: '나누리',
-    slashCommands: [],
-    usecasePath:
-      'src/agent/issue-labeler/application/infer-issue-labels.usecase.ts',
-    description: 'issue 자동 라벨링 (webhook 자동 트리거)',
-  },
-  {
     agentType: AgentType.VACATION,
     displayName: 'Vacation',
     nickname: '오휴가',

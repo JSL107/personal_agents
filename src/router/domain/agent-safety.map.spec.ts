@@ -16,14 +16,12 @@ describe('agent-safety.map', () => {
   //  - BLOG: Notion 초안 페이지를 만들고 상태를 갱신한다
   //  - BLOG_PUBLISH: 익명화한 초안을 GitHub Pages 로 발행한다
   //  - PAPER_RECOMMEND: saveRecommendationAtomically 로 추천·모의 주문을 트랜잭션 저장한다
-  //  - ISSUE_LABELER: issues.addLabels 로 레포 이슈를 바꾼다
   it.each([
     [AgentType.VACATION, AgentSafetyLevel.WRITE],
     [AgentType.JOB_APPLICATION, AgentSafetyLevel.WRITE],
     [AgentType.BLOG, AgentSafetyLevel.WRITE],
     [AgentType.PAPER_RECOMMEND, AgentSafetyLevel.WRITE],
     [AgentType.BLOG_PUBLISH, AgentSafetyLevel.IRREVERSIBLE],
-    [AgentType.ISSUE_LABELER, AgentSafetyLevel.IRREVERSIBLE],
   ])('%s 는 %s 등급이다', (agentType, expected) => {
     expect(AGENT_SAFETY_LEVEL[agentType]).toBe(expected);
   });
@@ -42,7 +40,6 @@ describe('agent-safety.map', () => {
   // 분류기는 그 worker 가 기록을 남긴다는 사실을 모른 채 고르게 된다 — 선언이 집행과 갈리는 자리.
   describe('분류 프롬프트 ⚠️ 표식 동기화', () => {
     // 프롬프트의 "분류 후보" 목록에 실제로 등장하는 worker 만 대상.
-    // (ISSUE_LABELER 는 webhook 전용이라 자연어 분류 후보가 아니다.)
     const listedInPrompt = (agentType: AgentType): boolean =>
       new RegExp(`^- ${agentType}: `, 'mu').test(
         INTENT_CLASSIFIER_SYSTEM_PROMPT,
