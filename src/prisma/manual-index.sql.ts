@@ -11,6 +11,9 @@ export interface ManualIndexStatement {
   // 되살렸는지 대조할 인덱스 이름. 확장(extension) 생성처럼 인덱스가 아닌 구문은 null.
   indexName: string | null;
   sql: string;
+  // invalid 로 남은 인덱스를 지우는 구문. 상수로 두는 이유 — 이름을 SQL 에 보간하면
+  // $executeRawUnsafe 불변식(scripts/check-invariants.cjs)에 걸린다.
+  dropSql: string | null;
 }
 
 export const MANUAL_INDEX_STATEMENTS: readonly ManualIndexStatement[] = [
@@ -18,15 +21,21 @@ export const MANUAL_INDEX_STATEMENTS: readonly ManualIndexStatement[] = [
   // CONCURRENTLY 는 트랜잭션 밖에서만 가능. IF NOT EXISTS 로 멱등성 보장.
   {
     indexName: 'idx_agent_run_output_fts',
+    dropSql: 'DROP INDEX CONCURRENTLY IF EXISTS idx_agent_run_output_fts',
     sql: `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_agent_run_output_fts
          ON agent_run USING GIN (to_tsvector('simple', COALESCE(output::text, '')))`,
   },
   // Episodic Memory — pgvector extension + HNSW 코사인 인덱스(멱등). spec 2026-06-18.
   // 운영 DB 가 pgvector 이미지가 아니면 CREATE EXTENSION 이 실패한다 — 구문마다 따로 실패를 받으므로
   // 메모리 기능만 비활성되고 아래 전략 파라미터 인덱스는 그대로 만들어진다.
-  { indexName: null, sql: `CREATE EXTENSION IF NOT EXISTS vector` },
+  {
+    indexName: null,
+    sql: `CREATE EXTENSION IF NOT EXISTS vector`,
+    dropSql: null,
+  },
   {
     indexName: 'idx_episodic_memory_embedding',
+    dropSql: 'DROP INDEX CONCURRENTLY IF EXISTS idx_episodic_memory_embedding',
     sql: `CREATE INDEX IF NOT EXISTS idx_episodic_memory_embedding
          ON episodic_memory USING hnsw (embedding vector_cosine_ops)`,
   },
@@ -37,6 +46,7 @@ export const MANUAL_INDEX_STATEMENTS: readonly ManualIndexStatement[] = [
   // 두 값이 동시에 활성이 되고, 읽는 쪽은 둘 중 하나를 골라 조용히 다른 값으로 돈다.
   {
     indexName: 'idx_strategy_parameter_active',
+    dropSql: 'DROP INDEX CONCURRENTLY IF EXISTS idx_strategy_parameter_active',
     sql: `CREATE UNIQUE INDEX IF NOT EXISTS idx_strategy_parameter_active
          ON strategy_parameter (strategy, name)
          WHERE activated_at IS NOT NULL AND superseded_at IS NULL`,

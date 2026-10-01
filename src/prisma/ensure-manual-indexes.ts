@@ -56,15 +56,12 @@ export const ensureManualIndexes = async (
   const before = await readIndexValidity(executor);
   const outcomes: ManualIndexOutcome[] = [];
 
-  for (const { indexName, sql } of MANUAL_INDEX_STATEMENTS) {
+  for (const { indexName, sql, dropSql } of MANUAL_INDEX_STATEMENTS) {
     const name = indexName ?? sql.split('\n')[0].trim();
     const rebuild = indexName !== null && before.get(indexName) === false;
     try {
-      if (rebuild) {
-        // ⚠️ SECURITY: indexName 은 MANUAL_INDEX_STATEMENTS 의 상수다 — 외부 입력이 아니다.
-        await executor.$executeRawUnsafe(
-          `DROP INDEX CONCURRENTLY IF EXISTS ${indexName}`,
-        );
+      if (rebuild && dropSql) {
+        await executor.$executeRawUnsafe(dropSql);
       }
       await executor.$executeRawUnsafe(sql);
     } catch (error: unknown) {
