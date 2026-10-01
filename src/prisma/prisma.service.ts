@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 
-import { MANUAL_INDEX_STATEMENTS } from './manual-index.sql';
+import { ensureManualIndexes } from './ensure-manual-indexes';
 
 @Injectable()
 export class PrismaService
@@ -21,9 +21,14 @@ export class PrismaService
     try {
       await this.$connect();
       // 스키마로 표현 못 하는 수동 인덱스를 멱등 재생성한다. 목록과 각 인덱스의 이유는
-      // manual-index.sql.ts — `pnpm db:push` 직후 단계도 같은 목록을 쓴다.
-      for (const statement of MANUAL_INDEX_STATEMENTS) {
-        await this.$executeRawUnsafe(statement.sql);
+      // manual-index.sql.ts — `pnpm db:push` 직후 단계도 같은 함수를 쓴다.
+      const outcomes = await ensureManualIndexes(this);
+      for (const outcome of outcomes) {
+        if (outcome.state === 'failed') {
+          this.logger.warn(
+            `수동 인덱스 준비 실패 — ${outcome.name}: ${outcome.reason}`,
+          );
+        }
       }
     } catch (error: unknown) {
       this.logger.warn(

@@ -1,6 +1,7 @@
 // Prisma 스키마 문법으로 표현할 수 없어 손으로 만드는 인덱스. `prisma db push` 는 스키마에 없는
 // 이 인덱스들을 drift 로 보고 지울 수 있으므로 두 곳이 같은 목록으로 되살린다 —
-// 앱 부팅(`PrismaService.onModuleInit`)과 push 직후(`scripts/restore-manual-indexes.ts`).
+// 앱 부팅(`PrismaService.onModuleInit`)과 push 직후(`scripts/restore-manual-indexes.ts`)가
+// 둘 다 `ensure-manual-indexes.ts` 를 거친다.
 // 목록을 한 곳에 두는 이유는 한쪽만 고치면 다른 쪽이 옛 인덱스를 되살리기 때문이다.
 //
 // ⚠️ SECURITY: `$executeRawUnsafe` 로 실행된다. 변수 보간이 전혀 없는 상수 문자열이라 안전하다.
@@ -21,7 +22,8 @@ export const MANUAL_INDEX_STATEMENTS: readonly ManualIndexStatement[] = [
          ON agent_run USING GIN (to_tsvector('simple', COALESCE(output::text, '')))`,
   },
   // Episodic Memory — pgvector extension + HNSW 코사인 인덱스(멱등). spec 2026-06-18.
-  // 운영 DB 가 pgvector 이미지가 아니면 CREATE EXTENSION 이 실패한다(메모리 기능만 비활성).
+  // 운영 DB 가 pgvector 이미지가 아니면 CREATE EXTENSION 이 실패한다 — 구문마다 따로 실패를 받으므로
+  // 메모리 기능만 비활성되고 아래 전략 파라미터 인덱스는 그대로 만들어진다.
   { indexName: null, sql: `CREATE EXTENSION IF NOT EXISTS vector` },
   {
     indexName: 'idx_episodic_memory_embedding',
