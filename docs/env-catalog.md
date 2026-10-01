@@ -2,7 +2,7 @@
 
 # 환경변수 카탈로그
 
-SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 160개.
+SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 164개.
 설명은 각 변수 주석의 첫 문장 발췌 — 상세는 app.config.ts 주석 참조. `.env.example` 동기는 `pnpm check:env`.
 
 ## 인프라 (앱 부팅 필수)
@@ -122,6 +122,10 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `RESUME_CALIBRATION_TARGET` | ❌ | 발송 대상 (Slack user/channel). 미설정 시 OWNER DM. |
 | `RESUME_CALIBRATION_CRON` | ❌ | BullMQ cron (default 월 10:00 — `0 10 * * 1`). |
 | `RESUME_CALIBRATION_TIMEZONE` | ❌ | default Asia/Seoul. |
+| `JOB_APPLICATION_NUDGE_OWNER_SLACK_USER_ID` | ❌ | 넛지 주체. 미설정 시 모듈 비활성. |
+| `JOB_APPLICATION_NUDGE_TARGET` | ❌ | 발송 대상 (Slack user/channel). 미설정 시 OWNER DM. |
+| `JOB_APPLICATION_NUDGE_CRON` | ❌ | BullMQ cron (default 매일 09:00 — `0 9 * * *`). |
+| `JOB_APPLICATION_NUDGE_TIMEZONE` | ❌ | default Asia/Seoul. |
 
 ## 채용 공고 수집
 

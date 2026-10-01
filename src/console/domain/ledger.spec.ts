@@ -123,10 +123,9 @@ describe('buildConsoleLedger', () => {
     ]);
   });
 
-  // 2026-10-01 폐지한 두 워커의 원장 행(agent_run #347·#349)이 그대로 남아 있다. 사규에서
+  // 2026-10-01 폐지한 ISSUE_LABELER 의 원장 행(agent_run #347)이 그대로 남아 있다. 사규에서
   // 빠져도 원장 집계는 문자열로 묶으므로 끊기지 않고 이력으로 남아야 한다.
   it('사규에서 폐지된 워커의 과거 행도 끊기지 않고 원장에 남는다', () => {
-    const retiredAgentTypes = ['ISSUE_LABELER', 'JOB_APPLICATION'];
     const rows = [
       run(
         'ISSUE_LABELER',
@@ -134,32 +133,21 @@ describe('buildConsoleLedger', () => {
         'SUCCEEDED',
         '2026-08-03T10:07:21+09:00',
       ),
-      run(
-        'JOB_APPLICATION',
-        'SLACK_MENTION_JOB_APPLICATION',
-        'SUCCEEDED',
-        '2026-08-03T10:08:38+09:00',
-      ),
     ];
 
     const ledger = buildConsoleLedger(rows, thursdayClock);
 
-    const registered = AGENT_REGISTRY.map((entry) => String(entry.agentType));
     expect(
-      retiredAgentTypes.filter((agentType) => registered.includes(agentType)),
-    ).toEqual([]);
-    const retired = ledger.agents.filter((agent) =>
-      retiredAgentTypes.includes(agent.agentType),
+      AGENT_REGISTRY.some(
+        (entry) => String(entry.agentType) === 'ISSUE_LABELER',
+      ),
+    ).toBe(false);
+    const retired = ledger.agents.find(
+      (agent) => agent.agentType === 'ISSUE_LABELER',
     );
-    expect(
-      retired.map((agent) => [
-        agent.agentType,
-        agent.totalRuns,
-        agent.autonomy,
-      ]),
-    ).toEqual([
-      ['ISSUE_LABELER', 1, 'EVENT_DRIVEN'],
-      ['JOB_APPLICATION', 1, 'ON_DEMAND'],
+    expect([retired?.totalRuns, retired?.autonomy]).toEqual([
+      1,
+      'EVENT_DRIVEN',
     ]);
   });
 

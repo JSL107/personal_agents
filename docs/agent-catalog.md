@@ -2,7 +2,7 @@
 
 # 에이전트 카탈로그
 
-이대리의 에이전트 29종. SoT: `src/agent-registry/agent-registry.ts` + `AGENT_TO_PROVIDER`(`src/model-router/domain/agent-provider.map.ts`).
+이대리의 에이전트 30종. SoT: `src/agent-registry/agent-registry.ts` + `AGENT_TO_PROVIDER`(`src/model-router/domain/agent-provider.map.ts`).
 드리프트는 `pnpm docs:check` 가 차단하고, agentType 집합 정합성은 `agent-registry.spec.ts` 가 강제한다.
 
 | 닉네임 | 기술 이름 | AgentType | 슬래시 | 모델 | 진입 usecase | 설명 |
@@ -22,6 +22,7 @@
 | 윤다정 | Humanizer | `HUMANIZER` | — (webhook/자동) | CHATGPT | `src/humanize/application/humanize.service.ts` | 자동 보고서 서술 필드 윤문 (AI 티 제거, 슬래시 없음, 내부 전용) |
 | 이보람 | Impact Reporter | `IMPACT_REPORTER` | `/impact-report` | CHATGPT | `src/agent/impact-reporter/application/generate-impact-report.usecase.ts` | PR 임팩트 리포트 생성 |
 | 주지킴 | Invest Monitor | `INVEST` | — (webhook/자동) | CHATGPT | `src/autopilot/infrastructure/tasks/stock-monitor.autopilot-task.ts` | 보유 종목 감시 — 장 마감 후 전일 대비·평단 대비 이상 판정 (슬래시 없음, autopilot 전용, LLM 미사용) |
+| 서지원 | Job Application | `JOB_APPLICATION` | — (webhook/자동) | CHATGPT | `src/agent/job-application/application/add-application.usecase.ts` | 지원 추적 CRM (회사/직무 지원 기록·상태·조회, 자연어 멘션 + 넛지 cron) |
 | 안정민 | Ops Supervisor | `OPS_SUPERVISOR` | — (webhook/자동) | CHATGPT | `src/agent/ops-supervisor/application/generate-ops-advice.usecase.ts` | 월간 운영 품질 이상 신호 분석과 개선 제안 생성 (슬래시 없음, autopilot 전용) |
 | 추천호 | Paper Recommend | `PAPER_RECOMMEND` | — (webhook/자동) | CHATGPT | `src/agent/paper-recommend/application/generate-paper-recommendation.usecase.ts` | 모의투자 전략별 추천 — 후보와 보유 종목을 함께 LLM 판단 (슬래시 없음, autopilot/CLI 전용) |
 | 백장부 | Paper Trade | `PAPER_TRADE` | — (webhook/자동) | CHATGPT | `src/autopilot/infrastructure/tasks/paper-trading.autopilot-task.ts` | 모의투자 계좌 — 일일 평가(autopilot) + 자연어 현황 조회(수익률·보유·현금, 읽기 전용) (슬래시 없음, LLM 미사용) |

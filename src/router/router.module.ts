@@ -16,6 +16,8 @@ import { DelayReportModule } from '../agent/delay-report/delay-report.module';
 import { DelayReportDispatcher } from '../agent/delay-report/infrastructure/delay-report.dispatcher';
 import { ImpactReporterModule } from '../agent/impact-reporter/impact-reporter.module';
 import { ImpactReporterDispatcher } from '../agent/impact-reporter/infrastructure/impact-reporter.dispatcher';
+import { JobApplicationDispatcher } from '../agent/job-application/infrastructure/job-application.dispatcher';
+import { JobApplicationModule } from '../agent/job-application/job-application.module';
 import { PmDispatcher } from '../agent/pm/infrastructure/pm.dispatcher';
 import { PmAgentModule } from '../agent/pm/pm-agent.module';
 import { PoEvalDispatcher } from '../agent/po-eval/infrastructure/po-eval.dispatcher';
@@ -76,6 +78,7 @@ import { RoutingNoRunPrismaRepository } from './infrastructure/routing-no-run.pr
     VacationModule,
     BlogModule,
     CareerMateModule,
+    JobApplicationModule,
     PaperTradingModule,
     DelayReportModule,
     ScheduleModule,
@@ -119,6 +122,7 @@ import { RoutingNoRunPrismaRepository } from './infrastructure/routing-no-run.pr
         BlogDispatcher,
         BlogPublishDispatcher,
         CareerMateDispatcher,
+        JobApplicationDispatcher,
         PaperTradeDispatcher,
         DelayReportDispatcher,
         ScheduleDispatcher,

@@ -59,7 +59,7 @@ let sampleAgents: [ConsoleAgent] =
         .content,
         [
             "BLOG", "BLOG_PUBLISH", "BLOG_REVISION", "HUMANIZER", "CAREER_MATE",
-            "CTO_STUDY",
+            "JOB_APPLICATION", "CTO_STUDY",
         ]
     )
     + planAgents(.treasury, ["INVEST", "PAPER_TRADE", "PAPER_RECOMMEND"])

@@ -109,7 +109,7 @@ function toDescription(commentBuffer: readonly string[]): string {
  * `@IsOptional` 유무로 required 판정, 속성 직전 contiguous `//` 블록을 설명으로.
  *
  * 주석 안의 `// - KEY: 설명` 줄은 그 키 전용 설명으로 따로 수집한다(블록 설명보다 우선).
- * 한 주석이 여러 키를 설명하는 구간(RESUME_CALIBRATION_* 등)에서
+ * 한 주석이 여러 키를 설명하는 구간(RESUME_CALIBRATION_*, JOB_APPLICATION_NUDGE_* 등)에서
  * 블록 첫 항목만 설명을 갖고 나머지가 빈칸이 되는 문제를 이 규칙이 해소한다.
  */
 function parseEnvEntries(): EnvEntry[] {
@@ -389,7 +389,7 @@ const ENV_GROUP_RULES: ReadonlyArray<readonly [RegExp, string]> = [
   [/^(CLAUDE_|ANTHROPIC_)/u, 'LLM CLI 인증'],
   [/^BE_(SANDBOX|AUTONOMOUS)/u, 'BE 자율개발'],
   [/^(IMPACT_REPORT_|PR_CAREERLOG_|CAREER_LOG_)/u, 'careerLog / Impact'],
-  [/^(CAREER_|RESUME_)/u, 'Career Mate'],
+  [/^(CAREER_|RESUME_|JOB_APPLICATION_)/u, 'Career Mate'],
   [/^JOB_FEED_/u, '채용 공고 수집'],
   [/^PR_REVIEW_/u, 'PR 리뷰 루프'],
   [/^DOCS_AUDIT_/u, 'docs-sync-audit'],

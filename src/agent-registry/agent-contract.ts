@@ -309,6 +309,10 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     Department.CONTENT,
     '머지된 PR 을 합성해 역량 프로필과 이력서를 만든다',
   ),
+  [AgentType.JOB_APPLICATION]: stub(
+    Department.CONTENT,
+    '지원 이력을 기록하고 상태를 추적한다',
+  ),
   [AgentType.VACATION]: stub(
     Department.INTERNAL_OPS,
     '연차 잔여일을 계산하고 사용을 기록한다',

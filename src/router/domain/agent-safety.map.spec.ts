@@ -12,11 +12,13 @@ describe('agent-safety.map', () => {
 
   // 등급 판정 근거(실측):
   //  - VACATION: registerLeave / cancelLeave 로 사용자 휴가 기록을 쓴다
+  //  - JOB_APPLICATION: addApplication / updateApplication 으로 지원 기록을 쓴다
   //  - BLOG: Notion 초안 페이지를 만들고 상태를 갱신한다
   //  - BLOG_PUBLISH: 익명화한 초안을 GitHub Pages 로 발행한다
   //  - PAPER_RECOMMEND: saveRecommendationAtomically 로 추천·모의 주문을 트랜잭션 저장한다
   it.each([
     [AgentType.VACATION, AgentSafetyLevel.WRITE],
+    [AgentType.JOB_APPLICATION, AgentSafetyLevel.WRITE],
     [AgentType.BLOG, AgentSafetyLevel.WRITE],
     [AgentType.PAPER_RECOMMEND, AgentSafetyLevel.WRITE],
     [AgentType.BLOG_PUBLISH, AgentSafetyLevel.IRREVERSIBLE],

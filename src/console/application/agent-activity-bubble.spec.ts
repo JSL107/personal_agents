@@ -132,6 +132,7 @@ describe('activityBubble', () => {
     ['BE', 'SLACK_COMMAND_BE_SCHEMA', null],
     ['BE', 'SLACK_COMMAND_BE_SRE', null],
     ['BE', 'SLACK_COMMAND_BE_TEST', null],
+    ['JOB_APPLICATION', 'SLACK_MENTION_JOB_APPLICATION', null],
     ['OPS_SUPERVISOR', 'SCHEDULED', null],
     ['CODE_REVIEWER', 'PR_REVIEW_SWEEP', { pullNumber: 999_999 }],
     ['CODE_REVIEWER', 'SLACK_COMMAND_REVIEW_PR', { pullNumber: 999_999 }],
@@ -151,17 +152,15 @@ describe('activityBubble', () => {
     },
   );
 
-  // 2026-10-01 폐지한 두 워커의 트리거. 규칙에서 빠져 null 이 되고, 진행 중 런이라면
+  // 2026-10-01 폐지한 ISSUE_LABELER 의 트리거. 규칙에서 빠져 null 이 되고, 진행 중 런이라면
   // bubbleForActiveRun 이 상태 기본 문구로 받는다 — 예외로 끊기지 않는다.
-  it.each([
-    ['ISSUE_LABELER', 'WEBHOOK_ISSUE_AUTO_LABEL', { issueNumber: 12 }],
-    ['JOB_APPLICATION', 'SLACK_MENTION_JOB_APPLICATION', null],
-  ] as const)(
-    '폐지된 %s:%s 는 규칙 문구를 만들지 않는다',
-    (agentType, triggerType, inputSnapshot) => {
-      expect(activityBubble({ agentType, triggerType, inputSnapshot })).toBe(
-        null,
-      );
-    },
-  );
+  it('폐지된 ISSUE_LABELER:WEBHOOK_ISSUE_AUTO_LABEL 은 규칙 문구를 만들지 않는다', () => {
+    expect(
+      activityBubble({
+        agentType: 'ISSUE_LABELER',
+        triggerType: 'WEBHOOK_ISSUE_AUTO_LABEL',
+        inputSnapshot: { issueNumber: 12 },
+      }),
+    ).toBe(null);
+  });
 });

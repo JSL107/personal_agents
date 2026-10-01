@@ -28,6 +28,7 @@ export const AGENT_TO_PROVIDER: Record<AgentType, ModelProviderName> = {
   // 달리 실제 호출이 있는 autopilot 전용 에이전트다.
   [AgentType.BLOG_REVISION]: ModelProviderName.CHATGPT,
   [AgentType.CAREER_MATE]: ModelProviderName.CHATGPT,
+  [AgentType.JOB_APPLICATION]: ModelProviderName.CHATGPT,
   [AgentType.SUBCONSCIOUS_GATE]: ModelProviderName.CHATGPT,
   [AgentType.CONTRADICTION_JUDGE]: ModelProviderName.CHATGPT,
   [AgentType.REVIEW_REPLY_JUDGE]: ModelProviderName.CHATGPT,

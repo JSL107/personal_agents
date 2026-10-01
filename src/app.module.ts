@@ -35,6 +35,7 @@ import { DocsAuditPrApplier } from './docs-audit/infrastructure/docs-audit-pr.ap
 import { GithubModule } from './github/github.module';
 import { HermesWatchdogModule } from './hermes-watchdog/hermes-watchdog.module';
 import { HumanizeModule } from './humanize/humanize.module';
+import { JobApplicationNudgeCronModule } from './job-application-nudge-cron/job-application-nudge-cron.module';
 import { LocalSessionsModule } from './local-sessions/local-sessions.module';
 import { ModelRouterModule } from './model-router/model-router.module';
 import { NotificationModule } from './notification/notification.module';
@@ -161,6 +162,7 @@ import { WebhookModule } from './webhook/webhook.module';
     // Phase 4 — 주 1회 자동 이력서 보정 점검. Hermes 웹리서치로 2026 트렌드 augment → CAREER_MATE 보정 → Slack DM.
     ResumeCalibrationCronModule,
     // Phase 3 — 매일 자동 지원 넛지. 마감 임박(≤3일)/팔로업 지난 진행 중 지원 건을 SQL 조회 → Slack DM.
+    JobApplicationNudgeCronModule,
     // Hermes(별도 프로세스) cron 이 조용히 죽는 것을 밖에서 감시 — ~/.hermes/cron/jobs.json 점검 → 실패 시 owner DM.
     // 2026-09-18 아침신문이 codex 쿼터 소진으로 실패했는데 알림이 없었던 사고 이후 추가.
     HermesWatchdogModule,
