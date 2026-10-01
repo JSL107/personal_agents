@@ -12,6 +12,15 @@
 // 좌표계가 둘이라는 점만 주의하면 된다 — 평면도는 SpriteKit 기준이라 y 가 **위로** 증가하고,
 // Canvas 는 아래로 증가한다. 변환은 `toCanvasY` 한 곳에서만 한다.
 
+/**
+ * 말풍선(하는 일)을 띄우는 상태 — 일하는 중·승인 대기만. 맥 2D 의 `agentTokenInfo`(`isActive`)와 같은 규칙이다.
+ * 예전 웹은 "쉬는 중" 만 뺐는데, 그러면 일을 마친 사람의 "완료했어요!" 가 상태가 바뀔 때까지 남아
+ * 조감 화면에 말풍선이 여덟 개씩 떠 있었다(사용자 보고). 3D(`renderer3d.js`)도 이 함수를 쓴다.
+ */
+export function showsBubble(state) {
+  return state === "IN_PROGRESS" || state === "AWAITING_APPROVAL";
+}
+
 // MARK: 머리 위 글자 층 계산
 //
 // **클래스 밖에 두는 이유는 검사 때문이다.** 이름표 판 위끝과 말풍선 판 아래끝은 서로 다른
@@ -1431,7 +1440,7 @@ export class OfficeRenderer {
     // 말풍선은 이름표보다 한 층 더 위다. 아래를 고정하고 위로 자라게 해야 두 줄이 될 때
     // 사람 머리와 이름표를 덮지 않는다.
     const bubble = agent?.bubble;
-    if (!bubble || state === "WAITING") {
+    if (!bubble || !showsBubble(state)) {
       return;
     }
     const clearance = bubbleBottomOffset(this.metrics, this.tileSize, fontSize);
