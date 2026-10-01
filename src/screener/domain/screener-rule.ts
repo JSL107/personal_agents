@@ -32,7 +32,13 @@ export const DEFAULT_MAXIMUM_DAILY_GAIN_PERCENT = Number.POSITIVE_INFINITY;
 // 후보·같은 지표에도 다른 종목이 선택될 수 있으므로, 앞 회차와 성적을 한 칸에 모으면 안 된다.
 // 6 으로 올린 이유(2026-09-30): 추천 프롬프트가 전체 지표를 직렬화하므로 investorFlow20 추가로 모델 입력이 달라진다.
 // 운영 순위 재료는 그대로이며, 수급 재료는 백테스트에서만 선택한다.
-export const SCREENER_RULE_VERSION = 6;
+//
+// 7 로 올린 이유(2026-10-01): **순위 재료**가 바뀌었다. SWING 1순위 재료가 `volumeSurge` 에서
+// `investorFlow20` 으로 바뀌어 같은 날·같은 후보에서도 다른 종목이 상위에 온다. 통과 조건(거래량
+// 급증 1.5배 이상)은 그대로라 후보 집합은 같다. 함께 두 전략 공통으로 **값이 없는 후보끼리는
+// 같은 최하위 순위**를 받게 했다(전에는 결측끼리도 코드 순으로 순위가 갈렸다). LONG_TERM 은 통과
+// 조건이 재료 대부분을 채워 영향이 작지만 0 은 아니다.
+export const SCREENER_RULE_VERSION = 7;
 export type ScreenStrategy = 'LONG_TERM' | 'SWING';
 export type RankingWeights = readonly [number, number, number];
 export const SWING_VOLUME_SURGE_MINIMUM = 1.5;
@@ -107,6 +113,13 @@ const withinDailyGainCap = (
   return return1d <= maximumDailyGainPercent;
 };
 
+// 백테스트의 칸 교체(`flowSlot`)와 SWING 기본 재료가 같은 객체를 쓴다. 이미 이 재료를 쓰는
+// 전략에 교체를 또 걸었는지를 객체 동일성으로 판정하기 위해서다.
+const INVESTOR_FLOW_MATERIAL: RankingMaterial = {
+  select: (candidate) => candidate.indicators.investorFlow20,
+  descending: true,
+};
+
 const materialsByStrategy: Record<ScreenStrategy, RankingMaterials> = {
   LONG_TERM: [
     { select: (candidate) => candidate.indicators.return6m, descending: true },
@@ -119,11 +132,12 @@ const materialsByStrategy: Record<ScreenStrategy, RankingMaterials> = {
       descending: true,
     },
   ],
+  // 1순위가 거래량 급증이던 것을 수급으로 바꿨다(2026-10-01). 5년 재생(2021-11-01~2026-09-29)에서
+  // 거래량 급증 순위는 승률 34.05%·거래당 평균 -1.50% 로 역방향이었고, 그 칸을 직전 20봉 수급으로
+  // 채우면 46.68%·+0.14%, 앞뒤 두 구간 모두 개선됐다(비우기만 하면 39.60%·-0.72%). 거래량 급증은
+  // 통과 조건으로는 남는다. 측정 상세: docs/superpowers/plans/2026-09-30-investor-flow-ranking-material.md
   SWING: [
-    {
-      select: (candidate) => candidate.indicators.volumeSurge,
-      descending: true,
-    },
+    INVESTOR_FLOW_MATERIAL,
     { select: (candidate) => candidate.indicators.return1m, descending: true },
     {
       select: (candidate) => candidate.indicators.high200Position,
@@ -152,7 +166,18 @@ const rankCandidates = (
     }
     return left.code.localeCompare(right.code);
   });
-  return new Map(sorted.map((candidate, index) => [candidate.code, index + 1]));
+  // 값이 없는 후보는 모두 같은 최하위 순위를 받는다. 결측끼리 코드 순으로 순위를 매기면, 수집
+  // 장애로 재료 하나가 전 종목 비는 날 그 재료의 가중치만큼 점수를 종목 코드가 정한다.
+  // 값이 있는 동률은 지금처럼 코드 순이다(재현 가능한 결정 순서).
+  const valuedCount = sorted.filter(
+    (candidate) => material.select(candidate) !== null,
+  ).length;
+  return new Map(
+    sorted.map((candidate, index) => [
+      candidate.code,
+      material.select(candidate) === null ? valuedCount + 1 : index + 1,
+    ]),
+  );
 };
 
 const validateRankingWeights = (rankingWeights: RankingWeights): number => {
@@ -204,10 +229,12 @@ export const screenStocks = (
     RankingMaterial,
   ];
   if (flowSlot !== null) {
-    materials[flowSlot - 1] = {
-      select: (candidate) => candidate.indicators.investorFlow20,
-      descending: true,
-    };
+    if (materials.includes(INVESTOR_FLOW_MATERIAL)) {
+      throw new Error(
+        `${strategy} 는 순위 재료에 이미 수급이 있어 수급 칸 교체를 쓸 수 없습니다.`,
+      );
+    }
+    materials[flowSlot - 1] = INVESTOR_FLOW_MATERIAL;
   }
   const rankingMaps = materials.map((material) =>
     rankCandidates(passed, material),
