@@ -8,7 +8,8 @@ import SpriteKit
 ///
 /// 백엔드는 `run.started` 직후 같은 사람의 `state.changed(IN_PROGRESS)` 를 보내고, 그것이 `.working`
 /// 연출이 된다(`visualIntents`). 그 `.working` 이 회의를 연 사람을 회의 시작과 동시에 책상으로 돌려보내던
-/// 것을 막는다 — 지시 하나만 보면 둘 다 맞는 연출이라 순서를 함께 흘려야만 드러난다.
+/// 것을 막는다 — 지시 하나만 보면 둘 다 맞는 연출이라 순서를 함께 흘려야만 드러난다. 상태가 바뀌면 앱이
+/// `sync` 도 다시 부르므로 그 재동기화까지 함께 흘린다.
 ///
 /// 대조군도 함께 본다. 주최자가 아닌 참석자에게 일이 들어오면 회의를 떠나야 한다(관제 신호가 연출을
 /// 이긴다). 주최자 보호가 지나쳐 모든 `.working` 을 삼키면 이쪽이 깨진다.
@@ -42,6 +43,18 @@ func runOfficeMeetingCheck() -> Bool {
 
     scene.perform([.meeting(agentTypes: attendees, thenWorking: host)])
     scene.perform([.working(agentType: host)])
+    // 앱에서는 스토어가 상태를 바꾼 뒤 `onChange(of: store.agents)` 가 `sync` 를 다시 부른다. 그 재동기화가
+    // 진행 중인 배회자를 끊는 경로(`strollersToStop`)도 주최자를 놓치면 안 된다.
+    let syncedAgents = agents.map { agent in
+        agent.agentType == host
+            ? ConsoleAgent(
+                agentType: agent.agentType, displayName: agent.displayName,
+                slashCommands: agent.slashCommands, description: agent.description,
+                state: .inProgress, bubble: agent.bubble, department: agent.department
+            )
+            : agent
+    }
+    scene.sync(agents: syncedAgents, approvals: [])
     let hostAfter = scene.meetingProbe(host)
     // 대조군 — 주최자가 아닌 사람에게 일이 들어온다.
     scene.perform([.working(agentType: guest)])
@@ -49,7 +62,7 @@ func runOfficeMeetingCheck() -> Bool {
     let stayerAfter = scene.meetingProbe(stayer)
 
     let checks: [(String, Bool)] = [
-        ("주최자는 뒤따른 .working 뒤에도 회의석으로 간다", hostAfter?.onMeetingSeat == true && hostAfter?.tracked == true),
+        ("주최자는 뒤따른 .working·재동기화 뒤에도 회의석으로 간다", hostAfter?.onMeetingSeat == true && hostAfter?.tracked == true),
         ("일이 들어온 참석자는 회의를 떠나 자리로 간다(대조군)", guestAfter?.headingHome == true && guestAfter?.tracked == false),
         ("나머지 참석자는 회의석에 남는다", stayerAfter?.onMeetingSeat == true && stayerAfter?.tracked == true),
     ]

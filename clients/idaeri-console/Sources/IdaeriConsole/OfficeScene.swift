@@ -171,7 +171,8 @@ final class OfficeScene: SKScene {
     ///
     /// 백엔드는 `run.started` 직후 같은 사람의 `IN_PROGRESS` 를 보내고 그것이 `.working` 이 된다.
     /// 그 `.working` 은 회의가 끝날 때 `endMeeting` 이 대신하므로 여기 있는 동안은 받지 않는다 —
-    /// 받으면 회의가 열리자마자 주최자만 책상으로 돌아간다. 다른 사건이 그 사람의 연출을 끊으면
+    /// 받으면 회의가 열리자마자 주최자만 책상으로 돌아간다. 같은 이유로 `sync` 의 배회 끊기에서도
+    /// 뺀다(상태가 바뀌면 앱이 `sync` 를 다시 부른다). 다른 사건이 그 사람의 연출을 끊으면
     /// (`cancelStroll`) 함께 빠진다.
     private var meetingHosts: Set<String> = []
     /// 배율이 바뀌어도 걸음의 목적지와 도착 후 동작을 이어가기 위한 기록.
@@ -768,7 +769,10 @@ final class OfficeScene: SKScene {
 
         // 재연결처럼 이벤트 없이 스냅샷만 갱신되는 경로에는 cancelStroll 훅이 없다.
         // 상태가 대기에서 벗어난 배회자는 여기서 끊고 자리로 돌려보낸다.
-        for agentType in strollersToStop(strolling: strollingAgents, agents: agents) {
+        // 회의를 연 사람은 뺀다 — 그 사람의 진행 상태는 회의가 끝나면 시작할 일이다(`meetingHosts`).
+        for agentType in strollersToStop(
+            strolling: strollingAgents.subtracting(meetingHosts), agents: agents
+        ) {
             cancelStroll(agentType)
             goHome(agentType)
         }

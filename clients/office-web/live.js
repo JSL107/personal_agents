@@ -929,12 +929,32 @@ function holdMeeting(agentTypes, thenWorking) {
     if (queueOrder.includes(agentType) || commuting.has(agentType) || departing.has(agentType)) {
       continue;
     }
+    const body = bodies[agentType];
+    if (!body) {
+      continue;
+    }
     const seat = seats[assigned];
+    const facing = table ? facingBetween(seat, table) : null;
+    const here = roundedTile(body);
     strolling.delete(agentType);
-    if (
+    // 배회 목적지 몇 곳(회의 테이블·책장 앞)은 회의석과 같은 칸이다. 이미 거기 서 있으면 경로가 비어
+    // `walkTo` 가 실패하므로, 걷지 않고 그 자리에서 회의를 시작한다 — 건너뛰면 다음 사람이 같은 칸에 겹친다.
+    if (!body.path && here.x === seat.x && here.y === seat.y) {
+      Object.assign(body, {
+        seated: false,
+        interactionPose: null,
+        arriveKind: "회의",
+        dwellRemaining: renderer.layout.meetingDwellSeconds,
+        onArrive: null,
+      });
+      if (facing) {
+        body.facing = facing;
+      }
+      body.pose = characterSpriteFor(body.facing).pose;
+    } else if (
       !walkTo(agentType, seat, {
         dwellSeconds: renderer.layout.meetingDwellSeconds,
-        facing: table ? facingBetween(seat, table) : null,
+        facing,
         kind: "회의",
       })
     ) {
@@ -1804,6 +1824,12 @@ async function main() {
         ? real
         : renderer.plan.desks.map((desk) => desk.agentType).filter((agentType) => bodies[agentType]).slice(0, 4);
       const host = attendees[attendees.length - 1];
+      // 첫 참석자는 자기가 배정될 회의석에 이미 서 있게 한다 — 배회 목적지가 회의석과 겹치는 칸이 있어
+      // 실제로 생기는 경우이고, 걷지 않고 회의에 들어와야 한다(겹치지 않아야 한다).
+      const firstSeat = renderer.layout.meetingSeats?.[0];
+      if (firstSeat) {
+        Object.assign(bodies[attendees[0]], { x: firstSeat.x, y: firstSeat.y, path: null, seated: false });
+      }
       performIntent({ kind: "meeting", agentTypes: attendees, thenWorking: host });
       // 앱이 실제로 보내는 순서 그대로 — `run.started` 의 회의 지시 뒤에 주최자의 `IN_PROGRESS` 가 온다.
       applyStreamPayload({ agentType: host, state: "IN_PROGRESS" });
