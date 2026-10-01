@@ -28,6 +28,7 @@ describe('PaperTradingPrismaRepository pending orders', () => {
     // 결제일 계산이 읽는 공휴일 달력. 기본은 공휴일 없음.
     scheduleItem: { findMany: jest.fn() },
     paperAccount: { findMany: jest.fn() },
+    paperCorporateAction: { findMany: jest.fn() },
     paperTrade: { findMany: jest.fn() },
     dailyPrice: { findMany: jest.fn() },
     benchmarkDailyClose: { findMany: jest.fn() },
@@ -64,6 +65,7 @@ describe('PaperTradingPrismaRepository pending orders', () => {
     prisma.paperOrder.findMany.mockResolvedValue([]);
     prisma.paperTrade.findMany.mockResolvedValue([]);
     prisma.dailyPrice.findMany.mockResolvedValue([]);
+    prisma.paperCorporateAction.findMany.mockResolvedValue([]);
     prisma.benchmarkDailyClose.findMany.mockResolvedValue([]);
     prisma.paperEquitySnapshot.findMany.mockResolvedValue([]);
   });
@@ -166,6 +168,22 @@ describe('PaperTradingPrismaRepository pending orders', () => {
         ticker: { select: { krxMarket: true } },
       },
       orderBy: [{ tradeDate: 'asc' }, { id: 'asc' }],
+    });
+    // 권리락일이 첫 매수일 **뒤**인 기업행동만 어떤 사이클의 몫이 될 수 있다.
+    expect(prisma.paperCorporateAction.findMany).toHaveBeenCalledWith({
+      where: {
+        accountId: { in: [7, 8] },
+        tickerId: { in: [71] },
+        exDate: { gt: new Date('2026-07-02T00:00:00.000Z'), lte: asOf },
+      },
+      select: {
+        accountId: true,
+        tickerId: true,
+        exDate: true,
+        cashDelta: true,
+        eligibleQuantity: true,
+      },
+      orderBy: { id: 'asc' },
     });
     expect(prisma.benchmarkDailyClose.findMany).toHaveBeenCalledWith({
       where: {

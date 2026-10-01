@@ -154,6 +154,7 @@ export class ScoreRecommendationsUsecase {
     const matched = matchRecommendationCycles({
       orders: data.orders,
       trades: data.recommendationTrades,
+      cashEvents: data.cashEvents,
     });
     const validDailyPrices = data.dailyPrices.flatMap((dailyPrice) =>
       dailyPrice.market === null
@@ -171,6 +172,9 @@ export class ScoreRecommendationsUsecase {
       const accountMatched = matchRecommendationCycles({
         orders: accountOrders,
         trades: accountTrades,
+        cashEvents: data.cashEvents.filter(
+          (cashEvent) => cashEvent.accountId === account.id,
+        ),
       });
       const score =
         aggregateRecommendationScores(accountMatched).find(

@@ -370,6 +370,97 @@ describe('matchRecommendationCycles', () => {
       anomalyCount: 2,
     });
   });
+
+  describe('기업행동 현금', () => {
+    // 2026-08-28 코람코더원리츠 특별배당락 사이클(trade 50 → 71)의 실제 원장 값.
+    // 가격만 보면 -78.73% 지만 주당 8,640원 배당(세후 1,330,319원)이 같은 사이클의 몫이다.
+    const exDividendCycle = {
+      orders: [order({ id: 54, accountId: 5, tickerId: 178 })],
+      trades: [
+        trade({
+          id: 50,
+          orderId: 54,
+          accountId: 5,
+          tickerId: 178,
+          quantity: decimal('182'),
+          price: decimal('10880'),
+          fee: decimal('369'),
+          tax: decimal('0'),
+          tradeDate: date('2026-08-24'),
+        }),
+        trade({
+          id: 71,
+          orderId: 75,
+          accountId: 5,
+          tickerId: 178,
+          side: 'SELL',
+          quantity: decimal('182'),
+          price: decimal('2320'),
+          fee: decimal('78'),
+          tax: decimal('844'),
+          realizedPnl: decimal('-1559211.005'),
+          tradeDate: date('2026-08-28'),
+        }),
+      ],
+    };
+    const dividend = {
+      accountId: 5,
+      tickerId: 178,
+      exDate: date('2026-08-28'),
+      cashDelta: decimal('1330319'),
+      eligibleQuantity: decimal('182'),
+    };
+
+    it('보유 구간에 권리락일이 든 배당을 사이클 손익에 더한다', () => {
+      const result = matchRecommendationCycles({
+        ...exDividendCycle,
+        cashEvents: [dividend],
+      });
+
+      expect(result.cycles[0].actualPnl).toBe('-228892');
+      expect(Number(result.cycles[0].actualReturnRate)).toBeCloseTo(
+        -0.115571,
+        6,
+      );
+      // 장부 realizedPnl 은 가격 손익만 담는다. 배당을 더한 값과 비교하면 오탐이다.
+      expect(result.anomalies).toEqual([]);
+      // 성적 집계도 같은 값을 읽는다 — 최대 손실이 -78.73% 로 남지 않는다.
+      expect(
+        Number(aggregateRecommendationScores(result)[0].maximumLoss),
+      ).toBeCloseTo(-0.115571, 6);
+    });
+
+    it('배당이 없으면 지금처럼 가격 손익만 센다', () => {
+      const result = matchRecommendationCycles(exDividendCycle);
+
+      expect(result.cycles[0].actualPnl).toBe('-1559211');
+      expect(result.anomalies).toEqual([]);
+    });
+
+    it('권리락일이 보유 구간 밖이거나 다른 계좌·종목이면 더하지 않는다', () => {
+      const result = matchRecommendationCycles({
+        ...exDividendCycle,
+        cashEvents: [
+          // 매수일 당일 권리락 — 그 전날 들고 있지 않았으니 권리가 없다.
+          { ...dividend, exDate: date('2026-08-24') },
+          { ...dividend, exDate: date('2026-08-31') },
+          { ...dividend, accountId: 6 },
+          { ...dividend, tickerId: 179 },
+        ],
+      });
+
+      expect(result.cycles[0].actualPnl).toBe('-1559211');
+    });
+
+    it('권리 수량 중 이 사이클이 든 주식만큼만 나눠 더한다', () => {
+      const result = matchRecommendationCycles({
+        ...exDividendCycle,
+        cashEvents: [{ ...dividend, eligibleQuantity: decimal('364') }],
+      });
+
+      expect(result.cycles[0].actualPnl).toBe('-894051.5');
+    });
+  });
 });
 
 describe('aggregateRecommendationScores', () => {

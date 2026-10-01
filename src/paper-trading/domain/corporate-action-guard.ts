@@ -1,4 +1,5 @@
 import { MoneyValue } from '../../market-data/domain/market-data.type';
+import { TradeSide } from './paper-account.type';
 
 export interface PriceJumpInput {
   tickerId: number;
@@ -59,3 +60,63 @@ export const describeSuspiciousPriceJump = (
 ): string =>
   `${tickerLabel} 가격이 전일 대비 ${suspicion.ratio}배로 변했습니다 — ` +
   `하루 가격제한(±30%) 밖이라 분할·병합·배당락 또는 시세 오류로 봅니다.`;
+
+export interface HoldingTradeInput {
+  side: TradeSide;
+  quantity: MoneyValue;
+  tradeDate: Date;
+}
+
+export interface HoldingCorporateActionInput {
+  exDate: Date;
+  cashDelta: MoneyValue;
+  quantityDelta: MoneyValue;
+}
+
+// 지금 들고 있는 보유분이 받은 기업행동 현금의 합. 보유분은 마지막으로 전량 정리한 뒤의
+// 첫 매수부터 시작하고, 그 매수일 **다음** 권리락일부터의 기업행동만 이 보유분의 몫이다
+// (권리락일에 산 주식은 권리가 없다). 앞선 보유 때 받은 배당이 지금 보유분의 평단·시세
+// 괴리를 설명하는 것처럼 세면 안 되므로 구간을 자른다.
+//
+// 같은 날짜에서는 기업행동을 체결보다 먼저 적용한다 — 분할·병합은 권리락일 전에 들고
+// 있던 수량에 걸리고, 그날의 체결은 이미 새 기준이다.
+export const sumCurrentHoldingCorporateCash = (input: {
+  trades: HoldingTradeInput[];
+  corporateActions: HoldingCorporateActionInput[];
+  zero: MoneyValue;
+}): MoneyValue => {
+  const events = [
+    ...input.corporateActions.map((corporateAction) => ({
+      time: corporateAction.exDate.getTime(),
+      order: 0,
+      quantityDelta: corporateAction.quantityDelta,
+    })),
+    ...input.trades.map((trade) => ({
+      time: trade.tradeDate.getTime(),
+      order: 1,
+      quantityDelta:
+        trade.side === 'BUY' ? trade.quantity : trade.quantity.times(-1),
+    })),
+  ].sort((left, right) => left.time - right.time || left.order - right.order);
+  let quantity = input.zero;
+  let holdingStart: number | null = null;
+  for (const event of events) {
+    const wasEmpty = quantity.comparedTo(0) <= 0;
+    quantity = quantity.plus(event.quantityDelta);
+    if (quantity.comparedTo(0) <= 0) {
+      holdingStart = null;
+    } else if (wasEmpty) {
+      holdingStart = event.time;
+    }
+  }
+  if (holdingStart === null) {
+    return input.zero;
+  }
+  const start = holdingStart;
+  return input.corporateActions
+    .filter((corporateAction) => corporateAction.exDate.getTime() > start)
+    .reduce(
+      (sum, corporateAction) => sum.plus(corporateAction.cashDelta),
+      input.zero,
+    );
+};

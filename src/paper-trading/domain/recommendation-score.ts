@@ -64,9 +64,24 @@ export interface RecommendationScoreAnomaly {
   actual?: string;
 }
 
+// 기업행동이 계좌에 넣은 현금(배당 등). 체결가만 보면 배당락일의 하락은 손실로 잡히지만, 그
+// 하락분은 배당으로 주주에게 넘어간 돈이다 — 2026-08-28 코람코더원리츠 특별배당락 사이클이
+// -78.73% 로 채점되어 계좌 5 의 평균 수익률을 -0.28% 에서 -4.89% 로 끌어내렸다.
+export interface RecommendationCashEventInput {
+  accountId: number;
+  tickerId: number;
+  exDate: Date;
+  // 세후 금액. 실제로 계좌에 들어온 돈이라 체결 손익과 같은 기준이다.
+  cashDelta: MoneyValue;
+  // 권리를 받은 수량. 한 배당을 여러 사이클이 나눠 가질 때의 분모다.
+  eligibleQuantity: MoneyValue | null;
+}
+
 export interface MatchRecommendationCyclesInput {
   orders: RecommendationOrderInput[];
   trades: RecommendationTradeInput[];
+  // 백테스트 원장처럼 기업행동이 없는 입력은 생략한다.
+  cashEvents?: RecommendationCashEventInput[];
 }
 
 export interface MatchRecommendationCyclesResult {
@@ -115,6 +130,7 @@ const isAfter = (
 const calculateActualPerformance = (
   buyTrade: RecommendationTradeInput,
   sellTrade: RecommendationTradeInput,
+  cashIncome: MoneyValue,
 ): ActualPerformance => {
   const entryTotal = buyTrade.price
     .times(buyTrade.quantity)
@@ -124,7 +140,7 @@ const calculateActualPerformance = (
     .times(sellTrade.quantity)
     .minus(sellTrade.fee)
     .minus(sellTrade.tax);
-  const pnl = exitTotal.minus(entryTotal);
+  const pnl = exitTotal.minus(entryTotal).plus(cashIncome);
   return {
     pnl,
     returnRate: pnl.dividedBy(entryTotal),
@@ -148,6 +164,31 @@ const exceedsPnlTolerance = (
   const absolute = difference.isNegative() ? difference.times(-1) : difference;
   return absolute.comparedTo(quantity.times(PNL_TOLERANCE_PER_SHARE)) > 0;
 };
+
+// 권리락일 전날까지 들고 있던 주식만 권리를 받는다. 그래서 매수일 < 권리락일 ≤ 매도일인
+// 사이클의 몫이고, 권리 수량 중 이 사이클이 든 수량만큼 나눈다.
+const sumCycleCashIncome = (
+  cashEvents: RecommendationCashEventInput[],
+  buyTrade: RecommendationTradeInput,
+  sellTrade: RecommendationTradeInput,
+): MoneyValue =>
+  cashEvents
+    .filter(
+      (cashEvent) =>
+        cashEvent.accountId === buyTrade.accountId &&
+        cashEvent.tickerId === buyTrade.tickerId &&
+        buyTrade.tradeDate.getTime() < cashEvent.exDate.getTime() &&
+        cashEvent.exDate.getTime() <= sellTrade.tradeDate.getTime(),
+    )
+    .reduce((sum, cashEvent) => {
+      const share =
+        cashEvent.eligibleQuantity && !cashEvent.eligibleQuantity.isZero()
+          ? cashEvent.cashDelta
+              .times(buyTrade.quantity)
+              .dividedBy(cashEvent.eligibleQuantity)
+          : cashEvent.cashDelta;
+      return sum.plus(share);
+    }, buyTrade.price.times(0));
 
 const holdingDaysBetween = (entryDate: Date, exitDate: Date): number =>
   (exitDate.getTime() - entryDate.getTime()) / (24 * 60 * 60 * 1000);
@@ -353,20 +394,28 @@ export const matchRecommendationCycles = (
       });
     }
 
-    const performance = calculateActualPerformance(buyTrade, sellTrade);
+    const cashIncome = sumCycleCashIncome(
+      input.cashEvents ?? [],
+      buyTrade,
+      sellTrade,
+    );
+    const performance = calculateActualPerformance(
+      buyTrade,
+      sellTrade,
+      cashIncome,
+    );
+    // 장부 realizedPnl 은 체결 손익만 담는다. 배당까지 더한 값과 대조하면 배당 받은
+    // 사이클이 전부 불일치로 잡힌다.
+    const tradePnl = performance.pnl.minus(cashIncome);
     if (
       sellTrade.realizedPnl &&
-      exceedsPnlTolerance(
-        sellTrade.realizedPnl,
-        performance.pnl,
-        sellTrade.quantity,
-      )
+      exceedsPnlTolerance(sellTrade.realizedPnl, tradePnl, sellTrade.quantity)
     ) {
       anomalies.push({
         type: 'REALIZED_PNL_MISMATCH',
         orderId: order.id,
         tradeId: sellTrade.id,
-        expected: performance.pnl.toString(),
+        expected: tradePnl.toString(),
         actual: sellTrade.realizedPnl.toString(),
       });
     }
@@ -427,15 +476,25 @@ const scoreStrategy = (
       buyTrade: RecommendationTradeInput;
       sellTrade: RecommendationTradeInput;
       holdingDays: number;
+      actualPnl: string;
+      actualReturnRate: string;
     } =>
       cycle.classification === 'CLOSED' &&
       cycle.buyTrade !== null &&
       cycle.sellTrade !== null &&
-      cycle.holdingDays !== null,
+      cycle.holdingDays !== null &&
+      cycle.actualPnl !== null &&
+      cycle.actualReturnRate !== null,
   );
-  const performances = closedCycles.map((cycle) =>
-    calculateActualPerformance(cycle.buyTrade, cycle.sellTrade),
-  );
+  // 사이클을 맺을 때 계산한 값을 그대로 쓴다. 여기서 체결가로 다시 계산하면 배당처럼
+  // 사이클 단계에서만 아는 현금이 평균·적중률에서 빠져, 사이클과 성적이 다른 숫자가 된다.
+  const performances: ActualPerformance[] = closedCycles.map((cycle) => {
+    const zero = cycle.buyTrade.price.times(0);
+    return {
+      pnl: zero.plus(cycle.actualPnl),
+      returnRate: zero.plus(cycle.actualReturnRate),
+    };
+  });
   const returnRates = performances.map((performance) => performance.returnRate);
   const sortedReturnRates = [...returnRates].sort((left, right) =>
     left.comparedTo(right),
