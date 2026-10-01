@@ -37,7 +37,7 @@ export const parsePullRequestReview = (
   onCorrection?: VerdictCorrectionListener,
 ): PullRequestReview => {
   const cleaned = extractJsonObjectText(text);
-  const parsed = parseJson(cleaned, text);
+  const parsed = joinSummarySentences(parseJson(cleaned, text));
 
   if (!isPullRequestReviewShape(parsed)) {
     throw new CodeReviewerException({
@@ -149,6 +149,26 @@ const parseJson = (text: string, rawText: string): unknown => {
       cause: new Error(buildJsonParseCauseMessage(error, rawText)),
     });
   }
+};
+
+// summary 는 문장 배열로 받아 줄바꿈으로 잇는다. 문자열 하나로 받던 때는 모델이 문장마다 따옴표를
+// 끊어 `"summary":"문장1","문장2",…` 처럼 깨진 JSON 을 냈다(재생 codex 324회 중 3회 파싱 실패).
+// 배열이면 같은 습관이 올바른 JSON 이 된다. 소비자는 그대로 문자열을 받고, 옛 형태(문자열)도 통과한다.
+const joinSummarySentences = (value: unknown): unknown => {
+  if (typeof value !== 'object' || value === null) {
+    return value;
+  }
+  const record = value as Record<string, unknown>;
+  if (!isStringArray(record.summary)) {
+    return value;
+  }
+  return {
+    ...record,
+    summary: record.summary
+      .map((sentence) => sentence.trim())
+      .filter((sentence) => sentence.length > 0)
+      .join('\n'),
+  };
 };
 
 const isPullRequestReviewShape = (
