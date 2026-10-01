@@ -101,6 +101,7 @@ export class ReviewPullRequestUsecase {
     isDraft,
     publish,
     excludeConventionFindingIds,
+    noFallback,
   }: ReviewPullRequestInput): Promise<AgentRunOutcome<PullRequestReview>> {
     // INVALID_PR_REFERENCE 는 파싱 시점에 즉시 예외.
     const ref = parsePrReference(prRef);
@@ -170,6 +171,7 @@ export class ReviewPullRequestUsecase {
             prompt,
             systemPrompt: CODE_REVIEWER_SYSTEM_PROMPT,
           },
+          ...(noFallback === true ? { noFallback: true } : {}),
         });
 
         // 짝이 틀린 판정(보류·등급)은 파서가 보정한다 — 모델 출력을 코드가 고쳤다는 사실은 남긴다.
