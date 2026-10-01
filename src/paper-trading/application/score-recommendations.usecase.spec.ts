@@ -187,6 +187,101 @@ describe('ScoreRecommendationsUsecase', () => {
     );
   });
 
+  it('기업행동 현금을 그 계좌의 사이클 성적에만 더한다', async () => {
+    // 두 계좌가 같은 종목을 같은 값에 사고팔았다. 배당 기록은 계좌 7 에만 있다.
+    const cycleTrades = (accountId: number, orderId: number) => [
+      {
+        id: orderId * 10,
+        orderId,
+        accountId,
+        tickerId: 71,
+        side: 'BUY',
+        quantity: decimal('1'),
+        price: decimal('100'),
+        fee: decimal('1'),
+        tax: decimal('0'),
+        realizedPnl: null,
+        tradeDate: new Date('2026-06-01T00:00:00.000Z'),
+      },
+      {
+        id: orderId * 10 + 1,
+        orderId: null,
+        accountId,
+        tickerId: 71,
+        side: 'SELL',
+        quantity: decimal('1'),
+        price: decimal('120'),
+        fee: decimal('1'),
+        tax: decimal('1'),
+        realizedPnl: decimal('17'),
+        tradeDate: new Date('2026-08-01T00:00:00.000Z'),
+      },
+    ];
+    repository.loadRecommendationScoreData.mockResolvedValue({
+      cashEvents: [
+        {
+          accountId: 7,
+          tickerId: 71,
+          exDate: new Date('2026-07-01T00:00:00.000Z'),
+          cashDelta: decimal('10'),
+          eligibleQuantity: decimal('1'),
+        },
+      ],
+      sellOrders: [],
+      accounts: [
+        { id: 7, name: 'LONG_TERM', seedAmount: decimal('1000') },
+        { id: 8, name: 'SWING', seedAmount: decimal('1000') },
+      ],
+      orders: [
+        {
+          id: 301,
+          accountId: 7,
+          tickerId: 71,
+          side: 'BUY',
+          strategy: 'LONG_TERM',
+          status: 'FILLED',
+          quantity: decimal('1'),
+          ruleVersion: 2,
+        },
+        {
+          id: 302,
+          accountId: 8,
+          tickerId: 71,
+          side: 'BUY',
+          strategy: 'SWING',
+          status: 'FILLED',
+          quantity: decimal('1'),
+          ruleVersion: 2,
+        },
+      ],
+      recommendationTrades: [...cycleTrades(7, 301), ...cycleTrades(8, 302)],
+      portfolioTrades: [],
+      dailyPrices: [],
+      benchmarkCloses: [],
+      snapshots: [],
+    });
+    const usecase = new ScoreRecommendationsUsecase(
+      repository as unknown as PaperTradingPrismaRepository,
+      NO_HOLIDAYS,
+    );
+
+    const result = await usecase.execute({
+      asOf: new Date('2026-08-13T00:00:00.000Z'),
+    });
+
+    // 체결 손익 17 + 배당 10 = 27, 원가 101.
+    expect(Number(result.accounts[0].score.meanReturnRate)).toBeCloseTo(
+      27 / 101,
+      10,
+    );
+    expect(Number(result.accounts[1].score.meanReturnRate)).toBeCloseTo(
+      17 / 101,
+      10,
+    );
+    // 배당이 체결 손익 대조를 깨지 않는다.
+    expect(result.accounts[0].exclusions.realizedPnlMismatch).toBe(0);
+  });
+
   it('krxMarket null을 조용히 버리지 않고 anomaly와 shadow unavailable로 센다', async () => {
     const asOf = new Date('2026-08-13T00:00:00.000Z');
     repository.loadRecommendationScoreData.mockResolvedValue({

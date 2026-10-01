@@ -5,6 +5,10 @@ import { readHolidayCalendar } from '../../holiday/infrastructure/holiday-calend
 import { MoneyValue } from '../../market-data/domain/market-data.type';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
+  HoldingCorporateActionInput,
+  HoldingTradeInput,
+} from '../domain/corporate-action-guard';
+import {
   ExitBandSellOrderRecord,
   ExitBandThreshold,
 } from '../domain/exit-band';
@@ -95,6 +99,11 @@ export interface InvariantCorporateActionRow {
   // 지급일. cashDelta 는 권리락일에 곧바로 cashBalance 에 반영되므로, 이 날이 오기 전까지
   // 그 금액은 잔고에 있어도 쓸 수 없는 돈이다. 매수 여력을 가르는 유일한 입력이다.
   payDate: Date | null;
+}
+
+export interface HoldingLedger {
+  trades: HoldingTradeInput[];
+  corporateActions: HoldingCorporateActionInput[];
 }
 
 export interface ApplyCorporateActionMutation {
@@ -1326,6 +1335,33 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
         })),
       };
     });
+  }
+
+  // 장마감 평가가 평단·시세 괴리를 기업행동 현금으로 설명할 수 있는지 볼 때 쓴다.
+  // 괴리가 난 종목에만 부르므로 평소에는 조회가 없다.
+  async findHoldingLedger(
+    accountId: number,
+    tickerId: number,
+  ): Promise<HoldingLedger> {
+    const [trades, corporateActions] = await Promise.all([
+      this.prisma.paperTrade.findMany({
+        where: { accountId, tickerId },
+        select: { side: true, quantity: true, tradeDate: true },
+        orderBy: [{ tradeDate: 'asc' }, { id: 'asc' }],
+      }),
+      this.prisma.paperCorporateAction.findMany({
+        where: { accountId, tickerId },
+        select: { exDate: true, cashDelta: true, quantityDelta: true },
+        orderBy: { id: 'asc' },
+      }),
+    ]);
+    return {
+      trades: trades.map((trade) => ({
+        ...trade,
+        side: trade.side as TradeSide,
+      })),
+      corporateActions,
+    };
   }
 
   async findQuantityAtDate(
