@@ -212,6 +212,7 @@ const command = {
   slippagePercent: 0,
   volumeSurgeMinimum: 1.5,
   rankingWeights: [1, 1, 1] as const,
+  flowSlot: null,
 };
 
 const commandWithExitBand = {

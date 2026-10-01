@@ -1,5 +1,7 @@
+import { BackfillInvestorFlowOptions } from '../application/backfill-investor-flow.usecase';
 import { BackfillPricesOptions } from '../application/backfill-universe-prices.usecase';
 import { CollectBenchmarkOptions } from '../application/collect-benchmark-closes.usecase';
+import { CollectInvestorFlowOptions } from '../application/collect-investor-flow.usecase';
 import { CollectPricesOptions } from '../application/collect-universe-prices.usecase';
 import { ScreenUniverseOptions } from '../application/screen-universe.usecase';
 
@@ -7,7 +9,9 @@ export const SCREENER_CLI_USAGE =
   '사용법:\n' +
   '  pnpm exec ts-node scripts/screener.ts sync-universe\n' +
   '  pnpm exec ts-node scripts/screener.ts collect-prices [--days <봉수>] [--limit <종목수>]\n' +
+  '  pnpm exec ts-node scripts/screener.ts collect-flow [--limit <종목수>]\n' +
   '  pnpm exec ts-node scripts/screener.ts backfill-prices [--years <연수>] [--limit <종목수>] [--recheck]\n' +
+  '  pnpm exec ts-node scripts/screener.ts backfill-flow [--years <연수>] [--limit <종목수>]\n' +
   '  pnpm exec ts-node scripts/screener.ts collect-benchmark [--days <봉수>] [--years <연수>]\n' +
   '  pnpm exec ts-node scripts/screener.ts screen [--strategy LONG_TERM|SWING] [--limit <종목수>] [--record]\n' +
   '  pnpm exec ts-node scripts/screener.ts score-outcomes\n' +
@@ -26,6 +30,16 @@ export interface CollectPricesArguments {
 export interface BackfillPricesArguments {
   subcommand: 'backfill-prices';
   options: BackfillPricesOptions;
+}
+
+export interface CollectFlowArguments {
+  subcommand: 'collect-flow';
+  options: CollectInvestorFlowOptions;
+}
+
+export interface BackfillFlowArguments {
+  subcommand: 'backfill-flow';
+  options: BackfillInvestorFlowOptions;
 }
 
 export interface ScreenArguments {
@@ -55,6 +69,8 @@ export type ScreenerCliArguments =
   | SyncUniverseArguments
   | CollectPricesArguments
   | BackfillPricesArguments
+  | CollectFlowArguments
+  | BackfillFlowArguments
   | CollectBenchmarkArguments
   | ScreenArguments
   | ScoreOutcomesArguments
@@ -89,6 +105,33 @@ const parseCollectPricesOptions = (
     }
   }
   return options;
+};
+
+const parseFlowOptions = <
+  T extends CollectInvestorFlowOptions | BackfillInvestorFlowOptions,
+>(
+  optionValues: string[],
+  includeYears: boolean,
+): T => {
+  const options: BackfillInvestorFlowOptions = {};
+  for (let index = 0; index < optionValues.length; index += 2) {
+    const key = optionValues[index];
+    const value = optionValues[index + 1];
+    if (
+      (key !== '--limit' && (!includeYears || key !== '--years')) ||
+      value === undefined ||
+      value.startsWith('--')
+    ) {
+      throw new Error(SCREENER_CLI_USAGE);
+    }
+    const parsed = parsePositiveInteger(value, key.slice(2));
+    if (key === '--years') {
+      options.years = parsed;
+    } else {
+      options.limit = parsed;
+    }
+  }
+  return options as T;
 };
 
 const parseBackfillPricesOptions = (
@@ -205,6 +248,12 @@ export const parseScreenerCliArguments = (
       subcommand,
       options: parseBackfillPricesOptions(optionValues),
     };
+  }
+  if (subcommand === 'collect-flow') {
+    return { subcommand, options: parseFlowOptions(optionValues, false) };
+  }
+  if (subcommand === 'backfill-flow') {
+    return { subcommand, options: parseFlowOptions(optionValues, true) };
   }
   if (subcommand === 'collect-benchmark') {
     return {

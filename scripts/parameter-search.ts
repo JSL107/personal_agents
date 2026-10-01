@@ -211,6 +211,7 @@ const main = async (): Promise<void> => {
               maximumDailyGainPercent: DEFAULT_MAXIMUM_DAILY_GAIN_PERCENT,
               volumeSurgeMinimum: combination.volumeSurgeMinimum,
               rankingWeights: combination.rankingWeights,
+              flowSlot: null,
               maximumPositions: BACKTEST_DEFAULTS.maximumPositions,
               weightPercent: combination.maximumWeightPercent,
               holdingTradeDays: DEFAULT_HOLDING_TRADE_DAYS[plan.strategy],

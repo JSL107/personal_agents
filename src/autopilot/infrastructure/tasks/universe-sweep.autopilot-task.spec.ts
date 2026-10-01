@@ -4,6 +4,7 @@ import { AgentRunService } from '../../../agent-run/application/agent-run.servic
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { CollectBenchmarkClosesUsecase } from '../../../screener/application/collect-benchmark-closes.usecase';
+import { CollectInvestorFlowUsecase } from '../../../screener/application/collect-investor-flow.usecase';
 import { CollectUniversePricesUsecase } from '../../../screener/application/collect-universe-prices.usecase';
 import { SyncUniverseUsecase } from '../../../screener/application/sync-universe.usecase';
 import { UniverseSweepAutopilotTask } from './universe-sweep.autopilot-task';
@@ -44,6 +45,18 @@ const createFixture = (enabled = 'true') => {
       };
     }),
   };
+  const collectInvestorFlow = {
+    execute: jest.fn(async () => {
+      calls.push('flow');
+      return {
+        targetCount: 2595,
+        succeeded: 2594,
+        failed: 1,
+        written: 100,
+        failures: ['000002: 응답 실패'],
+      };
+    }),
+  };
   const config = { get: jest.fn().mockReturnValue(enabled) };
   const agentRun = {
     execute: jest.fn(async (input) => {
@@ -57,12 +70,14 @@ const createFixture = (enabled = 'true') => {
       syncUniverse as unknown as SyncUniverseUsecase,
       collectPrices as unknown as CollectUniversePricesUsecase,
       collectBenchmark as unknown as CollectBenchmarkClosesUsecase,
+      collectInvestorFlow as unknown as CollectInvestorFlowUsecase,
       config as unknown as ConfigService,
       agentRun as unknown as AgentRunService,
     ),
     syncUniverse,
     collectPrices,
     collectBenchmark,
+    collectInvestorFlow,
     agentRun,
     calls,
   };
@@ -78,6 +93,7 @@ describe('UniverseSweepAutopilotTask', () => {
     expect(fixture.syncUniverse.execute).not.toHaveBeenCalled();
     expect(fixture.collectPrices.execute).not.toHaveBeenCalled();
     expect(fixture.collectBenchmark.execute).not.toHaveBeenCalled();
+    expect(fixture.collectInvestorFlow.execute).not.toHaveBeenCalled();
     expect(fixture.agentRun.execute).not.toHaveBeenCalled();
   });
 
@@ -89,12 +105,13 @@ describe('UniverseSweepAutopilotTask', () => {
       firedAtKst: '2026-08-17',
     });
 
-    expect(fixture.calls).toEqual(['sync', 'collect', 'benchmark']);
+    expect(fixture.calls).toEqual(['sync', 'collect', 'benchmark', 'flow']);
     expect(result).toEqual({
       skip: false,
       summaryText:
-        '유니버스 스윕 완료 — 동기화 2,595건(상폐 2건), 수집 성공 2,594/2,595종목, 저장 12,970봉, 재조정 1종목, 429 재시도 성공 5종목, 장중 차단 0봉, 실패 1종목, 시세 공급 중단 1종목(094800), 벤치마크 KOSPI 4봉',
-      detailText: '시세 수집 실패 상세\n- 000001: 시세 조회 실패',
+        '유니버스 스윕 완료 — 동기화 2,595건(상폐 2건), 수집 성공 2,594/2,595종목, 저장 12,970봉, 재조정 1종목, 429 재시도 성공 5종목, 장중 차단 0봉, 실패 1종목, 시세 공급 중단 1종목(094800), 벤치마크 KOSPI 4봉 · 수급 2,594/2,595종목, 저장 100건, 실패 1종목',
+      detailText:
+        '시세 수집 실패 상세\n- 000001: 시세 조회 실패\n\n수급 수집 실패 상세\n- 000002: 응답 실패',
     });
     expect(fixture.agentRun.execute).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -111,8 +128,9 @@ describe('UniverseSweepAutopilotTask', () => {
       result: {
         skip: false,
         summaryText:
-          '유니버스 스윕 완료 — 동기화 2,595건(상폐 2건), 수집 성공 2,594/2,595종목, 저장 12,970봉, 재조정 1종목, 429 재시도 성공 5종목, 장중 차단 0봉, 실패 1종목, 시세 공급 중단 1종목(094800), 벤치마크 KOSPI 4봉',
-        detailText: '시세 수집 실패 상세\n- 000001: 시세 조회 실패',
+          '유니버스 스윕 완료 — 동기화 2,595건(상폐 2건), 수집 성공 2,594/2,595종목, 저장 12,970봉, 재조정 1종목, 429 재시도 성공 5종목, 장중 차단 0봉, 실패 1종목, 시세 공급 중단 1종목(094800), 벤치마크 KOSPI 4봉 · 수급 2,594/2,595종목, 저장 100건, 실패 1종목',
+        detailText:
+          '시세 수집 실패 상세\n- 000001: 시세 조회 실패\n\n수급 수집 실패 상세\n- 000002: 응답 실패',
       },
       modelUsed: 'deterministic',
       output: {
@@ -135,6 +153,13 @@ describe('UniverseSweepAutopilotTask', () => {
           blockedIntraday: 1,
           latestTradeDate: '2026-08-11',
         },
+        investorFlow: {
+          targetCount: 2595,
+          succeeded: 2594,
+          failed: 1,
+          written: 100,
+          failures: ['000002: 응답 실패'],
+        },
       },
     });
   });
@@ -147,14 +172,16 @@ describe('UniverseSweepAutopilotTask', () => {
     ).resolves.toEqual({
       skip: false,
       summaryText:
-        '유니버스 스윕 완료 — 동기화 2,595건(상폐 2건), 수집 성공 2,594/2,595종목, 저장 12,970봉, 재조정 1종목, 429 재시도 성공 5종목, 장중 차단 0봉, 실패 1종목, 시세 공급 중단 1종목(094800), 벤치마크 KOSPI 4봉',
-      detailText: '시세 수집 실패 상세\n- 000001: 시세 조회 실패',
+        '유니버스 스윕 완료 — 동기화 2,595건(상폐 2건), 수집 성공 2,594/2,595종목, 저장 12,970봉, 재조정 1종목, 429 재시도 성공 5종목, 장중 차단 0봉, 실패 1종목, 시세 공급 중단 1종목(094800), 벤치마크 KOSPI 4봉 · 수급 2,594/2,595종목, 저장 100건, 실패 1종목',
+      detailText:
+        '시세 수집 실패 상세\n- 000001: 시세 조회 실패\n\n수급 수집 실패 상세\n- 000002: 응답 실패',
     });
 
-    expect(fixture.calls).toEqual(['sync', 'collect', 'benchmark']);
+    expect(fixture.calls).toEqual(['sync', 'collect', 'benchmark', 'flow']);
     expect(fixture.syncUniverse.execute).toHaveBeenCalledWith();
     expect(fixture.collectPrices.execute).toHaveBeenCalledWith();
     expect(fixture.collectBenchmark.execute).toHaveBeenCalledWith();
+    expect(fixture.collectInvestorFlow.execute).toHaveBeenCalledWith();
   });
 
   it('벤치마크 수집 실패를 요약에 남기고 유니버스 스윕은 성공 처리한다', async () => {
@@ -169,10 +196,11 @@ describe('UniverseSweepAutopilotTask', () => {
     ).resolves.toEqual({
       skip: false,
       summaryText:
-        '유니버스 스윕 완료 — 동기화 2,595건(상폐 2건), 수집 성공 2,594/2,595종목, 저장 12,970봉, 재조정 1종목, 429 재시도 성공 5종목, 장중 차단 0봉, 실패 1종목, 시세 공급 중단 1종목(094800), 벤치마크 KOSPI 실패(시장 지표 rate limit)',
-      detailText: '시세 수집 실패 상세\n- 000001: 시세 조회 실패',
+        '유니버스 스윕 완료 — 동기화 2,595건(상폐 2건), 수집 성공 2,594/2,595종목, 저장 12,970봉, 재조정 1종목, 429 재시도 성공 5종목, 장중 차단 0봉, 실패 1종목, 시세 공급 중단 1종목(094800), 벤치마크 KOSPI 실패(시장 지표 rate limit) · 수급 2,594/2,595종목, 저장 100건, 실패 1종목',
+      detailText:
+        '시세 수집 실패 상세\n- 000001: 시세 조회 실패\n\n수급 수집 실패 상세\n- 000002: 응답 실패',
     });
-    expect(fixture.calls).toEqual(['sync', 'collect', 'benchmark']);
+    expect(fixture.calls).toEqual(['sync', 'collect', 'benchmark', 'flow']);
 
     const execution = await fixture.agentRun.execute.mock.results[0].value;
     expect(execution).toEqual(
@@ -185,7 +213,27 @@ describe('UniverseSweepAutopilotTask', () => {
             symbol: 'KOSPI',
             error: '시장 지표 rate limit',
           },
+          investorFlow: expect.objectContaining({ failed: 1 }),
         },
+      }),
+    );
+  });
+
+  it('수급 수집 단계 예외를 상세에 남기되 스윕을 실패시키지 않는다', async () => {
+    const fixture = createFixture();
+    fixture.collectInvestorFlow.execute.mockRejectedValueOnce(
+      new Error('네이버 응답 실패'),
+    );
+
+    await expect(
+      fixture.task.run({ ownerSlackUserId: 'U1', firedAtKst: '2026-08-18' }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        skip: false,
+        summaryText: expect.stringContaining(
+          '수급 수집 실패(네이버 응답 실패)',
+        ),
+        detailText: expect.stringContaining('수급 수집 단계 실패'),
       }),
     );
   });

@@ -61,6 +61,9 @@ describe('MarketDataPrismaRepository', () => {
         high: true,
         low: true,
         volume: true,
+        foreignNetBuy: true,
+        institutionNetBuy: true,
+        flowVolume: true,
       },
     });
     expect(
@@ -302,7 +305,7 @@ describe('MarketDataPrismaRepository open 컬럼', () => {
     );
   });
 
-  it('upsertDailyPrices 가 신규 생성과 갱신 양쪽에 봉 네 값을 싣는다', async () => {
+  it('upsertDailyPrices 가 신규 생성과 갱신 양쪽에 봉 네 값을 싣고 수급 필드는 갱신하지 않는다', async () => {
     const upsert = jest.fn((input) => input);
     const prisma = {
       dailyPrice: { upsert },
@@ -329,6 +332,11 @@ describe('MarketDataPrismaRepository open 컬럼', () => {
         }),
       }),
     );
+    expect(upsert.mock.calls[0][0].update).not.toHaveProperty('foreignNetBuy');
+    expect(upsert.mock.calls[0][0].update).not.toHaveProperty(
+      'institutionNetBuy',
+    );
+    expect(upsert.mock.calls[0][0].update).not.toHaveProperty('flowVolume');
   });
 
   it('공급자가 시가·고가·저가를 빠뜨린 봉은 저장된 값을 null 로 덮지 않는다', async () => {

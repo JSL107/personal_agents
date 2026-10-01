@@ -29,6 +29,7 @@ const indicators = (
   turnover60: LIQUID_TURNOVER60,
   highFallbackBarCount: 0,
   barCount: 200,
+  investorFlow20: null,
   ...overrides,
 });
 
@@ -46,9 +47,47 @@ const candidate = (
 
 describe('screenStocks', () => {
   it('장투 통과 후보가 하나면 100점이다', () => {
-    expect(SCREENER_RULE_VERSION).toBe(5);
+    expect(SCREENER_RULE_VERSION).toBe(6);
     expect(screenStocks([candidate('000001')], 'LONG_TERM', 20)).toEqual([
       expect.objectContaining({ code: '000001', score: 100 }),
+    ]);
+  });
+
+  it('수급 순위 칸만 교체하고 지정하지 않으면 기존 순위를 유지한다', () => {
+    const candidates = [
+      candidate('000001', { return6m: 30, investorFlow20: -0.1 }),
+      candidate('000002', { return6m: 20, investorFlow20: 0.2 }),
+      candidate('000003', { return6m: 10, investorFlow20: 0.1 }),
+    ];
+    const legacy = screenStocks(
+      candidates,
+      'LONG_TERM',
+      3,
+      MINIMUM_TURNOVER60,
+      undefined,
+      undefined,
+      [1, 0, 0],
+    );
+    const flow = screenStocks(
+      candidates,
+      'LONG_TERM',
+      3,
+      MINIMUM_TURNOVER60,
+      undefined,
+      undefined,
+      [1, 0, 0],
+      1,
+    );
+
+    expect(legacy.map((stock) => stock.code)).toEqual([
+      '000001',
+      '000002',
+      '000003',
+    ]);
+    expect(flow.map((stock) => stock.code)).toEqual([
+      '000002',
+      '000003',
+      '000001',
     ]);
   });
 

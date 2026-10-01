@@ -8,6 +8,7 @@ import { BenchmarkPrismaRepository } from './infrastructure/benchmark.prisma.rep
 import { KrxDelistingClient } from './infrastructure/krx/krx-delisting.client';
 import { KrxListingClient } from './infrastructure/krx/krx-listing.client';
 import { MarketDataPrismaRepository } from './infrastructure/market-data.prisma.repository';
+import { NaverInvestorFlowClient } from './infrastructure/naver/naver-investor-flow.client';
 import { TossApiClient } from './infrastructure/toss/toss-api.client';
 import { TossInvestClient } from './infrastructure/toss/toss-invest.client';
 import { TossMarketDataClient } from './infrastructure/toss/toss-market-data.client';
@@ -21,6 +22,7 @@ import { YahooFinanceMarketDataClient } from './infrastructure/yahoo-finance.mar
     KrxDelistingClient,
     KrxListingClient,
     MarketDataPrismaRepository,
+    NaverInvestorFlowClient,
     BenchmarkPrismaRepository,
     YahooFinanceMarketDataClient,
     { provide: MARKET_DATA_PORT, useClass: TossMarketDataClient },
@@ -37,6 +39,7 @@ import { YahooFinanceMarketDataClient } from './infrastructure/yahoo-finance.mar
     KrxDelistingClient,
     KrxListingClient,
     MarketDataPrismaRepository,
+    NaverInvestorFlowClient,
     BenchmarkPrismaRepository,
   ],
 })

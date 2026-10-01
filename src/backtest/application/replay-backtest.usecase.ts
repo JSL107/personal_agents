@@ -102,6 +102,7 @@ export interface ReplayBacktestCommand {
   maximumDailyGainPercent: number;
   volumeSurgeMinimum: number;
   rankingWeights: RankingWeights;
+  flowSlot: 1 | 2 | 3 | null;
   maximumPositions: number;
   weightPercent: number;
   holdingTradeDays: number;
@@ -121,6 +122,7 @@ export interface ReplayBacktestCommand {
 
 export interface ReplayBacktestResult {
   strategy: ScreenStrategy;
+  flowSlot: 1 | 2 | 3 | null;
   from: string;
   to: string;
   tradeDateCount: number;
@@ -955,6 +957,7 @@ export class ReplayBacktestUsecase {
       context.command.maximumDailyGainPercent,
       context.command.volumeSurgeMinimum,
       context.command.rankingWeights,
+      context.command.flowSlot,
     );
     const asOfIndex = context.tradeDateIndex.get(asOf) as number;
     const heldPositions = context.ledger.openPositions().map((position) => ({
@@ -1087,6 +1090,7 @@ export class ReplayBacktestUsecase {
 
     return {
       strategy: context.command.strategy,
+      flowSlot: context.command.flowSlot,
       from: context.command.from,
       to: context.command.to,
       tradeDateCount: context.calendar.tradeDates.length,

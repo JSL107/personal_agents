@@ -3,6 +3,7 @@ import { formatBacktestResult } from './backtest.formatter';
 
 const result: ReplayBacktestResult = {
   strategy: 'LONG_TERM',
+  flowSlot: null,
   from: '2026-01-02',
   to: '2026-08-14',
   tradeDateCount: 152,

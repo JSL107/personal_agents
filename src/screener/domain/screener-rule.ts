@@ -30,7 +30,9 @@ export const DEFAULT_MAXIMUM_DAILY_GAIN_PERCENT = Number.POSITIVE_INFINITY;
 // LONG_TERM 매수 사유의 "과열된 반도체·급등 후보보다 … 기존 금융주 중심 보유 구성의
 // 분산에도 유리해"가 그 실례다. 업종은 프롬프트에 없었다). 추측이 데이터로 바뀌면 같은
 // 후보·같은 지표에도 다른 종목이 선택될 수 있으므로, 앞 회차와 성적을 한 칸에 모으면 안 된다.
-export const SCREENER_RULE_VERSION = 5;
+// 6 으로 올린 이유(2026-09-30): 추천 프롬프트가 전체 지표를 직렬화하므로 investorFlow20 추가로 모델 입력이 달라진다.
+// 운영 순위 재료는 그대로이며, 수급 재료는 백테스트에서만 선택한다.
+export const SCREENER_RULE_VERSION = 6;
 export type ScreenStrategy = 'LONG_TERM' | 'SWING';
 export type RankingWeights = readonly [number, number, number];
 export const SWING_VOLUME_SURGE_MINIMUM = 1.5;
@@ -180,6 +182,7 @@ export const screenStocks = (
   maximumDailyGainPercent: number = DEFAULT_MAXIMUM_DAILY_GAIN_PERCENT,
   volumeSurgeMinimum: number = SWING_VOLUME_SURGE_MINIMUM,
   rankingWeights: RankingWeights = DEFAULT_RANKING_WEIGHTS,
+  flowSlot: 1 | 2 | 3 | null = null,
 ): ScreenedStock[] => {
   const totalWeight = validateRankingWeights(rankingWeights);
   const passed = candidates.filter(
@@ -195,7 +198,18 @@ export const screenStocks = (
     return [];
   }
 
-  const rankingMaps = materialsByStrategy[strategy].map((material) =>
+  const materials = [...materialsByStrategy[strategy]] as [
+    RankingMaterial,
+    RankingMaterial,
+    RankingMaterial,
+  ];
+  if (flowSlot !== null) {
+    materials[flowSlot - 1] = {
+      select: (candidate) => candidate.indicators.investorFlow20,
+      descending: true,
+    };
+  }
+  const rankingMaps = materials.map((material) =>
     rankCandidates(passed, material),
   );
   const candidateCount = passed.length;

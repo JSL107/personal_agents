@@ -4,9 +4,11 @@ import { NestFactory } from '@nestjs/core';
 
 import { getTodayKstDate } from '../src/common/util/kst-date.util';
 import { PrismaModule } from '../src/prisma/prisma.module';
+import { BackfillInvestorFlowUsecase } from '../src/screener/application/backfill-investor-flow.usecase';
 import { BackfillUniversePricesUsecase } from '../src/screener/application/backfill-universe-prices.usecase';
 import { BuildScreeningScorecardUsecase } from '../src/screener/application/build-screening-scorecard.usecase';
 import { CollectBenchmarkClosesUsecase } from '../src/screener/application/collect-benchmark-closes.usecase';
+import { CollectInvestorFlowUsecase } from '../src/screener/application/collect-investor-flow.usecase';
 import { CollectUniversePricesUsecase } from '../src/screener/application/collect-universe-prices.usecase';
 import { ScoreScreeningOutcomesUsecase } from '../src/screener/application/score-screening-outcomes.usecase';
 import { ScreenUniverseUsecase } from '../src/screener/application/screen-universe.usecase';
@@ -138,6 +140,32 @@ const main = async (): Promise<void> => {
       );
       if (backfillFailureDetail) {
         console.log(backfillFailureDetail);
+      }
+      return;
+    }
+
+    if (parsed.subcommand === 'collect-flow') {
+      const result = await application
+        .get(CollectInvestorFlowUsecase)
+        .execute(parsed.options);
+      console.log(
+        `수급 수집 완료 — 성공 ${result.succeeded}/${result.targetCount}종목, 실패 ${result.failed}종목, 공급자 장애로 건너뜀 ${result.abortedCount}종목, 저장 ${result.written}건`,
+      );
+      for (const failure of result.failures) {
+        console.log(failure);
+      }
+      return;
+    }
+
+    if (parsed.subcommand === 'backfill-flow') {
+      const result = await application
+        .get(BackfillInvestorFlowUsecase)
+        .execute(parsed.options);
+      console.log(
+        `과거 수급 수집 완료 — 성공 ${result.succeeded}/${result.targetCount}종목, 건너뜀 ${result.skipped}, 소진 ${result.exhausted}, 미진전 ${result.stalled}, 실패 ${result.failed}, 조회 ${result.pagesFetched}페이지, 저장 ${result.written}건`,
+      );
+      for (const failure of result.failures) {
+        console.log(failure);
       }
       return;
     }
