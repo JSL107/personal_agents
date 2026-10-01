@@ -46,6 +46,7 @@ import {
   SimilarPlanRow,
   SucceededAgentRunSnapshot,
 } from '../domain/port/agent-run.repository.port';
+import { claimParentRun } from './parent-run-context';
 import {
   claimRoutingContext,
   RoutingContext,
@@ -114,8 +115,21 @@ export interface ExecuteAgentRunInput<T> {
   triggerType: TriggerType;
   inputSnapshot: unknown;
   evidence?: EvidenceInput[];
+  // 이 실행이 입력으로 읽어 간 **다른** 직원들(시작 전에 이미 정해진 것만). 콘솔 오피스가
+  // 시작 순간 이 사람들을 회의실로 모은다. 계보(parentId)와 다르다 — 그들이 이 실행을
+  // 낳은 게 아니라 이 실행이 그들의 지난 결과를 읽을 뿐이고, 출처가 여럿이라 칸 하나에 못 담는다.
+  // 감사 기록은 evidence 가 맡는다 — 이 값은 시작 알림에만 실리고 DB 에 남지 않는다.
+  participants?: readonly AgentType[];
   run: (context: AgentRunContext) => Promise<AgentRunExecutionResult<T>>;
 }
+
+// 시작·종료 알림에 함께 싣는 "이 실행에 엮인 사람들". 스윕처럼 실행 밖에서 내는 알림은 모른다.
+interface ConsoleRunLineage {
+  parentId: number | undefined;
+  participants: readonly AgentType[];
+}
+
+const NO_LINEAGE: ConsoleRunLineage = { parentId: undefined, participants: [] };
 
 // execute 의 외부 노출 형태 — 도메인 결과(result) 와 라우팅 메타(modelUsed/agentRunId) 분리.
 // SlackService formatter 가 footer 렌더링에 modelUsed/agentRunId 를 사용하고 (PRO-3),
@@ -237,12 +251,15 @@ export class AgentRunService implements OnApplicationBootstrap {
     status: AgentRunStatus,
     startedAt: Date,
     finishedAt: Date | null,
+    lineage: ConsoleRunLineage = NO_LINEAGE,
   ): ConsoleRun {
     return {
       id: String(id),
       agentType,
       status,
-      parentId: null,
+      parentId:
+        lineage.parentId === undefined ? null : String(lineage.parentId),
+      participants: lineage.participants,
       startedAt: startedAt.toISOString(),
       finishedAt: finishedAt === null ? null : finishedAt.toISOString(),
     };
@@ -253,6 +270,7 @@ export class AgentRunService implements OnApplicationBootstrap {
     triggerType,
     inputSnapshot,
     evidence,
+    participants = [],
     run,
   }: ExecuteAgentRunInput<T>): Promise<AgentRunOutcome<T>> {
     // 라우터가 스코프에 놓아 둔 근거를 **행을 만드는 순간** 집어 담는다.
@@ -266,11 +284,25 @@ export class AgentRunService implements OnApplicationBootstrap {
         `라우팅 근거 기록 건너뜀 — ${agentType} (inputSnapshot 이 객체가 아님: ${Array.isArray(inputSnapshot) ? 'array' : typeof inputSnapshot})`,
       );
     }
-    const { id } = await this.repository.begin({
+    // 부모도 행을 만드는 순간 적는다 — 사후에 적으면 아래 run.started 에 실리지 않는다.
+    const parentId = claimParentRun();
+    const { id, parentId: storedParentId } = await this.repository.begin({
       agentType,
       triggerType,
       inputSnapshot: withRoutingContext(inputSnapshot, routing),
+      ...(parentId !== undefined ? { parentId } : {}),
     });
+    // 자기 자신은 참여자가 아니다(PM 이 지난 PM 계획을 읽는 경우 등). 순서는 호출부 선언 그대로.
+    // 부모는 요청한 값이 아니라 **실제로 저장된** 값을 싣는다 — 부모 행이 없어 빼고 만든 경우
+    // 화면에만 위임 계보가 그려지면 DB 와 다른 이야기를 한다.
+    const lineage: ConsoleRunLineage = {
+      parentId: storedParentId,
+      participants: participants.filter(
+        (participant, index) =>
+          participant !== agentType &&
+          participants.indexOf(participant) === index,
+      ),
+    };
 
     // OPS-1 Quota Pane — execute 소요 시간을 finish 호출 시 함께 기록.
     // begin 직후 시점부터 측정해 evidence 기록 + run 콜백 + finish 직전까지의 elapsed 가 잡힌다.
@@ -287,6 +319,7 @@ export class AgentRunService implements OnApplicationBootstrap {
         AgentRunStatus.IN_PROGRESS,
         startedAt,
         null,
+        lineage,
       ),
     });
     this.consoleEvents?.publish({
@@ -362,6 +395,7 @@ export class AgentRunService implements OnApplicationBootstrap {
           AgentRunStatus.SUCCEEDED,
           startedAt,
           new Date(),
+          lineage,
         ),
       });
       this.consoleEvents?.publish({
@@ -427,6 +461,7 @@ export class AgentRunService implements OnApplicationBootstrap {
           AgentRunStatus.FAILED,
           startedAt,
           new Date(),
+          lineage,
         ),
       });
       this.consoleEvents?.publish({

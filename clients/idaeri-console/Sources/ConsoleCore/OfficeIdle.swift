@@ -731,7 +731,10 @@ public func officeMeetingSeats(plan: OfficeFloorPlan) -> [TilePoint] {
         }
 }
 
-/// 이 실행이 속한 체인의 참여자(조상부터 자신까지, 중복 제거).
+/// 이 실행에 엮인 사람들 — 입력으로 읽어 간 사람(`participants`) → 체인의 조상 → 자신 순, 중복 제거.
+///
+/// 두 출처는 뜻이 다르다. `parentId` 는 "누가 이 일을 넘겼나"(위임 계보)이고 `participants` 는
+/// "누구의 결과를 읽고 하나"(일일 평가가 회고·PO·임팩트 셋을 읽는 것)다. 회의는 둘 다를 모은다.
 ///
 /// `parentId` 를 거슬러 올라간다. 순환하거나 비정상적으로 긴 체인에서 멈추도록 상한을 둔다 —
 /// 화면 연출 하나 때문에 스냅샷 적용이 멈추면 관제 화면 전체가 얼어붙는다.
@@ -747,9 +750,11 @@ public func officeChainParticipants(run: ConsoleRun, runs: [ConsoleRun]) -> [Str
         }
         cursor = runsById[parentId]
     }
-    // 조상 → 자신 순으로 뒤집고, 같은 사람이 체인에 두 번 나오면 처음 자리만 남긴다.
+    // 읽어 간 사람 → 조상 → 자신 순으로 잇고, 같은 사람이 두 번 나오면 처음 자리만 남긴다.
+    // 자신은 맨 뒤에 둬야 하므로 읽어 간 사람 목록에서는 미리 뺀다(백엔드도 빼지만 믿지 않는다).
+    let sources = run.participants.filter { $0 != run.agentType }
     var seenAgents: Set<String> = []
-    return ancestors.reversed().filter { seenAgents.insert($0).inserted }
+    return (sources + ancestors.reversed()).filter { seenAgents.insert($0).inserted }
 }
 
 // MARK: - 내 작업 세션

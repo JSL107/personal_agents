@@ -1,6 +1,7 @@
 import { Logger } from '@nestjs/common';
 
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
+import { claimParentRun } from '../../agent-run/application/parent-run-context';
 import {
   claimRoutingContext,
   RoutingContext,
@@ -413,21 +414,29 @@ describe('IdaeriRouterUsecase', () => {
 
   describe('Handoff chain (step 6)', () => {
     it('worker 가 followUp 반환하면 manager 가 다음 worker 로 재 dispatch + 최종 worker 결과 반환', async () => {
-      const pmDispatcher = buildDispatcher(AgentType.PM, () => ({
-        agentRunId: 1,
-        output: { plan: 'PM result' },
-        modelUsed: 'pm-mock',
-        followUp: {
-          toWorker: AgentType.CODE_REVIEWER,
-          reason: 'PM 이 BE 검토 요청',
-          passthroughInput: { text: 'user repository 만들어줘' },
-        },
-      }));
-      const beDispatcher = buildDispatcher(AgentType.CODE_REVIEWER, () => ({
-        agentRunId: 2,
-        output: { plan: 'BE result' },
-        modelUsed: 'be-mock',
-      }));
+      // 각 dispatch 안에서 AgentRun 이 열린다고 치고, 그 순간 부모가 보이는지 기록한다.
+      const claimedParents: Array<number | undefined> = [];
+      const pmDispatcher = buildDispatcher(AgentType.PM, () => {
+        claimedParents.push(claimParentRun());
+        return {
+          agentRunId: 1,
+          output: { plan: 'PM result' },
+          modelUsed: 'pm-mock',
+          followUp: {
+            toWorker: AgentType.CODE_REVIEWER,
+            reason: 'PM 이 BE 검토 요청',
+            passthroughInput: { text: 'user repository 만들어줘' },
+          },
+        };
+      });
+      const beDispatcher = buildDispatcher(AgentType.CODE_REVIEWER, () => {
+        claimedParents.push(claimParentRun());
+        return {
+          agentRunId: 2,
+          output: { plan: 'BE result' },
+          modelUsed: 'be-mock',
+        };
+      });
       const { usecase, agentRunService } = buildUsecase([
         pmDispatcher,
         beDispatcher,
@@ -463,13 +472,10 @@ describe('IdaeriRouterUsecase', () => {
         }),
       );
 
-      // step 8 — child run (BE: id=2) 에 parent (PM: id=1) 가 기록됐는지.
-      // root entry (PM) 는 contextRefs 가 없어 setParentId 호출 X — child 만 1회 호출.
-      expect(agentRunService.setParentId).toHaveBeenCalledTimes(1);
-      expect(agentRunService.setParentId).toHaveBeenCalledWith({
-        id: 2,
-        parentId: 1,
-      });
+      // child run (BE) 은 열리는 순간 부모(PM: id=1)를 집어 간다 — 끝난 뒤 되돌아가 적지 않는다.
+      // root entry (PM) 는 contextRefs 가 없어 부모가 없다.
+      expect(claimedParents).toEqual([undefined, 1]);
+      expect(agentRunService.setParentId).not.toHaveBeenCalled();
     });
 
     it('chain 안 같은 worker 가 재진입하면 CYCLE_DETECTED', async () => {
@@ -790,7 +796,7 @@ describe('IdaeriRouterUsecase', () => {
 
   // 과거 실행 id 를 돌려주는 경로(CAREER_MATE 의 RENDER_*)에 이번 chain 의 부모를 적으면
   // 그 행이 다른 요청의 자식으로 둔갑한다.
-  it('재사용된 run 에는 parentId 를 쓰지 않는다', async () => {
+  it('재사용된 run 에는 parentId 를 쓰지 않는다 — 새 행을 열지 않으니 claim 도 없다', async () => {
     const dispatcher = buildDispatcher(AgentType.CAREER_MATE, () => ({
       agentRunId: 31,
       reusedAgentRun: true,
@@ -806,6 +812,26 @@ describe('IdaeriRouterUsecase', () => {
     });
 
     expect(agentRunService.setParentId).not.toHaveBeenCalled();
+  });
+
+  // 슬랙 대화 메모리는 직전 턴의 0(유효 run 없음)도 그대로 넘긴다. 부모로 쓰면 FK 가 깨진다.
+  it('직전 run id 가 0 sentinel 이면 부모로 넘기지 않는다', async () => {
+    let claimed: number | undefined = -1;
+    const dispatcher = buildDispatcher(AgentType.WORK_REVIEWER, () => {
+      claimed = claimParentRun();
+      return { agentRunId: 5 };
+    });
+    const { usecase } = buildUsecase([dispatcher]);
+
+    await usecase.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '회고해줘',
+      agentTypeHint: AgentType.WORK_REVIEWER,
+      contextRefs: { agentRunId: 0 },
+    });
+
+    expect(claimed).toBeUndefined();
   });
 
   // 이 세 갈래는 워커를 한 번도 부르지 않아 AgentRun 이 아예 없었다 — 분류가 실패한 표본이

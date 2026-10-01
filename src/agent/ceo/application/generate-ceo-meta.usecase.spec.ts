@@ -181,6 +181,28 @@ describe('GenerateCeoMetaUsecase', () => {
     expect(call.evidence[0].sourceType).toBe('CEO_META_SOURCE_PO_EVAL');
   });
 
+  // 주간 CEO 회의 참석자 — 오피스가 run.started 순간 이 사람들을 회의실로 모은다.
+  it('참석자는 PO_EVAL + 읽어 온 PM', async () => {
+    await usecase.execute({ slackUserId: 'U1', range: 'WEEK' });
+    expect(agentRunServiceExecute.mock.calls[0][0].participants).toEqual([
+      AgentType.PO_EVAL,
+      AgentType.PM,
+    ]);
+  });
+
+  it('PM 이 없으면 참석자도 PO_EVAL 만', async () => {
+    agentRunServiceFindRecent.mockImplementation(async ({ agentType }) => {
+      if (agentType === AgentType.PO_EVAL) {
+        return [phaseRun(201, {})];
+      }
+      return [];
+    });
+    await usecase.execute({ slackUserId: 'U1', range: 'WEEK' });
+    expect(agentRunServiceExecute.mock.calls[0][0].participants).toEqual([
+      AgentType.PO_EVAL,
+    ]);
+  });
+
   it('prompt 에 2 phase label + range 헤더 포함', async () => {
     await usecase.execute({ slackUserId: 'U1', range: 'TODAY' });
     const promptArg = modelRouter.route.mock.calls[0][0].request.prompt;

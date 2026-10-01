@@ -434,14 +434,32 @@ public func visualIntents(for event: ConsoleEvent, context: ChoreographyContext)
         }
         // 체인에 여럿이 얽혔으면 회의실로 모은다. 화면에서 자리를 뜨는 사람이 여럿이라
         // "지금 이 일에 누가 관여하는지" 가 한눈에 보인다 — 1:1 전달로는 두 사람만 보인다.
-        let participants = officeChainParticipants(run: run, runs: context.runs).filter(knows)
+        // 결과를 읽힌 사람(participants)이 지금 다른 일을 하는 중이면 부르지 않는다. 그 사람의
+        // 지금 일은 이 실행과 무관한데, 회의·전달 연출은 참석자의 작업 모습을 끊고(stopWorking)
+        // 끝나면 귀가만 시킨다 — 실제로는 일하는 중인데 다음 이벤트까지 노는 모습으로 남는다.
+        // 부모(위임)는 넘기고 나서 이 실행이 시작되므로 이 검사 대상이 아니다.
+        func isBusy(_ agentType: String) -> Bool {
+            let state = agent(agentType)?.state
+            return state == .inProgress || state == .awaitingApproval
+        }
+        let availableSources = run.participants.filter { !isBusy($0) }
+        let gatheringRun = ConsoleRun(
+            id: run.id, agentType: run.agentType, status: run.status, parentId: run.parentId,
+            participants: availableSources, startedAt: run.startedAt, finishedAt: run.finishedAt
+        )
+        let participants = officeChainParticipants(run: gatheringRun, runs: context.runs).filter(knows)
         if participants.count >= officeMeetingMinimumParticipants {
             return [.meeting(agentTypes: participants, thenWorking: run.agentType)]
         }
-        if let parentId = run.parentId,
-           let parent = context.runs.first(where: { $0.id == parentId }),
-           knows(parent.agentType) {
-            return [.handoff(from: parent.agentType, to: run.agentType), .working(agentType: run.agentType)]
+        // 둘뿐이면 1:1 전달. 넘긴 사람은 부모(위임)가 우선이고, 없으면 읽어 간 결과의 주인이다
+        // (PO 가 PM 계획을 읽어 점검하는 것 — 결과를 건네받는 모양이 같다).
+        let parentAgentType = run.parentId
+            .flatMap { parentId in context.runs.first(where: { $0.id == parentId }) }
+            .map(\.agentType)
+            .flatMap { knows($0) ? $0 : nil }
+        let sourceAgentType = availableSources.last { $0 != run.agentType && knows($0) }
+        if let from = parentAgentType ?? sourceAgentType {
+            return [.handoff(from: from, to: run.agentType), .working(agentType: run.agentType)]
         }
         return [.working(agentType: run.agentType)]
 
