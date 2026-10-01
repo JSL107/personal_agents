@@ -10,7 +10,7 @@
 // 그것만으로는 막히지 않는다.
 //
 // DROP INDEX 는 일부러 무시한다 — Prisma 스키마 문법으로 표현할 수 없어
-// src/prisma/prisma.service.ts 의 onModuleInit 이 부팅마다 IF NOT EXISTS 로 되살리는
+// src/prisma/manual-index.sql.ts 목록을 부팅과 push 직후(db:restore-indexes)가 되살리는
 // 수동 인덱스라, 상시 drift 로 나오는 것이 정상이다.
 
 import { execFileSync } from 'node:child_process';
