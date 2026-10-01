@@ -4,6 +4,7 @@ import {
   redactInjectionPhrases,
   wrapUntrustedInput,
 } from '../../../common/llm/untrusted-input.util';
+import { AssignedTasks } from '../../../github/domain/github.type';
 import { ConversationContext } from '../../../router/domain/conversation-context.type';
 import { PlanInputTruncation } from '../domain/pm-agent.type';
 import {
@@ -183,6 +184,7 @@ export class DailyPlanPromptBuilder {
         summaries: recentPlanSummaries,
         thresholdDays: staleDemoteDays,
         openIds: collectOpenGithubTaskIds(githubTasks),
+        githubTasks,
       }),
       similarPlans: formatSimilarPlansSection(similarPlans),
     };
@@ -313,10 +315,12 @@ const formatStaleTasksSection = ({
   summaries,
   thresholdDays,
   openIds,
+  githubTasks,
 }: {
   summaries: DailyPlanContext['recentPlanSummaries'];
   thresholdDays: number;
   openIds: OpenTaskIds;
+  githubTasks: AssignedTasks | null;
 }): string | null => {
   const staleIds = computeStaleTaskIds(summaries, thresholdDays, openIds);
   if (staleIds.size === 0) {
@@ -325,9 +329,14 @@ const formatStaleTasksSection = ({
 
   const daysById = computeConsecutiveDaysById(summaries, openIds);
   const latestTitleById = buildLatestTitleById(summaries);
+  const githubTitleById = buildGithubTitleById(githubTasks);
   const lines = [...staleIds].map((id) => {
     const days = (daysById.get(id) ?? 0) + 1;
-    const title = latestTitleById.get(id) ?? '(최근 제목 없음)';
+    // 오늘 GitHub 에서 받은 제목이 먼저다. 과거 plan 에 저장된 제목은 한 번 틀리면 그대로 대물림된다 —
+    // 옛 매핑 버그가 PR #52 에 "PR #1149 …" 를 써 넣었고, 그 제목이 정체 목록을 거쳐 매일 다시 저장됐다
+    // (2026-10-01 아침 plan). 오늘 목록에 없는 id(조회 실패·순번 id)만 과거 제목으로 물러선다.
+    const title =
+      githubTitleById.get(id) ?? latestTitleById.get(id) ?? '(최근 제목 없음)';
     return `- ${id} (${days}일 연속) : ${title}`;
   });
 
@@ -371,6 +380,25 @@ const formatSimilarPlansSection = (
     `[유사 plan (FTS top ${entries.length})]`,
     wrapUntrustedInput(entries.join('\n')),
   ].join('\n');
+};
+
+// id 는 stale-task.util 의 `owner/repo#번호` 형식과 같다. 표기는 GitHub 섹션과 맞춘다.
+const buildGithubTitleById = (
+  githubTasks: AssignedTasks | null,
+): Map<string, string> => {
+  if (!githubTasks) {
+    return new Map();
+  }
+  return new Map([
+    ...githubTasks.issues.map((issue): [string, string] => [
+      `${issue.repo}#${issue.number}`,
+      `Issue #${issue.number} ${issue.title}`,
+    ]),
+    ...githubTasks.pullRequests.map((pr): [string, string] => [
+      `${pr.repo}#${pr.number}`,
+      `PR #${pr.number} ${pr.title}`,
+    ]),
+  ]);
 };
 
 const buildLatestTitleById = (
