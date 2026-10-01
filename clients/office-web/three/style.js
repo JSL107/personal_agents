@@ -102,13 +102,23 @@ const materials = new Map();
 const artTextures = new Map();
 const artMaterials = new Map();
 const faceArtNames = ["face-open", "face-soft"];
+// **실패해도 모듈은 선다.** 이 파일은 3D 화면 전체(렌더러·가구·캐릭터)가 import 한다 — 최상위 await 가
+// 거부되면 얼굴 하나가 아니라 3D 화면이 통째로 안 뜬다. 그림마다 따로 받아, 못 읽은 표정은 경고만 남기고
+// 데칼을 숨긴다(`artMat` — 그림 없는 투명 재질은 얼굴에 흰 판으로 뜬다).
 if (typeof document !== "undefined") {
   const loader = new THREE.TextureLoader();
-  await Promise.all(faceArtNames.map(async (name) => {
-    const texture = await loader.loadAsync(new URL(`./textures/${name}.png`, import.meta.url).href);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    artTextures.set(name, texture);
-  }));
+  const results = await Promise.allSettled(
+    faceArtNames.map((name) => loader.loadAsync(new URL(`./textures/${name}.png`, import.meta.url).href))
+  );
+  results.forEach((result, index) => {
+    const name = faceArtNames[index];
+    if (result.status === "fulfilled") {
+      result.value.colorSpace = THREE.SRGBColorSpace;
+      artTextures.set(name, result.value);
+    } else {
+      console.warn(`얼굴 원화 ${name}.png 를 못 읽었다 — 얼굴 없이 그린다`, result.reason);
+    }
+  });
 }
 
 /** 원화에서 추출한 얼굴 데칼. 원화 색을 유지하고 머리 표면 위에 투명하게 합성한다. */
@@ -127,6 +137,10 @@ export function artMat(name) {
       toneMapped: false,
     });
     material.userData.paletteKey = `art:${name}`;
+    // 브라우저에서 그림을 못 읽었으면 데칼을 숨긴다. Node 검사(문서 없음)는 계약만 보므로 그대로 둔다.
+    if (typeof document !== "undefined" && !artTextures.has(name)) {
+      material.visible = false;
+    }
     artMaterials.set(name, material);
   }
   return artMaterials.get(name);
