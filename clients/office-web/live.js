@@ -759,6 +759,7 @@ function advanceBodies(deltaSeconds) {
           other &&
           strolling.has(agentType) &&
           strolling.has(partner) &&
+          canChatter(agentType) &&
           canChatter(partner) &&
           tileDistance(roundedTile(body), roundedTile(other)) <= renderer.layout.chatter.partnerMaxDistance
         ) {
@@ -1110,7 +1111,9 @@ function strollTick(now) {
       if (queueOrder.includes(agentType) || commuting.has(agentType)) {
         return false;
       }
-      if (state === "IN_PROGRESS" || state === "AWAITING_APPROVAL") {
+      // 쉬는 사람만, 그리고 내가 보낸 지시가 걸려 있지 않은 사람만(맥 `officeIsIdle`). 완료·실패·반영 대기인
+      // 사람까지 내보내면 실패 자세를 보여야 할 사람이 복도에서 잡담을 해 상태 신호가 흐려진다.
+      if (state !== "WAITING" || pendingPhases[agentType]) {
         return false;
       }
       const last = lastStrollAt[agentType];

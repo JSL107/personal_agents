@@ -1407,10 +1407,13 @@ export class OfficeRenderer {
     const state = agent?.state ?? "WAITING";
     const emphasized = state === "AWAITING_APPROVAL" || state === "FAILED";
     // 창이 작아 이름표가 서로 겹치는 구간에서는 겹친 글자 서른 개보다 **읽히는 몇 개**가 낫다.
+    // 잠깐 뜬 한 마디(배회 대사·`!`)가 있으면 건너뛰지 않는다 — 대사는 대부분 쉬는 사람이 해서, 여기서 끊으면
+    // 좁은 창에서는 한 번도 안 보인다.
     if (
       this.tileSize < this.metrics.nameplateCrowdedTileSize &&
       !emphasized &&
-      state !== "IN_PROGRESS"
+      state !== "IN_PROGRESS" &&
+      !body.flash
     ) {
       return;
     }
