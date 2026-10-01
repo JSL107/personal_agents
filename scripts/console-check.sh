@@ -14,6 +14,7 @@
 #   --asset-check           에셋이 다 있고 크기가 기대와 같은지 (방·가구·캐릭터·포즈·걸음)
 #   --crop-check            투명 여백 잘라내기 계약 (몸 경계 보존·여백 유지·여백 상한)
 #   --prewarm-check         워밍이 백그라운드에서 캐시를 채우는지 (중복 접힘 + 적재)
+#   --meeting-check         회의 지시 뒤 주최자의 .working 이 회의를 끊지 않는지 (+ 참석자 대조군)
 #   --color-check           오피스 렌더 픽셀의 실제 밝기 (통로·바닥·가구·셔츠 대역)
 #   --render-dashboard      대시보드 카드가 실제로 그려지는지 (라이트·다크 두 장)
 #   --render-calendar       캘린더 격자·머리글이 그려지는지 (5주 달·6주 달)
@@ -50,6 +51,9 @@ swift run IdaeriConsole --crop-check
 
 echo "── 워밍 계약 (--prewarm-check)"
 swift run IdaeriConsole --prewarm-check
+
+echo "── 회의 연출 (--meeting-check)"
+swift run IdaeriConsole --meeting-check
 
 echo "── 색 실측 (--color-check)"
 swift run IdaeriConsole --color-check
