@@ -727,6 +727,81 @@ describe('EvaluatePaperAccountUsecase', () => {
     expect(prisma.paperTrade.findMany).not.toHaveBeenCalled();
   });
 
+  // 2026-08-28 코람코더원리츠 특별배당락(10,930원 → 2,290원 기준가)의 다음 거래일 재현.
+  // 전일 대비 변동은 정상이라 가격 점프 판정을 통과하지만, 배당이 장부에 들어오기 전이면
+  // 계좌 총액에서 배당금만큼이 빠진 채 적재된다.
+  const exDividendNextDay = {
+    position: createPosition({
+      tickerId: 178,
+      code: '417310',
+      quantity: '182',
+      avgPrice: '10880',
+    }),
+    trade: createBuyTrade({ tickerId: 178, quantity: '182', price: '10880' }),
+    bars: {
+      '417310': [
+        createBar('2026-08-28', '2335'),
+        createBar('2026-08-31', '2355'),
+      ],
+    },
+    executedAt: new Date('2026-08-31T08:40:00.000Z'),
+  };
+
+  it('평단 대비 ±50% 를 넘는 종목에 기업행동 기록이 없으면 스냅샷을 적재하지 않는다', async () => {
+    const { usecase, snapshotTransaction } = createFixture({
+      seedAmount: '2000000',
+      cashBalance: '19840',
+      positions: [exDividendNextDay.position],
+      trades: [exDividendNextDay.trade],
+      barsBySymbol: exDividendNextDay.bars,
+    });
+
+    const result = await usecase.execute({
+      accountName: 'LONG_TERM',
+      executedAt: exDividendNextDay.executedAt,
+    });
+
+    expect(result.skipped).toBe(true);
+    expect(result.totalValue).toBeNull();
+    expect(result.invariantViolations).toEqual([]);
+    expect(result.suspiciousJumps).toHaveLength(1);
+    expect(result.suspiciousJumps[0]).toContain('417310(417310)');
+    expect(result.suspiciousJumps[0]).toContain('-78.35%');
+    expect(
+      snapshotTransaction.paperEquitySnapshot.upsert,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('기업행동을 장부에 반영한 종목은 평단 대비 폭이 커도 정상 적재한다', async () => {
+    // 배당은 평단을 바꾸지 않는다. 총액은 현금 + 수량 × 현재가라 배당이 현금에 들어온
+    // 뒤에는 맞는 값이고, 여기서 막으면 그 종목을 파는 날까지 스냅샷이 끊긴다.
+    const { usecase, snapshotTransaction } = createFixture({
+      seedAmount: '2000000',
+      cashBalance: '1350159',
+      positions: [exDividendNextDay.position],
+      trades: [exDividendNextDay.trade],
+      corporateActions: [
+        {
+          kind: 'DIVIDEND',
+          tickerId: 178,
+          cashDelta: decimal('1330319'),
+          quantityDelta: decimal('0'),
+          payDate: date('2026-11-27'),
+        },
+      ],
+      barsBySymbol: exDividendNextDay.bars,
+    });
+
+    const result = await usecase.execute({
+      accountName: 'LONG_TERM',
+      executedAt: exDividendNextDay.executedAt,
+    });
+
+    expect(result.skipped).toBe(false);
+    expect(result.totalValue).toBe('1778769');
+    expect(snapshotTransaction.paperEquitySnapshot.upsert).toHaveBeenCalled();
+  });
+
   it('같은 KST 거래일 재실행은 총계와 포지션 스냅샷을 단일 transaction에서 덮어쓴다', async () => {
     const position = createPosition({
       tickerId: 21,

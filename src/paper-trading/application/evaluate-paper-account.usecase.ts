@@ -13,6 +13,7 @@ import {
   describeSuspiciousPriceJump,
   detectSuspiciousPriceJump,
 } from '../domain/corporate-action-guard';
+import { describeLedgerMismatch, isLedgerMismatch } from '../domain/exit-band';
 import { verifyPaperInvariants } from '../domain/paper-invariant';
 import {
   calculateAccountValuation,
@@ -505,6 +506,57 @@ export class EvaluatePaperAccountUsecase {
               staleTickerCount,
               invariantViolations,
               suspiciousJumps: [],
+            },
+          };
+        }
+
+        // 기업행동 **다음** 거래일부터는 전일 대비 변동이 정상이라 위 가격 점프 판정을 지나친다.
+        // 배당이 아직 장부에 없으면 총액에서 배당금만큼 빠진 채 적재되고, 최대 낙폭은 그 행에
+        // 영구히 묶인다 — 계좌 5 의 MDD -14.96% 가 2026-08-28 배당락 하루에 묶인 것과 같다.
+        // 청산 밴드와 같은 잣대(`isLedgerMismatch`)로 고르되, 기업행동을 반영한 종목은
+        // 통과시킨다. 배당은 평단을 바꾸지 않아 반영 뒤에도 폭은 그대로이고, 총액은 현금
+        // 기준이라 이미 맞다.
+        // ponytail: 배당락일이 아닌 종목 단위로 반영 여부를 본다. 예전 보유 때의 기업행동
+        // 기록이 남은 종목은 통과한다 — 기업행동 행에 exDate 를 실으면 보유 구간으로 좁힐 수 있다.
+        const bookedTickerIds = new Set(
+          freshState.corporateActions.map(
+            (corporateAction) => corporateAction.tickerId,
+          ),
+        );
+        const unbookedLedgerMismatches = evaluatedPositions
+          .filter(
+            (position) =>
+              !bookedTickerIds.has(position.tickerId) &&
+              isLedgerMismatch(Number(position.returnRate)),
+          )
+          .map((position) =>
+            describeLedgerMismatch(
+              `${position.tickerName}(${position.tickerCode})`,
+              Number(position.returnRate),
+            ),
+          );
+        if (unbookedLedgerMismatches.length > 0) {
+          return {
+            snapshot: null,
+            result: {
+              skipped: true,
+              skipReason:
+                '기업행동이 장부에 반영되지 않아 평단과 시세가 어긋난 종목이 있습니다.',
+              tradeDate: tradeDateText,
+              cashBalance: freshState.account.cashBalance.toString(),
+              ...cashSettlement,
+              positionValue: null,
+              totalValue: null,
+              returnRate: null,
+              realizedPnl: null,
+              unrealizedPnl: null,
+              benchmarkClose: null,
+              positions: evaluatedPositions,
+              unpricedPositions,
+              positionCount: freshState.positions.length,
+              staleTickerCount,
+              invariantViolations: [],
+              suspiciousJumps: unbookedLedgerMismatches,
             },
           };
         }
