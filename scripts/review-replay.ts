@@ -94,6 +94,8 @@ interface MissPathNote {
   kind: 'not-in-diff' | 'ambiguous';
   candidates?: string[];
 }
+import { ModelRouterException } from '../src/model-router/domain/model-router.exception';
+import { retryReplayTrial } from '../src/pr-review-loop/domain/review-replay-retry';
 import { PrismaModule } from '../src/prisma/prisma.module';
 import { PrismaService } from '../src/prisma/prisma.service';
 
@@ -319,17 +321,33 @@ const replay = async (
       continue;
     }
     for (let trial = 1; trial <= options.trials; trial += 1) {
-      const startedAt = Date.now();
+      let startedAt = Date.now();
       try {
-        const outcome = await usecase.execute({
-          prRef: `${repository}#${pullNumber}`,
-          slackUserId: 'cli-review-replay',
-          triggerType: TriggerType.MANUAL,
-          snapshot,
-          ...(holdoutIds === undefined
-            ? {}
-            : { excludeConventionFindingIds: holdoutIds }),
-        });
+        // 폴백을 끄고, 모델 호출 실패(혼잡·시간 초과·쿼터)만 쉬었다가 같은 모델로 다시 시도한다.
+        // JSON 파싱 실패 같은 응답 결함은 재시도하지 않는다 — 그것은 리뷰어의 성질이라 측정 대상이다.
+        const outcome = await retryReplayTrial(
+          () => {
+            startedAt = Date.now();
+            return usecase.execute({
+              prRef: `${repository}#${pullNumber}`,
+              slackUserId: 'cli-review-replay',
+              triggerType: TriggerType.MANUAL,
+              snapshot,
+              noFallback: true,
+              ...(holdoutIds === undefined
+                ? {}
+                : { excludeConventionFindingIds: holdoutIds }),
+            });
+          },
+          {
+            isRetryable: (error) => error instanceof ModelRouterException,
+            sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+            onRetry: (error, attempt, delayMs) =>
+              console.error(
+                `재시도 ${attempt} — ${repository}#${pullNumber} t${trial}, ${delayMs / 1000}초 뒤: ${error instanceof Error ? error.message : String(error)}`,
+              ),
+          },
+        );
         const groupPairs = group.findings.map(
           (labeled): ReplayPair => ({
             labeled,
