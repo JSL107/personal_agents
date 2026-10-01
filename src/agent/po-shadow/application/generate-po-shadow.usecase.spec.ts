@@ -322,6 +322,21 @@ describe('GeneratePoShadowUsecase', () => {
     expect(agentRunServiceExecute).toHaveBeenCalledTimes(1);
   });
 
+  // 오피스는 run.started 순간 participants 로 1:1 전달을 그린다 — 대조 대상인 PM 이 넘겨주는 모양.
+  it('대조한 PM 계획의 주인(PM)을 참석자로 넘긴다', async () => {
+    agentRunServiceFindLatest.mockResolvedValue({
+      id: 99,
+      output: quietPlan,
+      endedAt: new Date('2026-08-19T03:00:00.000Z'),
+    });
+
+    await usecase.execute({ extraContext: '', slackUserId: 'U1' });
+
+    expect(agentRunServiceExecute.mock.calls[0][0].participants).toEqual([
+      AgentType.PM,
+    ]);
+  });
+
   it('quiet evidence에 직전 계획과 코드 생성 사실표를 모두 담는다', async () => {
     await usecase.execute({ extraContext: '', slackUserId: 'U1' });
 

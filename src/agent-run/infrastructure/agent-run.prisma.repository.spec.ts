@@ -1,3 +1,5 @@
+import { Prisma } from '@prisma/client';
+
 import { PrismaService } from '../../prisma/prisma.service';
 import { AgentRunStatus } from '../domain/agent-run.type';
 import {
@@ -197,6 +199,60 @@ describe('AgentRunPrismaRepository Ops Supervisor 집계', () => {
 // V3 비전 봇 쪼개기 step 8 (commit 2c236d7) 의 updateParentId 단위 검증.
 // repository 의 다른 method 들은 다른 의존성 (raw SQL / aggregate / FTS) 이 많아 spec 분리 가치 낮음 —
 // updateParentId 는 단순 update 라 mock 으로 명확히 검증 가능.
+describe('AgentRunPrismaRepository.begin', () => {
+  const baseInput = {
+    agentType: 'WORK_REVIEWER',
+    triggerType: 'SLACK_MESSAGE',
+    inputSnapshot: {},
+  } as unknown as Parameters<AgentRunPrismaRepository['begin']>[0];
+
+  it('parentId 를 행을 만드는 순간 함께 적는다', async () => {
+    const create = jest.fn().mockResolvedValue({ id: 7 });
+    const repository = new AgentRunPrismaRepository({
+      agentRun: { create },
+    } as unknown as PrismaService);
+
+    await expect(
+      repository.begin({ ...baseInput, parentId: 3 }),
+    ).resolves.toEqual({ id: 7, parentId: 3 });
+    expect(create.mock.calls[0][0].data).toMatchObject({ parentId: 3 });
+  });
+
+  // 부모 행이 지워졌다고 사용자 요청까지 실패하면 안 된다 — 계보는 부수 기록이다.
+  it('부모가 없어 FK 위반(P2003)이면 부모 없이 다시 만든다', async () => {
+    const fkError = new Prisma.PrismaClientKnownRequestError('fk', {
+      code: 'P2003',
+      clientVersion: 'test',
+    });
+    const create = jest
+      .fn()
+      .mockRejectedValueOnce(fkError)
+      .mockResolvedValueOnce({ id: 8 });
+    const repository = new AgentRunPrismaRepository({
+      agentRun: { create },
+    } as unknown as PrismaService);
+
+    // 부모 없이 만들었다는 사실을 돌려준다 — 시작 알림이 저장 안 된 계보를 그리지 않게.
+    await expect(
+      repository.begin({ ...baseInput, parentId: 999 }),
+    ).resolves.toEqual({ id: 8 });
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(create.mock.calls[1][0].data).not.toHaveProperty('parentId');
+  });
+
+  it('그 외 오류는 그대로 던진다', async () => {
+    const create = jest.fn().mockRejectedValue(new Error('db down'));
+    const repository = new AgentRunPrismaRepository({
+      agentRun: { create },
+    } as unknown as PrismaService);
+
+    await expect(
+      repository.begin({ ...baseInput, parentId: 3 }),
+    ).rejects.toThrow('db down');
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('AgentRunPrismaRepository.updateParentId', () => {
   const buildRepository = (): {
     repo: AgentRunPrismaRepository;

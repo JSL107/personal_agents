@@ -146,6 +146,11 @@ export class GenerateDailyPlanUsecase {
       triggerType: effectiveTriggerType,
       inputSnapshot,
       evidence,
+      // 실제로 읽어 온 남의 결과만 — 없어서 빈칸으로 들어간 사람은 회의에 부르지 않는다.
+      participants: [
+        ...(context.previousWorklog ? [AgentType.WORK_REVIEWER] : []),
+        ...(context.eveningRetro ? [AgentType.EVENING_RETRO] : []),
+      ],
       run: async ({ agentRunId }) => {
         const completion = await this.modelRouter.route({
           agentType: AgentType.PM,

@@ -7,6 +7,7 @@ import { AgentType } from '../../model-router/domain/model-router.type';
 import { AgentRunStatus, TriggerType } from '../domain/agent-run.type';
 import { AgentRunRepositoryPort } from '../domain/port/agent-run.repository.port';
 import { AgentRunService } from './agent-run.service';
+import { runWithParentRun } from './parent-run-context';
 import { RoutingContext, runWithRoutingContext } from './routing-context';
 
 describe('AgentRunService', () => {
@@ -791,6 +792,116 @@ describe('AgentRunService', () => {
         state: ConsoleAgentState.COMPLETED,
         bubble: '완료했어요!',
       });
+    });
+
+    // 오피스는 run.started 순간에 "이 일에 누가 엮였는지" 로 회의를 연다. 끝난 뒤에 적으면 늦다.
+    it('run.started 가 부모(라우터 스코프)와 참여자를 싣는다 — 자기 자신·중복은 뺀다', async () => {
+      const bus = buildBus();
+      const serviceWithBus = new AgentRunService(
+        repository,
+        undefined,
+        bus as unknown as ConsoleEventBus,
+      );
+
+      repository.begin.mockImplementation(async (input) => ({
+        id: 42,
+        ...(input.parentId !== undefined ? { parentId: input.parentId } : {}),
+      }));
+
+      await runWithParentRun(7, () =>
+        serviceWithBus.execute({
+          agentType: AgentType.PM,
+          triggerType: TriggerType.SLACK_COMMAND_TODAY,
+          inputSnapshot: {},
+          participants: [
+            AgentType.WORK_REVIEWER,
+            AgentType.PM,
+            AgentType.WORK_REVIEWER,
+            AgentType.EVENING_RETRO,
+          ],
+          run: async () => ({ result: 'r', modelUsed: 'm', output: {} }),
+        }),
+      );
+
+      expect(repository.begin).toHaveBeenCalledWith(
+        expect.objectContaining({ parentId: 7 }),
+      );
+      const runEvents = bus.publish.mock.calls
+        .map((call) => call[0])
+        .filter(
+          (event) =>
+            event.type === 'run.started' || event.type === 'run.finished',
+        );
+      for (const event of runEvents) {
+        expect(event).toMatchObject({
+          run: {
+            parentId: '7',
+            participants: ['WORK_REVIEWER', 'EVENING_RETRO'],
+          },
+        });
+      }
+    });
+
+    // 부모 행이 지워져 저장소가 부모 없이 만들었으면, 화면에도 위임 계보를 그리면 안 된다.
+    it('저장소가 부모를 저장하지 못했으면 run.started 의 parentId 도 비운다', async () => {
+      const bus = buildBus();
+      const serviceWithBus = new AgentRunService(
+        repository,
+        undefined,
+        bus as unknown as ConsoleEventBus,
+      );
+      repository.begin.mockResolvedValue({ id: 42 });
+
+      await runWithParentRun(999, () =>
+        serviceWithBus.execute({
+          agentType: AgentType.PM,
+          triggerType: TriggerType.SLACK_COMMAND_TODAY,
+          inputSnapshot: {},
+          run: async () => ({ result: 'r', modelUsed: 'm', output: {} }),
+        }),
+      );
+
+      expect(repository.begin).toHaveBeenCalledWith(
+        expect.objectContaining({ parentId: 999 }),
+      );
+      const started = bus.publish.mock.calls
+        .map((call) => call[0])
+        .flatMap((event) => (event.type === 'run.started' ? [event] : []));
+      expect(started[0].run.parentId).toBeNull();
+    });
+
+    // 한 dispatch 가 행을 둘 열어도 위임은 하나다 — 뒤의 행까지 같은 부모를 달면 갈래가 부풀어 보인다.
+    it('부모는 스코프 안 첫 실행만 가져가고, 스코프 밖이면 부모·참여자 없이 싣는다', async () => {
+      const bus = buildBus();
+      const serviceWithBus = new AgentRunService(
+        repository,
+        undefined,
+        bus as unknown as ConsoleEventBus,
+      );
+      const runOnce = () =>
+        serviceWithBus.execute({
+          agentType: AgentType.PM,
+          triggerType: TriggerType.SLACK_COMMAND_TODAY,
+          inputSnapshot: {},
+          run: async () => ({ result: 'r', modelUsed: 'm', output: {} }),
+        });
+
+      repository.begin.mockImplementation(async (input) => ({
+        id: 42,
+        ...(input.parentId !== undefined ? { parentId: input.parentId } : {}),
+      }));
+
+      await runWithParentRun(7, async () => {
+        await runOnce();
+        await runOnce();
+      });
+
+      const started = bus.publish.mock.calls
+        .map((call) => call[0])
+        .flatMap((event) => (event.type === 'run.started' ? [event] : []));
+      expect(started.map((event) => event.run.parentId)).toEqual(['7', null]);
+      expect(started[1]).toMatchObject({ run: { participants: [] } });
+      expect(repository.begin.mock.calls[1][0]).not.toHaveProperty('parentId');
     });
 
     // 말풍선 문구를 이벤트가 실어 보내지 않으면, 앱은 상태가 바뀔 때마다 스냅샷을 한 번 더

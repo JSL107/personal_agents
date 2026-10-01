@@ -78,6 +78,14 @@ export interface ConsoleRun {
   readonly agentType: string;
   readonly status: string;
   readonly parentId: string | null;
+  /**
+   * 이 실행이 입력으로 읽어 간 다른 직원들의 agentType(예: PO_EVAL → WORK_REVIEWER·PO_SHADOW·
+   * IMPACT_REPORTER). 오피스가 시작 순간 이 사람들을 회의실로 모은다.
+   *
+   * 출처 run 은 몇 시간~며칠 전 것이라 `runs` 목록에 없을 때가 많다 — 그래서 run id 가 아니라
+   * 사람을 싣는다. **시작·종료 알림에만** 실리고 스냅샷은 늘 빈 배열이다(DB 에 남기지 않는다).
+   */
+  readonly participants: readonly string[];
   readonly startedAt: string;
   readonly finishedAt: string | null;
 }

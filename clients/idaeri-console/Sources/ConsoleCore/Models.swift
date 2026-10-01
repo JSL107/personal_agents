@@ -137,6 +137,11 @@ public struct ConsoleRun: Codable, Identifiable, Sendable, Equatable {
     public let agentType: String
     public let status: String
     public let parentId: String?
+    /// 이 실행이 입력으로 읽어 간 다른 직원들(agentType). 시작 순간 회의실에 함께 모인다.
+    ///
+    /// 출처 실행은 몇 시간 전 것이라 `runs` 에 없을 때가 많아 run id 대신 사람을 싣는다.
+    /// 백엔드는 시작·종료 이벤트에만 채우고 스냅샷은 늘 비운다.
+    public let participants: [String]
     public let startedAt: String
     public let finishedAt: String?
 
@@ -145,6 +150,7 @@ public struct ConsoleRun: Codable, Identifiable, Sendable, Equatable {
         agentType: String,
         status: String,
         parentId: String?,
+        participants: [String] = [],
         startedAt: String,
         finishedAt: String?
     ) {
@@ -152,8 +158,26 @@ public struct ConsoleRun: Codable, Identifiable, Sendable, Equatable {
         self.agentType = agentType
         self.status = status
         self.parentId = parentId
+        self.participants = participants
         self.startedAt = startedAt
         self.finishedAt = finishedAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, agentType, status, parentId, participants, startedAt, finishedAt
+    }
+
+    // 이 필드가 없는 백엔드(배포 전 버전)의 이벤트도 읽어야 한다 — 없으면 빈 목록.
+    // 여기서 디코딩이 실패하면 그 이벤트 하나가 아니라 스냅샷 전체가 버려진다.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        agentType = try container.decode(String.self, forKey: .agentType)
+        status = try container.decode(String.self, forKey: .status)
+        parentId = try container.decodeIfPresent(String.self, forKey: .parentId)
+        participants = try container.decodeIfPresent([String].self, forKey: .participants) ?? []
+        startedAt = try container.decode(String.self, forKey: .startedAt)
+        finishedAt = try container.decodeIfPresent(String.self, forKey: .finishedAt)
     }
 }
 

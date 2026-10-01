@@ -122,6 +122,8 @@ export class GeneratePoShadowUsecase {
     return this.agentRunService.execute({
       agentType: AgentType.PO_SHADOW,
       triggerType: triggerType ?? TriggerType.SLACK_COMMAND_PO_SHADOW,
+      // 대조 대상인 PM 계획 — 없으면 위에서 NO_RECENT_PLAN 으로 끊기므로 늘 있다.
+      participants: [AgentType.PM],
       inputSnapshot: {
         slackUserId,
         sourcePlanAgentRunId: snapshot.id,
