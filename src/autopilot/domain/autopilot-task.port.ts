@@ -1,3 +1,4 @@
+import { RunVerdictFacet } from '../../agent-run/domain/run-verdict';
 import { PreviewKind } from '../../preview-gate/domain/preview-action.type';
 
 export const AUTOPILOT_TASKS = Symbol('AUTOPILOT_TASKS');
@@ -61,6 +62,11 @@ export interface AutopilotTaskResult {
   // 요약이 합쳐지므로(orchestrator) 설정은 메시지 단위다 — 하나라도 끄기를 요청하면 끈다.
   // 링크를 여러 개 싣는 목록형 카드(job-feed 등)가 미리보기에 파묻히는 것을 막는 용도다.
   unfurlLinks?: boolean;
+  // 있으면 메인 메시지의 스레드에 이 실행의 판정 버튼 댓글을 붙인다 — 요약 본문은 건드리지 않는다.
+  // 버튼 값에 agentRunId 가 실려, 여러 task 의 요약이 합쳐진 메시지에서도 판정이 이 실행에
+  // 정확히 귀속된다(사람 피드백 설계 2026-09-30 §1-2·§3). 판정 대상인 task 만 채운다.
+  // 요약을 실은 회차에만 붙는다 — 판정할 대상이 화면에 없으면 버튼도 없다.
+  runVerdict?: { agentRunId: number; facets: RunVerdictFacet[] };
   // T1_PREVIEW 전용 — 있으면 orchestrator 가 PreviewGate 승인 버튼 발송.
   preview?: AutopilotPreviewRequest;
   // T1_PREVIEW 전용 — 있으면 orchestrator 가 preview 단수와 합쳐 각각 PreviewGate 카드 발송.

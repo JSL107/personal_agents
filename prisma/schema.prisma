@@ -61,6 +61,26 @@ model AgentRun {
   @@map("agent_run")
 }
 
+// 사람이 에이전트 실행 결과에 내린 판정. 계약 점수(형식)와 다른 축 — 내용이 쓸모 있었는가.
+// facet·verdict 허용 값은 src/agent-run/domain/run-verdict.ts 한 곳에 있다.
+// (설계: docs/superpowers/specs/2026-09-30-human-feedback-channel-design.md §4)
+// 다시 누르면 같은 행을 덮어쓴다 — createdAt 은 처음 판정한 시각, updatedAt 은 마지막으로 바꾼 시각.
+model AgentRunVerdict {
+  id          Int      @id @default(autoincrement())
+  agentRunId  Int      @map("agent_run_id")
+  facet       String
+  verdict     String
+  note        String?  @db.Text
+  slackUserId String   @map("slack_user_id")
+  source      String
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@unique([agentRunId, facet, slackUserId])
+  @@index([agentRunId])
+  @@map("agent_run_verdict")
+}
+
 model EvidenceRecord {
   id          Int       @id @default(autoincrement())
   agentRunId  Int?      @map("agent_run_id")

@@ -842,4 +842,71 @@ describe('EveningRetroPublishTask', () => {
     expect(executeArgs.inputSnapshot.openPrFetchFailed).toBe(false);
     expect(result.summaryText).not.toContain('열린 PR 조회가 실패해');
   });
+  describe('(s) 판정 버튼 — 이 실행의 agentRunId 를 싣고, 문제 칸이 빈 날은 그 축을 내지 않는다', () => {
+    it('(s-1) 문제 칸이 차 있으면 두 축을 모두 낸다', async () => {
+      const { task } = makeTask({
+        prs: [PR_ITEM],
+        worklogRuns: [],
+        dailyEvalRuns: [],
+        routeResult: {
+          ...RETRO_RESPONSE,
+          text: JSON.stringify({
+            ...JSON.parse(RETRO_RESPONSE.text),
+            retrospective: { problem: '확인 없이 결론을 썼다' },
+          }),
+        },
+      });
+
+      const result = await task.run(CTX);
+
+      expect(result.runVerdict).toEqual({
+        agentRunId: 1,
+        facets: ['retro_problem', 'overall'],
+      });
+    });
+
+    it('(s-2) 문제 칸이 비면 회고 전체 축만 낸다', async () => {
+      const { task } = makeTask({
+        prs: [PR_ITEM],
+        worklogRuns: [],
+        dailyEvalRuns: [],
+      });
+
+      const result = await task.run(CTX);
+
+      expect(result.runVerdict).toEqual({ agentRunId: 1, facets: ['overall'] });
+    });
+
+    it('(s-3) 형식이 깨진 회차도 문제 칸이 없으니 회고 전체 축만 낸다', async () => {
+      const { task } = makeTask({
+        prs: [PR_ITEM],
+        worklogRuns: [],
+        dailyEvalRuns: [],
+        routeResult: {
+          ...RETRO_RESPONSE,
+          text: JSON.stringify({
+            ...JSON.parse(RETRO_RESPONSE.text),
+            retrospective: '옛 평문 회고',
+          }),
+        },
+      });
+
+      const result = await task.run(CTX);
+
+      expect(result.runVerdict?.facets).toEqual(['overall']);
+    });
+
+    it('(s-4) 회고 생성이 실패한 fallback 에는 판정할 대상이 없어 버튼도 없다', async () => {
+      const { task, agentRunService } = makeTask({
+        prs: [PR_ITEM],
+        worklogRuns: [],
+        dailyEvalRuns: [],
+      });
+      agentRunService.execute.mockRejectedValue(new Error('codex down'));
+
+      const result = await task.run(CTX);
+
+      expect(result.runVerdict).toBeUndefined();
+    });
+  });
 });

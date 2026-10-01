@@ -12,11 +12,13 @@ import {
   SLACK_NOTIFIER_PORT,
   SlackNotifierPort,
 } from '../../slack/domain/port/slack-notifier.port';
+import { RUN_VERDICT_FALLBACK_TEXT } from '../../slack/format/run-verdict-message.builder';
 import {
   AUTOPILOT_TASKS,
   AutopilotPreviewRequest,
   AutopilotTask,
   AutopilotTaskImage,
+  AutopilotTaskResult,
 } from '../domain/autopilot-task.port';
 import { PlaybookEntry } from '../domain/playbook.type';
 
@@ -166,6 +168,8 @@ export class AutopilotOrchestrator {
       // 이 item 을 낸 task 가 멘션 대상인지. 그룹의 item 중 하나라도 true 면 메인 메시지에
       // 멘션을 붙인다 — 한 메시지에 여러 task 의 요약이 합쳐지므로 개별 부착이 불가능하다.
       notifyOwner?: boolean;
+      // 스레드에 붙일 판정 버튼. 요약 본문과 따로 댓글로 나간다(task 결과 주석 참조).
+      runVerdict?: AutopilotTaskResult['runVerdict'];
     }[] = [];
     // 카드는 자기를 낸 task 의 item 인덱스를 함께 들고 다닌다. `requiresDetailDelivery` 카드가
     // "내 전문이 실제로 나갔나" 를 아래에서 확인하려면 이 연결선이 필요하다 — items 와 previews 는
@@ -216,6 +220,7 @@ export class AutopilotOrchestrator {
             onDelivered: result.onDelivered,
             unfurlLinks: result.unfurlLinks,
             notifyOwner: NOTIFY_OWNER_TASK_IDS.has(entry.taskId),
+            runVerdict: result.runVerdict,
           });
         }
         const requestedPreviews = [
@@ -522,6 +527,25 @@ export class AutopilotOrchestrator {
                   );
                 }
               }
+              // 판정 버튼은 상세 뒤에 둔다 — 읽고 나서 누르는 순서다. 실패해도 요약·상세는
+              // 이미 나갔으니 무르지 않지만, 그날 판정 기회가 사라진 것이라 로그로 남긴다
+              // (누름률을 셀 때 "버튼이 안 나간 날" 을 가려낼 유일한 흔적이다).
+              if (item.runVerdict) {
+                try {
+                  await this.slackNotifier.postMessage({
+                    target: resolved,
+                    text: RUN_VERDICT_FALLBACK_TEXT,
+                    threadTs: ts,
+                    runVerdict: item.runVerdict,
+                  });
+                } catch (error: unknown) {
+                  const message =
+                    error instanceof Error ? error.message : String(error);
+                  this.logger.warn(
+                    `Autopilot[${groupKey}] 판정 버튼 발송 실패 (agentRunId=${item.runVerdict.agentRunId}): ${message}`,
+                  );
+                }
+              }
             }
           } else {
             // 메인 메시지 ts 미반환(Slack API 이상 등) — 스레드 상세를 붙일 수 없어 skip.
@@ -536,6 +560,14 @@ export class AutopilotOrchestrator {
               if (isThreadBound(item)) {
                 detailUndelivered.add(index);
               }
+            }
+            const skippedVerdictCount = items.filter(
+              (item) => item.runVerdict,
+            ).length;
+            if (skippedVerdictCount > 0) {
+              this.logger.warn(
+                `Autopilot[${groupKey}] ${resolved} 메인 메시지 ts 미반환 — 판정 버튼 ${skippedVerdictCount}건 skip`,
+              );
             }
             const skippedDetailCount = items.filter(isThreadBound).length;
             if (skippedDetailCount > 0) {

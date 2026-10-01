@@ -1052,6 +1052,100 @@ describe('AutopilotOrchestrator', () => {
     expect(postMessageMock).toHaveBeenCalledTimes(2);
   });
 
+  describe('실행별 판정 버튼 — 합쳐진 메시지에서도 그 실행에만 귀속된다', () => {
+    const buildOrchestrator = (
+      tasks: unknown[],
+      postMessageMock: jest.Mock,
+    ): AutopilotOrchestrator =>
+      new AutopilotOrchestrator(
+        tasks as never,
+        { postMessage: postMessageMock } as never,
+        {
+          acquireOnce: jest.fn().mockResolvedValue(true),
+          isDone: jest.fn().mockResolvedValue(false),
+        } as never,
+        { execute: jest.fn() } as never,
+        { attachSlackMessage: jest.fn() } as never,
+      );
+
+    it('판정을 요청한 task 에만 버튼 댓글을 붙이고, 상세 뒤에 둔다', async () => {
+      const retroTask = makeTask('evening-retro-publish', {
+        skip: false,
+        summaryText: 'RETRO',
+        detailText: 'RETRO_DETAIL',
+        runVerdict: { agentRunId: 42, facets: ['retro_problem', 'overall'] },
+      });
+      const otherTask = makeTask('daily-eval', {
+        skip: false,
+        summaryText: 'EVAL',
+        detailText: 'EVAL_DETAIL',
+      });
+      const postMessageMock = jest.fn().mockResolvedValue({ ts: 'TS1' });
+      const orchestrator = buildOrchestrator(
+        [otherTask, retroTask],
+        postMessageMock,
+      );
+
+      await orchestrator.runGroup(
+        'evening',
+        [
+          makeEntry('daily-eval', 'daily-eval'),
+          makeEntry('evening-retro-publish', 'evening-retro-publish'),
+        ],
+        'U1',
+        'C1',
+      );
+
+      const verdictCalls = postMessageMock.mock.calls.filter(
+        ([input]) => input.runVerdict,
+      );
+      expect(verdictCalls).toHaveLength(1);
+      expect(verdictCalls[0][0]).toMatchObject({
+        target: 'C1',
+        threadTs: 'TS1',
+        runVerdict: { agentRunId: 42, facets: ['retro_problem', 'overall'] },
+      });
+      // 요약 본문은 건드리지 않는다 — 메인은 두 요약을 합친 그대로다.
+      expect(postMessageMock.mock.calls[0][0]).toEqual({
+        target: 'C1',
+        text: 'EVAL\n\n────────\n\nRETRO',
+      });
+      const texts = postMessageMock.mock.calls.map(([input]) => input.text);
+      expect(texts.indexOf('RETRO_DETAIL')).toBeLessThan(
+        postMessageMock.mock.calls.findIndex(([input]) => input.runVerdict),
+      );
+    });
+
+    it('버튼 발송이 실패해도 그룹은 성공하고 후처리는 그대로 돈다', async () => {
+      const onDelivered = jest.fn().mockResolvedValue(undefined);
+      const retroTask = makeTask('evening-retro-publish', {
+        skip: false,
+        summaryText: 'RETRO',
+        runVerdict: { agentRunId: 42, facets: ['overall'] },
+        onDelivered,
+      });
+      const postMessageMock = jest
+        .fn()
+        .mockImplementation(async (input: { runVerdict?: unknown }) => {
+          if (input.runVerdict) {
+            throw new Error('invalid_blocks');
+          }
+          return { ts: 'TS1' };
+        });
+      const orchestrator = buildOrchestrator([retroTask], postMessageMock);
+
+      await expect(
+        orchestrator.runGroup(
+          'evening',
+          [makeEntry('evening-retro-publish', 'evening-retro-publish')],
+          'U1',
+          'C1',
+        ),
+      ).resolves.toBeUndefined();
+      expect(onDelivered).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('detail 없는 task만 있으면 메인 1건만 발송', async () => {
     const task = makeTask('daily-eval', { skip: false, summaryText: '요약만' });
     const postMessage = jest.fn().mockResolvedValue({ ts: 'TS2' });
