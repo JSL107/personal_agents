@@ -444,8 +444,14 @@ model Ticker {
   @@map("ticker")
 }
 
-// 일별 시세. Yahoo 는 액면분할 시 과거 가격을 소급 재작성하므로
-// raw close 와 조정가(adjClose)를 모두 보관하고 지표 계산은 adjClose 를 쓴다.
+// 일별 시세. 지표 계산은 adjClose 를 쓴다.
+// close 와 adjClose 가 무엇을 담는지는 수집원이 정한다. Yahoo 매퍼는 원가격과 조정가를 따로
+// 담지만, 토스 매퍼는 요청한 계열(조정/미조정) 하나를 두 칸에 똑같이 넣는다
+// (`toss-market-data.mapper.ts`). 지금 수집은 토스 `adjusted=true` 라 두 칸 모두 조정가다
+// (2026-10-01 실측: 3,343,277행 중 close ≠ adjClose 0건).
+// 그래서 기업행동 뒤 재수집하면 과거 행까지 조정가로 덮인다. 체결가(미조정 시가)·장부 평단과
+// 과거 행을 그대로 비교하지 말 것 — 2026-08-28 코람코더원리츠 배당락 뒤 08-14 행 종가가
+// 체결 당시 10,920원에서 2,290원으로 바뀌어, 체결가가 시세의 4.7배인 것처럼 보였다.
 // 재시도·휴장일 재수집으로 같은 거래일이 다시 들어올 수 있어 (tickerId, tradeDate) 로 upsert 한다.
 model DailyPrice {
   id                Int       @id @default(autoincrement())
