@@ -93,7 +93,7 @@ export class AnalyzeJdGapUsecase {
       triggerType: triggerType ?? TriggerType.SLACK_MENTION_CAREER_MATE,
       inputSnapshot: { slackUserId, jdLength: jdText.length, company, role },
       run: async (context) => {
-        const profile = await this.resolveProfile(slackUserId);
+        const profile = await this.resolveProfile(slackUserId, triggerType);
         const completion = await this.modelRouter.route({
           agentType: AgentType.CAREER_MATE,
           request: {
@@ -147,12 +147,13 @@ export class AnalyzeJdGapUsecase {
 
   private async resolveProfile(
     slackUserId: string,
+    triggerType?: TriggerType,
   ): Promise<CareerProfileData> {
     const latest = await this.repository.findLatestBySlackUser(slackUserId);
     if (latest) {
       return latest.profileJson;
     }
-    const built = await this.buildProfile.execute({ slackUserId });
+    const built = await this.buildProfile.execute({ slackUserId, triggerType });
     return built.result;
   }
 }

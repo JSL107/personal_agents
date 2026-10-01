@@ -54,6 +54,7 @@ export class BuildCareerProfileUsecase {
   async execute({
     slackUserId,
     windowMonths = DEFAULT_WINDOW_MONTHS,
+    triggerType = TriggerType.SLACK_MENTION_CAREER_MATE,
   }: BuildCareerProfileInput): Promise<AgentRunOutcome<CareerProfileData>> {
     const githubLogin = this.config.get<string>('IMPACT_REPORT_GITHUB_AUTHOR');
     if (!githubLogin) {
@@ -87,7 +88,7 @@ export class BuildCareerProfileUsecase {
 
     return this.agentRunService.execute<CareerProfileData>({
       agentType: AgentType.CAREER_MATE,
-      triggerType: TriggerType.SLACK_MENTION_CAREER_MATE,
+      triggerType,
       inputSnapshot: {
         slackUserId,
         windowMonths: clampedWindowMonths,

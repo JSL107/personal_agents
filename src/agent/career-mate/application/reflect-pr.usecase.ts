@@ -64,6 +64,7 @@ export class ReflectPrUsecase {
     prText,
     impactContext,
     portfolioSync,
+    triggerType = TriggerType.SLACK_MENTION_CAREER_MATE,
   }: ReflectPrInput): Promise<AgentRunOutcome<ReflectPrResult>> {
     const refs = extractPrReferences(prText); // 0건 시 INVALID_PR_REFERENCE
     // 빈 문자열·공백만 들어온 입력은 없는 것과 같게 다룬다. 이후 분기가 전부 이 값을
@@ -81,7 +82,7 @@ export class ReflectPrUsecase {
 
     return this.agentRunService.execute<ReflectPrResult>({
       agentType: AgentType.CAREER_MATE,
-      triggerType: TriggerType.SLACK_MENTION_CAREER_MATE,
+      triggerType,
       inputSnapshot: {
         slackUserId,
         prs: refs.map((ref) => `${ref.repo}#${ref.number}`),
@@ -196,6 +197,7 @@ export class ReflectPrUsecase {
             ? null
             : await this.renderPortfolio.execute({
                 slackUserId,
+                triggerType,
                 ...(portfolioSync === 'defer' ? { deferBlockSync: true } : {}),
               });
 

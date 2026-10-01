@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
+import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { GithubClientPort } from '../../../github/domain/port/github-client.port';
 import { HumanizeService } from '../../../humanize/application/humanize.service';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
@@ -123,7 +124,10 @@ describe('ReflectPrUsecase', () => {
     });
     expect(repository.save).toHaveBeenCalled();
     // deferPortfolioSync 를 켜지 않은 호출(저녁 승인 경로)은 본문 반영을 기다린다.
-    expect(renderPortfolio.execute).toHaveBeenCalledWith({ slackUserId: 'U1' });
+    expect(renderPortfolio.execute).toHaveBeenCalledWith({
+      slackUserId: 'U1',
+      triggerType: TriggerType.SLACK_MENTION_CAREER_MATE,
+    });
     expect(outcome.result.portfolioUrl).toBe('https://notion/p');
     expect(outcome.result.accomplishment.evidence[0].pr).toBe(1692);
     expect(outcome.result.accomplishment.evidence[0].mergedAt).toBe(
@@ -141,6 +145,7 @@ describe('ReflectPrUsecase', () => {
     });
 
     expect(renderPortfolio.execute).toHaveBeenCalledWith({
+      triggerType: TriggerType.SLACK_MENTION_CAREER_MATE,
       slackUserId: 'U1',
       deferBlockSync: true,
     });
@@ -229,7 +234,10 @@ describe('ReflectPrUsecase', () => {
     expect(modelRouter.route).toHaveBeenCalledTimes(1);
     expect(repository.save).toHaveBeenCalled();
     // deferPortfolioSync 를 켜지 않은 호출(저녁 승인 경로)은 본문 반영을 기다린다.
-    expect(renderPortfolio.execute).toHaveBeenCalledWith({ slackUserId: 'U1' });
+    expect(renderPortfolio.execute).toHaveBeenCalledWith({
+      slackUserId: 'U1',
+      triggerType: TriggerType.SLACK_MENTION_CAREER_MATE,
+    });
     expect(outcome.result.accomplishment.evidence).toHaveLength(2);
     expect(outcome.result.narrative).toBe('이어진 두 PR 통합 회고');
   });

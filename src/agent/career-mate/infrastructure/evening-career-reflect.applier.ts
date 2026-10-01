@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 
+import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { ApplyResult } from '../../../preview-gate/domain/apply-result.type';
 import {
   ApplyProgress,
@@ -72,6 +73,7 @@ export class EveningCareerReflectApplier implements PreviewApplier {
         await this.reflectPr.execute({
           slackUserId: payload.slackUserId,
           prText: refs.join('\n'),
+          triggerType: TriggerType.EVENING_CAREER_REFLECT_APPROVAL,
           ...(impactContext ? { impactContext } : {}),
           // 묶음마다 포트폴리오를 건드리지 않는다. 포트폴리오는 페이지를 통째로 다시 쓰므로
           // 묶음 N건이면 (N-1)번이 다음 묶음에 덮여 사라지는 순수 낭비다 — 실측 카드가
@@ -132,6 +134,7 @@ export class EveningCareerReflectApplier implements PreviewApplier {
     try {
       const portfolio = await this.renderPortfolio.execute({
         slackUserId: payload.slackUserId,
+        triggerType: TriggerType.EVENING_CAREER_REFLECT_APPROVAL,
       });
       portfolioUrl = portfolio.url;
     } catch (error) {
