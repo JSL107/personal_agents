@@ -65,6 +65,11 @@ const DEFAULT_INLINE_MAX = 4;
 // 이름 하나당 사용처를 실을 파일 수와 파일당 구간 수. 검색 결과는 관련도 순이다.
 const USAGE_FILES_PER_SYMBOL = 3;
 const USAGE_WINDOWS_PER_FILE = 3;
+// 바이트 예산만으로는 호출 수가 묶이지 않는다 — 작은 파일이 많거나 조회가 계속 실패하면(본문이
+// 쌓이지 않으니) 예산이 차지 않는다. 호출 수와 실패 수로 따로 끊는다. 실패가 거듭되면 rate limit 일
+// 가능성이 커서, 계속 치면 같은 토큰을 쓰는 다른 경로의 예산까지 태운다.
+const MAX_FILE_READS = 30;
+const MAX_READ_FAILURES = 3;
 
 @Injectable()
 export class ReviewPullRequestUsecase {
@@ -267,13 +272,21 @@ export class ReviewPullRequestUsecase {
           : `: ${error instanceof Error ? error.message : String(error)}`;
       this.logger.warn(`리뷰 맥락 누락 (${label}) — ${what}${reason}`);
     };
+    let readAttempts = 0;
+    let readFailures = 0;
     const readHead = async (path: string): Promise<string | undefined> => {
-      const file = await this.githubClient.getFileFromBranch({
-        repo: detail.repo,
-        branch: detail.headSha,
-        path,
-      });
-      return file.content;
+      readAttempts += 1;
+      try {
+        const file = await this.githubClient.getFileFromBranch({
+          repo: detail.repo,
+          branch: detail.headSha,
+          path,
+        });
+        return file.content;
+      } catch (error: unknown) {
+        readFailures += 1;
+        throw error;
+      }
     };
 
     try {
@@ -287,7 +300,22 @@ export class ReviewPullRequestUsecase {
       // secondary rate limit 을 맞고, 어차피 상한 밖이라 버릴 본문이다.
       const sections: RelatedCodeSection[] = [];
       let collectedBytes = 0;
-      const budgetLeft = (): boolean => collectedBytes < RELATED_CODE_MAX_BYTES;
+      let stopNoted = false;
+      const budgetLeft = (): boolean => {
+        if (collectedBytes >= RELATED_CODE_MAX_BYTES) {
+          return false;
+        }
+        if (readAttempts < MAX_FILE_READS && readFailures < MAX_READ_FAILURES) {
+          return true;
+        }
+        if (!stopNoted) {
+          stopNoted = true;
+          warn(
+            `조회 중단 — 시도 ${readAttempts}회 · 실패 ${readFailures}회 (상한 ${MAX_FILE_READS}회 · 실패 ${MAX_READ_FAILURES}회)`,
+          );
+        }
+        return false;
+      };
       const keep = (section: RelatedCodeSection): void => {
         sections.push(section);
         collectedBytes += Buffer.byteLength(section.body, 'utf-8');
@@ -341,6 +369,9 @@ export class ReviewPullRequestUsecase {
           .filter((path) => !changedPaths.has(path))
           .slice(0, USAGE_FILES_PER_SYMBOL);
         for (const path of targets) {
+          if (!budgetLeft()) {
+            break;
+          }
           try {
             const content = await readHead(path);
             const excerpt =

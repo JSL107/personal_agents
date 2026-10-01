@@ -1224,6 +1224,68 @@ describe('ReviewPullRequestUsecase × diff 밖 맥락', () => {
     warn.mockRestore();
   });
 
+  const manyFilesDiff = (count: number): string =>
+    Array.from({ length: count }, (_, index) =>
+      [
+        `diff --git a/src/f${index}.ts b/src/f${index}.ts`,
+        `--- a/src/f${index}.ts`,
+        `+++ b/src/f${index}.ts`,
+        '@@ -1,1 +1,1 @@',
+        '-a',
+        '+b',
+      ].join('\n'),
+    ).join('\n');
+
+  it('작은 파일이 많아도 조회는 30회에서 멈춘다 — 바이트 예산만으로는 호출 수가 안 묶인다', async () => {
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    const { usecase, githubClient } = makeUsecase('JSL107/personal_agents');
+    githubClient.getPullRequestDiff.mockResolvedValue({
+      diff: manyFilesDiff(50),
+      truncated: false,
+      bytes: 1,
+    });
+    githubClient.getFileFromBranch.mockResolvedValue({
+      fileUrl: '',
+      content: 'b',
+    });
+
+    await usecase.execute({
+      prRef: 'JSL107/personal_agents#707',
+      slackUserId: 'U',
+    });
+
+    expect(githubClient.getFileFromBranch).toHaveBeenCalledTimes(30);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('조회 중단'));
+    warn.mockRestore();
+  });
+
+  it('조회가 3번 실패하면 남은 파일도 사용처 조회도 더 치지 않는다', async () => {
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    const { usecase, githubClient } = makeUsecase('JSL107/personal_agents');
+    githubClient.getPullRequestDiff.mockResolvedValue({
+      diff: `${manyFilesDiff(10)}\n+export const RULE_VERSION = 7;`,
+      truncated: false,
+      bytes: 1,
+    });
+    githubClient.getFileFromBranch.mockRejectedValue(
+      new Error('403 rate limit'),
+    );
+
+    const outcome = await usecase.execute({
+      prRef: 'JSL107/personal_agents#707',
+      slackUserId: 'U',
+    });
+
+    expect(outcome.result.approvalRecommendation).toBe('approve');
+    expect(githubClient.getFileFromBranch).toHaveBeenCalledTimes(3);
+    expect(githubClient.searchCode).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
   it('snapshot 경로(스윕)에도 같은 맥락이 붙는다', async () => {
     const { usecase, githubClient, promptOf } = makeUsecase(
       'JSL107/personal_agents',
