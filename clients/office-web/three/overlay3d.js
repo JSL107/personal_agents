@@ -8,6 +8,13 @@ import { CSS2DObject, CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer
 
 const STYLE_ID = "office3d-overlay-style";
 
+/**
+ * 말풍선·접수 대기 점을 이름표 위로 올리는 양(px). CSS 와 겹침 풀기(`renderer3d.js` 의 `separateLabels`)가
+ * 같은 값을 써야 한다 — 계산이 다른 숫자를 쓰면 말풍선 자리를 잘못 재 이웃 판과 다시 포개진다.
+ */
+export const BUBBLE_RAISE_PX = 30;
+export const DOTS_RAISE_PX = 28;
+
 /** 겹침층 글자 모양. 한 곳에 모아 두면 판마다 굵기·모서리가 어긋나지 않는다. */
 const STYLE = `
 .office3d-overlay { position: absolute; pointer-events: none; overflow: hidden; }
@@ -22,7 +29,7 @@ const STYLE = `
 .office3d-label.idle { background: rgba(38, 30, 25, 0.45); color: rgba(251, 246, 238, 0.7); }
 .office3d-label.alert { background: rgba(150, 38, 62, 0.9); }
 /* 이름표가 함께 떠 있으면 그 위로 — 간격을 3D 거리로 잡으면 확대 배율에 따라 겹친다. */
-.office3d-bubble.raised { margin-top: -30px; }
+.office3d-bubble.raised { margin-top: -${BUBBLE_RAISE_PX}px; }
 .office3d-bubble {
   font: 500 12px/1.35 "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
   max-width: 220px; white-space: normal; text-align: center;
@@ -33,7 +40,7 @@ const STYLE = `
 /* 접수 대기 점 — 글자는 그대로 두고 가림막만 옮긴다(글자를 바꾸려면 3D 장면까지 다시 그려야 한다).
    흰 점만 띄우면 밝은 바닥에서 안 보여 이름표와 같은 어두운 판 위에 올린다. */
 .office3d-dots {
-  position: relative; width: 36px; height: 16px; margin-top: -28px; border-radius: 8px;
+  position: relative; width: 36px; height: 16px; margin-top: -${DOTS_RAISE_PX}px; border-radius: 8px;
   background: rgba(38, 30, 25, 0.82); border: 1px solid rgba(255, 255, 255, 0.12);
 }
 .office3d-dots::after {
