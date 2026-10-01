@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 
+import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { CareerProfileData } from '../domain/career-mate.type';
 import { CareerProfileRepositoryPort } from '../domain/port/career-profile.repository.port';
@@ -433,5 +434,19 @@ describe('카드 성과 줄 채우기', () => {
 
     const [, payload] = (client.updateProject as jest.Mock).mock.calls[0];
     expect('keyContributions' in payload).toBe(false);
+  });
+
+  it('저장된 프로필이 없으면 넘겨받은 triggerType 으로 만든다', async () => {
+    const { usecase, buildProfile } = createFixture({}, null);
+
+    await usecase.execute({
+      slackUserId: 'U1',
+      triggerType: TriggerType.AUTOPILOT_PORTFOLIO_PUBLISH_CRON,
+    });
+
+    expect(buildProfile.execute).toHaveBeenCalledWith({
+      slackUserId: 'U1',
+      triggerType: TriggerType.AUTOPILOT_PORTFOLIO_PUBLISH_CRON,
+    });
   });
 });

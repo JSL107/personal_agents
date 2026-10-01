@@ -45,6 +45,7 @@ export class RenderPortfolioUsecase {
   async execute({
     slackUserId,
     deferBlockSync,
+    triggerType,
   }: RenderPortfolioInput): Promise<RenderPortfolioResult> {
     const parentPageId = this.config.get<string>(
       'CAREER_PORTFOLIO_NOTION_PAGE_ID',
@@ -67,7 +68,10 @@ export class RenderPortfolioUsecase {
       agentRunId = latest.agentRunId ?? 0;
       reusedAgentRun = true;
     } else {
-      const built = await this.buildProfile.execute({ slackUserId });
+      const built = await this.buildProfile.execute({
+        slackUserId,
+        triggerType,
+      });
       profile = built.result;
       agentRunId = built.agentRunId;
       reusedAgentRun = false;

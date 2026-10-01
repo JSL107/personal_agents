@@ -1,3 +1,4 @@
+import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { PREVIEW_KIND } from '../../../preview-gate/domain/preview-action.type';
 import { PreviewAction } from '../../../preview-gate/domain/preview-action.type';
 import { EveningCareerReflectApplier } from './evening-career-reflect.applier';
@@ -48,11 +49,13 @@ describe('EveningCareerReflectApplier', () => {
 
     expect(reflectPr.execute).toHaveBeenCalledTimes(2);
     expect(reflectPr.execute).toHaveBeenNthCalledWith(1, {
+      triggerType: TriggerType.EVENING_CAREER_REFLECT_APPROVAL,
       slackUserId: 'U1',
       prText: 'schoolbell-e/sbe-api-v5#10\nschoolbell-e/sbe-api-v5#11',
       portfolioSync: 'skip',
     });
     expect(reflectPr.execute).toHaveBeenNthCalledWith(2, {
+      triggerType: TriggerType.EVENING_CAREER_REFLECT_APPROVAL,
       slackUserId: 'U1',
       prText: 'JSL107/personal_agents#400',
       portfolioSync: 'skip',
@@ -88,7 +91,10 @@ describe('EveningCareerReflectApplier', () => {
     // 묶음 4건인데 포트폴리오 전체 재작성은 1회. 회차마다 하면 3회분이 뒤 회차에 덮여
     // 사라지는데, 한 번이 수백 초짜리라 그대로 대기 시간이 된다.
     expect(portfolio.execute).toHaveBeenCalledTimes(1);
-    expect(portfolio.execute).toHaveBeenCalledWith({ slackUserId: 'U1' });
+    expect(portfolio.execute).toHaveBeenCalledWith({
+      slackUserId: 'U1',
+      triggerType: TriggerType.EVENING_CAREER_REFLECT_APPROVAL,
+    });
     // 미루지 않는다 — 아래 문구가 "반영했습니다" 로 단정하고 카드는 재사용이 안 된다.
     expect(portfolio.execute.mock.calls[0][0].deferBlockSync).toBeUndefined();
     expect(result.message).toContain('https://notion.so/portfolio');
@@ -221,6 +227,7 @@ describe('EveningCareerReflectApplier', () => {
 
     expect(reflectPr.execute).toHaveBeenCalledTimes(1);
     expect(reflectPr.execute).toHaveBeenCalledWith({
+      triggerType: TriggerType.EVENING_CAREER_REFLECT_APPROVAL,
       slackUserId: 'U1',
       prText: prRefs.join('\n'),
       portfolioSync: 'skip',
@@ -265,6 +272,7 @@ describe('EveningCareerReflectApplier', () => {
     );
 
     expect(reflectPr.execute).toHaveBeenNthCalledWith(1, {
+      triggerType: TriggerType.EVENING_CAREER_REFLECT_APPROVAL,
       slackUserId: 'U1',
       prText: 'o/company#1',
       impactContext: '결제 실패율 3%→0.5%',
@@ -272,6 +280,7 @@ describe('EveningCareerReflectApplier', () => {
     });
     // 두 번째 묶음은 도입 전과 완전히 같은 호출 형태여야 한다.
     expect(reflectPr.execute).toHaveBeenNthCalledWith(2, {
+      triggerType: TriggerType.EVENING_CAREER_REFLECT_APPROVAL,
       slackUserId: 'U1',
       prText: 'o/personal#9',
       portfolioSync: 'skip',
@@ -293,6 +302,7 @@ describe('EveningCareerReflectApplier', () => {
     );
 
     expect(reflectPr.execute).toHaveBeenCalledWith({
+      triggerType: TriggerType.EVENING_CAREER_REFLECT_APPROVAL,
       slackUserId: 'U1',
       prText: 'o/company#1',
       portfolioSync: 'skip',
@@ -316,6 +326,7 @@ describe('EveningCareerReflectApplier', () => {
     );
 
     expect(reflectPr.execute).toHaveBeenCalledWith({
+      triggerType: TriggerType.EVENING_CAREER_REFLECT_APPROVAL,
       slackUserId: 'U1',
       prText: 'o/company#1',
       portfolioSync: 'skip',

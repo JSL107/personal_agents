@@ -104,6 +104,15 @@ export enum TriggerType {
   // (자동 수집물을 목표로 저장하면 사용자가 등록한 목표 공고가 밀려나고, 대기 카드가
   // 살아 있으면 사용자의 다음 응답을 가로챈다).
   AUTOPILOT_JOB_FEED_GAP_CRON = 'AUTOPILOT_JOB_FEED_GAP_CRON',
+  // CAREER_MATE 의 사람이 직접 부르지 않은 경로 셋 — 이전엔 전부 SLACK_MENTION_CAREER_MATE 로
+  // 남아 원장에서 멘션 사용량이 부풀고 cron 실패가 멘션 실패로 집계됐다.
+  // 주간 이력서 보정 cron (resume-calibration-cron consumer).
+  RESUME_CALIBRATION_CRON = 'RESUME_CALIBRATION_CRON',
+  // 저녁 회고 카드의 성과 반영 승인 (evening-career-reflect applier). 사람이 누르지만 멘션이
+  // 아니라 카드 소비라, 실패 시 다시 누를 수 없다는 점이 멘션과 다르다.
+  EVENING_CAREER_REFLECT_APPROVAL = 'EVENING_CAREER_REFLECT_APPROVAL',
+  // 포트폴리오 사이트 발행 autopilot — 프로필이 없어 새로 만들 때만 원장에 남는다.
+  AUTOPILOT_PORTFOLIO_PUBLISH_CRON = 'AUTOPILOT_PORTFOLIO_PUBLISH_CRON',
 }
 
 // worker 를 고른 경로. 셋을 구분하지 않으면 원장에서 분류기 성적을 낼 수 없다 —
