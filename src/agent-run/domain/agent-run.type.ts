@@ -44,9 +44,6 @@ export enum TriggerType {
   // 주 1회 자동 /impact-report --recent <N>d 종합 — 본인 작성 머지 PR 종합 보고.
   // 수동 /impact-report (SLACK_COMMAND_IMPACT_REPORT) 와 구분.
   IMPACT_REPORT_RECENT_CRON = 'IMPACT_REPORT_RECENT_CRON',
-  // issues.opened webhook 자동 라벨링 — repo label vocab 안에서 LLM 이 적합 label 부분집합 선택 후
-  // octokit issues.addLabels. 수동 라벨링과 구분하기 위한 trigger.
-  WEBHOOK_ISSUE_AUTO_LABEL = 'WEBHOOK_ISSUE_AUTO_LABEL',
   // 휴가 계산기 슬래시 (/휴가) + 자연어 멘션 공통 trigger. 동작(조회/등록/내역/취소) 구분은 inputSnapshot.action.
   SLACK_COMMAND_VACATION = 'SLACK_COMMAND_VACATION',
   // 블로그 릴레이 — 자연어 멘션 전용(슬래시 없음)이라 COMMAND 가 아닌 MENTION 명명.

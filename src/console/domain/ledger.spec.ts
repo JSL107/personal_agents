@@ -123,6 +123,34 @@ describe('buildConsoleLedger', () => {
     ]);
   });
 
+  // 2026-10-01 폐지한 ISSUE_LABELER 의 원장 행(agent_run #347)이 그대로 남아 있다. 사규에서
+  // 빠져도 원장 집계는 문자열로 묶으므로 끊기지 않고 이력으로 남아야 한다.
+  it('사규에서 폐지된 워커의 과거 행도 끊기지 않고 원장에 남는다', () => {
+    const rows = [
+      run(
+        'ISSUE_LABELER',
+        'WEBHOOK_ISSUE_AUTO_LABEL',
+        'SUCCEEDED',
+        '2026-08-03T10:07:21+09:00',
+      ),
+    ];
+
+    const ledger = buildConsoleLedger(rows, thursdayClock);
+
+    expect(
+      AGENT_REGISTRY.some(
+        (entry) => String(entry.agentType) === 'ISSUE_LABELER',
+      ),
+    ).toBe(false);
+    const retired = ledger.agents.find(
+      (agent) => agent.agentType === 'ISSUE_LABELER',
+    );
+    expect([retired?.totalRuns, retired?.autonomy]).toEqual([
+      1,
+      'EVENT_DRIVEN',
+    ]);
+  });
+
   it('첫 실행일·마지막 시각·idleDays·창립 일차를 KST 날짜로 계산한다', () => {
     const rows = [
       run(

@@ -75,8 +75,7 @@ export interface AgentContract {
    * 산출물 JSON 최상위에 반드시 있어야 할 키.
    *
    * 빈 배열이면 필드 검사를 건너뛴다 — 한 AgentType 이 여러 usecase 를 공유해
-   * 산출물 형태가 갈리는 경우(VACATION / CAREER_MATE) 나 배열을 그대로 내보내는
-   * 경우(ISSUE_LABELER) 는 공통 필수 키가 성립하지 않는다.
+   * 산출물 형태가 갈리는 경우(VACATION / CAREER_MATE) 는 공통 필수 키가 성립하지 않는다.
    *
    * 값은 2026-07-31 `agent_run` 실측에서 **성공 실행 전건에 등장한 키**만 골랐다.
    * 추측으로 채우면 프롬프트 머리말이 실제 출력 스키마와 어긋나 모델을 혼란시킨다.
@@ -426,10 +425,6 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     // 머리말이 모델에게 없는 스키마를 요구한다.
     skipPreamble: true,
   },
-  [AgentType.ISSUE_LABELER]: stub(
-    Department.QUALITY,
-    '새 이슈에 기존 라벨 중 적합한 것을 붙인다',
-  ),
   [AgentType.SUBCONSCIOUS_GATE]: {
     department: Department.INTERNAL_OPS,
     job: '감지된 상태 변화를 제안으로 올릴지 판정한다',
