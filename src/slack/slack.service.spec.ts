@@ -540,6 +540,24 @@ describe('SlackService.postMessage', () => {
       text: '본문',
     });
   });
+
+  it('runVerdict 를 주면 그 실행의 판정 버튼을 스레드에 싣는다', async () => {
+    const postMessageMock = jest.fn(async () => ({ ts: '111.333' }));
+    const service = buildService(postMessageMock);
+    await service.postMessage({
+      target: 'C1',
+      text: '대체 문구',
+      threadTs: '999.000',
+      runVerdict: { agentRunId: 6300, facets: ['overall'] },
+    });
+    const [args] = postMessageMock.mock.calls[0] as unknown as [
+      { text: string; thread_ts: string; blocks: unknown[] },
+    ];
+    expect(args.text).toBe('대체 문구');
+    expect(args.thread_ts).toBe('999.000');
+    expect(JSON.stringify(args.blocks)).toContain('run_verdict:overall:GOOD');
+    expect(JSON.stringify(args.blocks)).toContain('\\"agentRunId\\":6300');
+  });
 });
 
 // 그림을 메인 메시지로 올리는 경로. 업로드 응답만 보고 메시지를 보내면 슬랙이 아직 파일을

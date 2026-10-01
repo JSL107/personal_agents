@@ -34,6 +34,7 @@ import { PreferenceReactionHandler } from './handler/preference-reaction.handler
 import { PreviewActionHandler } from './handler/preview-action.handler';
 import { RetryRunHandler } from './handler/retry-run.handler';
 import { RouterMessageHandler } from './handler/router-message.handler';
+import { RunVerdictActionHandler } from './handler/run-verdict-action.handler';
 import { SlackInboxReactionHandler } from './handler/slack-inbox-reaction.handler';
 import { SlackPushpinReactionHandler } from './handler/slack-pushpin-reaction.handler';
 import { SubconsciousProposalActionHandler } from './handler/subconscious-proposal-action.handler';
@@ -98,6 +99,7 @@ import { SlackService } from './slack.service';
     PreferenceReactionHandler,
     VacationHandler,
     SubconsciousProposalActionHandler,
+    RunVerdictActionHandler,
     {
       provide: SLACK_HANDLER_PORT,
       useFactory: (...handlers: SlackHandler[]) => handlers,
@@ -117,6 +119,7 @@ import { SlackService } from './slack.service';
         PreferenceReactionHandler,
         VacationHandler,
         SubconsciousProposalActionHandler,
+        RunVerdictActionHandler,
       ],
     },
   ],

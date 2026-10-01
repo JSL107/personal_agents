@@ -1,3 +1,4 @@
+import { RunVerdictFacet } from '../../../agent-run/domain/run-verdict';
 import { PreviewCardMessage } from '../../../preview-gate/domain/preview-action.type';
 
 export const SLACK_NOTIFIER_PORT = Symbol('SLACK_NOTIFIER_PORT');
@@ -20,12 +21,16 @@ export interface SlackNotifierPort {
   // image 를 주면 본문 아래에 그 파일을 이미지 블록으로 싣는다(`uploadImageFile` 이 돌려준
   // id). 파일 업로드로 채널에 그림을 올리는 것과 달리 이쪽은 **일반 메시지**라 `ts` 가
   // 즉시 돌아오고, 그래서 그 메시지가 스레드의 뿌리가 될 수 있다.
+  //
+  // runVerdict 를 주면 본문 대신 그 실행의 판정 버튼을 싣는다(text 는 알림용 대체 문구).
+  // 버튼을 무엇으로 그릴지는 발송 어댑터가 정한다 — 호출부는 실행 id 와 축만 넘긴다.
   postMessage(input: {
     target: string;
     text: string;
     threadTs?: string;
     unfurlLinks?: boolean;
     image?: { fileId: string; altText: string };
+    runVerdict?: { agentRunId: number; facets: RunVerdictFacet[] };
   }): Promise<{ ts: string | undefined }>;
   // T1_PREVIEW 승인 카드. 반환된 좌표(channelId/messageTs)로 이후 chat.update(카드 갱신)가 가능.
   //
