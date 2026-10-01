@@ -1,3 +1,4 @@
+import { TriggerType } from '../../agent-run/domain/agent-run.type';
 import { ResumeCalibrationCronConsumer } from './resume-calibration-cron.consumer';
 
 const CAL = {
@@ -64,6 +65,7 @@ describe('ResumeCalibrationCronConsumer', () => {
       data: { ownerSlackUserId: 'U1', target: 'U1' },
     } as never);
     expect(deps.calibrateResume.execute).toHaveBeenCalledWith({
+      triggerType: TriggerType.RESUME_CALIBRATION_CRON,
       slackUserId: 'U1',
       webTrendsNote: '2026 트렌드 요약',
     });
@@ -94,6 +96,7 @@ describe('ResumeCalibrationCronConsumer', () => {
       data: { ownerSlackUserId: 'U1', target: 'U1' },
     } as never);
     expect(deps.calibrateResume.execute).toHaveBeenCalledWith({
+      triggerType: TriggerType.RESUME_CALIBRATION_CRON,
       slackUserId: 'U1',
       webTrendsNote: undefined,
     });

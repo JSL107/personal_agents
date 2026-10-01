@@ -1,3 +1,4 @@
+import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { CareerMateException } from '../domain/career-mate.exception';
 import { BuildCareerProfileUsecase } from './build-career-profile.usecase';
 
@@ -219,5 +220,33 @@ describe('BuildCareerProfileUsecase', () => {
     expect(saved.profileJson.accomplishments[0].impactContext).toBe(
       '결제 실패율 3%→0.5%',
     );
+  });
+
+  // 넘겨받은 출처가 원장에 그대로 남아야 cron 이 부른 생성이 멘션으로 집계되지 않는다.
+  it('triggerType 을 원장 기록에 쓰고, 미지정이면 멘션으로 남긴다', async () => {
+    const d = makeDeps([PR]);
+    const usecase = new BuildCareerProfileUsecase(
+      d.githubClient as never,
+      d.modelRouter as never,
+      d.repository as never,
+      d.agentRunService as never,
+      d.config as never,
+      d.humanizer as never,
+    );
+
+    await usecase.execute({
+      slackUserId: 'U1',
+      triggerType: TriggerType.RESUME_CALIBRATION_CRON,
+    });
+    await usecase.execute({ slackUserId: 'U1' });
+
+    const calls = d.agentRunService.execute.mock.calls as unknown as [
+      { triggerType: TriggerType },
+    ][];
+    const triggers = calls.map(([input]) => input.triggerType);
+    expect(triggers).toEqual([
+      TriggerType.RESUME_CALIBRATION_CRON,
+      TriggerType.SLACK_MENTION_CAREER_MATE,
+    ]);
   });
 });

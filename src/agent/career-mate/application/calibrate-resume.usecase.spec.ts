@@ -1,3 +1,4 @@
+import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { CareerProfileData } from '../domain/career-mate.type';
 import { CalibrateResumeUsecase } from './calibrate-resume.usecase';
 
@@ -73,7 +74,28 @@ describe('CalibrateResumeUsecase', () => {
   it('허브 없으면 자동 Build 후 진단', async () => {
     const d = makeDeps(null);
     await build(d).execute({ slackUserId: 'U1' });
-    expect(d.buildProfile.execute).toHaveBeenCalledWith({ slackUserId: 'U1' });
+    expect(d.buildProfile.execute).toHaveBeenCalledWith({
+      slackUserId: 'U1',
+      triggerType: TriggerType.SLACK_MENTION_CAREER_MATE,
+    });
+  });
+  // 주간 cron 이 넘긴 출처가 자기 원장과 안쪽 프로필 생성 원장 양쪽에 남아야 한다 —
+  // 한쪽만 넘기면 cron 실행 일부가 여전히 멘션으로 집계된다.
+  it('넘겨받은 triggerType 을 원장과 프로필 생성에 그대로 쓴다', async () => {
+    const d = makeDeps(null);
+    await build(d).execute({
+      slackUserId: 'U1',
+      triggerType: TriggerType.RESUME_CALIBRATION_CRON,
+    });
+    expect(d.agentRunService.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        triggerType: TriggerType.RESUME_CALIBRATION_CRON,
+      }),
+    );
+    expect(d.buildProfile.execute).toHaveBeenCalledWith({
+      slackUserId: 'U1',
+      triggerType: TriggerType.RESUME_CALIBRATION_CRON,
+    });
   });
   it('webTrendsNote 가 프롬프트에 반영된다', async () => {
     const d = makeDeps({

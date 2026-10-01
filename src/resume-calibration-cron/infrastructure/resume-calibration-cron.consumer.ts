@@ -10,6 +10,7 @@ import { CalibrateResumeUsecase } from '../../agent/career-mate/application/cali
 import { CareerMateException } from '../../agent/career-mate/domain/career-mate.exception';
 import { CareerMateErrorCode } from '../../agent/career-mate/domain/career-mate-error-code.enum';
 import { formatCalibrationReport } from '../../agent/career-mate/infrastructure/career-mate.formatter';
+import { TriggerType } from '../../agent-run/domain/agent-run.type';
 import { CronIdempotencyService } from '../../common/queue/cron-idempotency.service';
 import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
 import { getTodayKstDate } from '../../common/util/kst-date.util';
@@ -73,6 +74,7 @@ export class ResumeCalibrationCronConsumer extends WorkerHost {
       const outcome = await this.calibrateResume.execute({
         slackUserId: ownerSlackUserId,
         webTrendsNote,
+        triggerType: TriggerType.RESUME_CALIBRATION_CRON,
       });
       // 서술 필드(verdict/진단/액션) 윤문 — best-effort. 비활성/실패 시 원본 그대로 재조립된다.
       const humanizedResult = await humanizeCalibrationReport(

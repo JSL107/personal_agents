@@ -281,4 +281,19 @@ describe('AuditResumeUsecase', () => {
     expect(prompt).not.toContain('[이번 회차 범위]');
     expect(prompt).not.toContain('[이력서 전체 성과 목록');
   });
+
+  it('저장된 프로필이 없으면 자기 triggerType 으로 프로필을 만든다', async () => {
+    const fixture = createFixture({});
+    fixture.repository.findLatestBySlackUser.mockResolvedValue(null);
+
+    await fixture.usecase.execute({
+      slackUserId: 'U1',
+      triggerType: TriggerType.AUTOPILOT_RESUME_AUDIT_CRON,
+    });
+
+    expect(fixture.buildProfile.execute).toHaveBeenCalledWith({
+      slackUserId: 'U1',
+      triggerType: TriggerType.AUTOPILOT_RESUME_AUDIT_CRON,
+    });
+  });
 });

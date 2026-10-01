@@ -169,6 +169,10 @@ export interface AnalyzeJdGapInput {
 export interface BuildCareerProfileInput {
   slackUserId: string;
   windowMonths?: number;
+  // 원장의 trigger_type. 미지정이면 멘션(SLACK_MENTION_CAREER_MATE). cron·카드 승인처럼 사람이
+  // 직접 부르지 않은 실행이 안쪽에서 프로필을 만들 때 부른 쪽 출처를 그대로 넘긴다 — 안 넘기면
+  // 그 실행이 멘션으로 집계된다.
+  triggerType?: TriggerType;
 }
 
 export interface RenderResumeInput {
@@ -193,6 +197,8 @@ export interface RenderPortfolioInput {
    * 경로(RENDER_PORTFOLIO)는 반영 완료 자체가 산출물이라 기다려야 한다.
    */
   deferBlockSync?: boolean;
+  // 프로필이 없어 새로 만들 때 남길 trigger_type (BuildCareerProfileInput.triggerType 참조).
+  triggerType?: TriggerType;
 }
 
 export interface RenderPortfolioResult {
@@ -215,6 +221,8 @@ export interface CalibrationResultData {
 export interface CalibrateResumeInput {
   slackUserId: string;
   webTrendsNote?: string;
+  // 미지정이면 멘션. 주간 cron 은 RESUME_CALIBRATION_CRON.
+  triggerType?: TriggerType;
 }
 
 // REFLECT_PR — 단일 PR 회고 → 이력서/포트폴리오 반영.
@@ -226,6 +234,8 @@ export interface ParsedPrRef {
 export interface ReflectPrInput {
   slackUserId: string;
   prText: string; // 사용자 원문 (dispatcher 가 input.text 를 그대로 전달)
+  // 미지정이면 멘션. 저녁 회고 카드 승인 경로는 EVENING_CAREER_REFLECT_APPROVAL.
+  triggerType?: TriggerType;
   // 선택 입력. 없으면 도입 전과 완전히 같게 동작한다 — 프롬프트에 맥락 절이 붙지 않고
   // 저장되는 성과에도 impactContext 가 생기지 않는다.
   impactContext?: string;

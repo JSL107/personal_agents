@@ -1,3 +1,4 @@
+import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { CareerMateException } from '../domain/career-mate.exception';
 import { CareerProfileData } from '../domain/career-mate.type';
 import { RenderPortfolioUsecase } from './render-portfolio.usecase';
@@ -252,5 +253,25 @@ describe('RenderPortfolioUsecase', () => {
     await expect(usecase.execute({ slackUserId: 'U1' })).rejects.toBeInstanceOf(
       CareerMateException,
     );
+  });
+
+  it('프로필이 없어 새로 만들 때 넘겨받은 triggerType 을 넘긴다', async () => {
+    const d = makeDeps(null);
+    const usecase = new RenderPortfolioUsecase(
+      d.repository as never,
+      d.buildProfile as never,
+      d.notionClient as never,
+      d.config as never,
+    );
+
+    await usecase.execute({
+      slackUserId: 'U1',
+      triggerType: TriggerType.EVENING_CAREER_REFLECT_APPROVAL,
+    });
+
+    expect(d.buildProfile.execute).toHaveBeenCalledWith({
+      slackUserId: 'U1',
+      triggerType: TriggerType.EVENING_CAREER_REFLECT_APPROVAL,
+    });
   });
 });

@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { CareerProfileData } from '../domain/career-mate.type';
@@ -29,6 +30,8 @@ import { BuildCareerProfileUsecase } from './build-career-profile.usecase';
 
 export interface PublishPortfolioSiteInput {
   slackUserId: string;
+  // 프로필이 없어 새로 만들 때 남길 trigger_type. 미지정이면 멘션.
+  triggerType?: TriggerType;
 }
 
 export interface PublishPortfolioSiteFailure {
@@ -84,8 +87,12 @@ export class PublishPortfolioSiteUsecase {
 
   async execute({
     slackUserId,
+    triggerType,
   }: PublishPortfolioSiteInput): Promise<PublishPortfolioSiteResult> {
-    const { profile, agentRunId } = await this.resolveProfile(slackUserId);
+    const { profile, agentRunId } = await this.resolveProfile(
+      slackUserId,
+      triggerType,
+    );
     const { groups, skippedTitles } = groupAccomplishments(
       profile,
       this.payloadOptions(),
@@ -146,6 +153,7 @@ export class PublishPortfolioSiteUsecase {
 
   private async resolveProfile(
     slackUserId: string,
+    triggerType?: TriggerType,
   ): Promise<{ profile: CareerProfileData; agentRunId: number }> {
     const latest = await this.repository.findLatestBySlackUser(slackUserId);
     if (latest) {
@@ -154,7 +162,7 @@ export class PublishPortfolioSiteUsecase {
         agentRunId: latest.agentRunId ?? 0,
       };
     }
-    const built = await this.buildProfile.execute({ slackUserId });
+    const built = await this.buildProfile.execute({ slackUserId, triggerType });
     return { profile: built.result, agentRunId: built.agentRunId };
   }
 

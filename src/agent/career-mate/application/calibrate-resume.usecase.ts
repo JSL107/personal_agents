@@ -38,13 +38,14 @@ export class CalibrateResumeUsecase {
   async execute({
     slackUserId,
     webTrendsNote,
+    triggerType = TriggerType.SLACK_MENTION_CAREER_MATE,
   }: CalibrateResumeInput): Promise<AgentRunOutcome<CalibrationResultData>> {
     return this.agentRunService.execute<CalibrationResultData>({
       agentType: AgentType.CAREER_MATE,
-      triggerType: TriggerType.SLACK_MENTION_CAREER_MATE,
+      triggerType,
       inputSnapshot: { slackUserId, hasWebTrends: Boolean(webTrendsNote) },
       run: async () => {
-        const profile = await this.resolveProfile(slackUserId);
+        const profile = await this.resolveProfile(slackUserId, triggerType);
         const completion = await this.modelRouter.route({
           agentType: AgentType.CAREER_MATE,
           request: {
@@ -63,12 +64,13 @@ export class CalibrateResumeUsecase {
 
   private async resolveProfile(
     slackUserId: string,
+    triggerType?: TriggerType,
   ): Promise<CareerProfileData> {
     const latest = await this.repository.findLatestBySlackUser(slackUserId);
     if (latest) {
       return latest.profileJson;
     }
-    const built = await this.buildProfile.execute({ slackUserId });
+    const built = await this.buildProfile.execute({ slackUserId, triggerType });
     return built.result;
   }
 }

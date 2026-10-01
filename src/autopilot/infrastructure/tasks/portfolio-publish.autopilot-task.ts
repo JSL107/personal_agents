@@ -41,6 +41,7 @@ export class PortfolioPublishAutopilotTask implements AutopilotTask {
     try {
       result = await this.publishPortfolioSite.execute({
         slackUserId: context.ownerSlackUserId,
+        triggerType: TriggerType.AUTOPILOT_PORTFOLIO_PUBLISH_CRON,
       });
     } catch (error) {
       // 발행 자체가 통째로 실패한 경우(프로필 조회 실패, 사이트 목록 조회 실패 등).
