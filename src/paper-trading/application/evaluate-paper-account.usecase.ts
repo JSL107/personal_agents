@@ -12,7 +12,9 @@ import {
 import {
   describeSuspiciousPriceJump,
   detectSuspiciousPriceJump,
+  sumCurrentHoldingCorporateCash,
 } from '../domain/corporate-action-guard';
+import { describeLedgerMismatch, isLedgerMismatch } from '../domain/exit-band';
 import { verifyPaperInvariants } from '../domain/paper-invariant';
 import {
   calculateAccountValuation,
@@ -426,6 +428,31 @@ export class EvaluatePaperAccountUsecase {
       };
     }
 
+    const unexplainedLedgerMismatches =
+      await this.findUnexplainedLedgerMismatches(account.id, pricedPositions);
+    if (unexplainedLedgerMismatches.length > 0) {
+      return {
+        skipped: true,
+        skipReason:
+          '기업행동이 장부에 반영되지 않아 평단과 시세가 어긋난 종목이 있습니다.',
+        tradeDate: tradeDateText,
+        cashBalance,
+        ...emptyCashSettlementSummary(cashBalance),
+        positionValue: null,
+        totalValue: null,
+        returnRate: null,
+        realizedPnl: null,
+        unrealizedPnl: null,
+        benchmarkClose: null,
+        positions: evaluatedPositions,
+        unpricedPositions,
+        positionCount: positions.length,
+        staleTickerCount,
+        invariantViolations: [],
+        suspiciousJumps: unexplainedLedgerMismatches,
+      };
+    }
+
     const expectedTickerIds = positions.map((position) => position.tickerId);
     return await this.repository.saveEquitySnapshotWithRevalidatedState<EvaluateAccountResult>(
       account.id,
@@ -582,5 +609,56 @@ export class EvaluatePaperAccountUsecase {
         };
       },
     );
+  }
+  // 기업행동 **다음** 거래일부터는 전일 대비 변동이 정상이라 위 가격 점프 판정을 지나친다.
+  // 배당이 아직 장부에 없으면 총액에서 배당금만큼 빠진 채 적재되고, 최대 낙폭은 그 행에
+  // 영구히 묶인다 — 계좌 5 의 MDD -14.96% 가 2026-08-28 배당락 하루에 묶인 것과 같다.
+  //
+  // 청산 밴드와 같은 잣대(평단 대비 ±50%, `isLedgerMismatch`)로 고르되, 지금 보유분이 받은
+  // 기업행동 현금을 평가액에 더해 다시 잰다. 배당은 평단을 바꾸지 않아 반영 뒤에도 가격만의
+  // 폭은 그대로이기 때문이다. 종목에 기록이 있는지만 보면 같은 종목의 앞선 작은 배당이
+  // 다음 특별배당의 미반영을 가린다 — 금액이 괴리를 설명할 때만 통과시킨다.
+  private async findUnexplainedLedgerMismatches(
+    accountId: number,
+    pricedPositions: PositionPrice[],
+  ): Promise<string[]> {
+    const mismatches: string[] = [];
+    for (const { position, latest } of pricedPositions) {
+      const costBasis = position.avgPrice.times(position.quantity);
+      if (costBasis.isZero()) {
+        continue;
+      }
+      const marketValue = position.quantity.times(latest.close.toString());
+      const priceReturnRatePercent = marketValue
+        .minus(costBasis)
+        .dividedBy(costBasis)
+        .times(100);
+      if (!isLedgerMismatch(priceReturnRatePercent.toNumber())) {
+        continue;
+      }
+      const ledger = await this.repository.findHoldingLedger(
+        accountId,
+        position.tickerId,
+      );
+      const corporateCash = sumCurrentHoldingCorporateCash({
+        ...ledger,
+        zero: costBasis.times(0),
+      });
+      const explainedReturnRatePercent = marketValue
+        .plus(corporateCash)
+        .minus(costBasis)
+        .dividedBy(costBasis)
+        .times(100)
+        .toNumber();
+      if (isLedgerMismatch(explainedReturnRatePercent)) {
+        mismatches.push(
+          describeLedgerMismatch(
+            `${position.ticker.name}(${position.ticker.code})`,
+            explainedReturnRatePercent,
+          ),
+        );
+      }
+    }
+    return mismatches;
   }
 }

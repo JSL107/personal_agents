@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import {
   describeSuspiciousPriceJump,
   detectSuspiciousPriceJump,
+  sumCurrentHoldingCorporateCash,
 } from './corporate-action-guard';
 
 const decimal = (value: string): Prisma.Decimal => new Prisma.Decimal(value);
@@ -119,5 +120,71 @@ describe('describeSuspiciousPriceJump', () => {
       '코람코더원리츠(417310) 가격이 전일 대비 0.2136배로 변했습니다 — ' +
         '하루 가격제한(±30%) 밖이라 분할·병합·배당락 또는 시세 오류로 봅니다.',
     );
+  });
+});
+
+describe('sumCurrentHoldingCorporateCash', () => {
+  const day = (value: string): Date => new Date(`${value}T00:00:00.000Z`);
+  const zero = new Prisma.Decimal(0);
+  const buy = (tradeDate: string, quantity: string) => ({
+    side: 'BUY' as const,
+    quantity: new Prisma.Decimal(quantity),
+    tradeDate: day(tradeDate),
+  });
+  const sell = (tradeDate: string, quantity: string) => ({
+    ...buy(tradeDate, quantity),
+    side: 'SELL' as const,
+  });
+  const dividend = (exDate: string, cashDelta: string) => ({
+    exDate: day(exDate),
+    cashDelta: new Prisma.Decimal(cashDelta),
+    quantityDelta: zero,
+  });
+
+  it('지금 보유분이 받은 기업행동 현금만 더한다', () => {
+    const cash = sumCurrentHoldingCorporateCash({
+      trades: [buy('2026-08-24', '182')],
+      corporateActions: [dividend('2026-08-28', '1330319')],
+      zero,
+    });
+
+    expect(cash.toString()).toBe('1330319');
+  });
+
+  it('전량 정리하기 전 보유 때 받은 배당은 지금 보유분의 몫이 아니다', () => {
+    const cash = sumCurrentHoldingCorporateCash({
+      trades: [
+        buy('2026-08-01', '10'),
+        sell('2026-08-20', '10'),
+        buy('2026-09-01', '10'),
+      ],
+      corporateActions: [
+        dividend('2026-08-10', '500'),
+        dividend('2026-09-10', '70'),
+      ],
+      zero,
+    });
+
+    expect(cash.toString()).toBe('70');
+  });
+
+  it('권리락일에 산 보유분은 그날 기업행동의 권리가 없다', () => {
+    const cash = sumCurrentHoldingCorporateCash({
+      trades: [buy('2026-08-28', '10')],
+      corporateActions: [dividend('2026-08-28', '500')],
+      zero,
+    });
+
+    expect(cash.toString()).toBe('0');
+  });
+
+  it('보유가 없으면 0 이다', () => {
+    const cash = sumCurrentHoldingCorporateCash({
+      trades: [buy('2026-08-01', '10'), sell('2026-08-20', '10')],
+      corporateActions: [dividend('2026-08-10', '500')],
+      zero,
+    });
+
+    expect(cash.toString()).toBe('0');
   });
 });
