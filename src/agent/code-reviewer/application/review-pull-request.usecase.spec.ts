@@ -601,6 +601,18 @@ describe('ReviewPullRequestUsecase — conversationContext', () => {
     expect(prompt).toContain('[PR 메타]');
   });
 
+  it('noFallback 을 넘기면 모델 라우터에 그대로 전달하고, 안 넘기면 키를 싣지 않는다(운영은 폴백 유지)', async () => {
+    await usecase.execute({
+      prRef: 'foo/bar#7',
+      slackUserId: 'U1',
+      noFallback: true,
+    });
+    await usecase.execute({ prRef: 'foo/bar#7', slackUserId: 'U1' });
+
+    expect(modelRouter.route.mock.calls[0][0].noFallback).toBe(true);
+    expect(modelRouter.route.mock.calls[1][0]).not.toHaveProperty('noFallback');
+  });
+
   it('userInstruction 없으면 [사용자 지시] 섹션이 삽입되지 않는다 (회귀)', async () => {
     await usecase.execute({
       prRef: 'foo/bar#7',
