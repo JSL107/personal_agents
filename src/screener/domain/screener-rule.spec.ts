@@ -47,9 +47,77 @@ const candidate = (
 
 describe('screenStocks', () => {
   it('장투 통과 후보가 하나면 100점이다', () => {
-    expect(SCREENER_RULE_VERSION).toBe(6);
+    expect(SCREENER_RULE_VERSION).toBe(7);
     expect(screenStocks([candidate('000001')], 'LONG_TERM', 20)).toEqual([
       expect.objectContaining({ code: '000001', score: 100 }),
+    ]);
+  });
+
+  it('단타의 첫 순위 재료는 거래량 급증이 아니라 수급이다', () => {
+    const weights: [number, number, number] = [1, 0, 0];
+    const result = screenStocks(
+      [
+        candidate('000001', { volumeSurge: 5, investorFlow20: -0.1 }),
+        candidate('000002', { volumeSurge: 2, investorFlow20: 0.3 }),
+        candidate('000003', { volumeSurge: 3, investorFlow20: null }),
+      ],
+      'SWING',
+      3,
+      MINIMUM_TURNOVER60,
+      undefined,
+      undefined,
+      weights,
+    );
+
+    expect(result.map((stock) => stock.code)).toEqual([
+      '000002',
+      '000001',
+      '000003',
+    ]);
+  });
+
+  // SWING 은 1순위가 이미 수급이라 칸을 또 바꾸면 수급이 두 칸의 가중치를 차지한다.
+  // 교체 실험이 조용히 다른 전략을 재지 않도록 거부한다.
+  it.each([1, 2, 3] as const)(
+    '이미 수급을 쓰는 단타에 수급 칸 %i 교체를 요구하면 거부한다',
+    (flowSlot) => {
+      expect(() =>
+        screenStocks(
+          [candidate('000001', { investorFlow20: 0.1 })],
+          'SWING',
+          10,
+          MINIMUM_TURNOVER60,
+          undefined,
+          undefined,
+          undefined,
+          flowSlot,
+        ),
+      ).toThrow('이미 수급');
+    },
+  );
+
+  // 수집 장애로 수급이 전부 비면 그 재료의 순위가 종목 코드 순서가 되어, 점수의 1/3 을 코드가 정했다.
+  it('값이 없는 후보끼리는 같은 최하위 순위를 받아 코드가 점수를 가르지 않는다', () => {
+    const result = screenStocks(
+      [
+        candidate('000003', { investorFlow20: null }),
+        candidate('000001', { investorFlow20: null }),
+        candidate('000002', { investorFlow20: 0.2 }),
+        candidate('000004', { investorFlow20: null }),
+      ],
+      'SWING',
+      10,
+      MINIMUM_TURNOVER60,
+      undefined,
+      undefined,
+      [1, 0, 0],
+    );
+
+    expect(result.map(({ code, score }) => ({ code, score }))).toEqual([
+      { code: '000002', score: 100 },
+      { code: '000001', score: 66.67 },
+      { code: '000003', score: 66.67 },
+      { code: '000004', score: 66.67 },
     ]);
   });
 
