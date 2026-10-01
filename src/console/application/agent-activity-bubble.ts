@@ -39,14 +39,12 @@ const ACTIVITY_BUBBLE_RULES: Record<string, ActivityBubbleRule> = {
   SLACK_COMMAND_BE_SCHEMA: '스키마 짜는 중',
   SLACK_COMMAND_BE_SRE: '오류 추적 중',
   SLACK_COMMAND_BE_TEST: '테스트 짜는 중',
-  SLACK_MENTION_JOB_APPLICATION: '지원 정리 중',
   'OPS_SUPERVISOR:SCHEDULED': '운영 점검 중',
   PR_REVIEW_SWEEP: createPullRequestReviewBubble,
   SLACK_COMMAND_REVIEW_PR: createPullRequestReviewBubble,
   SLACK_MENTION_CODE_REVIEWER: createPullRequestReviewBubble,
   REMOTE_CONSOLE_CODE_REVIEWER: createPullRequestReviewBubble,
   SLACK_COMMAND_BE_FIX: createPullRequestCheckBubble,
-  WEBHOOK_ISSUE_AUTO_LABEL: createIssueLabelBubble,
   AUTOPILOT_INVEST_CRON: createInvestBubble,
 };
 
@@ -93,17 +91,6 @@ function createPullRequestCheckBubble(
     return null;
   }
   return `#${pullNumber} 점검 중`;
-}
-
-// 이름표가 이미 "이슈 분류"라 접두어는 중복이며, 6자리 번호까지 12자 상한 안에 들어와야 한다.
-function createIssueLabelBubble(
-  inputSnapshot: Record<string, unknown> | null,
-): string | null {
-  const issueNumber = readInteger(inputSnapshot, 'issueNumber');
-  if (issueNumber === null) {
-    return null;
-  }
-  return `#${issueNumber} 분류 중`;
 }
 
 function createInvestBubble(

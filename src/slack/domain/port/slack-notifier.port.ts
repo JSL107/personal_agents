@@ -2,7 +2,7 @@ import { PreviewCardMessage } from '../../../preview-gate/domain/preview-action.
 
 export const SLACK_NOTIFIER_PORT = Symbol('SLACK_NOTIFIER_PORT');
 
-// 슬랙 발송 책임만 추상화한 port. 크론 소비자(autopilot·resume-calibration·job-application-nudge·
+// 슬랙 발송 책임만 추상화한 port. 크론 소비자(autopilot·resume-calibration·
 // study-brief)가 SlackService 를 직접 의존하지 않게 하고, 향후 다른 알림 어댑터(Telegram 등)를
 // 붙일 때 소비자 변경 없이 모듈 wiring 만 바꾸게 하는 것이 목적이다.
 //

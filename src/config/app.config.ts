@@ -661,28 +661,6 @@ export class EnvironmentVariables {
   @IsString()
   HERMES_HOME?: string;
 
-  // ====== Job Application Nudge Cron — 매일 지원 넛지 (Phase 3) ======
-  // 마감 임박(≤3일)/팔로업 지난 진행 중 지원 건을 SQL 조회 → Slack DM.
-  // - JOB_APPLICATION_NUDGE_OWNER_SLACK_USER_ID: 넛지 주체. 미설정 시 모듈 비활성.
-  // - JOB_APPLICATION_NUDGE_TARGET: 발송 대상 (Slack user/channel). 미설정 시 OWNER DM.
-  // - JOB_APPLICATION_NUDGE_CRON: BullMQ cron (default 매일 09:00 — `0 9 * * *`).
-  // - JOB_APPLICATION_NUDGE_TIMEZONE: default Asia/Seoul.
-  @IsOptional()
-  @IsString()
-  JOB_APPLICATION_NUDGE_OWNER_SLACK_USER_ID?: string;
-
-  @IsOptional()
-  @IsString()
-  JOB_APPLICATION_NUDGE_TARGET?: string;
-
-  @IsOptional()
-  @IsString()
-  JOB_APPLICATION_NUDGE_CRON?: string;
-
-  @IsOptional()
-  @IsString()
-  JOB_APPLICATION_NUDGE_TIMEZONE?: string;
-
   // Daily Eval / Impact Report Recent / CEO Meta Cron 등 cron consumer 가 graceful skip (NO_xxx) 외
   // throw 직전에 owner 에게 DM 으로 알릴 Slack user ID (`U...`). 미설정 시 NoopCronFailureAlerter
   // (stdout warn 만). CLAUDE_AUTH_ALERT_OWNER 와 별도로 둬 cron 알람만 분리 구독 가능.
@@ -715,19 +693,6 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   PERSONAL_REPOS?: string;
-
-  // issues.opened webhook 자동 라벨링 — `true` (string) 일 때만 활성.
-  // 정책: 새 label 생성 X (repo 기존 vocab 안에서 LLM 분류 부분집합 선택).
-  // 추가 조건: GITHUB_TOKEN 이 `Issues: Read+Write` scope 보유.
-  @IsOptional()
-  @IsString()
-  GITHUB_ISSUE_AUTO_LABEL_ENABLED?: string;
-
-  // 자동 라벨링 대상 repo allowlist (콤마 구분 "owner/repo"). 미설정/빈 값 → enable 만으로 모든 repo 적용.
-  // monorepo / 다중 repo 환경에서 일부 repo 만 자동 라벨링 적용하고 싶을 때 사용.
-  @IsOptional()
-  @IsString()
-  GITHUB_ISSUE_AUTO_LABEL_REPOS?: string;
 
   // 휴가 계산기 — 본인 입사일 (YYYY-MM-DD). 미설정 시 /휴가 명령에서 친절한 에러.
   // 1인 봇이라 단일 입사일. 향후 멀티 사용자 시 테이블로 승격.

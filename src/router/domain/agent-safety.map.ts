@@ -63,8 +63,6 @@ export const AGENT_SAFETY_LEVEL: Record<AgentType, AgentSafetyLevel> = {
   [AgentType.VACATION]: AgentSafetyLevel.WRITE,
   // registerSchedule / updateScheduleStatus — 상태 전이(canTransition)로 되돌릴 수 있다.
   [AgentType.SCHEDULE]: AgentSafetyLevel.WRITE,
-  // addApplication / updateApplication — 상태 변경으로 되돌린다.
-  [AgentType.JOB_APPLICATION]: AgentSafetyLevel.WRITE,
   // Notion '블로그 초안' DB 에 페이지를 만들고 상태를 갱신한다.
   [AgentType.BLOG]: AgentSafetyLevel.WRITE,
   // 수정률 보고와 규칙 추출 결과만 원장에 남기는 autopilot 전용 worker.
@@ -76,8 +74,6 @@ export const AGENT_SAFETY_LEVEL: Record<AgentType, AgentSafetyLevel> = {
   // --- 외부에 되돌리기 어려운 변화를 남기는 worker ---
   // 익명화한 초안을 GitHub Pages 로 발행한다 (PreviewGate 승인이 앞에 있지만 등급은 행동 기준).
   [AgentType.BLOG_PUBLISH]: AgentSafetyLevel.IRREVERSIBLE,
-  // issues.addLabels — 남의 레포 이슈에 라벨을 단다.
-  [AgentType.ISSUE_LABELER]: AgentSafetyLevel.IRREVERSIBLE,
 
   // --- 설비 ---
   // ROUTER 는 워커가 아니라 라우터 자신이다. 하는 일은 "넘기지 못한 요청을 원장에 한 줄

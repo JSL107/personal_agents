@@ -97,15 +97,6 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
     description: '메타 회고 (PO_EVAL + PM 합성)',
   },
   {
-    agentType: AgentType.ISSUE_LABELER,
-    displayName: 'Issue Labeler',
-    nickname: '나누리',
-    slashCommands: [],
-    usecasePath:
-      'src/agent/issue-labeler/application/infer-issue-labels.usecase.ts',
-    description: 'issue 자동 라벨링 (webhook 자동 트리거)',
-  },
-  {
     agentType: AgentType.VACATION,
     displayName: 'Vacation',
     nickname: '오휴가',
@@ -148,16 +139,6 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
       'src/agent/career-mate/application/build-career-profile.usecase.ts',
     description:
       '이직용 역량 프로필 허브 + 이력서/포트폴리오 (merged PR 합성, 자연어 멘션)',
-  },
-  {
-    agentType: AgentType.JOB_APPLICATION,
-    displayName: 'Job Application',
-    nickname: '서지원',
-    slashCommands: [],
-    usecasePath:
-      'src/agent/job-application/application/add-application.usecase.ts',
-    description:
-      '지원 추적 CRM (회사/직무 지원 기록·상태·조회, 자연어 멘션 + 넛지 cron)',
   },
   {
     agentType: AgentType.SUBCONSCIOUS_GATE,

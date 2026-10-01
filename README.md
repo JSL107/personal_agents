@@ -22,7 +22,7 @@
 
 ## ✨ 무엇을 하나
 
-GitHub · Notion · Slack · 증권 시세를 연결해 **회사 롤플레이 역할**(PM · BE · Code Reviewer · CTO · PO · CEO …), **개인 업무**(이직 메이트 · 지원 추적 · 휴가 · 블로그), **투자 라인**(종목 감시 · 모의투자 추천·채점)을 함께 수행하는 1인 개발자용 비서 백엔드.
+GitHub · Notion · Slack · 증권 시세를 연결해 **회사 롤플레이 역할**(PM · BE · Code Reviewer · CTO · PO · CEO …), **개인 업무**(이직 메이트 · 휴가 · 블로그), **투자 라인**(종목 감시 · 모의투자 추천·채점)을 함께 수행하는 1인 개발자용 비서 백엔드.
 
 | | |
 |---|---|
@@ -52,7 +52,7 @@ flowchart TD
 
     R["Router<br/>Intent Classifier"]
     MR["Model Router<br/>codex CLI · 격리 spawn"]
-    WK["19 Dispatch Workers (자연어·슬래시)<br/>32 AgentTypes 전체 — 내부 자동화 포함<br/>PM · BE · Reviewer · CTO · PO · CEO<br/>이직 메이트 · 지원 추적 · 휴가 · 블로그"]
+    WK["18 Dispatch Workers (자연어·슬래시)<br/>31 AgentTypes 전체 — 내부 자동화 포함<br/>PM · BE · Reviewer · CTO · PO · CEO<br/>이직 메이트 · 휴가 · 블로그"]
     IV["투자 라인<br/>screener · market-data<br/>paper-trading · backtest"]
     PG{"Preview Gate<br/>✅ / ❌"}
     EXT["Slack · Notion · GitHub"]
@@ -158,7 +158,7 @@ NestJS 11 + DDD/Hexagonal · Prisma 6 + PostgreSQL · Redis/BullMQ · Slack Bolt
 
 - **회사 롤플레이** — PM `/today` · Work Reviewer `/worklog` · Code Reviewer `/review-pr` · PO Shadow `/po-shadow` · Impact Reporter `/impact-report` · PO_EVAL `/po-eval` · CEO `/ceo-review`
 - **승인형 실행** — 사용자 승인 기반 branch + commit + PR open preview (문서 감사 · 블로그 발행)
-- **개인 업무** — 이직 메이트(merged PR 합성 → 역량 프로필 → 이력서/포트폴리오, JD 갭 분석) · 지원 추적 CRM(등록/상태/넛지 cron) · 휴가 `/휴가`(입사일 기반 결정론 계산) · 블로그 릴레이(Hermes `tistory-blog` 스킬 → Notion 초안)
+- **개인 업무** — 이직 메이트(merged PR 합성 → 역량 프로필 → 이력서/포트폴리오, JD 갭 분석) · 휴가 `/휴가`(입사일 기반 결정론 계산) · 블로그 릴레이(Hermes `tistory-blog` 스킬 → Notion 초안)
 - **투자** — INVEST(보유 종목 감시, LLM 미사용) · PAPER_RECOMMEND(후보 추천) · PAPER_TRADE(가상 계좌 매매) — 셋 다 cron 발화, PAPER_TRADE 만 자연어 dispatch 가 있다
 - **내부 자동화** — Humanizer · Subconscious Gate · Contradiction Judge · Docs Audit Optimizer/Evaluator · Preference Learning · Evening Retro Publish · Ops Supervisor · Review Reply Judge · CTO Study
 
@@ -220,7 +220,7 @@ pnpm dev              # watch 모드 기동
 
 - **VIDEO_WATCH** — `@이대리 이 영상의 핵심을 설명해줘 https://youtu.be/<video-id>`처럼 유튜브 URL과 질문을 함께 보내면 자막·화면 프레임을 분석하고 근거 시각 링크를 답한다. 준비: `brew install yt-dlp ffmpeg`, `git clone --branch v0.3.2 --depth 1 https://github.com/bradautomates/claude-video.git ~/.idaeri/vendor/claude-video`, 그리고 `.env`의 `WATCH_SCRIPT_PATH`를 해당 `skills/watch/scripts/watch.py` 절대 경로로 설정한다. 실행은 로컬 엔진과 `--no-whisper`만 사용한다.
 
-- **BLOG · 이직 메이트 · 지원 추적** — 자연어 전용. 기존 Notion 초안 발행은 `BLOG_PUBLISH`가 자연어와 `/blog-publish`를 모두 지원
+- **BLOG · 이직 메이트** — 자연어 전용. 기존 Notion 초안 발행은 `BLOG_PUBLISH`가 자연어와 `/blog-publish`를 모두 지원
 - **VACATION** — `/휴가` 와 자연어 둘 다 지원
 
 Slack 설정: Event Subscriptions 에 `app_mention` + `message.im` + `reaction_added`, Bot scope 에 `app_mentions:read` + `im:history` + `reactions:read` + `channels:history` + `groups:history`. 뒤의 두 history 권한은 채널 메시지를 다시 읽을 때 쓴다 — 채널 알림 스레드에서 멘션했을 때 부모 메시지를 맥락으로 읽거나, 채널 메시지에 단 반응의 원문을 조회할 때다.
@@ -236,7 +236,7 @@ Slack 설정: Event Subscriptions 에 `app_mention` + `message.im` + `reaction_a
 
 | 이벤트 | 발화 | 추가 활성 env |
 |---|---|---|
-| `issues.opened` | Impact Reporter / Auto-Label | `GITHUB_ISSUE_AUTO_LABEL_ENABLED` |
+| `issues.opened` | Impact Reporter | — |
 | `pull_request.opened` | Impact Reporter / (조건부) Code Reviewer | `GITHUB_WEBHOOK_OWNER_LOGIN` |
 | `pull_request.closed` (merged) | PR careerLog → Notion | `PR_CAREERLOG_AUTO_ENABLED` + `CAREER_LOG_NOTION_PAGE_ID` |
 

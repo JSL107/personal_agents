@@ -18,9 +18,6 @@ export enum AgentType {
   // 원래 PM 과 함께 CTO 도 선택 입력으로 적혀 있었으나, CTO 배정 워커가 2026-09-04 에
   // 폐지돼 `AgentType.CTO` 자체가 없다 — 조회하는 코드도 PM 하나뿐이다.
   CEO = 'CEO',
-  // issues.opened webhook 자동 라벨링 — repo 의 기존 label vocab 안에서 적합한 label 부분집합
-  // 을 LLM 분류 추론으로 골라 issues.addLabels. 새 label 생성 X (vocab 내부 선택).
-  ISSUE_LABELER = 'ISSUE_LABELER',
   // 휴가 계산기 — 결정론적 계산 워커. 계산 자체엔 LLM 미사용.
   // AGENT_TO_PROVIDER 매핑은 자연어 멘션의 날짜/일수 파라미터 추출(VacationDispatcher) 용도로만 소비된다.
   VACATION = 'VACATION',
@@ -35,9 +32,6 @@ export enum AgentType {
   // 이직 메이트 — merged PR 합성 → 역량 프로필 허브 + 이력서/포트폴리오 (자연어 멘션 전용).
   // 프로필 합성 시 model-router 경유 (구조화 JSON 강점 → Claude).
   CAREER_MATE = 'CAREER_MATE',
-  // 지원 추적 CRM — 회사/직무 지원 기록·상태변경·조회 (자연어 멘션 전용 + 넛지 cron).
-  // CRUD 는 결정론, 자연어 파라미터 추출 시에만 model-router 경유 (경량 → ChatGPT).
-  JOB_APPLICATION = 'JOB_APPLICATION',
   // 내부 proactive 게이트 — redacted 상태 변화를 promote/drop 분류. 경량 → ChatGPT.
   // 슬래시 핸들러/ResponseCode/retry-run 체크리스트 비대상 (사용자 비노출 내부 타입).
   SUBCONSCIOUS_GATE = 'SUBCONSCIOUS_GATE',

@@ -48,7 +48,7 @@ private func planAgents(_ department: Department, _ types: [String]) -> [Console
 // 통째로 놓쳤다(문 칸이 배회 목적지가 되는 결함이 실제로 그렇게 빠져나갔다).
 let sampleAgents: [ConsoleAgent] =
     planAgents(.planning, ["PM", "PO_SHADOW", "DELAY_REPORT"])
-    + planAgents(.quality, ["CODE_REVIEWER", "REVIEW_REPLY_JUDGE", "ISSUE_LABELER", "VIDEO_WATCH"])
+    + planAgents(.quality, ["CODE_REVIEWER", "REVIEW_REPLY_JUDGE", "VIDEO_WATCH"])
     + planAgents(
         .evaluation,
         [
@@ -59,7 +59,7 @@ let sampleAgents: [ConsoleAgent] =
         .content,
         [
             "BLOG", "BLOG_PUBLISH", "BLOG_REVISION", "HUMANIZER", "CAREER_MATE",
-            "JOB_APPLICATION", "CTO_STUDY",
+            "CTO_STUDY",
         ]
     )
     + planAgents(.treasury, ["INVEST", "PAPER_TRADE", "PAPER_RECOMMEND"])
