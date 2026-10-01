@@ -37,6 +37,7 @@ import {
   AgentSucceededCountRow,
   AgentSweptCountRow,
   BeginAgentRunInput,
+  BeginAgentRunResult,
   CountUnsuccessfulSweepReviewsQuery,
   FailedAgentRunSnapshot,
   FailedRunDetail,
@@ -78,7 +79,7 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
     triggerType,
     inputSnapshot,
     parentId,
-  }: BeginAgentRunInput): Promise<{ id: number }> {
+  }: BeginAgentRunInput): Promise<BeginAgentRunResult> {
     const create = (withParentId?: number): Promise<{ id: number }> =>
       this.prisma.agentRun.create({
         data: {
@@ -92,7 +93,8 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
       });
 
     try {
-      return await create(parentId);
+      const { id } = await create(parentId);
+      return parentId !== undefined ? { id, parentId } : { id };
     } catch (error: unknown) {
       // 부모 행이 없으면(지워졌거나 잘못된 id) FK 위반(P2003)이 난다. 계보는 부수 기록이라
       // 그것 때문에 사용자 요청을 실패시키지 않는다 — 사후 기록 시절에도 경고로 끝났다.
@@ -101,7 +103,8 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2003'
       ) {
-        return await create(undefined);
+        const { id } = await create(undefined);
+        return { id };
       }
       throw error;
     }

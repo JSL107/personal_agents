@@ -690,6 +690,28 @@ func runOfficeMeetingTests(_ t: TestRunner) {
         "미지의 참여자를 빼고 둘이면 1:1 전달"
     )
 
+    // 결과를 읽힌 사람이 지금 다른 일을 하는 중이면 부르지 않는다 — 회의 연출이 작업 모습을
+    // 끊고 끝나면 귀가만 시켜, 실제로는 일하는 중인데 노는 모습으로 남는다.
+    let busyAgents = [
+        makeAgent("WORK_REVIEWER", .inProgress), makeAgent("PO_SHADOW", .completed),
+        makeAgent("IMPACT_REPORTER", .awaitingApproval), makeAgent("PO_EVAL", .waiting),
+    ]
+    let busyContext = ChoreographyContext(agents: busyAgents, runs: [], pendingCommands: [])
+    t.expectEqual(
+        visualIntents(for: .runStarted(evalRun), context: busyContext),
+        [.handoff(from: "PO_SHADOW", to: "PO_EVAL"), .working(agentType: "PO_EVAL")],
+        "작업 중·결재 대기인 출처는 빼고 센다 — 남은 하나는 1:1 전달"
+    )
+    let allBusyContext = ChoreographyContext(
+        agents: [makeAgent("PM", .inProgress), makeAgent("PO_SHADOW", .waiting)],
+        runs: [], pendingCommands: []
+    )
+    t.expectEqual(
+        visualIntents(for: .runStarted(shadowRun), context: allBusyContext),
+        [.working(agentType: "PO_SHADOW")],
+        "유일한 출처가 일하는 중이면 전달 연출 없이 혼자 일한다"
+    )
+
     // 위임 계보와 읽어 간 사람은 합쳐서 센다. 자신이 participants 에 섞여 와도 맨 뒤 한 번만.
     let mixedRuns = [makeRun("m0", "PM")]
     let mixedRun = ConsoleRun(

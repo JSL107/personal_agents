@@ -286,15 +286,17 @@ export class AgentRunService implements OnApplicationBootstrap {
     }
     // 부모도 행을 만드는 순간 적는다 — 사후에 적으면 아래 run.started 에 실리지 않는다.
     const parentId = claimParentRun();
-    const { id } = await this.repository.begin({
+    const { id, parentId: storedParentId } = await this.repository.begin({
       agentType,
       triggerType,
       inputSnapshot: withRoutingContext(inputSnapshot, routing),
       ...(parentId !== undefined ? { parentId } : {}),
     });
     // 자기 자신은 참여자가 아니다(PM 이 지난 PM 계획을 읽는 경우 등). 순서는 호출부 선언 그대로.
+    // 부모는 요청한 값이 아니라 **실제로 저장된** 값을 싣는다 — 부모 행이 없어 빼고 만든 경우
+    // 화면에만 위임 계보가 그려지면 DB 와 다른 이야기를 한다.
     const lineage: ConsoleRunLineage = {
-      parentId,
+      parentId: storedParentId,
       participants: participants.filter(
         (participant, index) =>
           participant !== agentType &&

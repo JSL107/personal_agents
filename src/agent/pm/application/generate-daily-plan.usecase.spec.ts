@@ -1280,4 +1280,82 @@ describe('GenerateDailyPlanUsecase', () => {
       expect(promptArg).not.toContain('[저녁 회고');
     });
   });
+
+  // 오피스는 run.started 순간 participants 로 회의를 연다 — 실제로 읽어 온 사람만 부른다.
+  describe('회의 참석자 (participants)', () => {
+    const review = {
+      summary: '어제 한 일 요약',
+      impact: { quantitative: ['+5건'], qualitative: '리뷰 자동화' },
+      improvementBeforeAfter: null,
+      nextActions: ['오늘 마무리할 다음 액션'],
+      oneLineAchievement: '/review-pr E2E 진입',
+    };
+    const retroRun = {
+      id: 777,
+      output: {
+        retrospective: {
+          keep: 'k',
+          problem: 'p',
+          tryNext: '리뷰 요청을 오전에 먼저 건다',
+          carryOver: '결제 재시도 PR 미완',
+        },
+        candidates: [],
+        prNotes: [],
+      },
+      endedAt: new Date('2026-04-25T14:00:00Z'),
+    };
+    const mockSources = ({
+      worklog,
+      retro,
+    }: {
+      worklog: boolean;
+      retro: boolean;
+    }): void => {
+      agentRunServiceFindLatest.mockImplementation(
+        ({ agentType }: { agentType: string }) =>
+          Promise.resolve(
+            worklog && agentType === AgentType.WORK_REVIEWER
+              ? {
+                  id: 50,
+                  output: review,
+                  endedAt: new Date('2026-04-22T08:00:00Z'),
+                }
+              : null,
+          ),
+      );
+      agentRunServiceFindRecent.mockImplementation(
+        ({ agentType }: { agentType: string }) =>
+          Promise.resolve(
+            retro && agentType === 'EVENING_RETRO' ? [retroRun] : [],
+          ),
+      );
+      listAssignedTasksExecute.mockResolvedValue({
+        issues: [],
+        pullRequests: [],
+      });
+    };
+
+    it('회고·저녁 회고를 모두 읽었으면 둘 다 참석', async () => {
+      mockSources({ worklog: true, retro: true });
+      await usecase.execute({ tasksText: 'x', slackUserId: 'U123' });
+      expect(agentRunServiceExecute.mock.calls[0][0].participants).toEqual([
+        AgentType.WORK_REVIEWER,
+        AgentType.EVENING_RETRO,
+      ]);
+    });
+
+    it('읽어 온 것만 참석 — 저녁 회고만 있으면 EVENING_RETRO 만', async () => {
+      mockSources({ worklog: false, retro: true });
+      await usecase.execute({ tasksText: 'x', slackUserId: 'U123' });
+      expect(agentRunServiceExecute.mock.calls[0][0].participants).toEqual([
+        AgentType.EVENING_RETRO,
+      ]);
+    });
+
+    it('아무것도 못 읽었으면 참석자 없음', async () => {
+      mockSources({ worklog: false, retro: false });
+      await usecase.execute({ tasksText: 'x', slackUserId: 'U123' });
+      expect(agentRunServiceExecute.mock.calls[0][0].participants).toEqual([]);
+    });
+  });
 });
