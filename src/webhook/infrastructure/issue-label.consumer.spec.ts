@@ -34,6 +34,7 @@ describe('WebhookIssueLabelConsumer', () => {
       resolveReviewThread: jest.fn(),
       commitFileToBranch: jest.fn(),
       getFileFromBranch: jest.fn(),
+      searchCode: jest.fn(),
     };
     inferUsecase = { execute: jest.fn() };
     consumer = new WebhookIssueLabelConsumer(

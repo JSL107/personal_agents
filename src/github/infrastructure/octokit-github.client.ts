@@ -38,6 +38,7 @@ import {
   PushBranchAndOpenPrResult,
   RepoLabel,
   ReviewThread,
+  SearchCodeInput,
 } from '../domain/port/github-client.port';
 import {
   MergeableState,
@@ -61,6 +62,9 @@ const MERGEABLE_STATES: ReadonlySet<string> = new Set([
 // 이 이상은 잘리고 PullRequestDetail.changedFilesTruncated=true 로 호출자에게 알린다.
 const CHANGED_FILES_MAX = 500;
 const CHANGED_FILES_PAGE_SIZE = 100;
+// GitHub 코드 검색 API 는 인증 사용자 기준 분당 10회로 다른 API 와 따로 제한된다.
+const CODE_SEARCH_PER_MINUTE = 10;
+const CODE_SEARCH_WINDOW_MS = 60_000;
 const LIST_REVIEW_THREADS_QUERY = `
   query($owner:String!, $name:String!, $number:Int!) {
     repository(owner:$owner, name:$name) {
@@ -146,6 +150,8 @@ interface ListReviewThreadsGraphqlResponse {
 export class OctokitGithubClient implements GithubClientPort {
   private readonly logger = new Logger(OctokitGithubClient.name);
   private cachedLogin: string | null = null;
+  // 최근 1분 안의 코드 검색 호출 시각(오름차순). `searchCode` 의 분당 예산 판정용.
+  private readonly codeSearchCalledAt: number[] = [];
 
   constructor(
     @Inject(OCTOKIT_INSTANCE) private readonly octokit: Octokit | null,
@@ -813,6 +819,39 @@ export class OctokitGithubClient implements GithubClientPort {
       throw this.wrapRequestFailed(
         error,
         `GitHub ${repo} 파일 재조회 실패 (${branch}:${path})`,
+      );
+    }
+  }
+
+  async searchCode({ repo, query, limit }: SearchCodeInput): Promise<string[]> {
+    this.assertOctokitConfigured();
+    // 예산을 넘기면 기다리지 않고 거절한다 — 호출자(리뷰 맥락 보강)는 best-effort 라 맥락 없이
+    // 진행하는 편이 리뷰를 1분 붙잡는 것보다 낫다. 403 을 맞으면 그 뒤 검색이 더 오래 막힌다.
+    // ponytail: 프로세스 단위 창이다 — 같은 토큰을 쓰는 다른 프로세스 호출은 세지 못한다.
+    const now = Date.now();
+    while (
+      this.codeSearchCalledAt.length > 0 &&
+      now - this.codeSearchCalledAt[0] >= CODE_SEARCH_WINDOW_MS
+    ) {
+      this.codeSearchCalledAt.shift();
+    }
+    if (this.codeSearchCalledAt.length >= CODE_SEARCH_PER_MINUTE) {
+      throw new GithubException({
+        code: GithubErrorCode.REQUEST_FAILED,
+        message: `GitHub 코드 검색 분당 ${CODE_SEARCH_PER_MINUTE}회 예산 소진 — 호출하지 않음 (${query})`,
+      });
+    }
+    this.codeSearchCalledAt.push(now);
+    try {
+      const response = await this.octokit!.rest.search.code({
+        q: `${query} repo:${repo}`,
+        per_page: Math.min(Math.max(1, limit), MAX_LIMIT),
+      });
+      return response.data.items.map((item) => item.path);
+    } catch (error: unknown) {
+      throw this.wrapRequestFailed(
+        error,
+        `GitHub ${repo} 코드 검색 실패 (${query})`,
       );
     }
   }

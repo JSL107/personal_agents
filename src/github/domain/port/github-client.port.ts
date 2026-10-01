@@ -210,6 +210,13 @@ export interface GetFileFromBranchResult {
   content?: string;
 }
 
+export interface SearchCodeInput {
+  repo: string; // "owner/repo"
+  // 검색어. repo 한정 qualifier 는 어댑터가 붙인다.
+  query: string;
+  limit: number;
+}
+
 export interface GithubClientPort {
   listMyAssignedTasks(
     options?: ListAssignedTasksOptions,
@@ -275,6 +282,10 @@ export interface GithubClientPort {
   getFileFromBranch(
     input: GetFileFromBranchInput,
   ): Promise<GetFileFromBranchResult>;
+
+  // 코드 검색 — 일치한 파일 경로만 돌려준다. GitHub 은 **기본 브랜치만** 색인하므로 PR 에서
+  // 새로 생긴 사용처는 찾지 못한다. 분당 10회 제한이 있어 어댑터가 예산을 넘기면 호출 없이 throw.
+  searchCode(input: SearchCodeInput): Promise<string[]>;
 
   // 아침 브리핑 완료/대기 분류용 PR 신호 보강. best-effort — 실패/캡 초과 PR 은
   // 중립 신호(mergeableState='unknown', 모든 flag false)로 채워 분류 시 ACTIVE 로 떨어진다.

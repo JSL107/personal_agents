@@ -237,6 +237,47 @@ describe('OctokitGithubClient', () => {
     });
   });
 
+  describe('searchCode', () => {
+    it('repo 한정 검색으로 경로만 돌려준다', async () => {
+      const code = jest.fn().mockResolvedValue({
+        data: { items: [{ path: 'src/a.ts' }, { path: 'src/b.ts' }] },
+      });
+      const client = new OctokitGithubClient({
+        rest: { search: { code } },
+      } as unknown as Octokit);
+
+      await expect(
+        client.searchCode({ repo: 'o/r', query: 'RULE_VERSION', limit: 10 }),
+      ).resolves.toEqual(['src/a.ts', 'src/b.ts']);
+      expect(code).toHaveBeenCalledWith({
+        q: 'RULE_VERSION repo:o/r',
+        per_page: 10,
+      });
+    });
+
+    // 분당 10회를 넘겨 403 을 맞으면 그 뒤 검색이 더 오래 막힌다 — 넘기기 전에 스스로 멈춘다.
+    it('1분 안 11번째 호출은 API 를 치지 않고 거절하고, 창이 지나면 다시 연다', async () => {
+      const now = jest.spyOn(Date, 'now').mockReturnValue(1_000_000);
+      const code = jest.fn().mockResolvedValue({ data: { items: [] } });
+      const client = new OctokitGithubClient({
+        rest: { search: { code } },
+      } as unknown as Octokit);
+      const call = () =>
+        client.searchCode({ repo: 'o/r', query: 'x', limit: 1 });
+
+      for (let index = 0; index < 10; index += 1) {
+        await call();
+      }
+      await expect(call()).rejects.toThrow('예산 소진');
+      expect(code).toHaveBeenCalledTimes(10);
+
+      now.mockReturnValue(1_000_000 + 60_000);
+      await expect(call()).resolves.toEqual([]);
+      expect(code).toHaveBeenCalledTimes(11);
+      now.mockRestore();
+    });
+  });
+
   describe('getPullRequestDiff', () => {
     it('mediaType=diff 로 호출하고 diff 텍스트를 그대로 반환', async () => {
       const get = jest.fn().mockResolvedValue({
