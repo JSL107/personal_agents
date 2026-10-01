@@ -133,6 +133,8 @@ struct OfficeLayoutExport: Codable {
     let attendanceHours: OfficeAttendanceHours
     /// 대표실 안쪽 줄의 작업 책상 자리(왼쪽부터). 로컬 편집기 세션이 여기 켜진다.
     let sessionDesks: [TilePoint]
+    /// 배회 대사(혼잣말·마주친 두 사람의 대화). 고르는 규칙은 웹(`live.js`)이 옮겨 적고, 문구와 숫자는 여기서만 정한다.
+    let chatter: OfficeChatterExport
     /// 유휴 산책이 갈 수 있는 자리. 어느 가구 앞에 어느 쪽을 보고 몇 초 머무는지까지.
     let strollSpots: [StrollSpotInfo]
     let metrics: OfficeRenderMetrics
@@ -150,6 +152,45 @@ struct StrollSpotInfo: Codable {
     /// 이 값을 안 실으면 웹·Windows 렌더러가 거리로만 골라 **맥 앱과 동작이 갈린다** —
     /// 같은 평면도를 보면서 한쪽 사람만 옆방으로 걸어간다. 공용 밴드 가구는 nil.
     let department: String?
+}
+
+/// 배회 대사 — `OfficeChatter.swift` 의 문구·상한을 그대로 싣는다.
+///
+/// 3D 화면은 배회를 웹이 정해(`live.js` 의 `strollTick`) 도착 순간을 맥이 모른다. 그래서 인계·거절처럼
+/// 맥이 계산해 밀어 줄 수 없고, 출퇴근 시각처럼 **숫자·문구는 싣고 고르는 규칙만 웹이 옮긴다.**
+struct OfficeChatterExport: Codable {
+    let maxLength: Int
+    let partnerMaxDistance: Int
+    let replyDelaySeconds: Double
+    /// 열 번 중 몇 번을 부서 잡담으로 할지.
+    let smallTalkChance: Int
+    /// 가구 종류 → 그 앞에서 하는 한 마디(없는 가구는 빠진다).
+    let destinations: [String: String]
+    /// 부서 → 잡담 풀.
+    let smallTalk: [String: [String]]
+    let openers: [String]
+    let replies: [String]
+}
+
+func officeChatterExport() -> OfficeChatterExport {
+    OfficeChatterExport(
+        maxLength: officeChatterMaxLength,
+        partnerMaxDistance: officeChatterPartnerMaxDistance,
+        replyDelaySeconds: officeChatterReplyDelaySeconds,
+        smallTalkChance: officeChatterSmallTalkChance,
+        destinations: Dictionary(
+            uniqueKeysWithValues: FurnitureKind.allCases.compactMap { kind in
+                officeDestinationChatter(kind: kind).map { (kind.rawValue, $0) }
+            }
+        ),
+        smallTalk: Dictionary(
+            uniqueKeysWithValues: Department.allCases.map {
+                ($0.rawValue, officeSmallTalkLines(department: $0))
+            }
+        ),
+        openers: officeChatterOpeners,
+        replies: officeChatterReplies
+    )
 }
 
 /// 출퇴근·점심 시각 경계. 받는 쪽이 **판정은 직접 하되** 경계값은 옮겨 적지 않는다.
@@ -320,6 +361,7 @@ func makeOfficeLayoutExport(agents: [ConsoleAgent], zoneColumns: Int) -> OfficeL
             lunch: officeLunchHour
         ),
         sessionDesks: officeSessionDesks(plan: plan),
+        chatter: officeChatterExport(),
         strollSpots: officeStrollSpots(plan: plan).map { spot in
             StrollSpotInfo(
                 kind: spot.kind.rawValue,

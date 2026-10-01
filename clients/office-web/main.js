@@ -485,7 +485,7 @@ async function captureOnce(window, target) {
   );
   // `?walk=`·`?commute=` 가 남긴 "누가 어디에 섰는지" 보고. 콘솔 로그는 여기까지 안 온다.
   const reports = await window.webContents.executeJavaScript(
-    "[document.body.dataset.walkReport, document.body.dataset.commuteReport, document.body.dataset.motionReport].filter(Boolean).join(' / ')"
+    "[document.body.dataset.walkReport, document.body.dataset.commuteReport, document.body.dataset.motionReport, document.body.dataset.chatterReport].filter(Boolean).join(' / ')"
   );
   fs.writeFileSync(target, (await window.webContents.capturePage()).toPNG());
   const succeeded = rendered && !failed;

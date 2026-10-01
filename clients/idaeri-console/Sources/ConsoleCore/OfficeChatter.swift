@@ -81,6 +81,12 @@ public func officeDestinationChatter(kind: FurnitureKind) -> String? {
 /// 부서 성격이 드러나는 혼잣말. 사람이 아니라 부서 단위로 쓴다 — 서른 명에게 각자 대사를 주면
 /// 사람이 늘 때마다 문구를 따라 늘려야 하고, 화면에서 구분되는 것은 어차피 방(부서)이다.
 public func officeSmallTalk(department: Department, variant: Int) -> String {
+    let lines = officeSmallTalkLines(department: department)
+    return lines[officeChatterIndex(variant, count: lines.count)]
+}
+
+/// 부서 잡담 풀. 3D 웹 렌더러가 평면도(`chatter.smallTalk`)로 같은 풀을 받는다 — 문구를 두 곳에 적지 않는다.
+public func officeSmallTalkLines(department: Department) -> [String] {
     let lines: [String]
     switch department {
     case .planning:
@@ -96,7 +102,7 @@ public func officeSmallTalk(department: Department, variant: Int) -> String {
     case .internalOps:
         lines = ["정리해야지", "많이 쌓였네", "이건 치우자"]
     }
-    return lines[officeChatterIndex(variant, count: lines.count)]
+    return lines
 }
 
 // MARK: - 한 마디 고르기
@@ -149,9 +155,12 @@ public func officeChatterPartner(
 ///
 /// 부서 조합(6×6=36)마다 대사를 쓰지 않는다 — 화면에서 두 사람이 어느 방 사람인지는 이미
 /// 좌석과 문패가 말하고, 오가는 말에서 읽히는 것은 "말을 걸었다" 는 사실 자체다.
+public let officeChatterOpeners = ["바쁘세요?", "잘 돼가요?", "커피 한잔?", "그거 봤어요?", "오늘 어때요?"]
+public let officeChatterReplies = ["거의 다 됐어요", "그럭저럭요", "좋죠", "아직이요", "이제 좀 풀려요"]
+
 public func officeChatterExchange(round: Int, seed: Int) -> (opener: String, reply: String) {
-    let openers = ["바쁘세요?", "잘 돼가요?", "커피 한잔?", "그거 봤어요?", "오늘 어때요?"]
-    let replies = ["거의 다 됐어요", "그럭저럭요", "좋죠", "아직이요", "이제 좀 풀려요"]
+    let openers = officeChatterOpeners
+    let replies = officeChatterReplies
     // 두 풀의 길이가 같으면 같은 인덱스로 뽑아도 되지만, 서로 다른 회차 성분을 섞어야
     // 한쪽 풀이 늘어났을 때 짝이 굳지 않는다.
     return (

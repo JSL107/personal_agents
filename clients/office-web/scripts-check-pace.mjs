@@ -100,4 +100,30 @@ for (const [state, expected] of [["IN_PROGRESS", true], ["AWAITING_APPROVAL", tr
   assert.equal(showsBubble(state), expected, `${state} 의 말풍선`);
 }
 
+// 배회 대사 — 맥 `OfficeChatter.swift` 와 같은 값을 내야 한다(같은 사람·같은 회차 → 같은 문구).
+// 기대값은 맥 `officeChatterSeed` 를 손으로 따라 계산한 것이다: "PM" = (80*31+77) = 2557, 회차 3 → 2557+21 = 2578.
+const { chatterSeed, chatterIndex, chatterLine, chatterPartner, chatterExchange } = await import("./chatter.js");
+assert.equal(chatterSeed("PM", 3), 2578);
+assert.equal(chatterSeed("PM", 0), 2557);
+assert.equal(chatterIndex(-7, 5), 3, "음수 씨앗도 범위 안으로");
+const chatterTable = {
+  smallTalkChance: 3,
+  destinations: { coffeeMachine: "커피 한 잔" },
+  smallTalk: { planning: ["뭐부터 하지", "순서를 바꿀까", "이건 다음에"] },
+  openers: ["바쁘세요?", "잘 돼가요?"],
+  replies: ["좋죠", "아직이요"],
+};
+// 2578 % 10 = 8 ≥ 3 → 목적지 대사. 2557 % 10 = 7 ≥ 3 → 목적지 대사.
+assert.equal(chatterLine(chatterTable, { kind: "coffeeMachine", department: "planning", agentType: "PM", round: 3 }), "커피 한 잔");
+// 목적지 대사가 없는 가구는 부서 잡담으로 — 빈 말풍선을 띄우지 않는다.
+assert.equal(chatterLine(chatterTable, { kind: "desk", department: "planning", agentType: "PM", round: 3 }), "순서를 바꿀까");
+// 씨앗 % 10 < 3 이면 목적지가 있어도 잡담 — "QA" = 81*31+65 = 2576, 회차 0 → 2576 % 10 = 6. 회차 1 → 2583 → 3. 회차 2 → 2590 → 0.
+assert.equal(chatterLine(chatterTable, { kind: "coffeeMachine", department: "planning", agentType: "QA", round: 2 }), ["뭐부터 하지", "순서를 바꿀까", "이건 다음에"][2590 % 3]);
+// 대화 상대 — 2칸 안의 가장 가까운 사람, 같으면 이름 순. 3칸은 "각자 서 있는" 것이다.
+const here = { x: 5, y: 5 };
+assert.equal(chatterPartner(here, [{ agentType: "B", tile: { x: 7, y: 5 } }, { agentType: "A", tile: { x: 6, y: 6 } }], 2), "A");
+assert.equal(chatterPartner(here, [{ agentType: "B", tile: { x: 6, y: 5 } }, { agentType: "A", tile: { x: 5, y: 6 } }], 2), "A");
+assert.equal(chatterPartner(here, [{ agentType: "B", tile: { x: 8, y: 5 } }], 2), null);
+assert.deepEqual(chatterExchange(chatterTable, 3, 2578), { opener: "바쁘세요?", reply: "좋죠" });
+
 console.log("✅ 3D 프레임 건너뛰기 검증 통과");
