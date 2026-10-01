@@ -53,7 +53,7 @@ func runOfficeHostingTests(_ t: TestRunner) {
         t.fail("이벤트 메시지를 읽지 못했다: \(error)")
     }
 
-    // 연출 지시는 인계·거절만 옮긴다 — 화면(`live.js` performIntent)이 읽는 이름 그대로.
+    // 연출 지시는 인계·회의·거절만 옮긴다 — 화면(`live.js` performIntent)이 읽는 이름 그대로.
     do {
         let handoff = officeHostedIntentMessage(.handoff(from: "PM", to: "CEO")) ?? ""
         let object = try JSONSerialization.jsonObject(with: Data(handoff.utf8)) as? [String: Any]
@@ -66,6 +66,15 @@ func runOfficeHostingTests(_ t: TestRunner) {
         let rejected = (try JSONSerialization.jsonObject(with: Data(reject.utf8)) as? [String: Any])?["data"] as? [String: Any]
         t.expectEqual(rejected?["kind"] as? String, "reject", "거절")
         t.expectEqual(rejected?["agentType"] as? String, "PM", "거절당한 사람")
+        // 회의는 참석자 순서를 그대로 옮긴다 — 화면은 이 순서대로 회의 자리를 채운다(2D `holdMeeting`).
+        let meeting = officeHostedIntentMessage(
+            .meeting(agentTypes: ["WORK_REVIEWER", "PO_SHADOW", "PO_EVAL"], thenWorking: "PO_EVAL")
+        ) ?? ""
+        let met = (try JSONSerialization.jsonObject(with: Data(meeting.utf8)) as? [String: Any])?["data"] as? [String: Any]
+        t.expectEqual(met?["kind"] as? String, "meeting", "회의")
+        t.expectEqual(met?["agentTypes"] as? [String], ["WORK_REVIEWER", "PO_SHADOW", "PO_EVAL"], "참석자")
+        t.expectEqual(met?["thenWorking"] as? String, "PO_EVAL", "회의 뒤 일을 시작할 사람")
+        t.expect(met?["from"] == nil && met?["agentType"] == nil, "회의에는 인계·거절 필드를 싣지 않는다")
         t.expect(
             officeHostedIntentMessage(.working(agentType: "PM")) == nil,
             "나머지 연출은 보내지 않는다(이벤트·스냅샷이 옮긴다)"

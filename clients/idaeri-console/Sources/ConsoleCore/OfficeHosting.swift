@@ -46,16 +46,20 @@ private struct HostedIntent: Encodable {
     var from: String?
     var to: String?
     var agentType: String?
+    var agentTypes: [String]?
+    var thenWorking: String?
 }
 
-/// 연출 지시 메시지. **인계와 거절만** 옮긴다 — 어느 사건이 어느 연출인지는 `visualIntents` 가 이미
-/// 정했고, 화면은 그 결과만 받아 걷게 한다(판정을 웹에 다시 적으면 규칙이 두 벌이 된다).
-/// 나머지 연출은 nil: 상태 색·말풍선은 이벤트·스냅샷으로, 줄서기·출퇴근은 화면이 스스로 한다.
+/// 연출 지시 메시지. **인계·회의·거절만** 옮긴다 — 어느 사건이 어느 연출인지, 회의에 누가 오는지는
+/// `visualIntents` 가 이미 정했고, 화면은 그 결과만 받아 걷게 한다(판정을 웹에 다시 적으면 규칙이
+/// 두 벌이 된다). 나머지 연출은 nil: 상태 색·말풍선은 이벤트·스냅샷으로, 줄서기·출퇴근은 화면이 스스로 한다.
 public func officeHostedIntentMessage(_ intent: VisualIntent) -> String? {
     let hosted: HostedIntent
     switch intent {
     case let .handoff(from, to):
         hosted = HostedIntent(kind: "handoff", from: from, to: to)
+    case let .meeting(agentTypes, thenWorking):
+        hosted = HostedIntent(kind: "meeting", agentTypes: agentTypes, thenWorking: thenWorking)
     case let .reject(agentType):
         hosted = HostedIntent(kind: "reject", agentType: agentType)
     default:

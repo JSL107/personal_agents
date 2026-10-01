@@ -246,7 +246,7 @@ final class Office3DController: NSObject, ObservableObject, WKScriptMessageHandl
         }
     }
 
-    /// 인계·거절 연출. 나머지 지시는 `officeHostedIntentMessage` 가 걸러 보내지 않는다.
+    /// 인계·회의·거절 연출. 나머지 지시는 `officeHostedIntentMessage` 가 걸러 보내지 않는다.
     func pushIntents(_ intents: [VisualIntent]) {
         for intent in intents {
             if let message = officeHostedIntentMessage(intent) {
