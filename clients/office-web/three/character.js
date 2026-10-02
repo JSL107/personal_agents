@@ -60,6 +60,14 @@ const BODY = {
   torsoDepth: 0.21,
 };
 
+/** 서류의 평소 자리(옆구리, `makeCharacter`)와 회의 자세별 자리 — 몸 기준 좌표·기울기(라디안). */
+const PAPERS_AT_SIDE = { x: BODY.torsoWidth / 2 + 0.08, y: BODY.hip + 0.02, z: 0.03, tilt: 0, roll: 0 };
+// 배회 자리의 `reading`·`writing`(책장·화이트보드 앞)과 이름을 나눈다 — 화이트보드 앞에서 서류를 들면 안 된다.
+const MEETING_PAPERS = {
+  "meeting-reading": { x: 0, y: BODY.shoulder - 0.04, z: BODY.torsoDepth / 2 + 0.12, tilt: -0.5, roll: Math.PI / 2 },
+  "meeting-writing": { x: 0, y: BODY.shoulder - 0.12, z: BODY.torsoDepth / 2 + 0.12, tilt: -1.2, roll: Math.PI / 2 },
+};
+
 /** Revolve a soft garment contour around its vertical seam. */
 function turned(profile, sides = 12) {
   return new THREE.LatheGeometry(profile.map(([radius, height]) => new THREE.Vector2(radius, height)), sides);
@@ -608,7 +616,7 @@ export function makeCharacter(look) {
   const papers = new THREE.Group();
   papers.add(mesh(new THREE.BoxGeometry(0.025, 0.22, 0.17), mat("paper"), 0, 0, 0));
   papers.add(mesh(new THREE.BoxGeometry(0.012, 0.2, 0.15), mat("bookBlue"), 0.018, 0, 0));
-  papers.position.set(BODY.torsoWidth / 2 + 0.08, BODY.hip + 0.02, 0.03);
+  papers.position.set(PAPERS_AT_SIDE.x, PAPERS_AT_SIDE.y, PAPERS_AT_SIDE.z);
   papers.visible = false;
   body.add(papers);
 
@@ -693,6 +701,14 @@ export function poseCharacter(character, body, now, { slump = false } = {}) {
   if (papers) {
     papers.visible = pressure >= 2;
   }
+  // 회의석에서 자료 보기·메모(live.js `holdMeeting`). 서류를 옆구리에서 가슴 앞으로 옮겨 든다.
+  const meetingPose = !walking && !body.seated && MEETING_PAPERS[body.interactionPose] ? body.interactionPose : null;
+  if (papers) {
+    const hold = MEETING_PAPERS[meetingPose] ?? PAPERS_AT_SIDE;
+    papers.visible = papers.visible || Boolean(meetingPose);
+    papers.position.set(hold.x, hold.y, hold.z);
+    papers.rotation.set(hold.tilt, 0, hold.roll);
+  }
   const lounging = isLounging(body);
   // 소파는 바라보는 쪽(`facing`)에 있다 — 등을 소파에 대야 하므로 반대로 돌린다.
   const facing = lounging ? OPPOSITE[body.facing] : body.seated ? "down" : body.facing;
@@ -724,5 +740,15 @@ export function poseCharacter(character, body, now, { slump = false } = {}) {
   });
   arms.forEach((arm, index) => {
     arm.rotation.x = walking ? Math.sin(phase + (index + 1) * Math.PI) * STRIDE * 0.6 : 0;
+    if (meetingPose === "meeting-reading") {
+      arm.rotation.x = -1.05;
+    } else if (meetingPose === "meeting-writing") {
+      // 오른손(index 1)은 펜 — 조금씩 움직여 쓰는 중으로 읽히게 한다. 왼손은 받침을 든다.
+      arm.rotation.x = index === 1 ? -0.75 + Math.sin(now * 6) * 0.08 : -0.95;
+    }
   });
+  if (meetingPose) {
+    // 고개를 서류 쪽으로 숙인다. 평소(-HEAD_LIFT)보다 내리되 얼굴이 정수리에 다 가리지 않을 만큼만.
+    head.rotation.x = 0.12;
+  }
 }
