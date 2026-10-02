@@ -359,6 +359,8 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 | `AUTOPILOT_OWNER_SLACK_USER_ID` · `AUTOPILOT_TARGET` | ⭕ | cron 전체 게이트 · 발송 대상(콤마 다중) |
 | `SUBCONSCIOUS_GATE_MODE` | ❌ | `legacy`(기존 LLM) · `shadow`(Jev 비교만) · `hybrid`(확신 높은 Jev 우선). 기본 `legacy` |
 | `TYPESAFE_API_KEY` · `SUBCONSCIOUS_JEV_MODEL` | ⭕ | Jev 게이트를 켤 때 필요한 TypeSafe 인증키와 모델 버전 |
+| `SUBCONSCIOUS_JEV_API_URL` | ⭕ | Jev 호환 엔드포인트. 로컬 Kev(`pnpm kev:start`)로 shadow 비교할 때 지정, 로컬 주소면 키 불필요 |
+| `SUBCONSCIOUS_DROP_SAMPLE_RATE` · `_DAILY_CAP` | ⭕ | legacy 가 버린 변경을 사람 판정 카드로 올릴 비율·하루 상한. 기본 `0.1`·`3`, `0` 이면 끔 |
 | `AUTOPILOT_INVEST_TARGET` | ⭕ | 투자 라인(주식·모의투자 10항목) 전용 발송 대상. 미설정 시 `AUTOPILOT_TARGET` |
 | `AUTOPILOT_CAREER_TARGET` | ⭕ | 커리어 라인(채용공고 수집·갭 분석) 전용 발송 대상. 미설정 시 `AUTOPILOT_TARGET` |
 | `AUTOPILOT_REVIEW_TARGET` | ⭕ | 리뷰 라인(PR 리뷰 스윕 요약) 전용 발송 대상. 미설정 시 `AUTOPILOT_TARGET` |
@@ -472,6 +474,8 @@ pnpm backtest --strategy LONG_TERM --from 2026-01-02 --to 2026-08-14
                                                # 과거 구간 재생으로 매매 규칙 성적 측정 (DB 읽기 전용)
 pnpm param-search --from 2021-10-01 --to 2026-08-31 --take-profit 5,10,15 --stop-loss -3,-5,-7
                                                # 파라미터 후보를 창마다 재생해 walk-forward 로 비교 (보고만)
+pnpm kev:start | kev:status | kev:stop         # 로컬 Kev(Jev 호환 결정 모델) 서버 — subconscious shadow 비교용
+pnpm subconscious:calibrate                    # shadow 원장 × 사람 판정으로 게이트 문턱 보정표 출력 (DB 읽기 전용)
 ```
 
 > **DB 변경**: `prisma/schema.prisma` 수정 → `pnpm db:push`(synchronize, Prisma Client 자동 재생성) → 앱 재시작.

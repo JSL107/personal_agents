@@ -11,6 +11,11 @@ export type ProposalStatus =
   | 'EXPIRED' // TTL 이 지나 코드가 닫았다
   | 'SUPERSEDED'; // PR 리뷰 스윕이 같은 PR 을 이미 리뷰해 코드가 닫았다
 
+// 카드가 어디서 왔나. DROP_SAMPLE = legacy 게이트가 버린(promote=false) 변경을 무작위로 골라
+// 사람 판정에 올린 것 — 버린 영역의 정답 라벨을 모으려는 표본이다. 카드 문구로는 구분하지 않고
+// (판정이 끌려가지 않게) 이 값으로만 가른다.
+export type ProposalOrigin = 'GATE' | 'DROP_SAMPLE';
+
 export interface SubconsciousProposalRecord {
   id: number;
   ownerUserId: string;
@@ -33,6 +38,7 @@ export interface CreateProposalInput {
   suggestedAgentType: string;
   proposalText: string;
   contextJson: unknown;
+  origin?: ProposalOrigin;
 }
 
 export interface SubconsciousProposalRepository {
@@ -49,6 +55,12 @@ export interface SubconsciousProposalRepository {
     changeKey: string,
     createdAfter: Date,
   ): Promise<boolean>;
+  // 표본 일일 상한 판정용 — 해당 origin 으로 since 이후 만든 카드 수(상태 무관).
+  countByOriginSince(
+    ownerUserId: string,
+    origin: ProposalOrigin,
+    since: Date,
+  ): Promise<number>;
   // 아직 응답하지 않은 카드 전량 — 사후 무효화가 훑는 입력.
   listPending(ownerUserId: string): Promise<SubconsciousProposalRecord[]>;
   // createdBefore 이전에 만들어진 미응답 카드를 한 번에 DISMISSED 로 닫고 닫은 수를 돌려준다.

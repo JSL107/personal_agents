@@ -329,13 +329,35 @@ model SubconsciousProposal {
   proposalText       String    @db.Text
   contextJson        Json      @map("context_json")
   status             String    @default("PENDING")
+  origin             String    @default("GATE")
   slackChannelId     String?   @map("slack_channel_id")
   slackMessageTs     String?   @map("slack_message_ts")
   createdAt          DateTime  @default(now()) @map("created_at")
   resolvedAt         DateTime? @map("resolved_at")
 
   @@index([ownerUserId, status, createdAt])
+  @@index([ownerUserId, origin, createdAt])
   @@map("subconscious_proposal")
+}
+
+model SubconsciousGateShadow {
+  id                 Int      @id @default(autoincrement())
+  changeKey          String   @map("change_key")
+  sourceId           String   @map("source_id")
+  kind               String
+  summary            String   @db.Text
+  shadowModel        String   @map("shadow_model")
+  promoteProbability Float?   @map("promote_probability")
+  agentChoice        String?  @map("agent_choice")
+  agentConfidence    Float?   @map("agent_confidence")
+  legacyPromote      Boolean? @map("legacy_promote")
+  legacyAgent        String?  @map("legacy_agent")
+  error              String?  @db.Text
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  @@index([changeKey, createdAt])
+  @@index([createdAt])
+  @@map("subconscious_gate_shadow")
 }
 
 // Episodic Memory — AgentRun 완료 결과를 로컬 임베딩으로 시간축에 적재(spec 2026-06-18).
