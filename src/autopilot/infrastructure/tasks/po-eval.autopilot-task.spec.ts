@@ -34,12 +34,16 @@ describe('PoEvalAutopilotTask', () => {
     expect(task.id).toBe('daily-eval');
   });
 
-  it('PO_EVAL 성공 시 요약은 summaryText, 근거(careerLog·합성 source)는 detailText 로 분리(skip=false)', async () => {
+  it('PO_EVAL 성공 시 메인은 건수 한 줄, 평가 요약·Wins·Blockers·근거는 모두 detailText(skip=false)', async () => {
     const execute = jest.fn().mockResolvedValue({
       result: {
         range: 'TODAY',
         sourceAgentRuns: { workReviewerRunId: 10 },
-        qualitative: { summary: '회고요약', blockers: [], wins: [] },
+        qualitative: {
+          summary: '회고요약',
+          blockers: ['스모크 공백'],
+          wins: ['PR 28건', '문서 정정'],
+        },
         careerLog: {
           schemaVersion: 1,
           period: '2026-06-17',
@@ -61,7 +65,17 @@ describe('PoEvalAutopilotTask', () => {
 
     expect(out.skip).toBe(false);
     expect(out.summaryText).toContain('Daily Eval');
-    expect(out.summaryText).toContain('회고요약_H');
+    // 저녁 메인 중복의 원천이라 메인에는 건수만 남기고 내용은 스레드 맨 앞으로 옮긴다.
+    expect(out.summaryText).toContain('Wins 2 · Blockers 1');
+    expect(out.summaryText).not.toContain('회고요약_H');
+    expect(out.summaryText).not.toContain('PR 28건');
+    expect(out.summaryText).not.toContain('스모크 공백');
+    expect(out.detailText).toContain('회고요약_H');
+    expect(out.detailText).toContain('PR 28건_H');
+    expect(out.detailText).toContain('스모크 공백_H');
+    expect(out.detailText!.indexOf('Wins')).toBeLessThan(
+      out.detailText!.indexOf('careerLog'),
+    );
     // 근거(합성 source · careerLog · model 푸터)는 스레드(detailText)로 내려가고 메인에는 없다.
     expect(out.summaryText).not.toContain('합성 source');
     expect(out.detailText).toContain('합성 source');
