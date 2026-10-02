@@ -105,7 +105,8 @@ export class PoEvalAutopilotTask implements AutopilotTask {
       const { wins, blockers } = humanized.qualitative;
       const summaryText = `🌅 *Daily Eval — ${firedAtKst} (19:00 KST 자동 회고)* · Wins ${wins.length} · Blockers ${blockers.length} — 내용은 스레드`;
       const detailText = `${formatted.summary}\n\n${formatted.detail}${formatModelFooter(outcome)}`;
-      return { skip: false, summaryText, detailText };
+      // 메인에는 건수뿐이라 상세가 유일한 사본이다 — 스레드 실패 시 채널로 대피시킨다.
+      return { skip: false, summaryText, detailText, detailIsOnlyCopy: true };
     } catch (error) {
       if (
         error instanceof PoEvalException &&

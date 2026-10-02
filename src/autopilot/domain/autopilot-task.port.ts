@@ -66,6 +66,11 @@ export interface AutopilotTaskResult {
   // `requiresDetailDelivery` 카드도 만들지 않는다. 승인 근거를 파일로 옮긴 task 에서 파일이
   // 빠지면 확인할 것이 없는 카드가 남기 때문이다. `detailText` 없이 이것만 주면 무시된다.
   detailFile?: AutopilotTaskFile;
+  // true 면 `detailText` 가 이 회차의 **유일한 사본**이다 — 요약은 건수·안내 한 줄뿐이고 내용은
+  // 상세에만 있는 task(저녁 daily-eval). 스레드 댓글이 실패하거나 메인 ts 가 없으면 채널에 한 번 더
+  // 붙인다. 멱등 가드가 이미 소비돼 재시도가 오지 않으므로 유실 대신 중복을 남긴다.
+  // 요약이 내용을 다 싣는 task 는 켜지 않는다 — 상세 실패마다 채널에 긴 글이 중복으로 붙는다.
+  detailIsOnlyCopy?: boolean;
   // 채널에 남길 한 줄. `detailImage` 와 함께 주면 "헤드라인 + 그림" 이 메인 메시지가 되고
   // `summaryText` 는 그 스레드 댓글로 내려간다. 종목별 내역처럼 긴 본문이 채널을 덮지 않게
   // 하면서도, 채널만 훑는 사람이 그날의 결론을 읽을 수 있게 하는 자리다.

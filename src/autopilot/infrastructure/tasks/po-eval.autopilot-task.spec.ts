@@ -73,6 +73,8 @@ describe('PoEvalAutopilotTask', () => {
     expect(out.detailText).toContain('회고요약_H');
     expect(out.detailText).toContain('PR 28건_H');
     expect(out.detailText).toContain('스모크 공백_H');
+    // 메인엔 건수뿐이라 상세가 유일한 사본 — 스레드 실패 시 채널 대피 대상이어야 한다.
+    expect(out.detailIsOnlyCopy).toBe(true);
     expect(out.detailText!.indexOf('Wins')).toBeLessThan(
       out.detailText!.indexOf('careerLog'),
     );
