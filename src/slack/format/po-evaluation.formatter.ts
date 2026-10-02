@@ -11,10 +11,14 @@ import { FormattedReport } from './formatted-report.type';
 //   *정량 성과* / *정성 성과* / *기술 스택* / _Impact_
 //   _합성 source: workReviewer=#X, poShadow=#Y, impactReporter=#Z (missing: ...)_
 // `quantitativeShownElsewhere` — 같은 메시지의 다른 스레드 댓글(저녁 업무 회고 「정량 근거」)이
-// 이미 같은 숫자를 싣고 있을 때만 켠다. 켜면 「정량 성과」 목록 대신 어디서 보면 되는지 한 줄만
-// 남긴다. 화면 배치만 바꾼다 — careerLog 원장·저장 형태는 그대로다. 미지정이면 종전 출력.
+// 이미 숫자를 싣고 있을 때만 켠다. `isShown` 이 참인 항목만 「정량 성과」에서 빼고 몇 건을 뺐는지
+// 한 줄로 알린다 — 업무 회고에 없던 항목은 그대로 남는다. 화면 배치만 바꾼다(careerLog 원장·저장
+// 형태는 그대로). 미지정이면 종전 출력.
 export interface FormatEvaluationOptions {
-  quantitativeShownElsewhere?: { workReviewerRunId: number };
+  quantitativeShownElsewhere?: {
+    workReviewerRunId: number;
+    isShown: (item: string) => boolean;
+  };
 }
 
 export const formatEvaluationOutput = (
@@ -47,17 +51,25 @@ export const formatEvaluationOutput = (
     `*💼 이력서용 careerLog — ${escapeSlackMrkdwn(cl.period)} (schemaVersion=${cl.schemaVersion})*`,
   ];
   const shownElsewhere = options.quantitativeShownElsewhere;
-  if (cl.achievements.quantitative.length > 0 && shownElsewhere) {
-    detailLines.push('');
-    detailLines.push(
-      `_정량 성과 ${cl.achievements.quantitative.length}건은 업무 회고(run #${shownElsewhere.workReviewerRunId}) 「정량 근거」와 같은 근거라 여기서는 생략합니다._`,
-    );
-  } else if (cl.achievements.quantitative.length > 0) {
+  const quantitative = shownElsewhere
+    ? cl.achievements.quantitative.filter(
+        (item) => !shownElsewhere.isShown(item),
+      )
+    : cl.achievements.quantitative;
+  const omittedCount =
+    cl.achievements.quantitative.length - quantitative.length;
+  if (quantitative.length > 0) {
     detailLines.push('');
     detailLines.push('*정량 성과*');
-    for (const item of cl.achievements.quantitative) {
+    for (const item of quantitative) {
       detailLines.push(`• ${escapeSlackMrkdwn(item)}`);
     }
+  }
+  if (shownElsewhere && omittedCount > 0) {
+    detailLines.push('');
+    detailLines.push(
+      `_정량 성과 ${omittedCount}건은 업무 회고(run #${shownElsewhere.workReviewerRunId}) 「정량 근거」와 같은 숫자라 여기서는 생략합니다._`,
+    );
   }
   if (cl.achievements.qualitative.length > 0) {
     detailLines.push('');

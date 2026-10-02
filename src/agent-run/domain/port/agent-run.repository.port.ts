@@ -60,6 +60,10 @@ export interface SucceededAgentRunSnapshot {
   // 없는 경우에 대조용으로 쓴다 (예: CTO 재배정이 직전 분배를 이어받을 때, 그 분배가
   // 지금과 같은 PM plan 을 본 것인지 dailyPlanAgentRunId 로 확인).
   inputSnapshot: unknown;
+  // 어느 경로로 돌았는지. 같은 agentType 이라도 수동 슬래시와 cron 은 다른 회차다 — 저녁 다이제스트가
+  // "방금 이 메시지로 나간 run 인가" 를 가릴 때 시각만으로는 수동 실행을 걸러내지 못한다.
+  // 선택 필드라 값이 없으면 "어느 경로인지 모름" 이다 — 소비자는 그것을 특정 경로로 간주하지 않는다.
+  triggerType?: TriggerType;
 }
 
 // 예외로 끝난 회차. 무엇을 입력으로 돌다 실패했는지(inputSnapshot)가 "매번 같은 결과를 내는
