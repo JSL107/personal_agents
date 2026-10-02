@@ -1,10 +1,20 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { SubconsciousGate } from '../domain/port/subconscious-gate.port';
+import {
+  SUBCONSCIOUS_GATE_SHADOW_REPOSITORY,
+  SubconsciousGateShadowRecord,
+  SubconsciousGateShadowRepository,
+} from '../domain/port/subconscious-gate-shadow.repository.port';
 import { GateDecision, RedactedChange } from '../domain/subconscious.type';
-import { JevSubconsciousGate } from './jev-subconscious-gate';
+import { JevEvaluation, JevSubconsciousGate } from './jev-subconscious-gate';
 import { LlmSubconsciousGate } from './llm-subconscious-gate';
+
+const SHADOW_ERROR_MAX_LENGTH = 400;
+
+const describeError = (reason: unknown): string =>
+  reason instanceof Error ? reason.message : String(reason);
 
 type GateMode = 'legacy' | 'shadow' | 'hybrid';
 
@@ -16,6 +26,8 @@ export class HybridSubconsciousGate implements SubconsciousGate {
     private readonly configService: ConfigService,
     private readonly jevGate: JevSubconsciousGate,
     private readonly legacyGate: LlmSubconsciousGate,
+    @Inject(SUBCONSCIOUS_GATE_SHADOW_REPOSITORY)
+    private readonly shadowRepository: SubconsciousGateShadowRepository,
   ) {}
 
   async judge(changes: RedactedChange[]): Promise<GateDecision[]> {
@@ -66,10 +78,65 @@ export class HybridSubconsciousGate implements SubconsciousGate {
       );
     }
 
+    await this.recordShadow(changes, legacyResult, jevResult);
+
     if (legacyResult.status === 'rejected') {
       throw legacyResult.reason;
     }
     return legacyResult.value;
+  }
+
+  // 변경마다 한 행. shadow 가 실패한 회차도 error 행으로 남긴다 — 빠진 회차와 실패한 회차를
+  // 구분하지 못하면 보정 표본이 조용히 편향된다. 영속 실패는 운영 경로(legacy 반환)를 깨지 않는다.
+  private async recordShadow(
+    changes: RedactedChange[],
+    legacyResult: PromiseSettledResult<GateDecision[]>,
+    jevResult: PromiseSettledResult<JevEvaluation>,
+  ): Promise<void> {
+    const legacyByKey = new Map(
+      legacyResult.status === 'fulfilled'
+        ? legacyResult.value.map((decision) => [decision.changeKey, decision])
+        : [],
+    );
+    const scoreByKey = new Map(
+      jevResult.status === 'fulfilled'
+        ? jevResult.value.scores.map((score) => [score.changeKey, score])
+        : [],
+    );
+    const shadowModel =
+      jevResult.status === 'fulfilled'
+        ? jevResult.value.model
+        : this.jevGate.model;
+    const error =
+      jevResult.status === 'rejected'
+        ? describeError(jevResult.reason).slice(0, SHADOW_ERROR_MAX_LENGTH)
+        : null;
+
+    const records: SubconsciousGateShadowRecord[] = changes.map((change) => {
+      const score = scoreByKey.get(change.key);
+      const legacy = legacyByKey.get(change.key);
+      return {
+        changeKey: change.key,
+        sourceId: change.sourceId,
+        kind: change.kind,
+        summary: change.summary,
+        shadowModel,
+        promoteProbability: score?.promoteProbability ?? null,
+        agentChoice: score?.agentChoice ?? null,
+        agentConfidence: score?.agentConfidence ?? null,
+        legacyPromote: legacy?.promote ?? null,
+        legacyAgent: legacy?.suggestedAgentType ?? null,
+        error,
+      };
+    });
+
+    try {
+      await this.shadowRepository.recordMany(records);
+    } catch (persistError) {
+      this.logger.warn(
+        `shadow 판정 저장 실패 (운영 판정은 계속): ${describeError(persistError)}`,
+      );
+    }
   }
 
   private async hybrid(changes: RedactedChange[]): Promise<GateDecision[]> {

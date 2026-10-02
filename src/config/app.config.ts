@@ -802,6 +802,34 @@ export class EnvironmentVariables {
   })
   SUBCONSCIOUS_JEV_CONFIDENCE_THRESHOLD?: string;
 
+  // Jev 호환 System One 엔드포인트. 미설정 시 TypeSafe 공식 URL. 로컬 Kev 를 shadow 로 붙일 때
+  // `pnpm kev:start` 가 안내하는 주소(http://127.0.0.1:8009/v1/systemone)를 넣는다. 로컬 주소면
+  // TYPESAFE_API_KEY 없이 호출한다.
+  @IsOptional()
+  @IsString()
+  @Matches(/^https?:\/\/\S+$/, {
+    message: 'SUBCONSCIOUS_JEV_API_URL 은 http(s) URL 이어야 합니다.',
+  })
+  SUBCONSCIOUS_JEV_API_URL?: string;
+
+  // legacy 게이트가 버린 변경을 사람 판정 카드로 올릴 비율 (0~1). 미설정 시 0.1, 0 이면 비활성.
+  // 버린 영역의 정답을 모아 게이트끼리 비교하려는 표본이다 — 근거는 subconscious.engine.ts.
+  @IsOptional()
+  @IsString()
+  @Matches(/^(?:0(?:\.\d+)?|0?\.\d+|1(?:\.0+)?)$/, {
+    message:
+      'SUBCONSCIOUS_DROP_SAMPLE_RATE 는 0 이상 1 이하인 소수여야 합니다.',
+  })
+  SUBCONSCIOUS_DROP_SAMPLE_RATE?: string;
+
+  // 위 표본 카드의 KST 하루 상한. 미설정 시 3. 시간당 승격 예산과는 별도로 센다.
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d+$/, {
+    message: 'SUBCONSCIOUS_DROP_SAMPLE_DAILY_CAP 는 0 이상 정수여야 합니다.',
+  })
+  SUBCONSCIOUS_DROP_SAMPLE_DAILY_CAP?: string;
+
   // 선호 프로필 자가학습 — 주간 학습 cron 게이트(미설정=OFF).
   // 'true' 일 때만 PreferenceLearningAutopilotTask 가 실행되고, 미설정/false 시 task 가 skip.
   @IsOptional()

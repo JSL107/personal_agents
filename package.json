@@ -51,7 +51,11 @@
     "review:dry": "ts-node scripts/review-pr-dry.ts",
     "review:replay": "ts-node scripts/review-replay.ts",
     "study:diagram": "ts-node scripts/study-diagram.ts",
-    "study:applicability": "ts-node scripts/study-applicability.ts"
+    "study:applicability": "ts-node scripts/study-applicability.ts",
+    "subconscious:calibrate": "node --env-file-if-exists=.env -r ts-node/register/transpile-only scripts/subconscious-calibrate.ts",
+    "kev:start": "bash scripts/kev.sh start",
+    "kev:stop": "bash scripts/kev.sh stop",
+    "kev:status": "bash scripts/kev.sh status"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.2.0",

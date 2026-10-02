@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   CreateProposalInput,
+  ProposalOrigin,
   ProposalStatus,
   SubconsciousProposalRecord,
   SubconsciousProposalRepository,
@@ -25,6 +26,7 @@ export class SubconsciousProposalPrismaRepository implements SubconsciousProposa
         proposalText: input.proposalText,
         contextJson: input.contextJson as Prisma.InputJsonValue,
         status: 'PENDING',
+        origin: input.origin ?? 'GATE',
       },
     });
     return toDomain(row);
@@ -51,6 +53,16 @@ export class SubconsciousProposalPrismaRepository implements SubconsciousProposa
       },
     });
     return count > 0;
+  }
+
+  async countByOriginSince(
+    ownerUserId: string,
+    origin: ProposalOrigin,
+    since: Date,
+  ): Promise<number> {
+    return await this.prisma.subconsciousProposal.count({
+      where: { ownerUserId, origin, createdAt: { gte: since } },
+    });
   }
 
   async listPending(

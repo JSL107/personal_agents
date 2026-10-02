@@ -31,9 +31,12 @@ const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 // KST 기준 (오늘 - daysAgo) 일의 00:00 을 가리키는 UTC Date.
-// 서버 timezone 과 무관하게 KST 캘린더일 필터 경계를 만든다.
-export const getKstDayStartAsUtc = (daysAgo = 0): Date => {
-  const kstNow = new Date(Date.now() + KST_OFFSET_MS);
+// 서버 timezone 과 무관하게 KST 캘린더일 필터 경계를 만든다. now 는 기준 시각(기본 현재).
+export const getKstDayStartAsUtc = (
+  daysAgo = 0,
+  now: number = Date.now(),
+): Date => {
+  const kstNow = new Date(now + KST_OFFSET_MS);
   const kstMidnightAsUtcTs = Date.UTC(
     kstNow.getUTCFullYear(),
     kstNow.getUTCMonth(),

@@ -10,7 +10,9 @@ const DEFAULT_MODEL = 'jev-1.13.0';
 const DEFAULT_TIMEOUT_MS = 2_000;
 const DEFAULT_PROMOTE_THRESHOLD = 0.98;
 const DEFAULT_CONFIDENCE_THRESHOLD = 0.95;
-const API_URL = 'https://api.typesafe.ai/v1/systemone';
+const DEFAULT_API_URL = 'https://api.typesafe.ai/v1/systemone';
+// 로컬 호환 서버(Kev 등)는 키 없이 받는다. 외부 주소에는 키 없이 보내지 않는다.
+const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
 
 const SUGGESTABLE_AGENTS = [
   AgentType.CODE_REVIEWER,
@@ -36,10 +38,20 @@ interface JevResponse {
   readonly answers?: Record<string, JevAnswer>;
 }
 
+// 변경마다 한 개 — 응답이 깨진 변경도 null 로 남겨 shadow 원장이 빠짐없이 쌓이게 한다.
+// agentChoice 는 SUGGESTABLE_AGENTS 필터 전의 원값(NONE 포함)이다.
+export interface JevChangeScore {
+  readonly changeKey: string;
+  readonly promoteProbability: number | null;
+  readonly agentChoice: string | null;
+  readonly agentConfidence: number | null;
+}
+
 export interface JevEvaluation {
   readonly decisions: readonly GateDecision[];
   readonly confidentDecisions: readonly GateDecision[];
   readonly fallbackChanges: readonly RedactedChange[];
+  readonly scores: readonly JevChangeScore[];
   readonly model: string;
 }
 
@@ -54,6 +66,14 @@ const readPositiveNumber = (
   }
   const value = Number(raw);
   return Number.isFinite(value) && value > 0 ? value : fallback;
+};
+
+const isLocalUrl = (url: string): boolean => {
+  try {
+    return LOCAL_HOSTNAMES.has(new URL(url).hostname);
+  } catch {
+    return false;
+  }
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -78,6 +98,7 @@ export class JevSubconsciousGate {
         decisions: [],
         confidentDecisions: [],
         fallbackChanges: [],
+        scores: [],
         model: this.model,
       };
     }
@@ -117,6 +138,7 @@ export class JevSubconsciousGate {
     const decisions: GateDecision[] = [];
     const confidentDecisions: GateDecision[] = [];
     const fallbackChanges: RedactedChange[] = [];
+    const scores: JevChangeScore[] = [];
 
     changes.forEach((change, index) => {
       const promote = answers[`promote_${index}`];
@@ -124,6 +146,21 @@ export class JevSubconsciousGate {
       const promoteProbability = promote?.noul;
       const agentConfidence = agent?.confidence;
       const suggestedAgentType = this.toAgentType(agent?.choice);
+      scores.push({
+        changeKey: change.key,
+        promoteProbability:
+          promote?.type === 'noul' && isProbability(promoteProbability)
+            ? promoteProbability
+            : null,
+        agentChoice:
+          agent?.type === 'choice' && typeof agent.choice === 'string'
+            ? agent.choice
+            : null,
+        agentConfidence:
+          agent?.type === 'choice' && isProbability(agentConfidence)
+            ? agentConfidence
+            : null,
+      });
 
       if (
         promote?.type !== 'noul' ||
@@ -159,13 +196,15 @@ export class JevSubconsciousGate {
       decisions,
       confidentDecisions,
       fallbackChanges,
+      scores,
       model: response.model ?? this.model,
     };
   }
 
   private async request(changes: RedactedChange[]): Promise<unknown> {
+    const apiUrl = this.apiUrl;
     const apiKey = this.configService.get<string>('TYPESAFE_API_KEY')?.trim();
-    if (!apiKey) {
+    if (!apiKey && !isLocalUrl(apiUrl)) {
       throw new Error('TYPESAFE_API_KEY is not configured');
     }
 
@@ -201,12 +240,14 @@ export class JevSubconsciousGate {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
-      const response = await fetch(API_URL, {
+      const response = await fetch(apiUrl, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
+        headers: apiKey
+          ? {
+              Authorization: `Bearer ${apiKey}`,
+              'Content-Type': 'application/json',
+            }
+          : { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: this.model, state, questions }),
         signal: controller.signal,
       });
@@ -241,7 +282,15 @@ export class JevSubconsciousGate {
       : undefined;
   }
 
-  private get model(): string {
+  private get apiUrl(): string {
+    return (
+      this.configService.get<string>('SUBCONSCIOUS_JEV_API_URL')?.trim() ||
+      DEFAULT_API_URL
+    );
+  }
+
+  // shadow 원장이 호출 실패 회차에도 어떤 모델을 겨냥했는지 남길 수 있게 공개한다.
+  get model(): string {
     return (
       this.configService.get<string>('SUBCONSCIOUS_JEV_MODEL')?.trim() ||
       DEFAULT_MODEL

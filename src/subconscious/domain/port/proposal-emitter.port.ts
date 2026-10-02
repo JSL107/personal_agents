@@ -1,4 +1,5 @@
 import { GateDecision, StateChange } from '../subconscious.type';
+import { ProposalOrigin } from './subconscious-proposal.repository.port';
 
 export const PROPOSAL_EMITTER = Symbol('PROPOSAL_EMITTER');
 
@@ -13,7 +14,11 @@ export interface ProposalEmitter {
     ownerUserId: string;
     change: StateChange;
     decision: GateDecision;
+    // 기본 GATE. legacy 가 버린 변경의 표본이면 DROP_SAMPLE.
+    origin?: ProposalOrigin;
   }): Promise<void>;
+  // 표본 일일 상한 판정 — since 이후 만든 DROP_SAMPLE 카드 수.
+  countDropSamplesSince(ownerUserId: string, since: Date): Promise<number>;
   // 이미 뜬 카드 중 스윕이 대신 처리한 것을 닫고, 닫은 수를 돌려준다.
   // 카드는 생성 시점엔 중복이 아니었다가 몇 초~몇 분 뒤 스윕이 같은 PR 을 리뷰하면서
   // 무의미해진다(실측 2026-09-09 PR #149: 15초, 09-08 #143: 5분 29초). 생성 시점 판정만으로는
