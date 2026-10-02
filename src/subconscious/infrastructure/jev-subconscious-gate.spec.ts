@@ -50,6 +50,7 @@ describe('JevSubconsciousGate', () => {
       decisions: [],
       confidentDecisions: [],
       fallbackChanges: [],
+      scores: [],
       model: 'jev-1.13.0',
     });
     expect(fetchMock).not.toHaveBeenCalled();
@@ -217,6 +218,61 @@ describe('JevSubconsciousGate', () => {
       'TYPESAFE_API_KEY is not configured',
     );
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('로컬 URL에서는 API 키 없이 호출하고 Authorization을 생략한다', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ model: 'kev-latest', answers: {} }),
+    });
+    global.fetch = fetchMock as typeof fetch;
+    const gate = makeGate({
+      SUBCONSCIOUS_JEV_API_URL: 'http://127.0.0.1:8009/v1/systemone',
+      SUBCONSCIOUS_JEV_MODEL: 'kev-latest',
+    });
+
+    const result = await gate.evaluate([makeChange('pr-1')]);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:8009/v1/systemone',
+      expect.objectContaining({
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    expect(result.scores).toEqual([
+      {
+        changeKey: 'pr-1',
+        promoteProbability: null,
+        agentChoice: null,
+        agentConfidence: null,
+      },
+    ]);
+  });
+
+  it('NONE 선택의 원값과 유효 점수를 보존한다', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        model: 'jev-1.13.0',
+        answers: {
+          promote_0: { type: 'noul', noul: 0.7 },
+          agent_0: { type: 'choice', choice: 'NONE', confidence: 0.8 },
+        },
+      }),
+    }) as typeof fetch;
+
+    const result = await makeGate({ TYPESAFE_API_KEY: 'test-key' }).evaluate([
+      makeChange('pr-1'),
+    ]);
+    expect(result.scores).toEqual([
+      {
+        changeKey: 'pr-1',
+        promoteProbability: 0.7,
+        agentChoice: 'NONE',
+        agentConfidence: 0.8,
+      },
+    ]);
+    expect(result.fallbackChanges).toEqual([makeChange('pr-1')]);
   });
 
   it('API 요청은 개인정보 제거가 끝난 변화와 고정 모델을 사용한다', async () => {

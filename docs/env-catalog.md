@@ -2,7 +2,7 @@
 
 # 환경변수 카탈로그
 
-SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 164개.
+SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 167개.
 설명은 각 변수 주석의 첫 문장 발췌 — 상세는 app.config.ts 주석 참조. `.env.example` 동기는 `pnpm check:env`.
 
 ## 인프라 (앱 부팅 필수)
@@ -191,6 +191,9 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `SUBCONSCIOUS_JEV_TIMEOUT_MS` | ❌ | Jev API 호출 timeout (밀리초). |
 | `SUBCONSCIOUS_JEV_PROMOTE_THRESHOLD` | ❌ | Jev가 자동 승격할 최소 promote 확률 (0보다 크고 1 이하). |
 | `SUBCONSCIOUS_JEV_CONFIDENCE_THRESHOLD` | ❌ | Jev가 담당 에이전트를 선택했다고 볼 최소 confidence (0보다 크고 1 이하). |
+| `SUBCONSCIOUS_JEV_API_URL` | ❌ | Jev 호환 System One 엔드포인트. |
+| `SUBCONSCIOUS_DROP_SAMPLE_RATE` | ❌ | legacy 게이트가 버린 변경을 사람 판정 카드로 올릴 비율 (0~1). 미설정 시 0.1, 0 이면 비활성. |
+| `SUBCONSCIOUS_DROP_SAMPLE_DAILY_CAP` | ❌ | 위 표본 카드의 KST 하루 상한. 미설정 시 3. 시간당 승격 예산과는 별도로 센다. |
 | `PREFERENCE_PROFILE_INJECTION_ENABLED` | ❌ | 학습된 프로필을 브리핑/윤문/라우팅에 주입(미설정=OFF). |
 | `HUMANIZE_REPORTS_ENABLED` | ❌ | 'false' 면 자동 보고서 윤문 OFF(기존 동작). 미설정 시 활성(기본 ON). |
 | `SUBCONSCIOUS_SCHEDULE` | ❌ | Subconscious tick BullMQ cron 표현식 (Asia/Seoul 기준). |

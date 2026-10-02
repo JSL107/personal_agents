@@ -1,7 +1,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
+import { getKstDayStartAsUtc } from '../../common/util/kst-date.util';
 import { redactPii } from '../../common/util/pii-redaction.util';
+import { AgentType } from '../../model-router/domain/model-router.type';
 import { diffSnapshots } from '../domain/diff-snapshots';
+import type { DropSamplePolicy } from '../domain/port/drop-sample-policy.port';
+import { DROP_SAMPLE_POLICY } from '../domain/port/drop-sample-policy.port';
 import type { PromotionBudget } from '../domain/port/promotion-budget.port';
 import { PROMOTION_BUDGET } from '../domain/port/promotion-budget.port';
 import type { ProposalEmitter } from '../domain/port/proposal-emitter.port';
@@ -13,10 +17,20 @@ import { SUBCONSCIOUS_BASELINE_REPOSITORY } from '../domain/port/subconscious-ba
 import type { SubconsciousGate } from '../domain/port/subconscious-gate.port';
 import { SUBCONSCIOUS_GATE } from '../domain/port/subconscious-gate.port';
 import {
+  GateDecision,
   RedactedChange,
   StateChange,
   StateSnapshot,
 } from '../domain/subconscious.type';
+
+const GITHUB_PR_KEY_PREFIX = 'github:pr:';
+
+// 표본 카드 문구는 일반 카드와 구분되지 않게 쓴다 — 표시가 있으면 "원래 버려진 것" 이라는
+// 인식이 판정을 끌어당긴다. 출처는 DB 의 origin 으로만 가른다.
+const buildSampleProposalText = (change: StateChange): string =>
+  change.item.key.startsWith(GITHUB_PR_KEY_PREFIX)
+    ? `「${change.item.summary}」 PR, 코드 리뷰할까요?`
+    : `「${change.item.summary}」 — 살펴볼까요?`;
 
 @Injectable()
 export class SubconsciousEngine {
@@ -33,6 +47,8 @@ export class SubconsciousEngine {
     private readonly baselineRepository: SubconsciousBaselineRepository,
     @Inject(PROPOSAL_EMITTER)
     private readonly proposalEmitter: ProposalEmitter,
+    @Inject(DROP_SAMPLE_POLICY)
+    private readonly dropSamplePolicy: DropSamplePolicy,
   ) {}
 
   async runTick(ownerSlackUserId: string, now: number): Promise<void> {
@@ -115,6 +131,7 @@ export class SubconsciousEngine {
 
     for (const decision of decisions) {
       if (!decision.promote) {
+        await this.sampleDropped(ownerSlackUserId, now, decision, changeByKey);
         continue;
       }
       if (!decision.suggestedAgentType) {
@@ -156,6 +173,80 @@ export class SubconsciousEngine {
         change: originalChange,
         decision,
       });
+    }
+  }
+
+  // legacy 가 버린 변경 일부를 일반 카드로 올려 버린 영역의 정답을 모은다. 표본 경로의 어떤 실패도
+  // tick 을 죽이지 않는다 — 운영 경로(승격 카드)보다 우선순위가 낮다.
+  private async sampleDropped(
+    ownerSlackUserId: string,
+    now: number,
+    decision: GateDecision,
+    changeByKey: Map<string, StateChange>,
+  ): Promise<void> {
+    const { rate, dailyCap, random } = this.dropSamplePolicy;
+    if (rate <= 0 || dailyCap <= 0) {
+      return;
+    }
+    const originalChange = changeByKey.get(decision.changeKey);
+    if (!originalChange) {
+      return;
+    }
+    if (random() >= rate) {
+      return;
+    }
+
+    const suggestedAgentType =
+      decision.suggestedAgentType ??
+      (decision.changeKey.startsWith(GITHUB_PR_KEY_PREFIX)
+        ? AgentType.CODE_REVIEWER
+        : undefined);
+    if (suggestedAgentType === undefined) {
+      this.logger.debug(
+        `표본 제외: changeKey="${decision.changeKey}" 는 담당 워커를 정할 수 없다`,
+      );
+      return;
+    }
+
+    const sampleDecision: GateDecision = {
+      ...decision,
+      promote: true,
+      suggestedAgentType,
+      // 버린 판정에 실린 문구("제안할 필요 없음" 류)를 쓰면 표본인 게 드러난다 — 항상 중립 문구.
+      proposalText: buildSampleProposalText(originalChange),
+    };
+
+    try {
+      const shouldEmit = await this.proposalEmitter.shouldEmit({
+        ownerUserId: ownerSlackUserId,
+        decision: sampleDecision,
+      });
+      if (!shouldEmit) {
+        return;
+      }
+      // ponytail: count 후 emit 이라 동시 tick 이 겹치면 상한을 1~2건 넘길 수 있다. tick 은
+      // BullMQ repeatable 단일 job 이라 실제로 겹치지 않는다 — 겹치게 되면 DB 유니크 슬롯으로 바꾼다.
+      const sampledToday = await this.proposalEmitter.countDropSamplesSince(
+        ownerSlackUserId,
+        getKstDayStartAsUtc(0, now),
+      );
+      if (sampledToday >= dailyCap) {
+        return;
+      }
+      // 시간당 승격 예산은 소비하지 않는다 — 표본이 진짜 제안을 밀어내지 않게.
+      await this.proposalEmitter.emit({
+        ownerUserId: ownerSlackUserId,
+        change: originalChange,
+        decision: sampleDecision,
+        origin: 'DROP_SAMPLE',
+      });
+      this.logger.log(
+        `drop 표본 카드 생성: changeKey="${decision.changeKey}" (오늘 ${sampledToday + 1}/${dailyCap})`,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `drop 표본 처리 실패 (tick 은 계속): ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 }

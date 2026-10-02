@@ -18,6 +18,7 @@ import { SlackService } from '../../slack/slack.service';
 import type { ProposalEmitter } from '../domain/port/proposal-emitter.port';
 import { PROPOSAL_EMITTER } from '../domain/port/proposal-emitter.port';
 import {
+  ProposalOrigin,
   ProposalStatus,
   SUBCONSCIOUS_PROPOSAL_REPOSITORY,
   SubconsciousProposalRecord,
@@ -261,10 +262,12 @@ export class SubconsciousProposalService implements ProposalEmitter {
     ownerUserId,
     change,
     decision,
+    origin = 'GATE',
   }: {
     ownerUserId: string;
     change: StateChange;
     decision: GateDecision;
+    origin?: ProposalOrigin;
   }): Promise<void> {
     const proposalText =
       decision.proposalText ?? `${change.kind} ${change.item.summary}`;
@@ -276,6 +279,7 @@ export class SubconsciousProposalService implements ProposalEmitter {
       suggestedAgentType: decision.suggestedAgentType!,
       proposalText,
       contextJson: { change },
+      origin,
     });
 
     try {
@@ -295,6 +299,17 @@ export class SubconsciousProposalService implements ProposalEmitter {
         error instanceof Error ? error.stack : undefined,
       );
     }
+  }
+
+  async countDropSamplesSince(
+    ownerUserId: string,
+    since: Date,
+  ): Promise<number> {
+    return await this.repository.countByOriginSince(
+      ownerUserId,
+      'DROP_SAMPLE',
+      since,
+    );
   }
 
   async apply(

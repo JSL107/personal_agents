@@ -23,6 +23,7 @@ describe('SubconsciousEngine', () => {
     shouldEmit: jest.Mock;
     emit: jest.Mock;
     dismissSweptPending: jest.Mock;
+    countDropSamplesSince: jest.Mock;
   };
   let engine: SubconsciousEngine;
 
@@ -40,6 +41,7 @@ describe('SubconsciousEngine', () => {
       shouldEmit: jest.fn().mockResolvedValue(true),
       emit: jest.fn().mockResolvedValue(undefined),
       dismissSweptPending: jest.fn().mockResolvedValue(0),
+      countDropSamplesSince: jest.fn().mockResolvedValue(0),
     };
 
     jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
@@ -47,13 +49,19 @@ describe('SubconsciousEngine', () => {
     jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
   });
 
-  const buildEngine = (sources: { id: string; fetchSnapshot: jest.Mock }[]) =>
+  const DISABLED_SAMPLING = { rate: 0, dailyCap: 3, random: () => 0 };
+
+  const buildEngine = (
+    sources: { id: string; fetchSnapshot: jest.Mock }[],
+    dropSamplePolicy = DISABLED_SAMPLING,
+  ) =>
     new SubconsciousEngine(
       sources as never,
       fakeGate as never,
       fakeBudget as never,
       fakeBaselineRepository as never,
       fakeProposalEmitter as never,
+      dropSamplePolicy,
     );
 
   it('케이스 1: 모든 소스 무변화 → gate.judge 0회, 제안 0건, baseline 갱신', async () => {
@@ -278,5 +286,188 @@ describe('SubconsciousEngine', () => {
 
     // 정리 실패가 baseline 갱신까지 막지 않는다 — 다음 회차에 다시 시도된다.
     expect(fakeBaselineRepository.upsert).toHaveBeenCalledTimes(1);
+  });
+
+  describe('drop 표본', () => {
+    const PR_SOURCE = 'github:pr:org/repo#1';
+    const PR_KEY = `${PR_SOURCE}:item-1`;
+    const dropDecision: GateDecision = {
+      changeKey: PR_KEY,
+      promote: false,
+      reason: '루틴',
+    };
+
+    const prSource = () => ({
+      id: PR_SOURCE,
+      fetchSnapshot: jest
+        .fn()
+        .mockResolvedValue(makeSnapshot(PR_SOURCE, 'NEW')),
+    });
+
+    beforeEach(() => {
+      fakeBaselineRepository.findBySource.mockResolvedValue(
+        makeSnapshot(PR_SOURCE, 'OLD'),
+      );
+      fakeGate.judge.mockResolvedValue([dropDecision]);
+    });
+
+    it('비율 0 이면 버린 변경을 올리지 않는다', async () => {
+      await buildEngine([prSource()]).runTick(OWNER, NOW);
+
+      expect(fakeProposalEmitter.emit).not.toHaveBeenCalled();
+    });
+
+    it('추첨에 걸리면 DROP_SAMPLE 카드를 만들고 시간당 예산은 소비하지 않는다', async () => {
+      await buildEngine([prSource()], {
+        rate: 0.1,
+        dailyCap: 3,
+        random: () => 0.05,
+      }).runTick(OWNER, NOW);
+
+      expect(fakeProposalEmitter.emit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ownerUserId: OWNER,
+          origin: 'DROP_SAMPLE',
+          decision: expect.objectContaining({
+            changeKey: PR_KEY,
+            promote: true,
+            suggestedAgentType: AgentType.CODE_REVIEWER,
+            proposalText: '「summary-NEW」 PR, 코드 리뷰할까요?',
+          }),
+        }),
+      );
+      expect(fakeBudget.tryConsume).not.toHaveBeenCalled();
+    });
+
+    it('버린 판정에 실린 문구 대신 항상 중립 문구를 쓴다', async () => {
+      fakeGate.judge.mockResolvedValue([
+        { ...dropDecision, proposalText: '제안할 필요 없음' },
+      ]);
+
+      await buildEngine([prSource()], {
+        rate: 1,
+        dailyCap: 3,
+        random: () => 0,
+      }).runTick(OWNER, NOW);
+
+      expect(fakeProposalEmitter.emit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          decision: expect.objectContaining({
+            proposalText: '「summary-NEW」 PR, 코드 리뷰할까요?',
+          }),
+        }),
+      );
+    });
+
+    it('하루 경계는 tick 의 now 기준 KST 자정으로 센다', async () => {
+      // 2026-10-02 00:30 KST = 2026-10-01T15:30Z → 기준은 2026-10-01T15:00Z
+      const now = Date.parse('2026-10-01T15:30:00Z');
+      await buildEngine([prSource()], {
+        rate: 1,
+        dailyCap: 3,
+        random: () => 0,
+      }).runTick(OWNER, now);
+
+      expect(fakeProposalEmitter.countDropSamplesSince).toHaveBeenCalledWith(
+        OWNER,
+        new Date('2026-10-01T15:00:00Z'),
+      );
+    });
+
+    it('추첨에 안 걸리면 올리지 않는다', async () => {
+      await buildEngine([prSource()], {
+        rate: 0.1,
+        dailyCap: 3,
+        random: () => 0.5,
+      }).runTick(OWNER, NOW);
+
+      expect(fakeProposalEmitter.emit).not.toHaveBeenCalled();
+    });
+
+    it('오늘 표본이 상한에 닿았으면 올리지 않는다', async () => {
+      fakeProposalEmitter.countDropSamplesSince.mockResolvedValue(3);
+
+      await buildEngine([prSource()], {
+        rate: 1,
+        dailyCap: 3,
+        random: () => 0,
+      }).runTick(OWNER, NOW);
+
+      expect(fakeProposalEmitter.emit).not.toHaveBeenCalled();
+    });
+
+    it('중복·스윕 규칙(shouldEmit)을 그대로 따른다', async () => {
+      fakeProposalEmitter.shouldEmit.mockResolvedValue(false);
+
+      await buildEngine([prSource()], {
+        rate: 1,
+        dailyCap: 3,
+        random: () => 0,
+      }).runTick(OWNER, NOW);
+
+      expect(fakeProposalEmitter.emit).not.toHaveBeenCalled();
+    });
+
+    it('PR 이 아니고 담당 워커도 없으면 표본에서 뺀다', async () => {
+      const notionSource = {
+        id: 'notion',
+        fetchSnapshot: jest
+          .fn()
+          .mockResolvedValue(makeSnapshot('notion', 'NEW')),
+      };
+      fakeBaselineRepository.findBySource.mockResolvedValue(
+        makeSnapshot('notion', 'OLD'),
+      );
+      fakeGate.judge.mockResolvedValue([
+        { changeKey: 'notion:item-1', promote: false, reason: '루틴' },
+      ]);
+
+      await buildEngine([notionSource], {
+        rate: 1,
+        dailyCap: 3,
+        random: () => 0,
+      }).runTick(OWNER, NOW);
+
+      expect(fakeProposalEmitter.emit).not.toHaveBeenCalled();
+    });
+
+    it('표본 처리 실패가 같은 회차의 승격 카드를 막지 않는다', async () => {
+      const promoteKey = 'github:item-1';
+      const githubSource = {
+        id: 'github',
+        fetchSnapshot: jest
+          .fn()
+          .mockResolvedValue(makeSnapshot('github', 'NEW')),
+      };
+      fakeBaselineRepository.findBySource.mockImplementation(
+        async (_owner: string, sourceId: string) =>
+          makeSnapshot(sourceId, 'OLD'),
+      );
+      fakeGate.judge.mockResolvedValue([
+        dropDecision,
+        {
+          changeKey: promoteKey,
+          promote: true,
+          reason: '중요',
+          suggestedAgentType: AgentType.CODE_REVIEWER,
+        },
+      ]);
+      fakeProposalEmitter.countDropSamplesSince.mockRejectedValue(
+        new Error('db down'),
+      );
+
+      await buildEngine([prSource(), githubSource], {
+        rate: 1,
+        dailyCap: 3,
+        random: () => 0,
+      }).runTick(OWNER, NOW);
+
+      expect(fakeProposalEmitter.emit).toHaveBeenCalledTimes(1);
+      expect(fakeProposalEmitter.emit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          decision: expect.objectContaining({ changeKey: promoteKey }),
+        }),
+      );
+    });
   });
 });

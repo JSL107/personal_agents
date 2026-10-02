@@ -72,6 +72,7 @@ const buildRepository = (
   create: jest.fn().mockImplementation(() => Promise.resolve(buildRecord())),
   findById: jest.fn().mockResolvedValue(record),
   hasProposedSince: jest.fn().mockResolvedValue(false),
+  countByOriginSince: jest.fn().mockResolvedValue(0),
   listPending: jest.fn().mockResolvedValue([]),
   expirePendingOlderThan: jest.fn().mockResolvedValue(0),
   markStatus: jest.fn().mockResolvedValue(undefined),
@@ -338,6 +339,44 @@ describe('SubconsciousProposalService.emit', () => {
 
     expect(repository.create).toHaveBeenCalled();
     expect(repository.attachSlackMessage).not.toHaveBeenCalled();
+  });
+
+  it('origin 을 지정하지 않으면 GATE, 표본이면 DROP_SAMPLE 로 저장한다', async () => {
+    const { service, repository } = buildService();
+    await service.emit({
+      ownerUserId: OWNER,
+      change: buildChange(),
+      decision: buildDecision(),
+    });
+    await service.emit({
+      ownerUserId: OWNER,
+      change: buildChange(),
+      decision: buildDecision(),
+      origin: 'DROP_SAMPLE',
+    });
+
+    expect(repository.create).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ origin: 'GATE' }),
+    );
+    expect(repository.create).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ origin: 'DROP_SAMPLE' }),
+    );
+  });
+
+  it('countDropSamplesSince 는 DROP_SAMPLE origin 만 센다', async () => {
+    const repository = buildRepository();
+    repository.countByOriginSince.mockResolvedValue(2);
+    const { service } = buildService({ repository });
+    const since = new Date('2026-10-01T15:00:00Z');
+
+    await expect(service.countDropSamplesSince(OWNER, since)).resolves.toBe(2);
+    expect(repository.countByOriginSince).toHaveBeenCalledWith(
+      OWNER,
+      'DROP_SAMPLE',
+      since,
+    );
   });
 });
 
