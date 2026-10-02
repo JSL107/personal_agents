@@ -166,6 +166,8 @@ export class AutopilotOrchestrator {
       image?: AutopilotTaskImage;
       // 상세 댓글 뒤에 올릴 스레드 파일. 상세와 같은 몫이라 업로드 실패는 상세 유실로 센다.
       file?: AutopilotTaskFile;
+      // 상세가 이 회차의 유일한 사본인지(포트 주석). 켜지면 상세 실패 시 채널에 대신 붙인다.
+      detailIsOnlyCopy?: boolean;
       onDelivered?: () => Promise<void>;
       unfurlLinks?: boolean;
       // 이 item 을 낸 task 가 멘션 대상인지. 그룹의 item 중 하나라도 true 면 메인 메시지에
@@ -223,6 +225,7 @@ export class AutopilotOrchestrator {
             // 파일은 상세에 딸린다 — 상세가 없으면 `detailItemIndex` 도 없어 업로드 실패를
             // 카드에 이어 줄 길이 없으므로 싣지 않는다(포트 주석의 "이것만 주면 무시").
             file: result.detailText ? result.detailFile : undefined,
+            detailIsOnlyCopy: result.detailIsOnlyCopy,
             onDelivered: result.onDelivered,
             unfurlLinks: result.unfurlLinks,
             notifyOwner: NOTIFY_OWNER_TASK_IDS.has(entry.taskId),
@@ -478,13 +481,19 @@ export class AutopilotOrchestrator {
               // `isOnlyCopy` 는 "이 글이 이 회차에 존재하는 유일한 사본인가" 다. 그림이
               // 메인으로 간 회차의 요약이 그렇다 — 채널에는 헤드라인과 그림만 있으므로
               // 이 댓글이 실패하면 종목별 내역이 그날 통째로 사라진다. 상세(detail)는
-              // 종전부터 실패를 삼켜 온 자리라 그대로 둔다.
+              // 종전부터 실패를 삼켜 온 자리라 그대로 두되, task 가 상세를 유일한 사본으로
+              // 표시한 경우(`detailIsOnlyCopy`)만 같은 대피 경로를 탄다.
               const threadPosts: { text: string; isOnlyCopy: boolean }[] = [
                 ...(mainImage && item === imageFirstItem
                   ? [{ text: item.summary, isOnlyCopy: true }]
                   : []),
                 ...(item.detail
-                  ? [{ text: item.detail, isOnlyCopy: false }]
+                  ? [
+                      {
+                        text: item.detail,
+                        isOnlyCopy: item.detailIsOnlyCopy === true,
+                      },
+                    ]
                   : []),
               ];
               for (const { text: threadText, isOnlyCopy } of threadPosts) {
@@ -605,6 +614,26 @@ export class AutopilotOrchestrator {
                 `Autopilot[${groupKey}] ${resolved} 메인 메시지 ts 미반환 — 스레드 ${skippedDetailCount}건 skip` +
                   (mainImage ? ' (그림이 메인이라 요약 본문까지 유실)' : ''),
               );
+            }
+            // 유일한 사본인 상세는 붙일 스레드가 없어도 버리지 않는다 — 채널에 따로 올린다.
+            // 후처리 건너뜀(`detailUndelivered`)은 위에서 이미 표시됐고 그대로 둔다.
+            for (const item of items) {
+              if (!item.detail || item.detailIsOnlyCopy !== true) {
+                continue;
+              }
+              try {
+                await this.slackNotifier.postMessage({
+                  target: resolved,
+                  text: item.detail,
+                  ...(item.unfurlLinks === false ? { unfurlLinks: false } : {}),
+                });
+              } catch (error: unknown) {
+                const message =
+                  error instanceof Error ? error.message : String(error);
+                this.logger.error(
+                  `Autopilot[${groupKey}] ${resolved} 유일한 사본인 상세를 채널에도 못 올려 이 회차에서 유실됐다: ${message}`,
+                );
+              }
             }
           }
         }

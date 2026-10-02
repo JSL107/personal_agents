@@ -104,7 +104,6 @@ export class PoEvalAutopilotTask implements AutopilotTask {
         range: 'TODAY',
         triggerType: TriggerType.DAILY_EVAL_CRON,
       });
-      const intro = `🌅 *Daily Eval — ${firedAtKst} (19:00 KST 자동 회고)*\n\n`;
       const humanized = await humanizeEvaluationOutput(
         outcome.result,
         this.humanizeService,
@@ -139,9 +138,14 @@ export class PoEvalAutopilotTask implements AutopilotTask {
             }
           : {},
       );
-      const summaryText = intro + formatted.summary;
-      const detailText = formatted.detail + formatModelFooter(outcome);
-      return { skip: false, summaryText, detailText };
+      // 저녁 메인에는 한 줄만 둔다. 평가 요약·Wins·Blockers 는 같은 메시지의 업무 회고 「오늘 한 일」·
+      // 저녁 회고 KPT 와 같은 사실을 되풀이해, 메인 중복의 원천이었다(설계 2026-10-02 evening-digest-dedup).
+      // 내용은 버리지 않고 스레드 맨 앞으로 옮긴다. 수동 /po-eval 은 이 task 를 거치지 않아 종전대로다.
+      const { wins, blockers } = humanized.qualitative;
+      const summaryText = `🌅 *Daily Eval — ${firedAtKst} (19:00 KST 자동 회고)* · Wins ${wins.length} · Blockers ${blockers.length} — 내용은 스레드`;
+      const detailText = `${formatted.summary}\n\n${formatted.detail}${formatModelFooter(outcome)}`;
+      // 메인엔 건수뿐이라 상세가 유일한 사본이다 — 스레드 실패 시 채널로 대피시킨다.
+      return { skip: false, summaryText, detailText, detailIsOnlyCopy: true };
     } catch (error) {
       if (
         error instanceof PoEvalException &&
