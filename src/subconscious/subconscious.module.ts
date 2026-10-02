@@ -15,14 +15,17 @@ import { SubconsciousEngine } from './application/subconscious.engine';
 import { SubconsciousScheduler } from './application/subconscious.scheduler';
 import { SubconsciousProposalService } from './application/subconscious-proposal.service';
 import { SubconsciousTickProcessor } from './application/subconscious-tick.processor';
+import { DROP_SAMPLE_POLICY } from './domain/port/drop-sample-policy.port';
 import { PROMOTION_BUDGET } from './domain/port/promotion-budget.port';
 import { PROPOSAL_EMITTER } from './domain/port/proposal-emitter.port';
 import type { StateSource } from './domain/port/state-source.port';
 import { STATE_SOURCES } from './domain/port/state-source.port';
 import { SUBCONSCIOUS_BASELINE_REPOSITORY } from './domain/port/subconscious-baseline.repository.port';
 import { SUBCONSCIOUS_GATE } from './domain/port/subconscious-gate.port';
+import { SUBCONSCIOUS_GATE_SHADOW_REPOSITORY } from './domain/port/subconscious-gate-shadow.repository.port';
 import { SUBCONSCIOUS_PROPOSAL_REPOSITORY } from './domain/port/subconscious-proposal.repository.port';
 import { SUBCONSCIOUS_TICK_QUEUE } from './domain/subconscious-tick.type';
+import { buildDropSamplePolicy } from './infrastructure/drop-sample-policy.factory';
 import { GithubStateSource } from './infrastructure/github-state-source';
 import { HybridSubconsciousGate } from './infrastructure/hybrid-subconscious-gate';
 import { JevSubconsciousGate } from './infrastructure/jev-subconscious-gate';
@@ -31,6 +34,7 @@ import { NotionStateSource } from './infrastructure/notion-state-source';
 import { RedisPromotionBudget } from './infrastructure/redis-promotion-budget';
 import { SlackInboxStateSource } from './infrastructure/slack-inbox-state-source';
 import { SubconsciousBaselinePrismaRepository } from './infrastructure/subconscious-baseline.prisma.repository';
+import { SubconsciousGateShadowPrismaRepository } from './infrastructure/subconscious-gate-shadow.prisma.repository';
 import { SubconsciousProposalPrismaRepository } from './infrastructure/subconscious-proposal.prisma.repository';
 
 // SubconsciousModule — proactive engine 전체 조립.
@@ -107,6 +111,18 @@ import { SubconsciousProposalPrismaRepository } from './infrastructure/subconsci
     {
       provide: SUBCONSCIOUS_BASELINE_REPOSITORY,
       useClass: SubconsciousBaselinePrismaRepository,
+    },
+    // ── Shadow 판정 원장 (문턱 보정용) ─────────────────────────────────────────
+    {
+      provide: SUBCONSCIOUS_GATE_SHADOW_REPOSITORY,
+      useClass: SubconsciousGateShadowPrismaRepository,
+    },
+    // ── Drop 표본 정책 ─────────────────────────────────────────────────────────
+    {
+      provide: DROP_SAMPLE_POLICY,
+      useFactory: (configService: ConfigService) =>
+        buildDropSamplePolicy(configService),
+      inject: [ConfigService],
     },
     // ── Proposal Repository ───────────────────────────────────────────────────
     {

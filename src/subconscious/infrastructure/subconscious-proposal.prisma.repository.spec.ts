@@ -22,4 +22,23 @@ describe('SubconsciousProposalPrismaRepository', () => {
       data: { status: 'EXPIRED', resolvedAt: expect.any(Date) },
     });
   });
+
+  it('hasProposedSince 는 만료된 표본 카드를 세지 않는다 — 못 본 표본이 운영 카드를 30일 막지 않게', async () => {
+    const count = jest.fn().mockResolvedValue(0);
+    const repository = new SubconsciousProposalPrismaRepository({
+      subconsciousProposal: { count },
+    } as unknown as PrismaService);
+    const createdAfter = new Date('2026-09-02T00:00:00Z');
+
+    await repository.hasProposedSince('U1', 'github:pr:o/r#1', createdAfter);
+
+    expect(count).toHaveBeenCalledWith({
+      where: {
+        ownerUserId: 'U1',
+        changeKey: 'github:pr:o/r#1',
+        createdAt: { gt: createdAfter },
+        NOT: { origin: 'DROP_SAMPLE', status: 'EXPIRED' },
+      },
+    });
+  });
 });
