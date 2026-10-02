@@ -179,6 +179,16 @@ const strolling = new Set();
  * 주최자만 자리로 돌아간다. 걸음을 새로 지시하는 `walkTo` 가 지운다.
  */
 const meeting = new Set();
+/**
+ * 열린 회의의 모임 상태(맥 `OfficeMeetingGathering` 과 같은 규칙). 번호 → `{walking, present, gatherRemaining, clockRemaining}`.
+ *
+ * 머무름은 **마지막 참석자가 도착한 뒤부터 다 같이** 센다. 각자 도착 순간부터 세던 때는 가까운 사람이 먼
+ * 사람이 오기 전에 떠났다(전원 도착 5초 뒤 넷 중 둘이 귀가 중). 와 있는 사람은 시계가 끝날 때까지
+ * `dwellRemaining` 이 무한이고, 시계가 끝나면 한꺼번에 놓아 준다. 오던 사람이 빠지거나 기다림 상한이 지나면
+ * 와 있는 사람끼리 시계를 켠다.
+ */
+const meetings = new Map();
+let meetingSerial = 0;
 let lastTickAt = 0;
 /** 백엔드가 준 승인 카드. 줄 세우기와 방치 압력의 입력이다. */
 let approvals = [];
@@ -339,6 +349,7 @@ function seatOf(agentType) {
 }
 
 function sendHome(agentType) {
+  leaveMeeting(agentType);
   const seat = seatOf(agentType);
   if (!seat) {
     delete bodies[agentType];
@@ -363,6 +374,7 @@ function sendHome(agentType) {
  * 서 있는 것으로 읽어, 그 사람이 다시 출근할 때 연출을 통째로 건너뛴다.
  */
 function despawn(agentType) {
+  leaveMeeting(agentType);
   delete bodies[agentType];
   strolling.delete(agentType);
   meeting.delete(agentType);
@@ -751,6 +763,7 @@ function walkTo(agentType, goal, options = {}) {
   // 걸음을 지시하는 이 한 곳에서 끊어야 한 군데만 고쳐도 셋이 같이 낫는다.
   body.dwellRemaining = 0;
   meeting.delete(agentType);
+  leaveMeeting(agentType);
   return true;
 }
 
@@ -760,6 +773,7 @@ function walkTo(agentType, goal, options = {}) {
  * 걸음 그림 두 장을 한 칸마다 번갈아 쓴다 — "한 칸 = 한 걸음" 과 맞다.
  */
 function advanceBodies(deltaSeconds) {
+  advanceMeetings(deltaSeconds);
   for (const [agentType, body] of Object.entries(bodies)) {
     if (body.cueRemaining > 0) {
       body.cueRemaining = Math.max(0, body.cueRemaining - deltaSeconds);
@@ -847,6 +861,9 @@ function advanceBodies(deltaSeconds) {
           if (strolling.has(agentType)) {
             speakOnArrival(agentType);
           }
+          if (body.meetingId) {
+            arriveAtMeeting(agentType);
+          }
         } else if (body.onArrive) {
           const arrive = body.onArrive;
           body.onArrive = null;
@@ -921,6 +938,15 @@ function holdMeeting(agentTypes, thenWorking) {
     return;
   }
   const table = renderer.plan.furniture.find((placement) => placement.kind === "meetingTable")?.tile;
+  meetingSerial += 1;
+  const id = meetingSerial;
+  const gathering = {
+    walking: new Set(),
+    present: new Set(),
+    gatherRemaining: renderer.layout.meetingGatherTimeoutSeconds ?? 20,
+    clockRemaining: null,
+  };
+  meetings.set(id, gathering);
   let assigned = 0;
   for (const agentType of agentTypes) {
     if (assigned >= seats.length) {
@@ -937,32 +963,113 @@ function holdMeeting(agentTypes, thenWorking) {
     const facing = table ? facingBetween(seat, table) : null;
     const here = roundedTile(body);
     strolling.delete(agentType);
+    // 이전 회의의 일반 참석자 표식을 지운다 — 같은 자리 분기는 `walkTo` 를 안 거쳐 남는다. 남으면 이번 회의의
+    // 주최자가 됐을 때 뒤따르는 `IN_PROGRESS` 를 일반 참석자의 일로 읽어 회의를 바로 끊는다(아래에서 다시 넣는다).
+    meeting.delete(agentType);
     // 배회 목적지 몇 곳(회의 테이블·책장 앞)은 회의석과 같은 칸이다. 이미 거기 서 있으면 경로가 비어
     // `walkTo` 가 실패하므로, 걷지 않고 그 자리에서 회의를 시작한다 — 건너뛰면 다음 사람이 같은 칸에 겹친다.
+    // 회의를 연 사람은 메모하고 나머지는 자료를 본다(2D 쇼케이스의 `writing`·`reading` 과 같은 짝, 3D `MEETING_PAPERS`).
+    const pose = agentType === thenWorking ? "meeting-writing" : "meeting-reading";
     if (!body.path && here.x === seat.x && here.y === seat.y) {
+      leaveMeeting(agentType);
       Object.assign(body, {
         seated: false,
-        interactionPose: null,
+        interactionPose: pose,
         arriveKind: "회의",
-        dwellRemaining: renderer.layout.meetingDwellSeconds,
+        dwellRemaining: Infinity,
         onArrive: null,
       });
       if (facing) {
         body.facing = facing;
       }
       body.pose = characterSpriteFor(body.facing).pose;
+      gathering.present.add(agentType);
     } else if (
-      !walkTo(agentType, seat, {
-        dwellSeconds: renderer.layout.meetingDwellSeconds,
-        facing,
-        kind: "회의",
-      })
+      // 걷기를 먼저 건다 — `walkTo` 가 이전 회의에서 빼는데(`leaveMeeting`), 순서가 바뀌면 이 회의에서 빠진다.
+      walkTo(agentType, seat, { dwellSeconds: Infinity, facing, pose, kind: "회의" })
     ) {
+      gathering.walking.add(agentType);
+    } else {
       continue;
     }
+    body.meetingId = id;
     assigned += 1;
     if (agentType !== thenWorking) {
       meeting.add(agentType);
+    }
+  }
+  if (assigned === 0) {
+    meetings.delete(id);
+  } else {
+    startMeetingIfGathered(id);
+  }
+}
+
+/** 회의석 도착. 회의가 이미 끝났으면 곧바로 흩어진다. */
+function arriveAtMeeting(agentType) {
+  const body = bodies[agentType];
+  const gathering = meetings.get(body.meetingId);
+  if (!gathering) {
+    body.meetingId = null;
+    body.dwellRemaining = Number.EPSILON;
+    return;
+  }
+  if (gathering.walking.delete(agentType)) {
+    gathering.present.add(agentType);
+  }
+  startMeetingIfGathered(body.meetingId);
+}
+
+/** 회의에서 빠진다(걸음을 새로 걸거나 자리로 보내거나 퇴근). 기다리던 사람이 빠지면 남은 사람끼리 시작한다. */
+function leaveMeeting(agentType) {
+  const body = bodies[agentType];
+  const id = body?.meetingId;
+  if (!id) {
+    return;
+  }
+  body.meetingId = null;
+  const gathering = meetings.get(id);
+  if (!gathering) {
+    return;
+  }
+  gathering.walking.delete(agentType);
+  gathering.present.delete(agentType);
+  if (gathering.walking.size === 0 && gathering.present.size === 0) {
+    meetings.delete(id);
+    return;
+  }
+  startMeetingIfGathered(id);
+}
+
+function startMeetingIfGathered(id) {
+  const gathering = meetings.get(id);
+  if (gathering && gathering.clockRemaining === null && gathering.walking.size === 0 && gathering.present.size > 0) {
+    gathering.clockRemaining = renderer.layout.meetingDwellSeconds;
+  }
+}
+
+/** 회의 시계 — 기다림 상한과 머무름. 머무름이 끝나면 와 있는 사람을 한꺼번에 놓아 준다(다음 프레임에 자리로). */
+function advanceMeetings(deltaSeconds) {
+  for (const [id, gathering] of meetings) {
+    if (gathering.clockRemaining === null) {
+      // 상한이 지난 뒤로는 와 있는 사람이 생기는 대로 시작한다 — 끝내 안 오는 사람을 기다리지 않는다.
+      gathering.gatherRemaining -= deltaSeconds;
+      if (gathering.gatherRemaining <= 0 && gathering.present.size > 0) {
+        gathering.clockRemaining = renderer.layout.meetingDwellSeconds;
+      }
+      continue;
+    }
+    gathering.clockRemaining -= deltaSeconds;
+    if (gathering.clockRemaining > 0) {
+      continue;
+    }
+    meetings.delete(id);
+    for (const agentType of gathering.present) {
+      const body = bodies[agentType];
+      if (body) {
+        body.meetingId = null;
+        body.dwellRemaining = Number.EPSILON;
+      }
     }
   }
 }
@@ -1832,7 +1939,9 @@ async function main() {
       }
       performIntent({ kind: "meeting", agentTypes: attendees, thenWorking: host });
       // 앱이 실제로 보내는 순서 그대로 — `run.started` 의 회의 지시 뒤에 주최자의 `IN_PROGRESS` 가 온다.
-      applyStreamPayload({ agentType: host, state: "IN_PROGRESS" });
+      // 실제 `state.changed` 는 활동 문구(`bubbleForActiveRun`)를 함께 싣는다. 상태만 보내면 직전 스냅샷의
+      // "업무 대기중" 이 진행 중인 사람 머리 위에 남는다 — 운영에는 없는 그림이다.
+      applyStreamPayload({ agentType: host, state: "IN_PROGRESS", bubble: "일하는 중…" });
       const step = 1 / 60;
       let elapsed = 0;
       while (elapsed < 60 && !attendees.every((agentType) => bodies[agentType]?.dwellRemaining > 0)) {
