@@ -196,11 +196,13 @@ export class SubconsciousEngine {
       return;
     }
 
-    const suggestedAgentType =
-      decision.suggestedAgentType ??
-      (decision.changeKey.startsWith(GITHUB_PR_KEY_PREFIX)
-        ? AgentType.CODE_REVIEWER
-        : undefined);
+    // PR 표본은 문구가 "코드 리뷰할까요?" 로 고정이라 워커도 CODE_REVIEWER 로 고정한다 — 버린 판정에
+    // 다른 워커가 붙어 와도 그걸 쓰면 사람이 본 카드와 실제 실행이 어긋나고 라벨이 오염된다.
+    const suggestedAgentType = decision.changeKey.startsWith(
+      GITHUB_PR_KEY_PREFIX,
+    )
+      ? AgentType.CODE_REVIEWER
+      : decision.suggestedAgentType;
     if (suggestedAgentType === undefined) {
       this.logger.debug(
         `표본 제외: changeKey="${decision.changeKey}" 는 담당 워커를 정할 수 없다`,

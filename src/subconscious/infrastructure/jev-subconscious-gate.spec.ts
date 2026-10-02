@@ -249,6 +249,37 @@ describe('JevSubconsciousGate', () => {
     ]);
   });
 
+  it('로컬 URL 에는 TypeSafe 키가 설정돼 있어도 보내지 않는다', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ model: 'kev-4b', answers: {} }),
+    });
+    global.fetch = fetchMock as typeof fetch;
+
+    await makeGate({
+      SUBCONSCIOUS_JEV_API_URL: 'http://localhost:8009/v1/systemone',
+      SUBCONSCIOUS_JEV_MODEL: 'kev-4b',
+      TYPESAFE_API_KEY: 'secret-key',
+    }).evaluate([makeChange('pr-1')]);
+
+    expect(fetchMock.mock.calls[0][1].headers).toEqual({
+      'Content-Type': 'application/json',
+    });
+  });
+
+  it('원격 URL 이 https 가 아니면 키를 평문으로 보내지 않고 실패한다', async () => {
+    const fetchMock = jest.fn();
+    global.fetch = fetchMock as typeof fetch;
+
+    await expect(
+      makeGate({
+        SUBCONSCIOUS_JEV_API_URL: 'http://jev.example.com/v1/systemone',
+        TYPESAFE_API_KEY: 'secret-key',
+      }).evaluate([makeChange('pr-1')]),
+    ).rejects.toThrow('https');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('NONE 선택의 원값과 유효 점수를 보존한다', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,

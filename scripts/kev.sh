@@ -8,14 +8,16 @@
 # 셸 변수(앱 설정 아님):
 #   KEV_HOME   기본 ~/.cache/idaeri-kev
 #   KEV_PORT   기본 8009
-#   KEV_MODEL  기본 jaredpalmer/kev-4b (9B 는 jaredpalmer/kev-9b, 메모리 약 2배)
-#   KEV_REF    기본 84847f0 (2026-10-02 M4 Max 에서 실측한 커밋)
+#   KEV_MODEL  기본 jaredpalmer/kev-4b@<revision> (9B 는 jaredpalmer/kev-9b@<revision>, 메모리 약 2배)
+#              revision 을 고정해야 HF main 이 바뀌어도 shadow 원장의 비교 기준이 흔들리지 않는다.
+#   KEV_REF    기본 2026-10-02 M4 Max 에서 실측한 커밋의 40자리 SHA.
+#              짧은 SHA 는 같은 이름의 태그가 생기면 그쪽으로 checkout 된다 — 전체 SHA 로만 고정한다.
 set -euo pipefail
 
 KEV_HOME="${KEV_HOME:-$HOME/.cache/idaeri-kev}"
 KEV_PORT="${KEV_PORT:-8009}"
-KEV_MODEL="${KEV_MODEL:-jaredpalmer/kev-4b}"
-KEV_REF="${KEV_REF:-84847f0}"
+KEV_MODEL="${KEV_MODEL:-jaredpalmer/kev-4b@6cfce5c2fa4b4bd64026336ab649c5ca78857d52}"
+KEV_REF="${KEV_REF:-84847f0a883d900f7de5b7a57eaa341ca7f9a6b4}"
 KEV_REPO_URL="https://github.com/jaredpalmer/kev.git"
 KEV_DIR="$KEV_HOME/kev"
 PID_FILE="$KEV_HOME/kev.pid"
@@ -61,12 +63,22 @@ require() {
   fi
 }
 
+# Kev 는 요청한 model 이름을 그대로 돌려준다. 이름을 실제 체크포인트에서 만들어야 4B·9B·revision 이
+# 원장(shadowModel)에서 갈린다. 예: jaredpalmer/kev-4b@6cfce5c… → kev-4b@6cfce5c
+shadow_model_name() {
+  local repo="${KEV_MODEL%%@*}" revision=""
+  case "$KEV_MODEL" in
+    *@*) revision="@$(echo "${KEV_MODEL#*@}" | cut -c1-7)" ;;
+  esac
+  echo "${repo##*/}${revision}"
+}
+
 print_env_hint() {
   cat <<EOF
 .env 에 아래를 넣고 앱을 재시작하면 shadow 비교가 시작됩니다:
   SUBCONSCIOUS_GATE_MODE=shadow
   SUBCONSCIOUS_JEV_API_URL=$ENDPOINT
-  SUBCONSCIOUS_JEV_MODEL=$(probe | sed -n 's/.*"model":"\([^"]*\)".*/\1/p')
+  SUBCONSCIOUS_JEV_MODEL=$(shadow_model_name)
   SUBCONSCIOUS_JEV_TIMEOUT_MS=15000
 EOF
 }
@@ -76,6 +88,17 @@ start() {
   require uv "brew install uv"
   require lsof "macOS 기본 포함"
   mkdir -p "$KEV_HOME"
+
+  # 첫 기동은 모델을 받느라 포트를 열기 전 수십 분이 걸린다. 그 사이 다시 치면 두 번째 인스턴스가
+  # pid 파일을 덮어써 첫 번째가 추적에서 빠진다 — pid 파일의 프로세스가 살아 있으면 기동 중으로 본다.
+  if [ -f "$PID_FILE" ]; then
+    local starting
+    starting="$(cat "$PID_FILE")"
+    if kill -0 "$starting" 2>/dev/null && is_kev_process "$starting" && [ -z "$(listening_pid)" ]; then
+      echo "기동 중입니다 (pid $starting, 로그 $LOG_FILE). 끝나면 pnpm kev:status 로 확인하세요."
+      return 0
+    fi
+  fi
 
   local owner
   owner="$(listening_pid)"
@@ -93,8 +116,13 @@ start() {
     echo "Kev 설치: $KEV_DIR"
     git clone --quiet "$KEV_REPO_URL" "$KEV_DIR"
   fi
-  git -C "$KEV_DIR" fetch --quiet origin || true
-  git -C "$KEV_DIR" checkout --quiet "$KEV_REF"
+  # 태그를 따라오지 않게 하고, checkout 후 HEAD 가 정확히 그 커밋인지 확인한다.
+  git -C "$KEV_DIR" fetch --quiet --no-tags origin "$KEV_REF" 2>/dev/null || true
+  git -C "$KEV_DIR" checkout --quiet --detach "${KEV_REF}^{commit}"
+  if [ "$(git -C "$KEV_DIR" rev-parse HEAD)" != "$KEV_REF" ]; then
+    echo "❌ Kev 커밋이 $KEV_REF 와 다릅니다. KEV_REF 는 40자리 전체 SHA 여야 합니다." >&2
+    exit 1
+  fi
   (cd "$KEV_DIR" && uv sync --quiet --extra serve)
 
   echo "Kev 시작: $KEV_MODEL (포트 $KEV_PORT, 로그 $LOG_FILE)"

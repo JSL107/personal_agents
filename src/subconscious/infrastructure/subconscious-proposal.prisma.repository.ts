@@ -45,11 +45,14 @@ export class SubconsciousProposalPrismaRepository implements SubconsciousProposa
     createdAfter: Date,
   ): Promise<boolean> {
     // status 조건이 없는 것은 의도다 — 응답이 끝난 카드도 "이미 물어본 것" 으로 센다.
+    // 예외 하나: 만료된 표본(DROP_SAMPLE) 카드. 사람이 보지 못한 채 닫힌 표본이 legacy 가 나중에 실제로
+    // 올리려는 같은 대상을 30일 막으면, 표본 장치가 운영 카드를 지우는 셈이다.
     const count = await this.prisma.subconsciousProposal.count({
       where: {
         ownerUserId,
         changeKey,
         createdAt: { gt: createdAfter },
+        NOT: { origin: 'DROP_SAMPLE', status: 'EXPIRED' },
       },
     });
     return count > 0;

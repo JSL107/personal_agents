@@ -203,8 +203,17 @@ export class JevSubconsciousGate {
 
   private async request(changes: RedactedChange[]): Promise<unknown> {
     const apiUrl = this.apiUrl;
-    const apiKey = this.configService.get<string>('TYPESAFE_API_KEY')?.trim();
-    if (!apiKey && !isLocalUrl(apiUrl)) {
+    const local = isLocalUrl(apiUrl);
+    // 원격에는 https 로만 키를 보낸다. 로컬 호환 서버(Kev)에는 TypeSafe 키를 넘길 이유가 없다.
+    if (!local && !apiUrl.startsWith('https://')) {
+      throw new Error(
+        'SUBCONSCIOUS_JEV_API_URL must use https for non-local hosts',
+      );
+    }
+    const apiKey = local
+      ? undefined
+      : this.configService.get<string>('TYPESAFE_API_KEY')?.trim();
+    if (!apiKey && !local) {
       throw new Error('TYPESAFE_API_KEY is not configured');
     }
 

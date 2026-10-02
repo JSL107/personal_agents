@@ -374,6 +374,26 @@ describe('SubconsciousEngine', () => {
       );
     });
 
+    it('PR 표본은 버린 판정에 다른 워커가 붙어 와도 CODE_REVIEWER 로 실행한다', async () => {
+      fakeGate.judge.mockResolvedValue([
+        { ...dropDecision, suggestedAgentType: AgentType.PM },
+      ]);
+
+      await buildEngine([prSource()], {
+        rate: 1,
+        dailyCap: 3,
+        random: () => 0,
+      }).runTick(OWNER, NOW);
+
+      expect(fakeProposalEmitter.emit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          decision: expect.objectContaining({
+            suggestedAgentType: AgentType.CODE_REVIEWER,
+          }),
+        }),
+      );
+    });
+
     it('추첨에 안 걸리면 올리지 않는다', async () => {
       await buildEngine([prSource()], {
         rate: 0.1,
