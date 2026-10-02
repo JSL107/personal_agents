@@ -3631,17 +3631,8 @@ final class OfficeScene: SKScene {
 
     /// 회의석 도착. 마지막으로 온 사람이면 다 같이 머무는 시계를 켠다. 회의가 이미 끝났으면 곧바로 흩어진다.
     private func arriveAtMeeting(_ agentType: String, meetingID: Int) {
+        // 회의가 끝났으면 `finishMeeting` 이 이미 이 사람을 자리로 돌려보냈다(`meetingOf` 가 비어 있다).
         guard meetingOf[agentType] == meetingID else {
-            return
-        }
-        guard meetings[meetingID] != nil else {
-            meetingOf[agentType] = nil
-            // 회의를 연 사람이면 자리에서 일을 시작하고, 아니면 자리로 돌아간다(`endMeeting`).
-            if meetingHosts.contains(agentType) {
-                endMeeting(agentType, thenWorking: agentType)
-            } else {
-                endStroll(agentType)
-            }
             return
         }
         if meetings[meetingID]?.gathering.arrive(agentType) == true {
@@ -3677,12 +3668,16 @@ final class OfficeScene: SKScene {
         ]), withKey: "meeting-\(meetingID)")
     }
 
-    /// 머무름이 끝났다 — 와 있는 사람이 한꺼번에 흩어진다. 아직 오는 중인 사람은 도착하자마자 흩어진다.
+    /// 머무름이 끝났다 — 와 있는 사람과 **아직 오는 중인 사람**이 한꺼번에 흩어진다.
+    ///
+    /// 오는 중인 사람도 여기서 정리한다. 기다림 상한이 대비하는 경우(걸음 완료 신호가 끝내 오지 않음)라면
+    /// 도착을 기다려 정리할 기회가 없다 — 주최자가 그렇게 남으면 `meetingHosts` 에 갇혀 이후 `.working` 이
+    /// 영영 무시된다. 정상 걸음은 상한(20초) 훨씬 전에 닿으므로 여기 남은 사람은 사실상 못 오는 사람이다.
     private func finishMeeting(_ meetingID: Int) {
         guard let entry = meetings.removeValue(forKey: meetingID) else {
             return
         }
-        for agentType in entry.gathering.present.sorted() {
+        for agentType in entry.gathering.present.union(entry.gathering.walking).sorted() {
             meetingOf[agentType] = nil
             endMeeting(agentType, thenWorking: entry.host)
         }
@@ -3703,6 +3698,13 @@ final class OfficeScene: SKScene {
                 || meetingOf[agentType].map { action(forKey: "meeting-\($0)") != nil } == true,
             gatherTimerArmed: meetingOf[agentType].map { action(forKey: "meeting-gather-\($0)") != nil } == true
         )
+    }
+
+    /// `--meeting-check` 전용 — 열린 회의의 머무름이 다 끝난 것처럼 마무리한다(창 없는 씬은 시간이 안 흐른다).
+    func finishMeetingsForCheck() {
+        for meetingID in meetings.keys.sorted() {
+            finishMeeting(meetingID)
+        }
     }
 
     /// `--meeting-check` 전용 — 걷는 중인 사람을 목적지에 세우고 도착 후 동작을 부른다.

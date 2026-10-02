@@ -75,6 +75,20 @@ func runOfficeMeetingCheck() -> Bool {
     let stayerAfter = scene.meetingProbe(stayer)
     let hostGathered = scene.meetingProbe(host)
 
+    // 끝내 안 온 주최자 — 걸음 완료 신호가 오지 않은 채(상한이 대비하는 경우) 회의가 끝난다.
+    // 끝난 뒤에도 회의 추적에 남으면 그 사람의 `.working` 이 영영 무시된다.
+    // 주최자를 먼저 자기 자리에 앉혀, 이번 회의에서는 걸어오는 중이게 한다(회의석에 서 있으면 곧바로 도착한다).
+    scene.perform([.returnHome(agentType: host)])
+    scene.finishWalkForCheck(host)
+    scene.perform([.meeting(agentTypes: attendees, thenWorking: host)])
+    let hostWalking = scene.meetingProbe(host)?.onMeetingSeat == true && scene.meetingProbe(host)?.tracked == true
+    scene.finishWalkForCheck(guest)
+    scene.finishWalkForCheck(stayer)
+    scene.finishMeetingsForCheck()
+    let strandedHost = scene.meetingProbe(host)
+    scene.perform([.working(agentType: host)])
+    let strandedHostAfterWork = scene.meetingProbe(host)
+
     let checks: [(String, Bool)] = [
         ("주최자는 뒤따른 .working·재동기화 뒤에도 회의석으로 간다", hostAfter?.onMeetingSeat == true && hostAfter?.tracked == true),
         ("먼저 온 사람은 늦은 사람을 기다린다(떠날 시계가 아직 안 돈다)", earlyArrivals.allSatisfy { $0?.leaveTimerArmed == false }),
@@ -83,6 +97,8 @@ func runOfficeMeetingCheck() -> Bool {
         ("나머지 참석자는 회의석에 남는다", stayerAfter?.onMeetingSeat == true && stayerAfter?.tracked == true),
         ("기다리던 사람이 빠지면 남은 전원의 시계가 함께 돈다", [stayerAfter, hostGathered].allSatisfy { $0?.leaveTimerArmed == true }),
         ("시계가 돌면 기다림 상한은 거둔다", stayerAfter?.gatherTimerArmed == false),
+        ("끝내 안 온 주최자도 회의가 끝나면 추적에서 빠지고 자리로 간다", hostWalking && strandedHost?.tracked == false && strandedHost?.headingHome == true),
+        ("그 주최자의 다음 .working 은 받는다", strandedHostAfterWork?.headingHome == true && strandedHostAfterWork?.tracked == false),
     ]
     for (name, passed) in checks {
         print("\(passed ? "✓" : "✗") \(name)")

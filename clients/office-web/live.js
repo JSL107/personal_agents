@@ -963,6 +963,9 @@ function holdMeeting(agentTypes, thenWorking) {
     const facing = table ? facingBetween(seat, table) : null;
     const here = roundedTile(body);
     strolling.delete(agentType);
+    // 이전 회의의 일반 참석자 표식을 지운다 — 같은 자리 분기는 `walkTo` 를 안 거쳐 남는다. 남으면 이번 회의의
+    // 주최자가 됐을 때 뒤따르는 `IN_PROGRESS` 를 일반 참석자의 일로 읽어 회의를 바로 끊는다(아래에서 다시 넣는다).
+    meeting.delete(agentType);
     // 배회 목적지 몇 곳(회의 테이블·책장 앞)은 회의석과 같은 칸이다. 이미 거기 서 있으면 경로가 비어
     // `walkTo` 가 실패하므로, 걷지 않고 그 자리에서 회의를 시작한다 — 건너뛰면 다음 사람이 같은 칸에 겹친다.
     // 회의를 연 사람은 메모하고 나머지는 자료를 본다(2D 쇼케이스의 `writing`·`reading` 과 같은 짝, 3D `MEETING_PAPERS`).
