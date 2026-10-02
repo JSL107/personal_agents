@@ -164,6 +164,10 @@ status() {
     echo "중지됨 (포트 $KEV_PORT)."
     return 0
   fi
+  if ! is_kev_process "$pid"; then
+    echo "중지됨 — 포트 $KEV_PORT 는 Kev 가 아닌 프로세스(pid $pid)가 쓰고 있습니다."
+    return 0
+  fi
   local response
   response="$(probe || true)"
   echo "실행 중: pid $pid · 포트 $KEV_PORT · 설정 모델 $KEV_MODEL"

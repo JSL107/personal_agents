@@ -30,14 +30,17 @@ const THRESHOLDS = [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.98];
 const BOOTSTRAP_ITERATIONS = 2000;
 const BOOTSTRAP_SEED = 7;
 // 이보다 적으면 어떤 차이도 0.5 와 구분되지 않는다(2026-10-02 실측: 양성 11·고유 7 로 구간 폭 ±0.17).
-const MIN_POSITIVES = 30;
-const MIN_CLUSTERS = 20;
+// 양성·음성 둘 다 본다 — AUROC 와 "무시 걸러냄" 은 음성이 모자라도 해석할 수 없고, 한쪽 클러스터가
+// 적으면 bootstrap 반복 다수가 정의되지 않아 구간이 흔들린다.
+const MIN_PER_LABEL = 30;
+const MIN_CLUSTERS_PER_LABEL = 10;
 // 같은 tick 안에서만 짝짓는다. 판정(legacy LLM 수십 초)과 카드 생성 사이의 여유. 이보다 오래된 shadow
 // 행은 다른 상태의 대상을 본 것이라 라벨을 붙이면 안 된다(shadow 를 끈 뒤 생긴 카드 등).
 const SAME_TICK_WINDOW_MS = 10 * 60 * 1000;
 
 interface JoinedRow {
   readonly changeKey: string;
+  readonly shadowModel: string;
   readonly origin: string;
   readonly label: boolean;
   readonly suggestedAgentType: string;
@@ -98,6 +101,7 @@ const loadJoinedRows = async (): Promise<JoinResult> => {
     }
     joined.push({
       changeKey: proposal.changeKey,
+      shadowModel: shadow.shadowModel,
       origin: proposal.origin,
       label: proposal.status === 'DISPATCHED',
       suggestedAgentType: proposal.suggestedAgentType,
@@ -109,33 +113,25 @@ const loadJoinedRows = async (): Promise<JoinResult> => {
   return { rows: joined, unmatched };
 };
 
-const main = async (): Promise<void> => {
-  const shadowCount = await prisma.subconsciousGateShadow.count();
-  const shadowErrors = await prisma.subconsciousGateShadow.count({
-    where: { error: { not: null } },
-  });
-  const { rows, unmatched } = await loadJoinedRows();
-
-  console.log('== subconscious 게이트 문턱 보정 ==');
-  console.log(
-    `shadow 원장 ${shadowCount}행 (호출 실패 ${shadowErrors}행) · 사람 판정과 붙은 행 ${rows.length} · 같은 회차 shadow 없는 판정 ${unmatched}건(제외)`,
-  );
-  for (const origin of ['GATE', 'DROP_SAMPLE']) {
-    console.log(
-      `  ${origin}: ${describeSample(rows.filter((row) => row.origin === origin))}`,
-    );
-  }
-
+const reportModel = (model: string, rows: readonly JoinedRow[]): void => {
+  console.log(`\n━━ shadow 모델: ${model} · ${describeSample(rows)}`);
   const scored = rows.filter((row) => row.promoteProbability !== null);
-  const positives = scored.filter((row) => row.label).length;
-  const clusters = new Set(scored.map((row) => row.changeKey)).size;
-  if (positives < MIN_POSITIVES || clusters < MIN_CLUSTERS) {
+  const positives = scored.filter((row) => row.label);
+  const negatives = scored.filter((row) => !row.label);
+  const positiveClusters = new Set(positives.map((row) => row.changeKey)).size;
+  const negativeClusters = new Set(negatives.map((row) => row.changeKey)).size;
+  if (
+    positives.length < MIN_PER_LABEL ||
+    negatives.length < MIN_PER_LABEL ||
+    positiveClusters < MIN_CLUSTERS_PER_LABEL ||
+    negativeClusters < MIN_CLUSTERS_PER_LABEL
+  ) {
     console.log(
-      `\n판정 불가 — 표본 부족 (점수 있는 실행 ${positives}/${MIN_POSITIVES}, 고유 대상 ${clusters}/${MIN_CLUSTERS}). 아래 수치는 참고용이다.`,
+      `판정 불가 — 표본 부족 (실행 ${positives.length}/${MIN_PER_LABEL}·고유 ${positiveClusters}/${MIN_CLUSTERS_PER_LABEL}, 무시 ${negatives.length}/${MIN_PER_LABEL}·고유 ${negativeClusters}/${MIN_CLUSTERS_PER_LABEL}). 아래 수치는 참고용이다.`,
     );
   }
 
-  console.log('\n[판별력]');
+  console.log('[판별력]');
   reportAuroc(
     'shadow promote 확률',
     scored.map((row) => ({
@@ -190,6 +186,36 @@ const main = async (): Promise<void> => {
     console.log('\n[담당 워커]');
     console.log(
       `  shadow 선택과 카드 워커 일치 ${matched}/${withAgent.length} · 항상 최빈값 기준선 ${majority}/${withAgent.length}`,
+    );
+  }
+};
+
+const main = async (): Promise<void> => {
+  const shadowCount = await prisma.subconsciousGateShadow.count();
+  const shadowErrors = await prisma.subconsciousGateShadow.count({
+    where: { error: { not: null } },
+  });
+  const { rows, unmatched } = await loadJoinedRows();
+
+  console.log('== subconscious 게이트 문턱 보정 ==');
+  console.log(
+    `shadow 원장 ${shadowCount}행 (호출 실패 ${shadowErrors}행) · 사람 판정과 붙은 행 ${rows.length} · 같은 회차 shadow 없는 판정 ${unmatched}건(제외)`,
+  );
+  for (const origin of ['GATE', 'DROP_SAMPLE']) {
+    console.log(
+      `  ${origin}: ${describeSample(rows.filter((row) => row.origin === origin))}`,
+    );
+  }
+
+  // 모델마다 점수 분포가 달라 한 표로 합치면 어느 모델에도 맞지 않는 문턱이 나온다.
+  const models = [...new Set(rows.map((row) => row.shadowModel))].sort();
+  if (models.length === 0) {
+    console.log('\n판정 불가 — 사람 판정과 붙은 shadow 행이 없다.');
+  }
+  for (const model of models) {
+    reportModel(
+      model,
+      rows.filter((row) => row.shadowModel === model),
     );
   }
 };
