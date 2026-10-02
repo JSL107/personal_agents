@@ -412,6 +412,34 @@ describe('AgentRunPrismaRepository.findRecentSucceededRuns', () => {
       }),
     );
   });
+
+  // 저녁 다이제스트가 "방금 나간 cron run 인가" 를 가르는 근거다 — 빠지면 수동 /worklog 를 걸러내지 못한다.
+  it('실행 경로(triggerType)를 함께 돌려준다', async () => {
+    const { repository, findMany } = buildRepository();
+    const endedAt = new Date('2026-07-07T10:00:00.000Z');
+    findMany.mockResolvedValue([
+      {
+        id: 7,
+        output: {},
+        endedAt,
+        inputSnapshot: {},
+        triggerType: 'DAILY_EVAL_CRON',
+      },
+    ]);
+
+    const runs = await repository.findRecentSucceededRuns({
+      agentType: 'WORK_REVIEWER' as never,
+      sinceDays: 1,
+      limit: 1,
+    });
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({ triggerType: true }),
+      }),
+    );
+    expect(runs[0].triggerType).toBe('DAILY_EVAL_CRON');
+  });
 });
 
 describe('AgentRunPrismaRepository.findRecentFailedRuns', () => {

@@ -18,36 +18,67 @@ import {
 } from '../../domain/autopilot-task.port';
 
 // 업무 회고 run 이 "이번 저녁 다이제스트에서 방금 나간 것" 으로 볼 수 있는 시간 폭. evening 그룹은
-// work-reviewer → daily-eval 을 연달아 돌리므로 그 사이는 수 분이다.
-// ponytail: 시각으로 같은 회차를 추정한다 — 그룹이 결과를 task 끼리 넘기게 되면 그 값으로 바꾼다.
+// work-reviewer → daily-eval 을 연달아 돌리므로 그 사이는 수 분이다. 수동 /worklog 는 시간이 아니라
+// 실행 경로(triggerType)로 걸러낸다 — 30분 안에 돈 수동 run 은 시간 조건을 통과하기 때문이다.
 const SAME_DIGEST_WINDOW_MS = 30 * 60 * 1000;
 
-// PO 평가가 합성에 쓴 업무 회고 run 이 이번 다이제스트 스레드에 「정량 근거」를 이미 실었는가.
-// 셋 다 맞아야 한다: 같은 run 이다(오늘 앞서 돈 수동 /worklog 가 아니다), 방금 끝났다(오늘 저녁
-// work-reviewer task 가 실패해 이전 run 을 집은 회차가 아니다), 정량 근거가 비어 있지 않다(비면
-// 업무 회고 스레드에 그 칸 자체가 없다). 하나라도 어긋나면 careerLog 정량 성과를 그대로 보인다 —
+// 숫자 토큰 — 숫자와 바로 뒤 단위를 함께 본다("28건", "8552줄"). 숫자만 보면 "1건" 같은 흔한 값이
+// 엉뚱한 항목과 맞아 고유 성과가 숨는다. 쉼표 자리수와 숫자·단위 사이 공백은 떼고 비교한다.
+const extractNumbers = (text: string): string[] =>
+  (text.match(/\d[\d,]*(?:\.\d+)?\s*[가-힣A-Za-z%]*/g) ?? []).map((token) =>
+    token.replace(/[,\s]/g, ''),
+  );
+
+// careerLog 정량 항목이 업무 회고 「정량 근거」에 이미 나간 것인가. 두 목록은 다른 모델 호출이 쓴
+// 문장이라 글자로는 거의 맞지 않는다 — 대신 숫자를 본다. 항목의 숫자가 **전부** 업무 회고 쪽에
+// 있을 때만 같은 성과로 친다. 숫자가 없는 항목은 비교할 근거가 없으니 같다고 보지 않는다(보인다).
+export const isCoveredByWorklog = (
+  item: string,
+  worklogQuantitative: readonly string[],
+): boolean => {
+  const numbers = extractNumbers(item);
+  if (numbers.length === 0) {
+    return false;
+  }
+  const shown = new Set(worklogQuantitative.flatMap(extractNumbers));
+  return numbers.every((number) => shown.has(number));
+};
+
+// PO 평가가 합성에 쓴 업무 회고 run 이 이번 다이제스트 스레드에 「정량 근거」를 실었다면 그 목록을,
+// 아니면 null 을 돌려준다. 넷 다 맞아야 한다: 같은 run 이다, 저녁 자동 실행이다(수동 /worklog 가
+// 아니다), 방금 끝났다(오늘 저녁 work-reviewer 가 실패해 이전 cron run 을 집은 회차가 아니다),
+// 정량 근거가 비어 있지 않다. 하나라도 어긋나면 null — careerLog 정량 성과를 그대로 보인다.
 // 숫자가 두 번 나오는 쪽이 한 번도 안 나오는 쪽보다 싸다.
-export const isQuantitativeShownInDigest = (
+export const findQuantitativeShownInDigest = (
   workReviewerRunId: number | undefined,
   latestWorklogRun: SucceededAgentRunSnapshot | undefined,
   now: Date,
-): boolean => {
+): string[] | null => {
   if (workReviewerRunId === undefined || latestWorklogRun === undefined) {
-    return false;
+    return null;
   }
   if (latestWorklogRun.id !== workReviewerRunId) {
-    return false;
+    return null;
+  }
+  if (latestWorklogRun.triggerType !== TriggerType.DAILY_EVAL_CRON) {
+    return null;
   }
   if (
     now.getTime() - latestWorklogRun.endedAt.getTime() >
     SAME_DIGEST_WINDOW_MS
   ) {
-    return false;
+    return null;
   }
   const quantitative = (
     latestWorklogRun.output as { impact?: { quantitative?: unknown } } | null
   )?.impact?.quantitative;
-  return Array.isArray(quantitative) && quantitative.length > 0;
+  if (!Array.isArray(quantitative)) {
+    return null;
+  }
+  const items = quantitative.filter(
+    (item): item is string => typeof item === 'string',
+  );
+  return items.length > 0 ? items : null;
 };
 
 // Daily Eval 이관 — 매일 19:00 KST PO_EVAL(range=TODAY) 자동 회고.
@@ -89,15 +120,23 @@ export class PoEvalAutopilotTask implements AutopilotTask {
               sinceDays: 1,
               limit: 1,
             });
+      const shownQuantitative =
+        workReviewerRunId === undefined
+          ? null
+          : findQuantitativeShownInDigest(
+              workReviewerRunId,
+              latestWorklogRun,
+              new Date(),
+            );
       const formatted = formatEvaluationOutput(
         humanized,
-        workReviewerRunId !== undefined &&
-          isQuantitativeShownInDigest(
-            workReviewerRunId,
-            latestWorklogRun,
-            new Date(),
-          )
-          ? { quantitativeShownElsewhere: { workReviewerRunId } }
+        workReviewerRunId !== undefined && shownQuantitative
+          ? {
+              quantitativeShownElsewhere: {
+                workReviewerRunId,
+                isShown: (item) => isCoveredByWorklog(item, shownQuantitative),
+              },
+            }
           : {},
       );
       const summaryText = intro + formatted.summary;

@@ -1,9 +1,11 @@
 import { PoEvalException } from '../../../agent/po-eval/domain/po-eval.exception';
 import { PoEvalErrorCode } from '../../../agent/po-eval/domain/po-eval-error-code.enum';
+import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { DomainStatus } from '../../../common/exception/domain-status.enum';
 import { HumanizeService } from '../../../humanize/application/humanize.service';
 import {
-  isQuantitativeShownInDigest,
+  findQuantitativeShownInDigest,
+  isCoveredByWorklog,
   PoEvalAutopilotTask,
 } from './po-eval.autopilot-task';
 
@@ -112,17 +114,25 @@ describe('PoEvalAutopilotTask', () => {
       output: { impact: { quantitative: ['PR 28건 머지'] } },
       endedAt: new Date('2026-06-17T10:01:00Z'),
       inputSnapshot: {},
+      triggerType: TriggerType.DAILY_EVAL_CRON,
       ...overrides,
     });
 
-    it('같은 run · 방금 끝남 · 정량 근거 있음 → 생략', () => {
-      expect(isQuantitativeShownInDigest(10, worklogRun(), NOW)).toBe(true);
+    it('같은 run · 저녁 자동 실행 · 방금 끝남 · 정량 근거 있음 → 그 목록을 돌려준다', () => {
+      expect(
+        findQuantitativeShownInDigest(10, worklogRun() as never, NOW),
+      ).toEqual(['PR 28건 머지']);
     });
 
     it.each([
       ['합성에 쓴 run 이 최신이 아니다', 10, worklogRun({ id: 11 })],
       [
-        '오래전에 끝난 run 이다(오늘 저녁 업무 회고가 실패한 회차)',
+        '30분 안에 끝난 수동 /worklog 다(오늘 저녁 업무 회고는 실패)',
+        10,
+        worklogRun({ triggerType: TriggerType.SLACK_COMMAND_WORKLOG }),
+      ],
+      [
+        '오래전에 끝난 run 이다',
         10,
         worklogRun({ endedAt: new Date('2026-06-17T05:00:00Z') }),
       ],
@@ -133,14 +143,26 @@ describe('PoEvalAutopilotTask', () => {
       ],
       ['업무 회고 run 을 못 찾았다', 10, undefined],
       ['PO 평가가 업무 회고를 안 썼다', undefined, worklogRun()],
-    ])('%s → 그대로 싣는다', (_label, runId, run) => {
+    ])('%s → null(그대로 싣는다)', (_label, runId, run) => {
       expect(
-        isQuantitativeShownInDigest(
+        findQuantitativeShownInDigest(
           runId as number | undefined,
           run as never,
           NOW,
         ),
-      ).toBe(false);
+      ).toBeNull();
+    });
+
+    it.each([
+      ['숫자가 모두 업무 회고에 있다', 'PR 28건, 8,552줄 변경', true],
+      ['쉼표 자리수만 다르다', '8552줄', true],
+      ['업무 회고에 없는 숫자가 하나라도 있다', 'PR 28건 · 파일 255개', false],
+      ['숫자가 없다', 'Router 도입', false],
+      ['숫자는 같아도 단위가 다르다', '28개 화면', false],
+    ])('isCoveredByWorklog — %s → %s', (_label, item, expected) => {
+      expect(isCoveredByWorklog(item, ['PR 28건 머지', '8,552줄 추가'])).toBe(
+        expected,
+      );
     });
 
     const evaluation = {
@@ -151,7 +173,7 @@ describe('PoEvalAutopilotTask', () => {
         schemaVersion: 1,
         period: '2026-06-17',
         achievements: {
-          quantitative: ['PR 28건 머지', '8,552줄'],
+          quantitative: ['PR 28건 머지', '8,552줄', '파일 255개 수정'],
           qualitative: ['Router 도입 완료'],
         },
         technologies: [],
@@ -159,8 +181,8 @@ describe('PoEvalAutopilotTask', () => {
       },
     };
 
-    it('조건이 맞으면 정량 성과 목록 대신 안내 한 줄만 남기고 정성 성과는 유지한다', async () => {
-      const task = new PoEvalAutopilotTask(
+    const runTask = async (latestWorklogRun: unknown) =>
+      new PoEvalAutopilotTask(
         {
           execute: jest.fn().mockResolvedValue({
             result: evaluation,
@@ -169,49 +191,38 @@ describe('PoEvalAutopilotTask', () => {
           }),
         } as never,
         makeHumanizeService(),
-        makeAgentRunService([
-          {
-            id: 10,
-            output: { impact: { quantitative: ['PR 28건 머지'] } },
-            endedAt: new Date(),
-            inputSnapshot: {},
-          },
-        ]),
+        makeAgentRunService([latestWorklogRun]),
+      ).run(CTX);
+
+    it('업무 회고에 나간 숫자만 빼고, 업무 회고에 없던 정량 항목과 정성 성과는 남긴다', async () => {
+      const out = await runTask(
+        worklogRun({
+          endedAt: new Date(),
+          output: { impact: { quantitative: ['PR 28건', '8,552줄'] } },
+        }),
       );
 
-      const out = await task.run(CTX);
-
-      expect(out.detailText).not.toContain('*정량 성과*');
-      expect(out.detailText).not.toContain('8,552줄');
+      expect(out.detailText).toContain('*정량 성과*');
+      expect(out.detailText).toContain('파일 255개 수정');
+      expect(out.detailText).not.toContain('PR 28건 머지');
       expect(out.detailText).toContain(
-        '정량 성과 2건은 업무 회고(run #10) 「정량 근거」와 같은 근거라',
+        '정량 성과 2건은 업무 회고(run #10) 「정량 근거」와 같은 숫자라',
       );
       expect(out.detailText).toContain('*정성 성과*');
     });
 
-    it('업무 회고 run 이 다르면 정량 성과를 그대로 싣는다', async () => {
-      const task = new PoEvalAutopilotTask(
-        {
-          execute: jest.fn().mockResolvedValue({
-            result: evaluation,
-            modelUsed: 'codex',
-            agentRunId: 50,
-          }),
-        } as never,
-        makeHumanizeService(),
-        makeAgentRunService([
-          {
-            id: 99,
-            output: { impact: { quantitative: ['x'] } },
-            endedAt: new Date(),
-            inputSnapshot: {},
-          },
-        ]),
+    it('30분 안의 수동 /worklog 가 최신이면 정량 성과를 하나도 빼지 않는다', async () => {
+      const out = await runTask(
+        worklogRun({
+          endedAt: new Date(),
+          triggerType: TriggerType.SLACK_COMMAND_WORKLOG,
+          output: { impact: { quantitative: ['PR 28건', '8,552줄'] } },
+        }),
       );
 
-      const out = await task.run(CTX);
-
-      expect(out.detailText).toContain('*정량 성과*');
+      expect(out.detailText).toContain('PR 28건 머지');
+      expect(out.detailText).toContain('8,552줄');
+      expect(out.detailText).not.toContain('생략합니다');
     });
   });
 });
