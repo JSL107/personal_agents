@@ -463,6 +463,75 @@ describe('AutopilotOrchestrator', () => {
       expect(postMessage).toHaveBeenCalledTimes(2);
     });
 
+    // 저녁 daily-eval 은 메인에 건수 한 줄만 두고 Wins·Blockers 를 상세에만 싣는다.
+    // 그 상세를 삼키면 그날 평가 내용이 Slack 에서 통째로 사라진다.
+    it('상세가 유일한 사본이면 스레드 실패 시 채널에 대신 붙인다', async () => {
+      const uploadImageFile = jest.fn();
+      const postMessage = jest
+        .fn()
+        .mockResolvedValueOnce({ ts: '111.222' })
+        .mockRejectedValueOnce(new Error('rate_limited'))
+        .mockResolvedValue({ ts: '333.444' });
+
+      await runWith({
+        uploadImageFile,
+        postMessage,
+        results: [
+          {
+            skip: false,
+            summaryText: '건수 한 줄',
+            detailText: 'Wins·Blockers 본문',
+            detailIsOnlyCopy: true,
+          },
+        ],
+      });
+
+      expect(postMessage).toHaveBeenNthCalledWith(3, {
+        target: 'C1',
+        text: 'Wins·Blockers 본문',
+      });
+      expect(postMessage).toHaveBeenCalledTimes(3);
+    });
+
+    it('상세가 유일한 사본이면 메인 ts 가 없어도 채널에 올린다', async () => {
+      const uploadImageFile = jest.fn();
+      const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
+
+      await runWith({
+        uploadImageFile,
+        postMessage,
+        results: [
+          {
+            skip: false,
+            summaryText: '건수 한 줄',
+            detailText: 'Wins·Blockers 본문',
+            detailIsOnlyCopy: true,
+          },
+        ],
+      });
+
+      expect(postMessage).toHaveBeenNthCalledWith(2, {
+        target: 'C1',
+        text: 'Wins·Blockers 본문',
+      });
+      expect(postMessage).toHaveBeenCalledTimes(2);
+    });
+
+    it('표시 없는 상세는 메인 ts 가 없어도 채널에 올리지 않는다 — 종전 동작', async () => {
+      const uploadImageFile = jest.fn();
+      const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
+
+      await runWith({
+        uploadImageFile,
+        postMessage,
+        results: [
+          { skip: false, summaryText: '요약', detailText: '상세 전문' },
+        ],
+      });
+
+      expect(postMessage).toHaveBeenCalledTimes(1);
+    });
+
     it('그림 없이 보낸 재시도까지 실패하면 발송 실패로 올린다', async () => {
       const uploadImageFile = jest.fn().mockResolvedValue({ fileId: 'F1' });
       const postMessage = jest
