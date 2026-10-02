@@ -862,7 +862,29 @@ describe('EveningRetroPublishTask', () => {
       expect(result.runVerdict).toEqual({
         agentRunId: 1,
         facets: ['retro_problem', 'overall'],
+        quote: '확인 없이 결론을 썼다',
       });
+    });
+
+    it('(s-1b) 인용은 윤문 뒤 화면에 나간 문장이다 (원장의 모델 원문이 아니다)', async () => {
+      const { task } = makeTask({
+        prs: [PR_ITEM],
+        worklogRuns: [],
+        dailyEvalRuns: [],
+        routeResult: {
+          ...RETRO_RESPONSE,
+          text: JSON.stringify({
+            ...JSON.parse(RETRO_RESPONSE.text),
+            retrospective: { problem: '확인 없이 결론을 썼다' },
+          }),
+        },
+        humanized: { 'retrospective.problem': '윤문된 문제 문장' },
+      });
+
+      const result = await task.run(CTX);
+
+      expect(result.summaryText).toContain('윤문된 문제 문장');
+      expect(result.runVerdict?.quote).toBe('윤문된 문제 문장');
     });
 
     it('(s-2) 문제 칸이 비면 회고 전체 축만 낸다', async () => {

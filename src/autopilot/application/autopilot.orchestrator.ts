@@ -17,6 +17,7 @@ import {
   AUTOPILOT_TASKS,
   AutopilotPreviewRequest,
   AutopilotTask,
+  AutopilotTaskFile,
   AutopilotTaskImage,
   AutopilotTaskResult,
 } from '../domain/autopilot-task.port';
@@ -163,6 +164,8 @@ export class AutopilotOrchestrator {
       headline?: string;
       // 스레드에 함께 올릴 이미지. 발송 실패는 요약·상세를 무르지 않는다.
       image?: AutopilotTaskImage;
+      // 상세 댓글 뒤에 올릴 스레드 파일. 상세와 같은 몫이라 업로드 실패는 상세 유실로 센다.
+      file?: AutopilotTaskFile;
       onDelivered?: () => Promise<void>;
       unfurlLinks?: boolean;
       // 이 item 을 낸 task 가 멘션 대상인지. 그룹의 item 중 하나라도 true 면 메인 메시지에
@@ -217,6 +220,9 @@ export class AutopilotOrchestrator {
             detail: result.detailText,
             headline: result.headlineText,
             image: result.detailImage,
+            // 파일은 상세에 딸린다 — 상세가 없으면 `detailItemIndex` 도 없어 업로드 실패를
+            // 카드에 이어 줄 길이 없으므로 싣지 않는다(포트 주석의 "이것만 주면 무시").
+            file: result.detailText ? result.detailFile : undefined,
             onDelivered: result.onDelivered,
             unfurlLinks: result.unfurlLinks,
             notifyOwner: NOTIFY_OWNER_TASK_IDS.has(entry.taskId),
@@ -440,6 +446,30 @@ export class AutopilotOrchestrator {
             ({ ts } = await postMain(undefined));
           }
           if (ts) {
+            // 판정 버튼은 스레드 첫 댓글로 둔다. 상세 뒤에 두면 앞선 task 의 상세가 몇 화면을
+            // 차지해 버튼이 스레드 맨 아래에 묻힌다(2026-10-01 실측). 판정할 문장은 댓글 머리에
+            // 인용으로 실려 있어 위로 되짚지 않아도 된다. 실패해도 요약은 이미 나갔으니 무르지
+            // 않지만, 그날 판정 기회가 사라진 것이라 로그로 남긴다(누름률을 셀 때 "버튼이 안
+            // 나간 날" 을 가려낼 유일한 흔적이다). 다른 task 의 상세 순서는 그대로다.
+            for (const item of items) {
+              if (!item.runVerdict) {
+                continue;
+              }
+              try {
+                await this.slackNotifier.postMessage({
+                  target: resolved,
+                  text: RUN_VERDICT_FALLBACK_TEXT,
+                  threadTs: ts,
+                  runVerdict: item.runVerdict,
+                });
+              } catch (error: unknown) {
+                const message =
+                  error instanceof Error ? error.message : String(error);
+                this.logger.warn(
+                  `Autopilot[${groupKey}] 판정 버튼 발송 실패 (agentRunId=${item.runVerdict.agentRunId}): ${message}`,
+                );
+              }
+            }
             for (const [index, item] of items.entries()) {
               // 그림이 메인으로 간 회차는 요약도 스레드로 내려간다 — 채널에 남는 것은
               // 헤드라인과 그림뿐이고, 종목별 내역은 답글을 펼쳐야 보인다. 상세가 따로
@@ -506,6 +536,25 @@ export class AutopilotOrchestrator {
                   }
                 }
               }
+              // 상세에 딸린 파일 — 실패는 상세 유실과 같다(후처리 건너뜀, 전문 의존 카드 보류).
+              if (item.file) {
+                try {
+                  await this.slackNotifier.uploadTextFile({
+                    target: resolved,
+                    threadTs: ts,
+                    content: item.file.content,
+                    filename: item.file.filename,
+                    title: item.file.title,
+                  });
+                } catch (error: unknown) {
+                  detailUndelivered.add(index);
+                  const message =
+                    error instanceof Error ? error.message : String(error);
+                  this.logger.warn(
+                    `Autopilot[${groupKey}] 스레드 파일 업로드 실패 (메인 발송 유지): ${message}`,
+                  );
+                }
+              }
               // 그림이 메인으로 올라간 회차는 스레드에 같은 그림을 또 올리지 않는다.
               if (item.image && !mainImage) {
                 try {
@@ -524,25 +573,6 @@ export class AutopilotOrchestrator {
                     error instanceof Error ? error.message : String(error);
                   this.logger.warn(
                     `Autopilot[${groupKey}] 스레드 이미지 업로드 실패 (요약·상세 발송 유지): ${message}`,
-                  );
-                }
-              }
-              // 판정 버튼은 상세 뒤에 둔다 — 읽고 나서 누르는 순서다. 실패해도 요약·상세는
-              // 이미 나갔으니 무르지 않지만, 그날 판정 기회가 사라진 것이라 로그로 남긴다
-              // (누름률을 셀 때 "버튼이 안 나간 날" 을 가려낼 유일한 흔적이다).
-              if (item.runVerdict) {
-                try {
-                  await this.slackNotifier.postMessage({
-                    target: resolved,
-                    text: RUN_VERDICT_FALLBACK_TEXT,
-                    threadTs: ts,
-                    runVerdict: item.runVerdict,
-                  });
-                } catch (error: unknown) {
-                  const message =
-                    error instanceof Error ? error.message : String(error);
-                  this.logger.warn(
-                    `Autopilot[${groupKey}] 판정 버튼 발송 실패 (agentRunId=${item.runVerdict.agentRunId}): ${message}`,
                   );
                 }
               }

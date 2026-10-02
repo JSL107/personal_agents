@@ -34,6 +34,15 @@ export interface AutopilotTaskImage {
   title: string;
 }
 
+// 스레드에 파일로 올릴 긴 본문. 슬랙은 파일을 몇 줄짜리 접힌 미리보기로 보여 주고, 눌러야
+// 전문이 열린다 — 한 화면을 넘는 본문(블로그 초안 전문)이 스레드를 덮지 않게 하는 자리다.
+export interface AutopilotTaskFile {
+  content: string;
+  // 확장자를 포함한다 — 슬랙이 이 이름으로 미리보기 형식(.md 등)을 정한다.
+  filename: string;
+  title: string;
+}
+
 export interface AutopilotTaskResult {
   // 게시할 내용 없으면 skip=true → 오케스트레이터가 전달 안 함(빈 알림 방지).
   skip: boolean;
@@ -52,6 +61,11 @@ export interface AutopilotTaskResult {
   // 이미지 업로드가 실패해도 요약·상세는 그대로 나간다. 그림은 요약을 보조하는 것이라
   // 그것 하나로 회차를 실패시키지 않는다 — 다만 실패는 로그로 남는다.
   detailImage?: AutopilotTaskImage;
+  // 있으면 `detailText` 댓글 바로 뒤에 스레드 파일로 올라간다. `detailText` 와 **같은 상세로
+  // 취급한다** — 업로드가 실패하면 상세 유실과 똑같이 그 task 의 onDelivered 를 건너뛰고,
+  // `requiresDetailDelivery` 카드도 만들지 않는다. 승인 근거를 파일로 옮긴 task 에서 파일이
+  // 빠지면 확인할 것이 없는 카드가 남기 때문이다. `detailText` 없이 이것만 주면 무시된다.
+  detailFile?: AutopilotTaskFile;
   // 채널에 남길 한 줄. `detailImage` 와 함께 주면 "헤드라인 + 그림" 이 메인 메시지가 되고
   // `summaryText` 는 그 스레드 댓글로 내려간다. 종목별 내역처럼 긴 본문이 채널을 덮지 않게
   // 하면서도, 채널만 훑는 사람이 그날의 결론을 읽을 수 있게 하는 자리다.
@@ -62,11 +76,18 @@ export interface AutopilotTaskResult {
   // 요약이 합쳐지므로(orchestrator) 설정은 메시지 단위다 — 하나라도 끄기를 요청하면 끈다.
   // 링크를 여러 개 싣는 목록형 카드(job-feed 등)가 미리보기에 파묻히는 것을 막는 용도다.
   unfurlLinks?: boolean;
-  // 있으면 메인 메시지의 스레드에 이 실행의 판정 버튼 댓글을 붙인다 — 요약 본문은 건드리지 않는다.
+  // 있으면 메인 메시지의 스레드 **첫 댓글**로 이 실행의 판정 버튼을 붙인다 — 요약 본문은 건드리지 않는다.
+  // 다른 task 의 상세 뒤에 두면 스레드를 끝까지 내려야 보여 묻힌다(2026-10-01 실측).
+  // `quote` 는 판정 대상 문장(화면에 나간 그대로)이다. 댓글 머리에 인용으로 실어, 무엇을 판정하는지
+  // 위로 되짚지 않아도 보이게 한다. 길면 발송 어댑터가 자른다.
   // 버튼 값에 agentRunId 가 실려, 여러 task 의 요약이 합쳐진 메시지에서도 판정이 이 실행에
   // 정확히 귀속된다(사람 피드백 설계 2026-09-30 §1-2·§3). 판정 대상인 task 만 채운다.
   // 요약을 실은 회차에만 붙는다 — 판정할 대상이 화면에 없으면 버튼도 없다.
-  runVerdict?: { agentRunId: number; facets: RunVerdictFacet[] };
+  runVerdict?: {
+    agentRunId: number;
+    facets: RunVerdictFacet[];
+    quote?: string;
+  };
   // T1_PREVIEW 전용 — 있으면 orchestrator 가 PreviewGate 승인 버튼 발송.
   preview?: AutopilotPreviewRequest;
   // T1_PREVIEW 전용 — 있으면 orchestrator 가 preview 단수와 합쳐 각각 PreviewGate 카드 발송.

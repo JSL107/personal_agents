@@ -24,7 +24,10 @@ import {
   toReadableSlackArgs,
 } from './format/message-blocks.builder';
 import { buildPreviewBlocks } from './format/preview-message.builder';
-import { buildRunVerdictBlocks } from './format/run-verdict-message.builder';
+import {
+  buildRunVerdictBlocks,
+  formatRunVerdictQuote,
+} from './format/run-verdict-message.builder';
 import { recordSlackSendLength } from './format/slack-send-length.recorder';
 import { buildSubconsciousProposalBlocks } from './format/subconscious-proposal-message.builder';
 
@@ -301,7 +304,11 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     threadTs?: string;
     unfurlLinks?: boolean;
     image?: { fileId: string; altText: string };
-    runVerdict?: { agentRunId: number; facets: RunVerdictFacet[] };
+    runVerdict?: {
+      agentRunId: number;
+      facets: RunVerdictFacet[];
+      quote?: string;
+    };
   }): Promise<{ ts: string | undefined }> {
     const origin = threadTs ? 'push-thread' : 'push';
     const response = await this.postChat({
@@ -315,6 +322,7 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
               agentRunId: runVerdict.agentRunId,
               facets: runVerdict.facets,
               verdicts: {},
+              quoteMrkdwn: formatRunVerdictQuote(runVerdict.quote),
             }) as never,
           }
         : image
@@ -356,6 +364,31 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
       ? await app.client.filesUploadV2({ ...destination, thread_ts: threadTs })
       : await app.client.filesUploadV2(destination);
     return { fileId: firstUploadedFileId(response) };
+  }
+
+  // 텍스트 본문을 스레드 파일로 올린다. 이미지가 아니라 처리 대기(`waitUntilImageReady`)가
+  // 필요 없다 — 슬랙이 텍스트 미리보기를 늦게 만들어도 파일 자체는 이미 열린다.
+  async uploadTextFile({
+    target,
+    threadTs,
+    content,
+    filename,
+    title,
+  }: {
+    target: string;
+    threadTs: string;
+    content: string;
+    filename: string;
+    title: string;
+  }): Promise<void> {
+    const app = this.assertAppReady();
+    await app.client.filesUploadV2({
+      channel_id: target,
+      thread_ts: threadTs,
+      content,
+      filename,
+      title,
+    });
   }
 
   // 채널 공유 없이 파일만 올린다(`channel_id` 를 주지 않는다). 공유는 이 id 를 이미지

@@ -30,7 +30,11 @@ export interface SlackNotifierPort {
     threadTs?: string;
     unfurlLinks?: boolean;
     image?: { fileId: string; altText: string };
-    runVerdict?: { agentRunId: number; facets: RunVerdictFacet[] };
+    runVerdict?: {
+      agentRunId: number;
+      facets: RunVerdictFacet[];
+      quote?: string;
+    };
   }): Promise<{ ts: string | undefined }>;
   // T1_PREVIEW 승인 카드. 반환된 좌표(channelId/messageTs)로 이후 chat.update(카드 갱신)가 가능.
   //
@@ -71,4 +75,13 @@ export interface SlackNotifierPort {
     filename: string;
     title: string;
   }): Promise<{ fileId: string }>;
+  // 텍스트 본문을 스레드에 파일로 올린다(`uploadImage` 와 같은 `files:write` 경로). 긴 본문을
+  // 접힌 미리보기로 싣는 용도라, 업로드 실패는 예외로 던져 호출부가 "상세 유실" 로 셀 수 있게 한다.
+  uploadTextFile(input: {
+    target: string;
+    threadTs: string;
+    content: string;
+    filename: string;
+    title: string;
+  }): Promise<void>;
 }

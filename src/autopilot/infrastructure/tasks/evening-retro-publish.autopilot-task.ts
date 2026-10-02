@@ -294,17 +294,23 @@ export class EveningRetroPublishTask implements AutopilotTask {
 
       // 판정 버튼 — 문제 칸이 빈 날은 「지어냈나」 를 물을 대상이 없어 그 축을 내지 않는다
       // (KPT 설계 §3-2 의 사람 판정 자리. 형식이 깨진 회차도 문제 칸이 없으니 같다).
-      const verdictFacets: RunVerdictFacet[] =
-        parsed.retrospective.problem?.trim()
-          ? ['retro_problem', 'overall']
-          : ['overall'];
+      // 인용은 화면에 나간 문장 그대로여야 한다 — 그래서 윤문을 거친 `parsed` 에서 읽는다
+      // (원장의 `outcome.result` 는 윤문 전 원문이라 화면과 다르다).
+      const problemSentence = parsed.retrospective.problem?.trim();
+      const verdictFacets: RunVerdictFacet[] = problemSentence
+        ? ['retro_problem', 'overall']
+        : ['overall'];
 
       return {
         skip: false,
         summaryText,
         detailText,
         previews,
-        runVerdict: { agentRunId: outcome.agentRunId, facets: verdictFacets },
+        runVerdict: {
+          agentRunId: outcome.agentRunId,
+          facets: verdictFacets,
+          ...(problemSentence ? { quote: problemSentence } : {}),
+        },
       };
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);

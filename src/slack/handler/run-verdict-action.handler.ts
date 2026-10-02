@@ -19,6 +19,7 @@ import { SlackHandler } from '../domain/port/slack-handler.port';
 import {
   buildRunVerdictBlocks,
   parseRunVerdictValue,
+  readRunVerdictQuote,
   RUN_VERDICT_ACTION_PATTERN,
   RUN_VERDICT_FALLBACK_TEXT,
 } from '../format/run-verdict-message.builder';
@@ -117,6 +118,7 @@ export class RunVerdictActionHandler implements SlackHandler {
                 agentRunId,
                 facets,
                 verdicts,
+                quoteMrkdwn: readRunVerdictQuote(body),
               }) as never,
             });
           });

@@ -10,8 +10,16 @@ import { FormattedReport } from './formatted-report.type';
 //   *💼 이력서용 careerLog ({period}, schemaVersion=1)*
 //   *정량 성과* / *정성 성과* / *기술 스택* / _Impact_
 //   _합성 source: workReviewer=#X, poShadow=#Y, impactReporter=#Z (missing: ...)_
+// `quantitativeShownElsewhere` — 같은 메시지의 다른 스레드 댓글(저녁 업무 회고 「정량 근거」)이
+// 이미 같은 숫자를 싣고 있을 때만 켠다. 켜면 「정량 성과」 목록 대신 어디서 보면 되는지 한 줄만
+// 남긴다. 화면 배치만 바꾼다 — careerLog 원장·저장 형태는 그대로다. 미지정이면 종전 출력.
+export interface FormatEvaluationOptions {
+  quantitativeShownElsewhere?: { workReviewerRunId: number };
+}
+
 export const formatEvaluationOutput = (
   output: EvaluationOutput,
+  options: FormatEvaluationOptions = {},
 ): FormattedReport => {
   const rangeLabel = output.range === 'WEEK' ? '최근 7일' : '최근 24시간';
   const summaryLines: string[] = [`*📊 PO 통합 평가 — ${rangeLabel}*`];
@@ -38,7 +46,13 @@ export const formatEvaluationOutput = (
   const detailLines: string[] = [
     `*💼 이력서용 careerLog — ${escapeSlackMrkdwn(cl.period)} (schemaVersion=${cl.schemaVersion})*`,
   ];
-  if (cl.achievements.quantitative.length > 0) {
+  const shownElsewhere = options.quantitativeShownElsewhere;
+  if (cl.achievements.quantitative.length > 0 && shownElsewhere) {
+    detailLines.push('');
+    detailLines.push(
+      `_정량 성과 ${cl.achievements.quantitative.length}건은 업무 회고(run #${shownElsewhere.workReviewerRunId}) 「정량 근거」와 같은 근거라 여기서는 생략합니다._`,
+    );
+  } else if (cl.achievements.quantitative.length > 0) {
     detailLines.push('');
     detailLines.push('*정량 성과*');
     for (const item of cl.achievements.quantitative) {
