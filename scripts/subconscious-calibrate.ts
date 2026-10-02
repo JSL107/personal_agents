@@ -1,7 +1,9 @@
 // subconscious 게이트 문턱 오프라인 보정 — shadow 원장(subconscious_gate_shadow)과 사람 판정
 // (subconscious_proposal: DISPATCHED=실행, DISMISSED=무시)을 붙여 판별력과 문턱별 효과를 출력한다.
 //
-// 이 스크립트는 문턱을 추천만 한다. 바꾸는 것은 사람이 .env 의 SUBCONSCIOUS_JEV_*_THRESHOLD 로 한다.
+// 이 스크립트는 promote 문턱(SUBCONSCIOUS_JEV_PROMOTE_THRESHOLD)을 볼 재료만 낸다. 실제 hybrid 게이트는
+// promote AND agent confidence 를 둘 다 넘을 때만 확신 승격하고 나머지는 legacy 가 다시 판정하므로,
+// 문턱 표는 "shadow 모델 단독 게이트였다면" 의 가정이다. 바꾸는 것은 사람이 .env 로 한다.
 // 읽기만 하고 아무것도 쓰지 않는다.
 //
 // 사용:
@@ -140,7 +142,15 @@ const reportModel = (model: string, rows: readonly JoinedRow[]): void => {
       label: row.label,
     })),
   );
-  const legacyRows = rows.filter((row) => row.legacyPromote !== null);
+  // shadow 와 같은 표본에서 잰다 — shadow 가 실패한 회차(점수 null)를 legacy 쪽에만 넣으면 두 수치가
+  // 다른 모집단 위에 나란히 찍힌다.
+  const legacyRows = scored.filter((row) => row.legacyPromote !== null);
+  const excluded = rows.length - scored.length;
+  if (excluded > 0) {
+    console.log(
+      `  (shadow 점수가 없는 ${excluded}행은 두 비교에서 모두 제외 — 호출 실패 회차)`,
+    );
+  }
   reportAuroc(
     'legacy 판정(0/1)',
     legacyRows.map((row) => ({
@@ -149,13 +159,20 @@ const reportModel = (model: string, rows: readonly JoinedRow[]): void => {
       label: row.label,
     })),
   );
+  if (legacyRows.some((row) => row.origin === 'DROP_SAMPLE')) {
+    console.log(
+      '  ↳ DROP_SAMPLE 은 버린 건의 일부(비율·하루 상한)만 뽑아 가중치 없이 섞었다 — legacy 비교는 방향만 본다.',
+    );
+  }
   if (!legacyRows.some((row) => row.legacyPromote === false)) {
     console.log(
       '  ↳ legacy 가 버린 건의 라벨(DROP_SAMPLE)이 아직 없어 legacy 판별력은 정의상 0.5 다.',
     );
   }
 
-  console.log('\n[문턱별 효과 — shadow promote 확률 기준]');
+  console.log(
+    '\n[문턱별 효과 — shadow 모델 단독 게이트 가정, promote 확률만 적용]',
+  );
   console.log('  문턱   실행 남김   무시 걸러냄');
   for (const row of thresholdTable(
     scored.map((item) => ({
@@ -196,14 +213,25 @@ const main = async (): Promise<void> => {
     where: { error: { not: null } },
   });
   const { rows, unmatched } = await loadJoinedRows();
+  // 라벨 없이 닫힌 카드 — 응답하지 않은 카드는 비중이 크고(2026-09-30 실측: 닫힌 62건 중 53건이 만료)
+  // 선택 편향의 원천이라 조용히 빠지지 않게 수를 보인다.
+  const unlabeled = await prisma.subconsciousProposal.groupBy({
+    by: ['origin', 'status'],
+    where: { status: { in: ['EXPIRED', 'SUPERSEDED'] } },
+    _count: { _all: true },
+  });
 
   console.log('== subconscious 게이트 문턱 보정 ==');
   console.log(
     `shadow 원장 ${shadowCount}행 (호출 실패 ${shadowErrors}행) · 사람 판정과 붙은 행 ${rows.length} · 같은 회차 shadow 없는 판정 ${unmatched}건(제외)`,
   );
   for (const origin of ['GATE', 'DROP_SAMPLE']) {
+    const closed = unlabeled
+      .filter((group) => group.origin === origin)
+      .map((group) => `${group.status} ${group._count._all}`)
+      .join(' · ');
     console.log(
-      `  ${origin}: ${describeSample(rows.filter((row) => row.origin === origin))}`,
+      `  ${origin}: ${describeSample(rows.filter((row) => row.origin === origin))} · 라벨 없이 닫힘 ${closed || '0'}`,
     );
   }
 

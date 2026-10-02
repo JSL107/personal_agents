@@ -15,7 +15,6 @@ import { SubconsciousEngine } from './application/subconscious.engine';
 import { SubconsciousScheduler } from './application/subconscious.scheduler';
 import { SubconsciousProposalService } from './application/subconscious-proposal.service';
 import { SubconsciousTickProcessor } from './application/subconscious-tick.processor';
-import type { DropSamplePolicy } from './domain/port/drop-sample-policy.port';
 import { DROP_SAMPLE_POLICY } from './domain/port/drop-sample-policy.port';
 import { PROMOTION_BUDGET } from './domain/port/promotion-budget.port';
 import { PROPOSAL_EMITTER } from './domain/port/proposal-emitter.port';
@@ -26,6 +25,7 @@ import { SUBCONSCIOUS_GATE } from './domain/port/subconscious-gate.port';
 import { SUBCONSCIOUS_GATE_SHADOW_REPOSITORY } from './domain/port/subconscious-gate-shadow.repository.port';
 import { SUBCONSCIOUS_PROPOSAL_REPOSITORY } from './domain/port/subconscious-proposal.repository.port';
 import { SUBCONSCIOUS_TICK_QUEUE } from './domain/subconscious-tick.type';
+import { buildDropSamplePolicy } from './infrastructure/drop-sample-policy.factory';
 import { GithubStateSource } from './infrastructure/github-state-source';
 import { HybridSubconsciousGate } from './infrastructure/hybrid-subconscious-gate';
 import { JevSubconsciousGate } from './infrastructure/jev-subconscious-gate';
@@ -46,10 +46,6 @@ import { SubconsciousProposalPrismaRepository } from './infrastructure/subconsci
 //
 // Redis: RouterModule 과 동일 패턴으로 ConfigService 에서 REDIS_HOST/PORT 를 읽어
 // SubconsciousModule 전용 IORedis 인스턴스를 생성한다 (BullMQ connection 과 분리).
-// 사용자 결정(2026-10-02): 버린 변경의 10% · 하루 3건.
-const DEFAULT_DROP_SAMPLE_RATE = 0.1;
-const DEFAULT_DROP_SAMPLE_DAILY_CAP = 3;
-
 @Module({
   imports: [
     BullModule.registerQueue({ name: SUBCONSCIOUS_TICK_QUEUE }),
@@ -124,31 +120,8 @@ const DEFAULT_DROP_SAMPLE_DAILY_CAP = 3;
     // ── Drop 표본 정책 ─────────────────────────────────────────────────────────
     {
       provide: DROP_SAMPLE_POLICY,
-      useFactory: (configService: ConfigService): DropSamplePolicy => {
-        const rawRate = configService
-          .get<string>('SUBCONSCIOUS_DROP_SAMPLE_RATE')
-          ?.trim();
-        const rate = rawRate ? Number(rawRate) : DEFAULT_DROP_SAMPLE_RATE;
-        const rawCap = configService
-          .get<string>('SUBCONSCIOUS_DROP_SAMPLE_DAILY_CAP')
-          ?.trim();
-        const dailyCap =
-          rawCap && /^\d+$/.test(rawCap)
-            ? parseInt(rawCap, 10)
-            : DEFAULT_DROP_SAMPLE_DAILY_CAP;
-        // hybrid 모드의 drop 은 legacy 가 아니라 Jev 혼합 판정이라 "legacy 가 버린 건" 표본이 아니다.
-        const gateMode = configService
-          .get<string>('SUBCONSCIOUS_GATE_MODE')
-          ?.trim()
-          .toLowerCase();
-        const validRate =
-          Number.isFinite(rate) && rate >= 0 && rate <= 1 ? rate : 0;
-        return {
-          rate: gateMode === 'hybrid' ? 0 : validRate,
-          dailyCap,
-          random: Math.random,
-        };
-      },
+      useFactory: (configService: ConfigService) =>
+        buildDropSamplePolicy(configService),
       inject: [ConfigService],
     },
     // ── Proposal Repository ───────────────────────────────────────────────────

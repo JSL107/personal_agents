@@ -806,6 +806,7 @@ export class EnvironmentVariables {
   // `pnpm kev:start` 가 안내하는 주소(http://127.0.0.1:8009/v1/systemone)를 넣는다. 로컬 주소면
   // TYPESAFE_API_KEY 없이 호출한다.
   @IsOptional()
+  @ValidateIf((_, value: unknown) => value !== '')
   @IsString()
   @Matches(/^https?:\/\/\S+$/, {
     message: 'SUBCONSCIOUS_JEV_API_URL 은 http(s) URL 이어야 합니다.',
@@ -815,6 +816,7 @@ export class EnvironmentVariables {
   // legacy 게이트가 버린 변경을 사람 판정 카드로 올릴 비율 (0~1). 미설정 시 0.1, 0 이면 비활성.
   // 버린 영역의 정답을 모아 게이트끼리 비교하려는 표본이다 — 근거는 subconscious.engine.ts.
   @IsOptional()
+  @ValidateIf((_, value: unknown) => value !== '')
   @IsString()
   @Matches(/^(?:0(?:\.\d+)?|0?\.\d+|1(?:\.0+)?)$/, {
     message:
@@ -824,6 +826,7 @@ export class EnvironmentVariables {
 
   // 위 표본 카드의 KST 하루 상한. 미설정 시 3. 시간당 승격 예산과는 별도로 센다.
   @IsOptional()
+  @ValidateIf((_, value: unknown) => value !== '')
   @IsString()
   @Matches(/^\d+$/, {
     message: 'SUBCONSCIOUS_DROP_SAMPLE_DAILY_CAP 는 0 이상 정수여야 합니다.',
