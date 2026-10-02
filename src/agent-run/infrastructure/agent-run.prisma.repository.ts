@@ -27,6 +27,7 @@ import {
   AgentRunChainNode,
   AgentRunStatus,
   EvidenceInput,
+  TriggerType,
 } from '../domain/agent-run.type';
 import {
   ActiveRunSnapshot,
@@ -256,7 +257,13 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
       where,
       orderBy: { endedAt: 'desc' },
       take: limit,
-      select: { id: true, output: true, endedAt: true, inputSnapshot: true },
+      select: {
+        id: true,
+        output: true,
+        endedAt: true,
+        inputSnapshot: true,
+        triggerType: true,
+      },
     });
 
     return rows
@@ -268,6 +275,7 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
         output: row.output as unknown,
         endedAt: row.endedAt,
         inputSnapshot: row.inputSnapshot as unknown,
+        triggerType: row.triggerType as TriggerType,
       }));
   }
 

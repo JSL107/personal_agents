@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-import { PublishNotionDraftUsecase } from '../../../agent/blog/application/publish-notion-draft.usecase';
+import {
+  BLOG_PREVIEW_CONFIRM_LINE,
+  PublishNotionDraftUsecase,
+} from '../../../agent/blog/application/publish-notion-draft.usecase';
 import {
   BlogPublishCandidate,
   buildBlogRunOutput,
@@ -15,6 +18,10 @@ import {
   AutopilotTaskContext,
   AutopilotTaskResult,
 } from '../../domain/autopilot-task.port';
+
+// 저녁 카드는 다이제스트와 따로 오는 메시지라 "아래" 에 전문이 없다. 전문이 실제로 있는 곳을 적는다.
+export const EVENING_BLOG_CONFIRM_LINE =
+  '저녁 다이제스트 스레드에 첨부한 전문(.md 파일)을 열어 확인한 뒤 ✅ 적용 / ❌ 취소를 눌러주세요.';
 
 @Injectable()
 export class BlogGithubPublishAutopilotTask implements AutopilotTask {
@@ -100,13 +107,24 @@ export class BlogGithubPublishAutopilotTask implements AutopilotTask {
       skip: false,
       summaryText: `Notion 블로그 초안 '${candidate.title}'의 GitHub 발행 승인을 기다립니다.`,
       // 카드의 previewText 는 제목·경로·요약뿐이다. 실제로 공개 저장소에 커밋될 본문을 보지 않고
-      // ✅ 를 누르면 익명화가 잘못된 글이 그대로 공개된다. 전문을 스레드 댓글로 함께 보낸다.
-      detailText: `*발행될 파일* \`${candidate.path}\`\n\n${candidate.content}`,
+      // ✅ 를 누르면 익명화가 잘못된 글이 그대로 공개된다. 그래서 전문을 스레드에 함께 싣되,
+      // 댓글 본문이 아니라 파일로 올린다 — 댓글로 펼치면 한 화면을 넘겨 스레드를 덮는다.
+      // 슬랙은 파일을 접힌 미리보기로 보여 주고 누르면 전문이 열린다. 승인 전에 글을 외부
+      // (공개 저장소·Notion)에 미리 쓰는 링크는 쓰지 않는다 — 그것이 이 게이트가 막는 일이다.
+      detailText: `*발행될 파일* \`${candidate.path}\` — 전문은 아래 첨부 파일로 확인하세요.`,
+      detailFile: {
+        content: candidate.content,
+        filename: candidate.path.split('/').at(-1) ?? 'post.md',
+        title: candidate.title,
+      },
       preview: {
         kind: PREVIEW_KIND.BLOG_GITHUB_PUBLISH,
         payload: candidate.payload,
-        previewText: candidate.previewText,
-        // 전문이 못 나간 회차에는 카드도 만들지 않는다. 카드 본문은 "아래 전문을 확인한 뒤"
+        previewText: candidate.previewText.replace(
+          BLOG_PREVIEW_CONFIRM_LINE,
+          EVENING_BLOG_CONFIRM_LINE,
+        ),
+        // 전문 파일이 못 나간 회차에는 카드도 만들지 않는다. 카드 본문은 "첨부한 전문을 확인한 뒤"
         // 라고 적고 있는데, 그 전문이 유실되면 확인할 것이 없는 채로 승인 버튼만 남는다.
         // Notion 원본으로 대신 확인할 수도 없다 — 커밋되는 것은 익명화를 거친 글이라
         // 원본과 다르고, 그 차이가 바로 사람이 봐야 하는 부분이다.
