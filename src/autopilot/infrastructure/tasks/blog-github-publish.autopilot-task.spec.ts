@@ -1,6 +1,9 @@
 import { ConfigService } from '@nestjs/config';
 
-import { PublishNotionDraftUsecase } from '../../../agent/blog/application/publish-notion-draft.usecase';
+import {
+  BLOG_PREVIEW_CONFIRM_LINE,
+  PublishNotionDraftUsecase,
+} from '../../../agent/blog/application/publish-notion-draft.usecase';
 import {
   BlogPublishCandidate,
   BlogStageStructure,
@@ -8,7 +11,10 @@ import {
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { PREVIEW_KIND } from '../../../preview-gate/domain/preview-action.type';
-import { BlogGithubPublishAutopilotTask } from './blog-github-publish.autopilot-task';
+import {
+  BlogGithubPublishAutopilotTask,
+  EVENING_BLOG_CONFIRM_LINE,
+} from './blog-github-publish.autopilot-task';
 
 const CONTEXT = {
   ownerSlackUserId: 'U1',
@@ -198,7 +204,8 @@ describe('BlogGithubPublishAutopilotTask', () => {
   });
 
   // 공개 저장소에 커밋되는 내용이라, 카드 요약만 보고 ✅ 를 누르면 익명화 실패를 못 잡는다.
-  it('실제 커밋될 전문을 스레드(detailText)로 함께 보낸다', async () => {
+  // 전문을 댓글로 펼치면 한 화면을 넘겨 스레드를 덮는다 — 댓글엔 경로 한 줄, 전문은 파일로.
+  it('실제 커밋될 전문을 스레드 파일(detailFile)로 보내고, 댓글에는 경로 안내만 싣는다', async () => {
     const { task } = buildTask({});
 
     const result = await task.run(CONTEXT);
@@ -206,9 +213,30 @@ describe('BlogGithubPublishAutopilotTask', () => {
     expect(result.detailText).toContain(
       'src/content/posts/2026-08-18-safe-post.md',
     );
-    // 카드 요약이 아니라 파일 본문이 실려야 한다.
-    expect(result.detailText).toContain('본문');
-    expect(result.detailText).toContain('title: "안전한 글"');
+    expect(result.detailText).toContain('첨부 파일');
+    expect(result.detailText).not.toContain('title: "안전한 글"');
+    // 카드 요약이 아니라 커밋될 파일 본문이 그대로 실려야 한다.
+    expect(result.detailFile).toEqual({
+      content: '---\ntitle: "안전한 글"\n---\n\n본문\n',
+      filename: '2026-08-18-safe-post.md',
+      title: '안전한 글',
+    });
+  });
+
+  it('카드 마지막 줄을 전문이 실제로 있는 곳(스레드 첨부 파일)으로 바꿔 단다', async () => {
+    const { task } = buildTask({
+      candidate: {
+        ...READY_CANDIDATE,
+        previewText: `미리보기\n\n${BLOG_PREVIEW_CONFIRM_LINE}`,
+      } as BlogPublishCandidate,
+    });
+
+    const result = await task.run(CONTEXT);
+
+    expect(result.preview?.previewText).toBe(
+      `미리보기\n\n${EVENING_BLOG_CONFIRM_LINE}`,
+    );
+    expect(result.preview?.requiresDetailDelivery).toBe(true);
   });
 
   it('기본 ON에서 준비된 후보를 orchestrator용 단수 preview로 반환한다', async () => {

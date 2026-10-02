@@ -1068,7 +1068,7 @@ describe('AutopilotOrchestrator', () => {
         { attachSlackMessage: jest.fn() } as never,
       );
 
-    it('판정을 요청한 task 에만 버튼 댓글을 붙이고, 상세 뒤에 둔다', async () => {
+    it('판정을 요청한 task 에만 버튼 댓글을 붙이고, 스레드 첫 댓글로 둔다', async () => {
       const retroTask = makeTask('evening-retro-publish', {
         skip: false,
         summaryText: 'RETRO',
@@ -1110,10 +1110,39 @@ describe('AutopilotOrchestrator', () => {
         target: 'C1',
         text: 'EVAL\n\n────────\n\nRETRO',
       });
-      const texts = postMessageMock.mock.calls.map(([input]) => input.text);
-      expect(texts.indexOf('RETRO_DETAIL')).toBeLessThan(
-        postMessageMock.mock.calls.findIndex(([input]) => input.runVerdict),
+      // 스레드 순서: 판정 버튼 → 앞 task 상세 → 판정 task 상세. 다른 task 의 상세 순서는 그대로다.
+      const threadCalls = postMessageMock.mock.calls
+        .map(([input]) => input)
+        .filter((input) => input.threadTs === 'TS1');
+      expect(threadCalls[0].runVerdict).toBeDefined();
+      expect(threadCalls.slice(1).map((input) => input.text)).toEqual([
+        'EVAL_DETAIL',
+        'RETRO_DETAIL',
+      ]);
+    });
+
+    it('판정 대상 문장(quote)을 발송 어댑터에 그대로 넘긴다', async () => {
+      const retroTask = makeTask('evening-retro-publish', {
+        skip: false,
+        summaryText: 'RETRO',
+        runVerdict: {
+          agentRunId: 42,
+          facets: ['retro_problem', 'overall'],
+          quote: '윤문된 문제 문장',
+        },
+      });
+      const postMessageMock = jest.fn().mockResolvedValue({ ts: 'TS1' });
+      await buildOrchestrator([retroTask], postMessageMock).runGroup(
+        'evening',
+        [makeEntry('evening-retro-publish', 'evening-retro-publish')],
+        'U1',
+        'C1',
       );
+
+      expect(
+        postMessageMock.mock.calls.find(([input]) => input.runVerdict)?.[0]
+          .runVerdict.quote,
+      ).toBe('윤문된 문제 문장');
     });
 
     it('버튼 발송이 실패해도 그룹은 성공하고 후처리는 그대로 돈다', async () => {
@@ -1778,6 +1807,91 @@ describe('AutopilotOrchestrator', () => {
       expect(createPreview.execute).not.toHaveBeenCalled();
       expect(postPreviewMessage).not.toHaveBeenCalled();
       // 조용히 사라지면 안 된다 — 왜 오늘 카드가 없는지 owner 가 알아야 한다.
+      expect(postMessage).toHaveBeenLastCalledWith({
+        target: 'C1',
+        text: expect.stringContaining('승인 카드 보류'),
+      });
+    });
+
+    it('전문 파일(detailFile)은 상세 댓글 바로 뒤 같은 스레드에 올리고 카드를 만든다', async () => {
+      const task = makeTask('blog-github-publish', {
+        skip: false,
+        summaryText: 'S',
+        detailText: '발행될 파일 안내',
+        detailFile: { content: '# 전문', filename: 'a.md', title: '제목' },
+        preview: GATED_PREVIEW,
+      });
+      const postMessage = jest.fn().mockResolvedValue({ ts: 'TS1' });
+      const uploadTextFile = jest.fn().mockResolvedValue(undefined);
+      const { createPreview, postPreviewMessage } = makeCardMocks();
+      const orchestrator = new AutopilotOrchestrator(
+        [task] as never,
+        { postMessage, postPreviewMessage, uploadTextFile } as never,
+        {
+          acquireOnce: jest.fn().mockResolvedValue(true),
+          release: jest.fn().mockResolvedValue(undefined),
+          isDone: jest.fn().mockResolvedValue(false),
+        } as never,
+        createPreview as never,
+        { attachSlackMessage: jest.fn().mockResolvedValue(undefined) } as never,
+      );
+
+      await orchestrator.runGroup(
+        'evening',
+        entriesFor('blog-github-publish'),
+        'U1',
+        'C1',
+      );
+
+      expect(uploadTextFile).toHaveBeenCalledWith({
+        target: 'C1',
+        threadTs: 'TS1',
+        content: '# 전문',
+        filename: 'a.md',
+        title: '제목',
+      });
+      expect(uploadTextFile.mock.invocationCallOrder[0]).toBeGreaterThan(
+        postMessage.mock.invocationCallOrder[1],
+      );
+      expect(createPreview.execute).toHaveBeenCalledTimes(1);
+    });
+
+    it('전문 파일 업로드가 실패하면 상세 유실로 보고 카드를 만들지 않는다', async () => {
+      const onDelivered = jest.fn().mockResolvedValue(undefined);
+      const task = makeTask('blog-github-publish', {
+        skip: false,
+        summaryText: 'S',
+        detailText: '발행될 파일 안내',
+        detailFile: { content: '# 전문', filename: 'a.md', title: '제목' },
+        preview: GATED_PREVIEW,
+        onDelivered,
+      });
+      const postMessage = jest.fn().mockResolvedValue({ ts: 'TS1' });
+      const uploadTextFile = jest
+        .fn()
+        .mockRejectedValue(new Error('missing_scope'));
+      const { createPreview, postPreviewMessage } = makeCardMocks();
+      const orchestrator = new AutopilotOrchestrator(
+        [task] as never,
+        { postMessage, postPreviewMessage, uploadTextFile } as never,
+        {
+          acquireOnce: jest.fn().mockResolvedValue(true),
+          release: jest.fn().mockResolvedValue(undefined),
+          isDone: jest.fn().mockResolvedValue(false),
+        } as never,
+        createPreview as never,
+        { attachSlackMessage: jest.fn().mockResolvedValue(undefined) } as never,
+      );
+
+      await orchestrator.runGroup(
+        'evening',
+        entriesFor('blog-github-publish'),
+        'U1',
+        'C1',
+      );
+
+      expect(createPreview.execute).not.toHaveBeenCalled();
+      expect(onDelivered).not.toHaveBeenCalled();
       expect(postMessage).toHaveBeenLastCalledWith({
         target: 'C1',
         text: expect.stringContaining('승인 카드 보류'),

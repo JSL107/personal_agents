@@ -246,6 +246,12 @@ interface BuiltPublishCandidate {
   stages: BlogStageStructure[];
 }
 
+// 카드 마지막 줄. 수동 `/blog-publish` 는 전문을 카드 바로 아래 메시지로 보내 이 문구가 맞다.
+// 저녁 자동 발행은 전문을 다이제스트 스레드의 파일로 올리므로 그 task 가 이 줄을 갈아 끼운다 —
+// 그래서 export 한다(문자열을 따로 적으면 한쪽만 바뀌어 교체가 조용히 빗나간다).
+export const BLOG_PREVIEW_CONFIRM_LINE =
+  '아래 전문을 확인한 뒤 ✅ 적용 / ❌ 취소를 눌러주세요.';
+
 @Injectable()
 export class PublishNotionDraftUsecase {
   private readonly logger = new Logger(PublishNotionDraftUsecase.name);
@@ -849,7 +855,7 @@ export class PublishNotionDraftUsecase {
       `Notion: ${draft.url}`,
       ...this.buildStageNote(humanized, draft, stages),
       '',
-      '아래 전문을 확인한 뒤 ✅ 적용 / ❌ 취소를 눌러주세요.',
+      BLOG_PREVIEW_CONFIRM_LINE,
     );
     return lines.join('\n');
   }
