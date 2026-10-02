@@ -138,6 +138,8 @@ struct OfficeLayoutExport: Codable {
     let meetingSeats: [TilePoint]
     /// 회의실에 모여 머무는 시간(초, `officeMeetingDwellSeconds`).
     let meetingDwellSeconds: Double
+    /// 늦는 사람을 기다리는 상한(초, `officeMeetingGatherTimeoutSeconds`). 머무름은 마지막 사람이 온 뒤부터 센다.
+    let meetingGatherTimeoutSeconds: Double
     /// 배회 대사(혼잣말·마주친 두 사람의 대화). 고르는 규칙은 웹(`live.js`)이 옮겨 적고, 문구와 숫자는 여기서만 정한다.
     let chatter: OfficeChatterExport
     /// 유휴 산책이 갈 수 있는 자리. 어느 가구 앞에 어느 쪽을 보고 몇 초 머무는지까지.
@@ -368,6 +370,7 @@ func makeOfficeLayoutExport(agents: [ConsoleAgent], zoneColumns: Int) -> OfficeL
         sessionDesks: officeSessionDesks(plan: plan),
         meetingSeats: officeMeetingSeats(plan: plan),
         meetingDwellSeconds: officeMeetingDwellSeconds,
+        meetingGatherTimeoutSeconds: officeMeetingGatherTimeoutSeconds,
         chatter: officeChatterExport(),
         strollSpots: officeStrollSpots(plan: plan).map { spot in
             StrollSpotInfo(

@@ -782,4 +782,39 @@ func runOfficeMeetingTests(_ t: TestRunner) {
         }
         t.expectEqual(stranded.count, 0, "회의 자리 \(seat.x),\(seat.y) 에 못 가는 좌석 없음")
     }
+
+    // 머무름은 마지막 참석자가 도착한 뒤 다 같이 센다.
+    var gathering = OfficeMeetingGathering(attendees: ["A", "B", "C"])
+    t.expect(!gathering.arrive("A"), "첫 도착으로는 시계가 안 켜진다")
+    t.expect(!gathering.arrive("B"), "한 명이 아직 오는 중이면 시계가 안 켜진다")
+    t.expect(!gathering.arrive("A"), "같은 사람이 두 번 도착해도 시계가 안 켜진다")
+    t.expect(gathering.arrive("C"), "마지막 사람이 도착하면 시계가 켜진다")
+    t.expect(!gathering.arrive("C") && !gathering.timeOut(), "시계는 한 번만 켜진다")
+
+    var dropout = OfficeMeetingGathering(attendees: ["A", "B", "C"])
+    _ = dropout.arrive("A")
+    _ = dropout.arrive("B")
+    t.expect(dropout.leave("C"), "오던 사람이 빠지면 와 있는 사람끼리 시계를 켠다")
+
+    var stuck = OfficeMeetingGathering(attendees: ["A", "B"])
+    t.expect(!stuck.timeOut(), "아무도 안 왔으면 상한이 와도 시계를 켤 사람이 없다")
+    t.expect(stuck.arrive("A"), "상한이 지난 뒤 처음 온 사람이 시계를 켠다 — 끝내 안 오는 사람을 기다리지 않는다")
+    t.expect(!stuck.arrive("B"), "시계가 켜진 뒤 도착한 사람은 시계를 다시 켜지 않는다")
+    var late = OfficeMeetingGathering(attendees: ["A", "B"])
+    _ = late.arrive("A")
+    t.expect(late.timeOut(), "와 있는 사람이 있으면 상한이 오는 순간 시계가 켜진다")
+    t.expect(stuck.present == ["A", "B"], "늦게 온 사람도 와 있는 사람에 합류해 함께 흩어진다")
+
+    var abandoned = OfficeMeetingGathering(attendees: ["A"])
+    t.expect(!abandoned.leave("A") && abandoned.isEmpty, "전원이 빠지면 회의가 빈다")
+
+    // 상한은 정상 걸음보다 넉넉히 길어야 한다 — 짧으면 먼 부서 사람이 오기 전에 회의가 시작된다.
+    // 한 칸 0.2초(맥 `walk` 의 stepDuration · 웹 STEP_SECONDS).
+    let longestSteps = meetingPlan.desks.map { desk in
+        meetingSeats.map { officePath(from: desk.seat, to: $0, walkable: meetingPlan.walkable).count }.max() ?? 0
+    }.max() ?? 0
+    t.expect(
+        Double(longestSteps) * 0.2 * 2 <= officeMeetingGatherTimeoutSeconds,
+        "기다림 상한(\(officeMeetingGatherTimeoutSeconds)초)이 가장 먼 걸음(\(longestSteps)칸)의 두 배 이상"
+    )
 }

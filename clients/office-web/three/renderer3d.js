@@ -640,8 +640,9 @@ export class Office3DRenderer {
       if (color) {
         plate.element.style.color = `#${tone(color, 0.1).getHexString()}`;
       }
-      // 방 북쪽 벽(허리 높이) 위에 세운다 — 방 안 가구·사람을 가리지 않는 자리.
-      plate.position.set(zone.origin.x + zone.width / 2, WALL_MID + 0.22, -(zone.origin.y + zone.height + 0.5));
+      // 방 안쪽, 북쪽 벽 바로 앞 바닥 위에 낮게 세운다. 벽 위에 올렸을 때는 그 벽 너머 방(기획 뒤 회의실,
+      // 평가 뒤 탕비실)의 가구 앞에 그려져 그 방 것처럼 읽혔다 — 회의 테이블 바로 앞에 '기획' 이 섰다.
+      plate.position.set(zone.origin.x + zone.width / 2, WALL_MID, -(zone.origin.y + zone.height - 0.6));
       this.scene.add(plate);
       this.plates.push(plate);
     }
@@ -1035,22 +1036,24 @@ export class Office3DRenderer {
     const state = agent?.state ?? "WAITING";
     const focused = agentType === this.hoveredAgent || agentType === this.selectedAgent;
     const named = focused || NAMED_STATES.has(state);
+    // 회의석에 와서 머무는 중(live.js `holdMeeting` 이 `meetingId` 를 단다, 걷는 동안은 아니다).
+    const meeting = Boolean(body.meetingId) && !body.path && !focused;
     const name = entry.look.roleLabel ?? agent?.nickname ?? agent?.displayName ?? agentType;
     // hover·선택이면 이름 옆에 상태와 하는 일까지 — 이것이 툴팁이다.
     const text = focused
       ? [name, STATE_LABELS[state] ?? state, agent?.job].filter(Boolean).join(" · ")
       : name;
-    const className = ALERT_STATES.has(state)
-      ? "office3d-label alert"
-      : named
-        ? "office3d-label"
-        : "office3d-label idle";
+    const className =
+      (ALERT_STATES.has(state) ? "office3d-label alert" : named ? "office3d-label" : "office3d-label idle") +
+      (meeting ? " compact" : "");
     Overlay3D.set(entry.name, text, className);
     entry.name.visible = true;
     entry.name.position.set(0, LABEL_HEIGHT, 0);
     // 머리 위 한 자리를 셋이 나눠 쓴다 — 잠깐 뜨는 말풍선(거절 `!`)이 먼저, 다음이 하는 일, 둘 다 없고
     // 지시가 접수만 된 상태면 점.
-    const bubbleText = body.flash ?? (showsBubble(state) ? agent?.bubble : null);
+    // 회의 중에는 상시 말풍선을 내린다 — 좁은 회의실을 덮는다. 잠깐 뜨는 문구("!")는 그대로, 상태는 발밑 링이
+    // 보이고, 하는 일은 hover 하면 툴팁·말풍선으로 다시 나온다.
+    const bubbleText = body.flash ?? (showsBubble(state) && !meeting ? agent?.bubble : null);
     const dots = !bubbleText && view.pending?.[agentType] === "sent";
     entry.bubble.visible = Boolean(bubbleText) || dots;
     if (entry.bubble.visible) {

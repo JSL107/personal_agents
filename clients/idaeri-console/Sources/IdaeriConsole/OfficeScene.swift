@@ -175,6 +175,11 @@ final class OfficeScene: SKScene {
     /// 뺀다(상태가 바뀌면 앱이 `sync` 를 다시 부른다). 다른 사건이 그 사람의 연출을 끊으면
     /// (`cancelStroll`) 함께 빠진다.
     private var meetingHosts: Set<String> = []
+    /// 열려 있는 회의의 모임 상태(`OfficeMeetingGathering`)와 회의를 연 사람. 번호는 회의마다 새로 준다.
+    private var meetings: [Int: (gathering: OfficeMeetingGathering, host: String)] = [:]
+    /// 참석자 → 그 사람이 가 있는 회의 번호. 회의가 끝난 뒤에도 오는 중이던 사람은 남아, 도착하면 곧바로 흩어진다.
+    private var meetingOf: [String: Int] = [:]
+    private var meetingSerial = 0
     /// 배율이 바뀌어도 걸음의 목적지와 도착 후 동작을 이어가기 위한 기록.
     private var walkDestinations: [String: (goal: TilePoint, completion: (() -> Void)?)] = [:]
     /// 같은 사람이 짧은 간격으로 계속 왕복하지 않게 Core 쿨다운 판정에 넘긴다.
@@ -3044,6 +3049,7 @@ final class OfficeScene: SKScene {
     /// 관제 이벤트가 장식 연출보다 우선하므로 이동 중간 위치에서라도 즉시 제어권을 넘긴다.
     private func cancelStroll(_ agentType: String) {
         meetingHosts.remove(agentType)
+        leaveMeeting(agentType)
         guard strollingAgents.remove(agentType) != nil else {
             return
         }
@@ -3572,37 +3578,113 @@ final class OfficeScene: SKScene {
     private func holdMeeting(_ agentTypes: [String], thenWorking: String) {
         let seats = officeMeetingSeats(plan: plan)
         let tableTile = plan.furniture.first { $0.kind == .meetingTable }?.tile
-        var assigned = 0
+        var attendance: [(agentType: String, node: CharacterNode, seat: TilePoint)] = []
         for agentType in agentTypes {
-            guard assigned < seats.count,
+            guard attendance.count < seats.count,
                   let node = characters[agentType],
                   !queueOrder.contains(agentType)
             else {
                 continue
             }
-            let seat = seats[assigned]
-            assigned += 1
-            cancelStroll(agentType)
-            strollingAgents.insert(agentType)
-            if agentType == thenWorking {
-                meetingHosts.insert(agentType)
+            attendance.append((agentType, node, seats[attendance.count]))
+        }
+        guard !attendance.isEmpty else {
+            startWorking(thenWorking)
+            return
+        }
+        meetingSerial += 1
+        let meetingID = meetingSerial
+        // 이전 연출(다른 회의 포함)을 먼저 끊고 나서 이 회의에 넣는다 — 순서가 바뀌면 방금 넣은 사람을
+        // `cancelStroll` 이 도로 빼 버린다.
+        for attendee in attendance {
+            cancelStroll(attendee.agentType)
+        }
+        // 모임 상태를 **걷기 전에** 만든다. 경로가 없거나 동작 줄이기면 `walk` 가 도착 콜백을 그 자리에서
+        // 부르므로, 늦게 만들면 그 사람의 도착이 기록되지 않는다.
+        meetings[meetingID] = (OfficeMeetingGathering(attendees: attendance.map(\.agentType)), thenWorking)
+        for attendee in attendance {
+            meetingOf[attendee.agentType] = meetingID
+            strollingAgents.insert(attendee.agentType)
+            if attendee.agentType == thenWorking {
+                meetingHosts.insert(attendee.agentType)
             }
+        }
+        run(.sequence([
+            .wait(forDuration: officeMeetingGatherTimeoutSeconds),
+            .run { [weak self] in
+                guard self?.meetings[meetingID]?.gathering.timeOut() == true else {
+                    return
+                }
+                self?.startMeetingClock(meetingID)
+            },
+        ]), withKey: "meeting-gather-\(meetingID)")
+        for (agentType, node, seat) in attendance {
             stopWorking(node)
             walk(node, to: seat) { [weak self, weak node] in
                 if let tableTile, let direction = facing(from: seat, to: tableTile) {
                     node?.apply(facing: direction)
                 }
-                node?.run(.sequence([
-                    .wait(forDuration: officeMeetingDwellSeconds),
-                    .run { [weak self] in
-                        self?.endMeeting(agentType, thenWorking: thenWorking)
-                    },
-                ]), withKey: "stroll")
+                self?.arriveAtMeeting(agentType, meetingID: meetingID)
             }
         }
-        guard assigned > 0 else {
-            startWorking(thenWorking)
+    }
+
+    /// 회의석 도착. 마지막으로 온 사람이면 다 같이 머무는 시계를 켠다. 회의가 이미 끝났으면 곧바로 흩어진다.
+    private func arriveAtMeeting(_ agentType: String, meetingID: Int) {
+        guard meetingOf[agentType] == meetingID else {
             return
+        }
+        guard meetings[meetingID] != nil else {
+            meetingOf[agentType] = nil
+            // 회의를 연 사람이면 자리에서 일을 시작하고, 아니면 자리로 돌아간다(`endMeeting`).
+            if meetingHosts.contains(agentType) {
+                endMeeting(agentType, thenWorking: agentType)
+            } else {
+                endStroll(agentType)
+            }
+            return
+        }
+        if meetings[meetingID]?.gathering.arrive(agentType) == true {
+            startMeetingClock(meetingID)
+        }
+    }
+
+    /// 회의에서 빠진다(`cancelStroll` 이 부른다). 기다리던 사람이 빠져 남은 사람이 다 와 있으면 시계를 켠다.
+    private func leaveMeeting(_ agentType: String) {
+        guard let meetingID = meetingOf.removeValue(forKey: agentType),
+              var entry = meetings[meetingID]
+        else {
+            return
+        }
+        let starts = entry.gathering.leave(agentType)
+        guard !entry.gathering.isEmpty else {
+            meetings[meetingID] = nil
+            removeAction(forKey: "meeting-gather-\(meetingID)")
+            removeAction(forKey: "meeting-\(meetingID)")
+            return
+        }
+        meetings[meetingID] = entry
+        if starts {
+            startMeetingClock(meetingID)
+        }
+    }
+
+    private func startMeetingClock(_ meetingID: Int) {
+        removeAction(forKey: "meeting-gather-\(meetingID)")
+        run(.sequence([
+            .wait(forDuration: officeMeetingDwellSeconds),
+            .run { [weak self] in self?.finishMeeting(meetingID) },
+        ]), withKey: "meeting-\(meetingID)")
+    }
+
+    /// 머무름이 끝났다 — 와 있는 사람이 한꺼번에 흩어진다. 아직 오는 중인 사람은 도착하자마자 흩어진다.
+    private func finishMeeting(_ meetingID: Int) {
+        guard let entry = meetings.removeValue(forKey: meetingID) else {
+            return
+        }
+        for agentType in entry.gathering.present.sorted() {
+            meetingOf[agentType] = nil
+            endMeeting(agentType, thenWorking: entry.host)
         }
     }
 
@@ -3616,8 +3698,24 @@ final class OfficeScene: SKScene {
             destination: destination,
             onMeetingSeat: officeMeetingSeats(plan: plan).contains(destination),
             headingHome: destination == homeDeskAssignments[agentType]?.seat,
-            tracked: strollingAgents.contains(agentType)
+            tracked: strollingAgents.contains(agentType),
+            leaveTimerArmed: node.action(forKey: "stroll") != nil
+                || meetingOf[agentType].map { action(forKey: "meeting-\($0)") != nil } == true,
+            gatherTimerArmed: meetingOf[agentType].map { action(forKey: "meeting-gather-\($0)") != nil } == true
         )
+    }
+
+    /// `--meeting-check` 전용 — 걷는 중인 사람을 목적지에 세우고 도착 후 동작을 부른다.
+    /// 검사에서는 SpriteKit 액션이 흐르지 않으므로(창 없는 씬) 도착을 직접 일으킨다.
+    func finishWalkForCheck(_ agentType: String) {
+        guard let node = characters[agentType], let destination = walkDestinations[agentType] else {
+            return
+        }
+        node.removeAction(forKey: "walk")
+        walkDestinations[agentType] = nil
+        node.tile = destination.goal
+        node.endWalk()
+        destination.completion?()
     }
 
     /// 회의가 끝나면 각자 자리로. 이 일을 이어받은 사람은 자리에 앉아 곧바로 일을 시작한다.

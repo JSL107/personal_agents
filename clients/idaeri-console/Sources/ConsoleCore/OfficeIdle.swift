@@ -679,10 +679,67 @@ private func officeRotatingPick(
 
 // MARK: - 회의
 
-/// 회의실에 모였을 때 머무는 시간(초). 배회 머무름(3~8초)보다 길다 — 여럿이 모이는 데
-/// 걸리는 시간(먼 부서에서 20칸 넘게 걸어온다)을 감안하지 않으면, 늦게 온 사람이 도착하는
-/// 순간 이미 회의가 끝나 있다.
+/// 회의실에 모인 뒤 머무는 시간(초). **마지막 참석자가 도착한 순간부터 다 같이 센다**
+/// (`OfficeMeetingGathering`). 각자 도착 순간부터 세던 때는 가까운 사람이 먼 사람이 오기 전에
+/// 떠났다 — 웹 실측으로 전원 도착 5초 뒤 넷 중 둘이 이미 귀가 중이었다.
 public let officeMeetingDwellSeconds: Double = 9
+
+/// 늦는 사람을 기다리는 상한(초). 회의를 연 순간부터 센다. 이 시간이 지나면 와 있는 사람끼리
+/// 머무름을 시작한다 — 걸음이 끊겨 도착 콜백이 영영 안 오는 사람이 있어도 회의가 끝나야 한다.
+///
+/// 값의 근거: 평면도에서 회의석까지 가장 먼 책상이 44칸(3열 배치, 2열은 39칸)이고 한 칸이
+/// 0.2초라 정상 걸음은 8.8초 안에 닿는다. 그 두 배를 넘게 잡아 정상 도착은 이 상한에 걸리지 않는다.
+public let officeMeetingGatherTimeoutSeconds: Double = 20
+
+/// 회의 하나의 모임 상태(순수). 누가 아직 오는 중이고 누가 와 있는지, 머무름 시계를 켤 때인지만 판정한다.
+///
+/// 시계는 **오는 중인 사람이 없어지는 순간** 한 번 켜진다 — 마지막 사람이 도착했거나, 오던 사람이
+/// 일이 들어와 빠졌거나. 상한(`officeMeetingGatherTimeoutSeconds`)이 먼저 오면 그때 켠다.
+/// 시계가 켜진 뒤 도착한 사람은 와 있는 사람에 합류해 같은 시각에 함께 흩어진다.
+public struct OfficeMeetingGathering: Equatable {
+    public private(set) var walking: Set<String>
+    public private(set) var present: Set<String> = []
+    public private(set) var clockStarted = false
+    /// 기다림 상한이 지났다. 그때 아무도 안 와 있었으면 다음에 오는 사람이 시계를 켠다.
+    public private(set) var timedOut = false
+
+    public init(attendees: [String]) {
+        walking = Set(attendees)
+    }
+
+    /// 아무도 남지 않았다 — 회의를 치운다.
+    public var isEmpty: Bool { walking.isEmpty && present.isEmpty }
+
+    /// 도착. 이 도착으로 시계를 켜야 하면 true.
+    public mutating func arrive(_ agentType: String) -> Bool {
+        guard walking.remove(agentType) != nil else {
+            return false
+        }
+        present.insert(agentType)
+        return startIfGathered()
+    }
+
+    /// 중간에 빠짐(일이 들어옴·퇴근 등). 오던 사람이 빠져 남은 사람이 다 와 있게 되면 true.
+    public mutating func leave(_ agentType: String) -> Bool {
+        walking.remove(agentType)
+        present.remove(agentType)
+        return startIfGathered()
+    }
+
+    /// 기다림 상한. 와 있는 사람이 있으면 지금 켠다(true).
+    public mutating func timeOut() -> Bool {
+        timedOut = true
+        return startIfGathered()
+    }
+
+    private mutating func startIfGathered() -> Bool {
+        guard !clockStarted, walking.isEmpty || timedOut, !present.isEmpty else {
+            return false
+        }
+        clockStarted = true
+        return true
+    }
+}
 
 /// 회의를 열 최소 참여 인원. 둘뿐이면 기존 1:1 전달 연출이 더 읽기 쉽다 —
 /// 두 사람이 각자 자리에서 회의실까지 왕복하는 동안 화면에는 아무 일도 일어나지 않는다.
