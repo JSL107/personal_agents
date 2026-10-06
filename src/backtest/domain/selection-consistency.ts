@@ -181,9 +181,11 @@ export const executeBuys = ({
 // 파싱 실패는 null. 운영에서는 주문 0건이 되는 별개의 결과다.
 export type ReplayAnswer = ExecutedBuy[] | null;
 
+// 금액까지 키에 넣는다. 같은 종목이라도 배정액이 다르면 다른 주문이다 — 현금이 모자란 회차는
+// 모델이 낸 순서에 따라 종목별 수량이 갈린다(`executeBuys` 주석).
 const buyKey = (answer: ExecutedBuy[]): string =>
   answer
-    .map((buy) => buy.code)
+    .map((buy) => `${buy.code}:${buy.amount}`)
     .sort()
     .join(',');
 

@@ -35,11 +35,11 @@ import {
  *     PAPER_RECOMMEND 는 `skipPreamble` 이라 route() 도 머리말을 붙이지 않으므로 요청은 같다.
  *   - DB 는 `agent_run` 을 읽기만 한다. 결과는 `--file` 의 JSONL(레포 밖)에만 쓴다.
  *
- * 실행 (`.env` 의 DATABASE_URL 이 필요하다):
- *   pnpm exec ts-node scripts/selection-consistency.ts ledger
- *   pnpm exec ts-node scripts/selection-consistency.ts baseline
- *   pnpm exec ts-node scripts/selection-consistency.ts sample --stage pilot|1|2 --file <path>
- *   pnpm exec ts-node scripts/selection-consistency.ts report --file <path>
+ * 실행 — PrismaClient 는 `.env` 를 스스로 읽지 않으므로 `--env-file` 로 넘긴다:
+ *   node --env-file=.env -r ts-node/register scripts/selection-consistency.ts ledger
+ *   node --env-file=.env -r ts-node/register scripts/selection-consistency.ts baseline
+ *   node --env-file=.env -r ts-node/register scripts/selection-consistency.ts sample --stage pilot|1|2 --file <path>
+ *   node --env-file=.env -r ts-node/register scripts/selection-consistency.ts report --file <path>
  *
  * `sample` 만 모델을 부른다(구독 쿼터 소모). 끊겨도 같은 파일로 다시 돌리면 끝난 칸은 건너뛴다.
  */

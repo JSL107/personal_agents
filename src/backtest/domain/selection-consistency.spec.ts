@@ -143,6 +143,9 @@ describe('selection-consistency', () => {
         { code: 'B', amount: 2_000_000 },
         { code: 'A', amount: 500_000 },
       ]);
+      // 종목 집합이 같아도 배정액이 다르면 완전일치가 아니다.
+      expect(pairwiseAgreement([ab, ba])).toBe(0);
+      expect(pairwiseAgreement([ab, ab])).toBe(1);
       expect(amountWeightedAgreement(ab, ba)).toBeCloseTo(
         1_000_000 / 4_000_000,
       );
