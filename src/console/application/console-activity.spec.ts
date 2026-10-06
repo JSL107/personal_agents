@@ -1,4 +1,8 @@
-import { buildConsoleActivity, toTaskTitle } from './console-activity';
+import {
+  buildConsoleActivity,
+  groupRecentRuns,
+  toTaskTitle,
+} from './console-activity';
 
 describe('toTaskTitle', () => {
   it.each([
@@ -16,7 +20,6 @@ describe('buildConsoleActivity', () => {
     today: '2026-10-06',
     serverTime: '2026-10-06T03:00:00.000Z',
     dayCount: 3,
-    recentLimit: 2,
   };
 
   it('KST 날짜별로 성공·실패·기타를 세고 실행 없는 날은 0으로 채운다', () => {
@@ -62,8 +65,7 @@ describe('buildConsoleActivity', () => {
   });
 
   it('최근 실행은 말풍선 규칙으로 제목을 붙이고 규칙이 없으면 자동/직접만 남긴다', () => {
-    const result = buildConsoleActivity(
-      [],
+    const result = groupRecentRuns(
       [
         {
           id: 7,
@@ -84,10 +86,11 @@ describe('buildConsoleActivity', () => {
           inputSnapshot: null,
         },
       ],
-      clock,
+      8,
     );
 
-    expect(result.recentRuns).toEqual([
+    expect(result.complete).toBe(false);
+    expect(result.runs).toEqual([
       {
         id: '7',
         agentType: 'CODE_REVIEWER',
@@ -107,17 +110,10 @@ describe('buildConsoleActivity', () => {
         count: 1,
       },
     ]);
-    expect(result.serverTime).toBe(clock.serverTime);
   });
 });
 
 describe('buildConsoleActivity 최근 실행 묶기', () => {
-  const clock = {
-    today: '2026-10-06',
-    serverTime: '2026-10-06T03:00:00.000Z',
-    dayCount: 1,
-    recentLimit: 2,
-  };
   const tick = (id: number, status = 'SUCCEEDED') => ({
     id,
     agentType: 'PAPER_TRADE',
@@ -131,22 +127,27 @@ describe('buildConsoleActivity 최근 실행 묶기', () => {
   });
 
   it('연달아 같은 일·결과는 한 줄로 묶고 최신 시각을 남기며, 줄 수 상한 뒤는 버린다', () => {
-    const result = buildConsoleActivity(
-      [],
+    const result = groupRecentRuns(
       [tick(9), tick(8), tick(7), tick(6, 'FAILED'), tick(5), tick(4)],
-      clock,
+      2,
     );
 
+    expect(result.complete).toBe(true);
     expect(
-      result.recentRuns.map((run) => [
-        run.id,
-        run.title,
-        run.status,
-        run.count,
-      ]),
+      result.runs.map((run) => [run.id, run.title, run.status, run.count]),
     ).toEqual([
       ['9', '장중 손절 점검', 'SUCCEEDED', 3],
       ['6', '장중 손절 점검', 'FAILED', 1],
     ]);
+  });
+
+  it('상한 줄 수를 다 채웠어도 다음 묶음의 첫 행을 못 봤으면 complete=false', () => {
+    const result = groupRecentRuns(
+      [tick(9), tick(8, 'FAILED'), tick(7, 'FAILED')],
+      2,
+    );
+
+    expect(result.complete).toBe(false);
+    expect(result.runs.map((run) => run.count)).toEqual([1, 2]);
   });
 });

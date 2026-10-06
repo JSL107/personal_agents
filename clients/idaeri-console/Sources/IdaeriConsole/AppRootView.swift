@@ -319,6 +319,9 @@ struct AppRootView: View {
                 store.apply(snapshot: snapshot)
                 status = .live
                 await resyncBriefing()
+                // 첫 연결에서도 받는다. 주기 재동기화(30초)나 상태 변경을 기다리면 서버가 조용한
+                // 동안 대시보드 그래프가 "불러오는 중" 으로 남는다.
+                await resyncActivity()
                 backoffSeconds = 1
                 for await event in await client.events() {
                     store.apply(event: event)

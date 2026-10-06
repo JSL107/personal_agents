@@ -96,9 +96,26 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
     });
   }
 
-  async findLatestRuns({ limit }: { limit: number }): Promise<LatestRunRow[]> {
+  async findLatestRuns({
+    limit,
+    before,
+  }: {
+    limit: number;
+    before?: { startedAt: Date; id: number };
+  }): Promise<LatestRunRow[]> {
+    // 커서는 (startedAt, id) 쌍이다. offset 으로 넘기면 읽는 사이 새 런이 들어올 때 한 행이
+    // 두 페이지에 걸쳐 두 번 세어진다. 같은 시각에 시작한 런은 id 로 순서를 고정한다.
     const rows = await this.prisma.agentRun.findMany({
-      orderBy: { startedAt: 'desc' },
+      where:
+        before === undefined
+          ? undefined
+          : {
+              OR: [
+                { startedAt: { lt: before.startedAt } },
+                { startedAt: before.startedAt, id: { lt: before.id } },
+              ],
+            },
+      orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
       take: limit,
       select: {
         id: true,

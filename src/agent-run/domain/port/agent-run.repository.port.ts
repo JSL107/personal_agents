@@ -292,7 +292,11 @@ export interface AgentRunRepositoryPort {
   // 콘솔 원장 집계용 전량 조회. 집계는 SQL이 아니라 console 도메인의 순수 함수가 담당한다.
   findAllRunsForLedger(): Promise<LedgerRunRow[]>;
   findRunsStartedSince(input: { since: Date }): Promise<ActivityRunRow[]>;
-  findLatestRuns(input: { limit: number }): Promise<LatestRunRow[]>;
+  // 최신순(startedAt, id 내림차순). before 를 주면 그 행보다 오래된 것부터 — 이어 읽기용 커서.
+  findLatestRuns(input: {
+    limit: number;
+    before?: { startedAt: Date; id: number };
+  }): Promise<LatestRunRow[]>;
   begin(input: BeginAgentRunInput): Promise<BeginAgentRunResult>;
   updateInputSnapshot?(input: {
     id: number;

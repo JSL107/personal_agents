@@ -934,11 +934,36 @@ describe('AgentRunPrismaRepository 콘솔 대시보드 조회', () => {
     const result = await repository.findLatestRuns({ limit: 8 });
 
     expect(findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ orderBy: { startedAt: 'desc' }, take: 8 }),
+      expect.objectContaining({
+        where: undefined,
+        orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
+        take: 8,
+      }),
     );
     expect(result.map((row) => row.inputSnapshot)).toEqual([
       { pullNumber: 1 },
       null,
     ]);
+  });
+
+  it('findLatestRuns 는 (startedAt, id) 커서보다 오래된 행만 읽는다', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const repository = new AgentRunPrismaRepository({
+      agentRun: { findMany },
+    } as unknown as PrismaService);
+    const startedAt = new Date('2026-10-06T02:00:00.000Z');
+
+    await repository.findLatestRuns({
+      limit: 50,
+      before: { startedAt, id: 42 },
+    });
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          OR: [{ startedAt: { lt: startedAt } }, { startedAt, id: { lt: 42 } }],
+        },
+      }),
+    );
   });
 });

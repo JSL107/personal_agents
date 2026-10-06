@@ -36,14 +36,57 @@ const titleOf = (row: LatestRunRow): string => {
   return isAutonomousTrigger(row.triggerType) ? '자동 실행' : '직접 지시';
 };
 
+export interface GroupedRecentRuns {
+  readonly runs: ConsoleRecentRun[];
+  /**
+   * 마지막 줄의 묶음이 끝났는가 — 상한 다음 줄의 첫 행을 이미 봤다는 뜻이다. false 면
+   * 더 오래된 행이 마지막 줄의 count 를 더 올릴 수 있어 이어 읽어야 한다.
+   */
+  readonly complete: boolean;
+}
+
+// 최신순으로 훑으며 바로 앞 줄과 담당자·일·결과가 같으면 그 줄의 count 만 올린다.
+// 연달아 돈 것만 묶는다 — 사이에 다른 일이 끼면 시간 순서를 지키려 따로 둔다.
+export const groupRecentRuns = (
+  latestRows: readonly LatestRunRow[],
+  limit: number,
+): GroupedRecentRuns => {
+  const runs: ConsoleRecentRun[] = [];
+  for (const row of latestRows) {
+    const title = titleOf(row);
+    const previous = runs.at(-1);
+    if (
+      previous !== undefined &&
+      previous.agentType === row.agentType &&
+      previous.title === title &&
+      previous.status === row.status
+    ) {
+      runs[runs.length - 1] = { ...previous, count: previous.count + 1 };
+      continue;
+    }
+    if (runs.length === limit) {
+      return { runs, complete: true };
+    }
+    runs.push({
+      id: String(row.id),
+      agentType: row.agentType,
+      status: row.status,
+      title,
+      startedAt: row.startedAt.toISOString(),
+      finishedAt: row.endedAt === null ? null : row.endedAt.toISOString(),
+      count: 1,
+    });
+  }
+  return { runs, complete: false };
+};
+
 export const buildConsoleActivity = (
   activityRows: readonly ActivityRunRow[],
-  latestRows: readonly LatestRunRow[],
+  recentRuns: readonly ConsoleRecentRun[],
   clock: {
     today: string;
     serverTime: string;
     dayCount: number;
-    recentLimit: number;
   },
 ): ConsoleActivity => {
   const firstDay = addCalendarDays(clock.today, -(clock.dayCount - 1));
@@ -70,38 +113,6 @@ export const buildConsoleActivity = (
         row.status === AgentRunStatus.FAILED
           ? 0
           : 1),
-    });
-  }
-
-  // 최신순으로 훑으며 바로 앞 줄과 담당자·일·결과가 같으면 그 줄의 count 만 올린다.
-  // 연달아 돈 것만 묶는다 — 사이에 다른 일이 끼면 시간 순서를 지키려 따로 둔다.
-  const recentRuns: ConsoleRecentRun[] = [];
-  for (const row of latestRows) {
-    const title = titleOf(row);
-    const previous = recentRuns.at(-1);
-    if (
-      previous !== undefined &&
-      previous.agentType === row.agentType &&
-      previous.title === title &&
-      previous.status === row.status
-    ) {
-      recentRuns[recentRuns.length - 1] = {
-        ...previous,
-        count: previous.count + 1,
-      };
-      continue;
-    }
-    if (recentRuns.length === clock.recentLimit) {
-      break;
-    }
-    recentRuns.push({
-      id: String(row.id),
-      agentType: row.agentType,
-      status: row.status,
-      title,
-      startedAt: row.startedAt.toISOString(),
-      finishedAt: row.endedAt === null ? null : row.endedAt.toISOString(),
-      count: 1,
     });
   }
 
