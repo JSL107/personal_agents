@@ -5,6 +5,8 @@ import { RetryRunUsecase } from './retry-run.usecase';
 describe('RetryRunUsecase', () => {
   const createRepoMock = (): jest.Mocked<AgentRunRepositoryPort> => ({
     findAllRunsForLedger: jest.fn(),
+    findRunsStartedSince: jest.fn(),
+    findLatestRuns: jest.fn(),
     findById: jest.fn(),
     begin: jest.fn(),
     finish: jest.fn(),

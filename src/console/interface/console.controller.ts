@@ -1,8 +1,10 @@
 import { Controller, Get, UseGuards } from '@nestjs/common';
 
+import { BuildActivityUsecase } from '../application/build-activity.usecase';
 import { BuildLedgerUsecase } from '../application/build-ledger.usecase';
 import { BuildPresidentBriefingUsecase } from '../application/build-president-briefing.usecase';
 import { ConsoleReadService } from '../application/console-read.service';
+import { ConsoleActivity } from '../domain/activity.type';
 import { ConsoleBriefing } from '../domain/briefing.type';
 import {
   ConsoleAgent,
@@ -25,7 +27,14 @@ export class ConsoleController {
     private readonly consoleRead: ConsoleReadService,
     private readonly buildBriefing: BuildPresidentBriefingUsecase,
     private readonly buildLedger: BuildLedgerUsecase,
+    private readonly buildActivity: BuildActivityUsecase,
   ) {}
+
+  // 대시보드 — 최근 14일 실행 추이와 최근 실행 목록. 스냅샷은 지금 도는 런만 담아 따로 둔다.
+  @Get('activity')
+  async getActivity(): Promise<ConsoleActivity> {
+    return await this.buildActivity.execute();
+  }
 
   @Get('ledger')
   async getLedger(): Promise<ConsoleLedger> {

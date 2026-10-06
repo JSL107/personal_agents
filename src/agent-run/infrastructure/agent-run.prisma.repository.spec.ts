@@ -898,3 +898,72 @@ describe('AgentRunPrismaRepository.findAllRunsForLedger', () => {
     });
   });
 });
+
+describe('AgentRunPrismaRepository 콘솔 대시보드 조회', () => {
+  it('findRunsStartedSince 는 시작 시각으로 자르고 집계용 3필드만 읽는다', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const repository = new AgentRunPrismaRepository({
+      agentRun: { findMany },
+    } as unknown as PrismaService);
+    const since = new Date('2026-09-22T15:00:00.000Z');
+
+    await repository.findRunsStartedSince({ since });
+
+    expect(findMany).toHaveBeenCalledWith({
+      where: { startedAt: { gte: since } },
+      select: { agentType: true, status: true, startedAt: true },
+    });
+  });
+
+  it('findLatestRuns 는 최신순 limit 건을 읽고 객체가 아닌 inputSnapshot 은 null 로 접는다', async () => {
+    const base = {
+      agentType: 'PM',
+      triggerType: 'MORNING_BRIEFING_CRON',
+      status: 'SUCCEEDED',
+      startedAt: new Date('2026-10-06T00:00:00.000Z'),
+      endedAt: null,
+    };
+    const findMany = jest.fn().mockResolvedValue([
+      { ...base, id: 2, inputSnapshot: { pullNumber: 1 } },
+      { ...base, id: 1, inputSnapshot: ['배열'] },
+    ]);
+    const repository = new AgentRunPrismaRepository({
+      agentRun: { findMany },
+    } as unknown as PrismaService);
+
+    const result = await repository.findLatestRuns({ limit: 8 });
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: undefined,
+        orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
+        take: 8,
+      }),
+    );
+    expect(result.map((row) => row.inputSnapshot)).toEqual([
+      { pullNumber: 1 },
+      null,
+    ]);
+  });
+
+  it('findLatestRuns 는 (startedAt, id) 커서보다 오래된 행만 읽는다', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const repository = new AgentRunPrismaRepository({
+      agentRun: { findMany },
+    } as unknown as PrismaService);
+    const startedAt = new Date('2026-10-06T02:00:00.000Z');
+
+    await repository.findLatestRuns({
+      limit: 50,
+      before: { startedAt, id: 42 },
+    });
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          OR: [{ startedAt: { lt: startedAt } }, { startedAt, id: { lt: 42 } }],
+        },
+      }),
+    );
+  });
+});

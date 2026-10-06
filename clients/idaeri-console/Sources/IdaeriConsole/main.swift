@@ -13,7 +13,8 @@ let application = NSApplication.shared
 application.setActivationPolicy(.regular)
 
 // 개인 사무실 카드 대시보드 시각 회귀 렌더. 백엔드 없이 고정 상태 6종을 한 장에 굽는다.
-//   swift run IdaeriConsole --render-dashboard /tmp/dashboard.png [--dark] [--size 2560x1600]
+//   swift run IdaeriConsole --render-dashboard /tmp/dashboard.png [--dark] [--size 2560x1600] [--agents]
+//   (`--agents` 는 대시보드 대신 에이전트 상태 탭을 굽는다)
 if let renderIndex = CommandLine.arguments.firstIndex(of: "--render-dashboard") {
     let outputPath =
         renderIndex + 1 < CommandLine.arguments.count
@@ -35,7 +36,8 @@ if let renderIndex = CommandLine.arguments.firstIndex(of: "--render-dashboard") 
         renderDashboardPreview(
             path: outputPath,
             darkMode: CommandLine.arguments.contains("--dark"),
-            size: dashboardRenderSize
+            size: dashboardRenderSize,
+            agentsTab: CommandLine.arguments.contains("--agents")
         ) ? 0 : 1
     )
 }

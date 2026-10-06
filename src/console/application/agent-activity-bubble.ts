@@ -47,6 +47,7 @@ const ACTIVITY_BUBBLE_RULES: Record<string, ActivityBubbleRule> = {
   REMOTE_CONSOLE_CODE_REVIEWER: createPullRequestReviewBubble,
   SLACK_COMMAND_BE_FIX: createPullRequestCheckBubble,
   AUTOPILOT_INVEST_CRON: createInvestBubble,
+  AUTOPILOT_PAPER_INTRADAY_STOP_CRON: '장중 손절 점검 중',
 };
 
 export function activityBubble(input: ActivityBubbleInput): string | null {

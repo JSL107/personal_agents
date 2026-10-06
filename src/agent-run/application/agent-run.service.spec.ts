@@ -13,6 +13,8 @@ import { RoutingContext, runWithRoutingContext } from './routing-context';
 describe('AgentRunService', () => {
   const createRepoMock = (): jest.Mocked<AgentRunRepositoryPort> => ({
     findAllRunsForLedger: jest.fn(),
+    findRunsStartedSince: jest.fn(),
+    findLatestRuns: jest.fn(),
     begin: jest.fn(),
     finish: jest.fn(),
     updateParentId: jest.fn(),

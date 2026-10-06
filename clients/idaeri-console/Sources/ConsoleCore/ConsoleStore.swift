@@ -35,6 +35,8 @@ public final class ConsoleStore: ObservableObject {
     @Published public private(set) var serverTime: String = ""
     /// 대표 브리핑. 스냅샷과 다른 요청으로 오므로 실패해도 나머지 화면은 그대로다.
     @Published public private(set) var briefing: ConsoleBriefing?
+    /// 대시보드 14일 추이·최근 실행. 받기 전이거나 실패하면 nil — 그래프 자리는 비워 둔다.
+    @Published public private(set) var activity: ConsoleActivity?
     /// 캘린더 탭이 조회한 일정 목록. 스냅샷과 무관하게 탭이 열릴 때·상태 변경 직후에만 갱신된다.
     @Published public private(set) var schedules: [ScheduleItem] = []
     @Published public private(set) var pendingCommands: [PendingCommand] = []
@@ -108,6 +110,10 @@ public final class ConsoleStore: ObservableObject {
             return agent
         }
         return agent.replacing(state: .waiting, bubble: waitingBubble)
+    }
+
+    public func apply(activity: ConsoleActivity) {
+        self.activity = activity
     }
 
     /// SSE 증분 이벤트를 현재 상태 위에 적용한다.
