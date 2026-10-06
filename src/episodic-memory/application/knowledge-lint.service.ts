@@ -69,6 +69,15 @@ export class KnowledgeLintService implements KnowledgeLintPort {
       occurredAt: row.occurredAt,
     }));
 
+    // 보고할 쌍을 다 센 뒤에 정리한다 — 순서를 바꾸면 이번 회차 알림에 무엇을 정리했는지가 안 남는다.
+    // 최근접이웃이 임계 밖이면 더 먼 짝도 임계 밖이므로, 쌍이 0건이면 정리할 것도 없다.
+    const duplicateSuperseded =
+      allDuplicates.length > 0
+        ? await this.repository.supersedeOlderDuplicates({
+            maxDistance: input.duplicateMaxDistance,
+          })
+        : 0;
+
     // L4 는 맨 마지막 — L1/L2(결정론, 무료) 결과를 먼저 확보. judge 미주입/비활성 시 skip(조회도 안 함).
     // null 로 남기는 것이 곧 "모순은 점검하지 않았다" 는 사실이다 — 호출자가 그것을 알아야
     // "이상 없음" 의 범위를 정직하게 말할 수 있다.
@@ -85,6 +94,7 @@ export class KnowledgeLintService implements KnowledgeLintPort {
       ],
       duplicateTotal: allDuplicates.length,
       duplicateTotalTruncated: scanTruncated,
+      duplicateSuperseded,
       l4:
         detection === null
           ? null

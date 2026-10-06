@@ -45,7 +45,13 @@ const describeDuplicateCount = (
 };
 
 export const formatKnowledgeLint = (
-  { issues, duplicateTotal, duplicateTotalTruncated, l4 }: KnowledgeLintOutcome,
+  {
+    issues,
+    duplicateTotal,
+    duplicateTotalTruncated,
+    duplicateSuperseded,
+    l4,
+  }: KnowledgeLintOutcome,
   firedAtKst: string,
 ): string => {
   const scope = describeScope(l4);
@@ -86,6 +92,11 @@ export const formatKnowledgeLint = (
         duplicates.length,
         duplicateTotalTruncated,
       ),
+    );
+    // 정리 0건이면 이 줄을 생략하지 않는다 — 쌍은 있는데 아무것도 안 찍혔다는 것 자체가 신호다
+    // (전부 워커 종류가 다른 쌍이거나, 정리 쿼리가 기대대로 돌지 않았다).
+    sections.push(
+      `_→ 오래된 쪽 ${duplicateSuperseded}건을 검색에서 뺐습니다 (행은 남김 · 워커 종류가 다른 쌍은 보고만)_`,
     );
     for (const issue of duplicates) {
       sections.push(

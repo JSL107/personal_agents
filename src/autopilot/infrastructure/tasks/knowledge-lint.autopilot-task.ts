@@ -17,7 +17,9 @@ import {
 } from '../../domain/port/autopilot-task-trace.port';
 
 // 주간 episodic-memory 무결성 점검 — L1 near-duplicate / L2 embedding-null(결정론, LLM 없음)
-// + L4 contradiction(ChatGPT 모순 판정, env 게이트 + 쿼터 가드). 이슈 0건이면 skip. T0_AUTO(읽기 전용).
+// + L4 contradiction(ChatGPT 모순 판정, env 게이트 + 쿼터 가드). 이슈 0건이면 skip.
+// L1 에서 찾은 같은 워커의 사실상 같은 글은 오래된 쪽에 superseded_at 을 찍는다(행 삭제 없음, 되돌릴 수 있음) —
+// 내부 기억 테이블만 고치고 외부 부작용이 없어 T0_AUTO 를 유지한다(선례: preview-sweeper 의 EXPIRED 갱신).
 // "사실상 같은 글" 만 중복으로 본다. 0.05 는 이 도메인에서 필터가 아니었다 — 2026-08-31 실측
 // (episodic_memory 1,700행)에서 최근접이웃 거리의 최댓값 자체가 0.1453 이고 0.05 이하가
 // 1,370/1,696(80.8%) 이라, 무관한 쌍까지 전부 통과했다. 같은 실측에서 거리 0(문자열까지 동일)이

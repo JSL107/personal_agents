@@ -28,6 +28,7 @@ describe('KnowledgeLintAutopilotTask', () => {
         ],
         duplicateTotal: 0,
         duplicateTotalTruncated: false,
+        duplicateSuperseded: 0,
         l4: L4_DONE,
       }),
     };
@@ -61,6 +62,7 @@ describe('KnowledgeLintAutopilotTask', () => {
         issues: [],
         duplicateTotal: 0,
         duplicateTotalTruncated: false,
+        duplicateSuperseded: 0,
         l4: L4_DONE,
       }),
     };
@@ -86,6 +88,7 @@ describe('KnowledgeLintAutopilotTask', () => {
         issues: [],
         duplicateTotal: 0,
         duplicateTotalTruncated: false,
+        duplicateSuperseded: 0,
         l4: L4_DONE,
       }),
     };
@@ -112,6 +115,7 @@ describe('KnowledgeLintAutopilotTask', () => {
         issues: [],
         duplicateTotal: 0,
         duplicateTotalTruncated: false,
+        duplicateSuperseded: 0,
         l4: L4_DONE,
       }),
     };
@@ -135,6 +139,7 @@ describe('KnowledgeLintAutopilotTask', () => {
         issues: [],
         duplicateTotal: 0,
         duplicateTotalTruncated: false,
+        duplicateSuperseded: 0,
         l4: null,
       }),
     };
@@ -159,6 +164,7 @@ describe('KnowledgeLintAutopilotTask', () => {
         issues: [],
         duplicateTotal: 0,
         duplicateTotalTruncated: false,
+        duplicateSuperseded: 0,
         l4: { candidates: 5, judged: 1, abortedByQuota: true },
       }),
     };
@@ -186,6 +192,7 @@ describe('KnowledgeLintAutopilotTask', () => {
         issues: [],
         duplicateTotal: 0,
         duplicateTotalTruncated: false,
+        duplicateSuperseded: 0,
         l4: null,
       }),
     };
@@ -218,6 +225,7 @@ describe('KnowledgeLintAutopilotTask', () => {
         issues: [],
         duplicateTotal: 0,
         duplicateTotalTruncated: false,
+        duplicateSuperseded: 0,
         l4: { candidates: 0, judged: 0, abortedByQuota: false },
       }),
     };

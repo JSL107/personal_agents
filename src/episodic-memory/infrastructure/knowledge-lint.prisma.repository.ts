@@ -95,6 +95,34 @@ export class KnowledgeLintPrismaRepository {
     return rows.map((row) => ({ id: row.id, occurredAt: row.occurred_at }));
   }
 
+  // 사실상 같은 글 중 오래된 쪽에 superseded_at 을 찍고 찍은 행 수를 돌려준다. 행은 지우지 않는다 —
+  // 되돌리려면 이 회차에 찍힌 superseded_at 을 NULL 로 돌리면 된다.
+  // 짝은 같은 kind·같은 agent_type 끼리만 본다: 검색(searchByVector)이 agent_type 으로 거르므로,
+  // 다른 워커의 같은 글을 근거로 찍으면 이쪽 워커의 검색에서 그 기억이 통째로 사라진다.
+  // "더 새것" 은 (occurred_at, id) 순서 — 같은 시각이면 id 가 큰 쪽이 남는다.
+  // 한 문장 안의 EXISTS 는 문장 시작 시점 스냅샷을 보므로 A<B<C 묶음은 A·B 가 찍히고 C 만 남는다.
+  // 거리 조건이라 벡터 인덱스를 못 타 풀스캔이다(1,700행 규모 가정 — 커지면 후보를 최근접이웃 조회로 좁힐 것).
+  async supersedeOlderDuplicates(input: {
+    maxDistance: number;
+  }): Promise<number> {
+    return await this.prisma.$executeRaw`
+      UPDATE episodic_memory a
+      SET superseded_at = now()
+      WHERE a.superseded_at IS NULL
+        AND a.embedding IS NOT NULL
+        AND EXISTS (
+          SELECT 1
+          FROM episodic_memory b
+          WHERE b.superseded_at IS NULL
+            AND b.embedding IS NOT NULL
+            AND b.kind = a.kind
+            AND b.agent_type IS NOT DISTINCT FROM a.agent_type
+            AND (b.occurred_at, b.id) > (a.occurred_at, a.id)
+            AND (a.embedding <=> b.embedding) <= ${input.maxDistance}
+        )
+    `;
+  }
+
   // L4 contradiction 후보 — 거리 밴드(minDistance < d <= maxDistance) 내 "유사하나 동일 아님" 쌍.
   // b.id > a.id 로 쌍을 SQL 단계에서 정규화(역쌍 제거) → service dedup 불필요.
   // judge 가 두 content 를 비교하므로 content + occurredAt(=a) 도 함께 반환.
