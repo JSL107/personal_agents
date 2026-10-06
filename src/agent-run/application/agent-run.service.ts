@@ -97,6 +97,20 @@ const EPISODIC_EXCLUDED_AGENT_TYPES: ReadonlySet<AgentType> = new Set([
   AgentType.INVEST, // {"marketCountry":"KR","holdingCount":0,...}
 ]);
 
+// SUBCONSCIOUS_GATE 는 타입째 막지 않고(위: 판정 회차의 reason 서술은 기억할 가치가 있다)
+// 판정이 하나도 없는 회차만 거른다. 변화가 없었거나 판정을 못 한 회차라 서술이 없고,
+// {"promotedCount":0,"decisions":[]} 가 문자열까지 같아 중복만 쌓는다
+// (2026-10-06 실측: 성공 674건 중 91건이 빈 decisions, 9/17~19 사흘에 같은 글 86벌).
+// LLM 게이트와 Jev 게이트(output.gate = 'jev')가 같은 타입·같은 decisions 키를 쓴다.
+// decisions 키가 없는 낯선 모양은 거르지 않는다 — 모르는 것은 예전처럼 남긴다.
+const hasNoGateDecisions = (agentType: AgentType, output: unknown): boolean => {
+  if (agentType !== AgentType.SUBCONSCIOUS_GATE) {
+    return false;
+  }
+  const decisions = (output as { decisions?: unknown } | null)?.decisions;
+  return Array.isArray(decisions) && decisions.length === 0;
+};
+
 export interface AgentRunExecutionResult<T> {
   result: T;
   modelUsed: string;
@@ -487,6 +501,9 @@ export class AgentRunService implements OnApplicationBootstrap {
       return;
     }
     if (EPISODIC_EXCLUDED_AGENT_TYPES.has(agentType)) {
+      return;
+    }
+    if (hasNoGateDecisions(agentType, output)) {
       return;
     }
     const content =
