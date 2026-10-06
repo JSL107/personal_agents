@@ -15,6 +15,63 @@ const L4_DONE = { candidates: 2, judged: 2, abortedByQuota: false };
 describe('KnowledgeLintAutopilotTask', () => {
   const context = { ownerSlackUserId: 'U1', firedAtKst: '2026-06-28' };
 
+  // 정리는 발송이 성공한 뒤에만 — 점검 단계에서 찍으면 발송·후속 단계 실패 시 정리 내역이 보고되지 않는다.
+  it('정리 대상이 있으면 onDelivered 에서만 같은 임계로 정리한다', async () => {
+    const knowledgeLint = {
+      lintIssues: jest.fn().mockResolvedValue({
+        issues: [
+          {
+            type: 'near_duplicate',
+            episodeId: 1,
+            relatedId: 2,
+            detail: '중복 후보 — distance 0.000',
+            occurredAt: new Date(),
+          },
+        ],
+        duplicateTotal: 1,
+        duplicateTotalTruncated: false,
+        duplicateSupersedable: 1,
+        l4: L4_DONE,
+      }),
+      supersedeOlderDuplicates: jest.fn().mockResolvedValue(1),
+    };
+    const task = new KnowledgeLintAutopilotTask(
+      knowledgeLint as never,
+      makeConfig() as never,
+      makeTrace() as never,
+    );
+
+    const result = await task.run(context);
+
+    expect(knowledgeLint.supersedeOlderDuplicates).not.toHaveBeenCalled();
+    await result.onDelivered?.();
+    expect(knowledgeLint.supersedeOlderDuplicates).toHaveBeenCalledWith({
+      maxDistance: 0.001,
+    });
+  });
+
+  it('정리 대상이 0건이면 onDelivered 를 두지 않는다', async () => {
+    const knowledgeLint = {
+      lintIssues: jest.fn().mockResolvedValue({
+        issues: [],
+        duplicateTotal: 0,
+        duplicateTotalTruncated: false,
+        duplicateSupersedable: 0,
+        l4: L4_DONE,
+      }),
+      supersedeOlderDuplicates: jest.fn(),
+    };
+    const task = new KnowledgeLintAutopilotTask(
+      knowledgeLint as never,
+      makeConfig() as never,
+      makeTrace() as never,
+    );
+
+    const result = await task.run(context);
+
+    expect(result.onDelivered).toBeUndefined();
+  });
+
   it('이슈 있으면 summaryText 반환 + L4 옵션(기본 활성/상한5) 전달', async () => {
     const knowledgeLint = {
       lintIssues: jest.fn().mockResolvedValue({
@@ -28,7 +85,7 @@ describe('KnowledgeLintAutopilotTask', () => {
         ],
         duplicateTotal: 0,
         duplicateTotalTruncated: false,
-        duplicateSuperseded: 0,
+        duplicateSupersedable: 0,
         l4: L4_DONE,
       }),
     };
@@ -62,7 +119,7 @@ describe('KnowledgeLintAutopilotTask', () => {
         issues: [],
         duplicateTotal: 0,
         duplicateTotalTruncated: false,
-        duplicateSuperseded: 0,
+        duplicateSupersedable: 0,
         l4: L4_DONE,
       }),
     };
@@ -88,7 +145,7 @@ describe('KnowledgeLintAutopilotTask', () => {
         issues: [],
         duplicateTotal: 0,
         duplicateTotalTruncated: false,
-        duplicateSuperseded: 0,
+        duplicateSupersedable: 0,
         l4: L4_DONE,
       }),
     };
@@ -115,7 +172,7 @@ describe('KnowledgeLintAutopilotTask', () => {
         issues: [],
         duplicateTotal: 0,
         duplicateTotalTruncated: false,
-        duplicateSuperseded: 0,
+        duplicateSupersedable: 0,
         l4: L4_DONE,
       }),
     };
@@ -139,7 +196,7 @@ describe('KnowledgeLintAutopilotTask', () => {
         issues: [],
         duplicateTotal: 0,
         duplicateTotalTruncated: false,
-        duplicateSuperseded: 0,
+        duplicateSupersedable: 0,
         l4: null,
       }),
     };
@@ -164,7 +221,7 @@ describe('KnowledgeLintAutopilotTask', () => {
         issues: [],
         duplicateTotal: 0,
         duplicateTotalTruncated: false,
-        duplicateSuperseded: 0,
+        duplicateSupersedable: 0,
         l4: { candidates: 5, judged: 1, abortedByQuota: true },
       }),
     };
@@ -192,7 +249,7 @@ describe('KnowledgeLintAutopilotTask', () => {
         issues: [],
         duplicateTotal: 0,
         duplicateTotalTruncated: false,
-        duplicateSuperseded: 0,
+        duplicateSupersedable: 0,
         l4: null,
       }),
     };
@@ -225,7 +282,7 @@ describe('KnowledgeLintAutopilotTask', () => {
         issues: [],
         duplicateTotal: 0,
         duplicateTotalTruncated: false,
-        duplicateSuperseded: 0,
+        duplicateSupersedable: 0,
         l4: { candidates: 0, judged: 0, abortedByQuota: false },
       }),
     };

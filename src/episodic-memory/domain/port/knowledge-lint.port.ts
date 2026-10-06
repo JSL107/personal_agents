@@ -52,16 +52,22 @@ export interface KnowledgeLintOutcome {
   // 조회가 스캔 상한에 걸려 duplicateTotal 이 하한값인가. 로그만으로는 부족하다 —
   // 화면에 뜨는 숫자가 확정 총계인지 "이 이상" 인지는 메시지를 보는 사람이 알아야 한다.
   duplicateTotalTruncated: boolean;
-  // 이번 회차에 오래된 쪽에 superseded_at 을 찍은 행 수. duplicateTotal(쌍 수)과 다를 수 있다 —
-  // 같은 글이 셋이면 두 행이 찍히고, 워커 종류(agent_type)가 다른 쌍은 보고만 하고 찍지 않는다.
-  duplicateSuperseded: number;
+  // 오래된 쪽이라 정리(superseded_at)할 행 수 — 점검 단계에서는 세기만 한다. 실제로 찍는 것은
+  // 알림 발송이 성공한 뒤(supersedeOlderDuplicates)다. duplicateTotal(쌍 수)과 다를 수 있다 —
+  // 같은 글이 셋이면 두 행이 걸리고, 워커 종류(agent_type)가 다른 쌍은 보고만 하고 찍지 않는다.
+  duplicateSupersedable: number;
   // L4 를 아예 수행하지 않았으면 null — 비활성(env) 또는 judge 미주입.
   // "점검 안 함(null)" 과 "점검했으나 일부 실패(judged < candidates)" 는 다른 사실이다.
   l4: ContradictionLintOutcome | null;
 }
 
 export interface KnowledgeLintPort {
+  // 읽기 전용 — 아무 행도 바꾸지 않는다.
   lintIssues(input: LintEpisodicMemoryInput): Promise<KnowledgeLintOutcome>;
+  // 중복의 오래된 쪽에 superseded_at 을 찍고 찍은 행 수를 돌려준다. 알림 발송 뒤에만 부른다 —
+  // 발송 전에 찍으면 발송·후속 조회가 실패했을 때 정리 내역이 보고되지 않은 채 남고,
+  // 재시도는 찍힌 행을 조회하지 않아 "이상 없음" 을 보낼 수 있다.
+  supersedeOlderDuplicates(input: { maxDistance: number }): Promise<number>;
 }
 
 export const KNOWLEDGE_LINT_PORT = Symbol('KNOWLEDGE_LINT_PORT');

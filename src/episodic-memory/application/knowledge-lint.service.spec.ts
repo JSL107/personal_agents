@@ -6,6 +6,7 @@ function createRepositoryMock() {
     findNearestNeighbors: jest.fn().mockResolvedValue([]),
     findEmbeddingNull: jest.fn().mockResolvedValue([]),
     findBandPairs: jest.fn().mockResolvedValue([]),
+    countOlderDuplicates: jest.fn().mockResolvedValue(0),
     supersedeOlderDuplicates: jest.fn().mockResolvedValue(0),
   };
 }
@@ -55,13 +56,13 @@ describe('KnowledgeLintService', () => {
     );
   });
 
-  // 정리는 보고 목록을 만든 뒤에, 같은 임계로 — 임계를 따로 들면 보고한 것과 찍는 것이 갈린다.
-  it('중복 쌍이 있으면 같은 임계로 오래된 쪽을 정리하고 그 수를 낸다', async () => {
+  // 점검은 읽기만 한다 — 찍는 것은 발송 뒤(태스크 onDelivered). 세는 임계는 보고 임계와 같아야 한다.
+  it('중복 쌍이 있으면 같은 임계로 정리 대상 수만 세고 찍지는 않는다', async () => {
     const repository = createRepositoryMock();
     repository.findNearestNeighbors.mockResolvedValue([
       { id: 1, relatedId: 2, distance: 0, occurredAt },
     ]);
-    repository.supersedeOlderDuplicates.mockResolvedValue(1);
+    repository.countOlderDuplicates.mockResolvedValue(1);
     const service = new KnowledgeLintService(repository as never);
 
     const outcome = await service.lintIssues({
@@ -69,15 +70,15 @@ describe('KnowledgeLintService', () => {
       limit: 50,
     });
 
-    expect(repository.supersedeOlderDuplicates).toHaveBeenCalledWith({
+    expect(repository.countOlderDuplicates).toHaveBeenCalledWith({
       maxDistance: 0.001,
     });
-    expect(outcome.duplicateSuperseded).toBe(1);
-    // 정리했어도 이번 회차 알림에는 찾은 쌍이 그대로 남아야 한다.
+    expect(repository.supersedeOlderDuplicates).not.toHaveBeenCalled();
+    expect(outcome.duplicateSupersedable).toBe(1);
     expect(outcome.duplicateTotal).toBe(1);
   });
 
-  it('중복 쌍이 0건이면 정리 쿼리를 부르지 않는다', async () => {
+  it('중복 쌍이 0건이면 세는 쿼리도 부르지 않는다', async () => {
     const repository = createRepositoryMock();
     const service = new KnowledgeLintService(repository as never);
 
@@ -86,8 +87,21 @@ describe('KnowledgeLintService', () => {
       limit: 50,
     });
 
-    expect(repository.supersedeOlderDuplicates).not.toHaveBeenCalled();
-    expect(outcome.duplicateSuperseded).toBe(0);
+    expect(repository.countOlderDuplicates).not.toHaveBeenCalled();
+    expect(outcome.duplicateSupersedable).toBe(0);
+  });
+
+  it('supersedeOlderDuplicates 는 임계를 그대로 넘기고 찍은 수를 돌려준다', async () => {
+    const repository = createRepositoryMock();
+    repository.supersedeOlderDuplicates.mockResolvedValue(3);
+    const service = new KnowledgeLintService(repository as never);
+
+    await expect(
+      service.supersedeOlderDuplicates({ maxDistance: 0.001 }),
+    ).resolves.toBe(3);
+    expect(repository.supersedeOlderDuplicates).toHaveBeenCalledWith({
+      maxDistance: 0.001,
+    });
   });
 
   // 보고 상한에 잘려도 총 쌍 수는 잘리기 전 값이어야 한다 — 이 값이 화면의 "N건 중" 이 된다.

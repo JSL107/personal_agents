@@ -15,14 +15,14 @@ const format = (
   duplicateTotal = issues.filter((issue) => issue.type === 'near_duplicate')
     .length,
   duplicateTotalTruncated = false,
-  duplicateSuperseded = 0,
+  duplicateSupersedable = 0,
 ): string =>
   formatKnowledgeLint(
     {
       issues,
       duplicateTotal,
       duplicateTotalTruncated,
-      duplicateSuperseded,
+      duplicateSupersedable,
       l4,
     },
     firedAtKst,
@@ -59,7 +59,7 @@ describe('formatKnowledgeLint', () => {
     expect(text).toContain('#9');
   });
 
-  it('중복 섹션에 이번 회차 정리 건수를 적는다', () => {
+  it('중복 섹션에 발송 뒤 정리할 건수를 예고한다', () => {
     const duplicate: KnowledgeLintIssue = {
       type: 'near_duplicate',
       episodeId: 1,
@@ -69,11 +69,11 @@ describe('formatKnowledgeLint', () => {
     };
 
     expect(format([duplicate], '2026-06-28', L4_DONE, 1, false, 1)).toContain(
-      '오래된 쪽 1건을 검색에서 뺐습니다',
+      '오래된 쪽 1건을 검색에서 뺍니다',
     );
-    // 쌍은 있는데 0건 정리도 숨기지 않는다 — 그 자체가 확인할 신호다.
+    // 쌍은 있는데 정리 대상 0건도 숨기지 않는다 — 그 자체가 확인할 신호다.
     expect(format([duplicate], '2026-06-28', L4_DONE, 1, false, 0)).toContain(
-      '오래된 쪽 0건을 검색에서 뺐습니다',
+      '오래된 쪽 0건을 검색에서 뺍니다',
     );
   });
 
@@ -91,7 +91,7 @@ describe('formatKnowledgeLint', () => {
       L4_DONE,
     );
 
-    expect(text).not.toContain('검색에서 뺐습니다');
+    expect(text).not.toContain('검색에서 뺍니다');
   });
 
   it('한 종류만 있으면 해당 섹션만 출력', () => {

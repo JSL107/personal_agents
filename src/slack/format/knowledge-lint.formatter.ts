@@ -49,7 +49,7 @@ export const formatKnowledgeLint = (
     issues,
     duplicateTotal,
     duplicateTotalTruncated,
-    duplicateSuperseded,
+    duplicateSupersedable,
     l4,
   }: KnowledgeLintOutcome,
   firedAtKst: string,
@@ -93,10 +93,11 @@ export const formatKnowledgeLint = (
         duplicateTotalTruncated,
       ),
     );
-    // 정리 0건이면 이 줄을 생략하지 않는다 — 쌍은 있는데 아무것도 안 찍혔다는 것 자체가 신호다
-    // (전부 워커 종류가 다른 쌍이거나, 정리 쿼리가 기대대로 돌지 않았다).
+    // 정리 대상 0건이어도 이 줄을 생략하지 않는다 — 쌍은 있는데 걸린 행이 없다는 것 자체가 신호다
+    // (전부 워커 종류가 다른 쌍이거나, 조건이 기대대로 돌지 않았다).
+    // 미래형으로 쓴다: 이 메시지가 나간 뒤에 찍는다(포트 supersedeOlderDuplicates 주석).
     sections.push(
-      `_→ 오래된 쪽 ${duplicateSuperseded}건을 검색에서 뺐습니다 (행은 남김 · 워커 종류가 다른 쌍은 보고만)_`,
+      `_→ 오래된 쪽 ${duplicateSupersedable}건을 검색에서 뺍니다 (이 알림 발송 뒤 적용 · 행은 남김 · 워커 종류가 다른 쌍은 보고만)_`,
     );
     for (const issue of duplicates) {
       sections.push(
