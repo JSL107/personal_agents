@@ -1,3 +1,4 @@
+import { BuildActivityUsecase } from '../application/build-activity.usecase';
 import { BuildLedgerUsecase } from '../application/build-ledger.usecase';
 import { BuildPresidentBriefingUsecase } from '../application/build-president-briefing.usecase';
 import { ConsoleReadService } from '../application/console-read.service';
@@ -25,6 +26,7 @@ describe('ConsoleController.getLedger', () => {
       {} as ConsoleReadService,
       {} as BuildPresidentBriefingUsecase,
       buildLedger as unknown as BuildLedgerUsecase,
+      {} as BuildActivityUsecase,
     );
 
     const result = await controller.getLedger();

@@ -16,19 +16,27 @@ private let dashboardPreviewSize = CGSize(width: 1280, height: 1500)
 /// `size` 를 생략하면(nil) 기존 회귀 캡처와 그대로 비교되도록 위 고정값을 쓴다.
 /// 넓은 창에서 카드 안 캐릭터·소품이 잘리는지는 폭을 바꿔 구워야만 눈으로 확인할 수 있어
 /// 호출부(`--render-dashboard --size`)가 넘길 수 있게 열어 둔다.
-func renderDashboardPreview(path: String, darkMode: Bool, size: CGSize? = nil) -> Bool {
+func renderDashboardPreview(
+    path: String, darkMode: Bool, size: CGSize? = nil, agentsTab: Bool = false
+) -> Bool {
     let dashboardPreviewSize = size ?? dashboardPreviewSize
     let store = ConsoleStore()
     store.apply(
         snapshot: ConsoleSnapshot(
             agents: dashboardPreviewAgents,
-            // runs 는 대시보드가 안 쓴다(오피스 탭 전용) — 비워 둬도 사각지대가 아니다.
-            runs: [],
+            // 진행 중 1건 — 대시보드의 "진행 중인 작업" 숫자와 "n분 전 시작" 이 이 값을 읽는다.
+            runs: [
+                ConsoleRun(
+                    id: "120", agentType: "CODE_REVIEWER", status: "IN_PROGRESS", parentId: nil,
+                    participants: [], startedAt: "2026-09-09T04:33:00.000Z", finishedAt: nil
+                )
+            ],
             approvals: dashboardPreviewApprovals,
             sessions: dashboardPreviewSessions,
             serverTime: "2026-09-09T04:35:00.000Z"
         )
     )
+    store.apply(activity: dashboardPreviewActivity)
     // 지시 배지는 스냅샷이 아니라 사용자 조작으로 쌓인다 — 굽는 쪽에서 직접 세워야
     // `pendingBadgeRow` 가 프레임에 들어온다(전송 중 · 전송 실패 두 모양).
     store.enqueueCommand(text: "owner/repo#42 리뷰해줘", agentTypeHint: "CODE_REVIEWER")
@@ -36,15 +44,26 @@ func renderDashboardPreview(path: String, darkMode: Bool, size: CGSize? = nil) -
         id: store.enqueueCommand(text: "오늘 할 일 알려줘", agentTypeHint: "PM")
     )
 
-    let dashboard = DashboardView(
-        store: store,
-        status: .live,
-        baseURLLabel: "preview",
-        onSend: { _, _ in },
-        onApprove: { _ in },
-        onReject: { _ in },
-        onInject: { _, _ in .queued }
-    )
+    let dashboard = Group {
+        if agentsTab {
+            AgentStatusView(
+                store: store,
+                status: .live,
+                baseURLLabel: "preview",
+                onSend: { _, _ in }
+            )
+        } else {
+            DashboardView(
+                store: store,
+                status: .live,
+                baseURLLabel: "preview",
+                onApprove: { _ in },
+                onReject: { _ in },
+                onInject: { _, _ in .queued },
+                onShowAgents: {}
+            )
+        }
+    }
     .environment(\.colorScheme, darkMode ? .dark : .light)
     .frame(width: dashboardPreviewSize.width, height: dashboardPreviewSize.height)
     .background(Color(nsColor: .windowBackgroundColor))
@@ -147,3 +166,38 @@ private let dashboardPreviewSessions: [ConsoleSession] = [
         lastActivityAt: "2026-09-09T04:34:00.000Z"
     )
 ]
+
+/// 14일 추이 표본 — 실패가 섞인 날, 실행이 없는 날(주말), 진행 중이 남은 오늘을 모두 담는다.
+private let dashboardPreviewActivity = ConsoleActivity(
+    days: [
+        ("2026-08-27", 21, 2, 0), ("2026-08-28", 18, 1, 0), ("2026-08-29", 4, 0, 0),
+        ("2026-08-30", 0, 0, 0), ("2026-08-31", 25, 3, 1), ("2026-09-01", 22, 0, 0),
+        ("2026-09-02", 19, 5, 0), ("2026-09-03", 23, 1, 0), ("2026-09-04", 17, 2, 0),
+        ("2026-09-05", 3, 0, 0), ("2026-09-06", 2, 1, 0), ("2026-09-07", 24, 2, 0),
+        ("2026-09-08", 20, 4, 0), ("2026-09-09", 9, 1, 2),
+    ].map { ConsoleActivityDay(date: $0.0, succeeded: $0.1, failed: $0.2, other: $0.3) },
+    recentRuns: [
+        ConsoleRecentRun(
+            id: "120", agentType: "CODE_REVIEWER", status: "IN_PROGRESS", title: "#536 리뷰",
+            startedAt: "2026-09-09T04:33:00.000Z", finishedAt: nil
+        ),
+        ConsoleRecentRun(
+            id: "119", agentType: "HUMANIZER", status: "SUCCEEDED", title: "문장 다듬기",
+            startedAt: "2026-09-09T04:20:00.000Z", finishedAt: "2026-09-09T04:22:00.000Z"
+        ),
+        ConsoleRecentRun(
+            id: "118", agentType: "PAPER_TRADE", status: "SUCCEEDED", title: "장중 손절 점검",
+            startedAt: "2026-09-09T04:00:00.000Z", finishedAt: "2026-09-09T04:05:00.000Z",
+            count: 7
+        ),
+        ConsoleRecentRun(
+            id: "117", agentType: "PM", status: "SUCCEEDED", title: "아침 계획 짜기",
+            startedAt: "2026-09-09T00:00:00.000Z", finishedAt: "2026-09-09T00:02:00.000Z"
+        ),
+        ConsoleRecentRun(
+            id: "116", agentType: "WORK_REVIEWER", status: "SUCCEEDED", title: "오늘 일 정리",
+            startedAt: "2026-09-08T14:00:00.000Z", finishedAt: "2026-09-08T14:03:00.000Z"
+        ),
+    ],
+    serverTime: "2026-09-09T04:35:00.000Z"
+)

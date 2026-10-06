@@ -6,7 +6,7 @@ import SwiftUI
 private let answeredCommandTTL: TimeInterval = 30 * 60
 
 /// 콘솔 루트. ConsoleStore 와 연결(스냅샷+SSE+백오프)을 소유하고,
-/// 대시보드↔오피스 탭을 전환한다. 두 탭이 같은 store 를 관측한다.
+/// 캘린더·대시보드·에이전트·오피스 탭을 전환한다. 모든 탭이 같은 store 를 관측한다.
 struct AppRootView: View {
     let client: ConsoleClient
     let baseURLLabel: String
@@ -44,10 +44,17 @@ struct AppRootView: View {
                     store: store,
                     status: status,
                     baseURLLabel: baseURLLabel,
-                    onSend: sendCommand,
                     onApprove: approve,
                     onReject: reject,
-                    onInject: inject
+                    onInject: inject,
+                    onShowAgents: { tab = .agents }
+                )
+            case .agents:
+                AgentStatusView(
+                    store: store,
+                    status: status,
+                    baseURLLabel: baseURLLabel,
+                    onSend: sendCommand
                 )
             case .office:
                 OfficeView(
@@ -241,6 +248,15 @@ struct AppRootView: View {
         await MainActor.run { store.apply(snapshot: snapshot) }
         lastResyncAt = Date()
         await resyncBriefing()
+        await resyncActivity()
+    }
+
+    /// 대시보드 추이·최근 실행. 브리핑과 같은 이유로 실패는 조용히 넘긴다.
+    private func resyncActivity() async {
+        guard let activity = try? await client.fetchActivity() else {
+            return
+        }
+        await MainActor.run { store.apply(activity: activity) }
     }
 
     /// 대표 브리핑을 받아 화면에 얹는다. 실패하면 조용히 넘긴다 — 집계가 없다고 관제가
@@ -303,6 +319,9 @@ struct AppRootView: View {
                 store.apply(snapshot: snapshot)
                 status = .live
                 await resyncBriefing()
+                // 첫 연결에서도 받는다. 주기 재동기화(30초)나 상태 변경을 기다리면 서버가 조용한
+                // 동안 대시보드 그래프가 "불러오는 중" 으로 남는다.
+                await resyncActivity()
                 backoffSeconds = 1
                 for await event in await client.events() {
                     store.apply(event: event)

@@ -6,6 +6,7 @@ import { LocalSessionsModule } from '../local-sessions/local-sessions.module';
 import { MemoryVacuumModule } from '../memory-vacuum/memory-vacuum.module';
 import { PrReviewPublishModule } from '../pr-review-loop/pr-review-publish.module';
 import { RouterModule } from '../router/router.module';
+import { BuildActivityUsecase } from './application/build-activity.usecase';
 import { BuildLedgerUsecase } from './application/build-ledger.usecase';
 import { BuildPresidentBriefingUsecase } from './application/build-president-briefing.usecase';
 import { ConsoleReadService } from './application/console-read.service';
@@ -38,6 +39,7 @@ import { ConsoleWriteController } from './interface/console-write.controller';
     ConsoleWriteController,
   ],
   providers: [
+    BuildActivityUsecase,
     BuildLedgerUsecase,
     BuildPresidentBriefingUsecase,
     ConsoleReadService,
