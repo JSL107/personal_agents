@@ -264,6 +264,25 @@ export interface LedgerRunRow {
   readonly startedAt: Date;
 }
 
+// 콘솔 대시보드 — 최근 14일 실행 추이. 일자·상태별로 세기만 하므로 무거운 JSON 은 싣지 않는다.
+export interface ActivityRunRow {
+  readonly agentType: string;
+  readonly status: string;
+  readonly startedAt: Date;
+}
+
+// 콘솔 대시보드 — 최근 실행 목록. 무엇을 했는지 한 줄로 보여 주려고 계기·입력을 함께 싣는다.
+export interface LatestRunRow {
+  readonly id: number;
+  readonly agentType: string;
+  readonly triggerType: string;
+  readonly status: string;
+  readonly startedAt: Date;
+  readonly endedAt: Date | null;
+  // Prisma Json 을 도메인에 들이지 않는다. 객체가 아니면 null 로 접는다.
+  readonly inputSnapshot: Record<string, unknown> | null;
+}
+
 export interface FailInProgressRunsInput {
   ids: readonly number[];
   output: Record<string, unknown>;
@@ -272,6 +291,8 @@ export interface FailInProgressRunsInput {
 export interface AgentRunRepositoryPort {
   // 콘솔 원장 집계용 전량 조회. 집계는 SQL이 아니라 console 도메인의 순수 함수가 담당한다.
   findAllRunsForLedger(): Promise<LedgerRunRow[]>;
+  findRunsStartedSince(input: { since: Date }): Promise<ActivityRunRow[]>;
+  findLatestRuns(input: { limit: number }): Promise<LatestRunRow[]>;
   begin(input: BeginAgentRunInput): Promise<BeginAgentRunResult>;
   updateInputSnapshot?(input: {
     id: number;

@@ -31,6 +31,7 @@ import {
 } from '../domain/agent-run.type';
 import {
   ActiveRunSnapshot,
+  ActivityRunRow,
   AgentContractScoreRow,
   AgentRetryCountRow,
   AgentRunRepositoryPort,
@@ -47,6 +48,7 @@ import {
   FindLatestSweepReviewQuery,
   FinishAgentRunInput,
   InputSnapshotEquals,
+  LatestRunRow,
   LatestSweepReview,
   LedgerRunRow,
   PmContextStats,
@@ -58,6 +60,14 @@ import {
   SimilarPlanRow,
   SucceededAgentRunSnapshot,
 } from '../domain/port/agent-run.repository.port';
+
+// Prisma Json 을 도메인으로 넘길 때 객체만 통과시킨다(배열·스칼라·null 은 null).
+const toPlainObject = (
+  value: Prisma.JsonValue,
+): Record<string, unknown> | null =>
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
 
 @Injectable()
 export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
@@ -73,6 +83,37 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
         startedAt: true,
       },
     });
+  }
+
+  async findRunsStartedSince({
+    since,
+  }: {
+    since: Date;
+  }): Promise<ActivityRunRow[]> {
+    return await this.prisma.agentRun.findMany({
+      where: { startedAt: { gte: since } },
+      select: { agentType: true, status: true, startedAt: true },
+    });
+  }
+
+  async findLatestRuns({ limit }: { limit: number }): Promise<LatestRunRow[]> {
+    const rows = await this.prisma.agentRun.findMany({
+      orderBy: { startedAt: 'desc' },
+      take: limit,
+      select: {
+        id: true,
+        agentType: true,
+        triggerType: true,
+        status: true,
+        startedAt: true,
+        endedAt: true,
+        inputSnapshot: true,
+      },
+    });
+    return rows.map((row) => ({
+      ...row,
+      inputSnapshot: toPlainObject(row.inputSnapshot),
+    }));
   }
 
   async begin({
@@ -586,12 +627,7 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
       startedAt: row.startedAt,
       endedAt: row.endedAt,
       triggerType: row.triggerType,
-      inputSnapshot:
-        row.inputSnapshot !== null &&
-        typeof row.inputSnapshot === 'object' &&
-        !Array.isArray(row.inputSnapshot)
-          ? (row.inputSnapshot as Record<string, unknown>)
-          : null,
+      inputSnapshot: toPlainObject(row.inputSnapshot),
     }));
   }
 

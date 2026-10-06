@@ -243,6 +243,20 @@ public actor ConsoleClient {
         return envelope.data
     }
 
+    /// `GET /v1/console/activity`. 대시보드의 14일 추이·최근 실행 목록.
+    /// 집계가 실패해도 관제 화면은 살아야 해서 스냅샷과 요청을 나눈다(브리핑과 같은 이유).
+    public func fetchActivity() async throws -> ConsoleActivity {
+        let url = baseURL.appendingPathComponent("v1/console/activity")
+        let (data, response) = try await session.data(for: authorized(URLRequest(url: url)))
+        guard let http = response as? HTTPURLResponse else {
+            throw ConsoleClientError.notHTTP
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw ConsoleClientError.badStatus(http.statusCode)
+        }
+        return try JSONDecoder().decode(ActivityEnvelope.self, from: data).data
+    }
+
     /// `GET /v1/console/schedules`. 캘린더 탭이 열릴 때와 상태 변경 직후에만 부른다 —
     /// 일정은 초 단위로 변하지 않으므로 SSE 에 싣지 않는다.
     public func fetchSchedules(from: String, to: String) async throws -> [ScheduleItem] {
@@ -393,6 +407,10 @@ public actor ConsoleClient {
 /// REST 응답 봉투. 실제 payload 는 `data` 에 담긴다.
 private struct SnapshotEnvelope: Decodable {
     let data: ConsoleSnapshot
+}
+
+private struct ActivityEnvelope: Decodable {
+    let data: ConsoleActivity
 }
 
 private struct BriefingEnvelope: Decodable {

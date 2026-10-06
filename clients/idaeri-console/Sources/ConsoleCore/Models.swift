@@ -518,3 +518,61 @@ public struct PendingCommand: Identifiable, Sendable, Equatable {
     /// 카드 매칭용 — 확정된 agentType 우선, 없으면 최초 힌트.
     public var effectiveAgentType: String? { resolvedAgentType ?? agentTypeHint }
 }
+
+/// `GET /v1/console/activity` 의 하루치 실행 집계(KST 날짜 기준).
+public struct ConsoleActivityDay: Codable, Equatable, Sendable, Identifiable {
+    public let date: String
+    public let succeeded: Int
+    public let failed: Int
+    /// 진행 중이거나 종료 상태가 기록되지 않은 실행.
+    public let other: Int
+
+    public var id: String { date }
+    public var total: Int { succeeded + failed + other }
+
+    public init(date: String, succeeded: Int, failed: Int, other: Int) {
+        self.date = date
+        self.succeeded = succeeded
+        self.failed = failed
+        self.other = other
+    }
+}
+
+/// 대시보드 "최근 실행" 한 줄.
+public struct ConsoleRecentRun: Codable, Equatable, Sendable, Identifiable {
+    public let id: String
+    public let agentType: String
+    public let status: String
+    public let title: String
+    public let startedAt: String
+    public let finishedAt: String?
+    /// 연달아 같은 일·결과로 끝나 한 줄로 묶인 수. 이 필드가 없던 서버에서도 해석이 깨지지
+    /// 않게 옵셔널로 받는다 — 해석이 실패하면 대시보드 그래프 전체가 비어 버린다.
+    public let count: Int?
+
+    public init(
+        id: String, agentType: String, status: String, title: String,
+        startedAt: String, finishedAt: String?, count: Int? = nil
+    ) {
+        self.id = id
+        self.agentType = agentType
+        self.status = status
+        self.title = title
+        self.startedAt = startedAt
+        self.finishedAt = finishedAt
+        self.count = count
+    }
+}
+
+/// 대시보드 집계. 스냅샷은 지금 도는 런만 담아 추이·이력은 여기서 따로 받는다.
+public struct ConsoleActivity: Codable, Equatable, Sendable {
+    public let days: [ConsoleActivityDay]
+    public let recentRuns: [ConsoleRecentRun]
+    public let serverTime: String
+
+    public init(days: [ConsoleActivityDay], recentRuns: [ConsoleRecentRun], serverTime: String) {
+        self.days = days
+        self.recentRuns = recentRuns
+        self.serverTime = serverTime
+    }
+}

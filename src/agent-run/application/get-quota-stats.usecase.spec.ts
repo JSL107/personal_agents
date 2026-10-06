@@ -8,6 +8,8 @@ const buildRepo = (
   rows: QuotaStatRow[],
 ): jest.Mocked<AgentRunRepositoryPort> => ({
   findAllRunsForLedger: jest.fn(),
+  findRunsStartedSince: jest.fn(),
+  findLatestRuns: jest.fn(),
   begin: jest.fn(),
   finish: jest.fn(),
   updateParentId: jest.fn(),
