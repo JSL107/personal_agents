@@ -84,7 +84,7 @@ AIHOT_MAX_CANDIDATES = 5
 
 # 원문 제목에 한자가 있으면 원문이 중국어(위챗 공중호 등)라 링크를 눌러도 읽을 수 없다.
 # 도메인 목록보다 단순하고, 영문 원문은 AIHOT 이 originalTitle 을 영어로 준다(2026-10-06 실측 7/8).
-_CJK_PATTERN = re.compile(r"[一-鿿]")
+_CJK_PATTERN = re.compile(r"[\u4e00-\u9fff]")
 
 KST = timezone(timedelta(hours=9))
 
@@ -293,7 +293,7 @@ def select_aihot_items(body: dict) -> tuple[list[dict], list[tuple[dict, str]]]:
 # (2026-09-13·14 '아침신문' 실패. 차단 목록은 tools/cronjob_tools.py `_CRON_INVISIBLE_CHARS`).
 # str.split() 은 이 문자들을 공백으로 보지 않으므로 아래 스니펫 정리로는 걸러지지 않는다.
 _INVISIBLE_TRANSLATION = dict.fromkeys(
-    map(ord, "​‌‍⁠﻿‪‫‬‭‮")
+    map(ord, "\u200b\u200c\u200d\u2060\ufeff\u202a\u202b\u202c\u202d\u202e")
 )
 
 
@@ -322,7 +322,7 @@ def ledger_row(article: dict, kept: bool, reason: str | None) -> dict:
 def collect_section(
     api_key: str, section: dict, ledger: list[dict]
 ) -> tuple[list[dict], list[str]]:
-    """영역 하나를 수집하고 URL 기준 중복을 제거한다.
+    """영역 하나의 후보를 소스 순서대로 모은다. 중복 제거는 main 이 선별을 마친 뒤에 한다.
 
     소스·쿼리 하나가 실패해도 나머지는 살린다 — 한 축이 막혔다고 영역을 통째로 비우면
     실제로는 절반이 멀쩡한데도 "수집 실패" 로 보고하게 된다.
@@ -330,20 +330,7 @@ def collect_section(
     """
     label = section["label"]
     collected: list[dict] = []
-    seen_urls: set[str] = set()
     failures: list[str] = []
-
-    def add(articles: list[dict]) -> None:
-        for article in articles:
-            url = (article.get("url") or "").strip()
-            # 두 쿼리가 같은 기사를 물어오는 경우가 있다. 그대로 두면 후보 수만 부풀고
-            # 모델이 같은 사건을 두 번 고를 수 있다.
-            if url and url in seen_urls:
-                ledger.append(ledger_row(article, False, "duplicate"))
-                continue
-            if url:
-                seen_urls.add(url)
-            collected.append(article)
 
     if section.get("aihot"):
         try:
@@ -356,7 +343,7 @@ def collect_section(
         else:
             for article, reason in dropped:
                 ledger.append(ledger_row(article, False, reason))
-            add(kept)
+            collected.extend(kept)
 
     for query in section["queries"]:
         if not api_key:
@@ -368,7 +355,7 @@ def collect_section(
             failures.append(type(error).__name__)
             print(f"section '{label}' query '{query}' failed: {error}", file=sys.stderr)
             continue
-        add(articles)
+        collected.extend(articles)
 
     return collected, failures
 
@@ -408,6 +395,7 @@ def main() -> int:
 
         lines: list[str] = []
         aihot_count = 0
+        seen_urls: set[str] = set()
         for article in articles:
             text = format_article(len(lines) + 1, article)
             # 기사 하나가 걸리면 hermes 가 그날 job 전체를 막는다. 걸리는 기사만 빼고 나머지를 살린다.
@@ -419,6 +407,16 @@ def main() -> int:
                 if aihot_count >= AIHOT_MAX_CANDIDATES:
                     ledger.append(ledger_row(article, False, "over_cap"))
                     continue
+            url = (article.get("url") or "").strip()
+            # 두 쿼리(또는 AIHOT 과 Tavily)가 같은 기사를 물어오는 경우가 있다. 그대로 두면 후보 수만
+            # 부풀고 모델이 같은 사건을 두 번 고를 수 있다. 선별·상한 뒤에 거르는 이유: 앞에서 거르면
+            # 선별·상한에 걸려 빠질 AIHOT 사본이 자리를 차지해 멀쩡한 Tavily 사본까지 함께 사라진다.
+            if url and url in seen_urls:
+                ledger.append(ledger_row(article, False, "duplicate"))
+                continue
+            if url:
+                seen_urls.add(url)
+            if article.get("source") == "aihot":
                 aihot_count += 1
             ledger.append(ledger_row(article, True, None))
             lines.append(text)
