@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import {
@@ -17,7 +17,11 @@ import {
 } from '../../domain/port/autopilot-task-trace.port';
 
 // 주간 episodic-memory 무결성 점검 — L1 near-duplicate / L2 embedding-null(결정론, LLM 없음)
-// + L4 contradiction(ChatGPT 모순 판정, env 게이트 + 쿼터 가드). 이슈 0건이면 skip. T0_AUTO(읽기 전용).
+// + L4 contradiction(ChatGPT 모순 판정, env 게이트 + 쿼터 가드). 이슈 0건이면 skip.
+// L1 에서 찾은 같은 워커의 사실상 같은 글은 오래된 쪽에 superseded_at 을 찍는다(행 삭제 없음, 되돌릴 수 있음) —
+// 내부 기억 테이블만 고치고 외부 부작용이 없어 T0_AUTO 를 유지한다(선례: preview-sweeper 의 EXPIRED 갱신).
+// 찍는 것은 알림 발송이 성공한 뒤(onDelivered)다. 점검 단계에서 찍으면 그 뒤 L4 조회·trace·발송이
+// 실패했을 때 정리 내역이 보고되지 않은 채 남고, 재시도는 찍힌 행을 못 봐 "이상 없음" 을 보낸다.
 // "사실상 같은 글" 만 중복으로 본다. 0.05 는 이 도메인에서 필터가 아니었다 — 2026-08-31 실측
 // (episodic_memory 1,700행)에서 최근접이웃 거리의 최댓값 자체가 0.1453 이고 0.05 이하가
 // 1,370/1,696(80.8%) 이라, 무관한 쌍까지 전부 통과했다. 같은 실측에서 거리 0(문자열까지 동일)이
@@ -36,6 +40,7 @@ const DEFAULT_L4_MAX_PAIRS = 5;
 @Injectable()
 export class KnowledgeLintAutopilotTask implements AutopilotTask {
   readonly id = 'knowledge-lint';
+  private readonly logger = new Logger(KnowledgeLintAutopilotTask.name);
 
   constructor(
     @Inject(KNOWLEDGE_LINT_PORT)
@@ -97,6 +102,20 @@ export class KnowledgeLintAutopilotTask implements AutopilotTask {
     return {
       skip: false,
       summaryText: formatKnowledgeLint(outcome, firedAtKst),
+      // 예고한 건수와 실제로 찍은 수가 다르면(발송 사이에 새 행이 들어온 경우) 로그로 남긴다.
+      // 후처리가 실패해도 아무것도 찍히지 않았으므로 다음 회차가 같은 행을 다시 잡는다.
+      onDelivered:
+        outcome.duplicateSupersedable > 0
+          ? async (): Promise<void> => {
+              const superseded =
+                await this.knowledgeLint.supersedeOlderDuplicates({
+                  maxDistance: DUPLICATE_MAX_DISTANCE,
+                });
+              this.logger.log(
+                `중복 정리 — 예고 ${outcome.duplicateSupersedable}건, 실제 ${superseded}건 superseded`,
+              );
+            }
+          : undefined,
     };
   }
 

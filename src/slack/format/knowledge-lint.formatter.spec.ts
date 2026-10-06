@@ -15,9 +15,16 @@ const format = (
   duplicateTotal = issues.filter((issue) => issue.type === 'near_duplicate')
     .length,
   duplicateTotalTruncated = false,
+  duplicateSupersedable = 0,
 ): string =>
   formatKnowledgeLint(
-    { issues, duplicateTotal, duplicateTotalTruncated, l4 },
+    {
+      issues,
+      duplicateTotal,
+      duplicateTotalTruncated,
+      duplicateSupersedable,
+      l4,
+    },
     firedAtKst,
   );
 
@@ -50,6 +57,41 @@ describe('formatKnowledgeLint', () => {
     expect(text).toContain('#1 ↔ #2');
     expect(text).toContain('임베딩 누락 1건');
     expect(text).toContain('#9');
+  });
+
+  it('중복 섹션에 발송 뒤 정리할 건수를 예고한다', () => {
+    const duplicate: KnowledgeLintIssue = {
+      type: 'near_duplicate',
+      episodeId: 1,
+      relatedId: 2,
+      detail: '중복 후보 — distance 0.000',
+      occurredAt,
+    };
+
+    expect(format([duplicate], '2026-06-28', L4_DONE, 1, false, 1)).toContain(
+      '오래된 쪽 1건을 검색에서 뺍니다',
+    );
+    // 쌍은 있는데 정리 대상 0건도 숨기지 않는다 — 그 자체가 확인할 신호다.
+    expect(format([duplicate], '2026-06-28', L4_DONE, 1, false, 0)).toContain(
+      '오래된 쪽 0건을 검색에서 뺍니다',
+    );
+  });
+
+  it('중복이 없으면 정리 줄을 쓰지 않는다', () => {
+    const text = format(
+      [
+        {
+          type: 'embedding_null',
+          episodeId: 9,
+          detail: 'embedding 누락 — 벡터 검색에서 제외됨',
+          occurredAt,
+        },
+      ],
+      '2026-06-28',
+      L4_DONE,
+    );
+
+    expect(text).not.toContain('검색에서 뺍니다');
   });
 
   it('한 종류만 있으면 해당 섹션만 출력', () => {

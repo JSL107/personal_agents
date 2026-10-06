@@ -69,6 +69,15 @@ export class KnowledgeLintService implements KnowledgeLintPort {
       occurredAt: row.occurredAt,
     }));
 
+    // 정리할 행은 세기만 한다 — 찍는 것은 발송 뒤(supersedeOlderDuplicates, 포트 주석 참조).
+    // 최근접이웃이 임계 밖이면 더 먼 짝도 임계 밖이므로, 쌍이 0건이면 셀 것도 없다.
+    const duplicateSupersedable =
+      allDuplicates.length > 0
+        ? await this.repository.countOlderDuplicates({
+            maxDistance: input.duplicateMaxDistance,
+          })
+        : 0;
+
     // L4 는 맨 마지막 — L1/L2(결정론, 무료) 결과를 먼저 확보. judge 미주입/비활성 시 skip(조회도 안 함).
     // null 로 남기는 것이 곧 "모순은 점검하지 않았다" 는 사실이다 — 호출자가 그것을 알아야
     // "이상 없음" 의 범위를 정직하게 말할 수 있다.
@@ -85,6 +94,7 @@ export class KnowledgeLintService implements KnowledgeLintPort {
       ],
       duplicateTotal: allDuplicates.length,
       duplicateTotalTruncated: scanTruncated,
+      duplicateSupersedable,
       l4:
         detection === null
           ? null
@@ -94,6 +104,12 @@ export class KnowledgeLintService implements KnowledgeLintPort {
               abortedByQuota: detection.abortedByQuota,
             },
     };
+  }
+
+  async supersedeOlderDuplicates(input: {
+    maxDistance: number;
+  }): Promise<number> {
+    return await this.repository.supersedeOlderDuplicates(input);
   }
 
   // 거리 밴드 쌍을 순차로 LLM 판정. codex 쿼터 소진 시 즉시 중단(circuit break) — 끝까지 안 먹는다.

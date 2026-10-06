@@ -437,7 +437,8 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
     },
     riskTier: 'T0_AUTO',
   },
-  // Knowledge Lint — 주간 episodic-memory 무결성 점검(중복/임베딩 누락). 읽기 전용이라 T0_AUTO.
+  // Knowledge Lint — 주간 episodic-memory 무결성 점검(중복/임베딩 누락) + 중복의 오래된 쪽 superseded 처리.
+  // 내부 기억 테이블만 고치고(행 삭제 없음) 외부 부작용이 없어 T0_AUTO.
   {
     id: 'knowledge-lint',
     taskId: 'knowledge-lint',
