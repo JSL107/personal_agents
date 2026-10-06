@@ -556,6 +556,57 @@ describe('AgentRunService', () => {
     },
   );
 
+  // SUBCONSCIOUS_GATE 는 타입째 막지 않는다 — 판정이 없는 회차만 거르고, 판정 이유가 담긴
+  // 회차와 decisions 키가 없는 낯선 모양은 예전처럼 적재한다.
+  it.each([
+    ['LLM 게이트의 빈 판정', { promotedCount: 0, decisions: [] }, false],
+    [
+      'Jev 게이트의 빈 판정',
+      { gate: 'jev', decisions: [], promotedCount: 0, fallbackCount: 1 },
+      false,
+    ],
+    [
+      '판정 이유가 있는 회차',
+      {
+        promotedCount: 0,
+        decisions: [
+          {
+            changeKey: 'github:pr:x#1',
+            promote: false,
+            reason: 'PR 수정만 감지',
+          },
+        ],
+      },
+      true,
+    ],
+    ['decisions 키가 없는 낯선 모양', { promotedCount: 0 }, true],
+  ])(
+    'SUBCONSCIOUS_GATE — %s 의 적재 여부',
+    async (_label, output, recorded) => {
+      const recorder = {
+        record: jest.fn().mockResolvedValue(undefined),
+        searchRelevant: jest.fn().mockResolvedValue([]),
+      };
+      const serviceWithRecorder = new AgentRunService(
+        repository,
+        recorder as never,
+      );
+
+      await serviceWithRecorder.execute({
+        agentType: AgentType.SUBCONSCIOUS_GATE,
+        triggerType: TriggerType.SUBCONSCIOUS_TICK,
+        inputSnapshot: {},
+        run: async () => ({
+          result: 'r',
+          modelUsed: 'codex-cli',
+          output,
+        }),
+      });
+
+      expect(recorder.record).toHaveBeenCalledTimes(recorded ? 1 : 0);
+    },
+  );
+
   // VACATION 은 조회(계측) 외에 등록·취소 usecase 가 같은 타입을 쓴다 — 막으면 사용자
   // 휴가 행위 기록까지 사라진다(PR #419 codex 리뷰).
   it('VACATION 처럼 usecase 를 공유하는 타입은 적재를 막지 않는다', async () => {
