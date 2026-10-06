@@ -1425,7 +1425,7 @@
 | 가정에 흔들리지 않는 값을 어떻게 고르나 · 왜 아직 못 고르나 | [2026-09-02 강건 순위](../docs/superpowers/specs/2026-09-02-slippage-robust-ranking.md) |
 | 파라미터를 바꾸면 성적이 뭉치나 · 왜 새 컬럼이 필요 없나 | [2026-09-02 오귀속 재확인](../docs/superpowers/specs/2026-09-02-rule-version-axis-verified.md) |
 | 거래량 급증을 얼마나 믿어야 하나 · 왜 순위에서 빼자는 것인가 | [2026-09-04 순위 재료 실측](../docs/superpowers/specs/2026-09-04-rank-material-measurement.md) |
-| 수급을 왜 SWING 1순위로 넣었나 · 당일 수급을 왜 빼나 | PR #702 · #707 본문과 `screener-rule.ts` 주석. 주석이 가리키는 `docs/superpowers/plans/2026-09-30-investor-flow-ranking-material.md` 는 **메인 트리에 없다**(2026-10-06 확인 — 작업 worktree 와 함께 사라진 것으로 보인다). 설계 기록은 메인 트리의 `.ai/2026-09-30-investor-flow/` 에 남아 있다 |
+| 수급을 왜 SWING 1순위로 넣었나 · 당일 수급을 왜 빼나 | PR #702 · #707 본문과 `screener-rule.ts` 주석. 주석이 가리키는 `docs/superpowers/plans/2026-09-30-investor-flow-ranking-material.md` 는 **레포에 커밋된 적이 없다**(2026-10-06 확인 — `docs/` 는 gitignore 라 `git add -f` 없이는 남지 않는다). 추적되는 근거는 PR 본문과 코드 주석뿐이다 — 측정 수치(승률 34.05% → 46.68%, 비우기 대조군 39.60%)는 #707 본문과 주석에 있다 |
 
 ### 코드 참고 위치
 
