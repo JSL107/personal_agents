@@ -315,11 +315,12 @@ TITLE_KEY_MIN_LENGTH = 12
 def title_key(title: str) -> str:
     """같은 기사가 다른 URL 로 재게시된 것(언론사 원문·포털 재게시)을 잡기 위한 제목 정규화 키.
 
-    대소문자·공백·문장부호만 무시하고 제목 전체를 비교한다. 끝의 매체명(`… - 머니투데이`)은 떼지 않는다 —
-    `… - 협력 확대` / `… - 협력 종료` 처럼 제목 본문의 짧은 꼬리와 구별할 수 없어 다른 기사를 같은 기사로 지운다.
-    재게시본은 제목이 글자 그대로 같으므로(2026-10-06 news1·daum 실측) 전체 비교로 충분하다.
+    대소문자와 공백만 정규화하고 제목 전체를 그대로 비교한다. 재게시본은 제목이 글자 그대로 같으므로
+    (2026-10-06 news1·daum 실측) 이것으로 충분하다. 더 느슨하게 하면 다른 기사를 같은 기사로 지운다:
+    - 문장부호를 지우면 `코스피 +1.2% 마감` / `코스피 -1.2% 마감` 이 같은 키가 된다.
+    - 끝의 매체명(`… - 머니투데이`)을 떼면 `… - 협력 확대` / `… - 협력 종료` 를 구별하지 못한다.
     """
-    return "".join(character for character in title.lower() if character.isalnum())
+    return " ".join(title.lower().split())
 
 
 def ledger_row(article: dict, kept: bool, reason: str | None) -> dict:
@@ -515,10 +516,11 @@ def self_check() -> None:
     assert normalize_published({"at": "x"}) == "발행일 미상"
     assert normalize_published("어제") == "어제"
 
-    # 같은 기사의 원문·포털 재게시는 같은 키(공백·문장부호 차이 무시), 꼬리만 다른 기사는 다른 키.
+    # 같은 기사의 원문·포털 재게시는 같은 키(공백·대소문자 차이 무시), 의미가 다른 기사는 다른 키.
     news1 = "스타트업 투자, 3분기 만에 10조 돌파…AI 반도체·바이오 자금 쏠림"
-    assert title_key(news1) == title_key(" " + news1.replace(",", "") + " ")
+    assert title_key(news1) == title_key("  " + news1.replace(" ", "  ").replace("AI", "ai") + " ")
     assert title_key("OpenAI와 마이크로소프트 - 협력 확대") != title_key("OpenAI와 마이크로소프트 - 협력 종료")
+    assert title_key("코스피 +1.2% 마감…외국인 순매수") != title_key("코스피 -1.2% 마감…외국인 순매수")
     assert len(title_key("[속보] 마감시황")) < TITLE_KEY_MIN_LENGTH
     print("self-check ok")
 
