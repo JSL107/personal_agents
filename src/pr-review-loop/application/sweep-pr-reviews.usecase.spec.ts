@@ -962,6 +962,24 @@ describe('SweepPrReviewsUsecase', () => {
       expect(body).toContain('> 요약 첫 줄 요약 둘째 줄');
     });
 
+    it('잘린 diff 를 본 리뷰면 모델 판단과 무관하게 본 바이트/전체 바이트를 붙인다', async () => {
+      noFindings();
+      github.getPullRequestDiff.mockResolvedValue({
+        diff: 'diff',
+        truncated: true,
+        bytes: 120_000,
+      });
+
+      await buildUsecase({
+        ...ENABLED,
+        PR_REVIEW_INLINE_DRYRUN: 'false',
+      }).execute();
+
+      const [{ body }] = github.addIssueComment.mock.calls[0];
+      expect(body).toContain('지적 사항 없음');
+      expect(body).toContain('diff 4/120,000 바이트만 검토');
+    });
+
     it('판단 보류로 끝난 리뷰는 "지적 없음" 대신 판단 보류와 이유를 단다 — 잘린 diff 를 안전하다고 알리지 않는다', async () => {
       reviewUsecase.execute.mockResolvedValue({
         ...REVIEW_OUTCOME,

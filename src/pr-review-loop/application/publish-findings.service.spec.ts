@@ -43,6 +43,7 @@ const baseInput = (findings: ReviewFinding[]) => ({
   pullNumber: 180,
   headSha: 'abc1234',
   diff: DIFF,
+  diffTotalBytes: Buffer.byteLength(DIFF),
   findings,
   max: 4,
   dryRun: false,
@@ -107,6 +108,64 @@ describe('PublishFindingsService', () => {
       postMode: 'INLINE',
       githubCommentId: '555',
       githubThreadNodeId: 'PRRC_a',
+    });
+  });
+
+  describe('잘린 diff 안내', () => {
+    it('지적을 게시했고 diff 가 잘렸으면 본 바이트/전체 바이트를 일반 코멘트로 남긴다', async () => {
+      github.createReviewComment.mockResolvedValue({
+        commentId: '555',
+        nodeId: 'PRRC_a',
+      });
+
+      await service.publish({
+        ...baseInput([finding()]),
+        diffTotalBytes: 120_000,
+      });
+
+      expect(github.addIssueComment).toHaveBeenCalledTimes(1);
+      const { body } = github.addIssueComment.mock.calls[0][0];
+      expect(body.startsWith('🤖 **이대리 자동 리뷰** · 부분 검토')).toBe(true);
+      expect(body).toContain(
+        `diff ${Buffer.byteLength(DIFF)}/120,000 바이트만 검토`,
+      );
+    });
+
+    it('안 잘렸으면 남기지 않는다', async () => {
+      github.createReviewComment.mockResolvedValue({
+        commentId: '555',
+        nodeId: 'PRRC_a',
+      });
+
+      await service.publish(baseInput([finding()]));
+
+      expect(github.addIssueComment).not.toHaveBeenCalled();
+    });
+
+    it('게시한 지적이 없으면(전부 중복) 남기지 않는다', async () => {
+      repository.createIfAbsent.mockResolvedValue(null);
+
+      await service.publish({
+        ...baseInput([finding()]),
+        diffTotalBytes: 120_000,
+      });
+
+      expect(github.addIssueComment).not.toHaveBeenCalled();
+    });
+
+    it('안내 게시가 실패해도 게시 결과는 그대로다', async () => {
+      github.createReviewComment.mockResolvedValue({
+        commentId: '555',
+        nodeId: 'PRRC_a',
+      });
+      github.addIssueComment.mockRejectedValue(new Error('boom'));
+
+      const outcome = await service.publish({
+        ...baseInput([finding()]),
+        diffTotalBytes: 120_000,
+      });
+
+      expect(outcome.inline).toBe(1);
     });
   });
 

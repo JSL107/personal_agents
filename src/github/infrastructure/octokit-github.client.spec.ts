@@ -1,6 +1,7 @@
 import { Octokit } from '@octokit/rest';
 
 import { GithubException } from '../domain/github.exception';
+import { PullRequestDiff } from '../domain/github.type';
 import { GithubErrorCode } from '../domain/github-error-code.enum';
 import {
   computeIsApprovedFromReviews,
@@ -391,6 +392,61 @@ describe('OctokitGithubClient', () => {
       });
 
       expect(result).toEqual({ diff: '한글', truncated: false, bytes: 6 });
+    });
+
+    describe('넘칠 때 테스트 파일을 뒤로 보낸다', () => {
+      const section = (path: string): string =>
+        `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n@@ -1 +1 @@\n+${path}\n`;
+      const diff = [
+        section('src/a.spec.ts'),
+        section('test/e2e.ts'),
+        section('src/b.ts'),
+        section('src/c.ts'),
+      ].join('');
+      const fetch = async (maxBytes: number): Promise<PullRequestDiff> => {
+        const get = jest.fn().mockResolvedValue({ data: diff });
+        const octokit = {
+          rest: { pulls: { get } },
+        } as unknown as Octokit;
+        return await new OctokitGithubClient(octokit).getPullRequestDiff({
+          repo: 'foo/bar',
+          number: 1,
+          maxBytes,
+        });
+      };
+
+      it('동작 코드가 원래 순서대로 앞에 오고, 테스트가 그 뒤에서 잘린다', async () => {
+        const codeBytes = Buffer.byteLength(
+          section('src/b.ts') + section('src/c.ts'),
+        );
+
+        const result = await fetch(codeBytes);
+
+        expect(result.truncated).toBe(true);
+        expect(result.bytes).toBe(Buffer.byteLength(diff));
+        expect(result.diff).toBe(section('src/b.ts') + section('src/c.ts'));
+      });
+
+      it('테스트 무리 안의 순서도 유지한다', async () => {
+        const result = await fetch(Buffer.byteLength(diff) - 1);
+
+        expect(result.diff.indexOf('src/a.spec.ts')).toBeLessThan(
+          result.diff.indexOf('test/e2e.ts'),
+        );
+        expect(result.diff.indexOf('test/e2e.ts')).toBeGreaterThan(
+          result.diff.indexOf('src/c.ts'),
+        );
+      });
+
+      it('안 넘치면 순서를 바꾸지 않는다', async () => {
+        const result = await fetch(Buffer.byteLength(diff));
+
+        expect(result).toEqual({
+          diff,
+          truncated: false,
+          bytes: Buffer.byteLength(diff),
+        });
+      });
     });
 
     it('Octokit 인스턴스가 null 이면 TOKEN_NOT_CONFIGURED 예외', async () => {
