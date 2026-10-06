@@ -35,7 +35,6 @@ import json
 import os
 import re
 import sys
-import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
@@ -308,6 +307,22 @@ def format_article(index: int, article: dict) -> str:
     return f"{index}. [{published}] {title}\n   {snippet}\n   {url}".translate(_INVISIBLE_TRANSLATION)
 
 
+# 제목 비교용 키가 이보다 짧으면 제목 중복 판정을 하지 않는다. "속보"·"마감시황" 같은 짧은 제목은
+# 서로 다른 기사끼리도 같아질 수 있다.
+TITLE_KEY_MIN_LENGTH = 12
+
+
+def title_key(title: str) -> str:
+    """같은 기사가 다른 URL 로 재게시된 것(언론사 원문·포털 재게시)을 잡기 위한 제목 정규화 키.
+
+    대소문자와 공백만 정규화하고 제목 전체를 그대로 비교한다. 재게시본은 제목이 글자 그대로 같으므로
+    (2026-10-06 news1·daum 실측) 이것으로 충분하다. 더 느슨하게 하면 다른 기사를 같은 기사로 지운다:
+    - 문장부호를 지우면 `코스피 +1.2% 마감` / `코스피 -1.2% 마감` 이 같은 키가 된다.
+    - 끝의 매체명(`… - 머니투데이`)을 떼면 `… - 협력 확대` / `… - 협력 종료` 를 구별하지 못한다.
+    """
+    return " ".join(title.lower().split())
+
+
 def ledger_row(article: dict, kept: bool, reason: str | None) -> dict:
     return {
         "date": datetime.now(KST).strftime("%Y-%m-%d"),
@@ -351,7 +366,9 @@ def collect_section(
             continue
         try:
             articles = search_news(api_key, query)
-        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError) as error:
+        # 예외를 골라 잡으면 목록 밖의 실패(RemoteDisconnected·IncompleteRead·ConnectionResetError 등) 하나가
+        # 스크립트를 죽이고, 그날 브리핑은 기사 대신 Script Error 만 받는다. 쿼리 하나의 실패로 끝나야 한다.
+        except Exception as error:  # noqa: BLE001
             failures.append(type(error).__name__)
             print(f"section '{label}' query '{query}' failed: {error}", file=sys.stderr)
             continue
@@ -396,6 +413,7 @@ def main() -> int:
         lines: list[str] = []
         aihot_count = 0
         seen_urls: set[str] = set()
+        seen_titles: set[str] = set()
         for article in articles:
             text = format_article(len(lines) + 1, article)
             # 기사 하나가 걸리면 hermes 가 그날 job 전체를 막는다. 걸리는 기사만 빼고 나머지를 살린다.
@@ -414,8 +432,16 @@ def main() -> int:
             if url and url in seen_urls:
                 ledger.append(ledger_row(article, False, "duplicate"))
                 continue
+            # 같은 기사가 언론사 원문과 포털 재게시(news1 → v.daum.net 등)로 URL 만 달리 들어오는 경우.
+            # URL 비교로는 못 잡아 후보 칸을 하나 낭비한다(2026-10-06 한국 IT 영역 실측).
+            key = title_key(article.get("title") or "")
+            if len(key) >= TITLE_KEY_MIN_LENGTH and key in seen_titles:
+                ledger.append(ledger_row(article, False, "duplicate_title"))
+                continue
             if url:
                 seen_urls.add(url)
+            if len(key) >= TITLE_KEY_MIN_LENGTH:
+                seen_titles.add(key)
             if article.get("source") == "aihot":
                 aihot_count += 1
             ledger.append(ledger_row(article, True, None))
@@ -489,6 +515,13 @@ def self_check() -> None:
     assert normalize_published(1759708607) == "발행일 미상"
     assert normalize_published({"at": "x"}) == "발행일 미상"
     assert normalize_published("어제") == "어제"
+
+    # 같은 기사의 원문·포털 재게시는 같은 키(공백·대소문자 차이 무시), 의미가 다른 기사는 다른 키.
+    news1 = "스타트업 투자, 3분기 만에 10조 돌파…AI 반도체·바이오 자금 쏠림"
+    assert title_key(news1) == title_key("  " + news1.replace(" ", "  ").replace("AI", "ai") + " ")
+    assert title_key("OpenAI와 마이크로소프트 - 협력 확대") != title_key("OpenAI와 마이크로소프트 - 협력 종료")
+    assert title_key("코스피 +1.2% 마감…외국인 순매수") != title_key("코스피 -1.2% 마감…외국인 순매수")
+    assert len(title_key("[속보] 마감시황")) < TITLE_KEY_MIN_LENGTH
     print("self-check ok")
 
 
