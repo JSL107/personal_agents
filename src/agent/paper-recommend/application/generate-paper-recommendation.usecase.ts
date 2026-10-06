@@ -189,7 +189,7 @@ export class GeneratePaperRecommendationUsecase {
         prompt: null,
         ruleVersion: null,
       },
-      run: async ({ agentRunId, updateInputSnapshot }) => {
+      run: async ({ agentRunId, updateInputSnapshot, recordModelResponse }) => {
         // 이 회차가 쓸 값을 한 번만 해소한다. 아래 스크리닝·프롬프트·비중 배정이 모두
         // 이 한 벌을 쓴다 — 회차 도중에 값이 갈리면 "무엇으로 판단했나" 가 남지 않는다.
         const parameters = await this.strategyParameters.execute(strategy);
@@ -295,6 +295,9 @@ export class GeneratePaperRecommendationUsecase {
             systemPrompt,
           },
         });
+        // 파싱 전에 남긴다 — 파싱이 실패한 회차야말로 모델이 무엇을 냈는지가 필요하고,
+        // output 에는 제약을 거친 주문만 남아 "원래 답" 과 재생 답을 비교할 수 없다.
+        await recordModelResponse(completion.text);
         const recommendation = parsePaperRecommendation(completion.text);
         const result = await this.repository.saveRecommendationAtomically({
           accountId: account.id,

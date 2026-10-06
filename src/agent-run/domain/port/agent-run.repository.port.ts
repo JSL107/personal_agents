@@ -302,6 +302,11 @@ export interface AgentRunRepositoryPort {
     id: number;
     inputSnapshot: unknown;
   }): Promise<void>;
+  // 모델 응답 원문을 run 행에 남긴다. finish 는 이 컬럼을 건드리지 않으므로 FAILED 로 끝나도 남는다.
+  recordModelResponse?(input: {
+    id: number;
+    modelResponse: string;
+  }): Promise<void>;
   finish(input: FinishAgentRunInput): Promise<void>;
   // 종료 신호로 끊긴 회차 마감 — 넘긴 id 중 **아직 IN_PROGRESS 인 것만** 닫는다.
   // 조건 없이 쓰면 같은 순간 끝난 회차의 실제 결과(SUCCEEDED)를 덮는다.
