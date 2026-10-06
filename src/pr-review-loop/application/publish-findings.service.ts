@@ -13,7 +13,9 @@ import {
   snapToCommentableLine,
 } from '../domain/diff-hunk.parser';
 import {
+  buildDiffCoverageNote,
   buildFindingCommentBody,
+  buildPartialReviewCommentBody,
   IDAERI_REVIEW_MARKER,
 } from '../domain/finding-comment.body';
 import { buildFindingFingerprint } from '../domain/finding-fingerprint';
@@ -37,6 +39,9 @@ export interface PublishFindingsInput {
   pullNumber: number;
   headSha: string;
   diff: string;
+  // 자르기 전 diff 전체 바이트(PullRequestDiff.bytes). diff 보다 크면 잘린 것이고, 게시할 때
+  // 코드가 "N/M 바이트만 검토" 를 남긴다. 선택값으로 두면 빠뜨린 호출부가 조용히 안내를 잃는다.
+  diffTotalBytes: number;
   findings: ReviewFinding[];
   max: number;
   dryRun: boolean;
@@ -130,7 +135,38 @@ export class PublishFindingsService {
       await this.postGroupedComment({ input, fallback, outcome });
     }
 
+    await this.postCoverageNote(input, outcome);
+
     return outcome;
+  }
+
+  // 지적을 하나라도 올렸는데 diff 가 잘렸으면 PR 에 따로 알린다 — 카드만 보면 전체를 본 리뷰로
+  // 읽힌다. 아무것도 안 올렸으면(전부 중복·게이트 탈락) 새로 알릴 리뷰가 없으므로 남기지 않는다.
+  // 안내일 뿐이라 실패해도 게시 결과를 바꾸지 않는다.
+  private async postCoverageNote(
+    input: PublishFindingsInput,
+    outcome: PublishOutcome,
+  ): Promise<void> {
+    const note = buildDiffCoverageNote(input.diff, input.diffTotalBytes);
+    if (
+      note === null ||
+      outcome.inline + outcome.file + outcome.issueComment === 0
+    ) {
+      return;
+    }
+    try {
+      await this.githubClient.addIssueComment({
+        repo: input.repo,
+        number: input.pullNumber,
+        body: buildPartialReviewCommentBody(note),
+      });
+    } catch (error: unknown) {
+      this.logger.warn(
+        `부분 검토 안내 게시 실패 (${input.repo}#${input.pullNumber}): ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   private async createCard({

@@ -47,7 +47,10 @@ import {
 
 const DEFAULT_LIMIT = 30;
 const MAX_LIMIT = 100;
-const DEFAULT_DIFF_MAX_BYTES = 50_000;
+// 잘린 미탐 12건 재생(각 3회, 테스트 뒤로 재배열)에서 50K 16.7·16.7·0% → 120K 16.7·25·16.7%,
+// 200K 는 120K 와 같은 재현율에 더 느렸다. 120K 는 응답 최대 221초(codex 시간 초과 300초),
+// 잘리는 카드 7장의 오탐 재현은 기준선과 같은 0/9. diff 1KB ≈ 233 토큰(2026-10-06 실측).
+const DEFAULT_DIFF_MAX_BYTES = 120_000;
 const ENGAGEMENT_ENRICH_MAX = 15;
 const WAITING_LOOKBACK_HOURS = 48;
 const MERGEABLE_STATES: ReadonlySet<string> = new Set([
@@ -1467,11 +1470,18 @@ const computeLatestOtherActivityMs = (
 // 한글이 많은 diff 는 truncated=true 인데 전문이 들어가거나 50KB 를 훌쩍 넘겼다.
 // 멀티바이트 문자 중간에서 자르면 U+FFFD 가 남으므로, 절단 지점이 연속 바이트(10xxxxxx)면
 // 문자 경계까지 물린다. 디코딩 후 끝의 U+FFFD 를 지우면 원본에 있던 U+FFFD 까지 지운다.
+//
+// 넘칠 때만 테스트 파일을 뒤로 보낸 뒤 자른다. GitHub 은 경로 순으로 주므로 테스트가 앞에
+// 오면 상한을 먹고 정작 동작 코드가 잘린다 — 잘린 미탐 12건 중 지적 줄이 상한 안에 든 것이
+// 이 순서로 2건 → 7건이 됐다(2026-10-06 실측). 안 넘치면 순서를 건드리지 않아 기존 리뷰
+// 입력은 그대로다. 인라인 좌표(parseDiffHunks)·해소 판정(parseDiffBaseHunks)은 파일 경로로
+// 찾고 줄 번호는 파일 내부 기준이라 파일 순서와 무관하다.
 const truncateDiff = (diff: string, maxBytes: number): PullRequestDiff => {
-  const buffer = Buffer.from(diff, 'utf-8');
-  if (buffer.byteLength <= maxBytes) {
-    return { diff, truncated: false, bytes: buffer.byteLength };
+  const bytes = Buffer.byteLength(diff, 'utf-8');
+  if (bytes <= maxBytes) {
+    return { diff, truncated: false, bytes };
   }
+  const buffer = Buffer.from(moveTestFilesLast(diff), 'utf-8');
   let end = maxBytes;
   while (end > 0 && (buffer[end] & 0xc0) === 0x80) {
     end--;
@@ -1479,6 +1489,28 @@ const truncateDiff = (diff: string, maxBytes: number): PullRequestDiff => {
   return {
     diff: buffer.subarray(0, end).toString('utf-8'),
     truncated: true,
-    bytes: buffer.byteLength,
+    bytes,
   };
+};
+
+const TEST_FILE_PATH =
+  /\.(spec|test)\.[cm]?[jt]sx?$|(^|\/)(test|tests|__tests__)\//;
+
+// `diff --git a/<경로> b/<경로>` 단위로 나누고, 같은 무리 안의 순서는 유지한다.
+// 헤더 앞 머리말이 있으면 테스트가 아닌 쪽에 남아 맨 앞을 지킨다.
+const moveTestFilesLast = (diff: string): string => {
+  const sections = diff.split(/^(?=diff --git )/m);
+  const isTest = (section: string): boolean => {
+    const header = section.split('\n', 1)[0];
+    const marker = header.lastIndexOf(' b/');
+    return (
+      header.startsWith('diff --git ') &&
+      marker >= 0 &&
+      TEST_FILE_PATH.test(header.slice(marker + ' b/'.length))
+    );
+  };
+  return [
+    ...sections.filter((section) => !isTest(section)),
+    ...sections.filter(isTest),
+  ].join('');
 };

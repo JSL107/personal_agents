@@ -11,6 +11,7 @@
  * --misses <json> 은 카드가 없는 미탐(외부 리뷰가 잡고 이대리는 놓친 결함)을 함께 재생해 미탐 재현율을 잰다.
  * 형식은 `src/pr-review-loop/domain/review-replay-misses.ts`. 회사 저장소 위치가 담기므로 저장소에 커밋하지 않는다.
  * 미탐만 재려면 --rejected 0 --fixed 0 을 함께 준다.
+ * --diff-max-bytes <N> 은 재생 diff 의 절단 상한을 바꾼다(기본은 운영과 같은 클라이언트 기본값). 상한을 정하는 실험용이다.
  * --rescore <보고서> 는 모델을 부르지 않고, 그 보고서의 모델 출력(원장 agent_run.output)을 현재 판정 규칙으로
  * 다시 매긴다. 판정 규칙이 바뀐 뒤 기준선을 쿼터 없이 다시 만드는 용도다. --baseline 과 함께 쓸 수 있고,
  * --misses 를 주면 미탐 본문·줄·경로를 그 파일(보고서가 쓴 미탐 파일과 같은 순서)로 바꿔 채점한다.
@@ -114,6 +115,8 @@ interface ReplayOptions {
   rescore?: string;
   // 재채점에서 미탐 본문·줄·경로를 바꿔 끼운 파일. id 는 misses 파일로 맞춘다.
   missesReplacement?: string;
+  // 없으면 클라이언트 기본 상한(운영과 같은 값).
+  diffMaxBytes?: number;
 }
 
 interface ReplayGroup {
@@ -278,6 +281,9 @@ const replay = async (
         repo: repository,
         baseSha: currentDetail.baseSha,
         headSha,
+        ...(options.diffMaxBytes === undefined
+          ? {}
+          : { maxBytes: options.diffMaxBytes }),
       });
       snapshot = {
         detail: { ...currentDetail, headSha, ...summarizeDiff(diff.diff) },
@@ -1034,6 +1040,7 @@ const readOptions = (): ReplayOptions => {
     baseline: readOption('baseline'),
     misses: readOption('misses'),
     rescore: readOption('rescore'),
+    diffMaxBytes: readOptionalInteger('diff-max-bytes', 1),
   };
   if (ids !== undefined) {
     return { ids, ...common };
@@ -1055,6 +1062,14 @@ const readInteger = (value: string, name: string, minimum: number): number => {
     throw new Error(`--${name}는 ${minimum} 이상의 정수여야 합니다.`);
   }
   return parsed;
+};
+
+const readOptionalInteger = (
+  name: string,
+  minimum: number,
+): number | undefined => {
+  const value = readOption(name);
+  return value === undefined ? undefined : readInteger(value, name, minimum);
 };
 
 const readOption = (name: string): string | undefined => {

@@ -17,7 +17,10 @@ import {
 } from '../../github/domain/port/github-client.port';
 import { extractCodexQuota } from '../../model-router/application/extract-codex-quota';
 import { AgentType } from '../../model-router/domain/model-router.type';
-import { buildNoFindingsCommentBody } from '../domain/finding-comment.body';
+import {
+  buildDiffCoverageNote,
+  buildNoFindingsCommentBody,
+} from '../domain/finding-comment.body';
 import {
   SweepExecution,
   SweepPullRequestResult,
@@ -420,6 +423,7 @@ export class SweepPrReviewsUsecase {
             dryRun,
             summary: outcome.result.summary,
             undeterminedReason: outcome.result.undeterminedReason,
+            coverageNote: buildDiffCoverageNote(diff.diff, diff.bytes),
           });
         }
         return null;
@@ -430,6 +434,7 @@ export class SweepPrReviewsUsecase {
         pullNumber,
         headSha: detail.headSha,
         diff: diff.diff,
+        diffTotalBytes: diff.bytes,
         findings: outcome.result.findings,
         max: this.inlineMax(),
         dryRun,
@@ -485,6 +490,7 @@ export class SweepPrReviewsUsecase {
     dryRun,
     summary,
     undeterminedReason,
+    coverageNote,
   }: {
     repo: string;
     pullNumber: number;
@@ -492,6 +498,7 @@ export class SweepPrReviewsUsecase {
     dryRun: boolean;
     summary: string;
     undeterminedReason?: string;
+    coverageNote: string | null;
   }): Promise<void> {
     // 연습 모드는 GitHub 에 아무것도 남기지 않는 것이 정의다.
     if (dryRun) {
@@ -504,7 +511,11 @@ export class SweepPrReviewsUsecase {
       await this.githubClient.addIssueComment({
         repo,
         number: pullNumber,
-        body: buildNoFindingsCommentBody(summary, undeterminedReason),
+        body: buildNoFindingsCommentBody(
+          summary,
+          undeterminedReason,
+          coverageNote,
+        ),
       });
     } catch (error: unknown) {
       this.logger.warn(
