@@ -21,6 +21,16 @@ import {
   ruleAgreement,
 } from '../src/backtest/domain/selection-consistency';
 import {
+  decidePerformanceAction,
+  decidePerformanceVerdict,
+  EQUIVALENCE_MARGIN_PCT,
+  pairedGap,
+  PERFORMANCE_BLOCK_WEEKS,
+  performanceBlockKey,
+  PerformanceVerdict,
+  ruleCounterfactualPicks,
+} from '../src/backtest/domain/selection-performance';
+import {
   CodexCliProvider,
   CodexQuotaExceededException,
 } from '../src/model-router/infrastructure/codex-cli.provider';
@@ -40,7 +50,9 @@ import {
  *   node --env-file=.env -r ts-node/register scripts/selection-consistency.ts baseline
  *   node --env-file=.env -r ts-node/register scripts/selection-consistency.ts sample --stage pilot|1|2 --file <path>
  *   node --env-file=.env -r ts-node/register scripts/selection-consistency.ts report --file <path>
+ *   node --env-file=.env -r ts-node/register scripts/selection-consistency.ts performance
  *
+ * `performance` 는 모델 선정 대 점수 상위 규칙의 사후 수익률 비교다(모델 호출 없음).
  * `sample` 만 모델을 부른다(구독 쿼터 소모). 끊겨도 같은 파일로 다시 돌리면 끝난 칸은 건너뛴다.
  */
 
@@ -360,6 +372,192 @@ const runReport = async (file: string): Promise<void> => {
   );
 };
 
+interface PerformanceRun {
+  strategy: string;
+  asOf: Date;
+  inputs: RecommendationPromptInputs;
+  modelCodes: string[];
+  // 프롬프트 후보와 원장의 실린 목록이 어긋난 회차. 어느 쪽이 모델이 본 것인지 가릴 수 없어 뺀다.
+  promptMismatch: boolean;
+  returnsByHorizon: Map<number, Map<string, number>>;
+}
+
+const loadPerformanceRuns = async (): Promise<PerformanceRun[]> => {
+  const screeningRuns = await prisma.screeningRun.findMany({
+    where: {
+      agentRun: { agentType: 'PAPER_RECOMMEND', status: 'SUCCEEDED' },
+    },
+    orderBy: [{ asOf: 'asc' }, { strategy: 'asc' }],
+    select: {
+      strategy: true,
+      asOf: true,
+      agentRunId: true,
+      agentRun: { select: { inputSnapshot: true } },
+      items: {
+        where: { presented: true },
+        orderBy: { rank: 'asc' },
+        select: {
+          ticker: { select: { code: true } },
+          outcomes: { select: { horizonDays: true, returnPct: true } },
+        },
+      },
+    },
+  });
+  const agentRunIds = screeningRuns.flatMap((run) =>
+    run.agentRunId === null ? [] : [run.agentRunId],
+  );
+  // 체결 여부를 가리지 않는다 — 주간 카드와 같이 "모델이 골랐나" 를 잰다. 진입가가 양쪽 다
+  // 다음 거래일 시가라 체결 운이 성적에 들어가지 않는다.
+  const orders = await prisma.paperOrder.findMany({
+    where: { side: 'BUY', agentRunId: { in: agentRunIds } },
+    select: { agentRunId: true, ticker: { select: { code: true } } },
+  });
+  const boughtByRun = new Map<number, Set<string>>();
+  for (const order of orders) {
+    if (order.agentRunId === null) {
+      continue;
+    }
+    const found = boughtByRun.get(order.agentRunId) ?? new Set<string>();
+    found.add(order.ticker.code);
+    boughtByRun.set(order.agentRunId, found);
+  }
+
+  return screeningRuns.flatMap((run) => {
+    const snapshot = run.agentRun?.inputSnapshot as { prompt?: string | null };
+    if (run.agentRunId === null || !snapshot?.prompt) {
+      return [];
+    }
+    const inputs = parseRecommendationPrompt(snapshot.prompt);
+    const presentedCodes = run.items.map((item) => item.ticker.code);
+    const returnsByHorizon = new Map<number, Map<string, number>>();
+    for (const item of run.items) {
+      for (const outcome of item.outcomes) {
+        const found =
+          returnsByHorizon.get(outcome.horizonDays) ??
+          new Map<string, number>();
+        found.set(item.ticker.code, Number(outcome.returnPct));
+        returnsByHorizon.set(outcome.horizonDays, found);
+      }
+    }
+    return [
+      {
+        strategy: run.strategy,
+        asOf: run.asOf,
+        inputs,
+        modelCodes: [...(boughtByRun.get(run.agentRunId) ?? [])],
+        promptMismatch:
+          inputs.candidates.map((candidate) => candidate.code).join(',') !==
+          presentedCodes.join(','),
+        returnsByHorizon,
+      },
+    ];
+  });
+};
+
+const runPerformance = async (): Promise<void> => {
+  const runs = await loadPerformanceRuns();
+  console.log(
+    `추천 성공 회차 ${runs.length} (SWING ${runs.filter((run) => run.strategy === 'SWING').length} · LONG_TERM ${runs.filter((run) => run.strategy === 'LONG_TERM').length}) · 프롬프트·원장 불일치 ${runs.filter((run) => run.promptMismatch).length}`,
+  );
+  const verdicts: PerformanceVerdict[] = [];
+  for (const [horizonText, weeks] of Object.entries(PERFORMANCE_BLOCK_WEEKS)) {
+    const horizon = Number(horizonText);
+    const gaps: BlockValue[] = [];
+    const disagreements: number[] = [];
+    const abstainedRuleReturns: number[] = [];
+    let overlap = 0;
+    let picks = 0;
+    let unscored = 0;
+    let noCash = 0;
+    let abstained = 0;
+    const excluded = { mismatch: 0, fewEligible: 0, missingOutcome: 0 };
+    for (const run of runs) {
+      const returns = run.returnsByHorizon.get(horizon);
+      if (!returns) {
+        unscored += 1;
+        continue;
+      }
+      if (run.promptMismatch) {
+        excluded.mismatch += 1;
+        continue;
+      }
+      const k = run.modelCodes.length;
+      if (k === 0) {
+        if (!hasBuyingHeadroom(run.inputs)) {
+          noCash += 1;
+          continue;
+        }
+        abstained += 1;
+        // 서술용 — 기권하지 않았다면 규칙이 샀을 상위 3종의 평균. 판정에는 넣지 않는다.
+        const top = ruleCounterfactualPicks(run.inputs, 3);
+        if (top !== null && top.every((code) => returns.has(code))) {
+          abstainedRuleReturns.push(
+            mean(top.map((code) => returns.get(code) as number)) as number,
+          );
+        }
+        continue;
+      }
+      const ruleCodes = ruleCounterfactualPicks(run.inputs, k);
+      if (ruleCodes === null) {
+        excluded.fewEligible += 1;
+        continue;
+      }
+      const gap = pairedGap({
+        modelCodes: run.modelCodes,
+        ruleCodes,
+        returnByCode: returns,
+      });
+      if (gap === null) {
+        excluded.missingOutcome += 1;
+        continue;
+      }
+      gaps.push({
+        block: performanceBlockKey(run.strategy, run.asOf, weeks),
+        value: gap.gapPct,
+      });
+      overlap += gap.overlapCount;
+      picks += k;
+      if (gap.disagreementGapPct !== null) {
+        disagreements.push(gap.disagreementGapPct);
+      }
+    }
+    const interval = blockBootstrapInterval(gaps);
+    const verdict = decidePerformanceVerdict(
+      interval,
+      EQUIVALENCE_MARGIN_PCT[horizon],
+    );
+    verdicts.push(verdict);
+    console.log(
+      `\n[${horizon}거래일 · 블록 ${weeks}주 · 동등 마진 ±${EQUIVALENCE_MARGIN_PCT[horizon]}%p]`,
+    );
+    console.log(
+      `짝 회차 ${gaps.length} · 미채점 ${unscored} · 현금 부족 ${noCash} · 모델 기권 ${abstained} · 제외(불일치 ${excluded.mismatch} · 적격 부족 ${excluded.fewEligible} · 성적 누락 ${excluded.missingOutcome})`,
+    );
+    console.log(
+      interval === null
+        ? 'D(모델 − 규칙): 값 없음'
+        : `D(모델 − 규칙): ${formatPct(interval.mean)}%p [95% ${formatPct(interval.lower)} ~ ${formatPct(interval.upper)}] 회차 ${interval.values} · 블록 ${interval.blocks}`,
+    );
+    console.log(`판정: ${verdict}`);
+    console.log(
+      `  (서술용) 겹친 종목 ${overlap}/${picks} · 다르게 고른 것끼리 평균 차 ${formatPct(mean(disagreements))}%p (회차 ${disagreements.length})`,
+    );
+    for (const strategy of ['SWING', 'LONG_TERM']) {
+      const values = gaps.filter((gap) => gap.block.startsWith(`${strategy}:`));
+      console.log(
+        `  (서술용) ${strategy} D 평균 ${formatPct(mean(values.map((gap) => gap.value)))}%p — 회차 ${values.length}`,
+      );
+    }
+    console.log(
+      `  (서술용) 모델 기권 회차의 규칙 상위 3종 평균 ${formatPct(mean(abstainedRuleReturns))}% — 회차 ${abstainedRuleReturns.length}`,
+    );
+  }
+  console.log(`\n행동: ${decidePerformanceAction(verdicts)}`);
+};
+
+const formatPct = (value: number | null): string =>
+  value === null ? '없음' : value.toFixed(2);
+
 const pushIfPresent = (
   values: BlockValue[],
   block: string,
@@ -407,6 +605,10 @@ const main = async (): Promise<void> => {
     await runBaseline();
     return;
   }
+  if (command === 'performance') {
+    await runPerformance();
+    return;
+  }
   const file = readOption(args, '--file');
   if (command === 'report' && file) {
     await runReport(file);
@@ -418,7 +620,7 @@ const main = async (): Promise<void> => {
     return;
   }
   throw new Error(
-    '사용법: ledger | baseline | sample --stage pilot|1|2 --file <jsonl> | report --file <jsonl>',
+    '사용법: ledger | baseline | performance | sample --stage pilot|1|2 --file <jsonl> | report --file <jsonl>',
   );
 };
 
