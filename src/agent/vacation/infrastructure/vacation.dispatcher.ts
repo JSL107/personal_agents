@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 
+import { buildParsePromptWithContext } from '../../../fact-answer/domain/parse-context';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import {
@@ -14,15 +15,15 @@ import {
 import {
   formatBalance,
   formatCanceled,
-  formatInvalidCommand,
   formatRegistered,
   formatUsageList,
 } from '../../../slack/format/vacation.formatter';
+import { AnswerVacationQuestionUsecase } from '../application/answer-vacation-question.usecase';
 import { CalculateBalanceUsecase } from '../application/calculate-balance.usecase';
 import { CancelLeaveUsecase } from '../application/cancel-leave.usecase';
 import { ListUsageUsecase } from '../application/list-usage.usecase';
 import { RegisterLeaveUsecase } from '../application/register-leave.usecase';
-import { plainDateToIso, todayInKst } from '../domain/plain-date';
+import { PlainDate, plainDateToIso, todayInKst } from '../domain/plain-date';
 import {
   NlVacationIntent,
   parseNlVacationIntent,
@@ -40,6 +41,7 @@ export class VacationDispatcher implements AgentDispatcher {
     private readonly registerLeave: RegisterLeaveUsecase,
     private readonly listUsage: ListUsageUsecase,
     private readonly cancelLeave: CancelLeaveUsecase,
+    private readonly answerQuestion: AnswerVacationQuestionUsecase,
   ) {}
 
   async dispatch(input: DispatchInput): Promise<DispatchOutcome> {
@@ -48,7 +50,7 @@ export class VacationDispatcher implements AgentDispatcher {
     const completion = await this.modelRouter.route({
       agentType: AgentType.VACATION,
       request: {
-        prompt: `[오늘: ${plainDateToIso(asOf)}]\n${input.text ?? ''}`,
+        prompt: buildParsePromptWithContext(plainDateToIso(asOf), input),
         systemPrompt: VACATION_PARSE_SYSTEM_PROMPT,
       },
     });
@@ -61,8 +63,11 @@ export class VacationDispatcher implements AgentDispatcher {
         this.logger.warn(
           `휴가 ${intent.action} 보류 — 질문·가정형 원문 (표지=${marker})`,
         );
-        return this.toOutcome(
-          0,
+        // 기록은 하지 않되 질문에는 답한다("3일 쓰면 며칠 남아?" → 잔여 계산) — 등록하려면 어떻게
+        // 말하면 되는지도 함께 알린다.
+        return this.answer(
+          input,
+          asOf,
           { action: 'UNKNOWN', heldWrite: { action: intent.action, marker } },
           this.formatHeldWrite(intent),
         );
@@ -113,8 +118,33 @@ export class VacationDispatcher implements AgentDispatcher {
         );
       }
       default:
-        return this.toOutcome(0, { action: 'UNKNOWN' }, formatInvalidCommand());
+        // 메뉴로 처리할 수 없는 질문 — 슬래시 사용법 대신 휴가 기록을 근거로 답한다.
+        return this.answer(input, asOf, { action: 'UNKNOWN' });
     }
+  }
+
+  private async answer(
+    input: DispatchInput,
+    asOf: PlainDate,
+    parsedIntent: Record<string, unknown>,
+    notice?: string,
+  ): Promise<DispatchOutcome> {
+    const outcome = await this.answerQuestion.execute({
+      slackUserId: input.slackUserId,
+      asOf,
+      text: input.text ?? '',
+      priorTurns: input.priorTurns ?? [],
+      parsedIntent,
+    });
+    return {
+      agentRunId: outcome.agentRunId,
+      output: { ...parsedIntent, usedFallback: outcome.result.usedFallback },
+      modelUsed: outcome.modelUsed,
+      formattedText:
+        notice === undefined
+          ? outcome.result.text
+          : `${outcome.result.text}\n\n${notice}`,
+    };
   }
 
   // 다시 말할 문장에 파서가 읽은 날짜·번호를 넣는다 — 파서는 직전 턴을 보지 않아서

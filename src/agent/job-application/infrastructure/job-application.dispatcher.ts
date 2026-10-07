@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 
+import { buildParsePromptWithContext } from '../../../fact-answer/domain/parse-context';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { findHypotheticalMarker } from '../../../router/domain/hypothetical-utterance';
@@ -8,8 +9,13 @@ import {
   AgentDispatcher,
   DispatchOutcome,
 } from '../../../router/domain/port/agent-dispatcher.port';
-import { plainDateToIso, todayInKst } from '../../vacation/domain/plain-date';
+import {
+  PlainDate,
+  plainDateToIso,
+  todayInKst,
+} from '../../vacation/domain/plain-date';
 import { AddApplicationUsecase } from '../application/add-application.usecase';
+import { AnswerJobQuestionUsecase } from '../application/answer-job-question.usecase';
 import { ListApplicationsUsecase } from '../application/list-applications.usecase';
 import { UpdateApplicationUsecase } from '../application/update-application.usecase';
 import {
@@ -20,7 +26,6 @@ import {
   formatAdded,
   formatApplicationList,
   formatHeldJobApplicationWrite,
-  formatUnknownJobApplication,
   formatUpdated,
 } from './job-application.formatter';
 
@@ -34,6 +39,7 @@ export class JobApplicationDispatcher implements AgentDispatcher {
     private readonly addApplication: AddApplicationUsecase,
     private readonly updateApplication: UpdateApplicationUsecase,
     private readonly listApplications: ListApplicationsUsecase,
+    private readonly answerQuestion: AnswerJobQuestionUsecase,
   ) {}
 
   async dispatch(input: DispatchInput): Promise<DispatchOutcome> {
@@ -42,7 +48,7 @@ export class JobApplicationDispatcher implements AgentDispatcher {
     const completion = await this.modelRouter.route({
       agentType: AgentType.JOB_APPLICATION,
       request: {
-        prompt: `[오늘: ${plainDateToIso(today)}]\n${input.text ?? ''}`,
+        prompt: buildParsePromptWithContext(plainDateToIso(today), input),
         systemPrompt: JOB_APPLICATION_PARSE_SYSTEM_PROMPT,
       },
     });
@@ -55,8 +61,10 @@ export class JobApplicationDispatcher implements AgentDispatcher {
         this.logger.warn(
           `지원 ${intent.action} 보류 — 질문·가정형 원문 (표지=${marker})`,
         );
-        return this.toOutcome(
-          0,
+        // 기록은 하지 않되 질문에는 지원 기록으로 답하고, 기록하려면 할 말을 함께 알린다.
+        return this.answer(
+          input,
+          today,
           { action: 'UNKNOWN', heldWrite: { action: intent.action, marker } },
           formatHeldJobApplicationWrite({ ...intent, action: intent.action }),
         );
@@ -98,12 +106,33 @@ export class JobApplicationDispatcher implements AgentDispatcher {
         return this.toOutcome(0, records, formatApplicationList(records));
       }
       default:
-        return this.toOutcome(
-          0,
-          { action: 'UNKNOWN' },
-          formatUnknownJobApplication(),
-        );
+        // 메뉴로 처리할 수 없는 질문 — 고정 예시 문구 대신 지원 기록을 근거로 답한다.
+        return this.answer(input, today, { action: 'UNKNOWN' });
     }
+  }
+
+  private async answer(
+    input: DispatchInput,
+    today: PlainDate,
+    parsedIntent: Record<string, unknown>,
+    notice?: string,
+  ): Promise<DispatchOutcome> {
+    const outcome = await this.answerQuestion.execute({
+      slackUserId: input.slackUserId,
+      today,
+      text: input.text ?? '',
+      priorTurns: input.priorTurns ?? [],
+      parsedIntent,
+    });
+    return {
+      agentRunId: outcome.agentRunId,
+      output: { ...parsedIntent, usedFallback: outcome.result.usedFallback },
+      modelUsed: outcome.modelUsed,
+      formattedText:
+        notice === undefined
+          ? outcome.result.text
+          : `${outcome.result.text}\n\n${notice}`,
+    };
   }
 
   private toOutcome(

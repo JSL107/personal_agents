@@ -108,6 +108,16 @@ const makeDispatcher = (intentText: string) => {
       },
     }),
   };
+  const answerQuestion = {
+    execute: jest.fn().mockResolvedValue({
+      agentRunId: 41,
+      modelUsed: 'codex-cli',
+      result: {
+        text: '프로필에는 총 경력 연수가 없어서 몇 년차인지는 기록에 없어요.',
+        usedFallback: false,
+      },
+    }),
+  };
   const dispatcher = new CareerMateDispatcher(
     modelRouter as never,
     buildProfile as never,
@@ -117,6 +127,7 @@ const makeDispatcher = (intentText: string) => {
     calibrateResume as never,
     auditResume as never,
     reflectPr as never,
+    answerQuestion as never,
   );
   return {
     dispatcher,
@@ -127,6 +138,7 @@ const makeDispatcher = (intentText: string) => {
     calibrateResume,
     auditResume,
     reflectPr,
+    answerQuestion,
   };
 };
 
@@ -157,14 +169,22 @@ describe('CareerMateDispatcher', () => {
     expect(outcome.formattedText).toContain('https://notion/x');
   });
 
-  it('UNKNOWN 이면 안내 문구를 반환한다', async () => {
+  it('UNKNOWN 이면 고정 안내 대신 저장된 프로필로 답하고, 생성 작업은 돌리지 않는다', async () => {
     const d = makeDispatcher('{"action":"UNKNOWN"}');
     const outcome = await d.dispatcher.dispatch({
       slackUserId: 'U1',
-      text: '?',
+      text: '내 이력서 기준으로 백엔드 몇 년차로 보여?',
     } as never);
     expect(d.buildProfile.execute).not.toHaveBeenCalled();
-    expect(outcome.formattedText).toContain('프로필');
+    expect(d.calibrateResume.execute).not.toHaveBeenCalled();
+    expect(d.answerQuestion.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: '내 이력서 기준으로 백엔드 몇 년차로 보여?',
+        parsedIntent: { action: 'UNKNOWN' },
+      }),
+    );
+    expect(outcome.agentRunId).toBe(41);
+    expect(outcome.formattedText).toContain('기록에 없어요');
   });
 
   it('ANALYZE_JD_GAP 의도면 analyzeJdGap 을 호출하고 갭 리포트를 반환한다', async () => {
