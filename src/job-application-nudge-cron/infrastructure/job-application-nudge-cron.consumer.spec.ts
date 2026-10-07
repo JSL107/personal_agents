@@ -61,6 +61,7 @@ describe('JobApplicationNudgeCronConsumer', () => {
     expect(findArg.deadlineWithinDays).toBe(3);
     expect(deps.slackNotifier.postMessage).toHaveBeenCalledTimes(1);
     const call = deps.slackNotifier.postMessage.mock.calls[0][0];
+    expect(call.kind).toBe('job-application-nudge');
     expect(call.target).toBe('C1');
     expect(call.text).toMatch(/📌 \*지원 넛지 — \d{4}-\d{2}-\d{2}\*/);
     expect(call.text).toContain('토스');

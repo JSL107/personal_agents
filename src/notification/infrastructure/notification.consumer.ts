@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { Job } from 'bullmq';
 
 import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
+import { DeliveryKind } from '../../slack/domain/slack-delivery.type';
 import { SlackService } from '../../slack/slack.service';
 import {
   ClaudeAuthSuspectJobData,
@@ -137,6 +138,7 @@ export class NotificationConsumer
       ownerId,
       text,
       label: 'claude-auth-suspect',
+      kind: 'alert:claude-auth',
     });
     if (sent) {
       this.markFired(dedupeKey);
@@ -173,6 +175,7 @@ export class NotificationConsumer
       ownerId,
       text,
       label: `cron-failure:${payload.cronName}`,
+      kind: 'alert:cron-failure',
     });
     if (sent) {
       this.markFired(dedupeKey);
@@ -193,13 +196,15 @@ export class NotificationConsumer
     ownerId,
     text,
     label,
+    kind,
   }: {
     ownerId: string;
     text: string;
     label: string;
+    kind: DeliveryKind;
   }): Promise<boolean> {
     try {
-      await this.slackService.postMessage({ target: ownerId, text });
+      await this.slackService.postMessage({ kind, target: ownerId, text });
       this.logger.log(`알람 전송 — ${label} → owner=${ownerId}`);
       return true;
     } catch (error: unknown) {

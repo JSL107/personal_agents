@@ -70,6 +70,9 @@ describe('ResumeCalibrationCronConsumer', () => {
       webTrendsNote: '2026 트렌드 요약',
     });
     expect(deps.slackNotifier.postMessage).toHaveBeenCalledTimes(1);
+    expect(deps.slackNotifier.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'resume-calibration' }),
+    );
   });
 
   it('owner 가 다르면 같은 날에도 각각 발송된다 (가드 키에 owner 포함)', async () => {
@@ -119,6 +122,7 @@ describe('ResumeCalibrationCronConsumer', () => {
     expect(deps.slackNotifier.postMessage).toHaveBeenCalledTimes(2);
     // 두 번째 발송은 첫 메시지 ts 로 스레드 댓글(전체 리포트).
     const secondCall = deps.slackNotifier.postMessage.mock.calls[1][0];
+    expect(secondCall.kind).toBe('resume-calibration');
     expect(secondCall.threadTs).toBe('T1');
     expect(secondCall.text).toContain('u5'); // 요약에서 접힌 항목이 전체엔 포함
   });

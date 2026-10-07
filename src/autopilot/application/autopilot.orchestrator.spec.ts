@@ -57,10 +57,12 @@ describe('AutopilotOrchestrator', () => {
     expect(task.run).toHaveBeenCalledWith(
       expect.objectContaining({ ownerSlackUserId: 'U1' }),
     );
-    expect(postMessage).toHaveBeenCalledWith({
-      target: 'C1',
-      text: '본문',
-    });
+    expect(postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: 'C1',
+        text: '본문',
+      }),
+    );
     expect(acquireOnce).toHaveBeenCalledTimes(1);
   });
 
@@ -91,7 +93,9 @@ describe('AutopilotOrchestrator', () => {
       'U1',
     );
 
-    expect(postMessage).toHaveBeenCalledWith({ target: 'U1', text: '본문' });
+    expect(postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ target: 'U1', text: '본문' }),
+    );
   });
 
   // 멘션 정책의 두 축을 한 쌍으로 고정한다. 모든 채널 발송에 멘션을 붙이던 동안 알림이
@@ -121,10 +125,12 @@ describe('AutopilotOrchestrator', () => {
       'C1',
     );
 
-    expect(postMessage).toHaveBeenCalledWith({
-      target: 'C1',
-      text: '<@U1>\n급락 감지',
-    });
+    expect(postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: 'C1',
+        text: '<@U1>\n급락 감지',
+      }),
+    );
   });
 
   // OR 집계가 이번 설계의 핵심 판단이다 — 한 메시지에 여러 task 요약이 합쳐지므로 item 단위로
@@ -158,10 +164,12 @@ describe('AutopilotOrchestrator', () => {
       'C1',
     );
 
-    expect(postMessage).toHaveBeenCalledWith({
-      target: 'C1',
-      text: '<@U1>\n조용\n\n────────\n\n급락',
-    });
+    expect(postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: 'C1',
+        text: '<@U1>\n조용\n\n────────\n\n급락',
+      }),
+    );
   });
 
   // 전멸 실패는 별도 경로가 멘션을 유지하지만, 부분 실패는 성공 요약과 함께 메인 메시지로
@@ -216,7 +224,9 @@ describe('AutopilotOrchestrator', () => {
 
     await orchestrator.runGroup('daily-eval', [T0_ENTRY], 'U1', 'C1');
 
-    expect(postMessage).toHaveBeenCalledWith({ target: 'C1', text: '본문' });
+    expect(postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ target: 'C1', text: '본문' }),
+    );
   });
 
   describe('unfurlLinks — 링크가 여러 개인 목록형 카드가 미리보기에 묻히지 않게 한다', () => {
@@ -257,10 +267,12 @@ describe('AutopilotOrchestrator', () => {
 
     it('아무도 요청하지 않으면 옵션을 붙이지 않는다 — 기존 발송은 그대로다', async () => {
       const postMessage = await runWith([{ skip: false, summaryText: '본문' }]);
-      expect(postMessage).toHaveBeenCalledWith({
-        target: 'C1',
-        text: '본문',
-      });
+      expect(postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          target: 'C1',
+          text: '본문',
+        }),
+      );
     });
 
     it('요약이 합쳐질 때 한 항목만 요청해도 끈다 — 설정은 메시지 단위다', async () => {
@@ -307,10 +319,10 @@ describe('AutopilotOrchestrator', () => {
         },
       ];
       const tasks = taskResults.map((result, index) =>
-        makeTask(index === 0 ? 'daily-eval' : `task-${index}`, result),
+        makeTask(index === 0 ? 'daily-eval' : 'work-reviewer', result),
       );
       const entries = taskResults.map((_, index) =>
-        index === 0 ? T0_ENTRY : makeEntry(`task-${index}`, `task-${index}`),
+        index === 0 ? T0_ENTRY : makeEntry('work-reviewer', 'work-reviewer'),
       );
       const uploadImage = jest.fn().mockResolvedValue({ fileId: undefined });
       const orchestrator = new AutopilotOrchestrator(
@@ -332,21 +344,29 @@ describe('AutopilotOrchestrator', () => {
       const uploadImageFile = jest.fn().mockResolvedValue({ fileId: 'F1' });
       const { postMessage, uploadImage } = await runWith({ uploadImageFile });
 
-      expect(uploadImageFile).toHaveBeenCalledWith({
-        png: IMAGE.png,
-        filename: IMAGE.filename,
-        title: IMAGE.title,
-      });
-      expect(postMessage).toHaveBeenNthCalledWith(1, {
-        target: 'C1',
-        text: HEADLINE,
-        image: { fileId: 'F1', altText: IMAGE.title },
-      });
-      expect(postMessage).toHaveBeenNthCalledWith(2, {
-        target: 'C1',
-        text: '종목별 내역',
-        threadTs: '111.222',
-      });
+      expect(uploadImageFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          png: IMAGE.png,
+          filename: IMAGE.filename,
+          title: IMAGE.title,
+        }),
+      );
+      expect(postMessage).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          target: 'C1',
+          text: HEADLINE,
+          image: { fileId: 'F1', altText: IMAGE.title },
+        }),
+      );
+      expect(postMessage).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          target: 'C1',
+          text: '종목별 내역',
+          threadTs: '111.222',
+        }),
+      );
       // 메인에 실린 그림을 스레드에 또 올리면 같은 그림이 두 번 뜬다.
       expect(uploadImage).not.toHaveBeenCalled();
     });
@@ -385,10 +405,13 @@ describe('AutopilotOrchestrator', () => {
         .mockRejectedValue(new Error('missing_scope'));
       const { postMessage, uploadImage } = await runWith({ uploadImageFile });
 
-      expect(postMessage).toHaveBeenNthCalledWith(1, {
-        target: 'C1',
-        text: '종목별 내역',
-      });
+      expect(postMessage).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          target: 'C1',
+          text: '종목별 내역',
+        }),
+      );
       expect(uploadImage).toHaveBeenCalledWith(
         expect.objectContaining({ target: 'C1', threadTs: '111.222' }),
       );
@@ -412,10 +435,13 @@ describe('AutopilotOrchestrator', () => {
         }),
       );
       // 그림을 빼고 종전 배치(요약이 메인)로 다시 보낸다.
-      expect(postMessage).toHaveBeenNthCalledWith(2, {
-        target: 'C1',
-        text: '종목별 내역',
-      });
+      expect(postMessage).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          target: 'C1',
+          text: '종목별 내역',
+        }),
+      );
       // 배치가 되돌아갔으므로 그림은 스레드로 간다 — 요약도 스레드로 내리면 중복이 된다.
       expect(uploadImage).toHaveBeenCalledWith(
         expect.objectContaining({ threadTs: '111.222' }),
@@ -436,10 +462,13 @@ describe('AutopilotOrchestrator', () => {
       await runWith({ uploadImageFile, postMessage });
 
       // 1) 헤드라인+그림 메인 2) 스레드 요약(실패) 3) 같은 요약을 채널로
-      expect(postMessage).toHaveBeenNthCalledWith(3, {
-        target: 'C1',
-        text: '종목별 내역',
-      });
+      expect(postMessage).toHaveBeenNthCalledWith(
+        3,
+        expect.objectContaining({
+          target: 'C1',
+          text: '종목별 내역',
+        }),
+      );
       expect(postMessage).toHaveBeenCalledTimes(3);
     });
 
@@ -486,10 +515,13 @@ describe('AutopilotOrchestrator', () => {
         ],
       });
 
-      expect(postMessage).toHaveBeenNthCalledWith(3, {
-        target: 'C1',
-        text: 'Wins·Blockers 본문',
-      });
+      expect(postMessage).toHaveBeenNthCalledWith(
+        3,
+        expect.objectContaining({
+          target: 'C1',
+          text: 'Wins·Blockers 본문',
+        }),
+      );
       expect(postMessage).toHaveBeenCalledTimes(3);
     });
 
@@ -510,10 +542,13 @@ describe('AutopilotOrchestrator', () => {
         ],
       });
 
-      expect(postMessage).toHaveBeenNthCalledWith(2, {
-        target: 'C1',
-        text: 'Wins·Blockers 본문',
-      });
+      expect(postMessage).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          target: 'C1',
+          text: 'Wins·Blockers 본문',
+        }),
+      );
       expect(postMessage).toHaveBeenCalledTimes(2);
     });
 
@@ -553,10 +588,13 @@ describe('AutopilotOrchestrator', () => {
       });
 
       expect(uploadImageFile).not.toHaveBeenCalled();
-      expect(postMessage).toHaveBeenNthCalledWith(1, {
-        target: 'C1',
-        text: '종목별 내역',
-      });
+      expect(postMessage).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          target: 'C1',
+          text: '종목별 내역',
+        }),
+      );
       expect(uploadImage).toHaveBeenCalledTimes(1);
     });
 
@@ -578,10 +616,13 @@ describe('AutopilotOrchestrator', () => {
       });
 
       expect(uploadImageFile).not.toHaveBeenCalled();
-      expect(postMessage).toHaveBeenNthCalledWith(1, {
-        target: 'C1',
-        text: '종목별 내역\n\n────────\n\n다른 워커 요약',
-      });
+      expect(postMessage).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          target: 'C1',
+          text: '종목별 내역\n\n────────\n\n다른 워커 요약',
+        }),
+      );
       expect(uploadImage).toHaveBeenCalledTimes(1);
     });
   });
@@ -672,14 +713,18 @@ describe('AutopilotOrchestrator', () => {
 
     expect(acquireOnce).toHaveBeenCalledTimes(1);
     expect(postMessage).toHaveBeenCalledTimes(2);
-    expect(postMessage).toHaveBeenCalledWith({
-      target: 'C1',
-      text: '본문',
-    });
-    expect(postMessage).toHaveBeenCalledWith({
-      target: 'C2',
-      text: '본문',
-    });
+    expect(postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: 'C1',
+        text: '본문',
+      }),
+    );
+    expect(postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: 'C2',
+        text: '본문',
+      }),
+    );
   });
 
   it('그룹 내 한 task 가 throw 해도 다른 task 발송 + 그룹 성공 (실패 격리)', async () => {
@@ -748,14 +793,20 @@ describe('AutopilotOrchestrator', () => {
     // **멘션 접두사까지 본다.** 본문만 `stringContaining` 으로 확인하면 채널 카드에서
     // 멘션이 빠져도 통과한다 — 실패 안내는 메인 카드와 다른 발송 경로라, 메인 카드 쪽
     // 단언으로는 이 경로의 회귀가 잡히지 않는다.
-    expect(postMessage).toHaveBeenNthCalledWith(1, {
-      target: 'C1',
-      text: expect.stringMatching(/^<@U1>\n[\s\S]*daily-eval 자동 생성 실패/),
-    });
-    expect(postMessage).toHaveBeenNthCalledWith(2, {
-      target: 'C2',
-      text: expect.stringMatching(/^<@U1>\n[\s\S]*daily-eval 자동 생성 실패/),
-    });
+    expect(postMessage).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        target: 'C1',
+        text: expect.stringMatching(/^<@U1>\n[\s\S]*daily-eval 자동 생성 실패/),
+      }),
+    );
+    expect(postMessage).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        target: 'C2',
+        text: expect.stringMatching(/^<@U1>\n[\s\S]*daily-eval 자동 생성 실패/),
+      }),
+    );
     expect(acquireOnce).not.toHaveBeenCalled();
   });
 
@@ -787,10 +838,12 @@ describe('AutopilotOrchestrator', () => {
       ),
     ).rejects.toThrow('Autopilot: 실행한 모든 task 가 실패했습니다.');
 
-    expect(postMessage).toHaveBeenCalledWith({
-      target: 'C1',
-      text: expect.stringMatching(/^<@U1>\n[\s\S]*daily-eval 자동 생성 실패/),
-    });
+    expect(postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: 'C1',
+        text: expect.stringMatching(/^<@U1>\n[\s\S]*daily-eval 자동 생성 실패/),
+      }),
+    );
     expect(acquireOnce).not.toHaveBeenCalled();
   });
 
@@ -871,15 +924,17 @@ describe('AutopilotOrchestrator', () => {
     // 카드를 무엇으로 그릴지는 preview-gate 가 소유하는 PreviewCardMessage 한 묶음으로 넘어간다 —
     // 경력 반영 카드에만 묶음별 "작업 맥락" 입력칸이 붙고, 그 개수·라벨·기존 값이 전부
     // payload 에서 나오기 때문이다.
-    expect(postPreviewMessage).toHaveBeenCalledWith({
-      target: 'C1',
-      preview: {
-        id: 'PV1',
-        kind: PREVIEW_KIND.EVENING_BLOG_PUBLISH,
-        previewText: '발행 후보',
-        payload: {},
-      },
-    });
+    expect(postPreviewMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: 'C1',
+        preview: {
+          id: 'PV1',
+          kind: PREVIEW_KIND.EVENING_BLOG_PUBLISH,
+          previewText: '발행 후보',
+          payload: {},
+        },
+      }),
+    );
     expect(acquireOnce).toHaveBeenCalledTimes(1);
   });
 
@@ -1012,21 +1067,25 @@ describe('AutopilotOrchestrator', () => {
     expect(createPreview.execute.mock.calls[0][0].ttlMs).toBe(
       24 * 60 * 60 * 1000,
     );
-    expect(slackNotifier.postPreviewMessage).toHaveBeenCalledWith({
-      target: 'U1',
-      preview: {
-        id: 'PV1',
-        kind: PREVIEW_KIND.DOCS_AUDIT_PR,
-        previewText: 'pv',
-        payload: { files: [] },
-      },
-    });
+    expect(slackNotifier.postPreviewMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: 'U1',
+        preview: {
+          id: 'PV1',
+          kind: PREVIEW_KIND.DOCS_AUDIT_PR,
+          previewText: 'pv',
+          payload: { files: [] },
+        },
+      }),
+    );
     // preview 발송 후 첫 타깃 좌표(channel/ts)를 저장한다.
-    expect(previewRepository.attachSlackMessage).toHaveBeenCalledWith({
-      id: 'PV1',
-      slackChannelId: 'C1',
-      slackMessageTs: '111.222',
-    });
+    expect(previewRepository.attachSlackMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'PV1',
+        slackChannelId: 'C1',
+        slackMessageTs: '111.222',
+      }),
+    );
   });
 
   it('preview 요청의 개별 TTL을 orchestrator 에 전달한다', async () => {
@@ -1082,7 +1141,7 @@ describe('AutopilotOrchestrator', () => {
 
   it('요약은 메인 메시지로, 상세는 같은 스레드 댓글로 발송한다', async () => {
     const taskA = {
-      id: 'a',
+      id: 'daily-eval',
       run: jest.fn().mockResolvedValue({
         skip: false,
         summaryText: 'SA',
@@ -1090,7 +1149,7 @@ describe('AutopilotOrchestrator', () => {
       }),
     };
     const taskB = {
-      id: 'b',
+      id: 'work-reviewer',
       run: jest.fn().mockResolvedValue({ skip: false, summaryText: 'SB' }),
     };
     const postMessageMock = jest.fn().mockResolvedValue({ ts: 'TS1' });
@@ -1103,21 +1162,27 @@ describe('AutopilotOrchestrator', () => {
       { attachSlackMessage: jest.fn() } as never,
     );
 
-    const entryA = makeEntry('a', 'a');
-    const entryB = makeEntry('b', 'b');
+    const entryA = makeEntry('daily-eval', 'daily-eval');
+    const entryB = makeEntry('work-reviewer', 'work-reviewer');
     await orchestrator.runGroup('g', [entryA, entryB], 'U1', 'C1');
 
     // 1) 메인: SA + 구분자 + SB
-    expect(postMessageMock).toHaveBeenNthCalledWith(1, {
-      target: 'C1',
-      text: 'SA\n\n────────\n\nSB',
-    });
+    expect(postMessageMock).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        target: 'C1',
+        text: 'SA\n\n────────\n\nSB',
+      }),
+    );
     // 2) 스레드: detailText 있는 A 만, threadTs=TS1
-    expect(postMessageMock).toHaveBeenNthCalledWith(2, {
-      target: 'C1',
-      text: 'DA',
-      threadTs: 'TS1',
-    });
+    expect(postMessageMock).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        target: 'C1',
+        text: 'DA',
+        threadTs: 'TS1',
+      }),
+    );
     expect(postMessageMock).toHaveBeenCalledTimes(2);
   });
 
@@ -1175,7 +1240,7 @@ describe('AutopilotOrchestrator', () => {
         runVerdict: { agentRunId: 42, facets: ['retro_problem', 'overall'] },
       });
       // 요약 본문은 건드리지 않는다 — 메인은 두 요약을 합친 그대로다.
-      expect(postMessageMock.mock.calls[0][0]).toEqual({
+      expect(postMessageMock.mock.calls[0][0]).toMatchObject({
         target: 'C1',
         text: 'EVAL\n\n────────\n\nRETRO',
       });
@@ -1261,10 +1326,12 @@ describe('AutopilotOrchestrator', () => {
     await orchestrator.runGroup('daily-eval', [T0_ENTRY], 'U1', 'C1');
 
     expect(postMessage).toHaveBeenCalledTimes(1);
-    expect(postMessage).toHaveBeenCalledWith({
-      target: 'C1',
-      text: '요약만',
-    });
+    expect(postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: 'C1',
+        text: '요약만',
+      }),
+    );
   });
 
   // 회귀 방지 — 멱등 가드가 acquireOnce 단계에서 소비된 채 메인 발송이 실패하면,
@@ -1469,7 +1536,7 @@ describe('AutopilotOrchestrator', () => {
     });
 
     it('task 가 guardKeySuffix 를 주면 가드 키 끝에 붙는다', async () => {
-      const task = makeTask('pr-review-sweep', {
+      const task = makeTask('daily-eval', {
         skip: false,
         summaryText: '본문',
         guardKeySuffix: 'contradicted-3',
@@ -1485,25 +1552,25 @@ describe('AutopilotOrchestrator', () => {
       );
 
       await orchestrator.runGroup(
-        'pr-review-sweep',
-        [makeEntry('pr-review-sweep', 'pr-review-sweep')],
+        'daily-eval',
+        [makeEntry('daily-eval', 'daily-eval')],
         'U1',
         'C1',
       );
 
       expect(acquireOnce).toHaveBeenCalledWith(
-        `autopilot:pr-review-sweep:${getTodayKstDate()}:contradicted-3`,
+        `autopilot:daily-eval:${getTodayKstDate()}:contradicted-3`,
         expect.anything(),
       );
     });
 
     it('여러 task 가 각자 접미사를 내면 실행 순서와 무관하게 정렬해 이어 붙인다', async () => {
-      const taskB = makeTask('task-b', {
+      const taskB = makeTask('daily-eval', {
         skip: false,
         summaryText: 'B',
         guardKeySuffix: 'zeta-1',
       });
-      const taskA = makeTask('task-a', {
+      const taskA = makeTask('work-reviewer', {
         skip: false,
         summaryText: 'A',
         guardKeySuffix: 'alpha-2',
@@ -1521,7 +1588,10 @@ describe('AutopilotOrchestrator', () => {
 
       await orchestrator.runGroup(
         'mixed',
-        [makeEntry('task-b', 'task-b'), makeEntry('task-a', 'task-a')],
+        [
+          makeEntry('daily-eval', 'daily-eval'),
+          makeEntry('work-reviewer', 'work-reviewer'),
+        ],
         'U1',
         'C1',
       );
@@ -1536,7 +1606,7 @@ describe('AutopilotOrchestrator', () => {
       // 🔴 acquireOnce 로 선점한 키와 release 로 롤백하는 키가 갈리면 가드가 영구히
       // 남아 그 그룹의 발송이 하루 내내 막힌다 — 접미사 도입으로 이 불변식이 깨지지
       // 않는지 직접 확인한다.
-      const task = makeTask('pr-review-sweep', {
+      const task = makeTask('daily-eval', {
         skip: false,
         summaryText: '본문',
         guardKeySuffix: 'contradicted-2',
@@ -1560,8 +1630,8 @@ describe('AutopilotOrchestrator', () => {
 
       await expect(
         orchestrator.runGroup(
-          'pr-review-sweep',
-          [makeEntry('pr-review-sweep', 'pr-review-sweep')],
+          'daily-eval',
+          [makeEntry('daily-eval', 'daily-eval')],
           'U1',
           'C1',
         ),
@@ -1876,10 +1946,12 @@ describe('AutopilotOrchestrator', () => {
       expect(createPreview.execute).not.toHaveBeenCalled();
       expect(postPreviewMessage).not.toHaveBeenCalled();
       // 조용히 사라지면 안 된다 — 왜 오늘 카드가 없는지 owner 가 알아야 한다.
-      expect(postMessage).toHaveBeenLastCalledWith({
-        target: 'C1',
-        text: expect.stringContaining('승인 카드 보류'),
-      });
+      expect(postMessage).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          target: 'C1',
+          text: expect.stringContaining('승인 카드 보류'),
+        }),
+      );
     });
 
     it('전문 파일(detailFile)은 상세 댓글 바로 뒤 같은 스레드에 올리고 카드를 만든다', async () => {
@@ -1912,13 +1984,15 @@ describe('AutopilotOrchestrator', () => {
         'C1',
       );
 
-      expect(uploadTextFile).toHaveBeenCalledWith({
-        target: 'C1',
-        threadTs: 'TS1',
-        content: '# 전문',
-        filename: 'a.md',
-        title: '제목',
-      });
+      expect(uploadTextFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          target: 'C1',
+          threadTs: 'TS1',
+          content: '# 전문',
+          filename: 'a.md',
+          title: '제목',
+        }),
+      );
       expect(uploadTextFile.mock.invocationCallOrder[0]).toBeGreaterThan(
         postMessage.mock.invocationCallOrder[1],
       );
@@ -1961,10 +2035,12 @@ describe('AutopilotOrchestrator', () => {
 
       expect(createPreview.execute).not.toHaveBeenCalled();
       expect(onDelivered).not.toHaveBeenCalled();
-      expect(postMessage).toHaveBeenLastCalledWith({
-        target: 'C1',
-        text: expect.stringContaining('승인 카드 보류'),
-      });
+      expect(postMessage).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          target: 'C1',
+          text: expect.stringContaining('승인 카드 보류'),
+        }),
+      );
     });
 
     it('메인 ts 를 못 받아 전문을 붙일 수 없어도 카드를 만들지 않는다', async () => {
@@ -2169,14 +2245,20 @@ describe('AutopilotOrchestrator', () => {
     expect(release).toHaveBeenCalledTimes(1);
     expect(release).toHaveBeenCalledWith(acquiredKey);
     expect(postMessage).toHaveBeenCalledTimes(2);
-    expect(postMessage).toHaveBeenNthCalledWith(1, {
-      target: 'C1',
-      text: '본문',
-    });
-    expect(postMessage).toHaveBeenNthCalledWith(2, {
-      target: 'C2',
-      text: '본문',
-    });
+    expect(postMessage).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        target: 'C1',
+        text: '본문',
+      }),
+    );
+    expect(postMessage).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        target: 'C2',
+        text: '본문',
+      }),
+    );
   });
 
   // 회귀 방지 — 한 승인 카드(preview) 의 생성/발송 실패가 (1) 이후 카드를 죽이거나
@@ -2449,7 +2531,9 @@ describe('AutopilotOrchestrator', () => {
 
     await orchestrator.runGroup('evening', [T0_ENTRY], 'U1', ', ,');
 
-    expect(postMessage).toHaveBeenCalledWith({ target: 'U1', text: '본문' });
+    expect(postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ target: 'U1', text: '본문' }),
+    );
     expect(postPreviewMessage).toHaveBeenCalledWith(
       expect.objectContaining({ target: 'U1' }),
     );
@@ -2486,13 +2570,15 @@ describe('AutopilotOrchestrator', () => {
 
     await orchestrator.runGroup('daily-eval', [T0_ENTRY], 'U1', 'C1');
 
-    expect(uploadImage).toHaveBeenCalledWith({
-      target: 'C1',
-      threadTs: '111.222',
-      png,
-      filename: 'curve.png',
-      title: '수익률 곡선',
-    });
+    expect(uploadImage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: 'C1',
+        threadTs: '111.222',
+        png,
+        filename: 'curve.png',
+        title: '수익률 곡선',
+      }),
+    );
   });
 
   // 그림 업로드 실패로 후처리를 건너뛰면, 그 task 의 상태가 확정되지 않아 다음 회차에
@@ -2539,5 +2625,244 @@ describe('AutopilotOrchestrator', () => {
       expect.objectContaining({ target: 'C1', text: '요약' }),
     );
     expect(onDelivered).toHaveBeenCalledTimes(1);
+  });
+
+  describe('발송 경로', () => {
+    const makeOrchestrator = (
+      tasks: ReturnType<typeof makeTask>[],
+      slackNotifier: Record<string, jest.Mock>,
+      firstRun = true,
+    ): AutopilotOrchestrator =>
+      new AutopilotOrchestrator(
+        tasks as never,
+        slackNotifier as never,
+        {
+          acquireOnce: jest.fn().mockResolvedValue(firstRun),
+          isDone: jest.fn().mockResolvedValue(false),
+        } as never,
+        { execute: jest.fn().mockResolvedValue({ id: 'preview-1' }) } as never,
+        { attachSlackMessage: jest.fn() } as never,
+      );
+
+    // 가드보다 먼저 쓰면 Slack 이라면 막혔을 같은 내용이 회차마다 쌓인다.
+    it('하루 1회 가드에 막힌 회차는 콘솔 항목도 원장에 쓰지 않는다', async () => {
+      const slackNotifier = {
+        postMessage: jest.fn(),
+        recordSuppressedDelivery: jest.fn().mockResolvedValue(undefined),
+      };
+      const task = makeTask('pr-review-sweep', {
+        skip: false,
+        summaryText: '채택률 통계',
+      });
+
+      await makeOrchestrator([task], slackNotifier, false).runGroup(
+        'pr-review-sweep',
+        [makeEntry('pr-review-sweep', 'pr-review-sweep')],
+        'U1',
+        'C1',
+      );
+
+      expect(slackNotifier.recordSuppressedDelivery).not.toHaveBeenCalled();
+      expect(slackNotifier.postMessage).not.toHaveBeenCalled();
+    });
+
+    // 콘솔 항목도 전달 산출물이다 — 다른 task 실패에 끌려 전멸로 판정되면 안 된다.
+    it('같은 그룹의 다른 task 가 실패해도 성공한 콘솔 항목은 원장에 남고 전멸로 보지 않는다', async () => {
+      const slackNotifier = {
+        postMessage: jest.fn().mockResolvedValue({ ts: '1.1' }),
+        recordSuppressedDelivery: jest.fn().mockResolvedValue(undefined),
+      };
+      const failing = makeTask('daily-eval', { skip: false, summaryText: '' });
+      failing.run.mockRejectedValue(new Error('모델 실패'));
+      const tasks = [
+        makeTask('run-sweeper', { skip: false, summaryText: '콘솔 요약' }),
+        failing,
+      ];
+
+      await expect(
+        makeOrchestrator(tasks, slackNotifier).runGroup(
+          'mixed',
+          [
+            makeEntry('run-sweeper', 'run-sweeper'),
+            makeEntry('daily-eval', 'daily-eval'),
+          ],
+          'U1',
+          'C1',
+        ),
+      ).resolves.toBeUndefined();
+
+      expect(slackNotifier.recordSuppressedDelivery).toHaveBeenCalledWith(
+        expect.objectContaining({ itemKinds: ['run-sweeper'] }),
+      );
+      expect(slackNotifier.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ itemKinds: ['daily-eval'] }),
+      );
+    });
+
+    // 되돌린 항목도 원래 발송 필드를 지녀야 한다 — detailIsOnlyCopy 를 잃으면 메인 ts 가 비는 회차에
+    // 상세 대피가 빠져 원장에도 Slack 에도 전문이 남지 않는다.
+    it('원장 실패로 되돌린 항목은 메인 ts 가 없어도 유일 사본 상세를 채널로 대피한다', async () => {
+      const slackNotifier = {
+        postMessage: jest.fn().mockResolvedValue({ ts: undefined }),
+        recordSuppressedDelivery: jest
+          .fn()
+          .mockRejectedValue(new Error('db unavailable')),
+      };
+      const task = makeTask('run-sweeper', {
+        skip: false,
+        summaryText: '정리 요약',
+        detailText: '정리 상세 전문',
+        detailIsOnlyCopy: true,
+        unfurlLinks: false,
+      });
+
+      await makeOrchestrator([task], slackNotifier).runGroup(
+        'run-sweeper',
+        [makeEntry('run-sweeper', 'run-sweeper')],
+        'U1',
+        'C1',
+      );
+
+      expect(slackNotifier.postMessage).toHaveBeenCalledTimes(2);
+      expect(slackNotifier.postMessage).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          target: 'C1',
+          text: '정리 상세 전문',
+          unfurlLinks: false,
+        }),
+      );
+      expect(slackNotifier.postMessage.mock.calls[1][0]).not.toHaveProperty(
+        'threadTs',
+      );
+    });
+
+    // 원장이 유일한 사본이라, 못 쓰면 버리지 않고 종전처럼 Slack 으로 보낸다.
+    it('원장 기록에 실패한 콘솔 항목은 Slack 으로 되돌려 보낸다', async () => {
+      const slackNotifier = {
+        postMessage: jest.fn().mockResolvedValue({ ts: '1.1' }),
+        recordSuppressedDelivery: jest
+          .fn()
+          .mockRejectedValue(new Error('db unavailable')),
+      };
+      const task = makeTask('run-sweeper', {
+        skip: false,
+        summaryText: '정리 요약',
+        detailText: '정리 상세',
+      });
+
+      await makeOrchestrator([task], slackNotifier).runGroup(
+        'run-sweeper',
+        [makeEntry('run-sweeper', 'run-sweeper')],
+        'U1',
+        'C1',
+      );
+
+      expect(slackNotifier.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: 'autopilot:run-sweeper',
+          itemKinds: ['run-sweeper'],
+          text: '정리 요약',
+        }),
+      );
+      expect(slackNotifier.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ text: '정리 상세', threadTs: '1.1' }),
+      );
+    });
+
+    it('콘솔 항목을 각 target 원장에 전문으로 기록하고 Slack 에 보내지 않는다', async () => {
+      const slackNotifier = {
+        postMessage: jest.fn(),
+        recordSuppressedDelivery: jest.fn().mockResolvedValue(undefined),
+      };
+      const task = makeTask('run-sweeper', {
+        skip: false,
+        summaryText: '요약',
+        detailText: '상세 전문',
+        detailIsOnlyCopy: true,
+      });
+
+      await makeOrchestrator([task], slackNotifier).runGroup(
+        'sweeper',
+        [makeEntry('run-sweeper', 'run-sweeper')],
+        'U1',
+        'C1,C2',
+      );
+
+      expect(slackNotifier.recordSuppressedDelivery).toHaveBeenCalledTimes(2);
+      expect(slackNotifier.recordSuppressedDelivery).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: 'autopilot:sweeper',
+          itemKinds: ['run-sweeper'],
+          target: 'C1',
+          text: '요약\n\n상세 전문',
+          reason: 'CONSOLE_ROUTE',
+        }),
+      );
+      expect(slackNotifier.recordSuppressedDelivery).toHaveBeenCalledWith(
+        expect.objectContaining({ target: 'C2' }),
+      );
+      expect(slackNotifier.postMessage).not.toHaveBeenCalled();
+    });
+
+    it('혼합 그룹은 Slack 항목만 합치고 taskId 를 기록한다', async () => {
+      const slackNotifier = {
+        postMessage: jest.fn().mockResolvedValue({ ts: undefined }),
+        recordSuppressedDelivery: jest.fn().mockResolvedValue(undefined),
+      };
+      const tasks = [
+        makeTask('run-sweeper', { skip: false, summaryText: '콘솔 요약' }),
+        makeTask('daily-eval', { skip: false, summaryText: 'Slack 요약' }),
+      ];
+
+      await makeOrchestrator(tasks, slackNotifier).runGroup(
+        'mixed',
+        [
+          makeEntry('run-sweeper', 'run-sweeper'),
+          makeEntry('daily-eval', 'daily-eval'),
+        ],
+        'U1',
+        'C1',
+      );
+
+      expect(slackNotifier.postMessage).toHaveBeenCalledTimes(1);
+      expect(slackNotifier.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: 'autopilot:mixed',
+          itemKinds: ['daily-eval'],
+          text: 'Slack 요약',
+        }),
+      );
+    });
+
+    it('콘솔 항목의 승인 카드는 여전히 Slack 에 게시한다', async () => {
+      const slackNotifier = {
+        postMessage: jest.fn(),
+        recordSuppressedDelivery: jest.fn().mockResolvedValue(undefined),
+        postPreviewMessage: jest
+          .fn()
+          .mockResolvedValue({ channelId: 'C1', messageTs: '1.1' }),
+      };
+      const task = makeTask('docs-sync-audit', {
+        skip: false,
+        summaryText: '콘솔 요약',
+        detailText: '콘솔 전문',
+        preview: {
+          kind: PREVIEW_KIND.EVENING_BLOG_PUBLISH,
+          payload: { pageId: 'p1' },
+          previewText: '승인 카드',
+        },
+      });
+
+      await makeOrchestrator([task], slackNotifier).runGroup(
+        'docs-sync-audit',
+        [makeEntry('docs-sync-audit', 'docs-sync-audit')],
+        'U1',
+        'C1',
+      );
+
+      expect(slackNotifier.postMessage).not.toHaveBeenCalled();
+      expect(slackNotifier.postPreviewMessage).toHaveBeenCalledTimes(1);
+      expect(slackNotifier.recordSuppressedDelivery).toHaveBeenCalledTimes(1);
+    });
   });
 });

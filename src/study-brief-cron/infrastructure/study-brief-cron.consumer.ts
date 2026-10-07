@@ -555,6 +555,7 @@ export class StudyBriefCronConsumer extends WorkerHost {
     let threadTs: string | undefined;
     try {
       const result = await this.slackNotifier.postMessage({
+        kind: 'study-brief',
         target,
         text: summary,
       });
@@ -574,6 +575,7 @@ export class StudyBriefCronConsumer extends WorkerHost {
       // 상세 스레드 실패는 요약 발송을 무효화하지 않는다. reportMd는 DB에 정본으로 보존된다.
       try {
         await this.slackNotifier.postMessage({
+          kind: 'study-brief',
           target,
           text: detail,
           threadTs,
