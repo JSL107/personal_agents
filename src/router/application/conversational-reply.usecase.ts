@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { ModelRouterUsecase } from '../../model-router/application/model-router.usecase';
@@ -38,18 +38,14 @@ export class ConversationalReplyUsecase {
   constructor(
     private readonly modelRouter: ModelRouterUsecase,
     private readonly configService: ConfigService,
-    // 미주입(단위 테스트)이면 전체 목록을 싣는다.
-    @Optional()
+    // 필수 — 빠지면 조용히 전체 목록을 안내하는 대신 부팅이 실패해야 "등록된 워커만" 이 지켜진다.
     @Inject(AGENT_DISPATCHER_PORT)
-    dispatchers?: AgentDispatcher[],
+    dispatchers: AgentDispatcher[],
   ) {
-    const registered = dispatchers?.map((dispatcher) => dispatcher.agentType);
-    this.capabilities =
-      registered === undefined
-        ? WORKER_CAPABILITIES
-        : WORKER_CAPABILITIES.filter(({ agentType }) =>
-            registered.includes(agentType),
-          );
+    const registered = dispatchers.map((dispatcher) => dispatcher.agentType);
+    this.capabilities = WORKER_CAPABILITIES.filter(({ agentType }) =>
+      registered.includes(agentType),
+    );
   }
 
   async reply({
@@ -117,7 +113,7 @@ export const buildSystemPrompt = ({
       : undefined,
     // 2026-08-13·19 DM 에서 개인 봇이 "어느 고객사의 가상계좌", "타인의 비공개 금융정보" 를 말했다 —
     // 자기가 누구의 비서인지 모르면 범용 챗봇처럼 답한다.
-    `- 이 봇은 한 사람의 개인 비서입니다. 고객사나 다른 사용자는 없고, 대화에 나오는 계좌(모의투자)·휴가·일정·지원 기록·PR 은 모두 이 사용자 본인 것입니다.`,
+    `- 이 봇은 한 사람의 개인 비서입니다. 고객사나 다른 사용자는 없고, 대화에 나오는 계좌(모의투자)·휴가·일정·지원 기록은 모두 이 사용자 본인 것입니다. 리뷰를 맡긴 PR 은 회사나 다른 사람의 레포일 수 있으니 소유를 전제하지 마세요.`,
     `- self-reference 매핑: 사용자가 "이대리 봇", "이 레포", "여기", "자기 자신", "너" 같은 표현을 직접 쓰면 그 대상은 당신 자신 = ${selfRepo ?? '봇이 동작하는 레포'} 입니다. 이 경우만 "어느 repo 인가요?" 다시 묻지 말고 그대로 사용.`,
     `- 다른 repo 가능성: 사용자가 GitHub URL 또는 "owner/name" 형식으로 다른 repo 를 명시하면 그 repo 를 사용하세요 — self 로 우회 X. 봇은 임의 repo 의 PR 도 리뷰·영향 분석합니다.`,
     shouldChangeDirection

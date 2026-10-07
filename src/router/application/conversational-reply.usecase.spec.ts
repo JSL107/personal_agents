@@ -128,8 +128,8 @@ describe('ConversationalReply — buildSystemPrompt (self-context)', () => {
 
       expect(prompt).toBe(baselinePrompt);
       expect(createHash('sha256').update(prompt).digest('hex')).toBe(
-        // 2026-10-07 기능 목록·개인 봇 사실·되묻기 규칙 교체로 갱신
-        'bd13f84d0f29ee7b62a57e212b8cc309655e0bfb83abc0f7c818ab5b6d733044',
+        // 2026-10-07 기능 목록·개인 봇 사실·되묻기 규칙 교체, PR 소유 문구 정정(#744 리뷰)으로 갱신
+        '61aa677f1a77c838778856be66a5ae95182a45bb060d4600ddaec2808963c57b',
       );
     },
   );
@@ -170,9 +170,11 @@ describe('ConversationalReply — 이대리가 할 수 있는 일', () => {
   });
 
   it('개인 비서라는 사실을 싣고, 고객사·타인을 상정하지 않게 한다', () => {
-    expect(buildSystemPrompt({})).toMatch(
-      /한 사람의 개인 비서.*고객사나 다른 사용자는 없/,
-    );
+    const prompt = buildSystemPrompt({});
+    expect(prompt).toMatch(/한 사람의 개인 비서.*고객사나 다른 사용자는 없/);
+    // 리뷰를 맡긴 PR 은 회사·남의 레포일 수 있다 — 본인 소유로 묶지 않는다(#744 리뷰).
+    expect(prompt).not.toMatch(/지원 기록·PR 은 모두/);
+    expect(prompt).toContain('소유를 전제하지 마세요');
   });
 
   it('목록에 있는 일이면 되묻지 말라는 규칙으로 "follow-up 질문으로 끌어라" 를 대체했다', () => {
@@ -319,6 +321,7 @@ describe('ConversationalReply — reply() (route(PM) 경유 호출)', () => {
     const usecase = new ConversationalReplyUsecase(
       modelRouter,
       buildConfigService(),
+      [] as AgentDispatcher[],
     );
 
     await usecase.reply({ text: '안녕', priorTurns: [] });
@@ -341,6 +344,7 @@ describe('ConversationalReply — reply() (route(PM) 경유 호출)', () => {
     const usecase = new ConversationalReplyUsecase(
       { route } as unknown as ModelRouterUsecase,
       buildConfigService(),
+      [] as AgentDispatcher[],
     );
 
     await usecase.reply({
@@ -365,6 +369,7 @@ describe('ConversationalReply — reply() (route(PM) 경유 호출)', () => {
     const usecase = new ConversationalReplyUsecase(
       modelRouter,
       buildConfigService(),
+      [] as AgentDispatcher[],
     );
 
     const result = await usecase.reply({ text: '안녕', priorTurns: [] });
@@ -380,6 +385,7 @@ describe('ConversationalReply — reply() (route(PM) 경유 호출)', () => {
     const usecase = new ConversationalReplyUsecase(
       modelRouter,
       buildConfigService(),
+      [] as AgentDispatcher[],
     );
 
     // RouterMessageHandler 가 이 throw 를 catch 해 사용자 안내로 처리하므로 전파가 보장돼야 한다.
