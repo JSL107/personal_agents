@@ -2,7 +2,10 @@ import {
   PullRequestReview,
   ReviewFinding,
 } from '../../agent/code-reviewer/domain/code-reviewer.type';
-import { formatPullRequestReview } from './pull-request-review.formatter';
+import {
+  formatPullRequestPublication,
+  formatPullRequestReview,
+} from './pull-request-review.formatter';
 
 const NO_FINDING_NOTICE = '*지적 사항 없음*';
 
@@ -80,5 +83,77 @@ describe('formatPullRequestReview', () => {
 
     expect(text).not.toContain(NO_FINDING_NOTICE);
     expect(text).toContain('변경 요약');
+  });
+});
+
+describe('formatPullRequestPublication', () => {
+  const outcome = {
+    inline: 0,
+    file: 0,
+    issueComment: 0,
+    dryRun: 0,
+    notPosted: 0,
+    dropped: 0,
+    duplicate: 0,
+  };
+
+  it('게시한 코멘트 수와 PR 링크, 제외·미게시 사유를 함께 쓴다', () => {
+    const line = formatPullRequestPublication({
+      kind: 'POSTED',
+      repo: 'o/r',
+      pullNumber: 3,
+      outcome: { ...outcome, inline: 2, file: 1, duplicate: 1, dropped: 2 },
+    });
+    expect(line).toContain('<https://github.com/o/r/pull/3|PR>');
+    expect(line).toContain('지적 3건을 게시');
+    expect(line).toContain('이미 게시된 지적 1건 제외');
+    expect(line).toContain('게시 상한 초과 2건 미게시');
+  });
+
+  it('지적이 없으면 게시 성공처럼 쓰지 않는다', () => {
+    expect(
+      formatPullRequestPublication({
+        kind: 'POSTED',
+        repo: 'o/r',
+        pullNumber: 3,
+        outcome,
+      }),
+    ).toBe('_게시할 지적이 없어 GitHub 에 코멘트를 달지 않았어요._');
+  });
+
+  it('전부 중복이면 새로 게시한 것이 없다고 쓴다', () => {
+    expect(
+      formatPullRequestPublication({
+        kind: 'POSTED',
+        repo: 'o/r',
+        pullNumber: 3,
+        outcome: { ...outcome, duplicate: 2 },
+      }),
+    ).toContain('새로 게시한 지적은 없어요');
+  });
+
+  it.each([
+    [
+      { kind: 'NOT_ALLOWED' as const, repo: 'o/r' },
+      '게시 허용 목록(PR_REVIEW_INLINE_REPOS)에 없어요',
+    ],
+    [{ kind: 'FAILED' as const, message: '403' }, '게시에 실패했어요'],
+    [
+      { kind: 'DRY_RUN' as const, outcome: { ...outcome, dryRun: 2 } },
+      '연습 모드라',
+    ],
+  ])('%o 은 "%s" 로 알린다', (publication, expected) => {
+    expect(formatPullRequestPublication(publication)).toContain(expected);
+  });
+
+  it('게시 실패 원문(외부 API 응답 등)은 사용자 문구에 싣지 않는다', () => {
+    const line = formatPullRequestPublication({
+      kind: 'FAILED',
+      message:
+        'HttpError: Bad credentials https://api.github.com token=ghp_secret',
+    });
+    expect(line).not.toContain('ghp_secret');
+    expect(line).not.toContain('api.github.com');
+    expect(line).toContain('서버 로그');
   });
 });

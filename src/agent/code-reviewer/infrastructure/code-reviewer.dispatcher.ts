@@ -17,16 +17,21 @@ import {
   AgentDispatcher,
   DispatchOutcome,
 } from '../../../router/domain/port/agent-dispatcher.port';
-import { formatPullRequestReview } from '../../../slack/format/pull-request-review.formatter';
+import {
+  formatPullRequestPublication,
+  formatPullRequestReview,
+} from '../../../slack/format/pull-request-review.formatter';
 import { ReviewPullRequestUsecase } from '../application/review-pull-request.usecase';
 import { CodeReviewerException } from '../domain/code-reviewer.exception';
 import { CodeReviewerErrorCode } from '../domain/code-reviewer-error-code.enum';
+import { resolvePrReferenceFromConversation } from '../domain/conversation-pr-reference';
 
 // 콘솔에서 PR 미지정 시 최근 open PR을 조회하는 범위.
 const AUTO_RESOLVE_LOOKBACK_DAYS = 180;
 
 // CODE_REVIEWER worker 의 Router dispatcher — 자연어 메시지 (`input.text`) 를 prRef 로 매핑.
-// classifier 가 자연어에서 PR reference (owner/repo#N) 를 추출해 input.text 로 넘기는 가정.
+// 분류기는 PR 참조를 추출하지 않는다(출력에 그 칸이 없다). 원문에 참조가 없으면 직전 코드 리뷰
+// 대화에서 이어받는다 — resolvePrReferenceFromConversation.
 @Injectable()
 export class CodeReviewerDispatcher implements AgentDispatcher {
   readonly agentType = AgentType.CODE_REVIEWER;
@@ -42,6 +47,21 @@ export class CodeReviewerDispatcher implements AgentDispatcher {
     let prRef = input.text ?? '';
     let autoResolvedNotice: string | undefined;
 
+    const fromConversation = resolvePrReferenceFromConversation(
+      prRef,
+      input.priorTurns,
+    );
+    if (fromConversation.kind === 'AMBIGUOUS') {
+      throw new CodeReviewerException({
+        code: CodeReviewerErrorCode.AMBIGUOUS_PR_REFERENCE,
+        message: `직전 대화에 PR 이 여러 개(${fromConversation.candidates.join(', ')}) 있어서 어느 PR 인지 모르겠어요. 링크를 같이 보내 주세요.`,
+        status: DomainStatus.BAD_REQUEST,
+      });
+    }
+    if (fromConversation.kind === 'INHERITED') {
+      prRef = fromConversation.prRef;
+    }
+
     if (input.source === 'REMOTE_CONSOLE' && prRef.trim().length === 0) {
       const resolved = await this.resolveLatestOpenPrOrThrow();
       if (resolved) {
@@ -50,7 +70,7 @@ export class CodeReviewerDispatcher implements AgentDispatcher {
       }
     }
 
-    const outcome = await this.reviewPullRequest.execute({
+    const outcome = await this.reviewWithNaturalLanguageError(input, {
       prRef,
       slackUserId: input.slackUserId,
       publish: input.publish ?? true,
@@ -68,12 +88,41 @@ export class CodeReviewerDispatcher implements AgentDispatcher {
       agentRunId: outcome.agentRunId,
       output: outcome.result,
       modelUsed: outcome.modelUsed,
-      formattedText: formatPullRequestReview({
-        prRef,
-        review: outcome.result,
-      }),
+      formattedText: [
+        formatPullRequestReview({ prRef, review: outcome.result }),
+        ...(outcome.publication !== undefined
+          ? ['', formatPullRequestPublication(outcome.publication)]
+          : []),
+      ].join('\n'),
       ...(autoResolvedNotice !== undefined ? { autoResolvedNotice } : {}),
     };
+  }
+
+  // 참조 형식 오류의 기본 문구는 슬래시 명령 사용법이다. 자연어 대화에서 그 문구가 나가면
+  // "명령어로 다시 하라" 는 안내가 된다(2026-08-27). Slack 자연어 경로만 대화 문구로 바꾸고,
+  // 콘솔·슬래시 경로는 원래 예외를 그대로 둔다.
+  private async reviewWithNaturalLanguageError(
+    input: DispatchInput,
+    request: Parameters<ReviewPullRequestUsecase['execute']>[0],
+  ): ReturnType<ReviewPullRequestUsecase['execute']> {
+    try {
+      return await this.reviewPullRequest.execute(request);
+    } catch (error: unknown) {
+      if (
+        input.source === 'SLACK_MESSAGE' &&
+        error instanceof CodeReviewerException &&
+        error.codeReviewerErrorCode ===
+          CodeReviewerErrorCode.INVALID_PR_REFERENCE
+      ) {
+        throw new CodeReviewerException({
+          code: CodeReviewerErrorCode.INVALID_PR_REFERENCE,
+          message:
+            '어느 PR 인지 찾지 못했어요. PR 링크(…/pull/123)나 owner/repo#123 을 같이 보내 주세요.',
+          status: DomainStatus.BAD_REQUEST,
+        });
+      }
+      throw error;
+    }
   }
 
   private async resolveLatestOpenPrOrThrow(): Promise<ResolvedLatestOpenPr | null> {
