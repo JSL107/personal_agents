@@ -122,6 +122,7 @@ LLM output 을 Slack mrkdwn 으로 직접 보낼 때는 control char (`*`, `_`, 
 pnpm lint:check     # 변경 후 가장 먼저
 pnpm test           # jest 단위
 pnpm build          # nest build (type 검증 포함)
+node --env-file=.env scripts/check-di.cjs  # build 후 모듈 DI 연결 검사 (연결 없이 그래프만 — 3중 green 이 못 봄. CI 는 pnpm check:di)
 pnpm prisma format  # schema 변경 시
 ```
 
