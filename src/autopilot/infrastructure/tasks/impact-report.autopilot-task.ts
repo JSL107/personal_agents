@@ -23,7 +23,7 @@ const DAYS_DEFAULT = 7;
 // Impact Report 이관 — 매주 토요일 09:00 KST `--recent <N>d` 본인 머지 PR 자동 종합.
 // 기존 src/impact-report-cron/infrastructure/impact-report-cron.consumer.ts 의 핵심 로직을 task 로 옮김.
 // days 는 IMPACT_REPORT_RECENT_DAYS env(기존 이름 유지, default 7)로 결정.
-// RECENT_MODE_NO_RESULTS / RECENT_MODE_ENV_MISSING 은 graceful 안내문(skip=false).
+// RECENT_MODE_NO_RESULTS 는 원장에 빈 회차로 남기고, env 누락은 안내문을 보낸다.
 // 발송은 오케스트레이터(T0) 가 담당 — 여기선 텍스트만 만든다.
 @Injectable()
 export class ImpactReportAutopilotTask implements AutopilotTask {
@@ -69,8 +69,8 @@ export class ImpactReportAutopilotTask implements AutopilotTask {
             `Impact Report skip — 최근 ${days}일 머지·진행 중 PR 0건 (owner=${ownerSlackUserId})`,
           );
           return {
-            skip: false,
-            summaryText: `🪶 *Impact Report — ${firedAtKst} skip*\n_최근 ${days}일 머지·진행 중 PR 0건. 다음 실행에 다시 시도합니다._`,
+            skip: true,
+            emptyReason: `🪶 *Impact Report — ${firedAtKst} skip*\n_최근 ${days}일 머지·진행 중 PR 0건. 다음 실행에 다시 시도합니다._`,
           };
         }
         if (

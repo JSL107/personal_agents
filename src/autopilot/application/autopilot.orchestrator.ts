@@ -215,6 +215,7 @@ export class AutopilotOrchestrator {
       detailIsOnlyCopy?: boolean;
       unfurlLinks?: boolean;
     }[] = [];
+    const emptyItems: { taskId: string; text: string }[] = [];
 
     for (const entry of entries) {
       const task = this.tasks.get(entry.taskId);
@@ -229,10 +230,13 @@ export class AutopilotOrchestrator {
       // T1_PREVIEW entry 는 preview 가 없으면(게이트 OFF) 자연히 텍스트 경로로 폴백한다.
       try {
         const result = await task.run({ ownerSlackUserId, firedAtKst });
-        if (!result.skip) {
+        if (!result.skip || result.emptyReason) {
           this.notificationPublisher?.publishRecovery(
             autopilotTaskIncidentKey(entry.taskId),
           );
+        }
+        if (result.skip && result.emptyReason) {
+          emptyItems.push({ taskId: entry.taskId, text: result.emptyReason });
         }
         if (result.guardKeySuffix) {
           guardKeySuffixes.push(result.guardKeySuffix);
@@ -322,6 +326,7 @@ export class AutopilotOrchestrator {
     ) {
       // 보낼 게 없어도 task 는 다 돌았다 = 이 슬롯은 완주. 표식을 남겨야 재큐가 같은 task 를
       // 또 돌리지 않는다(pr-review-sweep 처럼 결과 없이도 LLM 을 태우는 task 가 있다).
+      await this.recordEmptyItems(groupKey, targets, emptyItems);
       await this.markSlotDone(slotKey);
       this.logger.log(`Autopilot[${groupKey}] — 보고 내용 없음, 전달 skip`);
       return;
@@ -383,6 +388,8 @@ export class AutopilotOrchestrator {
     // job-feed 는 후처리가 알림 표식을 찍으므로 그 공고들이 영영 다시 안 뜬다. 상세를 못 보낸
     // task 는 후처리를 건너뛰고 다음 회차에 다시 보낸다(중복 > 유실, onDelivered 계약과 동일).
     const detailUndelivered = new Set<number>();
+
+    await this.recordEmptyItems(groupKey, targets, emptyItems);
 
     // 콘솔 항목은 가드를 통과한 회차에만 원장에 쓴다. 가드보다 먼저 쓰면 Slack 이라면 막혔을
     // 같은 내용이 회차마다 쌓인다(pr-review-sweep `*/3` 은 하루 480 회차 중 발송 2 회).
@@ -879,6 +886,32 @@ export class AutopilotOrchestrator {
         }`,
       );
       return false;
+    }
+  }
+
+  private async recordEmptyItems(
+    groupKey: string,
+    targets: string[],
+    emptyItems: { taskId: string; text: string }[],
+  ): Promise<void> {
+    for (const emptyItem of emptyItems) {
+      for (const target of targets) {
+        try {
+          await this.slackNotifier.recordSuppressedDelivery({
+            kind: `autopilot:${groupKey}`,
+            itemKinds: [emptyItem.taskId],
+            target,
+            text: emptyItem.text,
+            reason: SLACK_DELIVERY_SUPPRESS_REASON.EMPTY,
+          });
+        } catch (error: unknown) {
+          this.logger.warn(
+            `Autopilot[${groupKey}] 빈 항목 '${emptyItem.taskId}' 원장 기록 실패: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+      }
     }
   }
 

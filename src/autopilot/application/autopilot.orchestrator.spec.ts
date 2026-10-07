@@ -103,6 +103,36 @@ describe('AutopilotOrchestrator', () => {
     );
   });
 
+  it('끝까지 실행한 빈 회차는 복구를 발행하고 일반 skip은 발행하지 않는다', async () => {
+    const tasks = [
+      makeTask('daily-eval', { skip: true, emptyReason: '보고 없음' }),
+      makeTask('work-reviewer', { skip: true }),
+    ];
+    const publishRecovery = jest.fn();
+    const orchestrator = new AutopilotOrchestrator(
+      tasks as never,
+      {
+        recordSuppressedDelivery: jest.fn().mockResolvedValue(undefined),
+      } as never,
+      { isDone: jest.fn().mockResolvedValue(false) } as never,
+      { execute: jest.fn() } as never,
+      { attachSlackMessage: jest.fn() } as never,
+      { publishRecovery } as never,
+    );
+
+    await orchestrator.runGroup(
+      'mixed',
+      [T0_ENTRY, makeEntry('work-reviewer', 'work-reviewer')],
+      'U1',
+      'C1',
+    );
+
+    expect(publishRecovery).toHaveBeenCalledTimes(1);
+    expect(publishRecovery).toHaveBeenCalledWith(
+      autopilotTaskIncidentKey('daily-eval'),
+    );
+  });
+
   // 채널 카드는 알림이 없으면 읽히지 않고 흘러간다 — 멘션 대상 task 는 채널에 owner 멘션을
   // 붙이고, 이미 본인에게 가는 DM 에는 붙이지 않는다(같은 알림이 두 번 울린다).
   // 멘션 대상이 아닌 task 는 채널에서도 붙지 않으므로, DM 구분을 재려면 멘션 대상으로 재야 한다.
@@ -2651,6 +2681,117 @@ describe('AutopilotOrchestrator', () => {
         { execute: jest.fn().mockResolvedValue({ id: 'preview-1' }) } as never,
         { attachSlackMessage: jest.fn() } as never,
       );
+
+    it('빈 회차를 모든 대상의 EMPTY 원장에 기록하고 Slack 발송을 건너뛴다', async () => {
+      const slackNotifier = {
+        postMessage: jest.fn(),
+        recordSuppressedDelivery: jest.fn().mockResolvedValue(undefined),
+      };
+      const task = makeTask('daily-eval', {
+        skip: true,
+        emptyReason: '보고 없음',
+      });
+
+      await makeOrchestrator([task], slackNotifier).runGroup(
+        'daily-eval',
+        [T0_ENTRY],
+        'U1',
+        'C1,C2',
+      );
+
+      expect(slackNotifier.recordSuppressedDelivery).toHaveBeenCalledTimes(2);
+      expect(slackNotifier.recordSuppressedDelivery).toHaveBeenCalledWith({
+        kind: 'autopilot:daily-eval',
+        itemKinds: ['daily-eval'],
+        target: 'C1',
+        text: '보고 없음',
+        reason: 'EMPTY',
+      });
+      expect(slackNotifier.recordSuppressedDelivery).toHaveBeenCalledWith(
+        expect.objectContaining({ target: 'C2', reason: 'EMPTY' }),
+      );
+      expect(slackNotifier.postMessage).not.toHaveBeenCalled();
+    });
+
+    it('혼합 그룹은 빈 항목만 EMPTY 원장에 기록하고 요약만 Slack에 보낸다', async () => {
+      const slackNotifier = {
+        postMessage: jest.fn().mockResolvedValue({ ts: '1.1' }),
+        recordSuppressedDelivery: jest.fn().mockResolvedValue(undefined),
+      };
+      const tasks = [
+        makeTask('daily-eval', { skip: false, summaryText: '발송할 내용' }),
+        makeTask('work-reviewer', { skip: true, emptyReason: '보고 없음' }),
+      ];
+
+      await makeOrchestrator(tasks, slackNotifier).runGroup(
+        'mixed',
+        [T0_ENTRY, makeEntry('work-reviewer', 'work-reviewer')],
+        'U1',
+        'C1',
+      );
+
+      expect(slackNotifier.recordSuppressedDelivery).toHaveBeenCalledWith(
+        expect.objectContaining({
+          itemKinds: ['work-reviewer'],
+          reason: 'EMPTY',
+        }),
+      );
+      expect(slackNotifier.postMessage).toHaveBeenCalledTimes(1);
+      expect(slackNotifier.postMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: '발송할 내용',
+          itemKinds: ['daily-eval'],
+        }),
+      );
+    });
+
+    it('일반 skip은 원장에 기록하지 않고 빈 항목 원장 실패는 발송으로 대체하지 않는다', async () => {
+      const slackNotifier = {
+        postMessage: jest.fn(),
+        recordSuppressedDelivery: jest
+          .fn()
+          .mockRejectedValue(new Error('DB 실패')),
+      };
+      const tasks = [
+        makeTask('daily-eval', { skip: true }),
+        makeTask('work-reviewer', { skip: true, emptyReason: '보고 없음' }),
+      ];
+
+      await expect(
+        makeOrchestrator(tasks, slackNotifier).runGroup(
+          'mixed',
+          [T0_ENTRY, makeEntry('work-reviewer', 'work-reviewer')],
+          'U1',
+          'C1',
+        ),
+      ).resolves.toBeUndefined();
+
+      expect(slackNotifier.recordSuppressedDelivery).toHaveBeenCalledTimes(1);
+      expect(slackNotifier.postMessage).not.toHaveBeenCalled();
+    });
+
+    it('실패 task와 빈 항목만 있으면 그룹 전멸 오류를 던진다', async () => {
+      const failedTask = makeTask('daily-eval', { skip: false });
+      failedTask.run.mockRejectedValue(new Error('실패'));
+      const tasks = [
+        failedTask,
+        makeTask('work-reviewer', { skip: true, emptyReason: '보고 없음' }),
+      ];
+      const slackNotifier = {
+        postMessage: jest.fn(),
+        recordSuppressedDelivery: jest.fn(),
+      };
+
+      await expect(
+        makeOrchestrator(tasks, slackNotifier).runGroup(
+          'mixed',
+          [T0_ENTRY, makeEntry('work-reviewer', 'work-reviewer')],
+          'U1',
+          'C1',
+        ),
+      ).rejects.toBeInstanceOf(AutopilotAllTasksFailedError);
+      expect(slackNotifier.recordSuppressedDelivery).not.toHaveBeenCalled();
+    });
 
     // 가드보다 먼저 쓰면 Slack 이라면 막혔을 같은 내용이 회차마다 쌓인다.
     it('하루 1회 가드에 막힌 회차는 콘솔 항목도 원장에 쓰지 않는다', async () => {

@@ -46,6 +46,9 @@ export interface AutopilotTaskFile {
 export interface AutopilotTaskResult {
   // 게시할 내용 없으면 skip=true → 오케스트레이터가 전달 안 함(빈 알림 방지).
   skip: boolean;
+  // skip=true 이면서 끝까지 실행했지만 보고할 내용이 없을 때만 설정한다. 오케스트레이터가
+  // SUPPRESSED/EMPTY 원장에 기록한다. 실행 전 조건으로 건너뛴 회차에는 설정하지 않는다.
+  emptyReason?: string;
   // 메인 메시지에 합쳐질 요약 본문 (T0 전달).
   summaryText?: string;
   // 있으면 메인 메시지의 스레드 댓글로 발송될 상세 본문. 없으면 요약만.

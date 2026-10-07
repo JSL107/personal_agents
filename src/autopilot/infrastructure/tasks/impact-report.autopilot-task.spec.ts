@@ -58,7 +58,7 @@ describe('ImpactReportAutopilotTask', () => {
     expect(humanizeService.humanize).toHaveBeenCalled();
   });
 
-  it('RECENT_MODE_NO_RESULTS 면 graceful skip 안내(skip=false, detailText 없음)', async () => {
+  it('RECENT_MODE_NO_RESULTS 면 빈 회차를 원장용 사유로 반환한다', async () => {
     const execute = jest.fn().mockRejectedValue(
       new ImpactReporterException({
         code: ImpactReporterErrorCode.RECENT_MODE_NO_RESULTS,
@@ -75,8 +75,9 @@ describe('ImpactReportAutopilotTask', () => {
 
     const out = await task.run(CTX);
 
-    expect(out.skip).toBe(false);
-    expect(out.summaryText).toContain('skip');
+    expect(out.skip).toBe(true);
+    expect(out.emptyReason).toContain('최근 7일 머지·진행 중 PR 0건');
+    expect(out.summaryText).toBeUndefined();
     expect(out.detailText).toBeUndefined();
   });
 

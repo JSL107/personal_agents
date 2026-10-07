@@ -368,9 +368,14 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
         failures,
         sync.error,
       );
-      const taskResult = this.withSyncWarning(
+      const composedResult = this.withSyncWarning(
         this.withHoldingChanges(resultWithExposure, sync.changes),
         sync.error,
+      );
+      const taskResult = this.suppressEmptyNotice(
+        composedResult,
+        summaryText,
+        failures,
       );
       return {
         taskResult,
@@ -540,10 +545,14 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
       failures,
       sync.error,
     );
-    const taskResult = this.withSyncWarning(
+    const composedResult = this.withSyncWarning(
       this.withHoldingChanges(resultWithExposure, sync.changes),
       sync.error,
     );
+    const taskResult =
+      anomalies.length === 0
+        ? this.suppressEmptyNotice(composedResult, summaryText, failures)
+        : composedResult;
 
     return {
       taskResult,
@@ -635,6 +644,25 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
       ? `${result.summaryText}\n\n${statusText}`
       : statusText;
     return { ...result, skip: false, summaryText };
+  }
+
+  // 본문을 모두 합친 뒤에만 빈 회차를 판정한다. 상태·노출·매매·동기화 경고가
+  // 하나라도 붙었으면 화면에서 빠지면 안 된다.
+  private suppressEmptyNotice(
+    result: AutopilotTaskResult,
+    noticeText: string,
+    failures: string[],
+  ): AutopilotTaskResult {
+    if (
+      failures.length > 0 ||
+      result.summaryText !== noticeText ||
+      result.detailText ||
+      result.detailImage ||
+      result.detailFile
+    ) {
+      return result;
+    }
+    return { skip: true, emptyReason: noticeText };
   }
 
   private createAudit(

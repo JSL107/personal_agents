@@ -60,8 +60,8 @@ interface WorklogEvidenceQueryResult {
 // 기존 src/weekly-summary/infrastructure/weekly-summary.consumer.ts 의 핵심 로직을 task 로 옮김.
 // worklog / CEO meta 각각 요약은 summaryText(메인), 근거 detail 은 detailText(스레드)로 분리 반환 —
 // 오케스트레이터(T0)가 메인 발송 후 detailText 를 스레드 댓글로 붙인다.
-// CEO meta 실패 시(NO_PO_EVAL_RUN 등) graceful 안내문(detail 없음)으로 대체해 worklog 발송은 보장.
-// plan과 실적이 모두 없으면 skip 안내를 반환하되, 재시도 가능한 조회 실패는 throw 한다.
+// CEO meta run 부재 시 CEO 섹션을 생략하고, 그 외 실패는 안내문으로 대체해 worklog 발송은 보장.
+// plan과 실적이 모두 없으면 빈 회차를 반환하되, 재시도 가능한 조회 실패는 throw 한다.
 @Injectable()
 export class WeeklySummaryAutopilotTask implements AutopilotTask {
   readonly id = 'weekly-summary';
@@ -121,13 +121,16 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
           `Weekly Summary 실적 조회 실패로 회고 생성을 보류합니다: ${evidence.evidenceUnavailableReason}`,
         );
       }
-      const evidenceReason = evidence.evidenceUnavailableReason
-        ? ` ${evidence.evidenceUnavailableReason}`
-        : '';
-      return {
-        skip: false,
-        summaryText: `_📋 Weekly Summary — ${firedAtKst} skip_\n이번 주 PM AgentRun 기록이 없습니다. Weekly Summary 를 생성하지 않습니다.${evidenceReason}`,
-      };
+      const notice = `_📋 Weekly Summary — ${firedAtKst} skip_\n이번 주 PM AgentRun 기록이 없습니다. Weekly Summary 를 생성하지 않습니다.`;
+      // 실적을 확인하지 못한 회차(env IMPACT_REPORT_GITHUB_AUTHOR 미설정 등)는 "빈 주" 가 아니라
+      // 설정 결함이다. 원장에 묻지 않고 사유와 함께 Slack 으로 보내 고치게 한다.
+      if (evidence.evidenceUnavailableReason) {
+        return {
+          skip: false,
+          summaryText: `${notice} ${evidence.evidenceUnavailableReason}`,
+        };
+      }
+      return { skip: true, emptyReason: notice };
     }
 
     const sinceLabel = KST_DATE_FORMATTER.format(since);
@@ -164,7 +167,11 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
     const recoveryHealthLine =
       await this.buildRecoveryHealthLine(ownerSlackUserId);
 
-    const summaryText = `${worklogSummary}\n\n${recoveryHealthLine}\n\n────────\n\n${ceo.summary}`;
+    const weeklySummary = `${worklogSummary}\n\n${recoveryHealthLine}`;
+    const summaryText =
+      ceo.summary.trim().length > 0
+        ? `${weeklySummary}\n\n────────\n\n${ceo.summary}`
+        : weeklySummary;
     const detailParts = [worklogDetail];
     if (ceo.detail.trim().length > 0) {
       detailParts.push(ceo.detail);
@@ -265,7 +272,7 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
     }
   }
 
-  // CEO meta (P5) 는 worklog (P4) 직후 체인. PO_EVAL run 부재 시 graceful 안내문(detail 없음)으로 대체.
+  // CEO meta (P5) 는 worklog (P4) 직후 체인. PO_EVAL run 부재 시 섹션을 생략한다.
   private async buildCeoMeta(
     ownerSlackUserId: string,
     firedAtKst: string,
@@ -293,10 +300,7 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
         this.logger.warn(
           `Weekly Summary CEO meta skip — PO_EVAL run 없음 (owner=${ownerSlackUserId}): ${(error as Error).message}`,
         );
-        return {
-          summary: `_🧭 CEO Meta — ${firedAtKst} skip_\n_이번 주 PO_EVAL run 부재로 메타 회고 대상 없음. \`/po-eval\` 을 먼저 실행해주세요._`,
-          detail: '',
-        };
+        return { summary: '', detail: '' };
       }
       this.logger.error(
         `Weekly Summary CEO meta 실패 — 예상 외 에러 (owner=${ownerSlackUserId})`,

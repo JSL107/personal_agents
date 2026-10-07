@@ -180,6 +180,54 @@ describe('StockMonitorAutopilotTask', () => {
     recordedRuns = [];
   });
 
+  it.each([
+    { id: 'stock-monitor', targetMarketCountry: 'KR' },
+    { id: 'stock-monitor-us', targetMarketCountry: 'US' },
+  ] as const)(
+    '$id: 새 경보와 추가 전달 내용이 없으면 원장용 사유만 반환한다',
+    async (options) => {
+      const marketData = {
+        fetchDailyBars: jest
+          .fn()
+          .mockResolvedValue([bar('2026-07-21', 100), bar('2026-07-22', 100)]),
+      };
+      const repository = makeRepository();
+      repository.findLatestStoredTradeDate.mockResolvedValue(
+        new Date('2026-07-21T00:00:00.000Z'),
+      );
+
+      const result = await makeTask(marketData, repository, options).run(
+        context,
+      );
+
+      expect(result.skip).toBe(true);
+      expect(result.summaryText).toBeUndefined();
+      expect(result.emptyReason).toContain('새 경보 없음');
+      expect(recordedRuns[0].output).toMatchObject({
+        anomalyCount: 0,
+        failureCount: 0,
+      });
+    },
+  );
+
+  it('휴장 추정일도 추가 전달 내용이 없으면 원장용 사유만 반환한다', async () => {
+    const marketData = {
+      fetchDailyBars: jest
+        .fn()
+        .mockResolvedValue([bar('2026-07-20', 100), bar('2026-07-21', 100)]),
+    };
+    const repository = makeRepository();
+    repository.findLatestStoredTradeDate.mockResolvedValue(
+      new Date('2026-07-21T00:00:00.000Z'),
+    );
+
+    const result = await makeTask(marketData, repository).run(context);
+
+    expect(result.skip).toBe(true);
+    expect(result.summaryText).toBeUndefined();
+    expect(result.emptyReason).toContain('휴장 추정');
+  });
+
   it('잔고 동기화를 보유 종목 판정보다 먼저 1회 수행한다', async () => {
     const marketData = {
       fetchDailyBars: jest
@@ -375,6 +423,7 @@ describe('StockMonitorAutopilotTask', () => {
     ).run(context);
 
     expect(repository.findCurrentHoldings).toHaveBeenCalled();
+    expect(result.skip).toBe(false);
     expect(result.summaryText).toMatch(/^⚠️ 잔고 동기화 실패/);
     expect(recordedRuns[0].output).toMatchObject({
       syncedHoldings: null,
@@ -424,6 +473,7 @@ describe('StockMonitorAutopilotTask', () => {
     ).run(context);
 
     expect(result.summaryText).toContain('💼 *잔고 변화 2건*');
+    expect(result.skip).toBe(false);
     expect(result.summaryText).toContain(
       '• *SamsungElec* — 추가 매수 10주 → 20주, 평단 100원 → 95원',
     );
@@ -451,6 +501,7 @@ describe('StockMonitorAutopilotTask', () => {
 
     const result = await makeTask(marketData, repository).run(context);
 
+    expect(result.skip).toBe(false);
     expect(result.summaryText).toContain('새 경보 없음');
     expect(result.summaryText).toContain(
       '📌 *평균 매입가(산 가격)보다 크게 벌어진 1종목*',
@@ -496,7 +547,7 @@ describe('StockMonitorAutopilotTask', () => {
 
   // 공급자 지연은 종목마다 갈린다. 헤더의 "(YYYY-MM-DD 종가 기준)" 은 그중 최신 하나뿐이라,
   // 밝히지 않으면 하루 묵은 종목의 값이 그 날짜의 값으로 읽힌다.
-  it('종목마다 기준일이 갈리면 요약에 밝힌다', async () => {
+  it('종목마다 기준일이 갈리면 원장 사유에 밝힌다', async () => {
     const marketData = {
       fetchDailyBars: jest
         .fn()
@@ -515,8 +566,8 @@ describe('StockMonitorAutopilotTask', () => {
 
     const result = await makeTask(marketData, repository).run(context);
 
-    expect(result.summaryText).toContain('2026-07-22 종가 기준');
-    expect(result.summaryText).toContain(
+    expect(result.emptyReason).toContain('2026-07-22 종가 기준');
+    expect(result.emptyReason).toContain(
       '기준일이 다른 종목: 000660 2026-07-21',
     );
     expect(recordedRuns[0].output).toMatchObject({ checkedCount: 2 });
@@ -543,15 +594,15 @@ describe('StockMonitorAutopilotTask', () => {
 
     const result = await makeTask(marketData, repository).run(context);
 
-    expect(result.summaryText).toContain('경보선에 가장 가까운 종목: SKHynix');
-    expect(result.summaryText).toContain('하루 등락 +6.0%');
-    expect(result.summaryText).toContain('경보선 ±8% 까지 2.0%p');
-    expect(result.summaryText).not.toContain('SamsungElec —');
+    expect(result.emptyReason).toContain('경보선에 가장 가까운 종목: SKHynix');
+    expect(result.emptyReason).toContain('하루 등락 +6.0%');
+    expect(result.emptyReason).toContain('경보선 ±8% 까지 2.0%p');
+    expect(result.emptyReason).not.toContain('SamsungElec —');
   });
 
   // 휴장 추정은 별도 return 이라 배선을 빼먹기 쉽다(평단 상태 줄이 그랬다). 종목별 기준일이
   // 갈린 채 전 종목에 새 봉이 없는 날에도 그 사실이 카드에 남아야 한다.
-  it('휴장 추정일에도 종목별 기준일 갈림을 전달한다', async () => {
+  it('휴장 추정일에도 종목별 기준일 갈림을 원장에 남긴다', async () => {
     const marketData = {
       fetchDailyBars: jest
         .fn()
@@ -571,8 +622,8 @@ describe('StockMonitorAutopilotTask', () => {
 
     const result = await makeTask(marketData, repository).run(context);
 
-    expect(result.summaryText).toContain('휴장 추정');
-    expect(result.summaryText).toContain(
+    expect(result.emptyReason).toContain('휴장 추정');
+    expect(result.emptyReason).toContain(
       '기준일이 다른 종목: 000660 2026-07-20',
     );
   });
@@ -590,11 +641,11 @@ describe('StockMonitorAutopilotTask', () => {
 
     const result = await makeTask(marketData, repository).run(context);
 
-    expect(result.summaryText).not.toContain('기준일이 다른 종목');
+    expect(result.emptyReason).not.toContain('기준일이 다른 종목');
   });
 
-  // "새 경보 없음" 이 안전한 날인지 경보선 코앞인지 카드만 보고 갈리지 않던 것을 메운다.
-  it('경보가 없으면 경보선에 가장 가까운 종목을 함께 적는다', async () => {
+  // "새 경보 없음" 이 안전한 날인지 경보선 코앞인지 원장에서도 갈리지 않던 것을 메운다.
+  it('경보가 없으면 원장 사유에 경보선에 가장 가까운 종목을 함께 적는다', async () => {
     const marketData = {
       fetchDailyBars: jest
         .fn()
@@ -608,9 +659,9 @@ describe('StockMonitorAutopilotTask', () => {
 
     const result = await makeTask(marketData, repository).run(context);
 
-    expect(result.summaryText).toContain('새 경보 없음');
-    expect(result.summaryText).toContain('하루 등락 +3.0%');
-    expect(result.summaryText).toContain('경보선 ±8% 까지 5.0%p');
+    expect(result.emptyReason).toContain('새 경보 없음');
+    expect(result.emptyReason).toContain('하루 등락 +3.0%');
+    expect(result.emptyReason).toContain('경보선 ±8% 까지 5.0%p');
   });
 
   it('평단 대비가 임계 안이면 상태 줄을 넣지 않는다', async () => {
@@ -626,11 +677,11 @@ describe('StockMonitorAutopilotTask', () => {
 
     const result = await makeTask(marketData, repository).run(context);
 
-    expect(result.summaryText).not.toContain('크게 벌어진');
+    expect(result.emptyReason).not.toContain('크게 벌어진');
     expect(recordedRuns[0].output).toMatchObject({ avgPriceBreachCount: 0 });
   });
 
-  it('매매가 없으면 요약에 잔고 변화 줄을 넣지 않는다', async () => {
+  it('매매가 없으면 원장 사유에 잔고 변화 줄을 넣지 않는다', async () => {
     const marketData = {
       fetchDailyBars: jest
         .fn()
@@ -643,7 +694,7 @@ describe('StockMonitorAutopilotTask', () => {
 
     const result = await makeTask(marketData, repository).run(context);
 
-    expect(result.summaryText).not.toContain('잔고 변화');
+    expect(result.emptyReason).not.toContain('잔고 변화');
   });
 
   // 감시가 통째로 실패해도 매매는 이미 감지·적재됐다. 여기서 알림을 버리면 스냅샷이 이미
@@ -776,6 +827,7 @@ describe('StockMonitorAutopilotTask', () => {
     const result = await makeTask(marketData, repository).run(context);
 
     expect(marketData.fetchDailyBars).toHaveBeenCalledTimes(2);
+    expect(result.skip).toBe(false);
     expect(result.summaryText).toContain('새 거래일 시세가 없어');
     expect(result.summaryText).toContain('점검하지 못한 항목');
     expect(result.summaryText).toContain('000660');
@@ -803,6 +855,7 @@ describe('StockMonitorAutopilotTask', () => {
     const result = await makeTask(marketData, repository).run(context);
 
     expect(marketData.fetchUsdKrwRate).toHaveBeenCalledTimes(1);
+    expect(result.skip).toBe(false);
     expect(result.summaryText).toContain('📉 *주식 모니터링*');
     expect(result.summaryText).toContain(
       '🌎 *자산 배분* — 미국 주식 50% · 코스피 하락 베팅 50%',
@@ -946,13 +999,14 @@ describe('StockMonitorAutopilotTask', () => {
 
     const result = await makeTask(marketData, repository).run(context);
 
+    expect(result.skip).toBe(false);
     expect(result.summaryText).toContain('새 거래일 시세가 없어');
     expect(result.summaryText).toContain(
       '🌎 *자산 배분* — 미국 주식 50% · 코스피 하락 베팅 50%',
     );
   });
 
-  it('포트폴리오 노출 계산 실패는 기존 요약을 보존하고 경고한다', async () => {
+  it('포트폴리오 노출 계산 실패는 원장 사유를 보존하고 경고한다', async () => {
     const marketData = {
       fetchDailyBars: jest
         .fn()
@@ -971,8 +1025,8 @@ describe('StockMonitorAutopilotTask', () => {
     try {
       const result = await makeTask(marketData, repository).run(context);
 
-      expect(result.summaryText).toContain('📉 *주식 모니터링*');
-      expect(result.summaryText).not.toContain('🌎');
+      expect(result.emptyReason).toContain('📉 *주식 모니터링*');
+      expect(result.emptyReason).not.toContain('🌎');
       expect(warn).toHaveBeenCalledWith(
         expect.stringContaining('포트폴리오 노출 계산 실패'),
       );
