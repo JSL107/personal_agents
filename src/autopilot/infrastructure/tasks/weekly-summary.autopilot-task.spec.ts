@@ -36,6 +36,10 @@ const makeHumanizer = () => ({
     ),
 });
 
+const makeDeliveryRepository = () => ({
+  findSince: jest.fn().mockResolvedValue([]),
+});
+
 const makeConfig = (author: string | null = 'idaeri') => ({
   get: jest.fn().mockImplementation((key: string) => {
     if (key === 'IMPACT_REPORT_GITHUB_AUTHOR') {
@@ -66,6 +70,7 @@ describe('WeeklySummaryAutopilotTask', () => {
         {} as never,
         {} as never,
         {} as never,
+        makeDeliveryRepository() as never,
       ).id,
     ).toBe('weekly-summary');
   });
@@ -83,6 +88,7 @@ describe('WeeklySummaryAutopilotTask', () => {
       } as never,
       makeHumanizer() as never,
       makeConfig() as never,
+      makeDeliveryRepository() as never,
     );
 
     const out = await task.run(CTX);
@@ -128,6 +134,7 @@ describe('WeeklySummaryAutopilotTask', () => {
       githubClient as never,
       makeHumanizer() as never,
       makeConfig() as never,
+      makeDeliveryRepository() as never,
     );
 
     await task.run(CTX);
@@ -162,6 +169,7 @@ describe('WeeklySummaryAutopilotTask', () => {
       githubClient as never,
       makeHumanizer() as never,
       makeConfig() as never,
+      makeDeliveryRepository() as never,
     );
 
     await expect(task.run(CTX)).rejects.toThrow(
@@ -184,6 +192,7 @@ describe('WeeklySummaryAutopilotTask', () => {
       githubClient as never,
       makeHumanizer() as never,
       makeConfig(null) as never,
+      makeDeliveryRepository() as never,
     );
 
     const result = await task.run(CTX);
@@ -242,6 +251,7 @@ describe('WeeklySummaryAutopilotTask', () => {
       } as never,
       humanizer as never,
       makeConfig() as never,
+      makeDeliveryRepository() as never,
     );
 
     const out = await task.run(CTX);
@@ -319,6 +329,7 @@ describe('WeeklySummaryAutopilotTask', () => {
       githubClient as never,
       makeHumanizer() as never,
       makeConfig() as never,
+      makeDeliveryRepository() as never,
     );
 
     await task.run(CTX);
@@ -394,6 +405,7 @@ describe('WeeklySummaryAutopilotTask', () => {
       { listAuthorMergedPullRequestsSince } as never,
       makeHumanizer() as never,
       config as never,
+      makeDeliveryRepository() as never,
     );
 
     await task.run(CTX);
@@ -419,6 +431,7 @@ describe('WeeklySummaryAutopilotTask', () => {
   // 회수 대조 건강도 한 줄 — 회차 합산이 아니라 「대조 불가」 라벨이 뜬 회차 비율이다.
   const runWithPoShadowRuns = async (
     poShadowOutputs: unknown[],
+    deliveryRepository = makeDeliveryRepository(),
   ): Promise<string> => {
     const findRecentSucceededRuns = jest
       .fn()
@@ -457,6 +470,7 @@ describe('WeeklySummaryAutopilotTask', () => {
       } as never,
       makeHumanizer() as never,
       makeConfig() as never,
+      deliveryRepository as never,
     );
 
     const result = await task.run(CTX);
@@ -522,6 +536,7 @@ describe('WeeklySummaryAutopilotTask', () => {
       } as never,
       makeHumanizer() as never,
       makeConfig() as never,
+      makeDeliveryRepository() as never,
     );
 
     const result = await task.run(CTX);
@@ -535,5 +550,47 @@ describe('WeeklySummaryAutopilotTask', () => {
     const summaryText = await runWithPoShadowRuns([]);
 
     expect(summaryText).toContain('이번 주 PO 회차 없음');
+  });
+
+  it('콘솔로 돌린 발송을 상위 세 종류와 함께 표시하고 EMPTY는 제외한다', async () => {
+    const row = (
+      kind: string,
+      itemKinds: string[],
+      suppressReason: string,
+    ) => ({
+      kind,
+      itemKinds,
+      status: 'SUPPRESSED',
+      suppressReason,
+      reactionCount: 0,
+      replyCount: 0,
+    });
+    const repository = {
+      findSince: jest
+        .fn()
+        .mockResolvedValue([
+          row('autopilot:taskA', ['taskA'], 'CONSOLE_ROUTE'),
+          row('autopilot:taskA', ['taskA'], 'CONSOLE_ROUTE'),
+          row('autopilot:taskB', ['taskB'], 'CONSOLE_ROUTE'),
+          row('autopilot:taskC', ['taskC'], 'CONSOLE_ROUTE'),
+          row('autopilot:taskD', ['taskD'], 'CONSOLE_ROUTE'),
+          row('autopilot:taskA', ['taskA'], 'EMPTY'),
+        ]),
+    };
+    const summaryText = await runWithPoShadowRuns([], repository);
+    expect(summaryText).toContain('이번 주 5건 (taskA 2 · taskB 1 · taskC 1)');
+    expect(repository.findSince).toHaveBeenCalledWith(
+      new Date('2026-06-10T15:00:00.000Z'),
+    );
+  });
+
+  it('콘솔 발송이 없거나 조회가 실패하면 줄을 생략하고 주간 요약을 보낸다', async () => {
+    const emptySummary = await runWithPoShadowRuns([]);
+    expect(emptySummary).not.toContain('콘솔로 돌린 발송');
+    const failedSummary = await runWithPoShadowRuns([], {
+      findSince: jest.fn().mockRejectedValue(new Error('db down')),
+    });
+    expect(failedSummary).toContain('이번주 요약');
+    expect(failedSummary).not.toContain('콘솔로 돌린 발송');
   });
 });

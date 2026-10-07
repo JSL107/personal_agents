@@ -25,6 +25,11 @@ import {
   humanizeMetaOutput,
 } from '../../../humanize/application/humanize-report.adapter';
 import { AgentType } from '../../../model-router/domain/model-router.type';
+import {
+  SLACK_DELIVERY_REPOSITORY,
+  SlackDeliveryRepositoryPort,
+} from '../../../slack/domain/port/slack-delivery.repository.port';
+import { summarizeDeliveries } from '../../../slack/domain/slack-delivery-summary';
 import { formatCeoMetaOutput } from '../../../slack/format/ceo-meta.formatter';
 import { formatDailyReview } from '../../../slack/format/daily-review.formatter';
 import { FormattedReport } from '../../../slack/format/formatted-report.type';
@@ -76,6 +81,8 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
     private readonly githubClient: GithubClientPort,
     private readonly humanizeService: HumanizeService,
     private readonly configService: ConfigService,
+    @Inject(SLACK_DELIVERY_REPOSITORY)
+    private readonly slackDeliveryRepository: SlackDeliveryRepositoryPort,
   ) {}
 
   async run({
@@ -166,8 +173,9 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
 
     const recoveryHealthLine =
       await this.buildRecoveryHealthLine(ownerSlackUserId);
+    const consoleRouteLine = await this.buildConsoleRouteLine(since);
 
-    const weeklySummary = `${worklogSummary}\n\n${recoveryHealthLine}`;
+    const weeklySummary = `${worklogSummary}\n\n${recoveryHealthLine}${consoleRouteLine ? `\n${consoleRouteLine}` : ''}`;
     const summaryText =
       ceo.summary.trim().length > 0
         ? `${weeklySummary}\n\n────────\n\n${ceo.summary}`
@@ -179,6 +187,33 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
     const detailText = detailParts.join('\n\n────────\n\n');
 
     return { skip: false, summaryText, detailText };
+  }
+
+  private async buildConsoleRouteLine(since: Date): Promise<string | null> {
+    try {
+      const rows = await this.slackDeliveryRepository.findSince(since);
+      const summary = summarizeDeliveries(rows, { days: 7 });
+      const count = summary.totals.suppressedConsoleRoute;
+      if (count === 0) {
+        return null;
+      }
+      const topKinds = summary.byItemKind
+        .filter((group) => group.suppressedConsoleRoute > 0)
+        .sort(
+          (first, second) =>
+            second.suppressedConsoleRoute - first.suppressedConsoleRoute ||
+            first.key.localeCompare(second.key),
+        )
+        .slice(0, 3)
+        .map((group) => `${group.key} ${group.suppressedConsoleRoute}`)
+        .join(' · ');
+      return `🗄️ *콘솔로 돌린 발송* — 이번 주 ${count}건 (${topKinds}) · 본문은 콘솔 GET /v1/console/deliveries`;
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Weekly Summary 콘솔 발송 집계 조회 실패: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return null;
+    }
   }
 
   // PO 회수 대조의 건강도 한 줄. 회수 건수를 합산하지 않는다 — 각 회차의 recoverySummary 는
