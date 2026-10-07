@@ -5,6 +5,12 @@ import { VacationException } from '../domain/vacation.exception';
 import { LeaveUsagePrismaRepository } from '../infrastructure/leave-usage.prisma.repository';
 import { CalculateBalanceUsecase } from './calculate-balance.usecase';
 
+// 키별 설정값 — 키를 가리지 않고 같은 값을 돌려주면 선지급 일수 자리에 입사일 문자열이 들어간다.
+const configFor =
+  (values: Record<string, unknown> = {}) =>
+  (key: string): unknown =>
+    ({ VACATION_HIRE_DATE: '2024-01-15', ...values })[key];
+
 describe('CalculateBalanceUsecase', () => {
   let configGet: jest.Mock;
   let findActiveByUser: jest.Mock;
@@ -12,7 +18,7 @@ describe('CalculateBalanceUsecase', () => {
   let usecase: CalculateBalanceUsecase;
 
   beforeEach(() => {
-    configGet = jest.fn().mockReturnValue('2024-01-15');
+    configGet = jest.fn(configFor());
     findActiveByUser = jest.fn().mockResolvedValue([
       {
         id: 1,
@@ -54,6 +60,32 @@ describe('CalculateBalanceUsecase', () => {
     expect(result.result.grantedDays).toBe(15);
     expect(result.result.usedDays).toBe(5);
     expect(result.result.remainingDays).toBe(10);
+  });
+
+  it('1년차 선지급 설정 시 부여는 선지급 일수로 고정 (월 발생분 6일 대신 8일)', async () => {
+    configGet.mockImplementation(
+      configFor({
+        VACATION_HIRE_DATE: '2026-04-06',
+        VACATION_FIRST_YEAR_ADVANCE_DAYS: 8,
+      }),
+    );
+    const result = await usecase.execute({
+      slackUserId: 'U1',
+      asOf: { year: 2026, month: 10, day: 7 },
+    });
+    expect(result.result.grantedDays).toBe(8);
+    expect(result.result.remainingDays).toBe(8);
+  });
+
+  it('선지급 설정은 2년차 이후 부여(15일)에 영향을 주지 않는다', async () => {
+    configGet.mockImplementation(
+      configFor({ VACATION_FIRST_YEAR_ADVANCE_DAYS: 8 }),
+    );
+    const result = await usecase.execute({
+      slackUserId: 'U1',
+      asOf: { year: 2026, month: 6, day: 10 },
+    });
+    expect(result.result.grantedDays).toBe(15);
   });
 
   it('결정론 경로라 modelUsed=deterministic 로 audit', async () => {

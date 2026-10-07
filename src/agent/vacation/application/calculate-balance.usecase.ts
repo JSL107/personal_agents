@@ -9,17 +9,15 @@ import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { computeBalance } from '../domain/balance-calculator';
 import { PlainDate, plainDateToIso } from '../domain/plain-date';
-import { MonthlyThenFixed15Policy } from '../domain/policy/accrual-policy';
 import { VacationBalance } from '../domain/vacation.type';
 import { LeaveUsagePrismaRepository } from '../infrastructure/leave-usage.prisma.repository';
+import { resolveAccrualPolicy } from './resolve-accrual-policy';
 import { resolveHireDate } from './resolve-hire-date';
 
 interface CalculateBalanceCommand {
   slackUserId: string;
   asOf: PlainDate;
 }
-
-const policy = new MonthlyThenFixed15Policy();
 
 @Injectable()
 export class CalculateBalanceUsecase {
@@ -34,6 +32,7 @@ export class CalculateBalanceUsecase {
     asOf,
   }: CalculateBalanceCommand): Promise<AgentRunOutcome<VacationBalance>> {
     const hireDate = resolveHireDate(this.config);
+    const policy = resolveAccrualPolicy(this.config);
     const usages = await this.repository.findActiveByUser(slackUserId);
 
     return this.agentRunService.execute({

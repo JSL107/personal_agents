@@ -10,11 +10,11 @@ import { DomainStatus } from '../../../common/exception/domain-status.enum';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { computeBalance } from '../domain/balance-calculator';
 import { PlainDate } from '../domain/plain-date';
-import { MonthlyThenFixed15Policy } from '../domain/policy/accrual-policy';
 import { VacationException } from '../domain/vacation.exception';
 import { CancelLeaveResult } from '../domain/vacation.type';
 import { VacationErrorCode } from '../domain/vacation-error-code.enum';
 import { LeaveUsagePrismaRepository } from '../infrastructure/leave-usage.prisma.repository';
+import { resolveAccrualPolicy } from './resolve-accrual-policy';
 import { resolveHireDate } from './resolve-hire-date';
 
 interface CancelLeaveCommand {
@@ -22,8 +22,6 @@ interface CancelLeaveCommand {
   usageId: number;
   asOf: PlainDate;
 }
-
-const policy = new MonthlyThenFixed15Policy();
 
 @Injectable()
 export class CancelLeaveUsecase {
@@ -41,6 +39,7 @@ export class CancelLeaveUsecase {
     asOf,
   }: CancelLeaveCommand): Promise<AgentRunOutcome<CancelLeaveResult>> {
     const hireDate = resolveHireDate(this.config);
+    const policy = resolveAccrualPolicy(this.config);
 
     return this.agentRunService.execute({
       agentType: AgentType.VACATION,

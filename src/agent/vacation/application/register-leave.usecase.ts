@@ -14,9 +14,9 @@ import { AgentType } from '../../../model-router/domain/model-router.type';
 import { computeBalance } from '../domain/balance-calculator';
 import { countBusinessDays } from '../domain/business-day-counter';
 import { PlainDate, plainDateToIso } from '../domain/plain-date';
-import { MonthlyThenFixed15Policy } from '../domain/policy/accrual-policy';
 import { RegisterLeaveResult } from '../domain/vacation.type';
 import { LeaveUsagePrismaRepository } from '../infrastructure/leave-usage.prisma.repository';
+import { resolveAccrualPolicy } from './resolve-accrual-policy';
 import { resolveHireDate } from './resolve-hire-date';
 
 interface RegisterLeaveCommand {
@@ -27,8 +27,6 @@ interface RegisterLeaveCommand {
   asOf: PlainDate;
   fraction?: number;
 }
-
-const policy = new MonthlyThenFixed15Policy();
 
 @Injectable()
 export class RegisterLeaveUsecase {
@@ -49,6 +47,7 @@ export class RegisterLeaveUsecase {
     fraction,
   }: RegisterLeaveCommand): Promise<AgentRunOutcome<RegisterLeaveResult>> {
     const hireDate = resolveHireDate(this.config);
+    const policy = resolveAccrualPolicy(this.config);
     // 휴가는 법정 공휴일만 뺀다 — KRX 연말 휴장일(12/31)은 출근하는 날이라 센다.
     const calendar = await this.holidayCalendar.load();
     // 범위 역전 시 여기서 throw (저장 전).

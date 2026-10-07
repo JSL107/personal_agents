@@ -6,6 +6,12 @@ import { VacationException } from '../domain/vacation.exception';
 import { LeaveUsagePrismaRepository } from '../infrastructure/leave-usage.prisma.repository';
 import { CancelLeaveUsecase } from './cancel-leave.usecase';
 
+// 키별 설정값 — 키를 가리지 않고 같은 값을 돌려주면 선지급 일수 자리에 입사일 문자열이 들어간다.
+const configFor =
+  (values: Record<string, unknown> = {}) =>
+  (key: string): unknown =>
+    ({ VACATION_HIRE_DATE: '2024-01-15', ...values })[key];
+
 describe('CancelLeaveUsecase', () => {
   let configGet: jest.Mock;
   let softCancel: jest.Mock;
@@ -14,7 +20,7 @@ describe('CancelLeaveUsecase', () => {
   let usecase: CancelLeaveUsecase;
 
   beforeEach(() => {
-    configGet = jest.fn().mockReturnValue('2024-01-15');
+    configGet = jest.fn(configFor());
     softCancel = jest.fn().mockResolvedValue(true);
     findActiveByUser = jest.fn().mockResolvedValue([]);
     execute = jest.fn(async (input) => {
@@ -49,6 +55,22 @@ describe('CancelLeaveUsecase', () => {
     expect(softCancel).toHaveBeenCalled();
     expect(result.result.canceledId).toBe(10);
   });
+
+  it('1년차 선지급 설정 시 취소 후 잔여도 선지급 일수 기준 (부여 8 · 사용 0 → 잔여 8)', async () => {
+    configGet.mockImplementation(
+      configFor({
+        VACATION_HIRE_DATE: '2026-04-06',
+        VACATION_FIRST_YEAR_ADVANCE_DAYS: 8,
+      }),
+    );
+    const result = await usecase.execute({
+      slackUserId: 'U1',
+      usageId: 10,
+      asOf: { year: 2026, month: 10, day: 7 },
+    });
+    expect(result.result.balance.grantedDays).toBe(8);
+    expect(result.result.balance.remainingDays).toBe(8);
+  });
 });
 
 describe('CancelLeaveUsecase DI', () => {
@@ -56,7 +78,7 @@ describe('CancelLeaveUsecase DI', () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         CancelLeaveUsecase,
-        { provide: ConfigService, useValue: { get: () => '2024-01-15' } },
+        { provide: ConfigService, useValue: { get: configFor() } },
         { provide: LeaveUsagePrismaRepository, useValue: {} },
         { provide: AgentRunService, useValue: {} },
       ],
