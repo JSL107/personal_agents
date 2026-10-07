@@ -81,8 +81,8 @@ export class KnowledgeLintAutopilotTask implements AutopilotTask {
       });
       throw error;
     }
-    // Slack digest 발송(summaryText)은 사후 조회가 안 된다 — 이 주가 실제로 돌았는지·
-    // 게이트가 켜져 있었는지·판정 대상이 있었는지는 별도로 남겨야 사후에 가릴 수 있다.
+    // 이슈가 있으면 Slack, 없으면 EMPTY 원장에 남지만 점검 범위와 L4 실행 여부는
+    // 별도 trace 에 기록해야 사후에 구분할 수 있다.
     // candidates>0 이면 루프 첫 항목에서 최소 1 회는 judge 를 호출한다(KnowledgeLintService
     // 의 for-of 구조) — judged=0 이어도(첫 호출이 즉시 쿼터 소진) 호출 자체는 있었으므로
     // llmCalled 는 judged 가 아니라 candidates 기준으로 판단한다.
@@ -95,13 +95,17 @@ export class KnowledgeLintAutopilotTask implements AutopilotTask {
       detail: outcome.l4?.abortedByQuota ? 'L4 쿼터 소진으로 중단' : undefined,
     });
 
-    // 이슈 0건에도 skip 하지 않는다 — 주 1회(일 10:00) 발화라 skip 으로 끊으면 그 주에
-    // 점검이 돌았는지 자체가 아무 데도 안 남는다(LLM 을 안 쓰는 구간은 agent_run 에도 없다).
-    // 하트비트 문구와 점검 범위는 formatter 가 outcome.l4(실행 실태)로 판단한다 —
-    // env 플래그는 "하려고 했다" 일 뿐 "실제로 판정했다" 가 아니다.
+    // 이슈 0건의 하트비트는 Slack 대신 SUPPRESSED/EMPTY 원장에 남긴다.
+    // 단 L4 가 쿼터로 중단된 회차는 "깨끗하다" 가 아니라 "다 못 봤다" 라서 경고와 함께 Slack 으로 보낸다 —
+    // 원장에 묻으면 판정이 계속 중단돼도 아무도 모른다.
+    // formatter 는 outcome.l4(실행 실태)로 점검 범위를 판단한다.
+    const summaryText = formatKnowledgeLint(outcome, firedAtKst);
+    if (outcome.issues.length === 0 && !outcome.l4?.abortedByQuota) {
+      return { skip: true, emptyReason: summaryText };
+    }
     return {
       skip: false,
-      summaryText: formatKnowledgeLint(outcome, firedAtKst),
+      summaryText,
       // 예고한 건수와 실제로 찍은 수가 다르면(발송 사이에 새 행이 들어온 경우) 로그로 남긴다.
       // 후처리가 실패해도 아무것도 찍히지 않았으므로 다음 회차가 같은 행을 다시 잡는다.
       onDelivered:

@@ -9,6 +9,7 @@ export type SlackDeliveryStatus =
 
 export const SLACK_DELIVERY_SUPPRESS_REASON = {
   CONSOLE_ROUTE: 'CONSOLE_ROUTE',
+  EMPTY: 'EMPTY',
 } as const;
 
 export type SlackDeliverySuppressReason =
