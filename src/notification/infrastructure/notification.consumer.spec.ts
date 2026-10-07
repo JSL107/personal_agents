@@ -31,7 +31,7 @@ describe('NotificationConsumer', () => {
       { postMessage } as never,
       { get } as never,
       { alertIncident: { findUnique, upsert, update } } as never,
-      { add } as never,
+      { publishDelayedRecovery: add } as never,
     );
     return { consumer, postMessage, findUnique, upsert, update, add, get };
   };
@@ -131,13 +131,7 @@ describe('NotificationConsumer', () => {
     findUnique.mockResolvedValue(openRow());
     const job = recovery();
     await consumer.process(job as never);
-    expect(add).toHaveBeenCalledWith(
-      NOTIFICATION_JOB.INCIDENT_RECOVERED,
-      job.data,
-      expect.objectContaining({ delay: 29 * 60_000 }),
-    );
-    // 지연 job 이 dedup 키를 쥐면 더 최신 성공 신호가 버려진다(PR #745 리뷰).
-    expect(add.mock.calls[0][2]).not.toHaveProperty('deduplication');
+    expect(add).toHaveBeenCalledWith(job.data, 29 * 60_000);
     expect(postMessage).not.toHaveBeenCalled();
     expect(update).not.toHaveBeenCalled();
   });
