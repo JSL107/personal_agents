@@ -32,7 +32,10 @@ const makeConsumer = (due: JobApplicationRecord[]) => {
       return true;
     }),
   };
-  const notificationPublisher = { publishCronFailure: jest.fn() };
+  const notificationPublisher = {
+    publishCronFailure: jest.fn(),
+    publishRecovery: jest.fn(),
+  };
   const consumer = new JobApplicationNudgeCronConsumer(
     repository as never,
     slackNotifier as never,
@@ -49,6 +52,17 @@ const makeConsumer = (due: JobApplicationRecord[]) => {
 };
 
 describe('JobApplicationNudgeCronConsumer', () => {
+  it('정상 발송과 빈 결과 모두 같은 사건 키에 해결 신호를 보낸다', async () => {
+    for (const records of [[sampleRecord()], []]) {
+      const dependencies = makeConsumer(records);
+      await dependencies.consumer.process({
+        data: { ownerSlackUserId: 'U1', target: 'C1' },
+      } as never);
+      expect(
+        dependencies.notificationPublisher.publishRecovery,
+      ).toHaveBeenCalledWith('cron:Job Application Nudge Cron');
+    }
+  });
   it('due 있음 — findDueNudges 인자 전달 + Slack 발송 1회 (넛지 헤더 포함)', async () => {
     const deps = makeConsumer([sampleRecord()]);
     await deps.consumer.process({
@@ -120,6 +134,7 @@ describe('JobApplicationNudgeCronConsumer', () => {
     expect(deps.slackNotifier.postMessage).not.toHaveBeenCalled();
     expect(deps.notificationPublisher.publishCronFailure).toHaveBeenCalledWith({
       cronName: 'Job Application Nudge Cron',
+      incidentKey: 'cron:Job Application Nudge Cron',
       ownerSlackUserId: 'U1',
       errorMessage: 'db down',
     });

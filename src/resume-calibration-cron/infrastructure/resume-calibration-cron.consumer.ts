@@ -17,6 +17,7 @@ import { getTodayKstDate } from '../../common/util/kst-date.util';
 import { HumanizeService } from '../../humanize/application/humanize.service';
 import { humanizeCalibrationReport } from '../../humanize/application/humanize-report.adapter';
 import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
+import { cronIncidentKey } from '../../notification/domain/notification.type';
 import {
   SLACK_NOTIFIER_PORT,
   SlackNotifierPort,
@@ -29,6 +30,7 @@ import {
 
 // 발송 idempotency TTL — 25h. 다음 주기 발사 전 만료되도록 하루보다 약간 길게.
 const SENT_GUARD_TTL_SECONDS = 90_000;
+const INCIDENT_KEY = cronIncidentKey('Resume Calibration Cron');
 
 interface DeliverCalibrationInput {
   ownerSlackUserId: string;
@@ -93,6 +95,7 @@ export class ResumeCalibrationCronConsumer extends WorkerHost {
         dateKey: todayKst,
         detail: rendered.truncated ? rendered.full : undefined,
       });
+      this.notificationPublisher?.publishRecovery(INCIDENT_KEY);
     } catch (error) {
       if (
         error instanceof CareerMateException &&
@@ -107,6 +110,7 @@ export class ResumeCalibrationCronConsumer extends WorkerHost {
           text: `🌙 *이력서 보정 점검 — ${todayKst} skip*\n_역량 프로필이 없어 점검을 건너뜁니다. "@이대리 프로필 정리해줘" 먼저 실행해주세요._`,
           dateKey: todayKst,
         });
+        this.notificationPublisher?.publishRecovery(INCIDENT_KEY);
         return;
       }
       this.logger.error(
@@ -176,7 +180,7 @@ export class ResumeCalibrationCronConsumer extends WorkerHost {
     this.logger.log(`Resume Calibration Cron 발송 완료 — target=${target}`);
   }
 
-  // fire-and-forget — NotificationQueue 로 enqueue. consumer 측 30분 dedupe + Slack DM.
+  // fire-and-forget — NotificationQueue 의 사건 단위 Slack DM.
   private notifyOwnerFailure(ownerSlackUserId: string, error: unknown): void {
     if (!this.notificationPublisher) {
       return;
@@ -184,6 +188,7 @@ export class ResumeCalibrationCronConsumer extends WorkerHost {
     const errorMessage = error instanceof Error ? error.message : String(error);
     this.notificationPublisher.publishCronFailure({
       cronName: 'Resume Calibration Cron',
+      incidentKey: INCIDENT_KEY,
       ownerSlackUserId,
       errorMessage,
     });

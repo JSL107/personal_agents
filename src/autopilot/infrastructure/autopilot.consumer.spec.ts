@@ -1,3 +1,5 @@
+import { cronIncidentKey } from '../../notification/domain/notification.type';
+import { AutopilotAllTasksFailedError } from '../application/autopilot.orchestrator';
 import { AutopilotConsumer } from './autopilot.consumer';
 
 const makeJob = (name: string) =>
@@ -68,7 +70,7 @@ describe('AutopilotConsumer', () => {
       });
       const consumer = makeConsumer(
         { runGroup },
-        { publishCronFailure: jest.fn() },
+        { publishCronFailure: jest.fn(), publishRecovery: jest.fn() },
       );
 
       await expect(
@@ -171,6 +173,32 @@ describe('AutopilotConsumer', () => {
         cronName: 'Autopilot:morning',
         ownerSlackUserId: 'U1',
       }),
+    );
+  });
+
+  it('전멸 실패는 task 사건만 발행되므로 그룹 사건을 중복 발행하지 않는다', async () => {
+    const failure = new AutopilotAllTasksFailedError();
+    const publishCronFailure = jest.fn();
+    const consumer = makeConsumer(
+      { runGroup: jest.fn().mockRejectedValue(failure) },
+      { publishCronFailure },
+    );
+
+    await expect(consumer.process(makeJob('morning'))).rejects.toBe(failure);
+    expect(publishCronFailure).not.toHaveBeenCalled();
+  });
+
+  it('정상 종료 시 그룹 사건의 복구를 발행한다', async () => {
+    const publishRecovery = jest.fn();
+    const consumer = makeConsumer(
+      { runGroup: jest.fn().mockResolvedValue(undefined) },
+      { publishRecovery },
+    );
+
+    await consumer.process(makeJob('morning'));
+
+    expect(publishRecovery).toHaveBeenCalledWith(
+      cronIncidentKey('Autopilot:morning'),
     );
   });
 

@@ -456,6 +456,23 @@ model SlackDelivery {
   @@map("slack_delivery")
 }
 
+// 같은 원인의 고장을 한 사건으로 묶는다. 재발하면 같은 행을 다시 연다.
+model AlertIncident {
+  id             Int       @id @default(autoincrement())
+  key            String    @unique
+  label          String
+  openedAt       DateTime  @map("opened_at")
+  lastSeenAt     DateTime  @map("last_seen_at")
+  lastNotifiedAt DateTime  @map("last_notified_at")
+  occurrences    Int
+  lastError      String    @map("last_error") @db.Text
+  causes         String[]
+  resolvedAt     DateTime? @map("resolved_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  @@map("alert_incident")
+}
+
 // 보유 종목 모니터링 — 종목 마스터.
 // 티커는 상장 이전·티커 변경으로 바뀔 수 있어 PK 로 쓰지 않는다.
 // 유니크는 (market, code) — 6자리 코드는 시장이 다르면 중복될 수 있다.

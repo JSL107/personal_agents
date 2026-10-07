@@ -42,12 +42,17 @@ const makeConsumer = (opts: { hermesOk: boolean; cal?: unknown }) => {
   const humanizeService = {
     humanize: jest.fn(async (fields: Record<string, string>) => fields),
   };
+  const notificationPublisher = {
+    publishCronFailure: jest.fn(),
+    publishRecovery: jest.fn(),
+  };
   const consumer = new ResumeCalibrationCronConsumer(
     calibrateResume as never,
     humanizeService as never,
     hermesRunner as never,
     slackNotifier as never,
     cronIdempotency as never,
+    notificationPublisher as never,
   );
   return {
     consumer,
@@ -55,10 +60,20 @@ const makeConsumer = (opts: { hermesOk: boolean; cal?: unknown }) => {
     hermesRunner,
     slackNotifier,
     cronIdempotency,
+    notificationPublisher,
   };
 };
 
 describe('ResumeCalibrationCronConsumer', () => {
+  it('정상 종료는 해결 신호를 보낸다', async () => {
+    const dependencies = makeConsumer({ hermesOk: true });
+    await dependencies.consumer.process({
+      data: { ownerSlackUserId: 'U1', target: 'U1' },
+    } as never);
+    expect(
+      dependencies.notificationPublisher.publishRecovery,
+    ).toHaveBeenCalledWith('cron:Resume Calibration Cron');
+  });
   it('Hermes 성공 시 webTrendsNote 를 calibrate 에 전달하고 Slack 발송', async () => {
     const deps = makeConsumer({ hermesOk: true });
     await deps.consumer.process({
