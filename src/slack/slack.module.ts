@@ -20,7 +20,6 @@ import { PushpinTaskModule } from '../pushpin-task/pushpin-task.module';
 import { RouterModule } from '../router/router.module';
 import { SlackInboxModule } from '../slack-inbox/slack-inbox.module';
 import { SubconsciousModule } from '../subconscious/subconscious.module';
-import { SLACK_DELIVERY_REPOSITORY } from './domain/port/slack-delivery.repository.port';
 import {
   SLACK_HANDLER_PORT,
   SlackHandler,
@@ -28,6 +27,7 @@ import {
 import { AgentCommandHandler } from './handler/agent-command.handler';
 import { BlogPublishHandler } from './handler/blog-publish.handler';
 import { CareerContextActionHandler } from './handler/career-context-action.handler';
+import { DeliveryReactionHandler } from './handler/delivery-reaction.handler';
 import { DiagnosisHandler } from './handler/diagnosis.handler';
 import { FeedbackCommandHandler } from './handler/feedback-command.handler';
 import { PhaseCommandHandler } from './handler/phase-command.handler';
@@ -41,8 +41,8 @@ import { SlackPushpinReactionHandler } from './handler/slack-pushpin-reaction.ha
 import { SubconsciousProposalActionHandler } from './handler/subconscious-proposal-action.handler';
 import { VacationHandler } from './handler/vacation.handler';
 import { WriteBackHandler } from './handler/write-back.handler';
-import { SlackDeliveryPrismaRepository } from './infrastructure/slack-delivery.prisma.repository';
 import { SlackService } from './slack.service';
+import { SlackDeliveryModule } from './slack-delivery.module';
 
 @Module({
   imports: [
@@ -64,6 +64,7 @@ import { SlackService } from './slack.service';
     // OPS-1 /quota 슬래시 — GetQuotaStatsUsecase 주입.
     AgentRunModule,
     HumanizeModule,
+    SlackDeliveryModule,
     // PO-2 PreviewGate 는 AppModule 에서 forRoot(global: true) 로 한번 등록 — 별도 import 불필요.
     // OPS-3 Slack Reaction → Inbox
     SlackInboxModule,
@@ -83,10 +84,6 @@ import { SlackService } from './slack.service';
   ],
   providers: [
     SlackService,
-    {
-      provide: SLACK_DELIVERY_REPOSITORY,
-      useClass: SlackDeliveryPrismaRepository,
-    },
     // C-4 Phase 1 — SlackHandlerRegistry. 각 handler 가 SLACK_HANDLER_PORT multi-provider 로
     // 등록되면 SlackService 가 부팅 시 handlers.forEach(h => h.register(app)) 만 호출.
     // 후속 Phase 에서 나머지 register fn 도 동일 패턴으로 마이그레이션.
@@ -103,6 +100,7 @@ import { SlackService } from './slack.service';
     SlackInboxReactionHandler,
     SlackPushpinReactionHandler,
     PreferenceReactionHandler,
+    DeliveryReactionHandler,
     VacationHandler,
     SubconsciousProposalActionHandler,
     RunVerdictActionHandler,
@@ -123,6 +121,7 @@ import { SlackService } from './slack.service';
         SlackInboxReactionHandler,
         SlackPushpinReactionHandler,
         PreferenceReactionHandler,
+        DeliveryReactionHandler,
         VacationHandler,
         SubconsciousProposalActionHandler,
         RunVerdictActionHandler,

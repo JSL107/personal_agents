@@ -20,6 +20,41 @@ export type RecordSlackDeliveryInput = {
   errorMessage?: string;
 };
 
+export type SlackDeliveryMessageRef = {
+  channelId: string;
+  messageTs: string;
+};
+
+export type SlackDeliveryStatRow = {
+  kind: string;
+  itemKinds: string[];
+  status: SlackDeliveryStatus;
+  suppressReason: string | null;
+  reactionCount: number;
+  replyCount: number;
+};
+
+export type SlackDeliveryListInput = {
+  status: SlackDeliveryStatus;
+  since: Date;
+  limit: number;
+};
+
+export type SlackDeliveryListRow = SlackDeliveryStatRow & {
+  id: number;
+  target: string;
+  channelId: string | null;
+  messageTs: string | null;
+  textPreview: string;
+  fullText: string | null;
+  errorMessage: string | null;
+  createdAt: Date;
+};
+
 export interface SlackDeliveryRepositoryPort {
   record(input: RecordSlackDeliveryInput): Promise<void>;
+  incrementReactionCount(target: SlackDeliveryMessageRef): Promise<number>;
+  incrementReplyCount(target: SlackDeliveryMessageRef): Promise<number>;
+  findSince(since: Date): Promise<SlackDeliveryStatRow[]>;
+  findByStatus(input: SlackDeliveryListInput): Promise<SlackDeliveryListRow[]>;
 }

@@ -6,11 +6,14 @@ import { LocalSessionsModule } from '../local-sessions/local-sessions.module';
 import { MemoryVacuumModule } from '../memory-vacuum/memory-vacuum.module';
 import { PrReviewPublishModule } from '../pr-review-loop/pr-review-publish.module';
 import { RouterModule } from '../router/router.module';
+import { SlackDeliveryModule } from '../slack/slack-delivery.module';
 import { BuildActivityUsecase } from './application/build-activity.usecase';
+import { BuildDeliverySummaryUsecase } from './application/build-delivery-summary.usecase';
 import { BuildLedgerUsecase } from './application/build-ledger.usecase';
 import { BuildPresidentBriefingUsecase } from './application/build-president-briefing.usecase';
 import { ConsoleReadService } from './application/console-read.service';
 import { ConsoleWriteService } from './application/console-write.service';
+import { ListDeliveriesUsecase } from './application/list-deliveries.usecase';
 import { PendingConsoleTurnStore } from './application/pending-console-turn.store';
 import { PreconditionChainOrchestrator } from './application/precondition-chain.orchestrator';
 import { SessionPollerService } from './application/session-poller.service';
@@ -32,6 +35,7 @@ import { ConsoleWriteController } from './interface/console-write.controller';
     LocalSessionsModule,
     PrReviewPublishModule,
     RouterModule,
+    SlackDeliveryModule,
   ],
   controllers: [
     ConsoleController,
@@ -40,10 +44,12 @@ import { ConsoleWriteController } from './interface/console-write.controller';
   ],
   providers: [
     BuildActivityUsecase,
+    BuildDeliverySummaryUsecase,
     BuildLedgerUsecase,
     BuildPresidentBriefingUsecase,
     ConsoleReadService,
     ConsoleWriteService,
+    ListDeliveriesUsecase,
     ConsoleReadGuard,
     LoopbackOnlyGuard,
     PendingConsoleTurnStore,
