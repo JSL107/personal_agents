@@ -249,6 +249,55 @@ describe('ReviewPullRequestUsecase', () => {
     });
   });
 
+  it.each([
+    ['foo/bar', false, 'POSTED'],
+    ['baz/qux', false, 'NOT_ALLOWED'],
+    ['foo/bar', true, 'DRY_RUN'],
+  ])(
+    '허용 목록 %s · 연습 %s 이면 게시 결과를 %s 로 돌려준다 (사용자에게 알릴 근거)',
+    async (allowlist, dryRun, kind) => {
+      const published = {
+        inline: 2,
+        file: 0,
+        issueComment: 0,
+        dryRun: dryRun ? 2 : 0,
+        notPosted: 0,
+        dropped: 0,
+        duplicate: 0,
+      };
+      publishFindings.mockResolvedValueOnce(published);
+      configGet.mockImplementation((key: string) =>
+        key === 'PR_REVIEW_INLINE_REPOS' ? allowlist : undefined,
+      );
+
+      const result = await usecase.execute({
+        prRef: 'foo/bar#34',
+        slackUserId: 'U123',
+        publish: true,
+        dryRun,
+      });
+
+      expect(result.publication?.kind).toBe(kind);
+      if (result.publication?.kind === 'POSTED') {
+        expect(result.publication).toEqual({
+          kind: 'POSTED',
+          repo: 'foo/bar',
+          pullNumber: 34,
+          outcome: published,
+        });
+      }
+    },
+  );
+
+  it('publish 를 요청하지 않으면 게시 결과가 없다', async () => {
+    const result = await usecase.execute({
+      prRef: 'foo/bar#34',
+      slackUserId: 'U123',
+      publish: false,
+    });
+    expect(result.publication).toBeUndefined();
+  });
+
   it('dryRun 을 주면 게시도 연습 모드로 넘어간다', async () => {
     configGet.mockImplementation((key: string) => {
       if (key === 'PR_REVIEW_INLINE_REPOS') {
@@ -303,6 +352,8 @@ describe('ReviewPullRequestUsecase', () => {
       result: validReview,
       modelUsed: 'claude-cli',
       agentRunId: 55,
+      // 리뷰는 유지하되, 게시가 실패했다는 사실은 사용자에게 알릴 수 있게 싣는다.
+      publication: { kind: 'FAILED', message: 'GitHub publish failed' },
     });
     expect(agentRunServiceExecute).toHaveBeenCalledTimes(1);
   });

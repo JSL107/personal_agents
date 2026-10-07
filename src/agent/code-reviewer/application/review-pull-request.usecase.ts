@@ -29,6 +29,8 @@ import {
   PR_REVIEW_FINDING_REPOSITORY_PORT,
   PrReviewFindingRepositoryPort,
 } from '../../../pr-review-loop/domain/port/pr-review-finding.repository.port';
+import { PublishOutcome } from '../../../pr-review-loop/domain/publish-outcome.type';
+import { isRepoAllowed } from '../../../pr-review-loop/domain/publish-policy';
 import { ConversationContext } from '../../../router/domain/conversation-context.type';
 import {
   PullRequestReview,
@@ -62,6 +64,25 @@ import {
 } from '../domain/related-code';
 
 const DEFAULT_INLINE_MAX = 4;
+
+// 게시 단계에서 실제로 일어난 일. 사용자에게 게시 여부를 알릴 근거는 이것뿐이다 — 리뷰 모델은
+// 네트워크가 막힌 채 돌아 게시 결과를 알 수 없는데, 이게 없던 동안 "게시 미확인" 같은 문장을
+// 지어냈다(2026-08-27, 실제로는 허용 목록 밖이라 미게시였거나 게시에 성공한 회차).
+export type PullRequestPublication =
+  | {
+      kind: 'POSTED';
+      repo: string;
+      pullNumber: number;
+      outcome: PublishOutcome;
+    }
+  | { kind: 'NOT_ALLOWED'; repo: string }
+  | { kind: 'DRY_RUN'; outcome: PublishOutcome }
+  | { kind: 'FAILED'; message: string };
+
+// 게시를 시도하지 않은 회차(publish false·스윕·리뷰 실패 전 단계)는 publication 이 없다.
+export type ReviewPullRequestOutcome = AgentRunOutcome<PullRequestReview> & {
+  publication?: PullRequestPublication;
+};
 // 이름 하나당 사용처를 실을 파일 수와 파일당 구간 수. 검색 결과는 관련도 순이다.
 const USAGE_FILES_PER_SYMBOL = 3;
 const USAGE_WINDOWS_PER_FILE = 3;
@@ -102,7 +123,7 @@ export class ReviewPullRequestUsecase {
     publish,
     excludeConventionFindingIds,
     noFallback,
-  }: ReviewPullRequestInput): Promise<AgentRunOutcome<PullRequestReview>> {
+  }: ReviewPullRequestInput): Promise<ReviewPullRequestOutcome> {
     // INVALID_PR_REFERENCE 는 파싱 시점에 즉시 예외.
     const ref = parsePrReference(prRef);
     const effectiveTriggerType =
@@ -195,8 +216,11 @@ export class ReviewPullRequestUsecase {
       reviewedDetail !== undefined &&
       reviewedDiff !== undefined
     ) {
+      const allowlistRaw = this.configService?.get<string>(
+        'PR_REVIEW_INLINE_REPOS',
+      );
       try {
-        await this.publishFindingsService.publish({
+        const published = await this.publishFindingsService.publish({
           agentRunId: outcome.agentRunId,
           repo: ref.repo,
           pullNumber: ref.number,
@@ -209,14 +233,29 @@ export class ReviewPullRequestUsecase {
           // 과거 PR 재리뷰(검증)가 실제 코멘트를 다는 사고를 만들었다 — 게시 없는
           // 재현 경로가 없으면 이후 개선을 실증할 방법 자체가 없다.
           dryRun: dryRun === true,
-          allowlistRaw: this.configService?.get<string>(
-            'PR_REVIEW_INLINE_REPOS',
-          ),
+          allowlistRaw,
         });
+        // 허용 판정은 게시 서비스와 같은 순수 함수로 다시 구한다 — 새 조회는 없다. 목록 밖이면
+        // 서비스는 카드만 SUPPRESSED 로 남기고 조용히 끝나, 결과 집계만으로는 "목록 밖" 과
+        // "전부 실패" 를 가를 수 없다.
+        const publication: PullRequestPublication =
+          dryRun === true
+            ? { kind: 'DRY_RUN', outcome: published }
+            : isRepoAllowed(ref.repo, allowlistRaw)
+              ? {
+                  kind: 'POSTED',
+                  repo: ref.repo,
+                  pullNumber: ref.number,
+                  outcome: published,
+                }
+              : { kind: 'NOT_ALLOWED', repo: ref.repo };
+        return { ...outcome, publication };
       } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
         this.logger.warn(
-          `PR 리뷰 게시 실패 (${ref.repo}#${ref.number}), 리뷰 결과는 유지: ${error instanceof Error ? error.message : String(error)}`,
+          `PR 리뷰 게시 실패 (${ref.repo}#${ref.number}), 리뷰 결과는 유지: ${message}`,
         );
+        return { ...outcome, publication: { kind: 'FAILED', message } };
       }
     }
 
