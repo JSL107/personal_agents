@@ -1,6 +1,8 @@
 import {
+  buildDiffCoverageNote,
   buildFindingCommentBody,
   buildNoFindingsCommentBody,
+  buildPartialReviewCommentBody,
   IDAERI_REVIEW_MARKER,
 } from './finding-comment.body';
 
@@ -43,11 +45,44 @@ describe('buildNoFindingsCommentBody', () => {
     expect(buildNoFindingsCommentBody('   ')).not.toContain('>');
   });
 
+  it('잘린 diff 면 커버리지 안내를 끝에 붙이고, 없으면 붙이지 않는다', () => {
+    expect(buildNoFindingsCommentBody('요약', undefined, '⚠️ 안내')).toMatch(
+      /> 요약\n\n⚠️ 안내$/,
+    );
+    expect(buildNoFindingsCommentBody('요약', '이유', '⚠️ 안내')).toMatch(
+      /\n\n⚠️ 안내$/,
+    );
+    expect(buildNoFindingsCommentBody('요약', undefined, null)).not.toContain(
+      '⚠️',
+    );
+  });
+
   it('여러 줄 요약을 한 줄로 눌러 인용한다', () => {
     const body = buildNoFindingsCommentBody('  첫 줄\n\n  둘째 줄  ');
 
     expect(body).toContain('> 첫 줄 둘째 줄');
     // 인용 부호 뒤로 줄바꿈이 남으면 둘째 줄이 인용 밖으로 새어 나간다.
     expect(body.split('> ')[1]).not.toContain('\n');
+  });
+});
+
+describe('buildDiffCoverageNote', () => {
+  it('잘렸으면 본 바이트/전체 바이트를 적는다 — 한글은 UTF-8 바이트로 센다', () => {
+    expect(buildDiffCoverageNote('한글', 120_000)).toContain(
+      'diff 6/120,000 바이트만 검토',
+    );
+  });
+
+  it('안 잘렸으면 null', () => {
+    expect(buildDiffCoverageNote('한글', 6)).toBeNull();
+  });
+});
+
+describe('buildPartialReviewCommentBody', () => {
+  it('표식으로 시작하고 안내를 담는다', () => {
+    const body = buildPartialReviewCommentBody('⚠️ 안내');
+
+    expect(body.startsWith(IDAERI_REVIEW_MARKER)).toBe(true);
+    expect(body).toContain('⚠️ 안내');
   });
 });
