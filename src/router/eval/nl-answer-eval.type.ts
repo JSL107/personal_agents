@@ -22,6 +22,9 @@ export interface EvalExpect {
   notEndWithQuestion?: boolean;
   // 직전 봇 응답과 같은 문장을 되풀이하면 실패.
   differFromPriorBot?: boolean;
+  // eval 이 실행하지 않는 무거운 워커로 가도 되는 경우만 적는다. 여기 없는 워커로 간 회차는
+  // 답을 판정할 수 없으므로 실패로 센다 — 판정하지 않은 회차가 점수를 부풀리지 않게.
+  acceptStubRoutes?: AgentType[];
 }
 
 export interface EvalCase {
@@ -66,6 +69,8 @@ export interface EvalRunRecord {
   // 사용자가 보게 될 텍스트(오류면 오류 문구).
   text?: string;
   intercepts: EvalIntercept[];
+  // 0단계 가드가 질문·가정형이라 쓰지 않은 회차의 기록(DispatchOutcome.output.heldWrite).
+  heldWrite?: { action: string; marker: string };
   // 분류기·워커 파서의 원응답 — 가드 이전의 파서 판단을 여기서 복원한다.
   modelCalls: EvalModelCall[];
   durationMs: number;

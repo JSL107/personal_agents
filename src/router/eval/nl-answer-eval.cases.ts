@@ -108,7 +108,12 @@ export const NL_ANSWER_EVAL_CASES: readonly EvalCase[] = [
     split: 'tuning',
     note: '기능 질문 — 슬래시 안내 금지',
     text: '휴가 등록하려면 뭐라고 말하면 돼?',
-    expect: { forbidIntercepts: true },
+    // 등록하는 말의 예시를 알려 줘야 답이다(쓰기만 안 하면 통과하던 기준을 #743 리뷰로 보강).
+    expect: {
+      destinations: [AgentType.VACATION, 'REPLIED'],
+      forbidIntercepts: true,
+      mustMatch: [/등록/],
+    },
   },
   // ── tuning: 구인 ─────────────────────────────────────────────
   {
@@ -334,7 +339,13 @@ export const NL_ANSWER_EVAL_CASES: readonly EvalCase[] = [
         '좋아요. LLM 기초 원리, 프롬프트·RAG, 파인튜닝, 에이전트 구현 중 어디부터 깊게 공부하고 싶으세요?',
       ),
     ],
-    expect: { forbidIntercepts: true, notEndWithQuestion: true },
+    // 봇이 제시한 주제 중 하나를 고른 답은 BLOG 착수 지시로 분류하도록 설계돼 있다
+    // (intent-classifier-system.prompt.ts 「합의된 작업의 실행 지시」). 그쪽으로 가면 되묻기가 아니다.
+    expect: {
+      forbidIntercepts: true,
+      notEndWithQuestion: true,
+      acceptStubRoutes: [AgentType.BLOG],
+    },
   },
   {
     id: 'h-review-publish-0827a',

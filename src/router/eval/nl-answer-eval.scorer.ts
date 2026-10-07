@@ -69,9 +69,20 @@ export const scoreRun = (evalCase: EvalCase, run: EvalRunRecord): EvalScore => {
     (expect.mustNotMatch?.length ?? 0) > 0 ||
     expect.notEndWithQuestion === true ||
     expect.differFromPriorBot === true;
-  // 실행하지 않는 워커로 간 회차는 운영이라면 그 워커가 실제로 일을 했다 — 되묻기가 아니므로
-  // 텍스트 검사는 판정하지 않는다(요약의 stubRouted 로 따로 센다). 출처 검사는 위에서 이미 했다.
-  if (hasTextChecks && !answered && run.outcome !== 'STUB_ROUTED') {
+  // 실행하지 않는 워커로 간 회차는 답을 볼 수 없다. 문항이 그 워커를 허용했을 때만(예: 고른 기술
+  // 주제는 BLOG 가 글로 정리하는 설계) 텍스트 검사를 건너뛰고, 아니면 판정 불가로 실패시킨다 —
+  // 판정하지 않은 회차가 통과로 세어지면 기준선이 부풀려진다(#743 리뷰).
+  if (run.outcome === 'STUB_ROUTED') {
+    const accepted =
+      run.destination !== undefined &&
+      run.destination !== 'REPLIED' &&
+      (expect.acceptStubRoutes ?? []).includes(run.destination);
+    if (!accepted) {
+      failures.push(
+        `실행하지 않는 워커(${run.destination ?? '?'})로 라우팅 — 답을 판정할 수 없음`,
+      );
+    }
+  } else if (hasTextChecks && !answered) {
     failures.push(`답이 나가지 않음 (${run.outcome})`);
   }
 

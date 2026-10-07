@@ -31,6 +31,40 @@ export class EvalWriteBlockedException extends Error {
 export const isPrismaWriteOperation = (operation: string): boolean =>
   WRITE_OPERATIONS.has(operation);
 
+// $queryRaw 도 INSERT … RETURNING · UPDATE 를 보낼 수 있다 — 읽기 API 라는 이름만 믿지 않고
+// SQL 본문에 쓰기·DDL 키워드가 있으면 막는다. "updated_at" 같은 식별자는 낱말 경계로 걸리지 않는다.
+// "SELECT … FOR UPDATE" 도 잠금이라 함께 막힌다(eval 이 잠글 이유가 없다).
+const RAW_QUERY_OPERATIONS: ReadonlySet<string> = new Set([
+  '$queryRaw',
+  '$queryRawUnsafe',
+]);
+const WRITE_SQL =
+  /\b(?:insert|update|delete|merge|upsert|truncate|create|alter|drop|grant|revoke|copy|call|vacuum|reindex|refresh)\b/i;
+
+// 확장의 raw 연산 인자는 Prisma 버전마다 모양이 다르다(Sql 객체, [sql, ...values], 문자열).
+// 모양을 모르면 직렬화해서 본다 — 막아야 할 것을 놓치는 쪽보다 과하게 막는 쪽이 낫다.
+const rawSqlText = (args: unknown): string => {
+  if (typeof args === 'string') {
+    return args;
+  }
+  if (Array.isArray(args)) {
+    return rawSqlText(args[0]);
+  }
+  if (args !== null && typeof args === 'object') {
+    const candidate = args as { sql?: unknown; strings?: unknown };
+    if (typeof candidate.sql === 'string') {
+      return candidate.sql;
+    }
+    if (Array.isArray(candidate.strings)) {
+      return candidate.strings.join(' ');
+    }
+  }
+  return JSON.stringify(args) ?? '';
+};
+
+export const isRawWriteQuery = (operation: string, args: unknown): boolean =>
+  RAW_QUERY_OPERATIONS.has(operation) && WRITE_SQL.test(rawSqlText(args));
+
 interface AllOperationsParams {
   model?: string;
   operation: string;
@@ -47,7 +81,10 @@ export const readOnlyPrismaExtension = {
       args,
       query,
     }: AllOperationsParams): Promise<unknown> {
-      if (isPrismaWriteOperation(operation)) {
+      if (
+        isPrismaWriteOperation(operation) ||
+        isRawWriteQuery(operation, args)
+      ) {
         return Promise.reject(new EvalWriteBlockedException(model, operation));
       }
       return query(args);

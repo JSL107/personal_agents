@@ -147,18 +147,31 @@ describe('scoreRun', () => {
     );
   });
 
-  it('실행하지 않는 워커로 간 회차는 텍스트 검사를 판정하지 않고, 출처 검사만 한다', () => {
+  it('실행하지 않는 워커로 간 회차는 문항이 그 워커를 허용했을 때만 통과한다', () => {
     const stub = run({
       outcome: 'STUB_ROUTED',
       destination: AgentType.BLOG,
       text: undefined,
     });
+    // 허용 목록이 없으면 답을 판정할 수 없으므로 실패 — 판정 안 한 회차가 점수를 부풀리지 않게.
     expect(scoreRun(evalCase({ notEndWithQuestion: true }), stub).pass).toBe(
-      true,
+      false,
     );
     expect(
       scoreRun(
-        evalCase({ destinations: ['REPLIED'], notEndWithQuestion: true }),
+        evalCase({
+          notEndWithQuestion: true,
+          acceptStubRoutes: [AgentType.BLOG],
+        }),
+        stub,
+      ).pass,
+    ).toBe(true);
+    expect(
+      scoreRun(
+        evalCase({
+          notEndWithQuestion: true,
+          acceptStubRoutes: [AgentType.PM],
+        }),
         stub,
       ).pass,
     ).toBe(false);

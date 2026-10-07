@@ -30,11 +30,13 @@ import { RegisterLeaveUsecase } from '../src/agent/vacation/application/register
 import { VideoWatchDispatcher } from '../src/agent/video-watch/infrastructure/video-watch.dispatcher';
 import { WorkReviewerDispatcher } from '../src/agent/work-reviewer/infrastructure/work-reviewer.dispatcher';
 import { AgentRunService } from '../src/agent-run/application/agent-run.service';
+import { GITHUB_CLIENT_PORT } from '../src/github/domain/port/github-client.port';
 import { ModelRouterUsecase } from '../src/model-router/application/model-router.usecase';
 import { AgentType } from '../src/model-router/domain/model-router.type';
 import { MODEL_CALL_LOG_PORT } from '../src/model-router/domain/port/model-call-log.port';
 import { NotificationPublisher } from '../src/notification/application/notification-publisher.service';
 import { NOTIFICATION_QUEUE } from '../src/notification/domain/notification.type';
+import { NOTION_CLIENT_PORT } from '../src/notion/domain/port/notion-client.port';
 import { PreviewGateModule } from '../src/preview-gate/preview-gate.module';
 import { PrismaModule } from '../src/prisma/prisma.module';
 import { PrismaService } from '../src/prisma/prisma.service';
@@ -61,6 +63,7 @@ import {
 } from '../src/router/eval/read-only-prisma';
 import { RouterModule } from '../src/router/router.module';
 import { RegisterScheduleUsecase } from '../src/schedule/application/register-schedule.usecase';
+import { stripMentionPrefix } from '../src/slack/handler/router-message.handler';
 
 /**
  * 자연어 질문 eval — 실 분류기·실 워커 파서·실 대화 답변을 부르고, 쓰기는 하나도 실행하지 않는다.
@@ -180,6 +183,20 @@ const fakeAgentRunService = new Proxy(
 
 const noop = async (): Promise<void> => undefined;
 
+// 외부 서비스 클라이언트 — 어떤 호출이든 실행하지 않고 가로챈다. 쓰기 usecase 목록에서 빠진 경로
+// (예: 이력서 렌더링이 Notion 페이지를 만들고 덮어쓰는 것, #743 리뷰)도 여기서 멈춘다.
+// Prisma 쓰기 차단은 DB 만 막으므로 외부 쓰기는 이 층이 맡는다.
+const blockedClient = (name: string): unknown =>
+  new Proxy(
+    {},
+    {
+      get: (_target, property) =>
+        property === 'then' || LIFECYCLE_HOOKS.has(String(property))
+          ? undefined
+          : (): never => record(`${name}.${String(property)}`, {}),
+    },
+  );
+
 const readOption = (name: string): string | undefined => {
   const index = process.argv.indexOf(`--${name}`);
   return index < 0 ? undefined : process.argv[index + 1];
@@ -229,6 +246,10 @@ const buildModule = async (): Promise<TestingModule> => {
     )
     .overrideProvider(getQueueToken(NOTIFICATION_QUEUE))
     .useValue({})
+    .overrideProvider(NOTION_CLIENT_PORT)
+    .useValue(blockedClient('NotionClient'))
+    .overrideProvider(GITHUB_CLIENT_PORT)
+    .useValue(blockedClient('GithubClient'))
     .overrideProvider(ReviewPullRequestUsecase)
     .useValue({
       // 참조 파싱은 운영과 같은 함수로 한다 — 형식 오류는 운영처럼 사용자 오류로 나가고,
@@ -298,9 +319,14 @@ const runOnce = async (
       const result = await turn.execute({
         slackUserId,
         conversationKey: `eval:${evalCase.id}:${runIndex}`,
-        text: evalCase.text,
+        // 운영 app_mention 경로는 멘션을 떼고 라우터에 넘기며, 대화 기억에도 뗀 본문을 저장한다.
+        text: stripMentionPrefix(evalCase.text),
         source: 'SLACK_MESSAGE',
-        priorTurns: evalCase.priorTurns ?? [],
+        priorTurns: (evalCase.priorTurns ?? []).map((priorTurn) =>
+          priorTurn.role === 'assistant'
+            ? priorTurn
+            : { ...priorTurn, text: stripMentionPrefix(priorTurn.text) },
+        ),
         shouldRemember: false,
       });
       return {
@@ -313,6 +339,9 @@ const runOnce = async (
             ? result.text
             : buildDispatchReplyText(result.result),
         intercepts: context.intercepts,
+        ...(result.kind === 'WORKER_RAN'
+          ? readHeldWrite(result.result.output)
+          : {}),
         modelCalls: context.modelCalls,
         durationMs: Date.now() - startedAt,
       };
@@ -351,17 +380,42 @@ const runOnce = async (
   });
 };
 
+const readHeldWrite = (
+  output: unknown,
+): { heldWrite?: { action: string; marker: string } } => {
+  const held = (output as { heldWrite?: unknown } | null)?.heldWrite;
+  if (
+    held !== null &&
+    typeof held === 'object' &&
+    typeof (held as { action?: unknown }).action === 'string' &&
+    typeof (held as { marker?: unknown }).marker === 'string'
+  ) {
+    return { heldWrite: held as { action: string; marker: string } };
+  }
+  return {};
+};
+
+const WRITE_USECASE_NAMES: ReadonlySet<string> = new Set(
+  WRITE_USECASES.map(([, name]) => name),
+);
+
 const WRITE_ACTION = /"action"\s*:\s*"(REGISTER|CANCEL|ADD|UPDATE_STATUS)"/;
 
-// 파서가 쓰기 액션을 고른 회차 수 — 0단계 가드가 막기 전의 판단이다.
+// 파서가 쓰기를 고른 회차 수 — 0단계 가드가 막기 전의 판단이다. LLM 파서(휴가·지원)는 원응답의
+// 액션으로, 정규식 파서(일정)는 가드 보류 기록과 쓰기 가로챔으로 센다(#743 리뷰).
 const countParserWriteDecisions = (runs: EvalRunRecord[]): number =>
-  runs.filter((run) =>
-    run.modelCalls.some(
-      (call) =>
-        (call.agentType === AgentType.VACATION ||
-          call.agentType === AgentType.JOB_APPLICATION) &&
-        WRITE_ACTION.test(call.responseText),
-    ),
+  runs.filter(
+    (run) =>
+      run.heldWrite !== undefined ||
+      run.intercepts.some((intercept) =>
+        WRITE_USECASE_NAMES.has(intercept.name),
+      ) ||
+      run.modelCalls.some(
+        (call) =>
+          (call.agentType === AgentType.VACATION ||
+            call.agentType === AgentType.JOB_APPLICATION) &&
+          WRITE_ACTION.test(call.responseText),
+      ),
   ).length;
 
 const mapWithConcurrency = async <T, R>(
@@ -384,9 +438,19 @@ const mapWithConcurrency = async <T, R>(
   return results;
 };
 
+// 0·음수·소수·오타(NaN)면 회차가 하나도 돌지 않은 0/0 결과가 정상처럼 저장된다 — 실행 전에 끊는다.
+const readPositiveInteger = (name: string, fallback: number): number => {
+  const raw = readOption(name);
+  const value = raw === undefined ? fallback : Number(raw);
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error(`--${name} 는 1 이상의 정수여야 한다 (받은 값: ${raw})`);
+  }
+  return value;
+};
+
 const main = async (): Promise<void> => {
-  const runs = Number(readOption('runs') ?? '3');
-  const concurrency = Number(readOption('concurrency') ?? '2');
+  const runs = readPositiveInteger('runs', 3);
+  const concurrency = readPositiveInteger('concurrency', 2);
   const split = readOption('split') ?? 'all';
   const only = readOption('only')?.split(',');
   const out =
