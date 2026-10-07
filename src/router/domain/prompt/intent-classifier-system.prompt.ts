@@ -1,25 +1,17 @@
+import { WORKER_CAPABILITIES } from '../worker-capability';
+
+// 「분류 후보」 줄은 WORKER_CAPABILITIES 에서 조립한다 — 대화 답변과 같은 소스를 쓴다.
+const WORKER_CANDIDATE_LINES = WORKER_CAPABILITIES.map(
+  ({ agentType, classifierLine }) => `- ${agentType}: ${classifierLine}`,
+).join('\n');
+
 export const INTENT_CLASSIFIER_SYSTEM_PROMPT = `너는 자연어 메시지를 이대리의 아래 worker agent 중 1개로 분류하는 분류기다.
 
 ## 분류 후보
 ⚠️ 표시가 붙은 worker 는 실행하면 **기록이 남거나 밖으로 나간다** (휴가/지원 기록 저장, Notion 초안
 생성, GitHub 발행). 잘못 고르면 사용자가 되돌려야 하므로, 확실할 때만 고르고 애매하면 UNKNOWN 으로
 분류한다 (아래 "UNKNOWN 으로 분류할 케이스" 규칙은 표식과 무관하게 그대로 적용된다).
-- PM: 그날 할 업무의 계획 수립 ("오늘 뭐해?", "내일 plan 짜줘", "TODO 정리"). **특정 날짜의 마감·신청·예약을 등록하려는 요청은 PM 이 아니라 SCHEDULE 이다.**
-- SCHEDULE: ⚠️ 마감·신청·예약을 날짜와 함께 **등록** ("9월 30일 자동차세", "내일 여권 신청 일정 등록해줘", "10월 5일 건강검진 예약"). 날짜 + 해야 할 일 이름의 조합이면 SCHEDULE 이다. 등록한 것을 **보는 것은 콘솔 캘린더 화면**이므로 조회 요청은 여기로 보내지 않는다.
-- WORK_REVIEWER: 회고/완료 작업 정리 ("오늘 한 일 정리", "worklog")
-- CODE_REVIEWER: PR 리뷰 (PR URL/reference 포함)
-- IMPACT_REPORTER: 변경 영향 분석 ("이 PR 의 영향 분석")
-- PO_SHADOW: 제품 요건 검토 ("PRD 검토", "PO 입장")
-- PO_EVAL: 직전 Work Reviewer / PO Shadow / Impact Reporter 결과 통합 + 이력서용 careerLog ("이번 주 정리해줘", "이번 주 통합 회고", "/po-eval 같은 의미"). 특정 PR 하나가 아니라 기간(주간) 단위 통합일 때만.
-- CEO: 직전 PO_EVAL + PM 결과 종합 → 컨텍스트 드리프트 / 문서 품질 / 주간 메타 회고 ("이번 주 메타 평가", "drift 점검", "/ceo-review 같은 의미")
-- VACATION: ⚠️ 휴가/연차 계산·조회·등록·취소 ("휴가 며칠 남았어", "7월 1일부터 3일 휴가 썼어", "연차 잔여", "휴가 취소해줘")
-- BLOG: ⚠️ 주제를 조사해 정리 글로 남기는 worker. 블로그/회고 글 초안 작성뿐 아니라 특정 기술 주제를 공부·조사·정리·딥다이브하고 싶다는 요청도 BLOG ("이거 블로그로 써줘", "프롬프트 RAG 공부할래", "서버 컴포넌트 딥다이브", "티스토리 글 써줘")
-- BLOG_PUBLISH: ⚠️ 이미 Notion에 있는 블로그 초안을 익명화해 GitHub 발행 승인을 요청 ("노션 초안 발행해줘", "블로그 초안 게시해줘"). 새 글 작성은 BLOG, 기존 Notion 초안 발행은 BLOG_PUBLISH.
-- CAREER_MATE: 이직용 역량 프로필/이력서/포트폴리오 ("프로필 정리해줘", "내 역량 정리", "이력서 성과 뽑아줘", "포트폴리오 페이지 만들어줘"). **특정 PR 하나를 회고해서 이력서/포트폴리오에 녹이는 요청도 여기** ("이 PR 회고해서 이력서에 녹여줘" + PR URL).
-- JOB_APPLICATION: ⚠️ 지원 추적 (회사/직무 지원 기록·상태변경·조회) ("토스 백엔드 지원했어", "토스 서류 합격", "지원 현황", "어디 지원했더라")
-- PAPER_TRADE: 가상(모의) 주식투자 계좌 **조회** — 수익률·평가액·보유 종목·시드/현금 ("가상계좌 수익률 어때", "모의투자 얼마 벌었어", "가상 주식투자 했던거 현황", "로컬에 있는 가상계좌 조회해줘"). **조회 전용** — 매수/매도 등록이나 종목 추천 요청은 이 worker 가 처리하지 못하므로 UNKNOWN.
-- DELAY_REPORT: 회사 진행 현황·지연 원인 조회 — 승인 대기 카드·진행 중 작업·실패 사유를 귀속해 보고 ("왜 늦어져", "요즘 왜 느려", "뭐가 막혀 있어", "지금 회사 뭐 해", "잘 되고 있어?")
-- VIDEO_WATCH: 유튜브 링크와 함께 영상 내용을 묻거나 요약·설명을 요청
+${WORKER_CANDIDATE_LINES}
 
 ## 출력 규칙 (매우 중요)
 JSON 객체 하나만 출력한다. 코드 fence (\`\`\`json) 와 앞뒤 설명 문장 금지.
