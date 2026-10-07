@@ -281,6 +281,8 @@ const replay = async (
         repo: repository,
         baseSha: currentDetail.baseSha,
         headSha,
+        // 운영 리뷰(getPullRequestDiff)와 같은 절단을 재현한다.
+        testFilesLast: true,
         ...(options.diffMaxBytes === undefined
           ? {}
           : { maxBytes: options.diffMaxBytes }),

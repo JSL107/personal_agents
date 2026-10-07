@@ -135,23 +135,25 @@ export class PublishFindingsService {
       await this.postGroupedComment({ input, fallback, outcome });
     }
 
-    await this.postCoverageNote(input, outcome);
+    if (canPost) {
+      await this.postCoverageNote(input, outcome);
+    }
 
     return outcome;
   }
 
-  // 지적을 하나라도 올렸는데 diff 가 잘렸으면 PR 에 따로 알린다 — 카드만 보면 전체를 본 리뷰로
-  // 읽힌다. 아무것도 안 올렸으면(전부 중복·게이트 탈락) 새로 알릴 리뷰가 없으므로 남기지 않는다.
+  // diff 가 잘렸으면 PR 에 따로 알린다 — 카드만 보면 전체를 본 리뷰로 읽힌다.
+  // - 지적 0건: 온디맨드(`/review-pr`·라우터) 경로는 지적 없음 코멘트가 없어 PR 에 아무 흔적도 남지
+  //   않으므로 안내만 단다. 스윕은 지적 0건이면 여기 오기 전에 자기 "지적 없음" 코멘트로 끝난다.
+  // - 지적이 있는데 하나도 안 올렸으면(전부 중복·게이트 탈락) 새로 알릴 리뷰가 없어 남기지 않는다.
   // 안내일 뿐이라 실패해도 게시 결과를 바꾸지 않는다.
   private async postCoverageNote(
     input: PublishFindingsInput,
     outcome: PublishOutcome,
   ): Promise<void> {
     const note = buildDiffCoverageNote(input.diff, input.diffTotalBytes);
-    if (
-      note === null ||
-      outcome.inline + outcome.file + outcome.issueComment === 0
-    ) {
+    const posted = outcome.inline + outcome.file + outcome.issueComment;
+    if (note === null || (input.findings.length > 0 && posted === 0)) {
       return;
     }
     try {

@@ -438,6 +438,26 @@ describe('OctokitGithubClient', () => {
         );
       });
 
+      it('비ASCII 경로라 따옴표로 감싼 헤더의 테스트 파일도 뒤로 보낸다', async () => {
+        const quoted =
+          'diff --git "a/test/\\355\\225\\234.spec.ts" "b/test/\\355\\225\\234.spec.ts"\n+t\n';
+        const code = section('src/b.ts');
+        const get = jest.fn().mockResolvedValue({ data: quoted + code });
+        const octokit = {
+          rest: { pulls: { get } },
+        } as unknown as Octokit;
+
+        const result = await new OctokitGithubClient(
+          octokit,
+        ).getPullRequestDiff({
+          repo: 'foo/bar',
+          number: 1,
+          maxBytes: Buffer.byteLength(code),
+        });
+
+        expect(result.diff).toBe(code);
+      });
+
       it('안 넘치면 순서를 바꾸지 않는다', async () => {
         const result = await fetch(Buffer.byteLength(diff));
 
@@ -461,6 +481,36 @@ describe('OctokitGithubClient', () => {
   });
 
   describe('compareCommits', () => {
+    const section = (path: string): string =>
+      `diff --git a/${path} b/${path}\n+${path}\n`;
+    const diff = section('src/a.spec.ts') + section('src/b.ts');
+    const compare = async (
+      testFilesLast?: boolean,
+    ): Promise<PullRequestDiff> => {
+      const compareCommits = jest.fn().mockResolvedValue({ data: diff });
+      const octokit = {
+        rest: { repos: { compareCommits } },
+      } as unknown as Octokit;
+      return await new OctokitGithubClient(octokit).compareCommits({
+        repo: 'foo/bar',
+        baseSha: 'a'.repeat(40),
+        headSha: 'b'.repeat(40),
+        maxBytes: Buffer.byteLength(section('src/a.spec.ts')),
+        ...(testFilesLast === undefined ? {} : { testFilesLast }),
+      });
+    };
+
+    // 해소 판정은 지적한 파일만 뽑아 쓴다 — 재배열하면 테스트 파일 카드만 상한 밖으로 밀린다.
+    it('기본은 순서를 바꾸지 않고 자른다', async () => {
+      expect((await compare()).diff).toBe(section('src/a.spec.ts'));
+    });
+
+    it('testFilesLast 면 리뷰 입력과 같이 테스트를 뒤로 보내고 자른다', async () => {
+      expect((await compare(true)).diff.startsWith(section('src/b.ts'))).toBe(
+        true,
+      );
+    });
+
     it('getPullRequestDiff 와 같은 바이트 기준으로 판정·절단한다', async () => {
       const big = '+한글'.repeat(20); // 140 B, 60자
       const compareCommits = jest.fn().mockResolvedValue({ data: big });

@@ -331,7 +331,9 @@ export class OctokitGithubClient implements GithubClientPort {
         pull_number: number,
         mediaType: { format: 'diff' },
       });
-      return truncateDiff(response.data as unknown as string, maxBytes);
+      return truncateDiff(response.data as unknown as string, maxBytes, {
+        testFilesLast: true,
+      });
     } catch (error: unknown) {
       throw this.wrapRequestFailed(error, `PR #${number} diff 조회 실패`);
     }
@@ -342,6 +344,7 @@ export class OctokitGithubClient implements GithubClientPort {
     baseSha,
     headSha,
     maxBytes = DEFAULT_DIFF_MAX_BYTES,
+    testFilesLast = false,
   }: CompareCommitsOptions): Promise<PullRequestDiff> {
     this.assertOctokitConfigured();
     const [owner, repoName] = parseRepo(repo);
@@ -354,7 +357,9 @@ export class OctokitGithubClient implements GithubClientPort {
         head: headSha,
         mediaType: { format: 'diff' },
       });
-      return truncateDiff(response.data as unknown as string, maxBytes);
+      return truncateDiff(response.data as unknown as string, maxBytes, {
+        testFilesLast,
+      });
     } catch (error: unknown) {
       throw this.wrapRequestFailed(
         error,
@@ -1471,17 +1476,25 @@ const computeLatestOtherActivityMs = (
 // 멀티바이트 문자 중간에서 자르면 U+FFFD 가 남으므로, 절단 지점이 연속 바이트(10xxxxxx)면
 // 문자 경계까지 물린다. 디코딩 후 끝의 U+FFFD 를 지우면 원본에 있던 U+FFFD 까지 지운다.
 //
-// 넘칠 때만 테스트 파일을 뒤로 보낸 뒤 자른다. GitHub 은 경로 순으로 주므로 테스트가 앞에
+// testFilesLast 면 넘칠 때만 테스트 파일을 뒤로 보낸 뒤 자른다. GitHub 은 경로 순으로 주므로 테스트가 앞에
 // 오면 상한을 먹고 정작 동작 코드가 잘린다 — 잘린 미탐 12건 중 지적 줄이 상한 안에 든 것이
 // 이 순서로 2건 → 7건이 됐다(2026-10-06 실측). 안 넘치면 순서를 건드리지 않아 기존 리뷰
 // 입력은 그대로다. 인라인 좌표(parseDiffHunks)·해소 판정(parseDiffBaseHunks)은 파일 경로로
-// 찾고 줄 번호는 파일 내부 기준이라 파일 순서와 무관하다.
-const truncateDiff = (diff: string, maxBytes: number): PullRequestDiff => {
+// 찾고 줄 번호는 파일 내부 기준이라 파일 순서와 무관하다. 리뷰 입력에만 켠다 — 해소 판정은
+// 지적한 파일 하나만 뽑아 쓰므로 순서로 얻는 것이 없고, 테스트 파일에 단 카드만 상한 밖으로 밀린다.
+const truncateDiff = (
+  diff: string,
+  maxBytes: number,
+  { testFilesLast }: { testFilesLast: boolean },
+): PullRequestDiff => {
   const bytes = Buffer.byteLength(diff, 'utf-8');
   if (bytes <= maxBytes) {
     return { diff, truncated: false, bytes };
   }
-  const buffer = Buffer.from(moveTestFilesLast(diff), 'utf-8');
+  const buffer = Buffer.from(
+    testFilesLast ? moveTestFilesLast(diff) : diff,
+    'utf-8',
+  );
   let end = maxBytes;
   while (end > 0 && (buffer[end] & 0xc0) === 0x80) {
     end--;
@@ -1498,15 +1511,17 @@ const TEST_FILE_PATH =
 
 // `diff --git a/<경로> b/<경로>` 단위로 나누고, 같은 무리 안의 순서는 유지한다.
 // 헤더 앞 머리말이 있으면 테스트가 아닌 쪽에 남아 맨 앞을 지킨다.
+// 비ASCII 경로는 git 이 `"b/test/\355\225\234.spec.ts"` 처럼 따옴표로 감싸고 8진수로 이스케이프한다.
+// 판정에 쓰는 표식(.spec·test/ 등)은 ASCII 라 이스케이프를 풀 필요 없이 따옴표만 벗긴다.
 const moveTestFilesLast = (diff: string): string => {
   const sections = diff.split(/^(?=diff --git )/m);
   const isTest = (section: string): boolean => {
     const header = section.split('\n', 1)[0];
-    const marker = header.lastIndexOf(' b/');
+    const path = header.match(/ "?b\/(.*?)"?$/)?.[1];
     return (
       header.startsWith('diff --git ') &&
-      marker >= 0 &&
-      TEST_FILE_PATH.test(header.slice(marker + ' b/'.length))
+      path !== undefined &&
+      TEST_FILE_PATH.test(path)
     );
   };
   return [

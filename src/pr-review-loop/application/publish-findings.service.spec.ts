@@ -153,6 +153,25 @@ describe('PublishFindingsService', () => {
       expect(github.addIssueComment).not.toHaveBeenCalled();
     });
 
+    it('지적 0건이어도 잘렸으면 남긴다 — 온디맨드 경로는 이 안내 말고는 PR 에 흔적이 없다', async () => {
+      await service.publish({ ...baseInput([]), diffTotalBytes: 120_000 });
+
+      expect(github.addIssueComment).toHaveBeenCalledTimes(1);
+      expect(github.addIssueComment.mock.calls[0][0].body).toContain(
+        '부분 검토',
+      );
+    });
+
+    it('게시 허용 레포가 아니면 지적 0건이어도 남기지 않는다', async () => {
+      await service.publish({
+        ...baseInput([]),
+        diffTotalBytes: 120_000,
+        allowlistRaw: 'other/repo',
+      });
+
+      expect(github.addIssueComment).not.toHaveBeenCalled();
+    });
+
     it('안내 게시가 실패해도 게시 결과는 그대로다', async () => {
       github.createReviewComment.mockResolvedValue({
         commentId: '555',

@@ -80,6 +80,9 @@ export interface CompareCommitsOptions {
   baseSha: string;
   headSha: string;
   maxBytes?: number;
+  // 넘칠 때 테스트 파일을 뒤로 보낸 뒤 자른다. 리뷰 입력으로 쓸 때만 켠다(기본 false) —
+  // 해소 판정은 지적한 파일만 뽑아 쓰므로 순서를 바꾸면 테스트 파일 카드만 밀려난다.
+  testFilesLast?: boolean;
 }
 
 // PM-2 Write-back: GitHub Issue 또는 PR 의 코멘트 영역에 외부 게시 가능한 텍스트를 append.
