@@ -108,11 +108,14 @@ export const formatPullRequestPublication = (
     case 'NOT_ALLOWED':
       return `_GitHub 에 게시하지 않았어요 — ${escapeSlackMrkdwn(publication.repo)} 가 게시 허용 목록(PR_REVIEW_INLINE_REPOS)에 없어요._`;
     case 'FAILED':
-      return `_GitHub 게시에 실패했어요 — 리뷰 결과는 위와 같아요. (${escapeSlackMrkdwn(publication.message.slice(0, 120))})_`;
+      // 예외 원문은 로그에만 남긴다 — 외부 API 응답·내부 경로가 사용자 메시지로 새지 않게(#747 리뷰).
+      return '_GitHub 게시에 실패했어요 — 리뷰 결과는 위와 같아요. 원인은 서버 로그에 남겼어요._';
     case 'DRY_RUN':
       return `_연습 모드라 GitHub 에 게시하지 않았어요 (게시 대상 ${publication.outcome.dryRun}건)._`;
     case 'POSTED': {
       const { outcome } = publication;
+      // 인라인에 실패한 지적은 묶음 코멘트 한 건으로 올라가지만 집계는 지적 단위다. 그래서 "코멘트 N건"
+      // 이 아니라 "지적 N건" 으로 쓴다(#747 리뷰).
       const posted = outcome.inline + outcome.file + outcome.issueComment;
       const extras = [
         outcome.duplicate > 0
@@ -129,8 +132,8 @@ export const formatPullRequestPublication = (
       }
       const head =
         posted > 0
-          ? `GitHub ${link} 에 코멘트 ${posted}건을 게시했어요`
-          : `새로 게시한 코멘트는 없어요`;
+          ? `GitHub ${link} 에 지적 ${posted}건을 게시했어요`
+          : `새로 게시한 지적은 없어요`;
       return `_${[head, ...extras].join(' · ')}._`;
     }
   }

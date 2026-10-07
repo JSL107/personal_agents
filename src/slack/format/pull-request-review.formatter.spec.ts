@@ -105,7 +105,7 @@ describe('formatPullRequestPublication', () => {
       outcome: { ...outcome, inline: 2, file: 1, duplicate: 1, dropped: 2 },
     });
     expect(line).toContain('<https://github.com/o/r/pull/3|PR>');
-    expect(line).toContain('코멘트 3건을 게시');
+    expect(line).toContain('지적 3건을 게시');
     expect(line).toContain('이미 게시된 지적 1건 제외');
     expect(line).toContain('게시 상한 초과 2건 미게시');
   });
@@ -129,7 +129,7 @@ describe('formatPullRequestPublication', () => {
         pullNumber: 3,
         outcome: { ...outcome, duplicate: 2 },
       }),
-    ).toContain('새로 게시한 코멘트는 없어요');
+    ).toContain('새로 게시한 지적은 없어요');
   });
 
   it.each([
@@ -144,5 +144,16 @@ describe('formatPullRequestPublication', () => {
     ],
   ])('%o 은 "%s" 로 알린다', (publication, expected) => {
     expect(formatPullRequestPublication(publication)).toContain(expected);
+  });
+
+  it('게시 실패 원문(외부 API 응답 등)은 사용자 문구에 싣지 않는다', () => {
+    const line = formatPullRequestPublication({
+      kind: 'FAILED',
+      message:
+        'HttpError: Bad credentials https://api.github.com token=ghp_secret',
+    });
+    expect(line).not.toContain('ghp_secret');
+    expect(line).not.toContain('api.github.com');
+    expect(line).toContain('서버 로그');
   });
 });
