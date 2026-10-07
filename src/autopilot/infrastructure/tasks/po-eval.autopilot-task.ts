@@ -152,8 +152,8 @@ export class PoEvalAutopilotTask implements AutopilotTask {
         error.poEvalErrorCode === PoEvalErrorCode.NO_SUB_AGENT_RUNS
       ) {
         return {
-          skip: false,
-          summaryText: `🌙 *Daily Eval — ${firedAtKst} skip*\n_오늘 sub-agent (Work Reviewer / PO Shadow / Impact Reporter) run 부재로 회고 대상 없음. 내일 19:00 KST 에 다시 시도합니다._`,
+          skip: true,
+          emptyReason: `🌙 *Daily Eval — ${firedAtKst} skip*\n_오늘 sub-agent (Work Reviewer / PO Shadow / Impact Reporter) run 부재로 회고 대상 없음. 내일 19:00 KST 에 다시 시도합니다._`,
         };
       }
       throw error;

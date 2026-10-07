@@ -92,7 +92,7 @@ describe('PoEvalAutopilotTask', () => {
     );
   });
 
-  it('NO_SUB_AGENT_RUNS 면 skip 안내문(skip=false)', async () => {
+  it('NO_SUB_AGENT_RUNS 면 빈 회차를 원장용 사유로 반환한다', async () => {
     const execute = jest.fn().mockRejectedValue(
       new PoEvalException({
         code: PoEvalErrorCode.NO_SUB_AGENT_RUNS,
@@ -108,8 +108,9 @@ describe('PoEvalAutopilotTask', () => {
 
     const out = await task.run(CTX);
 
-    expect(out.skip).toBe(false);
-    expect(out.summaryText).toContain('skip');
+    expect(out.skip).toBe(true);
+    expect(out.emptyReason).toContain('오늘 sub-agent');
+    expect(out.summaryText).toBeUndefined();
   });
 
   it('그 외 에러는 throw (consumer 가 실패 통지)', async () => {

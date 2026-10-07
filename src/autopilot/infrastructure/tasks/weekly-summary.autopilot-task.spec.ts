@@ -70,7 +70,7 @@ describe('WeeklySummaryAutopilotTask', () => {
     ).toBe('weekly-summary');
   });
 
-  it('이번 주 PM run 0건 + 머지 PR 0건 → 기존 skip 안내(worklog/CEO 미호출)', async () => {
+  it('이번 주 PM run 0건 + 머지 PR 0건 → 빈 회차 원장 사유(worklog/CEO 미호출)', async () => {
     const findRecentSucceededRuns = jest.fn().mockResolvedValue([]);
     const worklogExecute = jest.fn();
     const ceoExecute = jest.fn();
@@ -87,10 +87,11 @@ describe('WeeklySummaryAutopilotTask', () => {
 
     const out = await task.run(CTX);
 
-    expect(out.skip).toBe(false);
-    expect(out.summaryText).toContain(
+    expect(out.skip).toBe(true);
+    expect(out.emptyReason).toContain(
       '이번 주 PM AgentRun 기록이 없습니다. Weekly Summary 를 생성하지 않습니다.',
     );
+    expect(out.summaryText).toBeUndefined();
     expect(out.detailText).toBeUndefined();
     expect(worklogExecute).not.toHaveBeenCalled();
     expect(ceoExecute).not.toHaveBeenCalled();
@@ -170,7 +171,8 @@ describe('WeeklySummaryAutopilotTask', () => {
     expect(ceoExecute).not.toHaveBeenCalled();
   });
 
-  it('이번 주 PM run 0건 + env IMPACT_REPORT_GITHUB_AUTHOR 미설정 → skip 안내문에 사유 포함', async () => {
+  // 실적을 확인하지 못한 회차는 빈 주가 아니라 설정 결함이라 원장에 묻지 않는다(PR #748 리뷰).
+  it('이번 주 PM run 0건 + env IMPACT_REPORT_GITHUB_AUTHOR 미설정 → 빈 회차로 묻지 않고 사유와 함께 발송', async () => {
     const findRecentSucceededRuns = jest.fn().mockResolvedValue([]);
     const worklogExecute = jest.fn();
     const ceoExecute = jest.fn();
@@ -187,6 +189,7 @@ describe('WeeklySummaryAutopilotTask', () => {
     const result = await task.run(CTX);
 
     expect(result.skip).toBe(false);
+    expect(result.emptyReason).toBeUndefined();
     expect(result.summaryText).toContain(
       '이번 주 PM AgentRun 기록이 없습니다. Weekly Summary 를 생성하지 않습니다.',
     );
@@ -201,7 +204,7 @@ describe('WeeklySummaryAutopilotTask', () => {
     expect(ceoExecute).not.toHaveBeenCalled();
   });
 
-  it('worklog 성공 시 요약은 summaryText, 근거 detail 은 detailText 스레드로 분리 (CEO skip 시 CEO detail 없음)', async () => {
+  it('worklog 성공 시 CEO run 이 없으면 CEO 섹션과 구분자 없이 worklog 를 발송한다', async () => {
     const findRecentSucceededRuns = jest
       .fn()
       .mockResolvedValue([
@@ -248,10 +251,12 @@ describe('WeeklySummaryAutopilotTask', () => {
     expect(humanizer.humanize).toHaveBeenCalledWith(
       expect.objectContaining({ summary: '이번주 요약' }),
     );
-    // 메인(summaryText): worklog 헤더 + 요약, CEO skip 안내. 근거 섹션은 없다.
+    // 메인(summaryText): worklog 헤더 + 요약만 남긴다. CEO 구분자도 없다.
     expect(out.summaryText).toContain('Weekly Summary');
     expect(out.summaryText).toContain('이번주 요약');
-    expect(out.summaryText).toContain('CEO Meta');
+    expect(out.summaryText).not.toContain('CEO Meta');
+    expect(out.summaryText).not.toContain('skip');
+    expect(out.summaryText).not.toContain('────────');
     expect(out.summaryText).not.toContain('정량 근거');
     expect(out.summaryText).not.toContain('질적 영향');
     // 스레드(detailText): worklog detail(정량 근거·질적 영향·다음 액션) + model 푸터. CEO skip 이라 CEO detail 없음.

@@ -163,10 +163,8 @@ describe('KnowledgeLintAutopilotTask', () => {
     );
   });
 
-  // 여기가 이 task 의 관측 가능성이다 — 주 1회 발화이고 LLM 을 안 쓰는 구간은 agent_run 에도
-  // 남지 않아, 0건에 skip 하면 "점검했고 깨끗하다" 와 "점검이 죽어서 안 돌았다" 를 사후에
-  // 가를 근거가 하나도 없어진다. skip=true 로 되돌리면 이 테스트만 실패한다.
-  it('이슈 0건이어도 하트비트를 남긴다 (skip=false)', async () => {
+  // 이슈 0건의 하트비트는 Slack 대신 SUPPRESSED/EMPTY 원장에 남긴다.
+  it('이슈 0건이면 원장용 하트비트를 반환한다 (skip=true)', async () => {
     const knowledgeLint = {
       lintIssues: jest.fn().mockResolvedValue({
         issues: [],
@@ -184,9 +182,10 @@ describe('KnowledgeLintAutopilotTask', () => {
 
     const result = await task.run(context);
 
-    expect(result.skip).toBe(false);
-    expect(result.summaryText).toContain('이상 없음');
-    expect(result.summaryText).toContain('2026-06-28');
+    expect(result.skip).toBe(true);
+    expect(result.emptyReason).toContain('이상 없음');
+    expect(result.emptyReason).toContain('2026-06-28');
+    expect(result.summaryText).toBeUndefined();
   });
 
   // L4 를 수행하지 않은 회차는 service 가 l4=null 을 돌려준다(비활성 또는 judge 미주입).
@@ -210,7 +209,7 @@ describe('KnowledgeLintAutopilotTask', () => {
 
     const result = await task.run(context);
 
-    expect(result.summaryText).toContain('모순 판정 꺼짐');
+    expect(result.emptyReason).toContain('모순 판정 꺼짐');
   });
 
   // codex 리뷰(PR #269 P2) 지적 — L4 가 쿼터로 중단된 회차에 "이상 없음" 을 알리면 점검 장애가
@@ -233,12 +232,36 @@ describe('KnowledgeLintAutopilotTask', () => {
 
     const result = await task.run(context);
 
+    // 이슈 0건이어도 판정이 중단됐으면 원장에 묻지 않고 경고와 함께 Slack 으로 보낸다.
     expect(result.skip).toBe(false);
-    // ✅(정상 하트비트)가 아니라 ⚠️ 로 나가야 한다. 문구에 "이상 없음" 이라는 낱말이 들어가긴
-    // 하지만("…을 확정하지 못했습니다"), 정상 보고와는 기호부터 다르다.
+    expect(result.emptyReason).toBeUndefined();
     expect(result.summaryText).toContain('⚠️');
     expect(result.summaryText).not.toContain('✅');
     expect(result.summaryText).toContain('1/5쌍만 판정');
+  });
+
+  it('L4 일부 judge 가 실패한 회차도 이상 없음으로 묻지 않는다', async () => {
+    // 쿼터 중단이 아니어도 판정 수가 후보 수보다 적으면 안 본 쌍이 남는다(PR #748 리뷰).
+    const knowledgeLint = {
+      lintIssues: jest.fn().mockResolvedValue({
+        issues: [],
+        duplicateTotal: 0,
+        duplicateTotalTruncated: false,
+        duplicateSupersedable: 0,
+        l4: { candidates: 5, judged: 3, abortedByQuota: false },
+      }),
+    };
+    const task = new KnowledgeLintAutopilotTask(
+      knowledgeLint as never,
+      makeConfig() as never,
+      makeTrace() as never,
+    );
+
+    const result = await task.run(context);
+
+    expect(result.skip).toBe(false);
+    expect(result.emptyReason).toBeUndefined();
+    expect(result.summaryText).toContain('3/5쌍만 판정 (일부 judge 실패)');
   });
 
   // 이 작업의 존재 이유 — 게이트가 꺼져 있으면 L4 는 아예 조회도 안 하지만(service 가 l4=null),
