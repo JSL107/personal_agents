@@ -37,6 +37,16 @@ describe('ruleCounterfactualPicks', () => {
     ).toEqual(['B', 'C']);
   });
 
+  it('결정 시점 대기 매수 종목도 뺀다 — 운영이 모델 답 뒤에 걸러내는 종목이다', () => {
+    expect(
+      ruleCounterfactualPicks(
+        inputs(['A'], ['A', 'B', 'C', 'D']),
+        2,
+        new Set(['B']),
+      ),
+    ).toEqual(['C', 'D']);
+  });
+
   it('적격 후보가 k 보다 적으면 null', () => {
     expect(ruleCounterfactualPicks(inputs(['A'], ['A', 'B']), 2)).toBeNull();
   });

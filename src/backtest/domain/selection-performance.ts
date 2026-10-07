@@ -49,17 +49,23 @@ export const performanceBlockKey = (
 };
 
 /**
- * 규칙이 샀을 k 종목 — 프롬프트의 보유 종목을 뺀 후보 중 점수 상위 k. 후보는 프롬프트에
- * 점수 내림차순으로 실려 있으므로 동점은 실린 순서로 가른다. 적격 후보가 k 보다 적으면
- * 같은 크기로 짝을 지을 수 없어 null.
+ * 규칙이 샀을 k 종목 — 프롬프트의 보유 종목과 결정 시점 대기 매수 종목을 뺀 후보 중 점수
+ * 상위 k. 운영은 대기 주문 종목을 프롬프트에 그대로 싣고 모델 답 뒤에 걸러내므로
+ * (`PENDING_ORDER_EXISTS`), 빼지 않으면 규칙이 운영에서는 살 수 없는 종목을 고른다.
+ * 후보는 프롬프트에 점수 내림차순으로 실려 있으므로 동점은 실린 순서로 가른다. 적격 후보가
+ * k 보다 적으면 같은 크기로 짝을 지을 수 없어 null.
  */
 export const ruleCounterfactualPicks = (
   inputs: RecommendationPromptInputs,
   k: number,
+  pendingBuyCodes: ReadonlySet<string> = new Set<string>(),
 ): string[] | null => {
   const heldCodes = new Set(inputs.positions.map((position) => position.code));
   const eligible = inputs.candidates
-    .filter((candidate) => !heldCodes.has(candidate.code))
+    .filter(
+      (candidate) =>
+        !heldCodes.has(candidate.code) && !pendingBuyCodes.has(candidate.code),
+    )
     .map((candidate) => candidate.code);
   return eligible.length < k ? null : eligible.slice(0, k);
 };

@@ -377,6 +377,7 @@ interface PerformanceRun {
   asOf: Date;
   inputs: RecommendationPromptInputs;
   modelCodes: string[];
+  pendingBuyCodes: Set<string>;
   // 프롬프트 후보와 원장의 실린 목록이 어긋난 회차. 어느 쪽이 모델이 본 것인지 가릴 수 없어 뺀다.
   promptMismatch: boolean;
   returnsByHorizon: Map<number, Map<string, number>>;
@@ -422,9 +423,44 @@ const loadPerformanceRuns = async (): Promise<PerformanceRun[]> => {
     boughtByRun.set(order.agentRunId, found);
   }
 
+  // 결정 시점에 대기 중이던 매수. 원장은 상태 이력을 남기지 않아 시각으로 되살린다 — 결정
+  // 전에 생겼고, 결정 시각까지 체결도 만료도 안 된 주문이다. 취소 시각은 남지 않아 취소된
+  // 주문은 대기로 세지 않는다. 운영은 계좌 단위로 거르고 계좌는 전략마다 하나다.
+  const allBuyOrders = await prisma.paperOrder.findMany({
+    where: { side: 'BUY', status: { not: 'CANCELLED' } },
+    select: {
+      strategy: true,
+      agentRunId: true,
+      createdAt: true,
+      expiresAt: true,
+      ticker: { select: { code: true } },
+      trades: { select: { createdAt: true } },
+    },
+  });
+  const pendingBuyCodesAt = (
+    strategy: string,
+    agentRunId: number,
+    decidedAt: Date,
+  ): Set<string> =>
+    new Set(
+      allBuyOrders
+        .filter(
+          (order) =>
+            order.strategy === strategy &&
+            order.agentRunId !== agentRunId &&
+            order.createdAt < decidedAt &&
+            (order.expiresAt === null || order.expiresAt > decidedAt) &&
+            order.trades.every((trade) => trade.createdAt >= decidedAt),
+        )
+        .map((order) => order.ticker.code),
+    );
+
   return screeningRuns.flatMap((run) => {
-    const snapshot = run.agentRun?.inputSnapshot as { prompt?: string | null };
-    if (run.agentRunId === null || !snapshot?.prompt) {
+    const snapshot = run.agentRun?.inputSnapshot as {
+      prompt?: string | null;
+      decidedAt?: string;
+    };
+    if (run.agentRunId === null || !snapshot?.prompt || !snapshot.decidedAt) {
       return [];
     }
     const inputs = parseRecommendationPrompt(snapshot.prompt);
@@ -445,6 +481,11 @@ const loadPerformanceRuns = async (): Promise<PerformanceRun[]> => {
         asOf: run.asOf,
         inputs,
         modelCodes: [...(boughtByRun.get(run.agentRunId) ?? [])],
+        pendingBuyCodes: pendingBuyCodesAt(
+          run.strategy,
+          run.agentRunId,
+          new Date(snapshot.decidedAt),
+        ),
         promptMismatch:
           inputs.candidates.map((candidate) => candidate.code).join(',') !==
           presentedCodes.join(','),
@@ -456,6 +497,9 @@ const loadPerformanceRuns = async (): Promise<PerformanceRun[]> => {
 
 const runPerformance = async (): Promise<void> => {
   const runs = await loadPerformanceRuns();
+  console.log(
+    `대기 매수가 실린 후보에 있던 회차 ${runs.filter((run) => run.inputs.candidates.some((candidate) => run.pendingBuyCodes.has(candidate.code))).length}`,
+  );
   console.log(
     `추천 성공 회차 ${runs.length} (SWING ${runs.filter((run) => run.strategy === 'SWING').length} · LONG_TERM ${runs.filter((run) => run.strategy === 'LONG_TERM').length}) · 프롬프트·원장 불일치 ${runs.filter((run) => run.promptMismatch).length}`,
   );
@@ -489,7 +533,7 @@ const runPerformance = async (): Promise<void> => {
         }
         abstained += 1;
         // 서술용 — 기권하지 않았다면 규칙이 샀을 상위 3종의 평균. 판정에는 넣지 않는다.
-        const top = ruleCounterfactualPicks(run.inputs, 3);
+        const top = ruleCounterfactualPicks(run.inputs, 3, run.pendingBuyCodes);
         if (top !== null && top.every((code) => returns.has(code))) {
           abstainedRuleReturns.push(
             mean(top.map((code) => returns.get(code) as number)) as number,
@@ -497,7 +541,11 @@ const runPerformance = async (): Promise<void> => {
         }
         continue;
       }
-      const ruleCodes = ruleCounterfactualPicks(run.inputs, k);
+      const ruleCodes = ruleCounterfactualPicks(
+        run.inputs,
+        k,
+        run.pendingBuyCodes,
+      );
       if (ruleCodes === null) {
         excluded.fewEligible += 1;
         continue;
