@@ -366,6 +366,7 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 | `AUTOPILOT_REVIEW_TARGET` | ⭕ | 리뷰 라인(PR 리뷰 스윕 요약) 전용 발송 대상. 미설정 시 `AUTOPILOT_TARGET` |
 | `CONSOLE_OWNER_SLACK_USER_ID` | ❌ | 콘솔 지시·승인 주체 — 없으면 콘솔 쓰기 503 |
 | `KOREAN_HOLIDAY_API_KEY` | ❌ | 공공데이터포털 특일 정보 **디코딩** 서비스키 — 없으면 달력에 공휴일이 안 뜬다 |
+| `VACATION_HIRE_DATE` · `VACATION_FIRST_YEAR_ADVANCE_DAYS` | ❌ | 휴가 계산 입사일(YYYY-MM-DD)과 1년차 선지급 일수(1~11). 선지급을 설정하면 1년차 부여가 그 값으로 고정되고 2년차 15일은 그대로 — 없으면 한 달에 1일씩 계산 |
 | `CAREER_LOG_NOTION_PAGE_ID` · `CAREER_*_NOTION_PAGE_ID` | ⭕ | careerLog · 이력서/포트폴리오 Notion 적재 대상 |
 | `BLOG_PUBLISH_REPO` · `BLOG_PUBLISH_BRANCH` · `BLOG_MASK_FORBIDDEN_TERMS` · `BLOG_NOTION_STATUS_DRAFT_VALUE` · `BLOG_NOTION_STATUS_HOLD_VALUE` · `BLOG_GITHUB_PUBLISH_ENABLED` | ⭕ | `/blog-publish` 대상 저장소·브랜치·익명화 금지어·Notion 초안/보류 상태값과 저녁 GitHub 발행 승인 카드 스위치. 금지어 목록이 비면 발행 차단. 보류 상태값 기본은 `보류` — 편집 단계가 발행 부적합으로 판정한 초안이 여기로 옮겨져 큐를 막지 않는다 |
 | `PORTFOLIO_SITE_URL` | ⭕ | 포트폴리오 사이트 주소. autopilot 이 08~24시 10분마다 `/backend/health` 를 불러 무료 플랜에서 잠든 API 를 깨운다. 비우면 워밍업 슬롯이 꺼진다 |

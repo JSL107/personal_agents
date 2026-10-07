@@ -75,3 +75,26 @@ describe('MonthlyThenFixed15Policy', () => {
     ).toBe(1);
   });
 });
+
+describe('MonthlyThenFixed15Policy — 1년차 선지급', () => {
+  const policy = new MonthlyThenFixed15Policy(8);
+  const hire = { year: 2026, month: 4, day: 6 };
+
+  it('입사 직후에도 선지급 일수 전부 부여', () => {
+    expect(
+      policy.accrualFor(hire, { year: 2026, month: 4, day: 6 }).grantedDays,
+    ).toBe(8);
+  });
+
+  it('월 발생분이 선지급을 넘어서도 8일 고정 (만 10개월)', () => {
+    expect(
+      policy.accrualFor(hire, { year: 2027, month: 2, day: 6 }).grantedDays,
+    ).toBe(8);
+  });
+
+  it('2년차는 차감 없이 15일', () => {
+    expect(
+      policy.accrualFor(hire, { year: 2027, month: 4, day: 6 }).grantedDays,
+    ).toBe(15);
+  });
+});

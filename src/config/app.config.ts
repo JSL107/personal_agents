@@ -726,6 +726,16 @@ export class EnvironmentVariables {
   })
   VACATION_HIRE_DATE?: string;
 
+  // 휴가 계산기 — 1년차 연차를 입사 때 선지급받은 일수. 설정하면 1년차 부여를 이 값으로 고정한다.
+  // 미설정 시 기본 정책(만 1개월당 1일, 최대 11일). 2년차 15일에서는 차감하지 않는다.
+  @IsOptional()
+  @Transform(normalizeOptionalNumberEnv)
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(11)
+  VACATION_FIRST_YEAR_ADVANCE_DAYS?: number;
+
   // Episodic Memory — 로컬 임베딩 모델 id + 차원. spec 2026-06-18.
   // 미설정 시 EpisodicMemoryModule 이 default('Xenova/multilingual-e5-small', 384) 사용.
   // 모델 변경 시 차원도 함께 변경하고 episodic_memory.embedding 컬럼/인덱스를 재생성해야 한다.
