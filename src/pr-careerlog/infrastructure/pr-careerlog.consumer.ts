@@ -117,7 +117,11 @@ export class WebhookPrCareerLogConsumer extends WorkerHost {
       `• 변경: +${detail.additions} / −${detail.deletions} (${detail.changedFilesTotalCount} files)`,
     ].join('\n');
     try {
-      await this.slackService.postMessage({ target: slackUserId, text });
+      await this.slackService.postMessage({
+        kind: 'pr-careerlog',
+        target: slackUserId,
+        text,
+      });
     } catch (error: unknown) {
       // 알람 자체 실패는 모듈 흐름 차단 X — append 는 이미 성공한 상태.
       this.logger.warn(

@@ -114,7 +114,11 @@ export class JobApplicationNudgeCronConsumer extends WorkerHost {
       );
       return;
     }
-    await this.slackNotifier.postMessage({ target, text });
+    await this.slackNotifier.postMessage({
+      kind: 'job-application-nudge',
+      target,
+      text,
+    });
     this.logger.log(`Job Application Nudge Cron 발송 완료 — target=${target}`);
   }
 

@@ -16,9 +16,19 @@ import { RunVerdictFacet } from '../agent-run/domain/run-verdict';
 import { appendIntegrationHint } from '../common/domain/integration-failure-hint';
 import { PreviewCardMessage } from '../preview-gate/domain/preview-action.type';
 import {
+  SLACK_DELIVERY_REPOSITORY,
+  SlackDeliveryRepositoryPort,
+} from './domain/port/slack-delivery.repository.port';
+import {
   SLACK_HANDLER_PORT,
   SlackHandler,
 } from './domain/port/slack-handler.port';
+import {
+  buildTextPreview,
+  DeliveryKind,
+  SLACK_DELIVERY_STATUS,
+  SlackDeliverySuppressReason,
+} from './domain/slack-delivery.type';
 import {
   toImageAttachedSlackArgs,
   toReadableSlackArgs,
@@ -101,6 +111,8 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     private readonly configService: ConfigService,
     @Inject(SLACK_HANDLER_PORT)
     private readonly slackHandlers: SlackHandler[],
+    @Inject(SLACK_DELIVERY_REPOSITORY)
+    private readonly slackDeliveryRepository: SlackDeliveryRepositoryPort,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -292,6 +304,8 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
   }
 
   async postMessage({
+    kind,
+    itemKinds,
     target,
     text,
     threadTs,
@@ -299,6 +313,8 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     image,
     runVerdict,
   }: {
+    kind: DeliveryKind;
+    itemKinds?: string[];
     target: string;
     text: string;
     threadTs?: string;
@@ -311,31 +327,95 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     };
   }): Promise<{ ts: string | undefined }> {
     const origin = threadTs ? 'push-thread' : 'push';
-    const response = await this.postChat({
-      channel: target,
-      // 이대리가 먼저 밀어내는 경로 — 계측에서 슬래시·멘션 응답과 갈라 본다(설계서 §7-5).
-      // 스레드 댓글은 본문과 길이 성격이 달라 따로 센다(cron 상세가 이 경로다).
-      ...(runVerdict
-        ? {
-            text,
-            blocks: buildRunVerdictBlocks({
-              agentRunId: runVerdict.agentRunId,
-              facets: runVerdict.facets,
-              verdicts: {},
-              quoteMrkdwn: formatRunVerdictQuote(runVerdict.quote),
-            }) as never,
-          }
-        : image
-          ? toImageAttachedSlackArgs(text, image, origin)
-          : toReadableSlackArgs(text, origin)),
-      ...(threadTs ? { thread_ts: threadTs } : {}),
-      // 미디어(썸네일)도 함께 꺼야 한다 — unfurl_links 만 끄면 이미지가 딸린 링크는
-      // 여전히 펼쳐진다. 값을 안 주면 슬랙 기본값(켜짐)이라 기존 발송은 그대로다.
-      ...(unfurlLinks === false
-        ? { unfurl_links: false, unfurl_media: false }
-        : {}),
+    try {
+      const response = await this.postChat({
+        channel: target,
+        // 이대리가 먼저 밀어내는 경로 — 계측에서 슬래시·멘션 응답과 갈라 본다(설계서 §7-5).
+        // 스레드 댓글은 본문과 길이 성격이 달라 따로 센다(cron 상세가 이 경로다).
+        ...(runVerdict
+          ? {
+              text,
+              blocks: buildRunVerdictBlocks({
+                agentRunId: runVerdict.agentRunId,
+                facets: runVerdict.facets,
+                verdicts: {},
+                quoteMrkdwn: formatRunVerdictQuote(runVerdict.quote),
+              }) as never,
+            }
+          : image
+            ? toImageAttachedSlackArgs(text, image, origin)
+            : toReadableSlackArgs(text, origin)),
+        ...(threadTs ? { thread_ts: threadTs } : {}),
+        // 미디어(썸네일)도 함께 꺼야 한다 — unfurl_links 만 끄면 이미지가 딸린 링크는
+        // 여전히 펼쳐진다. 값을 안 주면 슬랙 기본값(켜짐)이라 기존 발송은 그대로다.
+        ...(unfurlLinks === false
+          ? { unfurl_links: false, unfurl_media: false }
+          : {}),
+      });
+      await this.recordDelivery({
+        kind,
+        itemKinds: itemKinds ?? [],
+        target,
+        channelId: response.channel,
+        messageTs: response.ts,
+        threadTs,
+        status: SLACK_DELIVERY_STATUS.SENT,
+        textPreview: buildTextPreview(text),
+      });
+      return { ts: response.ts };
+    } catch (error: unknown) {
+      await this.recordDelivery({
+        kind,
+        itemKinds: itemKinds ?? [],
+        target,
+        threadTs,
+        status: SLACK_DELIVERY_STATUS.FAILED,
+        textPreview: buildTextPreview(text),
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  }
+
+  async recordSuppressedDelivery({
+    kind,
+    itemKinds,
+    target,
+    text,
+    reason,
+  }: {
+    kind: DeliveryKind;
+    itemKinds?: string[];
+    target: string;
+    text: string;
+    reason: SlackDeliverySuppressReason;
+  }): Promise<void> {
+    // 발송 기록(recordDelivery)과 달리 실패를 삼키지 않는다. 이 본문은 Slack 에 가지 않아
+    // 원장이 유일한 사본이므로, 호출부가 실패를 알아야 Slack 으로 되돌려 유실을 막을 수 있다.
+    await this.slackDeliveryRepository.record({
+      kind,
+      itemKinds: itemKinds ?? [],
+      target,
+      status: SLACK_DELIVERY_STATUS.SUPPRESSED,
+      suppressReason: reason,
+      textPreview: buildTextPreview(text),
+      fullText: text,
     });
-    return { ts: response.ts };
+  }
+
+  // 원장(slack_delivery) 기록은 발송의 부산물이다 — 기록 실패가 발송 결과를 바꾸거나 호출부로
+  // 번지면 안 된다. 그래서 여기서 삼키고 경고만 남긴다. 무엇이 나갔는지·안 나갔는지를 종류별로
+  // 세는 근거라 발송 지점마다 따로 쓰지 않고 이 한 곳으로 모은다.
+  private async recordDelivery(
+    input: Parameters<SlackDeliveryRepositoryPort['record']>[0],
+  ): Promise<void> {
+    try {
+      await this.slackDeliveryRepository.record(input);
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Slack 발송 원장 기록 실패: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   // 이미지 업로드. `chat.postMessage` 와 달리 파일 API 를 쓰므로 `files:write` 스코프가

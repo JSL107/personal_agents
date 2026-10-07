@@ -432,6 +432,30 @@ model SlackReactionSignal {
   @@map("slack_reaction_signal")
 }
 
+// 이대리가 먼저 보낸 Slack 메시지와 콘솔로 돌린 본문을 남기는 발송 원장.
+// SUPPRESSED 본문은 Slack 에 가지 않으므로 fullText 에 유일한 사본을 보관한다.
+model SlackDelivery {
+  id             Int      @id @default(autoincrement())
+  kind           String
+  itemKinds      String[] @map("item_kinds")
+  target         String
+  channelId      String?  @map("channel_id")
+  messageTs      String?  @map("message_ts")
+  threadTs       String?  @map("thread_ts")
+  status         String   // SENT | SUPPRESSED | FAILED
+  suppressReason String?  @map("suppress_reason") // CONSOLE_ROUTE
+  textPreview    String   @map("text_preview") // first 200 chars
+  fullText       String?  @map("full_text") @db.Text // only for SUPPRESSED (only copy)
+  errorMessage   String?  @map("error_message")
+  reactionCount  Int      @default(0) @map("reaction_count")
+  replyCount     Int      @default(0) @map("reply_count")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([kind, createdAt])
+  @@index([channelId, messageTs])
+  @@map("slack_delivery")
+}
+
 // 보유 종목 모니터링 — 종목 마스터.
 // 티커는 상장 이전·티커 변경으로 바뀔 수 있어 PK 로 쓰지 않는다.
 // 유니크는 (market, code) — 6자리 코드는 시장이 다르면 중복될 수 있다.

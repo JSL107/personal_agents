@@ -335,6 +335,7 @@ describe('StudyBriefCronConsumer', () => {
     ).toHaveBeenCalledWith(7, 'https://notion.so/PAGE');
     expect(dependencies.slackNotifier.postMessage).toHaveBeenCalledTimes(1);
     expect(dependencies.slackNotifier.postMessage).toHaveBeenCalledWith({
+      kind: 'study-brief',
       target: 'C1',
       text: expect.stringContaining(
         '<https://notion.so/PAGE|Notion에서 전체 읽기>',
@@ -363,6 +364,7 @@ describe('StudyBriefCronConsumer', () => {
       ).toHaveBeenCalledWith(7, 'https://notion.so/PAGE');
       expect(dependencies.slackNotifier.postMessage).toHaveBeenCalledTimes(1);
       expect(dependencies.slackNotifier.postMessage).toHaveBeenCalledWith({
+        kind: 'study-brief',
         target: 'C1',
         text: expect.stringContaining(
           '<https://notion.so/PAGE|Notion에서 전체 읽기>',

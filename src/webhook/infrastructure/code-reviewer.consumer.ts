@@ -48,7 +48,11 @@ export class WebhookCodeReviewerConsumer extends WorkerHost {
           prRef,
           review: outcome.result,
         }) + formatModelFooter(outcome);
-      await this.slackService.postMessage({ target: slackUserId, text });
+      await this.slackService.postMessage({
+        kind: 'code-review-webhook',
+        target: slackUserId,
+        text,
+      });
       this.logger.log(
         `Webhook code-reviewer 완료 — ${prRef} (agentRunId=${outcome.agentRunId})`,
       );

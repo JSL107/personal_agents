@@ -1,5 +1,9 @@
 import { RunVerdictFacet } from '../../../agent-run/domain/run-verdict';
 import { PreviewCardMessage } from '../../../preview-gate/domain/preview-action.type';
+import {
+  DeliveryKind,
+  SlackDeliverySuppressReason,
+} from '../slack-delivery.type';
 
 export const SLACK_NOTIFIER_PORT = Symbol('SLACK_NOTIFIER_PORT');
 
@@ -25,6 +29,8 @@ export interface SlackNotifierPort {
   // runVerdict 를 주면 본문 대신 그 실행의 판정 버튼을 싣는다(text 는 알림용 대체 문구).
   // 버튼을 무엇으로 그릴지는 발송 어댑터가 정한다 — 호출부는 실행 id 와 축만 넘긴다.
   postMessage(input: {
+    kind: DeliveryKind;
+    itemKinds?: string[];
     target: string;
     text: string;
     threadTs?: string;
@@ -36,6 +42,15 @@ export interface SlackNotifierPort {
       quote?: string;
     };
   }): Promise<{ ts: string | undefined }>;
+  // Slack 에 보내지 않기로 한 본문(콘솔 경로)을 발송 원장에 남긴다. 원장이 유일한 사본이라
+  // 기록 실패는 예외로 던진다 — 호출부가 받아서 Slack 으로 되돌린다.
+  recordSuppressedDelivery(input: {
+    kind: DeliveryKind;
+    itemKinds?: string[];
+    target: string;
+    text: string;
+    reason: SlackDeliverySuppressReason;
+  }): Promise<void>;
   // T1_PREVIEW 승인 카드. 반환된 좌표(channelId/messageTs)로 이후 chat.update(카드 갱신)가 가능.
   //
   // 카드를 무엇으로 그릴지는 preview-gate 의 개념이라 그쪽이 소유하는 PreviewCardMessage 를 받는다.

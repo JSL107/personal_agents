@@ -20,6 +20,7 @@ import { PushpinTaskModule } from '../pushpin-task/pushpin-task.module';
 import { RouterModule } from '../router/router.module';
 import { SlackInboxModule } from '../slack-inbox/slack-inbox.module';
 import { SubconsciousModule } from '../subconscious/subconscious.module';
+import { SLACK_DELIVERY_REPOSITORY } from './domain/port/slack-delivery.repository.port';
 import {
   SLACK_HANDLER_PORT,
   SlackHandler,
@@ -40,6 +41,7 @@ import { SlackPushpinReactionHandler } from './handler/slack-pushpin-reaction.ha
 import { SubconsciousProposalActionHandler } from './handler/subconscious-proposal-action.handler';
 import { VacationHandler } from './handler/vacation.handler';
 import { WriteBackHandler } from './handler/write-back.handler';
+import { SlackDeliveryPrismaRepository } from './infrastructure/slack-delivery.prisma.repository';
 import { SlackService } from './slack.service';
 
 @Module({
@@ -81,6 +83,10 @@ import { SlackService } from './slack.service';
   ],
   providers: [
     SlackService,
+    {
+      provide: SLACK_DELIVERY_REPOSITORY,
+      useClass: SlackDeliveryPrismaRepository,
+    },
     // C-4 Phase 1 — SlackHandlerRegistry. 각 handler 가 SLACK_HANDLER_PORT multi-provider 로
     // 등록되면 SlackService 가 부팅 시 handlers.forEach(h => h.register(app)) 만 호출.
     // 후속 Phase 에서 나머지 register fn 도 동일 패턴으로 마이그레이션.
