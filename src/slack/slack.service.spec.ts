@@ -31,6 +31,8 @@ import {
 } from '../agent/pm/domain/pm-agent.type';
 import { DailyReview } from '../agent/work-reviewer/domain/work-reviewer.type';
 import { QuotaStatsResult } from '../agent-run/application/get-quota-stats.usecase';
+import { SlackDeliveryRepositoryPort } from './domain/port/slack-delivery.repository.port';
+import { SLACK_DELIVERY_STATUS } from './domain/slack-delivery.type';
 import { formatContextSummary } from './format/context-summary.formatter';
 import { formatDailyPlan } from './format/daily-plan.formatter';
 import { formatDailyReview } from './format/daily-review.formatter';
@@ -38,6 +40,10 @@ import { formatModelFooter } from './format/model-footer.formatter';
 import { formatPullRequestReview } from './format/pull-request-review.formatter';
 import { formatQuotaStats } from './format/quota-stats.formatter';
 import { shouldRefreshSocketAfterDrift, SlackService } from './slack.service';
+
+const mockDeliveryRepository = {
+  record: jest.fn().mockResolvedValue(undefined),
+};
 
 const NO_TRUNCATION: PlanInputTruncation = {
   github: 0,
@@ -464,8 +470,16 @@ describe('formatModelFooter — sanitize (codex P1 / omc P2 fix)', () => {
 });
 
 describe('SlackService.postMessage', () => {
+  beforeEach(() => {
+    mockDeliveryRepository.record.mockReset().mockResolvedValue(undefined);
+  });
+
   const buildService = (postMessageMock: jest.Mock): SlackService => {
-    const service = new SlackService({} as unknown as ConfigService, []);
+    const service = new SlackService(
+      {} as unknown as ConfigService,
+      [],
+      mockDeliveryRepository as SlackDeliveryRepositoryPort,
+    );
     // private app 주입 (테스트 한정).
     (service as unknown as { app: unknown }).app = {
       client: { chat: { postMessage: postMessageMock } },
@@ -474,9 +488,13 @@ describe('SlackService.postMessage', () => {
   };
 
   it('threadTs 지정 시 thread_ts 로 발송하고 ts 를 반환한다', async () => {
-    const postMessageMock = jest.fn(async () => ({ ts: '111.222' }));
+    const postMessageMock = jest.fn(async () => ({
+      channel: 'C1',
+      ts: '111.222',
+    }));
     const service = buildService(postMessageMock);
     const result = await service.postMessage({
+      kind: 'study-brief',
       target: 'C1',
       text: '본문',
       threadTs: '999.000',
@@ -487,6 +505,88 @@ describe('SlackService.postMessage', () => {
       thread_ts: '999.000',
     });
     expect(result.ts).toBe('111.222');
+    expect(mockDeliveryRepository.record).toHaveBeenCalledWith({
+      kind: 'study-brief',
+      itemKinds: [],
+      target: 'C1',
+      channelId: 'C1',
+      messageTs: '111.222',
+      threadTs: '999.000',
+      status: SLACK_DELIVERY_STATUS.SENT,
+      textPreview: '본문',
+    });
+  });
+
+  it('Slack 실패 시 FAILED 를 기록하고 원래 오류 객체를 다시 던진다', async () => {
+    const error = new Error('socket hang up');
+    const service = buildService(jest.fn().mockRejectedValue(error));
+
+    await expect(
+      service.postMessage({ kind: 'study-brief', target: 'C1', text: '본문' }),
+    ).rejects.toBe(error);
+    expect(mockDeliveryRepository.record).toHaveBeenCalledWith({
+      kind: 'study-brief',
+      itemKinds: [],
+      target: 'C1',
+      threadTs: undefined,
+      status: SLACK_DELIVERY_STATUS.FAILED,
+      textPreview: '본문',
+      errorMessage: 'Slack 발송 실패: socket hang up',
+    });
+  });
+
+  it('원장 기록에 실패해도 전송 결과를 반환한다', async () => {
+    mockDeliveryRepository.record.mockRejectedValue(
+      new Error('db unavailable'),
+    );
+    const service = buildService(
+      jest.fn().mockResolvedValue({ channel: 'C1', ts: '111.222' }),
+    );
+
+    await expect(
+      service.postMessage({ kind: 'study-brief', target: 'C1', text: '본문' }),
+    ).resolves.toEqual({ ts: '111.222' });
+    expect(mockDeliveryRepository.record).toHaveBeenCalledTimes(1);
+  });
+
+  it('콘솔 라우팅은 본문 전체와 미리보기 200자를 SUPPRESSED 로 기록한다', async () => {
+    const service = buildService(jest.fn());
+    const text = '가'.repeat(220);
+
+    await service.recordSuppressedDelivery({
+      kind: 'autopilot:morning',
+      itemKinds: ['docs-sync-audit'],
+      target: 'C1',
+      text,
+      reason: 'CONSOLE_ROUTE',
+    });
+
+    expect(mockDeliveryRepository.record).toHaveBeenCalledWith({
+      kind: 'autopilot:morning',
+      itemKinds: ['docs-sync-audit'],
+      target: 'C1',
+      status: SLACK_DELIVERY_STATUS.SUPPRESSED,
+      suppressReason: 'CONSOLE_ROUTE',
+      textPreview: '가'.repeat(200),
+      fullText: text,
+    });
+  });
+
+  // 콘솔 본문은 원장이 유일한 사본이라 실패를 호출부에 알려야 Slack 으로 되돌릴 수 있다.
+  it('콘솔 원장 기록 실패는 호출자에게 던진다', async () => {
+    mockDeliveryRepository.record.mockRejectedValue(
+      new Error('db unavailable'),
+    );
+    const service = buildService(jest.fn());
+
+    await expect(
+      service.recordSuppressedDelivery({
+        kind: 'autopilot:morning',
+        target: 'C1',
+        text: '본문',
+        reason: 'CONSOLE_ROUTE',
+      }),
+    ).rejects.toThrow('db unavailable');
   });
 
   // 힌트 사전이 실제로 이 경로를 지나는지 — 겨냥한 조건(Slack platform error)에서 확인한다.
@@ -502,7 +602,11 @@ describe('SlackService.postMessage', () => {
     const service = buildService(jest.fn().mockRejectedValue(platformError));
 
     await expect(
-      service.postMessage({ target: 'C_NOPE', text: '본문' }),
+      service.postMessage({
+        kind: 'study-brief',
+        target: 'C_NOPE',
+        text: '본문',
+      }),
     ).rejects.toThrow(/앱 설치 워크스페이스/);
   });
 
@@ -517,7 +621,11 @@ describe('SlackService.postMessage', () => {
     const service = buildService(jest.fn().mockRejectedValue(platformError));
 
     await expect(
-      service.postMessage({ target: 'C_PRIVATE', text: '본문' }),
+      service.postMessage({
+        kind: 'study-brief',
+        target: 'C_PRIVATE',
+        text: '본문',
+      }),
     ).rejects.toThrow(/\/invite @이대리/);
   });
 
@@ -527,14 +635,22 @@ describe('SlackService.postMessage', () => {
     );
 
     await expect(
-      service.postMessage({ target: 'C1', text: '본문' }),
+      service.postMessage({
+        kind: 'study-brief',
+        target: 'C1',
+        text: '본문',
+      }),
     ).rejects.toThrow('Slack 발송 실패: socket hang up');
   });
 
   it('threadTs 없으면 thread_ts 를 넘기지 않는다', async () => {
     const postMessageMock = jest.fn(async () => ({ ts: '111.222' }));
     const service = buildService(postMessageMock);
-    await service.postMessage({ target: 'C1', text: '본문' });
+    await service.postMessage({
+      kind: 'study-brief',
+      target: 'C1',
+      text: '본문',
+    });
     expect(postMessageMock).toHaveBeenCalledWith({
       channel: 'C1',
       text: '본문',
@@ -545,6 +661,7 @@ describe('SlackService.postMessage', () => {
     const postMessageMock = jest.fn(async () => ({ ts: '111.333' }));
     const service = buildService(postMessageMock);
     await service.postMessage({
+      kind: 'study-brief',
       target: 'C1',
       text: '대체 문구',
       threadTs: '999.000',
@@ -567,7 +684,11 @@ describe('SlackService.uploadImageFile', () => {
     filesUploadV2: jest.Mock;
     info: jest.Mock;
   }): SlackService => {
-    const service = new SlackService({} as unknown as ConfigService, []);
+    const service = new SlackService(
+      {} as unknown as ConfigService,
+      [],
+      mockDeliveryRepository as SlackDeliveryRepositoryPort,
+    );
     (service as unknown as { app: unknown }).app = {
       client: {
         filesUploadV2: client.filesUploadV2,
@@ -638,12 +759,17 @@ describe('SlackService.uploadImageFile', () => {
 describe('SlackService.postMessage — 이미지 블록', () => {
   it('image 를 주면 본문 아래에 그 파일을 싣는다', async () => {
     const postMessageMock = jest.fn().mockResolvedValue({ ts: '111.222' });
-    const service = new SlackService({} as unknown as ConfigService, []);
+    const service = new SlackService(
+      {} as unknown as ConfigService,
+      [],
+      mockDeliveryRepository as SlackDeliveryRepositoryPort,
+    );
     (service as unknown as { app: unknown }).app = {
       client: { chat: { postMessage: postMessageMock } },
     };
 
     await service.postMessage({
+      kind: 'study-brief',
       target: 'C1',
       text: '헤드라인',
       image: { fileId: 'F1', altText: '수익률 곡선' },
@@ -668,18 +794,34 @@ describe('SlackService.postMessage — 이미지 블록', () => {
 
 describe('SlackService — app 부재 원인 구분 (assertAppReady)', () => {
   it('토큰 미설정(isConfigured=false)이면 "설정 누락"으로 던진다', async () => {
-    const service = new SlackService({} as unknown as ConfigService, []);
+    const service = new SlackService(
+      {} as unknown as ConfigService,
+      [],
+      mockDeliveryRepository as SlackDeliveryRepositoryPort,
+    );
     // app 없음 + isConfigured 기본 false
     await expect(
-      service.postMessage({ target: 'C1', text: 'x' }),
+      service.postMessage({
+        kind: 'study-brief',
+        target: 'C1',
+        text: 'x',
+      }),
     ).rejects.toThrow(/SLACK_BOT_TOKEN\/APP_TOKEN\/SIGNING_SECRET 누락/);
   });
 
   it('토큰은 설정됐지만 아직 기동 전(isConfigured=true, app 없음)이면 "아직 기동"으로 던진다 — 부팅 레이스를 토큰 문제로 오진하지 않는다', async () => {
-    const service = new SlackService({} as unknown as ConfigService, []);
+    const service = new SlackService(
+      {} as unknown as ConfigService,
+      [],
+      mockDeliveryRepository as SlackDeliveryRepositoryPort,
+    );
     (service as unknown as { isConfigured: boolean }).isConfigured = true;
     await expect(
-      service.postMessage({ target: 'C1', text: 'x' }),
+      service.postMessage({
+        kind: 'study-brief',
+        target: 'C1',
+        text: 'x',
+      }),
     ).rejects.toThrow(/아직 기동되지 않았습니다/);
   });
 });
@@ -689,7 +831,11 @@ describe('SlackService — app 부재 원인 구분 (assertAppReady)', () => {
 // 영구히 남는다. app 부재 두 갈래 모두 no-op 이어야 한다.
 describe('SlackService.closeProposalCard — app 부재 best-effort', () => {
   it('토큰 미설정이어도 던지지 않는다', async () => {
-    const service = new SlackService({} as unknown as ConfigService, []);
+    const service = new SlackService(
+      {} as unknown as ConfigService,
+      [],
+      mockDeliveryRepository as SlackDeliveryRepositoryPort,
+    );
 
     await expect(
       service.closeProposalCard({
@@ -701,7 +847,11 @@ describe('SlackService.closeProposalCard — app 부재 best-effort', () => {
   });
 
   it('토큰은 설정됐지만 기동 전(app 없음)이어도 던지지 않는다', async () => {
-    const service = new SlackService({} as unknown as ConfigService, []);
+    const service = new SlackService(
+      {} as unknown as ConfigService,
+      [],
+      mockDeliveryRepository as SlackDeliveryRepositoryPort,
+    );
     (service as unknown as { isConfigured: boolean }).isConfigured = true;
 
     await expect(
@@ -760,7 +910,11 @@ describe('SlackService Socket Mode watchdog', () => {
 
   it('Socket Mode 기동 성공 후 watchdog interval 을 시작하고 destroy 때 정리한다', async () => {
     const handler = { register: jest.fn() };
-    const service = new SlackService(buildConfigService(), [handler] as never);
+    const service = new SlackService(
+      buildConfigService(),
+      [handler] as never,
+      mockDeliveryRepository as SlackDeliveryRepositoryPort,
+    );
 
     await service.onModuleInit();
 
@@ -778,7 +932,11 @@ describe('SlackService Socket Mode watchdog', () => {
   it('watchdog drift 가 threshold 를 넘으면 기존 app 을 멈추고 새 App 으로 재연결한다', async () => {
     jest.setSystemTime(0);
     const handler = { register: jest.fn() };
-    const service = new SlackService(buildConfigService(), [handler] as never);
+    const service = new SlackService(
+      buildConfigService(),
+      [handler] as never,
+      mockDeliveryRepository as SlackDeliveryRepositoryPort,
+    );
 
     await service.onModuleInit();
     handler.register.mockClear();

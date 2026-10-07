@@ -153,11 +153,16 @@ export class ResumeCalibrationCronConsumer extends WorkerHost {
       );
       return;
     }
-    const { ts } = await this.slackNotifier.postMessage({ target, text });
+    const { ts } = await this.slackNotifier.postMessage({
+      kind: 'resume-calibration',
+      target,
+      text,
+    });
     if (detail && ts) {
       // 스레드 상세 실패는 요약 발송을 무효화하지 않는다(전체는 DB output 에도 보존).
       try {
         await this.slackNotifier.postMessage({
+          kind: 'resume-calibration',
           target,
           text: detail,
           threadTs: ts,

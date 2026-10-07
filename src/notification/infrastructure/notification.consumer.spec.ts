@@ -101,6 +101,9 @@ describe('NotificationConsumer — 전송 성공 시에만 dedupe 마킹', () =>
 
     // 전송이 실패했으므로 dedupe 되지 않고 두 번 다 발사 시도(침묵 방지).
     expect(postMessage).toHaveBeenCalledTimes(2);
+    expect(postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'alert:cron-failure' }),
+    );
   });
 
   it('전송 성공 시 markFired → 30분 내 같은 종류는 dedupe(1회만)', async () => {
@@ -111,5 +114,19 @@ describe('NotificationConsumer — 전송 성공 시에만 dedupe 마킹', () =>
     await consumer.process(cronFailureJob('morning-briefing'));
 
     expect(postMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('claude 인증 알림은 전용 kind 로 발송한다', async () => {
+    const postMessage = jest.fn().mockResolvedValue(undefined);
+    const consumer = makeConsumer(postMessage);
+
+    await consumer.process({
+      name: NOTIFICATION_JOB.CLAUDE_AUTH_SUSPECT,
+      data: { exitMessage: 'auth failed' },
+    } as never);
+
+    expect(postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'alert:claude-auth' }),
+    );
   });
 });

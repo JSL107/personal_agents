@@ -12,7 +12,9 @@ import {
   SLACK_NOTIFIER_PORT,
   SlackNotifierPort,
 } from '../../slack/domain/port/slack-notifier.port';
+import { SLACK_DELIVERY_SUPPRESS_REASON } from '../../slack/domain/slack-delivery.type';
 import { RUN_VERDICT_FALLBACK_TEXT } from '../../slack/format/run-verdict-message.builder';
+import { resolveAutopilotDeliveryRoute } from '../domain/autopilot-delivery-route';
 import {
   AUTOPILOT_TASKS,
   AutopilotPreviewRequest,
@@ -157,6 +159,7 @@ export class AutopilotOrchestrator {
     }
 
     const items: {
+      taskId: string;
       summary: string;
       detail?: string;
       // 그림을 메인으로 올릴 때 채널에 남길 한 줄. 이 자리가 채워지고 그림이 있으며 그룹에
@@ -191,12 +194,16 @@ export class AutopilotOrchestrator {
     // 붙여서, 접미사가 달라진 회차만 새 키로 다시 통과시킨다(autopilot-task.port.ts
     // AutopilotTaskResult.guardKeySuffix 참조).
     const guardKeySuffixes: string[] = [];
+    // 콘솔 경로 task 의 산출물. Slack 항목과 같은 가드를 타야 해서 가드 통과 후에 원장에 쓴다.
+    const consoleItems: { taskId: string; summary: string; detail?: string }[] =
+      [];
 
     for (const entry of entries) {
       const task = this.tasks.get(entry.taskId);
       if (!task) {
         throw new Error(`Autopilot: task 미등록 — taskId=${entry.taskId}`);
       }
+      const deliveryRoute = resolveAutopilotDeliveryRoute(entry.taskId);
       // 한 task 의 런타임 실패(모델 응답 파싱 실패 / LLM hang 등 외부 변동)가 그룹 전체를
       // 죽여 cron job 을 throw 시키지 않도록 격리한다. (이전엔 work-reviewer 의 JSON 파싱
       // 실패가 evening 그룹 전체를 실패시켜 daily-eval 보고까지 누락 + cron 실패 알람 발사.)
@@ -213,24 +220,38 @@ export class AutopilotOrchestrator {
         // (카드만 내고 skip 하는 task 가 실존한다 — 그때는 가리킬 item 자체가 없다).
         let detailItemIndex: number | null = null;
         if (!result.skip && result.summaryText) {
-          hasDeliverableSummary = true;
-          if (result.detailText) {
-            detailItemIndex = items.length;
+          // 콘솔 경로 task 는 Slack 에 싣지 않고 전문을 원장에만 남긴다. 판정을 SlackService 가 아니라
+          // 여기(합치기 전)에 두는 이유: 다이제스트는 여러 task 요약이 한 메시지로 합쳐져 메시지 단위로는
+          // 종류를 가를 수 없고, 메인 메시지를 안 보내 ts 가 비면 아래 경로가 실패로 읽어 상세를 채널에
+          // 대피 발송한다. 승인 카드(previews)는 이 판정과 무관하게 그대로 나간다.
+          // 기록은 여기서 하지 않고 모아 두었다가 하루 1회 발송 가드를 통과한 뒤에 한다(아래).
+          if (deliveryRoute === 'console') {
+            consoleItems.push({
+              taskId: entry.taskId,
+              summary: result.summaryText,
+              detail: result.detailText,
+            });
+          } else {
+            hasDeliverableSummary = true;
+            if (result.detailText) {
+              detailItemIndex = items.length;
+            }
+            items.push({
+              taskId: entry.taskId,
+              summary: result.summaryText,
+              detail: result.detailText,
+              headline: result.headlineText,
+              image: result.detailImage,
+              // 파일은 상세에 딸린다 — 상세가 없으면 `detailItemIndex` 도 없어 업로드 실패를
+              // 카드에 이어 줄 길이 없으므로 싣지 않는다(포트 주석의 "이것만 주면 무시").
+              file: result.detailText ? result.detailFile : undefined,
+              detailIsOnlyCopy: result.detailIsOnlyCopy,
+              onDelivered: result.onDelivered,
+              unfurlLinks: result.unfurlLinks,
+              notifyOwner: NOTIFY_OWNER_TASK_IDS.has(entry.taskId),
+              runVerdict: result.runVerdict,
+            });
           }
-          items.push({
-            summary: result.summaryText,
-            detail: result.detailText,
-            headline: result.headlineText,
-            image: result.detailImage,
-            // 파일은 상세에 딸린다 — 상세가 없으면 `detailItemIndex` 도 없어 업로드 실패를
-            // 카드에 이어 줄 길이 없으므로 싣지 않는다(포트 주석의 "이것만 주면 무시").
-            file: result.detailText ? result.detailFile : undefined,
-            detailIsOnlyCopy: result.detailIsOnlyCopy,
-            onDelivered: result.onDelivered,
-            unfurlLinks: result.unfurlLinks,
-            notifyOwner: NOTIFY_OWNER_TASK_IDS.has(entry.taskId),
-            runVerdict: result.runVerdict,
-          });
         }
         const requestedPreviews = [
           ...(result.preview ? [result.preview] : []),
@@ -253,6 +274,7 @@ export class AutopilotOrchestrator {
         // 여기서 세우지 않으면 멘션 대상이 아닌 task 의 실패가 조용히 흘러간다. 설계는 cron 실패를
         // 멘션 필요로 분류하고, 근거 수치(7일 73건)도 실패 전체를 센 값이다.
         items.push({
+          taskId: entry.taskId,
           summary: `_⚠️ ${entry.taskId} 자동 생성 실패 — ${message.slice(0, 200)}. 다음 슬롯에 재시도됩니다._`,
           notifyOwner: true,
         });
@@ -262,11 +284,13 @@ export class AutopilotOrchestrator {
     // 전달할 summary/preview 산출물이 없고 실패가 하나라도 있는데 실패 안내만 발송하면 cron 이
     // 성공 처리된다. 그러면 발송 가드와 슬롯 완주 표식까지 남아 BullMQ 재시도가 막히고, 실제
     // 보고가 다음 슬롯까지 유실된다. skip 은 정상 종료지만 전달 산출물은 아니며, preview 생성은
-    // 전달 산출물이므로 재시도 조건에서 제외한다.
+    // 전달 산출물이므로 재시도 조건에서 제외한다. 콘솔 항목도 전달 산출물이다 — 빼면 같은 그룹의
+    // 다른 task 실패에 끌려 전멸로 판정돼, 성공한 콘솔 결과가 원장에 남지 못하고 버려진다.
     if (
       failedTaskCount > 0 &&
       !hasDeliverableSummary &&
-      previews.length === 0
+      previews.length === 0 &&
+      consoleItems.length === 0
     ) {
       const failureNotice = items
         .map((item) => item.summary)
@@ -274,6 +298,7 @@ export class AutopilotOrchestrator {
       for (const resolved of targets) {
         try {
           await this.slackNotifier.postMessage({
+            kind: `autopilot:${groupKey}`,
             target: resolved,
             text: withOwnerMention(failureNotice, resolved, ownerSlackUserId),
           });
@@ -290,7 +315,11 @@ export class AutopilotOrchestrator {
       throw new Error('Autopilot: 실행한 모든 task 가 실패했습니다.');
     }
 
-    if (items.length === 0 && previews.length === 0) {
+    if (
+      items.length === 0 &&
+      previews.length === 0 &&
+      consoleItems.length === 0
+    ) {
       // 보낼 게 없어도 task 는 다 돌았다 = 이 슬롯은 완주. 표식을 남겨야 재큐가 같은 task 를
       // 또 돌리지 않는다(pr-review-sweep 처럼 결과 없이도 LLM 을 태우는 task 가 있다).
       await this.markSlotDone(slotKey);
@@ -355,6 +384,25 @@ export class AutopilotOrchestrator {
     // task 는 후처리를 건너뛰고 다음 회차에 다시 보낸다(중복 > 유실, onDelivered 계약과 동일).
     const detailUndelivered = new Set<number>();
 
+    // 콘솔 항목은 가드를 통과한 회차에만 원장에 쓴다. 가드보다 먼저 쓰면 Slack 이라면 막혔을
+    // 같은 내용이 회차마다 쌓인다(pr-review-sweep `*/3` 은 하루 480 회차 중 발송 2 회).
+    // 원장이 유일한 사본이라, 기록에 실패한 항목은 버리지 않고 종전처럼 Slack 항목으로 되돌린다.
+    for (const consoleItem of consoleItems) {
+      const recorded = await this.recordConsoleItem(
+        groupKey,
+        targets,
+        consoleItem,
+      );
+      if (!recorded) {
+        items.push({
+          taskId: consoleItem.taskId,
+          summary: consoleItem.summary,
+          detail: consoleItem.detail,
+          notifyOwner: false,
+        });
+      }
+    }
+
     try {
       if (items.length > 0) {
         // 그림을 채널의 얼굴로 세울 수 있는 회차인가. 요약이 하나뿐일 때만 뒤집는다 —
@@ -418,6 +466,8 @@ export class AutopilotOrchestrator {
               ? (imageFirstItem?.headline ?? '')
               : joinedSummary;
             return this.slackNotifier.postMessage({
+              kind: `autopilot:${groupKey}`,
+              itemKinds: items.map((item) => item.taskId),
               target: resolved,
               text: shouldNotifyOwner
                 ? withOwnerMention(text, resolved, ownerSlackUserId)
@@ -460,6 +510,8 @@ export class AutopilotOrchestrator {
               }
               try {
                 await this.slackNotifier.postMessage({
+                  kind: `autopilot:${groupKey}`,
+                  itemKinds: [item.taskId],
                   target: resolved,
                   text: RUN_VERDICT_FALLBACK_TEXT,
                   threadTs: ts,
@@ -499,6 +551,8 @@ export class AutopilotOrchestrator {
               for (const { text: threadText, isOnlyCopy } of threadPosts) {
                 try {
                   await this.slackNotifier.postMessage({
+                    kind: `autopilot:${groupKey}`,
+                    itemKinds: [item.taskId],
                     target: resolved,
                     text: threadText,
                     threadTs: ts,
@@ -524,6 +578,8 @@ export class AutopilotOrchestrator {
                   if (isOnlyCopy) {
                     try {
                       await this.slackNotifier.postMessage({
+                        kind: `autopilot:${groupKey}`,
+                        itemKinds: [item.taskId],
                         target: resolved,
                         text: threadText,
                         ...(item.unfurlLinks === false
@@ -623,6 +679,8 @@ export class AutopilotOrchestrator {
               }
               try {
                 await this.slackNotifier.postMessage({
+                  kind: `autopilot:${groupKey}`,
+                  itemKinds: [item.taskId],
                   target: resolved,
                   text: item.detail,
                   ...(item.unfurlLinks === false ? { unfurlLinks: false } : {}),
@@ -701,6 +759,7 @@ export class AutopilotOrchestrator {
           `Autopilot[${groupKey}] 승인 카드 '${preview.kind}' 생성 보류 — ${reason}`,
         );
         await this.notifyOwner(
+          groupKey,
           targets,
           `_⚠️ 승인 카드 보류 (${preview.kind}) — ${reason}. 확인할 본문 없이 승인하지 않도록 카드를 만들지 않았습니다. 후보는 큐에 남아 다음 발화에서 다시 오를 수 있습니다._`,
         );
@@ -743,7 +802,12 @@ export class AutopilotOrchestrator {
           `Autopilot[${groupKey}] 승인 카드 '${preview.kind}' 생성/발송 실패 (다른 카드는 계속): ${message}`,
           error instanceof Error ? error.stack : undefined,
         );
-        await this.notifyPreviewFailure(targets, preview.kind, message);
+        await this.notifyPreviewFailure(
+          groupKey,
+          targets,
+          preview.kind,
+          message,
+        );
       }
     }
 
@@ -785,14 +849,47 @@ export class AutopilotOrchestrator {
     }
   }
 
+  // 반환값 = 모든 대상의 원장 기록 성공 여부. 하나라도 실패하면 false — 호출부가 Slack 으로 되돌린다
+  // (이미 기록된 대상의 행은 남는다. 유실보다 원장 중복이 낫다).
+  private async recordConsoleItem(
+    groupKey: string,
+    targets: string[],
+    consoleItem: { taskId: string; summary: string; detail?: string },
+  ): Promise<boolean> {
+    const text = [consoleItem.summary, consoleItem.detail]
+      .filter(Boolean)
+      .join('\n\n');
+    try {
+      for (const resolved of targets) {
+        await this.slackNotifier.recordSuppressedDelivery({
+          kind: `autopilot:${groupKey}`,
+          itemKinds: [consoleItem.taskId],
+          target: resolved,
+          text,
+          reason: SLACK_DELIVERY_SUPPRESS_REASON.CONSOLE_ROUTE,
+        });
+      }
+      return true;
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Autopilot[${groupKey}] 콘솔 항목 '${consoleItem.taskId}' 원장 기록 실패 — Slack 으로 대신 보낸다: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return false;
+    }
+  }
+
   // 승인 카드 발송 실패를 owner digest 채널에 통지 — 조용한 유실 방지(자동 재발송은 안 함).
   // 통지 자체 실패는 로그만 남긴다(이미 상위에서 error 로그됨) — 재귀적 실패로 번지지 않게.
   private async notifyPreviewFailure(
+    groupKey: string,
     targets: string[],
     kind: string,
     message: string,
   ): Promise<void> {
     await this.notifyOwner(
+      groupKey,
       targets,
       `_⚠️ 승인 카드 발송 실패 (${kind}) — ${message.slice(0, 200)}. 자동 재발송되지 않으니 필요 시 수동 재실행해주세요._`,
     );
@@ -800,10 +897,18 @@ export class AutopilotOrchestrator {
 
   // owner digest 채널에 한 줄 통지. 통지 자체의 실패는 로그만 남긴다 — 이 함수를 부르는 자리는
   // 이미 무언가 잘못된 상황이라, 여기서 예외를 던지면 원래 원인이 가려진다.
-  private async notifyOwner(targets: string[], text: string): Promise<void> {
+  private async notifyOwner(
+    groupKey: string,
+    targets: string[],
+    text: string,
+  ): Promise<void> {
     for (const resolved of targets) {
       try {
-        await this.slackNotifier.postMessage({ target: resolved, text });
+        await this.slackNotifier.postMessage({
+          kind: `autopilot:${groupKey}`,
+          target: resolved,
+          text,
+        });
       } catch (notifyError: unknown) {
         const notifyMessage =
           notifyError instanceof Error
