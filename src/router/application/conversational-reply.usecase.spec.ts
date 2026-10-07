@@ -8,6 +8,8 @@ import {
   ModelProviderName,
 } from '../../model-router/domain/model-router.type';
 import { ConversationTurn } from '../domain/conversation-memory.type';
+import { AgentDispatcher } from '../domain/port/agent-dispatcher.port';
+import { WORKER_CAPABILITIES } from '../domain/worker-capability';
 import {
   buildPrompt,
   buildSystemPrompt,
@@ -105,7 +107,7 @@ describe('ConversationalReply — buildSystemPrompt (self-context)', () => {
       expect(prompt).toContain('질문으로 끝나는 문장을 쓰지 마세요');
       expect(prompt).toContain('선택지를 제시하지 마세요');
       expect(prompt).toMatch(/실제로 실행할 수 없는 요청.*솔직히/);
-      expect(prompt).toMatch(/실제로 가능한 일.*1~2개.*제안/);
+      expect(prompt).toMatch(/할 수 있는 일.*1~2개.*제안/);
       expect(prompt).toContain('2~4문장');
       expect(prompt).not.toContain('친근하고 짧게 (1~3문장)');
       expect(prompt).toMatch(/명령어 추천 \/ 슬래시 안내 절대 X/);
@@ -126,10 +128,69 @@ describe('ConversationalReply — buildSystemPrompt (self-context)', () => {
 
       expect(prompt).toBe(baselinePrompt);
       expect(createHash('sha256').update(prompt).digest('hex')).toBe(
-        '59be4ed1977e5313df1847ff7a3055e9b6525bdd127a69d7834f2f04296d06ac',
+        // 2026-10-07 기능 목록·개인 봇 사실·되묻기 규칙 교체로 갱신
+        'bd13f84d0f29ee7b62a57e212b8cc309655e0bfb83abc0f7c818ab5b6d733044',
       );
     },
   );
+});
+
+describe('ConversationalReply — 이대리가 할 수 있는 일', () => {
+  it('등록된 워커의 할 수 있는 일과 자연어 예시를 싣는다', () => {
+    const prompt = buildSystemPrompt({});
+    expect(prompt).toContain('이대리가 할 수 있는 일');
+    for (const { canDo } of WORKER_CAPABILITIES) {
+      expect(prompt).toContain(canDo);
+    }
+  });
+
+  it('받은 목록만 싣는다 — 등록되지 않은 워커를 할 수 있다고 하지 않는다', () => {
+    const vacation = WORKER_CAPABILITIES.find(
+      ({ agentType }) => agentType === AgentType.VACATION,
+    )!;
+    const paper = WORKER_CAPABILITIES.find(
+      ({ agentType }) => agentType === AgentType.PAPER_TRADE,
+    )!;
+    const prompt = buildSystemPrompt({ capabilities: [vacation] });
+    expect(prompt).toContain(vacation.canDo);
+    expect(prompt).not.toContain(paper.canDo);
+  });
+
+  it('reply() 는 주입된 dispatcher 의 워커만 싣는다', async () => {
+    const route = jest.fn().mockResolvedValue({ text: '네', modelUsed: 'm' });
+    const usecase = new ConversationalReplyUsecase(
+      { route } as unknown as ModelRouterUsecase,
+      { get: () => undefined } as unknown as ConfigService,
+      [{ agentType: AgentType.VACATION }] as unknown as AgentDispatcher[],
+    );
+    await usecase.reply({ text: '뭐 할 수 있어?', priorTurns: [] });
+    const systemPrompt: string = route.mock.calls[0][0].request.systemPrompt;
+    expect(systemPrompt).toContain('휴가·연차 잔여 조회');
+    expect(systemPrompt).not.toContain('모의투자(가상) 계좌');
+  });
+
+  it('개인 비서라는 사실을 싣고, 고객사·타인을 상정하지 않게 한다', () => {
+    expect(buildSystemPrompt({})).toMatch(
+      /한 사람의 개인 비서.*고객사나 다른 사용자는 없/,
+    );
+  });
+
+  it('목록에 있는 일이면 되묻지 말라는 규칙으로 "follow-up 질문으로 끌어라" 를 대체했다', () => {
+    const prompt = buildSystemPrompt({});
+    expect(prompt).not.toContain('follow-up 질문으로 끌어주세요');
+    expect(prompt).not.toContain('한 문장으로 또렷이 말해달라고');
+    expect(prompt).toMatch(/할 수 있는 일」에 있으면 되묻지 말고/);
+  });
+
+  it('자기소개가 실제 스택과 맞고 슬래시 명령을 예로 들지 않는다', () => {
+    const prompt = buildSystemPrompt({ repoLabel: 'JSL107/personal_agents' });
+    expect(prompt).toContain('Node 22 + NestJS 11');
+    expect(prompt).not.toContain('Node 20');
+    // 금지 목록 안의 예시("`/review-pr` 같은 표현 사용 금지")는 남고, 자기소개의 사용 예시만 빠진다.
+    expect(prompt).not.toContain(
+      '`/review-pr` / `/impact-report` 등 임의 repo',
+    );
+  });
 });
 
 describe('ConversationalReply — buildPrompt (role-tagged turn lines)', () => {

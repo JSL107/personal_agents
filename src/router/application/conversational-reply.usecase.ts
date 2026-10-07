@@ -1,10 +1,18 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { ModelRouterUsecase } from '../../model-router/application/model-router.usecase';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { LEARNING_REPO } from '../../pr-review-loop/domain/learning-repo';
 import { ConversationTurn } from '../domain/conversation-memory.type';
+import {
+  AGENT_DISPATCHER_PORT,
+  AgentDispatcher,
+} from '../domain/port/agent-dispatcher.port';
+import {
+  WORKER_CAPABILITIES,
+  WorkerCapability,
+} from '../domain/worker-capability';
 
 // prompt 폭증 방지 — 최근 5 turn 정도면 충분한 컨텍스트. 너무 많으면 cost + latency 폭증.
 // 한 turn 은 role=user 또는 role=assistant 1개 — 즉 한 사용자 ↔ 봇 round trip 은 최대 2 turn 소비.
@@ -23,10 +31,26 @@ const PRIOR_TURN_TEXT_CAP = 200;
 export class ConversationalReplyUsecase {
   private readonly logger = new Logger(ConversationalReplyUsecase.name);
 
+  // 실제로 라우팅 가능한 워커의 기능만 답에 싣는다 — 등록되지 않은 워커를 "할 수 있다" 고 하면
+  // 사용자가 그대로 말해도 실행되지 않는다.
+  private readonly capabilities: readonly WorkerCapability[];
+
   constructor(
     private readonly modelRouter: ModelRouterUsecase,
     private readonly configService: ConfigService,
-  ) {}
+    // 미주입(단위 테스트)이면 전체 목록을 싣는다.
+    @Optional()
+    @Inject(AGENT_DISPATCHER_PORT)
+    dispatchers?: AgentDispatcher[],
+  ) {
+    const registered = dispatchers?.map((dispatcher) => dispatcher.agentType);
+    this.capabilities =
+      registered === undefined
+        ? WORKER_CAPABILITIES
+        : WORKER_CAPABILITIES.filter(({ agentType }) =>
+            registered.includes(agentType),
+          );
+  }
 
   async reply({
     text,
@@ -44,6 +68,7 @@ export class ConversationalReplyUsecase {
         .get<string>('IMPACT_REPORT_GITHUB_AUTHOR')
         ?.trim(),
       unresolvedStreak,
+      capabilities: this.capabilities,
     });
     const prompt = buildPrompt({ text, priorTurns });
     try {
@@ -67,10 +92,12 @@ export const buildSystemPrompt = ({
   repoLabel,
   ownerLogin,
   unresolvedStreak,
+  capabilities = WORKER_CAPABILITIES,
 }: {
   repoLabel?: string;
   ownerLogin?: string;
   unresolvedStreak?: number;
+  capabilities?: readonly WorkerCapability[];
 }): string => {
   const selfRepo = repoLabel && repoLabel.length > 0 ? repoLabel : undefined;
   const selfOwner =
@@ -83,17 +110,28 @@ export const buildSystemPrompt = ({
     `당신의 정체:`,
     `- 이름: 이대리 (Slack 봇)`,
     selfRepo
-      ? `- 동작 환경: ${selfRepo} 레포의 backend (Node 20 + NestJS 10 + Prisma + Slack Bolt).`
+      ? `- 동작 환경: ${selfRepo} 레포의 backend (Node 22 + NestJS 11 + Prisma + Slack Bolt).`
       : `- 동작 환경: 단일 GitHub 레포의 backend 봇 (구체적 레포명은 환경변수 기반).`,
     selfOwner
       ? `- 주 사용자 (owner): GitHub login \`${selfOwner}\` — 슬랙에서 직접 대화하는 1인 사용자.`
       : undefined,
+    // 2026-08-13·19 DM 에서 개인 봇이 "어느 고객사의 가상계좌", "타인의 비공개 금융정보" 를 말했다 —
+    // 자기가 누구의 비서인지 모르면 범용 챗봇처럼 답한다.
+    `- 이 봇은 한 사람의 개인 비서입니다. 고객사나 다른 사용자는 없고, 대화에 나오는 계좌(모의투자)·휴가·일정·지원 기록·PR 은 모두 이 사용자 본인 것입니다.`,
     `- self-reference 매핑: 사용자가 "이대리 봇", "이 레포", "여기", "자기 자신", "너" 같은 표현을 직접 쓰면 그 대상은 당신 자신 = ${selfRepo ?? '봇이 동작하는 레포'} 입니다. 이 경우만 "어느 repo 인가요?" 다시 묻지 말고 그대로 사용.`,
-    `- 다른 repo 가능성: 사용자가 GitHub URL 또는 "owner/name" 형식으로 다른 repo 를 명시하면 그 repo 를 사용하세요 — self 로 우회 X. 봇은 \`/review-pr\` / \`/impact-report\` 등 임의 repo 도 다룹니다.`,
+    `- 다른 repo 가능성: 사용자가 GitHub URL 또는 "owner/name" 형식으로 다른 repo 를 명시하면 그 repo 를 사용하세요 — self 로 우회 X. 봇은 임의 repo 의 PR 도 리뷰·영향 분석합니다.`,
     shouldChangeDirection
       ? `- repo 가 모호하더라도 추가 확인 질문을 하지 마세요. [이전 대화] 에 있는 정보만 활용하고, 정보가 부족하면 그 한계를 진술하세요.`
       : `- repo 가 모호한 경우 (self-reference 도 없고 명시 repo 도 없을 때) 짧게 한 번 확인 가능. 단 [이전 대화] 에 이미 사용자가 답한 정보가 있으면 그대로 활용, 같은 질문 반복 X.`,
   ].filter((line): line is string => line !== undefined);
+
+  // 담당을 못 고른 질문이 이 답변으로 온다. 이대리가 무엇을 하는지 모르면 "무엇을 원하시는지" 만
+  // 되묻게 된다(2026-08-10 "프롬프트 Rag" 3턴, 08-19 모의투자 6턴).
+  const capabilityLines = [
+    '',
+    `이대리가 할 수 있는 일 (사용자가 아래 예시처럼 말하면 실제로 실행됩니다):`,
+    ...capabilities.map(({ canDo }) => `- ${canDo}`),
+  ];
 
   const directionChangeLines = shouldChangeDirection
     ? [
@@ -103,7 +141,7 @@ export const buildSystemPrompt = ({
         `- 추가 질문 금지: 응답에 물음표를 쓰지 말고, 질문으로 끝나는 문장을 쓰지 마세요.`,
         `- 선택지를 제시하지 마세요. "먼저 A를 볼까요, B를 볼까요"처럼 사용자가 고르게 하는 표현도 쓰지 마세요.`,
         `- 이 요청은 현재 대화 응답만으로 실제로 실행할 수 없는 요청임을 솔직히 말하세요.`,
-        `- 대신 이대리가 실제로 가능한 일 1~2개를 자연어로 제안하고, 각각 무엇을 얻을 수 있는지 진술형 문장으로 설명하세요. 특정 기술 주제는 조사해 정리 글로 남기는 방향을 포함할 수 있습니다.`,
+        `- 대신 위 「이대리가 할 수 있는 일」 중 가장 가까운 1~2개를 자연어로 제안하고, 각각 무엇을 얻을 수 있는지 진술형 문장으로 설명하세요. 특정 기술 주제는 조사해 정리 글로 남기는 방향을 포함할 수 있습니다.`,
         `- 제안만 하고 실행을 확정하지 마세요. 명령어·슬래시를 안내하지 말고, "해드릴게요" 같은 실행 약속도 하지 마세요.`,
         `- worker, 분류기, LLM 같은 시스템 내부 용어를 응답에 노출하지 마세요.`,
       ]
@@ -111,16 +149,16 @@ export const buildSystemPrompt = ({
 
   const basicFollowUpLine = shouldChangeDirection
     ? undefined
-    : `- 사용자가 무언가 시도하려는 의도가 보이면 "어떤 부분부터 보면 좋을까요?", "어떤 부분이 의심되시나요?" 같이 자연스러운 follow-up 질문으로 끌어주세요.`;
+    : `- 사용자가 묻거나 원하는 일이 「이대리가 할 수 있는 일」에 있으면 되묻지 말고, 할 수 있다고 답한 뒤 그렇게 말하면 바로 처리된다는 자연어 예시를 보여주세요. 목록에 없는 일이면 지금은 못 한다고 솔직히 말하고 가장 가까운 일을 알려주세요.`;
   const memoryRecoveryLine = shouldChangeDirection
     ? `- 직전 [assistant] 응답에서 "확인해볼게요" / "정리해볼게요" 같은 진행 약속을 했더라도, 그 약속이 진행 중인 것처럼 "아직 확인 중", "지금 보고 있어요" 라고 말하지 마세요 — 이 대화 응답만으로는 아무 작업도 시작되지 않았음을 솔직히 말하세요.`
     : `- 직전 [assistant] 응답에서 "확인해볼게요" / "정리해볼게요" 같은 진행 약속을 했더라도, 그 약속이 진행 중인 것처럼 "아직 확인 중", "지금 보고 있어요" 라고 말하지 마세요 — 이 대화 응답만으로는 아무 작업도 시작되지 않으므로 거짓이 됩니다. 사용자가 진행을 재촉하면, 작업이 아직 시작되지 않았음을 전제로 무엇을 원하는지 한 문장으로 짚어달라고 자연스럽게 되물으세요.`;
   const workRequestLine = shouldChangeDirection
     ? undefined
-    : `- 사용자가 실제 작업을 원하는 듯하면, 당신이 하겠다고 약속하는 대신 무엇을·어느 대상에 대해 원하는지 한 문장으로 또렷이 말해달라고 자연스럽게 되물어 주세요 (그렇게 또렷해져야 실제 작업이 시작됩니다). 명령어/슬래시는 안내하지 마세요.`;
+    : `- 되묻기는 원하는 일은 분명한데 꼭 필요한 대상(PR 링크, 날짜 등)이 빠졌을 때만, 빠진 것 하나만 짧게 물으세요. [이전 대화]에 이미 있는 정보는 묻지 마세요. 명령어/슬래시는 안내하지 마세요.`;
   const answerLengthLine = shouldChangeDirection
     ? `- 2~4문장 안에서 실행 불가 이유와 가능한 일 1~2개를 충분히 설명하세요.`
-    : `- 1~3문장 안. 길어지면 핵심 한 문장 + 후속 질문 한 문장 정도.`;
+    : `- 1~3문장 안. 무엇을 할 수 있는지 묻는 질문에는 관련 있는 일을 3~5개까지 짧게 나열해도 됩니다.`;
 
   return [
     shouldChangeDirection
@@ -128,6 +166,7 @@ export const buildSystemPrompt = ({
       : `당신은 "이대리" 라는 슬랙 봇입니다. 사용자의 자연어 메시지에 친근하고 짧게 (1~3문장) 한국어로 답해주세요.`,
     '',
     ...selfContextLines,
+    ...capabilityLines,
     ...directionChangeLines,
     '',
     `기본 자세:`,
