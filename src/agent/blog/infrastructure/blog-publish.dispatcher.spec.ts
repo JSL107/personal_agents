@@ -40,4 +40,25 @@ describe('BlogPublishDispatcher', () => {
       content: '전문',
     });
   });
+
+  it.each(['노션 초안 정규식 글 발행된 거야?', '그 글 발행하면 어떻게 돼'])(
+    '질문형 "%s" 은 발행 절차를 시작하지 않고, 확인 수단이 없다고 솔직히 말한다',
+    async (text) => {
+      const publishNotionDraft = {
+        execute: jest.fn(),
+      } as unknown as jest.Mocked<PublishNotionDraftUsecase>;
+      const dispatcher = new BlogPublishDispatcher(publishNotionDraft);
+
+      const result = await dispatcher.dispatch({
+        source: 'SLACK_MESSAGE',
+        slackUserId: 'U1',
+        text,
+      });
+
+      expect(publishNotionDraft.execute).not.toHaveBeenCalled();
+      expect(result.output).toMatchObject({ heldWrite: { action: 'PUBLISH' } });
+      expect(result.formattedText).toContain('발행 절차를 시작하지 않았어요');
+      expect(result.formattedText).toContain('아직 없어요');
+    },
+  );
 });

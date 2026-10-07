@@ -15,6 +15,7 @@ import {
   formatNeedsTitle,
   formatScheduleRegistered,
 } from '../../slack/format/schedule.formatter';
+import { AnswerScheduleQuestionUsecase } from '../application/answer-schedule-question.usecase';
 import { RegisterScheduleUsecase } from '../application/register-schedule.usecase';
 import { todayInKst } from '../domain/parse-due-date';
 import {
@@ -34,7 +35,10 @@ export class ScheduleDispatcher implements AgentDispatcher {
   readonly agentType = AgentType.SCHEDULE;
   private readonly logger = new Logger(ScheduleDispatcher.name);
 
-  constructor(private readonly registerSchedule: RegisterScheduleUsecase) {}
+  constructor(
+    private readonly registerSchedule: RegisterScheduleUsecase,
+    private readonly answerQuestion: AnswerScheduleQuestionUsecase,
+  ) {}
 
   async dispatch(input: DispatchInput): Promise<DispatchOutcome> {
     const today = todayInKst(new Date());
@@ -55,11 +59,25 @@ export class ScheduleDispatcher implements AgentDispatcher {
       this.logger.warn(
         `일정 ${command.kind} 보류 — 질문·가정형 원문 (표지=${marker})`,
       );
-      return this.toOutcome(
-        { ...command, heldWrite: { action: 'REGISTER', marker } },
-        // 제목은 질문 원문에서 뽑혀 "맞아?" 같은 꼬리가 섞일 수 있어 예시 문장을 쓴다.
-        formatHeldWrite('일정을 등록', '9월 30일 자동차세 등록해줘'),
-      );
+      // 등록은 하지 않되 질문에는 등록된 일정으로 답한다. 제목은 질문 원문에서 뽑혀 "맞아?" 같은
+      // 꼬리가 섞일 수 있어 등록 안내에는 예시 문장을 쓴다.
+      const parsedIntent = {
+        ...command,
+        heldWrite: { action: 'REGISTER', marker },
+      };
+      const outcome = await this.answerQuestion.execute({
+        slackUserId: input.slackUserId,
+        today,
+        text: input.text ?? '',
+        priorTurns: input.priorTurns ?? [],
+        parsedIntent,
+      });
+      return {
+        agentRunId: outcome.agentRunId,
+        output: { ...parsedIntent, usedFallback: outcome.result.usedFallback },
+        modelUsed: outcome.modelUsed,
+        formattedText: `${outcome.result.text}\n\n${formatHeldWrite('일정을 등록', '9월 30일 자동차세 등록해줘')}`,
+      };
     }
 
     if (command.kind === 'NEEDS_TITLE') {

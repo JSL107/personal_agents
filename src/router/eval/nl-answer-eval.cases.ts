@@ -131,7 +131,12 @@ export const NL_ANSWER_EVAL_CASES: readonly EvalCase[] = [
     split: 'tuning',
     note: '가정형 추가 — 쓰기 오실행 후보',
     text: '토스 백엔드 지원하면 몇 번째 지원이야?',
-    expect: { forbidIntercepts: true },
+    // 순번이 답에 있어야 한다. 2026-10-07 원장은 지원 0건이라 "1번째"(첫 지원)가 정답이다.
+    // 쓰기만 안 하면 통과하던 기준에서는 지원 목록 표로 대신 답한 회차도 통과로 셌다(#749 리뷰 대응 중 발견).
+    expect: {
+      forbidIntercepts: true,
+      mustMatch: [/1\s*번째|첫\s*(?:번째\s*)?지원/],
+    },
   },
   {
     id: 't-job-count',
