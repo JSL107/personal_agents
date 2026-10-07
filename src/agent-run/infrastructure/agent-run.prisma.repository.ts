@@ -181,6 +181,16 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
     });
   }
 
+  async recordModelResponse(input: {
+    id: number;
+    modelResponse: string;
+  }): Promise<void> {
+    await this.prisma.agentRun.update({
+      where: { id: input.id },
+      data: { modelResponse: input.modelResponse },
+    });
+  }
+
   async finish({
     id,
     status,
