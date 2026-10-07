@@ -92,4 +92,59 @@ describe('VacationDispatcher', () => {
     );
     expect(outcome.formattedText).toContain('등록');
   });
+
+  it.each([
+    [
+      'REGISTER',
+      '{"action":"REGISTER","startDate":"2026-10-12","endDate":"2026-10-14"}',
+      '다음주 월요일부터 3일 쓰면 몇 일 남아',
+      '2026-10-12~2026-10-14 휴가 등록해줘',
+    ],
+    [
+      'CANCEL',
+      '{"action":"CANCEL","usageId":12}',
+      '12번 휴가 취소하면 며칠 돌아와?',
+      '휴가 12번 취소해줘',
+    ],
+    [
+      'REGISTER',
+      '{"action":"REGISTER","startDate":"2026-10-20","endDate":"2026-10-20","fraction":0.5}',
+      '10월 20일 반차 쓰면 며칠 남지',
+      '2026-10-20 반차 등록해줘',
+    ],
+  ])(
+    '파서가 %s 를 내도 원문이 질문·가정형이면 쓰지 않는다',
+    async (action, parsed, text, expectedCommand) => {
+      const route = jest.fn().mockResolvedValue({
+        text: parsed,
+        modelUsed: 'codex-cli',
+        provider: 'CHATGPT',
+      });
+      const registerExecute = jest.fn();
+      const cancelExecute = jest.fn();
+      const dispatcher = new VacationDispatcher(
+        { route } as unknown as ModelRouterUsecase,
+        {} as CalculateBalanceUsecase,
+        { execute: registerExecute } as unknown as RegisterLeaveUsecase,
+        {} as ListUsageUsecase,
+        { execute: cancelExecute } as unknown as CancelLeaveUsecase,
+      );
+
+      const outcome = await dispatcher.dispatch({
+        source: 'SLACK_MESSAGE',
+        slackUserId: 'U1',
+        text,
+      });
+
+      expect(registerExecute).not.toHaveBeenCalled();
+      expect(cancelExecute).not.toHaveBeenCalled();
+      expect(outcome.agentRunId).toBe(0);
+      expect(outcome.output).toMatchObject({
+        action: 'UNKNOWN',
+        heldWrite: { action },
+      });
+      expect(outcome.formattedText).toContain('질문으로 보여서');
+      expect(outcome.formattedText).toContain(expectedCommand);
+    },
+  );
 });
