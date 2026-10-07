@@ -11,19 +11,27 @@
 //
 // 슬래시 명령·콘솔 버튼은 명시 입력이라 이 가드를 타지 않는다 — 자연어 dispatcher 만 부른다.
 export const HYPOTHETICAL_MARKERS: readonly RegExp[] = [
-  /가정/,
+  // 동사로 쓰인 가정만 — "가정통신문" 같은 명사 속 글자는 잡지 않는다.
+  /가정(?:하|해|했|이라|으로)/,
   /만약/,
-  /라면(?=\s|[,.!?]|$)/,
+  // 낱말에 붙은 조건 어미만 — "기준이라면", "오퍼라면". 띄어 쓴 음식 "라면"은 잡지 않는다.
+  /\S라면(?=\s|[,.!?]|$)/,
+  /[었았했였]다면/,
   /기준이면/,
-  // "쓰면 몇 일", "쓰면 남은", "지원하면 이번달 몇 개" — 조건절 뒤 짧은 거리 안의 수량 질문.
-  /면\s*(?:남|[^.?!\n]{0,12}?(?:몇|며칠|얼마))/,
-  /(?:남아|맞아|맞지|되나|돼)\s*[?？]/,
-  /[?？]\s*$/,
+  // "쓰면 몇 일", "쓰면 남은", "취소하면 어떻게 돼", "지원하면 이번달 몇 개" — 조건절 뒤의 질문.
+  /면\s*(?:남|어떻게|[^.?!\n]{0,12}?(?:몇|며칠|얼마))/,
+  /(?:될까|되나|할까|어때)(?=\s|[.!~]|$)/,
+  // 물음표는 위치와 무관하게 질문 표지다 — 뒤에 이모지(":pray:")나 말이 붙어도 잡는다.
+  /[?？]/,
 ];
+
+// Slack 링크·멘션(<https://...?a=1>, <@U123>)은 판정에서 뺀다 — URL 의 쿼리 물음표를 질문으로 읽지 않게.
+const SLACK_ANGLE_TOKEN = /<[^<>]*>/g;
 
 // 원문이 질문·가정형이면 걸린 표지를, 아니면 null 을 돌려준다. 걸린 표지는 막은 사유로 남긴다.
 export const findHypotheticalMarker = (text: string): string | null => {
-  const found = HYPOTHETICAL_MARKERS.find((marker) => marker.test(text));
+  const plain = text.replace(SLACK_ANGLE_TOKEN, ' ');
+  const found = HYPOTHETICAL_MARKERS.find((marker) => marker.test(plain));
   return found ? found.source : null;
 };
 

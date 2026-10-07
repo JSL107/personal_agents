@@ -129,7 +129,9 @@ export class VacationDispatcher implements AgentDispatcher {
     const start = plainDateToIso(intent.startDate!);
     const end = plainDateToIso(intent.endDate!);
     const period = start === end ? start : `${start}~${end}`;
-    return formatHeldWrite('휴가를 기록', `${period} 휴가 등록해줘`);
+    // 반차를 빼면 안내대로 다시 말한 요청이 종일 휴가로 기록된다.
+    const kind = intent.fraction === 0.5 ? '반차' : '휴가';
+    return formatHeldWrite('휴가를 기록', `${period} ${kind} 등록해줘`);
   }
 
   private toOutcome(

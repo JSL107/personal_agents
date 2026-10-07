@@ -2,10 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
-import {
-  findHypotheticalMarker,
-  formatHeldWrite,
-} from '../../../router/domain/hypothetical-utterance';
+import { findHypotheticalMarker } from '../../../router/domain/hypothetical-utterance';
 import { DispatchInput } from '../../../router/domain/idaeri-router.port';
 import {
   AgentDispatcher,
@@ -22,6 +19,7 @@ import {
 import {
   formatAdded,
   formatApplicationList,
+  formatHeldJobApplicationWrite,
   formatUnknownJobApplication,
   formatUpdated,
 } from './job-application.formatter';
@@ -60,13 +58,7 @@ export class JobApplicationDispatcher implements AgentDispatcher {
         return this.toOutcome(
           0,
           { action: 'UNKNOWN', heldWrite: { action: intent.action, marker } },
-          // 파서는 직전 턴을 보지 않으므로 다시 말할 문장에 회사·직무를 넣어 준다.
-          intent.action === 'ADD'
-            ? formatHeldWrite(
-                '지원 기록을 추가',
-                `${intent.company} ${intent.role} 지원 기록해줘`,
-              )
-            : formatHeldWrite('지원 상태를 변경', `${intent.ref} 상태 바꿔줘`),
+          formatHeldJobApplicationWrite({ ...intent, action: intent.action }),
         );
       }
     }

@@ -164,4 +164,33 @@ describe('ScheduleDispatcher', () => {
     expect(usecase.execute).not.toHaveBeenCalled();
     expect(outcome.formattedText).toContain('질문으로 보여서');
   });
+
+  it('날짜 없는 질문이 되묻기로 빠진 뒤 날짜만 오면, 합친 직전 턴이 질문이라 등록하지 않는다', async () => {
+    const usecase = createUsecase();
+    const dispatcher = new ScheduleDispatcher(usecase);
+
+    const first = await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '자동차세 등록해도 돼?',
+    });
+    const second = await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '9월 30일',
+      priorTurns: [
+        {
+          role: 'user',
+          text: '자동차세 등록해도 돼?',
+          agentType: AgentType.SCHEDULE,
+          agentRunId: 0,
+          timestampMs: Date.now(),
+        },
+      ],
+    });
+
+    expect(usecase.execute).not.toHaveBeenCalled();
+    expect(first.formattedText).toContain('질문으로 보여서');
+    expect(second.formattedText).toContain('질문으로 보여서');
+  });
 });

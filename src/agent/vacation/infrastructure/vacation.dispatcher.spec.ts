@@ -106,6 +106,12 @@ describe('VacationDispatcher', () => {
       '12번 휴가 취소하면 며칠 돌아와?',
       '휴가 12번 취소해줘',
     ],
+    [
+      'REGISTER',
+      '{"action":"REGISTER","startDate":"2026-10-20","endDate":"2026-10-20","fraction":0.5}',
+      '10월 20일 반차 쓰면 며칠 남지',
+      '2026-10-20 반차 등록해줘',
+    ],
   ])(
     '파서가 %s 를 내도 원문이 질문·가정형이면 쓰지 않는다',
     async (action, parsed, text, expectedCommand) => {

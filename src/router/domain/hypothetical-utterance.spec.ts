@@ -18,6 +18,9 @@ const HYPOTHETICAL: Record<string, string[]> = {
     '12월 24일 연차 내면 몇 개 남지',
     '다음주 화요일 휴가 등록하면 되나?',
     '어제 등록한 휴가 취소하면 며칠 돌아와',
+    '내일 휴가 써도 될까 :pray:',
+    '반차 쓰면 될까? :pray:',
+    '12번 휴가 취소하면 어떻게 돼',
   ],
   jobApplication: [
     '토스 서버 개발자 지원하면 몇 번째 지원이야?',
@@ -30,6 +33,7 @@ const HYPOTHETICAL: Record<string, string[]> = {
     '토스 오퍼라면 다른 데 정리해야 하나?',
     '당근 지원하면 이번달 몇 개야',
     '기준이면 지원 몇 개 했어',
+    '카카오 면접 붙었다면 상태 바꿔야 해',
   ],
   schedule: [
     '9월 30일 자동차세 맞아?',
@@ -69,6 +73,7 @@ const DECLARATIVE: Record<string, string[]> = {
     '네이버 클라우드 지원 추가',
     '토스 오퍼 받았어',
     '지원 현황 보여줘',
+    '토스 백엔드 지원했어 <https://toss.im/career/job-detail?job_id=123>',
   ],
   schedule: [
     '9월 30일 자동차세',
@@ -81,6 +86,9 @@ const DECLARATIVE: Record<string, string[]> = {
     '모레 보험 갱신',
     '10월 31일 서류 마감',
     '오늘 택배 반품',
+    '내일 가정통신문 제출',
+    '금요일 라면 먹기',
+    '10월 3일 가정 방문 상담',
   ],
 };
 

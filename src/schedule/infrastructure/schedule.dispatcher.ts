@@ -24,6 +24,11 @@ import {
 } from '../domain/parse-schedule-command';
 import { PlainDate } from '../domain/schedule.type';
 
+interface MergedScheduleCommand {
+  command: ScheduleCommand;
+  mergedPriorText?: string;
+}
+
 @Injectable()
 export class ScheduleDispatcher implements AgentDispatcher {
   readonly agentType = AgentType.SCHEDULE;
@@ -33,11 +38,29 @@ export class ScheduleDispatcher implements AgentDispatcher {
 
   async dispatch(input: DispatchInput): Promise<DispatchOutcome> {
     const today = todayInKst(new Date());
-    const command = this.withPriorTurn(
+    const { command, mergedPriorText } = this.withPriorTurn(
       parseScheduleCommand(input.text ?? '', today),
       input,
       today,
     );
+
+    // 되묻기보다 먼저, 합치는 데 쓴 직전 턴까지 본다. "자동차세 등록해도 돼?" 가 날짜 되묻기로
+    // 빠진 뒤 다음 턴 "9월 30일" 과 합쳐지면, 이번 원문만 봐서는 질문이었다는 걸 모른다.
+    const marker =
+      findHypotheticalMarker(input.text ?? '') ??
+      (mergedPriorText === undefined
+        ? null
+        : findHypotheticalMarker(mergedPriorText));
+    if (marker !== null) {
+      this.logger.warn(
+        `일정 ${command.kind} 보류 — 질문·가정형 원문 (표지=${marker})`,
+      );
+      return this.toOutcome(
+        { ...command, heldWrite: { action: 'REGISTER', marker } },
+        // 제목은 질문 원문에서 뽑혀 "맞아?" 같은 꼬리가 섞일 수 있어 예시 문장을 쓴다.
+        formatHeldWrite('일정을 등록', '9월 30일 자동차세 등록해줘'),
+      );
+    }
 
     if (command.kind === 'NEEDS_TITLE') {
       return this.toOutcome(command, formatNeedsTitle());
@@ -45,20 +68,6 @@ export class ScheduleDispatcher implements AgentDispatcher {
     if (command.kind === 'NEEDS_DATE') {
       // 되묻기는 Router 의 multi-turn 메모리(5턴·TTL 30분)가 다음 발화를 이 워커로 이어 준다.
       return this.toOutcome(command, formatNeedsDate(command.title));
-    }
-
-    // 직전 턴과 합쳐진 뒤의 REGISTER 도 여기서 본다 — 앞 턴의 날짜와 이번 질문이 합쳐져
-    // 등록되는 경로가 있다. 판정 대상은 이번 원문뿐이다(앞 턴은 이미 등록 의도로 받았다).
-    const marker = findHypotheticalMarker(input.text ?? '');
-    if (marker !== null) {
-      this.logger.warn(
-        `일정 REGISTER 보류 — 질문·가정형 원문 (표지=${marker})`,
-      );
-      return this.toOutcome(
-        { ...command, heldWrite: { action: 'REGISTER', marker } },
-        // 제목은 질문 원문에서 뽑혀 "맞아?" 같은 꼬리가 섞일 수 있어 예시 문장을 쓴다.
-        formatHeldWrite('일정을 등록', '9월 30일 자동차세 등록해줘'),
-      );
     }
 
     const record = await this.registerSchedule.execute({
@@ -75,15 +84,16 @@ export class ScheduleDispatcher implements AgentDispatcher {
    * 않으면 제목과 날짜를 번갈아 되물으며 대화가 끝나지 않는다.
    *
    * 현재 발화는 아직 메모리에 없다 — `router-message.handler` 가 dispatch 뒤에 `appendTurn`
-   * 하므로, 마지막 SCHEDULE user 턴이 곧 직전 되묻기 턴이다.
+   * 하므로, 마지막 SCHEDULE user 턴이 곧 직전 되묻기 턴이다. 합치는 데 쓴 그 턴의 원문도 함께
+   * 돌려준다 — 쓰기 가드가 앞 턴이 질문이었는지 봐야 한다.
    */
   private withPriorTurn(
     command: ScheduleCommand,
     input: DispatchInput,
     today: PlainDate,
-  ): ScheduleCommand {
+  ): MergedScheduleCommand {
     if (command.kind === 'REGISTER') {
-      return command;
+      return { command };
     }
     const prior = [...(input.priorTurns ?? [])]
       .reverse()
@@ -94,12 +104,15 @@ export class ScheduleDispatcher implements AgentDispatcher {
           turn.text.trim().length > 0,
       );
     if (!prior) {
-      return command;
+      return { command };
     }
-    return mergeScheduleCommands(
-      parseScheduleCommand(prior.text, today),
-      command,
-    );
+    return {
+      command: mergeScheduleCommands(
+        parseScheduleCommand(prior.text, today),
+        command,
+      ),
+      mergedPriorText: prior.text,
+    };
   }
 
   private toOutcome(output: unknown, formattedText: string): DispatchOutcome {
