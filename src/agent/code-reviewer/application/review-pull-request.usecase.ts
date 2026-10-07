@@ -202,6 +202,7 @@ export class ReviewPullRequestUsecase {
           pullNumber: ref.number,
           headSha: reviewedDetail.headSha,
           diff: reviewedDiff.diff,
+          diffTotalBytes: reviewedDiff.bytes,
           findings: outcome.result.findings,
           max: this.inlineMax(),
           // 호출자가 연습 모드를 요구하면 게시도 연습으로 간다. 하드코딩된 false 는
@@ -468,8 +469,10 @@ export const buildReviewPrompt = ({
   const truncatedNote = detail.changedFilesTruncated
     ? ` (잘림: 전체 ${detail.changedFilesTotalCount}개 중 ${detail.changedFiles.length}개만 노출)`
     : '';
+  // 넘친 diff 는 테스트 파일을 뒤로 보낸 뒤 자른다(octokit-github.client.ts truncateDiff).
+  // 그 사실을 모르면 잘려 나간 테스트를 "테스트 누락" 으로 지적한다.
   const diffNote = diff.truncated
-    ? `\n\n(diff 가 ${diff.bytes} bytes 라 ${Buffer.byteLength(diff.diff, 'utf-8')} bytes 까지만 잘려서 전달됨 — 잘린 뒷부분은 모를 수 있음)`
+    ? `\n\n(diff 가 ${diff.bytes} bytes 라 ${Buffer.byteLength(diff.diff, 'utf-8')} bytes 까지만 잘려서 전달됨 — 잘린 뒷부분은 모를 수 있음. 동작 코드를 먼저 싣고 테스트 파일(.spec·test/ 등)을 뒤로 미뤘으므로, changed files 에 있는데 diff 에 안 보이는 테스트는 누락이 아니라 잘린 것이다)`
     : '';
   // diff 는 그대로 두고, 안 보이는 문자가 있다는 사실만 diff 앞에 알린다.
   const hiddenChars = findHiddenUnicode(diff.diff);

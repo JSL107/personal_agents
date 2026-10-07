@@ -241,6 +241,7 @@ describe('ReviewPullRequestUsecase', () => {
       pullNumber: 34,
       headSha: 'reviewed-head-sha',
       diff: 'reviewed diff string',
+      diffTotalBytes: 20,
       findings: validReview.findings,
       max: 7,
       dryRun: false,
@@ -803,6 +804,8 @@ describe('buildReviewPrompt', () => {
       diff: { diff: 'short', truncated: true, bytes: 10000 },
     });
     expect(text).toContain('잘려서 전달됨');
+    // 테스트를 뒤로 미뤄 잘랐다는 사실 — 모르면 잘린 테스트를 누락으로 지적한다.
+    expect(text).toContain('누락이 아니라 잘린 것');
   });
 });
 describe('ReviewPullRequestUsecase × 학습 규약', () => {
