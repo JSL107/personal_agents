@@ -27,6 +27,17 @@ interface DetectHermesCronIssuesInput {
   staleAfterMs?: number;
 }
 
+export interface HermesCronJobIssues {
+  identifier: string;
+  label: string;
+  issues: HermesCronIssue[];
+}
+
+export interface GroupedHermesCronIssues {
+  jobs: HermesCronJobIssues[];
+  schedulerIssues: HermesCronIssue[];
+}
+
 // Slack 본문에 그대로 실리므로 원문 에러를 잘라 담는다.
 const DETAIL_LIMIT = 400;
 
@@ -46,8 +57,12 @@ const readNonEmpty = (value: string | null | undefined): string | null => {
 };
 
 // 이름이 비어 있어도 어느 job 인지 알아볼 수 있게 id 로 떨어진다.
-const readJobLabel = (job: HermesCronJobSnapshot): string => {
+export const readJobLabel = (job: HermesCronJobSnapshot): string => {
   return readNonEmpty(job.name) ?? readNonEmpty(job.id) ?? '(이름 없는 job)';
+};
+
+const readJobIdentifier = (job: HermesCronJobSnapshot): string => {
+  return readNonEmpty(job.id) ?? readJobLabel(job);
 };
 
 // next_run_at 이 과거로 굳어 있으면 스케줄러가 멈춘 것이다. 파싱 불가한 값은
@@ -125,6 +140,37 @@ export const detectHermesCronIssues = ({
   }
 
   return issues;
+};
+
+// 스케줄러 이상은 공통 사건으로, 실행·전달 실패는 job 별 사건으로 나눈다.
+export const groupHermesCronIssues = ({
+  jobs,
+  nowMs,
+  staleAfterMs,
+}: DetectHermesCronIssuesInput): GroupedHermesCronIssues => {
+  const result: GroupedHermesCronIssues = { jobs: [], schedulerIssues: [] };
+
+  for (const job of jobs) {
+    if (job.enabled === false) {
+      continue;
+    }
+
+    const issues = detectHermesCronIssues({ jobs: [job], nowMs, staleAfterMs });
+    result.jobs.push({
+      identifier: readJobIdentifier(job),
+      label: readJobLabel(job),
+      issues: issues.filter(
+        (issue) => issue.kind !== HERMES_CRON_ISSUE.SCHEDULER_STALLED,
+      ),
+    });
+    result.schedulerIssues.push(
+      ...issues.filter(
+        (issue) => issue.kind === HERMES_CRON_ISSUE.SCHEDULER_STALLED,
+      ),
+    );
+  }
+
+  return result;
 };
 
 const ISSUE_LABEL: Record<HermesCronIssueKind, string> = {

@@ -6,6 +6,7 @@ import { getActiveAgentRunId } from '../../common/llm/active-agent-run.context';
 import { MODEL_ROUTER_WORST_CASE_MS } from '../../common/llm/llm-timeout.constant';
 import { redactPii } from '../../common/util/pii-redaction.util';
 import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
+import { CLAUDE_AUTH_INCIDENT_KEY } from '../../notification/domain/notification.type';
 import { AGENT_TO_PROVIDER } from '../domain/agent-provider.map';
 import { ModelRouterException } from '../domain/model-router.exception';
 import {
@@ -130,6 +131,9 @@ export class ModelRouterUsecase {
         fallbackError: null,
         durationMs: Date.now() - startedAtMs,
       });
+      if (completion.provider === ModelProviderName.CLAUDE) {
+        this.notificationPublisher?.publishRecovery(CLAUDE_AUTH_INCIDENT_KEY);
+      }
       return completion;
     } catch (primaryError: unknown) {
       const primaryMessage =
@@ -195,6 +199,9 @@ export class ModelRouterUsecase {
           fallbackError: null,
           durationMs: Date.now() - startedAtMs,
         });
+        if (completion.provider === ModelProviderName.CLAUDE) {
+          this.notificationPublisher?.publishRecovery(CLAUDE_AUTH_INCIDENT_KEY);
+        }
         return completion;
       } catch (fallbackError: unknown) {
         const fallbackMessage =
@@ -329,7 +336,7 @@ export class ModelRouterUsecase {
   }
 
   // primary 실패가 ClaudeAuthSuspectException 일 때만 BullMQ queue 로 publish — consumer 가
-  // 30분 dedupe + SlackService.postMessage 처리. publisher 가 fire-and-forget — 모델 호출 흐름과 분리.
+  // 사건 단위 중복 억제 + SlackService.postMessage 처리. publisher 가 fire-and-forget — 모델 호출 흐름과 분리.
   private maybeNotifyClaudeAuthSuspect(error: unknown): void {
     if (!(error instanceof ClaudeAuthSuspectException)) {
       return;

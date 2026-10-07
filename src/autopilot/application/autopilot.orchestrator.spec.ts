@@ -1,8 +1,10 @@
 import { getTodayKstDate } from '../../common/util/kst-date.util';
+import { autopilotTaskIncidentKey } from '../../notification/domain/notification.type';
 import { PREVIEW_KIND } from '../../preview-gate/domain/preview-action.type';
 import { AUTOPILOT_PLAYBOOK } from '../domain/autopilot.playbook';
 import { PlaybookEntry } from '../domain/playbook.type';
 import {
+  AutopilotAllTasksFailedError,
   AutopilotOrchestrator,
   NOTIFY_OWNER_TASK_IDS,
 } from './autopilot.orchestrator';
@@ -64,6 +66,41 @@ describe('AutopilotOrchestrator', () => {
       }),
     );
     expect(acquireOnce).toHaveBeenCalledTimes(1);
+  });
+
+  it('정상 반환만 task 사건의 복구를 발행하고 skip 은 제외한다', async () => {
+    const successfulTask = makeTask('daily-eval', {
+      skip: false,
+      summaryText: '성공',
+    });
+    const skippedTask = makeTask('work-reviewer', { skip: true });
+    const publishRecovery = jest.fn();
+    const orchestrator = new AutopilotOrchestrator(
+      [successfulTask, skippedTask] as never,
+      { postMessage: jest.fn().mockResolvedValue({ ts: undefined }) } as never,
+      {
+        acquireOnce: jest.fn().mockResolvedValue(true),
+        isDone: jest.fn().mockResolvedValue(false),
+      } as never,
+      { execute: jest.fn() } as never,
+      { attachSlackMessage: jest.fn() } as never,
+      { publishRecovery } as never,
+    );
+
+    await orchestrator.runGroup(
+      'mixed',
+      [
+        makeEntry('daily-eval', 'daily-eval'),
+        makeEntry('work-reviewer', 'work-reviewer'),
+      ],
+      'U1',
+      'C1',
+    );
+
+    expect(publishRecovery).toHaveBeenCalledTimes(1);
+    expect(publishRecovery).toHaveBeenCalledWith(
+      autopilotTaskIncidentKey('daily-eval'),
+    );
   });
 
   // 채널 카드는 알림이 없으면 읽히지 않고 흘러간다 — 멘션 대상 task 는 채널에 owner 멘션을
@@ -172,16 +209,14 @@ describe('AutopilotOrchestrator', () => {
     );
   });
 
-  // 전멸 실패는 별도 경로가 멘션을 유지하지만, 부분 실패는 성공 요약과 함께 메인 메시지로
-  // 나간다. 실패 item 에 notifyOwner 를 세우지 않으면 멘션 대상이 아닌 task 의 실패가 조용히
-  // 흘러간다 — cron 실패는 멘션 필요로 분류된 부류다.
-  it('부분 실패 회차는 멘션 대상이 아닌 task 여도 멘션을 붙인다', async () => {
+  it('부분 실패 회차는 성공 요약만 채널에 보내고 실패는 사건으로 발행한다', async () => {
     const ok = makeTask('daily-eval', { skip: false, summaryText: '성공' });
     const broken = {
       id: 'po-shadow',
       run: jest.fn().mockRejectedValue(new Error('모델 응답 파싱 실패')),
     };
     const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
+    const publishCronFailure = jest.fn();
     const orchestrator = new AutopilotOrchestrator(
       [ok, broken] as never,
       { postMessage } as never,
@@ -191,6 +226,7 @@ describe('AutopilotOrchestrator', () => {
       } as never,
       { execute: jest.fn() } as never,
       { attachSlackMessage: jest.fn() } as never,
+      { publishCronFailure, publishRecovery: jest.fn() } as never,
     );
 
     await orchestrator.runGroup(
@@ -204,8 +240,13 @@ describe('AutopilotOrchestrator', () => {
     );
 
     const [sent] = postMessage.mock.calls[0]!;
-    expect(sent.text).toMatch(/^<@U1>\n/);
-    expect(sent.text).toContain('po-shadow 자동 생성 실패');
+    expect(sent.text).toBe('성공');
+    expect(publishCronFailure).toHaveBeenCalledWith({
+      cronName: 'Autopilot task po-shadow',
+      incidentKey: autopilotTaskIncidentKey('po-shadow'),
+      ownerSlackUserId: 'U1',
+      errorMessage: '모델 응답 파싱 실패',
+    });
   });
 
   it('멘션 대상이 아닌 task 는 채널 발송에도 멘션을 붙이지 않는다', async () => {
@@ -758,14 +799,14 @@ describe('AutopilotOrchestrator', () => {
       orchestrator.runGroup('evening', [e1, e2], 'U1', 'C1'),
     ).resolves.toBeUndefined();
 
-    // 정상 task 는 발송되고, 실패 task 는 안내로 표기된다 (조용한 실패 방지).
+    // 정상 task 만 채널에 남는다.
     expect(postMessage).toHaveBeenCalledTimes(1);
     const sentText: string = postMessage.mock.calls[0][0].text;
     expect(sentText).toContain('A 정상');
-    expect(sentText).toContain('work-reviewer');
+    expect(sentText).not.toContain('work-reviewer');
   });
 
-  it('그룹 내 모든 task 실패 → 모든 target에 실패 안내 후 재시도를 위해 throw', async () => {
+  it('그룹 내 모든 task 실패 → 채널 발송 없이 전용 오류를 던지고 가드를 소비하지 않는다', async () => {
     const taskA = {
       id: 'daily-eval',
       run: jest.fn().mockRejectedValue(new Error('boom')),
@@ -788,25 +829,8 @@ describe('AutopilotOrchestrator', () => {
         ' C1, , C2 ',
         'repeat:evening:1',
       ),
-    ).rejects.toThrow('Autopilot: 실행한 모든 task 가 실패했습니다.');
-    expect(postMessage).toHaveBeenCalledTimes(2);
-    // **멘션 접두사까지 본다.** 본문만 `stringContaining` 으로 확인하면 채널 카드에서
-    // 멘션이 빠져도 통과한다 — 실패 안내는 메인 카드와 다른 발송 경로라, 메인 카드 쪽
-    // 단언으로는 이 경로의 회귀가 잡히지 않는다.
-    expect(postMessage).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        target: 'C1',
-        text: expect.stringMatching(/^<@U1>\n[\s\S]*daily-eval 자동 생성 실패/),
-      }),
-    );
-    expect(postMessage).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        target: 'C2',
-        text: expect.stringMatching(/^<@U1>\n[\s\S]*daily-eval 자동 생성 실패/),
-      }),
-    );
+    ).rejects.toBeInstanceOf(AutopilotAllTasksFailedError);
+    expect(postMessage).not.toHaveBeenCalled();
     expect(acquireOnce).not.toHaveBeenCalled();
   });
 
@@ -838,19 +862,11 @@ describe('AutopilotOrchestrator', () => {
       ),
     ).rejects.toThrow('Autopilot: 실행한 모든 task 가 실패했습니다.');
 
-    expect(postMessage).toHaveBeenCalledWith(
-      expect.objectContaining({
-        target: 'C1',
-        text: expect.stringMatching(/^<@U1>\n[\s\S]*daily-eval 자동 생성 실패/),
-      }),
-    );
+    expect(postMessage).not.toHaveBeenCalled();
     expect(acquireOnce).not.toHaveBeenCalled();
   });
 
-  // 메인 카드에 건 「DM 에는 멘션을 붙이지 않는다」 규칙은 실패 안내에도 그대로 걸린다.
-  // 채널 쪽만 단언해 두면 반대 실수 — 본인에게 가는 DM 에 멘션을 붙여 같은 알림이 두 번
-  // 울리는 것 — 를 못 잡는다.
-  it('전멸 실패 안내도 owner DM 타깃에는 멘션을 붙이지 않는다', async () => {
+  it('전멸 실패는 owner DM 타깃에도 직접 메시지를 보내지 않는다', async () => {
     const failedTask = {
       id: 'daily-eval',
       run: jest.fn().mockRejectedValue(new Error('boom')),
@@ -874,10 +890,7 @@ describe('AutopilotOrchestrator', () => {
       ),
     ).rejects.toThrow('Autopilot: 실행한 모든 task 가 실패했습니다.');
 
-    const [[sent]] = postMessage.mock.calls;
-    expect(sent.target).toBe('U1');
-    expect(sent.text).not.toContain('<@U1>');
-    expect(sent.text).toContain('daily-eval 자동 생성 실패');
+    expect(postMessage).not.toHaveBeenCalled();
   });
 
   it('preview 산출물 + task 실패 → preview를 전달하고 그룹은 성공한다', async () => {
@@ -938,7 +951,7 @@ describe('AutopilotOrchestrator', () => {
     expect(acquireOnce).toHaveBeenCalledTimes(1);
   });
 
-  it('전멸 실패 안내 발송도 실패하면 원래 전멸 오류로 throw하고 가드를 소비하지 않는다', async () => {
+  it('전멸 실패 시 Slack 발송을 시도하지 않고 가드를 소비하지 않는다', async () => {
     const taskA = {
       id: 'daily-eval',
       run: jest.fn().mockRejectedValue(new Error('boom')),
@@ -965,12 +978,7 @@ describe('AutopilotOrchestrator', () => {
       ),
     ).rejects.toThrow('Autopilot: 실행한 모든 task 가 실패했습니다.');
 
-    expect(postMessage).toHaveBeenCalledWith(
-      expect.objectContaining({
-        target: 'C1',
-        text: expect.stringContaining('daily-eval 자동 생성 실패'),
-      }),
-    );
+    expect(postMessage).not.toHaveBeenCalled();
     expect(acquireOnce).not.toHaveBeenCalled();
   });
 
@@ -2694,9 +2702,7 @@ describe('AutopilotOrchestrator', () => {
       expect(slackNotifier.recordSuppressedDelivery).toHaveBeenCalledWith(
         expect.objectContaining({ itemKinds: ['run-sweeper'] }),
       );
-      expect(slackNotifier.postMessage).toHaveBeenCalledWith(
-        expect.objectContaining({ itemKinds: ['daily-eval'] }),
-      );
+      expect(slackNotifier.postMessage).not.toHaveBeenCalled();
     });
 
     // 되돌린 항목도 원래 발송 필드를 지녀야 한다 — detailIsOnlyCopy 를 잃으면 메인 ts 가 비는 회차에

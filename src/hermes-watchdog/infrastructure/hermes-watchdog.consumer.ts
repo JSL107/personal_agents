@@ -4,8 +4,13 @@ import { Job } from 'bullmq';
 
 import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
 import {
-  detectHermesCronIssues,
+  HERMES_SCHEDULER_INCIDENT_KEY,
+  HERMES_SNAPSHOT_INCIDENT_KEY,
+  hermesJobIncidentKey,
+} from '../../notification/domain/notification.type';
+import {
   formatHermesCronIssues,
+  groupHermesCronIssues,
 } from '../domain/hermes-cron-health';
 import {
   HERMES_WATCHDOG_QUEUE,
@@ -14,13 +19,8 @@ import {
 } from '../domain/hermes-watchdog.type';
 import { HermesJobsReader } from './hermes-jobs.reader';
 
-// NotificationConsumer 의 cronName 별 30분 dedupe key. 하루 1회 점검이라 항상 통과하지만,
-// 수동 재실행이 겹쳐도 같은 내용이 두 번 가지 않는다.
-//
-// 알람 제목은 NotificationConsumer 가 "⚠️ 이대리 cron 실패 — {cronName}" 로 고정 조립한다.
-// 실제로 실패한 것은 이대리가 아니라 Hermes 이므로 이름과 본문 머리말로 그 구분을 드러낸다
-// (알람 종류를 새로 파는 대신 — 배관은 그대로 쓴다).
-const WATCHDOG_CRON_NAME = 'Hermes 외부 cron';
+const SNAPSHOT_CRON_NAME = 'Hermes cron 상태 파일';
+const SCHEDULER_CRON_NAME = 'Hermes scheduler';
 const WATCHDOG_MESSAGE_HEAD =
   'Hermes(별도 프로세스)의 cron 점검 결과입니다. 이대리 자신의 cron 실패가 아닙니다.';
 
@@ -48,25 +48,49 @@ export class HermesWatchdogConsumer extends WorkerHost {
     if (snapshot === null) {
       return;
     }
+    this.notificationPublisher.publishRecovery(HERMES_SNAPSHOT_INCIDENT_KEY);
 
-    const issues = detectHermesCronIssues({
+    const grouped = groupHermesCronIssues({
       jobs: snapshot.jobs,
       nowMs: Date.now(),
     });
+    const issueCount =
+      grouped.schedulerIssues.length +
+      grouped.jobs.reduce((count, entry) => count + entry.issues.length, 0);
 
-    if (issues.length === 0) {
+    if (issueCount === 0) {
       this.logger.log(
         `Hermes cron 이상 없음 (job ${snapshot.jobs.length}건 점검).`,
       );
-      return;
+    } else {
+      this.logger.warn(`Hermes cron 이상 ${issueCount}건 — owner 알림 발송.`);
     }
 
-    this.logger.warn(`Hermes cron 이상 ${issues.length}건 — owner 알림 발송.`);
-    this.notificationPublisher.publishCronFailure({
-      cronName: WATCHDOG_CRON_NAME,
-      ownerSlackUserId,
-      errorMessage: `${WATCHDOG_MESSAGE_HEAD}\n${formatHermesCronIssues(issues)}`,
-    });
+    for (const entry of grouped.jobs) {
+      // 현재 owner 는 한 명이며 사건 key 에 owner 를 넣지 않는다.
+      const incidentKey = hermesJobIncidentKey(entry.identifier);
+      if (entry.issues.length === 0) {
+        this.notificationPublisher.publishRecovery(incidentKey);
+      } else {
+        this.notificationPublisher.publishCronFailure({
+          cronName: `Hermes ${entry.label}`,
+          incidentKey,
+          ownerSlackUserId,
+          errorMessage: `${WATCHDOG_MESSAGE_HEAD}\n${formatHermesCronIssues(entry.issues)}`,
+        });
+      }
+    }
+
+    if (grouped.schedulerIssues.length === 0) {
+      this.notificationPublisher.publishRecovery(HERMES_SCHEDULER_INCIDENT_KEY);
+    } else {
+      this.notificationPublisher.publishCronFailure({
+        cronName: SCHEDULER_CRON_NAME,
+        incidentKey: HERMES_SCHEDULER_INCIDENT_KEY,
+        ownerSlackUserId,
+        errorMessage: `${WATCHDOG_MESSAGE_HEAD}\n${formatHermesCronIssues(grouped.schedulerIssues)}`,
+      });
+    }
   }
 
   // 스냅샷을 못 읽는 것 자체가 알려야 할 상태다(Hermes 미설치·경로 변경·파일 손상).
@@ -80,7 +104,8 @@ export class HermesWatchdogConsumer extends WorkerHost {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error(`Hermes cron 스냅샷 읽기 실패: ${message}`);
       this.notificationPublisher.publishCronFailure({
-        cronName: WATCHDOG_CRON_NAME,
+        cronName: SNAPSHOT_CRON_NAME,
+        incidentKey: HERMES_SNAPSHOT_INCIDENT_KEY,
         ownerSlackUserId,
         errorMessage: `${WATCHDOG_MESSAGE_HEAD}\nHermes cron 상태 파일을 읽지 못했습니다 — ${message}`,
       });

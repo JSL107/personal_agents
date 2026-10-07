@@ -22,6 +22,7 @@ import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.c
 import { getTodayKstDate } from '../../common/util/kst-date.util';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
+import { cronIncidentKey } from '../../notification/domain/notification.type';
 import {
   NOTION_FILE_UPLOAD_PORT,
   NotionFileUploadPort,
@@ -86,6 +87,7 @@ import {
 import { formatStudyBrief } from './study-brief.formatter';
 
 const SENT_GUARD_TTL_SECONDS = 90_000;
+const INCIDENT_KEY = cronIncidentKey('Study Brief Cron');
 // Hermes(12분) + CTO route 최악 경로(10분)와 context/Slack 여유를 함께 덮는다.
 const PROCESSING_GUARD_TTL_SECONDS = 30 * 60;
 const KIND_BALANCE_LIMIT = 5;
@@ -149,6 +151,14 @@ export class StudyBriefCronConsumer extends WorkerHost {
   }
 
   async process(
+    job: Job<StudyBriefCronJobData>,
+    token?: string,
+  ): Promise<void> {
+    await this.runProcess(job, token);
+    this.notificationPublisher?.publishRecovery(INCIDENT_KEY);
+  }
+
+  private async runProcess(
     job: Job<StudyBriefCronJobData>,
     token?: string,
   ): Promise<void> {
@@ -624,6 +634,7 @@ export class StudyBriefCronConsumer extends WorkerHost {
     }
     this.notificationPublisher.publishCronFailure({
       cronName: 'Study Brief Cron',
+      incidentKey: INCIDENT_KEY,
       ownerSlackUserId,
       errorMessage: formatError(error),
     });

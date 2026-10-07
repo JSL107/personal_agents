@@ -6,7 +6,11 @@ import { AUTOPILOT_WORKER_OPTIONS } from '../../common/queue/worker-options.cons
 import { SystemWakeGuard } from '../../common/system/system-wake-guard.service';
 import { ModelRouterUsecase } from '../../model-router/application/model-router.usecase';
 import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
-import { AutopilotOrchestrator } from '../application/autopilot.orchestrator';
+import { cronIncidentKey } from '../../notification/domain/notification.type';
+import {
+  AutopilotAllTasksFailedError,
+  AutopilotOrchestrator,
+} from '../application/autopilot.orchestrator';
 import { AUTOPILOT_PLAYBOOK } from '../domain/autopilot.playbook';
 import { MUTUALLY_EXCLUSIVE_AUTOPILOT_GROUPS } from '../domain/autopilot.playbook-defaults';
 import {
@@ -15,7 +19,7 @@ import {
 } from '../domain/autopilot.type';
 
 // 단일 consumer — job.name(=groupKey)으로 그룹 entries 를 찾아 orchestrator.runGroup 에 위임.
-// 실패 시 owner DM 통지(fire-and-forget) 후 rethrow → BullMQ 재시도.
+// 그룹 실패는 owner DM 사건으로 발행하고 rethrow → BullMQ 재시도.
 @Processor(AUTOPILOT_CRON_QUEUE, AUTOPILOT_WORKER_OPTIONS)
 export class AutopilotConsumer extends WorkerHost {
   private readonly logger = new Logger(AutopilotConsumer.name);
@@ -71,12 +75,17 @@ export class AutopilotConsumer extends WorkerHost {
       } else {
         await runGroup();
       }
+      this.notificationPublisher?.publishRecovery(
+        cronIncidentKey(`Autopilot:${groupKey}`),
+      );
     } catch (error) {
       this.logger.error(
         `Autopilot[${groupKey}] 실패 (owner=${ownerSlackUserId})`,
         error,
       );
-      this.notifyOwnerFailure(ownerSlackUserId, groupKey, error);
+      if (!(error instanceof AutopilotAllTasksFailedError)) {
+        this.notifyOwnerFailure(ownerSlackUserId, groupKey, error);
+      }
       throw error;
     }
   }
