@@ -11,12 +11,14 @@ import {
 } from '../../fact-answer/application/fact-answer.usecase';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { ConversationTurn } from '../../router/domain/conversation-memory.type';
-import { ScheduleItemRecord } from '../domain/schedule.type';
+import { plainDateToUtcDate } from '../domain/parse-due-date';
+import { PlainDate, ScheduleItemRecord } from '../domain/schedule.type';
 import { ListSchedulesUsecase } from './list-schedules.usecase';
 
 interface AnswerScheduleQuestionCommand {
   slackUserId: string;
-  now: Date;
+  // 사용자 기준일(KST). dispatcher 가 쓰는 todayInKst 값을 그대로 받는다.
+  today: PlainDate;
   text: string;
   priorTurns: readonly ConversationTurn[];
   parsedIntent: Record<string, unknown>;
@@ -27,6 +29,7 @@ const LOOKBACK_DAYS = 14;
 const LOOKAHEAD_DAYS = 60;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+// 일정 마감일은 UTC 자정 Date 로 저장된다(plainDateToUtcDate). 날짜 산술도 같은 기준으로 한다.
 const toIsoDate = (date: Date): string => date.toISOString().slice(0, 10);
 
 // 일정 워커가 등록하지 않은 질문("9월 30일 자동차세 맞아?", "이번주 일정 뭐 있어?")에 등록된 일정으로 답한다.
@@ -42,7 +45,7 @@ export class AnswerScheduleQuestionUsecase {
 
   async execute({
     slackUserId,
-    now,
+    today,
     text,
     priorTurns,
     parsedIntent,
@@ -53,19 +56,20 @@ export class AnswerScheduleQuestionUsecase {
       inputSnapshot: { slackUserId, action: 'UNKNOWN', parsedIntent },
       evidence: [],
       run: async () => {
+        const todayUtc = plainDateToUtcDate(today);
+        // 경계일 포함(저장소는 gte·lte) — 시각 없는 UTC 자정끼리 비교해 경계일 일정이 빠지지 않는다.
+        const from = new Date(todayUtc.getTime() - LOOKBACK_DAYS * DAY_MS);
+        const to = new Date(todayUtc.getTime() + LOOKAHEAD_DAYS * DAY_MS);
         const records = await this.listSchedules.execute({
           slackUserId,
-          from: new Date(now.getTime() - LOOKBACK_DAYS * DAY_MS),
-          to: new Date(now.getTime() + LOOKAHEAD_DAYS * DAY_MS),
+          from,
+          to,
         });
         // 공휴일 동기화가 넣은 행은 사용자가 등록한 일정이 아니다.
         const schedules = records.filter((record) => !record.isHoliday);
         const facts = {
-          today: toIsoDate(now),
-          range: {
-            from: toIsoDate(new Date(now.getTime() - LOOKBACK_DAYS * DAY_MS)),
-            to: toIsoDate(new Date(now.getTime() + LOOKAHEAD_DAYS * DAY_MS)),
-          },
+          today: toIsoDate(todayUtc),
+          range: { from: toIsoDate(from), to: toIsoDate(to) },
           schedules: schedules.map((record) => ({
             title: record.title,
             due: toIsoDate(record.dueDate),

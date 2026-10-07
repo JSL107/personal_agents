@@ -81,4 +81,73 @@ describe('checkAnswerNumbers', () => {
       }).ok,
     ).toBe(true);
   });
+
+  it('기록 번호(id)는 수량 근거가 아니다 — id 로만 나오는 값을 수량으로 쓰면 잡는다', () => {
+    // 13 은 기록 번호로만 있다. 수량(잔여 4·사용 1)과 그 합·차로는 나오지 않는다.
+    expect(
+      checkAnswerNumbers({
+        reply: '잔여는 13일이에요.',
+        facts: { remaining: 4, usages: [{ id: 13, days: 1 }] },
+        question: '휴가 몇 개 남았어?',
+      }).unexpected,
+    ).toEqual(['13']);
+  });
+
+  it('번호로 쓴 값("5번", "#4")은 기록 번호와 대조해 통과시킨다', () => {
+    expect(
+      checkAnswerNumbers({
+        reply: '5번 기록(9월 21일)과 #4 기록이 있어요.',
+        facts: vacationFacts,
+        question: '휴가 내역 알려줘',
+      }).ok,
+    ).toBe(true);
+    expect(
+      checkAnswerNumbers({
+        reply: '9번 기록을 취소하면 돼요.',
+        facts: vacationFacts,
+        question: '어떤 걸 취소해야 해?',
+      }).unexpected,
+    ).toEqual(['번호 9']);
+  });
+
+  it('"3번째" 는 번호가 아니라 수량으로 본다 — 기록 번호가 아니라 수치와 대조한다', () => {
+    expect(
+      checkAnswerNumbers({
+        reply: '지금까지 3번째 지원이에요.',
+        facts: { total: 3, applications: [{ id: 7 }] },
+        question: '토스가 몇 번째 지원이야?',
+      }).ok,
+    ).toBe(true);
+  });
+
+  it('연도까지 적은 날짜는 연도까지 대조한다 — 다른 해의 같은 날짜는 잡는다', () => {
+    expect(
+      checkAnswerNumbers({
+        reply: '2026-09-21 에 하루 썼어요.',
+        facts: vacationFacts,
+        question: '언제 썼지?',
+      }).ok,
+    ).toBe(true);
+    expect(
+      checkAnswerNumbers({
+        reply: '2025년 9월 21일에 하루 썼어요.',
+        facts: vacationFacts,
+        question: '언제 썼지?',
+      }).unexpected,
+    ).toEqual(['날짜 2025-9-21']);
+  });
+
+  it('facts 에 코드가 계산해 넣은 값(지금 지원하면 몇 번째)은 그대로 통과한다', () => {
+    expect(
+      checkAnswerNumbers({
+        reply: '지금 지원하면 3번째 지원이고, 이번 달로는 2번째예요.',
+        facts: {
+          total: 2,
+          appliedThisMonth: 1,
+          ifAppliedNow: { ordinal: 3, ordinalThisMonth: 2 },
+        },
+        question: '토스 백엔드 지원하면 몇 번째 지원이야?',
+      }).ok,
+    ).toBe(true);
+  });
 });

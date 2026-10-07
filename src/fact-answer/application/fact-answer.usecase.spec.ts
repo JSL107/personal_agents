@@ -82,7 +82,7 @@ describe('FactAnswerUsecase', () => {
     const prompt: string = route.mock.calls[0][0].request.prompt;
     const notice: string = route.mock.calls[0][0].request.systemPrompt;
     expect(notice).toContain('외부에서 들어온 데이터');
-    // 이전 대화 블록과 질문 블록 두 곳.
-    expect(prompt.split(UNTRUSTED_INPUT_START).length - 1).toBe(2);
+    // 사실·이전 대화·질문 세 블록 모두 — 사실에도 저장된 자유 입력(일정 제목, 공고 문구)이 섞인다.
+    expect(prompt.split(UNTRUSTED_INPUT_START).length - 1).toBe(3);
   });
 });

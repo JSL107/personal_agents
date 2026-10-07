@@ -56,7 +56,17 @@ describe('AnswerJobQuestionUsecase', () => {
     expect(facts).toMatchObject({
       total: 2,
       appliedThisMonth: 1,
-      countsByStatus: { APPLIED: 1, INTERVIEW: 1 },
+      // 가정형 "지금 지원하면 몇 번째" 의 답을 코드가 계산해 넣는다.
+      ifAppliedNow: { ordinal: 3, ordinalThisMonth: 2 },
+      // 0건 상태도 키가 있어야 "오퍼 0개" 같은 맞는 답이 숫자 검사를 통과한다.
+      countsByStatus: {
+        APPLIED: 1,
+        INTERVIEW: 1,
+        OFFER: 0,
+        SCREENING: 0,
+        REJECTED: 0,
+        WITHDRAWN: 0,
+      },
     });
     expect(outcome.result.text).toBe('이번 달에는 1곳에 지원했어요.');
   });

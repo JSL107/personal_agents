@@ -40,7 +40,8 @@ describe('AnswerScheduleQuestionUsecase', () => {
 
     await usecase.execute({
       slackUserId: 'U1',
-      now: new Date('2026-10-07T03:00:00.000Z'),
+      // KST 기준일. UTC 로는 전날(10-06 18:00Z)이어도 사실의 오늘은 10-07 이어야 한다.
+      today: { year: 2026, month: 10, day: 7 },
       text: '이번 달 일정 뭐 있어?',
       priorTurns: [],
       parsedIntent: { kind: 'NEEDS_TITLE' },
@@ -51,8 +52,10 @@ describe('AnswerScheduleQuestionUsecase', () => {
       inputSnapshot: { action: 'UNKNOWN' },
     });
     const { from, to } = listExecute.mock.calls[0][0];
-    expect(from.toISOString().slice(0, 10)).toBe('2026-09-23');
-    expect(to.toISOString().slice(0, 10)).toBe('2026-12-06');
+    // 시각 없는 UTC 자정 — 경계일 일정이 gte·lte 비교에서 빠지지 않는다.
+    expect(from.toISOString()).toBe('2026-09-23T00:00:00.000Z');
+    expect(to.toISOString()).toBe('2026-12-06T00:00:00.000Z');
+    expect(answer.mock.calls[0][0].facts.today).toBe('2026-10-07');
     expect(answer.mock.calls[0][0].facts.schedules).toEqual([
       {
         title: '자동차세',

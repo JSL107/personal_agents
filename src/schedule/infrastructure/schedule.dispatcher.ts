@@ -67,7 +67,7 @@ export class ScheduleDispatcher implements AgentDispatcher {
       };
       const outcome = await this.answerQuestion.execute({
         slackUserId: input.slackUserId,
-        now: new Date(),
+        today,
         text: input.text ?? '',
         priorTurns: input.priorTurns ?? [],
         parsedIntent,
