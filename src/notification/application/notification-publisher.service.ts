@@ -5,6 +5,7 @@ import { Queue } from 'bullmq';
 import {
   ClaudeAuthSuspectJobData,
   CronFailureJobData,
+  IncidentRecoveredJobData,
   NOTIFICATION_JOB,
   NOTIFICATION_QUEUE,
   NotificationJobData,
@@ -78,5 +79,22 @@ export class NotificationPublisher {
           `사건 해결 신호 enqueue 실패 (key=${incidentKey}): ${error instanceof Error ? error.message : String(error)}`,
         );
       });
+  }
+
+  // 조용한 시간(30분)이 덜 지난 해결 신호를 남은 시간 뒤로 다시 넣는다. NotificationConsumer 가 쓴다 —
+  // 큐 토큰은 이 모듈 밖으로 내보내지 않으므로 consumer 가 큐를 직접 주입받으면 부팅이 실패한다.
+  // 지연 확인에는 중복 제거를 걸지 않는다. 걸면 대기 중인 지연 job 이 키를 쥐고 있는 동안 더 최신
+  // 성공 신호가 버려진다. 실패는 호출자가 BullMQ 재시도를 받도록 그대로 던진다.
+  async publishDelayedRecovery(
+    data: IncidentRecoveredJobData,
+    delayMs: number,
+  ): Promise<void> {
+    await this.queue.add(NOTIFICATION_JOB.INCIDENT_RECOVERED, data, {
+      delay: delayMs,
+      attempts: 2,
+      backoff: { type: 'exponential', delay: 30_000 },
+      removeOnComplete: true,
+      removeOnFail: 50,
+    });
   }
 }

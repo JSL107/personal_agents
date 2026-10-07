@@ -1,13 +1,14 @@
-import { InjectQueue, Processor, WorkerHost } from '@nestjs/bullmq';
+import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AlertIncident } from '@prisma/client';
-import { Job, Queue } from 'bullmq';
+import { Job } from 'bullmq';
 
 import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DeliveryKind } from '../../slack/domain/slack-delivery.type';
 import { SlackService } from '../../slack/slack.service';
+import { NotificationPublisher } from '../application/notification-publisher.service';
 import {
   decideOnFailure,
   formatIncidentDuration,
@@ -86,8 +87,7 @@ export class NotificationConsumer
     private readonly slackService: SlackService,
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
-    @InjectQueue(NOTIFICATION_QUEUE)
-    private readonly queue: Queue<NotificationJobData>,
+    private readonly notificationPublisher: NotificationPublisher,
   ) {
     super();
   }
@@ -296,18 +296,13 @@ export class NotificationConsumer
     const now = new Date();
     const elapsed = now.getTime() - incident.lastSeenAt.getTime();
     if (elapsed < INCIDENT_QUIET_MS) {
-      // 지연 확인에는 중복 제거를 걸지 않는다. 걸면 대기 중인 지연 job 이 키를 쥐고 있는 동안
-      // 더 최신 성공 신호가 버려지고, 그 사이 재실패가 나면 옛 job 은 낡은 신호로 폐기돼 사건이
-      // 다음 성공까지 열린 채 남는다. 성공마다 자기 지연 확인을 갖고, 먼저 조건을 채운 것이 닫는다
-      // (나머지는 이미 닫힌 사건을 보고 끝난다).
+      // 성공마다 자기 지연 확인을 갖고, 먼저 조건을 채운 것이 닫는다(나머지는 이미 닫힌 사건을 보고
+      // 끝난다). 중복 제거를 걸지 않는 이유는 publishDelayedRecovery 주석 참조.
       try {
-        await this.queue.add(NOTIFICATION_JOB.INCIDENT_RECOVERED, job.data, {
-          delay: INCIDENT_QUIET_MS - elapsed,
-          attempts: 2,
-          backoff: { type: 'exponential', delay: 30_000 },
-          removeOnComplete: true,
-          removeOnFail: 50,
-        });
+        await this.notificationPublisher.publishDelayedRecovery(
+          job.data,
+          INCIDENT_QUIET_MS - elapsed,
+        );
       } catch (error: unknown) {
         this.logger.warn(
           `사건 해결 지연 등록 실패 (key=${key}): ${String(error)}`,
