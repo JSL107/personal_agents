@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { AgentType } from '../../../model-router/domain/model-router.type';
+import { findHypotheticalMarker } from '../../../router/domain/hypothetical-utterance';
 import { DispatchInput } from '../../../router/domain/idaeri-router.port';
 import {
   AgentDispatcher,
@@ -16,6 +17,19 @@ export class BlogPublishDispatcher implements AgentDispatcher {
   constructor(private readonly publishNotionDraft: PublishNotionDraftUsecase) {}
 
   async dispatch(input: DispatchInput): Promise<DispatchOutcome> {
+    // "그 글 발행된 거야?" 같은 질문은 발행 요청이 아니다. 승인 카드가 앞에 있어 실제 발행은 없지만,
+    // 질문마다 초안 익명화(LLM)와 승인 카드가 만들어지면 묻지도 않은 작업이 생긴다. 발행 여부를
+    // 조회할 수단은 아직 없으므로 지어내지 않고 그 사실을 말한다.
+    const marker = findHypotheticalMarker(input.text ?? '');
+    if (marker !== null) {
+      return {
+        agentRunId: 0,
+        output: { action: 'UNKNOWN', heldWrite: { action: 'PUBLISH', marker } },
+        modelUsed: 'deterministic',
+        formattedText:
+          '발행 요청으로 보이지 않아 발행 절차를 시작하지 않았어요. 발행 여부를 대화로 확인하는 기능은 아직 없어요. 발행하려면 "노션 초안 <제목> 발행해줘" 처럼 말해 주세요.',
+      };
+    }
     const outcome = await this.publishNotionDraft.execute({
       slackUserId: input.slackUserId,
       titleQuery: extractTitleQuery(input.text ?? ''),

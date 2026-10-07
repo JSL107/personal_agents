@@ -1,11 +1,13 @@
 import { Module } from '@nestjs/common';
 
 import { AgentRunModule } from '../../agent-run/agent-run.module';
+import { FactAnswerModule } from '../../fact-answer/fact-answer.module';
 import { GithubModule } from '../../github/github.module';
 import { HumanizeModule } from '../../humanize/humanize.module';
 import { ModelRouterModule } from '../../model-router/model-router.module';
 import { NotionModule } from '../../notion/notion.module';
 import { AnalyzeJdGapUsecase } from './application/analyze-jd-gap.usecase';
+import { AnswerCareerQuestionUsecase } from './application/answer-career-question.usecase';
 import { AuditResumeUsecase } from './application/audit-resume.usecase';
 import { BuildCareerProfileUsecase } from './application/build-career-profile.usecase';
 import { CalibrateResumeUsecase } from './application/calibrate-resume.usecase';
@@ -25,6 +27,7 @@ import { PortfolioSiteApiClient } from './infrastructure/portfolio-site-api.clie
 @Module({
   imports: [
     AgentRunModule,
+    FactAnswerModule,
     ModelRouterModule,
     GithubModule,
     NotionModule,
@@ -51,6 +54,7 @@ import { PortfolioSiteApiClient } from './infrastructure/portfolio-site-api.clie
     CalibrateResumeUsecase,
     ReflectPrUsecase,
     PublishPortfolioSiteUsecase,
+    AnswerCareerQuestionUsecase,
     CareerMateDispatcher,
   ],
   exports: [

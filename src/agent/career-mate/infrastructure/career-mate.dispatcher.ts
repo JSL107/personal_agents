@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { buildParsePromptWithContext } from '../../../fact-answer/domain/parse-context';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { DispatchInput } from '../../../router/domain/idaeri-router.port';
@@ -8,7 +9,9 @@ import {
   AgentDispatcher,
   DispatchOutcome,
 } from '../../../router/domain/port/agent-dispatcher.port';
+import { plainDateToIso, todayInKst } from '../../vacation/domain/plain-date';
 import { AnalyzeJdGapUsecase } from '../application/analyze-jd-gap.usecase';
+import { AnswerCareerQuestionUsecase } from '../application/answer-career-question.usecase';
 import { AuditResumeUsecase } from '../application/audit-resume.usecase';
 import { BuildCareerProfileUsecase } from '../application/build-career-profile.usecase';
 import { CalibrateResumeUsecase } from '../application/calibrate-resume.usecase';
@@ -27,7 +30,6 @@ import {
   formatPrRetro,
   formatResume,
   formatResumeAudit,
-  formatUnknownCareerMate,
 } from './career-mate.formatter';
 
 @Injectable()
@@ -43,6 +45,7 @@ export class CareerMateDispatcher implements AgentDispatcher {
     private readonly calibrateResume: CalibrateResumeUsecase,
     private readonly auditResume: AuditResumeUsecase,
     private readonly reflectPr: ReflectPrUsecase,
+    private readonly answerQuestion: AnswerCareerQuestionUsecase,
   ) {}
 
   async dispatch(input: DispatchInput): Promise<DispatchOutcome> {
@@ -50,7 +53,10 @@ export class CareerMateDispatcher implements AgentDispatcher {
     const completion = await this.modelRouter.route({
       agentType: AgentType.CAREER_MATE,
       request: {
-        prompt: input.text ?? '',
+        prompt: buildParsePromptWithContext(
+          plainDateToIso(todayInKst(new Date())),
+          input,
+        ),
         systemPrompt: CAREER_MATE_INTENT_SYSTEM_PROMPT,
       },
     });
@@ -142,13 +148,21 @@ export class CareerMateDispatcher implements AgentDispatcher {
           formatPrRetro(outcome.result),
         );
       }
-      default:
+      default: {
+        // 메뉴로 처리할 수 없는 질문 — 고정 안내 대신 저장된 프로필을 근거로 답한다.
+        const outcome = await this.answerQuestion.execute({
+          slackUserId,
+          text: input.text ?? '',
+          priorTurns: input.priorTurns ?? [],
+          parsedIntent: { action: 'UNKNOWN' },
+        });
         return this.toOutcome(
-          0,
-          { action: 'UNKNOWN' },
-          'deterministic',
-          formatUnknownCareerMate(),
+          outcome.agentRunId,
+          { action: 'UNKNOWN', usedFallback: outcome.result.usedFallback },
+          outcome.modelUsed,
+          outcome.result.text,
         );
+      }
     }
   }
 

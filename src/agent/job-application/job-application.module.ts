@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
 
 import { AgentRunModule } from '../../agent-run/agent-run.module';
+import { FactAnswerModule } from '../../fact-answer/fact-answer.module';
 import { ModelRouterModule } from '../../model-router/model-router.module';
 import { AddApplicationUsecase } from './application/add-application.usecase';
+import { AnswerJobQuestionUsecase } from './application/answer-job-question.usecase';
 import { ListApplicationsUsecase } from './application/list-applications.usecase';
 import { UpdateApplicationUsecase } from './application/update-application.usecase';
 import { JOB_APPLICATION_REPOSITORY_PORT } from './domain/port/job-application.repository.port';
@@ -15,7 +17,7 @@ import { JobApplicationPrismaRepository } from './infrastructure/job-application
 // JOB_APPLICATION_REPOSITORY_PORT 토큰을 exports 에 노출 — 넛지 cron 모듈(배치 B)의
 // consumer 가 동일 repository 구현을 주입받기 위함 (별도 재provide 회피).
 @Module({
-  imports: [AgentRunModule, ModelRouterModule],
+  imports: [AgentRunModule, FactAnswerModule, ModelRouterModule],
   providers: [
     {
       provide: JOB_APPLICATION_REPOSITORY_PORT,
@@ -24,6 +26,7 @@ import { JobApplicationPrismaRepository } from './infrastructure/job-application
     AddApplicationUsecase,
     UpdateApplicationUsecase,
     ListApplicationsUsecase,
+    AnswerJobQuestionUsecase,
     JobApplicationDispatcher,
   ],
   exports: [

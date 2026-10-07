@@ -2,9 +2,12 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { WebClient } from '@slack/web-api';
 
+import { AgentRunModule } from '../agent-run/agent-run.module';
 import { LoopbackOnlyGuard } from '../common/guard/loopback-only.guard';
 import { ConsoleReadGuard } from '../console/interface/console-read.guard';
+import { FactAnswerModule } from '../fact-answer/fact-answer.module';
 import { PrismaModule } from '../prisma/prisma.module';
+import { AnswerScheduleQuestionUsecase } from './application/answer-schedule-question.usecase';
 import { DeleteScheduleUsecase } from './application/delete-schedule.usecase';
 import { ListSchedulesUsecase } from './application/list-schedules.usecase';
 import { MarkScheduleAsHolidayUsecase } from './application/mark-schedule-as-holiday.usecase';
@@ -23,13 +26,14 @@ import {
 import { ScheduleConsoleController } from './interface/schedule-console.controller';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [AgentRunModule, FactAnswerModule, PrismaModule],
   controllers: [ScheduleConsoleController],
   providers: [
     { provide: SCHEDULE_REPOSITORY_PORT, useClass: SchedulePrismaRepository },
     RegisterScheduleUsecase,
     RegisterConsoleScheduleUsecase,
     ListSchedulesUsecase,
+    AnswerScheduleQuestionUsecase,
     MarkScheduleAsHolidayUsecase,
     UpdateScheduleStatusUsecase,
     DeleteScheduleUsecase,

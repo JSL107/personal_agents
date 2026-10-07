@@ -1,5 +1,6 @@
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AddApplicationUsecase } from '../application/add-application.usecase';
+import { AnswerJobQuestionUsecase } from '../application/answer-job-question.usecase';
 import { ListApplicationsUsecase } from '../application/list-applications.usecase';
 import { UpdateApplicationUsecase } from '../application/update-application.usecase';
 import { JobApplicationDispatcher } from './job-application.dispatcher';
@@ -38,6 +39,7 @@ describe('JobApplicationDispatcher', () => {
       { execute: addExecute } as unknown as AddApplicationUsecase,
       {} as UpdateApplicationUsecase,
       {} as ListApplicationsUsecase,
+      {} as AnswerJobQuestionUsecase,
     );
 
     const outcome = await dispatcher.dispatch({
@@ -85,6 +87,7 @@ describe('JobApplicationDispatcher', () => {
       {} as AddApplicationUsecase,
       { execute: updateExecute } as unknown as UpdateApplicationUsecase,
       {} as ListApplicationsUsecase,
+      {} as AnswerJobQuestionUsecase,
     );
 
     const outcome = await dispatcher.dispatch({
@@ -113,6 +116,7 @@ describe('JobApplicationDispatcher', () => {
       {} as AddApplicationUsecase,
       {} as UpdateApplicationUsecase,
       { execute: listExecute } as unknown as ListApplicationsUsecase,
+      {} as AnswerJobQuestionUsecase,
     );
 
     const outcome = await dispatcher.dispatch({
@@ -126,23 +130,38 @@ describe('JobApplicationDispatcher', () => {
     expect(outcome.formattedText).toContain('지원 현황');
   });
 
-  it('UNKNOWN → 안내 문구', async () => {
+  it('UNKNOWN → 고정 예시 문구 대신 지원 기록으로 답한다', async () => {
     const route = makeRoute('{"action":"UNKNOWN"}');
+    const answerExecute = jest.fn().mockResolvedValue({
+      agentRunId: 12,
+      modelUsed: 'codex-cli',
+      result: {
+        text: '이번 달에는 아직 지원 기록이 없어요.',
+        usedFallback: false,
+      },
+    });
     const dispatcher = new JobApplicationDispatcher(
       { route } as unknown as ModelRouterUsecase,
       {} as AddApplicationUsecase,
       {} as UpdateApplicationUsecase,
       {} as ListApplicationsUsecase,
+      { execute: answerExecute } as unknown as AnswerJobQuestionUsecase,
     );
 
     const outcome = await dispatcher.dispatch({
       source: 'SLACK_MESSAGE',
       slackUserId: 'U1',
-      text: '아무말',
+      text: '이번 달에 몇 개 지원했어?',
     });
 
-    expect(outcome.agentRunId).toBe(0);
-    expect(outcome.formattedText).toContain('도와드릴까요');
+    expect(answerExecute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: '이번 달에 몇 개 지원했어?',
+        parsedIntent: { action: 'UNKNOWN' },
+      }),
+    );
+    expect(outcome.agentRunId).toBe(12);
+    expect(outcome.formattedText).toBe('이번 달에는 아직 지원 기록이 없어요.');
   });
 
   it.each([
@@ -163,11 +182,20 @@ describe('JobApplicationDispatcher', () => {
     async (action, parsed, text, expectedCommand) => {
       const addExecute = jest.fn();
       const updateExecute = jest.fn();
+      const answerExecute = jest.fn().mockResolvedValue({
+        agentRunId: 13,
+        modelUsed: 'codex-cli',
+        result: {
+          text: '지금까지 지원 기록은 0건이에요.',
+          usedFallback: false,
+        },
+      });
       const dispatcher = new JobApplicationDispatcher(
         { route: makeRoute(parsed) } as unknown as ModelRouterUsecase,
         { execute: addExecute } as unknown as AddApplicationUsecase,
         { execute: updateExecute } as unknown as UpdateApplicationUsecase,
         {} as ListApplicationsUsecase,
+        { execute: answerExecute } as unknown as AnswerJobQuestionUsecase,
       );
 
       const outcome = await dispatcher.dispatch({
@@ -178,11 +206,14 @@ describe('JobApplicationDispatcher', () => {
 
       expect(addExecute).not.toHaveBeenCalled();
       expect(updateExecute).not.toHaveBeenCalled();
-      expect(outcome.agentRunId).toBe(0);
+      expect(outcome.agentRunId).toBe(13);
       expect(outcome.output).toMatchObject({
         action: 'UNKNOWN',
         heldWrite: { action },
       });
+      expect(outcome.formattedText).toContain(
+        '지금까지 지원 기록은 0건이에요.',
+      );
       expect(outcome.formattedText).toContain('질문으로 보여서');
       expect(outcome.formattedText).toContain(expectedCommand);
     },

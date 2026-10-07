@@ -165,17 +165,33 @@ DM 사용자 발화 42건과 `#공부` 사용자 질문 2건을 원문으로 다
 
 ### 3단계 — 워커 UNKNOWN 을 facts 답으로
 
-- [ ] `src/fact-answer/` 모듈에 `FactAnswerUsecase.answer({ text, priorTurns, facts })`. 시스템 프롬프트: facts 와 원문의 숫자만 근거로, 계산은 단계를 보이고, 모르는 값은 지어내지 않는다.
-- [ ] facts 는 워커가 **이름 붙은 필드**로 만든다(예: `granted`, `used`, `remaining`, `usages[].days`). 계산이 정해진 값(잔여·사용 합계)은 도메인 계산 결과를 facts 에 넣는다.
-- [ ] 숫자 검사(코드)는 지어낸 숫자를 막는 장치로 한정한다: 답의 수치 토큰이 facts 값·원문 숫자·그 둘의 합·차 중 하나인지 본다. 날짜(`YYYY-MM-DD`, `M월 D일`)와 id 는 먼저 떼어 내 날짜·id 끼리만 대조한다. 검사를 통과해도 계산이 맞다는 보증은 아니며, 정답 여부는 eval 로 판정한다. 실패하면 facts 의 결정론 요약(사용법 안내가 아니라 잔여·내역 표)으로 폴백한다.
-- [ ] 각 워커의 UNKNOWN 분기는 `agentRunService.execute` 로 자기 AgentRun 을 연다(action `UNKNOWN`, `inputSnapshot.parsedIntent`). 그 안에서 facts 조회 → 답변 → 숫자 검사를 하고 `output = { facts, reply, numberCheck }` 로 정상 종료한다. 답변 생성이 실패하면 facts 결정론 요약으로 답하고 `output.answerError` 를 남긴 채 정상 종료한다(사용자에게는 답이 나갔다). facts 조회 자체가 실패하면 실패로 끝낸다. UNKNOWN 분기는 `preview`·`slackBlocks`·`followUp` 을 채우지 않는다.
-- [ ] 단위 테스트: 라우팅 근거가 UNKNOWN AgentRun 에 한 번만 실리고 `routing_no_run` 에 남지 않음, 답변 실패 시 폴백, 숫자 검사(날짜·반차 0.5·여러 건 합계 포함).
-- [ ] 워커별 facts 와 파서 수정 (파서는 UNKNOWN 정의 줄을 치환해 가정·확인·비교·정정 요청을 UNKNOWN 으로 명시하고, `priorTurns` 를 싣는다):
+- [x] `src/fact-answer/` 모듈에 `FactAnswerUsecase.answer({ text, priorTurns, facts })`. 시스템 프롬프트: facts 와 원문의 숫자만 근거로, 계산은 단계를 보이고, 모르는 값은 지어내지 않는다.
+- [x] facts 는 워커가 **이름 붙은 필드**로 만든다(예: `granted`, `used`, `remaining`, `usages[].days`). 계산이 정해진 값(잔여·사용 합계)은 도메인 계산 결과를 facts 에 넣는다.
+- [x] 숫자 검사(코드)는 지어낸 숫자를 막는 장치로 한정한다: 답의 수치 토큰이 facts 값·원문 숫자·그 둘의 합·차 중 하나인지 본다. 날짜(`YYYY-MM-DD`, `M월 D일`)와 id 는 먼저 떼어 내 날짜·id 끼리만 대조한다. 검사를 통과해도 계산이 맞다는 보증은 아니며, 정답 여부는 eval 로 판정한다. 실패하면 facts 의 결정론 요약(사용법 안내가 아니라 잔여·내역 표)으로 폴백한다.
+- [x] 각 워커의 UNKNOWN 분기는 `agentRunService.execute` 로 자기 AgentRun 을 연다(action `UNKNOWN`, `inputSnapshot.parsedIntent`). 그 안에서 facts 조회 → 답변 → 숫자 검사를 하고 `output = { facts, reply, numberCheck }` 로 정상 종료한다. 답변 생성이 실패하면 facts 결정론 요약으로 답하고 `output.answerError` 를 남긴 채 정상 종료한다(사용자에게는 답이 나갔다). facts 조회 자체가 실패하면 실패로 끝낸다. UNKNOWN 분기는 `preview`·`slackBlocks`·`followUp` 을 채우지 않는다.
+- [x] 단위 테스트: 답변 실패 시 폴백, 숫자 검사(날짜·반차 0.5·여러 건 합계 포함), 워커별 facts 내용과 UNKNOWN 원장 기록. 라우팅 근거가 UNKNOWN AgentRun 에 한 번만 실리는 것은 별도 테스트를 쓰지 않았다 — 워커가 dispatch 안에서 `AgentRunService.execute` 로 행을 열면 기존 `claimRoutingContext` 가 그 행에 근거를 싣는 구조로 보장된다.
+- [x] 워커별 facts 와 파서 수정 (파서는 UNKNOWN 정의 줄을 치환해 가정·확인·비교·정정 요청을 UNKNOWN 으로 명시하고, `priorTurns` 를 싣는다):
   - VACATION: 현재·직전 회기 부여·사용·잔여, 사용 내역. 기존 BALANCE AgentRun 을 열지 않도록 repository + 잔여 계산을 직접 쓴다. 기존 BALANCE·REGISTER·CANCEL 경로의 `inputSnapshot` 에도 `parsedIntent` 를 남긴다.
   - JOB_APPLICATION: 지원 현황 목록.
   - CAREER_MATE: 최신 프로필 요약(없으면 없음).
   - SCHEDULE: `ListSchedulesUsecase` 를 dispatcher 에 연결해 0단계에서 막은 질문과 조회 질문("이번주 일정 뭐 있어?")에 다가오는 일정 facts 로 답한다. 분류기의 SCHEDULE 설명 수정은 2단계가 맡는다(병렬 진행 중 분류기 프롬프트 파일 충돌 방지). 그 전까지 일정 조회 질문이 SCHEDULE 로 오지 않는 것은 정상이다.
   - BLOG_PUBLISH: 원문이 발행 요청이 아니면(질문 표지) 발행 usecase 를 부르지 않고 UNKNOWN 으로 내린다. facts 는 초안 목록 — 발행 usecase 안의 목록 조회를 꺼내 쓸 수 있을 때만. 꺼내는 비용이 크면 facts 없이 기능 목록 답으로 둔다.
+
+구현 메모:
+- BLOG_PUBLISH 는 facts 답을 붙이지 않았다. 발행은 승인 카드가 앞에 있어 질문으로 실제 발행되지는 않으므로, 질문형 원문이면 발행 절차(익명화 LLM·승인 카드)를 시작하지 않고 "발행 여부를 대화로 확인하는 기능은 아직 없다" 고 말하는 데서 멈췄다. 초안 목록 조회를 발행 usecase 에서 꺼내는 일은 후속.
+- SCHEDULE 은 질문 표지로 등록을 보류한 회차에만 답한다. 일정 조회 질문이 SCHEDULE 로 오게 하는 분류기 줄 수정은 이 PR 머지 뒤 후속.
+- 일정 답변 원장용 트리거 `SLACK_MENTION_SCHEDULE` 을 추가했다(`trigger_type` 은 문자열 컬럼이라 스키마 변경 없음).
+
+#### 3단계 결과 — 최종 (2026-10-07, main `d2a9f8d5` + 3단계, 34문항 × 3회)
+
+| 구분 | 기준선 | 2단계 후 | 4단계 후 | 최종 |
+|---|---|---|---|---|
+| tuning | 16/20 | 18/20 | 18/20 | 20/20 |
+| holdout | 8/14 | 9/14 | 12/14 | 14/14 |
+
+- 3단계로 고쳐진 문항과 실제 답: h-vacation-verify-1007 "네, 맞아요. 부여 8일 − 사용 4일 = 잔여 4일이에요.", h-vacation-advance-0915 "이 답변으로는 기록을 바꾸지 않았고, 현재 잔여는 4일이에요. 부여 일수는 설정 VACATION_FIRST_YEAR_ADVANCE_DAYS 를 고쳐야 반영됩니다.", t-vacation-compare "기록에 작년 휴가 사용량이 없어서 비교할 수 없어요. 현재 기간에는 4일 사용했어요.", t-career-question "기록에는 총 경력 연수가 없어 몇 년 차인지 판단할 수 없어요. 다만 …"(이력서 보정 생성으로 빠지지 않음).
+- 외부·DB 쓰기 차단 기록 0건.
+- 만점을 그대로 믿지 않는다: holdout 중 h-review-publish-0827a 는 4단계에서 결과를 보고 분류기를 고친 문항이라 완전한 미공개 문항이 아니다. 채점은 정규식이라 뜻은 사람이 원문을 읽어 확인했다(위 답들). 문항 34개·사용자 1명이라, 운영 대화의 새 실패 원문을 holdout 에 계속 보태야 한다.
 
 ### 4단계 — PR 후속 지시와 게시 결과
 
