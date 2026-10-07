@@ -144,4 +144,47 @@ describe('JobApplicationDispatcher', () => {
     expect(outcome.agentRunId).toBe(0);
     expect(outcome.formattedText).toContain('도와드릴까요');
   });
+
+  it.each([
+    [
+      'ADD',
+      '{"action":"ADD","company":"토스","role":"백엔드"}',
+      '토스 백엔드 지원하면 몇 번째 지원이야?',
+      '토스 백엔드 지원 기록해줘',
+    ],
+    [
+      'UPDATE_STATUS',
+      '{"action":"UPDATE_STATUS","ref":"카카오","status":"INTERVIEW"}',
+      '카카오 서류 합격이라면 상태 뭐로 바꿔야 돼',
+      '카카오 면접(으)로 바꿔줘',
+    ],
+  ])(
+    '파서가 %s 를 내도 원문이 질문·가정형이면 쓰지 않는다',
+    async (action, parsed, text, expectedCommand) => {
+      const addExecute = jest.fn();
+      const updateExecute = jest.fn();
+      const dispatcher = new JobApplicationDispatcher(
+        { route: makeRoute(parsed) } as unknown as ModelRouterUsecase,
+        { execute: addExecute } as unknown as AddApplicationUsecase,
+        { execute: updateExecute } as unknown as UpdateApplicationUsecase,
+        {} as ListApplicationsUsecase,
+      );
+
+      const outcome = await dispatcher.dispatch({
+        source: 'SLACK_MESSAGE',
+        slackUserId: 'U1',
+        text,
+      });
+
+      expect(addExecute).not.toHaveBeenCalled();
+      expect(updateExecute).not.toHaveBeenCalled();
+      expect(outcome.agentRunId).toBe(0);
+      expect(outcome.output).toMatchObject({
+        action: 'UNKNOWN',
+        heldWrite: { action },
+      });
+      expect(outcome.formattedText).toContain('질문으로 보여서');
+      expect(outcome.formattedText).toContain(expectedCommand);
+    },
+  );
 });

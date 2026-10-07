@@ -1,3 +1,4 @@
+import { formatHeldWrite } from '../../../router/domain/hypothetical-utterance';
 import { plainDateToIso } from '../../vacation/domain/plain-date';
 import {
   ApplicationStatus,
@@ -85,3 +86,22 @@ export const formatUnknownJobApplication = (): string =>
     '• 상태 변경: "토스 서류 합격"',
     '• 현황 조회: "지원 현황 보여줘"',
   ].join('\n');
+
+// 질문·가정형이라 쓰지 않았을 때의 안내. 파서는 직전 턴을 보지 않으므로 다시 말할 문장에
+// 회사·직무·바꿀 상태를 모두 넣는다. 회사·직무는 사용자 입력이라 escape 한다.
+export const formatHeldJobApplicationWrite = (intent: {
+  action: 'ADD' | 'UPDATE_STATUS';
+  company?: string;
+  role?: string;
+  ref?: string;
+  status?: ApplicationStatus;
+}): string =>
+  intent.action === 'ADD'
+    ? formatHeldWrite(
+        '지원 기록을 추가',
+        `${escapeSlackMrkdwn(`${intent.company} ${intent.role}`)} 지원 기록해줘`,
+      )
+    : formatHeldWrite(
+        '지원 상태를 변경',
+        `${escapeSlackMrkdwn(intent.ref ?? '')} ${statusLabel(intent.status!)}(으)로 바꿔줘`,
+      );

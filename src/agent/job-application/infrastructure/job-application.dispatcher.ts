@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
+import { findHypotheticalMarker } from '../../../router/domain/hypothetical-utterance';
 import { DispatchInput } from '../../../router/domain/idaeri-router.port';
 import {
   AgentDispatcher,
@@ -18,6 +19,7 @@ import {
 import {
   formatAdded,
   formatApplicationList,
+  formatHeldJobApplicationWrite,
   formatUnknownJobApplication,
   formatUpdated,
 } from './job-application.formatter';
@@ -25,6 +27,7 @@ import {
 @Injectable()
 export class JobApplicationDispatcher implements AgentDispatcher {
   readonly agentType = AgentType.JOB_APPLICATION;
+  private readonly logger = new Logger(JobApplicationDispatcher.name);
 
   constructor(
     private readonly modelRouter: ModelRouterUsecase,
@@ -44,6 +47,21 @@ export class JobApplicationDispatcher implements AgentDispatcher {
       },
     });
     const intent = parseJobApplicationIntent(completion.text);
+
+    // 추가·상태 변경은 승인 게이트 없이 바로 기록된다 — 질문·가정형 원문이면 쓰지 않는다.
+    if (intent.action === 'ADD' || intent.action === 'UPDATE_STATUS') {
+      const marker = findHypotheticalMarker(input.text ?? '');
+      if (marker !== null) {
+        this.logger.warn(
+          `지원 ${intent.action} 보류 — 질문·가정형 원문 (표지=${marker})`,
+        );
+        return this.toOutcome(
+          0,
+          { action: 'UNKNOWN', heldWrite: { action: intent.action, marker } },
+          formatHeldJobApplicationWrite({ ...intent, action: intent.action }),
+        );
+      }
+    }
 
     switch (intent.action) {
       case 'ADD': {
