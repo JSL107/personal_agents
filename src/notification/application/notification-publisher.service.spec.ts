@@ -11,7 +11,7 @@ describe('NotificationPublisher', () => {
       NOTIFICATION_JOB.INCIDENT_RECOVERED,
       { incidentKey: 'task:one', succeededAt: expect.any(Number) },
       expect.objectContaining({
-        deduplication: { id: 'recovery:task:one' },
+        deduplication: { id: 'recovery:task:one', keepLastIfActive: true },
         attempts: 2,
       }),
     );

@@ -277,10 +277,11 @@ export class NotificationConsumer
     try {
       incident = await this.prisma.alertIncident.findUnique({ where: { key } });
     } catch (error: unknown) {
+      // 삼키면 job 이 성공 처리돼 재시도가 없고, 성공이 드문 claude 같은 사건은 오래 열린 채 남는다.
       this.logger.warn(
-        `사건 원장 해결 조회 실패 (key=${key}): ${String(error)}`,
+        `사건 원장 해결 조회 실패 — 재시도 (key=${key}): ${String(error)}`,
       );
-      return;
+      throw error;
     }
     if (!incident || incident.resolvedAt) {
       return;
@@ -295,13 +296,15 @@ export class NotificationConsumer
     const now = new Date();
     const elapsed = now.getTime() - incident.lastSeenAt.getTime();
     if (elapsed < INCIDENT_QUIET_MS) {
-      // 처리 중인 job 이 dedup key 를 점유하므로 해제한 뒤 같은 key 로 지연 등록한다.
+      // 지연 확인에는 중복 제거를 걸지 않는다. 걸면 대기 중인 지연 job 이 키를 쥐고 있는 동안
+      // 더 최신 성공 신호가 버려지고, 그 사이 재실패가 나면 옛 job 은 낡은 신호로 폐기돼 사건이
+      // 다음 성공까지 열린 채 남는다. 성공마다 자기 지연 확인을 갖고, 먼저 조건을 채운 것이 닫는다
+      // (나머지는 이미 닫힌 사건을 보고 끝난다).
       try {
-        await job.removeDeduplicationKey();
         await this.queue.add(NOTIFICATION_JOB.INCIDENT_RECOVERED, job.data, {
-          deduplication: { id: `recovery:${key}` },
           delay: INCIDENT_QUIET_MS - elapsed,
           attempts: 2,
+          backoff: { type: 'exponential', delay: 30_000 },
           removeOnComplete: true,
           removeOnFail: 50,
         });

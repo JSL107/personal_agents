@@ -61,8 +61,14 @@ export class NotificationPublisher {
         NOTIFICATION_JOB.INCIDENT_RECOVERED,
         { incidentKey, succeededAt: Date.now() },
         {
-          deduplication: { id: `recovery:${incidentKey}` },
+          // 같은 key 의 대기 job 은 하나만 둔다(3분 주기 task 의 성공마다 쌓이지 않게).
+          // 처리 중인 job 이 있으면 최신 신호를 보관했다가 끝난 뒤 이어서 넣는다.
+          deduplication: {
+            id: `recovery:${incidentKey}`,
+            keepLastIfActive: true,
+          },
           attempts: 2,
+          backoff: { type: 'exponential', delay: 30_000 },
           removeOnComplete: true,
           removeOnFail: 50,
         },
