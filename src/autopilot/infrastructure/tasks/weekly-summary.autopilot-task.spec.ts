@@ -171,7 +171,8 @@ describe('WeeklySummaryAutopilotTask', () => {
     expect(ceoExecute).not.toHaveBeenCalled();
   });
 
-  it('이번 주 PM run 0건 + env IMPACT_REPORT_GITHUB_AUTHOR 미설정 → 빈 회차 사유 포함', async () => {
+  // 실적을 확인하지 못한 회차는 빈 주가 아니라 설정 결함이라 원장에 묻지 않는다(PR #748 리뷰).
+  it('이번 주 PM run 0건 + env IMPACT_REPORT_GITHUB_AUTHOR 미설정 → 빈 회차로 묻지 않고 사유와 함께 발송', async () => {
     const findRecentSucceededRuns = jest.fn().mockResolvedValue([]);
     const worklogExecute = jest.fn();
     const ceoExecute = jest.fn();
@@ -187,14 +188,14 @@ describe('WeeklySummaryAutopilotTask', () => {
 
     const result = await task.run(CTX);
 
-    expect(result.skip).toBe(true);
-    expect(result.emptyReason).toContain(
+    expect(result.skip).toBe(false);
+    expect(result.emptyReason).toBeUndefined();
+    expect(result.summaryText).toContain(
       '이번 주 PM AgentRun 기록이 없습니다. Weekly Summary 를 생성하지 않습니다.',
     );
-    expect(result.emptyReason).toContain(
+    expect(result.summaryText).toContain(
       'env IMPACT_REPORT_GITHUB_AUTHOR 미설정',
     );
-    expect(result.summaryText).toBeUndefined();
     expect(result.detailText).toBeUndefined();
     expect(
       githubClient.listAuthorMergedPullRequestsSince,

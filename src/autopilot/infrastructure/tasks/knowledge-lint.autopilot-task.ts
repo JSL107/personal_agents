@@ -5,7 +5,10 @@ import {
   KNOWLEDGE_LINT_PORT,
   KnowledgeLintPort,
 } from '../../../episodic-memory/domain/port/knowledge-lint.port';
-import { formatKnowledgeLint } from '../../../slack/format/knowledge-lint.formatter';
+import {
+  formatKnowledgeLint,
+  isL4Incomplete,
+} from '../../../slack/format/knowledge-lint.formatter';
 import {
   AutopilotTask,
   AutopilotTaskContext,
@@ -96,11 +99,12 @@ export class KnowledgeLintAutopilotTask implements AutopilotTask {
     });
 
     // 이슈 0건의 하트비트는 Slack 대신 SUPPRESSED/EMPTY 원장에 남긴다.
-    // 단 L4 가 쿼터로 중단된 회차는 "깨끗하다" 가 아니라 "다 못 봤다" 라서 경고와 함께 Slack 으로 보낸다 —
-    // 원장에 묻으면 판정이 계속 중단돼도 아무도 모른다.
+    // 단 L4 를 끝까지 못 돌린 회차(쿼터 중단·일부 judge 실패)는 "깨끗하다" 가 아니라 "다 못 봤다" 라서
+    // 경고와 함께 Slack 으로 보낸다 — 원장에 묻으면 판정이 계속 미완주여도 아무도 모른다.
+    // 미완주 판정은 formatter 의 경고 문구와 같은 함수로 해서 둘이 어긋나지 않게 한다.
     // formatter 는 outcome.l4(실행 실태)로 점검 범위를 판단한다.
     const summaryText = formatKnowledgeLint(outcome, firedAtKst);
-    if (outcome.issues.length === 0 && !outcome.l4?.abortedByQuota) {
+    if (outcome.issues.length === 0 && !isL4Incomplete(outcome.l4)) {
       return { skip: true, emptyReason: summaryText };
     }
     return {

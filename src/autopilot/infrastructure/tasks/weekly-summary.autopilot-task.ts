@@ -121,13 +121,16 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
           `Weekly Summary 실적 조회 실패로 회고 생성을 보류합니다: ${evidence.evidenceUnavailableReason}`,
         );
       }
-      const evidenceReason = evidence.evidenceUnavailableReason
-        ? ` ${evidence.evidenceUnavailableReason}`
-        : '';
-      return {
-        skip: true,
-        emptyReason: `_📋 Weekly Summary — ${firedAtKst} skip_\n이번 주 PM AgentRun 기록이 없습니다. Weekly Summary 를 생성하지 않습니다.${evidenceReason}`,
-      };
+      const notice = `_📋 Weekly Summary — ${firedAtKst} skip_\n이번 주 PM AgentRun 기록이 없습니다. Weekly Summary 를 생성하지 않습니다.`;
+      // 실적을 확인하지 못한 회차(env IMPACT_REPORT_GITHUB_AUTHOR 미설정 등)는 "빈 주" 가 아니라
+      // 설정 결함이다. 원장에 묻지 않고 사유와 함께 Slack 으로 보내 고치게 한다.
+      if (evidence.evidenceUnavailableReason) {
+        return {
+          skip: false,
+          summaryText: `${notice} ${evidence.evidenceUnavailableReason}`,
+        };
+      }
+      return { skip: true, emptyReason: notice };
     }
 
     const sinceLabel = KST_DATE_FORMATTER.format(since);

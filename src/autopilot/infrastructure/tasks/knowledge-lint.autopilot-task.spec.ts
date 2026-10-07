@@ -240,6 +240,30 @@ describe('KnowledgeLintAutopilotTask', () => {
     expect(result.summaryText).toContain('1/5쌍만 판정');
   });
 
+  it('L4 일부 judge 가 실패한 회차도 이상 없음으로 묻지 않는다', async () => {
+    // 쿼터 중단이 아니어도 판정 수가 후보 수보다 적으면 안 본 쌍이 남는다(PR #748 리뷰).
+    const knowledgeLint = {
+      lintIssues: jest.fn().mockResolvedValue({
+        issues: [],
+        duplicateTotal: 0,
+        duplicateTotalTruncated: false,
+        duplicateSupersedable: 0,
+        l4: { candidates: 5, judged: 3, abortedByQuota: false },
+      }),
+    };
+    const task = new KnowledgeLintAutopilotTask(
+      knowledgeLint as never,
+      makeConfig() as never,
+      makeTrace() as never,
+    );
+
+    const result = await task.run(context);
+
+    expect(result.skip).toBe(false);
+    expect(result.emptyReason).toBeUndefined();
+    expect(result.summaryText).toContain('3/5쌍만 판정 (일부 judge 실패)');
+  });
+
   // 이 작업의 존재 이유 — 게이트가 꺼져 있으면 L4 는 아예 조회도 안 하지만(service 가 l4=null),
   // "이 주에 knowledge-lint 가 발화했고 게이트는 꺼져 있었다" 는 사실은 그래도 남아야 한다.
   it('L4 게이트가 꺼져 있어도 흔적을 남긴다', async () => {

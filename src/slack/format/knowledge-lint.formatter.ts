@@ -10,7 +10,7 @@ const sanitizeMrkdwn = (text: string): string => text.replace(/[*_~`]/g, '');
 
 // L4 를 끝까지 못 돌렸나 — 쿼터 중단이거나 후보 중 일부만 판정한 경우.
 // 이때는 "이상 없음" 이 성립하지 않는다: 안 본 쌍에 모순이 있을 수 있다.
-const isL4Incomplete = (l4: ContradictionLintOutcome | null): boolean =>
+export const isL4Incomplete = (l4: ContradictionLintOutcome | null): boolean =>
   l4 !== null && (l4.abortedByQuota || l4.judged < l4.candidates);
 
 // 실제로 무엇을 점검했는지 — env 플래그가 아니라 실행 결과에서 만든다.
