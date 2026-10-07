@@ -69,6 +69,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
   const holidayCalendar = { load: loadNoHolidays };
   // 실제 시스템 프롬프트는 run 안의 갱신으로만 남으므로, 그 인자를 볼 수 있게 참조를 둔다.
   const updateInputSnapshot = jest.fn();
+  const recordModelResponse = jest.fn();
 
   let usecase: GeneratePaperRecommendationUsecase;
 
@@ -147,6 +148,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
       const execution = await input.run({
         agentRunId: 99,
         updateInputSnapshot,
+        recordModelResponse,
       });
       return {
         result: execution.result,
@@ -276,6 +278,45 @@ describe('GeneratePaperRecommendationUsecase', () => {
     );
   });
 
+  it('모델 응답 원문을 가공 없이 실행 원장에 남긴다', async () => {
+    const raw =
+      '```json\n{"sells":[],"buys":[{"code":"000660","reason":"추세 우위","weightPercent":15}]}\n```';
+    modelRouter.route.mockResolvedValueOnce({
+      text: raw,
+      modelUsed: 'codex-cli',
+      provider: ModelProviderName.CHATGPT,
+    });
+
+    await usecase.execute({ strategies: ['SWING'], decidedAt });
+
+    // 코드펜스·파서가 버리는 weightPercent 까지 그대로 — output 에는 남지 않는 부분이다.
+    expect(recordModelResponse).toHaveBeenCalledWith(raw);
+  });
+
+  it('파싱이 실패한 회차도 파싱 전에 원문을 남긴다', async () => {
+    modelRouter.route.mockResolvedValueOnce({
+      text: '오늘은 추천하지 않습니다.',
+      modelUsed: 'codex-cli',
+      provider: ModelProviderName.CHATGPT,
+    });
+
+    const result = await usecase.execute({
+      strategies: ['SWING'],
+      decidedAt,
+    });
+
+    expect(result.failed).toEqual([
+      {
+        strategy: 'SWING',
+        message: '모델 응답을 JSON으로 파싱하지 못했습니다.',
+      },
+    ]);
+    expect(recordModelResponse).toHaveBeenCalledWith(
+      '오늘은 추천하지 않습니다.',
+    );
+    expect(repository.saveRecommendationAtomically).not.toHaveBeenCalled();
+  });
+
   it('screen 실패도 AgentRun 내부에서 FAILED 처리되도록 run callback 안에서 실행한다', async () => {
     screenUniverse.execute.mockRejectedValueOnce(new Error('screen failed'));
     agentRunService.execute.mockImplementationOnce(async (input) => {
@@ -283,6 +324,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
       await input.run({
         agentRunId: 99,
         updateInputSnapshot: jest.fn(),
+        recordModelResponse: jest.fn(),
       });
       throw new Error('unreachable');
     });

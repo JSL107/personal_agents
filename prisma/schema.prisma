@@ -32,6 +32,11 @@ model AgentRun {
   // NULL 은 "검사 항목이 0 개(스텁 계약)" 를 뜻한다 — 1.0 으로 채우면 무검사가
   // 만점으로 위장돼 평균이 조용히 부풀려진다.
   contractScore      Float?    @map("contract_score")
+  // 모델이 낸 응답 원문(PII 마스킹·상한 적용). output 은 파싱·제약을 거친 결과라 "모델이 원래
+  // 뭐라고 답했나" 를 복원할 수 없고, 실패 회차는 output 이 오류 문구로 바뀐다. 파싱 전에
+  // 기록하므로 파싱 실패 회차에도 남는다. output 밖에 두는 이유는 contractViolations 와 같다
+  // (episodic 임베딩·FTS·콘솔 소비자에 원문이 섞이지 않게). 지금은 PAPER_RECOMMEND 만 쓴다.
+  modelResponse      String?   @map("model_response") @db.Text
   startedAt          DateTime  @default(now()) @map("started_at")
   endedAt            DateTime? @map("ended_at")
 

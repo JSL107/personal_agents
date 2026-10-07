@@ -9,6 +9,7 @@ import {
 import { evaluateContract } from '../../agent-registry/contract-inspector';
 import { DomainException } from '../../common/exception/domain.exception';
 import { runWithActiveAgentRun } from '../../common/llm/active-agent-run.context';
+import { redactPii } from '../../common/util/pii-redaction.util';
 import { bubbleForActiveRun } from '../../console/application/agent-activity-bubble';
 import { ConsoleEventBus } from '../../console/application/console-event-bus.service';
 import { bubbleForState } from '../../console/application/derive-agent-state';
@@ -122,6 +123,9 @@ export interface AgentRunExecutionResult<T> {
 export interface AgentRunContext {
   agentRunId: number;
   updateInputSnapshot: (inputSnapshot: unknown) => Promise<void>;
+  // 모델 응답 원문을 남긴다. 파싱 **전에** 부르면 파싱 실패 회차에도 남는다. best-effort —
+  // 기록 실패가 run 결과를 바꾸지 않는다.
+  recordModelResponse: (modelResponse: string) => Promise<void>;
 }
 
 export interface ExecuteAgentRunInput<T> {
@@ -369,6 +373,9 @@ export class AgentRunService implements OnApplicationBootstrap {
               });
             }
           },
+          recordModelResponse: async (modelResponse: string) => {
+            await this.recordModelResponse(id, agentType, modelResponse);
+          },
         }),
       );
 
@@ -488,6 +495,28 @@ export class AgentRunService implements OnApplicationBootstrap {
       throw error;
     } finally {
       this.activeRuns.delete(id);
+    }
+  }
+
+  private async recordModelResponse(
+    id: number,
+    agentType: AgentType,
+    modelResponse: string,
+  ): Promise<void> {
+    if (!this.repository.recordModelResponse) {
+      return;
+    }
+    try {
+      await this.repository.recordModelResponse({
+        id,
+        modelResponse: toLedgerModelResponse(modelResponse),
+      });
+    } catch (error: unknown) {
+      this.logger.warn(
+        `AgentRun #${id} (${agentType}) 모델 응답 원문 기록 실패 — 실행은 계속한다: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
   }
 
@@ -776,6 +805,10 @@ export class AgentRunService implements OnApplicationBootstrap {
 // 상한이 없으면 어느 한 경로가 긴 본문을 실어 보내는 순간 원장 행이 통째로 부풀고, 그 사실은
 // 조회할 때까지 드러나지 않는다.
 const CAUSE_LEDGER_LIMIT = 1_000;
+// 모델 응답 원문 상한. 정상 추천 응답은 수 KB 다 — 모델 출력은 신뢰 경계 밖이라 폭주 응답이
+// 원장을 키우지 않게 자르고, 잘린 사실은 꼬리 표식으로 남긴다(비교 측정이 잘린 원문을 원래 답으로
+// 오인하지 않게).
+const MODEL_RESPONSE_LEDGER_LIMIT = 50_000;
 // 폴백 양쪽 사유를 한 줄로 합칠 때 한쪽이 쓸 수 있는 길이. 라벨("primary: " 등)을 더해도
 // CAUSE_LEDGER_LIMIT 안에 들어오게 절반보다 조금 작게 잡는다.
 const CAUSE_SIDE_LIMIT = 480;
@@ -850,4 +883,15 @@ const describeCause = (cause: unknown): string | null => {
 const extractCauseMessage = (error: unknown): string | null => {
   const cause = (error as { cause?: unknown } | null | undefined)?.cause;
   return describeCause(cause)?.slice(0, CAUSE_LEDGER_LIMIT) ?? null;
+};
+
+// 원장에 남길 모델 응답. 마스킹을 먼저 해야 상한이 마스킹된 길이 기준으로 걸린다.
+export const toLedgerModelResponse = (modelResponse: string): string => {
+  const redacted = redactPii(modelResponse);
+  if (redacted.length <= MODEL_RESPONSE_LEDGER_LIMIT) {
+    return redacted;
+  }
+  return `${redacted.slice(0, MODEL_RESPONSE_LEDGER_LIMIT)}…[truncated ${
+    redacted.length - MODEL_RESPONSE_LEDGER_LIMIT
+  } chars]`;
 };
