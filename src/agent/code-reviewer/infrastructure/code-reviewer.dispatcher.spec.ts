@@ -2,6 +2,7 @@ import { ConfigService } from '@nestjs/config';
 
 import { DomainStatus } from '../../../common/exception/domain-status.enum';
 import { GithubClientPort } from '../../../github/domain/port/github-client.port';
+import { AgentType } from '../../../model-router/domain/model-router.type';
 import { DispatchInput } from '../../../router/domain/idaeri-router.port';
 import { ReviewPullRequestUsecase } from '../application/review-pull-request.usecase';
 import { CodeReviewerException } from '../domain/code-reviewer.exception';
@@ -257,5 +258,98 @@ describe('CodeReviewerDispatcher', () => {
       status: DomainStatus.NOT_FOUND,
     } as CodeReviewerException);
     expect(reviewPullRequestExecute).not.toHaveBeenCalled();
+  });
+
+  describe('링크 없는 후속 지시와 게시 결과 (2026-08-27)', () => {
+    const PR_282_LINK =
+      '<https://github.com/schoolbell-e/sbe-survey-v5/pull/282|github.com/schoolbell-e/sbe-survey-v5/pull/282>';
+    const reviewTurn = (text: string, agentType: AgentType | null) => ({
+      role: 'user' as const,
+      text,
+      agentType,
+      agentRunId: null,
+      timestampMs: 0,
+    });
+
+    it('원문에 PR 이 없으면 직전 코드 리뷰 턴의 PR 로 리뷰한다', async () => {
+      const { dispatcher, reviewPullRequestExecute } = makeFixture();
+
+      await dispatcher.dispatch({
+        ...baseInput,
+        text: '게시까지 진행해줘.',
+        priorTurns: [
+          reviewTurn(`${PR_282_LINK} 이거 리뷰 가능?`, AgentType.CODE_REVIEWER),
+        ],
+      });
+
+      expect(reviewPullRequestExecute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          prRef: 'schoolbell-e/sbe-survey-v5#282',
+          publish: true,
+        }),
+      );
+    });
+
+    it('직전 리뷰 턴에 PR 이 여럿이면 리뷰를 실행하지 않고 되묻는다', async () => {
+      const { dispatcher, reviewPullRequestExecute } = makeFixture();
+
+      await expect(
+        dispatcher.dispatch({
+          ...baseInput,
+          text: '게시해줘',
+          priorTurns: [
+            reviewTurn(`${PR_282_LINK} 리뷰`, AgentType.CODE_REVIEWER),
+            reviewTurn(
+              'JSL107/personal_agents#741 리뷰',
+              AgentType.CODE_REVIEWER,
+            ),
+          ],
+        }),
+      ).rejects.toMatchObject({
+        codeReviewerErrorCode: CodeReviewerErrorCode.AMBIGUOUS_PR_REFERENCE,
+      });
+      expect(reviewPullRequestExecute).not.toHaveBeenCalled();
+    });
+
+    it('Slack 자연어에서 PR 을 끝내 못 찾으면 슬래시 사용법 대신 대화 문구로 알린다', async () => {
+      const { dispatcher, reviewPullRequestExecute } = makeFixture();
+      reviewPullRequestExecute.mockRejectedValueOnce(
+        new CodeReviewerException({
+          code: CodeReviewerErrorCode.INVALID_PR_REFERENCE,
+          message:
+            'PR 참조 형식이 잘못되었습니다: "게시해줘". 사용 예: `/review-pr …`',
+          status: DomainStatus.BAD_REQUEST,
+        }),
+      );
+
+      const rejected = dispatcher.dispatch({ ...baseInput, text: '게시해줘' });
+
+      await expect(rejected).rejects.toMatchObject({
+        codeReviewerErrorCode: CodeReviewerErrorCode.INVALID_PR_REFERENCE,
+      });
+      await expect(rejected).rejects.not.toThrow('/review-pr');
+    });
+
+    it('게시 결과를 리뷰 본문 아래 한 줄로 붙인다', async () => {
+      const { dispatcher, reviewPullRequestExecute } = makeFixture();
+      reviewPullRequestExecute.mockResolvedValueOnce({
+        result: review,
+        modelUsed: 'codex',
+        agentRunId: 7,
+        publication: {
+          kind: 'NOT_ALLOWED',
+          repo: 'schoolbell-e/sbe-survey-v5',
+        },
+      });
+
+      const outcome = await dispatcher.dispatch({
+        ...baseInput,
+        text: `${PR_282_LINK} 리뷰해줘`,
+      });
+
+      expect(outcome.formattedText).toContain(
+        '게시 허용 목록(PR_REVIEW_INLINE_REPOS)에 없어요',
+      );
+    });
   });
 });

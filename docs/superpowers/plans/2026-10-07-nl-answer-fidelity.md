@@ -179,11 +179,23 @@ DM 사용자 발화 42건과 `#공부` 사용자 질문 2건을 원문으로 다
 
 ### 4단계 — PR 후속 지시와 게시 결과
 
-- [ ] 코드 리뷰 dispatcher: 원문에서 PR 참조를 못 찾으면 `input.priorTurns` 중 **`agentType === CODE_REVIEWER` 인 턴**에서만 PR 참조를 모은다(대화 메모리는 본문을 자르지 않고 저장하고, 실패한 턴의 사용자 원문도 남긴다 — `router-message.handler.ts:279·303·362`). 서로 다른 PR 이 하나면 그 PR 로 실행하고, 둘 이상이면 어느 PR 인지 되묻는다. 하나도 없으면 실패하되 안내문은 슬래시 사용법 대신 "어느 PR 인지 링크를 같이 보내 달라"로 바꾼다. 다른 워커 턴의 링크는 쓰지 않는다 — `publish` 기본값이 true 라 잘못 고르면 다른 PR 에 코멘트가 달린다.
-- [ ] 게시 결과: `ReviewPullRequestUsecase` 가 `publishFindingsService.publish` 의 반환값(`PublishOutcome`)을 버리지 않고 결과에 싣는다. 허용 목록 판정은 이미 있는 순수 함수 `isRepoAllowed` 로 같은 자리에서 구해 함께 싣는다(새 조회 없음). 게시 예외는 지금처럼 리뷰를 유지하되 "게시 실패"로 싣는다.
-- [ ] dispatcher 가 결정론 한 줄을 붙인다: 게시 N건 / 허용 목록 밖이라 게시하지 않음(설정 `PR_REVIEW_INLINE_REPOS`) / 이미 게시된 지적과 중복 / 게시 실패 / 지적 없음. "지적 없음"은 게시 성공과 구분해 쓴다.
-- [ ] 리뷰 시스템 프롬프트에 "게시 여부는 시스템이 따로 알린다, 서술하지 않는다"를 넣는다.
-- [ ] 단위 테스트: CODE_REVIEWER 턴의 PR 승계, 원문 참조 우선, 복수 PR 되묻기, 다른 워커 턴 링크 무시, 게시 결과 갈래별 문구. 콘솔 진입(`handle-conversation-turn.usecase.ts`)도 같은 `priorTurns` 를 넘기는지 확인한다.
+- [x] 코드 리뷰 dispatcher: 원문에서 PR 참조를 못 찾으면 `input.priorTurns` 중 **`agentType === CODE_REVIEWER` 인 턴**에서만 PR 참조를 모은다(대화 메모리는 본문을 자르지 않고 저장하고, 실패한 턴의 사용자 원문도 남긴다 — `router-message.handler.ts:279·303·362`). 서로 다른 PR 이 하나면 그 PR 로 실행하고, 둘 이상이면 어느 PR 인지 되묻는다. 하나도 없으면 실패하되 안내문은 슬래시 사용법 대신 "어느 PR 인지 링크를 같이 보내 달라"로 바꾼다. 다른 워커 턴의 링크는 쓰지 않는다 — `publish` 기본값이 true 라 잘못 고르면 다른 PR 에 코멘트가 달린다.
+- [x] 게시 결과: `ReviewPullRequestUsecase` 가 `publishFindingsService.publish` 의 반환값(`PublishOutcome`)을 버리지 않고 결과에 싣는다. 허용 목록 판정은 이미 있는 순수 함수 `isRepoAllowed` 로 같은 자리에서 구해 함께 싣는다(새 조회 없음). 게시 예외는 지금처럼 리뷰를 유지하되 "게시 실패"로 싣는다.
+- [x] dispatcher 가 결정론 한 줄을 붙인다: 게시 N건 / 허용 목록 밖이라 게시하지 않음(설정 `PR_REVIEW_INLINE_REPOS`) / 이미 게시된 지적과 중복 / 게시 실패 / 지적 없음. "지적 없음"은 게시 성공과 구분해 쓴다.
+- [x] 리뷰 시스템 프롬프트에 "게시 여부는 시스템이 따로 알린다, 서술하지 않는다"를 넣는다.
+- [x] 단위 테스트: CODE_REVIEWER 턴의 PR 승계, 원문 참조 우선, 복수 PR 되묻기, 다른 워커 턴 링크 무시, 게시 결과 갈래별 문구. 콘솔 진입(`handle-conversation-turn.usecase.ts`)도 같은 `priorTurns` 를 넘기는지 확인한다.
+- [x] (계획 밖, eval 로 발견) 분류기 CODE_REVIEWER 설명에 "직전 대화가 PR 리뷰이고 게시해 달라고 하면 링크가 없어도 CODE_REVIEWER" 를 더했다. 멘션을 뗀 "게시까지 진행해줘." 에는 "리뷰" 라는 말이 없어 분류기가 UNKNOWN 을 냈고, 대화 답변이 "이 대화에서는 GitHub 에 게시할 수 없어요" 라고 틀리게 답했다. holdout 실패를 보고 고친 것이라 전체 문항을 다시 재 회귀가 없음을 확인했다.
+
+#### 4단계 결과 (2026-10-07)
+
+| 구분 | 기준선 | 2단계 후 | 4단계 후 |
+|---|---|---|---|
+| tuning | 16/20 | 18/20 | 18/20 |
+| holdout | 8/14 | 9/14 | 12/14 |
+
+- 개선: h-review-publish-0827a 0/3 → 3/3, h-review-publish-0827b 0/3 → 3/3(둘 다 직전 리뷰의 PR #282 로 리뷰 실행).
+- 회차 변동: h-vacation-freeform-0908 0/3 → 2/3(휴가 파서 경로, 이번 변경과 무관).
+- 남은 실패 4문항은 모두 3단계 대상(휴가 파서 뭉갬 3, 커리어 질문의 이력서 보정 선택 1). 외부·DB 쓰기 차단 기록 0건.
 
 ### 단계 순서와 PR
 

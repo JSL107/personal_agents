@@ -34,9 +34,12 @@ export const WORKER_CAPABILITIES: readonly WorkerCapability[] = [
   },
   {
     agentType: AgentType.CODE_REVIEWER,
-    classifierLine: 'PR 리뷰 (PR URL/reference 포함)',
+    // 2026-10-07: 링크 없는 "게시까지 진행해줘." 가 UNKNOWN 으로 빠져 대화 답변이 "게시할 수 없어요" 라고
+    // 틀리게 답했다(2026-08-27 원문, eval h-review-publish-0827a). 직전 리뷰를 올리라는 지시도 여기다.
+    classifierLine:
+      'PR 리뷰 (PR URL/reference 포함). 직전 대화가 PR 리뷰이고 사용자가 "게시해줘", "코멘트 달아줘", "게시까지 진행해줘" 처럼 그 리뷰를 GitHub 에 올리라고 하면 링크가 없어도 CODE_REVIEWER',
     canDo:
-      'GitHub PR 을 리뷰하고 허용된 레포면 코멘트로 게시한다. 예: "<PR 링크> 리뷰해줘"',
+      'GitHub PR 을 리뷰하고 허용된 레포면 코멘트로 게시한다. 직전에 리뷰한 PR 은 링크 없이 "게시해줘" 라고 해도 된다. 예: "<PR 링크> 리뷰해줘"',
   },
   {
     agentType: AgentType.IMPACT_REPORTER,
