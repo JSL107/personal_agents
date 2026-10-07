@@ -1,7 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
+import {
+  findHypotheticalMarker,
+  formatHeldWrite,
+} from '../../../router/domain/hypothetical-utterance';
 import { DispatchInput } from '../../../router/domain/idaeri-router.port';
 import {
   AgentDispatcher,
@@ -25,6 +29,7 @@ import {
 @Injectable()
 export class JobApplicationDispatcher implements AgentDispatcher {
   readonly agentType = AgentType.JOB_APPLICATION;
+  private readonly logger = new Logger(JobApplicationDispatcher.name);
 
   constructor(
     private readonly modelRouter: ModelRouterUsecase,
@@ -44,6 +49,27 @@ export class JobApplicationDispatcher implements AgentDispatcher {
       },
     });
     const intent = parseJobApplicationIntent(completion.text);
+
+    // 추가·상태 변경은 승인 게이트 없이 바로 기록된다 — 질문·가정형 원문이면 쓰지 않는다.
+    if (intent.action === 'ADD' || intent.action === 'UPDATE_STATUS') {
+      const marker = findHypotheticalMarker(input.text ?? '');
+      if (marker !== null) {
+        this.logger.warn(
+          `지원 ${intent.action} 보류 — 질문·가정형 원문 (표지=${marker})`,
+        );
+        return this.toOutcome(
+          0,
+          { action: 'UNKNOWN', heldWrite: { action: intent.action, marker } },
+          // 파서는 직전 턴을 보지 않으므로 다시 말할 문장에 회사·직무를 넣어 준다.
+          intent.action === 'ADD'
+            ? formatHeldWrite(
+                '지원 기록을 추가',
+                `${intent.company} ${intent.role} 지원 기록해줘`,
+              )
+            : formatHeldWrite('지원 상태를 변경', `${intent.ref} 상태 바꿔줘`),
+        );
+      }
+    }
 
     switch (intent.action) {
       case 'ADD': {

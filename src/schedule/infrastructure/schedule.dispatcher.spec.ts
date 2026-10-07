@@ -124,4 +124,44 @@ describe('ScheduleDispatcher', () => {
 
     expect(usecase.execute).not.toHaveBeenCalled();
   });
+
+  it('날짜와 제목이 있어도 원문이 질문이면 등록하지 않는다', async () => {
+    const usecase = createUsecase();
+    const dispatcher = new ScheduleDispatcher(usecase);
+
+    const outcome = await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '9월 30일 자동차세 맞아?',
+    });
+
+    expect(usecase.execute).not.toHaveBeenCalled();
+    expect(outcome.output).toMatchObject({
+      heldWrite: { action: 'REGISTER' },
+    });
+    expect(outcome.formattedText).toContain('질문으로 보여서');
+  });
+
+  it('직전 턴과 합쳐 REGISTER 가 되어도 이번 원문이 질문이면 등록하지 않는다', async () => {
+    const usecase = createUsecase();
+    const dispatcher = new ScheduleDispatcher(usecase);
+
+    const outcome = await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '9월 30일이라면 며칠 남았어',
+      priorTurns: [
+        {
+          role: 'user',
+          text: '자동차세 등록해줘',
+          agentType: AgentType.SCHEDULE,
+          agentRunId: 0,
+          timestampMs: Date.now(),
+        },
+      ],
+    });
+
+    expect(usecase.execute).not.toHaveBeenCalled();
+    expect(outcome.formattedText).toContain('질문으로 보여서');
+  });
 });
