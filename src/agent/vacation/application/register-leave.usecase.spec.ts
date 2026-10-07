@@ -46,6 +46,34 @@ describe('RegisterLeaveUsecase', () => {
     );
   });
 
+  it('1년차 선지급 설정 시 등록 후 잔여도 선지급 일수 기준 (부여 8 · 사용 1 → 잔여 7)', async () => {
+    configGet.mockImplementation(
+      configFor({
+        VACATION_HIRE_DATE: '2026-04-06',
+        VACATION_FIRST_YEAR_ADVANCE_DAYS: 8,
+      }),
+    );
+    findActiveByUser.mockResolvedValue([
+      {
+        id: 10,
+        slackUserId: 'U1',
+        startDate: { year: 2026, month: 10, day: 19 },
+        endDate: { year: 2026, month: 10, day: 19 },
+        businessDays: 1,
+        memo: null,
+        createdAt: new Date('2026-10-07T00:00:00.000Z'),
+      },
+    ]);
+    const outcome = await usecase.execute({
+      slackUserId: 'U1',
+      startDate: { year: 2026, month: 10, day: 19 },
+      endDate: { year: 2026, month: 10, day: 19 },
+      asOf: { year: 2026, month: 10, day: 7 },
+    });
+    expect(outcome.result.balance.grantedDays).toBe(8);
+    expect(outcome.result.balance.remainingDays).toBe(7);
+  });
+
   it('공휴일은 휴가 일수에서 뺀다 (추석 주 9/23~9/29 = 23·28·29 3영업일)', async () => {
     await usecase.execute({
       slackUserId: 'U1',
