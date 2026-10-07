@@ -14,6 +14,7 @@ import {
 import { CronIdempotencyService } from '../../common/queue/cron-idempotency.service';
 import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
 import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
+import { cronIncidentKey } from '../../notification/domain/notification.type';
 import {
   SLACK_NOTIFIER_PORT,
   SlackNotifierPort,
@@ -26,6 +27,7 @@ import {
 
 // 발송 idempotency TTL — 25h. 다음 날 같은 시각 발사 전 만료되도록 하루보다 약간 길게.
 const SENT_GUARD_TTL_SECONDS = 90_000;
+const INCIDENT_KEY = cronIncidentKey('Job Application Nudge Cron');
 
 interface DeliverNudgeInput {
   ownerSlackUserId: string;
@@ -76,6 +78,7 @@ export class JobApplicationNudgeCronConsumer extends WorkerHost {
           `Job Application Nudge — due 0건, skip (${ownerSlackUserId})`,
         );
         // 조용히 skip — 매일 빈 DM 방지.
+        this.notificationPublisher?.publishRecovery(INCIDENT_KEY);
         return;
       }
       const text = `📌 *지원 넛지 — ${todayKst}*\n\n` + formatNudge(due);
@@ -85,6 +88,7 @@ export class JobApplicationNudgeCronConsumer extends WorkerHost {
         text,
         dateKey: todayKst,
       });
+      this.notificationPublisher?.publishRecovery(INCIDENT_KEY);
     } catch (error) {
       this.logger.error(
         `Job Application Nudge Cron 실패 (owner=${ownerSlackUserId})`,
@@ -122,7 +126,7 @@ export class JobApplicationNudgeCronConsumer extends WorkerHost {
     this.logger.log(`Job Application Nudge Cron 발송 완료 — target=${target}`);
   }
 
-  // fire-and-forget — NotificationQueue 로 enqueue. consumer 측 30분 dedupe + Slack DM.
+  // fire-and-forget — NotificationQueue 의 사건 단위 Slack DM.
   private notifyOwnerFailure(ownerSlackUserId: string, error: unknown): void {
     if (!this.notificationPublisher) {
       return;
@@ -130,6 +134,7 @@ export class JobApplicationNudgeCronConsumer extends WorkerHost {
     const errorMessage = error instanceof Error ? error.message : String(error);
     this.notificationPublisher.publishCronFailure({
       cronName: 'Job Application Nudge Cron',
+      incidentKey: INCIDENT_KEY,
       ownerSlackUserId,
       errorMessage,
     });

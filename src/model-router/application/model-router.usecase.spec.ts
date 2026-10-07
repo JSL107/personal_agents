@@ -8,12 +8,40 @@ import {
   LLM_CLI_TIMEOUT_MS,
   MODEL_ROUTER_WORST_CASE_MS,
 } from '../../common/llm/llm-timeout.constant';
+import { CLAUDE_AUTH_INCIDENT_KEY } from '../../notification/domain/notification.type';
 import { AgentType, ModelProviderName } from '../domain/model-router.type';
 import { ModelProviderPort } from '../domain/port/model-provider.port';
 import { CodexQuotaExceededException } from '../infrastructure/codex-cli.provider';
 import { ModelRouterUsecase } from './model-router.usecase';
 
 describe('ModelRouterUsecase', () => {
+  it('Claude 성공은 사건 해결 신호를 보내고 ChatGPT 성공은 보내지 않는다', async () => {
+    const chatgptProvider = createProviderMock(ModelProviderName.CHATGPT);
+    const claudeProvider = createProviderMock(ModelProviderName.CLAUDE);
+    const notificationPublisher = { publishRecovery: jest.fn() };
+    const router = new ModelRouterUsecase(
+      chatgptProvider,
+      claudeProvider,
+      notificationPublisher as never,
+    );
+    chatgptProvider.complete.mockResolvedValueOnce({
+      text: 'ok',
+      modelUsed: 'codex-cli',
+      provider: ModelProviderName.CHATGPT,
+    });
+    await router.route({ agentType: AgentType.PM, request: { prompt: 'hi' } });
+    expect(notificationPublisher.publishRecovery).not.toHaveBeenCalled();
+    chatgptProvider.complete.mockRejectedValueOnce(new Error('codex down'));
+    claudeProvider.complete.mockResolvedValueOnce({
+      text: 'ok',
+      modelUsed: 'claude-cli',
+      provider: ModelProviderName.CLAUDE,
+    });
+    await router.route({ agentType: AgentType.PM, request: { prompt: 'hi' } });
+    expect(notificationPublisher.publishRecovery).toHaveBeenCalledWith(
+      CLAUDE_AUTH_INCIDENT_KEY,
+    );
+  });
   const createProviderMock = (
     name: ModelProviderName,
   ): jest.Mocked<ModelProviderPort> => ({

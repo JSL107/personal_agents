@@ -1,8 +1,10 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
 import { CronIdempotencyService } from '../../common/queue/cron-idempotency.service';
 import { CRON_SENT_GUARD_TTL_SECONDS } from '../../common/queue/worker-options.constant';
 import { getTodayKstDate } from '../../common/util/kst-date.util';
+import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
+import { autopilotTaskIncidentKey } from '../../notification/domain/notification.type';
 import { CreatePreviewUsecase } from '../../preview-gate/application/create-preview.usecase';
 import {
   PREVIEW_ACTION_REPOSITORY_PORT,
@@ -46,7 +48,7 @@ const buildSlotKey = (groupKey: string, slotId: string): string =>
 // 채널에 올라간 카드는 알림이 울리지 않아 읽히지 않은 채 흘러간다 — 채널 발송에 owner 멘션을
 // 맨 앞 줄로 붙인다. DM 은 이미 본인에게 가므로 붙이지 않는다(같은 알림이 두 번 울린다).
 //
-// 붙이는 대상은 아래 NOTIFY_OWNER_TASK_IDS 와 전멸 실패 안내로 한정한다 — 모든 채널 발송에
+// 붙이는 대상은 아래 NOTIFY_OWNER_TASK_IDS 로 한정한다 — 모든 채널 발송에
 // 붙이던 동안 알림이 과해져, 정작 울려야 하는 것까지 함께 무시되는 상태가 됐다.
 //
 // 멘션은 반드시 `<@유저ID>` 형식이어야 한다. `@핸들` 은 그냥 글자로 렌더돼 알림이 가지 않는다.
@@ -59,10 +61,10 @@ const DIRECT_MESSAGE_TARGET = /^[UW]/;
 //
 // 근거(최근 7일 실측, 2026-09-18): 자율 실행 984건 중 울려야 했던 것은 실패 73건 +
 // 승인 카드 14건 = 87건(8.8%). 나머지 91%는 알림이 불필요했고, 그 소음이 알림 자체를
-// 무시하게 만들었다.
+// 무시하게 만들었다. 실패 73건은 이제 채널 멘션이 아니라 사건 DM 으로 간다.
 //
 // 승인 카드는 postPreviewMessage 가 별도로 내보내며 원래 멘션이 없다 — 승인율 85~100% 로
-// 이미 잘 눌리고 있어 건드리지 않는다. 전멸 실패 안내는 이 집합과 무관하게 항상 멘션한다.
+// 이미 잘 눌리고 있어 건드리지 않는다. task 실패는 사건 DM 으로 따로 보낸다.
 //
 // 이 목록은 task 의 성격이 아니라 발송 정책이므로 playbook 이 아니라 여기 둔다.
 // 값은 playbook 의 `taskId` 와 같다(`autopilot.playbook.ts`) — 어긋나면 해당 task 의 멘션이
@@ -79,6 +81,13 @@ const withOwnerMention = (
   ownerSlackUserId: string,
 ): string =>
   DIRECT_MESSAGE_TARGET.test(target) ? text : `<@${ownerSlackUserId}>\n${text}`;
+
+export class AutopilotAllTasksFailedError extends Error {
+  constructor() {
+    super('Autopilot: 실행한 모든 task 가 실패했습니다.');
+    this.name = AutopilotAllTasksFailedError.name;
+  }
+}
 
 // 플레이북 그룹을 실행 → 비-skip summaryText 를 메인 메시지로 합치고 detailText 는 스레드 댓글로,
 // 멱등 1회 후 다중 타깃 fan-out 발송. T1_PREVIEW task 의 preview 는 CreatePreviewUsecase →
@@ -97,6 +106,8 @@ export class AutopilotOrchestrator {
     private readonly createPreview: CreatePreviewUsecase,
     @Inject(PREVIEW_ACTION_REPOSITORY_PORT)
     private readonly previewRepository: PreviewActionRepositoryPort,
+    @Optional()
+    private readonly notificationPublisher?: NotificationPublisher,
   ) {
     this.tasks = new Map(tasks.map((task) => [task.id, task]));
   }
@@ -218,6 +229,11 @@ export class AutopilotOrchestrator {
       // T1_PREVIEW entry 는 preview 가 없으면(게이트 OFF) 자연히 텍스트 경로로 폴백한다.
       try {
         const result = await task.run({ ownerSlackUserId, firedAtKst });
+        if (!result.skip) {
+          this.notificationPublisher?.publishRecovery(
+            autopilotTaskIncidentKey(entry.taskId),
+          );
+        }
         if (result.guardKeySuffix) {
           guardKeySuffixes.push(result.guardKeySuffix);
         }
@@ -276,23 +292,18 @@ export class AutopilotOrchestrator {
           `Autopilot[${groupKey}] task '${entry.taskId}' 실패 (그룹은 계속): ${message}`,
           error instanceof Error ? error.stack : undefined,
         );
-        // 조용한 실패 방지 — owner digest 에 짧게 표기. message 는 길이 cap.
-        //
-        // notifyOwner 를 task 종류와 무관하게 세운다. 전멸 실패는 아래 failureNotice 경로가 멘션을
-        // 유지하지만, 부분 실패는 성공한 요약과 함께 이 items 를 타고 메인 메시지로 나간다 —
-        // 여기서 세우지 않으면 멘션 대상이 아닌 task 의 실패가 조용히 흘러간다. 설계는 cron 실패를
-        // 멘션 필요로 분류하고, 근거 수치(7일 73건)도 실패 전체를 센 값이다.
-        items.push({
-          taskId: entry.taskId,
-          summary: `_⚠️ ${entry.taskId} 자동 생성 실패 — ${message.slice(0, 200)}. 다음 슬롯에 재시도됩니다._`,
-          notifyOwner: true,
+        this.notificationPublisher?.publishCronFailure({
+          cronName: `Autopilot task ${entry.taskId}`,
+          incidentKey: autopilotTaskIncidentKey(entry.taskId),
+          ownerSlackUserId,
+          errorMessage: message,
         });
       }
     }
 
-    // 전달할 summary/preview 산출물이 없고 실패가 하나라도 있는데 실패 안내만 발송하면 cron 이
-    // 성공 처리된다. 그러면 발송 가드와 슬롯 완주 표식까지 남아 BullMQ 재시도가 막히고, 실제
-    // 보고가 다음 슬롯까지 유실된다. skip 은 정상 종료지만 전달 산출물은 아니며, preview 생성은
+    // 전달할 summary/preview 산출물이 없고 실패가 하나라도 있으면 cron 을 실패 처리한다.
+    // 발송 가드와 슬롯 완주 표식이 남으면 BullMQ 재시도가 막힌다. skip 은 정상 종료지만
+    // 전달 산출물은 아니며, preview 생성은
     // 전달 산출물이므로 재시도 조건에서 제외한다. 콘솔 항목도 전달 산출물이다 — 빼면 같은 그룹의
     // 다른 task 실패에 끌려 전멸로 판정돼, 성공한 콘솔 결과가 원장에 남지 못하고 버려진다.
     if (
@@ -301,27 +312,7 @@ export class AutopilotOrchestrator {
       previews.length === 0 &&
       consoleItems.length === 0
     ) {
-      const failureNotice = items
-        .map((item) => item.summary)
-        .join('\n\n────────\n\n');
-      for (const resolved of targets) {
-        try {
-          await this.slackNotifier.postMessage({
-            kind: `autopilot:${groupKey}`,
-            target: resolved,
-            text: withOwnerMention(failureNotice, resolved, ownerSlackUserId),
-          });
-        } catch (error: unknown) {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          this.logger.warn(
-            `Autopilot[${groupKey}] 전멸 실패 안내 발송 실패 (${resolved}): ${message}`,
-          );
-        }
-      }
-      // 여기서 가드를 쓰면 BullMQ retry가 이미 전송된 실행으로 오인해 죽는다. 전멸은 저빈도
-      // 그룹에서 드물고 재시도마다 안내가 재발송돼도, 조용한 유실보다 확실히 낫다는 tradeoff다.
-      throw new Error('Autopilot: 실행한 모든 task 가 실패했습니다.');
+      throw new AutopilotAllTasksFailedError();
     }
 
     if (

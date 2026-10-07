@@ -118,7 +118,10 @@ const makeConsumer = ({
   const slackNotifier = {
     postMessage: jest.fn().mockResolvedValue({ ts: 'T1' }),
   };
-  const notificationPublisher = { publishCronFailure: jest.fn() };
+  const notificationPublisher = {
+    publishCronFailure: jest.fn(),
+    publishRecovery: jest.fn(),
+  };
   const configService = {
     get: jest.fn((key: string) =>
       key === 'STUDY_BRIEF_NOTION_DATABASE_ID' ? notionDatabaseId : undefined,
@@ -182,6 +185,25 @@ const JOB = {
 };
 
 describe('StudyBriefCronConsumer', () => {
+  it('정상 종료와 소재 없음 모두 해결 신호를 보낸다', async () => {
+    const succeeded = makeConsumer();
+    await succeeded.consumer.process({
+      data: { ownerSlackUserId: 'U1', target: 'C1' },
+    } as never);
+    expect(
+      succeeded.notificationPublisher.publishRecovery,
+    ).toHaveBeenCalledWith('cron:Study Brief Cron');
+
+    const noTopic = makeConsumer({
+      hermesOutput: 'NO_TOPIC: 최근 주제와 중복',
+    });
+    await noTopic.consumer.process({
+      data: { ownerSlackUserId: 'U1', target: 'C1' },
+    } as never);
+    expect(noTopic.notificationPublisher.publishRecovery).toHaveBeenCalledWith(
+      'cron:Study Brief Cron',
+    );
+  });
   it('Hermes 조사 후 CTO 판정, 저장, Slack 카드·스레드 순으로 처리한다', async () => {
     const dependencies = makeConsumer();
 
@@ -476,6 +498,9 @@ describe('StudyBriefCronConsumer', () => {
     await expect(
       dependencies.consumer.process(overlapped as never, 'token-1'),
     ).rejects.toBeInstanceOf(DelayedError);
+    expect(
+      dependencies.notificationPublisher.publishRecovery,
+    ).toHaveBeenCalledTimes(1);
 
     expect(dependencies.hermesRunner.run).toHaveBeenCalledTimes(1);
     expect(dependencies.studyBriefRepository.save).toHaveBeenCalledTimes(1);

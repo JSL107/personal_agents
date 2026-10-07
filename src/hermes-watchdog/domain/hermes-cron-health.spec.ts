@@ -1,6 +1,7 @@
 import {
   detectHermesCronIssues,
   formatHermesCronIssues,
+  groupHermesCronIssues,
   HERMES_CRON_ISSUE,
 } from './hermes-cron-health';
 import { HermesCronJobSnapshot } from './hermes-watchdog.type';
@@ -189,5 +190,66 @@ describe('formatHermesCronIssues', () => {
     expect(text).toBe(
       '• [실행 실패] 아침신문 — boom\n• [스케줄러 멈춤] 아침신문 — stuck',
     );
+  });
+});
+
+describe('groupHermesCronIssues', () => {
+  it('스케줄러 멈춤은 여러 job 에 걸쳐도 공통 사건으로 묶는다', () => {
+    const result = groupHermesCronIssues({
+      jobs: [
+        {
+          ...MORNING_NEWS_FAILURE,
+          last_status: 'ok',
+          next_run_at: '2026-09-18T06:00:00+09:00',
+        },
+        {
+          id: 'second-id',
+          name: '저녁신문',
+          enabled: true,
+          next_run_at: '2026-09-18T06:00:00+09:00',
+        },
+      ],
+      nowMs: CHECKED_AT_MS,
+    });
+
+    expect(result.schedulerIssues).toHaveLength(2);
+    expect(result.jobs).toEqual([
+      expect.objectContaining({
+        identifier: '91a2c90c75b8',
+        label: '아침신문',
+        issues: [],
+      }),
+      expect.objectContaining({
+        identifier: 'second-id',
+        label: '저녁신문',
+        issues: [],
+      }),
+    ]);
+  });
+
+  it('실행·전달 실패는 id 기준으로 각 job 에 묶고 꺼진 job 은 제외한다', () => {
+    const result = groupHermesCronIssues({
+      jobs: [
+        { ...MORNING_NEWS_FAILURE, last_delivery_error: 'delivery error' },
+        {
+          id: 'disabled-id',
+          name: '꺼진 작업',
+          enabled: false,
+          last_status: 'error',
+        },
+      ],
+      nowMs: CHECKED_AT_MS,
+    });
+
+    expect(result.jobs).toHaveLength(1);
+    expect(result.jobs[0]).toMatchObject({
+      identifier: '91a2c90c75b8',
+      label: '아침신문',
+    });
+    expect(result.jobs[0].issues.map((issue) => issue.kind)).toEqual([
+      HERMES_CRON_ISSUE.LAST_RUN_FAILED,
+      HERMES_CRON_ISSUE.DELIVERY_FAILED,
+    ]);
+    expect(result.schedulerIssues).toEqual([]);
   });
 });

@@ -686,7 +686,7 @@ export class EnvironmentVariables {
   // Daily Eval / Impact Report Recent / CEO Meta Cron 등 cron consumer 가 graceful skip (NO_xxx) 외
   // throw 직전에 owner 에게 DM 으로 알릴 Slack user ID (`U...`). 미설정 시 NoopCronFailureAlerter
   // (stdout warn 만). CLAUDE_AUTH_ALERT_OWNER 와 별도로 둬 cron 알람만 분리 구독 가능.
-  // 30분 dedupe 는 cron 별로 적용 (한 cron 의 연쇄 실패 알람 폭주 방지).
+  // 같은 cron 의 연쇄 실패는 사건 단위로 묶고, 원장 접근 실패 시 30분 메모리 dedupe 를 쓴다.
   @IsOptional()
   @IsString()
   CRON_FAILURE_ALERT_OWNER_SLACK_USER_ID?: string;
