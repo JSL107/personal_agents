@@ -68,3 +68,13 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      # 앱 DI 연결 게이트 — 3중 green 이 못 보는 모듈 연결 오류(#745 → 핫픽스 #746)를 잡는다.
+      # preview 모드라 provider 를 만들지 않아 Redis/DB 에 연결하지 않는다. env 는 validateEnv 의
+      # 필수 3종을 통과시키기 위한 가짜 값이며 어디에도 접속하지 않는다.
+      - name: Check DI wiring
+        run: pnpm check:di
+        env:
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: '6379'
+          DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/ci
