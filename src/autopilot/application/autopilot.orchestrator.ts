@@ -195,8 +195,15 @@ export class AutopilotOrchestrator {
     // AutopilotTaskResult.guardKeySuffix 참조).
     const guardKeySuffixes: string[] = [];
     // 콘솔 경로 task 의 산출물. Slack 항목과 같은 가드를 타야 해서 가드 통과 후에 원장에 쓴다.
-    const consoleItems: { taskId: string; summary: string; detail?: string }[] =
-      [];
+    // 원장 기록에 실패하면 Slack 항목으로 되돌리므로, 발송 방식을 정하는 필드도 원래 결과 그대로 들고 간다
+    // (`detailIsOnlyCopy` 를 잃으면 메인 ts 가 비는 회차에 상세 대피가 빠져 원장·Slack 어디에도 안 남는다).
+    const consoleItems: {
+      taskId: string;
+      summary: string;
+      detail?: string;
+      detailIsOnlyCopy?: boolean;
+      unfurlLinks?: boolean;
+    }[] = [];
 
     for (const entry of entries) {
       const task = this.tasks.get(entry.taskId);
@@ -230,6 +237,8 @@ export class AutopilotOrchestrator {
               taskId: entry.taskId,
               summary: result.summaryText,
               detail: result.detailText,
+              detailIsOnlyCopy: result.detailIsOnlyCopy,
+              unfurlLinks: result.unfurlLinks,
             });
           } else {
             hasDeliverableSummary = true;
@@ -398,6 +407,8 @@ export class AutopilotOrchestrator {
           taskId: consoleItem.taskId,
           summary: consoleItem.summary,
           detail: consoleItem.detail,
+          detailIsOnlyCopy: consoleItem.detailIsOnlyCopy,
+          unfurlLinks: consoleItem.unfurlLinks,
           notifyOwner: false,
         });
       }

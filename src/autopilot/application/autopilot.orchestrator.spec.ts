@@ -2699,6 +2699,43 @@ describe('AutopilotOrchestrator', () => {
       );
     });
 
+    // 되돌린 항목도 원래 발송 필드를 지녀야 한다 — detailIsOnlyCopy 를 잃으면 메인 ts 가 비는 회차에
+    // 상세 대피가 빠져 원장에도 Slack 에도 전문이 남지 않는다.
+    it('원장 실패로 되돌린 항목은 메인 ts 가 없어도 유일 사본 상세를 채널로 대피한다', async () => {
+      const slackNotifier = {
+        postMessage: jest.fn().mockResolvedValue({ ts: undefined }),
+        recordSuppressedDelivery: jest
+          .fn()
+          .mockRejectedValue(new Error('db unavailable')),
+      };
+      const task = makeTask('run-sweeper', {
+        skip: false,
+        summaryText: '정리 요약',
+        detailText: '정리 상세 전문',
+        detailIsOnlyCopy: true,
+        unfurlLinks: false,
+      });
+
+      await makeOrchestrator([task], slackNotifier).runGroup(
+        'run-sweeper',
+        [makeEntry('run-sweeper', 'run-sweeper')],
+        'U1',
+        'C1',
+      );
+
+      expect(slackNotifier.postMessage).toHaveBeenCalledTimes(2);
+      expect(slackNotifier.postMessage).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          target: 'C1',
+          text: '정리 상세 전문',
+          unfurlLinks: false,
+        }),
+      );
+      expect(slackNotifier.postMessage.mock.calls[1][0]).not.toHaveProperty(
+        'threadTs',
+      );
+    });
+
     // 원장이 유일한 사본이라, 못 쓰면 버리지 않고 종전처럼 Slack 으로 보낸다.
     it('원장 기록에 실패한 콘솔 항목은 Slack 으로 되돌려 보낸다', async () => {
       const slackNotifier = {
