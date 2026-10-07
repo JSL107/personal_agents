@@ -6,7 +6,7 @@ import { ConsoleAgentState } from '../../console/domain/console.type';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { AgentRunStatus, TriggerType } from '../domain/agent-run.type';
 import { AgentRunRepositoryPort } from '../domain/port/agent-run.repository.port';
-import { AgentRunService } from './agent-run.service';
+import { AgentRunService, toLedgerModelResponse } from './agent-run.service';
 import { runWithParentRun } from './parent-run-context';
 import { RoutingContext, runWithRoutingContext } from './routing-context';
 
@@ -378,6 +378,67 @@ describe('AgentRunService', () => {
   // LLM 응답 파싱 실패는 raw 응답 앞부분을 cause 에만 담는다. 그 cause 가 로그로만 나가던 동안
   // 실제로 원인 추적이 막혔다 — 2026-08-14 WORK_REVIEWER, 08-18 BLOG_PUBLISH 의 파싱 실패는
   // 원장에 문구 한 줄만 남아 모델이 무엇을 돌려줬는지 사후에 복구할 수 없었다.
+  describe('모델 응답 원문 기록', () => {
+    it('기록한 원문은 run 이 이후에 실패해도 finish 가 덮지 않는다', async () => {
+      const recordModelResponse = jest.fn().mockResolvedValue(undefined);
+      repository.recordModelResponse = recordModelResponse;
+
+      await expect(
+        service.execute({
+          agentType: AgentType.PAPER_RECOMMEND,
+          triggerType: TriggerType.AUTOPILOT_PAPER_RECOMMEND_CRON,
+          inputSnapshot: {},
+          run: async ({ recordModelResponse: record }) => {
+            await record('{"buys": [깨진 응답');
+            throw new Error('모델 응답을 JSON으로 파싱하지 못했습니다.');
+          },
+        }),
+      ).rejects.toThrow('파싱하지 못했습니다');
+
+      expect(recordModelResponse).toHaveBeenCalledWith({
+        id: 42,
+        modelResponse: '{"buys": [깨진 응답',
+      });
+      const finishInput = repository.finish.mock.calls[0][0];
+      expect(finishInput.status).toBe(AgentRunStatus.FAILED);
+      expect(finishInput).not.toHaveProperty('modelResponse');
+    });
+
+    it('저장이 실패해도 run 은 그대로 성공한다 — 기록이 판단을 바꾸지 않는다', async () => {
+      repository.recordModelResponse = jest
+        .fn()
+        .mockRejectedValue(new Error('db down'));
+
+      const outcome = await service.execute({
+        agentType: AgentType.PAPER_RECOMMEND,
+        triggerType: TriggerType.AUTOPILOT_PAPER_RECOMMEND_CRON,
+        inputSnapshot: {},
+        run: async ({ recordModelResponse: record }) => {
+          await record('{}');
+          return { result: 'ok', modelUsed: 'codex-cli', output: {} };
+        },
+      });
+
+      expect(outcome.result).toBe('ok');
+      expect(repository.finish).toHaveBeenCalledWith(
+        expect.objectContaining({ status: AgentRunStatus.SUCCEEDED }),
+      );
+    });
+
+    it('토큰 형태는 가리고, 상한을 넘으면 잘린 길이를 꼬리에 적는다', () => {
+      const token = `xoxb-${'1'.repeat(12)}`;
+      expect(toLedgerModelResponse(`응답 ${token}`)).toBe(
+        '응답 [REDACTED:slack_token]',
+      );
+
+      const long = toLedgerModelResponse('a'.repeat(50_010));
+      expect(long).toBe(`${'a'.repeat(50_000)}…[truncated 10 chars]`);
+      expect(toLedgerModelResponse('a'.repeat(50_000))).toBe(
+        'a'.repeat(50_000),
+      );
+    });
+  });
+
   it('cause 가 있으면 원장 output 에 cause 도 남긴다 (상한 1000자)', async () => {
     const bomb = new Error('모델 응답을 JSON 으로 파싱하지 못했습니다.');
     (bomb as { cause?: unknown }).cause = new Error(

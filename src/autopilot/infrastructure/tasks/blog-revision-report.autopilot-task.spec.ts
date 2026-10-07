@@ -21,6 +21,7 @@ describe('BlogRevisionReportAutopilotTask 원장', () => {
       const execution = await input.run({
         agentRunId: 1,
         updateInputSnapshot: jest.fn(),
+        recordModelResponse: jest.fn(),
       });
       records.push(execution.output);
       return {
