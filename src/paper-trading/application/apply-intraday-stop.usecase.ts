@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { fetchDailyBarsWithRateLimitRetry } from '../../market-data/domain/fetch-daily-bars-with-rate-limit-retry';
 import { DailyBar } from '../../market-data/domain/market-data.type';
 import {
   MARKET_DATA_PORT,
@@ -365,7 +366,8 @@ export class ApplyIntradayStopUsecase {
       try {
         // 2봉을 받는다. 전일 종가가 없으면 기업행동 판정 자체가 불가능하고, 그러면
         // 배당락·분할로 튄 가격이 그대로 손절 판정에 들어간다.
-        bars = await this.marketData.fetchDailyBars(
+        bars = await fetchDailyBarsWithRateLimitRetry(
+          this.marketData,
           position.ticker.tossSymbol,
           2,
           { adjusted: false },
