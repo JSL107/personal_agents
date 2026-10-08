@@ -25,6 +25,7 @@ import {
   SubconsciousProposalRepository,
 } from '../domain/port/subconscious-proposal.repository.port';
 import { GateDecision, StateChange } from '../domain/subconscious.type';
+import { SubconsciousErrorCode } from '../domain/subconscious-error-code.enum';
 
 // 카드 유효 시간. 1시간이었으나 실측(2026-09-10)에서 미응답 카드 22건이 만료로 죽었고, 그중
 // 상당수는 스윕이 조회하지 않는 PR(남이 작성해 나에게 할당) 이라 카드가 유일한 리뷰 경로였다.
@@ -466,7 +467,7 @@ export class SubconsciousProposalService implements ProposalEmitter {
 }
 
 export class SubconsciousProposalException extends DomainException {
-  readonly errorCode = 'SUBCONSCIOUS_PROPOSAL_ERROR';
+  readonly errorCode = SubconsciousErrorCode.PROPOSAL_ERROR;
   readonly status: DomainStatus;
 
   constructor(message: string, domainStatus: DomainStatus) {
