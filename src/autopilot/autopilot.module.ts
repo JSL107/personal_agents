@@ -44,6 +44,7 @@ import { ScreenerModule } from '../screener/screener.module';
 import { SLACK_NOTIFIER_PORT } from '../slack/domain/port/slack-notifier.port';
 import { SlackModule } from '../slack/slack.module';
 import { SlackService } from '../slack/slack.service';
+import { SlackDeliveryModule } from '../slack/slack-delivery.module';
 import { StudyApplicabilityModule } from '../study-brief-cron/study-applicability.module';
 import { StudyDeepdiveModule } from '../study-brief-cron/study-deepdive.module';
 import { AutopilotOrchestrator } from './application/autopilot.orchestrator';
@@ -125,6 +126,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     PreviewGateModule,
     PrReviewLoopModule,
     SlackModule,
+    SlackDeliveryModule,
     NotificationQueueModule,
     PaperTradingModule,
     PaperRecommendModule,
