@@ -58,8 +58,10 @@ export enum TriggerType {
   // Code Reviewer 자연어 멘션 진입 — 수동 slash command와 구분해 집계·감사한다.
   SLACK_MENTION_CODE_REVIEWER = 'SLACK_MENTION_CODE_REVIEWER',
   SLACK_MENTION_VIDEO_WATCH = 'SLACK_MENTION_VIDEO_WATCH',
-  // 일정 워커가 등록 대신 질문에 답한 회차(자연어 응답 충실도 3단계). 등록 자체는 AgentRun 을 열지 않는다.
+  // 일정 워커의 자연어 멘션 — 등록과 질문 답변이 함께 쓴다. 동작 구분은 inputSnapshot.action.
   SLACK_MENTION_SCHEDULE = 'SLACK_MENTION_SCHEDULE',
+  // 지연 보고("왜 늦어져?") — 결정론 워커라도 AgentRun 을 남긴다. 없으면 원장이 NEVER_RUN 으로 본다.
+  SLACK_MENTION_DELAY_REPORT = 'SLACK_MENTION_DELAY_REPORT',
   // 라우터가 담당자를 고르지 못해 dispatch 이전에 끊긴 요청. 워커별 멘션 트리거와 나누는
   // 이유는 집계 때문이다 — 워커 실패와 섞이면 "분류가 안 되는 비율" 을 따로 셀 수 없다.
   ROUTING_FAILED = 'ROUTING_FAILED',
@@ -112,6 +114,13 @@ export enum TriggerType {
   EVENING_CAREER_REFLECT_APPROVAL = 'EVENING_CAREER_REFLECT_APPROVAL',
   // 포트폴리오 사이트 발행 autopilot — 프로필이 없어 새로 만들 때만 원장에 남는다.
   AUTOPILOT_PORTFOLIO_PUBLISH_CRON = 'AUTOPILOT_PORTFOLIO_PUBLISH_CRON',
+  // 주간 knowledge-lint 의 L4 모순 판정 회차(CONTRADICTION_JUDGE). 판정 usecase 는 모듈 순환으로
+  // AgentRunService 를 못 받아, autopilot task 가 회차 단위로 감싼다.
+  AUTOPILOT_KNOWLEDGE_LINT_CRON = 'AUTOPILOT_KNOWLEDGE_LINT_CRON',
+  // 주간 docs-sync-audit 의 Layer 2 LLM 호출(DOCS_AUDIT_OPTIMIZER/EVALUATOR) — 호출마다 한 행.
+  // `_CRON` 을 붙이지 않는다: 문서 수정 후보가 있는 주에만 호출되는 파생 호출이라, 자율 워커로
+  // 분류되면 후보 없는 주가 끼는 순간 원장 정지 판정(stall.ts)이 거짓 경고를 낸다.
+  DOCS_AUDIT_LAYER2 = 'DOCS_AUDIT_LAYER2',
 }
 
 // worker 를 고른 경로. 셋을 구분하지 않으면 원장에서 분류기 성적을 낼 수 없다 —

@@ -7,6 +7,7 @@ import {
   FailedRunDetail,
   RecentlyFinishedRun,
 } from '../../../agent-run/domain/port/agent-run.repository.port';
+import { AgentType } from '../../../model-router/domain/model-router.type';
 import { FindAllOpenPreviewsUsecase } from '../../../preview-gate/application/find-all-open-previews.usecase';
 import { PreviewAction } from '../../../preview-gate/domain/preview-action.type';
 import { attributeDelay } from '../domain/attribute-delay';
@@ -31,6 +32,9 @@ interface ReadResult<T> {
   value: T;
   unavailableAxis: string | null;
 }
+
+const isNotDelayReport = (run: { agentType: string }): boolean =>
+  run.agentType !== AgentType.DELAY_REPORT;
 
 @Injectable()
 export class BuildDelayReportUsecase {
@@ -103,12 +107,15 @@ export class BuildDelayReportUsecase {
     ].filter((axis): axis is string => axis !== null);
 
     const input: DelayReportInput = {
-      activeRuns: activeRunsResult.value,
+      // 지연 보고 자신의 run 은 세 입력 모두에서 뺀다 — dispatcher 가 AgentRun 안에서 부르므로
+      // 지금 회차는 IN_PROGRESS 로, 지난 회차는 성공·실패로 원장에 있다. 남겨 두면 "진행 중 작업:
+      // 지연 보고" 나 "지연 보고 실행이 실패했어요" 가 사용자 작업의 지연 원인으로 뽑힌다.
+      activeRuns: activeRunsResult.value.filter(isNotDelayReport),
       openPreviews: openPreviewsResult.value.filter(
         (preview) => preview.slackUserId === slackUserId,
       ),
-      failedRuns: failedRunsResult.value,
-      recentlyFinished: finishedRunsResult.value,
+      failedRuns: failedRunsResult.value.filter(isNotDelayReport),
+      recentlyFinished: finishedRunsResult.value.filter(isNotDelayReport),
       integrations: this.readIntegrations(),
       now,
       unavailableAxes,

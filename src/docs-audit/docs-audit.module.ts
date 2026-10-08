@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { AgentRunModule } from '../agent-run/agent-run.module';
 import { ModelRouterModule } from '../model-router/model-router.module';
 import {
   DocExcerptReader,
@@ -56,7 +57,7 @@ const fullDocReader: FullDocReader = async (path) => {
 };
 
 @Module({
-  imports: [ModelRouterModule],
+  imports: [AgentRunModule, ModelRouterModule],
   providers: [
     CodexDocsJudgeAdapter,
     {
