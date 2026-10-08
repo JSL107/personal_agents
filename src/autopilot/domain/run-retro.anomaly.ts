@@ -159,12 +159,17 @@ export const detectContractScoreAnomalies = (
       agentType: row.agentType,
       kind: 'CONTRACT_SCORE',
       detail:
-        `형식 준수율 ${toPercent(row.avgScore)}% ` +
-        `(${row.scoredCount}건 평균, 하한 ${toPercent(thresholds.contractScore)}% · 필수 필드 존재 여부만 검사함)` +
+        `형식 준수율 ${floorPercent(row.avgScore)}% ` +
+        `(${row.scoredCount}건 평균, 하한 ${roundPercent(thresholds.contractScore)}% · 필수 필드 존재 여부만 검사함)` +
         ` · ${describeHumanVerdicts(row.agentType, verdicts, thresholds)}`,
     }));
 
-const toPercent = (ratio: number): number => Math.round(ratio * 100);
+// 경보 문구는 "하한 미달" 의 근거라 표시값이 하한 이상으로 보이면 안 된다 — 반올림하면 0.499 가
+// "50% (하한 50%)" 로 찍힌다. 평균은 0.1%p 단위로 내림해 판정(원래 비율 < 하한)과 표시를 같은 쪽에 둔다.
+// 부동소수 오차로 0.1%p 더 내려가는 경우는 있어도 올라가지는 않는다.
+const floorPercent = (ratio: number): number => Math.floor(ratio * 1000) / 10;
+
+const roundPercent = (ratio: number): number => Math.round(ratio * 1000) / 10;
 
 const describeHumanVerdicts = (
   agentType: string,

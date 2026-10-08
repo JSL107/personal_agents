@@ -144,7 +144,7 @@ describe('detectContractScoreAnomalies', () => {
     expect(anomalies[0].agentType).toBe('PAPER_TRADE');
     expect(anomalies[0].kind).toBe('CONTRACT_SCORE');
     expect(anomalies[0].detail).toBe(
-      '형식 준수율 2% (171건 평균, 하한 50% · 필수 필드 존재 여부만 검사함) · 품질: 판정 없음',
+      '형식 준수율 2.3% (171건 평균, 하한 50% · 필수 필드 존재 여부만 검사함) · 품질: 판정 없음',
     );
     expect(anomalies[0].detail).not.toContain('계약 점수');
   });
@@ -158,6 +158,23 @@ describe('detectContractScoreAnomalies', () => {
 
     expect(anomalies).toEqual([]);
   });
+
+  // 판정은 원래 비율로 하므로, 표시가 반올림이면 0.499 가 "50% (하한 50%)" 로 찍혀 경보 근거가 사라진다.
+  it.each([
+    [0.499, '형식 준수율 49.9% (10건 평균, 하한 50%'],
+    [0.4999, '형식 준수율 49.9% (10건 평균, 하한 50%'],
+  ])(
+    '하한 바로 아래(%s)는 표시값도 하한보다 작게 내림한다',
+    (avgScore, expected) => {
+      const anomalies = detectContractScoreAnomalies(
+        [{ agentType: 'PM', scoredCount: 10, avgScore }],
+        [],
+      );
+
+      expect(anomalies).toHaveLength(1);
+      expect(anomalies[0].detail).toContain(expected);
+    },
+  );
 
   it('점수가 하한 이상이면 조용하다 (계기판 소음 방지)', () => {
     const anomalies = detectContractScoreAnomalies(
