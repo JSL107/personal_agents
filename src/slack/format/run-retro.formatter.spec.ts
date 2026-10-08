@@ -73,4 +73,22 @@ describe('formatRunRetro', () => {
       '이번주 실행 0건 (지난주 45건) — 시스템 전체 점검 필요',
     );
   });
+
+  // 형식 경보는 품질로 읽히면 안 된다 — 힌트도 "형식" 을 말한다(설계 §6).
+  it('형식 준수율 경보: 형식 힌트를 붙이고 "계약 점수" 라는 말을 쓰지 않는다', () => {
+    const anomalies: RunAnomaly[] = [
+      {
+        agentType: 'PM',
+        kind: 'CONTRACT_SCORE',
+        detail:
+          '형식 준수율 30% (10건 평균, 하한 50% · 필수 필드 존재 여부만 검사함) · 품질: 판정 없음',
+      },
+    ];
+    const text = formatRunRetro([], anomalies, '2026-07-06');
+
+    expect(text).toContain(
+      '• 📋 PM: 형식 준수율 30% (10건 평균, 하한 50% · 필수 필드 존재 여부만 검사함) · 품질: 판정 없음 — 산출물 형식이 계약과 어긋남',
+    );
+    expect(text).not.toContain('계약 점수');
+  });
 });
