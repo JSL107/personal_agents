@@ -175,6 +175,17 @@ export const NL_ANSWER_EVAL_CASES: readonly EvalCase[] = [
     expect: { forbidIntercepts: true, mustNotMatch: [ASK_BACK] },
   },
   {
+    id: 't-schedule-lookup-plain',
+    split: 'tuning',
+    note: '물음표 없는 일정 조회 — 등록 파서가 문장 전체를 제목으로 읽어 날짜를 되묻던 경로(2026-10-08 실측)',
+    text: '다음주 마감 알려줘',
+    expect: {
+      destinations: [AgentType.SCHEDULE, 'REPLIED'],
+      forbidIntercepts: true,
+      mustNotMatch: [ASK_BACK, /언제까지/],
+    },
+  },
+  {
     id: 't-schedule-question',
     split: 'tuning',
     note: '날짜 없는 확인형 — 되묻기로 빠진 뒤 등록되던 경로(#741 리뷰)',
