@@ -43,6 +43,12 @@ export interface AutopilotTaskFile {
   title: string;
 }
 
+export interface AutopilotRunVerdictRequest {
+  agentRunId: number;
+  facets: RunVerdictFacet[];
+  quote?: string;
+}
+
 export interface AutopilotTaskResult {
   // 게시할 내용 없으면 skip=true → 오케스트레이터가 전달 안 함(빈 알림 방지).
   skip: boolean;
@@ -91,11 +97,9 @@ export interface AutopilotTaskResult {
   // 버튼 값에 agentRunId 가 실려, 여러 task 의 요약이 합쳐진 메시지에서도 판정이 이 실행에
   // 정확히 귀속된다(사람 피드백 설계 2026-09-30 §1-2·§3). 판정 대상인 task 만 채운다.
   // 요약을 실은 회차에만 붙는다 — 판정할 대상이 화면에 없으면 버튼도 없다.
-  runVerdict?: {
-    agentRunId: number;
-    facets: RunVerdictFacet[];
-    quote?: string;
-  };
+  // 한 task 가 여러 실행을 판정받을 수 있다 — 저녁 회고 task 는 그날 아침 계획(PM) 실행도 함께 싣는다.
+  // 실행마다 댓글이 하나다(버튼을 누른 뒤 댓글을 다시 그릴 때 그 실행의 판정만 읽는다).
+  runVerdicts?: AutopilotRunVerdictRequest[];
   // T1_PREVIEW 전용 — 있으면 orchestrator 가 PreviewGate 승인 버튼 발송.
   preview?: AutopilotPreviewRequest;
   // T1_PREVIEW 전용 — 있으면 orchestrator 가 preview 단수와 합쳐 각각 PreviewGate 카드 발송.

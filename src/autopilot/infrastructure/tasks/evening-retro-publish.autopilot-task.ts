@@ -36,6 +36,7 @@ import { AgentType } from '../../../model-router/domain/model-router.type';
 import { PREVIEW_KIND } from '../../../preview-gate/domain/preview-action.type';
 import {
   AutopilotPreviewRequest,
+  AutopilotRunVerdictRequest,
   AutopilotTask,
   AutopilotTaskContext,
   AutopilotTaskResult,
@@ -160,6 +161,11 @@ export class EveningRetroPublishTask implements AutopilotTask {
     if (mergedPrs.length === 0 && !worklogText && !dailyEvalText) {
       return { skip: true };
     }
+
+    // 아침 계획 판정 — 계획이 맞았는지는 하루를 보낸 뒤에야 알 수 있어 저녁 스레드에서 묻는다
+    // (사람 피드백 설계 §3-3). 회고가 실패해도 대체 요약이 나가므로 두 경로 모두에 싣는다.
+    // ponytail: 위 skip(재료 0건) 회차는 요약이 없어 이 버튼도 나가지 않는다 — 그런 날이 잦아지면 별도 task 로.
+    const pmPlanVerdict = await this.findTodayPmPlanVerdict(ownerSlackUserId);
 
     try {
       // 실행 원장에 남긴다. 이 task 는 블로그·경력 카드를 만드는 유일한 경로인데, 원장을
@@ -306,11 +312,14 @@ export class EveningRetroPublishTask implements AutopilotTask {
         summaryText,
         detailText,
         previews,
-        runVerdict: {
-          agentRunId: outcome.agentRunId,
-          facets: verdictFacets,
-          ...(problemSentence ? { quote: problemSentence } : {}),
-        },
+        runVerdicts: [
+          {
+            agentRunId: outcome.agentRunId,
+            facets: verdictFacets,
+            ...(problemSentence ? { quote: problemSentence } : {}),
+          },
+          ...pmPlanVerdict,
+        ],
       };
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
@@ -318,6 +327,7 @@ export class EveningRetroPublishTask implements AutopilotTask {
       return {
         skip: false,
         summaryText: `🌙 *오늘의 회고 — ${firedAtKst}*\n_회고 자동 생성에 실패했습니다(${message.slice(0, 120)}). 내일 다시 시도합니다._`,
+        ...(pmPlanVerdict.length > 0 ? { runVerdicts: pmPlanVerdict } : {}),
       };
     }
   }
@@ -375,6 +385,32 @@ export class EveningRetroPublishTask implements AutopilotTask {
       return `\n\n_⚠️ 오늘 머지된 PR 이 0건으로 조회됐습니다. 실제로 없었다면 정상이지만, 며칠 연속이면 GitHub 조회 경로를 확인하세요._${openPrNotice}`;
     }
     return openPrNotice;
+  }
+
+  // 오늘(KST) 아침 브리핑이 낸 PM 실행. 수동 `/today` 는 아침 보고로 나간 계획이 아니라 제외한다.
+  // 아침 PM 이 실패한 날은 판정할 대상이 없어 빈 배열이다. 조회 실패도 회고를 막지 않는다.
+  private async findTodayPmPlanVerdict(
+    slackUserId: string,
+  ): Promise<AutopilotRunVerdictRequest[]> {
+    try {
+      // sinceDays: 1 = 오늘 KST 0시 이후에 끝난 실행(저장소 구현이 KST 날짜 경계로 자른다).
+      const runs = await this.agentRunService.findRecentSucceededRuns({
+        agentType: AgentType.PM,
+        slackUserId,
+        sinceDays: 1,
+        // 수동 /today 가 같은 날 여러 번 돌아도 아침 cron 실행이 창 밖으로 밀리지 않게 넉넉히 읽는다.
+        // ponytail: 하루 20회를 넘기면 다시 놓친다 — 그때는 저장소 조회에 triggerType 조건을 넣는다.
+        limit: 20,
+      });
+      const found = runs.find(
+        (run) => run.triggerType === TriggerType.MORNING_BRIEFING_CRON,
+      );
+      return found ? [{ agentRunId: found.id, facets: ['pm_plan'] }] : [];
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`아침 계획 실행 조회 실패 — 계획 판정 생략: ${message}`);
+      return [];
+    }
   }
 
   private async readRunText(

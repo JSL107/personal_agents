@@ -18,14 +18,14 @@ import {
 import { SlackHandler } from '../domain/port/slack-handler.port';
 import {
   buildRunVerdictBlocks,
+  buildRunVerdictFallbackText,
   parseRunVerdictValue,
   readRunVerdictQuote,
   RUN_VERDICT_ACTION_PATTERN,
-  RUN_VERDICT_FALLBACK_TEXT,
 } from '../format/run-verdict-message.builder';
 import { toUserFacingErrorMessage } from './slack-handler.helper';
 
-// 실행별 판정 버튼(저녁 회고 스레드 댓글) 처리 — 누르면 저장하고 그 댓글을 "판정됨" 으로 다시 그린다.
+// 실행별 판정 버튼(저녁 회고·PO 대행·아침 계획 스레드 댓글) 처리 — 누르면 저장하고 그 댓글을 "판정됨" 으로 다시 그린다.
 // 설계: docs/superpowers/specs/2026-09-30-human-feedback-channel-design.md §3·§4.
 //
 // 실패는 조용히 넘기지 않는다 — 누른 사람은 저장됐다고 믿고 떠나므로, 저장이 안 됐으면 그 자리에서 알린다.
@@ -113,7 +113,7 @@ export class RunVerdictActionHandler implements SlackHandler {
             await client.chat.update({
               channel: messageRef.channel,
               ts: messageRef.ts,
-              text: RUN_VERDICT_FALLBACK_TEXT,
+              text: buildRunVerdictFallbackText(facets),
               blocks: buildRunVerdictBlocks({
                 agentRunId,
                 facets,

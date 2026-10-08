@@ -1245,7 +1245,7 @@ describe('AutopilotOrchestrator', () => {
         skip: false,
         summaryText: 'RETRO',
         detailText: 'RETRO_DETAIL',
-        runVerdict: { agentRunId: 42, facets: ['retro_problem', 'overall'] },
+        runVerdicts: [{ agentRunId: 42, facets: ['retro_problem', 'overall'] }],
       });
       const otherTask = makeTask('daily-eval', {
         skip: false,
@@ -1293,15 +1293,47 @@ describe('AutopilotOrchestrator', () => {
       ]);
     });
 
+    it('한 task 가 실행 여러 개를 판정받으면 실행마다 댓글을 따로, 요청 순서대로 붙인다', async () => {
+      const retroTask = makeTask('evening-retro-publish', {
+        skip: false,
+        summaryText: 'RETRO',
+        runVerdicts: [
+          { agentRunId: 42, facets: ['overall'] },
+          { agentRunId: 7, facets: ['pm_plan'] },
+        ],
+      });
+      const postMessageMock = jest.fn().mockResolvedValue({ ts: 'TS1' });
+      await buildOrchestrator([retroTask], postMessageMock).runGroup(
+        'evening',
+        [makeEntry('evening-retro-publish', 'evening-retro-publish')],
+        'U1',
+        'C1',
+      );
+
+      const verdictCalls = postMessageMock.mock.calls
+        .map(([input]) => input)
+        .filter((input) => input.runVerdict);
+      expect(verdictCalls.map((input) => input.runVerdict.agentRunId)).toEqual([
+        42, 7,
+      ]);
+      // 대체 문구 머리는 그 댓글의 축이 정한다 — 계획 댓글이 "저녁 회고" 로 알림 가지 않게.
+      expect(verdictCalls[1].text).toContain('아침 계획');
+      expect(verdictCalls.every((input) => input.threadTs === 'TS1')).toBe(
+        true,
+      );
+    });
+
     it('판정 대상 문장(quote)을 발송 어댑터에 그대로 넘긴다', async () => {
       const retroTask = makeTask('evening-retro-publish', {
         skip: false,
         summaryText: 'RETRO',
-        runVerdict: {
-          agentRunId: 42,
-          facets: ['retro_problem', 'overall'],
-          quote: '윤문된 문제 문장',
-        },
+        runVerdicts: [
+          {
+            agentRunId: 42,
+            facets: ['retro_problem', 'overall'],
+            quote: '윤문된 문제 문장',
+          },
+        ],
       });
       const postMessageMock = jest.fn().mockResolvedValue({ ts: 'TS1' });
       await buildOrchestrator([retroTask], postMessageMock).runGroup(
@@ -1322,7 +1354,7 @@ describe('AutopilotOrchestrator', () => {
       const retroTask = makeTask('evening-retro-publish', {
         skip: false,
         summaryText: 'RETRO',
-        runVerdict: { agentRunId: 42, facets: ['overall'] },
+        runVerdicts: [{ agentRunId: 42, facets: ['overall'] }],
         onDelivered,
       });
       const postMessageMock = jest
