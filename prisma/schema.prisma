@@ -1292,3 +1292,23 @@ model ScheduleItem {
   @@index([slackUserId, dueDate])
   @@map("schedule_item")
 }
+
+// PO 대행이 판단 기준으로 삼는 제품 목표. 정본은 이 표 하나다 — Notion 등 다른 곳에 복제하지 않는다.
+// 행은 사용자가 확인 카드(PreviewGate)를 승인했을 때만 생긴다(`ProductGoalApplier`). 활성은
+// `closedAt IS NULL` 이다(`supersededAt` 과 같은 패턴). 주기는 스키마에 박지 않고 `dueDate` 로만 쓴다.
+model ProductGoal {
+  id               Int       @id @default(autoincrement())
+  slackUserId      String    @map("slack_user_id")
+  title            String
+  // 무엇을 "달성" 으로 볼지 한 줄. 필수다 — 끝을 판정할 수 없는 목표는 저장하지 않는다.
+  successCriterion String    @map("success_criterion") @db.Text
+  // PR·이슈 제목에 이 중 하나가 들어 있으면 그 작업이 이 목표에 붙은 것으로 본다.
+  keywords         String[]
+  dueDate          DateTime? @map("due_date") @db.Date
+  closedAt         DateTime? @map("closed_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  @@index([slackUserId, closedAt])
+  @@map("product_goal")
+}

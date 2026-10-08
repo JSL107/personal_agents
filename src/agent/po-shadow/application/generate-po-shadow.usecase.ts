@@ -37,6 +37,16 @@ import {
   PoShadowReport,
 } from '../domain/po-shadow.type';
 import { PoShadowErrorCode } from '../domain/po-shadow-error-code.enum';
+import {
+  PRODUCT_GOAL_REPOSITORY_PORT,
+  ProductGoalRepositoryPort,
+} from '../domain/port/product-goal.repository.port';
+import { ProductGoalRecord, STALE_GOAL_DAYS } from '../domain/product-goal';
+import {
+  buildProductGoalFacts,
+  collectLastProgressAt,
+  ProductGoalFactsResult,
+} from '../domain/product-goal.facts';
 import { parsePoShadowReport } from '../domain/prompt/po-shadow.parser';
 import { PO_SHADOW_OUTPUT_SCHEMA } from '../domain/prompt/po-shadow.schema';
 import { collectStoredFactIds } from '../domain/prompt/po-shadow-report.coercer';
@@ -48,6 +58,18 @@ const STALENESS_THRESHOLD_MS = 18 * 60 * 60 * 1000;
 // 모든 키의 firstReportedAt 을 보존한다.
 const RECOVERY_LOOKBACK_DAYS = 30;
 const RECOVERY_LOOKBACK_LIMIT = 40;
+// 제품 목표 조회(또는 그 진행 기록 조회)가 실패한 회차의 열화 라벨. 목표가 없는 것과 못 본 것은
+// 글자가 달라야 한다 — 같으면 "목표 밖 작업 없음" 이 실은 "목표를 못 읽음" 인 회차를 가린다.
+const DEGRADED_PRODUCT_GOAL = '제품 목표';
+// 묵은 목표 판정은 30일 창 안의 진행 기록을 **전부** 봐야 한다. 상한에 걸려 오래된 회차가 잘리면
+// 그 안에만 있던 진행을 놓쳐 "30일 넘게 진행 없음" 으로 오판한다(#773 리뷰). 실측(2026-10-08)
+// 30일 PO 성공 회차 27건·하루 최대 1건이라, 하루 6회를 넘게 돌려도 창을 다 덮는 값으로 둔다.
+const GOAL_PROGRESS_LOOKBACK_LIMIT = 200;
+
+interface ProductGoalCollection extends ProductGoalFactsResult {
+  goals: ProductGoalRecord[];
+  degraded: boolean;
+}
 
 @Injectable()
 export class GeneratePoShadowUsecase {
@@ -57,6 +79,8 @@ export class GeneratePoShadowUsecase {
     private readonly contextCollector: PoShadowContextCollector,
     @Inject(GITHUB_CLIENT_PORT)
     private readonly githubClient: GithubClientPort,
+    @Inject(PRODUCT_GOAL_REPOSITORY_PORT)
+    private readonly goalRepository: ProductGoalRepositoryPort,
   ) {}
 
   private readonly logger = new Logger(GeneratePoShadowUsecase.name);
@@ -112,10 +136,21 @@ export class GeneratePoShadowUsecase {
       context,
       now,
     });
+    // 활성 목표가 0개면 사실·프롬프트 블록·inputSnapshot 키를 하나도 만들지 않는다 —
+    // 목표를 쓰지 않는 사용자의 출력은 단계 3 이전과 같아야 한다.
+    const goalCollection = await this.collectProductGoals({
+      slackUserId,
+      context,
+      now,
+    });
     const facts = [
       ...withdrawStalledReasons(planFacts, recovery.reasonWithdrawnKeys),
       ...recovery.facts,
+      ...goalCollection.facts,
     ];
+    const degradedSources = goalCollection.degraded
+      ? [...recovery.degradedSources, DEGRADED_PRODUCT_GOAL]
+      : recovery.degradedSources;
     const recoverySummary = toRecoverySummary(recovery);
     // 사용자가 "릴리즈 오늘로 변경" 같은 상황을 직접 적어 보냈다면 사실표가 조용해도 검토한다.
     // 어긋남만으로 갈림길을 정하면 사용자가 친 말이 evidence 에만 저장되고 답은
@@ -133,6 +168,11 @@ export class GeneratePoShadowUsecase {
         sourcePlanAgentRunId: snapshot.id,
         sourcePlanEndedAt: snapshot.endedAt.toISOString(),
         extraContextLength: trimmedExtra.length,
+        // 다음 회차의 묵은 목표 판정이 읽는다(`collectLastProgressAt`). 목표 표에 쓰지 않는 이유는
+        // PO 회차가 도메인 테이블에 쓰기 시작하면 READ_ONLY 등급이 거짓이 되기 때문이다.
+        ...(goalCollection.goals.length > 0
+          ? { goalProgress: goalCollection.progressedGoalIds }
+          : {}),
       },
       evidence: [
         {
@@ -157,11 +197,14 @@ export class GeneratePoShadowUsecase {
       ],
       run: async () => {
         if (!needsReview) {
-          const report = buildQuietReport({
-            facts,
-            degradedSources: recovery.degradedSources,
-            recoverySummary,
-          });
+          const report = withGoalCheckIns(
+            buildQuietReport({
+              facts,
+              degradedSources,
+              recoverySummary,
+            }),
+            goalCollection.checkIns,
+          );
           return {
             result: report,
             modelUsed: 'deterministic',
@@ -174,6 +217,7 @@ export class GeneratePoShadowUsecase {
           planAgentRunId: snapshot.id,
           facts,
           extraContext: trimmedExtra,
+          goals: goalCollection.goals,
         });
         const completion = await this.modelRouter.route({
           agentType: AgentType.PO_SHADOW,
@@ -184,12 +228,15 @@ export class GeneratePoShadowUsecase {
           },
         });
         const parsedReport = parsePoShadowReport(completion.text);
-        const report = buildGuardedReport({
-          report: parsedReport,
-          facts,
-          degradedSources: recovery.degradedSources,
-          recoverySummary,
-        });
+        const report = withGoalCheckIns(
+          buildGuardedReport({
+            report: parsedReport,
+            facts,
+            degradedSources,
+            recoverySummary,
+          }),
+          goalCollection.checkIns,
+        );
         return {
           result: report,
           modelUsed: completion.modelUsed,
@@ -197,6 +244,64 @@ export class GeneratePoShadowUsecase {
         };
       },
     });
+  }
+
+  private async collectProductGoals({
+    slackUserId,
+    context,
+    now,
+  }: {
+    slackUserId: string;
+    context: PoShadowContext;
+    now: Date;
+  }): Promise<ProductGoalCollection> {
+    const empty: ProductGoalCollection = {
+      goals: [],
+      facts: [],
+      progressedGoalIds: [],
+      checkIns: [],
+      degraded: false,
+    };
+    let goals: ProductGoalRecord[];
+    try {
+      goals = await this.goalRepository.findActive(slackUserId);
+    } catch (error: unknown) {
+      this.logger.warn(
+        `제품 목표 조회 실패 (목표 없이 계속 진행): ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return { ...empty, degraded: true };
+    }
+    if (goals.length === 0) {
+      return empty;
+    }
+
+    let lastProgressAtByGoalId = new Map<number, Date>();
+    let degraded = false;
+    try {
+      const runs = await this.agentRunService.findRecentSucceededRuns({
+        agentType: AgentType.PO_SHADOW,
+        slackUserId,
+        sinceDays: STALE_GOAL_DAYS,
+        limit: GOAL_PROGRESS_LOOKBACK_LIMIT,
+      });
+      lastProgressAtByGoalId = collectLastProgressAt(runs);
+    } catch (error: unknown) {
+      // 진행 기록 없이 판정하면 묵은 목표 질문이 일찍 뜰 수 있다 — 못 본 사실을 라벨로 밝힌다.
+      this.logger.warn(
+        `제품 목표 진행 기록 조회 실패: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      degraded = true;
+    }
+    return {
+      goals,
+      degraded,
+      ...buildProductGoalFacts({
+        goals,
+        context,
+        lastProgressAtByGoalId,
+        now,
+      }),
+    };
   }
 
   // 직전 회차들이 지적한 키가 어떻게 끝났는지 회수한다. 원장 조회 1회 + 담당 목록에 없는 키에
@@ -441,6 +546,7 @@ interface BuildPromptInput {
   planAgentRunId: number;
   facts: PlanRealityFact[];
   extraContext: string;
+  goals: ProductGoalRecord[];
 }
 
 const buildPrompt = ({
@@ -449,6 +555,7 @@ const buildPrompt = ({
   planAgentRunId,
   facts,
   extraContext,
+  goals,
 }: BuildPromptInput): string => {
   const sections = [
     // 섹션 라벨은 우리가 만든 문구라 경계 밖에 둔다 — 안에 넣으면 이 섹션이 무엇인지조차
@@ -464,6 +571,8 @@ const buildPrompt = ({
     // 사용자가 직접 적어 보낸 상황이라 경계를 씌우지 않는다. 이 워커에서 명령권자는 사용자다.
     '[추가 컨텍스트]',
     extraContext.length > 0 ? extraContext : '(없음)',
+    // 목표가 없으면 섹션 자체를 싣지 않는다 — 목표를 쓰지 않는 사용자의 프롬프트는 그대로다.
+    ...(goals.length > 0 ? ['[활성 제품 목표]', buildGoalSection(goals)] : []),
   ];
   return sections.join('\n\n');
 };
@@ -490,6 +599,29 @@ const buildFactTable = ({ facts }: { facts: PlanRealityFact[] }): string => {
     .join('\n');
   return wrapUntrustedInput(table);
 };
+
+// 목표는 대표가 확인 카드로 확정한 값이라 경계를 씌우지 않는다(추가 컨텍스트와 같은 이유).
+// 판정 지시를 시스템 프롬프트가 아니라 이 섹션에 두는 것도 같은 이유다 — 목표가 없는 회차의
+// 시스템 프롬프트를 바꾸지 않는다.
+const buildGoalSection = (goals: ProductGoalRecord[]): string => {
+  const lines = goals.map((goal) => {
+    const dueDate =
+      goal.dueDate === null ? '없음' : goal.dueDate.toISOString().slice(0, 10);
+    return `- ${goal.title} | 달성 기준: ${goal.successCriterion} | 기한: ${dueDate}`;
+  });
+  return [
+    ...lines,
+    '대표가 확정한 이번 분기 판단 기준이다. 달성 기준을 충족했는지는 사실표에 없다 — 말하려면 judgments 에만 한 문장으로 쓴다(카드에 "추정" 이 붙는다). 기한이 지난 목표가 있으면 그 기준 충족 여부에 대한 판단을 judgments 에 쓴다. GOAL_UNSERVED·GOAL_DEADLINE_RISK 는 다른 사실처럼 factId 로 인용할 수 있다.',
+  ].join('\n');
+};
+
+// 묵은 목표 질문은 코드가 붙인다 — 모델 출력이 아니라 사실(기한·진행 기록)에서 나온 줄이다.
+// 없으면 필드를 싣지 않아 목표를 쓰지 않는 사용자의 리포트는 형태가 그대로다.
+const withGoalCheckIns = (
+  report: PoShadowReport,
+  checkIns: string[],
+): PoShadowReport =>
+  checkIns.length > 0 ? { ...report, goalCheckIns: checkIns } : report;
 
 // 회수 결과를 카드가 렌더할 형태로 옮긴다. 지적이 하나도 없던 회차에는 null 이라
 // 포맷터가 블록 자체를 그리지 않는다.
