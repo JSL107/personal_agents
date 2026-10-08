@@ -1,7 +1,12 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { AgentRunStatus } from '../../../agent-run/domain/agent-run.type';
+import {
+  AGENT_RUN_VERDICT_REPOSITORY_PORT,
+  AgentRunVerdictRepositoryPort,
+  AgentVerdictCountRow,
+} from '../../../agent-run/domain/port/agent-run-verdict.repository.port';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { formatRunRetro } from '../../../slack/format/run-retro.formatter';
 import {
@@ -32,7 +37,11 @@ export class RunRetroAutopilotTask implements AutopilotTask {
   readonly id = 'run-retro';
   private readonly logger = new Logger(RunRetroAutopilotTask.name);
 
-  constructor(private readonly agentRunService: AgentRunService) {}
+  constructor(
+    private readonly agentRunService: AgentRunService,
+    @Inject(AGENT_RUN_VERDICT_REPOSITORY_PORT)
+    private readonly verdictRepository: AgentRunVerdictRepositoryPort,
+  ) {}
 
   async run({
     firedAtKst,
@@ -80,9 +89,9 @@ export class RunRetroAutopilotTask implements AutopilotTask {
     }
   }
 
-  // 계약 점수도 chain 과 같은 부가 축이다 — 이 조회 하나가 실패했다고 실패율·지연 회고까지
+  // 형식 준수율도 chain 과 같은 부가 축이다 — 이 조회 하나가 실패했다고 실패율·지연 회고까지
   // 막으면, 원래 보려던 신호가 부가 신호의 사고로 가려진다. 대신 **삼킨 사실은 로그로 남긴다**
-  // (조용한 0건이 되면 "이번주는 계약 점수가 정상이었다" 와 구분되지 않는다).
+  // (조용한 0건이 되면 "이번주는 형식 준수율이 정상이었다" 와 구분되지 않는다).
   private async detectContractScoreAnomaliesSafely(): Promise<RunAnomaly[]> {
     try {
       // 이번주 창만 본다. 지난주와의 비교가 아니라 절대 하한으로 판정하므로
@@ -91,12 +100,31 @@ export class RunRetroAutopilotTask implements AutopilotTask {
         sinceDays: CURRENT_WINDOW_DAYS,
         untilDays: 0,
       });
-      return detectContractScoreAnomalies(rows);
+      return detectContractScoreAnomalies(
+        rows,
+        await this.countVerdictsSafely(),
+      );
     } catch (error: unknown) {
       this.logger.warn(
-        `주간 회고 계약 점수 조회 실패 (통계 회고는 계속): ${error instanceof Error ? error.message : String(error)}`,
+        `주간 회고 형식 준수율 조회 실패 (통계 회고는 계속): ${error instanceof Error ? error.message : String(error)}`,
       );
       return [];
+    }
+  }
+
+  // 사람 판정은 형식 경보에 덧붙는 정보다 — 이 조회가 실패해도 경보는 나가고, 문구가
+  // "판정 없음" 대신 "판정 조회 실패" 로 바뀐다(null). 0건과 실패를 섞으면 품질 신호가 거짓이 된다.
+  private async countVerdictsSafely(): Promise<AgentVerdictCountRow[] | null> {
+    try {
+      return await this.verdictRepository.countByAgentType({
+        sinceDays: CURRENT_WINDOW_DAYS,
+        untilDays: 0,
+      });
+    } catch (error: unknown) {
+      this.logger.warn(
+        `주간 회고 사람 판정 조회 실패 (형식 경보는 계속): ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return null;
     }
   }
 

@@ -101,3 +101,20 @@ export const getRunVerdictQuoteLabel = (
   }
   return undefined;
 };
+
+// 축마다 값 이름이 다르지만 품질 집계는 좋음/나쁨 두 칸으로 센다(설계 §6).
+// "이미 알던 것"(KNOWN)은 틀리지도 맞지도 않아 어느 칸에도 넣지 않는다 — 판정 건수에만 든다.
+const POSITIVE_VERDICTS: ReadonlySet<string> = new Set(['GOOD', 'REAL']);
+const NEGATIVE_VERDICTS: ReadonlySet<string> = new Set(['BAD', 'FABRICATED']);
+
+export type RunVerdictPolarity = 'good' | 'bad' | 'neutral';
+
+export const getRunVerdictPolarity = (verdict: string): RunVerdictPolarity => {
+  if (POSITIVE_VERDICTS.has(verdict)) {
+    return 'good';
+  }
+  if (NEGATIVE_VERDICTS.has(verdict)) {
+    return 'bad';
+  }
+  return 'neutral';
+};
