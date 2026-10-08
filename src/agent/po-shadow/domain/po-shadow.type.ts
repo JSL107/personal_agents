@@ -55,6 +55,10 @@ export interface PoShadowRecoverySummary {
   unassigned: number;
   uncomparable: number;
   total: number;
+  // 권고 철회(21일+)로 reason 을 뺀 키. 카드에는 렌더하지 않고 원장에만 남긴다 — 철회 규칙의
+  // 존치 판정용. 회차마다 30일치를 다시 세므로 회차 합이 아니라 서로 다른 키 수로 센다.
+  // 이 필드가 없는 회차는 측정 전(2026-10 이전)이다.
+  reasonWithdrawnKeys?: string[];
 }
 
 export interface PoShadowReport {

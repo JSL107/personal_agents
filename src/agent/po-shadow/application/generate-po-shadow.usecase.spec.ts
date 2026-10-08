@@ -699,6 +699,8 @@ describe('GeneratePoShadowUsecase', () => {
         merged: 1,
         total: 1,
         uncomparable: 0,
+        // 철회가 없는 회차에도 빈 배열로 남겨야 "측정 전"(필드 없음)과 "0건" 이 갈린다.
+        reasonWithdrawnKeys: [],
       });
       expect(result.result.factSummary.join('\n')).toContain('머지됨');
     });
