@@ -101,5 +101,15 @@ assert.equal(briefingFromResponse(envelope({ todos: [] })), null, "streak·daily
 assert.equal(acceptBriefing(undefined), null);
 assert.equal(acceptBriefing({ ...BRIEFING_DEMO, streak: null }), null);
 assert.equal(acceptBriefing(BRIEFING_DEMO), BRIEFING_DEMO);
+// 서버가 할 일마다 대상(targets)을 싣는다 — 3D 는 버튼을 그리지 않지만 그 필드 때문에 브리핑을 버리면 안 된다.
+const withTargets = {
+  ...BRIEFING_DEMO,
+  todos: BRIEFING_DEMO.todos.map((todo) => ({
+    ...todo,
+    targets: [{ label: "PM", agentType: "PM", runId: 11, retryable: true }],
+  })),
+};
+assert.equal(acceptBriefing(withTargets), withTargets, "대상이 실린 할 일도 받는다");
+assert.deepEqual(presidentTodoLines(withTargets.todos), presidentTodoLines(BRIEFING_DEMO.todos), "대상은 말풍선 문구를 바꾸지 않는다");
 
 console.log("브리핑 규칙: 맥 PresidentBriefing 과 같은 답");

@@ -14,6 +14,11 @@ struct AgentInspectorView: View {
     /// 이력 두 줄(`agentLedgerLines`). 원장을 못 받았으면 비어 있고 자리도 그리지 않는다.
     var ledgerLines: [String] = []
     var isStalled = false
+    /// 브리핑이 이 담당자의 실패를 재시도 대상으로 실었으면 그 run id(`retryTarget`). 없으면 버튼을 그리지 않는다.
+    var retryRunId: Int?
+    var isRetrying = false
+    var retryNotice: String?
+    var onRetry: (Int) -> Void = { _ in }
 
     var body: some View {
         ScrollView {
@@ -96,6 +101,22 @@ struct AgentInspectorView: View {
                 .background(Color(red: 0.88, green: 0.96, blue: 0.88).opacity(0.82), in: RoundedRectangle(cornerRadius: Radius.panel, style: .continuous))
                 if !ledgerLines.isEmpty {
                     ledgerSection
+                }
+                if let retryRunId {
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        Button { onRetry(retryRunId) } label: {
+                            Label(isRetrying ? "재시도 중" : "실패한 실행 재시도", systemImage: "arrow.clockwise")
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, Spacing.xs)
+                        }
+                        .disabled(isRetrying)
+                        if let retryNotice {
+                            Text(retryNotice)
+                                .font(Typography.caption)
+                                .foregroundStyle(Color.red)
+                        }
+                    }
+                    .controlSize(.small)
                 }
                 Text(agent.job ?? agent.description).font(Typography.body).foregroundStyle(CozyPalette.ink.opacity(0.78))
                 if !agent.slashCommands.isEmpty {

@@ -11,6 +11,8 @@ struct OfficeView: View {
     let scene: OfficeScene
     let onSend: (String, String?) -> Void
     let onApprove: (String) -> Void
+    /// 실패 실행 재시도 — 인스펙터 버튼.
+    var onRetryRun: (Int) -> Void = { _ in }
     let onReject: (String) -> Void
     /// 대표에게 지시하는 바가 열렸는지. 담당자를 지정하지 않는 지시라 대상 상태가 따로 없다.
     /// 소유자는 `AppRootView` — 메뉴에서 열 때 탭 전환과 함께 세팅돼야 한다.
@@ -70,7 +72,11 @@ struct OfficeView: View {
                                 store.ledger?.entry(for: agentType),
                                 serverTime: store.ledger?.serverTime ?? ""
                             ),
-                            isStalled: store.stalledAgentTypes.contains(agentType)
+                            isStalled: store.stalledAgentTypes.contains(agentType),
+                            retryRunId: retryRunId(for: agentType),
+                            isRetrying: retryRunId(for: agentType).map(store.retryingRunIds.contains) ?? false,
+                            retryNotice: store.runRetryNotice,
+                            onRetry: onRetryRun
                         )
                     }
                 }
@@ -346,6 +352,10 @@ struct OfficeView: View {
     }
 
     /// 3D 화면이 보낸 사건 — 2D 씬의 `onAgentClick`·`onPresidentClick`·`onFocusChange` 와 같은 자리.
+    private func retryRunId(for agentType: String) -> Int? {
+        retryTarget(agentType: agentType, todos: store.briefing?.todos ?? [])?.runId
+    }
+
     private func handleOffice3DMessage(_ body: [String: Any]) {
         switch body["type"] as? String {
         case "office:agent-click":
