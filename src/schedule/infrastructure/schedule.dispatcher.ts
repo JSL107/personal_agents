@@ -106,7 +106,12 @@ export class ScheduleDispatcher implements AgentDispatcher {
         return {
           result: record,
           modelUsed: 'deterministic',
-          output: { scheduleId: record.id },
+          // 제목·마감일을 함께 싣는다 — id 만 남기면 episodic 인덱스에 계측만 쌓인다.
+          output: {
+            scheduleId: record.id,
+            title: record.title,
+            dueDate: record.dueDate,
+          },
         };
       },
     });
