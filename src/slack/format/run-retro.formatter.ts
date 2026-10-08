@@ -21,9 +21,10 @@ const HINT: Record<RunAnomalyKind, string> = {
   AGENT_DISAPPEARED: ' — cron 사망 의심',
   TOTAL_SILENCE: ' — 시스템 전체 점검 필요',
   CHAIN_FAILURE: ' — 체인 중단 지점 확인',
-  // 실행은 성공했는데 산출물이 계약과 다른 상태다. 한 AgentType 을 성격이 다른 워커가
+  // 실행은 성공했는데 산출물 형식이 계약과 다른 상태다. 한 AgentType 을 성격이 다른 워커가
   // 나눠 쓰면 한쪽이 남의 계약으로 채점돼 이 값이 통째로 내려간다.
-  CONTRACT_SCORE: ' — 산출물이 계약과 어긋남(워커가 이름을 나눠 쓰는지 확인)',
+  CONTRACT_SCORE:
+    ' — 산출물 형식이 계약과 어긋남(워커가 이름을 나눠 쓰는지 확인)',
   MISSING_WEEKLY: ' — 주간 cron 결번 의심',
 };
 

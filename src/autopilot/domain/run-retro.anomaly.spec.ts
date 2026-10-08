@@ -131,34 +131,74 @@ describe('detectChainFailureAnomalies — 체인 실패 지목', () => {
 
 describe('detectContractScoreAnomalies', () => {
   // 2026-08-28 실측값 그대로 — PAPER_TRADE 171건 평균 0.023, 나머지 워커는 1.000.
-  it('하한 아래인 워커를 지목한다', () => {
-    const anomalies = detectContractScoreAnomalies([
-      { agentType: 'PAPER_TRADE', scoredCount: 171, avgScore: 0.023 },
-      { agentType: 'HUMANIZER', scoredCount: 66, avgScore: 1 },
-    ]);
+  it('하한 아래인 워커를 형식 준수율로 지목한다 (품질 점수로 읽히지 않게)', () => {
+    const anomalies = detectContractScoreAnomalies(
+      [
+        { agentType: 'PAPER_TRADE', scoredCount: 171, avgScore: 0.023 },
+        { agentType: 'HUMANIZER', scoredCount: 66, avgScore: 1 },
+      ],
+      [],
+    );
 
     expect(anomalies).toHaveLength(1);
     expect(anomalies[0].agentType).toBe('PAPER_TRADE');
     expect(anomalies[0].kind).toBe('CONTRACT_SCORE');
-    expect(anomalies[0].detail).toContain('계약 점수 0.02');
-    expect(anomalies[0].detail).toContain('171건 평균');
+    expect(anomalies[0].detail).toBe(
+      '형식 준수율 2% (171건 평균, 하한 50% · 필수 필드 존재 여부만 검사함) · 품질: 판정 없음',
+    );
+    expect(anomalies[0].detail).not.toContain('계약 점수');
   });
 
   // 표본이 적으면 한 회차의 형식 오류가 평균을 끌어내려 매주 같은 경보가 뜬다.
   it('표본이 하한 미만이면 지목하지 않는다', () => {
-    const anomalies = detectContractScoreAnomalies([
-      { agentType: 'CTO', scoredCount: 4, avgScore: 0 },
-    ]);
+    const anomalies = detectContractScoreAnomalies(
+      [{ agentType: 'CTO', scoredCount: 4, avgScore: 0 }],
+      [],
+    );
 
     expect(anomalies).toEqual([]);
   });
 
   it('점수가 하한 이상이면 조용하다 (계기판 소음 방지)', () => {
-    const anomalies = detectContractScoreAnomalies([
-      { agentType: 'PM', scoredCount: 20, avgScore: 0.5 },
-    ]);
+    const anomalies = detectContractScoreAnomalies(
+      [{ agentType: 'PM', scoredCount: 20, avgScore: 0.5 }],
+      [{ agentType: 'PM', total: 9, good: 1, bad: 8 }],
+    );
 
     expect(anomalies).toEqual([]);
+  });
+
+  describe('사람 판정 병기 (설계 §6 — 판정 없는 곳에 품질 숫자를 쓰지 않는다)', () => {
+    const lowScore = [{ agentType: 'PM', scoredCount: 10, avgScore: 0.3 }];
+    const detail = (
+      verdicts: Parameters<typeof detectContractScoreAnomalies>[1],
+    ): string => detectContractScoreAnomalies(lowScore, verdicts)[0].detail;
+
+    it('판정 5건 이상이면 좋음/나쁨/건수를 싣는다', () => {
+      expect(
+        detail([{ agentType: 'PM', total: 5, good: 3, bad: 1 }]),
+      ).toContain('품질: 좋음 3 · 나쁨 1 (판정 5건)');
+    });
+
+    it('판정 5건 미만이면 좋음/나쁨 없이 건수만 싣는다', () => {
+      const text = detail([{ agentType: 'PM', total: 4, good: 4, bad: 0 }]);
+
+      expect(text).toContain('품질: 판정 4건 (5건 미만이라 좋음/나쁨 생략)');
+      expect(text).not.toContain('좋음 4');
+    });
+
+    it('그 agentType 의 판정이 없으면 "판정 없음" — 다른 워커 판정을 끌어오지 않는다', () => {
+      expect(
+        detail([{ agentType: 'PO_SHADOW', total: 9, good: 9, bad: 0 }]),
+      ).toContain('품질: 판정 없음');
+    });
+
+    it('판정 조회가 실패했으면(null) "판정 없음" 이 아니라 조회 실패로 적는다', () => {
+      const text = detail(null);
+
+      expect(text).toContain('품질: 판정 조회 실패');
+      expect(text).not.toContain('판정 없음');
+    });
   });
 });
 

@@ -48,6 +48,7 @@ const setup = (
   const repository: jest.Mocked<AgentRunVerdictRepositoryPort> = {
     record: jest.fn().mockResolvedValue(undefined),
     findByRun: jest.fn().mockResolvedValue([]),
+    countByAgentType: jest.fn().mockResolvedValue([]),
     ...repositoryOverride,
   };
   const { app, getHandler } = buildAppMock();
