@@ -1,5 +1,6 @@
 import {
   buildRunVerdictBlocks,
+  buildRunVerdictFallbackText,
   formatRunVerdictQuote,
   parseRunVerdictValue,
   readRunVerdictQuote,
@@ -43,6 +44,39 @@ describe('run-verdict-message.builder', () => {
       verdict: 'FABRICATED',
       facets: ['retro_problem', 'overall'],
     });
+  });
+
+  it('PO 대행 축은 세 갈래 버튼을 내고, 머리·대체 문구가 PO 대행 몫이다', () => {
+    const blocks = buildRunVerdictBlocks({
+      agentRunId: 9,
+      facets: ['po_first_action'],
+      verdicts: {},
+    }) as Block[];
+
+    expect(buttonsOf(blocks).map((button) => button.action_id)).toEqual([
+      'run_verdict:po_first_action:GOOD',
+      'run_verdict:po_first_action:KNOWN',
+      'run_verdict:po_first_action:BAD',
+    ]);
+    expect(blocks[0].text?.text).toContain('PO 대행 판정');
+    expect(buildRunVerdictFallbackText(['po_first_action'])).toContain(
+      'PO 대행 판정',
+    );
+    // "이미 알던 것" 은 PO 대행 축에서만 허용된다 — 다른 축 값으로 섞여 들어오지 않는다.
+    expect(
+      parseRunVerdictValue(
+        JSON.stringify({
+          agentRunId: 9,
+          facet: 'pm_plan',
+          verdict: 'KNOWN',
+          facets: ['pm_plan'],
+        }),
+      ),
+    ).toBeNull();
+  });
+
+  it('인용 이름이 없으면 인용 줄만 싣는다', () => {
+    expect(formatRunVerdictQuote('문장')).toBe('> 문장');
   });
 
   it('문제 칸 축을 내지 않은 날은 그 버튼이 없다', () => {
@@ -120,7 +154,7 @@ describe('run-verdict-message.builder', () => {
         agentRunId: 1,
         facets: ['retro_problem', 'overall'],
         verdicts: {},
-        quoteMrkdwn: formatRunVerdictQuote('확인 없이 결론을 썼다'),
+        quoteMrkdwn: formatRunVerdictQuote('확인 없이 결론을 썼다', '문제 칸'),
       }) as (Block & { block_id?: string })[];
 
       expect(blocks[1]).toMatchObject({
@@ -143,7 +177,10 @@ describe('run-verdict-message.builder', () => {
     });
 
     it('길면 자르고, 줄바꿈은 한 줄로 펴고, 제어 문자를 이스케이프한다', () => {
-      const quote = formatRunVerdictQuote(`a<b>&\n${'가'.repeat(300)}`);
+      const quote = formatRunVerdictQuote(
+        `a<b>&\n${'가'.repeat(300)}`,
+        '문제 칸',
+      );
 
       expect(quote).toContain('a&lt;b&gt;&amp; 가');
       expect(quote?.endsWith('…')).toBe(true);
@@ -157,7 +194,7 @@ describe('run-verdict-message.builder', () => {
         agentRunId: 1,
         facets: ['overall'],
         verdicts: {},
-        quoteMrkdwn: formatRunVerdictQuote('A & B'),
+        quoteMrkdwn: formatRunVerdictQuote('A & B', '문제 칸'),
       });
       const reread = readRunVerdictQuote({ message: { blocks: first } });
       const redrawn = buildRunVerdictBlocks({
