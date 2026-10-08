@@ -6,6 +6,35 @@ public enum ConsoleClientError: Error {
     case notHTTP
 }
 
+/// 실패 실행 재시도 접수 결과. 거절이면 서버 문구를 그대로 보여 준다(Slack `/retry-run` 과 같은 문장).
+public enum RunRetryOutcome: Equatable, Sendable {
+    case accepted
+    case rejected(String)
+}
+
+/// `POST /v1/console/runs/:id/retry` 응답 → 결과. 202 만 접수다. 본문은 `{code, message, data}` 봉투.
+public func runRetryOutcome(status: Int, body: Data) -> RunRetryOutcome {
+    if status == 202 {
+        return .accepted
+    }
+    struct Envelope: Decodable { let message: String? }
+    let message = (try? JSONDecoder().decode(Envelope.self, from: body))?.message
+    return .rejected(message ?? "재시도를 접수하지 못했습니다 (HTTP \(status))")
+}
+
+public func buildRunRetryRequest(baseURL: URL, runId: Int, token: String?) -> URLRequest {
+    let url = baseURL
+        .appendingPathComponent("v1/console/runs")
+        .appendingPathComponent(String(runId))
+        .appendingPathComponent("retry")
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    if let token {
+        request.setValue(token, forHTTPHeaderField: "x-console-token")
+    }
+    return request
+}
+
 /// SSE 버퍼에서 완성된 이벤트를 잘라 디코딩하는 순수 파서.
 ///
 /// 백엔드 `@Sse('stream')` 는 각 이벤트를 `data: <json>\n\n` 로 흘려보낸다. 스트림은 임의
@@ -405,6 +434,17 @@ public actor ConsoleClient {
         try await sendExpectingSuccess(
             buildApprovalRequest(baseURL: baseURL, previewId: id, action: "cancel", token: token)
         )
+    }
+
+    /// `POST /v1/console/runs/:id/retry` — 실패 실행 재시도. 접수까지만 기다리고 진행은 SSE 로 따라온다.
+    public func retryRun(id: Int) async throws -> RunRetryOutcome {
+        let (data, response) = try await session.data(
+            for: buildRunRetryRequest(baseURL: baseURL, runId: id, token: token)
+        )
+        guard let http = response as? HTTPURLResponse else {
+            throw ConsoleClientError.notHTTP
+        }
+        return runRetryOutcome(status: http.statusCode, body: data)
     }
 
     private func sendExpectingSuccess(_ request: URLRequest) async throws {

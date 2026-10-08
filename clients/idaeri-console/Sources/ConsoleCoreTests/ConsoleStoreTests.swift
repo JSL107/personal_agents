@@ -664,4 +664,37 @@ private func runAcknowledgeCompletionTests(_ t: TestRunner) {
     ghostStore.apply(snapshot: completedSnapshot(runId: firstRunId))
     ghostStore.acknowledgeCompletion(agentType: "GHOST")
     t.expectEqual(ghostStore.agents.first?.state, .completed, "미지 agentType 무시")
+
+    // 재시도 버튼 잠금 — 누른 직후엔 앱이 먼저 잠그고, 브리핑을 받으면 서버의 `retrying` 이 정본이다.
+    // 앱만 잠금을 들고 있으면 새 실행이 생기기 전에 실패한 재시도에서 버튼이 「재시도 중」으로 굳는다.
+    let retryStore = ConsoleStore()
+    let streak = ConsoleStreak(current: 0, best: 0, todayOpened: 0, todayRemaining: 0)
+    let report = ConsoleDailyReport(
+        date: "2026-10-08", succeeded: 0, failed: 1, approvalsOpened: 0, approvalsHandled: 0, pendingReviewPulls: 0
+    )
+    let briefingWith = { (targets: [(Int, Bool)]) in
+        ConsoleBriefing(
+            todos: [
+                ConsoleTodo(
+                    kind: .failedRun, label: "재시도", detail: "다음 실행은 내일",
+                    targets: targets.map {
+                        ConsoleTodoTarget(label: "PM", agentType: "PM", runId: $0.0, retryable: true, retrying: $0.1)
+                    }
+                )
+            ],
+            streak: streak, dailyReport: report, serverTime: "2026-10-08T00:00:00.000Z"
+        )
+    }
+    retryStore.apply(briefing: briefingWith([(11, false), (12, false)]))
+    retryStore.beginRetryingRun(id: 11)
+    retryStore.beginRetryingRun(id: 12)
+    retryStore.failRetryingRun(id: 12, notice: "거절됨")
+    t.expectEqual(retryStore.retryingRunIds, [11], "거절된 재시도는 잠금을 푼다")
+    t.expectEqual(retryStore.runRetryNotice, "거절됨", "거절 사유를 남긴다")
+    retryStore.apply(briefing: briefingWith([(11, true)]))
+    t.expectEqual(retryStore.retryingRunIds, [11], "서버가 돌고 있다고 하면 잠근 채 둔다")
+    retryStore.apply(briefing: briefingWith([(11, false)]))
+    t.expectEqual(retryStore.retryingRunIds, [], "대상이 남아 있어도 서버가 끝났다고 하면 푼다")
+    retryStore.beginRetryingRun(id: 11)
+    t.expectEqual(retryStore.runRetryNotice, nil, "새로 누르면 이전 안내를 지운다")
 }

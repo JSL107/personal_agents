@@ -7,17 +7,73 @@ public enum ConsoleTodoKind: String, Codable, Sendable {
     case prReview = "PR_REVIEW"
 }
 
-/// 회의실 벽면 판에 적히는 한 줄.
+/// 할 일 대상 하나. 실패 실행이면 `runId`·`agentType`, PR 리뷰면 `pullNumber`·`url` 이 있다.
+public struct ConsoleTodoTarget: Codable, Equatable, Sendable {
+    public let label: String
+    public let agentType: String?
+    public let runId: Int?
+    /// 재시도 버튼을 띄워도 되는가(서버의 `REPLAYABLE_AGENT_TYPES`). 참이어도 실행별로 거절될 수 있다.
+    public let retryable: Bool?
+    /// 서버가 접수한 재시도가 지금 돌고 있다. 버튼 잠금의 정본.
+    public let retrying: Bool?
+    public let pullNumber: Int?
+    public let url: String?
+
+    public init(
+        label: String, agentType: String? = nil, runId: Int? = nil, retryable: Bool? = nil,
+        retrying: Bool? = nil, pullNumber: Int? = nil, url: String? = nil
+    ) {
+        self.label = label
+        self.agentType = agentType
+        self.runId = runId
+        self.retryable = retryable
+        self.retrying = retrying
+        self.pullNumber = pullNumber
+        self.url = url
+    }
+
+    /// 재시도 버튼을 그릴 run id. 지원하지 않는 종류면 nil.
+    public var retryRunId: Int? {
+        retryable == true ? runId : nil
+    }
+}
+
+/// 대표 머리 위 말풍선과 대시보드 「대표 할 일」 목록이 쓰는 한 줄.
 public struct ConsoleTodo: Codable, Equatable, Sendable {
     public let kind: ConsoleTodoKind
     public let label: String
     public let detail: String
+    /// 이 할 일이 합쳐 놓은 대상들. 말풍선은 `label` 한 줄을 쓰고 목록이 대상마다 버튼을 그린다.
+    public let targets: [ConsoleTodoTarget]
 
-    public init(kind: ConsoleTodoKind, label: String, detail: String) {
+    public init(kind: ConsoleTodoKind, label: String, detail: String, targets: [ConsoleTodoTarget] = []) {
         self.kind = kind
         self.label = label
         self.detail = detail
+        self.targets = targets
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case kind, label, detail, targets
+    }
+
+    /// `targets` 가 없던 백엔드 응답도 받는다 — 앱과 서버가 따로 배포되는 동안 브리핑 전체가
+    /// 디코딩 실패로 사라지지 않게.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try container.decode(ConsoleTodoKind.self, forKey: .kind)
+        label = try container.decode(String.self, forKey: .label)
+        detail = try container.decode(String.self, forKey: .detail)
+        targets = try container.decodeIfPresent([ConsoleTodoTarget].self, forKey: .targets) ?? []
+    }
+}
+
+/// 인스펙터가 고른 담당자의 재시도 대상. 실패 할 일에 그 담당자가 있고 재시도를 지원할 때만.
+public func retryTarget(agentType: String, todos: [ConsoleTodo]) -> ConsoleTodoTarget? {
+    todos
+        .filter { $0.kind == .failedRun }
+        .flatMap(\.targets)
+        .first { $0.agentType == agentType && $0.retryRunId != nil }
 }
 
 /// 연속 기록. 백엔드가 판정까지 끝낸 값이라 앱은 표시만 한다.
