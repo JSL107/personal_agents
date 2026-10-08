@@ -9,6 +9,7 @@ function makeController() {
     sendCommand: jest.fn(),
     applyApproval: jest.fn().mockResolvedValue(undefined),
     cancelApproval: jest.fn().mockResolvedValue(undefined),
+    retryRun: jest.fn().mockResolvedValue(undefined),
   };
   const sessionInject = { inject: jest.fn() };
   const controller = new ConsoleWriteController(
@@ -31,6 +32,13 @@ describe('ConsoleWriteController', () => {
       agentTypeHint: 'CTO',
       commandId: 'command-1',
     });
+    expect(result).toEqual({ accepted: true });
+  });
+
+  it('runs/:id/retry 는 service.retryRun 위임 후 accepted 반환', async () => {
+    const { controller, service } = makeController();
+    const result = await controller.retryRun(42);
+    expect(service.retryRun).toHaveBeenCalledWith(42);
     expect(result).toEqual({ accepted: true });
   });
 

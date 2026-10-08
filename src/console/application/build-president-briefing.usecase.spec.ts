@@ -6,6 +6,7 @@ import { FindAllOpenPreviewsUsecase } from '../../preview-gate/application/find-
 import { FindPreviewDayOutcomesUsecase } from '../../preview-gate/application/find-preview-day-outcomes.usecase';
 import { ConsoleTodoKind } from '../domain/briefing.type';
 import { BuildPresidentBriefingUsecase } from './build-president-briefing.usecase';
+import { ConsoleRetryTracker } from './console-retry-tracker';
 
 const openPreview = (expiresAt: Date): unknown => ({
   id: 'preview-1',
@@ -47,6 +48,7 @@ describe('BuildPresidentBriefingUsecase', () => {
   let findAllOpenPreviews: { execute: jest.Mock };
   let findPreviewDayOutcomes: { execute: jest.Mock };
   let findingRepository: { countOpenPostedByPullRequest: jest.Mock };
+  let retryTracker: ConsoleRetryTracker;
 
   beforeEach(async () => {
     agentRunService = {
@@ -55,6 +57,7 @@ describe('BuildPresidentBriefingUsecase', () => {
       countFailedSince: jest.fn().mockResolvedValue(0),
       findRecentSucceededRuns: jest.fn().mockResolvedValue([]),
     };
+    retryTracker = new ConsoleRetryTracker();
     findAllOpenPreviews = { execute: jest.fn().mockResolvedValue([]) };
     findPreviewDayOutcomes = { execute: jest.fn().mockResolvedValue([]) };
     findingRepository = {
@@ -74,6 +77,7 @@ describe('BuildPresidentBriefingUsecase', () => {
           provide: PR_REVIEW_FINDING_REPOSITORY_PORT,
           useValue: findingRepository,
         },
+        { provide: ConsoleRetryTracker, useValue: retryTracker },
       ],
     }).compile();
 
@@ -165,6 +169,72 @@ describe('BuildPresidentBriefingUsecase', () => {
     expect(briefing.todos).toHaveLength(1);
     expect(briefing.todos[0].kind).toBe(ConsoleTodoKind.FAILED_RUN);
     expect(briefing.todos[0].label).toBe('PM 재시도');
+  });
+
+  // 말풍선은 합친 한 줄을 쓰지만, 대시보드는 대상마다 버튼을 그린다. id 를 하나만 실으면
+  // N건 중 한 건만 처리된다.
+  it('실패 할 일은 워커마다 실패한 run id 와 재시도 가능 여부를 대상으로 싣는다', async () => {
+    agentRunService.findRecentlyFinishedRuns.mockResolvedValue([
+      { agentType: 'PM', status: 'FAILED', runId: 11 },
+      { agentType: 'VACATION', status: 'FAILED', runId: 12 },
+    ]);
+    agentRunService.findRecentSucceededRuns.mockResolvedValue([
+      succeededRun(1, '2026-08-19T00:00:00Z'),
+      succeededRun(2, '2026-08-18T00:00:00Z'),
+      succeededRun(3, '2026-08-17T00:00:00Z'),
+    ]);
+    // 콘솔에서 접수한 재시도가 도는 중이면 앱이 버튼을 묶도록 서버가 알려 준다.
+    retryTracker.tryAcquire(11);
+
+    const briefing = await usecase.execute();
+
+    expect(briefing.todos[0].label).toBe('실패한 실행 2건 재시도');
+    expect(briefing.todos[0].targets).toEqual([
+      {
+        label: 'PM',
+        agentType: 'PM',
+        runId: 11,
+        retryable: true,
+        retrying: true,
+      },
+      {
+        label: 'VACATION',
+        agentType: 'VACATION',
+        runId: 12,
+        retryable: false,
+        retrying: false,
+      },
+    ]);
+  });
+
+  it('PR 리뷰 할 일은 PR 마다 GitHub 링크를 대상으로 싣는다 — 회수 실행은 하지 않는다', async () => {
+    findingRepository.countOpenPostedByPullRequest.mockResolvedValue([
+      openPull(
+        'JSL107/personal_agents',
+        1005,
+        new Date('2026-08-19T00:00:00Z'),
+      ),
+      openPull('JSL107/personal_agents', 994, new Date('2026-08-09T00:00:00Z')),
+    ]);
+
+    const briefing = await usecase.execute();
+
+    expect(briefing.todos[0].targets.map((target) => target.url)).toEqual([
+      'https://github.com/JSL107/personal_agents/pull/994',
+      'https://github.com/JSL107/personal_agents/pull/1005',
+    ]);
+    expect(briefing.todos[0].targets[0]).not.toHaveProperty('runId');
+  });
+
+  it('승인 할 일은 대상을 싣지 않는다 — 카드별 처리는 「승인 대기」 목록이 한다', async () => {
+    findAllOpenPreviews.execute.mockResolvedValue([
+      { id: 'p1', expiresAt: new Date('2026-08-20T10:04:00Z') },
+    ]);
+
+    const briefing = await usecase.execute();
+
+    expect(briefing.todos[0].kind).toBe(ConsoleTodoKind.APPROVAL);
+    expect(briefing.todos[0].targets).toEqual([]);
   });
 
   it('성공한 실행이 끝난 워커는 실패 목록에 오르지 않는다', async () => {
