@@ -166,7 +166,7 @@ func renderOfficeScene(
         }
     } else {
         let ledger = snapshot == nil ? nil : fetchLedgerSynchronously(client: client)
-        stalled = officeStalledAgentTypes(ledger: ledger, roster: renderedAgents)
+        stalled = officeStalledAgentTypes(ledger: ledger, roster: renderedAgents, runs: renderedRuns)
     }
     scene.applyStalled(stalled)
     // 말풍선·경과·승인 배지는 오버레이라 sync 로는 그려지지 않는다. 빼면 이 화면으로

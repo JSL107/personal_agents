@@ -65,15 +65,23 @@ public func decodeLedgerResponse(_ data: Data) throws -> ConsoleLedger {
 /// 있으면 내보낸다. 2026-10-08 실측에서 09-04 폐지된 `CTO` 가 옛 크론 기록 때문에 `stalled=true`
 /// (32일)로 왔다 — 그대로 올리면 대시보드의 유일한 정지 담당자가 없는 사람이 된다.
 ///
-/// 지금 일하는 중(`inProgress`)인 사람도 뺀다. 원장은 10분 간격으로 받으므로 멈췄던 워커가
-/// 다시 돌기 시작한 직후에는 원장이 낡아 있다 — 눈앞의 실행이 더 정확한 사실이다.
+/// 지금 일하는 중인 사람도 뺀다. 원장은 10분 간격으로 받으므로 멈췄던 워커가 다시 돌기
+/// 시작한 직후에는 원장이 낡아 있다 — 눈앞의 실행이 더 정확한 사실이다.
+///
+/// "일하는 중" 을 상태값(`inProgress`)만으로 보지 않는다. 열린 승인이 있으면 상태는
+/// `awaitingApproval` 로 묶여 새 런의 `inProgress` 전이가 숨는다(`ConsoleStore.changeAgentState`,
+/// 백엔드 `deriveAgentState` 도 승인을 우선). 그래서 미종료 런(`finishedAt == nil`)도 함께 본다 —
+/// 스토어의 `hasActiveRun` 과 같은 기준이다.
 public func officeStalledAgentTypes(
-    ledger: ConsoleLedger?, roster: [ConsoleAgent]
+    ledger: ConsoleLedger?, roster: [ConsoleAgent], runs: [ConsoleRun]
 ) -> Set<String> {
     guard let ledger else {
         return []
     }
-    let candidates = Set(roster.filter { $0.state != .inProgress }.map(\.agentType))
+    let running = Set(runs.filter { $0.finishedAt == nil }.map(\.agentType))
+    let candidates = Set(
+        roster.filter { $0.state != .inProgress && !running.contains($0.agentType) }.map(\.agentType)
+    )
     return Set(ledger.agents.filter { $0.stalled && candidates.contains($0.agentType) }.map(\.agentType))
 }
 

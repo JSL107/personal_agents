@@ -60,12 +60,31 @@ func runAgentLedgerTests(_ t: TestRunner) {
         ],
         serverTime: "2026-10-08T01:44:27.357Z"
     )
-    let stalled = officeStalledAgentTypes(ledger: ledger, roster: roster)
+    let stalled = officeStalledAgentTypes(ledger: ledger, roster: roster, runs: [])
     t.expectEqual(stalled, ["OPS_SUPERVISOR"], "명단 밖(CTO)과 일하는 중(PM)은 빼야 한다 (실제: \(stalled))")
-    t.expectEqual(officeStalledAgentTypes(ledger: nil, roster: roster), [], "원장이 없으면 정지 표시도 없다")
+    // 승인이 열린 채 새 런이 돌면 상태는 awaitingApproval 로 묶여 inProgress 가 안 보인다.
+    // 상태만 보면 일하는 사람에게 낡은 정지 배지가 붙는다 — 미종료 런으로 거른다.
+    let approvalRoster = [makeLedgerAgent("OPS_SUPERVISOR", .awaitingApproval)]
+    let activeRun = ConsoleRun(
+        id: "r1", agentType: "OPS_SUPERVISOR", status: "IN_PROGRESS", parentId: nil,
+        startedAt: "2026-10-08T01:40:00.000Z", finishedAt: nil
+    )
+    t.expectEqual(
+        officeStalledAgentTypes(ledger: ledger, roster: approvalRoster, runs: [activeRun]), [],
+        "승인 열림 + 활성 런이면 정지가 아니다"
+    )
+    let finishedRun = ConsoleRun(
+        id: "r0", agentType: "OPS_SUPERVISOR", status: "SUCCEEDED", parentId: nil,
+        startedAt: "2026-09-19T00:00:00.000Z", finishedAt: "2026-09-19T00:01:00.000Z"
+    )
+    t.expectEqual(
+        officeStalledAgentTypes(ledger: ledger, roster: approvalRoster, runs: [finishedRun]),
+        ["OPS_SUPERVISOR"], "끝난 런만 있으면 여전히 정지 (대조군)"
+    )
+    t.expectEqual(officeStalledAgentTypes(ledger: nil, roster: roster, runs: []), [], "원장이 없으면 정지 표시도 없다")
     if let decoded {
         t.expectEqual(
-            officeStalledAgentTypes(ledger: decoded, roster: roster), [],
+            officeStalledAgentTypes(ledger: decoded, roster: roster, runs: []), [],
             "실제 응답에서 정지는 폐지된 CTO 하나뿐이라 화면에는 아무도 정지로 뜨지 않아야 한다"
         )
     }
