@@ -126,8 +126,10 @@ Work Reviewer 4조각 묶음의 나머지(오늘 한 일 나열 · 정량 근거
 
 ## 4. 성공 기준 — 2주 뒤(2026-10-22께) 확인
 
-1. **하루 채널 메시지 6통 이하** — 아침 1(전날 23시 포트폴리오 발행 결과 포함) + 저녁 1 + 카드 평균 2~3 + 사건 0~1. 지금은 중위 16통이다.
+1. **평일 하루 채널 메시지 6통 이하** — 아침 1(전날 23시 포트폴리오 발행 결과 포함) + 저녁 1 + 카드 평균 2~3 + 사건 0~1. 지금은 중위 16통이다.
    포트폴리오 발행 보고(21일 중 13일 발송)를 아침에 흡수하지 않으면 같은 집계 기준으로 7통이 된다.
+   주간 발송(금 주간 요약·모의투자 주간 채점, 토 임팩트 리포트, 일 CEO 메타·knowledge-lint·preference-learning)은
+   이 지표에서 빼고 따로 센다 — 매일 오는 메시지의 양을 재려는 지표라서다.
    `logs/slack-send.jsonl` 의 `push`·`card` 를 날짜별로 센다(스윕·콘솔 경로 제외 기준 동일하게).
 2. **승인 카드의 다음 날 정오(KST) 전 처리 비율 90% 이상 유지** — 지금 91.4%(32/35, 9-18 이후,
    응답 시간 중위 13.6시간). 할 일 목록으로 옮긴 뒤 카드를 놓치기 시작하면 실패다. `preview_action` 으로 잰다.
@@ -147,10 +149,19 @@ Work Reviewer 4조각 묶음의 나머지(오늘 한 일 나열 · 정량 근거
 
 | 순서 | 내용 | 주요 지점 | 비고 |
 |---|---|---|---|
-| PR 1 | 아침 한 통 + 아침 쪽 건수 줄이기 | `secretariat` · `morning-briefing` · `po-shadow`(morning 그룹으로), `secretariat.digest.ts`, `secretariat.formatter.ts` | 할 일 조회: 승인 대기는 `FindAllOpenPreviewsUsecase`, 신규 공고는 `ListNotifiablePostingsUsecase` — 둘 다 기존 함수. 투자·공고·공부·포트폴리오 줄은 아침 task 가 데이터를 직접 읽어 만들고, 원래 task(job-feed·job-feed-gap·study-*·portfolio-publish)는 Slack 요약을 내지 않는다 |
-| PR 2 | 저녁 마감 + 저녁 쪽 건수 줄이기 | evening 그룹 4개 task, stock-monitor·paper-score·paper-recommend·paper-intraday-stop | 사건 없는 회차는 #748 방식(`skip: true` + `emptyReason` → `SUPPRESSED/EMPTY`)으로 원장에만 남긴다. **경로 표를 회차별로 바꾸는 새 장치는 필요 없다** |
+| PR 1 | 아침 한 통 + 아침 쪽 건수 줄이기 | `secretariat` · `morning-briefing` · `po-shadow`(morning 그룹으로), `secretariat.digest.ts`, `secretariat.formatter.ts` | 할 일 조회: 승인 대기는 `FindAllOpenPreviewsUsecase`, 신규 공고는 `ListNotifiablePostingsUsecase` — 둘 다 기존 함수. 투자·공고·공부·포트폴리오 줄은 아침 task 가 데이터를 직접 읽어 만들고, 원래 task(job-feed·job-feed-gap·study-*·portfolio-publish)는 Slack 요약을 내지 않는다. **공고 알림 선점을 아침 묶음으로 옮긴다** — 아래 |
+| PR 2 | 저녁 마감 + 저녁 쪽 건수 줄이기 | evening 그룹 4개 task, stock-monitor·stock-monitor-us·paper-trading(장마감 평가)·paper-recommend·paper-intraday-stop·paper-order-fill | 사건 없는 회차는 #748 방식(`skip: true` + `emptyReason` → `SUPPRESSED/EMPTY`)으로 원장에만 남긴다. **경로 표를 회차별로 바꾸는 새 장치는 필요 없다** |
 | PR 3 | 시각 조정 | `autopilot.playbook-defaults.ts`, `study-brief-cron.type.ts` | 아래 표 |
 | (선택) PR 4 | 장애 "N일째" | `portfolio-warmup.autopilot-task.ts`, 열린 장애 조회 신설 | 지금도 하루 1통 수준이라 우선순위 낮음 |
+
+**공고 알림 선점(`claimForNotification`)을 아침 묶음의 `onDelivered` 로 옮긴다.** 지금은 job-feed 가 Slack 발송에
+성공한 뒤 `onDelivered` 에서 보낸 공고에 표식을 남긴다(`job-feed.autopilot-task.ts:134-180`). `ListNotifiablePostingsUsecase` 는
+조회만 하므로, 아침 task 가 목록만 읽고 job-feed 의 선점을 그대로 두면 07:00 에 선점돼 08:30 목록이 비고, 선점을 없애면
+같은 공고가 매일 다시 뜬다. 그래서 job-feed 는 07:00 에 수집·채점만 하고 요약은 내지 않으며(선점도 안 함), 아침 task 가
+목록을 읽어 실은 공고를 자기 `onDelivered` 에서 선점한다. 흡수 대상 중 발송 후처리(`onDelivered`)를 쓰는 task 는
+job-feed 하나다 — secretariat·morning-briefing·po-shadow·job-feed-gap·study-*·portfolio-publish·stock-monitor·paper-* 는
+쓰지 않는다(`grep onDelivered src/autopilot/infrastructure/tasks/`, 나머지 한 곳은 주간 task 인 knowledge-lint).
+job-feed-gap 은 분석 시점에 `gapAgentRunId` 로 따로 표식을 남겨(`findGapCandidates`) 선점과 무관하다.
 
 **투자·공고 task 를 아침·저녁 묶음에 task 째로 넣지 않는다.** 같은 `digestGroup` 안의 cron 항목은 실행 시각이
 같아야 하고, 다르면 부팅 검사에서 막힌다(`autopilot.playbook.ts:575-610`). 체결 09:30 · 장마감 17:40 ·
@@ -199,3 +210,6 @@ Work Reviewer 4조각 묶음의 나머지(오늘 한 일 나열 · 정량 근거
 | 투자 결과를 저녁 묶음에 합침 | 같은 묶음의 cron 은 시각이 같아야 해서 task 째로 못 넣는다 | 묶음 task 가 원장을 읽어 한 줄로 (§5) |
 | 회사 줄 한 줄 | 비서실과 PO 검토가 다른 PR 을 고른다 | PO 검토 쪽으로 결정 (§5) |
 | 하루 6통 계산 | 매일 23시 포트폴리오 발행 보고가 빠져 있었다(같은 기준이면 7통) | PR 1 에서 아침 "어제" 줄로 흡수, 계산에 포함 (§3-1, §4, §6) |
+| 아침 task 가 공고 목록만 읽음 | 공고 선점은 job-feed 의 발송 후처리(`onDelivered`)에 있어, 그대로 두면 목록이 비거나 같은 공고가 반복된다 | 선점을 아침 묶음의 `onDelivered` 로 옮김 (§5) |
+| 하루 6통 (요일 무관) | 주간 발송이 섞이면 금·토·일에 기준을 넘는다 | 평일 한정, 주간 발송은 지표에서 제외 (§4) |
+| PR 2 의 장마감 평가 = `paper-score` | `paper-score` 는 금요일 주간 채점이고, 매일 장마감 평가는 `paper-trading`(17:40) | task 목록 정정 (§5) |
