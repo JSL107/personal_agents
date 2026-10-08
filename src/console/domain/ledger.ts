@@ -57,6 +57,7 @@ const buildAgentLedger = (
   agentType: string,
   rows: readonly DatedLedgerRunRow[],
   today: string,
+  isRegistered: boolean,
 ): ConsoleAgentLedger => {
   if (rows.length === 0) {
     return {
@@ -106,12 +107,16 @@ const buildAgentLedger = (
       today,
       lastAutonomousRun.kstDate,
     );
-    stalled = isStalled({
-      autonomy,
-      activeDays,
-      spanDays,
-      idleDays: autonomyIdleDays,
-    });
+    // 폐지돼 레지스트리에서 빠진 워커(예: 09-04 폐지된 CTO)는 옛 크론 기록만 남아 영원히
+    // 정지로 보인다. 다시 돌 일이 없으니 정지 경보만 끄고 이력 숫자는 과거 기록으로 남긴다.
+    stalled =
+      isRegistered &&
+      isStalled({
+        autonomy,
+        activeDays,
+        spanDays,
+        idleDays: autonomyIdleDays,
+      });
   }
 
   return {
@@ -139,9 +144,10 @@ export const buildConsoleLedger = (
     rowsByAgentType.set(row.agentType, agentRows);
   }
 
-  const agentTypes = new Set<string>(
+  const registeredAgentTypes = new Set<string>(
     AGENT_REGISTRY.map((entry) => entry.agentType),
   );
+  const agentTypes = new Set<string>(registeredAgentTypes);
   for (const agentType of rowsByAgentType.keys()) {
     agentTypes.add(agentType);
   }
@@ -152,6 +158,7 @@ export const buildConsoleLedger = (
         agentType,
         rowsByAgentType.get(agentType) ?? [],
         clock.today,
+        registeredAgentTypes.has(agentType),
       ),
     )
     .sort((left, right) => {
