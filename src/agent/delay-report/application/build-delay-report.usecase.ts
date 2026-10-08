@@ -7,6 +7,7 @@ import {
   FailedRunDetail,
   RecentlyFinishedRun,
 } from '../../../agent-run/domain/port/agent-run.repository.port';
+import { AgentType } from '../../../model-router/domain/model-router.type';
 import { FindAllOpenPreviewsUsecase } from '../../../preview-gate/application/find-all-open-previews.usecase';
 import { PreviewAction } from '../../../preview-gate/domain/preview-action.type';
 import { attributeDelay } from '../domain/attribute-delay';
@@ -103,7 +104,11 @@ export class BuildDelayReportUsecase {
     ].filter((axis): axis is string => axis !== null);
 
     const input: DelayReportInput = {
-      activeRuns: activeRunsResult.value,
+      // 이 보고 자신의 run 은 빼야 한다 — dispatcher 가 AgentRun 안에서 부르므로 조회 시점에
+      // 자기 행이 IN_PROGRESS 라, 그대로 두면 "진행 중 작업: 지연 보고" 가 늘 주원인이 된다.
+      activeRuns: activeRunsResult.value.filter(
+        (run) => run.agentType !== AgentType.DELAY_REPORT,
+      ),
       openPreviews: openPreviewsResult.value.filter(
         (preview) => preview.slackUserId === slackUserId,
       ),

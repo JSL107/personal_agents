@@ -96,6 +96,7 @@ const EPISODIC_EXCLUDED_AGENT_TYPES: ReadonlySet<AgentType> = new Set([
   AgentType.PAPER_TRADE, // {"inspectedCount":6,"priceErrorCount":0,...}
   AgentType.HUMANIZER, // {"humanizedKeys":["retrospective"]}
   AgentType.INVEST, // {"marketCountry":"KR","holdingCount":0,...}
+  AgentType.CONTRADICTION_JUDGE, // {"candidates":5,"judged":5,"contradictions":0,...}
 ]);
 
 // SUBCONSCIOUS_GATE 는 타입째 막지 않고(위: 판정 회차의 reason 서술은 기억할 가치가 있다)

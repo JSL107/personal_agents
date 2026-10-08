@@ -32,17 +32,33 @@ const createAnswer = (): AnswerScheduleQuestionUsecase =>
     }),
   }) as unknown as AnswerScheduleQuestionUsecase;
 
+// execute 는 run 결과를 그대로 돌려준다 — 등록 회차의 원장 기록 여부는 호출 인자로 확인한다.
+const createAgentRunService = () => ({
+  execute: jest.fn(async ({ run }) => ({
+    ...(await run({})),
+    agentRunId: 42,
+  })),
+});
+
 describe('ScheduleDispatcher', () => {
   it('agentType 은 SCHEDULE 이다', () => {
     expect(
-      new ScheduleDispatcher(createUsecase(), createAnswer()).agentType,
+      new ScheduleDispatcher(
+        createUsecase(),
+        createAnswer(),
+        createAgentRunService() as never,
+      ).agentType,
     ).toBe(AgentType.SCHEDULE);
   });
 
   it('날짜와 제목이 있으면 등록하고 확인 문장을 낸다', async () => {
     const usecase = createUsecase();
     const answer = createAnswer();
-    const dispatcher = new ScheduleDispatcher(usecase, answer);
+    const dispatcher = new ScheduleDispatcher(
+      usecase,
+      answer,
+      createAgentRunService() as never,
+    );
 
     const outcome = await dispatcher.dispatch({
       source: 'SLACK_MESSAGE',
@@ -55,10 +71,43 @@ describe('ScheduleDispatcher', () => {
     expect(outcome.modelUsed).toBe('deterministic');
   });
 
+  it('등록은 AgentRun 을 남기고, 되묻기는 남기지 않는다', async () => {
+    const agentRunService = createAgentRunService();
+    const dispatcher = new ScheduleDispatcher(
+      createUsecase(),
+      createAnswer(),
+      agentRunService as never,
+    );
+
+    const registered = await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '9월 30일 자동차세',
+    });
+    await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '자동차세 등록해줘',
+    });
+
+    expect(agentRunService.execute).toHaveBeenCalledTimes(1);
+    expect(agentRunService.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentType: AgentType.SCHEDULE,
+        triggerType: 'SLACK_MENTION_SCHEDULE',
+      }),
+    );
+    expect(registered.agentRunId).toBe(42);
+  });
+
   it('날짜가 없으면 등록하지 않고 되묻는다', async () => {
     const usecase = createUsecase();
     const answer = createAnswer();
-    const dispatcher = new ScheduleDispatcher(usecase, answer);
+    const dispatcher = new ScheduleDispatcher(
+      usecase,
+      answer,
+      createAgentRunService() as never,
+    );
 
     const outcome = await dispatcher.dispatch({
       source: 'SLACK_MESSAGE',
@@ -73,7 +122,11 @@ describe('ScheduleDispatcher', () => {
   it('되묻기 후속으로 날짜만 오면 직전 SCHEDULE 턴의 제목과 합쳐 등록한다', async () => {
     const usecase = createUsecase();
     const answer = createAnswer();
-    const dispatcher = new ScheduleDispatcher(usecase, answer);
+    const dispatcher = new ScheduleDispatcher(
+      usecase,
+      answer,
+      createAgentRunService() as never,
+    );
 
     const outcome = await dispatcher.dispatch({
       source: 'SLACK_MESSAGE',
@@ -99,7 +152,11 @@ describe('ScheduleDispatcher', () => {
   it('직전 턴이 다른 워커면 합치지 않는다 — 남의 대화를 제목으로 끌어오지 않는다', async () => {
     const usecase = createUsecase();
     const answer = createAnswer();
-    const dispatcher = new ScheduleDispatcher(usecase, answer);
+    const dispatcher = new ScheduleDispatcher(
+      usecase,
+      answer,
+      createAgentRunService() as never,
+    );
 
     const outcome = await dispatcher.dispatch({
       source: 'SLACK_MESSAGE',
@@ -123,7 +180,11 @@ describe('ScheduleDispatcher', () => {
   it('봇이 한 되묻기 발화는 제목으로 쓰지 않는다 — assistant 턴은 사용자의 말이 아니다', async () => {
     const usecase = createUsecase();
     const answer = createAnswer();
-    const dispatcher = new ScheduleDispatcher(usecase, answer);
+    const dispatcher = new ScheduleDispatcher(
+      usecase,
+      answer,
+      createAgentRunService() as never,
+    );
 
     await dispatcher.dispatch({
       source: 'SLACK_MESSAGE',
@@ -146,7 +207,11 @@ describe('ScheduleDispatcher', () => {
   it('날짜와 제목이 있어도 원문이 질문이면 등록하지 않는다', async () => {
     const usecase = createUsecase();
     const answer = createAnswer();
-    const dispatcher = new ScheduleDispatcher(usecase, answer);
+    const dispatcher = new ScheduleDispatcher(
+      usecase,
+      answer,
+      createAgentRunService() as never,
+    );
 
     const outcome = await dispatcher.dispatch({
       source: 'SLACK_MESSAGE',
@@ -171,7 +236,11 @@ describe('ScheduleDispatcher', () => {
   it('직전 턴과 합쳐 REGISTER 가 되어도 이번 원문이 질문이면 등록하지 않는다', async () => {
     const usecase = createUsecase();
     const answer = createAnswer();
-    const dispatcher = new ScheduleDispatcher(usecase, answer);
+    const dispatcher = new ScheduleDispatcher(
+      usecase,
+      answer,
+      createAgentRunService() as never,
+    );
 
     const outcome = await dispatcher.dispatch({
       source: 'SLACK_MESSAGE',
@@ -195,7 +264,11 @@ describe('ScheduleDispatcher', () => {
   it('날짜 없는 질문이 되묻기로 빠진 뒤 날짜만 오면, 합친 직전 턴이 질문이라 등록하지 않는다', async () => {
     const usecase = createUsecase();
     const answer = createAnswer();
-    const dispatcher = new ScheduleDispatcher(usecase, answer);
+    const dispatcher = new ScheduleDispatcher(
+      usecase,
+      answer,
+      createAgentRunService() as never,
+    );
 
     const first = await dispatcher.dispatch({
       source: 'SLACK_MESSAGE',
@@ -227,7 +300,11 @@ describe('ScheduleDispatcher', () => {
     async (text) => {
       const usecase = createUsecase();
       const answer = createAnswer();
-      const dispatcher = new ScheduleDispatcher(usecase, answer);
+      const dispatcher = new ScheduleDispatcher(
+        usecase,
+        answer,
+        createAgentRunService() as never,
+      );
 
       const outcome = await dispatcher.dispatch({
         source: 'SLACK_MESSAGE',
@@ -249,7 +326,11 @@ describe('ScheduleDispatcher', () => {
   it('직전 턴이 조회 질문이면 날짜만 온 다음 턴과 합쳐 등록하지 않는다', async () => {
     const usecase = createUsecase();
     const answer = createAnswer();
-    const dispatcher = new ScheduleDispatcher(usecase, answer);
+    const dispatcher = new ScheduleDispatcher(
+      usecase,
+      answer,
+      createAgentRunService() as never,
+    );
 
     const outcome = await dispatcher.dispatch({
       source: 'SLACK_MESSAGE',
@@ -274,7 +355,11 @@ describe('ScheduleDispatcher', () => {
   it('가장 가까운 일정 턴이 조회면, 그 전의 미완료 등록 턴과도 합치지 않는다', async () => {
     const usecase = createUsecase();
     const answer = createAnswer();
-    const dispatcher = new ScheduleDispatcher(usecase, answer);
+    const dispatcher = new ScheduleDispatcher(
+      usecase,
+      answer,
+      createAgentRunService() as never,
+    );
     const turn = (text: string) => ({
       role: 'user' as const,
       text,
