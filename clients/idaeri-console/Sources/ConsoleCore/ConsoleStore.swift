@@ -42,7 +42,7 @@ public final class ConsoleStore: ObservableObject {
 
     /// 화면에 정지로 표시할 담당자(지금 명단에 있는 사람만 — `officeStalledAgentTypes`).
     public var stalledAgentTypes: Set<String> {
-        officeStalledAgentTypes(ledger: ledger, roster: agents)
+        officeStalledAgentTypes(ledger: ledger, roster: agents, runs: runs)
     }
     /// 캘린더 탭이 조회한 일정 목록. 스냅샷과 무관하게 탭이 열릴 때·상태 변경 직후에만 갱신된다.
     @Published public private(set) var schedules: [ScheduleItem] = []

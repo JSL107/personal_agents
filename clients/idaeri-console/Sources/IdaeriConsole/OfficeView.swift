@@ -253,6 +253,8 @@ struct OfficeView: View {
                 }
                 .onChange(of: store.runs) { _ in
                     office3D.pushSnapshot(currentSnapshot)
+                    // 정지 표시는 미종료 런에도 달려 있다(`officeStalledAgentTypes`).
+                    scene.applyStalled(store.stalledAgentTypes)
                     // 재연결 스냅샷은 이벤트를 방출하지 않으므로, agents 불변인데 runs 만 바뀐
                     // 경우(같은 에이전트의 새 run)에도 경과 오버레이를 갱신한다.
                     scene.refreshOverlays(
