@@ -54,6 +54,13 @@ const makeTask = (opts: {
   openPrsError?: Error;
   worklogRuns?: { id: number; output: unknown; endedAt: Date }[];
   dailyEvalRuns?: { id: number; output: unknown; endedAt: Date }[];
+  // 오늘 발송 원장. 기본은 아침 그룹 본문이 나간 상태 — 계획 판정을 보는 테스트의 전제다.
+  deliveries?: {
+    kind: string;
+    itemKinds: string[];
+    threadTs: string | null;
+    status: string;
+  }[];
   pmRuns?: {
     id: number;
     output: unknown;
@@ -141,12 +148,29 @@ const makeTask = (opts: {
       ),
   };
 
+  const deliveryRepository = {
+    findSince: jest.fn().mockResolvedValue(
+      opts.deliveries ?? [
+        {
+          kind: 'autopilot:morning',
+          itemKinds: ['secretariat', 'morning-briefing'],
+          threadTs: null,
+          status: 'SENT',
+          suppressReason: null,
+          reactionCount: 0,
+          replyCount: 0,
+        },
+      ],
+    ),
+  };
+
   const task = new EveningRetroPublishTask(
     agentRunService as never,
     githubClient as never,
     modelRouter as never,
     humanizeService as never,
     config as never,
+    deliveryRepository as never,
   );
 
   return {
@@ -1018,6 +1042,67 @@ describe('EveningRetroPublishTask', () => {
         { agentRunId: 70, facets: ['pm_plan'] },
       ]);
     });
+
+    it.each([
+      [
+        '발송 실패',
+        [
+          {
+            kind: 'autopilot:morning',
+            itemKinds: ['secretariat', 'morning-briefing'],
+            threadTs: null,
+            status: 'FAILED',
+          },
+        ],
+      ],
+      [
+        '콘솔로 억제',
+        [
+          {
+            kind: 'autopilot:morning',
+            itemKinds: ['secretariat', 'morning-briefing'],
+            threadTs: null,
+            status: 'SUPPRESSED',
+          },
+        ],
+      ],
+      [
+        '스레드 댓글만 나감',
+        [
+          {
+            kind: 'autopilot:morning',
+            itemKinds: ['morning-briefing'],
+            threadTs: '1.0',
+            status: 'SENT',
+          },
+        ],
+      ],
+      ['기록 없음', []],
+    ])(
+      '(s-9) 아침 브리핑 본문이 실제로 나가지 않은 날(%s)은 계획 판정을 내지 않는다',
+      async (_label, deliveries) => {
+        const { task } = makeTask({
+          prs: [PR_ITEM],
+          worklogRuns: [],
+          dailyEvalRuns: [],
+          deliveries,
+          pmRuns: [
+            {
+              id: 70,
+              output: {},
+              endedAt: new Date(),
+              triggerType: TriggerType.MORNING_BRIEFING_CRON,
+            },
+          ],
+        });
+
+        const result = await task.run(CTX);
+
+        expect(result.runVerdicts).toEqual([
+          { agentRunId: 1, facets: ['overall'] },
+        ]);
+      },
+    );
 
     it('(s-8) 아침 계획 조회가 실패해도 회고 판정은 그대로 나간다', async () => {
       const { task, agentRunService } = makeTask({
