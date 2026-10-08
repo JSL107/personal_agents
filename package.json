@@ -61,7 +61,7 @@
     "kev:status": "bash scripts/kev.sh status"
   },
   "dependencies": {
-    "@huggingface/transformers": "^4.2.0",
+    "@huggingface/transformers": "^4.3.1",
     "@nestjs/bullmq": "^11.0.4",
     "@nestjs/common": "^11.2.3",
     "@nestjs/config": "^4.0.4",
@@ -117,7 +117,6 @@
     "overrides": {
       "@babel/core@7": "^7.29.6",
       "@hono/node-server@1": "^1.19.15",
-      "adm-zip@0.5": "^0.6.1",
       "ajv@8": "^8.18.0",
       "axios@1": "^1.20.0",
       "body-parser@2": "^2.3.0",
@@ -135,7 +134,6 @@
       "protobufjs@7": "^7.6.5",
       "proxy-addr@2": "^2.0.8",
       "qs@6": "^6.15.2",
-      "sharp@0.34": "^0.35.5",
       "tmp@0.0": "^0.2.6",
       "undici@7": "^7.28.0",
       "uuid@11": "^11.1.1",
