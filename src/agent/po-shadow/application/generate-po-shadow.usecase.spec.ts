@@ -699,8 +699,51 @@ describe('GeneratePoShadowUsecase', () => {
         merged: 1,
         total: 1,
         uncomparable: 0,
+        // 철회가 없는 회차에도 빈 배열로 남겨야 "측정 전"(필드 없음)과 "0건" 이 갈린다.
+        reasonWithdrawnKeys: [],
       });
       expect(result.result.factSummary.join('\n')).toContain('머지됨');
+    });
+
+    // 21일 넘게 담당에 남은 PR 이 오늘 계획에도 있으면 사유가 FINDING_UNMOVED 와 PLANNED_STALLED
+    // 두 곳에 실린다. 철회는 둘 다에서 빠져야 하고, 그때만 철회로 기록돼야 한다.
+    const STALLED_REASON = '리뷰 0건 · 마지막 활동 3일 전';
+    const runStalledPriorAfter = async (daysAgo: number) => {
+      agentRunServiceFindLatest.mockResolvedValue({
+        id: 99,
+        output: mismatchPlan,
+        endedAt: new Date(),
+      });
+      contextCollectorCollect.mockResolvedValue(mismatchContext());
+      agentRunServiceFindRecent.mockImplementation(({ agentType }) =>
+        Promise.resolve(
+          agentType === AgentType.PO_SHADOW
+            ? [priorRun(['stalled:acme/app#264'], daysAgo)]
+            : [],
+        ),
+      );
+      const result = await usecase.execute({
+        extraContext: '',
+        slackUserId: 'U1',
+      });
+      const prompt: string = modelRouter.route.mock.calls[0][0].request.prompt;
+      return { result, prompt };
+    };
+
+    it('21일 넘은 계획 포함 키는 두 사실 모두에서 사유를 빼고 철회로 기록한다', async () => {
+      const { result, prompt } = await runStalledPriorAfter(22);
+
+      expect(prompt).not.toContain(STALLED_REASON);
+      expect(result.result.recoverySummary?.reasonWithdrawnKeys).toEqual([
+        'acme/app#264',
+      ]);
+    });
+
+    it('20일이면 두 사실 모두 사유를 유지하고 철회로 기록하지 않는다', async () => {
+      const { result, prompt } = await runStalledPriorAfter(20);
+
+      expect(countOccurrences(prompt, STALLED_REASON)).toBe(2);
+      expect(result.result.recoverySummary?.reasonWithdrawnKeys).toEqual([]);
     });
 
     it('lifecycle 조회가 실패하면 그 키만 대조 불가로 세고 열화 라벨을 남긴다', async () => {

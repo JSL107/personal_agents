@@ -322,33 +322,43 @@ describe('waitingItem.reason 을 detail 에 싣는다', () => {
 
 describe('권고 철회 — sequence 3(21일)부터 detail 에서 reason 을 뺀다', () => {
   const REASON = '승인·충돌 없음 — 머지만 남음';
-  const recoverAfter = (days: number) =>
+  const recoverAfter = (days: number, withReason = true) =>
     buildFindingRecoveryFacts({
       priorFindings: [{ key: KEY, firstReportedAt: day(days) }],
       context: contextWith({
         ...assigned(KEY),
-        waitingItems: [
-          {
-            title: 't',
-            url: 'https://github.com/acme/app/pull/264',
-            reason: REASON,
-          },
-        ],
+        waitingItems: withReason
+          ? [
+              {
+                title: 't',
+                url: 'https://github.com/acme/app/pull/264',
+                reason: REASON,
+              },
+            ]
+          : [],
       }),
       lifecycles: new Map(),
       now: NOW,
-    }).facts[0];
+    });
 
   it('sequence 2(20일)까지는 reason 을 싣는다', () => {
-    const fact = recoverAfter(20);
-    expect(fact.sequence).toBe(2);
-    expect(fact.detail).toBe(`14일째 미이동 — ${REASON}`);
+    const result = recoverAfter(20);
+    expect(result.facts[0].sequence).toBe(2);
+    expect(result.facts[0].detail).toBe(`14일째 미이동 — ${REASON}`);
+    expect(result.reasonWithdrawnKeys).toEqual([]);
   });
 
   it('sequence 3(21일)이면 reason 없이 경과만 남긴다', () => {
-    const fact = recoverAfter(21);
-    expect(fact.sequence).toBe(3);
-    expect(fact.detail).toBe('21일째 미이동');
+    const result = recoverAfter(21);
+    expect(result.facts[0].sequence).toBe(3);
+    expect(result.facts[0].detail).toBe('21일째 미이동');
+    expect(result.reasonWithdrawnKeys).toEqual([KEY]);
+  });
+
+  it('사유가 원래 없던 키는 철회로 세지 않는다 — 존치 판정이 부풀지 않게', () => {
+    const result = recoverAfter(21, false);
+    expect(result.facts[0].detail).toBe('21일째 미이동');
+    expect(result.reasonWithdrawnKeys).toEqual([]);
   });
 });
 

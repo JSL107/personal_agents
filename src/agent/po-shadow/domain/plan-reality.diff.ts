@@ -59,6 +59,9 @@ export interface FindingRecoveryResult {
   // 키 추출 실패 + 조회 실패. 카드의 "(대조 불가 N건)" 과 주간 지표가 같은 값을 쓴다.
   uncomparableCount: number;
   totalPriorKeys: number;
+  // 이번 회차에 실제로 reason 을 뺀 키. 사유가 원래 없던 키는 넣지 않는다 — 철회 규칙의 발화를
+  // detail 문자열에서 되읽으면 "철회" 와 "사유 없음" 이 구분되지 않는다.
+  reasonWithdrawnKeys: string[];
   // 담당 조회 자체가 실패해 전건을 회수하지 못했는지. 이 경우 수집기 라벨이 이미 있으므로
   // 회수 쪽에서 라벨을 겹쳐 달지 않는다.
   assignedLookupFailed: boolean;
@@ -409,6 +412,21 @@ const buildNotFoundFact = (task: TaskItem): PlanRealityFact => ({
   ...(task.url ? { url: task.url } : {}),
 });
 
+// 철회한 키는 계획 대조 쪽 PLANNED_STALLED 에서도 reason 을 뺀다. 그 fact 의 detail 이 같은
+// waitingItem.reason 이라, FINDING_UNMOVED 에서만 빼면 같은 권고 재료가 프롬프트에 남는다.
+// 철회 판정은 buildFindingRecoveryFacts 한 곳이 하고 여기서는 그 결과만 따른다.
+export const withdrawStalledReasons = (
+  facts: PlanRealityFact[],
+  reasonWithdrawnKeys: string[],
+): PlanRealityFact[] => {
+  const withdrawnIds = new Set(
+    reasonWithdrawnKeys.map((key) => `stalled:${key}`),
+  );
+  return facts.map((fact) =>
+    withdrawnIds.has(fact.id) ? { ...fact, detail: '대기 중' } : fact,
+  );
+};
+
 const buildStalledFact = (
   actualItem: ActualGithubItem,
   waitingItem: WaitingItem,
@@ -461,6 +479,7 @@ export const buildFindingRecoveryFacts = ({
       .filter((entry): entry is [string, string] => entry !== null),
   );
   const facts: PlanRealityFact[] = [];
+  const reasonWithdrawnKeys: string[] = [];
   const tally = { merged: 0, unresolved: 0, abandoned: 0, unassigned: 0 };
   let uncomparableCount = 0;
 
@@ -473,6 +492,7 @@ export const buildFindingRecoveryFacts = ({
       movementTally: tally,
       uncomparableCount: 0,
       totalPriorKeys: priorFindings.length,
+      reasonWithdrawnKeys: [],
       assignedLookupFailed: true,
     };
   }
@@ -487,7 +507,20 @@ export const buildFindingRecoveryFacts = ({
       // 7일 미만은 아직 정상 진행이라 사실을 만들지 않는다. 다만 카드의 "미해결" 에는 센다
       // — 그래서 표시된 미해결 수와 FINDING_UNMOVED 개수는 다를 수 있다.
       if (sequence >= 1) {
-        facts.push(buildUnmovedFact({ prior, sequence, reasonByKey }));
+        // 철회 구간에 들면 reason 을 싣지 않는다 — 모델이 쓸 재료가 사라져 권고 문장도 사라진다.
+        const reason = reasonByKey.get(prior.key) ?? null;
+        const withdrawn =
+          reason !== null && sequence >= UNMOVED_REASON_WITHDRAW_SEQUENCE;
+        if (withdrawn) {
+          reasonWithdrawnKeys.push(prior.key);
+        }
+        facts.push(
+          buildUnmovedFact({
+            prior,
+            sequence,
+            reason: withdrawn ? null : reason,
+          }),
+        );
       }
       continue;
     }
@@ -531,6 +564,7 @@ export const buildFindingRecoveryFacts = ({
     movementTally: tally,
     uncomparableCount,
     totalPriorKeys: priorFindings.length,
+    reasonWithdrawnKeys,
     assignedLookupFailed: false,
   };
 };
@@ -577,17 +611,12 @@ const toGithubUrl = (key: string): string => {
 const buildUnmovedFact = ({
   prior,
   sequence,
-  reasonByKey,
+  reason,
 }: {
   prior: PriorFinding;
   sequence: number;
-  reasonByKey: Map<string, string>;
+  reason: string | null;
 }): PlanRealityFact => {
-  // 철회 구간에 들면 reason 을 싣지 않는다 — 모델이 쓸 재료가 사라져 권고 문장도 사라진다.
-  const reason =
-    sequence >= UNMOVED_REASON_WITHDRAW_SEQUENCE
-      ? null
-      : (reasonByKey.get(prior.key) ?? null);
   const elapsed = `${sequence * RECOVERY_SEQUENCE_DAYS}일째 미이동`;
   return {
     id: `finding-unmoved:${prior.key}`,
