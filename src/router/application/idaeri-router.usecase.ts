@@ -271,7 +271,7 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
     };
   }
 
-  // 담당자는 골랐는데 새 AgentRun 이 열리지 않은 회차(캐시 재사용 RENDER_*·결정론 DELAY_REPORT·
+  // 담당자는 골랐는데 새 AgentRun 이 열리지 않은 회차(캐시 재사용 RENDER_*·일정 되묻기·
   // 0 sentinel)를 남긴다. 없으면 이 발화는 원장 어디에도 없다. 기다리지 않는다 — 부수 기록이다.
   private recordNoRun(routing: RoutingContext, outcome: DispatchOutcome): void {
     if (!this.routingNoRun) {
