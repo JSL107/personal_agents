@@ -28,6 +28,7 @@
     "docs:check": "ts-node scripts/sync-docs.ts --check",
     "harness:replay": "ts-node scripts/harness-replay.ts",
     "eval:nl-answer": "ts-node scripts/nl-answer-eval.ts",
+    "eval:nl-candidates": "ts-node scripts/nl-answer-candidates.ts",
     "console:check": "bash scripts/console-check.sh",
     "console:install-hooks": "ts-node scripts/console-hooks.ts install",
     "console:uninstall-hooks": "ts-node scripts/console-hooks.ts uninstall",

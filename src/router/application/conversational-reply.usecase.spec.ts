@@ -129,7 +129,7 @@ describe('ConversationalReply — buildSystemPrompt (self-context)', () => {
       expect(prompt).toBe(baselinePrompt);
       expect(createHash('sha256').update(prompt).digest('hex')).toBe(
         // 2026-10-07 기능 목록·개인 봇 사실·되묻기 규칙 교체, PR 소유 문구 정정(#744 리뷰), 링크 없는 게시 안내(4단계)로 갱신
-        '04069be8c4cb98d43e59cab3f438f2c17784047ba64de8b3936605576941e88b',
+        '2e46d432d99b0ed5ed94e2122671760a2c2d32e1e8e1efe68791186198b1c577',
       );
     },
   );
