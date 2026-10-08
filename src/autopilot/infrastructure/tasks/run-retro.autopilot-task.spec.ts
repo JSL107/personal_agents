@@ -65,7 +65,7 @@ describe('RunRetroAutopilotTask', () => {
       sinceDays: 7,
       untilDays: 0,
     });
-    expect(result.summaryText).toContain('PAPER_TRADE: 형식 준수율 2%');
+    expect(result.summaryText).toContain('PAPER_TRADE: 형식 준수율 2.3%');
     expect(result.summaryText).toContain(
       '171건 평균, 하한 50% · 필수 필드 존재 여부만 검사함',
     );
