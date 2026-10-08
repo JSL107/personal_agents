@@ -581,6 +581,7 @@ describe('WeeklySummaryAutopilotTask', () => {
     expect(summaryText).toContain('이번 주 5건 (taskA 2 · taskB 1 · taskC 1)');
     expect(repository.findSince).toHaveBeenCalledWith(
       new Date('2026-06-10T15:00:00.000Z'),
+      new Date('2026-06-17T15:00:00.000Z'),
     );
   });
 

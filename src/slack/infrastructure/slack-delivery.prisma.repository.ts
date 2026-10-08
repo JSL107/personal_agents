@@ -41,9 +41,9 @@ export class SlackDeliveryPrismaRepository implements SlackDeliveryRepositoryPor
     return result.count;
   }
 
-  async findSince(since: Date): Promise<SlackDeliveryStatRow[]> {
+  async findSince(since: Date, until?: Date): Promise<SlackDeliveryStatRow[]> {
     const rows = await this.prisma.slackDelivery.findMany({
-      where: { createdAt: { gte: since } },
+      where: { createdAt: { gte: since, ...(until ? { lt: until } : {}) } },
       select: {
         kind: true,
         itemKinds: true,
