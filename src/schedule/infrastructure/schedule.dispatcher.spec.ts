@@ -98,6 +98,11 @@ describe('ScheduleDispatcher', () => {
       }),
     );
     expect(registered.agentRunId).toBe(42);
+    // episodic 인덱스에 계측(id)만 쌓이지 않게 제목·마감일을 output 에 싣는다.
+    const { run } = agentRunService.execute.mock.calls[0][0];
+    await expect(run({})).resolves.toMatchObject({
+      output: { scheduleId: 1, title: '자동차세' },
+    });
   });
 
   it('날짜가 없으면 등록하지 않고 되묻는다', async () => {
