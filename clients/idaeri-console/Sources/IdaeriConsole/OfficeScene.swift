@@ -165,6 +165,9 @@ final class OfficeScene: SKScene {
     /// 마지막 오버레이 입력 — 포커스 전환 직후 라벨을 새 배율로 다시 그리는 데 쓴다.
     private var lastSyncedRuns: [ConsoleRun] = []
     private var lastSyncedPendingCommands: [PendingCommand] = []
+    /// 정지 배지를 달 담당자(`officeStalledAgentTypes`). 노드가 다시 만들어져도 `refreshOverlays`
+    /// 가 이 값으로 다시 단다.
+    private var stalledAgentTypes: Set<String> = []
     /// 이벤트가 오면 자율 연출을 즉시 끊을 수 있어야 하므로 완료 후 탕비실 이동도 함께 추적한다.
     private var strollingAgents: Set<String> = []
     /// 회의를 열고, 끝나면 자리에서 일을 시작할 사람.
@@ -1545,6 +1548,8 @@ final class OfficeScene: SKScene {
         )
         node.resize(tileSize: tileSize, spriteScale: characterScale)
         node.apply(state: agent.state)
+        // 출근으로 중간에 생기는 노드는 다음 `refreshOverlays` 까지 배지 없이 앉아 있게 된다.
+        node.setStalled(stalledAgentTypes.contains(agent.agentType))
         return node
     }
 
@@ -3804,6 +3809,14 @@ final class OfficeScene: SKScene {
 
     // MARK: - 관제 정보 오버레이
 
+    /// 자율 워커 정지 배지를 단다. 원장은 스냅샷과 따로 오므로 따로 들어온다.
+    func applyStalled(_ agentTypes: Set<String>) {
+        stalledAgentTypes = agentTypes
+        for (agentType, node) in characters {
+            node.setStalled(agentTypes.contains(agentType))
+        }
+    }
+
     /// 캐릭터 머리 위 정보(상시 말풍선·경과·승인 배지)를 현재 상태로 다시 그린다.
     func refreshOverlays(
         agents: [ConsoleAgent],
@@ -3817,6 +3830,7 @@ final class OfficeScene: SKScene {
             guard let node = characters[agent.agentType] else {
                 continue
             }
+            node.setStalled(stalledAgentTypes.contains(agent.agentType))
             agentBubbles[agent.agentType] = agent.bubble
             // 값이 없으면 지운다. 예전 값을 남기면 서버를 되돌렸을 때(필드를 모르는 버전)
             // 사라진 직무가 화면에 계속 붙어 있다.

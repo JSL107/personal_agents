@@ -16,6 +16,10 @@ final class CharacterNode: SKNode {
     /// 선택 하이라이트 — 몸을 감싸는 흰 테두리. 자세·타일 크기가 바뀌면 함께 다시 잡아야 해서
     /// 씬이 아니라 캐릭터가 들고 있는다(씬이 한 번 만들어 붙이면 갱신 경로가 없다).
     private let selectionRing = SKShapeNode()
+    /// 자율 워커 정지 배지 — 머리 옆 살구색 원에 일시정지 기호. 선택 테두리와 같은 이유로 캐릭터가
+    /// 들고 있고, 숨김만 토글한다. 채도를 낮추는 표현은 쓰지 않는다(코지 스펙 §4.4: 상태는 배지로).
+    private let stallBadge = SKShapeNode()
+    private var stallBadgeIconSize: CGFloat = 0
     private let nameLabel = SKLabelNode()
     /// 이름표 뒤 어두운 판. 책상·바닥 무늬 위에 글자가 그냥 놓이면 읽히지 않는다.
     private let namePlate = SKShapeNode()
@@ -164,6 +168,13 @@ final class CharacterNode: SKNode {
         selectionRing.isHidden = true
         addChild(selectionRing)
 
+        stallBadge.fillColor = SKColor(red: 0.96, green: 0.62, blue: 0.45, alpha: 1)
+        stallBadge.strokeColor = SKColor(red: 1.0, green: 0.97, blue: 0.90, alpha: 1)
+        stallBadge.lineWidth = 1.5
+        stallBadge.zPosition = 16
+        stallBadge.isHidden = true
+        addChild(stallBadge)
+
         apply(facing: .down)
     }
 
@@ -261,6 +272,38 @@ final class CharacterNode: SKNode {
         selectionRing.isHidden = !selected
         selectionRing.alpha = selected ? 1 : 0
         refreshNameplate()
+    }
+
+    func setStalled(_ stalled: Bool) {
+        stallBadge.isHidden = !stalled
+    }
+
+    /// 정지 배지를 현재 자세·타일 크기에 맞춘다. 이름표·말풍선은 머리 위 가운데를 쓰므로 머리
+    /// 오른쪽 어깨 높이에 둔다 — 같은 줄에 두면 이름표 겹침 회귀가 난다.
+    private func layoutStallBadge() {
+        let radius = max(5, currentTileSize * 0.13)
+        stallBadge.path = CGPath(
+            ellipseIn: CGRect(x: -radius, y: -radius, width: radius * 2, height: radius * 2),
+            transform: nil
+        )
+        stallBadge.position = CGPoint(
+            x: currentTileSize * 0.30, y: headTopY - currentTileSize * 0.20
+        )
+        let iconSize = (radius * 1.1).rounded()
+        guard iconSize != stallBadgeIconSize else {
+            return
+        }
+        stallBadgeIconSize = iconSize
+        stallBadge.removeAllChildren()
+        if let texture = symbolTexture(
+            systemName: "pause.fill", pointSize: iconSize,
+            color: NSColor(red: 0.36, green: 0.25, blue: 0.18, alpha: 1)
+        ) {
+            let icon = SKSpriteNode(texture: texture)
+            let scale = iconSize / max(texture.size().width, texture.size().height)
+            icon.size = CGSize(width: texture.size().width * scale, height: texture.size().height * scale)
+            stallBadge.addChild(icon)
+        }
     }
 
     /// 이름표 불투명도. 유휴가 스물아홉이라 전부 선명하면 활성 세 명이 묻힌다.
@@ -716,6 +759,7 @@ final class CharacterNode: SKNode {
         // 여기서 함께 다시 잡지 않으면 앉고 설 때마다 라벨이 머리에 파묻히거나 떠오른다.
         layoutNameplate()
         layoutSelectionRing()
+        layoutStallBadge()
         layoutHeadLabels()
     }
 
