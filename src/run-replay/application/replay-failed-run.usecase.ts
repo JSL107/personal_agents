@@ -19,6 +19,7 @@ import {
   ReplayRejection,
   ReplayRejectionCode,
 } from '../domain/run-replay.type';
+import { ReplayInFlightLock } from './replay-in-flight.lock';
 
 type OutcomeOf<Usecase extends { execute: (...args: never[]) => unknown }> =
   Awaited<ReturnType<Usecase['execute']>>;
@@ -83,9 +84,54 @@ export class ReplayFailedRunUsecase {
     private readonly paperTradingRepository: PaperTradingPrismaRepository,
     private readonly agentRunService: AgentRunService,
     private readonly watchVideoUsecase: WatchVideoUsecase,
+    private readonly inFlightLock: ReplayInFlightLock,
   ) {}
 
-  async prepare({
+  /**
+   * 같은 run 의 재실행이 이미 돌고 있으면 `IN_FLIGHT` 로 거절한다. 잠금은 판정(DB 조회) **전에**
+   * 걸어 그 사이 들어온 두 번째 요청도 막고, 판정이 거절·예외로 끝나면 풀고, 통과하면 `run()` 이
+   * 끝날 때 푼다. 그래서 호출자는 READY 를 받으면 반드시 `run()` 을 불러야 한다.
+   */
+  async prepare(input: {
+    runId: number;
+    requesterSlackUserId: string;
+  }): Promise<ReplayPreparation> {
+    const { runId } = input;
+    if (!this.inFlightLock.tryAcquire(runId)) {
+      return reject(
+        ReplayRejectionCode.IN_FLIGHT,
+        `run #${runId} 재시도가 이미 진행 중입니다. 끝난 뒤 결과를 확인해주세요.`,
+      );
+    }
+    let preparation: ReplayPreparation;
+    try {
+      preparation = await this.judge(input);
+    } catch (error: unknown) {
+      this.inFlightLock.release(runId);
+      throw error;
+    }
+    if (preparation.kind === 'REJECTED') {
+      this.inFlightLock.release(runId);
+      return preparation;
+    }
+    const run = preparation.run as () => Promise<unknown>;
+    return {
+      ...preparation,
+      run: async () => {
+        try {
+          return await run();
+        } finally {
+          this.inFlightLock.release(runId);
+        }
+      },
+    } as PreparedReplay;
+  }
+
+  isReplaying(runId: number): boolean {
+    return this.inFlightLock.isRetrying(runId);
+  }
+
+  private async judge({
     runId,
     requesterSlackUserId,
   }: {

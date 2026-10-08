@@ -7,6 +7,7 @@ import {
   ReplayFailedRunUsecase,
   ReplayPreparation,
 } from './replay-failed-run.usecase';
+import { ReplayInFlightLock } from './replay-in-flight.lock';
 
 const OWNER = 'U1';
 
@@ -43,6 +44,7 @@ const setup = (payload: unknown) => {
     },
     agentRunService: { setParentId: jest.fn().mockResolvedValue(undefined) },
     watchVideoUsecase: agentUsecase(),
+    inFlightLock: new ReplayInFlightLock(),
   };
   const usecase = new ReplayFailedRunUsecase(
     ...(Object.values(dependencies) as unknown as ConstructorParameters<
@@ -208,6 +210,71 @@ describe('ReplayFailedRunUsecase', () => {
       await expect(preparation.run()).resolves.toMatchObject({
         agentRunId: 99,
       });
+    });
+  });
+
+  // Slack `/retry-run` 과 콘솔 버튼이 이 판정을 함께 지나므로 잠금도 여기 하나다 — 진입점마다
+  // 따로 잠그면 두 곳에서 동시에 누른 같은 run 이 두 번 돌아 게시 리뷰·발행 카드가 두 벌 나간다.
+  describe('중복 실행 잠금', () => {
+    const readyOf = async (preparation: Promise<ReplayPreparation>) => {
+      const resolved = await preparation;
+      if (resolved.kind !== 'READY') {
+        throw new Error(`READY 여야 한다: ${JSON.stringify(resolved)}`);
+      }
+      return resolved;
+    };
+
+    it('같은 run 의 재실행이 도는 동안 다른 진입점의 요청은 IN_FLIGHT, 끝나면 다시 받는다', async () => {
+      const { prepare, generateDailyPlanUsecase } = setup(failedRun('PM'));
+      let finish: (value: unknown) => void = () => undefined;
+      generateDailyPlanUsecase.execute.mockReturnValue(
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+      );
+
+      const first = await readyOf(prepare());
+      const running = first.run();
+      expectRejected(await prepare(), ReplayRejectionCode.IN_FLIGHT);
+
+      finish(outcome(99));
+      await running;
+      expect(await prepare()).toMatchObject({ kind: 'READY' });
+    });
+
+    it('판정을 기다리는 사이 들어온 두 번째 요청도 막는다', async () => {
+      const { prepare } = setup(failedRun('PM'));
+
+      const [first, second] = await Promise.all([prepare(), prepare()]);
+
+      expect(first).toMatchObject({ kind: 'READY' });
+      expectRejected(second, ReplayRejectionCode.IN_FLIGHT);
+    });
+
+    it('판정이 거절되면 잠금을 푼다', async () => {
+      const { prepare } = setup(failedRun('VACATION'));
+      expectRejected(await prepare(), ReplayRejectionCode.NOT_SUPPORTED);
+      expectRejected(await prepare(), ReplayRejectionCode.NOT_SUPPORTED);
+    });
+
+    it('판정이 예외로 끝나도 잠금을 풀어 다음 요청을 받는다', async () => {
+      const { prepare, retryRunUsecase } = setup(failedRun('PM'));
+      retryRunUsecase.execute.mockRejectedValueOnce(new Error('DB 흔들림'));
+
+      await expect(prepare()).rejects.toThrow('DB 흔들림');
+      expect(await prepare()).toMatchObject({ kind: 'READY' });
+    });
+
+    it('실행이 실패해도 잠금을 푼다', async () => {
+      const { prepare, generateDailyPlanUsecase } = setup(failedRun('PM'));
+      generateDailyPlanUsecase.execute.mockRejectedValueOnce(
+        new Error('codex 실패'),
+      );
+
+      await expect((await readyOf(prepare())).run()).rejects.toThrow(
+        'codex 실패',
+      );
+      expect(await prepare()).toMatchObject({ kind: 'READY' });
     });
   });
 

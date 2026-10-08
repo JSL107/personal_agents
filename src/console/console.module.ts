@@ -13,7 +13,6 @@ import { BuildDeliverySummaryUsecase } from './application/build-delivery-summar
 import { BuildLedgerUsecase } from './application/build-ledger.usecase';
 import { BuildPresidentBriefingUsecase } from './application/build-president-briefing.usecase';
 import { ConsoleReadService } from './application/console-read.service';
-import { ConsoleRetryTracker } from './application/console-retry-tracker';
 import { ConsoleWriteService } from './application/console-write.service';
 import { ListDeliveriesUsecase } from './application/list-deliveries.usecase';
 import { PendingConsoleTurnStore } from './application/pending-console-turn.store';
@@ -51,7 +50,6 @@ import { ConsoleWriteController } from './interface/console-write.controller';
     BuildLedgerUsecase,
     BuildPresidentBriefingUsecase,
     ConsoleReadService,
-    ConsoleRetryTracker,
     ConsoleWriteService,
     ListDeliveriesUsecase,
     ConsoleReadGuard,

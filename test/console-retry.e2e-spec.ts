@@ -6,7 +6,6 @@ import * as request from 'supertest';
 import { AllExceptionsFilter } from './../src/common/filter/all-exceptions.filter';
 import { LoopbackOnlyGuard } from './../src/common/guard/loopback-only.guard';
 import { ResponseInterceptor } from './../src/common/interceptor/response.interceptor';
-import { ConsoleRetryTracker } from './../src/console/application/console-retry-tracker';
 import { ConsoleWriteService } from './../src/console/application/console-write.service';
 import { PendingConsoleTurnStore } from './../src/console/application/pending-console-turn.store';
 import { PreconditionChainOrchestrator } from './../src/console/application/precondition-chain.orchestrator';
@@ -29,7 +28,6 @@ describe('POST /v1/console/runs/:id/retry (e2e)', () => {
       controllers: [ConsoleWriteController],
       providers: [
         ConsoleWriteService,
-        ConsoleRetryTracker,
         LoopbackOnlyGuard,
         {
           provide: ConfigService,
@@ -95,15 +93,14 @@ describe('POST /v1/console/runs/:id/retry (e2e)', () => {
     });
   });
 
-  it('도는 중인 run 을 다시 누르면 409', async () => {
+  it('같은 run 이 이미 재실행 중이면 409', async () => {
     prepare.mockResolvedValue({
-      kind: 'READY',
-      agentType: 'PM',
-      runId: 42,
-      run: () => new Promise(() => undefined),
+      kind: 'REJECTED',
+      code: ReplayRejectionCode.IN_FLIGHT,
+      message:
+        'run #42 재시도가 이미 진행 중입니다. 끝난 뒤 결과를 확인해주세요.',
     });
 
-    await post('42');
     const response = await post('42');
 
     expect(response.status).toBe(409);
