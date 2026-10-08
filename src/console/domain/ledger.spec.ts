@@ -210,4 +210,58 @@ describe('buildConsoleLedger', () => {
       stalled: true,
     });
   });
+
+  it('레지스트리 밖 자율 워커는 오래 쉬어도 정지로 판정하지 않고 이력은 남긴다', () => {
+    const rows = [
+      run('CTO', 'CTO_ASSIGN_CRON', 'SUCCEEDED', '2026-07-01T13:00:00+09:00'),
+      run('CTO', 'CTO_ASSIGN_CRON', 'SUCCEEDED', '2026-07-02T13:00:00+09:00'),
+      run('CTO', 'CTO_ASSIGN_CRON', 'SUCCEEDED', '2026-07-03T13:00:00+09:00'),
+    ];
+
+    const ledger = buildConsoleLedger(rows, thursdayClock);
+    const cto = ledger.agents.find((agent) => agent.agentType === 'CTO');
+
+    expect(
+      AGENT_REGISTRY.some((entry) => String(entry.agentType) === 'CTO'),
+    ).toBe(false);
+    expect(cto).toMatchObject({
+      totalRuns: 3,
+      autonomy: 'AUTONOMOUS',
+      autonomyIdleDays: 48,
+      stalled: false,
+    });
+    expect(ledger.company.totalRuns).toBe(3);
+  });
+
+  it('레지스트리 안 자율 워커는 같은 공백이면 정지로 판정한다', () => {
+    const rows = [
+      run(
+        'PM',
+        'MORNING_BRIEFING_CRON',
+        'SUCCEEDED',
+        '2026-07-01T07:50:00+09:00',
+      ),
+      run(
+        'PM',
+        'MORNING_BRIEFING_CRON',
+        'SUCCEEDED',
+        '2026-07-02T07:50:00+09:00',
+      ),
+      run(
+        'PM',
+        'MORNING_BRIEFING_CRON',
+        'SUCCEEDED',
+        '2026-07-03T07:50:00+09:00',
+      ),
+    ];
+
+    const ledger = buildConsoleLedger(rows, thursdayClock);
+    const pm = ledger.agents.find((agent) => agent.agentType === 'PM');
+
+    expect(pm).toMatchObject({
+      autonomy: 'AUTONOMOUS',
+      autonomyIdleDays: 48,
+      stalled: true,
+    });
+  });
 });
