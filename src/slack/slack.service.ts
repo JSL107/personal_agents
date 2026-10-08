@@ -12,7 +12,10 @@ import {
   ChatPostMessageResponse,
 } from '@slack/web-api';
 
-import { RunVerdictFacet } from '../agent-run/domain/run-verdict';
+import {
+  getRunVerdictQuoteLabel,
+  RunVerdictFacet,
+} from '../agent-run/domain/run-verdict';
 import { appendIntegrationHint } from '../common/domain/integration-failure-hint';
 import { PreviewCardMessage } from '../preview-gate/domain/preview-action.type';
 import {
@@ -339,7 +342,10 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
                 agentRunId: runVerdict.agentRunId,
                 facets: runVerdict.facets,
                 verdicts: {},
-                quoteMrkdwn: formatRunVerdictQuote(runVerdict.quote),
+                quoteMrkdwn: formatRunVerdictQuote(
+                  runVerdict.quote,
+                  getRunVerdictQuoteLabel(runVerdict.facets),
+                ),
               }) as never,
             }
           : image

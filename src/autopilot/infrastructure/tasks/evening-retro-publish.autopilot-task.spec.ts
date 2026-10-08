@@ -54,6 +54,19 @@ const makeTask = (opts: {
   openPrsError?: Error;
   worklogRuns?: { id: number; output: unknown; endedAt: Date }[];
   dailyEvalRuns?: { id: number; output: unknown; endedAt: Date }[];
+  // 오늘 발송 원장. 기본은 아침 그룹 본문이 나간 상태 — 계획 판정을 보는 테스트의 전제다.
+  deliveries?: {
+    kind: string;
+    itemKinds: string[];
+    threadTs: string | null;
+    status: string;
+  }[];
+  pmRuns?: {
+    id: number;
+    output: unknown;
+    endedAt: Date;
+    triggerType: TriggerType;
+  }[];
   routeResult?: { text: string; modelUsed: string; provider: string };
   humanized?: Record<string, string>;
 }) => {
@@ -95,6 +108,9 @@ const makeTask = (opts: {
         if (args.agentType === AgentType.PO_EVAL) {
           return Promise.resolve(opts.dailyEvalRuns ?? []);
         }
+        if (args.agentType === AgentType.PM) {
+          return Promise.resolve(opts.pmRuns ?? []);
+        }
         return Promise.resolve([]);
       }),
     // 실제 execute 와 같은 계약으로 흉내낸다 — run 을 실행하고 결과를 outcome 으로 감싼다.
@@ -132,12 +148,29 @@ const makeTask = (opts: {
       ),
   };
 
+  const deliveryRepository = {
+    findSince: jest.fn().mockResolvedValue(
+      opts.deliveries ?? [
+        {
+          kind: 'autopilot:morning',
+          itemKinds: ['secretariat', 'morning-briefing'],
+          threadTs: null,
+          status: 'SENT',
+          suppressReason: null,
+          reactionCount: 0,
+          replyCount: 0,
+        },
+      ],
+    ),
+  };
+
   const task = new EveningRetroPublishTask(
     agentRunService as never,
     githubClient as never,
     modelRouter as never,
     humanizeService as never,
     config as never,
+    deliveryRepository as never,
   );
 
   return {
@@ -859,11 +892,13 @@ describe('EveningRetroPublishTask', () => {
 
       const result = await task.run(CTX);
 
-      expect(result.runVerdict).toEqual({
-        agentRunId: 1,
-        facets: ['retro_problem', 'overall'],
-        quote: '확인 없이 결론을 썼다',
-      });
+      expect(result.runVerdicts).toEqual([
+        {
+          agentRunId: 1,
+          facets: ['retro_problem', 'overall'],
+          quote: '확인 없이 결론을 썼다',
+        },
+      ]);
     });
 
     it('(s-1b) 인용은 윤문 뒤 화면에 나간 문장이다 (원장의 모델 원문이 아니다)', async () => {
@@ -884,7 +919,7 @@ describe('EveningRetroPublishTask', () => {
       const result = await task.run(CTX);
 
       expect(result.summaryText).toContain('윤문된 문제 문장');
-      expect(result.runVerdict?.quote).toBe('윤문된 문제 문장');
+      expect(result.runVerdicts?.[0].quote).toBe('윤문된 문제 문장');
     });
 
     it('(s-2) 문제 칸이 비면 회고 전체 축만 낸다', async () => {
@@ -896,7 +931,9 @@ describe('EveningRetroPublishTask', () => {
 
       const result = await task.run(CTX);
 
-      expect(result.runVerdict).toEqual({ agentRunId: 1, facets: ['overall'] });
+      expect(result.runVerdicts).toEqual([
+        { agentRunId: 1, facets: ['overall'] },
+      ]);
     });
 
     it('(s-3) 형식이 깨진 회차도 문제 칸이 없으니 회고 전체 축만 낸다', async () => {
@@ -915,7 +952,7 @@ describe('EveningRetroPublishTask', () => {
 
       const result = await task.run(CTX);
 
-      expect(result.runVerdict?.facets).toEqual(['overall']);
+      expect(result.runVerdicts?.[0].facets).toEqual(['overall']);
     });
 
     it('(s-4) 회고 생성이 실패한 fallback 에는 판정할 대상이 없어 버튼도 없다', async () => {
@@ -928,7 +965,165 @@ describe('EveningRetroPublishTask', () => {
 
       const result = await task.run(CTX);
 
-      expect(result.runVerdict).toBeUndefined();
+      expect(result.runVerdicts).toBeUndefined();
+    });
+
+    it('(s-5) 오늘 아침 브리핑 PM 실행이 있으면 그 실행의 계획 판정 댓글을 회고 뒤에 싣는다', async () => {
+      const { task } = makeTask({
+        prs: [PR_ITEM],
+        worklogRuns: [],
+        dailyEvalRuns: [],
+        pmRuns: [
+          {
+            id: 77,
+            output: {},
+            endedAt: new Date(),
+            triggerType: TriggerType.SLACK_COMMAND_TODAY,
+          },
+          {
+            id: 70,
+            output: {},
+            endedAt: new Date(),
+            triggerType: TriggerType.MORNING_BRIEFING_CRON,
+          },
+        ],
+      });
+
+      const result = await task.run(CTX);
+
+      // 수동 /today(77)는 아침 보고로 나간 계획이 아니라 건너뛴다.
+      expect(result.runVerdicts).toEqual([
+        { agentRunId: 1, facets: ['overall'] },
+        { agentRunId: 70, facets: ['pm_plan'] },
+      ]);
+    });
+
+    it('(s-6) 아침 브리핑 PM 이 없던 날(실패·수동만)은 계획 판정을 내지 않는다', async () => {
+      const { task } = makeTask({
+        prs: [PR_ITEM],
+        worklogRuns: [],
+        dailyEvalRuns: [],
+        pmRuns: [
+          {
+            id: 77,
+            output: {},
+            endedAt: new Date(),
+            triggerType: TriggerType.SLACK_COMMAND_TODAY,
+          },
+        ],
+      });
+
+      const result = await task.run(CTX);
+
+      expect(result.runVerdicts?.map((verdict) => verdict.facets)).toEqual([
+        ['overall'],
+      ]);
+    });
+
+    it('(s-7) 회고 생성이 실패해도 아침 계획 판정은 대체 요약에 실어 낸다', async () => {
+      const { task, agentRunService } = makeTask({
+        prs: [PR_ITEM],
+        worklogRuns: [],
+        dailyEvalRuns: [],
+        pmRuns: [
+          {
+            id: 70,
+            output: {},
+            endedAt: new Date(),
+            triggerType: TriggerType.MORNING_BRIEFING_CRON,
+          },
+        ],
+      });
+      agentRunService.execute.mockRejectedValue(new Error('codex down'));
+
+      const result = await task.run(CTX);
+
+      expect(result.runVerdicts).toEqual([
+        { agentRunId: 70, facets: ['pm_plan'] },
+      ]);
+    });
+
+    it.each([
+      [
+        '발송 실패',
+        [
+          {
+            kind: 'autopilot:morning',
+            itemKinds: ['secretariat', 'morning-briefing'],
+            threadTs: null,
+            status: 'FAILED',
+          },
+        ],
+      ],
+      [
+        '콘솔로 억제',
+        [
+          {
+            kind: 'autopilot:morning',
+            itemKinds: ['secretariat', 'morning-briefing'],
+            threadTs: null,
+            status: 'SUPPRESSED',
+          },
+        ],
+      ],
+      [
+        '스레드 댓글만 나감',
+        [
+          {
+            kind: 'autopilot:morning',
+            itemKinds: ['morning-briefing'],
+            threadTs: '1.0',
+            status: 'SENT',
+          },
+        ],
+      ],
+      ['기록 없음', []],
+    ])(
+      '(s-9) 아침 브리핑 본문이 실제로 나가지 않은 날(%s)은 계획 판정을 내지 않는다',
+      async (_label, deliveries) => {
+        const { task } = makeTask({
+          prs: [PR_ITEM],
+          worklogRuns: [],
+          dailyEvalRuns: [],
+          deliveries,
+          pmRuns: [
+            {
+              id: 70,
+              output: {},
+              endedAt: new Date(),
+              triggerType: TriggerType.MORNING_BRIEFING_CRON,
+            },
+          ],
+        });
+
+        const result = await task.run(CTX);
+
+        expect(result.runVerdicts).toEqual([
+          { agentRunId: 1, facets: ['overall'] },
+        ]);
+      },
+    );
+
+    it('(s-8) 아침 계획 조회가 실패해도 회고 판정은 그대로 나간다', async () => {
+      const { task, agentRunService } = makeTask({
+        prs: [PR_ITEM],
+        worklogRuns: [],
+        dailyEvalRuns: [],
+      });
+      const original =
+        agentRunService.findRecentSucceededRuns.getMockImplementation();
+      agentRunService.findRecentSucceededRuns.mockImplementation(
+        (args: { agentType: AgentType }) =>
+          args.agentType === AgentType.PM
+            ? Promise.reject(new Error('db down'))
+            : (original?.(args) ?? Promise.resolve([])),
+      );
+
+      const result = await task.run(CTX);
+
+      expect(result.runVerdicts).toEqual([
+        { agentRunId: 1, facets: ['overall'] },
+      ]);
     });
   });
 });

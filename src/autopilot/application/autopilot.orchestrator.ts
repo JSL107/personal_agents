@@ -15,7 +15,7 @@ import {
   SlackNotifierPort,
 } from '../../slack/domain/port/slack-notifier.port';
 import { SLACK_DELIVERY_SUPPRESS_REASON } from '../../slack/domain/slack-delivery.type';
-import { RUN_VERDICT_FALLBACK_TEXT } from '../../slack/format/run-verdict-message.builder';
+import { buildRunVerdictFallbackText } from '../../slack/format/run-verdict-message.builder';
 import { resolveAutopilotDeliveryRoute } from '../domain/autopilot-delivery-route';
 import {
   AUTOPILOT_TASKS,
@@ -188,7 +188,7 @@ export class AutopilotOrchestrator {
       // 멘션을 붙인다 — 한 메시지에 여러 task 의 요약이 합쳐지므로 개별 부착이 불가능하다.
       notifyOwner?: boolean;
       // 스레드에 붙일 판정 버튼. 요약 본문과 따로 댓글로 나간다(task 결과 주석 참조).
-      runVerdict?: AutopilotTaskResult['runVerdict'];
+      runVerdicts?: AutopilotTaskResult['runVerdicts'];
     }[] = [];
     // 카드는 자기를 낸 task 의 item 인덱스를 함께 들고 다닌다. `requiresDetailDelivery` 카드가
     // "내 전문이 실제로 나갔나" 를 아래에서 확인하려면 이 연결선이 필요하다 — items 와 previews 는
@@ -278,7 +278,7 @@ export class AutopilotOrchestrator {
               onDelivered: result.onDelivered,
               unfurlLinks: result.unfurlLinks,
               notifyOwner: NOTIFY_OWNER_TASK_IDS.has(entry.taskId),
-              runVerdict: result.runVerdict,
+              runVerdicts: result.runVerdicts,
             });
           }
         }
@@ -514,24 +514,23 @@ export class AutopilotOrchestrator {
             // 않지만, 그날 판정 기회가 사라진 것이라 로그로 남긴다(누름률을 셀 때 "버튼이 안
             // 나간 날" 을 가려낼 유일한 흔적이다). 다른 task 의 상세 순서는 그대로다.
             for (const item of items) {
-              if (!item.runVerdict) {
-                continue;
-              }
-              try {
-                await this.slackNotifier.postMessage({
-                  kind: `autopilot:${groupKey}`,
-                  itemKinds: [item.taskId],
-                  target: resolved,
-                  text: RUN_VERDICT_FALLBACK_TEXT,
-                  threadTs: ts,
-                  runVerdict: item.runVerdict,
-                });
-              } catch (error: unknown) {
-                const message =
-                  error instanceof Error ? error.message : String(error);
-                this.logger.warn(
-                  `Autopilot[${groupKey}] 판정 버튼 발송 실패 (agentRunId=${item.runVerdict.agentRunId}): ${message}`,
-                );
+              for (const runVerdict of item.runVerdicts ?? []) {
+                try {
+                  await this.slackNotifier.postMessage({
+                    kind: `autopilot:${groupKey}`,
+                    itemKinds: [item.taskId],
+                    target: resolved,
+                    text: buildRunVerdictFallbackText(runVerdict.facets),
+                    threadTs: ts,
+                    runVerdict,
+                  });
+                } catch (error: unknown) {
+                  const message =
+                    error instanceof Error ? error.message : String(error);
+                  this.logger.warn(
+                    `Autopilot[${groupKey}] 판정 버튼 발송 실패 (agentRunId=${runVerdict.agentRunId}): ${message}`,
+                  );
+                }
               }
             }
             for (const [index, item] of items.entries()) {
@@ -665,9 +664,10 @@ export class AutopilotOrchestrator {
                 detailUndelivered.add(index);
               }
             }
-            const skippedVerdictCount = items.filter(
-              (item) => item.runVerdict,
-            ).length;
+            const skippedVerdictCount = items.reduce(
+              (total, item) => total + (item.runVerdicts?.length ?? 0),
+              0,
+            );
             if (skippedVerdictCount > 0) {
               this.logger.warn(
                 `Autopilot[${groupKey}] ${resolved} 메인 메시지 ts 미반환 — 판정 버튼 ${skippedVerdictCount}건 skip`,
