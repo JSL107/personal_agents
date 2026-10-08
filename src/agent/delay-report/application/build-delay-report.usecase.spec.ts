@@ -116,4 +116,56 @@ describe('BuildDelayReportUsecase', () => {
 
     expect(verdict.primaryCause).not.toBe('RUN_IN_PROGRESS');
   });
+
+  // 지난 지연 보고 회차의 실패·성공도 원장에 있다 — 그것이 다음 보고의 원인이 되면 안 된다.
+  // 대조군: 같은 입력에 다른 워커의 미해소 실패가 있으면 그것은 여전히 원인이다.
+  it.each([
+    ['지연 보고 자신의 지난 실패만 있으면', [], 'NONE'],
+    [
+      '다른 워커 실패가 함께 있으면',
+      [
+        {
+          agentType: 'PM',
+          reason: '타임아웃',
+          endedAt: new Date('2026-09-04T02:40:00Z'),
+        },
+      ],
+      'UNRESOLVED_FAILURE',
+    ],
+  ])('%s 원인은 %s 이다', async (_label, otherFailures, expected) => {
+    const ownFailure = {
+      agentType: 'DELAY_REPORT',
+      reason: '조회 실패',
+      endedAt: new Date('2026-09-04T02:50:00Z'),
+    };
+    const agentRunService = {
+      findActiveRuns: jest.fn().mockResolvedValue([]),
+      findFailedRunsSince: jest
+        .fn()
+        .mockResolvedValue([ownFailure, ...otherFailures]),
+      findRecentlyFinishedRuns: jest.fn().mockResolvedValue([
+        { agentType: 'DELAY_REPORT', status: 'FAILED', runId: 11 },
+        ...otherFailures.map(() => ({
+          agentType: 'PM',
+          status: 'FAILED',
+          runId: 12,
+        })),
+      ]),
+    } as unknown as AgentRunService;
+    const usecase = new BuildDelayReportUsecase(
+      agentRunService,
+      {
+        execute: jest.fn().mockResolvedValue([]),
+      } as unknown as FindAllOpenPreviewsUsecase,
+      { get: jest.fn() } as unknown as ConfigService,
+    );
+
+    const verdict = await usecase.execute({
+      slackUserId: 'U1',
+      now: new Date('2026-09-04T03:00:00Z'),
+    });
+
+    expect(verdict.primaryCause).toBe(expected);
+    expect(verdict.detail).not.toContain('DELAY_REPORT');
+  });
 });
