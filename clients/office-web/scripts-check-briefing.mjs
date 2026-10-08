@@ -6,9 +6,12 @@
 import assert from "node:assert/strict";
 
 import {
+  BRIEFING_DEMO,
   STREAK_STAMP_DIAMETER_RATIO,
   STREAK_STAMP_MAX_COUNT,
   STREAK_STAMP_STEP_RATIO,
+  acceptBriefing,
+  briefingFromResponse,
   dailyReportLines,
   presidentTodoLines,
   showsDailyReport,
@@ -86,5 +89,17 @@ const boards = [
 assert.deepEqual(streakBoardTile(boards, president), { x: 13, y: 18 });
 assert.equal(streakBoardTile(boards.slice(0, 3), president), null);
 assert.equal(streakBoardTile(boards, undefined), null);
+
+// 입구 거르기 — 모양이 어긋난 값은 null(아무것도 안 띄움). 프레임 루프가 `streak.current` 를 읽다 멈추면 화면 전체가 굳는다.
+// 이 부분은 웹 쪽 방어라 맥 대조 대상이 아니다.
+const envelope = (data) => ({ code: "SUCCESS", message: "", data });
+assert.equal(briefingFromResponse(envelope(BRIEFING_DEMO)), BRIEFING_DEMO);
+assert.equal(briefingFromResponse(BRIEFING_DEMO), BRIEFING_DEMO, "봉투 없이 와도 받는다");
+assert.equal(briefingFromResponse(null), null);
+assert.equal(briefingFromResponse(envelope(null)), null, "{data:null} 이 봉투째 브리핑이 되면 안 된다");
+assert.equal(briefingFromResponse(envelope({ todos: [] })), null, "streak·dailyReport 가 없으면 받지 않는다");
+assert.equal(acceptBriefing(undefined), null);
+assert.equal(acceptBriefing({ ...BRIEFING_DEMO, streak: null }), null);
+assert.equal(acceptBriefing(BRIEFING_DEMO), BRIEFING_DEMO);
 
 console.log("브리핑 규칙: 맥 PresidentBriefing 과 같은 답");

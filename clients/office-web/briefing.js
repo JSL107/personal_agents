@@ -43,6 +43,33 @@ export function presidentTodoLines(todos) {
   ];
 }
 
+/**
+ * 밖에서 들어온 값을 브리핑으로 받아들일지 — 모양이 맞으면 그대로, 아니면 null(아무것도 안 띄움).
+ *
+ * 이 값은 3D 프레임 루프가 매번 읽는다(`briefing.streak.current` 등). 모양이 어긋난 값이 한 번 들어오면 루프가
+ * 예외로 멈춰 **사무실 화면 전체**가 굳는다 — 장식 하나 때문에 관제가 죽지 않게 입구에서 거른다. 직접 조회와
+ * 맥 앱 메시지 두 입구가 모두 이 함수를 지난다.
+ */
+export function acceptBriefing(value) {
+  const valid =
+    value !== null &&
+    typeof value === "object" &&
+    Array.isArray(value.todos) &&
+    typeof value.streak?.current === "number" &&
+    typeof value.dailyReport === "object" &&
+    value.dailyReport !== null;
+  return valid ? value : null;
+}
+
+/**
+ * `GET /v1/console/briefing` 응답 본문 → 브리핑. 백엔드는 `{code, message, data}` 봉투로 감싸 보낸다.
+ * `data` 가 있으면 봉투로 보고 그 안을 본다 — `data ?? 본문` 으로 쓰면 `{data: null}` 이 봉투째 브리핑이 된다.
+ */
+export function briefingFromResponse(payload) {
+  const isEnvelope = payload !== null && typeof payload === "object" && "data" in payload;
+  return acceptBriefing(isEnvelope ? payload.data : payload);
+}
+
 /** 게시판에 찍히는 도장 수 — 어제까지 이어진 연속 일수(상한에서 자른다). */
 export function streakStampCount(streak) {
   return Math.max(0, Math.min(streak.current, STREAK_STAMP_MAX_COUNT));

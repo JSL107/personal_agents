@@ -14,7 +14,7 @@ import {
 } from "./office.js";
 import { chatterExchange, chatterLine, chatterPartner, chatterSeed, tileDistance } from "./chatter.js";
 import { canvasSizes } from "./canvas-size.js";
-import { BRIEFING_DEMO } from "./briefing.js";
+import { BRIEFING_DEMO, acceptBriefing, briefingFromResponse } from "./briefing.js";
 
 /** 유휴 산책 규칙 — 맥 앱 `OfficeIdle` 과 같은 값. */
 const STROLL_TICK_SECONDS = 8;
@@ -1412,8 +1412,7 @@ async function refreshBriefing() {
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
-    const payload = await response.json();
-    briefing = payload.data ?? payload;
+    briefing = briefingFromResponse(await response.json());
   } catch (error) {
     // 지난 값은 남긴다 — 한 번 끊겼다고 할 일 말풍선이 사라지면 "할 일이 없다" 로 읽힌다.
     console.warn(`브리핑을 못 받았다: ${error}`);
@@ -1639,7 +1638,7 @@ function receiveFromHost(message) {
     case "briefing":
       // 데모 중에는 앱이 민 실제 값으로 덮지 않는다(`refreshBriefing` 과 같은 규칙).
       if (!briefingDemo) {
-        briefing = message.data ?? null;
+        briefing = acceptBriefing(message.data);
       }
       break;
     case "sleep":
