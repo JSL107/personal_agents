@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 
+import { fetchDailyBarsWithRateLimitRetry } from '../../market-data/domain/fetch-daily-bars-with-rate-limit-retry';
 import { DailyBar } from '../../market-data/domain/market-data.type';
 import {
   MARKET_DATA_PORT,
@@ -164,9 +165,12 @@ export class FillPendingOrdersUsecase {
   ): Promise<boolean> {
     let bars: DailyBar[];
     try {
-      bars = await this.marketData.fetchDailyBars(order.tossSymbol, 1, {
-        adjusted: false,
-      });
+      bars = await fetchDailyBarsWithRateLimitRetry(
+        this.marketData,
+        order.tossSymbol,
+        1,
+        { adjusted: false },
+      );
     } catch {
       result.lookupFailure += 1;
       result.details.push(toDetail(order, 'LOOKUP_FAILURE'));
