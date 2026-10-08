@@ -4,6 +4,7 @@ import {
   AgentContractScoreRow,
   AgentRunStatRow,
 } from '../../../agent-run/domain/port/agent-run.repository.port';
+import { AgentVerdictCountRow } from '../../../agent-run/domain/port/agent-run-verdict.repository.port';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { RunRetroAutopilotTask } from './run-retro.autopilot-task';
 
@@ -32,11 +33,15 @@ const makeService = (
   findLatestSucceededRun: jest.fn().mockResolvedValue(null),
 });
 
+const makeVerdicts = (rows: AgentVerdictCountRow[] = []) => ({
+  countByAgentType: jest.fn().mockResolvedValue(rows),
+});
+
 describe('RunRetroAutopilotTask', () => {
   // 검수는 제 몫을 했는데 읽는 곳이 없어 167 건이 전건 0 점으로 쌓이는 동안 화면에 아무
   // 신호도 뜨지 않았다(2026-08-28 실측). 실행이 성공한 채로 남는 이상이라 실패율·지연 어느
   // 축에도 걸리지 않으므로, 이 경로가 유일한 관측 지점이다.
-  it('계약 점수가 하한 아래인 워커를 카드에 싣는다', async () => {
+  it('형식 준수율이 하한 아래인 워커를 카드에 싣는다', async () => {
     const stats: AgentRunStatRow[] = [
       {
         agentType: 'PAPER_TRADE',
@@ -51,19 +56,82 @@ describe('RunRetroAutopilotTask', () => {
       { agentType: 'PM', scoredCount: 7, avgScore: 1 },
     ]);
 
-    const result = await new RunRetroAutopilotTask(service as never).run(
-      context,
-    );
+    const result = await new RunRetroAutopilotTask(
+      service as never,
+      makeVerdicts() as never,
+    ).run(context);
 
     expect(service.aggregateContractScores).toHaveBeenCalledWith({
       sinceDays: 7,
       untilDays: 0,
     });
-    expect(result.summaryText).toContain('PAPER_TRADE: 계약 점수 0.02');
-    expect(result.summaryText).toContain('171건 평균, 하한 0.5');
-    expect(result.summaryText).toContain('산출물이 계약과 어긋남');
+    expect(result.summaryText).toContain('PAPER_TRADE: 형식 준수율 2%');
+    expect(result.summaryText).toContain(
+      '171건 평균, 하한 50% · 필수 필드 존재 여부만 검사함',
+    );
+    expect(result.summaryText).toContain('품질: 판정 없음');
+    expect(result.summaryText).toContain('산출물 형식이 계약과 어긋남');
+    expect(result.summaryText).not.toContain('계약 점수');
     // 만점 워커는 실리지 않는다 — 조용한 계기판.
-    expect(result.summaryText).not.toContain('PM: 계약 점수');
+    expect(result.summaryText).not.toContain('PM: 형식 준수율');
+  });
+
+  const lowScoreStats: AgentRunStatRow[] = [
+    {
+      agentType: 'PO_SHADOW',
+      total: 10,
+      failed: 0,
+      failRate: 0,
+      avgDurationMs: 900,
+    },
+  ];
+  const lowScore: AgentContractScoreRow[] = [
+    { agentType: 'PO_SHADOW', scoredCount: 10, avgScore: 0.3 },
+  ];
+
+  // 형식 준수율만 홀로 서면 품질로 읽힌다 — 같은 줄에 사람 판정을 둔다(설계 §6).
+  it('형식 경보 줄에 같은 창의 사람 판정 수를 병기한다', async () => {
+    const service = makeService(lowScoreStats, lowScoreStats, {}, lowScore);
+    const verdicts = makeVerdicts([
+      { agentType: 'PO_SHADOW', total: 6, good: 4, bad: 1 },
+    ]);
+
+    const result = await new RunRetroAutopilotTask(
+      service as never,
+      verdicts as never,
+    ).run(context);
+
+    expect(verdicts.countByAgentType).toHaveBeenCalledWith({
+      sinceDays: 7,
+      untilDays: 0,
+    });
+    expect(result.summaryText).toContain(
+      'PO_SHADOW: 형식 준수율 30% (10건 평균, 하한 50% · 필수 필드 존재 여부만 검사함) · 품질: 좋음 4 · 나쁨 1 (판정 6건)',
+    );
+  });
+
+  // 0건과 조회 실패를 섞으면 "판정 없음" 이 거짓말이 된다.
+  it('판정 조회가 실패해도 형식 경보는 나가고 품질 칸은 조회 실패로 적는다', async () => {
+    const service = makeService(lowScoreStats, lowScoreStats, {}, lowScore);
+    const verdicts = {
+      countByAgentType: jest.fn().mockRejectedValue(new Error('DB 연결 끊김')),
+    };
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+
+    const result = await new RunRetroAutopilotTask(
+      service as never,
+      verdicts as never,
+    ).run(context);
+
+    expect(result.summaryText).toContain('PO_SHADOW: 형식 준수율 30%');
+    expect(result.summaryText).toContain('품질: 판정 조회 실패');
+    expect(result.summaryText).not.toContain('판정 없음');
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('사람 판정 조회 실패'),
+    );
+    warn.mockRestore();
   });
 
   it('두 윈도우(이번주/지난주)를 조회한다', async () => {
@@ -87,7 +155,10 @@ describe('RunRetroAutopilotTask', () => {
         },
       ],
     );
-    const task = new RunRetroAutopilotTask(service as never);
+    const task = new RunRetroAutopilotTask(
+      service as never,
+      makeVerdicts() as never,
+    );
 
     await task.run(context);
 
@@ -122,7 +193,10 @@ describe('RunRetroAutopilotTask', () => {
         },
       ],
     );
-    const task = new RunRetroAutopilotTask(service as never);
+    const task = new RunRetroAutopilotTask(
+      service as never,
+      makeVerdicts() as never,
+    );
 
     const result = await task.run(context);
 
@@ -132,7 +206,10 @@ describe('RunRetroAutopilotTask', () => {
 
   it('이번주 0건 AND 지난주 0건이면 skip=true', async () => {
     const service = makeService([], []);
-    const task = new RunRetroAutopilotTask(service as never);
+    const task = new RunRetroAutopilotTask(
+      service as never,
+      makeVerdicts() as never,
+    );
 
     const result = await task.run(context);
 
@@ -153,7 +230,10 @@ describe('RunRetroAutopilotTask', () => {
         },
       ],
     );
-    const task = new RunRetroAutopilotTask(service as never);
+    const task = new RunRetroAutopilotTask(
+      service as never,
+      makeVerdicts() as never,
+    );
 
     const result = await task.run(context);
 
@@ -189,9 +269,10 @@ describe('RunRetroAutopilotTask', () => {
       endedAt: new Date('2026-08-20T00:00:00.000Z'),
     });
 
-    const result = await new RunRetroAutopilotTask(service as never).run(
-      context,
-    );
+    const result = await new RunRetroAutopilotTask(
+      service as never,
+      makeVerdicts() as never,
+    ).run(context);
 
     expect(service.findLatestSucceededRun).toHaveBeenCalledWith({
       agentType: AgentType.BLOG_REVISION,
@@ -216,7 +297,10 @@ describe('RunRetroAutopilotTask — 체인 관측', () => {
         ],
       },
     });
-    const task = new RunRetroAutopilotTask(service as never);
+    const task = new RunRetroAutopilotTask(
+      service as never,
+      makeVerdicts() as never,
+    );
 
     const result = await task.run(context);
 
@@ -235,21 +319,27 @@ describe('RunRetroAutopilotTask — 체인 관측', () => {
         ],
       },
     });
-    const task = new RunRetroAutopilotTask(service as never);
+    const task = new RunRetroAutopilotTask(
+      service as never,
+      makeVerdicts() as never,
+    );
 
     const result = await task.run(context);
 
     expect(result.summaryText).toContain('이상 없음');
   });
 
-  // 계약 점수는 부가 축이다 — 이 조회 하나의 사고가 실패율·지연 회고까지 막으면 원래 보려던
+  // 형식 준수율은 부가 축이다 — 이 조회 하나의 사고가 실패율·지연 회고까지 막으면 원래 보려던
   // 신호가 함께 사라진다(체인 관측과 같은 정책).
-  it('계약 점수 조회가 실패해도 통계 회고는 그대로 나간다', async () => {
+  it('형식 준수율 조회가 실패해도 통계 회고는 그대로 나간다', async () => {
     const service = makeService(healthyStats, healthyStats);
     service.aggregateContractScores = jest
       .fn()
       .mockRejectedValue(new Error('DB 연결 끊김'));
-    const task = new RunRetroAutopilotTask(service as never);
+    const task = new RunRetroAutopilotTask(
+      service as never,
+      makeVerdicts() as never,
+    );
 
     const result = await task.run(context);
 
@@ -262,7 +352,10 @@ describe('RunRetroAutopilotTask — 체인 관측', () => {
     service.findChainRootsInWindow = jest
       .fn()
       .mockRejectedValue(new Error('DB 연결 끊김'));
-    const task = new RunRetroAutopilotTask(service as never);
+    const task = new RunRetroAutopilotTask(
+      service as never,
+      makeVerdicts() as never,
+    );
 
     const result = await task.run(context);
 
@@ -278,9 +371,10 @@ describe('RunRetroAutopilotTask — 체인 관측', () => {
     const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
 
     try {
-      const result = await new RunRetroAutopilotTask(service as never).run(
-        context,
-      );
+      const result = await new RunRetroAutopilotTask(
+        service as never,
+        makeVerdicts() as never,
+      ).run(context);
 
       expect(result.skip).toBe(false);
       expect(result.summaryText).toContain('이상 없음');

@@ -2,6 +2,7 @@ import {
   AgentContractScoreRow,
   AgentRunStatRow,
 } from '../../agent-run/domain/port/agent-run.repository.port';
+import { AgentVerdictCountRow } from '../../agent-run/domain/port/agent-run-verdict.repository.port';
 import { AgentType } from '../../model-router/domain/model-router.type';
 
 export type RunAnomalyKind =
@@ -31,6 +32,9 @@ export const RUN_RETRO_THRESHOLDS = {
   contractScore: 0.5,
   // 표본이 적으면 한 회차의 형식 오류가 평균을 끌어내려 매주 같은 경보가 뜬다.
   minContractScored: 5,
+  // 사람 판정이 이 건수 미만이면 좋음/나쁨 분포를 싣지 않고 건수만 적는다 — 두세 건의 분포는
+  // 품질 숫자로 읽히기엔 너무 흔들린다(설계 docs/superpowers/specs/2026-09-30-human-feedback-channel-design.md §6).
+  minVerdictsForQuality: 5,
   // 주간 cron 은 7일 주기다. 8일이면 한 회차를 확실히 건너뛴 것이며, 7일은 실행 시각이
   // 몇 분 밀린 정상 회차까지 오탐할 수 있어 경계에서 제외한다.
   weeklyMissingDays: 8,
@@ -128,7 +132,7 @@ export const detectRunAnomalies = (
   return anomalies;
 };
 
-// 직무 계약 점수 이상 — 산출물이 계약과 어긋난 채 쌓이고 있는 워커를 지목한다. 부작용 없는 순수함수.
+// 형식 준수율 이상 — 산출물이 계약 형식과 어긋난 채 쌓이고 있는 워커를 지목한다. 부작용 없는 순수함수.
 //
 // 이 판정이 없던 동안 검수는 제 몫을 했는데 **읽는 곳이 없었다**. 위반은 logger.warn 으로만
 // 나가고 `contract_score` 컬럼을 조회하는 코드가 없어, 성공 실행 167 건이 전건 0 점으로
@@ -136,8 +140,13 @@ export const detectRunAnomalies = (
 //
 // 실패율과 달리 낮은 점수는 **실행이 성공한 채로** 남는다 — status 는 SUCCEEDED 라 다른 어떤
 // 축에도 걸리지 않는다. 그래서 별도 축이 필요하다.
+//
+// `contract_score` 는 필수 필드가 있는지만 본다. 품질 점수로 읽히지 않도록 문구를 "형식 준수율"로
+// 두고, 품질은 사람 판정(agent_run_verdict)으로만 옆에 적는다 — 사람 판정이 없는 곳에 품질 숫자를
+// 쓰지 않는다(설계 §6). `verdicts` 가 null 이면 판정 조회가 실패한 것이다.
 export const detectContractScoreAnomalies = (
   rows: AgentContractScoreRow[],
+  verdicts: AgentVerdictCountRow[] | null,
   thresholds: Thresholds = RUN_RETRO_THRESHOLDS,
 ): RunAnomaly[] =>
   rows
@@ -150,9 +159,30 @@ export const detectContractScoreAnomalies = (
       agentType: row.agentType,
       kind: 'CONTRACT_SCORE',
       detail:
-        `계약 점수 ${row.avgScore.toFixed(2)} ` +
-        `(${row.scoredCount}건 평균, 하한 ${thresholds.contractScore})`,
+        `형식 준수율 ${toPercent(row.avgScore)}% ` +
+        `(${row.scoredCount}건 평균, 하한 ${toPercent(thresholds.contractScore)}% · 필수 필드 존재 여부만 검사함)` +
+        ` · ${describeHumanVerdicts(row.agentType, verdicts, thresholds)}`,
     }));
+
+const toPercent = (ratio: number): number => Math.round(ratio * 100);
+
+const describeHumanVerdicts = (
+  agentType: string,
+  verdicts: AgentVerdictCountRow[] | null,
+  thresholds: Thresholds,
+): string => {
+  if (verdicts === null) {
+    return '품질: 판정 조회 실패';
+  }
+  const found = verdicts.find((row) => row.agentType === agentType);
+  if (!found || found.total === 0) {
+    return '품질: 판정 없음';
+  }
+  if (found.total < thresholds.minVerdictsForQuality) {
+    return `품질: 판정 ${found.total}건 (${thresholds.minVerdictsForQuality}건 미만이라 좋음/나쁨 생략)`;
+  }
+  return `품질: 좋음 ${found.good} · 나쁨 ${found.bad} (판정 ${found.total}건)`;
+};
 
 // 한 chain(뿌리 run 하나로부터 뻗은 계보)의 실패 요약. DB 조회는 태스크가 하고 판정만 여기서 한다.
 export interface ChainFailureSummary {
