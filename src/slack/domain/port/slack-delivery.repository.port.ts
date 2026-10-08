@@ -28,6 +28,8 @@ export type SlackDeliveryMessageRef = {
 export type SlackDeliveryStatRow = {
   kind: string;
   itemKinds: string[];
+  // 스레드 상세 댓글이면 본문 메시지 ts. 발송 수는 본문만 센다(slack-delivery-summary.ts).
+  threadTs: string | null;
   status: SlackDeliveryStatus;
   suppressReason: string | null;
   reactionCount: number;

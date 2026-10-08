@@ -10,6 +10,7 @@ const row = (
 ): SlackDeliveryStatRow => ({
   kind: 'autopilot:weekly-summary',
   itemKinds: [],
+  threadTs: null,
   status: 'SENT',
   suppressReason: null,
   reactionCount: 0,
@@ -43,6 +44,7 @@ describe('summarizeDeliveries', () => {
 
     expect(summary.totals).toEqual({
       sent: 3,
+      threadDetailSent: 0,
       suppressedConsoleRoute: 1,
       suppressedEmpty: 1,
       failed: 1,
@@ -93,6 +95,43 @@ describe('summarizeDeliveries', () => {
         },
       ).byKind[0].cleanupCandidate,
     ).toBe(false);
+  });
+
+  it('counts a main message plus its thread details as one sent message', () => {
+    const summary = summarizeDeliveries(
+      [
+        row({ kind: 'autopilot:evening' }),
+        row({ kind: 'autopilot:evening', threadTs: '1.0' }),
+        row({ kind: 'autopilot:evening', threadTs: '1.0' }),
+      ],
+      { days: 14 },
+    );
+
+    expect(summary.totals.sent).toBe(1);
+    expect(summary.totals.threadDetailSent).toBe(2);
+    expect(summary.byKind[0]).toMatchObject({ sent: 1, threadDetailSent: 2 });
+  });
+
+  it('adds reactions and replies on thread details to the group sums', () => {
+    const summary = summarizeDeliveries(
+      [
+        row({ kind: 'autopilot:evening' }),
+        row({
+          kind: 'autopilot:evening',
+          threadTs: '1.0',
+          reactionCount: 1,
+          replyCount: 1,
+        }),
+      ],
+      { days: 14 },
+    );
+
+    expect(summary.byKind[0]).toMatchObject({
+      sent: 1,
+      reactionCount: 1,
+      replyCount: 1,
+      reactedSentCount: 0,
+    });
   });
 });
 
