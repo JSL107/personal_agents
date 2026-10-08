@@ -212,6 +212,7 @@ export class GeneratePoShadowUsecase {
       movementTally: { merged: 0, unresolved: 0, abandoned: 0, unassigned: 0 },
       uncomparableCount: 0,
       totalPriorKeys: 0,
+      reasonWithdrawnKeys: [],
       assignedLookupFailed: false,
     };
 
@@ -504,5 +505,6 @@ const toRecoverySummary = (
     unassigned: recovery.movementTally.unassigned,
     uncomparable: recovery.uncomparableCount,
     total: recovery.totalPriorKeys,
+    reasonWithdrawnKeys: recovery.reasonWithdrawnKeys,
   };
 };
