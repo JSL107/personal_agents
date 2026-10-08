@@ -15,7 +15,37 @@ const STYLE_ID = "office3d-overlay-style";
 export const BUBBLE_RAISE_PX = 30;
 export const DOTS_RAISE_PX = 28;
 
+/**
+ * 대표 할 일 말풍선 글꼴. CSS 와 폭 재기(`measureText`)가 같은 값을 써야 한다 — 다르면 몫에 들어간다고 잰
+ * 후보가 실제로는 넘쳐 말줄임표가 "외 N건" 을 먹는다(맥 `renderPresidentTodoBubble` 이 막으려던 것).
+ */
+export const TODO_FONT = `600 12px "Apple SD Gothic Neo", "Malgun Gothic", sans-serif`;
+
+let measureContext = null;
+/** 글자 한 줄의 폭(px). 말풍선 후보 고르기용 — DOM 에 붙여 재면 레이아웃이 한 번 더 돈다. */
+export function measureText(text, font) {
+  measureContext ??= document.createElement("canvas").getContext("2d");
+  measureContext.font = font;
+  return measureContext.measureText(text).width;
+}
+
 /** 겹침층 글자 모양. 한 곳에 모아 두면 판마다 굵기·모서리가 어긋나지 않는다. */
+const BRIEFING_STYLE = `
+/* 대표 머리 위 할 일 — 맥처럼 어두운 판에 금색 테두리. 직원 말풍선(흰 판)과 갈려 "지금 하는 일" 로 읽히지 않는다.
+   경고등과 같은 자리라 렌더러가 카메라 쪽으로 조금 당겨 앞에 그린다(z-index 는 CSS2DRenderer 가 거리로 덮어쓴다). 폭은 렌더러가 4.6칸으로 묶고, 그래도 넘치면 말줄임표. */
+.office3d-todo {
+  font: ${TODO_FONT}; line-height: 1.3; padding: 2px 8px; border-radius: 5px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; box-sizing: content-box;
+  background: rgba(18, 18, 18, 0.88); color: #ffedc2; border: 1px solid rgba(242, 199, 77, 0.9);
+  transform: translateY(-50%);
+}
+/* 펼친 정산 카드 — 대표 머리 위에서 **오른쪽으로** 펼친다. 종이는 대표 왼쪽(소파)이라 가운데 두면 카드가 자기를 연
+   손잡이를 덮어 다시 접을 곳이 사라진다(맥과 같은 이유). translate 는 렌더러의 transform 과 따로 합쳐진다. */
+.office3d-card {
+  font: 500 12px/1.45 "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; white-space: nowrap;
+  padding: 9px 13px; border-radius: 6px; background: rgba(26, 26, 26, 0.94); color: #f2f2f2;
+  border: 1px solid #8c8c8c; translate: calc(50% - 16px) calc(-50% - 22px);
+}`;
 const STYLE = `
 .office3d-overlay { position: absolute; pointer-events: none; overflow: hidden; }
 .office3d-overlay * { pointer-events: none; }
@@ -80,7 +110,7 @@ export class Overlay3D {
     if (!document.getElementById(STYLE_ID)) {
       const style = document.createElement("style");
       style.id = STYLE_ID;
-      style.textContent = STYLE;
+      style.textContent = STYLE + BRIEFING_STYLE;
       document.head.appendChild(style);
     }
     this.css = new CSS2DRenderer();

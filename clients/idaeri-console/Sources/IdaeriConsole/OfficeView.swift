@@ -159,6 +159,7 @@ struct OfficeView: View {
                     office3D.onMessage = { handleOffice3DMessage($0) }
                     office3D.pushSnapshot(currentSnapshot)
                     office3D.pushPending(store.pendingCommands)
+                    office3D.pushBriefing(store.briefing)
                     scene.onDailyReportClick = {
                         scene.toggleDailyReportCard(store.briefing)
                     }
@@ -237,6 +238,8 @@ struct OfficeView: View {
                     office3D.pushSnapshot(currentSnapshot)
                 }
                 .onChange(of: store.briefing) { newBriefing in
+                    // 3D 화면은 브리핑을 스스로 받지 못한다(`Office3DController.pushBriefing`).
+                    office3D.pushBriefing(newBriefing)
                     // 이게 없으면 브리핑을 새로 받아도 화면은 부팅 때 그린 판 그대로다 —
                     // 결재를 눌러 할 일이 사라져도 보드에는 계속 남아 있게 된다.
                     scene.refreshBriefing(
