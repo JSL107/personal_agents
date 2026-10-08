@@ -15,6 +15,7 @@ import {
 import { FindAllOpenPreviewsUsecase } from '../../preview-gate/application/find-all-open-previews.usecase';
 import { FindPreviewDayOutcomesUsecase } from '../../preview-gate/application/find-preview-day-outcomes.usecase';
 import { PreviewAction } from '../../preview-gate/domain/preview-action.type';
+import { isReplayableAgentType } from '../../run-replay/domain/run-replay.type';
 import {
   ConsoleBriefing,
   ConsoleDailyReport,
@@ -22,6 +23,7 @@ import {
   ConsoleTodoKind,
 } from '../domain/briefing.type';
 import { calculateStreak, CardDayOutcome } from '../domain/streak';
+import { ConsoleRetryTracker } from './console-retry-tracker';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 // 워커의 평소 주기를 재는 창. `SuggestNextWorkUsecase` 와 같은 값을 쓴다 — 같은 원장에서
@@ -34,6 +36,8 @@ const RUNS_PER_DAY_SELF_HEALING = 2;
 
 interface FailedAgentCandidate {
   readonly agentType: string;
+  /** 오늘 마지막으로 끝난(=실패한) 실행. 재시도 버튼이 이 id 를 다시 돌린다. */
+  readonly runId: number;
   readonly medianIntervalDays: number;
 }
 
@@ -57,6 +61,7 @@ export class BuildPresidentBriefingUsecase {
     private readonly findPreviewDayOutcomes: FindPreviewDayOutcomesUsecase,
     @Inject(PR_REVIEW_FINDING_REPOSITORY_PORT)
     private readonly findingRepository: PrReviewFindingRepositoryPort,
+    private readonly retryTracker: ConsoleRetryTracker,
   ) {}
 
   async execute(): Promise<ConsoleBriefing> {
@@ -92,7 +97,9 @@ export class BuildPresidentBriefingUsecase {
     const stuckAgents = await this.findStuckAgents(finishedToday);
     const todos = [
       ...buildApprovalTodo(openPreviews),
-      ...buildFailedRunTodo(stuckAgents),
+      ...buildFailedRunTodo(stuckAgents, (runId) =>
+        this.retryTracker.isRetrying(runId),
+      ),
       ...buildReviewTodo(openPulls),
     ];
 
@@ -123,20 +130,22 @@ export class BuildPresidentBriefingUsecase {
    * 잰다.
    */
   private async findStuckAgents(
-    finishedToday: readonly { agentType: string; status: string }[],
+    finishedToday: readonly {
+      agentType: string;
+      status: string;
+      runId: number;
+    }[],
   ): Promise<FailedAgentCandidate[]> {
-    const failedAgentTypes = finishedToday
-      .filter((run) => run.status === 'FAILED')
-      .map((run) => run.agentType);
+    const failedRuns = finishedToday.filter((run) => run.status === 'FAILED');
     const candidates = await Promise.all(
-      failedAgentTypes.map(async (agentType) => {
+      failedRuns.map(async ({ agentType, runId }) => {
         const medianIntervalDays = await this.measureCycleDays(agentType);
         // 주기를 모르면(성공 이력이 2일 미만) 판단할 근거가 없다. 띄우지 않는다 —
         // 근거 없는 재촉은 보드의 신뢰를 깎는다.
         if (medianIntervalDays === null || medianIntervalDays < 1) {
           return null;
         }
-        return { agentType, medianIntervalDays };
+        return { agentType, runId, medianIntervalDays };
       }),
     );
     return candidates.filter(
@@ -231,12 +240,14 @@ const buildApprovalTodo = (
       kind: ConsoleTodoKind.APPROVAL,
       label: `승인 ${previews.length}건`,
       detail: `${formatKstTime(soonest.expiresAt)} 만료`,
+      targets: [],
     },
   ];
 };
 
 const buildFailedRunTodo = (
   candidates: readonly FailedAgentCandidate[],
+  isRetrying: (runId: number) => boolean,
 ): ConsoleTodo[] => {
   if (candidates.length === 0) {
     return [];
@@ -254,6 +265,13 @@ const buildFailedRunTodo = (
         first.medianIntervalDays >= 2
           ? `다음 실행은 ${first.medianIntervalDays}일 뒤`
           : '다음 실행은 내일',
+      targets: candidates.map((candidate) => ({
+        label: candidate.agentType,
+        agentType: candidate.agentType,
+        runId: candidate.runId,
+        retryable: isReplayableAgentType(candidate.agentType),
+        retrying: isRetrying(candidate.runId),
+      })),
     },
   ];
 };
@@ -275,6 +293,11 @@ const buildReviewTodo = (
       kind: ConsoleTodoKind.PR_REVIEW,
       label,
       detail: days >= 1 ? `${days}일째` : '오늘',
+      targets: pulls.map((pull) => ({
+        label: `${pull.repo} #${pull.pullNumber} · 지적 ${pull.count}건`,
+        pullNumber: pull.pullNumber,
+        url: `https://github.com/${pull.repo}/pull/${pull.pullNumber}`,
+      })),
     },
   ];
 };

@@ -9,6 +9,10 @@ import { parseTopicSelection } from '../../common/util/topic-selection.util';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { ApplyPreviewUsecase } from '../../preview-gate/application/apply-preview.usecase';
 import { CancelPreviewUsecase } from '../../preview-gate/application/cancel-preview.usecase';
+import { ReplayFailedRunUsecase } from '../../run-replay/application/replay-failed-run.usecase';
+import { RunReplayException } from '../../run-replay/domain/run-replay.exception';
+import { ReplayRejectionCode } from '../../run-replay/domain/run-replay.type';
+import { ConsoleRetryTracker } from './console-retry-tracker';
 import { PendingConsoleTurnStore } from './pending-console-turn.store';
 import {
   ConsoleChainInput,
@@ -33,6 +37,10 @@ export class ConsoleWriteService {
     private readonly applyPreview: ApplyPreviewUsecase,
     private readonly cancelPreview: CancelPreviewUsecase,
     private readonly pendingTurns: PendingConsoleTurnStore,
+    private readonly replayFailedRun: ReplayFailedRunUsecase,
+    // 모델 호출이 수십 초라 그 사이 다시 누르면 같은 실행이 두 번 돈다 — 게시하는 코드 리뷰나
+    // 블로그 발행 카드가 두 벌 나간다.
+    private readonly retryTracker: ConsoleRetryTracker,
   ) {}
 
   sendCommand(input: ConsoleCommandInput): void {
@@ -126,6 +134,42 @@ export class ConsoleWriteService {
   async cancelApproval(previewId: string): Promise<void> {
     const slackUserId = this.requireOwner();
     await this.cancelPreview.execute({ previewId, slackUserId });
+  }
+
+  // 재시도는 승인과 같은 접수형이다 — 거절할 수 있는 것은 이 await 안에서 4xx 로 돌려주고,
+  // 통과하면 실행은 백그라운드로 넘긴다. 진행·결과는 run 시작/종료 SSE 로 화면에 반영된다.
+  //
+  // PreviewGate 를 거치지 않는다(2026-10-08 결정). Slack `/retry-run` 도 바로 실행하며, 대표가
+  // 직접 누른 버튼이 곧 사람 승인이다. 발행처럼 되돌리기 어려운 일은 그 워커가 스스로 승인 카드를 낸다.
+  async retryRun(runId: number): Promise<void> {
+    const slackUserId = this.requireOwner();
+    // 판정(DB 조회)을 기다리는 사이에 같은 클릭이 또 들어올 수 있어 잠금을 판정 **전에** 건다.
+    if (!this.retryTracker.tryAcquire(runId)) {
+      throw new RunReplayException({
+        code: ReplayRejectionCode.IN_FLIGHT,
+        message: `run #${runId} 재시도가 이미 진행 중입니다.`,
+      });
+    }
+    const prepared = await this.replayFailedRun
+      .prepare({ runId, requesterSlackUserId: slackUserId })
+      .catch((error: unknown) => {
+        this.retryTracker.release(runId);
+        throw error;
+      });
+    if (prepared.kind === 'REJECTED') {
+      this.retryTracker.release(runId);
+      throw new RunReplayException(prepared);
+    }
+    void prepared
+      .run()
+      .catch((error: unknown) => {
+        // 실패는 새 run 이 FAILED 로 원장에 남고 SSE 로 나간다. 이 로그는 콘솔에서 누른 건을 잇는 용도.
+        const reason = error instanceof Error ? error.message : String(error);
+        this.logger.warn(`리모컨 재시도 실패 run=${runId}: ${reason}`);
+      })
+      .finally(() => {
+        this.retryTracker.release(runId);
+      });
   }
 
   private requireOwner(): string {

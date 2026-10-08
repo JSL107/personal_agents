@@ -5,6 +5,7 @@ import {
   HttpCode,
   NotFoundException,
   Param,
+  ParseIntPipe,
   Post,
   UseGuards,
 } from '@nestjs/common';
@@ -16,7 +17,7 @@ import { ConsoleWriteService } from '../application/console-write.service';
 import { ConsoleCommandDto } from './dto/console-command.dto';
 import { SessionInjectDto } from './dto/session-inject.dto';
 
-// 콘솔 리모컨 write 표면 — 지시·승인(접수 202) + 거절(await 200).
+// 콘솔 리모컨 write 표면 — 지시·승인·실패 재시도(접수 202) + 거절(await 200).
 // 모든 경로는 LoopbackOnlyGuard(loopback+토큰) 뒤에 있다.
 //
 // 승인이 202 인 것은 반영이 분 단위로 길기 때문이다(ConsoleWriteService.applyApproval 주석).
@@ -52,6 +53,15 @@ export class ConsoleWriteController {
   async cancel(@Param('id') id: string): Promise<{ ok: true }> {
     await this.consoleWrite.cancelApproval(id);
     return { ok: true };
+  }
+
+  @Post('runs/:id/retry')
+  @HttpCode(202)
+  async retryRun(
+    @Param('id', ParseIntPipe) id: number,
+  ): Promise<{ accepted: true }> {
+    await this.consoleWrite.retryRun(id);
+    return { accepted: true };
   }
 
   @Post('sessions/:sessionId/inject')
