@@ -25,6 +25,7 @@ import {
   PlanRealityFact,
   PriorFinding,
   RecoveryLifecycle,
+  withdrawStalledReasons,
 } from '../domain/plan-reality.diff';
 import { PoShadowException } from '../domain/po-shadow.exception';
 import { guardPoShadowReport } from '../domain/po-shadow.guard';
@@ -111,7 +112,10 @@ export class GeneratePoShadowUsecase {
       context,
       now,
     });
-    const facts = [...planFacts, ...recovery.facts];
+    const facts = [
+      ...withdrawStalledReasons(planFacts, recovery.reasonWithdrawnKeys),
+      ...recovery.facts,
+    ];
     const recoverySummary = toRecoverySummary(recovery);
     // 사용자가 "릴리즈 오늘로 변경" 같은 상황을 직접 적어 보냈다면 사실표가 조용해도 검토한다.
     // 어긋남만으로 갈림길을 정하면 사용자가 친 말이 evidence 에만 저장되고 답은
@@ -212,6 +216,7 @@ export class GeneratePoShadowUsecase {
       movementTally: { merged: 0, unresolved: 0, abandoned: 0, unassigned: 0 },
       uncomparableCount: 0,
       totalPriorKeys: 0,
+      reasonWithdrawnKeys: [],
       assignedLookupFailed: false,
     };
 
@@ -504,5 +509,6 @@ const toRecoverySummary = (
     unassigned: recovery.movementTally.unassigned,
     uncomparable: recovery.uncomparableCount,
     total: recovery.totalPriorKeys,
+    reasonWithdrawnKeys: recovery.reasonWithdrawnKeys,
   };
 };
