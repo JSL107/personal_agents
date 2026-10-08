@@ -251,6 +251,11 @@ if let renderIndex = CommandLine.arguments.firstIndex(of: "--render") {
     // 확인할 방법이 없어 원인을 찾는 데 오래 걸렸다. 백엔드 없이 세션을 세우는 입구를 둔다.
     //   swift run IdaeriConsole --render /tmp/office.png --populated-demo --session-demo
     let sessionDemo = CommandLine.arguments.contains("--session-demo")
+    // 정지 배지는 실 백엔드에서 거의 뜨지 않는다(2026-10-08 실측: 정지 판정은 폐지된 CTO 하나뿐이고
+    // 명단 교차로 빠진다). 대기 중인 앞쪽 세 명을 정지로 세워 굽는다. `--selected-demo` 와 함께
+    // 쓰면 선택한 사람도 정지로 세워 인스펙터의 멈춤 줄까지 보인다.
+    //   swift run IdaeriConsole --render /tmp/office.png --populated-demo --stall-demo
+    let stallDemo = CommandLine.arguments.contains("--stall-demo")
     let succeeded = renderOfficeScene(
         client: client,
         path: outputPath,
@@ -269,6 +274,7 @@ if let renderIndex = CommandLine.arguments.firstIndex(of: "--render") {
         room: room,
         selectedDemo: selectedDemo,
         selectedApprovalDemo: selectedApprovalDemo,
+        stallDemo: stallDemo,
         darkMode: CommandLine.arguments.contains("--dark")
     )
     exit(succeeded ? 0 : 1)

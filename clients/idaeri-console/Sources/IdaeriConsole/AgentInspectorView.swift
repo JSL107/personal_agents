@@ -11,6 +11,9 @@ struct AgentInspectorView: View {
     let onApprovalDetail: (ConsoleApproval) -> Void
     let onApprove: (String) -> Void
     let onReject: (String) -> Void
+    /// 이력 두 줄(`agentLedgerLines`). 원장을 못 받았으면 비어 있고 자리도 그리지 않는다.
+    var ledgerLines: [String] = []
+    var isStalled = false
 
     var body: some View {
         ScrollView {
@@ -91,6 +94,9 @@ struct AgentInspectorView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(Spacing.md)
                 .background(Color(red: 0.88, green: 0.96, blue: 0.88).opacity(0.82), in: RoundedRectangle(cornerRadius: Radius.panel, style: .continuous))
+                if !ledgerLines.isEmpty {
+                    ledgerSection
+                }
                 Text(agent.job ?? agent.description).font(Typography.body).foregroundStyle(CozyPalette.ink.opacity(0.78))
                 if !agent.slashCommands.isEmpty {
                     Text(agent.slashCommands.joined(separator: "  ")).font(Typography.metricMono)
@@ -144,5 +150,18 @@ struct AgentInspectorView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(agent.roleName) 담당자 상세")
+    }
+
+    /// 근속·누적 / 최근 실행. 정지면 둘째 줄을 살구색으로 칠한다 — 실패(코랄)와 섞이지 않게.
+    private var ledgerSection: some View {
+        VStack(alignment: .leading, spacing: Spacing.tight) {
+            ForEach(Array(ledgerLines.enumerated()), id: \.offset) { index, line in
+                let warns = isStalled && index == ledgerLines.count - 1
+                Label(line, systemImage: warns ? "pause.circle.fill" : (index == 0 ? "calendar" : "clock"))
+                    .font(warns ? Typography.captionEmphasis : Typography.caption)
+                    .foregroundStyle(warns ? CozyPalette.apricot : CozyPalette.ink.opacity(0.7))
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 }
