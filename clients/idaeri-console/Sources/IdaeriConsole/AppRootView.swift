@@ -301,6 +301,13 @@ struct AppRootView: View {
     /// 체인 실행처럼 상태 변경이 몰릴 때 요청이 폭주하지 않도록 최소 간격을 둔다. 그 간격에
     /// 걸려 조회를 건너뛰어도 문구만은 이벤트가 실어 온 값으로 이미 맞다.
     private func resyncAfterStateChange(_ event: ConsoleEvent) async {
+        // 런이 끝나면 들고 있는 원장은 낡았다. 정지였던 사람이 방금 일을 마쳤으면 미종료 런
+        // 필터가 풀려 옛 `stalled=true` 가 되살아난다. 그렇다고 앱이 정지를 풀면 안 된다 —
+        // 정지는 **자율** 실행 기준이라 수동 실행이 끝나도 그대로일 수 있고, 앱은 그 런의
+        // 계기를 모른다. 10분 간격만 풀어 다음 재동기화에서 서버가 다시 판정하게 한다.
+        if case .runFinished = event {
+            lastLedgerAt = nil
+        }
         // 승인이 열리거나 닫히면 할 일 보드의 첫 줄이 바로 바뀌어야 한다. 30초 주기를
         // 기다리면 방금 누른 결재가 보드에 그대로 남아 "안 눌린 것" 처럼 보인다.
         if case .approvalOpened = event {
