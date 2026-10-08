@@ -31,6 +31,9 @@ export const PREVIEW_KIND = {
   // payload = { prGroups:string[][], slackUserId } (EveningCareerReflectApplier 가 묶음마다 ReflectPrUsecase 위임).
   // prRefs:string[] 는 그룹 도입(2026-08-31) 이전 카드의 형태 — applier 가 1개 묶음으로 받아준다.
   EVENING_CAREER_REFLECT: 'EVENING_CAREER_REFLECT',
+  // PO 대행 제품 목표 — 자연어 선언·닫기를 승인 후에만 반영한다. 목표는 사람만 확정한다.
+  // payload = { action:'CREATE', draft } | { action:'CLOSE', goalId, title } (ProductGoalApplier).
+  PRODUCT_GOAL: 'PRODUCT_GOAL',
   // CTO 분배 확정 — 사용자가 분배 결과에 "응" 하면 BE / BE_SCHEMA / BE_TEST 를 순차 실행.
   // payload = { ctoAgentRunId, slackUserId, assignments } (CtoBeChainPayload).
   // 슬래시(`/be plan ...`) 를 손으로 치던 실행 경로를 자연어 승인 한 마디로 대체하는 게 목적.
