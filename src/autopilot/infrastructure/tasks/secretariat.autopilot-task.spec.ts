@@ -70,7 +70,7 @@ describe('SecretariatAutopilotTask', () => {
     expect(text).toContain('*② 진행 중* — 없음');
     expect(text).toContain('*③ 대표 승인 대기* — 없음');
     expect(text).toContain(
-      '*④ 막힌 것* — 1종\n   • CODE_REVIEWER 1건 — 모델 호출 실패 (CHATGPT)',
+      '*④ 막힌 것* — 1종\n   • Code Reviewer 1건 — 모델 호출 실패 (CHATGPT)',
     );
     // 실패 1건은 결정거리가 아니다 — 다음 슬롯이 재시도한다.
     expect(text).toContain('*⑤ 오늘 결정할 것* — 없음');
