@@ -24,8 +24,7 @@ export interface BlockReasonPhrase {
 //  - INTEGRATION: `src/github/infrastructure/octokit-github.client.ts:345`,
 //    `src/notion/infrastructure/notion-api.client.ts:80` 및 레포 전반의
 //    `... 가 설정되지 않았습니다 (.env 확인).` 변형
-//  - PREREQUISITE: `src/agent/cto/application/generate-assignment.usecase.ts:230`,
-//    `src/agent/ceo/application/generate-ceo-meta.usecase.ts:128`
+//  - PREREQUISITE: `src/agent/ceo/application/generate-ceo-meta.usecase.ts:126` (NO_PO_EVAL_RUN)
 // 문구가 바뀌면 이 매칭은 조용히 깨진다. errorCode 를 원장에 보존하는 별도 변경 전까지 유지한다.
 const QUOTA_SIGNAL = '사용량 한도 초과';
 const CONFIGURATION_MISSING_SIGNAL = '설정되지 않';
