@@ -35,6 +35,11 @@ import { ModelRouterUsecase } from '../../../model-router/application/model-rout
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { PREVIEW_KIND } from '../../../preview-gate/domain/preview-action.type';
 import {
+  SLACK_DELIVERY_REPOSITORY,
+  SlackDeliveryRepositoryPort,
+} from '../../../slack/domain/port/slack-delivery.repository.port';
+import { SLACK_DELIVERY_STATUS } from '../../../slack/domain/slack-delivery.type';
+import {
   AutopilotPreviewRequest,
   AutopilotRunVerdictRequest,
   AutopilotTask,
@@ -43,6 +48,9 @@ import {
 } from '../../domain/autopilot-task.port';
 
 const RETRO_PR_LIMIT = 20;
+// 아침 계획이 실린 발송의 원장 좌표 — 오케스트레이터가 그룹 본문을 `autopilot:<그룹>` 으로 남긴다.
+const MORNING_DELIVERY_KIND = 'autopilot:morning';
+const MORNING_BRIEFING_TASK_ID = 'morning-briefing';
 // 메인 메시지에 세울 후보 수. 나머지는 스레드 댓글로 내린다 — 후보를 전부 본문에 펼치면
 // 한 화면을 넘겨 정작 회고 문단이 밀려난다.
 const SUMMARY_CANDIDATE_LIMIT = 3;
@@ -79,6 +87,8 @@ export class EveningRetroPublishTask implements AutopilotTask {
     private readonly modelRouter: ModelRouterUsecase,
     private readonly humanizeService: HumanizeService,
     private readonly config: ConfigService,
+    @Inject(SLACK_DELIVERY_REPOSITORY)
+    private readonly deliveryRepository: SlackDeliveryRepositoryPort,
   ) {}
 
   async run({
@@ -405,7 +415,29 @@ export class EveningRetroPublishTask implements AutopilotTask {
       const found = runs.find(
         (run) => run.triggerType === TriggerType.MORNING_BRIEFING_CRON,
       );
-      return found ? [{ agentRunId: found.id, facets: ['pm_plan'] }] : [];
+      if (!found) {
+        return [];
+      }
+      // 실행이 성공해도 아침 메시지가 나가지 않았으면 사람은 그 계획을 본 적이 없다 — 본 적 없는
+      // 계획에 받은 판정이 그 실행의 품질 신호로 쌓이지 않게, 오늘 아침 그룹 본문이 실제로
+      // 발송(SENT)된 날만 묻는다. 원장에 agentRunId 가 없어 그룹·task·날짜로 맞춘다.
+      const deliveries = await this.deliveryRepository.findSince(
+        getKstDayStartAsUtc(),
+      );
+      const morningDelivered = deliveries.some(
+        (delivery) =>
+          delivery.kind === MORNING_DELIVERY_KIND &&
+          delivery.itemKinds.includes(MORNING_BRIEFING_TASK_ID) &&
+          delivery.threadTs === null &&
+          delivery.status === SLACK_DELIVERY_STATUS.SENT,
+      );
+      if (!morningDelivered) {
+        this.logger.log(
+          `아침 브리핑 발송 기록 없음 — 계획 판정 생략 (agentRunId=${found.id})`,
+        );
+        return [];
+      }
+      return [{ agentRunId: found.id, facets: ['pm_plan'] }];
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(`아침 계획 실행 조회 실패 — 계획 판정 생략: ${message}`);
