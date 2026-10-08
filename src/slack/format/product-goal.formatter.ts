@@ -53,6 +53,8 @@ export const formatGoalProblem = (
       return '🧭 이 목표에 붙일 작업을 찾을 키워드가 없어요. "키워드 a, b" 를 붙여 다시 선언해 주세요.';
     case 'UNREADABLE_DUE_DATE':
       return '🧭 기한을 날짜로 읽지 못했어요. "기한 12월 31일" 이나 "기한 2026-12-31" 처럼 말해 주세요.';
+    case 'DUPLICATE_TITLE':
+      return '🧭 같은 제목의 활성 목표가 이미 있어 저장하지 않았어요. 다른 제목으로 선언하거나 기존 목표를 닫아 주세요.';
     case 'ACTIVE_LIMIT_REACHED':
       return [
         `🧭 활성 목표가 이미 ${MAX_ACTIVE_PRODUCT_GOALS}개라 저장하지 않았어요. 하나를 닫을까요?`,

@@ -982,6 +982,33 @@ describe('GeneratePoShadowUsecase', () => {
       expect(outcome.result).not.toHaveProperty('goalCheckIns');
     });
 
+    // 30일 창 안 회차가 상한보다 많을 때 오래된 회차가 잘리면 그 안에만 있던 진행을 놓친다(#773 리뷰).
+    it('41번째보다 오래된 회차에만 진행이 있어도 30일 안이면 묵었다고 하지 않는다', async () => {
+      goalFindActive.mockResolvedValue([
+        goalRecord({ createdAt: new Date(now.getTime() - 40 * DAY) }),
+      ]);
+      contextCollectorCollect.mockResolvedValue(emptyContext());
+      // 최신순 60회차(약 24일치). 진행은 51번째 회차(20일 전)에만 있다.
+      const runs = Array.from({ length: 60 }, (_, index) => ({
+        id: 1000 - index,
+        output: null,
+        inputSnapshot: { goalProgress: index === 50 ? [1] : [] },
+        endedAt: new Date(now.getTime() - index * 0.4 * DAY),
+      }));
+      // 실제 저장소처럼 limit 을 지킨다 — 상한이 창보다 작으면 51번째가 잘린다.
+      agentRunServiceFindRecent.mockImplementation(
+        async ({ limit }: { limit: number }) => runs.slice(0, limit),
+      );
+
+      const outcome = await usecase.execute({
+        extraContext: '',
+        slackUserId: 'U1',
+        now,
+      });
+
+      expect(outcome.result).not.toHaveProperty('goalCheckIns');
+    });
+
     it('목표 조회가 실패하면 목표 없이 진행하고 못 본 사실을 라벨로 밝힌다', async () => {
       goalFindActive.mockRejectedValue(new Error('db down'));
       contextCollectorCollect.mockResolvedValue(emptyContext());

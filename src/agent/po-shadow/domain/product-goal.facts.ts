@@ -2,7 +2,6 @@ import {
   plainDateToUtcDate,
   todayInKst,
 } from '../../../schedule/domain/parse-due-date';
-import { DailyPlan } from '../../pm/domain/pm-agent.type';
 import { PlanRealityFact } from './plan-reality.diff';
 import { PoShadowContext } from './po-shadow.type';
 import {
@@ -19,7 +18,6 @@ const UNSERVED_TITLE_PREVIEW_COUNT = 3;
 
 export interface BuildProductGoalFactsInput {
   goals: ProductGoalRecord[];
-  plan: DailyPlan;
   context: PoShadowContext;
   // 직전 PO 회차들이 남긴 목표별 마지막 진행 시각. 없는 목표는 진행 기록이 없다는 뜻이다.
   lastProgressAtByGoalId: Map<number, Date>;
@@ -42,7 +40,6 @@ interface WorkItem {
 // 활성 목표가 0개면 아무것도 만들지 않는다 — 단계 3 이전 출력과 같아야 한다.
 export const buildProductGoalFacts = ({
   goals: candidateGoals,
-  plan,
   context,
   lastProgressAtByGoalId,
   now,
@@ -55,14 +52,17 @@ export const buildProductGoalFacts = ({
   }
 
   const todayUtc = plainDateToUtcDate(todayInKst(now));
-  const progressedWork = collectProgressedWork({ plan, context });
+  const progressedWork = collectProgressedWork(context);
+  // 머지 조회를 못 한 회차는 진행이 없었는지 알 수 없다. 그때는 목표 밖 작업과 무진행 질문을
+  // 내지 않는다 — 못 본 것을 "진행 없음" 으로 읽으면 멀쩡한 목표에 "아직 유효한가요?" 를 묻는다.
+  const progressKnown = context.mergedLookupAvailable;
   const openItems = collectOpenItems(context);
   const facts: PlanRealityFact[] = [];
 
   const unserved = progressedWork.filter(
     (work) => !goals.some((goal) => isLinkedToGoal(goal, work.title)),
   );
-  if (unserved.length > 0) {
+  if (progressKnown && unserved.length > 0) {
     facts.push(buildUnservedFact(unserved));
   }
 
@@ -91,6 +91,7 @@ export const buildProductGoalFacts = ({
         goal,
         daysLeft: daysUntil(goal.dueDate, todayUtc),
         progressedToday: progressedGoalIds.includes(goal.id),
+        progressKnown,
         lastProgressAt: lastProgressAtByGoalId.get(goal.id) ?? null,
         now,
       }),
@@ -128,31 +129,14 @@ const readGoalProgress = (inputSnapshot: unknown): number[] => {
   return value.filter((item): item is number => Number.isSafeInteger(item));
 };
 
-// "오늘 진행된 작업" — 계획에 실린 GitHub 항목과 계획 이후 머지된 PR. 계획 밖 담당 항목은
-// 열려 있을 뿐 움직였다는 근거가 아니라 넣지 않는다.
-const collectProgressedWork = ({
-  plan,
-  context,
-}: {
-  plan: DailyPlan;
-  context: PoShadowContext;
-}): WorkItem[] => {
-  const planned = [plan.topPriority, ...plan.morning, ...plan.afternoon]
-    .filter((task) => task.source === 'GITHUB')
-    .map((task) => ({ title: task.title, url: task.url }));
-  const merged = context.mergedPullRequests.map((pullRequest) => ({
+// "오늘 진행된 작업" — 계획 이후 머지된 PR 만 센다. 계획에 실렸거나 담당 목록에 열려 있다는 것은
+// 움직였다는 근거가 아니다 — 그것을 진행으로 치면 매일 계획에만 오르고 멈춘 일이 진행으로
+// 기록돼 30일 무진행 질문이 영영 뜨지 않는다(#773 리뷰).
+const collectProgressedWork = (context: PoShadowContext): WorkItem[] =>
+  context.mergedPullRequests.map((pullRequest) => ({
     title: pullRequest.title,
     url: pullRequest.url,
   }));
-  const unique = new Map<string, WorkItem>();
-  for (const work of [...planned, ...merged]) {
-    const key = work.url ?? work.title;
-    if (!unique.has(key)) {
-      unique.set(key, work);
-    }
-  }
-  return [...unique.values()];
-};
 
 const collectOpenItems = (context: PoShadowContext): WorkItem[] => {
   if (context.assignedTasks === null) {
@@ -197,19 +181,21 @@ const buildCheckIn = ({
   goal,
   daysLeft,
   progressedToday,
+  progressKnown,
   lastProgressAt,
   now,
 }: {
   goal: ProductGoalRecord;
   daysLeft: number | null;
   progressedToday: boolean;
+  progressKnown: boolean;
   lastProgressAt: Date | null;
   now: Date;
 }): string | null => {
   if (daysLeft !== null && daysLeft < 0) {
     return `"${goal.title}" — 기한 ${-daysLeft}일 지남. 이 목표 아직 유효한가요?`;
   }
-  if (progressedToday) {
+  if (progressedToday || !progressKnown) {
     return null;
   }
   // 진행 기록이 없으면 만든 시각부터 센다 — 갓 만든 목표를 바로 묵었다고 하지 않는다.
