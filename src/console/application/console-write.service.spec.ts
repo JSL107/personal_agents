@@ -4,7 +4,6 @@ import { ConfigService } from '@nestjs/config';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { RunReplayException } from '../../run-replay/domain/run-replay.exception';
 import { ReplayRejectionCode } from '../../run-replay/domain/run-replay.type';
-import { ConsoleRetryTracker } from './console-retry-tracker';
 import { ConsoleWriteService } from './console-write.service';
 
 const OWNER = 'U_OWNER';
@@ -32,7 +31,6 @@ function makeService(owner?: string) {
     cancelPreview as never,
     pendingTurns as never,
     replayFailedRun as never,
-    new ConsoleRetryTracker(),
   );
   return {
     service,
@@ -275,74 +273,9 @@ describe('ConsoleWriteService', () => {
     });
 
     // 모델 호출이 수십 초라 그 사이 다시 누르면 게시 리뷰·발행 카드가 두 벌 나간다.
-    it('같은 run 의 재시도가 도는 동안 다시 누르면 409 로 끊고, 끝나면 다시 받는다', async () => {
-      const { service, replayFailedRun } = makeService(OWNER);
-      let finish: () => void = () => undefined;
-      const run = jest.fn(
-        () =>
-          new Promise<void>((resolve) => {
-            finish = resolve;
-          }),
-      );
-      replayFailedRun.prepare.mockResolvedValue({
-        kind: 'READY',
-        agentType: 'PM',
-        runId: 7,
-        run,
-      });
-
-      await service.retryRun(7);
-      await expect(service.retryRun(7)).rejects.toMatchObject({
-        errorCode: ReplayRejectionCode.IN_FLIGHT,
-      });
-      expect(run).toHaveBeenCalledTimes(1);
-
-      finish();
-      await new Promise((resolve) => setImmediate(resolve));
-      await service.retryRun(7);
-      expect(run).toHaveBeenCalledTimes(2);
-    });
-
-    it('판정을 기다리는 사이 들어온 두 번째 클릭도 409 로 끊는다', async () => {
-      const { service, replayFailedRun } = makeService(OWNER);
-      const run = jest.fn(() => new Promise<void>(() => undefined));
-      replayFailedRun.prepare.mockResolvedValue({
-        kind: 'READY',
-        agentType: 'PM',
-        runId: 7,
-        run,
-      });
-
-      const [first, second] = await Promise.allSettled([
-        service.retryRun(7),
-        service.retryRun(7),
-      ]);
-
-      expect(first.status).toBe('fulfilled');
-      expect(second).toMatchObject({
-        status: 'rejected',
-        reason: { errorCode: ReplayRejectionCode.IN_FLIGHT },
-      });
-      expect(run).toHaveBeenCalledTimes(1);
-    });
-
-    it('거절되면 잠금을 풀어 다시 누를 수 있다', async () => {
-      const { service, replayFailedRun } = makeService(OWNER);
-      replayFailedRun.prepare.mockResolvedValue({
-        kind: 'REJECTED',
-        code: ReplayRejectionCode.NOT_REPRODUCIBLE,
-        message: '재현 불가',
-      });
-
-      await expect(service.retryRun(7)).rejects.toMatchObject({
-        errorCode: ReplayRejectionCode.NOT_REPRODUCIBLE,
-      });
-      await expect(service.retryRun(7)).rejects.toMatchObject({
-        errorCode: ReplayRejectionCode.NOT_REPRODUCIBLE,
-      });
-    });
-
-    it('실행이 실패해도 접수는 성공으로 끝나고 잠금이 풀린다', async () => {
+    // 접수 뒤의 실패는 돌려줄 곳이 없다 — 삼키되 로그로 남긴다(처리되지 않은 거부 방지).
+    // 중복 실행 잠금은 Slack 과 공유하는 `ReplayFailedRunUsecase.prepare` 가 맡는다(그쪽 spec).
+    it('실행이 실패해도 접수는 성공으로 끝난다', async () => {
       const { service, replayFailedRun } = makeService(OWNER);
       const run = jest.fn().mockRejectedValue(new Error('codex 실패'));
       replayFailedRun.prepare.mockResolvedValue({
@@ -354,7 +287,7 @@ describe('ConsoleWriteService', () => {
 
       await expect(service.retryRun(7)).resolves.toBeUndefined();
       await new Promise((resolve) => setImmediate(resolve));
-      await expect(service.retryRun(7)).resolves.toBeUndefined();
+      expect(run).toHaveBeenCalledTimes(1);
     });
   });
 });

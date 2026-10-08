@@ -2,6 +2,7 @@ import { App } from '@slack/bolt';
 
 import { HumanizeService } from '../../humanize/application/humanize.service';
 import { ReplayFailedRunUsecase } from '../../run-replay/application/replay-failed-run.usecase';
+import { ReplayInFlightLock } from '../../run-replay/application/replay-in-flight.lock';
 import { RetryRunHandler } from './retry-run.handler';
 
 type RetryCallback = (input: {
@@ -32,10 +33,11 @@ const setup = (inputSnapshot: Record<string, unknown>) => {
     }),
   };
   const agentRunService = { setParentId: jest.fn() };
-  const dependencies: object[] = Array.from({ length: 13 }, () => ({}));
+  const dependencies: object[] = Array.from({ length: 14 }, () => ({}));
   dependencies[0] = retryRunUsecase;
   dependencies[11] = agentRunService;
   dependencies[12] = watchVideoUsecase;
+  dependencies[13] = new ReplayInFlightLock();
   // 판정·디스패치는 replay 유스케이스로 옮겼다 — 그 생성자에 같은 목을 넣어 Slack 경로 전체를 그대로 검증한다.
   const replayFailedRunUsecase = Reflect.construct(
     ReplayFailedRunUsecase,
@@ -127,6 +129,25 @@ describe('RetryRunHandler VIDEO_WATCH', () => {
       response_type: 'ephemeral',
       replace_original: true,
       text: 'AgentRun #42 는 다른 사용자의 실행 기록이라 재실행할 수 없습니다.',
+    });
+  });
+
+  it('같은 run 이 이미 재실행 중이면 진행 문구를 덮어 안내하고 다시 돌리지 않는다', async () => {
+    const { run, respond, watchVideoUsecase } = setup({
+      slackUserId: 'U1',
+      videoId: 'jNQXAC9IVRw',
+    });
+    watchVideoUsecase.execute.mockReturnValueOnce(new Promise(() => undefined));
+
+    void run();
+    await new Promise((resolve) => setImmediate(resolve));
+    await run();
+
+    expect(watchVideoUsecase.execute).toHaveBeenCalledTimes(1);
+    expect(respond).toHaveBeenCalledWith({
+      response_type: 'ephemeral',
+      replace_original: true,
+      text: 'run #42 재시도가 이미 진행 중입니다. 끝난 뒤 결과를 확인해주세요.',
     });
   });
 });

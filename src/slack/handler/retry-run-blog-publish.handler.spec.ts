@@ -2,6 +2,7 @@ import { App } from '@slack/bolt';
 
 import { HumanizeService } from '../../humanize/application/humanize.service';
 import { ReplayFailedRunUsecase } from '../../run-replay/application/replay-failed-run.usecase';
+import { ReplayInFlightLock } from '../../run-replay/application/replay-in-flight.lock';
 import { RetryRunHandler } from './retry-run.handler';
 
 type RetryCallback = (input: {
@@ -40,10 +41,11 @@ describe('RetryRunHandler BLOG_PUBLISH', () => {
       }),
     };
     const agentRunService = { setParentId: jest.fn() };
-    const dependencies: object[] = Array.from({ length: 13 }, () => ({}));
+    const dependencies: object[] = Array.from({ length: 14 }, () => ({}));
     dependencies[0] = retryRunUsecase;
     dependencies[9] = publishNotionDraftUsecase;
     dependencies[11] = agentRunService;
+    dependencies[13] = new ReplayInFlightLock();
     // 판정·디스패치는 replay 유스케이스로 옮겼다 — 그 생성자에 같은 목을 넣어 Slack 경로 전체를 그대로 검증한다.
     const replayFailedRunUsecase = Reflect.construct(
       ReplayFailedRunUsecase,

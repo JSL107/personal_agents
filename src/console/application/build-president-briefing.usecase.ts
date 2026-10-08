@@ -15,6 +15,7 @@ import {
 import { FindAllOpenPreviewsUsecase } from '../../preview-gate/application/find-all-open-previews.usecase';
 import { FindPreviewDayOutcomesUsecase } from '../../preview-gate/application/find-preview-day-outcomes.usecase';
 import { PreviewAction } from '../../preview-gate/domain/preview-action.type';
+import { ReplayFailedRunUsecase } from '../../run-replay/application/replay-failed-run.usecase';
 import { isReplayableAgentType } from '../../run-replay/domain/run-replay.type';
 import {
   ConsoleBriefing,
@@ -23,7 +24,6 @@ import {
   ConsoleTodoKind,
 } from '../domain/briefing.type';
 import { calculateStreak, CardDayOutcome } from '../domain/streak';
-import { ConsoleRetryTracker } from './console-retry-tracker';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 // 워커의 평소 주기를 재는 창. `SuggestNextWorkUsecase` 와 같은 값을 쓴다 — 같은 원장에서
@@ -61,7 +61,7 @@ export class BuildPresidentBriefingUsecase {
     private readonly findPreviewDayOutcomes: FindPreviewDayOutcomesUsecase,
     @Inject(PR_REVIEW_FINDING_REPOSITORY_PORT)
     private readonly findingRepository: PrReviewFindingRepositoryPort,
-    private readonly retryTracker: ConsoleRetryTracker,
+    private readonly replayFailedRun: ReplayFailedRunUsecase,
   ) {}
 
   async execute(): Promise<ConsoleBriefing> {
@@ -98,7 +98,7 @@ export class BuildPresidentBriefingUsecase {
     const todos = [
       ...buildApprovalTodo(openPreviews),
       ...buildFailedRunTodo(stuckAgents, (runId) =>
-        this.retryTracker.isRetrying(runId),
+        this.replayFailedRun.isReplaying(runId),
       ),
       ...buildReviewTodo(openPulls),
     ];

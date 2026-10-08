@@ -4,9 +4,9 @@ import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { PR_REVIEW_FINDING_REPOSITORY_PORT } from '../../pr-review-loop/domain/port/pr-review-finding.repository.port';
 import { FindAllOpenPreviewsUsecase } from '../../preview-gate/application/find-all-open-previews.usecase';
 import { FindPreviewDayOutcomesUsecase } from '../../preview-gate/application/find-preview-day-outcomes.usecase';
+import { ReplayFailedRunUsecase } from '../../run-replay/application/replay-failed-run.usecase';
 import { ConsoleTodoKind } from '../domain/briefing.type';
 import { BuildPresidentBriefingUsecase } from './build-president-briefing.usecase';
-import { ConsoleRetryTracker } from './console-retry-tracker';
 
 const openPreview = (expiresAt: Date): unknown => ({
   id: 'preview-1',
@@ -48,7 +48,7 @@ describe('BuildPresidentBriefingUsecase', () => {
   let findAllOpenPreviews: { execute: jest.Mock };
   let findPreviewDayOutcomes: { execute: jest.Mock };
   let findingRepository: { countOpenPostedByPullRequest: jest.Mock };
-  let retryTracker: ConsoleRetryTracker;
+  let replayingRunIds: Set<number>;
 
   beforeEach(async () => {
     agentRunService = {
@@ -57,7 +57,7 @@ describe('BuildPresidentBriefingUsecase', () => {
       countFailedSince: jest.fn().mockResolvedValue(0),
       findRecentSucceededRuns: jest.fn().mockResolvedValue([]),
     };
-    retryTracker = new ConsoleRetryTracker();
+    replayingRunIds = new Set();
     findAllOpenPreviews = { execute: jest.fn().mockResolvedValue([]) };
     findPreviewDayOutcomes = { execute: jest.fn().mockResolvedValue([]) };
     findingRepository = {
@@ -77,7 +77,12 @@ describe('BuildPresidentBriefingUsecase', () => {
           provide: PR_REVIEW_FINDING_REPOSITORY_PORT,
           useValue: findingRepository,
         },
-        { provide: ConsoleRetryTracker, useValue: retryTracker },
+        {
+          provide: ReplayFailedRunUsecase,
+          useValue: {
+            isReplaying: (runId: number) => replayingRunIds.has(runId),
+          },
+        },
       ],
     }).compile();
 
@@ -183,8 +188,8 @@ describe('BuildPresidentBriefingUsecase', () => {
       succeededRun(2, '2026-08-18T00:00:00Z'),
       succeededRun(3, '2026-08-17T00:00:00Z'),
     ]);
-    // 콘솔에서 접수한 재시도가 도는 중이면 앱이 버튼을 묶도록 서버가 알려 준다.
-    retryTracker.tryAcquire(11);
+    // 재시도가 도는 중이면(Slack·콘솔 공용 잠금) 앱이 버튼을 묶도록 서버가 알려 준다.
+    replayingRunIds.add(11);
 
     const briefing = await usecase.execute();
 
