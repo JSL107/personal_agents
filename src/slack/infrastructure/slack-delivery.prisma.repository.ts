@@ -47,6 +47,7 @@ export class SlackDeliveryPrismaRepository implements SlackDeliveryRepositoryPor
       select: {
         kind: true,
         itemKinds: true,
+        threadTs: true,
         status: true,
         suppressReason: true,
         reactionCount: true,
@@ -70,6 +71,7 @@ export class SlackDeliveryPrismaRepository implements SlackDeliveryRepositoryPor
         id: true,
         kind: true,
         itemKinds: true,
+        threadTs: true,
         target: true,
         channelId: true,
         messageTs: true,

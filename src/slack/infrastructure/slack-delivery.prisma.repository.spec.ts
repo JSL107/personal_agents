@@ -79,6 +79,7 @@ describe('SlackDeliveryPrismaRepository', () => {
       select: {
         kind: true,
         itemKinds: true,
+        threadTs: true,
         status: true,
         suppressReason: true,
         reactionCount: true,
@@ -101,6 +102,7 @@ describe('SlackDeliveryPrismaRepository', () => {
         id: true,
         kind: true,
         itemKinds: true,
+        threadTs: true,
         target: true,
         channelId: true,
         messageTs: true,

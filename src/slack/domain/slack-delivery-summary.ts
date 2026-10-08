@@ -10,8 +10,13 @@ const CLEANUP_MIN_SENT = 10;
 export const SLACK_DELIVERY_SUMMARY_NOTE =
   '반응·답글이 없다고 안 읽었다는 증거는 아니다. 클릭은 Slack 이 알려 주지 않아 세지 못한다. 합쳐진 다이제스트의 반응은 그 안의 모든 종류에 똑같이 더해진다.';
 
+// sent·reactedSentCount 는 본문 메시지만 센다. 오케스트레이터가 상세를 같은 kind 의 스레드
+// 댓글로 붙이므로(autopilot.orchestrator.ts) 댓글까지 세면 발송 1건이 1+N건으로 부풀고 정리 후보
+// 문턱(sent >= 10)에 일찍 닿는다. 댓글은 threadDetailSent 로 따로 세고, 댓글에 달린 반응·답글은
+// reactionCount·replyCount 에 그대로 더한다.
 export type SlackDeliveryCounts = {
   sent: number;
+  threadDetailSent: number;
   suppressedConsoleRoute: number;
   suppressedEmpty: number;
   failed: number;
@@ -82,6 +87,7 @@ const clampInteger = (
 
 const emptyCounts = (): SlackDeliveryCounts => ({
   sent: 0,
+  threadDetailSent: 0,
   suppressedConsoleRoute: 0,
   suppressedEmpty: 0,
   failed: 0,
@@ -108,9 +114,13 @@ const addRow = (
   row: SlackDeliveryStatRow,
 ): void => {
   if (row.status === 'SENT') {
-    counts.sent += 1;
     counts.reactionCount += row.reactionCount;
     counts.replyCount += row.replyCount;
+    if (row.threadTs) {
+      counts.threadDetailSent += 1;
+      return;
+    }
+    counts.sent += 1;
     if (row.reactionCount > 0 || row.replyCount > 0) {
       counts.reactedSentCount += 1;
     }
