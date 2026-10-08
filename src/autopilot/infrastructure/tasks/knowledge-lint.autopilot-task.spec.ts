@@ -8,6 +8,16 @@ function makeTrace() {
   return { record: jest.fn().mockResolvedValue(undefined) };
 }
 
+// execute 는 run 결과를 그대로 돌려주고 예외도 그대로 던진다(실제 서비스와 같은 바깥 동작).
+function makeAgentRunService() {
+  return {
+    execute: jest.fn(async ({ run }) => ({
+      ...(await run({})),
+      agentRunId: 1,
+    })),
+  };
+}
+
 // L4 후보 2쌍을 전부 판정한 정상 실태. service 가 돌려주는 형태를 그대로 흉내낸다 —
 // 배열만 돌려주는 mock 은 실제 계약과 어긋나 하트비트 문구를 검증할 수 없다.
 const L4_DONE = { candidates: 2, judged: 2, abortedByQuota: false };
@@ -39,6 +49,7 @@ describe('KnowledgeLintAutopilotTask', () => {
       knowledgeLint as never,
       makeConfig() as never,
       makeTrace() as never,
+      makeAgentRunService() as never,
     );
 
     const result = await task.run(context);
@@ -65,6 +76,7 @@ describe('KnowledgeLintAutopilotTask', () => {
       knowledgeLint as never,
       makeConfig() as never,
       makeTrace() as never,
+      makeAgentRunService() as never,
     );
 
     const result = await task.run(context);
@@ -93,6 +105,7 @@ describe('KnowledgeLintAutopilotTask', () => {
       knowledgeLint as never,
       makeConfig() as never,
       makeTrace() as never,
+      makeAgentRunService() as never,
     );
 
     const result = await task.run(context);
@@ -128,6 +141,7 @@ describe('KnowledgeLintAutopilotTask', () => {
       knowledgeLint as never,
       config as never,
       makeTrace() as never,
+      makeAgentRunService() as never,
     );
 
     await task.run(context);
@@ -154,6 +168,7 @@ describe('KnowledgeLintAutopilotTask', () => {
       knowledgeLint as never,
       config as never,
       makeTrace() as never,
+      makeAgentRunService() as never,
     );
 
     await task.run(context);
@@ -178,6 +193,7 @@ describe('KnowledgeLintAutopilotTask', () => {
       knowledgeLint as never,
       makeConfig() as never,
       makeTrace() as never,
+      makeAgentRunService() as never,
     );
 
     const result = await task.run(context);
@@ -205,6 +221,7 @@ describe('KnowledgeLintAutopilotTask', () => {
         AUTOPILOT_KNOWLEDGE_LINT_L4_ENABLED: 'false',
       }) as never,
       makeTrace() as never,
+      makeAgentRunService() as never,
     );
 
     const result = await task.run(context);
@@ -228,6 +245,7 @@ describe('KnowledgeLintAutopilotTask', () => {
       knowledgeLint as never,
       makeConfig() as never,
       makeTrace() as never,
+      makeAgentRunService() as never,
     );
 
     const result = await task.run(context);
@@ -255,6 +273,7 @@ describe('KnowledgeLintAutopilotTask', () => {
       knowledgeLint as never,
       makeConfig() as never,
       makeTrace() as never,
+      makeAgentRunService() as never,
     );
 
     const result = await task.run(context);
@@ -277,13 +296,18 @@ describe('KnowledgeLintAutopilotTask', () => {
       }),
     };
     const trace = makeTrace();
+    const agentRunService = makeAgentRunService();
     const task = new KnowledgeLintAutopilotTask(
       knowledgeLint as never,
       makeConfig({ AUTOPILOT_KNOWLEDGE_LINT_L4_ENABLED: 'false' }) as never,
       trace as never,
+      agentRunService as never,
     );
 
     await task.run(context);
+
+    // 판정 워커가 돌지 않은 회차라 원장에 CONTRADICTION_JUDGE 를 남기지 않는다.
+    expect(agentRunService.execute).not.toHaveBeenCalled();
 
     expect(trace.record).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -310,14 +334,23 @@ describe('KnowledgeLintAutopilotTask', () => {
       }),
     };
     const trace = makeTrace();
+    const agentRunService = makeAgentRunService();
     const task = new KnowledgeLintAutopilotTask(
       knowledgeLint as never,
       makeConfig() as never,
       trace as never,
+      agentRunService as never,
     );
 
     await task.run(context);
 
+    // 후보가 없어도 L4 를 돌린 회차다 — 원장에 남겨야 NEVER_RUN 으로 읽히지 않는다.
+    expect(agentRunService.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentType: 'CONTRADICTION_JUDGE',
+        triggerType: 'AUTOPILOT_KNOWLEDGE_LINT_CRON',
+      }),
+    );
     expect(trace.record).toHaveBeenCalledWith(
       expect.objectContaining({
         taskId: 'knowledge-lint',
@@ -339,6 +372,7 @@ describe('KnowledgeLintAutopilotTask', () => {
       knowledgeLint as never,
       makeConfig() as never,
       trace as never,
+      makeAgentRunService() as never,
     );
 
     await expect(task.run(context)).rejects.toThrow('임베딩 조회 실패');

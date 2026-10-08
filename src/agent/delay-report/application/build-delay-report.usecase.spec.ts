@@ -85,4 +85,35 @@ describe('BuildDelayReportUsecase', () => {
     );
     warn.mockRestore();
   });
+
+  it('지연 보고 자신의 진행 중 run 은 지연 원인으로 세지 않는다', async () => {
+    const now = new Date('2026-09-04T03:00:00Z');
+    const agentRunService = {
+      findActiveRuns: jest.fn().mockResolvedValue([
+        {
+          id: 9,
+          agentType: 'DELAY_REPORT',
+          status: 'IN_PROGRESS',
+          parentId: null,
+          startedAt: now,
+          endedAt: null,
+          triggerType: 'SLACK_MENTION_DELAY_REPORT',
+          inputSnapshot: null,
+        },
+      ]),
+      findFailedRunsSince: jest.fn().mockResolvedValue([]),
+      findRecentlyFinishedRuns: jest.fn().mockResolvedValue([]),
+    } as unknown as AgentRunService;
+    const usecase = new BuildDelayReportUsecase(
+      agentRunService,
+      {
+        execute: jest.fn().mockResolvedValue([]),
+      } as unknown as FindAllOpenPreviewsUsecase,
+      { get: jest.fn() } as unknown as ConfigService,
+    );
+
+    const verdict = await usecase.execute({ slackUserId: 'U1', now });
+
+    expect(verdict.primaryCause).not.toBe('RUN_IN_PROGRESS');
+  });
 });

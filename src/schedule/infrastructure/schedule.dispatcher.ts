@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 
+import { AgentRunService } from '../../agent-run/application/agent-run.service';
+import { TriggerType } from '../../agent-run/domain/agent-run.type';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import {
   findHypotheticalMarker,
@@ -39,6 +41,7 @@ export class ScheduleDispatcher implements AgentDispatcher {
   constructor(
     private readonly registerSchedule: RegisterScheduleUsecase,
     private readonly answerQuestion: AnswerScheduleQuestionUsecase,
+    private readonly agentRunService: AgentRunService,
   ) {}
 
   async dispatch(input: DispatchInput): Promise<DispatchOutcome> {
@@ -83,12 +86,36 @@ export class ScheduleDispatcher implements AgentDispatcher {
       return this.toOutcome(command, formatNeedsDate(command.title));
     }
 
-    const record = await this.registerSchedule.execute({
-      slackUserId: input.slackUserId,
-      title: command.title,
-      dueDate: command.dueDate,
+    // 등록은 DB 에 쓰는 부작용이라 AgentRun 을 남긴다. 되묻기(NEEDS_*)는 한 일이 없어 남기지 않는다.
+    // RegisterScheduleUsecase 를 감싸지 않는 이유: 공휴일 동기화·콘솔 등록도 같은 usecase 를 지난다.
+    const outcome = await this.agentRunService.execute({
+      agentType: AgentType.SCHEDULE,
+      triggerType: TriggerType.SLACK_MENTION_SCHEDULE,
+      inputSnapshot: {
+        slackUserId: input.slackUserId,
+        action: 'REGISTER',
+        title: command.title,
+        dueDate: command.dueDate,
+      },
+      run: async () => {
+        const record = await this.registerSchedule.execute({
+          slackUserId: input.slackUserId,
+          title: command.title,
+          dueDate: command.dueDate,
+        });
+        return {
+          result: record,
+          modelUsed: 'deterministic',
+          output: { scheduleId: record.id },
+        };
+      },
     });
-    return this.toOutcome(record, formatScheduleRegistered(record));
+    return {
+      agentRunId: outcome.agentRunId,
+      output: outcome.result,
+      modelUsed: outcome.modelUsed,
+      formattedText: formatScheduleRegistered(outcome.result),
+    };
   }
 
   private async answer(

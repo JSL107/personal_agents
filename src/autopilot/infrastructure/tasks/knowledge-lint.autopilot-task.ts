@@ -1,10 +1,15 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { AgentRunService } from '../../../agent-run/application/agent-run.service';
+import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import {
+  ContradictionLintOptions,
   KNOWLEDGE_LINT_PORT,
+  KnowledgeLintOutcome,
   KnowledgeLintPort,
 } from '../../../episodic-memory/domain/port/knowledge-lint.port';
+import { AgentType } from '../../../model-router/domain/model-router.type';
 import {
   formatKnowledgeLint,
   isL4Incomplete,
@@ -51,6 +56,7 @@ export class KnowledgeLintAutopilotTask implements AutopilotTask {
     private readonly configService: ConfigService,
     @Inject(AUTOPILOT_TASK_TRACE_PORT)
     private readonly trace: AutopilotTaskTracePort,
+    private readonly agentRunService: AgentRunService,
   ) {}
 
   async run({
@@ -63,16 +69,19 @@ export class KnowledgeLintAutopilotTask implements AutopilotTask {
     // candidateCount·llmCalled 를 null 로 두는 것이 포트가 정의한 "예외로 중단돼 못 셈" 이다.
     let outcome: Awaited<ReturnType<KnowledgeLintPort['lintIssues']>>;
     try {
-      outcome = await this.knowledgeLint.lintIssues({
-        duplicateMaxDistance: DUPLICATE_MAX_DISTANCE,
-        limit: LINT_ISSUE_CAP,
-        l4: {
-          enabled: l4Enabled,
-          maxPairs: this.resolveL4MaxPairs(),
-          minDistance: L4_BAND_MIN,
-          maxDistance: L4_BAND_MAX,
-        },
-      });
+      const l4 = {
+        enabled: l4Enabled,
+        maxPairs: this.resolveL4MaxPairs(),
+        minDistance: L4_BAND_MIN,
+        maxDistance: L4_BAND_MAX,
+      };
+      const lint = (): Promise<KnowledgeLintOutcome> =>
+        this.knowledgeLint.lintIssues({
+          duplicateMaxDistance: DUPLICATE_MAX_DISTANCE,
+          limit: LINT_ISSUE_CAP,
+          l4,
+        });
+      outcome = l4Enabled ? await this.lintWithLedger(lint, l4) : await lint();
     } catch (error: unknown) {
       await this.trace.record({
         taskId: this.id,
@@ -125,6 +134,41 @@ export class KnowledgeLintAutopilotTask implements AutopilotTask {
             }
           : undefined,
     };
+  }
+
+  // L4 회차를 CONTRADICTION_JUDGE 로 원장에 남긴다. 판정 usecase 는 모듈 순환
+  // (AgentRunModule → EpisodicMemoryModule → ContradictionJudgeModule)으로 AgentRunService 를
+  // 못 받아 여기서 회차 단위로 감싼다 — 안쪽 판정 호출의 model_call 도 이 run id 로 묶인다.
+  // 없으면 매주 판정해도 원장이 이 워커를 NEVER_RUN 으로 본다(2026-10-04 판정 5건, 원장 0건).
+  // L1/L2 조회가 던져도 이 행이 FAILED 가 된다 — 판정까지 못 간 회차라 틀린 귀속은 아니다.
+  private async lintWithLedger(
+    lint: () => Promise<KnowledgeLintOutcome>,
+    l4: ContradictionLintOptions,
+  ): Promise<KnowledgeLintOutcome> {
+    const { result } = await this.agentRunService.execute({
+      agentType: AgentType.CONTRADICTION_JUDGE,
+      triggerType: TriggerType.AUTOPILOT_KNOWLEDGE_LINT_CRON,
+      inputSnapshot: {
+        maxPairs: l4.maxPairs,
+        band: [l4.minDistance, l4.maxDistance],
+      },
+      run: async () => {
+        const lintOutcome = await lint();
+        const contradictions = lintOutcome.issues.filter(
+          (issue) => issue.type === 'contradiction',
+        ).length;
+        return {
+          result: lintOutcome,
+          // 실제 응답한 provider(폴백 포함)는 이 run id 로 묶인 model_call 행에 있다.
+          modelUsed:
+            (lintOutcome.l4?.candidates ?? 0) > 0
+              ? 'codex-cli'
+              : 'deterministic',
+          output: { ...lintOutcome.l4, contradictions },
+        };
+      },
+    });
+    return result;
   }
 
   // 미설정 시 활성 — 'false' 일 때만 L4 비활성(L1/L2 는 유지).
