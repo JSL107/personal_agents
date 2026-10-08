@@ -88,6 +88,20 @@ describe('SlackDeliveryPrismaRepository', () => {
     });
   });
 
+  it('끝 경계가 주어지면 createdAt < until 로 닫는다', async () => {
+    findMany.mockResolvedValue([]);
+    const since = new Date('2026-10-01T00:00:00Z');
+    const until = new Date('2026-10-08T00:00:00Z');
+
+    await repository.findSince(since, until);
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { createdAt: { gte: since, lt: until } },
+      }),
+    );
+  });
+
   it('상태별 원장을 최신순으로 제한하여 조회한다', async () => {
     findMany.mockResolvedValue([]);
     const since = new Date('2026-10-01T00:00:00Z');

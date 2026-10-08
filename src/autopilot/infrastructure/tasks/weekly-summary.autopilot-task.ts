@@ -173,7 +173,7 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
 
     const recoveryHealthLine =
       await this.buildRecoveryHealthLine(ownerSlackUserId);
-    const consoleRouteLine = await this.buildConsoleRouteLine(since);
+    const consoleRouteLine = await this.buildConsoleRouteLine(since, until);
 
     const weeklySummary = `${worklogSummary}\n\n${recoveryHealthLine}${consoleRouteLine ? `\n${consoleRouteLine}` : ''}`;
     const summaryText =
@@ -189,9 +189,13 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
     return { skip: false, summaryText, detailText };
   }
 
-  private async buildConsoleRouteLine(since: Date): Promise<string | null> {
+  // 재시도가 다음 KST 날짜로 넘어가도 다음 기간 발송이 섞이지 않게 회고 기간과 같은 끝 경계를 둔다.
+  private async buildConsoleRouteLine(
+    since: Date,
+    until: Date,
+  ): Promise<string | null> {
     try {
-      const rows = await this.slackDeliveryRepository.findSince(since);
+      const rows = await this.slackDeliveryRepository.findSince(since, until);
       const summary = summarizeDeliveries(rows, { days: 7 });
       const count = summary.totals.suppressedConsoleRoute;
       if (count === 0) {

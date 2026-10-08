@@ -57,6 +57,7 @@ export interface SlackDeliveryRepositoryPort {
   record(input: RecordSlackDeliveryInput): Promise<void>;
   incrementReactionCount(target: SlackDeliveryMessageRef): Promise<number>;
   incrementReplyCount(target: SlackDeliveryMessageRef): Promise<number>;
-  findSince(since: Date): Promise<SlackDeliveryStatRow[]>;
+  // until 은 선택 — 주어지면 createdAt < until 로 끝을 닫는다(기간이 고정된 주간 요약용).
+  findSince(since: Date, until?: Date): Promise<SlackDeliveryStatRow[]>;
   findByStatus(input: SlackDeliveryListInput): Promise<SlackDeliveryListRow[]>;
 }
