@@ -205,7 +205,8 @@ export const NL_ANSWER_EVAL_CASES: readonly EvalCase[] = [
     split: 'tuning',
     note: '발행 여부 질문 — 발행이 시도되면 안 된다',
     text: '노션 초안 정규식 글 발행된 거야?',
-    expect: { forbidIntercepts: true },
+    // 발행 기록을 조회할 수 있는 블로그 워커가 답해야 한다 — 대화 답변은 확인 없이 단정했다.
+    expect: { destinations: [AgentType.BLOG_PUBLISH], forbidIntercepts: true },
   },
   {
     id: 't-review-link',
@@ -439,6 +440,18 @@ export const NL_ANSWER_EVAL_CASES: readonly EvalCase[] = [
       forbidIntercepts: true,
       mustMatch: [/429/],
       mustNotMatch: [/보내\s*주세요/],
+    },
+  },
+  {
+    id: 'h-instagram-video-1006',
+    split: 'holdout',
+    note: '2026-10-06 run 7199 — 원장 후보 추출(pnpm eval:nl-candidates)로 찾은 첫 문항. 영상 워커는 유튜브만 받는다',
+    text: `${MENTION}<https://www.instagram.com/reels/DeG_NGxhQ3E/|instagram.com/reels/DeG_NGxhQ3E>\n이거 영상 분석 할 수 있어?`,
+    // 인스타그램은 못 한다는 것과, 할 수 있는 범위(유튜브)를 말해야 한다. 되묻기·범용 답은 실패.
+    expect: {
+      forbidIntercepts: true,
+      mustMatch: [/유튜브|YouTube/i],
+      mustNotMatch: [ASK_BACK],
     },
   },
 ];

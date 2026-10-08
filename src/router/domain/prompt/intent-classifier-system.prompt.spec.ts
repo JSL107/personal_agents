@@ -8,12 +8,13 @@ describe('INTENT_CLASSIFIER_SYSTEM_PROMPT', () => {
   // 분류 후보 문구를 일부러 바꿨다면 바뀐 줄을 커밋에 밝히고, 분류 eval 을 다시 잰 뒤 지문을 갱신한다.
   // 갱신 이력: 2026-10-07 CODE_REVIEWER 에 "링크 없는 게시 지시" 추가(자연어 응답 충실도 4단계).
   //           2026-10-08 SCHEDULE 이 일정 조회도 받는다(자연어 응답 충실도 후속).
+  //           2026-10-08 BLOG_PUBLISH 가 발행 여부·초안 목록 질문도 받는다.
   it('분류기 프롬프트 지문이 마지막으로 잰 값과 같다 — 바꾸면 분류 eval 을 다시 잰다', () => {
     expect(
       createHash('sha256')
         .update(INTENT_CLASSIFIER_SYSTEM_PROMPT)
         .digest('hex'),
-    ).toBe('9944bec114cfcf7328c6f155e6faa547ddca7f2ef0fc920aa592789132d3cf0e');
+    ).toBe('1bd01bcf1a5b275102f0fce1a77353eac3ea5918cddd8334dd64af9210c5c32e');
   });
 
   it('SCHEDULE 후보가 분류 표에 있다', () => {

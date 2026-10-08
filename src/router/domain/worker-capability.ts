@@ -82,11 +82,13 @@ export const WORKER_CAPABILITIES: readonly WorkerCapability[] = [
       '기술 주제를 조사해 정리 글(블로그 초안)로 남긴다. 예: "프롬프트 RAG 공부할래", "서버 컴포넌트 딥다이브"',
   },
   {
+    // 2026-10-08: 발행 여부·초안 목록 질문도 받는다 — 블로그 워커가 조회 문장을 발행보다 먼저 알아보고
+    // 기록으로 답하게 된 뒤(blog-lookup.ts)라야 안전하다.
     agentType: AgentType.BLOG_PUBLISH,
     classifierLine:
-      '⚠️ 이미 Notion에 있는 블로그 초안을 익명화해 GitHub 발행 승인을 요청 ("노션 초안 발행해줘", "블로그 초안 게시해줘"). 새 글 작성은 BLOG, 기존 Notion 초안 발행은 BLOG_PUBLISH.',
+      '⚠️ 이미 Notion에 있는 블로그 초안을 익명화해 GitHub 발행 승인을 요청 ("노션 초안 발행해줘", "블로그 초안 게시해줘"). 새 글 작성은 BLOG, 기존 Notion 초안 발행은 BLOG_PUBLISH. 블로그 글이 발행됐는지·남은 초안이 무엇인지 묻는 질문("그 글 발행됐어?", "남은 초안 뭐 있어")도 BLOG_PUBLISH.',
     canDo:
-      'Notion 에 있는 블로그 초안을 익명화해 발행 승인을 요청한다. 예: "노션 초안 발행해줘"',
+      'Notion 에 있는 블로그 초안을 익명화해 발행 승인을 요청하고, 남은 초안과 최근 발행 기록을 알려 준다. 예: "노션 초안 발행해줘", "남은 초안 뭐 있어?"',
   },
   {
     agentType: AgentType.CAREER_MATE,

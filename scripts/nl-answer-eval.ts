@@ -246,8 +246,6 @@ const buildModule = async (): Promise<TestingModule> => {
     )
     .overrideProvider(getQueueToken(NOTIFICATION_QUEUE))
     .useValue({})
-    .overrideProvider(NOTION_CLIENT_PORT)
-    .useValue(blockedClient('NotionClient'))
     .overrideProvider(GITHUB_CLIENT_PORT)
     .useValue(blockedClient('GithubClient'))
     .overrideProvider(ReviewPullRequestUsecase)
@@ -278,7 +276,39 @@ const buildModule = async (): Promise<TestingModule> => {
 };
 
 // 분류기·파서 응답을 회차별로 남긴다 — 가드 이전의 파서 판단은 여기서만 복원된다.
+// Notion 은 읽기만 실제로 통과시킨다 — 블로그 질문 답변이 초안 목록을 읽어야 답할 수 있다. 그 밖의
+// 메서드(페이지 생성·덮어쓰기·속성 변경)는 전부 가로챈다. 목록에 없는 새 메서드도 기본이 차단이다.
+const NOTION_READ_METHODS: ReadonlySet<string> = new Set([
+  'queryDraftPages',
+  'getPageMarkdown',
+]);
+
+const blockNotionWrites = (moduleRef: TestingModule): void => {
+  const notion = moduleRef.get<Record<string, unknown>>(NOTION_CLIENT_PORT, {
+    strict: false,
+  });
+  const prototype = Object.getPrototypeOf(notion) as Record<string, unknown>;
+  // 읽기 메서드는 손대지 않은 사본에서 돈다 — 내부 도우미(assertClientConfigured 등)도 원래대로 불린다.
+  // 인스턴스에만 가로채기를 덮으므로, 사본은 같은 클라이언트 필드에 원래 메서드를 그대로 가진다.
+  const untouched = Object.assign(Object.create(prototype) as object, {
+    ...notion,
+  }) as Record<string, unknown>;
+  for (const name of Object.getOwnPropertyNames(prototype)) {
+    if (name === 'constructor' || typeof notion[name] !== 'function') {
+      continue;
+    }
+    notion[name] = NOTION_READ_METHODS.has(name)
+      ? (...args: unknown[]): unknown =>
+          (prototype[name] as (...callArgs: unknown[]) => unknown).apply(
+            untouched,
+            args,
+          )
+      : (): never => record(`NotionClient.${name}`, {});
+  }
+};
+
 const instrument = (moduleRef: TestingModule): void => {
+  blockNotionWrites(moduleRef);
   const modelRouter = moduleRef.get(ModelRouterUsecase);
   const route = modelRouter.route.bind(modelRouter);
   modelRouter.route = (async (request: Parameters<typeof route>[0]) => {

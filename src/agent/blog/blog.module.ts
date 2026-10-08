@@ -3,10 +3,12 @@ import { ConfigService } from '@nestjs/config';
 import { WebClient } from '@slack/web-api';
 
 import { AgentRunModule } from '../../agent-run/agent-run.module';
+import { FactAnswerModule } from '../../fact-answer/fact-answer.module';
 import { GithubModule } from '../../github/github.module';
 import { HumanizeModule } from '../../humanize/humanize.module';
 import { ModelRouterModule } from '../../model-router/model-router.module';
 import { NotionModule } from '../../notion/notion.module';
+import { AnswerBlogQuestionUsecase } from './application/answer-blog-question.usecase';
 import { ExtractRevisionConventionsUsecase } from './application/extract-revision-conventions.usecase';
 import { GenerateBlogDraftUsecase } from './application/generate-blog-draft.usecase';
 import { MeasureBlogRevisionUsecase } from './application/measure-blog-revision.usecase';
@@ -31,6 +33,7 @@ import {
   // GithubModule — 주간 수정률 집계가 발행된 글의 최종본을 저장소에서 읽는다.
   imports: [
     AgentRunModule,
+    FactAnswerModule,
     GithubModule,
     HumanizeModule,
     ModelRouterModule,
@@ -40,6 +43,7 @@ import {
     GenerateBlogDraftUsecase,
     ExtractRevisionConventionsUsecase,
     PublishNotionDraftUsecase,
+    AnswerBlogQuestionUsecase,
     MeasureBlogRevisionUsecase,
     BlogDispatcher,
     BlogPublishDispatcher,
