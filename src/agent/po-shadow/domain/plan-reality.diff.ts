@@ -94,6 +94,9 @@ const COMPARABLE_FACT_PREFIXES = new Set([
 export const RECOVERY_SEQUENCE_DAYS = 7;
 // 미이동이 이 구간 수 이상이면 검토를 켠다(14일).
 export const UNMOVED_REVIEW_SEQUENCE = 2;
+// 미이동이 이 구간 수 이상이면 detail 에서 reason 을 뺀다(21일) — 무시당한 권고를 계속 되살리지
+// 않는다. 실측(2026-09-10) 상 발화 0건이라 2026-12 에 재평가해 여전히 0이면 삭제 후보다.
+export const UNMOVED_REASON_WITHDRAW_SEQUENCE = 3;
 
 // 회수 경로가 원장에 남기는 열화 라벨. 주간 지표(`weekly-summary`)가 대조 불가 회차 비율을
 // 여기서 읽으므로 usecase 로컬 상수로 두지 않는다.
@@ -580,7 +583,11 @@ const buildUnmovedFact = ({
   sequence: number;
   reasonByKey: Map<string, string>;
 }): PlanRealityFact => {
-  const reason = reasonByKey.get(prior.key) ?? null;
+  // 철회 구간에 들면 reason 을 싣지 않는다 — 모델이 쓸 재료가 사라져 권고 문장도 사라진다.
+  const reason =
+    sequence >= UNMOVED_REASON_WITHDRAW_SEQUENCE
+      ? null
+      : (reasonByKey.get(prior.key) ?? null);
   const elapsed = `${sequence * RECOVERY_SEQUENCE_DAYS}일째 미이동`;
   return {
     id: `finding-unmoved:${prior.key}`,
