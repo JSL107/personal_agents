@@ -64,6 +64,9 @@ export const PALETTE = Object.freeze({
   waterBlue: 0x6bb8ed,
   chairBlack: 0x30343e,
   foliageGreen: 0x4e852e,
+  // 대표실 게시판의 연속 기록 도장(맥 `renderStreakStamps` 와 같은 색). 금색은 상한을 넘긴 마지막 도장.
+  stampRed: 0xcf4a3d,
+  stampGold: 0xf2bf3d,
 });
 
 /** 모든 둥근 상자가 쓰는 모서리 반경(타일 1칸 = 1). 한 값이라 가구끼리 뭉툭함이 같다. */

@@ -14,6 +14,7 @@ import {
 } from "./office.js";
 import { chatterExchange, chatterLine, chatterPartner, chatterSeed, tileDistance } from "./chatter.js";
 import { canvasSizes } from "./canvas-size.js";
+import { BRIEFING_DEMO } from "./briefing.js";
 
 /** 유휴 산책 규칙 — 맥 앱 `OfficeIdle` 과 같은 값. */
 const STROLL_TICK_SECONDS = 8;
@@ -28,6 +29,8 @@ const STROLL_COOLDOWN_SECONDS = 90;
 const STROLL_CONCURRENCY = 3;
 /** 한 칸 걷는 데 걸리는 시간(초). 0.16 은 다리가 교차하기 전에 몸이 지나가 종종거려 보였다. */
 const STEP_SECONDS = 0.2;
+/** 대표 브리핑을 다시 받는 주기(초) — 맥 앱의 브리핑 재동기화와 같은 30초. 스트림은 브리핑 변화를 알리지 않는다. */
+const BRIEFING_INTERVAL_SECONDS = 30;
 /** 스냅샷을 다시 받는 주기(초). 스트림이 끊겨도 화면이 굳지 않게 하는 안전망이다. */
 const SNAPSHOT_INTERVAL_SECONDS = 20;
 /** 출퇴근 걷기를 한 사람씩 늦추는 간격(초) — 맥 앱 `arrivalStagger` 와 같은 값. */
@@ -149,6 +152,12 @@ const use3d = query.get("renderer") === "3d";
  * `webkit.messageHandlers.idaeri` 로 앱에 되돌려 보낸다(인스펙터·지시 바는 앱 몫).
  */
 const hosted = query.get("hosted") === "1";
+/**
+ * `?briefing=1` — 대표 브리핑을 맥 `--briefing-demo` 와 같은 값으로 꾸며 넣는다(할 일 셋 · 연속 8일 · 정산).
+ * 실 백엔드는 할 일 0건·연속 0일인 날이 많아 이 입구 없이는 말풍선·도장·종이가 한 화면에 안 뜬다.
+ * 종이는 퇴근 시각 이후에만 놓이므로 `hour=21` 과 함께 준다. `?briefing=card` 는 정산 카드까지 펼친다.
+ */
+const briefingDemo = query.has("briefing");
 /** 3D 렌더러 클래스. `main()` 이 필요할 때만 불러와 채운다. */
 let Office3DRenderer = null;
 /**
@@ -214,6 +223,11 @@ let loadedSpriteCount = 0;
  * 조용히 사라진다** — 여기 모아 상태 줄에 찍어 "평면도를 다시 뽑아야 한다" 를 드러낸다.
  */
 let agentsWithoutSeat = [];
+/**
+ * 대표 브리핑(`/v1/console/briefing`) — 할 일 말풍선·연속 도장·퇴근 정산 종이의 입력. 3D 만 그린다.
+ * 못 받았으면 null 이고 셋 다 안 뜬다. 맥 앱처럼 실패는 조용히 넘긴다 — 장식이 관제 화면을 멈추면 안 된다.
+ */
+let briefing = briefingDemo ? BRIEFING_DEMO : null;
 /** 기억 청소 실태(스냅샷의 `housekeeping`). 3D 가 로봇청소기·먼지로 그린다. 서버가 모르면 null. */
 let housekeeping = null;
 /**
@@ -337,6 +351,7 @@ function renderOnce() {
     summary: summaryCounts(),
     pending: pendingPhases,
     housekeeping,
+    briefing,
   });
   setStatus(summary(), hasStaleLayout());
   document.body.dataset.rendered = "1";
@@ -1383,6 +1398,28 @@ async function fetchSnapshot() {
   return payload.data ?? payload;
 }
 
+/**
+ * 브리핑을 다시 받는다. 앱 안에서는 받지 않는다 — 웹뷰 주소(`idaeri-office://`)는 파일만 주고 백엔드로 넘기지
+ * 않아, 앱이 `briefing` 메시지로 밀어 준다(`receiveFromHost`). 데모 중에는 실제 값으로 덮지 않는다.
+ * 3D 만 그리므로 2D 에서는 부르지 않는다 — 안 쓰는 조회를 30초마다 보낼 이유가 없다.
+ */
+async function refreshBriefing() {
+  if (hosted || briefingDemo || !use3d) {
+    return;
+  }
+  try {
+    const response = await fetch("/v1/console/briefing");
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const payload = await response.json();
+    briefing = payload.data ?? payload;
+  } catch (error) {
+    // 지난 값은 남긴다 — 한 번 끊겼다고 할 일 말풍선이 사라지면 "할 일이 없다" 로 읽힌다.
+    console.warn(`브리핑을 못 받았다: ${error}`);
+  }
+}
+
 function applySnapshot(data) {
   agents = Object.fromEntries(
     (data.agents ?? []).map((agent) => [agent.agentType, agent])
@@ -1568,6 +1605,7 @@ function postToHost(message) {
  * - `intent`   연출 지시 하나(`{kind: "handoff", from, to}` · `{kind: "meeting", agentTypes, thenWorking}` ·
  *              `{kind: "reject", agentType}`)
  * - `pending`  내가 보낸 지시의 단계 전부(`{agentType: 단계}`)
+ * - `briefing` 대표 브리핑(`GET /v1/console/briefing` 의 값 그대로, 못 받았으면 null)
  * - `sleep`    창이 가려졌다/다시 보인다
  * - `select`   앱에서 인스펙터가 닫혔다(null) 등 — 발밑 선택 링을 맞춘다
  * - `focus`    앱의 esc 가 방 확대를 풀었다(null)
@@ -1597,6 +1635,12 @@ function receiveFromHost(message) {
       break;
     case "pending":
       applyPending(message.data ?? {});
+      break;
+    case "briefing":
+      // 데모 중에는 앱이 민 실제 값으로 덮지 않는다(`refreshBriefing` 과 같은 규칙).
+      if (!briefingDemo) {
+        briefing = message.data ?? null;
+      }
       break;
     case "sleep":
       sleeping = Boolean(message.value);
@@ -1785,7 +1829,7 @@ async function main() {
     postToHost({ type: "ready" });
   }
 
-  await refreshSnapshot();
+  await Promise.all([refreshSnapshot(), refreshBriefing()]);
   window.addEventListener("resize", resize);
 
   // 정지 렌더는 한 판 그리고 끝난다 — 스냅샷을 못 받은 채로 그리면 **사람이 0명인 사무실이
@@ -1991,6 +2035,7 @@ async function main() {
   if (!hosted) {
     subscribe();
     setInterval(refreshSnapshot, SNAPSHOT_INTERVAL_SECONDS * 1000);
+    setInterval(refreshBriefing, BRIEFING_INTERVAL_SECONDS * 1000);
   }
 
   let previous = performance.now();
@@ -2030,6 +2075,7 @@ async function main() {
       summary: summaryCounts(),
       pending: pendingPhases,
       housekeeping,
+      briefing,
     });
     if (sleeping) {
       // 창이 가려졌다 — 예약을 끊어 계산도 그리기도 멈춘다. 깨면 `resumeFrames` 가 다시 건다.
