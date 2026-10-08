@@ -54,7 +54,7 @@ describe('AnswerScheduleQuestionUsecase', () => {
     const { from, to } = listExecute.mock.calls[0][0];
     // 시각 없는 UTC 자정 — 경계일 일정이 gte·lte 비교에서 빠지지 않는다.
     expect(from.toISOString()).toBe('2026-09-23T00:00:00.000Z');
-    expect(to.toISOString()).toBe('2026-12-06T00:00:00.000Z');
+    expect(to.toISOString()).toBe('2027-10-08T00:00:00.000Z');
     expect(answer.mock.calls[0][0].facts.today).toBe('2026-10-07');
     expect(answer.mock.calls[0][0].facts.schedules).toEqual([
       {

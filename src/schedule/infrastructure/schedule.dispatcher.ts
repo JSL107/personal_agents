@@ -132,15 +132,17 @@ export class ScheduleDispatcher implements AgentDispatcher {
     if (command.kind === 'REGISTER') {
       return { command };
     }
-    const prior = [...(input.priorTurns ?? [])].reverse().find(
-      (turn) =>
-        turn.agentType === AgentType.SCHEDULE &&
-        (turn.role ?? 'user') === 'user' &&
-        turn.text.trim().length > 0 &&
-        // 조회 질문은 등록의 앞 턴이 아니다 — 합치면 "이번주 일정 알려줘" 가 제목으로 등록된다.
-        !isScheduleLookup(turn.text),
-    );
-    if (!prior) {
+    const prior = [...(input.priorTurns ?? [])]
+      .reverse()
+      .find(
+        (turn) =>
+          turn.agentType === AgentType.SCHEDULE &&
+          (turn.role ?? 'user') === 'user' &&
+          turn.text.trim().length > 0,
+      );
+    // 가장 가까운 SCHEDULE 턴이 조회 질문이면 그 자체가 등록 흐름의 경계다. 조회 턴만 건너뛰고 더
+    // 거슬러 올라가면, 그 전의 미완료 등록("자동차세 등록해줘")이 이번 날짜와 합쳐져 등록된다(#753 리뷰).
+    if (!prior || isScheduleLookup(prior.text)) {
       return { command };
     }
     return {

@@ -270,4 +270,27 @@ describe('ScheduleDispatcher', () => {
     // 제목이 없으니 무엇을 등록할지 되묻는다(조회 문장을 제목으로 쓰지 않는다).
     expect(outcome.formattedText).toContain('무엇을 등록할까요');
   });
+
+  it('가장 가까운 일정 턴이 조회면, 그 전의 미완료 등록 턴과도 합치지 않는다', async () => {
+    const usecase = createUsecase();
+    const answer = createAnswer();
+    const dispatcher = new ScheduleDispatcher(usecase, answer);
+    const turn = (text: string) => ({
+      role: 'user' as const,
+      text,
+      agentType: AgentType.SCHEDULE,
+      agentRunId: 0,
+      timestampMs: Date.now(),
+    });
+
+    await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '9월 30일',
+      priorTurns: [turn('자동차세 등록해줘'), turn('이번주 일정 알려줘')],
+    });
+
+    // "자동차세" 가 9월 30일로 등록되면 안 된다 — 조회 질문이 그 등록 흐름을 끊었다.
+    expect(usecase.execute).not.toHaveBeenCalled();
+  });
 });

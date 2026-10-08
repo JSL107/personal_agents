@@ -15,5 +15,11 @@ const LOOKUP_PATTERNS: readonly RegExp[] = [
   new RegExp(`^\\s*${PERIOD}\\s*${LOOKUP_NOUN}\\s*[?？]?\\s*$`),
 ];
 
+// 명시적 쓰기 지시가 있으면 조회가 아니다 — "내일 예약 확인 일정 등록해줘" 처럼 제목에 조회 낱말이
+// 섞인 등록 요청이 조회로 빠지지 않게(#753 리뷰).
+const WRITE_INTENT =
+  /(?:등록|추가|넣어|잡아)\s*(?:해|줘|줄래|주세요|해줘|할래|하자|요)?/;
+
 export const isScheduleLookup = (text: string): boolean =>
+  !WRITE_INTENT.test(text) &&
   LOOKUP_PATTERNS.some((pattern) => pattern.test(text));
