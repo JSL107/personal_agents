@@ -320,6 +320,38 @@ describe('waitingItem.reason 을 detail 에 싣는다', () => {
   });
 });
 
+describe('권고 철회 — sequence 3(21일)부터 detail 에서 reason 을 뺀다', () => {
+  const REASON = '승인·충돌 없음 — 머지만 남음';
+  const recoverAfter = (days: number) =>
+    buildFindingRecoveryFacts({
+      priorFindings: [{ key: KEY, firstReportedAt: day(days) }],
+      context: contextWith({
+        ...assigned(KEY),
+        waitingItems: [
+          {
+            title: 't',
+            url: 'https://github.com/acme/app/pull/264',
+            reason: REASON,
+          },
+        ],
+      }),
+      lifecycles: new Map(),
+      now: NOW,
+    }).facts[0];
+
+  it('sequence 2(20일)까지는 reason 을 싣는다', () => {
+    const fact = recoverAfter(20);
+    expect(fact.sequence).toBe(2);
+    expect(fact.detail).toBe(`14일째 미이동 — ${REASON}`);
+  });
+
+  it('sequence 3(21일)이면 reason 없이 경과만 남긴다', () => {
+    const fact = recoverAfter(21);
+    expect(fact.sequence).toBe(3);
+    expect(fact.detail).toBe('21일째 미이동');
+  });
+});
+
 describe('hasPlanRealityMismatch — 검토를 켜는 조건', () => {
   const fact = (
     kind: PlanRealityFact['kind'],
