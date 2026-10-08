@@ -68,12 +68,16 @@ const formatResult = (
     }
     return formatFailureSummary(failedByStrategy.get(strategy)!);
   });
-  const detailSections = presentStrategies.map((strategy) => {
+  // 스레드에는 요약에 없는 것만 남긴다 — 제외 종목 목록과 실패 전문. 둘 다 없으면 스레드를
+  // 만들지 않는다. 예전에는 계좌·주문 줄을 상세에 한 번 더 적고 판단 근거는 상세에만 두어,
+  // 추천 메시지만 보면 근거가 없고 스레드는 부모를 반복했다(2026-10-07 점검).
+  const detailSections = presentStrategies.flatMap((strategy) => {
     const completed = completedByStrategy.get(strategy);
     if (completed) {
-      return formatCompletedDetail(completed);
+      const detail = formatCompletedDetail(completed);
+      return detail === null ? [] : [detail];
     }
-    return formatFailureDetail(failedByStrategy.get(strategy)!);
+    return [formatFailureDetail(failedByStrategy.get(strategy)!)];
   });
 
   // 추천은 저녁에 나가고 주문은 **다음 거래일 시가**에 체결된다. 그 시차를 카드가 안 적으면
@@ -98,7 +102,9 @@ const formatResult = (
       `*모의투자 추천* — ${headline}${timing}`,
       ...summarySections,
     ].join('\n'),
-    detailText: detailSections.join('\n\n'),
+    ...(detailSections.length > 0
+      ? { detailText: detailSections.join('\n\n') }
+      : {}),
   };
 };
 
@@ -114,7 +120,13 @@ const formatCompletedSummary = (
     ? `*${STRATEGY_LABELS[completed.strategy]}* 매수 ${buyCount} · ` +
       `매도 ${sellCount} | ${accountText}`
     : `*${STRATEGY_LABELS[completed.strategy]}* 주문 없음 | ${accountText}`;
-  const lines = [header, ...completed.orders.map(formatOrderLine)];
+  const lines = [header];
+  for (const order of completed.orders) {
+    lines.push(
+      formatOrderLine(order),
+      `   판단: ${escapeSlackMrkdwn(order.reason)}`,
+    );
+  }
   if (completed.skipped.length > 0) {
     lines.push(formatSkipSummary(completed));
   }
@@ -125,29 +137,21 @@ const formatCompletedSummary = (
   return lines.join('\n');
 };
 
+// 제외 종목은 요약에 사유별 건수만 있으므로 종목별 목록만 상세로 보낸다.
 const formatCompletedDetail = (
   completed: PaperRecommendationSuccess,
-): string => {
-  const lines = [
-    `*${STRATEGY_LABELS[completed.strategy]} 상세*`,
-    `계좌: ${formatAccount(completed)}`,
-  ];
-  for (const order of completed.orders) {
-    lines.push(
-      formatOrderLine(order),
-      `   판단: ${escapeSlackMrkdwn(order.reason)}`,
-    );
+): string | null => {
+  if (completed.skipped.length === 0) {
+    return null;
   }
-  for (const skip of completed.skipped) {
-    lines.push(
-      ` • 제외 ${sideLabel(skip.side)} ${escapeSlackMrkdwn(skip.name)}(${skip.code}) — ` +
+  return [
+    `*${STRATEGY_LABELS[completed.strategy]} 제외 상세*`,
+    ...completed.skipped.map(
+      (skip) =>
+        ` • 제외 ${sideLabel(skip.side)} ${escapeSlackMrkdwn(skip.name)}(${skip.code}) — ` +
         SKIP_REASON_LABELS[skip.reason],
-    );
-  }
-  if (completed.orders.length === 0) {
-    lines.push(emptyReasonLine(completed));
-  }
-  return lines.join('\n');
+    ),
+  ].join('\n');
 };
 
 // 주문이 0건인 이유를 '모델이 아무것도 안 골랐다' 와 '시세가 없어 만들지 못했다' 로 가른다.
