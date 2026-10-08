@@ -17,6 +17,8 @@ struct DashboardView: View {
     let onApprove: (String) -> Void
     let onReject: (String) -> Void
     let onInject: (String, String) async throws -> InjectOutcome
+    /// 실패 실행 재시도(원본 run id). 미리보기 렌더는 넘기지 않는다.
+    var onRetryRun: (Int) -> Void = { _ in }
     /// "전체 보기" — 에이전트 상태 탭으로 넘어간다.
     let onShowAgents: () -> Void
 
@@ -372,6 +374,9 @@ struct DashboardView: View {
 
     private var operationsColumn: some View {
         VStack(alignment: .leading, spacing: Spacing.lg) {
+            if !presidentTargetTodos.isEmpty {
+                presidentTodoSection
+            }
             VStack(alignment: .leading, spacing: Spacing.sm) {
                 sectionTitle("승인 대기")
                 if let notice = store.approvalNotice {
@@ -448,6 +453,68 @@ struct DashboardView: View {
             Button("승인") { onApprove(approval.id) }
             Button("거절") { onReject(approval.id) }
                 .tint(.red)
+        }
+        .controlSize(.small)
+        .padding(.horizontal, Spacing.md)
+        .padding(.vertical, Spacing.sm)
+    }
+
+    // MARK: - 대표 할 일 (실패 재시도 · PR 리뷰 회수)
+
+    /// 대상이 실린 할 일만. 승인은 아래 「승인 대기」가 카드별로 보여 주므로 여기서 다시 늘어놓지 않는다.
+    private var presidentTargetTodos: [ConsoleTodo] {
+        (store.briefing?.todos ?? []).filter { $0.kind != .approval && !$0.targets.isEmpty }
+    }
+
+    private var presidentTodoSection: some View {
+        VStack(alignment: .leading, spacing: Spacing.sm) {
+            sectionTitle("대표 할 일")
+            if let notice = store.runRetryNotice {
+                Text(notice)
+                    .font(Typography.caption)
+                    .foregroundStyle(Color.red)
+            }
+            ListPanel {
+                ForEach(Array(presidentTargetTodos.enumerated()), id: \.offset) { todoIndex, todo in
+                    ForEach(Array(todo.targets.enumerated()), id: \.offset) { targetIndex, target in
+                        if todoIndex > 0 || targetIndex > 0 {
+                            Divider()
+                        }
+                        todoTargetRow(todo: todo, target: target)
+                    }
+                }
+            }
+        }
+    }
+
+    private func todoTargetRow(todo: ConsoleTodo, target: ConsoleTodoTarget) -> some View {
+        HStack(spacing: Spacing.sm) {
+            Image(systemName: todo.kind == .failedRun ? "arrow.clockwise.circle" : "text.bubble")
+                .foregroundStyle(todo.kind == .failedRun ? ConsoleAgentState.failed.accentColor : Color.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(target.label)
+                    .font(Typography.body)
+                    .lineLimit(1)
+                Text(todo.detail)
+                    .font(Typography.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: Spacing.sm)
+            if let runId = target.retryRunId {
+                let isRetrying = store.retryingRunIds.contains(runId)
+                Button(isRetrying ? "재시도 중" : "재시도") { onRetryRun(runId) }
+                    .disabled(isRetrying)
+                    .accessibilityLabel("\(target.label) 실패 실행 재시도")
+            } else if todo.kind == .failedRun {
+                Text("재시도 미지원")
+                    .font(Typography.caption)
+                    .foregroundStyle(.secondary)
+            }
+            // PR 리뷰 회수는 지적마다 정탐·오탐 판정이 필요해 원클릭으로 돌리지 않는다 — 열어 주기까지만.
+            if let url = target.url.flatMap(URL.init(string:)) {
+                Link("PR 열기", destination: url)
+                    .accessibilityLabel("\(target.label) GitHub 에서 열기")
+            }
         }
         .controlSize(.small)
         .padding(.horizontal, Spacing.md)

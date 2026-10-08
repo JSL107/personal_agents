@@ -50,6 +50,7 @@ struct AppRootView: View {
                     onApprove: approve,
                     onReject: reject,
                     onInject: inject,
+                    onRetryRun: retryRun,
                     onShowAgents: { tab = .agents }
                 )
             case .agents:
@@ -65,6 +66,7 @@ struct AppRootView: View {
                     scene: officeScene,
                     onSend: sendCommand,
                     onApprove: approve,
+                    onRetryRun: retryRun,
                     onReject: reject,
                     isPresidentBarOpen: $isPresidentBarOpen,
                     selectedAgent: $selectedOfficeAgent,
@@ -201,6 +203,28 @@ struct AppRootView: View {
             return "백엔드에 CONSOLE_OWNER_SLACK_USER_ID 가 설정되지 않았습니다."
         default:
             return "백엔드 오류 (HTTP \(status))."
+        }
+    }
+
+    /// 실패 실행 재시도. 승인처럼 누른 즉시 버튼을 잠그고, 접수(202)면 잠근 채 둔다 — 진행은
+    /// SSE run 이벤트로 보이고, 다음 브리핑이 그 대상을 빼면 잠금이 풀린다.
+    func retryRun(id: Int) {
+        store.beginRetryingRun(id: id)
+        Task {
+            let notice: String?
+            do {
+                switch try await client.retryRun(id: id) {
+                case .accepted:
+                    notice = nil
+                case let .rejected(message):
+                    notice = message
+                }
+            } catch {
+                notice = "재시도 실패 — 백엔드에 연결하지 못했습니다. 주소(\(baseURLLabel))와 실행 여부를 확인하세요."
+            }
+            if let notice {
+                await MainActor.run { store.failRetryingRun(id: id, notice: notice) }
+            }
         }
     }
 

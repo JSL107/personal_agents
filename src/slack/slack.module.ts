@@ -18,6 +18,7 @@ import { PaperTradingModule } from '../paper-trading/paper-trading.module';
 import { PreferenceProfileModule } from '../preference-profile/preference-profile.module';
 import { PushpinTaskModule } from '../pushpin-task/pushpin-task.module';
 import { RouterModule } from '../router/router.module';
+import { RunReplayModule } from '../run-replay/run-replay.module';
 import { SlackInboxModule } from '../slack-inbox/slack-inbox.module';
 import { SubconsciousModule } from '../subconscious/subconscious.module';
 import {
@@ -64,6 +65,7 @@ import { SlackDeliveryModule } from './slack-delivery.module';
     // OPS-1 /quota 슬래시 — GetQuotaStatsUsecase 주입.
     AgentRunModule,
     HumanizeModule,
+    RunReplayModule,
     SlackDeliveryModule,
     // PO-2 PreviewGate 는 AppModule 에서 forRoot(global: true) 로 한번 등록 — 별도 import 불필요.
     // OPS-3 Slack Reaction → Inbox

@@ -323,4 +323,59 @@ func runPresidentBriefingTests(_ t: TestRunner) {
         "최고 기록을 남겨야 한다: \(lines)"
     )
 
+    // MARK: 할 일 대상(재시도·PR 링크)
+
+    // 서버가 대상을 싣기 전 응답도 받아야 한다 — 앱과 서버가 따로 배포되는 동안 브리핑이 통째로
+    // 디코딩 실패로 사라지면 말풍선·도장·정산 종이가 함께 꺼진다.
+    let legacyTodo = try? JSONDecoder().decode(
+        ConsoleTodo.self,
+        from: Data(#"{"kind":"FAILED_RUN","label":"PM 재시도","detail":"다음 실행은 내일"}"#.utf8)
+    )
+    t.expectEqual(legacyTodo?.targets, [], "targets 가 없는 응답은 빈 대상으로 받는다")
+
+    let failedTodo = try? JSONDecoder().decode(
+        ConsoleTodo.self,
+        from: Data(
+            #"""
+            {"kind":"FAILED_RUN","label":"실패한 실행 2건 재시도","detail":"다음 실행은 내일",
+             "targets":[{"label":"PM","agentType":"PM","runId":11,"retryable":true},
+                        {"label":"VACATION","agentType":"VACATION","runId":12,"retryable":false}]}
+            """#.utf8)
+    )
+    t.expectEqual(failedTodo?.targets.map(\.retryRunId), [11, nil], "재시도 지원 종류만 버튼용 run id 를 낸다")
+
+    let reviewTodo = ConsoleTodo(
+        kind: .prReview, label: "PR 리뷰 회수 2건", detail: "10일째",
+        targets: [ConsoleTodoTarget(label: "o/r #994", pullNumber: 994, url: "https://github.com/o/r/pull/994")]
+    )
+    t.expectEqual(reviewTodo.targets.first?.retryRunId, nil, "PR 대상은 재시도 버튼이 없다 — 링크까지만")
+
+    if let failedTodo {
+        let todos = [reviewTodo, failedTodo]
+        t.expectEqual(retryTarget(agentType: "PM", todos: todos)?.runId, 11, "인스펙터는 그 담당자의 재시도 대상을 찾는다")
+        t.expectEqual(retryTarget(agentType: "VACATION", todos: todos), nil, "지원하지 않는 종류는 버튼을 띄우지 않는다")
+        t.expectEqual(retryTarget(agentType: "CEO", todos: todos), nil, "실패 할 일에 없는 담당자는 대상이 없다")
+    } else {
+        t.expect(false, "대상이 실린 실패 할 일을 디코딩해야 한다")
+    }
+
+    // 거절 사유는 서버 문구를 그대로 보여 준다(Slack `/retry-run` 과 같은 문장).
+    t.expectEqual(runRetryOutcome(status: 202, body: Data()), .accepted, "202 만 접수다")
+    t.expectEqual(
+        runRetryOutcome(
+            status: 409,
+            body: Data(#"{"code":"RUN_REPLAY_IN_FLIGHT","message":"run #7 재시도가 이미 진행 중입니다.","data":null}"#.utf8)
+        ),
+        .rejected("run #7 재시도가 이미 진행 중입니다."),
+        "거절은 봉투의 message 를 싣는다"
+    )
+    t.expectEqual(
+        runRetryOutcome(status: 500, body: Data("oops".utf8)),
+        .rejected("재시도를 접수하지 못했습니다 (HTTP 500)"),
+        "본문을 못 읽으면 상태 코드로 안내한다"
+    )
+    let retryRequest = buildRunRetryRequest(baseURL: URL(string: "http://127.0.0.1:3099")!, runId: 42, token: "secret")
+    t.expectEqual(retryRequest.url?.absoluteString, "http://127.0.0.1:3099/v1/console/runs/42/retry", "재시도 경로")
+    t.expectEqual(retryRequest.httpMethod, "POST", "재시도는 POST")
+    t.expectEqual(retryRequest.value(forHTTPHeaderField: "x-console-token"), "secret", "콘솔 토큰을 싣는다")
 }
