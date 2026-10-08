@@ -46,6 +46,7 @@
    - Swift 4~5개: `ConsoleTodo` 디코딩·테스트, 클라이언트, 대상 목록 UI.
    착수 전 확인: 로드맵 §3 이 지적한 "승인 카드 만료 경로가 canceller 를 부르지 않는 문제"가 #643 이후에도 남아 있는지(이번 결정 시점에는 확인하지 않았다).
 3. **웹 3D 따라잡기** — `live.js`·`three/overlay3d.js` 와 브리핑 전달 경로(웹이 `/v1/console/briefing` 을 직접 조회하거나 `OfficeHosting` 메시지로 넘김). 중간 규모. 웹 2D(Canvas)는 대상에서 뺀다.
+   - 후속 처리(2026-10-08): #763 리뷰 지적(웹 브리핑 검사의 기대값이 손으로 고정돼 맥 규칙이 바뀌어도 통과)을 맥·웹 공용 대조표 `clients/idaeri-console/fixtures/president-briefing.json` 로 닫았다. 맥 `ConsoleCoreTests`(`BriefingParityTests.swift`)와 웹 `check:briefing` 이 같은 파일로 양쪽 함수를 잰다.
 
 ## 4. 이 결정으로 닫히는 것
 
