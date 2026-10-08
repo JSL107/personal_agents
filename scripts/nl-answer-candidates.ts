@@ -21,6 +21,7 @@ const DEFAULT_DAYS = 14;
 const DAY_MS = 24 * 60 * 60 * 1_000;
 
 const REASON_TITLE: Record<CandidateReason, string> = {
+  FAILED: '처리 중 오류로 끝남 (사용자가 오류를 받음)',
   FALLBACK: '사실 기반 답 대신 표로 답함 (답 생성 실패·숫자 검사 실패)',
   HELD_WRITE: '질문으로 보여 쓰기를 보류함 (실제로 기록을 원했을 수 있음)',
   UNCLASSIFIED: '분류기가 담당을 못 고름 (대화 답변으로 감)',
@@ -47,6 +48,7 @@ const main = async (): Promise<void> => {
       select: {
         id: true,
         agentType: true,
+        status: true,
         startedAt: true,
         inputSnapshot: true,
         output: true,

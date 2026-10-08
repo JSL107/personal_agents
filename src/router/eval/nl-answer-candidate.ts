@@ -5,6 +5,8 @@ import { NL_ANSWER_EVAL_CASES } from './nl-answer-eval.cases';
 // (plan: docs/superpowers/plans/2026-10-07-nl-answer-fidelity.md §2 「과최적화 방지」·§5 「표본 부족」)
 
 export type CandidateReason =
+  // 처리 중 오류로 끝났다 — 사용자는 답 대신 오류를 받았다.
+  | 'FAILED'
   // 사실 기반 답을 못 내고 결정론 요약으로 대신 답했다(답 생성 실패·숫자 검사 실패).
   | 'FALLBACK'
   // 질문·가정형이라 쓰기를 보류했다 — 사용자가 실제로 기록을 원했을 수도 있다.
@@ -17,6 +19,7 @@ export type CandidateReason =
 export interface LedgerRunRow {
   id: number;
   agentType: string;
+  status: string;
   startedAt: Date;
   inputSnapshot: unknown;
   output: unknown;
@@ -65,6 +68,10 @@ export const toNlAnswerCandidate = (
     worker: row.agentType,
     text,
   };
+  // 실패한 회차는 output 이 비어 아래 갈래에 걸리지 않고 "사실 답을 냄" 으로 잘못 세어진다(#755 리뷰).
+  if (row.status === 'FAILED') {
+    return { ...base, reason: 'FAILED' };
+  }
   if (row.agentType === 'ROUTER' && output.outcome === 'UNCLASSIFIED') {
     return { ...base, reason: 'UNCLASSIFIED' };
   }

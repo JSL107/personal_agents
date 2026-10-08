@@ -3,12 +3,14 @@ import { toNlAnswerCandidate } from './nl-answer-candidate';
 const row = (
   overrides: Partial<{
     agentType: string;
+    status: string;
     inputSnapshot: unknown;
     output: unknown;
   }>,
 ) => ({
   id: 7,
   agentType: 'VACATION',
+  status: 'SUCCEEDED',
   startedAt: new Date('2026-10-08T01:00:00.000Z'),
   inputSnapshot: { routedText: '휴가 3일 쓰면 며칠 남아?', action: 'UNKNOWN' },
   output: { usedFallback: false },
@@ -83,5 +85,11 @@ describe('toNlAnswerCandidate', () => {
         }),
       ),
     ).toBeNull();
+  });
+
+  it('처리 중 오류로 끝난 회차는 사실 답이 아니라 FAILED 로 분류한다', () => {
+    expect(
+      toNlAnswerCandidate(row({ status: 'FAILED', output: null })),
+    ).toMatchObject({ reason: 'FAILED' });
   });
 });
