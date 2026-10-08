@@ -117,6 +117,7 @@ pnpm capture   # 사무실을 한 판 그려 /tmp/idaeri-office.png 로 저장�
 | `?meeting=1` | 회의 지시(일일 평가 회의 — 회고·PO·임팩트·평가 넷)를 흘려 전원이 회의 자리에 선 뒤 그 초만큼 더 진행시킨다(3D). `?meeting=16` 처럼 머무는 시간(9초)보다 길게 주면 흩어져 자리로 돌아간 뒤를 그린다. 회의는 맥 앱이 `intent` 로 밀어 줘야만 열려 이 입구 없이는 안 뜬다. 보고는 `data-meeting-report` |
 | `?chatter=1` | 쉬는 사람을 배회 목적지마다 하나씩 세워 도착 대사(혼잣말·마주친 두 사람의 대화)를 한꺼번에 띄운다(맥 `--chatter-demo`). 대화는 둘이 동시에 2칸 안에 멈춰야 생겨 정지 화면에 우연히는 안 잡힌다. 보고는 `data-chatter-report` |
 | `?pressure=3` | 승인 카드 하나를 그 단계(1 줄 · 2 서류 · 3 발 구르기 · 4 대표 경고등)까지 방치된 것으로 꾸며 넣는다. 실 백엔드는 승인 대기가 0건인 날이 대부분이라 이 입구 없이는 네 표현이 한 번도 안 뜬다 |
+| `?briefing=1` | 대표 브리핑을 맥 `--briefing-demo` 와 같은 값(할 일 셋 · 연속 8일 · 정산)으로 꾸며 넣는다(3D). 실 백엔드는 할 일 0건·연속 0일인 날이 많아 이 입구 없이는 말풍선·도장·종이가 한 화면에 안 뜬다. 종이는 퇴근 시각 이후에만 놓이므로 `hour=21` 과 함께 준다. `?briefing=card` 는 정산 카드까지 펼친다 |
 
 `hour` 는 같은 이름이 여럿이면 **마지막 것**을 쓴다 — 캡처가 `hour=12` 를 먼저 붙이므로 `--query=hour=19` 로 덮어쓸 수 있다.
 
@@ -153,6 +154,11 @@ pnpm capture   # 사무실을 한 판 그려 /tmp/idaeri-office.png 로 저장�
 - **배회 대사** — 배회 목적지에 도착하면 한 마디(가구 앞 대사 또는 부서 잡담), 2칸 안에 멈춰 선 배회자가 있으면
   두 마디를 주고받는다. 문구·확률·거리·답 지연은 평면도의 `chatter`(맥 `OfficeChatter.swift`)가 싣고 오고,
   고르는 규칙만 `chatter.js` 에 옮겼다 — 2D·3D·윈도우 모두 같다. 옛 평면도에는 `chatter` 가 없어 말하지 않는다.
+- **대표 브리핑** — 대표 머리 위 할 일 한 줄 · 대표실 게시판의 연속 기록 도장 · 퇴근 시각 이후 소파 위 「오늘 성적」 종이
+  (누르면 정산 카드를 펼치고 다시 누르면 접는다). 맥 2D(#338)와 같은 표시다. 브라우저·윈도우 앱은 `GET /v1/console/briefing` 을
+  30초마다 직접 받고, 맥 앱 안에서는 웹뷰 주소가 백엔드로 이어지지 않아 앱이 `briefing` 메시지로 밀어 준다. 문구 후보·도장 개수·
+  종이 시각·카드 문장은 `briefing.js` 가 맥 `PresidentBriefing.swift` 와 같은 규칙으로 고르고 `pnpm check:briefing` 이 대조한다.
+  말풍선 문구는 몫(타일 × 4.6칸)에 들어가는 가장 긴 후보라, 타일 크기가 다른 맥 2D 와 고른 문구가 다를 수 있다. 3D 에서만 그린다.
 - **맥 앱에서만 나오는 연출** — 인계(받는 사람 책상까지 걸어갔다 복귀) · 회의(참석자가 회의 테이블에 모였다 흩어짐 — 자리는
   평면도의 `meetingSeats`, 옛 평면도에는 없어 열리지 않는다) · 거절(좌우 흔들림 + `!`) · 접수 대기 점 ·
   완료 시 튀어오름. 앞의 셋은 앱이 계산한 연출 지시(`intent`)를, 뒤의 둘은 앱의 지시 바가 추적하는 단계
@@ -168,6 +174,7 @@ pnpm check:style                          # 팔레트·크기·벽걸이 규칙
 pnpm check:pace                           # 프레임 건너뛰기(멈춤 1fps · 걷기 30fps · 변화는 즉시)
 pnpm check:merge                          # 합친 뒤에도 삼각형 수·경계 상자가 그대로인지
 pnpm check:labels                         # 이름표 겹침 풀기(회의석 넷·문패 피하기·스친 판은 그대로)
+pnpm check:briefing                       # 대표 브리핑 규칙이 맥 PresidentBriefing 과 같은 답을 내는지
 node scripts-check-style.mjs --require-all # + 평면도의 모든 가구가 제 빌더를 가졌는지
 pnpm vendor:three                          # three.js 버전을 올린 뒤 vendor/three 를 다시 채운다
 ```
@@ -200,6 +207,7 @@ pnpm vendor:three                          # three.js 버전을 올린 뒤 vendo
 - `vendor/three/` — 동봉한 three.js(번들러가 없어 `index.html` 의 import map 이 이리로 잇는다)
 - `live.js` — 백엔드에서 상태를 받아 오고 사람을 걷게 한다
 - `chatter.js` — 배회 대사를 고르는 규칙(맥 `OfficeChatter.swift` 와 같은 씨앗·확률)
+- `briefing.js` — 대표 브리핑 표시 규칙(맥 `PresidentBriefing.swift` 와 같은 문구·상한·시각)
 - `serve.py` — 브라우저로 볼 때 쓰는 개발용 서버. 백엔드가 CORS 를 열지 않아 프록시가 필요하다
 - `main.js` — 윈도우 앱의 껍데기. 서버 주소를 기억하고, 창과 같은 출처로 백엔드를 넘겨준다
 - `setup.html` — 첫 실행 설정 화면(서버 주소·토큰)
