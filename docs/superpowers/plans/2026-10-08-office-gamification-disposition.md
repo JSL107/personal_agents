@@ -2,7 +2,7 @@
 
 결정 2026-10-08. `2026-08-20-office-gamification-roadmap.md` 의 남은 항목과 `2026-09-04-office-pixel-refit.md` Task 7 을
 9/9 코지 리디자인(`specs/2026-09-09-office-cozy-miniature-redesign-design.md`) 이후의 화면 체계에 맞춰 정리한다.
-이 문서가 위 두 계획의 잔여 판정을 대체한다.
+이 문서가 위 두 계획의 잔여 판정을 대체한다. 근거 문서 셋(로드맵·코지 스펙·pixel-refit 계획)은 이 문서와 함께 저장소에 추적된다.
 
 ## 1. 코드로 다시 확인한 현재 상태
 
@@ -29,7 +29,7 @@
 | 2회차 서류 주고받기 | **완료로 닫음** | 위 §1. 손에 드는 서류 소품은 추가하지 않는다 — cozy props 에 에셋이 없고, 걷는 동작만으로 전달 의미가 읽힌다 |
 | 2회차 창밖 날씨 | **폐기** | 08-19 원 스펙이 "없어도 아쉽지 않다"로 분류했다. 실제 날씨는 외부 API 와 env 4곳 갱신이 필요해 가치 대비 비용이 크다 |
 | 2회차 옆자리 리액션 | **폐기** | 잡담·회의·인계가 생동감 목표를 채웠다. 좌석 주변 연출은 이름표 겹침 회귀 위험이 가장 크다 |
-| 3회차 조작 | **형태를 바꿔 유효** — 오피스 장면이 아니라 대시보드 「사람 손 필요」 목록·인스펙터에 버튼 | 클릭할 판이 없어졌다. 동작별로 나눈다: **승인**은 인스펙터에 이미 있어 완료. **실패 재시도**는 기존 `retry-run` 유스케이스를 콘솔 API 로 연다. **PR 리뷰 회수**는 지적마다 정탐·오탐 판정이 필요해(`docs/pr-review-bot-protocol.md`) 원클릭 실행이 맞지 않으므로 GitHub PR 을 여는 링크까지만 둔다 |
+| 3회차 조작 | **형태를 바꿔 유효** — 오피스 장면이 아니라 대시보드 「사람 손 필요」 목록·인스펙터에 버튼 | 클릭할 판이 없어졌다. 동작별로 나눈다: **승인**은 인스펙터에 이미 있어 완료. **실패 재시도**는 유효하나, 재실행 로직을 Slack 핸들러에서 공용 유스케이스로 먼저 꺼내야 한다(§3-2). **PR 리뷰 회수**는 지적마다 정탐·오탐 판정이 필요해(`docs/pr-review-bot-protocol.md`) 원클릭 실행이 맞지 않으므로 GitHub PR 을 여는 링크까지만 둔다 |
 | 웹 렌더러 따라잡기 | **형태를 바꿔 유효** — 대상은 3D 만 | 1·3회차를 SwiftUI 쪽(대시보드·인스펙터)에 두면 웹으로 옮길 것은 #338 의 할 일 말풍선·연속 도장·정산 종이 셋으로 줄어든다 |
 | pixel-refit Task 7 | **폐기** | 코지 스펙 §4.1 이 양자화된 도트 경계를 폐기했다. 2D 는 cozy 원화(`SpriteLoader.cozy*`, 394장)로 그리고 픽셀 스프라이트는 폴백으로만 남아 있다 |
 
@@ -39,7 +39,11 @@
 
 1. **1회차 화면** — 백엔드 변경 없음. Swift 5~7개: `ConsoleClient` ledger 조회, Core 모델·디코딩 테스트, `AgentInspectorView` 이력 두 줄, 대시보드 「사람 손 필요」 목록에 정지 워커, 캐릭터 배지.
    착수 전 확인: 워커 폐지(#719 등) 이후 ledger 의 정지 판정과 `NEVER_RUN` 분류가 지금 레지스트리와 맞는지.
-2. **3회차 재시도·PR 링크** — 백엔드 3~4개: `ConsoleTodo` 에 `runId`·`url`, `POST /v1/console/runs/:id/retry`(기존 `retry-run` 재사용, PreviewGate 경유 여부는 설계 시 결정). Swift 3~4개: 모델·클라이언트·버튼.
+2. **3회차 재시도·PR 링크** — 두 가지 선행 작업이 있어 백엔드가 7~10개로 늘어난다.
+   - **재실행 유스케이스 추출(선행).** `RetryRunUsecase.execute()` 는 FAILED run 의 스냅샷을 돌려줄 뿐 재실행하지 않는다(`src/agent-run/application/retry-run.usecase.ts:64-76`). 입력 검증·소유자 검사·agentType 별 디스패치는 Slack 전용 `RetryRunHandler` 의 switch 에 있다(`src/slack/handler/retry-run.handler.ts:131` 이후). 콘솔에서 이 switch 를 복제하면 두 진입점이 어긋나므로, 전송 계층과 무관한 replay 유스케이스로 꺼내 Slack 과 콘솔이 함께 쓴다. 이 switch 는 16종만 다루고 나머지는 `default` 로 빠지므로, 재시도 버튼은 지원 종류에만 띄운다. 비용: 유스케이스 신설 + 핸들러 이관 + 테스트로 4~5개.
+   - **할 일 항목을 대상별로 나눈다.** `buildFailedRunTodo`·`buildReviewTodo` 는 대상이 여럿이어도 「실패한 실행 N건 재시도」·「PR 리뷰 회수 N건」으로 할 일 하나에 합친다(`src/console/application/build-president-briefing.usecase.ts:238-281`). 여기에 `runId`·`url` 하나만 붙이면 N건 중 한 건만 처리된다. 또 `FailedAgentCandidate` 는 `agentType` 만 들고 run id 가 없다. 그래서 할 일 하나에 `targets: { runId | pullNumber, url, label }[]` 배열을 싣고 버튼은 대상마다 그린다. 대표 머리 위 말풍선은 지금처럼 합친 문구를 쓴다. 비용: 브리핑 유스케이스·타입·테스트로 2~3개.
+   - 콘솔 API `POST /v1/console/runs/:id/retry`(PreviewGate 경유 여부는 설계 시 결정) 1~2개.
+   - Swift 4~5개: `ConsoleTodo` 디코딩·테스트, 클라이언트, 대상 목록 UI.
    착수 전 확인: 로드맵 §3 이 지적한 "승인 카드 만료 경로가 canceller 를 부르지 않는 문제"가 #643 이후에도 남아 있는지(이번 결정 시점에는 확인하지 않았다).
 3. **웹 3D 따라잡기** — `live.js`·`three/overlay3d.js` 와 브리핑 전달 경로(웹이 `/v1/console/briefing` 을 직접 조회하거나 `OfficeHosting` 메시지로 넘김). 중간 규모. 웹 2D(Canvas)는 대상에서 뺀다.
 
