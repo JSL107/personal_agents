@@ -1,5 +1,7 @@
 import { App } from '@slack/bolt';
 
+import { HumanizeService } from '../../humanize/application/humanize.service';
+import { ReplayFailedRunUsecase } from '../../run-replay/application/replay-failed-run.usecase';
 import { RetryRunHandler } from './retry-run.handler';
 
 type RetryCallback = (input: {
@@ -42,10 +44,15 @@ describe('RetryRunHandler BLOG_PUBLISH', () => {
     dependencies[0] = retryRunUsecase;
     dependencies[9] = publishNotionDraftUsecase;
     dependencies[11] = agentRunService;
-    const handler = Reflect.construct(
-      RetryRunHandler,
+    // 판정·디스패치는 replay 유스케이스로 옮겼다 — 그 생성자에 같은 목을 넣어 Slack 경로 전체를 그대로 검증한다.
+    const replayFailedRunUsecase = Reflect.construct(
+      ReplayFailedRunUsecase,
       dependencies,
-    ) as RetryRunHandler;
+    ) as ReplayFailedRunUsecase;
+    const handler = new RetryRunHandler(
+      replayFailedRunUsecase,
+      {} as HumanizeService,
+    );
     const callbacks = new Map<string, RetryCallback>();
     const app = {
       command: jest.fn((name: string, callback: RetryCallback) => {

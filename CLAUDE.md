@@ -70,7 +70,7 @@
 5. ORM 은 **Prisma 만**. TypeORM/`@nestjs/typeorm` import 금지.
 6. DB 변경: `prisma/schema.prisma` 수정 → `pnpm db:push` (synchronize 방식, 마이그레이션 파일 X).
 7. 새 env 추가 시 4곳 동기 갱신: `.env.example` + `.env` + `src/config/app.config.ts` (class-validator) + README 표.
-8. 새 슬래시/에이전트 추가 시 [AGENTS.md §4](./AGENTS.md) 의 14개 체크리스트 그대로 (특히 `AgentType` exhaustive 4곳 + `/retry-run` switch + `ResponseCode` enum).
+8. 새 슬래시/에이전트 추가 시 [AGENTS.md §4](./AGENTS.md) 의 14개 체크리스트 그대로 (특히 `AgentType` exhaustive 4곳 + 재실행 switch(`src/run-replay/`) + `ResponseCode` enum).
 
 ---
 
@@ -108,7 +108,7 @@ if (a) { if (b) { ... } }        // → ts-pattern 의 match 검토
 
 CLI latency 10~40초 → Slack 3초 안 ack 강제 (즉시 `ack` → 모델 호출 → `respond({ replace_original: true })` 로 덮어쓰기).
 
-- 패턴 구현: `src/slack/handler/agent-command.handler.ts` (단일 워커 슬래시) + 카테고리 핸들러 (`phase-command.handler.ts` — `/po-eval` `/ceo-review`, `feedback-command.handler.ts` — `/review-feedback`) + 개별 파일 (`retry-run.handler.ts`, `write-back.handler.ts`, `diagnosis.handler.ts`)
+- 패턴 구현: `src/slack/handler/agent-command.handler.ts` (단일 워커 슬래시) + 카테고리 핸들러 (`phase-command.handler.ts` — `/po-eval` `/ceo-review`, `feedback-command.handler.ts` — `/review-feedback`) + 개별 파일 (`retry-run.handler.ts` — 판정은 `src/run-replay/`, `write-back.handler.ts`, `diagnosis.handler.ts`)
 - `replace_original: true` 헬퍼: `src/slack/handler/slack-handler.helper.ts:60-74`
 - ephemeral 응답에서 `replace_original` 가끔 안 먹는 건 Slack API 한계, 그대로 둠.
 
