@@ -66,6 +66,11 @@ jobs:
       - name: Test
         run: pnpm test
 
+      # HTTP 표면 e2e — 컨트롤러·가드·인터셉터 배선을 supertest 로 확인한다. 협력자는 전부 목이라
+      # DB/Redis 가 필요 없다. 이 단계가 없던 동안 console e2e 가 DI 누락으로 깨진 채 남아 있었다.
+      - name: E2E
+        run: pnpm test:e2e
+
       - name: Build
         run: pnpm build
 
