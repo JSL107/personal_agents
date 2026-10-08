@@ -146,6 +146,7 @@ final class Office3DController: NSObject, ObservableObject, WKScriptMessageHandl
     private var isReady = false
     private var latestSnapshot: String?
     private var latestPending: String?
+    private var latestBriefing: String?
     private var pendingSnapshot: ConsoleSnapshot?
     private var snapshotScheduled = false
     private var sleeping = false
@@ -205,6 +206,9 @@ final class Office3DController: NSObject, ObservableObject, WKScriptMessageHandl
             if let latestPending {
                 send(latestPending)
             }
+            if let latestBriefing {
+                send(latestBriefing)
+            }
             setSleeping(sleeping)
             setSelected(selectedAgent)
             return
@@ -261,6 +265,16 @@ final class Office3DController: NSObject, ObservableObject, WKScriptMessageHandl
             return
         }
         latestPending = message
+        send(message)
+    }
+
+    /// 대표 브리핑(할 일 말풍선·연속 도장·정산 종이). 웹뷰 주소(`idaeri-office://`)는 파일만 주고 백엔드로 넘기지
+    /// 않아 화면이 직접 조회할 수 없다 — 앱이 받은 값을 그대로 민다. 화면이 서기 전에 온 값은 `ready` 에 보낸다.
+    func pushBriefing(_ briefing: ConsoleBriefing?) {
+        let data = briefing.flatMap { try? JSONEncoder().encode($0) }
+        let json = data.flatMap { String(data: $0, encoding: .utf8) } ?? "null"
+        let message = #"{"type":"briefing","data":"# + json + "}"
+        latestBriefing = message
         send(message)
     }
 

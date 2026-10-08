@@ -30,12 +30,26 @@ import {
 } from "./style.js";
 import { buildFurniture, missingKinds } from "./furniture3d/index.js";
 import { makeCharacter, makeStatusRing, poseCharacter, seatOffset } from "./character.js";
-import { BUBBLE_RAISE_PX, DOTS_RAISE_PX, Overlay3D } from "./overlay3d.js";
+import { BUBBLE_RAISE_PX, DOTS_RAISE_PX, Overlay3D, TODO_FONT, measureText } from "./overlay3d.js";
 import { separateLabels } from "./label-separation.js";
 import { PRESIDENT_COZY_LOOK } from "./cozy-looks.js";
 import { showsBubble } from "../office.js";
 import { frameSignature, shouldRender } from "./frame-pace.js";
 import { mergeStatic } from "./static-merge.js";
+import { FRAME as PINBOARD } from "./furniture3d/wallPinboard.js";
+import {
+  PRESIDENT_BUBBLE_WIDTH_TILES,
+  STREAK_STAMP_DIAMETER_RATIO,
+  STREAK_STAMP_HEIGHT_RATIO,
+  STREAK_STAMP_MAX_COUNT,
+  STREAK_STAMP_STEP_RATIO,
+  dailyReportLines,
+  presidentTodoLines,
+  showsDailyReport,
+  streakBoardTile,
+  streakStampCount,
+  streakStampSaturated,
+} from "../briefing.js";
 
 /**
  * 카메라 각. 방위는 남쪽(+z)에서 동쪽으로 돈 각, 고도는 바닥에서 올려본 각.
@@ -183,6 +197,8 @@ export class Office3DRenderer {
     this.selectedAgent = null;
     const query = new URLSearchParams(window.location.search);
     this.focusDepartment = query.get("room");
+    // `?briefing=card` — 정산 카드를 펼친 채로 연다. 정지 캡처는 종이를 누를 수 없어 이 입구가 없으면 카드를 못 본다.
+    this.reportCardOpen = query.get("briefing") === "card";
     this.listen();
     this.setLayout(layout);
   }
@@ -256,6 +272,153 @@ export class Office3DRenderer {
     mergeStatic(this.scene);
     this.buildDeskLamps();
     this.buildHousekeeping();
+    this.buildBriefingSigns();
+  }
+
+  /**
+   * 대표 브리핑 표시 셋 — 머리 위 할 일 말풍선 · 대표실 게시판의 연속 도장 · 퇴근 뒤 소파 위 정산 종이
+   * (맥 2D `refreshBriefing`). 무엇을 띄울지는 `briefing.js`(맥 Core 와 같은 규칙)가 정하고 여기서는 그리기만 한다.
+   * 켜고 끄는 물체라 합친 뒤에 넣는다. 글자는 대표 몸이 아니라 대표 자리에 세운 빈 물체에 붙인다 — 대표 몸은
+   * 합치기 전에 장면에 들어가 있어 거기 붙인 것이 합치기에 함께 굳을 수 있다.
+   */
+  buildBriefingSigns() {
+    this.briefingKey = null;
+    this.briefingSigns = null;
+    const presidentTile = this.plan.presidentTile;
+    const presidentArea = (this.plan.commonAreas ?? []).find((area) => area.kind === "president");
+    if (!presidentTile) {
+      return;
+    }
+    const anchor = new THREE.Object3D();
+    anchor.position.copy(this.world(presidentTile.x, presidentTile.y));
+    // 경고등(🚨)과 같은 높이 — 맥처럼 같은 자리를 쓰고 말풍선이 위에 온다. 위로 더 쌓으면 대표실이
+    // 화면 위쪽 끝이라 확대한 화면에서 잘린다.
+    // 겹침층은 카메라에 가까운 글자를 위에 그린다(CSS2DRenderer 가 거리로 z-index 를 매긴다). 카메라는 남동쪽(+x·+z)에
+    // 있으므로 그쪽으로 조금 당겨 경고등보다 말풍선이, 말풍선보다 카드가 위에 오게 한다.
+    const bubble = this.overlay.label("office3d-todo");
+    bubble.position.set(0.02, LABEL_HEIGHT + 0.2, 0.04);
+    bubble.visible = false;
+    const card = this.overlay.label("office3d-card");
+    card.position.set(0.04, LABEL_HEIGHT + 0.2, 0.08);
+    card.visible = false;
+    anchor.add(bubble, card);
+    this.scene.add(anchor);
+
+    // 도장 — 게시판 빌더(`wallPinboard.js`)와 같은 자리에 걸린 판 위에 원판을 미리 상한 개수만큼 만들어 두고
+    // 켜고 끈다. 흰 테두리 원판을 뒤에 깐다(맥과 같은 이유 — 없으면 붉은 도장이 분홍 쪽지와 섞인다).
+    const boardTile = streakBoardTile(this.plan.furniture, presidentArea);
+    const stamps = [];
+    if (boardTile) {
+      const board = new THREE.Group();
+      const diameter = PINBOARD.width * STREAK_STAMP_DIAMETER_RATIO;
+      const disc = (radius, depth, key, z) => {
+        const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, depth, 24), mat(key));
+        mesh.rotation.x = Math.PI / 2;
+        mesh.position.z = z;
+        mesh.userData.noOutline = true;
+        return mesh;
+      };
+      for (let index = 0; index < STREAK_STAMP_MAX_COUNT; index += 1) {
+        const stamp = new THREE.Group();
+        const face = disc(diameter / 2, 0.01, "stampRed", WALL_MOUNT.backZ + 0.072);
+        stamp.add(disc(diameter * 0.62, 0.008, "paper", WALL_MOUNT.backZ + 0.064), face);
+        stamp.position.y = PINBOARD.bottom + PINBOARD.height * STREAK_STAMP_HEIGHT_RATIO;
+        stamp.visible = false;
+        board.add(stamp);
+        stamps.push({ stamp, face });
+      }
+      if (this.hangOnWall(board, boardTile.x, boardTile.y)) {
+        this.scene.add(board);
+      }
+    }
+
+    // 정산 종이 — 대표실 왼쪽 끝 칸(맥과 같은 칸). 3D 에서 그 칸은 소파라 방석 위에 놓는다.
+    const paperTile = { x: (presidentArea?.originX ?? presidentTile.x) + 1, y: presidentTile.y };
+    const paper = new THREE.Group();
+    paper.position.copy(this.world(paperTile.x, paperTile.y, SCALE.sofaSeat));
+    const sheet = new THREE.Mesh(new RoundedBoxGeometry(0.42, 0.014, 0.5, 2, 0.006), mat("paper"));
+    sheet.rotation.y = 0.18;
+    sheet.castShadow = true;
+    paper.add(sheet);
+    // 종이 위 줄 세 개 — 글자를 쓰기엔 작아 "무언가 적힌 서류" 로만 읽히게 한다(맥과 같다).
+    for (let index = 0; index < 3; index += 1) {
+      const rule = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.004, 0.025), mat("metalLight"));
+      rule.position.set(0, 0.009, -0.14 + index * 0.12);
+      rule.userData.noOutline = true;
+      sheet.add(rule);
+    }
+    // 글자판은 종이 **앞(아래)** 에 단다. 위에 달면 뒤 벽에 붙은 세션 이름(대표실 책상 몫)과 포개진다(첫 캡처).
+    const caption = this.overlay.label("office3d-label", "오늘 성적");
+    // 3D 거리만으로 내리면 확대 배율에 따라 종이를 덮는다 — 화면 픽셀로 한 번 더 내린다(`translate` 는 렌더러 transform 과 따로 합쳐진다).
+    // 왼쪽으로도 비킨다 — 최소 창(타일 19px)에서 오른쪽 끝이 대표 머리 위 할 일 말풍선 밑으로 들어갔다.
+    caption.position.set(0, 0, 0.5);
+    caption.element.style.translate = "-28px 16px";
+    paper.add(caption);
+    // 누르는 자리 — 얇은 종이 자체를 맞히기는 어려워 칸 크기의 보이지 않는 상자를 둔다.
+    const hit = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.5, 0.8), new THREE.MeshBasicMaterial({ visible: false }));
+    hit.position.y = 0.1;
+    hit.userData = { dailyReport: true, noOutline: true };
+    paper.add(hit);
+    this.hitTargets.push(hit);
+    addOutlines(sheet);
+    paper.visible = false;
+    this.scene.add(paper);
+    this.briefingSigns = { bubble, card, stamps, paper };
+  }
+
+  /**
+   * 브리핑이 바뀌었거나 시각·배율이 바뀌었을 때만 표시를 고친다(매 프레임 DOM 을 건드리지 않는다).
+   * @param {object|null} briefing `GET /v1/console/briefing` 의 `data`. 받지 못했으면 null — 아무것도 안 띄운다.
+   */
+  updateBriefing(briefing, hour) {
+    const signs = this.briefingSigns;
+    if (!signs) {
+      return;
+    }
+    const showsPaper = Boolean(briefing) && showsDailyReport(hour, this.layout.attendanceHours);
+    const key = JSON.stringify([briefing, showsPaper, this.reportCardOpen, Math.round(this.tileSize)]);
+    if (key === this.briefingKey) {
+      return;
+    }
+    this.briefingKey = key;
+
+    // 말풍선 — 몫(4.6칸)에 들어가는 가장 긴 후보. 가장 짧은 것도 넘치면 그것을 쓰고 말줄임표에 맡긴다.
+    const candidates = briefing ? presidentTodoLines(briefing.todos ?? []) : [];
+    signs.bubble.visible = candidates.length > 0;
+    if (signs.bubble.visible) {
+      const budget = this.tileSize * PRESIDENT_BUBBLE_WIDTH_TILES;
+      const line = candidates.find((candidate) => measureText(candidate, TODO_FONT) <= budget) ?? candidates.at(-1);
+      Overlay3D.set(signs.bubble, line);
+      signs.bubble.element.style.maxWidth = `${Math.round(budget)}px`;
+    }
+
+    // 도장 — 개수만 말한다. 0개면 빈 게시판이 곧 "끊김" 이다.
+    const count = briefing ? streakStampCount(briefing.streak) : 0;
+    const saturated = briefing ? streakStampSaturated(briefing.streak) : false;
+    const step = PINBOARD.width * STREAK_STAMP_STEP_RATIO;
+    signs.stamps.forEach(({ stamp, face }, index) => {
+      stamp.visible = index < count;
+      stamp.position.x = -step * (count - 1) / 2 + step * index;
+      face.material = mat(saturated && index === count - 1 ? "stampGold" : "stampRed");
+    });
+
+    // 정산 종이와 펼친 카드. 종이가 사라지면 카드도 걷는다 — 자정 뒤에 어제 성적이 떠 있지 않게.
+    signs.paper.visible = showsPaper;
+    // 브리핑을 아직 못 받은 것은 "종이를 걷을 때" 가 아니다 — 그때 접으면 `?briefing=card` 가 첫 응답 전에 꺼진다.
+    if (briefing && !showsPaper) {
+      this.reportCardOpen = false;
+    }
+    signs.card.visible = showsPaper && this.reportCardOpen;
+    if (signs.card.visible) {
+      const element = signs.card.element;
+      element.replaceChildren(
+        ...dailyReportLines(briefing.dailyReport, briefing.streak).map((text) => {
+          const line = document.createElement("div");
+          line.textContent = text;
+          return line;
+        })
+      );
+    }
   }
 
   /**
@@ -713,7 +876,10 @@ export class Office3DRenderer {
   /** 포인터 아래 가장 앞의 것. 사람이 바닥보다 우선이다. */
   pick(pointer) {
     this.raycaster.setFromCamera(pointer, this.camera);
-    const person = this.raycaster.intersectObjects(this.hitTargets, false)[0];
+    // 정산 종이는 퇴근 뒤에만 보인다 — 숨은 동안 그 상자가 소파 위 클릭을 가로채면 안 된다(광선은 숨김을 안 본다).
+    const person = this.raycaster
+      .intersectObjects(this.hitTargets, false)
+      .find((hit) => !hit.object.userData.dailyReport || this.briefingSigns?.paper.visible);
     if (person) {
       return person.object.userData;
     }
@@ -733,6 +899,11 @@ export class Office3DRenderer {
     }
     if (target?.president) {
       this.emit("office:president-click", {});
+      return;
+    }
+    // 정산 종이는 화면 안에서 카드를 접고 편다(맥 2D 도 씬이 직접 한다) — 앱에 알릴 일이 아니다.
+    if (target?.dailyReport) {
+      this.reportCardOpen = !this.reportCardOpen;
       return;
     }
     if (this.selectedAgent) {
@@ -883,7 +1054,7 @@ export class Office3DRenderer {
     }
     const hovered = this.pointer ? this.pick(this.pointer) : null;
     this.hoveredAgent = hovered?.agentType ?? null;
-    this.canvas.style.cursor = this.hoveredAgent || hovered?.president ? "pointer" : "";
+    this.canvas.style.cursor = this.hoveredAgent || hovered?.president || hovered?.dailyReport ? "pointer" : "";
     if (this.presidentName) {
       this.presidentName.visible = Boolean(hovered?.president);
     }
@@ -906,6 +1077,7 @@ export class Office3DRenderer {
     }
     this.updateSessions(view.sessions ?? []);
     this.updateHousekeeping(view.housekeeping ?? null, view.now ?? 0);
+    this.updateBriefing(view.briefing ?? null, view.hour ?? 12);
     if (this.presidentAlarm) {
       this.presidentAlarm.visible = Boolean(view.presidentAlarm);
     }
@@ -921,6 +1093,7 @@ export class Office3DRenderer {
         Boolean(view.presidentAlarm),
         hud,
         this.housekeepingKey,
+        this.briefingKey,
       ],
       bodies,
       agents: view.agents,
