@@ -44,6 +44,9 @@ export type GoalDeclarationProblem =
   | 'UNMEASURABLE_CRITERION'
   | 'MISSING_KEYWORDS'
   | 'UNREADABLE_DUE_DATE'
+  // 같은 제목의 활성 목표가 이미 있다. 받아 주면 닫기가 정확 일치 둘을 모호하다고 거절해
+  // 어떤 자연어로도 닫을 수 없는 목표가 슬롯을 영구히 차지한다(#773 리뷰).
+  | 'DUPLICATE_TITLE'
   | 'ACTIVE_LIMIT_REACHED';
 
 const SLACK_MENTION = /<@[^>]+>/g;
@@ -103,11 +106,11 @@ export const parseProductGoalCommand = (
 // 선언 검사와 applier 재검사가 같이 부른다. 문제가 없으면 null.
 export const findGoalDeclarationProblem = ({
   draft,
-  activeGoalCount,
+  activeGoals,
   dueDateUnreadable = false,
 }: {
   draft: ProductGoalDraft;
-  activeGoalCount: number;
+  activeGoals: Pick<ProductGoalRecord, 'title'>[];
   dueDateUnreadable?: boolean;
 }): GoalDeclarationProblem | null => {
   if (draft.title.trim().length === 0) {
@@ -125,7 +128,11 @@ export const findGoalDeclarationProblem = ({
   if (dueDateUnreadable) {
     return 'UNREADABLE_DUE_DATE';
   }
-  if (activeGoalCount >= MAX_ACTIVE_PRODUCT_GOALS) {
+  const title = normalizeTitle(draft.title);
+  if (activeGoals.some((goal) => normalizeTitle(goal.title) === title)) {
+    return 'DUPLICATE_TITLE';
+  }
+  if (activeGoals.length >= MAX_ACTIVE_PRODUCT_GOALS) {
     return 'ACTIVE_LIMIT_REACHED';
   }
   return null;

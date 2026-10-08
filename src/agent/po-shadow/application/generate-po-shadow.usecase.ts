@@ -13,7 +13,6 @@ import {
 } from '../../../github/domain/port/github-client.port';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
-import { DailyPlan } from '../../pm/domain/pm-agent.type';
 import { coerceToDailyPlan } from '../../pm/domain/prompt/previous-plan-formatter';
 import {
   buildFindingRecoveryFacts,
@@ -62,6 +61,10 @@ const RECOVERY_LOOKBACK_LIMIT = 40;
 // 제품 목표 조회(또는 그 진행 기록 조회)가 실패한 회차의 열화 라벨. 목표가 없는 것과 못 본 것은
 // 글자가 달라야 한다 — 같으면 "목표 밖 작업 없음" 이 실은 "목표를 못 읽음" 인 회차를 가린다.
 const DEGRADED_PRODUCT_GOAL = '제품 목표';
+// 묵은 목표 판정은 30일 창 안의 진행 기록을 **전부** 봐야 한다. 상한에 걸려 오래된 회차가 잘리면
+// 그 안에만 있던 진행을 놓쳐 "30일 넘게 진행 없음" 으로 오판한다(#773 리뷰). 실측(2026-10-08)
+// 30일 PO 성공 회차 27건·하루 최대 1건이라, 하루 6회를 넘게 돌려도 창을 다 덮는 값으로 둔다.
+const GOAL_PROGRESS_LOOKBACK_LIMIT = 200;
 
 interface ProductGoalCollection extends ProductGoalFactsResult {
   goals: ProductGoalRecord[];
@@ -137,7 +140,6 @@ export class GeneratePoShadowUsecase {
     // 목표를 쓰지 않는 사용자의 출력은 단계 3 이전과 같아야 한다.
     const goalCollection = await this.collectProductGoals({
       slackUserId,
-      plan,
       context,
       now,
     });
@@ -246,12 +248,10 @@ export class GeneratePoShadowUsecase {
 
   private async collectProductGoals({
     slackUserId,
-    plan,
     context,
     now,
   }: {
     slackUserId: string;
-    plan: DailyPlan;
     context: PoShadowContext;
     now: Date;
   }): Promise<ProductGoalCollection> {
@@ -282,7 +282,7 @@ export class GeneratePoShadowUsecase {
         agentType: AgentType.PO_SHADOW,
         slackUserId,
         sinceDays: STALE_GOAL_DAYS,
-        limit: RECOVERY_LOOKBACK_LIMIT,
+        limit: GOAL_PROGRESS_LOOKBACK_LIMIT,
       });
       lastProgressAtByGoalId = collectLastProgressAt(runs);
     } catch (error: unknown) {
@@ -297,7 +297,6 @@ export class GeneratePoShadowUsecase {
       degraded,
       ...buildProductGoalFacts({
         goals,
-        plan,
         context,
         lastProgressAtByGoalId,
         now,

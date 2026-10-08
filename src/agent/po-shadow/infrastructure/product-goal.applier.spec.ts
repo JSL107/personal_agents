@@ -36,6 +36,7 @@ describe('ProductGoalApplier', () => {
   let repository: {
     findActive: jest.Mock;
     create: jest.Mock;
+    createGuarded: jest.Mock;
     close: jest.Mock;
   };
   let applier: ProductGoalApplier;
@@ -45,6 +46,16 @@ describe('ProductGoalApplier', () => {
       findActive: jest.fn().mockResolvedValue([]),
       create: jest.fn(async (input) => ({ id: 7, ...input })),
       close: jest.fn().mockResolvedValue(true),
+      // 실제 저장소처럼 활성 목록을 읽어 검사한 뒤에만 저장한다. 트랜잭션 원자성 자체는 DB 에서
+      // 확인한다(PR 검증 노트) — 여기서는 applier 가 검사를 저장소 안으로 넘기는지를 본다.
+      createGuarded: jest.fn(async (input, guard) => {
+        const activeGoals = await repository.findActive(input.slackUserId);
+        const problem = guard(activeGoals);
+        if (problem !== null) {
+          return { problem, activeGoals };
+        }
+        return { created: await repository.create(input) };
+      }),
     };
     applier = new ProductGoalApplier(
       repository as unknown as ProductGoalRepositoryPort,
@@ -88,6 +99,17 @@ describe('ProductGoalApplier', () => {
     await expect(
       applier.apply(previewOf({ action: 'CREATE', draft: draft() })),
     ).rejects.toThrow(`활성 목표가 이미 ${MAX_ACTIVE_PRODUCT_GOALS}개`);
+    expect(repository.create).not.toHaveBeenCalled();
+  });
+
+  // 같은 제목 카드 두 장을 차례로 승인하는 경우 — 선언 시점 검사는 둘 다 통과한다(#773 리뷰).
+  it('승인 시점에 같은 제목의 활성 목표가 있으면 저장하지 않는다', async () => {
+    repository.findActive.mockResolvedValue([
+      { ...activeGoal(1), title: '보존기간 파일 파기' },
+    ]);
+    await expect(
+      applier.apply(previewOf({ action: 'CREATE', draft: draft() })),
+    ).rejects.toThrow('같은 제목의 활성 목표가 이미 있어');
     expect(repository.create).not.toHaveBeenCalled();
   });
 

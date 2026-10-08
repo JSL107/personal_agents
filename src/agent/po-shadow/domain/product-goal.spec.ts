@@ -105,6 +105,12 @@ describe('parseProductGoalCommand', () => {
   });
 });
 
+// 선언 초안과 겹치지 않는 제목의 활성 목표 n 개.
+const titled = (count: number): { title: string }[] =>
+  Array.from({ length: count }, (_, index) => ({
+    title: `다른 목표 ${index}`,
+  }));
+
 describe('findGoalDeclarationProblem', () => {
   // 정책 3 — 달성 기준 없는 목표는 저장하지 않는다.
   it.each([
@@ -116,7 +122,7 @@ describe('findGoalDeclarationProblem', () => {
     expect(
       findGoalDeclarationProblem({
         draft: draft({ successCriterion }),
-        activeGoalCount: 0,
+        activeGoals: [],
       }),
     ).toBe(expected);
   });
@@ -126,13 +132,29 @@ describe('findGoalDeclarationProblem', () => {
     expect(
       findGoalDeclarationProblem({
         draft: draft(),
-        activeGoalCount: MAX_ACTIVE_PRODUCT_GOALS,
+        activeGoals: titled(MAX_ACTIVE_PRODUCT_GOALS),
       }),
     ).toBe('ACTIVE_LIMIT_REACHED');
     expect(
       findGoalDeclarationProblem({
         draft: draft(),
-        activeGoalCount: MAX_ACTIVE_PRODUCT_GOALS - 1,
+        activeGoals: titled(MAX_ACTIVE_PRODUCT_GOALS - 1),
+      }),
+    ).toBeNull();
+  });
+
+  // 같은 제목이 둘이면 닫기가 모호 거절돼 어떤 말로도 닫을 수 없다(#773 리뷰).
+  it('정규화한 제목이 같은 활성 목표가 있으면 저장하지 않는다', () => {
+    expect(
+      findGoalDeclarationProblem({
+        draft: draft({ title: '보존기간  파일 파기' }),
+        activeGoals: [{ title: '"보존기간 파일 파기"' }],
+      }),
+    ).toBe('DUPLICATE_TITLE');
+    expect(
+      findGoalDeclarationProblem({
+        draft: draft({ title: '보존기간 파일 파기 2차' }),
+        activeGoals: [{ title: '보존기간 파일 파기' }],
       }),
     ).toBeNull();
   });
@@ -141,19 +163,19 @@ describe('findGoalDeclarationProblem', () => {
     expect(
       findGoalDeclarationProblem({
         draft: draft({ title: '' }),
-        activeGoalCount: 0,
+        activeGoals: [],
       }),
     ).toBe('MISSING_TITLE');
     expect(
       findGoalDeclarationProblem({
         draft: draft({ keywords: [] }),
-        activeGoalCount: 0,
+        activeGoals: [],
       }),
     ).toBe('MISSING_KEYWORDS');
     expect(
       findGoalDeclarationProblem({
         draft: draft(),
-        activeGoalCount: 0,
+        activeGoals: [],
         dueDateUnreadable: true,
       }),
     ).toBe('UNREADABLE_DUE_DATE');

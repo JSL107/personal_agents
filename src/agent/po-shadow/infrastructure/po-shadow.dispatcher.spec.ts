@@ -105,6 +105,17 @@ describe('PoShadowDispatcher — 제품 목표', () => {
     expect(outcome.formattedText).toContain('목표 1');
   });
 
+  it('같은 제목의 활성 목표가 있으면 카드 없이 거절한다', async () => {
+    repository.findActive.mockResolvedValue([
+      activeGoal(4, '보존기간 파일 파기'),
+    ]);
+    const outcome = await dispatch(DECLARATION);
+    expect(createPreview.execute).not.toHaveBeenCalled();
+    expect(outcome.formattedText).toContain(
+      '같은 제목의 활성 목표가 이미 있어',
+    );
+  });
+
   it('질문형 선언은 카드를 만들지 않는다', async () => {
     const outcome = await dispatch(`${DECLARATION} 이렇게 저장해도 될까?`);
     expect(createPreview.execute).not.toHaveBeenCalled();

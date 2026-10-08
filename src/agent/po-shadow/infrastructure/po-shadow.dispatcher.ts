@@ -113,7 +113,7 @@ export class PoShadowDispatcher implements AgentDispatcher {
     const activeGoals = await this.goalRepository.findActive(slackUserId);
     const problem = findGoalDeclarationProblem({
       draft,
-      activeGoalCount: activeGoals.length,
+      activeGoals,
       dueDateUnreadable,
     });
     if (problem !== null) {

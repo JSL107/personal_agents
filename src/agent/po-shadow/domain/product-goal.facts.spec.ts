@@ -1,4 +1,3 @@
-import { DailyPlan, TaskItem } from '../../pm/domain/pm-agent.type';
 import { PoShadowContext } from './po-shadow.type';
 import { ProductGoalRecord, STALE_GOAL_DAYS } from './product-goal';
 import {
@@ -9,25 +8,6 @@ import {
 // KST 2026-10-08 12:00
 const now = new Date('2026-10-08T03:00:00Z');
 const DAY = 86_400_000;
-
-const task = (id: string, title: string): TaskItem => ({
-  id,
-  title,
-  source: 'GITHUB',
-  subtasks: [],
-  isCriticalPath: false,
-  url: `https://github.com/${id.replace('#', '/pull/')}`,
-});
-
-const planOf = (tasks: TaskItem[]): DailyPlan => ({
-  topPriority: tasks[0],
-  varianceAnalysis: { rolledOverTasks: [], analysisReasoning: '' },
-  morning: tasks,
-  afternoon: [],
-  blocker: null,
-  estimatedHours: 6,
-  reasoning: '',
-});
 
 const contextWith = (
   openTitles: string[] = [],
@@ -85,16 +65,13 @@ const goal = (
 const build = (
   goals: ProductGoalRecord[],
   {
-    plan = planOf([task('acme/app#1', 'feat(file): 보존기간 만료 파일 파기')]),
-    context = contextWith(),
+    context = contextWith([], ['feat(file): 보존기간 만료 파일 파기']),
     lastProgressAtByGoalId = new Map<number, Date>(),
   }: {
-    plan?: DailyPlan;
     context?: PoShadowContext;
     lastProgressAtByGoalId?: Map<number, Date>;
   } = {},
-) =>
-  buildProductGoalFacts({ goals, plan, context, lastProgressAtByGoalId, now });
+) => buildProductGoalFacts({ goals, context, lastProgressAtByGoalId, now });
 
 describe('buildProductGoalFacts', () => {
   it('활성 목표가 없으면 아무것도 만들지 않는다', () => {
@@ -107,11 +84,14 @@ describe('buildProductGoalFacts', () => {
 
   it('목표에 안 붙은 작업은 GOAL_UNSERVED 한 건으로 묶는다', () => {
     const result = build([goal()], {
-      plan: planOf([
-        task('acme/app#1', 'feat(file): 보존기간 만료 파일 파기'),
-        task('acme/app#2', 'fix(auth): 토큰 갱신'),
-      ]),
-      context: contextWith([], ['chore: 의존성 갱신']),
+      context: contextWith(
+        [],
+        [
+          'feat(file): 보존기간 만료 파일 파기',
+          'fix(auth): 토큰 갱신',
+          'chore: 의존성 갱신',
+        ],
+      ),
     });
     expect(result.facts).toEqual([
       {
@@ -168,12 +148,13 @@ describe('buildProductGoalFacts', () => {
 
   // 정책 5 — 묵은 목표를 다시 묻는다.
   describe('묵은 목표 질문', () => {
-    const idlePlan = planOf([task('acme/app#9', 'fix: 무관한 수정')]);
+    // 오늘 머지는 있지만 목표에 붙지 않은 회차.
+    const idle = contextWith([], ['fix: 무관한 수정']);
 
     it('기한이 지났으면 묻는다', () => {
       const result = build(
         [goal({ dueDate: new Date('2026-10-05T00:00:00Z') })],
-        { plan: idlePlan },
+        { context: idle },
       );
       expect(result.checkIns).toEqual([
         '"보존기간 파일 파기" — 기한 3일 지남. 이 목표 아직 유효한가요?',
@@ -184,7 +165,7 @@ describe('buildProductGoalFacts', () => {
       const result = build(
         [goal({ createdAt: new Date(now.getTime() - 60 * DAY) })],
         {
-          plan: idlePlan,
+          context: idle,
           lastProgressAtByGoalId: new Map([
             [1, new Date(now.getTime() - STALE_GOAL_DAYS * DAY - 60_000)],
           ]),
@@ -199,7 +180,7 @@ describe('buildProductGoalFacts', () => {
       const result = build(
         [goal({ createdAt: new Date(now.getTime() - 60 * DAY) })],
         {
-          plan: idlePlan,
+          context: idle,
           lastProgressAtByGoalId: new Map([
             // 정확히 기준일째 — "넘게" 가 아니다.
             [1, new Date(now.getTime() - STALE_GOAL_DAYS * DAY)],
@@ -210,7 +191,7 @@ describe('buildProductGoalFacts', () => {
     });
 
     it('진행 기록이 없어도 만든 지 기준일이 안 됐으면 묻지 않는다', () => {
-      expect(build([goal()], { plan: idlePlan }).checkIns).toEqual([]);
+      expect(build([goal()], { context: idle }).checkIns).toEqual([]);
     });
 
     it('오늘 진행이 있으면 오래된 목표라도 묻지 않는다', () => {
@@ -219,6 +200,45 @@ describe('buildProductGoalFacts', () => {
       ]);
       expect(result.checkIns).toEqual([]);
     });
+  });
+});
+
+// 진행은 머지로만 센다 — 계획에 실렸거나 열려 있는 것은 움직였다는 근거가 아니다(#773 리뷰).
+describe('buildProductGoalFacts — 진행 근거', () => {
+  const oldGoal = goal({ createdAt: new Date(now.getTime() - 40 * DAY) });
+
+  it('계획·담당 목록에만 오르고 머지되지 않은 키워드 항목은 진행이 아니다', () => {
+    const result = build([oldGoal], {
+      context: contextWith(['보존기간 파기 배치 추가'], []),
+    });
+    expect(result.progressedGoalIds).toEqual([]);
+    expect(result.checkIns).toEqual([
+      `"보존기간 파일 파기" — ${STALE_GOAL_DAYS}일 넘게 붙은 진행 없음. 이 목표 아직 유효한가요?`,
+    ]);
+  });
+
+  it('대조군 — 목표에 붙은 PR 이 머지되면 진행이다', () => {
+    const result = build([oldGoal]);
+    expect(result.progressedGoalIds).toEqual([1]);
+    expect(result.checkIns).toEqual([]);
+  });
+
+  it('머지 조회를 못 한 회차는 목표 밖 작업·무진행 질문을 내지 않는다', () => {
+    const unknown = {
+      ...contextWith([], ['chore: 의존성 갱신']),
+      mergedLookupAvailable: false,
+    };
+    const result = build([oldGoal], { context: unknown });
+    expect(result.facts).toEqual([]);
+    expect(result.checkIns).toEqual([]);
+  });
+
+  it('머지 조회를 못 해도 기한 경과는 묻는다', () => {
+    const overdue = goal({ dueDate: new Date('2026-10-05T00:00:00Z') });
+    const result = build([overdue], {
+      context: { ...contextWith(), mergedLookupAvailable: false },
+    });
+    expect(result.checkIns).toHaveLength(1);
   });
 });
 
