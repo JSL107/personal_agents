@@ -892,13 +892,21 @@ early return). 이 때문에 계획이 없는 기간에는 실적이 있어도 �
 각 회차의 상세는 PR #467·#470·#472·#473·#474 본문에 있다.
 
 - [ ] **B. 차단 사유 사전 — Slack 실왕복 미측정.** 실패 경로가 없어 못 쟀다(원장 최근 24h 실패 0건,
-  선행 조건 전부 충족, env 키 5종 다 설정). 재는 법: 본인이 아닌 다른 Slack 사용자가 `/ceo-review` 를
-  실행한다. CEO 는 PO_EVAL 성공 run 을 slackUserId 기준으로 찾으므로(`generate-ceo-meta.usecase.ts`
-  `collectSnapshots`) 즉시 NO_PO_EVAL_RUN 이 난다. 원문(`… \`/po-eval\` 먼저 실행해주세요 — …`) 뒤에
-  `선행 산출물 없이 내용을 지어내지 않습니다.` 가 붙어야 한다. 원문에 `실행해` 가 있어 ③ 복구 안내는
-  안 붙는 것이 정상이다(`block-reason.ts` `statesRecoveryAlready`). 그 계정의 슬래시 권한은 미확인.
-  (예전 재는 법인 `/assign` 은 2026-09-04 폐지됐다. 이 문구는 `없`+`/po-eval` 로 문자열 판정에도 걸려,
-  예전 경로와 달리 #473 errorCode 판정만 따로 재지는 못한다.)
+  선행 조건 전부 충족, env 키 5종 다 설정). 재는 법: `/ceo-review` 를 **그 계정에 조회 창 안 PO_EVAL 성공
+  run 이 0건일 때** 실행한다. CEO 는 PO_EVAL 성공 run 을 slackUserId 별로 찾는다(`generate-ceo-meta.usecase.ts`
+  `collectSnapshots` → `findRecentSucceededRuns`). 조회 창은 "지금부터 N시간" 이 아니라 KST 날짜 경계
+  기준이다 — `ended_at >= getKstDayStartAsUtc(sinceDays - 1)`, 기본 `week` 는 6일 전 KST 0시부터,
+  `today` 는 오늘 KST 0시부터.
+  - 실행 전 확인: `select count(*) from agent_run where agent_type='PO_EVAL' and status='SUCCEEDED'
+    and input_snapshot->>'slackUserId'='<계정>' and ended_at >= <창 시작 KST 0시>` 가 0 이어야 한다.
+  - 본인 계정: 저녁 cron(daily-eval)이 매일 PO_EVAL 을 남겨(2026-10-08 실측 최근 14일 14건, 마지막
+    10-07 19:01 KST) 기본 `week` 로는 재현되지 않는다. **`/ceo-review today` 를 그날 저녁 cron 전에**
+    치면 재현된다. PO_EVAL 이력이 없는 다른 계정이면 기본 `week` 로도 되지만 그 계정의 슬래시 권한은 미확인.
+  - 기대 출력: 원문(`week` — `` … `/po-eval` 먼저 실행해주세요 — … `` / `today` — `` … range 를 week 로
+    늘리거나 `/po-eval` 을 실행해주세요. ``) 뒤에 `선행 산출물 없이 내용을 지어내지 않습니다.` 가 붙는다.
+    두 원문 모두 `실행해` 가 있어 ③ 복구 안내는 안 붙는 것이 정상이다(`block-reason.ts` `statesRecoveryAlready`).
+  - 한계: 두 문구 모두 `없`+`/po-eval` 로 문자열 판정에도 걸려, 폐지된 `/assign` 경로와 달리 #473 errorCode
+    판정만 따로 재지는 못한다.
 - [x] **C. 브리핑 decisions/risks — 실 모델이 채우는지 확인됨.** 2026-10-08 DB 실측: 09-05 이후
   WORK_REVIEWER 성공 34건 중 risks 33건, decisions 2건이 채워졌다.
   - [ ] 열린 질문: decisions 가 34건 중 2건뿐인 것이 정상(결정 없는 날이 대부분)인지, 프롬프트가 덜 끌어내는지.
