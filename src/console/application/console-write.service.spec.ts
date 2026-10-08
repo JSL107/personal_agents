@@ -2,6 +2,8 @@ import { ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { AgentType } from '../../model-router/domain/model-router.type';
+import { RunReplayException } from '../../run-replay/domain/run-replay.exception';
+import { ReplayRejectionCode } from '../../run-replay/domain/run-replay.type';
 import { ConsoleWriteService } from './console-write.service';
 
 const OWNER = 'U_OWNER';
@@ -21,15 +23,18 @@ function makeService(owner?: string) {
     peek: jest.fn().mockReturnValue(null),
     consume: jest.fn(),
   };
+  const replayFailedRun = { prepare: jest.fn() };
   const service = new ConsoleWriteService(
     config,
     chainOrchestrator as never,
     applyPreview as never,
     cancelPreview as never,
     pendingTurns as never,
+    replayFailedRun as never,
   );
   return {
     service,
+    replayFailedRun,
     chainOrchestrator,
     applyPreview,
     cancelPreview,
@@ -221,5 +226,68 @@ describe('ConsoleWriteService', () => {
     await expect(service.applyApproval('p1')).rejects.toThrow(
       ServiceUnavailableException,
     );
+  });
+
+  describe('retryRun', () => {
+    it('owner 를 요청자로 판정을 받고, 통과하면 기다리지 않고 실행을 시작한다', async () => {
+      const { service, replayFailedRun } = makeService(OWNER);
+      let finish: () => void = () => undefined;
+      const run = jest.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      replayFailedRun.prepare.mockResolvedValue({
+        kind: 'READY',
+        agentType: 'PM',
+        runId: 7,
+        run,
+      });
+
+      await expect(service.retryRun(7)).resolves.toBeUndefined();
+
+      expect(replayFailedRun.prepare).toHaveBeenCalledWith({
+        runId: 7,
+        requesterSlackUserId: OWNER,
+      });
+      expect(run).toHaveBeenCalledTimes(1);
+      finish();
+    });
+
+    it('거절은 같은 문구의 도메인 예외로 돌려준다 — 404/409 등으로 응답된다', async () => {
+      const { service, replayFailedRun } = makeService(OWNER);
+      replayFailedRun.prepare.mockResolvedValue({
+        kind: 'REJECTED',
+        code: ReplayRejectionCode.NOT_FOUND,
+        message: 'run #7 를 찾을 수 없거나 FAILED 상태가 아닙니다.',
+      });
+
+      const result = service.retryRun(7);
+
+      await expect(result).rejects.toBeInstanceOf(RunReplayException);
+      await expect(result).rejects.toMatchObject({
+        errorCode: ReplayRejectionCode.NOT_FOUND,
+        message: 'run #7 를 찾을 수 없거나 FAILED 상태가 아닙니다.',
+      });
+    });
+
+    // 모델 호출이 수십 초라 그 사이 다시 누르면 게시 리뷰·발행 카드가 두 벌 나간다.
+    // 접수 뒤의 실패는 돌려줄 곳이 없다 — 삼키되 로그로 남긴다(처리되지 않은 거부 방지).
+    // 중복 실행 잠금은 Slack 과 공유하는 `ReplayFailedRunUsecase.prepare` 가 맡는다(그쪽 spec).
+    it('실행이 실패해도 접수는 성공으로 끝난다', async () => {
+      const { service, replayFailedRun } = makeService(OWNER);
+      const run = jest.fn().mockRejectedValue(new Error('codex 실패'));
+      replayFailedRun.prepare.mockResolvedValue({
+        kind: 'READY',
+        agentType: 'PM',
+        runId: 7,
+        run,
+      });
+
+      await expect(service.retryRun(7)).resolves.toBeUndefined();
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(run).toHaveBeenCalledTimes(1);
+    });
   });
 });

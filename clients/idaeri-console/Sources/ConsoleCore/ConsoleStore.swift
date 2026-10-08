@@ -56,6 +56,12 @@ public final class ConsoleStore: ObservableObject {
     /// 승인/거절 write 결과 안내. 실패 사유를 담고, 성공하면 nil 로 지워진다.
     /// 대시보드·오피스 어느 탭에서 눌러도 같은 store 를 보므로 안내가 공유된다.
     @Published public private(set) var approvalNotice: String?
+    /// 재시도 중인 원본 run id. 버튼을 "재시도 중" 으로 묶어 두 번 누르지 않게 한다.
+    /// 누른 직후에는 앱이 먼저 잠그고, 브리핑을 받을 때마다 서버의 `retrying` 으로 덮어쓴다 —
+    /// 앱 혼자 잠금을 들고 있으면 새 실행이 생기기도 전에 실패한 재시도에서 버튼이 굳는다.
+    @Published public private(set) var retryingRunIds: Set<Int> = []
+    /// 재시도 거절·연결 실패 안내. 대시보드·인스펙터가 함께 본다.
+    @Published public private(set) var runRetryNotice: String?
     /// 처리한 SSE 이벤트를 방출한다(연출 트리거용). 스냅샷 적용은 방출하지 않는다.
     public let eventStream = PassthroughSubject<ConsoleEvent, Never>()
 
@@ -130,6 +136,20 @@ public final class ConsoleStore: ObservableObject {
     /// SSE 증분 이벤트를 현재 상태 위에 적용한다.
     public func apply(briefing: ConsoleBriefing) {
         self.briefing = briefing
+        retryingRunIds = Set(
+            briefing.todos.flatMap(\.targets).filter { $0.retrying == true }.compactMap(\.runId)
+        )
+    }
+
+    public func beginRetryingRun(id: Int) {
+        retryingRunIds.insert(id)
+        runRetryNotice = nil
+    }
+
+    /// 접수가 거절되거나 연결이 실패하면 버튼을 되살리고 사유를 남긴다.
+    public func failRetryingRun(id: Int, notice: String) {
+        retryingRunIds.remove(id)
+        runRetryNotice = notice
     }
 
     /// 일정 조회 결과를 통째로 교체한다.

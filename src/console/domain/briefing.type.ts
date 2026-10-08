@@ -30,6 +30,32 @@ export interface ConsoleTodo {
   readonly label: string;
   /** 급한 정도 한 줄. 예: '오늘 19:04 만료', '11일째' */
   readonly detail: string;
+  /**
+   * 이 할 일이 합쳐 놓은 대상 하나하나. 말풍선은 위의 합친 문구를 쓰고, 대시보드 목록이 대상마다
+   * 버튼을 그린다 — 할 일 하나에 id 하나만 실으면 N건 중 한 건만 처리된다.
+   *
+   * 승인은 대시보드 「승인 대기」가 카드별로 이미 보여 주므로 비워 둔다.
+   */
+  readonly targets: ConsoleTodoTarget[];
+}
+
+/** 할 일 대상 하나. 실패 실행이면 `runId`, PR 리뷰면 `pullNumber`·`url` 이 있다. */
+export interface ConsoleTodoTarget {
+  /** 목록 한 줄 문구. 예: 'PM', 'JSL107/personal_agents #1005 · 지적 3건' */
+  readonly label: string;
+  /** 실패 실행의 담당자. 인스펙터가 선택한 담당자의 재시도 대상을 찾을 때 쓴다(라벨은 문구라 키로 쓰지 않는다). */
+  readonly agentType?: string;
+  readonly runId?: number;
+  /**
+   * 콘솔 재시도 버튼을 띄워도 되는가 — replay 가 지원하는 종류인지(`REPLAYABLE_AGENT_TYPES`).
+   * 참이어도 실행에 따라 서버가 거절할 수 있다(추가 컨텍스트가 붙은 PO_SHADOW 등).
+   */
+  readonly retryable?: boolean;
+  /** 콘솔에서 접수한 재시도가 지금 돌고 있다. 앱은 이 값으로 버튼을 「재시도 중」으로 묶는다. */
+  readonly retrying?: boolean;
+  readonly pullNumber?: number;
+  /** 사람이 직접 열어 처리할 곳. PR 리뷰 회수는 지적마다 판정이 필요해 링크까지만 준다. */
+  readonly url?: string;
 }
 
 /**
