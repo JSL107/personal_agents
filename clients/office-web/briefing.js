@@ -2,8 +2,8 @@
 //
 // 할 일 말풍선 문구 후보·연속 도장 개수·정산 종이를 띄울 시각·정산 카드 문장을 고르는 판정은
 // **맥과 한 글자도 달라지면 안 된다** — 같은 브리핑을 두 화면이 다르게 말하게 된다. 이 파일은 맥 함수의
-// 이름·순서·문구를 그대로 따르고, `pnpm check:briefing` 이 맥 테스트(`PresidentBriefingTests.swift`)와
-// 같은 입력으로 같은 결과가 나오는지 확인한다. 맥 쪽을 고치면 여기와 그 검사를 함께 고친다.
+// 이름·순서·문구를 그대로 따르고, 맥 `ConsoleCoreTests` 와 `pnpm check:briefing` 이 같은 대조표
+// (`../idaeri-console/fixtures/president-briefing.json`)로 양쪽을 잰다. 맥 쪽을 고치면 대조표와 여기를 함께 고친다.
 //
 // 시각 경계(퇴근 시각)는 숫자를 다시 적지 않고 평면도의 `attendanceHours` 를 읽는다(README 「배치 규칙」).
 
