@@ -1,26 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { App } from '@slack/bolt';
+import { App, RespondFn } from '@slack/bolt';
 
-import { PublishNotionDraftUsecase } from '../../agent/blog/application/publish-notion-draft.usecase';
-import { GenerateCeoMetaUsecase } from '../../agent/ceo/application/generate-ceo-meta.usecase';
-import { ReviewPullRequestUsecase } from '../../agent/code-reviewer/application/review-pull-request.usecase';
-import { GenerateImpactReportUsecase } from '../../agent/impact-reporter/application/generate-impact-report.usecase';
-import { GeneratePaperRecommendationUsecase } from '../../agent/paper-recommend/application/generate-paper-recommendation.usecase';
-import { GenerateDailyPlanUsecase } from '../../agent/pm/application/generate-daily-plan.usecase';
-import { GeneratePoEvaluationUsecase } from '../../agent/po-eval/application/generate-po-evaluation.usecase';
-import { GeneratePoShadowUsecase } from '../../agent/po-shadow/application/generate-po-shadow.usecase';
-import {
-  WatchVideoOutcome,
-  WatchVideoUsecase,
-} from '../../agent/video-watch/application/watch-video.usecase';
-import { GenerateWorklogUsecase } from '../../agent/work-reviewer/application/generate-worklog.usecase';
-import { AgentRunService } from '../../agent-run/application/agent-run.service';
-import { RetryRunUsecase } from '../../agent-run/application/retry-run.usecase';
-import { TriggerType } from '../../agent-run/domain/agent-run.type';
-import { AgentRunRange } from '../../common/domain/agent-run-range.type';
 import { HumanizeService } from '../../humanize/application/humanize.service';
 import { humanizeEvaluationOutput } from '../../humanize/application/humanize-report.adapter';
-import { PaperTradingPrismaRepository } from '../../paper-trading/infrastructure/paper-trading.prisma.repository';
+import {
+  PreparedReplay,
+  ReplayFailedRunUsecase,
+} from '../../run-replay/application/replay-failed-run.usecase';
+import { ReplayRejectionCode } from '../../run-replay/domain/run-replay.type';
 import { SlackHandler } from '../domain/port/slack-handler.port';
 import { formatCeoMetaOutput } from '../format/ceo-meta.formatter';
 import { formatDailyPlan } from '../format/daily-plan.formatter';
@@ -37,9 +24,14 @@ import {
   toUserFacingErrorMessage,
 } from './slack-handler.helper';
 
+const KEEP_ORIGINAL_ON_REJECTION: ReadonlySet<ReplayRejectionCode> = new Set([
+  ReplayRejectionCode.NOT_FOUND,
+  ReplayRejectionCode.UNKNOWN_AGENT_TYPE,
+]);
+
 // /retry-run — FAILED AgentRun 의 inputSnapshot 으로 동일 작업을 재실행 (OPS-5).
-// 본인 명의의 run 만 가능, agentType 별로 적합한 usecase 로 라우팅.
-// agent-command.handler 가 비대해져 (488 LOC) retry-run switch 부분만 분리 (V3 audit P2).
+// 판정·디스패치·재시도 계보는 콘솔 재시도 버튼과 함께 쓰는 `ReplayFailedRunUsecase` 에 있고,
+// 여기는 Slack ack 와 결과를 Slack 문구로 바꾸는 일만 한다.
 //
 // C-4 Phase 9 — registerRetryRunHandler fn → @Injectable() class.
 @Injectable()
@@ -47,35 +39,9 @@ export class RetryRunHandler implements SlackHandler {
   private readonly logger = new Logger(RetryRunHandler.name);
 
   constructor(
-    private readonly retryRunUsecase: RetryRunUsecase,
-    private readonly generateDailyPlanUsecase: GenerateDailyPlanUsecase,
-    private readonly generateWorklogUsecase: GenerateWorklogUsecase,
-    private readonly reviewPullRequestUsecase: ReviewPullRequestUsecase,
-    private readonly generateImpactReportUsecase: GenerateImpactReportUsecase,
-    private readonly generatePoShadowUsecase: GeneratePoShadowUsecase,
-    private readonly generatePoEvaluationUsecase: GeneratePoEvaluationUsecase,
-    private readonly generateCeoMetaUsecase: GenerateCeoMetaUsecase,
-    private readonly generatePaperRecommendationUsecase: GeneratePaperRecommendationUsecase,
-    private readonly publishNotionDraftUsecase: PublishNotionDraftUsecase,
-    private readonly paperTradingRepository: PaperTradingPrismaRepository,
-    private readonly agentRunService: AgentRunService,
+    private readonly replayFailedRunUsecase: ReplayFailedRunUsecase,
     private readonly humanizeService: HumanizeService,
-    private readonly watchVideoUsecase: WatchVideoUsecase,
   ) {}
-
-  // 재시도로 만들어진 새 run 을 원본 FAILED run 의 자식으로 연결한다. 이렇게 해야 "이 실행은
-  // 무엇의 재시도인가" 를 DB 만으로 재구성할 수 있다. 방향은 /auto-flow 와 동일 (부모=원본).
-  // 반환 타입의 파라미터를 좁은 구조로 둬서 agentType 별 result 타입과 무관하게 재사용한다.
-  private linkRetryLineage(
-    originalRunId: number,
-  ): (outcome: { agentRunId: number }) => Promise<void> {
-    return async (outcome: { agentRunId: number }): Promise<void> => {
-      await this.agentRunService.setParentId({
-        id: outcome.agentRunId,
-        parentId: originalRunId,
-      });
-    };
-  }
 
   register(app: App): void {
     app.command('/retry-run', async ({ ack, command, respond }) => {
@@ -93,365 +59,163 @@ export class RetryRunHandler implements SlackHandler {
         text: `이대리가 run #${id} 를 재실행하는 중입니다...`,
       });
 
-      const payload = await this.retryRunUsecase.execute({ id });
-      if (!payload) {
+      const prepared = await this.replayFailedRunUsecase.prepare({
+        runId: id,
+        requesterSlackUserId: command.user_id,
+      });
+      if (prepared.kind === 'REJECTED') {
         await respond({
           response_type: 'ephemeral',
-          text: `run #${id} 를 찾을 수 없거나 FAILED 상태가 아닙니다.`,
+          // 실행 기록 자체를 못 찾은 경우와 처음 보는 종류는 종전대로 진행 문구를 덮지 않는다.
+          ...(KEEP_ORIGINAL_ON_REJECTION.has(prepared.code)
+            ? {}
+            : { replace_original: true }),
+          text: prepared.message,
         });
         return;
       }
-
-      // typed 후에도 runtime 형식 검증은 필수 — DB 의 JSON 이 우리 union 과 다른 형태일 수도.
-      const rawSnapshot = payload.inputSnapshot as unknown;
-      if (
-        !rawSnapshot ||
-        typeof rawSnapshot !== 'object' ||
-        Array.isArray(rawSnapshot)
-      ) {
-        await respond({
-          response_type: 'ephemeral',
-          replace_original: true,
-          text: `AgentRun #${id} 의 inputSnapshot 형식이 올바르지 않아 재실행할 수 없습니다.`,
-        });
-        return;
-      }
-      const snapshot = payload.inputSnapshot;
-      const originalUserId = snapshot.slackUserId;
-      if (originalUserId && originalUserId !== command.user_id) {
-        await respond({
-          response_type: 'ephemeral',
-          replace_original: true,
-          text: `AgentRun #${id} 는 다른 사용자의 실행 기록이라 재실행할 수 없습니다.`,
-        });
-        return;
-      }
-      const slackUserId = originalUserId ?? command.user_id;
-
-      switch (payload.agentType) {
-        case 'PM':
-          await runAgentCommand({
-            respond,
-            logger: this.logger,
-            commandLabel: '/retry-run(PM)',
-            execute: () =>
-              this.generateDailyPlanUsecase.execute({
-                tasksText: snapshot.tasksText ?? '',
-                slackUserId,
-                triggerType: TriggerType.FAILURE_REPLAY,
-              }),
-            format: (result) =>
-              formatDailyPlan(result.plan, result.inputTruncation),
-            onOutcome: this.linkRetryLineage(id),
-          });
-          break;
-        case 'WORK_REVIEWER':
-          await runAgentCommand({
-            respond,
-            logger: this.logger,
-            commandLabel: '/retry-run(WORK_REVIEWER)',
-            execute: () =>
-              this.generateWorklogUsecase.execute({
-                workText: snapshot.workText ?? '',
-                slackUserId,
-              }),
-            format: formatDailyReview,
-            onOutcome: this.linkRetryLineage(id),
-          });
-          break;
-        case 'CODE_REVIEWER':
-          await runAgentCommand({
-            respond,
-            logger: this.logger,
-            commandLabel: '/retry-run(CODE_REVIEWER)',
-            execute: () =>
-              this.reviewPullRequestUsecase.execute({
-                prRef: snapshot.prRef ?? '',
-                slackUserId,
-                // 최초 실행이 게시하기로 했던 리뷰만 재실행에서도 게시한다.
-                // 스냅샷에 키가 없는 스윕·연습 모드 실행은 종전대로 미게시.
-                publish: snapshot.publish === true,
-              }),
-            format: (review) =>
-              formatPullRequestReview({
-                prRef: snapshot.prRef ?? '',
-                review,
-              }),
-            onOutcome: this.linkRetryLineage(id),
-          });
-          break;
-        case 'IMPACT_REPORTER':
-          await runAgentCommand({
-            respond,
-            logger: this.logger,
-            commandLabel: '/retry-run(IMPACT_REPORTER)',
-            execute: () =>
-              this.generateImpactReportUsecase.execute({
-                subject: snapshot.subject ?? '',
-                slackUserId,
-              }),
-            format: formatImpactReport,
-            onOutcome: this.linkRetryLineage(id),
-          });
-          break;
-        case 'PO_SHADOW': {
-          const origLen = snapshot.extraContextLength ?? 0;
-          if (origLen > 0) {
-            await respond({
-              response_type: 'ephemeral',
-              replace_original: true,
-              text: `AgentRun #${id} (PO_SHADOW) 는 추가 컨텍스트가 포함된 요청이라 정확히 재현할 수 없어 재실행을 지원하지 않습니다.`,
-            });
-            return;
-          }
-          await runAgentCommand({
-            respond,
-            logger: this.logger,
-            commandLabel: `/retry-run#${id} (PO_SHADOW)`,
-            execute: () =>
-              this.generatePoShadowUsecase.execute({
-                extraContext: '',
-                slackUserId,
-              }),
-            format: formatPoShadowReport,
-            onOutcome: this.linkRetryLineage(id),
-          });
-          break;
-        }
-        case 'PO_EVAL': {
-          const range: AgentRunRange =
-            snapshot.range === 'TODAY' ? 'TODAY' : 'WEEK';
-          await runAgentCommand({
-            respond,
-            logger: this.logger,
-            commandLabel: `/retry-run#${id} (PO_EVAL)`,
-            execute: () =>
-              this.generatePoEvaluationUsecase.execute({
-                slackUserId,
-                range,
-              }),
-            format: async (result) => {
-              const humanized = await humanizeEvaluationOutput(
-                result,
-                this.humanizeService,
-              );
-              return formatEvaluationOutput(humanized);
-            },
-            onOutcome: this.linkRetryLineage(id),
-          });
-          break;
-        }
-        case 'CEO': {
-          const range: AgentRunRange =
-            snapshot.range === 'TODAY' ? 'TODAY' : 'WEEK';
-          await runAgentCommand({
-            respond,
-            logger: this.logger,
-            commandLabel: `/retry-run#${id} (CEO)`,
-            execute: () =>
-              this.generateCeoMetaUsecase.execute({
-                slackUserId,
-                range,
-              }),
-            format: formatCeoMetaOutput,
-            onOutcome: this.linkRetryLineage(id),
-          });
-          break;
-        }
-        case 'VACATION': {
-          await respond({
-            response_type: 'ephemeral',
-            replace_original: true,
-            text: `AgentRun #${id} (VACATION) 은 입력값에 의존하는 계산/기록이라 재실행을 지원하지 않습니다. \`/휴가\` 명령으로 다시 시도해주세요.`,
-          });
-          return;
-        }
-        case 'DELAY_REPORT': {
-          await respond({
-            response_type: 'ephemeral',
-            replace_original: true,
-            text: `AgentRun #${id} (DELAY_REPORT) 는 실시간 조회라 재실행 개념이 없습니다. 현재 진행 현황을 다시 물어봐주세요.`,
-          });
-          return;
-        }
-        // 실패는 대부분 다운로드 차단·codex 일시 실패라 같은 입력으로 다시 돌릴 가치가 있다.
-        // 링크 원문은 저장하지 않으므로 검증된 videoId 로 요청 문장을 복원한다.
-        case 'VIDEO_WATCH': {
-          if (typeof snapshot.videoId !== 'string') {
-            await respond({
-              response_type: 'ephemeral',
-              replace_original: true,
-              text: `AgentRun #${id} (VIDEO_WATCH) 는 영상 정보가 남아 있지 않아 재실행할 수 없습니다. 영상 링크와 질문을 다시 멘션해 주세요.`,
-            });
-            return;
-          }
-          const videoId = snapshot.videoId;
-          const question =
-            typeof snapshot.question === 'string' ? snapshot.question : '';
-          let report: WatchVideoOutcome['report'] | null = null;
-          await runAgentCommand({
-            respond,
-            logger: this.logger,
-            commandLabel: '/retry-run(VIDEO_WATCH)',
-            execute: async () => {
-              const outcome = await this.watchVideoUsecase.execute({
-                slackUserId,
-                text: `${question} https://www.youtube.com/watch?v=${videoId}`,
-                triggerType: TriggerType.FAILURE_REPLAY,
-              });
-              report = outcome.report;
-              return outcome;
-            },
-            format: (result) =>
-              formatVideoWatch(
-                result,
-                report ?? {
-                  title: null,
-                  videoId,
-                  frameCount: 0,
-                  transcriptSource: null,
-                },
-              ),
-            onOutcome: this.linkRetryLineage(id),
-          });
-          break;
-        }
-        // 28일을 되짚는 누적 집계라 회차가 실패해도 데이터가 남지 않는다 — 다음 주 회차가
-        // 같은 범위를 통째로 다시 본다. 지금 당장 수치를 봐야 하면 읽기 전용 스크립트가 있다.
-        case 'BLOG_REVISION': {
-          await respond({
-            response_type: 'ephemeral',
-            replace_original: true,
-            text: `AgentRun #${id} (BLOG_REVISION) 은 28일을 되짚는 누적 집계라 회차 하나가 실패해도 다음 주 회차가 같은 범위를 다시 셉니다. 지금 수치를 확인하려면 \`node --env-file=.env -r ts-node/register/transpile-only scripts/blog-revision-report.ts\` 를 실행해주세요.`,
-          });
-          return;
-        }
-        case 'PAPER_RECOMMEND': {
-          const strategy = snapshot.strategy;
-          const decidedAt = snapshot.decidedAt
-            ? new Date(snapshot.decidedAt)
-            : null;
-          if (
-            (strategy !== 'LONG_TERM' && strategy !== 'SWING') ||
-            decidedAt === null ||
-            Number.isNaN(decidedAt.getTime())
-          ) {
-            await respond({
-              response_type: 'ephemeral',
-              replace_original: true,
-              text: `AgentRun #${id} (PAPER_RECOMMEND) 의 strategy 또는 decidedAt이 올바르지 않아 재실행할 수 없습니다.`,
-            });
-            return;
-          }
-          const account =
-            await this.paperTradingRepository.findAccountByName(strategy);
-          if (
-            account &&
-            (await this.paperTradingRepository.hasOrdersForRecommendation({
-              accountId: account.id,
-              strategy,
-              decidedAt,
-            }))
-          ) {
-            await respond({
-              response_type: 'ephemeral',
-              replace_original: true,
-              text: `AgentRun #${id} (PAPER_RECOMMEND) 은 이미 PENDING 주문을 남겨 중복 추천 방지를 위해 재실행할 수 없습니다.`,
-            });
-            return;
-          }
-          await runEphemeral({
-            respond,
-            logger: this.logger,
-            commandLabel: `/retry-run#${id} (PAPER_RECOMMEND)`,
-            task: async () => {
-              const result =
-                await this.generatePaperRecommendationUsecase.execute({
-                  strategies: [strategy],
-                  decidedAt,
-                  triggerType: TriggerType.FAILURE_REPLAY,
-                });
-              const completed = result.completed[0];
-              if (completed) {
-                await this.linkRetryLineage(id)({
-                  agentRunId: completed.agentRunId,
-                });
-              }
-              return result;
-            },
-            format: (result) => {
-              const completed = result.completed[0];
-              if (completed) {
-                return `${completed.strategy} 추천 재실행 완료: PENDING 주문 ${completed.ordersCreated}건`;
-              }
-              return `${strategy} 추천 재실행 실패: ${result.failed[0]?.message ?? '알 수 없는 오류'}`;
-            },
-          });
-          break;
-        }
-        case 'BLOG': {
-          await respond({
-            response_type: 'ephemeral',
-            replace_original: true,
-            text: `AgentRun #${id} (BLOG) 은 Hermes 에이전트 실행이라 retry-run 을 지원하지 않습니다. 같은 요청을 자연어로 다시 멘션해주세요 (예: "@이대리 … 블로그 써줘").`,
-          });
-          return;
-        }
-        case 'BLOG_PUBLISH': {
-          const commandLabel = `/retry-run#${id} (BLOG_PUBLISH)`;
-          try {
-            const outcome = await this.publishNotionDraftUsecase.execute({
-              titleQuery: snapshot.titleQuery ?? '',
-              pageId: snapshot.pageId,
-              publishedAt: snapshot.publishedAt,
-              slackUserId,
-              triggerType: TriggerType.FAILURE_REPLAY,
-            });
-            await respondBlogPublishOutcome(respond, outcome);
-            try {
-              await this.linkRetryLineage(id)(outcome);
-            } catch (error: unknown) {
-              this.logger.warn(
-                `${commandLabel} 실행 후처리 실패 (응답은 정상 전달됨): ${error instanceof Error ? error.message : String(error)}`,
-              );
-            }
-          } catch (error: unknown) {
-            const rawMessage =
-              error instanceof Error ? error.message : String(error);
-            this.logger.error(
-              `${commandLabel} 실패: ${rawMessage}`,
-              error instanceof Error ? error.stack : undefined,
-            );
-            await respond({
-              response_type: 'ephemeral',
-              replace_original: true,
-              text: `이대리 ${commandLabel} 실패: ${toUserFacingErrorMessage(error)}`,
-            });
-          }
-          break;
-        }
-        case 'CAREER_MATE': {
-          await respond({
-            response_type: 'ephemeral',
-            replace_original: true,
-            text: `AgentRun #${id} (CAREER_MATE) 은 retry-run 대신 자연어로 다시 요청해주세요 (예: "@이대리 프로필 다시 정리해줘").`,
-          });
-          return;
-        }
-        case 'JOB_APPLICATION': {
-          await respond({
-            response_type: 'ephemeral',
-            replace_original: true,
-            text: `AgentRun #${id} (JOB_APPLICATION) 은 입력 의존 기록이라 retry 미지원 — 자연어로 다시 말씀해주세요 (예: "@이대리 토스 서류 합격").`,
-          });
-          return;
-        }
-        default:
-          await respond({
-            response_type: 'ephemeral',
-            text: `agentType '${payload.agentType}' 는 retry-run 이 지원되지 않습니다.`,
-          });
-      }
+      await this.respondReplay(prepared, respond);
     });
+  }
+
+  // 결과 모양이 종류마다 달라 포맷만 종류별로 고른다. 실행 자체는 `prepared.run()` 이 한다.
+  private async respondReplay(
+    prepared: PreparedReplay,
+    respond: RespondFn,
+  ): Promise<void> {
+    const id = prepared.runId;
+    switch (prepared.agentType) {
+      case 'PM':
+        await runAgentCommand({
+          respond,
+          logger: this.logger,
+          commandLabel: '/retry-run(PM)',
+          execute: prepared.run,
+          format: (result) =>
+            formatDailyPlan(result.plan, result.inputTruncation),
+        });
+        return;
+      case 'WORK_REVIEWER':
+        await runAgentCommand({
+          respond,
+          logger: this.logger,
+          commandLabel: '/retry-run(WORK_REVIEWER)',
+          execute: prepared.run,
+          format: formatDailyReview,
+        });
+        return;
+      case 'CODE_REVIEWER': {
+        const prRef = prepared.prRef;
+        await runAgentCommand({
+          respond,
+          logger: this.logger,
+          commandLabel: '/retry-run(CODE_REVIEWER)',
+          execute: prepared.run,
+          format: (review) => formatPullRequestReview({ prRef, review }),
+        });
+        return;
+      }
+      case 'IMPACT_REPORTER':
+        await runAgentCommand({
+          respond,
+          logger: this.logger,
+          commandLabel: '/retry-run(IMPACT_REPORTER)',
+          execute: prepared.run,
+          format: formatImpactReport,
+        });
+        return;
+      case 'PO_SHADOW':
+        await runAgentCommand({
+          respond,
+          logger: this.logger,
+          commandLabel: `/retry-run#${id} (PO_SHADOW)`,
+          execute: prepared.run,
+          format: formatPoShadowReport,
+        });
+        return;
+      case 'PO_EVAL':
+        await runAgentCommand({
+          respond,
+          logger: this.logger,
+          commandLabel: `/retry-run#${id} (PO_EVAL)`,
+          execute: prepared.run,
+          format: async (result) =>
+            formatEvaluationOutput(
+              await humanizeEvaluationOutput(result, this.humanizeService),
+            ),
+        });
+        return;
+      case 'CEO':
+        await runAgentCommand({
+          respond,
+          logger: this.logger,
+          commandLabel: `/retry-run#${id} (CEO)`,
+          execute: prepared.run,
+          format: formatCeoMetaOutput,
+        });
+        return;
+      case 'VIDEO_WATCH': {
+        const videoId = prepared.videoId;
+        let report: Awaited<ReturnType<typeof prepared.run>>['report'] | null =
+          null;
+        await runAgentCommand({
+          respond,
+          logger: this.logger,
+          commandLabel: '/retry-run(VIDEO_WATCH)',
+          execute: async () => {
+            const outcome = await prepared.run();
+            report = outcome.report;
+            return outcome;
+          },
+          format: (result) =>
+            formatVideoWatch(
+              result,
+              report ?? {
+                title: null,
+                videoId,
+                frameCount: 0,
+                transcriptSource: null,
+              },
+            ),
+        });
+        return;
+      }
+      case 'PAPER_RECOMMEND': {
+        const strategy = prepared.strategy;
+        await runEphemeral({
+          respond,
+          logger: this.logger,
+          commandLabel: `/retry-run#${id} (PAPER_RECOMMEND)`,
+          task: prepared.run,
+          format: (result) => {
+            const completed = result.completed[0];
+            if (completed) {
+              return `${completed.strategy} 추천 재실행 완료: PENDING 주문 ${completed.ordersCreated}건`;
+            }
+            return `${strategy} 추천 재실행 실패: ${result.failed[0]?.message ?? '알 수 없는 오류'}`;
+          },
+        });
+        return;
+      }
+      case 'BLOG_PUBLISH': {
+        const commandLabel = `/retry-run#${id} (BLOG_PUBLISH)`;
+        try {
+          await respondBlogPublishOutcome(respond, await prepared.run());
+        } catch (error: unknown) {
+          const rawMessage =
+            error instanceof Error ? error.message : String(error);
+          this.logger.error(
+            `${commandLabel} 실패: ${rawMessage}`,
+            error instanceof Error ? error.stack : undefined,
+          );
+          await respond({
+            response_type: 'ephemeral',
+            replace_original: true,
+            text: `이대리 ${commandLabel} 실패: ${toUserFacingErrorMessage(error)}`,
+          });
+        }
+        return;
+      }
+    }
   }
 }
