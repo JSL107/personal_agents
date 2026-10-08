@@ -412,6 +412,21 @@ const buildNotFoundFact = (task: TaskItem): PlanRealityFact => ({
   ...(task.url ? { url: task.url } : {}),
 });
 
+// 철회한 키는 계획 대조 쪽 PLANNED_STALLED 에서도 reason 을 뺀다. 그 fact 의 detail 이 같은
+// waitingItem.reason 이라, FINDING_UNMOVED 에서만 빼면 같은 권고 재료가 프롬프트에 남는다.
+// 철회 판정은 buildFindingRecoveryFacts 한 곳이 하고 여기서는 그 결과만 따른다.
+export const withdrawStalledReasons = (
+  facts: PlanRealityFact[],
+  reasonWithdrawnKeys: string[],
+): PlanRealityFact[] => {
+  const withdrawnIds = new Set(
+    reasonWithdrawnKeys.map((key) => `stalled:${key}`),
+  );
+  return facts.map((fact) =>
+    withdrawnIds.has(fact.id) ? { ...fact, detail: '대기 중' } : fact,
+  );
+};
+
 const buildStalledFact = (
   actualItem: ActualGithubItem,
   waitingItem: WaitingItem,
