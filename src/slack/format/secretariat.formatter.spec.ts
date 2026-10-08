@@ -142,4 +142,37 @@ describe('formatSecretariat', () => {
       expect(text).not.toContain('연속');
     });
   });
+
+  describe('에이전트 표시 이름', () => {
+    it('enum 원문 대신 레지스트리 표시 이름을 쓰고, 레지스트리에 없는 값은 원문을 둔다', () => {
+      // 2026-10-07 실발송: "CODE_REVIEWER 129 · PAPER_TRADE 85" 가 그대로 노출됐다.
+      const text = render({
+        completed: [
+          { agentType: 'CODE_REVIEWER', count: 129 },
+          { agentType: 'PAPER_TRADE', count: 85 },
+          { agentType: 'RETIRED_WORKER', count: 1 },
+        ],
+        inProgress: ['SUBCONSCIOUS_GATE'],
+        blocked: [
+          { agentType: 'HUMANIZER', reason: '모델 호출 실패', count: 2 },
+        ],
+        decision: {
+          kind: 'UNRESOLVED_FAILURE',
+          agentType: 'INVEST',
+          reason: '시세 없음',
+          count: 1,
+        },
+      });
+
+      expect(text).toContain(
+        '*① 완료* — 215건 · Code Reviewer 129 · Paper Trade 85 · RETIRED_WORKER 1',
+      );
+      expect(text).toContain('*② 진행 중* — Subconscious Gate');
+      expect(text).toContain('• Humanizer 2건 — 모델 호출 실패');
+      expect(text).toContain('Invest Monitor 1건 실패');
+      expect(text).not.toMatch(
+        /CODE_REVIEWER|PAPER_TRADE|SUBCONSCIOUS_GATE|HUMANIZER|INVEST\b/,
+      );
+    });
+  });
 });
