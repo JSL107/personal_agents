@@ -16,8 +16,11 @@ const COMMON_CODES: ReadonlySet<string> = new Set([
   ResponseCode.VALIDATION_FAILED,
 ]);
 
-// 여러 도메인이 일부러 같이 쓰는 값. 도메인 값이 agent_run.errorCode 로 저장돼 이름을 나누지 않았다.
-const SHARED_CODES: ReadonlySet<string> = new Set([ResponseCode.PARSE_FAILED]);
+// 여러 도메인이 일부러 같이 쓰는 값과 그 값을 쓰는 enum 전부. 도메인 값이 agent_run.errorCode 로
+// 저장돼 이름을 나누지 않았다. 값이 아니라 enum 조합으로 고정해 세 번째 enum 의 재사용도 막는다.
+const SHARED_CODES: Readonly<Record<string, readonly string[]>> = {
+  [ResponseCode.PARSE_FAILED]: ['CeoErrorCode', 'PoEvalErrorCode'],
+};
 
 // DomainException 을 던지지만 errorCode enum 이 파일명 규칙 밖에 있는 파일 — enum 은 아래에 손으로 올린다.
 const EXCEPTIONS_OUTSIDE_NAMING: ReadonlySet<string> = new Set([
@@ -73,11 +76,18 @@ describe('ResponseCode', () => {
   );
 
   it('도메인 값은 다른 도메인·공통 코드와 겹치지 않는다', () => {
-    const duplicated = domainValues.filter(
-      (code, index) =>
-        !SHARED_CODES.has(code) && domainValues.indexOf(code) !== index,
+    const owners = new Map<string, string[]>();
+    for (const [name, domainErrorCode] of domainErrorCodes) {
+      for (const code of Object.values(domainErrorCode)) {
+        owners.set(code, [...(owners.get(code) ?? []), name]);
+      }
+    }
+    const shared = Object.fromEntries(
+      [...owners]
+        .filter(([, names]) => names.length > 1)
+        .map(([code, names]) => [code, names.sort()]),
     );
-    expect(duplicated).toEqual([]);
+    expect(shared).toEqual(SHARED_CODES);
     expect(domainValues.filter((code) => COMMON_CODES.has(code))).toEqual([]);
   });
 
