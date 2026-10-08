@@ -8,6 +8,7 @@ import { SlackCollectorModule } from '../../slack-collector/slack-collector.modu
 import { GeneratePoShadowUsecase } from './application/generate-po-shadow.usecase';
 import { PoShadowContextCollector } from './application/po-shadow-context.collector';
 import { PoShadowDispatcher } from './infrastructure/po-shadow.dispatcher';
+import { ProductGoalModule } from './product-goal.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { PoShadowDispatcher } from './infrastructure/po-shadow.dispatcher';
     GithubModule,
     SlackCollectorModule,
     NotionModule,
+    ProductGoalModule,
   ],
   providers: [
     GeneratePoShadowUsecase,

@@ -16,7 +16,9 @@ import { PmWriteBackApplier } from './agent/pm/infrastructure/pm-write-back.appl
 import { PmAgentModule } from './agent/pm/pm-agent.module';
 import { PoEvalCareerlogApplier } from './agent/po-eval/infrastructure/po-eval-careerlog.applier';
 import { PoEvalModule } from './agent/po-eval/po-eval.module';
+import { ProductGoalApplier } from './agent/po-shadow/infrastructure/product-goal.applier';
 import { PoShadowModule } from './agent/po-shadow/po-shadow.module';
+import { ProductGoalModule } from './agent/po-shadow/product-goal.module';
 import { StockModule } from './agent/stock/stock.module';
 import { VacationModule } from './agent/vacation/vacation.module';
 import { WorkReviewerModule } from './agent/work-reviewer/work-reviewer.module';
@@ -129,6 +131,7 @@ import { WebhookModule } from './webhook/webhook.module';
         GithubBlogPublishApplier,
         StudyApplyIssueApplier,
         EveningCareerReflectApplier,
+        ProductGoalApplier,
       ],
       // 레버 3b: apply 후 결과 검증 — DOCS_AUDIT_PR 의 PR open 을 getPullRequest 로 재확인.
       verifiers: [GithubPrVerifier, GithubFileVerifier],
@@ -147,6 +150,7 @@ import { WebhookModule } from './webhook/webhook.module';
         // PreviewGate 컨텍스트에서 새로 만들므로, BeChainModule 이 그것을 재수출하지
         // 않는 이상 여기 없으면 부팅이 index[1] 에서 끊긴다(런타임에만 드러난다).
         AgentRunModule,
+        ProductGoalModule,
       ],
     }),
     SlackModule,

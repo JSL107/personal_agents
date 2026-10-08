@@ -245,3 +245,25 @@ describe('회수 블록 — factSummary 가 아니라 독립 블록으로 낸다
     expect(rendered).not.toContain('🔁');
   });
 });
+
+describe('formatPoShadowReport — 묵은 목표 질문', () => {
+  const checkIns = [
+    '"업로드 개선" — 30일 넘게 붙은 진행 없음. 이 목표 아직 유효한가요?',
+  ];
+
+  it.each([
+    ['조용한 날', { ...base, quiet: true, findings: [], factSummary: [] }],
+    ['검토하는 날', base],
+  ])('%s에도 목표 점검 블록을 싣는다', (_, report) => {
+    const text = formatPoShadowReport({ ...report, goalCheckIns: checkIns });
+    expect(text).toContain('🧭 *목표 점검*');
+    expect(text).toContain('이 목표 아직 유효한가요?');
+    expect(text).toContain('목표 닫아줘');
+  });
+
+  it('질문이 없으면 카드가 목표 도입 전과 같다', () => {
+    expect(formatPoShadowReport({ ...base, goalCheckIns: [] })).toBe(
+      formatPoShadowReport(base),
+    );
+  });
+});

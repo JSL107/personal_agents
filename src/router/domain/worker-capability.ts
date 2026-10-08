@@ -50,8 +50,10 @@ export const WORKER_CAPABILITIES: readonly WorkerCapability[] = [
   },
   {
     agentType: AgentType.PO_SHADOW,
-    classifierLine: '제품 요건 검토 ("PRD 검토", "PO 입장")',
-    canDo: '제품 요건을 PO 입장에서 검토한다. 예: "이 PRD 검토해줘"',
+    classifierLine:
+      '제품 요건 검토 ("PRD 검토", "PO 입장") + 분기 제품 목표 선언·조회·닫기 ("이번 분기 목표는 …, 달성 기준은 …", "목표 보여줘", "<제목> 목표 닫아줘")',
+    canDo:
+      '제품 요건을 PO 입장에서 검토하고, 분기 제품 목표를 선언·조회·닫는다. 예: "이 PRD 검토해줘", "목표 보여줘"',
   },
   {
     agentType: AgentType.PO_EVAL,

@@ -11,6 +11,8 @@ import { DailyPlan, TaskItem } from '../../pm/domain/pm-agent.type';
 import { PoShadowException } from '../domain/po-shadow.exception';
 import { PoShadowContext, PoShadowReport } from '../domain/po-shadow.type';
 import { PoShadowErrorCode } from '../domain/po-shadow-error-code.enum';
+import { ProductGoalRepositoryPort } from '../domain/port/product-goal.repository.port';
+import { ProductGoalRecord } from '../domain/product-goal';
 import { PO_SHADOW_OUTPUT_SCHEMA } from '../domain/prompt/po-shadow.schema';
 import { GeneratePoShadowUsecase } from './generate-po-shadow.usecase';
 import { PoShadowContextCollector } from './po-shadow-context.collector';
@@ -153,6 +155,7 @@ describe('GeneratePoShadowUsecase', () => {
   let contextCollectorCollect: jest.Mock;
   let agentRunServiceFindRecent: jest.Mock;
   let githubGetLifecycle: jest.Mock;
+  let goalFindActive: jest.Mock;
   let usecase: GeneratePoShadowUsecase;
 
   beforeEach(() => {
@@ -174,6 +177,9 @@ describe('GeneratePoShadowUsecase', () => {
 
     agentRunServiceFindRecent = jest.fn().mockResolvedValue([]);
     githubGetLifecycle = jest.fn();
+    // 기본은 활성 목표 0개 — 이 파일의 기존 단언 전부가 "목표를 쓰지 않는 사용자의 출력은
+    // 단계 3 이전과 같다" 는 회귀 검사가 된다.
+    goalFindActive = jest.fn().mockResolvedValue([]);
 
     usecase = new GeneratePoShadowUsecase(
       modelRouter as unknown as ModelRouterUsecase,
@@ -188,6 +194,7 @@ describe('GeneratePoShadowUsecase', () => {
       {
         getItemLifecycle: githubGetLifecycle,
       } as unknown as GithubClientPort,
+      { findActive: goalFindActive } as unknown as ProductGoalRepositoryPort,
     );
 
     modelRouter.route.mockResolvedValue({
@@ -799,6 +806,193 @@ describe('GeneratePoShadowUsecase', () => {
       });
 
       expect(result.result.degradedSources).toContain('직전 PO 보고');
+    });
+  });
+  describe('제품 목표', () => {
+    const now = new Date('2026-10-08T03:00:00.000Z');
+    const DAY = 86_400_000;
+
+    const goalRecord = (
+      overrides: Partial<ProductGoalRecord> = {},
+    ): ProductGoalRecord => ({
+      id: 1,
+      slackUserId: 'U1',
+      title: '업로드 개선',
+      successCriterion: '업로드 실패율 1% 이하',
+      keywords: ['업로드'],
+      dueDate: null,
+      closedAt: null,
+      createdAt: new Date(now.getTime() - DAY),
+      ...overrides,
+    });
+
+    const executeInput = () => agentRunServiceExecute.mock.calls[0][0];
+    const factTable = () =>
+      executeInput().evidence.find(
+        (item: { sourceType: string }) =>
+          item.sourceType === 'PO_SHADOW_FACT_TABLE',
+      ).payload as { kind: string }[];
+
+    beforeEach(() => {
+      agentRunServiceFindLatest.mockResolvedValue({
+        id: 99,
+        output: quietPlan,
+        endedAt: now,
+      });
+    });
+
+    // 회귀 — 목표를 쓰지 않는 사용자의 출력은 단계 3 이전과 같아야 한다.
+    it('활성 목표가 0개면 inputSnapshot·리포트·조회 횟수가 그대로다', async () => {
+      contextCollectorCollect.mockResolvedValue({
+        ...emptyContext(),
+        mergedPullRequests: [],
+      });
+
+      const outcome = await usecase.execute({
+        extraContext: '',
+        slackUserId: 'U1',
+        now,
+      });
+
+      expect(Object.keys(executeInput().inputSnapshot).sort()).toEqual([
+        'extraContextLength',
+        'slackUserId',
+        'sourcePlanAgentRunId',
+        'sourcePlanEndedAt',
+      ]);
+      expect(outcome.result).not.toHaveProperty('goalCheckIns');
+      expect(factTable().some((fact) => fact.kind.startsWith('GOAL_'))).toBe(
+        false,
+      );
+      // 원장 조회는 회수 1회뿐 — 목표 진행 기록 조회가 덧붙지 않는다.
+      expect(agentRunServiceFindRecent).toHaveBeenCalledTimes(1);
+    });
+
+    it('활성 목표가 0개면 프롬프트에 목표 섹션을 싣지 않는다', async () => {
+      agentRunServiceFindLatest.mockResolvedValue({
+        id: 99,
+        output: mismatchPlan,
+        endedAt: now,
+      });
+      contextCollectorCollect.mockResolvedValue(mismatchContext());
+
+      await usecase.execute({ extraContext: '', slackUserId: 'U1', now });
+
+      expect(modelRouter.route.mock.calls[0][0].request.prompt).not.toContain(
+        '[활성 제품 목표]',
+      );
+    });
+
+    it('목표에 안 붙은 작업은 GOAL_UNSERVED 로 사실 목록에만 싣고 검토를 켜지 않는다', async () => {
+      goalFindActive.mockResolvedValue([goalRecord()]);
+      contextCollectorCollect.mockResolvedValue({
+        ...emptyContext(),
+        mergedPullRequests: [
+          {
+            number: 5,
+            title: 'chore: 의존성 갱신',
+            body: '',
+            repo: 'acme/app',
+            url: 'https://github.com/acme/app/pull/5',
+            state: 'merged',
+            mergedAt: '2026-10-08T01:00:00.000Z',
+            updatedAt: '2026-10-08T01:00:00.000Z',
+            additions: 1,
+            deletions: 1,
+            changedFilesCount: 1,
+          },
+        ],
+      });
+
+      const outcome = await usecase.execute({
+        extraContext: '',
+        slackUserId: 'U1',
+        now,
+      });
+
+      expect(modelRouter.route).not.toHaveBeenCalled();
+      expect(outcome.result.quiet).toBe(true);
+      expect(outcome.result.factSummary).toEqual([
+        // 계획의 USER_INPUT 항목이 원래 내던 사실 — 목표와 무관하게 그대로다.
+        '릴리즈 체크 — 외부 상태로 자동 확인 불가',
+        '목표 밖 작업 1건 — chore: 의존성 갱신',
+      ]);
+      expect(executeInput().inputSnapshot.goalProgress).toEqual([]);
+    });
+
+    it('기한 임박 + 붙은 열린 항목이 있으면 검토를 켜고 목표를 프롬프트에 싣는다', async () => {
+      goalFindActive.mockResolvedValue([
+        goalRecord({ dueDate: new Date('2026-10-12T00:00:00.000Z') }),
+      ]);
+      contextCollectorCollect.mockResolvedValue({
+        ...emptyContext(),
+        assignedTasks: mismatchContext().assignedTasks,
+      });
+
+      await usecase.execute({ extraContext: '', slackUserId: 'U1', now });
+
+      expect(factTable().map((fact) => fact.kind)).toContain(
+        'GOAL_DEADLINE_RISK',
+      );
+      const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(prompt).toContain('[활성 제품 목표]');
+      expect(prompt).toContain(
+        '- 업로드 개선 | 달성 기준: 업로드 실패율 1% 이하 | 기한: 2026-10-12',
+      );
+      expect(prompt).toContain('judgments 에만');
+    });
+
+    it('묵은 목표는 리포트에 "아직 유효한가요?" 를 싣는다', async () => {
+      goalFindActive.mockResolvedValue([
+        goalRecord({ createdAt: new Date(now.getTime() - 40 * DAY) }),
+      ]);
+      contextCollectorCollect.mockResolvedValue(emptyContext());
+
+      const outcome = await usecase.execute({
+        extraContext: '',
+        slackUserId: 'U1',
+        now,
+      });
+
+      expect(outcome.result.goalCheckIns).toEqual([
+        '"업로드 개선" — 30일 넘게 붙은 진행 없음. 이 목표 아직 유효한가요?',
+      ]);
+    });
+
+    it('직전 회차의 진행 기록이 있으면 묵었다고 하지 않는다', async () => {
+      goalFindActive.mockResolvedValue([
+        goalRecord({ createdAt: new Date(now.getTime() - 40 * DAY) }),
+      ]);
+      contextCollectorCollect.mockResolvedValue(emptyContext());
+      agentRunServiceFindRecent.mockResolvedValue([
+        {
+          id: 50,
+          output: null,
+          inputSnapshot: { goalProgress: [1] },
+          endedAt: new Date(now.getTime() - 5 * DAY),
+        },
+      ]);
+
+      const outcome = await usecase.execute({
+        extraContext: '',
+        slackUserId: 'U1',
+        now,
+      });
+
+      expect(outcome.result).not.toHaveProperty('goalCheckIns');
+    });
+
+    it('목표 조회가 실패하면 목표 없이 진행하고 못 본 사실을 라벨로 밝힌다', async () => {
+      goalFindActive.mockRejectedValue(new Error('db down'));
+      contextCollectorCollect.mockResolvedValue(emptyContext());
+
+      const outcome = await usecase.execute({
+        extraContext: '',
+        slackUserId: 'U1',
+        now,
+      });
+
+      expect(outcome.result.degradedSources).toContain('제품 목표');
     });
   });
 });
