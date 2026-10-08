@@ -24,6 +24,7 @@ import {
   ScheduleCommand,
 } from '../domain/parse-schedule-command';
 import { PlainDate } from '../domain/schedule.type';
+import { isScheduleLookup } from '../domain/schedule-lookup';
 
 interface MergedScheduleCommand {
   command: ScheduleCommand;
@@ -42,6 +43,11 @@ export class ScheduleDispatcher implements AgentDispatcher {
 
   async dispatch(input: DispatchInput): Promise<DispatchOutcome> {
     const today = todayInKst(new Date());
+    // 조회 문장은 등록 파서에 넣지 않는다 — 문장 전체가 제목으로 읽혀 날짜를 되묻거나("이번주 일정
+    // 알려줘") 바로 등록된다("오늘 할 일"). 등록된 일정으로 답한다.
+    if (isScheduleLookup(input.text ?? '')) {
+      return this.answer(input, today, { kind: 'LOOKUP' });
+    }
     const { command, mergedPriorText } = this.withPriorTurn(
       parseScheduleCommand(input.text ?? '', today),
       input,
@@ -61,23 +67,12 @@ export class ScheduleDispatcher implements AgentDispatcher {
       );
       // 등록은 하지 않되 질문에는 등록된 일정으로 답한다. 제목은 질문 원문에서 뽑혀 "맞아?" 같은
       // 꼬리가 섞일 수 있어 등록 안내에는 예시 문장을 쓴다.
-      const parsedIntent = {
-        ...command,
-        heldWrite: { action: 'REGISTER', marker },
-      };
-      const outcome = await this.answerQuestion.execute({
-        slackUserId: input.slackUserId,
+      return this.answer(
+        input,
         today,
-        text: input.text ?? '',
-        priorTurns: input.priorTurns ?? [],
-        parsedIntent,
-      });
-      return {
-        agentRunId: outcome.agentRunId,
-        output: { ...parsedIntent, usedFallback: outcome.result.usedFallback },
-        modelUsed: outcome.modelUsed,
-        formattedText: `${outcome.result.text}\n\n${formatHeldWrite('일정을 등록', '9월 30일 자동차세 등록해줘')}`,
-      };
+        { ...command, heldWrite: { action: 'REGISTER', marker } },
+        formatHeldWrite('일정을 등록', '9월 30일 자동차세 등록해줘'),
+      );
     }
 
     if (command.kind === 'NEEDS_TITLE') {
@@ -94,6 +89,30 @@ export class ScheduleDispatcher implements AgentDispatcher {
       dueDate: command.dueDate,
     });
     return this.toOutcome(record, formatScheduleRegistered(record));
+  }
+
+  private async answer(
+    input: DispatchInput,
+    today: PlainDate,
+    parsedIntent: Record<string, unknown>,
+    notice?: string,
+  ): Promise<DispatchOutcome> {
+    const outcome = await this.answerQuestion.execute({
+      slackUserId: input.slackUserId,
+      today,
+      text: input.text ?? '',
+      priorTurns: input.priorTurns ?? [],
+      parsedIntent,
+    });
+    return {
+      agentRunId: outcome.agentRunId,
+      output: { ...parsedIntent, usedFallback: outcome.result.usedFallback },
+      modelUsed: outcome.modelUsed,
+      formattedText:
+        notice === undefined
+          ? outcome.result.text
+          : `${outcome.result.text}\n\n${notice}`,
+    };
   }
 
   /**
@@ -113,14 +132,14 @@ export class ScheduleDispatcher implements AgentDispatcher {
     if (command.kind === 'REGISTER') {
       return { command };
     }
-    const prior = [...(input.priorTurns ?? [])]
-      .reverse()
-      .find(
-        (turn) =>
-          turn.agentType === AgentType.SCHEDULE &&
-          (turn.role ?? 'user') === 'user' &&
-          turn.text.trim().length > 0,
-      );
+    const prior = [...(input.priorTurns ?? [])].reverse().find(
+      (turn) =>
+        turn.agentType === AgentType.SCHEDULE &&
+        (turn.role ?? 'user') === 'user' &&
+        turn.text.trim().length > 0 &&
+        // 조회 질문은 등록의 앞 턴이 아니다 — 합치면 "이번주 일정 알려줘" 가 제목으로 등록된다.
+        !isScheduleLookup(turn.text),
+    );
     if (!prior) {
       return { command };
     }
