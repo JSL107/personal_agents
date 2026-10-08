@@ -129,7 +129,8 @@ describe('ConversationalReply — buildSystemPrompt (self-context)', () => {
       expect(prompt).toBe(baselinePrompt);
       expect(createHash('sha256').update(prompt).digest('hex')).toBe(
         // 2026-10-07 기능 목록·개인 봇 사실·되묻기 규칙 교체, PR 소유 문구 정정(#744 리뷰), 링크 없는 게시 안내(4단계)로 갱신
-        '2e46d432d99b0ed5ed94e2122671760a2c2d32e1e8e1efe68791186198b1c577',
+        // 2026-10-08 PO_SHADOW 가 분기 제품 목표 선언·조회·닫기도 받는다(PO Shadow 단계 3)
+        '44e4211530e305775ff4c0bd1d246b208cd20ab51db3aaa4975c30ef8498ff9b',
       );
     },
   );

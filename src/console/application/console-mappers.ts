@@ -20,6 +20,8 @@ export const PREVIEW_KIND_TO_AGENT: Record<PreviewKind, AgentType | null> = {
   EVENING_BLOG_PUBLISH: AgentType.EVENING_RETRO,
   BLOG_GITHUB_PUBLISH: AgentType.BLOG_PUBLISH,
   EVENING_CAREER_REFLECT: AgentType.EVENING_RETRO,
+  // 제품 목표 선언·닫기 확인 — PO 대행이 받은 선언이다.
+  PRODUCT_GOAL: AgentType.PO_SHADOW,
   // 분배를 확정하는 승인이라 카드 주인은 실행될 BE worker 가 아니라 분배자인 CTO 다.
   SESSION_INJECT: null,
   // 폐지된 kind(#477). 담당 에이전트였던 BE worker 도 함께 사라져 집결 대상이 없다.

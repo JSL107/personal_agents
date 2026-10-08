@@ -192,6 +192,39 @@ export const NL_ANSWER_EVAL_CASES: readonly EvalCase[] = [
     text: '자동차세 등록해도 돼?',
     expect: { forbidIntercepts: true },
   },
+  // ── tuning: 제품 목표(PO Shadow 단계 3) ──────────────────────
+  // PO 워커는 eval 에서 실행하지 않으므로 라우팅만 잰다(acceptStubRoutes). 선언·닫기의 카드·저장
+  // 동작은 디스패처·applier 단위 테스트가 맡는다.
+  {
+    id: 't-goal-declare',
+    split: 'tuning',
+    note: '분기 목표 선언 — PM(오늘 계획)으로 새면 목표가 저장 경로에 닿지 않는다',
+    text: '이번 분기 목표는 보존기간 파일 파기, 달성 기준은 운영 배포 완료, 기한 12월 31일',
+    expect: {
+      destinations: [AgentType.PO_SHADOW],
+      acceptStubRoutes: [AgentType.PO_SHADOW],
+    },
+  },
+  {
+    id: 't-goal-list',
+    split: 'tuning',
+    note: '목표 조회',
+    text: '목표 보여줘',
+    expect: {
+      destinations: [AgentType.PO_SHADOW],
+      acceptStubRoutes: [AgentType.PO_SHADOW],
+    },
+  },
+  {
+    id: 't-goal-close',
+    split: 'tuning',
+    note: '목표 닫기',
+    text: '보존기간 파일 파기 목표 닫아줘',
+    expect: {
+      destinations: [AgentType.PO_SHADOW],
+      acceptStubRoutes: [AgentType.PO_SHADOW],
+    },
+  },
   // ── tuning: 커리어·블로그·리뷰·모의투자·기능 ───────────────────
   {
     id: 't-career-question',

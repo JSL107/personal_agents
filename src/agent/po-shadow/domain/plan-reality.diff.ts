@@ -19,7 +19,11 @@ export type PlanRealityFactKind =
   | 'FINDING_MERGED'
   | 'FINDING_UNMOVED'
   | 'FINDING_ABANDONED'
-  | 'FINDING_UNASSIGNED';
+  | 'FINDING_UNASSIGNED'
+  // 제품 목표(단계 3) — 활성 목표가 있을 때만 나온다. 성공 기준 충족 여부는 사실이 아니라
+  // judgments 층이다(자연어 기준을 코드가 잴 수 없다).
+  | 'GOAL_UNSERVED'
+  | 'GOAL_DEADLINE_RISK';
 
 export interface PlanRealityFact {
   id: string;
@@ -81,6 +85,8 @@ const MISMATCH_KINDS = new Set<PlanRealityFactKind>([
   'UNPLANNED_ASSIGNED',
   'UNPLANNED_MENTION',
   'WORKER_FAILED',
+  // GOAL_UNSERVED 는 넣지 않는다 — 잡무·버그 수정 때문에 거의 매일 나와 매일 검토가 켜진다.
+  'GOAL_DEADLINE_RISK',
 ]);
 
 // 회수 대조가 가능한 fact id 접두어. mention 은 재발화하지 않고 failed 는 id 에 시각이 들어가

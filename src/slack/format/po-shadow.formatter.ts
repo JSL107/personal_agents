@@ -38,6 +38,11 @@ export const formatPoShadowReport = (report: PoShadowReport): string => {
     sections.push(recoveryBlock);
   }
 
+  const checkInBlock = formatGoalCheckIns(report.goalCheckIns);
+  if (checkInBlock) {
+    sections.push(checkInBlock);
+  }
+
   const degradedLine = formatDegradedLine(report.degradedSources);
   if (degradedLine) {
     sections.push(degradedLine);
@@ -90,6 +95,19 @@ const formatRecoveryBlock = (
   return `${head}\n  ${parts.join(' · ')}\n  _비교 대상 없음 — 지적하지 않은 항목의 이동률은 아직 재지 않습니다._`;
 };
 
+// 묵은 목표 질문. 닫기는 사용자가 한다 — 닫는 말을 함께 알려 준다.
+const formatGoalCheckIns = (checkIns: string[] | undefined): string | null => {
+  if (checkIns === undefined || checkIns.length === 0) {
+    return null;
+  }
+  const lines = checkIns.map((line) => `• ${escapeSlackMrkdwn(line)}`);
+  return [
+    '🧭 *목표 점검*',
+    ...lines,
+    '_더 유효하지 않으면 "<제목> 목표 닫아줘" 로 닫아 주세요._',
+  ].join('\n');
+};
+
 const formatDegradedLine = (degradedSources: string[]): string | null => {
   if (degradedSources.length === 0) {
     return null;
@@ -108,6 +126,10 @@ const formatQuietReport = (report: PoShadowReport): string => {
   const recoveryBlock = formatRecoveryBlock(report.recoverySummary);
   if (recoveryBlock) {
     blocks.push(recoveryBlock);
+  }
+  const checkInBlock = formatGoalCheckIns(report.goalCheckIns);
+  if (checkInBlock) {
+    blocks.push(checkInBlock);
   }
   const degradedLine = formatDegradedLine(report.degradedSources);
   if (degradedLine) {

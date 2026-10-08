@@ -9,12 +9,13 @@ describe('INTENT_CLASSIFIER_SYSTEM_PROMPT', () => {
   // 갱신 이력: 2026-10-07 CODE_REVIEWER 에 "링크 없는 게시 지시" 추가(자연어 응답 충실도 4단계).
   //           2026-10-08 SCHEDULE 이 일정 조회도 받는다(자연어 응답 충실도 후속).
   //           2026-10-08 BLOG_PUBLISH 가 발행 여부·초안 목록 질문도 받는다.
+  //           2026-10-08 PO_SHADOW 가 분기 제품 목표 선언·조회·닫기도 받는다(PO Shadow 단계 3).
   it('분류기 프롬프트 지문이 마지막으로 잰 값과 같다 — 바꾸면 분류 eval 을 다시 잰다', () => {
     expect(
       createHash('sha256')
         .update(INTENT_CLASSIFIER_SYSTEM_PROMPT)
         .digest('hex'),
-    ).toBe('1bd01bcf1a5b275102f0fce1a77353eac3ea5918cddd8334dd64af9210c5c32e');
+    ).toBe('764cefd949936a30710b22f4fc0d616e3269bec8503b3a88dcb3a556716c6e35');
   });
 
   it('SCHEDULE 후보가 분류 표에 있다', () => {

@@ -76,4 +76,7 @@ export interface PoShadowReport {
   degradedSources: string[];
   // factSummary·degradedSources 와 같은 자리 — 코드가 채운다. 모델에게는 null 을 요구한다.
   recoverySummary: PoShadowRecoverySummary | null;
+  // 묵은 목표 질문("이 목표 아직 유효한가요?"). 코드가 채우고, 없으면 키 자체가 없다 —
+  // 활성 목표가 없는 사용자의 리포트 형태를 단계 3 이전과 같게 둔다.
+  goalCheckIns?: string[];
 }
