@@ -24,6 +24,10 @@ import {
 import { RouterException } from '../../router/domain/router.exception';
 import { RouterErrorCode } from '../../router/domain/router-error-code.enum';
 import { isUnresolvedFollowUpTurn } from '../../router/domain/unresolved-turn.util';
+import {
+  SLACK_DELIVERY_REPOSITORY,
+  SlackDeliveryRepositoryPort,
+} from '../domain/port/slack-delivery.repository.port';
 import { SlackHandler } from '../domain/port/slack-handler.port';
 import { toReadableSlackArgs } from '../format/message-blocks.builder';
 import { buildPreviewBlocks } from '../format/preview-message.builder';
@@ -65,6 +69,8 @@ export class RouterMessageHandler implements SlackHandler {
     private readonly findLatestPendingPreview: FindLatestPendingPreviewUsecase,
     private readonly applyPreviewUsecase: ApplyPreviewUsecase,
     private readonly cancelPreviewUsecase: CancelPreviewUsecase,
+    @Inject(SLACK_DELIVERY_REPOSITORY)
+    private readonly deliveryRepository: SlackDeliveryRepositoryPort,
   ) {}
 
   register(app: App): void {
@@ -96,6 +102,12 @@ export class RouterMessageHandler implements SlackHandler {
         channelId,
         threadTs,
         memoryThreadTs,
+        // 답글 집계는 실제 thread_ts 만 쓴다 — threadTs(`thread_ts ?? ts`)를 쓰면 최상위 멘션이
+        // 자기 자신에 대한 답글로 세진다.
+        replyToTs:
+          'thread_ts' in event && typeof event.thread_ts === 'string'
+            ? event.thread_ts
+            : undefined,
         messageTs,
         say,
         client,
@@ -144,6 +156,7 @@ export class RouterMessageHandler implements SlackHandler {
         channelId,
         threadTs,
         memoryThreadTs,
+        replyToTs: memoryThreadTs,
         messageTs,
         say,
         client,
@@ -158,6 +171,7 @@ export class RouterMessageHandler implements SlackHandler {
     channelId,
     threadTs,
     memoryThreadTs,
+    replyToTs,
     messageTs,
     say,
     client,
@@ -168,11 +182,25 @@ export class RouterMessageHandler implements SlackHandler {
     channelId: string;
     threadTs: string | undefined;
     memoryThreadTs: string | undefined;
+    replyToTs: string | undefined;
     messageTs: string | undefined;
     say: SayFn;
     client: WebClient;
     source: 'app_mention' | 'dm';
   }): Promise<void> {
+    if (replyToTs) {
+      try {
+        await this.deliveryRepository.incrementReplyCount({
+          channelId,
+          messageTs: replyToTs,
+        });
+      } catch (error: unknown) {
+        this.logger.warn(
+          `발송 답글 집계 실패: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+
     if (text.length === 0) {
       await say({
         thread_ts: threadTs,

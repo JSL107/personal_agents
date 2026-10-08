@@ -20,6 +20,7 @@ import {
 } from '../../router/domain/idaeri-router.port';
 import { RouterException } from '../../router/domain/router.exception';
 import { RouterErrorCode } from '../../router/domain/router-error-code.enum';
+import { SlackDeliveryRepositoryPort } from '../domain/port/slack-delivery.repository.port';
 import { RouterMessageHandler } from './router-message.handler';
 
 // C-4 Phase 10 — fn → class 마이그레이션 이후 spec sync hotfix.
@@ -33,6 +34,7 @@ const buildHandler = (
     findLatestPendingPreview?: FindLatestPendingPreviewUsecase;
     applyPreviewUsecase?: ApplyPreviewUsecase;
     cancelPreviewUsecase?: CancelPreviewUsecase;
+    deliveryRepository?: SlackDeliveryRepositoryPort;
   } = {},
 ): RouterMessageHandler => {
   const conversationalReply =
@@ -57,6 +59,11 @@ const buildHandler = (
     ({
       execute: jest.fn().mockResolvedValue(null),
     } as unknown as CancelPreviewUsecase);
+  const deliveryRepository =
+    options.deliveryRepository ??
+    ({
+      incrementReplyCount: jest.fn().mockResolvedValue(0),
+    } as unknown as SlackDeliveryRepositoryPort);
   return new RouterMessageHandler(
     idaeriRouter,
     conversationMemory,
@@ -64,6 +71,7 @@ const buildHandler = (
     findLatestPendingPreview,
     applyPreviewUsecase,
     cancelPreviewUsecase,
+    deliveryRepository,
   );
 };
 
@@ -1459,5 +1467,100 @@ describe('RouterMessageHandler — 갭 분석 주제선택 인터셉트', () => 
     expect(dispatch).not.toHaveBeenCalledWith(
       expect.objectContaining({ agentTypeHint: AgentType.BLOG }),
     );
+  });
+});
+
+describe('RouterMessageHandler — 원장 답글 집계', () => {
+  const buildCase = () => {
+    const { app, getHandler } = buildAppMock();
+    const incrementReplyCount = jest.fn().mockResolvedValue(1);
+    const dispatch = jest.fn().mockResolvedValue({
+      agentRunId: 1,
+      workerType: AgentType.PM,
+      output: {},
+      modelUsed: 'mock',
+      formattedText: '응답',
+    });
+    buildHandler(
+      { dispatch },
+      {
+        deliveryRepository: {
+          incrementReplyCount,
+        } as unknown as SlackDeliveryRepositoryPort,
+      },
+    ).register(app);
+    return { getHandler, incrementReplyCount, dispatch };
+  };
+
+  it('스레드 멘션은 실제 thread_ts 로 집계한다', async () => {
+    const { getHandler, incrementReplyCount } = buildCase();
+    await invokeHandler(getHandler('app_mention'), {
+      type: 'app_mention',
+      user: 'U_USER',
+      channel: 'C_CHANNEL',
+      ts: '200.001',
+      thread_ts: '100.001',
+      text: '<@UBOT> 질문',
+    });
+    expect(incrementReplyCount).toHaveBeenCalledWith({
+      channelId: 'C_CHANNEL',
+      messageTs: '100.001',
+    });
+  });
+
+  it('최상위 멘션은 자신의 ts 를 답글로 세지 않는다', async () => {
+    const { getHandler, incrementReplyCount } = buildCase();
+    await invokeHandler(getHandler('app_mention'), {
+      type: 'app_mention',
+      user: 'U_USER',
+      channel: 'C_CHANNEL',
+      ts: '200.001',
+      text: '<@UBOT> 질문',
+    });
+    expect(incrementReplyCount).not.toHaveBeenCalled();
+  });
+
+  it('스레드 DM 만 실제 thread_ts 로 집계한다', async () => {
+    const { getHandler, incrementReplyCount } = buildCase();
+    await invokeHandler(getHandler('message'), {
+      type: 'message',
+      channel_type: 'im',
+      user: 'U_USER',
+      channel: 'D_CHANNEL',
+      ts: '200.001',
+      thread_ts: '100.001',
+      text: '질문',
+    });
+    expect(incrementReplyCount).toHaveBeenCalledWith({
+      channelId: 'D_CHANNEL',
+      messageTs: '100.001',
+    });
+  });
+
+  it('최상위 DM 은 답글로 세지 않는다', async () => {
+    const { getHandler, incrementReplyCount } = buildCase();
+    await invokeHandler(getHandler('message'), {
+      type: 'message',
+      channel_type: 'im',
+      user: 'U_USER',
+      channel: 'D_CHANNEL',
+      ts: '200.001',
+      text: '질문',
+    });
+    expect(incrementReplyCount).not.toHaveBeenCalled();
+  });
+
+  it('집계 실패해도 대화를 dispatch 한다', async () => {
+    const { getHandler, incrementReplyCount, dispatch } = buildCase();
+    incrementReplyCount.mockRejectedValue(new Error('DB 오류'));
+    await invokeHandler(getHandler('app_mention'), {
+      type: 'app_mention',
+      user: 'U_USER',
+      channel: 'C_CHANNEL',
+      ts: '200.001',
+      thread_ts: '100.001',
+      text: '<@UBOT> 질문',
+    });
+    expect(dispatch).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,9 +1,27 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  DefaultValuePipe,
+  Get,
+  ParseEnumPipe,
+  ParseIntPipe,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 
+import {
+  SLACK_DELIVERY_STATUS,
+  SlackDeliveryStatus,
+} from '../../slack/domain/slack-delivery.type';
+import { SlackDeliverySummary } from '../../slack/domain/slack-delivery-summary';
 import { BuildActivityUsecase } from '../application/build-activity.usecase';
+import { BuildDeliverySummaryUsecase } from '../application/build-delivery-summary.usecase';
 import { BuildLedgerUsecase } from '../application/build-ledger.usecase';
 import { BuildPresidentBriefingUsecase } from '../application/build-president-briefing.usecase';
 import { ConsoleReadService } from '../application/console-read.service';
+import {
+  ListDeliveriesResult,
+  ListDeliveriesUsecase,
+} from '../application/list-deliveries.usecase';
 import { ConsoleActivity } from '../domain/activity.type';
 import { ConsoleBriefing } from '../domain/briefing.type';
 import {
@@ -28,7 +46,30 @@ export class ConsoleController {
     private readonly buildBriefing: BuildPresidentBriefingUsecase,
     private readonly buildLedger: BuildLedgerUsecase,
     private readonly buildActivity: BuildActivityUsecase,
+    private readonly buildDeliverySummary: BuildDeliverySummaryUsecase,
+    private readonly listDeliveries: ListDeliveriesUsecase,
   ) {}
+
+  @Get('deliveries/summary')
+  async getDeliverySummary(
+    @Query('days', new DefaultValuePipe(14), ParseIntPipe) days: number,
+  ): Promise<SlackDeliverySummary> {
+    return await this.buildDeliverySummary.execute(days);
+  }
+
+  @Get('deliveries')
+  async getDeliveries(
+    @Query(
+      'status',
+      new DefaultValuePipe('SUPPRESSED'),
+      new ParseEnumPipe(SLACK_DELIVERY_STATUS),
+    )
+    status: SlackDeliveryStatus,
+    @Query('days', new DefaultValuePipe(14), ParseIntPipe) days: number,
+    @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit: number,
+  ): Promise<ListDeliveriesResult> {
+    return await this.listDeliveries.execute({ status, days, limit });
+  }
 
   // 대시보드 — 최근 14일 실행 추이와 최근 실행 목록. 스냅샷은 지금 도는 런만 담아 따로 둔다.
   @Get('activity')

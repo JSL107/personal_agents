@@ -43,6 +43,10 @@ import { shouldRefreshSocketAfterDrift, SlackService } from './slack.service';
 
 const mockDeliveryRepository = {
   record: jest.fn().mockResolvedValue(undefined),
+  incrementReactionCount: jest.fn().mockResolvedValue(0),
+  incrementReplyCount: jest.fn().mockResolvedValue(0),
+  findSince: jest.fn().mockResolvedValue([]),
+  findByStatus: jest.fn().mockResolvedValue([]),
 };
 
 const NO_TRUNCATION: PlanInputTruncation = {
