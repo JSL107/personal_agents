@@ -24,9 +24,10 @@ interface AnswerScheduleQuestionCommand {
   parsedIntent: Record<string, unknown>;
 }
 
-// 사실로 넘기는 일정 범위 — 지난 2주(놓친 마감 확인용)와 앞으로 두 달.
+// 사실로 넘기는 일정 범위 — 지난 2주(놓친 마감 확인용)와 앞으로 1년. 개인 일정이라 1년치도 많지 않고,
+// 두 달로 자르면 "내년 1월 일정" 같은 조회가 범위 밖이라 "없다" 로 잘못 답한다(#753 리뷰).
 const LOOKBACK_DAYS = 14;
-const LOOKAHEAD_DAYS = 60;
+const LOOKAHEAD_DAYS = 366;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 // 일정 마감일은 UTC 자정 Date 로 저장된다(plainDateToUtcDate). 날짜 산술도 같은 기준으로 한다.
@@ -76,6 +77,9 @@ export class AnswerScheduleQuestionUsecase {
             dueTime: record.dueTime,
             status: record.status,
           })),
+          // 범위 밖 질문을 "없다" 로 답하지 않게 한계를 함께 넘긴다.
+          rangeNote:
+            '조회 범위 밖의 일정은 확인하지 않았다 — 범위 밖 기간을 물으면 "기록 범위 밖이라 모른다" 고 답한다.',
           howToRegister:
             '"9월 30일 자동차세 등록해줘" 처럼 날짜와 이름을 함께 말하면 등록된다.',
         };

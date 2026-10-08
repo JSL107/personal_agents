@@ -7,12 +7,13 @@ describe('INTENT_CLASSIFIER_SYSTEM_PROMPT', () => {
   // 고정한다. 분류 기준선(2026-09-22, 30/30)과 자연어 eval 기준선이 이 문자열 위에서 잰 값이다.
   // 분류 후보 문구를 일부러 바꿨다면 바뀐 줄을 커밋에 밝히고, 분류 eval 을 다시 잰 뒤 지문을 갱신한다.
   // 갱신 이력: 2026-10-07 CODE_REVIEWER 에 "링크 없는 게시 지시" 추가(자연어 응답 충실도 4단계).
+  //           2026-10-08 SCHEDULE 이 일정 조회도 받는다(자연어 응답 충실도 후속).
   it('분류기 프롬프트 지문이 마지막으로 잰 값과 같다 — 바꾸면 분류 eval 을 다시 잰다', () => {
     expect(
       createHash('sha256')
         .update(INTENT_CLASSIFIER_SYSTEM_PROMPT)
         .digest('hex'),
-    ).toBe('649960c79c998e1004ad9532ddb156f0faccf614e862d70fd42380b0b2deb4c8');
+    ).toBe('9944bec114cfcf7328c6f155e6faa547ddca7f2ef0fc920aa592789132d3cf0e');
   });
 
   it('SCHEDULE 후보가 분류 표에 있다', () => {
