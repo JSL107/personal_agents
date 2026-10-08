@@ -108,6 +108,26 @@ describe('PoShadowAutopilotTask', () => {
     expect(result.summaryText).toContain('🤔 _추정_ 윤문 목적 충돌');
     expect(result.summaryText).toContain('↳ 근거: #264 원본 사실');
     expect(result.summaryText).not.toContain('원문 헤드라인');
+    // 판정 버튼은 이 실행에 귀속되고, 인용은 화면에 나간 윤문본 헤드라인이다.
+    expect(result.runVerdicts).toEqual([
+      {
+        agentRunId: 4,
+        facets: ['po_first_action'],
+        quote: '윤문 헤드라인',
+      },
+    ]);
+  });
+
+  it('조용한 회차는 판정할 제안이 없어 버튼을 붙이지 않는다', async () => {
+    usecase.execute.mockResolvedValue({
+      result: quietReport(),
+      modelUsed: 'none',
+      agentRunId: 3,
+    });
+
+    const result = await task.run(CONTEXT);
+
+    expect(result.runVerdicts).toBeUndefined();
   });
 
   it('NO_RECENT_PLAN이면 계획 부재 하트비트를 남긴다', async () => {

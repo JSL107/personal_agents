@@ -70,9 +70,24 @@ export class PoShadowAutopilotTask implements AutopilotTask {
       outcome.result,
       this.humanizeService,
     );
+    // 정오 그룹은 이 task 하나라 메시지와 실행이 1:1 이다. 판정할 "먼저 이것부터" 가 화면에 있을 때만
+    // 버튼을 붙인다 — 인용은 윤문을 거친 화면 문장 그대로다(원장의 `outcome.result` 는 윤문 전).
+    // 조용한 회차(위)는 제안이 없어 물을 대상이 없다.
+    const headline = humanized.headline.trim();
     return {
       skip: false,
       summaryText: formatPoShadowReport(humanized),
+      ...(headline
+        ? {
+            runVerdicts: [
+              {
+                agentRunId: outcome.agentRunId,
+                facets: ['po_first_action'],
+                quote: headline,
+              },
+            ],
+          }
+        : {}),
     };
   }
 }

@@ -1,4 +1,5 @@
 import {
+  getRunVerdictHeading,
   getRunVerdictLabel,
   isAllowedRunVerdict,
   isRunVerdictFacet,
@@ -11,8 +12,10 @@ import {
 export const RUN_VERDICT_ACTION_PREFIX = 'run_verdict:';
 export const RUN_VERDICT_ACTION_PATTERN = /^run_verdict:/;
 
-export const RUN_VERDICT_FALLBACK_TEXT =
-  '🌙 저녁 회고 판정 — 누른 것만 판정으로 셉니다.';
+// 알림용 대체 문구. 머리는 댓글의 축이 정한다 — 같은 버튼 틀을 저녁 회고·PO 대행·아침 계획이 같이 쓴다.
+export const buildRunVerdictFallbackText = (
+  facets: RunVerdictFacet[],
+): string => `${getRunVerdictHeading(facets)} — 누른 것만 판정으로 셉니다.`;
 
 // 인용 블록 — 판정 대상 문장을 댓글 머리에 싣는다. 누른 뒤 다시 그릴 때 서버에는 그 문장이
 // 없으므로(버튼 값에 본문을 싣지 않는다), 핸들러가 원래 메시지에서 이 block_id 의 텍스트를
@@ -22,8 +25,10 @@ export const RUN_VERDICT_QUOTE_BLOCK_ID = 'run-verdict-quote';
 // 스레드 댓글 머리라 두세 줄 안에서 끝나야 한다. 넘으면 자르고 말줄임을 붙인다.
 const RUN_VERDICT_QUOTE_MAX_CHARS = 200;
 
+// `label` 은 인용 머리 이름(`getRunVerdictQuoteLabel`). 없으면 인용만 싣는다.
 export const formatRunVerdictQuote = (
   quote: string | undefined,
+  label?: string,
 ): string | undefined => {
   const trimmed = quote?.replace(/\s+/g, ' ').trim();
   if (!trimmed) {
@@ -37,7 +42,7 @@ export const formatRunVerdictQuote = (
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
-  return `*문제 칸*\n> ${escaped}`;
+  return label ? `*${label}*\n> ${escaped}` : `> ${escaped}`;
 };
 
 // 버튼을 누른 action body 의 원래 판정 댓글에서 인용 블록의 mrkdwn 을 되읽는다. 없거나 모양이
@@ -89,7 +94,7 @@ export const buildRunVerdictBlocks = ({
     type: 'section',
     text: {
       type: 'mrkdwn',
-      text: '🌙 *저녁 회고 판정* — 누른 것만 판정으로 셉니다.',
+      text: `*${getRunVerdictHeading(facets)}* — 누른 것만 판정으로 셉니다.`,
     },
   },
   ...(quoteMrkdwn
