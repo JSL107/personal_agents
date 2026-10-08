@@ -111,38 +111,32 @@ struct DashboardView: View {
                     .font(Typography.caption)
             }
             LazyVGrid(columns: columns, spacing: Spacing.md) {
-                ForEach(liveAgents) { agent in
+                let stalled = store.stalledAgentTypes
+                ForEach(liveAgents(stalled: stalled)) { agent in
+                    let isStalled = stalled.contains(agent.agentType)
                     LiveAgentCard(
                         agent: agent,
-                        footnote: footnote(for: agent),
-                        isHighlighted: agent.state == .inProgress
+                        footnote: footnote(for: agent, isStalled: isStalled),
+                        isHighlighted: agent.state == .inProgress || isStalled,
+                        isStalled: isStalled
                     )
                 }
             }
         }
     }
 
-    /// 사람 손이 필요한 순서로 세운다 — 진행 중 > 승인 대기 > 실패 > 연동 대기 > 완료 > 대기.
-    private var liveAgents: [ConsoleAgent] {
-        func rank(_ state: ConsoleAgentState) -> Int {
-            switch state {
-            case .inProgress: return 0
-            case .awaitingApproval: return 1
-            case .failed: return 2
-            case .awaitingIntegration: return 3
-            case .completed: return 4
-            case .waiting: return 5
-            }
-        }
-        return Array(
-            store.agents.enumerated()
-                .sorted { (rank($0.element.state), $0.offset) < (rank($1.element.state), $1.offset) }
-                .map(\.element)
+    /// 사람 손이 필요한 순서로 세운다 — 진행 중 > 승인 대기 > 실패 > 정지 > 연동 대기 > 완료 > 대기.
+    private func liveAgents(stalled: Set<String>) -> [ConsoleAgent] {
+        Array(
+            dashboardAttentionOrder(agents: store.agents, stalledAgentTypes: stalled)
                 .prefix(liveAgentLimit)
         )
     }
 
-    private func footnote(for agent: ConsoleAgent) -> String {
+    private func footnote(for agent: ConsoleAgent, isStalled: Bool) -> String {
+        if isStalled, let stall = agentStallFootnote(store.ledger?.entry(for: agent.agentType)) {
+            return stall
+        }
         if agent.state == .inProgress,
             let run = store.runs.first(where: { $0.agentType == agent.agentType }),
             let relative = relativeTime(run.startedAt)
@@ -645,6 +639,8 @@ private struct LiveAgentCard: View {
     let agent: ConsoleAgent
     let footnote: String
     let isHighlighted: Bool
+    /// 자율 워커 정지. 상태(대개 대기)는 그대로 두고 아이콘·테두리·각주만 바꾼다.
+    var isStalled = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.sm) {
@@ -659,7 +655,13 @@ private struct LiveAgentCard: View {
                     .lineLimit(1)
             }
             HStack(spacing: Spacing.sm) {
-                AgentStateIcon(state: agent.state)
+                if isStalled {
+                    Image(systemName: "pause.circle.fill")
+                        .foregroundStyle(CozyPalette.apricot)
+                        .font(Typography.body)
+                } else {
+                    AgentStateIcon(state: agent.state)
+                }
                 Text(agent.bubble)
                     .font(Typography.body)
                     .lineLimit(1)
@@ -672,8 +674,8 @@ private struct LiveAgentCard: View {
                     .strokeBorder(CozyPalette.outline.opacity(0.15))
             )
             Text(footnote)
-                .font(Typography.captionSmall)
-                .foregroundStyle(.secondary)
+                .font(isStalled ? Typography.captionEmphasis : Typography.captionSmall)
+                .foregroundStyle(isStalled ? AnyShapeStyle(CozyPalette.apricot) : AnyShapeStyle(.secondary))
                 .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .padding(Spacing.md)
@@ -684,7 +686,9 @@ private struct LiveAgentCard: View {
         .overlay(
             RoundedRectangle(cornerRadius: Radius.panel, style: .continuous)
                 .strokeBorder(
-                    isHighlighted ? agent.state.accentColor.opacity(0.6) : CozyPalette.outline.opacity(0.12),
+                    isHighlighted
+                        ? (isStalled ? CozyPalette.apricot : agent.state.accentColor).opacity(0.6)
+                        : CozyPalette.outline.opacity(0.12),
                     lineWidth: isHighlighted ? Stroke.emphasis : 1
                 )
         )

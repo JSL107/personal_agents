@@ -15,6 +15,9 @@ struct AppRootView: View {
     @State private var status: ConnectionStatus = .connecting
     /// 마지막으로 스냅샷을 다시 받은 시각. 상태 변경이 몰릴 때 요청 폭주를 막는 최소 간격 기준.
     @State private var lastResyncAt: Date?
+    /// 마지막으로 원장을 받은 시각. 원장은 하루 단위로만 바뀌는데 `agent_run` 전량을 훑으므로
+    /// 30초 재동기화마다 부르지 않는다.
+    @State private var lastLedgerAt: Date?
     /// 첫 화면은 캘린더다(2026-09-18 결정) — 마감·신청·예약을 Slack 에 등록한 뒤 이 화면에서
     /// 확인하는 것이 목표라, 앱을 열자마자 그 확인이 보여야 한다.
     @State private var tab: ConsoleTab = .calendar
@@ -249,6 +252,7 @@ struct AppRootView: View {
         lastResyncAt = Date()
         await resyncBriefing()
         await resyncActivity()
+        await resyncLedger()
     }
 
     /// 대시보드 추이·최근 실행. 브리핑과 같은 이유로 실패는 조용히 넘긴다.
@@ -257,6 +261,19 @@ struct AppRootView: View {
             return
         }
         await MainActor.run { store.apply(activity: activity) }
+    }
+
+    /// 담당자 이력·정지 판정. 실패하면 조용히 넘기고 다음 주기에 다시 시도한다 — 성공 시각만
+    /// 기록하므로 실패가 10분 간격을 잡아먹지 않는다.
+    private func resyncLedger() async {
+        if let lastLedgerAt, Date().timeIntervalSince(lastLedgerAt) < 600 {
+            return
+        }
+        guard let ledger = try? await client.fetchLedger() else {
+            return
+        }
+        await MainActor.run { store.apply(ledger: ledger) }
+        lastLedgerAt = Date()
     }
 
     /// 대표 브리핑을 받아 화면에 얹는다. 실패하면 조용히 넘긴다 — 집계가 없다고 관제가
@@ -322,6 +339,7 @@ struct AppRootView: View {
                 // 첫 연결에서도 받는다. 주기 재동기화(30초)나 상태 변경을 기다리면 서버가 조용한
                 // 동안 대시보드 그래프가 "불러오는 중" 으로 남는다.
                 await resyncActivity()
+                await resyncLedger()
                 backoffSeconds = 1
                 for await event in await client.events() {
                     store.apply(event: event)

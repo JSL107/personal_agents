@@ -37,6 +37,7 @@ func renderDashboardPreview(
         )
     )
     store.apply(activity: dashboardPreviewActivity)
+    store.apply(ledger: dashboardPreviewLedger)
     // 지시 배지는 스냅샷이 아니라 사용자 조작으로 쌓인다 — 굽는 쪽에서 직접 세워야
     // `pendingBadgeRow` 가 프레임에 들어온다(전송 중 · 전송 실패 두 모양).
     store.enqueueCommand(text: "owner/repo#42 리뷰해줘", agentTypeHint: "CODE_REVIEWER")
@@ -166,6 +167,24 @@ private let dashboardPreviewSessions: [ConsoleSession] = [
         lastActivityAt: "2026-09-09T04:34:00.000Z"
     )
 ]
+
+/// 원장 표본 — 대기 중인 WORK_REVIEWER 가 정지라 「지금 담당자」 넷째 자리로 올라와야 한다.
+/// CTO 는 명단에 없는 폐지 워커(2026-10-08 실측 값)라 정지여도 카드가 생기면 안 된다.
+private let dashboardPreviewLedger = ConsoleLedger(
+    agents: [
+        ConsoleAgentLedger(
+            agentType: "WORK_REVIEWER", firstRunDate: "2026-06-23", totalRuns: 174, failedRuns: 14,
+            lastRunAt: "2026-08-30T00:17:13.703Z", autonomy: "AUTONOMOUS", stalled: true,
+            idleDays: 10, autonomyIdleDays: 10
+        ),
+        ConsoleAgentLedger(
+            agentType: "CTO", firstRunDate: "2026-07-01", totalRuns: 26, failedRuns: 0,
+            lastRunAt: "2026-09-06T04:00:00.108Z", autonomy: "AUTONOMOUS", stalled: true,
+            idleDays: 32, autonomyIdleDays: 32
+        ),
+    ],
+    serverTime: "2026-09-09T04:35:00.000Z"
+)
 
 /// 14일 추이 표본 — 실패가 섞인 날, 실행이 없는 날(주말), 진행 중이 남은 오늘을 모두 담는다.
 private let dashboardPreviewActivity = ConsoleActivity(

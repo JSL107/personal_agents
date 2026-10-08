@@ -37,6 +37,13 @@ public final class ConsoleStore: ObservableObject {
     @Published public private(set) var briefing: ConsoleBriefing?
     /// 대시보드 14일 추이·최근 실행. 받기 전이거나 실패하면 nil — 그래프 자리는 비워 둔다.
     @Published public private(set) var activity: ConsoleActivity?
+    /// 담당자 이력·정지 판정. 받기 전이거나 실패하면 nil — 이력 줄과 정지 표시를 그리지 않는다.
+    @Published public private(set) var ledger: ConsoleLedger?
+
+    /// 화면에 정지로 표시할 담당자(지금 명단에 있는 사람만 — `officeStalledAgentTypes`).
+    public var stalledAgentTypes: Set<String> {
+        officeStalledAgentTypes(ledger: ledger, roster: agents)
+    }
     /// 캘린더 탭이 조회한 일정 목록. 스냅샷과 무관하게 탭이 열릴 때·상태 변경 직후에만 갱신된다.
     @Published public private(set) var schedules: [ScheduleItem] = []
     @Published public private(set) var pendingCommands: [PendingCommand] = []
@@ -114,6 +121,10 @@ public final class ConsoleStore: ObservableObject {
 
     public func apply(activity: ConsoleActivity) {
         self.activity = activity
+    }
+
+    public func apply(ledger: ConsoleLedger) {
+        self.ledger = ledger
     }
 
     /// SSE 증분 이벤트를 현재 상태 위에 적용한다.

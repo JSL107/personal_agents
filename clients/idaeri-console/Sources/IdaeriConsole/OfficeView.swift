@@ -65,7 +65,12 @@ struct OfficeView: View {
                             onSend: { send(to: $0) },
                             onApprovalDetail: { selectedApproval = $0 },
                             onApprove: { onApprove($0); selectedAgent = nil; scene.setSelected(nil) },
-                            onReject: { onReject($0); selectedAgent = nil; scene.setSelected(nil) }
+                            onReject: { onReject($0); selectedAgent = nil; scene.setSelected(nil) },
+                            ledgerLines: agentLedgerLines(
+                                store.ledger?.entry(for: agentType),
+                                serverTime: store.ledger?.serverTime ?? ""
+                            ),
+                            isStalled: store.stalledAgentTypes.contains(agentType)
                         )
                     }
                 }
@@ -140,6 +145,7 @@ struct OfficeView: View {
                     scene.setSelected(validSelection)
                     focusedRoom = uses3D ? office3D.focusedDepartment : scene.focusedDepartment
                     scene.applyHousekeeping(store.housekeeping)
+                    scene.applyStalled(store.stalledAgentTypes)
                     scene.refreshOverlays(
                         agents: store.agents, runs: store.runs,
                         pendingCommands: store.pendingCommands, now: Date()
@@ -194,10 +200,15 @@ struct OfficeView: View {
                     scene.sync(agents: newAgents, approvals: store.approvals)
                     office3D.pushSnapshot(currentSnapshot)
                     scene.applyHousekeeping(store.housekeeping)
+                    // 정지 표시는 상태에도 달려 있다(일하는 중이면 뺀다 — `officeStalledAgentTypes`).
+                    scene.applyStalled(store.stalledAgentTypes)
                     scene.refreshOverlays(
                         agents: newAgents, runs: store.runs,
                         pendingCommands: store.pendingCommands, now: Date()
                     )
+                }
+                .onChange(of: store.ledger) { _ in
+                    scene.applyStalled(store.stalledAgentTypes)
                 }
                 .onChange(of: store.approvals) { newApprovals in
                     // 승인만 바뀐 경우는 줄만 맞춘다. 여기서 sync 를 부르면 승인 알림이 오갈

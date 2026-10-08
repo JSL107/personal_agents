@@ -31,6 +31,7 @@ func renderOfficeScene(
     room: Department? = nil,
     selectedDemo: Bool = false,
     selectedApprovalDemo: Bool = false,
+    stallDemo: Bool = false,
     darkMode: Bool = false
 ) -> Bool {
     let selectedCapture = selectedDemo || selectedApprovalDemo
@@ -49,7 +50,9 @@ func renderOfficeScene(
     // 데모는 백엔드가 꺼져도 일곱 자세가 모두 보여야 회귀 입구 역할을 한다.
     var renderedAgents = poseDemo ? poseDemoAgents() : (populatedDemo ? populatedDemoAgents() : snapshot?.agents ?? [])
     if selectedCapture {
-        renderedAgents = populatedDemoAgents() + [selectedDemoAgent(approval: selectedApprovalDemo)]
+        renderedAgents = populatedDemoAgents() + [
+            selectedDemoAgent(approval: selectedApprovalDemo, stalled: stallDemo)
+        ]
     }
     if busyDemo {
         // 백엔드가 꺼져 있으면 사람이 0명이라 이 모드는 **빈 사무실을 성공으로 저장한다.**
@@ -147,6 +150,25 @@ func renderOfficeScene(
         return false
     }
     scene.updateCompanySummary(renderedAgents)
+    // 정지 배지. 실 경로는 앱과 같은 판정(`officeStalledAgentTypes`)을 그대로 탄다.
+    let stalled: Set<String>
+    if stallDemo {
+        stalled = Set(
+            renderedAgents.filter { $0.state != .inProgress && $0.agentType != "SELECTED_DEMO" }
+                .prefix(selectedCapture ? 2 : 3).map(\.agentType)
+                + (selectedCapture ? ["SELECTED_DEMO"] : [])
+        )
+        guard !stalled.isEmpty else {
+            FileHandle.standardError.write(
+                Data("--stall-demo 가 아무것도 그리지 못했다 — 대기 중인 사람이 없다\n".utf8)
+            )
+            return false
+        }
+    } else {
+        let ledger = snapshot == nil ? nil : fetchLedgerSynchronously(client: client)
+        stalled = officeStalledAgentTypes(ledger: ledger, roster: renderedAgents)
+    }
+    scene.applyStalled(stalled)
     // 말풍선·경과·승인 배지는 오버레이라 sync 로는 그려지지 않는다. 빼면 이 화면으로
     // 확인할 수 있는 대상에서 "무슨 일 중" 문구가 통째로 빠진다.
     scene.refreshOverlays(
@@ -196,7 +218,7 @@ func renderOfficeScene(
     }
     let finalImage: CGImage
     if selectedCapture {
-        guard let composed = composeSelectedInspector(sceneImage: image, size: size, agent: selectedDemoAgent(approval: selectedApprovalDemo), approval: selectedApprovalDemo ? selectedDemoApproval() : nil, darkMode: darkMode) else {
+        guard let composed = composeSelectedInspector(sceneImage: image, size: size, agent: selectedDemoAgent(approval: selectedApprovalDemo, stalled: stallDemo), approval: selectedApprovalDemo ? selectedDemoApproval() : nil, stalled: stallDemo, darkMode: darkMode) else {
             return false
         }
         finalImage = composed
@@ -216,10 +238,12 @@ func renderOfficeScene(
     }
 }
 
-private func selectedDemoAgent(approval: Bool = false) -> ConsoleAgent {
+/// 정지 데모면 대기로 세운다 — 일하는 중인 사람은 정지로 표시하지 않는다(`officeStalledAgentTypes`).
+private func selectedDemoAgent(approval: Bool = false, stalled: Bool = false) -> ConsoleAgent {
     ConsoleAgent(
         agentType: "SELECTED_DEMO", displayName: "모모", slashCommands: ["/review-pr", "/worklog"],
-        description: "완료된 업무를 검토하고 다음 작업을 정리한다", state: approval ? .awaitingApproval : .inProgress,
+        description: "완료된 업무를 검토하고 다음 작업을 정리한다",
+        state: approval ? .awaitingApproval : (stalled ? .waiting : .inProgress),
         bubble: "PR #299 리뷰 중", department: Department.quality.rawValue, job: "코드 리뷰와 업무 품질을 관리한다"
     )
 }
@@ -230,7 +254,18 @@ private func selectedDemoApproval() -> ConsoleApproval {
 
 /// The offline selected-agent capture reserves the inspector width before rendering the scene,
 /// then composes the panel beside it so no employee is covered by the panel.
-private func composeSelectedInspector(sceneImage: CGImage, size: CGSize, agent: ConsoleAgent, approval: ConsoleApproval?, darkMode: Bool = false) -> CGImage? {
+/// 인스펙터 이력 줄도 앱과 같은 함수(`agentLedgerLines`)로 만든다. 값은 2026-10-08 실측
+/// WORK_REVIEWER 행, 정지 데모는 같은 날 CTO 의 32일 정지 값이다.
+private func selectedDemoLedgerLines(stalled: Bool) -> [String] {
+    let entry = ConsoleAgentLedger(
+        agentType: "SELECTED_DEMO", firstRunDate: "2026-06-23", totalRuns: 174, failedRuns: 14,
+        lastRunAt: "2026-10-08T00:17:13.703Z", autonomy: "AUTONOMOUS", stalled: stalled,
+        idleDays: stalled ? 32 : 0, autonomyIdleDays: stalled ? 32 : 1
+    )
+    return agentLedgerLines(entry, serverTime: "2026-10-08T01:44:27.357Z")
+}
+
+private func composeSelectedInspector(sceneImage: CGImage, size: CGSize, agent: ConsoleAgent, approval: ConsoleApproval?, stalled: Bool = false, darkMode: Bool = false) -> CGImage? {
     let image = NSImage(size: size)
     image.lockFocus()
     NSColor(calibratedRed: darkMode ? 0.12 : 0.98, green: darkMode ? 0.10 : 0.94, blue: darkMode ? 0.10 : 0.86, alpha: 1).setFill()
@@ -239,7 +274,8 @@ private func composeSelectedInspector(sceneImage: CGImage, size: CGSize, agent: 
         .draw(in: NSRect(x: 0, y: 0, width: size.width - Layout.officeInspectorWidth, height: size.height))
     let hosting = NSHostingView(rootView: AgentInspectorView(
         agent: agent, approval: approval, commandText: .constant(""), onClose: {}, onSend: { _ in },
-        onApprovalDetail: { _ in }, onApprove: { _ in }, onReject: { _ in }
+        onApprovalDetail: { _ in }, onApprove: { _ in }, onReject: { _ in },
+        ledgerLines: selectedDemoLedgerLines(stalled: stalled), isStalled: stalled
     ))
     hosting.appearance = NSAppearance(named: darkMode ? .darkAqua : .aqua)
     hosting.frame = NSRect(x: size.width - Layout.officeInspectorWidth, y: 0, width: Layout.officeInspectorWidth, height: size.height)
@@ -500,6 +536,20 @@ func fetchBriefingSynchronously(client: ConsoleClient) -> ConsoleBriefing? {
     var result: ConsoleBriefing?
     Task {
         result = try? await client.fetchBriefing()
+        semaphore.signal()
+    }
+    guard semaphore.wait(timeout: .now() + 5) == .success else {
+        return nil
+    }
+    return result
+}
+
+/// 원장도 같은 방식으로 기다린다. 실패하면 nil — 정지 배지 없이 굽는다(앱과 같은 폴백).
+func fetchLedgerSynchronously(client: ConsoleClient) -> ConsoleLedger? {
+    let semaphore = DispatchSemaphore(value: 0)
+    var result: ConsoleLedger?
+    Task {
+        result = try? await client.fetchLedger()
         semaphore.signal()
     }
     guard semaphore.wait(timeout: .now() + 5) == .success else {
