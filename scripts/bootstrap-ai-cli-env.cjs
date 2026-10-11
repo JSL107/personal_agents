@@ -43,9 +43,88 @@ const REPLACE_HOOKS = ALL || args.includes('--replace-hooks');
 const REPLACE_GLOBAL_DOCS = ALL || args.includes('--replace-global-docs');
 const EXPORT_DIR = path.resolve(args.find((arg) => !arg.startsWith('--')) || 'ai-cli-env-export');
 
+const IS_WINDOWS = process.platform === 'win32';
+/**
+ * hook 명령에 넣을 이 PC 의 홈. Windows 는 슬래시로 바꾼다. hook 명령은 `bash ~/.claude/hooks/x.sh` 처럼
+ * Git Bash 를 거치는데, `C:\Users\me/.claude/...` 의 역슬래시는 bash 가 이스케이프로 먹어 `C:Usersme/...` 가 된다.
+ * 슬래시 경로는 bash·node·python 모두 그대로 받는다.
+ */
+const HOOK_HOME = IS_WINDOWS ? HOME.replace(/\\/g, '/') : HOME;
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+/**
+ * 덮어쓰기 전 기존 항목을 옮겨 둘 곳. 예전에는 같은 디렉터리에 `.bak-<stamp>` 로 남겼는데,
+ * ~/.claude/skills 안에 남은 백업 폴더를 Claude Code 가 스킬로 또 읽어 같은 스킬이 두 번 로드됐다.
+ */
+const BACKUP_DIR = path.join(HOME, '.ai-cli-env-backup', stamp);
+/**
+ * 앱이 스스로 관리하는 자산 — 옮기지도 덮지도 않는다. `skills/synced` 는 데스크톱 앱이 동기화하며
+ * 잠가 두는 폴더라 Windows 에서 rename 이 EPERM 으로 실패해 복원 전체가 멈췄다.
+ * export 쪽 같은 이름의 목록과 맞춘다 (이미 만들어진 스냅샷에 들어 있는 것도 여기서 걸러진다).
+ */
+const APP_MANAGED_ASSETS = ['skills/synced'];
 const warnings = [];
 let sourceHome = HOME;
+
+/** 이 PC 기준 경로를 백업 디렉터리 안의 같은 상대 위치로 바꾼다. */
+function backupPathFor(target) {
+  const backupPath = path.join(BACKUP_DIR, path.relative(HOME, target));
+  fs.mkdirSync(path.dirname(backupPath), { recursive: true });
+  return backupPath;
+}
+
+/**
+ * cmd.exe 를 두 번 지나는 인자를 이스케이프한다 (cross-spawn 과 같은 방식).
+ * `.cmd` 셰임은 cmd /c 가 한 번, 셰임 안의 `%*` 가 다시 한 번 해석하므로 메타 문자에 ^ 를 두 겹 붙인다.
+ * 따옴표 처리는 실행 파일 쪽 인자 파서(MSVCRT 규칙)를 위한 것이다.
+ */
+function quoteForCmdShim(arg) {
+  const quoted = `"${String(arg).replace(/(\\*)"/g, '$1$1\\"').replace(/(\\*)$/, '$1$1')}"`;
+  return quoted.replace(/([()\][%!^"`<>&|;, *?])/g, '^^^$1');
+}
+
+/**
+ * execFileSync 의 Windows 대응판. Windows 의 execFile 은 확장자 없는 이름(`codex`)으로 `codex.cmd` 를
+ * 찾지 못하고(ENOENT), Node 18.20+/20.12+ 는 `.cmd` 를 셸 없이 띄우는 것도 막는다.
+ * shell: true 는 인자를 이스케이프 없이 이어 붙여 MCP 정의 JSON·토큰 값이 cmd 에서 깨지므로 쓰지 않는다.
+ */
+function execCommand(command, commandArgs) {
+  if (!IS_WINDOWS) {
+    return execFileSync(command, commandArgs, { stdio: 'pipe' });
+  }
+  const resolved = resolveWindowsCommand(command);
+  if (!resolved) {
+    const error = new Error(`${command} 를 PATH 에서 찾을 수 없다`);
+    error.code = 'ENOENT';
+    throw error;
+  }
+  if (!/\.(cmd|bat)$/i.test(resolved)) {
+    return execFileSync(resolved, commandArgs, { stdio: 'pipe' });
+  }
+  // 실행 파일 경로는 따옴표로만 감싼다 — 명령 자리의 `^ ` 는 cmd 가 공백으로 풀지 않아 `Program Files` 류 경로를 못 찾는다.
+  const commandLine = [`"${resolved}"`, ...commandArgs.map(quoteForCmdShim)];
+  return execFileSync(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', `"${commandLine.join(' ')}"`], {
+    stdio: 'pipe',
+    windowsVerbatimArguments: true,
+  });
+}
+
+/**
+ * `where` 결과 중 실제로 실행 가능한 첫 항목. npm 전역 디렉터리에는 Git Bash 용 확장자 없는 스크립트
+ * (`codex`)가 `codex.cmd` 와 나란히 있어, 첫 줄을 그대로 쓰면 실행할 수 없는 파일을 집는다.
+ */
+function resolveWindowsCommand(command) {
+  const executable = new Set((process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD').toLowerCase().split(';'));
+  try {
+    return (
+      execFileSync('where', [command], { encoding: 'utf8', stdio: 'pipe' })
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .find((line) => executable.has(path.extname(line).toLowerCase())) || null
+    );
+  } catch {
+    return null;
+  }
+}
 
 /**
  * displayArgs 를 주면 로그에는 그것만 찍는다.
@@ -59,7 +138,7 @@ function run(command, commandArgs, displayArgs) {
     return true;
   }
   try {
-    execFileSync(command, commandArgs, { stdio: 'pipe' });
+    execCommand(command, commandArgs);
     console.log(`  ✓ ${printable}`);
     return true;
   } catch (error) {
@@ -76,6 +155,9 @@ function run(command, commandArgs, displayArgs) {
 }
 
 function hasCommand(command) {
+  if (IS_WINDOWS) {
+    return resolveWindowsCommand(command) !== null;
+  }
   try {
     execFileSync('which', [command], { stdio: 'pipe' });
     return true;
@@ -134,6 +216,10 @@ function copyAsset(sourceDir, destinationDir, entries, label, protectExisting) {
   for (const entry of entries) {
     const from = path.join(sourceDir, entry);
     const to = path.join(destinationDir, entry);
+    if (APP_MANAGED_ASSETS.includes(`${path.basename(destinationDir)}/${entry}`)) {
+      console.log(`  건너뜀 ${entry} — 앱이 관리하는 폴더라 옮기지 않는다.`);
+      continue;
+    }
     if (!fs.existsSync(from)) {
       warnings.push(`${label}/${entry} — 내보낸 디렉터리에 없음`);
       continue;
@@ -144,27 +230,48 @@ function copyAsset(sourceDir, destinationDir, entries, label, protectExisting) {
       continue;
     }
     if (DRY_RUN) {
-      console.log(`  [dry-run] ${entry}${fs.existsSync(to) ? ' (기존 백업 후 덮어씀)' : ''}`);
+      console.log(`  [dry-run] ${entry}${fs.existsSync(to) ? ` (기존은 ${BACKUP_DIR} 로 옮긴 뒤 덮어씀)` : ''}`);
       continue;
     }
-    if (fs.existsSync(to)) {
-      fs.renameSync(to, `${to}.bak-${stamp}`);
+    // 한 항목이 잠겨 있어도(다른 프로세스가 쥔 파일 등) 나머지 복원은 계속한다 — 중간에 멈추면 반쯤 바뀐 상태가 남는다.
+    try {
+      if (fs.existsSync(to)) {
+        fs.renameSync(to, backupPathFor(to));
+      }
+      fs.cpSync(from, to, { recursive: true });
+      console.log(`  ✓ ${entry}`);
+    } catch (error) {
+      console.log(`  ✗ ${entry} — ${error.code || error.message}`);
+      warnings.push(`${label}/${entry} 복사 실패 (${error.code || error.message}) — 기존 것이 옮겨졌다면 ${BACKUP_DIR} 에 있다`);
     }
-    fs.cpSync(from, to, { recursive: true });
-    console.log(`  ✓ ${entry}`);
   }
 }
 
 /**
  * hooks 명령 문자열의 옛 홈 경로를 이 PC 의 홈으로 바꾼다.
  * 치환 건수를 함께 돌려줘 dry-run 에서도 몇 곳이 바뀌는지 보이게 한다.
+ * 문자열 단위로 바꾼다 — JSON 텍스트째 바꾸면 Windows 홈의 역슬래시가 JSON 이스케이프를 깨뜨려 parse 가 죽는다.
  */
 function rewriteHome(hooks) {
-  if (!sourceHome || sourceHome === HOME) {
+  if (!sourceHome || sourceHome === HOOK_HOME) {
     return { hooks, replaced: 0 };
   }
-  const parts = JSON.stringify(hooks).split(sourceHome);
-  return { hooks: JSON.parse(parts.join(HOME)), replaced: parts.length - 1 };
+  let replaced = 0;
+  const rewrite = (value) => {
+    if (typeof value === 'string') {
+      const parts = value.split(sourceHome);
+      replaced += parts.length - 1;
+      return parts.join(HOOK_HOME);
+    }
+    if (Array.isArray(value)) {
+      return value.map(rewrite);
+    }
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, rewrite(inner)]));
+    }
+    return value;
+  };
+  return { hooks: rewrite(hooks), replaced };
 }
 
 /** 이 PC 에만 있는 경로를 가리키는 hook 명령을 찾는다 (앱 번들·패키지 매니저 경로 등). */
@@ -213,7 +320,7 @@ function applyHooks(label, hooks, targetPath) {
   }
 
   const { hooks: rewritten, replaced } = rewriteHome(hooks);
-  console.log(`  홈 경로 치환 ${replaced}곳 (${sourceHome} → ${HOME})`);
+  console.log(`  홈 경로 치환 ${replaced}곳 (${sourceHome} → ${HOOK_HOME})`);
   if (DRY_RUN) {
     console.log(`  [dry-run] ${targetPath} 의 hooks 를 ${hookEvents.length}종으로 교체 (기존은 백업)`);
     return;
@@ -221,13 +328,13 @@ function applyHooks(label, hooks, targetPath) {
 
   const hadFile = fs.existsSync(targetPath);
   if (hadFile) {
-    fs.copyFileSync(targetPath, `${targetPath}.bak-${stamp}`);
+    fs.copyFileSync(targetPath, backupPathFor(targetPath));
   }
   current.hooks = rewritten;
   fs.mkdirSync(path.dirname(targetPath), { recursive: true });
   fs.writeFileSync(targetPath, `${JSON.stringify(current, null, 2)}\n`);
   console.log(
-    `  ✓ hooks ${hookEvents.length}종 적용${hadFile ? ` (기존 파일은 .bak-${stamp} 로 백업)` : ' (기존 파일 없음 — 새로 만듦)'}`,
+    `  ✓ hooks ${hookEvents.length}종 적용${hadFile ? ` (기존 파일은 ${BACKUP_DIR} 에 백업)` : ' (기존 파일 없음 — 새로 만듦)'}`,
   );
 }
 
