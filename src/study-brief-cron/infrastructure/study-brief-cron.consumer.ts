@@ -36,6 +36,7 @@ import {
   SLACK_NOTIFIER_PORT,
   SlackNotifierPort,
 } from '../../slack/domain/port/slack-notifier.port';
+import { SLACK_DELIVERY_SUPPRESS_REASON } from '../../slack/domain/slack-delivery.type';
 import {
   GenerateStudyDiagramInput,
   GenerateStudyDiagramUsecase,
@@ -560,6 +561,26 @@ export class StudyBriefCronConsumer extends WorkerHost {
     if (!firstRun) {
       this.logger.warn(`Study Brief Cron 중복 발송 차단 — ${guardKey}`);
       return;
+    }
+
+    // 아침 한 통(morning-briefing 08:30)이 "공부" 한 줄로 이 브리프를 싣는다 — 채널에는 따로
+    // 보내지 않고 요약·전문을 발송 원장에만 남긴다(docs/superpowers/plans/2026-10-08-daily-message-direction.md §3-1).
+    // 원장이 유일한 사본이라 기록에 실패하면 종전처럼 Slack 으로 보낸다(orchestrator 콘솔 경로와 같은 원칙).
+    const text = detail === undefined ? summary : `${summary}\n\n${detail}`;
+    try {
+      await this.slackNotifier.recordSuppressedDelivery({
+        kind: 'study-brief',
+        itemKinds: ['study-brief'],
+        target,
+        text,
+        reason: SLACK_DELIVERY_SUPPRESS_REASON.CONSOLE_ROUTE,
+      });
+      this.logger.log(`Study Brief Cron 원장 기록 완료 — target=${target}`);
+      return;
+    } catch (error) {
+      this.logger.warn(
+        `Study Brief Cron 원장 기록 실패 — Slack 으로 대신 보낸다: ${formatError(error)}`,
+      );
     }
 
     let threadTs: string | undefined;

@@ -123,7 +123,7 @@ export class ExpandStudyBriefUsecase {
         ...(input.firedAtKst ? { firedAtKst: input.firedAtKst } : {}),
       },
       run: async ({ updateInputSnapshot }) => {
-        // 브리프 조회와 확장 완료 표시가 원자적이지 않다. cron(11:00)과 수동 CLI 가 겹치면
+        // 브리프 조회와 확장 완료 표시가 원자적이지 않다. cron(08:10)과 수동 CLI 가 겹치면
         // 같은 브리프를 동시에 확장해 초안이 두 장 만들어지므로 확장 구간 자체를 잠근다.
         const acquired = await this.cronIdempotency.acquireOnce(
           PROCESSING_GUARD_KEY,

@@ -6,6 +6,7 @@ import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { MODEL_ROUTER_WORST_CASE_MS } from '../../../common/llm/llm-timeout.constant';
 import { AUTOPILOT_WORKER_OPTIONS } from '../../../common/queue/worker-options.constant';
 import { parseAvoidSkillTags } from '../../../job-feed/domain/avoid-skills';
+import { DEFAULT_JOB_MATCH_THRESHOLD } from '../../../job-feed/domain/notify-policy';
 import {
   JOB_POSTING_REPOSITORY_PORT,
   JobPostingRepositoryPort,
@@ -17,8 +18,6 @@ import {
   AutopilotTaskResult,
 } from '../../domain/autopilot-task.port';
 
-// 실측 분포 기준(job-feed.autopilot-task.ts 참조) — 코드 기본값을 .env.example 과 맞춘다.
-const DEFAULT_MATCH_THRESHOLD = 80;
 // 순차 모델 호출 1건의 worst-case(MODEL_ROUTER_WORST_CASE_MS=606초)가 이미 autopilot
 // consumer lock 예산(AUTOPILOT_WORKER_OPTIONS.lockDuration=876초)의 60%보다 크다 —
 // 기본값을 2로 두면 2건 순차 실행(최악 1,212초)이 예산을 넘겨 BullMQ 재시도를 유발한다
@@ -64,7 +63,7 @@ export class JobFeedGapAutopilotTask implements AutopilotTask {
     }
     const threshold =
       this.configService.get<number>('JOB_FEED_MATCH_THRESHOLD') ??
-      DEFAULT_MATCH_THRESHOLD;
+      DEFAULT_JOB_MATCH_THRESHOLD;
 
     // 알림에서 거르는 기피 기술이 갭 분석(모델 호출)에는 안 걸리면, "저장은 하되
     // 알림에서만 뺀다"는 목적이 알림 표면 두 곳 중 하나에서만 지켜진다 — 기피
