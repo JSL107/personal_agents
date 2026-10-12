@@ -372,11 +372,11 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
         this.withHoldingChanges(resultWithExposure, sync.changes),
         sync.error,
       );
-      const taskResult = this.suppressEmptyNotice(
-        composedResult,
-        summaryText,
+      const taskResult = this.suppressQuietRun(composedResult, {
         failures,
-      );
+        syncError: sync.error,
+        alertCount: closedDayStatuses.length,
+      });
       return {
         taskResult,
         audit: this.createAudit(sync, {
@@ -551,7 +551,11 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
     );
     const taskResult =
       anomalies.length === 0
-        ? this.suppressEmptyNotice(composedResult, summaryText, failures)
+        ? this.suppressQuietRun(composedResult, {
+            failures,
+            syncError: sync.error,
+            alertCount: avgPriceStatuses.length,
+          })
         : composedResult;
 
     return {
@@ -646,23 +650,27 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
     return { ...result, skip: false, summaryText };
   }
 
-  // 본문을 모두 합친 뒤에만 빈 회차를 판정한다. 상태·노출·매매·동기화 경고가
-  // 하나라도 붙었으면 화면에서 빠지면 안 된다.
-  private suppressEmptyNotice(
+  // 본문을 모두 합친 뒤에만 조용한 회차를 판정한다. 채널로 보내는 것은 사람이 볼 사건이 있을 때뿐이다 —
+  // 새 경보(호출부가 anomalies 0 일 때만 부른다)·평단 경보선 이탈·점검 실패·잔고 동기화 오류.
+  // 노출·매매 변동만 붙은 회차는 매일 비슷한 상태 보고라 원장(SUPPRESSED/EMPTY)에 전문을 남긴다
+  // (docs/superpowers/plans/2026-10-08-daily-message-direction.md §3-3 "새 경보 없음은 보내지 않는다").
+  private suppressQuietRun(
     result: AutopilotTaskResult,
-    noticeText: string,
-    failures: string[],
+    {
+      failures,
+      syncError,
+      alertCount,
+    }: { failures: string[]; syncError: unknown; alertCount: number },
   ): AutopilotTaskResult {
-    if (
-      failures.length > 0 ||
-      result.summaryText !== noticeText ||
-      result.detailText ||
-      result.detailImage ||
-      result.detailFile
-    ) {
+    if (failures.length > 0 || syncError || alertCount > 0) {
       return result;
     }
-    return { skip: true, emptyReason: noticeText };
+    return {
+      skip: true,
+      emptyReason: [result.summaryText, result.detailText]
+        .filter((part): part is string => Boolean(part))
+        .join('\n\n'),
+    };
   }
 
   private createAudit(

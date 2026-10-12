@@ -91,8 +91,21 @@ const createFixture = (input?: {
       ],
     }),
   };
+  // 기본은 청산 예약이 걸린 날(채널로 나가는 회차)이다. 예약이 없는 날은 원장에만 남는다 —
+  // 아래 '청산 예약이 없으면' 테스트가 따로 본다.
   const exitBand = {
-    execute: jest.fn().mockResolvedValue({ accounts: [], createdCount: 0 }),
+    execute: jest.fn().mockResolvedValue({
+      createdCount: 1,
+      accounts: [
+        {
+          accountName: 'LONG_TERM',
+          created: 1,
+          skippedByPendingSell: 0,
+          skippedByNoPosition: 0,
+          reasons: ['005930 손절 밴드 도달'],
+        },
+      ],
+    }),
   };
   const config = {
     get: jest.fn().mockReturnValue(input?.enabled ?? 'true'),
@@ -190,14 +203,15 @@ describe('PaperTradingAutopilotTask', () => {
     );
   });
 
-  it('계좌별 평가를 원장 감사와 Slack summaryText에 함께 남긴다', async () => {
-    const { task, agentRun } = createFixture();
+  it('계좌별 평가를 원장 감사와 원장 전용 요약(청산 없는 날)에 함께 남긴다', async () => {
+    const { task, agentRun, exitBand } = createFixture();
+    exitBand.execute.mockResolvedValue({ accounts: [], createdCount: 0 });
 
     const result = await task.run(context);
 
-    expect(result.skip).toBe(false);
-    expect(result.summaryText).toContain('*[LONG_TERM]*');
-    expect(result.summaryText).toContain('*[SWING]*');
+    expect(result.skip).toBe(true);
+    expect(result.emptyReason).toContain('*[LONG_TERM]*');
+    expect(result.emptyReason).toContain('*[SWING]*');
     expect(agentRun.execute).toHaveBeenCalledWith(
       expect.objectContaining({
         agentType: AgentType.PAPER_TRADE,
@@ -244,8 +258,9 @@ describe('PaperTradingAutopilotTask', () => {
   });
 
   // 계좌가 없는 상태를 조용히 성공으로 남기면 성적표가 비어가는 것을 아무도 모른다.
-  it('계좌가 0건이면 원장에 남기고 경고 summary를 반환한다', async () => {
-    const { task, agentRun } = createFixture({ accounts: [] });
+  it('계좌가 0건이면 청산이 없어도 경고 summary 를 채널로 반환한다', async () => {
+    const { task, agentRun, exitBand } = createFixture({ accounts: [] });
+    exitBand.execute.mockResolvedValue({ accounts: [], createdCount: 0 });
 
     const result = await task.run(context);
 
@@ -260,6 +275,19 @@ describe('PaperTradingAutopilotTask', () => {
       exitBandOrderCount: 0,
       exitBandAccounts: [],
     });
+  });
+
+  it('청산 예약이 없으면 채널에 내지 않고 계좌별 평가를 원장(emptyReason)에만 남긴다', async () => {
+    const { task, exitBand, reportImage } = createFixture();
+    exitBand.execute.mockResolvedValue({ accounts: [], createdCount: 0 });
+
+    const result = await task.run(context);
+
+    expect(result.skip).toBe(true);
+    expect(result.summaryText).toBeUndefined();
+    expect(result.emptyReason).toContain('*[LONG_TERM]*');
+    // 보내지 않을 그림은 만들지 않는다.
+    expect(reportImage.execute).not.toHaveBeenCalled();
   });
 
   it('밴드 청산이 걸리면 카드와 원장에 예약 내역을 남긴다', async () => {

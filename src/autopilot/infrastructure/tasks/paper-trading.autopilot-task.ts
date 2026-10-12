@@ -238,6 +238,21 @@ export class PaperTradingAutopilotTask implements AutopilotTask {
             `가상 계좌 ${evaluations.accounts.length}개 중 ${failedEntries.length}개를 평가하지 못했습니다 — ${detail}${evaluatedText}${exitBandText}`,
           );
         }
+        // 청산 예약이 없는 날은 채널에 내지 않고 원장(SUPPRESSED/EMPTY)에만 남긴다. 계좌별 수익률은
+        // 저녁 마감 한 통(evening-retro-publish)이 스냅샷을 읽어 한 줄로 싣는다 — 따로 보내는 투자
+        // 메시지는 손절·청산처럼 사건이 있을 때뿐이다(docs/superpowers/plans/2026-10-08-daily-message-direction.md §3-3).
+        // 계좌가 0개인 회차는 예외다 — "평가할 계좌가 없다" 는 성적표가 비어 가는 조용한 실패의
+        // 경고라 원장에 묻으면 아무도 모른다.
+        if (exitBand.createdCount === 0 && evaluations.accounts.length > 0) {
+          return {
+            result: {
+              skip: true,
+              emptyReason: buildSummaryText(evaluations),
+            },
+            modelUsed: 'deterministic',
+            output: buildAudit(evaluations, exitBand),
+          };
+        }
         // 곡선은 방금 적재한 스냅샷까지 포함한다 — 평가 뒤에 부르는 이유가 그것이다.
         // 그림이 없으면(데이터 부족·렌더 실패) usecase 가 null 을 주고 요약만 나간다.
         const reportImage =

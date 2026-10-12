@@ -50,9 +50,9 @@ import {
   AutopilotTaskResult,
 } from '../../domain/autopilot-task.port';
 import {
-  MORNING_DIGEST_REPOSITORY_PORT,
-  MorningDigestRepositoryPort,
-} from '../../domain/port/morning-digest.repository.port';
+  DAILY_DIGEST_REPOSITORY_PORT,
+  DailyDigestRepositoryPort,
+} from '../../domain/port/daily-digest.repository.port';
 import {
   formatMorningDigest,
   MorningDigestInput,
@@ -196,8 +196,8 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
     private readonly listNotifiable: ListNotifiablePostingsUsecase,
     @Inject(JOB_POSTING_REPOSITORY_PORT)
     private readonly jobPostingRepository: JobPostingRepositoryPort,
-    @Inject(MORNING_DIGEST_REPOSITORY_PORT)
-    private readonly digestRepository: MorningDigestRepositoryPort,
+    @Inject(DAILY_DIGEST_REPOSITORY_PORT)
+    private readonly digestRepository: DailyDigestRepositoryPort,
     private readonly configService: ConfigService,
   ) {}
 

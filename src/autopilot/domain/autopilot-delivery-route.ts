@@ -6,11 +6,14 @@ export type AutopilotDeliveryRoute = 'slack' | 'console';
 // 2026-10-12 아침 한 통(docs/superpowers/plans/2026-10-08-daily-message-direction.md §3-1): 비서실·
 // 공부(적용 판정 요약·딥다이브)·포트폴리오 발행·공고 수집·갭 분석은 콘솔로 보내고, 그 결과를
 // 아침 morning-briefing 이 원장에서 읽어 한 줄씩 싣는다. 적용 판정의 승인 카드는 경로와 무관하게 나간다.
+//
+// 같은 날 저녁 마감 한 통(§3-2): worklog(work-reviewer)·Daily Eval·모의투자 추천·체결 결과는 콘솔로 보내고,
+// evening-retro-publish 가 머지 건수·회고 Keep·체결·내일 예정을 한 줄씩 싣는다. 회고 전문은 그 스레드에 있다.
 export const AUTOPILOT_DELIVERY_ROUTE: Readonly<
   Record<string, AutopilotDeliveryRoute>
 > = {
-  'work-reviewer': 'slack',
-  'daily-eval': 'slack',
+  'work-reviewer': 'console',
+  'daily-eval': 'console',
   'evening-retro-publish': 'slack',
   'blog-github-publish': 'slack',
   'study-applicability': 'console',
@@ -29,8 +32,8 @@ export const AUTOPILOT_DELIVERY_ROUTE: Readonly<
   'stock-monitor': 'slack',
   'paper-trading': 'slack',
   'universe-sweep': 'console',
-  'paper-recommend': 'slack',
-  'paper-order-fill': 'slack',
+  'paper-recommend': 'console',
+  'paper-order-fill': 'console',
   'paper-intraday-stop': 'slack',
   'paper-score': 'slack',
   'stock-alert-scoring': 'console',
