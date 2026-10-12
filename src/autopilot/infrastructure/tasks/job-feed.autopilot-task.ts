@@ -11,6 +11,10 @@ import { ListNotifiablePostingsUsecase } from '../../../job-feed/application/lis
 import { ScoreJobPostingsUsecase } from '../../../job-feed/application/score-job-postings.usecase';
 import { parseAvoidSkillTags } from '../../../job-feed/domain/avoid-skills';
 import {
+  DEFAULT_JOB_MATCH_THRESHOLD,
+  DEFAULT_JOB_NOTIFY_LIMIT,
+} from '../../../job-feed/domain/notify-policy';
+import {
   JOB_POSTING_REPOSITORY_PORT,
   JobPostingRepositoryPort,
 } from '../../../job-feed/domain/port/job-posting.repository.port';
@@ -26,11 +30,7 @@ interface ProfileMatchInput {
   profileId: number | null;
 }
 
-// 실측 분포(228건 중 80~100:95 · 60~79:117 · 40~59:14 · 20~39:2) 기준 — 60점은
-// 93%가 통과해 필터 구실을 못 한다(Task 17, .env.example JOB_FEED_MATCH_THRESHOLD=80).
-const DEFAULT_MATCH_THRESHOLD = 80;
 const DEFAULT_DETAIL_LIMIT = 20;
-const DEFAULT_NOTIFY_LIMIT = 10;
 
 // 모델을 부르지 않는다. 갭 분석은 별도 슬롯(job-feed-gap)이 맡는다 —
 // 한 그룹의 잠금 시간 예산(worker-options.constant.ts LONG_RUNNING_WORKER_LOCK_DURATION_MS)이
@@ -64,7 +64,7 @@ export class JobFeedAutopilotTask implements AutopilotTask {
 
     const threshold =
       this.configService.get<number>('JOB_FEED_MATCH_THRESHOLD') ??
-      DEFAULT_MATCH_THRESHOLD;
+      DEFAULT_JOB_MATCH_THRESHOLD;
     const detailLimit =
       this.configService.get<number>('JOB_FEED_DETAIL_LIMIT') ??
       DEFAULT_DETAIL_LIMIT;
@@ -111,7 +111,7 @@ export class JobFeedAutopilotTask implements AutopilotTask {
 
     const postings = await this.listNotifiable.execute({
       threshold,
-      limit: DEFAULT_NOTIFY_LIMIT,
+      limit: DEFAULT_JOB_NOTIFY_LIMIT,
       avoidSkillTags,
     });
 
@@ -131,41 +131,9 @@ export class JobFeedAutopilotTask implements AutopilotTask {
       scoreSkipReason: scoreResult.skipped ? scoreResult.reason : null,
     });
 
-    // 알림 선점(claimForNotification)은 발송이 성공한 뒤에만 한다. listNotifiable 은
-    // 이제 후보만 돌려주고 선점하지 않는다 — 여기서 미리 선점하면 이 뒤(포매팅·전달
-    // 과정)의 실패가 표식만 남기고 그 공고를 영영 다시 안 뜨게 만든다(orchestrator 의
-    // onDelivered 계약 참조). 후보가 없으면 선점할 것도 없다.
-    const onDelivered =
-      postings.length === 0
-        ? undefined
-        : async (): Promise<void> => {
-            const claimedAt = new Date();
-            let failed = 0;
-            // 발송은 이미 끝났다 — 한 건의 선점 실패로 나머지를 포기하면, 카드에는
-            // 이미 나갔는데 표식만 안 남은 공고가 다음 회차에 다시 뜬다. 건별로
-            // 격리해 최대한 많이 선점한다.
-            for (const posting of postings) {
-              try {
-                await this.jobPostingRepository.claimForNotification(
-                  posting.normalizedKey,
-                  claimedAt,
-                );
-              } catch (error: unknown) {
-                failed += 1;
-                const message =
-                  error instanceof Error ? error.message : String(error);
-                this.logger.warn(
-                  `job-feed 알림 선점 실패 — ${posting.normalizedKey}: ${message}`,
-                );
-              }
-            }
-            if (failed > 0) {
-              this.logger.warn(
-                `job-feed 알림 선점 — ${postings.length}건 중 ${failed}건 실패, 다음 회차에 재알림될 수 있음`,
-              );
-            }
-          };
-
+    // 알림 선점(claimForNotification)은 여기서 하지 않는다 — 이 task 는 콘솔 경로라 Slack 에
+    // 나가지 않고, 같은 목록을 08:30 아침 한 통(morning-briefing)이 실어 보낸 뒤 그쪽의
+    // onDelivered 에서 선점한다. 여기서 선점하면 07:00 에 표식이 찍혀 08:30 목록이 빈다.
     // 카드에 공고 열 건의 링크가 실린다. 미리보기를 켜 두면 채용 사이트가 회사 사진과
     // 소개문을 하나씩 펼쳐, 열 줄짜리 요약이 화면 몇 배 길이로 늘어나고 정작 목록은 묻힌다.
     // 링크가 실리는 곳이 스레드 댓글로 옮겨갔으므로, orchestrator 는 이 설정을 메인뿐
@@ -177,7 +145,6 @@ export class JobFeedAutopilotTask implements AutopilotTask {
       skip: false,
       summaryText: summary,
       detailText: detail ?? undefined,
-      onDelivered,
       unfurlLinks: false,
     };
   }

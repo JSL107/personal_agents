@@ -6,7 +6,6 @@ import {
   EVENING_RETRO_SYSTEM_PROMPT,
   EveningBlogSourcePr,
   EveningPrInput,
-  EveningPrNote,
   EveningRetroCandidate,
   EveningRetroReflection,
   EveningRetroResult,
@@ -18,7 +17,10 @@ import { groupPrRefsByRepo } from '../../../agent/career-mate/domain/group-pr-re
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { RunVerdictFacet } from '../../../agent-run/domain/run-verdict';
-import { getKstDayStartAsUtc } from '../../../common/util/kst-date.util';
+import {
+  countKstDaysBetween,
+  getKstDayStartAsUtc,
+} from '../../../common/util/kst-date.util';
 import {
   classifyRepoSource,
   REPO_SOURCE_LABEL,
@@ -33,6 +35,7 @@ import { HumanizeService } from '../../../humanize/application/humanize.service'
 import { humanizeEveningRetro } from '../../../humanize/application/humanize-report.adapter';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
+import { FindAllOpenPreviewsUsecase } from '../../../preview-gate/application/find-all-open-previews.usecase';
 import { PREVIEW_KIND } from '../../../preview-gate/domain/preview-action.type';
 import {
   SLACK_DELIVERY_REPOSITORY,
@@ -40,14 +43,37 @@ import {
 } from '../../../slack/domain/port/slack-delivery.repository.port';
 import { SLACK_DELIVERY_STATUS } from '../../../slack/domain/slack-delivery.type';
 import {
+  escapeSlackMrkdwn,
+  isSafeHttpUrl,
+  sanitizeForSlackLink,
+} from '../../../slack/format/mrkdwn.util';
+import {
   AutopilotPreviewRequest,
   AutopilotRunVerdictRequest,
   AutopilotTask,
   AutopilotTaskContext,
   AutopilotTaskResult,
 } from '../../domain/autopilot-task.port';
+import {
+  DAILY_DIGEST_REPOSITORY_PORT,
+  DailyDigestRepositoryPort,
+} from '../../domain/port/daily-digest.repository.port';
+import {
+  EveningDigestInput,
+  formatEveningDigest,
+} from '../evening-digest.formatter';
+import { MorningIncident } from '../morning-digest.formatter';
 
 const RETRO_PR_LIMIT = 20;
+// 넘어가는 장애로 올릴 사건의 관측 창 — 아침 한 통과 같은 기준(morning-briefing INCIDENT_SEEN_WINDOW_DAYS).
+const INCIDENT_SEEN_WINDOW_DAYS = 7;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// 마감 한 줄의 재료 중 회고와 무관한 것(투자·넘어가는 것).
+type EveningCarryContext = Pick<
+  EveningDigestInput,
+  'invest' | 'carriedApprovalCount' | 'incidents'
+>;
 // 아침 계획이 실린 발송의 원장 좌표 — 오케스트레이터가 그룹 본문을 `autopilot:<그룹>` 으로 남긴다.
 const MORNING_DELIVERY_KIND = 'autopilot:morning';
 const MORNING_BRIEFING_TASK_ID = 'morning-briefing';
@@ -55,7 +81,7 @@ const MORNING_BRIEFING_TASK_ID = 'morning-briefing';
 // 한 화면을 넘겨 정작 회고 문단이 밀려난다.
 const SUMMARY_CANDIDATE_LIMIT = 3;
 const REASON_PREVIEW_MAX_CHARS = 80;
-const PR_NOTE_PREVIEW_MAX_CHARS = 100;
+const PR_TITLE_PREVIEW_MAX_CHARS = 60;
 
 interface TopPickPayload {
   title: string;
@@ -72,7 +98,7 @@ interface EveningBlogPayload {
   slackUserId: string;
 }
 
-// 저녁 회고→발행 후보 — evening 그룹(19:00 KST), daily-eval/work-reviewer 뒤 순서.
+// 저녁 회고→발행 후보 — evening 그룹(19:40 KST), daily-eval/work-reviewer 뒤 순서.
 // 오늘 머지 PR + 오늘 WORK_REVIEWER/PO_EVAL run 을 재조회해 codex 로 1회 회고→후보 JSON.
 // 발송은 orchestrator(T1_PREVIEW) — 여기선 텍스트 + previews 만 만든다.
 @Injectable()
@@ -89,6 +115,9 @@ export class EveningRetroPublishTask implements AutopilotTask {
     private readonly config: ConfigService,
     @Inject(SLACK_DELIVERY_REPOSITORY)
     private readonly deliveryRepository: SlackDeliveryRepositoryPort,
+    private readonly findAllOpenPreviews: FindAllOpenPreviewsUsecase,
+    @Inject(DAILY_DIGEST_REPOSITORY_PORT)
+    private readonly digestRepository: DailyDigestRepositoryPort,
   ) {}
 
   async run({
@@ -121,15 +150,28 @@ export class EveningRetroPublishTask implements AutopilotTask {
       ),
     });
 
+    // 머지 PR 조회가 깨져도 마감 한 통은 나가야 한다 — worklog·Daily Eval 이 콘솔로 옮겨져 이 task 가
+    // 저녁의 유일한 본문이다. 실패는 결과 줄에 "조회 실패" 로 드러내고(0건과 구분), 회고는 남은 재료로 돈다.
+    // 그날 경력 카드는 근거 PR 이 없어 만들어지지 않는다 — 실패 줄이 그 사실을 알린다.
+    let mergedPrFetchFailed = false;
     const mergedPrs: EveningPrInput[] = authorLogin
-      ? (
-          await this.githubClient.listAuthorMergedPullRequestsSince({
+      ? await this.githubClient
+          .listAuthorMergedPullRequestsSince({
             repo: null,
             author: authorLogin,
             sinceIsoDate,
             limit: RETRO_PR_LIMIT,
           })
-        ).map(toPrInput)
+          .then((pullRequests) => pullRequests.map(toPrInput))
+          .catch((error: unknown) => {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            this.logger.warn(
+              `머지 PR 조회 실패 — 건수 미상으로 진행: ${message}`,
+            );
+            mergedPrFetchFailed = true;
+            return [];
+          })
       : [];
 
     // carryOver("오늘 못 끝낸 것") 의 근거. 조회가 깨져도 회고는 계속 돈다 — 저녁 보고가
@@ -168,14 +210,36 @@ export class EveningRetroPublishTask implements AutopilotTask {
       ownerSlackUserId,
     );
 
-    if (mergedPrs.length === 0 && !worklogText && !dailyEvalText) {
-      return { skip: true };
-    }
-
     // 아침 계획 판정 — 계획이 맞았는지는 하루를 보낸 뒤에야 알 수 있어 저녁 스레드에서 묻는다
-    // (사람 피드백 설계 §3-3). 회고가 실패해도 대체 요약이 나가므로 두 경로 모두에 싣는다.
-    // ponytail: 위 skip(재료 0건) 회차는 요약이 없어 이 버튼도 나가지 않는다 — 그런 날이 잦아지면 별도 task 로.
+    // (사람 피드백 설계 §3-3). 마감 한 통은 회고 재료가 없는 날에도 나가므로 세 경로 모두에 싣는다.
     const pmPlanVerdict = await this.findTodayPmPlanVerdict(ownerSlackUserId);
+    const carry = await this.loadCarryContext(ownerSlackUserId, firedAtKst);
+    const buildDigest = (
+      input: Pick<EveningDigestInput, 'keep' | 'retroFailure'>,
+    ): string =>
+      formatEveningDigest({
+        firedAtKst,
+        mergedPrCount: mergedPrFetchFailed ? null : mergedPrs.length,
+        ...carry,
+        ...input,
+      }) +
+      // 조회 실패는 위 결과 줄이 알린다 — "근거 PR 0건" 경고를 겹쳐 붙이면 0건으로 읽힌다.
+      (mergedPrFetchFailed
+        ? ''
+        : this.buildEvidenceNotice(
+            authorLogin,
+            mergedPrs.length,
+            openPrFetchFailed,
+          ));
+
+    // 회고 재료가 하나도 없는 날도 하루를 닫는 신호(투자·넘어가는 것)는 낸다 — 회고만 건너뛴다.
+    if (mergedPrs.length === 0 && !worklogText && !dailyEvalText) {
+      return {
+        skip: false,
+        summaryText: buildDigest({ keep: null, retroFailure: null }),
+        ...(pmPlanVerdict.length > 0 ? { runVerdicts: pmPlanVerdict } : {}),
+      };
+    }
 
     try {
       // 실행 원장에 남긴다. 이 task 는 블로그·경력 카드를 만드는 유일한 경로인데, 원장을
@@ -235,19 +299,26 @@ export class EveningRetroPublishTask implements AutopilotTask {
       const scoreLines = summaryCandidates
         .map((candidate) => this.formatCandidateLine(candidate, authorLogin))
         .join('\n');
-      const summaryText = `🌙 *오늘의 회고 — ${firedAtKst}*\n\n${this.formatReflectionText(
+      // 채널에는 마감 한 통만 남기고, 회고 전문(KPT·발행 후보)은 스레드로 내린다
+      // (docs/superpowers/plans/2026-10-08-daily-message-direction.md §3-2). 판정 버튼은 스레드
+      // 첫 댓글이고 판정 대상 문장을 인용으로 싣으므로, 회고가 스레드로 가도 무엇을 판정하는지 보인다.
+      const summaryText = buildDigest({
+        keep: parsed.retrospective.malformed
+          ? null
+          : (parsed.retrospective.keep?.trim() ?? null) || null,
+        retroFailure: null,
+      });
+      const retroText = `🌙 *오늘의 회고 — ${firedAtKst}*\n\n${this.formatReflectionText(
         parsed.retrospective,
       )}\n\n${this.formatCandidateHeading(
         parsed.candidates.length,
-      )}\n${scoreLines || '_후보 없음_'}${this.buildEvidenceNotice(
-        authorLogin,
-        mergedPrs.length,
-        openPrFetchFailed,
-      )}`;
-      const detailText = this.buildCandidateDetailText(
-        parsed.candidates,
-        authorLogin,
-      );
+      )}\n${scoreLines || '_후보 없음_'}`;
+      const detailText = [
+        retroText,
+        this.buildCandidateDetailText(parsed.candidates, authorLogin),
+      ]
+        .filter((part): part is string => Boolean(part))
+        .join('\n\n');
 
       const previews: AutopilotPreviewRequest[] = [];
       // 블로그 카드 — 대표(최고점) 후보 기준. candidates 있을 때만.
@@ -271,14 +342,13 @@ export class EveningRetroPublishTask implements AutopilotTask {
           retroContext: formatRetroContext(parsed.retrospective),
           slackUserId: ownerSlackUserId,
         };
-        const outlineText = this.formatOutlineText(top.outline);
-        const applyGuide = top.outline.length
-          ? '✅ 누르면 위 PR 내용과 초안 개요를 근거로 codex 가 본문 생성 후 Notion 발행.'
-          : '✅ 누르면 위 PR 내용을 근거로 codex 가 본문 생성 후 Notion 발행.';
+        // 카드는 읽지 않고 눌린다(분석 보고 §5 질문 3) — 첫 줄만으로 판단되게 점수·제목·근거를 싣고,
+        // 둘째 줄은 누르면 무엇이 일어나는지만 적는다. 쓸 가치·초안 개요는 회고 스레드의 후보 상세에 있다.
+        // payload 는 그대로다 — 승인 시 반영되는 내용은 바뀌지 않는다.
         previews.push({
           kind: PREVIEW_KIND.EVENING_BLOG_PUBLISH,
           payload,
-          previewText: `📝 *블로그 발행 후보* (${top.blogValueScore}점) · ${sourceLabel}\n제목: ${top.title}\n근거 PR: ${sourceRefsText}\n왜 쓸 가치: ${top.reason}${outlineText}\n${applyGuide}`,
+          previewText: `📝 *블로그 후보 ${top.blogValueScore}점* · 「${top.title}」 · 근거 ${sourceLabel} ${sourceRefsText}\n✅ 누르면 이 PR 들로 본문을 써 Notion 초안으로 올립니다 — GitHub 공개 발행은 따로 묻습니다.`,
         });
       }
       // 경력 카드 — 저장소별로 나눠 회고한다. 하루치를 한 덩어리로 넘기면 서로 무관한 PR 이
@@ -286,10 +356,7 @@ export class EveningRetroPublishTask implements AutopilotTask {
       // 추상화 단계를 올려 제목이 서로 구분되지 않는다 — group-pr-refs.ts 주석 참고.
       if (mergedPrs.length > 0) {
         const { groups, droppedRefCount } = groupPrRefsByRepo(mergedPrs);
-        const groupedRefsText = this.formatGroupedPrRefs(
-          mergedPrs,
-          parsed.prNotes,
-        );
+        const groupedRefsText = this.formatGroupedPrRefs(mergedPrs);
         const reflectedCount = groups.reduce(
           (total, group) => total + group.refs.length,
           0,
@@ -302,9 +369,11 @@ export class EveningRetroPublishTask implements AutopilotTask {
             prGroups: groups.map((group) => group.refs),
             slackUserId: ownerSlackUserId,
           },
-          // 아래 입력칸 안내를 본문에도 한 줄 둔다. 입력칸의 label·hint 만으로는 "왜
-          // 적어야 하는지" 가 없어서, 코드에 남지 않는 정보라는 사실이 전달되지 않는다.
-          previewText: `💼 *경력 반영 후보* (오늘 머지 ${reflectedCount}건 · 저장소 ${groups.length}곳${droppedNote})\n${groupedRefsText}\n✅ 누르면 저장소별로 나눠 성과 ${groups.length}건을 이력서 프로필에 편입 + 포트폴리오 Notion 반영.\n📝 이 작업이 사용자·매출·비용·처리량에 무엇을 했는지는 코드에 남지 않습니다 — 아래 칸에 저장소별로 적어 두면 이력서 문장이 그 근거를 씁니다(선택).`,
+          // 첫 줄만으로 판단되게 건수·저장소 수·반영처를 싣는다. PR 줄은 재서술한 메모 대신 제목+링크로 —
+          // 원본은 GitHub 에 있고 메모는 그 사본이었다(분석 보고 §4 3-1).
+          // 아래 입력칸 안내는 한 줄로 남긴다. 입력칸의 label·hint 만으로는 "코드에 남지 않는
+          // 정보라서 적는다" 는 이유가 전달되지 않는다.
+          previewText: `💼 *경력 반영 ${reflectedCount}건* · 저장소 ${groups.length}곳${droppedNote} → 이력서 프로필·포트폴리오 Notion\n${groupedRefsText}\n_(선택) 이 작업이 사용자·비용·처리량에 한 일을 아래 칸에 적으면 이력서 문장이 그 근거를 씁니다 — 코드에는 남지 않는 정보입니다._`,
         });
       }
 
@@ -321,6 +390,8 @@ export class EveningRetroPublishTask implements AutopilotTask {
         skip: false,
         summaryText,
         detailText,
+        // 회고 전문은 이제 스레드에만 있다. 스레드가 실패하면 채널에 대신 붙인다(중복 > 유실).
+        detailIsOnlyCopy: true,
         previews,
         runVerdicts: [
           {
@@ -336,7 +407,10 @@ export class EveningRetroPublishTask implements AutopilotTask {
       this.logger.warn(`저녁 회고 생성 실패 — 텍스트 fallback: ${message}`);
       return {
         skip: false,
-        summaryText: `🌙 *오늘의 회고 — ${firedAtKst}*\n_회고 자동 생성에 실패했습니다(${message.slice(0, 120)}). 내일 다시 시도합니다._`,
+        summaryText: buildDigest({
+          keep: null,
+          retroFailure: message.slice(0, 120),
+        }),
         ...(pmPlanVerdict.length > 0 ? { runVerdicts: pmPlanVerdict } : {}),
       };
     }
@@ -364,6 +438,83 @@ export class EveningRetroPublishTask implements AutopilotTask {
     return REFLECTION_COLUMNS.map(
       ({ key, label }) => `*${label}* ${reflection[key] ?? '없음'}`,
     ).join('\n');
+  }
+
+  // 마감 한 줄의 투자·넘어감 재료. 하나가 실패해도 마감 메시지는 나가야 한다 — 실패한 줄만 빠진다.
+  private async loadCarryContext(
+    ownerSlackUserId: string,
+    firedAtKst: string,
+  ): Promise<EveningCarryContext> {
+    const now = new Date();
+    // paper_* 의 거래일 컬럼은 @db.Date 라 UTC 자정으로 맞춘다.
+    const tradeDate = new Date(`${firedAtKst}T00:00:00.000Z`);
+    const [invest, carriedApprovalCount, incidents] = await Promise.all([
+      this.loadInvest(tradeDate),
+      this.findAllOpenPreviews
+        .execute({ now })
+        .then(
+          (previews) =>
+            previews.filter(
+              (preview) => preview.slackUserId === ownerSlackUserId,
+            ).length,
+        )
+        .catch((error: unknown) => {
+          this.logger.warn(`승인 대기 조회 실패 — 줄 생략: ${String(error)}`);
+          return 0;
+        }),
+      this.digestRepository
+        .findOpenIncidents({
+          seenSince: new Date(
+            now.getTime() - INCIDENT_SEEN_WINDOW_DAYS * DAY_MS,
+          ),
+        })
+        .then((rows): MorningIncident[] =>
+          rows.map((row) => ({
+            label: row.label,
+            dayCount: countKstDaysBetween(row.openedAt, now) + 1,
+          })),
+        )
+        .catch((error: unknown) => {
+          this.logger.warn(`열린 장애 조회 실패 — 줄 생략: ${String(error)}`);
+          return [];
+        }),
+    ]);
+    return { invest, carriedApprovalCount, incidents };
+  }
+
+  private async loadInvest(
+    tradeDate: Date,
+  ): Promise<EveningDigestInput['invest']> {
+    try {
+      const [returns, filled, next, recommendRuns] = await Promise.all([
+        this.digestRepository.findPaperReturns({ tradeDate }),
+        this.digestRepository.countPaperTrades({ tradeDate }),
+        this.digestRepository.findNextPaperOrders({ tradeDate }),
+        this.agentRunService.findRecentSucceededRuns({
+          agentType: AgentType.PAPER_RECOMMEND,
+          sinceDays: 1,
+          limit: 1,
+        }),
+      ]);
+      // 평가·체결·예정이 모두 없던 날(휴장·모의투자 꺼짐)만 줄을 내지 않는다. 평가가 실패해도
+      // 추천은 따로 돌아 내일 주문을 만들 수 있으므로, 예정 주문이 있으면 줄을 낸다.
+      if (
+        returns.length === 0 &&
+        filled.buyCount + filled.sellCount === 0 &&
+        next === null
+      ) {
+        return null;
+      }
+      // 추천(19:30)이 이 회차(19:40)보다 늦게 끝났으면 원장에 오늘 실행이 아직 없다 — "예정 없음" 과 구분한다.
+      return {
+        returns,
+        filled,
+        next: recommendRuns.length > 0 ? next : undefined,
+      };
+    } catch (error: unknown) {
+      this.logger.warn(`모의투자 마감 조회 실패 — 줄 생략: ${String(error)}`);
+      return null;
+    }
   }
 
   /**
@@ -558,18 +709,12 @@ export class EveningRetroPublishTask implements AutopilotTask {
     return `*발행 후보 전체 — ${candidates.length}건*\n${lines.join('\n')}`;
   }
 
-  private formatGroupedPrRefs(
-    pullRequests: EveningPrInput[],
-    prNotes: EveningPrNote[],
-  ): string {
-    const noteByRef = new Map(prNotes.map((note) => [note.ref, note.note]));
+  private formatGroupedPrRefs(pullRequests: EveningPrInput[]): string {
     const lines = (['company', 'personal'] as const)
       .map((source) => {
         const refs = pullRequests
           .filter((pullRequest) => pullRequest.source === source)
-          .map((pullRequest) =>
-            this.formatCareerPrLine(pullRequest, noteByRef),
-          );
+          .map((pullRequest) => this.formatCareerPrLine(pullRequest));
         if (refs.length === 0) {
           return null;
         }
@@ -580,25 +725,18 @@ export class EveningRetroPublishTask implements AutopilotTask {
     return lines.join('\n');
   }
 
-  private formatCareerPrLine(
-    pullRequest: EveningPrInput,
-    noteByRef: Map<string, string>,
-  ): string {
-    const ref = `${pullRequest.repo}#${pullRequest.number}`;
-    const note = noteByRef.get(ref)?.trim() || pullRequest.title.trim();
-    if (!note) {
-      return `  • ${ref}`;
+  private formatCareerPrLine(pullRequest: EveningPrInput): string {
+    const ref = this.formatShortRef(
+      `${pullRequest.repo}#${pullRequest.number}`,
+    );
+    const linkedRef = isSafeHttpUrl(pullRequest.url)
+      ? `<${sanitizeForSlackLink(pullRequest.url)}|${ref}>`
+      : ref;
+    const title = pullRequest.title.trim();
+    if (!title) {
+      return `  • ${linkedRef}`;
     }
-    const truncatedNote = this.truncateText(note, PR_NOTE_PREVIEW_MAX_CHARS);
-    return `  • ${ref} — ${truncatedNote}`;
-  }
-
-  private formatOutlineText(outline: string[]): string {
-    if (outline.length === 0) {
-      return '';
-    }
-    const bullets = outline.map((line) => `\n • ${line}`).join('');
-    return `\n*초안 개요*${bullets}`;
+    return `  • ${linkedRef} ${escapeSlackMrkdwn(this.truncateText(title, PR_TITLE_PREVIEW_MAX_CHARS))}`;
   }
 
   private resolveSourcePrs(

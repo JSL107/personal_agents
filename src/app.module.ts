@@ -160,7 +160,7 @@ import { WebhookModule } from './webhook/webhook.module';
     // Producer (NotificationQueueModule) 는 ModelRouterModule / 3 cron consumer module 가 직접 imports.
     NotificationModule,
     // workflow-phase-definition §5.2 Daily Eval → Autopilot SP1 실이관 (2026-06-17).
-    // 플레이북 선언 + 오케스트레이터 엔진으로 통합. 동작(19:00 KST PO_EVAL Slack 게시) 동등 보존.
+    // 플레이북 선언 + 오케스트레이터 엔진으로 통합. 동작(19:40 KST PO_EVAL) 동등 보존.
     // SP4: 주간 3종(weekly-summary/ceo-meta/impact-report) 도 Autopilot 플레이북으로 통합.
     AutopilotModule,
     // Phase 4 — 주 1회 자동 이력서 보정 점검. Hermes 웹리서치로 2026 트렌드 augment → CAREER_MATE 보정 → Slack DM.

@@ -110,7 +110,7 @@ describe('AutopilotScheduler', () => {
     expect(addCalls).toContain('job-feed-gap');
   });
 
-  it('evening 그룹 스케줄은 첫 항목(work-reviewer) env 기반 → 19:00', async () => {
+  it('evening 그룹 스케줄은 첫 항목(work-reviewer) env 기반 → 19:40', async () => {
     const queue = makeQueue();
     const config = {
       get: jest.fn((key: string) =>
@@ -125,7 +125,7 @@ describe('AutopilotScheduler', () => {
     );
     expect(eveningCall).toBeDefined();
     expect(eveningCall[2]).toMatchObject({
-      repeat: { pattern: '0 19 * * *', tz: 'Asia/Seoul' },
+      repeat: { pattern: '40 19 * * *', tz: 'Asia/Seoul' },
     });
   });
 

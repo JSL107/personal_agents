@@ -158,7 +158,7 @@ export class EnvironmentVariables {
   @IsString()
   BLOG_GITHUB_PUBLISH_ENABLED?: string;
 
-  // 오늘의 공부를 블로그 초안으로 펼치는 딥다이브 확장(매일 11:00).
+  // 오늘의 공부를 블로그 초안으로 펼치는 딥다이브 확장(매일 08:10).
   // `false` 문자열이면 skip, 미설정이면 활성(기본 ON).
   @IsOptional()
   @IsString()
@@ -698,7 +698,7 @@ export class EnvironmentVariables {
   @IsString()
   PR_CAREERLOG_AUTO_ENABLED?: string;
 
-  // 저녁 회고→발행 후보 (매일 19:00 KST evening 그룹). `false` 문자열이면 task 전체 skip.
+  // 저녁 회고→발행 후보 (매일 19:40 KST evening 그룹). `false` 문자열이면 task 전체 skip.
   // 미설정 = 활성(기본 ON). task 가 내부적으로 `!== 'false'` 로 판정.
   @IsOptional()
   @IsString()
@@ -942,7 +942,7 @@ export class EnvironmentVariables {
   // ====== Daily Study Brief Cron — 매일 AI·에이전트 딥다이브 ======
   // - STUDY_BRIEF_OWNER_SLACK_USER_ID: 학습 주체. 미설정 시 모듈 비활성.
   // - STUDY_BRIEF_TARGET: 발송 대상 (Slack user/channel). 미설정 시 OWNER DM.
-  // - STUDY_BRIEF_CRON: BullMQ cron (default 매일 09:30 — `30 9 * * *`).
+  // - STUDY_BRIEF_CRON: BullMQ cron (default 매일 07:30 — `30 7 * * *`).
   // - STUDY_BRIEF_TIMEZONE: default Asia/Seoul.
   // - STUDY_BRIEF_NOTION_DATABASE_ID: 발행 대상 DB. 미설정 시 Slack 전체 카드 fallback.
   @IsOptional()

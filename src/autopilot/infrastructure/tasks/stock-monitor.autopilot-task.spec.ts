@@ -434,7 +434,7 @@ describe('StockMonitorAutopilotTask', () => {
     });
   });
 
-  it('감지한 매매를 요약에 덧붙이고 원장에 건수를 남긴다', async () => {
+  it('감지한 매매를 요약에 덧붙이고 원장에 건수를 남긴다 — 경보 없는 날은 원장 전용 본문', async () => {
     const marketData = {
       fetchDailyBars: jest
         .fn()
@@ -472,16 +472,16 @@ describe('StockMonitorAutopilotTask', () => {
       syncHoldings,
     ).run(context);
 
-    expect(result.summaryText).toContain('💼 *잔고 변화 2건*');
-    expect(result.skip).toBe(false);
-    expect(result.summaryText).toContain(
+    expect(result.emptyReason).toContain('💼 *잔고 변화 2건*');
+    expect(result.skip).toBe(true);
+    expect(result.emptyReason).toContain(
       '• *SamsungElec* — 추가 매수 10주 → 20주, 평단 100원 → 95원',
     );
-    expect(result.summaryText).toContain(
+    expect(result.emptyReason).toContain(
       '• 🇺🇸 *PFE* — 신규 매수 62.0845주 (평단 USD 26.8245)',
     );
     // 감시 판정 요약을 밀어내지 않고 그 뒤에 붙는다.
-    expect(result.summaryText).toMatch(/주식 모니터링[\s\S]*잔고 변화/);
+    expect(result.emptyReason).toMatch(/주식 모니터링[\s\S]*잔고 변화/);
     expect(recordedRuns[0].output).toMatchObject({ holdingChangeCount: 2 });
   });
 
@@ -839,7 +839,7 @@ describe('StockMonitorAutopilotTask', () => {
     });
   });
 
-  it('국내 감시도 환율을 한 번 조회해 정상 요약 끝에 포트폴리오 노출을 덧붙인다', async () => {
+  it('국내 감시도 환율을 한 번 조회해 정상 요약 끝에 포트폴리오 노출을 덧붙인다 — 경보 없는 날은 원장 전용 본문', async () => {
     const marketData = {
       fetchDailyBars: jest
         .fn()
@@ -855,9 +855,9 @@ describe('StockMonitorAutopilotTask', () => {
     const result = await makeTask(marketData, repository).run(context);
 
     expect(marketData.fetchUsdKrwRate).toHaveBeenCalledTimes(1);
-    expect(result.skip).toBe(false);
-    expect(result.summaryText).toContain('📉 *주식 모니터링*');
-    expect(result.summaryText).toContain(
+    expect(result.skip).toBe(true);
+    expect(result.emptyReason).toContain('📉 *주식 모니터링*');
+    expect(result.emptyReason).toContain(
       '🌎 *자산 배분* — 미국 주식 50% · 코스피 하락 베팅 50%',
     );
   });
@@ -940,7 +940,7 @@ describe('StockMonitorAutopilotTask', () => {
     }
   });
 
-  it('포트폴리오 노출을 잔고 변화 블록보다 먼저 표시한다', async () => {
+  it('포트폴리오 노출을 잔고 변화 블록보다 먼저 표시한다 — 경보 없는 날은 원장 전용 본문', async () => {
     const marketData = {
       fetchDailyBars: jest
         .fn()
@@ -977,14 +977,14 @@ describe('StockMonitorAutopilotTask', () => {
       syncHoldings,
     ).run(context);
 
-    const exposureIndex = result.summaryText!.indexOf('🌎 ');
-    const holdingChangesIndex = result.summaryText!.indexOf('💼 *잔고 변화');
+    const exposureIndex = result.emptyReason!.indexOf('🌎 ');
+    const holdingChangesIndex = result.emptyReason!.indexOf('💼 *잔고 변화');
     expect(exposureIndex).toBeGreaterThanOrEqual(0);
     expect(holdingChangesIndex).toBeGreaterThanOrEqual(0);
     expect(exposureIndex).toBeLessThan(holdingChangesIndex);
   });
 
-  it('휴장 요약에도 포트폴리오 노출을 덧붙인다', async () => {
+  it('휴장 요약에도 포트폴리오 노출을 덧붙인다 — 경보 없는 날은 원장 전용 본문', async () => {
     const marketData = {
       fetchDailyBars: jest
         .fn()
@@ -999,9 +999,9 @@ describe('StockMonitorAutopilotTask', () => {
 
     const result = await makeTask(marketData, repository).run(context);
 
-    expect(result.skip).toBe(false);
-    expect(result.summaryText).toContain('새 거래일 시세가 없어');
-    expect(result.summaryText).toContain(
+    expect(result.skip).toBe(true);
+    expect(result.emptyReason).toContain('새 거래일 시세가 없어');
+    expect(result.emptyReason).toContain(
       '🌎 *자산 배분* — 미국 주식 50% · 코스피 하락 베팅 50%',
     );
   });

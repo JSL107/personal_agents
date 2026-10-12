@@ -212,7 +212,7 @@ describe('ExpandStudyBriefUsecase', () => {
     expect(context.markBlogDraftCreated).not.toHaveBeenCalled();
   });
 
-  // cron(11:00)과 수동 CLI 가 겹치면 같은 브리프로 초안이 두 장 생긴다.
+  // cron(08:10)과 수동 CLI 가 겹치면 같은 브리프로 초안이 두 장 생긴다.
   it('다른 확장이 진행 중이면 브리프를 집지 않는다', async () => {
     const context = build({ guardTaken: true });
 

@@ -115,8 +115,14 @@ const makeConsumer = ({
   const notionFileUpload = {
     uploadImage: jest.fn().mockResolvedValue('upload-1'),
   };
+  // 정상 경로는 원장 기록(아침 한 통이 싣는다)이다. 이 파일의 문구 검사들은 원장 기록이 실패해
+  // Slack 으로 대신 보내는 경로로 본다 — 그 경로의 본문이 종전 발송과 같기 때문이다.
+  // 원장 경로 자체는 아래 '아침 한 통으로 옮긴 뒤' 테스트가 원장 성공으로 바꿔 검사한다.
   const slackNotifier = {
     postMessage: jest.fn().mockResolvedValue({ ts: 'T1' }),
+    recordSuppressedDelivery: jest
+      .fn()
+      .mockRejectedValue(new Error('원장 기록 실패')),
   };
   const notificationPublisher = {
     publishCronFailure: jest.fn(),
@@ -228,6 +234,42 @@ describe('StudyBriefCronConsumer', () => {
     expect(dependencies.slackNotifier.postMessage.mock.calls[1][0]).toEqual(
       expect.objectContaining({ target: 'C1', threadTs: 'T1' }),
     );
+  });
+
+  it('아침 한 통으로 옮긴 뒤 — 요약·전문을 원장에만 남기고 채널에는 보내지 않는다', async () => {
+    const dependencies = makeConsumer();
+    dependencies.slackNotifier.recordSuppressedDelivery.mockResolvedValue(
+      undefined,
+    );
+
+    await dependencies.consumer.process(JOB as never);
+
+    expect(dependencies.slackNotifier.postMessage).not.toHaveBeenCalled();
+    expect(
+      dependencies.slackNotifier.recordSuppressedDelivery,
+    ).toHaveBeenCalledTimes(1);
+    expect(
+      dependencies.slackNotifier.recordSuppressedDelivery,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'study-brief',
+        itemKinds: ['study-brief'],
+        target: 'C1',
+        reason: 'CONSOLE_ROUTE',
+        text: expect.stringContaining('durable execution'),
+      }),
+    );
+  });
+
+  it('원장 기록이 실패하면 유실 대신 종전처럼 Slack 으로 보낸다', async () => {
+    const dependencies = makeConsumer();
+
+    await dependencies.consumer.process(JOB as never);
+
+    expect(
+      dependencies.slackNotifier.recordSuppressedDelivery,
+    ).toHaveBeenCalledTimes(1);
+    expect(dependencies.slackNotifier.postMessage).toHaveBeenCalledTimes(2);
   });
 
   it('채택 이력 조회가 실패해도 조사는 진행한다', async () => {

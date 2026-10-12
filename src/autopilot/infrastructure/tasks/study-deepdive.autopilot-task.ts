@@ -8,7 +8,7 @@ import {
   AutopilotTaskResult,
 } from '../../domain/autopilot-task.port';
 
-// 오늘의 공부(09:30) → 딥다이브 확장(11:00) → 블로그 초안 DB.
+// 오늘의 공부(07:30) → 딥다이브 확장(08:10) → 블로그 초안 DB.
 // 앞 단계와 시각을 벌려 둔 이유: 브리프 크론은 Hermes 12분 + CTO 판정까지 최악 30분이 걸린다.
 // 같은 슬롯에 붙이면 그날 브리프가 저장되기 전에 이 task 가 돌아 매번 '확장할 것 없음' 이 된다.
 @Injectable()
