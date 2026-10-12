@@ -1255,6 +1255,26 @@ describe('EveningRetroPublishTask', () => {
       );
     });
 
+    it('(t-3c) 머지 PR 조회가 실패해도 마감 한 통은 나가고 0건이 아니라 조회 실패로 적는다', async () => {
+      const { task, githubClient } = makeTask({
+        worklogRuns: [],
+        dailyEvalRuns: [],
+        paperReturns: [{ accountName: 'LONG_TERM', returnRate: '1' }],
+      });
+      githubClient.listAuthorMergedPullRequestsSince.mockRejectedValue(
+        new Error('GitHub 502'),
+      );
+
+      const result = await task.run(CTX);
+
+      expect(result.skip).toBe(false);
+      expect(result.summaryText).toContain(
+        '• 오늘  ⚠️ 머지 PR 조회 실패 — 건수 미상',
+      );
+      expect(result.summaryText).not.toContain('PR 0건 머지');
+      expect(result.summaryText).toContain('• 투자  장기 +1%');
+    });
+
     it('(t-4) 회고 생성이 실패해도 결과 줄은 내고 실패 사실만 덧붙인다', async () => {
       const { task, modelRouter } = makeTask({
         prs: [PR_ITEM],
