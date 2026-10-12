@@ -7,7 +7,7 @@
  *
  * 산출물 (기본 ./ai-cli-env-export/)
  *   manifest.json      도구별 마켓플레이스·플러그인·MCP 정의 (비밀값은 ${VAR} 플레이스홀더)
- *   claude/            skills · agents · commands · hooks 사본
+ *   claude/            skills · agents · commands · hooks · rules · skill-library · CLAUDE.md 사본
  *   codex/             agents · skills · rules · AGENTS.md 사본
  *   SECRETS-TODO.md    새 PC 에서 직접 발급·로그인해야 하는 항목
  *
@@ -37,7 +37,16 @@ const CREDENTIAL_IN_TEXT = /(token|key|secret|password|auth|credential|access[-_
 /** 이 PC 에서만 유효한 경로 — 새 PC 에 같은 위치가 없으므로 옮기지 않는다. */
 const LOCAL_PATH = /^(\/|\.\.?\/|~\/)/;
 
-const CLAUDE_ASSET_DIRS = ['skills', 'agents', 'commands', 'hooks'];
+/**
+ * rules·skill-library 는 전역 CLAUDE.md 가 경로로 직접 가리키는 문서다(`~/.claude/rules/*.md` 를 읽고 따르라 등).
+ * 빠지면 새 PC 의 CLAUDE.md 가 없는 파일을 참조하게 된다.
+ */
+const CLAUDE_ASSET_DIRS = ['skills', 'agents', 'commands', 'hooks', 'rules', 'skill-library'];
+/**
+ * 앱이 스스로 관리하는 자산 — 내보내지 않는다. `skills/synced` 는 데스크톱 앱이 동기화하며 잠가 두는 폴더라
+ * 새 PC 에서 덮으려다 EPERM 으로 복원이 멈췄다. bootstrap 의 같은 이름 목록과 맞춘다.
+ */
+const APP_MANAGED_ASSETS = ['skills/synced'];
 /** 전역 지침 파일 — 빠지면 새 PC 에서 운영 원칙·모델 라우팅·codex-flow 규칙이 통째로 사라진다. */
 const CLAUDE_ASSET_FILES = ['CLAUDE.md'];
 const CODEX_ASSET_DIRS = ['agents', 'skills', 'rules'];
@@ -96,7 +105,7 @@ function copyAssets(sourceDir, destinationDir) {
   const copied = [];
   fs.mkdirSync(destinationDir, { recursive: true });
   for (const entry of fs.readdirSync(sourceDir)) {
-    if (shouldSkip(entry)) {
+    if (shouldSkip(entry) || APP_MANAGED_ASSETS.includes(`${path.basename(sourceDir)}/${entry}`)) {
       continue;
     }
     try {
