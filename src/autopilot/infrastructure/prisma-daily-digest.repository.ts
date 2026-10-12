@@ -6,13 +6,14 @@ import {
   SLACK_DELIVERY_SUPPRESS_REASON,
 } from '../../slack/domain/slack-delivery.type';
 import {
+  DailyDigestRepositoryPort,
   DuePaperOrderCount,
-  MorningDigestRepositoryPort,
   OpenIncidentRow,
-} from '../domain/port/morning-digest.repository.port';
+  PaperAccountReturn,
+} from '../domain/port/daily-digest.repository.port';
 
 @Injectable()
-export class PrismaMorningDigestRepository implements MorningDigestRepositoryPort {
+export class PrismaDailyDigestRepository implements DailyDigestRepositoryPort {
   constructor(private readonly prisma: PrismaService) {}
 
   async findOpenIncidents({
@@ -72,8 +73,56 @@ export class PrismaMorningDigestRepository implements MorningDigestRepositoryPor
       where: { status: 'PENDING', targetTradeDate: { lte: tradeDate } },
       _count: { _all: true },
     });
-    const countOf = (side: string): number =>
-      rows.find((row) => row.side === side)?._count._all ?? 0;
-    return { buyCount: countOf('BUY'), sellCount: countOf('SELL') };
+    return toSideCount(rows);
+  }
+
+  async countPaperOrdersAfter({
+    tradeDate,
+  }: {
+    tradeDate: Date;
+  }): Promise<DuePaperOrderCount> {
+    const rows = await this.prisma.paperOrder.groupBy({
+      by: ['side'],
+      where: { status: 'PENDING', targetTradeDate: { gt: tradeDate } },
+      _count: { _all: true },
+    });
+    return toSideCount(rows);
+  }
+
+  async countPaperTrades({
+    tradeDate,
+  }: {
+    tradeDate: Date;
+  }): Promise<DuePaperOrderCount> {
+    const rows = await this.prisma.paperTrade.groupBy({
+      by: ['side'],
+      where: { tradeDate },
+      _count: { _all: true },
+    });
+    return toSideCount(rows);
+  }
+
+  async findPaperReturns({
+    tradeDate,
+  }: {
+    tradeDate: Date;
+  }): Promise<PaperAccountReturn[]> {
+    const rows = await this.prisma.paperEquitySnapshot.findMany({
+      where: { tradeDate, isBackfilled: false },
+      select: { returnRate: true, account: { select: { name: true } } },
+      orderBy: { accountId: 'asc' },
+    });
+    return rows.map((row) => ({
+      accountName: row.account.name,
+      returnRate: row.returnRate.toString(),
+    }));
   }
 }
+
+const toSideCount = (
+  rows: { side: string; _count: { _all: number } }[],
+): DuePaperOrderCount => {
+  const countOf = (side: string): number =>
+    rows.find((row) => row.side === side)?._count._all ?? 0;
+  return { buyCount: countOf('BUY'), sellCount: countOf('SELL') };
+};

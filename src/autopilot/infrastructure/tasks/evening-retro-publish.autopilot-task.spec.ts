@@ -69,6 +69,12 @@ const makeTask = (opts: {
   }[];
   routeResult?: { text: string; modelUsed: string; provider: string };
   humanized?: Record<string, string>;
+  openPreviews?: { slackUserId: string }[];
+  incidents?: { label: string; openedAt: Date }[];
+  paperReturns?: { accountName: string; returnRate: string }[];
+  paperTrades?: { buyCount: number; sellCount: number };
+  paperNext?: { buyCount: number; sellCount: number };
+  recommendRuns?: { id: number }[];
 }) => {
   const config = {
     get: jest.fn().mockImplementation((key: string) => {
@@ -110,6 +116,9 @@ const makeTask = (opts: {
         }
         if (args.agentType === AgentType.PM) {
           return Promise.resolve(opts.pmRuns ?? []);
+        }
+        if (args.agentType === AgentType.PAPER_RECOMMEND) {
+          return Promise.resolve(opts.recommendRuns ?? []);
         }
         return Promise.resolve([]);
       }),
@@ -164,6 +173,21 @@ const makeTask = (opts: {
     ),
   };
 
+  // 마감 한 줄의 투자·넘어감 재료. 기본은 전부 비어 있다(모의투자 없음·장애 없음·남은 카드 없음).
+  const findAllOpenPreviews = {
+    execute: jest.fn().mockResolvedValue(opts.openPreviews ?? []),
+  };
+  const digestRepository = {
+    findOpenIncidents: jest.fn().mockResolvedValue(opts.incidents ?? []),
+    findPaperReturns: jest.fn().mockResolvedValue(opts.paperReturns ?? []),
+    countPaperTrades: jest
+      .fn()
+      .mockResolvedValue(opts.paperTrades ?? { buyCount: 0, sellCount: 0 }),
+    countPaperOrdersAfter: jest
+      .fn()
+      .mockResolvedValue(opts.paperNext ?? { buyCount: 0, sellCount: 0 }),
+  };
+
   const task = new EveningRetroPublishTask(
     agentRunService as never,
     githubClient as never,
@@ -171,6 +195,8 @@ const makeTask = (opts: {
     humanizeService as never,
     config as never,
     deliveryRepository as never,
+    findAllOpenPreviews as never,
+    digestRepository as never,
   );
 
   return {
@@ -202,7 +228,7 @@ describe('EveningRetroPublishTask', () => {
     expect(modelRouter.route).not.toHaveBeenCalled();
   });
 
-  it('(b) 소스 전무(PR 0건, worklog null, dailyEval null) → skip=true, route 미호출', async () => {
+  it('(b) 소스 전무(PR 0건, worklog null, dailyEval null) → 회고는 건너뛰되 마감 한 통은 낸다', async () => {
     const { task, modelRouter } = makeTask({
       prs: [],
       worklogRuns: [],
@@ -211,8 +237,11 @@ describe('EveningRetroPublishTask', () => {
 
     const result = await task.run(CTX);
 
-    expect(result.skip).toBe(true);
+    expect(result.skip).toBe(false);
     expect(modelRouter.route).not.toHaveBeenCalled();
+    expect(result.summaryText).toContain('🌙 *7/3(금) 마감*');
+    expect(result.summaryText).toContain('• 오늘  PR 0건 머지');
+    expect(result.previews).toBeUndefined();
   });
 
   it('(c) PR 1건 있음 → previews.length === 2, 경력 payload.prGroups 에 schoolbell-e/sbe-api-v5#864 포함', async () => {
@@ -408,16 +437,16 @@ describe('EveningRetroPublishTask', () => {
       }>;
     };
 
-    expect(result.summaryText).toContain('회사 실무');
-    expect(result.summaryText).toContain('실제 PR 근거가 충분하다.');
-    expect(blogPreview?.previewText).toContain('근거 PR: sbe-api-v5#864');
-    expect(blogPreview?.previewText).toContain(
-      '왜 쓸 가치: 실제 PR 근거가 충분하다.',
+    // 회고·후보 이유는 스레드(회고 전문)에 있다.
+    expect(result.detailText).toContain('회사 실무');
+    expect(result.detailText).toContain('실제 PR 근거가 충분하다.');
+    // 카드는 첫 줄만으로 판단되게 점수·제목·근거만 싣고, 쓸 가치·개요는 싣지 않는다.
+    expect(blogPreview?.previewText.split('\n')[0]).toContain(
+      '근거 회사 실무 sbe-api-v5#864',
     );
-    expect(blogPreview?.previewText).toContain('*초안 개요*');
-    expect(blogPreview?.previewText).toContain(
-      '• 문제: PR 승인 전에는 정합성 문제가 드러나지 않았다.',
-    );
+    expect(blogPreview?.previewText).not.toContain('왜 쓸 가치');
+    expect(blogPreview?.previewText).not.toContain('*초안 개요*');
+    expect(blogPreview?.previewText.split('\n')).toHaveLength(2);
     expect(payload.topPick.reason).toBe('실제 PR 근거가 충분하다.');
     expect(payload.topPick.sourceRefs).toEqual(['schoolbell-e/sbe-api-v5#864']);
     expect(payload.topPick.outline).toEqual([
@@ -436,7 +465,7 @@ describe('EveningRetroPublishTask', () => {
     ]);
   });
 
-  it('(g-2) outline 이 비어 있으면 블로그 preview 의 초안 개요 블록을 생략한다', async () => {
+  it('(g-2) 블로그 카드 둘째 줄은 누르면 일어나는 일만 적는다 — 개요 유무와 무관', async () => {
     const routeResult = {
       ...RETRO_RESPONSE,
       text: JSON.stringify({
@@ -466,9 +495,9 @@ describe('EveningRetroPublishTask', () => {
       (preview) => preview.kind === PREVIEW_KIND.EVENING_BLOG_PUBLISH,
     );
 
-    expect(blogPreview?.previewText).not.toContain('*초안 개요*');
-    expect(blogPreview?.previewText).not.toContain('초안 개요를 근거로');
-    expect(blogPreview?.previewText).toContain('위 PR 내용을 근거로');
+    expect(blogPreview?.previewText).toBe(
+      '📝 *블로그 후보 70점* · 「T」 · 근거 회사 실무 sbe-api-v5#864\n✅ 누르면 이 PR 들로 본문을 써 Notion 초안으로 올립니다 — GitHub 공개 발행은 따로 묻습니다.',
+    );
   });
 
   it('(h) 경력 preview 는 회사/개인 repository 를 그룹화해서 표시한다', async () => {
@@ -492,19 +521,24 @@ describe('EveningRetroPublishTask', () => {
     );
 
     expect(careerPreview?.previewText).toContain('• 회사 실무:');
+    // PR 줄은 재서술 메모가 아니라 제목 + 링크다(분석 보고 §4 3-1).
     expect(careerPreview?.previewText).toContain(
-      '• schoolbell-e/sbe-api-v5#864 — user_to_group 정합성 문제를 트랜잭션 경계로 보강',
+      '  • <https://x|sbe-api-v5#864> t',
+    );
+    expect(careerPreview?.previewText).not.toContain(
+      'user_to_group 정합성 문제를 트랜잭션 경계로 보강',
     );
     expect(careerPreview?.previewText).toContain('• 개인 프로젝트(이대리):');
     expect(careerPreview?.previewText).toContain(
-      '• JSL107/personal_agents#142 — 개인 프로젝트 저녁 회고 개선',
+      '  • <https://x|personal_agents#142> 개인 프로젝트 저녁 회고 개선',
+    );
+    expect(careerPreview?.previewText.split('\n')[0]).toBe(
+      '💼 *경력 반영 2건* · 저장소 2곳 → 이력서 프로필·포트폴리오 Notion',
     );
     // 카드에 붙는 "작업 맥락" 입력칸의 존재 이유를 본문이 설명해야 한다 —
     // label·hint 만으로는 "왜 적어야 하는지"(코드에 안 남는다)가 전달되지 않는다.
-    expect(careerPreview?.previewText).toContain('코드에 남지 않습니다');
-    expect(careerPreview?.previewText).toContain(
-      '아래 칸에 저장소별로 적어 두면',
-    );
+    expect(careerPreview?.previewText).toContain('코드에는 남지 않는 정보');
+    expect(careerPreview?.previewText).toContain('아래 칸에 적으면');
   });
 
   it('(i) 저녁 회고 LLM 호출은 기존 1회만 수행한다', async () => {
@@ -554,11 +588,11 @@ describe('EveningRetroPublishTask', () => {
       (preview) => preview.kind === PREVIEW_KIND.EVENING_CAREER_REFLECT,
     );
 
-    expect(result.summaryText).toContain('개인 프로젝트(이대리)');
+    expect(result.detailText).toContain('개인 프로젝트(이대리)');
     expect(careerPreview?.previewText).toContain('• 회사 실무:');
-    expect(careerPreview?.previewText).toContain('schoolbell-e/sbe-api-v5#864');
+    expect(careerPreview?.previewText).toContain('|sbe-api-v5#864>');
     expect(careerPreview?.previewText).toContain('• 개인 프로젝트(이대리):');
-    expect(careerPreview?.previewText).toContain('me/personal_agents#142');
+    expect(careerPreview?.previewText).toContain('|personal_agents#142>');
   });
 
   it('(k) 근거 PR 0건이면 요약에 그 사실을 남긴다 (조용한 0건 방지)', async () => {
@@ -630,10 +664,10 @@ describe('EveningRetroPublishTask', () => {
       'prNotes.note.0',
       'retrospective.keep',
     ]);
-    expect(result.summaryText).toContain('윤문된 회고');
-    expect(result.summaryText).toContain('윤문된 제목');
-    expect(result.summaryText).toContain('윤문된 이유');
-    expect(result.summaryText).not.toContain('실제 PR 근거가 충분하다.');
+    expect(result.detailText).toContain('윤문된 회고');
+    expect(result.detailText).toContain('윤문된 제목');
+    expect(result.detailText).toContain('윤문된 이유');
+    expect(result.detailText).not.toContain('실제 PR 근거가 충분하다.');
   });
 
   it('(o) 후보가 상위 정원을 넘으면 요약엔 3건만 세우고 전체는 스레드로 내린다', async () => {
@@ -662,9 +696,10 @@ describe('EveningRetroPublishTask', () => {
 
     const result = await task.run(CTX);
 
-    expect(result.summaryText).toContain('제목95');
-    expect(result.summaryText).not.toContain('제목80');
-    expect(result.summaryText).toContain('4건 중 상위 3건');
+    // 메인은 마감 한 통이라 후보가 없다. 회고 전문(스레드)에 상위 3건과 전체 목록이 함께 있다.
+    expect(result.summaryText).not.toContain('제목95');
+    expect(result.detailText).toContain('제목95');
+    expect(result.detailText).toContain('4건 중 상위 3건');
     expect(result.detailText).toContain('제목80');
     expect(result.detailText).toContain('발행 후보 전체 — 4건');
   });
@@ -699,17 +734,17 @@ describe('EveningRetroPublishTask', () => {
 
     const result = await task.run(CTX);
 
-    expect(result.summaryText).toContain(
+    expect(result.detailText).toContain(
       '계획서를 실적으로 재서술하던 문제를 바로잡았다. …',
     );
-    // 문장 중간에서 잘려 뜻이 끊기면 안 된다 — 뒷 문장은 통째로 스레드에만 있다.
+    // 문장 중간에서 잘려 뜻이 끊기면 안 된다 — 뒷 문장은 통째로 후보 상세에 있다.
     expect(result.summaryText).not.toContain('블로그 가치가 높다');
     expect(result.detailText).toContain(
       '자동화된 평가의 근거 설계를 설명할 수 있다.',
     );
   });
 
-  it('(p) 메인에서 빠진 것이 하나도 없으면 스레드를 만들지 않는다 (본문 반복 방지)', async () => {
+  it('(p) 회고에서 빠진 것이 하나도 없으면 후보 상세를 덧붙이지 않는다 (본문 반복 방지)', async () => {
     const nothingHidden = {
       text: JSON.stringify({
         retrospective: { keep: 'r' },
@@ -737,7 +772,9 @@ describe('EveningRetroPublishTask', () => {
 
     const result = await task.run(CTX);
 
-    expect(result.detailText).toBeUndefined();
+    // 스레드는 회고 전문 하나뿐이다 — 같은 후보를 상세로 한 번 더 늘어놓지 않는다.
+    expect(result.detailText).toContain('오늘의 회고');
+    expect(result.detailText).not.toContain('발행 후보 전체');
   });
 
   // 메인 줄에서 키워드를 뺐으므로 스레드가 유일한 표시 위치다. 후보가 적고 이유도 짧다는
@@ -776,10 +813,10 @@ describe('EveningRetroPublishTask', () => {
 
     const result = await task.run(CTX);
 
-    expect(result.summaryText).toContain('*문제* 확인 없이 결론을 썼다');
-    expect(result.summaryText).toContain('*유지* 없음');
-    expect(result.summaryText).toContain('*개선* 없음');
-    expect(result.summaryText).toContain('*미완* 없음');
+    expect(result.detailText).toContain('*문제* 확인 없이 결론을 썼다');
+    expect(result.detailText).toContain('*유지* 없음');
+    expect(result.detailText).toContain('*개선* 없음');
+    expect(result.detailText).toContain('*미완* 없음');
   });
 
   it('(q-2) 모델이 형식을 어기면 「없음」 네 줄 대신 읽지 못했다고 밝힌다', async () => {
@@ -798,10 +835,10 @@ describe('EveningRetroPublishTask', () => {
 
     const result = await task.run(CTX);
 
-    expect(result.summaryText).toContain('회고를 읽지 못했습니다');
-    expect(result.summaryText).not.toContain('*유지* 없음');
+    expect(result.detailText).toContain('회고를 읽지 못했습니다');
+    expect(result.detailText).not.toContain('*유지* 없음');
     // 형식만 어겼을 뿐 읽을 수 있는 회고라면 내용까지 버리지 않는다.
-    expect(result.summaryText).toContain('옛 평문 회고');
+    expect(result.detailText).toContain('옛 평문 회고');
     // 회고를 못 읽어도 그날의 발행 후보는 살아남아야 한다.
     expect(result.previews?.length).toBeGreaterThan(0);
   });
@@ -838,7 +875,7 @@ describe('EveningRetroPublishTask', () => {
     const result = await task.run(CTX);
 
     expect(result.skip).toBe(false);
-    expect(result.summaryText).toContain('오늘의 회고');
+    expect(result.detailText).toContain('오늘의 회고');
   });
 
   // 조회가 깨지면 목록이 `[]` 라 openPrCount 가 0 이 되는데, 그 0 은 "오늘 다 끝냈다" 와
@@ -918,7 +955,7 @@ describe('EveningRetroPublishTask', () => {
 
       const result = await task.run(CTX);
 
-      expect(result.summaryText).toContain('윤문된 문제 문장');
+      expect(result.detailText).toContain('윤문된 문제 문장');
       expect(result.runVerdicts?.[0].quote).toBe('윤문된 문제 문장');
     });
 
@@ -1124,6 +1161,140 @@ describe('EveningRetroPublishTask', () => {
       expect(result.runVerdicts).toEqual([
         { agentRunId: 1, facets: ['overall'] },
       ]);
+    });
+  });
+
+  describe('(t) 저녁 마감 한 통', () => {
+    it('(t-1) 결과·투자·넘어가는 것을 한 줄씩 싣고, 회고 전문은 스레드의 유일한 사본이다', async () => {
+      const { task } = makeTask({
+        prs: [PR_ITEM],
+        worklogRuns: [],
+        dailyEvalRuns: [],
+        routeResult: {
+          ...RETRO_RESPONSE,
+          text: JSON.stringify({
+            ...JSON.parse(RETRO_RESPONSE.text),
+            retrospective: {
+              keep: '자연어 오실행 방지 가드를 넣었다. 이어서 정리했다.',
+            },
+          }),
+        },
+        paperReturns: [
+          { accountName: 'LONG_TERM', returnRate: '-0.0612' },
+          { accountName: 'SWING', returnRate: '1.2' },
+        ],
+        paperTrades: { buyCount: 2, sellCount: 1 },
+        paperNext: { buyCount: 1, sellCount: 3 },
+        recommendRuns: [{ id: 9 }],
+        openPreviews: [{ slackUserId: 'U1' }, { slackUserId: 'U2' }],
+        // 24시간 전은 KST 달력으로 언제나 어제다 → 2일째.
+        incidents: [
+          {
+            label: 'Autopilot task paper-recommend',
+            openedAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
+          },
+        ],
+      });
+
+      const result = await task.run(CTX);
+
+      expect(result.summaryText).toBe(
+        [
+          '🌙 *7/3(금) 마감*',
+          '• 오늘  PR 1건 머지 · 핵심: 자연어 오실행 방지 가드를 넣었다.',
+          '• 투자  장기 -0.06% · 스윙 +1.2% · 오늘 체결 매수 2 · 매도 1 · 내일 시가 매수 1 · 매도 3 예정',
+          '• 넘어감  승인 대기 1장 · 🔴 Autopilot task paper-recommend 2일째',
+        ].join('\n'),
+      );
+      expect(result.detailText).toContain('오늘의 회고');
+      expect(result.detailIsOnlyCopy).toBe(true);
+      // 카드와 판정 버튼은 요약과 별개 필드라 마감 한 통으로 줄여도 그대로 나간다.
+      expect(result.previews).toHaveLength(2);
+      expect(result.runVerdicts?.[0].agentRunId).toBe(1);
+    });
+
+    it('(t-2) 오늘 추천이 아직 원장에 없으면 "0건 예정" 대신 집계 전이라고 적는다', async () => {
+      const { task } = makeTask({
+        prs: [],
+        worklogRuns: [],
+        dailyEvalRuns: [],
+        paperReturns: [{ accountName: 'LONG_TERM', returnRate: '0' }],
+        recommendRuns: [],
+      });
+
+      const result = await task.run(CTX);
+
+      expect(result.summaryText).toContain(
+        '• 투자  장기 0% · 내일 추천 집계 전',
+      );
+    });
+
+    it('(t-3) 모의투자 평가가 없던 날(휴장·꺼짐)은 투자 줄을 내지 않는다', async () => {
+      const { task } = makeTask({
+        prs: [],
+        worklogRuns: [],
+        dailyEvalRuns: [],
+      });
+
+      const result = await task.run(CTX);
+
+      expect(result.summaryText).not.toContain('• 투자');
+    });
+
+    it('(t-3b) 평가 스냅샷이 없어도 내일 예정 주문이 있으면 투자 줄을 낸다', async () => {
+      const { task } = makeTask({
+        prs: [],
+        worklogRuns: [],
+        dailyEvalRuns: [],
+        paperNext: { buyCount: 2, sellCount: 0 },
+        recommendRuns: [{ id: 9 }],
+      });
+
+      const result = await task.run(CTX);
+
+      expect(result.summaryText).toContain(
+        '• 투자  내일 시가 매수 2 · 매도 0 예정',
+      );
+    });
+
+    it('(t-4) 회고 생성이 실패해도 결과 줄은 내고 실패 사실만 덧붙인다', async () => {
+      const { task, modelRouter } = makeTask({
+        prs: [PR_ITEM],
+        worklogRuns: [],
+        dailyEvalRuns: [],
+      });
+      modelRouter.route.mockRejectedValue(new Error('quota'));
+
+      const result = await task.run(CTX);
+
+      expect(result.summaryText).toContain('• 오늘  PR 1건 머지');
+      expect(result.summaryText).toContain('⚠️ 회고 자동 생성 실패(quota)');
+      expect(result.previews).toBeUndefined();
+    });
+
+    it('(t-5) 곁다리 조회가 실패해도 그 줄만 빠지고 마감 메시지는 나간다', async () => {
+      const { task } = makeTask({
+        prs: [],
+        worklogRuns: [],
+        dailyEvalRuns: [],
+      });
+      const failing = jest.fn().mockRejectedValue(new Error('db down'));
+      Object.assign(
+        (task as unknown as { digestRepository: Record<string, jest.Mock> })
+          .digestRepository,
+        {
+          findOpenIncidents: failing,
+          findPaperReturns: failing,
+          countPaperTrades: failing,
+          countPaperOrdersAfter: failing,
+        },
+      );
+
+      const result = await task.run(CTX);
+
+      expect(result.skip).toBe(false);
+      expect(result.summaryText).toContain('🌙 *7/3(금) 마감*');
+      expect(result.summaryText).not.toContain('• 투자');
     });
   });
 });

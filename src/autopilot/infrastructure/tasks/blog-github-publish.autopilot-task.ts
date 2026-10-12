@@ -21,7 +21,43 @@ import {
 
 // 저녁 카드는 다이제스트와 따로 오는 메시지라 "아래" 에 전문이 없다. 전문이 실제로 있는 곳을 적는다.
 export const EVENING_BLOG_CONFIRM_LINE =
-  '저녁 다이제스트 스레드에 첨부한 전문(.md 파일)을 열어 확인한 뒤 ✅ 적용 / ❌ 취소를 눌러주세요.';
+  '전문은 저녁 마감 메시지 스레드의 .md 첨부 — 익명화가 맞는지 열어 본 뒤 ✅ / ❌';
+
+// 카드 첫 줄로 접어 넣어 본문에서는 빼는 줄. 승인은 읽지 않고 눌리므로(분석 보고 §5 질문 3)
+// 판단에 필요한 것(무엇이 · 어디로 · 공개되는지)을 첫 줄 하나에 모은다.
+const FOLDED_LINE_PREFIXES = [
+  '*GitHub 블로그 발행 미리보기*',
+  '제목: ',
+  '경로: ',
+  '요약: ',
+  'Notion: ',
+];
+
+// 원래 미리보기에서 첫 줄로 접은 줄을 빼고, 안전 정보(초안 제목 변경·윤문 단계 경고)는 남긴다.
+// 확인 문구는 저녁용으로 바꾼다. payload 는 건드리지 않는다 — 화면 문구만 바뀐다.
+export const buildEveningGithubCardText = ({
+  previewText,
+  title,
+  path,
+}: {
+  previewText: string;
+  title: string;
+  path: string;
+}): string => {
+  const keptLines = previewText
+    .split('\n')
+    .filter(
+      (line) =>
+        line.trim().length > 0 &&
+        line !== BLOG_PREVIEW_CONFIRM_LINE &&
+        !FOLDED_LINE_PREFIXES.some((prefix) => line.startsWith(prefix)),
+    );
+  return [
+    `🌐 *GitHub 공개 발행* · 「${title}」 · 공개 저장소 \`${path}\` 에 그대로 올라갑니다`,
+    ...keptLines,
+    EVENING_BLOG_CONFIRM_LINE,
+  ].join('\n');
+};
 
 @Injectable()
 export class BlogGithubPublishAutopilotTask implements AutopilotTask {
@@ -120,10 +156,11 @@ export class BlogGithubPublishAutopilotTask implements AutopilotTask {
       preview: {
         kind: PREVIEW_KIND.BLOG_GITHUB_PUBLISH,
         payload: candidate.payload,
-        previewText: candidate.previewText.replace(
-          BLOG_PREVIEW_CONFIRM_LINE,
-          EVENING_BLOG_CONFIRM_LINE,
-        ),
+        previewText: buildEveningGithubCardText({
+          previewText: candidate.previewText,
+          title: candidate.title,
+          path: candidate.path,
+        }),
         // 전문 파일이 못 나간 회차에는 카드도 만들지 않는다. 카드 본문은 "첨부한 전문을 확인한 뒤"
         // 라고 적고 있는데, 그 전문이 유실되면 확인할 것이 없는 채로 승인 버튼만 남는다.
         // Notion 원본으로 대신 확인할 수도 없다 — 커밋되는 것은 익명화를 거친 글이라

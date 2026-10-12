@@ -81,7 +81,7 @@ export const findQuantitativeShownInDigest = (
   return items.length > 0 ? items : null;
 };
 
-// Daily Eval 이관 — 매일 19:00 KST PO_EVAL(range=TODAY) 자동 회고.
+// Daily Eval 이관 — 매일 19:40 KST PO_EVAL(range=TODAY) 자동 회고.
 // 기존 src/daily-eval/infrastructure/daily-eval.consumer.ts 의 핵심 로직을 task 로 옮김.
 // 발송은 오케스트레이터(T0)가 담당 — 여기선 텍스트만 만든다.
 @Injectable()
@@ -142,7 +142,7 @@ export class PoEvalAutopilotTask implements AutopilotTask {
       // 저녁 회고 KPT 와 같은 사실을 되풀이해, 메인 중복의 원천이었다(설계 2026-10-02 evening-digest-dedup).
       // 내용은 버리지 않고 스레드 맨 앞으로 옮긴다. 수동 /po-eval 은 이 task 를 거치지 않아 종전대로다.
       const { wins, blockers } = humanized.qualitative;
-      const summaryText = `🌅 *Daily Eval — ${firedAtKst} (19:00 KST 자동 회고)* · Wins ${wins.length} · Blockers ${blockers.length} — 내용은 스레드`;
+      const summaryText = `🌅 *Daily Eval — ${firedAtKst} (19:40 KST 자동 회고)* · Wins ${wins.length} · Blockers ${blockers.length} — 내용은 스레드`;
       const detailText = `${formatted.summary}\n\n${formatted.detail}${formatModelFooter(outcome)}`;
       // 메인엔 건수뿐이라 상세가 유일한 사본이다 — 스레드 실패 시 채널로 대피시킨다.
       return { skip: false, summaryText, detailText, detailIsOnlyCopy: true };
@@ -153,7 +153,7 @@ export class PoEvalAutopilotTask implements AutopilotTask {
       ) {
         return {
           skip: true,
-          emptyReason: `🌙 *Daily Eval — ${firedAtKst} skip*\n_오늘 sub-agent (Work Reviewer / PO Shadow / Impact Reporter) run 부재로 회고 대상 없음. 내일 19:00 KST 에 다시 시도합니다._`,
+          emptyReason: `🌙 *Daily Eval — ${firedAtKst} skip*\n_오늘 sub-agent (Work Reviewer / PO Shadow / Impact Reporter) run 부재로 회고 대상 없음. 내일 19:40 KST 에 다시 시도합니다._`,
         };
       }
       throw error;
