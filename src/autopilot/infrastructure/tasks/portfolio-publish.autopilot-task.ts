@@ -20,6 +20,11 @@ import {
 // 저녁 회고(19:00)가 프로필을 갱신하고, 그 승인 카드가 눌릴 여유를 둔 뒤 발행한다.
 // 승인이 안 눌린 날은 이전 프로필을 다시 발행하는데, slug 멱등이라 중복이 생기지 않는다.
 // 설계: docs/superpowers/plans/2026-08-18-portfolio-site-automation.md §4-C.
+// 발행이 통째로 실패한 회차의 요약 머리. 콘솔 원장에만 남는 보고라, 다음 날 아침 한 통이
+// 이 머리로 실패를 알아보고 "장애" 로 올린다(morning-briefing.autopilot-task.ts) — 문구를 바꾸면 함께 바뀐다.
+export const PORTFOLIO_PUBLISH_FAILURE_HEADER =
+  '⚠️ *포트폴리오 사이트 발행 실패*';
+
 @Injectable()
 export class PortfolioPublishAutopilotTask implements AutopilotTask {
   readonly id = 'portfolio-publish';
@@ -50,7 +55,7 @@ export class PortfolioPublishAutopilotTask implements AutopilotTask {
       this.logger.error(`포트폴리오 사이트 발행 실패 — ${reason}`);
       return {
         skip: false,
-        summaryText: `⚠️ *포트폴리오 사이트 발행 실패* — ${reason}`,
+        summaryText: `${PORTFOLIO_PUBLISH_FAILURE_HEADER} — ${reason}`,
       };
     }
 

@@ -206,18 +206,6 @@ describe('MorningBriefingAutopilotTask', () => {
     expect(out.detailText).toContain('오늘 자동 수집된 할 일이 없습니다');
   });
 
-  it('그 외 에러는 throw', async () => {
-    const execute = jest.fn().mockRejectedValue(new Error('boom'));
-    const humanizeService = { humanize: jest.fn() };
-    const task = buildTask(
-      { execute } as never,
-      humanizeService as unknown as HumanizeService,
-      emptyStockRepository(),
-      listSchedulesUsecase(),
-    );
-    await expect(task.run(CTX)).rejects.toThrow('boom');
-  });
-
   describe('자산 한 줄', () => {
     const planOutcome = {
       result: {
@@ -743,7 +731,9 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
 
     const out = await task.run(CTX);
 
-    expect(out.summaryText).toContain('수집이 멈춘 것 같습니다');
+    // 첫 줄만 보고 판단하는 메시지라 수집 정지는 할 일(장애)로 세어 첫 줄에 드러난다.
+    expect(out.summaryText).toContain('— 할 일 1 · 장애 1');
+    expect(out.summaryText).toContain('🔴 장애  공고 수집 멈춤 — 마지막 수집');
   });
 
   it('평일인데 수집된 적이 한 번도 없으면 0건이 아니라 수집 문제로 알린다', async () => {
@@ -763,7 +753,10 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
 
     const out = await task.run(CTX);
 
-    expect(out.summaryText).toContain('• 공고  ⚠️ 수집된 적이 없습니다');
+    expect(out.summaryText).toContain(
+      '🔴 장애  공고 수집된 적 없음 — 수집 설정 확인',
+    );
+    expect(out.summaryText).not.toContain('손댈 것 없음');
   });
 
   it('링크 없는 계획 제목·장애 라벨도 mrkdwn 으로 해석되지 않게 이스케이프한다', async () => {
@@ -824,7 +817,7 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
       firedAtKst: '2026-06-21',
     });
 
-    expect(out.summaryText).not.toContain('수집이 멈춘');
+    expect(out.summaryText).not.toContain('공고 수집 멈춤');
   });
 
   it('공고명은 mrkdwn 으로 해석되지 않게 이스케이프하고, 계획 전문은 유일한 사본으로 표시한다', async () => {
@@ -845,6 +838,78 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
 
     expect(out.summaryText).toContain('A&amp;B&lt;랩&gt; 백엔드 개발자');
     expect(out.detailIsOnlyCopy).toBe(true);
+  });
+
+  it('PM 계획 생성이 실패해도 나머지 줄은 그대로 나가고 실패는 장애로 첫 줄에 오른다', async () => {
+    const task = buildTask(
+      { execute: jest.fn().mockRejectedValue(new Error('codex quota')) },
+      humanize(),
+      emptyStockRepository(),
+      listSchedulesUsecase(),
+      {
+        findAllOpenPreviews: {
+          execute: jest
+            .fn()
+            .mockResolvedValue([preview('EVENING_CAREER_REFLECT')]),
+        },
+      },
+    );
+
+    const out = await task.run(CTX);
+
+    expect(out.skip).toBe(false);
+    expect(out.summaryText?.split('\n')[0]).toBe(
+      '☀️ *6/17(수) 아침* — 할 일 2 · 승인 1 · 장애 1',
+    );
+    expect(out.summaryText).toContain(
+      '🔴 장애  오늘 계획 생성 실패 — codex quota',
+    );
+    expect(out.summaryText).not.toContain('• 회사');
+    expect(out.detailText).toContain('오늘 계획을 만들지 못했습니다');
+  });
+
+  it('포트폴리오 발행이 통째로 실패한 보고(불릿 없음)도 장애로 올린다', async () => {
+    const task = buildTask(
+      generateDailyPlan(),
+      humanize(),
+      emptyStockRepository(),
+      listSchedulesUsecase(),
+      {
+        digestRepository: {
+          ...emptyDigestRepository(),
+          findLatestConsoleText: jest
+            .fn()
+            .mockResolvedValue('⚠️ *포트폴리오 사이트 발행 실패* — 사이트 401'),
+        },
+      },
+    );
+
+    const out = await task.run(CTX);
+
+    expect(out.summaryText).toContain(
+      '🔴 장애  포트폴리오 사이트 발행 실패 — 사이트 401',
+    );
+    expect(out.summaryText).not.toContain('• 포트폴리오  어제');
+  });
+
+  it('공부 브리프는 생산자(study-brief-cron)의 owner 키로 조회한다', async () => {
+    const digestRepository = emptyDigestRepository();
+    const task = buildTask(
+      generateDailyPlan(),
+      humanize(),
+      emptyStockRepository(),
+      listSchedulesUsecase(),
+      {
+        digestRepository,
+        config: { STUDY_BRIEF_OWNER_SLACK_USER_ID: 'U-STUDY' },
+      },
+    );
+
+    await task.run(CTX);
+
+    expect(digestRepository.findLatestStudyBrief).toHaveBeenCalledWith(
+      expect.objectContaining({ ownerUserId: 'U-STUDY' }),
+    );
   });
 
   it('곁다리 조회가 실패해도 그 줄만 빠지고 메시지는 나간다', async () => {

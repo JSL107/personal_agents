@@ -13,7 +13,9 @@ import { formatTradeDay } from './paper-number.formatter';
 
 export interface MorningIncident {
   label: string;
-  dayCount: number;
+  // 사건 원장(alert_incident)에서 온 장애만 며칠째인지 안다. 그날 회차에서 감지한 문제
+  // (계획 생성 실패·공고 수집 정지·포트폴리오 발행 실패)는 null 이라 일수를 적지 않는다.
+  dayCount: number | null;
 }
 
 export interface MorningPosting {
@@ -28,9 +30,6 @@ export interface MorningDigestInput {
   incidents: MorningIncident[];
   // null = 공고 수집이 꺼져 있다(줄 자체를 내지 않는다). [] = 켜져 있으나 새 공고 없음.
   postings: MorningPosting[] | null;
-  // 공고 수집이 멈춘 것 같을 때만 채운다. 새 공고 0건과 수집 정지를 구분하려는 줄이다 —
-  // job-feed 메시지의 각주가 하던 일을 여기서 이어받는다. lastCollectedOn 이 null 이면 수집된 적이 없다.
-  stalePostingCollection: { lastCollectedOn: string | null } | null;
   invest: { buyCount: number; sellCount: number } | null;
   // PM 계획의 최우선 1건. 회사 일의 "먼저 이것부터" 출처는 이것 하나다(§5 결정 갱신).
   company: { title: string; url: string | null } | null;
@@ -75,9 +74,9 @@ export const formatMorningDigest = (input: MorningDigestInput): string => {
     );
   }
   for (const incident of input.incidents) {
-    todo.push(
-      `• 🔴 장애  ${escapeSlackMrkdwn(incident.label)} · ${incident.dayCount}일째`,
-    );
+    const days =
+      incident.dayCount === null ? '' : ` · ${incident.dayCount}일째`;
+    todo.push(`• 🔴 장애  ${escapeSlackMrkdwn(incident.label)}${days}`);
   }
   if (postings.length > 0) {
     todo.push(
@@ -118,14 +117,6 @@ export const formatMorningDigest = (input: MorningDigestInput): string => {
   }
   if (input.portfolio) {
     rest.push(`• 포트폴리오  어제 ${escapeSlackMrkdwn(input.portfolio)}`);
-  }
-  if (input.postings !== null && input.stalePostingCollection) {
-    const { lastCollectedOn } = input.stalePostingCollection;
-    rest.push(
-      lastCollectedOn
-        ? `• 공고  ⚠️ 마지막 수집 ${formatTradeDay(lastCollectedOn)} — 수집이 멈춘 것 같습니다`
-        : '• 공고  ⚠️ 수집된 적이 없습니다 — 수집 설정을 확인하세요',
-    );
   }
 
   return [
