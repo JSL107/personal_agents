@@ -73,7 +73,7 @@ const makeTask = (opts: {
   incidents?: { label: string; openedAt: Date }[];
   paperReturns?: { accountName: string; returnRate: string }[];
   paperTrades?: { buyCount: number; sellCount: number };
-  paperNext?: { buyCount: number; sellCount: number };
+  paperNext?: { buyCount: number; sellCount: number; tradeDate: string };
   recommendRuns?: { id: number }[];
 }) => {
   const config = {
@@ -183,9 +183,7 @@ const makeTask = (opts: {
     countPaperTrades: jest
       .fn()
       .mockResolvedValue(opts.paperTrades ?? { buyCount: 0, sellCount: 0 }),
-    countPaperOrdersAfter: jest
-      .fn()
-      .mockResolvedValue(opts.paperNext ?? { buyCount: 0, sellCount: 0 }),
+    findNextPaperOrders: jest.fn().mockResolvedValue(opts.paperNext ?? null),
   };
 
   const task = new EveningRetroPublishTask(
@@ -1184,7 +1182,7 @@ describe('EveningRetroPublishTask', () => {
           { accountName: 'SWING', returnRate: '1.2' },
         ],
         paperTrades: { buyCount: 2, sellCount: 1 },
-        paperNext: { buyCount: 1, sellCount: 3 },
+        paperNext: { buyCount: 1, sellCount: 3, tradeDate: '2026-07-06' },
         recommendRuns: [{ id: 9 }],
         openPreviews: [{ slackUserId: 'U1' }, { slackUserId: 'U2' }],
         // 24시간 전은 KST 달력으로 언제나 어제다 → 2일째.
@@ -1202,7 +1200,7 @@ describe('EveningRetroPublishTask', () => {
         [
           '🌙 *7/3(금) 마감*',
           '• 오늘  PR 1건 머지 · 핵심: 자연어 오실행 방지 가드를 넣었다.',
-          '• 투자  장기 -0.06% · 스윙 +1.2% · 오늘 체결 매수 2 · 매도 1 · 내일 시가 매수 1 · 매도 3 예정',
+          '• 투자  장기 -0.06% · 스윙 +1.2% · 오늘 체결 매수 2 · 매도 1 · 7/6(월) 시가 매수 1 · 매도 3 예정',
           '• 넘어감  승인 대기 1장 · 🔴 Autopilot task paper-recommend 2일째',
         ].join('\n'),
       );
@@ -1246,14 +1244,14 @@ describe('EveningRetroPublishTask', () => {
         prs: [],
         worklogRuns: [],
         dailyEvalRuns: [],
-        paperNext: { buyCount: 2, sellCount: 0 },
+        paperNext: { buyCount: 2, sellCount: 0, tradeDate: '2026-07-06' },
         recommendRuns: [{ id: 9 }],
       });
 
       const result = await task.run(CTX);
 
       expect(result.summaryText).toContain(
-        '• 투자  내일 시가 매수 2 · 매도 0 예정',
+        '• 투자  7/6(월) 시가 매수 2 · 매도 0 예정',
       );
     });
 
@@ -1286,7 +1284,7 @@ describe('EveningRetroPublishTask', () => {
           findOpenIncidents: failing,
           findPaperReturns: failing,
           countPaperTrades: failing,
-          countPaperOrdersAfter: failing,
+          findNextPaperOrders: failing,
         },
       );
 

@@ -12,6 +12,11 @@ export interface DuePaperOrderCount {
   sellCount: number;
 }
 
+// 다음 체결일 하루치 대기 주문. tradeDate 는 그 체결일(YYYY-MM-DD).
+export interface NextPaperOrders extends DuePaperOrderCount {
+  tradeDate: string;
+}
+
 export interface PaperAccountReturn {
   accountName: string;
   // 시드 대비 수익률(%) 문자열 — PaperEquitySnapshot.returnRate 그대로.
@@ -34,10 +39,11 @@ export interface DailyDigestRepositoryPort {
   }): Promise<string | null>;
   // 그 거래일(또는 그 전)에 체결할 대기 주문 수.
   countDuePaperOrders(input: { tradeDate: Date }): Promise<DuePaperOrderCount>;
-  // 그 거래일 **다음** 거래일 이후에 체결할 대기 주문 수(저녁에 "내일 예정").
-  countPaperOrdersAfter(input: {
+  // 그 거래일보다 뒤에 체결할 대기 주문 중 **가장 이른 체결일 하루치**. 없으면 null.
+  // 그 뒤 날짜의 주문까지 합치면 "다음 체결일 예정" 수가 부풀려진다.
+  findNextPaperOrders(input: {
     tradeDate: Date;
-  }): Promise<DuePaperOrderCount>;
+  }): Promise<NextPaperOrders | null>;
   // 그 거래일에 체결된 매매 수.
   countPaperTrades(input: { tradeDate: Date }): Promise<DuePaperOrderCount>;
   // 그 거래일 장마감 평가 스냅샷의 계좌별 수익률(백필 제외).
