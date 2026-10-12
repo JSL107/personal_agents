@@ -38,7 +38,7 @@ export enum TriggerType {
   WEEKLY_CEO_META_CRON = 'WEEKLY_CEO_META_CRON',
   // 사용자 명시 트리거 1회로 P1 (PM plan) → P2 (CTO 분배) → P3 (BE worker) 자동 chain 호출.
   // 본 trigger 는 chain 의 PM step 에만 명시 — CTO/BE step 은 기존 trigger 유지, chain 추적은 parentId.
-  // workflow-phase-definition §5.2 의 Daily Eval — 매일 19:00 KST PO_EVAL (range=TODAY) 자동 트리거.
+  // workflow-phase-definition §5.2 의 Daily Eval — 매일 19:40 KST PO_EVAL (range=TODAY) 자동 트리거.
   // 수동 /po-eval (SLACK_COMMAND_PO_EVAL) 와 구분 — 분석 / Failure Replay 시 trigger 출처 명확.
   DAILY_EVAL_CRON = 'DAILY_EVAL_CRON',
   // 주 1회 자동 /impact-report --recent <N>d 종합 — 본인 작성 머지 PR 종합 보고.

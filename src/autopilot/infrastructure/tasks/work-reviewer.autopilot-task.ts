@@ -111,7 +111,7 @@ export class WorkReviewerAutopilotTask implements AutopilotTask {
       );
       const formatted = formatDailyReview(humanized);
       const summaryText =
-        `📝 *Work Reviewer — ${firedAtKst} (19:00 KST 자동 worklog)*\n\n` +
+        `📝 *Work Reviewer — ${firedAtKst} (19:40 KST 자동 worklog)*\n\n` +
         formatted.summary;
       const detailText = formatted.detail + formatModelFooter(outcome);
       return { skip: false, summaryText, detailText };

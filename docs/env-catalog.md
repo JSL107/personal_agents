@@ -175,7 +175,7 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `BLOG_NOTION_STATUS_DRAFT_VALUE` | ❌ | — |
 | `BLOG_NOTION_STATUS_HOLD_VALUE` | ❌ | 편집 단계가 '발행 부적합' 으로 판정한 초안을 옮길 Notion 상태값. 미설정이면 '보류'. |
 | `BLOG_GITHUB_PUBLISH_ENABLED` | ❌ | Notion 블로그 초안의 GitHub 발행 승인 카드를 저녁 evening digest에 추가한다. |
-| `EVENING_RETRO_PUBLISH_ENABLED` | ❌ | 저녁 회고→발행 후보 (매일 19:00 KST evening 그룹). `false` 문자열이면 task 전체 skip. |
+| `EVENING_RETRO_PUBLISH_ENABLED` | ❌ | 저녁 회고→발행 후보 (매일 19:40 KST evening 그룹). `false` 문자열이면 task 전체 skip. |
 | `EVENING_RETRO_BLOG_NOTION_DATABASE_ID` | ❌ | 블로그 발행 대상 Notion "블로그 초안" DB ID. 미설정 시 블로그 카드 승인은 명시 에러. |
 
 ## proactive / 메모리 / 윤문

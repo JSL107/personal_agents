@@ -57,7 +57,8 @@ describe('AUTOPILOT_PLAYBOOK', () => {
       riskTier: 'T1_PREVIEW',
       trigger: {
         kind: 'CRON',
-        schedule: '0 19 * * *',
+        // 19:40 — 모의투자 내일 추천(19:30) 뒤에 마감 한 통이 "내일 예정" 을 싣는다.
+        schedule: '40 19 * * *',
         timezone: 'Asia/Seoul',
       },
     });
