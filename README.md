@@ -253,11 +253,11 @@ Slack 설정: Event Subscriptions 에 `app_mention` + `message.im` + `reaction_a
 
 | 시간 (Asia/Seoul) | 동작 |
 |---|---|
-| 🌅 매일 08:30 | 비서실(하루 한 장 결산) + Morning Briefing(PM `/today` 자동 계획) |
-| 🕚 매일 11:00 | 오늘의 공부 딥다이브 — 아침 브리프를 블로그 초안으로 펼침 |
-| 🕐 매일 13:00 | PO Shadow |
-| 🌆 매일 19:00 | Worklog + Daily Eval(PO_EVAL) + 저녁 회고 발행 후보 + 블로그 GitHub 발행 카드 |
-| 🌙 매일 23:00 | 포트폴리오 사이트 발행 |
+| 🌄 매일 07:30 · 08:05 · 08:10 | 오늘의 공부 브리프 → 적용 판정 · 딥다이브(블로그 초안) — 채널에는 안 보내고 아침 한 통에 한 줄로 실린다 |
+| 🌅 매일 08:30 | 아침 한 통 — 할 일(승인 대기·장애·새 공고) + 투자·회사(PM 계획 최우선)·공부·어제 포트폴리오 한 줄씩. PM 계획 전문·공고 목록은 스레드. 비서실 결산은 콘솔 원장 |
+| 🕐 매일 13:00 | PO Shadow — 오전 동안 계획이 틀어졌을 때만 발송(조용한 날은 원장에만) |
+| 🌆 매일 19:40 | 저녁 마감 한 통 — 오늘 머지·회고 핵심 / 투자(수익률·체결·다음 체결일 예정) / 넘어가는 것 한 줄씩. 회고 전문·발행 후보는 스레드, 승인 카드(블로그·경력·GitHub)는 바로 아래. Worklog·Daily Eval 은 콘솔 원장. 모의투자 추천(19:30) 뒤에 둔다 |
+| 🌙 매일 23:00 | 포트폴리오 사이트 발행 — 보고는 콘솔 원장, 다음 날 아침 한 통의 "어제" 줄 |
 
 **투자** — 종목 감시·모의계좌 평가·유니버스 수집에는 각각 `STOCK_MONITOR_ENABLED` · `PAPER_TRADING_ENABLED` · `SCREENER_ENABLED` 가 필요하다(기본 OFF). 나머지 슬롯은 전용 스위치 없이 돌되 대상 데이터(열린 계좌·미체결 주문·채점할 알림)가 없으면 조용히 건너뛴다.
 
@@ -300,7 +300,7 @@ Slack 설정: Event Subscriptions 에 `app_mention` + `message.im` + `reaction_a
 
 > 주식·모의투자 알림은 플레이북에서 `line: 'invest'` 로 묶여 있어 `AUTOPILOT_INVEST_TARGET` 하나로 전용 채널에 보낼 수 있다. 미설정 시 `AUTOPILOT_TARGET`(없으면 owner DM)을 그대로 쓴다. 채널로 보내려면 봇이 그 채널에 초대돼 있어야 한다.
 >
-> 채용공고 카드(`job-feed`)와 갭 분석(`job-feed-gap`)은 같은 방식으로 `line: 'career'` 이며 `AUTOPILOT_CAREER_TARGET` 을 쓴다. PR 리뷰 스윕 요약(`pr-review-sweep`)은 `line: 'review'` 로 `AUTOPILOT_REVIEW_TARGET` 을 쓴다.
+> 채용공고 수집(`job-feed`)과 갭 분석(`job-feed-gap`)은 같은 방식으로 `line: 'career'` 이며 `AUTOPILOT_CAREER_TARGET` 을 쓴다. 다만 둘 다 콘솔 경로라 Slack 에는 나가지 않고, 새 공고는 아침 한 통(공통 대상)에 실린다. PR 리뷰 스윕 요약(`pr-review-sweep`)은 `line: 'review'` 로 `AUTOPILOT_REVIEW_TARGET` 을 쓴다.
 
 </details>
 
@@ -382,7 +382,7 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 | `JOB_FEED_DETAIL_LIMIT` | ❌ | 실행당 상세 페이지를 가져올 최대 건수(1~100, 기본 20) |
 | `JOB_FEED_AVOID_SKILLS` | ❌ | 기피 기술(쉼표 구분). 사전에서 빼지 않고 저장은 그대로 두되, 하나라도 요구하는 공고를 알림 후보에서만 뺀다(설정을 바꾸면 다시 보인다) |
 | `STUDY_DIAGRAM_WIDTH_PX` · `STUDY_DIAGRAM_MIN_FONT_PX` · `STUDY_DIAGRAM_MAX_HEIGHT_PX` | ❌ | 오늘의 공부 그림(`STUDY_DIAGRAM_ENABLED`)의 캔버스 폭 · 최소 글자 높이 · 세로 상한(px). 실측으로 확정한 값을 넣는다 |
-| `STUDY_APPLY_ISSUE_REPO` | ❌ | 오늘의 공부 적용 판정(매일 10:30)이 APPLY 일 때 승인 카드 → issue 를 만들 레포(`owner/repo`). 미설정이면 판정만 저장한다 |
+| `STUDY_APPLY_ISSUE_REPO` | ❌ | 오늘의 공부 적용 판정(매일 08:05)이 APPLY 일 때 승인 카드 → issue 를 만들 레포(`owner/repo`). 미설정이면 판정만 저장한다 |
 
 **기본 OFF 인 기능 스위치** — `'true'` 로 켠다. `STOCK_MONITOR_ENABLED`(보유 종목 모니터링) · `PAPER_TRADING_ENABLED`(모의투자 평가) · `SCREENER_ENABLED`(KRX 유니버스·시세 수집) · `SUBCONSCIOUS_ENABLED`(proactive engine) · `PR_REVIEW_LOOP_ENABLED`(PR 리뷰 스윕) · `AUTOPILOT_PREFERENCE_LEARNING_ENABLED`(주간 선호 학습) · `PREFERENCE_PROFILE_INJECTION_ENABLED`(학습 프로필 주입) · `JOB_FEED_ENABLED`(채용공고 자동 수집) · `STUDY_DIAGRAM_ENABLED`(오늘의 공부 그림 첨부).
 

@@ -154,7 +154,7 @@ describe('JobFeedAutopilotTask', () => {
     ).not.toHaveBeenCalled();
   });
 
-  it('프로필이 있으면 채점·상세수집·알림선점을 이어서 실행하고 마지막 수집 시각을 각주에 담는다', async () => {
+  it('프로필이 있으면 채점·상세수집을 이어서 실행하되 알림 선점은 하지 않고 마지막 수집 시각을 각주에 담는다', async () => {
     const lastCollectedAt = new Date('2026-08-27T22:00:00.000Z');
     const posting = {
       id: 1,
@@ -216,18 +216,12 @@ describe('JobFeedAutopilotTask', () => {
     // 소개문을 하나씩 펼쳐 목록이 묻히므로, 이 task 는 반드시 끄기를 요청해야 한다.
     expect(result.unfurlLinks).toBe(false);
 
-    // run() 실행만으로는 아직 아무것도 선점하지 않는다 — 선점은 onDelivered 콜백
-    // 안에서, 발송이 성공한 뒤에만 일어난다(orchestrator 가 그 시점에 호출한다).
+    // 선점은 08:30 아침 한 통(morning-briefing)이 실어 보낸 뒤 그쪽 onDelivered 가 한다.
+    // 여기서 선점하면 07:00 에 표식이 찍혀 아침 목록이 빈다 — 이 task 는 후처리를 갖지 않는다.
     expect(
       deps.jobPostingRepository.claimForNotification,
     ).not.toHaveBeenCalled();
-    expect(result.onDelivered).toBeInstanceOf(Function);
-
-    await result.onDelivered?.();
-    expect(deps.jobPostingRepository.claimForNotification).toHaveBeenCalledWith(
-      'toss|백엔드개발자',
-      expect.any(Date),
-    );
+    expect(result.onDelivered).toBeUndefined();
 
     // fetchDetail 이 saveDetail 로 스킬을 채우며 채점 표식을 지운 행이 그날 안에
     // 반영되려면, fetchDetail 이후 채점이 한 번 더 돌아야 한다(원티드 65점 고정 재발 방지).
@@ -283,55 +277,6 @@ describe('JobFeedAutopilotTask', () => {
     });
   });
 
-  it('알림 후보가 없으면 onDelivered 를 아예 만들지 않는다 — 선점할 것이 없다', async () => {
-    const deps = makeDeps({ notifiablePostings: [] });
-    const task = buildTask(deps);
-
-    const result = await task.run(CONTEXT);
-
-    expect(result.onDelivered).toBeUndefined();
-  });
-
-  it('onDelivered 는 후보 각각을 normalizedKey 로 선점한다 — 중복 공고는 한 번만', async () => {
-    const postingA = {
-      id: 1,
-      source: 'jumpit',
-      sourceId: '1',
-      company: '토스',
-      title: '백엔드 개발자',
-      detailUrl: 'https://example.test/1',
-      skillTags: ['Java'],
-      rawSkillTags: [],
-      minYears: 3,
-      maxYears: 5,
-      experienceLevel: 'mid',
-      locations: ['서울'],
-      normalizedKey: 'toss|백엔드개발자',
-      jdText: null,
-      matchScore: 80,
-    };
-    const postingB = {
-      ...postingA,
-      id: 2,
-      normalizedKey: 'danggeun|서버개발자',
-    };
-    const deps = makeDeps({ notifiablePostings: [postingA, postingB] });
-    const task = buildTask(deps);
-
-    const result = await task.run(CONTEXT);
-    await result.onDelivered?.();
-
-    expect(
-      deps.jobPostingRepository.claimForNotification,
-    ).toHaveBeenCalledTimes(2);
-    expect(
-      deps.jobPostingRepository.claimForNotification,
-    ).toHaveBeenNthCalledWith(1, 'toss|백엔드개발자', expect.any(Date));
-    expect(
-      deps.jobPostingRepository.claimForNotification,
-    ).toHaveBeenNthCalledWith(2, 'danggeun|서버개발자', expect.any(Date));
-  });
-
   it('JOB_FEED_AVOID_SKILLS 를 정규화해 알림·상세수집 두 표면 모두에 같은 값으로 넘긴다', async () => {
     const deps = makeDeps();
     const task = buildTask(deps, {
@@ -372,57 +317,6 @@ describe('JobFeedAutopilotTask', () => {
       expect.objectContaining({ avoidSkillTags: ['PHP', 'Cobol'] }),
     );
     expect(warning).toHaveBeenCalledWith(expect.stringContaining('Cobol'));
-    warning.mockRestore();
-  });
-
-  it('onDelivered 는 한 건이 선점에 실패해도 나머지를 계속 선점하고 실패 건수를 로그로 남긴다', async () => {
-    const warning = jest
-      .spyOn(Logger.prototype, 'warn')
-      .mockImplementation(() => undefined);
-    const postingA = {
-      id: 1,
-      source: 'jumpit',
-      sourceId: '1',
-      company: '토스',
-      title: '백엔드 개발자',
-      detailUrl: 'https://example.test/1',
-      skillTags: ['Java'],
-      rawSkillTags: [],
-      minYears: 3,
-      maxYears: 5,
-      experienceLevel: 'mid',
-      locations: ['서울'],
-      normalizedKey: 'toss|백엔드개발자',
-      jdText: null,
-      matchScore: 80,
-    };
-    const postingB = {
-      ...postingA,
-      id: 2,
-      normalizedKey: 'danggeun|서버개발자',
-    };
-    const postingC = { ...postingA, id: 3, normalizedKey: 'kakao|서버개발자' };
-    const deps = makeDeps({
-      notifiablePostings: [postingA, postingB, postingC],
-    });
-    // 두 번째 후보 선점만 실패한다 — 발송은 이미 끝났으니 나머지는 계속 선점돼야 한다.
-    deps.jobPostingRepository.claimForNotification = jest
-      .fn()
-      .mockResolvedValueOnce(true)
-      .mockRejectedValueOnce(new Error('DB 연결 끊김'))
-      .mockResolvedValueOnce(true);
-    const task = buildTask(deps);
-
-    const result = await task.run(CONTEXT);
-    await expect(result.onDelivered?.()).resolves.toBeUndefined();
-
-    expect(
-      deps.jobPostingRepository.claimForNotification,
-    ).toHaveBeenCalledTimes(3);
-    expect(
-      deps.jobPostingRepository.claimForNotification,
-    ).toHaveBeenNthCalledWith(3, 'kakao|서버개발자', expect.any(Date));
-    expect(warning).toHaveBeenCalledWith(expect.stringContaining('1건'));
     warning.mockRestore();
   });
 
