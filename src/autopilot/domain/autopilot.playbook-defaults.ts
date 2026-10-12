@@ -35,11 +35,15 @@ export const DEFAULT_RUN_RETRO_TIMEZONE = 'Asia/Seoul';
 export const DEFAULT_RUN_SWEEPER_CRON = '50 * * * *';
 export const DEFAULT_RUN_SWEEPER_TIMEZONE = 'Asia/Seoul';
 
-// 오늘의 공부 딥다이브 확장 기본 스케줄 — 매일 11:00 KST.
-// 브리프 크론(09:30)이 Hermes 12분 + CTO 판정으로 최악 30분 걸리므로 그 뒤에 둔다.
-export const DEFAULT_STUDY_DEEPDIVE_CRON = '0 11 * * *';
+// 오늘의 공부 체인 — 브리프(07:30, study-brief-cron.type.ts) → 적용 판정(08:05) · 딥다이브(08:10).
+// 아침 한 통(08:30)이 "공부" 한 줄로 싣도록 그 전에 끝낸다(2026-10-08 사용자 결정).
+// 브리프가 Hermes 12분 + CTO 판정으로 최악 30분(08:00) 걸리므로 뒤 두 단계는 그 뒤에 둔다.
+// 두 단계는 서로 기대지 않고 각자 "48시간 안의 가장 오래된 미처리 브리프" 를 집는다 — 브리프가
+// 늦게 끝난 날은 다음 날 회차가 처리하고, 브리프가 사라지지는 않는다. 5분 어긋낸 것은 둘 다
+// 모델을 불러 같은 순간 출발을 피하려는 것이다.
+export const DEFAULT_STUDY_DEEPDIVE_CRON = '10 8 * * *';
 export const DEFAULT_STUDY_DEEPDIVE_TIMEZONE = 'Asia/Seoul';
-export const DEFAULT_STUDY_APPLICABILITY_CRON = '30 10 * * *';
+export const DEFAULT_STUDY_APPLICABILITY_CRON = '5 8 * * *';
 export const DEFAULT_STUDY_APPLICABILITY_TIMEZONE = 'Asia/Seoul';
 
 // Knowledge Lint 기본 스케줄 — 매주 일 10:00 KST(run-retro 월 09:00 / ceo-meta 일 18:00 과 시간 분리).

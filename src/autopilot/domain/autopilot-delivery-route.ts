@@ -2,6 +2,10 @@ export type AutopilotDeliveryRoute = 'slack' | 'console';
 
 // task 성격이 아닌 발송 정책이다. 콘솔 경로는 Slack 에 게시하지 않고 전문을 slack_delivery
 // 원장에 보관한다. owner 가 2026-10-07 확정: docs/superpowers/plans/2026-10-07-slack-delivery-gate.md
+//
+// 2026-10-12 아침 한 통(docs/superpowers/plans/2026-10-08-daily-message-direction.md §3-1): 비서실·
+// 공부(적용 판정 요약·딥다이브)·포트폴리오 발행·공고 수집·갭 분석은 콘솔로 보내고, 그 결과를
+// 아침 morning-briefing 이 원장에서 읽어 한 줄씩 싣는다. 적용 판정의 승인 카드는 경로와 무관하게 나간다.
 export const AUTOPILOT_DELIVERY_ROUTE: Readonly<
   Record<string, AutopilotDeliveryRoute>
 > = {
@@ -9,9 +13,9 @@ export const AUTOPILOT_DELIVERY_ROUTE: Readonly<
   'daily-eval': 'slack',
   'evening-retro-publish': 'slack',
   'blog-github-publish': 'slack',
-  'study-applicability': 'slack',
-  'study-deepdive': 'slack',
-  secretariat: 'slack',
+  'study-applicability': 'console',
+  'study-deepdive': 'console',
+  secretariat: 'console',
   'morning-briefing': 'slack',
   'po-shadow': 'slack',
   'weekly-summary': 'slack',
@@ -42,9 +46,9 @@ export const AUTOPILOT_DELIVERY_ROUTE: Readonly<
   'ai-cli-env-snapshot': 'console',
   'ai-cli-env-apply': 'slack',
   'portfolio-warmup': 'slack',
-  'portfolio-publish': 'slack',
-  'job-feed': 'slack',
-  'job-feed-gap': 'slack',
+  'portfolio-publish': 'console',
+  'job-feed': 'console',
+  'job-feed-gap': 'console',
 };
 
 export const resolveAutopilotDeliveryRoute = (

@@ -19,6 +19,13 @@ describe('AUTOPILOT_DELIVERY_ROUTE', () => {
     'ops-supervisor',
     'docs-sync-audit',
     'run-retro',
+    // 2026-10-12 아침 한 통 — 결과는 morning-briefing 이 원장에서 읽어 한 줄씩 싣는다.
+    'secretariat',
+    'study-applicability',
+    'study-deepdive',
+    'portfolio-publish',
+    'job-feed',
+    'job-feed-gap',
   ];
 
   it('모든 playbook taskId 에 경로가 있고 경로 키는 모두 playbook 에 있다', () => {
@@ -35,7 +42,7 @@ describe('AUTOPILOT_DELIVERY_ROUTE', () => {
     }
   });
 
-  it('콘솔 경로는 owner 가 확정한 13개이며 paper-score 는 Slack 에 남는다', () => {
+  it('콘솔 경로는 owner 가 확정한 19개이며 paper-score·아침 한 통은 Slack 에 남는다', () => {
     expect(
       Object.entries(AUTOPILOT_DELIVERY_ROUTE)
         .filter(([, route]) => route === 'console')
@@ -43,6 +50,8 @@ describe('AUTOPILOT_DELIVERY_ROUTE', () => {
         .sort(),
     ).toEqual(consoleTaskIds.sort());
     expect(resolveAutopilotDeliveryRoute('paper-score')).toBe('slack');
+    // 저녁 회고의 pm_plan 판정 버튼은 아침 발송 원장에 morning-briefing 이 SENT 로 있어야 붙는다.
+    expect(resolveAutopilotDeliveryRoute('morning-briefing')).toBe('slack');
   });
 
   it('미등록 taskId 는 즉시 오류를 낸다', () => {

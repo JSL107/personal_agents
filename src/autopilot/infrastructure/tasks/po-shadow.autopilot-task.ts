@@ -59,10 +59,13 @@ export class PoShadowAutopilotTask implements AutopilotTask {
       throw error;
     }
 
+    // 어긋남이 없는 회차는 채널에 내지 않고 원장(SUPPRESSED/EMPTY)에만 남긴다. 정오 검토의 몫은
+    // "오전 동안 계획이 틀어졌나" 를 알리는 사건 알림이고, 오늘 먼저 할 일은 아침 한 통이 PM 계획의
+    // 최우선 1건으로 이미 말했다(docs/superpowers/plans/2026-10-08-daily-message-direction.md §8).
     if (outcome.result.quiet) {
       return {
-        skip: false,
-        summaryText: formatPoShadowReport(outcome.result),
+        skip: true,
+        emptyReason: formatPoShadowReport(outcome.result),
       };
     }
 

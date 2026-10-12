@@ -66,7 +66,7 @@ describe('PoShadowAutopilotTask', () => {
     expect(task.id).toBe('po-shadow');
   });
 
-  it('quiet 결과는 윤문을 건너뛰고 원본 사실로 한 줄을 만든다', async () => {
+  it('quiet 결과는 채널에 내지 않고 원본 사실 한 줄을 원장(emptyReason)에만 남긴다', async () => {
     usecase.execute.mockResolvedValue({
       result: quietReport(),
       modelUsed: 'none',
@@ -76,8 +76,8 @@ describe('PoShadowAutopilotTask', () => {
     const result = await task.run(CONTEXT);
 
     expect(result).toEqual({
-      skip: false,
-      summaryText: '✅ *PO 검토* — 계획대로 진행 중 (#10 머지 완료)',
+      skip: true,
+      emptyReason: '✅ *PO 검토* — 계획대로 진행 중 (#10 머지 완료)',
     });
     expect(humanizeService.humanize).not.toHaveBeenCalled();
     expect(usecase.execute).toHaveBeenCalledWith({

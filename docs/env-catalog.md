@@ -224,7 +224,7 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `PORTFOLIO_SITE_URL` | ❌ | — |
 | `PORTFOLIO_AUTOMATION_TOKEN` | ❌ | — |
 | `PORTFOLIO_ANONYMIZED_OWNERS` | ❌ | — |
-| `STUDY_DEEPDIVE_ENABLED` | ❌ | 오늘의 공부를 블로그 초안으로 펼치는 딥다이브 확장(매일 11:00). |
+| `STUDY_DEEPDIVE_ENABLED` | ❌ | 오늘의 공부를 블로그 초안으로 펼치는 딥다이브 확장(매일 08:10). |
 | `STUDY_APPLY_ISSUE_REPO` | ❌ | 오늘의 공부 적용 제안 승인 시 issue 를 만들 레포(owner/repo). |
 | `STALE_DATA_CUTOFF_DAYS` | ❌ | OPS-6 stale data filter — GitHub assigned issue / Notion task DB 의 컷오프 (일 단위). |
 | `PM_STALE_DEMOTE_DAYS` | ❌ | PM 데일리 플랜 정체 태스크 강등 임계값. 미설정 시 default 5일. |
@@ -250,7 +250,7 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `KOREAN_HOLIDAY_API_KEY` | ❌ | 공공데이터포털 「한국천문연구원 특일 정보」 서비스키(**디코딩 키**). |
 | `STUDY_BRIEF_OWNER_SLACK_USER_ID` | ❌ | 학습 주체. 미설정 시 모듈 비활성. |
 | `STUDY_BRIEF_TARGET` | ❌ | 발송 대상 (Slack user/channel). 미설정 시 OWNER DM. |
-| `STUDY_BRIEF_CRON` | ❌ | BullMQ cron (default 매일 09:30 — `30 9 * * *`). |
+| `STUDY_BRIEF_CRON` | ❌ | BullMQ cron (default 매일 07:30 — `30 7 * * *`). |
 | `STUDY_BRIEF_TIMEZONE` | ❌ | default Asia/Seoul. |
 | `STUDY_BRIEF_NOTION_DATABASE_ID` | ❌ | 발행 대상 DB. 미설정 시 Slack 전체 카드 fallback. |
 | `STUDY_DIAGRAM_ENABLED` | ❌ | 'true' 일 때만 그림을 그려 노션 페이지에 붙인다. 기본 꺼짐. |

@@ -1,7 +1,9 @@
 import { StudyResearchKind } from './study-research.parser';
 
 export const STUDY_BRIEF_CRON_QUEUE = 'study-brief-cron';
-export const DEFAULT_STUDY_BRIEF_CRON = '30 9 * * *';
+// 아침 한 통(08:30) 전에 끝나도록 07:30 — 최악 30분(Hermes 12분 + CTO 판정). 뒤 단계 시각은
+// autopilot.playbook-defaults.ts 의 DEFAULT_STUDY_APPLICABILITY_CRON · DEFAULT_STUDY_DEEPDIVE_CRON.
+export const DEFAULT_STUDY_BRIEF_CRON = '30 7 * * *';
 export const DEFAULT_STUDY_BRIEF_TIMEZONE = 'Asia/Seoul';
 // 주제 선정에서 제외할 최근 브리프의 기간. 30일이던 동안 A2A(8/6→9/7)·AG-UI(8/12→9/13)·
 // Durable Execution(8/9→9/9)이 창을 벗어난 바로 다음 날 다시 뽑혔다. 하루 1건이라 1년이면

@@ -1550,12 +1550,12 @@ describe('AutopilotOrchestrator', () => {
         .fn()
         .mockRejectedValue(new Error('첫 task 후처리 실패'));
       const succeedingOnDelivered = jest.fn().mockResolvedValue(undefined);
-      const taskA = makeTask('job-feed', {
+      const taskA = makeTask('daily-eval', {
         skip: false,
         summaryText: 'A',
         onDelivered: failingOnDelivered,
       });
-      const taskB = makeTask('job-feed-gap', {
+      const taskB = makeTask('work-reviewer', {
         skip: false,
         summaryText: 'B',
         onDelivered: succeedingOnDelivered,
@@ -1571,8 +1571,8 @@ describe('AutopilotOrchestrator', () => {
         { execute: jest.fn() } as never,
         { attachSlackMessage: jest.fn() } as never,
       );
-      const e1 = makeEntry('job-feed', 'job-feed');
-      const e2 = makeEntry('job-feed-gap', 'job-feed-gap');
+      const e1 = makeEntry('daily-eval', 'daily-eval');
+      const e2 = makeEntry('work-reviewer', 'work-reviewer');
 
       await orchestrator.runGroup('morning', [e1, e2], 'U1', 'C1');
 
@@ -1883,13 +1883,13 @@ describe('AutopilotOrchestrator', () => {
     it('여러 task 중 하나의 상세만 실패하면 그 task 의 후처리만 건너뛴다', async () => {
       const failedItemOnDelivered = jest.fn().mockResolvedValue(undefined);
       const deliveredItemOnDelivered = jest.fn().mockResolvedValue(undefined);
-      const taskA = makeTask('job-feed', {
+      const taskA = makeTask('daily-eval', {
         skip: false,
         summaryText: 'A',
         detailText: 'DA',
         onDelivered: failedItemOnDelivered,
       });
-      const taskB = makeTask('job-feed-gap', {
+      const taskB = makeTask('work-reviewer', {
         skip: false,
         summaryText: 'B',
         detailText: 'DB',
@@ -1915,8 +1915,8 @@ describe('AutopilotOrchestrator', () => {
       await orchestrator.runGroup(
         'morning',
         [
-          makeEntry('job-feed', 'job-feed'),
-          makeEntry('job-feed-gap', 'job-feed-gap'),
+          makeEntry('daily-eval', 'daily-eval'),
+          makeEntry('work-reviewer', 'work-reviewer'),
         ],
         'U1',
         'C1',
@@ -2206,7 +2206,7 @@ describe('AutopilotOrchestrator', () => {
     // 실패하면 전부 막는" 전역 구현과 구분되지 않는다 — 같은 그룹에 전문 실패 task 를
     // 앞에 세워, 뒤 task 의 카드가 자기 전문만 본다는 것을 고정한다.
     it('다른 task 의 전문이 실패해도 자기 전문이 나갔으면 카드를 만든다', async () => {
-      const noisy = makeTask('job-feed', {
+      const noisy = makeTask('daily-eval', {
         skip: false,
         summaryText: 'A',
         detailText: '공고 목록',
@@ -2232,7 +2232,7 @@ describe('AutopilotOrchestrator', () => {
       ).runGroup(
         'evening',
         [
-          makeEntry('job-feed', 'job-feed'),
+          makeEntry('daily-eval', 'daily-eval'),
           makeEntry('blog-github-publish', 'blog-github-publish'),
         ],
         'U1',
@@ -2252,7 +2252,7 @@ describe('AutopilotOrchestrator', () => {
         detailText: '발행될 본문',
         preview: GATED_PREVIEW,
       });
-      const later = makeTask('job-feed', {
+      const later = makeTask('daily-eval', {
         skip: false,
         summaryText: 'B',
         detailText: '공고 목록',
@@ -2274,7 +2274,7 @@ describe('AutopilotOrchestrator', () => {
         'evening',
         [
           makeEntry('blog-github-publish', 'blog-github-publish'),
-          makeEntry('job-feed', 'job-feed'),
+          makeEntry('daily-eval', 'daily-eval'),
         ],
         'U1',
         'C1',
