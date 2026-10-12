@@ -557,7 +557,7 @@ ARCHITECTURE 1. 기각 재료(39건 중 이유 있는 33건)보다 **3.5배 많�
 
 ## 목표 8 — 과거 수용 답글 백필
 
-- [ ] **상태**: 미착수
+- [x] **상태**: 완료 (2026-10-12) — 876건 백필, 못 가져온 것 44건(사유별 아래).
 - **전제**: 목표 7.
 - **왜**: 목표 10 을 설계하려면 실물이 필요한데, 목표 7 만으로는 하루 20~33건씩 몇 주를 기다려야 한다.
   과거 ACKED 562건의 답글이 GitHub 에 그대로 살아 있고, **선례가 있다** —
@@ -573,7 +573,34 @@ ARCHITECTURE 1. 기각 재료(39건 중 이유 있는 33건)보다 **3.5배 많�
 **완료 판정**: 백필된 건수와, 스레드 페이지 잘림(`octokit-github.client.ts:66` 이 답글·리액션을
 20개까지만 가져온다) 때문에 못 가져온 건수를 **둘 다** 보고한다. 못 가져온 것을 0으로 적지 않는다.
 
-- **결과**: (미기재)
+- **결과**: **876건 백필 완료, 못 가져온 것 44건** — `scripts/backfill-accept-reply.ts`.
+  - **재집계 (2026-10-12)**: ACKED 1,120건 중 `accept_reply` 가 빈 카드 **920건**(PR 438). 위 562건은 작성 당시 값이다.
+    레포별 personal_agents 535 · sbe-spinoff-workspace 164 · sbe-api-v5 89 · sbe-api-v5-puppeteer 69 ·
+    DDD_BE 39 · sbe-api-v4 20 · sbe-survey-v5 4. `github_comment_id` 가 없는 카드는 0건.
+  - **미리보기 결과**: 백필 가능 **876건**, 못 가져온 것 **44건**.
+    | 사유 | 건수 |
+    |---|---|
+    | owner 답글이 카드 확정(`decided_at`) 뒤에만 있음 | 42 (personal_agents 26 · sbe-spinoff-workspace 9 · sbe-api-v5-puppeteer 4 · sbe-api-v4 3) |
+    | owner 아닌 사람 답글만 있음(함정 7로 제외) | 2 (sbe-api-v4#273 카드 437·438) |
+    | 조직 레포 권한 부족(403/404) · 조회 오류 · 봇 코멘트 삭제 | 0 · 0 · 0 |
+    | 스레드 페이지 잘림 | 해당 없음 — REST `/pulls/{n}/comments` 를 끝까지 페이지네이션했다. 대상 중 운영 GraphQL 상한(스레드 50·코멘트 20)을 넘는 스레드도 0건 |
+  - **추출 규칙은 운영 수확과 같다**: 봇 코멘트와 같은 스레드에서, 봇 코멘트보다 늦고 **카드 확정 시각 이전**에
+    owner 가 쓴, 봇 표식으로 시작하지 않는 글을 `\n` 으로 잇는다. 확정 시각으로 자르지 않은 첫 미리보기는
+    대조군 5건이 어긋났다 — 확정 뒤의 후속 답글(측정 결과, 결정 번복)까지 붙었기 때문이다. 카드 1461 은 확정
+    1분 뒤 「정정합니다… 위험을 감수하기로」로 결정이 뒤집혔다. 자른 뒤 **대조군(운영 코드가 이미 채운 200건)
+    200/200 바이트 일치**.
+  - **확정 뒤에만 답글이 있는 42건은 넣지 않는다(2026-10-12 결정)**. 대부분 👍 0~1분 뒤의 수용 설명이라 재료로는
+    진짜지만, 운영 규칙과 기준이 갈리고 1461 처럼 확정 직후 번복도 있어 시간 간격만으로는 수용과 번복을 가를 수 없다.
+  - **적용 방법**: `pnpm exec ts-node scripts/backfill-accept-reply.ts --apply`. 대상 행 전체를
+    `~/.idaeri-backups/accept-reply-backfill-<시각>.json` 에 백업한 뒤 `status='ACKED' AND accept_reply IS NULL` 조건부로
+    `accept_reply` 한 칸만 갱신한다. 대조군이 하나라도 어긋나거나 추출에 실패하면 적용을 거부한다.
+  - **적용 (2026-10-12 02:31 UTC)**: 876건 갱신, 건너뜀 0건. 적용 직전 미리보기와 같은 수치(대조군 200/200).
+    재집계: ACKED 1,120건 중 `accept_reply` 빈 카드 920 → **44**(위 사유표와 일치), 값이 있는 카드 1,076건이 전부
+    `ACKED` 이고 `rejectReason` 과 함께 채워진 행은 0건. 백업은
+    `~/.idaeri-backups/accept-reply-backfill-2026-10-12T02-31-42-686Z.json`(876행, 모두 적용 전 `accept_reply = null`) —
+    되돌리려면 그 id 들의 `accept_reply` 를 null 로 돌린다.
+  - **목표 11 기준선 영향 없음**: `accept_reply` 는 쓰기 경로(`harvest-review-signals.usecase.ts`,
+    `pr-review-finding.prisma.repository.ts`)에만 나오고 리뷰 생성·학습 규약(`learned-conventions.ts`)·재생은 읽지 않는다.
 
 ---
 
