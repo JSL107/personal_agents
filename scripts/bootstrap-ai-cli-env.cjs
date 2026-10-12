@@ -310,7 +310,16 @@ function applyHooks(label, hooks, targetPath) {
     return;
   }
 
-  const current = fs.existsSync(targetPath) ? JSON.parse(fs.readFileSync(targetPath, 'utf8')) : {};
+  // 읽기·백업·쓰기 실패는 이 단계만 건너뛰고 나머지 복원은 계속한다(copyAsset 과 같은 정책).
+  // 단, 기존 파일을 읽지 못했거나 백업하지 못했으면 덮어쓰지 않는다 — 되돌릴 사본 없이 남의 설정을 지우게 된다.
+  let current;
+  try {
+    current = fs.existsSync(targetPath) ? JSON.parse(fs.readFileSync(targetPath, 'utf8')) : {};
+  } catch (error) {
+    console.log(`  ✗ 기존 ${targetPath} 를 읽지 못함 — ${error.code || error.message}`);
+    warnings.push(`${label} hooks 미적용 — 기존 설정 파일을 읽지 못해 건드리지 않았다 (${error.code || error.message})`);
+    return;
+  }
   const existingEvents = Object.keys(current.hooks || {});
   if (existingEvents.length && !REPLACE_HOOKS) {
     console.log(`  건너뜀 — 이 PC 에 이미 hooks ${existingEvents.length}종이 있다.`);
@@ -328,11 +337,25 @@ function applyHooks(label, hooks, targetPath) {
 
   const hadFile = fs.existsSync(targetPath);
   if (hadFile) {
-    fs.copyFileSync(targetPath, backupPathFor(targetPath));
+    try {
+      fs.copyFileSync(targetPath, backupPathFor(targetPath));
+    } catch (error) {
+      console.log(`  ✗ 백업 실패 — ${error.code || error.message}`);
+      warnings.push(`${label} hooks 미적용 — 기존 파일을 백업하지 못해 덮어쓰지 않았다 (${error.code || error.message})`);
+      return;
+    }
   }
   current.hooks = rewritten;
-  fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-  fs.writeFileSync(targetPath, `${JSON.stringify(current, null, 2)}\n`);
+  try {
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    fs.writeFileSync(targetPath, `${JSON.stringify(current, null, 2)}\n`);
+  } catch (error) {
+    console.log(`  ✗ 쓰기 실패 — ${error.code || error.message}`);
+    warnings.push(
+      `${label} hooks 미적용 — 설정 파일 쓰기 실패 (${error.code || error.message})${hadFile ? ` · 기존 파일 사본은 ${BACKUP_DIR} 에 있다` : ''}`,
+    );
+    return;
+  }
   console.log(
     `  ✓ hooks ${hookEvents.length}종 적용${hadFile ? ` (기존 파일은 ${BACKUP_DIR} 에 백업)` : ' (기존 파일 없음 — 새로 만듦)'}`,
   );
