@@ -13,6 +13,11 @@ export interface EveningPaperCount {
   sellCount: number;
 }
 
+export interface EveningNextOrders extends EveningPaperCount {
+  // 다음 체결일(YYYY-MM-DD). "내일" 로 적지 않는다 — 금요일 추천의 체결일은 월요일이다.
+  tradeDate: string;
+}
+
 export interface EveningDigestInput {
   firedAtKst: string;
   mergedPrCount: number;
@@ -23,8 +28,9 @@ export interface EveningDigestInput {
   invest: {
     returns: { accountName: string; returnRate: string }[];
     filled: EveningPaperCount;
-    // null = 오늘 추천(19:30)이 아직 원장에 없다 — "0건 예정" 과 구분한다.
-    next: EveningPaperCount | null;
+    // undefined = 오늘 추천(19:30)이 아직 원장에 없다 — "예정 없음" 과 구분한다.
+    // null = 추천은 돌았고 다음 체결일에 잡힌 주문이 없다.
+    next: EveningNextOrders | null | undefined;
   } | null;
   carriedApprovalCount: number;
   incidents: MorningIncident[];
@@ -63,11 +69,11 @@ const formatInvest = (
   if (buyCount + sellCount > 0) {
     parts.push(`오늘 체결 매수 ${buyCount} · 매도 ${sellCount}`);
   }
-  if (invest.next === null) {
+  if (invest.next === undefined) {
     parts.push('내일 추천 집계 전');
-  } else if (invest.next.buyCount + invest.next.sellCount > 0) {
+  } else if (invest.next) {
     parts.push(
-      `내일 시가 매수 ${invest.next.buyCount} · 매도 ${invest.next.sellCount} 예정`,
+      `${formatTradeDay(invest.next.tradeDate)} 시가 매수 ${invest.next.buyCount} · 매도 ${invest.next.sellCount} 예정`,
     );
   }
   return parts.length > 0 ? parts.join(' · ') : null;

@@ -473,7 +473,7 @@ export class EveningRetroPublishTask implements AutopilotTask {
       const [returns, filled, next, recommendRuns] = await Promise.all([
         this.digestRepository.findPaperReturns({ tradeDate }),
         this.digestRepository.countPaperTrades({ tradeDate }),
-        this.digestRepository.countPaperOrdersAfter({ tradeDate }),
+        this.digestRepository.findNextPaperOrders({ tradeDate }),
         this.agentRunService.findRecentSucceededRuns({
           agentType: AgentType.PAPER_RECOMMEND,
           sinceDays: 1,
@@ -485,12 +485,16 @@ export class EveningRetroPublishTask implements AutopilotTask {
       if (
         returns.length === 0 &&
         filled.buyCount + filled.sellCount === 0 &&
-        next.buyCount + next.sellCount === 0
+        next === null
       ) {
         return null;
       }
-      // 추천(19:30)이 이 회차(19:40)보다 늦게 끝났으면 원장에 오늘 실행이 아직 없다 — "0건" 과 구분한다.
-      return { returns, filled, next: recommendRuns.length > 0 ? next : null };
+      // 추천(19:30)이 이 회차(19:40)보다 늦게 끝났으면 원장에 오늘 실행이 아직 없다 — "예정 없음" 과 구분한다.
+      return {
+        returns,
+        filled,
+        next: recommendRuns.length > 0 ? next : undefined,
+      };
     } catch (error: unknown) {
       this.logger.warn(`모의투자 마감 조회 실패 — 줄 생략: ${String(error)}`);
       return null;

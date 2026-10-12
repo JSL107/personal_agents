@@ -8,6 +8,7 @@ import {
 import {
   DailyDigestRepositoryPort,
   DuePaperOrderCount,
+  NextPaperOrders,
   OpenIncidentRow,
   PaperAccountReturn,
 } from '../domain/port/daily-digest.repository.port';
@@ -76,17 +77,28 @@ export class PrismaDailyDigestRepository implements DailyDigestRepositoryPort {
     return toSideCount(rows);
   }
 
-  async countPaperOrdersAfter({
+  async findNextPaperOrders({
     tradeDate,
   }: {
     tradeDate: Date;
-  }): Promise<DuePaperOrderCount> {
+  }): Promise<NextPaperOrders | null> {
+    const earliest = await this.prisma.paperOrder.findFirst({
+      where: { status: 'PENDING', targetTradeDate: { gt: tradeDate } },
+      select: { targetTradeDate: true },
+      orderBy: { targetTradeDate: 'asc' },
+    });
+    if (!earliest?.targetTradeDate) {
+      return null;
+    }
     const rows = await this.prisma.paperOrder.groupBy({
       by: ['side'],
-      where: { status: 'PENDING', targetTradeDate: { gt: tradeDate } },
+      where: { status: 'PENDING', targetTradeDate: earliest.targetTradeDate },
       _count: { _all: true },
     });
-    return toSideCount(rows);
+    return {
+      ...toSideCount(rows),
+      tradeDate: earliest.targetTradeDate.toISOString().slice(0, 10),
+    };
   }
 
   async countPaperTrades({
