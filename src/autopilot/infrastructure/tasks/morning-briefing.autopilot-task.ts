@@ -58,6 +58,8 @@ import {
   MorningDigestInput,
   MorningIncident,
 } from '../morning-digest.formatter';
+import { formatTradeDay } from '../paper-number.formatter';
+import { PORTFOLIO_PUBLISH_FAILURE_HEADER } from './portfolio-publish.autopilot-task';
 
 // 환율을 저장하는 것은 저녁 감시라 아침에는 늘 어제 값이 최신이다. 연휴를 감안해도 이만큼
 // 묵었으면 환산이 자산 규모를 왜곡하므로, 그때는 자산 줄 자체를 내지 않는다.
@@ -83,6 +85,8 @@ const STALE_COLLECTION_MS = 48 * 60 * 60 * 1000;
 // 어제 23시 포트폴리오 보고를 찾는 창. 아침 08:30 기준 그 전날 밤까지만 본다.
 const PORTFOLIO_LOOKBACK_MS = 24 * 60 * 60 * 1000;
 const PORTFOLIO_LINE_MAX_LENGTH = 150;
+// 장애 줄에 실을 실패 사유 길이. 전문은 원장·로그에 있다.
+const FAILURE_REASON_MAX_LENGTH = 80;
 const PORTFOLIO_TASK_ID = 'portfolio-publish';
 const APPROVAL_LABEL_MAX_LENGTH = 20;
 const THREAD_SEPARATOR = '\n\n────────\n\n';
@@ -117,9 +121,28 @@ const toApprovalLabel = (preview: PreviewAction): string => {
     : `${firstLine.slice(0, APPROVAL_LABEL_MAX_LENGTH)}…`;
 };
 
-// 콘솔 원장에 남은 포트폴리오 발행 보고(요약 + 상세 전문)에서 요약 불릿만 한 줄로 접는다.
-const foldPortfolioReport = (fullText: string): string | null => {
+// KST 달력일(YYYY-MM-DD). Date 를 넘기므로 formatKstDate 의 파싱 실패 분기(null)는 오지 않는다.
+const getKstDateOf = (date: Date): string =>
+  formatKstDate(date.toISOString()) ?? date.toISOString().slice(0, 10);
+
+const truncate = (text: string, maxLength: number): string =>
+  text.length <= maxLength ? text : `${text.slice(0, maxLength)}…`;
+
+type PortfolioReport =
+  | { kind: 'report'; line: string }
+  | { kind: 'failure'; reason: string };
+
+// 콘솔 원장에 남은 포트폴리오 발행 보고(요약 + 상세 전문)를 읽는다. 발행이 통째로 실패한 회차는
+// 불릿 없이 실패 머리 한 줄이라, 불릿만 주우면 유일한 실패 보고가 사라진다 — 머리로 먼저 가른다.
+const readPortfolioReport = (fullText: string): PortfolioReport | null => {
   const summaryPart = fullText.split('\n\n')[0] ?? '';
+  if (summaryPart.startsWith(PORTFOLIO_PUBLISH_FAILURE_HEADER)) {
+    const reason = summaryPart
+      .slice(PORTFOLIO_PUBLISH_FAILURE_HEADER.length)
+      .replace(/^\s*—\s*/, '')
+      .trim();
+    return { kind: 'failure', reason };
+  }
   const bullets = summaryPart
     .split('\n')
     .filter((line) => line.startsWith('• '))
@@ -127,21 +150,25 @@ const foldPortfolioReport = (fullText: string): string | null => {
   if (bullets.length === 0) {
     return null;
   }
-  const line = `발행 — ${bullets.join(' · ')}`;
-  return line.length <= PORTFOLIO_LINE_MAX_LENGTH
-    ? line
-    : `${line.slice(0, PORTFOLIO_LINE_MAX_LENGTH)}…`;
+  return {
+    kind: 'report',
+    line: truncate(`발행 — ${bullets.join(' · ')}`, PORTFOLIO_LINE_MAX_LENGTH),
+  };
 };
 
 interface PlanSection {
   // 스레드에 실을 계획 전문(지금까지 메인에 있던 요약 + 상세).
   thread: string;
   company: TaskItem | null;
+  // 계획 생성이 실패했으면 그 사유. 아침 메시지 본체는 그대로 나가고 이것만 장애 줄로 오른다.
+  failure: string | null;
 }
 
 interface PostingSection {
   postings: StoredJobPosting[] | null;
-  staleCollection: MorningDigestInput['stalePostingCollection'];
+  // 공고 수집이 멈춘 것 같으면 장애 줄 문구. 새 공고 0건과 수집 정지를 구분한다 — job-feed
+  // 메시지의 각주가 하던 일을 여기서 이어받는다.
+  staleIncident: MorningIncident | null;
   thread: string | null;
 }
 
@@ -186,22 +213,43 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
         this.loadIncidents(now),
         this.loadPostings(firedAtKst, now),
         this.loadInvest(firedAtKst),
-        this.loadStudy(ownerSlackUserId),
+        this.loadStudy(
+          // 브리프는 별도 cron 이 자기 owner 로 저장한다(study-brief-cron.scheduler.ts). 두 owner 설정이
+          // 갈라지면 autopilot owner 로는 브리프를 못 찾아 공부 줄이 조용히 빠지므로, 생산자의 키를 먼저 쓴다.
+          this.configService
+            .get<string>('STUDY_BRIEF_OWNER_SLACK_USER_ID')
+            ?.trim() || ownerSlackUserId,
+        ),
         this.loadPortfolio(now),
       ]);
 
+    // 그날 회차에서 감지한 문제도 장애로 센다 — 첫 줄만 보고 열지 정하는 메시지라, 아래 줄에만
+    // 경고를 두면 첫 줄이 "손댈 것 없음" 인 채로 문제가 묻힌다.
+    const detectedIncidents: MorningIncident[] = [
+      ...(plan.failure
+        ? [{ label: `오늘 계획 생성 실패 — ${plan.failure}`, dayCount: null }]
+        : []),
+      ...(posting.staleIncident ? [posting.staleIncident] : []),
+      ...(portfolio?.kind === 'failure'
+        ? [
+            {
+              label: `포트폴리오 사이트 발행 실패 — ${truncate(portfolio.reason, FAILURE_REASON_MAX_LENGTH)}`,
+              dayCount: null,
+            },
+          ]
+        : []),
+    ];
     const digestInput: MorningDigestInput = {
       firedAtKst,
       approvalLabels,
-      incidents,
+      incidents: [...incidents, ...detectedIncidents],
       postings: posting.postings,
-      stalePostingCollection: posting.staleCollection,
       invest,
       company: plan.company
         ? { title: plan.company.title, url: plan.company.url ?? null }
         : null,
       study,
-      portfolio,
+      portfolio: portfolio?.kind === 'report' ? portfolio.line : null,
     };
     const postings = posting.postings ?? [];
 
@@ -249,6 +297,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
       return {
         thread: `${planSummary}\n\n${formatted.detail}${formatModelFooter(outcome)}`,
         company: humanizedPlan.topPriority,
+        failure: null,
       };
     } catch (error) {
       if (
@@ -263,9 +312,20 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
           ),
           ownerSlackUserId,
         );
-        return { thread: emptyTasksText, company: null };
+        return { thread: emptyTasksText, company: null, failure: null };
       }
-      throw error;
+      // 계획 생성 실패가 아침 메시지 전체를 지우면 안 된다 — 승인 대기·장애·공고·공부·포트폴리오는
+      // 계획과 무관한 정보이고, 그 원래 발송은 콘솔로 옮겨져 이 메시지가 유일한 표면이다.
+      // 실패는 PM 실행 원장(FAILED)에 남고, 여기서는 장애 줄로 올린다.
+      const reason = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `아침 계획 생성 실패 — 나머지 줄은 그대로 발송: ${reason}`,
+      );
+      return {
+        thread: `_⚠️ 오늘 계획을 만들지 못했습니다 — ${reason}_`,
+        company: null,
+        failure: truncate(reason, FAILURE_REASON_MAX_LENGTH),
+      };
     }
   }
 
@@ -307,7 +367,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
   ): Promise<PostingSection> {
     // 미설정이면 꺼진 상태가 기본이다(job-feed 와 같은 스위치).
     if (this.configService.get<string>('JOB_FEED_ENABLED') !== 'true') {
-      return { postings: null, staleCollection: null, thread: null };
+      return { postings: null, staleIncident: null, thread: null };
     }
     try {
       const postings = await this.listNotifiable.execute({
@@ -337,11 +397,12 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
       });
       return {
         postings,
-        staleCollection: isStale
+        staleIncident: isStale
           ? {
-              lastCollectedOn: lastCollectedAt
-                ? formatKstDate(lastCollectedAt.toISOString())
-                : null,
+              label: lastCollectedAt
+                ? `공고 수집 멈춤 — 마지막 수집 ${formatTradeDay(getKstDateOf(lastCollectedAt))}`
+                : '공고 수집된 적 없음 — 수집 설정 확인',
+              dayCount: null,
             }
           : null,
         thread: detail
@@ -350,7 +411,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
       };
     } catch (error: unknown) {
       this.logger.warn(`공고 조회 실패 — 줄 생략: ${String(error)}`);
-      return { postings: null, staleCollection: null, thread: null };
+      return { postings: null, staleIncident: null, thread: null };
     }
   }
 
@@ -384,13 +445,13 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
     }
   }
 
-  private async loadPortfolio(now: Date): Promise<string | null> {
+  private async loadPortfolio(now: Date): Promise<PortfolioReport | null> {
     try {
       const text = await this.digestRepository.findLatestConsoleText({
         itemKind: PORTFOLIO_TASK_ID,
         since: new Date(now.getTime() - PORTFOLIO_LOOKBACK_MS),
       });
-      return text ? foldPortfolioReport(text) : null;
+      return text ? readPortfolioReport(text) : null;
     } catch (error: unknown) {
       this.logger.warn(`포트폴리오 보고 조회 실패 — 줄 생략: ${String(error)}`);
       return null;
