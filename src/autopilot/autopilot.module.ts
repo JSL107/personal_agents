@@ -52,10 +52,10 @@ import { AutopilotScheduler } from './application/autopilot.scheduler';
 import { AUTOPILOT_CRON_QUEUE } from './domain/autopilot.type';
 import { AUTOPILOT_TASKS } from './domain/autopilot-task.port';
 import { AUTOPILOT_TASK_TRACE_PORT } from './domain/port/autopilot-task-trace.port';
-import { MORNING_DIGEST_REPOSITORY_PORT } from './domain/port/morning-digest.repository.port';
+import { DAILY_DIGEST_REPOSITORY_PORT } from './domain/port/daily-digest.repository.port';
 import { AutopilotConsumer } from './infrastructure/autopilot.consumer';
 import { PrismaAutopilotTaskTraceRepository } from './infrastructure/prisma-autopilot-task-trace.repository';
-import { PrismaMorningDigestRepository } from './infrastructure/prisma-morning-digest.repository';
+import { PrismaDailyDigestRepository } from './infrastructure/prisma-daily-digest.repository';
 import { AiCliEnvApplyAutopilotTask } from './infrastructure/tasks/ai-cli-env-apply.autopilot-task';
 import { AiCliEnvSnapshotAutopilotTask } from './infrastructure/tasks/ai-cli-env-snapshot.autopilot-task';
 import { BlogGithubPublishAutopilotTask } from './infrastructure/tasks/blog-github-publish.autopilot-task';
@@ -149,10 +149,10 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
       provide: AUTOPILOT_TASK_TRACE_PORT,
       useExisting: PrismaAutopilotTaskTraceRepository,
     },
-    PrismaMorningDigestRepository,
+    PrismaDailyDigestRepository,
     {
-      provide: MORNING_DIGEST_REPOSITORY_PORT,
-      useExisting: PrismaMorningDigestRepository,
+      provide: DAILY_DIGEST_REPOSITORY_PORT,
+      useExisting: PrismaDailyDigestRepository,
     },
     PoEvalAutopilotTask,
     PoShadowAutopilotTask,

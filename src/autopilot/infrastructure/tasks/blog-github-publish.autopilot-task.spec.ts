@@ -223,18 +223,39 @@ describe('BlogGithubPublishAutopilotTask', () => {
     });
   });
 
-  it('카드 마지막 줄을 전문이 실제로 있는 곳(스레드 첨부 파일)으로 바꿔 단다', async () => {
+  it('카드를 첫 줄만 읽어도 판단되게 접고, 안전 정보는 남기며, 확인 줄은 전문이 실제로 있는 곳으로 바꾼다', async () => {
+    // publish-notion-draft.usecase.ts buildPreviewText 가 만드는 실제 줄 구성.
+    const usecasePreviewText = [
+      '*GitHub 블로그 발행 미리보기*',
+      '제목: 안전한 글',
+      '(초안 제목: ○○사 사례)',
+      '경로: `src/content/posts/2026-08-18-safe-post.md`',
+      '요약: 요약문',
+      'Notion: https://notion.so/page',
+      '⚠️ 윤문 단계 건너뜀',
+      '',
+      BLOG_PREVIEW_CONFIRM_LINE,
+    ].join('\n');
     const { task } = buildTask({
       candidate: {
         ...READY_CANDIDATE,
-        previewText: `미리보기\n\n${BLOG_PREVIEW_CONFIRM_LINE}`,
+        previewText: usecasePreviewText,
       } as BlogPublishCandidate,
     });
 
     const result = await task.run(CONTEXT);
 
     expect(result.preview?.previewText).toBe(
-      `미리보기\n\n${EVENING_BLOG_CONFIRM_LINE}`,
+      [
+        '🌐 *GitHub 공개 발행* · 「안전한 글」 · 공개 저장소 `src/content/posts/2026-08-18-safe-post.md` 에 그대로 올라갑니다',
+        '(초안 제목: ○○사 사례)',
+        '⚠️ 윤문 단계 건너뜀',
+        EVENING_BLOG_CONFIRM_LINE,
+      ].join('\n'),
+    );
+    // 화면 문구만 바뀐다 — 승인 시 커밋되는 내용(payload)은 후보 그대로다.
+    expect(result.preview?.payload).toBe(
+      READY_CANDIDATE.status === 'ready' ? READY_CANDIDATE.payload : undefined,
     );
     expect(result.preview?.requiresDetailDelivery).toBe(true);
   });
@@ -254,7 +275,11 @@ describe('BlogGithubPublishAutopilotTask', () => {
           READY_CANDIDATE.status === 'ready'
             ? READY_CANDIDATE.payload
             : undefined,
-        previewText: 'GitHub 블로그 발행 미리보기',
+        previewText: [
+          '🌐 *GitHub 공개 발행* · 「안전한 글」 · 공개 저장소 `src/content/posts/2026-08-18-safe-post.md` 에 그대로 올라갑니다',
+          'GitHub 블로그 발행 미리보기',
+          EVENING_BLOG_CONFIRM_LINE,
+        ].join('\n'),
       },
     });
   });

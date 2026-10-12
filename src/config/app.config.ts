@@ -698,7 +698,7 @@ export class EnvironmentVariables {
   @IsString()
   PR_CAREERLOG_AUTO_ENABLED?: string;
 
-  // 저녁 회고→발행 후보 (매일 19:00 KST evening 그룹). `false` 문자열이면 task 전체 skip.
+  // 저녁 회고→발행 후보 (매일 19:40 KST evening 그룹). `false` 문자열이면 task 전체 skip.
   // 미설정 = 활성(기본 ON). task 가 내부적으로 `!== 'false'` 로 판정.
   @IsOptional()
   @IsString()

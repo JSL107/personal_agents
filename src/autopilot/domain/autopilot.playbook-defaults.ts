@@ -1,5 +1,8 @@
 // Daily Eval 기본 스케줄 — 기존 src/daily-eval/domain/daily-eval.type.ts 에서 승계.
-export const DEFAULT_DAILY_EVAL_CRON = '0 19 * * *';
+// 19:40 — 모의투자 내일 추천(19:30)이 끝난 뒤 저녁 마감 한 통이 "내일 예정" 을 싣도록 (2026-10-08 사용자 결정).
+// 추천을 당기지 않는 이유는 DEFAULT_PAPER_RECOMMEND_CRON 주석 — 재료인 유니버스 수집(18:30)과 재시도 여유 뒤라서다.
+// 같은 그룹(evening) 네 항목이 이 상수를 함께 쓰므로 그룹 전체가 옮겨진다(validatePlaybook 의 그룹 시각 일치).
+export const DEFAULT_DAILY_EVAL_CRON = '40 19 * * *';
 export const DEFAULT_DAILY_EVAL_TIMEZONE = 'Asia/Seoul';
 
 // Morning Briefing 기본 스케줄 — 기존 src/morning-briefing/domain/morning-briefing.type.ts 승계.
@@ -161,7 +164,7 @@ export const DEFAULT_PR_REVIEW_SWEEP_TIMEZONE = 'Asia/Seoul';
 
 // 포트폴리오 사이트 발행 — 매일 23:00 KST.
 //
-// 저녁 회고(DEFAULT_DAILY_EVAL_CRON, 19:00)가 경력 프로필을 갱신하고 그 승인 카드가 눌릴
+// 저녁 회고(DEFAULT_DAILY_EVAL_CRON, 19:40)가 경력 프로필을 갱신하고 그 승인 카드가 눌릴
 // 여유를 4시간 둔 뒤 발행한다. 승인이 안 눌린 날은 이전 프로필을 다시 밀어 넣지만
 // slug 멱등이라 중복 항목이 생기지 않는다.
 // 워밍업 시간대(08~24시) 안이라 사이트가 깨어 있는 시각이기도 하다.
