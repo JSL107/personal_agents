@@ -20,7 +20,8 @@ export interface EveningNextOrders extends EveningPaperCount {
 
 export interface EveningDigestInput {
   firedAtKst: string;
-  mergedPrCount: number;
+  // null = 머지 PR 조회가 실패했다 — "0건" 과 구분한다.
+  mergedPrCount: number | null;
   // 회고의 Keep 칸 — "오늘 무엇이 잘 됐나" 한 문장. 회고가 없으면 null.
   keep: string | null;
   // 회고 생성에 실패했을 때의 사유. 결과 줄은 그대로 내고 이 사실만 덧붙인다.
@@ -82,7 +83,11 @@ const formatInvest = (
 export const formatEveningDigest = (input: EveningDigestInput): string => {
   const lines = [`🌙 *${formatTradeDay(input.firedAtKst)} 마감*`];
 
-  const todayParts = [`PR ${input.mergedPrCount}건 머지`];
+  const todayParts = [
+    input.mergedPrCount === null
+      ? '⚠️ 머지 PR 조회 실패 — 건수 미상'
+      : `PR ${input.mergedPrCount}건 머지`,
+  ];
   if (input.keep) {
     todayParts.push(`핵심: ${escapeSlackMrkdwn(firstSentence(input.keep))}`);
   }

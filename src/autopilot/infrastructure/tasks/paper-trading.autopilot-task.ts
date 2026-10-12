@@ -92,6 +92,14 @@ const buildAudit = (
 
 // 규칙이 건 매도는 다음 거래일 시가에 체결된다. 카드에 안 적으면 다음날 아침 잔고가
 // 바뀐 이유를 사후에 원장으로만 추적해야 한다.
+// 밴드를 벗어났지만 이미 PENDING 매도가 있어 새로 만들지 않은 건수. 같은 슬롯의 재시도(첫 실행이 주문을
+// 만든 뒤 Slack 발송만 실패)에서는 생성 0 · 이 값 > 0 이 되는데, 그 청산은 실제로 다음 거래일에 체결된다.
+const countPendingExitSells = (exitBand: ApplyExitBandResult): number =>
+  exitBand.accounts.reduce(
+    (total, account) => total + account.skippedByPendingSell,
+    0,
+  );
+
 const buildExitBandText = (exitBand: ApplyExitBandResult): string => {
   if (exitBand.accounts.length === 0) {
     return '';
@@ -99,7 +107,10 @@ const buildExitBandText = (exitBand: ApplyExitBandResult): string => {
   const lines = exitBand.accounts.flatMap((account) =>
     account.reasons.map((reason) => `• [${account.accountName}] ${reason}`),
   );
-  return `\n\n*청산 예약 — 다음 거래일 시가 매도 ${exitBand.createdCount}건*\n${lines.join('\n')}`;
+  const pendingCount = countPendingExitSells(exitBand);
+  const pendingText =
+    pendingCount > 0 ? ` · 이미 예약돼 있던 매도 ${pendingCount}건` : '';
+  return `\n\n*청산 예약 — 다음 거래일 시가 매도 ${exitBand.createdCount}건${pendingText}*\n${lines.join('\n')}`;
 };
 
 // 계좌가 여러 개면 어느 계좌의 평가인지가 리포트에서 드러나야 한다. 포매터는 계좌 이름을
@@ -242,8 +253,13 @@ export class PaperTradingAutopilotTask implements AutopilotTask {
         // 저녁 마감 한 통(evening-retro-publish)이 스냅샷을 읽어 한 줄로 싣는다 — 따로 보내는 투자
         // 메시지는 손절·청산처럼 사건이 있을 때뿐이다(docs/superpowers/plans/2026-10-08-daily-message-direction.md §3-3).
         // 계좌가 0개인 회차는 예외다 — "평가할 계좌가 없다" 는 성적표가 비어 가는 조용한 실패의
-        // 경고라 원장에 묻으면 아무도 모른다.
-        if (exitBand.createdCount === 0 && evaluations.accounts.length > 0) {
+        // 경고라 원장에 묻으면 아무도 모른다. 이미 예약된 청산 매도가 있는 회차(재시도 등)도
+        // 예외다 — 생성이 0이어도 다음 거래일에 실제로 팔리는 주문이라, 묻으면 사용자가 끝내 모른다.
+        if (
+          exitBand.createdCount === 0 &&
+          countPendingExitSells(exitBand) === 0 &&
+          evaluations.accounts.length > 0
+        ) {
           return {
             result: {
               skip: true,

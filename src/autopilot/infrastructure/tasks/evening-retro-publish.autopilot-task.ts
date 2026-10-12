@@ -150,15 +150,28 @@ export class EveningRetroPublishTask implements AutopilotTask {
       ),
     });
 
+    // 머지 PR 조회가 깨져도 마감 한 통은 나가야 한다 — worklog·Daily Eval 이 콘솔로 옮겨져 이 task 가
+    // 저녁의 유일한 본문이다. 실패는 결과 줄에 "조회 실패" 로 드러내고(0건과 구분), 회고는 남은 재료로 돈다.
+    // 그날 경력 카드는 근거 PR 이 없어 만들어지지 않는다 — 실패 줄이 그 사실을 알린다.
+    let mergedPrFetchFailed = false;
     const mergedPrs: EveningPrInput[] = authorLogin
-      ? (
-          await this.githubClient.listAuthorMergedPullRequestsSince({
+      ? await this.githubClient
+          .listAuthorMergedPullRequestsSince({
             repo: null,
             author: authorLogin,
             sinceIsoDate,
             limit: RETRO_PR_LIMIT,
           })
-        ).map(toPrInput)
+          .then((pullRequests) => pullRequests.map(toPrInput))
+          .catch((error: unknown) => {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            this.logger.warn(
+              `머지 PR 조회 실패 — 건수 미상으로 진행: ${message}`,
+            );
+            mergedPrFetchFailed = true;
+            return [];
+          })
       : [];
 
     // carryOver("오늘 못 끝낸 것") 의 근거. 조회가 깨져도 회고는 계속 돈다 — 저녁 보고가
@@ -206,15 +219,18 @@ export class EveningRetroPublishTask implements AutopilotTask {
     ): string =>
       formatEveningDigest({
         firedAtKst,
-        mergedPrCount: mergedPrs.length,
+        mergedPrCount: mergedPrFetchFailed ? null : mergedPrs.length,
         ...carry,
         ...input,
       }) +
-      this.buildEvidenceNotice(
-        authorLogin,
-        mergedPrs.length,
-        openPrFetchFailed,
-      );
+      // 조회 실패는 위 결과 줄이 알린다 — "근거 PR 0건" 경고를 겹쳐 붙이면 0건으로 읽힌다.
+      (mergedPrFetchFailed
+        ? ''
+        : this.buildEvidenceNotice(
+            authorLogin,
+            mergedPrs.length,
+            openPrFetchFailed,
+          ));
 
     // 회고 재료가 하나도 없는 날도 하루를 닫는 신호(투자·넘어가는 것)는 낸다 — 회고만 건너뛴다.
     if (mergedPrs.length === 0 && !worklogText && !dailyEvalText) {

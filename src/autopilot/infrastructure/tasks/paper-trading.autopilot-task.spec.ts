@@ -290,6 +290,29 @@ describe('PaperTradingAutopilotTask', () => {
     expect(reportImage.execute).not.toHaveBeenCalled();
   });
 
+  it('재시도 회차처럼 생성은 0이어도 이미 예약된 청산 매도가 있으면 채널로 알린다', async () => {
+    const { task, exitBand } = createFixture();
+    exitBand.execute.mockResolvedValue({
+      createdCount: 0,
+      accounts: [
+        {
+          accountName: 'LONG_TERM',
+          created: 0,
+          skippedByPendingSell: 1,
+          skippedByNoPosition: 0,
+          reasons: [],
+        },
+      ],
+    });
+
+    const result = await task.run(context);
+
+    expect(result.skip).toBe(false);
+    expect(result.summaryText).toContain(
+      '청산 예약 — 다음 거래일 시가 매도 0건 · 이미 예약돼 있던 매도 1건',
+    );
+  });
+
   it('밴드 청산이 걸리면 카드와 원장에 예약 내역을 남긴다', async () => {
     const { task, exitBand } = createFixture();
     exitBand.execute.mockResolvedValue({
