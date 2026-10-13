@@ -136,3 +136,19 @@ describe('isPublicSourceDraft', () => {
     }
   });
 });
+
+describe('BLOG_ANONYMIZE_SYSTEM_PROMPT — 범용 도구 이름과 근거 링크', () => {
+  // 실측(2026-10-13): PR 회고 글에서 GitHub 가 「코드 호스팅 서비스」로 한 글에 10번 바뀌었다.
+  it('범용 개발·협업 도구 이름을 보존 대상으로 둔다', () => {
+    ['GitHub', 'Slack', 'Notion', 'Claude Code', 'Codex'].forEach((name) => {
+      expect(BLOG_ANONYMIZE_SYSTEM_PROMPT).toContain(name);
+    });
+  });
+
+  // 실측: 근거 PR 링크가 「근거: 내부 변경 검토 기록」으로 바뀌어 6편 끝에 남았다.
+  it('근거 링크 줄은 설명으로 바꾸지 말고 지우게 한다', () => {
+    expect(BLOG_ANONYMIZE_SYSTEM_PROMPT).toContain(
+      '근거로 붙은 PR·이슈 링크 줄은 설명으로 바꾸지 말고 줄째 지운다',
+    );
+  });
+});
