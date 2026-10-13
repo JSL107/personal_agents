@@ -24,11 +24,14 @@ export interface ArtJobListResult {
 }
 
 // 회사 사진은 쓰지 않는다 — 실측(2026-10-13)에서 사무실·로고 사진이라 게임 그림체를 보여주지 못했다.
-export type ArtJobImageOrigin = 'PLAY_STORE';
+// KAKAO_IMAGE 는 플레이스토어에 없는 (미출시) 게임용 — 검색 결과라 공식 이미지가 아니므로 출처를 함께 싣는다.
+export type ArtJobImageOrigin = 'PLAY_STORE' | 'KAKAO_IMAGE';
 
 export interface ArtJobImage {
   url: string;
   origin: ArtJobImageOrigin;
+  // 검색 결과 이미지의 출처 사이트명(예: '인벤'). 플레이스토어 아이콘은 없다.
+  sourceName?: string;
 }
 
 export interface ResolvedArtJobImage {
