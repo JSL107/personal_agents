@@ -1,4 +1,4 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { Processor } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 
@@ -6,6 +6,7 @@ import { ReviewPullRequestUsecase } from '../../agent/code-reviewer/application/
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
 import { DomainException } from '../../common/exception/domain.exception';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
+import { ObservedWorkerHost } from '../../common/queue/observed-worker-host';
 import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
 import { formatModelFooter } from '../../slack/format/model-footer.formatter';
 import { formatPullRequestReview } from '../../slack/format/pull-request-review.formatter';
@@ -22,7 +23,7 @@ import {
   concurrency: 1,
   ...LONG_RUNNING_WORKER_OPTIONS,
 })
-export class WebhookCodeReviewerConsumer extends WorkerHost {
+export class WebhookCodeReviewerConsumer extends ObservedWorkerHost {
   private readonly logger = new Logger(WebhookCodeReviewerConsumer.name);
 
   constructor(
