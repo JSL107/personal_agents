@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 
+import { GithubClientPort } from '../../../github/domain/port/github-client.port';
 import { HumanizeService } from '../../../humanize/application/humanize.service';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import {
@@ -19,6 +20,7 @@ describe('EveningBlogPublishApplier', () => {
   let notionClient: jest.Mocked<NotionClientPort>;
   let config: jest.Mocked<ConfigService>;
   let humanizer: jest.Mocked<HumanizeService>;
+  let githubClient: jest.Mocked<GithubClientPort>;
 
   const makePreview = (payload: unknown): PreviewAction =>
     ({
@@ -51,11 +53,16 @@ describe('EveningBlogPublishApplier', () => {
       humanize: jest.fn(async (fields: Record<string, string>) => fields),
     } as unknown as jest.Mocked<HumanizeService>;
 
+    githubClient = {
+      isRepositoryPublic: jest.fn().mockResolvedValue(false),
+    } as unknown as jest.Mocked<GithubClientPort>;
+
     applier = new EveningBlogPublishApplier(
       modelRouter,
       notionClient,
       config,
       humanizer,
+      githubClient,
     );
   });
 
@@ -156,6 +163,70 @@ describe('EveningBlogPublishApplier', () => {
     const propertyOrder =
       notionClient.updatePageProperties.mock.invocationCallOrder[0];
     expect(appendOrder).toBeLessThan(propertyOrder);
+  });
+
+  describe('(b-4) 출처유형 = 익명화 계약 — 재료 저장소 공개 여부로 고른다', () => {
+    const makeSourcePr = (repo: string, number: number) => ({
+      repo,
+      number,
+      url: `https://github.com/${repo}/pull/${number}`,
+      title: 't',
+      body: 'b',
+    });
+    const applyWith = async (sourcePrs: unknown[]): Promise<unknown> => {
+      await applier.apply(
+        makePreview({
+          topPick: { title: '제목', keywords: [] },
+          sourcePrs,
+          retroContext: '회고',
+          slackUserId: 'U1',
+        }),
+      );
+      const call = notionClient.updatePageProperties.mock.calls[0][0];
+      return (call.properties as Record<string, unknown>)['출처유형'];
+    };
+
+    it('재료가 전부 공개 저장소면 공개 PR — 같은 저장소는 한 번만 조회한다', async () => {
+      githubClient.isRepositoryPublic.mockResolvedValue(true);
+
+      const sourceType = await applyWith([
+        makeSourcePr('JSL107/personal_agents', 1),
+        makeSourcePr('JSL107/personal_agents', 2),
+      ]);
+
+      expect(sourceType).toEqual({ select: { name: '공개 PR' } });
+      expect(githubClient.isRepositoryPublic).toHaveBeenCalledTimes(1);
+    });
+
+    it('비공개 저장소가 하나라도 섞이면 PR', async () => {
+      githubClient.isRepositoryPublic.mockImplementation((repo: string) =>
+        Promise.resolve(repo === 'JSL107/personal_agents'),
+      );
+
+      const sourceType = await applyWith([
+        makeSourcePr('JSL107/personal_agents', 1),
+        makeSourcePr('schoolbell-e/sbe-api-v5', 2),
+      ]);
+
+      expect(sourceType).toEqual({ select: { name: 'PR' } });
+    });
+
+    it('재료가 없으면 조회하지 않고 PR', async () => {
+      const sourceType = await applyWith([]);
+
+      expect(sourceType).toEqual({ select: { name: 'PR' } });
+      expect(githubClient.isRepositoryPublic).not.toHaveBeenCalled();
+    });
+
+    it('공개 여부 조회가 실패하면 throw 하지 않고 PR (모르면 엄격한 쪽)', async () => {
+      githubClient.isRepositoryPublic.mockRejectedValue(new Error('404'));
+
+      const sourceType = await applyWith([
+        makeSourcePr('JSL107/personal_agents', 1),
+      ]);
+
+      expect(sourceType).toEqual({ select: { name: 'PR' } });
+    });
   });
 
   it('(b-3) 속성 설정이 실패해도 throw 하지 않고 안내 문구를 message 에 덧붙인다', async () => {
