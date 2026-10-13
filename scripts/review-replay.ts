@@ -12,6 +12,8 @@
  * 형식은 `src/pr-review-loop/domain/review-replay-misses.ts`. 회사 저장소 위치가 담기므로 저장소에 커밋하지 않는다.
  * 미탐만 재려면 --rejected 0 --fixed 0 을 함께 준다.
  * --diff-max-bytes <N> 은 재생 diff 의 절단 상한을 바꾼다(기본은 운영과 같은 클라이언트 기본값). 상한을 정하는 실험용이다.
+ * --full-file-list 는 변경 파일 목록을 잘리지 않은 diff 에서 센다(운영처럼). 기본은 잘린 diff 기준이라, 상한을 넘는
+ * PR 에서는 잘린 뒤쪽 파일이 목록에서 빠진다. 켜면 이전 보고서와 입력이 달라지므로 같은 플래그끼리만 비교한다.
  * --rescore <보고서> 는 모델을 부르지 않고, 그 보고서의 모델 출력(원장 agent_run.output)을 현재 판정 규칙으로
  * 다시 매긴다. 판정 규칙이 바뀐 뒤 기준선을 쿼터 없이 다시 만드는 용도다. --baseline 과 함께 쓸 수 있고,
  * --misses 를 주면 미탐 본문·줄·경로를 그 파일(보고서가 쓴 미탐 파일과 같은 순서)로 바꿔 채점한다.
@@ -43,6 +45,7 @@ import {
   compareMissedIntactWithBaseline,
   compareWithBaseline,
   FindingReplayResult,
+  fullFileListOf,
   intactMissedIdsOf,
   isSameSample,
   LabeledFinding,
@@ -117,6 +120,9 @@ interface ReplayOptions {
   missesReplacement?: string;
   // 없으면 클라이언트 기본 상한(운영과 같은 값).
   diffMaxBytes?: number;
+  // 변경 파일 목록을 잘리지 않은 diff 에서 센다(운영은 API 가 전체 목록을 준다). 기본은 꺼짐 — 켜면
+  // 이전 보고서와 입력이 달라져 비교할 수 없다.
+  fullFileList: boolean;
 }
 
 interface ReplayGroup {
@@ -287,8 +293,22 @@ const replay = async (
           ? {}
           : { maxBytes: options.diffMaxBytes }),
       });
+      // 기본은 잘린 diff 에서 센다 — diff 가 상한보다 크면 잘린 뒤쪽 파일이 목록에서 빠진다
+      // (실측: personal_agents#412 는 480KB 라 문서 파일만 남았다). 운영과 같게 보려면 --full-file-list.
+      const listedDiff = options.fullFileList
+        ? await github.compareCommits({
+            repo: repository,
+            baseSha: currentDetail.baseSha,
+            headSha,
+            maxBytes: Number.MAX_SAFE_INTEGER,
+          })
+        : diff;
       snapshot = {
-        detail: { ...currentDetail, headSha, ...summarizeDiff(diff.diff) },
+        detail: {
+          ...currentDetail,
+          headSha,
+          ...summarizeDiff(listedDiff.diff),
+        },
         diff,
       };
       const changedFiles = snapshot.detail.changedFiles;
@@ -605,6 +625,8 @@ const writeReport = (
     (miss) => miss.headShaSource === 'latest-card',
   ).length;
   const sameScorer = baselineReport?.scorerVersion === REPLAY_SCORER_VERSION;
+  // --full-file-list 를 켠 쪽과 끈 쪽은 프롬프트의 변경 파일 목록이 달라 같은 카드라도 비교할 수 없다.
+  const sameFileList = baselineReport?.fullFileList === options.fullFileList;
   const report: ReplayReport = {
     generatedAt: new Date().toISOString(),
     scorerVersion: REPLAY_SCORER_VERSION,
@@ -619,6 +641,7 @@ const writeReport = (
             sameScorer,
             sameSample:
               sameScorer &&
+              sameFileList &&
               baselineReport.skipped === 0 &&
               skipped.length === 0 &&
               isSameSample(
@@ -701,6 +724,11 @@ const writeReport = (
               : [
                   `경고: 기준선은 판정 규칙 v${baselineReport?.scorerVersion} 로, 이번은 v${REPLAY_SCORER_VERSION} 로 채점했다 — 재현율을 비교할 수 없다. 기준선을 다시 돌릴 것`,
                 ]),
+            ...(sameFileList
+              ? []
+              : [
+                  `경고: 기준선은 --full-file-list ${baselineReport?.fullFileList ? '켬' : '끔'}, 이번은 ${options.fullFileList ? '켬' : '끔'} — 변경 파일 목록이 달라 비교할 수 없다. 같은 플래그로 다시 돌릴 것`,
+                ]),
             ...(report.baseline.sameSample
               ? []
               : [
@@ -762,6 +790,7 @@ const readBaseline = (
   intactMissedIds: number[];
   skipped: number;
   scorerVersion: number;
+  fullFileList: boolean;
 } => {
   const report: unknown = JSON.parse(readFileSync(path, 'utf8'));
   const summaries = readBaselineSummaries(report);
@@ -776,6 +805,7 @@ const readBaseline = (
     intactMissedIds: intactMissedIdsOf(report),
     skipped: skippedCountOf(report),
     scorerVersion: scorerVersionOf(report),
+    fullFileList: fullFileListOf(report),
   };
 };
 
@@ -1043,6 +1073,7 @@ const readOptions = (): ReplayOptions => {
     misses: readOption('misses'),
     rescore: readOption('rescore'),
     diffMaxBytes: readOptionalInteger('diff-max-bytes', 1),
+    fullFileList: process.argv.includes('--full-file-list'),
   };
   if (ids !== undefined) {
     return { ids, ...common };
