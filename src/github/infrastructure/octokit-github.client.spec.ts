@@ -136,7 +136,9 @@ describe('OctokitGithubClient', () => {
       pages,
     }: {
       changedFilesTotalCount: number;
-      pages: Array<{ filename: string }[]>;
+      pages: Array<
+        { filename: string; additions?: number; deletions?: number }[]
+      >;
     }): { octokit: Octokit; get: jest.Mock; listFiles: jest.Mock } => {
       const get = jest.fn().mockResolvedValue({
         data: {
@@ -170,7 +172,12 @@ describe('OctokitGithubClient', () => {
     it('PR 메타 + changedFiles 를 합쳐 PullRequestDetail 로 반환한다', async () => {
       const { octokit, get } = buildPrOctokit({
         changedFilesTotalCount: 2,
-        pages: [[{ filename: 'src/a.ts' }, { filename: 'src/b.ts' }]],
+        pages: [
+          [
+            { filename: 'src/a.ts', additions: 100, deletions: 20 },
+            { filename: 'src/b.ts', additions: 20, deletions: 10 },
+          ],
+        ],
       });
       const client = new OctokitGithubClient(octokit);
 
@@ -189,6 +196,7 @@ describe('OctokitGithubClient', () => {
         authorLogin: 'octocat',
         changedFiles: ['src/a.ts', 'src/b.ts'],
         changedFilesTotalCount: 2,
+        changedLinesByFile: { 'src/a.ts': 120, 'src/b.ts': 30 },
         changedFilesTruncated: false,
         additions: 120,
         deletions: 30,

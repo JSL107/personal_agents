@@ -376,7 +376,12 @@ export class ReviewPullRequestUsecase {
         );
         return undefined;
       }
-      const changedLines = countChangedLines(diff.diff);
+      // API 값이 우선이다 — 잘린 diff 로 세면 뒤쪽 파일이 0 이 된다. diff 값은 CHANGED_FILES_MAX 로
+      // 목록이 잘린 파일의 보충용.
+      const changedLines = new Map([
+        ...countChangedLines(diff.diff),
+        ...Object.entries(detail.changedLinesByFile),
+      ]);
       const { candidates, omitted } = selectCompanionSpecs({
         changedPaths: [
           ...new Set([...detail.changedFiles, ...changedLines.keys()]),

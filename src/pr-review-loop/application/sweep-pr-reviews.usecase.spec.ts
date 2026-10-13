@@ -34,6 +34,7 @@ const DETAIL = {
   changedFiles: ['src/foo.service.ts'],
   changedFilesTruncated: false,
   changedFilesTotalCount: 1,
+  changedLinesByFile: {},
   additions: 10,
   deletions: 2,
   isDraft: false,
@@ -765,6 +766,7 @@ describe('SweepPrReviewsUsecase', () => {
       changedFiles: ['src/foo.service.ts'],
       changedFilesTruncated: false,
       changedFilesTotalCount: 127,
+      changedLinesByFile: {},
       additions: 27_778,
       deletions: 4_696,
       isDraft: false,
@@ -815,6 +817,7 @@ describe('SweepPrReviewsUsecase', () => {
               changedFiles: ['src/foo.service.ts'],
               changedFilesTruncated: false,
               changedFilesTotalCount: 1,
+              changedLinesByFile: {},
               additions: 10,
               deletions: 2,
             } as never);
@@ -867,6 +870,7 @@ describe('SweepPrReviewsUsecase', () => {
       changedFiles: [],
       changedFilesTruncated: false,
       changedFilesTotalCount: 127,
+      changedLinesByFile: {},
       // 경계 바로 위 — 20,000 은 통과, 20,001 부터 컷.
       additions: 20_001,
       deletions: 0,

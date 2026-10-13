@@ -2,9 +2,10 @@
  * 리뷰 입력에 변경 파일의 기존 테스트 본문(`[기존 테스트]`)을 붙이기 위한 순수 함수들.
  *
  * 왜 필요한가: PR #412 카드 571 은 `backend-role.filter.spec.ts:145` 가 이미 덮고 있던 시나리오를
- * "검증되지 않는다" 로 지적했다. diff 가 480KB 라 뒤로 밀린 spec 이 잘려 모델이 본문을 못 봤다.
- * 파일이 있다는 사실만으로는 안 풀린다 — 그 안에 해당 케이스가 있는지 보려면 본문이 필요하다.
+ * "검증되지 않는다" 로 지적했다. 그때 모델 입력에는 실제 spec 대신 계획 문서 속 spec 초안(중복 태그 케이스 없음)만
+ * 들어 있었다. 파일이 있다는 사실만으로는 안 풀린다 — 그 안에 해당 케이스가 있는지 보려면 실제 본문이 필요하다.
  * 설계: `docs/superpowers/specs/2026-09-08-pr-review-depth-and-learning-design.md` §4 2단계.
+ * 카드 571 경위: `docs/superpowers/plans/2026-10-13-companion-spec-order-result.md` §3.
  */
 
 // 첨부 본문 합계 상한. 이 레포 spec 중앙값 4,050 bytes 기준 15개 분량(스펙 §4 초깃값, 실측 후 조정).
@@ -176,7 +177,8 @@ export interface CompanionSpecSelection {
  *
  * - diff 에 포함된 spec 도 빼지 않는다 — diff 는 바뀐 hunk 만 보여 나머지 케이스는 안 보인다.
  * - 트리가 잘렸으면 짝을 못 찾은 JS/TS 소스에 `X.spec.ext`·`X.test.ext` 를 추측 후보로 둔다(개별 조회로 확인).
- * - 바뀐 줄 수를 모르는 파일(diff 가 잘려 안 보인 파일)은 0 으로 쳐 뒤로 간다.
+ * - 바뀐 줄 수를 모르는 파일은 0 으로 쳐 뒤로 간다. 호출부는 `pulls.listFiles` 의 파일별 값을 넘긴다 —
+ *   잘린 diff 로만 세면 뒤쪽 파일이 전부 0 이 돼 순서가 경로순으로 무너진다(#412).
  */
 export const selectCompanionSpecs = ({
   changedPaths,
