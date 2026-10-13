@@ -25,7 +25,7 @@ describe('evening-blog-publish-properties', () => {
 
   describe('buildEveningBlogProperties', () => {
     it('출처유형=PR / 카테고리=개발 회고 / 상태=초안 을 항상 채운다', () => {
-      const props = buildEveningBlogProperties([]);
+      const props = buildEveningBlogProperties([], 'PR');
       expect(props).toEqual({
         출처유형: { select: { name: 'PR' } },
         카테고리: { select: { name: '개발 회고' } },
@@ -33,15 +33,20 @@ describe('evening-blog-publish-properties', () => {
       });
     });
 
+    it('받은 출처유형을 그대로 싣는다 (공개 PR)', () => {
+      const props = buildEveningBlogProperties([], '공개 PR');
+      expect(props['출처유형']).toEqual({ select: { name: '공개 PR' } });
+    });
+
     it('키워드가 있으면 태그 multi_select 를 추가한다', () => {
-      const props = buildEveningBlogProperties(['nestjs', 'notion']);
+      const props = buildEveningBlogProperties(['nestjs', 'notion'], 'PR');
       expect(props['태그']).toEqual({
         multi_select: [{ name: 'nestjs' }, { name: 'notion' }],
       });
     });
 
     it('키워드가 전부 빈값이면 태그 속성을 넣지 않는다', () => {
-      const props = buildEveningBlogProperties(['', '  ']);
+      const props = buildEveningBlogProperties(['', '  '], 'PR');
       expect(props['태그']).toBeUndefined();
     });
   });

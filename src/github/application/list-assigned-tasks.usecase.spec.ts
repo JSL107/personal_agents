@@ -22,6 +22,7 @@ const buildClientMock = (
   listAuthorOpenPullRequests: jest.fn(),
   listOpenPullRequestRefs: jest.fn(),
   listRepoLabels: jest.fn(),
+  isRepositoryPublic: jest.fn(),
   addLabelsToIssue: jest.fn(),
   pushBranchAndOpenPr: jest.fn(),
   fetchPullRequestEngagement: jest.fn(),

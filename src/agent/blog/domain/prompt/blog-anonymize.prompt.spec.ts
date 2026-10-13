@@ -117,6 +117,8 @@ describe('isPublicSourceDraft', () => {
   it('공개 자료 출처만 참이다', () => {
     expect(isPublicSourceDraft(PUBLIC_PROJECT_SOURCE_TYPE)).toBe(true);
     expect(isPublicSourceDraft(WEB_SOURCE_TYPE)).toBe(true);
+    // 재료 PR 이 전부 공개 저장소인 저녁 회고 — 저장소별 계약 선택.
+    expect(isPublicSourceDraft('공개 PR')).toBe(true);
     expect(isPublicSourceDraft('PR')).toBe(false);
     expect(isPublicSourceDraft('')).toBe(false);
   });

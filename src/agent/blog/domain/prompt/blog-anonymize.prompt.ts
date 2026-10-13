@@ -1,3 +1,4 @@
+import { EVENING_BLOG_PUBLIC_SOURCE_TYPE } from '../evening-blog-publish-properties';
 import { STUDY_DEEPDIVE_SOURCE_TYPE } from '../study-deepdive-blog-properties';
 
 // 초안 → 발행 전 식별정보 제거 단계 system prompt.
@@ -5,6 +6,7 @@ import { STUDY_DEEPDIVE_SOURCE_TYPE } from '../study-deepdive-blog-properties';
 // 초안 출처에 따라 **계약이 다르다**. 하나로 두면 한쪽이 반드시 망가진다:
 //
 // - 회사 PR 회고(출처유형 `PR`): 사내 코드가 재료다. 클래스·함수·테이블 실명이 나가면 안 된다.
+//   재료 PR 이 전부 공개 저장소인 회고는 `공개 PR` 로 저장돼 아래 공개 계약을 탄다.
 // - 오늘의 공부 딥다이브(출처유형 `오늘의 공부`): 공개 기술 문서와 **글쓴이 본인의 공개
 //   저장소**가 재료다. 여기에 회사용 규칙을 적용하면 Slack·GitHub·NestJS 같은 공개 제품명과
 //   자기 프로젝트 모듈명까지 "협업 메신저"·"○○ 계층" 으로 갈려 글이 통째로 일반론이 된다.
@@ -98,6 +100,7 @@ export const WEB_SOURCE_TYPE = '웹';
 const PUBLIC_SOURCE_TYPES: ReadonlySet<string> = new Set([
   STUDY_DEEPDIVE_SOURCE_TYPE,
   WEB_SOURCE_TYPE,
+  EVENING_BLOG_PUBLIC_SOURCE_TYPE,
 ]);
 
 /**

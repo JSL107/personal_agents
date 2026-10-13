@@ -696,6 +696,53 @@ describe('OctokitGithubClient', () => {
     });
   });
 
+  describe('isRepositoryPublic — 블로그 초안 익명화 계약 선택', () => {
+    const clientWith = (get: jest.Mock): OctokitGithubClient =>
+      new OctokitGithubClient({
+        rest: { repos: { get } },
+      } as unknown as Octokit);
+
+    it('visibility=public 만 공개로 본다', async () => {
+      const get = jest
+        .fn()
+        .mockResolvedValue({ data: { private: false, visibility: 'public' } });
+
+      await expect(clientWith(get).isRepositoryPublic('foo/bar')).resolves.toBe(
+        true,
+      );
+      expect(get).toHaveBeenCalledWith({ owner: 'foo', repo: 'bar' });
+    });
+
+    it.each([
+      ['internal', { private: false, visibility: 'internal' }],
+      ['visibility 없음', { private: false }],
+    ])('%s 는 비공개로 떨어진다 (fail-closed)', async (_label, data) => {
+      const get = jest.fn().mockResolvedValue({ data });
+
+      await expect(clientWith(get).isRepositoryPublic('foo/bar')).resolves.toBe(
+        false,
+      );
+    });
+
+    it('private=true 는 비공개', async () => {
+      const get = jest.fn().mockResolvedValue({ data: { private: true } });
+
+      await expect(clientWith(get).isRepositoryPublic('foo/bar')).resolves.toBe(
+        false,
+      );
+    });
+
+    it('조회 실패는 REQUEST_FAILED 로 감싼다 — 호출부가 회사 계약으로 떨어진다', async () => {
+      const get = jest.fn().mockRejectedValue(new Error('Not Found'));
+
+      await expect(
+        clientWith(get).isRepositoryPublic('foo/bar'),
+      ).rejects.toMatchObject({
+        githubErrorCode: GithubErrorCode.REQUEST_FAILED,
+      });
+    });
+  });
+
   describe('listRepoLabels — issues.opened 자동 라벨링 vocab 회복', () => {
     it('paginate 결과를 RepoLabel[] 로 정규화 (description 누락은 null)', async () => {
       const paginate = jest
