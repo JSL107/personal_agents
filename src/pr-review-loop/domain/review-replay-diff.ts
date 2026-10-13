@@ -11,6 +11,38 @@ export interface DiffSummary {
   deletions: number;
 }
 
+// 비ASCII 경로는 git(core.quotePath 기본값)이 `+++ "b/\355\225\234.ts"` 처럼 따옴표로 감싸고 8진수로 이스케이프한다.
+// 이 헤더를 못 읽으면 `current` 가 앞 파일에 머물러 이 파일의 증감이 앞 파일에 더해진다.
+const GIT_PATH_ESCAPES: Record<string, string> = {
+  t: '\t',
+  n: '\n',
+  '"': '"',
+  '\\': '\\',
+};
+
+const parseHeaderPath = (
+  line: string,
+  marker: '--- a/' | '+++ b/',
+): string | undefined => {
+  if (line.startsWith(marker)) {
+    return line.slice(marker.length).trim();
+  }
+  const quoted = `${marker.slice(0, 4)}"${marker.slice(4)}`;
+  const trimmed = line.trimEnd();
+  if (!trimmed.startsWith(quoted) || !trimmed.endsWith('"')) {
+    return undefined;
+  }
+  // 8진수 이스케이프는 UTF-8 바이트 하나씩이다 — latin1 로 바이트를 모은 뒤 UTF-8 로 다시 읽는다.
+  const bytes = trimmed
+    .slice(quoted.length, -1)
+    .replace(/\\([0-7]{3}|.)/g, (_, code: string) =>
+      code.length === 3
+        ? String.fromCharCode(parseInt(code, 8))
+        : (GIT_PATH_ESCAPES[code] ?? code),
+    );
+  return Buffer.from(bytes, 'latin1').toString('utf-8');
+};
+
 export const summarizeDiff = (diff: string): DiffSummary => {
   const changedFiles: string[] = [];
   const changedLinesByFile: Record<string, number> = {};
@@ -20,12 +52,14 @@ export const summarizeDiff = (diff: string): DiffSummary => {
   // 삭제된 파일은 `--- a/경로` 다음에 `+++ /dev/null` 이 온다 — 새 경로만 모으면 그 파일이 목록에서 빠진다.
   let removedPath: string | undefined;
   for (const line of diff.split('\n')) {
-    if (line.startsWith('--- a/')) {
-      removedPath = line.slice('--- a/'.length).trim();
+    const oldPath = parseHeaderPath(line, '--- a/');
+    if (oldPath !== undefined) {
+      removedPath = oldPath;
       continue;
     }
-    if (line.startsWith('+++ b/')) {
-      current = line.slice('+++ b/'.length).trim();
+    const newPath = parseHeaderPath(line, '+++ b/');
+    if (newPath !== undefined) {
+      current = newPath;
       changedFiles.push(current);
       changedLinesByFile[current] = 0;
       removedPath = undefined;
