@@ -45,6 +45,7 @@ import {
   compareMissedIntactWithBaseline,
   compareWithBaseline,
   FindingReplayResult,
+  fullFileListOf,
   intactMissedIdsOf,
   isSameSample,
   LabeledFinding,
@@ -624,6 +625,8 @@ const writeReport = (
     (miss) => miss.headShaSource === 'latest-card',
   ).length;
   const sameScorer = baselineReport?.scorerVersion === REPLAY_SCORER_VERSION;
+  // --full-file-list 를 켠 쪽과 끈 쪽은 프롬프트의 변경 파일 목록이 달라 같은 카드라도 비교할 수 없다.
+  const sameFileList = baselineReport?.fullFileList === options.fullFileList;
   const report: ReplayReport = {
     generatedAt: new Date().toISOString(),
     scorerVersion: REPLAY_SCORER_VERSION,
@@ -638,6 +641,7 @@ const writeReport = (
             sameScorer,
             sameSample:
               sameScorer &&
+              sameFileList &&
               baselineReport.skipped === 0 &&
               skipped.length === 0 &&
               isSameSample(
@@ -720,6 +724,11 @@ const writeReport = (
               : [
                   `경고: 기준선은 판정 규칙 v${baselineReport?.scorerVersion} 로, 이번은 v${REPLAY_SCORER_VERSION} 로 채점했다 — 재현율을 비교할 수 없다. 기준선을 다시 돌릴 것`,
                 ]),
+            ...(sameFileList
+              ? []
+              : [
+                  `경고: 기준선은 --full-file-list ${baselineReport?.fullFileList ? '켬' : '끔'}, 이번은 ${options.fullFileList ? '켬' : '끔'} — 변경 파일 목록이 달라 비교할 수 없다. 같은 플래그로 다시 돌릴 것`,
+                ]),
             ...(report.baseline.sameSample
               ? []
               : [
@@ -781,6 +790,7 @@ const readBaseline = (
   intactMissedIds: number[];
   skipped: number;
   scorerVersion: number;
+  fullFileList: boolean;
 } => {
   const report: unknown = JSON.parse(readFileSync(path, 'utf8'));
   const summaries = readBaselineSummaries(report);
@@ -795,6 +805,7 @@ const readBaseline = (
     intactMissedIds: intactMissedIdsOf(report),
     skipped: skippedCountOf(report),
     scorerVersion: scorerVersionOf(report),
+    fullFileList: fullFileListOf(report),
   };
 };
 

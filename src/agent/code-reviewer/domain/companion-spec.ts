@@ -14,6 +14,8 @@ export const COMPANION_SPEC_MAX_FILES = 20;
 // 트리 조회 + 본문 조회 전체에 쓰는 시간. 넘기면 모은 데까지만 싣는다(제약 B — 머지까지 10~20분).
 export const COMPANION_SPEC_FETCH_TIMEOUT_MS = 10_000;
 export const COMPANION_SPEC_FETCH_CONCURRENCY = 4;
+// 블록 머리에 나열하는 생략·미조회 경로 수. 변경 파일이 수백 개면 경로 나열만으로 바이트 예산을 넘는다.
+export const COMPANION_SPEC_MAX_LISTED_PATHS = 10;
 
 const JS_SOURCE = /\.[cm]?[jt]sx?$/;
 const JS_TEST = /^(.+)\.(?:spec|test)(\.[cm]?[jt]sx?)$/;
@@ -165,7 +167,7 @@ export interface CompanionSpecCandidate {
 
 export interface CompanionSpecSelection {
   candidates: CompanionSpecCandidate[];
-  // 예산·개수 상한으로 조회하지 않은 테스트 경로.
+  // 예산·개수 상한으로 조회하지 않은 테스트 경로. 트리에서 존재를 확인한 것만 — 추측 경로는 넣지 않는다.
   omitted: string[];
 }
 
@@ -237,7 +239,11 @@ export const selectCompanionSpecs = ({
   for (const candidate of ranked) {
     const size = candidate.size ?? 0;
     if (candidates.length >= maxFiles || reservedBytes + size > maxBytes) {
-      omitted.push(candidate.path);
+      // 크기를 모르는 후보는 잘린 트리에서 경로를 추측한 것이라 있는지조차 모른다. "생략했지만 테스트는 있다"
+      // 로 적으면 없는 테스트를 있다고 단정하게 된다 — 트리가 잘렸다는 안내가 이미 따로 나간다.
+      if (candidate.size !== undefined) {
+        omitted.push(candidate.path);
+      }
       continue;
     }
     candidates.push(candidate);

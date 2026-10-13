@@ -3,6 +3,7 @@ import {
   compareMissedIntactWithBaseline,
   compareWithBaseline,
   FindingReplayResult,
+  fullFileListOf,
   intactMissedIdsOf,
   isSameSample,
   LabeledFinding,
@@ -211,6 +212,15 @@ describe('compareBodies', () => {
     };
     expect(compareBodies(card.body, other.body)?.sharedIdentifiers).toBe(0);
     expect(matchReplayedFinding(card, [other])).toBeUndefined();
+  });
+});
+
+describe('fullFileListOf', () => {
+  it('옵션 칸이 없거나 꺼졌으면 false, 켰을 때만 true', () => {
+    expect(fullFileListOf({ groups: [] })).toBe(false);
+    expect(fullFileListOf(null)).toBe(false);
+    expect(fullFileListOf({ options: { fullFileList: false } })).toBe(false);
+    expect(fullFileListOf({ options: { fullFileList: true } })).toBe(true);
   });
 });
 

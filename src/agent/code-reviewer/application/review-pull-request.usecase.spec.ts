@@ -1621,3 +1621,131 @@ describe('ReviewPullRequestUsecase × 기존 테스트 첨부', () => {
     }
   });
 });
+
+describe('ReviewPullRequestUsecase × 기존 테스트 첨부 — 상한', () => {
+  const validReview: PullRequestReview = {
+    summary: 's',
+    riskLevel: 'low',
+    mustFix: [],
+    niceToHave: [],
+    missingTests: [],
+    reviewCommentDrafts: [],
+    approvalRecommendation: 'approve',
+    findings: [],
+  };
+  const sources = (count: number): string[] =>
+    Array.from({ length: count }, (_, index) => `src/f${index}.ts`);
+
+  const makeUsecase = (count: number, specSize: number) => {
+    const route = jest.fn().mockResolvedValue({
+      text: JSON.stringify(validReview),
+      modelUsed: 'codex-cli',
+      provider: ModelProviderName.CHATGPT,
+    });
+    const changed = sources(count);
+    const githubClient = {
+      getPullRequest: jest.fn().mockResolvedValue({
+        number: 1,
+        title: 't',
+        body: '',
+        repo: 'foo/bar',
+        url: 'u',
+        baseRef: 'main',
+        baseSha: 'base',
+        headRef: 'h',
+        authorLogin: 'a',
+        mergedAt: null,
+        changedFiles: changed,
+        changedFilesTotalCount: count,
+        changedFilesTruncated: false,
+        additions: 1,
+        deletions: 1,
+        headSha: 'head-sha',
+        isDraft: false,
+      }),
+      getPullRequestDiff: jest
+        .fn()
+        .mockResolvedValue({ diff: '', truncated: false, bytes: 0 }),
+      getFileFromBranch: jest.fn(),
+      searchCode: jest.fn().mockResolvedValue([]),
+      listTree: jest.fn().mockResolvedValue({
+        entries: changed.flatMap((path) => [
+          { path, size: 1 },
+          { path: path.replace('.ts', '.spec.ts'), size: specSize },
+        ]),
+        truncated: false,
+      }),
+    };
+    const usecase = new ReviewPullRequestUsecase(
+      { route } as never,
+      {
+        execute: jest.fn(async (input) => {
+          const execution = await input.run({ agentRunId: 1 });
+          return { ...execution, agentRunId: 1 };
+        }),
+      } as never,
+      githubClient as never,
+    );
+    const promptOf = (): string => route.mock.calls[0][0].request.prompt;
+    return { usecase, githubClient, promptOf };
+  };
+
+  it('생략 경로는 앞 10개만 나열하고 나머지는 개수로 줄인다 — 경로 나열이 예산을 우회하지 않게', async () => {
+    const { usecase, promptOf } = makeUsecase(15, 70 * 1024);
+
+    await usecase.execute({ prRef: 'foo/bar#1', slackUserId: 'U' });
+
+    const note = promptOf()
+      .split('\n')
+      .find((line) => line.includes('15개 생략'));
+    expect(note).toBeDefined();
+    expect(note).toMatch(/ 외 5개\)$/);
+    expect(note?.match(/\.spec\.ts/g)).toHaveLength(10);
+  });
+
+  it('본문 조회가 3번 실패하면 남은 조회를 치지 않고 미조회로 알린다', async () => {
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    const { usecase, githubClient, promptOf } = makeUsecase(8, 10);
+    githubClient.getFileFromBranch.mockRejectedValue(new Error('403'));
+
+    await usecase.execute({ prRef: 'foo/bar#1', slackUserId: 'U' });
+
+    // 동시 조회 4개가 함께 출발하므로 상한 직전에 떠난 것까지만 나간다 — 8개를 다 치지 않는다.
+    expect(githubClient.getFileFromBranch.mock.calls.length).toBeLessThan(8);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('남은 조회 중단 (상한 3회)'),
+    );
+    expect(promptOf()).toContain('조회하지 못한 테스트 8개');
+    warn.mockRestore();
+  });
+
+  it('본문 조회 도중 10초가 지나면 끝난 파일만 싣고 기다리던 파일은 미조회로 알린다', async () => {
+    jest.useFakeTimers();
+    try {
+      const { usecase, githubClient, promptOf } = makeUsecase(2, 10);
+      githubClient.getFileFromBranch.mockImplementation(
+        ({ path }: { path: string }) =>
+          path === 'src/f0.spec.ts'
+            ? Promise.resolve({ fileUrl: '', content: 'it(0)' })
+            : new Promise(() => undefined),
+      );
+
+      const pending = usecase.execute({
+        prRef: 'foo/bar#1',
+        slackUserId: 'U',
+      });
+      await jest.advanceTimersByTimeAsync(10_000);
+      await pending;
+
+      const prompt = promptOf();
+      expect(prompt).toContain('### src/f0.spec.ts (전체');
+      expect(prompt).toContain(
+        '조회하지 못한 테스트 1개 — 있지만 본문을 못 봤다: src/f1.spec.ts',
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});

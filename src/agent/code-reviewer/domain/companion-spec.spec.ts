@@ -182,6 +182,22 @@ describe('selectCompanionSpecs', () => {
   });
 });
 
+describe('selectCompanionSpecs — 추측 후보', () => {
+  it('트리가 잘려 추측한 경로는 상한에 걸려도 생략 목록에 넣지 않는다 — 있는지 모르는 테스트를 있다고 적지 않게', () => {
+    const { candidates, omitted } = selectCompanionSpecs({
+      changedPaths: ['src/a.ts', 'src/c.ts'],
+      changedLines: new Map([['src/a.ts', 5]]),
+      tree: entries({ 'src/a.ts': 1, 'src/a.spec.ts': 10, 'src/c.ts': 1 }),
+      treeTruncated: true,
+      maxFiles: 1,
+    });
+    expect(candidates.map((candidate) => candidate.path)).toEqual([
+      'src/a.spec.ts',
+    ]);
+    expect(omitted).toEqual([]);
+  });
+});
+
 describe('assembleCompanionSpecs', () => {
   it('줄 번호를 붙이고, 예산을 넘는 파일은 통째로 빼고 다음 파일을 싣는다', () => {
     const assembled = assembleCompanionSpecs(
