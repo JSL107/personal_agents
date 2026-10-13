@@ -18,17 +18,19 @@ import {
   AutopilotTaskResult,
 } from '../../domain/autopilot-task.port';
 
-// 순차 모델 호출 1건의 worst-case(MODEL_ROUTER_WORST_CASE_MS=606초)가 이미 autopilot
-// consumer lock 예산(AUTOPILOT_WORKER_OPTIONS.lockDuration=876초)의 60%보다 크다 —
-// 기본값을 2로 두면 2건 순차 실행(최악 1,212초)이 예산을 넘겨 BullMQ 재시도를 유발한다
-// (이 레포가 2026-07-26 에 겪은 12회 연쇄 재실행과 같은 계열). 기본은 1건만 돈다.
+// 순차 모델 호출 1건의 worst-case(MODEL_ROUTER_WORST_CASE_MS=908초)가 이미 autopilot
+// consumer lock 예산(AUTOPILOT_WORKER_OPTIONS.lockDuration=1,178초)의 60%보다 크다 —
+// 기본값을 2로 두면 2건 순차 실행(최악 1,816초)이 예산을 넘는다. lock 은 자동 갱신되므로 넘는 것만으로
+// stalled 가 되지는 않지만, 갱신에 실패하면 BullMQ 가 같은 job 을 다시 돌린다(이 레포가 2026-07-26 에
+// 겪은 12회 연쇄 재실행과 같은 계열). 그래서 worker-options.constant.ts 의 보수적 기준대로 예산 안에
+// 두고, 기본은 1건만 돈다.
 const DEFAULT_TOP_N = 1;
 
 // 아래 경과 시간 가드와 짝을 이루는 안전 여유(60%) — 근거는 가드 상수 정의부 주석 참조.
 const ELAPSED_BUDGET_SAFETY_RATIO = 0.6;
 // autopilot consumer 의 실제 lock 예산(AUTOPILOT_WORKER_OPTIONS.lockDuration)의 60%를
-// 누적 경과 시간의 안전 상한으로 둔다. 모델 호출 worst-case(MODEL_ROUTER_WORST_CASE_MS=606초)가
-// 이미 그 60%(525.6초)보다 커서, 이 가드는 사실상 "같은 회차에 모델 호출을 두 번 이상
+// 누적 경과 시간의 안전 상한으로 둔다. 모델 호출 worst-case(MODEL_ROUTER_WORST_CASE_MS=908초)가
+// 이미 그 60%(706.8초)보다 커서, 이 가드는 사실상 "같은 회차에 모델 호출을 두 번 이상
 // 순차로 걸지 않는다"로 귀결된다 — 의도된 결과다. DEFAULT_TOP_N 을 1로 낮췄어도 env 로
 // JOB_FEED_GAP_ANALYSIS_TOP_N 을 2까지 올릴 수 있으므로(app.config.ts @Max(2)), 그 경우에도
 // 이 가드가 두 번째 호출을 막아 예산 초과를 방지한다. 첫 건은 무조건 시도한다(아래 run() 의
