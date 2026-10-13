@@ -253,8 +253,8 @@ describe('JobFeedGapAutopilotTask', () => {
     expect(result.summaryText).toContain('쿼터 소진');
   });
 
-  // 예산 안전장치 — 순차 모델 호출 1건의 worst-case(MODEL_ROUTER_WORST_CASE_MS=606초)가
-  // 이미 안전 상한(AUTOPILOT_WORKER_OPTIONS.lockDuration 의 60%=525.6초)보다 크기 때문에,
+  // 예산 안전장치 — 순차 모델 호출 1건의 worst-case(MODEL_ROUTER_WORST_CASE_MS=908초)가
+  // 이미 안전 상한(AUTOPILOT_WORKER_OPTIONS.lockDuration 의 60%=706.8초)보다 크기 때문에,
   // 이 가드는 실행 속도와 무관하게 "같은 회차엔 최대 1건만 처리"로 항상 귀결된다 — Date.now()
   // 를 흉내 낼 필요 없이 결정론적으로 재현된다(job-feed-gap.autopilot-task.ts 상단 주석 참조).
   it('예산 안전장치 — 후보가 2건이어도 1건만 처리하고 나머지는 다음 회차로 미룬다', async () => {

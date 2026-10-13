@@ -1033,9 +1033,9 @@ export class EnvironmentVariables {
   @Max(100)
   JOB_FEED_MATCH_THRESHOLD?: number;
 
-  // 상한이 2인 이유 — 순차 모델 호출 1건의 worst-case(606초)가 이미 autopilot consumer
-  // lock 예산(876초)의 60%를 넘는다. 3건 이상이면 job-feed-gap.autopilot-task.ts 의
-  // 경과 시간 가드가 사실상 항상 1건만 처리해 나머지가 매 회차 밀리므로, 설정 가능한
+  // 상한이 2인 이유 — 순차 모델 호출 1건의 worst-case(MODEL_ROUTER_WORST_CASE_MS=908초)가
+  // 이미 autopilot consumer lock 예산(AUTOPILOT_WORKER_OPTIONS.lockDuration=1,178초)의
+  // 60%를 넘는다. 3건 이상이면 job-feed-gap.autopilot-task.ts 의 경과 시간 가드가 사실상 항상 1건만 처리해 나머지가 매 회차 밀리므로, 설정 가능한
   // 상한 자체를 예산 안에서 의미 있는 값(2)으로 막는다.
   @IsOptional()
   @Transform(normalizeOptionalNumberEnv)
