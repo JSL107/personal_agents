@@ -702,13 +702,26 @@ describe('OctokitGithubClient', () => {
         rest: { repos: { get } },
       } as unknown as Octokit);
 
-    it('private=false 만 공개로 본다', async () => {
-      const get = jest.fn().mockResolvedValue({ data: { private: false } });
+    it('visibility=public 만 공개로 본다', async () => {
+      const get = jest
+        .fn()
+        .mockResolvedValue({ data: { private: false, visibility: 'public' } });
 
       await expect(clientWith(get).isRepositoryPublic('foo/bar')).resolves.toBe(
         true,
       );
       expect(get).toHaveBeenCalledWith({ owner: 'foo', repo: 'bar' });
+    });
+
+    it.each([
+      ['internal', { private: false, visibility: 'internal' }],
+      ['visibility 없음', { private: false }],
+    ])('%s 는 비공개로 떨어진다 (fail-closed)', async (_label, data) => {
+      const get = jest.fn().mockResolvedValue({ data });
+
+      await expect(clientWith(get).isRepositoryPublic('foo/bar')).resolves.toBe(
+        false,
+      );
     });
 
     it('private=true 는 비공개', async () => {
