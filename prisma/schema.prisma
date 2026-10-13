@@ -442,7 +442,7 @@ model SlackDelivery {
   channelId      String?  @map("channel_id")
   messageTs      String?  @map("message_ts")
   threadTs       String?  @map("thread_ts")
-  status         String   // SENT | SUPPRESSED | FAILED
+  status         String // SENT | SUPPRESSED | FAILED
   suppressReason String?  @map("suppress_reason") // CONSOLE_ROUTE
   textPreview    String   @map("text_preview") // first 200 chars
   fullText       String?  @map("full_text") @db.Text // only for SUPPRESSED (only copy)
@@ -1311,4 +1311,27 @@ model ProductGoal {
 
   @@index([slackUserId, closedAt])
   @@map("product_goal")
+}
+
+// 게임잡 원화 공고 피드(src/art-job-feed-cron). 백엔드 job_posting 과 달리 채점 없이
+// 조건에 맞는 공고를 남에게 전부 보낸다 — 이 표는 "이미 본 공고" 장부 역할만 한다.
+model ArtJobPosting {
+  id        Int    @id @default(autoincrement())
+  source    String
+  sourceId  String @map("source_id")
+  company   String
+  title     String
+  detailUrl String @map("detail_url")
+
+  gameTitle   String? @map("game_title")
+  imageUrl    String? @map("image_url")
+  imageOrigin String? @map("image_origin")
+
+  firstSeenAt   DateTime  @default(now()) @map("first_seen_at")
+  notifiedAt    DateTime? @map("notified_at")
+  // 'SEED' — 첫 실행에서 게시 상한을 넘겨 보내지 않고 본 것으로만 표시한 공고.
+  skippedReason String?   @map("skipped_reason")
+
+  @@unique([source, sourceId])
+  @@map("art_job_posting")
 }

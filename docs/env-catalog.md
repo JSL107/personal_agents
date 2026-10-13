@@ -2,7 +2,7 @@
 
 # 환경변수 카탈로그
 
-SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 168개.
+SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 172개.
 설명은 각 변수 주석의 첫 문장 발췌 — 상세는 app.config.ts 주석 참조. `.env.example` 동기는 `pnpm check:env`.
 
 ## 인프라 (앱 부팅 필수)
@@ -241,6 +241,10 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `HERMES_WATCHDOG_CRON` | ❌ | BullMQ cron (default 매일 08:30 — `30 8 * * *`, 아침신문 08:00 직후). |
 | `HERMES_WATCHDOG_TIMEZONE` | ❌ | default Asia/Seoul. |
 | `HERMES_HOME` | ❌ | Hermes 홈 디렉터리. 미설정 시 `~/.hermes`. |
+| `ART_JOB_FEED_TARGET` | ❌ | 게시 채널(`C...`). 미설정 시 모듈 비활성. |
+| `ART_JOB_FEED_MENTION_USER_ID` | ❌ | 머리 메시지에서 멘션할 사용자(`U...`). 비우면 멘션 없음. |
+| `ART_JOB_FEED_CRON` | ❌ | BullMQ cron (default `0 9,18 * * *` — 09:00·18:00). |
+| `ART_JOB_FEED_TIMEZONE` | ❌ | default Asia/Seoul. |
 | `CRON_FAILURE_ALERT_OWNER_SLACK_USER_ID` | ❌ | Daily Eval / Impact Report Recent / CEO Meta Cron 등 cron consumer 가 graceful skip (NO_xxx) 외 throw 직전에 owner 에게 DM 으로 알릴 Slack user ID (`U...`). |
 | `PERSONAL_REPOS` | ❌ | Optional override CSV of owner/repo \| owner/* \| owner. 기본은 repo owner 가 IMPACT_REPORT_GITHUB_AUTHOR 본인이면 개인 프로젝트로 자동 라벨, 조직 소유 개인 프로젝트 등 예외만 추가. |
 | `VACATION_HIRE_DATE` | ❌ | 휴가 계산기 — 본인 입사일 (YYYY-MM-DD). 미설정 시 /휴가 명령에서 친절한 에러. |
