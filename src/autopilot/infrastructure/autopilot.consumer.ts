@@ -1,7 +1,8 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { Processor } from '@nestjs/bullmq';
 import { Logger, Optional } from '@nestjs/common';
 import { Job } from 'bullmq';
 
+import { ObservedWorkerHost } from '../../common/queue/observed-worker-host';
 import { AUTOPILOT_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
 import { SystemWakeGuard } from '../../common/system/system-wake-guard.service';
 import { ModelRouterUsecase } from '../../model-router/application/model-router.usecase';
@@ -21,7 +22,7 @@ import {
 // 단일 consumer — job.name(=groupKey)으로 그룹 entries 를 찾아 orchestrator.runGroup 에 위임.
 // 그룹 실패는 owner DM 사건으로 발행하고 rethrow → BullMQ 재시도.
 @Processor(AUTOPILOT_CRON_QUEUE, AUTOPILOT_WORKER_OPTIONS)
-export class AutopilotConsumer extends WorkerHost {
+export class AutopilotConsumer extends ObservedWorkerHost {
   private readonly logger = new Logger(AutopilotConsumer.name);
   // 배타 그룹의 실행을 잇는 사슬. worker 는 한 프로세스 안에서 도므로 프로세스 안의 사슬이면
   // 충분하다(BullMQ 동시 처리도 같은 worker 인스턴스 안에서 일어난다). 인스턴스를 여러 개

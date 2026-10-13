@@ -1,9 +1,10 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { Processor } from '@nestjs/bullmq';
 import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AlertIncident } from '@prisma/client';
 import { Job } from 'bullmq';
 
+import { ObservedWorkerHost } from '../../common/queue/observed-worker-host';
 import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DeliveryKind } from '../../slack/domain/slack-delivery.type';
@@ -77,7 +78,7 @@ const readOccurredAt = (job: Job<NotificationJobData>): Date =>
   ...LONG_RUNNING_WORKER_OPTIONS,
 })
 export class NotificationConsumer
-  extends WorkerHost
+  extends ObservedWorkerHost
   implements OnApplicationBootstrap
 {
   private readonly logger = new Logger(NotificationConsumer.name);

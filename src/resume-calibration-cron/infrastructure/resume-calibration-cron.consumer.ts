@@ -1,4 +1,4 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { Processor } from '@nestjs/bullmq';
 import { Inject, Logger, Optional } from '@nestjs/common';
 import { Job } from 'bullmq';
 
@@ -12,6 +12,7 @@ import { CareerMateErrorCode } from '../../agent/career-mate/domain/career-mate-
 import { formatCalibrationReport } from '../../agent/career-mate/infrastructure/career-mate.formatter';
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
 import { CronIdempotencyService } from '../../common/queue/cron-idempotency.service';
+import { ObservedWorkerHost } from '../../common/queue/observed-worker-host';
 import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
 import { getTodayKstDate } from '../../common/util/kst-date.util';
 import { HumanizeService } from '../../humanize/application/humanize.service';
@@ -47,7 +48,7 @@ interface DeliverCalibrationInput {
 //
 // 중복 발송 차단: BullMQ stalled 재처리로 같은 슬롯 2회 처리 시 deliverOnce 가 skip.
 @Processor(RESUME_CALIBRATION_CRON_QUEUE, LONG_RUNNING_WORKER_OPTIONS)
-export class ResumeCalibrationCronConsumer extends WorkerHost {
+export class ResumeCalibrationCronConsumer extends ObservedWorkerHost {
   private readonly logger = new Logger(ResumeCalibrationCronConsumer.name);
 
   constructor(

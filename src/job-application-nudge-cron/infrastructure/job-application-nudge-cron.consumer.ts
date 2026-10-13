@@ -1,4 +1,4 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { Processor } from '@nestjs/bullmq';
 import { Inject, Logger, Optional } from '@nestjs/common';
 import { Job } from 'bullmq';
 
@@ -12,6 +12,7 @@ import {
   todayInKst,
 } from '../../agent/vacation/domain/plain-date';
 import { CronIdempotencyService } from '../../common/queue/cron-idempotency.service';
+import { ObservedWorkerHost } from '../../common/queue/observed-worker-host';
 import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
 import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
 import { cronIncidentKey } from '../../notification/domain/notification.type';
@@ -42,7 +43,7 @@ interface DeliverNudgeInput {
 //
 // 중복 발송 차단: BullMQ stalled 재처리로 같은 슬롯 2회 처리 시 deliverOnce 가 skip.
 @Processor(JOB_APPLICATION_NUDGE_CRON_QUEUE, LONG_RUNNING_WORKER_OPTIONS)
-export class JobApplicationNudgeCronConsumer extends WorkerHost {
+export class JobApplicationNudgeCronConsumer extends ObservedWorkerHost {
   private readonly logger = new Logger(JobApplicationNudgeCronConsumer.name);
 
   constructor(

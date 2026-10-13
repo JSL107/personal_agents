@@ -1,8 +1,9 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { Processor } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 
 import { GenerateImpactReportUsecase } from '../../agent/impact-reporter/application/generate-impact-report.usecase';
+import { ObservedWorkerHost } from '../../common/queue/observed-worker-host';
 import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
 import {
   IMPACT_REPORT_QUEUE,
@@ -15,7 +16,7 @@ import {
   concurrency: 1,
   ...LONG_RUNNING_WORKER_OPTIONS,
 })
-export class WebhookImpactReportConsumer extends WorkerHost {
+export class WebhookImpactReportConsumer extends ObservedWorkerHost {
   private readonly logger = new Logger(WebhookImpactReportConsumer.name);
 
   constructor(

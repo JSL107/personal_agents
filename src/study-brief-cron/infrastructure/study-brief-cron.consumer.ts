@@ -1,4 +1,4 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { Processor } from '@nestjs/bullmq';
 import { Inject, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DelayedError, Job } from 'bullmq';
@@ -18,6 +18,7 @@ import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { CronIdempotencyService } from '../../common/queue/cron-idempotency.service';
+import { ObservedWorkerHost } from '../../common/queue/observed-worker-host';
 import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
 import { getTodayKstDate } from '../../common/util/kst-date.util';
 import { AgentType } from '../../model-router/domain/model-router.type';
@@ -118,7 +119,7 @@ interface PublishToNotionInput {
 }
 
 @Processor(STUDY_BRIEF_CRON_QUEUE, LONG_RUNNING_WORKER_OPTIONS)
-export class StudyBriefCronConsumer extends WorkerHost {
+export class StudyBriefCronConsumer extends ObservedWorkerHost {
   private readonly logger = new Logger(StudyBriefCronConsumer.name);
 
   constructor(
