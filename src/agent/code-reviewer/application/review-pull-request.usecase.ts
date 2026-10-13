@@ -43,6 +43,7 @@ import {
   COMPANION_SPEC_FETCH_TIMEOUT_MS,
   COMPANION_SPEC_MAX_BYTES,
   COMPANION_SPEC_MAX_FILES,
+  COMPANION_SPEC_MAX_LISTED_PATHS,
   countChangedLines,
   selectCompanionSpecs,
 } from '../domain/companion-spec';
@@ -390,8 +391,15 @@ export class ReviewPullRequestUsecase {
 
       const contents = new Map<string, string>();
       let next = 0;
+      // 워커들이 함께 센다. [related code] 와 같은 상한 — 실패가 거듭되면 rate limit 일 가능성이 커서
+      // 계속 치면 같은 토큰을 쓰는 다른 경로의 예산까지 태운다.
+      let failures = 0;
       const worker = async (): Promise<void> => {
-        while (next < candidates.length && Date.now() < deadline) {
+        while (
+          next < candidates.length &&
+          Date.now() < deadline &&
+          failures < MAX_READ_FAILURES
+        ) {
           const candidate = candidates[next];
           next += 1;
           try {
@@ -405,6 +413,7 @@ export class ReviewPullRequestUsecase {
             }
           } catch {
             // 아래에서 미조회로 센다.
+            failures += 1;
           }
         }
       };
@@ -422,6 +431,11 @@ export class ReviewPullRequestUsecase {
         ),
         deadline,
       );
+      if (failures >= MAX_READ_FAILURES) {
+        this.logger.warn(
+          `기존 테스트 누락 (${label}) — 본문 조회 ${failures}회 실패로 남은 조회 중단 (상한 ${MAX_READ_FAILURES}회)`,
+        );
+      }
 
       const files = candidates.flatMap((candidate) => {
         const content = contents.get(candidate.path);
@@ -753,7 +767,11 @@ export const buildReviewPrompt = ({
   return lines.join('\n');
 };
 
-const listPaths = (paths: string[]): string => paths.join(', ');
+const listPaths = (paths: string[]): string => {
+  const shown = paths.slice(0, COMPANION_SPEC_MAX_LISTED_PATHS).join(', ');
+  const rest = paths.length - COMPANION_SPEC_MAX_LISTED_PATHS;
+  return rest > 0 ? `${shown} 외 ${rest}개` : shown;
+};
 
 // 생략·미조회·잘림을 블록 머리에 적는다 — 모델이 블록에 없는 테스트를 "없다" 로 읽지 않게 한다.
 const renderCompanionSpecs = (block: CompanionSpecBlock): string[] => {
