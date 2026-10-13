@@ -173,12 +173,13 @@ describe('EveningBlogPublishApplier', () => {
       title: 't',
       body: 'b',
     });
+    const RETRO_CONTEXT = '사내 정산 테이블 수정 회고';
     const applyWith = async (sourcePrs: unknown[]): Promise<unknown> => {
       await applier.apply(
         makePreview({
           topPick: { title: '제목', keywords: [] },
           sourcePrs,
-          retroContext: '회고',
+          retroContext: RETRO_CONTEXT,
           slackUserId: 'U1',
         }),
       );
@@ -196,6 +197,23 @@ describe('EveningBlogPublishApplier', () => {
 
       expect(sourceType).toEqual({ select: { name: '공개 PR' } });
       expect(githubClient.isRepositoryPublic).toHaveBeenCalledTimes(1);
+    });
+
+    it('공개 PR 초안은 본문 생성에 회고 맥락을 싣지 않는다 — 사내 이름이 코드 예시로 새는 경로', async () => {
+      githubClient.isRepositoryPublic.mockResolvedValue(true);
+
+      await applyWith([makeSourcePr('JSL107/personal_agents', 1)]);
+
+      const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(prompt).not.toContain(RETRO_CONTEXT);
+      expect(prompt).toContain('회고 맥락을 싣지 않는다');
+    });
+
+    it('PR 초안은 회고 맥락을 그대로 싣는다', async () => {
+      await applyWith([makeSourcePr('schoolbell-e/sbe-api-v5', 1)]);
+
+      const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(prompt).toContain(RETRO_CONTEXT);
     });
 
     it('비공개 저장소가 하나라도 섞이면 PR', async () => {
