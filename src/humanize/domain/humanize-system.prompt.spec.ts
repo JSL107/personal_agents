@@ -134,6 +134,16 @@ describe('개인 블로그 목소리 프롬프트', () => {
     expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain('~거든요');
   });
 
+  // 「끊지 마라」만으로는 윤문이 연결어미 자리에서 긴 문장을 끊었다. 마침표 위치를 보존하라는
+  // 구체 지시가 있어야 유지된다(실측은 HUMANIZE_PERSONAL_BLOG_TONE 주석). 보고서·이력서 경로가
+  // 쓰는 기본 프롬프트에는 넣지 않았으므로 그쪽으로 새지 않는지도 함께 고정한다.
+  it('원문의 마침표 위치를 보존하라고 블로그 목소리에만 지시한다', () => {
+    expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain(
+      '원문의 마침표 위치는 그대로 둬라',
+    );
+    expect(HUMANIZE_SYSTEM_PROMPT).not.toContain('마침표 위치');
+  });
+
   it('문장 길이와 문단 크기를 숫자로 강제하지 않는다', () => {
     expect(HUMANIZE_PERSONAL_BLOG_TONE).toContain(
       '문장 길이를 일정한 범위에 맞추려고 하지 마라',
