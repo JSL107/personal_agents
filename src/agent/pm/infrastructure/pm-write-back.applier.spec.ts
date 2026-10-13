@@ -61,6 +61,7 @@ const buildGithubMock = (): jest.Mocked<GithubClientPort> => ({
   commitFileToBranch: jest.fn(),
   getFileFromBranch: jest.fn(),
   searchCode: jest.fn(),
+  listTree: jest.fn(),
 });
 
 const buildNotionMock = (): jest.Mocked<NotionClientPort> => ({

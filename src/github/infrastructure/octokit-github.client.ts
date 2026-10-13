@@ -31,12 +31,14 @@ import {
   ListAuthorMergedPullRequestsOptions,
   ListOpenPullRequestRefsOptions,
   ListReviewThreadsResult,
+  ListTreeInput,
   OCTOKIT_INSTANCE,
   OpenPullRequestRef,
   PullRequestRef,
   PushBranchAndOpenPrInput,
   PushBranchAndOpenPrResult,
   RepoLabel,
+  RepoTree,
   ReviewThread,
   SearchCodeInput,
 } from '../domain/port/github-client.port';
@@ -827,6 +829,33 @@ export class OctokitGithubClient implements GithubClientPort {
       throw this.wrapRequestFailed(
         error,
         `GitHub ${repo} 파일 재조회 실패 (${branch}:${path})`,
+      );
+    }
+  }
+
+  async listTree({ repo, ref }: ListTreeInput): Promise<RepoTree> {
+    this.assertOctokitConfigured();
+    const [owner, repoName] = parseRepo(repo);
+    try {
+      const response = await this.octokit!.rest.git.getTree({
+        owner,
+        repo: repoName,
+        tree_sha: ref,
+        // 문자열 타입이다 — 값과 무관하게 이 키가 있으면 재귀로 받는다.
+        recursive: 'true',
+      });
+      return {
+        entries: response.data.tree.flatMap((entry) =>
+          entry.type === 'blob' && typeof entry.path === 'string'
+            ? [{ path: entry.path, size: entry.size ?? 0 }]
+            : [],
+        ),
+        truncated: response.data.truncated,
+      };
+    } catch (error: unknown) {
+      throw this.wrapRequestFailed(
+        error,
+        `GitHub ${repo} 트리 조회 실패 (${ref})`,
       );
     }
   }
