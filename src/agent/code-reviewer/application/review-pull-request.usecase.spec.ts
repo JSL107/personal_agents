@@ -101,6 +101,7 @@ describe('ReviewPullRequestUsecase', () => {
       mergedAt: null,
       changedFiles: ['src/a.ts'],
       changedFilesTotalCount: 1,
+      changedLinesByFile: {},
       changedFilesTruncated: false,
       additions: 10,
       deletions: 2,
@@ -205,6 +206,7 @@ describe('ReviewPullRequestUsecase', () => {
       mergedAt: null,
       changedFiles: ['src/injected.ts'],
       changedFilesTotalCount: 1,
+      changedLinesByFile: {},
       changedFilesTruncated: false,
       additions: 1,
       deletions: 0,
@@ -396,6 +398,7 @@ describe('ReviewPullRequestUsecase', () => {
       mergedAt: null,
       changedFiles: ['src/injected.ts'],
       changedFilesTotalCount: 1,
+      changedLinesByFile: {},
       changedFilesTruncated: false,
       additions: 1,
       deletions: 0,
@@ -622,6 +625,7 @@ describe('ReviewPullRequestUsecase — conversationContext', () => {
       mergedAt: null,
       changedFiles: ['src/x.ts'],
       changedFilesTotalCount: 1,
+      changedLinesByFile: {},
       changedFilesTruncated: false,
       additions: 1,
       deletions: 0,
@@ -707,6 +711,7 @@ describe('ReviewPullRequestUsecase — conversationContext', () => {
       mergedAt: null,
       changedFiles: ['prisma/schema.prisma'],
       changedFilesTotalCount: 1,
+      changedLinesByFile: {},
       changedFilesTruncated: false,
       additions: 10,
       deletions: 2,
@@ -755,6 +760,7 @@ describe('buildReviewPrompt', () => {
         mergedAt: null,
         changedFiles: ['src/a.ts', 'src/b.ts'],
         changedFilesTotalCount: 2,
+        changedLinesByFile: {},
         changedFilesTruncated: false,
         additions: 5,
         deletions: 1,
@@ -789,6 +795,7 @@ describe('buildReviewPrompt', () => {
         mergedAt: null,
         changedFiles: [],
         changedFilesTotalCount: 0,
+        changedLinesByFile: {},
         changedFilesTruncated: false,
         additions: 0,
         deletions: 0,
@@ -822,6 +829,7 @@ describe('buildReviewPrompt', () => {
         mergedAt: null,
         changedFiles: ['x.ts'],
         changedFilesTotalCount: 600,
+        changedLinesByFile: {},
         changedFilesTruncated: true,
         additions: 0,
         deletions: 0,
@@ -848,6 +856,7 @@ describe('buildReviewPrompt', () => {
         mergedAt: null,
         changedFiles: [],
         changedFilesTotalCount: 0,
+        changedLinesByFile: {},
         changedFilesTruncated: false,
         additions: 0,
         deletions: 0,
@@ -911,6 +920,7 @@ describe('ReviewPullRequestUsecase × 학습 규약', () => {
         mergedAt: null,
         changedFiles: ['src/payment.ts'],
         changedFilesTotalCount: 1,
+        changedLinesByFile: {},
         changedFilesTruncated: false,
         additions: 1,
         deletions: 0,
@@ -1084,6 +1094,7 @@ describe('ReviewPullRequestUsecase × 학습 규약', () => {
       mergedAt: null,
       changedFiles: ['src/payment.ts'],
       changedFilesTotalCount: 1,
+      changedLinesByFile: {},
       changedFilesTruncated: false,
       additions: 1,
       deletions: 0,
@@ -1116,6 +1127,7 @@ describe('buildReviewPrompt — 숨은 유니코드 안내', () => {
     mergedAt: null,
     changedFiles: [],
     changedFilesTotalCount: 0,
+    changedLinesByFile: {},
     changedFilesTruncated: false,
     additions: 1,
     deletions: 0,
@@ -1197,6 +1209,7 @@ describe('ReviewPullRequestUsecase × diff 밖 맥락', () => {
         mergedAt: null,
         changedFiles: ['src/rule.ts'],
         changedFilesTotalCount: 1,
+        changedLinesByFile: {},
         changedFilesTruncated: false,
         additions: 1,
         deletions: 1,
@@ -1403,11 +1416,16 @@ describe('ReviewPullRequestUsecase × 기존 테스트 첨부', () => {
     changedPaths,
     treeSizes = { 'src/rule.ts': 10, 'src/rule.spec.ts': specBody.length },
     changedFilesTruncated = false,
+    changedLinesByFile = {},
+    diffPaths = changedPaths,
   }: {
     repo: string;
     changedPaths: string[];
     treeSizes?: Record<string, number>;
     changedFilesTruncated?: boolean;
+    changedLinesByFile?: Record<string, number>;
+    // 상한에서 잘린 diff 를 흉내 낸다 — 기본은 변경 파일 전부.
+    diffPaths?: string[];
   }) => {
     const route = jest.fn().mockResolvedValue({
       text: JSON.stringify(validReview),
@@ -1428,6 +1446,7 @@ describe('ReviewPullRequestUsecase × 기존 테스트 첨부', () => {
         mergedAt: null,
         changedFiles: changedPaths,
         changedFilesTotalCount: changedPaths.length,
+        changedLinesByFile,
         changedFilesTruncated,
         additions: 1,
         deletions: 1,
@@ -1435,7 +1454,7 @@ describe('ReviewPullRequestUsecase × 기존 테스트 첨부', () => {
         isDraft: false,
       }),
       getPullRequestDiff: jest.fn().mockResolvedValue({
-        diff: changedPaths.map(fileDiff).join('\n'),
+        diff: diffPaths.map(fileDiff).join('\n'),
         truncated: false,
         bytes: 10,
       }),
@@ -1528,6 +1547,31 @@ describe('ReviewPullRequestUsecase × 기존 테스트 첨부', () => {
       '1개 생략 — 본문을 못 봤을 뿐 테스트는 있다: src/rule.spec.ts',
     );
     expect(prompt).toContain('(실린 본문 없음');
+  });
+
+  it('diff 가 잘려도 API 의 파일별 증감으로 순서를 정한다 — 뒤쪽 큰 변경의 짝이 먼저 (#412)', async () => {
+    const { usecase, githubClient } = makeUsecase({
+      repo: 'foo/bar',
+      changedPaths: ['src/a.ts', 'src/z.ts'],
+      // z.ts 는 diff 상한에서 잘려 diff 로 세면 0 줄이다.
+      diffPaths: ['src/a.ts'],
+      changedLinesByFile: { 'src/a.ts': 2, 'src/z.ts': 500 },
+      // 예산 60KB 에 하나만 들어간다.
+      treeSizes: {
+        'src/a.ts': 10,
+        'src/a.spec.ts': 40 * 1024,
+        'src/z.ts': 10,
+        'src/z.spec.ts': 40 * 1024,
+      },
+    });
+
+    await usecase.execute({ prRef: 'foo/bar#412', slackUserId: 'U' });
+
+    const reads = githubClient.getFileFromBranch.mock.calls.map(
+      ([input]) => input.path,
+    );
+    expect(reads).toContain('src/z.spec.ts');
+    expect(reads).not.toContain('src/a.spec.ts');
   });
 
   it('짝 테스트가 없으면 블록이 없다', async () => {
@@ -1657,6 +1701,7 @@ describe('ReviewPullRequestUsecase × 기존 테스트 첨부 — 상한', () =>
         mergedAt: null,
         changedFiles: changed,
         changedFilesTotalCount: count,
+        changedLinesByFile: {},
         changedFilesTruncated: false,
         additions: 1,
         deletions: 1,

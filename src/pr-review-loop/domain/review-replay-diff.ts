@@ -4,12 +4,17 @@ export interface DiffSummary {
   changedFiles: string[];
   changedFilesTotalCount: number;
   changedFilesTruncated: boolean;
+  // 운영은 `pulls.listFiles` 값을 쓴다. 재생은 카드 시점 head 의 diff 에서 센다 — 현재 PR 의 API 값은
+  // 그 뒤 커밋까지 섞여 있다. --full-file-list 면 잘리지 않은 diff 라 운영과 같아진다.
+  changedLinesByFile: Record<string, number>;
   additions: number;
   deletions: number;
 }
 
 export const summarizeDiff = (diff: string): DiffSummary => {
   const changedFiles: string[] = [];
+  const changedLinesByFile: Record<string, number> = {};
+  let current: string | undefined;
   let additions = 0;
   let deletions = 0;
   // 삭제된 파일은 `--- a/경로` 다음에 `+++ /dev/null` 이 온다 — 새 경로만 모으면 그 파일이 목록에서 빠진다.
@@ -20,13 +25,17 @@ export const summarizeDiff = (diff: string): DiffSummary => {
       continue;
     }
     if (line.startsWith('+++ b/')) {
-      changedFiles.push(line.slice('+++ b/'.length).trim());
+      current = line.slice('+++ b/'.length).trim();
+      changedFiles.push(current);
+      changedLinesByFile[current] = 0;
       removedPath = undefined;
       continue;
     }
     if (line.startsWith('+++ /dev/null')) {
       if (removedPath !== undefined) {
-        changedFiles.push(removedPath);
+        current = removedPath;
+        changedFiles.push(current);
+        changedLinesByFile[current] = 0;
         removedPath = undefined;
       }
       continue;
@@ -37,16 +46,20 @@ export const summarizeDiff = (diff: string): DiffSummary => {
     }
     if (line.startsWith('+')) {
       additions += 1;
+    } else if (line.startsWith('-')) {
+      deletions += 1;
+    } else {
       continue;
     }
-    if (line.startsWith('-')) {
-      deletions += 1;
+    if (current !== undefined) {
+      changedLinesByFile[current] += 1;
     }
   }
   return {
     changedFiles,
     changedFilesTotalCount: changedFiles.length,
     changedFilesTruncated: false,
+    changedLinesByFile,
     additions,
     deletions,
   };
