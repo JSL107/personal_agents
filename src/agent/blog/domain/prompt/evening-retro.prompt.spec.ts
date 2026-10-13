@@ -408,7 +408,7 @@ describe('buildEveningBlogBodyPrompt', () => {
 describe('EVENING_BLOG_BODY_SYSTEM_PROMPT', () => {
   it('저녁 블로그 생성에도 통합 채점표의 핵심 기준을 적용한다', () => {
     for (const rule of [
-      '문장의 호흡을 무조건 짧게 만들지 않는다',
+      '사실 하나를 말할 때마다 마침표를 찍지 마라',
       '임의로 줄바꿈하지 않는다',
       '마침표만 붙여 나열하지 않는다',
       '공식·1차 출처',
