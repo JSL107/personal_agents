@@ -770,7 +770,8 @@ ARCHITECTURE 1. 기각 재료(39건 중 이유 있는 33건)보다 **3.5배 많�
   - 관측: 10-07 당시에는 worker 에 `stalled` 이벤트 리스너가 없어 서버 로그로 stalled 를 볼 수 없었고, 이벤트 스트림은
     약 1만 건(2.4일)만 남아 위 경위는 lock 만료 시각으로 판정했다. #792(10-13) 부터 모든 consumer 가 `ObservedWorkerHost` 를
     상속해 stalled 회수 시 `stalled 회수 — queue=… job.name=… job.id=…` warn 을 `logs/server.log` 에 남긴다.
-    `maxStalledCount` 를 넘겨 `failed` 로 끝난 job 은 여전히 로그가 없다(consumer catch 를 거치지 않음).
+    `maxStalledCount` 를 넘겨 `failed` 로 끝난 job 은 consumer catch 를 거치지 않아 같은 클래스가 `stalled 한도 초과로 실패 — …`
+    error 로 따로 남긴다. repeat 로 등록한 cron job 은 BullMQ 가 이 실패 처리에서 제외해 해당 없다.
 - ~~**문구만 다른 같은 지적의 중복 게시**~~ — **2026-10-13 크기를 재고 고치지 않기로 닫았다.**
   - 배경: 지문은 repo·PR·파일·본문(공백·대소문자만 정규화)이라 모델이 같은 지적을 다른 문구로 내면 다시 게시된다.
     회차 겹침(위 항목) 밖에서도 같은 일이 생기는지 원장 전 기간(07-31~10-13, 게시 1,541건)을 쟀다.

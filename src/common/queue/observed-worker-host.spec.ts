@@ -54,4 +54,26 @@ describe('ObservedWorkerHost', () => {
       'stalled 회수 — queue=autopilot-cron job.name=pr-review-sweep job.id=repeat:abc:1760317980000',
     );
   });
+
+  it('stalled 한도 초과 failed 만 error 로 남기고, consumer 가 던진 실패는 다시 찍지 않는다', () => {
+    const consumer = new SampleConsumer();
+    const worker = Object.assign(new EventEmitter(), { name: 'code-reviewer' });
+    (consumer as unknown as { _worker: unknown })._worker = worker;
+    const logError = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+    worker.on('failed', consumer.logWorkerStalledLimitFailed.bind(consumer));
+    const job = { name: 'review', id: '42' } as Job;
+
+    worker.emit('failed', job, new Error('리뷰 모델 호출 실패'), 'active');
+    expect(logError).not.toHaveBeenCalled();
+
+    worker.emit(
+      'failed',
+      job,
+      new Error('job stalled more than allowable limit'),
+      'active',
+    );
+    expect(logError).toHaveBeenCalledWith(
+      'stalled 한도 초과로 실패 — queue=code-reviewer job.name=review job.id=42',
+    );
+  });
 });
