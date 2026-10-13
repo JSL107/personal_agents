@@ -56,12 +56,17 @@ const link = (text: string, url: string | null): string =>
     ? `<${sanitizeForSlackLink(url)}|${sanitizeForSlackLink(text)}>`
     : escapeSlackMrkdwn(text);
 
+// 회사명만 적는다. 공고 제목은 "…의 새로운 기준을 만들 [백엔드 테크리드] 찾습니다" 처럼 길어
+// 두 건만 붙여도 한 줄이 두세 줄로 넘친다 — 제목은 스레드 목록에 있다.
 const formatPostingNames = (postings: MorningPosting[]): string => {
-  const names = postings
+  const companies = [...new Set(postings.map((posting) => posting.company))];
+  const names = companies
     .slice(0, MAX_POSTING_NAMES)
-    // 회사명·제목은 채용 사이트 원문이라 `<` `&` 가 섞이면 링크·서식으로 해석된다.
-    .map((posting) => escapeSlackMrkdwn(`${posting.company} ${posting.title}`));
-  const rest = postings.length - names.length;
+    // 회사명은 채용 사이트 원문이라 `<` `&` 가 섞이면 링크·서식으로 해석된다.
+    .map(escapeSlackMrkdwn);
+  // "외 N" 은 이름을 못 적은 **회사** 수다. 공고 수로 세면 한 회사의 공고 2건이 "A사 외 1" 로 나가
+  // 다른 회사가 더 있는 것처럼 읽힌다 — 공고 수는 앞의 "공고 N건" 이 이미 말한다.
+  const rest = companies.length - names.length;
   return rest > 0 ? `${names.join(' · ')} 외 ${rest}` : names.join(' · ');
 };
 
@@ -70,17 +75,17 @@ export const formatMorningDigest = (input: MorningDigestInput): string => {
   const todo: string[] = [];
   if (input.approvalLabels.length > 0) {
     todo.push(
-      `• 승인 대기 ${input.approvalLabels.length}장 — ${escapeSlackMrkdwn(countByLabel(input.approvalLabels))}`,
+      `• *승인 대기 ${input.approvalLabels.length}장* — ${escapeSlackMrkdwn(countByLabel(input.approvalLabels))}`,
     );
   }
   for (const incident of input.incidents) {
     const days =
       incident.dayCount === null ? '' : ` · ${incident.dayCount}일째`;
-    todo.push(`• 🔴 장애  ${escapeSlackMrkdwn(incident.label)}${days}`);
+    todo.push(`• 🔴 *장애* — ${escapeSlackMrkdwn(incident.label)}${days}`);
   }
   if (postings.length > 0) {
     todo.push(
-      `• 공고 ${postings.length}건 — ${formatPostingNames(postings)} · 지원할지? (목록은 스레드)`,
+      `• *공고 ${postings.length}건* — ${formatPostingNames(postings)} (목록은 스레드)`,
     );
   }
 
@@ -94,34 +99,39 @@ export const formatMorningDigest = (input: MorningDigestInput): string => {
   const totalCount =
     input.approvalLabels.length + input.incidents.length + postings.length;
   const day = formatTradeDay(input.firedAtKst);
+  // 종류가 하나뿐이면 "할 일 10 · 공고 10" 처럼 같은 숫자가 두 번 보인다 — 종류만 적는다.
   const header =
     totalCount === 0
       ? `☀️ *${day} 아침* — 손댈 것 없음`
-      : `☀️ *${day} 아침* — 할 일 ${totalCount} · ${kinds.join(' · ')}`;
+      : kinds.length === 1
+        ? `☀️ *${day} 아침* — ${kinds[0]}`
+        : `☀️ *${day} 아침* — 할 일 ${totalCount} (${kinds.join(' · ')})`;
 
   const rest: string[] = [];
   if (input.invest) {
     rest.push(
-      `• 투자  오늘 시가 매수 ${input.invest.buyCount} · 매도 ${input.invest.sellCount} 예정`,
+      `• *투자* — 오늘 시가 매수 ${input.invest.buyCount} · 매도 ${input.invest.sellCount} 예정`,
     );
   }
   if (input.company) {
     rest.push(
-      `• 회사  먼저 이것부터 — ${link(input.company.title, input.company.url)}`,
+      `• *회사 1순위* — ${link(input.company.title, input.company.url)}`,
     );
   }
   if (input.study) {
     rest.push(
-      `• 공부  ${link(input.study.topic, input.study.url)} · ${STUDY_MINUTES}분`,
+      `• *공부* — ${link(input.study.topic, input.study.url)} · ${STUDY_MINUTES}분`,
     );
   }
   if (input.portfolio) {
-    rest.push(`• 포트폴리오  어제 ${escapeSlackMrkdwn(input.portfolio)}`);
+    rest.push(`• *포트폴리오* — 어제 ${escapeSlackMrkdwn(input.portfolio)}`);
   }
 
+  // 소제목은 `*…*` 만 있는 줄이어야 공통 렌더(message-blocks.builder)가 제목 블록 + 구분선으로 올린다.
+  // 앞에 이모지를 붙이면 한 소제목만 본문 글씨로 남아 두 소제목의 크기가 달라진다.
   return [
     header,
-    ...(todo.length > 0 ? ['', '✋ *할 일*', ...todo] : []),
+    ...(todo.length > 0 ? ['', '*할 일*', ...todo] : []),
     ...(rest.length > 0 ? ['', '*어제 · 오늘*', ...rest] : []),
   ].join('\n');
 };

@@ -110,9 +110,9 @@ const buildCheckInBlocks = (
       type: 'bullet',
       text: `최우선: ${renderTaskTitle(plan.topPriority)}`,
       link: plan.topPriority.url,
+      ...toSubtaskChildren(plan.topPriority),
     },
   );
-  appendSubtaskBlocks(blocks, plan.topPriority);
 
   if (plan.morning.length > 0) {
     blocks.push({ type: 'bullet', text: '오전' });
@@ -121,8 +121,8 @@ const buildCheckInBlocks = (
         type: 'todo',
         text: renderTaskTitle(task),
         link: task.url,
+        ...toSubtaskChildren(task),
       });
-      appendSubtaskBlocks(blocks, task);
     }
   }
 
@@ -133,8 +133,8 @@ const buildCheckInBlocks = (
         type: 'todo',
         text: renderTaskTitle(task),
         link: task.url,
+        ...toSubtaskChildren(task),
       });
-      appendSubtaskBlocks(blocks, task);
     }
   }
 
@@ -193,17 +193,14 @@ const appendSourceBlocks = (
   }
 };
 
-// WBS 서브태스크를 부모 todo 바로 아래에 "  - subtitle (Nm)" 형태의 paragraph 들로 append.
-// Notion API 에 nested children 을 한 번에 보내려면 block_object 의 children 필드가 필요해 복잡 —
-// 지금은 들여쓰기 paragraph 로 단순 표현 (템플릿 가독성과 충돌 안 남).
-const appendSubtaskBlocks = (
-  blocks: NotionPlanBlock[],
-  task: TaskItem,
-): void => {
-  for (const sub of task.subtasks) {
-    blocks.push({
-      type: 'paragraph',
-      text: `   ↳ ${sub.title} (${sub.estimatedMinutes}m)`,
-    });
-  }
-};
+// WBS 서브태스크를 부모 블록의 하위 글머리표("subtitle (Nm)")로 넣는다. 같은 깊이에 늘어놓으면
+// 어느 할 일의 하위 작업인지 안 보이고, 부모를 접어도 함께 접히지 않는다.
+const toSubtaskChildren = (task: TaskItem): { children?: NotionPlanBlock[] } =>
+  task.subtasks.length > 0
+    ? {
+        children: task.subtasks.map((sub) => ({
+          type: 'bullet' as const,
+          text: `${sub.title} (${sub.estimatedMinutes}m)`,
+        })),
+      }
+    : {};

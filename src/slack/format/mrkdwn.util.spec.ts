@@ -19,6 +19,14 @@ describe('breakProseIntoSentences', () => {
     );
   });
 
+  it('기호 없이 들여쓴 긴 줄도 상위 항목에 딸린 줄이라 쪼개지 않는다', () => {
+    const line =
+      '      → 오늘 할 일에서 빼고 백로그로 분리한다. 다음 주 계획 회의에서 다시 우선순위를 정할 때 함께 살펴본다. 그전까지는 담당 목록에서도 내려 두고, 관련 알림도 함께 꺼서 오늘 집중할 일이 흐트러지지 않게 한다.';
+    const indented = line.replace('→ ', '');
+    expect(breakProseIntoSentences(line)).toBe(line);
+    expect(breakProseIntoSentences(indented)).toBe(indented);
+  });
+
   it('목록·인용 줄과 짧은 줄은 건드리지 않는다', () => {
     const untouched = [
       `• ${longProse}`,

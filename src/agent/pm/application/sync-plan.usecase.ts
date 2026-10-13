@@ -109,7 +109,7 @@ const buildPreviewText = (tasks: TaskItem[]): string => {
     const where = task.source === 'GITHUB' ? 'GitHub Issue' : 'Notion page';
     lines.push(`*${where} — ${task.title}* (${task.id})`);
     for (const sub of task.subtasks) {
-      lines.push(`  ↳ ${sub.title} (${sub.estimatedMinutes}m)`);
+      lines.push(`  • ${sub.title} (${sub.estimatedMinutes}m)`);
     }
     lines.push('');
   }

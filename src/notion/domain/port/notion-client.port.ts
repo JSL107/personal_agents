@@ -58,13 +58,23 @@ interface NotionTextBlock {
 export type NotionPlanBlock =
   | ({ type: 'heading' } & NotionTextBlock) // heading_2 — "Check in HH:MM" 등
   | ({ type: 'subheading' } & NotionTextBlock) // heading_3 — "오늘의 할 일" 등
-  | ({ type: 'bullet'; link?: string } & NotionTextBlock)
+  // children: 이 블록 안에 들여 넣을 하위 블록. Notion 은 한 요청에서 두 단계 깊이까지 받는다 — 한 단계만 쓴다.
+  | ({
+      type: 'bullet';
+      link?: string;
+      children?: NotionPlanBlock[];
+    } & NotionTextBlock)
   | ({ type: 'numbered' } & NotionTextBlock)
   | ({ type: 'paragraph'; link?: string } & NotionTextBlock)
   | ({ type: 'quote' } & NotionTextBlock)
   | ({ type: 'code'; language: string } & NotionTextBlock)
   | ({ type: 'callout'; icon: string } & NotionTextBlock)
-  | ({ type: 'todo'; checked?: boolean; link?: string } & NotionTextBlock)
+  | ({
+      type: 'todo';
+      checked?: boolean;
+      link?: string;
+      children?: NotionPlanBlock[];
+    } & NotionTextBlock)
   | { type: 'divider' }
   // 이미지는 텍스트 블록이 아니다 — NotionTextBlock 교차 타입에 넣지 않는다.
   // fileUploadId 는 NotionFileUploadPort.uploadImage 가 돌려준 값이다.

@@ -14,6 +14,7 @@ import {
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { coerceToDailyPlan } from '../../pm/domain/prompt/previous-plan-formatter';
+import { buildFindingReferences } from '../domain/finding-reference';
 import {
   buildFindingRecoveryFacts,
   buildPlanRealityFacts,
@@ -228,13 +229,21 @@ export class GeneratePoShadowUsecase {
           },
         });
         const parsedReport = parsePoShadowReport(completion.text);
+        const guardedReport = buildGuardedReport({
+          report: parsedReport,
+          facts,
+          degradedSources,
+          recoverySummary,
+        });
         const report = withGoalCheckIns(
-          buildGuardedReport({
-            report: parsedReport,
-            facts,
-            degradedSources,
-            recoverySummary,
-          }),
+          {
+            ...guardedReport,
+            findingReferences: buildFindingReferences(
+              guardedReport.findings,
+              facts,
+              buildGithubTitleByKey(context),
+            ),
+          },
           goalCollection.checkIns,
         );
         return {
@@ -437,6 +446,17 @@ export class GeneratePoShadowUsecase {
     return lifecycles;
   }
 }
+
+// 지난 지적 사실은 제목이 없어 이번 회차 조회 결과에서 `owner/repo#N` 으로 찾는다.
+const buildGithubTitleByKey = (context: PoShadowContext): Map<string, string> =>
+  new Map(
+    [
+      ...(context.assignedTasks?.issues ?? []),
+      ...(context.assignedTasks?.pullRequests ?? []),
+      ...context.activePullRequests,
+      ...context.mergedPullRequests,
+    ].map((item) => [`${item.repo}#${item.number}`, item.title]),
+  );
 
 interface BuildQuietReportInput {
   facts: PlanRealityFact[];

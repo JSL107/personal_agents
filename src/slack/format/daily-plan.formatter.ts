@@ -81,7 +81,7 @@ const renderTaskLine = (task: TaskItem): string => {
   const wbs =
     task.subtasks.length > 0
       ? `\n${task.subtasks
-          .map((s) => `   ↳ ${s.title} (${s.estimatedMinutes}m)`)
+          .map((s) => `   • ${s.title} (${s.estimatedMinutes}m)`)
           .join('\n')}`
       : '';
   return `• ${lineage}${critical}${titled}${wbs}`;
