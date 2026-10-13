@@ -231,10 +231,13 @@ const LONG_SENTENCE_MIN = 80;
  *
  * 목표 코퍼스(기술 블로그)가 아니라 방어선을 쓴다. 토스는 변동계수 0.35~0.91 · 80자 이상
  * 0~45% 로 짧게 쓰는 글이 섞여 있어, 그쪽 범위를 붙이면 지금 글도 「범위 안」으로 읽힌다.
+ *
+ * 범위는 `~` 가 아니라 `–` 로 잇는다. 이 줄은 Slack `mrkdwn` 섹션으로 그대로 나가는데
+ * (`preview-message.builder.ts`), 한 줄에 `~` 가 둘이면 그 사이가 취소선 문법이 된다(리뷰 지적).
  */
 const BREATH_REFERENCE = {
-  variation: '0.46~0.84',
-  longPercent: '8~26%',
+  variation: '0.46–0.84',
+  longPercent: '8–26%',
 } as const;
 // 프로파일의 구어 종결어미. 이유를 문장 끊고 뒤에 던지는 이 문체의 표식이다.
 //

@@ -375,7 +375,25 @@ describe('formatKoreanStyleMetrics', () => {
     const line = formatKoreanStyleMetrics(metrics);
     expect(line).toContain('호흡(관측값): 변동계수');
     expect(line).toContain('80자 이상 10%');
-    expect(line).toContain('사람이 고친 글 0.46~0.84 · 8~26%');
+    expect(line).toContain('사람이 고친 글 0.46–0.84 · 8–26%');
+    // Slack mrkdwn 은 `~…~` 를 취소선으로 그린다. 호흡 줄에는 `~` 가 없어야 한다.
+    const breathLine = line.split('\n').find((part) => part.startsWith('호흡'));
+    expect(breathLine).not.toContain('~');
+  });
+
+  // 80자 「이상」 계약을 경계에서 고정한다. 길이는 공백을 빼고 마침표까지 센다.
+  it.each([
+    [79, 0],
+    [80, 3],
+  ])('공백 제외 %i자 문장 하나는 긴 문장 비율 %i% 다', (length, expected) => {
+    const sentences = [
+      ...Array.from({ length: 39 }, () => '오늘 결과를 확인했어요.'),
+      `${'가'.repeat(length - 2)}요.`,
+    ];
+
+    expect(measureKoreanStyle(sentences.join(' ')).longSentencePercent).toBe(
+      expected,
+    );
   });
 
   it('40문장 미만이면 호흡 줄을 적지 않는다', () => {
