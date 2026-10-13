@@ -107,6 +107,11 @@ const RESOLVE_REVIEW_THREAD_MUTATION = `
   }
 `;
 
+type ChangedFileList = Pick<
+  PullRequestDetail,
+  'changedFiles' | 'changedLinesByFile'
+>;
+
 interface GraphqlPageInfo {
   hasNextPage: boolean;
 }
@@ -228,11 +233,13 @@ export class OctokitGithubClient implements GithubClientPort {
       });
 
       const totalCount = prResponse.data.changed_files;
-      const changedFiles = await this.fetchChangedFiles({
-        owner,
-        repoName,
-        pullNumber: number,
-      });
+      const { changedFiles, changedLinesByFile } = await this.fetchChangedFiles(
+        {
+          owner,
+          repoName,
+          pullNumber: number,
+        },
+      );
 
       return {
         number,
@@ -247,6 +254,7 @@ export class OctokitGithubClient implements GithubClientPort {
         mergedAt: prResponse.data.merged_at,
         changedFiles,
         changedFilesTotalCount: totalCount,
+        changedLinesByFile,
         changedFilesTruncated:
           totalCount > changedFiles.length || totalCount > CHANGED_FILES_MAX,
         additions: prResponse.data.additions,
@@ -294,8 +302,9 @@ export class OctokitGithubClient implements GithubClientPort {
     owner: string;
     repoName: string;
     pullNumber: number;
-  }): Promise<string[]> {
-    const filenames: string[] = [];
+  }): Promise<ChangedFileList> {
+    const changedFiles: string[] = [];
+    const changedLinesByFile: Record<string, number> = {};
     const iterator = this.octokit!.paginate.iterator(
       this.octokit!.rest.pulls.listFiles,
       {
@@ -307,13 +316,14 @@ export class OctokitGithubClient implements GithubClientPort {
     );
     for await (const page of iterator) {
       for (const file of page.data) {
-        filenames.push(file.filename);
-        if (filenames.length >= CHANGED_FILES_MAX) {
-          return filenames;
+        changedFiles.push(file.filename);
+        changedLinesByFile[file.filename] = file.additions + file.deletions;
+        if (changedFiles.length >= CHANGED_FILES_MAX) {
+          return { changedFiles, changedLinesByFile };
         }
       }
     }
-    return filenames;
+    return { changedFiles, changedLinesByFile };
   }
 
   async getPullRequestDiff({
