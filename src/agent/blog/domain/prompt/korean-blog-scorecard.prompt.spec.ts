@@ -15,7 +15,7 @@ describe('KOREAN_BLOG_SCORECARD_PROMPT', () => {
     expect(all).toHaveLength(11);
     // 앞뒤 경계와 문체 항목의 자리를 못박는다. 순서가 밀리면 여기서 걸린다.
     expect(all[0]).toContain('한국어 기술 블로그 통합 채점표의 기준을 따른다');
-    expect(all[5]).toContain('문장의 호흡을 무조건 짧게 만들지 않는다');
+    expect(all[5]).toContain('사실 하나를 말할 때마다 마침표를 찍지 마라');
     expect(all[6]).toContain('임의로 줄바꿈하지 않는다');
     expect(all[9]).toContain('마침표만 붙여 나열하지 않는다');
     expect(all[10]).toContain('마지막에는 처음 제기한 문제에 답하고');
@@ -36,7 +36,7 @@ describe('KOREAN_BLOG_CONTENT_RULES', () => {
     // 프롬프트(humanize-system.prompt.ts:449-451,461)에 이미 있어 두 번 적용된다.
     const content = KOREAN_BLOG_CONTENT_RULES;
 
-    expect(content).not.toContain('문장의 호흡을 무조건 짧게 만들지 않는다');
+    expect(content).not.toContain('사실 하나를 말할 때마다 마침표를 찍지 마라');
     expect(content).not.toContain('임의로 줄바꿈하지 않는다');
     expect(content).not.toContain('마침표만 붙여 나열하지 않는다');
   });
