@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 
 import { ModelRouterUsecase } from '../../model-router/application/model-router.usecase';
 import { AgentType } from '../../model-router/domain/model-router.type';
-import { LEARNING_REPO } from '../../pr-review-loop/domain/learning-repo';
+import { SELF_REPO } from '../../pr-review-loop/domain/learning-repo';
 import { ConversationTurn } from '../domain/conversation-memory.type';
 import {
   AGENT_DISPATCHER_PORT,
@@ -59,7 +59,7 @@ export class ConversationalReplyUsecase {
   }): Promise<string> {
     const systemPrompt = buildSystemPrompt({
       // 이대리 자신의 레포. 대화 응답이 "우리 레포" 를 지칭할 때 쓰는 이름이라 상수로 족하다.
-      repoLabel: LEARNING_REPO,
+      repoLabel: SELF_REPO,
       ownerLogin: this.configService
         .get<string>('IMPACT_REPORT_GITHUB_AUTHOR')
         ?.trim(),
