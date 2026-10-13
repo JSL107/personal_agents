@@ -617,7 +617,10 @@ export class OctokitGithubClient implements GithubClientPort {
         owner,
         repo: repoName,
       });
-      return data.private === false;
+      // `visibility` 가 `public` 일 때만 공개로 본다. `internal`(Enterprise 조직 내부 공개)과
+      // 필드가 없는 응답은 비공개로 떨어진다 — 공개 계약은 코드를 원문 그대로 내보내므로
+      // 모르면 엄격한 쪽이다(PR #790 리뷰 지적).
+      return data.private === false && data.visibility === 'public';
     } catch (error: unknown) {
       throw this.wrapRequestFailed(error, `GitHub ${repo} 공개 여부 조회 실패`);
     }
