@@ -36,9 +36,10 @@ export const STUDY_APPLY_PREVIEW_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 // 카드 없이 남은 APPLY 를 다시 찾는 창. 카드 TTL 과 같게 둬, 레포 설정을 일주일 안에 고치면
 // 그 사이 판정된 제안이 카드로 나온다.
 export const PENDING_CARD_LOOKBACK_MS = STUDY_APPLY_PREVIEW_TTL_MS;
-// 한 회차에 모델을 부르는 판정은 1건. 모델 호출 1건의 최악(MODEL_ROUTER_WORST_CASE_MS=606초)이 이미
-// autopilot worker lockDuration(876초)의 70% 라, 2건을 순차로 걸면 최악 1,212초로 예산을 넘겨 BullMQ 가
-// stalled 로 보고 같은 job 을 다시 돌린다(job-feed-gap.autopilot-task.ts 의 DEFAULT_TOP_N=1 과 같은 근거).
+// 한 회차에 모델을 부르는 판정은 1건. 모델 호출 1건의 최악(MODEL_ROUTER_WORST_CASE_MS=908초)이 이미
+// autopilot worker lockDuration(AUTOPILOT_WORKER_OPTIONS.lockDuration=1,178초)의 77% 라, 2건을 순차로 걸면
+// 최악 1,816초로 예산을 넘겨 BullMQ 가 stalled 로 보고 같은 job 을 다시 돌린다
+// (job-feed-gap.autopilot-task.ts 의 DEFAULT_TOP_N=1 과 같은 근거).
 // 하루 새 브리프는 1건이라 1건이면 그날 판정되고, 모델 없이 끝나는 판정(키워드·후보 없음)은 상한 밖이다.
 export const MAX_MODEL_JUDGEMENTS_PER_RUN = 1;
 // 반복 자체의 안전 상한. 48시간 창에 하루 1건이라 실제로는 2~3건이다.
