@@ -255,25 +255,32 @@ export const stripStructuralEmDashes = (markdown: string): string => {
 // 모델이 스스로 붙인 작업용 표기. 지시하는 프롬프트가 없어 프롬프트로 막을 자리도 없다.
 // 실측(2026-10-13, 공개 글 39편): 인라인 태그 `[작성자 관찰]` 류 8곳, 인용구로 남은 골격 라벨
 // `> 세 줄 요약` 류 3곳, 익명화가 PR 링크를 설명으로 바꾼 꼬리줄 `근거: 내부 변경 검토 기록` 6편.
-// 태그 뒤에 `(` 가 오면 링크 텍스트라 남긴다.
+// 태그 뒤에 `(`·`[`·`:` 가 오면 인라인 링크·참조형 링크·참조 정의라 남긴다.
 const SCAFFOLD_TAG_PATTERN =
-  /\[(?:작성자 (?:관찰|해석|판단|재구성)|출처 요약|의역)\](?!\()[ \t]*/g;
+  /\[(?:작성자 (?:관찰|해석|판단|재구성)|출처 요약|의역)\](?![([:])[ \t]*/g;
 const SCAFFOLD_LABEL_LINE_PATTERN =
   /^\s{0,3}>\s*(?:세 줄 요약|핵심 사실|정리)\s*$/;
-// 링크가 남은 `근거:` 줄은 실제 출처라 지우지 않는다. 링크 없이 「내부」「변경」 설명만 남은 줄이
-// 익명화 흔적이다(실측 6줄 전부 「변경」을 포함). `근거: RFC 9110 15.5절` 같은 실제 출처는 남긴다.
+// 링크(인라인·참조형)가 남은 `근거:` 줄은 실제 출처라 지우지 않는다. 지우는 것은 익명화가 남긴
+// 문구로 실측된 꼴뿐이다 — 실측 6줄은 전부 「내부 변경」「관련 변경」「~한 변경 기록」 중 하나였다.
+// 「변경」 한 낱말로 넓히면 `근거: Node.js v22 변경 로그` 같은 실제 출처가 지워진다(리뷰 지적).
 const ANONYMIZED_SOURCE_TAIL_PATTERN =
-  /^\s*근거\s*:(?!.*(?:https?:\/\/|\]\())(?=.*(?:내부|변경)).*$/;
-// 인라인 코드 스팬. 태그를 리터럴 예시로 쓴 자리라 치환에서 뺀다.
-const INLINE_CODE_SPLIT_PATTERN = /(`+[^`]*`+)/;
+  /^\s*근거\s*:(?!.*(?:https?:\/\/|\]\(|\]\[))(?=.*(?:내부 변경|관련 변경|[한된] 변경 기록)).*$/;
+// 인라인 코드 스팬 — 여는 백틱과 **같은 개수**의 백틱으로만 닫힌다(CommonMark). 개수를 안 보면
+// ``a ` [의역]`` 처럼 안쪽 백틱에서 스팬이 일찍 닫혀 리터럴이 지워진다(리뷰 지적).
+const INLINE_CODE_SPAN_PATTERN = /(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)/g;
 
-const removeScaffoldTags = (line: string): string =>
-  line
-    .split(INLINE_CODE_SPLIT_PATTERN)
-    .map((segment, index) =>
-      index % 2 === 1 ? segment : segment.replace(SCAFFOLD_TAG_PATTERN, ''),
-    )
-    .join('');
+// 인라인 코드 밖에서만 태그를 지운다. 태그를 리터럴 예시로 쓴 자리라 그 안은 남긴다.
+const removeScaffoldTags = (line: string): string => {
+  let result = '';
+  let cursor = 0;
+  for (const span of line.matchAll(INLINE_CODE_SPAN_PATTERN)) {
+    const start = span.index ?? 0;
+    result +=
+      line.slice(cursor, start).replace(SCAFFOLD_TAG_PATTERN, '') + span[0];
+    cursor = start + span[0].length;
+  }
+  return result + line.slice(cursor).replace(SCAFFOLD_TAG_PATTERN, '');
+};
 const BLANK_LINE_PATTERN = /^\s*$/;
 
 /**
