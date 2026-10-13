@@ -165,6 +165,48 @@ describe('NotionApiClient', () => {
     });
   });
 
+  it('todo·bullet 의 children 을 부모 블록 안의 하위 블록으로 함께 보낸다', async () => {
+    const create = jest.fn().mockResolvedValue({
+      id: 'page-1',
+      url: 'https://notion.so/page-1',
+      properties: {},
+    });
+    const adapter = new NotionApiClient(
+      { pages: { create } } as unknown as Client,
+      buildConfig({}),
+    );
+
+    await adapter.createDatabasePage({
+      databaseId: 'db-1',
+      properties: {},
+      blocks: [
+        {
+          type: 'todo',
+          text: '업로드 차단 해소',
+          children: [{ type: 'bullet', text: '리뷰어 지정 (15m)' }],
+        },
+        { type: 'bullet', text: '하위 없음', children: [] },
+      ],
+    });
+
+    const [todo, bullet] = create.mock.calls[0][0].children;
+    expect(todo.to_do.children).toEqual([
+      {
+        object: 'block',
+        type: 'bulleted_list_item',
+        bulleted_list_item: {
+          rich_text: [
+            expect.objectContaining({
+              text: expect.objectContaining({ content: '리뷰어 지정 (15m)' }),
+            }),
+          ],
+        },
+      },
+    ]);
+    // 하위가 비면 키를 싣지 않는다.
+    expect(bullet.bulleted_list_item).not.toHaveProperty('children');
+  });
+
   it('page를 archived 상태로 갱신한다', async () => {
     const update = jest.fn().mockResolvedValue({});
     const adapter = new NotionApiClient(
