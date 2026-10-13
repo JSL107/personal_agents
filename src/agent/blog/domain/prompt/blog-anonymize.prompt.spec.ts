@@ -152,3 +152,47 @@ describe('BLOG_ANONYMIZE_SYSTEM_PROMPT — 범용 도구 이름과 근거 링크
     );
   });
 });
+
+describe('익명화 계약 — 수치 규칙', () => {
+  const PROMPTS = [
+    BLOG_ANONYMIZE_SYSTEM_PROMPT,
+    BLOG_ANONYMIZE_PUBLIC_PROJECT_SYSTEM_PROMPT,
+  ];
+
+  // 실측(2026-10-13): 경계 없는 이 낱말 때문에 실행 원장 876 run 이 「수백 건」으로 발행됐다.
+  // 보존 지시를 덧붙이는 대신 이 낱말을 지웠으므로 다시 들어오면 위 지시가 이긴다.
+  it('경계 없는 「사고 규모 실수치」 지시를 남기지 않는다', () => {
+    PROMPTS.forEach((prompt) => {
+      expect(prompt).not.toContain('사고 규모 실수치');
+    });
+  });
+
+  it('회사·고객 규모는 범주로, 글쓴이가 잰 값은 숫자 그대로 둔다', () => {
+    PROMPTS.forEach((prompt) => {
+      expect(prompt).toContain('영향받은 고객·기관·학교·사용자 수');
+      expect(prompt).toContain('개발 도구의 실행 기록·로그 건수');
+      expect(prompt).toContain('실험 반복 횟수와 표본');
+      expect(prompt).toContain('숫자 그대로 둔다');
+    });
+  });
+
+  // A/B 실측(2026-10-13, 합성 초안 2회): 이 줄이 없으면 1,034 를 「수천」으로 부풀리고
+  // 초과 지급액을 「백만 P대」로 남겨 규모를 흘렸다.
+  // 금액 조항은 회사·고객 금액에만 건다 — 범위가 없으면 공개 요금·크레딧 한도 같은 공개 수치까지
+  // 지운다(PR #789 리뷰 지적).
+  it('범주는 부풀리지 않고, 금액은 범주로도 남기지 않는다', () => {
+    PROMPTS.forEach((prompt) => {
+      expect(prompt).toContain('범주는 실제 값보다 크게 잡지 않고');
+      expect(prompt).toContain(
+        '그중 회사·고객의 금액·포인트·크레딧은 범주로도 남기지 말고 발생 사실만 쓴다',
+      );
+    });
+  });
+
+  // 이 계약의 기존 원칙 — 모르면 엄격한 쪽이다.
+  it('판단이 서지 않는 수치는 범주로 바꾼다', () => {
+    PROMPTS.forEach((prompt) => {
+      expect(prompt).toContain('판단이 서지 않으면 범주로 바꾼다');
+    });
+  });
+});
