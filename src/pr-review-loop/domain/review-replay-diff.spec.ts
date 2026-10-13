@@ -28,6 +28,12 @@ describe('summarizeDiff', () => {
       changedFiles: ['src/kept.ts', 'src/gone.ts', 'src/new.ts'],
       changedFilesTotalCount: 3,
       changedFilesTruncated: false,
+      // 파일별 증감 — 운영의 `pulls.listFiles` 값 자리를 채운다.
+      changedLinesByFile: {
+        'src/kept.ts': 2,
+        'src/gone.ts': 1,
+        'src/new.ts': 1,
+      },
       additions: 2,
       deletions: 2,
     });

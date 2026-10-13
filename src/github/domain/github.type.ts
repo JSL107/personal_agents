@@ -46,6 +46,9 @@ export interface PullRequestDetail {
   changedFiles: string[];
   changedFilesTruncated: boolean; // hard cap (CHANGED_FILES_MAX) 초과로 잘렸는지
   changedFilesTotalCount: number; // PR 전체 변경 파일 수 (잘리기 전)
+  // 파일별 바뀐 줄 수(추가 + 삭제). `pulls.listFiles` 값이라 diff 가 상한에서 잘려도 정확하다 —
+  // 잘린 diff 로 세면 뒤쪽 파일이 0 이 돼 [기존 테스트] 선택 순서가 경로순으로 무너진다(#412).
+  changedLinesByFile: Record<string, number>;
   additions: number;
   deletions: number;
   // 리뷰 시점 head commit sha — 카드의 커밋 대조 기준선(Phase 2)이자 인라인 코멘트의 commit_id.

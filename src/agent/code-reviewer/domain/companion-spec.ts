@@ -176,7 +176,8 @@ export interface CompanionSpecSelection {
  *
  * - diff 에 포함된 spec 도 빼지 않는다 — diff 는 바뀐 hunk 만 보여 나머지 케이스는 안 보인다.
  * - 트리가 잘렸으면 짝을 못 찾은 JS/TS 소스에 `X.spec.ext`·`X.test.ext` 를 추측 후보로 둔다(개별 조회로 확인).
- * - 바뀐 줄 수를 모르는 파일(diff 가 잘려 안 보인 파일)은 0 으로 쳐 뒤로 간다.
+ * - 바뀐 줄 수를 모르는 파일은 0 으로 쳐 뒤로 간다. 호출부는 `pulls.listFiles` 의 파일별 값을 넘긴다 —
+ *   잘린 diff 로만 세면 뒤쪽 파일이 전부 0 이 돼 순서가 경로순으로 무너진다(#412).
  */
 export const selectCompanionSpecs = ({
   changedPaths,
