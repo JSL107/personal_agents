@@ -206,9 +206,11 @@ const judgeStructuralDash = (head: string, tail: string): DashVerdict => {
   return 'colon';
 };
 
-export const stripStructuralEmDashes = (markdown: string): string => {
-  const { lines, blocks } = scanMarkdownBlocks(markdown);
-  // 코드 펜스 안은 건드리지 않는다 — 명령어나 출력 예시의 `—` 는 필자의 문체가 아니다.
+// 펜스 코드블록에 속한 줄 번호. 문체 후처리는 코드 안을 건드리지 않는다.
+const collectFencedLineIndexes = (
+  lines: string[],
+  blocks: MarkdownBlock[],
+): Set<number> => {
   const fenced = new Set<number>();
   blocks
     .filter((block) => FENCE_PATTERN.test(lines[block.startLine]))
@@ -217,6 +219,13 @@ export const stripStructuralEmDashes = (markdown: string): string => {
         fenced.add(line);
       }
     });
+  return fenced;
+};
+
+export const stripStructuralEmDashes = (markdown: string): string => {
+  const { lines, blocks } = scanMarkdownBlocks(markdown);
+  // 코드 펜스 안은 건드리지 않는다 — 명령어나 출력 예시의 `—` 는 필자의 문체가 아니다.
+  const fenced = collectFencedLineIndexes(lines, blocks);
 
   return lines
     .map((line, index) => {
@@ -240,6 +249,80 @@ export const stripStructuralEmDashes = (markdown: string): string => {
         },
       );
     })
+    .join('\n');
+};
+
+// 모델이 스스로 붙인 작업용 표기. 지시하는 프롬프트가 없어 프롬프트로 막을 자리도 없다.
+// 실측(2026-10-13, 공개 글 39편): 인라인 태그 `[작성자 관찰]` 류 8곳, 인용구로 남은 골격 라벨
+// `> 세 줄 요약` 류 3곳, 익명화가 PR 링크를 설명으로 바꾼 꼬리줄 `근거: 내부 변경 검토 기록` 6편.
+// 태그 뒤에 `(` 가 오면 링크 텍스트라 남긴다.
+const SCAFFOLD_TAG_PATTERN =
+  /\[(?:작성자 (?:관찰|해석|판단|재구성)|출처 요약|의역)\](?!\()[ \t]*/g;
+const SCAFFOLD_LABEL_LINE_PATTERN =
+  /^\s{0,3}>\s*(?:세 줄 요약|핵심 사실|정리)\s*$/;
+// 링크가 남은 `근거:` 줄은 실제 출처라 지우지 않는다. 링크 없이 「내부」「변경」 설명만 남은 줄이
+// 익명화 흔적이다(실측 6줄 전부 「변경」을 포함). `근거: RFC 9110 15.5절` 같은 실제 출처는 남긴다.
+const ANONYMIZED_SOURCE_TAIL_PATTERN =
+  /^\s*근거\s*:(?!.*(?:https?:\/\/|\]\())(?=.*(?:내부|변경)).*$/;
+// 인라인 코드 스팬. 태그를 리터럴 예시로 쓴 자리라 치환에서 뺀다.
+const INLINE_CODE_SPLIT_PATTERN = /(`+[^`]*`+)/;
+
+const removeScaffoldTags = (line: string): string =>
+  line
+    .split(INLINE_CODE_SPLIT_PATTERN)
+    .map((segment, index) =>
+      index % 2 === 1 ? segment : segment.replace(SCAFFOLD_TAG_PATTERN, ''),
+    )
+    .join('');
+const BLANK_LINE_PATTERN = /^\s*$/;
+
+/**
+ * 발행본에 남은 작업용 표기(인라인 태그·골격 라벨·익명화된 근거 꼬리줄)를 걷어낸다.
+ * 코드 펜스와 들여쓴 줄은 건드리지 않는다. 줄을 지운 자리에 빈 줄이 겹치지 않게 뒤 빈 줄도 함께 지운다.
+ */
+export const stripPublishScaffolding = (markdown: string): string => {
+  const { lines, blocks } = scanMarkdownBlocks(markdown);
+  const fenced = collectFencedLineIndexes(lines, blocks);
+  const isProtected = (index: number): boolean =>
+    fenced.has(index) || INDENTED_LINE_PATTERN.test(lines[index]);
+
+  const removed = new Set<number>();
+  lines.forEach((line, index) => {
+    if (!isProtected(index) && SCAFFOLD_LABEL_LINE_PATTERN.test(line)) {
+      removed.add(index);
+    }
+  });
+  let lastContentIndex = lines.length - 1;
+  while (
+    lastContentIndex >= 0 &&
+    BLANK_LINE_PATTERN.test(lines[lastContentIndex])
+  ) {
+    lastContentIndex -= 1;
+  }
+  if (
+    lastContentIndex >= 0 &&
+    !isProtected(lastContentIndex) &&
+    ANONYMIZED_SOURCE_TAIL_PATTERN.test(lines[lastContentIndex])
+  ) {
+    removed.add(lastContentIndex);
+  }
+  [...removed].forEach((index) => {
+    const previousIsBlank =
+      index === 0 || BLANK_LINE_PATTERN.test(lines[index - 1]);
+    if (
+      previousIsBlank &&
+      index + 1 < lines.length &&
+      BLANK_LINE_PATTERN.test(lines[index + 1])
+    ) {
+      removed.add(index + 1);
+    }
+  });
+
+  return lines
+    .map((line, index) =>
+      isProtected(index) ? line : removeScaffoldTags(line),
+    )
+    .filter((_line, index) => !removed.has(index))
     .join('\n');
 };
 

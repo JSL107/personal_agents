@@ -179,3 +179,29 @@ describe('scanForbiddenTerms', () => {
     expect(hits).toEqual([]);
   });
 });
+
+describe('scanForbiddenTerms — 로컬 홈 경로', () => {
+  // 실측(2026-10-13): 공개 글에 작성자 PC 의 홈 경로가 3곳 발행됐다.
+  it('작성자 PC 의 홈 경로를 차단한다', () => {
+    const hits = scanForbiddenTerms(
+      { body: 'cd /Users/someone/repos/blog 로 이동해요.', tags: [] },
+      [],
+    );
+
+    expect(hits).toEqual([
+      expect.objectContaining({ term: '/Users/someone/', kind: 'pattern' }),
+    ]);
+  });
+
+  it('공식 문서 예시의 리눅스 경로와 가린 자리표시는 통과시킨다', () => {
+    const hits = scanForbiddenTerms(
+      {
+        body: '"cwd": "/home/user/project" 와 `/Users/<사용자>` 형태의 경로예요.',
+        tags: [],
+      },
+      [],
+    );
+
+    expect(hits).toEqual([]);
+  });
+});

@@ -50,6 +50,11 @@ const STRUCTURAL_PATTERNS: Array<{ term: string; expression: RegExp }> = [
     term: '사내 저장소 링크',
     expression: /github\.com\/[\w.-]+\/sbe[\w.-]*/gi,
   },
+  // 작성자 PC 의 홈 경로 — 로컬 실행 기록을 옮겨 적은 글에 사용자 계정명이 그대로 남는다
+  // (실측: 2026-10-13 공개 글 08-26 에 `/Users/<계정>/repos/...` 3곳). 치환하지 않고 막는다 —
+  // 경로를 지우면 명령어 예시가 깨지므로 고칠 자리는 사람이 고른다. 문서 예시의 `/home/user/...`
+  // 같은 리눅스 경로는 공식 문서에서 그대로 옮긴 것이 많아 대상에서 뺀다.
+  { term: '로컬 홈 경로', expression: /\/Users\/[A-Za-z0-9._-]+\//g },
 ];
 
 export const scanForbiddenTerms = (
