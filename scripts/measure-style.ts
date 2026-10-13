@@ -36,6 +36,10 @@ type SampleReport = {
 };
 
 // 짧은 문장·편차·최장 문장은 자동 판정 기준이 아니라 코퍼스의 분포를 보기 위한 관측값이다.
+//
+// 61자는 이 스크립트가 프로파일 갱신에 써 온 눈금이라 그대로 둔다. 발행 카드의 「긴 문장」은
+// 80자 이상(`longSentencePercent`)이라 다른 정의다 — 카드 수치를 여기서 재현할 수 있게
+// 아래 리듬 줄에 둘을 나란히 적는다.
 const LONG_SENTENCE_MIN = 61;
 // 문장 끝에 붙는 닫는 문자. `korean-style-metrics` 의 CLOSING_CHARS 를 **손으로 복사한 것**이다
 // (export 되어 있지 않다). 그쪽이 바뀌면 여기도 같이 고쳐야 종결 판정이 갈리지 않는다.
@@ -176,7 +180,7 @@ const describe = (label: string, markdown: string): void => {
   console.log(`\n## ${label}`);
   console.log(`상태    문장 ${sentences.length}개 · ${verdict}`);
   console.log(
-    `리듬    평균 ${metrics.averageLength}자 · 편차 ${metrics.lengthStandardDeviation} · 최장 ${metrics.longestSentenceLength}자 · 20자↓ ${metrics.shortSentencePercent}% · 61자↑ ${percent(longCount, sentences.length)}`,
+    `리듬    평균 ${metrics.averageLength}자 · 편차 ${metrics.lengthStandardDeviation} · 최장 ${metrics.longestSentenceLength}자 · 20자↓ ${metrics.shortSentencePercent}% · 61자↑ ${percent(longCount, sentences.length)} · 80자↑(카드) ${metrics.longSentencePercent}%`,
   );
   console.log(
     `종결    해요체 ${metrics.yoEndingPercent}% · 구어 ${metrics.colloquialEndingPercent}% · 교대율 ${metrics.endingAlternationPercent}%`,

@@ -75,7 +75,9 @@ describe('buildStudyDeepdivePrompt', () => {
       // (humanize-system.prompt.ts:449-451,461) 에 이미 있어, 여기에도 걸면 두 번 적용된다.
       const prompt = buildStudyDeepdivePrompt(input);
 
-      expect(prompt).not.toContain('문장의 호흡을 무조건 짧게 만들지 않는다');
+      expect(prompt).not.toContain(
+        '사실 하나를 말할 때마다 마침표를 찍지 마라',
+      );
       expect(prompt).not.toContain(
         '한 문장 안에서 의미가 이어지는데 임의로 줄바꿈하지 않는다',
       );
