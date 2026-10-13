@@ -213,6 +213,24 @@ export interface GetFileFromBranchResult {
   content?: string;
 }
 
+export interface ListTreeInput {
+  repo: string; // "owner/repo"
+  // 커밋 SHA 또는 브랜치 이름.
+  ref: string;
+}
+
+export interface RepoTreeEntry {
+  path: string;
+  size: number;
+}
+
+export interface RepoTree {
+  // 파일(blob)만. 디렉터리·서브모듈은 뺀다.
+  entries: RepoTreeEntry[];
+  // GitHub 이 100,000 항목 · 7MB 에서 자른다. 참이면 목록에 없는 경로를 "없음" 으로 단정하지 않는다.
+  truncated: boolean;
+}
+
 export interface SearchCodeInput {
   repo: string; // "owner/repo"
   // 검색어. repo 한정 qualifier 는 어댑터가 붙인다.
@@ -289,6 +307,9 @@ export interface GithubClientPort {
   // 코드 검색 — 일치한 파일 경로만 돌려준다. GitHub 은 **기본 브랜치만** 색인하므로 PR 에서
   // 새로 생긴 사용처는 찾지 못한다. 분당 10회 제한이 있어 어댑터가 예산을 넘기면 호출 없이 throw.
   searchCode(input: SearchCodeInput): Promise<string[]>;
+
+  // 레포 전체 파일 목록을 재귀 트리 1회로 가져온다. 리뷰가 변경 파일의 대응 테스트를 짝짓는 데 쓴다.
+  listTree(input: ListTreeInput): Promise<RepoTree>;
 
   // 아침 브리핑 완료/대기 분류용 PR 신호 보강. best-effort — 실패/캡 초과 PR 은
   // 중립 신호(mergeableState='unknown', 모든 flag false)로 채워 분류 시 ACTIVE 로 떨어진다.

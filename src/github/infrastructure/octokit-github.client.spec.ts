@@ -238,6 +238,37 @@ describe('OctokitGithubClient', () => {
     });
   });
 
+  describe('listTree', () => {
+    it('재귀 트리를 문자열 recursive 로 받아 파일만 경로·크기로 돌려준다', async () => {
+      const getTree = jest.fn().mockResolvedValue({
+        data: {
+          truncated: false,
+          tree: [
+            { path: 'src', type: 'tree' },
+            { path: 'src/a.spec.ts', type: 'blob', size: 12 },
+            { path: 'vendor/lib', type: 'commit' },
+          ],
+        },
+      });
+      const client = new OctokitGithubClient({
+        rest: { git: { getTree } },
+      } as unknown as Octokit);
+
+      await expect(
+        client.listTree({ repo: 'o/r', ref: 'head-sha' }),
+      ).resolves.toEqual({
+        entries: [{ path: 'src/a.spec.ts', size: 12 }],
+        truncated: false,
+      });
+      expect(getTree).toHaveBeenCalledWith({
+        owner: 'o',
+        repo: 'r',
+        tree_sha: 'head-sha',
+        recursive: 'true',
+      });
+    });
+  });
+
   describe('searchCode', () => {
     it('repo 한정 검색으로 경로만 돌려준다', async () => {
       const code = jest.fn().mockResolvedValue({

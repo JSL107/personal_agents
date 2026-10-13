@@ -31,6 +31,7 @@ const buildClientMock = (
   commitFileToBranch: jest.fn(),
   getFileFromBranch: jest.fn(),
   searchCode: jest.fn(),
+  listTree: jest.fn(),
 });
 
 describe('ListAssignedTasksUsecase', () => {

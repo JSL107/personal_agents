@@ -70,6 +70,7 @@ describe('GenerateImpactReportUsecase', () => {
       commitFileToBranch: jest.fn(),
       getFileFromBranch: jest.fn(),
       searchCode: jest.fn(),
+      listTree: jest.fn(),
     };
     configGet = jest.fn().mockReturnValue(undefined);
 

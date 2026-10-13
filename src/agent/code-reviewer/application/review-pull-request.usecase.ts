@@ -37,6 +37,16 @@ import {
   ReviewPullRequestInput,
 } from '../domain/code-reviewer.type';
 import {
+  assembleCompanionSpecs,
+  AssembledCompanionSpecs,
+  COMPANION_SPEC_FETCH_CONCURRENCY,
+  COMPANION_SPEC_FETCH_TIMEOUT_MS,
+  COMPANION_SPEC_MAX_BYTES,
+  COMPANION_SPEC_MAX_FILES,
+  countChangedLines,
+  selectCompanionSpecs,
+} from '../domain/companion-spec';
+import {
   findHiddenUnicode,
   formatHiddenUnicodeList,
   formatHiddenUnicodeWarning,
@@ -91,6 +101,33 @@ const USAGE_WINDOWS_PER_FILE = 3;
 // 가능성이 커서, 계속 치면 같은 토큰을 쓰는 다른 경로의 예산까지 태운다.
 const MAX_FILE_READS = 30;
 const MAX_READ_FAILURES = 3;
+
+// `[기존 테스트]` 블록. 조회 결과의 잘림·생략·실패를 함께 들고 다닌다 — 모델이 "여기 없다" 를
+// "테스트가 없다" 로 읽지 않게 프롬프트에 그대로 적는다.
+export interface CompanionSpecBlock extends AssembledCompanionSpecs {
+  changedFilesTruncated: boolean;
+  treeTruncated: boolean;
+  unreadPaths: string[];
+}
+
+// 기한까지 안 끝나면 undefined. 늦게 끝난 쪽의 결과·실패는 버린다(race 가 처리기를 달아 둔다).
+const withDeadline = async <T>(
+  promise: Promise<T>,
+  deadline: number,
+): Promise<T | undefined> => {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<undefined>((resolve) => {
+    timer = setTimeout(
+      () => resolve(undefined),
+      Math.max(0, deadline - Date.now()),
+    );
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+};
 
 @Injectable()
 export class ReviewPullRequestUsecase {
@@ -165,13 +202,14 @@ export class ReviewPullRequestUsecase {
         reviewedDiff = diff;
 
         // 스냅샷 경로(스윕)도 여기를 지나므로 같은 맥락이 붙는다.
-        const [learnedConventions, relatedCode] = await Promise.all([
-          this.buildLearnedConventions(
-            detail.repo,
-            excludeConventionFindingIds,
-          ),
-          this.buildRelatedCode(detail, diff),
-        ]);
+        const [learnedConventions, { companionSpecs, relatedCode }] =
+          await Promise.all([
+            this.buildLearnedConventions(
+              detail.repo,
+              excludeConventionFindingIds,
+            ),
+            this.buildDiffContext(detail, diff),
+          ]);
 
         // 규약은 diff 뒤에 붙인다 — "이건 지적하지 말라" 류 지시는 diff 를 다 읽은 뒤
         // 마지막에 있는 편이 긴 컨텍스트에서 덜 묻힌다. 손으로 적은 규약과 기각에서
@@ -182,6 +220,7 @@ export class ReviewPullRequestUsecase {
             diff,
             conversationContext,
             relatedCode,
+            companionSpecs,
           }) +
           buildRepoConventions(detail.repo) +
           learnedConventions;
@@ -292,6 +331,137 @@ export class ReviewPullRequestUsecase {
     ];
   }
 
+  // 기존 테스트를 먼저 모은다 — 거기 실린 테스트는 [related code] 에서 빼야 같은 본문이 두 번
+  // 실리지 않는다. [related code] 가 붙는 레포(owner)에서만 순차이고, 기존 테스트 쪽은 10초 상한이 있다.
+  private async buildDiffContext(
+    detail: PullRequestDetail,
+    diff: PullRequestDiff,
+  ): Promise<{
+    companionSpecs?: CompanionSpecBlock;
+    relatedCode?: AssembledRelatedCode;
+  }> {
+    const companionSpecs = await this.buildCompanionSpecs(detail, diff);
+    const relatedCode = await this.buildRelatedCode(
+      detail,
+      diff,
+      new Set(companionSpecs?.includedPaths ?? []),
+    );
+    return { companionSpecs, relatedCode };
+  }
+
+  /**
+   * 변경 파일의 대응 테스트 본문 — "기존 테스트가 이미 그 케이스를 덮고 있는데 '검증 안 됨' 으로
+   * 지적" 하는 오탐(#412)을 겨냥한다. 모든 레포에 붙는다.
+   *
+   * 트리 조회 1회로 짝을 정하고(트리 전문은 프롬프트에 넣지 않는다), 고른 파일만 동시 조회한다.
+   * 트리·본문 조회 전체에 상한 시간을 두고, 넘거나 실패하면 모은 데까지만 — 트리 조회부터 실패하면
+   * 블록 없이 종전 입력으로 진행한다.
+   */
+  private async buildCompanionSpecs(
+    detail: PullRequestDetail,
+    diff: PullRequestDiff,
+  ): Promise<CompanionSpecBlock | undefined> {
+    const label = `${detail.repo}#${detail.number}`;
+    const startedAt = Date.now();
+    const deadline = startedAt + COMPANION_SPEC_FETCH_TIMEOUT_MS;
+    try {
+      const tree = await withDeadline(
+        this.githubClient.listTree({ repo: detail.repo, ref: detail.headSha }),
+        deadline,
+      );
+      if (tree === undefined) {
+        this.logger.warn(
+          `기존 테스트 누락 (${label}) — 트리 조회가 ${COMPANION_SPEC_FETCH_TIMEOUT_MS}ms 안에 안 끝남`,
+        );
+        return undefined;
+      }
+      const changedLines = countChangedLines(diff.diff);
+      const { candidates, omitted } = selectCompanionSpecs({
+        changedPaths: [
+          ...new Set([...detail.changedFiles, ...changedLines.keys()]),
+        ],
+        changedLines,
+        tree: tree.entries,
+        treeTruncated: tree.truncated,
+      });
+      if (candidates.length === 0 && omitted.length === 0) {
+        return undefined;
+      }
+
+      const contents = new Map<string, string>();
+      let next = 0;
+      const worker = async (): Promise<void> => {
+        while (next < candidates.length && Date.now() < deadline) {
+          const candidate = candidates[next];
+          next += 1;
+          try {
+            const file = await this.githubClient.getFileFromBranch({
+              repo: detail.repo,
+              branch: detail.headSha,
+              path: candidate.path,
+            });
+            if (file?.content !== undefined) {
+              contents.set(candidate.path, file.content);
+            }
+          } catch {
+            // 아래에서 미조회로 센다.
+          }
+        }
+      };
+      await withDeadline(
+        Promise.all(
+          Array.from(
+            {
+              length: Math.min(
+                COMPANION_SPEC_FETCH_CONCURRENCY,
+                candidates.length,
+              ),
+            },
+            worker,
+          ),
+        ),
+        deadline,
+      );
+
+      const files = candidates.flatMap((candidate) => {
+        const content = contents.get(candidate.path);
+        return content === undefined ? [] : [{ path: candidate.path, content }];
+      });
+      // 크기를 모르는 후보는 잘린 트리에서 경로를 추측한 것이라, 못 읽었으면 대개 없는 파일이다.
+      const unreadPaths = candidates
+        .filter(
+          (candidate) =>
+            candidate.size !== undefined && !contents.has(candidate.path),
+        )
+        .map((candidate) => candidate.path);
+      const assembled = assembleCompanionSpecs(files);
+      const block: CompanionSpecBlock = {
+        ...assembled,
+        omittedPaths: [...omitted, ...assembled.omittedPaths],
+        changedFilesTruncated: detail.changedFilesTruncated,
+        treeTruncated: tree.truncated,
+        unreadPaths,
+      };
+      // 첨부 바이트와 조회 소요를 남긴다 — 입력이 커지는 비용을 운영 로그로 확인하기 위해서다(스펙 §6).
+      this.logger.log(
+        `기존 테스트 첨부 (${label}): ${block.includedPaths.length}개 · ${block.bytes} bytes · 생략 ${block.omittedPaths.length} · 미조회 ${unreadPaths.length} · 조회 ${Date.now() - startedAt}ms${tree.truncated ? ' · 트리 잘림' : ''}`,
+      );
+      if (
+        block.includedPaths.length === 0 &&
+        block.omittedPaths.length === 0 &&
+        unreadPaths.length === 0
+      ) {
+        return undefined;
+      }
+      return block;
+    } catch (error: unknown) {
+      this.logger.warn(
+        `기존 테스트 누락 (${label}) — 수집 실패, 블록 없이 진행: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return undefined;
+    }
+  }
+
   /**
    * diff 밖 맥락 — 바뀐 파일의 head 시점 본문과, 바뀐 이름의 다른 파일 사용처.
    *
@@ -302,6 +472,8 @@ export class ReviewPullRequestUsecase {
   private async buildRelatedCode(
     detail: PullRequestDetail,
     diff: PullRequestDiff,
+    // [기존 테스트] 에 전문이 실린 파일. 여기서 다시 읽지 않는다.
+    skipPaths: ReadonlySet<string> = new Set(),
   ): Promise<AssembledRelatedCode | undefined> {
     if (!isSelfRepo(detail.repo)) {
       return undefined;
@@ -367,7 +539,7 @@ export class ReviewPullRequestUsecase {
       const ordered = [
         ...changedFiles.filter((file) => !isTestFile(file.filePath)),
         ...changedFiles.filter((file) => isTestFile(file.filePath)),
-      ];
+      ].filter((file) => !skipPaths.has(file.filePath));
       let changedCount = 0;
       for (const file of ordered) {
         if (!budgetLeft()) {
@@ -499,11 +671,13 @@ export const buildReviewPrompt = ({
   diff,
   conversationContext,
   relatedCode,
+  companionSpecs,
 }: {
   detail: PullRequestDetail;
   diff: PullRequestDiff;
   conversationContext?: ConversationContext;
   relatedCode?: AssembledRelatedCode;
+  companionSpecs?: CompanionSpecBlock;
 }): string => {
   const truncatedNote = detail.changedFilesTruncated
     ? ` (잘림: 전체 ${detail.changedFilesTotalCount}개 중 ${detail.changedFiles.length}개만 노출)`
@@ -572,5 +746,47 @@ export const buildReviewPrompt = ({
     );
   }
 
+  if (companionSpecs !== undefined) {
+    lines.push('', ...renderCompanionSpecs(companionSpecs));
+  }
+
   return lines.join('\n');
+};
+
+const listPaths = (paths: string[]): string => paths.join(', ');
+
+// 생략·미조회·잘림을 블록 머리에 적는다 — 모델이 블록에 없는 테스트를 "없다" 로 읽지 않게 한다.
+const renderCompanionSpecs = (block: CompanionSpecBlock): string[] => {
+  const notes: string[] = [];
+  if (block.changedFilesTruncated) {
+    notes.push(
+      '일부만 확인함 — 변경 파일 목록이 잘려 목록 밖 파일의 테스트는 찾지 않았다',
+    );
+  }
+  if (block.treeTruncated) {
+    notes.push(
+      '레포 트리가 잘려 짝 일부는 경로를 추측해 확인했다 — 여기 없다고 테스트가 없는 것은 아니다',
+    );
+  }
+  if (block.omittedPaths.length > 0) {
+    notes.push(
+      `예산(${COMPANION_SPEC_MAX_BYTES} bytes · ${COMPANION_SPEC_MAX_FILES}개)을 넘어 ${block.omittedPaths.length}개 생략 — 본문을 못 봤을 뿐 테스트는 있다: ${listPaths(block.omittedPaths)}`,
+    );
+  }
+  if (block.unreadPaths.length > 0) {
+    notes.push(
+      `조회하지 못한 테스트 ${block.unreadPaths.length}개 — 있지만 본문을 못 봤다: ${listPaths(block.unreadPaths)}`,
+    );
+  }
+  return [
+    '[기존 테스트] — 바뀐 파일(또는 그 짝 소스)의 테스트 파일 head 본문 전체(줄 번호 포함). diff 에 바뀐 부분만 보이는 테스트도 여기서는 전체다.',
+    // 레포에서 그대로 읽은 PR head 의 파일이라 diff 와 같은 경계로 감싼다. 안내도 안에 둔다 —
+    // 경로는 PR 작성자가 정하는 값이라 [PR 메타] 의 파일명과 같은 이유로 경계 밖에 두지 않는다.
+    wrapUntrustedInput(
+      [
+        ...notes.map((note) => `(${note})`),
+        block.text.length > 0 ? block.text : '(실린 본문 없음 — 위 안내 참조)',
+      ].join('\n'),
+    ),
+  ];
 };
