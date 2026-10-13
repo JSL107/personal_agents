@@ -3,7 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { ArtJobListResult } from '../domain/art-job-feed.type';
 import { ArtJobSourcePort } from '../domain/port/art-job-feed.ports';
 import { fetchTextWithRetry } from './fetch-text-with-retry';
-import { parseGamejobCompanyPhotos, parseGamejobList } from './gamejob.parser';
+import { parseGamejobList } from './gamejob.parser';
 
 const USER_AGENT =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36';
@@ -28,15 +28,5 @@ export class GamejobSource implements ArtJobSourcePort {
       },
     });
     return parseGamejobList(html);
-  }
-
-  async fetchCompanyPhotoUrls(sourceId: string): Promise<string[]> {
-    const html = await fetchTextWithRetry({
-      url: `https://www.gamejob.co.kr/Recruit/GI_Read/View?GI_No=${encodeURIComponent(sourceId)}`,
-      timeoutMs: 10_000,
-      label: '게임잡 상세',
-      headers: { 'User-Agent': USER_AGENT },
-    });
-    return parseGamejobCompanyPhotos(html);
   }
 }

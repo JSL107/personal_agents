@@ -37,10 +37,26 @@ export class ImageDownloader implements ImageDownloaderPort {
     if (length > MAX_BYTES) {
       throw new Error('이미지 크기 5MB 초과');
     }
-    const buffer = Buffer.from(await response.arrayBuffer());
-    if (buffer.length > MAX_BYTES) {
-      throw new Error('이미지 크기 5MB 초과');
+    if (!response.body) {
+      throw new Error('이미지 응답 본문 없음');
     }
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let totalBytes = 0;
+    for (
+      let chunk = await reader.read();
+      !chunk.done;
+      chunk = await reader.read()
+    ) {
+      const value = chunk.value;
+      totalBytes += value.byteLength;
+      if (totalBytes > MAX_BYTES) {
+        await reader.cancel();
+        throw new Error('이미지 크기 5MB 초과');
+      }
+      chunks.push(value);
+    }
+    const buffer = Buffer.concat(chunks, totalBytes);
     const hash = createHash('sha256').update(buffer).digest('hex').slice(0, 12);
     return { buffer, filename: `art-job-${hash}.${extension}` };
   }

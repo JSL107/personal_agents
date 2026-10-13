@@ -2,10 +2,8 @@ import { Processor } from '@nestjs/bullmq';
 import { Inject, Logger, Optional } from '@nestjs/common';
 import { Job } from 'bullmq';
 
-import {
-  ArtJobListing,
-  ResolvedArtJobImage,
-} from '../../art-job-feed/domain/art-job-feed.type';
+import { todayInKst } from '../../agent/vacation/domain/plain-date';
+import { ArtJobListing } from '../../art-job-feed/domain/art-job-feed.type';
 import { isTargetArtRole } from '../../art-job-feed/domain/art-role.filter';
 import {
   ART_JOB_SOURCE_PORT,
@@ -20,8 +18,9 @@ import {
   ArtJobPostingRepositoryPort,
 } from '../../art-job-feed/domain/port/art-job-posting.repository.port';
 import {
-  formatArtJobHeader,
-  formatArtJobPosting,
+  ArtJobDigestItem,
+  formatArtJobDigest,
+  formatArtJobImageCaption,
 } from '../../art-job-feed/infrastructure/art-job-feed.formatter';
 import { CronIdempotencyService } from '../../common/queue/cron-idempotency.service';
 import { ObservedWorkerHost } from '../../common/queue/observed-worker-host';
@@ -57,12 +56,14 @@ interface CollectedListings {
   listings: ArtJobListing[];
 }
 
-interface ImageAttachment {
-  fileId: string;
-  altText: string;
+interface ImageReplyInput {
+  target: string;
+  threadTs: string;
+  order: number;
+  item: ArtJobDigestItem;
 }
 
-// 게임잡 원화 공고 → 채널. 머리 메시지 1통(멘션) + 공고마다 1통(이미지 1장).
+// 게임잡 원화 공고 → 채널. 회차당 본문 1통(멘션 + 공고 목록), 플레이스토어 이미지는 그 스레드에.
 //
 // 장부 기록은 게시 **뒤에** 한다. 게시 후 기록이 실패하면 다음 회차에 한 번 더 나가고,
 // 기록 후 게시가 실패하면 그 공고는 영영 안 나간다 — 중복이 유실보다 낫다.
@@ -136,22 +137,61 @@ export class ArtJobFeedCronConsumer extends ObservedWorkerHost {
       return;
     }
 
+    const slotKey = `cron:${ART_JOB_FEED_CRON_QUEUE}:${target}:${KST_SLOT_FORMAT.format(new Date())}`;
     const firstRun = await this.cronIdempotency.acquireOnce(
-      `cron:${ART_JOB_FEED_CRON_QUEUE}:${target}:${KST_SLOT_FORMAT.format(new Date())}`,
+      slotKey,
       SLOT_GUARD_TTL_SECONDS,
     );
     if (!firstRun) {
       this.logger.warn(`${CRON_NAME} 중복 발송 차단 — 이 슬롯은 이미 처리됨`);
       return;
     }
+    try {
+      await this.postDigest(target, mentionUserId, toPost);
+    } catch (error) {
+      // 가드를 쥔 채 실패하면 BullMQ 재시도가 "이미 처리됨" 으로 성공 처리돼 공고가 빠진다.
+      // 이미 나간 공고는 장부(markNotified)가 막으므로, 가드를 풀어도 중복 게시는 생기지 않는다.
+      await this.cronIdempotency.release(slotKey);
+      throw error;
+    }
+  }
 
-    await this.slackNotifier.postMessage({
+  private async postDigest(
+    target: string,
+    mentionUserId: string | null,
+    toPost: ArtJobListing[],
+  ): Promise<void> {
+    const items: ArtJobDigestItem[] = [];
+    for (const listing of toPost) {
+      items.push({
+        listing,
+        resolved: await this.imageResolver.resolve(listing),
+      });
+    }
+    const { ts } = await this.slackNotifier.postMessage({
       kind: 'art-job-feed',
       target,
-      text: formatArtJobHeader({ count: toPost.length, mentionUserId }),
+      text: formatArtJobDigest({
+        items,
+        mentionUserId,
+        today: todayInKst(new Date()),
+      }),
+      // 공고 링크 미리보기는 게임잡 공통 로고라 정보가 없고 메시지만 길어진다.
+      unfurlLinks: false,
     });
-    for (const listing of toPost) {
-      await this.postOne(target, listing);
+    for (const item of items) {
+      await this.repository.markNotified(item);
+    }
+    if (!ts) {
+      return;
+    }
+    for (const [index, item] of items.entries()) {
+      await this.replyWithImage({
+        target,
+        threadTs: ts,
+        order: index + 1,
+        item,
+      });
     }
   }
 
@@ -170,27 +210,16 @@ export class ArtJobFeedCronConsumer extends ObservedWorkerHost {
     return { received, listings: [...bySourceId.values()] };
   }
 
-  private async postOne(target: string, listing: ArtJobListing): Promise<void> {
-    const resolved = await this.imageResolver.resolve(listing);
-    const image = await this.uploadImage(listing, resolved);
-    await this.slackNotifier.postMessage({
-      kind: 'art-job-feed',
-      target,
-      text: formatArtJobPosting(listing, resolved),
-      // 공고 링크 미리보기는 게임잡 공통 로고라 정보가 없고 메시지만 길어진다.
-      unfurlLinks: false,
-      ...(image ? { image } : {}),
-    });
-    await this.repository.markNotified({ listing, resolved });
-  }
-
-  // 이미지 실패는 공고 발송을 막지 않는다 — 글만이라도 보낸다.
-  private async uploadImage(
-    listing: ArtJobListing,
-    resolved: ResolvedArtJobImage,
-  ): Promise<ImageAttachment | null> {
-    if (!resolved.image) {
-      return null;
+  // 이미지 실패는 본문에 영향이 없다 — 이미 목록은 나갔고 스레드 그림만 빠진다.
+  private async replyWithImage({
+    target,
+    threadTs,
+    order,
+    item,
+  }: ImageReplyInput): Promise<void> {
+    const { listing, resolved } = item;
+    if (!resolved.image || !resolved.gameTitle) {
+      return;
     }
     try {
       const downloaded = await this.imageDownloader.download(
@@ -199,16 +228,21 @@ export class ArtJobFeedCronConsumer extends ObservedWorkerHost {
       const { fileId } = await this.slackNotifier.uploadImageFile({
         png: downloaded.buffer,
         filename: downloaded.filename,
-        title: resolved.gameTitle ?? listing.company,
+        title: resolved.gameTitle,
       });
-      return { fileId, altText: resolved.gameTitle ?? listing.company };
+      await this.slackNotifier.postMessage({
+        kind: 'art-job-feed',
+        target,
+        threadTs,
+        text: formatArtJobImageCaption(order, resolved.gameTitle),
+        image: { fileId, altText: resolved.gameTitle },
+      });
     } catch (error) {
       this.logger.warn(
-        `${CRON_NAME} 이미지 첨부 실패 — GI_No=${listing.sourceId}, url=${resolved.image.url}: ${
+        `${CRON_NAME} 스레드 이미지 실패 — GI_No=${listing.sourceId}, url=${resolved.image.url}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
-      return null;
     }
   }
 

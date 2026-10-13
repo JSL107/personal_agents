@@ -11,6 +11,7 @@ describe('game title', () => {
     ['[넷마블네오] 캐릭터 원화', '넷마블네오㈜', null],
     ['[LOST ARK Mobile] 캐릭터 원화', '스마일게이트', 'LOST ARK Mobile'],
     ['[NC] 캐릭터 원화', '㈜엔씨소프트', 'NC'],
+    ['[Team Tetrapod] 추리게임 아트 모집', '㈜팀 테트라포드', null],
   ])('extracts %s', (title, company, expected) => {
     expect(extractGameTitle(title, company)).toBe(expected);
   });

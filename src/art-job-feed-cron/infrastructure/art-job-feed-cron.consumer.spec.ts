@@ -11,6 +11,9 @@ const listing = (sourceId: string, title: string): ArtJobListing => ({
   title,
   detailUrl: `https://www.gamejob.co.kr/Recruit/GI_Read/View?GI_No=${sourceId}`,
   deadlineText: null,
+  career: null,
+  employmentType: null,
+  location: null,
 });
 
 const CHARACTER = (sourceId: string) =>
@@ -76,6 +79,9 @@ const makeConsumer = ({
       acquired.add(key);
       return true;
     }),
+    release: jest.fn(async (key: string) => {
+      acquired.delete(key);
+    }),
   };
   const notificationPublisher = {
     publishCronFailure: jest.fn(),
@@ -100,7 +106,7 @@ const makeConsumer = ({
 };
 
 describe('ArtJobFeedCronConsumer', () => {
-  it('대상 직무의 신규 공고만 머리 1통 + 공고별 1통(이미지 포함)으로 게시한다', async () => {
+  it('대상 직무의 신규 공고를 본문 1통으로 보내고 이미지는 그 스레드에 단다', async () => {
     const { consumer, slackNotifier, repository } = makeConsumer({
       pages: [
         { received: 3, listings: [CHARACTER('1'), MODELER, CHARACTER('2')] },
@@ -110,16 +116,21 @@ describe('ArtJobFeedCronConsumer', () => {
 
     await consumer.process(JOB as never);
 
-    const texts = slackNotifier.postMessage.mock.calls.map(
-      ([input]) => input.text,
-    );
-    expect(texts).toHaveLength(2);
-    expect(texts[0]).toBe('🎨 <@U9> 게임잡 새 원화 공고 *1건*');
-    expect(texts[1]).toContain('GI_No=1|');
-    expect(slackNotifier.postMessage.mock.calls[1][0]).toMatchObject({
+    expect(slackNotifier.postMessage).toHaveBeenCalledTimes(2);
+    const [main] = slackNotifier.postMessage.mock.calls[0];
+    expect(main).toMatchObject({
       target: 'C1',
       kind: 'art-job-feed',
       unfurlLinks: false,
+    });
+    expect(main.text.startsWith('🎨 <@U9> 게임잡 새 원화 공고 *1건*')).toBe(
+      true,
+    );
+    expect(main.text).toContain('GI_No=1|');
+    expect(main.text).not.toContain('GI_No=900');
+    expect(slackNotifier.postMessage.mock.calls[1][0]).toMatchObject({
+      threadTs: '1',
+      text: '1. 🎮 카오스 제로 나이트메어',
       image: { fileId: 'F1', altText: '카오스 제로 나이트메어' },
     });
     expect(repository.markNotified).toHaveBeenCalledTimes(1);
@@ -146,7 +157,9 @@ describe('ArtJobFeedCronConsumer', () => {
 
     await consumer.process(JOB as never);
 
+    // 본문 1통 + 이미지 스레드 10통
     expect(slackNotifier.postMessage).toHaveBeenCalledTimes(11);
+    expect(slackNotifier.postMessage.mock.calls[0][0].text).toContain('*10건*');
     expect(repository.markNotified).toHaveBeenCalledTimes(10);
     expect(
       repository.markSeeded.mock.calls[0][0].map(
@@ -155,14 +168,27 @@ describe('ArtJobFeedCronConsumer', () => {
     ).toEqual(['11', '12', '13']);
   });
 
-  it('이미지 다운로드가 실패해도 글만으로 보낸다', async () => {
+  it('이미지 다운로드가 실패해도 본문은 나가고 장부에 남는다', async () => {
     const { consumer, slackNotifier, repository } = makeConsumer({
       pages: [{ received: 1, listings: [CHARACTER('1')] }],
       downloadFails: true,
     });
     await consumer.process(JOB as never);
-    expect(slackNotifier.postMessage.mock.calls[1][0].image).toBeUndefined();
+    expect(slackNotifier.postMessage).toHaveBeenCalledTimes(1);
     expect(repository.markNotified).toHaveBeenCalledTimes(1);
+  });
+
+  it('이미지가 없는 공고는 스레드를 달지 않는다', async () => {
+    const { consumer, slackNotifier } = makeConsumer({
+      pages: [{ received: 1, listings: [CHARACTER('1')] }],
+      resolved: {
+        gameTitle: '카오스 제로 나이트메어',
+        image: null,
+        googleSearchUrl: 'https://www.google.com/search?tbm=isch&q=x',
+      },
+    });
+    await consumer.process(JOB as never);
+    expect(slackNotifier.postMessage).toHaveBeenCalledTimes(1);
   });
 
   it('행을 받았는데 파싱이 0 이면 실패로 던지고 owner 에게 알린다', async () => {
@@ -187,6 +213,23 @@ describe('ArtJobFeedCronConsumer', () => {
     });
     await consumer.process(JOB as never);
     expect(slackNotifier.postMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it('본문 발송이 실패하면 슬롯 가드를 풀어 재시도가 실제로 다시 보낸다', async () => {
+    const { consumer, slackNotifier, repository } = makeConsumer({
+      pages: [{ received: 1, listings: [CHARACTER('1')] }],
+    });
+    slackNotifier.postMessage.mockRejectedValueOnce(new Error('rate_limited'));
+
+    await expect(consumer.process(JOB as never)).rejects.toThrow(
+      'rate_limited',
+    );
+    expect(repository.markNotified).not.toHaveBeenCalled();
+
+    await consumer.process(JOB as never);
+    // 실패한 1회 + 재시도 본문 1통 + 스레드 이미지 1통
+    expect(slackNotifier.postMessage).toHaveBeenCalledTimes(3);
+    expect(repository.markNotified).toHaveBeenCalledTimes(1);
   });
 
   it('같은 슬롯의 재처리는 발송하지 않는다', async () => {

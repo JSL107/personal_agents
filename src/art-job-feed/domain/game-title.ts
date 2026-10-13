@@ -1,5 +1,5 @@
 const NON_GAME_TERMS =
-  /프로젝트|project|신규|외주|프리랜서|재택|본부|소속|채용|모집|스튜디오|studio|games|개발실|live-ops|\bai\b|(^|\W)팀(\W|$)/i;
+  /프로젝트|project|신규|외주|프리랜서|재택|본부|소속|채용|모집|스튜디오|studio|games|개발실|live-ops|\bai\b|\bteam\b|(^|\W)팀(\W|$)/i;
 
 export const normalizeTitleKey = (text: string): string => {
   return text.toLowerCase().replace(/[^가-힣a-z0-9]/g, '');

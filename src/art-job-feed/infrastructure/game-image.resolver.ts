@@ -1,25 +1,17 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 
 import {
   ArtJobListing,
   ResolvedArtJobImage,
 } from '../domain/art-job-feed.type';
 import { extractGameTitle, normalizeTitleKey } from '../domain/game-title';
-import {
-  ART_JOB_SOURCE_PORT,
-  ArtJobSourcePort,
-  GameImageResolverPort,
-} from '../domain/port/art-job-feed.ports';
+import { GameImageResolverPort } from '../domain/port/art-job-feed.ports';
 import { fetchTextWithRetry } from './fetch-text-with-retry';
 import { parsePlayStoreSearch } from './play-store.parser';
 
 @Injectable()
 export class GameImageResolver implements GameImageResolverPort {
   private readonly logger = new Logger(GameImageResolver.name);
-
-  constructor(
-    @Inject(ART_JOB_SOURCE_PORT) private readonly source: ArtJobSourcePort,
-  ) {}
 
   async resolve(listing: ArtJobListing): Promise<ResolvedArtJobImage> {
     const gameTitle = extractGameTitle(listing.title, listing.company);
@@ -34,7 +26,7 @@ export class GameImageResolver implements GameImageResolverPort {
         const key = normalizeTitleKey(gameTitle);
         const app = parsePlayStoreSearch(html).find((candidate) => {
           const appKey = normalizeTitleKey(candidate.name);
-          return appKey.includes(key) || key.includes(appKey);
+          return appKey === key || (key.length >= 4 && appKey.startsWith(key));
         });
         if (app) {
           return {
@@ -47,22 +39,12 @@ export class GameImageResolver implements GameImageResolverPort {
         this.logger.warn(`플레이스토어 이미지 조회 실패: ${String(error)}`);
       }
     }
-    try {
-      const photos = await this.source.fetchCompanyPhotoUrls(listing.sourceId);
-      if (photos[0]) {
-        return {
-          gameTitle,
-          image: { url: photos[0], origin: 'COMPANY_PHOTO' },
-          googleSearchUrl: null,
-        };
-      }
-    } catch (error) {
-      this.logger.warn(`게임잡 회사 사진 조회 실패: ${String(error)}`);
-    }
     return {
       gameTitle,
       image: null,
-      googleSearchUrl: `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(gameTitle ?? `${listing.company} 게임`)}`,
+      googleSearchUrl: gameTitle
+        ? `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(gameTitle)}`
+        : null,
     };
   }
 }
