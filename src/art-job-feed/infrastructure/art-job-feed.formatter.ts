@@ -19,6 +19,10 @@ export interface ArtJobDigestInput {
   today: PlainMonthDay;
 }
 
+// 번호 이모지 리액션 → 제외(ArtJobExclusionReactionHandler). 받는 사람이 기능을 알 길이 이 줄뿐이다.
+const EXCLUSION_HINT =
+  '_관심 없는 공고는 이 메시지에 번호 이모지(1️⃣~🔟)를 달아 주세요. 같은 공고가 다시 올라와도 보내지 않아요._';
+
 // 한 회차 = 채널 메시지 한 통. 공고마다 따로 보내면 하루 최대 22통이 채널을 덮어
 // 목록을 한눈에 비교할 수 없었다. 이미지는 스레드로 내리고 여기엔 글만 싣는다.
 export const formatArtJobDigest = ({
@@ -31,7 +35,7 @@ export const formatArtJobDigest = ({
   const blocks = items.map(({ listing, resolved }, index) => {
     return formatItem(index + 1, listing, resolved, today);
   });
-  return [header, ...blocks].join('\n\n');
+  return [header, ...blocks, EXCLUSION_HINT].join('\n\n');
 };
 
 const formatItem = (

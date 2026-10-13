@@ -62,6 +62,7 @@ describe('formatArtJobDigest', () => {
           '*2. <https://www.gamejob.co.kr/Recruit/GI_Read/View?GI_No=283904|[프로젝트 A] 캐릭터 컨셉>*',
           '그레이게임즈 · 상시',
         ].join('\n'),
+        '_관심 없는 공고는 이 메시지에 번호 이모지(1️⃣~🔟)를 달아 주세요. 같은 공고가 다시 올라와도 보내지 않아요._',
       ].join('\n\n'),
     );
   });
