@@ -1,7 +1,8 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { Processor } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 
+import { ObservedWorkerHost } from '../../common/queue/observed-worker-host';
 import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
 import {
   HERMES_SCHEDULER_INCIDENT_KEY,
@@ -31,7 +32,7 @@ const WATCHDOG_MESSAGE_HEAD =
 // 않고 파일 하나를 읽을 뿐이라 BullMQ 기본 lock 으로 충분하고, 늘리면 실제 hang 시 stalled
 // 복구만 늦어진다.
 @Processor(HERMES_WATCHDOG_QUEUE)
-export class HermesWatchdogConsumer extends WorkerHost {
+export class HermesWatchdogConsumer extends ObservedWorkerHost {
   private readonly logger = new Logger(HermesWatchdogConsumer.name);
 
   constructor(

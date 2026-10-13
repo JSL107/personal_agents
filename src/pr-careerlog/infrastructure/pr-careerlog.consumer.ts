@@ -1,8 +1,9 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { Processor } from '@nestjs/bullmq';
 import { Inject, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Job } from 'bullmq';
 
+import { ObservedWorkerHost } from '../../common/queue/observed-worker-host';
 import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
 import { getTodayKstDate } from '../../common/util/kst-date.util';
 import { PullRequestDetail } from '../../github/domain/github.type';
@@ -31,7 +32,7 @@ import {
   concurrency: 1,
   ...LONG_RUNNING_WORKER_OPTIONS,
 })
-export class WebhookPrCareerLogConsumer extends WorkerHost {
+export class WebhookPrCareerLogConsumer extends ObservedWorkerHost {
   private readonly logger = new Logger(WebhookPrCareerLogConsumer.name);
 
   constructor(

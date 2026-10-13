@@ -1,7 +1,8 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { Processor } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 
+import { ObservedWorkerHost } from '../../common/queue/observed-worker-host';
 import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
 import {
   SUBCONSCIOUS_TICK_QUEUE,
@@ -12,7 +13,7 @@ import { SubconsciousEngine } from './subconscious.engine';
 // tick job → SubconsciousEngine.runTick(owner, now).
 // 실패 시 rethrow → BullMQ 재시도 (attempts=2, exponential backoff).
 @Processor(SUBCONSCIOUS_TICK_QUEUE, LONG_RUNNING_WORKER_OPTIONS)
-export class SubconsciousTickProcessor extends WorkerHost {
+export class SubconsciousTickProcessor extends ObservedWorkerHost {
   private readonly logger = new Logger(SubconsciousTickProcessor.name);
 
   constructor(private readonly engine: SubconsciousEngine) {
