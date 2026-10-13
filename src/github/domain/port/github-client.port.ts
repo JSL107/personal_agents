@@ -286,6 +286,10 @@ export interface GithubClientPort {
   // 새 label 생성은 정책상 안 함 — LLM 이 vocab 안에서만 선택하도록 prompt 단에서 제한.
   listRepoLabels(repo: string): Promise<RepoLabel[]>;
 
+  // 저녁 회고 블로그 초안의 익명화 계약 선택 — owner 가 같아도 비공개 저장소가 섞여 있어
+  // (2026-10-13 JSL107 기준 공개 9 · 비공개 11) owner 로는 공개 여부를 알 수 없다.
+  isRepositoryPublic(repo: string): Promise<boolean>;
+
   // 멱등 — 이미 붙어 있는 label 은 GitHub 가 noop 처리. labels 가 빈 배열이면 호출 자체 skip.
   addLabelsToIssue(input: AddIssueLabelsInput): Promise<void>;
 

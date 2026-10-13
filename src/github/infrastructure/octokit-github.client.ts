@@ -609,6 +609,20 @@ export class OctokitGithubClient implements GithubClientPort {
     }
   }
 
+  async isRepositoryPublic(repo: string): Promise<boolean> {
+    this.assertOctokitConfigured();
+    const [owner, repoName] = parseRepo(repo);
+    try {
+      const { data } = await this.octokit!.rest.repos.get({
+        owner,
+        repo: repoName,
+      });
+      return data.private === false;
+    } catch (error: unknown) {
+      throw this.wrapRequestFailed(error, `GitHub ${repo} 공개 여부 조회 실패`);
+    }
+  }
+
   // issues.opened webhook 자동 라벨링 — 멱등 (이미 붙은 label 은 noop). labels 빈 배열은 caller 가 skip.
   async addLabelsToIssue({
     repo,
