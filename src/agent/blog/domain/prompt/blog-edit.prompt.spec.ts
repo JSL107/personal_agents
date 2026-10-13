@@ -78,3 +78,24 @@ describe('학습 규칙 섹션', () => {
     );
   });
 });
+
+describe('BLOG_EDIT_SYSTEM_PROMPT — 맺음과 반복', () => {
+  // 실측(2026-10-13): 「맺음은 남는 교훈으로 닫는다」를 따라 23편 중 대부분이 격언 한 줄로 끝났다.
+  // 덧붙이지 않고 그 줄을 바꿨다 — 상반된 지시를 아래에 더하면 위 지시가 이긴다.
+  it('교훈으로 닫으라는 지시를 남기지 않는다', () => {
+    expect(buildBlogEditSystemPrompt([])).not.toContain(
+      '맺음은 남는 교훈으로 닫는다',
+    );
+    expect(sectionOf('## 정리할 것')).toContain(
+      '맺음은 아직 남은 한계나 다음에 할 일로 닫는다',
+    );
+  });
+
+  it('끝 절의 재요약과 반복된 범위 안내를 덜어낼 대상으로 둔다', () => {
+    const trimmed = sectionOf('## 덜어낼 것');
+    expect(trimmed).toContain(
+      '마지막 절에서 앞 절의 내용을 다시 요약하는 문단',
+    );
+    expect(trimmed).toContain('도입의 한 곳만 남긴다');
+  });
+});

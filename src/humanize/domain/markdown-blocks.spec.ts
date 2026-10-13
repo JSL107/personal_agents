@@ -4,6 +4,7 @@ import {
   maskFencedCodeBlocks,
   restoreFencedCodeBlocks,
   scanMarkdownBlocks,
+  stripPublishScaffolding,
   stripStructuralEmDashes,
 } from './markdown-blocks';
 
@@ -449,5 +450,76 @@ describe('countMarkdownStructure — 단계 경계 계측', () => {
     expect(before.quotes).toBe(1);
     expect(after.headings).toBe(1);
     expect(before.headings).toBe(2);
+  });
+});
+
+describe('stripPublishScaffolding', () => {
+  // 실측(2026-10-13): 공개 글 08-26 에 태그 8곳이 그대로 발행됐다.
+  it('본문 속 작업용 태그를 걷어낸다', () => {
+    expect(
+      stripPublishScaffolding(
+        '턴이라고 불러요. [작성자 관찰] 제가 본 요청은 짧아요.',
+      ),
+    ).toBe('턴이라고 불러요. 제가 본 요청은 짧아요.');
+    expect(stripPublishScaffolding('> [의역] 판정은 증거가 하게 하라.')).toBe(
+      '> 판정은 증거가 하게 하라.',
+    );
+  });
+
+  it('같은 글자의 링크 텍스트는 남긴다', () => {
+    const linked = '[의역](https://example.com/translation) 을 참고해요.';
+    expect(stripPublishScaffolding(linked)).toBe(linked);
+  });
+
+  // 실측: 09-09 글에 골격 라벨 셋이 인용구로 남았다.
+  it('인용구로 남은 골격 라벨 줄과 뒤 빈 줄을 지운다', () => {
+    expect(
+      stripPublishScaffolding(
+        '> 세 줄 요약\n\n첫 문단이에요.\n\n> 정리\n\n## 교훈',
+      ),
+    ).toBe('첫 문단이에요.\n\n## 교훈');
+  });
+
+  it('라벨 낱말로 시작하는 실제 인용은 남긴다', () => {
+    const quote = '> 정리하면 실패는 시끄러워야 한다.';
+    expect(stripPublishScaffolding(quote)).toBe(quote);
+  });
+
+  // 실측: 익명화가 근거 PR 링크를 설명으로 바꾼 꼬리줄이 6편 끝에 남았다.
+  it('링크 없는 근거 꼬리줄을 지운다', () => {
+    expect(
+      stripPublishScaffolding(
+        '시작되지 않아요.\n\n근거: 내부 변경 검토 기록\n',
+      ),
+    ).toBe('시작되지 않아요.\n');
+  });
+
+  it('링크가 남은 근거 줄과 끝이 아닌 근거 줄은 남긴다', () => {
+    const linked = '본문.\n\n근거: [문서](https://example.com)';
+    expect(stripPublishScaffolding(linked)).toBe(linked);
+    const middle = '근거: 내부 기록\n\n본문이 이어져요.';
+    expect(stripPublishScaffolding(middle)).toBe(middle);
+  });
+
+  // 리뷰 지적: URL 없는 실제 출처도 마지막 줄이면 지워졌다.
+  it('링크 없는 실제 출처 꼬리줄은 남긴다', () => {
+    const source = '본문.\n\n근거: RFC 9110 15.5절';
+    expect(stripPublishScaffolding(source)).toBe(source);
+  });
+
+  // 리뷰 지적: 태그를 인라인 코드로 예시한 자리까지 빈 코드 스팬이 됐다.
+  it('인라인 코드 안의 태그 표기는 남긴다', () => {
+    const literal = '`[의역]` 표기는 지워요. [의역] 이건 지워요.';
+    expect(stripPublishScaffolding(literal)).toBe(
+      '`[의역]` 표기는 지워요. 이건 지워요.',
+    );
+  });
+
+  it('코드 펜스 안은 건드리지 않는다', () => {
+    const code =
+      '```text\n[작성자 관찰] 로그\n> 정리\n```\n근거: 내부 변경 기록';
+    expect(stripPublishScaffolding(code)).toBe(
+      '```text\n[작성자 관찰] 로그\n> 정리\n```',
+    );
   });
 });
