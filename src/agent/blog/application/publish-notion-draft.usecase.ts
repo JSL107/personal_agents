@@ -26,6 +26,7 @@ import {
   MarkdownStructureCounts,
   maskFencedCodeBlocks,
   restoreFencedCodeBlocks,
+  stripPublishScaffolding,
   stripStructuralEmDashes,
 } from '../../../humanize/domain/markdown-blocks';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
@@ -545,9 +546,14 @@ export class PublishNotionDraftUsecase {
     // 4) 구조 줄표 — 헤딩·목록 머리말의 `—` 를 콜론으로 바꾼다. 말투 단계가 산문만 보므로
     // 프롬프트의 줄표 금지가 그 두 자리에 닿지 않는다. 규칙을 넣고 발행한 글에서 줄표 9개가
     // 전부 헤딩과 목록이었다. 산문 속 줄표는 여기서 손대지 않는다(뜻을 읽어야 갈린다).
+    // 5) 작업용 표기 — 모델이 스스로 붙인 `[작성자 관찰]` 류 태그·`> 세 줄 요약` 류 골격 라벨·
+    // 익명화된 `근거:` 꼬리줄을 걷어낸다. 지시한 프롬프트가 없어 프롬프트로는 막을 수 없었고,
+    // 공개 글 39편 중 8편에 그대로 발행됐다(2026-10-13 실측).
     const structured: HumanizeMarkdownResult = {
       ...humanized,
-      markdown: stripStructuralEmDashes(humanized.markdown),
+      markdown: stripPublishScaffolding(
+        stripStructuralEmDashes(humanized.markdown),
+      ),
     };
 
     // 윤문이 문단을 크게 줄일 수도 있어 **최종 발행본 기준으로 한 번 더** 본다.
