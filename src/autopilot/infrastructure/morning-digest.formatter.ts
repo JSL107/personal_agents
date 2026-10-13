@@ -59,11 +59,14 @@ const link = (text: string, url: string | null): string =>
 // 회사명만 적는다. 공고 제목은 "…의 새로운 기준을 만들 [백엔드 테크리드] 찾습니다" 처럼 길어
 // 두 건만 붙여도 한 줄이 두세 줄로 넘친다 — 제목은 스레드 목록에 있다.
 const formatPostingNames = (postings: MorningPosting[]): string => {
-  const names = [...new Set(postings.map((posting) => posting.company))]
+  const companies = [...new Set(postings.map((posting) => posting.company))];
+  const names = companies
     .slice(0, MAX_POSTING_NAMES)
     // 회사명은 채용 사이트 원문이라 `<` `&` 가 섞이면 링크·서식으로 해석된다.
     .map(escapeSlackMrkdwn);
-  const rest = postings.length - names.length;
+  // "외 N" 은 이름을 못 적은 **회사** 수다. 공고 수로 세면 한 회사의 공고 2건이 "A사 외 1" 로 나가
+  // 다른 회사가 더 있는 것처럼 읽힌다 — 공고 수는 앞의 "공고 N건" 이 이미 말한다.
+  const rest = companies.length - names.length;
   return rest > 0 ? `${names.join(' · ')} 외 ${rest}` : names.join(' · ');
 };
 

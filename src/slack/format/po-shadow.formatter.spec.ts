@@ -147,6 +147,27 @@ describe('formatPoShadowReport', () => {
     );
   });
 
+  it('링크가 있는 참조도 라벨의 Slack 제어문자(<>|)를 걷어 링크 태그를 깨지 못하게 한다', () => {
+    const rendered = formatPoShadowReport(
+      {
+        ...base,
+        findingReferences: [
+          [
+            {
+              text: 'app#1 <!channel>|가짜',
+              url: 'https://github.com/o/r/pull/1',
+            },
+          ],
+        ],
+      },
+      { detailInThread: true },
+    );
+    expect(rendered).toContain(
+      '      • <https://github.com/o/r/pull/1|app#1 !channel가짜>',
+    );
+    expect(rendered).not.toContain('<!channel>');
+  });
+
   it('formatPoShadowDetail 은 quiet 회차에 null 이다', () => {
     expect(formatPoShadowDetail({ ...base, quiet: true })).toBeNull();
   });
