@@ -44,6 +44,9 @@ interface EveningBlogPayload {
   slackUserId: string;
 }
 
+const PUBLIC_DRAFT_RETRO_CONTEXT =
+  '(공개 저장소 초안이라 회고 맥락을 싣지 않는다 — 근거 PR 만으로 쓴다)';
+
 @Injectable()
 export class EveningBlogPublishApplier implements PreviewApplier {
   readonly kind = PREVIEW_KIND.EVENING_BLOG_PUBLISH;
@@ -73,6 +76,16 @@ export class EveningBlogPublishApplier implements PreviewApplier {
       );
     }
 
+    // 계약을 본문 생성 **전에** 정한다. 공개 계약은 코드블록을 가린 채 익명화하고 원문 그대로
+    // 되돌리므로, 본문 모델이 회고 맥락(그날 회사 업무가 섞인 worklog·평가·머지 PR 요약)의
+    // 사내 이름을 코드 예시로 옮기면 금지어 목록에 없는 한 그대로 발행된다(PR #790 리뷰 지적).
+    // 그래서 공개 초안에는 회고 맥락을 싣지 않는다 — 재료는 공개 PR 본문과 주제 개요뿐이다.
+    const sourceType = await this.resolveSourceType(payload.sourcePrs ?? []);
+    const retroContext =
+      sourceType === EVENING_BLOG_PUBLIC_SOURCE_TYPE
+        ? PUBLIC_DRAFT_RETRO_CONTEXT
+        : payload.retroContext;
+
     const completion = await this.modelRouter.route({
       agentType: AgentType.EVENING_RETRO,
       request: {
@@ -80,7 +93,7 @@ export class EveningBlogPublishApplier implements PreviewApplier {
           title: payload.topPick.title,
           keywords: payload.topPick.keywords,
           reason: payload.topPick.reason ?? '',
-          retroContext: payload.retroContext,
+          retroContext,
           sourcePrs: payload.sourcePrs ?? [],
           outline: payload.topPick.outline ?? [],
         }),
@@ -109,7 +122,7 @@ export class EveningBlogPublishApplier implements PreviewApplier {
     const propertyNotice = await this.applyRowProperties(
       row.pageId,
       payload.topPick.keywords ?? [],
-      await this.resolveSourceType(payload.sourcePrs ?? []),
+      sourceType,
     );
 
     return {
