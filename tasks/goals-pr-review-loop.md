@@ -789,9 +789,13 @@ ARCHITECTURE 1. 기각 재료(39건 중 이유 있는 33건)보다 **3.5배 많�
     - 같은 head 면 ready 재리뷰 skip — 같은 9건에서 재리뷰가 처음 찾은 지적 7건(1331·1333·1421·1564·1590·1592·1133)을
       잃는다. 1590 은 ACKED mustFix 다. 중복 10건과 맞바꿀 수 없다.
   - 다시 열 조건: 빈도가 오르면 재리뷰 프롬프트에 그 PR 에 이미 게시한 지적을 넣고 반복을 금하는 방안을 본다(프롬프트 변경).
-  - 재측정 쿼리: `pr_review_finding` 의 INLINE·FILE 행을 repo·pull_number·head_sha·file_path 로 self-join,
-    `abs(a.line - b.line) <= 5 and a.id < b.id`, `agent_run_id` 같음/다름으로 회차를 가른다. run 에는 head 가 없어
-    회차의 head 는 그 회차 finding 의 `head_sha` 로 판정한다.
+  - 재측정 절차 (두 단계 — 1단계만으로는 위 10건이 재현되지 않는다):
+    1. 경로 표(후보 선별): `pr_review_finding` 의 INLINE·FILE 행을 repo·pull_number·head_sha·file_path 로 self-join,
+       `abs(coalesce(a.line,0) - coalesce(b.line,0)) <= 5 and a.id < b.id`, `agent_run_id` 같음/다름으로 회차를 가른다.
+       다른 파일에 실린 같은 지적(1468≈1467)과 ISSUE_COMMENT(1332≈1330)는 여기서 빠진다.
+    2. 같은 head 재리뷰 중복 수: repo·pull_number·head_sha 가 같은데 `agent_run_id` 가 둘 이상인 묶음을 찾고,
+       그 회차들의 finding 전부(post_mode·파일·줄 무관)를 회차별로 나열해 본문을 대조한다. 10건은 이 단계의 값이다.
+    run 에는 head 가 없어 회차의 head 는 그 회차 finding 의 `head_sha` 로 판정한다.
 - **스펙 3단계 — 조건부 2패스 열람** (`needContext` 로 파일을 더 읽고 후보를 재판정).
   기각 CORRECTNESS 15건 중 소스를 잘못 읽어 생긴 오탐(#268 유형)과 호출부 추적을 겨냥한다.
   **전제는 목표 9 의 결과다** — 2단계로 얼마나 풀리는지 보고 남은 몫이 있을 때만 연다.
