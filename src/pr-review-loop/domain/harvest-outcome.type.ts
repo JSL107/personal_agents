@@ -1,4 +1,4 @@
-import { CategoryAdoption } from './adoption-rate';
+import { RepoCategoryAdoption } from './adoption-rate';
 
 // 이번 회차에 새로 보류가 걸린 카드. 사람이 어느 스레드를 보면 되는지 Slack 에 링크로 낸다.
 export interface HeldFinding {
@@ -39,7 +39,7 @@ export interface HarvestOutcome {
   // "정상적으로 볼 게 없었다" 와 "못 봤다" 가 섞인다. 조용한 중단을 Slack 에 드러내는
   // 유일한 신호라 카운터가 아니라 별도 플래그로 둔다.
   quotaStopped: boolean;
-  // 이번 회차 카운트가 아니라 "지금까지의 누적 채택률"이다. 카드 상태가 바뀐 회차에만
-  // 채워진다 — 상태가 그대로면 비율도 그대로이므로 조회 자체를 하지 않는다.
-  adoption: CategoryAdoption[];
+  // 이번 회차 카운트가 아니라 학습 레포별 구간 채택률이다(`LEARNING_REPOS` 순서, 레포 안에서는
+  // 표본 순). 레포끼리 합산하지 않는다.
+  adoption: RepoCategoryAdoption[];
 }

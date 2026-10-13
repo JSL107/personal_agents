@@ -6,7 +6,6 @@ import {
   HarvestOutcome,
   HeldFinding,
 } from '../../pr-review-loop/domain/harvest-outcome.type';
-import { LEARNING_REPO } from '../../pr-review-loop/domain/learning-repo';
 import {
   PublishOutcome,
   SweepPullRequestResult,
@@ -156,34 +155,42 @@ export const formatPrReviewSweep = ({
   // 무슨 뜻인지 되물어 온 표현이다.
   //
   // notable 이 여럿이면 각각 자기 줄에 선다 — 한 줄에 이어 붙이면 고치려던 문제가 그대로 돌아온다.
-  const measuredAdoption = harvest.adoption.filter(
-    (item) => item.ratePercent !== null,
-  );
-  if (measuredAdoption.length > 0) {
+  // 레포마다 따로 낸다(`LEARNING_REPOS` 순서). 합쳐서 내면 표본이 큰 레포가 작은 레포의 변화를
+  // 덮는다 — 학습을 새로 연 레포의 효과가 바로 그 작은 쪽이다.
+  const measuredByRepo = new Map<string, typeof harvest.adoption>();
+  for (const item of harvest.adoption) {
+    if (item.ratePercent === null) {
+      continue;
+    }
+    const bucket = measuredByRepo.get(item.repo) ?? [];
+    bucket.push(item);
+    measuredByRepo.set(item.repo, bucket);
+  }
+  for (const [repo, measuredAdoption] of measuredByRepo) {
     const notable = measuredAdoption.filter(isNotableAdoption);
     // 이탤릭으로 감싸지 않는다 — 코드스팬과 겹치면 Slack 이 밑줄 기호를 그대로 노출할 수 있고,
     // spec 은 문자열 포함만 보므로 그 렌더 실패를 잡지 못한다. 이 파일의 다른 줄도 코드스팬만 쓴다.
-    const window = `최근 ${ADOPTION_WINDOW_DAYS}일 · \`${LEARNING_REPO}\``;
+    const window = `최근 ${ADOPTION_WINDOW_DAYS}일 · \`${repo}\``;
     if (notable.length === 0) {
       lines.push(`📊 채택률 ${measuredAdoption.length}종 모두 정상`, window);
-    } else {
-      const quietCount = measuredAdoption.length - notable.length;
-      lines.push('📊 채택률');
-      for (const {
-        category,
-        total,
-        ratePercent,
-        changePercentPoint,
-      } of notable) {
-        lines.push(
-          `• ${escapeSlackMrkdwn(category)} ${ratePercent}%(${total})${formatChange(changePercentPoint)}`,
-        );
-      }
-      if (quietCount > 0) {
-        lines.push(`• 나머지 ${quietCount}종 정상`);
-      }
-      lines.push(window);
+      continue;
     }
+    const quietCount = measuredAdoption.length - notable.length;
+    lines.push('📊 채택률');
+    for (const {
+      category,
+      total,
+      ratePercent,
+      changePercentPoint,
+    } of notable) {
+      lines.push(
+        `• ${escapeSlackMrkdwn(category)} ${ratePercent}%(${total})${formatChange(changePercentPoint)}`,
+      );
+    }
+    if (quietCount > 0) {
+      lines.push(`• 나머지 ${quietCount}종 정상`);
+    }
+    lines.push(window);
   }
   for (const result of results) {
     const icon = RISK_ICON[result.riskLevel] ?? '⚪';

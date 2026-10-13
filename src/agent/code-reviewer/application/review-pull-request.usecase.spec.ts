@@ -1114,6 +1114,59 @@ describe('ReviewPullRequestUsecase × 학습 규약', () => {
       deps.findingRepository.findRejectionsForConventions,
     ).not.toHaveBeenCalled();
   });
+
+  it('학습을 연 회사 레포에는 그 레포의 기각만 규약으로 싣고, 손으로 적은 규약은 싣지 않는다', async () => {
+    // 학습 허용 목록(`LEARNING_REPOS`)은 기각 규약에만 적용된다. 손으로 적은 규약은
+    // personal_agents 사정이라 회사 레포에 실리면 틀린 규약이 정탐을 지운다.
+    const deps = makeDeps();
+    deps.githubClient.getPullRequest.mockResolvedValue({
+      number: 1,
+      title: 'feat: 벌점 집계',
+      body: '',
+      repo: 'schoolbell-e/sbe-spinoff-workspace',
+      url: 'u',
+      baseRef: 'staging',
+      baseSha: 'base-sha',
+      headRef: 'h',
+      authorLogin: 'JSL107',
+      mergedAt: null,
+      changedFiles: ['src/entries.service.ts'],
+      changedFilesTotalCount: 1,
+      changedLinesByFile: {},
+      changedFilesTruncated: false,
+      additions: 1,
+      deletions: 0,
+      headSha: 'sha',
+      isDraft: false,
+    });
+    deps.findingRepository.findRejectionsForConventions.mockResolvedValue([
+      rejection(
+        'TEST',
+        '이 저장소는 k8s overlay 의 env 값을 테스트로 고정하지 않습니다',
+      ),
+      rejection(
+        'TEST',
+        '기존 spec 이 이미 같은 경로를 덮고 있어 추가하지 않습니다',
+      ),
+    ]);
+
+    await buildUsecase(deps).execute({
+      prRef: 'schoolbell-e/sbe-spinoff-workspace#1',
+      slackUserId: 'U1',
+    });
+
+    expect(
+      deps.findingRepository.findRejectionsForConventions,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({ repo: 'schoolbell-e/sbe-spinoff-workspace' }),
+    );
+    const prompt = promptOf(deps);
+    expect(prompt).toContain('기각된 지적과 그 이유');
+    expect(prompt).toContain(
+      'k8s overlay 의 env 값을 테스트로 고정하지 않습니다',
+    );
+    expect(prompt).not.toContain('[리뷰 대상 레포 규약');
+  });
 });
 
 describe('buildReviewPrompt — 숨은 유니코드 안내', () => {

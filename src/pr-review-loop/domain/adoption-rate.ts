@@ -25,6 +25,14 @@ export interface CategoryAdoption {
   changePercentPoint: number | null;
 }
 
+/**
+ * 레포 하나의 카테고리 채택률. 학습 규약이 실리는 레포가 여럿이라(`LEARNING_REPOS`) 어느 레포의
+ * 값인지 함께 싣는다 — 레포끼리 합산하면 한 레포의 규약 효과가 다른 레포 결론에 묻힌다.
+ */
+export interface RepoCategoryAdoption extends CategoryAdoption {
+  repo: string;
+}
+
 // 채택률을 말하기 위한 최소 표본. 3~4건으로 비율을 내면 그 숫자가 판단 근거로 쓰이면서
 // 사실상 추측이 된다. 미달 카테고리는 비율 대신 표본 수만 노출한다.
 //

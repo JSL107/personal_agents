@@ -8,7 +8,7 @@ import {
   ReviewThread,
 } from '../../github/domain/port/github-client.port';
 import { CodexQuotaExceededException } from '../../model-router/infrastructure/codex-cli.provider';
-import { LEARNING_REPO } from '../domain/learning-repo';
+import { LEARNING_REPOS } from '../domain/learning-repo';
 import { PrReviewFindingRepositoryPort } from '../domain/port/pr-review-finding.repository.port';
 import { PrReviewFindingRecord } from '../domain/pr-review-finding.type';
 import { HarvestReviewSignalsUsecase } from './harvest-review-signals.usecase';
@@ -1367,8 +1367,9 @@ describe('HarvestReviewSignalsUsecase', () => {
 
     expect(outcome.acked).toBe(1);
     // 표본 하한이 20 이라 20건으로 맞춘다. 17/20 = 85%
-    expect(outcome.adoption).toEqual([
-      {
+    expect(outcome.adoption).toEqual(
+      LEARNING_REPOS.map((repo) => ({
+        repo,
         category: 'TEST',
         adopted: 17,
         rejected: 3,
@@ -1376,8 +1377,8 @@ describe('HarvestReviewSignalsUsecase', () => {
         ratePercent: 85,
         // mock 이 최근·직전 두 조회에 같은 값을 돌려주므로 변화는 0 이다.
         changePercentPoint: 0,
-      },
-    ]);
+      })),
+    );
   });
 
   // 이 회차에 반응이 없어도 구간 채택률은 실어야 한다. 이 그룹의 Slack 발송은 하루 1회뿐이라
@@ -1400,8 +1401,9 @@ describe('HarvestReviewSignalsUsecase', () => {
     const outcome = await usecase.execute();
 
     expect(outcome.acked).toBe(0);
-    expect(outcome.adoption).toEqual([
-      {
+    expect(outcome.adoption).toEqual(
+      LEARNING_REPOS.map((repo) => ({
+        repo,
         category: 'TEST',
         adopted: 17,
         rejected: 3,
@@ -1409,8 +1411,8 @@ describe('HarvestReviewSignalsUsecase', () => {
         ratePercent: 85,
         // mock 이 최근·직전 두 조회에 같은 값을 돌려주므로 변화는 0 이다.
         changePercentPoint: 0,
-      },
-    ]);
+      })),
+    );
   });
 
   it('STALE 확정만 있는 회차에도 구간 채택률을 낸다', async () => {
@@ -1429,16 +1431,17 @@ describe('HarvestReviewSignalsUsecase', () => {
     const outcome = await usecase.execute();
 
     expect(outcome.stale).toBe(1);
-    expect(outcome.adoption).toEqual([
-      {
+    expect(outcome.adoption).toEqual(
+      LEARNING_REPOS.map((repo) => ({
+        repo,
         category: 'TEST',
         adopted: 20,
         rejected: 0,
         total: 20,
         ratePercent: 100,
         changePercentPoint: 0,
-      },
-    ]);
+      })),
+    );
   });
 
   it('최근 구간과 그 직전 같은 길이 구간을 조회한다', async () => {
@@ -1459,23 +1462,67 @@ describe('HarvestReviewSignalsUsecase', () => {
       await usecase.execute();
 
       const recentSince = new Date('2026-08-12T00:00:00.000Z');
-      expect(repository.countAdoptionByCategory).toHaveBeenCalledTimes(2);
-      // 최근 구간은 상한이 없다 — 지금 결론이 나는 카드까지 세어야 한다.
-      // 두 구간 모두 학습 규약이 실리는 레포로 한정한다. 전 레포를 합산하면 규약이
-      // 실리지도 않는 레포의 결론이 섞여 규약 효과를 물어볼 수 없다.
-      expect(repository.countAdoptionByCategory).toHaveBeenCalledWith({
-        repo: LEARNING_REPO,
-        since: recentSince,
-      });
-      // 직전 구간은 같은 길이로 맞닿아 있다. 경계가 어긋나면 두 비율의 기준이 달라진다.
-      expect(repository.countAdoptionByCategory).toHaveBeenCalledWith({
-        repo: LEARNING_REPO,
-        since: new Date('2026-07-29T00:00:00.000Z'),
-        until: recentSince,
-      });
+      // 학습 레포마다 두 구간씩. 레포를 빼고 전 레포로 한 번 세면 호출 수가 어긋난다.
+      expect(repository.countAdoptionByCategory).toHaveBeenCalledTimes(
+        LEARNING_REPOS.length * 2,
+      );
+      for (const repo of LEARNING_REPOS) {
+        // 최근 구간은 상한이 없다 — 지금 결론이 나는 카드까지 세어야 한다.
+        // 두 구간 모두 학습 규약이 실리는 레포 하나씩으로 한정한다. 합산하면 규약이
+        // 실리지도 않는 레포(또는 다른 학습 레포)의 결론이 섞여 규약 효과를 물어볼 수 없다.
+        expect(repository.countAdoptionByCategory).toHaveBeenCalledWith({
+          repo,
+          since: recentSince,
+        });
+        // 직전 구간은 같은 길이로 맞닿아 있다. 경계가 어긋나면 두 비율의 기준이 달라진다.
+        expect(repository.countAdoptionByCategory).toHaveBeenCalledWith({
+          repo,
+          since: new Date('2026-07-29T00:00:00.000Z'),
+          until: recentSince,
+        });
+      }
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  it('학습 레포마다 따로 세고 합산하지 않는다', async () => {
+    // 레포마다 다른 값을 돌려준다. 합산하면 TEST 가 40건 한 줄로 나와 spinoff 의 하락이
+    // personal_agents 의 만점에 묻힌다 — 학습을 새로 연 레포의 효과를 못 잰다.
+    const { usecase, github, repository } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    repository.countAdoptionByCategory.mockImplementation(
+      async ({ repo }: { repo: string }) =>
+        repo === 'schoolbell-e/sbe-spinoff-workspace'
+          ? [
+              { category: 'TEST', status: 'ACKED', count: 14 },
+              { category: 'TEST', status: 'REJECTED', count: 6 },
+            ]
+          : [{ category: 'TEST', status: 'ACKED', count: 20 }],
+    );
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: null,
+      pullRequestState: 'OPEN',
+      truncated: false,
+      threads: [reviewThread()],
+    });
+
+    const outcome = await usecase.execute();
+
+    expect(
+      outcome.adoption.map(({ repo, total, ratePercent }) => ({
+        repo,
+        total,
+        ratePercent,
+      })),
+    ).toEqual([
+      { repo: 'JSL107/personal_agents', total: 20, ratePercent: 100 },
+      {
+        repo: 'schoolbell-e/sbe-spinoff-workspace',
+        total: 20,
+        ratePercent: 70,
+      },
+    ]);
   });
 
   it('채택률 집계가 실패해도 수확 결과는 그대로 낸다', async () => {

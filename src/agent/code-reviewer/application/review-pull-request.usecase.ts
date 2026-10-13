@@ -24,7 +24,10 @@ import {
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { PublishFindingsService } from '../../../pr-review-loop/application/publish-findings.service';
-import { isSelfRepo } from '../../../pr-review-loop/domain/learning-repo';
+import {
+  isLearningRepo,
+  isSelfRepo,
+} from '../../../pr-review-loop/domain/learning-repo';
 import {
   PR_REVIEW_FINDING_REPOSITORY_PORT,
   PrReviewFindingRepositoryPort,
@@ -645,10 +648,10 @@ export class ReviewPullRequestUsecase {
     repo: string,
     excludeFindingIds?: number[],
   ): Promise<string> {
-    // owner 저장소로 한정한다. 기각 이유는 owner 뿐 아니라 **PR 작성자**도 남길 수 있어
-    // (`harvest-review-signals.usecase.ts` 의 `decisionLogins`), 남의 저장소에서는 제3자가
-    // 쓴 문장이 규약으로 굳는다. 손으로 적은 규약(`buildRepoConventions`)과 같은 경계다.
-    if (!isSelfRepo(repo)) {
+    // 허용 목록의 레포로 한정한다(`learning-repo.ts`). 채택률 집계와 같은 목록이다 —
+    // 둘이 갈리면 규약을 실은 효과를 잴 수 없다. 손으로 적은 규약(`buildRepoConventions`)·
+    // diff 밖 맥락(`buildRelatedCode`)은 여전히 자기 레포 전용이다.
+    if (!isLearningRepo(repo)) {
       return '';
     }
     if (this.findingRepository === undefined) {
