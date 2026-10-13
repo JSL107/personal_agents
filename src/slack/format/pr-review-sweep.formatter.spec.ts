@@ -1,5 +1,5 @@
 import { ADOPTION_WINDOW_DAYS } from '../../pr-review-loop/domain/adoption-rate';
-import { LEARNING_REPO } from '../../pr-review-loop/domain/learning-repo';
+import { SELF_REPO } from '../../pr-review-loop/domain/learning-repo';
 import { formatPrReviewSweep } from './pr-review-sweep.formatter';
 
 const outcome = (overrides = {}) => ({
@@ -34,12 +34,14 @@ const adoption = (
   total: number,
   ratePercent: number | null,
   changePercentPoint: number | null = null,
+  repo: string = SELF_REPO,
 ) => {
   // adopted + rejected === total 을 지킨다. 깨진 조합으로 검증하면 실제로는 나올 수 없는
   // 입력을 통과시키게 된다.
   const adopted =
     ratePercent === null ? total : Math.round((total * ratePercent) / 100);
   return {
+    repo,
     category,
     adopted,
     rejected: total - adopted,
@@ -379,9 +381,9 @@ describe('formatPrReviewSweep', () => {
 
   it('채택률 줄에 구간 길이와 집계 대상 레포를 밝힌다 — 이상 있을 때와 없을 때 모두', () => {
     // 누적인지 구간인지 안 적으면 읽는 사람이 전체 성적으로 오해한다.
-    // 레포도 마찬가지다 — 이 숫자는 학습 규약이 실리는 레포 하나만 센 값이라,
+    // 레포도 마찬가지다 — 이 숫자는 학습 규약이 실리는 레포 하나씩 따로 센 값이라,
     // 밝히지 않으면 여러 레포를 리뷰하는 사용자가 전체 성적으로 읽는다.
-    const window = `최근 ${ADOPTION_WINDOW_DAYS}일 · \`${LEARNING_REPO}\``;
+    const window = `최근 ${ADOPTION_WINDOW_DAYS}일 · \`${SELF_REPO}\``;
 
     const quiet = formatPrReviewSweep({
       harvest: harvest({ acked: 1, adoption: [adoption('TEST', 15, 100)] }),
@@ -394,6 +396,35 @@ describe('formatPrReviewSweep', () => {
       results: [],
     });
     expect(noisy).toContain(window);
+  });
+
+  it('학습 레포가 여럿이면 레포마다 따로 내고 합산하지 않는다', () => {
+    // 합산하면 표본이 큰 레포가 작은 레포의 변화를 덮는다 — 학습을 새로 연 레포의 효과가
+    // 바로 그 작은 쪽이다. 레포마다 자기 구간 줄이 붙어야 어느 수치가 어느 레포인지 읽힌다.
+    const spinoff = 'schoolbell-e/sbe-spinoff-workspace';
+    const text = formatPrReviewSweep({
+      harvest: harvest({
+        acked: 1,
+        adoption: [
+          adoption('TEST', 69, 94, -6),
+          adoption('TEST', 120, 95, 0, spinoff),
+          adoption('CORRECTNESS', 63, 70, null, spinoff),
+        ],
+      }),
+      results: [],
+    });
+
+    const selfAt = text.indexOf(`\`${SELF_REPO}\``);
+    const spinoffAt = text.indexOf(`\`${spinoff}\``);
+    expect(selfAt).toBeGreaterThan(-1);
+    expect(spinoffAt).toBeGreaterThan(selfAt);
+    // 자기 레포 블록: TEST 하락만. spinoff 블록: CORRECTNESS 저수준 + TEST 정상 1종.
+    expect(text.slice(0, selfAt)).toContain('\n• TEST 94%(69) ↓6%p');
+    const spinoffBlock = text.slice(selfAt, spinoffAt);
+    expect(spinoffBlock).toContain('\n• CORRECTNESS 70%(63)');
+    expect(spinoffBlock).toContain('\n• 나머지 1종 정상');
+    // 두 레포의 TEST 를 더한 표본(189)은 어디에도 없다.
+    expect(text).not.toContain('(189)');
   });
 
   it('집계가 비면 채택률 줄을 생략한다', () => {

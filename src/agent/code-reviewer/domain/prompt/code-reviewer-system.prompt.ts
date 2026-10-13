@@ -87,7 +87,7 @@ const SELF_REPO_CONVENTIONS = `
 이 목록에 없는 사항은 평소대로 판단한다. 규약을 이유로 실제 결함을 덮지 말 것.`;
 
 // 리뷰 프롬프트에 덧붙일 레포 규약. 대상 레포가 아니면 빈 문자열(동작 변화 0).
-// 대상 판정은 `isSelfRepo` 하나로 모은다 — 손으로 적은 이 규약, 기각에서 학습한 규약,
-// 그리고 그 효과를 재는 채택률 집계가 같은 경계를 봐야 한다(`learning-repo.ts`).
+// 이 규약은 이 레포 사정을 손으로 적은 것이라 자기 레포(`isSelfRepo`)에만 붙는다. 기각에서
+// 학습한 규약은 더 넓은 허용 목록(`isLearningRepo`)을 따른다(`learning-repo.ts`).
 export const buildRepoConventions = (repo: string): string =>
   isSelfRepo(repo) ? SELF_REPO_CONVENTIONS : '';

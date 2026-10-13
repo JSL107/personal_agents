@@ -157,6 +157,7 @@ describe('PrReviewSweepAutopilotTask', () => {
       quotaStopped: false,
       adoption: [
         {
+          repo: 'JSL107/personal_agents',
           category: 'TEST',
           // 「이상」 경로로 렌더되게 낮춰 둔다(80% 미만). 정상 범위면 개수로만 묶여
           // 수치가 사라지고, 그러면 전달 구간을 볼 수 없다.
