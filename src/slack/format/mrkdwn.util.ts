@@ -85,7 +85,8 @@ export const linkifyBareUrls = (text: string): string =>
 const PROSE_WRAP_THRESHOLD = 100;
 // `*` 는 목록 기호가 아니라 Slack 의 굵게 표시다 — 여기 넣으면 `*판단 근거*` 로 시작하는 산문이
 // 목록으로 오인돼 통째로 건너뛴다.
-const LIST_OR_QUOTE_LINE = /^\s*([•\->↳|]|\d+[.)])/;
+// 들여쓴 줄은 기호가 없어도 상위 항목에 딸린 줄이다(예: 지적 아래 `      → 할 일`) — 쪼개면 둘째 줄이 들여쓰기를 잃는다.
+const LIST_OR_QUOTE_LINE = /^(\s|[•\->↳→|]|\d+[.)])/;
 const SENTENCE_BOUNDARY = /([.!?])[ \t]+(?=\S)/g;
 
 // 화면에 실제로 보이는 글자 수. `<주소|이름>` 은 이름만 보이므로 주소 길이로 재면

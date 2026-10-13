@@ -193,17 +193,17 @@ const appendSourceBlocks = (
   }
 };
 
-// WBS 서브태스크를 부모 todo 바로 아래에 "  - subtitle (Nm)" 형태의 paragraph 들로 append.
+// WBS 서브태스크를 부모 todo 바로 아래에 "subtitle (Nm)" 형태의 글머리표로 append.
 // Notion API 에 nested children 을 한 번에 보내려면 block_object 의 children 필드가 필요해 복잡 —
-// 지금은 들여쓰기 paragraph 로 단순 표현 (템플릿 가독성과 충돌 안 남).
+// 지금은 같은 깊이의 글머리표로 단순 표현한다. 화살표·공백 들여쓰기는 Notion 에서 기호만 남아 읽기 나쁘다.
 const appendSubtaskBlocks = (
   blocks: NotionPlanBlock[],
   task: TaskItem,
 ): void => {
   for (const sub of task.subtasks) {
     blocks.push({
-      type: 'paragraph',
-      text: `   ↳ ${sub.title} (${sub.estimatedMinutes}m)`,
+      type: 'bullet',
+      text: `${sub.title} (${sub.estimatedMinutes}m)`,
     });
   }
 };
