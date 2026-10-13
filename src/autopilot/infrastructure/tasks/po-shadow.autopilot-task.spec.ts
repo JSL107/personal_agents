@@ -103,10 +103,12 @@ describe('PoShadowAutopilotTask', () => {
 
     const result = await task.run(CONTEXT);
 
-    expect(result.summaryText).toContain('🎯 *먼저 이것부터* 윤문 헤드라인');
-    expect(result.summaryText).toContain('• 윤문 지적 — 윤문 제안');
+    expect(result.summaryText).toContain('🎯 *먼저* 윤문 헤드라인');
+    expect(result.summaryText).toContain('1. 윤문 지적\n      → 윤문 제안');
     expect(result.summaryText).toContain('🤔 _추정_ 윤문 목적 충돌');
-    expect(result.summaryText).toContain('↳ 근거: #264 원본 사실');
+    // 근거는 스레드로 내려간다.
+    expect(result.summaryText).not.toContain('근거:');
+    expect(result.detailText).toContain('1. #264 원본 사실');
     expect(result.summaryText).not.toContain('원문 헤드라인');
     // 판정 버튼은 이 실행에 귀속되고, 인용은 화면에 나간 윤문본 헤드라인이다.
     expect(result.runVerdicts).toEqual([
