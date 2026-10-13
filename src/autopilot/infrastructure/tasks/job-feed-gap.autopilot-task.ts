@@ -20,8 +20,10 @@ import {
 
 // 순차 모델 호출 1건의 worst-case(MODEL_ROUTER_WORST_CASE_MS=908초)가 이미 autopilot
 // consumer lock 예산(AUTOPILOT_WORKER_OPTIONS.lockDuration=1,178초)의 60%보다 크다 —
-// 기본값을 2로 두면 2건 순차 실행(최악 1,816초)이 예산을 넘겨 BullMQ 재시도를 유발한다
-// (이 레포가 2026-07-26 에 겪은 12회 연쇄 재실행과 같은 계열). 기본은 1건만 돈다.
+// 기본값을 2로 두면 2건 순차 실행(최악 1,816초)이 예산을 넘는다. lock 은 자동 갱신되므로 넘는 것만으로
+// stalled 가 되지는 않지만, 갱신에 실패하면 BullMQ 가 같은 job 을 다시 돌린다(이 레포가 2026-07-26 에
+// 겪은 12회 연쇄 재실행과 같은 계열). 그래서 worker-options.constant.ts 의 보수적 기준대로 예산 안에
+// 두고, 기본은 1건만 돈다.
 const DEFAULT_TOP_N = 1;
 
 // 아래 경과 시간 가드와 짝을 이루는 안전 여유(60%) — 근거는 가드 상수 정의부 주석 참조.
