@@ -73,6 +73,46 @@ describe('PrReviewSweepAutopilotTask', () => {
     expect(result.summaryText).toContain('인라인 2');
   });
 
+  it('앞 회차가 도는 중이면 수확·스윕 없이 skip 하고, 끝난 뒤 회차는 다시 돈다', async () => {
+    let finishFirst: (value: {
+      results: never[];
+      quotaStopped: boolean;
+    }) => void = () => undefined;
+    sweepUsecase.execute.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishFirst = resolve;
+        }),
+    );
+    const first = task.run(CONTEXT);
+    await Promise.resolve();
+
+    await expect(task.run(CONTEXT)).resolves.toEqual({ skip: true });
+    expect(harvestUsecase.execute).toHaveBeenCalledTimes(1);
+    expect(sweepUsecase.execute).toHaveBeenCalledTimes(1);
+
+    finishFirst({ results: [], quotaStopped: false });
+    await first;
+    sweepUsecase.execute.mockResolvedValue({
+      results: [],
+      quotaStopped: false,
+    });
+    await task.run(CONTEXT);
+    expect(sweepUsecase.execute).toHaveBeenCalledTimes(2);
+  });
+
+  it('회차가 실패해도 다음 회차를 막지 않는다', async () => {
+    sweepUsecase.execute.mockRejectedValueOnce(new Error('boom'));
+    await expect(task.run(CONTEXT)).rejects.toThrow('boom');
+
+    sweepUsecase.execute.mockResolvedValue({
+      results: [],
+      quotaStopped: false,
+    });
+    await expect(task.run(CONTEXT)).resolves.toEqual({ skip: true });
+    expect(sweepUsecase.execute).toHaveBeenCalledTimes(2);
+  });
+
   it('수확을 리뷰 스윕보다 먼저 실행한다', async () => {
     const callOrder: string[] = [];
     harvestUsecase.execute.mockImplementation(async () => {

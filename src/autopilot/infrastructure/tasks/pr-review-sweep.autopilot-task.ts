@@ -21,6 +21,16 @@ import {
 export class PrReviewSweepAutopilotTask implements AutopilotTask {
   readonly id = 'pr-review-sweep';
   private readonly logger = new Logger(PrReviewSweepAutopilotTask.name);
+  // 이 프로세스에서 회차가 도는 중인지. 두 회차가 겹치면 같은 PR 을 둘 다 리뷰할 수 있다 —
+  // 스윕은 원장의 IN_PROGRESS 행을 보고 진행 중인 PR 을 건너뛰지만, 「판정 조회 → 행 생성」
+  // 사이 틈은 막지 못한다. 실측(2026-10-07): 09:37 재시작으로 끊긴 09:33 회차가 lock 만료 후
+  // stalled 로 09:53 에 다시 돌았고, 09:54 정규 회차와 0.66 초 차이로 같은 PR 을 골라 같은
+  // 지적이 인라인으로 두 번 달렸다(agent_run 7446·7447). autopilot 큐가 concurrency 2 라
+  // 3분을 넘긴 회차와 다음 정규 회차도 같은 틈을 가진다.
+  // 겹친 회차는 skip 으로 끝낸다 — 그 슬롯은 완주로 기록되고, 놓친 PR 은 다음 회차가 집는다.
+  // ponytail: 프로세스 안 플래그라 서버를 여러 개 띄우면 못 막는다(autopilot.consumer 의
+  // exclusiveChain 과 같은 전제). 그때는 Redis 잠금으로 바꾼다.
+  private running = false;
 
   constructor(
     private readonly harvestUsecase: HarvestReviewSignalsUsecase,
@@ -29,6 +39,19 @@ export class PrReviewSweepAutopilotTask implements AutopilotTask {
 
   async run(context: AutopilotTaskContext): Promise<AutopilotTaskResult> {
     void context;
+    if (this.running) {
+      this.logger.log('앞 회차가 아직 도는 중 — 이번 회차 skip');
+      return { skip: true };
+    }
+    this.running = true;
+    try {
+      return await this.runSweep();
+    } finally {
+      this.running = false;
+    }
+  }
+
+  private async runSweep(): Promise<AutopilotTaskResult> {
     let harvest = emptyHarvestOutcome();
     try {
       harvest = await this.harvestUsecase.execute();
