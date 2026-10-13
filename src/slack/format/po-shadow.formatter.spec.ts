@@ -1,5 +1,8 @@
 import { PoShadowReport } from '../../agent/po-shadow/domain/po-shadow.type';
-import { formatPoShadowReport } from './po-shadow.formatter';
+import {
+  formatPoShadowDetail,
+  formatPoShadowReport,
+} from './po-shadow.formatter';
 
 const base: PoShadowReport = {
   schemaVersion: 2,
@@ -90,13 +93,83 @@ describe('formatPoShadowReport', () => {
     const rendered = formatPoShadowReport(base);
     const sections = rendered.split('\n\n');
 
-    expect(sections[0]).toBe('*PO 검토*');
-    expect(sections[1]).toBe(
-      '🎯 *먼저 이것부터* #264 업로드 차단부터 해소한다.',
-    );
+    expect(sections[0]).toBe('*PO 검토 — 계획과 다른 점 1가지*');
+    expect(sections[1]).toBe('🎯 *먼저* #264 업로드 차단부터 해소한다.');
     expect(sections[2]).toBe(
-      '• #264 업로드가 멈췄다 — 리뷰어를 지정한다\n  ↳ 근거: #264 업로드 차단 · 리뷰 0건',
+      '1. #264 업로드가 멈췄다\n      → 리뷰어를 지정한다\n      근거: #264 업로드 차단 · 리뷰 0건',
     );
+  });
+
+  it('detailInThread 면 근거 줄과 지난 지적 통계를 빼고 formatPoShadowDetail 이 싣는다', () => {
+    const report = {
+      ...base,
+      recoverySummary: {
+        merged: 3,
+        unresolved: 1,
+        unmovedFactCount: 1,
+        abandoned: 0,
+        unassigned: 0,
+        uncomparable: 0,
+        total: 4,
+      },
+    };
+
+    const main = formatPoShadowReport(report, { detailInThread: true });
+    expect(main).toContain(
+      '1. #264 업로드가 멈췄다\n      → 리뷰어를 지정한다',
+    );
+    expect(main).not.toContain('근거:');
+    expect(main).not.toContain('지난 지적');
+
+    const detail = formatPoShadowDetail(report);
+    expect(detail).toContain('*지적별 근거*\n1. #264 업로드 차단 · 리뷰 0건');
+    expect(detail).toContain('🔁 *지난 지적 4건*');
+  });
+
+  it('findingReferences 가 있으면 지적 아래 저장소·제목 링크를 단다 — 링크 텍스트의 Slack 문법은 막는다', () => {
+    const rendered = formatPoShadowReport(
+      {
+        ...base,
+        findingReferences: [
+          [
+            {
+              text: 'sbe-conduct-api#3922 학교 관리자용',
+              url: 'https://github.com/o/r/pull/3922',
+            },
+            { text: '<!channel> 워커', url: null },
+          ],
+        ],
+      },
+      { detailInThread: true },
+    );
+    expect(rendered).toContain(
+      '1. #264 업로드가 멈췄다\n      • <https://github.com/o/r/pull/3922|sbe-conduct-api#3922 학교 관리자용>\n      • &lt;!channel&gt; 워커\n      → 리뷰어를 지정한다',
+    );
+  });
+
+  it('링크가 있는 참조도 라벨의 Slack 제어문자(<>|)를 걷어 링크 태그를 깨지 못하게 한다', () => {
+    const rendered = formatPoShadowReport(
+      {
+        ...base,
+        findingReferences: [
+          [
+            {
+              text: 'app#1 <!channel>|가짜',
+              url: 'https://github.com/o/r/pull/1',
+            },
+          ],
+        ],
+      },
+      { detailInThread: true },
+    );
+    expect(rendered).toContain(
+      '      • <https://github.com/o/r/pull/1|app#1 !channel가짜>',
+    );
+    expect(rendered).not.toContain('<!channel>');
+  });
+
+  it('formatPoShadowDetail 은 quiet 회차에 null 이다', () => {
+    expect(formatPoShadowDetail({ ...base, quiet: true })).toBeNull();
   });
 
   it('finding보다 factSummary가 짧으면 누락 근거 줄만 생략한다', () => {
@@ -112,7 +185,9 @@ describe('formatPoShadowReport', () => {
       ],
     });
 
-    expect(rendered).toContain('• 코드 리뷰가 실패했다 — 실패 원인을 확인한다');
+    expect(rendered).toContain(
+      '2. 코드 리뷰가 실패했다\n      → 실패 원인을 확인한다',
+    );
     expect(rendered).not.toContain('근거: undefined');
     expect(rendered).not.toContain('undefined');
   });
@@ -125,7 +200,7 @@ describe('formatPoShadowReport', () => {
     });
 
     expect(rendered).toContain(
-      '🎯 *먼저 이것부터* #264 업로드 차단부터 해소한다.\n\n  ↳ 근거: #264 리뷰 0건\n  ↳ 근거: #975 새 담당 PR',
+      '🎯 *먼저* #264 업로드 차단부터 해소한다.\n\n근거: #264 리뷰 0건\n근거: #975 새 담당 PR',
     );
   });
 

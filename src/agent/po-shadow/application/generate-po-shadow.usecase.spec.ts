@@ -488,6 +488,10 @@ describe('GeneratePoShadowUsecase', () => {
     expect(result.result.factSummary).toEqual([
       '업로드 개선 — 리뷰 0건 · 마지막 활동 3일 전',
     ]);
+    // 지적 아래 링크는 걸러진 뒤의 유효 근거로 코드가 만든다.
+    expect(result.result.findingReferences).toEqual([
+      [{ text: 'app#264 업로드 개선', url: expect.stringContaining('264') }],
+    ]);
     expect(result.result.droppedFindingCount).toBe(1);
   });
 

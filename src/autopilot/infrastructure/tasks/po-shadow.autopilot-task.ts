@@ -8,7 +8,10 @@ import { AgentRunOutcome } from '../../../agent-run/application/agent-run.servic
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { HumanizeService } from '../../../humanize/application/humanize.service';
 import { humanizePoShadowReport } from '../../../humanize/application/humanize-report.adapter';
-import { formatPoShadowReport } from '../../../slack/format/po-shadow.formatter';
+import {
+  formatPoShadowDetail,
+  formatPoShadowReport,
+} from '../../../slack/format/po-shadow.formatter';
 import {
   AutopilotTask,
   AutopilotTaskContext,
@@ -77,9 +80,12 @@ export class PoShadowAutopilotTask implements AutopilotTask {
     // 버튼을 붙인다 — 인용은 윤문을 거친 화면 문장 그대로다(원장의 `outcome.result` 는 윤문 전).
     // 조용한 회차(위)는 제안이 없어 물을 대상이 없다.
     const headline = humanized.headline.trim();
+    // 근거 줄과 지난 지적 통계는 스레드로 — 메인은 "무엇이 틀어졌고 무엇을 하나" 만 싣는다.
+    const detailText = formatPoShadowDetail(humanized);
     return {
       skip: false,
-      summaryText: formatPoShadowReport(humanized),
+      summaryText: formatPoShadowReport(humanized, { detailInThread: true }),
+      ...(detailText ? { detailText } : {}),
       ...(headline
         ? {
             runVerdicts: [

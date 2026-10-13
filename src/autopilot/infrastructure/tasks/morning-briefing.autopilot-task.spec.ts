@@ -617,18 +617,18 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
 
     expect(out.summaryText).toBe(
       [
-        '☀️ *6/17(수) 아침* — 할 일 5 · 승인 3 · 장애 1 · 공고 1',
+        '☀️ *6/17(수) 아침* — 할 일 5 (승인 3 · 장애 1 · 공고 1)',
         '',
-        '✋ *할 일*',
-        '• 승인 대기 3장 — 블로그 후보 · 경력 반영 · GitHub 발행',
-        '• 🔴 장애  Autopilot task paper-recommend · 2일째',
-        '• 공고 1건 — 하마랩 백엔드 개발자 · 지원할지? (목록은 스레드)',
+        '*할 일*',
+        '• *승인 대기 3장* — 블로그 후보 · 경력 반영 · GitHub 발행',
+        '• 🔴 *장애* — Autopilot task paper-recommend · 2일째',
+        '• *공고 1건* — 하마랩 (목록은 스레드)',
         '',
         '*어제 · 오늘*',
-        '• 투자  오늘 시가 매수 1 · 매도 3 예정',
-        '• 회사  먼저 이것부터 — <https://github.com/o/r/pull/3668|PR #3668 비속어 필터 검증 근거 기록>',
-        '• 공부  <https://notion.so/brief|Agent Middleware Hooks> · 15분',
-        '• 포트폴리오  어제 발행 — 새 프로젝트 1건 · 📋 이력서 감사 — 약함 2건',
+        '• *투자* — 오늘 시가 매수 1 · 매도 3 예정',
+        '• *회사 1순위* — <https://github.com/o/r/pull/3668|PR #3668 비속어 필터 검증 근거 기록>',
+        '• *공부* — <https://notion.so/brief|Agent Middleware Hooks> · 15분',
+        '• *포트폴리오* — 어제 발행 · 새 프로젝트 1건 · 이력서 감사: 약함 2건',
       ].join('\n'),
     );
     // 계획 전문과 공고 목록은 스레드에 있다.
@@ -655,7 +655,7 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
     expect(out.summaryText?.split('\n')[0]).toBe(
       '☀️ *6/17(수) 아침* — 손댈 것 없음',
     );
-    expect(out.summaryText).not.toContain('✋');
+    expect(out.summaryText).not.toContain('*할 일*');
     expect(out.onDelivered).toBeUndefined();
   });
 
@@ -732,8 +732,10 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
     const out = await task.run(CTX);
 
     // 첫 줄만 보고 판단하는 메시지라 수집 정지는 할 일(장애)로 세어 첫 줄에 드러난다.
-    expect(out.summaryText).toContain('— 할 일 1 · 장애 1');
-    expect(out.summaryText).toContain('🔴 장애  공고 수집 멈춤 — 마지막 수집');
+    expect(out.summaryText).toContain('아침* — 장애 1');
+    expect(out.summaryText).toContain(
+      '🔴 *장애* — 공고 수집 멈춤 — 마지막 수집',
+    );
   });
 
   it('평일인데 수집된 적이 한 번도 없으면 0건이 아니라 수집 문제로 알린다', async () => {
@@ -754,7 +756,7 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
     const out = await task.run(CTX);
 
     expect(out.summaryText).toContain(
-      '🔴 장애  공고 수집된 적 없음 — 수집 설정 확인',
+      '🔴 *장애* — 공고 수집된 적 없음 — 수집 설정 확인',
     );
     expect(out.summaryText).not.toContain('손댈 것 없음');
   });
@@ -789,9 +791,9 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
     const out = await task.run(CTX);
 
     expect(out.summaryText).toContain(
-      '먼저 이것부터 — &lt;!channel&gt; 확인 &amp; 배포',
+      '*회사 1순위* — &lt;!channel&gt; 확인 &amp; 배포',
     );
-    expect(out.summaryText).toContain('🔴 장애  task &lt;x&gt; · 1일째');
+    expect(out.summaryText).toContain('🔴 *장애* — task &lt;x&gt; · 1일째');
   });
 
   it('주말 아침에는 수집 정지를 판정하지 않는다 — 수집은 평일만 돈다', async () => {
@@ -836,7 +838,7 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
 
     const out = await task.run(CTX);
 
-    expect(out.summaryText).toContain('A&amp;B&lt;랩&gt; 백엔드 개발자');
+    expect(out.summaryText).toContain('A&amp;B&lt;랩&gt; (목록은 스레드)');
     expect(out.detailIsOnlyCopy).toBe(true);
   });
 
@@ -859,10 +861,10 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
 
     expect(out.skip).toBe(false);
     expect(out.summaryText?.split('\n')[0]).toBe(
-      '☀️ *6/17(수) 아침* — 할 일 2 · 승인 1 · 장애 1',
+      '☀️ *6/17(수) 아침* — 할 일 2 (승인 1 · 장애 1)',
     );
     expect(out.summaryText).toContain(
-      '🔴 장애  오늘 계획 생성 실패 — codex quota',
+      '🔴 *장애* — 오늘 계획 생성 실패 — codex quota',
     );
     expect(out.summaryText).not.toContain('• 회사');
     expect(out.detailText).toContain('오늘 계획을 만들지 못했습니다');
@@ -887,9 +889,9 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
     const out = await task.run(CTX);
 
     expect(out.summaryText).toContain(
-      '🔴 장애  포트폴리오 사이트 발행 실패 — 사이트 401',
+      '🔴 *장애* — 포트폴리오 사이트 발행 실패 — 사이트 401',
     );
-    expect(out.summaryText).not.toContain('• 포트폴리오  어제');
+    expect(out.summaryText).not.toContain('• *포트폴리오* — 어제');
   });
 
   it('공부 브리프는 생산자(study-brief-cron)의 owner 키로 조회한다', async () => {
@@ -934,6 +936,6 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
 
     expect(out.skip).toBe(false);
     expect(out.summaryText).toContain('손댈 것 없음');
-    expect(out.summaryText).toContain('• 회사  먼저 이것부터');
+    expect(out.summaryText).toContain('• *회사 1순위*');
   });
 });

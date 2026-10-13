@@ -44,6 +44,12 @@ export interface PoShadowFinding {
   suggestion: string;
 }
 
+// 지적이 가리키는 항목 — 카드에서 지적 아래 링크로 렌더한다. 코드가 사실표에서 채운다.
+export interface PoShadowFindingReference {
+  text: string;
+  url: string | null;
+}
+
 // 회수 결과 요약. 카드의 독립 블록이 이 값을 렌더한다.
 // `unresolved` 에는 7일 미만이라 사실을 만들지 않은 키도 포함되므로
 // `unmovedFactCount` 와 다를 수 있다 — 그 차이를 카드가 밝힌다.
@@ -79,4 +85,6 @@ export interface PoShadowReport {
   // 묵은 목표 질문("이 목표 아직 유효한가요?"). 코드가 채우고, 없으면 키 자체가 없다 —
   // 활성 목표가 없는 사용자의 리포트 형태를 단계 3 이전과 같게 둔다.
   goalCheckIns?: string[];
+  // findings 와 같은 인덱스. 코드가 채우고, 이 필드가 없는 회차(2026-10 이전)는 링크 없이 렌더한다.
+  findingReferences?: PoShadowFindingReference[][];
 }

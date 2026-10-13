@@ -829,6 +829,15 @@ const resolveRichText = ({
 
 // NotionPlanBlock → Notion API block 형식.
 // semantic discriminated union — ts-pattern 으로 exhaustive 매칭.
+// 하위 블록은 부모 블록 객체 안의 `children` 으로 함께 보낸다(blocks.children.append 한 번에 중첩 생성).
+// 비어 있으면 키를 아예 싣지 않는다 — 빈 배열도 요청 형태를 바꿔 기존 블록과 달라 보이게 할 이유가 없다.
+const toChildren = (
+  children: NotionPlanBlock[] | undefined,
+): { children?: Record<string, unknown>[] } =>
+  children && children.length > 0
+    ? { children: children.map(toNotionBlock) }
+    : {};
+
 const toNotionBlock = (block: NotionPlanBlock): Record<string, unknown> => {
   return match(block)
     .with({ type: 'divider' }, () => ({
@@ -846,11 +855,12 @@ const toNotionBlock = (block: NotionPlanBlock): Record<string, unknown> => {
       type: 'heading_3',
       heading_3: { rich_text: resolveRichText({ text, richText }) },
     }))
-    .with({ type: 'bullet' }, ({ text, richText, link }) => ({
+    .with({ type: 'bullet' }, ({ text, richText, link, children }) => ({
       object: 'block',
       type: 'bulleted_list_item',
       bulleted_list_item: {
         rich_text: resolveRichText({ text, richText, link }),
+        ...toChildren(children),
       },
     }))
     .with({ type: 'numbered' }, ({ text, richText }) => ({
@@ -879,12 +889,13 @@ const toNotionBlock = (block: NotionPlanBlock): Record<string, unknown> => {
         icon: { type: 'emoji', emoji: icon },
       },
     }))
-    .with({ type: 'todo' }, ({ text, richText, checked, link }) => ({
+    .with({ type: 'todo' }, ({ text, richText, checked, link, children }) => ({
       object: 'block',
       type: 'to_do',
       to_do: {
         rich_text: resolveRichText({ text, richText, link }),
         checked: checked === true,
+        ...toChildren(children),
       },
     }))
     .with({ type: 'paragraph' }, ({ text, richText, link }) => ({

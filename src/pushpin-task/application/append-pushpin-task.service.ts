@@ -120,7 +120,7 @@ export const buildPushpinTaskBlocks = ({
   if (permalink && permalink.length > 0) {
     blocks.push({
       type: 'bullet',
-      text: '↳ Slack 원본 링크',
+      text: 'Slack 원본 링크',
       link: permalink,
     });
   }

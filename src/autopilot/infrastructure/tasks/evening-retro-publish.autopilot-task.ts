@@ -638,7 +638,7 @@ export class EveningRetroPublishTask implements AutopilotTask {
     const sourceRefsText = this.formatSourceRefsText(candidate.sourceRefs);
     const reason = this.summarizeReason(candidate.reason);
 
-    return `• *${candidate.blogValueScore}점* ${candidate.title}\n    ↳ ${sourceLabel} · ${sourceRefsText} · ${reason}`;
+    return `• *${candidate.blogValueScore}점* ${candidate.title}\n    ${sourceLabel} · ${sourceRefsText} · ${reason}`;
   }
 
   /**
@@ -703,7 +703,7 @@ export class EveningRetroPublishTask implements AutopilotTask {
       const sourceRefsText = this.formatSourceRefsText(candidate.sourceRefs);
       const keywordsText = candidate.keywords.join(', ');
       const keywordSuffix = keywordsText ? ` — ${keywordsText}` : '';
-      return `• (${candidate.blogValueScore}점) ${candidate.title}${keywordSuffix}\n    ↳ ${sourceLabel} · ${sourceRefsText}\n    ↳ ${candidate.reason}`;
+      return `• (${candidate.blogValueScore}점) ${candidate.title}${keywordSuffix}\n    ${sourceLabel} · ${sourceRefsText}\n    ${candidate.reason}`;
     });
 
     return `*발행 후보 전체 — ${candidates.length}건*\n${lines.join('\n')}`;

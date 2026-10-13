@@ -1,23 +1,39 @@
 import {
+  PoShadowFindingReference,
   PoShadowRecoverySummary,
   PoShadowReport,
 } from '../../agent/po-shadow/domain/po-shadow.type';
-import { escapeSlackMrkdwn } from './mrkdwn.util';
+import {
+  escapeSlackMrkdwn,
+  isSafeHttpUrl,
+  sanitizeForSlackLink,
+} from './mrkdwn.util';
+
+export interface PoShadowFormatOptions {
+  // true 면 지적별 근거 줄과 지난 지적 통계를 빼고 `formatPoShadowDetail` 이 스레드로 싣는다.
+  // 스레드가 없는 슬래시 응답은 기본값(false)으로 전부 한 통에 싣는다.
+  detailInThread?: boolean;
+}
 
 // 조회하지 못한 소스는 조용한 날에도, 지적이 있는 날에도 그대로 밝힌다. "이상 없음" 과
 // "못 봤음" 이 같은 글자로 나가면 카드가 조용한 고장을 덮는다.
-export const formatPoShadowReport = (report: PoShadowReport): string => {
+export const formatPoShadowReport = (
+  report: PoShadowReport,
+  { detailInThread = false }: PoShadowFormatOptions = {},
+): string => {
   if (report.quiet) {
     return formatQuietReport(report);
   }
 
-  const sections = [
-    '*PO 검토*',
-    `🎯 *먼저 이것부터* ${escapeSlackMrkdwn(report.headline)}`,
-  ];
+  // `*…*` 만 있는 줄이라 공통 렌더가 제목 블록으로 올린다. 몇 가지를 말하는지 먼저 보여 준다.
+  const title =
+    report.findings.length > 0
+      ? `*PO 검토 — 계획과 다른 점 ${report.findings.length}가지*`
+      : '*PO 검토*';
+  const sections = [title, `🎯 *먼저* ${escapeSlackMrkdwn(report.headline)}`];
 
   if (report.findings.length > 0) {
-    sections.push(formatFindings(report));
+    sections.push(formatFindings(report, !detailInThread));
   } else if (report.factSummary.length > 0) {
     sections.push(formatEvidenceLines(report.factSummary));
   }
@@ -33,7 +49,9 @@ export const formatPoShadowReport = (report: PoShadowReport): string => {
     );
   }
 
-  const recoveryBlock = formatRecoveryBlock(report.recoverySummary);
+  const recoveryBlock = detailInThread
+    ? null
+    : formatRecoveryBlock(report.recoverySummary);
   if (recoveryBlock) {
     sections.push(recoveryBlock);
   }
@@ -49,6 +67,31 @@ export const formatPoShadowReport = (report: PoShadowReport): string => {
   }
 
   return sections.join('\n\n');
+};
+
+// `detailInThread` 로 메인에서 뺀 것 — 지적별 근거와 지난 지적 통계. 근거는 사실표 라벨 그대로라
+// ("…#3753 — 지난 지적 — 머지됨") 메인에서는 읽히지 않지만, 지적이 지어낸 말이 아님을 확인할 자리는 남긴다.
+export const formatPoShadowDetail = (report: PoShadowReport): string | null => {
+  if (report.quiet) {
+    return null;
+  }
+  const sections: string[] = [];
+  if (report.findings.length > 0) {
+    const evidence = report.findings
+      .map((_, index) => report.factSummary[index])
+      .map((fact, index) =>
+        fact === undefined ? null : `${index + 1}. ${escapeSlackMrkdwn(fact)}`,
+      )
+      .filter((line): line is string => line !== null);
+    if (evidence.length > 0) {
+      sections.push(['*지적별 근거*', ...evidence].join('\n'));
+    }
+  }
+  const recoveryBlock = formatRecoveryBlock(report.recoverySummary);
+  if (recoveryBlock) {
+    sections.push(recoveryBlock);
+  }
+  return sections.length > 0 ? sections.join('\n\n') : null;
 };
 
 // 사실표 밖 판단은 "추정" 을 달아 내보낸다 — 근거 없이 말해도 되지만 근거 없음을 실토한다.
@@ -138,19 +181,40 @@ const formatQuietReport = (report: PoShadowReport): string => {
   return blocks.join('\n\n');
 };
 
-const formatFindings = (report: PoShadowReport): string =>
+// 저장소·번호·원래 제목을 링크로 — 모델이 줄여 쓴 "#3922 학교 관리자용" 만으로는 무슨 일인지 모른다.
+const formatReferences = (
+  references: PoShadowFindingReference[] | undefined,
+): string => {
+  if (!references || references.length === 0) {
+    return '';
+  }
+  const items = references.map((reference) =>
+    reference.url && isSafeHttpUrl(reference.url)
+      ? `<${sanitizeForSlackLink(reference.url)}|${sanitizeForSlackLink(reference.text)}>`
+      : escapeSlackMrkdwn(reference.text),
+  );
+  // 한 줄에 이어 붙이면 어디서 항목이 갈리는지 안 보인다 — 한 줄에 하나.
+  return items.map((item) => `\n      • ${item}`).join('');
+};
+
+// 상황과 할 일을 한 줄에 대시로 이으면 어디까지가 상황인지 안 보인다 — 할 일을 다음 줄 화살표로 뗀다.
+const formatFindings = (
+  report: PoShadowReport,
+  includeEvidence: boolean,
+): string =>
   report.findings
     .map((finding, index) => {
       const point = escapeSlackMrkdwn(finding.point);
       const suggestion = escapeSlackMrkdwn(finding.suggestion);
-      const findingLine = `• ${point} — ${suggestion}`;
+      const references = formatReferences(report.findingReferences?.[index]);
+      const findingLines = `${index + 1}. ${point}${references}\n      → ${suggestion}`;
       const fact = report.factSummary[index];
-      if (fact === undefined) {
-        return findingLine;
+      if (!includeEvidence || fact === undefined) {
+        return findingLines;
       }
-      return `${findingLine}\n  ↳ 근거: ${escapeSlackMrkdwn(fact)}`;
+      return `${findingLines}\n      근거: ${escapeSlackMrkdwn(fact)}`;
     })
     .join('\n');
 
 const formatEvidenceLines = (factSummary: string[]): string =>
-  factSummary.map((fact) => `  ↳ 근거: ${escapeSlackMrkdwn(fact)}`).join('\n');
+  factSummary.map((fact) => `근거: ${escapeSlackMrkdwn(fact)}`).join('\n');
