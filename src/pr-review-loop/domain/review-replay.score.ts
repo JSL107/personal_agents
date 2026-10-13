@@ -716,6 +716,16 @@ export const scorerVersionOf = (report: unknown): number => {
   return typeof scorerVersion === 'number' ? scorerVersion : 1;
 };
 
+// 변경 파일 목록을 전체 diff 에서 셌는지(--full-file-list). 이 칸이 생기기 전 보고서는 꺼진 것으로 읽는다.
+// 켠 실행과 끈 실행은 프롬프트의 파일 목록이 달라 같은 카드라도 입력이 다르다.
+export const fullFileListOf = (report: unknown): boolean => {
+  if (typeof report !== 'object' || report === null) {
+    return false;
+  }
+  const { options } = report as { options?: { fullFileList?: unknown } };
+  return options?.fullFileList === true;
+};
+
 export const isSameSample = (
   left: readonly number[],
   right: readonly number[],

@@ -74,6 +74,7 @@ describe('ReviewPullRequestUsecase', () => {
       commitFileToBranch: jest.fn(),
       getFileFromBranch: jest.fn(),
       searchCode: jest.fn(),
+      listTree: jest.fn(),
     };
     configGet = jest.fn();
     publishFindings = jest.fn().mockResolvedValue({});
@@ -598,6 +599,7 @@ describe('ReviewPullRequestUsecase — conversationContext', () => {
       commitFileToBranch: jest.fn(),
       getFileFromBranch: jest.fn(),
       searchCode: jest.fn(),
+      listTree: jest.fn(),
     };
 
     usecase = new ReviewPullRequestUsecase(
@@ -932,6 +934,7 @@ describe('ReviewPullRequestUsecase × 학습 규약', () => {
       commitFileToBranch: jest.fn(),
       getFileFromBranch: jest.fn(),
       searchCode: jest.fn(),
+      listTree: jest.fn(),
     };
     const findingRepository = {
       findRejectionsForConventions: jest.fn().mockResolvedValue([]),
@@ -1208,6 +1211,7 @@ describe('ReviewPullRequestUsecase × diff 밖 맥락', () => {
         content: headFiles[path],
       })),
       searchCode: jest.fn().mockResolvedValue(['src/rule.ts', 'src/use.ts']),
+      listTree: jest.fn().mockResolvedValue({ entries: [], truncated: false }),
     };
     const usecase = new ReviewPullRequestUsecase(
       { route } as never,
@@ -1368,5 +1372,380 @@ describe('ReviewPullRequestUsecase × diff 밖 맥락', () => {
 
     expect(githubClient.getPullRequest).not.toHaveBeenCalled();
     expect(promptOf()).toContain('3: const flowSlot = 1;');
+  });
+});
+
+describe('ReviewPullRequestUsecase × 기존 테스트 첨부', () => {
+  const validReview: PullRequestReview = {
+    summary: 's',
+    riskLevel: 'low',
+    mustFix: [],
+    niceToHave: [],
+    missingTests: [],
+    reviewCommentDrafts: [],
+    approvalRecommendation: 'approve',
+    findings: [],
+  };
+  const fileDiff = (path: string): string =>
+    [
+      `diff --git a/${path} b/${path}`,
+      `--- a/${path}`,
+      `+++ b/${path}`,
+      '@@ -1,1 +1,1 @@',
+      '-a',
+      '+b',
+    ].join('\n');
+  const specBody =
+    "it('중복 태그는 하나로 센다', () => {\n  expect(1).toBe(1);\n});";
+
+  const makeUsecase = ({
+    repo,
+    changedPaths,
+    treeSizes = { 'src/rule.ts': 10, 'src/rule.spec.ts': specBody.length },
+    changedFilesTruncated = false,
+  }: {
+    repo: string;
+    changedPaths: string[];
+    treeSizes?: Record<string, number>;
+    changedFilesTruncated?: boolean;
+  }) => {
+    const route = jest.fn().mockResolvedValue({
+      text: JSON.stringify(validReview),
+      modelUsed: 'codex-cli',
+      provider: ModelProviderName.CHATGPT,
+    });
+    const githubClient = {
+      getPullRequest: jest.fn().mockResolvedValue({
+        number: 412,
+        title: 't',
+        body: '',
+        repo,
+        url: 'u',
+        baseRef: 'main',
+        baseSha: 'base',
+        headRef: 'h',
+        authorLogin: 'a',
+        mergedAt: null,
+        changedFiles: changedPaths,
+        changedFilesTotalCount: changedPaths.length,
+        changedFilesTruncated,
+        additions: 1,
+        deletions: 1,
+        headSha: 'head-sha',
+        isDraft: false,
+      }),
+      getPullRequestDiff: jest.fn().mockResolvedValue({
+        diff: changedPaths.map(fileDiff).join('\n'),
+        truncated: false,
+        bytes: 10,
+      }),
+      getFileFromBranch: jest.fn(async ({ path }: { path: string }) => ({
+        fileUrl: '',
+        content: path === 'src/rule.spec.ts' ? specBody : 'const a = 1;',
+      })),
+      searchCode: jest.fn().mockResolvedValue([]),
+      listTree: jest.fn().mockResolvedValue({
+        entries: Object.entries(treeSizes).map(([path, size]) => ({
+          path,
+          size,
+        })),
+        truncated: false,
+      }),
+    };
+    const usecase = new ReviewPullRequestUsecase(
+      { route } as never,
+      {
+        execute: jest.fn(async (input) => {
+          const execution = await input.run({ agentRunId: 1 });
+          return { ...execution, agentRunId: 1 };
+        }),
+      } as never,
+      githubClient as never,
+    );
+    const promptOf = (): string => route.mock.calls[0][0].request.prompt;
+    return { usecase, githubClient, promptOf };
+  };
+
+  it('다른 레포에도 바뀐 소스의 짝 spec 본문을 줄 번호와 함께 [기존 테스트] 로 감싸 싣는다', async () => {
+    const { usecase, githubClient, promptOf } = makeUsecase({
+      repo: 'foo/bar',
+      changedPaths: ['src/rule.ts'],
+    });
+
+    await usecase.execute({ prRef: 'foo/bar#412', slackUserId: 'U' });
+
+    expect(githubClient.listTree).toHaveBeenCalledWith({
+      repo: 'foo/bar',
+      ref: 'head-sha',
+    });
+    const prompt = promptOf();
+    const block = prompt.slice(prompt.indexOf('[기존 테스트]'));
+    expect(block).toContain('<untrusted-input>');
+    expect(block).toContain(
+      `### src/rule.spec.ts (전체 ${Buffer.byteLength(specBody, 'utf-8')} bytes)`,
+    );
+    expect(block).toContain("1: it('중복 태그는 하나로 센다', () => {");
+    // 트리 전문은 싣지 않는다.
+    expect(prompt).not.toContain('src/rule.ts (전체');
+    expect(prompt).not.toContain('[related code]');
+  });
+
+  it('diff 에 든 spec 도 전문으로 싣고, [related code] 는 그 spec 을 다시 읽지 않는다', async () => {
+    const { usecase, githubClient, promptOf } = makeUsecase({
+      repo: 'JSL107/personal_agents',
+      changedPaths: ['src/rule.ts', 'src/rule.spec.ts'],
+    });
+
+    await usecase.execute({
+      prRef: 'JSL107/personal_agents#412',
+      slackUserId: 'U',
+    });
+
+    const specReads = githubClient.getFileFromBranch.mock.calls.filter(
+      ([input]) => input.path === 'src/rule.spec.ts',
+    );
+    expect(specReads).toHaveLength(1);
+    const prompt = promptOf();
+    expect(prompt).toContain('src/rule.ts — 바뀐 파일 (head)');
+    expect(prompt).not.toContain('src/rule.spec.ts — 바뀐 파일 (head)');
+    expect(prompt).toContain('### src/rule.spec.ts (전체');
+  });
+
+  it('예산을 넘은 spec 과 잘린 변경 목록을 블록 머리에 알린다 — 없다로 읽지 않게', async () => {
+    const { usecase, githubClient, promptOf } = makeUsecase({
+      repo: 'foo/bar',
+      changedPaths: ['src/rule.ts'],
+      treeSizes: { 'src/rule.ts': 10, 'src/rule.spec.ts': 70 * 1024 },
+      changedFilesTruncated: true,
+    });
+
+    await usecase.execute({ prRef: 'foo/bar#412', slackUserId: 'U' });
+
+    expect(githubClient.getFileFromBranch).not.toHaveBeenCalled();
+    const prompt = promptOf();
+    expect(prompt).toContain('일부만 확인함');
+    expect(prompt).toContain(
+      '1개 생략 — 본문을 못 봤을 뿐 테스트는 있다: src/rule.spec.ts',
+    );
+    expect(prompt).toContain('(실린 본문 없음');
+  });
+
+  it('짝 테스트가 없으면 블록이 없다', async () => {
+    const { usecase, promptOf } = makeUsecase({
+      repo: 'foo/bar',
+      changedPaths: ['src/rule.ts'],
+      treeSizes: { 'src/rule.ts': 10 },
+    });
+
+    await usecase.execute({ prRef: 'foo/bar#412', slackUserId: 'U' });
+
+    expect(promptOf()).not.toContain('[기존 테스트]');
+  });
+
+  it('트리 조회가 실패하면 블록 없이 리뷰를 계속한다 — best-effort', async () => {
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    const { usecase, githubClient, promptOf } = makeUsecase({
+      repo: 'foo/bar',
+      changedPaths: ['src/rule.ts'],
+    });
+    githubClient.listTree.mockRejectedValue(new Error('403'));
+
+    const outcome = await usecase.execute({
+      prRef: 'foo/bar#412',
+      slackUserId: 'U',
+    });
+
+    expect(outcome.result.approvalRecommendation).toBe('approve');
+    expect(promptOf()).not.toContain('[기존 테스트]');
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('수집 실패, 블록 없이 진행: 403'),
+    );
+    warn.mockRestore();
+  });
+
+  it('본문 조회 하나가 실패하면 그 파일만 미조회로 알리고 나머지는 싣는다', async () => {
+    const { usecase, githubClient, promptOf } = makeUsecase({
+      repo: 'foo/bar',
+      changedPaths: ['src/rule.ts', 'src/other.ts'],
+      treeSizes: {
+        'src/rule.ts': 10,
+        'src/rule.spec.ts': specBody.length,
+        'src/other.ts': 10,
+        'src/other.spec.ts': 10,
+      },
+    });
+    githubClient.getFileFromBranch.mockImplementation(async ({ path }) => {
+      if (path === 'src/other.spec.ts') {
+        throw new Error('500');
+      }
+      return { fileUrl: '', content: specBody };
+    });
+
+    await usecase.execute({ prRef: 'foo/bar#412', slackUserId: 'U' });
+
+    const prompt = promptOf();
+    expect(prompt).toContain('### src/rule.spec.ts (전체');
+    expect(prompt).toContain(
+      '조회하지 못한 테스트 1개 — 있지만 본문을 못 봤다: src/other.spec.ts',
+    );
+  });
+
+  it('트리 조회가 10초 안에 안 끝나면 기다리지 않고 블록 없이 진행한다', async () => {
+    jest.useFakeTimers();
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    try {
+      const { usecase, githubClient, promptOf } = makeUsecase({
+        repo: 'foo/bar',
+        changedPaths: ['src/rule.ts'],
+      });
+      githubClient.listTree.mockReturnValue(new Promise(() => undefined));
+
+      const pending = usecase.execute({
+        prRef: 'foo/bar#412',
+        slackUserId: 'U',
+      });
+      await jest.advanceTimersByTimeAsync(10_000);
+      await pending;
+
+      expect(promptOf()).not.toContain('[기존 테스트]');
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('트리 조회가 10000ms 안에 안 끝남'),
+      );
+    } finally {
+      warn.mockRestore();
+      jest.useRealTimers();
+    }
+  });
+});
+
+describe('ReviewPullRequestUsecase × 기존 테스트 첨부 — 상한', () => {
+  const validReview: PullRequestReview = {
+    summary: 's',
+    riskLevel: 'low',
+    mustFix: [],
+    niceToHave: [],
+    missingTests: [],
+    reviewCommentDrafts: [],
+    approvalRecommendation: 'approve',
+    findings: [],
+  };
+  const sources = (count: number): string[] =>
+    Array.from({ length: count }, (_, index) => `src/f${index}.ts`);
+
+  const makeUsecase = (count: number, specSize: number) => {
+    const route = jest.fn().mockResolvedValue({
+      text: JSON.stringify(validReview),
+      modelUsed: 'codex-cli',
+      provider: ModelProviderName.CHATGPT,
+    });
+    const changed = sources(count);
+    const githubClient = {
+      getPullRequest: jest.fn().mockResolvedValue({
+        number: 1,
+        title: 't',
+        body: '',
+        repo: 'foo/bar',
+        url: 'u',
+        baseRef: 'main',
+        baseSha: 'base',
+        headRef: 'h',
+        authorLogin: 'a',
+        mergedAt: null,
+        changedFiles: changed,
+        changedFilesTotalCount: count,
+        changedFilesTruncated: false,
+        additions: 1,
+        deletions: 1,
+        headSha: 'head-sha',
+        isDraft: false,
+      }),
+      getPullRequestDiff: jest
+        .fn()
+        .mockResolvedValue({ diff: '', truncated: false, bytes: 0 }),
+      getFileFromBranch: jest.fn(),
+      searchCode: jest.fn().mockResolvedValue([]),
+      listTree: jest.fn().mockResolvedValue({
+        entries: changed.flatMap((path) => [
+          { path, size: 1 },
+          { path: path.replace('.ts', '.spec.ts'), size: specSize },
+        ]),
+        truncated: false,
+      }),
+    };
+    const usecase = new ReviewPullRequestUsecase(
+      { route } as never,
+      {
+        execute: jest.fn(async (input) => {
+          const execution = await input.run({ agentRunId: 1 });
+          return { ...execution, agentRunId: 1 };
+        }),
+      } as never,
+      githubClient as never,
+    );
+    const promptOf = (): string => route.mock.calls[0][0].request.prompt;
+    return { usecase, githubClient, promptOf };
+  };
+
+  it('생략 경로는 앞 10개만 나열하고 나머지는 개수로 줄인다 — 경로 나열이 예산을 우회하지 않게', async () => {
+    const { usecase, promptOf } = makeUsecase(15, 70 * 1024);
+
+    await usecase.execute({ prRef: 'foo/bar#1', slackUserId: 'U' });
+
+    const note = promptOf()
+      .split('\n')
+      .find((line) => line.includes('15개 생략'));
+    expect(note).toBeDefined();
+    expect(note).toMatch(/ 외 5개\)$/);
+    expect(note?.match(/\.spec\.ts/g)).toHaveLength(10);
+  });
+
+  it('본문 조회가 3번 실패하면 남은 조회를 치지 않고 미조회로 알린다', async () => {
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    const { usecase, githubClient, promptOf } = makeUsecase(8, 10);
+    githubClient.getFileFromBranch.mockRejectedValue(new Error('403'));
+
+    await usecase.execute({ prRef: 'foo/bar#1', slackUserId: 'U' });
+
+    // 동시 조회 4개가 함께 출발하므로 상한 직전에 떠난 것까지만 나간다 — 8개를 다 치지 않는다.
+    expect(githubClient.getFileFromBranch.mock.calls.length).toBeLessThan(8);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('남은 조회 중단 (상한 3회)'),
+    );
+    expect(promptOf()).toContain('조회하지 못한 테스트 8개');
+    warn.mockRestore();
+  });
+
+  it('본문 조회 도중 10초가 지나면 끝난 파일만 싣고 기다리던 파일은 미조회로 알린다', async () => {
+    jest.useFakeTimers();
+    try {
+      const { usecase, githubClient, promptOf } = makeUsecase(2, 10);
+      githubClient.getFileFromBranch.mockImplementation(
+        ({ path }: { path: string }) =>
+          path === 'src/f0.spec.ts'
+            ? Promise.resolve({ fileUrl: '', content: 'it(0)' })
+            : new Promise(() => undefined),
+      );
+
+      const pending = usecase.execute({
+        prRef: 'foo/bar#1',
+        slackUserId: 'U',
+      });
+      await jest.advanceTimersByTimeAsync(10_000);
+      await pending;
+
+      const prompt = promptOf();
+      expect(prompt).toContain('### src/f0.spec.ts (전체');
+      expect(prompt).toContain(
+        '조회하지 못한 테스트 1개 — 있지만 본문을 못 봤다: src/f1.spec.ts',
+      );
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
