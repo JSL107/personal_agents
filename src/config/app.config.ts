@@ -683,6 +683,28 @@ export class EnvironmentVariables {
   @IsString()
   JOB_APPLICATION_NUDGE_TIMEZONE?: string;
 
+  // ====== 게임잡 원화 공고 피드 — 하루 2회 채널 게시 ======
+  // 2D 캐릭터 원화·컨셉 공고를 채점 없이 전부 보낸다. 남에게 가는 발송이라 기본은 꺼짐.
+  // - ART_JOB_FEED_TARGET: 게시 채널(`C...`). 미설정 시 모듈 비활성.
+  // - ART_JOB_FEED_MENTION_USER_ID: 머리 메시지에서 멘션할 사용자(`U...`). 비우면 멘션 없음.
+  // - ART_JOB_FEED_CRON: BullMQ cron (default `0 9,18 * * *` — 09:00·18:00).
+  // - ART_JOB_FEED_TIMEZONE: default Asia/Seoul.
+  @IsOptional()
+  @IsString()
+  ART_JOB_FEED_TARGET?: string;
+
+  @IsOptional()
+  @IsString()
+  ART_JOB_FEED_MENTION_USER_ID?: string;
+
+  @IsOptional()
+  @IsString()
+  ART_JOB_FEED_CRON?: string;
+
+  @IsOptional()
+  @IsString()
+  ART_JOB_FEED_TIMEZONE?: string;
+
   // Daily Eval / Impact Report Recent / CEO Meta Cron 등 cron consumer 가 graceful skip (NO_xxx) 외
   // throw 직전에 owner 에게 DM 으로 알릴 Slack user ID (`U...`). 미설정 시 NoopCronFailureAlerter
   // (stdout warn 만). CLAUDE_AUTH_ALERT_OWNER 와 별도로 둬 cron 알람만 분리 구독 가능.

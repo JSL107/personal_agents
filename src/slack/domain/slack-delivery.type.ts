@@ -20,6 +20,7 @@ export type DeliveryKind =
   | 'study-brief'
   | 'resume-calibration'
   | 'job-application-nudge'
+  | 'art-job-feed'
   | 'code-review-webhook'
   | 'pr-careerlog'
   | 'alert:claude-auth'
