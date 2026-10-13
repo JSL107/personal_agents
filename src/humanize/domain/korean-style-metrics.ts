@@ -73,6 +73,21 @@ export { extractProseSentences } from './korean-style-sentences';
 // 표·코드가 한 문장으로 붙어 편차가 228 로 잡힌 회차가 있었다(문장 축만 오염되고 구성 축은
 // 멀쩡하다).
 //
+// **2026-10-13 — 위 「판정할 차이가 없다」는 8월 생성분까지만 맞다.** 2026-09-09 부터 발행
+// 출처가 '오늘의 공부' 딥다이브에서 저녁 회고 초안으로 바뀌었고(#486 이 회고 쪽 굶음을 푼 직후),
+// 그 23편의 최초 발행본은 편차 11~20 으로 방어선(사람이 고친 8월 글 16편 현재본 23~49)과
+// **겹치지 않는다.** 평균으로 나눈 변동계수도 0.28~0.44 vs 0.46~0.84 라 「글이 짧아져서」만은
+// 아니다. 가장 뚜렷한 차이는 80자 이상 문장 비율(0~6% vs 8~26%)이다.
+//
+// 그래도 판정에 넣지 않는다 — **고칠 단계가 여기가 아니기 때문이다.** 같은 23편의 Notion
+// 초안(회고 경로는 저장 전에 윤문을 한 번 거친다)이 이미 편차 13~23 이고, 발행 단계의
+// 익명화·편집·윤문을 지나며 바뀐 폭은 중앙값 −1.0 이다. 같은 회고 입력을 3회씩 다시 생성해 보면
+// 모델 초안부터 편차 16~24 이고 저장 전 윤문 뒤에도 16~23 이다 — 균일함은 초안 생성에서 생긴다.
+// 판정에 넣으면 갭이 `style-feedback.ts` 를 타고 **윤문** 프롬프트로 되먹여지는데, 윤문은 이
+// 균일함을 만들지 않았고 오히려 초안에 있는 80자 이상 문장의 약 40%를 끊는다(같은 실측). 그래서
+// 처방은 초안 프롬프트(`korean-blog-scorecard.prompt.ts` 의 `breath`)에 두고, 여기서는 카드에
+// 방어선 범위를 붙여 보이게만 한다(`BREATH_REFERENCE`).
+//
 // 이 지표는 지금도 발행을 막지 않는다. 카드에 수치를 적어 눈으로 보게 하는 용도다.
 
 export type KoreanStyleMetrics = {
@@ -82,6 +97,9 @@ export type KoreanStyleMetrics = {
   // 비율은 0~100 정수 퍼센트다. 소수 1자리로 반올림하면 0~5% 가 전부 0 으로 뭉개져
   // "구어 어미가 하나도 없다" 로 읽힌다(실측: 142문장 중 6개 = 4% 가 0% 로 표시됐다).
   shortSentencePercent: number;
+  // 80자(공백 제외) 이상 문장의 비율. 최장 문장 하나만 보면 「긴 문장이 아예 없는 글」과 「한
+  // 번쯤 길게 간 글」이 갈리지 않는다. 9월 회고 생성분은 대부분 0% 였다(파일 헤더 2026-10-13).
+  longSentencePercent: number;
   longestSentenceLength: number;
   // 가장 긴 문장 그대로. 상한을 넘겼을 때 **무엇이 길었는지** 사람이 봐야 처방이 갈린다 —
   // 끊어야 할 만연체와, 끊을 수 없는 영문 이름 나열은 길이만으로 구분되지 않는다.
@@ -202,6 +220,22 @@ const endsWithQuestion = (sentence: string): boolean =>
   sentence.replace(SENTENCE_CLOSERS, '').endsWith('?');
 
 const SHORT_SENTENCE_MAX = 20;
+const LONG_SENTENCE_MIN = 80;
+
+/**
+ * 호흡 관측 줄에 나란히 적는 방어선 범위 — 판정이 아니라 비교용이다.
+ *
+ * 출처: 2026-10-13 실측, 블로그 2026-08-20~09-07 글 16편의 현재본(발행 뒤 사람이 고친 커밋이
+ * 있는 글 — `fetch-blog-baseline.ts` 와 같은 기준). 숫자만 찍힌 「편차 13.7」은 좋은 값인지
+ * 나쁜 값인지 알려주지 못해 아무도 판정하지 못했다(파일 헤더).
+ *
+ * 목표 코퍼스(기술 블로그)가 아니라 방어선을 쓴다. 토스는 변동계수 0.35~0.91 · 80자 이상
+ * 0~45% 로 짧게 쓰는 글이 섞여 있어, 그쪽 범위를 붙이면 지금 글도 「범위 안」으로 읽힌다.
+ */
+const BREATH_REFERENCE = {
+  variation: '0.46~0.84',
+  longPercent: '8~26%',
+} as const;
 // 프로파일의 구어 종결어미. 이유를 문장 끊고 뒤에 던지는 이 문체의 표식이다.
 //
 // 이 목록에 `~에요`·`~아요` 를 넣지 않는다. 그 둘은 이유를 던지는 어미가 아니라 해요체 평서형이라
@@ -365,6 +399,7 @@ export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
       averageLength: 0,
       lengthStandardDeviation: 0,
       shortSentencePercent: 0,
+      longSentencePercent: 0,
       longestSentenceLength: 0,
       longestSentence: '',
       longestSentenceWords: 0,
@@ -453,6 +488,10 @@ export const measureKoreanStyle = (markdown: string): KoreanStyleMetrics => {
     lengthStandardDeviation: round(Math.sqrt(variance)),
     shortSentencePercent: toPercent(
       lengths.filter((length) => length <= SHORT_SENTENCE_MAX).length,
+      lengths.length,
+    ),
+    longSentencePercent: toPercent(
+      lengths.filter((length) => length >= LONG_SENTENCE_MIN).length,
       lengths.length,
     ),
     longestSentenceLength: lengths[longestIndex],
@@ -720,7 +759,12 @@ export const formatKoreanStyleMetrics = (
     translationeseParts.length > 0
       ? `\n번역투(관측값): ${translationeseParts.join(' · ')} — ${t.samples.join(', ')}`
       : '';
-  return `${sentenceLine}\n${paragraph}${composition}${translationese}${verdict}${scopeHint}`;
+  // 호흡은 편차를 평균으로 나눠 본다 — 글이 짧아지면 편차도 따라 줄어서, 편차만으로는 「짧아진
+  // 글」과 「균일해진 글」이 갈리지 않는다. 비율 축이라 문장 축과 같은 표본 조건을 건다.
+  const breath = metrics.measurable
+    ? `\n호흡(관측값): 변동계수 ${(metrics.lengthStandardDeviation / metrics.averageLength).toFixed(2)} · 80자 이상 ${metrics.longSentencePercent}% — 사람이 고친 글 ${BREATH_REFERENCE.variation} · ${BREATH_REFERENCE.longPercent}`
+    : '';
+  return `${sentenceLine}\n${paragraph}${breath}${composition}${translationese}${verdict}${scopeHint}`;
 };
 
 const round = (value: number): number => Math.round(value * 10) / 10;

@@ -359,6 +359,33 @@ describe('formatKoreanStyleMetrics', () => {
     expect(line).not.toContain('무생물주어');
   });
 
+  // 9월 회고 생성분은 80자 이상 문장이 0% 인 글이 대부분이었다. 비율과 방어선 범위가 함께
+  // 찍혀야 「편차 13.7」 같은 맨숫자를 판정할 수 있다.
+  it('40문장 이상이면 호흡 줄에 변동계수·긴 문장 비율을 방어선 범위와 함께 적는다', () => {
+    const shortSentence = '오늘 배포 결과를 팀과 함께 확인했어요.';
+    const longSentence =
+      '재시도 큐에 쌓인 작업이 같은 키로 두 번 들어오면 두 번째 작업은 앞 작업의 결과를 먼저 조회한 뒤에 이미 끝난 일이면 건너뛰고 아직 진행 중이면 잠시 기다렸다가 다시 확인하도록 바꿔서 같은 결제가 두 번 나가던 문제를 막았어요.';
+    const sentences = [
+      ...Array.from({ length: 36 }, () => shortSentence),
+      ...Array.from({ length: 4 }, () => longSentence),
+    ];
+    const metrics = measureKoreanStyle(sentences.join(' '));
+
+    expect(metrics.longSentencePercent).toBe(10);
+    const line = formatKoreanStyleMetrics(metrics);
+    expect(line).toContain('호흡(관측값): 변동계수');
+    expect(line).toContain('80자 이상 10%');
+    expect(line).toContain('사람이 고친 글 0.46~0.84 · 8~26%');
+  });
+
+  it('40문장 미만이면 호흡 줄을 적지 않는다', () => {
+    const line = formatKoreanStyleMetrics(
+      measureKoreanStyle('짧다. 조금 더 긴 문장을 하나 넣습니다.'),
+    );
+
+    expect(line).not.toContain('호흡');
+  });
+
   it('관측값임이 드러나게 한 줄로 적는다', () => {
     const line = formatKoreanStyleMetrics(
       measureKoreanStyle('짧다. 조금 더 긴 문장을 하나 넣습니다.'),
@@ -430,6 +457,7 @@ describe('줄표(—) 세기', () => {
     averageLength: 40,
     lengthStandardDeviation: 15,
     shortSentencePercent: 25,
+    longSentencePercent: 0,
     // 새 축도 목표 안 값으로 둔다 — 이 픽스처의 전제가 「다른 축은 전부 통과」다.
     wordsPerSentence: 12,
     clausesPerSentence: 2,
@@ -526,6 +554,7 @@ describe('줄표(—) 세기', () => {
       // 문장 축 값은 전부 목표 밖이지만 보류라 잡히지 않아야 한다.
       lengthStandardDeviation: 1,
       shortSentencePercent: 0,
+      longSentencePercent: 0,
       emDashCount: 9,
     });
     expect(gaps).toEqual(['줄표 9회(≤2회)']);
@@ -564,6 +593,7 @@ describe('재현 목표 판정', () => {
     averageLength: 40,
     lengthStandardDeviation: 15,
     shortSentencePercent: 25,
+    longSentencePercent: 0,
     // 새 축도 목표 안 값으로 둔다 — 이 픽스처의 전제가 「다른 축은 전부 통과」다.
     wordsPerSentence: 12,
     clausesPerSentence: 2,
@@ -630,6 +660,7 @@ describe('재현 목표 판정', () => {
         ...base,
         lengthStandardDeviation: 3,
         shortSentencePercent: 6,
+        longSentencePercent: 0,
         colloquialEndingPercent: 33,
       }),
     ).toEqual([]);
