@@ -152,7 +152,16 @@ const readPortfolioReport = (fullText: string): PortfolioReport | null => {
   }
   return {
     kind: 'report',
-    line: truncate(`발행 — ${bullets.join(' · ')}`, PORTFOLIO_LINE_MAX_LENGTH),
+    // 불릿 안의 " — " 와 장식 이모지를 그대로 이으면 "발행 — 📋 이력서 감사 — 약함…" 처럼 대시가 겹친다.
+    // ⚠️ 는 경고 표시라 남긴다.
+    line: truncate(
+      `발행 · ${bullets
+        .map((bullet) =>
+          bullet.replace(/^(📋|📌)\s*/u, '').replace(/ — /g, ': '),
+        )
+        .join(' · ')}`,
+      PORTFOLIO_LINE_MAX_LENGTH,
+    ),
   };
 };
 
