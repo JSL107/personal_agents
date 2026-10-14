@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import { RoutedVia } from '../../agent-run/domain/agent-run.type';
 import { PrismaService } from '../../prisma/prisma.service';
+import { SLACK_DELIVERY_STATUS } from '../../slack/domain/slack-delivery.type';
 import {
   CujDeliveryRow,
   CujLedgerReaderPort,
@@ -43,6 +44,9 @@ export class CujLedgerPrismaReader implements CujLedgerReaderPort {
       where: {
         itemKinds: { has: itemKind },
         createdAt: { lt: before },
+        // 발송 실패(FAILED)는 회차 기록으로 치지 않는다 — 보고가 사람에게 닿지 않았고, 실패 알림도
+        // 같은 Slack 으로 나가 함께 묻힐 수 있다. 콘솔·빈 회차(SUPPRESSED)는 정상 회차다.
+        status: { not: SLACK_DELIVERY_STATUS.FAILED },
       },
       orderBy: { createdAt: 'desc' },
       select: { createdAt: true },
