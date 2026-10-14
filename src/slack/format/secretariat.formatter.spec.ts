@@ -186,9 +186,19 @@ describe('formatSecretariat', () => {
             count: 1,
           },
         ],
+        // ⑤ 결정 문구도 같은 사유를 따로 옮긴다 — 한쪽만 고치면 다른 쪽에서 원문이 샌다.
+        decision: {
+          kind: 'UNRESOLVED_FAILURE',
+          agentType: 'CODE_REVIEWER',
+          reason: 'swept: stale IN_PROGRESS',
+          count: 2,
+        },
       });
       expect(text).toContain(
         '코드 리뷰 1건 — 30분 넘게 끝나지 않아 자동으로 정리됨',
+      );
+      expect(text).toContain(
+        '코드 리뷰 2건 실패, 아직 복구 안 됨 — 30분 넘게 끝나지 않아 자동으로 정리됨',
       );
       expect(text).not.toContain('swept');
     });

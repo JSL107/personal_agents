@@ -38,12 +38,12 @@ export const formatQuotaStats = (stats: QuotaStatsResult): string => {
   // 실제로 plan 에 주입됐는지 가시화.
   const ctx = stats.pmContext;
   if (ctx.pmRunCount > 0) {
-    lines.push('', '*PM 컨텍스트 주입*');
+    lines.push('', '*오늘 계획에 넣은 맥락*');
     // 외부 guard 로 pmRunCount > 0 보장됨 — 내부 0-나눗셈 방어 중복 제거 (V3 mid-progress audit B3 P10).
     const inboxAvg = (ctx.totalInboxItems / ctx.pmRunCount).toFixed(1);
     const similarAvg = (ctx.totalSimilarPlans / ctx.pmRunCount).toFixed(1);
     lines.push(
-      `• PM 실행 ${ctx.pmRunCount}회 중 Slack Inbox 항목 누적 ${ctx.totalInboxItems}개 (실행당 평균 ${inboxAvg}개, ${ctx.pmRunsWithInbox}회 사용)`,
+      `• 오늘 계획 ${ctx.pmRunCount}회 중 Slack Inbox 항목 누적 ${ctx.totalInboxItems}개 (실행당 평균 ${inboxAvg}개, ${ctx.pmRunsWithInbox}회 사용)`,
     );
     lines.push(
       `• 유사 plan(FTS) 누적 ${ctx.totalSimilarPlans}개 (실행당 평균 ${similarAvg}개, ${ctx.pmRunsWithSimilar}회 매칭)`,

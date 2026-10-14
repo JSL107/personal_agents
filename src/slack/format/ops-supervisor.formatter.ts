@@ -1,3 +1,4 @@
+import { toTaskLabel } from '../../agent-registry/agent-registry';
 import {
   QualityAnomaly,
   QualityAnomalyKind,
@@ -10,6 +11,11 @@ const ICON: Record<QualityAnomalyKind, string> = {
   ZOMBIE: '🧟',
   PREVIEW_REJECT: '🙅',
 };
+
+// 에이전트 이상의 key 는 agentType 이라 한국어 담당 이름으로 옮긴다. 카드 거절의 key 는
+// 카드 종류(preview kind)인데 아직 한국어 이름표가 없어 원문을 둔다.
+const describeKey = (item: QualityAnomaly): string =>
+  item.scope === 'agent' ? toTaskLabel(item.key) : item.key;
 
 // 이상 0건이면 1줄 하트비트, 있으면 항목과 codex 제안을 표시한다.
 export const formatOpsSupervisor = (
@@ -26,7 +32,7 @@ export const formatOpsSupervisor = (
 
   const header = `🩺 *운영 감독관* — ${firedAtKst} · 품질 이상 ${anomalies.length}건 (최근 30일)`;
   const lines = anomalies.map(
-    (item) => `• ${ICON[item.kind]} ${item.key}: ${item.detail}`,
+    (item) => `• ${ICON[item.kind]} ${describeKey(item)}: ${item.detail}`,
   );
   const advice =
     suggestion !== null

@@ -1,4 +1,9 @@
 import { ContextSummary } from '../../agent/pm/application/sync-context.usecase';
+import { toTaskLabel } from '../../agent-registry/agent-registry';
+import { AgentType } from '../../model-router/domain/model-router.type';
+
+const PLAN_LABEL = toTaskLabel(AgentType.PM);
+const WORKLOG_LABEL = toTaskLabel(AgentType.WORK_REVIEWER);
 
 // /sync-context 결과 — 컨텍스트 재수집 상태 요약을 한국어 Slack 마크다운으로 렌더.
 // 모델 호출이 없으므로 formatModelFooter 는 붙이지 않는다 (HOTFIX-1).
@@ -15,11 +20,11 @@ export const formatContextSummary = (summary: ContextSummary): string => {
     `*Slack*: 본인 멘션 ${summary.slack.mentionCount}건 (최근 ${summary.slack.sinceHours}h)`,
     '',
     summary.previousPlan
-      ? `*직전 PM 실행*: #${summary.previousPlan.agentRunId} (${summary.previousPlan.endedAt.slice(0, 10)})`
-      : '*직전 PM 실행*: 없음',
+      ? `*직전 ${PLAN_LABEL}*: #${summary.previousPlan.agentRunId} (${summary.previousPlan.endedAt.slice(0, 10)})`
+      : `*직전 ${PLAN_LABEL}*: 없음`,
     summary.previousWorklog
-      ? `*직전 Work Reviewer 실행*: #${summary.previousWorklog.agentRunId} (${summary.previousWorklog.endedAt.slice(0, 10)})`
-      : '*직전 Work Reviewer 실행*: 없음',
+      ? `*직전 ${WORKLOG_LABEL}*: #${summary.previousWorklog.agentRunId} (${summary.previousWorklog.endedAt.slice(0, 10)})`
+      : `*직전 ${WORKLOG_LABEL}*: 없음`,
   ];
 
   return lines.join('\n');
