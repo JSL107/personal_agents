@@ -90,6 +90,26 @@ describe('isLedgerGap', () => {
     });
   });
 
+  // 지난 회차 기록 → 다음 회차 당일 아침(회차 전)은 조용, 그다음 날 아침에 울린다.
+  it.each([
+    ['weekly-summary', '2026-10-09T17:01:00+09:00', '2026-10-16', '2026-10-17'],
+    ['impact-report', '2026-10-10T09:01:00+09:00', '2026-10-17', '2026-10-18'],
+    ['knowledge-lint', '2026-10-11T10:00:00+09:00', '2026-10-18', '2026-10-19'],
+    [
+      'blog-revision-report',
+      '2026-10-12T09:30:00+09:00',
+      '2026-10-19',
+      '2026-10-20',
+    ],
+  ])(
+    '%s — 다음 회차 당일 아침은 조용하고, 그 회차가 빠지면 다음 날 알린다',
+    (taskId, recordedAt, nextFireDay, dayAfter) => {
+      const latest = new Date(recordedAt);
+      expect(isGap(taskId, nextFireDay, latest)).toBe(false);
+      expect(isGap(taskId, dayAfter, latest)).toBe(true);
+    },
+  );
+
   describe('env 오버라이드를 따른다', () => {
     // run-retro 를 매월 1·15일 09:00 으로 바꾼 경우. 10-01 회차 뒤 다음은 10-15.
     const twiceMonthly = { AUTOPILOT_RUN_RETRO_SCHEDULE: '0 9 1,15 * *' };

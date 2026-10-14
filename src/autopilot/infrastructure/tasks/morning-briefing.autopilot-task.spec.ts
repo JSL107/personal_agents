@@ -153,10 +153,18 @@ describe('MorningBriefingAutopilotTask', () => {
         'cuj-check',
         new Date('2026-10-16T15:00:00Z'),
       );
-      expect(find).toHaveBeenCalledWith(
+      for (const taskId of [
         'run-retro',
-        new Date('2026-10-16T15:00:00Z'),
-      );
+        'weekly-summary',
+        'impact-report',
+        'knowledge-lint',
+        'blog-revision-report',
+      ]) {
+        expect(find).toHaveBeenCalledWith(
+          taskId,
+          new Date('2026-10-16T15:00:00Z'),
+        );
+      }
     });
 
     it('어제 기록이 있으면 조용하다', async () => {
