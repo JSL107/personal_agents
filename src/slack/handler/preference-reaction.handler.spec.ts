@@ -192,6 +192,101 @@ describe('PreferenceReactionHandler', () => {
     });
   });
 
+  describe('스레드 답글에 달린 반응 — 답한 질문을 함께 남긴다', () => {
+    const reply = {
+      bot_id: 'B_BOT',
+      ts: '1700000100.0002',
+      thread_ts: '1700000000.0001',
+      text: '「관심 없음」 버튼을 누르면 돼요.',
+    };
+    const reactOn = async (
+      client: ReturnType<typeof buildClient>,
+      repository: jest.Mocked<ReactionSignalRepositoryPort>,
+    ): Promise<void> => {
+      const { app, getHandler } = buildAppMock();
+      new PreferenceReactionHandler(repository).register(app);
+      await getHandler()({
+        event: {
+          reaction: '-1',
+          user: 'U1',
+          item: { type: 'message', channel: 'D1', ts: reply.ts },
+        },
+        client,
+        context: { botUserId: 'BOT', botId: 'B_BOT' },
+      });
+    };
+
+    it('답글 직전의 사람 메시지를 질문으로 저장한다 — 그보다 앞선 발화·봇 메시지는 쓰지 않는다', async () => {
+      const repository = buildRepository();
+      const client = buildClient(reply);
+      client.conversations.replies
+        .mockResolvedValueOnce({ messages: [reply] })
+        .mockResolvedValueOnce({
+          messages: [
+            { ts: '1700000000.0001', text: '<@BOT> 공고 피드 알려줘' },
+            { bot_id: 'B_BOT', ts: '1700000050.0001', text: '공고 피드는…' },
+            {
+              ts: '1700000090.0001',
+              text: '<@BOT> 필요 없는 공고는 어떻게 빼?',
+            },
+          ],
+        });
+
+      await reactOn(client, repository);
+
+      expect(client.conversations.replies).toHaveBeenLastCalledWith({
+        channel: 'D1',
+        ts: '1700000000.0001',
+        latest: reply.ts,
+        inclusive: false,
+        limit: 200,
+      });
+      expect(repository.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          messageText: reply.text,
+          promptText: '<@BOT> 필요 없는 공고는 어떻게 빼?',
+        }),
+      );
+    });
+
+    it('질문 조회가 실패해도 반응은 질문 없이 저장한다', async () => {
+      const repository = buildRepository();
+      const client = buildClient(reply);
+      client.conversations.replies
+        .mockResolvedValueOnce({ messages: [reply] })
+        .mockRejectedValueOnce(new Error('ratelimited'));
+
+      await reactOn(client, repository);
+
+      const saved = repository.record.mock.calls[0][0];
+      expect(saved.messageText).toBe(reply.text);
+      expect(saved).not.toHaveProperty('promptText');
+    });
+  });
+
+  it('최상위 메시지(cron 발송 등)는 스레드를 다시 조회하지 않고 질문 없이 저장한다', async () => {
+    const { app, getHandler } = buildAppMock();
+    const repository = buildRepository();
+    new PreferenceReactionHandler(repository).register(app);
+    const client = buildClient({
+      ...botMessage('오늘 오전 브리핑 보냅니다', '1.1'),
+      thread_ts: '1.1',
+    });
+
+    await getHandler()({
+      event: {
+        reaction: '-1',
+        user: 'U1',
+        item: { type: 'message', channel: 'C1', ts: '1.1' },
+      },
+      client,
+      context: { botUserId: 'BOT', botId: 'B_BOT' },
+    });
+
+    expect(client.conversations.replies).toHaveBeenCalledTimes(1);
+    expect(repository.record.mock.calls[0][0]).not.toHaveProperty('promptText');
+  });
+
   it('저장 실패는 graceful — 이벤트 처리를 끝낸다', async () => {
     const { app, getHandler } = buildAppMock();
     const repository = buildRepository();

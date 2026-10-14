@@ -86,7 +86,7 @@ export const claimRoutingContext = (): RoutingContext | undefined => {
 const ROUTED_TEXT_LIMIT = 500;
 // 잘렸다는 사실 자체가 정보다. 이 표식이 없으면 "짧게 친 입력" 과 "길어서 잘린 입력" 이
 // 원장에서 같은 모양이 되어, 분류가 틀렸을 때 모델이 실제로 무엇을 봤는지 되짚을 수 없다.
-const ROUTED_TEXT_TRUNCATION_MARK = '…[잘림]';
+export const ROUTED_TEXT_TRUNCATION_MARK = '…[잘림]';
 
 /**
  * 원장에 싣는 라우팅 원문. 사용자 입력이라 토큰·키가 섞일 수 있어 마스킹하고 길이를 자른다.

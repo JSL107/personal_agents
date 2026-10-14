@@ -20,6 +20,10 @@ import { SlackHandler } from '../domain/port/slack-handler.port';
 // 제약이 중복 저장을 막는다.
 const TARGET_EMOJIS = ['+1', 'thumbsup', '-1', 'thumbsdown'];
 
+// 질문을 찾을 때 읽는 스레드 메시지 수. 대화 스레드는 짧지만, 이 수를 넘는 긴 스레드에서는
+// 앞쪽 메시지만 와서 질문이 아닌 더 이른 발화가 잡힐 수 있다.
+const THREAD_FETCH_LIMIT = 200;
+
 @Injectable()
 export class PreferenceReactionHandler implements SlackHandler {
   private readonly logger = new Logger(PreferenceReactionHandler.name);
@@ -77,12 +81,23 @@ export class PreferenceReactionHandler implements SlackHandler {
           return;
         }
 
+        const promptText =
+          message.thread_ts && message.thread_ts !== message.ts
+            ? await this.findPromptText(
+                client,
+                event.item.channel,
+                message.thread_ts,
+                event.item.ts,
+              )
+            : undefined;
+
         await this.reactionRepository.record({
           slackUserId: event.user,
           channelId: event.item.channel,
           messageTs: event.item.ts,
           emoji: event.reaction,
           messageText: message.text,
+          ...(promptText ? { promptText } : {}),
         });
         this.logger.log(
           `선호 반응 저장 — user=${event.user} emoji=${event.reaction} channel=${event.item.channel} ts=${event.item.ts}`,
@@ -93,5 +108,35 @@ export class PreferenceReactionHandler implements SlackHandler {
         );
       }
     });
+  }
+
+  // 반응 대상 답글 바로 앞의 사람 메시지 = 이대리가 답한 질문. 👎 달린 대화 답변을 eval 후보로
+  // 낼 때 쓴다(nl-answer-candidate). 원장(agent_run)에는 Slack 메시지 ts 가 없어 반응 행에서
+  // run 으로 거슬러 갈 수 없으므로, 질문을 아는 유일한 시점인 여기서 같이 남긴다.
+  // `latest` 를 답글 ts 로, inclusive=false 로 두면 답글 이전 메시지만 온다(2026-10-14 실측).
+  // 질문을 못 찾아도 반응 저장은 계속한다 — 선호 학습 신호가 이 부가 정보 때문에 빠지면 안 된다.
+  private async findPromptText(
+    client: App['client'],
+    channel: string,
+    threadTs: string,
+    replyTs: string,
+  ): Promise<string | undefined> {
+    try {
+      const thread = await client.conversations.replies({
+        channel,
+        ts: threadTs,
+        latest: replyTs,
+        inclusive: false,
+        limit: THREAD_FETCH_LIMIT,
+      });
+      return thread.messages
+        ?.filter((candidate) => !candidate.bot_id && candidate.text)
+        .at(-1)?.text;
+    } catch (error: unknown) {
+      this.logger.warn(
+        `반응 대상의 질문 조회 실패 — 질문 없이 저장한다: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return undefined;
+    }
   }
 }
