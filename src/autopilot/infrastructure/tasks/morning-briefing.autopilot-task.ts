@@ -395,7 +395,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
     }
   }
 
-  // CUJ 점검(cuj-check)은 아침 브리핑을 감시하고, 아침 브리핑은 CUJ 점검과 주간 실행 회고(run-retro)가
+  // CUJ 점검(cuj-check)은 아침 브리핑을 감시하고, 아침 브리핑은 CUJ 점검과 주간 작업들이
   // 제 cron 의 직전 회차 이후 원장을 남겼는지 본다(LEDGER_GAP_WATCHES). 감시자인 브리핑이 멈추면 CUJ 점검이 잡고,
   // 둘이 함께 멈추면(스케줄러 정지·앱 다운) 매일 오던 이 메시지가 안 오는 것 자체가 신호다.
   // 조회가 실패해도 브리핑 본체는 나가야 하므로 줄만 생략한다.
