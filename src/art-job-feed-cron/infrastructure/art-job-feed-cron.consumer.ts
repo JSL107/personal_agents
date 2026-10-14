@@ -10,6 +10,7 @@ import {
   ResolvedArtJobImage,
 } from '../../art-job-feed/domain/art-job-feed.type';
 import { isTargetArtRole } from '../../art-job-feed/domain/art-role.filter';
+import { deadlineDateOf } from '../../art-job-feed/domain/deadline';
 import {
   ART_JOB_SOURCE_PORT,
   ArtJobSourcePort,
@@ -211,19 +212,20 @@ export class ArtJobFeedCronConsumer extends ObservedWorkerHost {
         resolved: await this.imageResolver.resolve(listing),
       });
     }
+    // 라벨·버튼·장부 마감일이 같은 "오늘"을 기준으로 계산되게 한 번만 잡는다.
+    const today = todayInKst(new Date());
     const { ts } = await this.slackNotifier.postMessage({
       kind: 'art-job-feed',
       target,
-      ...formatArtJobDigest({
-        items,
-        mentionUserId,
-        today: todayInKst(new Date()),
-      }),
+      ...formatArtJobDigest({ items, mentionUserId, today }),
       // 공고 링크 미리보기는 게임잡 공통 로고라 정보가 없고 메시지만 길어진다.
       unfurlLinks: false,
     });
     for (const item of items) {
-      await this.repository.markNotified(item);
+      await this.repository.markNotified({
+        ...item,
+        deadlineDate: deadlineDateOf(item.listing.deadlineText, today),
+      });
     }
     if (!ts) {
       return;
