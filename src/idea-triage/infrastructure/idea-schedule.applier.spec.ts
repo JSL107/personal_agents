@@ -136,4 +136,37 @@ describe('IdeaScheduleApplier', () => {
     expect(repository.markScheduled).toHaveBeenCalledWith(3, 8);
     expect(result.message).toContain('2026-10-19');
   });
+
+  it('일정 등록 직후 단계 기록을 남겨, 판정 기록 갱신이 실패한 뒤 다시 승인해도 일정을 또 만들지 않는다', async () => {
+    const { repository, registerSchedule } = createMocks();
+    const done: string[] = [];
+    const progress = {
+      get done(): readonly string[] {
+        return [...done];
+      },
+      record: jest.fn(async (step: string) => {
+        done.push(step);
+      }),
+    };
+    repository.markScheduled.mockRejectedValueOnce(new Error('DB 일시 오류'));
+    const applier = new IdeaScheduleApplier(repository, registerSchedule);
+
+    await expect(applier.apply(preview, progress)).rejects.toThrow(
+      'DB 일시 오류',
+    );
+    await applier.apply(preview, progress);
+
+    expect(registerSchedule.execute).toHaveBeenCalledTimes(1);
+    expect(progress.record).toHaveBeenCalledWith('schedule-registered:8');
+    expect(repository.markScheduled).toHaveBeenLastCalledWith(3, 8);
+  });
+
+  it('단계 기록이 없으면(첫 승인) 일정을 등록한다', async () => {
+    const { repository, registerSchedule } = createMocks();
+    await new IdeaScheduleApplier(repository, registerSchedule).apply(preview, {
+      done: [],
+      record: jest.fn().mockResolvedValue(undefined),
+    });
+    expect(registerSchedule.execute).toHaveBeenCalledTimes(1);
+  });
 });
