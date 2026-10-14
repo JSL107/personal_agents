@@ -25,7 +25,8 @@ export interface ArtJobListResult {
 
 // 회사 사진은 쓰지 않는다 — 실측(2026-10-13)에서 사무실·로고 사진이라 게임 그림체를 보여주지 못했다.
 // KAKAO_IMAGE 는 플레이스토어에 없는 (미출시) 게임용 — 검색 결과라 공식 이미지가 아니므로 출처를 함께 싣는다.
-export type ArtJobImageOrigin = 'PLAY_STORE' | 'KAKAO_IMAGE';
+// SEARCH_PREVIEW 는 확인을 못 한 검색 1순위 그림 — 스레드에 '확인 안 됨' 으로 표시해 싣는다.
+export type ArtJobImageOrigin = 'PLAY_STORE' | 'KAKAO_IMAGE' | 'SEARCH_PREVIEW';
 
 export interface ArtJobImage {
   url: string;
@@ -37,9 +38,13 @@ export interface ArtJobImage {
 export interface ResolvedArtJobImage {
   // 제목 [대괄호] 에서 뽑은 게임명. 회사명·미공개 프로젝트면 null.
   gameTitle: string | null;
+  // 그 게임이 맞다고 확인된 그림(플레이스토어 일치·기사 제목 확인).
   image: ArtJobImage | null;
-  // image 가 null 이고 gameTitle 이 있을 때만 채운다 — 게임명 구글 이미지 검색 링크.
-  // 회사명 검색은 결과가 엉뚱해 만들지 않는다.
+  // image 가 없을 때 검색 1순위 그림. 맞는 게임인지 확인하지 못했다.
+  preview?: ArtJobImage | null;
+  // 미리보기·구글 링크에 쓴 검색어('회사명 게임명' 또는 '회사명 게임').
+  searchQuery?: string | null;
+  // image 가 null 일 때 구글 이미지 검색 링크.
   googleSearchUrl: string | null;
 }
 

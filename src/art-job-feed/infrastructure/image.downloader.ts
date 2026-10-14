@@ -4,8 +4,11 @@ import { Injectable } from '@nestjs/common';
 
 import { DownloadedImage } from '../domain/art-job-feed.type';
 import { ImageDownloaderPort } from '../domain/port/art-job-feed.ports';
+import { assertPublicUrl } from './public-url.guard';
 
 const MAX_BYTES = 5 * 1024 * 1024;
+// 리다이렉트를 직접 따라가며 매 단계 주소를 다시 검사한다(자동 추적은 내부망 리다이렉트를 못 막는다).
+const MAX_REDIRECTS = 3;
 const EXTENSIONS: Record<string, string> = {
   'image/png': 'png',
   'image/jpeg': 'jpg',
@@ -16,10 +19,7 @@ const EXTENSIONS: Record<string, string> = {
 @Injectable()
 export class ImageDownloader implements ImageDownloaderPort {
   async download(url: string): Promise<DownloadedImage> {
-    const response = await fetch(url, {
-      signal: AbortSignal.timeout(10_000),
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-    });
+    const response = await this.fetchPublic(new URL(url));
     if (!response.ok) {
       throw new Error(`이미지 요청 실패: HTTP ${response.status}`);
     }
@@ -59,5 +59,23 @@ export class ImageDownloader implements ImageDownloaderPort {
     const buffer = Buffer.concat(chunks, totalBytes);
     const hash = createHash('sha256').update(buffer).digest('hex').slice(0, 12);
     return { buffer, filename: `art-job-${hash}.${extension}` };
+  }
+
+  private async fetchPublic(start: URL): Promise<Response> {
+    let current = start;
+    for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
+      await assertPublicUrl(current);
+      const response = await fetch(current, {
+        signal: AbortSignal.timeout(10_000),
+        headers: { 'User-Agent': 'Mozilla/5.0' },
+        redirect: 'manual',
+      });
+      const location = response.headers.get('location');
+      if (response.status < 300 || response.status >= 400 || !location) {
+        return response;
+      }
+      current = new URL(location, current);
+    }
+    throw new Error(`이미지 리다이렉트 ${MAX_REDIRECTS}회 초과`);
   }
 }

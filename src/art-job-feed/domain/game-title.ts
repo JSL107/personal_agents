@@ -13,10 +13,7 @@ export const extractGameTitle = (
   if (!candidate || NON_GAME_TERMS.test(candidate)) {
     return null;
   }
-  const companyCore = company
-    .replace(/㈜|\(주\)|주식회사/g, '')
-    .replace(/[([].*$/, '')
-    .trim();
+  const companyCore = cleanCompanyName(company);
   const candidateKey = normalizeTitleKey(candidate);
   const companyKey = normalizeTitleKey(companyCore);
   if (
@@ -26,4 +23,20 @@ export const extractGameTitle = (
     return null;
   }
   return candidate;
+};
+
+// '㈜스튜디오비사이드', '스마일게이트 (지점)' → 법인 표기와 괄호 꼬리를 뗀 이름.
+export const cleanCompanyName = (company: string): string => {
+  return company
+    .replace(/㈜|\(주\)|주식회사/g, '')
+    .replace(/[([].*$/, '')
+    .trim();
+};
+
+// 이미지 검색어. 게임명만 검색하면 동명의 다른 게임이 걸려서 회사명을 함께 넣는다.
+export const buildImageSearchQuery = (
+  company: string,
+  gameTitle: string | null,
+): string => {
+  return `${cleanCompanyName(company)} ${gameTitle ?? '게임'}`.trim();
 };
