@@ -251,6 +251,7 @@ describe('formatArtJobDeadlineReminder', () => {
           company: 'A & B',
           title: '원화 <급구>',
           detailUrl: 'https://www.gamejob.co.kr/x?GI_No=1',
+          interestedBy: null,
         },
       ]),
     ).toBe(

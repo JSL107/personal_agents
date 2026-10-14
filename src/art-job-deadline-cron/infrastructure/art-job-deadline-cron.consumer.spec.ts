@@ -6,6 +6,7 @@ const POSTING: ArtJobReminderPosting = {
   company: '그레이게임즈',
   title: '캐릭터 원화',
   detailUrl: 'https://www.gamejob.co.kr/x?GI_No=7',
+  interestedBy: null,
 };
 const JOB = {
   data: { recipient: 'U_RECIPIENT', ownerSlackUserId: 'U_OWNER' },
@@ -125,5 +126,26 @@ describe('ArtJobDeadlineCronConsumer', () => {
     expect(deps.postMessage).toHaveBeenCalledTimes(1);
     expect(deps.notificationPublisher.publishCronFailure).toHaveBeenCalled();
     expect(deps.notificationPublisher.publishRecovery).not.toHaveBeenCalled();
+  });
+
+  it('누른 사람별로 한 통씩 보내고, 누른 사람 기록이 없으면 받는 사람에게 보낸다', async () => {
+    const deps = makeConsumer([
+      { ...POSTING, id: 1, interestedBy: 'U_OWNER' },
+      { ...POSTING, id: 2, interestedBy: null },
+      { ...POSTING, id: 3, interestedBy: 'U_OWNER' },
+    ]);
+
+    await deps.consumer.process(JOB);
+
+    const sent = deps.postMessage.mock.calls.map(([call]) => {
+      return [call.target, call.text.match(/\*(\d+)건\*/)[1]];
+    });
+    expect(sent).toEqual([
+      ['U_OWNER', '2'],
+      ['U_RECIPIENT', '1'],
+    ]);
+    expect(deps.repository.markReminded.mock.calls.map(([ids]) => ids)).toEqual(
+      [[1, 3], [2]],
+    );
   });
 });

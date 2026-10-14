@@ -1365,6 +1365,8 @@ model ArtJobPosting {
   deadlineDate       DateTime? @map("deadline_date") @db.Date
   // 받는 사람이 「관심 있음」을 누른 시각. 마감 전날 DM 알림 대상.
   interestedAt       DateTime? @map("interested_at")
+  // 「관심 있음」을 누른 사람(Slack user id). 마감 알림 DM 이 이 사람에게 간다. 없으면 받는 사람에게.
+  interestedBy       String?   @map("interested_by")
   // 마감 알림을 마지막으로 보낸 시각. 같은 회차를 다시 처리해도 두 번 보내지 않는다.
   deadlineRemindedAt DateTime? @map("deadline_reminded_at")
 

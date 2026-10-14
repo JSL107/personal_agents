@@ -164,6 +164,16 @@ describe('ArtJobExclusionActionHandler', () => {
     expect(respond).not.toHaveBeenCalled();
   });
 
+  it('운영자가 「관심 있음」을 누르면 누른 사람으로 운영자를 남긴다', async () => {
+    const { repository, run } = buildHarness({
+      blocks: [HEADER, row('7', {})],
+    });
+
+    await run(ART_JOB_INTEREST_ACTION, '7', 'U_OWNER');
+
+    expect(repository.setInterested).toHaveBeenCalledWith('7', true, 'U_OWNER');
+  });
+
   it('받는 사람이 설정되지 않았으면 운영자도 누를 수 없다', async () => {
     const { repository, run } = buildHarness({ recipient: '' });
 
@@ -203,7 +213,11 @@ describe('ArtJobExclusionActionHandler — 관심 있음', () => {
       'U_RECIPIENT',
     );
 
-    expect(repository.setInterested).toHaveBeenCalledWith('7', true);
+    expect(repository.setInterested).toHaveBeenCalledWith(
+      '7',
+      true,
+      'U_RECIPIENT',
+    );
     expect(repository.findInterestedSourceIds).toHaveBeenCalledWith(['7', '8']);
     // 마감일 없는 8번 줄은 다시 그려도 「관심 있음」이 생기지 않는다.
     expect(update.mock.calls[0][0].blocks).toEqual([
@@ -222,7 +236,11 @@ describe('ArtJobExclusionActionHandler — 관심 있음', () => {
 
     const { update } = await run(ART_JOB_UNINTEREST_ACTION, '7', 'U_RECIPIENT');
 
-    expect(repository.setInterested).toHaveBeenCalledWith('7', false);
+    expect(repository.setInterested).toHaveBeenCalledWith(
+      '7',
+      false,
+      'U_RECIPIENT',
+    );
     expect(update.mock.calls[0][0].blocks).toEqual([HEADER, row('7', {})]);
   });
 
@@ -235,7 +253,11 @@ describe('ArtJobExclusionActionHandler — 관심 있음', () => {
 
     const { respond } = await run(ART_JOB_INTEREST_ACTION, '7', 'U_RECIPIENT');
 
-    expect(repository.setInterested).toHaveBeenCalledWith('7', true);
+    expect(repository.setInterested).toHaveBeenCalledWith(
+      '7',
+      true,
+      'U_RECIPIENT',
+    );
     expect(respond.mock.calls[0][0]).toMatchObject({
       response_type: 'ephemeral',
       text: expect.stringContaining('알림 시각이 이미 지나'),

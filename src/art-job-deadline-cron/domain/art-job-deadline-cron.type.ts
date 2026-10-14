@@ -3,7 +3,7 @@ import { ART_JOB_REMINDER_HOURS_KST } from '../../art-job-feed/domain/art-job-in
 export const ART_JOB_DEADLINE_CRON_QUEUE = 'art-job-deadline-cron';
 
 export interface ArtJobDeadlineCronJobData {
-  // 알림을 받을 사람 — 원화 공고 버튼을 누를 수 있는 사람(ART_JOB_FEED_MENTION_USER_ID)과 같다.
+  // 누른 사람 기록이 없는 공고의 알림을 받을 사람 — 원화 공고의 받는 사람(ART_JOB_FEED_MENTION_USER_ID).
   recipient: string;
   // 실패 알림을 받을 사람. 없으면 로그만 남긴다.
   ownerSlackUserId: string | null;
