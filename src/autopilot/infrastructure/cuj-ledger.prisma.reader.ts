@@ -5,6 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import {
   CujDeliveryRow,
   CujLedgerReaderPort,
+  CujMentionReceiptRow,
   CujOrderRow,
   CujPreviewRow,
   CujRunRow,
@@ -87,6 +88,16 @@ export class CujLedgerPrismaReader implements CujLedgerReaderPort {
         ],
       },
       select: RUN_SELECT,
+    });
+  }
+
+  async readMentionReceipts(
+    since: Date,
+    until: Date,
+  ): Promise<CujMentionReceiptRow[]> {
+    return await this.prisma.mentionReceipt.findMany({
+      where: { receivedAt: { gte: since, lt: until } },
+      select: { status: true },
     });
   }
 

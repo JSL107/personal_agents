@@ -12,6 +12,7 @@ import {
   AutopilotTaskResult,
 } from '../../domain/autopilot-task.port';
 import {
+  CUJ_THRESHOLDS,
   CujViolation,
   detectApprovalViolations,
   detectEveningReviewViolations,
@@ -98,7 +99,13 @@ export class CujCheckAutopilotTask implements AutopilotTask {
       );
     });
     await this.checkSafely(5, violations, async () =>
-      detectMentionViolations(await this.reader.readMentions(since, now)),
+      detectMentionViolations(
+        await this.reader.readMentions(since, now),
+        await this.reader.readMentionReceipts(
+          since,
+          new Date(now.getTime() - CUJ_THRESHOLDS.longMentionDeadlineMs),
+        ),
+      ),
     );
     await this.checkSafely(6, violations, async () =>
       detectApprovalViolations(

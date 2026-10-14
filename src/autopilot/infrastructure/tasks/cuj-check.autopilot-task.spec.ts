@@ -45,6 +45,7 @@ describe('CujCheckAutopilotTask', () => {
         .mockResolvedValue([run('LONG_TERM'), run('SWING')]),
       readPendingOrders: jest.fn().mockResolvedValue([]),
       readMentions: jest.fn().mockResolvedValue([]),
+      readMentionReceipts: jest.fn().mockResolvedValue([]),
       readFailedPreviews: jest.fn().mockResolvedValue([]),
     };
     holidays = { load: jest.fn().mockResolvedValue(holidayCalendarOf([])) };
@@ -52,6 +53,16 @@ describe('CujCheckAutopilotTask', () => {
   });
 
   afterEach(() => jest.useRealTimers());
+
+  it('멘션 수신 기록은 아직 처리 중일 수 있는 최근 10분을 빼고 읽는다', async () => {
+    reader.readMentionReceipts.mockResolvedValue([{ status: 'RECEIVED' }]);
+    const result = await task.run(context);
+    expect(reader.readMentionReceipts).toHaveBeenCalledWith(
+      new Date('2026-10-13T00:10:00Z'),
+      new Date('2026-10-14T00:00:00Z'),
+    );
+    expect(JSON.stringify(result)).toContain('답 안 나감 1건');
+  });
 
   it('정상 회차도 EMPTY 원장 사유를 남긴다', async () => {
     expect(await task.run(context)).toEqual({
