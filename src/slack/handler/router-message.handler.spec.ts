@@ -22,7 +22,10 @@ import { RouterException } from '../../router/domain/router.exception';
 import { RouterErrorCode } from '../../router/domain/router-error-code.enum';
 import { MentionReceiptRepositoryPort } from '../domain/port/mention-receipt.repository.port';
 import { SlackDeliveryRepositoryPort } from '../domain/port/slack-delivery.repository.port';
-import { RouterMessageHandler } from './router-message.handler';
+import {
+  pickThreadReplies,
+  RouterMessageHandler,
+} from './router-message.handler';
 
 // C-4 Phase 10 — fn → class 마이그레이션 이후 spec sync hotfix.
 // `register*Handler(app, deps)` 호출 자리를 `new RouterMessageHandler(...).register(app)` 으로 치환.
@@ -2204,5 +2207,57 @@ describe('RouterMessageHandler — 멘션 수신 기록', () => {
     ).register(app);
     const { say } = await invokeHandler(getHandler('app_mention'), mention);
     expect(say).toHaveBeenCalledTimes(1);
+  });
+});
+
+// #839 리뷰 — 완료 답장은 동기 답보다 먼저 끼어들 수도 있다(user turn 저장 뒤 say 를 기다리는 사이).
+describe('pickThreadReplies', () => {
+  const B_THREAD = 'U:D:B';
+  const turn = (
+    role: 'user' | 'assistant',
+    text: string,
+    replyThreadKey?: string,
+  ): ConversationTurn => ({
+    role,
+    text,
+    agentType: AgentType.BLOG,
+    agentRunId: 0,
+    timestampMs: 0,
+    ...(replyThreadKey ? { replyThreadKey } : {}),
+  });
+
+  it('동기 답 앞에 다른 스레드 완료 답장이 끼어도 동기 답을 고른다', () => {
+    expect(
+      pickThreadReplies({
+        turnsAfterRoot: [
+          turn('assistant', 'A 완료', 'U:D:A'),
+          turn('assistant', 'B 시작'),
+        ],
+        threadKey: B_THREAD,
+      }).map((picked) => picked.text),
+    ).toEqual(['B 시작']);
+  });
+
+  it('다음 요청 뒤의 표시 없는 답은 고르지 않고, 이 스레드 완료 답장은 어디 있든 고른다', () => {
+    expect(
+      pickThreadReplies({
+        turnsAfterRoot: [
+          turn('assistant', 'B 시작'),
+          turn('user', 'C 써줘'),
+          turn('assistant', 'C 시작'),
+          turn('assistant', 'B 완료', B_THREAD),
+        ],
+        threadKey: B_THREAD,
+      }).map((picked) => picked.text),
+    ).toEqual(['B 시작', 'B 완료']);
+  });
+
+  it('부모 발화에 답이 없으면(처리 실패) 다음 요청의 답을 끌어오지 않는다', () => {
+    expect(
+      pickThreadReplies({
+        turnsAfterRoot: [turn('user', 'C 써줘'), turn('assistant', 'C 시작')],
+        threadKey: B_THREAD,
+      }),
+    ).toEqual([]);
   });
 });
