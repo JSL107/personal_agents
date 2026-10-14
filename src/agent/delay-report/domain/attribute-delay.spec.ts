@@ -227,4 +227,18 @@ describe('attributeDelay', () => {
 
     expect(verdict.failureKind).toBe('OTHER');
   });
+
+  it('스위퍼가 닫은 실패는 한국어 담당 이름과 풀어 쓴 사유로 안내한다 (#816 리뷰)', () => {
+    const verdict = attributeDelay(
+      input({
+        failedRuns: [failedRun('swept: stale IN_PROGRESS')],
+        recentlyFinished: [finishedFailure()],
+      }),
+    );
+
+    expect(verdict.detail).toContain(
+      '오늘 계획 실행이 실패했어요. 30분 넘게 끝나지 않아 자동으로 정리됨',
+    );
+    expect(verdict.detail).not.toMatch(/swept|\bPM\b/);
+  });
 });
