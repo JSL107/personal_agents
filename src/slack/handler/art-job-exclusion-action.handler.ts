@@ -42,8 +42,9 @@ const ART_JOB_ACTIONS = [
   ART_JOB_UNINTEREST_ACTION,
 ];
 
-// 원화 공고 본문의 「관심 없음」·「관심 있음」 버튼과 각 되돌리기. 받는 사람(ART_JOB_FEED_MENTION_USER_ID)의
-// 클릭만 장부에 반영하고, 그 메시지의 버튼들을 장부 상태대로 다시 그린다.
+// 원화 공고 본문의 「관심 없음」·「관심 있음」 버튼과 각 되돌리기. 받는 사람(ART_JOB_FEED_MENTION_USER_ID)과
+// 운영자(AUTOPILOT_OWNER_SLACK_USER_ID)의 클릭만 장부에 반영하고, 그 메시지의 버튼들을 장부 상태대로 다시 그린다.
+// 운영자가 눌러도 장부는 하나라 결과는 받는 사람 몫이다 — 마감 알림 DM 도 받는 사람에게 간다.
 //
 // 실패는 조용히 넘기지 않는다 — 누른 사람은 반영됐다고 믿고 떠나므로 그 자리에서 알린다.
 @Injectable()
@@ -64,14 +65,11 @@ export class ArtJobExclusionActionHandler implements SlackHandler {
     for (const actionId of ART_JOB_ACTIONS) {
       app.action(actionId, async ({ ack, body, respond, client }) => {
         await ack();
-        const recipient = this.configService
-          .get<string>('ART_JOB_FEED_MENTION_USER_ID')
-          ?.trim();
-        if (!recipient || extractActionUserId(body) !== recipient) {
+        if (!this.canPress(extractActionUserId(body))) {
           await respond({
             response_type: 'ephemeral',
             replace_original: false,
-            text: '공고를 받는 사람만 누를 수 있어요.',
+            text: '공고를 받는 사람과 운영자만 누를 수 있어요.',
           });
           return;
         }
@@ -141,6 +139,20 @@ export class ArtJobExclusionActionHandler implements SlackHandler {
         }
       });
     }
+  }
+
+  // 받는 사람이 없으면 기능이 꺼진 것이라 운영자도 못 누른다.
+  private canPress(userId: string | null): boolean {
+    const recipient = this.configService
+      .get<string>('ART_JOB_FEED_MENTION_USER_ID')
+      ?.trim();
+    if (!recipient || !userId) {
+      return false;
+    }
+    const owner = this.configService
+      .get<string>('AUTOPILOT_OWNER_SLACK_USER_ID')
+      ?.trim();
+    return userId === recipient || userId === owner;
   }
 
   // 장부에 반영하고, 누른 사람이 알아야 할 것이 있으면 그 문구를 돌려준다. 장부에 없는 공고면 던진다.

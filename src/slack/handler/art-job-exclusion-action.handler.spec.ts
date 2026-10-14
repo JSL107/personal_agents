@@ -77,7 +77,10 @@ const buildHarness = ({
   };
   const configService = {
     get: (key: string) =>
-      key === 'ART_JOB_FEED_MENTION_USER_ID' ? recipient : undefined,
+      ({
+        ART_JOB_FEED_MENTION_USER_ID: recipient,
+        AUTOPILOT_OWNER_SLACK_USER_ID: 'U_OWNER',
+      })[key],
   } as unknown as ConfigService;
   new ArtJobExclusionActionHandler(
     configService,
@@ -150,6 +153,24 @@ describe('ArtJobExclusionActionHandler', () => {
     expect(respond.mock.calls[0][0]).toMatchObject({
       response_type: 'ephemeral',
     });
+  });
+
+  it('운영자도 누를 수 있다', async () => {
+    const { repository, run } = buildHarness();
+
+    const { respond } = await run(ART_JOB_EXCLUDE_ACTION, '7', 'U_OWNER');
+
+    expect(repository.setExcluded).toHaveBeenCalledWith('7', true);
+    expect(respond).not.toHaveBeenCalled();
+  });
+
+  it('받는 사람이 설정되지 않았으면 운영자도 누를 수 없다', async () => {
+    const { repository, run } = buildHarness({ recipient: '' });
+
+    const { respond } = await run(ART_JOB_EXCLUDE_ACTION, '7', 'U_OWNER');
+
+    expect(repository.setExcluded).not.toHaveBeenCalled();
+    expect(respond.mock.calls[0][0].text).toContain('운영자만');
   });
 
   it('장부에 없는 공고면 다시 그리지 않고 실패를 알린다', async () => {
