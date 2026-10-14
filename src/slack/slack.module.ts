@@ -27,7 +27,7 @@ import {
   SlackHandler,
 } from './domain/port/slack-handler.port';
 import { AgentCommandHandler } from './handler/agent-command.handler';
-import { ArtJobExclusionReactionHandler } from './handler/art-job-exclusion-reaction.handler';
+import { ArtJobExclusionActionHandler } from './handler/art-job-exclusion-action.handler';
 import { BlogPublishHandler } from './handler/blog-publish.handler';
 import { CareerContextActionHandler } from './handler/career-context-action.handler';
 import { DeliveryReactionHandler } from './handler/delivery-reaction.handler';
@@ -76,7 +76,7 @@ import { SlackDeliveryModule } from './slack-delivery.module';
     PushpinTaskModule,
     // 👍/👎 reaction → 선호 학습 신호 저장 — REACTION_SIGNAL_REPOSITORY 의존.
     PreferenceProfileModule,
-    // 번호 이모지 → 원화 공고 제외 — ART_JOB_POSTING_REPOSITORY_PORT 의존.
+    // 원화 공고 「관심 없음」 버튼 — ART_JOB_POSTING_REPOSITORY_PORT 의존.
     ArtJobFeedModule,
     // V3 비전 봇 쪼개기 step 5 — 자연어 진입 (app_mention) 시 IdaeriRouterPort.dispatch 로 위임.
     RouterModule,
@@ -107,7 +107,7 @@ import { SlackDeliveryModule } from './slack-delivery.module';
     SlackPushpinReactionHandler,
     PreferenceReactionHandler,
     DeliveryReactionHandler,
-    ArtJobExclusionReactionHandler,
+    ArtJobExclusionActionHandler,
     VacationHandler,
     SubconsciousProposalActionHandler,
     RunVerdictActionHandler,
@@ -129,7 +129,7 @@ import { SlackDeliveryModule } from './slack-delivery.module';
         SlackPushpinReactionHandler,
         PreferenceReactionHandler,
         DeliveryReactionHandler,
-        ArtJobExclusionReactionHandler,
+        ArtJobExclusionActionHandler,
         VacationHandler,
         SubconsciousProposalActionHandler,
         RunVerdictActionHandler,

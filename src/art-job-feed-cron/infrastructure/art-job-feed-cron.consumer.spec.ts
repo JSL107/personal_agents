@@ -130,22 +130,18 @@ describe('ArtJobFeedCronConsumer', () => {
     expect(main.text.startsWith('🎨 <@U9> 게임잡 새 원화 공고 *1건*')).toBe(
       true,
     );
-    expect(main.text).toContain('GI_No=1|');
-    expect(main.text).not.toContain('GI_No=900');
+    expect(JSON.stringify(main.blocks)).toContain('GI_No=1|');
+    expect(JSON.stringify(main.blocks)).not.toContain('GI_No=900');
     expect(slackNotifier.postMessage.mock.calls[1][0]).toMatchObject({
       threadTs: '1',
       text: '1. 🎮 카오스 제로 나이트메어',
       image: { fileId: 'F1', altText: '카오스 제로 나이트메어' },
     });
     expect(repository.markNotified).toHaveBeenCalledTimes(1);
-    expect(repository.markNotified.mock.calls[0][0]).toMatchObject({
-      messageTs: '1',
-      digestOrder: 1,
-    });
     expect(repository.markSeeded).not.toHaveBeenCalled();
   });
 
-  it('번호 이모지로 제외한 공고가 새 번호로 다시 올라오면 보내지 않는다', async () => {
+  it('「관심 없음」으로 제외한 공고가 새 번호로 다시 올라오면 보내지 않는다', async () => {
     const { consumer, slackNotifier, repository } = makeConsumer({
       pages: [
         {
@@ -165,8 +161,8 @@ describe('ArtJobFeedCronConsumer', () => {
 
     const [main] = slackNotifier.postMessage.mock.calls[0];
     expect(main.text).toContain('*1건*');
-    expect(main.text).toContain('GI_No=8|');
-    expect(main.text).not.toContain('GI_No=7|');
+    expect(JSON.stringify(main.blocks)).toContain('GI_No=8|');
+    expect(JSON.stringify(main.blocks)).not.toContain('GI_No=7|');
     expect(repository.markNotified).toHaveBeenCalledTimes(1);
   });
 

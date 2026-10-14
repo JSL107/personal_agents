@@ -314,6 +314,7 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     threadTs,
     unfurlLinks,
     image,
+    blocks,
     runVerdict,
   }: {
     kind: DeliveryKind;
@@ -323,6 +324,7 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     threadTs?: string;
     unfurlLinks?: boolean;
     image?: { fileId: string; altText: string };
+    blocks?: Record<string, unknown>[];
     runVerdict?: {
       agentRunId: number;
       facets: RunVerdictFacet[];
@@ -348,9 +350,11 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
                 ),
               }) as never,
             }
-          : image
-            ? toImageAttachedSlackArgs(text, image, origin)
-            : toReadableSlackArgs(text, origin)),
+          : blocks
+            ? { text, blocks: blocks as never }
+            : image
+              ? toImageAttachedSlackArgs(text, image, origin)
+              : toReadableSlackArgs(text, origin)),
         ...(threadTs ? { thread_ts: threadTs } : {}),
         // 미디어(썸네일)도 함께 꺼야 한다 — unfurl_links 만 끄면 이미지가 딸린 링크는
         // 여전히 펼쳐진다. 값을 안 주면 슬랙 기본값(켜짐)이라 기존 발송은 그대로다.
