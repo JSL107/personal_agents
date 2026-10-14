@@ -69,6 +69,31 @@ describe('buildPaperRecommendationPrompt', () => {
 
   // 비중은 코드가 정한다. 프롬프트에 비중 요구가 남아 있으면 모델이 다시 숫자를 뱉기 시작하고
   // 그 순간 같은 후보에도 회차마다 다른 수량이 나온다.
+  it('빈 추천의 이유를 JSON 필드와 규칙으로 요청한다', () => {
+    const prompt = buildPaperRecommendSystemPrompt({
+      maximumWeightPercent: 20,
+    });
+    expect(prompt).toContain('"holdReason":');
+    expect(prompt).toContain(
+      'sells와 buys가 모두 비면 holdReason에 그 이유를 한 문장으로 적는다. 하나라도 있으면 holdReason은 생략한다.',
+    );
+  });
+
+  // 주문이 있는 예시에 holdReason 을 같이 보이면 "있으면 생략" 규칙과 어긋나 모델이 두 지시를
+  // 함께 받는다. 예시마다 JSON 객체를 떼어 holdReason 은 빈 추천 쪽에만 있는지 본다.
+  it('holdReason 은 매수·매도가 빈 예시에만 나온다', () => {
+    const prompt = buildPaperRecommendSystemPrompt({
+      maximumWeightPercent: 20,
+    });
+    const examples = prompt.match(/\{\n[\s\S]*?\n\}/g) ?? [];
+    expect(examples).toHaveLength(2);
+    const [withOrders, empty] = examples;
+    expect(withOrders).toContain('"code": "000660"');
+    expect(withOrders).not.toContain('holdReason');
+    expect(empty).toContain('"buys": []');
+    expect(empty).toContain('"holdReason":');
+  });
+
   it('시스템 프롬프트가 비중 출력을 요구하지 않는다', () => {
     const systemPrompt = buildPaperRecommendSystemPrompt({
       maximumWeightPercent: 20,

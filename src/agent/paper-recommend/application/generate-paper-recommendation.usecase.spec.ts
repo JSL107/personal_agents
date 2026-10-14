@@ -707,6 +707,8 @@ describe('GeneratePaperRecommendationUsecase', () => {
       strategy: 'LONG_TERM',
       accountId: 41,
       ordersCreated: 2,
+      candidateCount: 1,
+      emptyReason: null,
       agentRunId: 99,
       dataAsOf: '2026-08-13',
       targetTradeDate: '2026-08-14',
@@ -749,6 +751,25 @@ describe('GeneratePaperRecommendationUsecase', () => {
         returnRate: 1.2,
       },
     });
+  });
+
+  it('모델이 빈 추천을 내면 후보 수와 보유 판단 사유를 출력에 남긴다', async () => {
+    modelRouter.route.mockResolvedValue({
+      text: JSON.stringify({ sells: [], buys: [], holdReason: '추세가 약함' }),
+      modelUsed: 'codex-cli',
+      provider: ModelProviderName.CHATGPT,
+    });
+    const result = await usecase.execute({
+      strategies: ['LONG_TERM'],
+      decidedAt,
+    });
+    expect(result.completed[0]).toEqual(
+      expect.objectContaining({
+        ordersCreated: 0,
+        candidateCount: 1,
+        emptyReason: { code: 'MODEL_HELD', detail: '추세가 약함' },
+      }),
+    );
   });
 
   it('수량 0인 매수는 주문으로 저장하지 않는다', async () => {

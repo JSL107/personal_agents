@@ -21,17 +21,25 @@ LONG_TERM은 중장기 추세와 안정성을, SWING은 단기 모멘텀과 거�
 종목명 뒤 대괄호는 업종이다. 업종은 제시된 값만 쓴다 — '미분류'는 업종을 모른다는 뜻이고,
 종목명으로 업종을 추측해 근거로 삼지 않는다.
 
-반드시 아래 JSON 객체 하나만 출력한다. 코드 fence와 설명은 출력하지 않는다.
+반드시 아래 두 형태 중 하나의 JSON 객체 하나만 출력한다. 코드 fence와 설명은 출력하지 않는다.
+매수나 매도가 있을 때:
 {
   "sells": [{ "code": "005930", "reason": "매도 근거" }],
   "buys": [{ "code": "000660", "reason": "매수 근거" }]
+}
+매수도 매도도 하지 않을 때:
+{
+  "sells": [],
+  "buys": [],
+  "holdReason": "아무것도 하지 않기로 한 이유 한 문장"
 }
 
 규칙:
 - buys는 최대 ${MAXIMUM_BUY_COUNT}종이다.
 - 비중과 수량은 시스템이 정한다. 종목당 ${maximumWeightPercent}%가 배정되므로 비중이나 수량은 출력하지 않는다.
 - 보유 중인 종목은 재매수하지 않는다.
-- sells에는 보유 중인 종목만 넣는다.`;
+- sells에는 보유 중인 종목만 넣는다.
+- sells와 buys가 모두 비면 holdReason에 그 이유를 한 문장으로 적는다. 하나라도 있으면 holdReason은 생략한다.`;
 
 export const buildPaperRecommendationPrompt = (
   input: BuildPaperRecommendationPromptInput,

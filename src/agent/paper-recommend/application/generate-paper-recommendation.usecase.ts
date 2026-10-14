@@ -37,6 +37,10 @@ import {
   PaperRecommendationSkipReason,
   PaperRecommendationStrategy,
 } from '../domain/paper-recommendation.type';
+import {
+  decidePaperRecommendationEmptyReason,
+  PaperRecommendationEmptyReason,
+} from '../domain/paper-recommendation-empty-reason';
 import { planPendingOrders } from '../domain/pending-order-plan';
 import {
   buildPaperRecommendationPrompt,
@@ -77,6 +81,8 @@ export interface PaperRecommendationSuccess {
   strategy: PaperRecommendationStrategy;
   accountId: number;
   ordersCreated: number;
+  candidateCount: number;
+  emptyReason: PaperRecommendationEmptyReason | null;
   agentRunId: number;
   orders: PaperRecommendationOrderDetail[];
   skipped: PaperRecommendationSkipDetail[];
@@ -321,6 +327,16 @@ export class GeneratePaperRecommendationUsecase {
                 strategy,
                 accountId: account.id,
                 ordersCreated: orders.length,
+                candidateCount: screen.stocks.length,
+                emptyReason: decidePaperRecommendationEmptyReason({
+                  ordersCreated: orders.length,
+                  dataAsOf: screen.asOf,
+                  candidateCount: screen.stocks.length,
+                  positionCount: state.positions.length,
+                  proposedCount:
+                    recommendation.sells.length + recommendation.buys.length,
+                  holdReason: recommendation.holdReason,
+                }),
                 agentRunId,
                 orders: this.toOrderDetails({
                   screen,
