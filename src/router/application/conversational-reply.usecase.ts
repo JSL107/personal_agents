@@ -28,11 +28,11 @@ const PRIOR_TURN_LIMIT = 5;
 // 사용자 발화는 짧지만, 스레드 원글(공고 피드·알림)과 이대리 자신의 직전 답은 길다. 200자로 자르면
 // "이거 뭔데?" 가 가리키는 글의 앞부분만 보고 답한다(2026-10-08 run 7585, 10-13 run 8292).
 const PRIOR_TURN_TEXT_CAP = 1500;
-// 직전 작업 turn 이 기록된 시각보다 이만큼 앞선 실행까지 같은 작업으로 본다. 동기 worker 는 실행이
-// 끝난 뒤에야 turn 이 남아 시작 시각이 그만큼 앞선다.
-// ponytail: 같은 사용자가 다른 스레드에서 같은 worker 를 돌리면 그쪽이 잡힌다 — run 에 스레드 키를
-// 남기게 되면 그걸로 좁힌다.
-const WORK_STATUS_LOOKBACK_MS = 30 * 60 * 1000;
+// 실행 id 가 없는 작업 turn(비동기 BLOG ack)은 같은 대화에서 turn 시각보다 이만큼 앞서 시작된
+// 실행까지 그 작업으로 본다. 비동기 실행은 ack 를 남기기 직전에 시작하므로 짧게 잡는다 — 길면
+// 같은 대화의 더 이전 실행(보류된 요청 앞의 초안 등)이 잡힌다. 몇 분 뒤 남는 완료 답장 turn 은
+// 이 창을 벗어날 수 있지만, 그 turn 자체가 결과(링크·실패 사유)를 담고 있어 상태 줄이 없어도 된다.
+const ASYNC_WORK_STATUS_LOOKBACK_MS = 5 * 60 * 1000;
 
 // IntentClassifier 가 UNKNOWN 반환 (어느 worker 에도 매핑 불가) 시 RouterMessageHandler 의 catch
 // 분기에서 호출되는 일반 대화 응답 fallback.
@@ -75,13 +75,14 @@ export class ConversationalReplyUsecase {
     priorTurns,
     unresolvedStreak,
     routingMissRunId,
-    slackUserId,
+    conversationKey,
   }: {
     text: string;
     priorTurns: ConversationTurn[];
     unresolvedStreak?: number;
-    // 있으면 직전 작업 turn 의 실제 실행 상태를 조회해 싣는다 — "작업하고 있어?" 에 추측으로 답하지 않게.
-    slackUserId?: string;
+    // priorTurns 를 읽어 온 대화 기억 키. 실행 id 가 없는 작업 turn(비동기 BLOG)은 이 대화에서
+    // 시작된 실행만 찾는다 — 없으면 그런 turn 의 상태는 싣지 않는다.
+    conversationKey?: string;
     // 라우터가 이 회차를 남긴 ROUTER run. 있으면 답을 그 행의 모델 응답 원문으로 남긴다 —
     // 없으면 원장에는 "못 골랐다" 만 있고 이대리가 뭐라고 답했는지는 사라진다.
     routingMissRunId?: number;
@@ -98,7 +99,7 @@ export class ConversationalReplyUsecase {
     });
     const workStatus = await this.describeLatestWorkStatus({
       priorTurns,
-      slackUserId,
+      conversationKey,
     });
     const prompt = buildPrompt({ text, priorTurns, workStatus });
     try {
@@ -128,28 +129,44 @@ export class ConversationalReplyUsecase {
   // 대화의 마지막 작업 turn(worker 가 답한 assistant turn)이 맡긴 일의 실제 상태 한 줄.
   // 블로그처럼 "시작했어요" 만 답하고 뒤에서 도는 일은 turn 에 결과가 없어, 이게 없으면 모델이
   // 진행 여부를 지어낸다(2026-10-14 run 8886 — 재시작으로 끊겼는데 "시작된 적 없다" 고 답함).
+  // 실행은 이 대화의 것만 본다 — 같은 사용자가 다른 스레드에서 돌린 실행을 싣지 않는다(#824 리뷰).
   // 조회 실패는 답을 막지 않는다 — 상태 줄 없이 예전처럼 답한다.
   private async describeLatestWorkStatus({
     priorTurns,
-    slackUserId,
+    conversationKey,
   }: {
     priorTurns: ConversationTurn[];
-    slackUserId?: string;
+    conversationKey?: string;
   }): Promise<string | undefined> {
     const workTurn = [...priorTurns]
       .reverse()
       .find((turn) => turn.role === 'assistant' && turn.agentType);
-    if (!workTurn?.agentType || !slackUserId || !this.agentRunService) {
+    if (!workTurn?.agentType || !this.agentRunService) {
       return undefined;
     }
     const label = toTaskLabel(workTurn.agentType);
     try {
-      const run = await this.agentRunService.findLatestUserRun({
+      // 동기 worker 는 turn 에 실제 실행 id 가 남는다.
+      if (workTurn.agentRunId !== null && workTurn.agentRunId > 0) {
+        const run = await this.agentRunService.findRunStatus(
+          workTurn.agentRunId,
+        );
+        return formatWorkStatus(label, run);
+      }
+      // id 가 0·null 인 turn 은 비동기 BLOG ack 이거나, 실행 기록 없이 바로 답한 조회(시세·일정 등)다.
+      // 이 대화에서 시작된 실행이 없으면 후자로 보고 상태를 싣지 않는다 — "실행 기록 없음" 은
+      // 이미 답이 나간 조회를 시작조차 안 된 일로 읽히게 한다.
+      if (!conversationKey) {
+        return undefined;
+      }
+      const run = await this.agentRunService.findLatestConversationRun({
         agentType: workTurn.agentType,
-        slackUserId,
-        startedSince: new Date(workTurn.timestampMs - WORK_STATUS_LOOKBACK_MS),
+        conversationKey,
+        startedSince: new Date(
+          workTurn.timestampMs - ASYNC_WORK_STATUS_LOOKBACK_MS,
+        ),
       });
-      return formatWorkStatus(label, run);
+      return run === null ? undefined : formatWorkStatus(label, run);
     } catch (error: unknown) {
       this.logger.warn(
         `직전 작업 상태 조회 실패 — 상태 없이 답한다: ${error instanceof Error ? error.message : String(error)}`,

@@ -60,6 +60,36 @@ describe('GenerateBlogDraftUsecase', () => {
     expect(runner.run).not.toHaveBeenCalled();
   });
 
+  it('대화 키가 있으면 실행 스냅샷에 남기고, 없으면 남기지 않는다', async () => {
+    const runner: HermesRunnerPort = {
+      run: jest.fn().mockResolvedValue({ stdout: VALID_NOTION_URL }),
+    };
+    const usecase = new GenerateBlogDraftUsecase(
+      agentRunStub,
+      runner,
+      makeNotion().client,
+      makeConfigService(),
+    );
+    const execute = agentRunStub.execute as jest.Mock;
+
+    await usecase.execute({
+      requestText: '주제',
+      slackUserId: 'U1',
+      conversationKey: 'U1:D1',
+    });
+    await usecase.execute({ requestText: '주제', slackUserId: 'U1' });
+
+    expect(execute.mock.calls[0][0].inputSnapshot).toEqual({
+      requestText: '주제',
+      slackUserId: 'U1',
+      conversationKey: 'U1:D1',
+    });
+    expect(execute.mock.calls[1][0].inputSnapshot).toEqual({
+      requestText: '주제',
+      slackUserId: 'U1',
+    });
+  });
+
   it('URL 미발견 시 NOTION_URL_NOT_FOUND', async () => {
     const runner: HermesRunnerPort = {
       run: jest.fn().mockResolvedValue({ stdout: '초안만 씀', stderr: '' }),
