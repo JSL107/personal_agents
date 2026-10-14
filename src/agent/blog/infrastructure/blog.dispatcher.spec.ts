@@ -10,7 +10,7 @@ const flushPromises = (): Promise<void> =>
   new Promise((resolve) => setImmediate(resolve));
 
 const buildNotifier = (): jest.Mocked<BlogSlackNotifierPort> => ({
-  notify: jest.fn().mockResolvedValue(undefined),
+  notify: jest.fn().mockResolvedValue(true),
 });
 
 const buildSuccessOutcome = (
@@ -245,6 +245,53 @@ describe('BlogDispatcher', () => {
       expect(rememberReply).toHaveBeenCalledWith(
         '블로그 초안 생성 실패: hermes 비정상 종료',
       );
+    });
+
+    it('결과 답장 대기를 백그라운드 전에 남기고, 게시 결과를 기록한다', async () => {
+      const execute = jest.fn().mockResolvedValue(buildSuccessOutcome(42));
+      const markFinalReplyPending = jest.fn().mockResolvedValue(undefined);
+      const recordFinalReply = jest.fn().mockResolvedValue(undefined);
+      const dispatcher = new BlogDispatcher(
+        { execute } as unknown as GenerateBlogDraftUsecase,
+        buildNotifier(),
+      );
+
+      await dispatcher.dispatch({
+        source: 'SLACK_MESSAGE',
+        slackUserId: 'U1',
+        text: '프롬프트 RAG 공부해볼래',
+        replyContext: {
+          channel: 'C1',
+          markFinalReplyPending,
+          recordFinalReply,
+        },
+      });
+      expect(markFinalReplyPending).toHaveBeenCalledTimes(1);
+      expect(recordFinalReply).not.toHaveBeenCalled();
+      await flushPromises();
+
+      expect(recordFinalReply).toHaveBeenCalledWith(true);
+    });
+
+    it('결과 답장 게시가 실패하면 실패로 기록한다', async () => {
+      const execute = jest.fn().mockResolvedValue(buildSuccessOutcome(42));
+      const notifier = buildNotifier();
+      notifier.notify.mockResolvedValue(false);
+      const recordFinalReply = jest.fn().mockResolvedValue(undefined);
+      const dispatcher = new BlogDispatcher(
+        { execute } as unknown as GenerateBlogDraftUsecase,
+        notifier,
+      );
+
+      await dispatcher.dispatch({
+        source: 'SLACK_MESSAGE',
+        slackUserId: 'U1',
+        text: '프롬프트 RAG 공부해볼래',
+        replyContext: { channel: 'C1', recordFinalReply },
+      });
+      await flushPromises();
+
+      expect(recordFinalReply).toHaveBeenCalledWith(false);
     });
 
     it('대화 기억이 실패해도 답장은 나간다', async () => {

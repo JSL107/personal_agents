@@ -55,12 +55,14 @@ describe('CujCheckAutopilotTask', () => {
 
   afterEach(() => jest.useRealTimers());
 
-  it('멘션 수신 기록은 최근 10분을 빼고, 직전 회차가 뺀 10분부터 읽는다', async () => {
-    reader.readMentionReceipts.mockResolvedValue([{ status: 'RECEIVED' }]);
+  it('멘션 수신 기록은 최근 20분을 빼고, 직전 회차가 뺀 20분부터 읽는다', async () => {
+    reader.readMentionReceipts.mockResolvedValue([
+      { status: 'RECEIVED', finalReplyStatus: null },
+    ]);
     const result = await task.run(context);
     expect(reader.readMentionReceipts).toHaveBeenCalledWith(
-      new Date('2026-10-13T00:00:00Z'),
-      new Date('2026-10-14T00:00:00Z'),
+      new Date('2026-10-12T23:50:00Z'),
+      new Date('2026-10-13T23:50:00Z'),
     );
     expect(JSON.stringify(result)).toContain('답 안 나감 1건');
   });

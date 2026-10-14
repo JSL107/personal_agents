@@ -100,7 +100,7 @@ export class CujCheckAutopilotTask implements AutopilotTask {
     });
     // 수신 기록은 아직 처리 중일 수 있는 최근 기한만큼 뺀다. 하한도 같은 폭으로 당겨야 직전 회차가
     // 뺀 구간을 이번 회차가 읽는다 — 하한을 24시간에 두면 그 구간이 어느 회차에서도 안 읽힌다.
-    const receiptDeadlineMs = CUJ_THRESHOLDS.longMentionDeadlineMs;
+    const receiptDeadlineMs = CUJ_THRESHOLDS.mentionReceiptGraceMs;
     await this.checkSafely(5, violations, async () =>
       detectMentionViolations(
         await this.reader.readMentions(since, now),
