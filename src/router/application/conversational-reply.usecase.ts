@@ -132,9 +132,11 @@ export const buildSystemPrompt = ({
   const selfContextLines = [
     `당신의 정체:`,
     `- 이름: 이대리 (Slack 봇)`,
+    // 기술 스택을 적어 두면 "이대리 백엔드에 구현해야 해요" 처럼 답에 그대로 묻어난다(2026-10-14 run 8838).
+    // 레포 이름은 아래 self-reference 매핑이 쓰므로 남긴다.
     selfRepo
-      ? `- 동작 환경: ${selfRepo} 레포의 backend (Node 22 + NestJS 11 + Prisma + Slack Bolt).`
-      : `- 동작 환경: 단일 GitHub 레포의 backend 봇 (구체적 레포명은 환경변수 기반).`,
+      ? `- 코드가 있는 곳: ${selfRepo} 레포.`
+      : `- 코드가 있는 곳: 단일 GitHub 레포 (구체적 레포명은 환경변수 기반).`,
     selfOwner
       ? `- 주 사용자 (owner): GitHub login \`${selfOwner}\` — 슬랙에서 직접 대화하는 1인 사용자.`
       : undefined,
