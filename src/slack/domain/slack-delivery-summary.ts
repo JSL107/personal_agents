@@ -6,6 +6,12 @@ const MIN_LIST_LIMIT = 1;
 const MAX_LIST_LIMIT = 200;
 const CLEANUP_MIN_DAYS = 14;
 const CLEANUP_MIN_SENT = 10;
+// 버튼으로 응답받는 카드. 클릭은 Slack 이 알려 주지 않아 반응·답글이 0 인 것이 정상이므로
+// "보내도 아무도 안 보는 종류" 로 정리 후보에 올리지 않는다(승인율은 preview_action 등 각자의 원장이 잰다).
+const BUTTON_CARD_KINDS: ReadonlySet<string> = new Set([
+  'preview-card',
+  'subconscious-proposal',
+]);
 
 export const SLACK_DELIVERY_SUMMARY_NOTE =
   '반응·답글이 없다고 안 읽었다는 증거는 아니다. 클릭은 Slack 이 알려 주지 않아 세지 못한다. 합쳐진 다이제스트의 반응은 그 안의 모든 종류에 똑같이 더해진다.';
@@ -143,6 +149,7 @@ const toGroups = (
     key,
     ...counts,
     cleanupCandidate:
+      !BUTTON_CARD_KINDS.has(key) &&
       days >= CLEANUP_MIN_DAYS &&
       counts.sent >= CLEANUP_MIN_SENT &&
       counts.reactionCount === 0 &&

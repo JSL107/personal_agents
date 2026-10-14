@@ -10,8 +10,9 @@ export type AutopilotDeliveryRoute = 'slack' | 'console';
 // 같은 날 저녁 마감 한 통(§3-2): worklog(work-reviewer)·Daily Eval·모의투자 추천·체결 결과는 콘솔로 보내고,
 // evening-retro-publish 가 머지 건수·회고 Keep·체결·내일 예정을 한 줄씩 싣는다. 회고 전문은 그 스레드에 있다.
 //
-// 2026-10-14 주간 보고 3종(ceo-meta·knowledge-lint·blog-revision-report)도 콘솔로 보낸다. 원장에 전문이 남고,
+// 2026-10-14 주간 보고(knowledge-lint·blog-revision-report)도 콘솔로 보낸다. 원장에 전문이 남고,
 // knowledge-lint 의 중복 정리(onDelivered)는 orchestrator 가 원장 기록 직후에 부른다.
+// 일요일 ceo-meta task 는 같은 날 폐지했다 — 금요일 weekly-summary 가 같은 CEO 주간 회고를 Slack 으로 낸다.
 export const AUTOPILOT_DELIVERY_ROUTE: Readonly<
   Record<string, AutopilotDeliveryRoute>
 > = {
@@ -26,7 +27,6 @@ export const AUTOPILOT_DELIVERY_ROUTE: Readonly<
   'morning-briefing': 'slack',
   'po-shadow': 'slack',
   'weekly-summary': 'slack',
-  'ceo-meta': 'console',
   'impact-report': 'slack',
   'run-retro': 'console',
   'blog-revision-report': 'console',

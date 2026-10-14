@@ -76,7 +76,7 @@ describe('AutopilotOrchestrator', () => {
       skip: false,
       summaryText: '성공',
     });
-    const skippedTask = makeTask('ceo-meta', { skip: true });
+    const skippedTask = makeTask('blog-revision-report', { skip: true });
     const publishRecovery = jest.fn();
     const orchestrator = new AutopilotOrchestrator(
       [successfulTask, skippedTask] as never,
@@ -94,7 +94,7 @@ describe('AutopilotOrchestrator', () => {
       'mixed',
       [
         makeEntry('weekly-summary', 'weekly-summary'),
-        makeEntry('ceo-meta', 'ceo-meta'),
+        makeEntry('blog-revision-report', 'blog-revision-report'),
       ],
       'U1',
       'C1',
@@ -109,7 +109,7 @@ describe('AutopilotOrchestrator', () => {
   it('끝까지 실행한 빈 회차는 복구를 발행하고 일반 skip은 발행하지 않는다', async () => {
     const tasks = [
       makeTask('weekly-summary', { skip: true, emptyReason: '보고 없음' }),
-      makeTask('ceo-meta', { skip: true }),
+      makeTask('blog-revision-report', { skip: true }),
     ];
     const publishRecovery = jest.fn();
     const orchestrator = new AutopilotOrchestrator(
@@ -125,7 +125,7 @@ describe('AutopilotOrchestrator', () => {
 
     await orchestrator.runGroup(
       'mixed',
-      [T0_ENTRY, makeEntry('ceo-meta', 'ceo-meta')],
+      [T0_ENTRY, makeEntry('blog-revision-report', 'blog-revision-report')],
       'U1',
       'C1',
     );
@@ -315,7 +315,10 @@ describe('AutopilotOrchestrator', () => {
     ): Promise<jest.Mock> => {
       const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
       const tasks = results.map((result, index) => {
-        return makeTask(index === 0 ? 'weekly-summary' : 'ceo-meta', result);
+        return makeTask(
+          index === 0 ? 'weekly-summary' : 'blog-revision-report',
+          result,
+        );
       });
       const orchestrator = new AutopilotOrchestrator(
         tasks as never,
@@ -330,7 +333,7 @@ describe('AutopilotOrchestrator', () => {
       const entries = tasks.map((_, index) => {
         return index === 0
           ? makeEntry('weekly-summary', 'weekly-summary')
-          : makeEntry('ceo-meta', 'ceo-meta');
+          : makeEntry('blog-revision-report', 'blog-revision-report');
       });
       await orchestrator.runGroup('evening', entries, 'U1', 'C1');
       return postMessage;
@@ -399,10 +402,15 @@ describe('AutopilotOrchestrator', () => {
         },
       ];
       const tasks = taskResults.map((result, index) =>
-        makeTask(index === 0 ? 'weekly-summary' : 'ceo-meta', result),
+        makeTask(
+          index === 0 ? 'weekly-summary' : 'blog-revision-report',
+          result,
+        ),
       );
       const entries = taskResults.map((_, index) =>
-        index === 0 ? T0_ENTRY : makeEntry('ceo-meta', 'ceo-meta'),
+        index === 0
+          ? T0_ENTRY
+          : makeEntry('blog-revision-report', 'blog-revision-report'),
       );
       const uploadImage = jest.fn().mockResolvedValue({ fileId: undefined });
       const orchestrator = new AutopilotOrchestrator(
@@ -709,7 +717,10 @@ describe('AutopilotOrchestrator', () => {
 
   it('2항목 그룹 → task 2개 실행, postMessage 1회(구분자 포함)', async () => {
     const taskA = makeTask('weekly-summary', { skip: false, summaryText: 'A' });
-    const taskB = makeTask('ceo-meta', { skip: false, summaryText: 'B' });
+    const taskB = makeTask('blog-revision-report', {
+      skip: false,
+      summaryText: 'B',
+    });
     const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
     const acquireOnce = jest.fn().mockResolvedValue(true);
     const orchestrator = new AutopilotOrchestrator(
@@ -721,7 +732,7 @@ describe('AutopilotOrchestrator', () => {
     );
 
     const e1 = makeEntry('weekly-summary', 'weekly-summary');
-    const e2 = makeEntry('ceo-meta', 'ceo-meta');
+    const e2 = makeEntry('blog-revision-report', 'blog-revision-report');
     await orchestrator.runGroup('evening', [e1, e2], 'U1', 'C1');
 
     expect(taskA.run).toHaveBeenCalledTimes(1);
@@ -736,7 +747,10 @@ describe('AutopilotOrchestrator', () => {
 
   it('그룹 내 일부 skip → 비-skip summaryText 만 발송', async () => {
     const taskA = makeTask('weekly-summary', { skip: true });
-    const taskB = makeTask('ceo-meta', { skip: false, summaryText: 'B' });
+    const taskB = makeTask('blog-revision-report', {
+      skip: false,
+      summaryText: 'B',
+    });
     const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
     const acquireOnce = jest.fn().mockResolvedValue(true);
     const orchestrator = new AutopilotOrchestrator(
@@ -748,7 +762,7 @@ describe('AutopilotOrchestrator', () => {
     );
 
     const e1 = makeEntry('weekly-summary', 'weekly-summary');
-    const e2 = makeEntry('ceo-meta', 'ceo-meta');
+    const e2 = makeEntry('blog-revision-report', 'blog-revision-report');
     await orchestrator.runGroup('evening', [e1, e2], 'U1', 'C1');
 
     expect(postMessage).toHaveBeenCalledTimes(1);
@@ -816,7 +830,7 @@ describe('AutopilotOrchestrator', () => {
       summaryText: 'A 정상',
     });
     const taskB = {
-      id: 'ceo-meta',
+      id: 'blog-revision-report',
       run: jest
         .fn()
         .mockRejectedValue(
@@ -834,7 +848,7 @@ describe('AutopilotOrchestrator', () => {
     );
 
     const e1 = makeEntry('weekly-summary', 'weekly-summary');
-    const e2 = makeEntry('ceo-meta', 'ceo-meta');
+    const e2 = makeEntry('blog-revision-report', 'blog-revision-report');
 
     // 한 task 실패가 그룹/cron 전체를 죽이지 않는다 (throw 안 함).
     await expect(
@@ -845,7 +859,7 @@ describe('AutopilotOrchestrator', () => {
     expect(postMessage).toHaveBeenCalledTimes(1);
     const sentText: string = postMessage.mock.calls[0][0].text;
     expect(sentText).toContain('A 정상');
-    expect(sentText).not.toContain('ceo-meta');
+    expect(sentText).not.toContain('blog-revision-report');
   });
 
   it('그룹 내 모든 task 실패 → 채널 발송 없이 전용 오류를 던지고 가드를 소비하지 않는다', async () => {
@@ -1202,7 +1216,7 @@ describe('AutopilotOrchestrator', () => {
       }),
     };
     const taskB = {
-      id: 'ceo-meta',
+      id: 'blog-revision-report',
       run: jest.fn().mockResolvedValue({ skip: false, summaryText: 'SB' }),
     };
     const postMessageMock = jest.fn().mockResolvedValue({ ts: 'TS1' });
@@ -1216,7 +1230,7 @@ describe('AutopilotOrchestrator', () => {
     );
 
     const entryA = makeEntry('weekly-summary', 'weekly-summary');
-    const entryB = makeEntry('ceo-meta', 'ceo-meta');
+    const entryB = makeEntry('blog-revision-report', 'blog-revision-report');
     await orchestrator.runGroup('g', [entryA, entryB], 'U1', 'C1');
 
     // 1) 메인: SA + 구분자 + SB
@@ -1579,7 +1593,7 @@ describe('AutopilotOrchestrator', () => {
         summaryText: 'A',
         onDelivered: failingOnDelivered,
       });
-      const taskB = makeTask('ceo-meta', {
+      const taskB = makeTask('blog-revision-report', {
         skip: false,
         summaryText: 'B',
         onDelivered: succeedingOnDelivered,
@@ -1596,7 +1610,7 @@ describe('AutopilotOrchestrator', () => {
         { attachSlackMessage: jest.fn() } as never,
       );
       const e1 = makeEntry('weekly-summary', 'weekly-summary');
-      const e2 = makeEntry('ceo-meta', 'ceo-meta');
+      const e2 = makeEntry('blog-revision-report', 'blog-revision-report');
 
       await orchestrator.runGroup('morning', [e1, e2], 'U1', 'C1');
 
@@ -1667,7 +1681,7 @@ describe('AutopilotOrchestrator', () => {
         summaryText: 'B',
         guardKeySuffix: 'zeta-1',
       });
-      const taskA = makeTask('ceo-meta', {
+      const taskA = makeTask('blog-revision-report', {
         skip: false,
         summaryText: 'A',
         guardKeySuffix: 'alpha-2',
@@ -1687,7 +1701,7 @@ describe('AutopilotOrchestrator', () => {
         'mixed',
         [
           makeEntry('weekly-summary', 'weekly-summary'),
-          makeEntry('ceo-meta', 'ceo-meta'),
+          makeEntry('blog-revision-report', 'blog-revision-report'),
         ],
         'U1',
         'C1',
@@ -1916,7 +1930,7 @@ describe('AutopilotOrchestrator', () => {
         detailText: 'DA',
         onDelivered: failedItemOnDelivered,
       });
-      const taskB = makeTask('ceo-meta', {
+      const taskB = makeTask('blog-revision-report', {
         skip: false,
         summaryText: 'B',
         detailText: 'DB',
@@ -1943,7 +1957,7 @@ describe('AutopilotOrchestrator', () => {
         'morning',
         [
           makeEntry('weekly-summary', 'weekly-summary'),
-          makeEntry('ceo-meta', 'ceo-meta'),
+          makeEntry('blog-revision-report', 'blog-revision-report'),
         ],
         'U1',
         'C1',
@@ -2794,19 +2808,22 @@ describe('AutopilotOrchestrator', () => {
       };
       const tasks = [
         makeTask('weekly-summary', { skip: false, summaryText: '발송할 내용' }),
-        makeTask('ceo-meta', { skip: true, emptyReason: '보고 없음' }),
+        makeTask('blog-revision-report', {
+          skip: true,
+          emptyReason: '보고 없음',
+        }),
       ];
 
       await makeOrchestrator(tasks, slackNotifier).runGroup(
         'mixed',
-        [T0_ENTRY, makeEntry('ceo-meta', 'ceo-meta')],
+        [T0_ENTRY, makeEntry('blog-revision-report', 'blog-revision-report')],
         'U1',
         'C1',
       );
 
       expect(slackNotifier.recordSuppressedDelivery).toHaveBeenCalledWith(
         expect.objectContaining({
-          itemKinds: ['ceo-meta'],
+          itemKinds: ['blog-revision-report'],
           reason: 'EMPTY',
         }),
       );
@@ -2828,13 +2845,16 @@ describe('AutopilotOrchestrator', () => {
       };
       const tasks = [
         makeTask('weekly-summary', { skip: true }),
-        makeTask('ceo-meta', { skip: true, emptyReason: '보고 없음' }),
+        makeTask('blog-revision-report', {
+          skip: true,
+          emptyReason: '보고 없음',
+        }),
       ];
 
       await expect(
         makeOrchestrator(tasks, slackNotifier).runGroup(
           'mixed',
-          [T0_ENTRY, makeEntry('ceo-meta', 'ceo-meta')],
+          [T0_ENTRY, makeEntry('blog-revision-report', 'blog-revision-report')],
           'U1',
           'C1',
         ),
@@ -2849,7 +2869,10 @@ describe('AutopilotOrchestrator', () => {
       failedTask.run.mockRejectedValue(new Error('실패'));
       const tasks = [
         failedTask,
-        makeTask('ceo-meta', { skip: true, emptyReason: '보고 없음' }),
+        makeTask('blog-revision-report', {
+          skip: true,
+          emptyReason: '보고 없음',
+        }),
       ];
       const slackNotifier = {
         postMessage: jest.fn(),
@@ -2859,7 +2882,7 @@ describe('AutopilotOrchestrator', () => {
       await expect(
         makeOrchestrator(tasks, slackNotifier).runGroup(
           'mixed',
-          [T0_ENTRY, makeEntry('ceo-meta', 'ceo-meta')],
+          [T0_ENTRY, makeEntry('blog-revision-report', 'blog-revision-report')],
           'U1',
           'C1',
         ),

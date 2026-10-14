@@ -33,7 +33,6 @@ describe('AUTOPILOT_DELIVERY_ROUTE', () => {
     'paper-recommend',
     'paper-order-fill',
     // 2026-10-14 주간 보고 — 원장에 전문을 남긴다. knowledge-lint 의 후처리는 기록 직후에 돈다.
-    'ceo-meta',
     'knowledge-lint',
     'blog-revision-report',
   ];
