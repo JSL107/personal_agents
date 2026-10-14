@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { formatKstDate } from '../../../common/util/kst-date.util';
 import {
   HOLIDAY_CALENDAR_PORT,
   HolidayCalendarPort,
@@ -75,6 +76,11 @@ export interface GeneratePaperRecommendationCommand {
   strategies?: PaperRecommendationStrategy[];
   decidedAt?: Date;
   triggerType?: TriggerType;
+  // 스크리너 기준일이 판단일(KST)과 다르면 모델을 부르기 전에 그 전략을 실패로 끊는다.
+  // 자동 회차만 켠다 — 달력에 없는 휴장(동기화 실패·임시 휴장)이나 저녁 시세 수집 실패 날
+  // 직전 거래일 시세로 주문을 만들면, 다음날 09:00 체결이 09:10 CUJ 경보보다 먼저 일어난다.
+  // 수동 재실행은 지난 판단일을 일부러 다시 도는 경로라 켜지 않는다.
+  requireFreshMarketData?: boolean;
 }
 
 export interface PaperRecommendationSuccess {
@@ -165,6 +171,7 @@ export class GeneratePaperRecommendationUsecase {
           decidedAt,
           triggerType:
             command.triggerType ?? TriggerType.AUTOPILOT_PAPER_RECOMMEND_CRON,
+          requireFreshMarketData: command.requireFreshMarketData ?? false,
         });
         completed.push(outcome);
       } catch (error: unknown) {
@@ -178,10 +185,12 @@ export class GeneratePaperRecommendationUsecase {
     strategy,
     decidedAt,
     triggerType,
+    requireFreshMarketData,
   }: {
     strategy: PaperRecommendationStrategy;
     decidedAt: Date;
     triggerType: TriggerType;
+    requireFreshMarketData: boolean;
   }): Promise<PaperRecommendationSuccess> {
     const outcome = await this.agentRunService.execute({
       agentType: AgentType.PAPER_RECOMMEND,
@@ -225,6 +234,18 @@ export class GeneratePaperRecommendationUsecase {
           // 실패한 날은 주문이 없어, id 없이는 "다 보고 아무것도 안 샀다" 와 구분되지 않는다.
           record: { agentRunId },
         });
+        // 시세가 아예 없으면(asOf=null) 주문이 0건이 되는 기존 경로(NO_MARKET_DATA)에 맡긴다.
+        const expectedAsOf = formatKstDate(decidedAt.toISOString());
+        if (
+          requireFreshMarketData &&
+          screen.asOf !== null &&
+          screen.asOf !== expectedAsOf
+        ) {
+          throw new Error(
+            `시세가 ${screen.asOf} 기준에 멈춰 판단일(${expectedAsOf}) 시세 없이 주문하지 않음 — ` +
+              '달력에 없는 휴장이거나 저녁 시세 수집이 실패했다',
+          );
+        }
         const valuation = await this.repository.findLatestValuation(account.id);
         const accountValuation = Number(
           (valuation?.totalValue ?? account.seedAmount).toString(),
