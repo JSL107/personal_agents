@@ -38,7 +38,7 @@ describe('formatKnowledgeLint', () => {
           type: 'near_duplicate',
           episodeId: 1,
           relatedId: 2,
-          detail: '중복 후보 — distance 0.010',
+          detail: '중복 후보 — 차이 0.010',
           occurredAt,
         },
         {
@@ -52,10 +52,10 @@ describe('formatKnowledgeLint', () => {
       L4_DONE,
     );
 
-    expect(text).toContain('Knowledge Lint');
+    expect(text).toContain('기억 점검');
     expect(text).toContain('중복 후보 1건');
     expect(text).toContain('#1 ↔ #2');
-    expect(text).toContain('임베딩 누락 1건');
+    expect(text).toContain('검색 색인 누락 1건');
     expect(text).toContain('#9');
   });
 
@@ -64,7 +64,7 @@ describe('formatKnowledgeLint', () => {
       type: 'near_duplicate',
       episodeId: 1,
       relatedId: 2,
-      detail: '중복 후보 — distance 0.000',
+      detail: '중복 후보 — 차이 0.000',
       occurredAt,
     };
 
@@ -108,7 +108,7 @@ describe('formatKnowledgeLint', () => {
       L4_DONE,
     );
 
-    expect(text).toContain('임베딩 누락 1건');
+    expect(text).toContain('검색 색인 누락 1건');
     expect(text).not.toContain('중복 후보');
   });
 
@@ -182,9 +182,9 @@ describe('formatKnowledgeLint', () => {
 
     expect(text).toContain('⚠️');
     expect(text).not.toContain('✅');
-    expect(text).not.toContain('episodic-memory 이상 없음');
+    expect(text).not.toContain('작업 기억 이상 없음');
     expect(text).toContain('1/5쌍만 판정');
-    expect(text).toContain('쿼터 소진');
+    expect(text).toContain('사용량 한도 소진');
   });
 
   it('일부 judge 실패로 후보를 다 못 본 회차도 ✅ 를 쓰지 않는다', () => {
@@ -207,7 +207,7 @@ describe('formatKnowledgeLint', () => {
           type: 'near_duplicate',
           episodeId: 1,
           relatedId: 2,
-          detail: '중복 후보 — distance 0.000',
+          detail: '중복 후보 — 차이 0.000',
           occurredAt,
         },
       ],
@@ -228,7 +228,7 @@ describe('formatKnowledgeLint', () => {
           type: 'near_duplicate',
           episodeId: 1,
           relatedId: 2,
-          detail: '중복 후보 — distance 0.000',
+          detail: '중복 후보 — 차이 0.000',
           occurredAt,
         },
       ],
@@ -249,7 +249,7 @@ describe('formatKnowledgeLint', () => {
           type: 'near_duplicate',
           episodeId: 1,
           relatedId: 2,
-          detail: '중복 후보 — distance 0.000',
+          detail: '중복 후보 — 차이 0.000',
           occurredAt,
         },
       ],
@@ -275,7 +275,7 @@ describe('formatKnowledgeLint', () => {
       { candidates: 4, judged: 1, abortedByQuota: true },
     );
 
-    expect(text).toContain('임베딩 누락 1건');
+    expect(text).toContain('검색 색인 누락 1건');
     // 보고된 목록이 전부가 아님을 밝혀야 한다.
     expect(text).toContain('전부가 아닐 수 있습니다');
     expect(text).toContain('1/4쌍만 판정');

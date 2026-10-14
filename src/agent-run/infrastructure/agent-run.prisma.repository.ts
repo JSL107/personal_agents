@@ -27,6 +27,7 @@ import {
   AgentRunChainNode,
   AgentRunStatus,
   EvidenceInput,
+  STALE_RUN_SWEPT_ERROR,
   TriggerType,
 } from '../domain/agent-run.type';
 import {
@@ -864,7 +865,7 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
       where: { status: 'IN_PROGRESS', startedAt: { lt: cutoff } },
       data: {
         status: 'FAILED',
-        output: { error: 'swept: stale IN_PROGRESS' },
+        output: { error: STALE_RUN_SWEPT_ERROR },
         endedAt: new Date(),
       },
     });

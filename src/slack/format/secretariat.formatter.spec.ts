@@ -37,7 +37,7 @@ describe('formatSecretariat', () => {
         ],
       });
 
-      expect(text).toContain('*① 완료* — 9건 · PM 7 · CEO 2');
+      expect(text).toContain('*① 완료* — 9건 · 오늘 계획 7 · 주간 총평 2');
     });
 
     it('5종을 넘으면 나머지를 "외 N종" 으로 접는다', () => {
@@ -138,13 +138,15 @@ describe('formatSecretariat', () => {
         },
       });
 
-      expect(text).toContain('PM 3건 실패, 아직 복구 안 됨 — 모델 호출 실패');
+      expect(text).toContain(
+        '오늘 계획 3건 실패, 아직 복구 안 됨 — 모델 호출 실패',
+      );
       expect(text).not.toContain('연속');
     });
   });
 
   describe('에이전트 표시 이름', () => {
-    it('enum 원문 대신 레지스트리 표시 이름을 쓰고, 레지스트리에 없는 값은 원문을 둔다', () => {
+    it('enum 원문 대신 레지스트리의 한국어 담당 이름을 쓰고, 레지스트리에 없는 값은 원문을 둔다', () => {
       // 2026-10-07 실발송: "CODE_REVIEWER 129 · PAPER_TRADE 85" 가 그대로 노출됐다.
       const text = render({
         completed: [
@@ -165,14 +167,30 @@ describe('formatSecretariat', () => {
       });
 
       expect(text).toContain(
-        '*① 완료* — 215건 · Code Reviewer 129 · Paper Trade 85 · RETIRED_WORKER 1',
+        '*① 완료* — 215건 · 코드 리뷰 129 · 모의투자 계좌 85 · RETIRED_WORKER 1',
       );
-      expect(text).toContain('*② 진행 중* — Subconscious Gate');
-      expect(text).toContain('• Humanizer 2건 — 모델 호출 실패');
-      expect(text).toContain('Invest Monitor 1건 실패');
+      expect(text).toContain('*② 진행 중* — 자율 제안 거르기');
+      expect(text).toContain('• 보고서 문장 다듬기 2건 — 모델 호출 실패');
+      expect(text).toContain('보유 종목 감시 1건 실패');
       expect(text).not.toMatch(
         /CODE_REVIEWER|PAPER_TRADE|SUBCONSCIOUS_GATE|HUMANIZER|INVEST\b/,
       );
+    });
+
+    it('스위퍼가 닫은 실패는 원문 대신 무슨 일인지 풀어 쓴다', () => {
+      const text = render({
+        blocked: [
+          {
+            agentType: 'CODE_REVIEWER',
+            reason: 'swept: stale IN_PROGRESS',
+            count: 1,
+          },
+        ],
+      });
+      expect(text).toContain(
+        '코드 리뷰 1건 — 30분 넘게 끝나지 않아 자동으로 정리됨',
+      );
+      expect(text).not.toContain('swept');
     });
   });
 });

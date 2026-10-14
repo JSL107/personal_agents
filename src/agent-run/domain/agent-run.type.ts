@@ -10,6 +10,17 @@ export enum AgentRunStatus {
 // 죽은 런이 "일하는 중" 으로 오표시되던 것을 즉시 교정한다. 두 경로가 같은 값을 쓰도록 단일 소스.
 export const STALE_RUN_THRESHOLD_MINUTES = 30;
 
+// 스위퍼가 고착 런을 닫을 때 output.error 에 남기는 값. 원장 조회(`output->>'error'`)가 이 원문에
+// 기대므로 바꾸지 않고, 사람에게 보일 때만 describeFailureReason 으로 옮긴다.
+export const STALE_RUN_SWEPT_ERROR = 'swept: stale IN_PROGRESS';
+
+// 실패 사유를 Slack 보고에 찍을 문장으로. 스위퍼 원문만 옮기고 나머지는 그대로 둔다 —
+// 워커가 남긴 오류는 이미 한국어 도메인 메시지가 대부분이고, 모르는 원문을 지어 옮기면 원인이 가려진다.
+export const describeFailureReason = (reason: string): string =>
+  reason === STALE_RUN_SWEPT_ERROR
+    ? `${STALE_RUN_THRESHOLD_MINUTES}분 넘게 끝나지 않아 자동으로 정리됨`
+    : reason;
+
 // 에이전트 실행을 촉발한 트리거 출처. 기획서 §11.1 trigger_type 필드에 대응.
 export enum TriggerType {
   // 주간 블로그 수정률 집계. 다른 cron 트리거와 마찬가지로 태스크별 고유 값을 둔다 —

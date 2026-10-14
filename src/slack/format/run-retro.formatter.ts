@@ -1,3 +1,4 @@
+import { toTaskLabel } from '../../agent-registry/agent-registry';
 import { AgentRunStatRow } from '../../agent-run/domain/port/agent-run.repository.port';
 import {
   RunAnomaly,
@@ -47,7 +48,7 @@ export const formatRunRetro = (
     : `🚨 *주간 회고* — ${firedAtKst} · 이상 ${anomalies.length}건 감지 (최근 7일)`;
 
   const lines = anomalies.map((item) => {
-    const label = item.agentType ? `${item.agentType}: ` : '';
+    const label = item.agentType ? `${toTaskLabel(item.agentType)}: ` : '';
     return `• ${ICON[item.kind]} ${label}${item.detail}${HINT[item.kind]}`;
   });
 

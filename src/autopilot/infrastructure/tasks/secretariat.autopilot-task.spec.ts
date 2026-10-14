@@ -66,11 +66,11 @@ describe('SecretariatAutopilotTask', () => {
     expect(result.skip).toBe(false);
     const text = result.summaryText ?? '';
     expect(text).toContain('📋 *비서실* — 2026-08-03 · 지난 24시간');
-    expect(text).toContain('*① 완료* — 1건 · PM 1');
+    expect(text).toContain('*① 완료* — 1건 · 오늘 계획 1');
     expect(text).toContain('*② 진행 중* — 없음');
     expect(text).toContain('*③ 대표 승인 대기* — 없음');
     expect(text).toContain(
-      '*④ 막힌 것* — 1종\n   • Code Reviewer 1건 — 모델 호출 실패 (CHATGPT)',
+      '*④ 막힌 것* — 1종\n   • 코드 리뷰 1건 — 모델 호출 실패 (CHATGPT)',
     );
     // 실패 1건은 결정거리가 아니다 — 다음 슬롯이 재시도한다.
     expect(text).toContain('*⑤ 오늘 결정할 것* — 없음');

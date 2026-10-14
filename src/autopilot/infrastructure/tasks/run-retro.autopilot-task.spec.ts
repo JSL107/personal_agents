@@ -65,7 +65,7 @@ describe('RunRetroAutopilotTask', () => {
       sinceDays: 7,
       untilDays: 0,
     });
-    expect(result.summaryText).toContain('PAPER_TRADE: 형식 준수율 2.3%');
+    expect(result.summaryText).toContain('모의투자 계좌: 형식 준수율 2.3%');
     expect(result.summaryText).toContain(
       '171건 평균, 하한 50% · 필수 필드 존재 여부만 검사함',
     );
@@ -73,7 +73,7 @@ describe('RunRetroAutopilotTask', () => {
     expect(result.summaryText).toContain('산출물 형식이 계약과 어긋남');
     expect(result.summaryText).not.toContain('계약 점수');
     // 만점 워커는 실리지 않는다 — 조용한 계기판.
-    expect(result.summaryText).not.toContain('PM: 형식 준수율');
+    expect(result.summaryText).not.toContain('오늘 계획: 형식 준수율');
   });
 
   const lowScoreStats: AgentRunStatRow[] = [
@@ -106,7 +106,7 @@ describe('RunRetroAutopilotTask', () => {
       untilDays: 0,
     });
     expect(result.summaryText).toContain(
-      'PO_SHADOW: 형식 준수율 30% (10건 평균, 하한 50% · 필수 필드 존재 여부만 검사함) · 품질: 좋음 4 · 나쁨 1 (판정 6건)',
+      '계획 대비 점검: 형식 준수율 30% (10건 평균, 하한 50% · 필수 필드 존재 여부만 검사함) · 품질: 좋음 4 · 나쁨 1 (판정 6건)',
     );
   });
 
@@ -125,7 +125,7 @@ describe('RunRetroAutopilotTask', () => {
       verdicts as never,
     ).run(context);
 
-    expect(result.summaryText).toContain('PO_SHADOW: 형식 준수율 30%');
+    expect(result.summaryText).toContain('계획 대비 점검: 형식 준수율 30%');
     expect(result.summaryText).toContain('품질: 판정 조회 실패');
     expect(result.summaryText).not.toContain('판정 없음');
     expect(warn).toHaveBeenCalledWith(
@@ -277,7 +277,7 @@ describe('RunRetroAutopilotTask', () => {
     expect(service.findLatestSucceededRun).toHaveBeenCalledWith({
       agentType: AgentType.BLOG_REVISION,
     });
-    expect(result.summaryText).toContain('BLOG_REVISION');
+    expect(result.summaryText).toContain('블로그 수정률 보고');
     expect(result.summaryText).toContain('주간 실행 결번');
   });
 });
