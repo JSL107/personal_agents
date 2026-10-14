@@ -55,7 +55,7 @@ const emptyDigestRepository = () => ({
 });
 
 interface DigestDeps {
-  cujLedgerReader?: { findLatestCujCheckDeliveryBefore: jest.Mock };
+  cujLedgerReader?: { findLatestDeliveryBefore: jest.Mock };
   findAllOpenPreviews?: { execute: jest.Mock };
   listNotifiable?: { execute: jest.Mock };
   jobPostingRepository?: Record<string, jest.Mock>;
@@ -88,7 +88,7 @@ const buildTask = (
     (deps.digestRepository ?? emptyDigestRepository()) as never,
     { get: (key: string) => deps.config?.[key] } as never,
     (deps.cujLedgerReader ?? {
-      findLatestCujCheckDeliveryBefore: jest.fn().mockResolvedValue(null),
+      findLatestDeliveryBefore: jest.fn().mockResolvedValue(null),
     }) as never,
   );
 
@@ -103,61 +103,114 @@ const basePlan = {
 };
 
 describe('MorningBriefingAutopilotTask', () => {
-  describe('CUJ 점검 결번 감시', () => {
+  describe('원장 결번 감시', () => {
     // 회차 2026-10-17(토) → 어제는 10-16. 오늘 0시(KST) = 2026-10-16T15:00Z.
     const context = { ownerSlackUserId: 'U1', firedAtKst: '2026-10-17' };
+    // 감시 대상별 마지막 기록. 없는 대상은 기준점 없음(null).
+    const latestBy =
+      (latest: Record<string, Date | Error>) =>
+      async (itemKind: string): Promise<Date | null> => {
+        const value = latest[itemKind];
+        if (value instanceof Error) {
+          throw value;
+        }
+        return value ?? null;
+      };
     const runWith = async (
-      findLatestCujCheckDeliveryBefore: jest.Mock,
+      findLatestDeliveryBefore: jest.Mock,
+      firedAtKst = context.firedAtKst,
     ): Promise<string> => {
       const task = buildTask(
         { execute: jest.fn().mockRejectedValue(new Error('계획 장애')) },
         { humanize: jest.fn() },
         emptyStockRepository(),
         listSchedulesUsecase(),
-        { cujLedgerReader: { findLatestCujCheckDeliveryBefore } },
+        { cujLedgerReader: { findLatestDeliveryBefore } },
       );
-      const result = await task.run(context);
+      const result = await task.run({ ...context, firedAtKst });
       return result.summaryText ?? '';
     };
 
-    it('어제 기록이 없으면 마지막 기록일과 함께 장애 줄에 싣는다', async () => {
+    it('CUJ 점검 어제 기록이 없으면 마지막 기록일과 함께 장애 줄에 싣는다', async () => {
       const find = jest
         .fn()
-        .mockResolvedValue(new Date('2026-10-15T00:10:00Z'));
+        .mockImplementation(
+          latestBy({ 'cuj-check': new Date('2026-10-15T00:10:00Z') }),
+        );
 
       const text = await runWith(find);
 
       expect(text).toContain('CUJ 점검 기록 없음 — 마지막 기록 10/15(목)');
     });
 
-    it('오늘 0시 이전 기록만 묻는다 — 늦게 돈 회차에서 오늘 실행이 어제 결번을 가리지 않게', async () => {
+    it('오늘 0시 이전 기록만 묻는다 — 늦게 돈 회차에서 오늘 실행이 지난 결번을 가리지 않게', async () => {
       const find = jest.fn().mockResolvedValue(null);
 
       await runWith(find);
 
-      expect(find).toHaveBeenCalledWith(new Date('2026-10-16T15:00:00Z'));
+      expect(find).toHaveBeenCalledWith(
+        'cuj-check',
+        new Date('2026-10-16T15:00:00Z'),
+      );
+      expect(find).toHaveBeenCalledWith(
+        'run-retro',
+        new Date('2026-10-16T15:00:00Z'),
+      );
     });
 
     it('어제 기록이 있으면 조용하다', async () => {
       const find = jest
         .fn()
-        .mockResolvedValue(new Date('2026-10-16T00:10:00Z'));
+        .mockImplementation(
+          latestBy({ 'cuj-check': new Date('2026-10-16T00:10:00Z') }),
+        );
 
       expect(await runWith(find)).not.toContain('CUJ 점검');
     });
 
     it('기록이 한 번도 없으면(첫 실행 전) 조용하다', async () => {
-      expect(await runWith(jest.fn().mockResolvedValue(null))).not.toContain(
-        'CUJ 점검',
+      const text = await runWith(jest.fn().mockResolvedValue(null));
+
+      expect(text).not.toContain('CUJ 점검');
+      expect(text).not.toContain('주간 실행 회고');
+    });
+
+    it('월요일 주간 실행 회고가 빠지면 화요일 아침에 싣는다', async () => {
+      const find = jest
+        .fn()
+        .mockImplementation(
+          latestBy({ 'run-retro': new Date('2026-10-12T00:00:00Z') }),
+        );
+
+      const text = await runWith(find, '2026-10-20');
+
+      expect(text).toContain(
+        '주간 실행 회고 기록 없음 — 마지막 기록 10/12(월)',
       );
     });
 
-    it('조회가 실패해도 브리핑은 나가고 그 줄만 빠진다', async () => {
-      const text = await runWith(
-        jest.fn().mockRejectedValue(new Error('원장 장애')),
+    it('주간 실행 회고는 회차 전인 다음 월요일 아침까지 조용하다', async () => {
+      const find = jest
+        .fn()
+        .mockImplementation(
+          latestBy({ 'run-retro': new Date('2026-10-12T00:00:00Z') }),
+        );
+
+      expect(await runWith(find, '2026-10-19')).not.toContain('주간 실행 회고');
+    });
+
+    it('한 대상의 조회가 실패해도 브리핑과 다른 대상의 줄은 나간다', async () => {
+      const find = jest.fn().mockImplementation(
+        latestBy({
+          'cuj-check': new Error('원장 장애'),
+          'run-retro': new Date('2026-10-05T00:00:00Z'),
+        }),
       );
 
+      const text = await runWith(find);
+
       expect(text).not.toContain('CUJ 점검');
+      expect(text).toContain('주간 실행 회고 기록 없음');
       expect(text).toContain('오늘 계획 생성 실패');
     });
   });
