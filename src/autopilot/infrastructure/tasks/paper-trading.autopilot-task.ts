@@ -119,7 +119,7 @@ const buildSummaryText = (result: EvaluateAllAccountsResult): string => {
   if (result.accounts.length === 0) {
     return (
       '*가상 매매 장마감 평가*\n\n' +
-      '⚠️ 평가할 가상 계좌가 없습니다 — 추천(PAPER_RECOMMEND)이 계좌를 열기 전이거나 계좌가 삭제되었습니다.'
+      '⚠️ 평가할 가상 계좌가 없습니다 — 모의투자 추천이 계좌를 열기 전이거나 계좌가 삭제되었습니다.'
     );
   }
   return result.accounts
