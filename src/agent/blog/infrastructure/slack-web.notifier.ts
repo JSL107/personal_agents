@@ -28,12 +28,12 @@ export class SlackWebNotifier implements BlogSlackNotifierPort {
     channel,
     threadTs,
     text,
-  }: BlogSlackNotifyInput): Promise<void> {
+  }: BlogSlackNotifyInput): Promise<boolean> {
     if (!this.client) {
       this.logger.warn(
         `SLACK_BOT_TOKEN 미설정 — 비동기 BLOG 답장 생략 (channel=${channel}).`,
       );
-      return;
+      return false;
     }
     try {
       await this.client.chat.postMessage({
@@ -41,6 +41,7 @@ export class SlackWebNotifier implements BlogSlackNotifierPort {
         ...(threadTs ? { thread_ts: threadTs } : {}),
         ...toReadableSlackArgs(text),
       });
+      return true;
     } catch (error: unknown) {
       const reason = error instanceof Error ? error.message : String(error);
       // 이 경로는 삼키고 로그만 남기므로, 로그가 유일한 단서다 — 행동 한 줄을 여기에 붙인다.
@@ -50,6 +51,7 @@ export class SlackWebNotifier implements BlogSlackNotifierPort {
           error,
         ),
       );
+      return false;
     }
   }
 }

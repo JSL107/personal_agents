@@ -77,6 +77,7 @@ const buildHandler = (
     options.mentionReceiptRepository ?? {
       recordReceived: jest.fn().mockResolvedValue(undefined),
       recordOutcome: jest.fn().mockResolvedValue(undefined),
+      recordFinalReply: jest.fn().mockResolvedValue(undefined),
     },
   );
 };
@@ -222,6 +223,8 @@ describe('RouterMessageHandler — app_mention', () => {
         channel: 'C_CHANNEL',
         threadTs: '1730000000.000001',
         rememberReply: expect.any(Function),
+        markFinalReplyPending: expect.any(Function),
+        recordFinalReply: expect.any(Function),
       },
     } satisfies DispatchInput);
     expect(say).toHaveBeenCalledWith(
@@ -1001,6 +1004,8 @@ describe('RouterMessageHandler — message (DM)', () => {
         channel: 'D_DMCHANNEL',
         threadTs: '1730000000.000001',
         rememberReply: expect.any(Function),
+        markFinalReplyPending: expect.any(Function),
+        recordFinalReply: expect.any(Function),
       },
     } satisfies DispatchInput);
     expect(say).toHaveBeenCalled();
@@ -1695,6 +1700,7 @@ describe('RouterMessageHandler — 멘션 수신 기록', () => {
     const receipts = {
       recordReceived: jest.fn().mockResolvedValue(undefined),
       recordOutcome: jest.fn().mockResolvedValue(undefined),
+      recordFinalReply: jest.fn().mockResolvedValue(undefined),
     };
     buildHandler({ dispatch }, { mentionReceiptRepository: receipts }).register(
       app,
@@ -1754,6 +1760,26 @@ describe('RouterMessageHandler — 멘션 수신 기록', () => {
     });
   });
 
+  it('비동기 담당의 결과 답장 대기·게시 결과를 같은 멘션에 기록한다', async () => {
+    const dispatch = jest.fn(async (input: DispatchInput) => {
+      await input.replyContext?.markFinalReplyPending?.();
+      await input.replyContext?.recordFinalReply?.(false);
+      return {
+        agentRunId: 0,
+        workerType: AgentType.BLOG,
+        output: { async: true },
+        modelUsed: 'hermes-cli',
+        formattedText: '작성을 시작했어요',
+      };
+    });
+    const { handler, receipts } = buildCase(dispatch);
+    await invokeHandler(handler, mention);
+    expect(receipts.recordFinalReply.mock.calls).toEqual([
+      [{ ...ref, status: 'PENDING' }],
+      [{ ...ref, status: 'FAILED' }],
+    ]);
+  });
+
   it('기록이 실패해도 답변은 나간다', async () => {
     const { app, getHandler } = buildAppMock();
     buildHandler(
@@ -1762,6 +1788,7 @@ describe('RouterMessageHandler — 멘션 수신 기록', () => {
         mentionReceiptRepository: {
           recordReceived: jest.fn().mockRejectedValue(new Error('db down')),
           recordOutcome: jest.fn().mockRejectedValue(new Error('db down')),
+          recordFinalReply: jest.fn().mockRejectedValue(new Error('db down')),
         },
       },
     ).register(app);

@@ -50,4 +50,13 @@ describe('MentionReceiptPrismaRepository', () => {
       },
     });
   });
+
+  it('결과 답장 상태는 수신 상태와 따로 적는다', async () => {
+    await repository.recordFinalReply({ ...ref, status: 'PENDING' });
+
+    expect(updateMany).toHaveBeenLastCalledWith({
+      where: ref,
+      data: { finalReplyStatus: 'PENDING' },
+    });
+  });
 });

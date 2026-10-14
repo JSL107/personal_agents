@@ -23,6 +23,9 @@ export const CUJ_THRESHOLDS = {
   prFailures: 3,
   mentionDeadlineMs: 60_000,
   longMentionDeadlineMs: 600_000,
+  // 멘션 수신 기록을 판정하기 전 기다리는 시간. 블로그 결과 답장은 Hermes 상한(hermes-cli.runner.ts
+  // HERMES_TIMEOUT_MS 12분) 뒤에 나갈 수 있어, 장시간 기한(10분)으로 끊으면 정상 진행을 미응답으로 센다.
+  mentionReceiptGraceMs: 1_200_000,
   morningDeadlineHour: 9,
   eveningDeadlineHour: 21,
 } as const;
@@ -258,7 +261,7 @@ export const detectPaperInvestmentViolations = (
   return violation(4, '모의투자', parts.join(' · '));
 };
 
-// receipts 는 받은 지 longMentionDeadlineMs 가 지난 멘션만 담아야 한다 — 그 안의 RECEIVED 는 아직
+// receipts 는 받은 지 mentionReceiptGraceMs 가 지난 멘션만 담아야 한다 — 그 안의 RECEIVED 는 아직
 // 처리 중일 수 있다. 기한이 지나도 RECEIVED 면 처리 도중 프로세스가 죽었거나 멈춘 것이다.
 export const detectMentionViolations = (
   rows: CujRunRow[],
@@ -274,8 +277,13 @@ export const detectMentionViolations = (
           ? CUJ_THRESHOLDS.longMentionDeadlineMs
           : CUJ_THRESHOLDS.mentionDeadlineMs),
   ).length;
+  // 결과 답장(BLOG)이 대기·실패로 남은 멘션도 답이 안 나간 것이다 — ack 만 받고 결과를 못 받았다.
   const unanswered = receipts.filter(
-    (row) => row.status === 'RECEIVED' || row.status === 'REPLY_FAILED',
+    (row) =>
+      row.status === 'RECEIVED' ||
+      row.status === 'REPLY_FAILED' ||
+      row.finalReplyStatus === 'PENDING' ||
+      row.finalReplyStatus === 'FAILED',
   ).length;
   // 처리 실패 안내만 나간 멘션. 워커 실행 실패와 겹칠 수 있지만, 라우터 앞에서 끊겨 agent_run 이
   // 없는 실패는 여기서만 보인다.

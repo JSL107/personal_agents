@@ -3,6 +3,8 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   MENTION_RECEIPT_STATUS,
+  MentionFinalReplyStatus,
+  MentionReceiptRef,
   MentionReceiptRepositoryPort,
   MentionReceiptStatus,
   RecordMentionOutcomeInput,
@@ -62,6 +64,17 @@ export class MentionReceiptPrismaRepository implements MentionReceiptRepositoryP
         repliedAt:
           status === MENTION_RECEIPT_STATUS.REPLY_FAILED ? null : new Date(),
       },
+    });
+  }
+
+  async recordFinalReply({
+    channelId,
+    messageTs,
+    status,
+  }: MentionReceiptRef & { status: MentionFinalReplyStatus }): Promise<void> {
+    await this.prisma.mentionReceipt.updateMany({
+      where: { channelId, messageTs },
+      data: { finalReplyStatus: status },
     });
   }
 }

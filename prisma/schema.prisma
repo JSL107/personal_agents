@@ -474,6 +474,9 @@ model MentionReceipt {
   errorMessage String?   @map("error_message")
   receivedAt   DateTime  @default(now()) @map("received_at")
   repliedAt    DateTime? @map("replied_at")
+  // 즉시 ack 뒤 결과를 따로 올리는 담당(BLOG)의 결과 답장. null 은 따로 올릴 답장이 없는 멘션.
+  // PENDING | POSTED | FAILED — status 는 ack 게시로 REPLIED 가 되므로 결과 답장은 여기서만 보인다.
+  finalReplyStatus String? @map("final_reply_status")
 
   @@unique([channelId, messageTs])
   @@index([receivedAt])
