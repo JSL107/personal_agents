@@ -45,6 +45,21 @@ const listSourceFiles = (directory: string): string[] =>
 
 type Violation = { source: string; terms: string[]; text: string };
 const violations: Violation[] = [];
+// 감싼 대상 이름(`<파일> <export>`). 배선이 깨졌는지 spec 이 확인하는 자리다(`internal-terms.spec.ts`).
+const wrappedSources = new Set<string>();
+
+// spec 이 이 setup 이 실제로 등록·동작하는지 보려고 읽는다. import 로 받으면 등록이 빠져도 spec 이
+// 직접 불러와 통과해 버리므로, setup 이 돌았을 때만 생기는 전역으로 넘긴다.
+export type InternalTermsGuard = {
+  wrappedSources: ReadonlySet<string>;
+  takeViolations: () => Violation[];
+};
+(
+  globalThis as { __internalTermsGuard?: InternalTermsGuard }
+).__internalTermsGuard = {
+  wrappedSources,
+  takeViolations: () => violations.splice(0),
+};
 
 const collectStrings = (value: unknown, depth = 0): string[] => {
   if (typeof value === 'string') {
@@ -80,6 +95,9 @@ const pickTaskText: Pick = (value) => {
     result.summaryText,
     result.detailText,
     result.headlineText,
+    // 이미지·파일 제목도 Slack 에 그대로 보인다(orchestrator 가 제목·대체 텍스트로 싣는다).
+    result.detailImage?.title,
+    result.detailFile?.title,
     result.detailFile?.content,
     result.preview?.previewText,
     ...(result.previews ?? []).map((preview) => preview.previewText),
@@ -129,6 +147,7 @@ const wrapExports = (
         .prototype;
       const original = prototype.run as AnyFunction | undefined;
       if (typeof original === 'function') {
+        wrappedSources.add(source);
         prototype.run = function (this: unknown, ...args: unknown[]) {
           return inspectResult(
             source,
@@ -144,6 +163,7 @@ const wrapExports = (
       continue;
     }
     const original = value as AnyFunction;
+    wrappedSources.add(source);
     moduleExports[name] =
       mode === 'firstArg'
         ? (...args: unknown[]) => {
