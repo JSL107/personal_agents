@@ -193,7 +193,26 @@ describe('ArtJobExclusionActionHandler', () => {
     );
 
     expect(update).not.toHaveBeenCalled();
-    expect(respond.mock.calls[0][0].text).toContain('반영하지 못했어요');
+    // 저장 오류와 다른 문구로, 장부 기록이 재시도 중일 수 있으니 영구 실패로 단정하지 않는다.
+    expect(respond.mock.calls[0][0].text).toBe(
+      '이 공고가 아직 기록에 없어요. 몇 분 뒤 다시 눌러 보고, 그래도 안 되면 반영할 수 없는 공고예요.',
+    );
+  });
+
+  it('저장이 일시적으로 실패하면 잠시 뒤 다시 누르라고 알린다', async () => {
+    const { repository, run } = buildHarness();
+    repository.setExcluded.mockRejectedValueOnce(new Error('db down'));
+
+    const { respond, update } = await run(
+      ART_JOB_EXCLUDE_ACTION,
+      '7',
+      'U_RECIPIENT',
+    );
+
+    expect(update).not.toHaveBeenCalled();
+    expect(respond.mock.calls[0][0].text).toBe(
+      '반영하지 못했어요. 잠시 뒤 다시 눌러 주세요.',
+    );
   });
 });
 
@@ -282,7 +301,7 @@ describe('ArtJobExclusionActionHandler — 관심 있음', () => {
     );
 
     expect(update).not.toHaveBeenCalled();
-    expect(respond.mock.calls[0][0].text).toContain('반영하지 못했어요');
+    expect(respond.mock.calls[0][0].text).toContain('아직 기록에 없어요');
   });
 });
 
