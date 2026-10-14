@@ -1,4 +1,7 @@
-import { DailyBar } from '../../../market-data/domain/market-data.type';
+import {
+  DailyBar,
+  DecimalValue,
+} from '../../../market-data/domain/market-data.type';
 import {
   AlertMargin,
   AvgPriceStatus,
@@ -79,6 +82,20 @@ const isBreached = (percent: number, thresholds: Thresholds): boolean => {
     return true;
   }
   return percent >= thresholds.avgPriceUpperPercent;
+};
+
+// 평단 대비 가격이 경보선 밖인가. 잔고가 이미 바뀐 뒤 "바뀌기 전 평단" 으로 직전 상태를 재야 하는
+// 호출부(stock-monitor 의 매매 전이 판정)가 쓴다 — 임계를 따로 적으면 경보와 기준이 갈린다.
+export const isAvgPriceBandBreached = (
+  price: DecimalValue,
+  avgPrice: DecimalValue,
+  thresholds: Thresholds = STOCK_THRESHOLDS,
+): boolean => {
+  const avg = avgPrice.toNumber();
+  if (avg === 0) {
+    return false;
+  }
+  return isBreached(((price.toNumber() - avg) / avg) * 100, thresholds);
 };
 
 export const detectAvgPriceBreach = (

@@ -63,6 +63,7 @@ const makeRepository = () => ({
   upsertFxRate: jest.fn().mockResolvedValue(undefined),
   findFxRate: jest.fn().mockResolvedValue(null),
   findTickersWithUnscoredAlerts: jest.fn().mockResolvedValue([]),
+  findDailyPricesSince: jest.fn().mockResolvedValue([]),
 });
 
 const portfolioPositions = [
@@ -543,6 +544,143 @@ describe('StockMonitorAutopilotTask', () => {
       anomalyCount: 0,
       avgPriceBreachCount: 0,
     });
+  });
+
+  // 경보 판정은 오늘 평단 하나로 어제·오늘을 잰다. 물타기로 평단이 내려가 경보선 안으로 들어온 날은
+  // 어제를 바뀌기 전 평단으로 재야 복귀로 잡힌다.
+  it('매수로 평단이 바뀌어 경보선 안으로 들어오면 복귀로 발송한다', async () => {
+    const marketData = {
+      fetchDailyBars: jest
+        .fn()
+        .mockResolvedValue([bar('2026-07-21', 79), bar('2026-07-22', 79)]),
+    };
+    const repository = makeRepository();
+    repository.findCurrentHoldings.mockResolvedValue([
+      { ...holdings[0], quantity: decimal(20), avgPrice: decimal(90) },
+    ]);
+    repository.findLatestStoredTradeDate.mockResolvedValue(
+      new Date('2026-07-21T00:00:00.000Z'),
+    );
+    const syncHoldings = makeSyncHoldings();
+    syncHoldings.execute.mockResolvedValue({
+      synced: 1,
+      zeroed: 0,
+      changes: [holdingChange({ previousAvgPrice: '100', avgPrice: '90' })],
+    });
+
+    const result = await makeTask(
+      marketData,
+      repository,
+      { id: 'stock-monitor', targetMarketCountry: 'KR' },
+      'true',
+      syncHoldings,
+    ).run(context);
+
+    expect(result.skip).toBe(false);
+    expect(result.summaryText).toContain(
+      '↩️ *경보선 안으로 돌아온 종목* — SamsungElec',
+    );
+  });
+
+  // 팔린 종목은 보유 목록에 없어 판정 루프가 못 본다. 남은 이탈 종목만 보고 "변화 없음" 이 되면
+  // 이탈 종목의 매도가 원장에 묻힌다.
+  it('경보선 밖이던 종목을 전량 매도하면 남은 이탈 종목이 그대로여도 발송한다', async () => {
+    const marketData = {
+      fetchDailyBars: jest
+        .fn()
+        .mockResolvedValue([bar('2026-07-21', 64), bar('2026-07-22', 64)]),
+    };
+    const repository = makeRepository();
+    repository.findCurrentHoldings.mockResolvedValue([holdings[0]]);
+    repository.findLatestStoredTradeDate.mockResolvedValue(
+      new Date('2026-07-21T00:00:00.000Z'),
+    );
+    repository.findDailyPricesSince.mockResolvedValue([
+      {
+        tradeDate: new Date('2026-07-21T00:00:00.000Z'),
+        adjClose: decimal(60),
+      },
+    ]);
+    const syncHoldings = makeSyncHoldings();
+    syncHoldings.execute.mockResolvedValue({
+      synced: 1,
+      zeroed: 1,
+      changes: [
+        holdingChange({
+          tickerId: 2,
+          tickerName: 'SKHynix',
+          symbol: '000660',
+          kind: 'SOLD_ALL',
+          previousQuantity: '5',
+          quantity: '0',
+          previousAvgPrice: '100',
+          avgPrice: '100',
+        }),
+      ],
+    });
+
+    const result = await makeTask(
+      marketData,
+      repository,
+      { id: 'stock-monitor', targetMarketCountry: 'KR' },
+      'true',
+      syncHoldings,
+    ).run(context);
+
+    expect(result.skip).toBe(false);
+    expect(result.summaryText).toContain('전량 매도');
+    expect(repository.findDailyPricesSince).toHaveBeenCalledWith(
+      2,
+      expect.any(Date),
+    );
+  });
+
+  // 대조군 — 경보선 안이던 종목의 매도는 이탈 집합을 바꾸지 않는다(매매 변동만 붙은 회차).
+  it('경보선 안이던 종목을 전량 매도하면 원장에만 남긴다', async () => {
+    const marketData = {
+      fetchDailyBars: jest
+        .fn()
+        .mockResolvedValue([bar('2026-07-21', 64), bar('2026-07-22', 64)]),
+    };
+    const repository = makeRepository();
+    repository.findCurrentHoldings.mockResolvedValue([holdings[0]]);
+    repository.findLatestStoredTradeDate.mockResolvedValue(
+      new Date('2026-07-21T00:00:00.000Z'),
+    );
+    repository.findDailyPricesSince.mockResolvedValue([
+      {
+        tradeDate: new Date('2026-07-21T00:00:00.000Z'),
+        adjClose: decimal(100),
+      },
+    ]);
+    const syncHoldings = makeSyncHoldings();
+    syncHoldings.execute.mockResolvedValue({
+      synced: 1,
+      zeroed: 1,
+      changes: [
+        holdingChange({
+          tickerId: 2,
+          tickerName: 'SKHynix',
+          symbol: '000660',
+          kind: 'SOLD_ALL',
+          previousQuantity: '5',
+          quantity: '0',
+          previousAvgPrice: '100',
+          avgPrice: '100',
+        }),
+      ],
+    });
+
+    const result = await makeTask(
+      marketData,
+      repository,
+      { id: 'stock-monitor', targetMarketCountry: 'KR' },
+      'true',
+      syncHoldings,
+    ).run(context);
+
+    expect(result.skip).toBe(true);
+    expect(result.emptyReason).toContain('전량 매도');
   });
 
   // 새로 넘은 종목은 detectAvgPriceBreach 경보로 나간다 — 이탈 집합 변화의 다른 쪽.

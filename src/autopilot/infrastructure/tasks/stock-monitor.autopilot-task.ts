@@ -10,6 +10,7 @@ import {
   detectAvgPriceBreach,
   detectDailyChange,
   inspectAvgPriceStatus,
+  isAvgPriceBandBreached,
   isMarketClosed,
   measureAlertMargin,
 } from '../../../agent/stock/domain/stock-anomaly';
@@ -48,6 +49,9 @@ import {
 
 // 판정에 필요한 최소 봉 수(당일 + 전일). 여유를 두고 5거래일을 받는다.
 const REQUIRED_BARS = 5;
+// 전량 매도한 종목의 "팔기 전 마지막 종가" 를 찾는 범위. 보유 중에는 매 거래일 저장되므로
+// 연휴를 넉넉히 덮는 2주면 된다.
+const SOLD_PRICE_LOOKBACK_MS = 14 * 24 * 60 * 60 * 1000;
 
 // 원장(`agent_run.output`)에 남길 실행 요약. 화면에 보내는 summaryText 와 달리
 // **일이 없었던 실행도** 남긴다 — holdingCount=0 이 기록되지 않으면 "감시는 켜져 있는데
@@ -374,11 +378,12 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
         this.withHoldingChanges(resultWithExposure, sync.changes),
         sync.error,
       );
-      // 휴장일은 새 봉이 없어 이탈 종목 집합이 직전 거래일과 같다 — 상태 줄은 원장에만 남긴다.
+      // 휴장일은 새 봉이 없어 시세로는 이탈 종목 집합이 바뀌지 않는다 — 상태 줄은 원장에만 남긴다.
+      // 매매로 빠진 종목만 센다.
       const taskResult = this.suppressQuietRun(composedResult, {
         failures,
         syncError: sync.error,
-        breachChangeCount: 0,
+        breachChangeCount: await this.countSoldBreaches(sync.changes),
       });
       return {
         taskResult,
@@ -415,18 +420,36 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
     // 어제 봉으로는 경보선 밖이었는데 오늘 봉으로 안에 들어온 종목. 경보선을 새로 넘는 쪽은
     // detectAvgPriceBreach 가 같은 임계로 경보를 내므로, 이탈 집합의 변화 중 비는 쪽은 이것뿐이다.
     const recoveredNames: string[] = [];
+    // 경보 판정(detectAvgPriceBreach)은 **오늘 평단** 하나로 어제·오늘 봉을 잰다. 오늘 매매로 평단이
+    // 바뀌었으면 어제 상태는 바뀌기 전 평단으로 재야 한다 — 아니면 평단 변경만으로 생긴 이탈·복귀가
+    // 경보에도 복귀 목록에도 안 잡히고, 매매 변동만 붙은 회차로 묻힌다.
+    const previousAvgPriceByTicker = new Map(
+      sync.changes
+        .filter((change) => change.previousAvgPrice !== null)
+        .map((change) => [
+          change.tickerId,
+          new Prisma.Decimal(change.previousAvgPrice as string),
+        ]),
+    );
+    let enteredCount = 0;
     const collectStatus = (
       entry: HoldingSnapshot & { tickerId: number },
       bar: DailyBar,
       previousBar: DailyBar | null,
     ): void => {
       const status = inspectAvgPriceStatus(entry, bar);
+      const wasBreached =
+        previousBar !== null &&
+        isAvgPriceBandBreached(
+          previousBar.adjClose,
+          previousAvgPriceByTicker.get(entry.tickerId) ?? entry.avgPrice,
+        );
       if (status) {
         avgPriceStatuses.push(status);
-      } else if (
-        previousBar &&
-        inspectAvgPriceStatus(entry, previousBar) !== null
-      ) {
+        if (!wasBreached) {
+          enteredCount += 1;
+        }
+      } else if (wasBreached) {
         recoveredNames.push(entry.tickerName);
       }
       checkedBaseDates.push({
@@ -569,7 +592,10 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
         ? this.suppressQuietRun(composedResult, {
             failures,
             syncError: sync.error,
-            breachChangeCount: recoveredNames.length,
+            breachChangeCount:
+              recoveredNames.length +
+              enteredCount +
+              (await this.countSoldBreaches(sync.changes)),
           })
         : composedResult;
 
@@ -647,6 +673,41 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
       }
     }
     return backfilledCount;
+  }
+
+  // 전량 매도로 이탈 집합에서 빠진 종목 수. 팔린 종목은 findCurrentHoldings 에 없어 판정 루프가 못 본다.
+  // 직전 상태는 보유 중에 저장된 마지막 종가와 매도 전 평단으로 잰다. 시세를 못 읽으면 판단할 수 없으므로
+  // 변화로 센다 — 이탈 종목의 매도가 묻히는 것보다 한 번 더 나가는 쪽이 낫다.
+  private async countSoldBreaches(changes: HoldingChange[]): Promise<number> {
+    const since = new Date(this.now().getTime() - SOLD_PRICE_LOOKBACK_MS);
+    let count = 0;
+    for (const change of changes) {
+      if (change.kind !== 'SOLD_ALL' || change.previousAvgPrice === null) {
+        continue;
+      }
+      try {
+        const prices = await this.repository.findDailyPricesSince(
+          change.tickerId,
+          since,
+        );
+        const lastPrice = prices.at(-1);
+        if (
+          !lastPrice ||
+          isAvgPriceBandBreached(
+            lastPrice.adjClose,
+            new Prisma.Decimal(change.previousAvgPrice),
+          )
+        ) {
+          count += 1;
+        }
+      } catch (error) {
+        this.logger.warn(
+          `${change.symbol} 매도 전 시세 조회 실패 — 이탈 변화로 본다: ${(error as Error).message}`,
+        );
+        count += 1;
+      }
+    }
+    return count;
   }
 
   // 평단 대비 임계 밖 상태를 요약 뒤에 붙인다. 발화가 최초 진입 때만이라 이 줄이 없으면
