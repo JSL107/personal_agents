@@ -69,7 +69,7 @@ export const WORKER_CAPABILITIES: readonly WorkerCapability[] = [
     classifierLine:
       '직전 PO_EVAL + PM 결과 종합 → 컨텍스트 드리프트 / 문서 품질 / 주간 메타 회고 ("이번 주 메타 평가", "drift 점검", "/ceo-review 같은 의미")',
     canDo:
-      '한 주 동안 계획과 실제가 어긋난 곳, 고칠 문서를 짚는 주간 총평을 한다. 예: "이번 주 메타 평가해줘"',
+      '한 주 동안 계획과 실제가 어긋난 곳, 고칠 문서를 짚는 주간 점검을 한다. 예: "이번 주 계획이랑 실제가 어긋난 곳 짚어줘"',
   },
   {
     agentType: AgentType.VACATION,
