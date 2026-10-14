@@ -5,7 +5,11 @@ import {
   ArtJobListing,
   ResolvedArtJobImage,
 } from '../domain/art-job-feed.type';
-import { extractGameTitle, normalizeTitleKey } from '../domain/game-title';
+import {
+  buildImageSearchQuery,
+  extractGameTitle,
+  normalizeTitleKey,
+} from '../domain/game-title';
 import { GameImageResolverPort } from '../domain/port/art-job-feed.ports';
 import { fetchTextWithRetry } from './fetch-text-with-retry';
 import { KakaoImageDocument, KakaoImageSearch } from './kakao-image.search';
@@ -42,6 +46,8 @@ const isTrustedMedia = (docUrl: string): boolean => {
 
 // 이보다 짧은 게임명은 부분 일치 검증이 의미 없다(플레이스토어 시작 일치와 같은 하한).
 const MIN_VERIFIABLE_TITLE_LENGTH = 4;
+// 미리보기는 확인 없이 싣는 그림이라 최소한 알아볼 수 있는 크기만 거른다.
+const MIN_PREVIEW_WIDTH = 300;
 // 기사 제목까지 확인할 후보 수 — 후보마다 기사 페이지를 한 번씩 받는다.
 const MAX_ARTICLE_CHECKS = 5;
 
@@ -105,6 +111,54 @@ export const articleMentionsGame = (
   });
 };
 
+// 개인 블로그·카페 사진은 실측(2026-10-14)에서 사옥 사진·무관한 인물 사진이었다. 미리보기에서 뺀다.
+const PERSONAL_POST_HOSTS = [
+  'blog.naver.com',
+  'tistory.com',
+  'cafe.naver.com',
+  'cafe.daum.net',
+  'blog.daum.net',
+  'brunch.co.kr',
+  'velog.io',
+];
+
+const isPersonalPost = (docUrl: string): boolean => {
+  const host = hostnameOf(docUrl);
+  return PERSONAL_POST_HOSTS.some((personal) => {
+    return host === personal || host.endsWith(`.${personal}`);
+  });
+};
+
+// 확인 못 한 검색 그림. 게임 매체를 먼저, 없으면 개인 글이 아닌 출처(뉴스 등)를 고른다.
+// 맞는 게임인지는 모르므로 캡션에 '확인 안 됨' 을 붙인다.
+export const pickPreview = (
+  documents: KakaoImageDocument[],
+): ArtJobImage | null => {
+  const usable = documents.filter((document) => {
+    return (
+      document.width >= MIN_PREVIEW_WIDTH && !isPersonalPost(document.docUrl)
+    );
+  });
+  const found =
+    usable.find((document) => isTrustedMedia(document.docUrl)) ?? usable[0];
+  if (!found) {
+    return null;
+  }
+  return {
+    url: found.imageUrl,
+    origin: 'SEARCH_PREVIEW',
+    sourceName: found.sourceName || hostnameOf(found.docUrl),
+  };
+};
+
+const hostnameOf = (url: string): string => {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return '';
+  }
+};
+
 const toKakaoImage = (document: KakaoImageDocument): ArtJobImage => {
   return {
     url: document.imageUrl,
@@ -145,39 +199,47 @@ export class GameImageResolver implements GameImageResolverPort {
         this.logger.warn(`플레이스토어 이미지 조회 실패: ${String(error)}`);
       }
     }
-    // 플레이스토어에 없는(대개 미출시) 게임만 이미지 검색으로 보강한다.
-    const searched = gameTitle ? await this.searchKakao(gameTitle) : null;
-    if (searched) {
-      return { gameTitle, image: searched, googleSearchUrl: null };
+    // 플레이스토어에 없으면 카카오 이미지 검색 한 번으로 확인된 그림과 미리보기를 함께 고른다.
+    const searchQuery = buildImageSearchQuery(listing.company, gameTitle);
+    const documents = await this.searchKakao(searchQuery);
+    const verified = gameTitle
+      ? await this.findVerified(documents, gameTitle)
+      : null;
+    if (verified) {
+      return { gameTitle, image: verified, googleSearchUrl: null };
     }
     return {
       gameTitle,
       image: null,
-      googleSearchUrl: gameTitle
-        ? `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(gameTitle)}`
-        : null,
+      preview: pickPreview(documents),
+      searchQuery,
+      googleSearchUrl: `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(searchQuery)}`,
     };
   }
 
-  private async searchKakao(gameTitle: string): Promise<ArtJobImage | null> {
-    // 'NC' 같은 짧은 이름은 기사 제목 검증이 무력하다('NCSOFT' 가 든 모든 기사와 일치).
-    // 플레이스토어 시작 일치와 같은 하한을 둔다.
-    if (
-      !this.kakaoImageSearch.isEnabled() ||
-      normalizeTitleKey(gameTitle).length < MIN_VERIFIABLE_TITLE_LENGTH
-    ) {
-      return null;
+  private async searchKakao(query: string): Promise<KakaoImageDocument[]> {
+    if (!this.kakaoImageSearch.isEnabled()) {
+      return [];
     }
-    let candidates: KakaoImageDocument[];
     try {
-      candidates = filterKakaoCandidates(
-        await this.kakaoImageSearch.search(`${gameTitle} 게임`),
-      );
+      return await this.kakaoImageSearch.search(query);
     } catch (error) {
       this.logger.warn(`카카오 이미지 검색 실패: ${String(error)}`);
+      return [];
+    }
+  }
+
+  // 게임 매체 기사이고 기사 제목에 게임명이 있는 그림만 '확인됨' 으로 친다.
+  private async findVerified(
+    documents: KakaoImageDocument[],
+    gameTitle: string,
+  ): Promise<ArtJobImage | null> {
+    // 'NC' 같은 짧은 이름은 기사 제목 검증이 무력하다('NCSOFT' 가 든 모든 기사와 일치).
+    // 플레이스토어 시작 일치와 같은 하한을 둔다.
+    if (normalizeTitleKey(gameTitle).length < MIN_VERIFIABLE_TITLE_LENGTH) {
       return null;
     }
-    for (const candidate of candidates) {
+    for (const candidate of filterKakaoCandidates(documents)) {
       if (await this.isArticleAboutGame(candidate.docUrl, gameTitle)) {
         return toKakaoImage(candidate);
       }
