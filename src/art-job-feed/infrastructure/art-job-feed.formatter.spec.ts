@@ -18,8 +18,8 @@ const LISTING: ArtJobListing = {
 };
 
 describe('formatArtJobDigest', () => {
-  it('머리(멘션)와 번호 붙은 공고 목록을 한 통으로 만든다', () => {
-    const text = formatArtJobDigest({
+  it('머리(멘션)와 번호 붙은 공고 목록을 한 통으로 만들고 공고마다 「관심 없음」 버튼을 단다', () => {
+    const message = formatArtJobDigest({
       mentionUserId: 'U9',
       today: TODAY,
       items: [
@@ -50,25 +50,65 @@ describe('formatArtJobDigest', () => {
       ],
     });
 
-    expect(text).toBe(
-      [
-        '🎨 <@U9> 게임잡 새 원화 공고 *2건*',
-        [
-          '*1. <https://www.gamejob.co.kr/Recruit/GI_Read/View?GI_No=283904|[카오스 제로 나이트메어] 캐릭터 원화 급구  정규직>*',
-          '스마일게이트 &amp; 슈퍼크리에이티브 · 경력3년↑ · 정규직 · 경기 성남시 · 🔥 *오늘 마감*',
-          '🎮 카오스 제로 나이트메어 · 이미지는 스레드에',
-        ].join('\n'),
-        [
-          '*2. <https://www.gamejob.co.kr/Recruit/GI_Read/View?GI_No=283904|[프로젝트 A] 캐릭터 컨셉>*',
-          '그레이게임즈 · 상시',
-        ].join('\n'),
-        '_관심 없는 공고는 이 메시지에 번호 이모지(1️⃣~🔟)를 달아 주세요. 같은 공고가 다시 올라와도 보내지 않아요._',
-      ].join('\n\n'),
-    );
+    expect(
+      message.text.startsWith('🎨 <@U9> 게임잡 새 원화 공고 *2건*\n\n*1. <'),
+    ).toBe(true);
+    expect(message.text).toContain('그레이게임즈 · 상시');
+    expect(message.text).not.toContain('관심 없음');
+    expect(message.blocks).toEqual([
+      {
+        type: 'section',
+        text: { type: 'mrkdwn', text: '🎨 <@U9> 게임잡 새 원화 공고 *2건*' },
+      },
+      {
+        type: 'section',
+        block_id: 'art-job:283904',
+        text: {
+          type: 'mrkdwn',
+          text: [
+            '*1. <https://www.gamejob.co.kr/Recruit/GI_Read/View?GI_No=283904|[카오스 제로 나이트메어] 캐릭터 원화 급구  정규직>*',
+            '스마일게이트 &amp; 슈퍼크리에이티브 · 경력3년↑ · 정규직 · 경기 성남시 · 🔥 *오늘 마감*',
+            '🎮 카오스 제로 나이트메어 · 이미지는 스레드에',
+          ].join('\n'),
+        },
+        accessory: {
+          type: 'button',
+          action_id: 'art_job_exclude',
+          text: { type: 'plain_text', text: '관심 없음' },
+          value: '283904',
+        },
+      },
+      {
+        type: 'section',
+        block_id: 'art-job:2',
+        text: {
+          type: 'mrkdwn',
+          text: [
+            '*2. <https://www.gamejob.co.kr/Recruit/GI_Read/View?GI_No=283904|[프로젝트 A] 캐릭터 컨셉>*',
+            '그레이게임즈 · 상시',
+          ].join('\n'),
+        },
+        accessory: {
+          type: 'button',
+          action_id: 'art_job_exclude',
+          text: { type: 'plain_text', text: '관심 없음' },
+          value: '2',
+        },
+      },
+      {
+        type: 'context',
+        elements: [
+          {
+            type: 'mrkdwn',
+            text: '관심 없는 공고는 *관심 없음* 을 눌러 주세요. 같은 공고가 다시 올라와도 보내지 않아요.',
+          },
+        ],
+      },
+    ]);
   });
 
   it('이미지가 없고 게임명이 있으면 게임명을 구글 이미지 검색 링크로 단다', () => {
-    const text = formatArtJobDigest({
+    const { text: header, blocks } = formatArtJobDigest({
       mentionUserId: null,
       today: TODAY,
       items: [
@@ -82,12 +122,14 @@ describe('formatArtJobDigest', () => {
         },
       ],
     });
-    expect(text.startsWith('🎨 게임잡 새 원화 공고 *1건*')).toBe(true);
+    const text = JSON.stringify(blocks);
+    expect(header.startsWith('🎨 게임잡 새 원화 공고 *1건*\n\n')).toBe(true);
     expect(text).toContain(
       '🎮 <https://www.google.com/search?tbm=isch&q=x|LOST ARK Mobile> (구글 이미지 검색)',
     );
-    // 멘션 대상이 없으면 리액션 핸들러가 꺼져 있으므로 제외 안내도 싣지 않는다.
-    expect(text).not.toContain('번호 이모지');
+    // 멘션 대상이 없으면 누를 수 있는 사람이 없으므로 버튼도 안내도 싣지 않는다.
+    expect(text).not.toContain('accessory');
+    expect(text).not.toContain('관심 없음');
   });
 });
 

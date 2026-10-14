@@ -1332,13 +1332,9 @@ model ArtJobPosting {
   // 'SEED' — 첫 실행에서 게시 상한을 넘겨 보내지 않고 본 것으로만 표시한 공고.
   skippedReason String?   @map("skipped_reason")
 
-  // 게시된 본문 메시지 ts 와 그 안의 번호 — 번호 이모지 리액션을 이 공고로 되짚는 열쇠.
-  messageTs   String?   @map("message_ts")
-  digestOrder Int?      @map("digest_order")
-  // 받는 사람이 번호 이모지를 단 시각. 같은 회사·같은 제목이 새 번호로 다시 올라와도 보내지 않는다.
-  excludedAt  DateTime? @map("excluded_at")
+  // 받는 사람이 본문의 「관심 없음」을 누른 시각. 같은 회사·같은 제목이 새 번호로 다시 올라와도 보내지 않는다.
+  excludedAt DateTime? @map("excluded_at")
 
   @@unique([source, sourceId])
-  @@index([messageTs])
   @@map("art_job_posting")
 }

@@ -7,19 +7,6 @@ export const ART_JOB_POSTING_REPOSITORY_PORT = Symbol(
 export interface MarkNotifiedInput {
   listing: ArtJobListing;
   resolved: ResolvedArtJobImage;
-  // 본문 메시지 ts(게시 결과에 없으면 null)와 본문 속 번호 — 번호 이모지 리액션을 되짚는 열쇠.
-  messageTs: string | null;
-  digestOrder: number;
-}
-
-export interface MarkExcludedInput {
-  messageTs: string;
-  digestOrder: number;
-}
-
-export interface ExcludedPosting {
-  company: string;
-  title: string;
 }
 
 export interface ArtJobPostingRepositoryPort {
@@ -30,6 +17,8 @@ export interface ArtJobPostingRepositoryPort {
   markSeeded(listings: ArtJobListing[]): Promise<void>;
   // 제외된 공고의 exclusionKey(회사 + 제목) 집합.
   findExcludedKeys(): Promise<Set<string>>;
-  // 본문 ts + 번호에 해당하는 공고를 제외로 표시한다. 장부에 없으면 null.
-  markExcluded(input: MarkExcludedInput): Promise<ExcludedPosting | null>;
+  // 주어진 공고 중 제외된 것의 sourceId. 본문 버튼을 장부 상태대로 다시 그릴 때 쓴다.
+  findExcludedSourceIds(sourceIds: string[]): Promise<Set<string>>;
+  // 제외 여부를 바꾼다. 되돌리기는 같은 회사 + 제목의 제외를 전부 푼다. 장부에 없는 공고면 false.
+  setExcluded(sourceId: string, excluded: boolean): Promise<boolean>;
 }
