@@ -148,4 +148,35 @@ describe('ArtJobDeadlineCronConsumer', () => {
       [[1, 3], [2]],
     );
   });
+
+  it('한 사람에게 보내다 실패해도 나머지 사람에게는 보내고, 실패를 모아 던진다', async () => {
+    const postMessage = jest.fn(async ({ target }: { target: string }) => {
+      if (target === 'U_BROKEN') {
+        throw new Error('user_not_found');
+      }
+      return {};
+    });
+    const deps = makeConsumer(
+      [
+        { ...POSTING, id: 1, interestedBy: 'U_BROKEN' },
+        { ...POSTING, id: 2, interestedBy: 'U_OWNER' },
+      ],
+      postMessage,
+    );
+
+    await expect(deps.consumer.process(JOB)).rejects.toThrow(
+      '마감 알림 1/2명 실패 — U_BROKEN: user_not_found',
+    );
+    expect(deps.repository.markReminded).toHaveBeenCalledWith(
+      [2],
+      expect.any(Date),
+    );
+
+    // 재시도: 보낸 사람은 가드로 건너뛰고 실패한 사람만 다시 시도한다.
+    postMessage.mockClear();
+    await expect(deps.consumer.process(JOB)).rejects.toThrow('U_BROKEN');
+    expect(postMessage.mock.calls.map(([call]) => call.target)).toEqual([
+      'U_BROKEN',
+    ]);
+  });
 });

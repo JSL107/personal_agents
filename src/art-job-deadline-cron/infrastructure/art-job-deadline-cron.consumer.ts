@@ -88,10 +88,24 @@ export class ArtJobDeadlineCronConsumer extends ObservedWorkerHost {
     const kstHour = new Date(now.getTime() + 9 * HOUR_MS).getUTCHours();
     const slot = `${plainDateToIso(today)}T${kstHour}`;
     let completed = true;
+    const failures: string[] = [];
+    // 한 사람의 실패가 뒤 순서 사람의 알림을 막지 않게 끝까지 돈 뒤 모아서 던진다. 재시도는 이미 보낸
+    // 사람을 가드로 건너뛰고 실패한 사람만 다시 시도한다.
     for (const [target, postings] of byTarget) {
-      if (!(await this.deliver(target, postings, slot, now))) {
-        completed = false;
+      try {
+        if (!(await this.deliver(target, postings, slot, now))) {
+          completed = false;
+        }
+      } catch (error) {
+        failures.push(
+          `${target}: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
+    }
+    if (failures.length > 0) {
+      throw new Error(
+        `마감 알림 ${failures.length}/${byTarget.size}명 실패 — ${failures.join(' / ')}`,
+      );
     }
     return completed;
   }
