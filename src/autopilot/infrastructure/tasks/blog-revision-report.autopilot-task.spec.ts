@@ -42,7 +42,11 @@ describe('BlogRevisionReportAutopilotTask 원장', () => {
   });
   it('미설정도 이유를 원장에 남기고 카드는 생략한다', async () => {
     measure.isConfigured.mockReturnValue(false);
-    expect(await task.run()).toEqual({ skip: true });
+    // emptyReason 이 있어야 slack_delivery 에 EMPTY 행이 남아 결번 감시가 정상 회차로 본다.
+    expect(await task.run()).toEqual({
+      skip: true,
+      emptyReason: expect.stringContaining('미설정'),
+    });
     expect(records).toEqual([
       expect.objectContaining({
         skipReason: 'NOT_CONFIGURED',
@@ -65,7 +69,10 @@ describe('BlogRevisionReportAutopilotTask 원장', () => {
       summary: { postCount: 0, averagePercent: 0, untouchedCount: 0 },
       unmatchedCount: 2,
     });
-    expect(await task.run()).toEqual({ skip: true });
+    expect(await task.run()).toEqual({
+      skip: true,
+      emptyReason: expect.stringContaining('최근 14일 발행 글이 없어'),
+    });
     expect(records).toEqual([
       expect.objectContaining({
         skipReason: 'NO_RECENT_POSTS',
