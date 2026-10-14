@@ -1,7 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 
 import { ApplyResult } from '../../preview-gate/domain/apply-result.type';
-import { PreviewApplier } from '../../preview-gate/domain/port/preview-applier.port';
+import {
+  ApplyProgress,
+  PreviewApplier,
+} from '../../preview-gate/domain/port/preview-applier.port';
 import {
   PREVIEW_KIND,
   PreviewAction,
@@ -68,6 +71,24 @@ const parsePayload = (payload: unknown): IdeaSchedulePayload => {
   };
 };
 
+// 일정 등록을 마친 단계 이름. 뒤에 붙는 숫자는 만든 ScheduleItem id 다.
+const SCHEDULE_REGISTERED_STEP = 'schedule-registered:';
+
+const findRegisteredScheduleId = (
+  progress: ApplyProgress | undefined,
+): number | null => {
+  const step = progress?.done.find((done) =>
+    done.startsWith(SCHEDULE_REGISTERED_STEP),
+  );
+  if (!step) {
+    return null;
+  }
+  const scheduleItemId = Number(step.slice(SCHEDULE_REGISTERED_STEP.length));
+  return Number.isInteger(scheduleItemId) && scheduleItemId > 0
+    ? scheduleItemId
+    : null;
+};
+
 const formatDate = (date: PlainDate): string =>
   `${date.year}-${String(date.month).padStart(2, '0')}-${String(date.day).padStart(2, '0')}`;
 
@@ -81,7 +102,10 @@ export class IdeaScheduleApplier implements PreviewApplier {
     private readonly registerSchedule: RegisterScheduleUsecase,
   ) {}
 
-  async apply(preview: PreviewAction): Promise<ApplyResult> {
+  async apply(
+    preview: PreviewAction,
+    progress?: ApplyProgress,
+  ): Promise<ApplyResult> {
     const payload = parsePayload(preview.payload);
     const idea = await this.repository.findById(payload.ideaTriageId);
     if (!idea) {
@@ -101,13 +125,21 @@ export class IdeaScheduleApplier implements PreviewApplier {
       plainDateToUtcDate(today).getTime()
         ? today
         : payload.dueDate;
-    const schedule = await this.registerSchedule.execute({
-      slackUserId: preview.slackUserId,
-      title: payload.title,
-      dueDate,
-      memo: payload.memo,
-    });
-    await this.repository.markScheduled(payload.ideaTriageId, schedule.id);
+    // 일정을 만든 뒤 판정 기록 갱신이 실패하면 카드는 PENDING 으로 돌아와 다시 눌린다. 그때
+    // 일정을 또 만들지 않도록 만든 id 를 게이트의 단계 기록에 먼저 남긴다 — 이 기록은 실패한
+    // 승인 뒤에도 지워지지 않고 다음 승인의 `progress.done` 으로 돌아온다(`apply-preview.usecase.ts`).
+    let scheduleItemId = findRegisteredScheduleId(progress);
+    if (scheduleItemId === null) {
+      const schedule = await this.registerSchedule.execute({
+        slackUserId: preview.slackUserId,
+        title: payload.title,
+        dueDate,
+        memo: payload.memo,
+      });
+      scheduleItemId = schedule.id;
+      await progress?.record(`${SCHEDULE_REGISTERED_STEP}${scheduleItemId}`);
+    }
+    await this.repository.markScheduled(payload.ideaTriageId, scheduleItemId);
     return {
       message: `📅 ${formatDate(dueDate)} 「${payload.title}」 일정 등록`,
       artifacts: [],
