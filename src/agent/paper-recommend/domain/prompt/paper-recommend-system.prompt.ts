@@ -24,14 +24,16 @@ LONG_TERM은 중장기 추세와 안정성을, SWING은 단기 모멘텀과 거�
 반드시 아래 JSON 객체 하나만 출력한다. 코드 fence와 설명은 출력하지 않는다.
 {
   "sells": [{ "code": "005930", "reason": "매도 근거" }],
-  "buys": [{ "code": "000660", "reason": "매수 근거" }]
+  "buys": [{ "code": "000660", "reason": "매수 근거" }],
+  "holdReason": "sells와 buys가 모두 비어 있을 때만, 아무것도 하지 않기로 한 이유 한 문장"
 }
 
 규칙:
 - buys는 최대 ${MAXIMUM_BUY_COUNT}종이다.
 - 비중과 수량은 시스템이 정한다. 종목당 ${maximumWeightPercent}%가 배정되므로 비중이나 수량은 출력하지 않는다.
 - 보유 중인 종목은 재매수하지 않는다.
-- sells에는 보유 중인 종목만 넣는다.`;
+- sells에는 보유 중인 종목만 넣는다.
+- sells와 buys가 모두 비면 holdReason에 그 이유를 한 문장으로 적는다. 하나라도 있으면 holdReason은 생략한다.`;
 
 export const buildPaperRecommendationPrompt = (
   input: BuildPaperRecommendationPromptInput,

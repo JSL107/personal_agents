@@ -345,6 +345,52 @@ describe('PaperRecommendAutopilotTask', () => {
     );
     expect(result.summaryText).not.toContain('매수·매도 추천 없음');
   });
+  it.each([
+    ['NO_MARKET_DATA', null, '시세 데이터 없음 — 주문 생성 안 됨'],
+    ['NO_CANDIDATES', null, '조건을 통과한 후보 종목 없음'],
+    ['ALL_FILTERED', null, '추천이 모두 제외돼 주문 없음'],
+    [
+      'MODEL_HELD',
+      '관망 <근거> & 대기',
+      '보유 유지 판단 — 관망 &lt;근거&gt; &amp; 대기',
+    ],
+    ['MODEL_HELD', null, '보유 유지 판단 (사유 미기재)'],
+  ])('%s 이유를 저장된 코드로 표시한다', async (code, detail, line) => {
+    const recommendation = {
+      execute: jest.fn().mockResolvedValue({
+        completed: [
+          {
+            strategy: 'LONG_TERM',
+            accountId: 11,
+            ordersCreated: 0,
+            agentRunId: 31,
+            dataAsOf: '2026-08-17',
+            candidateCount: 1,
+            emptyReason: { code, detail },
+            orders: [],
+            skipped: [],
+            account: {
+              cashBalance: 10000000,
+              totalValue: 10000000,
+              positionCount: 0,
+              returnRate: null,
+            },
+          },
+        ],
+        failed: [],
+      }),
+    };
+    const task = new PaperRecommendAutopilotTask(
+      recommendation as unknown as GeneratePaperRecommendationUsecase,
+      NO_HOLIDAYS,
+    );
+    const result = await task.run({
+      ownerSlackUserId: 'U1',
+      firedAtKst: '2026-08-17',
+    });
+    expect(result.summaryText).toContain(line);
+  });
+
   it('평가 스냅샷이 있으면 계좌 수익률을 함께 보여준다', async () => {
     const recommendation = {
       execute: jest.fn().mockResolvedValue({
