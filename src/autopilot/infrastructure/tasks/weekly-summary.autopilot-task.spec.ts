@@ -264,7 +264,7 @@ describe('WeeklySummaryAutopilotTask', () => {
     // 메인(summaryText): worklog 헤더 + 요약만 남긴다. CEO 구분자도 없다.
     expect(out.summaryText).toContain('Weekly Summary');
     expect(out.summaryText).toContain('이번주 요약');
-    expect(out.summaryText).not.toContain('CEO Meta');
+    expect(out.summaryText).not.toContain('주간 자동 회고');
     expect(out.summaryText).not.toContain('skip');
     expect(out.summaryText).not.toContain('────────');
     expect(out.summaryText).not.toContain('정량 근거');
