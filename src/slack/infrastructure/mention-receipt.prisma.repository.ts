@@ -2,7 +2,10 @@ import { Injectable } from '@nestjs/common';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import {
+  MENTION_FINAL_REPLY_STATUS,
   MENTION_RECEIPT_STATUS,
+  MentionFinalReplyStatus,
+  MentionReceiptRef,
   MentionReceiptRepositoryPort,
   MentionReceiptStatus,
   RecordMentionOutcomeInput,
@@ -18,6 +21,14 @@ const OUTCOME_PRECEDENCE: MentionReceiptStatus[] = [
   MENTION_RECEIPT_STATUS.REPLY_FAILED,
   MENTION_RECEIPT_STATUS.ERROR_REPLIED,
   MENTION_RECEIPT_STATUS.REPLIED,
+];
+
+// 결과 답장도 같은 이유로 뒤 상태만 덮는다 — 재전송된 중복 실행의 대기·실패가 먼저 끝난 게시를 지우지 않게.
+// 아직 아무 기록이 없는 행(null)은 어느 상태로든 갱신한다.
+const FINAL_REPLY_PRECEDENCE: MentionFinalReplyStatus[] = [
+  MENTION_FINAL_REPLY_STATUS.PENDING,
+  MENTION_FINAL_REPLY_STATUS.FAILED,
+  MENTION_FINAL_REPLY_STATUS.POSTED,
 ];
 
 @Injectable()
@@ -62,6 +73,31 @@ export class MentionReceiptPrismaRepository implements MentionReceiptRepositoryP
         repliedAt:
           status === MENTION_RECEIPT_STATUS.REPLY_FAILED ? null : new Date(),
       },
+    });
+  }
+
+  async recordFinalReply({
+    channelId,
+    messageTs,
+    status,
+  }: MentionReceiptRef & { status: MentionFinalReplyStatus }): Promise<void> {
+    await this.prisma.mentionReceipt.updateMany({
+      where: {
+        channelId,
+        messageTs,
+        OR: [
+          { finalReplyStatus: null },
+          {
+            finalReplyStatus: {
+              in: FINAL_REPLY_PRECEDENCE.slice(
+                0,
+                FINAL_REPLY_PRECEDENCE.indexOf(status),
+              ),
+            },
+          },
+        ],
+      },
+      data: { finalReplyStatus: status },
     });
   }
 }

@@ -136,7 +136,7 @@ export class CujLedgerPrismaReader implements CujLedgerReaderPort {
   ): Promise<CujMentionReceiptRow[]> {
     return await this.prisma.mentionReceipt.findMany({
       where: { receivedAt: { gte: since, lt: until } },
-      select: { status: true },
+      select: { status: true, finalReplyStatus: true },
     });
   }
 
