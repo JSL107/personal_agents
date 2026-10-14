@@ -11,6 +11,9 @@ export const IDAERI_ROUTER_PORT = Symbol('IDAERI_ROUTER_PORT');
 export interface BlogReplyContext {
   channel: string;
   threadTs?: string;
+  // 백그라운드 완료 답장을 대화 기억에도 남긴다. 없으면 기억에는 "작성을 시작했어요" ack 만 남아,
+  // 완료 직후 "이거 3줄 요약해줘" 가 가리킬 원문이 사라진다(2026-10-14 run 8837).
+  rememberReply?: (text: string) => Promise<void>;
 }
 
 // dispatch 진입점 — 사용자/cron/webhook 의 발화를 manager 에 전달한다.

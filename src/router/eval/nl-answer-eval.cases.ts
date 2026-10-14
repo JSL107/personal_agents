@@ -38,6 +38,9 @@ const VACATION_BALANCE_7479 =
   '*:beach_with_umbrella: 휴가 잔여*  *현재 회기*: 2026-04-06 ~ 2027-04-05 • 부여: 6일 • 사용: 4일 • 잔여: 2일  _이대리 (VACATION) · agentRunId=7479_';
 const VACATION_LIST_0915 =
   '*:clipboard: 휴가 내역*  • [#5] 2026-09-21 (1영업일) • [#4] 2026-07-24 (0.5영업일) • [#3] 2026-06-19 (1영업일) • [#2] 2026-06-12 (0.5영업일)';
+// run 8832 완료 알림 — formatBlogDraft 형식, summary·URL 은 원장 output 원문.
+const BLOG_DRAFT_8832 =
+  '🚀 *블로그 발행 완료*\n프롬프트 엔지니어링과 RAG의 차이를 “입력 안의 정보를 잘 쓰게 하는가, 입력 밖의 근거를 찾아 넣는가”로 나누어 설명한 초안이다. 작은 문서·질문 세트로 검색 결과와 답변 실패를 먼저 기록하면서 RAG를 공부하는 접근을 제안한다.\n발행된 글 보기: <https://app.notion.com/p/RAG-3f969cbba3948131878ad514c324b13d>\n_상태=발행 으로 자동 게시됐습니다. 공개 뷰에서 바로 확인하세요._';
 
 // 되묻기 실패의 대표 문구. 개인 봇이 대상을 몰라 되묻는 회차를 잡는다.
 const ASK_BACK = /알려\s*주(?:세요|실래요)|짚어\s*주세요|말씀해\s*주세요/;
@@ -240,6 +243,31 @@ export const NL_ANSWER_EVAL_CASES: readonly EvalCase[] = [
     text: '노션 초안 정규식 글 발행된 거야?',
     // 발행 기록을 조회할 수 있는 블로그 워커가 답해야 한다 — 대화 답변은 확인 없이 단정했다.
     expect: { destinations: [AgentType.BLOG_PUBLISH], forbidIntercepts: true },
+  },
+  {
+    id: 't-blog-summary-explicit',
+    split: 'tuning',
+    note: '요약 오분류 수정의 대조군 — 글로 남기라고 명시하면 "요약" 이 들어 있어도 BLOG 다',
+    text: '프롬프트 RAG 3줄 요약해서 블로그 초안으로 정리해줘',
+    expect: {
+      destinations: [AgentType.BLOG],
+      acceptStubRoutes: [AgentType.BLOG],
+    },
+  },
+  {
+    id: 't-brainstorm-topic',
+    split: 'tuning',
+    note: '주제가 있는 브레인스토밍 — "못 한다" 가 아니라 실제 아이디어를 내야 한다(2026-10-14 run 8836 후속)',
+    text: '주말에 해볼 만한 백엔드 사이드 프로젝트 아이디어 같이 브레인스토밍해줘',
+    // 아이디어가 둘 이상 나열돼야 한다 — 번호·불릿 줄이 두 개 이상.
+    expect: {
+      destinations: ['REPLIED'],
+      forbidIntercepts: true,
+      mustMatch: [
+        /(?:^|\n)\s*(?:\d+[.)]|[-•*])\s*\S[\s\S]*\n\s*(?:\d+[.)]|[-•*])\s*\S/,
+      ],
+      mustNotMatch: [/지원하지\s*않|못\s*해요/],
+    },
   },
   {
     id: 't-review-link',
@@ -565,6 +593,55 @@ export const NL_ANSWER_EVAL_CASES: readonly EvalCase[] = [
         ASK_BACK,
         /실시간[^.!?\n]{0,15}(?:검색|찾아)[^.!?\n]{0,15}(?:드릴|드려|할\s*수\s*있|가능)/,
       ],
+    },
+  },
+  // ── holdout: 2026-10-14 👎 후보(run 8837) ──
+  // DM 에서 "지금 이거에 대해서 3줄 요약할 수 있어?" 가 BLOG(0.98)로 가 Notion 초안을 새로 만들었다.
+  // 3분 전 run 8832("프롬프트 RAG공부해볼래")의 초안이 02:50:48 에 끝났고 8837 은 02:51:31 이다.
+  // "이거" 가 그 초안인지는 원장으로 확정되지 않는다(대화 기억은 TTL 30분이라 남지 않았고, 봇 DM 원문은
+  // 읽지 못했다). 아래 두 문항은 둘 다 재구성이다.
+  {
+    id: 'h-summary-in-context-1014',
+    split: 'holdout',
+    note: '2026-10-14 run 8837 재구성 — 요약할 원문이 맥락에 있는 경우. 직전 봇 턴은 run 8832 완료 알림(formatBlogDraft 형식, summary 는 원장 output 원문)으로 재구성했다',
+    text: `${MENTION}지금 이거에 대해서 3줄 요약할 수 있어?`,
+    priorTurns: [
+      user(`${MENTION}프롬프트 RAG공부해볼래`, AgentType.BLOG),
+      bot(BLOG_DRAFT_8832, AgentType.BLOG),
+    ],
+    // 블로그 초안을 새로 만들지 말고 그 자리에서 요약해야 한다 — 원문의 핵심(입력 안 정보 vs 입력 밖 근거)이 답에 있어야 한다.
+    expect: {
+      destinations: ['REPLIED'],
+      forbidIntercepts: true,
+      mustMatch: [/입력/, /근거|검색/],
+      mustNotMatch: [ASK_BACK, /요약[^.!?\n]{0,10}(?:못|없|어려)/],
+      notEndWithQuestion: true,
+    },
+  },
+  {
+    id: 'h-summary-no-source-1014',
+    split: 'holdout',
+    note: '2026-10-14 run 8837 재구성 — 당시 대화 기억 상태. 비동기 블로그 완료 알림은 대화 기억에 남지 않아 직전 봇 턴은 "작성을 시작했어요" ack 뿐이다(blog.dispatcher.ts runInBackground)',
+    text: `${MENTION}지금 이거에 대해서 3줄 요약할 수 있어?`,
+    priorTurns: [
+      user(`${MENTION}프롬프트 RAG공부해볼래`, AgentType.BLOG),
+      bot(
+        '📝 블로그 초안 작성을 시작했어요. 몇 분 뒤 이 스레드에 Notion 링크를 올릴게요.',
+        AgentType.BLOG,
+      ),
+    ],
+    // 요약할 원문이 맥락에 없다. 초안을 새로 만들면 실패이고, 원문 없이 어떻게 답하는지는 채점하지 않는다.
+    expect: { destinations: ['REPLIED'], forbidIntercepts: true },
+  },
+  {
+    id: 'h-brainstorm-can-1014',
+    split: 'holdout',
+    note: '2026-10-14 run 8836 — 브레인스토밍 가능 여부에 "자유로운 브레인스토밍 기능은 지원하지 않아요" 라고 답했다. 대화만으로 할 수 있는 일이다',
+    text: `${MENTION}나랑 브레인 스토밍도 가능해?`,
+    expect: {
+      destinations: ['REPLIED'],
+      forbidIntercepts: true,
+      mustNotMatch: [/지원하지\s*않|못\s*해요|어려워요|기능은\s*없/],
     },
   },
 ];
