@@ -45,6 +45,10 @@ import { formatModelFooter } from '../../../slack/format/model-footer.formatter'
 import { formatUpcomingLine } from '../../../slack/format/schedule-briefing.formatter';
 import { formatWaitingSection } from '../../../slack/format/waiting-section.formatter';
 import {
+  findLastFireBefore,
+  resolveTaskCronSchedule,
+} from '../../application/autopilot-schedule';
+import {
   AutopilotTask,
   AutopilotTaskContext,
   AutopilotTaskResult,
@@ -392,7 +396,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
   }
 
   // CUJ 점검(cuj-check)은 아침 브리핑을 감시하고, 아침 브리핑은 CUJ 점검과 주간 실행 회고(run-retro)가
-  // 제 주기 안에 원장을 남겼는지 본다(LEDGER_GAP_WATCHES). 감시자인 브리핑이 멈추면 CUJ 점검이 잡고,
+  // 제 cron 의 직전 회차 이후 원장을 남겼는지 본다(LEDGER_GAP_WATCHES). 감시자인 브리핑이 멈추면 CUJ 점검이 잡고,
   // 둘이 함께 멈추면(스케줄러 정지·앱 다운) 매일 오던 이 메시지가 안 오는 것 자체가 신호다.
   // 조회가 실패해도 브리핑 본체는 나가야 하므로 줄만 생략한다.
   private async loadLedgerGapIncidents(
@@ -411,17 +415,22 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
   // 감시 대상마다 따로 삼킨다 — 한 조회의 실패가 다른 대상의 결번 줄까지 지우지 않게.
   private async loadLedgerGapIncident(
     firedAtKst: string,
-    { taskId, label, periodDays }: LedgerGapWatch,
+    { taskId, label }: LedgerGapWatch,
   ): Promise<MorningIncident | null> {
     try {
+      const todayStart = getLedgerWatchTodayStart(firedAtKst);
+      // 스케줄러가 등록한 것과 같은 cron(env 오버라이드 반영)의 직전 회차. 잘못된 cron 이면 던져서 이 줄만 빠진다.
+      const lastFireBeforeToday = findLastFireBefore(
+        resolveTaskCronSchedule(taskId, (key) =>
+          this.configService.get<string>(key),
+        ),
+        todayStart,
+      );
       const latestBeforeToday =
-        await this.cujLedgerReader.findLatestDeliveryBefore(
-          taskId,
-          getLedgerWatchTodayStart(firedAtKst),
-        );
+        await this.cujLedgerReader.findLatestDeliveryBefore(taskId, todayStart);
       if (
         latestBeforeToday === null ||
-        !isLedgerGap(firedAtKst, latestBeforeToday, periodDays)
+        !isLedgerGap(latestBeforeToday, lastFireBeforeToday)
       ) {
         return null;
       }
