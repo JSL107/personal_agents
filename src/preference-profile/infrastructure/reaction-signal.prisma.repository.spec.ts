@@ -40,6 +40,21 @@ describe('ReactionSignalPrismaRepository', () => {
     });
   });
 
+  // 질문은 사람이 친 원문이라 토큰이 섞일 수 있다 — 원장 라우팅 원문과 같은 마스킹을 거친다.
+  it('질문 원문은 PII 를 가려 저장한다', async () => {
+    prisma.slackReactionSignal.create.mockResolvedValue({});
+    const token = `ghp_${'a'.repeat(36)}`;
+
+    await repository.record({
+      ...recordInput(),
+      promptText: `이 토큰 왜 안 돼? ${token}`,
+    });
+
+    const saved = prisma.slackReactionSignal.create.mock.calls[0][0].data;
+    expect(saved.promptText).toContain('이 토큰 왜 안 돼?');
+    expect(saved.promptText).not.toContain(token);
+  });
+
   // 다이제스트 카드는 수천 자다. 신호로 쓰는 건 앞 300자뿐이라, 상한이 없으면 쓰지 않는
   // 본문이 테이블을 채운다.
   it('메시지 본문이 1,000자를 넘으면 잘라서 저장한다', async () => {

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { redactPii } from '../../common/util/pii-redaction.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   ReactionSignalRepositoryPort,
@@ -29,6 +30,15 @@ export class ReactionSignalPrismaRepository implements ReactionSignalRepositoryP
         data: {
           ...input,
           messageText: input.messageText.slice(0, MESSAGE_TEXT_CAP),
+          // 사람이 친 원문이라 토큰·키가 섞일 수 있다 — 원장의 라우팅 원문(toLedgerRoutedText)처럼 가린다.
+          ...(input.promptText === undefined
+            ? {}
+            : {
+                promptText: redactPii(input.promptText).slice(
+                  0,
+                  MESSAGE_TEXT_CAP,
+                ),
+              }),
         },
       });
     } catch (error: unknown) {

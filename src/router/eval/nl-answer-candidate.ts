@@ -1,3 +1,4 @@
+import { ROUTED_TEXT_TRUNCATION_MARK } from '../../agent-run/application/routing-context';
 import { NL_ANSWER_EVAL_CASES } from './nl-answer-eval.cases';
 
 // 운영 원장에서 "질문에 제대로 답하지 못했을 수 있는" 자연어 회차를 골라, 사람이 보고 eval holdout 에
@@ -5,6 +6,8 @@ import { NL_ANSWER_EVAL_CASES } from './nl-answer-eval.cases';
 // (plan: docs/superpowers/plans/2026-10-07-nl-answer-fidelity.md §2 「과최적화 방지」·§5 「표본 부족」)
 
 export type CandidateReason =
+  // 사용자가 답에 👎 를 달았다 — 실패를 사람이 직접 표시한 가장 직접적인 신호.
+  | 'DISLIKED'
   // 처리 중 오류로 끝났다 — 사용자는 답 대신 오류를 받았다.
   | 'FAILED'
   // 사실 기반 답을 못 내고 결정론 요약으로 대신 답했다(답 생성 실패·숫자 검사 실패).
@@ -25,8 +28,16 @@ export interface LedgerRunRow {
   output: unknown;
 }
 
+// 👎 반응 행(slack_reaction_signal). promptText 는 반응 대상이 스레드 답글일 때만 있다.
+export interface DislikedReplyRow {
+  messageTs: string;
+  messageText: string;
+  promptText: string | null;
+}
+
 export interface NlAnswerCandidate {
-  agentRunId: number;
+  // 👎 반응을 원장 run 에 잇지 못하면 null — 질문·답은 반응 행만으로 낸다.
+  agentRunId: number | null;
   startedAt: string;
   worker: string;
   text: string;
@@ -44,6 +55,17 @@ const normalize = (text: string): string =>
 const KNOWN_TEXTS: ReadonlySet<string> = new Set(
   NL_ANSWER_EVAL_CASES.map((evalCase) => normalize(evalCase.text)),
 );
+
+// 원장의 라우팅 원문은 500자에서 잘리고 표식이 붙는다(toLedgerRoutedText) — 잘린 원문은 앞부분으로 맞춘다.
+const isSameUtterance = (routedText: string, promptText: string): boolean => {
+  const routed = normalize(routedText);
+  const prompt = normalize(promptText);
+  return routed.endsWith(ROUTED_TEXT_TRUNCATION_MARK)
+    ? prompt.startsWith(routed.slice(0, -ROUTED_TEXT_TRUNCATION_MARK.length))
+    : routed === prompt;
+};
+
+const ANSWER_PREVIEW_LENGTH = 160;
 
 const asRecord = (value: unknown): Record<string, unknown> =>
   value !== null && typeof value === 'object'
@@ -92,4 +114,46 @@ export const toNlAnswerCandidate = (
     return { ...base, reason: 'HELD_WRITE' };
   }
   return { ...base, reason: 'FACT_ANSWER' };
+};
+
+// 👎 반응 → 후보. 원장에는 Slack 메시지 ts 가 없어 반응과 run 을 직접 잇는 키가 없다. 그래서 질문 원문이
+// 같고 답이 게시되기 전에 시작한 가장 최근 run 을 그 답의 run 으로 본다. 같은 문장을 두 번 물었다면
+// 더 최근 회차가 잡힌다 — 질문·답 본문은 반응 행의 것이라 사람이 읽는 내용은 틀리지 않는다.
+export const toDislikedCandidate = (
+  signal: DislikedReplyRow,
+  runs: readonly LedgerRunRow[],
+  knownTexts: ReadonlySet<string> = KNOWN_TEXTS,
+): NlAnswerCandidate | null => {
+  const prompt = signal.promptText;
+  // 질문이 없으면(최상위 cron 발송 등) 대화 답변이 아니다.
+  if (!prompt || prompt.trim().length === 0) {
+    return null;
+  }
+  if (knownTexts.has(normalize(prompt))) {
+    return null;
+  }
+  const answeredAt = new Date(Number(signal.messageTs) * 1_000);
+  const run = runs
+    .filter((row) => {
+      const routedText = asRecord(row.inputSnapshot).routedText;
+      return (
+        typeof routedText === 'string' &&
+        row.startedAt.getTime() <= answeredAt.getTime() &&
+        isSameUtterance(routedText, prompt)
+      );
+    })
+    .reduce<LedgerRunRow | undefined>(
+      (latest, row) =>
+        latest === undefined || row.startedAt > latest.startedAt ? row : latest,
+      undefined,
+    );
+  const answer = signal.messageText.replace(/\s+/g, ' ').trim();
+  return {
+    agentRunId: run?.id ?? null,
+    startedAt: (run?.startedAt ?? answeredAt).toISOString(),
+    worker: run?.agentType ?? 'run 미연결',
+    text: normalize(prompt),
+    reason: 'DISLIKED',
+    detail: `답: ${answer.length > ANSWER_PREVIEW_LENGTH ? `${answer.slice(0, ANSWER_PREVIEW_LENGTH)}…` : answer}`,
+  };
 };

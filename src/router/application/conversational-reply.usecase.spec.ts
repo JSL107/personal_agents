@@ -132,7 +132,8 @@ describe('ConversationalReply — buildSystemPrompt (self-context)', () => {
         // 2026-10-07 기능 목록·개인 봇 사실·되묻기 규칙 교체, PR 소유 문구 정정(#744 리뷰), 링크 없는 게시 안내(4단계)로 갱신
         // 2026-10-08 PO_SHADOW 가 분기 제품 목표 선언·조회·닫기도 받는다(PO Shadow 단계 3)
         // 2026-10-14 자동·이모지·버튼 기능 목록 안내 규칙, 주제가 겹치지 않는 대안 금지(run 8787)
-        'fe8839c1cf73d4ecb054ff4ede3eb54ad40c9a5f056360b14a2c4d1be3894a3a',
+        // 2026-10-14 BLOG canDo 에 웹 검색 조사 경로와 "바로 검색해 답하지는 못한다" 를 명시(run 8605)
+        '4f2523c3697411a313cc3d39a0fd6a54593181f4ac34201b41aca8c55b6e2c77',
       );
     },
   );
