@@ -393,6 +393,10 @@ export class RouterMessageHandler implements SlackHandler {
       .reverse()
       .find((turn) => turn.agentRunId !== null)?.agentRunId;
 
+    // 봇 답장이 달리는 스레드의 기억 키 — DM 최상위 발화면 memoryKey(channel 키)와 다르다.
+    const replyThreadKey = threadTs
+      ? this.conversationMemory.buildKey({ slackUserId, channelId, threadTs })
+      : memoryKey;
     let succeeded = false;
     try {
       // 자연어 Y/N → 사용자의 직전 PreviewGate preview 에 대한 응답 인터셉트.
@@ -437,17 +441,13 @@ export class RouterMessageHandler implements SlackHandler {
           channel: channelId,
           ...(threadTs ? { threadTs } : {}),
           conversationKey: memoryKey,
-          rememberReply: (replyText: string) =>
+          replyThreadKey,
+          rememberReply: (replyText: string, agentRunId?: number) =>
             this.rememberAsyncReply({
               memoryKey,
-              replyThreadKey: threadTs
-                ? this.conversationMemory.buildKey({
-                    slackUserId,
-                    channelId,
-                    threadTs,
-                  })
-                : memoryKey,
+              replyThreadKey,
               text: replyText,
+              agentRunId,
             }),
           ...(messageTs
             ? this.buildFinalReplyRecorders({ channelId, messageTs })
@@ -588,16 +588,18 @@ export class RouterMessageHandler implements SlackHandler {
     memoryKey,
     replyThreadKey,
     text,
+    agentRunId,
   }: {
     memoryKey: string;
     replyThreadKey: string;
     text: string;
+    agentRunId?: number;
   }): Promise<void> {
     const turn: ConversationTurn = {
       role: 'assistant',
       text,
       agentType: AgentType.BLOG,
-      agentRunId: null,
+      agentRunId: agentRunId ?? null,
       timestampMs: Date.now(),
     };
     await this.conversationMemory.appendTurn(memoryKey, turn);
@@ -683,7 +685,9 @@ export class RouterMessageHandler implements SlackHandler {
           conversationKey: turn.conversationKey ?? channelKey,
         });
       }
-      return { turns: channelTurns, key: channelKey };
+      // 첫 질문의 맥락도 부모 뒤의 다른 최상위 대화를 뺀다 — 넘기면 그쪽 작업의 실행 id·상태가 이
+      // 스레드의 직전 작업으로 잡힌다. 부모 앞의 대화는 맥락일 수 있어 남긴다.
+      return { turns: channelTurns.slice(0, rootEnd), key: channelKey };
     }
     // 역할은 항상 user 에 원문 표식을 붙인다. assistant 로 두면 다른 앱의 알림이나 알림에 섞인
     // 외부 응답 본문이 "이대리 자신의 직전 응답"으로 해석된다(IntentClassifier·ConversationalReply

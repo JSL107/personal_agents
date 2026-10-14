@@ -33,6 +33,9 @@ const PRIOR_TURN_TEXT_CAP = 1500;
 // 같은 대화의 더 이전 실행(보류된 요청 앞의 초안 등)이 잡힌다. 몇 분 뒤 남는 완료 답장 turn 은
 // 이 창을 벗어날 수 있지만, 그 turn 자체가 결과(링크·실패 사유)를 담고 있어 상태 줄이 없어도 된다.
 const ASYNC_WORK_STATUS_LOOKBACK_MS = 5 * 60 * 1000;
+// 대화 기억에 작업 turn 이 없을 때 원장에서 이 대화의 비동기 실행을 찾는 창 — 대화 기억 TTL(30분)과
+// 같다. 기억은 키당 5 turn 이라 스레드 문답이 쌓이면 작업 turn 이 먼저 밀려난다.
+const CONVERSATION_RUN_LOOKBACK_MS = 30 * 60 * 1000;
 
 // IntentClassifier 가 UNKNOWN 반환 (어느 worker 에도 매핑 불가) 시 RouterMessageHandler 의 catch
 // 분기에서 호출되는 일반 대화 응답 fallback.
@@ -144,8 +147,11 @@ export class ConversationalReplyUsecase {
       .filter((turn) => turn.role === 'assistant');
     const workTurnIndex = replies.findIndex((turn) => turn.agentType);
     const workTurn = replies[workTurnIndex];
-    if (!workTurn?.agentType || !this.agentRunService) {
+    if (!this.agentRunService) {
       return undefined;
+    }
+    if (!workTurn?.agentType) {
+      return await this.describeConversationRun(conversationKey);
     }
     const label = toTaskLabel(workTurn.agentType);
     try {
@@ -179,6 +185,31 @@ export class ConversationalReplyUsecase {
         ),
       });
       return run === null ? undefined : formatWorkStatus(label, run);
+    } catch (error: unknown) {
+      this.logger.warn(
+        `직전 작업 상태 조회 실패 — 상태 없이 답한다: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return undefined;
+    }
+  }
+
+  // 작업 turn 이 기억 밖으로 밀려난 대화 — 이 대화의 최근 비동기 실행(BLOG)을 원장에서 찾는다.
+  // 동기 worker 의 결과는 이미 답으로 나갔으므로 찾지 않는다.
+  private async describeConversationRun(
+    conversationKey: string | undefined,
+  ): Promise<string | undefined> {
+    if (!conversationKey || !this.agentRunService) {
+      return undefined;
+    }
+    try {
+      const run = await this.agentRunService.findLatestConversationRun({
+        agentType: AgentType.BLOG,
+        conversationKey,
+        startedSince: new Date(Date.now() - CONVERSATION_RUN_LOOKBACK_MS),
+      });
+      return run === null
+        ? undefined
+        : formatWorkStatus(toTaskLabel(AgentType.BLOG), run);
     } catch (error: unknown) {
       this.logger.warn(
         `직전 작업 상태 조회 실패 — 상태 없이 답한다: ${error instanceof Error ? error.message : String(error)}`,

@@ -223,6 +223,7 @@ describe('RouterMessageHandler — app_mention', () => {
         channel: 'C_CHANNEL',
         threadTs: '1730000000.000001',
         conversationKey: 'U_USER:C_CHANNEL:1730000000.000001',
+        replyThreadKey: 'U_USER:C_CHANNEL:1730000000.000001',
         rememberReply: expect.any(Function),
         markFinalReplyPending: expect.any(Function),
         recordFinalReply: expect.any(Function),
@@ -956,12 +957,14 @@ describe('RouterMessageHandler — message (DM)', () => {
         timestampMs: Date.now(),
       });
 
-      await input.replyContext?.rememberReply?.(COMPLETION);
+      await input.replyContext?.rememberReply?.(COMPLETION, 42);
 
       const threadTurns = await conversationMemory.getRecentTurns(threadKey);
       const channelTurns = await conversationMemory.getRecentTurns(channelKey);
       expect(threadTurns.at(-1)?.text).toBe(COMPLETION);
       expect(channelTurns.at(-1)?.text).toBe(COMPLETION);
+      // 실행 id 가 실려 다음 "작업 끝났어?" 가 이 실행의 상태를 바로 조회한다.
+      expect(threadTurns.at(-1)?.agentRunId).toBe(42);
     });
 
     it('스레드 키가 비어 있으면 channel 키에만 남긴다 — 첫 스레드 진입의 channel 키 되짚기를 막지 않게', async () => {
@@ -1054,8 +1057,7 @@ describe('RouterMessageHandler — message (DM)', () => {
         modelUsed: 'hermes-cli',
         formattedText: '📝 블로그 초안 작성을 시작했어요.',
       } satisfies DispatchResult)
-      .mockRejectedValueOnce(unknown())
-      .mockRejectedValueOnce(unknown());
+      .mockRejectedValue(unknown());
     const conversationalReply = {
       reply: jest.fn().mockResolvedValue('아직 쓰고 있어요.'),
     } as unknown as ConversationalReplyUsecase;
@@ -1102,7 +1104,12 @@ describe('RouterMessageHandler — message (DM)', () => {
       say: jest.fn(),
       client,
     });
-    for (const ts of ['1730000000.000002', '1730000000.000003']) {
+    for (const ts of [
+      '1730000000.000002',
+      '1730000000.000003',
+      '1730000000.000004',
+      '1730000000.000005',
+    ]) {
       await invoke({
         event: {
           type: 'message',
@@ -1120,6 +1127,9 @@ describe('RouterMessageHandler — message (DM)', () => {
 
     const second = (conversationalReply.reply as jest.Mock).mock
       .calls[1][0] as { priorTurns: ConversationTurn[] };
+    expect(dispatch.mock.calls[0][0].replyContext?.replyThreadKey).toBe(
+      `U_USER:D_DMCHANNEL:${DM_TS}`,
+    );
     expect(second.priorTurns.map((turn) => turn.text)).not.toContain(
       '오늘 일정 뭐야',
     );
@@ -1130,6 +1140,17 @@ describe('RouterMessageHandler — message (DM)', () => {
         conversationKey: 'U_USER:D_DMCHANNEL',
       }),
     );
+    // 네 번째 질문 — 5 turn 창에서 ack 가 밀려났다. 그래도 넘기는 대화 키가 실행에 남긴 답장 스레드
+    // 키와 같아 원장에서 이 실행을 찾는다.
+    const fourth = (conversationalReply.reply as jest.Mock).mock
+      .calls[3][0] as {
+      priorTurns: ConversationTurn[];
+      conversationKey: string;
+    };
+    expect(
+      fourth.priorTurns.some((saved) => saved.agentType === AgentType.BLOG),
+    ).toBe(false);
+    expect(fourth.conversationKey).toBe(`U_USER:D_DMCHANNEL:${DM_TS}`);
   });
 
   // #836 리뷰 — 같은 문구의 앞선 DM, 부모 뒤에 이어진 다른 최상위 대화는 옮기지 않는다.
@@ -1165,8 +1186,14 @@ describe('RouterMessageHandler — message (DM)', () => {
         status: DomainStatus.BAD_REQUEST,
       }),
     );
+    const conversationalReply = {
+      reply: jest.fn().mockResolvedValue('아직 쓰고 있어요.'),
+    } as unknown as ConversationalReplyUsecase;
     const { app, getHandler } = buildAppMock();
-    buildHandler({ dispatch }, { conversationMemory }).register(app);
+    buildHandler(
+      { dispatch },
+      { conversationMemory, conversationalReply },
+    ).register(app);
     const invoke = getHandler('message') as unknown as (args: {
       event: Record<string, unknown>;
       say: jest.Mock;
@@ -1213,6 +1240,16 @@ describe('RouterMessageHandler — message (DM)', () => {
     expect(threadTurns.map((saved) => saved.text)).not.toContain(
       '오늘 plan 짜줘',
     );
+    // 첫 질문의 맥락에서도 부모 뒤의 다른 최상위 대화는 빠진다. 앞의 대화는 남는다.
+    const first = (conversationalReply.reply as jest.Mock).mock.calls[0][0] as {
+      priorTurns: ConversationTurn[];
+    };
+    expect(first.priorTurns.map((saved) => saved.text)).toEqual([
+      '블로그 써줘',
+      '예전 초안 시작',
+      '블로그 써줘',
+      '새 초안 시작',
+    ]);
   });
 
   it('channel_type=im + 일반 user message → router.dispatch (멘션 prefix 없이 전체 text)', async () => {
@@ -1244,6 +1281,8 @@ describe('RouterMessageHandler — message (DM)', () => {
         threadTs: '1730000000.000001',
         // DM 최상위 발화라 기억 키는 channel 단위다 — 답장 스레드(threadTs)와 다르다.
         conversationKey: 'U_USER:D_DMCHANNEL',
+        // 답장은 그 발화의 스레드에 달린다 — 실행 기록이 그 스레드에서도 찾히게 함께 남긴다.
+        replyThreadKey: 'U_USER:D_DMCHANNEL:1730000000.000001',
         rememberReply: expect.any(Function),
         markFinalReplyPending: expect.any(Function),
         recordFinalReply: expect.any(Function),
