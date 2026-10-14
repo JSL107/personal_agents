@@ -30,6 +30,14 @@ interface ActionMessage {
   blocks?: SlackBlock[];
 }
 
+// 장부에 아직 없는 공고의 버튼 — 게시 직후 기록 전이거나 기록이 재시도 중일 때(일시), 또는 장부 밖에서
+// 만든 메시지(영구). 저장 오류와 안내를 나누려고 종류를 따로 둔다.
+class ArtJobPostingNotFoundError extends Error {
+  constructor(sourceId: string) {
+    super(`장부에 없는 공고 — GI_No=${sourceId}`);
+  }
+}
+
 export interface ArtJobButtonStates {
   excludedIds: Set<string>;
   interestedIds: Set<string>;
@@ -95,7 +103,13 @@ export class ArtJobExclusionActionHandler implements SlackHandler {
           await respond({
             response_type: 'ephemeral',
             replace_original: false,
-            text: '반영하지 못했어요. 잠시 뒤 다시 눌러 주세요.',
+            // 장부에 없는 공고는 영구 실패로 단정하지 않는다 — 게시 직후이거나 장부 기록이 재시도
+            // 중이면(게시 cron 은 게시 → 기록, 실패 시 BullMQ 재시도) 몇 분 뒤 같은 버튼이 동작한다.
+            // 저장 오류와는 원인이 달라 문구만 나눈다.
+            text:
+              error instanceof ArtJobPostingNotFoundError
+                ? '이 공고가 아직 기록에 없어요. 몇 분 뒤 다시 눌러 보고, 그래도 안 되면 반영할 수 없는 공고예요.'
+                : '반영하지 못했어요. 잠시 뒤 다시 눌러 주세요.',
           });
           return;
         }
@@ -169,7 +183,7 @@ export class ArtJobExclusionActionHandler implements SlackHandler {
       const excluded = actionId === ART_JOB_EXCLUDE_ACTION;
       const found = await this.repository.setExcluded(sourceId, excluded);
       if (!found) {
-        throw new Error(`장부에 없는 공고 — GI_No=${sourceId}`);
+        throw new ArtJobPostingNotFoundError(sourceId);
       }
       this.logger.log(
         `원화 공고 ${excluded ? '제외' : '제외 해제'} — GI_No=${sourceId}`,
@@ -183,7 +197,7 @@ export class ArtJobExclusionActionHandler implements SlackHandler {
       userId,
     );
     if (!posting) {
-      throw new Error(`장부에 없는 공고 — GI_No=${sourceId}`);
+      throw new ArtJobPostingNotFoundError(sourceId);
     }
     this.logger.log(
       `원화 공고 ${interested ? '관심' : '관심 해제'} — GI_No=${sourceId}`,
