@@ -12,6 +12,12 @@ let client = ConsoleClient(baseURL: baseURL, token: token)
 let application = NSApplication.shared
 application.setActivationPolicy(.regular)
 
+// 보고서 목록 시각 회귀 렌더. 백엔드 없이 고정 fixture를 사용한다.
+if let index = CommandLine.arguments.firstIndex(of: "--render-reports") {
+    let path = index + 1 < CommandLine.arguments.count ? CommandLine.arguments[index + 1] : "reports.png"
+    exit(renderReportsPreview(path: path) ? 0 : 1)
+}
+
 // 개인 사무실 카드 대시보드 시각 회귀 렌더. 백엔드 없이 고정 상태 6종을 한 장에 굽는다.
 //   swift run IdaeriConsole --render-dashboard /tmp/dashboard.png [--dark] [--size 2560x1600] [--agents]
 //   (`--agents` 는 대시보드 대신 에이전트 상태 탭을 굽는다)

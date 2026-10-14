@@ -325,6 +325,28 @@ public actor ConsoleClient {
         return envelope.data
     }
 
+    /// 콘솔로 전달된 보고서를 조회한다. 응답 본문은 공통 `data` 봉투다.
+    public func fetchDeliveries(
+        status: String = "SUPPRESSED", days: Int = 14, limit: Int = 200
+    ) async throws -> ListDeliveriesResult {
+        var components = URLComponents(
+            url: baseURL.appendingPathComponent("v1/console/deliveries"),
+            resolvingAgainstBaseURL: false
+        )
+        components?.queryItems = [
+            URLQueryItem(name: "status", value: status),
+            URLQueryItem(name: "days", value: String(days)),
+            URLQueryItem(name: "limit", value: String(limit)),
+        ]
+        guard let url = components?.url else { throw ConsoleClientError.notHTTP }
+        let (data, response) = try await session.data(for: authorized(URLRequest(url: url)))
+        guard let http = response as? HTTPURLResponse else { throw ConsoleClientError.notHTTP }
+        guard (200..<300).contains(http.statusCode) else {
+            throw ConsoleClientError.badStatus(http.statusCode)
+        }
+        return try JSONDecoder().decode(DeliveriesEnvelope.self, from: data).data
+    }
+
     /// `POST /v1/console/schedules`. 캘린더에서 직접 등록한다(Slack 발화와 같은 저장 경로).
     ///
     /// `dueDate` 는 `yyyy-MM-dd` 문자열이다 — Date 를 그대로 실으면 인코더가 UTC 로 찍어
@@ -469,6 +491,10 @@ private struct ActivityEnvelope: Decodable {
 
 private struct BriefingEnvelope: Decodable {
     let data: ConsoleBriefing
+}
+
+private struct DeliveriesEnvelope: Decodable {
+    let data: ListDeliveriesResult
 }
 
 private struct SchedulesEnvelope: Decodable {
