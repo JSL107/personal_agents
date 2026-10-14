@@ -35,10 +35,13 @@ const isRecordValue = (value: unknown): value is Record<string, unknown> =>
 export class CujLedgerPrismaReader implements CujLedgerReaderPort {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findLatestCujCheckDeliveryBefore(before: Date): Promise<Date | null> {
+  async findLatestDeliveryBefore(
+    itemKind: string,
+    before: Date,
+  ): Promise<Date | null> {
     const delivery = await this.prisma.slackDelivery.findFirst({
       where: {
-        itemKinds: { has: 'cuj-check' },
+        itemKinds: { has: itemKind },
         createdAt: { lt: before },
       },
       orderBy: { createdAt: 'desc' },

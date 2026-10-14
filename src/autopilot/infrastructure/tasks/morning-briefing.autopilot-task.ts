@@ -50,9 +50,11 @@ import {
   AutopilotTaskResult,
 } from '../../domain/autopilot-task.port';
 import {
-  getCujWatchTodayStart,
-  isCujCheckMissingYesterday,
-} from '../../domain/cuj-check-missing';
+  getLedgerWatchTodayStart,
+  isLedgerGap,
+  LEDGER_GAP_WATCHES,
+  LedgerGapWatch,
+} from '../../domain/ledger-gap-watch';
 import {
   CUJ_LEDGER_READER_PORT,
   CujLedgerReaderPort,
@@ -233,7 +235,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
       invest,
       study,
       portfolio,
-      cujIncident,
+      ledgerGapIncidents,
     ] = await Promise.all([
       this.loadApprovalLabels(ownerSlackUserId, now),
       this.loadIncidents(now),
@@ -247,7 +249,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
           ?.trim() || ownerSlackUserId,
       ),
       this.loadPortfolio(now),
-      this.loadCujIncident(firedAtKst),
+      this.loadLedgerGapIncidents(firedAtKst),
     ]);
 
     // 그날 회차에서 감지한 문제도 장애로 센다 — 첫 줄만 보고 열지 정하는 메시지라, 아래 줄에만
@@ -265,7 +267,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
             },
           ]
         : []),
-      ...(cujIncident ? [cujIncident] : []),
+      ...ledgerGapIncidents,
     ];
     const digestInput: MorningDigestInput = {
       firedAtKst,
@@ -389,29 +391,46 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
     }
   }
 
-  // CUJ 점검(cuj-check)은 아침 브리핑을 감시하고, 아침 브리핑은 CUJ 점검이 어제 돌았는지 본다.
+  // CUJ 점검(cuj-check)은 아침 브리핑을 감시하고, 아침 브리핑은 CUJ 점검과 주간 실행 회고(run-retro)가
+  // 제 주기 안에 원장을 남겼는지 본다(LEDGER_GAP_WATCHES). 감시자인 브리핑이 멈추면 CUJ 점검이 잡고,
   // 둘이 함께 멈추면(스케줄러 정지·앱 다운) 매일 오던 이 메시지가 안 오는 것 자체가 신호다.
   // 조회가 실패해도 브리핑 본체는 나가야 하므로 줄만 생략한다.
-  private async loadCujIncident(
+  private async loadLedgerGapIncidents(
     firedAtKst: string,
+  ): Promise<MorningIncident[]> {
+    const incidents = await Promise.all(
+      LEDGER_GAP_WATCHES.map((watch) =>
+        this.loadLedgerGapIncident(firedAtKst, watch),
+      ),
+    );
+    return incidents.filter(
+      (incident): incident is MorningIncident => incident !== null,
+    );
+  }
+
+  // 감시 대상마다 따로 삼킨다 — 한 조회의 실패가 다른 대상의 결번 줄까지 지우지 않게.
+  private async loadLedgerGapIncident(
+    firedAtKst: string,
+    { taskId, label, periodDays }: LedgerGapWatch,
   ): Promise<MorningIncident | null> {
     try {
       const latestBeforeToday =
-        await this.cujLedgerReader.findLatestCujCheckDeliveryBefore(
-          getCujWatchTodayStart(firedAtKst),
+        await this.cujLedgerReader.findLatestDeliveryBefore(
+          taskId,
+          getLedgerWatchTodayStart(firedAtKst),
         );
       if (
         latestBeforeToday === null ||
-        !isCujCheckMissingYesterday(firedAtKst, latestBeforeToday)
+        !isLedgerGap(firedAtKst, latestBeforeToday, periodDays)
       ) {
         return null;
       }
       return {
-        label: `CUJ 점검 기록 없음 — 마지막 기록 ${formatTradeDay(getKstDateOf(latestBeforeToday))}`,
+        label: `${label} 기록 없음 — 마지막 기록 ${formatTradeDay(getKstDateOf(latestBeforeToday))}`,
         dayCount: null,
       };
     } catch (error: unknown) {
-      this.logger.warn(`CUJ 점검 원장 조회 실패 — 줄 생략: ${String(error)}`);
+      this.logger.warn(`${label} 원장 조회 실패 — 줄 생략: ${String(error)}`);
       return null;
     }
   }
