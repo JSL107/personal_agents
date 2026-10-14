@@ -20,25 +20,85 @@ export interface ArtJobDigestInput {
   today: PlainMonthDay;
 }
 
-// 번호 이모지 리액션 → 제외(ArtJobExclusionReactionHandler). 받는 사람이 기능을 알 길이 이 줄뿐이다.
-// 핸들러는 받는 사람(멘션 대상)이 있을 때만 켜지므로, 멘션이 없으면 동작하지 않는 안내도 싣지 않는다.
+// 본문 버튼 → 제외 / 되돌리기(ArtJobExclusionActionHandler). 버튼 값은 공고 번호(sourceId)다.
+// action_id 는 블록 안에서만 유일하면 되므로 공고마다 같은 값을 쓰고, 어느 공고인지는 값으로 가린다.
+export const ART_JOB_EXCLUDE_ACTION = 'art_job_exclude';
+export const ART_JOB_RESTORE_ACTION = 'art_job_restore';
+const ITEM_BLOCK_PREFIX = 'art-job:';
+
+// 받는 사람이 기능을 알 길이 이 줄뿐이다. 본문 끝 context 블록 — 출처 표기 같은 꼬리 줄도 여기에 붙인다.
 const EXCLUSION_HINT =
-  '_관심 없는 공고는 이 메시지에 번호 이모지(1️⃣~🔟)를 달아 주세요. 같은 공고가 다시 올라와도 보내지 않아요._';
+  '관심 없는 공고는 *관심 없음* 을 눌러 주세요. 같은 공고가 다시 올라와도 보내지 않아요.';
+
+export interface ArtJobDigestMessage {
+  // 알림·검색용 대체 문구. 본문은 blocks 로만 그린다.
+  text: string;
+  blocks: SlackBlock[];
+}
+
+export type SlackBlock = Record<string, unknown>;
+
+export const artJobItemBlockId = (sourceId: string): string => {
+  return `${ITEM_BLOCK_PREFIX}${sourceId}`;
+};
+
+export const parseArtJobItemBlockId = (blockId: unknown): string | null => {
+  if (typeof blockId !== 'string' || !blockId.startsWith(ITEM_BLOCK_PREFIX)) {
+    return null;
+  }
+  return blockId.slice(ITEM_BLOCK_PREFIX.length) || null;
+};
+
+export const buildArtJobItemButton = (
+  sourceId: string,
+  excluded: boolean,
+): SlackBlock => {
+  return {
+    type: 'button',
+    action_id: excluded ? ART_JOB_RESTORE_ACTION : ART_JOB_EXCLUDE_ACTION,
+    text: {
+      type: 'plain_text',
+      text: excluded ? '제외됨 · 되돌리기' : '관심 없음',
+    },
+    value: sourceId,
+  };
+};
 
 // 한 회차 = 채널 메시지 한 통. 공고마다 따로 보내면 하루 최대 22통이 채널을 덮어
 // 목록을 한눈에 비교할 수 없었다. 이미지는 스레드로 내리고 여기엔 글만 싣는다.
+//
+// 버튼은 받는 사람(멘션 대상)이 있을 때만 단다 — 핸들러가 그 사람의 클릭만 받으므로,
+// 멘션이 없으면 아무도 누를 수 없는 버튼이 된다.
 export const formatArtJobDigest = ({
   items,
   mentionUserId,
   today,
-}: ArtJobDigestInput): string => {
+}: ArtJobDigestInput): ArtJobDigestMessage => {
   const mention = mentionUserId ? `<@${mentionUserId}> ` : '';
   const header = `🎨 ${mention}게임잡 새 원화 공고 *${items.length}건*`;
-  const blocks = items.map(({ listing, resolved }, index) => {
-    return formatItem(index + 1, listing, resolved, today);
-  });
-  const hint = mentionUserId ? [EXCLUSION_HINT] : [];
-  return [header, ...blocks, ...hint].join('\n\n');
+  const blocks: SlackBlock[] = [
+    { type: 'section', text: { type: 'mrkdwn', text: header } },
+  ];
+  for (const [index, { listing, resolved }] of items.entries()) {
+    blocks.push({
+      type: 'section',
+      block_id: artJobItemBlockId(listing.sourceId),
+      text: {
+        type: 'mrkdwn',
+        text: formatItem(index + 1, listing, resolved, today),
+      },
+      ...(mentionUserId
+        ? { accessory: buildArtJobItemButton(listing.sourceId, false) }
+        : {}),
+    });
+  }
+  if (mentionUserId) {
+    blocks.push({
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: EXCLUSION_HINT }],
+    });
+  }
+  return { text: header, blocks };
 };
 
 const formatItem = (

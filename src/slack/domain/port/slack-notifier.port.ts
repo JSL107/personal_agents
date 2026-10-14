@@ -26,6 +26,9 @@ export interface SlackNotifierPort {
   // id). 파일 업로드로 채널에 그림을 올리는 것과 달리 이쪽은 **일반 메시지**라 `ts` 가
   // 즉시 돌아오고, 그래서 그 메시지가 스레드의 뿌리가 될 수 있다.
   //
+  // blocks 를 주면 그 Block Kit 을 그대로 싣는다(text 는 알림용 대체 문구). 버튼처럼 본문
+  // 글로는 못 그리는 것을 호출부가 직접 조립할 때 쓴다.
+  //
   // runVerdict 를 주면 본문 대신 그 실행의 판정 버튼을 싣는다(text 는 알림용 대체 문구).
   // 버튼을 무엇으로 그릴지는 발송 어댑터가 정한다 — 호출부는 실행 id 와 축만 넘긴다.
   postMessage(input: {
@@ -36,6 +39,7 @@ export interface SlackNotifierPort {
     threadTs?: string;
     unfurlLinks?: boolean;
     image?: { fileId: string; altText: string };
+    blocks?: Record<string, unknown>[];
     runVerdict?: {
       agentRunId: number;
       facets: RunVerdictFacet[];
