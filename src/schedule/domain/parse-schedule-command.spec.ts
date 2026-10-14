@@ -92,6 +92,24 @@ describe('parseScheduleCommand', () => {
       parseScheduleCommand('납부까지 끝내기 10월 1일', TODAY),
     ).toMatchObject({ title: '납부까지 끝내기' });
   });
+
+  it.each([
+    // 2026-10-13 run 8621 원문.
+    ['내일 할일에 대화 고도화 추가해 줄래?', '대화 고도화'],
+    ['내일 일정에 치과 넣어 주세요', '치과'],
+    ['10월 5일 건강검진 예약 등록해줄래요?', '건강검진 예약'],
+    ['내일 자동차세 잡아줄래?', '자동차세'],
+  ])('부탁형 지시어와 등록할 곳 머리말을 걷어낸다: %s', (text, title) => {
+    const command = parseScheduleCommand(text, TODAY);
+    expect(command.kind).toBe('REGISTER');
+    expect(command).toMatchObject({ title });
+  });
+
+  it('머리말이 아닌 "할일" 은 제목에 남긴다', () => {
+    expect(parseScheduleCommand('내일 할일 목록 정리', TODAY)).toMatchObject({
+      title: '할일 목록 정리',
+    });
+  });
 });
 
 describe('mergeScheduleCommands', () => {
