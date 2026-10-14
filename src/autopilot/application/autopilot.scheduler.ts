@@ -12,6 +12,7 @@ import {
   AutopilotJobData,
 } from '../domain/autopilot.type';
 import { PlaybookEntry, PlaybookLine } from '../domain/playbook.type';
+import { resolveCronSchedule, toScheduleEnvId } from './autopilot-schedule';
 
 const LOW_FREQUENCY_RETRY_OPTIONS = {
   attempts: 4,
@@ -93,15 +94,8 @@ export class AutopilotScheduler implements OnApplicationBootstrap {
       if (primary.trigger.kind !== 'CRON') {
         continue;
       }
-      const envKey = primary.id.toUpperCase().replace(/-/g, '_');
-      const aiCliEnvKeys = this.getAiCliEnvScheduleKeys(primary.id);
-      const schedule = this.readNonEmpty(
-        aiCliEnvKeys?.cron ?? `AUTOPILOT_${envKey}_SCHEDULE`,
-        primary.trigger.schedule,
-      );
-      const tz = this.readNonEmpty(
-        aiCliEnvKeys?.timezone ?? `AUTOPILOT_${envKey}_TIMEZONE`,
-        primary.trigger.timezone,
+      const { pattern: schedule, tz } = resolveCronSchedule(primary, (key) =>
+        this.configService.get<string>(key),
       );
       // 라인별 발송 대상. 투자 라인만 전용 채널로 빼고 나머지는 공통 target(기본 owner DM)을
       // 쓴다. 그룹 안에서 라인이 섞이지 않는 것은 validatePlaybook 이 부팅 때 보장한다.
@@ -142,14 +136,14 @@ export class AutopilotScheduler implements OnApplicationBootstrap {
     entries: PlaybookEntry[],
   ): void {
     for (const entry of entries.slice(1)) {
-      const envKey = entry.id.toUpperCase().replace(/-/g, '_');
+      const envKey = toScheduleEnvId(entry.id);
       for (const suffix of ['SCHEDULE', 'TIMEZONE']) {
         const key = `AUTOPILOT_${envKey}_${suffix}`;
         const raw = this.configService.get<string>(key);
         if (raw && raw.trim().length > 0) {
           this.logger.warn(
             `Autopilot[${groupKey}] — ${key} 는 무시됩니다. 그룹 스케줄은 첫 항목 id 기준이라 ` +
-              `AUTOPILOT_${entries[0].id.toUpperCase().replace(/-/g, '_')}_${suffix} 로 옮겨야 적용됩니다.`,
+              `AUTOPILOT_${toScheduleEnvId(entries[0].id)}_${suffix} 로 옮겨야 적용됩니다.`,
           );
         }
       }
@@ -165,34 +159,16 @@ export class AutopilotScheduler implements OnApplicationBootstrap {
     return trimmed.length > 0 ? trimmed : null;
   }
 
-  private getAiCliEnvScheduleKeys(
-    id: string,
-  ): { cron: string; timezone: string } | undefined {
-    if (id === 'ai-cli-env-snapshot') {
-      return {
-        cron: 'AI_CLI_ENV_SNAPSHOT_CRON',
-        timezone: 'AI_CLI_ENV_SNAPSHOT_TIMEZONE',
-      };
-    }
-    if (id === 'ai-cli-env-apply') {
-      return {
-        cron: 'AI_CLI_ENV_APPLY_CRON',
-        timezone: 'AI_CLI_ENV_APPLY_TIMEZONE',
-      };
-    }
-    return undefined;
-  }
-
   /**
    * 발송 대상 env 를 읽는다. 대상은 콤마 다중 값이라 "비었다" 의 기준이 schedule/timezone 과
-   * 다르다 — `", ,"` 는 trim 후에도 길이가 남아 readNonEmpty 를 통과하지만, 수신 측
+   * 다르다 — `", ,"` 는 trim 후에도 길이가 남아 스케줄 해석(autopilot-schedule.ts 의 readNonEmpty)을 통과하지만, 수신 측
    * (AutopilotOrchestrator) 이 콤마로 쪼개 빈 조각을 버리면 대상이 0개가 된다. 그러면 메인
    * 다이제스트도 스레드 상세도 승인 카드 메시지도 한 건 안 나가는데 카드 생성 루프는 그대로
    * 돌아 preview_action PENDING 행만 남고, 그 행이 다음 회차의 발행 큐를 TTL 24h 동안 막는다.
    * 게다가 예외가 없어 cron 은 성공으로 끝난다 — 모든 그룹이 조용히 무동작이 되는 경로다.
    *
    * 그래서 여기서 "실제 대상 0개 = 값 없음" 으로 보고 fallback 으로 떨어뜨린다. 이 판정을
-   * readNonEmpty 에 넣으면 안 된다 — 같은 함수를 쓰는 schedule 은 `0 9,18 * * *` 처럼 콤마가
+   * 그쪽 readNonEmpty 에 넣으면 안 된다 — 그 함수를 쓰는 schedule 은 `0 9,18 * * *` 처럼 콤마가
    * 정상 문법이다. 오설정을 삼키지 않도록 경고를 남기되, 부팅 1회라 3분마다 도는 고빈도
    * 그룹에서도 알람이 도배되지 않는다.
    */
@@ -212,15 +188,6 @@ export class AutopilotScheduler implements OnApplicationBootstrap {
       );
     }
     return fallback;
-  }
-
-  private readNonEmpty(key: string, fallback: string): string {
-    const raw = this.configService.get<string>(key);
-    if (!raw) {
-      return fallback;
-    }
-    const trimmed = raw.trim();
-    return trimmed.length > 0 ? trimmed : fallback;
   }
 
   private async cleanupExistingRepeatables(): Promise<void> {

@@ -24,7 +24,14 @@ import {
  * 쌓이지 않았다.
  *
  * 집계와 skip 모두 원장에 남겨, 다른 주간 회고가 미실행을 감지할 수 있게 한다.
+ * skip 도 `emptyReason` 을 내서 slack_delivery 에 SUPPRESSED/EMPTY 행을 남긴다 — 아침 브리핑의
+ * 결번 감시(LEDGER_GAP_WATCHES)가 그 행으로 회차가 돌았는지 본다. 빼면 글이 없는 정상 주에도
+ * 원장이 비어 결번으로 오탐한다.
  */
+const NOT_CONFIGURED_NOTICE =
+  '🪶 *블로그 수정률 — skip*\n_BLOG_PUBLISH_REPO·BLOG_PUBLISH_BRANCH 미설정이라 집계하지 않았습니다._';
+const NO_RECENT_POSTS_NOTICE = `🪶 *블로그 수정률 — skip*\n_최근 ${REVISION_WINDOW_DAYS}일 발행 글이 없어 보고할 수치가 없습니다._`;
+
 @Injectable()
 export class BlogRevisionReportAutopilotTask implements AutopilotTask {
   readonly id = 'blog-revision-report';
@@ -44,7 +51,7 @@ export class BlogRevisionReportAutopilotTask implements AutopilotTask {
         if (!this.measureBlogRevision.isConfigured()) {
           // 설정이 없어도 회차가 돌았다는 증거는 남긴다. 카드만 생략한다.
           return {
-            result: { skip: true },
+            result: { skip: true, emptyReason: NOT_CONFIGURED_NOTICE },
             modelUsed: 'none',
             output: {
               recentAveragePercent: 0,
@@ -71,7 +78,7 @@ export class BlogRevisionReportAutopilotTask implements AutopilotTask {
         return {
           result:
             summaryText === null
-              ? { skip: true }
+              ? { skip: true, emptyReason: NO_RECENT_POSTS_NOTICE }
               : { skip: false, summaryText },
           modelUsed: extraction.modelUsed,
           output: {

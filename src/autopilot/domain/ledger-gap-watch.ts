@@ -1,24 +1,36 @@
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 // 아침 브리핑이 원장(slack_delivery.item_kinds)으로 결번을 지켜보는 자동 작업.
 // 대상은 결번을 다른 누구도 모르는 작업이다 — cuj-check 는 자기가 안 돈 날을 스스로 못 알리고,
 // run-retro 는 콘솔 경로라 산출물이 Slack 에 닿지 않는 데다 자기 결번 탐지(detectMissingWeeklyRuns)의
-// 대상도 아니다. 둘 다 정상 회차마다 원장에 한 줄을 남긴다(콘솔 경로는 SUPPRESSED/CONSOLE_ROUTE).
+// 대상도 아니다. 주간 보고들은 한 주 빠져도 아무도 찾지 않는다. 모두 정상 회차마다 원장에 한 줄을 남긴다
+// (콘솔 경로는 SUPPRESSED/CONSOLE_ROUTE).
 //
-// `periodDays` 는 cron 주기다. 판정을 날짜 단위로 하므로 회차가 몇 분·몇 시간 밀려도 같은 날에
-// 남는 한 오탐하지 않는다(run-retro.anomaly.ts 의 weeklyMissingDays 가 피하려던 경계 문제).
+// 주기는 여기 적지 않는다 — 판정은 그 작업의 실제 cron(env 오버라이드 반영)에서 구한 직전 회차로 한다
+// (autopilot-schedule.ts). 숫자로 고정하면 오버라이드가 더 드물 때(격주) 오탐하고 더 촘촘할 때 늦게 잡는다.
 export interface LedgerGapWatch {
   taskId: string;
   label: string;
-  periodDays: number;
 }
 
 export const LEDGER_GAP_WATCHES: readonly LedgerGapWatch[] = [
   // 매일 09:10
-  { taskId: 'cuj-check', label: 'CUJ 점검', periodDays: 1 },
+  { taskId: 'cuj-check', label: 'CUJ 점검' },
   // 매주 월 09:00 — 결번이면 화요일 브리핑부터 다음 회차까지 매일 뜬다. 이번주 실행이 0건이고 이상도
   // 없으면 skip 해 원장이 비는데, 그건 일주일 내내 아무것도 안 돈 상황이라 울려도 맞다.
-  { taskId: 'run-retro', label: '주간 실행 회고', periodDays: 7 },
+  { taskId: 'run-retro', label: '주간 실행 회고' },
+  // 아래 주간 작업도 정상 회차마다 원장에 한 줄을 남긴다 — 빈 주는 emptyReason 으로 SUPPRESSED/EMPTY,
+  // 콘솔 경로는 SUPPRESSED/CONSOLE_ROUTE. emptyReason 없이 skip 하는 경로가 생기면 정상 주에 오탐하니
+  // 여기 넣기 전에 그것부터 확인한다. 작업 예외로 끝난 회차는 행이 없어 다음 날 뜬다(즉시 실패 알림과 별개).
+  // 매주 금 17:00
+  { taskId: 'weekly-summary', label: '주간 요약' },
+  // 매주 토 09:00
+  { taskId: 'impact-report', label: '임팩트 리포트' },
+  // 매주 일 10:00 (콘솔)
+  { taskId: 'knowledge-lint', label: '기억 무결성 점검' },
+  // 매주 월 09:30 (콘솔)
+  { taskId: 'blog-revision-report', label: '블로그 수정률' },
 ];
 
 // 회차 날짜(firedAtKst)의 KST 0시. 지금 시각이 아니라 회차 날짜로 잡아야 늦게 돈 회차·재실행이
@@ -26,23 +38,33 @@ export const LEDGER_GAP_WATCHES: readonly LedgerGapWatch[] = [
 export const getLedgerWatchTodayStart = (firedAtKst: string): Date =>
   new Date(`${firedAtKst}T00:00:00+09:00`);
 
-// 직전 주기 안에 원장 기록이 없는지. 비는 원인은 대부분 실행 자체가 없었던 날이다 — 앱이 꺼진 채
+// 그 시각이 속한 KST 달력일의 0시. KST 는 일광절약시간이 없어 고정 오프셋으로 충분하다.
+const getKstDayStart = (at: Date): Date =>
+  new Date(
+    Math.floor((at.getTime() + KST_OFFSET_MS) / DAY_MS) * DAY_MS -
+      KST_OFFSET_MS,
+  );
+
+// 직전 회차가 있던 날 이후로 원장 기록이 없는지. 비는 원인은 대부분 실행 자체가 없었던 날이다 — 앱이 꺼진 채
 // 회차 시각을 지나면 BullMQ 는 놓친 회차를 다시 돌리지 않는다. 다만 작업 예외(이미 즉시 알림이 나감)나
 // 원장 기록 실패(로그만 남김)로도 비므로 "실행 안 됨" 이 아니라 "기록 없음" 으로 알린다.
 //
 // `latestBeforeToday` 는 오늘 0시 **이전**의 마지막 기록이어야 한다. 오늘 기록까지 넣으면
 // 브리핑이 회차 시각 뒤로 밀린 날 오늘 실행이 지난 결번을 가린다.
+// `lastFireBeforeToday` 는 오늘 0시 이전의 마지막 cron 회차다. 비교를 그 회차의 **날짜**로 하므로
+// 회차가 몇 분·몇 시간 밀려도 같은 날에 남는 한 오탐하지 않는다(run-retro.anomaly.ts 의
+// weeklyMissingDays 가 피하려던 경계 문제).
+// ponytail: 날짜 단위라 하루 여러 회차(예: 오버라이드 `0 9,18 * * *`)는 그날 하나만 남아도 조용하다 —
+// 하루 통째로 빠진 것만 잡는다. 감시 대상은 모두 하루 1회 이하라 지금은 해당 없다. 회차 단위가 필요해지면
+// 직전 회차 시각 + 허용 지연과 비교하도록 바꾼다(회차 날짜 기준 원칙을 함께 다시 정해야 한다).
 // 기록이 한 번도 없으면 감시 기준점이 없는 것이라 알리지 않는다(첫 실행 전의 거짓 경보 방지).
+// 직전 회차를 못 구했으면(조회 창 안에 회차 없음) 기대할 기록도 없어 알리지 않는다.
 export const isLedgerGap = (
-  firedAtKst: string,
   latestBeforeToday: Date | null,
-  periodDays: number,
+  lastFireBeforeToday: Date | null,
 ): boolean => {
-  if (latestBeforeToday === null) {
+  if (latestBeforeToday === null || lastFireBeforeToday === null) {
     return false;
   }
-  const windowStart = new Date(
-    getLedgerWatchTodayStart(firedAtKst).getTime() - periodDays * DAY_MS,
-  );
-  return latestBeforeToday < windowStart;
+  return latestBeforeToday < getKstDayStart(lastFireBeforeToday);
 };
