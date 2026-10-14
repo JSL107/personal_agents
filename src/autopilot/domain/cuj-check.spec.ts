@@ -136,6 +136,203 @@ describe('CUJ detectors', () => {
     ).toEqual([]);
   });
 
+  describe('모의투자 회차 내용 판정', () => {
+    const calendar = holidayCalendarOf([]);
+    const paper = (
+      strategy: string,
+      output: Record<string, unknown>,
+      startedAt = '2026-10-13T10:30:00Z',
+    ): CujRunRow => ({
+      status: 'SUCCEEDED',
+      agentType: 'PAPER_RECOMMEND',
+      durationMs: null,
+      output: { strategy, ...output },
+      startedAt: new Date(startedAt),
+    });
+    const held = {
+      ordersCreated: 0,
+      dataAsOf: '2026-10-13',
+      emptyReason: { code: 'MODEL_HELD', detail: '관망' },
+    };
+    const swingOk = paper('SWING', {
+      ordersCreated: 1,
+      dataAsOf: '2026-10-13',
+    });
+    const detailOf = (longTerm: CujRunRow, orders = 0): string | undefined =>
+      detectPaperInvestmentViolations(
+        [longTerm, swingOk],
+        Array.from({ length: orders }, () => ({ targetTradeDate: null })),
+        '2026-10-13',
+        calendar,
+      )[0]?.detail;
+
+    it('모델이 관망한 0건은 holdReason 이 비어도 정상이다', () => {
+      expect(detailOf(paper('LONG_TERM', held))).toBeUndefined();
+      expect(
+        detailOf(
+          paper('LONG_TERM', {
+            ...held,
+            emptyReason: { code: 'MODEL_HELD', detail: null },
+          }),
+        ),
+      ).toBeUndefined();
+    });
+
+    it('시세가 없거나 어제 날짜가 아니면 주문이 있어도 경보한다', () => {
+      expect(
+        detailOf(
+          paper('LONG_TERM', {
+            ordersCreated: 0,
+            dataAsOf: null,
+            emptyReason: { code: 'NO_MARKET_DATA', detail: null },
+          }),
+        ),
+      ).toBe('장기투자 시세 없음');
+      expect(
+        detailOf(
+          paper('LONG_TERM', { ordersCreated: 2, dataAsOf: '2026-10-12' }),
+        ),
+      ).toBe('장기투자 시세가 2026-10-12 기준에 멈춤');
+    });
+
+    it('후보도 보유도 없는 0건은 경보한다', () => {
+      expect(
+        detailOf(
+          paper('LONG_TERM', {
+            ...held,
+            emptyReason: { code: 'NO_CANDIDATES', detail: null },
+          }),
+        ),
+      ).toBe('장기투자 후보도 보유 종목도 없어 주문 0건 (원인 미상)');
+    });
+
+    it('대기 주문 중복만으로 전량 제외된 0건은 정상이고 미종결 주문 경보는 남는다', () => {
+      const pendingOnly = paper('LONG_TERM', {
+        ...held,
+        emptyReason: { code: 'ALL_FILTERED', detail: null },
+        skipped: [
+          { side: 'BUY', code: '017890', reason: 'PENDING_ORDER_EXISTS' },
+        ],
+      });
+      expect(detailOf(pendingOnly)).toBeUndefined();
+      expect(detailOf(pendingOnly, 1)).toBe('미종결 주문 1건');
+    });
+
+    it('대기 주문 외 사유가 섞인 전량 제외는 사유를 풀어 경보한다', () => {
+      expect(
+        detailOf(
+          paper('LONG_TERM', {
+            ...held,
+            emptyReason: { code: 'ALL_FILTERED', detail: null },
+            skipped: [
+              { side: 'BUY', code: '1', reason: 'PENDING_ORDER_EXISTS' },
+              { side: 'BUY', code: '2', reason: 'INSUFFICIENT_CASH' },
+              { side: 'BUY', code: '3', reason: 'INSUFFICIENT_CASH' },
+              { side: 'SELL', code: '4', reason: 'NOT_HELD' },
+            ],
+          }),
+        ),
+      ).toBe(
+        '장기투자 제안이 모두 제약에 걸려 주문 0건 (현금 부족, 보유하지 않은 종목 매도)',
+      );
+    });
+
+    it('전량 제외인데 제외 기록이 비면 기록 불일치로 경보한다', () => {
+      expect(
+        detailOf(
+          paper('LONG_TERM', {
+            ...held,
+            emptyReason: { code: 'ALL_FILTERED', detail: null },
+            skipped: [],
+          }),
+        ),
+      ).toBe('장기투자 제안이 모두 걸렸다는데 걸린 기록이 없음');
+    });
+
+    it('사유 코드가 없거나 모르는 값이면 판정하지 않는다', () => {
+      expect(
+        detailOf(
+          paper('LONG_TERM', { ordersCreated: 0, dataAsOf: '2026-10-13' }),
+        ),
+      ).toBeUndefined();
+      expect(
+        detailOf(
+          paper('LONG_TERM', {
+            ...held,
+            emptyReason: { code: 'SOMETHING_NEW', detail: null },
+          }),
+        ),
+      ).toBeUndefined();
+    });
+
+    it('휴장일 회차는 낡은 시세·0건이어도 경보하지 않는다', () => {
+      const stale = paper('SWING', {
+        ordersCreated: 0,
+        dataAsOf: '2026-09-23',
+        emptyReason: { code: 'ALL_FILTERED', detail: null },
+        skipped: [{ side: 'BUY', code: '1', reason: 'INSUFFICIENT_CASH' }],
+      });
+      expect(
+        detectPaperInvestmentViolations(
+          [stale],
+          [],
+          '2026-09-25',
+          holidayCalendarOf(['2026-09-25']),
+        ),
+      ).toEqual([]);
+    });
+
+    it('같은 전략에 성공이 여럿이면 마지막 회차만 판정한다', () => {
+      const broken = { ...held, dataAsOf: null };
+      const earlierBroken = paper('LONG_TERM', broken, '2026-10-13T10:30:00Z');
+      const laterHeld = paper('LONG_TERM', held, '2026-10-13T11:00:00Z');
+      expect(
+        detectPaperInvestmentViolations(
+          [laterHeld, earlierBroken, swingOk],
+          [],
+          '2026-10-13',
+          calendar,
+        ),
+      ).toEqual([]);
+      expect(
+        detectPaperInvestmentViolations(
+          [
+            paper('LONG_TERM', held, '2026-10-13T10:30:00Z'),
+            paper('LONG_TERM', broken, '2026-10-13T11:00:00Z'),
+            swingOk,
+          ],
+          [],
+          '2026-10-13',
+          calendar,
+        )[0].detail,
+      ).toBe('장기투자 시세 없음');
+    });
+
+    it('두 전략의 문제와 미종결 주문을 한 줄로 합친다', () => {
+      expect(
+        detectPaperInvestmentViolations(
+          [
+            paper('LONG_TERM', { ...held, dataAsOf: null }),
+            paper('SWING', {
+              ...held,
+              emptyReason: { code: 'NO_CANDIDATES', detail: null },
+            }),
+          ],
+          [{ targetTradeDate: null }],
+          '2026-10-13',
+          calendar,
+        ),
+      ).toEqual([
+        {
+          cuj: 4,
+          title: '모의투자',
+          detail:
+            '장기투자 시세 없음 · 스윙 후보도 보유 종목도 없어 주문 0건 (원인 미상) · 미종결 주문 1건',
+        },
+      ]);
+    });
+  });
+
   it('멘션은 일반 60초와 장시간 600초의 초과만 지연으로 센다', () => {
     expect(
       detectMentionViolations([
