@@ -67,6 +67,37 @@ type RouterMessageParams = {
   source: 'app_mention' | 'dm';
 };
 
+// channel 키에서 부모 발화 뒤 turn 중 이 스레드 몫. 게시된 스레드가 적힌 turn(비동기 완료 답장)은 그
+// 키로만 고르고, 표시 없는 turn 은 다음 user turn 전의 첫 assistant 하나(그 발화의 동기 답)만 고른다.
+// 완료 답장은 아무 때나 끼어들어 "user → 다른 스레드 완료 → 동기 답" 순서도 생긴다(#839 리뷰).
+export const pickThreadReplies = ({
+  turnsAfterRoot,
+  threadKey,
+}: {
+  turnsAfterRoot: ConversationTurn[];
+  threadKey: string;
+}): ConversationTurn[] => {
+  const picked: ConversationTurn[] = [];
+  let answered = false;
+  for (const turn of turnsAfterRoot) {
+    if (turn.replyThreadKey !== undefined) {
+      if (turn.replyThreadKey === threadKey) {
+        picked.push(turn);
+      }
+      continue;
+    }
+    if (turn.role !== 'assistant') {
+      answered = true;
+      continue;
+    }
+    if (!answered) {
+      picked.push(turn);
+      answered = true;
+    }
+  }
+  return picked;
+};
+
 type ReplyTracker = {
   say: SayFn;
   markErrorReply: () => void;
@@ -667,11 +698,10 @@ export class RouterMessageHandler implements SlackHandler {
       // 그 작업의 실행 id·상태를 이어받는다(#836 리뷰, 다른 스레드 완료 답장은 10-14 실측).
       const conversation = [
         channelTurns[rootIndex],
-        ...channelTurns
-          .slice(rootIndex + 1)
-          .filter((turn, offset) =>
-            this.isReplyInThread({ turn, offset, threadKey: memoryKey }),
-          ),
+        ...pickThreadReplies({
+          turnsAfterRoot: channelTurns.slice(rootIndex + 1),
+          threadKey: memoryKey,
+        }),
       ];
       for (const turn of conversation) {
         await this.conversationMemory.appendTurn(memoryKey, turn);
@@ -693,26 +723,6 @@ export class RouterMessageHandler implements SlackHandler {
     await this.conversationMemory.appendTurn(memoryKey, rootTurn);
     // 원문 turn 은 작업 turn 이 아니므로, 작업 turn 이 있다면 channel 키에서 온 것이다.
     return [...channelTurns, rootTurn];
-  }
-
-  // channel 키에서 부모 발화 뒤 offset 번째 turn 이 이 스레드의 답인지. 부모 바로 다음 답은 동기로 붙은
-  // 그 발화의 답이고, 그 뒤로는 이 스레드에 게시된 비동기 완료 답장만 이 스레드 몫이다.
-  private isReplyInThread({
-    turn,
-    offset,
-    threadKey,
-  }: {
-    turn: ConversationTurn;
-    offset: number;
-    threadKey: string;
-  }): boolean {
-    if (turn.role !== 'assistant') {
-      return false;
-    }
-    if (turn.replyThreadKey !== undefined) {
-      return turn.replyThreadKey === threadKey;
-    }
-    return offset === 0;
   }
 
   // 스레드 부모 본문을 대화 턴으로 가져온다.
