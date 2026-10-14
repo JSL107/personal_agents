@@ -23,6 +23,10 @@ import {
   AutopilotTaskContext,
   AutopilotTaskResult,
 } from '../../domain/autopilot-task.port';
+import {
+  AUTOPILOT_TASK_TRACE_PORT,
+  AutopilotTaskTracePort,
+} from '../../domain/port/autopilot-task-trace.port';
 import { formatMoney, formatTradeDay } from '../paper-number.formatter';
 
 const STRATEGIES: PaperRecommendationStrategy[] = ['LONG_TERM', 'SWING'];
@@ -238,14 +242,18 @@ export class PaperRecommendAutopilotTask implements AutopilotTask {
     private readonly generateRecommendation: GeneratePaperRecommendationUsecase,
     @Inject(HOLIDAY_CALENDAR_PORT)
     private readonly holidayCalendar: HolidayCalendarPort,
+    @Inject(AUTOPILOT_TASK_TRACE_PORT)
+    private readonly trace: AutopilotTaskTracePort,
   ) {}
 
   async run(context: AutopilotTaskContext): Promise<AutopilotTaskResult> {
     // 휴장일에는 새 시세가 없다. 그대로 돌면 직전 거래일 저녁 회차와 같은 데이터로 한 번 더
     // 판단해 주문을 또 만든다(2026-09-24 추석 회차 — dataAsOf=09-23 으로 주문 2건).
     // 수동 재실행(`/retry-run`)은 사람이 고른 것이라 막지 않는다.
-    // `emptyReason` 으로 돌려 원장(`slack_delivery` SUPPRESSED/EMPTY)에 남긴다 — 그냥 skip 하면
-    // agent_run 도 로그도 없어, 가드가 막은 날과 서버가 꺼진 날이 구분되지 않는다(10-05·10-09).
+    // 건너뛴 사실은 발화 흔적(`autopilot_task_trace`)에 남긴다 — 그냥 skip 하면 agent_run 도
+    // 로그도 없어, 가드가 막은 날과 서버가 꺼진 날이 구분되지 않는다(10-05·10-09).
+    // `emptyReason` 은 쓰지 않는다. 실행 전 조건의 skip 이라 계약에 어긋나고, orchestrator 가
+    // 그것을 복구 신호로 읽어 직전 실패로 열린 장애를 휴장일에 닫아 버린다.
     const calendar = await this.holidayCalendar.load();
     if (
       !isKrxTradingDay(
@@ -253,9 +261,17 @@ export class PaperRecommendAutopilotTask implements AutopilotTask {
         calendar,
       )
     ) {
+      await this.trace.record({
+        taskId: this.id,
+        firedAtKst: context.firedAtKst,
+        gateEnabled: true,
+        candidateCount: null,
+        llmCalled: false,
+        detail: '휴장일 — 추천 판단 건너뜀',
+      });
       return {
         skip: true,
-        emptyReason: `휴장일(${context.firedAtKst}) — 모의투자 추천 판단 건너뜀`,
+        summaryText: `휴장일(${context.firedAtKst}) — 모의투자 추천 판단 건너뜀`,
       };
     }
     const result = await this.generateRecommendation.execute({
