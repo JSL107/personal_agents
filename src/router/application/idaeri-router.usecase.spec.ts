@@ -1049,11 +1049,17 @@ describe('IdaeriRouterUsecase', () => {
       let ranWithoutThrowing = false;
       const agentRunService = {
         setParentId: jest.fn().mockResolvedValue(undefined),
-        execute: jest.fn(async ({ run }: { run: () => Promise<unknown> }) => {
-          // execute 는 run 이 정상 반환하면 SUCCEEDED, 던지면 FAILED 로 마감한다.
-          await run();
-          ranWithoutThrowing = true;
-        }),
+        execute: jest.fn(
+          async ({
+            run,
+          }: {
+            run: (context: { agentRunId: number }) => Promise<unknown>;
+          }) => {
+            // execute 는 run 이 정상 반환하면 SUCCEEDED, 던지면 FAILED 로 마감한다.
+            await run({ agentRunId: 8787 });
+            ranWithoutThrowing = true;
+          },
+        ),
       } as unknown as jest.Mocked<AgentRunService>;
       const { usecase } = buildUsecase([], classifier, agentRunService);
 
@@ -1065,6 +1071,8 @@ describe('IdaeriRouterUsecase', () => {
         }),
       ).rejects.toMatchObject({
         routerErrorCode: RouterErrorCode.INTENT_CLASSIFY_FAILED,
+        // 대화 답변이 같은 행에 답을 붙일 수 있게 run id 를 싣는다.
+        routingMissRunId: 8787,
       });
 
       expect(ranWithoutThrowing).toBe(true);
