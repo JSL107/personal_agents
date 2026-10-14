@@ -12,6 +12,7 @@ import {
   AutopilotTaskResult,
 } from '../../domain/autopilot-task.port';
 import {
+  CUJ_THRESHOLDS,
   CujViolation,
   detectApprovalViolations,
   detectEveningReviewViolations,
@@ -97,8 +98,17 @@ export class CujCheckAutopilotTask implements AutopilotTask {
         calendar,
       );
     });
+    // 수신 기록은 아직 처리 중일 수 있는 최근 기한만큼 뺀다. 하한도 같은 폭으로 당겨야 직전 회차가
+    // 뺀 구간을 이번 회차가 읽는다 — 하한을 24시간에 두면 그 구간이 어느 회차에서도 안 읽힌다.
+    const receiptDeadlineMs = CUJ_THRESHOLDS.longMentionDeadlineMs;
     await this.checkSafely(5, violations, async () =>
-      detectMentionViolations(await this.reader.readMentions(since, now)),
+      detectMentionViolations(
+        await this.reader.readMentions(since, now),
+        await this.reader.readMentionReceipts(
+          new Date(since.getTime() - receiptDeadlineMs),
+          new Date(now.getTime() - receiptDeadlineMs),
+        ),
+      ),
     );
     await this.checkSafely(6, violations, async () =>
       detectApprovalViolations(

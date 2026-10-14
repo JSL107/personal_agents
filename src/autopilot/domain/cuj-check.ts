@@ -6,6 +6,7 @@ import {
 import { AgentType } from '../../model-router/domain/model-router.type';
 import {
   CujDeliveryRow,
+  CujMentionReceiptRow,
   CujOrderRow,
   CujPreviewRow,
   CujRunRow,
@@ -185,7 +186,12 @@ export const detectPaperInvestmentViolations = (
   return violation(4, '모의투자', parts.join(' · '));
 };
 
-export const detectMentionViolations = (rows: CujRunRow[]): CujViolation[] => {
+// receipts 는 받은 지 longMentionDeadlineMs 가 지난 멘션만 담아야 한다 — 그 안의 RECEIVED 는 아직
+// 처리 중일 수 있다. 기한이 지나도 RECEIVED 면 처리 도중 프로세스가 죽었거나 멈춘 것이다.
+export const detectMentionViolations = (
+  rows: CujRunRow[],
+  receipts: CujMentionReceiptRow[],
+): CujViolation[] => {
   const failed = rows.filter((row) => row.status === 'FAILED').length;
   const late = rows.filter(
     (row) =>
@@ -196,10 +202,25 @@ export const detectMentionViolations = (rows: CujRunRow[]): CujViolation[] => {
           ? CUJ_THRESHOLDS.longMentionDeadlineMs
           : CUJ_THRESHOLDS.mentionDeadlineMs),
   ).length;
-  if (failed === 0 && late === 0) {
+  const unanswered = receipts.filter(
+    (row) => row.status === 'RECEIVED' || row.status === 'REPLY_FAILED',
+  ).length;
+  // 처리 실패 안내만 나간 멘션. 워커 실행 실패와 겹칠 수 있지만, 라우터 앞에서 끊겨 agent_run 이
+  // 없는 실패는 여기서만 보인다.
+  const errorReplied = receipts.filter(
+    (row) => row.status === 'ERROR_REPLIED',
+  ).length;
+  const parts = [
+    [failed, `실패 ${failed}건`],
+    [late, `지연 ${late}건`],
+    [unanswered, `답 안 나감 ${unanswered}건`],
+    [errorReplied, `오류 답변 ${errorReplied}건`],
+  ] as const;
+  const details = parts.filter(([count]) => count > 0).map(([, text]) => text);
+  if (details.length === 0) {
     return [];
   }
-  return violation(5, '멘션 대화', `실패 ${failed}건 · 지연 ${late}건`);
+  return violation(5, '멘션 대화', details.join(' · '));
 };
 
 export const detectApprovalViolations = (
