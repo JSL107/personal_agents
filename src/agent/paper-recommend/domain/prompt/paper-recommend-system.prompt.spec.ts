@@ -79,6 +79,21 @@ describe('buildPaperRecommendationPrompt', () => {
     );
   });
 
+  // 주문이 있는 예시에 holdReason 을 같이 보이면 "있으면 생략" 규칙과 어긋나 모델이 두 지시를
+  // 함께 받는다. 예시마다 JSON 객체를 떼어 holdReason 은 빈 추천 쪽에만 있는지 본다.
+  it('holdReason 은 매수·매도가 빈 예시에만 나온다', () => {
+    const prompt = buildPaperRecommendSystemPrompt({
+      maximumWeightPercent: 20,
+    });
+    const examples = prompt.match(/\{\n[\s\S]*?\n\}/g) ?? [];
+    expect(examples).toHaveLength(2);
+    const [withOrders, empty] = examples;
+    expect(withOrders).toContain('"code": "000660"');
+    expect(withOrders).not.toContain('holdReason');
+    expect(empty).toContain('"buys": []');
+    expect(empty).toContain('"holdReason":');
+  });
+
   it('시스템 프롬프트가 비중 출력을 요구하지 않는다', () => {
     const systemPrompt = buildPaperRecommendSystemPrompt({
       maximumWeightPercent: 20,
