@@ -56,8 +56,12 @@ export class ArtJobDeadlineCronConsumer extends ObservedWorkerHost {
   async process(job: Job<ArtJobDeadlineCronJobData>): Promise<void> {
     const { recipient, ownerSlackUserId } = job.data;
     try {
-      await this.run(recipient, new Date());
-      this.notificationPublisher?.publishRecovery(INCIDENT_KEY);
+      const completed = await this.run(recipient, new Date());
+      // 가드에 막혀 건너뛴 회차는 해결 신호를 보내지 않는다 — 발송 뒤 장부 기록이 실패해 재시도된
+      // 경우, 아무것도 안 한 재시도가 방금 낸 실패 알림을 덮어 버린다.
+      if (completed) {
+        this.notificationPublisher?.publishRecovery(INCIDENT_KEY);
+      }
     } catch (error) {
       this.logger.error(`${CRON_NAME} 실패 (recipient=${recipient})`, error);
       this.notifyOwnerFailure(ownerSlackUserId, error);
@@ -65,7 +69,8 @@ export class ArtJobDeadlineCronConsumer extends ObservedWorkerHost {
     }
   }
 
-  private async run(recipient: string, now: Date): Promise<void> {
+  // 이 회차를 끝까지 처리했으면 true, 이미 처리된 회차라 건너뛰었으면 false.
+  private async run(recipient: string, now: Date): Promise<boolean> {
     const today = todayInKst(now);
     const due = await this.repository.findDueReminders(
       addDays(today, 1),
@@ -73,7 +78,7 @@ export class ArtJobDeadlineCronConsumer extends ObservedWorkerHost {
     );
     this.logger.log(`${CRON_NAME} — 내일 마감 관심 공고 ${due.length}건`);
     if (due.length === 0) {
-      return;
+      return true;
     }
 
     const kstHour = new Date(now.getTime() + 9 * HOUR_MS).getUTCHours();
@@ -84,7 +89,7 @@ export class ArtJobDeadlineCronConsumer extends ObservedWorkerHost {
     );
     if (!firstRun) {
       this.logger.warn(`${CRON_NAME} 중복 발송 차단 — 이 회차는 이미 처리됨`);
-      return;
+      return false;
     }
     try {
       await this.slackNotifier.postMessage({
@@ -98,10 +103,13 @@ export class ArtJobDeadlineCronConsumer extends ObservedWorkerHost {
       await this.cronIdempotency.release(slotKey);
       throw error;
     }
+    // 여기서 실패하면 가드는 쥔 채로 둔다 — 풀면 재시도가 같은 DM 을 한 번 더 보낸다.
+    // 기록이 빠져도 같은 회차는 가드가 막고, 다음 회차 발송은 원래 의도한 두 번째 알림이다.
     await this.repository.markReminded(
       due.map((posting) => posting.id),
       now,
     );
+    return true;
   }
 
   private notifyOwnerFailure(

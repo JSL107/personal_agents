@@ -114,4 +114,16 @@ describe('ArtJobDeadlineCronConsumer', () => {
     expect(deps.repository.markReminded).not.toHaveBeenCalled();
     expect(deps.notificationPublisher.publishCronFailure).toHaveBeenCalled();
   });
+
+  it('발송 뒤 장부 기록이 실패하면 재시도가 다시 보내지도, 해결 신호로 실패 알림을 덮지도 않는다', async () => {
+    const deps = makeConsumer([POSTING]);
+    deps.repository.markReminded.mockRejectedValueOnce(new Error('db down'));
+
+    await expect(deps.consumer.process(JOB)).rejects.toThrow('db down');
+    await deps.consumer.process(JOB);
+
+    expect(deps.postMessage).toHaveBeenCalledTimes(1);
+    expect(deps.notificationPublisher.publishCronFailure).toHaveBeenCalled();
+    expect(deps.notificationPublisher.publishRecovery).not.toHaveBeenCalled();
+  });
 });
