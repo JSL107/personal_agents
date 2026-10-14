@@ -29,6 +29,8 @@ export interface CujPreviewRow {
 }
 
 export interface CujLedgerReaderPort {
+  // cuj-check 자신이 `before` 이전에 남긴 마지막 원장 시각(상태 무관). 아침 브리핑이 결번 감시에 쓴다.
+  findLatestCujCheckDeliveryBefore(before: Date): Promise<Date | null>;
   readPrReviews(since: Date, until: Date): Promise<CujRunRow[]>;
   // 게시가 끝내 실패해 GitHub 에 안 나간 지적 수. 리뷰 실행은 게시 전에 SUCCEEDED 로 닫히므로
   // 실행 상태만 보면 이 단절이 보이지 않는다.
