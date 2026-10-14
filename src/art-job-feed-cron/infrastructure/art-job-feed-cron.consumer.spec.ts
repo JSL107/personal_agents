@@ -138,6 +138,10 @@ describe('ArtJobFeedCronConsumer', () => {
       image: { fileId: 'F1', altText: '카오스 제로 나이트메어' },
     });
     expect(repository.markNotified).toHaveBeenCalledTimes(1);
+    // 마감 전날 알림이 장부의 마감일을 읽는다 — 게시 라벨과 같은 규칙으로 계산해 함께 남긴다.
+    expect(repository.markNotified.mock.calls[0][0]).toHaveProperty(
+      'deadlineDate',
+    );
     expect(repository.markSeeded).not.toHaveBeenCalled();
   });
 

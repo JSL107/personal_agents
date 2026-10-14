@@ -1361,6 +1361,13 @@ model ArtJobPosting {
   // 받는 사람이 본문의 「관심 없음」을 누른 시각. 같은 회사·같은 제목이 새 번호로 다시 올라와도 보내지 않는다.
   excludedAt DateTime? @map("excluded_at")
 
+  // 게시 시점에 마감 표기로 계산한 마감일(KST). 상시·채용시처럼 날짜가 없으면 null.
+  deadlineDate       DateTime? @map("deadline_date") @db.Date
+  // 받는 사람이 「관심 있음」을 누른 시각. 마감 전날 DM 알림 대상.
+  interestedAt       DateTime? @map("interested_at")
+  // 마감 알림을 마지막으로 보낸 시각. 같은 회차를 다시 처리해도 두 번 보내지 않는다.
+  deadlineRemindedAt DateTime? @map("deadline_reminded_at")
+
   @@unique([source, sourceId])
   @@map("art_job_posting")
 }
