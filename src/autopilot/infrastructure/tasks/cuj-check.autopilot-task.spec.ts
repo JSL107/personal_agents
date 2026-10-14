@@ -28,6 +28,7 @@ describe('CujCheckAutopilotTask', () => {
     jest.useFakeTimers().setSystemTime(new Date('2026-10-14T00:10:00Z'));
     reader = {
       readPrReviews: jest.fn().mockResolvedValue([]),
+      countUnpostedFindings: jest.fn().mockResolvedValue(0),
       readDeliveries: jest
         .fn()
         .mockImplementation(async (since: Date) =>
@@ -69,6 +70,33 @@ describe('CujCheckAutopilotTask', () => {
     expect(result.summaryText).toContain('깨진 여정 1건');
     expect(result.summaryText).toContain('PR 리뷰 — 실패 3건 / 전체 4건');
     expect(result.summaryText).not.toContain('승인 반영');
+  });
+
+  // 늦게 돈 회차나 재실행도 판정 날짜의 원장을 읽어야 한다 — 지금 시각으로 창을 잡으면
+  // 다른 날 기록과 비교해 거짓 경보가 난다.
+  it('날짜 창은 지금 시각이 아니라 회차 날짜에서 잡는다', async () => {
+    jest.setSystemTime(new Date('2026-10-15T03:00:00Z'));
+    await task.run(context);
+    const windows = reader.readDeliveries.mock.calls.map(([since, until]) => [
+      since.toISOString(),
+      until.toISOString(),
+    ]);
+    expect(windows).toEqual([
+      ['2026-10-13T15:00:00.000Z', '2026-10-14T15:00:00.000Z'],
+      ['2026-10-12T15:00:00.000Z', '2026-10-13T15:00:00.000Z'],
+    ]);
+    expect(reader.readPaperRecommendations).toHaveBeenCalledWith(
+      new Date('2026-10-12T15:00:00.000Z'),
+      new Date('2026-10-13T15:00:00.000Z'),
+    );
+  });
+
+  it('게시 미완 지적은 최근 10분을 빼고 센다', async () => {
+    await task.run(context);
+    expect(reader.countUnpostedFindings).toHaveBeenCalledWith(
+      new Date('2026-10-13T00:10:00.000Z'),
+      new Date('2026-10-14T00:00:00.000Z'),
+    );
   });
 
   it('한 조회 실패를 확인 불가로 알리고 다른 CUJ 판정도 계속한다', async () => {

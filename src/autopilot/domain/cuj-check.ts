@@ -54,12 +54,23 @@ const onDateByDeadline = (date: Date, day: string, hour: number): boolean =>
       date.getUTCSeconds() === 0 &&
       date.getUTCMilliseconds() === 0));
 
-export const detectPrReviewViolations = (rows: CujRunRow[]): CujViolation[] => {
+export const detectPrReviewViolations = (
+  rows: CujRunRow[],
+  unpostedFindings: number,
+): CujViolation[] => {
   const failed = rows.filter((row) => row.status === 'FAILED').length;
-  if (failed < CUJ_THRESHOLDS.prFailures) {
+  const parts: string[] = [];
+  if (failed >= CUJ_THRESHOLDS.prFailures) {
+    parts.push(`실패 ${failed}건 / 전체 ${rows.length}건`);
+  }
+  // 게시 실패는 한 건이라도 사람이 리뷰를 못 받은 것이라 임계값 없이 알린다.
+  if (unpostedFindings > 0) {
+    parts.push(`게시 안 된 지적 ${unpostedFindings}건`);
+  }
+  if (parts.length === 0) {
     return [];
   }
-  return violation(1, 'PR 리뷰', `실패 ${failed}건 / 전체 ${rows.length}건`);
+  return violation(1, 'PR 리뷰', parts.join(' · '));
 };
 
 export const detectMorningBriefingViolations = (

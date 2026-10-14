@@ -37,13 +37,22 @@ const delivery = (
 
 describe('CUJ detectors', () => {
   it('PR 리뷰는 실패 2건까지 정상이고 3건부터 경보한다', () => {
-    expect(detectPrReviewViolations([run('FAILED'), run('FAILED')])).toEqual(
+    expect(detectPrReviewViolations([run('FAILED'), run('FAILED')], 0)).toEqual(
       [],
     );
     expect(
-      detectPrReviewViolations([run('FAILED'), run('FAILED'), run('FAILED')])[0]
-        .detail,
+      detectPrReviewViolations(
+        [run('FAILED'), run('FAILED'), run('FAILED')],
+        0,
+      )[0].detail,
     ).toBe('실패 3건 / 전체 3건');
+  });
+
+  // 리뷰 실행은 게시 전에 SUCCEEDED 로 닫힌다 — 게시 실패는 실행 상태로는 안 보여 따로 센다.
+  it('PR 리뷰는 실행이 모두 성공해도 게시 안 된 지적이 1건이면 경보한다', () => {
+    expect(detectPrReviewViolations([run('SUCCEEDED')], 1)[0].detail).toBe(
+      '게시 안 된 지적 1건',
+    );
   });
 
   it('아침 브리핑은 09:00 정각과 KST 자정 넘은 UTC 행을 올바르게 판정한다', () => {
