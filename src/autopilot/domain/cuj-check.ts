@@ -1,3 +1,4 @@
+import { PaperRecommendationSkipReason } from '../../agent/paper-recommend/domain/paper-recommendation.type';
 import { formatKstDate } from '../../common/util/kst-date.util';
 import {
   HolidayCalendar,
@@ -161,6 +162,68 @@ const strategyOf = (output: unknown): string | null => {
   return typeof output.strategy === 'string' ? output.strategy : null;
 };
 
+const SKIP_REASON_LABELS: Record<PaperRecommendationSkipReason, string> = {
+  ALREADY_HELD: '이미 보유',
+  NOT_IN_CANDIDATES: '후보 밖 종목',
+  ZERO_WEIGHT: '비중 0',
+  INSUFFICIENT_CASH: '현금 부족',
+  BUY_LIMIT_REACHED: '매수 건수 상한',
+  NOT_HELD: '보유하지 않은 종목 매도',
+  PENDING_ORDER_EXISTS: '대기 주문 중복',
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
+const skipReasonOf = (skip: unknown): string =>
+  isRecord(skip) && typeof skip.reason === 'string'
+    ? skip.reason
+    : '알 수 없음';
+
+// 회차 하나의 시세 날짜와 0건 사유를 판정한다. 근거가 없으면(필드가 없는 #819 이전 output,
+// 모르는 사유 코드) 경보하지 않는다 — 지어낸 경보보다 침묵이 낫다.
+// 사유 코드의 의미는 paper-recommendation-empty-reason.ts 가 정한다.
+const paperRunProblems = (output: unknown, yesterday: string): string[] => {
+  if (!isRecord(output)) {
+    return [];
+  }
+  const problems: string[] = [];
+  // 거래일 19:30 회차는 그날 종가를 본다. 날짜가 어긋나면 주문 수와 상관없이 낡은 시세로
+  // 판단한 것이다. null 은 시세 자체가 없는 경우(NO_MARKET_DATA)다.
+  if ('dataAsOf' in output && output.dataAsOf !== yesterday) {
+    problems.push(
+      output.dataAsOf === null
+        ? '시세 없음'
+        : `시세가 ${String(output.dataAsOf)} 기준에 멈춤`,
+    );
+  }
+  if (output.ordersCreated !== 0 || !isRecord(output.emptyReason)) {
+    return problems;
+  }
+  const code = output.emptyReason.code;
+  if (code === 'NO_CANDIDATES') {
+    problems.push('후보도 보유 종목도 없어 주문 0건 (원인 미상)');
+  }
+  if (code === 'ALL_FILTERED' && Array.isArray(output.skipped)) {
+    // 대기 주문과 겹친 종목을 뺀 것은 중복 주문 방지라 정상이다. 그 주문이 오래 남는 문제는
+    // 아래 미종결 주문 검사가 따로 잡는다.
+    const reasons = new Set(output.skipped.map(skipReasonOf));
+    reasons.delete('PENDING_ORDER_EXISTS');
+    if (output.skipped.length === 0) {
+      problems.push('제안이 모두 걸렸다는데 걸린 기록이 없음');
+    } else if (reasons.size > 0) {
+      const labels = [...reasons].map(
+        (reason) =>
+          SKIP_REASON_LABELS[reason as PaperRecommendationSkipReason] ?? reason,
+      );
+      problems.push(`제안이 모두 제약에 걸려 주문 0건 (${labels.join(', ')})`);
+    }
+  }
+  // MODEL_HELD 는 모델의 관망 판단이라 정상이다. holdReason 이 비는 회차의 경보는 실측을
+  // 본 뒤 정한다(2026-10-14 기준 실측 0건).
+  return problems;
+};
+
 export const detectPaperInvestmentViolations = (
   runs: CujRunRow[],
   orders: CujOrderRow[],
@@ -169,11 +232,20 @@ export const detectPaperInvestmentViolations = (
 ): CujViolation[] => {
   const parts: string[] = [];
   const tradeDate = new Date(`${yesterday}T00:00:00.000Z`);
+  // 휴장일에도 추천이 도는 날이 있지만 그날의 낡은 시세·0건은 장애가 아니므로 거래일만 본다.
   if (isKrxTradingDay(tradeDate, calendar)) {
     const succeeded = runs.filter((row) => row.status === 'SUCCEEDED');
     for (const [strategy, label] of PAPER_STRATEGY_LABELS) {
-      if (!succeeded.some((row) => strategyOf(row.output) === strategy)) {
+      // 재시도로 성공이 여럿이면 실제로 반영된 마지막 회차만 본다.
+      const latest = succeeded
+        .filter((row) => strategyOf(row.output) === strategy)
+        .sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime())[0];
+      if (latest === undefined) {
         parts.push(`${label} 추천 실행 없음`);
+        continue;
+      }
+      for (const problem of paperRunProblems(latest.output, yesterday)) {
+        parts.push(`${label} ${problem}`);
       }
     }
   }

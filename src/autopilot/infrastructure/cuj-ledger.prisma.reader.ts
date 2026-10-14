@@ -28,6 +28,9 @@ const ROUTED_VIA: Record<RoutedVia, true> = {
   nickname: true,
 };
 
+const isRecordValue = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
 @Injectable()
 export class CujLedgerPrismaReader implements CujLedgerReaderPort {
   constructor(private readonly prisma: PrismaService) {}
@@ -72,13 +75,34 @@ export class CujLedgerPrismaReader implements CujLedgerReaderPort {
     since: Date,
     until: Date,
   ): Promise<CujRunRow[]> {
-    return await this.prisma.agentRun.findMany({
+    const rows = await this.prisma.agentRun.findMany({
       where: {
         agentType: 'PAPER_RECOMMEND',
         startedAt: { gte: since, lt: until },
       },
-      select: RUN_SELECT,
+      select: { ...RUN_SELECT, inputSnapshot: true },
     });
+    // `/retry-run` 은 과거 회차를 원래 decidedAt 그대로 재실행한다(replay-failed-run.usecase.ts).
+    // 시작 시각만 보면 그 재실행이 그날 정규 회차로 섞여, 정규 회차의 실패·낡은 시세를 가리거나
+    // 과거 날짜의 시세로 엉뚱한 경보를 낸다. 판단 기준일이 점검 범위 안인 회차만 남긴다.
+    return rows
+      .filter(({ inputSnapshot }) => {
+        const decidedAt = isRecordValue(inputSnapshot)
+          ? inputSnapshot.decidedAt
+          : undefined;
+        if (typeof decidedAt !== 'string') {
+          return true;
+        }
+        const time = new Date(decidedAt).getTime();
+        return time >= since.getTime() && time < until.getTime();
+      })
+      .map(({ status, agentType, durationMs, startedAt, output }) => ({
+        status,
+        agentType,
+        durationMs,
+        startedAt,
+        output,
+      }));
   }
 
   async readPendingOrders(before: Date): Promise<CujOrderRow[]> {
