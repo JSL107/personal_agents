@@ -26,6 +26,34 @@ describe('describeEnabledPassiveCapabilities', () => {
     expect(both).toContain('「관심 없음」 버튼');
   });
 
+  it('오토파일럿 하위 기능은 각자의 플래그가 "true" 일 때만 안내한다 (#807 리뷰)', () => {
+    const base = { AUTOPILOT_OWNER_SLACK_USER_ID: 'U1' };
+    const off = describeEnabledPassiveCapabilities(reader(base)).join('\n');
+    expect(off).toContain('아침 브리핑과 주간 요약');
+    expect(off).not.toContain('백엔드 채용공고');
+    expect(off).not.toContain('주식 경보');
+    expect(off).not.toContain('모의투자');
+
+    const on = describeEnabledPassiveCapabilities(
+      reader({
+        ...base,
+        JOB_FEED_ENABLED: 'true',
+        STOCK_MONITOR_ENABLED: 'true',
+        PAPER_TRADING_ENABLED: 'true',
+      }),
+    ).join('\n');
+    expect(on).toContain('백엔드 채용공고');
+    expect(on).toContain('주식 경보');
+    expect(on).toContain('모의투자');
+
+    // 플래그만 켜도 오토파일럿 owner 가 없으면 플레이북이 등록되지 않는다.
+    expect(
+      describeEnabledPassiveCapabilities(
+        reader({ STOCK_MONITOR_ENABLED: 'true' }),
+      ).join('\n'),
+    ).not.toContain('주식 경보');
+  });
+
   it('바꿔 둔 트리거 이모지 이름을 그대로 안내한다', () => {
     const lines = describeEnabledPassiveCapabilities(
       reader({
