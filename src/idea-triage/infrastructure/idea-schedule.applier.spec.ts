@@ -1,0 +1,139 @@
+import {
+  PREVIEW_KIND,
+  PREVIEW_STATUS,
+  PreviewAction,
+} from '../../preview-gate/domain/preview-action.type';
+import { RegisterScheduleUsecase } from '../../schedule/application/register-schedule.usecase';
+import { ScheduleStatus } from '../../schedule/domain/schedule.type';
+import {
+  IdeaTriageRecord,
+  IdeaTriageRepositoryPort,
+} from '../domain/port/idea-triage.repository.port';
+import {
+  IdeaScheduleApplier,
+  IdeaSchedulePayload,
+} from './idea-schedule.applier';
+
+const payload: IdeaSchedulePayload = {
+  ideaTriageId: 3,
+  title: '아이디어 구현',
+  dueDate: { year: 2026, month: 10, day: 16 },
+  memo: '원글 링크',
+};
+
+const preview: PreviewAction = {
+  id: 'preview-1',
+  slackUserId: 'U1',
+  kind: PREVIEW_KIND.IDEA_SCHEDULE,
+  payload,
+  status: PREVIEW_STATUS.PENDING,
+  previewText: 'preview',
+  expiresAt: new Date('2026-10-20T00:00:00Z'),
+  createdAt: new Date('2026-10-14T00:00:00Z'),
+  appliedAt: null,
+  cancelledAt: null,
+  slackChannelId: null,
+  slackMessageTs: null,
+  lastFailedAt: null,
+  lastFailureReason: null,
+  applyProgress: null,
+};
+
+const idea: IdeaTriageRecord = {
+  id: 3,
+  channelId: 'C1',
+  messageTs: '1.1',
+  authorSlackUserId: 'U2',
+  ideaText: '아이디어',
+  verdict: 'BUILD',
+  reason: '이유',
+  counterpoint: '반박',
+  scheduleTitle: payload.title,
+  effort: 'S',
+  proposedDate: payload.dueDate,
+  status: 'POSTED',
+  replyTs: '2.2',
+  previewId: 'preview-1',
+  scheduleItemId: null,
+  agentRunId: 1,
+  createdAt: new Date('2026-10-14T00:00:00Z'),
+  updatedAt: new Date('2026-10-14T00:00:00Z'),
+};
+
+const createMocks = () => {
+  const repository = {
+    findById: jest.fn().mockResolvedValue(idea),
+    markScheduled: jest.fn().mockResolvedValue(undefined),
+  } as unknown as jest.Mocked<IdeaTriageRepositoryPort>;
+  const registerSchedule = {
+    execute: jest.fn().mockResolvedValue({
+      id: 8,
+      slackUserId: 'U1',
+      title: payload.title,
+      dueDate: new Date('2026-10-16T00:00:00Z'),
+      dueTime: null,
+      linkUrl: null,
+      memo: payload.memo,
+      status: ScheduleStatus.OPEN,
+      completedAt: null,
+      isHoliday: false,
+    }),
+  } as unknown as jest.Mocked<RegisterScheduleUsecase>;
+  return { repository, registerSchedule };
+};
+
+describe('IdeaScheduleApplier', () => {
+  afterEach(() => jest.useRealTimers());
+
+  it('payload 날짜가 유효하지 않으면 일정 등록 전 거절한다', async () => {
+    const { repository, registerSchedule } = createMocks();
+    const applier = new IdeaScheduleApplier(repository, registerSchedule);
+    await expect(
+      applier.apply({
+        ...preview,
+        payload: { ...payload, dueDate: { year: 2026, month: 2, day: 30 } },
+      }),
+    ).rejects.toThrow('유효한 날짜');
+    expect(registerSchedule.execute).not.toHaveBeenCalled();
+  });
+
+  it('payload 제목이 40자를 초과하면 일정 등록 전 거절한다', async () => {
+    const { repository, registerSchedule } = createMocks();
+    const applier = new IdeaScheduleApplier(repository, registerSchedule);
+    await expect(
+      applier.apply({
+        ...preview,
+        payload: { ...payload, title: '가'.repeat(41) },
+      }),
+    ).rejects.toThrow('필드가 올바르지');
+    expect(registerSchedule.execute).not.toHaveBeenCalled();
+  });
+
+  it('이미 등록된 일정이면 다시 생성하지 않는다', async () => {
+    const { repository, registerSchedule } = createMocks();
+    repository.findById.mockResolvedValue({ ...idea, scheduleItemId: 8 });
+    const result = await new IdeaScheduleApplier(
+      repository,
+      registerSchedule,
+    ).apply(preview);
+    expect(result.message).toContain('일정 등록');
+    expect(registerSchedule.execute).not.toHaveBeenCalled();
+  });
+
+  it('승인 시점에 제안일이 지났으면 KST 오늘로 당기고 원장에 id를 기록한다', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-10-18T15:30:00Z'));
+    const { repository, registerSchedule } = createMocks();
+    const result = await new IdeaScheduleApplier(
+      repository,
+      registerSchedule,
+    ).apply(preview);
+    expect(registerSchedule.execute).toHaveBeenCalledWith({
+      slackUserId: 'U1',
+      title: payload.title,
+      dueDate: { year: 2026, month: 10, day: 19 },
+      memo: payload.memo,
+    });
+    expect(repository.markScheduled).toHaveBeenCalledWith(3, 8);
+    expect(result.message).toContain('2026-10-19');
+  });
+});

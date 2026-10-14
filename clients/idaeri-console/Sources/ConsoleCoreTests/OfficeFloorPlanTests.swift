@@ -48,7 +48,7 @@ private func planAgents(_ department: Department, _ types: [String]) -> [Console
 // 부서를 안 넘겨 27명이 전부 한 방에 몰렸고, 그래서 "방이 여섯일 때만 드러나는" 결함을
 // 통째로 놓쳤다(문 칸이 배회 목적지가 되는 결함이 실제로 그렇게 빠져나갔다).
 let sampleAgents: [ConsoleAgent] =
-    planAgents(.planning, ["PM", "PO_SHADOW", "DELAY_REPORT"])
+    planAgents(.planning, ["PM", "PO_SHADOW", "DELAY_REPORT", "IDEA_TRIAGE"])
     + planAgents(.quality, ["CODE_REVIEWER", "REVIEW_REPLY_JUDGE", "VIDEO_WATCH"])
     + planAgents(
         .evaluation,
