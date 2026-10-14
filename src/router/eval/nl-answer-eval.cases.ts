@@ -290,6 +290,20 @@ export const NL_ANSWER_EVAL_CASES: readonly EvalCase[] = [
     expect: { destinations: [AgentType.PAPER_TRADE], forbidIntercepts: true },
   },
   {
+    // 기능 안내가 예시로 내미는 문장은 사용자가 그대로 말했을 때 그 기능으로 가야 한다.
+    // 2026-10-14 "내일 plan 짜줘" 를 일상어로 바꾸면서 추가.
+    id: 't-pm-plain-example',
+    split: 'tuning',
+    note: '기능 안내의 오늘 계획 예시 문장',
+    text: '내일 할 일 계획 세워줘',
+    // PM 워커는 eval 에서 실행하지 않으므로 라우팅만 잰다.
+    expect: {
+      destinations: [AgentType.PM],
+      acceptStubRoutes: [AgentType.PM],
+      forbidIntercepts: true,
+    },
+  },
+  {
     id: 't-capability',
     split: 'tuning',
     note: '기능 질문 — 이대리가 할 수 있는 일을 알아야 한다',

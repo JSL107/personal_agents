@@ -18,7 +18,8 @@ export const WORKER_CAPABILITIES: readonly WorkerCapability[] = [
     agentType: AgentType.PM,
     classifierLine:
       '그날 할 업무의 계획 수립 ("오늘 뭐해?", "내일 plan 짜줘", "TODO 정리"). **특정 날짜의 마감·신청·예약을 등록하려는 요청은 PM 이 아니라 SCHEDULE 이다.**',
-    canDo: '그날 할 일 계획을 세운다. 예: "오늘 뭐해?", "내일 plan 짜줘"',
+    canDo:
+      '그날 할 일 계획을 세운다. 예: "오늘 뭐해?", "내일 할 일 계획 세워줘"',
   },
   {
     // 2026-10-08: 일정 조회를 SCHEDULE 로 받는다 — 일정 워커가 조회 문장을 등록보다 먼저 알아보고
@@ -46,14 +47,15 @@ export const WORKER_CAPABILITIES: readonly WorkerCapability[] = [
   {
     agentType: AgentType.IMPACT_REPORTER,
     classifierLine: '변경 영향 분석 ("이 PR 의 영향 분석")',
-    canDo: 'PR 의 변경 영향을 분석한다. 예: "<PR 링크> 영향 분석해줘"',
+    canDo:
+      'PR 이 무엇을 바꾸고 어디에 영향을 주는지 정리한다. 예: "<PR 링크> 영향 분석해줘"',
   },
   {
     agentType: AgentType.PO_SHADOW,
     classifierLine:
       '제품 요건 검토 ("PRD 검토", "PO 입장") + 분기 제품 목표 선언·조회·닫기 ("이번 분기 목표는 …, 달성 기준은 …", "목표 보여줘", "<제목> 목표 닫아줘")',
     canDo:
-      '제품 요건을 PO 입장에서 검토하고, 분기 제품 목표를 선언·조회·닫는다. 예: "이 PRD 검토해줘", "목표 보여줘"',
+      '만들려는 기능의 요건 문서를 제품 담당자 눈으로 검토하고, 분기 제품 목표를 정하고·보여 주고·닫는다. 예: "이 PRD 검토해줘", "목표 보여줘"',
   },
   {
     agentType: AgentType.PO_EVAL,
@@ -67,7 +69,7 @@ export const WORKER_CAPABILITIES: readonly WorkerCapability[] = [
     classifierLine:
       '직전 PO_EVAL + PM 결과 종합 → 컨텍스트 드리프트 / 문서 품질 / 주간 메타 회고 ("이번 주 메타 평가", "drift 점검", "/ceo-review 같은 의미")',
     canDo:
-      '주간 메타 회고(문서 품질·맥락 드리프트 점검)를 한다. 예: "이번 주 메타 평가해줘"',
+      '한 주 동안 계획과 실제가 어긋난 곳, 고칠 문서를 짚는 주간 총평을 한다. 예: "이번 주 메타 평가해줘"',
   },
   {
     agentType: AgentType.VACATION,
@@ -90,7 +92,7 @@ export const WORKER_CAPABILITIES: readonly WorkerCapability[] = [
     classifierLine:
       '⚠️ 이미 Notion에 있는 블로그 초안을 익명화해 GitHub 발행 승인을 요청 ("노션 초안 발행해줘", "블로그 초안 게시해줘"). 새 글 작성은 BLOG, 기존 Notion 초안 발행은 BLOG_PUBLISH. 블로그 글이 발행됐는지·남은 초안이 무엇인지 묻는 질문("그 글 발행됐어?", "남은 초안 뭐 있어")도 BLOG_PUBLISH.',
     canDo:
-      'Notion 에 있는 블로그 초안을 익명화해 발행 승인을 요청하고, 남은 초안과 최근 발행 기록을 알려 준다. 예: "노션 초안 발행해줘", "남은 초안 뭐 있어?"',
+      'Notion 에 있는 블로그 초안에서 회사 이름 같은 민감한 부분을 가린 뒤 블로그에 올려도 될지 승인을 받고, 남은 초안과 최근 발행 기록을 알려 준다. 예: "노션 초안 발행해줘", "남은 초안 뭐 있어?"',
   },
   {
     agentType: AgentType.CAREER_MATE,
