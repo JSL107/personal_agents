@@ -656,12 +656,22 @@ export class RouterMessageHandler implements SlackHandler {
       threadTs: memoryThreadTs,
       messageTs,
     });
+    if (rootText === null) {
+      return { turns: channelTurns, key: channelKey };
+    }
     // DM 에서 봇이 답글로 만든 스레드면 부모(사용자의 첫 발화)가 이미 channel 키에 있다 —
     // 다시 붙이면 user → assistant → 같은 user 순서의 뒤틀린 대화가 된다.
-    if (
-      rootText === null ||
-      channelTurns.some((turn) => turn.text === rootText)
-    ) {
+    const rootIndex = channelTurns.findIndex((turn) => turn.text === rootText);
+    if (rootIndex >= 0) {
+      // 부모부터의 이 대화를 스레드 키로 옮겨 담는다. 이 문답이 스레드 키에 쌓이면 다음 턴부터는
+      // 되짚지 않아, 안 옮기면 두 번째 "작업하고 있어?" 가 맡긴 작업을 못 본다. 부모 앞의 다른
+      // 최상위 대화는 옮기지 않는다.
+      for (const turn of channelTurns.slice(rootIndex)) {
+        await this.conversationMemory.appendTurn(memoryKey, {
+          ...turn,
+          conversationKey: turn.conversationKey ?? channelKey,
+        });
+      }
       return { turns: channelTurns, key: channelKey };
     }
     // 역할은 항상 user 에 원문 표식을 붙인다. assistant 로 두면 다른 앱의 알림이나 알림에 섞인
