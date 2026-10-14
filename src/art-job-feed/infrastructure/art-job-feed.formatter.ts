@@ -4,6 +4,12 @@ import {
   sanitizeForSlackLink,
 } from '../../slack/format/mrkdwn.util';
 import {
+  ART_JOB_EXCLUDE_LABEL,
+  ART_JOB_INTEREST_LABEL,
+  ART_JOB_RESTORE_LABEL,
+  ART_JOB_UNINTEREST_LABEL,
+} from '../domain/art-job-exclusion';
+import {
   ArtJobImage,
   ArtJobListing,
   ResolvedArtJobImage,
@@ -39,8 +45,7 @@ const INTEREST_ACTIONS: readonly unknown[] = [
 const ITEM_BLOCK_PREFIX = 'art-job:';
 
 // 받는 사람이 기능을 알 길이 이 줄뿐이다. 본문 끝 context 블록 — 출처 표기 같은 꼬리 줄도 여기에 붙인다.
-const EXCLUSION_HINT =
-  '마음에 드는 공고는 *관심 있음* 을 누르면 마감 전날 DM 으로 알려 드려요. 관심 없는 공고는 *관심 없음* 을 누르면 같은 공고가 다시 올라와도 보내지 않아요.';
+const EXCLUSION_HINT = `마음에 드는 공고는 *${ART_JOB_INTEREST_LABEL}* 을 누르면 마감 전날 DM 으로 알려 드려요. 관심 없는 공고는 *${ART_JOB_EXCLUDE_LABEL}* 을 누르면 같은 공고가 다시 올라와도 보내지 않아요.`;
 
 export interface ArtJobDigestMessage {
   // 알림·스크린 리더용 대체 문구 — blocks 와 같은 내용을 글로 담는다(버튼·안내 제외).
@@ -70,7 +75,7 @@ export const buildArtJobItemButton = (
     action_id: excluded ? ART_JOB_RESTORE_ACTION : ART_JOB_EXCLUDE_ACTION,
     text: {
       type: 'plain_text',
-      text: excluded ? '제외됨 · 되돌리기' : '관심 없음',
+      text: excluded ? ART_JOB_RESTORE_LABEL : ART_JOB_EXCLUDE_LABEL,
     },
     value: sourceId,
   };
@@ -85,7 +90,7 @@ const buildInterestButton = (
     action_id: interested ? ART_JOB_UNINTEREST_ACTION : ART_JOB_INTEREST_ACTION,
     text: {
       type: 'plain_text',
-      text: interested ? '⭐ 관심 공고 · 되돌리기' : '⭐ 관심 있음',
+      text: `⭐ ${interested ? ART_JOB_UNINTEREST_LABEL : ART_JOB_INTEREST_LABEL}`,
     },
     value: sourceId,
   };

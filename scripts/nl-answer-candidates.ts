@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import {
   CandidateReason,
   NlAnswerCandidate,
+  toDislikedCandidate,
   toNlAnswerCandidate,
 } from '../src/router/eval/nl-answer-candidate';
 import { readOnlyPrismaExtension } from '../src/router/eval/read-only-prisma';
@@ -19,8 +20,10 @@ import { readOnlyPrismaExtension } from '../src/router/eval/read-only-prisma';
 
 const DEFAULT_DAYS = 14;
 const DAY_MS = 24 * 60 * 60 * 1_000;
+const DISLIKE_EMOJIS = ['-1', 'thumbsdown'];
 
 const REASON_TITLE: Record<CandidateReason, string> = {
+  DISLIKED: '답에 👎 가 달림 (사용자가 직접 실패로 표시)',
   FAILED: '처리 중 오류로 끝남 (사용자가 오류를 받음)',
   FALLBACK: '사실 기반 답 대신 표로 답함 (답 생성 실패·숫자 검사 실패)',
   HELD_WRITE: '질문으로 보여 쓰기를 보류함 (실제로 기록을 원했을 수 있음)',
@@ -43,8 +46,9 @@ const main = async (): Promise<void> => {
   const days = readDays();
   const prisma = new PrismaClient().$extends(readOnlyPrismaExtension);
   try {
+    const since = new Date(Date.now() - days * DAY_MS);
     const rows = await prisma.agentRun.findMany({
-      where: { startedAt: { gte: new Date(Date.now() - days * DAY_MS) } },
+      where: { startedAt: { gte: since } },
       select: {
         id: true,
         agentType: true,
@@ -55,14 +59,35 @@ const main = async (): Promise<void> => {
       },
       orderBy: { startedAt: 'desc' },
     });
-    const candidates = rows
-      .map((row) => toNlAnswerCandidate(row))
+    const dislikes = await prisma.slackReactionSignal.findMany({
+      where: {
+        emoji: { in: DISLIKE_EMOJIS },
+        createdAt: { gte: since },
+      },
+      select: { messageTs: true, messageText: true, promptText: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    const disliked = dislikes
+      .map((signal) => toDislikedCandidate(signal, rows))
       .filter(
         (candidate): candidate is NlAnswerCandidate => candidate !== null,
       );
+    // 👎 로 이어진 run 은 다른 갈래(UNCLASSIFIED 등)에 다시 싣지 않는다.
+    const dislikedRunIds = new Set(
+      disliked.map((candidate) => candidate.agentRunId),
+    );
+    const candidates = [
+      ...disliked,
+      ...rows
+        .filter((row) => !dislikedRunIds.has(row.id))
+        .map((row) => toNlAnswerCandidate(row))
+        .filter(
+          (candidate): candidate is NlAnswerCandidate => candidate !== null,
+        ),
+    ];
 
     process.stdout.write(
-      `# eval holdout 후보 — 최근 ${days}일, 원장 ${rows.length}행 중 ${candidates.length}건\n`,
+      `# eval holdout 후보 — 최근 ${days}일, 원장 ${rows.length}행 · 👎 ${dislikes.length}건 중 ${candidates.length}건\n`,
     );
     for (const reason of Object.keys(REASON_TITLE) as CandidateReason[]) {
       const group = candidates.filter(
@@ -73,7 +98,7 @@ const main = async (): Promise<void> => {
       );
       for (const candidate of group) {
         process.stdout.write(
-          `- [${candidate.startedAt.slice(0, 16)} · ${candidate.worker} · run ${candidate.agentRunId}] ${candidate.text}${candidate.detail ? `  (${candidate.detail})` : ''}\n`,
+          `- [${candidate.startedAt.slice(0, 16)} · ${candidate.worker} · run ${candidate.agentRunId ?? '-'}] ${candidate.text}${candidate.detail ? `  (${candidate.detail})` : ''}\n`,
         );
       }
     }

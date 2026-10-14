@@ -6,6 +6,8 @@ export interface RecordReactionInput {
   messageTs: string;
   emoji: string;
   messageText: string;
+  // 반응 대상이 스레드 답글일 때 그 직전의 사람 메시지. 최상위 메시지면 없다.
+  promptText?: string;
 }
 
 export interface ReactionSignalRow {

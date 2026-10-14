@@ -426,6 +426,10 @@ model SlackReactionSignal {
   messageTs   String   @map("message_ts")
   emoji       String
   messageText String   @map("message_text") @db.Text
+  // 반응 대상이 스레드 답글이면 그 직전의 사람 메시지(=이대리가 답한 질문). PII 마스킹 후 저장한다.
+  // 👎 달린 대화 답변을 eval 후보로 낼 때 질문 원문이 필요한데, 원장(agent_run)에는 Slack 메시지
+  // ts 가 없어 반응 행에서 run 으로 거슬러 갈 키가 없다. 최상위 메시지(cron 발송 등)는 null.
+  promptText  String?  @map("prompt_text") @db.Text
   createdAt   DateTime @default(now()) @map("created_at")
 
   @@unique([channelId, messageTs, slackUserId, emoji])
