@@ -31,7 +31,7 @@ const EXCLUSION_HINT =
   '관심 없는 공고는 *관심 없음* 을 눌러 주세요. 같은 공고가 다시 올라와도 보내지 않아요.';
 
 export interface ArtJobDigestMessage {
-  // 알림·검색용 대체 문구. 본문은 blocks 로만 그린다.
+  // 알림·스크린 리더용 대체 문구 — blocks 와 같은 내용을 글로 담는다(버튼·안내 제외).
   text: string;
   blocks: SlackBlock[];
 }
@@ -76,17 +76,17 @@ export const formatArtJobDigest = ({
 }: ArtJobDigestInput): ArtJobDigestMessage => {
   const mention = mentionUserId ? `<@${mentionUserId}> ` : '';
   const header = `🎨 ${mention}게임잡 새 원화 공고 *${items.length}건*`;
+  const itemTexts = items.map(({ listing, resolved }, index) => {
+    return formatItem(index + 1, listing, resolved, today);
+  });
   const blocks: SlackBlock[] = [
     { type: 'section', text: { type: 'mrkdwn', text: header } },
   ];
-  for (const [index, { listing, resolved }] of items.entries()) {
+  for (const [index, { listing }] of items.entries()) {
     blocks.push({
       type: 'section',
       block_id: artJobItemBlockId(listing.sourceId),
-      text: {
-        type: 'mrkdwn',
-        text: formatItem(index + 1, listing, resolved, today),
-      },
+      text: { type: 'mrkdwn', text: itemTexts[index] },
       ...(mentionUserId
         ? { accessory: buildArtJobItemButton(listing.sourceId, false) }
         : {}),
@@ -98,7 +98,8 @@ export const formatArtJobDigest = ({
       elements: [{ type: 'mrkdwn', text: EXCLUSION_HINT }],
     });
   }
-  return { text: header, blocks };
+  // 스크린 리더와 블록을 못 그리는 화면은 text 만 읽는다 — 머리만 두면 공고가 통째로 빠진다.
+  return { text: [header, ...itemTexts].join('\n\n'), blocks };
 };
 
 const formatItem = (

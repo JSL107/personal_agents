@@ -99,10 +99,34 @@ export class ArtJobPostingPrismaRepository implements ArtJobPostingRepositoryPor
   }
 
   async setExcluded(sourceId: string, excluded: boolean): Promise<boolean> {
-    const result = await this.prisma.artJobPosting.updateMany({
-      where: { source: ART_JOB_SOURCE, sourceId },
-      data: { excludedAt: excluded ? new Date() : null },
+    const found = await this.prisma.artJobPosting.findUnique({
+      where: { source_sourceId: { source: ART_JOB_SOURCE, sourceId } },
+      select: { id: true, company: true, title: true },
     });
-    return result.count > 0;
+    if (!found) {
+      return false;
+    }
+    if (excluded) {
+      await this.prisma.artJobPosting.update({
+        where: { id: found.id },
+        data: { excludedAt: new Date() },
+      });
+      return true;
+    }
+    // 되돌리기는 같은 공고(회사 + 제목) 전부를 푼다. 발송 필터가 그 단위로 거르므로, 같은 제목의
+    // 다른 번호가 제외로 남아 있으면 이 행만 풀어도 재등록은 계속 걸러진다.
+    const key = exclusionKey(found.company, found.title);
+    const excludedRows = await this.prisma.artJobPosting.findMany({
+      where: { source: ART_JOB_SOURCE, excludedAt: { not: null } },
+      select: { id: true, company: true, title: true },
+    });
+    const ids = excludedRows
+      .filter((row) => exclusionKey(row.company, row.title) === key)
+      .map((row) => row.id);
+    await this.prisma.artJobPosting.updateMany({
+      where: { id: { in: ids } },
+      data: { excludedAt: null },
+    });
+    return true;
   }
 }

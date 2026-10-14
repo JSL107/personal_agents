@@ -50,7 +50,11 @@ describe('formatArtJobDigest', () => {
       ],
     });
 
-    expect(message.text).toBe('🎨 <@U9> 게임잡 새 원화 공고 *2건*');
+    expect(
+      message.text.startsWith('🎨 <@U9> 게임잡 새 원화 공고 *2건*\n\n*1. <'),
+    ).toBe(true);
+    expect(message.text).toContain('그레이게임즈 · 상시');
+    expect(message.text).not.toContain('관심 없음');
     expect(message.blocks).toEqual([
       {
         type: 'section',
@@ -119,7 +123,7 @@ describe('formatArtJobDigest', () => {
       ],
     });
     const text = JSON.stringify(blocks);
-    expect(header).toBe('🎨 게임잡 새 원화 공고 *1건*');
+    expect(header.startsWith('🎨 게임잡 새 원화 공고 *1건*\n\n')).toBe(true);
     expect(text).toContain(
       '🎮 <https://www.google.com/search?tbm=isch&q=x|LOST ARK Mobile> (구글 이미지 검색)',
     );
