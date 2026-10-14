@@ -3,6 +3,7 @@ import {
   articleMentionsGame,
   filterKakaoCandidates,
   GameImageResolver,
+  pickPreview,
 } from './game-image.resolver';
 import { KakaoImageDocument } from './kakao-image.search';
 
@@ -238,5 +239,52 @@ describe('articleMentionsGame', () => {
 
   it('제목이 없으면 확인 실패다', () => {
     expect(articleMentionsGame('<html></html>', '이터널 리턴')).toBe(false);
+  });
+});
+
+describe('pickPreview', () => {
+  it('게임 매체가 없어도 개인 블로그·카페는 고르지 않고 다음 출처로 넘어간다', () => {
+    expect(
+      pickPreview([
+        document({
+          docUrl: 'https://blog.naver.com/a',
+          imageUrl: 'https://p/1.jpg',
+        }),
+        document({
+          docUrl: 'https://x.tistory.com/2',
+          imageUrl: 'https://p/2.jpg',
+        }),
+        document({
+          docUrl: 'https://cafe.daum.net/3',
+          imageUrl: 'https://p/3.jpg',
+        }),
+        document({
+          docUrl: 'https://news.example.com/4',
+          imageUrl: 'https://p/4.jpg',
+          sourceName: '뉴스',
+        }),
+      ])?.url,
+    ).toBe('https://p/4.jpg');
+  });
+
+  it('개인 글뿐이면 미리보기를 싣지 않는다', () => {
+    expect(
+      pickPreview([document({ docUrl: 'https://blog.naver.com/a' })]),
+    ).toBeNull();
+  });
+
+  it('폭 299px 은 버리고 300px 은 받는다', () => {
+    const narrow = document({
+      docUrl: 'https://news.example.com/1',
+      imageUrl: 'https://p/299.jpg',
+      width: 299,
+    });
+    const wide = document({
+      docUrl: 'https://news.example.com/2',
+      imageUrl: 'https://p/300.jpg',
+      width: 300,
+    });
+    expect(pickPreview([narrow])).toBeNull();
+    expect(pickPreview([narrow, wide])?.url).toBe('https://p/300.jpg');
   });
 });
