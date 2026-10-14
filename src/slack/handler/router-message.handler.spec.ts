@@ -901,6 +901,74 @@ describe('RouterMessageHandler — message (DM)', () => {
     return { handler: getHandler('message'), dispatch };
   };
 
+  // #817 리뷰 — DM 최상위 발화는 channel 키에 쌓이지만 완료 답장은 그 발화의 스레드에 달린다.
+  describe('비동기 완료 답장 기억 (rememberReply)', () => {
+    const DM_TS = '1730000000.000001';
+    const setup = async () => {
+      const dispatch = jest.fn().mockResolvedValue({
+        agentRunId: 0,
+        workerType: AgentType.BLOG,
+        output: { async: true },
+        modelUsed: 'hermes-cli',
+        formattedText: '📝 블로그 초안 작성을 시작했어요.',
+      } satisfies DispatchResult);
+      const conversationMemory = new ConversationMemoryService();
+      const { app, getHandler } = buildAppMock();
+      buildHandler({ dispatch }, { conversationMemory }).register(app);
+      await invokeHandler(getHandler('message'), {
+        type: 'message',
+        user: 'U_USER',
+        text: '프롬프트 RAG 공부해볼래',
+        ts: DM_TS,
+        channel: 'D_DMCHANNEL',
+        channel_type: 'im',
+      });
+      const input = dispatch.mock.calls[0][0] as DispatchInput;
+      const channelKey = conversationMemory.buildKey({
+        slackUserId: 'U_USER',
+        channelId: 'D_DMCHANNEL',
+      });
+      const threadKey = conversationMemory.buildKey({
+        slackUserId: 'U_USER',
+        channelId: 'D_DMCHANNEL',
+        threadTs: DM_TS,
+      });
+      return { input, conversationMemory, channelKey, threadKey };
+    };
+    const COMPLETION = '🚀 *블로그 발행 완료*\n요약 본문';
+
+    it('작업 중 스레드로 대화가 옮겨 갔으면 스레드 키에도 남긴다', async () => {
+      const { input, conversationMemory, channelKey, threadKey } =
+        await setup();
+      await conversationMemory.appendTurn(threadKey, {
+        role: 'user',
+        text: '나랑 브레인 스토밍도 가능해?',
+        agentType: null,
+        agentRunId: null,
+        timestampMs: Date.now(),
+      });
+
+      await input.replyContext?.rememberReply?.(COMPLETION);
+
+      const threadTurns = await conversationMemory.getRecentTurns(threadKey);
+      const channelTurns = await conversationMemory.getRecentTurns(channelKey);
+      expect(threadTurns.at(-1)?.text).toBe(COMPLETION);
+      expect(channelTurns.at(-1)?.text).toBe(COMPLETION);
+    });
+
+    it('스레드 키가 비어 있으면 channel 키에만 남긴다 — 첫 스레드 진입의 channel 키 되짚기를 막지 않게', async () => {
+      const { input, conversationMemory, channelKey, threadKey } =
+        await setup();
+
+      await input.replyContext?.rememberReply?.(COMPLETION);
+
+      expect(await conversationMemory.getRecentTurns(threadKey)).toEqual([]);
+      expect(
+        (await conversationMemory.getRecentTurns(channelKey)).at(-1)?.text,
+      ).toBe(COMPLETION);
+    });
+  });
+
   it('channel_type=im + 일반 user message → router.dispatch (멘션 prefix 없이 전체 text)', async () => {
     const dispatch = jest.fn().mockResolvedValue({
       agentRunId: 5,

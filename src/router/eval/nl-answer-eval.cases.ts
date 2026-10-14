@@ -613,7 +613,12 @@ export const NL_ANSWER_EVAL_CASES: readonly EvalCase[] = [
     expect: {
       destinations: ['REPLIED'],
       forbidIntercepts: true,
-      mustMatch: [/입력/, /근거|검색/],
+      // 사용자가 정한 3줄을 지켜야 한다 — 빈 줄이 아닌 줄이 정확히 셋(#817 리뷰).
+      mustMatch: [
+        /입력/,
+        /근거|검색/,
+        /^\s*[^\n]*\S[^\n]*(?:\n+[^\n]*\S[^\n]*){2}\s*$/,
+      ],
       mustNotMatch: [ASK_BACK, /요약[^.!?\n]{0,10}(?:못|없|어려)/],
       notEndWithQuestion: true,
     },
@@ -630,8 +635,15 @@ export const NL_ANSWER_EVAL_CASES: readonly EvalCase[] = [
         AgentType.BLOG,
       ),
     ],
-    // 요약할 원문이 맥락에 없다. 초안을 새로 만들면 실패이고, 원문 없이 어떻게 답하는지는 채점하지 않는다.
-    expect: { destinations: ['REPLIED'], forbidIntercepts: true },
+    // 요약할 원문이 맥락에 없다. 초안을 새로 만들면 실패이고, 일반 지식으로 "프롬프트 RAG" 를 대신 요약해도
+    // 실패다 — 원문이 없다고 말하거나 무엇을 가리키는지 물어야 한다(#817 리뷰, 수정 전 rebase 측정 1/3 이 지어냄).
+    expect: {
+      destinations: ['REPLIED'],
+      forbidIntercepts: true,
+      mustMatch: [
+        /(?:내용|본문|원문|초안)[^.!?\n]{0,20}없|무엇을|어떤\s*(?:내용|글)|붙여/,
+      ],
+    },
   },
   {
     id: 'h-brainstorm-can-1014',
