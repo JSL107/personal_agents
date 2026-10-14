@@ -211,6 +211,30 @@ describe('ArtJobFeedCronConsumer', () => {
     expect(repository.markNotified).toHaveBeenCalledTimes(1);
   });
 
+  it('확인된 이미지가 없으면 검색 미리보기를 확인 안 됨 캡션으로 스레드에 단다', async () => {
+    const { consumer, slackNotifier } = makeConsumer({
+      pages: [{ received: 1, listings: [CHARACTER('1')] }],
+      resolved: {
+        gameTitle: '카오스 제로 나이트메어',
+        image: null,
+        preview: {
+          url: 'https://img.example/p.jpg',
+          origin: 'SEARCH_PREVIEW',
+          sourceName: '게임포커스',
+        },
+        searchQuery: '스마일게이트 카오스 제로 나이트메어',
+        googleSearchUrl: 'https://www.google.com/search?tbm=isch&q=x',
+      },
+    });
+    await consumer.process(JOB as never);
+    expect(slackNotifier.postMessage).toHaveBeenCalledTimes(2);
+    expect(slackNotifier.postMessage.mock.calls[1][0]).toMatchObject({
+      threadTs: '1',
+      text: '1. 🔎 검색 미리보기 · 확인 안 된 이미지 (검색어: 스마일게이트 카오스 제로 나이트메어 · 출처: 게임포커스)',
+      image: { fileId: 'F1', altText: '스마일게이트 카오스 제로 나이트메어' },
+    });
+  });
+
   it('이미지가 없는 공고는 스레드를 달지 않는다', async () => {
     const { consumer, slackNotifier } = makeConsumer({
       pages: [{ received: 1, listings: [CHARACTER('1')] }],

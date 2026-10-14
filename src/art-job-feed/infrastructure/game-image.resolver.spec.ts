@@ -56,15 +56,15 @@ describe('GameImageResolver', () => {
       origin: 'PLAY_STORE',
     });
   });
-  it('returns a game-title search link after search failure', async () => {
+  it('검색이 실패하면 회사명+게임명 구글 링크를 준다', async () => {
     global.fetch = jest.fn().mockRejectedValue(new Error('offline'));
     const result = await new GameImageResolver(kakaoOff()).resolve(listing);
     expect(result.image).toBeNull();
     expect(result.googleSearchUrl).toBe(
-      `https://www.google.com/search?tbm=isch&q=${encodeURIComponent('카오스 제로 나이트메어')}`,
+      `https://www.google.com/search?tbm=isch&q=${encodeURIComponent('스마일게이트 카오스 제로 나이트메어')}`,
     );
   });
-  it('returns no search link without a game title', async () => {
+  it('게임명이 없으면 회사명+게임으로 구글 링크를 만든다', async () => {
     global.fetch = jest.fn();
     const result = await new GameImageResolver(kakaoOff()).resolve({
       ...listing,
@@ -73,7 +73,9 @@ describe('GameImageResolver', () => {
     expect(result).toMatchObject({
       gameTitle: null,
       image: null,
-      googleSearchUrl: null,
+      preview: null,
+      searchQuery: '스마일게이트 게임',
+      googleSearchUrl: `https://www.google.com/search?tbm=isch&q=${encodeURIComponent('스마일게이트 게임')}`,
     });
     expect(global.fetch).not.toHaveBeenCalled();
   });
@@ -127,7 +129,9 @@ describe('GameImageResolver', () => {
       document({ docUrl: 'https://www.inven.co.kr/webzine/news/?news=2' }),
     ]);
     const result = await new GameImageResolver(kakao as never).resolve(listing);
-    expect(kakao.search).toHaveBeenCalledWith('카오스 제로 나이트메어 게임');
+    expect(kakao.search).toHaveBeenCalledWith(
+      '스마일게이트 카오스 제로 나이트메어',
+    );
     expect(result).toEqual({
       gameTitle: '카오스 제로 나이트메어',
       image: {
@@ -151,7 +155,7 @@ describe('GameImageResolver', () => {
     expect(result.googleSearchUrl).not.toBeNull();
   });
 
-  it('짧은 게임명은 카카오 보강을 하지 않는다', async () => {
+  it('짧은 게임명은 확인하지 않고 미리보기로만 싣는다', async () => {
     mockPages({});
     const kakao = kakaoReturning([document()]);
     const result = await new GameImageResolver(kakao as never).resolve({
@@ -159,8 +163,39 @@ describe('GameImageResolver', () => {
       title: '[NC] 캐릭터 원화',
       company: '회사',
     });
-    expect(kakao.search).not.toHaveBeenCalled();
     expect(result.image).toBeNull();
+    expect(result.preview).toEqual({
+      url: 'https://img.inven.co.kr/a.jpg',
+      origin: 'SEARCH_PREVIEW',
+      sourceName: '인벤',
+    });
+    expect(global.fetch).not.toHaveBeenCalledWith(
+      expect.stringContaining('inven.co.kr/webzine'),
+      expect.anything(),
+    );
+  });
+
+  it('확인 실패 시 미리보기는 게임 매체를 먼저, 개인 블로그는 쓰지 않는다', async () => {
+    mockPages({});
+    const kakao = kakaoReturning([
+      document({
+        docUrl: 'https://blog.naver.com/x',
+        sourceName: '네이버블로그',
+      }),
+      document({
+        docUrl: 'https://news.example.com/1',
+        imageUrl: 'https://news.example.com/a.jpg',
+        sourceName: '뉴스',
+      }),
+      document({
+        docUrl: 'https://www.gamefocus.co.kr/1',
+        imageUrl: 'https://gf/a.jpg',
+        sourceName: '게임포커스',
+      }),
+    ]);
+    const result = await new GameImageResolver(kakao as never).resolve(listing);
+    expect(result.image).toBeNull();
+    expect(result.preview?.url).toBe('https://gf/a.jpg');
   });
 
   it('카카오 검색이 실패해도 던지지 않는다', async () => {
