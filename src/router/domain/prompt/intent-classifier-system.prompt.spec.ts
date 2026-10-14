@@ -10,12 +10,13 @@ describe('INTENT_CLASSIFIER_SYSTEM_PROMPT', () => {
   //           2026-10-08 SCHEDULE 이 일정 조회도 받는다(자연어 응답 충실도 후속).
   //           2026-10-08 BLOG_PUBLISH 가 발행 여부·초안 목록 질문도 받는다.
   //           2026-10-08 PO_SHADOW 가 분기 제품 목표 선언·조회·닫기도 받는다(PO Shadow 단계 3).
+  //           2026-10-14 BLOG 에서 대화·스레드에 이미 있는 내용의 요약·설명 요청을 뺀다(run 8837).
   it('분류기 프롬프트 지문이 마지막으로 잰 값과 같다 — 바꾸면 분류 eval 을 다시 잰다', () => {
     expect(
       createHash('sha256')
         .update(INTENT_CLASSIFIER_SYSTEM_PROMPT)
         .digest('hex'),
-    ).toBe('764cefd949936a30710b22f4fc0d616e3269bec8503b3a88dcb3a556716c6e35');
+    ).toBe('d3c5c2f3c432407acde66425ca7a08982a7cfe2b380c0a96976774aded87ccd1');
   });
 
   it('SCHEDULE 후보가 분류 표에 있다', () => {
