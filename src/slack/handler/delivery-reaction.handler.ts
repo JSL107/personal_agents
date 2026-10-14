@@ -8,7 +8,7 @@ import {
 import { SlackHandler } from '../domain/port/slack-handler.port';
 
 // reaction_removed 는 집계하지 않아 반응 토글은 두 번 센다(다른 반응 핸들러와 동일).
-// 원장 밖 메시지(postPreviewMessage, postProposalMessage, say() 답글, direct WebClient 두 경로)는 집계하지 않는다.
+// 원장 밖 메시지(postPreviewMessage, say() 답글, direct WebClient 두 경로)는 집계하지 않는다.
 @Injectable()
 export class DeliveryReactionHandler implements SlackHandler {
   private readonly logger = new Logger(DeliveryReactionHandler.name);

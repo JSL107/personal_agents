@@ -214,6 +214,7 @@ export class AutopilotOrchestrator {
       detail?: string;
       detailIsOnlyCopy?: boolean;
       unfurlLinks?: boolean;
+      onDelivered?: () => Promise<void>;
     }[] = [];
     const emptyItems: { taskId: string; text: string }[] = [];
 
@@ -259,6 +260,7 @@ export class AutopilotOrchestrator {
               detail: result.detailText,
               detailIsOnlyCopy: result.detailIsOnlyCopy,
               unfurlLinks: result.unfurlLinks,
+              onDelivered: result.onDelivered,
             });
           } else {
             hasDeliverableSummary = true;
@@ -394,6 +396,9 @@ export class AutopilotOrchestrator {
     // 콘솔 항목은 가드를 통과한 회차에만 원장에 쓴다. 가드보다 먼저 쓰면 Slack 이라면 막혔을
     // 같은 내용이 회차마다 쌓인다(pr-review-sweep `*/3` 은 하루 480 회차 중 발송 2 회).
     // 원장이 유일한 사본이라, 기록에 실패한 항목은 버리지 않고 종전처럼 Slack 항목으로 되돌린다.
+    // 콘솔 항목은 원장 기록이 곧 전달이므로 후처리(onDelivered)를 기록 직후에 부른다 — 버리면
+    // knowledge-lint 의 중복 정리처럼 "보고한 뒤에만 실행" 하는 후처리가 영영 돌지 않는다.
+    // Slack 으로 되돌린 항목은 아래 Slack 경로의 후처리 규칙(발송 성공 후)을 그대로 탄다.
     for (const consoleItem of consoleItems) {
       const recorded = await this.recordConsoleItem(
         groupKey,
@@ -407,8 +412,21 @@ export class AutopilotOrchestrator {
           detail: consoleItem.detail,
           detailIsOnlyCopy: consoleItem.detailIsOnlyCopy,
           unfurlLinks: consoleItem.unfurlLinks,
+          onDelivered: consoleItem.onDelivered,
           notifyOwner: false,
         });
+        continue;
+      }
+      if (!consoleItem.onDelivered) {
+        continue;
+      }
+      try {
+        await consoleItem.onDelivered();
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.warn(
+          `Autopilot[${groupKey}] 콘솔 항목 '${consoleItem.taskId}' onDelivered 후처리 실패 (기록은 유지): ${message}`,
+        );
       }
     }
 

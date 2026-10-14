@@ -237,6 +237,15 @@ export const formatAvgPriceStatuses = (statuses: AvgPriceStatus[]): string => {
   return lines.join('\n');
 };
 
+// 어제 종가로는 경보선 밖이었는데 오늘 안으로 돌아온 종목. 상태 목록에서 조용히 빠지기만 하면
+// 왜 이 회차가 발송됐는지 본문에 드러나지 않는다.
+export const formatAvgPriceRecoveries = (tickerNames: string[]): string => {
+  if (tickerNames.length === 0) {
+    return '';
+  }
+  return `↩️ *경보선 안으로 돌아온 종목* — ${tickerNames.join(' · ')}`;
+};
+
 // 종목마다 기준일이 다르면 그 사실을 적는다. 헤더의 "(YYYY-MM-DD 종가 기준)" 은 종목별
 // 마지막 봉 중 **가장 최신 날짜** 하나라, 지연된 종목의 하루 전 값이 그 날짜 아래에 섞인다.
 const formatOlderBaseDates = (baseDates?: StockBaseDate[]): string => {

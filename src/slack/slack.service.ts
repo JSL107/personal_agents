@@ -590,15 +590,39 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
       origin: 'card',
       blocks: blocks.length,
     });
-    const response = await this.postChat({
-      channel: target,
-      text: proposalText,
-      blocks: blocks as never,
-    });
-    return {
-      channelId: String(response.channel ?? target),
-      messageTs: String(response.ts ?? ''),
-    };
+    // 발송 원장 기록은 postMessage 와 같다 — 성공은 SENT, 실패는 FAILED 로 남기고 예외는 그대로 던진다.
+    // 자율 제안 카드가 원장 밖에 있으면 하루에 무엇이 나갔는지 셀 때 이 DM 만 빠진다.
+    const textPreview = buildTextPreview(proposalText);
+    try {
+      const response = await this.postChat({
+        channel: target,
+        text: proposalText,
+        blocks: blocks as never,
+      });
+      await this.recordDelivery({
+        kind: 'subconscious-proposal',
+        itemKinds: [],
+        target,
+        channelId: response.channel,
+        messageTs: response.ts,
+        status: SLACK_DELIVERY_STATUS.SENT,
+        textPreview,
+      });
+      return {
+        channelId: String(response.channel ?? target),
+        messageTs: String(response.ts ?? ''),
+      };
+    } catch (error: unknown) {
+      await this.recordDelivery({
+        kind: 'subconscious-proposal',
+        itemKinds: [],
+        target,
+        status: SLACK_DELIVERY_STATUS.FAILED,
+        textPreview,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
   }
 
   // Subconscious proposal 카드 종료 표시 — 자동 정리로 닫힌 카드의 버튼을 걷어낸다.

@@ -23,6 +23,7 @@ export type DeliveryKind =
   | 'art-job-feed'
   | 'art-job-deadline'
   | 'idea-triage'
+  | 'subconscious-proposal'
   | 'code-review-webhook'
   | 'pr-careerlog'
   | 'alert:claude-auth'
