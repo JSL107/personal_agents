@@ -1,3 +1,4 @@
+import { exclusionKey } from '../../art-job-feed/domain/art-job-exclusion';
 import {
   ArtJobListing,
   ArtJobListResult,
@@ -33,6 +34,7 @@ const JOB = {
 interface MakeOptions {
   pages?: ArtJobListResult[];
   known?: string[];
+  excludedKeys?: string[];
   isEmpty?: boolean;
   resolved?: ResolvedArtJobImage;
   downloadFails?: boolean;
@@ -41,6 +43,7 @@ interface MakeOptions {
 const makeConsumer = ({
   pages = [{ received: 0, listings: [] }],
   known = [],
+  excludedKeys = [],
   isEmpty = false,
   resolved = WITH_IMAGE,
   downloadFails = false,
@@ -64,6 +67,7 @@ const makeConsumer = ({
     findKnownSourceIds: jest.fn().mockResolvedValue(new Set(known)),
     markNotified: jest.fn().mockResolvedValue(undefined),
     markSeeded: jest.fn().mockResolvedValue(undefined),
+    findExcludedKeys: jest.fn().mockResolvedValue(new Set(excludedKeys)),
   };
   const slackNotifier = {
     postMessage: jest.fn().mockResolvedValue({ ts: '1' }),
@@ -134,7 +138,36 @@ describe('ArtJobFeedCronConsumer', () => {
       image: { fileId: 'F1', altText: '카오스 제로 나이트메어' },
     });
     expect(repository.markNotified).toHaveBeenCalledTimes(1);
+    expect(repository.markNotified.mock.calls[0][0]).toMatchObject({
+      messageTs: '1',
+      digestOrder: 1,
+    });
     expect(repository.markSeeded).not.toHaveBeenCalled();
+  });
+
+  it('번호 이모지로 제외한 공고가 새 번호로 다시 올라오면 보내지 않는다', async () => {
+    const { consumer, slackNotifier, repository } = makeConsumer({
+      pages: [
+        {
+          received: 2,
+          listings: [
+            CHARACTER('7'),
+            listing('8', '[카오스 제로 나이트메어] 일러스트'),
+          ],
+        },
+      ],
+      excludedKeys: [
+        exclusionKey('회사', '[카오스 제로 나이트메어]  캐릭터 원화'),
+      ],
+    });
+
+    await consumer.process(JOB as never);
+
+    const [main] = slackNotifier.postMessage.mock.calls[0];
+    expect(main.text).toContain('*1건*');
+    expect(main.text).toContain('GI_No=8|');
+    expect(main.text).not.toContain('GI_No=7|');
+    expect(repository.markNotified).toHaveBeenCalledTimes(1);
   });
 
   it('신규가 없으면 아무것도 보내지 않는다', async () => {
