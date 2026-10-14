@@ -55,14 +55,25 @@ describe('ArtJobExclusionReactionHandler', () => {
     });
   });
 
-  it('🔟 은 10번으로 읽는다', async () => {
+  it.each([
+    ['one', 1],
+    ['two', 2],
+    ['three', 3],
+    ['four', 4],
+    ['five', 5],
+    ['six', 6],
+    ['seven', 7],
+    ['eight', 8],
+    ['nine', 9],
+    ['keycap_ten', 10],
+  ])('%s 이모지는 %i번 공고로 읽는다', async (reaction, digestOrder) => {
     const { handler, markExcluded } = buildHarness();
 
-    await handler?.({ event: { ...baseEvent, reaction: 'keycap_ten' } });
+    await handler?.({ event: { ...baseEvent, reaction } });
 
     expect(markExcluded).toHaveBeenCalledWith({
       messageTs: '100.001',
-      digestOrder: 10,
+      digestOrder,
     });
   });
 

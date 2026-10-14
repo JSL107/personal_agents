@@ -20,6 +20,7 @@ export interface ArtJobDigestInput {
 }
 
 // 번호 이모지 리액션 → 제외(ArtJobExclusionReactionHandler). 받는 사람이 기능을 알 길이 이 줄뿐이다.
+// 핸들러는 받는 사람(멘션 대상)이 있을 때만 켜지므로, 멘션이 없으면 동작하지 않는 안내도 싣지 않는다.
 const EXCLUSION_HINT =
   '_관심 없는 공고는 이 메시지에 번호 이모지(1️⃣~🔟)를 달아 주세요. 같은 공고가 다시 올라와도 보내지 않아요._';
 
@@ -35,7 +36,8 @@ export const formatArtJobDigest = ({
   const blocks = items.map(({ listing, resolved }, index) => {
     return formatItem(index + 1, listing, resolved, today);
   });
-  return [header, ...blocks, EXCLUSION_HINT].join('\n\n');
+  const hint = mentionUserId ? [EXCLUSION_HINT] : [];
+  return [header, ...blocks, ...hint].join('\n\n');
 };
 
 const formatItem = (

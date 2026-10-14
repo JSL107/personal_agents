@@ -86,6 +86,8 @@ describe('formatArtJobDigest', () => {
     expect(text).toContain(
       '🎮 <https://www.google.com/search?tbm=isch&q=x|LOST ARK Mobile> (구글 이미지 검색)',
     );
+    // 멘션 대상이 없으면 리액션 핸들러가 꺼져 있으므로 제외 안내도 싣지 않는다.
+    expect(text).not.toContain('번호 이모지');
   });
 });
 
