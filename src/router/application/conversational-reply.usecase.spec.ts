@@ -576,4 +576,14 @@ describe('ConversationalReply — 직전 작업 상태', () => {
     );
     expect(prompt).not.toContain('"지금은 대기 중"');
   });
+
+  it('되묻기가 반복된 방향 전환에서도 [직전 작업 상태] 를 우선한다 (#824 리뷰)', () => {
+    const prompt = buildSystemPrompt({ unresolvedStreak: 2 });
+    expect(prompt).toContain(
+      '[직전 작업 상태] 가 있고 사용자가 그 작업의 진행을 물으면, 실행할 수 없다고 하지 말고',
+    );
+    expect(prompt).toContain(
+      '아무 작업도 시작되지 않았음을 솔직히 말하세요. [직전 작업 상태] 가 있으면 그 상태를 따르세요.',
+    );
+  });
 });

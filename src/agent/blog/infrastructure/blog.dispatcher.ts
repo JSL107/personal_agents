@@ -110,21 +110,25 @@ export class BlogDispatcher implements AgentDispatcher {
     reply: BlogReplyContext,
   ): Promise<void> {
     this.inFlightReplies.add(reply);
+    let text: string;
     try {
       const outcome = await this.generateBlogDraft.execute({
         requestText: buildBlogRequestText(input),
         slackUserId: input.slackUserId,
       });
-      await this.reply(reply, formatBlogDraft(outcome.result));
+      text = formatBlogDraft(outcome.result);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(
         `비동기 BLOG 백그라운드 실패 (user=${input.slackUserId}): ${message}`,
       );
-      await this.reply(reply, `블로그 초안 생성 실패: ${message}`);
+      text = `블로그 초안 생성 실패: ${message}`;
     } finally {
+      // 생성이 끝나면 답장 전에 중단 대상에서 뺀다 — 완료 답장 도중 신호가 오면 "다시 요청하라" 가
+      // 성공 링크와 같이 나가 이미 있는 초안을 중복 생성하게 한다(#824 리뷰).
       this.inFlightReplies.delete(reply);
     }
+    await this.reply(reply, text);
   }
 
   // 종료 신호(SIGTERM·SIGINT)에서 아직 도는 초안의 스레드에 중단을 알린다 — 없으면 "몇 분 뒤 링크를

@@ -358,6 +358,30 @@ describe('BlogDispatcher', () => {
       expect(notifier.notify).not.toHaveBeenCalled();
     });
 
+    it('생성이 끝나 완료 답장을 보내는 중이면 중단 안내를 보내지 않는다 (#824 리뷰)', async () => {
+      const execute = jest.fn().mockResolvedValue(buildSuccessOutcome());
+      let releaseNotify!: () => void;
+      const notifier: jest.Mocked<BlogSlackNotifierPort> = {
+        notify: jest.fn().mockReturnValueOnce(
+          new Promise<void>((resolve) => {
+            releaseNotify = resolve;
+          }),
+        ),
+      };
+      const dispatcher = new BlogDispatcher(
+        { execute } as unknown as GenerateBlogDraftUsecase,
+        notifier,
+      );
+      await dispatchAsync(dispatcher, 'T1');
+      await flushPromises();
+      expect(notifier.notify).toHaveBeenCalledTimes(1);
+
+      await dispatcher.notifyInterrupted();
+
+      expect(notifier.notify).toHaveBeenCalledTimes(1);
+      releaseNotify();
+    });
+
     it('답장이 매달려도 상한(2초) 뒤에 돌아온다 — 종료를 막지 않는다', async () => {
       jest.useFakeTimers();
       try {
