@@ -159,7 +159,9 @@ export class ConversationalReplyUsecase {
       // id 가 0·null 인 turn 은 비동기 BLOG ack 이거나, 실행 기록 없이 바로 답한 조회(시세·일정 등)다.
       // 이 대화에서 시작된 실행이 없으면 후자로 보고 상태를 싣지 않는다 — "실행 기록 없음" 은
       // 이미 답이 나간 조회를 시작조차 안 된 일로 읽히게 한다.
-      if (!conversationKey) {
+      // 다른 키에서 옮겨 담은 turn 은 자기가 시작된 대화 키를 들고 있다.
+      const runConversationKey = workTurn.conversationKey ?? conversationKey;
+      if (!runConversationKey) {
         return undefined;
       }
       // 하한은 이 작업을 맡긴 요청 직전의 답까지 올린다. 이 작업의 실행은 그 뒤에 시작됐고, 같은
@@ -168,7 +170,7 @@ export class ConversationalReplyUsecase {
       const previousReply = replies[workTurnIndex + 1];
       const run = await this.agentRunService.findLatestConversationRun({
         agentType: workTurn.agentType,
-        conversationKey,
+        conversationKey: runConversationKey,
         startedSince: new Date(
           Math.max(
             workTurn.timestampMs - ASYNC_WORK_STATUS_LOOKBACK_MS,

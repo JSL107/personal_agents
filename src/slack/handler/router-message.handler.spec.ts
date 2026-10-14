@@ -1035,6 +1035,186 @@ describe('RouterMessageHandler — message (DM)', () => {
     );
   });
 
+  // 첫 질문의 문답이 스레드 키에 쌓이면 두 번째 질문부터는 channel 키를 되짚지 않는다 — 그래도
+  // 맡긴 작업 turn 이 보여야 하고, 그 turn 은 작업을 시작한 대화 키를 들고 있어야 한다.
+  it('같은 스레드에서 두 번째로 진행을 물어도 작업 turn 을 시작 대화 키와 함께 넘긴다', async () => {
+    const DM_TS = '1730000000.000001';
+    const unknown = () =>
+      new RouterException({
+        code: RouterErrorCode.INTENT_CLASSIFY_FAILED,
+        message: '의도 분류 실패 — UNKNOWN',
+        status: DomainStatus.BAD_REQUEST,
+      });
+    const dispatch = jest
+      .fn()
+      .mockResolvedValueOnce({
+        agentRunId: 0,
+        workerType: AgentType.BLOG,
+        output: { async: true },
+        modelUsed: 'hermes-cli',
+        formattedText: '📝 블로그 초안 작성을 시작했어요.',
+      } satisfies DispatchResult)
+      .mockRejectedValueOnce(unknown())
+      .mockRejectedValueOnce(unknown());
+    const conversationalReply = {
+      reply: jest.fn().mockResolvedValue('아직 쓰고 있어요.'),
+    } as unknown as ConversationalReplyUsecase;
+    const conversationMemory = new ConversationMemoryService();
+    const { app, getHandler } = buildAppMock();
+    buildHandler(
+      { dispatch },
+      { conversationalReply, conversationMemory },
+    ).register(app);
+    // 그 앞의 다른 최상위 대화 — 스레드로 옮겨 오면 안 된다.
+    await conversationMemory.appendTurn('U_USER:D_DMCHANNEL', {
+      role: 'user',
+      text: '오늘 일정 뭐야',
+      agentType: null,
+      agentRunId: null,
+      timestampMs: Date.now(),
+    });
+    const client = {
+      reactions: {
+        add: jest.fn().mockResolvedValue({ ok: true }),
+        remove: jest.fn().mockResolvedValue({ ok: true }),
+      },
+      conversations: {
+        replies: jest.fn().mockResolvedValue({
+          messages: [{ ts: DM_TS, text: '프롬프트 RAG 블로그 써줘' }],
+        }),
+      },
+    };
+    const invoke = getHandler('message') as unknown as (args: {
+      event: Record<string, unknown>;
+      say: jest.Mock;
+      client: unknown;
+    }) => Promise<void>;
+
+    await invoke({
+      event: {
+        type: 'message',
+        user: 'U_USER',
+        text: '프롬프트 RAG 블로그 써줘',
+        ts: DM_TS,
+        channel: 'D_DMCHANNEL',
+        channel_type: 'im',
+      },
+      say: jest.fn(),
+      client,
+    });
+    for (const ts of ['1730000000.000002', '1730000000.000003']) {
+      await invoke({
+        event: {
+          type: 'message',
+          user: 'U_USER',
+          text: '너 작업하고 있어?',
+          ts,
+          thread_ts: DM_TS,
+          channel: 'D_DMCHANNEL',
+          channel_type: 'im',
+        },
+        say: jest.fn(),
+        client,
+      });
+    }
+
+    const second = (conversationalReply.reply as jest.Mock).mock
+      .calls[1][0] as { priorTurns: ConversationTurn[] };
+    expect(second.priorTurns.map((turn) => turn.text)).not.toContain(
+      '오늘 일정 뭐야',
+    );
+    expect(second.priorTurns).toContainEqual(
+      expect.objectContaining({
+        role: 'assistant',
+        agentType: AgentType.BLOG,
+        conversationKey: 'U_USER:D_DMCHANNEL',
+      }),
+    );
+  });
+
+  // #836 리뷰 — 같은 문구의 앞선 DM, 부모 뒤에 이어진 다른 최상위 대화는 옮기지 않는다.
+  it('스레드로 옮겨 담는 것은 최근 부모 발화와 그 답뿐이다', async () => {
+    const DM_TS = '1730000000.000005';
+    const conversationMemory = new ConversationMemoryService();
+    const channelKey = 'U_USER:D_DMCHANNEL';
+    const turn = (
+      role: 'user' | 'assistant',
+      text: string,
+      agentType: AgentType | null,
+      agentRunId: number | null,
+    ): ConversationTurn => ({
+      role,
+      text,
+      agentType,
+      agentRunId,
+      timestampMs: Date.now(),
+    });
+    for (const seeded of [
+      turn('user', '블로그 써줘', AgentType.BLOG, 0),
+      turn('assistant', '예전 초안 시작', AgentType.BLOG, 0),
+      turn('user', '블로그 써줘', AgentType.BLOG, 0),
+      turn('assistant', '새 초안 시작', AgentType.BLOG, 0),
+      turn('user', '오늘 plan 짜줘', AgentType.PM, 77),
+    ]) {
+      await conversationMemory.appendTurn(channelKey, seeded);
+    }
+    const dispatch = jest.fn().mockRejectedValue(
+      new RouterException({
+        code: RouterErrorCode.INTENT_CLASSIFY_FAILED,
+        message: '의도 분류 실패 — UNKNOWN',
+        status: DomainStatus.BAD_REQUEST,
+      }),
+    );
+    const { app, getHandler } = buildAppMock();
+    buildHandler({ dispatch }, { conversationMemory }).register(app);
+    const invoke = getHandler('message') as unknown as (args: {
+      event: Record<string, unknown>;
+      say: jest.Mock;
+      client: unknown;
+    }) => Promise<void>;
+
+    await invoke({
+      event: {
+        type: 'message',
+        user: 'U_USER',
+        text: '너 작업하고 있어?',
+        ts: '1730000000.000009',
+        thread_ts: DM_TS,
+        channel: 'D_DMCHANNEL',
+        channel_type: 'im',
+      },
+      say: jest.fn(),
+      client: {
+        reactions: {
+          add: jest.fn().mockResolvedValue({ ok: true }),
+          remove: jest.fn().mockResolvedValue({ ok: true }),
+        },
+        conversations: {
+          replies: jest.fn().mockResolvedValue({
+            messages: [{ ts: DM_TS, text: '블로그 써줘' }],
+          }),
+        },
+      },
+    });
+
+    const threadTurns = await conversationMemory.getRecentTurns(
+      `${channelKey}:${DM_TS}`,
+    );
+    expect(threadTurns.slice(0, 2)).toEqual([
+      expect.objectContaining({
+        text: '블로그 써줘',
+        conversationKey: channelKey,
+      }),
+      expect.objectContaining({
+        text: '새 초안 시작',
+        conversationKey: channelKey,
+      }),
+    ]);
+    expect(threadTurns.map((saved) => saved.text)).not.toContain(
+      '오늘 plan 짜줘',
+    );
+  });
+
   it('channel_type=im + 일반 user message → router.dispatch (멘션 prefix 없이 전체 text)', async () => {
     const dispatch = jest.fn().mockResolvedValue({
       agentRunId: 5,
