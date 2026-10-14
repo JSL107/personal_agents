@@ -16,15 +16,15 @@ export const isL4Incomplete = (l4: ContradictionLintOutcome | null): boolean =>
 // 실제로 무엇을 점검했는지 — env 플래그가 아니라 실행 결과에서 만든다.
 const describeScope = (l4: ContradictionLintOutcome | null): string => {
   if (l4 === null) {
-    return '중복·임베딩 점검 · 모순 판정 꺼짐';
+    return '중복·검색 색인 점검 · 모순 판정 꺼짐';
   }
   if (l4.abortedByQuota) {
-    return `중복·임베딩 점검 · 모순 ${l4.judged}/${l4.candidates}쌍만 판정 (쿼터 소진으로 중단)`;
+    return `중복·검색 색인 점검 · 모순 ${l4.judged}/${l4.candidates}쌍만 판정 (사용량 한도 소진으로 중단)`;
   }
   if (l4.judged < l4.candidates) {
-    return `중복·임베딩 점검 · 모순 ${l4.judged}/${l4.candidates}쌍만 판정 (일부 judge 실패)`;
+    return `중복·검색 색인 점검 · 모순 ${l4.judged}/${l4.candidates}쌍만 판정 (일부 판정 실패)`;
   }
-  return `중복·임베딩 점검 · 모순 ${l4.candidates}쌍 판정`;
+  return `중복·검색 색인 점검 · 모순 ${l4.candidates}쌍 판정`;
 };
 
 // 중복 섹션 헤딩 — 목록은 보고 상한에, 총계는 스캔 상한에 각각 잘릴 수 있다.
@@ -36,12 +36,12 @@ const describeDuplicateCount = (
   truncated: boolean,
 ): string => {
   if (truncated) {
-    return `*중복 후보 ${total}건 이상* _— 가까운 순 ${shown}건만 표시_`;
+    return `*중복 후보 ${total}건 이상* _— 가까운 순 ${shown}건만 표시 · 차이가 0에 가까울수록 같은 내용_`;
   }
   if (total > shown) {
-    return `*중복 후보 ${total}건* _— 가까운 순 ${shown}건만 표시_`;
+    return `*중복 후보 ${total}건* _— 가까운 순 ${shown}건만 표시 · 차이가 0에 가까울수록 같은 내용_`;
   }
-  return `*중복 후보 ${shown}건*`;
+  return `*중복 후보 ${shown}건* _— 차이가 0에 가까울수록 같은 내용_`;
 };
 
 export const formatKnowledgeLint = (
@@ -65,9 +65,9 @@ export const formatKnowledgeLint = (
   // 알리면 점검 장애가 정상으로 위장되고, 그건 이 하트비트가 없애려던 실패 모드 그 자체다.
   if (issues.length === 0) {
     if (incomplete) {
-      return `⚠️ *Knowledge Lint* — ${firedAtKst} · 모순 판정을 끝내지 못해 "이상 없음" 을 확정하지 못했습니다 (${scope})`;
+      return `⚠️ *기억 점검* — ${firedAtKst} · 모순 판정을 끝내지 못해 "이상 없음" 을 확정하지 못했습니다 (${scope})`;
     }
-    return `✅ *Knowledge Lint* — ${firedAtKst} · episodic-memory 이상 없음 (${scope})`;
+    return `✅ *기억 점검* — ${firedAtKst} · 이대리가 쌓아 둔 작업 기억 이상 없음 (${scope})`;
   }
 
   const duplicates = issues.filter((issue) => issue.type === 'near_duplicate');
@@ -77,7 +77,7 @@ export const formatKnowledgeLint = (
   );
 
   const sections: string[] = [
-    `🧹 *Knowledge Lint* — ${firedAtKst} (episodic-memory 무결성)`,
+    `🧹 *기억 점검* — ${firedAtKst} (이대리가 쌓아 둔 작업 기억)`,
   ];
 
   // 이슈가 있는 회차에도 L4 미완주는 알린다 — 아래 목록이 전부라고 오해하지 않게.
@@ -97,7 +97,7 @@ export const formatKnowledgeLint = (
     // (전부 워커 종류가 다른 쌍이거나, 조건이 기대대로 돌지 않았다).
     // 미래형으로 쓴다: 이 메시지가 나간 뒤에 찍는다(포트 supersedeOlderDuplicates 주석).
     sections.push(
-      `_→ 오래된 쪽 ${duplicateSupersedable}건을 검색에서 뺍니다 (이 알림 발송 뒤 적용 · 행은 남김 · 워커 종류가 다른 쌍은 보고만)_`,
+      `_→ 오래된 쪽 ${duplicateSupersedable}건을 검색에서 뺍니다 (이 알림 발송 뒤 적용 · 기록은 남김 · 담당이 다른 쌍은 보고만)_`,
     );
     for (const issue of duplicates) {
       sections.push(
@@ -107,7 +107,7 @@ export const formatKnowledgeLint = (
   }
 
   if (nulls.length > 0) {
-    sections.push(`*임베딩 누락 ${nulls.length}건*`);
+    sections.push(`*검색 색인 누락 ${nulls.length}건*`);
     for (const issue of nulls) {
       sections.push(`• #${issue.episodeId} — ${issue.detail}`);
     }

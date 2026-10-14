@@ -34,7 +34,7 @@ describe('KnowledgeLintAutopilotTask', () => {
             type: 'near_duplicate',
             episodeId: 1,
             relatedId: 2,
-            detail: '중복 후보 — distance 0.000',
+            detail: '중복 후보 — 차이 0.000',
             occurredAt: new Date(),
           },
         ],
@@ -123,7 +123,7 @@ describe('KnowledgeLintAutopilotTask', () => {
       }),
     );
     expect(result.skip).toBe(false);
-    expect(result.summaryText).toContain('Knowledge Lint');
+    expect(result.summaryText).toContain('기억 점검');
   });
 
   it('L4_ENABLED=false 면 l4.enabled=false 로 전달', async () => {
@@ -280,7 +280,7 @@ describe('KnowledgeLintAutopilotTask', () => {
 
     expect(result.skip).toBe(false);
     expect(result.emptyReason).toBeUndefined();
-    expect(result.summaryText).toContain('3/5쌍만 판정 (일부 judge 실패)');
+    expect(result.summaryText).toContain('3/5쌍만 판정 (일부 판정 실패)');
   });
 
   // 이 작업의 존재 이유 — 게이트가 꺼져 있으면 L4 는 아예 조회도 안 하지만(service 가 l4=null),

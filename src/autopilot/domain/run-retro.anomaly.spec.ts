@@ -116,6 +116,15 @@ describe('detectChainFailureAnomalies — 체인 실패 지목', () => {
     expect(anomalies[0].detail).toContain('CTO');
   });
 
+  it('실패 지점은 enum 원문 대신 한국어 담당 이름으로 적는다 (#816 리뷰)', () => {
+    const anomalies = detectChainFailureAnomalies([
+      buildChainSummary({ failedAgentTypes: ['CODE_REVIEWER'] }),
+    ]);
+
+    expect(anomalies[0].detail).toContain('코드 리뷰 실패');
+    expect(anomalies[0].detail).not.toContain('CODE_REVIEWER');
+  });
+
   it('표기 상한을 넘으면 나머지는 "외 N건" 으로 접는다 (계기판 소음 방지)', () => {
     const summaries = [1, 2, 3, 4, 5].map((seq) =>
       buildChainSummary({ rootRunId: seq }),

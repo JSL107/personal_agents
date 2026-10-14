@@ -65,7 +65,7 @@ export class KnowledgeLintService implements KnowledgeLintPort {
     const nullIssues = nullRows.map<KnowledgeLintIssue>((row) => ({
       type: 'embedding_null',
       episodeId: row.id,
-      detail: 'embedding 누락 — 벡터 검색에서 제외됨',
+      detail: '검색 색인 누락 — 비슷한 기억 찾기에서 빠짐',
       occurredAt: row.occurredAt,
     }));
 
@@ -142,7 +142,7 @@ export class KnowledgeLintService implements KnowledgeLintPort {
             type: 'contradiction',
             episodeId: pair.idA,
             relatedId: pair.idB,
-            detail: `모순 후보 — ${verdict.reason || `distance ${pair.distance.toFixed(3)}`}`,
+            detail: `모순 후보 — ${verdict.reason || `차이 ${pair.distance.toFixed(3)}`}`,
             occurredAt: pair.occurredAt,
           });
         }
@@ -182,7 +182,7 @@ export class KnowledgeLintService implements KnowledgeLintPort {
         type: 'near_duplicate',
         episodeId: row.id,
         relatedId: row.relatedId,
-        detail: `중복 후보 — distance ${row.distance.toFixed(3)}`,
+        detail: `중복 후보 — 차이 ${row.distance.toFixed(3)}`,
         occurredAt: row.occurredAt,
       });
     }

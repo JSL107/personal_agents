@@ -1,4 +1,5 @@
-import { AGENT_REGISTRY } from '../../agent-registry/agent-registry';
+import { toTaskLabel } from '../../agent-registry/agent-registry';
+import { describeFailureReason } from '../../agent-run/domain/agent-run.type';
 import {
   SecretariatDecision,
   SecretariatDigest,
@@ -12,16 +13,6 @@ const DETAIL_LINE_LIMIT = 3;
 // ① 완료는 한 줄 인라인이라 종류가 많으면 줄이 화면을 넘는다. 실측(2026-08-03)에서 하루
 // 13종이 나와 한 줄을 가득 채웠다 — 총 건수를 앞세우고 상위 몇 개만 남긴다.
 const COMPLETED_INLINE_LIMIT = 5;
-
-// 원장의 agentType 은 enum 원문(`PAPER_TRADE`)이라 그대로 찍으면 내부 식별자가 브리핑에 노출된다.
-// 표시 이름은 레지스트리 한 곳에서 가져온다. 폐지된 워커처럼 레지스트리에 없는 값은 원문을 둔다 —
-// 지우면 그 런이 있었다는 사실까지 사라진다.
-const AGENT_LABELS = new Map<string, string>(
-  AGENT_REGISTRY.map((entry) => [entry.agentType, entry.displayName]),
-);
-
-const toAgentLabel = (agentType: string): string =>
-  AGENT_LABELS.get(agentType) ?? agentType;
 
 const formatRemaining = (expiresAt: Date, now: Date): string => {
   const minutes = Math.round((expiresAt.getTime() - now.getTime()) / 60_000);
@@ -48,7 +39,7 @@ const formatCompleted = (completed: SecretariatDigest['completed']): string => {
   const total = completed.reduce((sum, row) => sum + row.count, 0);
   const head = completed
     .slice(0, COMPLETED_INLINE_LIMIT)
-    .map((row) => `${toAgentLabel(row.agentType)} ${row.count}`)
+    .map((row) => `${toTaskLabel(row.agentType)} ${row.count}`)
     .join(' · ');
   if (completed.length <= COMPLETED_INLINE_LIMIT) {
     return `${total}건 · ${head}`;
@@ -68,7 +59,7 @@ const formatDecision = (
   }
   // "연속" 이라고 쓰지 않는다 — 관측 창 안의 실패 건수일 뿐, 사이에 성공이 있었는지는
   // 이 숫자로 알 수 없다. 다만 마지막 종료가 실패인 것만 여기까지 오므로 미복구는 확실하다.
-  return `${toAgentLabel(decision.agentType)} ${decision.count}건 실패, 아직 복구 안 됨 — ${escapeSlackMrkdwn(decision.reason)}`;
+  return `${toTaskLabel(decision.agentType)} ${decision.count}건 실패, 아직 복구 안 됨 — ${escapeSlackMrkdwn(describeFailureReason(decision.reason))}`;
 };
 
 /**
@@ -89,7 +80,7 @@ export const formatSecretariat = (
   const inProgress =
     digest.inProgress.length === 0
       ? '없음'
-      : digest.inProgress.map(toAgentLabel).join(' · ');
+      : digest.inProgress.map(toTaskLabel).join(' · ');
   lines.push(`*② 진행 중* — ${inProgress}`);
 
   if (digest.approvals.length === 0) {
@@ -119,7 +110,7 @@ export const formatSecretariat = (
           .slice(0, DETAIL_LINE_LIMIT)
           .map(
             (row) =>
-              `   • ${toAgentLabel(row.agentType)} ${row.count}건 — ${escapeSlackMrkdwn(row.reason)}`,
+              `   • ${toTaskLabel(row.agentType)} ${row.count}건 — ${escapeSlackMrkdwn(describeFailureReason(row.reason))}`,
           ),
         digest.blocked.length,
       ),

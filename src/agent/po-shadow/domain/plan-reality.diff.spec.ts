@@ -476,9 +476,34 @@ describe('buildPlanRealityFacts', () => {
     expect(facts.find((fact) => fact.kind === 'WORKER_FAILED')).toEqual({
       id: 'failed:BE_TEST:2026-08-19T04:30:00.000Z',
       kind: 'WORKER_FAILED',
-      label: 'BE_TEST 워커',
+      label: 'BE_TEST 작업',
       detail: '실패 — 테스트 타임아웃',
     });
+  });
+
+  it('실패 사실은 한국어 담당 이름과 풀어 쓴 스위퍼 사유로 적는다 (#816 리뷰)', () => {
+    const context = emptyContext();
+    context.failedRunsToday = [
+      {
+        agentType: 'CODE_REVIEWER',
+        reason: 'swept: stale IN_PROGRESS',
+        endedAt: new Date('2026-08-19T04:30:00.000Z'),
+      },
+    ];
+
+    const fact = buildPlanRealityFacts(
+      buildPlan({
+        topPriority: buildTask({
+          id: 'user-task',
+          title: '사용자 인터뷰',
+          source: 'USER_INPUT',
+        }),
+      }),
+      context,
+    ).find((item) => item.kind === 'WORKER_FAILED');
+
+    expect(fact?.label).toBe('코드 리뷰 작업');
+    expect(fact?.detail).toBe('실패 — 30분 넘게 끝나지 않아 자동으로 정리됨');
   });
 
   it('topPriority, morning, afternoon에 같은 ID가 반복돼도 계획 사실은 한 번만 만든다', () => {

@@ -53,9 +53,9 @@ describe('formatRunRetro', () => {
     );
     expect(text).toContain('🚨');
     expect(text).toContain('이상 2건');
-    expect(text).toContain('PM: 평균 201.4s — 인증/쿼터 소진 의심');
+    expect(text).toContain('오늘 계획: 평균 201.4s — 인증/쿼터 소진 의심');
     expect(text).toContain(
-      'PO_EVAL: 이번주 0건 (지난주 10건) — cron 사망 의심',
+      '하루 평가: 이번주 0건 (지난주 10건) — cron 사망 의심',
     );
   });
 
@@ -87,7 +87,7 @@ describe('formatRunRetro', () => {
     const text = formatRunRetro([], anomalies, '2026-07-06');
 
     expect(text).toContain(
-      '• 📋 PM: 형식 준수율 30% (10건 평균, 하한 50% · 필수 필드 존재 여부만 검사함) · 품질: 판정 없음 — 산출물 형식이 계약과 어긋남',
+      '• 📋 오늘 계획: 형식 준수율 30% (10건 평균, 하한 50% · 필수 필드 존재 여부만 검사함) · 품질: 판정 없음 — 산출물 형식이 계약과 어긋남',
     );
     expect(text).not.toContain('계약 점수');
   });
