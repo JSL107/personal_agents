@@ -544,4 +544,22 @@ export const NL_ANSWER_EVAL_CASES: readonly EvalCase[] = [
       },
     },
   },
+  {
+    id: 'h-web-search-1013',
+    split: 'holdout',
+    note: '2026-10-13 run 8605 — 웹 검색 가능 여부. 대화 답변·워커는 네트워크가 막힌 codex 로 돌아 검색하지 않고(codex-cli.provider.ts CODEX_EPHEMERAL_NOTICE), 블로그 초안을 쓰는 Hermes tistory-blog 스킬만 web_search 로 조사한다(2026-10-14 확인)',
+    text: `${MENTION}인터넷 검색 할 수 있어?`,
+    // 바로 검색해 답하지는 못한다는 것과, 조사 글(블로그 초안)로 정리하면 웹을 찾아본다는 것을 둘 다 말해야 한다.
+    // "실시간으로 찾아 드릴게요" 처럼 질문에 바로 검색해 답할 수 있다고 하면 실패.
+    expect: {
+      destinations: ['REPLIED'],
+      forbidIntercepts: true,
+      // 두 번째 식은 "바로 검색하지는 못한다" 는 한정. "블로그 초안으로 남길 때만 검색한다" 처럼 범위를 좁혀 말해도 같은 뜻이다.
+      mustMatch: [
+        /블로그|조사|정리\s*글|초안/,
+        /못|않|없|안\s*돼|어려|에만|경우만|때만/,
+      ],
+      mustNotMatch: [ASK_BACK, /실시간/],
+    },
+  },
 ];
