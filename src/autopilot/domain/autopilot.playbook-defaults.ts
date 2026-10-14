@@ -24,6 +24,9 @@ export const DEFAULT_IMPACT_REPORT_CRON = '0 9 * * 6';
 export const DEFAULT_IMPACT_REPORT_TIMEZONE = 'Asia/Seoul';
 
 // Run Retro 기본 스케줄 — 매주 월 09:00 KST(한 주 시작 시점에 지난 7일 실행 통계 회고).
+export const DEFAULT_CUJ_CHECK_CRON = '10 9 * * *';
+export const DEFAULT_CUJ_CHECK_TIMEZONE = 'Asia/Seoul';
+
 export const DEFAULT_RUN_RETRO_CRON = '0 9 * * 1';
 export const DEFAULT_RUN_RETRO_TIMEZONE = 'Asia/Seoul';
 

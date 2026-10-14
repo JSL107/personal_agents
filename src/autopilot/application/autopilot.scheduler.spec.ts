@@ -75,8 +75,9 @@ describe('AutopilotScheduler', () => {
     //   + memory-vacuum(주간 세션 기억 색인 청소, 단독 그룹)
     //   + holiday-sync(주간 한국 공휴일 동기화, 단독 그룹)
     //   + study-applicability(오늘의 공부 적용 판정, 단독 그룹)
-    //   + idea-triage(평일 아이디어 판정, 단독 그룹) = 36그룹.
-    expect(queue.add).toHaveBeenCalledTimes(36);
+    //   + idea-triage(평일 아이디어 판정, 단독 그룹)
+    //   + cuj-check(매일 핵심 여정 점검, 단독 그룹) = 37그룹.
+    expect(queue.add).toHaveBeenCalledTimes(37);
     expect(addCalls).toContain('idea-triage');
     expect(addCalls).toContain('memory-vacuum');
     expect(addCalls).toContain('holiday-sync');
@@ -94,6 +95,7 @@ describe('AutopilotScheduler', () => {
     expect(addCalls).not.toContain('ceo-meta');
     expect(addCalls).toContain('impact-report');
     expect(addCalls).toContain('run-retro');
+    expect(addCalls).toContain('cuj-check');
     expect(addCalls).toContain('knowledge-lint');
     expect(addCalls).toContain('docs-sync-audit');
     expect(addCalls).toContain('preference-learning');

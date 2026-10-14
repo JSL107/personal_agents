@@ -29,6 +29,7 @@ export const AUTOPILOT_DELIVERY_ROUTE: Readonly<
   'weekly-summary': 'slack',
   'impact-report': 'slack',
   'run-retro': 'console',
+  'cuj-check': 'slack',
   'blog-revision-report': 'console',
   'run-sweeper': 'console',
   'preview-sweeper': 'console',
