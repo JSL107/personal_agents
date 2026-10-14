@@ -595,6 +595,7 @@ export class RouterMessageHandler implements SlackHandler {
       agentType: AgentType.BLOG,
       agentRunId: agentRunId ?? null,
       timestampMs: Date.now(),
+      ...(replyThreadKey === memoryKey ? {} : { replyThreadKey }),
     };
     await this.conversationMemory.appendTurn(memoryKey, turn);
     if (replyThreadKey === memoryKey) {
@@ -660,22 +661,23 @@ export class RouterMessageHandler implements SlackHandler {
       .findIndex((turn) => turn.text === rootText);
     if (fromEnd >= 0) {
       const rootIndex = channelTurns.length - 1 - fromEnd;
-      // 부모 발화와 그 답을 스레드 키로 옮겨 담는다. 이 문답이 스레드 키에 쌓이면 다음 턴부터는
-      // 되짚지 않아, 안 옮기면 두 번째 "작업하고 있어?" 가 맡긴 작업을 못 본다. 부모 앞뒤의 다른
-      // 최상위 대화는 옮기지 않는다 — 뒤의 것을 옮기면 이 스레드가 그 작업을 이어받는다(#836 리뷰).
-      const nextUserOffset = channelTurns
-        .slice(rootIndex + 1)
-        .findIndex((turn) => turn.role !== 'assistant');
-      const rootEnd =
-        nextUserOffset < 0
-          ? channelTurns.length
-          : rootIndex + 1 + nextUserOffset;
-      for (const turn of channelTurns.slice(rootIndex, rootEnd)) {
+      // 부모 발화와 그 답, 이 스레드에 게시된 완료 답장을 스레드 키로 옮겨 담는다. 이 문답이 스레드
+      // 키에 쌓이면 다음 턴부터는 되짚지 않아, 안 옮기면 두 번째 "작업하고 있어?" 가 맡긴 작업을 못
+      // 본다. 부모 뒤의 다른 최상위 대화와 다른 스레드의 완료 답장은 옮기지 않는다 — 옮기면 이 스레드가
+      // 그 작업의 실행 id·상태를 이어받는다(#836 리뷰, 다른 스레드 완료 답장은 10-14 실측).
+      const conversation = [
+        channelTurns[rootIndex],
+        ...channelTurns
+          .slice(rootIndex + 1)
+          .filter((turn, offset) =>
+            this.isReplyInThread({ turn, offset, threadKey: memoryKey }),
+          ),
+      ];
+      for (const turn of conversation) {
         await this.conversationMemory.appendTurn(memoryKey, turn);
       }
-      // 첫 질문의 맥락도 부모 뒤의 다른 최상위 대화를 뺀다 — 넘기면 그쪽 작업의 실행 id·상태가 이
-      // 스레드의 직전 작업으로 잡힌다. 부모 앞의 대화는 맥락일 수 있어 남긴다.
-      return channelTurns.slice(0, rootEnd);
+      // 첫 질문의 맥락도 같은 기준으로 고른다. 부모 앞의 대화는 맥락일 수 있어 남긴다.
+      return [...channelTurns.slice(0, rootIndex), ...conversation];
     }
     // 역할은 항상 user 에 원문 표식을 붙인다. assistant 로 두면 다른 앱의 알림이나 알림에 섞인
     // 외부 응답 본문이 "이대리 자신의 직전 응답"으로 해석된다(IntentClassifier·ConversationalReply
@@ -691,6 +693,26 @@ export class RouterMessageHandler implements SlackHandler {
     await this.conversationMemory.appendTurn(memoryKey, rootTurn);
     // 원문 turn 은 작업 turn 이 아니므로, 작업 turn 이 있다면 channel 키에서 온 것이다.
     return [...channelTurns, rootTurn];
+  }
+
+  // channel 키에서 부모 발화 뒤 offset 번째 turn 이 이 스레드의 답인지. 부모 바로 다음 답은 동기로 붙은
+  // 그 발화의 답이고, 그 뒤로는 이 스레드에 게시된 비동기 완료 답장만 이 스레드 몫이다.
+  private isReplyInThread({
+    turn,
+    offset,
+    threadKey,
+  }: {
+    turn: ConversationTurn;
+    offset: number;
+    threadKey: string;
+  }): boolean {
+    if (turn.role !== 'assistant') {
+      return false;
+    }
+    if (turn.replyThreadKey !== undefined) {
+      return turn.replyThreadKey === threadKey;
+    }
+    return offset === 0;
   }
 
   // 스레드 부모 본문을 대화 턴으로 가져온다.
