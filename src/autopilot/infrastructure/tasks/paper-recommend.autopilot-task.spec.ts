@@ -26,7 +26,8 @@ describe('PaperRecommendAutopilotTask', () => {
           task.run({ ownerSlackUserId: 'U1', firedAtKst }),
         ).resolves.toEqual({
           skip: true,
-          summaryText: `휴장일(${firedAtKst}) — 모의투자 추천 판단 건너뜀`,
+          // summaryText 가 아니라 emptyReason 이어야 orchestrator 가 원장에 남긴다.
+          emptyReason: `휴장일(${firedAtKst}) — 모의투자 추천 판단 건너뜀`,
         });
         expect(recommendation.execute).not.toHaveBeenCalled();
       },
@@ -46,6 +47,7 @@ describe('PaperRecommendAutopilotTask', () => {
       expect(recommendation.execute).toHaveBeenCalledWith({
         decidedAt: new Date('2026-09-23T19:30:00+09:00'),
         triggerType: TriggerType.AUTOPILOT_PAPER_RECOMMEND_CRON,
+        requireFreshMarketData: true,
       });
     });
   });
@@ -117,6 +119,7 @@ describe('PaperRecommendAutopilotTask', () => {
     expect(recommendation.execute).toHaveBeenCalledWith({
       decidedAt: new Date('2026-08-17T19:30:00+09:00'),
       triggerType: TriggerType.AUTOPILOT_PAPER_RECOMMEND_CRON,
+      requireFreshMarketData: true,
     });
   });
 
