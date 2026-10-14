@@ -1,8 +1,13 @@
+import { attributeDelay } from '../../agent/delay-report/domain/attribute-delay';
 import {
   AXIS_APPROVAL,
   AXIS_FAILED_RUN,
   DelayVerdict,
 } from '../../agent/delay-report/domain/delay-report.type';
+import {
+  AgentRunStatus,
+  STALE_RUN_SWEPT_ERROR,
+} from '../../agent-run/domain/agent-run.type';
 import { formatDelayReport } from './delay-report.formatter';
 
 const verdict = (overrides: Partial<DelayVerdict> = {}): DelayVerdict => ({
@@ -197,5 +202,47 @@ describe('formatDelayReport', () => {
     expect(text).toContain('&lt;script&gt;');
     expect(text).toContain('&amp;');
     expect(text).not.toContain('<script>');
+  });
+});
+
+// 손으로 쓴 verdict 대신 실제 귀속 결과를 렌더한다 — 도메인이 조립한 문장이 포맷터를 거쳐야
+// 공용 금칙어 검사(`internal-terms.jest-setup.ts`)가 그 경로도 지킨다(#825 후속).
+describe('formatDelayReport — 실제 귀속 결과', () => {
+  it('실패·멈춤 의심 안내 모두 한국어 담당 이름과 풀어 쓴 사유로 나간다', () => {
+    const text = formatDelayReport(
+      attributeDelay({
+        openPreviews: [],
+        activeRuns: [
+          {
+            id: 1,
+            agentType: 'CODE_REVIEWER',
+            status: AgentRunStatus.IN_PROGRESS,
+            parentId: null,
+            startedAt: new Date('2026-09-04T02:15:00.000Z'),
+            endedAt: null,
+            triggerType: 'SLACK_COMMAND_REVIEW_PR',
+            inputSnapshot: null,
+          },
+        ],
+        failedRuns: [
+          {
+            agentType: 'CODE_REVIEWER',
+            reason: STALE_RUN_SWEPT_ERROR,
+            endedAt: new Date('2026-09-04T02:50:00.000Z'),
+          },
+        ],
+        recentlyFinished: [
+          { agentType: 'CODE_REVIEWER', status: 'FAILED', runId: 3 },
+        ],
+        integrations: { githubConfigured: true, notionConfigured: true },
+        now: new Date('2026-09-04T03:00:00.000Z'),
+        unavailableAxes: [],
+      }),
+    );
+
+    expect(text).toContain(
+      '코드 리뷰 실행이 실패했어요. 30분 넘게 끝나지 않아 자동으로 정리됨',
+    );
+    expect(text).toContain('코드 리뷰 실행이 45분째 멈췄을 가능성이 있어요');
   });
 });

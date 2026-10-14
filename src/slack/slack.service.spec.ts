@@ -1163,8 +1163,8 @@ describe('formatContextSummary (HOTFIX-1)', () => {
     expect(output).toContain('Issue 3건 / PR 1건');
     expect(output).toContain('활성 task 2건');
     expect(output).toContain('본인 멘션 5건');
-    expect(output).toContain('직전 PM 실행*: #99 (2026-04-26)');
-    expect(output).toContain('직전 Work Reviewer 실행*: #100 (2026-04-26)');
+    expect(output).toContain('직전 오늘 계획*: #99 (2026-04-26)');
+    expect(output).toContain('직전 업무 정리*: #100 (2026-04-26)');
   });
 
   it('GitHub fetch 실패 시 ⚠ 라인 노출 + Notion/Slack 은 그대로', () => {
@@ -1182,8 +1182,8 @@ describe('formatContextSummary (HOTFIX-1)', () => {
       previousPlan: null,
       previousWorklog: null,
     });
-    expect(output).toContain('직전 PM 실행*: 없음');
-    expect(output).toContain('직전 Work Reviewer 실행*: 없음');
+    expect(output).toContain('직전 오늘 계획*: 없음');
+    expect(output).toContain('직전 업무 정리*: 없음');
   });
 });
 

@@ -139,7 +139,7 @@ export class PhaseCommandHandler implements SlackHandler {
       const range: AgentRunRange = arg === 'today' ? 'TODAY' : 'WEEK';
       await ack({
         response_type: 'ephemeral',
-        text: `이대리(CEO 메타) 가 ${range === 'WEEK' ? '최근 7일' : '최근 24시간'} phase 결과를 종합 중입니다 (15~30초 소요)...`,
+        text: `이대리(총평) 가 ${range === 'WEEK' ? '최근 7일' : '최근 24시간'} phase 결과를 종합 중입니다 (15~30초 소요)...`,
       });
 
       await runAgentCommand({
