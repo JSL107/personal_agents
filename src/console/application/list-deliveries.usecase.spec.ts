@@ -32,4 +32,24 @@ describe('ListDeliveriesUsecase', () => {
       items,
     });
   });
+
+  // 빈 결과(EMPTY)가 콘솔 보고서와 같은 SUPPRESSED 로 쌓이므로, 사유는 limit 보다 먼저
+  // 저장소 조회 조건으로 내려가야 다른 사유의 행이 한도를 차지하지 않는다.
+  it('억제 사유가 오면 저장소 조회 조건으로 넘긴다', async () => {
+    const repository = { findByStatus: jest.fn().mockResolvedValue([]) };
+    const usecase = new ListDeliveriesUsecase(
+      repository as unknown as SlackDeliveryRepositoryPort,
+    );
+
+    await usecase.execute({
+      status: 'SUPPRESSED',
+      suppressReason: 'CONSOLE_ROUTE',
+      days: 14,
+      limit: 200,
+    });
+
+    expect(repository.findByStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ suppressReason: 'CONSOLE_ROUTE', limit: 200 }),
+    );
+  });
 });

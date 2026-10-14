@@ -6,6 +6,7 @@ import SwiftUI
 enum ConsoleTab: Hashable {
     case calendar
     case dashboard
+    case reports
     case agents
     case office
 }
@@ -44,6 +45,7 @@ struct ConsoleHeaderView: View {
             Picker("보기", selection: $tab) {
                 Label("캘린더", systemImage: "calendar").tag(ConsoleTab.calendar)
                 Label("대시보드", systemImage: "chart.bar.xaxis").tag(ConsoleTab.dashboard)
+                Label("보고서", systemImage: "doc.text").tag(ConsoleTab.reports)
                 Label("에이전트", systemImage: "rectangle.grid.2x2.fill").tag(ConsoleTab.agents)
                 Label("오피스", systemImage: "person.3.fill").tag(ConsoleTab.office)
             }

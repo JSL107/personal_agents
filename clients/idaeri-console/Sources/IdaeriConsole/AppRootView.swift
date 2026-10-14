@@ -53,6 +53,8 @@ struct AppRootView: View {
                     onRetryRun: retryRun,
                     onShowAgents: { tab = .agents }
                 )
+            case .reports:
+                ReportsView(client: client)
             case .agents:
                 AgentStatusView(
                     store: store,

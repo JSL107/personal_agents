@@ -67,6 +67,9 @@ trap 'rm -rf "$RENDER_DIR"' EXIT
 swift run IdaeriConsole --render-dashboard "$RENDER_DIR/dashboard-light.png"
 swift run IdaeriConsole --render-dashboard "$RENDER_DIR/dashboard-dark.png" --dark
 
+echo "── 보고서 렌더"
+swift run IdaeriConsole --render-reports "$RENDER_DIR/reports.png"
+
 # 캘린더는 앱의 첫 화면이라 여기서 터지면 아무것도 못 한다. **6주 달을 함께 굽는다** —
 # 행이 하나 늘어 창 하한에서 넘치는 조판은 그 달을 굽지 않으면 드러나지 않는다.
 echo "── 캘린더 렌더 (5주 달·6주 달)"
