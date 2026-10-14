@@ -92,7 +92,22 @@ describe('formatArtJobDigest', () => {
 });
 
 describe('formatArtJobImageCaption', () => {
-  it('본문 번호와 게임명을 싣는다', () => {
-    expect(formatArtJobImageCaption(3, 'A&B')).toBe('3. 🎮 A&amp;B');
+  it('플레이스토어 아이콘은 번호와 게임명만 싣는다', () => {
+    expect(
+      formatArtJobImageCaption(3, 'A&B', {
+        url: 'https://x',
+        origin: 'PLAY_STORE',
+      }),
+    ).toBe('3. 🎮 A&amp;B');
+  });
+
+  it('검색으로 찾은 그림은 참고 이미지와 출처를 밝힌다', () => {
+    expect(
+      formatArtJobImageCaption(2, 'LOST ARK Mobile', {
+        url: 'https://x',
+        origin: 'KAKAO_IMAGE',
+        sourceName: '인벤',
+      }),
+    ).toBe('2. 🎮 LOST ARK Mobile · 참고 이미지 (출처: 인벤)');
   });
 });

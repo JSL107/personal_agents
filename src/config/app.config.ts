@@ -705,6 +705,12 @@ export class EnvironmentVariables {
   @IsString()
   ART_JOB_FEED_TIMEZONE?: string;
 
+  // - KAKAO_REST_API_KEY: 카카오(다음) 이미지 검색 키. 플레이스토어에 없는(미출시) 게임의
+  //   참고 이미지를 게임 매체 기사에서 찾는다. 비우면 이 보강을 건너뛴다(무료 일 30,000건).
+  @IsOptional()
+  @IsString()
+  KAKAO_REST_API_KEY?: string;
+
   // Daily Eval / Impact Report Recent / CEO Meta Cron 등 cron consumer 가 graceful skip (NO_xxx) 외
   // throw 직전에 owner 에게 DM 으로 알릴 Slack user ID (`U...`). 미설정 시 NoopCronFailureAlerter
   // (stdout warn 만). CLAUDE_AUTH_ALERT_OWNER 와 별도로 둬 cron 알람만 분리 구독 가능.

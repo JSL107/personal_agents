@@ -3,6 +3,7 @@ import {
   sanitizeForSlackLink,
 } from '../../slack/format/mrkdwn.util';
 import {
+  ArtJobImage,
   ArtJobListing,
   ResolvedArtJobImage,
 } from '../domain/art-job-feed.type';
@@ -90,9 +91,18 @@ const formatGameLine = (resolved: ResolvedArtJobImage): string | null => {
 };
 
 // 스레드 이미지 메시지의 글 — 본문 목록 번호와 맞춰 어느 공고의 그림인지 찾게 한다.
+// 검색으로 찾은 그림은 공식 이미지가 아닐 수 있어 참고용임과 출처를 밝힌다.
 export const formatArtJobImageCaption = (
   order: number,
   gameTitle: string,
+  image: ArtJobImage,
 ): string => {
-  return `${order}. 🎮 ${escapeSlackMrkdwn(gameTitle)}`;
+  const caption = `${order}. 🎮 ${escapeSlackMrkdwn(gameTitle)}`;
+  if (image.origin !== 'KAKAO_IMAGE') {
+    return caption;
+  }
+  const source = image.sourceName
+    ? ` (출처: ${escapeSlackMrkdwn(image.sourceName)})`
+    : '';
+  return `${caption} · 참고 이미지${source}`;
 };
