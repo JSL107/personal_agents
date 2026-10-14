@@ -52,6 +52,10 @@ describe('parseScheduleCommand', () => {
       title: '주민등록 등본 발급',
       dueDate: { year: 2026, month: 9, day: 19 },
     });
+    // 끝에 온 동사도 부탁 어미가 없으면 제목이다.
+    expect(parseScheduleCommand('내일 자동이체 추가', TODAY)).toMatchObject({
+      title: '자동이체 추가',
+    });
     expect(parseScheduleCommand('내일 자동이체 추가 신청', TODAY)).toEqual({
       kind: 'REGISTER',
       title: '자동이체 추가 신청',
@@ -91,6 +95,27 @@ describe('parseScheduleCommand', () => {
     expect(
       parseScheduleCommand('납부까지 끝내기 10월 1일', TODAY),
     ).toMatchObject({ title: '납부까지 끝내기' });
+  });
+
+  it.each([
+    // 2026-10-13 run 8621 원문.
+    ['내일 할일에 대화 고도화 추가해 줄래?', '대화 고도화'],
+    ['내일 일정에 치과 넣어 주세요', '치과'],
+    ['10월 5일 건강검진 예약 등록해줄래요?', '건강검진 예약'],
+    ['내일 자동차세 잡아줄래?', '자동차세'],
+    // #807 리뷰 — 가드가 허용하는 다른 부탁 어미도 제목에 남기지 않는다.
+    ['내일 치과 추가해 줄 수 있어?', '치과'],
+    ['내일 치과 추가해 주실 수 있어요?', '치과'],
+  ])('부탁형 지시어와 등록할 곳 머리말을 걷어낸다: %s', (text, title) => {
+    const command = parseScheduleCommand(text, TODAY);
+    expect(command.kind).toBe('REGISTER');
+    expect(command).toMatchObject({ title });
+  });
+
+  it('머리말이 아닌 "할일" 은 제목에 남긴다', () => {
+    expect(parseScheduleCommand('내일 할일 목록 정리', TODAY)).toMatchObject({
+      title: '할일 목록 정리',
+    });
   });
 });
 

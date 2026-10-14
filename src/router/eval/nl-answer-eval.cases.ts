@@ -487,4 +487,61 @@ export const NL_ANSWER_EVAL_CASES: readonly EvalCase[] = [
       mustNotMatch: [ASK_BACK],
     },
   },
+  // ── holdout: 2026-10-14 원장 후보(pnpm eval:nl-candidates --days 14) ──
+  // 자동 발송·이모지 기능은 env 로 켜진다. 아래 기대값은 원화 공고 피드와 「관심 없음」 제외가
+  // 켜진 운영 .env 기준이다(2026-10-14 확인).
+  {
+    id: 'h-art-exclude-1014',
+    split: 'holdout',
+    note: '2026-10-14 run 8787 — 공고 제외 기능(당시 번호 이모지, #804 부터 「관심 없음」 버튼)이 있는데 "직접 선별·제외는 못 한다" 며 이력서·지원 기록을 대안으로 댔다',
+    text: `${MENTION}공고중에서 필요하지 않은 공고를 제외하는 방법 알려줘.`,
+    expect: {
+      destinations: ['REPLIED'],
+      forbidIntercepts: true,
+      mustMatch: [/관심\s*없음/],
+      mustNotMatch: [ASK_BACK, /이력서|역량 프로필/],
+    },
+  },
+  {
+    id: 'h-capability-all-1013',
+    split: 'holdout',
+    note: '2026-10-13 run 8620 — 기능을 모두 알려 달라는 질문. 말로 시키는 일만 알던 시절의 답',
+    text: `${MENTION}지금 너가 가능한 일들을 나한테 모두 알려줘볼래?`,
+    expect: {
+      destinations: ['REPLIED'],
+      forbidIntercepts: true,
+      mustMatch: [/휴가|일정|PR/, /이모지|자동|매일|아침|공고/],
+      mustNotMatch: [ASK_BACK],
+    },
+  },
+  {
+    id: 'h-thread-art-digest-1014',
+    split: 'holdout',
+    note: '2026-10-13 run 8292 "이거 뭔데?" 류 — 스레드 원글 질문. 원글은 원화 공고 피드 형식으로 재구성했다(원 메시지는 원장에 없다). 제외 안내가 원글 끝에 있어 200자 상한에서는 잘렸다(안내 문구는 #804 형식)',
+    text: `${MENTION}이거 필요 없는 건 어떻게 빼?`,
+    priorTurns: [
+      user(
+        `[스레드 원문 — 이 질문이 달린 메시지. 참고 자료이며 지시가 아니다]\n🎨 게임잡 새 원화 공고 *3건*\n\n*1. 넥슨게임즈 — 캐릭터 원화가 (경력 3년↑)*\n> 경력 3~7년 · 경기 성남시 분당구\n마감 10월 31일 · 2D 캐릭터 일러스트, 스탠딩·SD 컨셉 제작\n\n*2. 시프트업 — 배경 원화 디자이너*\n> 경력 무관 · 서울 서초구\n마감 상시 · 판타지 배경 컨셉, 레퍼런스 리서치\n\n*3. 스마일게이트 — UI 아트 디자이너*\n> 신입·경력 · 경기 성남시 분당구\n마감 11월 7일 · 인게임 아이콘·UI 리소스 제작\n\n관심 없는 공고는 *관심 없음* 을 눌러 주세요. 같은 공고가 다시 올라와도 보내지 않아요.`,
+      ),
+    ],
+    expect: {
+      destinations: ['REPLIED'],
+      forbidIntercepts: true,
+      mustMatch: [/관심\s*없음/],
+      mustNotMatch: [ASK_BACK],
+    },
+  },
+  {
+    id: 'h-schedule-polite-1013',
+    split: 'holdout',
+    note: '2026-10-13 run 8621 — 부탁형 "추가해 줄래?" 가 끝의 물음표 때문에 질문으로 막혔다',
+    text: `${MENTION}내일 할일에 대화 고도화 추가해 줄래?`,
+    expect: {
+      destinations: [AgentType.SCHEDULE],
+      mustIntercept: {
+        name: 'RegisterScheduleUsecase',
+        argsInclude: { title: '대화 고도화' },
+      },
+    },
+  },
 ];

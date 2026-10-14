@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 
 import { ConfigService } from '@nestjs/config';
 
+import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { ModelRouterUsecase } from '../../model-router/application/model-router.usecase';
 import {
   AgentType,
@@ -130,7 +131,8 @@ describe('ConversationalReply — buildSystemPrompt (self-context)', () => {
       expect(createHash('sha256').update(prompt).digest('hex')).toBe(
         // 2026-10-07 기능 목록·개인 봇 사실·되묻기 규칙 교체, PR 소유 문구 정정(#744 리뷰), 링크 없는 게시 안내(4단계)로 갱신
         // 2026-10-08 PO_SHADOW 가 분기 제품 목표 선언·조회·닫기도 받는다(PO Shadow 단계 3)
-        '44e4211530e305775ff4c0bd1d246b208cd20ab51db3aaa4975c30ef8498ff9b',
+        // 2026-10-14 자동·이모지·버튼 기능 목록 안내 규칙, 주제가 겹치지 않는 대안 금지(run 8787)
+        'fe8839c1cf73d4ecb054ff4ede3eb54ad40c9a5f056360b14a2c4d1be3894a3a',
       );
     },
   );
@@ -168,6 +170,33 @@ describe('ConversationalReply — 이대리가 할 수 있는 일', () => {
     const systemPrompt: string = route.mock.calls[0][0].request.systemPrompt;
     expect(systemPrompt).toContain('휴가·연차 잔여 조회');
     expect(systemPrompt).not.toContain('모의투자(가상) 계좌');
+  });
+
+  it('자동·이모지 기능은 받은 것만, 말로 시키는 일과 구분해 싣는다', () => {
+    expect(buildSystemPrompt({})).not.toContain('버튼으로 할 수 있는 일 (');
+    const prompt = buildSystemPrompt({
+      passiveCapabilities: ['원화 공고 글에서 「관심 없음」을 누르면 뺀다.'],
+    });
+    expect(prompt).toContain(
+      '이모지·버튼으로 할 수 있는 일 (말로 시키는 일이 아니라',
+    );
+    expect(prompt).toContain('- 원화 공고 글에서 「관심 없음」을 누르면 뺀다.');
+    expect(prompt).toContain('말로 시키면 된다고 하지 마세요');
+  });
+
+  it('reply() 는 켜진 자동·이모지 기능만 싣는다 — env 가 비면 안내하지 않는다', async () => {
+    const route = jest.fn().mockResolvedValue({ text: '네', modelUsed: 'm' });
+    const env: Record<string, string> = { ART_JOB_FEED_TARGET: 'C1' };
+    const usecase = new ConversationalReplyUsecase(
+      { route } as unknown as ModelRouterUsecase,
+      { get: (key: string) => env[key] } as unknown as ConfigService,
+      [] as unknown as AgentDispatcher[],
+    );
+    await usecase.reply({ text: '공고 빼는 법?', priorTurns: [] });
+    const systemPrompt: string = route.mock.calls[0][0].request.systemPrompt;
+    expect(systemPrompt).toContain('게임잡의 원화 채용공고');
+    // 받는 사람(ART_JOB_FEED_MENTION_USER_ID)이 없으면 누구의 클릭도 제외로 반영되지 않는다.
+    expect(systemPrompt).not.toContain('「관심 없음」 버튼');
   });
 
   it('개인 비서라는 사실을 싣고, 고객사·타인을 상정하지 않게 한다', () => {
@@ -280,14 +309,23 @@ describe('ConversationalReply — buildPrompt (role-tagged turn lines)', () => {
     expect(prompt).toContain('turn-8');
   });
 
-  it('200자 초과 turn 은 truncate (cost 통제)', () => {
-    const longText = 'a'.repeat(250);
+  it('1500자 초과 turn 은 truncate (cost 통제)', () => {
+    const longText = 'a'.repeat(1600);
     const prompt = buildPrompt({
       text: '?',
       priorTurns: [baseTurn({ text: longText })],
     });
-    expect(prompt).toContain('a'.repeat(200) + '…');
-    expect(prompt).not.toContain('a'.repeat(250));
+    expect(prompt).toContain('a'.repeat(1500) + '…');
+    expect(prompt).not.toContain('a'.repeat(1501));
+  });
+
+  it('스레드 원글처럼 긴 직전 글도 뒷부분까지 싣는다 — "이거 뭔데?" 가 가리키는 대상', () => {
+    const digest = `원화 공고 피드\n${'공고 줄 '.repeat(100)}\n10. 마지막 공고`;
+    const prompt = buildPrompt({
+      text: '이거 뭔데?',
+      priorTurns: [baseTurn({ text: digest })],
+    });
+    expect(prompt).toContain('10. 마지막 공고');
   });
 
   it('직전 [assistant] 발화를 자기 발화로 인식시키되 실행 약속 반복은 금지하는 instruction 이 마지막에 등장', () => {
@@ -311,6 +349,32 @@ describe('ConversationalReply — reply() (route(PM) 경유 호출)', () => {
     ({
       get: jest.fn().mockReturnValue('JSL107/personal_agents'),
     }) as unknown as ConfigService;
+
+  it('라우터가 남긴 ROUTER run 이 있으면 답을 그 행에 붙이고, 없으면 붙이지 않는다', async () => {
+    const route = jest.fn().mockResolvedValue({ text: ' 답 ', modelUsed: 'm' });
+    const attachModelResponse = jest.fn().mockResolvedValue(undefined);
+    const usecase = new ConversationalReplyUsecase(
+      { route } as unknown as ModelRouterUsecase,
+      buildConfigService(),
+      [] as AgentDispatcher[],
+      { attachModelResponse } as unknown as AgentRunService,
+    );
+
+    await usecase.reply({
+      text: '안녕',
+      priorTurns: [],
+      routingMissRunId: 8787,
+    });
+    expect(attachModelResponse).toHaveBeenCalledWith({
+      agentRunId: 8787,
+      agentType: AgentType.ROUTER,
+      modelResponse: '답',
+    });
+
+    attachModelResponse.mockClear();
+    await usecase.reply({ text: '안녕', priorTurns: [] });
+    expect(attachModelResponse).not.toHaveBeenCalled();
+  });
 
   it('CHATGPT(PM) 으로 route() 를 거쳐 호출한다 — 직접 provider 호출이 아니라 fallback chain 을 탄다', async () => {
     const route = jest.fn().mockResolvedValue({
