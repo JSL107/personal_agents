@@ -113,7 +113,7 @@ export class HandleConversationTurnUsecase {
           unresolvedStreak:
             input.unresolvedStreak ?? calculateUnresolvedStreak(priorTurns),
           routingMissRunId: (error as RouterException).routingMissRunId,
-          slackUserId: input.slackUserId,
+          conversationKey: input.conversationKey,
         });
       } catch (replyError: unknown) {
         throw new ConversationalReplyFailedException(replyError);

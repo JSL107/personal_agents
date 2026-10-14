@@ -67,6 +67,12 @@ type RouterMessageParams = {
   source: 'app_mention' | 'dm';
 };
 
+// 대화 기억에서 읽은 직전 turn 과, 그 turn 들을 실제로 읽어 온 키.
+type PriorTurns = {
+  turns: ConversationTurn[];
+  key: string;
+};
+
 type ReplyTracker = {
   say: SayFn;
   markErrorReply: () => void;
@@ -360,14 +366,15 @@ export class RouterMessageHandler implements SlackHandler {
       channelId,
       threadTs: memoryThreadTs,
     });
-    const priorTurns = await this.getPriorTurnsWithChannelFallback({
-      memoryKey,
-      slackUserId,
-      channelId,
-      memoryThreadTs,
-      messageTs,
-      client,
-    });
+    const { turns: priorTurns, key: priorTurnsKey } =
+      await this.getPriorTurnsWithChannelFallback({
+        memoryKey,
+        slackUserId,
+        channelId,
+        memoryThreadTs,
+        messageTs,
+        client,
+      });
     let unresolvedStreak = 0;
     for (const turn of [...priorTurns].reverse()) {
       if (turn.role !== 'assistant') {
@@ -429,6 +436,7 @@ export class RouterMessageHandler implements SlackHandler {
         replyContext: {
           channel: channelId,
           ...(threadTs ? { threadTs } : {}),
+          conversationKey: memoryKey,
           rememberReply: (replyText: string) =>
             this.rememberAsyncReply({
               memoryKey,
@@ -492,7 +500,8 @@ export class RouterMessageHandler implements SlackHandler {
             priorTurns,
             unresolvedStreak,
             routingMissRunId: (error as RouterException).routingMissRunId,
-            slackUserId,
+            // 실행을 시작한 대화의 키 — 스레드 키가 비어 channel 키를 되짚었으면 그쪽이다.
+            conversationKey: priorTurnsKey,
           });
           await this.conversationMemory.appendTurn(memoryKey, {
             role: 'user',
@@ -613,6 +622,9 @@ export class RouterMessageHandler implements SlackHandler {
   // 않는 대신 병행 스레드가 한 덩어리가 된다. 그래서 스레드 격리는 유지하고, 스레드 키가
   // 아직 빈 첫 진입에서만 channel 키를 한 번 되짚는다. 두 번째 턴 이후로는 스레드 키에
   // 이미 쌓여 있어 이 되짚기가 일어나지 않는다.
+  //
+  // 읽어 온 키도 함께 돌려준다 — 비동기 작업(BLOG)의 실행 기록은 그 작업을 시작한 대화의 키로
+  // 찾으므로, 되짚었으면 지금 스레드 키가 아니라 channel 키로 찾아야 한다.
   private async getPriorTurnsWithChannelFallback({
     memoryKey,
     slackUserId,
@@ -627,10 +639,10 @@ export class RouterMessageHandler implements SlackHandler {
     memoryThreadTs: string | undefined;
     messageTs: string | undefined;
     client: WebClient;
-  }): Promise<ConversationTurn[]> {
+  }): Promise<PriorTurns> {
     const turns = await this.conversationMemory.getRecentTurns(memoryKey);
     if (turns.length > 0 || memoryThreadTs === undefined) {
-      return turns;
+      return { turns, key: memoryKey };
     }
     const channelKey = this.conversationMemory.buildKey({
       slackUserId,
@@ -650,7 +662,7 @@ export class RouterMessageHandler implements SlackHandler {
       rootText === null ||
       channelTurns.some((turn) => turn.text === rootText)
     ) {
-      return channelTurns;
+      return { turns: channelTurns, key: channelKey };
     }
     // 역할은 항상 user 에 원문 표식을 붙인다. assistant 로 두면 다른 앱의 알림이나 알림에 섞인
     // 외부 응답 본문이 "이대리 자신의 직전 응답"으로 해석된다(IntentClassifier·ConversationalReply
@@ -664,7 +676,8 @@ export class RouterMessageHandler implements SlackHandler {
     };
     // 스레드 키에 적재해 두 번째 턴부터도 "이거"가 무엇인지 남게 한다.
     await this.conversationMemory.appendTurn(memoryKey, rootTurn);
-    return [...channelTurns, rootTurn];
+    // 원문 turn 은 작업 turn 이 아니므로, 작업 turn 이 있다면 channel 키에서 온 것이다.
+    return { turns: [...channelTurns, rootTurn], key: channelKey };
   }
 
   // 스레드 부모 본문을 대화 턴으로 가져온다.

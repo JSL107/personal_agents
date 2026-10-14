@@ -15,6 +15,9 @@ export type BlogStageStructure = MarkdownStructureCounts & {
 export interface GenerateBlogDraftInput {
   requestText: string;
   slackUserId: string;
+  // 요청이 들어온 대화의 기억 키. 비동기 경로는 대화에 실행 id 를 못 남기므로, "작업하고 있어?"
+  // 가 이 키로 자기 대화의 실행만 찾는다. cron·슬래시처럼 대화가 없으면 생략.
+  conversationKey?: string;
 }
 
 // 노션 초안 → GitHub 파일 발행 승인 카드 payload. Astro post 조립 결과(path/content)는 카드 생성
