@@ -25,6 +25,7 @@ import { EpisodicMemoryModule } from '../episodic-memory/episodic-memory.module'
 import { GithubModule } from '../github/github.module';
 import { HolidayModule } from '../holiday/holiday.module';
 import { HumanizeModule } from '../humanize/humanize.module';
+import { IdeaTriageModule } from '../idea-triage/idea-triage.module';
 import { JobFeedModule } from '../job-feed/job-feed.module';
 import {
   MARKET_DATA_PORT,
@@ -64,6 +65,7 @@ import { CeoMetaAutopilotTask } from './infrastructure/tasks/ceo-meta.autopilot-
 import { DocsSyncAuditTask } from './infrastructure/tasks/docs-sync-audit.autopilot-task';
 import { EveningRetroPublishTask } from './infrastructure/tasks/evening-retro-publish.autopilot-task';
 import { HolidaySyncAutopilotTask } from './infrastructure/tasks/holiday-sync.autopilot-task';
+import { IdeaTriageAutopilotTask } from './infrastructure/tasks/idea-triage.autopilot-task';
 import { ImpactReportAutopilotTask } from './infrastructure/tasks/impact-report.autopilot-task';
 import { JobFeedAutopilotTask } from './infrastructure/tasks/job-feed.autopilot-task';
 import { JobFeedGapAutopilotTask } from './infrastructure/tasks/job-feed-gap.autopilot-task';
@@ -138,6 +140,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     StudyApplicabilityModule,
     JobFeedModule,
     ScheduleModule,
+    IdeaTriageModule,
   ],
   providers: [
     AutopilotScheduler,
@@ -170,6 +173,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     KnowledgeLintAutopilotTask,
     MemoryVacuumAutopilotTask,
     HolidaySyncAutopilotTask,
+    IdeaTriageAutopilotTask,
     DocsSyncAuditTask,
     PreferenceLearningAutopilotTask,
     EveningRetroPublishTask,
@@ -272,6 +276,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         knowledgeLint: KnowledgeLintAutopilotTask,
         memoryVacuum: MemoryVacuumAutopilotTask,
         holidaySync: HolidaySyncAutopilotTask,
+        ideaTriage: IdeaTriageAutopilotTask,
         docsSyncAudit: DocsSyncAuditTask,
         preferenceLearning: PreferenceLearningAutopilotTask,
         eveningRetro: EveningRetroPublishTask,
@@ -313,6 +318,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         knowledgeLint,
         memoryVacuum,
         holidaySync,
+        ideaTriage,
         docsSyncAudit,
         preferenceLearning,
         eveningRetro,
@@ -355,6 +361,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         KnowledgeLintAutopilotTask,
         MemoryVacuumAutopilotTask,
         HolidaySyncAutopilotTask,
+        IdeaTriageAutopilotTask,
         DocsSyncAuditTask,
         PreferenceLearningAutopilotTask,
         EveningRetroPublishTask,

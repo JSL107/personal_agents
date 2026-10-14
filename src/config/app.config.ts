@@ -259,6 +259,15 @@ export class EnvironmentVariables {
   @IsString()
   AUTOPILOT_REVIEW_TARGET?: string;
 
+  @IsOptional()
+  @ValidateIf((_, value: unknown) => value !== '')
+  @IsString()
+  @Matches(/^[CG][A-Z0-9]+$/, {
+    message:
+      'IDEA_CHANNEL_ID 는 C 또는 G 로 시작하는 Slack 채널 ID 여야 합니다.',
+  })
+  IDEA_CHANNEL_ID?: string;
+
   // AI CLI 환경 스냅샷 동기화. AI_CLI_ENV_SYNC_REPO 미설정 시 export/apply task 모두 skip.
   @IsOptional()
   @ValidateIf((_, value: unknown) => value !== '')

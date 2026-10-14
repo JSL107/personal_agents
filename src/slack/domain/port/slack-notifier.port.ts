@@ -62,6 +62,8 @@ export interface SlackNotifierPort {
   // 넓어지고, 발송 포트가 승인 카드의 내부 사정을 알게 된다.
   postPreviewMessage(input: {
     target: string;
+    // 지정하면 승인 카드를 원글 스레드에 단다.
+    threadTs?: string;
     preview: PreviewCardMessage;
   }): Promise<{ channelId: string; messageTs: string }>;
   // 이미지를 채널(또는 스레드)에 올린다. 텍스트로는 못 보여주는 것 — 시간축 위의 곡선,

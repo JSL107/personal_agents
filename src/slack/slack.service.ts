@@ -538,9 +538,11 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
   // body.actions[0].value (=previewId) 와 body.user.id 로 PreviewGate usecase 위임.
   async postPreviewMessage({
     target,
+    threadTs,
     preview,
   }: {
     target: string;
+    threadTs?: string;
     preview: PreviewCardMessage;
   }): Promise<{ channelId: string; messageTs: string }> {
     // 카드는 blocks 로만 나가 toReadableSlackArgs 를 지나지 않는다 — 계측이 여기서 따로 붙는다.
@@ -557,6 +559,7 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     });
     const response = await this.postChat({
       channel: target,
+      ...(threadTs ? { thread_ts: threadTs } : {}),
       text: preview.previewText,
       // Bolt 의 blocks union 은 매우 엄격 (KnownBlock) — Block Kit JSON 을 그대로 쓰기 위해 narrow cast.
       blocks: blocks as never,

@@ -1,0 +1,3 @@
+export enum IdeaTriageErrorCode {
+  INVALID_MODEL_OUTPUT = 'IDEA_TRIAGE_INVALID_MODEL_OUTPUT',
+}

@@ -45,6 +45,8 @@ public func agentRoleLabel(for agentType: String) -> String? {
     // 이름표에서도 그 차이가 보이게 마감을 남긴다.
     case "SCHEDULE":
         return "오마감"
+    case "IDEA_TRIAGE":
+        return "이심사"
     case "PO_SHADOW":
         return "박보좌"
     case "PO_EVAL":

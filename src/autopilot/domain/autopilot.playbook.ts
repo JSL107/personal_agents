@@ -13,6 +13,8 @@ import {
   DEFAULT_DOCS_AUDIT_TIMEZONE,
   DEFAULT_HOLIDAY_SYNC_CRON,
   DEFAULT_HOLIDAY_SYNC_TIMEZONE,
+  DEFAULT_IDEA_TRIAGE_CRON,
+  DEFAULT_IDEA_TRIAGE_TIMEZONE,
   DEFAULT_IMPACT_REPORT_CRON,
   DEFAULT_IMPACT_REPORT_TIMEZONE,
   DEFAULT_JOB_FEED_CRON,
@@ -436,6 +438,18 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       timezone: DEFAULT_HOLIDAY_SYNC_TIMEZONE,
     },
     riskTier: 'T0_AUTO',
+  },
+  // 아이디어 채널 분류 — 평일 오전 #이대리_아이디어 새 글을 판정해 원글 스레드에 답한다.
+  // T1_PREVIEW: 일정 등록은 스레드의 승인 카드 ✅ 뒤에서만 일어난다. IDEA_CHANNEL_ID 미설정 시 skip.
+  {
+    id: 'idea-triage',
+    taskId: 'idea-triage',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_IDEA_TRIAGE_CRON,
+      timezone: DEFAULT_IDEA_TRIAGE_TIMEZONE,
+    },
+    riskTier: 'T1_PREVIEW',
   },
   // Knowledge Lint — 주간 episodic-memory 무결성 점검(중복/임베딩 누락) + 중복의 오래된 쪽 superseded 처리.
   // 내부 기억 테이블만 고치고(행 삭제 없음) 외부 부작용이 없어 T0_AUTO.

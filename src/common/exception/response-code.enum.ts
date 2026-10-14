@@ -1,4 +1,5 @@
 export enum ResponseCode {
+  IDEA_TRIAGE_INVALID_MODEL_OUTPUT = 'IDEA_TRIAGE_INVALID_MODEL_OUTPUT',
   // 공통 성공
   SUCCESS = 'SUCCESS',
 

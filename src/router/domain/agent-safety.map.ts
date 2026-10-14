@@ -57,6 +57,7 @@ export const AGENT_SAFETY_LEVEL: Record<AgentType, AgentSafetyLevel> = {
   [AgentType.OPS_SUPERVISOR]: AgentSafetyLevel.UNAUDITED,
   [AgentType.INVEST]: AgentSafetyLevel.UNAUDITED,
   [AgentType.CTO_STUDY]: AgentSafetyLevel.UNAUDITED,
+  [AgentType.IDEA_TRIAGE]: AgentSafetyLevel.READ_ONLY,
 
   // --- 사용자 데이터를 기록하는 worker (되돌릴 경로 있음) ---
   // registerLeave / cancelLeave — 잘못 등록해도 취소로 되돌린다.
