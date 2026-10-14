@@ -160,6 +160,9 @@
     "testEnvironment": "node",
     "setupFiles": [
       "<rootDir>/jest.polyfills.js"
+    ],
+    "setupFilesAfterEnv": [
+      "<rootDir>/slack/format/internal-terms.jest-setup.ts"
     ]
   }
 }

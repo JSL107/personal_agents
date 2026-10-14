@@ -15,7 +15,7 @@ export const formatSearchRuns = (result: SearchAgentRunsResult): string => {
     return [
       `*🔍 "${safeKeyword}" 매칭 0건*`,
       '',
-      '_본인 SUCCEEDED AgentRun 중 키워드를 포함한 결과가 없습니다. 키워드를 더 일반화하거나 직접 DB 를 조회해주세요._',
+      '_본인이 성공한 실행 기록 중 키워드를 포함한 결과가 없습니다. 키워드를 더 일반화하거나 직접 DB 를 조회해주세요._',
     ].join('\n');
   }
 

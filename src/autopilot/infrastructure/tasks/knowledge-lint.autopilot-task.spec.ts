@@ -91,7 +91,7 @@ describe('KnowledgeLintAutopilotTask', () => {
           {
             type: 'embedding_null',
             episodeId: 9,
-            detail: 'embedding 누락',
+            detail: '검색 색인 누락 — 비슷한 기억 찾기에서 빠짐',
             occurredAt: new Date(),
           },
         ],
