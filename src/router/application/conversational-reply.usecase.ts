@@ -1,7 +1,12 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { toTaskLabel } from '../../agent-registry/agent-registry';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
+import {
+  AgentRunStatus,
+  describeFailureReason,
+} from '../../agent-run/domain/agent-run.type';
 import { ModelRouterUsecase } from '../../model-router/application/model-router.usecase';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { SELF_REPO } from '../../pr-review-loop/domain/learning-repo';
@@ -23,6 +28,11 @@ const PRIOR_TURN_LIMIT = 5;
 // 사용자 발화는 짧지만, 스레드 원글(공고 피드·알림)과 이대리 자신의 직전 답은 길다. 200자로 자르면
 // "이거 뭔데?" 가 가리키는 글의 앞부분만 보고 답한다(2026-10-08 run 7585, 10-13 run 8292).
 const PRIOR_TURN_TEXT_CAP = 1500;
+// 직전 작업 turn 이 기록된 시각보다 이만큼 앞선 실행까지 같은 작업으로 본다. 동기 worker 는 실행이
+// 끝난 뒤에야 turn 이 남아 시작 시각이 그만큼 앞선다.
+// ponytail: 같은 사용자가 다른 스레드에서 같은 worker 를 돌리면 그쪽이 잡힌다 — run 에 스레드 키를
+// 남기게 되면 그걸로 좁힌다.
+const WORK_STATUS_LOOKBACK_MS = 30 * 60 * 1000;
 
 // IntentClassifier 가 UNKNOWN 반환 (어느 worker 에도 매핑 불가) 시 RouterMessageHandler 의 catch
 // 분기에서 호출되는 일반 대화 응답 fallback.
@@ -65,10 +75,13 @@ export class ConversationalReplyUsecase {
     priorTurns,
     unresolvedStreak,
     routingMissRunId,
+    slackUserId,
   }: {
     text: string;
     priorTurns: ConversationTurn[];
     unresolvedStreak?: number;
+    // 있으면 직전 작업 turn 의 실제 실행 상태를 조회해 싣는다 — "작업하고 있어?" 에 추측으로 답하지 않게.
+    slackUserId?: string;
     // 라우터가 이 회차를 남긴 ROUTER run. 있으면 답을 그 행의 모델 응답 원문으로 남긴다 —
     // 없으면 원장에는 "못 골랐다" 만 있고 이대리가 뭐라고 답했는지는 사라진다.
     routingMissRunId?: number;
@@ -83,7 +96,11 @@ export class ConversationalReplyUsecase {
       capabilities: this.capabilities,
       passiveCapabilities: this.passiveCapabilities,
     });
-    const prompt = buildPrompt({ text, priorTurns });
+    const workStatus = await this.describeLatestWorkStatus({
+      priorTurns,
+      slackUserId,
+    });
+    const prompt = buildPrompt({ text, priorTurns, workStatus });
     try {
       const completion = await this.modelRouter.route({
         agentType: AgentType.PM,
@@ -107,7 +124,56 @@ export class ConversationalReplyUsecase {
       throw error;
     }
   }
+
+  // 대화의 마지막 작업 turn(worker 가 답한 assistant turn)이 맡긴 일의 실제 상태 한 줄.
+  // 블로그처럼 "시작했어요" 만 답하고 뒤에서 도는 일은 turn 에 결과가 없어, 이게 없으면 모델이
+  // 진행 여부를 지어낸다(2026-10-14 run 8886 — 재시작으로 끊겼는데 "시작된 적 없다" 고 답함).
+  // 조회 실패는 답을 막지 않는다 — 상태 줄 없이 예전처럼 답한다.
+  private async describeLatestWorkStatus({
+    priorTurns,
+    slackUserId,
+  }: {
+    priorTurns: ConversationTurn[];
+    slackUserId?: string;
+  }): Promise<string | undefined> {
+    const workTurn = [...priorTurns]
+      .reverse()
+      .find((turn) => turn.role === 'assistant' && turn.agentType);
+    if (!workTurn?.agentType || !slackUserId || !this.agentRunService) {
+      return undefined;
+    }
+    const label = toTaskLabel(workTurn.agentType);
+    try {
+      const run = await this.agentRunService.findLatestUserRun({
+        agentType: workTurn.agentType,
+        slackUserId,
+        startedSince: new Date(workTurn.timestampMs - WORK_STATUS_LOOKBACK_MS),
+      });
+      return formatWorkStatus(label, run);
+    } catch (error: unknown) {
+      this.logger.warn(
+        `직전 작업 상태 조회 실패 — 상태 없이 답한다: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return undefined;
+    }
+  }
 }
+
+export const formatWorkStatus = (
+  label: string,
+  run: { status: string; failureReason: string | null } | null,
+): string => {
+  if (run === null) {
+    return `${label}: 실행 기록 없음 (시작되지 않았거나 기록되기 전에 끊김)`;
+  }
+  if (run.status === AgentRunStatus.IN_PROGRESS) {
+    return `${label}: 지금 진행 중`;
+  }
+  if (run.status === AgentRunStatus.SUCCEEDED) {
+    return `${label}: 완료됨`;
+  }
+  return `${label}: 실패 — ${describeFailureReason(run.failureReason ?? '이유 미기록')}`;
+};
 
 export const buildSystemPrompt = ({
   repoLabel,
@@ -184,7 +250,7 @@ export const buildSystemPrompt = ({
     : `- 사용자가 묻거나 원하는 일이 「이대리가 할 수 있는 일」에 있으면 되묻지 말고, 할 수 있다고 답한 뒤 그렇게 말하면 바로 처리된다는 자연어 예시를 보여주세요. 「이대리가 자동으로 하는 일과 이모지·버튼으로 할 수 있는 일」에 있으면 그 방법(언제 오는지, 어디에 어떤 이모지를 달거나 어떤 버튼을 누르는지)을 그대로 알려주세요 — 말로 시키면 된다고 하지 마세요. 대화만으로 할 수 있는 일 — [이전 대화]·스레드 원문의 요약·설명, 브레인스토밍, 의견, 잡담 — 은 목록과 무관하게 지금 이 답에서 직접 하세요("지원하지 않는다" 고 하지 마세요). 요약·설명은 원문에 없는 사실을 보태지 말고, 요약할 원문이 [이전 대화]에 없으면 일반 지식으로 대신 요약하지 말고 무엇을 가리키는지 짧게 물으세요. 조회·기록·발행처럼 실제로 실행해야 하는 일이 두 목록 어디에도 없을 때만 지금은 못 한다고 솔직히 말하고 가장 가까운 일을 알려주세요. 가장 가까운 일도 반드시 목록 안에서 고르고, 목록에 없는 방법("파일·자막을 보내 주면 분석할게요" 같은)을 지어내지 마세요. 질문과 주제가 겹치지 않는 일(공고 제외를 물었는데 이력서 정리)은 대안으로 붙이지 말고, 그럴 바엔 못 한다고만 답하세요.`;
   const memoryRecoveryLine = shouldChangeDirection
     ? `- 직전 [assistant] 응답에서 "확인해볼게요" / "정리해볼게요" 같은 진행 약속을 했더라도, 그 약속이 진행 중인 것처럼 "아직 확인 중", "지금 보고 있어요" 라고 말하지 마세요 — 이 대화 응답만으로는 아무 작업도 시작되지 않았음을 솔직히 말하세요.`
-    : `- 직전 [assistant] 응답에서 "확인해볼게요" / "정리해볼게요" 같은 진행 약속을 했더라도, 그 약속이 진행 중인 것처럼 "아직 확인 중", "지금 보고 있어요" 라고 말하지 마세요 — 이 대화 응답만으로는 아무 작업도 시작되지 않으므로 거짓이 됩니다. 사용자가 진행을 재촉하면, 작업이 아직 시작되지 않았음을 전제로 무엇을 원하는지 한 문장으로 짚어달라고 자연스럽게 되물으세요.`;
+    : `- 직전 [assistant] 응답에서 "확인해볼게요" / "정리해볼게요" 같은 진행 약속을 했더라도, 그 약속이 진행 중인 것처럼 "아직 확인 중", "지금 보고 있어요" 라고 말하지 마세요 — 이 대화 응답만으로는 아무 작업도 시작되지 않으므로 거짓이 됩니다. 사용자가 진행을 재촉하면, prompt 에 [직전 작업 상태] 가 있으면 그 상태를 그대로 전하고, 없으면 작업이 아직 시작되지 않았음을 전제로 무엇을 원하는지 한 문장으로 짚어달라고 자연스럽게 되물으세요.`;
   const workRequestLine = shouldChangeDirection
     ? undefined
     : `- 되묻기는 원하는 일은 분명한데 꼭 필요한 대상(PR 링크, 날짜 등)이 빠졌을 때만, 빠진 것 하나만 짧게 물으세요. [이전 대화]에 이미 있는 정보는 묻지 마세요. 명령어/슬래시는 안내하지 마세요.`;
@@ -210,9 +276,10 @@ export const buildSystemPrompt = ({
     `- prompt 의 [이전 대화] 섹션에 user / assistant 라벨이 붙어 있으면 [assistant] 는 당신 자신의 직전 응답입니다. 직전에 나눈 화제와 맥락은 자연스럽게 이어가되, 실행 약속만은 반복하지 마세요.`,
     `- 이미 사용자가 답한 정보 (예: repo URL, PR 번호) 를 다시 묻지 마세요 — 이전 turn 에 명시돼 있으면 그대로 활용.`,
     memoryRecoveryLine,
+    `- prompt 에 [직전 작업 상태] 가 있으면 그것이 실제 실행 기록입니다. 작업 진행을 물으면 이 상태만 근거로 답하고(진행 중·완료·실패와 그 사유), 반대로 말하지 마세요. 실패했으면 같은 요청을 다시 보내면 된다고 알려주세요.`,
     '',
     `답변 규칙:`,
-    `- 모르거나 단정 어려운 사실 (예: 봇 자체의 현재 작업 상태) 은 솔직히 "지금은 대기 중", "확인이 필요하겠어요" 식으로 짧게.`,
+    `- 모르거나 단정 어려운 사실 (예: 봇 자체의 현재 작업 상태) 은 솔직히 "확인이 필요하겠어요" 식으로 짧게. 단 [직전 작업 상태] 가 있으면 추측하지 말고 그 상태를 따르세요.`,
     `- 시스템 내부 동작 / LLM 사용 / agent 분류기 / sandbox 같은 내부 용어 노출 X.`,
     `- 실행 약속 금지: 이 대화 응답은 어떤 작업도 실제로 실행하지 않습니다 (PR 리뷰·회고·이력서/포트폴리오 정리·코드 변경·plan 수립 등 무엇도). 따라서 "~해볼게요", "정리해드릴게요", "처리하겠습니다", "가져올게요" 처럼 당신이 그 작업을 진행/완료하겠다는 미래 약속을 하지 마세요 — 지킬 수 없는 약속이 됩니다.`,
     workRequestLine,
@@ -225,11 +292,16 @@ export const buildSystemPrompt = ({
 export const buildPrompt = ({
   text,
   priorTurns,
+  workStatus,
 }: {
   text: string;
   priorTurns: ConversationTurn[];
+  workStatus?: string;
 }): string => {
   const recent = priorTurns.slice(-PRIOR_TURN_LIMIT);
+  const workStatusLines = workStatus
+    ? ['', `[직전 작업 상태 (실제 실행 기록)]`, workStatus]
+    : [];
   if (recent.length === 0) {
     return `[사용자 메시지]\n${text}\n\n위 메시지에 답하세요.`;
   }
@@ -248,6 +320,7 @@ export const buildPrompt = ({
   return [
     `[이전 대화 (오래된 순)]`,
     ...turnLines,
+    ...workStatusLines,
     '',
     `[현재 사용자 메시지]`,
     text,

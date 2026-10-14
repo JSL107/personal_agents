@@ -362,6 +362,7 @@ export class RouterMessageHandler implements SlackHandler {
             priorTurns,
             unresolvedStreak,
             routingMissRunId: (error as RouterException).routingMissRunId,
+            slackUserId,
           });
           await this.conversationMemory.appendTurn(memoryKey, {
             role: 'user',
