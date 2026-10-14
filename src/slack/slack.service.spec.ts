@@ -863,6 +863,82 @@ describe('SlackService.postPreviewMessage — 스레드 좌표', () => {
   });
 });
 
+describe('SlackService.postProposalMessage — 발송 원장', () => {
+  beforeEach(() => {
+    mockDeliveryRepository.record.mockReset().mockResolvedValue(undefined);
+  });
+
+  const buildProposalService = (postMessageMock: jest.Mock): SlackService => {
+    const service = new SlackService(
+      {} as unknown as ConfigService,
+      [],
+      mockDeliveryRepository as SlackDeliveryRepositoryPort,
+    );
+    (service as unknown as { app: unknown }).app = {
+      client: { chat: { postMessage: postMessageMock } },
+    };
+    return service;
+  };
+
+  it('제안 카드를 SENT 로 기록하고 카드 좌표를 반환한다', async () => {
+    const service = buildProposalService(
+      jest.fn().mockResolvedValue({ channel: 'D1', ts: '3.0' }),
+    );
+
+    await expect(
+      service.postProposalMessage({
+        target: 'U1',
+        proposalText: '제안 본문',
+        proposalId: 7,
+      }),
+    ).resolves.toEqual({ channelId: 'D1', messageTs: '3.0' });
+    expect(mockDeliveryRepository.record).toHaveBeenCalledWith({
+      kind: 'subconscious-proposal',
+      itemKinds: [],
+      target: 'U1',
+      channelId: 'D1',
+      messageTs: '3.0',
+      status: SLACK_DELIVERY_STATUS.SENT,
+      textPreview: '제안 본문',
+    });
+  });
+
+  it('발송 실패는 FAILED 로 기록하고 그대로 던진다', async () => {
+    const service = buildProposalService(
+      jest.fn().mockRejectedValue(new Error('channel_not_found')),
+    );
+
+    await expect(
+      service.postProposalMessage({
+        target: 'U1',
+        proposalText: '제안 본문',
+        proposalId: 7,
+      }),
+    ).rejects.toThrow('channel_not_found');
+    expect(mockDeliveryRepository.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'subconscious-proposal',
+        status: SLACK_DELIVERY_STATUS.FAILED,
+      }),
+    );
+  });
+
+  it('원장 기록에 실패해도 카드 좌표를 반환한다', async () => {
+    mockDeliveryRepository.record.mockRejectedValue(new Error('db down'));
+    const service = buildProposalService(
+      jest.fn().mockResolvedValue({ channel: 'D1', ts: '3.0' }),
+    );
+
+    await expect(
+      service.postProposalMessage({
+        target: 'U1',
+        proposalText: '제안 본문',
+        proposalId: 7,
+      }),
+    ).resolves.toEqual({ channelId: 'D1', messageTs: '3.0' });
+  });
+});
+
 describe('SlackService — app 부재 원인 구분 (assertAppReady)', () => {
   it('토큰 미설정(isConfigured=false)이면 "설정 누락"으로 던진다', async () => {
     const service = new SlackService(

@@ -3028,6 +3028,63 @@ describe('AutopilotOrchestrator', () => {
       expect(slackNotifier.postMessage).not.toHaveBeenCalled();
     });
 
+    // knowledge-lint 의 중복 정리처럼 "보고한 뒤에만" 도는 후처리가 콘솔 경로에서도 돌아야 한다.
+    it('콘솔 항목의 onDelivered 는 원장 기록 뒤에 부른다', async () => {
+      const calls: string[] = [];
+      const slackNotifier = {
+        postMessage: jest.fn(),
+        recordSuppressedDelivery: jest.fn().mockImplementation(async () => {
+          calls.push('record');
+        }),
+      };
+      const onDelivered = jest.fn().mockImplementation(async () => {
+        calls.push('onDelivered');
+      });
+      const task = makeTask('knowledge-lint', {
+        skip: false,
+        summaryText: '중복 3건 정리 예정',
+        onDelivered,
+      });
+
+      await makeOrchestrator([task], slackNotifier).runGroup(
+        'knowledge-lint',
+        [makeEntry('knowledge-lint', 'knowledge-lint')],
+        'U1',
+        'C1',
+      );
+
+      expect(calls).toEqual(['record', 'onDelivered']);
+      expect(slackNotifier.postMessage).not.toHaveBeenCalled();
+    });
+
+    it('원장 기록에 실패한 콘솔 항목의 onDelivered 는 Slack 발송 뒤에 부른다', async () => {
+      const slackNotifier = {
+        postMessage: jest.fn().mockResolvedValue({ ts: '1.1' }),
+        recordSuppressedDelivery: jest
+          .fn()
+          .mockRejectedValue(new Error('db unavailable')),
+      };
+      const onDelivered = jest.fn().mockResolvedValue(undefined);
+      const task = makeTask('knowledge-lint', {
+        skip: false,
+        summaryText: '중복 3건 정리 예정',
+        onDelivered,
+      });
+
+      await makeOrchestrator([task], slackNotifier).runGroup(
+        'knowledge-lint',
+        [makeEntry('knowledge-lint', 'knowledge-lint')],
+        'U1',
+        'C1',
+      );
+
+      expect(slackNotifier.postMessage).toHaveBeenCalledTimes(1);
+      expect(onDelivered).toHaveBeenCalledTimes(1);
+      expect(
+        slackNotifier.postMessage.mock.invocationCallOrder[0],
+      ).toBeLessThan(onDelivered.mock.invocationCallOrder[0]);
+    });
+
     it('혼합 그룹은 Slack 항목만 합치고 taskId 를 기록한다', async () => {
       const slackNotifier = {
         postMessage: jest.fn().mockResolvedValue({ ts: undefined }),
