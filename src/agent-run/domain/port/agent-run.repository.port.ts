@@ -257,6 +257,13 @@ export interface FailedRunDetail {
   endedAt: Date;
 }
 
+// 대화 응답 — 사용자가 "작업하고 있어?" 처럼 직전 작업의 진행을 물을 때 실제 상태로 답하려고 읽는다.
+export interface LatestUserRun {
+  status: string;
+  // FAILED 일 때만 `output.error`. 그 외 상태는 null.
+  failureReason: string | null;
+}
+
 export interface LedgerRunRow {
   readonly agentType: string;
   readonly triggerType: string;
@@ -408,6 +415,12 @@ export interface AgentRunRepositoryPort {
   // 비서실 브리핑 — cutoff 이내에 끝난 실패 런 전건 + 이유(최신순).
   // slackUserId 를 주면 그 사용자의 실패만 — 개인 계획 검토(PO Shadow)가 남의 실패를
   // 집어오지 않게. 미지정이면 전체(비서실 브리핑처럼 조직 관점 집계).
+  // 한 사용자의 한 worker 실행 중 startedSince 이후 가장 최근 1건. 없으면 null.
+  findLatestUserRun(input: {
+    agentType: string;
+    slackUserId: string;
+    startedSince: Date;
+  }): Promise<LatestUserRun | null>;
   findFailedRunsSince(input: {
     withinMinutes: number;
     slackUserId?: string;

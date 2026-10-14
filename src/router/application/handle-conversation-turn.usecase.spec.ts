@@ -180,6 +180,7 @@ describe('HandleConversationTurnUsecase', () => {
         text: '안녕',
         priorTurns,
         unresolvedStreak,
+        slackUserId: 'U1',
       });
     },
   );
@@ -274,6 +275,7 @@ describe('HandleConversationTurnUsecase', () => {
       text: '안녕',
       priorTurns,
       unresolvedStreak: 2,
+      slackUserId: 'U1',
     });
     expect(dependencies.conversationMemory.appendTurn).toHaveBeenCalledTimes(2);
     expect(dependencies.conversationMemory.appendTurn).toHaveBeenNthCalledWith(

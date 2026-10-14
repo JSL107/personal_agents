@@ -14,23 +14,33 @@ const SIGNALS: readonly NodeJS.Signals[] = ['SIGTERM', 'SIGINT'];
 //
 // 리스너는 `once` 로 걸고 마감 뒤 같은 신호를 다시 올린다 — 리스너가 빠진 자리라 기본 동작(즉시 종료)
 // 으로 간다. 그래서 이 배선이 늘리는 종료 시간은 마감 기록 한 번(상한 2초)뿐이다.
+//
+// onSignal 은 마감과 병렬로 도는 추가 정리(중단 안내 답장 등). 각자 자기 상한을 지킨다.
 export const interruptRunsOnSignal = (
   application: INestApplicationContext,
+  onSignal: ReadonlyArray<() => Promise<void>> = [],
 ): void => {
   const logger = new Logger('InterruptRunsOnSignal');
   for (const signal of SIGNALS) {
     process.once(signal, (received: NodeJS.Signals) => {
-      void application
-        .get(AgentRunService)
-        .interruptActiveRuns()
-        .catch((error: unknown) => {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          logger.warn(`중단 마감 실패, 그대로 종료한다: ${message}`);
-        })
-        .finally(() => {
-          process.kill(process.pid, received);
-        });
+      const tasks = [
+        () => application.get(AgentRunService).interruptActiveRuns(),
+        ...onSignal,
+      ];
+      // then 으로 감싸 application.get 같은 동기 throw 도 같은 catch 로 받는다.
+      void Promise.all(
+        tasks.map((task) =>
+          Promise.resolve()
+            .then(task)
+            .catch((error: unknown) => {
+              const message =
+                error instanceof Error ? error.message : String(error);
+              logger.warn(`중단 마감 실패, 그대로 종료한다: ${message}`);
+            }),
+        ),
+      ).finally(() => {
+        process.kill(process.pid, received);
+      });
     });
   }
 };

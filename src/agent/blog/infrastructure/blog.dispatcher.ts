@@ -24,6 +24,11 @@ import {
 // outcome.agentRunId 는 number 필수라 "유효 run 없음" sentinel 0 을 쓴다(router/handler 와 일관).
 // 실제 agentRunId 는 백그라운드 완료 후 notify 메시지(formatBlogDraft)로 전달된다.
 const ASYNC_ACK_AGENT_RUN_ID = 0;
+// 종료 신호에서 중단 안내 답장에 주는 시간. 프로세스는 곧 죽어야 한다 — run 마감(AgentRunService
+// SHUTDOWN_MARK_TIMEOUT_MS)과 같은 상한으로 병렬로 돌아 종료 시간을 늘리지 않는다.
+const INTERRUPT_NOTICE_TIMEOUT_MS = 2_000;
+const INTERRUPT_NOTICE_TEXT =
+  '⚠️ 서버가 재시작되면서 블로그 초안 작성이 중단됐어요. 같은 요청을 다시 보내 주시면 처음부터 다시 쓸게요.';
 
 const buildBlogRequestText = (input: DispatchInput): string => {
   const text = input.text ?? '';
@@ -42,6 +47,9 @@ const buildBlogRequestText = (input: DispatchInput): string => {
 export class BlogDispatcher implements AgentDispatcher {
   readonly agentType = AgentType.BLOG;
   private readonly logger = new Logger(BlogDispatcher.name);
+  // 백그라운드로 도는 초안의 답장 위치. 프로세스가 죽으면 runInBackground 의 실패 답장도 같이
+  // 사라지므로, 종료 신호에서 notifyInterrupted 가 대신 알린다.
+  private readonly inFlightReplies = new Set<BlogReplyContext>();
 
   constructor(
     private readonly generateBlogDraft: GenerateBlogDraftUsecase,
@@ -101,18 +109,50 @@ export class BlogDispatcher implements AgentDispatcher {
     input: DispatchInput,
     reply: BlogReplyContext,
   ): Promise<void> {
+    this.inFlightReplies.add(reply);
+    let text: string;
     try {
       const outcome = await this.generateBlogDraft.execute({
         requestText: buildBlogRequestText(input),
         slackUserId: input.slackUserId,
       });
-      await this.reply(reply, formatBlogDraft(outcome.result));
+      text = formatBlogDraft(outcome.result);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(
         `비동기 BLOG 백그라운드 실패 (user=${input.slackUserId}): ${message}`,
       );
-      await this.reply(reply, `블로그 초안 생성 실패: ${message}`);
+      text = `블로그 초안 생성 실패: ${message}`;
+    } finally {
+      // 생성이 끝나면 답장 전에 중단 대상에서 뺀다 — 완료 답장 도중 신호가 오면 "다시 요청하라" 가
+      // 성공 링크와 같이 나가 이미 있는 초안을 중복 생성하게 한다(#824 리뷰).
+      this.inFlightReplies.delete(reply);
+    }
+    await this.reply(reply, text);
+  }
+
+  // 종료 신호(SIGTERM·SIGINT)에서 아직 도는 초안의 스레드에 중단을 알린다 — 없으면 "몇 분 뒤 링크를
+  // 올릴게요" 뒤로 아무 소식이 없다(2026-10-14 run 8886). 상한을 넘기거나 실패하면 포기한다.
+  async notifyInterrupted(): Promise<void> {
+    const replies = [...this.inFlightReplies];
+    if (replies.length === 0) {
+      return;
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        Promise.allSettled(
+          replies.map((reply) => this.reply(reply, INTERRUPT_NOTICE_TEXT)),
+        ),
+        new Promise<void>((resolve) => {
+          timer = setTimeout(resolve, INTERRUPT_NOTICE_TIMEOUT_MS);
+        }),
+      ]);
+      this.logger.warn(
+        `종료 신호 — 블로그 초안 ${replies.length}건에 중단 안내`,
+      );
+    } finally {
+      clearTimeout(timer);
     }
   }
 
