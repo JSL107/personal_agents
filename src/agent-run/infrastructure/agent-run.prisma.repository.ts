@@ -51,7 +51,6 @@ import {
   InputSnapshotEquals,
   LatestRunRow,
   LatestSweepReview,
-  LatestUserRun,
   LedgerRunRow,
   PmContextStats,
   QuotaStatRow,
@@ -61,6 +60,7 @@ import {
   SearchAgentRunsQuery,
   SimilarPlanRow,
   SucceededAgentRunSnapshot,
+  WorkRunStatus,
 } from '../domain/port/agent-run.repository.port';
 
 // Prisma Json 을 도메인으로 넘길 때 객체만 통과시킨다(배열·스칼라·null 은 null).
@@ -70,6 +70,18 @@ const toPlainObject = (
   value !== null && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null;
+
+const toWorkRunStatus = ({
+  status,
+  output,
+}: {
+  status: string;
+  output: Prisma.JsonValue;
+}): WorkRunStatus => ({
+  status,
+  failureReason:
+    status === AgentRunStatus.FAILED ? extractFailureReason(output) : null,
+});
 
 @Injectable()
 export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
@@ -804,36 +816,35 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
     });
   }
 
-  async findLatestUserRun({
+  async findRunStatus(id: number): Promise<WorkRunStatus | null> {
+    const found = await this.prisma.agentRun.findUnique({
+      where: { id },
+      select: { status: true, output: true },
+    });
+    return found ? toWorkRunStatus(found) : null;
+  }
+
+  async findLatestConversationRun({
     agentType,
-    slackUserId,
+    conversationKey,
     startedSince,
   }: {
     agentType: string;
-    slackUserId: string;
+    conversationKey: string;
     startedSince: Date;
-  }): Promise<LatestUserRun | null> {
-    // slackUserId 는 inputSnapshot JSON 안에 있다 — findFailedRunsSince 와 같은 path 필터.
+  }): Promise<WorkRunStatus | null> {
+    // conversationKey 는 inputSnapshot JSON 안에 있다 — findFailedRunsSince 와 같은 path 필터.
     const where: Prisma.AgentRunWhereInput = {
       agentType,
       startedAt: { gte: startedSince },
-      inputSnapshot: { path: ['slackUserId'], equals: slackUserId },
+      inputSnapshot: { path: ['conversationKey'], equals: conversationKey },
     };
     const found = await this.prisma.agentRun.findFirst({
       where,
       orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
       select: { status: true, output: true },
     });
-    if (!found) {
-      return null;
-    }
-    return {
-      status: found.status,
-      failureReason:
-        found.status === AgentRunStatus.FAILED
-          ? extractFailureReason(found.output)
-          : null,
-    };
+    return found ? toWorkRunStatus(found) : null;
   }
 
   async findFailedRunsSince({

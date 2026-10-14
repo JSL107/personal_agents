@@ -43,10 +43,10 @@ import {
   FindLatestSweepReviewQuery,
   InputSnapshotEquals,
   LatestSweepReview,
-  LatestUserRun,
   RecentlyFinishedRun,
   SimilarPlanRow,
   SucceededAgentRunSnapshot,
+  WorkRunStatus,
 } from '../domain/port/agent-run.repository.port';
 import { claimParentRun } from './parent-run-context';
 import {
@@ -687,13 +687,19 @@ export class AgentRunService implements OnApplicationBootstrap {
     return await this.repository.findRecentlyFinishedRuns(input);
   }
 
-  // 대화 응답 — 직전 작업의 실제 상태. 사용자 한정·시각 경계는 repository 가 건다.
-  async findLatestUserRun(input: {
+  // 대화 응답 — 직전 작업의 실제 상태. 대화 기억에 실행 id 가 남은 worker 용.
+  async findRunStatus(id: number): Promise<WorkRunStatus | null> {
+    return await this.repository.findRunStatus(id);
+  }
+
+  // 대화 응답 — 실행 id 를 대화에 못 남기는 비동기 worker(BLOG)용. 대화 한정·시각 경계는
+  // repository 가 건다.
+  async findLatestConversationRun(input: {
     agentType: string;
-    slackUserId: string;
+    conversationKey: string;
     startedSince: Date;
-  }): Promise<LatestUserRun | null> {
-    return await this.repository.findLatestUserRun(input);
+  }): Promise<WorkRunStatus | null> {
+    return await this.repository.findLatestConversationRun(input);
   }
 
   // 비서실 브리핑 — cutoff 이내 실패 런 전건 + 이유. 반복 실패 판정에 건수가 필요해

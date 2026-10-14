@@ -11,6 +11,9 @@ export const IDAERI_ROUTER_PORT = Symbol('IDAERI_ROUTER_PORT');
 export interface BlogReplyContext {
   channel: string;
   threadTs?: string;
+  // 요청이 들어온 대화의 기억 키 — 백그라운드 실행 기록에 남겨, 이 대화에서 "작업하고 있어?" 를
+  // 물으면 같은 사용자의 다른 대화 실행이 아니라 이 실행의 상태로 답하게 한다.
+  conversationKey?: string;
   // 백그라운드 완료 답장을 대화 기억에도 남긴다. 없으면 기억에는 "작성을 시작했어요" ack 만 남아,
   // 완료 직후 "이거 3줄 요약해줘" 가 가리킬 원문이 사라진다(2026-10-14 run 8837).
   rememberReply?: (text: string) => Promise<void>;
