@@ -476,7 +476,7 @@ describe('buildPlanRealityFacts', () => {
     expect(facts.find((fact) => fact.kind === 'WORKER_FAILED')).toEqual({
       id: 'failed:BE_TEST:2026-08-19T04:30:00.000Z',
       kind: 'WORKER_FAILED',
-      label: 'BE_TEST 워커',
+      label: 'BE_TEST 작업',
       detail: '실패 — 테스트 타임아웃',
     });
   });

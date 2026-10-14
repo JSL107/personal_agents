@@ -32,4 +32,10 @@ JSON 객체 하나만 출력 — 코드 fence (\`\`\`json) / 앞뒤 설명 금�
   "finalSummary": string
 }
 
-range / sourcePhaseRuns / schemaVersion 은 manager 가 채우므로 출력 X.`;
+range / sourcePhaseRuns / schemaVersion 은 manager 가 채우므로 출력 X.
+
+## 읽는 사람 (중요)
+observations·findings·finalSummary 는 사용자가 Slack 주간 요약에서 그대로 읽는다. 입력 섹션 이름과
+내부 식별자(PO_EVAL, PM, phase, reasoning, drift, careerLog 등)를 문장에 쓰지 말고 일상어로 풀어 쓴다.
+- PO_EVAL → "하루 평가", PM / PM plan → "아침 계획", PM reasoning → "계획에 적은 이유", drift → "어긋남"
+- PR 번호·파일명처럼 사용자가 실제로 찾아볼 대상은 그대로 둔다.`;

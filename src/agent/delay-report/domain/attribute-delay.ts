@@ -1,4 +1,8 @@
-import { STALE_RUN_THRESHOLD_MINUTES } from '../../../agent-run/domain/agent-run.type';
+import { toTaskLabel } from '../../../agent-registry/agent-registry';
+import {
+  describeFailureReason,
+  STALE_RUN_THRESHOLD_MINUTES,
+} from '../../../agent-run/domain/agent-run.type';
 import {
   ActiveRunSnapshot,
   FailedRunDetail,
@@ -87,7 +91,7 @@ const buildStaleNotes = (
 ): string[] => {
   return staleRuns.map(
     (run) =>
-      `${run.agentType} 실행이 ${minutesSince(run.startedAt, now)}분째 멈췄을 가능성이 있어요. 주간 스위퍼가 정리할 때까지 진행 중으로 단정하지 않습니다.`,
+      `${toTaskLabel(run.agentType)} 실행이 ${minutesSince(run.startedAt, now)}분째 멈췄을 가능성이 있어요. 자동 정리가 돌 때까지 진행 중으로 단정하지 않습니다.`,
   );
 };
 
@@ -116,15 +120,17 @@ const findUnresolvedFailure = (
 };
 
 const failureDetail = (failure: FailedRunDetail, kind: FailureKind): string => {
+  const task = toTaskLabel(failure.agentType);
+  const reason = describeFailureReason(failure.reason);
   switch (kind) {
     case 'INTEGRATION':
-      return `${failure.agentType} 실행이 미연동 상태라 실패했어요. ${failure.reason}`;
+      return `${task} 실행이 미연동 상태라 실패했어요. ${reason}`;
     case 'QUOTA':
-      return `ChatGPT 사용량 한도 초과로 ${failure.agentType} 실행이 실패했어요. ${failure.reason}`;
+      return `ChatGPT 사용량 한도 초과로 ${task} 실행이 실패했어요. ${reason}`;
     case 'PREREQUISITE':
-      return `${failure.agentType} 실행이 선행 산출물 부재로 실패했어요. ${failure.reason}`;
+      return `${task} 실행이 선행 산출물 부재로 실패했어요. ${reason}`;
     case 'OTHER':
-      return `${failure.agentType} 실행이 실패했어요. ${failure.reason}`;
+      return `${task} 실행이 실패했어요. ${reason}`;
   }
 };
 
@@ -184,7 +190,7 @@ export const attributeDelay = (input: DelayReportInput): DelayVerdict => {
     const oldestRun = freshRuns[0];
     return withContext(
       'RUN_IN_PROGRESS',
-      `${oldestRun.agentType}이(가) ${minutesSince(oldestRun.startedAt, input.now)}분째 작업 중이에요. 30분 안쪽이라 정상 범위입니다.`,
+      `${toTaskLabel(oldestRun.agentType)} 실행이 ${minutesSince(oldestRun.startedAt, input.now)}분째 진행 중이에요. ${STALE_RUN_THRESHOLD_MINUTES}분 안쪽이라 정상 범위입니다.`,
     );
   }
 

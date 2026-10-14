@@ -1,3 +1,5 @@
+import { toTaskLabel } from '../../../agent-registry/agent-registry';
+import { describeFailureReason } from '../../../agent-run/domain/agent-run.type';
 import {
   GithubIssue,
   GithubPullRequest,
@@ -196,8 +198,8 @@ export const buildPlanRealityFacts = (
     facts.push({
       id: `failed:${failedRun.agentType}:${failedRun.endedAt.toISOString()}`,
       kind: 'WORKER_FAILED',
-      label: `${failedRun.agentType} 워커`,
-      detail: `실패 — ${failedRun.reason}`,
+      label: `${toTaskLabel(failedRun.agentType)} 작업`,
+      detail: `실패 — ${describeFailureReason(failedRun.reason)}`,
     });
   }
 
