@@ -20,7 +20,4 @@ export interface ConversationTurn {
   agentType: AgentType | null;
   agentRunId: number | null;
   timestampMs: number;
-  // 다른 키에서 옮겨 담은 turn 의 원래 대화 키. 비동기 작업(BLOG)의 실행은 시작한 대화의 키로
-  // 찾으므로, DM 최상위에서 스레드로 넘어온 turn 은 이 키로 상태를 조회한다.
-  conversationKey?: string;
 }
