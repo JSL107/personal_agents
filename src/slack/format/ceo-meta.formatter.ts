@@ -3,7 +3,7 @@ import { FormattedReport } from './formatted-report.type';
 
 // CEO worker (P5 Meta) Slack 답글 formatter.
 // summary:
-//   *🧭 CEO 메타 review — {range}*
+//   *🧭 총평 — {range}*
 //   _{finalSummary}_
 //
 // detail:
@@ -18,7 +18,7 @@ export const formatCeoMetaOutput = (output: MetaOutput): FormattedReport => {
   const rangeLabel = output.range === 'WEEK' ? '최근 7일' : '최근 24시간';
 
   const summaryLines: string[] = [];
-  summaryLines.push(`*🧭 CEO 메타 review — ${rangeLabel}*`);
+  summaryLines.push(`*🧭 총평 — ${rangeLabel}*`);
   if (output.finalSummary.trim().length > 0) {
     summaryLines.push('');
     summaryLines.push(`_${escapeSlackMrkdwn(output.finalSummary)}_`);

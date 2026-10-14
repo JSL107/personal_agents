@@ -41,8 +41,8 @@ describe('formatOpsSupervisor', () => {
       '2026-08-01',
     );
 
-    expect(text).toContain('PM');
-    expect(text).toContain('실패율 30%');
+    // 담당 이름은 agentType 원문이 아니라 한국어 이름표로 나간다(#825 후속).
+    expect(text).toContain('• 🔴 오늘 계획: 실패율 30%');
     expect(text).toContain('인증 만료 의심');
   });
 

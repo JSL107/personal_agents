@@ -14,7 +14,7 @@ describe('formatCeoMetaOutput', () => {
   it('summary 에 finalSummary 와 드리프트 헤더가 포함된다', () => {
     const { summary } = formatCeoMetaOutput(base);
     expect(summary).toContain('본 주는 phase 흐름 정상.');
-    expect(summary).toContain('CEO 메타 review');
+    expect(summary).toContain('🧭 총평 — 최근 7일');
   });
 
   it('detail 에 observations 와 findings 전체가 담긴다', () => {

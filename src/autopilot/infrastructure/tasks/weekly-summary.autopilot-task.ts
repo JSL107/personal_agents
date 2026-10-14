@@ -327,8 +327,7 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
       );
       return {
         summary:
-          `🧭 *CEO Meta — ${firedAtKst} (주간 자동 메타 회고)*\n\n` +
-          ceoFormatted.summary,
+          `🧭 *주간 자동 회고 — ${firedAtKst}*\n\n` + ceoFormatted.summary,
         detail: ceoFormatted.detail + formatModelFooter(ceoOutcome),
       };
     } catch (error) {
@@ -346,7 +345,7 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
         error,
       );
       return {
-        summary: `_🧭 CEO Meta — ${firedAtKst} 실패_\n_예상 외 에러로 CEO 메타 회고를 생성하지 못했습니다. 로그를 확인해주세요._`,
+        summary: `_🧭 주간 자동 회고 — ${firedAtKst} 실패_\n_예상 외 에러로 주간 총평을 만들지 못했습니다. 로그를 확인해주세요._`,
         detail: '',
       };
     }
