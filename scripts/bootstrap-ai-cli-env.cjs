@@ -8,7 +8,7 @@
  *   --dry-run              실제로 바꾸지 않고 실행할 명령·복사 대상만 보여준다 (먼저 이걸로 확인할 것)
  *   --all                  아래 세 플래그를 한 번에 켠다. 내 PC 를 그대로 옮기는 게 목적일 때 쓴다.
  *                          (남의 PC 나 공용 머신에 적용할 때는 켜지 말 것 — 그 머신의 hooks·전역 규칙을 덮는다)
- *   --with-hooks           hooks 설정까지 적용한다 (기본은 안내만)
+ *   --with-hooks           hooks 설정까지 적용하고, 스킬 링크 동기화를 스케줄러에 등록한다 (기본은 안내만)
  *   --replace-hooks        이 PC 에 이미 hooks 가 있어도 덮어쓴다 (없으면 건너뛰고 알린다)
  *   --replace-global-docs  이 PC 에 이미 있는 전역 지침 문서(~/.claude/CLAUDE.md · ~/.codex/AGENTS.md)를
  *                          덮어쓴다. 기본은 건너뛴다 — 그 머신에서 수기로 더한 규칙이 날아가기 때문이다.
@@ -20,6 +20,7 @@
  *   4. hooks 는 통째로 교체하며, 명령 안의 옛 홈 경로를 이 PC 의 홈으로 치환
  *   5. Claude 스킬을 Codex(~/.agents/skills)에 링크로 잇고, 그 동기화를 이 PC 스케줄러에 등록
  *      (맥 launchd / 윈도우 작업 스케줄러 — 로그인 시 + 1시간마다, ~/.claude/hooks/skill-link-sync.cjs)
+ *      codex CLI 가 있고 --with-hooks(또는 --all)일 때만 — hooks 와 같은 승인 게이트
  *
  * permissions 와 defaultMode 는 옮기지 않는다. 새 PC 의 승인 게이트는 그 PC 에서 정한다.
  */
@@ -521,10 +522,20 @@ function restoreCodex(codex) {
  * Claude 스킬을 Codex 가 읽는 ~/.agents/skills 에 링크로 잇는 동기화를 이 PC 스케줄러에 건다.
  * 복사본 두 벌은 갈라진다 — 어느 PC 를 새로 세팅하든 링크가 저절로 따라오게 하려는 것이다.
  * 스크립트는 claude/hooks 자산으로 같이 복사돼 들어온다. 옛 스냅샷이라 없으면 알리고 건너뛴다.
+ * 스냅샷에서 온 코드를 실행하고 스케줄러에 영구 등록하는 일이라 hooks 와 같은 승인(--with-hooks / --all)을 요구한다.
  */
 function installSkillLinkSync() {
   const scriptPath = path.join(CLAUDE_DIR, 'hooks', 'skill-link-sync.cjs');
   console.log('\n=== 스킬 링크 동기화 (Claude → Codex) ===');
+  if (!hasCommand('codex')) {
+    console.log('  codex CLI 가 없다 — 이을 대상이 없어 건너뛴다.');
+    return;
+  }
+  if (!WITH_HOOKS) {
+    console.log('  건너뜀 — 등록하려면 --with-hooks 를 붙일 것.');
+    console.log(`  (스냅샷의 ${scriptPath} 를 실행하고 스케줄러에 영구 등록한다. 내용을 먼저 읽고 결정하는 편이 안전하다.)`);
+    return;
+  }
   if (!DRY_RUN && !fs.existsSync(scriptPath)) {
     warnings.push(`${scriptPath} 없음 — 스킬 링크 동기화 스케줄러 미등록`);
     return;
