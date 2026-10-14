@@ -1,10 +1,12 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { ModelRouterUsecase } from '../../model-router/application/model-router.usecase';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { SELF_REPO } from '../../pr-review-loop/domain/learning-repo';
 import { ConversationTurn } from '../domain/conversation-memory.type';
+import { describeEnabledPassiveCapabilities } from '../domain/passive-capability';
 import {
   AGENT_DISPATCHER_PORT,
   AgentDispatcher,
@@ -18,7 +20,9 @@ import {
 // 한 turn 은 role=user 또는 role=assistant 1개 — 즉 한 사용자 ↔ 봇 round trip 은 최대 2 turn 소비.
 // MAX_TURNS (memory service) = 5 와 통일.
 const PRIOR_TURN_LIMIT = 5;
-const PRIOR_TURN_TEXT_CAP = 200;
+// 사용자 발화는 짧지만, 스레드 원글(공고 피드·알림)과 이대리 자신의 직전 답은 길다. 200자로 자르면
+// "이거 뭔데?" 가 가리키는 글의 앞부분만 보고 답한다(2026-10-08 run 7585, 10-13 run 8292).
+const PRIOR_TURN_TEXT_CAP = 1500;
 
 // IntentClassifier 가 UNKNOWN 반환 (어느 worker 에도 매핑 불가) 시 RouterMessageHandler 의 catch
 // 분기에서 호출되는 일반 대화 응답 fallback.
@@ -34,6 +38,8 @@ export class ConversationalReplyUsecase {
   // 실제로 라우팅 가능한 워커의 기능만 답에 싣는다 — 등록되지 않은 워커를 "할 수 있다" 고 하면
   // 사용자가 그대로 말해도 실행되지 않는다.
   private readonly capabilities: readonly WorkerCapability[];
+  // 켜져 있는 자동 발송·이모지·버튼 기능. env 는 실행 중에 바뀌지 않으므로 생성 시 한 번 정한다.
+  private readonly passiveCapabilities: readonly string[];
 
   constructor(
     private readonly modelRouter: ModelRouterUsecase,
@@ -41,10 +47,16 @@ export class ConversationalReplyUsecase {
     // 필수 — 빠지면 조용히 전체 목록을 안내하는 대신 부팅이 실패해야 "등록된 워커만" 이 지켜진다.
     @Inject(AGENT_DISPATCHER_PORT)
     dispatchers: AgentDispatcher[],
+    // 답을 담당 못 고른 회차의 원장 행에 붙인다. 없으면 기록만 건너뛴다.
+    @Optional()
+    private readonly agentRunService?: AgentRunService,
   ) {
     const registered = dispatchers.map((dispatcher) => dispatcher.agentType);
     this.capabilities = WORKER_CAPABILITIES.filter(({ agentType }) =>
       registered.includes(agentType),
+    );
+    this.passiveCapabilities = describeEnabledPassiveCapabilities((key) =>
+      this.configService.get<string>(key),
     );
   }
 
@@ -52,10 +64,14 @@ export class ConversationalReplyUsecase {
     text,
     priorTurns,
     unresolvedStreak,
+    routingMissRunId,
   }: {
     text: string;
     priorTurns: ConversationTurn[];
     unresolvedStreak?: number;
+    // 라우터가 이 회차를 남긴 ROUTER run. 있으면 답을 그 행의 모델 응답 원문으로 남긴다 —
+    // 없으면 원장에는 "못 골랐다" 만 있고 이대리가 뭐라고 답했는지는 사라진다.
+    routingMissRunId?: number;
   }): Promise<string> {
     const systemPrompt = buildSystemPrompt({
       // 이대리 자신의 레포. 대화 응답이 "우리 레포" 를 지칭할 때 쓰는 이름이라 상수로 족하다.
@@ -65,6 +81,7 @@ export class ConversationalReplyUsecase {
         ?.trim(),
       unresolvedStreak,
       capabilities: this.capabilities,
+      passiveCapabilities: this.passiveCapabilities,
     });
     const prompt = buildPrompt({ text, priorTurns });
     try {
@@ -75,7 +92,15 @@ export class ConversationalReplyUsecase {
         // 붙으면 이 usecase 가 요구하는 1~3문장 대화 응답과 충돌한다.
         noContractPreamble: true,
       });
-      return completion.text.trim();
+      const reply = completion.text.trim();
+      if (routingMissRunId !== undefined) {
+        await this.agentRunService?.attachModelResponse({
+          agentRunId: routingMissRunId,
+          agentType: AgentType.ROUTER,
+          modelResponse: reply,
+        });
+      }
+      return reply;
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(`Conversational fallback 실패: ${message}`);
@@ -89,11 +114,13 @@ export const buildSystemPrompt = ({
   ownerLogin,
   unresolvedStreak,
   capabilities = WORKER_CAPABILITIES,
+  passiveCapabilities = [],
 }: {
   repoLabel?: string;
   ownerLogin?: string;
   unresolvedStreak?: number;
   capabilities?: readonly WorkerCapability[];
+  passiveCapabilities?: readonly string[];
 }): string => {
   const selfRepo = repoLabel && repoLabel.length > 0 ? repoLabel : undefined;
   const selfOwner =
@@ -127,6 +154,13 @@ export const buildSystemPrompt = ({
     '',
     `이대리가 할 수 있는 일 (사용자가 아래 예시처럼 말하면 실제로 실행됩니다):`,
     ...capabilities.map(({ canDo }) => `- ${canDo}`),
+    ...(passiveCapabilities.length > 0
+      ? [
+          '',
+          `이대리가 자동으로 하는 일과 이모지·버튼으로 할 수 있는 일 (말로 시키는 일이 아니라, 아래처럼 동작합니다):`,
+          ...passiveCapabilities.map((line) => `- ${line}`),
+        ]
+      : []),
   ];
 
   const directionChangeLines = shouldChangeDirection
@@ -145,7 +179,7 @@ export const buildSystemPrompt = ({
 
   const basicFollowUpLine = shouldChangeDirection
     ? undefined
-    : `- 사용자가 묻거나 원하는 일이 「이대리가 할 수 있는 일」에 있으면 되묻지 말고, 할 수 있다고 답한 뒤 그렇게 말하면 바로 처리된다는 자연어 예시를 보여주세요. 목록에 없는 일이면 지금은 못 한다고 솔직히 말하고 가장 가까운 일을 알려주세요. 가장 가까운 일도 반드시 목록 안에서 고르고, 목록에 없는 방법("파일·자막을 보내 주면 분석할게요" 같은)을 지어내지 마세요.`;
+    : `- 사용자가 묻거나 원하는 일이 「이대리가 할 수 있는 일」에 있으면 되묻지 말고, 할 수 있다고 답한 뒤 그렇게 말하면 바로 처리된다는 자연어 예시를 보여주세요. 「이대리가 자동으로 하는 일과 이모지·버튼으로 할 수 있는 일」에 있으면 그 방법(언제 오는지, 어디에 어떤 이모지를 달거나 어떤 버튼을 누르는지)을 그대로 알려주세요 — 말로 시키면 된다고 하지 마세요. 두 목록 어디에도 없는 일이면 지금은 못 한다고 솔직히 말하고 가장 가까운 일을 알려주세요. 가장 가까운 일도 반드시 목록 안에서 고르고, 목록에 없는 방법("파일·자막을 보내 주면 분석할게요" 같은)을 지어내지 마세요. 질문과 주제가 겹치지 않는 일(공고 제외를 물었는데 이력서 정리)은 대안으로 붙이지 말고, 그럴 바엔 못 한다고만 답하세요.`;
   const memoryRecoveryLine = shouldChangeDirection
     ? `- 직전 [assistant] 응답에서 "확인해볼게요" / "정리해볼게요" 같은 진행 약속을 했더라도, 그 약속이 진행 중인 것처럼 "아직 확인 중", "지금 보고 있어요" 라고 말하지 마세요 — 이 대화 응답만으로는 아무 작업도 시작되지 않았음을 솔직히 말하세요.`
     : `- 직전 [assistant] 응답에서 "확인해볼게요" / "정리해볼게요" 같은 진행 약속을 했더라도, 그 약속이 진행 중인 것처럼 "아직 확인 중", "지금 보고 있어요" 라고 말하지 마세요 — 이 대화 응답만으로는 아무 작업도 시작되지 않으므로 거짓이 됩니다. 사용자가 진행을 재촉하면, 작업이 아직 시작되지 않았음을 전제로 무엇을 원하는지 한 문장으로 짚어달라고 자연스럽게 되물으세요.`;

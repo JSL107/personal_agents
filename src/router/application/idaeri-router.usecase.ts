@@ -339,12 +339,14 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
         run:
           outcome === 'UNCLASSIFIED'
             ? // 정상 종료. reason 은 분류기가 왜 못 골랐는지의 유일한 단서라 함께 싣는다.
-              () =>
-                Promise.resolve({
+              ({ agentRunId }) => {
+                exception.routingMissRunId = agentRunId;
+                return Promise.resolve({
                   result: undefined,
                   modelUsed: 'deterministic',
                   output: { outcome, reason: exception.message },
-                })
+                });
+              }
             : // 미등록 dispatcher 는 진짜 결함이다 — 그 워커로 가야 할 요청이 전부 막힌다.
               () => Promise.reject(exception),
       });
