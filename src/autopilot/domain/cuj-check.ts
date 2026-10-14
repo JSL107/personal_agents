@@ -278,12 +278,14 @@ export const detectMentionViolations = (
           : CUJ_THRESHOLDS.mentionDeadlineMs),
   ).length;
   // 결과 답장(BLOG)이 대기·실패로 남은 멘션도 답이 안 나간 것이다 — ack 만 받고 결과를 못 받았다.
+  // 반대로 결과 답장이 게시됐으면 ack 게시가 실패했어도 사용자는 답을 받았다.
   const unanswered = receipts.filter(
     (row) =>
-      row.status === 'RECEIVED' ||
-      row.status === 'REPLY_FAILED' ||
-      row.finalReplyStatus === 'PENDING' ||
-      row.finalReplyStatus === 'FAILED',
+      row.finalReplyStatus !== 'POSTED' &&
+      (row.status === 'RECEIVED' ||
+        row.status === 'REPLY_FAILED' ||
+        row.finalReplyStatus === 'PENDING' ||
+        row.finalReplyStatus === 'FAILED'),
   ).length;
   // 처리 실패 안내만 나간 멘션. 워커 실행 실패와 겹칠 수 있지만, 라우터 앞에서 끊겨 agent_run 이
   // 없는 실패는 여기서만 보인다.

@@ -51,12 +51,41 @@ describe('MentionReceiptPrismaRepository', () => {
     });
   });
 
-  it('결과 답장 상태는 수신 상태와 따로 적는다', async () => {
+  it('결과 답장 대기는 아직 기록이 없는 행에만 적는다', async () => {
     await repository.recordFinalReply({ ...ref, status: 'PENDING' });
 
     expect(updateMany).toHaveBeenLastCalledWith({
-      where: ref,
+      where: {
+        ...ref,
+        OR: [{ finalReplyStatus: null }, { finalReplyStatus: { in: [] } }],
+      },
       data: { finalReplyStatus: 'PENDING' },
+    });
+  });
+
+  it('결과 답장 게시는 대기·실패를 덮지만, 실패는 게시를 덮지 못한다', async () => {
+    await repository.recordFinalReply({ ...ref, status: 'POSTED' });
+    expect(updateMany).toHaveBeenLastCalledWith({
+      where: {
+        ...ref,
+        OR: [
+          { finalReplyStatus: null },
+          { finalReplyStatus: { in: ['PENDING', 'FAILED'] } },
+        ],
+      },
+      data: { finalReplyStatus: 'POSTED' },
+    });
+
+    await repository.recordFinalReply({ ...ref, status: 'FAILED' });
+    expect(updateMany).toHaveBeenLastCalledWith({
+      where: {
+        ...ref,
+        OR: [
+          { finalReplyStatus: null },
+          { finalReplyStatus: { in: ['PENDING'] } },
+        ],
+      },
+      data: { finalReplyStatus: 'FAILED' },
     });
   });
 });

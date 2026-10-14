@@ -367,6 +367,8 @@ describe('CUJ detectors', () => {
           // ack 만 나가고 결과 답장이 안 나간 블로그 멘션
           { status: 'REPLIED', finalReplyStatus: 'PENDING' },
           { status: 'REPLIED', finalReplyStatus: 'FAILED' },
+          // ack 게시는 실패했지만 결과 답장은 나간 멘션 — 답을 받았다
+          { status: 'REPLY_FAILED', finalReplyStatus: 'POSTED' },
         ],
       )[0].detail,
     ).toBe('답 안 나감 4건 · 오류 답변 1건');
