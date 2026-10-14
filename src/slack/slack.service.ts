@@ -557,17 +557,43 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
       origin: 'card',
       blocks: blocks.length,
     });
-    const response = await this.postChat({
-      channel: target,
-      ...(threadTs ? { thread_ts: threadTs } : {}),
-      text: preview.previewText,
-      // Bolt 의 blocks union 은 매우 엄격 (KnownBlock) — Block Kit JSON 을 그대로 쓰기 위해 narrow cast.
-      blocks: blocks as never,
-    });
-    return {
-      channelId: String(response.channel ?? target),
-      messageTs: String(response.ts ?? ''),
-    };
+    // 발송 원장 기록은 postMessage·postProposalMessage 와 같다 — 성공은 SENT, 실패는 FAILED 로 남기고
+    // 예외는 그대로 던진다. 승인 카드가 원장 밖에 있으면 하루에 무엇이 나갔는지 셀 때 카드만 빠진다.
+    const textPreview = buildTextPreview(preview.previewText);
+    try {
+      const response = await this.postChat({
+        channel: target,
+        ...(threadTs ? { thread_ts: threadTs } : {}),
+        text: preview.previewText,
+        // Bolt 의 blocks union 은 매우 엄격 (KnownBlock) — Block Kit JSON 을 그대로 쓰기 위해 narrow cast.
+        blocks: blocks as never,
+      });
+      await this.recordDelivery({
+        kind: 'preview-card',
+        itemKinds: [],
+        target,
+        channelId: response.channel,
+        messageTs: response.ts,
+        threadTs,
+        status: SLACK_DELIVERY_STATUS.SENT,
+        textPreview,
+      });
+      return {
+        channelId: String(response.channel ?? target),
+        messageTs: String(response.ts ?? ''),
+      };
+    } catch (error: unknown) {
+      await this.recordDelivery({
+        kind: 'preview-card',
+        itemKinds: [],
+        target,
+        threadTs,
+        status: SLACK_DELIVERY_STATUS.FAILED,
+        textPreview,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
   }
 
   // Subconscious proposal — proposalId 가 박힌 ✅실행 / ❌무시 버튼 Block Kit DM 발송.

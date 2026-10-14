@@ -61,7 +61,7 @@ describe('AutopilotScheduler', () => {
     const unique = new Set(addCalls);
     expect(unique.size).toBe(addCalls.length);
     // SP4: evening(daily-eval+work-reviewer) + morning + noon(assign+po-shadow)
-    //   + weekly-summary + ceo-meta + impact-report
+    //   + weekly-summary + impact-report (ceo-meta 는 2026-10-14 폐지)
     //   + run-retro(주간 실행 회고, 단독 그룹) + knowledge-lint(주간 무결성 점검, 단독 그룹)
     //   + docs-sync-audit + preference-learning + run-sweeper + preview-sweeper + ops-supervisor
     //   + stock-monitor + paper-trading + universe-sweep + stock-monitor-us + stock-alert-scoring + pr-review-sweep
@@ -75,8 +75,8 @@ describe('AutopilotScheduler', () => {
     //   + memory-vacuum(주간 세션 기억 색인 청소, 단독 그룹)
     //   + holiday-sync(주간 한국 공휴일 동기화, 단독 그룹)
     //   + study-applicability(오늘의 공부 적용 판정, 단독 그룹)
-    //   + idea-triage(평일 아이디어 판정, 단독 그룹) = 37그룹.
-    expect(queue.add).toHaveBeenCalledTimes(37);
+    //   + idea-triage(평일 아이디어 판정, 단독 그룹) = 36그룹.
+    expect(queue.add).toHaveBeenCalledTimes(36);
     expect(addCalls).toContain('idea-triage');
     expect(addCalls).toContain('memory-vacuum');
     expect(addCalls).toContain('holiday-sync');
@@ -90,7 +90,8 @@ describe('AutopilotScheduler', () => {
     expect(addCalls).toContain('morning');
     expect(addCalls).toContain('noon');
     expect(addCalls).toContain('weekly-summary');
-    expect(addCalls).toContain('ceo-meta');
+    // 일요일 ceo-meta 는 폐지 — CEO 주간 회고는 weekly-summary(금) 한 곳에서만 만든다.
+    expect(addCalls).not.toContain('ceo-meta');
     expect(addCalls).toContain('impact-report');
     expect(addCalls).toContain('run-retro');
     expect(addCalls).toContain('knowledge-lint');

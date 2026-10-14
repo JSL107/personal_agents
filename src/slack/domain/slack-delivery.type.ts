@@ -24,6 +24,7 @@ export type DeliveryKind =
   | 'art-job-deadline'
   | 'idea-triage'
   | 'subconscious-proposal'
+  | 'preview-card'
   | 'code-review-webhook'
   | 'pr-careerlog'
   | 'alert:claude-auth'
