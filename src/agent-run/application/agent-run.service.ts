@@ -43,6 +43,7 @@ import {
   FindLatestSweepReviewQuery,
   InputSnapshotEquals,
   LatestSweepReview,
+  LatestUserRun,
   RecentlyFinishedRun,
   SimilarPlanRow,
   SucceededAgentRunSnapshot,
@@ -684,6 +685,15 @@ export class AgentRunService implements OnApplicationBootstrap {
     since?: Date;
   }): Promise<RecentlyFinishedRun[]> {
     return await this.repository.findRecentlyFinishedRuns(input);
+  }
+
+  // 대화 응답 — 직전 작업의 실제 상태. 사용자 한정·시각 경계는 repository 가 건다.
+  async findLatestUserRun(input: {
+    agentType: string;
+    slackUserId: string;
+    startedSince: Date;
+  }): Promise<LatestUserRun | null> {
+    return await this.repository.findLatestUserRun(input);
   }
 
   // 비서실 브리핑 — cutoff 이내 실패 런 전건 + 이유. 반복 실패 판정에 건수가 필요해

@@ -51,6 +51,7 @@ import {
   InputSnapshotEquals,
   LatestRunRow,
   LatestSweepReview,
+  LatestUserRun,
   LedgerRunRow,
   PmContextStats,
   QuotaStatRow,
@@ -801,6 +802,38 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
     return await this.prisma.agentRun.count({
       where: { endedAt: { gte: since }, status: AgentRunStatus.FAILED },
     });
+  }
+
+  async findLatestUserRun({
+    agentType,
+    slackUserId,
+    startedSince,
+  }: {
+    agentType: string;
+    slackUserId: string;
+    startedSince: Date;
+  }): Promise<LatestUserRun | null> {
+    // slackUserId 는 inputSnapshot JSON 안에 있다 — findFailedRunsSince 와 같은 path 필터.
+    const where: Prisma.AgentRunWhereInput = {
+      agentType,
+      startedAt: { gte: startedSince },
+      inputSnapshot: { path: ['slackUserId'], equals: slackUserId },
+    };
+    const found = await this.prisma.agentRun.findFirst({
+      where,
+      orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
+      select: { status: true, output: true },
+    });
+    if (!found) {
+      return null;
+    }
+    return {
+      status: found.status,
+      failureReason:
+        found.status === AgentRunStatus.FAILED
+          ? extractFailureReason(found.output)
+          : null,
+    };
   }
 
   async findFailedRunsSince({

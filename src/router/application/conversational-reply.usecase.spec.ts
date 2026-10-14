@@ -15,6 +15,7 @@ import {
   buildPrompt,
   buildSystemPrompt,
   ConversationalReplyUsecase,
+  formatWorkStatus,
 } from './conversational-reply.usecase';
 
 describe('ConversationalReply — buildSystemPrompt (self-context)', () => {
@@ -147,7 +148,8 @@ describe('ConversationalReply — buildSystemPrompt (self-context)', () => {
         // 2026-10-14 원문이 없을 때 일반 지식으로 대신 요약하지 않는다(#817 리뷰)
         // 2026-10-14 기능 안내 문구를 일상어로(PO 입장·메타 회고·드리프트·익명화·plan 대신 풀어 씀)
         // 2026-10-14 CEO 예시 "이번 주 메타 평가해줘" 를 일상어로(#822 리뷰)
-        'f9477db2fc7819bff274805eb5f3fb0801b21f4e7de0c3ef578971e2a7314eca',
+        // 2026-10-14 진행 여부는 [직전 작업 상태] 실제 기록으로 답한다 — "대기 중" 추측 예시 제거(run 8886)
+        '57c4571477811e1e65623c35f4a59ac1b9af505b34a98ea9ecad8b6a1815c113',
       );
     },
   );
@@ -470,5 +472,120 @@ describe('ConversationalReply — reply() (route(PM) 경유 호출)', () => {
     await expect(
       usecase.reply({ text: '안녕', priorTurns: [] }),
     ).rejects.toThrow('모델 호출 실패 (CHATGPT)');
+  });
+});
+
+describe('ConversationalReply — 직전 작업 상태', () => {
+  const workTurns: ConversationTurn[] = [
+    {
+      role: 'user',
+      text: '대화 맥락 기억에 대해서 공부할래',
+      agentType: AgentType.BLOG,
+      agentRunId: 0,
+      timestampMs: 1_700_000_000_000,
+    },
+    {
+      role: 'assistant',
+      text: '📝 블로그 초안 작성을 시작했어요.',
+      agentType: AgentType.BLOG,
+      agentRunId: 0,
+      timestampMs: 1_700_000_000_000,
+    },
+  ];
+
+  const buildUsecase = (
+    findLatestUserRun: jest.Mock,
+  ): { usecase: ConversationalReplyUsecase; route: jest.Mock } => {
+    const route = jest.fn().mockResolvedValue({ text: '네', modelUsed: 'm' });
+    const usecase = new ConversationalReplyUsecase(
+      { route } as unknown as ModelRouterUsecase,
+      { get: () => undefined } as unknown as ConfigService,
+      [] as unknown as AgentDispatcher[],
+      { findLatestUserRun } as unknown as AgentRunService,
+    );
+    return { usecase, route };
+  };
+
+  it('재시작으로 끊긴 작업이면 실패와 사유를 prompt 에 싣는다 (run 8886 재현)', async () => {
+    const findLatestUserRun = jest.fn().mockResolvedValue({
+      status: 'FAILED',
+      failureReason: '프로세스 종료로 중단됨',
+    });
+    const { usecase, route } = buildUsecase(findLatestUserRun);
+
+    await usecase.reply({
+      text: '너 작업하고 있어?',
+      priorTurns: workTurns,
+      slackUserId: 'U1',
+    });
+
+    expect(findLatestUserRun).toHaveBeenCalledWith({
+      agentType: AgentType.BLOG,
+      slackUserId: 'U1',
+      startedSince: new Date(1_700_000_000_000 - 30 * 60 * 1000),
+    });
+    const prompt: string = route.mock.calls[0][0].request.prompt;
+    expect(prompt).toContain('[직전 작업 상태 (실제 실행 기록)]');
+    expect(prompt).toContain('실패 — 프로세스 종료로 중단됨');
+  });
+
+  it('작업 turn 이 없거나 사용자를 모르면 조회하지 않는다', async () => {
+    const findLatestUserRun = jest.fn();
+    const { usecase, route } = buildUsecase(findLatestUserRun);
+
+    await usecase.reply({ text: '안녕', priorTurns: [], slackUserId: 'U1' });
+    await usecase.reply({ text: '너 작업하고 있어?', priorTurns: workTurns });
+
+    expect(findLatestUserRun).not.toHaveBeenCalled();
+    expect(route.mock.calls[1][0].request.prompt).not.toContain(
+      '[직전 작업 상태',
+    );
+  });
+
+  it('조회가 실패해도 답은 나간다 — 상태 줄만 빠진다', async () => {
+    const findLatestUserRun = jest.fn().mockRejectedValue(new Error('db down'));
+    const { usecase, route } = buildUsecase(findLatestUserRun);
+
+    await expect(
+      usecase.reply({
+        text: '너 작업하고 있어?',
+        priorTurns: workTurns,
+        slackUserId: 'U1',
+      }),
+    ).resolves.toBe('네');
+    expect(route.mock.calls[0][0].request.prompt).not.toContain(
+      '[직전 작업 상태',
+    );
+  });
+
+  it('상태별 문구', () => {
+    expect(formatWorkStatus('블로그', null)).toContain('실행 기록 없음');
+    expect(
+      formatWorkStatus('블로그', {
+        status: 'IN_PROGRESS',
+        failureReason: null,
+      }),
+    ).toBe('블로그: 지금 진행 중');
+    expect(
+      formatWorkStatus('블로그', { status: 'SUCCEEDED', failureReason: null }),
+    ).toBe('블로그: 완료됨');
+  });
+
+  it('상태 줄이 있으면 그것만 근거로 답하라는 규칙이 있고, "대기 중" 을 예로 들지 않는다', () => {
+    const prompt = buildSystemPrompt({});
+    expect(prompt).toContain(
+      '[직전 작업 상태] 가 있으면 그것이 실제 실행 기록',
+    );
+    expect(prompt).not.toContain('"지금은 대기 중"');
+  });
+
+  it('되묻기가 반복된 방향 전환에서도 [직전 작업 상태] 를 우선한다 (#824 리뷰)', () => {
+    const prompt = buildSystemPrompt({ unresolvedStreak: 2 });
+    expect(prompt).toContain(
+      '[직전 작업 상태] 가 있고 사용자가 그 작업의 진행을 물으면, 실행할 수 없다고 하지 말고',
+    );
+    expect(prompt).toContain(
+      '아무 작업도 시작되지 않았음을 솔직히 말하세요. [직전 작업 상태] 가 있으면 그 상태를 따르세요.',
+    );
   });
 });

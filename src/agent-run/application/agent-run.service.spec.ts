@@ -46,6 +46,7 @@ describe('AgentRunService', () => {
     findLatestSweepReview: jest.fn().mockResolvedValue(null),
     countUnsuccessfulSweepReviews: jest.fn().mockResolvedValue(0),
     findRecentlyFinishedRuns: jest.fn().mockResolvedValue([]),
+    findLatestUserRun: jest.fn().mockResolvedValue(null),
     findFailedRunsSince: jest.fn().mockResolvedValue([]),
     aggregateSucceededCounts: jest.fn().mockResolvedValue([]),
     countSucceededSince: jest.fn().mockResolvedValue([]),
