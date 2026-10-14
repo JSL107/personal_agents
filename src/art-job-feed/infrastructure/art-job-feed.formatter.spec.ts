@@ -1,5 +1,6 @@
 import { ArtJobListing } from '../domain/art-job-feed.type';
 import {
+  formatArtJobDeadlineReminder,
   formatArtJobDigest,
   formatArtJobImageCaption,
   formatArtJobPreviewCaption,
@@ -19,7 +20,7 @@ const LISTING: ArtJobListing = {
 };
 
 describe('formatArtJobDigest', () => {
-  it('머리(멘션)와 번호 붙은 공고 목록을 한 통으로 만들고 공고마다 「관심 없음」 버튼을 단다', () => {
+  it('머리(멘션)와 번호 붙은 공고 목록을 한 통으로 만들고 공고마다 버튼 줄을 단다', () => {
     const message = formatArtJobDigest({
       mentionUserId: 'U9',
       today: TODAY,
@@ -63,7 +64,6 @@ describe('formatArtJobDigest', () => {
       },
       {
         type: 'section',
-        block_id: 'art-job:283904',
         text: {
           type: 'mrkdwn',
           text: [
@@ -72,16 +72,22 @@ describe('formatArtJobDigest', () => {
             '🎮 카오스 제로 나이트메어 · 이미지는 스레드에',
           ].join('\n'),
         },
-        accessory: {
-          type: 'button',
-          action_id: 'art_job_exclude',
-          text: { type: 'plain_text', text: '관심 없음' },
-          value: '283904',
-        },
+      },
+      // 오늘 마감은 전날이 지났으므로 「관심 있음」 없이 「관심 없음」만.
+      {
+        type: 'actions',
+        block_id: 'art-job:283904',
+        elements: [
+          {
+            type: 'button',
+            action_id: 'art_job_exclude',
+            text: { type: 'plain_text', text: '관심 없음' },
+            value: '283904',
+          },
+        ],
       },
       {
         type: 'section',
-        block_id: 'art-job:2',
         text: {
           type: 'mrkdwn',
           text: [
@@ -89,23 +95,62 @@ describe('formatArtJobDigest', () => {
             '그레이게임즈 · 상시',
           ].join('\n'),
         },
-        accessory: {
-          type: 'button',
-          action_id: 'art_job_exclude',
-          text: { type: 'plain_text', text: '관심 없음' },
-          value: '2',
-        },
+      },
+      // 상시는 마감 전날을 정할 수 없다.
+      {
+        type: 'actions',
+        block_id: 'art-job:2',
+        elements: [
+          {
+            type: 'button',
+            action_id: 'art_job_exclude',
+            text: { type: 'plain_text', text: '관심 없음' },
+            value: '2',
+          },
+        ],
       },
       {
         type: 'context',
         elements: [
           {
             type: 'mrkdwn',
-            text: '관심 없는 공고는 *관심 없음* 을 눌러 주세요. 같은 공고가 다시 올라와도 보내지 않아요.',
+            text: '마음에 드는 공고는 *관심 있음* 을 누르면 마감 전날 DM 으로 알려 드려요. 관심 없는 공고는 *관심 없음* 을 누르면 같은 공고가 다시 올라와도 보내지 않아요.',
           },
         ],
       },
     ]);
+  });
+
+  it('마감일이 내일 이후인 공고에는 「관심 있음」을 앞에 단다', () => {
+    const { blocks } = formatArtJobDigest({
+      mentionUserId: 'U9',
+      today: TODAY,
+      items: [
+        {
+          listing: { ...LISTING, deadlineText: '~10/31(금)' },
+          resolved: { gameTitle: null, image: null, googleSearchUrl: null },
+        },
+      ],
+    });
+
+    expect(blocks[2]).toEqual({
+      type: 'actions',
+      block_id: 'art-job:283904',
+      elements: [
+        {
+          type: 'button',
+          action_id: 'art_job_interest',
+          text: { type: 'plain_text', text: '⭐ 관심 있음' },
+          value: '283904',
+        },
+        {
+          type: 'button',
+          action_id: 'art_job_exclude',
+          text: { type: 'plain_text', text: '관심 없음' },
+          value: '283904',
+        },
+      ],
+    });
   });
 
   it('이미지가 없으면 게임명 옆에 구글 이미지 검색 링크를 단다', () => {
@@ -129,7 +174,7 @@ describe('formatArtJobDigest', () => {
       '🎮 LOST ARK Mobile · <https://www.google.com/search?tbm=isch&q=x|구글 이미지 검색>',
     );
     // 멘션 대상이 없으면 누를 수 있는 사람이 없으므로 버튼도 안내도 싣지 않는다.
-    expect(text).not.toContain('accessory');
+    expect(text).not.toContain('"actions"');
     expect(text).not.toContain('관심 없음');
   });
 });
@@ -193,6 +238,23 @@ describe('formatArtJobPreviewCaption', () => {
       }),
     ).toBe(
       '5. 🔎 검색 미리보기 · 확인 안 된 이미지 (검색어: 팀 테트라포드 게임 · 출처: 게임포커스)',
+    );
+  });
+});
+
+describe('formatArtJobDeadlineReminder', () => {
+  it('내일 마감 관심 공고를 링크 목록 한 통으로 묶는다', () => {
+    expect(
+      formatArtJobDeadlineReminder([
+        {
+          id: 1,
+          company: 'A & B',
+          title: '원화 <급구>',
+          detailUrl: 'https://www.gamejob.co.kr/x?GI_No=1',
+        },
+      ]),
+    ).toBe(
+      '⏰ 내일 마감인 관심 공고 *1건*\n• <https://www.gamejob.co.kr/x?GI_No=1|원화 급구> · A &amp; B',
     );
   });
 });

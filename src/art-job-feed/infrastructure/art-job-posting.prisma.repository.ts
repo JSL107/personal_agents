@@ -1,10 +1,17 @@
 import { Injectable } from '@nestjs/common';
 
+import {
+  PlainDate,
+  plainDateToUtcDate,
+  utcDateToPlainDate,
+} from '../../agent/vacation/domain/plain-date';
 import { PrismaService } from '../../prisma/prisma.service';
 import { exclusionKey } from '../domain/art-job-exclusion';
 import { ART_JOB_SOURCE, ArtJobListing } from '../domain/art-job-feed.type';
 import {
   ArtJobPostingRepositoryPort,
+  ArtJobReminderPosting,
+  InterestedPosting,
   MarkNotifiedInput,
 } from '../domain/port/art-job-posting.repository.port';
 
@@ -40,9 +47,14 @@ export class ArtJobPostingPrismaRepository implements ArtJobPostingRepositoryPor
     return new Set(rows.map((row) => row.sourceId));
   }
 
-  async markNotified({ listing, resolved }: MarkNotifiedInput): Promise<void> {
+  async markNotified({
+    listing,
+    resolved,
+    deadlineDate,
+  }: MarkNotifiedInput): Promise<void> {
     const fields = {
       ...toBaseFields(listing),
+      deadlineDate: deadlineDate ? plainDateToUtcDate(deadlineDate) : null,
       gameTitle: resolved.gameTitle,
       imageUrl: resolved.image?.url ?? null,
       imageOrigin: resolved.image?.origin ?? null,
@@ -128,5 +140,71 @@ export class ArtJobPostingPrismaRepository implements ArtJobPostingRepositoryPor
       data: { excludedAt: null },
     });
     return true;
+  }
+
+  async findInterestedSourceIds(sourceIds: string[]): Promise<Set<string>> {
+    if (sourceIds.length === 0) {
+      return new Set();
+    }
+    const rows = await this.prisma.artJobPosting.findMany({
+      where: {
+        source: ART_JOB_SOURCE,
+        sourceId: { in: sourceIds },
+        interestedAt: { not: null },
+      },
+      select: { sourceId: true },
+    });
+    return new Set(rows.map((row) => row.sourceId));
+  }
+
+  async setInterested(
+    sourceId: string,
+    interested: boolean,
+  ): Promise<InterestedPosting | null> {
+    const found = await this.prisma.artJobPosting.findUnique({
+      where: { source_sourceId: { source: ART_JOB_SOURCE, sourceId } },
+      select: { id: true, deadlineDate: true },
+    });
+    if (!found) {
+      return null;
+    }
+    await this.prisma.artJobPosting.update({
+      where: { id: found.id },
+      data: { interestedAt: interested ? new Date() : null },
+    });
+    return {
+      deadlineDate: found.deadlineDate
+        ? utcDateToPlainDate(found.deadlineDate)
+        : null,
+    };
+  }
+
+  async findDueReminders(
+    deadline: PlainDate,
+    remindedBefore: Date,
+  ): Promise<ArtJobReminderPosting[]> {
+    return await this.prisma.artJobPosting.findMany({
+      where: {
+        deadlineDate: plainDateToUtcDate(deadline),
+        interestedAt: { not: null },
+        excludedAt: null,
+        OR: [
+          { deadlineRemindedAt: null },
+          { deadlineRemindedAt: { lt: remindedBefore } },
+        ],
+      },
+      select: { id: true, company: true, title: true, detailUrl: true },
+      orderBy: { id: 'asc' },
+    });
+  }
+
+  async markReminded(ids: number[], at: Date): Promise<void> {
+    if (ids.length === 0) {
+      return;
+    }
+    await this.prisma.artJobPosting.updateMany({
+      where: { id: { in: ids } },
+      data: { deadlineRemindedAt: at },
+    });
   }
 }

@@ -1,4 +1,4 @@
-import { normalizeDeadline } from './deadline';
+import { deadlineDateOf, normalizeDeadline } from './deadline';
 
 const TODAY = { year: 2026, month: 10, day: 13 };
 
@@ -28,6 +28,28 @@ describe('normalizeDeadline', () => {
     expect(normalizeDeadline(' 접수마감 ', TODAY)).toEqual({
       label: '접수마감',
       urgent: false,
+    });
+  });
+});
+
+describe('deadlineDateOf', () => {
+  it.each([
+    ['~10/31(금)', { year: 2026, month: 10, day: 31 }],
+    ['D-3', { year: 2026, month: 10, day: 16 }],
+    ['오늘마감', TODAY],
+    ['내일마감', { year: 2026, month: 10, day: 14 }],
+    ['채용시', null],
+    ['접수마감', null],
+    [null, null],
+  ])('%s → %o', (raw, date) => {
+    expect(deadlineDateOf(raw, TODAY)).toEqual(date);
+  });
+
+  it('라벨과 같은 규칙으로 연도를 넘긴다 — 12월에 본 1월 마감은 내년', () => {
+    expect(deadlineDateOf('~1/2', { year: 2026, month: 12, day: 30 })).toEqual({
+      year: 2027,
+      month: 1,
+      day: 2,
     });
   });
 });

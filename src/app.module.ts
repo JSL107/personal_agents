@@ -25,6 +25,7 @@ import { WorkReviewerModule } from './agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from './agent-run/agent-run.module';
 import { AiCliEnvModule } from './ai-cli-env/ai-cli-env.module';
 import { AiCliEnvApplyPreviewApplier } from './ai-cli-env/infrastructure/ai-cli-env-apply.preview-applier';
+import { ArtJobDeadlineCronModule } from './art-job-deadline-cron/art-job-deadline-cron.module';
 import { ArtJobFeedCronModule } from './art-job-feed-cron/art-job-feed-cron.module';
 import { AutopilotModule } from './autopilot/autopilot.module';
 import { CodeGraphModule } from './code-graph/code-graph.module';
@@ -175,6 +176,8 @@ import { WebhookModule } from './webhook/webhook.module';
     // Phase 3 — 매일 자동 지원 넛지. 마감 임박(≤3일)/팔로업 지난 진행 중 지원 건을 SQL 조회 → Slack DM.
     JobApplicationNudgeCronModule,
     ArtJobFeedCronModule,
+    // 「관심 있음」 원화 공고 → 마감 전날 09·13시 DM.
+    ArtJobDeadlineCronModule,
     // Hermes(별도 프로세스) cron 이 조용히 죽는 것을 밖에서 감시 — ~/.hermes/cron/jobs.json 점검 → 실패 시 owner DM.
     // 2026-09-18 아침신문이 codex 쿼터 소진으로 실패했는데 알림이 없었던 사고 이후 추가.
     HermesWatchdogModule,

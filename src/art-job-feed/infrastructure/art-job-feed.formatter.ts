@@ -1,3 +1,4 @@
+import { comparePlainDate } from '../../agent/vacation/domain/plain-date';
 import {
   escapeSlackMrkdwn,
   sanitizeForSlackLink,
@@ -7,7 +8,12 @@ import {
   ArtJobListing,
   ResolvedArtJobImage,
 } from '../domain/art-job-feed.type';
-import { normalizeDeadline, PlainMonthDay } from '../domain/deadline';
+import {
+  deadlineDateOf,
+  normalizeDeadline,
+  PlainMonthDay,
+} from '../domain/deadline';
+import { ArtJobReminderPosting } from '../domain/port/art-job-posting.repository.port';
 
 export interface ArtJobDigestItem {
   listing: ArtJobListing;
@@ -20,15 +26,21 @@ export interface ArtJobDigestInput {
   today: PlainMonthDay;
 }
 
-// 본문 버튼 → 제외 / 되돌리기(ArtJobExclusionActionHandler). 버튼 값은 공고 번호(sourceId)다.
+// 본문 버튼 → 제외·관심 / 되돌리기(ArtJobExclusionActionHandler). 버튼 값은 공고 번호(sourceId)다.
 // action_id 는 블록 안에서만 유일하면 되므로 공고마다 같은 값을 쓰고, 어느 공고인지는 값으로 가린다.
 export const ART_JOB_EXCLUDE_ACTION = 'art_job_exclude';
 export const ART_JOB_RESTORE_ACTION = 'art_job_restore';
+export const ART_JOB_INTEREST_ACTION = 'art_job_interest';
+export const ART_JOB_UNINTEREST_ACTION = 'art_job_uninterest';
+const INTEREST_ACTIONS: readonly unknown[] = [
+  ART_JOB_INTEREST_ACTION,
+  ART_JOB_UNINTEREST_ACTION,
+];
 const ITEM_BLOCK_PREFIX = 'art-job:';
 
 // 받는 사람이 기능을 알 길이 이 줄뿐이다. 본문 끝 context 블록 — 출처 표기 같은 꼬리 줄도 여기에 붙인다.
 const EXCLUSION_HINT =
-  '관심 없는 공고는 *관심 없음* 을 눌러 주세요. 같은 공고가 다시 올라와도 보내지 않아요.';
+  '마음에 드는 공고는 *관심 있음* 을 누르면 마감 전날 DM 으로 알려 드려요. 관심 없는 공고는 *관심 없음* 을 누르면 같은 공고가 다시 올라와도 보내지 않아요.';
 
 export interface ArtJobDigestMessage {
   // 알림·스크린 리더용 대체 문구 — blocks 와 같은 내용을 글로 담는다(버튼·안내 제외).
@@ -64,6 +76,64 @@ export const buildArtJobItemButton = (
   };
 };
 
+const buildInterestButton = (
+  sourceId: string,
+  interested: boolean,
+): SlackBlock => {
+  return {
+    type: 'button',
+    action_id: interested ? ART_JOB_UNINTEREST_ACTION : ART_JOB_INTEREST_ACTION,
+    text: {
+      type: 'plain_text',
+      text: interested ? '⭐ 관심 공고 · 되돌리기' : '⭐ 관심 있음',
+    },
+    value: sourceId,
+  };
+};
+
+export interface ArtJobItemActionsState {
+  // 마감일이 있는 공고만 「관심 있음」을 단다 — 상시·채용시는 전날 알림을 계산할 수 없다.
+  interestable: boolean;
+  interested: boolean;
+  excluded: boolean;
+}
+
+// 공고 글 아래 버튼 줄. section accessory 는 버튼 하나만 받으므로 actions 블록에 둔다.
+export const buildArtJobItemActions = (
+  sourceId: string,
+  { interestable, interested, excluded }: ArtJobItemActionsState,
+): SlackBlock => {
+  const elements = interestable
+    ? [buildInterestButton(sourceId, interested)]
+    : [];
+  elements.push(buildArtJobItemButton(sourceId, excluded));
+  return {
+    type: 'actions',
+    block_id: artJobItemBlockId(sourceId),
+    elements,
+  };
+};
+
+// 다시 그릴 때 원래 「관심 있음」이 달린 줄인지 — 마감일을 다시 계산하지 않고 그려진 모양을 따른다.
+export const hasInterestButton = (block: SlackBlock): boolean => {
+  const elements = block.elements;
+  if (!Array.isArray(elements)) {
+    return false;
+  }
+  return elements.some((element: { action_id?: unknown }) => {
+    return INTEREST_ACTIONS.includes(element.action_id);
+  });
+};
+
+// 전날 알림을 받을 수 있는 공고만 — 마감일이 없거나(상시·채용시) 오늘 마감이면 전날이 이미 지났다.
+const isInterestable = (
+  deadlineText: string | null,
+  today: PlainMonthDay,
+): boolean => {
+  const date = deadlineDateOf(deadlineText, today);
+  return date !== null && comparePlainDate(date, today) > 0;
+};
+
 // 한 회차 = 채널 메시지 한 통. 공고마다 따로 보내면 하루 최대 22통이 채널을 덮어
 // 목록을 한눈에 비교할 수 없었다. 이미지는 스레드로 내리고 여기엔 글만 싣는다.
 //
@@ -85,12 +155,17 @@ export const formatArtJobDigest = ({
   for (const [index, { listing }] of items.entries()) {
     blocks.push({
       type: 'section',
-      block_id: artJobItemBlockId(listing.sourceId),
       text: { type: 'mrkdwn', text: itemTexts[index] },
-      ...(mentionUserId
-        ? { accessory: buildArtJobItemButton(listing.sourceId, false) }
-        : {}),
     });
+    if (mentionUserId) {
+      blocks.push(
+        buildArtJobItemActions(listing.sourceId, {
+          interestable: isInterestable(listing.deadlineText, today),
+          interested: false,
+          excluded: false,
+        }),
+      );
+    }
   }
   if (mentionUserId) {
     blocks.push({
@@ -185,4 +260,17 @@ export const formatArtJobPreviewCaption = (
     ? ` · 출처: ${escapeSlackMrkdwn(preview.sourceName)}`
     : '';
   return `${order}. 🔎 검색 미리보기 · 확인 안 된 이미지 (검색어: ${escapeSlackMrkdwn(searchQuery)}${source})`;
+};
+
+// 마감 전날 DM — 「관심 있음」 공고 중 내일 마감인 것을 한 통으로 묶는다.
+export const formatArtJobDeadlineReminder = (
+  postings: ArtJobReminderPosting[],
+): string => {
+  const lines = postings.map((posting) => {
+    const title = escapeSlackMrkdwn(sanitizeForSlackLink(posting.title));
+    return `• <${posting.detailUrl}|${title}> · ${escapeSlackMrkdwn(posting.company)}`;
+  });
+  return [`⏰ 내일 마감인 관심 공고 *${postings.length}건*`, ...lines].join(
+    '\n',
+  );
 };

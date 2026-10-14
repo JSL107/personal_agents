@@ -1,3 +1,4 @@
+import { PlainDate } from '../../../agent/vacation/domain/plain-date';
 import { ArtJobListing, ResolvedArtJobImage } from '../art-job-feed.type';
 
 export const ART_JOB_POSTING_REPOSITORY_PORT = Symbol(
@@ -7,6 +8,18 @@ export const ART_JOB_POSTING_REPOSITORY_PORT = Symbol(
 export interface MarkNotifiedInput {
   listing: ArtJobListing;
   resolved: ResolvedArtJobImage;
+  deadlineDate: PlainDate | null;
+}
+
+export interface InterestedPosting {
+  deadlineDate: PlainDate | null;
+}
+
+export interface ArtJobReminderPosting {
+  id: number;
+  company: string;
+  title: string;
+  detailUrl: string;
 }
 
 export interface ArtJobPostingRepositoryPort {
@@ -21,4 +34,17 @@ export interface ArtJobPostingRepositoryPort {
   findExcludedSourceIds(sourceIds: string[]): Promise<Set<string>>;
   // 제외 여부를 바꾼다. 되돌리기는 같은 회사 + 제목의 제외를 전부 푼다. 장부에 없는 공고면 false.
   setExcluded(sourceId: string, excluded: boolean): Promise<boolean>;
+  // 주어진 공고 중 「관심 있음」인 것의 sourceId.
+  findInterestedSourceIds(sourceIds: string[]): Promise<Set<string>>;
+  // 관심 여부를 바꾸고 그 공고의 마감일을 돌려준다. 장부에 없는 공고면 null.
+  setInterested(
+    sourceId: string,
+    interested: boolean,
+  ): Promise<InterestedPosting | null>;
+  // 마감일이 deadline 인 관심 공고 중, 제외되지 않았고 remindedBefore 이후로 알림을 안 보낸 것.
+  findDueReminders(
+    deadline: PlainDate,
+    remindedBefore: Date,
+  ): Promise<ArtJobReminderPosting[]>;
+  markReminded(ids: number[], at: Date): Promise<void>;
 }
