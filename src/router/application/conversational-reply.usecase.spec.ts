@@ -49,12 +49,21 @@ describe('ConversationalReply — buildSystemPrompt (self-context)', () => {
     expect(prompt).not.toMatch(/GitHub login `/);
   });
 
-  it('repoLabel 미설정 시 generic 동작 환경 안내로 fallback', () => {
+  it('repoLabel 미설정 시 generic 레포 안내로 fallback', () => {
     const prompt = buildSystemPrompt({});
-    expect(prompt).toContain('단일 GitHub 레포의 backend 봇');
+    expect(prompt).toContain('코드가 있는 곳: 단일 GitHub 레포');
     // 빈 문자열은 미설정과 동일 — falsy 처리
     const prompt2 = buildSystemPrompt({ repoLabel: '', ownerLogin: '' });
-    expect(prompt2).toContain('단일 GitHub 레포의 backend 봇');
+    expect(prompt2).toContain('코드가 있는 곳: 단일 GitHub 레포');
+  });
+
+  it('자기소개에 기술 스택을 싣지 않는다 — 답에 "백엔드에 구현" 류로 묻어난다', () => {
+    for (const prompt of [
+      buildSystemPrompt({ repoLabel: 'JSL107/personal_agents' }),
+      buildSystemPrompt({}),
+    ]) {
+      expect(prompt).not.toMatch(/NestJS|Prisma|Node 22|Slack Bolt|backend/);
+    }
   });
 
   it('대화 메모리 활용 규칙이 prompt 에 포함된다 (직전 [assistant] 라벨 인식 + 이미 받은 정보 재질문 금지)', () => {
@@ -133,7 +142,8 @@ describe('ConversationalReply — buildSystemPrompt (self-context)', () => {
         // 2026-10-08 PO_SHADOW 가 분기 제품 목표 선언·조회·닫기도 받는다(PO Shadow 단계 3)
         // 2026-10-14 자동·이모지·버튼 기능 목록 안내 규칙, 주제가 겹치지 않는 대안 금지(run 8787)
         // 2026-10-14 BLOG canDo 에 웹 검색 조사 경로와 "바로 검색해 답하지는 못한다" 를 명시(run 8605)
-        '4f2523c3697411a313cc3d39a0fd6a54593181f4ac34201b41aca8c55b6e2c77',
+        // 2026-10-14 자기소개에서 기술 스택 제거 — 답에 "백엔드에 구현" 으로 묻어났다(run 8838)
+        '0b6e209ff1a8163a2cedc2018f4fde5a9daeca35b1ac07b592647a32cada3fcd',
       );
     },
   );
@@ -215,10 +225,8 @@ describe('ConversationalReply — 이대리가 할 수 있는 일', () => {
     expect(prompt).toMatch(/할 수 있는 일」에 있으면 되묻지 말고/);
   });
 
-  it('자기소개가 실제 스택과 맞고 슬래시 명령을 예로 들지 않는다', () => {
+  it('자기소개가 슬래시 명령을 예로 들지 않는다', () => {
     const prompt = buildSystemPrompt({ repoLabel: 'JSL107/personal_agents' });
-    expect(prompt).toContain('Node 22 + NestJS 11');
-    expect(prompt).not.toContain('Node 20');
     // 금지 목록 안의 예시("`/review-pr` 같은 표현 사용 금지")는 남고, 자기소개의 사용 예시만 빠진다.
     expect(prompt).not.toContain(
       '`/review-pr` / `/impact-report` 등 임의 repo',
