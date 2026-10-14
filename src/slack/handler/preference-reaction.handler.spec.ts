@@ -1,7 +1,10 @@
 import { App } from '@slack/bolt';
 
 import { ReactionSignalRepositoryPort } from '../../preference-profile/domain/port/reaction-signal.repository.port';
-import { PreferenceReactionHandler } from './preference-reaction.handler';
+import {
+  pickPromptText,
+  PreferenceReactionHandler,
+} from './preference-reaction.handler';
 
 type ReactionAddedEvent = {
   reaction: string;
@@ -387,5 +390,30 @@ describe('PreferenceReactionHandler', () => {
 
     expect(client.conversations.replies).not.toHaveBeenCalled();
     expect(repository.record).not.toHaveBeenCalled();
+  });
+});
+
+describe('pickPromptText — 답이 답한 질문 고르기', () => {
+  const human = (text: string) => ({ text });
+  const bot = (text: string) => ({ bot_id: 'B_BOT', text });
+
+  it('답 바로 앞의 사람 메시지 하나를 고른다 — 그 앞의 주고받기는 보지 않는다', () => {
+    expect(pickPromptText([human('Q1'), bot('A1'), human('Q2')])).toBe('Q2');
+  });
+
+  it('답 앞의 봇 메시지(접수 안내·미리보기)는 건너뛴다', () => {
+    expect(pickPromptText([human('Q1'), bot('접수했어요')])).toBe('Q1');
+  });
+
+  it('사람 메시지가 연달아 둘 이상이면 어느 질문의 답인지 몰라 고르지 않는다', () => {
+    expect(pickPromptText([human('Q1'), human('Q2')])).toBeUndefined();
+    expect(
+      pickPromptText([bot('A0'), human('Q1'), human('Q2'), bot('접수')]),
+    ).toBeUndefined();
+  });
+
+  it('사람 메시지가 없으면 고르지 않는다', () => {
+    expect(pickPromptText([bot('공지')])).toBeUndefined();
+    expect(pickPromptText([])).toBeUndefined();
   });
 });

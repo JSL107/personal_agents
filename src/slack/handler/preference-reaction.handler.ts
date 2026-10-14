@@ -24,6 +24,28 @@ const TARGET_EMOJIS = ['+1', 'thumbsup', '-1', 'thumbsdown'];
 // 앞쪽 메시지만 와서 질문이 아닌 더 이른 발화가 잡힐 수 있다.
 const THREAD_FETCH_LIMIT = 200;
 
+type ThreadMessage = { bot_id?: string; text?: string };
+
+// 답 바로 앞의 봇 메시지(접수 안내·미리보기)를 건너뛰고, 그 앞에 이어진 사람 메시지가 정확히 하나일 때만
+// 그것을 질문으로 본다. 사람 메시지가 둘 이상 이어졌으면(질문 두 개를 연달아 보내고 답이 나중에 온 경우)
+// 어느 질문의 답인지 알 수 없어 남기지 않는다 — 엉뚱한 질문과 짝지어진 후보는 없는 것보다 나쁘다(#812 리뷰).
+// ponytail: 두 요청이 동시에 처리 중일 때 "접수 안내 → 다음 질문 → 앞 요청의 최종 답" 순서는 여전히
+// 다음 질문과 짝지어진다. 정확히 하려면 답을 게시할 때 질문 ts 를 함께 기록해야 한다.
+export const pickPromptText = (
+  messagesBeforeReply: readonly ThreadMessage[],
+): string | undefined => {
+  const humanRun: ThreadMessage[] = [];
+  let index = messagesBeforeReply.length - 1;
+  while (index >= 0 && messagesBeforeReply[index].bot_id) {
+    index -= 1;
+  }
+  while (index >= 0 && !messagesBeforeReply[index].bot_id) {
+    humanRun.push(messagesBeforeReply[index]);
+    index -= 1;
+  }
+  return humanRun.length === 1 ? humanRun[0].text || undefined : undefined;
+};
+
 @Injectable()
 export class PreferenceReactionHandler implements SlackHandler {
   private readonly logger = new Logger(PreferenceReactionHandler.name);
@@ -110,9 +132,9 @@ export class PreferenceReactionHandler implements SlackHandler {
     });
   }
 
-  // 반응 대상 답글 바로 앞의 사람 메시지 = 이대리가 답한 질문. 👎 달린 대화 답변을 eval 후보로
-  // 낼 때 쓴다(nl-answer-candidate). 원장(agent_run)에는 Slack 메시지 ts 가 없어 반응 행에서
-  // run 으로 거슬러 갈 수 없으므로, 질문을 아는 유일한 시점인 여기서 같이 남긴다.
+  // 반응 대상 답글이 답한 질문을 찾는다. 👎 달린 대화 답변을 eval 후보로 낼 때 쓴다(nl-answer-candidate).
+  // 원장(agent_run)에는 Slack 메시지 ts 가 없어 반응 행에서 run 으로 거슬러 갈 수 없으므로, 질문을 아는
+  // 유일한 시점인 여기서 같이 남긴다. 짝을 고르는 규칙은 pickPromptText.
   // `latest` 를 답글 ts 로, inclusive=false 로 두면 답글 이전 메시지만 온다(2026-10-14 실측).
   // 질문을 못 찾아도 반응 저장은 계속한다 — 선호 학습 신호가 이 부가 정보 때문에 빠지면 안 된다.
   private async findPromptText(
@@ -129,9 +151,7 @@ export class PreferenceReactionHandler implements SlackHandler {
         inclusive: false,
         limit: THREAD_FETCH_LIMIT,
       });
-      return thread.messages
-        ?.filter((candidate) => !candidate.bot_id && candidate.text)
-        .at(-1)?.text;
+      return pickPromptText(thread.messages ?? []);
     } catch (error: unknown) {
       this.logger.warn(
         `반응 대상의 질문 조회 실패 — 질문 없이 저장한다: ${error instanceof Error ? error.message : String(error)}`,
