@@ -44,7 +44,7 @@ const ART_JOB_ACTIONS = [
 
 // 원화 공고 본문의 「관심 없음」·「관심 있음」 버튼과 각 되돌리기. 받는 사람(ART_JOB_FEED_MENTION_USER_ID)과
 // 운영자(AUTOPILOT_OWNER_SLACK_USER_ID)의 클릭만 장부에 반영하고, 그 메시지의 버튼들을 장부 상태대로 다시 그린다.
-// 운영자가 눌러도 장부는 하나라 결과는 받는 사람 몫이다 — 마감 알림 DM 도 받는 사람에게 간다.
+// 마감 알림 DM 은 「관심 있음」을 누른 사람에게 간다(장부의 interested_by).
 //
 // 실패는 조용히 넘기지 않는다 — 누른 사람은 반영됐다고 믿고 떠나므로 그 자리에서 알린다.
 @Injectable()
@@ -65,7 +65,8 @@ export class ArtJobExclusionActionHandler implements SlackHandler {
     for (const actionId of ART_JOB_ACTIONS) {
       app.action(actionId, async ({ ack, body, respond, client }) => {
         await ack();
-        if (!this.canPress(extractActionUserId(body))) {
+        const userId = extractActionUserId(body);
+        if (!userId || !this.canPress(userId)) {
           await respond({
             response_type: 'ephemeral',
             replace_original: false,
@@ -87,7 +88,7 @@ export class ArtJobExclusionActionHandler implements SlackHandler {
         }
         let notice: string | null;
         try {
-          notice = await this.applyToLedger(actionId, sourceId);
+          notice = await this.applyToLedger(actionId, sourceId, userId);
         } catch (error: unknown) {
           const reason = error instanceof Error ? error.message : String(error);
           this.logger.warn(`원화 공고 버튼 저장 실패 (${actionId}): ${reason}`);
@@ -142,11 +143,11 @@ export class ArtJobExclusionActionHandler implements SlackHandler {
   }
 
   // 받는 사람이 없으면 기능이 꺼진 것이라 운영자도 못 누른다.
-  private canPress(userId: string | null): boolean {
+  private canPress(userId: string): boolean {
     const recipient = this.configService
       .get<string>('ART_JOB_FEED_MENTION_USER_ID')
       ?.trim();
-    if (!recipient || !userId) {
+    if (!recipient) {
       return false;
     }
     const owner = this.configService
@@ -159,6 +160,7 @@ export class ArtJobExclusionActionHandler implements SlackHandler {
   private async applyToLedger(
     actionId: string,
     sourceId: string,
+    userId: string,
   ): Promise<string | null> {
     if (
       actionId === ART_JOB_EXCLUDE_ACTION ||
@@ -175,7 +177,11 @@ export class ArtJobExclusionActionHandler implements SlackHandler {
       return null;
     }
     const interested = actionId === ART_JOB_INTEREST_ACTION;
-    const posting = await this.repository.setInterested(sourceId, interested);
+    const posting = await this.repository.setInterested(
+      sourceId,
+      interested,
+      userId,
+    );
     if (!posting) {
       throw new Error(`장부에 없는 공고 — GI_No=${sourceId}`);
     }

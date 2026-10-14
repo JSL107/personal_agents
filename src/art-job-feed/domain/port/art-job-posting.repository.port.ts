@@ -20,6 +20,8 @@ export interface ArtJobReminderPosting {
   company: string;
   title: string;
   detailUrl: string;
+  // 「관심 있음」을 누른 사람. 이 컬럼이 생기기 전에 표시된 공고는 null.
+  interestedBy: string | null;
 }
 
 export interface ArtJobPostingRepositoryPort {
@@ -36,10 +38,12 @@ export interface ArtJobPostingRepositoryPort {
   setExcluded(sourceId: string, excluded: boolean): Promise<boolean>;
   // 주어진 공고 중 「관심 있음」인 것의 sourceId.
   findInterestedSourceIds(sourceIds: string[]): Promise<Set<string>>;
-  // 관심 여부를 바꾸고 그 공고의 마감일을 돌려준다. 장부에 없는 공고면 null.
+  // 관심 여부와 누른 사람을 바꾸고 그 공고의 마감일을 돌려준다. 해제하면 누른 사람도 비운다.
+  // 장부에 없는 공고면 null.
   setInterested(
     sourceId: string,
     interested: boolean,
+    userId: string,
   ): Promise<InterestedPosting | null>;
   // 마감일이 deadline 인 관심 공고 중, 제외되지 않았고 remindedBefore 이후로 알림을 안 보낸 것.
   findDueReminders(

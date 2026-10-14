@@ -160,6 +160,7 @@ export class ArtJobPostingPrismaRepository implements ArtJobPostingRepositoryPor
   async setInterested(
     sourceId: string,
     interested: boolean,
+    userId: string,
   ): Promise<InterestedPosting | null> {
     const found = await this.prisma.artJobPosting.findUnique({
       where: { source_sourceId: { source: ART_JOB_SOURCE, sourceId } },
@@ -170,7 +171,9 @@ export class ArtJobPostingPrismaRepository implements ArtJobPostingRepositoryPor
     }
     await this.prisma.artJobPosting.update({
       where: { id: found.id },
-      data: { interestedAt: interested ? new Date() : null },
+      data: interested
+        ? { interestedAt: new Date(), interestedBy: userId }
+        : { interestedAt: null, interestedBy: null },
     });
     return {
       deadlineDate: found.deadlineDate
@@ -193,7 +196,13 @@ export class ArtJobPostingPrismaRepository implements ArtJobPostingRepositoryPor
           { deadlineRemindedAt: { lt: remindedBefore } },
         ],
       },
-      select: { id: true, company: true, title: true, detailUrl: true },
+      select: {
+        id: true,
+        company: true,
+        title: true,
+        detailUrl: true,
+        interestedBy: true,
+      },
       orderBy: { id: 'asc' },
     });
   }

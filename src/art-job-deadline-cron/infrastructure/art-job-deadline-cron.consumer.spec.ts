@@ -6,6 +6,7 @@ const POSTING: ArtJobReminderPosting = {
   company: '그레이게임즈',
   title: '캐릭터 원화',
   detailUrl: 'https://www.gamejob.co.kr/x?GI_No=7',
+  interestedBy: null,
 };
 const JOB = {
   data: { recipient: 'U_RECIPIENT', ownerSlackUserId: 'U_OWNER' },
@@ -125,5 +126,57 @@ describe('ArtJobDeadlineCronConsumer', () => {
     expect(deps.postMessage).toHaveBeenCalledTimes(1);
     expect(deps.notificationPublisher.publishCronFailure).toHaveBeenCalled();
     expect(deps.notificationPublisher.publishRecovery).not.toHaveBeenCalled();
+  });
+
+  it('누른 사람별로 한 통씩 보내고, 누른 사람 기록이 없으면 받는 사람에게 보낸다', async () => {
+    const deps = makeConsumer([
+      { ...POSTING, id: 1, interestedBy: 'U_OWNER' },
+      { ...POSTING, id: 2, interestedBy: null },
+      { ...POSTING, id: 3, interestedBy: 'U_OWNER' },
+    ]);
+
+    await deps.consumer.process(JOB);
+
+    const sent = deps.postMessage.mock.calls.map(([call]) => {
+      return [call.target, call.text.match(/\*(\d+)건\*/)[1]];
+    });
+    expect(sent).toEqual([
+      ['U_OWNER', '2'],
+      ['U_RECIPIENT', '1'],
+    ]);
+    expect(deps.repository.markReminded.mock.calls.map(([ids]) => ids)).toEqual(
+      [[1, 3], [2]],
+    );
+  });
+
+  it('한 사람에게 보내다 실패해도 나머지 사람에게는 보내고, 실패를 모아 던진다', async () => {
+    const postMessage = jest.fn(async ({ target }: { target: string }) => {
+      if (target === 'U_BROKEN') {
+        throw new Error('user_not_found');
+      }
+      return {};
+    });
+    const deps = makeConsumer(
+      [
+        { ...POSTING, id: 1, interestedBy: 'U_BROKEN' },
+        { ...POSTING, id: 2, interestedBy: 'U_OWNER' },
+      ],
+      postMessage,
+    );
+
+    await expect(deps.consumer.process(JOB)).rejects.toThrow(
+      '마감 알림 1/2명 실패 — U_BROKEN: user_not_found',
+    );
+    expect(deps.repository.markReminded).toHaveBeenCalledWith(
+      [2],
+      expect.any(Date),
+    );
+
+    // 재시도: 보낸 사람은 가드로 건너뛰고 실패한 사람만 다시 시도한다.
+    postMessage.mockClear();
+    await expect(deps.consumer.process(JOB)).rejects.toThrow('U_BROKEN');
+    expect(postMessage.mock.calls.map(([call]) => call.target)).toEqual([
+      'U_BROKEN',
+    ]);
   });
 });
