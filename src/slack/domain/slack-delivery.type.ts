@@ -21,6 +21,7 @@ export type DeliveryKind =
   | 'resume-calibration'
   | 'job-application-nudge'
   | 'art-job-feed'
+  | 'idea-triage'
   | 'code-review-webhook'
   | 'pr-careerlog'
   | 'alert:claude-auth'

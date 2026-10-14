@@ -172,6 +172,11 @@ export class ReplayFailedRunUsecase {
     ): (() => Promise<Outcome>) => this.withLineage(runId, execute);
 
     switch (payload.agentType) {
+      case 'IDEA_TRIAGE':
+        return reject(
+          ReplayRejectionCode.NOT_SUPPORTED,
+          `AgentRun #${runId} (IDEA_TRIAGE) 는 cron 회차에서 미게시 판정 재시도와 신규 수집을 처리하므로 개별 재실행을 지원하지 않습니다.`,
+        );
       case 'PM':
         return ready(
           'PM',

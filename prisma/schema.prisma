@@ -1293,6 +1293,31 @@ model ScheduleItem {
   @@map("schedule_item")
 }
 
+// 채널 원글별 판정과 게시 상태. 고유 키로 중복 회차의 재게시를 막는다.
+model IdeaTriage {
+  id                Int      @id @default(autoincrement())
+  channelId         String   @map("channel_id")
+  messageTs         String   @map("message_ts")
+  authorSlackUserId String?  @map("author_slack_user_id")
+  ideaText          String   @map("idea_text") @db.Text
+  verdict           String
+  reason            String   @db.Text
+  counterpoint      String   @db.Text
+  scheduleTitle     String   @map("schedule_title")
+  effort            String
+  proposedDate      DateTime @map("proposed_date") @db.Date
+  status            String
+  replyTs           String?  @map("reply_ts")
+  previewId         String?  @map("preview_id")
+  scheduleItemId    Int?     @map("schedule_item_id")
+  agentRunId        Int?     @map("agent_run_id")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@unique([channelId, messageTs])
+  @@map("idea_triage")
+}
+
 // PO 대행이 판단 기준으로 삼는 제품 목표. 정본은 이 표 하나다 — Notion 등 다른 곳에 복제하지 않는다.
 // 행은 사용자가 확인 카드(PreviewGate)를 승인했을 때만 생긴다(`ProductGoalApplier`). 활성은
 // `closedAt IS NULL` 이다(`supersededAt` 과 같은 패턴). 주기는 스키마에 박지 않고 `dueDate` 로만 쓴다.
