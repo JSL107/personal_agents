@@ -359,6 +359,79 @@ describe('GeneratePaperRecommendationUsecase', () => {
     }
   });
 
+  describe('낡은 시세 차단 (requireFreshMarketData)', () => {
+    // 판단일 2026-09-24(추석, 달력에서 빠졌다고 가정) 19:30 KST — 시세는 09-23 에 멈춰 있다.
+    const holidayDecidedAt = new Date('2026-09-24T19:30:00+09:00');
+    const stopScreenAt = (asOf: string | null): void => {
+      const original = screenUniverse.execute.getMockImplementation()!;
+      screenUniverse.execute.mockImplementation(async (input) => ({
+        ...(await original(input)),
+        asOf,
+      }));
+    };
+
+    it('자동 회차는 시세가 판단일보다 낡았으면 모델 호출·주문 전에 실패한다', async () => {
+      stopScreenAt('2026-09-23');
+
+      const result = await usecase.execute({
+        strategies: ['LONG_TERM'],
+        decidedAt: holidayDecidedAt,
+        requireFreshMarketData: true,
+      });
+
+      expect(result.completed).toEqual([]);
+      expect(result.failed).toEqual([
+        {
+          strategy: 'LONG_TERM',
+          message: expect.stringContaining(
+            '시세가 2026-09-23 기준에 멈춰 판단일(2026-09-24)',
+          ),
+        },
+      ]);
+      expect(modelRouter.route).not.toHaveBeenCalled();
+      expect(repository.saveRecommendationAtomically).not.toHaveBeenCalled();
+    });
+
+    it('판단일 시세면 자동 회차도 그대로 주문한다', async () => {
+      stopScreenAt('2026-09-24');
+
+      const result = await usecase.execute({
+        strategies: ['LONG_TERM'],
+        decidedAt: holidayDecidedAt,
+        requireFreshMarketData: true,
+      });
+
+      expect(result.failed).toEqual([]);
+      expect(result.completed[0].dataAsOf).toBe('2026-09-24');
+    });
+
+    // 수동 재실행은 지난 판단일을 다시 돈다 — 그 회차를 막으면 재실행 자체가 불가능해진다.
+    it('옵션을 켜지 않으면(수동 재실행) 낡은 시세여도 막지 않는다', async () => {
+      stopScreenAt('2026-09-23');
+
+      const result = await usecase.execute({
+        strategies: ['LONG_TERM'],
+        decidedAt: holidayDecidedAt,
+      });
+
+      expect(result.failed).toEqual([]);
+      expect(modelRouter.route).toHaveBeenCalledTimes(1);
+    });
+
+    it('시세가 아예 없으면(asOf=null) 실패가 아니라 기존 주문 0건 경로로 간다', async () => {
+      stopScreenAt(null);
+
+      const result = await usecase.execute({
+        strategies: ['LONG_TERM'],
+        decidedAt: holidayDecidedAt,
+        requireFreshMarketData: true,
+      });
+
+      expect(result.failed).toEqual([]);
+      expect(result.completed[0].ordersCreated).toBe(0);
+    });
+  });
+
   it('후보 밖 보유 종목도 includedIndicators 지표를 모델 prompt에 포함한다', async () => {
     repository.findAccountByName.mockResolvedValue({
       id: 41,

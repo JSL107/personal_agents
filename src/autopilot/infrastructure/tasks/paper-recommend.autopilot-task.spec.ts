@@ -4,6 +4,7 @@ import { holidayCalendarOf } from '../../../holiday/domain/business-calendar';
 import { PaperRecommendAutopilotTask } from './paper-recommend.autopilot-task';
 
 const NO_HOLIDAYS = { load: async () => holidayCalendarOf([]) };
+const NO_TRACE = { record: async () => undefined };
 
 describe('PaperRecommendAutopilotTask', () => {
   describe('휴장일', () => {
@@ -17,11 +18,15 @@ describe('PaperRecommendAutopilotTask', () => {
       '휴장일(%s)에는 추천 판단을 돌리지 않는다',
       async (firedAtKst) => {
         const recommendation = { execute: jest.fn() };
+        const trace = { record: jest.fn().mockResolvedValue(undefined) };
         const task = new PaperRecommendAutopilotTask(
           recommendation as unknown as GeneratePaperRecommendationUsecase,
           chuseok,
+          trace,
         );
 
+        // emptyReason 을 돌려주면 orchestrator 가 복구 신호로 읽어 열린 장애를 닫는다 —
+        // 실행 전 skip 은 summaryText 로 두고 흔적은 trace 에 남긴다.
         await expect(
           task.run({ ownerSlackUserId: 'U1', firedAtKst }),
         ).resolves.toEqual({
@@ -29,6 +34,14 @@ describe('PaperRecommendAutopilotTask', () => {
           summaryText: `휴장일(${firedAtKst}) — 모의투자 추천 판단 건너뜀`,
         });
         expect(recommendation.execute).not.toHaveBeenCalled();
+        expect(trace.record).toHaveBeenCalledWith({
+          taskId: 'paper-recommend',
+          firedAtKst,
+          gateEnabled: true,
+          candidateCount: null,
+          llmCalled: false,
+          detail: '휴장일 — 추천 판단 건너뜀',
+        });
       },
     );
 
@@ -36,16 +49,22 @@ describe('PaperRecommendAutopilotTask', () => {
       const recommendation = {
         execute: jest.fn().mockResolvedValue({ completed: [], failed: [] }),
       };
+      const trace = { record: jest.fn().mockResolvedValue(undefined) };
       const task = new PaperRecommendAutopilotTask(
         recommendation as unknown as GeneratePaperRecommendationUsecase,
         chuseok,
+        trace,
       );
 
       await task.run({ ownerSlackUserId: 'U1', firedAtKst: '2026-09-23' });
 
+      // 거래일 흔적은 agent_run 이 맡는다.
+      expect(trace.record).not.toHaveBeenCalled();
+
       expect(recommendation.execute).toHaveBeenCalledWith({
         decidedAt: new Date('2026-09-23T19:30:00+09:00'),
         triggerType: TriggerType.AUTOPILOT_PAPER_RECOMMEND_CRON,
+        requireFreshMarketData: true,
       });
     });
   });
@@ -99,6 +118,7 @@ describe('PaperRecommendAutopilotTask', () => {
     const task = new PaperRecommendAutopilotTask(
       recommendation as unknown as GeneratePaperRecommendationUsecase,
       NO_HOLIDAYS,
+      NO_TRACE,
     );
 
     await expect(
@@ -117,6 +137,7 @@ describe('PaperRecommendAutopilotTask', () => {
     expect(recommendation.execute).toHaveBeenCalledWith({
       decidedAt: new Date('2026-08-17T19:30:00+09:00'),
       triggerType: TriggerType.AUTOPILOT_PAPER_RECOMMEND_CRON,
+      requireFreshMarketData: true,
     });
   });
 
@@ -133,6 +154,7 @@ describe('PaperRecommendAutopilotTask', () => {
     const task = new PaperRecommendAutopilotTask(
       recommendation as unknown as GeneratePaperRecommendationUsecase,
       NO_HOLIDAYS,
+      NO_TRACE,
     );
 
     await expect(
@@ -192,6 +214,7 @@ describe('PaperRecommendAutopilotTask', () => {
     const task = new PaperRecommendAutopilotTask(
       recommendation as unknown as GeneratePaperRecommendationUsecase,
       NO_HOLIDAYS,
+      NO_TRACE,
     );
 
     const result = await task.run({
@@ -255,6 +278,7 @@ describe('PaperRecommendAutopilotTask', () => {
     const task = new PaperRecommendAutopilotTask(
       recommendation as unknown as GeneratePaperRecommendationUsecase,
       NO_HOLIDAYS,
+      NO_TRACE,
     );
 
     const result = await task.run({
@@ -298,6 +322,7 @@ describe('PaperRecommendAutopilotTask', () => {
     const task = new PaperRecommendAutopilotTask(
       recommendation as unknown as GeneratePaperRecommendationUsecase,
       NO_HOLIDAYS,
+      NO_TRACE,
     );
 
     const result = await task.run({
@@ -333,6 +358,7 @@ describe('PaperRecommendAutopilotTask', () => {
     const task = new PaperRecommendAutopilotTask(
       recommendation as unknown as GeneratePaperRecommendationUsecase,
       NO_HOLIDAYS,
+      NO_TRACE,
     );
 
     const result = await task.run({
@@ -383,6 +409,7 @@ describe('PaperRecommendAutopilotTask', () => {
     const task = new PaperRecommendAutopilotTask(
       recommendation as unknown as GeneratePaperRecommendationUsecase,
       NO_HOLIDAYS,
+      NO_TRACE,
     );
     const result = await task.run({
       ownerSlackUserId: 'U1',
@@ -417,6 +444,7 @@ describe('PaperRecommendAutopilotTask', () => {
     const task = new PaperRecommendAutopilotTask(
       recommendation as unknown as GeneratePaperRecommendationUsecase,
       NO_HOLIDAYS,
+      NO_TRACE,
     );
 
     const result = await task.run({
@@ -461,6 +489,7 @@ describe('PaperRecommendAutopilotTask', () => {
     const task = new PaperRecommendAutopilotTask(
       recommendation as unknown as GeneratePaperRecommendationUsecase,
       NO_HOLIDAYS,
+      NO_TRACE,
     );
 
     const result = await task.run({
@@ -511,6 +540,7 @@ describe('PaperRecommendAutopilotTask', () => {
     const task = new PaperRecommendAutopilotTask(
       recommendation as unknown as GeneratePaperRecommendationUsecase,
       NO_HOLIDAYS,
+      NO_TRACE,
     );
 
     const result = await task.run({
@@ -560,6 +590,7 @@ describe('PaperRecommendAutopilotTask', () => {
     const task = new PaperRecommendAutopilotTask(
       recommendation as unknown as GeneratePaperRecommendationUsecase,
       NO_HOLIDAYS,
+      NO_TRACE,
     );
 
     const result = await task.run({
@@ -612,6 +643,7 @@ describe('PaperRecommendAutopilotTask', () => {
     const task = new PaperRecommendAutopilotTask(
       recommendation as unknown as GeneratePaperRecommendationUsecase,
       NO_HOLIDAYS,
+      NO_TRACE,
     );
 
     const result = await task.run({

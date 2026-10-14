@@ -1,4 +1,5 @@
-// 주간 판정 계열 autopilot task(knowledge-lint L4 · docs-sync-audit Layer2)의 발화 흔적 포트.
+// 주간 판정 계열 autopilot task(knowledge-lint L4 · docs-sync-audit Layer2)와 휴장일에 건너뛰는
+// paper-recommend 의 발화 흔적 포트.
 // Slack digest 발송(summaryText)은 사후 조회·집계가 안 되므로, "발화했다/게이트 상태/
 // 판정 대상 건수/LLM 호출 여부" 를 별도로 남겨 사후에 원인(게이트 OFF · 대상 0건 · 미발화)을
 // 가릴 수 있게 한다.
