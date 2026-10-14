@@ -112,6 +112,7 @@ export class HandleConversationTurnUsecase {
           priorTurns,
           unresolvedStreak:
             input.unresolvedStreak ?? calculateUnresolvedStreak(priorTurns),
+          routingMissRunId: (error as RouterException).routingMissRunId,
         });
       } catch (replyError: unknown) {
         throw new ConversationalReplyFailedException(replyError);

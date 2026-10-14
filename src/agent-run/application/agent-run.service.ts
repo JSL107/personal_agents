@@ -499,6 +499,20 @@ export class AgentRunService implements OnApplicationBootstrap {
     }
   }
 
+  // 원장 밖에서 만든 답을 이미 끝난 run 에 남긴다 — 담당을 못 고른 회차(ROUTER)의 대화 답변.
+  // 기록 실패는 경고만 남긴다(답은 이미 사용자에게 나갔다).
+  async attachModelResponse(input: {
+    agentRunId: number;
+    agentType: AgentType;
+    modelResponse: string;
+  }): Promise<void> {
+    await this.recordModelResponse(
+      input.agentRunId,
+      input.agentType,
+      input.modelResponse,
+    );
+  }
+
   private async recordModelResponse(
     id: number,
     agentType: AgentType,

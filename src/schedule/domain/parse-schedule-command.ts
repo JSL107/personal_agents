@@ -30,8 +30,14 @@ const DATE_FRAGMENTS = DATE_CORES.map(
 // 지시어는 **문장 끝에 올 때만** 걷어낸다. 앵커 없이 잡으면 제목에 든 정상 낱말을 먹는다
 // ("주민등록 등본 발급" 의 등록, "자동이체 추가 신청" 의 추가). 종결어미를 필수로 둬야
 // 동사 하나만으로는 매칭되지 않는다.
+// 부탁형("추가해 줄래?", "넣어 주세요")과 끝 문장부호도 지시어의 일부로 본다 — 안 걷으면
+// "추가해 줄래?" 가 제목에 남는다(2026-10-13 run 8621).
 const TRAILING_INSTRUCTION =
-  /\s*(일정|스케줄|마감|리마인더)?\s*(등록|추가|잡아|넣어)\s*(해줘|해|줘|주세요)\s*$/;
+  /\s*(일정|스케줄|마감|리마인더)?\s*(등록|추가|잡아|넣어)\s*(?:해\s*)?(해|줘|주세요|줄래요?|주실래요|줄\s*수\s*있(?:어요?|나요)|주실\s*수\s*있어요)\s*[?？.!]*\s*$/;
+
+// "할일에 ○○ 추가" 의 "할일에" 처럼 등록할 곳을 가리키는 머리말. 문장 맨 앞, 조사와 띄어쓰기가
+// 붙었을 때만 걷어낸다 — "할일 목록 정리" 같은 제목은 남는다.
+const LEADING_TARGET = /^\s*(할\s*일|일정|스케줄)\s*(에|으로|로)\s+/;
 
 const stripTitle = (text: string): string => {
   let stripped = text;
@@ -39,6 +45,7 @@ const stripTitle = (text: string): string => {
     stripped = stripped.replace(pattern, ' ');
   }
   stripped = stripped.replace(TRAILING_INSTRUCTION, ' ');
+  stripped = stripped.replace(LEADING_TARGET, ' ');
   return stripped.replace(/\s+/g, ' ').trim();
 };
 
