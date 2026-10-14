@@ -10,7 +10,9 @@ import {
 
 import {
   SLACK_DELIVERY_STATUS,
+  SLACK_DELIVERY_SUPPRESS_REASON,
   SlackDeliveryStatus,
+  SlackDeliverySuppressReason,
 } from '../../slack/domain/slack-delivery.type';
 import { SlackDeliverySummary } from '../../slack/domain/slack-delivery-summary';
 import { BuildActivityUsecase } from '../application/build-activity.usecase';
@@ -67,8 +69,19 @@ export class ConsoleController {
     status: SlackDeliveryStatus,
     @Query('days', new DefaultValuePipe(14), ParseIntPipe) days: number,
     @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit: number,
+    // 콘솔 앱 보고서 탭은 CONSOLE_ROUTE 만 본다. 생략하면 예전처럼 사유를 가리지 않는다.
+    @Query(
+      'reason',
+      new ParseEnumPipe(SLACK_DELIVERY_SUPPRESS_REASON, { optional: true }),
+    )
+    reason: SlackDeliverySuppressReason | undefined,
   ): Promise<ListDeliveriesResult> {
-    return await this.listDeliveries.execute({ status, days, limit });
+    return await this.listDeliveries.execute({
+      status,
+      days,
+      limit,
+      ...(reason === undefined ? {} : { suppressReason: reason }),
+    });
   }
 
   // 대시보드 — 최근 14일 실행 추이와 최근 실행 목록. 스냅샷은 지금 도는 런만 담아 따로 둔다.

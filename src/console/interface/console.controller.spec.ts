@@ -69,11 +69,22 @@ describe('ConsoleController deliveries', () => {
       listDeliveries as unknown as ListDeliveriesUsecase,
     );
 
-    expect(await controller.getDeliveries('SENT', 7, 20)).toBe(expected);
+    expect(await controller.getDeliveries('SENT', 7, 20, undefined)).toBe(
+      expected,
+    );
     expect(listDeliveries.execute).toHaveBeenCalledWith({
       status: 'SENT',
       days: 7,
       limit: 20,
+    });
+
+    // 콘솔 앱 보고서 탭은 CONSOLE_ROUTE 만 요청한다 — 사유가 오면 그대로 넘긴다.
+    await controller.getDeliveries('SUPPRESSED', 14, 200, 'CONSOLE_ROUTE');
+    expect(listDeliveries.execute).toHaveBeenLastCalledWith({
+      status: 'SUPPRESSED',
+      days: 14,
+      limit: 200,
+      suppressReason: 'CONSOLE_ROUTE',
     });
   });
 });

@@ -133,4 +133,27 @@ describe('SlackDeliveryPrismaRepository', () => {
       take: 50,
     });
   });
+
+  it('억제 사유를 주면 take 와 같은 조회 조건에 넣는다', async () => {
+    findMany.mockResolvedValue([]);
+    const since = new Date('2026-10-01T00:00:00Z');
+
+    await repository.findByStatus({
+      status: 'SUPPRESSED',
+      suppressReason: 'CONSOLE_ROUTE',
+      since,
+      limit: 200,
+    });
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          status: 'SUPPRESSED',
+          suppressReason: 'CONSOLE_ROUTE',
+          createdAt: { gte: since },
+        },
+        take: 200,
+      }),
+    );
+  });
 });

@@ -863,7 +863,7 @@ private struct ChartPanel<Content: View>: View {
     }
 }
 
-private struct ListPanel<Content: View>: View {
+struct ListPanel<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {

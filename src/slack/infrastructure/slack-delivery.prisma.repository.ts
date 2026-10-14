@@ -62,11 +62,16 @@ export class SlackDeliveryPrismaRepository implements SlackDeliveryRepositoryPor
 
   async findByStatus({
     status,
+    suppressReason,
     since,
     limit,
   }: SlackDeliveryListInput): Promise<SlackDeliveryListRow[]> {
     const rows = await this.prisma.slackDelivery.findMany({
-      where: { status, createdAt: { gte: since } },
+      where: {
+        status,
+        ...(suppressReason === undefined ? {} : { suppressReason }),
+        createdAt: { gte: since },
+      },
       select: {
         id: true,
         kind: true,
