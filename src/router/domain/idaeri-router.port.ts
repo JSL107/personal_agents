@@ -14,6 +14,10 @@ export interface BlogReplyContext {
   // 백그라운드 완료 답장을 대화 기억에도 남긴다. 없으면 기억에는 "작성을 시작했어요" ack 만 남아,
   // 완료 직후 "이거 3줄 요약해줘" 가 가리킬 원문이 사라진다(2026-10-14 run 8837).
   rememberReply?: (text: string) => Promise<void>;
+  // 결과 답장의 게시 여부를 멘션 수신 기록에 남긴다. ack 가 나가면 그 멘션은 답한 것으로 닫히므로,
+  // 이것이 없으면 결과 답장이 끝내 안 나가도 어디에도 안 보인다. 둘 다 throw 하지 않는다.
+  markFinalReplyPending?: () => Promise<void>;
+  recordFinalReply?: (posted: boolean) => Promise<void>;
 }
 
 // dispatch 진입점 — 사용자/cron/webhook 의 발화를 manager 에 전달한다.

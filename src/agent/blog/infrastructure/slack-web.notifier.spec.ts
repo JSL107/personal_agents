@@ -32,15 +32,25 @@ describe('SlackWebNotifier', () => {
     expect(postMessage).toHaveBeenCalledWith({ channel: 'C1', text: '완료' });
   });
 
-  it('postMessage 실패는 swallow 한다(throw 안 함)', async () => {
+  it('게시하면 true 를 돌려준다', async () => {
+    const notifier = new SlackWebNotifier({
+      chat: { postMessage: jest.fn().mockResolvedValue({ ok: true }) },
+    } as unknown as WebClient);
+
+    await expect(notifier.notify({ channel: 'C1', text: 'x' })).resolves.toBe(
+      true,
+    );
+  });
+
+  it('postMessage 실패는 swallow 하고 false 를 돌려준다', async () => {
     const postMessage = jest.fn().mockRejectedValue(new Error('boom'));
     const notifier = new SlackWebNotifier({
       chat: { postMessage },
     } as unknown as WebClient);
 
-    await expect(
-      notifier.notify({ channel: 'C1', text: 'x' }),
-    ).resolves.toBeUndefined();
+    await expect(notifier.notify({ channel: 'C1', text: 'x' })).resolves.toBe(
+      false,
+    );
   });
 
   // 삼키는 경로라 로그가 유일한 단서 — 힌트가 그 로그에 실리는지 확인한다.
@@ -66,11 +76,11 @@ describe('SlackWebNotifier', () => {
     warn.mockRestore();
   });
 
-  it('client 가 null 이면 noop(throw 안 함)', async () => {
+  it('client 가 null 이면 noop 하고 false 를 돌려준다', async () => {
     const notifier = new SlackWebNotifier(null);
 
-    await expect(
-      notifier.notify({ channel: 'C1', text: 'x' }),
-    ).resolves.toBeUndefined();
+    await expect(notifier.notify({ channel: 'C1', text: 'x' })).resolves.toBe(
+      false,
+    );
   });
 });
