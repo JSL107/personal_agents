@@ -20,4 +20,8 @@ export interface ConversationTurn {
   agentType: AgentType | null;
   agentRunId: number | null;
   timestampMs: number;
+  // 나중에 끼어든 turn(비동기 완료 답장)이 실제로 게시된 스레드의 기억 키. DM 최상위 요청의 완료
+  // 답장은 channel 키에도 남는데, 완료 시점에 쌓여 다른 최상위 요청 뒤에 놓일 수 있다 — 스레드로
+  // 옮겨 담을 때 이 키로 자기 스레드 답장만 고른다.
+  replyThreadKey?: string;
 }
