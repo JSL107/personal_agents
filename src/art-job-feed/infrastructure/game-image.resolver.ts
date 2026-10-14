@@ -40,6 +40,8 @@ const isTrustedMedia = (docUrl: string): boolean => {
   }
 };
 
+// 이보다 짧은 게임명은 부분 일치 검증이 의미 없다(플레이스토어 시작 일치와 같은 하한).
+const MIN_VERIFIABLE_TITLE_LENGTH = 4;
 // 기사 제목까지 확인할 후보 수 — 후보마다 기사 페이지를 한 번씩 받는다.
 const MAX_ARTICLE_CHECKS = 5;
 
@@ -158,7 +160,12 @@ export class GameImageResolver implements GameImageResolverPort {
   }
 
   private async searchKakao(gameTitle: string): Promise<ArtJobImage | null> {
-    if (!this.kakaoImageSearch.isEnabled()) {
+    // 'NC' 같은 짧은 이름은 기사 제목 검증이 무력하다('NCSOFT' 가 든 모든 기사와 일치).
+    // 플레이스토어 시작 일치와 같은 하한을 둔다.
+    if (
+      !this.kakaoImageSearch.isEnabled() ||
+      normalizeTitleKey(gameTitle).length < MIN_VERIFIABLE_TITLE_LENGTH
+    ) {
       return null;
     }
     let candidates: KakaoImageDocument[];

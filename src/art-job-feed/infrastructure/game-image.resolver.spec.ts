@@ -151,6 +151,18 @@ describe('GameImageResolver', () => {
     expect(result.googleSearchUrl).not.toBeNull();
   });
 
+  it('짧은 게임명은 카카오 보강을 하지 않는다', async () => {
+    mockPages({});
+    const kakao = kakaoReturning([document()]);
+    const result = await new GameImageResolver(kakao as never).resolve({
+      ...listing,
+      title: '[NC] 캐릭터 원화',
+      company: '회사',
+    });
+    expect(kakao.search).not.toHaveBeenCalled();
+    expect(result.image).toBeNull();
+  });
+
   it('카카오 검색이 실패해도 던지지 않는다', async () => {
     mockPages({});
     const kakao = {
