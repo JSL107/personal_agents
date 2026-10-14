@@ -193,9 +193,10 @@ describe('ArtJobExclusionActionHandler', () => {
     );
 
     expect(update).not.toHaveBeenCalled();
-    // 다시 눌러도 같으므로 재시도를 권하지 않는다.
-    expect(respond.mock.calls[0][0].text).toContain('기록에 없어');
-    expect(respond.mock.calls[0][0].text).not.toContain('잠시 뒤');
+    // 저장 오류와 다른 문구로, 장부 기록이 재시도 중일 수 있으니 영구 실패로 단정하지 않는다.
+    expect(respond.mock.calls[0][0].text).toBe(
+      '이 공고가 아직 기록에 없어요. 몇 분 뒤 다시 눌러 보고, 그래도 안 되면 반영할 수 없는 공고예요.',
+    );
   });
 
   it('저장이 일시적으로 실패하면 잠시 뒤 다시 누르라고 알린다', async () => {
@@ -300,7 +301,7 @@ describe('ArtJobExclusionActionHandler — 관심 있음', () => {
     );
 
     expect(update).not.toHaveBeenCalled();
-    expect(respond.mock.calls[0][0].text).toContain('기록에 없어');
+    expect(respond.mock.calls[0][0].text).toContain('아직 기록에 없어요');
   });
 });
 

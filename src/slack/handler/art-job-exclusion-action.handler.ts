@@ -30,8 +30,8 @@ interface ActionMessage {
   blocks?: SlackBlock[];
 }
 
-// 게시 뒤 장부 기록이 실패했거나(art-job-feed-cron 은 게시 → 기록 순서) 장부 밖에서 만든 메시지의 버튼.
-// 일시 실패(DB 오류 등)와 안내를 나누려고 종류를 따로 둔다.
+// 장부에 아직 없는 공고의 버튼 — 게시 직후 기록 전이거나 기록이 재시도 중일 때(일시), 또는 장부 밖에서
+// 만든 메시지(영구). 저장 오류와 안내를 나누려고 종류를 따로 둔다.
 class ArtJobPostingNotFoundError extends Error {
   constructor(sourceId: string) {
     super(`장부에 없는 공고 — GI_No=${sourceId}`);
@@ -103,10 +103,12 @@ export class ArtJobExclusionActionHandler implements SlackHandler {
           await respond({
             response_type: 'ephemeral',
             replace_original: false,
-            // 장부에 없는 공고는 다시 눌러도 같다 — 재시도를 권하면 헛수고만 시킨다.
+            // 장부에 없는 공고는 영구 실패로 단정하지 않는다 — 게시 직후이거나 장부 기록이 재시도
+            // 중이면(게시 cron 은 게시 → 기록, 실패 시 BullMQ 재시도) 몇 분 뒤 같은 버튼이 동작한다.
+            // 저장 오류와는 원인이 달라 문구만 나눈다.
             text:
               error instanceof ArtJobPostingNotFoundError
-                ? '이 공고는 기록에 없어 반영할 수 없어요. 다시 눌러도 바뀌지 않아요.'
+                ? '이 공고가 아직 기록에 없어요. 몇 분 뒤 다시 눌러 보고, 그래도 안 되면 반영할 수 없는 공고예요.'
                 : '반영하지 못했어요. 잠시 뒤 다시 눌러 주세요.',
           });
           return;
