@@ -11,6 +11,7 @@ import {
 import { ArtJobFeedCronConsumer } from './art-job-feed-cron.consumer';
 
 const listing = (sourceId: string, title: string): ArtJobListing => ({
+  source: 'gamejob',
   sourceId,
   company: '회사',
   title,
@@ -38,6 +39,9 @@ const JOB = {
 
 interface MakeOptions {
   pages?: ArtJobListResult[];
+  // 사람인(보조 소스) 응답. 없으면 키가 없는 상태처럼 빈 결과.
+  saraminPages?: ArtJobListResult[];
+  saraminFails?: boolean;
   known?: string[];
   excludedKeys?: string[];
   isEmpty?: boolean;
@@ -50,6 +54,8 @@ interface MakeOptions {
 
 const makeConsumer = ({
   pages = [{ received: 0, listings: [] }],
+  saraminPages = [],
+  saraminFails = false,
   known = [],
   excludedKeys = [],
   isEmpty = false,
@@ -60,6 +66,7 @@ const makeConsumer = ({
   keywords = ART_JOB_KEYWORD_SEED,
 }: MakeOptions = {}) => {
   const source = {
+    source: 'gamejob',
     fetchLatest: jest.fn(async (page: number) => {
       return pages[page - 1] ?? { received: 0, listings: [] };
     }),
@@ -78,7 +85,10 @@ const makeConsumer = ({
   };
   const repository = {
     isEmpty: jest.fn().mockResolvedValue(isEmpty),
-    findKnownSourceIds: jest.fn().mockResolvedValue(new Set(known)),
+    findKnownKeys: jest
+      .fn()
+      // 게임잡 열쇠는 번호 그대로다(listingKey).
+      .mockResolvedValue(new Set(known)),
     markNotified: jest.fn().mockResolvedValue(undefined),
     markSeeded: jest.fn().mockResolvedValue(undefined),
     findExcludedKeys: jest.fn().mockResolvedValue(new Set(excludedKeys)),
@@ -106,8 +116,18 @@ const makeConsumer = ({
     publishRecovery: jest.fn(),
   };
   const keywordRepository = { load: jest.fn().mockResolvedValue(keywords) };
+  const saramin = {
+    source: 'saramin',
+    fetchLatest: jest.fn(async (page: number) => {
+      if (saraminFails) {
+        throw new Error('사람인 인증 실패(리다이렉트)');
+      }
+      return saraminPages[page - 1] ?? { received: 0, listings: [] };
+    }),
+    fetchPostingBody: jest.fn().mockResolvedValue(''),
+  };
   const consumer = new ArtJobFeedCronConsumer(
-    source as never,
+    [source, saramin] as never,
     imageResolver as never,
     imageDownloader as never,
     repository as never,
@@ -119,6 +139,7 @@ const makeConsumer = ({
   return {
     consumer,
     source,
+    saramin,
     repository,
     slackNotifier,
     notificationPublisher,
@@ -324,7 +345,7 @@ describe('ArtJobFeedCronConsumer', () => {
       pages: [{ received: 40, listings: [] }],
     });
     await expect(consumer.process(JOB as never)).rejects.toThrow(
-      '마크업 변경 의심',
+      'gamejob 목록 40행을 받았지만 파싱 0건',
     );
     expect(slackNotifier.postMessage).not.toHaveBeenCalled();
     expect(notificationPublisher.publishCronFailure).toHaveBeenCalledWith(
@@ -358,6 +379,76 @@ describe('ArtJobFeedCronConsumer', () => {
     // 실패한 1회 + 재시도 본문 1통 + 스레드 이미지 1통
     expect(slackNotifier.postMessage).toHaveBeenCalledTimes(3);
     expect(repository.markNotified).toHaveBeenCalledTimes(1);
+  });
+
+  it('사람인 공고를 게임잡 뒤에 잇고 출처 표기를 붙인다', async () => {
+    const { consumer, slackNotifier, source, saramin } = makeConsumer({
+      pages: [{ received: 1, listings: [CHARACTER('1')] }],
+      saraminPages: [
+        {
+          received: 1,
+          listings: [
+            {
+              ...listing('S1', '2D 캐릭터 원화가 모집'),
+              source: 'saramin',
+              company: '사람인게임즈',
+            },
+          ],
+        },
+      ],
+    });
+    await consumer.process(JOB as never);
+    const text = slackNotifier.postMessage.mock.calls[0][0].text;
+    expect(text.startsWith('🎨 <@U9> 게임잡·사람인 새 원화 공고 *2건*')).toBe(
+      true,
+    );
+    expect(text).toContain('사람인게임즈 · 사람인');
+    expect(text).toContain('Powered by 취업 사람인');
+    // 공고 번호는 그 소스에서만 뜻이 있다 — 본문은 각자의 소스로, 버튼 값은 소스를 담아.
+    expect(source.fetchPostingBody.mock.calls[0][0].sourceId).toBe('1');
+    expect(saramin.fetchPostingBody.mock.calls[0][0].sourceId).toBe('S1');
+    const values = JSON.stringify(
+      slackNotifier.postMessage.mock.calls[0][0].blocks,
+    );
+    expect(values).toContain('"value":"1"');
+    expect(values).toContain('"value":"saramin:S1"');
+  });
+
+  it('양쪽에 같은 공고(회사+제목)가 있으면 게임잡 것만 남긴다', async () => {
+    const { consumer, slackNotifier, repository } = makeConsumer({
+      pages: [{ received: 1, listings: [CHARACTER('1')] }],
+      saraminPages: [
+        {
+          received: 1,
+          listings: [{ ...CHARACTER('S1'), source: 'saramin' }],
+        },
+      ],
+    });
+    await consumer.process(JOB as never);
+    expect(slackNotifier.postMessage.mock.calls[0][0].text).toContain('*1건*');
+    expect(repository.markNotified.mock.calls[0][0].listing.source).toBe(
+      'gamejob',
+    );
+  });
+
+  it('보조 소스(사람인)가 실패해도 게임잡 공고는 보낸다', async () => {
+    const { consumer, slackNotifier } = makeConsumer({
+      pages: [{ received: 1, listings: [CHARACTER('1')] }],
+      saraminFails: true,
+    });
+    await consumer.process(JOB as never);
+    expect(slackNotifier.postMessage.mock.calls[0][0].text).toContain(
+      '게임잡 새 원화 공고 *1건*',
+    );
+  });
+
+  it('보조 소스가 행을 받고 파싱 0건이면 그 소스만 건너뛴다', async () => {
+    const { consumer, slackNotifier } = makeConsumer({
+      pages: [{ received: 1, listings: [CHARACTER('1')] }],
+      saraminPages: [{ received: 40, listings: [] }],
+    });
+    await consumer.process(JOB as never);
+    expect(slackNotifier.postMessage).toHaveBeenCalled();
   });
 
   it('같은 슬롯의 재처리는 발송하지 않는다', async () => {

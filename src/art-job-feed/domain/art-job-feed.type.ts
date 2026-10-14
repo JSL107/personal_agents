@@ -1,9 +1,11 @@
 // 게임잡 원화 공고 피드 — 백엔드 피드(src/job-feed)와 분리한다. 백엔드 쪽은 내 커리어
 // 프로필로 채점해 고르는 구조이고, 이쪽은 남(디자이너)에게 조건에 맞는 공고를 전부 보낸다.
-export const ART_JOB_SOURCE = 'gamejob';
+// 게임잡(HTML 파싱)이 주 소스, 사람인(공식 Open API, SARAMIN_ACCESS_KEY 필요)이 보조 소스다.
+export type ArtJobSourceId = 'gamejob' | 'saramin';
 
 // 목록 한 행에서 뽑는 값.
 export interface ArtJobListing {
+  source: ArtJobSourceId;
   sourceId: string;
   company: string;
   title: string;

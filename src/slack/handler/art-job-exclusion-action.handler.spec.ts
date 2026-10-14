@@ -44,11 +44,15 @@ const row = (
     excluded: state.excluded ?? false,
   });
 
+// 게임잡 버튼 값은 번호뿐이다(listingKey) — 사람인 이전에 게시된 본문과 같은 모양.
+const G7 = { source: 'gamejob', sourceId: '7' };
+const G8 = { source: 'gamejob', sourceId: '8' };
+
 interface HarnessOptions {
   recipient?: string;
   found?: boolean;
-  excludedIds?: string[];
-  interestedIds?: string[];
+  excludedKeys?: string[];
+  interestedKeys?: string[];
   deadlineDate?: { year: number; month: number; day: number } | null;
   blocks?: Record<string, unknown>[];
 }
@@ -56,8 +60,8 @@ interface HarnessOptions {
 const buildHarness = ({
   recipient = 'U_RECIPIENT',
   found = true,
-  excludedIds = ['7'],
-  interestedIds = [],
+  excludedKeys = ['7'],
+  interestedKeys = [],
   deadlineDate = { year: 2999, month: 1, day: 1 },
   blocks = [HEADER, item('7'), item('8')],
 }: HarnessOptions = {}) => {
@@ -69,11 +73,11 @@ const buildHarness = ({
   } as unknown as App;
   const repository = {
     setExcluded: jest.fn().mockResolvedValue(found),
-    findExcludedSourceIds: jest.fn().mockResolvedValue(new Set(excludedIds)),
+    findExcludedListingKeys: jest.fn().mockResolvedValue(new Set(excludedKeys)),
     setInterested: jest.fn().mockResolvedValue(found ? { deadlineDate } : null),
-    findInterestedSourceIds: jest
+    findInterestedListingKeys: jest
       .fn()
-      .mockResolvedValue(new Set(interestedIds)),
+      .mockResolvedValue(new Set(interestedKeys)),
   };
   const configService = {
     get: (key: string) =>
@@ -115,8 +119,8 @@ describe('ArtJobExclusionActionHandler', () => {
       'U_RECIPIENT',
     );
 
-    expect(repository.setExcluded).toHaveBeenCalledWith('7', true);
-    expect(repository.findExcludedSourceIds).toHaveBeenCalledWith(['7', '8']);
+    expect(repository.setExcluded).toHaveBeenCalledWith(G7, true);
+    expect(repository.findExcludedListingKeys).toHaveBeenCalledWith([G7, G8]);
     expect(update).toHaveBeenCalledWith({
       channel: 'C_ART',
       ts: '1.1',
@@ -127,11 +131,11 @@ describe('ArtJobExclusionActionHandler', () => {
   });
 
   it('「되돌리기」는 제외를 해제한다', async () => {
-    const { repository, run } = buildHarness({ excludedIds: [] });
+    const { repository, run } = buildHarness({ excludedKeys: [] });
 
     const { update } = await run(ART_JOB_RESTORE_ACTION, '7', 'U_RECIPIENT');
 
-    expect(repository.setExcluded).toHaveBeenCalledWith('7', false);
+    expect(repository.setExcluded).toHaveBeenCalledWith(G7, false);
     expect(update.mock.calls[0][0].blocks).toEqual([
       HEADER,
       item('7'),
@@ -160,7 +164,7 @@ describe('ArtJobExclusionActionHandler', () => {
 
     const { respond } = await run(ART_JOB_EXCLUDE_ACTION, '7', 'U_OWNER');
 
-    expect(repository.setExcluded).toHaveBeenCalledWith('7', true);
+    expect(repository.setExcluded).toHaveBeenCalledWith(G7, true);
     expect(respond).not.toHaveBeenCalled();
   });
 
@@ -171,7 +175,7 @@ describe('ArtJobExclusionActionHandler', () => {
 
     await run(ART_JOB_INTEREST_ACTION, '7', 'U_OWNER');
 
-    expect(repository.setInterested).toHaveBeenCalledWith('7', true, 'U_OWNER');
+    expect(repository.setInterested).toHaveBeenCalledWith(G7, true, 'U_OWNER');
   });
 
   it('받는 사람이 설정되지 않았으면 운영자도 누를 수 없다', async () => {
@@ -181,6 +185,47 @@ describe('ArtJobExclusionActionHandler', () => {
 
     expect(repository.setExcluded).not.toHaveBeenCalled();
     expect(respond.mock.calls[0][0].text).toContain('운영자만');
+  });
+
+  it('사람인 공고 버튼은 소스를 담은 값으로 장부를 찾는다', async () => {
+    const { repository, run } = buildHarness({
+      excludedKeys: ['saramin:7'],
+      blocks: [HEADER, item('7'), item('saramin:7')],
+    });
+
+    const { update } = await run(
+      ART_JOB_EXCLUDE_ACTION,
+      'saramin:7',
+      'U_RECIPIENT',
+    );
+
+    expect(repository.setExcluded).toHaveBeenCalledWith(
+      { source: 'saramin', sourceId: '7' },
+      true,
+    );
+    expect(repository.findExcludedListingKeys).toHaveBeenCalledWith([
+      G7,
+      { source: 'saramin', sourceId: '7' },
+    ]);
+    // 번호가 같은 게임잡 공고(7)는 건드리지 않는다.
+    expect(update.mock.calls[0][0].blocks).toEqual([
+      HEADER,
+      item('7'),
+      item('saramin:7', true),
+    ]);
+  });
+
+  it('모르는 소스의 버튼 값은 장부에 손대지 않고 알린다', async () => {
+    const { repository, run } = buildHarness();
+
+    const { respond } = await run(
+      ART_JOB_EXCLUDE_ACTION,
+      'wanted:7',
+      'U_RECIPIENT',
+    );
+
+    expect(repository.setExcluded).not.toHaveBeenCalled();
+    expect(respond.mock.calls[0][0].text).toContain('버튼 정보를 읽지 못했');
   });
 
   it('장부에 없는 공고면 다시 그리지 않고 실패를 알린다', async () => {
@@ -221,8 +266,8 @@ describe('ArtJobExclusionActionHandler — 관심 있음', () => {
 
   it('「관심 있음」을 저장하고 버튼 줄을 장부 상태대로 다시 그린다', async () => {
     const { repository, run } = buildHarness({
-      excludedIds: [],
-      interestedIds: ['7'],
+      excludedKeys: [],
+      interestedKeys: ['7'],
       blocks: rowBlocks,
     });
 
@@ -233,11 +278,11 @@ describe('ArtJobExclusionActionHandler — 관심 있음', () => {
     );
 
     expect(repository.setInterested).toHaveBeenCalledWith(
-      '7',
+      G7,
       true,
       'U_RECIPIENT',
     );
-    expect(repository.findInterestedSourceIds).toHaveBeenCalledWith(['7', '8']);
+    expect(repository.findInterestedListingKeys).toHaveBeenCalledWith([G7, G8]);
     // 마감일 없는 8번 줄은 다시 그려도 「관심 있음」이 생기지 않는다.
     expect(update.mock.calls[0][0].blocks).toEqual([
       HEADER,
@@ -249,14 +294,14 @@ describe('ArtJobExclusionActionHandler — 관심 있음', () => {
 
   it('「되돌리기」는 관심을 해제한다', async () => {
     const { repository, run } = buildHarness({
-      excludedIds: [],
+      excludedKeys: [],
       blocks: [HEADER, row('7', { interested: true })],
     });
 
     const { update } = await run(ART_JOB_UNINTEREST_ACTION, '7', 'U_RECIPIENT');
 
     expect(repository.setInterested).toHaveBeenCalledWith(
-      '7',
+      G7,
       false,
       'U_RECIPIENT',
     );
@@ -265,7 +310,7 @@ describe('ArtJobExclusionActionHandler — 관심 있음', () => {
 
   it('전날 알림 시각이 이미 지났으면 저장은 하되 DM 이 없다고 알린다', async () => {
     const { repository, run } = buildHarness({
-      excludedIds: [],
+      excludedKeys: [],
       deadlineDate: { year: 2000, month: 1, day: 1 },
       blocks: rowBlocks,
     });
@@ -273,7 +318,7 @@ describe('ArtJobExclusionActionHandler — 관심 있음', () => {
     const { respond } = await run(ART_JOB_INTEREST_ACTION, '7', 'U_RECIPIENT');
 
     expect(repository.setInterested).toHaveBeenCalledWith(
-      '7',
+      G7,
       true,
       'U_RECIPIENT',
     );
@@ -311,8 +356,8 @@ describe('redrawButtons', () => {
 
     expect(
       redrawButtons([HEADER, item('7'), plain], {
-        excludedIds: new Set(['7', '9']),
-        interestedIds: new Set(['7']),
+        excludedKeys: new Set(['7', '9']),
+        interestedKeys: new Set(['7']),
       }),
     ).toEqual([HEADER, item('7', true), plain]);
   });

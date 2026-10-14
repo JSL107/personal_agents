@@ -18,6 +18,8 @@ const REFERER =
 
 @Injectable()
 export class GamejobSource implements ArtJobSourcePort {
+  readonly source = 'gamejob' as const;
+
   async fetchPostingBody(listing: ArtJobListing): Promise<string> {
     const html = await fetchTextWithRetry({
       url: `https://www.gamejob.co.kr/Recruit/GI_Read_Comt_Ifrm?gno=${encodeURIComponent(listing.sourceId)}`,

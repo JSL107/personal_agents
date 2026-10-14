@@ -12,6 +12,7 @@ import {
 import {
   ArtJobImage,
   ArtJobListing,
+  ArtJobSourceId,
   ResolvedArtJobImage,
 } from '../domain/art-job-feed.type';
 import {
@@ -19,7 +20,10 @@ import {
   normalizeDeadline,
   PlainMonthDay,
 } from '../domain/deadline';
-import { ArtJobReminderPosting } from '../domain/port/art-job-posting.repository.port';
+import {
+  ArtJobReminderPosting,
+  listingKey,
+} from '../domain/port/art-job-posting.repository.port';
 
 export interface ArtJobDigestItem {
   listing: ArtJobListing;
@@ -33,7 +37,7 @@ export interface ArtJobDigestInput {
   today: PlainMonthDay;
 }
 
-// 본문 버튼 → 제외·관심 / 되돌리기(ArtJobExclusionActionHandler). 버튼 값은 공고 번호(sourceId)다.
+// 본문 버튼 → 제외·관심 / 되돌리기(ArtJobExclusionActionHandler). 버튼 값은 공고 열쇠(listingKey)다.
 // action_id 는 블록 안에서만 유일하면 되므로 공고마다 같은 값을 쓰고, 어느 공고인지는 값으로 가린다.
 export const ART_JOB_EXCLUDE_ACTION = 'art_job_exclude';
 export const ART_JOB_RESTORE_ACTION = 'art_job_restore';
@@ -56,8 +60,8 @@ export interface ArtJobDigestMessage {
 
 export type SlackBlock = Record<string, unknown>;
 
-export const artJobItemBlockId = (sourceId: string): string => {
-  return `${ITEM_BLOCK_PREFIX}${sourceId}`;
+export const artJobItemBlockId = (key: string): string => {
+  return `${ITEM_BLOCK_PREFIX}${key}`;
 };
 
 export const parseArtJobItemBlockId = (blockId: unknown): string | null => {
@@ -68,7 +72,7 @@ export const parseArtJobItemBlockId = (blockId: unknown): string | null => {
 };
 
 export const buildArtJobItemButton = (
-  sourceId: string,
+  key: string,
   excluded: boolean,
 ): SlackBlock => {
   return {
@@ -78,14 +82,11 @@ export const buildArtJobItemButton = (
       type: 'plain_text',
       text: excluded ? ART_JOB_RESTORE_LABEL : ART_JOB_EXCLUDE_LABEL,
     },
-    value: sourceId,
+    value: key,
   };
 };
 
-const buildInterestButton = (
-  sourceId: string,
-  interested: boolean,
-): SlackBlock => {
+const buildInterestButton = (key: string, interested: boolean): SlackBlock => {
   return {
     type: 'button',
     action_id: interested ? ART_JOB_UNINTEREST_ACTION : ART_JOB_INTEREST_ACTION,
@@ -93,7 +94,7 @@ const buildInterestButton = (
       type: 'plain_text',
       text: `⭐ ${interested ? ART_JOB_UNINTEREST_LABEL : ART_JOB_INTEREST_LABEL}`,
     },
-    value: sourceId,
+    value: key,
   };
 };
 
@@ -106,16 +107,14 @@ export interface ArtJobItemActionsState {
 
 // 공고 글 아래 버튼 줄. section accessory 는 버튼 하나만 받으므로 actions 블록에 둔다.
 export const buildArtJobItemActions = (
-  sourceId: string,
+  key: string,
   { interestable, interested, excluded }: ArtJobItemActionsState,
 ): SlackBlock => {
-  const elements = interestable
-    ? [buildInterestButton(sourceId, interested)]
-    : [];
-  elements.push(buildArtJobItemButton(sourceId, excluded));
+  const elements = interestable ? [buildInterestButton(key, interested)] : [];
+  elements.push(buildArtJobItemButton(key, excluded));
   return {
     type: 'actions',
-    block_id: artJobItemBlockId(sourceId),
+    block_id: artJobItemBlockId(key),
     elements,
   };
 };
@@ -140,6 +139,14 @@ const isInterestable = (
   return date !== null && comparePlainDate(date, today) > 0;
 };
 
+const SOURCE_LABELS: Readonly<Record<ArtJobSourceId, string>> = {
+  gamejob: '게임잡',
+  saramin: '사람인',
+};
+// 사람인 Open API 이용 조건 — 사람인이 제공한 채용정보임을 표기해야 한다(oapi.saramin.co.kr/introduce).
+const SARAMIN_ATTRIBUTION =
+  '<https://www.saramin.co.kr|Powered by 취업 사람인>';
+
 // 한 회차 = 채널 메시지 한 통. 공고마다 따로 보내면 하루 최대 22통이 채널을 덮어
 // 목록을 한눈에 비교할 수 없었다. 이미지는 스레드로 내리고 여기엔 글만 싣는다.
 //
@@ -151,7 +158,11 @@ export const formatArtJobDigest = ({
   today,
 }: ArtJobDigestInput): ArtJobDigestMessage => {
   const mention = mentionUserId ? `<@${mentionUserId}> ` : '';
-  const header = `🎨 ${mention}게임잡 새 원화 공고 *${items.length}건*`;
+  const sources = [...new Set(items.map(({ listing }) => listing.source))].sort(
+    (left, right) => left.localeCompare(right),
+  );
+  const sourceLabel = sources.map((source) => SOURCE_LABELS[source]).join('·');
+  const header = `🎨 ${mention}${sourceLabel} 새 원화 공고 *${items.length}건*`;
   const itemTexts = items.map(({ listing, resolved, styleTags }, index) => {
     return formatItem(index + 1, listing, resolved, styleTags, today);
   });
@@ -165,7 +176,7 @@ export const formatArtJobDigest = ({
     });
     if (mentionUserId) {
       blocks.push(
-        buildArtJobItemActions(listing.sourceId, {
+        buildArtJobItemActions(listingKey(listing), {
           interestable: isInterestable(listing.deadlineText, today),
           interested: false,
           excluded: false,
@@ -173,14 +184,19 @@ export const formatArtJobDigest = ({
       );
     }
   }
-  if (mentionUserId) {
+  const attribution = sources.includes('saramin') ? [SARAMIN_ATTRIBUTION] : [];
+  const footer = [...(mentionUserId ? [EXCLUSION_HINT] : []), ...attribution];
+  if (footer.length > 0) {
     blocks.push({
       type: 'context',
-      elements: [{ type: 'mrkdwn', text: EXCLUSION_HINT }],
+      elements: footer.map((text) => ({ type: 'mrkdwn', text })),
     });
   }
   // 스크린 리더와 블록을 못 그리는 화면은 text 만 읽는다 — 머리만 두면 공고가 통째로 빠진다.
-  return { text: [header, ...itemTexts].join('\n\n'), blocks };
+  return {
+    text: [header, ...itemTexts, ...attribution].join('\n\n'),
+    blocks,
+  };
 };
 
 const formatItem = (
@@ -201,6 +217,9 @@ const formatItem = (
   ]
     .filter((value): value is string => Boolean(value))
     .map(escapeSlackMrkdwn);
+  if (listing.source === 'saramin') {
+    facts.push(SOURCE_LABELS.saramin);
+  }
   if (deadline) {
     facts.push(
       deadline.urgent

@@ -712,6 +712,12 @@ export class EnvironmentVariables {
   @IsString()
   KAKAO_REST_API_KEY?: string;
 
+  // - SARAMIN_ACCESS_KEY: 사람인 Open API access-key(oapi.saramin.co.kr 승인 후 발급). 원화·게임디자인
+  //   공고를 게임잡에 더해 보조 소스로 받는다. 비우면 사람인 수집을 건너뛴다(일 500회 한도).
+  @IsOptional()
+  @IsString()
+  SARAMIN_ACCESS_KEY?: string;
+
   // Daily Eval / Impact Report Recent / CEO Meta Cron 등 cron consumer 가 graceful skip (NO_xxx) 외
   // throw 직전에 owner 에게 DM 으로 알릴 Slack user ID (`U...`). 미설정 시 NoopCronFailureAlerter
   // (stdout warn 만). CLAUDE_AUTH_ALERT_OWNER 와 별도로 둬 cron 알람만 분리 구독 가능.

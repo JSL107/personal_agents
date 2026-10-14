@@ -1,0 +1,23 @@
+{
+  "jobs": {
+    "count": 1,
+    "start": 0,
+    "total": "1",
+    "job": [
+      {
+        "url": "http://www.saramin.co.kr/zf_user/jobs/relay/view?rec_idx=27614114",
+        "active": 1,
+        "company": { "detail": { "href": "http://www.saramin.co.kr/zf_user/company-info/view?csn=example", "name": "(주)사람인게임즈" } },
+        "position": {
+          "title": "2D 캐릭터 원화가 모집",
+          "location": { "code": "101050", "name": "서울 &gt; 강남구" },
+          "job-type": { "code": "1", "name": "정규직" },
+          "experience-level": { "code": 2, "min": 3, "max": 0, "name": "경력3년↑" }
+        },
+        "close-type": { "code": "1", "name": "접수마감일" },
+        "expiration-timestamp": "1761836399",
+        "id": "27614114"
+      }
+    ]
+  }
+}

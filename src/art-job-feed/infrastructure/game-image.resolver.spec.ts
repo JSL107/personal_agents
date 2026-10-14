@@ -7,6 +7,7 @@ import {
 import { KakaoImageDocument } from './kakao-image.search';
 
 const listing: ArtJobListing = {
+  source: 'gamejob',
   sourceId: '1',
   title: '[카오스 제로 나이트메어] 캐릭터 원화',
   company: '스마일게이트',
@@ -38,9 +39,13 @@ const document = (
   ...overrides,
 });
 
-const noRepresentative = {
-  fetchRepresentativeGames: jest.fn().mockResolvedValue([]),
-} as never;
+// 소스 배열(ART_JOB_SOURCES) — 공고의 source 로 대표게임을 물을 소스를 고른다.
+const noRepresentative = [
+  {
+    source: 'gamejob',
+    fetchRepresentativeGames: jest.fn().mockResolvedValue([]),
+  },
+] as never;
 
 describe('GameImageResolver', () => {
   const originalFetch = global.fetch;
@@ -276,6 +281,7 @@ describe('GameImageResolver — 회사 대표게임', () => {
   });
   const untitled = { ...listing, title: '캐릭터 원화', company: '게임듀오' };
   const representatives = (names: string[] | Error) => ({
+    source: 'gamejob',
     fetchRepresentativeGames:
       names instanceof Error
         ? jest.fn().mockRejectedValue(names)
@@ -293,10 +299,9 @@ describe('GameImageResolver — 회사 대표게임', () => {
 
   it('제목에 게임명이 없으면 대표게임의 플레이스토어 아이콘을 대표작으로 싣는다', async () => {
     playStoreWith('캣 히어로 : 방치형 RPG');
-    const result = await new GameImageResolver(
-      kakaoOff(),
-      representatives(['어나더던전', '캣히어로']) as never,
-    ).resolve(untitled);
+    const result = await new GameImageResolver(kakaoOff(), [
+      representatives(['어나더던전', '캣히어로']),
+    ] as never).resolve(untitled);
     expect(result).toEqual({
       gameTitle: null,
       image: {
@@ -311,10 +316,9 @@ describe('GameImageResolver — 회사 대표게임', () => {
   it('제목 게임명의 그림이 있으면 대표게임은 보지 않는다', async () => {
     playStoreWith('카오스 제로 나이트메어');
     const source = representatives(['캣히어로']);
-    const result = await new GameImageResolver(
-      kakaoOff(),
-      source as never,
-    ).resolve(listing);
+    const result = await new GameImageResolver(kakaoOff(), [
+      source,
+    ] as never).resolve(listing);
     expect(result.representativeGame).toBeUndefined();
     expect(source.fetchRepresentativeGames).not.toHaveBeenCalled();
   });
@@ -331,7 +335,7 @@ describe('GameImageResolver — 회사 대표게임', () => {
     const kakao = kakaoReturning([document()]);
     const result = await new GameImageResolver(
       kakao as never,
-      representatives(['템빨:오버기어드', '리니지Ⅱ']) as never,
+      [representatives(['템빨:오버기어드', '리니지Ⅱ'])] as never,
     ).resolve({ ...untitled, company: '㈜그레이게임즈' });
     expect(result).toMatchObject({
       image: { origin: 'KAKAO_IMAGE', sourceName: '인벤' },
@@ -341,16 +345,28 @@ describe('GameImageResolver — 회사 대표게임', () => {
     expect(kakao.search).toHaveBeenCalledWith('그레이게임즈 템빨:오버기어드');
   });
 
+  it('대표게임은 공고를 가져온 소스에 묻는다', async () => {
+    playStoreWith('캣 히어로 : 방치형 RPG');
+    const gamejob = representatives(['캣히어로']);
+    const saramin = { ...representatives([]), source: 'saramin' };
+    const result = await new GameImageResolver(kakaoOff(), [
+      gamejob,
+      saramin,
+    ] as never).resolve({ ...untitled, source: 'saramin', sourceId: '1' });
+    expect(gamejob.fetchRepresentativeGames).not.toHaveBeenCalled();
+    expect(saramin.fetchRepresentativeGames).toHaveBeenCalledTimes(1);
+    expect(result.image).toBeNull();
+  });
+
   it('대표게임 조회가 실패하거나 일치가 없으면 구글 링크로 물러선다', async () => {
     playStoreWith('무관한 앱');
     for (const source of [
       representatives(new Error('offline')),
       representatives(['캣히어로']),
     ]) {
-      const result = await new GameImageResolver(
-        kakaoOff(),
-        source as never,
-      ).resolve(untitled);
+      const result = await new GameImageResolver(kakaoOff(), [
+        source,
+      ] as never).resolve(untitled);
       expect(result).toEqual({
         gameTitle: null,
         image: null,

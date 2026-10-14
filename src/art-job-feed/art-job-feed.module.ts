@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { PrismaModule } from '../prisma/prisma.module';
 import {
-  ART_JOB_SOURCE_PORT,
+  ART_JOB_SOURCES,
   GAME_IMAGE_RESOLVER_PORT,
   IMAGE_DOWNLOADER_PORT,
 } from './domain/port/art-job-feed.ports';
@@ -14,12 +14,23 @@ import { GameImageResolver } from './infrastructure/game-image.resolver';
 import { GamejobSource } from './infrastructure/gamejob.source';
 import { ImageDownloader } from './infrastructure/image.downloader';
 import { KakaoImageSearch } from './infrastructure/kakao-image.search';
+import { SaraminSource } from './infrastructure/saramin.source';
 
 @Module({
   imports: [PrismaModule],
   providers: [
     KakaoImageSearch,
-    { provide: ART_JOB_SOURCE_PORT, useClass: GamejobSource },
+    GamejobSource,
+    SaraminSource,
+    // 다중 소스는 여기 한 곳에서 배열로 등록한다 — 분산 등록하면 주입 시점에 일부가 빠진다.
+    {
+      provide: ART_JOB_SOURCES,
+      useFactory: (gamejob: GamejobSource, saramin: SaraminSource) => [
+        gamejob,
+        saramin,
+      ],
+      inject: [GamejobSource, SaraminSource],
+    },
     { provide: GAME_IMAGE_RESOLVER_PORT, useClass: GameImageResolver },
     { provide: IMAGE_DOWNLOADER_PORT, useClass: ImageDownloader },
     {
@@ -32,7 +43,7 @@ import { KakaoImageSearch } from './infrastructure/kakao-image.search';
     },
   ],
   exports: [
-    ART_JOB_SOURCE_PORT,
+    ART_JOB_SOURCES,
     GAME_IMAGE_RESOLVER_PORT,
     IMAGE_DOWNLOADER_PORT,
     ART_JOB_POSTING_REPOSITORY_PORT,

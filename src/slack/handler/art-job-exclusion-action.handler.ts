@@ -5,7 +5,10 @@ import { App } from '@slack/bolt';
 import { hasReminderLeft } from '../../art-job-feed/domain/art-job-interest';
 import {
   ART_JOB_POSTING_REPOSITORY_PORT,
+  ArtJobPostingRef,
   ArtJobPostingRepositoryPort,
+  listingKey,
+  parseListingKey,
 } from '../../art-job-feed/domain/port/art-job-posting.repository.port';
 import {
   ART_JOB_EXCLUDE_ACTION,
@@ -33,14 +36,15 @@ interface ActionMessage {
 // 장부에 아직 없는 공고의 버튼 — 게시 직후 기록 전이거나 기록이 재시도 중일 때(일시), 또는 장부 밖에서
 // 만든 메시지(영구). 저장 오류와 안내를 나누려고 종류를 따로 둔다.
 class ArtJobPostingNotFoundError extends Error {
-  constructor(sourceId: string) {
-    super(`장부에 없는 공고 — GI_No=${sourceId}`);
+  constructor(ref: ArtJobPostingRef) {
+    super(`장부에 없는 공고 — ${listingKey(ref)}`);
   }
 }
 
+// 둘 다 listingKey 집합 — 버튼 값·block_id 와 같은 표기다.
 export interface ArtJobButtonStates {
-  excludedIds: Set<string>;
-  interestedIds: Set<string>;
+  excludedKeys: Set<string>;
+  interestedKeys: Set<string>;
 }
 
 const ART_JOB_ACTIONS = [
@@ -82,10 +86,11 @@ export class ArtJobExclusionActionHandler implements SlackHandler {
           });
           return;
         }
-        const sourceId = extractActionValue(body);
+        const value = extractActionValue(body);
+        const ref = value ? parseListingKey(value) : null;
         const messageRef = extractActionMessageRef(body);
         const message = (body as { message?: ActionMessage }).message;
-        if (!sourceId || !messageRef || !message?.blocks) {
+        if (!ref || !messageRef || !message?.blocks) {
           this.logger.warn('원화 공고 버튼 해석 실패 — 값·메시지 좌표 누락');
           await respond({
             response_type: 'ephemeral',
@@ -96,7 +101,7 @@ export class ArtJobExclusionActionHandler implements SlackHandler {
         }
         let notice: string | null;
         try {
-          notice = await this.applyToLedger(actionId, sourceId, userId);
+          notice = await this.applyToLedger(actionId, ref, userId);
         } catch (error: unknown) {
           const reason = error instanceof Error ? error.message : String(error);
           this.logger.warn(`원화 공고 버튼 저장 실패 (${actionId}): ${reason}`);
@@ -118,14 +123,14 @@ export class ArtJobExclusionActionHandler implements SlackHandler {
         try {
           await this.serializeByMessage(messageRef.ts, async () => {
             const blocks = message.blocks ?? [];
-            const sourceIds = blocks
+            const refs = blocks
               .map((block) => parseArtJobItemBlockId(block.block_id))
-              .filter((id): id is string => id !== null);
+              .map((key) => (key ? parseListingKey(key) : null))
+              .filter((found): found is ArtJobPostingRef => found !== null);
             const states: ArtJobButtonStates = {
-              excludedIds:
-                await this.repository.findExcludedSourceIds(sourceIds),
-              interestedIds:
-                await this.repository.findInterestedSourceIds(sourceIds),
+              excludedKeys: await this.repository.findExcludedListingKeys(refs),
+              interestedKeys:
+                await this.repository.findInterestedListingKeys(refs),
             };
             await client.chat.update({
               channel: messageRef.channel,
@@ -137,7 +142,7 @@ export class ArtJobExclusionActionHandler implements SlackHandler {
         } catch (error: unknown) {
           const reason = error instanceof Error ? error.message : String(error);
           this.logger.warn(
-            `원화 공고 본문 갱신 실패 (저장은 완료) — GI_No=${sourceId}: ${reason}`,
+            `원화 공고 본문 갱신 실패 (저장은 완료) — ${listingKey(ref)}: ${reason}`,
           );
           await respond({
             response_type: 'ephemeral',
@@ -173,7 +178,7 @@ export class ArtJobExclusionActionHandler implements SlackHandler {
   // 장부에 반영하고, 누른 사람이 알아야 할 것이 있으면 그 문구를 돌려준다. 장부에 없는 공고면 던진다.
   private async applyToLedger(
     actionId: string,
-    sourceId: string,
+    ref: ArtJobPostingRef,
     userId: string,
   ): Promise<string | null> {
     if (
@@ -181,26 +186,26 @@ export class ArtJobExclusionActionHandler implements SlackHandler {
       actionId === ART_JOB_RESTORE_ACTION
     ) {
       const excluded = actionId === ART_JOB_EXCLUDE_ACTION;
-      const found = await this.repository.setExcluded(sourceId, excluded);
+      const found = await this.repository.setExcluded(ref, excluded);
       if (!found) {
-        throw new ArtJobPostingNotFoundError(sourceId);
+        throw new ArtJobPostingNotFoundError(ref);
       }
       this.logger.log(
-        `원화 공고 ${excluded ? '제외' : '제외 해제'} — GI_No=${sourceId}`,
+        `원화 공고 ${excluded ? '제외' : '제외 해제'} — ${listingKey(ref)}`,
       );
       return null;
     }
     const interested = actionId === ART_JOB_INTEREST_ACTION;
     const posting = await this.repository.setInterested(
-      sourceId,
+      ref,
       interested,
       userId,
     );
     if (!posting) {
-      throw new ArtJobPostingNotFoundError(sourceId);
+      throw new ArtJobPostingNotFoundError(ref);
     }
     this.logger.log(
-      `원화 공고 ${interested ? '관심' : '관심 해제'} — GI_No=${sourceId}`,
+      `원화 공고 ${interested ? '관심' : '관심 해제'} — ${listingKey(ref)}`,
     );
     if (!interested) {
       return null;
@@ -236,18 +241,18 @@ export class ArtJobExclusionActionHandler implements SlackHandler {
 // 버튼 줄(actions)이 지금 형식, 글 옆 버튼 하나(section accessory)는 관심 버튼 전에 올라간 본문이다.
 export const redrawButtons = (
   blocks: SlackBlock[],
-  { excludedIds, interestedIds }: ArtJobButtonStates,
+  { excludedKeys, interestedKeys }: ArtJobButtonStates,
 ): SlackBlock[] => {
   return blocks.map((block) => {
-    const sourceId = parseArtJobItemBlockId(block.block_id);
-    if (!sourceId) {
+    const key = parseArtJobItemBlockId(block.block_id);
+    if (!key) {
       return block;
     }
     if (block.type === 'actions') {
-      return buildArtJobItemActions(sourceId, {
+      return buildArtJobItemActions(key, {
         interestable: hasInterestButton(block),
-        interested: interestedIds.has(sourceId),
-        excluded: excludedIds.has(sourceId),
+        interested: interestedKeys.has(key),
+        excluded: excludedKeys.has(key),
       });
     }
     if (!block.accessory) {
@@ -255,7 +260,7 @@ export const redrawButtons = (
     }
     return {
       ...block,
-      accessory: buildArtJobItemButton(sourceId, excludedIds.has(sourceId)),
+      accessory: buildArtJobItemButton(key, excludedKeys.has(key)),
     };
   });
 };

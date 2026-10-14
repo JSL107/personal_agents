@@ -13,12 +13,13 @@ import { findMatchedTerms } from '../../art-job-feed/domain/art-job-keyword';
 import { isTargetArtRole } from '../../art-job-feed/domain/art-role.filter';
 import { deadlineDateOf } from '../../art-job-feed/domain/deadline';
 import {
-  ART_JOB_SOURCE_PORT,
+  ART_JOB_SOURCES,
   ArtJobSourcePort,
   GAME_IMAGE_RESOLVER_PORT,
   GameImageResolverPort,
   IMAGE_DOWNLOADER_PORT,
   ImageDownloaderPort,
+  sourceOf,
 } from '../../art-job-feed/domain/port/art-job-feed.ports';
 import {
   ART_JOB_KEYWORD_REPOSITORY_PORT,
@@ -27,6 +28,7 @@ import {
 import {
   ART_JOB_POSTING_REPOSITORY_PORT,
   ArtJobPostingRepositoryPort,
+  listingKey,
 } from '../../art-job-feed/domain/port/art-job-posting.repository.port';
 import {
   ArtJobDigestItem,
@@ -115,8 +117,8 @@ export class ArtJobFeedCronConsumer extends ObservedWorkerHost {
   private readonly logger = new Logger(ArtJobFeedCronConsumer.name);
 
   constructor(
-    @Inject(ART_JOB_SOURCE_PORT)
-    private readonly source: ArtJobSourcePort,
+    @Inject(ART_JOB_SOURCES)
+    private readonly sources: ArtJobSourcePort[],
     @Inject(GAME_IMAGE_RESOLVER_PORT)
     private readonly imageResolver: GameImageResolverPort,
     @Inject(IMAGE_DOWNLOADER_PORT)
@@ -153,24 +155,15 @@ export class ArtJobFeedCronConsumer extends ObservedWorkerHost {
     const { target, mentionUserId, trigger } = job.data;
     const keywords = await this.keywordRepository.load();
     const collected = await this.collect();
-    // 받은 행은 있는데 파싱이 0 이면 사이트 마크업이 바뀐 것이다. 조용히 "새 공고 없음"
-    // 으로 끝나면 몇 주가 지나도 아무도 모른다.
-    if (collected.received > 0 && collected.listings.length === 0) {
-      throw new Error(
-        `게임잡 목록 ${collected.received}행을 받았지만 파싱 0건 — 마크업 변경 의심`,
-      );
-    }
 
     const targets = collected.listings.filter((listing) => {
       return isTargetArtRole(listing.title, keywords);
     });
     const isFirstRun = await this.repository.isEmpty();
-    const known = await this.repository.findKnownSourceIds(
-      targets.map((listing) => listing.sourceId),
-    );
+    const known = await this.repository.findKnownKeys(targets);
     const excluded = await this.repository.findExcludedKeys();
     const unseen = targets.filter((listing) => {
-      return !known.has(listing.sourceId);
+      return !known.has(listingKey(listing));
     });
     // 받는 사람이 「관심 없음」으로 뺀 공고가 새 번호로 다시 올라온 것. 장부에 남기지 않고 매 회차 거른다.
     const fresh = unseen.filter((listing) => {
@@ -222,10 +215,10 @@ export class ArtJobFeedCronConsumer extends ObservedWorkerHost {
     for (const listing of toPost) {
       let body = '';
       try {
-        body = await this.source.fetchPostingBody(listing);
+        body = await sourceOf(this.sources, listing).fetchPostingBody(listing);
       } catch (error) {
         this.logger.warn(
-          `${CRON_NAME} 공고 본문 조회 실패 — ${listing.sourceId}: ${error instanceof Error ? error.message : String(error)}`,
+          `${CRON_NAME} 공고 본문 조회 실패 — ${listingKey(listing)}: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
       items.push({
@@ -262,17 +255,65 @@ export class ArtJobFeedCronConsumer extends ObservedWorkerHost {
     }
   }
 
+  // 소스 순서(게임잡 → 사람인)대로 모으고, 같은 공고가 양쪽에 있으면 앞 소스 것만 남긴다.
+  // 주 소스(첫 번째) 실패는 던지고, 보조 소스 실패는 경고만 남긴다 — 사람인은 베타 API 라
+  // 그쪽 장애로 게임잡 공고까지 못 나가면 안 된다.
   private async collect(): Promise<CollectedListings> {
+    let received = 0;
+    const byKey = new Map<string, ArtJobListing>();
+    const seenPostings = new Set<string>();
+    for (const [index, source] of this.sources.entries()) {
+      let listings: ArtJobListing[];
+      try {
+        const fetched = await this.collectFrom(source);
+        received += fetched.received;
+        listings = fetched.listings;
+      } catch (error) {
+        if (index === 0) {
+          throw error;
+        }
+        this.logger.warn(
+          `${CRON_NAME} 보조 소스(${source.source}) 수집 실패 — 건너뜀: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        continue;
+      }
+      // 앞 소스에 이미 있는 회사+제목만 거른다. 같은 소스 안에서 제목이 같은 공고는
+      // 번호가 다른 별개 공고일 수 있어(예: 팀별 동일 제목) 그대로 둔다.
+      const earlierPostings = new Set(seenPostings);
+      for (const listing of listings) {
+        const postingKey = exclusionKey(listing.company, listing.title);
+        if (earlierPostings.has(postingKey)) {
+          continue;
+        }
+        seenPostings.add(postingKey);
+        byKey.set(listingKey(listing), listing);
+      }
+    }
+    return { received, listings: [...byKey.values()] };
+  }
+
+  private async collectFrom(
+    source: ArtJobSourcePort,
+  ): Promise<CollectedListings> {
     let received = 0;
     const bySourceId = new Map<string, ArtJobListing>();
     for (let page = 1; page <= LIST_PAGES_PER_RUN; page += 1) {
-      const result = await this.source.fetchLatest(page);
+      const result = await source.fetchLatest(page);
       received += result.received;
       for (const listing of result.listings) {
         if (!bySourceId.has(listing.sourceId)) {
           bySourceId.set(listing.sourceId, listing);
         }
       }
+    }
+    // 받은 행은 있는데 파싱이 0 이면 사이트 마크업·응답 형태가 바뀐 것이다. 조용히 "새 공고 없음"
+    // 으로 끝나면 몇 주가 지나도 아무도 모른다.
+    if (received > 0 && bySourceId.size === 0) {
+      throw new Error(
+        `${source.source} 목록 ${received}행을 받았지만 파싱 0건 — 마크업·응답 형태 변경 의심`,
+      );
     }
     return { received, listings: [...bySourceId.values()] };
   }

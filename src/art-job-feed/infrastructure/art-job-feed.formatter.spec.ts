@@ -8,6 +8,7 @@ import {
 const TODAY = { year: 2026, month: 10, day: 13 };
 
 const LISTING: ArtJobListing = {
+  source: 'gamejob',
   sourceId: '283904',
   company: '스마일게이트 & 슈퍼크리에이티브',
   title: '[카오스 제로 나이트메어] 캐릭터 원화 <급구> | 정규직',

@@ -11,9 +11,10 @@ import {
   normalizeTitleKey,
 } from '../domain/game-title';
 import {
-  ART_JOB_SOURCE_PORT,
+  ART_JOB_SOURCES,
   ArtJobSourcePort,
   GameImageResolverPort,
+  sourceOf,
 } from '../domain/port/art-job-feed.ports';
 import { fetchTextWithRetry } from './fetch-text-with-retry';
 import { KakaoImageDocument, KakaoImageSearch } from './kakao-image.search';
@@ -127,8 +128,8 @@ export class GameImageResolver implements GameImageResolverPort {
 
   constructor(
     private readonly kakaoImageSearch: KakaoImageSearch,
-    @Inject(ART_JOB_SOURCE_PORT)
-    private readonly source: ArtJobSourcePort,
+    @Inject(ART_JOB_SOURCES)
+    private readonly sources: ArtJobSourcePort[],
   ) {}
 
   async resolve(listing: ArtJobListing): Promise<ResolvedArtJobImage> {
@@ -163,7 +164,9 @@ export class GameImageResolver implements GameImageResolverPort {
   ): Promise<{ name: string; image: ArtJobImage } | null> {
     let names: string[];
     try {
-      names = await this.source.fetchRepresentativeGames(listing);
+      names = await sourceOf(this.sources, listing).fetchRepresentativeGames(
+        listing,
+      );
     } catch (error) {
       this.logger.warn(
         `대표게임 조회 실패 ${listing.sourceId}: ${String(error)}`,

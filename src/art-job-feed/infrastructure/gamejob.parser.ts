@@ -53,6 +53,7 @@ export const parseGamejobList = (html: string): ArtJobListResult => {
       (value) => value.includes('>') || LOCATION_PREFIX.test(value),
     );
     listings.push({
+      source: 'gamejob',
       sourceId,
       title,
       company,

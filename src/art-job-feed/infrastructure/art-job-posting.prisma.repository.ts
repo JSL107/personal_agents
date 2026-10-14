@@ -7,11 +7,13 @@ import {
 } from '../../agent/vacation/domain/plain-date';
 import { PrismaService } from '../../prisma/prisma.service';
 import { exclusionKey } from '../domain/art-job-exclusion';
-import { ART_JOB_SOURCE, ArtJobListing } from '../domain/art-job-feed.type';
+import { ArtJobListing } from '../domain/art-job-feed.type';
 import {
+  ArtJobPostingRef,
   ArtJobPostingRepositoryPort,
   ArtJobReminderPosting,
   InterestedPosting,
+  listingKey,
   MarkNotifiedInput,
 } from '../domain/port/art-job-posting.repository.port';
 
@@ -25,6 +27,18 @@ const toBaseFields = (listing: ArtJobListing) => {
   };
 };
 
+const toRefWhere = ({ source, sourceId }: ArtJobPostingRef) => {
+  return { source, sourceId };
+};
+
+// 장부의 source 는 문자열 컬럼이다 — 이 피드가 쓴 값만 들어 있다.
+const toListingKey = (row: { source: string; sourceId: string }): string => {
+  return listingKey({
+    source: row.source as ArtJobPostingRef['source'],
+    sourceId: row.sourceId,
+  });
+};
+
 @Injectable()
 export class ArtJobPostingPrismaRepository implements ArtJobPostingRepositoryPort {
   constructor(private readonly prisma: PrismaService) {}
@@ -36,15 +50,17 @@ export class ArtJobPostingPrismaRepository implements ArtJobPostingRepositoryPor
     return found === null;
   }
 
-  async findKnownSourceIds(sourceIds: string[]): Promise<Set<string>> {
-    if (sourceIds.length === 0) {
+  async findKnownKeys(listings: ArtJobListing[]): Promise<Set<string>> {
+    if (listings.length === 0) {
       return new Set();
     }
     const rows = await this.prisma.artJobPosting.findMany({
-      where: { source: ART_JOB_SOURCE, sourceId: { in: sourceIds } },
-      select: { sourceId: true },
+      where: {
+        OR: listings.map(toRefWhere),
+      },
+      select: { source: true, sourceId: true },
     });
-    return new Set(rows.map((row) => row.sourceId));
+    return new Set(rows.map(toListingKey));
   }
 
   async markNotified({
@@ -63,9 +79,9 @@ export class ArtJobPostingPrismaRepository implements ArtJobPostingRepositoryPor
     };
     await this.prisma.artJobPosting.upsert({
       where: {
-        source_sourceId: { source: ART_JOB_SOURCE, sourceId: listing.sourceId },
+        source_sourceId: { source: listing.source, sourceId: listing.sourceId },
       },
-      create: { source: ART_JOB_SOURCE, sourceId: listing.sourceId, ...fields },
+      create: { source: listing.source, sourceId: listing.sourceId, ...fields },
       update: fields,
     });
   }
@@ -77,7 +93,7 @@ export class ArtJobPostingPrismaRepository implements ArtJobPostingRepositoryPor
     await this.prisma.artJobPosting.createMany({
       data: listings.map((listing) => {
         return {
-          source: ART_JOB_SOURCE,
+          source: listing.source,
           sourceId: listing.sourceId,
           ...toBaseFields(listing),
           skippedReason: SEED_REASON,
@@ -89,30 +105,31 @@ export class ArtJobPostingPrismaRepository implements ArtJobPostingRepositoryPor
 
   async findExcludedKeys(): Promise<Set<string>> {
     const rows = await this.prisma.artJobPosting.findMany({
-      where: { source: ART_JOB_SOURCE, excludedAt: { not: null } },
+      where: { excludedAt: { not: null } },
       select: { company: true, title: true },
     });
     return new Set(rows.map((row) => exclusionKey(row.company, row.title)));
   }
 
-  async findExcludedSourceIds(sourceIds: string[]): Promise<Set<string>> {
-    if (sourceIds.length === 0) {
+  async findExcludedListingKeys(
+    refs: ArtJobPostingRef[],
+  ): Promise<Set<string>> {
+    if (refs.length === 0) {
       return new Set();
     }
     const rows = await this.prisma.artJobPosting.findMany({
-      where: {
-        source: ART_JOB_SOURCE,
-        sourceId: { in: sourceIds },
-        excludedAt: { not: null },
-      },
-      select: { sourceId: true },
+      where: { OR: refs.map(toRefWhere), excludedAt: { not: null } },
+      select: { source: true, sourceId: true },
     });
-    return new Set(rows.map((row) => row.sourceId));
+    return new Set(rows.map(toListingKey));
   }
 
-  async setExcluded(sourceId: string, excluded: boolean): Promise<boolean> {
+  async setExcluded(
+    ref: ArtJobPostingRef,
+    excluded: boolean,
+  ): Promise<boolean> {
     const found = await this.prisma.artJobPosting.findUnique({
-      where: { source_sourceId: { source: ART_JOB_SOURCE, sourceId } },
+      where: { source_sourceId: toRefWhere(ref) },
       select: { id: true, company: true, title: true },
     });
     if (!found) {
@@ -128,8 +145,9 @@ export class ArtJobPostingPrismaRepository implements ArtJobPostingRepositoryPor
     // 되돌리기는 같은 공고(회사 + 제목) 전부를 푼다. 발송 필터가 그 단위로 거르므로, 같은 제목의
     // 다른 번호가 제외로 남아 있으면 이 행만 풀어도 재등록은 계속 걸러진다.
     const key = exclusionKey(found.company, found.title);
+    // 발송 필터(findExcludedKeys)가 소스를 가리지 않으므로 되돌리기도 소스를 가리지 않는다.
     const excludedRows = await this.prisma.artJobPosting.findMany({
-      where: { source: ART_JOB_SOURCE, excludedAt: { not: null } },
+      where: { excludedAt: { not: null } },
       select: { id: true, company: true, title: true },
     });
     const ids = excludedRows
@@ -142,28 +160,26 @@ export class ArtJobPostingPrismaRepository implements ArtJobPostingRepositoryPor
     return true;
   }
 
-  async findInterestedSourceIds(sourceIds: string[]): Promise<Set<string>> {
-    if (sourceIds.length === 0) {
+  async findInterestedListingKeys(
+    refs: ArtJobPostingRef[],
+  ): Promise<Set<string>> {
+    if (refs.length === 0) {
       return new Set();
     }
     const rows = await this.prisma.artJobPosting.findMany({
-      where: {
-        source: ART_JOB_SOURCE,
-        sourceId: { in: sourceIds },
-        interestedAt: { not: null },
-      },
-      select: { sourceId: true },
+      where: { OR: refs.map(toRefWhere), interestedAt: { not: null } },
+      select: { source: true, sourceId: true },
     });
-    return new Set(rows.map((row) => row.sourceId));
+    return new Set(rows.map(toListingKey));
   }
 
   async setInterested(
-    sourceId: string,
+    ref: ArtJobPostingRef,
     interested: boolean,
     userId: string,
   ): Promise<InterestedPosting | null> {
     const found = await this.prisma.artJobPosting.findUnique({
-      where: { source_sourceId: { source: ART_JOB_SOURCE, sourceId } },
+      where: { source_sourceId: toRefWhere(ref) },
       select: { id: true, deadlineDate: true },
     });
     if (!found) {
