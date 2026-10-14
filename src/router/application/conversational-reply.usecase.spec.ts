@@ -149,7 +149,19 @@ describe('ConversationalReply — buildSystemPrompt (self-context)', () => {
         // 2026-10-14 기능 안내 문구를 일상어로(PO 입장·메타 회고·드리프트·익명화·plan 대신 풀어 씀)
         // 2026-10-14 CEO 예시 "이번 주 메타 평가해줘" 를 일상어로(#822 리뷰)
         // 2026-10-14 진행 여부는 [직전 작업 상태] 실제 기록으로 답한다 — "대기 중" 추측 예시 제거(run 8886)
-        '57c4571477811e1e65623c35f4a59ac1b9af505b34a98ea9ecad8b6a1815c113',
+        // 2026-10-14 반말 질문에도 존댓말로 — 같은 스레드에서 말투가 오갔다("작업하고 있어?" 실측 10회 중 4회 반말)
+        'c02a624659ad649abc7de0ca43aff5a6745d3cd57364bf20d63b6a15624642bb',
+      );
+    },
+  );
+});
+
+describe('ConversationalReply — 말투', () => {
+  it.each([0, 2])(
+    'streak=%i 에서도 반말 질문에 존댓말로 답하라는 규칙을 싣는다',
+    (unresolvedStreak) => {
+      expect(buildSystemPrompt({ unresolvedStreak })).toContain(
+        '사용자가 반말을 써도 항상 존댓말(~요)로 답하세요',
       );
     },
   );
