@@ -23,10 +23,20 @@ export const parsePaperRecommendation = (raw: string): PaperRecommendation => {
     throw invalidModelOutput('모델 응답이 객체가 아닙니다.');
   }
 
-  return {
-    sells: parseSells(parsed.sells),
-    buys: parseBuys(parsed.buys),
-  };
+  const sells = parseSells(parsed.sells);
+  const buys = parseBuys(parsed.buys);
+  const holdReason =
+    sells.length === 0 && buys.length === 0
+      ? parseHoldReason(parsed.holdReason)
+      : undefined;
+  return { sells, buys, ...(holdReason === undefined ? {} : { holdReason }) };
+};
+
+const parseHoldReason = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  return value.trim().replace(/\s+/gu, ' ').slice(0, 300).trim() || undefined;
 };
 
 const stripCodeFence = (value: string): string => {

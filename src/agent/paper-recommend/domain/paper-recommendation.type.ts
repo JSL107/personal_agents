@@ -13,6 +13,7 @@ export interface PaperRecommendationBuy {
 export interface PaperRecommendation {
   sells: PaperRecommendationSell[];
   buys: PaperRecommendationBuy[];
+  holdReason?: string;
 }
 
 export interface PaperRecommendationCandidate {

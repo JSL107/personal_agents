@@ -154,8 +154,22 @@ const formatCompletedDetail = (
   ].join('\n');
 };
 
-// 주문이 0건인 이유를 '모델이 아무것도 안 골랐다' 와 '시세가 없어 만들지 못했다' 로 가른다.
+// 새 실행은 저장된 판정을 표시하고, 이전 실행은 기존 필드에서 추론한다.
 const emptyReasonLine = (completed: PaperRecommendationSuccess): string => {
+  if (completed.emptyReason) {
+    switch (completed.emptyReason.code) {
+      case 'NO_MARKET_DATA':
+        return ' • 시세 데이터 없음 — 주문 생성 안 됨';
+      case 'NO_CANDIDATES':
+        return ' • 조건을 통과한 후보 종목 없음';
+      case 'ALL_FILTERED':
+        return ' • 추천이 모두 제외돼 주문 없음';
+      case 'MODEL_HELD':
+        return completed.emptyReason.detail
+          ? ` • 보유 유지 판단 — ${escapeSlackMrkdwn(completed.emptyReason.detail)}`
+          : ' • 보유 유지 판단 (사유 미기재)';
+    }
+  }
   if (completed.dataAsOf === null) {
     return ' • 시세 데이터 없음 — 주문 생성 안 됨';
   }

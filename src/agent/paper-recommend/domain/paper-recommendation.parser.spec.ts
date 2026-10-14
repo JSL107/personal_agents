@@ -30,6 +30,24 @@ describe('parsePaperRecommendation', () => {
     expect(result.buys[0]).not.toHaveProperty('weightPercent');
   });
 
+  it('holdReason을 정규화하고 300자로 제한하며 잘못된 타입은 무시한다', () => {
+    expect(
+      parsePaperRecommendation(
+        JSON.stringify({ holdReason: '  보유\n  유지  ' }),
+      ).holdReason,
+    ).toBe('보유 유지');
+    expect(
+      parsePaperRecommendation(JSON.stringify({ holdReason: '가'.repeat(301) }))
+        .holdReason,
+    ).toHaveLength(300);
+    expect(
+      parsePaperRecommendation(JSON.stringify({ holdReason: 42 })),
+    ).toEqual({ sells: [], buys: [] });
+    expect(
+      parsePaperRecommendation(JSON.stringify({ holdReason: '  ' })),
+    ).toEqual({ sells: [], buys: [] });
+  });
+
   it('잘못된 JSON이면 PAPER_RECOMMEND_INVALID_MODEL_OUTPUT을 던진다', () => {
     expect(() => parsePaperRecommendation('{not json}')).toThrow(
       expect.objectContaining({
