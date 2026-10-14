@@ -244,6 +244,8 @@ export class PaperRecommendAutopilotTask implements AutopilotTask {
     // 휴장일에는 새 시세가 없다. 그대로 돌면 직전 거래일 저녁 회차와 같은 데이터로 한 번 더
     // 판단해 주문을 또 만든다(2026-09-24 추석 회차 — dataAsOf=09-23 으로 주문 2건).
     // 수동 재실행(`/retry-run`)은 사람이 고른 것이라 막지 않는다.
+    // `emptyReason` 으로 돌려 원장(`slack_delivery` SUPPRESSED/EMPTY)에 남긴다 — 그냥 skip 하면
+    // agent_run 도 로그도 없어, 가드가 막은 날과 서버가 꺼진 날이 구분되지 않는다(10-05·10-09).
     const calendar = await this.holidayCalendar.load();
     if (
       !isKrxTradingDay(
@@ -253,12 +255,13 @@ export class PaperRecommendAutopilotTask implements AutopilotTask {
     ) {
       return {
         skip: true,
-        summaryText: `휴장일(${context.firedAtKst}) — 모의투자 추천 판단 건너뜀`,
+        emptyReason: `휴장일(${context.firedAtKst}) — 모의투자 추천 판단 건너뜀`,
       };
     }
     const result = await this.generateRecommendation.execute({
       decidedAt: new Date(`${context.firedAtKst}T19:30:00+09:00`),
       triggerType: TriggerType.AUTOPILOT_PAPER_RECOMMEND_CRON,
+      requireFreshMarketData: true,
     });
     return formatResult(result);
   }
