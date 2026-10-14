@@ -376,6 +376,7 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 | `AUTOPILOT_PORTFOLIO_PUBLISH_SCHEDULE` · `_TIMEZONE` | ⭕ | 발행 발화 시각 override(기본 `0 23 * * *`, Asia/Seoul) |
 | `EPISODIC_EMBED_MODEL` / `_DIM` | ❌ | 임베딩 모델·차원 (기본 384dim) |
 | `ART_JOB_FEED_TARGET` · `ART_JOB_FEED_MENTION_USER_ID` | ❌ | 게임잡 원화(2D 캐릭터 원화·컨셉) 공고를 게시할 채널과 머리 메시지 멘션 대상. 채널이 비면 기능 꺼짐. 공고마다 게임 이미지(구글 플레이 → 회사 사진 → 없으면 구글 이미지 검색 링크) |
+| `KAKAO_REST_API_KEY` | ❌ | 원화 공고 피드에서 플레이스토어에 없는(미출시) 게임의 참고 이미지를 카카오 이미지 검색으로 찾는다. 게임 매체 기사 이미지만 채택하고 출처를 표시. 비우면 건너뜀 |
 | `ART_JOB_FEED_CRON` · `_TIMEZONE` | ❌ | 게시 시각 override(기본 `0 9,18 * * *`, Asia/Seoul) |
 | `JOB_FEED_ENABLED` | ❌ | 백엔드 채용공고 자동 수집(점핏·랠릿·원티드) 마스터 스위치. `true` 가 아니면 수집·채점·알림 자체가 skip |
 | `JOB_FEED_YEARS` · `JOB_FEED_LOCATIONS` | ❌ | 연차(0~50)·지역(쉼표 구분) 매칭 축. 미설정 시 각 축을 중립으로 채점 |

@@ -11,10 +11,12 @@ import { ArtJobPostingPrismaRepository } from './infrastructure/art-job-posting.
 import { GameImageResolver } from './infrastructure/game-image.resolver';
 import { GamejobSource } from './infrastructure/gamejob.source';
 import { ImageDownloader } from './infrastructure/image.downloader';
+import { KakaoImageSearch } from './infrastructure/kakao-image.search';
 
 @Module({
   imports: [PrismaModule],
   providers: [
+    KakaoImageSearch,
     { provide: ART_JOB_SOURCE_PORT, useClass: GamejobSource },
     { provide: GAME_IMAGE_RESOLVER_PORT, useClass: GameImageResolver },
     { provide: IMAGE_DOWNLOADER_PORT, useClass: ImageDownloader },

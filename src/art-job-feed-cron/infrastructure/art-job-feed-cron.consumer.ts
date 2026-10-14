@@ -244,7 +244,11 @@ export class ArtJobFeedCronConsumer extends ObservedWorkerHost {
         kind: 'art-job-feed',
         target,
         threadTs,
-        text: formatArtJobImageCaption(order, resolved.gameTitle),
+        text: formatArtJobImageCaption(
+          order,
+          resolved.gameTitle,
+          resolved.image,
+        ),
         image: { fileId, altText: resolved.gameTitle },
       });
     } catch (error) {

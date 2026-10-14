@@ -2,7 +2,7 @@
 
 # 환경변수 카탈로그
 
-SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 172개.
+SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 173개.
 설명은 각 변수 주석의 첫 문장 발췌 — 상세는 app.config.ts 주석 참조. `.env.example` 동기는 `pnpm check:env`.
 
 ## 인프라 (앱 부팅 필수)
@@ -245,6 +245,7 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `ART_JOB_FEED_MENTION_USER_ID` | ❌ | 머리 메시지에서 멘션할 사용자(`U...`). 비우면 멘션 없음. |
 | `ART_JOB_FEED_CRON` | ❌ | BullMQ cron (default `0 9,18 * * *` — 09:00·18:00). |
 | `ART_JOB_FEED_TIMEZONE` | ❌ | default Asia/Seoul. |
+| `KAKAO_REST_API_KEY` | ❌ | 카카오(다음) 이미지 검색 키. 플레이스토어에 없는(미출시) 게임의 참고 이미지를 게임 매체 기사에서 찾는다. 비우면 이 보강을 건너뛴다(무료 일 30,000건). |
 | `CRON_FAILURE_ALERT_OWNER_SLACK_USER_ID` | ❌ | Daily Eval / Impact Report Recent / CEO Meta Cron 등 cron consumer 가 graceful skip (NO_xxx) 외 throw 직전에 owner 에게 DM 으로 알릴 Slack user ID (`U...`). |
 | `PERSONAL_REPOS` | ❌ | Optional override CSV of owner/repo \| owner/* \| owner. 기본은 repo owner 가 IMPACT_REPORT_GITHUB_AUTHOR 본인이면 개인 프로젝트로 자동 라벨, 조직 소유 개인 프로젝트 등 예외만 추가. |
 | `VACATION_HIRE_DATE` | ❌ | 휴가 계산기 — 본인 입사일 (YYYY-MM-DD). 미설정 시 /휴가 명령에서 친절한 에러. |
