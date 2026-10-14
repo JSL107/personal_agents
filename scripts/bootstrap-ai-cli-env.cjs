@@ -18,6 +18,8 @@
  *   2. MCP 서버 등록 (env·headers 값은 현재 셸의 환경 변수에서 채운다 — 없으면 건너뛰고 알린다)
  *   3. skills / agents / commands / rules / AGENTS.md 등 자산 복사 (기존 것은 백업)
  *   4. hooks 는 통째로 교체하며, 명령 안의 옛 홈 경로를 이 PC 의 홈으로 치환
+ *   5. Claude 스킬을 Codex(~/.agents/skills)에 링크로 잇고, 그 동기화를 이 PC 스케줄러에 등록
+ *      (맥 launchd / 윈도우 작업 스케줄러 — 로그인 시 + 1시간마다, ~/.claude/hooks/skill-link-sync.cjs)
  *
  * permissions 와 defaultMode 는 옮기지 않는다. 새 PC 의 승인 게이트는 그 PC 에서 정한다.
  */
@@ -513,6 +515,24 @@ function restoreCodex(codex) {
   applyHooks('Codex', codex.hooks, CODEX_HOOKS);
 }
 
+// ------------------------------------------------------------- 스킬 링크 동기화
+
+/**
+ * Claude 스킬을 Codex 가 읽는 ~/.agents/skills 에 링크로 잇는 동기화를 이 PC 스케줄러에 건다.
+ * 복사본 두 벌은 갈라진다 — 어느 PC 를 새로 세팅하든 링크가 저절로 따라오게 하려는 것이다.
+ * 스크립트는 claude/hooks 자산으로 같이 복사돼 들어온다. 옛 스냅샷이라 없으면 알리고 건너뛴다.
+ */
+function installSkillLinkSync() {
+  const scriptPath = path.join(CLAUDE_DIR, 'hooks', 'skill-link-sync.cjs');
+  console.log('\n=== 스킬 링크 동기화 (Claude → Codex) ===');
+  if (!DRY_RUN && !fs.existsSync(scriptPath)) {
+    warnings.push(`${scriptPath} 없음 — 스킬 링크 동기화 스케줄러 미등록`);
+    return;
+  }
+  run('node', [scriptPath]);
+  run('node', [scriptPath, '--install']);
+}
+
 // ----------------------------------------------------------------------- 실행
 
 function main() {
@@ -530,6 +550,7 @@ function main() {
 
   restoreClaude(manifest.claude);
   restoreCodex(manifest.codex);
+  installSkillLinkSync();
 
   console.log('\n--- 결과 ---');
   if (warnings.length) {
