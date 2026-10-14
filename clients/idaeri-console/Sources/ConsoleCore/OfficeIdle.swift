@@ -486,6 +486,11 @@ public func officeWorkAffinity(agentType: String) -> [FurnitureKind] {
     // 모여서 정하고 나눈다.
     case "PM", "CTO", "CEO", "PO_SHADOW", "IMPACT_REPORTER":
         return [.meetingTable]
+    // 아이디어를 판에 펼쳐 놓고 개발 가치를 따진다. 판정하는 일이지만 게시판(`wallPinboard`)으로
+    // 보내지 않는다 — 기획실 게시판은 지연 리포트의 벽 모니터에 자리를 내줘 평가실에만 남았고,
+    // 그쪽으로 보내면 배회할 때마다 방을 나간다. 기획실에 있는 이동식 화이트보드와 책장으로 간다.
+    case "IDEA_TRIAGE":
+        return [.whiteboard, .bookshelf]
     default:
         return []
     }
