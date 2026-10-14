@@ -53,14 +53,17 @@ import { AutopilotScheduler } from './application/autopilot.scheduler';
 import { AUTOPILOT_CRON_QUEUE } from './domain/autopilot.type';
 import { AUTOPILOT_TASKS } from './domain/autopilot-task.port';
 import { AUTOPILOT_TASK_TRACE_PORT } from './domain/port/autopilot-task-trace.port';
+import { CUJ_LEDGER_READER_PORT } from './domain/port/cuj-ledger.reader.port';
 import { DAILY_DIGEST_REPOSITORY_PORT } from './domain/port/daily-digest.repository.port';
 import { AutopilotConsumer } from './infrastructure/autopilot.consumer';
+import { CujLedgerPrismaReader } from './infrastructure/cuj-ledger.prisma.reader';
 import { PrismaAutopilotTaskTraceRepository } from './infrastructure/prisma-autopilot-task-trace.repository';
 import { PrismaDailyDigestRepository } from './infrastructure/prisma-daily-digest.repository';
 import { AiCliEnvApplyAutopilotTask } from './infrastructure/tasks/ai-cli-env-apply.autopilot-task';
 import { AiCliEnvSnapshotAutopilotTask } from './infrastructure/tasks/ai-cli-env-snapshot.autopilot-task';
 import { BlogGithubPublishAutopilotTask } from './infrastructure/tasks/blog-github-publish.autopilot-task';
 import { BlogRevisionReportAutopilotTask } from './infrastructure/tasks/blog-revision-report.autopilot-task';
+import { CujCheckAutopilotTask } from './infrastructure/tasks/cuj-check.autopilot-task';
 import { DocsSyncAuditTask } from './infrastructure/tasks/docs-sync-audit.autopilot-task';
 import { EveningRetroPublishTask } from './infrastructure/tasks/evening-retro-publish.autopilot-task';
 import { HolidaySyncAutopilotTask } from './infrastructure/tasks/holiday-sync.autopilot-task';
@@ -163,6 +166,9 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     WorkReviewerAutopilotTask,
     WeeklySummaryAutopilotTask,
     ImpactReportAutopilotTask,
+    CujCheckAutopilotTask,
+    CujLedgerPrismaReader,
+    { provide: CUJ_LEDGER_READER_PORT, useExisting: CujLedgerPrismaReader },
     RunRetroAutopilotTask,
     RunSweeperAutopilotTask,
     PortfolioPublishAutopilotTask,
@@ -265,6 +271,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         workReviewer: WorkReviewerAutopilotTask,
         weeklySummary: WeeklySummaryAutopilotTask,
         impactReport: ImpactReportAutopilotTask,
+        cujCheck: CujCheckAutopilotTask,
         runRetro: RunRetroAutopilotTask,
         runSweeper: RunSweeperAutopilotTask,
         portfolioPublish: PortfolioPublishAutopilotTask,
@@ -306,6 +313,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         workReviewer,
         weeklySummary,
         impactReport,
+        cujCheck,
         runRetro,
         runSweeper,
         portfolioPublish,
@@ -348,6 +356,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         WorkReviewerAutopilotTask,
         WeeklySummaryAutopilotTask,
         ImpactReportAutopilotTask,
+        CujCheckAutopilotTask,
         RunRetroAutopilotTask,
         RunSweeperAutopilotTask,
         PortfolioPublishAutopilotTask,
