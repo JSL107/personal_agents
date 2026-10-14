@@ -23,6 +23,7 @@ import {
   USD_KRW_PAIR,
 } from '../../../agent/stock/domain/stock-monitor.type';
 import {
+  formatAvgPriceRecoveries,
   formatAvgPriceStatuses,
   formatHoldingChanges,
   formatPortfolioExposure,
@@ -363,6 +364,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
         this.withAvgPriceStatuses(
           { skip: false, summaryText },
           closedDayStatuses,
+          [],
         ),
         usdKrwRate,
         failures,
@@ -372,10 +374,11 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
         this.withHoldingChanges(resultWithExposure, sync.changes),
         sync.error,
       );
+      // 휴장일은 새 봉이 없어 이탈 종목 집합이 직전 거래일과 같다 — 상태 줄은 원장에만 남긴다.
       const taskResult = this.suppressQuietRun(composedResult, {
         failures,
         syncError: sync.error,
-        alertCount: closedDayStatuses.length,
+        breachChangeCount: 0,
       });
       return {
         taskResult,
@@ -409,6 +412,9 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
     // 실패로 빠진 종목이 섞이지 않는 이 자리에서 함께 모은다.
     const checkedBaseDates: StockBaseDate[] = [];
     const alertMargins: AlertMargin[] = [];
+    // 어제 봉으로는 경보선 밖이었는데 오늘 봉으로 안에 들어온 종목. 경보선을 새로 넘는 쪽은
+    // detectAvgPriceBreach 가 같은 임계로 경보를 내므로, 이탈 집합의 변화 중 비는 쪽은 이것뿐이다.
+    const recoveredNames: string[] = [];
     const collectStatus = (
       entry: HoldingSnapshot & { tickerId: number },
       bar: DailyBar,
@@ -417,6 +423,11 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
       const status = inspectAvgPriceStatus(entry, bar);
       if (status) {
         avgPriceStatuses.push(status);
+      } else if (
+        previousBar &&
+        inspectAvgPriceStatus(entry, previousBar) !== null
+      ) {
+        recoveredNames.push(entry.tickerName);
       }
       checkedBaseDates.push({
         symbol: entry.symbol,
@@ -540,7 +551,11 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
       nearestMargin: pickNearestMargin(alertMargins),
     });
     const resultWithExposure = await this.withPortfolioExposure(
-      this.withAvgPriceStatuses({ skip: false, summaryText }, avgPriceStatuses),
+      this.withAvgPriceStatuses(
+        { skip: false, summaryText },
+        avgPriceStatuses,
+        recoveredNames,
+      ),
       usdKrwRate,
       failures,
       sync.error,
@@ -554,7 +569,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
         ? this.suppressQuietRun(composedResult, {
             failures,
             syncError: sync.error,
-            alertCount: avgPriceStatuses.length,
+            breachChangeCount: recoveredNames.length,
           })
         : composedResult;
 
@@ -639,8 +654,14 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
   private withAvgPriceStatuses(
     result: AutopilotTaskResult,
     statuses: AvgPriceStatus[],
+    recoveredNames: string[],
   ): AutopilotTaskResult {
-    const statusText = formatAvgPriceStatuses(statuses);
+    const statusText = [
+      formatAvgPriceStatuses(statuses),
+      formatAvgPriceRecoveries(recoveredNames),
+    ]
+      .filter(Boolean)
+      .join('\n\n');
     if (!statusText) {
       return result;
     }
@@ -651,18 +672,23 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
   }
 
   // 본문을 모두 합친 뒤에만 조용한 회차를 판정한다. 채널로 보내는 것은 사람이 볼 사건이 있을 때뿐이다 —
-  // 새 경보(호출부가 anomalies 0 일 때만 부른다)·평단 경보선 이탈·점검 실패·잔고 동기화 오류.
+  // 새 경보(호출부가 anomalies 0 일 때만 부른다)·평단 경보선 이탈 집합의 변화·점검 실패·잔고 동기화 오류.
   // 노출·매매 변동만 붙은 회차는 매일 비슷한 상태 보고라 원장(SUPPRESSED/EMPTY)에 전문을 남긴다
   // (docs/superpowers/plans/2026-10-08-daily-message-direction.md §3-3 "새 경보 없음은 보내지 않는다").
+  //
+  // 이탈 "상태" 만으로는 보내지 않는다(2026-10-14). 계속 이탈해 있는 종목 하나가 매 거래일 "새 경보 없음"
+  // 을 내보냈다(KODEX 인버스 -41%, 10-07~10-13 거래일 전부 SENT). 새로 넘은 종목은 경보(anomaly)로
+  // 이미 나가므로, 여기서 세는 변화는 경보선 안으로 돌아온 종목 수다. 직전 상태는 저장소가 아니라
+  // 같은 종목의 어제 봉으로 판정한다 — 회차가 빠진 날이 있어도 기준이 어긋나지 않는다.
   private suppressQuietRun(
     result: AutopilotTaskResult,
     {
       failures,
       syncError,
-      alertCount,
-    }: { failures: string[]; syncError: unknown; alertCount: number },
+      breachChangeCount,
+    }: { failures: string[]; syncError: unknown; breachChangeCount: number },
   ): AutopilotTaskResult {
-    if (failures.length > 0 || syncError || alertCount > 0) {
+    if (failures.length > 0 || syncError || breachChangeCount > 0) {
       return result;
     }
     return {

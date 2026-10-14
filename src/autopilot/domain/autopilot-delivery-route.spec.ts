@@ -32,6 +32,10 @@ describe('AUTOPILOT_DELIVERY_ROUTE', () => {
     'daily-eval',
     'paper-recommend',
     'paper-order-fill',
+    // 2026-10-14 주간 보고 — 원장에 전문을 남긴다. knowledge-lint 의 후처리는 기록 직후에 돈다.
+    'ceo-meta',
+    'knowledge-lint',
+    'blog-revision-report',
   ];
 
   it('모든 playbook taskId 에 경로가 있고 경로 키는 모두 playbook 에 있다', () => {

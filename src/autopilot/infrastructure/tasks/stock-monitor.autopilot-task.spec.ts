@@ -486,8 +486,9 @@ describe('StockMonitorAutopilotTask', () => {
   });
 
   // 발화는 최초 진입 때만이라, 어제도 하한 밖이던 종목은 알림이 영원히 안 뜬다.
-  // 그 손실이 "이상 없음" 뒤에 가려지지 않는지 확인한다.
-  it('발화가 억제되는 손실 종목도 상태 줄로 드러낸다', async () => {
+  // 그 손실이 "이상 없음" 뒤에 가려지지 않게 상태 줄로 남긴다. 다만 이탈 집합이 어제와 같으면
+  // 매 거래일 같은 내용이라 채널에는 보내지 않고 원장에 둔다(2026-10-14).
+  it('발화가 억제되는 손실 종목은 상태 줄로 원장에 남기고 채널에는 보내지 않는다', async () => {
     const marketData = {
       fetchDailyBars: jest
         .fn()
@@ -501,21 +502,67 @@ describe('StockMonitorAutopilotTask', () => {
 
     const result = await makeTask(marketData, repository).run(context);
 
-    expect(result.skip).toBe(false);
-    expect(result.summaryText).toContain('새 경보 없음');
-    expect(result.summaryText).toContain(
+    expect(result.skip).toBe(true);
+    expect(result.emptyReason).toContain('새 경보 없음');
+    expect(result.emptyReason).toContain(
       '📌 *평균 매입가(산 가격)보다 크게 벌어진 1종목*',
     );
-    expect(result.summaryText).toContain(
+    expect(result.emptyReason).toContain(
       '• *SamsungElec* — 100원에 사서 지금 64원, -36.0%',
     );
-    expect(result.summaryText).toContain(
+    expect(result.emptyReason).toContain(
       '  10주 보유 · 평가손 360원 (경보선 -20%)',
     );
     expect(recordedRuns[0].output).toMatchObject({
       anomalyCount: 0,
       avgPriceBreachCount: 1,
     });
+  });
+
+  // 이탈 집합에서 빠지는 변화는 경보가 없다. 상태 줄에서 조용히 사라지기만 하면 안 된다.
+  it('어제 경보선 밖이던 종목이 안으로 돌아오면 그 사실을 적어 발송한다', async () => {
+    const marketData = {
+      fetchDailyBars: jest
+        .fn()
+        .mockResolvedValue([bar('2026-07-21', 79), bar('2026-07-22', 81)]),
+    };
+    const repository = makeRepository();
+    repository.findCurrentHoldings.mockResolvedValue([holdings[0]]);
+    repository.findLatestStoredTradeDate.mockResolvedValue(
+      new Date('2026-07-21T00:00:00.000Z'),
+    );
+
+    const result = await makeTask(marketData, repository).run(context);
+
+    expect(result.skip).toBe(false);
+    expect(result.summaryText).toContain(
+      '↩️ *경보선 안으로 돌아온 종목* — SamsungElec',
+    );
+    expect(result.summaryText).not.toContain('크게 벌어진');
+    expect(recordedRuns[0].output).toMatchObject({
+      anomalyCount: 0,
+      avgPriceBreachCount: 0,
+    });
+  });
+
+  // 새로 넘은 종목은 detectAvgPriceBreach 경보로 나간다 — 이탈 집합 변화의 다른 쪽.
+  it('어제 안이던 종목이 경보선을 새로 넘으면 경보로 발송한다', async () => {
+    const marketData = {
+      fetchDailyBars: jest
+        .fn()
+        .mockResolvedValue([bar('2026-07-21', 81), bar('2026-07-22', 79)]),
+    };
+    const repository = makeRepository();
+    repository.findCurrentHoldings.mockResolvedValue([holdings[0]]);
+    repository.findLatestStoredTradeDate.mockResolvedValue(
+      new Date('2026-07-21T00:00:00.000Z'),
+    );
+
+    const result = await makeTask(marketData, repository).run(context);
+
+    expect(result.skip).toBe(false);
+    expect(result.summaryText).toContain('구간 진입');
+    expect(result.summaryText).not.toContain('돌아온 종목');
   });
 
   // 일부 종목만 새 봉을 받은 날. 봉이 없어 "신규 거래일 봉 없음" 으로 실패 처리되는 종목이
@@ -1055,7 +1102,8 @@ describe('StockMonitorAutopilotTask', () => {
     expect(recordedRuns[0].output).not.toHaveProperty('portfolioExposure');
   });
   // 휴장 추정은 별도 return 이라 배선을 빼먹기 쉽다. 임계 밖이라는 사실은 휴장이라고 사라지지
-  // 않으므로, 판정을 건너뛰는 이 경로에서도 상태와 건수가 남아야 한다.
+  // 않으므로, 판정을 건너뛰는 이 경로에서도 상태와 건수가 남아야 한다. 새 봉이 없어 이탈 집합이
+  // 바뀔 수 없으므로 채널에는 보내지 않고 원장에 둔다.
   it('휴장 추정이어도 평단 대비 임계 밖 상태와 건수를 남긴다', async () => {
     const marketData = {
       fetchDailyBars: jest
@@ -1070,11 +1118,12 @@ describe('StockMonitorAutopilotTask', () => {
 
     const result = await makeTask(marketData, repository).run(context);
 
-    expect(result.summaryText).toContain('새 거래일 시세가 없어');
-    expect(result.summaryText).toContain(
+    expect(result.skip).toBe(true);
+    expect(result.emptyReason).toContain('새 거래일 시세가 없어');
+    expect(result.emptyReason).toContain(
       '📌 *평균 매입가(산 가격)보다 크게 벌어진 1종목*',
     );
-    expect(result.summaryText).toContain(
+    expect(result.emptyReason).toContain(
       '• *SamsungElec* — 100원에 사서 지금 64원, -36.0%',
     );
     expect(recordedRuns[0].output).toMatchObject({
