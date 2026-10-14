@@ -590,6 +590,63 @@ describe('ConversationalReply — 직전 작업 상태', () => {
     );
   });
 
+  it('실행 없이 보류된 요청에 같은 대화의 직전 초안 상태를 붙이지 않는다 — 하한이 직전 답까지 올라간다 (#831 리뷰)', async () => {
+    const draftStartedMs = 1_700_000_000_000;
+    const draftAckMs = draftStartedMs + 2_000;
+    const heldMs = draftStartedMs + 90_000;
+    const turns: ConversationTurn[] = [
+      {
+        role: 'user',
+        text: '대화 맥락 기억 블로그 써줘',
+        agentType: AgentType.BLOG,
+        agentRunId: 0,
+        timestampMs: draftAckMs,
+      },
+      {
+        role: 'assistant',
+        text: '📝 블로그 초안 작성을 시작했어요.',
+        agentType: AgentType.BLOG,
+        agentRunId: 0,
+        timestampMs: draftAckMs,
+      },
+      {
+        role: 'user',
+        text: '이거 3줄 요약할 수 있어?',
+        agentType: AgentType.BLOG,
+        agentRunId: 0,
+        timestampMs: heldMs,
+      },
+      {
+        role: 'assistant',
+        text: '블로그 초안을 작성할까요?',
+        agentType: AgentType.BLOG,
+        agentRunId: 0,
+        timestampMs: heldMs,
+      },
+    ];
+    // 저장소처럼 startedSince 이후에 시작한 실행만 돌려준다 — 직전 초안은 90초 전에 실패했다.
+    const findLatestConversationRun = jest.fn(
+      async ({ startedSince }: { startedSince: Date }) =>
+        startedSince.getTime() <= draftStartedMs
+          ? { status: 'FAILED', failureReason: 'hermes 실패' }
+          : null,
+    );
+    const { usecase, route } = buildUsecase({ findLatestConversationRun });
+
+    await usecase.reply({
+      text: '너 작업하고 있어?',
+      priorTurns: turns,
+      conversationKey: 'U1:D1',
+    });
+
+    expect(findLatestConversationRun).toHaveBeenCalledWith(
+      expect.objectContaining({ startedSince: new Date(draftAckMs) }),
+    );
+    expect(route.mock.calls[0][0].request.prompt).not.toContain(
+      '[직전 작업 상태',
+    );
+  });
+
   it('작업 turn 이 없거나, 실행 id 없는 turn 인데 대화 키를 모르면 조회하지 않는다', async () => {
     const findRunStatus = jest.fn();
     const findLatestConversationRun = jest.fn();

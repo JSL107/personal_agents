@@ -138,9 +138,12 @@ export class ConversationalReplyUsecase {
     priorTurns: ConversationTurn[];
     conversationKey?: string;
   }): Promise<string | undefined> {
-    const workTurn = [...priorTurns]
+    // 최근 turn 부터 본다 — 마지막 작업 turn 과, 그 앞의 마지막 답.
+    const replies = [...priorTurns]
       .reverse()
-      .find((turn) => turn.role === 'assistant' && turn.agentType);
+      .filter((turn) => turn.role === 'assistant');
+    const workTurnIndex = replies.findIndex((turn) => turn.agentType);
+    const workTurn = replies[workTurnIndex];
     if (!workTurn?.agentType || !this.agentRunService) {
       return undefined;
     }
@@ -159,11 +162,18 @@ export class ConversationalReplyUsecase {
       if (!conversationKey) {
         return undefined;
       }
+      // 하한은 이 작업을 맡긴 요청 직전의 답까지 올린다. 이 작업의 실행은 그 뒤에 시작됐고, 같은
+      // 대화의 앞선 실행은 그 답(자기 ack) 전에 시작됐다 — 시각 창만으로는 실행 없이 보류된 요청에
+      // 직전 초안의 상태가 붙는다(#831 리뷰).
+      const previousReply = replies[workTurnIndex + 1];
       const run = await this.agentRunService.findLatestConversationRun({
         agentType: workTurn.agentType,
         conversationKey,
         startedSince: new Date(
-          workTurn.timestampMs - ASYNC_WORK_STATUS_LOOKBACK_MS,
+          Math.max(
+            workTurn.timestampMs - ASYNC_WORK_STATUS_LOOKBACK_MS,
+            previousReply?.timestampMs ?? 0,
+          ),
         ),
       });
       return run === null ? undefined : formatWorkStatus(label, run);
