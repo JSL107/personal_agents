@@ -461,6 +461,25 @@ model SlackDelivery {
   @@map("slack_delivery")
 }
 
+// 멘션·DM 한 건의 수신과 답변 게시 결과. slack_delivery 는 이대리가 먼저 보내는 메시지만 담고
+// agent_run 은 라우터를 지나야 생기므로, 그 앞에서 끊긴 멘션은 여기에만 남는다.
+// RECEIVED 로 오래 남은 행 = 처리 중 프로세스가 죽었거나 멈춘 것. 원문·사용자 ID 는 두지 않는다 —
+// 원문은 channelId + messageTs 로 Slack 에서 찾고, 마스킹본은 agent_run.input_snapshot.routedText 에 있다.
+model MentionReceipt {
+  id           Int       @id @default(autoincrement())
+  source       String // app_mention | dm
+  channelId    String    @map("channel_id")
+  messageTs    String    @map("message_ts")
+  status       String // RECEIVED | REPLIED | ERROR_REPLIED | REPLY_FAILED
+  errorMessage String?   @map("error_message")
+  receivedAt   DateTime  @default(now()) @map("received_at")
+  repliedAt    DateTime? @map("replied_at")
+
+  @@unique([channelId, messageTs])
+  @@index([receivedAt])
+  @@map("mention_receipt")
+}
+
 // 같은 원인의 고장을 한 사건으로 묶는다. 재발하면 같은 행을 다시 연다.
 model AlertIncident {
   id             Int       @id @default(autoincrement())

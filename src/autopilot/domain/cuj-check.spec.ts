@@ -138,18 +138,35 @@ describe('CUJ detectors', () => {
 
   it('멘션은 일반 60초와 장시간 600초의 초과만 지연으로 센다', () => {
     expect(
-      detectMentionViolations([
-        run('SUCCEEDED', 'PM', 60_000),
-        run('SUCCEEDED', 'BLOG', 600_000),
-      ]),
+      detectMentionViolations(
+        [run('SUCCEEDED', 'PM', 60_000), run('SUCCEEDED', 'BLOG', 600_000)],
+        [{ status: 'REPLIED' }],
+      ),
     ).toEqual([]);
     expect(
-      detectMentionViolations([
-        run('FAILED'),
-        run('SUCCEEDED', 'PM', 60_001),
-        run('SUCCEEDED', 'BLOG', 600_001),
-      ])[0].detail,
+      detectMentionViolations(
+        [
+          run('FAILED'),
+          run('SUCCEEDED', 'PM', 60_001),
+          run('SUCCEEDED', 'BLOG', 600_001),
+        ],
+        [],
+      )[0].detail,
     ).toBe('실패 1건 · 지연 2건');
+  });
+
+  it('멘션 수신 기록에서 답 안 나간 건과 오류 답변을 따로 센다', () => {
+    expect(
+      detectMentionViolations(
+        [],
+        [
+          { status: 'RECEIVED' },
+          { status: 'REPLY_FAILED' },
+          { status: 'ERROR_REPLIED' },
+          { status: 'REPLIED' },
+        ],
+      )[0].detail,
+    ).toBe('답 안 나감 2건 · 오류 답변 1건');
   });
 
   it('승인 반영은 남은 실패가 없으면 정상이고 kind를 요약한다', () => {

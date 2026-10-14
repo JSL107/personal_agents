@@ -16,6 +16,10 @@ export interface CujDeliveryRow {
   errorMessage: string | null;
 }
 
+export interface CujMentionReceiptRow {
+  status: string;
+}
+
 export interface CujOrderRow {
   targetTradeDate: Date | null;
 }
@@ -34,5 +38,10 @@ export interface CujLedgerReaderPort {
   readPendingOrders(before: Date): Promise<CujOrderRow[]>;
   // 자연어 진입 전체 — 라우터가 기존 슬래시 트리거로 워커를 부르는 경우까지 포함한다.
   readMentions(since: Date, until: Date): Promise<CujRunRow[]>;
+  // 멘션 수신 기록 — agent_run 이 안 생긴 채 끊긴 멘션과 게시 실패까지 본다.
+  readMentionReceipts(
+    since: Date,
+    until: Date,
+  ): Promise<CujMentionReceiptRow[]>;
   readFailedPreviews(since: Date, until: Date): Promise<CujPreviewRow[]>;
 }

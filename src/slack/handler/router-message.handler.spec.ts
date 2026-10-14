@@ -20,6 +20,7 @@ import {
 } from '../../router/domain/idaeri-router.port';
 import { RouterException } from '../../router/domain/router.exception';
 import { RouterErrorCode } from '../../router/domain/router-error-code.enum';
+import { MentionReceiptRepositoryPort } from '../domain/port/mention-receipt.repository.port';
 import { SlackDeliveryRepositoryPort } from '../domain/port/slack-delivery.repository.port';
 import { RouterMessageHandler } from './router-message.handler';
 
@@ -35,6 +36,7 @@ const buildHandler = (
     applyPreviewUsecase?: ApplyPreviewUsecase;
     cancelPreviewUsecase?: CancelPreviewUsecase;
     deliveryRepository?: SlackDeliveryRepositoryPort;
+    mentionReceiptRepository?: MentionReceiptRepositoryPort;
   } = {},
 ): RouterMessageHandler => {
   const conversationalReply =
@@ -72,6 +74,10 @@ const buildHandler = (
     applyPreviewUsecase,
     cancelPreviewUsecase,
     deliveryRepository,
+    options.mentionReceiptRepository ?? {
+      recordReceived: jest.fn().mockResolvedValue(undefined),
+      recordOutcome: jest.fn().mockResolvedValue(undefined),
+    },
   );
 };
 
@@ -1671,5 +1677,95 @@ describe('RouterMessageHandler — 원장 답글 집계', () => {
       text: '<@UBOT> 질문',
     });
     expect(dispatch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('RouterMessageHandler — 멘션 수신 기록', () => {
+  const mention = {
+    type: 'app_mention',
+    user: 'U_USER',
+    channel: 'C_CHANNEL',
+    ts: '300.001',
+    text: '<@UBOT> 오늘 할 일',
+  };
+  const ref = { channelId: 'C_CHANNEL', messageTs: '300.001' };
+
+  const buildCase = (dispatch: jest.Mock) => {
+    const { app, getHandler } = buildAppMock();
+    const receipts = {
+      recordReceived: jest.fn().mockResolvedValue(undefined),
+      recordOutcome: jest.fn().mockResolvedValue(undefined),
+    };
+    buildHandler({ dispatch }, { mentionReceiptRepository: receipts }).register(
+      app,
+    );
+    return { handler: getHandler('app_mention'), receipts };
+  };
+
+  const okDispatch = () =>
+    jest.fn().mockResolvedValue({
+      agentRunId: 1,
+      workerType: AgentType.PM,
+      output: {},
+      modelUsed: 'mock',
+      formattedText: '응답',
+    });
+
+  it('수신을 먼저 남기고 답이 게시되면 REPLIED 로 닫는다', async () => {
+    const { handler, receipts } = buildCase(okDispatch());
+    await invokeHandler(handler, mention);
+    expect(receipts.recordReceived).toHaveBeenCalledWith({
+      ...ref,
+      source: 'app_mention',
+    });
+    expect(receipts.recordOutcome).toHaveBeenCalledWith({
+      ...ref,
+      status: 'REPLIED',
+    });
+  });
+
+  it('처리 실패 안내만 나가면 ERROR_REPLIED 다', async () => {
+    const { handler, receipts } = buildCase(
+      jest.fn().mockRejectedValue(new Error('router down')),
+    );
+    await invokeHandler(handler, mention);
+    expect(receipts.recordOutcome).toHaveBeenCalledWith({
+      ...ref,
+      status: 'ERROR_REPLIED',
+    });
+  });
+
+  it('게시가 전부 실패하면 REPLY_FAILED 와 Slack 오류를 남긴다', async () => {
+    const { handler, receipts } = buildCase(okDispatch());
+    const say = jest.fn().mockRejectedValue(new Error('channel_not_found'));
+    const client = {
+      reactions: {
+        add: jest.fn().mockResolvedValue({ ok: true }),
+        remove: jest.fn().mockResolvedValue({ ok: true }),
+      },
+    };
+    await expect(handler({ event: mention, say, client })).rejects.toThrow(
+      'channel_not_found',
+    );
+    expect(receipts.recordOutcome).toHaveBeenCalledWith({
+      ...ref,
+      status: 'REPLY_FAILED',
+      errorMessage: 'channel_not_found',
+    });
+  });
+
+  it('기록이 실패해도 답변은 나간다', async () => {
+    const { app, getHandler } = buildAppMock();
+    buildHandler(
+      { dispatch: okDispatch() },
+      {
+        mentionReceiptRepository: {
+          recordReceived: jest.fn().mockRejectedValue(new Error('db down')),
+          recordOutcome: jest.fn().mockRejectedValue(new Error('db down')),
+        },
+      },
+    ).register(app);
+    const { say } = await invokeHandler(getHandler('app_mention'), mention);
+    expect(say).toHaveBeenCalledTimes(1);
   });
 });
