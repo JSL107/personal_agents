@@ -14,9 +14,13 @@ export interface BlogReplyContext {
   // 요청이 들어온 대화의 기억 키 — 백그라운드 실행 기록에 남겨, 이 대화에서 "작업하고 있어?" 를
   // 물으면 같은 사용자의 다른 대화 실행이 아니라 이 실행의 상태로 답하게 한다.
   conversationKey?: string;
+  // 봇이 답장을 다는 스레드의 기억 키 — DM 최상위 요청이면 conversationKey(channel 키)와 다르다.
+  // 실행 기록에 함께 남겨, 그 스레드에서 몇 번째로 묻든 대화 기억과 무관하게 이 실행을 찾는다.
+  replyThreadKey?: string;
   // 백그라운드 완료 답장을 대화 기억에도 남긴다. 없으면 기억에는 "작성을 시작했어요" ack 만 남아,
   // 완료 직후 "이거 3줄 요약해줘" 가 가리킬 원문이 사라진다(2026-10-14 run 8837).
-  rememberReply?: (text: string) => Promise<void>;
+  // 실행 id 를 함께 받으면 그 turn 으로 다음 "작업 끝났어?" 가 실제 상태를 바로 조회한다.
+  rememberReply?: (text: string, agentRunId?: number) => Promise<void>;
   // 결과 답장의 게시 여부를 멘션 수신 기록에 남긴다. ack 가 나가면 그 멘션은 답한 것으로 닫히므로,
   // 이것이 없으면 결과 답장이 끝내 안 나가도 어디에도 안 보인다. 둘 다 throw 하지 않는다.
   markFinalReplyPending?: () => Promise<void>;

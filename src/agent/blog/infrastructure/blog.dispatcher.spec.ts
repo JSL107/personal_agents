@@ -152,7 +152,8 @@ describe('BlogDispatcher', () => {
         replyContext: {
           channel: 'C1',
           threadTs: 'T1',
-          conversationKey: 'U1:C1:T1',
+          conversationKey: 'U1:C1',
+          replyThreadKey: 'U1:C1:T1',
         },
       });
 
@@ -163,7 +164,8 @@ describe('BlogDispatcher', () => {
         requestText:
           '루프 엔지니어링\n\n[대화 맥락] 직전 논의를 토대로 실패 패턴을 분석한다',
         slackUserId: 'U1',
-        conversationKey: 'U1:C1:T1',
+        conversationKey: 'U1:C1',
+        replyThreadKey: 'U1:C1:T1',
       });
       // 아직 백그라운드 미완 → notify 호출 X.
       expect(notifier.notify).not.toHaveBeenCalled();
@@ -225,8 +227,10 @@ describe('BlogDispatcher', () => {
       });
       await flushPromises();
 
+      // 실행 id 를 함께 남긴다 — 다음 "작업 끝났어?" 가 이 실행의 상태를 바로 조회한다.
       expect(rememberReply).toHaveBeenCalledWith(
         expect.stringContaining('app.notion.com'),
+        42,
       );
     });
 
@@ -250,6 +254,7 @@ describe('BlogDispatcher', () => {
 
       expect(rememberReply).toHaveBeenCalledWith(
         '블로그 초안 생성 실패: hermes 비정상 종료',
+        undefined,
       );
     });
 

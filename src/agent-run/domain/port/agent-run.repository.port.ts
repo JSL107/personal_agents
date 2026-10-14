@@ -414,8 +414,8 @@ export interface AgentRunRepositoryPort {
   }): Promise<RecentlyFinishedRun[]>;
   // 대화 기억에 남은 실행 id 의 상태. 없으면 null.
   findRunStatus(id: number): Promise<WorkRunStatus | null>;
-  // 한 대화(inputSnapshot.conversationKey)에서 시작된 한 worker 실행 중 startedSince 이후 가장
-  // 최근 1건. 실행 id 를 대화에 못 남기는 비동기 worker(BLOG)용. 없으면 null.
+  // 한 대화(inputSnapshot.conversationKey 또는 답장 스레드 키 replyThreadKey 가 같은)의 한 worker
+  // 실행 중 startedSince 이후 가장 최근 1건. 실행 id 를 대화에 못 남기는 비동기 worker(BLOG)용. 없으면 null.
   findLatestConversationRun(input: {
     agentType: string;
     conversationKey: string;

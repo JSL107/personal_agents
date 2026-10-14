@@ -667,7 +667,7 @@ describe('ConversationalReply — 직전 작업 상태', () => {
     );
   });
 
-  it('작업 turn 이 없거나, 실행 id 없는 turn 인데 대화 키를 모르면 조회하지 않는다', async () => {
+  it('대화 키를 모르면 조회하지 않는다', async () => {
     const findRunStatus = jest.fn();
     const findLatestConversationRun = jest.fn();
     const { usecase, route } = buildUsecase({
@@ -675,16 +675,68 @@ describe('ConversationalReply — 직전 작업 상태', () => {
       findLatestConversationRun,
     });
 
-    await usecase.reply({
-      text: '안녕',
-      priorTurns: [],
-      conversationKey: 'U1:D1',
-    });
+    await usecase.reply({ text: '안녕', priorTurns: [] });
     await usecase.reply({ text: '너 작업하고 있어?', priorTurns: workTurns });
 
     expect(findRunStatus).not.toHaveBeenCalled();
     expect(findLatestConversationRun).not.toHaveBeenCalled();
     expect(route.mock.calls[1][0].request.prompt).not.toContain(
+      '[직전 작업 상태',
+    );
+  });
+
+  // 대화 기억은 키당 5 turn 이라 스레드 문답이 쌓이면 블로그 ack 가 먼저 밀려난다.
+  it('작업 turn 이 기억 밖으로 밀려났으면 이 대화의 최근 30분 블로그 실행을 원장에서 찾는다', async () => {
+    jest.useFakeTimers().setSystemTime(new Date(1_700_000_000_000));
+    const findLatestConversationRun = jest
+      .fn()
+      .mockResolvedValue({ status: 'SUCCEEDED', failureReason: null });
+    const { usecase, route } = buildUsecase({ findLatestConversationRun });
+
+    try {
+      await usecase.reply({
+        text: '너 작업하고 있어?',
+        priorTurns: [
+          {
+            role: 'user',
+            text: '너 작업하고 있어?',
+            agentType: null,
+            agentRunId: null,
+            timestampMs: 1_700_000_000_000,
+          },
+          {
+            role: 'assistant',
+            text: '아직 쓰고 있어요.',
+            agentType: null,
+            agentRunId: null,
+            timestampMs: 1_700_000_000_000,
+          },
+        ],
+        conversationKey: 'U1:D1:111.1',
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+
+    expect(findLatestConversationRun).toHaveBeenCalledWith({
+      agentType: AgentType.BLOG,
+      conversationKey: 'U1:D1:111.1',
+      startedSince: new Date(1_700_000_000_000 - 30 * 60 * 1000),
+    });
+    expect(route.mock.calls[0][0].request.prompt).toContain('완료됨');
+  });
+
+  it('작업 turn 이 없고 이 대화의 실행도 없으면 상태 줄을 싣지 않는다', async () => {
+    const findLatestConversationRun = jest.fn().mockResolvedValue(null);
+    const { usecase, route } = buildUsecase({ findLatestConversationRun });
+
+    await usecase.reply({
+      text: '안녕',
+      priorTurns: [],
+      conversationKey: 'U1:D1',
+    });
+
+    expect(route.mock.calls[0][0].request.prompt).not.toContain(
       '[직전 작업 상태',
     );
   });

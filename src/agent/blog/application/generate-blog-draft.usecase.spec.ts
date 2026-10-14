@@ -76,6 +76,7 @@ describe('GenerateBlogDraftUsecase', () => {
       requestText: '주제',
       slackUserId: 'U1',
       conversationKey: 'U1:D1',
+      replyThreadKey: 'U1:D1:111.1',
     });
     await usecase.execute({ requestText: '주제', slackUserId: 'U1' });
 
@@ -83,6 +84,7 @@ describe('GenerateBlogDraftUsecase', () => {
       requestText: '주제',
       slackUserId: 'U1',
       conversationKey: 'U1:D1',
+      replyThreadKey: 'U1:D1:111.1',
     });
     expect(execute.mock.calls[1][0].inputSnapshot).toEqual({
       requestText: '주제',

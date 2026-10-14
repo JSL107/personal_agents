@@ -113,6 +113,7 @@ export class BlogDispatcher implements AgentDispatcher {
   ): Promise<void> {
     this.inFlightReplies.add(reply);
     let text: string;
+    let agentRunId: number | undefined;
     try {
       const outcome = await this.generateBlogDraft.execute({
         requestText: buildBlogRequestText(input),
@@ -120,8 +121,12 @@ export class BlogDispatcher implements AgentDispatcher {
         ...(reply.conversationKey
           ? { conversationKey: reply.conversationKey }
           : {}),
+        ...(reply.replyThreadKey
+          ? { replyThreadKey: reply.replyThreadKey }
+          : {}),
       });
       text = formatBlogDraft(outcome.result);
+      agentRunId = outcome.agentRunId;
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(
@@ -133,7 +138,7 @@ export class BlogDispatcher implements AgentDispatcher {
       // 성공 링크와 같이 나가 이미 있는 초안을 중복 생성하게 한다(#824 리뷰).
       this.inFlightReplies.delete(reply);
     }
-    const posted = await this.reply(reply, text);
+    const posted = await this.reply(reply, text, agentRunId);
     // 재시작 안내(notifyInterrupted)는 결과가 아니라 기록하지 않는다 — 대기로 남아 「답 안 나감」으로 세진다.
     await reply.recordFinalReply?.(posted);
   }
@@ -164,14 +169,18 @@ export class BlogDispatcher implements AgentDispatcher {
   }
 
   // 같은 스레드에 답장하고 대화 기억에도 남긴다. 기억 실패는 답장을 막지 않는다 — 다음 턴 맥락만 잃는다.
-  private async reply(reply: BlogReplyContext, text: string): Promise<boolean> {
+  private async reply(
+    reply: BlogReplyContext,
+    text: string,
+    agentRunId?: number,
+  ): Promise<boolean> {
     const posted = await this.notifier.notify({
       channel: reply.channel,
       ...(reply.threadTs ? { threadTs: reply.threadTs } : {}),
       text,
     });
     try {
-      await reply.rememberReply?.(text);
+      await reply.rememberReply?.(text, agentRunId);
     } catch (error: unknown) {
       this.logger.warn(
         `BLOG 완료 답장 대화 기억 실패: ${error instanceof Error ? error.message : String(error)}`,
