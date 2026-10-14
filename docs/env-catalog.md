@@ -2,7 +2,7 @@
 
 # 환경변수 카탈로그
 
-SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 173개.
+SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 174개.
 설명은 각 변수 주석의 첫 문장 발췌 — 상세는 app.config.ts 주석 참조. `.env.example` 동기는 `pnpm check:env`.
 
 ## 인프라 (앱 부팅 필수)
@@ -228,6 +228,7 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `STUDY_APPLY_ISSUE_REPO` | ❌ | 오늘의 공부 적용 제안 승인 시 issue 를 만들 레포(owner/repo). |
 | `STALE_DATA_CUTOFF_DAYS` | ❌ | OPS-6 stale data filter — GitHub assigned issue / Notion task DB 의 컷오프 (일 단위). |
 | `PM_STALE_DEMOTE_DAYS` | ❌ | PM 데일리 플랜 정체 태스크 강등 임계값. 미설정 시 default 5일. |
+| `IDEA_CHANNEL_ID` | ❌ | — |
 | `AI_CLI_ENV_SYNC_REPO` | ❌ | AI CLI 환경 스냅샷 동기화. AI_CLI_ENV_SYNC_REPO 미설정 시 export/apply task 모두 skip. |
 | `AI_CLI_ENV_SYNC_DIR` | ❌ | Snapshot repo의 로컬 clone 경로. 미설정 시 ~/.ai-cli-env-sync. |
 | `AI_CLI_ENV_SNAPSHOT_CRON` | ❌ | 스냅샷 export cron. 미설정 시 매일 19:00(Asia/Seoul). |

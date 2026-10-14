@@ -38,6 +38,8 @@ import { DocsAuditPrApplier } from './docs-audit/infrastructure/docs-audit-pr.ap
 import { GithubModule } from './github/github.module';
 import { HermesWatchdogModule } from './hermes-watchdog/hermes-watchdog.module';
 import { HumanizeModule } from './humanize/humanize.module';
+import { IdeaTriageModule } from './idea-triage/idea-triage.module';
+import { IdeaScheduleApplier } from './idea-triage/infrastructure/idea-schedule.applier';
 import { JobApplicationNudgeCronModule } from './job-application-nudge-cron/job-application-nudge-cron.module';
 import { LocalSessionsModule } from './local-sessions/local-sessions.module';
 import { ModelRouterModule } from './model-router/model-router.module';
@@ -106,6 +108,7 @@ import { WebhookModule } from './webhook/webhook.module';
     StockModule,
     PaperTradingModule,
     PaperRecommendModule,
+    IdeaTriageModule,
     // V3 SOTA Foundation 1.2 — Docker 격리 실행 환경. BE-Test self-correction 루프(아래)가
     // 소비 — tmpfs 주입으로 호스트 fs 변조 없이 검증.
     // 학습 주제 판정 — Hermes 딥다이브 주제를 개인 레포와 연결해 학습 필요성을 판정한다(cron 전용).
@@ -133,6 +136,7 @@ import { WebhookModule } from './webhook/webhook.module';
         StudyApplyIssueApplier,
         EveningCareerReflectApplier,
         ProductGoalApplier,
+        IdeaScheduleApplier,
       ],
       // 레버 3b: apply 후 결과 검증 — DOCS_AUDIT_PR 의 PR open 을 getPullRequest 로 재확인.
       verifiers: [GithubPrVerifier, GithubFileVerifier],
@@ -152,6 +156,8 @@ import { WebhookModule } from './webhook/webhook.module';
         // 않는 이상 여기 없으면 부팅이 index[1] 에서 끊긴다(런타임에만 드러난다).
         AgentRunModule,
         ProductGoalModule,
+        IdeaTriageModule,
+        ScheduleModule,
       ],
     }),
     SlackModule,

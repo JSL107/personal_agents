@@ -818,6 +818,51 @@ describe('SlackService.postMessage — 이미지 블록', () => {
   });
 });
 
+describe('SlackService.postPreviewMessage — 스레드 좌표', () => {
+  const preview = {
+    id: 'preview-1',
+    kind: 'IDEA_SCHEDULE',
+    previewText: '일정 등록',
+    payload: { title: '과제' },
+  } as const;
+
+  const buildPreviewService = (): {
+    service: SlackService;
+    postMessageMock: jest.Mock;
+  } => {
+    const postMessageMock = jest
+      .fn()
+      .mockResolvedValue({ channel: 'C1', ts: '2.0' });
+    const service = new SlackService(
+      {} as unknown as ConfigService,
+      [],
+      mockDeliveryRepository as SlackDeliveryRepositoryPort,
+    );
+    (service as unknown as { app: unknown }).app = {
+      client: { chat: { postMessage: postMessageMock } },
+    };
+    return { service, postMessageMock };
+  };
+
+  it('threadTs 가 있으면 승인 카드를 원글 스레드에 보낸다', async () => {
+    const { service, postMessageMock } = buildPreviewService();
+    await service.postPreviewMessage({
+      target: 'C1',
+      threadTs: '1.0',
+      preview,
+    });
+    expect(postMessageMock).toHaveBeenCalledWith(
+      expect.objectContaining({ channel: 'C1', thread_ts: '1.0' }),
+    );
+  });
+
+  it('threadTs 를 생략하면 기존처럼 최상위로 보낸다', async () => {
+    const { service, postMessageMock } = buildPreviewService();
+    await service.postPreviewMessage({ target: 'C1', preview });
+    expect(postMessageMock.mock.calls[0][0]).not.toHaveProperty('thread_ts');
+  });
+});
+
 describe('SlackService — app 부재 원인 구분 (assertAppReady)', () => {
   it('토큰 미설정(isConfigured=false)이면 "설정 누락"으로 던진다', async () => {
     const service = new SlackService(

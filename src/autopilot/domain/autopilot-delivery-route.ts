@@ -12,6 +12,7 @@ export type AutopilotDeliveryRoute = 'slack' | 'console';
 export const AUTOPILOT_DELIVERY_ROUTE: Readonly<
   Record<string, AutopilotDeliveryRoute>
 > = {
+  'idea-triage': 'console',
   'work-reviewer': 'console',
   'daily-eval': 'console',
   'evening-retro-publish': 'slack',

@@ -6,6 +6,7 @@ import {
 
 describe('AUTOPILOT_DELIVERY_ROUTE', () => {
   const consoleTaskIds = [
+    'idea-triage',
     'pr-review-sweep',
     'run-sweeper',
     'preview-sweeper',
@@ -47,7 +48,7 @@ describe('AUTOPILOT_DELIVERY_ROUTE', () => {
     }
   });
 
-  it('콘솔 경로는 owner 가 확정한 23개이며 paper-score·아침 한 통은 Slack 에 남는다', () => {
+  it('콘솔 경로는 아이디어 판정 요약을 포함하며 paper-score·아침 한 통은 Slack 에 남는다', () => {
     expect(
       Object.entries(AUTOPILOT_DELIVERY_ROUTE)
         .filter(([, route]) => route === 'console')

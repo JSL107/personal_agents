@@ -225,6 +225,8 @@ pnpm dev              # watch 모드 기동
 
 Slack 설정: Event Subscriptions 에 `app_mention` + `message.im` + `reaction_added`, Bot scope 에 `app_mentions:read` + `im:history` + `reactions:read` + `channels:history` + `groups:history`. 뒤의 두 history 권한은 채널 메시지를 다시 읽을 때 쓴다 — 채널 알림 스레드에서 멘션했을 때 부모 메시지를 맥락으로 읽거나, 채널 메시지에 단 반응의 원문을 조회할 때다.
 
+아이디어 판정은 평일 09:00 KST에 `IDEA_CHANNEL_ID`의 최근 최상위 글을 최대 10건 읽어 개발 가치를 판단한다. 판정 답글과 개발 대상의 ✅/❌ 일정 승인 카드는 원글 스레드에 붙는다. ✅ 승인 뒤 내부 `ScheduleItem`에 일정이 등록된다. 봇을 해당 채널에 초대해야 하며, 공개·비공개 채널 기록 조회에는 각각 `channels:history`·`groups:history` 권한이 필요하다.
+
 </details>
 
 <details>
@@ -364,6 +366,7 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 | `AUTOPILOT_INVEST_TARGET` | ⭕ | 투자 라인(주식·모의투자 10항목) 전용 발송 대상. 미설정 시 `AUTOPILOT_TARGET` |
 | `AUTOPILOT_CAREER_TARGET` | ⭕ | 커리어 라인(채용공고 수집·갭 분석) 전용 발송 대상. 미설정 시 `AUTOPILOT_TARGET` |
 | `AUTOPILOT_REVIEW_TARGET` | ⭕ | 리뷰 라인(PR 리뷰 스윕 요약) 전용 발송 대상. 미설정 시 `AUTOPILOT_TARGET` |
+| `IDEA_CHANNEL_ID` | ⭕ | 평일 09:00 KST 아이디어 판정 대상 Slack 채널 ID(`C...`/`G...`). 미설정 시 해당 task 건너뜀 |
 | `CONSOLE_OWNER_SLACK_USER_ID` | ❌ | 콘솔 지시·승인 주체 — 없으면 콘솔 쓰기 503 |
 | `KOREAN_HOLIDAY_API_KEY` | ❌ | 공공데이터포털 특일 정보 **디코딩** 서비스키 — 없으면 달력에 공휴일이 안 뜬다 |
 | `VACATION_HIRE_DATE` · `VACATION_FIRST_YEAR_ADVANCE_DAYS` | ❌ | 휴가 계산 입사일(YYYY-MM-DD)과 1년차 선지급 일수(1~11). 선지급을 설정하면 1년차 부여가 그 값으로 고정되고 2년차 15일은 그대로 — 없으면 한 달에 1일씩 계산 |

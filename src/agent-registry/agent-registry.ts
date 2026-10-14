@@ -302,6 +302,15 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
       '마감·신청·예약 등록 — 자연어 날짜 표현을 해석해 등록 (자연어 멘션 전용, LLM 미사용)',
   },
   {
+    agentType: AgentType.IDEA_TRIAGE,
+    displayName: 'Idea Triage',
+    nickname: '이심사',
+    slashCommands: [],
+    usecasePath: 'src/idea-triage/application/judge-idea.usecase.ts',
+    description:
+      '아이디어 채널의 새 글을 판정하고 승인 후 내부 일정을 등록한다',
+  },
+  {
     agentType: AgentType.ROUTER,
     displayName: 'Router',
     // 동료가 아니라 설비다 — 요청을 받아 담당자에게 넘기는 일만 한다. 닉네임으로 불릴 일이
