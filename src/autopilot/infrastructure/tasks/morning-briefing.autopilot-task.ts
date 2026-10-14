@@ -50,6 +50,14 @@ import {
   AutopilotTaskResult,
 } from '../../domain/autopilot-task.port';
 import {
+  getCujWatchTodayStart,
+  isCujCheckMissingYesterday,
+} from '../../domain/cuj-check-missing';
+import {
+  CUJ_LEDGER_READER_PORT,
+  CujLedgerReaderPort,
+} from '../../domain/port/cuj-ledger.reader.port';
+import {
   DAILY_DIGEST_REPOSITORY_PORT,
   DailyDigestRepositoryPort,
 } from '../../domain/port/daily-digest.repository.port';
@@ -208,6 +216,8 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
     @Inject(DAILY_DIGEST_REPOSITORY_PORT)
     private readonly digestRepository: DailyDigestRepositoryPort,
     private readonly configService: ConfigService,
+    @Inject(CUJ_LEDGER_READER_PORT)
+    private readonly cujLedgerReader: CujLedgerReaderPort,
   ) {}
 
   async run({
@@ -216,21 +226,29 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
   }: AutopilotTaskContext): Promise<AutopilotTaskResult> {
     const now = new Date();
     const plan = await this.buildPlanSection(ownerSlackUserId);
-    const [approvalLabels, incidents, posting, invest, study, portfolio] =
-      await Promise.all([
-        this.loadApprovalLabels(ownerSlackUserId, now),
-        this.loadIncidents(now),
-        this.loadPostings(firedAtKst, now),
-        this.loadInvest(firedAtKst),
-        this.loadStudy(
-          // 브리프는 별도 cron 이 자기 owner 로 저장한다(study-brief-cron.scheduler.ts). 두 owner 설정이
-          // 갈라지면 autopilot owner 로는 브리프를 못 찾아 공부 줄이 조용히 빠지므로, 생산자의 키를 먼저 쓴다.
-          this.configService
-            .get<string>('STUDY_BRIEF_OWNER_SLACK_USER_ID')
-            ?.trim() || ownerSlackUserId,
-        ),
-        this.loadPortfolio(now),
-      ]);
+    const [
+      approvalLabels,
+      incidents,
+      posting,
+      invest,
+      study,
+      portfolio,
+      cujIncident,
+    ] = await Promise.all([
+      this.loadApprovalLabels(ownerSlackUserId, now),
+      this.loadIncidents(now),
+      this.loadPostings(firedAtKst, now),
+      this.loadInvest(firedAtKst),
+      this.loadStudy(
+        // 브리프는 별도 cron 이 자기 owner 로 저장한다(study-brief-cron.scheduler.ts). 두 owner 설정이
+        // 갈라지면 autopilot owner 로는 브리프를 못 찾아 공부 줄이 조용히 빠지므로, 생산자의 키를 먼저 쓴다.
+        this.configService
+          .get<string>('STUDY_BRIEF_OWNER_SLACK_USER_ID')
+          ?.trim() || ownerSlackUserId,
+      ),
+      this.loadPortfolio(now),
+      this.loadCujIncident(firedAtKst),
+    ]);
 
     // 그날 회차에서 감지한 문제도 장애로 센다 — 첫 줄만 보고 열지 정하는 메시지라, 아래 줄에만
     // 경고를 두면 첫 줄이 "손댈 것 없음" 인 채로 문제가 묻힌다.
@@ -247,6 +265,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
             },
           ]
         : []),
+      ...(cujIncident ? [cujIncident] : []),
     ];
     const digestInput: MorningDigestInput = {
       firedAtKst,
@@ -367,6 +386,33 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
     } catch (error: unknown) {
       this.logger.warn(`열린 장애 조회 실패 — 줄 생략: ${String(error)}`);
       return [];
+    }
+  }
+
+  // CUJ 점검(cuj-check)은 아침 브리핑을 감시하고, 아침 브리핑은 CUJ 점검이 어제 돌았는지 본다.
+  // 둘이 함께 멈추면(스케줄러 정지·앱 다운) 매일 오던 이 메시지가 안 오는 것 자체가 신호다.
+  // 조회가 실패해도 브리핑 본체는 나가야 하므로 줄만 생략한다.
+  private async loadCujIncident(
+    firedAtKst: string,
+  ): Promise<MorningIncident | null> {
+    try {
+      const latestBeforeToday =
+        await this.cujLedgerReader.findLatestCujCheckDeliveryBefore(
+          getCujWatchTodayStart(firedAtKst),
+        );
+      if (
+        latestBeforeToday === null ||
+        !isCujCheckMissingYesterday(firedAtKst, latestBeforeToday)
+      ) {
+        return null;
+      }
+      return {
+        label: `CUJ 점검 멈춤 — 마지막 실행 ${formatTradeDay(getKstDateOf(latestBeforeToday))}`,
+        dayCount: null,
+      };
+    } catch (error: unknown) {
+      this.logger.warn(`CUJ 점검 원장 조회 실패 — 줄 생략: ${String(error)}`);
+      return null;
     }
   }
 
