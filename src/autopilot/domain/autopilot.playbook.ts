@@ -5,8 +5,6 @@ import {
   DEFAULT_AI_CLI_ENV_SNAPSHOT_TIMEZONE,
   DEFAULT_BLOG_REVISION_REPORT_CRON,
   DEFAULT_BLOG_REVISION_REPORT_TIMEZONE,
-  DEFAULT_CEO_META_CRON,
-  DEFAULT_CEO_META_TIMEZONE,
   DEFAULT_DAILY_EVAL_CRON,
   DEFAULT_DAILY_EVAL_TIMEZONE,
   DEFAULT_DOCS_AUDIT_CRON,
@@ -80,6 +78,7 @@ import { PlaybookEntry, PlaybookLine } from './playbook.type';
 // SP1: Daily Eval 1건만(기존 cron 이관). SP2: Morning Briefing 추가(출근 통합).
 // SP3: work-reviewer 추가 + daily-eval digestGroup='evening' → 퇴근 1건 통합.
 // SP4: 주간 cron 3종 이관 — weekly-summary(금 17:00) / ceo-meta(일 18:00) / impact-report(토 09:00).
+// 2026-10-14 ceo-meta(일) 폐지 — weekly-summary 가 같은 인자로 CEO 주간 회고를 이미 만들어 Slack 으로 낸다.
 //      각각 독립 digestGroup 없음 = 단독 그룹, 서로 다른 스케줄이라 묶지 않음.
 export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
   // evening 그룹 순서 주의 — work-reviewer 가 daily-eval 보다 먼저여야 한다.
@@ -207,16 +206,6 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       kind: 'CRON',
       schedule: DEFAULT_WEEKLY_SUMMARY_CRON,
       timezone: DEFAULT_WEEKLY_SUMMARY_TIMEZONE,
-    },
-    riskTier: 'T0_AUTO',
-  },
-  {
-    id: 'ceo-meta',
-    taskId: 'ceo-meta',
-    trigger: {
-      kind: 'CRON',
-      schedule: DEFAULT_CEO_META_CRON,
-      timezone: DEFAULT_CEO_META_TIMEZONE,
     },
     riskTier: 'T0_AUTO',
   },

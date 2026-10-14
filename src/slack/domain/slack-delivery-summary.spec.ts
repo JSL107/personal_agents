@@ -75,6 +75,20 @@ describe('summarizeDeliveries', () => {
     );
   });
 
+  // 버튼 카드는 클릭으로 응답받고 클릭은 세지 못한다 — 반응 0 이 정상이라 정리 후보가 아니다.
+  it('does not flag button cards as cleanup candidates', () => {
+    for (const kind of ['preview-card', 'subconscious-proposal']) {
+      const tenCards = Array.from({ length: 10 }, () => row({ kind }));
+      expect(
+        summarizeDeliveries(tenCards, { days: 14 }).byKind[0].cleanupCandidate,
+      ).toBe(false);
+      expect(
+        summarizeDeliveries(tenCards, { days: 14 }).byItemKind[0]
+          .cleanupCandidate,
+      ).toBe(false);
+    }
+  });
+
   it('flags cleanup candidates only after 14 days and 10 sent messages without reactions or replies', () => {
     const tenSent = Array.from({ length: 10 }, () => row({ kind: 'quiet' }));
     expect(

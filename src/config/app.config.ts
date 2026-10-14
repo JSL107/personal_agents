@@ -237,7 +237,7 @@ export class EnvironmentVariables {
   // 스케줄 override (각 항목): AUTOPILOT_<ID>_SCHEDULE / _TIMEZONE.
   //   ID = 플레이북 entry id 대문자 + 언더스코어 변환:
   //     daily-eval → DAILY_EVAL, morning-briefing → MORNING_BRIEFING,
-  //     weekly-summary → WEEKLY_SUMMARY, ceo-meta → CEO_META, impact-report → IMPACT_REPORT.
+  //     weekly-summary → WEEKLY_SUMMARY, impact-report → IMPACT_REPORT.
   //   미설정 시 playbook-defaults.ts 의 DEFAULT_* 상수 사용.
   @IsOptional()
   @IsString()
@@ -392,14 +392,6 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   AUTOPILOT_WEEKLY_SUMMARY_TIMEZONE?: string;
-
-  @IsOptional()
-  @IsString()
-  AUTOPILOT_CEO_META_SCHEDULE?: string;
-
-  @IsOptional()
-  @IsString()
-  AUTOPILOT_CEO_META_TIMEZONE?: string;
 
   @IsOptional()
   @IsString()

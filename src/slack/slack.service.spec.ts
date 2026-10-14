@@ -856,6 +856,52 @@ describe('SlackService.postPreviewMessage — 스레드 좌표', () => {
     );
   });
 
+  it('승인 카드를 preview-card 로 원장에 SENT 기록한다', async () => {
+    mockDeliveryRepository.record.mockReset().mockResolvedValue(undefined);
+    const { service } = buildPreviewService();
+    await service.postPreviewMessage({
+      target: 'C1',
+      threadTs: '1.0',
+      preview,
+    });
+    expect(mockDeliveryRepository.record).toHaveBeenCalledWith({
+      kind: 'preview-card',
+      itemKinds: [],
+      target: 'C1',
+      channelId: 'C1',
+      messageTs: '2.0',
+      threadTs: '1.0',
+      status: SLACK_DELIVERY_STATUS.SENT,
+      textPreview: '일정 등록',
+    });
+  });
+
+  it('승인 카드 발송 실패는 FAILED 로 기록하고 그대로 던진다', async () => {
+    mockDeliveryRepository.record.mockReset().mockResolvedValue(undefined);
+    const { service, postMessageMock } = buildPreviewService();
+    postMessageMock.mockRejectedValue(new Error('channel_not_found'));
+    await expect(
+      service.postPreviewMessage({ target: 'C1', preview }),
+    ).rejects.toThrow('channel_not_found');
+    expect(mockDeliveryRepository.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'preview-card',
+        status: SLACK_DELIVERY_STATUS.FAILED,
+      }),
+    );
+  });
+
+  it('원장 기록에 실패해도 카드 좌표를 반환한다', async () => {
+    mockDeliveryRepository.record
+      .mockReset()
+      .mockRejectedValue(new Error('db down'));
+    const { service } = buildPreviewService();
+    await expect(
+      service.postPreviewMessage({ target: 'C1', preview }),
+    ).resolves.toEqual({ channelId: 'C1', messageTs: '2.0' });
+    mockDeliveryRepository.record.mockReset().mockResolvedValue(undefined);
+  });
+
   it('threadTs 를 생략하면 기존처럼 최상위로 보낸다', async () => {
     const { service, postMessageMock } = buildPreviewService();
     await service.postPreviewMessage({ target: 'C1', preview });

@@ -61,7 +61,6 @@ import { AiCliEnvApplyAutopilotTask } from './infrastructure/tasks/ai-cli-env-ap
 import { AiCliEnvSnapshotAutopilotTask } from './infrastructure/tasks/ai-cli-env-snapshot.autopilot-task';
 import { BlogGithubPublishAutopilotTask } from './infrastructure/tasks/blog-github-publish.autopilot-task';
 import { BlogRevisionReportAutopilotTask } from './infrastructure/tasks/blog-revision-report.autopilot-task';
-import { CeoMetaAutopilotTask } from './infrastructure/tasks/ceo-meta.autopilot-task';
 import { DocsSyncAuditTask } from './infrastructure/tasks/docs-sync-audit.autopilot-task';
 import { EveningRetroPublishTask } from './infrastructure/tasks/evening-retro-publish.autopilot-task';
 import { HolidaySyncAutopilotTask } from './infrastructure/tasks/holiday-sync.autopilot-task';
@@ -163,7 +162,6 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     MorningBriefingAutopilotTask,
     WorkReviewerAutopilotTask,
     WeeklySummaryAutopilotTask,
-    CeoMetaAutopilotTask,
     ImpactReportAutopilotTask,
     RunRetroAutopilotTask,
     RunSweeperAutopilotTask,
@@ -266,7 +264,6 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         morning: MorningBriefingAutopilotTask,
         workReviewer: WorkReviewerAutopilotTask,
         weeklySummary: WeeklySummaryAutopilotTask,
-        ceoMeta: CeoMetaAutopilotTask,
         impactReport: ImpactReportAutopilotTask,
         runRetro: RunRetroAutopilotTask,
         runSweeper: RunSweeperAutopilotTask,
@@ -308,7 +305,6 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         morning,
         workReviewer,
         weeklySummary,
-        ceoMeta,
         impactReport,
         runRetro,
         runSweeper,
@@ -351,7 +347,6 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         MorningBriefingAutopilotTask,
         WorkReviewerAutopilotTask,
         WeeklySummaryAutopilotTask,
-        CeoMetaAutopilotTask,
         ImpactReportAutopilotTask,
         RunRetroAutopilotTask,
         RunSweeperAutopilotTask,
