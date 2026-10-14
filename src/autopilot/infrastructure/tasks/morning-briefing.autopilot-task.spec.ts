@@ -119,13 +119,14 @@ describe('MorningBriefingAutopilotTask', () => {
     const runWith = async (
       findLatestDeliveryBefore: jest.Mock,
       firedAtKst = context.firedAtKst,
+      config: Record<string, string> = {},
     ): Promise<string> => {
       const task = buildTask(
         { execute: jest.fn().mockRejectedValue(new Error('계획 장애')) },
         { humanize: jest.fn() },
         emptyStockRepository(),
         listSchedulesUsecase(),
-        { cujLedgerReader: { findLatestDeliveryBefore } },
+        { cujLedgerReader: { findLatestDeliveryBefore }, config },
       );
       const result = await task.run({ ...context, firedAtKst });
       return result.summaryText ?? '';
@@ -152,10 +153,18 @@ describe('MorningBriefingAutopilotTask', () => {
         'cuj-check',
         new Date('2026-10-16T15:00:00Z'),
       );
-      expect(find).toHaveBeenCalledWith(
+      for (const taskId of [
         'run-retro',
-        new Date('2026-10-16T15:00:00Z'),
-      );
+        'weekly-summary',
+        'impact-report',
+        'knowledge-lint',
+        'blog-revision-report',
+      ]) {
+        expect(find).toHaveBeenCalledWith(
+          taskId,
+          new Date('2026-10-16T15:00:00Z'),
+        );
+      }
     });
 
     it('어제 기록이 있으면 조용하다', async () => {
@@ -197,6 +206,39 @@ describe('MorningBriefingAutopilotTask', () => {
         );
 
       expect(await runWith(find, '2026-10-19')).not.toContain('주간 실행 회고');
+    });
+
+    it('스케줄 env 오버라이드로 판정한다 — 더 드문 cron 이면 다음 회차 전까지 조용하다', async () => {
+      const find = jest
+        .fn()
+        .mockImplementation(
+          latestBy({ 'run-retro': new Date('2026-10-01T00:00:00Z') }),
+        );
+
+      expect(await runWith(find, '2026-10-10')).toContain(
+        '주간 실행 회고 기록 없음',
+      );
+      expect(
+        await runWith(find, '2026-10-10', {
+          AUTOPILOT_RUN_RETRO_SCHEDULE: '0 9 1,15 * *',
+        }),
+      ).not.toContain('주간 실행 회고');
+    });
+
+    it('cron 오버라이드가 잘못되면 그 대상 줄만 빠진다', async () => {
+      const find = jest.fn().mockImplementation(
+        latestBy({
+          'cuj-check': new Date('2026-10-15T00:10:00Z'),
+          'run-retro': new Date('2026-10-05T00:00:00Z'),
+        }),
+      );
+
+      const text = await runWith(find, context.firedAtKst, {
+        AUTOPILOT_CUJ_CHECK_SCHEDULE: 'bad cron',
+      });
+
+      expect(text).not.toContain('CUJ 점검');
+      expect(text).toContain('주간 실행 회고 기록 없음');
     });
 
     it('한 대상의 조회가 실패해도 브리핑과 다른 대상의 줄은 나간다', async () => {

@@ -31,3 +31,25 @@ describe('CujLedgerPrismaReader.readPaperRecommendations', () => {
     expect(rows[0]).not.toHaveProperty('inputSnapshot');
   });
 });
+
+describe('CujLedgerPrismaReader.findLatestDeliveryBefore', () => {
+  it('발송 실패(FAILED) 행은 회차 기록으로 치지 않는다', async () => {
+    const findFirst = jest.fn().mockResolvedValue(null);
+    const reader = new CujLedgerPrismaReader({
+      slackDelivery: { findFirst },
+    } as unknown as PrismaService);
+    const before = new Date('2026-10-16T15:00:00.000Z');
+
+    await reader.findLatestDeliveryBefore('weekly-summary', before);
+
+    expect(findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          itemKinds: { has: 'weekly-summary' },
+          createdAt: { lt: before },
+          status: { not: 'FAILED' },
+        },
+      }),
+    );
+  });
+});

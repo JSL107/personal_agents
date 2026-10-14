@@ -30,7 +30,8 @@ export interface CujPreviewRow {
 }
 
 export interface CujLedgerReaderPort {
-  // `itemKind` 작업이 `before` 이전에 남긴 마지막 원장 시각(상태 무관 — 콘솔 경로의 SUPPRESSED 행 포함).
+  // `itemKind` 작업이 `before` 이전에 남긴 마지막 원장 시각. 발송 실패(FAILED)는 빼고, 콘솔·빈 회차의
+  // SUPPRESSED 행은 넣는다.
   // 아침 브리핑이 결번 감시(LEDGER_GAP_WATCHES)에 쓴다.
   findLatestDeliveryBefore(
     itemKind: string,
