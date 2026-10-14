@@ -22,7 +22,10 @@ import { RouterException } from '../../router/domain/router.exception';
 import { RouterErrorCode } from '../../router/domain/router-error-code.enum';
 import { MentionReceiptRepositoryPort } from '../domain/port/mention-receipt.repository.port';
 import { SlackDeliveryRepositoryPort } from '../domain/port/slack-delivery.repository.port';
-import { RouterMessageHandler } from './router-message.handler';
+import {
+  pickThreadReplies,
+  RouterMessageHandler,
+} from './router-message.handler';
 
 // C-4 Phase 10 — fn → class 마이그레이션 이후 spec sync hotfix.
 // `register*Handler(app, deps)` 호출 자리를 `new RouterMessageHandler(...).register(app)` 으로 치환.
@@ -965,6 +968,8 @@ describe('RouterMessageHandler — message (DM)', () => {
       expect(channelTurns.at(-1)?.text).toBe(COMPLETION);
       // 실행 id 가 실려 다음 "작업 끝났어?" 가 이 실행의 상태를 바로 조회한다.
       expect(threadTurns.at(-1)?.agentRunId).toBe(42);
+      // channel 키 쪽에는 게시된 스레드가 적혀, 다른 스레드로 옮겨 담기지 않는다.
+      expect(channelTurns.at(-1)?.replyThreadKey).toBe(threadKey);
     });
 
     it('스레드 키가 비어 있으면 channel 키에만 남긴다 — 첫 스레드 진입의 channel 키 되짚기를 막지 않게', async () => {
@@ -1262,6 +1267,122 @@ describe('RouterMessageHandler — message (DM)', () => {
       '블로그 써줘',
       '새 초안 시작',
     ]);
+  });
+
+  // 10-14 실측 — 완료 답장은 완료 시점에 channel 키에 쌓여 다른 최상위 요청 뒤에 놓인다. B 스레드에
+  // 처음 들어올 때 A 의 완료 답장(실행 id 포함)을 옮기면 B 를 A 의 상태로 답한다.
+  it('스레드로 옮길 때 다른 스레드에 게시된 완료 답장은 빼고 자기 스레드 것만 담는다', async () => {
+    const A_TS = '1730000000.000001';
+    const B_TS = '1730000000.000002';
+    const channelKey = 'U_USER:D_DMCHANNEL';
+    const conversationMemory = new ConversationMemoryService();
+    const seeded: ConversationTurn[] = [
+      {
+        role: 'user',
+        text: 'A 블로그 써줘',
+        agentType: AgentType.BLOG,
+        agentRunId: 0,
+        timestampMs: Date.now(),
+      },
+      {
+        role: 'assistant',
+        text: 'A 시작',
+        agentType: AgentType.BLOG,
+        agentRunId: 0,
+        timestampMs: Date.now(),
+      },
+      {
+        role: 'user',
+        text: 'B 블로그 써줘',
+        agentType: AgentType.BLOG,
+        agentRunId: 0,
+        timestampMs: Date.now(),
+      },
+      {
+        role: 'assistant',
+        text: 'B 시작',
+        agentType: AgentType.BLOG,
+        agentRunId: 0,
+        timestampMs: Date.now(),
+      },
+      {
+        role: 'assistant',
+        text: 'A 완료',
+        agentType: AgentType.BLOG,
+        agentRunId: 41,
+        timestampMs: Date.now(),
+        replyThreadKey: `${channelKey}:${A_TS}`,
+      },
+    ];
+    for (const turn of seeded) {
+      await conversationMemory.appendTurn(channelKey, turn);
+    }
+    const dispatch = jest.fn().mockRejectedValue(
+      new RouterException({
+        code: RouterErrorCode.INTENT_CLASSIFY_FAILED,
+        message: '의도 분류 실패 — UNKNOWN',
+        status: DomainStatus.BAD_REQUEST,
+      }),
+    );
+    const conversationalReply = {
+      reply: jest.fn().mockResolvedValue('확인해 볼게요.'),
+    } as unknown as ConversationalReplyUsecase;
+    const { app, getHandler } = buildAppMock();
+    buildHandler(
+      { dispatch },
+      { conversationMemory, conversationalReply },
+    ).register(app);
+    const invoke = getHandler('message') as unknown as (args: {
+      event: Record<string, unknown>;
+      say: jest.Mock;
+      client: unknown;
+    }) => Promise<void>;
+    const roots: Record<string, string> = {
+      [A_TS]: 'A 블로그 써줘',
+      [B_TS]: 'B 블로그 써줘',
+    };
+    const askIn = async (threadTs: string, ts: string) =>
+      await invoke({
+        event: {
+          type: 'message',
+          user: 'U_USER',
+          text: '너 작업하고 있어?',
+          ts,
+          thread_ts: threadTs,
+          channel: 'D_DMCHANNEL',
+          channel_type: 'im',
+        },
+        say: jest.fn(),
+        client: {
+          reactions: {
+            add: jest.fn().mockResolvedValue({ ok: true }),
+            remove: jest.fn().mockResolvedValue({ ok: true }),
+          },
+          conversations: {
+            replies: jest.fn().mockResolvedValue({
+              messages: [{ ts: threadTs, text: roots[threadTs] }],
+            }),
+          },
+        },
+      });
+
+    await askIn(B_TS, '1730000000.000010');
+    await askIn(A_TS, '1730000000.000011');
+
+    const texts = (call: number) =>
+      (
+        (conversationalReply.reply as jest.Mock).mock.calls[call][0] as {
+          priorTurns: ConversationTurn[];
+        }
+      ).priorTurns.map((turn) => turn.text);
+    expect(texts(0).slice(-2)).toEqual(['B 블로그 써줘', 'B 시작']);
+    expect(texts(0)).not.toContain('A 완료');
+    expect(texts(1)).toEqual(['A 블로그 써줘', 'A 시작', 'A 완료']);
+    expect(
+      (await conversationMemory.getRecentTurns(`${channelKey}:${B_TS}`)).map(
+        (turn) => turn.text,
+      ),
+    ).not.toContain('A 완료');
   });
 
   it('channel_type=im + 일반 user message → router.dispatch (멘션 prefix 없이 전체 text)', async () => {
@@ -2086,5 +2207,57 @@ describe('RouterMessageHandler — 멘션 수신 기록', () => {
     ).register(app);
     const { say } = await invokeHandler(getHandler('app_mention'), mention);
     expect(say).toHaveBeenCalledTimes(1);
+  });
+});
+
+// #839 리뷰 — 완료 답장은 동기 답보다 먼저 끼어들 수도 있다(user turn 저장 뒤 say 를 기다리는 사이).
+describe('pickThreadReplies', () => {
+  const B_THREAD = 'U:D:B';
+  const turn = (
+    role: 'user' | 'assistant',
+    text: string,
+    replyThreadKey?: string,
+  ): ConversationTurn => ({
+    role,
+    text,
+    agentType: AgentType.BLOG,
+    agentRunId: 0,
+    timestampMs: 0,
+    ...(replyThreadKey ? { replyThreadKey } : {}),
+  });
+
+  it('동기 답 앞에 다른 스레드 완료 답장이 끼어도 동기 답을 고른다', () => {
+    expect(
+      pickThreadReplies({
+        turnsAfterRoot: [
+          turn('assistant', 'A 완료', 'U:D:A'),
+          turn('assistant', 'B 시작'),
+        ],
+        threadKey: B_THREAD,
+      }).map((picked) => picked.text),
+    ).toEqual(['B 시작']);
+  });
+
+  it('다음 요청 뒤의 표시 없는 답은 고르지 않고, 이 스레드 완료 답장은 어디 있든 고른다', () => {
+    expect(
+      pickThreadReplies({
+        turnsAfterRoot: [
+          turn('assistant', 'B 시작'),
+          turn('user', 'C 써줘'),
+          turn('assistant', 'C 시작'),
+          turn('assistant', 'B 완료', B_THREAD),
+        ],
+        threadKey: B_THREAD,
+      }).map((picked) => picked.text),
+    ).toEqual(['B 시작', 'B 완료']);
+  });
+
+  it('부모 발화에 답이 없으면(처리 실패) 다음 요청의 답을 끌어오지 않는다', () => {
+    expect(
+      pickThreadReplies({
+        turnsAfterRoot: [turn('user', 'C 써줘'), turn('assistant', 'C 시작')],
+        threadKey: B_THREAD,
+      }),
+    ).toEqual([]);
   });
 });
