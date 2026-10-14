@@ -27,7 +27,7 @@ describe('CujCheckAutopilotTask', () => {
   beforeEach(() => {
     jest.useFakeTimers().setSystemTime(new Date('2026-10-14T00:10:00Z'));
     reader = {
-      findLatestCujCheckDeliveryBefore: jest.fn().mockResolvedValue(null),
+      findLatestDeliveryBefore: jest.fn().mockResolvedValue(null),
       readPrReviews: jest.fn().mockResolvedValue([]),
       countUnpostedFindings: jest.fn().mockResolvedValue(0),
       readDeliveries: jest
