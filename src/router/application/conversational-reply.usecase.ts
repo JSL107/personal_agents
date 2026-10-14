@@ -33,6 +33,9 @@ const PRIOR_TURN_TEXT_CAP = 1500;
 // 같은 대화의 더 이전 실행(보류된 요청 앞의 초안 등)이 잡힌다. 몇 분 뒤 남는 완료 답장 turn 은
 // 이 창을 벗어날 수 있지만, 그 turn 자체가 결과(링크·실패 사유)를 담고 있어 상태 줄이 없어도 된다.
 const ASYNC_WORK_STATUS_LOOKBACK_MS = 5 * 60 * 1000;
+// 대화 기억에 작업 turn 이 없을 때 원장에서 이 대화의 비동기 실행을 찾는 창 — 대화 기억 TTL(30분)과
+// 같다. 기억은 키당 5 turn 이라 스레드 문답이 쌓이면 작업 turn 이 먼저 밀려난다.
+const CONVERSATION_RUN_LOOKBACK_MS = 30 * 60 * 1000;
 
 // IntentClassifier 가 UNKNOWN 반환 (어느 worker 에도 매핑 불가) 시 RouterMessageHandler 의 catch
 // 분기에서 호출되는 일반 대화 응답 fallback.
@@ -80,8 +83,8 @@ export class ConversationalReplyUsecase {
     text: string;
     priorTurns: ConversationTurn[];
     unresolvedStreak?: number;
-    // priorTurns 를 읽어 온 대화 기억 키. 실행 id 가 없는 작업 turn(비동기 BLOG)은 이 대화에서
-    // 시작된 실행만 찾는다 — 없으면 그런 turn 의 상태는 싣지 않는다.
+    // 지금 대화의 기억 키(스레드 안이면 스레드 키). 실행 id 가 없는 작업 turn(비동기 BLOG)은 이 대화에서
+    // 시작되거나 이 대화에 답장하는 실행만 찾는다 — 없으면 그런 turn 의 상태는 싣지 않는다.
     conversationKey?: string;
     // 라우터가 이 회차를 남긴 ROUTER run. 있으면 답을 그 행의 모델 응답 원문으로 남긴다 —
     // 없으면 원장에는 "못 골랐다" 만 있고 이대리가 뭐라고 답했는지는 사라진다.
@@ -144,8 +147,11 @@ export class ConversationalReplyUsecase {
       .filter((turn) => turn.role === 'assistant');
     const workTurnIndex = replies.findIndex((turn) => turn.agentType);
     const workTurn = replies[workTurnIndex];
-    if (!workTurn?.agentType || !this.agentRunService) {
+    if (!this.agentRunService) {
       return undefined;
+    }
+    if (!workTurn?.agentType) {
+      return await this.describeConversationRun(conversationKey);
     }
     const label = toTaskLabel(workTurn.agentType);
     try {
@@ -159,9 +165,7 @@ export class ConversationalReplyUsecase {
       // id 가 0·null 인 turn 은 비동기 BLOG ack 이거나, 실행 기록 없이 바로 답한 조회(시세·일정 등)다.
       // 이 대화에서 시작된 실행이 없으면 후자로 보고 상태를 싣지 않는다 — "실행 기록 없음" 은
       // 이미 답이 나간 조회를 시작조차 안 된 일로 읽히게 한다.
-      // 다른 키에서 옮겨 담은 turn 은 자기가 시작된 대화 키를 들고 있다.
-      const runConversationKey = workTurn.conversationKey ?? conversationKey;
-      if (!runConversationKey) {
+      if (!conversationKey) {
         return undefined;
       }
       // 하한은 이 작업을 맡긴 요청 직전의 답까지 올린다. 이 작업의 실행은 그 뒤에 시작됐고, 같은
@@ -170,7 +174,7 @@ export class ConversationalReplyUsecase {
       const previousReply = replies[workTurnIndex + 1];
       const run = await this.agentRunService.findLatestConversationRun({
         agentType: workTurn.agentType,
-        conversationKey: runConversationKey,
+        conversationKey,
         startedSince: new Date(
           Math.max(
             workTurn.timestampMs - ASYNC_WORK_STATUS_LOOKBACK_MS,
@@ -179,6 +183,31 @@ export class ConversationalReplyUsecase {
         ),
       });
       return run === null ? undefined : formatWorkStatus(label, run);
+    } catch (error: unknown) {
+      this.logger.warn(
+        `직전 작업 상태 조회 실패 — 상태 없이 답한다: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return undefined;
+    }
+  }
+
+  // 작업 turn 이 기억 밖으로 밀려난 대화 — 이 대화의 최근 비동기 실행(BLOG)을 원장에서 찾는다.
+  // 동기 worker 의 결과는 이미 답으로 나갔으므로 찾지 않는다.
+  private async describeConversationRun(
+    conversationKey: string | undefined,
+  ): Promise<string | undefined> {
+    if (!conversationKey || !this.agentRunService) {
+      return undefined;
+    }
+    try {
+      const run = await this.agentRunService.findLatestConversationRun({
+        agentType: AgentType.BLOG,
+        conversationKey,
+        startedSince: new Date(Date.now() - CONVERSATION_RUN_LOOKBACK_MS),
+      });
+      return run === null
+        ? undefined
+        : formatWorkStatus(toTaskLabel(AgentType.BLOG), run);
     } catch (error: unknown) {
       this.logger.warn(
         `직전 작업 상태 조회 실패 — 상태 없이 답한다: ${error instanceof Error ? error.message : String(error)}`,

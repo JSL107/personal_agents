@@ -833,11 +833,19 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
     conversationKey: string;
     startedSince: Date;
   }): Promise<WorkRunStatus | null> {
-    // conversationKey 는 inputSnapshot JSON 안에 있다 — findFailedRunsSince 와 같은 path 필터.
+    // 두 키 모두 inputSnapshot JSON 안에 있다 — findFailedRunsSince 와 같은 path 필터. 시작한 대화 키나
+    // 답장 스레드 키 중 하나만 맞으면 이 대화의 실행이다(DM 최상위 요청은 둘이 다르다).
     const where: Prisma.AgentRunWhereInput = {
       agentType,
       startedAt: { gte: startedSince },
-      inputSnapshot: { path: ['conversationKey'], equals: conversationKey },
+      OR: [
+        {
+          inputSnapshot: { path: ['conversationKey'], equals: conversationKey },
+        },
+        {
+          inputSnapshot: { path: ['replyThreadKey'], equals: conversationKey },
+        },
+      ],
     };
     const found = await this.prisma.agentRun.findFirst({
       where,
