@@ -565,26 +565,6 @@ describe('ConversationalReply — 직전 작업 상태', () => {
     expect(prompt).toContain('실패 — 프로세스 종료로 중단됨');
   });
 
-  it('다른 키에서 옮겨 담은 작업 turn 은 그 turn 이 시작된 대화 키로 찾는다', async () => {
-    const findLatestConversationRun = jest
-      .fn()
-      .mockResolvedValue({ status: 'IN_PROGRESS', failureReason: null });
-    const { usecase } = buildUsecase({ findLatestConversationRun });
-
-    await usecase.reply({
-      text: '너 작업하고 있어?',
-      priorTurns: workTurns.map((turn) => ({
-        ...turn,
-        conversationKey: 'U1:D1',
-      })),
-      conversationKey: 'U1:D1:111.1',
-    });
-
-    expect(findLatestConversationRun).toHaveBeenCalledWith(
-      expect.objectContaining({ conversationKey: 'U1:D1' }),
-    );
-  });
-
   it('동기 작업은 turn 에 남은 실행 id 로 바로 조회한다 — 대화 키·사용자로 찾지 않는다 (#824 리뷰)', async () => {
     const findRunStatus = jest
       .fn()

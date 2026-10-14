@@ -980,20 +980,23 @@ describe('RouterMessageHandler — message (DM)', () => {
     });
   });
 
-  // #824 리뷰 — "작업하고 있어?" 는 같은 사용자의 다른 대화가 아니라 그 작업을 시작한 대화의
-  // 실행을 봐야 한다. DM 최상위에서 시작해 봇이 만든 스레드에서 물으면 지금 스레드 키가 아니라
-  // 되짚어 읽은 channel 키가 작업을 시작한 키다.
-  it('봇이 만든 스레드에서 비동기 작업 진행을 물으면 그 작업을 시작한 대화 키로 답을 만든다', async () => {
-    const DM_TS = '1730000000.000001';
+  // #824·#838 리뷰 — "작업하고 있어?" 는 그 작업을 맡긴 스레드의 실행을 봐야 한다. DM 최상위 블로그
+  // 실행은 모두 같은 channel 키에서 시작하므로 channel 키로 찾으면 나중에 맡긴 다른 블로그가 잡힌다.
+  // 실행에는 답장 스레드 키가 남으니 지금 스레드 키로 찾는다.
+  it('DM 최상위에서 블로그를 두 번 맡겨도 앞 스레드에서 물으면 그 스레드 키로 찾는다', async () => {
+    const A_TS = '1730000000.000001';
+    const B_TS = '1730000000.000002';
+    const ack = {
+      agentRunId: 0,
+      workerType: AgentType.BLOG,
+      output: { async: true },
+      modelUsed: 'hermes-cli',
+      formattedText: '📝 블로그 초안 작성을 시작했어요.',
+    } satisfies DispatchResult;
     const dispatch = jest
       .fn()
-      .mockResolvedValueOnce({
-        agentRunId: 0,
-        workerType: AgentType.BLOG,
-        output: { async: true },
-        modelUsed: 'hermes-cli',
-        formattedText: '📝 블로그 초안 작성을 시작했어요.',
-      } satisfies DispatchResult)
+      .mockResolvedValueOnce(ack)
+      .mockResolvedValueOnce(ack)
       .mockRejectedValueOnce(
         new RouterException({
           code: RouterErrorCode.INTENT_CLASSIFY_FAILED,
@@ -1013,34 +1016,50 @@ describe('RouterMessageHandler — message (DM)', () => {
       },
     ).register(app);
 
-    await invokeHandler(getHandler('message'), {
-      type: 'message',
-      user: 'U_USER',
-      text: '프롬프트 RAG 블로그 써줘',
-      ts: DM_TS,
-      channel: 'D_DMCHANNEL',
-      channel_type: 'im',
-    });
+    for (const [ts, text] of [
+      [A_TS, '프롬프트 RAG 블로그 써줘'],
+      [B_TS, '루프 엔지니어링 블로그 써줘'],
+    ]) {
+      await invokeHandler(getHandler('message'), {
+        type: 'message',
+        user: 'U_USER',
+        text,
+        ts,
+        channel: 'D_DMCHANNEL',
+        channel_type: 'im',
+      });
+    }
     await invokeHandler(getHandler('message'), {
       type: 'message',
       user: 'U_USER',
       text: '너 작업하고 있어?',
-      ts: '1730000000.000002',
-      thread_ts: DM_TS,
+      ts: '1730000000.000003',
+      thread_ts: A_TS,
       channel: 'D_DMCHANNEL',
       channel_type: 'im',
     });
 
-    const started = dispatch.mock.calls[0][0] as DispatchInput;
-    expect(started.replyContext?.conversationKey).toBe('U_USER:D_DMCHANNEL');
+    const startedA = dispatch.mock.calls[0][0] as DispatchInput;
+    const startedB = dispatch.mock.calls[1][0] as DispatchInput;
+    // 두 실행은 시작 키를 공유하고 답장 스레드 키로만 갈린다.
+    expect(startedA.replyContext?.conversationKey).toBe('U_USER:D_DMCHANNEL');
+    expect(startedB.replyContext?.conversationKey).toBe('U_USER:D_DMCHANNEL');
+    expect(startedB.replyContext?.replyThreadKey).toBe(
+      `U_USER:D_DMCHANNEL:${B_TS}`,
+    );
     expect(conversationalReply.reply).toHaveBeenCalledWith(
-      expect.objectContaining({ conversationKey: 'U_USER:D_DMCHANNEL' }),
+      expect.objectContaining({
+        conversationKey: startedA.replyContext?.replyThreadKey,
+      }),
+    );
+    expect(startedA.replyContext?.replyThreadKey).toBe(
+      `U_USER:D_DMCHANNEL:${A_TS}`,
     );
   });
 
   // 첫 질문의 문답이 스레드 키에 쌓이면 두 번째 질문부터는 channel 키를 되짚지 않는다 — 그래도
-  // 맡긴 작업 turn 이 보여야 하고, 그 turn 은 작업을 시작한 대화 키를 들고 있어야 한다.
-  it('같은 스레드에서 두 번째로 진행을 물어도 작업 turn 을 시작 대화 키와 함께 넘긴다', async () => {
+  // 맡긴 작업 turn 이 보여야 한다.
+  it('같은 스레드에서 두 번째로 진행을 물어도 작업 turn 을 넘긴다', async () => {
     const DM_TS = '1730000000.000001';
     const unknown = () =>
       new RouterException({
@@ -1137,7 +1156,6 @@ describe('RouterMessageHandler — message (DM)', () => {
       expect.objectContaining({
         role: 'assistant',
         agentType: AgentType.BLOG,
-        conversationKey: 'U_USER:D_DMCHANNEL',
       }),
     );
     // 네 번째 질문 — 5 turn 창에서 ack 가 밀려났다. 그래도 넘기는 대화 키가 실행에 남긴 답장 스레드
@@ -1228,14 +1246,8 @@ describe('RouterMessageHandler — message (DM)', () => {
       `${channelKey}:${DM_TS}`,
     );
     expect(threadTurns.slice(0, 2)).toEqual([
-      expect.objectContaining({
-        text: '블로그 써줘',
-        conversationKey: channelKey,
-      }),
-      expect.objectContaining({
-        text: '새 초안 시작',
-        conversationKey: channelKey,
-      }),
+      expect.objectContaining({ text: '블로그 써줘' }),
+      expect.objectContaining({ text: '새 초안 시작' }),
     ]);
     expect(threadTurns.map((saved) => saved.text)).not.toContain(
       '오늘 plan 짜줘',
