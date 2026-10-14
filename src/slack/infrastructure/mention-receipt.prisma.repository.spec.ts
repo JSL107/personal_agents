@@ -26,7 +26,7 @@ describe('MentionReceiptPrismaRepository', () => {
     });
 
     expect(updateMany).toHaveBeenLastCalledWith({
-      where: ref,
+      where: { ...ref, status: { in: ['RECEIVED'] } },
       data: {
         status: 'REPLY_FAILED',
         errorMessage: 'x'.repeat(200),
@@ -39,7 +39,10 @@ describe('MentionReceiptPrismaRepository', () => {
     await repository.recordOutcome({ ...ref, status: 'REPLIED' });
 
     expect(updateMany).toHaveBeenLastCalledWith({
-      where: ref,
+      where: {
+        ...ref,
+        status: { in: ['RECEIVED', 'REPLY_FAILED', 'ERROR_REPLIED'] },
+      },
       data: {
         status: 'REPLIED',
         errorMessage: null,
