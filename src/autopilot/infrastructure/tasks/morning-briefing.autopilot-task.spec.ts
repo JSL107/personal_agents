@@ -120,14 +120,14 @@ describe('MorningBriefingAutopilotTask', () => {
       return result.summaryText ?? '';
     };
 
-    it('어제 기록이 없으면 마지막 실행일과 함께 장애 줄에 싣는다', async () => {
+    it('어제 기록이 없으면 마지막 기록일과 함께 장애 줄에 싣는다', async () => {
       const find = jest
         .fn()
         .mockResolvedValue(new Date('2026-10-15T00:10:00Z'));
 
       const text = await runWith(find);
 
-      expect(text).toContain('CUJ 점검 멈춤 — 마지막 실행 10/15(목)');
+      expect(text).toContain('CUJ 점검 기록 없음 — 마지막 기록 10/15(목)');
     });
 
     it('오늘 0시 이전 기록만 묻는다 — 늦게 돈 회차에서 오늘 실행이 어제 결번을 가리지 않게', async () => {

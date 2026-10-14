@@ -407,7 +407,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
         return null;
       }
       return {
-        label: `CUJ 점검 멈춤 — 마지막 실행 ${formatTradeDay(getKstDateOf(latestBeforeToday))}`,
+        label: `CUJ 점검 기록 없음 — 마지막 기록 ${formatTradeDay(getKstDateOf(latestBeforeToday))}`,
         dayCount: null,
       };
     } catch (error: unknown) {
