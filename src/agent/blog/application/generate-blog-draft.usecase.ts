@@ -63,6 +63,7 @@ export class GenerateBlogDraftUsecase {
     requestText,
     slackUserId,
     conversationKey,
+    replyThreadKey,
   }: GenerateBlogDraftInput): Promise<AgentRunOutcome<BlogDraftResult>> {
     const trimmed = requestText.trim();
     if (trimmed.length === 0) {
@@ -80,6 +81,7 @@ export class GenerateBlogDraftUsecase {
         requestText: trimmed,
         slackUserId,
         ...(conversationKey ? { conversationKey } : {}),
+        ...(replyThreadKey ? { replyThreadKey } : {}),
       },
       evidence: [
         {
