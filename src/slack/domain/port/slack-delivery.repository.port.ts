@@ -38,6 +38,9 @@ export type SlackDeliveryStatRow = {
 
 export type SlackDeliveryListInput = {
   status: SlackDeliveryStatus;
+  // SUPPRESSED 는 콘솔 경로(CONSOLE_ROUTE)와 빈 결과(EMPTY)를 함께 담는다. 한쪽만 볼 때는
+  // limit 적용 전에 걸러야 다른 쪽 행이 한도를 차지하지 않는다. 생략하면 사유를 가리지 않는다.
+  suppressReason?: SlackDeliverySuppressReason;
   since: Date;
   limit: number;
 };

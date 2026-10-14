@@ -13,6 +13,10 @@ public struct ListDeliveriesResult: Codable, Equatable, Sendable {
         self.limit = limit
         self.items = items
     }
+
+    /// 서버는 최신 `limit` 건만 주고 전체 건수를 알려 주지 않는다. 한도가 꽉 찼으면 더 오래된
+    /// 보고서가 잘렸을 수 있으므로 화면이 그 사실을 알려야 한다.
+    public var isTruncated: Bool { items.count >= limit }
 }
 
 public struct SlackDeliveryListRow: Codable, Equatable, Sendable, Identifiable {
@@ -66,7 +70,7 @@ public struct DeliveryDayGroup: Equatable, Sendable {
 
 private let reportKST = TimeZone(identifier: "Asia/Seoul")!
 
-/// 서버의 ISO-8601 문자열을 절대 시각으로 해석한다. 유효하지 않은 값은 목록에서 제외한다.
+/// 서버의 ISO-8601 문자열을 절대 시각으로 해석한다. 유효하지 않으면 nil — 그 행은 「날짜 미상」 묶음으로 간다.
 public func deliveryDate(_ value: String) -> Date? {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -80,6 +84,9 @@ public func deliveryTimeLabel(_ value: String) -> String {
     formatter.dateFormat = "HH:mm"
     return formatter.string(from: date)
 }
+
+/// 날짜를 읽지 못한 행을 모으는 묶음 키. 버리면 건수와 화면이 어긋나 빈 목록처럼 보인다.
+public let unknownDeliveryDayKey = "unknown"
 
 public func groupDeliveries(_ rows: [SlackDeliveryListRow]) -> [DeliveryDayGroup] {
     var calendar = Calendar(identifier: .gregorian)
@@ -103,6 +110,10 @@ public func groupDeliveries(_ rows: [SlackDeliveryListRow]) -> [DeliveryDayGroup
             groups.append(DeliveryDayGroup(dayKey: key,
                 label: "\(month)월 \(day)일 (\(weekdayNames[weekday - 1]))", rows: [row]))
         }
+    }
+    let undated = rows.filter { deliveryDate($0.createdAt) == nil }
+    if !undated.isEmpty {
+        groups.append(DeliveryDayGroup(dayKey: unknownDeliveryDayKey, label: "날짜 미상", rows: undated))
     }
     return groups
 }

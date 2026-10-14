@@ -5,6 +5,7 @@ import SwiftUI
 struct ReportsView: View {
     let client: ConsoleClient
     @State private var rows: [SlackDeliveryListRow] = []
+    @State private var isTruncated = false
     @State private var expandedIds: Set<Int> = []
     @State private var isLoading = true
     @State private var errorMessage: String?
@@ -12,6 +13,7 @@ struct ReportsView: View {
     var body: some View {
         ReportsContent(rows: rows, expandedIds: $expandedIds,
                        isLoading: isLoading, errorMessage: errorMessage,
+                       isTruncated: isTruncated,
                        onRefresh: { Task { await load() } })
             .task { await load() }
     }
@@ -20,7 +22,9 @@ struct ReportsView: View {
         isLoading = true
         errorMessage = nil
         do {
-            rows = try await client.fetchDeliveries().items
+            let result = try await client.fetchDeliveries()
+            rows = result.items
+            isTruncated = result.isTruncated
         } catch {
             errorMessage = "보고서를 불러오지 못했습니다: \(error.localizedDescription)"
         }
@@ -34,6 +38,7 @@ struct ReportsContent: View {
     @Binding var expandedIds: Set<Int>
     let isLoading: Bool
     let errorMessage: String?
+    var isTruncated = false
     let onRefresh: () -> Void
 
     var body: some View {
@@ -55,6 +60,11 @@ struct ReportsContent: View {
                 Text("콘솔로 온 보고서가 없습니다").foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, minHeight: 180)
             } else {
+                if isTruncated {
+                    // 서버는 최신 N건만 준다 — 잘린 사실을 숨기면 오래된 보고서가 없던 것처럼 보인다.
+                    Text("최근 \(rows.count)건만 표시합니다. 더 오래된 보고서는 생략됐습니다.")
+                        .font(Typography.caption).foregroundStyle(.secondary)
+                }
                 ScrollView {
                     VStack(alignment: .leading, spacing: Spacing.lg) {
                         ForEach(groupDeliveries(rows), id: \.dayKey) { group in

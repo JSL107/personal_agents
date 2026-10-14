@@ -327,17 +327,19 @@ public actor ConsoleClient {
 
     /// 콘솔로 전달된 보고서를 조회한다. 응답 본문은 공통 `data` 봉투다.
     public func fetchDeliveries(
-        status: String = "SUPPRESSED", days: Int = 14, limit: Int = 200
+        status: String = "SUPPRESSED", reason: String? = "CONSOLE_ROUTE",
+        days: Int = 14, limit: Int = 200
     ) async throws -> ListDeliveriesResult {
         var components = URLComponents(
             url: baseURL.appendingPathComponent("v1/console/deliveries"),
             resolvingAgainstBaseURL: false
         )
+        // SUPPRESSED 에는 빈 결과(EMPTY)도 섞이므로 서버가 limit 전에 사유로 거르게 한다.
         components?.queryItems = [
             URLQueryItem(name: "status", value: status),
             URLQueryItem(name: "days", value: String(days)),
             URLQueryItem(name: "limit", value: String(limit)),
-        ]
+        ] + (reason.map { [URLQueryItem(name: "reason", value: $0)] } ?? [])
         guard let url = components?.url else { throw ConsoleClientError.notHTTP }
         let (data, response) = try await session.data(for: authorized(URLRequest(url: url)))
         guard let http = response as? HTTPURLResponse else { throw ConsoleClientError.notHTTP }

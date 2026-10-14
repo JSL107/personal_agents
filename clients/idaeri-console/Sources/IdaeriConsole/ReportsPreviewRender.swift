@@ -20,7 +20,7 @@ func renderReportsPreview(path: String) -> Bool {
     ]
     let size = CGSize(width: 1000, height: 850)
     let view = ReportsContent(rows: rows, expandedIds: .constant([1]), isLoading: false,
-                              errorMessage: nil, onRefresh: {})
+                              errorMessage: nil, isTruncated: true, onRefresh: {})
         .frame(width: size.width, height: size.height)
     let hostingView = NSHostingView(rootView: view)
     hostingView.frame = NSRect(origin: .zero, size: size)

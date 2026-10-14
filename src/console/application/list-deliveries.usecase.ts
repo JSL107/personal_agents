@@ -5,7 +5,10 @@ import {
   SlackDeliveryListRow,
   SlackDeliveryRepositoryPort,
 } from '../../slack/domain/port/slack-delivery.repository.port';
-import { SlackDeliveryStatus } from '../../slack/domain/slack-delivery.type';
+import {
+  SlackDeliveryStatus,
+  SlackDeliverySuppressReason,
+} from '../../slack/domain/slack-delivery.type';
 import {
   clampDeliveryListLimit,
   clampDeliveryWindowDays,
@@ -15,6 +18,7 @@ const MILLISECONDS_PER_DAY = 24 * 60 * 60 * 1000;
 
 export type ListDeliveriesInput = {
   status: SlackDeliveryStatus;
+  suppressReason?: SlackDeliverySuppressReason;
   days: number;
   limit: number;
 };
@@ -39,6 +43,9 @@ export class ListDeliveriesUsecase {
     const since = new Date(Date.now() - days * MILLISECONDS_PER_DAY);
     const items = await this.repository.findByStatus({
       status: input.status,
+      ...(input.suppressReason === undefined
+        ? {}
+        : { suppressReason: input.suppressReason }),
       since,
       limit,
     });
