@@ -116,7 +116,8 @@ describe('IdeaScheduleApplier', () => {
       repository,
       registerSchedule,
     ).apply(preview);
-    expect(result.message).toContain('일정 등록');
+    expect(result.message).toContain('이미 등록');
+    expect(result.message).not.toContain('2026-10-16');
     expect(registerSchedule.execute).not.toHaveBeenCalled();
   });
 
@@ -157,7 +158,9 @@ describe('IdeaScheduleApplier', () => {
     await applier.apply(preview, progress);
 
     expect(registerSchedule.execute).toHaveBeenCalledTimes(1);
-    expect(progress.record).toHaveBeenCalledWith('schedule-registered:8');
+    expect(progress.record).toHaveBeenCalledWith(
+      'schedule-registered:8:2026-10-16',
+    );
     expect(repository.markScheduled).toHaveBeenLastCalledWith(3, 8);
   });
 
@@ -168,5 +171,32 @@ describe('IdeaScheduleApplier', () => {
       record: jest.fn().mockResolvedValue(undefined),
     });
     expect(registerSchedule.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('첫 승인 뒤 날짜가 바뀌어 재승인해도 실제 등록한 날짜로 안내한다', async () => {
+    // 첫 승인 2026-10-18 KST — 제안일(10-16)이 지나 오늘(10-18)로 당겨 등록한다.
+    jest.useFakeTimers().setSystemTime(new Date('2026-10-18T03:00:00Z'));
+    const { repository, registerSchedule } = createMocks();
+    const done: string[] = [];
+    const progress = {
+      get done(): readonly string[] {
+        return [...done];
+      },
+      record: jest.fn(async (step: string) => {
+        done.push(step);
+      }),
+    };
+    repository.markScheduled.mockRejectedValueOnce(new Error('DB 일시 오류'));
+    const applier = new IdeaScheduleApplier(repository, registerSchedule);
+    await expect(applier.apply(preview, progress)).rejects.toThrow(
+      'DB 일시 오류',
+    );
+
+    // 재승인 2026-10-20 KST — 다시 계산하면 10-20 이 되지만 실제 등록일은 10-18 이다.
+    jest.setSystemTime(new Date('2026-10-20T03:00:00Z'));
+    const result = await applier.apply(preview, progress);
+
+    expect(registerSchedule.execute).toHaveBeenCalledTimes(1);
+    expect(result.message).toContain('2026-10-18');
   });
 });

@@ -71,22 +71,39 @@ const parsePayload = (payload: unknown): IdeaSchedulePayload => {
   };
 };
 
-// 일정 등록을 마친 단계 이름. 뒤에 붙는 숫자는 만든 ScheduleItem id 다.
+// 일정 등록을 마친 단계 이름. 뒤에 `<ScheduleItem id>:<YYYY-MM-DD>` 를 붙인다 — 날짜까지
+// 남기는 것은 재승인이 날짜를 다시 계산하면 그 사이 날이 바뀌었을 때 실제 등록일과 다른 날짜를
+// 안내하기 때문이다(승인 지연 시 제안일을 "오늘" 로 당기므로 오늘이 바뀌면 값도 바뀐다).
 const SCHEDULE_REGISTERED_STEP = 'schedule-registered:';
 
-const findRegisteredScheduleId = (
+interface RegisteredSchedule {
+  scheduleItemId: number;
+  dueDate: PlainDate;
+}
+
+const findRegisteredSchedule = (
   progress: ApplyProgress | undefined,
-): number | null => {
+): RegisteredSchedule | null => {
   const step = progress?.done.find((done) =>
     done.startsWith(SCHEDULE_REGISTERED_STEP),
   );
   if (!step) {
     return null;
   }
-  const scheduleItemId = Number(step.slice(SCHEDULE_REGISTERED_STEP.length));
-  return Number.isInteger(scheduleItemId) && scheduleItemId > 0
-    ? scheduleItemId
-    : null;
+  const matched = /^(\d+):(\d{4})-(\d{2})-(\d{2})$/.exec(
+    step.slice(SCHEDULE_REGISTERED_STEP.length),
+  );
+  if (!matched) {
+    return null;
+  }
+  return {
+    scheduleItemId: Number(matched[1]),
+    dueDate: {
+      year: Number(matched[2]),
+      month: Number(matched[3]),
+      day: Number(matched[4]),
+    },
+  };
 };
 
 const formatDate = (date: PlainDate): string =>
@@ -112,36 +129,42 @@ export class IdeaScheduleApplier implements PreviewApplier {
       throw new Error('아이디어 판정 기록을 찾을 수 없습니다.');
     }
     if (idea.scheduleItemId !== null) {
+      // 실제 등록일은 판정 기록에 없다(제안일과 다를 수 있다) — 틀린 날짜를 안내하지 않도록 뺀다.
       return {
-        message: `📅 ${formatDate(idea.proposedDate)} 「${payload.title}」 일정 등록`,
+        message: `📅 「${payload.title}」 일정은 이미 등록돼 있습니다`,
         artifacts: [],
       };
     }
 
-    const today = todayInKst(new Date());
-    // 승인 지연으로 제안일이 지난 경우 과거 일정이 생기지 않도록 오늘로 당긴다.
-    const dueDate =
-      plainDateToUtcDate(payload.dueDate).getTime() <
-      plainDateToUtcDate(today).getTime()
-        ? today
-        : payload.dueDate;
     // 일정을 만든 뒤 판정 기록 갱신이 실패하면 카드는 PENDING 으로 돌아와 다시 눌린다. 그때
-    // 일정을 또 만들지 않도록 만든 id 를 게이트의 단계 기록에 먼저 남긴다 — 이 기록은 실패한
-    // 승인 뒤에도 지워지지 않고 다음 승인의 `progress.done` 으로 돌아온다(`apply-preview.usecase.ts`).
-    let scheduleItemId = findRegisteredScheduleId(progress);
-    if (scheduleItemId === null) {
+    // 일정을 또 만들지 않도록 만든 id 와 날짜를 게이트의 단계 기록에 먼저 남긴다 — 이 기록은
+    // 실패한 승인 뒤에도 지워지지 않고 다음 승인의 `progress.done` 으로 돌아온다(`apply-preview.usecase.ts`).
+    let registered = findRegisteredSchedule(progress);
+    if (registered === null) {
+      const today = todayInKst(new Date());
+      // 승인 지연으로 제안일이 지난 경우 과거 일정이 생기지 않도록 오늘로 당긴다.
+      const dueDate =
+        plainDateToUtcDate(payload.dueDate).getTime() <
+        plainDateToUtcDate(today).getTime()
+          ? today
+          : payload.dueDate;
       const schedule = await this.registerSchedule.execute({
         slackUserId: preview.slackUserId,
         title: payload.title,
         dueDate,
         memo: payload.memo,
       });
-      scheduleItemId = schedule.id;
-      await progress?.record(`${SCHEDULE_REGISTERED_STEP}${scheduleItemId}`);
+      registered = { scheduleItemId: schedule.id, dueDate };
+      await progress?.record(
+        `${SCHEDULE_REGISTERED_STEP}${schedule.id}:${formatDate(dueDate)}`,
+      );
     }
-    await this.repository.markScheduled(payload.ideaTriageId, scheduleItemId);
+    await this.repository.markScheduled(
+      payload.ideaTriageId,
+      registered.scheduleItemId,
+    );
     return {
-      message: `📅 ${formatDate(dueDate)} 「${payload.title}」 일정 등록`,
+      message: `📅 ${formatDate(registered.dueDate)} 「${payload.title}」 일정 등록`,
       artifacts: [],
     };
   }
