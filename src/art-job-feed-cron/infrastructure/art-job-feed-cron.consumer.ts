@@ -163,7 +163,7 @@ export class ArtJobFeedCronConsumer extends ObservedWorkerHost {
     const unseen = targets.filter((listing) => {
       return !known.has(listing.sourceId);
     });
-    // 받는 사람이 번호 이모지로 뺀 공고가 새 번호로 다시 올라온 것. 장부에 남기지 않고 매 회차 거른다.
+    // 받는 사람이 「관심 없음」으로 뺀 공고가 새 번호로 다시 올라온 것. 장부에 남기지 않고 매 회차 거른다.
     const fresh = unseen.filter((listing) => {
       return !excluded.has(exclusionKey(listing.company, listing.title));
     });
@@ -214,7 +214,7 @@ export class ArtJobFeedCronConsumer extends ObservedWorkerHost {
     const { ts } = await this.slackNotifier.postMessage({
       kind: 'art-job-feed',
       target,
-      text: formatArtJobDigest({
+      ...formatArtJobDigest({
         items,
         mentionUserId,
         today: todayInKst(new Date()),
@@ -222,12 +222,8 @@ export class ArtJobFeedCronConsumer extends ObservedWorkerHost {
       // 공고 링크 미리보기는 게임잡 공통 로고라 정보가 없고 메시지만 길어진다.
       unfurlLinks: false,
     });
-    for (const [index, item] of items.entries()) {
-      await this.repository.markNotified({
-        ...item,
-        messageTs: ts ?? null,
-        digestOrder: index + 1,
-      });
+    for (const item of items) {
+      await this.repository.markNotified(item);
     }
     if (!ts) {
       return;
