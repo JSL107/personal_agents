@@ -223,8 +223,7 @@ describe('RouterMessageHandler — app_mention', () => {
     );
     const sayText = say.mock.calls[0][0].text as string;
     expect(sayText).toContain('mock body');
-    expect(sayText).toContain('agentRunId=99');
-    expect(sayText).toContain(AgentType.PM);
+    expect(sayText).toContain('_이대리 (오늘 계획) · 실행 #99_');
   });
 
   // 2026-10-14 run 8837 — 비동기 블로그 완료 답장이 기억에 없어 다음 턴 "이거 요약해줘" 가 원문을 못 봤다.
@@ -303,8 +302,7 @@ describe('RouterMessageHandler — app_mention', () => {
     expect(sayText).toContain('PM body');
     expect(sayText).toContain('BE body');
     expect(sayText).toContain('---');
-    expect(sayText).toContain(`${AgentType.PM} → ${AgentType.CODE_REVIEWER}`);
-    expect(sayText).toContain('agentRunIds=[1, 2]');
+    expect(sayText).toContain('오늘 계획 → 코드 리뷰 · 실행 #1, #2');
   });
 
   it('비동기 ack(agentRunId=0)면 footer 없이 안내 formattedText 만 say', async () => {

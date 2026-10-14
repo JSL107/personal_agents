@@ -670,7 +670,7 @@ describe('PreconditionChainOrchestrator', () => {
       .filter((event) => event.type === 'command.answered')
       .map((event) => event.message);
     expect(answeredMessages).toEqual([
-      '최종 산출물\n\n_이대리 (CEO) · agentRunId=1_',
+      '최종 산출물\n\n_이대리 (주간 총평) · 실행 #1_',
     ]);
 
     // 산출물을 숨기는 것과 같은 이유로 기억에서도 뺀다 — 사용자가 말하지도 보지도 않은 turn 이

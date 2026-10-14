@@ -25,7 +25,7 @@ export class RunSweeperAutopilotTask implements AutopilotTask {
     }
     return {
       skip: false,
-      summaryText: `🧹 *좀비 정리* — ${STALE_RUN_THRESHOLD_MINUTES}분+ IN_PROGRESS ${swept}건을 FAILED로 정리`,
+      summaryText: `🧹 *좀비 정리* — ${STALE_RUN_THRESHOLD_MINUTES}분 넘게 끝나지 않은 작업 ${swept}건을 실패로 정리`,
     };
   }
 }
