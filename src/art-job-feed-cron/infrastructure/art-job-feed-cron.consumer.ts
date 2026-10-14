@@ -3,6 +3,7 @@ import { Inject, Logger, Optional } from '@nestjs/common';
 import { Job } from 'bullmq';
 
 import { todayInKst } from '../../agent/vacation/domain/plain-date';
+import { exclusionKey } from '../../art-job-feed/domain/art-job-exclusion';
 import { ArtJobListing } from '../../art-job-feed/domain/art-job-feed.type';
 import { isTargetArtRole } from '../../art-job-feed/domain/art-role.filter';
 import {
@@ -121,8 +122,13 @@ export class ArtJobFeedCronConsumer extends ObservedWorkerHost {
     const known = await this.repository.findKnownSourceIds(
       targets.map((listing) => listing.sourceId),
     );
-    const fresh = targets.filter((listing) => {
+    const excluded = await this.repository.findExcludedKeys();
+    const unseen = targets.filter((listing) => {
       return !known.has(listing.sourceId);
+    });
+    // 받는 사람이 번호 이모지로 뺀 공고가 새 번호로 다시 올라온 것. 장부에 남기지 않고 매 회차 거른다.
+    const fresh = unseen.filter((listing) => {
+      return !excluded.has(exclusionKey(listing.company, listing.title));
     });
     const toPost = fresh.slice(0, MAX_POSTINGS_PER_RUN);
     if (isFirstRun) {
@@ -131,7 +137,7 @@ export class ArtJobFeedCronConsumer extends ObservedWorkerHost {
     }
 
     this.logger.log(
-      `${CRON_NAME} — 수신 ${collected.received} · 파싱 ${collected.listings.length} · 대상 ${targets.length} · 신규 ${fresh.length} · 게시 ${toPost.length}`,
+      `${CRON_NAME} — 수신 ${collected.received} · 파싱 ${collected.listings.length} · 대상 ${targets.length} · 신규 ${fresh.length} · 제외 ${unseen.length - fresh.length} · 게시 ${toPost.length}`,
     );
     if (toPost.length === 0) {
       return;
@@ -179,8 +185,12 @@ export class ArtJobFeedCronConsumer extends ObservedWorkerHost {
       // 공고 링크 미리보기는 게임잡 공통 로고라 정보가 없고 메시지만 길어진다.
       unfurlLinks: false,
     });
-    for (const item of items) {
-      await this.repository.markNotified(item);
+    for (const [index, item] of items.entries()) {
+      await this.repository.markNotified({
+        ...item,
+        messageTs: ts ?? null,
+        digestOrder: index + 1,
+      });
     }
     if (!ts) {
       return;

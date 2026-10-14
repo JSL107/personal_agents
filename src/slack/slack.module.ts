@@ -13,6 +13,7 @@ import { VacationModule } from '../agent/vacation/vacation.module';
 import { VideoWatchModule } from '../agent/video-watch/video-watch.module';
 import { WorkReviewerModule } from '../agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from '../agent-run/agent-run.module';
+import { ArtJobFeedModule } from '../art-job-feed/art-job-feed.module';
 import { HumanizeModule } from '../humanize/humanize.module';
 import { PaperTradingModule } from '../paper-trading/paper-trading.module';
 import { PreferenceProfileModule } from '../preference-profile/preference-profile.module';
@@ -26,6 +27,7 @@ import {
   SlackHandler,
 } from './domain/port/slack-handler.port';
 import { AgentCommandHandler } from './handler/agent-command.handler';
+import { ArtJobExclusionReactionHandler } from './handler/art-job-exclusion-reaction.handler';
 import { BlogPublishHandler } from './handler/blog-publish.handler';
 import { CareerContextActionHandler } from './handler/career-context-action.handler';
 import { DeliveryReactionHandler } from './handler/delivery-reaction.handler';
@@ -74,6 +76,8 @@ import { SlackDeliveryModule } from './slack-delivery.module';
     PushpinTaskModule,
     // 👍/👎 reaction → 선호 학습 신호 저장 — REACTION_SIGNAL_REPOSITORY 의존.
     PreferenceProfileModule,
+    // 번호 이모지 → 원화 공고 제외 — ART_JOB_POSTING_REPOSITORY_PORT 의존.
+    ArtJobFeedModule,
     // V3 비전 봇 쪼개기 step 5 — 자연어 진입 (app_mention) 시 IdaeriRouterPort.dispatch 로 위임.
     RouterModule,
     // 휴가 잔여/등록/내역/취소 — 결정론 계산. /휴가 슬래시.
@@ -103,6 +107,7 @@ import { SlackDeliveryModule } from './slack-delivery.module';
     SlackPushpinReactionHandler,
     PreferenceReactionHandler,
     DeliveryReactionHandler,
+    ArtJobExclusionReactionHandler,
     VacationHandler,
     SubconsciousProposalActionHandler,
     RunVerdictActionHandler,
@@ -124,6 +129,7 @@ import { SlackDeliveryModule } from './slack-delivery.module';
         SlackPushpinReactionHandler,
         PreferenceReactionHandler,
         DeliveryReactionHandler,
+        ArtJobExclusionReactionHandler,
         VacationHandler,
         SubconsciousProposalActionHandler,
         RunVerdictActionHandler,
