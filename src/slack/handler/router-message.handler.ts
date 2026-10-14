@@ -17,6 +17,7 @@ import { ConversationalReplyUsecase } from '../../router/application/conversatio
 import { ConversationTurn } from '../../router/domain/conversation-memory.type';
 import { buildDispatchReplyText } from '../../router/domain/dispatch-reply.util';
 import {
+  BlogReplyContext,
   DispatchResult,
   IDAERI_ROUTER_PORT,
   IdaeriRouterPort,
@@ -25,6 +26,7 @@ import { RouterException } from '../../router/domain/router.exception';
 import { RouterErrorCode } from '../../router/domain/router-error-code.enum';
 import { isUnresolvedFollowUpTurn } from '../../router/domain/unresolved-turn.util';
 import {
+  MENTION_FINAL_REPLY_STATUS,
   MENTION_RECEIPT_REPOSITORY,
   MENTION_RECEIPT_STATUS,
   MentionReceiptRef,
@@ -265,6 +267,30 @@ export class RouterMessageHandler implements SlackHandler {
     }
   }
 
+  // 비동기 담당(BLOG)의 결과 답장을 수신 기록에 잇는다. 백그라운드에서 불리므로 throw 하지 않는다.
+  private buildFinalReplyRecorders(
+    receipt: MentionReceiptRef,
+  ): Pick<BlogReplyContext, 'markFinalReplyPending' | 'recordFinalReply'> {
+    return {
+      markFinalReplyPending: () =>
+        this.recordMentionSafely(() =>
+          this.mentionReceiptRepository.recordFinalReply({
+            ...receipt,
+            status: MENTION_FINAL_REPLY_STATUS.PENDING,
+          }),
+        ),
+      recordFinalReply: (posted: boolean) =>
+        this.recordMentionSafely(() =>
+          this.mentionReceiptRepository.recordFinalReply({
+            ...receipt,
+            status: posted
+              ? MENTION_FINAL_REPLY_STATUS.POSTED
+              : MENTION_FINAL_REPLY_STATUS.FAILED,
+          }),
+        ),
+    };
+  }
+
   // 기록 실패가 답변 흐름을 막으면 안 된다 — 경고만 남긴다.
   private async recordMentionSafely(write: () => Promise<void>): Promise<void> {
     try {
@@ -415,6 +441,9 @@ export class RouterMessageHandler implements SlackHandler {
                 : memoryKey,
               text: replyText,
             }),
+          ...(messageTs
+            ? this.buildFinalReplyRecorders({ channelId, messageTs })
+            : {}),
         },
       });
       await this.conversationMemory.appendTurn(memoryKey, {

@@ -337,7 +337,10 @@ describe('CUJ detectors', () => {
     expect(
       detectMentionViolations(
         [run('SUCCEEDED', 'PM', 60_000), run('SUCCEEDED', 'BLOG', 600_000)],
-        [{ status: 'REPLIED' }],
+        [
+          { status: 'REPLIED', finalReplyStatus: null },
+          { status: 'REPLIED', finalReplyStatus: 'POSTED' },
+        ],
       ),
     ).toEqual([]);
     expect(
@@ -357,13 +360,18 @@ describe('CUJ detectors', () => {
       detectMentionViolations(
         [],
         [
-          { status: 'RECEIVED' },
-          { status: 'REPLY_FAILED' },
-          { status: 'ERROR_REPLIED' },
-          { status: 'REPLIED' },
+          { status: 'RECEIVED', finalReplyStatus: null },
+          { status: 'REPLY_FAILED', finalReplyStatus: null },
+          { status: 'ERROR_REPLIED', finalReplyStatus: null },
+          { status: 'REPLIED', finalReplyStatus: null },
+          // ack 만 나가고 결과 답장이 안 나간 블로그 멘션
+          { status: 'REPLIED', finalReplyStatus: 'PENDING' },
+          { status: 'REPLIED', finalReplyStatus: 'FAILED' },
+          // ack 게시는 실패했지만 결과 답장은 나간 멘션 — 답을 받았다
+          { status: 'REPLY_FAILED', finalReplyStatus: 'POSTED' },
         ],
       )[0].detail,
-    ).toBe('답 안 나감 2건 · 오류 답변 1건');
+    ).toBe('답 안 나감 4건 · 오류 답변 1건');
   });
 
   it('승인 반영은 남은 실패가 없으면 정상이고 kind를 요약한다', () => {

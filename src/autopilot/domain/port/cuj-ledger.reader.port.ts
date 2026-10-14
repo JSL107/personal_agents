@@ -18,6 +18,7 @@ export interface CujDeliveryRow {
 
 export interface CujMentionReceiptRow {
   status: string;
+  finalReplyStatus: string | null;
 }
 
 export interface CujOrderRow {

@@ -93,6 +93,8 @@ export class BlogDispatcher implements AgentDispatcher {
 
     // 비동기 경로 — 즉시 ack + 백그라운드. runInBackground 는 내부에서 모든 실패를
     // notify 로 흡수하므로 void 로 띄워도 unhandled rejection 이 없다.
+    // 결과 답장 대기는 백그라운드를 띄우기 전에 남긴다 — 결과 기록이 대기 기록보다 먼저 쓰이면 안 된다.
+    await reply.markFinalReplyPending?.();
     void this.runInBackground(input, reply);
     return {
       agentRunId: ASYNC_ACK_AGENT_RUN_ID,
@@ -128,7 +130,9 @@ export class BlogDispatcher implements AgentDispatcher {
       // 성공 링크와 같이 나가 이미 있는 초안을 중복 생성하게 한다(#824 리뷰).
       this.inFlightReplies.delete(reply);
     }
-    await this.reply(reply, text);
+    const posted = await this.reply(reply, text);
+    // 재시작 안내(notifyInterrupted)는 결과가 아니라 기록하지 않는다 — 대기로 남아 「답 안 나감」으로 세진다.
+    await reply.recordFinalReply?.(posted);
   }
 
   // 종료 신호(SIGTERM·SIGINT)에서 아직 도는 초안의 스레드에 중단을 알린다 — 없으면 "몇 분 뒤 링크를
@@ -157,8 +161,8 @@ export class BlogDispatcher implements AgentDispatcher {
   }
 
   // 같은 스레드에 답장하고 대화 기억에도 남긴다. 기억 실패는 답장을 막지 않는다 — 다음 턴 맥락만 잃는다.
-  private async reply(reply: BlogReplyContext, text: string): Promise<void> {
-    await this.notifier.notify({
+  private async reply(reply: BlogReplyContext, text: string): Promise<boolean> {
+    const posted = await this.notifier.notify({
       channel: reply.channel,
       ...(reply.threadTs ? { threadTs: reply.threadTs } : {}),
       text,
@@ -170,5 +174,6 @@ export class BlogDispatcher implements AgentDispatcher {
         `BLOG 완료 답장 대화 기억 실패: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
+    return posted;
   }
 }
