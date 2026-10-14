@@ -302,6 +302,14 @@ export class RouterMessageHandler implements SlackHandler {
         replyContext: {
           channel: channelId,
           ...(threadTs ? { threadTs } : {}),
+          rememberReply: (replyText: string) =>
+            this.conversationMemory.appendTurn(memoryKey, {
+              role: 'assistant',
+              text: replyText,
+              agentType: AgentType.BLOG,
+              agentRunId: null,
+              timestampMs: Date.now(),
+            }),
         },
       });
       await this.conversationMemory.appendTurn(memoryKey, {

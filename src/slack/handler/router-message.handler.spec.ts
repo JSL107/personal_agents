@@ -215,6 +215,7 @@ describe('RouterMessageHandler — app_mention', () => {
       replyContext: {
         channel: 'C_CHANNEL',
         threadTs: '1730000000.000001',
+        rememberReply: expect.any(Function),
       },
     } satisfies DispatchInput);
     expect(say).toHaveBeenCalledWith(
@@ -224,6 +225,47 @@ describe('RouterMessageHandler — app_mention', () => {
     expect(sayText).toContain('mock body');
     expect(sayText).toContain('agentRunId=99');
     expect(sayText).toContain(AgentType.PM);
+  });
+
+  // 2026-10-14 run 8837 — 비동기 블로그 완료 답장이 기억에 없어 다음 턴 "이거 요약해줘" 가 원문을 못 봤다.
+  it('rememberReply 는 완료 답장을 같은 대화 기억 키에 봇 턴으로 남긴다', async () => {
+    const { app, getHandler } = buildAppMock();
+    const dispatch = jest.fn().mockResolvedValue({
+      agentRunId: 0,
+      workerType: AgentType.BLOG,
+      output: { async: true },
+      modelUsed: 'hermes-cli',
+      formattedText: '📝 블로그 초안 작성을 시작했어요.',
+    } satisfies DispatchResult);
+    const conversationMemory = new ConversationMemoryService();
+    buildHandler({ dispatch }, { conversationMemory }).register(app);
+
+    await invokeHandler(getHandler('app_mention'), {
+      type: 'app_mention',
+      user: 'U_USER',
+      text: '<@UBOT> 프롬프트 RAG 공부해볼래',
+      ts: '1730000000.000001',
+      channel: 'C_CHANNEL',
+    });
+    const input = dispatch.mock.calls[0][0] as DispatchInput;
+    await input.replyContext?.rememberReply?.(
+      '🚀 *블로그 발행 완료*\n요약 본문',
+    );
+
+    const turns = await conversationMemory.getRecentTurns(
+      conversationMemory.buildKey({
+        slackUserId: 'U_USER',
+        channelId: 'C_CHANNEL',
+        threadTs: '1730000000.000001',
+      }),
+    );
+    expect(turns.at(-1)).toEqual(
+      expect.objectContaining({
+        role: 'assistant',
+        text: '🚀 *블로그 발행 완료*\n요약 본문',
+        agentType: AgentType.BLOG,
+      }),
+    );
   });
 
   it('handoffResults 가 있으면 chain 본문 결합 + worker 시퀀스 footer', async () => {
@@ -886,6 +928,7 @@ describe('RouterMessageHandler — message (DM)', () => {
       replyContext: {
         channel: 'D_DMCHANNEL',
         threadTs: '1730000000.000001',
+        rememberReply: expect.any(Function),
       },
     } satisfies DispatchInput);
     expect(say).toHaveBeenCalled();

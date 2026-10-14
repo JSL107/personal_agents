@@ -2,6 +2,10 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import {
+  findHypotheticalMarker,
+  formatHeldWrite,
+} from '../../../router/domain/hypothetical-utterance';
+import {
   BlogReplyContext,
   DispatchInput,
 } from '../../../router/domain/idaeri-router.port';
@@ -61,6 +65,24 @@ export class BlogDispatcher implements AgentDispatcher {
       };
     }
 
+    // 자연어 질문("이거 3줄 요약할 수 있어?")이면 초안을 만들지 않는다 — Notion 페이지가 실제로
+    // 생긴다(2026-10-14 run 8837). 회신 컨텍스트가 있는 자연어 멘션 경로만 본다 — 주제 번호 선택은
+    // 명시 지시라 동기 경로로 오고, 주제 제목에 물음표가 있어도 막지 않는다.
+    const marker = findHypotheticalMarker(input.text ?? '');
+    if (marker !== null) {
+      this.logger.warn(`BLOG 초안 보류 — 질문·가정형 원문 (표지=${marker})`);
+      return {
+        agentRunId: ASYNC_ACK_AGENT_RUN_ID,
+        output: { heldWrite: { action: 'DRAFT', marker } },
+        modelUsed: 'none',
+        // 예시 문구에 `<주제>` 를 쓰면 Slack 이 `<…>` 를 제어 표기로 읽어 깨진다 — 실제 주제로 든다.
+        formattedText: formatHeldWrite(
+          '블로그 초안을 작성',
+          '프롬프트 RAG 블로그 초안 써줘',
+        ),
+      };
+    }
+
     // 비동기 경로 — 즉시 ack + 백그라운드. runInBackground 는 내부에서 모든 실패를
     // notify 로 흡수하므로 void 로 띄워도 unhandled rejection 이 없다.
     void this.runInBackground(input, reply);
@@ -84,21 +106,29 @@ export class BlogDispatcher implements AgentDispatcher {
         requestText: buildBlogRequestText(input),
         slackUserId: input.slackUserId,
       });
-      await this.notifier.notify({
-        channel: reply.channel,
-        ...(reply.threadTs ? { threadTs: reply.threadTs } : {}),
-        text: formatBlogDraft(outcome.result),
-      });
+      await this.reply(reply, formatBlogDraft(outcome.result));
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(
         `비동기 BLOG 백그라운드 실패 (user=${input.slackUserId}): ${message}`,
       );
-      await this.notifier.notify({
-        channel: reply.channel,
-        ...(reply.threadTs ? { threadTs: reply.threadTs } : {}),
-        text: `블로그 초안 생성 실패: ${message}`,
-      });
+      await this.reply(reply, `블로그 초안 생성 실패: ${message}`);
+    }
+  }
+
+  // 같은 스레드에 답장하고 대화 기억에도 남긴다. 기억 실패는 답장을 막지 않는다 — 다음 턴 맥락만 잃는다.
+  private async reply(reply: BlogReplyContext, text: string): Promise<void> {
+    await this.notifier.notify({
+      channel: reply.channel,
+      ...(reply.threadTs ? { threadTs: reply.threadTs } : {}),
+      text,
+    });
+    try {
+      await reply.rememberReply?.(text);
+    } catch (error: unknown) {
+      this.logger.warn(
+        `BLOG 완료 답장 대화 기억 실패: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 }
