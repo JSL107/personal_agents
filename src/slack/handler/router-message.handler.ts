@@ -303,12 +303,16 @@ export class RouterMessageHandler implements SlackHandler {
           channel: channelId,
           ...(threadTs ? { threadTs } : {}),
           rememberReply: (replyText: string) =>
-            this.conversationMemory.appendTurn(memoryKey, {
-              role: 'assistant',
+            this.rememberAsyncReply({
+              memoryKey,
+              replyThreadKey: threadTs
+                ? this.conversationMemory.buildKey({
+                    slackUserId,
+                    channelId,
+                    threadTs,
+                  })
+                : memoryKey,
               text: replyText,
-              agentType: AgentType.BLOG,
-              agentRunId: null,
-              timestampMs: Date.now(),
             }),
         },
       });
@@ -428,6 +432,40 @@ export class RouterMessageHandler implements SlackHandler {
           name: REACTION_SUCCESS,
         });
       }
+    }
+  }
+
+  // 비동기 worker(BLOG)의 완료 답장을 대화 기억에 남긴다.
+  //
+  // DM 최상위 발화는 channel 키에 쌓이지만 봇 답장은 그 발화의 스레드에 달린다. 작업이 도는 몇 분 사이
+  // 사용자가 그 스레드에서 이어 말하면 스레드 키가 채워지고, 그 뒤로는 channel 키를 되짚지 않는다 —
+  // channel 키에만 남기면 스레드의 "이거 요약해줘" 가 완료 답장을 못 본다(#817 리뷰). 그래서 스레드 키가
+  // 이미 쓰이고 있을 때만 거기에도 남긴다. 빈 스레드 키에 먼저 쓰면 첫 진입의 channel 키 되짚기가 막혀
+  // 그 앞 대화를 잃는다.
+  private async rememberAsyncReply({
+    memoryKey,
+    replyThreadKey,
+    text,
+  }: {
+    memoryKey: string;
+    replyThreadKey: string;
+    text: string;
+  }): Promise<void> {
+    const turn: ConversationTurn = {
+      role: 'assistant',
+      text,
+      agentType: AgentType.BLOG,
+      agentRunId: null,
+      timestampMs: Date.now(),
+    };
+    await this.conversationMemory.appendTurn(memoryKey, turn);
+    if (replyThreadKey === memoryKey) {
+      return;
+    }
+    const threadTurns =
+      await this.conversationMemory.getRecentTurns(replyThreadKey);
+    if (threadTurns.length > 0) {
+      await this.conversationMemory.appendTurn(replyThreadKey, turn);
     }
   }
 

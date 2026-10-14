@@ -224,6 +224,29 @@ describe('BlogDispatcher', () => {
       );
     });
 
+    it('생성 실패 답장도 대화 기억에 남긴다 — 다음 턴이 실패를 알고 답하게', async () => {
+      const execute = jest
+        .fn()
+        .mockRejectedValue(new Error('hermes 비정상 종료'));
+      const rememberReply = jest.fn().mockResolvedValue(undefined);
+      const dispatcher = new BlogDispatcher(
+        { execute } as unknown as GenerateBlogDraftUsecase,
+        buildNotifier(),
+      );
+
+      await dispatcher.dispatch({
+        source: 'SLACK_MESSAGE',
+        slackUserId: 'U1',
+        text: '프롬프트 RAG 공부해볼래',
+        replyContext: { channel: 'C1', threadTs: 'T1', rememberReply },
+      });
+      await flushPromises();
+
+      expect(rememberReply).toHaveBeenCalledWith(
+        '블로그 초안 생성 실패: hermes 비정상 종료',
+      );
+    });
+
     it('대화 기억이 실패해도 답장은 나간다', async () => {
       const execute = jest.fn().mockResolvedValue(buildSuccessOutcome(42));
       const notifier = buildNotifier();
