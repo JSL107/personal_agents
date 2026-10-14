@@ -221,6 +221,7 @@ describe('RouterMessageHandler — app_mention', () => {
       replyContext: {
         channel: 'C_CHANNEL',
         threadTs: '1730000000.000001',
+        conversationKey: 'U_USER:C_CHANNEL:1730000000.000001',
         rememberReply: expect.any(Function),
       },
     } satisfies DispatchInput);
@@ -973,6 +974,64 @@ describe('RouterMessageHandler — message (DM)', () => {
     });
   });
 
+  // #824 리뷰 — "작업하고 있어?" 는 같은 사용자의 다른 대화가 아니라 그 작업을 시작한 대화의
+  // 실행을 봐야 한다. DM 최상위에서 시작해 봇이 만든 스레드에서 물으면 지금 스레드 키가 아니라
+  // 되짚어 읽은 channel 키가 작업을 시작한 키다.
+  it('봇이 만든 스레드에서 비동기 작업 진행을 물으면 그 작업을 시작한 대화 키로 답을 만든다', async () => {
+    const DM_TS = '1730000000.000001';
+    const dispatch = jest
+      .fn()
+      .mockResolvedValueOnce({
+        agentRunId: 0,
+        workerType: AgentType.BLOG,
+        output: { async: true },
+        modelUsed: 'hermes-cli',
+        formattedText: '📝 블로그 초안 작성을 시작했어요.',
+      } satisfies DispatchResult)
+      .mockRejectedValueOnce(
+        new RouterException({
+          code: RouterErrorCode.INTENT_CLASSIFY_FAILED,
+          message: '의도 분류 실패 — UNKNOWN',
+          status: DomainStatus.BAD_REQUEST,
+        }),
+      );
+    const conversationalReply = {
+      reply: jest.fn().mockResolvedValue('아직 쓰고 있어요.'),
+    } as unknown as ConversationalReplyUsecase;
+    const { app, getHandler } = buildAppMock();
+    buildHandler(
+      { dispatch },
+      {
+        conversationalReply,
+        conversationMemory: new ConversationMemoryService(),
+      },
+    ).register(app);
+
+    await invokeHandler(getHandler('message'), {
+      type: 'message',
+      user: 'U_USER',
+      text: '프롬프트 RAG 블로그 써줘',
+      ts: DM_TS,
+      channel: 'D_DMCHANNEL',
+      channel_type: 'im',
+    });
+    await invokeHandler(getHandler('message'), {
+      type: 'message',
+      user: 'U_USER',
+      text: '너 작업하고 있어?',
+      ts: '1730000000.000002',
+      thread_ts: DM_TS,
+      channel: 'D_DMCHANNEL',
+      channel_type: 'im',
+    });
+
+    const started = dispatch.mock.calls[0][0] as DispatchInput;
+    expect(started.replyContext?.conversationKey).toBe('U_USER:D_DMCHANNEL');
+    expect(conversationalReply.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ conversationKey: 'U_USER:D_DMCHANNEL' }),
+    );
+  });
+
   it('channel_type=im + 일반 user message → router.dispatch (멘션 prefix 없이 전체 text)', async () => {
     const dispatch = jest.fn().mockResolvedValue({
       agentRunId: 5,
@@ -1000,6 +1059,8 @@ describe('RouterMessageHandler — message (DM)', () => {
       replyContext: {
         channel: 'D_DMCHANNEL',
         threadTs: '1730000000.000001',
+        // DM 최상위 발화라 기억 키는 channel 단위다 — 답장 스레드(threadTs)와 다르다.
+        conversationKey: 'U_USER:D_DMCHANNEL',
         rememberReply: expect.any(Function),
       },
     } satisfies DispatchInput);

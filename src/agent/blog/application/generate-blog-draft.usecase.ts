@@ -62,6 +62,7 @@ export class GenerateBlogDraftUsecase {
   async execute({
     requestText,
     slackUserId,
+    conversationKey,
   }: GenerateBlogDraftInput): Promise<AgentRunOutcome<BlogDraftResult>> {
     const trimmed = requestText.trim();
     if (trimmed.length === 0) {
@@ -75,7 +76,11 @@ export class GenerateBlogDraftUsecase {
     return this.agentRunService.execute({
       agentType: AgentType.BLOG,
       triggerType: TriggerType.SLACK_MENTION_BLOG,
-      inputSnapshot: { requestText: trimmed, slackUserId },
+      inputSnapshot: {
+        requestText: trimmed,
+        slackUserId,
+        ...(conversationKey ? { conversationKey } : {}),
+      },
       evidence: [
         {
           sourceType: 'SLACK_MENTION_BLOG',

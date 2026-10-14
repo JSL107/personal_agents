@@ -115,6 +115,9 @@ export class BlogDispatcher implements AgentDispatcher {
       const outcome = await this.generateBlogDraft.execute({
         requestText: buildBlogRequestText(input),
         slackUserId: input.slackUserId,
+        ...(reply.conversationKey
+          ? { conversationKey: reply.conversationKey }
+          : {}),
       });
       text = formatBlogDraft(outcome.result);
     } catch (error: unknown) {

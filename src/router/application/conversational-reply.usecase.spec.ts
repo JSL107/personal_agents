@@ -493,64 +493,133 @@ describe('ConversationalReply — 직전 작업 상태', () => {
     },
   ];
 
-  const buildUsecase = (
-    findLatestUserRun: jest.Mock,
-  ): { usecase: ConversationalReplyUsecase; route: jest.Mock } => {
+  const syncWorkTurns: ConversationTurn[] = [
+    {
+      role: 'user',
+      text: '이 PR 리뷰해줘',
+      agentType: AgentType.CODE_REVIEWER,
+      agentRunId: 4242,
+      timestampMs: 1_700_000_000_000,
+    },
+    {
+      role: 'assistant',
+      text: '리뷰 결과 …',
+      agentType: AgentType.CODE_REVIEWER,
+      agentRunId: 4242,
+      timestampMs: 1_700_000_000_000,
+    },
+  ];
+
+  const buildUsecase = ({
+    findRunStatus = jest.fn(),
+    findLatestConversationRun = jest.fn(),
+  }: {
+    findRunStatus?: jest.Mock;
+    findLatestConversationRun?: jest.Mock;
+  }): { usecase: ConversationalReplyUsecase; route: jest.Mock } => {
     const route = jest.fn().mockResolvedValue({ text: '네', modelUsed: 'm' });
     const usecase = new ConversationalReplyUsecase(
       { route } as unknown as ModelRouterUsecase,
       { get: () => undefined } as unknown as ConfigService,
       [] as unknown as AgentDispatcher[],
-      { findLatestUserRun } as unknown as AgentRunService,
+      {
+        findRunStatus,
+        findLatestConversationRun,
+      } as unknown as AgentRunService,
     );
     return { usecase, route };
   };
 
-  it('재시작으로 끊긴 작업이면 실패와 사유를 prompt 에 싣는다 (run 8886 재현)', async () => {
-    const findLatestUserRun = jest.fn().mockResolvedValue({
+  it('비동기 작업은 이 대화에서 시작된 실행만 찾아 실패와 사유를 싣는다 (run 8886 재현)', async () => {
+    const findLatestConversationRun = jest.fn().mockResolvedValue({
       status: 'FAILED',
       failureReason: '프로세스 종료로 중단됨',
     });
-    const { usecase, route } = buildUsecase(findLatestUserRun);
+    const { usecase, route } = buildUsecase({ findLatestConversationRun });
 
     await usecase.reply({
       text: '너 작업하고 있어?',
       priorTurns: workTurns,
-      slackUserId: 'U1',
+      conversationKey: 'U1:D1:111.1',
     });
 
-    expect(findLatestUserRun).toHaveBeenCalledWith({
+    expect(findLatestConversationRun).toHaveBeenCalledWith({
       agentType: AgentType.BLOG,
-      slackUserId: 'U1',
-      startedSince: new Date(1_700_000_000_000 - 30 * 60 * 1000),
+      conversationKey: 'U1:D1:111.1',
+      startedSince: new Date(1_700_000_000_000 - 5 * 60 * 1000),
     });
     const prompt: string = route.mock.calls[0][0].request.prompt;
     expect(prompt).toContain('[직전 작업 상태 (실제 실행 기록)]');
     expect(prompt).toContain('실패 — 프로세스 종료로 중단됨');
   });
 
-  it('작업 turn 이 없거나 사용자를 모르면 조회하지 않는다', async () => {
-    const findLatestUserRun = jest.fn();
-    const { usecase, route } = buildUsecase(findLatestUserRun);
+  it('동기 작업은 turn 에 남은 실행 id 로 바로 조회한다 — 대화 키·사용자로 찾지 않는다 (#824 리뷰)', async () => {
+    const findRunStatus = jest
+      .fn()
+      .mockResolvedValue({ status: 'SUCCEEDED', failureReason: null });
+    const findLatestConversationRun = jest.fn();
+    const { usecase, route } = buildUsecase({
+      findRunStatus,
+      findLatestConversationRun,
+    });
 
-    await usecase.reply({ text: '안녕', priorTurns: [], slackUserId: 'U1' });
+    await usecase.reply({
+      text: '아까 그거 끝났어?',
+      priorTurns: syncWorkTurns,
+      conversationKey: 'U1:C1:222.2',
+    });
+
+    expect(findRunStatus).toHaveBeenCalledWith(4242);
+    expect(findLatestConversationRun).not.toHaveBeenCalled();
+    expect(route.mock.calls[0][0].request.prompt).toContain(': 완료됨');
+  });
+
+  it('실행 id 없는 turn 인데 이 대화에서 시작된 실행이 없으면 상태 줄을 싣지 않는다 — 바로 답한 조회를 "기록 없음" 으로 읽히지 않게', async () => {
+    const findLatestConversationRun = jest.fn().mockResolvedValue(null);
+    const { usecase, route } = buildUsecase({ findLatestConversationRun });
+
+    await usecase.reply({
+      text: '너 작업하고 있어?',
+      priorTurns: workTurns,
+      conversationKey: 'U1:D1:111.1',
+    });
+
+    expect(findLatestConversationRun).toHaveBeenCalled();
+    expect(route.mock.calls[0][0].request.prompt).not.toContain(
+      '[직전 작업 상태',
+    );
+  });
+
+  it('작업 turn 이 없거나, 실행 id 없는 turn 인데 대화 키를 모르면 조회하지 않는다', async () => {
+    const findRunStatus = jest.fn();
+    const findLatestConversationRun = jest.fn();
+    const { usecase, route } = buildUsecase({
+      findRunStatus,
+      findLatestConversationRun,
+    });
+
+    await usecase.reply({
+      text: '안녕',
+      priorTurns: [],
+      conversationKey: 'U1:D1',
+    });
     await usecase.reply({ text: '너 작업하고 있어?', priorTurns: workTurns });
 
-    expect(findLatestUserRun).not.toHaveBeenCalled();
+    expect(findRunStatus).not.toHaveBeenCalled();
+    expect(findLatestConversationRun).not.toHaveBeenCalled();
     expect(route.mock.calls[1][0].request.prompt).not.toContain(
       '[직전 작업 상태',
     );
   });
 
   it('조회가 실패해도 답은 나간다 — 상태 줄만 빠진다', async () => {
-    const findLatestUserRun = jest.fn().mockRejectedValue(new Error('db down'));
-    const { usecase, route } = buildUsecase(findLatestUserRun);
+    const findRunStatus = jest.fn().mockRejectedValue(new Error('db down'));
+    const { usecase, route } = buildUsecase({ findRunStatus });
 
     await expect(
       usecase.reply({
         text: '너 작업하고 있어?',
-        priorTurns: workTurns,
-        slackUserId: 'U1',
+        priorTurns: syncWorkTurns,
       }),
     ).resolves.toBe('네');
     expect(route.mock.calls[0][0].request.prompt).not.toContain(

@@ -149,15 +149,21 @@ describe('BlogDispatcher', () => {
         conversationContext: {
           userInstruction: '직전 논의를 토대로 실패 패턴을 분석한다',
         },
-        replyContext: { channel: 'C1', threadTs: 'T1' },
+        replyContext: {
+          channel: 'C1',
+          threadTs: 'T1',
+          conversationKey: 'U1:C1:T1',
+        },
       });
 
       expect(outcome.agentRunId).toBe(0);
       expect(outcome.formattedText).toContain('작성을 시작');
+      // 대화 키를 실행에 넘긴다 — 이 대화의 "작업하고 있어?" 가 이 실행을 찾는다(#824 리뷰).
       expect(execute).toHaveBeenCalledWith({
         requestText:
           '루프 엔지니어링\n\n[대화 맥락] 직전 논의를 토대로 실패 패턴을 분석한다',
         slackUserId: 'U1',
+        conversationKey: 'U1:C1:T1',
       });
       // 아직 백그라운드 미완 → notify 호출 X.
       expect(notifier.notify).not.toHaveBeenCalled();
