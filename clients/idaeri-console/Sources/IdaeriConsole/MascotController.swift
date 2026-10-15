@@ -41,8 +41,8 @@ import SwiftUI
     private var reactionBubble: MascotBubble?
     private var replyBubble: MascotBubble?
     private var lastMascotCommand: (text: String, sentAt: Date)?
-    /// 답장을 이미 띄운 지시. 같은 답을 30초 재동기화마다 다시 띄우지 않게 한다.
-    private var shownReplyCommandId: UUID?
+    /// 마스코트가 보낸 지시의 id. 답장(`command.answered`)을 이 id 로만 받는다.
+    private var mascotCommandId: UUID?
     private var failedNoticeCommandId: UUID?
     private var dismissedFailureIds: Set<UUID> = []
     private var reactionLedger: MascotReactionLedger
@@ -100,10 +100,12 @@ import SwiftUI
             return
         }
         lastMascotCommand = (trimmed, Date())
+        mascotCommandId = nil
         replyBubble = nil
         replyTimer?.invalidate()
         failedNoticeCommandId = nil
         NotificationCenter.default.post(name: .idaeriMascotCommand, object: nil, userInfo: ["text": trimmed])
+        bindMascotCommandId()
         closeCommandInput()
     }
 
@@ -186,48 +188,66 @@ import SwiftUI
             self.submittedApprovalId = nil
         }
         scheduleGraceRecheck(now: now)
+        refreshCommandResult()
         maybeShowBriefing(now: now)
         maybeReactToWorkload(now: now)
-        refreshCommandResult()
         refreshBubble()
     }
 
-    /// 마스코트가 보낸 지시의 결과를 그 지시 한 건의 기록(`pendingCommands`)에서 읽는다.
+    /// 보낸 지시가 store 에 올라간 id 를 잡아 둔다. 통지는 `AppRootView` 가 받아 기록을 만들므로
+    /// 보낸 직후에 못 찾으면 다음 갱신에서 다시 찾는다.
+    private func bindMascotCommandId() {
+        guard mascotCommandId == nil, let lastMascotCommand else {
+            return
+        }
+        mascotCommandId = store.pendingCommands.last(where: {
+            $0.text == lastMascotCommand.text && $0.sentAt >= lastMascotCommand.sentAt
+        })?.id
+    }
+
+    /// 보낸 지시가 실패했는지를 그 지시 한 건의 기록(`pendingCommands`)에서 읽는다.
     ///
-    /// 대화 기록(`store.conversation`)에서 고르지 않는 이유: 한 줄에 어느 지시의 답인지가 없어,
-    /// 앞 지시의 답이 새 지시 뒤에 도착하면 새 지시의 답으로 보인다. 서버의 답·거절은 지시 id 로
-    /// 그 기록에 붙으므로(`ConsoleStore.markCommand`) 여기서 읽으면 짝이 틀리지 않는다.
+    /// 답장은 여기서 읽지 않는다 — worker 가 도는 지시는 `run.finished` 가 먼저 와 기록이 `.done`
+    /// 이 되고, 뒤이은 `command.answered` 는 phase 를 바꾸지 않는다(`ConsoleStore.markCommand`).
+    /// 게다가 `.done` 기록은 5초 정리 루프가 지운다. 그래서 답장은 이벤트로 받는다(`receive`).
     private func refreshCommandResult() {
-        guard let lastMascotCommand,
-              let command = store.pendingCommands.last(where: {
-                  $0.text == lastMascotCommand.text && $0.sentAt >= lastMascotCommand.sentAt
-              })
+        bindMascotCommandId()
+        guard let mascotCommandId,
+              let command = store.pendingCommands.first(where: { $0.id == mascotCommandId }),
+              command.phase == .failed
         else {
             return
         }
-        switch command.phase {
-        case .failed:
-            replyBubble = nil
-            replyTimer?.invalidate()
-            if !dismissedFailureIds.contains(command.id) {
-                failedNoticeCommandId = command.id
-            }
-        case .answered:
-            guard shownReplyCommandId != command.id,
-                  let reply = command.reason?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !reply.isEmpty
-            else {
-                return
-            }
-            shownReplyCommandId = command.id
-            replyBubble = .reply(reply)
-            replyTimer?.invalidate()
-            replyTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: false) { [weak self] _ in
-                Task { @MainActor [weak self] in self?.closeReply() }
-            }
-        default:
+        replyBubble = nil
+        replyTimer?.invalidate()
+        if !dismissedFailureIds.contains(command.id) {
+            failedNoticeCommandId = command.id
+        }
+    }
+
+    /// 마스코트가 보낸 지시의 답장만 띄운다. 대화 기록이 아니라 지시 id 로 짝을 맞춰야 앞 지시의
+    /// 늦은 답이 새 지시의 답으로 보이지 않는다.
+    private func showReply(commandId: String, message: String) {
+        bindMascotCommandId()
+        let reply = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let mascotCommandId, commandId == mascotCommandId.uuidString, !reply.isEmpty else {
             return
         }
+        replyBubble = .reply(reply)
+        replyTimer?.invalidate()
+        replyTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.closeReply() }
+        }
+    }
+
+    /// 브리핑보다 우선하는 말풍선이 지금 떠야 하는가 — `refreshBubble` 의 우선순위와 같은 조건.
+    private var hasPriorityBubble: Bool {
+        store.approvalNotice != nil
+            || failedNoticeCommandId != nil
+            || commandInputOpen
+            || submittedApprovalId != nil
+            || store.approvals.contains { !dismissedApprovalIds.contains($0.id) }
+            || replyBubble != nil
     }
 
     private func refreshBubble() {
@@ -277,11 +297,17 @@ import SwiftUI
         guard let slot = mascotBriefingSlot(now: now, calendar: .current),
               UserDefaults.standard.string(forKey: briefingSlotKey) != slot,
               let briefing = store.briefing else { return }
+        // 더 급한 말풍선이 떠 있으면 브리핑은 가려진다. 그때 칸을 기록하면 한 번도 보이지 않은 채
+        // 그 시각이 지나가므로, 보일 수 있을 때까지 기록을 미룬다(1분 타이머·스토어 갱신이 다시 부른다).
+        guard !hasPriorityBubble else { return }
         UserDefaults.standard.set(slot, forKey: briefingSlotKey)
         showTransient(.briefing(mascotBriefingLines(briefing: briefing)), duration: 20)
     }
 
     private func receive(_ event: ConsoleEvent) {
+        if case let .commandAnswered(commandId, message) = event {
+            showReply(commandId: commandId, message: message)
+        }
         if case let .runFinished(run) = event, run.status == "SUCCEEDED" {
             let now = Date()
             if reactionLedger.fireDaily(
