@@ -106,7 +106,11 @@ export const mergeArtJobFeedCommands = (
   return current;
 };
 
-const findListKind = (text: string): ArtJobKeywordKind | undefined => {
+// 인용한 키워드 안의 낱말은 목록 이름으로 보지 않는다 — 「허용에 "북미 스타일" 추가해줘」가 화풍으로 가면 안 된다(#849 리뷰).
+const QUOTED_GROUP = /\[[^\]]+\]|「[^」]+」|"[^"]+"|'[^']+'/g;
+
+const findListKind = (rawText: string): ArtJobKeywordKind | undefined => {
+  const text = rawText.replace(QUOTED_GROUP, ' ');
   if (/화풍|태그|그림체|스타일/.test(text)) {
     return 'STYLE';
   }
@@ -121,7 +125,10 @@ const findListKind = (text: string): ArtJobKeywordKind | undefined => {
 
 // 목록을 되물은 뒤의 답. 「제외」 단답은 목록 이름이다 — 평소 문장에서는 동사와 헷갈려 받지 않는다.
 const findAnswerListKind = (text: string): ArtJobKeywordKind | undefined => {
-  return findListKind(text) ?? (/제외/.test(text) ? 'EXCLUDED' : undefined);
+  return (
+    findListKind(text) ??
+    (/제외/.test(text.replace(QUOTED_GROUP, ' ')) ? 'EXCLUDED' : undefined)
+  );
 };
 
 const extractTerms = (text: string): string[] => {
@@ -135,27 +142,28 @@ const extractTerms = (text: string): string[] => {
   return [...new Set(raw.map(cleanTerm).filter(isValidTerm))];
 };
 
+// 목록 이름 뒤 → 「<키워드> 키워드」 → 목록 이름 앞 → 동사 앞 순서로 보고, 실제 키워드가 하나라도 남는
+// 첫 후보를 쓴다. 「허용 키워드에 2D 추가해줘」를 「<키워드> 키워드」로 먼저 읽으면 목록 이름 「허용」을
+// 잡았다가 걸러져 키워드가 비어 버린다(#849 리뷰).
+const UNQUOTED_TERM_PATTERNS: readonly RegExp[] = [
+  /(?:허용|대상|제외어|제외|화풍|태그|그림체|스타일)(?:\s*(?:키워드|목록))?(?:에|에서|로|으로)?\s+([^\s]+)\s*(?:추가|넣어|등록|포함|제거|삭제|빼|지워|없애)/,
+  /(?:^|\s)([^\s]+)\s*키워드/,
+  /(?:^|\s)([^\s]+)\s*(?:화풍|태그|그림체|스타일|허용|제외어)/,
+  /(?:^|\s)([^\s]+)\s*(?:추가|넣어|등록|포함|제거|삭제|빼|지워|없애|제외\s*해)/,
+];
+
 const extractUnquotedTerms = (text: string): string[] => {
-  const beforeKeyword = text.match(/(?:^|\s)([^\s]+)\s*키워드/);
-  if (beforeKeyword) {
-    return beforeKeyword[1].split(/[/,·、]/);
+  for (const pattern of UNQUOTED_TERM_PATTERNS) {
+    const captured = text.match(pattern)?.[1];
+    if (captured === undefined) {
+      continue;
+    }
+    const candidates = captured.split(/[/,·、]/);
+    if (candidates.map(cleanTerm).some(isValidTerm)) {
+      return candidates;
+    }
   }
-  const afterList = text.match(
-    /(?:허용|대상|제외어|화풍|태그|그림체|스타일)(?:에|에서|로|으로)?\s+([^\s]+)\s*(?:추가|넣어|등록|포함|제거|삭제|빼|지워|없애)/,
-  );
-  if (afterList) {
-    return afterList[1].split(/[/,·、]/);
-  }
-  const beforeList = text.match(
-    /(?:^|\s)([^\s]+)\s*(?:화풍|태그|그림체|스타일|허용|제외어)/,
-  );
-  if (beforeList) {
-    return beforeList[1].split(/[/,·、]/);
-  }
-  const beforeVerb = text.match(
-    /(?:^|\s)([^\s]+)\s*(?:추가|넣어|등록|포함|제거|삭제|빼|지워|없애|제외\s*해)/,
-  );
-  return beforeVerb ? beforeVerb[1].split(/[/,·、]/) : [];
+  return [];
 };
 
 const cleanTerm = (raw: string): string => {

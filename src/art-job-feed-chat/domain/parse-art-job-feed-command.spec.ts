@@ -25,6 +25,24 @@ describe('parseArtJobFeedCommand', () => {
       '그거랑 더불어서 캐주얼 북미풍도 함께 넣어서 찾아서 나한테 지금 보여줘봐.',
       { kind: 'NEEDS_TERMS', action: 'ADD', listKind: undefined },
     ],
+    // #849 리뷰 — 인용 안의 「스타일」은 목록 이름이 아니다.
+    [
+      '허용에 "북미 스타일" 추가해줘',
+      { kind: 'ADD', listKind: 'TARGET', terms: ['북미 스타일'] },
+    ],
+    [
+      '제외어에 "UI 스타일" 넣어줘',
+      { kind: 'ADD', listKind: 'EXCLUDED', terms: ['UI 스타일'] },
+    ],
+    // #849 리뷰 — 목록 이름 뒤의 실제 키워드를 뽑는다.
+    [
+      '허용 키워드에 2D 추가해줘',
+      { kind: 'ADD', listKind: 'TARGET', terms: ['2D'] },
+    ],
+    [
+      '제외 키워드에서 3D 제거해줘',
+      { kind: 'REMOVE', listKind: 'EXCLUDED', terms: ['3D'] },
+    ],
     ['공고 가져와', { kind: 'FETCH' }],
     ['공고 올려줘', { kind: 'FETCH' }],
     ['공고 보내줘', { kind: 'FETCH' }],
