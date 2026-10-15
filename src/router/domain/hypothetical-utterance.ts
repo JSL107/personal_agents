@@ -14,14 +14,24 @@
 // "라면")가 함께 있으면 여전히 막힌다.
 //
 // 슬래시 명령·콘솔 버튼은 명시 입력이라 이 가드를 타지 않는다 — 자연어 dispatcher 만 부른다.
-// 정중한 쓰기 지시의 끝. 동사는 휴가·지원·일정·블로그 쓰기에 쓰이는 것만 둔다 — "확인해 줄래?",
-// "요약할 수 있어?" 같은 조회·확인 부탁은 여기 들지 않아 물음표로 막힌다. `써`·`작성해` 는 블로그
-// 초안용이지만(2026-10-15 "블로그 글좀 써줄래?" 가 막혀 다시 말해야 했다) 공용이라 "휴가 써줄래?"
-// 같은 다른 도메인의 정중한 지시도 함께 풀린다.
-const WRITE_REQUEST =
-  /(?:(?:등록|추가|기록|취소|변경|처리|작성)\s*해|넣어|잡아|바꿔|써)\s*(?:줄래요?|주실래요|줄\s?수\s?있(?:어요?|나요)|주실\s?수\s?있어요|주세요|줘요?)/;
+// 정중한 쓰기 지시의 동사. 휴가·지원·일정 쓰기에 쓰이는 것만 둔다 — "확인해 줄래?" 같은
+// 조회·확인 부탁은 여기 들지 않아 물음표로 막힌다.
+const WRITE_VERBS = String.raw`(?:등록|추가|기록|취소|변경|처리)\s*해|넣어|잡아|바꿔`;
+const REQUEST_ENDING = String.raw`\s*(?:줄래요?|주실래요|줄\s?수\s?있(?:어요?|나요)|주실\s?수\s?있어요|주세요|줘요?)`;
 
-export const HYPOTHETICAL_MARKERS: readonly RegExp[] = [
+// 블로그 초안의 정중한 지시 동사("블로그 글좀 써줄래?" — 2026-10-15 막혀 다시 말해야 했다).
+// 공용 동사에 넣지 않는다 — 일정 파서는 "내일 일정에 대해 의견을 써줄래?" 를 REGISTER 로 읽어
+// 제목 "대해 의견을 써줄래?" 로 저장하므로(#840 리뷰), 블로그 dispatcher 만 넘긴다.
+export const BLOG_WRITE_VERBS = String.raw`작성\s*해|써`;
+
+// 물음표는 위치와 무관하게 질문 표지다 — 뒤에 이모지(":pray:")나 말이 붙어도 잡는다.
+// 쓰기 동사 + 부탁 어미("추가해 줄래", "취소해 줄 수 있어", "넣어 주세요") 바로 뒤의 물음표만 예외다.
+const questionMark = (verbs: string): RegExp =>
+  new RegExp(`(?<!(?:${verbs})${REQUEST_ENDING})[?？]`);
+
+const QUESTION_MARK = questionMark(WRITE_VERBS);
+
+const HYPOTHETICAL_MARKERS: readonly RegExp[] = [
   // 동사로 쓰인 가정만 — "가정통신문" 같은 명사 속 글자는 잡지 않는다.
   /가정(?:하|해|했|이라|으로)/,
   /만약/,
@@ -32,18 +42,25 @@ export const HYPOTHETICAL_MARKERS: readonly RegExp[] = [
   // "쓰면 몇 일", "쓰면 남은", "취소하면 어떻게 돼", "지원하면 이번달 몇 개" — 조건절 뒤의 질문.
   /면\s*(?:남|어떻게|[^.?!\n]{0,12}?(?:몇|며칠|얼마))/,
   /(?:될까|되나|할까|어때)(?=\s|[.!~]|$)/,
-  // 물음표는 위치와 무관하게 질문 표지다 — 뒤에 이모지(":pray:")나 말이 붙어도 잡는다.
-  // 쓰기 동사 + 부탁 어미("추가해 줄래", "취소해 줄 수 있어", "넣어 주세요") 바로 뒤의 물음표만 예외다.
-  new RegExp(`(?<!${WRITE_REQUEST.source})[?？]`),
 ];
 
 // Slack 링크·멘션(<https://...?a=1>, <@U123>)은 판정에서 뺀다 — URL 의 쿼리 물음표를 질문으로 읽지 않게.
 const SLACK_ANGLE_TOKEN = /<[^<>]*>/g;
 
 // 원문이 질문·가정형이면 걸린 표지를, 아니면 null 을 돌려준다. 걸린 표지는 막은 사유로 남긴다.
-export const findHypotheticalMarker = (text: string): string | null => {
+// extraWriteVerbs 는 그 dispatcher 에서만 정중한 지시로 볼 동사(예: BLOG_WRITE_VERBS)다.
+export const findHypotheticalMarker = (
+  text: string,
+  extraWriteVerbs?: string,
+): string | null => {
   const plain = text.replace(SLACK_ANGLE_TOKEN, ' ');
-  const found = HYPOTHETICAL_MARKERS.find((marker) => marker.test(plain));
+  const markers = [
+    ...HYPOTHETICAL_MARKERS,
+    extraWriteVerbs === undefined
+      ? QUESTION_MARK
+      : questionMark(`${WRITE_VERBS}|${extraWriteVerbs}`),
+  ];
+  const found = markers.find((marker) => marker.test(plain));
   return found ? found.source : null;
 };
 
