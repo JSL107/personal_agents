@@ -19,6 +19,23 @@ const LISTING: ArtJobListing = {
 };
 
 describe('formatArtJobDigest', () => {
+  it('화풍 태그를 해당 공고 줄과 text fallback 에만 표시한다', () => {
+    const message = formatArtJobDigest({
+      mentionUserId: null,
+      today: TODAY,
+      items: [
+        {
+          listing: LISTING,
+          resolved: { gameTitle: null, image: null, googleSearchUrl: null },
+          styleTags: ['북미풍', '캐주얼 & 페인팅'],
+        },
+      ],
+    });
+    expect(message.text).toContain(' · 🎨 북미풍, 캐주얼 &amp; 페인팅');
+    expect(JSON.stringify(message.blocks)).toContain(
+      '🎨 북미풍, 캐주얼 &amp; 페인팅',
+    );
+  });
   it('머리(멘션)와 번호 붙은 공고 목록을 한 통으로 만들고 공고마다 버튼 줄을 단다', () => {
     const message = formatArtJobDigest({
       mentionUserId: 'U9',
@@ -26,6 +43,7 @@ describe('formatArtJobDigest', () => {
       items: [
         {
           listing: LISTING,
+          styleTags: [],
           resolved: {
             gameTitle: '카오스 제로 나이트메어',
             image: {
@@ -46,6 +64,7 @@ describe('formatArtJobDigest', () => {
             employmentType: null,
             location: null,
           },
+          styleTags: [],
           resolved: { gameTitle: null, image: null, googleSearchUrl: null },
         },
       ],
@@ -127,6 +146,7 @@ describe('formatArtJobDigest', () => {
       items: [
         {
           listing: { ...LISTING, deadlineText: '~10/31(금)' },
+          styleTags: [],
           resolved: { gameTitle: null, image: null, googleSearchUrl: null },
         },
       ],
@@ -159,6 +179,7 @@ describe('formatArtJobDigest', () => {
       items: [
         {
           listing: LISTING,
+          styleTags: [],
           resolved: {
             gameTitle: 'LOST ARK Mobile',
             image: null,
@@ -207,6 +228,7 @@ describe('회사 대표작 표기', () => {
       items: [
         {
           listing: LISTING,
+          styleTags: [],
           resolved: {
             gameTitle: null,
             image: { url: 'https://x', origin: 'PLAY_STORE' },
@@ -239,6 +261,7 @@ describe('formatArtJobDigest — 확인 못 한 이미지', () => {
       items: [
         {
           listing: LISTING,
+          styleTags: [],
           resolved: {
             gameTitle: null,
             image: null,

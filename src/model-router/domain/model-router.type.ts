@@ -93,6 +93,7 @@ export enum AgentType {
   ROUTER = 'ROUTER',
   // Slack 자연어 멘션으로 유튜브 영상 자막과 화면 프레임을 분석한다.
   VIDEO_WATCH = 'VIDEO_WATCH',
+  ART_JOB_FEED = 'ART_JOB_FEED',
 }
 
 // LLM 최종 응답의 형태를 강제하는 JSON Schema. 구조를 타입으로 다시 표현하지 않는 이유는

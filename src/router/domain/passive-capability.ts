@@ -49,7 +49,7 @@ export const PASSIVE_CAPABILITIES: readonly PassiveCapability[] = [
   {
     isEnabled: hasAll('ART_JOB_FEED_TARGET'),
     describe: () =>
-      '정해진 시간(기본 오전 9시·오후 6시)에 게임잡의 원화 채용공고를 이미지와 함께 채널에 올린다.',
+      '정해진 시간(기본 오전 9시·오후 6시)에 게임잡의 원화 채용공고를 이미지와 함께 채널에 올린다. 화풍 키워드가 잡힌 공고에는 🎨 태그가 붙는다. 원화 공고 채널에서 "공고 가져와"라고 하면 수집 회차를 바로 실행한다.',
   },
   {
     isEnabled: hasAll('ART_JOB_FEED_TARGET', 'ART_JOB_FEED_MENTION_USER_ID'),

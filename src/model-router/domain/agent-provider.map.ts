@@ -58,4 +58,5 @@ export const AGENT_TO_PROVIDER: Record<AgentType, ModelProviderName> = {
   // 이 엔트리는 Record<AgentType,...> exhaustive 타입 충족용 sentinel (INVEST·SCHEDULE 선례).
   [AgentType.ROUTER]: ModelProviderName.CHATGPT,
   [AgentType.VIDEO_WATCH]: ModelProviderName.CHATGPT,
+  [AgentType.ART_JOB_FEED]: ModelProviderName.CHATGPT,
 };

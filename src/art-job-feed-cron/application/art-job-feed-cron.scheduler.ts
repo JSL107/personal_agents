@@ -5,10 +5,13 @@ import { Queue } from 'bullmq';
 
 import {
   ART_JOB_FEED_CRON_QUEUE,
-  ArtJobFeedCronJobData,
   DEFAULT_ART_JOB_FEED_CRON,
   DEFAULT_ART_JOB_FEED_TIMEZONE,
 } from '../domain/art-job-feed-cron.type';
+import {
+  readArtJobFeedConfig,
+  readArtJobFeedJobData,
+} from './art-job-feed-job-data';
 
 const ART_JOB_FEED_CRON_JOB_NAME = 'art-job-feed-cron';
 
@@ -25,27 +28,23 @@ export class ArtJobFeedCronScheduler implements OnApplicationBootstrap {
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
-    const target = this.readOrNull('ART_JOB_FEED_TARGET');
+    const payload = readArtJobFeedJobData(this.configService);
     await this.cleanupExistingRepeatables();
-    if (!target) {
+    if (!payload) {
       this.logger.log('Art Job Feed Cron 비활성 (ART_JOB_FEED_TARGET 미설정).');
       return;
     }
 
     const cron =
-      this.readOrNull('ART_JOB_FEED_CRON') ?? DEFAULT_ART_JOB_FEED_CRON;
+      readArtJobFeedConfig(this.configService, 'ART_JOB_FEED_CRON') ??
+      DEFAULT_ART_JOB_FEED_CRON;
     const tz =
-      this.readOrNull('ART_JOB_FEED_TIMEZONE') ?? DEFAULT_ART_JOB_FEED_TIMEZONE;
-
-    const payload: ArtJobFeedCronJobData = {
-      target,
-      mentionUserId: this.readOrNull('ART_JOB_FEED_MENTION_USER_ID'),
-      ownerSlackUserId: this.readOrNull('AUTOPILOT_OWNER_SLACK_USER_ID'),
-    };
+      readArtJobFeedConfig(this.configService, 'ART_JOB_FEED_TIMEZONE') ??
+      DEFAULT_ART_JOB_FEED_TIMEZONE;
 
     await this.queue.add(ART_JOB_FEED_CRON_JOB_NAME, payload, {
       repeat: { pattern: cron, tz },
-      jobId: `art-job-feed-cron:${target}`,
+      jobId: `art-job-feed-cron:${payload.target}`,
       removeOnComplete: 20,
       removeOnFail: 20,
       attempts: 2,
@@ -53,17 +52,8 @@ export class ArtJobFeedCronScheduler implements OnApplicationBootstrap {
     });
 
     this.logger.log(
-      `Art Job Feed Cron 활성화 — target=${target}, cron="${cron}" (${tz})`,
+      `Art Job Feed Cron 활성화 — target=${payload.target}, cron="${cron}" (${tz})`,
     );
-  }
-
-  private readOrNull(key: string): string | null {
-    const raw = this.configService.get<string>(key);
-    if (!raw) {
-      return null;
-    }
-    const trimmed = raw.trim();
-    return trimmed.length > 0 ? trimmed : null;
   }
 
   private async cleanupExistingRepeatables(): Promise<void> {

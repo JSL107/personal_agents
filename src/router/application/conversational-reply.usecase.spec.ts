@@ -89,6 +89,15 @@ describe('ConversationalReply — buildSystemPrompt (self-context)', () => {
     expect(prompt).toContain('해볼게요');
   });
 
+  it('실행하지 않은 요청을 수락하거나 반영한 것처럼 답하지 말라는 지침이 포함된다', () => {
+    for (const unresolvedStreak of [0, 2]) {
+      const prompt = buildSystemPrompt({ unresolvedStreak });
+      expect(prompt).toContain('실제로 실행하지 않은 요청');
+      expect(prompt).toContain('반영할게요');
+      expect(prompt).toContain('못 하는 일은 못 한다고 먼저 말하세요');
+    }
+  });
+
   it('거짓 진행 보고 금지 — "아직 확인 중" 처럼 진행 중인 척하지 말라는 지침이 포함된다', () => {
     const prompt = buildSystemPrompt({});
     expect(prompt).toMatch(/진행 중인 것처럼/);
@@ -150,7 +159,8 @@ describe('ConversationalReply — buildSystemPrompt (self-context)', () => {
         // 2026-10-14 CEO 예시 "이번 주 메타 평가해줘" 를 일상어로(#822 리뷰)
         // 2026-10-14 진행 여부는 [직전 작업 상태] 실제 기록으로 답한다 — "대기 중" 추측 예시 제거(run 8886)
         // 2026-10-14 반말 질문에도 존댓말로 — 같은 스레드에서 말투가 오갔다("작업하고 있어?" 실측 10회 중 4회 반말)
-        'c02a624659ad649abc7de0ca43aff5a6745d3cd57364bf20d63b6a15624642bb',
+        // 2026-10-15 원화 공고 대화 기능 안내와 실행하지 않은 요청의 거짓 수락 금지
+        '65bba6b732cdc3af25458e0321821f11681df7689ee9841027b3aef636703291',
       );
     },
   );

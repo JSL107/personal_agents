@@ -6,7 +6,9 @@ import {
   GAME_IMAGE_RESOLVER_PORT,
   IMAGE_DOWNLOADER_PORT,
 } from './domain/port/art-job-feed.ports';
+import { ART_JOB_KEYWORD_REPOSITORY_PORT } from './domain/port/art-job-keyword.repository.port';
 import { ART_JOB_POSTING_REPOSITORY_PORT } from './domain/port/art-job-posting.repository.port';
+import { ArtJobKeywordPrismaRepository } from './infrastructure/art-job-keyword.prisma.repository';
 import { ArtJobPostingPrismaRepository } from './infrastructure/art-job-posting.prisma.repository';
 import { GameImageResolver } from './infrastructure/game-image.resolver';
 import { GamejobSource } from './infrastructure/gamejob.source';
@@ -24,12 +26,17 @@ import { KakaoImageSearch } from './infrastructure/kakao-image.search';
       provide: ART_JOB_POSTING_REPOSITORY_PORT,
       useClass: ArtJobPostingPrismaRepository,
     },
+    {
+      provide: ART_JOB_KEYWORD_REPOSITORY_PORT,
+      useClass: ArtJobKeywordPrismaRepository,
+    },
   ],
   exports: [
     ART_JOB_SOURCE_PORT,
     GAME_IMAGE_RESOLVER_PORT,
     IMAGE_DOWNLOADER_PORT,
     ART_JOB_POSTING_REPOSITORY_PORT,
+    ART_JOB_KEYWORD_REPOSITORY_PORT,
   ],
 })
 export class ArtJobFeedModule {}

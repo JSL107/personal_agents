@@ -3,6 +3,11 @@ import * as cheerio from 'cheerio';
 import { ArtJobListing, ArtJobListResult } from '../domain/art-job-feed.type';
 
 const tidy = (text: string): string => text.replace(/\s+/g, ' ').trim();
+export const parsePostingBodyText = (html: string): string => {
+  const $ = cheerio.load(html);
+  $('title, style, script').remove();
+  return tidy($('body').text());
+};
 const EMPLOYMENT_TYPES =
   /정규직|계약직|인턴|프리랜서|파견직|아르바이트|위촉직|병역특례/;
 const LOCATION_PREFIX =

@@ -5,7 +5,13 @@ export interface ArtJobFeedCronJobData {
   mentionUserId: string | null;
   // 실패 알림을 받을 사람. 없으면 로그만 남긴다.
   ownerSlackUserId: string | null;
+  trigger?: 'CRON' | 'MANUAL';
 }
+
+export type ArtJobFeedRunResult =
+  | { kind: 'POSTED'; count: number }
+  | { kind: 'NO_NEW' }
+  | { kind: 'SLOT_TAKEN' };
 
 // 하루 2회(09:00·18:00 KST). cron 하나로 두 시각을 표현한다.
 export const DEFAULT_ART_JOB_FEED_CRON = '0 9,18 * * *';

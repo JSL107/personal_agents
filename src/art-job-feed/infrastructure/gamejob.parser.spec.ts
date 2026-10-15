@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import {
   parseCompanyPageUrl,
   parseGamejobList,
+  parsePostingBodyText,
   parseRepresentativeGameText,
 } from './gamejob.parser';
 
@@ -11,6 +12,12 @@ const fixture = (name: string): string =>
   readFileSync(join(__dirname, '__fixtures__', name), 'utf8');
 
 describe('gamejob parser', () => {
+  it('iframe 본문 텍스트만 읽고 title/style 은 빼며 공백을 접는다', () => {
+    const text = parsePostingBodyText(fixture('gamejob-body-ifrm.html'));
+    expect(text).toContain('3DS MAX');
+    expect(text).not.toContain('채용공고 상세페이지');
+    expect(text).not.toMatch(/\s{2}/);
+  });
   it('parses actual list rows and deduplicates IDs', () => {
     const html = fixture('gamejob-list.html');
     const result = parseGamejobList(html + html);

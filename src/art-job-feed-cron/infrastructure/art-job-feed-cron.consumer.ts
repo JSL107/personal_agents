@@ -9,6 +9,7 @@ import {
   ArtJobListing,
   ResolvedArtJobImage,
 } from '../../art-job-feed/domain/art-job-feed.type';
+import { findMatchedTerms } from '../../art-job-feed/domain/art-job-keyword';
 import { isTargetArtRole } from '../../art-job-feed/domain/art-role.filter';
 import { deadlineDateOf } from '../../art-job-feed/domain/deadline';
 import {
@@ -19,6 +20,10 @@ import {
   IMAGE_DOWNLOADER_PORT,
   ImageDownloaderPort,
 } from '../../art-job-feed/domain/port/art-job-feed.ports';
+import {
+  ART_JOB_KEYWORD_REPOSITORY_PORT,
+  ArtJobKeywordRepositoryPort,
+} from '../../art-job-feed/domain/port/art-job-keyword.repository.port';
 import {
   ART_JOB_POSTING_REPOSITORY_PORT,
   ArtJobPostingRepositoryPort,
@@ -40,6 +45,7 @@ import {
 import {
   ART_JOB_FEED_CRON_QUEUE,
   ArtJobFeedCronJobData,
+  ArtJobFeedRunResult,
   LIST_PAGES_PER_RUN,
   MAX_POSTINGS_PER_RUN,
 } from '../domain/art-job-feed-cron.type';
@@ -100,7 +106,11 @@ interface ImageReplyInput {
 //
 // 장부 기록은 게시 **뒤에** 한다. 게시 후 기록이 실패하면 다음 회차에 한 번 더 나가고,
 // 기록 후 게시가 실패하면 그 공고는 영영 안 나간다 — 중복이 유실보다 낫다.
-@Processor(ART_JOB_FEED_CRON_QUEUE, LONG_RUNNING_WORKER_OPTIONS)
+// cron 과 수동 FETCH 를 한 워커에서 직렬화해야 게시 장부의 중복 판정이 안전하다.
+@Processor(ART_JOB_FEED_CRON_QUEUE, {
+  ...LONG_RUNNING_WORKER_OPTIONS,
+  concurrency: 1,
+})
 export class ArtJobFeedCronConsumer extends ObservedWorkerHost {
   private readonly logger = new Logger(ArtJobFeedCronConsumer.name);
 
@@ -116,17 +126,20 @@ export class ArtJobFeedCronConsumer extends ObservedWorkerHost {
     @Inject(SLACK_NOTIFIER_PORT)
     private readonly slackNotifier: SlackNotifierPort,
     private readonly cronIdempotency: CronIdempotencyService,
+    @Inject(ART_JOB_KEYWORD_REPOSITORY_PORT)
+    private readonly keywordRepository: ArtJobKeywordRepositoryPort,
     @Optional()
     private readonly notificationPublisher?: NotificationPublisher,
   ) {
     super();
   }
 
-  async process(job: Job<ArtJobFeedCronJobData>): Promise<void> {
+  async process(job: Job<ArtJobFeedCronJobData>): Promise<ArtJobFeedRunResult> {
     const { target, ownerSlackUserId } = job.data;
     try {
-      await this.run(job.data);
+      const result = await this.run(job);
       this.notificationPublisher?.publishRecovery(INCIDENT_KEY);
+      return result;
     } catch (error) {
       this.logger.error(`${CRON_NAME} 실패 (target=${target})`, error);
       this.notifyOwnerFailure(ownerSlackUserId, error);
@@ -134,10 +147,11 @@ export class ArtJobFeedCronConsumer extends ObservedWorkerHost {
     }
   }
 
-  private async run({
-    target,
-    mentionUserId,
-  }: ArtJobFeedCronJobData): Promise<void> {
+  private async run(
+    job: Job<ArtJobFeedCronJobData>,
+  ): Promise<ArtJobFeedRunResult> {
+    const { target, mentionUserId, trigger } = job.data;
+    const keywords = await this.keywordRepository.load();
     const collected = await this.collect();
     // 받은 행은 있는데 파싱이 0 이면 사이트 마크업이 바뀐 것이다. 조용히 "새 공고 없음"
     // 으로 끝나면 몇 주가 지나도 아무도 모른다.
@@ -148,7 +162,7 @@ export class ArtJobFeedCronConsumer extends ObservedWorkerHost {
     }
 
     const targets = collected.listings.filter((listing) => {
-      return isTargetArtRole(listing.title);
+      return isTargetArtRole(listing.title, keywords);
     });
     const isFirstRun = await this.repository.isEmpty();
     const known = await this.repository.findKnownSourceIds(
@@ -172,20 +186,24 @@ export class ArtJobFeedCronConsumer extends ObservedWorkerHost {
       `${CRON_NAME} — 수신 ${collected.received} · 파싱 ${collected.listings.length} · 대상 ${targets.length} · 신규 ${fresh.length} · 제외 ${unseen.length - fresh.length} · 게시 ${toPost.length}`,
     );
     if (toPost.length === 0) {
-      return;
+      return { kind: 'NO_NEW' };
     }
 
-    const slotKey = `cron:${ART_JOB_FEED_CRON_QUEUE}:${target}:${KST_SLOT_FORMAT.format(new Date())}`;
+    const slotKey =
+      trigger === 'MANUAL'
+        ? `cron:${ART_JOB_FEED_CRON_QUEUE}:${target}:manual:${job.id}`
+        : `cron:${ART_JOB_FEED_CRON_QUEUE}:${target}:${KST_SLOT_FORMAT.format(new Date())}`;
     const firstRun = await this.cronIdempotency.acquireOnce(
       slotKey,
       SLOT_GUARD_TTL_SECONDS,
     );
     if (!firstRun) {
       this.logger.warn(`${CRON_NAME} 중복 발송 차단 — 이 슬롯은 이미 처리됨`);
-      return;
+      return { kind: 'SLOT_TAKEN' };
     }
     try {
-      await this.postDigest(target, mentionUserId, toPost);
+      await this.postDigest(target, mentionUserId, toPost, keywords.style);
+      return { kind: 'POSTED', count: toPost.length };
     } catch (error) {
       // 가드를 쥔 채 실패하면 BullMQ 재시도가 "이미 처리됨" 으로 성공 처리돼 공고가 빠진다.
       // 이미 나간 공고는 장부(markNotified)가 막으므로, 가드를 풀어도 중복 게시는 생기지 않는다.
@@ -198,12 +216,22 @@ export class ArtJobFeedCronConsumer extends ObservedWorkerHost {
     target: string,
     mentionUserId: string | null,
     toPost: ArtJobListing[],
+    styleTerms: string[],
   ): Promise<void> {
     const items: ArtJobDigestItem[] = [];
     for (const listing of toPost) {
+      let body = '';
+      try {
+        body = await this.source.fetchPostingBody(listing);
+      } catch (error) {
+        this.logger.warn(
+          `${CRON_NAME} 공고 본문 조회 실패 — ${listing.sourceId}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
       items.push({
         listing,
         resolved: await this.imageResolver.resolve(listing),
+        styleTags: findMatchedTerms(styleTerms, `${listing.title}\n${body}`),
       });
     }
     // 라벨·버튼·장부 마감일이 같은 "오늘"을 기준으로 계산되게 한 번만 잡는다.

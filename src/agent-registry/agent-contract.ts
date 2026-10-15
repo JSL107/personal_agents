@@ -368,6 +368,10 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     deliverableFields: ['answer', 'highlights'],
     requireEvidence: false,
   },
+  [AgentType.ART_JOB_FEED]: stub(
+    Department.PLANNING,
+    '원화 공고 키워드를 관리하고 새 공고 수집 회차를 실행한다',
+  ),
   [AgentType.PAPER_RECOMMEND]: {
     department: Department.TREASURY,
     job: '모의투자 후보와 보유 종목을 검토해 매수와 전량 매도를 추천한다',
