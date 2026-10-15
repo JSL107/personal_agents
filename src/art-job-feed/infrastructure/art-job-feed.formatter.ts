@@ -222,6 +222,10 @@ const formatGameLine = (resolved: ResolvedArtJobImage): string | null => {
     ? escapeSlackMrkdwn(sanitizeForSlackLink(resolved.gameTitle))
     : null;
   if (resolved.image) {
+    if (resolved.representativeGame) {
+      const representative = `회사 대표작 ${escapeSlackMrkdwn(sanitizeForSlackLink(resolved.representativeGame))} · 이미지는 스레드에`;
+      return name ? `🎮 ${name} · ${representative}` : `🎮 ${representative}`;
+    }
     return name ? `🎮 ${name} · 이미지는 스레드에` : null;
   }
   const parts = name ? [`🎮 ${name}`] : [];
@@ -236,12 +240,14 @@ const formatGameLine = (resolved: ResolvedArtJobImage): string | null => {
 
 // 스레드 이미지 메시지의 글 — 본문 목록 번호와 맞춰 어느 공고의 그림인지 찾게 한다.
 // 검색으로 찾은 그림은 공식 이미지가 아닐 수 있어 참고용임과 출처를 밝힌다.
+// 회사 대표게임의 그림이면 공고의 게임으로 읽히지 않게 '회사 대표작' 을 붙인다.
 export const formatArtJobImageCaption = (
   order: number,
   gameTitle: string,
   image: ArtJobImage,
+  representative = false,
 ): string => {
-  const caption = `${order}. 🎮 ${escapeSlackMrkdwn(gameTitle)}`;
+  const caption = `${order}. 🎮 ${representative ? '회사 대표작: ' : ''}${escapeSlackMrkdwn(gameTitle)}`;
   if (image.origin !== 'KAKAO_IMAGE') {
     return caption;
   }

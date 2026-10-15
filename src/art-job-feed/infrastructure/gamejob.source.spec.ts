@@ -19,4 +19,34 @@ describe('GamejobSource', () => {
       }),
     );
   });
+
+  it('공고 상세 → 회사 정보를 따라가 대표게임을 나눠 준다', async () => {
+    global.fetch = jest.fn(async (url: string) => ({
+      ok: true,
+      text: async () =>
+        url.includes('GI_Read')
+          ? '<a href="/Company/Detail?M=7">회사</a>'
+          : '<dt>대표게임</dt><dd><span>캣히어로, 어나더던전</span></dd>',
+    })) as never;
+    const games = await new GamejobSource().fetchRepresentativeGames({
+      detailUrl: 'https://www.gamejob.co.kr/Recruit/GI_Read/View?GI_No=1',
+    } as never);
+    expect(games).toEqual(['캣히어로', '어나더던전']);
+    expect(global.fetch).toHaveBeenLastCalledWith(
+      'https://www.gamejob.co.kr/Company/Detail?M=7',
+      expect.anything(),
+    );
+  });
+
+  it('회사 정보 링크가 없으면 빈 배열이다', async () => {
+    global.fetch = jest
+      .fn()
+      .mockResolvedValue({ ok: true, text: async () => '<html></html>' });
+    expect(
+      await new GamejobSource().fetchRepresentativeGames({
+        detailUrl: 'https://x',
+      } as never),
+    ).toEqual([]);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
 });
