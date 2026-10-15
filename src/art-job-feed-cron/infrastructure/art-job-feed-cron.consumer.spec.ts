@@ -211,6 +211,24 @@ describe('ArtJobFeedCronConsumer', () => {
     expect(repository.markNotified).toHaveBeenCalledTimes(1);
   });
 
+  it('회사 대표작 그림은 캡션에 대표작임을 밝혀 스레드에 단다', async () => {
+    const { consumer, slackNotifier } = makeConsumer({
+      pages: [{ received: 1, listings: [CHARACTER('1')] }],
+      resolved: {
+        gameTitle: null,
+        image: { url: 'https://img.example/cat.png', origin: 'PLAY_STORE' },
+        representativeGame: '캣히어로',
+        googleSearchUrl: null,
+      },
+    });
+    await consumer.process(JOB as never);
+    expect(slackNotifier.postMessage.mock.calls[1][0]).toMatchObject({
+      threadTs: '1',
+      text: '1. 🎮 회사 대표작: 캣히어로',
+      image: { fileId: 'F1', altText: '캣히어로' },
+    });
+  });
+
   it('이미지가 없는 공고는 스레드를 달지 않는다', async () => {
     const { consumer, slackNotifier } = makeConsumer({
       pages: [{ received: 1, listings: [CHARACTER('1')] }],

@@ -199,6 +199,38 @@ describe('formatArtJobImageCaption', () => {
   });
 });
 
+describe('회사 대표작 표기', () => {
+  it('본문은 대표작임을 밝히고 스레드에 이미지가 있다고 알린다', () => {
+    const { text } = formatArtJobDigest({
+      mentionUserId: null,
+      today: TODAY,
+      items: [
+        {
+          listing: LISTING,
+          resolved: {
+            gameTitle: null,
+            image: { url: 'https://x', origin: 'PLAY_STORE' },
+            representativeGame: '캣히어로',
+            googleSearchUrl: null,
+          },
+        },
+      ],
+    });
+    expect(text).toContain('🎮 회사 대표작 캣히어로 · 이미지는 스레드에');
+  });
+
+  it('스레드 캡션에 회사 대표작을 붙인다', () => {
+    expect(
+      formatArtJobImageCaption(
+        3,
+        '캣히어로',
+        { url: 'https://x', origin: 'PLAY_STORE' },
+        true,
+      ),
+    ).toBe('3. 🎮 회사 대표작: 캣히어로');
+  });
+});
+
 describe('formatArtJobDigest — 확인 못 한 이미지', () => {
   it('게임명이 없으면 구글 링크만 알리고 미리보기 안내는 없다', () => {
     const { blocks } = formatArtJobDigest({
