@@ -4,6 +4,7 @@ import { App } from '@slack/bolt';
 
 import { AppendPushpinTaskService } from '../../pushpin-task/application/append-pushpin-task.service';
 import { SlackHandler } from '../domain/port/slack-handler.port';
+import { findReactedMessage } from './reacted-message.lookup';
 
 // 📌 (default) reaction 이 메시지에 달리면 그 메시지를 Notion task 페이지에 자동 적재.
 // SlackInboxReactionHandler 의 inbox 트리거와 독립 — 사용자가 다른 이모지를 task 와 inbox 분리 가능.
@@ -40,13 +41,11 @@ export class SlackPushpinReactionHandler implements SlackHandler {
       }
 
       try {
-        const history = await client.conversations.history({
-          channel: event.item.channel,
-          latest: event.item.ts,
-          inclusive: true,
-          limit: 1,
-        });
-        const message = history.messages?.[0];
+        const message = await findReactedMessage(
+          client,
+          event.item.channel,
+          event.item.ts,
+        );
         if (!message?.text) {
           return;
         }
