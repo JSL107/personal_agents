@@ -152,7 +152,7 @@ const findAnswerListKinds = (text: string): ArtJobKeywordKind[] => {
   if (/제외|거르/.test(text)) {
     kinds.push('EXCLUDED');
   }
-  if (/화풍|태그|그림체/.test(text)) {
+  if (/화풍|태그|그림체|스타일/.test(text)) {
     kinds.push('STYLE');
   }
   return kinds;
@@ -215,8 +215,8 @@ const cleanTerm = (raw: string): string => {
 };
 
 // 봇이 보여 준 목록 라벨(「허용(제목에 있으면 받기)」 등)이나 그 조각은 키워드가 아니다(run 9099).
-const LIST_LABEL_FRAGMENT =
-  /[()（）]|제목에\s*있으면|태그만|^(?:허용|제외|화풍)/;
+// 괄호 자체는 막지 않는다 — 「C++(언리얼)」 같은 정상 키워드가 있다(#850 리뷰).
+const LIST_LABEL_FRAGMENT = /제목에\s*있으면|태그만|^(?:허용|제외|화풍)/;
 
 const isValidTerm = (term: string): boolean =>
   validateKeywordTerm(term) === null && !LIST_LABEL_FRAGMENT.test(term);

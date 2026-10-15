@@ -153,6 +153,13 @@ describe('ArtJobFeedDispatcher', () => {
     expect(keywords.add).not.toHaveBeenCalled();
   });
 
+  it('제외 목록의 키워드는 누락이 아니라 걸러진다고 안내한다', async () => {
+    const { dispatcher, input } = setup();
+    const outcome = await dispatcher.dispatch(input('[3D] 관련 공고 찾아줘'));
+    expect(outcome.formattedText).toContain('제외 목록에 있어 걸러짐: 3D');
+    expect(outcome.formattedText).not.toContain('목록에 없음');
+  });
+
   it('대기 시간 초과는 실행 중으로 답한다', async () => {
     const { dispatcher, input, waitUntilFinished } = setup();
     waitUntilFinished.mockRejectedValue(

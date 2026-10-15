@@ -250,14 +250,22 @@ export class ArtJobFeedDispatcher implements AgentDispatcher, OnModuleDestroy {
   ): string {
     const has = (list: string[], term: string): boolean =>
       list.some((known) => known.toLowerCase() === term.toLowerCase());
-    const target = terms.filter((term) => has(keywords.target, term));
-    const styleOnly = terms.filter(
+    // 제외가 먼저다 — 제외어가 하나라도 맞으면 허용 목록에 있어도 걸러진다(isTargetArtRole, #850 리뷰).
+    const excluded = terms.filter((term) => has(keywords.excluded, term));
+    const rest = terms.filter((term) => !has(keywords.excluded, term));
+    const target = rest.filter((term) => has(keywords.target, term));
+    const styleOnly = rest.filter(
       (term) => !has(keywords.target, term) && has(keywords.style, term),
     );
-    const missing = terms.filter(
+    const missing = rest.filter(
       (term) => !has(keywords.target, term) && !has(keywords.style, term),
     );
     const lines = ['공고는 저장된 허용 키워드로 골라요.'];
+    if (excluded.length > 0) {
+      lines.push(
+        `제외 목록에 있어 걸러짐: ${this.formatTerms(excluded)} — 받으려면 "제외에서 ${excluded[0]} 빼줘"처럼 말해 주세요.`,
+      );
+    }
     if (target.length > 0) {
       lines.push(`허용 목록에 있음: ${this.formatTerms(target)}`);
     }

@@ -192,6 +192,27 @@ describe('parseArtJobFeedCommand', () => {
       });
     });
 
+    it.each(['스타일', '「스타일」'])(
+      '되묻기에 %s 라고 답하면 화풍에 넣는다',
+      (answer) => {
+        expect(
+          mergeArtJobFeedCommands(
+            prior,
+            parseArtJobFeedCommand(answer),
+            answer,
+          ),
+        ).toMatchObject({ kind: 'ADD', listKind: 'STYLE' });
+      },
+    );
+
+    it('괄호가 든 정상 키워드는 받는다', () => {
+      expect(parseArtJobFeedCommand('허용에 "C++(언리얼)" 추가해줘')).toEqual({
+        kind: 'ADD',
+        listKind: 'TARGET',
+        terms: ['C++(언리얼)'],
+      });
+    });
+
     it('라벨 하나만 「」로 답하면 그 목록에 넣는다', () => {
       const answer = '「화풍(태그만)」';
       expect(
