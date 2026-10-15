@@ -48,6 +48,50 @@ func runMascotTests(_ runner: TestRunner) {
     runner.expectEqual(mascotSay(MascotQuip("푸루루")), "푸루루", "뜻이 없으면 소리만")
     runner.expectEqual(mascotSay(MascotQuip("우라", "고정"), "  "), "우라 (고정)", "빈 정보는 고정 뜻으로 물러선다")
 
+    runner.suite("Mascot pose priority")
+    runner.expectEqual(
+        mascotPose(MascotPoseContext(mood: .awaitingApproval, dragging: true)), .dangle, "끌기가 가장 먼저"
+    )
+    runner.expectEqual(
+        mascotPose(MascotPoseContext(mood: .failed, flourish: .happy)), .happy, "한 번 몸짓이 승인·실패보다 먼저"
+    )
+    runner.expectEqual(
+        mascotPose(MascotPoseContext(mood: .awaitingApproval, thinking: true, hovering: true)), .approval,
+        "승인 대기는 지시 대기·마우스 올림보다 먼저"
+    )
+    runner.expectEqual(
+        mascotPose(MascotPoseContext(mood: .idle, thinking: true, reading: true)), .thinking, "지시 대기가 읽기보다 먼저"
+    )
+    runner.expectEqual(
+        mascotPose(MascotPoseContext(mood: .idle, reading: true, hovering: true)), .reading, "읽기가 마우스 올림보다 먼저"
+    )
+    runner.expectEqual(
+        mascotPose(MascotPoseContext(mood: .working, blinking: true, hovering: true)), .hover, "마우스 올림이 깜빡임보다 먼저"
+    )
+    runner.expectEqual(MascotPose.thinking.fallback, .working, "고민 그림이 없으면 작업 자세")
+    runner.expectEqual(MascotPose.dangle.fallback, .idle, "새 포즈는 쉼 그림으로 버틴다")
+    runner.expect(MascotPose.idle.fallback == nil, "쉼 그림이 마지막")
+    for pose in MascotPose.allCases {
+        var chain: MascotPose? = pose
+        var steps = 0
+        while let current = chain, steps < 10 {
+            chain = current.fallback
+            steps += 1
+        }
+        runner.expect(chain == nil, "\(pose) 대체 사슬은 끝나야 한다")
+    }
+
+    runner.suite("Mascot reply split")
+    let signed = mascotSplitReply("지연 없습니다.\n\n_이대리 (진행 현황 조회) · 실행 #9086_\n")
+    runner.expectEqual(signed.body, "지연 없습니다.", "서명 앞까지가 본문")
+    runner.expectEqual(signed.signature, "이대리 (진행 현황 조회) · 실행 #9086", "밑줄을 벗긴 서명")
+    let plain = mascotSplitReply("그냥 답\n둘째 줄")
+    runner.expectEqual(plain.body, "그냥 답\n둘째 줄", "서명이 없으면 그대로")
+    runner.expect(plain.signature == nil, "서명이 없으면 nil")
+    runner.expect(mascotSplitReply("_강조_로 시작하는 답").signature == nil, "한 줄 안의 강조는 서명이 아니다")
+    runner.expectEqual(mascotFidgetDelay(random: 0), 15, "몸짓 간격 하한")
+    runner.expectEqual(mascotFidgetDelay(random: 1), 35, "몸짓 간격 상한")
+
     runner.suite("Mascot chatter")
     let chatterNoon = mascotTestDate("2026-10-14T03:00:00.000Z")  // 수 12:00 KST
     let longAgo = chatterNoon.addingTimeInterval(-mascotChatterQuietSeconds)

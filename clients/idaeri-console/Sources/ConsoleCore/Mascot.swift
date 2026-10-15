@@ -26,13 +26,96 @@ public enum MascotMood: String, CaseIterable, Sendable {
     case failed
 }
 
-/// rawValue 는 사용자 그림 파일의 이름과 일치한다.
+/// rawValue 는 사용자 그림 파일의 이름과 일치한다(`idle.png`, 여러 장이면 `thinking_1.png`…).
 public enum MascotPose: String, CaseIterable, Sendable {
     case idle
     case blink
     case working
     case approval
     case failed
+    /// 지시 답을 기다리는 동안(턱 괴고 고민).
+    case thinking
+    /// 답장 말풍선이 열려 있는 동안(쪽지를 읽음).
+    case reading
+    /// 답이 오거나 칭찬할 때 한 번(만세 점프).
+    case happy
+    /// 끌고 다니는 동안(대롱대롱).
+    case dangle
+    /// 마우스를 올렸을 때(커서를 올려다봄).
+    case hover
+    /// 클릭 직후 잠깐(간지러워함).
+    case poke
+
+    /// 이 그림이 없을 때 대신 쓸 그림. 새 포즈는 그림이 생기기 전까지 기존 다섯 장으로 버틴다.
+    public var fallback: MascotPose? {
+        switch self {
+        case .idle:
+            return nil
+        case .thinking:
+            return .working
+        case .blink, .working, .approval, .failed, .reading, .happy, .dangle, .hover, .poke:
+            return .idle
+        }
+    }
+}
+
+/// 지금 그릴 그림을 고르는 데 필요한 상태.
+public struct MascotPoseContext: Equatable, Sendable {
+    public var mood: MascotMood
+    public var blinking = false
+    public var thinking = false
+    public var reading = false
+    public var hovering = false
+    public var dragging = false
+    /// 한 번 재생하는 몸짓 그림(`happy`·`poke`). 짧게 켜졌다 꺼진다.
+    public var flourish: MascotPose?
+
+    public init(
+        mood: MascotMood, blinking: Bool = false, thinking: Bool = false, reading: Bool = false,
+        hovering: Bool = false, dragging: Bool = false, flourish: MascotPose? = nil
+    ) {
+        self.mood = mood
+        self.blinking = blinking
+        self.thinking = thinking
+        self.reading = reading
+        self.hovering = hovering
+        self.dragging = dragging
+        self.flourish = flourish
+    }
+}
+
+/// 그림 우선순위: 끌기 > 한 번 몸짓 > 승인·실패 > 지시 대기 > 답장 읽기 > 마우스 올림 > 깜빡임 > 작업·쉼.
+///
+/// 끌기와 한 번 몸짓은 사용자가 방금 한 행동에 대한 즉답이라 무엇보다 먼저 보인다. 그다음은 사용자가
+/// 처리할 일(승인·실패)이다 — 마우스를 올렸다고 승인 대기 자세가 가려지면 할 일을 놓친다.
+public func mascotPose(_ context: MascotPoseContext) -> MascotPose {
+    if context.dragging {
+        return .dangle
+    }
+    if let flourish = context.flourish {
+        return flourish
+    }
+    switch context.mood {
+    case .awaitingApproval:
+        return .approval
+    case .failed:
+        return .failed
+    case .idle, .working:
+        break
+    }
+    if context.thinking {
+        return .thinking
+    }
+    if context.reading {
+        return .reading
+    }
+    if context.hovering {
+        return .hover
+    }
+    if context.blinking {
+        return .blink
+    }
+    return context.mood == .working ? .working : .idle
 }
 
 /// 승인과 실패를 실행 상태보다 먼저 보여야 사용자가 처리할 일을 놓치지 않는다.
@@ -70,16 +153,7 @@ public func mascotGraceRecheck(runs: [ConsoleRun], now: Date) -> Date? {
 }
 
 public func mascotPose(mood: MascotMood, blinking: Bool) -> MascotPose {
-    switch mood {
-    case .idle:
-        return blinking ? .blink : .idle
-    case .working:
-        return blinking ? .blink : .working
-    case .awaitingApproval:
-        return .approval
-    case .failed:
-        return .failed
-    }
+    mascotPose(MascotPoseContext(mood: mood, blinking: blinking))
 }
 
 /// 달력의 시간대를 써서 같은 실시간도 사용자 현지의 정시 슬롯으로 기록한다.

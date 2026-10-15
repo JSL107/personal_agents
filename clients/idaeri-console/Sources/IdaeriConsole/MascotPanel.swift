@@ -13,7 +13,7 @@ final class MascotPanel: NSPanel {
     override var canBecomeKey: Bool { true }
 
     init() {
-        let size = NSSize(width: 340, height: 300)
+        let size = Self.size
         let visibleFrame = NSScreen.main?.visibleFrame ?? NSRect(origin: .zero, size: size)
         let origin = Self.defaultOrigin(size: size, visibleFrame: visibleFrame)
         super.init(
@@ -64,6 +64,8 @@ final class MascotPanel: NSPanel {
         }
     }
 
+    /// 패널 크기. 긴 답장(스크롤 180pt)과 캐릭터가 함께 들어가는 높이다. 대부분 투명이라 빈 곳 클릭은 아래로 넘어간다.
+    static let size = NSSize(width: 340, height: 440)
     /// 캐릭터 그림 한 변. 화면(`MascotView`)과 화면 밖 검사가 같은 값을 쓴다.
     static let characterSide: CGFloat = 96
     /// 패널 가장자리와 내용 사이 여백. 캐릭터는 이만큼 아래 가장자리에서 떨어져 가운데에 선다.

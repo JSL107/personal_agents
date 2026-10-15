@@ -6,7 +6,8 @@ enum MascotBubble: Equatable {
     case notice(String)
     case commandInput
     case approval(id: String, headline: String, title: String, more: Int, submitted: Bool, armed: Bool)
-    case reply(String)
+    case thinking(String)
+    case reply(sound: String, body: String, signature: String?)
     case briefing([String])
     case reaction(String)
 }
@@ -47,6 +48,12 @@ struct MascotView: View {
     @State private var hopOffset: CGFloat = 0
     @State private var shakeAngle: Double = 0
     @State private var squish: CGFloat = 0
+    /// 좌우 둘러보기 — 그림을 뒤집어 반대쪽을 본다.
+    @State private var facing: CGFloat = 1
+    /// 지시를 기다리는 동안 통통 튀는 높이.
+    @State private var bounce: CGFloat = 0
+    /// 답장 본문의 실제 높이. 스크롤 영역을 이만큼(최대 180pt)만 잡는다.
+    @State private var replyHeight: CGFloat = 0
 
     var body: some View {
         GeometryReader { geometry in
@@ -78,19 +85,28 @@ struct MascotView: View {
             }
         }
         .coordinateSpace(name: "mascotPanel")
-        .frame(width: 340, height: 300)
+        .frame(width: MascotPanel.size.width, height: MascotPanel.size.height)
     }
 
     private var character: some View {
         characterImage
             // 숨쉬기는 아래(발)를 기준으로 부풀어야 땅에 선 채 숨쉬는 것처럼 보인다.
+            // 폭 1~2% 는 화면에서 거의 안 보였다. 눈에 띄되 출렁이지는 않는 3~4% 로 둔다.
             .scaleEffect(
-                x: (breathing ? 1.012 : 1) + squish,
-                y: (breathing ? 0.985 : 1) - squish,
+                x: ((breathing ? 1.03 : 1) + squish) * facing,
+                y: (breathing ? 0.965 : 1) - squish,
                 anchor: .bottom
             )
             .rotationEffect(.degrees((hovering ? -5 : 0) + shakeAngle), anchor: .bottom)
-            .offset(y: hopOffset)
+            .offset(y: hopOffset + bounce)
+            .onChange(of: controller.thinking) { thinking in
+                // 기다리는 동안 통통 — "돌고 있다" 를 몸으로 보인다. 끝나면 제자리로.
+                if thinking {
+                    withAnimation(.easeInOut(duration: 0.32).repeatForever(autoreverses: true)) { bounce = -7 }
+                } else {
+                    withAnimation(.easeOut(duration: 0.2)) { bounce = 0 }
+                }
+            }
             .onAppear {
                 withAnimation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true)) {
                     breathing = true
@@ -126,6 +142,19 @@ struct MascotView: View {
                     withAnimation(.easeInOut(duration: 0.07)) { shakeAngle = angle }
                 }
             }
+        case .lookAround:
+            // 왼쪽을 보고, 잠깐 멈췄다 오른쪽으로 돌아온다.
+            withAnimation(.easeInOut(duration: 0.15)) { facing = -1 }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) {
+                withAnimation(.easeInOut(duration: 0.15)) { facing = 1 }
+            }
+        case .sway:
+            let angles: [Double] = [6, -6, 5, -4, 0]
+            for (index, angle) in angles.enumerated() {
+                DispatchQueue.main.asyncAfter(deadline: .now() + Double(index) * 0.18) {
+                    withAnimation(.easeInOut(duration: 0.18)) { shakeAngle = angle }
+                }
+            }
         case .squish:
             withAnimation(.easeOut(duration: 0.08)) { squish = 0.12 }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
@@ -134,17 +163,41 @@ struct MascotView: View {
         }
     }
 
+    private var poseContext: MascotPoseContext {
+        MascotPoseContext(
+            mood: controller.mood,
+            blinking: controller.blinking,
+            thinking: controller.thinking,
+            reading: controller.isReading,
+            hovering: hovering,
+            dragging: dragStart != nil,
+            flourish: controller.flourish
+        )
+    }
+
     private var characterImage: some View {
-        Group {
-            if let image = mascotImage(mascotPose(mood: controller.mood, blinking: controller.blinking))
-                ?? mascotImage(mascotPose(mood: controller.mood, blinking: false))
-            {
-                Image(nsImage: image).resizable().interpolation(.high).scaledToFit()
-                    .frame(width: MascotPanel.characterSide, height: MascotPanel.characterSide)
+        let context = poseContext
+        let blinkBase = mascotPose(MascotPoseContext(mood: context.mood))
+        let resolved = mascotResolvedFrames(mascotPose(context), blinkBase: blinkBase)
+        return Group {
+            if resolved.frames.count > 1 {
+                // 여러 장이면 그 포즈를 보이는 동안에만 넘긴다. 한 장짜리 포즈에는 타이머가 없다.
+                let interval = 1 / mascotFramesPerSecond(resolved.pose)
+                TimelineView(.periodic(from: .now, by: interval)) { timeline in
+                    let index = Int(timeline.date.timeIntervalSinceReferenceDate / interval) % resolved.frames.count
+                    mascotFrameView(resolved.frames[index])
+                }
+            } else if let image = resolved.frames.first {
+                mascotFrameView(image)
             } else {
-                MascotPlaceholder(mood: controller.mood, blinking: controller.blinking)
+                MascotPlaceholder(mood: controller.displayMood, blinking: controller.blinking)
             }
         }
+    }
+
+    private func mascotFrameView(_ image: NSImage) -> some View {
+        Image(nsImage: image).resizable().interpolation(.high).scaledToFit()
+            .frame(width: MascotPanel.characterSide, height: MascotPanel.characterSide)
     }
 
     private var dragGesture: some Gesture {
@@ -207,8 +260,24 @@ struct MascotView: View {
                     Button("자세히") { controller.showDashboard() }
                     Button("나중에") { controller.dismissApproval(id: id) }
                 }
-            case let .reply(message):
-                Text(message).lineLimit(6)
+            case let .thinking(line):
+                MascotThinkingLine(text: line)
+            case let .reply(sound, body, signature):
+                Text(sound).font(.system(size: 14, weight: .bold))
+                // 긴 답은 잘라 버리지 않고 스크롤한다. 마크다운(굵게·기울임·코드)은 이대리 답이 실제로 쓴다.
+                // 짧은 답은 내용 높이만큼만, 180pt 를 넘는 답만 스크롤한다. 높이 상한(`maxHeight`)만 걸면
+                // 제안받은 높이를 다 차지해 말풍선 가운데가 크게 빈다 — 본문 높이를 재서 그만큼만 쓴다.
+                ScrollView {
+                    replyText(body)
+                        .background(GeometryReader { geometry in
+                            Color.clear.preference(key: MascotReplyHeight.self, value: geometry.size.height)
+                        })
+                }
+                .frame(height: min(max(replyHeight, 18), 180))
+                .onPreferenceChange(MascotReplyHeight.self) { replyHeight = $0 }
+                if let signature {
+                    Text(signature).font(.caption).foregroundColor(.secondary)
+                }
                 HStack { Spacer(); Button("닫기") { controller.closeReply() } }
             case let .briefing(lines):
                 ForEach(lines, id: \.self) { line in Text(line) }
@@ -229,6 +298,13 @@ struct MascotView: View {
         }
         .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
         .accessibilityElement(children: .contain)
+    }
+
+    private func replyText(_ body: String) -> some View {
+        Text(mascotMarkdown(body))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
     }
 
     private func submitCommand() {
@@ -254,5 +330,34 @@ private struct MascotBubbleTail: Shape {
         path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
         path.closeSubpath()
         return path
+    }
+}
+
+/// 답 본문을 마크다운으로 읽는다. 줄바꿈은 그대로 두고, 해석에 실패하면 원문을 쓴다.
+private func mascotMarkdown(_ text: String) -> AttributedString {
+    (try? AttributedString(
+        markdown: text,
+        options: AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+    )) ?? AttributedString(text)
+}
+
+/// "생각 중" 한 줄 + 움직이는 점 세 개. 기다리는 동안에만 0.4초마다 다시 그린다.
+private struct MascotThinkingLine: View {
+    let text: String
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.4)) { context in
+            let step = Int(context.date.timeIntervalSinceReferenceDate / 0.4) % 4
+            Text(text + String(repeating: " ·", count: step))
+                .frame(minWidth: 150, alignment: .leading)
+        }
+    }
+}
+
+private struct MascotReplyHeight: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
