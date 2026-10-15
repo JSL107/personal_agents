@@ -24,6 +24,7 @@ import { ArtJobReminderPosting } from '../domain/port/art-job-posting.repository
 export interface ArtJobDigestItem {
   listing: ArtJobListing;
   resolved: ResolvedArtJobImage;
+  styleTags: string[];
 }
 
 export interface ArtJobDigestInput {
@@ -151,8 +152,8 @@ export const formatArtJobDigest = ({
 }: ArtJobDigestInput): ArtJobDigestMessage => {
   const mention = mentionUserId ? `<@${mentionUserId}> ` : '';
   const header = `🎨 ${mention}게임잡 새 원화 공고 *${items.length}건*`;
-  const itemTexts = items.map(({ listing, resolved }, index) => {
-    return formatItem(index + 1, listing, resolved, today);
+  const itemTexts = items.map(({ listing, resolved, styleTags }, index) => {
+    return formatItem(index + 1, listing, resolved, styleTags, today);
   });
   const blocks: SlackBlock[] = [
     { type: 'section', text: { type: 'mrkdwn', text: header } },
@@ -186,6 +187,7 @@ const formatItem = (
   order: number,
   listing: ArtJobListing,
   resolved: ResolvedArtJobImage,
+  styleTags: string[],
   today: PlainMonthDay,
 ): string => {
   const title = escapeSlackMrkdwn(sanitizeForSlackLink(listing.title));
@@ -205,6 +207,9 @@ const formatItem = (
         ? `🔥 *${escapeSlackMrkdwn(deadline.label)}*`
         : escapeSlackMrkdwn(deadline.label),
     );
+  }
+  if (styleTags.length > 0) {
+    facts.push(`🎨 ${styleTags.map(escapeSlackMrkdwn).join(', ')}`);
   }
   const lines = [
     `*${order}. <${listing.detailUrl}|${title}>*`,

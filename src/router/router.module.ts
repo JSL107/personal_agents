@@ -31,6 +31,8 @@ import { VideoWatchModule } from '../agent/video-watch/video-watch.module';
 import { WorkReviewerDispatcher } from '../agent/work-reviewer/infrastructure/work-reviewer.dispatcher';
 import { WorkReviewerModule } from '../agent/work-reviewer/work-reviewer.module';
 import { AgentRunModule } from '../agent-run/agent-run.module';
+import { ArtJobFeedChatModule } from '../art-job-feed-chat/art-job-feed-chat.module';
+import { ArtJobFeedDispatcher } from '../art-job-feed-chat/infrastructure/art-job-feed.dispatcher';
 import { EpisodicMemoryModule } from '../episodic-memory/episodic-memory.module';
 import { ModelRouterModule } from '../model-router/model-router.module';
 import { PaperTradeDispatcher } from '../paper-trading/infrastructure/paper-trade.dispatcher';
@@ -83,6 +85,7 @@ import { RoutingNoRunPrismaRepository } from './infrastructure/routing-no-run.pr
     DelayReportModule,
     ScheduleModule,
     VideoWatchModule,
+    ArtJobFeedChatModule,
   ],
   providers: [
     IntentClassifierUsecase,
@@ -127,6 +130,7 @@ import { RoutingNoRunPrismaRepository } from './infrastructure/routing-no-run.pr
         DelayReportDispatcher,
         ScheduleDispatcher,
         VideoWatchDispatcher,
+        ArtJobFeedDispatcher,
       ],
     },
   ],

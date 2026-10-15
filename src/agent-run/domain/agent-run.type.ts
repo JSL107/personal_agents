@@ -69,6 +69,7 @@ export enum TriggerType {
   // Code Reviewer 자연어 멘션 진입 — 수동 slash command와 구분해 집계·감사한다.
   SLACK_MENTION_CODE_REVIEWER = 'SLACK_MENTION_CODE_REVIEWER',
   SLACK_MENTION_VIDEO_WATCH = 'SLACK_MENTION_VIDEO_WATCH',
+  SLACK_MENTION_ART_JOB_FEED = 'SLACK_MENTION_ART_JOB_FEED',
   // 일정 워커의 자연어 멘션 — 등록과 질문 답변이 함께 쓴다. 동작 구분은 inputSnapshot.action.
   SLACK_MENTION_SCHEDULE = 'SLACK_MENTION_SCHEDULE',
   // 지연 보고("왜 늦어져?") — 결정론 워커라도 AgentRun 을 남긴다. 없으면 원장이 NEVER_RUN 으로 본다.

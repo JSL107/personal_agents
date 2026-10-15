@@ -23,6 +23,7 @@ const REQUEST_ENDING = String.raw`\s*(?:줄래요?|주실래요|줄\s?수\s?있(
 // 공용 동사에 넣지 않는다 — 일정 파서는 "내일 일정에 대해 의견을 써줄래?" 를 REGISTER 로 읽어
 // 제목 "대해 의견을 써줄래?" 로 저장하므로(#840 리뷰), 블로그 dispatcher 만 넘긴다.
 export const BLOG_WRITE_VERBS = String.raw`작성\s*해|써`;
+export const ART_JOB_WRITE_VERBS = String.raw`올려|가져와|빼|제거\s*해|삭제\s*해|지워`;
 
 // 물음표는 위치와 무관하게 질문 표지다 — 뒤에 이모지(":pray:")나 말이 붙어도 잡는다.
 // 쓰기 동사 + 부탁 어미("추가해 줄래", "취소해 줄 수 있어", "넣어 주세요") 바로 뒤의 물음표만 예외다.

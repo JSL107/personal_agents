@@ -7,6 +7,7 @@ import { fetchTextWithRetry } from './fetch-text-with-retry';
 import {
   parseCompanyPageUrl,
   parseGamejobList,
+  parsePostingBodyText,
   parseRepresentativeGameText,
 } from './gamejob.parser';
 
@@ -17,6 +18,16 @@ const REFERER =
 
 @Injectable()
 export class GamejobSource implements ArtJobSourcePort {
+  async fetchPostingBody(listing: ArtJobListing): Promise<string> {
+    const html = await fetchTextWithRetry({
+      url: `https://www.gamejob.co.kr/Recruit/GI_Read_Comt_Ifrm?gno=${encodeURIComponent(listing.sourceId)}`,
+      timeoutMs: 10_000,
+      label: '게임잡 공고 본문',
+      headers: { 'User-Agent': USER_AGENT, Referer: listing.detailUrl },
+    });
+    return parsePostingBodyText(html);
+  }
+
   async fetchLatest(page: number): Promise<ArtJobListResult> {
     const body = `condition[duty]=5&condition[menucode]=duty&page=${page}&direct=0&order=3&pagesize=40&tabcode=1`;
     const html = await fetchTextWithRetry({

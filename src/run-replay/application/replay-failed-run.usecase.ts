@@ -346,6 +346,11 @@ export class ReplayFailedRunUsecase {
           ReplayRejectionCode.NOT_SUPPORTED,
           `AgentRun #${runId} (JOB_APPLICATION) 은 입력 의존 기록이라 retry 미지원 — 자연어로 다시 말씀해주세요 (예: "@이대리 토스 서류 합격").`,
         );
+      case 'ART_JOB_FEED':
+        return reject(
+          ReplayRejectionCode.NOT_SUPPORTED,
+          `AgentRun #${runId} (ART_JOB_FEED) 은 키워드 변경이나 채널 게시를 다시 실행할 수 없습니다. 원화 공고 채널에서 새로 요청해 주세요.`,
+        );
       default:
         return reject(
           ReplayRejectionCode.UNKNOWN_AGENT_TYPE,

@@ -1399,3 +1399,28 @@ model ArtJobPosting {
   @@unique([source, sourceId])
   @@map("art_job_posting")
 }
+
+model ArtJobKeyword {
+  id        Int      @id @default(autoincrement())
+  // 'TARGET' | 'EXCLUDED' | 'STYLE'
+  kind      String
+  term      String
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([kind, term])
+  @@map("art_job_keyword")
+}
+
+model ArtJobKeywordChange {
+  id        Int      @id @default(autoincrement())
+  // 'ADD' | 'REMOVE'
+  action    String
+  kind      String
+  term      String
+  actor     String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@map("art_job_keyword_change")
+}
