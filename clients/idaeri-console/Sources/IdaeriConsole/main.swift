@@ -375,12 +375,23 @@ let window = NSWindow(
     backing: .buffered,
     defer: false
 )
+// 창을 닫아도 콘솔 동기화와 마스코트 승인이 이어져야 하므로 둘이 같은 store를 사용한다.
+let store = ConsoleStore()
+let appDelegate = AppDelegate(window: window)
+application.delegate = appDelegate
+window.delegate = appDelegate
 window.title = "이대리 콘솔"
 window.center()
 window.contentView = NSHostingView(
-    rootView: AppRootView(client: client, baseURLLabel: baseURLString)
+    rootView: AppRootView(client: client, baseURLLabel: baseURLString, store: store)
 )
 window.makeKeyAndOrderFront(nil)
+// Swift 5 최상위 코드는 actor 비격리지만 이 실행 지점은 AppKit 메인 스레드다.
+let mascot = MainActor.assumeIsolated { () -> MascotController in
+    let controller = MascotController(store: store)
+    controller.show()
+    return controller
+}
 
 application.activate(ignoringOtherApps: true)
 application.run()

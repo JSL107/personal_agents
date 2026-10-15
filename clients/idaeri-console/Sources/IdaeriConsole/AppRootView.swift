@@ -5,13 +5,13 @@ import SwiftUI
 // 백엔드의 보관된 작업 제안과 앱의 제안 카드를 같은 30분에 만료시킨다.
 private let answeredCommandTTL: TimeInterval = 30 * 60
 
-/// 콘솔 루트. ConsoleStore 와 연결(스냅샷+SSE+백오프)을 소유하고,
+/// 콘솔 루트. 공유 ConsoleStore 의 연결(스냅샷+SSE+백오프)을 소유하고,
 /// 캘린더·대시보드·에이전트·오피스 탭을 전환한다. 모든 탭이 같은 store 를 관측한다.
 struct AppRootView: View {
     let client: ConsoleClient
     let baseURLLabel: String
 
-    @StateObject private var store = ConsoleStore()
+    @ObservedObject var store: ConsoleStore
     @State private var status: ConnectionStatus = .connecting
     /// 마지막으로 스냅샷을 다시 받은 시각. 상태 변경이 몰릴 때 요청 폭주를 막는 최소 간격 기준.
     @State private var lastResyncAt: Date?
@@ -87,6 +87,15 @@ struct AppRootView: View {
             tab = .office
             isPresidentBarOpen = true
         }
+        .onReceive(NotificationCenter.default.publisher(for: .idaeriMascotApprove)) { notification in
+            guard let id = notification.userInfo?["id"] as? String else {
+                return
+            }
+            approve(id: id)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .idaeriShowDashboard)) { _ in
+            tab = .dashboard
+        }
         // 담당자 목록이 바뀌면 그들의 현재 포즈를 미리 준비한다. 준비(디스크 읽기 + 알파 경계
         // 탐색)는 장당 32ms 라 여러 명이면 그만큼이 렌더 스레드에서 돌고 그동안 창이 멈춘다.
         // 상태를 먼저 아는 곳은 여기(`store`)이므로, 화면이 그것을 그리기 전에 준비를 시작한다.
@@ -100,10 +109,8 @@ struct AppRootView: View {
         // ⚠️ **이 줄이 사라지면 워밍이 조용히 죽고, 어느 게이트도 알려주지 않는다.** 화면은
         // 똑같이 나오고 준비가 렌더 스레드로 되돌아가 느려질 뿐이다. `--prewarm-check` 는
         // `prewarmCozyCharacters` 와 요청 생성을 직접 불러 확인하므로 이 **배선**은 밟지 않는다.
-        // 검사로 덮지 못하는 이유는 구조에 있다 — `store` 가 `@StateObject` 로 이 뷰 안에 있어
-        // 밖에서 값을 넣을 수 없고(오프스크린으로 띄워도 `onChange` 를 발동시킬 수 없다),
-        // `ConsoleStore` 는 `ConsoleCore` 에 있어 `SpriteLoader`(IdaeriConsole)를 부를 수도 없다.
-        // 그래서 여기는 **사람이 지키는 자리**다. 옮기거나 지울 때 워밍이 어디서 시작되는지 볼 것.
+        // `ConsoleStore` 는 `ConsoleCore` 에 있어 `SpriteLoader`(IdaeriConsole)를 부를 수 없다.
+        // 그래서 이 배선은 여기서 유지한다. 옮길 때 워밍이 어디서 시작되는지 확인할 것.
         .onChange(of: store.agents) { agents in
             SpriteLoader.prewarmCozyCharacters(cozyDashboardPrewarmRequests(for: agents))
         }

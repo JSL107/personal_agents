@@ -108,4 +108,10 @@ extension MainMenuBridge {
 extension Notification.Name {
     /// 담당자 미지정 지시 바를 열라는 요청(메뉴 → 화면).
     static let idaeriOpenPresidentCommand = Notification.Name("idaeri.openPresidentCommand")
+
+    /// 마스코트의 승인 버튼도 기존 화면의 승인 처리 경로를 쓰게 한다.
+    static let idaeriMascotApprove = Notification.Name("idaeri.mascotApprove")
+
+    /// 마스코트에서 요청한 대시보드를 숨긴 메인 창과 함께 복원한다.
+    static let idaeriShowDashboard = Notification.Name("idaeri.showDashboard")
 }
