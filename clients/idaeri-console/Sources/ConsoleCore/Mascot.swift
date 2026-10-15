@@ -7,6 +7,18 @@ public let mascotWorkGraceSeconds: TimeInterval = 20
 /// 사용자가 정한 평일 브리핑 종료 시각. 시작은 기존 출근 시각을 재사용한다.
 public let mascotBriefingEndHour = 19
 
+/// 승인 말풍선이 뜬 뒤 [승인] 버튼이 눌리기 시작하는 시간.
+///
+/// 말풍선은 커서 바로 밑에 새로 뜰 수 있고, 그 순간 패널이 마우스를 받기 시작한다. 사용자가 원래
+/// 아래 앱(Dock·창 모서리)을 누르려던 클릭이 그대로 승인으로 들어가지 않도록, 사람이 말풍선을
+/// 알아차릴 짧은 시간 동안은 누를 수 없게 둔다.
+public let mascotApprovalArmDelaySeconds: TimeInterval = 0.8
+
+/// 승인 말풍선이 `shownAt` 에 떴을 때 `now` 에 [승인]을 눌러도 되는가.
+public func mascotApprovalArmed(shownAt: Date, now: Date) -> Bool {
+    now.timeIntervalSince(shownAt) >= mascotApprovalArmDelaySeconds
+}
+
 public enum MascotMood: String, CaseIterable, Sendable {
     case idle
     case working

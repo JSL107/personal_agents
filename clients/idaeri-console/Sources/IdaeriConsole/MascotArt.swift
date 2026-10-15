@@ -64,6 +64,6 @@ struct MascotPlaceholder: View {
                     .offset(x: 35, y: -30)
             }
         }
-        .frame(width: 96, height: 96)
+        .frame(width: MascotPanel.characterSide, height: MascotPanel.characterSide)
     }
 }
