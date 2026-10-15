@@ -44,6 +44,39 @@ describe('GamejobSource', () => {
     );
   });
 
+  it('상세 페이지의 모집분야·키워드·게임분야를 본문 뒤에 붙인다', async () => {
+    global.fetch = jest.fn(async (url: string) => ({
+      ok: true,
+      text: async () =>
+        url.includes('Comt_Ifrm')
+          ? '<html><body>배경 원화</body></html>'
+          : '<dl class="recruit-data-item"><dt class="recruit-data-title">게임분야</dt><dd class="recruit-data-text">RPG, Casual</dd></dl>',
+    })) as never;
+    expect(
+      await new GamejobSource().fetchPostingBody({
+        sourceId: '1',
+        detailUrl: 'https://www.gamejob.co.kr/Recruit/GI_Read/View?GI_No=1',
+      } as never),
+    ).toBe('배경 원화\n게임분야: RPG, Casual');
+  });
+
+  it('상세 페이지를 못 읽어도 본문은 돌려준다', async () => {
+    const body = (): Promise<string> =>
+      Promise.resolve('<html><body>배경 원화</body></html>');
+    const empty = (): Promise<string> => Promise.resolve('');
+    global.fetch = jest.fn(async (url: string) =>
+      url.includes('Comt_Ifrm')
+        ? { ok: true, text: body }
+        : { ok: false, status: 404, text: empty },
+    ) as never;
+    expect(
+      await new GamejobSource().fetchPostingBody({
+        sourceId: '1',
+        detailUrl: 'https://www.gamejob.co.kr/Recruit/GI_Read/View?GI_No=1',
+      } as never),
+    ).toBe('배경 원화');
+  });
+
   it('공고 상세 → 회사 정보를 따라가 대표게임을 나눠 준다', async () => {
     global.fetch = jest.fn(async (url: string) => ({
       ok: true,
