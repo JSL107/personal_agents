@@ -1,5 +1,5 @@
 import { InjectQueue } from '@nestjs/bullmq';
-import { Inject, Injectable, OnModuleDestroy } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Queue, QueueEvents } from 'bullmq';
 
@@ -45,6 +45,7 @@ const LIST_LABEL: Record<ArtJobKeywordKind, string> = {
 @Injectable()
 export class ArtJobFeedDispatcher implements AgentDispatcher, OnModuleDestroy {
   readonly agentType = AgentType.ART_JOB_FEED;
+  private readonly logger = new Logger(ArtJobFeedDispatcher.name);
   private queueEvents?: QueueEvents;
 
   constructor(
@@ -147,10 +148,7 @@ export class ArtJobFeedDispatcher implements AgentDispatcher, OnModuleDestroy {
           return { result, output: result, modelUsed: 'deterministic' };
         },
       });
-      const note =
-        command.terms.length > 0
-          ? `\n${this.formatFetchTermsNote(command.terms, await this.keywords.load())}`
-          : '';
+      const note = await this.fetchTermsNote(command.terms);
       return {
         agentRunId: outcome.agentRunId,
         output: outcome.result,
@@ -239,6 +237,21 @@ export class ArtJobFeedDispatcher implements AgentDispatcher, OnModuleDestroy {
         return '같은 요청이 이미 처리됐어요.';
       case 'TIMEOUT':
         return '아직 가져오는 중이에요. 끝나면 채널에 바로 올라와요.';
+    }
+  }
+
+  // 안내는 덧붙이는 정보다 — 키워드 조회가 실패해도 이미 끝난 게시 결과는 그대로 답한다(#850 리뷰).
+  private async fetchTermsNote(terms: string[]): Promise<string> {
+    if (terms.length === 0) {
+      return '';
+    }
+    try {
+      return `\n${this.formatFetchTermsNote(terms, await this.keywords.load())}`;
+    } catch (error) {
+      this.logger.warn(
+        `가져오기 키워드 안내 생략 — ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return '';
     }
   }
 

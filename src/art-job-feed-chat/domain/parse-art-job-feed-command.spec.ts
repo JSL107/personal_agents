@@ -47,6 +47,14 @@ describe('parseArtJobFeedCommand', () => {
     ['공고 가져와', { kind: 'FETCH', terms: [] }],
     // 2026-10-15 16:19 — 「공고」 없이 말한 가져오기.
     ['지금줘봐', { kind: 'FETCH', terms: [] }],
+    // #850 리뷰 — 목록 조회가 가져오기로 빠지면 채널에 게시된다.
+    ['화풍 목록 지금 보여줘', { kind: 'LIST', listKind: 'STYLE' }],
+    ['공고 제외 목록 보여줘', { kind: 'LIST', listKind: 'EXCLUDED' }],
+    ['허용 키워드 지금 보여줘', { kind: 'LIST', listKind: 'TARGET' }],
+    [
+      '[북미 스타일] 관련 공고 찾아줘',
+      { kind: 'FETCH', terms: ['북미 스타일'] },
+    ],
     ['공고가져와', { kind: 'FETCH', terms: [] }],
     [
       '[캐주얼 / 북미풍 / 일러스트/ 디자이너/ 아트 / 원화 / 캐릭터] 관련 공고 찾아줘.',

@@ -25,8 +25,19 @@ const LIST_VERB = /보여|조회|목록|뭐\s*있|알려|확인/;
 
 export const parseArtJobFeedCommand = (text: string): ArtJobFeedCommand => {
   const normalized = text.trim();
+  const unquoted = normalized.replace(QUOTED_GROUP, ' ');
   const listKind = findListKind(normalized);
 
+  // 목록 조회를 가져오기보다 먼저 본다 — 「화풍 목록 지금 보여줘」가 가져오기로 빠져 채널에 게시하면 안 된다
+  // (#850 리뷰). 인용 안의 낱말(「[북미 스타일] 관련 공고 찾아줘」)은 목록 이름으로 보지 않는다.
+  if (
+    /키워드|허용|화풍|제외어|제외\s*목록|태그|그림체|스타일/.test(unquoted) &&
+    LIST_VERB.test(normalized) &&
+    !ADD_VERB.test(normalized) &&
+    !REMOVE_VERB.test(normalized)
+  ) {
+    return { kind: 'LIST', listKind };
+  }
   // 키워드를 말하지 않은 「공고 가져와·관련 공고 찾아줘·지금 줘봐」는 가져오기다.
   // 「공고」 없는 「지금줘봐」가 키워드 안내로 빠졌다(2026-10-15 16:19).
   if (
@@ -36,14 +47,6 @@ export const parseArtJobFeedCommand = (text: string): ArtJobFeedCommand => {
       /지금\s*(?:공고|줘|보여|올려|가져|받)/.test(normalized))
   ) {
     return { kind: 'FETCH', terms: extractQuotedTerms(normalized) };
-  }
-  if (
-    /키워드|허용|화풍|제외어|제외\s*목록|태그|그림체|스타일/.test(normalized) &&
-    LIST_VERB.test(normalized) &&
-    !ADD_VERB.test(normalized) &&
-    !REMOVE_VERB.test(normalized)
-  ) {
-    return { kind: 'LIST', listKind };
   }
 
   const action: Action | null = REMOVE_VERB.test(normalized)

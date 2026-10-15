@@ -160,6 +160,20 @@ describe('ArtJobFeedDispatcher', () => {
     expect(outcome.formattedText).not.toContain('목록에 없음');
   });
 
+  it('키워드 안내 조회가 실패해도 게시 결과는 그대로 답한다', async () => {
+    const { dispatcher, input, waitUntilFinished, keywords } = setup();
+    waitUntilFinished.mockResolvedValue({ kind: 'POSTED', count: 1 });
+    keywords.load.mockRejectedValue(new Error('db down'));
+    const outcome = await dispatcher.dispatch(input('[원화] 관련 공고 찾아줘'));
+    expect(outcome.formattedText).toBe('새 공고 1건을 채널에 올렸어요.');
+  });
+
+  it('목록 조회 문장은 가져오기를 돌리지 않는다', async () => {
+    const { dispatcher, input, queue } = setup();
+    await dispatcher.dispatch(input('화풍 목록 지금 보여줘'));
+    expect(queue.add).not.toHaveBeenCalled();
+  });
+
   it('대기 시간 초과는 실행 중으로 답한다', async () => {
     const { dispatcher, input, waitUntilFinished } = setup();
     waitUntilFinished.mockRejectedValue(
