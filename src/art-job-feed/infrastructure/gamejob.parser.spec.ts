@@ -1,7 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { parseGamejobList } from './gamejob.parser';
+import {
+  parseCompanyPageUrl,
+  parseGamejobList,
+  parseRepresentativeGameText,
+} from './gamejob.parser';
 
 const fixture = (name: string): string =>
   readFileSync(join(__dirname, '__fixtures__', name), 'utf8');
@@ -43,5 +47,25 @@ describe('gamejob parser', () => {
       employmentType: null,
       location: null,
     });
+  });
+});
+
+describe('회사 정보 파싱', () => {
+  it('공고 상세에서 회사 정보 페이지 주소를 찾는다', () => {
+    expect(
+      parseCompanyPageUrl('<a href="/Company/Detail?M=34960030">회사</a>'),
+    ).toBe('https://www.gamejob.co.kr/Company/Detail?M=34960030');
+    expect(parseCompanyPageUrl('<div></div>')).toBeNull();
+  });
+
+  // 실측(2026-10-15) 회사 정보 페이지의 마크업 — 값이 span 안에 있고 더보기 주석이 붙는다.
+  it('「대표게임」 칸의 값을 읽고, 비었거나 - 이면 null', () => {
+    const page = (value: string) =>
+      `<dl><dt class="tit">기업형태</dt><dd>벤처기업</dd><dt class="tit">대표게임</dt><dd><span class="ellipsis">${value}</span><!--// 더보기 레이어 --></dd><dt class="tit">주요사업</dt><dd>게임</dd></dl>`;
+    expect(
+      parseRepresentativeGameText(page('\n  이세계 용병단 키우기\n')),
+    ).toBe('이세계 용병단 키우기');
+    expect(parseRepresentativeGameText(page('-'))).toBeNull();
+    expect(parseRepresentativeGameText('<dl></dl>')).toBeNull();
   });
 });

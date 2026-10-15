@@ -1,9 +1,14 @@
 import { Injectable } from '@nestjs/common';
 
-import { ArtJobListResult } from '../domain/art-job-feed.type';
+import { ArtJobListing, ArtJobListResult } from '../domain/art-job-feed.type';
+import { splitRepresentativeGames } from '../domain/game-title';
 import { ArtJobSourcePort } from '../domain/port/art-job-feed.ports';
 import { fetchTextWithRetry } from './fetch-text-with-retry';
-import { parseGamejobList } from './gamejob.parser';
+import {
+  parseCompanyPageUrl,
+  parseGamejobList,
+  parseRepresentativeGameText,
+} from './gamejob.parser';
 
 const USER_AGENT =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36';
@@ -28,5 +33,26 @@ export class GamejobSource implements ArtJobSourcePort {
       },
     });
     return parseGamejobList(html);
+  }
+
+  async fetchRepresentativeGames(listing: ArtJobListing): Promise<string[]> {
+    const detail = await fetchTextWithRetry({
+      url: listing.detailUrl,
+      timeoutMs: 10_000,
+      label: '게임잡 공고 상세',
+      headers: { 'User-Agent': USER_AGENT },
+    });
+    const companyUrl = parseCompanyPageUrl(detail);
+    if (!companyUrl) {
+      return [];
+    }
+    const company = await fetchTextWithRetry({
+      url: companyUrl,
+      timeoutMs: 10_000,
+      label: '게임잡 회사 정보',
+      headers: { 'User-Agent': USER_AGENT },
+    });
+    const text = parseRepresentativeGameText(company);
+    return text ? splitRepresentativeGames(text) : [];
   }
 }

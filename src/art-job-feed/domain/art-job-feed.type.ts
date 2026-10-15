@@ -41,6 +41,9 @@ export interface ResolvedArtJobImage {
   gameTitle: string | null;
   // 그 게임이 맞다고 확인된 그림(플레이스토어 일치·기사 제목 확인).
   image: ArtJobImage | null;
+  // image 가 공고의 게임이 아니라 회사 「대표게임」의 그림일 때 그 게임명. 받는 사람이 공고 게임으로
+  // 오해하지 않게 본문·캡션에 '회사 대표작' 으로 밝힌다.
+  representativeGame?: string | null;
   // image 가 null 일 때 구글 이미지 검색 링크.
   googleSearchUrl: string | null;
 }
