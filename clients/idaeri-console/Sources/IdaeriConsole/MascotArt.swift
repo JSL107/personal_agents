@@ -47,8 +47,11 @@ func mascotResolvedFrames(_ pose: MascotPose, blinkBase: MascotPose) -> (pose: M
 /// 포즈별 넘김 속도(초당 장 수). 고민·작업은 차분히, 만세는 빠르게.
 func mascotFramesPerSecond(_ pose: MascotPose) -> Double {
     switch pose {
-    case .happy, .poke:
+    case .poke:
         return 8
+    case .happy:
+        // 춤 4장 — 초당 6장이면 한 바퀴 0.67초, 2초 동안 세 바퀴.
+        return 6
     case .working, .dangle, .planning, .reviewing, .evaluating, .counting, .writing, .fixing, .typing:
         return 6
     case .thinking, .reading, .hover:

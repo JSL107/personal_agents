@@ -65,6 +65,9 @@ import SwiftUI
         return false
     }
 
+    /// 기쁨 춤을 보이는 시간. 4장 반복 춤이라 1.2초면 한 바퀴도 못 돌고 끝나 눈에 안 띈다 — 두 바퀴 남짓.
+    private let mascotHappySeconds: TimeInterval = 2
+
     /// 한 번 몸짓 그림을 잠깐 띄운다.
     func flourish(_ pose: MascotPose, seconds: TimeInterval) {
         flourish = pose
@@ -468,7 +471,7 @@ import SwiftUI
         // 깡충 한 번으로는 눈길이 닿기 전에 끝난다. 두 번 뛰고, 답장은 [닫기]를 누를 때까지 남긴다 —
         // 30초 뒤 사라지면 자리를 비운 사이 온 답을 놓친다.
         play(.hop)
-        flourish(.happy, seconds: 1.2)
+        flourish(.happy, seconds: mascotHappySeconds)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.play(.hop) }
         replyTimer?.invalidate()
     }
@@ -602,7 +605,7 @@ import SwiftUI
                 saveReactionLedger(now: now)
                 showTransient(.reaction(mascotSay(mascotQuip(.cheer, random: .random(in: 0..<1)))), duration: 8)
                 play(.hop)
-                flourish(.happy, seconds: 1.2)
+                flourish(.happy, seconds: mascotHappySeconds)
             }
         }
         queueRefresh()
