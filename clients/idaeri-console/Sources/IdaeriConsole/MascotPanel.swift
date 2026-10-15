@@ -33,6 +33,9 @@ final class MascotPanel: NSPanel {
         becomesKeyOnlyIfNeeded = true
         ignoresMouseEvents = true
         setFrameAutosaveName("IdaeriMascotPanel")
+        // 이름을 붙이는 것만으로는 저장된 위치를 읽어 오지 않는다. 끌어 놓은 자리를 재실행 뒤에도
+        // 지키려면 명시적으로 읽는다. 저장값이 없으면 false 이고 위의 기본 위치가 그대로 남는다.
+        setFrameUsingName("IdaeriMascotPanel")
         // 포인터가 다른 앱 위에 있어도 진입을 감지해야 하므로 전역 감시도 필요하다.
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged]) { [weak self] _ in
             self?.refreshMouseHit()

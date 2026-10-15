@@ -41,7 +41,8 @@ import SwiftUI
     private var reactionBubble: MascotBubble?
     private var replyBubble: MascotBubble?
     private var lastMascotCommand: (text: String, sentAt: Date)?
-    private var observedConversationIds: Set<UUID> = []
+    /// 답장을 이미 띄운 지시. 같은 답을 30초 재동기화마다 다시 띄우지 않게 한다.
+    private var shownReplyCommandId: UUID?
     private var failedNoticeCommandId: UUID?
     private var dismissedFailureIds: Set<UUID> = []
     private var reactionLedger: MascotReactionLedger
@@ -99,7 +100,6 @@ import SwiftUI
             return
         }
         lastMascotCommand = (trimmed, Date())
-        observedConversationIds = Set(store.conversation.map(\.id))
         replyBubble = nil
         replyTimer?.invalidate()
         failedNoticeCommandId = nil
@@ -192,31 +192,41 @@ import SwiftUI
         refreshBubble()
     }
 
+    /// 마스코트가 보낸 지시의 결과를 그 지시 한 건의 기록(`pendingCommands`)에서 읽는다.
+    ///
+    /// 대화 기록(`store.conversation`)에서 고르지 않는 이유: 한 줄에 어느 지시의 답인지가 없어,
+    /// 앞 지시의 답이 새 지시 뒤에 도착하면 새 지시의 답으로 보인다. 서버의 답·거절은 지시 id 로
+    /// 그 기록에 붙으므로(`ConsoleStore.markCommand`) 여기서 읽으면 짝이 틀리지 않는다.
     private func refreshCommandResult() {
-        guard let lastMascotCommand else {
-            return
-        }
-        let failedCommand = store.pendingCommands.last {
-            $0.text == lastMascotCommand.text && $0.sentAt >= lastMascotCommand.sentAt && $0.phase == .failed
-        }
-        if let failedCommand {
-            replyBubble = nil
-            replyTimer?.invalidate()
-            if !dismissedFailureIds.contains(failedCommand.id) {
-                failedNoticeCommandId = failedCommand.id
-            }
-        }
-        let newTurns = store.conversation.filter { !observedConversationIds.contains($0.id) }
-        observedConversationIds.formUnion(newTurns.map(\.id))
-        guard failedCommand == nil,
-              let reply = newTurns.last(where: { $0.role == .idaeri && $0.at >= lastMascotCommand.sentAt })
+        guard let lastMascotCommand,
+              let command = store.pendingCommands.last(where: {
+                  $0.text == lastMascotCommand.text && $0.sentAt >= lastMascotCommand.sentAt
+              })
         else {
             return
         }
-        replyBubble = .reply(reply.text)
-        replyTimer?.invalidate()
-        replyTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: false) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.closeReply() }
+        switch command.phase {
+        case .failed:
+            replyBubble = nil
+            replyTimer?.invalidate()
+            if !dismissedFailureIds.contains(command.id) {
+                failedNoticeCommandId = command.id
+            }
+        case .answered:
+            guard shownReplyCommandId != command.id,
+                  let reply = command.reason?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !reply.isEmpty
+            else {
+                return
+            }
+            shownReplyCommandId = command.id
+            replyBubble = .reply(reply)
+            replyTimer?.invalidate()
+            replyTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: false) { [weak self] _ in
+                Task { @MainActor [weak self] in self?.closeReply() }
+            }
+        default:
+            return
         }
     }
 

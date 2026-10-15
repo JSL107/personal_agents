@@ -4790,8 +4790,9 @@ final class OfficeScene: SKScene {
         }
         hoveredAgentType = hit
         if hit == officeHitTargetPresident {
-            // 대표 영역은 다른 직원과 겹치지 않게 판정하고 호버 표시도 유지한다.
-            president?.run(.scale(to: 1.12, duration: 0.1))
+            // 대표 영역은 계속 판정한다 — 빼면 대표 위 클릭이 겹친 직원 선택으로 샌다. 다만 커지는
+            // 몸짓은 주지 않는다. 지시 입구가 마스코트로 옮겨 대표를 눌러도 아무 일도 없으므로,
+            // "누를 수 있다" 를 알리면 죽은 버튼이 된다.
             hideHoverTooltip()
             return
         }
