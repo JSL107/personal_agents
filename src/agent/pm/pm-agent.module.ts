@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { AgentRunModule } from '../../agent-run/agent-run.module';
 import { DailyPlanModule } from '../../daily-plan/daily-plan.module';
 import { GithubModule } from '../../github/github.module';
+import { LocalSessionsModule } from '../../local-sessions/local-sessions.module';
 import { ModelRouterModule } from '../../model-router/model-router.module';
 import { NotionModule } from '../../notion/notion.module';
 import { PreferenceProfileModule } from '../../preference-profile/preference-profile.module';
@@ -25,6 +26,7 @@ import { PmDispatcher } from './infrastructure/pm.dispatcher';
     AgentRunModule,
     DailyPlanModule,
     GithubModule,
+    LocalSessionsModule,
     NotionModule,
     // 학습된 업무 선호(priorities 등)를 데일리플랜 생성에 주입 — PREFERENCE_PROFILE_PORT export.
     PreferenceProfileModule,

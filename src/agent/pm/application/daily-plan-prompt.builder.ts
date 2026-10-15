@@ -5,6 +5,7 @@ import {
   wrapUntrustedInput,
 } from '../../../common/llm/untrusted-input.util';
 import { AssignedTasks } from '../../../github/domain/github.type';
+import { formatWorkSessionsSection } from '../../../local-sessions/domain/work-session-digest';
 import { ConversationContext } from '../../../router/domain/conversation-context.type';
 import { PlanInputTruncation } from '../domain/pm-agent.type';
 import {
@@ -58,6 +59,7 @@ const TRIM_ORDER: ReadonlyArray<keyof PromptSections> = [
   'slackMentions',
   'recentPlanSummaries',
   'retroTryNext',
+  'workSessions',
   'notion',
   'previousWorklog',
   'previousPlan',
@@ -74,6 +76,7 @@ interface PromptSections {
   retroTryNext: string | null;
   slackMentions: string | null;
   inboxItems: string | null;
+  workSessions: string | null;
   userText: string | null;
   github: string | null;
   notion: string | null;
@@ -175,6 +178,10 @@ export class DailyPlanPromptBuilder {
         : null,
       slackMentions: slackResult ? slackResult.content : null,
       inboxItems: inboxSection,
+      workSessions: formatWorkSessionsSection({
+        sessions: context.workSessions,
+        header: `[로컬 작업 세션 — ${formatSinceKst(context.workSessionsSince)} 이후 Claude Code·Codex 대화형 세션 요약 (참고: 하다 만 일 근거)]`,
+      }),
       userText: formatUserTextSection(userText),
       github: githubResult ? githubResult.content : null,
       notion: notionResult ? notionResult.content : null,
@@ -275,6 +282,11 @@ export class DailyPlanPromptBuilder {
     return Buffer.byteLength(joined, 'utf8');
   }
 }
+
+const formatSinceKst = (date: Date): string => {
+  const koreanTime = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+  return koreanTime.toISOString().slice(5, 16).replace('T', ' ');
+};
 
 // ", " (콤마+공백) 으로 명확히 분리된 짧은 TODO 리스트만 별도 섹션으로 분리한다.
 // codex/omc P2: 단일 자유 텍스트 내 자연 콤마 ("결제 API 버그 수정, 특히 카드사 응답") 가
