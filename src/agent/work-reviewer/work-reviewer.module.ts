@@ -1,13 +1,19 @@
 import { Module } from '@nestjs/common';
 
 import { AgentRunModule } from '../../agent-run/agent-run.module';
+import { LocalSessionsModule } from '../../local-sessions/local-sessions.module';
 import { ModelRouterModule } from '../../model-router/model-router.module';
 import { NotionModule } from '../../notion/notion.module';
 import { GenerateWorklogUsecase } from './application/generate-worklog.usecase';
 import { WorkReviewerDispatcher } from './infrastructure/work-reviewer.dispatcher';
 
 @Module({
-  imports: [ModelRouterModule, AgentRunModule, NotionModule],
+  imports: [
+    ModelRouterModule,
+    AgentRunModule,
+    NotionModule,
+    LocalSessionsModule,
+  ],
   providers: [GenerateWorklogUsecase, WorkReviewerDispatcher],
   exports: [GenerateWorklogUsecase, WorkReviewerDispatcher],
 })

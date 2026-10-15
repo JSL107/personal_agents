@@ -9,6 +9,12 @@ import { ClassifyPullRequestEngagementUsecase } from '../../../github/applicatio
 import { ListAssignedTasksUsecase } from '../../../github/application/list-assigned-tasks.usecase';
 import { AssignedTasks } from '../../../github/domain/github.type';
 import { WaitingItem } from '../../../github/domain/pr-engagement.type';
+import {
+  ListWorkSessionsParams,
+  previousWeekdayMorningKst,
+  WorkSessionDigestService,
+} from '../../../local-sessions/application/work-session-digest.service';
+import { WorkSessionDigest } from '../../../local-sessions/domain/work-session-digest';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { ListActiveTasksUsecase } from '../../../notion/application/list-active-tasks.usecase';
 import { NotionTask } from '../../../notion/domain/notion.type';
@@ -70,6 +76,8 @@ export interface DailyPlanContext {
   recentPlanSummaries: RecentPlanSummary[];
   inboxItems: string[];
   inboxItemIds: number[];
+  workSessions: WorkSessionDigest[];
+  workSessionsSince: Date;
   similarPlans: SimilarPlanRow[];
   // cron + BRIEFING_WAITING_SECTION_ENABLED=true 일 때만 채워짐. 그 외 빈 배열.
   waitingItems: WaitingItem[];
@@ -88,6 +96,7 @@ export class DailyPlanContextCollector {
     private readonly listActiveTasksUsecase: ListActiveTasksUsecase,
     private readonly slackInboxService: SlackInboxService,
     private readonly classifyEngagement: ClassifyPullRequestEngagementUsecase,
+    private readonly workSessionDigestService: WorkSessionDigestService,
   ) {}
 
   async collect({
@@ -105,6 +114,7 @@ export class DailyPlanContextCollector {
     // true 이면 excludeApprovedPullRequests 분기는 실행되지 않는다 (우선 분기).
     classifyWaitingPullRequests?: boolean;
   }): Promise<DailyPlanContext> {
+    const workSessionsSince = previousWeekdayMorningKst(new Date());
     const [
       githubTasksRaw,
       previousPlan,
@@ -115,6 +125,7 @@ export class DailyPlanContextCollector {
       recentPlanSummaries,
       inboxResult,
       similarPlans,
+      workSessions,
     ] = await Promise.all([
       this.fetchGithubTasksOrNull(),
       this.fetchPreviousPlanOrNull(),
@@ -125,6 +136,10 @@ export class DailyPlanContextCollector {
       this.fetchRecentPlanSummariesOrEmpty({ slackUserId }),
       this.fetchInboxItemsOrEmpty({ slackUserId }),
       this.fetchSimilarPlansOrEmpty({ userText }),
+      this.fetchWorkSessionsOrEmpty({
+        since: workSessionsSince,
+        slackUserId,
+      }),
     ]);
 
     let githubTasks = githubTasksRaw;
@@ -184,9 +199,24 @@ export class DailyPlanContextCollector {
       recentPlanSummaries,
       inboxItems: inboxResult.texts,
       inboxItemIds: inboxResult.ids,
+      workSessions,
+      workSessionsSince,
       similarPlans,
       waitingItems,
     };
+  }
+
+  private fetchWorkSessionsOrEmpty(
+    params: ListWorkSessionsParams,
+  ): WorkSessionDigest[] {
+    try {
+      return this.workSessionDigestService.listSince(params);
+    } catch (error: unknown) {
+      this.logger.warn(
+        `작업 세션 수집 실패 (해당 컨텍스트 없이 계속 진행): ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return [];
+    }
   }
 
   private async fetchGithubTasksOrNull(): Promise<AssignedTasks | null> {

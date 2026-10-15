@@ -197,6 +197,9 @@ export class ReplayFailedRunUsecase {
             this.generateWorklogUsecase.execute({
               workText: snapshot.workText ?? '',
               slackUserId,
+              // 다른 에이전트와 같이 재실행임을 남긴다. worklog 는 이 값으로 로컬 세션 첨부를 건너뛴다 —
+              // 스냅샷만으로는 원래 실행이 주간 요약이었는지 알 수 없어서다.
+              triggerType: TriggerType.FAILURE_REPLAY,
             }),
           ),
         );
