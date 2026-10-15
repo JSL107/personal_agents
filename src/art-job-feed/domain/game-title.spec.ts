@@ -27,6 +27,11 @@ describe('game title', () => {
   it('normalizes punctuation', () => {
     expect(normalizeTitleKey('LOST ARK-Mobile!')).toBe('lostarkmobile');
   });
+  it('로마 숫자를 숫자로 바꿔 남긴다', () => {
+    expect(normalizeTitleKey('리니지Ⅱ')).toBe('리니지2');
+    expect(normalizeTitleKey('파이널판타지 Ⅻ')).toBe('파이널판타지12');
+    expect(normalizeTitleKey('ⅳ')).toBe('4');
+  });
 });
 
 describe('splitRepresentativeGames', () => {
@@ -46,9 +51,12 @@ describe('splitRepresentativeGames', () => {
     ).toHaveLength(3);
   });
 
-  it('미공개 코드명은 뺀다', () => {
+  it('미공개 코드명은 빼고, Project 로 시작하는 출시작은 남긴다', () => {
     expect(
       splitRepresentativeGames('템빨:오버기어드 , 프로젝트A, Project S'),
     ).toEqual(['템빨:오버기어드']);
+    expect(splitRepresentativeGames('Project Zomboid, Project EA')).toEqual([
+      'Project Zomboid',
+    ]);
   });
 });

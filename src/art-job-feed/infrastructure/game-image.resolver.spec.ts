@@ -319,6 +319,28 @@ describe('GameImageResolver — 회사 대표게임', () => {
     expect(source.fetchRepresentativeGames).not.toHaveBeenCalled();
   });
 
+  it('플레이스토어에 없으면 첫 대표게임만 카카오 기사로 확인해 싣는다', async () => {
+    global.fetch = jest.fn(async (url: string) => ({
+      ok: true,
+      status: 200,
+      text: async () =>
+        url.includes('inven.co.kr/webzine')
+          ? '<title>그레이게임즈 템빨:오버기어드 출시</title>'
+          : '<div></div>',
+    })) as never;
+    const kakao = kakaoReturning([document()]);
+    const result = await new GameImageResolver(
+      kakao as never,
+      representatives(['템빨:오버기어드', '리니지Ⅱ']) as never,
+    ).resolve({ ...untitled, company: '㈜그레이게임즈' });
+    expect(result).toMatchObject({
+      image: { origin: 'KAKAO_IMAGE', sourceName: '인벤' },
+      representativeGame: '템빨:오버기어드',
+    });
+    expect(kakao.search).toHaveBeenCalledTimes(1);
+    expect(kakao.search).toHaveBeenCalledWith('그레이게임즈 템빨:오버기어드');
+  });
+
   it('대표게임 조회가 실패하거나 일치가 없으면 구글 링크로 물러선다', async () => {
     playStoreWith('무관한 앱');
     for (const source of [
