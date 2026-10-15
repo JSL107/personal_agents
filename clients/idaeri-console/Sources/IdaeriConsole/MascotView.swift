@@ -42,17 +42,19 @@ struct MascotView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            VStack(alignment: .trailing, spacing: 8) {
+            // 말풍선과 캐릭터를 같은 세로축(패널 가운데)에 세운다. 오른쪽 끝으로 맞추면 그림이 96pt 칸 안에
+            // 좌우 여백을 두고 그려져 있어 말풍선 끝과 몸이 어긋나 보인다.
+            VStack(alignment: .center, spacing: 10) {
                 Spacer(minLength: 0)
                 if let bubble = controller.bubble {
                     bubbleView(bubble)
-                        .frame(maxWidth: 300, alignment: .trailing)
+                        .frame(maxWidth: 300, alignment: .center)
                         .modifier(MascotHitArea())
                 }
                 character
                     .modifier(MascotHitArea())
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             .padding(12)
             .onPreferenceChange(MascotHitRects.self) { rects in
                 // SwiftUI 는 위에서 아래로, AppKit 패널은 아래에서 위로 좌표가 증가한다.
@@ -160,6 +162,13 @@ struct MascotView: View {
         .foregroundColor(Color(nsColor: .labelColor))
         .padding(12)
         .background(Color(nsColor: .windowBackgroundColor).opacity(0.96), in: RoundedRectangle(cornerRadius: 14))
+        // 꼬리는 아래 가운데에서 캐릭터를 가리킨다 — 누가 말하는지 보이게.
+        .overlay(alignment: .bottom) {
+            MascotBubbleTail()
+                .fill(Color(nsColor: .windowBackgroundColor).opacity(0.96))
+                .frame(width: 16, height: 9)
+                .offset(y: 8)
+        }
         .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
         .accessibilityElement(children: .contain)
     }
@@ -175,5 +184,17 @@ struct MascotView: View {
     private func closeCommandInput() {
         controller.closeCommandInput()
         commandText = ""
+    }
+}
+
+/// 말풍선 아래로 내려오는 꼬리(아래를 향한 삼각형).
+private struct MascotBubbleTail: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
+        path.closeSubpath()
+        return path
     }
 }
