@@ -225,9 +225,6 @@ const formatGameLine = (resolved: ResolvedArtJobImage): string | null => {
     return name ? `🎮 ${name} · 이미지는 스레드에` : null;
   }
   const parts = name ? [`🎮 ${name}`] : [];
-  if (resolved.preview) {
-    parts.push('검색 미리보기는 스레드에');
-  }
   if (resolved.googleSearchUrl) {
     parts.push(`<${resolved.googleSearchUrl}|구글 이미지 검색>`);
   }
@@ -252,19 +249,6 @@ export const formatArtJobImageCaption = (
     ? ` (출처: ${escapeSlackMrkdwn(image.sourceName)})`
     : '';
   return `${caption} · 참고 이미지${source}`;
-};
-
-// 확인 못 한 검색 1순위 그림의 글 — 받는 사람이 다른 게임 그림을 이 공고의 것으로 오해하지 않게
-// '확인 안 됨' 과 검색어·출처를 함께 밝힌다.
-export const formatArtJobPreviewCaption = (
-  order: number,
-  searchQuery: string,
-  preview: ArtJobImage,
-): string => {
-  const source = preview.sourceName
-    ? ` · 출처: ${escapeSlackMrkdwn(preview.sourceName)}`
-    : '';
-  return `${order}. 🔎 검색 미리보기 · 확인 안 된 이미지 (검색어: ${escapeSlackMrkdwn(searchQuery)}${source})`;
 };
 
 // 마감 전날 DM — 「관심 있음」 공고 중 내일 마감인 것을 한 통으로 묶는다.
