@@ -38,6 +38,10 @@ const document = (
   ...overrides,
 });
 
+const noRepresentative = {
+  fetchRepresentativeGames: jest.fn().mockResolvedValue([]),
+} as never;
+
 describe('GameImageResolver', () => {
   const originalFetch = global.fetch;
   afterEach(() => {
@@ -50,7 +54,11 @@ describe('GameImageResolver', () => {
         '<div><a href="/store/apps/details?id=wrong" aria-label="무관한 앱"></a><img src="https://play-lh.googleusercontent.com/wrong=s64"></div><div><a href="/store/apps/details?id=right" aria-label="카오스 제로 나이트메어"></a><img src="https://play-lh.googleusercontent.com/right=s64"></div>',
     });
     expect(
-      (await new GameImageResolver(kakaoOff()).resolve(listing)).image,
+      (
+        await new GameImageResolver(kakaoOff(), noRepresentative).resolve(
+          listing,
+        )
+      ).image,
     ).toEqual({
       url: 'https://play-lh.googleusercontent.com/right=w512',
       origin: 'PLAY_STORE',
@@ -58,7 +66,10 @@ describe('GameImageResolver', () => {
   });
   it('검색이 실패하면 회사명+게임명 구글 링크를 준다', async () => {
     global.fetch = jest.fn().mockRejectedValue(new Error('offline'));
-    const result = await new GameImageResolver(kakaoOff()).resolve(listing);
+    const result = await new GameImageResolver(
+      kakaoOff(),
+      noRepresentative,
+    ).resolve(listing);
     expect(result.image).toBeNull();
     expect(result.googleSearchUrl).toBe(
       `https://www.google.com/search?tbm=isch&q=${encodeURIComponent('스마일게이트 카오스 제로 나이트메어')}`,
@@ -66,7 +77,10 @@ describe('GameImageResolver', () => {
   });
   it('게임명이 없으면 회사명+게임으로 구글 링크를 만든다', async () => {
     global.fetch = jest.fn();
-    const result = await new GameImageResolver(kakaoOff()).resolve({
+    const result = await new GameImageResolver(
+      kakaoOff(),
+      noRepresentative,
+    ).resolve({
       ...listing,
       title: '캐릭터 원화',
     });
@@ -90,7 +104,10 @@ describe('GameImageResolver', () => {
         text: async () =>
           `<div><a href="/store/apps/details?id=game" aria-label="${appName}"></a><img src="https://play-lh.googleusercontent.com/game=s64"></div>`,
       });
-      const result = await new GameImageResolver(kakaoOff()).resolve({
+      const result = await new GameImageResolver(
+        kakaoOff(),
+        noRepresentative,
+      ).resolve({
         ...listing,
         title,
       });
@@ -126,7 +143,10 @@ describe('GameImageResolver', () => {
       }),
       document({ docUrl: 'https://www.inven.co.kr/webzine/news/?news=2' }),
     ]);
-    const result = await new GameImageResolver(kakao as never).resolve(listing);
+    const result = await new GameImageResolver(
+      kakao as never,
+      noRepresentative,
+    ).resolve(listing);
     expect(kakao.search).toHaveBeenCalledWith(
       '스마일게이트 카오스 제로 나이트메어',
     );
@@ -148,7 +168,10 @@ describe('GameImageResolver', () => {
     const kakao = kakaoReturning([
       document({ docUrl: 'https://www.inven.co.kr/webzine/news/?news=1' }),
     ]);
-    const result = await new GameImageResolver(kakao as never).resolve(listing);
+    const result = await new GameImageResolver(
+      kakao as never,
+      noRepresentative,
+    ).resolve(listing);
     expect(result.image).toBeNull();
     expect(result.googleSearchUrl).not.toBeNull();
   });
@@ -156,7 +179,10 @@ describe('GameImageResolver', () => {
   it('짧은 게임명은 기사 확인을 하지 않고 이미지 없이 둔다', async () => {
     mockPages({});
     const kakao = kakaoReturning([document()]);
-    const result = await new GameImageResolver(kakao as never).resolve({
+    const result = await new GameImageResolver(
+      kakao as never,
+      noRepresentative,
+    ).resolve({
       ...listing,
       title: '[NC] 캐릭터 원화',
       company: '회사',
@@ -186,7 +212,10 @@ describe('GameImageResolver', () => {
         sourceName: '게임포커스',
       }),
     ]);
-    const result = await new GameImageResolver(kakao as never).resolve(listing);
+    const result = await new GameImageResolver(
+      kakao as never,
+      noRepresentative,
+    ).resolve(listing);
     expect(result).toEqual({
       gameTitle: '카오스 제로 나이트메어',
       image: null,
@@ -200,7 +229,10 @@ describe('GameImageResolver', () => {
       isEnabled: () => true,
       search: jest.fn().mockRejectedValue(new Error('401')),
     };
-    const result = await new GameImageResolver(kakao as never).resolve(listing);
+    const result = await new GameImageResolver(
+      kakao as never,
+      noRepresentative,
+    ).resolve(listing);
     expect(result.image).toBeNull();
   });
 });
@@ -234,5 +266,74 @@ describe('articleMentionsGame', () => {
 
   it('제목이 없으면 확인 실패다', () => {
     expect(articleMentionsGame('<html></html>', '이터널 리턴')).toBe(false);
+  });
+});
+
+describe('GameImageResolver — 회사 대표게임', () => {
+  const originalFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+  const untitled = { ...listing, title: '캐릭터 원화', company: '게임듀오' };
+  const representatives = (names: string[] | Error) => ({
+    fetchRepresentativeGames:
+      names instanceof Error
+        ? jest.fn().mockRejectedValue(names)
+        : jest.fn().mockResolvedValue(names),
+  });
+  const playStoreWith = (appName: string) => {
+    global.fetch = jest.fn(async (url: string) => ({
+      ok: true,
+      text: async () =>
+        url.includes(encodeURIComponent(appName.split(' ')[0]))
+          ? `<div><a href="/store/apps/details?id=x" aria-label="${appName}"></a><img src="https://play-lh.googleusercontent.com/cat=s64"></div>`
+          : '<div></div>',
+    })) as never;
+  };
+
+  it('제목에 게임명이 없으면 대표게임의 플레이스토어 아이콘을 대표작으로 싣는다', async () => {
+    playStoreWith('캣 히어로 : 방치형 RPG');
+    const result = await new GameImageResolver(
+      kakaoOff(),
+      representatives(['어나더던전', '캣히어로']) as never,
+    ).resolve(untitled);
+    expect(result).toEqual({
+      gameTitle: null,
+      image: {
+        url: 'https://play-lh.googleusercontent.com/cat=w512',
+        origin: 'PLAY_STORE',
+      },
+      representativeGame: '캣히어로',
+      googleSearchUrl: null,
+    });
+  });
+
+  it('제목 게임명의 그림이 있으면 대표게임은 보지 않는다', async () => {
+    playStoreWith('카오스 제로 나이트메어');
+    const source = representatives(['캣히어로']);
+    const result = await new GameImageResolver(
+      kakaoOff(),
+      source as never,
+    ).resolve(listing);
+    expect(result.representativeGame).toBeUndefined();
+    expect(source.fetchRepresentativeGames).not.toHaveBeenCalled();
+  });
+
+  it('대표게임 조회가 실패하거나 일치가 없으면 구글 링크로 물러선다', async () => {
+    playStoreWith('무관한 앱');
+    for (const source of [
+      representatives(new Error('offline')),
+      representatives(['캣히어로']),
+    ]) {
+      const result = await new GameImageResolver(
+        kakaoOff(),
+        source as never,
+      ).resolve(untitled);
+      expect(result).toEqual({
+        gameTitle: null,
+        image: null,
+        googleSearchUrl: expect.stringContaining('google.com'),
+      });
+    }
   });
 });

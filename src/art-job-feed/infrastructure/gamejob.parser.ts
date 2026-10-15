@@ -65,3 +65,19 @@ export const parseGamejobList = (html: string): ArtJobListResult => {
   });
   return { received: ids.size, listings };
 };
+
+// 공고 상세 → 회사 정보 페이지 주소. 회사 정보가 없는 공고(헤드헌팅 등)는 null.
+export const parseCompanyPageUrl = (html: string): string | null => {
+  const id = /\/Company\/Detail\?M=(\d+)/.exec(html)?.[1];
+  return id ? `https://www.gamejob.co.kr/Company/Detail?M=${id}` : null;
+};
+
+// 회사 정보 페이지의 「대표게임」 칸. 회사가 직접 적는 값이라 비어 있거나 '-' 일 수 있다.
+export const parseRepresentativeGameText = (html: string): string | null => {
+  const $ = cheerio.load(html);
+  const label = $('dt')
+    .filter((_, element) => tidy($(element).text()) === '대표게임')
+    .first();
+  const text = tidy(label.next('dd').text());
+  return text && text !== '-' ? text : null;
+};

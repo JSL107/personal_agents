@@ -57,14 +57,20 @@ const buildImageCaption = (
   order: number,
   resolved: ResolvedArtJobImage,
 ): ImageCaption | null => {
-  if (resolved.image && resolved.gameTitle) {
-    return {
-      image: resolved.image,
-      text: formatArtJobImageCaption(order, resolved.gameTitle, resolved.image),
-      altText: resolved.gameTitle,
-    };
+  const name = resolved.representativeGame ?? resolved.gameTitle;
+  if (!resolved.image || !name) {
+    return null;
   }
-  return null;
+  return {
+    image: resolved.image,
+    text: formatArtJobImageCaption(
+      order,
+      name,
+      resolved.image,
+      Boolean(resolved.representativeGame),
+    ),
+    altText: name,
+  };
 };
 const INCIDENT_KEY = cronIncidentKey(CRON_NAME);
 // 한 슬롯(09시·18시) 안에서만 막으면 된다 — 다음 슬롯 전에 만료되도록 9시간 미만.
