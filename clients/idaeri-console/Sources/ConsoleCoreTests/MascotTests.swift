@@ -35,6 +35,46 @@ private let mascotTestBriefing = ConsoleBriefing(
 )
 
 func runMascotTests(_ runner: TestRunner) {
+    runner.suite("Mascot voice")
+    for moment in MascotMoment.allCases {
+        runner.expect(!(mascotQuips[moment] ?? []).isEmpty, "\(moment) 후보가 있어야 한다")
+        runner.expectEqual(mascotQuip(moment, random: 0), mascotQuips[moment]![0], "\(moment) 0 → 첫 후보")
+        runner.expectEqual(
+            mascotQuip(moment, random: 0.9999), mascotQuips[moment]!.last!, "\(moment) 1 직전 → 마지막 후보"
+        )
+    }
+    runner.expectEqual(mascotSay(MascotQuip("야하!!"), "PM 결재 요청"), "야하!! (PM 결재 요청)", "정보는 괄호로")
+    runner.expectEqual(mascotSay(MascotQuip("우라…", "심심해")), "우라… (심심해)", "고정 뜻도 괄호로")
+    runner.expectEqual(mascotSay(MascotQuip("푸루루")), "푸루루", "뜻이 없으면 소리만")
+    runner.expectEqual(mascotSay(MascotQuip("우라", "고정"), "  "), "우라 (고정)", "빈 정보는 고정 뜻으로 물러선다")
+
+    runner.suite("Mascot chatter")
+    let chatterNoon = mascotTestDate("2026-10-14T03:00:00.000Z")  // 수 12:00 KST
+    let longAgo = chatterNoon.addingTimeInterval(-mascotChatterQuietSeconds)
+    runner.expect(
+        mascotChatterDue(mood: .idle, lastSpokeAt: longAgo, now: chatterNoon, calendar: mascotTestCalendar()),
+        "쉬는 중·20분 조용·근무 시간이면 혼잣말"
+    )
+    runner.expect(
+        !mascotChatterDue(
+            mood: .idle, lastSpokeAt: chatterNoon.addingTimeInterval(-60), now: chatterNoon,
+            calendar: mascotTestCalendar()
+        ),
+        "방금 말했으면 혼잣말 안 함"
+    )
+    runner.expect(
+        !mascotChatterDue(mood: .working, lastSpokeAt: longAgo, now: chatterNoon, calendar: mascotTestCalendar()),
+        "작업 중엔 혼잣말 안 함"
+    )
+    let lateNight = mascotTestDate("2026-10-14T14:00:00.000Z")  // 23:00 KST
+    runner.expect(
+        !mascotChatterDue(
+            mood: .idle, lastSpokeAt: lateNight.addingTimeInterval(-3600), now: lateNight,
+            calendar: mascotTestCalendar()
+        ),
+        "근무 시간 밖엔 혼잣말 안 함"
+    )
+
     runner.suite("Mascot approval arming")
     let shownAt = Date(timeIntervalSince1970: 1_000_000)
     runner.expect(!mascotApprovalArmed(shownAt: shownAt, now: shownAt), "뜬 순간에는 승인 불가")

@@ -11,6 +11,12 @@ import SwiftUI
     @Published private(set) var blinking = false
     @Published private(set) var bubble: MascotBubble?
     @Published private(set) var commandInputOpen = false
+    /// 화면이 한 번 재생할 몸짓. `id` 가 바뀔 때마다 재생한다(같은 몸짓을 연달아 줄 수 있게).
+    @Published private(set) var motion = MascotMotion(kind: .hop, id: 0)
+    /// 지시 입력창의 안내 문구. 열 때마다 한 번 고른다.
+    @Published private(set) var commandPrompt = mascotSay(mascotQuip(.commandPrompt, random: 0))
+    /// 마지막으로 말풍선을 띄운 시각. 혼잣말은 이때부터 오래 조용할 때만 꺼낸다.
+    private var lastSpokeAt = Date()
 
     private func setMood(_ value: MascotMood) {
         if mood != value {
@@ -21,7 +27,20 @@ import SwiftUI
     private func setBubble(_ value: MascotBubble?) {
         if bubble != value {
             bubble = value
+            if value != nil {
+                lastSpokeAt = Date()
+            }
         }
+    }
+
+    func play(_ kind: MascotMotion.Kind) {
+        motion = MascotMotion(kind: kind, id: motion.id + 1)
+    }
+
+    /// 같은 내용에는 같은 소리를 고른다. 말풍선은 재동기화마다 다시 그려지는데, 그때마다 새로 뽑으면
+    /// 보고 있는 문구가 깜빡이며 바뀐다. 프로세스 안에서만 같으면 되므로 `hashValue` 로 충분하다.
+    private func steadyRandom(_ key: String) -> Double {
+        Double(UInt(bitPattern: key.hashValue) % 1000) / 1000
     }
 
     let panel = MascotPanel()
@@ -85,12 +104,37 @@ import SwiftUI
         scheduleBlink()
     }
 
+    /// 캐릭터를 한 번 눌렀을 때. 브리핑이 있으면 브리핑을, 없으면 소리만 낸다.
+    func poke() {
+        play(.squish)
+        guard store.briefing != nil else {
+            showTransient(.reaction(mascotSay(mascotQuip(.poke, random: .random(in: 0..<1)))), duration: 4)
+            return
+        }
+        showBriefingNow()
+    }
+
     func showBriefingNow() {
         guard let briefing = store.briefing else { return }
-        showTransient(.briefing(mascotBriefingLines(briefing: briefing)), duration: 20)
+        showTransient(.briefing(voicedBriefingLines(briefing)), duration: 20)
+    }
+
+    /// 브리핑 첫 줄(할 일)에 우사기 소리를 입힌다. 연속 기록 줄은 그대로 둔다.
+    private func voicedBriefingLines(_ briefing: ConsoleBriefing) -> [String] {
+        var lines = mascotBriefingLines(briefing: briefing)
+        guard !lines.isEmpty else {
+            return lines
+        }
+        let random = Double.random(in: 0..<1)
+        lines[0] = briefing.todos.isEmpty
+            ? mascotSay(mascotQuip(.briefingClear, random: random))
+            : mascotSay(mascotQuip(.briefingTodo, random: random), lines[0])
+        return lines
     }
 
     func openCommandInput() {
+        commandPrompt = mascotSay(mascotQuip(.commandPrompt, random: .random(in: 0..<1)))
+        play(.hop)
         commandInputOpen = true
         panel.setCommandInputActive(true)
         panel.makeKey()
@@ -182,7 +226,15 @@ import SwiftUI
     private func refresh() {
         let now = Date()
         let todos = store.briefing?.todos ?? []
+        let previousMood = mood
         setMood(mascotMood(approvals: store.approvals, runs: store.runs, todos: todos, now: now))
+        if mood == .failed, previousMood != .failed {
+            play(.shake)
+            showTransient(
+                .reaction(mascotSay(mascotQuip(.trouble, random: .random(in: 0..<1)), "엎어진 일 있어")),
+                duration: 8
+            )
+        }
         if mood != .idle && mood != .working && blinking {
             blinking = false
         }
@@ -194,7 +246,24 @@ import SwiftUI
         refreshCommandResult()
         maybeShowBriefing(now: now)
         maybeReactToWorkload(now: now)
+        maybeChatter(now: now)
         refreshBubble()
+    }
+
+    /// 오래 조용하면 가끔 혼잣말을 한다. 하루 3번·확률 0.35 — 매분 확인하므로 확률을 낮게 둔다.
+    private func maybeChatter(now: Date) {
+        guard bubble == nil,
+              mascotChatterDue(mood: mood, lastSpokeAt: lastSpokeAt, now: now, calendar: .current),
+              reactionLedger.fireDaily(
+                  prefix: "chatter", max: 3, chance: 0.35,
+                  random: .random(in: 0..<1), now: now, calendar: .current
+              )
+        else {
+            return
+        }
+        saveReactionLedger(now: now)
+        showTransient(.reaction(mascotSay(mascotQuip(.chatter, random: .random(in: 0..<1)))), duration: 8)
+        play(.hop)
     }
 
     /// 보낸 지시가 store 에 올라간 id 를 잡아 둔다. 통지는 `AppRootView` 가 받아 기록을 만들므로
@@ -236,7 +305,8 @@ import SwiftUI
         guard let mascotCommandId, commandId == mascotCommandId.uuidString, !reply.isEmpty else {
             return
         }
-        replyBubble = .reply(reply)
+        replyBubble = .reply(mascotSay(mascotQuip(.reply, random: .random(in: 0..<1)), reply))
+        play(.hop)
         replyTimer?.invalidate()
         replyTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: false) { [weak self] _ in
             Task { @MainActor [weak self] in self?.closeReply() }
@@ -262,14 +332,16 @@ import SwiftUI
             approvalShown = nil
         }
         if let notice = store.approvalNotice {
-            setBubble(.notice(notice))
+            setBubble(.notice(mascotSay(mascotQuip(.trouble, random: steadyRandom(notice)), notice)))
             return
         }
         if let failedNoticeCommandId,
            let failedCommand = store.pendingCommands.first(where: { $0.id == failedNoticeCommandId }) {
             let reason = failedCommand.reason?.trimmingCharacters(in: .whitespacesAndNewlines)
             let detail = reason.flatMap { $0.isEmpty ? nil : $0 } ?? "연결 확인"
-            setBubble(.notice("지시를 보내지 못했습니다 — \(detail)"))
+            setBubble(.notice(mascotSay(
+                mascotQuip(.trouble, random: steadyRandom(detail)), "지시를 못 보냈어 — \(detail)"
+            )))
             return
         }
         if commandInputOpen {
@@ -286,6 +358,7 @@ import SwiftUI
             let now = Date()
             if approvalShown?.id != approval.id {
                 approvalShown = (approval.id, now)
+                play(.hop)
             }
             let shownAt = approvalShown?.at ?? now
             let armed = mascotApprovalArmed(shownAt: shownAt, now: now)
@@ -294,7 +367,10 @@ import SwiftUI
             }
             setBubble(.approval(
                 id: approval.id,
-                headline: mascotApprovalHeadline(approval: approval, agents: store.agents),
+                headline: mascotSay(
+                    mascotQuip(.approval, random: steadyRandom(approval.id)),
+                    mascotApprovalHeadline(approval: approval, agents: store.agents)
+                ),
                 title: approval.title,
                 more: approvals.count - 1,
                 submitted: submittedApprovalId == approval.id,
@@ -332,7 +408,8 @@ import SwiftUI
         // 그 시각이 지나가므로, 보일 수 있을 때까지 기록을 미룬다(1분 타이머·스토어 갱신이 다시 부른다).
         guard !hasPriorityBubble else { return }
         UserDefaults.standard.set(slot, forKey: briefingSlotKey)
-        showTransient(.briefing(mascotBriefingLines(briefing: briefing)), duration: 20)
+        showTransient(.briefing(voicedBriefingLines(briefing)), duration: 20)
+        play(.hop)
     }
 
     private func receive(_ event: ConsoleEvent) {
@@ -346,7 +423,8 @@ import SwiftUI
                 random: Double.random(in: 0..<1), now: now, calendar: .current
             ) {
                 saveReactionLedger(now: now)
-                showTransient(.reaction("잘했어요! 오늘도 한 건 끝냈네요."), duration: 8)
+                showTransient(.reaction(mascotSay(mascotQuip(.cheer, random: .random(in: 0..<1)))), duration: 8)
+                play(.hop)
             }
         }
         queueRefresh()
@@ -360,7 +438,8 @@ import SwiftUI
                 "lots:" + MascotReactionLedger.halfDayKey(now: now, calendar: .current), now: now
            ) {
             saveReactionLedger(now: now)
-            showTransient(.reaction("할 일이 많네요. 하나씩 같이 해봐요."), duration: 8)
+            showTransient(.reaction(mascotSay(mascotQuip(.lots, random: .random(in: 0..<1)))), duration: 8)
+            play(.shake)
         }
         if let streak = store.briefing?.streak,
            streak.todayOpened > 0, streak.todayRemaining == 0 {
@@ -368,7 +447,8 @@ import SwiftUI
                 ?? Self.dayString(now: now)
             if reactionLedger.fireOnce("done:" + day, now: now) {
                 saveReactionLedger(now: now)
-                showTransient(.reaction("오늘 할 일을 모두 마쳤어요!"), duration: 8)
+                showTransient(.reaction(mascotSay(mascotQuip(.dayDone, random: .random(in: 0..<1)))), duration: 8)
+                play(.hop)
             }
         }
     }
@@ -435,4 +515,19 @@ import SwiftUI
             }
         }
     }
+}
+
+/// 화면이 재생할 짧은 몸짓.
+struct MascotMotion: Equatable {
+    enum Kind {
+        /// 깡충 — 새 소식(승인·답장·브리핑·칭찬).
+        case hop
+        /// 부르르 — 실패·할 일 많음.
+        case shake
+        /// 말랑 눌림 — 클릭.
+        case squish
+    }
+
+    let kind: Kind
+    let id: Int
 }
