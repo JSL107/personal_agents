@@ -179,6 +179,7 @@ describe('ReplayFailedRunUsecase', () => {
       expect(generateWorklogUsecase.execute).toHaveBeenCalledWith({
         workText: '한 일',
         slackUserId: OWNER,
+        triggerType: TriggerType.FAILURE_REPLAY,
       });
     });
 

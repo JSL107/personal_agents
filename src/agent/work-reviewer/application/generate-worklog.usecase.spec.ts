@@ -113,18 +113,22 @@ describe('GenerateWorklogUsecase', () => {
     ).not.toContain('firstPrompt');
   });
 
-  it('주간 경로에서는 세션 조회를 하지 않는다', async () => {
-    modelRouter.route.mockResolvedValue({
-      text: JSON.stringify(validReview),
-      modelUsed: 'codex-cli',
-    });
-    await usecase.execute({
-      workText: '완료',
-      slackUserId: 'U123',
-      triggerType: TriggerType.WEEKLY_SUMMARY_CRON,
-    });
-    expect(listSince).not.toHaveBeenCalled();
-  });
+  // 주간 요약은 기간이 다르고, 재실행은 원래 실행이 주간인지 일일인지 모른다 — 둘 다 붙이지 않는다.
+  it.each([TriggerType.WEEKLY_SUMMARY_CRON, TriggerType.FAILURE_REPLAY])(
+    '%s 경로에서는 세션 조회를 하지 않는다',
+    async (triggerType) => {
+      modelRouter.route.mockResolvedValue({
+        text: JSON.stringify(validReview),
+        modelUsed: 'codex-cli',
+      });
+      await usecase.execute({
+        workText: '완료',
+        slackUserId: 'U123',
+        triggerType,
+      });
+      expect(listSince).not.toHaveBeenCalled();
+    },
+  );
 
   it('모델 응답을 DailyReview 로 파싱해 반환한다', async () => {
     modelRouter.route.mockResolvedValue({

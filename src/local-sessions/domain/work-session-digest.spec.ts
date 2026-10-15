@@ -130,6 +130,25 @@ describe('parseClaudeTranscript', () => {
     });
   });
 
+  // 마지막 요청에 답이 아직 없으면 "하다 만 일" 이다 — 앞 요청의 응답을 붙이면 끝난 일처럼 읽힌다.
+  it('drops a reply that belongs to an earlier request', () => {
+    const result = parseClaudeTranscript(
+      [
+        claudeUser('first', '2026-10-14T01:00:00.000Z'),
+        line({
+          type: 'assistant',
+          timestamp: '2026-10-14T01:30:00.000Z',
+          message: { content: [{ type: 'text', text: 'answer to first' }] },
+        }),
+        claudeUser('second', '2026-10-14T02:00:00.000Z'),
+      ],
+      SINCE,
+      'id',
+    );
+
+    expect(result).toMatchObject({ lastPrompt: 'second', lastReply: null });
+  });
+
   it('truncates long prompts with an ellipsis', () => {
     const result = parseClaudeTranscript(
       [
@@ -214,6 +233,34 @@ describe('parseCodexRollout', () => {
       lastReply: 'Done',
       lastActivityAt: new Date('2026-10-14T03:00:00.000Z'),
     });
+  });
+
+  it('drops a task_complete reply that belongs to an earlier request', () => {
+    const result = parseCodexRollout(
+      [
+        meta('codex_cli', 'cli'),
+        prompt,
+        line({
+          type: 'event_msg',
+          timestamp: '2026-10-14T02:00:00.000Z',
+          payload: { type: 'task_complete', last_agent_message: 'Done' },
+        }),
+        line({
+          type: 'event_msg',
+          timestamp: '2026-10-14T03:00:00.000Z',
+          payload: {
+            type: 'item_completed',
+            item: {
+              type: 'UserMessage',
+              content: [{ type: 'text', text: 'Next work' }],
+            },
+          },
+        }),
+      ],
+      SINCE,
+    );
+
+    expect(result).toMatchObject({ lastPrompt: 'Next work', lastReply: null });
   });
 });
 
@@ -304,6 +351,26 @@ describe('toWorkSessionEvidencePayload', () => {
     expect(payload.sessions).toHaveLength(WORK_SESSION_MAX_COUNT);
     expect(payload.sessions[0].sessionId).toBe(
       `id-${WORK_SESSION_MAX_COUNT + 1}`,
+    );
+  });
+
+  // 바이트 상한으로 섹션에서 빠진 블록은 evidence 에도 없어야 한다.
+  it('matches the sessions that the section actually shows', () => {
+    const longReply = '가'.repeat(400);
+    const sessions = Array.from(
+      { length: WORK_SESSION_MAX_COUNT },
+      (_, index) => ({
+        ...digest(`id-${index}`, `2026-10-14T0${index}:00:00.000Z`),
+        lastPrompt: longReply,
+        lastReply: longReply,
+      }),
+    );
+    const section = formatWorkSessionsSection({ sessions, header: '[h]' });
+    const shownCount = (section?.match(/^- \[claude\]/gm) ?? []).length;
+
+    expect(shownCount).toBeLessThan(WORK_SESSION_MAX_COUNT);
+    expect(toWorkSessionEvidencePayload(sessions, SINCE).sessions).toHaveLength(
+      shownCount,
     );
   });
 

@@ -34,6 +34,13 @@ import { WorkReviewerErrorCode } from '../domain/work-reviewer-error-code.enum';
 
 const KST_OFFSET_HOURS = 9;
 
+// 오늘 세션을 붙이는 실행 — 수동 /worklog 와 19:40 일일 자동만. 주간 요약은 기간이 다르고,
+// 재실행(FAILURE_REPLAY)은 원래 실행이 주간인지 일일인지 모르므로 붙이지 않는다.
+const WORK_SESSION_TRIGGERS: ReadonlySet<TriggerType> = new Set([
+  TriggerType.SLACK_COMMAND_WORKLOG,
+  TriggerType.DAILY_EVAL_CRON,
+]);
+
 // KST 기준 "오늘" 을 UTC 00:00 Date 로 반환 (PM 과 동일 정규화).
 // reviewDate 를 request 진입 시점에 고정해 midnight 근처 race 방지 (codex review b1309omm0 P1 와 동일 패턴).
 const getKstTodayAsUtcDate = (): Date => {
@@ -78,7 +85,11 @@ export class GenerateWorklogUsecase {
     const reviewDate = getKstTodayAsUtcDate();
     const since = kstStartOfDay(new Date());
     let sessions: WorkSessionDigest[] = [];
-    if (triggerType !== TriggerType.WEEKLY_SUMMARY_CRON) {
+    if (
+      WORK_SESSION_TRIGGERS.has(
+        triggerType ?? TriggerType.SLACK_COMMAND_WORKLOG,
+      )
+    ) {
       try {
         sessions = this.workSessionDigestService.listSince({
           since,
