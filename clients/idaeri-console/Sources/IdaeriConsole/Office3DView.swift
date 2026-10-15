@@ -137,7 +137,7 @@ private final class OfficeWebSchemeHandler: NSObject, WKURLSchemeHandler {
 /// 선택·상태 변화가 조용히 버려진다(화면은 렌더러를 세운 뒤에 `ready` 를 보낸다). 대신 마지막 스냅샷·잠·선택을 들고 있다가 `ready` 에 한꺼번에 보낸다 —
 /// 안 그러면 첫 화면이 다음 변화(길면 30초 재동기화)까지 빈 사무실로 남는다.
 final class Office3DController: NSObject, ObservableObject, WKScriptMessageHandler {
-    /// 화면이 보낸 사건(`office:agent-click` · `office:president-click` · `office:focus` · `escape`).
+    /// 화면이 보낸 직원 선택·집중·닫기 사건. 대표 클릭은 맥에서 지시 입구로 쓰지 않는다.
     var onMessage: (([String: Any]) -> Void)?
 
     private var webView: WKWebView?
@@ -146,7 +146,6 @@ final class Office3DController: NSObject, ObservableObject, WKScriptMessageHandl
     private var isReady = false
     private var latestSnapshot: String?
     private var latestPending: String?
-    private var latestBriefing: String?
     private var pendingSnapshot: ConsoleSnapshot?
     private var snapshotScheduled = false
     private var sleeping = false
@@ -206,9 +205,6 @@ final class Office3DController: NSObject, ObservableObject, WKScriptMessageHandl
             if let latestPending {
                 send(latestPending)
             }
-            if let latestBriefing {
-                send(latestBriefing)
-            }
             setSleeping(sleeping)
             setSelected(selectedAgent)
             return
@@ -265,16 +261,6 @@ final class Office3DController: NSObject, ObservableObject, WKScriptMessageHandl
             return
         }
         latestPending = message
-        send(message)
-    }
-
-    /// 대표 브리핑(할 일 말풍선·연속 도장·정산 종이). 웹뷰 주소(`idaeri-office://`)는 파일만 주고 백엔드로 넘기지
-    /// 않아 화면이 직접 조회할 수 없다 — 앱이 받은 값을 그대로 민다. 화면이 서기 전에 온 값은 `ready` 에 보낸다.
-    func pushBriefing(_ briefing: ConsoleBriefing?) {
-        let data = briefing.flatMap { try? JSONEncoder().encode($0) }
-        let json = data.flatMap { String(data: $0, encoding: .utf8) } ?? "null"
-        let message = #"{"type":"briefing","data":"# + json + "}"
-        latestBriefing = message
         send(message)
     }
 

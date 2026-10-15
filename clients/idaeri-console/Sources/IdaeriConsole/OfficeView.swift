@@ -4,8 +4,7 @@ import SpriteKit
 import SwiftUI
 
 /// 오피스 탭. store.agents 를 씬에 반영하고, SSE 이벤트를 연출(VisualIntent)로 잇는다.
-/// 원 클릭 시 지시 입력 바(일반) 또는 승인/거절 팝오버(승인 대기)를 띄우고,
-/// 대표(나) 클릭 시 담당자를 정하지 않는 지시 바를 띄운다.
+/// 원 클릭 시 담당자 지시 입력 바 또는 승인/거절 팝오버를 띄운다.
 struct OfficeView: View {
     @ObservedObject var store: ConsoleStore
     let scene: OfficeScene
@@ -14,9 +13,6 @@ struct OfficeView: View {
     /// 실패 실행 재시도 — 인스펙터 버튼.
     var onRetryRun: (Int) -> Void = { _ in }
     let onReject: (String) -> Void
-    /// 대표에게 지시하는 바가 열렸는지. 담당자를 지정하지 않는 지시라 대상 상태가 따로 없다.
-    /// 소유자는 `AppRootView` — 메뉴에서 열 때 탭 전환과 함께 세팅돼야 한다.
-    @Binding var isPresidentBarOpen: Bool
     @Binding var selectedAgent: String?
 
     /// 리사이즈가 **시작될 때**의 창 크기. 키운 것인지 줄인 것인지 가르는 유일한 근거다 —
@@ -140,9 +136,7 @@ struct OfficeView: View {
                     // 통지는 상태가 "바뀔 때" 만 온다. 이미 가려지거나 최소화된 창에서 탭이
                     // 열리면 다음 통지까지 씬이 계속 돌므로, 나타나는 시점에 한 번 맞춘다.
                     applySceneSleep()
-                    let validSelection = isPresidentBarOpen
-                        ? nil
-                        : reconciledSelectedAgent(current: selectedAgent, agents: store.agents)
+                    let validSelection = reconciledSelectedAgent(current: selectedAgent, agents: store.agents)
                     selectedAgent = validSelection
                     scene.setVectorMetricsEnabled(validSelection != nil)
                     scene.onFocusChange = { focusedRoom = $0 }
@@ -158,29 +152,17 @@ struct OfficeView: View {
                     )
                     scene.onAgentClick = { agentType in
                         selectedAgent = agentType
-                        isPresidentBarOpen = false
                         commandText = ""
                     }
-                    scene.onPresidentClick = { openPresidentBar() }
                     office3D.onMessage = { handleOffice3DMessage($0) }
                     office3D.pushSnapshot(currentSnapshot)
                     office3D.pushPending(store.pendingCommands)
-                    office3D.pushBriefing(store.briefing)
-                    scene.onDailyReportClick = {
-                        scene.toggleDailyReportCard(store.briefing)
-                    }
-                    scene.refreshBriefing(
-                        store.briefing,
-                        hour: Calendar.current.component(.hour, from: Date())
-                    )
                 }
                 .onDisappear {
                     // 다른 탭에서는 씬의 시간도 멈춘다. 복귀하면 같은 위치에서 이어진다.
                     scene.isPaused = true
                     scene.onAgentClick = nil
-                    scene.onPresidentClick = nil
                     scene.onFocusChange = nil
-                    scene.onDailyReportClick = nil
                     office3D.onMessage = nil
                     // 웹뷰는 창에서 떨어져도 살아 있다 — 재우지 않으면 안 보이는 화면이 계속 돈다.
                     office3D.setSleeping(true)
@@ -228,30 +210,11 @@ struct OfficeView: View {
                     scene.setSelected(newSelection)
                     office3D.setSelected(newSelection)
                 }
-                .onChange(of: isPresidentBarOpen) { isOpen in
-                    // 메뉴에서 열린 경우는 `openPresidentBar` 를 거치지 않는다. 선택된 사람이 남아
-                    // 있으면 그 사람 상호작용 바가 우선해 지시 바가 열리지 않으므로 여기서 놓는다.
-                    guard isOpen else {
-                        return
-                    }
-                    selectedAgent = nil
-                    commandText = ""
-                }
                 .onChange(of: store.sessions) { newSessions in
                     // 세션은 사규가 배정한 자리가 없어 사무실을 다시 그릴 필요가 없다.
                     // sync 를 부르면 세션 하나 뜰 때마다 바닥·가구·29명이 통째로 다시 그려진다.
                     scene.syncSessions(newSessions)
                     office3D.pushSnapshot(currentSnapshot)
-                }
-                .onChange(of: store.briefing) { newBriefing in
-                    // 3D 화면은 브리핑을 스스로 받지 못한다(`Office3DController.pushBriefing`).
-                    office3D.pushBriefing(newBriefing)
-                    // 이게 없으면 브리핑을 새로 받아도 화면은 부팅 때 그린 판 그대로다 —
-                    // 결재를 눌러 할 일이 사라져도 보드에는 계속 남아 있게 된다.
-                    scene.refreshBriefing(
-                        newBriefing,
-                        hour: Calendar.current.component(.hour, from: Date())
-                    )
                 }
                 .onChange(of: store.pendingCommands) { _ in
                     office3D.pushPending(store.pendingCommands)
@@ -287,9 +250,7 @@ struct OfficeView: View {
                     )
                 }
 
-            if selectedAgent == nil, isPresidentBarOpen {
-                presidentBar
-            } else if selectedAgent == nil {
+            if selectedAgent == nil {
                 // 배지와 승인 실패 사유는 함께 쌓는다. 하나로 분기하면 담당자 미확정 지시가 도는
                 // 몇 분 동안 승인·거절 실패 사유가 배지에 가려 어디에도 안 보인다.
                 idleBar
@@ -307,7 +268,7 @@ struct OfficeView: View {
                 office3D.setFocus(nil)
             }
         }
-        // 시트는 항상 살아 있는 루트에 단 한 번 단다 — ZStack 의 세 바는 상호 배타 분기라,
+        // 시트는 항상 살아 있는 루트에 단 한 번 단다 — 선택 패널과 빈 바는 상호 배타 분기라,
         // 분기 안쪽에 달면 다른 바에서 상태를 켜는 순간 presenter 가 없어 시트가 안 열린다.
         .sheet(isPresented: $showAnswerSheet) {
             ScrollView {
@@ -351,7 +312,7 @@ struct OfficeView: View {
         )
     }
 
-    /// 3D 화면이 보낸 사건 — 2D 씬의 `onAgentClick`·`onPresidentClick`·`onFocusChange` 와 같은 자리.
+    /// 3D 화면이 보낸 사건 — 2D 씬의 담당자 선택·방 확대와 같은 자리.
     private func retryRunId(for agentType: String) -> Int? {
         retryTarget(agentType: agentType, todos: store.briefing?.todos ?? [])?.runId
     }
@@ -363,10 +324,7 @@ struct OfficeView: View {
                 return
             }
             selectedAgent = agentType
-            isPresidentBarOpen = false
             commandText = ""
-        case "office:president-click":
-            openPresidentBar()
         case "office:focus":
             focusedRoom = (body["department"] as? String).flatMap(Department.init(rawValue:))
         case "escape", "office:deselect":
@@ -409,13 +367,9 @@ struct OfficeView: View {
     private var officeAccessibilityControls: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
             Text(officeAccessibilitySummary(agents: store.agents, approvals: store.approvals))
-            Button("대표에게 지시") { openPresidentBar() }
-                .accessibilityHint("담당자를 지정하지 않고 지시 입력")
-            Button("오늘의 리포트") { scene.toggleDailyReportCard(store.briefing) }
             ForEach(store.agents) { agent in
                 Button("\(agent.roleName) 선택") {
                     selectedAgent = agent.agentType
-                    isPresidentBarOpen = false
                     commandText = ""
                 }
                 .accessibilityHint("담당자 상세와 지시 입력 열기")
@@ -427,18 +381,6 @@ struct OfficeView: View {
         }
     }
 
-    /// 씬 안의 대표를 클릭했을 때. 마우스 말고 지시 바를 여는 길은 메뉴 바의 「지시 ▸ 대표에게
-    /// 지시…」(⌘K) — 씬은 접근성 트리에 이름 없는 이미지 하나로만 잡히고 접근성 API 클릭도
-    /// SpriteKit 에 전달되지 않아, 화면 위 버튼을 걷어낸 뒤로는 그 항목이 유일한 대체 경로다
-    /// (MainMenu.swift).
-    private func openPresidentBar() {
-        selectedAgent = nil
-        isPresidentBarOpen = true
-        commandText = ""
-    }
-
-    /// 대표에게 지시 — 담당자를 지정하지 않는다. 라우터가 자연어를 보고 워커를 고르고,
-    /// 선행 조건이 빠졌으면 그 앞 워커까지 알아서 돌린다.
     /// 방 뷰에서 지금 어느 방인지와 나가는 방법. 확대하면 방 이름표가 화면 밖으로 밀릴 수 있어
     /// 씬 밖에 따로 둔다 — 씬 노드가 아니라 오버레이라 타일 크기 변화에 영향받지 않는다.
     @ViewBuilder
@@ -453,88 +395,6 @@ struct OfficeView: View {
             .background(.black.opacity(0.55), in: Capsule())
             .padding(.top, Spacing.sm)
         }
-    }
-
-    private var presidentBar: some View {
-        VStack(alignment: .leading, spacing: Spacing.sm) {
-            HStack {
-                Text("👑 나 (대표)").font(Typography.sectionTitle)
-                Spacer()
-                Button("닫기") { isPresidentBarOpen = false }
-            }
-            if !store.conversation.isEmpty {
-                conversationLog
-            }
-            HStack {
-                TextField("지시… 담당자는 이대리가 고릅니다", text: $commandText)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit(sendToPresident)
-                Button("전송", action: sendToPresident)
-                    .disabled(commandText.trimmingCharacters(in: .whitespaces).isEmpty)
-            }
-            // 배지를 여기 두지 않는다 — 대화 로그가 이미 같은 진행·응답을 턴으로 보여줘서
-            // 한 응답이 두 번 보인다. 바를 닫았을 때의 진행 추적은 `idleBar` 의 배지가 맡는다.
-        }
-        .padding(Spacing.md)
-        .background(.thinMaterial)
-        .cornerRadius(Radius.panel)
-        .padding(Spacing.md)
-    }
-
-    private var conversationLog: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(spacing: Spacing.sm) {
-                    ForEach(store.conversation) { turn in
-                        conversationTurnRow(turn)
-                            .id(turn.id)
-                    }
-                }
-                .padding(.vertical, Spacing.xs)
-            }
-            .frame(maxHeight: 260)
-            .onChange(of: store.conversation.last?.id) { latestTurnId in
-                guard let latestTurnId else {
-                    return
-                }
-                proxy.scrollTo(latestTurnId, anchor: .bottom)
-            }
-        }
-    }
-
-    private func conversationTurnRow(_ turn: ConsoleTurn) -> some View {
-        HStack {
-            if turn.role == .me {
-                Spacer(minLength: Spacing.xxl)
-            }
-            Text(turn.text)
-                .font(Typography.body)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.horizontal, Spacing.md)
-                .padding(.vertical, Spacing.sm)
-                .background(
-                    RoundedRectangle(cornerRadius: Radius.control, style: .continuous)
-                        .fill(Color.primary.opacity(turn.role == .me ? 0.10 : 0.06))
-                )
-                .accessibilityLabel(
-                    turn.role == .me ? "나: \(turn.text)" : "이대리: \(turn.text)"
-                )
-            if turn.role == .idaeri {
-                Spacer(minLength: Spacing.xxl)
-            }
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private func sendToPresident() {
-        let trimmed = commandText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            return
-        }
-        onSend(trimmed, nil)
-        commandText = ""
-        // 에이전트 지시와 달리 바를 닫지 않는다 — 담당자가 정해지기까지의 진행·실패가 이 자리에
-        // 뜨는데, 닫아버리면 방금 보낸 지시가 어디로 갔는지 볼 데가 없다.
     }
 
     /// 아직 담당자가 정해지지 않은 지시의 진행 배지. `run.started` 로 담당자가 확정되면

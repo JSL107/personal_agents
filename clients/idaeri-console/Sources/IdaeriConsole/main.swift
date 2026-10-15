@@ -222,11 +222,6 @@ if let renderIndex = CommandLine.arguments.firstIndex(of: "--render") {
     // 하는지 지목할 수가 없다. 같은 목록은 stderr 로도 나간다.
     //   swift run IdaeriConsole --render /tmp/office.png --busy-demo --labels
     let debugLabels = CommandLine.arguments.contains("--labels")
-    // 할 일 말풍선과 연속 도장은 실 백엔드가 지금 승인 0건·연속 0일이라 화면에 뜨지 않는다.
-    // 할 일 3종이 겹친 날과 연속 3일을 강제해 굽는다 — `--alarm-demo` 와 함께 쓰면 대표 머리
-    // 위에 문패·경고등·말풍선이 한꺼번에 쌓이는 최악을 볼 수 있다.
-    //   swift run IdaeriConsole --render /tmp/office.png --briefing-demo --alarm-demo
-    let briefingDemo = CommandLine.arguments.contains("--briefing-demo")
     // 방 하나만 확대해 굽는다. 방 6개는 격자 위치가 달라 한 방만 맞을 수 있어, 앱을 띄우지 않고
     // 여섯 장을 확인할 입구가 필요하다.
     //   swift run IdaeriConsole --render /tmp/office.png --room engineering
@@ -272,7 +267,6 @@ if let renderIndex = CommandLine.arguments.firstIndex(of: "--render") {
         hoverAgentType: hoverAgentType,
         busyDemo: busyDemo,
         alarmDemo: alarmDemo,
-        briefingDemo: briefingDemo,
         chatterDemo: chatterDemo,
         vacuumDemo: vacuumDemo,
         sessionDemo: sessionDemo,
@@ -335,7 +329,7 @@ if let iconURL = Bundle.module.url(forResource: "appicon", withExtension: "png")
     application.applicationIconImage = icon
 }
 
-// 메뉴 바. 대표에게 지시하는 입구가 여기 있다 — 자세한 이유는 MainMenu.swift.
+// 메뉴 바. 마스코트에게 지시하는 키보드 입구가 여기 있다 — 자세한 이유는 MainMenu.swift.
 // 브리지는 메뉴 항목이 약하게 참조하므로 앱이 사는 동안 여기서 붙들고 있어야 한다.
 let menuBridge = installMainMenu(on: application)
 
@@ -375,12 +369,23 @@ let window = NSWindow(
     backing: .buffered,
     defer: false
 )
+// 창을 닫아도 콘솔 동기화와 마스코트 승인이 이어져야 하므로 둘이 같은 store를 사용한다.
+let store = ConsoleStore()
+let appDelegate = AppDelegate(window: window)
+application.delegate = appDelegate
+window.delegate = appDelegate
 window.title = "이대리 콘솔"
 window.center()
 window.contentView = NSHostingView(
-    rootView: AppRootView(client: client, baseURLLabel: baseURLString)
+    rootView: AppRootView(client: client, baseURLLabel: baseURLString, store: store)
 )
 window.makeKeyAndOrderFront(nil)
+// Swift 5 최상위 코드는 actor 비격리지만 이 실행 지점은 AppKit 메인 스레드다.
+let mascot = MainActor.assumeIsolated { () -> MascotController in
+    let controller = MascotController(store: store)
+    controller.show()
+    return controller
+}
 
 application.activate(ignoringOtherApps: true)
 application.run()
