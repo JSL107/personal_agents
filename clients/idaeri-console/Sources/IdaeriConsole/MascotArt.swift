@@ -49,7 +49,7 @@ func mascotFramesPerSecond(_ pose: MascotPose) -> Double {
     switch pose {
     case .happy, .poke:
         return 8
-    case .working, .dangle:
+    case .working, .dangle, .planning, .reviewing, .evaluating, .counting, .writing, .fixing, .typing:
         return 6
     case .thinking, .reading, .hover:
         return 4

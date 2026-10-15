@@ -8,6 +8,12 @@ private func mascotTestCalendar() -> Calendar {
     return calendar
 }
 
+private func mascotTestIso(_ date: Date) -> String {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter.string(from: date)
+}
+
 private func mascotTestDate(_ text: String) -> Date {
     officeParseIsoDate(text)!
 }
@@ -80,6 +86,81 @@ func runMascotTests(_ runner: TestRunner) {
         }
         runner.expect(chain == nil, "\(pose) 대체 사슬은 끝나야 한다")
     }
+
+    runner.suite("Mascot activity")
+    let activityNow = mascotTestDate("2026-10-14T03:00:00.000Z")
+    func activityRun(_ id: String, _ agentType: String, secondsAgo: Double) -> ConsoleRun {
+        ConsoleRun(
+            id: id, agentType: agentType, status: "IN_PROGRESS", parentId: nil,
+            startedAt: mascotTestIso(activityNow.addingTimeInterval(-secondsAgo)), finishedAt: nil
+        )
+    }
+    func activityAgent(_ agentType: String, _ department: String?) -> ConsoleAgent {
+        ConsoleAgent(
+            agentType: agentType, displayName: agentType, slashCommands: [], description: "",
+            state: .inProgress, bubble: "\(agentType) 하는 중", department: department
+        )
+    }
+    let reviewAgent = activityAgent("CODE_REVIEWER", "quality")
+    let blogAgent = activityAgent("BLOG_PUBLISH", "content")
+    func activitySession(_ id: String, state: String, minutesAgo: Double) -> ConsoleSession {
+        ConsoleSession(
+            sessionId: id, pid: 1, source: "claude", name: "세션 \(id)", cwd: "/Users/me/repo-\(id)", state: state,
+            startedAt: mascotTestIso(activityNow.addingTimeInterval(-3600)),
+            lastActivityAt: mascotTestIso(activityNow.addingTimeInterval(-minutesAgo * 60))
+        )
+    }
+    runner.expectEqual(
+        mascotActivity(
+            runs: [activityRun("1", "CODE_REVIEWER", secondsAgo: 300), activityRun("2", "BLOG_PUBLISH", secondsAgo: 60)],
+            agents: [reviewAgent, blogAgent], sessions: [], now: activityNow
+        ),
+        .writing, "가장 최근에 시작한 실행의 부서 소품"
+    )
+    runner.expect(
+        mascotActivity(
+            runs: [activityRun("1", "CODE_REVIEWER", secondsAgo: 5)], agents: [reviewAgent], sessions: [], now: activityNow
+        ) == nil,
+        "유예 안의 짧은 실행은 소품을 들지 않는다"
+    )
+    runner.expectEqual(
+        mascotActivity(runs: [], agents: [], sessions: [activitySession("a", state: "active", minutesAgo: 1)], now: activityNow),
+        .typing, "내 세션만 돌면 타이핑"
+    )
+    runner.expect(
+        mascotActivity(runs: [], agents: [], sessions: [activitySession("a", state: "idle", minutesAgo: 1)], now: activityNow) == nil,
+        "쉬는 세션은 타이핑이 아니다"
+    )
+    runner.expectEqual(mascotActivityPose(.internalOps), .fixing, "총무는 드라이버")
+    runner.expectEqual(mascotActivityPose(.treasury), .counting, "자산은 주판")
+    runner.expectEqual(
+        mascotBusyCount(
+            runs: [activityRun("1", "CODE_REVIEWER", secondsAgo: 300), activityRun("2", "X", secondsAgo: 3)],
+            sessions: [activitySession("a", state: "active", minutesAgo: 1), activitySession("b", state: "idle", minutesAgo: 9)],
+            now: activityNow
+        ),
+        2, "유예 넘긴 실행 1 + 일하는 세션 1"
+    )
+    runner.expectEqual(
+        mascotPose(MascotPoseContext(mood: .working, blinking: true, activity: .reviewing)), .reviewing,
+        "소품 그림에는 깜빡임을 섞지 않는다"
+    )
+    runner.expectEqual(
+        mascotPose(MascotPoseContext(mood: .awaitingApproval, activity: .reviewing)), .approval, "승인 대기가 소품보다 먼저"
+    )
+    let statusItems = mascotStatusItems(
+        approvals: [mascotTestApproval], runs: [activityRun("1", "CODE_REVIEWER", secondsAgo: 300)],
+        agents: [reviewAgent],
+        sessions: [activitySession("old", state: "idle", minutesAgo: 30), activitySession("new", state: "active", minutesAgo: 2)],
+        now: activityNow
+    )
+    runner.expectEqual(statusItems.map(\.kind), [.approval, .run, .session, .session], "승인 → 실행 → 세션 순")
+    runner.expectEqual(statusItems[1].detail, "CODE_REVIEWER 하는 중", "실행 설명은 직원 말풍선 문장")
+    runner.expectEqual(statusItems[1].when, "5분 전", "실행 경과")
+    runner.expectEqual(statusItems[2].title, "세션 new", "일하는 세션이 먼저")
+    runner.expectEqual(statusItems[2].detail, "repo-new", "세션 설명은 작업 폴더 이름")
+    runner.expectEqual(mascotRelativeTime(activityNow.addingTimeInterval(-30), now: activityNow), "방금", "1분 안은 방금")
+    runner.expectEqual(mascotRelativeTime(activityNow.addingTimeInterval(-7200), now: activityNow), "2시간 전", "시간 단위")
 
     runner.suite("Mascot reply split")
     let signed = mascotSplitReply("지연 없습니다.\n\n_이대리 (진행 현황 조회) · 실행 #9086_\n")

@@ -15,6 +15,13 @@ import SwiftUI
     @Published private(set) var thinking = false
     /// 한 번 재생하는 몸짓 그림(`happy`·`poke`). 짧게 켜졌다 꺼진다.
     @Published private(set) var flourish: MascotPose?
+    /// 지금 하는 일의 소품 그림. 없으면 nil.
+    @Published private(set) var activity: MascotPose?
+    /// 머리 위 배지 숫자 — 돌고 있는 이대리 실행 + 일하는 내 세션.
+    @Published private(set) var busyCount = 0
+    /// 클릭으로 연 진행 목록. 다시 누르거나 [닫기], 45초 뒤 닫힌다.
+    private var statusOpen = false
+    private var statusTimer: Timer?
     private var flourishTimer: Timer?
     private var thinkingSince: Date?
     private var thinkingDoneSince: Date?
@@ -158,20 +165,46 @@ import SwiftUI
         }
     }
 
-    /// 캐릭터를 한 번 눌렀을 때. 브리핑이 있으면 브리핑을, 없으면 소리만 낸다.
+    /// 캐릭터를 한 번 눌렀을 때 — 진행 목록을 펴고 접는다.
     func poke() {
         play(.squish)
         flourish(.poke, seconds: 0.8)
-        guard store.briefing != nil else {
-            showTransient(.reaction(mascotSay(mascotQuip(.poke, random: .random(in: 0..<1)))), duration: 4)
-            return
+        statusOpen ? closeStatus() : openStatus()
+    }
+
+    func openStatus() {
+        statusOpen = true
+        statusTimer?.invalidate()
+        statusTimer = Timer.scheduledTimer(withTimeInterval: 45, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.closeStatus() }
         }
-        showBriefingNow()
+        refreshBubble()
+    }
+
+    func closeStatus() {
+        statusOpen = false
+        statusTimer?.invalidate()
+        refreshBubble()
     }
 
     func showBriefingNow() {
         guard let briefing = store.briefing else { return }
         showTransient(.briefing(voicedBriefingLines(briefing)), duration: 20)
+    }
+
+    /// 진행 목록 머리 — 브리핑(할 일 한 줄 + 연속 기록). 같은 내용엔 같은 소리.
+    private func statusHeader() -> [String] {
+        guard let briefing = store.briefing else {
+            return []
+        }
+        var lines = mascotBriefingLines(briefing: briefing)
+        if !lines.isEmpty {
+            let key = lines[0]
+            lines[0] = briefing.todos.isEmpty
+                ? mascotSay(mascotQuip(.briefingClear, random: steadyRandom(key)))
+                : mascotSay(mascotQuip(.briefingTodo, random: steadyRandom(key)), key)
+        }
+        return lines
     }
 
     /// 브리핑 첫 줄(할 일)에 우사기 소리를 입힌다. 연속 기록 줄은 그대로 둔다.
@@ -304,6 +337,14 @@ import SwiftUI
         if let submittedApprovalId,
            !store.approvals.contains(where: { $0.id == submittedApprovalId }) || store.approvalNotice != nil {
             self.submittedApprovalId = nil
+        }
+        let nextActivity = mascotActivity(runs: store.runs, agents: store.agents, sessions: store.sessions, now: now)
+        if activity != nextActivity {
+            activity = nextActivity
+        }
+        let nextBusy = mascotBusyCount(runs: store.runs, sessions: store.sessions, now: now)
+        if busyCount != nextBusy {
+            busyCount = nextBusy
         }
         scheduleGraceRecheck(now: now)
         refreshCommandResult()
@@ -451,6 +492,14 @@ import SwiftUI
         }
         if commandInputOpen {
             setBubble(.commandInput)
+            return
+        }
+        // 사용자가 직접 연 목록이라 승인 말풍선보다 먼저 보인다. 승인 대기도 목록 맨 위에 있다.
+        if statusOpen {
+            setBubble(.status(header: statusHeader(), items: mascotStatusItems(
+                approvals: store.approvals, runs: store.runs, agents: store.agents,
+                sessions: store.sessions, now: Date()
+            )))
             return
         }
         // 승인 통지를 보낸 뒤 스토어가 카드를 숨기기 전까지 같은 버튼을 다시 그리지 않는다.
@@ -602,7 +651,7 @@ import SwiftUI
                     self?.refreshBubble()
                 }
             }
-        case .notice, .commandInput, .approval, .thinking, .reply:
+        case .notice, .commandInput, .status, .approval, .thinking, .reply:
             break
         }
         refreshBubble()

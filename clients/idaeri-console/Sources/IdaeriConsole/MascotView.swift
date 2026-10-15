@@ -5,6 +5,7 @@ import SwiftUI
 enum MascotBubble: Equatable {
     case notice(String)
     case commandInput
+    case status(header: [String], items: [MascotStatusItem])
     case approval(id: String, headline: String, title: String, more: Int, submitted: Bool, armed: Bool)
     case thinking(String)
     case reply(sound: String, body: String, signature: String?)
@@ -120,6 +121,18 @@ struct MascotView: View {
             .onChange(of: controller.motion) { motion in
                 play(motion.kind)
             }
+            // 지금 돌고 있는 일의 개수. 0 이면 숨긴다.
+            .overlay(alignment: .topTrailing) {
+                if controller.busyCount > 0 {
+                    Text("\(controller.busyCount)")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.orange, in: Capsule())
+                        .offset(x: -6, y: 6)
+                }
+            }
             .contentShape(Rectangle())
             .accessibilityLabel("\(mascotName), \(moodLabel)")
             .onTapGesture(count: 2) { controller.openCommandInput() }
@@ -171,7 +184,8 @@ struct MascotView: View {
             reading: controller.isReading,
             hovering: hovering,
             dragging: dragStart != nil,
-            flourish: controller.flourish
+            flourish: controller.flourish,
+            activity: controller.activity
         )
     }
 
@@ -260,6 +274,8 @@ struct MascotView: View {
                     Button("자세히") { controller.showDashboard() }
                     Button("나중에") { controller.dismissApproval(id: id) }
                 }
+            case let .status(header, items):
+                MascotStatusCard(header: header, items: items, onClose: { controller.closeStatus() })
             case let .thinking(line):
                 MascotThinkingLine(text: line)
             case let .reply(sound, body, signature):
@@ -359,5 +375,85 @@ private struct MascotReplyHeight: PreferenceKey {
 
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())
+    }
+}
+
+/// 클릭하면 펼치는 진행 목록 — 브리핑 머리 + 승인·실행·세션 줄.
+private struct MascotStatusCard: View {
+    let header: [String]
+    let items: [MascotStatusItem]
+    let onClose: () -> Void
+
+    /// 패널 높이 안에 들어가는 줄 수. 넘치는 것은 "외 N개" 로 접는다.
+    private let maxRows = 6
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(header, id: \.self) { line in
+                Text(line).font(.system(size: 12))
+            }
+            if !header.isEmpty {
+                Divider()
+            }
+            if items.isEmpty {
+                Text("지금 돌고 있는 일은 없어요").font(.system(size: 12)).foregroundColor(.secondary)
+            }
+            ForEach(items.prefix(maxRows)) { item in
+                row(item)
+            }
+            if items.count > maxRows {
+                Text("외 \(items.count - maxRows)개").font(.caption).foregroundColor(.secondary)
+            }
+            HStack {
+                Spacer()
+                Button("닫기", action: onClose)
+            }
+        }
+        .frame(width: 276, alignment: .leading)
+    }
+
+    private func row(_ item: MascotStatusItem) -> some View {
+        HStack(spacing: 8) {
+            Circle().fill(dotColor(item)).frame(width: 7, height: 7)
+            Image(systemName: icon(item.kind)).font(.system(size: 11)).foregroundColor(.secondary)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(item.title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                if !item.detail.isEmpty {
+                    Text(item.detail).font(.system(size: 11)).foregroundColor(.secondary).lineLimit(1)
+                }
+            }
+            Spacer(minLength: 4)
+            VStack(alignment: .trailing, spacing: 1) {
+                Text(item.badge)
+                    .font(.system(size: 10, weight: .medium))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 1)
+                    .background(dotColor(item).opacity(0.18), in: Capsule())
+                Text(item.when).font(.system(size: 10)).foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private func icon(_ kind: MascotStatusItem.Kind) -> String {
+        switch kind {
+        case .approval:
+            return "checkmark.seal"
+        case .run:
+            return "hammer"
+        case .session:
+            return "terminal"
+        }
+    }
+
+    /// 승인 대기는 주황(할 일), 작업 중은 초록, 쉬는 세션은 회색.
+    private func dotColor(_ item: MascotStatusItem) -> Color {
+        switch item.kind {
+        case .approval:
+            return .orange
+        case .run:
+            return .green
+        case .session:
+            return item.badge == "작업 중" ? .green : .gray
+        }
     }
 }
