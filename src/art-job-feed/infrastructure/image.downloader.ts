@@ -1,10 +1,15 @@
 import { createHash } from 'node:crypto';
 
 import { Injectable } from '@nestjs/common';
+import * as sharpModule from 'sharp';
 
 import { DownloadedImage } from '../domain/art-job-feed.type';
 import { ImageDownloaderPort } from '../domain/port/art-job-feed.ports';
 import { assertPublicUrl } from './public-url.guard';
+
+// sharp 는 CJS 에서 module.exports 가 함수 자체인데 타입은 ESM default 로만 낸다.
+// 이 레포는 esModuleInterop 이 꺼져 있어 default import 가 런타임에 undefined 다.
+const sharp = sharpModule as unknown as typeof sharpModule.default;
 
 const MAX_BYTES = 5 * 1024 * 1024;
 // 리다이렉트를 직접 따라가며 매 단계 주소를 다시 검사한다(자동 추적은 내부망 리다이렉트를 못 막는다).
@@ -56,9 +61,17 @@ export class ImageDownloader implements ImageDownloaderPort {
       }
       chunks.push(value);
     }
-    const buffer = Buffer.concat(chunks, totalBytes);
+    const downloaded = Buffer.concat(chunks, totalBytes);
+    // 슬랙 이미지 블록은 webp 를 받지 않는다(invalid_blocks, 2026-10-15 루리웹 그림 실측). png 로 바꿔 싣는다.
+    const isWebp = extension === 'webp';
+    const buffer = isWebp
+      ? await sharp(downloaded).png().toBuffer()
+      : downloaded;
     const hash = createHash('sha256').update(buffer).digest('hex').slice(0, 12);
-    return { buffer, filename: `art-job-${hash}.${extension}` };
+    return {
+      buffer,
+      filename: `art-job-${hash}.${isWebp ? 'png' : extension}`,
+    };
   }
 
   private async fetchPublic(start: URL): Promise<Response> {
