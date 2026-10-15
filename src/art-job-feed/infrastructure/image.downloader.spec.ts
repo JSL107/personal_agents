@@ -110,6 +110,31 @@ describe('ImageDownloader', () => {
     expect(image.buffer).toEqual(Buffer.from([1, 2]));
     expect(image.filename).toMatch(/^art-job-[a-f0-9]{12}\.png$/);
   });
+  it('webp 는 슬랙 이미지 블록이 받는 png 로 바꾼다', async () => {
+    // 1x1 빨간 점 webp
+    const webp = Buffer.from(
+      'UklGRjwAAABXRUJQVlA4IDAAAADQAQCdASoBAAEAAUAmJaACdLoB+AADsAD+8ut//NgVzXPv9//S4P0uD9Lg/9KQAAA=',
+      'base64',
+    );
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      headers: new Headers({ 'content-type': 'image/webp' }),
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array(webp));
+          controller.close();
+        },
+      }),
+    });
+    const image = await new ImageDownloader().download(
+      'https://example.com/art.webp',
+    );
+    expect(image.filename).toMatch(/\.png$/);
+    // PNG 시그니처
+    expect(image.buffer.subarray(0, 8)).toEqual(
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    );
+  });
   it('rejects non-images', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
