@@ -1,5 +1,5 @@
 import { InjectQueue } from '@nestjs/bullmq';
-import { Inject, Injectable, OnModuleDestroy } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Queue, QueueEvents } from 'bullmq';
 
@@ -45,6 +45,7 @@ const LIST_LABEL: Record<ArtJobKeywordKind, string> = {
 @Injectable()
 export class ArtJobFeedDispatcher implements AgentDispatcher, OnModuleDestroy {
   readonly agentType = AgentType.ART_JOB_FEED;
+  private readonly logger = new Logger(ArtJobFeedDispatcher.name);
   private queueEvents?: QueueEvents;
 
   constructor(
@@ -120,7 +121,7 @@ export class ArtJobFeedDispatcher implements AgentDispatcher, OnModuleDestroy {
       return this.reply(
         command,
         // 뽑은 키워드를 그대로 보여 준다 — 잘못 뽑혔으면 답하기 전에 사용자가 알아챈다.
-        `${this.formatTerms(command.terms)} 키워드를 「허용(제목에 있으면 받기) / 제외(제목에 있으면 거르기) / 화풍(태그만)」 중 어디에 ${command.action === 'ADD' ? '추가' : '제거'}할까요? 예: "화풍에 추가"`,
+        `${this.formatTerms(command.terms)} 키워드를 「허용(제목에 있으면 받기) / 제외(제목에 있으면 거르기) / 화풍(태그만)」 중 한 곳을 골라 주세요. 한 번에 한 목록에만 ${command.action === 'ADD' ? '추가' : '제거'}해요. 예: "화풍에 추가"`,
       );
     }
     if (command.kind === 'NEEDS_TERMS') {
@@ -147,11 +148,12 @@ export class ArtJobFeedDispatcher implements AgentDispatcher, OnModuleDestroy {
           return { result, output: result, modelUsed: 'deterministic' };
         },
       });
+      const note = await this.fetchTermsNote(command.terms);
       return {
         agentRunId: outcome.agentRunId,
         output: outcome.result,
         modelUsed: outcome.modelUsed,
-        formattedText: this.formatFetch(outcome.result),
+        formattedText: `${this.formatFetch(outcome.result)}${note}`,
       };
     }
 
@@ -236,6 +238,61 @@ export class ArtJobFeedDispatcher implements AgentDispatcher, OnModuleDestroy {
       case 'TIMEOUT':
         return '아직 가져오는 중이에요. 끝나면 채널에 바로 올라와요.';
     }
+  }
+
+  // 안내는 덧붙이는 정보다 — 키워드 조회가 실패해도 이미 끝난 게시 결과는 그대로 답한다(#850 리뷰).
+  private async fetchTermsNote(terms: string[]): Promise<string> {
+    if (terms.length === 0) {
+      return '';
+    }
+    try {
+      return `\n${this.formatFetchTermsNote(terms, await this.keywords.load())}`;
+    } catch (error) {
+      this.logger.warn(
+        `가져오기 키워드 안내 생략 — ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return '';
+    }
+  }
+
+  // 「[캐주얼 / 북미풍] 관련 공고 찾아줘」 — 가져오기는 저장된 허용 키워드로 거르므로, 말한 키워드가
+  // 실제로 어떻게 쓰이는지 알려 준다. 말한 키워드로 따로 찾는다고 오해하지 않게 한다.
+  private formatFetchTermsNote(
+    terms: string[],
+    keywords: ArtJobKeywordSet,
+  ): string {
+    const has = (list: string[], term: string): boolean =>
+      list.some((known) => known.toLowerCase() === term.toLowerCase());
+    // 제외가 먼저다 — 제외어가 하나라도 맞으면 허용 목록에 있어도 걸러진다(isTargetArtRole, #850 리뷰).
+    const excluded = terms.filter((term) => has(keywords.excluded, term));
+    const rest = terms.filter((term) => !has(keywords.excluded, term));
+    const target = rest.filter((term) => has(keywords.target, term));
+    const styleOnly = rest.filter(
+      (term) => !has(keywords.target, term) && has(keywords.style, term),
+    );
+    const missing = rest.filter(
+      (term) => !has(keywords.target, term) && !has(keywords.style, term),
+    );
+    const lines = ['공고는 저장된 허용 키워드로 골라요.'];
+    if (excluded.length > 0) {
+      lines.push(
+        `제외 목록에 있어 걸러짐: ${this.formatTerms(excluded)} — 받으려면 "제외에서 ${excluded[0]} 빼줘"처럼 말해 주세요.`,
+      );
+    }
+    if (target.length > 0) {
+      lines.push(`허용 목록에 있음: ${this.formatTerms(target)}`);
+    }
+    if (styleOnly.length > 0) {
+      lines.push(
+        `화풍 태그로만 씀(거르지 않고 🎨 태그): ${this.formatTerms(styleOnly)}`,
+      );
+    }
+    if (missing.length > 0) {
+      lines.push(
+        `목록에 없음: ${this.formatTerms(missing)} — 받으려면 "허용에 ${missing[0]} 추가해줘"처럼 말해 주세요.`,
+      );
+    }
+    return lines.join('\n');
   }
 
   private formatChange(
