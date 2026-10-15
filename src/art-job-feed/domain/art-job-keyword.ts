@@ -63,16 +63,23 @@ const escapeRegularExpression = (term: string): string => {
 
 // 화풍 키워드의 다른 표기. 게임잡 게임분야는 장르를 영문(「Casual」)으로 적어 「캐주얼」로는 잡히지 않는다.
 // 태그에는 사용자가 등록한 표기를 그대로 보여 준다. 「애니」처럼 직무명(애니메이션·애니메이터)에 걸리는 말은 넣지 않는다.
-const STYLE_TERM_ALIASES: Readonly<Record<string, readonly string[]>> = {
-  캐주얼: ['casual'],
-  서브컬처: ['서브컬쳐', 'subculture'],
-  서브컬쳐: ['서브컬처', 'subculture'],
+// 같은 화풍의 표기 묶음 — 어느 표기로 등록해도 묶음 전체로 찾는다(「Casual」로 등록해도 「캐주얼」을 잡는다, #851 리뷰).
+const STYLE_SPELLING_GROUPS: readonly (readonly string[])[] = [
+  ['캐주얼', 'casual'],
+  ['서브컬처', '서브컬쳐', 'subculture'],
+];
+
+const spellingsOf = (term: string): string[] => {
+  const key = term.toLocaleLowerCase();
+  const group = STYLE_SPELLING_GROUPS.find((spellings) =>
+    spellings.some((spelling) => spelling.toLocaleLowerCase() === key),
+  );
+  return [term, ...(group ?? [])];
 };
 
 export const findStyleTags = (terms: string[], text: string): string[] => {
   return terms.filter((term) => {
-    const spellings = [term, ...(STYLE_TERM_ALIASES[term] ?? [])];
-    return findMatchedTerms(spellings, text).length > 0;
+    return findMatchedTerms(spellingsOf(term), text).length > 0;
   });
 };
 

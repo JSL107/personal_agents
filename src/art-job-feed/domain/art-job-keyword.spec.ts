@@ -39,6 +39,18 @@ describe('findStyleTags', () => {
     ]);
   });
 
+  it.each([
+    ['Casual', '2D 캐주얼 게임 그래픽'],
+    ['casual', '게임분야: RPG, Casual'],
+    ['Subculture', '서브컬처 스타일 원화'],
+    ['서브컬쳐', '장르: Subculture'],
+  ])(
+    '%s 로 등록해도 다른 표기(%s)를 잡고 등록한 표기로 태그한다',
+    (term, text) => {
+      expect(findStyleTags([term], text)).toEqual([term]);
+    },
+  );
+
   it('영문 표기는 단어 경계로만 맞춘다', () => {
     expect(findStyleTags(['캐주얼'], 'Casualty Studio')).toEqual([]);
   });
