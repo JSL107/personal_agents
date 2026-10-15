@@ -4,6 +4,7 @@ import { AgentRunService } from '../../../agent-run/application/agent-run.servic
 import { DailyPlanService } from '../../../daily-plan/application/daily-plan.service';
 import { ClassifyPullRequestEngagementUsecase } from '../../../github/application/classify-pr-engagement.usecase';
 import { ListAssignedTasksUsecase } from '../../../github/application/list-assigned-tasks.usecase';
+import { WorkSessionDigestService } from '../../../local-sessions/application/work-session-digest.service';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import {
   AgentType,
@@ -117,6 +118,9 @@ describe('GenerateDailyPlanUsecase', () => {
           .fn()
           .mockResolvedValue({ activePullRequests: [], waitingItems: [] }),
       } as unknown as ClassifyPullRequestEngagementUsecase,
+      {
+        listSince: jest.fn().mockReturnValue([]),
+      } as unknown as WorkSessionDigestService,
     );
     const promptBuilder = new DailyPlanPromptBuilder();
     const evidenceBuilder = new DailyPlanEvidenceBuilder();
@@ -482,6 +486,9 @@ describe('GenerateDailyPlanUsecase', () => {
         {
           execute: classifyExecuteMock,
         } as unknown as ClassifyPullRequestEngagementUsecase,
+        {
+          listSince: jest.fn().mockReturnValue([]),
+        } as unknown as WorkSessionDigestService,
       );
 
       const usecaseWithFalseToggle = new GenerateDailyPlanUsecase(

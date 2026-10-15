@@ -1,3 +1,4 @@
+import { WorkSessionDigest } from '../../../local-sessions/domain/work-session-digest';
 import { DailyReview } from '../../work-reviewer/domain/work-reviewer.type';
 import { DailyPlan, TaskItem } from '../domain/pm-agent.type';
 import { RecentPlanSummary } from '../domain/prompt/recent-plan-summary-formatter';
@@ -54,6 +55,19 @@ const buildEveningRetro = (
   agentRunId: 77,
 });
 
+const buildWorkSession = (): WorkSessionDigest => ({
+  source: 'claude',
+  sessionId: 'session-1',
+  repo: 'personal_agents',
+  branch: 'feat/test',
+  title: '작업',
+  pullRequests: [],
+  firstPrompt: '테스트 작성',
+  lastPrompt: null,
+  lastReply: '완료',
+  lastActivityAt: new Date('2026-10-14T09:00:00.000Z'),
+});
+
 const buildBaseContext = (
   overrides: Partial<DailyPlanContext> = {},
 ): DailyPlanContext => ({
@@ -70,6 +84,8 @@ const buildBaseContext = (
   inboxItemIds: [],
   similarPlans: [],
   waitingItems: [],
+  workSessions: [],
+  workSessionsSince: new Date('2026-10-14T00:00:00.000Z'),
   ...overrides,
 });
 
@@ -78,6 +94,50 @@ describe('DailyPlanPromptBuilder', () => {
 
   beforeEach(() => {
     builder = new DailyPlanPromptBuilder();
+  });
+
+  it('작업 세션이 0개면 기존 prompt 와 정확히 동일하다', () => {
+    const built = builder.build(buildBaseContext());
+
+    expect(built.prompt).toBe('[사용자 입력]\n오늘 할 일');
+    expect(built.truncated.droppedSections).toEqual([]);
+  });
+
+  it('작업 세션이 있으면 KST 기간 헤더와 요약을 포함한다', () => {
+    const built = builder.build(
+      buildBaseContext({ workSessions: [buildWorkSession()] }),
+    );
+
+    expect(built.prompt).toContain('[로컬 작업 세션 — 10-14 09:00 이후');
+    expect(built.prompt).toContain('첫 요청: 테스트 작성');
+    expect(built.prompt).toContain('<untrusted-input>');
+  });
+
+  it('용량 초과 시 작업 세션을 notion 보다 먼저 버린다', () => {
+    const notionTasks = Array.from({ length: 10 }, (_, index) => ({
+      databaseId: 'db',
+      pageId: `pg${index}`,
+      url: 'https://notion.so/pg',
+      title: `항목${index} ${'나'.repeat(400)}`,
+      properties: {},
+    }));
+    const built = builder.build(
+      buildBaseContext({
+        userText: '가'.repeat(5000),
+        notionTasks,
+        workSessions: [buildWorkSession()],
+        previousPlan: {
+          plan: buildDailyPlan('가'.repeat(200)),
+          endedAt: new Date('2026-04-26T05:00:00Z'),
+          agentRunId: 99,
+        },
+      }),
+    );
+
+    expect(built.truncated.droppedSections).toContain('workSessions');
+    expect(
+      built.truncated.droppedSections.indexOf('workSessions'),
+    ).toBeLessThan(built.truncated.droppedSections.indexOf('notion'));
   });
 
   it('conversationContext.userInstruction 이 있으면 [사용자 지시] 섹션을 prompt 최우선(맨 앞)에 포함', () => {

@@ -4,8 +4,21 @@ import {
   AgentRunOutcome,
   AgentRunService,
 } from '../../../agent-run/application/agent-run.service';
-import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import {
+  EvidenceInput,
+  TriggerType,
+} from '../../../agent-run/domain/agent-run.type';
 import { DomainStatus } from '../../../common/exception/domain-status.enum';
+import { UNTRUSTED_INPUT_NOTICE } from '../../../common/llm/untrusted-input.util';
+import {
+  kstStartOfDay,
+  WorkSessionDigestService,
+} from '../../../local-sessions/application/work-session-digest.service';
+import {
+  formatWorkSessionsSection,
+  toWorkSessionEvidencePayload,
+  WorkSessionDigest,
+} from '../../../local-sessions/domain/work-session-digest';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { AppendWorklogUsecase } from '../../../notion/application/append-worklog.usecase';
@@ -44,6 +57,7 @@ export class GenerateWorklogUsecase {
     private readonly modelRouter: ModelRouterUsecase,
     private readonly agentRunService: AgentRunService,
     private readonly appendWorklogUsecase: AppendWorklogUsecase,
+    private readonly workSessionDigestService: WorkSessionDigestService,
   ) {}
 
   async execute({
@@ -62,24 +76,53 @@ export class GenerateWorklogUsecase {
     }
 
     const reviewDate = getKstTodayAsUtcDate();
+    const since = kstStartOfDay(new Date());
+    let sessions: WorkSessionDigest[] = [];
+    if (triggerType !== TriggerType.WEEKLY_SUMMARY_CRON) {
+      try {
+        sessions = this.workSessionDigestService.listSince({
+          since,
+          slackUserId,
+        });
+      } catch (error: unknown) {
+        this.logger.warn(
+          `작업 세션 조회 실패: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+    const section = formatWorkSessionsSection({
+      sessions,
+      header:
+        '[로컬 작업 세션 — 오늘 Claude Code·Codex 대화형 세션 요약 (실적 판단 참고, 계획과 같은 등급의 근거 아님)]',
+    });
+    const evidence: EvidenceInput[] = [
+      {
+        sourceType: 'SLACK_COMMAND_WORKLOG',
+        sourceId: slackUserId,
+        payload: { workText: trimmed },
+      },
+    ];
+    if (section) {
+      evidence.push({
+        sourceType: 'LOCAL_WORK_SESSIONS',
+        sourceId: 'local',
+        payload: toWorkSessionEvidencePayload(sessions, since),
+      });
+    }
 
     return this.agentRunService.execute({
       agentType: AgentType.WORK_REVIEWER,
       triggerType: triggerType ?? TriggerType.SLACK_COMMAND_WORKLOG,
       inputSnapshot: { workText: trimmed, slackUserId },
-      evidence: [
-        {
-          sourceType: 'SLACK_COMMAND_WORKLOG',
-          sourceId: slackUserId,
-          payload: { workText: trimmed },
-        },
-      ],
+      evidence,
       run: async () => {
         const completion = await this.modelRouter.route({
           agentType: AgentType.WORK_REVIEWER,
           request: {
-            prompt: trimmed,
-            systemPrompt: WORK_REVIEWER_SYSTEM_PROMPT,
+            prompt: section ? `${trimmed}\n\n${section}` : trimmed,
+            systemPrompt: section
+              ? `${WORK_REVIEWER_SYSTEM_PROMPT}\n\n${UNTRUSTED_INPUT_NOTICE}`
+              : WORK_REVIEWER_SYSTEM_PROMPT,
             outputSchema: DAILY_REVIEW_OUTPUT_SCHEMA,
           },
         });

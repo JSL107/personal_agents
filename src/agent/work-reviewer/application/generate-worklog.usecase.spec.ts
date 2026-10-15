@@ -1,4 +1,7 @@
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
+import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { WorkSessionDigestService } from '../../../local-sessions/application/work-session-digest.service';
+import { WorkSessionDigest } from '../../../local-sessions/domain/work-session-digest';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import {
   AgentType,
@@ -7,6 +10,7 @@ import {
 } from '../../../model-router/domain/model-router.type';
 import { AppendWorklogUsecase } from '../../../notion/application/append-worklog.usecase';
 import { DAILY_REVIEW_OUTPUT_SCHEMA } from '../domain/prompt/daily-review.schema';
+import { WORK_REVIEWER_SYSTEM_PROMPT } from '../domain/prompt/work-reviewer-system.prompt';
 import { WorkReviewerException } from '../domain/work-reviewer.exception';
 import { DailyReview } from '../domain/work-reviewer.type';
 import { WorkReviewerErrorCode } from '../domain/work-reviewer-error-code.enum';
@@ -30,6 +34,7 @@ describe('GenerateWorklogUsecase', () => {
   let agentRunServiceExecute: jest.Mock;
   let appendWorklogExecute: jest.Mock;
   let usecase: GenerateWorklogUsecase;
+  let listSince: jest.Mock;
 
   beforeEach(() => {
     modelRouter = { route: jest.fn() };
@@ -42,12 +47,83 @@ describe('GenerateWorklogUsecase', () => {
       };
     });
     appendWorklogExecute = jest.fn().mockResolvedValue(null);
+    listSince = jest.fn().mockReturnValue([]);
 
     usecase = new GenerateWorklogUsecase(
       modelRouter as unknown as ModelRouterUsecase,
       { execute: agentRunServiceExecute } as unknown as AgentRunService,
       { execute: appendWorklogExecute } as unknown as AppendWorklogUsecase,
+      { listSince } as unknown as WorkSessionDigestService,
     );
+  });
+
+  it('세션이 0개면 prompt, systemPrompt, evidence가 기존 값과 정확히 같다', async () => {
+    modelRouter.route.mockResolvedValue({
+      text: JSON.stringify(validReview),
+      modelUsed: 'codex-cli',
+    });
+    await usecase.execute({ workText: '  완료  ', slackUserId: 'U123' });
+    expect(modelRouter.route.mock.calls[0][0].request.prompt).toBe('완료');
+    expect(modelRouter.route.mock.calls[0][0].request.systemPrompt).toBe(
+      WORK_REVIEWER_SYSTEM_PROMPT,
+    );
+    expect(agentRunServiceExecute.mock.calls[0][0].evidence).toEqual([
+      {
+        sourceType: 'SLACK_COMMAND_WORKLOG',
+        sourceId: 'U123',
+        payload: { workText: '완료' },
+      },
+    ]);
+  });
+
+  it('세션이 있으면 섹션, NOTICE, 본문 없는 evidence가 붙는다', async () => {
+    const session: WorkSessionDigest = {
+      source: 'codex',
+      sessionId: 's1',
+      repo: 'project',
+      branch: null,
+      title: null,
+      pullRequests: [],
+      firstPrompt: '구현',
+      lastPrompt: null,
+      lastReply: '완료',
+      lastActivityAt: new Date(),
+    };
+    listSince.mockReturnValue([session]);
+    modelRouter.route.mockResolvedValue({
+      text: JSON.stringify(validReview),
+      modelUsed: 'codex-cli',
+    });
+    await usecase.execute({ workText: '완료', slackUserId: 'U123' });
+    expect(listSince).toHaveBeenCalledWith({
+      since: expect.any(Date),
+      slackUserId: 'U123',
+    });
+    expect(modelRouter.route.mock.calls[0][0].request.prompt).toContain(
+      '[로컬 작업 세션',
+    );
+    expect(modelRouter.route.mock.calls[0][0].request.systemPrompt).toContain(
+      '<untrusted-input>',
+    );
+    expect(agentRunServiceExecute.mock.calls[0][0].evidence[1].sourceType).toBe(
+      'LOCAL_WORK_SESSIONS',
+    );
+    expect(
+      JSON.stringify(agentRunServiceExecute.mock.calls[0][0].evidence[1]),
+    ).not.toContain('firstPrompt');
+  });
+
+  it('주간 경로에서는 세션 조회를 하지 않는다', async () => {
+    modelRouter.route.mockResolvedValue({
+      text: JSON.stringify(validReview),
+      modelUsed: 'codex-cli',
+    });
+    await usecase.execute({
+      workText: '완료',
+      slackUserId: 'U123',
+      triggerType: TriggerType.WEEKLY_SUMMARY_CRON,
+    });
+    expect(listSince).not.toHaveBeenCalled();
   });
 
   it('모델 응답을 DailyReview 로 파싱해 반환한다', async () => {

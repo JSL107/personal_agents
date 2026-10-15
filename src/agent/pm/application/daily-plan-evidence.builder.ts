@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { EvidenceInput } from '../../../agent-run/domain/agent-run.type';
+import { toWorkSessionEvidencePayload } from '../../../local-sessions/domain/work-session-digest';
 import {
   DailyPlanContext,
   SLACK_MENTION_SINCE_HOURS,
@@ -20,6 +21,8 @@ export class DailyPlanEvidenceBuilder {
       eveningRetro,
       slackMentions,
       notionTasks,
+      workSessions,
+      workSessionsSince,
     } = context;
 
     const evidence: EvidenceInput[] = [
@@ -88,6 +91,13 @@ export class DailyPlanEvidenceBuilder {
         payload: {
           tasks: notionTasks,
         },
+      });
+    }
+    if (workSessions.length > 0) {
+      evidence.push({
+        sourceType: 'LOCAL_WORK_SESSIONS',
+        sourceId: 'local',
+        payload: toWorkSessionEvidencePayload(workSessions, workSessionsSince),
       });
     }
     return evidence;

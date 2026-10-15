@@ -6,6 +6,8 @@ import {
   GithubPullRequest,
 } from '../../../github/domain/github.type';
 import { WaitingItem } from '../../../github/domain/pr-engagement.type';
+import { WorkSessionDigestService } from '../../../local-sessions/application/work-session-digest.service';
+import { WorkSessionDigest } from '../../../local-sessions/domain/work-session-digest';
 import { ListActiveTasksUsecase } from '../../../notion/application/list-active-tasks.usecase';
 import { ListMyMentionsUsecase } from '../../../slack-collector/application/list-my-mentions.usecase';
 import { SlackMention } from '../../../slack-collector/domain/slack-collector.type';
@@ -35,9 +37,15 @@ const buildClassifyMock = (split: {
     execute: jest.fn().mockResolvedValue(split),
   }) as unknown as ClassifyPullRequestEngagementUsecase;
 
+const buildWorkSessionMock = (): WorkSessionDigestService =>
+  ({
+    listSince: jest.fn().mockReturnValue([]),
+  }) as unknown as WorkSessionDigestService;
+
 const buildCollector = (
   githubTasks: AssignedTasks,
   classifyEngagement?: ClassifyPullRequestEngagementUsecase,
+  workSessionDigestService = buildWorkSessionMock(),
 ): DailyPlanContextCollector =>
   new DailyPlanContextCollector(
     {
@@ -61,6 +69,7 @@ const buildCollector = (
     } as unknown as SlackInboxService,
     classifyEngagement ??
       buildClassifyMock({ activePullRequests: [], waitingItems: [] }),
+    workSessionDigestService,
   );
 
 describe('DailyPlanContextCollector — excludeApprovedPullRequests', () => {
@@ -71,6 +80,52 @@ describe('DailyPlanContextCollector — excludeApprovedPullRequests', () => {
       buildPr({ number: 2, title: 'approved PR', isApproved: true }),
     ],
   };
+
+  it('직전 평일 09:00 KST 이후 세션을 수집한다', async () => {
+    const session: WorkSessionDigest = {
+      source: 'codex',
+      sessionId: 'session-1',
+      repo: 'personal_agents',
+      branch: null,
+      title: null,
+      pullRequests: [],
+      firstPrompt: '테스트 작성',
+      lastPrompt: null,
+      lastReply: null,
+      lastActivityAt: new Date(),
+    };
+    const listSince = jest.fn().mockReturnValue([session]);
+    const collector = buildCollector(githubTasks, undefined, {
+      listSince,
+    } as unknown as WorkSessionDigestService);
+
+    const context = await collector.collect({
+      userText: '',
+      slackUserId: 'U1',
+    });
+
+    expect(context.workSessions).toEqual([session]);
+    expect(listSince).toHaveBeenCalledWith({
+      since: context.workSessionsSince,
+      slackUserId: expect.any(String),
+    });
+    expect(context.workSessionsSince.getUTCHours()).toBe(0);
+  });
+
+  it('세션 조회 실패 시 빈 배열로 계속한다', async () => {
+    const collector = buildCollector(githubTasks, undefined, {
+      listSince: jest.fn(() => {
+        throw new Error('unavailable');
+      }),
+    } as unknown as WorkSessionDigestService);
+
+    const context = await collector.collect({
+      userText: '',
+      slackUserId: 'U1',
+    });
+
+    expect(context.workSessions).toEqual([]);
+  });
 
   it('default (excludeApprovedPullRequests=false) 에서는 isApproved=true 인 PR 도 포함', async () => {
     const collector = buildCollector(githubTasks);
@@ -153,6 +208,7 @@ describe('DailyPlanContextCollector — excludeApprovedPullRequests', () => {
         markConsumed: jest.fn().mockResolvedValue(undefined),
       } as unknown as SlackInboxService,
       buildClassifyMock({ activePullRequests: [], waitingItems: [] }),
+      buildWorkSessionMock(),
     );
 
     const context = await collector.collect({
@@ -241,6 +297,7 @@ describe('DailyPlanContextCollector — excludeApprovedPullRequests', () => {
         markConsumed: jest.fn().mockResolvedValue(undefined),
       } as unknown as SlackInboxService,
       buildClassifyMock({ activePullRequests: [], waitingItems: [] }),
+      buildWorkSessionMock(),
     );
 
     const context = await collector.collect({
