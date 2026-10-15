@@ -78,7 +78,7 @@ describe('ArtJobFeedDispatcher', () => {
     const first = await dispatcher.dispatch(
       input('[캐주얼 / 북미풍] 키워드도 찾아줬으면 좋겠어!'),
     );
-    expect(first.formattedText).toContain('어디에 추가할까요');
+    expect(first.formattedText).toContain('중 한 곳을 골라 주세요');
     const followUp = input('화풍');
     followUp.priorTurns = [
       {
@@ -136,6 +136,21 @@ describe('ArtJobFeedDispatcher', () => {
       expect.objectContaining({ trigger: 'MANUAL' }),
       expect.objectContaining({ attempts: 1 }),
     );
+  });
+
+  it('키워드를 함께 말한 가져오기는 그 키워드가 어떻게 쓰이는지 알린다', async () => {
+    const { dispatcher, input, waitUntilFinished, keywords } = setup();
+    waitUntilFinished.mockResolvedValue({ kind: 'POSTED', count: 2 });
+    const outcome = await dispatcher.dispatch(
+      input('[원화 / 북미풍 / 반실사] 관련 공고 찾아줘'),
+    );
+    expect(outcome.formattedText).toContain('새 공고 2건');
+    expect(outcome.formattedText).toContain('허용 목록에 있음: 원화');
+    expect(outcome.formattedText).toContain(
+      '화풍 태그로만 씀(거르지 않고 🎨 태그): 북미풍',
+    );
+    expect(outcome.formattedText).toContain('목록에 없음: 반실사');
+    expect(keywords.add).not.toHaveBeenCalled();
   });
 
   it('대기 시간 초과는 실행 중으로 답한다', async () => {
