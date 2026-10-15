@@ -37,6 +37,9 @@ import SwiftUI
     private var refreshQueued = false
     private var dismissedApprovalIds: Set<String> = []
     private var submittedApprovalId: String?
+    /// 지금 승인 말풍선에 띄운 카드와 처음 띄운 시각. [승인] 지연(`mascotApprovalArmed`)의 기준.
+    private var approvalShown: (id: String, at: Date)?
+    private var approvalArmTimer: Timer?
     private var briefingBubble: MascotBubble?
     private var reactionBubble: MascotBubble?
     private var replyBubble: MascotBubble?
@@ -251,6 +254,13 @@ import SwiftUI
     }
 
     private func refreshBubble() {
+        // 승인 말풍선이 아닌 것을 그리는 동안에는 등장 시각을 지운다. 안내의 [확인]을 누르면 같은
+        // 자리에 승인 말풍선이 다시 뜨는데, 옛 시각이 남아 있으면 지연 없이 바로 눌린다.
+        if store.approvalNotice != nil || failedNoticeCommandId != nil || commandInputOpen
+            || submittedApprovalId != nil
+        {
+            approvalShown = nil
+        }
         if let notice = store.approvalNotice {
             setBubble(.notice(notice))
             return
@@ -273,16 +283,37 @@ import SwiftUI
         }
         let approvals = store.approvals.filter { !dismissedApprovalIds.contains($0.id) }
         if let approval = approvals.first {
+            let now = Date()
+            if approvalShown?.id != approval.id {
+                approvalShown = (approval.id, now)
+            }
+            let shownAt = approvalShown?.at ?? now
+            let armed = mascotApprovalArmed(shownAt: shownAt, now: now)
+            if !armed {
+                scheduleApprovalArm(at: shownAt.addingTimeInterval(mascotApprovalArmDelaySeconds))
+            }
             setBubble(.approval(
                 id: approval.id,
                 headline: mascotApprovalHeadline(approval: approval, agents: store.agents),
                 title: approval.title,
                 more: approvals.count - 1,
-                submitted: submittedApprovalId == approval.id
+                submitted: submittedApprovalId == approval.id,
+                armed: armed
             ))
             return
         }
+        approvalShown = nil
         setBubble(replyBubble ?? briefingBubble ?? reactionBubble)
+    }
+
+    /// [승인]이 눌리기 시작하는 시각에 말풍선을 한 번 다시 그린다.
+    private func scheduleApprovalArm(at date: Date) {
+        approvalArmTimer?.invalidate()
+        approvalArmTimer = Timer.scheduledTimer(
+            withTimeInterval: max(0.01, date.timeIntervalSinceNow), repeats: false
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.refreshBubble() }
+        }
     }
 
     private func scheduleGraceRecheck(now: Date) {

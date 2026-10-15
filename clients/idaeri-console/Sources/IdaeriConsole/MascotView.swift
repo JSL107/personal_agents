@@ -5,7 +5,7 @@ import SwiftUI
 enum MascotBubble: Equatable {
     case notice(String)
     case commandInput
-    case approval(id: String, headline: String, title: String, more: Int, submitted: Bool)
+    case approval(id: String, headline: String, title: String, more: Int, submitted: Bool, armed: Bool)
     case reply(String)
     case briefing([String])
     case reaction(String)
@@ -138,12 +138,12 @@ struct MascotView: View {
                     Button("닫기") { closeCommandInput() }
                         .keyboardShortcut(.cancelAction)
                 }
-            case let .approval(id, headline, title, more, submitted):
+            case let .approval(id, headline, title, more, submitted, armed):
                 Text(headline).font(.headline)
                 Text(title).lineLimit(3)
                 if more > 0 { Text("외 \(more)건").font(.caption) }
                 HStack {
-                    Button("승인") { controller.approve(id: id) }.disabled(submitted)
+                    Button("승인") { controller.approve(id: id) }.disabled(submitted || !armed)
                     Button("자세히") { controller.showDashboard() }
                     Button("나중에") { controller.dismissApproval(id: id) }
                 }

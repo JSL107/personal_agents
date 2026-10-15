@@ -6,6 +6,7 @@ final class MascotPanel: NSPanel {
     private var interactiveRects: [CGRect] = []
     private var globalMonitor: Any?
     private var localMonitor: Any?
+    private var screenObserver: NSObjectProtocol?
     private var isCharacterDragActive = false
     private var isCommandInputActive = false
 
@@ -14,10 +15,7 @@ final class MascotPanel: NSPanel {
     init() {
         let size = NSSize(width: 340, height: 300)
         let visibleFrame = NSScreen.main?.visibleFrame ?? NSRect(origin: .zero, size: size)
-        let origin = NSPoint(
-            x: visibleFrame.maxX - size.width - 16,
-            y: visibleFrame.minY + 16
-        )
+        let origin = Self.defaultOrigin(size: size, visibleFrame: visibleFrame)
         super.init(
             contentRect: NSRect(origin: origin, size: size),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -36,6 +34,14 @@ final class MascotPanel: NSPanel {
         // 이름을 붙이는 것만으로는 저장된 위치를 읽어 오지 않는다. 끌어 놓은 자리를 재실행 뒤에도
         // 지키려면 명시적으로 읽는다. 저장값이 없으면 false 이고 위의 기본 위치가 그대로 남는다.
         setFrameUsingName("IdaeriMascotPanel")
+        keepOnScreen()
+        // 모니터를 빼면 그 화면에 있던 패널은 갈 곳을 잃는다. 테두리 없는 창은 시스템이 화면 안으로
+        // 당겨 주지 않으므로 화면 구성이 바뀔 때마다 다시 확인한다.
+        screenObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.keepOnScreen()
+        }
         // 포인터가 다른 앱 위에 있어도 진입을 감지해야 하므로 전역 감시도 필요하다.
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged]) { [weak self] _ in
             self?.refreshMouseHit()
@@ -53,6 +59,23 @@ final class MascotPanel: NSPanel {
         if let localMonitor {
             NSEvent.removeMonitor(localMonitor)
         }
+        if let screenObserver {
+            NotificationCenter.default.removeObserver(screenObserver)
+        }
+    }
+
+    /// 저장된 위치가 지금 연결된 어느 화면에도 걸치지 않으면(외부 모니터를 뺀 경우) 기본 자리로 옮긴다.
+    private func keepOnScreen() {
+        guard !NSScreen.screens.contains(where: { $0.visibleFrame.intersects(frame) }),
+              let visibleFrame = NSScreen.main?.visibleFrame
+        else {
+            return
+        }
+        setFrameOrigin(Self.defaultOrigin(size: frame.size, visibleFrame: visibleFrame))
+    }
+
+    private static func defaultOrigin(size: NSSize, visibleFrame: NSRect) -> NSPoint {
+        NSPoint(x: visibleFrame.maxX - size.width - 16, y: visibleFrame.minY + 16)
     }
 
     func updateInteractiveRects(_ rects: [CGRect]) {

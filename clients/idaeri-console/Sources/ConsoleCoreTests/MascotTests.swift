@@ -35,6 +35,19 @@ private let mascotTestBriefing = ConsoleBriefing(
 )
 
 func runMascotTests(_ runner: TestRunner) {
+    runner.suite("Mascot approval arming")
+    let shownAt = Date(timeIntervalSince1970: 1_000_000)
+    runner.expect(!mascotApprovalArmed(shownAt: shownAt, now: shownAt), "뜬 순간에는 승인 불가")
+    runner.expect(
+        !mascotApprovalArmed(shownAt: shownAt, now: shownAt.addingTimeInterval(0.79)),
+        "0.8초 전에는 승인 불가"
+    )
+    runner.expect(
+        // 정확히 0.8 을 더하면 큰 기준 시각에서 0.7999… 로 돌아와 경계 비교가 흔들린다.
+        mascotApprovalArmed(shownAt: shownAt, now: shownAt.addingTimeInterval(0.81)),
+        "0.8초가 지나면 승인 가능"
+    )
+
     runner.suite("Mascot")
 
     let now = mascotTestDate("2026-10-15T00:00:30Z")
