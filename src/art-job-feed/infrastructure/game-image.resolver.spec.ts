@@ -3,7 +3,6 @@ import {
   articleMentionsGame,
   filterKakaoCandidates,
   GameImageResolver,
-  pickPreview,
 } from './game-image.resolver';
 import { KakaoImageDocument } from './kakao-image.search';
 
@@ -74,8 +73,6 @@ describe('GameImageResolver', () => {
     expect(result).toMatchObject({
       gameTitle: null,
       image: null,
-      preview: null,
-      searchQuery: '스마일게이트 게임',
       googleSearchUrl: `https://www.google.com/search?tbm=isch&q=${encodeURIComponent('스마일게이트 게임')}`,
     });
     expect(global.fetch).not.toHaveBeenCalled();
@@ -156,7 +153,7 @@ describe('GameImageResolver', () => {
     expect(result.googleSearchUrl).not.toBeNull();
   });
 
-  it('짧은 게임명은 확인하지 않고 미리보기로만 싣는다', async () => {
+  it('짧은 게임명은 기사 확인을 하지 않고 이미지 없이 둔다', async () => {
     mockPages({});
     const kakao = kakaoReturning([document()]);
     const result = await new GameImageResolver(kakao as never).resolve({
@@ -165,18 +162,13 @@ describe('GameImageResolver', () => {
       company: '회사',
     });
     expect(result.image).toBeNull();
-    expect(result.preview).toEqual({
-      url: 'https://img.inven.co.kr/a.jpg',
-      origin: 'SEARCH_PREVIEW',
-      sourceName: '인벤',
-    });
     expect(global.fetch).not.toHaveBeenCalledWith(
       expect.stringContaining('inven.co.kr/webzine'),
       expect.anything(),
     );
   });
 
-  it('확인 실패 시 미리보기는 게임 매체를 먼저, 개인 블로그는 쓰지 않는다', async () => {
+  it('확인 못 한 검색 그림은 어느 출처든 싣지 않는다', async () => {
     mockPages({});
     const kakao = kakaoReturning([
       document({
@@ -195,8 +187,11 @@ describe('GameImageResolver', () => {
       }),
     ]);
     const result = await new GameImageResolver(kakao as never).resolve(listing);
-    expect(result.image).toBeNull();
-    expect(result.preview?.url).toBe('https://gf/a.jpg');
+    expect(result).toEqual({
+      gameTitle: '카오스 제로 나이트메어',
+      image: null,
+      googleSearchUrl: expect.stringContaining('google.com'),
+    });
   });
 
   it('카카오 검색이 실패해도 던지지 않는다', async () => {
@@ -239,52 +234,5 @@ describe('articleMentionsGame', () => {
 
   it('제목이 없으면 확인 실패다', () => {
     expect(articleMentionsGame('<html></html>', '이터널 리턴')).toBe(false);
-  });
-});
-
-describe('pickPreview', () => {
-  it('게임 매체가 없어도 개인 블로그·카페는 고르지 않고 다음 출처로 넘어간다', () => {
-    expect(
-      pickPreview([
-        document({
-          docUrl: 'https://blog.naver.com/a',
-          imageUrl: 'https://p/1.jpg',
-        }),
-        document({
-          docUrl: 'https://x.tistory.com/2',
-          imageUrl: 'https://p/2.jpg',
-        }),
-        document({
-          docUrl: 'https://cafe.daum.net/3',
-          imageUrl: 'https://p/3.jpg',
-        }),
-        document({
-          docUrl: 'https://news.example.com/4',
-          imageUrl: 'https://p/4.jpg',
-          sourceName: '뉴스',
-        }),
-      ])?.url,
-    ).toBe('https://p/4.jpg');
-  });
-
-  it('개인 글뿐이면 미리보기를 싣지 않는다', () => {
-    expect(
-      pickPreview([document({ docUrl: 'https://blog.naver.com/a' })]),
-    ).toBeNull();
-  });
-
-  it('폭 299px 은 버리고 300px 은 받는다', () => {
-    const narrow = document({
-      docUrl: 'https://news.example.com/1',
-      imageUrl: 'https://p/299.jpg',
-      width: 299,
-    });
-    const wide = document({
-      docUrl: 'https://news.example.com/2',
-      imageUrl: 'https://p/300.jpg',
-      width: 300,
-    });
-    expect(pickPreview([narrow])).toBeNull();
-    expect(pickPreview([narrow, wide])?.url).toBe('https://p/300.jpg');
   });
 });

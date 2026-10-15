@@ -27,7 +27,6 @@ import {
   ArtJobDigestItem,
   formatArtJobDigest,
   formatArtJobImageCaption,
-  formatArtJobPreviewCaption,
 } from '../../art-job-feed/infrastructure/art-job-feed.formatter';
 import { CronIdempotencyService } from '../../common/queue/cron-idempotency.service';
 import { ObservedWorkerHost } from '../../common/queue/observed-worker-host';
@@ -53,7 +52,7 @@ interface ImageCaption {
   altText: string;
 }
 
-// 확인된 그림이 우선, 없으면 확인 안 된 검색 미리보기. 둘 다 없으면 스레드에 싣지 않는다.
+// 확인된 그림만 스레드에 싣는다. 없으면 본문의 구글 검색 링크로 대신한다.
 const buildImageCaption = (
   order: number,
   resolved: ResolvedArtJobImage,
@@ -63,17 +62,6 @@ const buildImageCaption = (
       image: resolved.image,
       text: formatArtJobImageCaption(order, resolved.gameTitle, resolved.image),
       altText: resolved.gameTitle,
-    };
-  }
-  if (resolved.preview && resolved.searchQuery) {
-    return {
-      image: resolved.preview,
-      text: formatArtJobPreviewCaption(
-        order,
-        resolved.searchQuery,
-        resolved.preview,
-      ),
-      altText: resolved.searchQuery,
     };
   }
   return null;
