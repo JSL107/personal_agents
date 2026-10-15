@@ -4,6 +4,7 @@ import { App } from '@slack/bolt';
 
 import { SlackInboxService } from '../../slack-inbox/application/slack-inbox.service';
 import { SlackHandler } from '../domain/port/slack-handler.port';
+import { findReactedMessage } from './reacted-message.lookup';
 
 // OPS-3 — 특정 이모지 reaction 으로 메시지를 SlackInbox 에 누적.
 // 사용자가 채널/DM 메시지에 emoji (default: raised_hand) 를 달면 그 메시지를 PM 컨텍스트의 "task 후보" 로
@@ -38,13 +39,11 @@ export class SlackInboxReactionHandler implements SlackHandler {
       }
 
       try {
-        const history = await client.conversations.history({
-          channel: event.item.channel,
-          latest: event.item.ts,
-          inclusive: true,
-          limit: 1,
-        });
-        const message = history.messages?.[0];
+        const message = await findReactedMessage(
+          client,
+          event.item.channel,
+          event.item.ts,
+        );
         if (!message?.text) {
           return;
         }
