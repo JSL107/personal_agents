@@ -4,6 +4,10 @@ import {
   ArtJobListResult,
   ResolvedArtJobImage,
 } from '../../art-job-feed/domain/art-job-feed.type';
+import {
+  ART_JOB_KEYWORD_SEED,
+  ArtJobKeywordSet,
+} from '../../art-job-feed/domain/art-job-keyword';
 import { ArtJobFeedCronConsumer } from './art-job-feed-cron.consumer';
 
 const listing = (sourceId: string, title: string): ArtJobListing => ({
@@ -28,6 +32,7 @@ const WITH_IMAGE: ResolvedArtJobImage = {
 };
 
 const JOB = {
+  id: 'cron-1',
   data: { target: 'C1', mentionUserId: 'U9', ownerSlackUserId: 'U1' },
 };
 
@@ -38,6 +43,9 @@ interface MakeOptions {
   isEmpty?: boolean;
   resolved?: ResolvedArtJobImage;
   downloadFails?: boolean;
+  body?: string;
+  bodyFails?: boolean;
+  keywords?: ArtJobKeywordSet;
 }
 
 const makeConsumer = ({
@@ -47,11 +55,17 @@ const makeConsumer = ({
   isEmpty = false,
   resolved = WITH_IMAGE,
   downloadFails = false,
+  body = '',
+  bodyFails = false,
+  keywords = ART_JOB_KEYWORD_SEED,
 }: MakeOptions = {}) => {
   const source = {
     fetchLatest: jest.fn(async (page: number) => {
       return pages[page - 1] ?? { received: 0, listings: [] };
     }),
+    fetchPostingBody: bodyFails
+      ? jest.fn().mockRejectedValue(new Error('body timeout'))
+      : jest.fn().mockResolvedValue(body),
     fetchCompanyPhotoUrls: jest.fn(),
   };
   const imageResolver = { resolve: jest.fn().mockResolvedValue(resolved) };
@@ -91,6 +105,7 @@ const makeConsumer = ({
     publishCronFailure: jest.fn(),
     publishRecovery: jest.fn(),
   };
+  const keywordRepository = { load: jest.fn().mockResolvedValue(keywords) };
   const consumer = new ArtJobFeedCronConsumer(
     source as never,
     imageResolver as never,
@@ -98,6 +113,7 @@ const makeConsumer = ({
     repository as never,
     slackNotifier as never,
     cronIdempotency as never,
+    keywordRepository as never,
     notificationPublisher as never,
   );
   return {
@@ -106,10 +122,69 @@ const makeConsumer = ({
     repository,
     slackNotifier,
     notificationPublisher,
+    keywordRepository,
+    cronIdempotency,
   };
 };
 
 describe('ArtJobFeedCronConsumer', () => {
+  it('키워드를 회차당 한 번 읽어 제목을 거르고 본문 화풍을 태그한다', async () => {
+    const { consumer, slackNotifier, source, keywordRepository } = makeConsumer(
+      {
+        pages: [
+          { received: 2, listings: [CHARACTER('1'), listing('2', '개발자')] },
+        ],
+        body: '북미풍 캐주얼',
+      },
+    );
+    await expect(consumer.process(JOB as never)).resolves.toEqual({
+      kind: 'POSTED',
+      count: 1,
+    });
+    expect(keywordRepository.load).toHaveBeenCalledTimes(1);
+    expect(source.fetchPostingBody).toHaveBeenCalledTimes(1);
+    expect(slackNotifier.postMessage.mock.calls[0][0].text).toContain(
+      '🎨 북미풍, 캐주얼',
+    );
+  });
+
+  it('본문 조회 실패는 태그만 생략하고 게시를 계속한다', async () => {
+    const { consumer, slackNotifier, repository } = makeConsumer({
+      pages: [{ received: 1, listings: [CHARACTER('1')] }],
+      bodyFails: true,
+    });
+    await expect(consumer.process(JOB as never)).resolves.toEqual({
+      kind: 'POSTED',
+      count: 1,
+    });
+    expect(slackNotifier.postMessage).toHaveBeenCalled();
+    expect(repository.markNotified).toHaveBeenCalledTimes(1);
+  });
+
+  it('수동 슬롯은 cron 과 별개이며 같은 수동 job 재시도만 차단한다', async () => {
+    const { consumer, cronIdempotency } = makeConsumer({
+      pages: [{ received: 1, listings: [CHARACTER('1')] }],
+    });
+    const manual = {
+      ...JOB,
+      id: 'manual-7',
+      data: { ...JOB.data, trigger: 'MANUAL' },
+    };
+    await expect(consumer.process(JOB as never)).resolves.toEqual({
+      kind: 'POSTED',
+      count: 1,
+    });
+    await expect(consumer.process(manual as never)).resolves.toEqual({
+      kind: 'POSTED',
+      count: 1,
+    });
+    await expect(consumer.process(manual as never)).resolves.toEqual({
+      kind: 'SLOT_TAKEN',
+    });
+    expect(cronIdempotency.acquireOnce.mock.calls[1][0]).toBe(
+      'cron:art-job-feed-cron:C1:manual:manual-7',
+    );
+  });
   it('대상 직무의 신규 공고를 본문 1통으로 보내고 이미지는 그 스레드에 단다', async () => {
     const { consumer, slackNotifier, repository } = makeConsumer({
       pages: [
@@ -175,7 +250,9 @@ describe('ArtJobFeedCronConsumer', () => {
       pages: [{ received: 1, listings: [CHARACTER('1')] }],
       known: ['1'],
     });
-    await consumer.process(JOB as never);
+    await expect(consumer.process(JOB as never)).resolves.toEqual({
+      kind: 'NO_NEW',
+    });
     expect(slackNotifier.postMessage).not.toHaveBeenCalled();
   });
 

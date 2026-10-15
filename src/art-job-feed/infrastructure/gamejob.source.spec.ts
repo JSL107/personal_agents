@@ -20,6 +20,30 @@ describe('GamejobSource', () => {
     );
   });
 
+  it('공고 iframe 을 같은 UA 와 상세 Referer 로 읽는다', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      text: async () =>
+        '<html><title>제목</title><body>북미풍 원화</body></html>',
+    });
+    const listing = {
+      sourceId: '123',
+      detailUrl: 'https://www.gamejob.co.kr/Recruit/GI_Read/View?GI_No=123',
+    };
+    expect(await new GamejobSource().fetchPostingBody(listing as never)).toBe(
+      '북미풍 원화',
+    );
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://www.gamejob.co.kr/Recruit/GI_Read_Comt_Ifrm?gno=123',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Referer: listing.detailUrl,
+          'User-Agent': expect.any(String),
+        }),
+      }),
+    );
+  });
+
   it('공고 상세 → 회사 정보를 따라가 대표게임을 나눠 준다', async () => {
     global.fetch = jest.fn(async (url: string) => ({
       ok: true,

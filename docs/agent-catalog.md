@@ -2,11 +2,12 @@
 
 # 에이전트 카탈로그
 
-이대리의 에이전트 31종. SoT: `src/agent-registry/agent-registry.ts` + `AGENT_TO_PROVIDER`(`src/model-router/domain/agent-provider.map.ts`).
+이대리의 에이전트 32종. SoT: `src/agent-registry/agent-registry.ts` + `AGENT_TO_PROVIDER`(`src/model-router/domain/agent-provider.map.ts`).
 드리프트는 `pnpm docs:check` 가 차단하고, agentType 집합 정합성은 `agent-registry.spec.ts` 가 강제한다.
 
 | 닉네임 | 기술 이름 | AgentType | 슬래시 | 모델 | 진입 usecase | 설명 |
 |---|---|---|---|---|---|---|
+| 공고담당 | Art Job Feed | `ART_JOB_FEED` | — (webhook/자동) | CHATGPT | `src/art-job-feed-chat/infrastructure/art-job-feed.dispatcher.ts` | 원화 공고 키워드 조회·변경과 수동 공고 수집 (자연어 멘션) |
 | 문작가 | Blog | `BLOG` | — (webhook/자동) | CHATGPT | `src/agent/blog/application/generate-blog-draft.usecase.ts` | 블로그 초안 릴레이 (자연어 멘션 → Hermes tistory-blog 스킬) |
 | 배포해 | Blog Publish | `BLOG_PUBLISH` | `/blog-publish` | CHATGPT | `src/agent/blog/application/publish-notion-draft.usecase.ts` | Notion 블로그 초안 익명화 + GitHub 발행 승인 |
 | 한교정 | Blog Revision Report | `BLOG_REVISION` | — (webhook/자동) | CHATGPT | `src/agent/blog/application/extract-revision-conventions.usecase.ts` | 블로그 수정률 주간 보고와 반복 수정 규칙 추출 (슬래시 없음, autopilot 전용) |

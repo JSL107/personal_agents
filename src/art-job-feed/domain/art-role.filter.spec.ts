@@ -1,3 +1,4 @@
+import { ART_JOB_KEYWORD_SEED } from './art-job-keyword';
 import { isTargetArtRole } from './art-role.filter';
 
 // 제목은 전부 2026-10-13 게임잡 원화 직종 실측.
@@ -16,8 +17,9 @@ describe('isTargetArtRole', () => {
     '[프로젝트 BB] 픽셀아티스트',
     '2D 아트 디자이너',
     '캐릭터/배경 원화가 모집',
+    '캐릭터 디자인',
   ])('includes %s', (title) => {
-    expect(isTargetArtRole(title)).toBe(true);
+    expect(isTargetArtRole(title, ART_JOB_KEYWORD_SEED)).toBe(true);
   });
 
   it.each([
@@ -36,7 +38,9 @@ describe('isTargetArtRole', () => {
     '3D 캐릭터 원화/모델링',
     '캐릭터 UI 컨셉',
     '캐릭터 애니메이션 원화',
+    '캐릭터 기획자',
+    'Game GUI 디자이너',
   ])('excludes %s', (title) => {
-    expect(isTargetArtRole(title)).toBe(false);
+    expect(isTargetArtRole(title, ART_JOB_KEYWORD_SEED)).toBe(false);
   });
 });

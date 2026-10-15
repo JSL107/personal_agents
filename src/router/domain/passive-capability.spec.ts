@@ -18,6 +18,7 @@ describe('describeEnabledPassiveCapabilities', () => {
       reader({ ART_JOB_FEED_TARGET: 'C1', ART_JOB_FEED_MENTION_USER_ID: ' ' }),
     ).join('\n');
     expect(feedOnly).toContain('원화 채용공고');
+    expect(feedOnly).toContain('화풍 키워드가 잡힌 공고에는 🎨 태그가 붙는다');
     expect(feedOnly).not.toContain('관심 없음');
 
     const both = describeEnabledPassiveCapabilities(

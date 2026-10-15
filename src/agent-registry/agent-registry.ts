@@ -305,6 +305,16 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
     description: '유튜브 영상 자막과 화면 프레임 분석 (자연어 멘션)',
   },
   {
+    agentType: AgentType.ART_JOB_FEED,
+    displayName: 'Art Job Feed',
+    nickname: '공고담당',
+    taskLabel: '원화 공고 관리',
+    slashCommands: [],
+    usecasePath:
+      'src/art-job-feed-chat/infrastructure/art-job-feed.dispatcher.ts',
+    description: '원화 공고 키워드 조회·변경과 수동 공고 수집 (자연어 멘션)',
+  },
+  {
     agentType: AgentType.PAPER_RECOMMEND,
     displayName: 'Paper Recommend',
     nickname: '추천호',
