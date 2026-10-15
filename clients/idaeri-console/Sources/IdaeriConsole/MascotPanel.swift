@@ -64,9 +64,29 @@ final class MascotPanel: NSPanel {
         }
     }
 
-    /// 저장된 위치가 지금 연결된 어느 화면에도 걸치지 않으면(외부 모니터를 뺀 경우) 기본 자리로 옮긴다.
+    /// 캐릭터 그림 한 변. 화면(`MascotView`)과 화면 밖 검사가 같은 값을 쓴다.
+    static let characterSide: CGFloat = 96
+    /// 패널 가장자리와 내용 사이 여백. 캐릭터는 이만큼 아래 가장자리에서 떨어져 가운데에 선다.
+    static let contentInset: CGFloat = 12
+
+    /// 패널 안 캐릭터 칸의 화면 좌표. `MascotView` 가 캐릭터를 아래 가운데에 세우는 배치와 같다.
+    private var characterFrameOnScreen: NSRect {
+        NSRect(
+            x: frame.midX - Self.characterSide / 2,
+            y: frame.minY + Self.contentInset,
+            width: Self.characterSide,
+            height: Self.characterSide
+        )
+    }
+
+    /// 캐릭터 칸이 지금 연결된 어느 화면 안에도 온전히 들어오지 않으면 기본 자리로 옮긴다.
+    ///
+    /// 패널 전체가 화면과 겹치는지만 보면 안 된다 — 패널은 340pt 인데 대부분 투명하고, 끌 수 있는
+    /// 손잡이는 가운데 캐릭터뿐이다. 외부 모니터를 뺀 뒤 투명한 가장자리만 걸쳐 있으면 겹침은 참인데
+    /// 캐릭터는 화면 밖이라 다시 끌어올 방법이 없다.
     private func keepOnScreen() {
-        guard !NSScreen.screens.contains(where: { $0.visibleFrame.intersects(frame) }),
+        let character = characterFrameOnScreen
+        guard !NSScreen.screens.contains(where: { $0.visibleFrame.contains(character) }),
               let visibleFrame = NSScreen.main?.visibleFrame
         else {
             return

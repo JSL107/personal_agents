@@ -87,6 +87,13 @@ func runMascotTests(_ runner: TestRunner) {
         mascotApprovalArmed(shownAt: shownAt, now: shownAt.addingTimeInterval(0.81)),
         "0.8초가 지나면 승인 가능"
     )
+    // `Date` 는 2001년 기준 초를 저장한다. 그 기준점(0)에서 재야 0.8 이 오차 없이 표현돼 `>=` 경계를
+    // 정확히 잴 수 있다(1970년 0초도 내부값은 -978,307,200 이라 오차가 난다).
+    let epoch = Date(timeIntervalSinceReferenceDate: 0)
+    runner.expect(
+        mascotApprovalArmed(shownAt: epoch, now: epoch.addingTimeInterval(mascotApprovalArmDelaySeconds)),
+        "정확히 0.8초에 승인 가능"
+    )
 
     runner.suite("Mascot")
 

@@ -63,7 +63,7 @@ struct MascotView: View {
                     .modifier(MascotHitArea())
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-            .padding(12)
+            .padding(MascotPanel.contentInset)
             .onPreferenceChange(MascotHitRects.self) { rects in
                 // SwiftUI 는 위에서 아래로, AppKit 패널은 아래에서 위로 좌표가 증가한다.
                 let panelRects = rects.map { rect in
@@ -140,7 +140,7 @@ struct MascotView: View {
                 ?? mascotImage(mascotPose(mood: controller.mood, blinking: false))
             {
                 Image(nsImage: image).resizable().interpolation(.high).scaledToFit()
-                    .frame(width: 96, height: 96)
+                    .frame(width: MascotPanel.characterSide, height: MascotPanel.characterSide)
             } else {
                 MascotPlaceholder(mood: controller.mood, blinking: controller.blinking)
             }
