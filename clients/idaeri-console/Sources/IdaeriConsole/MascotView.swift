@@ -122,7 +122,8 @@ struct MascotView: View {
                 play(motion.kind)
             }
             // 지금 돌고 있는 일의 개수. 0 이면 숨긴다.
-            .overlay(alignment: .topTrailing) {
+            // 그림 칸 바깥 오른쪽 옆구리에 둔다 — 칸 안 오른쪽 위는 그림의 `?`·반짝이 자리라 배지가 덮는다.
+            .overlay(alignment: .trailing) {
                 if controller.busyCount > 0 {
                     Text("\(controller.busyCount)")
                         .font(.system(size: 11, weight: .bold))
@@ -130,7 +131,8 @@ struct MascotView: View {
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(Color.orange, in: Capsule())
-                        .offset(x: -6, y: 6)
+                        .fixedSize()
+                        .offset(x: 22, y: -8)
                 }
             }
             .contentShape(Rectangle())
