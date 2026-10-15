@@ -13,7 +13,10 @@ OpenAI 는 ChatGPT 구독 계정으로 쓸 수 있는 Codex 모델 목록을 예
    Hermes 도 `chatgpt.com/backend-api/codex` 를 같은 ChatGPT 계정으로 부른다. 목록은 codex CLI 가 돌 때만
    갱신되므로, MAX_CACHE_AGE_SECONDS 보다 오래됐으면 아무것도 바꾸지 않고 알리기만 한다 — 낡은 목록을 믿고
    멀쩡한 설정을 고치는 쪽이 더 나쁘다.
-2. `~/.hermes/config.yaml` 의 `model.default` 가 목록에 있으면 끝(조용함).
+2. `~/.hermes/config.yaml` 의 `model.provider` 가 `openai-codex` 가 아니면 끝(조용함) — 허용 목록이 codex 의
+   것이라 다른 provider 에 들이대면 멀쩡한 모델을 gpt 로 바꿔 전부 깨뜨린다. `model.default` 가 목록에 있어도 끝.
+   설치된 hermes(v0.15.1)의 job 모델은 job `model` → `HERMES_MODEL` → `model.default` 순이고 `cron.model` 은
+   없다(`cron/scheduler.py` run_job). hermes 를 올리면 이 순서부터 다시 확인한다.
 3. 없으면 `~/.codex/config.toml` 의 `model` 로 바꾼다. 이대리가 매일 실제로 쓰는 모델이라 동작이 검증돼 있다.
    목록의 우선순위 1등을 고르지 않는 이유: 무거운 모델이 걸리면 아침신문이 900초 넘게 무응답으로 끊긴
    전례가 있다(2026-07-10). 그 모델도 목록에 없으면 바꾸지 않고 알리기만 한다.
@@ -61,11 +64,15 @@ STATE_PATH = HERMES_HOME / "cache" / "model-guard.json"
 MAX_CACHE_AGE_SECONDS = 3 * 24 * 60 * 60
 ALERT_REPEAT_SECONDS = 24 * 60 * 60
 
-_DEFAULT_LINE = re.compile(r"^(?P<prefix>[ \t]+default:[ \t]*)(?P<quote>['\"]?)(?P<value>[^\s'\"#]+)(?P=quote)")
+# 허용 목록이 codex 의 것이라, 이 provider 를 쓸 때만 판정·교체한다. 다른 provider 에 gpt 모델을 넣으면 전부 깨진다.
+CODEX_PROVIDER = "openai-codex"
 
 
-def find_default_line(config_text: str) -> tuple[int, re.Match[str]] | None:
-    """최상위 `model:` 블록 안의 `default:` 줄 번호와 매치. 없으면 None."""
+def find_model_field(config_text: str, key: str = "default") -> tuple[int, re.Match[str]] | None:
+    """최상위 `model:` 블록 안의 `<key>:` 줄 번호와 매치. 없으면 None."""
+    pattern = re.compile(
+        rf"^(?P<prefix>[ \t]+{key}:[ \t]*)(?P<quote>['\"]?)(?P<value>[^\s'\"#]+)(?P=quote)"
+    )
     lines = config_text.splitlines()
     try:
         start = next(index for index, line in enumerate(lines) if line.rstrip() == "model:")
@@ -75,14 +82,14 @@ def find_default_line(config_text: str) -> tuple[int, re.Match[str]] | None:
         line = lines[index]
         if line.strip() and not line[0].isspace():
             return None
-        found = _DEFAULT_LINE.match(line)
+        found = pattern.match(line)
         if found:
             return index, found
     return None
 
 
 def replace_default(config_text: str, model: str) -> str:
-    located = find_default_line(config_text)
+    located = find_model_field(config_text)
     if located is None:
         raise ValueError("config.yaml 에서 model.default 를 찾지 못함")
     index, found = located
@@ -94,12 +101,18 @@ def replace_default(config_text: str, model: str) -> str:
 
 def decide(
     current: str,
+    provider: str | None,
     allowed: set[str],
     fallback: str | None,
     cache_age_seconds: float,
     pinned_jobs: dict[str, str],
 ) -> tuple[str | None, str | None, list[str]]:
-    """(바꿀 모델, 교체 알림, 경고 목록). 경고는 상태가 이어지는 동안 하루 한 번 다시 보낸다."""
+    """(바꿀 모델, 교체 알림, 경고 목록). 경고는 상태가 이어지는 동안 하루 한 번 다시 보낸다.
+
+    pinned_jobs 는 codex provider 로 도는 job 만 담는다(load_pinned_jobs 가 거른다).
+    """
+    if not pinned_jobs and provider != CODEX_PROVIDER:
+        return None, None, []
     if cache_age_seconds > MAX_CACHE_AGE_SECONDS:
         days = int(cache_age_seconds // 86400)
         return None, None, [
@@ -114,7 +127,7 @@ def decide(
         for name, model in sorted(pinned_jobs.items())
         if model not in allowed
     ]
-    if current in allowed:
+    if provider != CODEX_PROVIDER or current in allowed:
         return None, None, warnings
     if fallback and fallback in allowed:
         notice = (
@@ -159,13 +172,16 @@ def load_codex_model() -> str | None:
     return model if isinstance(model, str) else None
 
 
-def load_pinned_jobs() -> dict[str, str]:
+def load_pinned_jobs(default_provider: str | None) -> dict[str, str]:
+    """모델을 고정했고 codex provider 로 도는 job. provider 를 안 박은 job 은 전역 provider 를 따른다."""
     data = json.loads(HERMES_JOBS_PATH.read_text())
     jobs = data["jobs"] if isinstance(data, dict) else data
     return {
         job.get("name") or job.get("id"): job["model"]
         for job in jobs
-        if isinstance(job.get("model"), str) and job["model"]
+        if isinstance(job.get("model"), str)
+        and job["model"]
+        and (job.get("provider") or default_provider) == CODEX_PROVIDER
     }
 
 
@@ -181,10 +197,16 @@ def write_atomic(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(text)
+    if path.exists():
+        # os.replace 는 임시 파일의 mode(umask 기준)를 그대로 가져온다. 사용자가 좁혀 둔 권한을 넓히지 않는다.
+        shutil.copymode(path, temporary)
     os.replace(temporary, path)
 
 
-def switch_model(config_text: str, model: str, now: datetime) -> Path:
+def switch_model(config_text: str, model: str, now: datetime) -> Path | None:
+    """바꿨으면 백업 경로, 읽은 뒤 누가 설정을 고쳤으면 None(덮어쓰지 않고 다음 회차에 다시 본다)."""
+    if HERMES_CONFIG_PATH.read_text() != config_text:
+        return None
     backup = HERMES_CONFIG_PATH.with_name(
         f"config.yaml.bak.{now.strftime('%Y%m%d_%H%M%S')}_model_guard"
     )
@@ -196,29 +218,49 @@ def switch_model(config_text: str, model: str, now: datetime) -> Path:
 def run(now: datetime) -> list[str]:
     try:
         config_text = HERMES_CONFIG_PATH.read_text()
-        located = find_default_line(config_text)
+        located = find_model_field(config_text)
         if located is None:
             raise ValueError("config.yaml 에서 model.default 를 찾지 못함")
-        current = located[1]["value"]
+        provider_line = find_model_field(config_text, "provider")
+        provider = provider_line[1]["value"] if provider_line else None
         allowed, fetched_at = load_allowed()
         target, notice, warnings = decide(
-            current,
+            located[1]["value"],
+            provider,
             allowed,
             load_codex_model(),
             now.timestamp() - fetched_at,
-            load_pinned_jobs(),
+            load_pinned_jobs(provider),
         )
-    except (OSError, ValueError, KeyError, TypeError, tomllib.TOMLDecodeError) as error:
+    except (
+        OSError,
+        ValueError,
+        KeyError,
+        TypeError,
+        AttributeError,
+        tomllib.TOMLDecodeError,
+    ) as error:
         # 예외로 죽으면 hermes 가 매시 "script failed" 를 보낸다. 같은 문제는 하루 한 번만 알린다.
+        # AttributeError: 문법은 맞지만 원소가 매핑이 아닌 JSON(`"models": ["a"]` 등).
         target, notice = None, None
         warnings = [f"⚠️ Hermes 모델 점검 실패 — {type(error).__name__}: {error}"]
 
     messages = []
     if target:
-        backup = switch_model(config_text, target, now)
-        messages.append(f"{notice}\n백업: `{backup}`")
+        try:
+            backup = switch_model(config_text, target, now)
+            if backup:
+                messages.append(f"{notice}\n백업: `{backup}`")
+        except OSError as error:
+            warnings.append(
+                f"⚠️ Hermes 기본 모델을 `{target}` 로 바꾸지 못했습니다 — {type(error).__name__}: {error}"
+            )
     state, due = due_warnings(load_state(), warnings, now.timestamp())
-    write_atomic(STATE_PATH, json.dumps(state, ensure_ascii=False))
+    try:
+        write_atomic(STATE_PATH, json.dumps(state, ensure_ascii=False))
+    except OSError:
+        # 상태를 못 남기면 다음 회차에 같은 경고가 다시 나갈 뿐이다. 알림 자체는 막지 않는다.
+        pass
     return messages + due
 
 
@@ -230,34 +272,44 @@ def self_check() -> None:
         "agent:\n"
         "  default: keep-me\n"
     )
-    located = find_default_line(config)
+    located = find_model_field(config)
     assert located and located[1]["value"] == "gpt-5.5"
     replaced = replace_default(config, "gpt-6-sol")
     assert "  default: gpt-6-sol  # 주석\n" in replaced
     assert "  default: keep-me\n" in replaced, "다른 블록의 default 는 그대로"
     assert replace_default("model:\n  default: 'a'\n", "b") == "model:\n  default: 'b'\n"
-    assert find_default_line("agent:\n  default: x\nmodel:\n  provider: p\n") is None
-    assert find_default_line("model:\n  provider: p\nother:\n  default: x\n") is None
+    assert find_model_field("agent:\n  default: x\nmodel:\n  provider: p\n") is None
+    assert find_model_field("model:\n  provider: p\nother:\n  default: x\n") is None
+
+    provider_line = find_model_field(config, "provider")
+    assert provider_line and provider_line[1]["value"] == CODEX_PROVIDER
 
     allowed = {"gpt-6-sol", "gpt-5.6-luna"}
     day = 86400
+    C = CODEX_PROVIDER
 
-    target, notice, warnings = decide("gpt-6-sol", allowed, "gpt-6-sol", day, {})
+    # codex 가 아닌 provider 에는 codex 허용 목록을 들이대지 않는다.
+    assert decide("claude-sonnet-5", "anthropic", allowed, "gpt-6-sol", day, {}) == (None, None, [])
+    assert decide("gpt-5.5", None, allowed, "gpt-6-sol", day, {}) == (None, None, [])
+    target, _, warnings = decide("claude-sonnet-5", "anthropic", allowed, "gpt-6-sol", day, {"j": "gpt-5.5"})
+    assert target is None and len(warnings) == 1, "codex 로 도는 고정 job 경고는 남김"
+
+    target, notice, warnings = decide("gpt-6-sol", C, allowed, "gpt-6-sol", day, {})
     assert (target, notice, warnings) == (None, None, []), "정상이면 조용함"
 
-    target, notice, warnings = decide("gpt-5.5", allowed, "gpt-6-sol", day, {})
+    target, notice, warnings = decide("gpt-5.5", C, allowed, "gpt-6-sol", day, {})
     assert target == "gpt-6-sol" and "`gpt-5.5`" in notice and warnings == []
 
-    target, notice, warnings = decide("gpt-5.5", allowed, "gpt-5.4", day, {})
+    target, notice, warnings = decide("gpt-5.5", C, allowed, "gpt-5.4", day, {})
     assert target is None and notice is None and "직접 고쳐야" in warnings[0]
-    target, _, warnings = decide("gpt-5.5", allowed, None, day, {})
+    target, _, warnings = decide("gpt-5.5", C, allowed, None, day, {})
     assert target is None and len(warnings) == 1
 
-    target, _, warnings = decide("gpt-5.5", allowed, "gpt-6-sol", 4 * day, {})
+    target, _, warnings = decide("gpt-5.5", C, allowed, "gpt-6-sol", 4 * day, {})
     assert target is None and "4일째" in warnings[0], "낡은 목록으로는 바꾸지 않음"
 
     target, _, warnings = decide(
-        "gpt-6-sol", allowed, "gpt-6-sol", day, {"아침신문": "gpt-5.4-mini", "감시": "gpt-5.6-luna"}
+        "gpt-6-sol", C, allowed, "gpt-6-sol", day, {"아침신문": "gpt-5.4-mini", "감시": "gpt-5.6-luna"}
     )
     assert target is None and len(warnings) == 1 and "`아침신문`" in warnings[0]
 
