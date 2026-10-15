@@ -3,7 +3,6 @@ import {
   formatArtJobDeadlineReminder,
   formatArtJobDigest,
   formatArtJobImageCaption,
-  formatArtJobPreviewCaption,
 } from './art-job-feed.formatter';
 
 const TODAY = { year: 2026, month: 10, day: 13 };
@@ -200,8 +199,8 @@ describe('formatArtJobImageCaption', () => {
   });
 });
 
-describe('formatArtJobDigest — 검색 미리보기', () => {
-  it('게임명이 없어도 미리보기·구글 링크를 한 줄로 알린다', () => {
+describe('formatArtJobDigest — 확인 못 한 이미지', () => {
+  it('게임명이 없으면 구글 링크만 알리고 미리보기 안내는 없다', () => {
     const { blocks } = formatArtJobDigest({
       mentionUserId: null,
       today: TODAY,
@@ -211,34 +210,16 @@ describe('formatArtJobDigest — 검색 미리보기', () => {
           resolved: {
             gameTitle: null,
             image: null,
-            preview: {
-              url: 'https://x',
-              origin: 'SEARCH_PREVIEW',
-              sourceName: '게임포커스',
-            },
-            searchQuery: '그레이게임즈 게임',
             googleSearchUrl: 'https://www.google.com/search?tbm=isch&q=y',
           },
         },
       ],
     });
-    expect(JSON.stringify(blocks)).toContain(
-      '🔎 검색 미리보기는 스레드에 · <https://www.google.com/search?tbm=isch&q=y|구글 이미지 검색>',
+    const text = JSON.stringify(blocks);
+    expect(text).toContain(
+      '🔎 <https://www.google.com/search?tbm=isch&q=y|구글 이미지 검색>',
     );
-  });
-});
-
-describe('formatArtJobPreviewCaption', () => {
-  it('확인 안 된 이미지임과 검색어·출처를 밝힌다', () => {
-    expect(
-      formatArtJobPreviewCaption(5, '팀 테트라포드 게임', {
-        url: 'https://x',
-        origin: 'SEARCH_PREVIEW',
-        sourceName: '게임포커스',
-      }),
-    ).toBe(
-      '5. 🔎 검색 미리보기 · 확인 안 된 이미지 (검색어: 팀 테트라포드 게임 · 출처: 게임포커스)',
-    );
+    expect(text).not.toContain('미리보기');
   });
 });
 
