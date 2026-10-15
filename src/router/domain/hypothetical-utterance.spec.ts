@@ -1,4 +1,5 @@
 import {
+  BLOG_WRITE_VERBS,
   findHypotheticalMarker,
   formatHeldWrite,
 } from './hypothetical-utterance';
@@ -56,6 +57,14 @@ const HYPOTHETICAL: Record<string, string[]> = {
     '내일 일정 있는지 확인해 줄래?',
     '오늘 택배 반품 해야 돼?',
   ],
+  // 블로그 동사(`써`·`작성해`)는 공용이 아니다 — 일정 파서는 첫 문장을 제목 "대해 의견을 써줄래?" 로
+  // REGISTER 한다(#840 리뷰). 블로그 dispatcher 밖에서는 계속 막힌다.
+  blogVerbElsewhere: [
+    '내일 일정에 대해 의견을 써줄래?',
+    '내일 회고 작성해 줄 수 있어?',
+    '내일 휴가 써줄래?',
+    '이거 관련으로 블로그 글좀 써줄래?',
+  ],
 };
 
 const DECLARATIVE: Record<string, string[]> = {
@@ -110,6 +119,25 @@ const DECLARATIVE: Record<string, string[]> = {
   ],
 };
 
+// 블로그 dispatcher 는 BLOG_WRITE_VERBS 를 넘긴다.
+const BLOG_HYPOTHETICAL = [
+  // 2026-10-14 run 8837 — 질문인데 Notion 페이지가 실제로 생겼다.
+  '이거 3줄 요약할 수 있어?',
+  '블로그 글 확인해 줄래?',
+  '그 글 써도 돼?',
+  '블로그 글 써 줬어?',
+  '만약 RAG 주제라면 블로그 글 써줄래?',
+];
+
+const BLOG_DECLARATIVE = [
+  // 2026-10-15 운영 원문 — "써줘." 로 다시 말해야 했다.
+  '이거 관련으로 블로그 글좀 써줄래?',
+  '프롬프트 RAG 블로그 초안 작성해 줄래?',
+  '이 기사로 블로그 써 주실 수 있어요?',
+  // 공용 동사도 그대로 통한다.
+  '이 주제 블로그 목록에 추가해 줄래?',
+];
+
 describe('findHypotheticalMarker', () => {
   describe.each(Object.entries(HYPOTHETICAL))('%s 질문·가정형', (_, texts) => {
     it.each(texts)('"%s" 는 표지가 걸린다', (text) => {
@@ -137,6 +165,16 @@ describe('findHypotheticalMarker', () => {
 
   it('라면(음식)이 문장 중간 낱말 일부면 걸리지 않는다', () => {
     expect(findHypotheticalMarker('라면땡기는날 휴가 등록해줘')).toBeNull();
+  });
+
+  describe('블로그 동사를 넘기면', () => {
+    it.each(BLOG_HYPOTHETICAL)('"%s" 는 표지가 걸린다', (text) => {
+      expect(findHypotheticalMarker(text, BLOG_WRITE_VERBS)).not.toBeNull();
+    });
+
+    it.each(BLOG_DECLARATIVE)('"%s" 는 표지가 걸리지 않는다', (text) => {
+      expect(findHypotheticalMarker(text, BLOG_WRITE_VERBS)).toBeNull();
+    });
   });
 });
 

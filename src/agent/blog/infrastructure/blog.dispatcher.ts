@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import {
+  BLOG_WRITE_VERBS,
   findHypotheticalMarker,
   formatHeldWrite,
 } from '../../../router/domain/hypothetical-utterance';
@@ -76,7 +77,8 @@ export class BlogDispatcher implements AgentDispatcher {
     // 자연어 질문("이거 3줄 요약할 수 있어?")이면 초안을 만들지 않는다 — Notion 페이지가 실제로
     // 생긴다(2026-10-14 run 8837). 회신 컨텍스트가 있는 자연어 멘션 경로만 본다 — 주제 번호 선택은
     // 명시 지시라 동기 경로로 오고, 주제 제목에 물음표가 있어도 막지 않는다.
-    const marker = findHypotheticalMarker(input.text ?? '');
+    // "블로그 글 써줄래?" 같은 정중한 지시는 질문이 아니다 — 블로그 동사는 여기서만 넘긴다.
+    const marker = findHypotheticalMarker(input.text ?? '', BLOG_WRITE_VERBS);
     if (marker !== null) {
       this.logger.warn(`BLOG 초안 보류 — 질문·가정형 원문 (표지=${marker})`);
       return {

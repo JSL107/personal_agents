@@ -350,6 +350,26 @@ describe('BlogDispatcher', () => {
         '블로그 초안을 작성하지 않았어요',
       );
     });
+
+    // 2026-10-15 — 정중한 지시인데 질문으로 보류돼 "써줘." 로 다시 말해야 했다.
+    it('"써줄래?" 같은 정중한 지시는 보류하지 않고 작성을 시작한다', async () => {
+      const execute = jest.fn().mockResolvedValue(buildSuccessOutcome());
+      const dispatcher = new BlogDispatcher(
+        { execute } as unknown as GenerateBlogDraftUsecase,
+        buildNotifier(),
+      );
+
+      const outcome = await dispatcher.dispatch({
+        source: 'SLACK_MESSAGE',
+        slackUserId: 'U1',
+        text: '<@U0AULUXLF9B> 이거 관련으로 블로그 글좀 써줄래?',
+        replyContext: { channel: 'C1', threadTs: 'T1' },
+      });
+      await flushPromises();
+
+      expect(outcome.formattedText).toContain('작성을 시작');
+      expect(execute).toHaveBeenCalled();
+    });
   });
 
   // 주제 번호 선택(갭 블로그)은 회신 컨텍스트 없이 동기로 온다 — 명시 선택이라 제목의 물음표로 막지 않는다.
