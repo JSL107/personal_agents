@@ -23,7 +23,6 @@ func renderOfficeScene(
     hoverAgentType: String? = nil,
     busyDemo: Bool = false,
     alarmDemo: Bool = false,
-    briefingDemo: Bool = false,
     chatterDemo: Bool = false,
     vacuumDemo: Bool = false,
     sessionDemo: Bool = false,
@@ -177,18 +176,11 @@ func renderOfficeScene(
         pendingCommands: [],
         now: Date()
     )
-    // 할 일 말풍선·연속 도장·정산 종이도 함께 굽는다. 빠뜨리면 "안 그리는 요소는 정상으로
-    // 보인다" 는 사각지대가 그대로 생긴다 — 말풍선이 화면 위로 넘치는지, 도장이 게시판을
-    // 벗어나는지, 종이가 대표를 덮는지가 이 경로에서만 보인다.
-    let fetched = poseDemo || populatedDemo || selectedCapture ? nil : fetchBriefingSynchronously(client: client)
-    let briefing = briefingDemo ? briefingDemoValue() : fetched
-    scene.refreshBriefing(briefing, hour: hour ?? Calendar.current.component(.hour, from: Date()))
-
     if poseDemo, !scene.applyPoseDemo() {
         FileHandle.standardError.write(Data("자세 데모에 필요한 사람 또는 가구가 부족하다\n".utf8))
         return false
     }
-    // 오버레이·브리핑이 다 올라간 뒤에 얹는다. 먼저 띄우면 상시 말풍선을 다시 그리는
+    // 오버레이가 다 올라간 뒤에 얹는다. 먼저 띄우면 상시 말풍선을 다시 그리는
     // `refreshOverlays` 가 배회 대사를 지우고, 두 문구가 같은 자리를 다투는지도 안 보인다.
     if chatterDemo, !scene.previewChatter() {
         return false
@@ -389,33 +381,6 @@ private let alarmDemoAgentType = "ALARM_DEMO"
 
 /// 승인 대기 줄에 서 있는 사람 하나(`AWAITING_APPROVAL`)를 만든다. `applyApprovalPressure`가
 /// 방치 압력을 매기려면 승인 카드뿐 아니라 화면에 캐릭터 노드도 있어야 하므로 함께 만든다.
-/// 브리핑 데모 — 할 일 3종이 겹친 날과 연속 3일.
-///
-/// 실 백엔드는 지금(2026-08) 승인 0건·실패 0건·연속 0일이라 이 입구 없이는 말풍선의 "외 N건"
-/// 축약도, 게시판 도장도 화면에 뜨지 않는다. 도장이 실제로 읽히는 크기인지는 눈으로만 판정되고,
-/// 연속 기록이 3일까지 쌓이려면 사흘을 기다려야 한다.
-///
-/// 할 일 순서는 실제 조립 순서(승인 → 실패 → 리뷰)를 그대로 쓴다 — 말풍선이 **가장 급한 것**을
-/// 고르는지 확인하려면 목록에 그 순서가 있어야 한다.
-private func briefingDemoValue() -> ConsoleBriefing {
-    ConsoleBriefing(
-        todos: [
-            ConsoleTodo(kind: .approval, label: "승인 3건", detail: "19:04 만료"),
-            ConsoleTodo(kind: .failedRun, label: "PM 재시도", detail: "다음 실행은 내일"),
-            ConsoleTodo(kind: .prReview, label: "PR 리뷰 회수 2건", detail: "10일째"),
-        ],
-        // 도장 상한(5)을 **넘긴** 값이다. 마지막 도장을 금색으로 칠하는 포화 표식이 이 입구의
-        // 확인 대상이고, 상한 아래(1~5개)는 테스트가 고정한다. 원장 실측 최고 기록은 3일이라
-        // 기다려서는 어느 쪽도 볼 수 없다.
-        streak: ConsoleStreak(current: 8, best: 8, todayOpened: 3, todayRemaining: 3),
-        dailyReport: ConsoleDailyReport(
-            date: "2026-08-20", succeeded: 21, failed: 1,
-            approvalsOpened: 3, approvalsHandled: 0, pendingReviewPulls: 2
-        ),
-        serverTime: ISO8601DateFormatter().string(from: Date())
-    )
-}
-
 private func alarmDemoAgent() -> ConsoleAgent {
     ConsoleAgent(
         agentType: alarmDemoAgentType,
@@ -527,21 +492,6 @@ func populatedDemoAgents() -> [ConsoleAgent] {
             department: departments[index % departments.count].rawValue
         )
     }
-}
-
-/// 대표 브리핑도 같은 방식으로 기다렸다가 그린다. 없으면 회의실 판이 통째로 안 그려지므로
-/// 호출자가 그 사실을 알 수 있게 nil 을 그대로 돌려준다.
-func fetchBriefingSynchronously(client: ConsoleClient) -> ConsoleBriefing? {
-    let semaphore = DispatchSemaphore(value: 0)
-    var result: ConsoleBriefing?
-    Task {
-        result = try? await client.fetchBriefing()
-        semaphore.signal()
-    }
-    guard semaphore.wait(timeout: .now() + 5) == .success else {
-        return nil
-    }
-    return result
 }
 
 /// 원장도 같은 방식으로 기다린다. 실패하면 nil — 정지 배지 없이 굽는다(앱과 같은 폴백).
