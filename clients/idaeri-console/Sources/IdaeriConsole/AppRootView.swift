@@ -21,10 +21,6 @@ struct AppRootView: View {
     /// 첫 화면은 캘린더다(2026-09-18 결정) — 마감·신청·예약을 Slack 에 등록한 뒤 이 화면에서
     /// 확인하는 것이 목표라, 앱을 열자마자 그 확인이 보여야 한다.
     @State private var tab: ConsoleTab = .calendar
-    /// 담당자 미지정 지시 바가 열렸는지. 오피스 탭의 상태지만 여기서 소유한다 — 메뉴에서 열 때는
-    /// 탭 전환과 함께 세팅돼야 하고, 그 시점의 `OfficeView` 는 아직 만들어지지 않아 통지를 직접
-    /// 받을 수 없다.
-    @State private var isPresidentBarOpen = false
     @State private var selectedOfficeAgent: String?
     /// 탭을 떠나도 직원의 위치와 진행 중인 연출을 보존한다.
     @State private var officeScene: OfficeScene = {
@@ -70,7 +66,6 @@ struct AppRootView: View {
                     onApprove: approve,
                     onRetryRun: retryRun,
                     onReject: reject,
-                    isPresidentBarOpen: $isPresidentBarOpen,
                     selectedAgent: $selectedOfficeAgent,
                     office3D: office3D
                 )
@@ -78,14 +73,11 @@ struct AppRootView: View {
         }
         .background(CozyPalette.canvas)
         .frame(minWidth: Layout.windowMinWidth, minHeight: Layout.windowMinHeight)
-        .onReceive(
-            NotificationCenter.default.publisher(for: .idaeriOpenPresidentCommand)
-        ) { _ in
-            // 지시 바는 오피스 탭에만 있다. 대시보드를 보고 있을 때 눌렸다면 탭까지 옮겨 준다 —
-            // 안 그러면 메뉴를 눌러도 아무 일도 일어나지 않는다.
-            selectedOfficeAgent = nil
-            tab = .office
-            isPresidentBarOpen = true
+        .onReceive(NotificationCenter.default.publisher(for: .idaeriMascotCommand)) { notification in
+            guard let text = notification.userInfo?["text"] as? String else {
+                return
+            }
+            sendCommand(text: text, agentTypeHint: nil)
         }
         .onReceive(NotificationCenter.default.publisher(for: .idaeriMascotApprove)) { notification in
             guard let id = notification.userInfo?["id"] as? String else {

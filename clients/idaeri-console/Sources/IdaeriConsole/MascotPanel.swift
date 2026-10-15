@@ -7,6 +7,9 @@ final class MascotPanel: NSPanel {
     private var globalMonitor: Any?
     private var localMonitor: Any?
     private var isCharacterDragActive = false
+    private var isCommandInputActive = false
+
+    override var canBecomeKey: Bool { true }
 
     init() {
         let size = NSSize(width: 340, height: 300)
@@ -59,9 +62,14 @@ final class MascotPanel: NSPanel {
         refreshMouseHit()
     }
 
+    func setCommandInputActive(_ active: Bool) {
+        isCommandInputActive = active
+        refreshMouseHit()
+    }
+
     private func refreshMouseHit() {
         let point = convertPoint(fromScreen: NSEvent.mouseLocation)
         let hit = interactiveRects.contains { $0.contains(point) }
-        ignoresMouseEvents = !(hit || isCharacterDragActive)
+        ignoresMouseEvents = !(hit || isCharacterDragActive || isCommandInputActive)
     }
 }

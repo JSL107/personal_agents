@@ -10,6 +10,7 @@ import SwiftUI
     @Published private(set) var mood: MascotMood = .idle
     @Published private(set) var blinking = false
     @Published private(set) var bubble: MascotBubble?
+    @Published private(set) var commandInputOpen = false
 
     private func setMood(_ value: MascotMood) {
         if mood != value {
@@ -32,11 +33,17 @@ import SwiftUI
     private var blinkEndTimer: Timer?
     private var briefingTimer: Timer?
     private var reactionTimer: Timer?
+    private var replyTimer: Timer?
     private var refreshQueued = false
     private var dismissedApprovalIds: Set<String> = []
     private var submittedApprovalId: String?
     private var briefingBubble: MascotBubble?
     private var reactionBubble: MascotBubble?
+    private var replyBubble: MascotBubble?
+    private var lastMascotCommand: (text: String, sentAt: Date)?
+    private var observedConversationIds: Set<UUID> = []
+    private var failedNoticeCommandId: UUID?
+    private var dismissedFailureIds: Set<UUID> = []
     private var reactionLedger: MascotReactionLedger
     private let reactionFile: URL
     private let briefingSlotKey = "mascotLastBriefingSlot"
@@ -60,6 +67,9 @@ import SwiftUI
         store.eventStream.sink { [weak self] event in
             DispatchQueue.main.async { self?.receive(event) }
         }.store(in: &subscriptions)
+        NotificationCenter.default.publisher(for: .idaeriOpenMascotCommand).sink { [weak self] _ in
+            DispatchQueue.main.async { self?.openCommandInput() }
+        }.store(in: &subscriptions)
     }
 
     func show() {
@@ -76,8 +86,50 @@ import SwiftUI
         showTransient(.briefing(mascotBriefingLines(briefing: briefing)), duration: 20)
     }
 
+    func openCommandInput() {
+        commandInputOpen = true
+        panel.setCommandInputActive(true)
+        panel.makeKey()
+        refreshBubble()
+    }
+
+    func sendCommand(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return
+        }
+        lastMascotCommand = (trimmed, Date())
+        observedConversationIds = Set(store.conversation.map(\.id))
+        replyBubble = nil
+        replyTimer?.invalidate()
+        failedNoticeCommandId = nil
+        NotificationCenter.default.post(name: .idaeriMascotCommand, object: nil, userInfo: ["text": trimmed])
+        closeCommandInput()
+    }
+
+    func closeCommandInput() {
+        guard commandInputOpen else {
+            return
+        }
+        commandInputOpen = false
+        panel.setCommandInputActive(false)
+        panel.resignKey()
+        refreshBubble()
+    }
+
+    func closeReply() {
+        replyBubble = nil
+        replyTimer?.invalidate()
+        refreshBubble()
+    }
+
     func clearNotice() {
-        store.setApprovalNotice(nil)
+        if store.approvalNotice != nil {
+            store.setApprovalNotice(nil)
+        } else if let failedNoticeCommandId {
+            dismissedFailureIds.insert(failedNoticeCommandId)
+            self.failedNoticeCommandId = nil
+        }
         queueRefresh()
     }
 
@@ -136,12 +188,52 @@ import SwiftUI
         scheduleGraceRecheck(now: now)
         maybeShowBriefing(now: now)
         maybeReactToWorkload(now: now)
+        refreshCommandResult()
         refreshBubble()
+    }
+
+    private func refreshCommandResult() {
+        guard let lastMascotCommand else {
+            return
+        }
+        let failedCommand = store.pendingCommands.last {
+            $0.text == lastMascotCommand.text && $0.sentAt >= lastMascotCommand.sentAt && $0.phase == .failed
+        }
+        if let failedCommand {
+            replyBubble = nil
+            replyTimer?.invalidate()
+            if !dismissedFailureIds.contains(failedCommand.id) {
+                failedNoticeCommandId = failedCommand.id
+            }
+        }
+        let newTurns = store.conversation.filter { !observedConversationIds.contains($0.id) }
+        observedConversationIds.formUnion(newTurns.map(\.id))
+        guard failedCommand == nil,
+              let reply = newTurns.last(where: { $0.role == .idaeri && $0.at >= lastMascotCommand.sentAt })
+        else {
+            return
+        }
+        replyBubble = .reply(reply.text)
+        replyTimer?.invalidate()
+        replyTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.closeReply() }
+        }
     }
 
     private func refreshBubble() {
         if let notice = store.approvalNotice {
             setBubble(.notice(notice))
+            return
+        }
+        if let failedNoticeCommandId,
+           let failedCommand = store.pendingCommands.first(where: { $0.id == failedNoticeCommandId }) {
+            let reason = failedCommand.reason?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let detail = reason.flatMap { $0.isEmpty ? nil : $0 } ?? "연결 확인"
+            setBubble(.notice("지시를 보내지 못했습니다 — \(detail)"))
+            return
+        }
+        if commandInputOpen {
+            setBubble(.commandInput)
             return
         }
         // 승인 통지를 보낸 뒤 스토어가 카드를 숨기기 전까지 같은 버튼을 다시 그리지 않는다.
@@ -160,7 +252,7 @@ import SwiftUI
             ))
             return
         }
-        setBubble(briefingBubble ?? reactionBubble)
+        setBubble(replyBubble ?? briefingBubble ?? reactionBubble)
     }
 
     private func scheduleGraceRecheck(now: Date) {
@@ -253,7 +345,7 @@ import SwiftUI
                     self?.refreshBubble()
                 }
             }
-        case .notice, .approval:
+        case .notice, .commandInput, .approval, .reply:
             break
         }
         refreshBubble()

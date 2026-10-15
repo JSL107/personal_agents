@@ -4,7 +4,9 @@ import SwiftUI
 
 enum MascotBubble: Equatable {
     case notice(String)
+    case commandInput
     case approval(id: String, headline: String, title: String, more: Int, submitted: Bool)
+    case reply(String)
     case briefing([String])
     case reaction(String)
 }
@@ -35,6 +37,8 @@ struct MascotView: View {
     @ObservedObject var controller: MascotController
     /// 끌기 시작 순간의 패널 원점과 화면 기준 포인터 위치.
     @State private var dragStart: (panel: NSPoint, mouse: NSPoint)?
+    @State private var commandText = ""
+    @FocusState private var commandFieldFocused: Bool
 
     var body: some View {
         GeometryReader { geometry in
@@ -80,7 +84,8 @@ struct MascotView: View {
         }
         .contentShape(Rectangle())
         .accessibilityLabel("\(mascotName), \(moodLabel)")
-        .onTapGesture { controller.showBriefingNow() }
+        .onTapGesture(count: 2) { controller.openCommandInput() }
+        .onTapGesture(count: 1) { controller.showBriefingNow() }
         .gesture(
             DragGesture(minimumDistance: 3)
                 // 이동량은 화면 좌표의 포인터로 잰다. 제스처의 `translation` 은 캐릭터 좌표계 기준이라,
@@ -123,6 +128,16 @@ struct MascotView: View {
             case let .notice(message):
                 Text(message).lineLimit(4)
                 HStack { Spacer(); Button("확인") { controller.clearNotice() } }
+            case .commandInput:
+                TextField("무엇을 맡길까요?", text: $commandText)
+                    .focused($commandFieldFocused)
+                    .onSubmit { submitCommand() }
+                    .onAppear { commandFieldFocused = true }
+                HStack {
+                    Button("보내기") { submitCommand() }
+                    Button("닫기") { closeCommandInput() }
+                        .keyboardShortcut(.cancelAction)
+                }
             case let .approval(id, headline, title, more, submitted):
                 Text(headline).font(.headline)
                 Text(title).lineLimit(3)
@@ -132,6 +147,9 @@ struct MascotView: View {
                     Button("자세히") { controller.showDashboard() }
                     Button("나중에") { controller.dismissApproval(id: id) }
                 }
+            case let .reply(message):
+                Text(message).lineLimit(6)
+                HStack { Spacer(); Button("닫기") { controller.closeReply() } }
             case let .briefing(lines):
                 ForEach(lines, id: \.self) { line in Text(line) }
             case let .reaction(message):
@@ -144,5 +162,18 @@ struct MascotView: View {
         .background(Color(nsColor: .windowBackgroundColor).opacity(0.96), in: RoundedRectangle(cornerRadius: 14))
         .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
         .accessibilityElement(children: .contain)
+    }
+
+    private func submitCommand() {
+        let text = commandText
+        controller.sendCommand(text)
+        if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            commandText = ""
+        }
+    }
+
+    private func closeCommandInput() {
+        controller.closeCommandInput()
+        commandText = ""
     }
 }
