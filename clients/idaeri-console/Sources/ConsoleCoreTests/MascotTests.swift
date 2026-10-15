@@ -148,17 +148,30 @@ func runMascotTests(_ runner: TestRunner) {
     runner.expectEqual(
         mascotPose(MascotPoseContext(mood: .awaitingApproval, activity: .reviewing)), .approval, "승인 대기가 소품보다 먼저"
     )
-    let statusItems = mascotStatusItems(
-        approvals: [mascotTestApproval], runs: [activityRun("1", "CODE_REVIEWER", secondsAgo: 300)],
-        agents: [reviewAgent],
-        sessions: [activitySession("old", state: "idle", minutesAgo: 30), activitySession("new", state: "active", minutesAgo: 2)],
-        now: activityNow
+    let mascotFailedTodo = ConsoleTodo(kind: .failedRun, label: "실패 2건", detail: "재시도 가능", targets: [
+        ConsoleTodoTarget(label: "CODE_REVIEWER 재시도", agentType: "CODE_REVIEWER", runId: 41, retryable: true),
+        ConsoleTodoTarget(label: "OLD 재시도", agentType: "OLD", runId: 42, retryable: false),
+    ])
+    let mascotPrTodo = ConsoleTodo(kind: .prReview, label: "PR 리뷰 회수 1건", detail: "오늘", targets: [
+        ConsoleTodoTarget(label: "PR #847", pullNumber: 847, url: "https://github.com/x/y/pull/847"),
+    ])
+    let mascotApprovalTodo = ConsoleTodo(kind: .approval, label: "승인 1건", detail: "19:04 만료")
+    let mascotTodoRowsResult = mascotTodoRows(
+        todos: [mascotApprovalTodo, mascotFailedTodo, mascotPrTodo], approvals: [mascotTestApproval], agents: [reviewAgent],
+        retryingRunIds: [], now: activityNow
     )
-    runner.expectEqual(statusItems.map(\.kind), [.approval, .run, .session, .session], "승인 → 실행 → 세션 순")
-    runner.expectEqual(statusItems[1].detail, "CODE_REVIEWER 하는 중", "실행 설명은 직원 말풍선 문장")
-    runner.expectEqual(statusItems[1].when, "5분 전", "실행 경과")
-    runner.expectEqual(statusItems[2].title, "세션 new", "일하는 세션이 먼저")
-    runner.expectEqual(statusItems[2].detail, "repo-new", "세션 설명은 작업 폴더 이름")
+    runner.expectEqual(
+        mascotTodoRowsResult.map(\.kind), [.approval, .failedRun, .failedRun, .prReview],
+        "승인은 열린 카드에서 한 번만, 실패·PR 은 대상마다"
+    )
+    runner.expectEqual(mascotTodoRowsResult[1].title, "CODE_REVIEWER", "실패 줄 제목은 직원 표시명")
+    runner.expectEqual(mascotTodoRowsResult[1].action, .retry(runId: 41), "재시도 가능한 실패는 재시도")
+    runner.expectEqual(mascotTodoRowsResult[2].action, .openDashboard, "재시도 불가 실패는 대시보드로")
+    runner.expectEqual(mascotTodoRowsResult[3].action, .openURL("https://github.com/x/y/pull/847"), "PR 은 링크로")
+    let mascotBusyRows = mascotTodoRows(
+        todos: [mascotFailedTodo], approvals: [], agents: [], retryingRunIds: [41], now: activityNow
+    )
+    runner.expect(mascotBusyRows[0].busy, "재시도 접수된 실행은 잠근다")
     runner.expectEqual(mascotRelativeTime(activityNow.addingTimeInterval(-30), now: activityNow), "방금", "1분 안은 방금")
     runner.expectEqual(mascotRelativeTime(activityNow.addingTimeInterval(-7200), now: activityNow), "2시간 전", "시간 단위")
 

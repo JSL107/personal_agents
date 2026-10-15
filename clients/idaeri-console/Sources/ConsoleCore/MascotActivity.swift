@@ -51,24 +51,6 @@ public func mascotBusyCount(runs: [ConsoleRun], sessions: [ConsoleSession], now:
     mascotVisibleRuns(runs, now: now).count + sessions.filter(\.isActive).count
 }
 
-/// 진행 목록 한 줄.
-public struct MascotStatusItem: Equatable, Sendable, Identifiable {
-    public enum Kind: Equatable, Sendable {
-        case run
-        case session
-        case approval
-    }
-
-    public let id: String
-    public let kind: Kind
-    public let title: String
-    public let detail: String
-    /// `작업 중`·`쉬는 중`·`승인 대기` 같은 짧은 상태 표시.
-    public let badge: String
-    /// `방금`·`3분 전` 같은 시각 표시.
-    public let when: String
-}
-
 /// `방금`·`N분 전`·`N시간 전`·`N일 전`.
 public func mascotRelativeTime(_ date: Date?, now: Date) -> String {
     guard let date else {
@@ -87,52 +69,63 @@ public func mascotRelativeTime(_ date: Date?, now: Date) -> String {
     return "\(Int(seconds / 86_400))일 전"
 }
 
-/// 진행 목록: 승인 대기(처리할 일) → 이대리 실행(최근 시작 순) → 내 세션(일하는 것 먼저, 최근 활동 순).
+/// 클릭 목록의 할 일 한 줄 — 내가 처리해야 하는 것.
+public struct MascotTodoRow: Equatable, Sendable, Identifiable {
+    public enum Action: Equatable, Sendable {
+        /// 대시보드 상세로(승인 카드·재시도 불가 실패).
+        case openDashboard
+        /// 실패 실행을 다시 돌린다(대시보드 [재시도]와 같은 경로).
+        case retry(runId: Int)
+        /// PR 을 브라우저로 연다.
+        case openURL(String)
+    }
+
+    public let id: String
+    public let kind: ConsoleTodoKind
+    public let title: String
+    public let detail: String
+    public let action: Action?
+    /// 재시도를 이미 접수해 도는 중 — 버튼을 잠근다.
+    public let busy: Bool
+}
+
+/// 할 일 목록: 승인 대기 → 실패한 작업 → PR 리뷰 회수.
 ///
-/// 실행의 설명은 그 직원의 말풍선 문장(`bubble`)을 쓴다 — 오피스가 머리 위에 띄우는 "지금 하는 일"
-/// 과 같은 문장이라 두 화면이 다른 말을 하지 않는다.
-public func mascotStatusItems(
-    approvals: [ConsoleApproval], runs: [ConsoleRun], agents: [ConsoleAgent],
-    sessions: [ConsoleSession], now: Date
-) -> [MascotStatusItem] {
-    var items: [MascotStatusItem] = []
-    for approval in approvals {
-        items.append(MascotStatusItem(
+/// 승인은 브리핑 집계가 아니라 지금 열린 카드(`approvals`)에서 만든다 — 브리핑은 30초마다 오고,
+/// 카드는 누르는 순간 목록에서 빠지므로 그쪽이 화면과 맞는다. 실패·PR 은 브리핑의 대상(`targets`)
+/// 한 건이 한 줄이다. 백엔드가 이미 급한 순서로 조립하므로 그 순서를 그대로 쓴다.
+public func mascotTodoRows(
+    todos: [ConsoleTodo], approvals: [ConsoleApproval], agents: [ConsoleAgent],
+    retryingRunIds: Set<Int>, now: Date
+) -> [MascotTodoRow] {
+    var rows: [MascotTodoRow] = approvals.map { approval in
+        MascotTodoRow(
             id: "approval:\(approval.id)", kind: .approval,
             title: mascotApprovalHeadline(approval: approval, agents: agents),
-            detail: approval.title, badge: "승인 대기",
-            when: mascotRelativeTime(officeParseIsoDate(approval.createdAt), now: now)
-        ))
+            detail: "\(approval.title) · \(mascotRelativeTime(officeParseIsoDate(approval.createdAt), now: now))",
+            action: .openDashboard, busy: false
+        )
     }
-    let runsByRecent = mascotVisibleRuns(runs, now: now).sorted {
-        (officeParseIsoDate($0.startedAt) ?? .distantPast) > (officeParseIsoDate($1.startedAt) ?? .distantPast)
-    }
-    for run in runsByRecent {
-        let agent = agents.first(where: { $0.agentType == run.agentType })
-        items.append(MascotStatusItem(
-            id: "run:\(run.id)", kind: .run,
-            title: agent?.displayName ?? run.agentType,
-            detail: agent?.bubble ?? "",
-            badge: "작업 중",
-            when: mascotRelativeTime(officeParseIsoDate(run.startedAt), now: now)
-        ))
-    }
-    let sessionsSorted = sessions.sorted { left, right in
-        if left.isActive != right.isActive {
-            return left.isActive
+    for todo in todos where todo.kind == .failedRun {
+        for target in todo.targets {
+            let name = target.agentType.flatMap { type in agents.first(where: { $0.agentType == type })?.displayName }
+            let runId = target.retryRunId
+            rows.append(MascotTodoRow(
+                id: "failed:\(target.runId.map(String.init) ?? target.label)", kind: .failedRun,
+                title: name ?? target.label, detail: "실패 — \(target.label)",
+                action: runId.map { .retry(runId: $0) } ?? .openDashboard,
+                busy: target.retrying == true || runId.map(retryingRunIds.contains) == true
+            ))
         }
-        let leftAt = officeParseIsoDate(left.lastActivityAt ?? left.startedAt) ?? .distantPast
-        let rightAt = officeParseIsoDate(right.lastActivityAt ?? right.startedAt) ?? .distantPast
-        return leftAt > rightAt
     }
-    for session in sessionsSorted {
-        items.append(MascotStatusItem(
-            id: "session:\(session.sessionId)", kind: .session,
-            title: session.name,
-            detail: (session.cwd as NSString).lastPathComponent,
-            badge: session.isActive ? "작업 중" : "쉬는 중",
-            when: mascotRelativeTime(officeParseIsoDate(session.lastActivityAt ?? session.startedAt), now: now)
-        ))
+    for todo in todos where todo.kind == .prReview {
+        for target in todo.targets {
+            rows.append(MascotTodoRow(
+                id: "pr:\(target.pullNumber.map(String.init) ?? target.label)", kind: .prReview,
+                title: target.label, detail: todo.detail,
+                action: target.url.map { .openURL($0) }, busy: false
+            ))
+        }
     }
-    return items
+    return rows
 }

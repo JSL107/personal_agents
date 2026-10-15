@@ -181,6 +181,20 @@ import SwiftUI
         refreshBubble()
     }
 
+    /// 할 일 줄의 버튼. 재시도는 대시보드 [재시도]와 같은 `AppRootView.retryRun` 경로를 탄다.
+    func perform(_ action: MascotTodoRow.Action) {
+        switch action {
+        case .openDashboard:
+            showDashboard()
+        case let .retry(runId):
+            NotificationCenter.default.post(name: .idaeriMascotRetry, object: nil, userInfo: ["runId": runId])
+        case let .openURL(raw):
+            if let url = URL(string: raw) {
+                NSWorkspace.shared.open(url)
+            }
+        }
+    }
+
     func closeStatus() {
         statusOpen = false
         statusTimer?.invalidate()
@@ -496,10 +510,15 @@ import SwiftUI
         }
         // 사용자가 직접 연 목록이라 승인 말풍선보다 먼저 보인다. 승인 대기도 목록 맨 위에 있다.
         if statusOpen {
-            setBubble(.status(header: statusHeader(), items: mascotStatusItems(
-                approvals: store.approvals, runs: store.runs, agents: store.agents,
-                sessions: store.sessions, now: Date()
-            )))
+            setBubble(.status(
+                header: statusHeader(),
+                todos: mascotTodoRows(
+                    todos: store.briefing?.todos ?? [], approvals: store.approvals, agents: store.agents,
+                    retryingRunIds: store.retryingRunIds, now: Date()
+                ),
+                busyCount: busyCount,
+                notice: store.runRetryNotice
+            ))
             return
         }
         // 승인 통지를 보낸 뒤 스토어가 카드를 숨기기 전까지 같은 버튼을 다시 그리지 않는다.

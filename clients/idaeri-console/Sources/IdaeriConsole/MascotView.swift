@@ -5,7 +5,7 @@ import SwiftUI
 enum MascotBubble: Equatable {
     case notice(String)
     case commandInput
-    case status(header: [String], items: [MascotStatusItem])
+    case status(header: [String], todos: [MascotTodoRow], busyCount: Int, notice: String?)
     case approval(id: String, headline: String, title: String, more: Int, submitted: Bool, armed: Bool)
     case thinking(String)
     case reply(sound: String, body: String, signature: String?)
@@ -274,8 +274,11 @@ struct MascotView: View {
                     Button("자세히") { controller.showDashboard() }
                     Button("나중에") { controller.dismissApproval(id: id) }
                 }
-            case let .status(header, items):
-                MascotStatusCard(header: header, items: items, onClose: { controller.closeStatus() })
+            case let .status(header, todos, busyCount, notice):
+                MascotStatusCard(
+                    header: header, todos: todos, busyCount: busyCount, notice: notice,
+                    onAction: { controller.perform($0) }, onClose: { controller.closeStatus() }
+                )
             case let .thinking(line):
                 MascotThinkingLine(text: line)
             case let .reply(sound, body, signature):
@@ -378,13 +381,16 @@ private struct MascotReplyHeight: PreferenceKey {
     }
 }
 
-/// 클릭하면 펼치는 진행 목록 — 브리핑 머리 + 승인·실행·세션 줄.
+/// 클릭하면 펼치는 할 일 목록 — 브리핑 머리 + 내가 처리할 일(승인·실패·PR) + 돌고 있는 일 수.
 private struct MascotStatusCard: View {
     let header: [String]
-    let items: [MascotStatusItem]
+    let todos: [MascotTodoRow]
+    let busyCount: Int
+    let notice: String?
+    let onAction: (MascotTodoRow.Action) -> Void
     let onClose: () -> Void
 
-    /// 패널 높이 안에 들어가는 줄 수. 넘치는 것은 "외 N개" 로 접는다.
+    /// 패널 높이 안에 들어가는 줄 수. 넘치는 것은 "외 N개" 로 접는다(전체는 대시보드).
     private let maxRows = 6
 
     var body: some View {
@@ -395,16 +401,23 @@ private struct MascotStatusCard: View {
             if !header.isEmpty {
                 Divider()
             }
-            if items.isEmpty {
-                Text("지금 돌고 있는 일은 없어요").font(.system(size: 12)).foregroundColor(.secondary)
+            if todos.isEmpty {
+                Text("지금 내가 할 일은 없어요").font(.system(size: 12)).foregroundColor(.secondary)
             }
-            ForEach(items.prefix(maxRows)) { item in
-                row(item)
+            ForEach(todos.prefix(maxRows)) { todo in
+                row(todo)
             }
-            if items.count > maxRows {
-                Text("외 \(items.count - maxRows)개").font(.caption).foregroundColor(.secondary)
+            if todos.count > maxRows {
+                Button("외 \(todos.count - maxRows)개 — 대시보드에서 보기") { onAction(.openDashboard) }
+                    .buttonStyle(.link)
+                    .font(.caption)
+            }
+            if let notice {
+                Text(notice).font(.caption).foregroundColor(.red).lineLimit(2)
             }
             HStack {
+                Text(busyCount > 0 ? "지금 돌고 있는 일 \(busyCount)개" : "돌고 있는 일 없음")
+                    .font(.caption).foregroundColor(.secondary)
                 Spacer()
                 Button("닫기", action: onClose)
             }
@@ -412,48 +425,54 @@ private struct MascotStatusCard: View {
         .frame(width: 276, alignment: .leading)
     }
 
-    private func row(_ item: MascotStatusItem) -> some View {
+    private func row(_ todo: MascotTodoRow) -> some View {
         HStack(spacing: 8) {
-            Circle().fill(dotColor(item)).frame(width: 7, height: 7)
-            Image(systemName: icon(item.kind)).font(.system(size: 11)).foregroundColor(.secondary)
+            Circle().fill(color(todo.kind)).frame(width: 7, height: 7)
+            Image(systemName: icon(todo.kind)).font(.system(size: 11)).foregroundColor(.secondary)
             VStack(alignment: .leading, spacing: 1) {
-                Text(item.title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
-                if !item.detail.isEmpty {
-                    Text(item.detail).font(.system(size: 11)).foregroundColor(.secondary).lineLimit(1)
-                }
+                Text(todo.title).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                Text(todo.detail).font(.system(size: 11)).foregroundColor(.secondary).lineLimit(1)
             }
             Spacer(minLength: 4)
-            VStack(alignment: .trailing, spacing: 1) {
-                Text(item.badge)
-                    .font(.system(size: 10, weight: .medium))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 1)
-                    .background(dotColor(item).opacity(0.18), in: Capsule())
-                Text(item.when).font(.system(size: 10)).foregroundColor(.secondary)
+            if let action = todo.action {
+                Button(buttonTitle(action)) { onAction(action) }
+                    .controlSize(.small)
+                    .disabled(todo.busy)
             }
         }
     }
 
-    private func icon(_ kind: MascotStatusItem.Kind) -> String {
+    private func buttonTitle(_ action: MascotTodoRow.Action) -> String {
+        switch action {
+        case .openDashboard:
+            return "열기"
+        case .retry:
+            return "재시도"
+        case .openURL:
+            return "PR"
+        }
+    }
+
+    private func icon(_ kind: ConsoleTodoKind) -> String {
         switch kind {
         case .approval:
             return "checkmark.seal"
-        case .run:
-            return "hammer"
-        case .session:
-            return "terminal"
+        case .failedRun:
+            return "exclamationmark.triangle"
+        case .prReview:
+            return "arrow.triangle.pull"
         }
     }
 
-    /// 승인 대기는 주황(할 일), 작업 중은 초록, 쉬는 세션은 회색.
-    private func dotColor(_ item: MascotStatusItem) -> Color {
-        switch item.kind {
+    /// 승인은 주황, 실패는 빨강, PR 은 파랑.
+    private func color(_ kind: ConsoleTodoKind) -> Color {
+        switch kind {
         case .approval:
             return .orange
-        case .run:
-            return .green
-        case .session:
-            return item.badge == "작업 중" ? .green : .gray
+        case .failedRun:
+            return .red
+        case .prReview:
+            return .blue
         }
     }
 }
