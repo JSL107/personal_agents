@@ -1,6 +1,6 @@
 import {
-  findStyleTags,
   findMatchedTerms,
+  findStyleTags,
   normalizeKeywordTerm,
   validateKeywordTerm,
 } from './art-job-keyword';
