@@ -8,6 +8,7 @@ import {
   parseCompanyPageUrl,
   parseGamejobList,
   parsePostingBodyText,
+  parseRecruitDataText,
   parseRepresentativeGameText,
 } from './gamejob.parser';
 
@@ -25,7 +26,16 @@ export class GamejobSource implements ArtJobSourcePort {
       label: '게임잡 공고 본문',
       headers: { 'User-Agent': USER_AGENT, Referer: listing.detailUrl },
     });
-    return parsePostingBodyText(html);
+    // 상세 페이지 항목(모집분야·키워드·게임분야)은 덧붙이는 재료다 — 실패하면 본문만으로 판정한다.
+    const fields = await fetchTextWithRetry({
+      url: listing.detailUrl,
+      timeoutMs: 10_000,
+      label: '게임잡 공고 상세',
+      headers: { 'User-Agent': USER_AGENT },
+    })
+      .then(parseRecruitDataText)
+      .catch(() => '');
+    return [parsePostingBodyText(html), fields].filter(Boolean).join('\n');
   }
 
   async fetchLatest(page: number): Promise<ArtJobListResult> {

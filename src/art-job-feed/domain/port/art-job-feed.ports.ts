@@ -12,7 +12,7 @@ export const IMAGE_DOWNLOADER_PORT = Symbol('IMAGE_DOWNLOADER_PORT');
 export interface ArtJobSourcePort {
   // 원화 직종 목록, 등록일 최신순. page 는 1부터.
   fetchLatest(page: number): Promise<ArtJobListResult>;
-  // 상세 본문 iframe 의 가시 텍스트. 스타일 키워드 태그에만 사용한다.
+  // 상세 본문 iframe 의 가시 텍스트 + 상세 페이지의 모집분야·키워드·게임분야. 화풍 태그에만 사용한다.
   fetchPostingBody(listing: ArtJobListing): Promise<string>;
   // 공고 상세 → 회사 정보의 「대표게임」 이름들. 회사 정보나 대표게임이 없으면 빈 배열.
   fetchRepresentativeGames(listing: ArtJobListing): Promise<string[]>;

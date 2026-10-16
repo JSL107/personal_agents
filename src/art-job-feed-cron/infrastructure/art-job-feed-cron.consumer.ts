@@ -9,7 +9,7 @@ import {
   ArtJobListing,
   ResolvedArtJobImage,
 } from '../../art-job-feed/domain/art-job-feed.type';
-import { findMatchedTerms } from '../../art-job-feed/domain/art-job-keyword';
+import { findStyleTags } from '../../art-job-feed/domain/art-job-keyword';
 import { isTargetArtRole } from '../../art-job-feed/domain/art-role.filter';
 import { deadlineDateOf } from '../../art-job-feed/domain/deadline';
 import {
@@ -231,7 +231,7 @@ export class ArtJobFeedCronConsumer extends ObservedWorkerHost {
       items.push({
         listing,
         resolved: await this.imageResolver.resolve(listing),
-        styleTags: findMatchedTerms(styleTerms, `${listing.title}\n${body}`),
+        styleTags: findStyleTags(styleTerms, `${listing.title}\n${body}`),
       });
     }
     // 라벨·버튼·장부 마감일이 같은 "오늘"을 기준으로 계산되게 한 번만 잡는다.

@@ -148,6 +148,18 @@ describe('ArtJobFeedCronConsumer', () => {
     );
   });
 
+  // 상세 페이지의 영문 장르 표기가 Slack 출력까지 이어지는지 — 한글 본문만으로는 함수 연결이 틀려도 통과한다(#851 리뷰).
+  it('본문·상세 항목의 영문 장르(Casual)도 등록한 표기로 태그한다', async () => {
+    const { consumer, slackNotifier } = makeConsumer({
+      pages: [{ received: 1, listings: [CHARACTER('1')] }],
+      body: '배경 원화\n게임분야: 모바일게임 RPG, Casual',
+    });
+    await consumer.process(JOB as never);
+    const text: string = slackNotifier.postMessage.mock.calls[0][0].text;
+    expect(text).toContain('🎨 캐주얼');
+    expect(text).not.toContain('북미풍');
+  });
+
   it('본문 조회 실패는 태그만 생략하고 게시를 계속한다', async () => {
     const { consumer, slackNotifier, repository } = makeConsumer({
       pages: [{ received: 1, listings: [CHARACTER('1')] }],
