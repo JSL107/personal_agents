@@ -45,6 +45,7 @@ import { HandleConversationTurnUsecase } from '../src/router/application/handle-
 import { IntentClassifierUsecase } from '../src/router/application/intent-classifier.usecase';
 import { buildDispatchReplyText } from '../src/router/domain/dispatch-reply.util';
 import { ROUTING_NO_RUN_PORT } from '../src/router/domain/port/routing-no-run.port';
+import { INTENT_CLASSIFIER_EVAL_CASES } from '../src/router/eval/intent-classifier-eval.cases';
 import { NL_ANSWER_EVAL_CASES } from '../src/router/eval/nl-answer-eval.cases';
 import {
   summarizeCase,
@@ -71,6 +72,8 @@ import { stripMentionPrefix } from '../src/slack/handler/router-message.handler'
  *
  * 사용법: pnpm eval:nl-answer [--runs 3] [--concurrency 2] [--split tuning|holdout|all]
  *                             [--only id1,id2] [--out <path>]
+ *        pnpm eval:classifier [--runs 2] [--concurrency 2] [--only id1,id2] [--out <path>]
+ *          — 분류기만 잰다(intent-classifier-eval.cases.ts). 분류기 프롬프트를 바꾸면 돌린다.
  *
  * 운영 서버와 같은 DB·LLM 구독을 쓰므로 다음을 지킨다.
  * - AppModule 을 띄우지 않는다. 전체 부팅은 실행 중인 서버의 BullMQ repeatable job 과 cron 을
@@ -478,7 +481,116 @@ const readPositiveInteger = (name: string, fallback: number): number => {
   return value;
 };
 
+interface ClassifierRunRecord {
+  caseId: string;
+  runIndex: number;
+  agentType: string;
+  confidence: number;
+  reason: string;
+  accepted: boolean;
+}
+
+// --classifier: 분류기만 부른다(src/router/eval/intent-classifier-eval.cases.ts). 워커는 실행하지 않으므로
+// 문항당 LLM 호출은 1회다. 모듈 조립은 아래 main 과 같다 — 유사 과거 작업·취향 블록도 운영처럼 실린다.
+const runClassifierEval = async (): Promise<void> => {
+  const runs = readPositiveInteger('runs', 2);
+  const concurrency = readPositiveInteger('concurrency', 2);
+  const only = readOption('only')?.split(',');
+  const out =
+    readOption('out') ?? join(tmpdir(), `classifier-eval-${Date.now()}.json`);
+  const cases = INTENT_CLASSIFIER_EVAL_CASES.filter(
+    (evalCase) => only === undefined || only.includes(evalCase.id),
+  );
+  if (cases.length === 0) {
+    throw new Error('실행할 문항이 없다 — --only 를 확인하라');
+  }
+
+  const moduleRef = await buildModule();
+  try {
+    const classifier = moduleRef.get(IntentClassifierUsecase);
+    const jobs = cases.flatMap((evalCase) =>
+      Array.from({ length: runs }, (_, runIndex) => ({ evalCase, runIndex })),
+    );
+    process.stderr.write(
+      `[classifier] 문항 ${cases.length}개 × ${runs}회 = ${jobs.length}회차, 동시 ${concurrency}\n`,
+    );
+    let done = 0;
+    const records = await mapWithConcurrency(
+      jobs,
+      concurrency,
+      async ({ evalCase, runIndex }): Promise<ClassifierRunRecord> => {
+        const base = { caseId: evalCase.id, runIndex };
+        let recorded: ClassifierRunRecord;
+        try {
+          const classification = await classifier.classify(
+            evalCase.text,
+            evalCase.priorTurns,
+          );
+          recorded = {
+            ...base,
+            agentType: classification.agentType,
+            confidence: classification.confidence,
+            reason: classification.reason,
+            accepted: (evalCase.accept as string[]).includes(
+              classification.agentType,
+            ),
+          };
+        } catch (error) {
+          recorded = {
+            ...base,
+            agentType: 'ERROR',
+            confidence: 0,
+            reason: error instanceof Error ? error.message : String(error),
+            accepted: false,
+          };
+        }
+        done += 1;
+        process.stderr.write(
+          `[classifier] ${done}/${jobs.length} ${evalCase.id}#${runIndex} → ${recorded.agentType}\n`,
+        );
+        return recorded;
+      },
+    );
+    writeFileSync(
+      out,
+      JSON.stringify(
+        { generatedAt: new Date().toISOString(), runsPerCase: runs, records },
+        null,
+        2,
+      ),
+      'utf8',
+    );
+
+    for (const evalCase of cases) {
+      const caseRuns = records.filter(
+        (recorded) => recorded.caseId === evalCase.id,
+      );
+      const passes = caseRuns.filter((recorded) => recorded.accepted).length;
+      process.stdout.write(
+        `${passes === caseRuns.length ? 'O' : 'X'} ${evalCase.id} ${passes}/${caseRuns.length}` +
+          ` 기대=${evalCase.accept.join('|')}` +
+          ` 실제=${caseRuns.map((recorded) => `${recorded.agentType}(${recorded.confidence})`).join(',')}\n`,
+      );
+    }
+    const satisfied = cases.filter((evalCase) =>
+      records
+        .filter((recorded) => recorded.caseId === evalCase.id)
+        .every((recorded) => recorded.accepted),
+    ).length;
+    process.stdout.write(
+      `문항 ${satisfied}/${cases.length} 충족 (회차 ${records.filter((recorded) => recorded.accepted).length}/${records.length})\n저장: ${out}\n`,
+    );
+  } finally {
+    await moduleRef.get<PrismaClient>(PrismaService).$disconnect();
+    await moduleRef.close();
+  }
+};
+
 const main = async (): Promise<void> => {
+  if (process.argv.includes('--classifier')) {
+    await runClassifierEval();
+    return;
+  }
   const runs = readPositiveInteger('runs', 3);
   const concurrency = readPositiveInteger('concurrency', 2);
   const split = readOption('split') ?? 'all';
