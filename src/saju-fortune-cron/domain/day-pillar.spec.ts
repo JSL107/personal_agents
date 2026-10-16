@@ -1,4 +1,4 @@
-import { dayPillarOf, isValidPillar } from './day-pillar';
+import { dayPillarOf, isValidPillar, pillarToHangul } from './day-pillar';
 
 describe('dayPillarOf', () => {
   // 정답은 만세력(datedb.net 2026-10-16 = 癸亥)과 2000-01-01 = 戊午 로 교차 확인한 값.
@@ -36,5 +36,14 @@ describe('isValidPillar', () => {
     expect(isValidPillar('甲丑')).toBe(false);
     expect(isValidPillar('갑자')).toBe(false);
     expect(isValidPillar('甲')).toBe(false);
+  });
+});
+
+describe('pillarToHangul', () => {
+  it('간지를 한글 독음으로 바꾼다', () => {
+    expect(pillarToHangul('癸亥')).toBe('계해');
+    expect(pillarToHangul('甲子')).toBe('갑자');
+    expect(pillarToHangul('己巳')).toBe('기사');
+    expect(pillarToHangul('庚辰')).toBe('경진');
   });
 });

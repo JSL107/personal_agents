@@ -16,7 +16,7 @@ import {
   SlackNotifierPort,
 } from '../../slack/domain/port/slack-notifier.port';
 import { escapeSlackMrkdwn } from '../../slack/format/mrkdwn.util';
-import { dayPillarOf } from '../domain/day-pillar';
+import { dayPillarOf, pillarToHangul } from '../domain/day-pillar';
 import { buildSajuFortunePrompt } from '../domain/saju-fortune.prompt';
 import {
   parseSajuFortuneRecipients,
@@ -131,7 +131,7 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
       await this.slackNotifier.postMessage({
         kind: 'saju-fortune',
         target: recipient.slackUserId,
-        text: `🔮 *오늘의 운세 — ${todayKst} (${todayPillar}일)*\n\n${escapeSlackMrkdwn(fortune)}`,
+        text: `🔮 *오늘의 운세 — ${todayKst} (${pillarToHangul(todayPillar)}일)*\n\n${escapeSlackMrkdwn(fortune)}`,
       });
     } catch (error) {
       await this.cronIdempotency.release(guardKey);

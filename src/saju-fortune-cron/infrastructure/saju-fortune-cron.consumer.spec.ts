@@ -57,7 +57,9 @@ describe('SajuFortuneCronConsumer', () => {
       'U222',
     ]);
     const text: string = postMessage.mock.calls[0][0].text;
-    expect(text).toMatch(/^🔮 \*오늘의 운세 — \d{4}-\d{2}-\d{2} \(..일\)\*/);
+    expect(text).toMatch(
+      /^🔮 \*오늘의 운세 — \d{4}-\d{2}-\d{2} \([가-힣]{2}일\)\*/,
+    );
     expect(text).toContain('&lt;!channel&gt;');
     expect(text).not.toContain('丙寅');
   });
