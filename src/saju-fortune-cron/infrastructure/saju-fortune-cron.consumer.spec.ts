@@ -57,7 +57,9 @@ describe('SajuFortuneCronConsumer', () => {
       'U222',
     ]);
     const text: string = postMessage.mock.calls[0][0].text;
-    expect(text).toMatch(/^🔮 \*오늘의 운세 — \d{4}-\d{2}-\d{2} \(..일\)\*/);
+    expect(text).toMatch(
+      /^🔮 \*오늘의 운세 — \d{4}-\d{2}-\d{2} \([가-힣]{2}일\)\*/,
+    );
     expect(text).toContain('&lt;!channel&gt;');
     expect(text).not.toContain('丙寅');
   });
@@ -98,6 +100,27 @@ describe('SajuFortuneCronConsumer', () => {
     expect(postMessage.mock.calls.map(([input]) => input.target)).toEqual([
       'U222',
     ]);
+  });
+
+  it('한자가 섞이면 한 번 다시 만들어 한자 없는 쪽을 보낸다', async () => {
+    route
+      .mockResolvedValueOnce({ text: '己土는 오늘 癸水를 만난다' })
+      .mockResolvedValueOnce({ text: '흙 기운이 물을 만나는 날이야' })
+      .mockResolvedValueOnce({ text: '쇠 기운이 반짝이는 날이야' });
+
+    await consumer.process(JOB);
+
+    expect(route).toHaveBeenCalledTimes(3);
+    expect(postMessage.mock.calls[0][0].text).toContain('흙 기운이 물을');
+  });
+
+  it('두 번 다 한자가 섞이면 마지막 응답을 그대로 보낸다', async () => {
+    route.mockResolvedValue({ text: '癸水의 날' });
+
+    await consumer.process(JOB);
+
+    expect(route).toHaveBeenCalledTimes(4);
+    expect(postMessage).toHaveBeenCalledTimes(2);
   });
 
   it('오늘 이미 보낸 사람은 LLM 도 부르지 않는다', async () => {
