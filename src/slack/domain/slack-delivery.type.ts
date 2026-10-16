@@ -20,6 +20,7 @@ export type DeliveryKind =
   | 'study-brief'
   | 'resume-calibration'
   | 'job-application-nudge'
+  | 'saju-fortune'
   | 'art-job-feed'
   | 'art-job-deadline'
   | 'idea-triage'

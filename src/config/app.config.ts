@@ -684,6 +684,30 @@ export class EnvironmentVariables {
   @IsString()
   JOB_APPLICATION_NUDGE_TIMEZONE?: string;
 
+  // ====== Saju Fortune Cron — 매일 사주 운세 DM ======
+  // 남에게 가는 발송이라 두 값이 다 있어야 켜진다.
+  // - SAJU_FORTUNE_OWNER_SLACK_USER_ID: 실패 알림 수신자. 미설정 시 모듈 비활성.
+  // - SAJU_FORTUNE_RECIPIENTS: `U123|이름|丙寅 辛卯 壬戌 庚子|07:30;U456|이름|...` — 기둥은 만세력에서
+  //   확인한 년·월·일(·시)주. 시각을 모르면 3개. 끝의 발송 시각(HH:MM)은 생략 가능.
+  //   형식이 틀린 항목은 부팅 로그에 번호만 남기고 뺀다.
+  // - SAJU_FORTUNE_CRON: 발송 시각을 안 적은 사람의 BullMQ cron (default 매일 08:00 — `0 8 * * *`).
+  // - SAJU_FORTUNE_TIMEZONE: default Asia/Seoul.
+  @IsOptional()
+  @IsString()
+  SAJU_FORTUNE_OWNER_SLACK_USER_ID?: string;
+
+  @IsOptional()
+  @IsString()
+  SAJU_FORTUNE_RECIPIENTS?: string;
+
+  @IsOptional()
+  @IsString()
+  SAJU_FORTUNE_CRON?: string;
+
+  @IsOptional()
+  @IsString()
+  SAJU_FORTUNE_TIMEZONE?: string;
+
   // ====== 게임잡 원화 공고 피드 — 하루 2회 채널 게시 ======
   // 2D 캐릭터 원화·컨셉 공고를 채점 없이 전부 보낸다. 남에게 가는 발송이라 기본은 꺼짐.
   // - ART_JOB_FEED_TARGET: 게시 채널(`C...`). 미설정 시 모듈 비활성.
