@@ -103,43 +103,28 @@ func runMascotTests(_ runner: TestRunner) {
     }
     let reviewAgent = activityAgent("CODE_REVIEWER", "quality")
     let blogAgent = activityAgent("BLOG_PUBLISH", "content")
-    func activitySession(_ id: String, state: String, minutesAgo: Double) -> ConsoleSession {
-        ConsoleSession(
-            sessionId: id, pid: 1, source: "claude", name: "세션 \(id)", cwd: "/Users/me/repo-\(id)", state: state,
-            startedAt: mascotTestIso(activityNow.addingTimeInterval(-3600)),
-            lastActivityAt: mascotTestIso(activityNow.addingTimeInterval(-minutesAgo * 60))
-        )
-    }
     runner.expectEqual(
         mascotActivity(
             runs: [activityRun("1", "CODE_REVIEWER", secondsAgo: 300), activityRun("2", "BLOG_PUBLISH", secondsAgo: 60)],
-            agents: [reviewAgent, blogAgent], sessions: [], now: activityNow
+            agents: [reviewAgent, blogAgent], now: activityNow
         ),
         .writing, "가장 최근에 시작한 실행의 부서 소품"
     )
     runner.expect(
         mascotActivity(
-            runs: [activityRun("1", "CODE_REVIEWER", secondsAgo: 5)], agents: [reviewAgent], sessions: [], now: activityNow
+            runs: [activityRun("1", "CODE_REVIEWER", secondsAgo: 5)], agents: [reviewAgent], now: activityNow
         ) == nil,
         "유예 안의 짧은 실행은 소품을 들지 않는다"
     )
-    runner.expectEqual(
-        mascotActivity(runs: [], agents: [], sessions: [activitySession("a", state: "active", minutesAgo: 1)], now: activityNow),
-        .typing, "내 세션만 돌면 타이핑"
-    )
-    runner.expect(
-        mascotActivity(runs: [], agents: [], sessions: [activitySession("a", state: "idle", minutesAgo: 1)], now: activityNow) == nil,
-        "쉬는 세션은 타이핑이 아니다"
-    )
+    runner.expect(mascotActivity(runs: [], agents: [], now: activityNow) == nil, "이대리 실행이 없으면 소품도 없다")
     runner.expectEqual(mascotActivityPose(.internalOps), .fixing, "총무는 드라이버")
     runner.expectEqual(mascotActivityPose(.treasury), .counting, "자산은 주판")
     runner.expectEqual(
         mascotBusyCount(
             runs: [activityRun("1", "CODE_REVIEWER", secondsAgo: 300), activityRun("2", "X", secondsAgo: 3)],
-            sessions: [activitySession("a", state: "active", minutesAgo: 1), activitySession("b", state: "idle", minutesAgo: 9)],
             now: activityNow
         ),
-        2, "유예 넘긴 실행 1 + 일하는 세션 1"
+        1, "유예 넘긴 이대리 실행만 센다"
     )
     runner.expectEqual(
         mascotPose(MascotPoseContext(mood: .working, blinking: true, activity: .reviewing)), .reviewing,

@@ -17,7 +17,7 @@ import SwiftUI
     @Published private(set) var flourish: MascotPose?
     /// 지금 하는 일의 소품 그림. 없으면 nil.
     @Published private(set) var activity: MascotPose?
-    /// 머리 위 배지 숫자 — 돌고 있는 이대리 실행 + 일하는 내 세션.
+    /// 머리 위 배지 숫자 — 돌고 있는 이대리 실행.
     @Published private(set) var busyCount = 0
     /// 클릭으로 연 진행 목록. 다시 누르거나 [닫기], 45초 뒤 닫힌다.
     private var statusOpen = false
@@ -385,11 +385,11 @@ import SwiftUI
            !store.approvals.contains(where: { $0.id == submittedApprovalId }) || store.approvalNotice != nil {
             self.submittedApprovalId = nil
         }
-        let nextActivity = mascotActivity(runs: store.runs, agents: store.agents, sessions: store.sessions, now: now)
+        let nextActivity = mascotActivity(runs: store.runs, agents: store.agents, now: now)
         if activity != nextActivity {
             activity = nextActivity
         }
-        let nextBusy = mascotBusyCount(runs: store.runs, sessions: store.sessions, now: now)
+        let nextBusy = mascotBusyCount(runs: store.runs, now: now)
         if busyCount != nextBusy {
             busyCount = nextBusy
         }
