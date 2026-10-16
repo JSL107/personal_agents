@@ -41,7 +41,13 @@ export class ArtJobPostingPrismaRepository implements ArtJobPostingRepositoryPor
       return new Set();
     }
     const rows = await this.prisma.artJobPosting.findMany({
-      where: { source: ART_JOB_SOURCE, sourceId: { in: sourceIds } },
+      where: {
+        source: ART_JOB_SOURCE,
+        sourceId: { in: sourceIds },
+        // 첫 실행에서 상한을 넘겨 보류만 한 공고(SEED, 미발송)는 아직 안 본 것으로 친다. 예전에는 이것도
+        // "본 것" 이라 영영 안 나갔다(2026-10-16: 시프트업 니케 원화가 등 열린 공고 15건).
+        NOT: { skippedReason: SEED_REASON, notifiedAt: null },
+      },
       select: { sourceId: true },
     });
     return new Set(rows.map((row) => row.sourceId));

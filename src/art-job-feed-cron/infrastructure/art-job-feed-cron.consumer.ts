@@ -178,7 +178,8 @@ export class ArtJobFeedCronConsumer extends ObservedWorkerHost {
     });
     const toPost = fresh.slice(0, MAX_POSTINGS_PER_RUN);
     if (isFirstRun) {
-      // 첫 실행에 등록일순 80건을 다 쏟지 않는다. 최신 상한만 보내고 나머지는 본 것으로만 둔다.
+      // 첫 실행에 목록을 다 쏟지 않는다. 최신 상한만 보내고 나머지는 보류(SEED)로 적어 둔다 — 보류분은
+      // findKnownSourceIds 가 안 본 것으로 돌려줘 다음 회차들이 상한 안에서 보낸다.
       await this.repository.markSeeded(fresh.slice(MAX_POSTINGS_PER_RUN));
     }
 
