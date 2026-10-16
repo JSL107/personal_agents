@@ -329,6 +329,92 @@ export const NL_ANSWER_EVAL_CASES: readonly EvalCase[] = [
       mustNotMatch: [/PO 입장|메타|드리프트|익명화|plan 짜/i],
     },
   },
+  // ── tuning: 원화 공고 ─────────────────────────────────────────
+  // 2026-10-15 원화 공고 채널 원문(run 9065~9100). #849·#850 이 이 원문으로 분류기·파서를 고쳤으므로
+  // holdout 이 아니라 tuning 이다. eval 에는 채널 정보가 없어서, 키워드 변경·가져오기까지 해석된 회차는
+  // "원화 공고 채널에서 말해 주세요"로 끝난다 — 그 문구가 나오면 파서가 쓰기 명령으로 읽었다는 뜻이다.
+  {
+    id: 't-art-keyword-ask-1015',
+    split: 'tuning',
+    note: '2026-10-15 run 9065 — 목록 없이 키워드만 말한 요청. 어느 목록인지 되물어야 한다',
+    text: `${MENTION}[캐주얼 / 북미풍] 키워드도 찾아줬으면 좋겠어!`,
+    expect: {
+      destinations: [AgentType.ART_JOB_FEED],
+      forbidIntercepts: true,
+      mustMatch: [/캐주얼/, /북미풍/, /골라/],
+    },
+  },
+  {
+    id: 't-art-keyword-add-1015',
+    split: 'tuning',
+    note: '2026-10-15 run 9067 — 키워드 5개 추가 요청, 목록 미지정',
+    text: `${MENTION}공고 [일러스트/ 디자이너/ 아트 / 원화 / 캐릭터] 키워드도 추가해줘`,
+    expect: {
+      destinations: [AgentType.ART_JOB_FEED],
+      forbidIntercepts: true,
+      mustMatch: [/일러스트/, /캐릭터/, /골라/],
+    },
+  },
+  {
+    id: 't-art-fetch-now-1015',
+    split: 'tuning',
+    note: '2026-10-15 16:19 — 「공고」 없는 「지금줘봐」. 직전 턴은 #850 본문의 반실사 제외 요청으로 재구성했다(원 메시지는 원장 원문 미대조)',
+    text: `${MENTION}지금줘봐`,
+    priorTurns: [
+      user(
+        "'반실사' 키워드 제외(제목에 있으면 거르기)",
+        AgentType.ART_JOB_FEED,
+      ),
+      bot(
+        '제외(제목에 있으면 거르기) 추가: 반실사 / 이미 있음: 없음\n제외(제목에 있으면 거르기): 3D, 반실사\n다음 수집 회차부터 적용돼요.',
+        AgentType.ART_JOB_FEED,
+      ),
+    ],
+    expect: {
+      destinations: [AgentType.ART_JOB_FEED],
+      forbidIntercepts: true,
+      mustMatch: [/원화 공고 채널/],
+    },
+  },
+  {
+    id: 't-art-answer-style-1015',
+    split: 'tuning',
+    note: '2026-10-15 — 목록을 되물은 뒤 「화풍」 단답. 직전 키워드(캐주얼·북미풍)를 화풍에 넣는 명령이어야 한다',
+    text: `${MENTION}화풍`,
+    priorTurns: [
+      user(
+        '[캐주얼 / 북미풍] 키워드도 찾아줬으면 좋겠어!',
+        AgentType.ART_JOB_FEED,
+      ),
+      bot(
+        '캐주얼, 북미풍 키워드를 「허용(제목에 있으면 받기) / 제외(제목에 있으면 거르기) / 화풍(태그만)」 중 한 곳을 골라 주세요. 한 번에 한 목록에만 추가해요. 예: "화풍에 추가"',
+        AgentType.ART_JOB_FEED,
+      ),
+    ],
+    expect: {
+      destinations: [AgentType.ART_JOB_FEED],
+      forbidIntercepts: true,
+      mustMatch: [/원화 공고 채널/],
+    },
+  },
+  {
+    id: 't-art-answer-exclude-1015',
+    split: 'tuning',
+    note: '2026-10-15 — 목록을 되물은 뒤 「제외」 단답. 직전 키워드(반실사)를 제외 목록에 넣는 명령이어야 한다',
+    text: `${MENTION}제외`,
+    priorTurns: [
+      user("'반실사' 키워드도 넣어줘", AgentType.ART_JOB_FEED),
+      bot(
+        '반실사 키워드를 「허용(제목에 있으면 받기) / 제외(제목에 있으면 거르기) / 화풍(태그만)」 중 한 곳을 골라 주세요. 한 번에 한 목록에만 추가해요. 예: "화풍에 추가"',
+        AgentType.ART_JOB_FEED,
+      ),
+    ],
+    expect: {
+      destinations: [AgentType.ART_JOB_FEED],
+      forbidIntercepts: true,
+      mustMatch: [/원화 공고 채널/],
+    },
+  },
 
   // ── holdout: 점검 문서 실패 원문 ─────────────────────────────
   {

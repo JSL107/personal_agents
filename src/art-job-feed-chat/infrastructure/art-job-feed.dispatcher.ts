@@ -6,6 +6,10 @@ import { Queue, QueueEvents } from 'bullmq';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
 import {
+  ART_JOB_EXCLUDE_LABEL,
+  ART_JOB_RESTORE_LABEL,
+} from '../../art-job-feed/domain/art-job-exclusion';
+import {
   ArtJobKeywordKind,
   ArtJobKeywordSet,
 } from '../../art-job-feed/domain/art-job-keyword';
@@ -86,9 +90,15 @@ export class ArtJobFeedDispatcher implements AgentDispatcher, OnModuleDestroy {
 
     if (command.kind === 'UNKNOWN') {
       const keywords = await this.keywords.load();
+      // 공고 하나를 빼는 법을 물으면 키워드보다 버튼이 답이다. 버튼은 받는 사람이 있을 때만 달린다
+      // (passive-capability.ts 와 같은 조건).
+      const exclusion =
+        jobData.mentionUserId === null
+          ? ''
+          : `특정 공고만 빼려면 공고 옆의 「${ART_JOB_EXCLUDE_LABEL}」 버튼을 누르세요. 같은 공고는 다음 회차부터 보내지 않고, 잘못 눌렀으면 「${ART_JOB_RESTORE_LABEL}」를 누르면 돼요.\n`;
       return this.reply(
         command,
-        `원화 공고 키워드는 허용·제외·화풍 목록을 조회·변경할 수 있고, 원화 공고 채널에서 "공고 가져와"라고 하면 새 공고를 올려요.\n${this.formatLists(keywords)}`,
+        `${exclusion}원화 공고 키워드는 허용·제외·화풍 목록을 조회·변경할 수 있고, 원화 공고 채널에서 "공고 가져와"라고 하면 새 공고를 올려요.\n${this.formatLists(keywords)}`,
       );
     }
     if (command.kind === 'LIST') {
