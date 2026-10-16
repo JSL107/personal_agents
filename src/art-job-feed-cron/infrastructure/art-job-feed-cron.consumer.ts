@@ -46,7 +46,7 @@ import {
   ART_JOB_FEED_CRON_QUEUE,
   ArtJobFeedCronJobData,
   ArtJobFeedRunResult,
-  LIST_PAGES_PER_RUN,
+  MAX_LIST_PAGES_PER_RUN,
   MAX_POSTINGS_PER_RUN,
 } from '../domain/art-job-feed-cron.type';
 
@@ -265,13 +265,26 @@ export class ArtJobFeedCronConsumer extends ObservedWorkerHost {
   private async collect(): Promise<CollectedListings> {
     let received = 0;
     const bySourceId = new Map<string, ArtJobListing>();
-    for (let page = 1; page <= LIST_PAGES_PER_RUN; page += 1) {
+    for (let page = 1; page <= MAX_LIST_PAGES_PER_RUN; page += 1) {
       const result = await this.source.fetchLatest(page);
       received += result.received;
+      // 행은 받았는데 파싱이 0 이면 그 쪽의 마크업이 바뀐 것이다. 목록 끝으로 오인해 멈추면 앞 쪽에서 모은
+      // 공고 때문에 전체 파싱 0 경보도 울리지 않아 뒤쪽 공고를 조용히 놓친다(#855 리뷰).
+      if (result.received > 0 && result.listings.length === 0) {
+        throw new Error(
+          `게임잡 목록 ${page}쪽 ${result.received}행을 받았지만 파싱 0건 — 마크업 변경 의심`,
+        );
+      }
+      let added = 0;
       for (const listing of result.listings) {
         if (!bySourceId.has(listing.sourceId)) {
           bySourceId.set(listing.sourceId, listing);
+          added += 1;
         }
+      }
+      // 빈 쪽이나 이미 본 공고만 돌려주는 쪽(마지막 쪽을 되풀이하는 경우)이면 끝까지 읽은 것이다.
+      if (added === 0) {
+        break;
       }
     }
     return { received, listings: [...bySourceId.values()] };
