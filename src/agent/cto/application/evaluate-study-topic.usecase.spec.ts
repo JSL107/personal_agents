@@ -11,9 +11,13 @@ import { EvaluateStudyTopicUsecase } from './evaluate-study-topic.usecase';
 describe('EvaluateStudyTopicUsecase', () => {
   const makeUsecase = () => {
     const modelRouter = { route: jest.fn() };
+    const recordModelResponse = jest.fn().mockResolvedValue(undefined);
     const agentRunService = {
       execute: jest.fn(async (input) => {
-        const execution = await input.run({ agentRunId: 41 });
+        const execution = await input.run({
+          agentRunId: 41,
+          recordModelResponse,
+        });
         return { ...execution, agentRunId: 41 };
       }),
     };
@@ -24,6 +28,7 @@ describe('EvaluateStudyTopicUsecase', () => {
       ),
       modelRouter,
       agentRunService,
+      recordModelResponse,
     };
   };
 
@@ -89,4 +94,30 @@ describe('EvaluateStudyTopicUsecase', () => {
       expect(outcome.result).toMatchObject({ kind });
     },
   );
+
+  it('형식 위반으로 판정이 실패해도 모델 원문을 먼저 남긴다', async () => {
+    const dependencies = makeUsecase();
+    const raw = JSON.stringify({
+      whatImproves: '개선',
+      adoptionCost: '낮음',
+      minutes: null,
+    });
+    dependencies.modelRouter.route.mockResolvedValue({
+      text: raw,
+      modelUsed: 'codex-cli',
+    });
+
+    await expect(
+      dependencies.usecase.execute({
+        slackUserId: 'U1',
+        research: {
+          kind: 'TOOL',
+          topic: 'codex app server',
+          sourceUrls: [],
+          reportMd: '조사',
+        },
+      }),
+    ).rejects.toThrow('minutes');
+    expect(dependencies.recordModelResponse).toHaveBeenCalledWith(raw);
+  });
 });

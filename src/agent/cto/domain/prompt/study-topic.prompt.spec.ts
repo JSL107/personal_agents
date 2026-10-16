@@ -32,7 +32,13 @@ describe('study topic prompt', () => {
         '번호 목록(`1. … 2. …`)이나 여러 단계 나열을 어느 필드에도 넣지 마라',
       );
       expect(prompt).toContain('본문 `## 오늘 할 일`의 몫이다');
+      expect(prompt).toContain('null로 두거나 생략하지 않는다');
     }
+    // 2026-10-16 run 9130 이 minutes: null 로 실패했다. 원문이 남지 않아 원인은 확정하지 못했고,
+    // minutes 문장 끝에 붙어 있던 caution 생략 지시를 가장 유력한 후보로 보고 뗐다.
+    expect(STUDY_TOOL_SYSTEM_PROMPT).not.toContain(
+      'minutes는 설치·연결 예상 시간이다. caution',
+    );
   });
 
   it('조사 전문과 프로필 근거를 사용자 프롬프트에 포함한다', () => {

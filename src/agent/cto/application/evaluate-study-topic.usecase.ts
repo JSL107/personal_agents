@@ -43,7 +43,7 @@ export class EvaluateStudyTopicUsecase {
           payload: { sourceUrls: research.sourceUrls },
         },
       ],
-      run: async () => {
+      run: async ({ recordModelResponse }) => {
         const systemPrompt =
           research.kind === 'CONCEPT'
             ? STUDY_CONCEPT_SYSTEM_PROMPT
@@ -55,6 +55,8 @@ export class EvaluateStudyTopicUsecase {
             systemPrompt,
           },
         });
+        // 파싱 전에 남겨야 형식 위반으로 실패한 회차에도 원문이 남는다(2026-10-16 run 9130 은 원문이 없어 원인을 못 확정했다).
+        await recordModelResponse(completion.text);
         const output = parseStudyVerdict(completion.text, research.kind);
         this.logger.log(
           `CTO 학습 판정 완료 — kind=${research.kind} topic=${research.topic}`,
