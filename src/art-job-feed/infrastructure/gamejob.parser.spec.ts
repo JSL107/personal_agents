@@ -5,6 +5,7 @@ import {
   parseCompanyPageUrl,
   parseGamejobList,
   parsePostingBodyText,
+  parseRecruitDataText,
   parseRepresentativeGameText,
 } from './gamejob.parser';
 
@@ -12,6 +13,18 @@ const fixture = (name: string): string =>
   readFileSync(join(__dirname, '__fixtures__', name), 'utf8');
 
 describe('gamejob parser', () => {
+  it('상세 페이지에서 모집분야·키워드·게임분야만 뽑는다', () => {
+    const text = parseRecruitDataText(
+      fixture('gamejob-detail-recruit-data.html'),
+    );
+    expect(text.split('\n')).toEqual([
+      '모집분야: 게임개발(모바일), 원화',
+      '키워드: 모바일, 배경, 배경원화',
+      '게임분야: 모바일게임 RPG, Casual',
+    ]);
+    expect(text).not.toContain('툴팁');
+  });
+
   it('iframe 본문 텍스트만 읽고 title/style 은 빼며 공백을 접는다', () => {
     const text = parsePostingBodyText(fixture('gamejob-body-ifrm.html'));
     expect(text).toContain('3DS MAX');

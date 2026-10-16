@@ -8,6 +8,26 @@ export const parsePostingBodyText = (html: string): string => {
   $('title, style, script').remove();
   return tidy($('body').text());
 };
+
+// 상세 페이지의 정리된 항목 중 화풍·장르를 담는 것. 본문(iframe)에는 없고 여기에만 있는 경우가 많다 —
+// 게임분야 「RPG, Casual」, 키워드 「도트, 픽셀, 캐릭터원화」(2026-10-15 최신 12건 실측).
+const RECRUIT_DATA_TITLES = new Set(['모집분야', '키워드', '게임분야']);
+
+export const parseRecruitDataText = (html: string): string => {
+  const $ = cheerio.load(html);
+  const lines: string[] = [];
+  $('dl.recruit-data-item').each((_, element) => {
+    const title = tidy($(element).find('dt.recruit-data-title').text());
+    if (!RECRUIT_DATA_TITLES.has(title)) {
+      return;
+    }
+    const value = tidy($(element).find('dd.recruit-data-text').text());
+    if (value) {
+      lines.push(`${title}: ${value}`);
+    }
+  });
+  return lines.join('\n');
+};
 const EMPLOYMENT_TYPES =
   /정규직|계약직|인턴|프리랜서|파견직|아르바이트|위촉직|병역특례/;
 const LOCATION_PREFIX =
