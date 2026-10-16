@@ -32,6 +32,34 @@ const buildDependencies = (): {
 });
 
 describe('HandleConversationTurnUsecase', () => {
+  it('분류 실패 시 persona를 대화 답변으로 전달하고 worker dispatch에는 싣지 않는다', async () => {
+    const dependencies = buildDependencies();
+    dependencies.router.dispatch.mockRejectedValue(
+      new RouterException({
+        message: '분류 실패',
+        code: RouterErrorCode.INTENT_CLASSIFY_FAILED,
+      }),
+    );
+    dependencies.conversationalReply.reply.mockResolvedValue('안녕');
+    const usecase = new HandleConversationTurnUsecase(
+      dependencies.router,
+      dependencies.conversationMemory,
+      dependencies.conversationalReply,
+    );
+    await usecase.execute({
+      slackUserId: 'U1',
+      conversationKey: 'U1:CONSOLE',
+      text: '안녕',
+      source: 'REMOTE_CONSOLE',
+      persona: 'USAGI',
+    });
+    expect(dependencies.conversationalReply.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ persona: 'USAGI' }),
+    );
+    expect(dependencies.router.dispatch.mock.calls[0][0]).not.toHaveProperty(
+      'persona',
+    );
+  });
   it.each([
     [
       '최근 worker turn',

@@ -41,6 +41,8 @@ struct MascotView: View {
     @State private var dragStart: (panel: NSPoint, mouse: NSPoint)?
     @State private var commandText = ""
     @FocusState private var commandFieldFocused: Bool
+    @State private var replyText = ""
+    @FocusState private var replyFieldFocused: Bool
     /// 숨쉬기 — 평소에 아주 천천히 위아래로 부푼다.
     @State private var breathing = false
     /// 마우스를 올리면 고개를 갸웃한다.
@@ -296,7 +298,7 @@ struct MascotView: View {
                 // 짧은 답은 내용 높이만큼만, 180pt 를 넘는 답만 스크롤한다. 높이 상한(`maxHeight`)만 걸면
                 // 제안받은 높이를 다 차지해 말풍선 가운데가 크게 빈다 — 본문 높이를 재서 그만큼만 쓴다.
                 ScrollView {
-                    replyText(body)
+                    renderedReplyText(body)
                         .background(GeometryReader { geometry in
                             Color.clear.preference(key: MascotReplyHeight.self, value: geometry.size.height)
                         })
@@ -306,7 +308,27 @@ struct MascotView: View {
                 if let signature {
                     Text(signature).font(.caption).foregroundColor(.secondary)
                 }
-                HStack { Spacer(); Button("닫기") { controller.closeReply() } }
+                TextField("이어서 말하기…", text: $replyText)
+                    .focused($replyFieldFocused)
+                    // 포커스가 빠지면 입력 상태도 푼다. 입력 중에 승인 말풍선이 답장을 밀어내면 칸이 사라지는데,
+                    // 그대로 두면 패널의 투명한 빈 곳까지 클릭을 가로채 뒤의 앱이 눌리지 않는다.
+                    .onChange(of: replyFieldFocused) { focused in
+                        if focused {
+                            controller.beginReplyTyping()
+                        } else {
+                            controller.endReplyTyping()
+                        }
+                    }
+                    .onSubmit { submitReply() }
+                HStack {
+                    Spacer()
+                    Button("보내기") { submitReply() }
+                    Button("닫기") {
+                        replyFieldFocused = false
+                        replyText = ""
+                        controller.closeReply()
+                    }
+                }
             case let .briefing(lines):
                 ForEach(lines, id: \.self) { line in Text(line) }
             case let .reaction(message):
@@ -328,7 +350,7 @@ struct MascotView: View {
         .accessibilityElement(children: .contain)
     }
 
-    private func replyText(_ body: String) -> some View {
+    private func renderedReplyText(_ body: String) -> some View {
         Text(mascotMarkdown(body))
             .frame(maxWidth: .infinity, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
@@ -341,6 +363,16 @@ struct MascotView: View {
         if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             commandText = ""
         }
+    }
+
+    private func submitReply() {
+        let text = replyText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else {
+            return
+        }
+        controller.sendReply(text)
+        replyText = ""
+        replyFieldFocused = false
     }
 
     private func closeCommandInput() {

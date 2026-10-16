@@ -110,6 +110,24 @@ function okWithText(workerType: string, formattedText: string) {
 }
 
 describe('PreconditionChainOrchestrator', () => {
+  it('persona를 대화 처리와 선행 체인에 전달한다', async () => {
+    const { orchestrator, handleConversationTurn } = make();
+    handleConversationTurn.execute
+      .mockRejectedValueOnce(
+        new FakeDomainException(CeoErrorCode.NO_PO_EVAL_RUN),
+      )
+      .mockResolvedValueOnce(ok('PO_EVAL'))
+      .mockResolvedValueOnce(ok('CEO'));
+    await orchestrator.run({
+      slackUserId: 'U1',
+      agentTypeHint: AgentType.CEO,
+      persona: 'USAGI',
+    });
+    expect(handleConversationTurn.execute).toHaveBeenCalledTimes(3);
+    for (const [input] of handleConversationTurn.execute.mock.calls) {
+      expect(input).toEqual(expect.objectContaining({ persona: 'USAGI' }));
+    }
+  });
   it('분류 실패 대화 응답을 CONSOLE 격리 key로 command.answered 발행한다', async () => {
     const {
       orchestrator,

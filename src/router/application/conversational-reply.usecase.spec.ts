@@ -168,6 +168,23 @@ describe('ConversationalReply — buildSystemPrompt (self-context)', () => {
 
 describe('ConversationalReply — 말투', () => {
   it.each([0, 2])(
+    '우사기 persona는 streak=%i에서도 기존 말투를 치환한다',
+    (unresolvedStreak) => {
+      const prompt = buildSystemPrompt({ persona: 'USAGI', unresolvedStreak });
+      expect(
+        prompt.startsWith(
+          '당신은 이대리 사무실의 마스코트 토끼 "우사기" 입니다.',
+        ),
+      ).toBe(true);
+      expect(prompt).toContain('이름: 우사기 (이대리 봇의 마스코트)');
+      expect(prompt).toContain('우사기답게 짧고 밝은 반말');
+      expect(prompt).not.toContain('항상 존댓말');
+      expect(prompt).not.toContain('이름: 이대리 (Slack 봇)');
+      expect(prompt).toContain('이대리가 할 수 있는 일');
+      expect(prompt).toContain('실행 약속 금지');
+    },
+  );
+  it.each([0, 2])(
     'streak=%i 에서도 반말 질문에 존댓말로 답하라는 규칙을 싣는다',
     (unresolvedStreak) => {
       expect(buildSystemPrompt({ unresolvedStreak })).toContain(
@@ -386,6 +403,19 @@ describe('ConversationalReply — reply() (route(PM) 경유 호출)', () => {
     ({
       get: jest.fn().mockReturnValue('JSL107/personal_agents'),
     }) as unknown as ConfigService;
+
+  it('우사기 persona를 모델 systemPrompt에 반영한다', async () => {
+    const route = jest.fn().mockResolvedValue({ text: '안녕', modelUsed: 'm' });
+    const usecase = new ConversationalReplyUsecase(
+      { route } as unknown as ModelRouterUsecase,
+      buildConfigService(),
+      [] as AgentDispatcher[],
+    );
+    await usecase.reply({ text: '안녕', priorTurns: [], persona: 'USAGI' });
+    expect(route.mock.calls[0][0].request.systemPrompt).toContain(
+      '마스코트 토끼 "우사기"',
+    );
+  });
 
   it('라우터가 남긴 ROUTER run 이 있으면 답을 그 행에 붙이고, 없으면 붙이지 않는다', async () => {
     const route = jest.fn().mockResolvedValue({ text: ' 답 ', modelUsed: 'm' });

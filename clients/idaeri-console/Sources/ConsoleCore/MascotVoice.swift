@@ -49,7 +49,10 @@ public let mascotQuips: [MascotMoment: [MascotQuip]] = [
     .reply: [MascotQuip("우라!"), MascotQuip("야하!")],
     .thinking: [MascotQuip("푸루루…", "생각 중"), MascotQuip("우라…", "알아보는 중"), MascotQuip("후음…", "잠깐만")],
     .slow: [MascotQuip("후엥…", "답이 안 와 — 콘솔에서 봐 줘")],
-    .commandPrompt: [MascotQuip("우라?", "뭐 시킬 거야?"), MascotQuip("야하?", "뭐 해 줄까?")],
+    .commandPrompt: [
+        MascotQuip("우라?", "뭐 시킬 거야?"), MascotQuip("야하?", "뭐 해 줄까?"),
+        MascotQuip("푸루루?", "아무 말이나 해"),
+    ],
     .chatter: [
         MascotQuip("푸루루루루…"), MascotQuip("우라…", "심심해"), MascotQuip("야하~", "간식 시간 아냐?"),
         MascotQuip("후음…", "조용하다"), MascotQuip("하아~", "졸려"),

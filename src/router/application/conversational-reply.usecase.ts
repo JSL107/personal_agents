@@ -10,6 +10,7 @@ import {
 import { ModelRouterUsecase } from '../../model-router/application/model-router.usecase';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { SELF_REPO } from '../../pr-review-loop/domain/learning-repo';
+import { ReplyPersona } from '../domain/conversation-context.type';
 import { ConversationTurn } from '../domain/conversation-memory.type';
 import { describeEnabledPassiveCapabilities } from '../domain/passive-capability';
 import {
@@ -79,6 +80,7 @@ export class ConversationalReplyUsecase {
     unresolvedStreak,
     routingMissRunId,
     conversationKey,
+    persona,
   }: {
     text: string;
     priorTurns: ConversationTurn[];
@@ -89,6 +91,7 @@ export class ConversationalReplyUsecase {
     // 라우터가 이 회차를 남긴 ROUTER run. 있으면 답을 그 행의 모델 응답 원문으로 남긴다 —
     // 없으면 원장에는 "못 골랐다" 만 있고 이대리가 뭐라고 답했는지는 사라진다.
     routingMissRunId?: number;
+    persona?: ReplyPersona;
   }): Promise<string> {
     const systemPrompt = buildSystemPrompt({
       // 이대리 자신의 레포. 대화 응답이 "우리 레포" 를 지칭할 때 쓰는 이름이라 상수로 족하다.
@@ -99,6 +102,7 @@ export class ConversationalReplyUsecase {
       unresolvedStreak,
       capabilities: this.capabilities,
       passiveCapabilities: this.passiveCapabilities,
+      persona,
     });
     const workStatus = await this.describeLatestWorkStatus({
       priorTurns,
@@ -239,12 +243,14 @@ export const buildSystemPrompt = ({
   unresolvedStreak,
   capabilities = WORKER_CAPABILITIES,
   passiveCapabilities = [],
+  persona,
 }: {
   repoLabel?: string;
   ownerLogin?: string;
   unresolvedStreak?: number;
   capabilities?: readonly WorkerCapability[];
   passiveCapabilities?: readonly string[];
+  persona?: ReplyPersona;
 }): string => {
   const selfRepo = repoLabel && repoLabel.length > 0 ? repoLabel : undefined;
   const selfOwner =
@@ -255,7 +261,9 @@ export const buildSystemPrompt = ({
   // 봇이 자기 자신 = `${selfRepo}` 임을 인지하지 못해 "어느 repo?" 를 반복 묻는 패턴 (2026-06-05 사례) 차단.
   const selfContextLines = [
     `당신의 정체:`,
-    `- 이름: 이대리 (Slack 봇)`,
+    persona === 'USAGI'
+      ? `- 이름: 우사기 (이대리 봇의 마스코트). 이대리에게 시키는 일은 사용자가 우사기에게 말해도 똑같이 처리됩니다.`
+      : `- 이름: 이대리 (Slack 봇)`,
     // 기술 스택을 적어 두면 "이대리 백엔드에 구현해야 해요" 처럼 답에 그대로 묻어난다(2026-10-14 run 8838).
     // 레포 이름은 아래 self-reference 매핑이 쓰므로 남긴다.
     selfRepo
@@ -318,9 +326,11 @@ export const buildSystemPrompt = ({
     : `- 기능 안내·짧은 질문은 1~3문장으로 짧게. 무엇을 할 수 있는지 묻는 질문에는 관련 있는 일을 3~5개까지 짧게 나열해도 됩니다. 요약·브레인스토밍·의견처럼 내용 자체가 답인 요청은 필요한 만큼 쓰되(사용자가 줄 수를 정했으면 그대로) 군더더기는 빼세요.`;
 
   return [
-    shouldChangeDirection
-      ? `당신은 "이대리" 라는 슬랙 봇입니다. 사용자의 자연어 메시지에 친근하고 분명하게 한국어로 답해주세요.`
-      : `당신은 "이대리" 라는 슬랙 봇입니다. 사용자의 자연어 메시지에 친근하게 한국어로 답해주세요. 길이는 아래 「답변 규칙」을 따릅니다.`,
+    persona === 'USAGI'
+      ? `당신은 이대리 사무실의 마스코트 토끼 "우사기" 입니다. 사용자가 화면 구석의 우사기에게 말을 걸었습니다. 이대리가 할 수 있는 일과 실행 기록은 그대로 알고 있으니 아래 규칙대로 사실만 답하되, 말투는 우사기로 하세요.${shouldChangeDirection ? '' : ' 길이는 아래 「답변 규칙」을 따릅니다.'}`
+      : shouldChangeDirection
+        ? `당신은 "이대리" 라는 슬랙 봇입니다. 사용자의 자연어 메시지에 친근하고 분명하게 한국어로 답해주세요.`
+        : `당신은 "이대리" 라는 슬랙 봇입니다. 사용자의 자연어 메시지에 친근하게 한국어로 답해주세요. 길이는 아래 「답변 규칙」을 따릅니다.`,
     '',
     ...selfContextLines,
     ...capabilityLines,
@@ -340,7 +350,9 @@ export const buildSystemPrompt = ({
     `답변 규칙:`,
     // 사용자가 반말로 물으면 답도 반말로 따라가, 같은 스레드에서 말투가 오갔다(2026-10-14 실측 —
     // "작업하고 있어?" 10회 중 4회가 "응, ~야", 나머지는 존댓말).
-    `- 말투: 사용자가 반말을 써도 항상 존댓말(~요)로 답하세요. 한 답 안에서 반말과 존댓말을 섞지 마세요.`,
+    persona === 'USAGI'
+      ? `- 말투: 우사기답게 짧고 밝은 반말(~야, ~해)로 답하세요. 한 답 안에서 존댓말을 섞지 마세요. "푸루루", "야하", "우라", "하아?" 같은 우사기 소리는 문장 중간이나 끝에 가끔만 섞고, 답 첫머리에는 붙이지 마세요 — 화면이 말풍선 맨 위에 소리를 이미 붙입니다. 소리만으로 답하지 말고 뜻은 반드시 한국어 문장으로 전하세요.`
+      : `- 말투: 사용자가 반말을 써도 항상 존댓말(~요)로 답하세요. 한 답 안에서 반말과 존댓말을 섞지 마세요.`,
     `- 모르거나 단정 어려운 사실 (예: 봇 자체의 현재 작업 상태) 은 솔직히 "확인이 필요하겠어요" 식으로 짧게. 단 [직전 작업 상태] 가 있으면 추측하지 말고 그 상태를 따르세요.`,
     `- 시스템 내부 동작 / LLM 사용 / agent 분류기 / sandbox 같은 내부 용어 노출 X.`,
     `- 실행 약속 금지: 이 대화 응답은 어떤 작업도 실제로 실행하지 않습니다 (PR 리뷰·회고·이력서/포트폴리오 정리·코드 변경·plan 수립 등 무엇도). 따라서 "~해볼게요", "정리해드릴게요", "처리하겠습니다", "가져올게요" 처럼 당신이 그 작업을 진행/완료하겠다는 미래 약속을 하지 마세요 — 지킬 수 없는 약속이 됩니다.`,

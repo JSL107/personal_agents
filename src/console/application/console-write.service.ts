@@ -9,6 +9,7 @@ import { parseTopicSelection } from '../../common/util/topic-selection.util';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { ApplyPreviewUsecase } from '../../preview-gate/application/apply-preview.usecase';
 import { CancelPreviewUsecase } from '../../preview-gate/application/cancel-preview.usecase';
+import { ReplyPersona } from '../../router/domain/conversation-context.type';
 import { ReplayFailedRunUsecase } from '../../run-replay/application/replay-failed-run.usecase';
 import { RunReplayException } from '../../run-replay/domain/run-replay.exception';
 import { PendingConsoleTurnStore } from './pending-console-turn.store';
@@ -21,6 +22,7 @@ interface ConsoleCommandInput {
   text: string;
   agentTypeHint?: AgentType;
   commandId?: string;
+  persona?: ReplyPersona;
 }
 
 // 콘솔 리모컨 write 위임 서비스. owner 를 주입해 orchestrator 로 넘긴다.
@@ -48,6 +50,7 @@ export class ConsoleWriteService {
         agentTypeHint: pendingTurn.agentType,
         text: input.text,
         commandId: input.commandId,
+        ...(input.persona ? { persona: input.persona } : {}),
       });
       return;
     }
@@ -67,6 +70,7 @@ export class ConsoleWriteService {
           agentTypeHint: suggestion.agentType,
           text: undefined,
           commandId: input.commandId,
+          ...(input.persona ? { persona: input.persona } : {}),
         });
         return;
       }
@@ -76,6 +80,7 @@ export class ConsoleWriteService {
       text: input.text,
       agentTypeHint: input.agentTypeHint,
       commandId: input.commandId,
+      ...(input.persona ? { persona: input.persona } : {}),
     });
   }
 

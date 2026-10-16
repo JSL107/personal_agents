@@ -37,6 +37,18 @@ func runConsoleClientTests(_ t: TestRunner) {
     t.expectEqual(decoded.text, "오늘 계획", "command body text")
     t.expectEqual(decoded.agentTypeHint, "PM", "command body hint")
     t.expectEqual(decoded.commandId, "command-123", "command body commandId")
+    t.expectNil(decoded.persona, "기존 command 에 persona 없음")
+
+    let mascotRequest = try! buildCommandRequest(
+        baseURL: base,
+        body: CommandRequest(text: "안녕", agentTypeHint: nil, commandId: "command-mascot", persona: "USAGI"),
+        token: nil
+    )
+    let mascotBody = try! JSONDecoder().decode(
+        CommandRequestEcho.self,
+        from: mascotRequest.httpBody ?? Data()
+    )
+    t.expectEqual(mascotBody.persona, "USAGI", "마스코트 command persona")
 
     // 토큰 미설정이면 헤더 없음
     let noToken = try! buildCommandRequest(
@@ -114,6 +126,7 @@ private struct CommandRequestEcho: Decodable {
     let text: String
     let agentTypeHint: String?
     let commandId: String
+    let persona: String?
 }
 
 private struct InjectBodyEcho: Decodable {
