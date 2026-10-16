@@ -12,12 +12,13 @@ describe('INTENT_CLASSIFIER_SYSTEM_PROMPT', () => {
   //           2026-10-08 PO_SHADOW 가 분기 제품 목표 선언·조회·닫기도 받는다(PO Shadow 단계 3).
   //           2026-10-14 BLOG 에서 대화·스레드에 이미 있는 내용의 요약·설명 요청을 뺀다(run 8837).
   //           2026-10-15 ART_JOB_FEED(원화 공고 키워드·즉시 수집) 후보와 목록 되묻기 후속 규칙을 넣는다(run 9065~9074).
+  //           2026-10-16 ART_JOB_FEED 에서 공고를 빼거나 받는 방법 질문을 뺀다(eval h-thread-art-digest-1014 1/3).
   it('분류기 프롬프트 지문이 마지막으로 잰 값과 같다 — 바꾸면 분류 eval 을 다시 잰다', () => {
     expect(
       createHash('sha256')
         .update(INTENT_CLASSIFIER_SYSTEM_PROMPT)
         .digest('hex'),
-    ).toBe('d9ca8876840c53c03425abb5dc187f58cdadc5f4f7e87d2b0490490d1eb9f415');
+    ).toBe('30524ce99a5385be1d60477716dd7c87746af9b0fc0adc652d51a51a7f2ea4d9');
   });
 
   it('SCHEDULE 후보가 분류 표에 있다', () => {

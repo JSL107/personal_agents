@@ -22,6 +22,9 @@ const ADD_VERB =
   /추가|넣어|등록|포함|찾아(?:줘|줬으면)|걸러\s*내지\s*말|걸러줘|제외\s*해/;
 const FETCH_VERB = /가져|올려|보내|받아|긁어/;
 const LIST_VERB = /보여|조회|목록|뭐\s*있|알려|확인/;
+// 방법을 묻는 말은 명령이 아니다 — 「이거 필요 없는 건 어떻게 빼?」가 「어떻게」를 키워드로 뽑아
+// 제거 목록을 되물었다(2026-10-15 eval h-thread-art-digest-1014).
+const HOW_TO = /어떻게|어떡|방법/;
 
 export const parseArtJobFeedCommand = (text: string): ArtJobFeedCommand => {
   const normalized = text.trim();
@@ -37,6 +40,10 @@ export const parseArtJobFeedCommand = (text: string): ArtJobFeedCommand => {
     !REMOVE_VERB.test(normalized)
   ) {
     return { kind: 'LIST', listKind };
+  }
+  // 가져오기보다 먼저 본다 — 「공고 가져오는 방법」이 채널 게시로 빠지면 안 된다.
+  if (HOW_TO.test(normalized)) {
+    return { kind: 'UNKNOWN' };
   }
   // 키워드를 말하지 않은 「공고 가져와·관련 공고 찾아줘·지금 줘봐」는 가져오기다.
   // 「공고」 없는 「지금줘봐」가 키워드 안내로 빠졌다(2026-10-15 16:19).
@@ -77,11 +84,13 @@ export const mergeArtJobFeedCommands = (
   current: ArtJobFeedCommand,
   currentText: string,
 ): ArtJobFeedCommand => {
+  // 방법 질문은 되묻기의 답도 아니다 — 「제외하는 방법 알려줘」의 「제외」를 목록 답으로 합치면 직전 키워드가 써진다.
   if (
     current.kind === 'FETCH' ||
     current.kind === 'LIST' ||
     current.kind === 'ADD' ||
-    current.kind === 'REMOVE'
+    current.kind === 'REMOVE' ||
+    HOW_TO.test(currentText)
   ) {
     return current;
   }
