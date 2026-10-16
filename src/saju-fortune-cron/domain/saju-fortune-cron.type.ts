@@ -5,7 +5,6 @@ export const SAJU_FORTUNE_CRON_QUEUE = 'saju-fortune-cron';
 // 사주는 잡 데이터에 싣지 않는다 — Redis 에 남지 않게 consumer 가 매 회차 env 에서 읽는다.
 // 잡은 발송 시각별로 하나씩 등록되고, 그 시각에 받을 사람의 Slack ID 만 싣는다.
 export interface SajuFortuneCronJobData {
-  ownerSlackUserId: string;
   recipientSlackUserIds: string[];
 }
 

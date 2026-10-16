@@ -11,7 +11,7 @@ import { SajuFortuneCronConsumer } from './saju-fortune-cron.consumer';
 
 const RECIPIENTS = 'U111|길동|丙寅 辛卯 壬戌 庚子;U222|철수|戊辰 甲寅 癸亥';
 const JOB = {
-  data: { ownerSlackUserId: 'U111', recipientSlackUserIds: ['U111', 'U222'] },
+  data: { recipientSlackUserIds: ['U111', 'U222'] },
 } as Job<SajuFortuneCronJobData>;
 
 describe('SajuFortuneCronConsumer', () => {
@@ -76,7 +76,7 @@ describe('SajuFortuneCronConsumer', () => {
     expect(acquireOnce).toHaveBeenCalledTimes(1);
     expect(acquireOnce.mock.calls[0][0]).toContain(':U222:');
     expect(publishCronFailure).toHaveBeenCalledWith(
-      expect.objectContaining({ ownerSlackUserId: 'U111' }),
+      expect.objectContaining({ cronName: 'Saju Fortune Cron' }),
     );
   });
 
@@ -91,7 +91,7 @@ describe('SajuFortuneCronConsumer', () => {
 
   it('이 잡이 맡은 시각의 사람에게만 보낸다', async () => {
     await consumer.process({
-      data: { ownerSlackUserId: 'U111', recipientSlackUserIds: ['U222'] },
+      data: { recipientSlackUserIds: ['U222'] },
     } as Job<SajuFortuneCronJobData>);
 
     expect(route).toHaveBeenCalledTimes(1);
