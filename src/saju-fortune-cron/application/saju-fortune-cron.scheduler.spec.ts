@@ -20,7 +20,6 @@ const buildScheduler = (env: Record<string, string>) => {
 describe('SajuFortuneCronScheduler', () => {
   it('발송 시각이 같은 사람끼리 묶어 시각마다 잡을 하나씩 등록한다', async () => {
     const { add, scheduler } = buildScheduler({
-      SAJU_FORTUNE_OWNER_SLACK_USER_ID: 'U111',
       SAJU_FORTUNE_RECIPIENTS: [
         'U111|길동|丙寅 辛卯 壬戌 庚子|07:30',
         'U222|철수|戊辰 甲寅 癸亥',
@@ -41,9 +40,9 @@ describe('SajuFortuneCronScheduler', () => {
     expect(JSON.stringify(add.mock.calls)).not.toContain('丙寅');
   });
 
-  it('owner 가 없으면 등록하지 않는다', async () => {
+  it('유효한 받는 사람이 없으면 등록하지 않는다', async () => {
     const { add, scheduler } = buildScheduler({
-      SAJU_FORTUNE_RECIPIENTS: 'U222|철수|戊辰 甲寅 癸亥',
+      SAJU_FORTUNE_RECIPIENTS: 'U222|철수|甲丑 甲寅 癸亥',
     });
 
     await scheduler.onApplicationBootstrap();
