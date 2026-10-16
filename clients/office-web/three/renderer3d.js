@@ -1054,7 +1054,10 @@ export class Office3DRenderer {
     }
     const hovered = this.pointer ? this.pick(this.pointer) : null;
     this.hoveredAgent = hovered?.agentType ?? null;
-    this.canvas.style.cursor = this.hoveredAgent || hovered?.president || hovered?.dailyReport ? "pointer" : "";
+    // 대표는 손가락 커서를 주지 않는다 — 누를 수 있다고 알리는 표시인데, 대표 클릭을 받아 무언가 하는
+    // 쪽이 없다(윈도우는 `office:president-click` 을 듣지 않고, 맥은 지시 입구를 마스코트로 옮겨 무시한다).
+    // 올리면 이름표가 뜨는 것은 그대로 둔다 — 누가 대표인지 알려 주는 몫이다.
+    this.canvas.style.cursor = this.hoveredAgent || hovered?.dailyReport ? "pointer" : "";
     if (this.presidentName) {
       this.presidentName.visible = Boolean(hovered?.president);
     }
