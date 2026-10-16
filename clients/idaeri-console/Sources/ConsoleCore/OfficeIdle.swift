@@ -491,6 +491,11 @@ public func officeWorkAffinity(agentType: String) -> [FurnitureKind] {
     // 그쪽으로 보내면 배회할 때마다 방을 나간다. 기획실에 있는 이동식 화이트보드와 책장으로 간다.
     case "IDEA_TRIAGE":
         return [.whiteboard, .bookshelf]
+    // 원화 공고를 여러 사이트에서 찾아 모은다 — 자료를 찾아 읽는 몸짓이라 책장이 먼저다. 공고를
+    // 붙여 두는 게시판이 더 어울리지만 기획실에는 없어(위 IDEA_TRIAGE 와 같은 사정) 보내면 방을
+    // 나간다. 같은 방에 있는 책장과 이동식 화이트보드로 간다.
+    case "ART_JOB_FEED":
+        return [.bookshelf, .whiteboard]
     default:
         return []
     }
