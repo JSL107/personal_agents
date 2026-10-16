@@ -58,6 +58,7 @@ import { PreviewGateModule } from './preview-gate/preview-gate.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ResumeCalibrationCronModule } from './resume-calibration-cron/resume-calibration-cron.module';
 import { RouterModule } from './router/router.module';
+import { SajuFortuneCronModule } from './saju-fortune-cron/saju-fortune-cron.module';
 import { ScheduleModule } from './schedule/schedule.module';
 import { SlackModule } from './slack/slack.module';
 import { SlackCollectorModule } from './slack-collector/slack-collector.module';
@@ -175,6 +176,8 @@ import { WebhookModule } from './webhook/webhook.module';
     ResumeCalibrationCronModule,
     // Phase 3 — 매일 자동 지원 넛지. 마감 임박(≤3일)/팔로업 지난 진행 중 지원 건을 SQL 조회 → Slack DM.
     JobApplicationNudgeCronModule,
+    // 매일 사주 운세 DM — 받는 사람마다 오늘 일진(코드 계산) + 타고난 사주로 LLM 1회 → DM.
+    SajuFortuneCronModule,
     ArtJobFeedCronModule,
     // 「관심 있음」 원화 공고 → 마감 전날 09·13시 DM.
     ArtJobDeadlineCronModule,
