@@ -367,7 +367,7 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 | `AUTOPILOT_INVEST_TARGET` | ⭕ | 투자 라인(주식·모의투자 10항목) 전용 발송 대상. 미설정 시 `AUTOPILOT_TARGET` |
 | `AUTOPILOT_CAREER_TARGET` | ⭕ | 커리어 라인(채용공고 수집·갭 분석) 전용 발송 대상. 미설정 시 `AUTOPILOT_TARGET` |
 | `AUTOPILOT_REVIEW_TARGET` | ⭕ | 리뷰 라인(PR 리뷰 스윕 요약) 전용 발송 대상. 미설정 시 `AUTOPILOT_TARGET` |
-| `SAJU_FORTUNE_OWNER_SLACK_USER_ID` · `SAJU_FORTUNE_RECIPIENTS` | ❌ | 매일 사주 운세 DM(사람마다 발송 시각 지정 가능). 받는 사람은 `U123\|이름\|丙寅 辛卯 壬戌 庚子\|07:30` 을 `;` 로 잇는다(기둥은 만세력 확인값, 시각 모르면 3개 · 끝의 발송 시각은 생략하면 08:00). 둘 다 있어야 켜진다 |
+| `SAJU_FORTUNE_OWNER_SLACK_USER_ID` · `SAJU_FORTUNE_RECIPIENTS` · `SAJU_FORTUNE_CRON` | ❌ | 매일 사주 운세 DM(사람마다 발송 시각 지정 가능). 받는 사람은 `U123\|이름\|丙寅 辛卯 壬戌 庚子\|07:30` 을 `;` 로 잇는다(기둥은 만세력 확인값, 시각 모르면 3개 · 끝의 발송 시각(KST)을 생략하면 `SAJU_FORTUNE_CRON`, 기본 `0 8 * * *`). 둘 다 있어야 켜진다 |
 | `IDEA_CHANNEL_ID` | ⭕ | 평일 09:00 KST 아이디어 판정 대상 Slack 채널 ID(`C...`/`G...`). 미설정 시 해당 task 건너뜀 |
 | `CONSOLE_OWNER_SLACK_USER_ID` | ❌ | 콘솔 지시·승인 주체 — 없으면 콘솔 쓰기 503 |
 | `KOREAN_HOLIDAY_API_KEY` | ❌ | 공공데이터포털 특일 정보 **디코딩** 서비스키 — 없으면 달력에 공휴일이 안 뜬다 |

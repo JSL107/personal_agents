@@ -10,9 +10,9 @@ import {
 import {
   dailyCronOf,
   DEFAULT_SAJU_FORTUNE_CRON,
-  DEFAULT_SAJU_FORTUNE_TIMEZONE,
   parseSajuFortuneRecipients,
   SAJU_FORTUNE_CRON_QUEUE,
+  SAJU_FORTUNE_TIMEZONE,
   SajuFortuneCronJobData,
 } from '../domain/saju-fortune-cron.type';
 
@@ -52,10 +52,7 @@ export class SajuFortuneCronScheduler implements OnApplicationBootstrap {
       'SAJU_FORTUNE_CRON',
       DEFAULT_SAJU_FORTUNE_CRON,
     );
-    const tz = this.readNonEmpty(
-      'SAJU_FORTUNE_TIMEZONE',
-      DEFAULT_SAJU_FORTUNE_TIMEZONE,
-    );
+    const tz = SAJU_FORTUNE_TIMEZONE;
 
     const catchUps = await enqueueMissedRuns(this.queue, this.logger);
     await this.cleanupExistingRepeatables();

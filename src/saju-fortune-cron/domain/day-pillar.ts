@@ -19,6 +19,10 @@ export const dayPillarOf = (plainDate: string): string => {
   }
   const [, year, month, day] = matched;
   const dateUtc = Date.UTC(Number(year), Number(month) - 1, Number(day));
+  // Date.UTC 는 2026-02-30 을 03-02 로 조용히 넘긴다 — 되돌려 비교해 다른 날의 일진을 내지 않게 막는다.
+  if (new Date(dateUtc).toISOString().slice(0, 10) !== plainDate) {
+    throw new Error(`일진 계산 날짜 오류(달력에 없는 날): ${plainDate}`);
+  }
   const daysFromReference = Math.round(
     (dateUtc - REFERENCE_DATE_UTC) / MILLISECONDS_PER_DAY,
   );

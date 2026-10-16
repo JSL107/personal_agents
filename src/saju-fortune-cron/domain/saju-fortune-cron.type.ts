@@ -11,14 +11,16 @@ export interface SajuFortuneCronJobData {
 
 // 매일 08:00 KST 기본.
 export const DEFAULT_SAJU_FORTUNE_CRON = '0 8 * * *';
-export const DEFAULT_SAJU_FORTUNE_TIMEZONE = 'Asia/Seoul';
+// 시간대는 설정으로 열지 않는다 — consumer 의 "오늘"(일진·발송 가드)이 KST 고정이라,
+// cron 만 다른 시간대로 돌면 날짜 경계에서 엉뚱한 날의 일진이 나간다.
+export const SAJU_FORTUNE_TIMEZONE = 'Asia/Seoul';
 
 export interface SajuFortuneRecipient {
   slackUserId: string;
   name: string;
   // 만세력에서 확인한 타고난 기둥 — 년·월·일(·시) 순. 시각을 모르면 3개.
   natalPillars: string[];
-  // 'HH:MM' (timezone 은 SAJU_FORTUNE_TIMEZONE). 없으면 SAJU_FORTUNE_CRON 을 따른다.
+  // 'HH:MM' KST. 없으면 SAJU_FORTUNE_CRON 을 따른다.
   sendTime?: string;
 }
 

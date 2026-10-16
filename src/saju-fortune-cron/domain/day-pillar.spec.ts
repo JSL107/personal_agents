@@ -16,6 +16,14 @@ describe('dayPillarOf', () => {
     expect(dayPillarOf(plainDate)).toBe(expected);
   });
 
+  it('형식은 맞아도 달력에 없는 날이면 던진다', () => {
+    expect(() => dayPillarOf('2026-02-30')).toThrow('달력에 없는 날');
+    expect(() => dayPillarOf('2026-02-29')).toThrow('달력에 없는 날');
+    expect(() => dayPillarOf('2026-13-01')).toThrow('달력에 없는 날');
+    // 외부 확인한 2026-10-16(癸亥)과 960일(60의 배수) 차이.
+    expect(dayPillarOf('2024-02-29')).toBe('癸亥');
+  });
+
   it('형식이 아니면 던진다', () => {
     expect(() => dayPillarOf('2026/10/16')).toThrow('일진 계산 날짜 형식 오류');
   });

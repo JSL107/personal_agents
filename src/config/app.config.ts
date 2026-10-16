@@ -691,7 +691,7 @@ export class EnvironmentVariables {
   //   확인한 년·월·일(·시)주. 시각을 모르면 3개. 끝의 발송 시각(HH:MM)은 생략 가능.
   //   형식이 틀린 항목은 부팅 로그에 번호만 남기고 뺀다.
   // - SAJU_FORTUNE_CRON: 발송 시각을 안 적은 사람의 BullMQ cron (default 매일 08:00 — `0 8 * * *`).
-  // - SAJU_FORTUNE_TIMEZONE: default Asia/Seoul.
+  //   시간대는 KST 고정이다(일진·발송 가드가 KST 날짜 기준).
   @IsOptional()
   @IsString()
   SAJU_FORTUNE_OWNER_SLACK_USER_ID?: string;
@@ -703,10 +703,6 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   SAJU_FORTUNE_CRON?: string;
-
-  @IsOptional()
-  @IsString()
-  SAJU_FORTUNE_TIMEZONE?: string;
 
   // ====== 게임잡 원화 공고 피드 — 하루 2회 채널 게시 ======
   // 2D 캐릭터 원화·컨셉 공고를 채점 없이 전부 보낸다. 남에게 가는 발송이라 기본은 꺼짐.
