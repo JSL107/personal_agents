@@ -1,5 +1,8 @@
 const HEAVENLY_STEMS = '甲乙丙丁戊己庚辛壬癸';
 const EARTHLY_BRANCHES = '子丑寅卯辰巳午未申酉戌亥';
+// 위 두 줄과 같은 순서의 한글 독음.
+const HEAVENLY_STEMS_HANGUL = '갑을병정무기경신임계';
+const EARTHLY_BRANCHES_HANGUL = '자축인묘진사오미신유술해';
 const SEXAGENARY_CYCLE = 60;
 const MILLISECONDS_PER_DAY = 86_400_000;
 
@@ -48,3 +51,8 @@ export const isValidPillar = (pillar: string): boolean => {
   }
   return stemIndex % 2 === branchIndex % 2;
 };
+
+// '癸亥' → '계해'. 받는 사람에게 보이는 글에는 한자 대신 한글 독음을 쓴다.
+export const pillarToHangul = (pillar: string): string =>
+  HEAVENLY_STEMS_HANGUL[HEAVENLY_STEMS.indexOf(pillar[0])] +
+  EARTHLY_BRANCHES_HANGUL[EARTHLY_BRANCHES.indexOf(pillar[1])];

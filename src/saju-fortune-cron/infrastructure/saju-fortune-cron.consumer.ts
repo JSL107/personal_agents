@@ -16,7 +16,7 @@ import {
   SlackNotifierPort,
 } from '../../slack/domain/port/slack-notifier.port';
 import { escapeSlackMrkdwn } from '../../slack/format/mrkdwn.util';
-import { dayPillarOf } from '../domain/day-pillar';
+import { dayPillarOf, pillarToHangul } from '../domain/day-pillar';
 import { buildSajuFortunePrompt } from '../domain/saju-fortune.prompt';
 import {
   parseSajuFortuneRecipients,
@@ -30,6 +30,8 @@ const SENT_GUARD_TTL_SECONDS = 90_000;
 // 6줄 지시를 어긴 장문이 DM 을 덮지 않게 자른다.
 const MAXIMUM_FORTUNE_LENGTH = 1_200;
 const INCIDENT_KEY = cronIncidentKey('Saju Fortune Cron');
+// CJK 통합 한자. 받는 사람이 읽지 못한 「己土는 오늘 癸水를…」 같은 응답을 거른다.
+const HANJA_PATTERN = /[\u4E00-\u9FFF]/;
 
 interface DeliverFortuneInput {
   recipient: SajuFortuneRecipient;
@@ -107,17 +109,11 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
       return;
     }
 
-    const completion = await this.modelRouter.route({
-      agentType: AgentType.PM,
-      request: {
-        prompt: buildSajuFortunePrompt({ recipient, todayKst, todayPillar }),
-      },
-      noContractPreamble: true,
+    const fortune = await this.generateFortune({
+      recipient,
+      todayKst,
+      todayPillar,
     });
-    const fortune = completion.text.trim().slice(0, MAXIMUM_FORTUNE_LENGTH);
-    if (fortune.length === 0) {
-      throw new Error('운세 응답이 비어 있음');
-    }
 
     // stalled 재처리로 같은 사람이 동시에 두 번 처리되면 뒤쪽은 여기서 막힌다.
     const firstRun = await this.cronIdempotency.acquireOnce(
@@ -131,13 +127,42 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
       await this.slackNotifier.postMessage({
         kind: 'saju-fortune',
         target: recipient.slackUserId,
-        text: `🔮 *오늘의 운세 — ${todayKst} (${todayPillar}일)*\n\n${escapeSlackMrkdwn(fortune)}`,
+        text: `🔮 *오늘의 운세 — ${todayKst} (${pillarToHangul(todayPillar)}일)*\n\n${escapeSlackMrkdwn(fortune)}`,
       });
     } catch (error) {
       await this.cronIdempotency.release(guardKey);
       throw error;
     }
     this.logger.log(`Saju Fortune 발송 완료 — ${recipient.slackUserId}`);
+  }
+
+  // 한자 금지는 프롬프트 지시라 코드가 다시 본다. 섞였으면 한 번만 다시 만들고, 그래도 섞이면
+  // 경고만 남기고 그대로 보낸다 — 그날 운세가 아예 안 가는 것보다 한자 몇 자가 낫다.
+  private async generateFortune(input: DeliverFortuneInput): Promise<string> {
+    const first = await this.requestFortune(input);
+    if (!HANJA_PATTERN.test(first)) {
+      return first;
+    }
+    const second = await this.requestFortune(input);
+    if (HANJA_PATTERN.test(second)) {
+      this.logger.warn(
+        `Saju Fortune 한자 섞인 응답 — 재생성 후에도 남아 그대로 발송 (${input.recipient.slackUserId})`,
+      );
+    }
+    return second;
+  }
+
+  private async requestFortune(input: DeliverFortuneInput): Promise<string> {
+    const completion = await this.modelRouter.route({
+      agentType: AgentType.PM,
+      request: { prompt: buildSajuFortunePrompt(input) },
+      noContractPreamble: true,
+    });
+    const fortune = completion.text.trim().slice(0, MAXIMUM_FORTUNE_LENGTH);
+    if (fortune.length === 0) {
+      throw new Error('운세 응답이 비어 있음');
+    }
+    return fortune;
   }
 
   // fire-and-forget — NotificationQueue 의 사건 단위 Slack DM. 수신자는 payload 가 아니라
