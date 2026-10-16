@@ -43,6 +43,31 @@ function makeService(owner?: string) {
 }
 
 describe('ConsoleWriteService', () => {
+  it.each(['normal', 'awaiting', 'suggestion'])(
+    '%s 경로에서 persona를 체인에 전달한다',
+    (path) => {
+      const { service, chainOrchestrator, pendingTurns } = makeService(OWNER);
+      if (path === 'awaiting') {
+        pendingTurns.peek.mockReturnValue({
+          kind: 'AWAITING_INPUT',
+          agentType: AgentType.PM,
+        });
+      }
+      if (path === 'suggestion') {
+        pendingTurns.peek.mockReturnValue({
+          kind: 'SUGGESTIONS',
+          suggestions: [{ agentType: AgentType.PM }],
+        });
+      }
+      service.sendCommand({
+        text: path === 'suggestion' ? '1번' : '안녕',
+        persona: 'USAGI',
+      });
+      expect(chainOrchestrator.run).toHaveBeenCalledWith(
+        expect.objectContaining({ persona: 'USAGI' }),
+      );
+    },
+  );
   it('보관된 제안에 2번으로 답하면 두 번째 worker를 agentTypeHint로 착수시킨다', () => {
     const { service, chainOrchestrator, pendingTurns } = makeService(OWNER);
     pendingTurns.peek.mockReturnValue({

@@ -287,7 +287,32 @@ import SwiftUI
     func closeReply() {
         replyBubble = nil
         replyTimer?.invalidate()
+        panel.setCommandInputActive(false)
+        panel.resignKey()
         refreshBubble()
+    }
+
+    func beginReplyTyping() {
+        panel.setCommandInputActive(true)
+        panel.makeKey()
+    }
+
+    /// 답장 칸에서 포커스가 빠졌다. 지시 입력창이 열려 있으면 그쪽이 입력 상태를 쥐고 있으므로 둔다.
+    func endReplyTyping() {
+        guard !commandInputOpen else {
+            return
+        }
+        panel.setCommandInputActive(false)
+    }
+
+    func sendReply(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return
+        }
+        sendCommand(trimmed)
+        panel.setCommandInputActive(false)
+        panel.resignKey()
     }
 
     func clearNotice() {

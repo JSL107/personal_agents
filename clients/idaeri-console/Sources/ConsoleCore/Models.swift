@@ -406,11 +406,13 @@ public struct CommandRequest: Encodable, Sendable {
     public let text: String
     public let agentTypeHint: String?
     public let commandId: String
+    public let persona: String?
 
-    public init(text: String, agentTypeHint: String?, commandId: String) {
+    public init(text: String, agentTypeHint: String?, commandId: String, persona: String? = nil) {
         self.text = text
         self.agentTypeHint = agentTypeHint
         self.commandId = commandId
+        self.persona = persona
     }
 }
 

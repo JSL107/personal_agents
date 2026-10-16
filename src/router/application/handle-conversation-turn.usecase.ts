@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { AgentType } from '../../model-router/domain/model-router.type';
+import { ReplyPersona } from '../domain/conversation-context.type';
 import { ConversationTurn } from '../domain/conversation-memory.type';
 import { buildDispatchReplyText } from '../domain/dispatch-reply.util';
 import {
@@ -23,6 +24,7 @@ export interface HandleConversationTurnInput {
   agentTypeHint?: AgentType;
   priorTurns?: ConversationTurn[];
   unresolvedStreak?: number;
+  persona?: ReplyPersona;
   // 이 turn 을 대화 기억에 남길지. 체이닝으로 당겨 실행하는 선행 worker 는 false —
   // 사용자가 말하지도 보지도 않은 turn 이라, 남기면 5턴 한도에서 실제 발화를 밀어낸다.
   shouldRemember?: boolean;
@@ -114,6 +116,7 @@ export class HandleConversationTurnUsecase {
             input.unresolvedStreak ?? calculateUnresolvedStreak(priorTurns),
           routingMissRunId: (error as RouterException).routingMissRunId,
           conversationKey: input.conversationKey,
+          ...(input.persona ? { persona: input.persona } : {}),
         });
       } catch (replyError: unknown) {
         throw new ConversationalReplyFailedException(replyError);

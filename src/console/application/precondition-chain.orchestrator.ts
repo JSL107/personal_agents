@@ -18,6 +18,7 @@ import {
   ConversationalReplyFailedException,
   HandleConversationTurnUsecase,
 } from '../../router/application/handle-conversation-turn.usecase';
+import { ReplyPersona } from '../../router/domain/conversation-context.type';
 import {
   buildDispatchReplyText,
   collectDispatchRunIds,
@@ -41,6 +42,7 @@ export interface ConsoleChainInput {
   text?: string;
   agentTypeHint?: AgentType;
   commandId?: string;
+  persona?: ReplyPersona;
 }
 
 interface ChainState {
@@ -99,6 +101,7 @@ export class PreconditionChainOrchestrator {
         conversationKey,
         text: input.text ?? '',
         agentTypeHint: input.agentTypeHint,
+        ...(input.persona ? { persona: input.persona } : {}),
         // 선행 worker turn 은 기억하지 않는다 — 산출물을 사용자에게 보이지 않는 것과 같은 이유.
         shouldRemember: shouldPublishWorkerAnswer,
       });
@@ -176,6 +179,7 @@ export class PreconditionChainOrchestrator {
           ? `--recent ${this.impactRecentDays()}d`
           : undefined,
         commandId: input.commandId,
+        ...(input.persona ? { persona: input.persona } : {}),
       };
       const nextChain: ChainState = {
         depth: chain.depth + 1,
