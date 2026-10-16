@@ -79,6 +79,12 @@ struct AppRootView: View {
             }
             sendCommand(text: text, agentTypeHint: nil)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .idaeriMascotRetry)) { notification in
+            guard let runId = notification.userInfo?["runId"] as? Int else {
+                return
+            }
+            retryRun(id: runId)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .idaeriMascotApprove)) { notification in
             guard let id = notification.userInfo?["id"] as? String else {
                 return

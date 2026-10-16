@@ -8,6 +8,12 @@ private func mascotTestCalendar() -> Calendar {
     return calendar
 }
 
+private func mascotTestIso(_ date: Date) -> String {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter.string(from: date)
+}
+
 private func mascotTestDate(_ text: String) -> Date {
     officeParseIsoDate(text)!
 }
@@ -47,6 +53,145 @@ func runMascotTests(_ runner: TestRunner) {
     runner.expectEqual(mascotSay(MascotQuip("우라…", "심심해")), "우라… (심심해)", "고정 뜻도 괄호로")
     runner.expectEqual(mascotSay(MascotQuip("푸루루")), "푸루루", "뜻이 없으면 소리만")
     runner.expectEqual(mascotSay(MascotQuip("우라", "고정"), "  "), "우라 (고정)", "빈 정보는 고정 뜻으로 물러선다")
+
+    runner.suite("Mascot pose priority")
+    runner.expectEqual(
+        mascotPose(MascotPoseContext(mood: .awaitingApproval, dragging: true)), .dangle, "끌기가 가장 먼저"
+    )
+    runner.expectEqual(
+        mascotPose(MascotPoseContext(mood: .failed, flourish: .happy)), .happy, "한 번 몸짓이 승인·실패보다 먼저"
+    )
+    runner.expectEqual(
+        mascotPose(MascotPoseContext(mood: .awaitingApproval, thinking: true, hovering: true)), .approval,
+        "승인 대기는 지시 대기·마우스 올림보다 먼저"
+    )
+    runner.expectEqual(
+        mascotPose(MascotPoseContext(mood: .idle, thinking: true, reading: true)), .thinking, "지시 대기가 읽기보다 먼저"
+    )
+    runner.expectEqual(
+        mascotPose(MascotPoseContext(mood: .idle, reading: true, hovering: true)), .reading, "읽기가 마우스 올림보다 먼저"
+    )
+    runner.expectEqual(
+        mascotPose(MascotPoseContext(mood: .working, blinking: true, hovering: true)), .hover, "마우스 올림이 깜빡임보다 먼저"
+    )
+    runner.expectEqual(MascotPose.thinking.fallback, .working, "고민 그림이 없으면 작업 자세")
+    runner.expectEqual(MascotPose.dangle.fallback, .idle, "새 포즈는 쉼 그림으로 버틴다")
+    runner.expect(MascotPose.idle.fallback == nil, "쉼 그림이 마지막")
+    for pose in MascotPose.allCases {
+        var chain: MascotPose? = pose
+        var steps = 0
+        while let current = chain, steps < 10 {
+            chain = current.fallback
+            steps += 1
+        }
+        runner.expect(chain == nil, "\(pose) 대체 사슬은 끝나야 한다")
+    }
+
+    runner.suite("Mascot activity")
+    let activityNow = mascotTestDate("2026-10-14T03:00:00.000Z")
+    func activityRun(_ id: String, _ agentType: String, secondsAgo: Double) -> ConsoleRun {
+        ConsoleRun(
+            id: id, agentType: agentType, status: "IN_PROGRESS", parentId: nil,
+            startedAt: mascotTestIso(activityNow.addingTimeInterval(-secondsAgo)), finishedAt: nil
+        )
+    }
+    func activityAgent(_ agentType: String, _ department: String?) -> ConsoleAgent {
+        ConsoleAgent(
+            agentType: agentType, displayName: agentType, slashCommands: [], description: "",
+            state: .inProgress, bubble: "\(agentType) 하는 중", department: department
+        )
+    }
+    let reviewAgent = activityAgent("CODE_REVIEWER", "quality")
+    let blogAgent = activityAgent("BLOG_PUBLISH", "content")
+    func activitySession(_ id: String, state: String, minutesAgo: Double) -> ConsoleSession {
+        ConsoleSession(
+            sessionId: id, pid: 1, source: "claude", name: "세션 \(id)", cwd: "/Users/me/repo-\(id)", state: state,
+            startedAt: mascotTestIso(activityNow.addingTimeInterval(-3600)),
+            lastActivityAt: mascotTestIso(activityNow.addingTimeInterval(-minutesAgo * 60))
+        )
+    }
+    runner.expectEqual(
+        mascotActivity(
+            runs: [activityRun("1", "CODE_REVIEWER", secondsAgo: 300), activityRun("2", "BLOG_PUBLISH", secondsAgo: 60)],
+            agents: [reviewAgent, blogAgent], sessions: [], now: activityNow
+        ),
+        .writing, "가장 최근에 시작한 실행의 부서 소품"
+    )
+    runner.expect(
+        mascotActivity(
+            runs: [activityRun("1", "CODE_REVIEWER", secondsAgo: 5)], agents: [reviewAgent], sessions: [], now: activityNow
+        ) == nil,
+        "유예 안의 짧은 실행은 소품을 들지 않는다"
+    )
+    runner.expectEqual(
+        mascotActivity(runs: [], agents: [], sessions: [activitySession("a", state: "active", minutesAgo: 1)], now: activityNow),
+        .typing, "내 세션만 돌면 타이핑"
+    )
+    runner.expect(
+        mascotActivity(runs: [], agents: [], sessions: [activitySession("a", state: "idle", minutesAgo: 1)], now: activityNow) == nil,
+        "쉬는 세션은 타이핑이 아니다"
+    )
+    runner.expectEqual(mascotActivityPose(.internalOps), .fixing, "총무는 드라이버")
+    runner.expectEqual(mascotActivityPose(.treasury), .counting, "자산은 주판")
+    runner.expectEqual(
+        mascotBusyCount(
+            runs: [activityRun("1", "CODE_REVIEWER", secondsAgo: 300), activityRun("2", "X", secondsAgo: 3)],
+            sessions: [activitySession("a", state: "active", minutesAgo: 1), activitySession("b", state: "idle", minutesAgo: 9)],
+            now: activityNow
+        ),
+        2, "유예 넘긴 실행 1 + 일하는 세션 1"
+    )
+    runner.expectEqual(
+        mascotPose(MascotPoseContext(mood: .working, blinking: true, activity: .reviewing)), .reviewing,
+        "소품 그림에는 깜빡임을 섞지 않는다"
+    )
+    runner.expectEqual(
+        mascotPose(MascotPoseContext(mood: .awaitingApproval, activity: .reviewing)), .approval, "승인 대기가 소품보다 먼저"
+    )
+    let mascotFailedTodo = ConsoleTodo(kind: .failedRun, label: "실패 2건", detail: "재시도 가능", targets: [
+        ConsoleTodoTarget(label: "CODE_REVIEWER 재시도", agentType: "CODE_REVIEWER", runId: 41, retryable: true),
+        ConsoleTodoTarget(label: "OLD 재시도", agentType: "OLD", runId: 42, retryable: false),
+    ])
+    let mascotPrTodo = ConsoleTodo(kind: .prReview, label: "PR 리뷰 회수 1건", detail: "오늘", targets: [
+        ConsoleTodoTarget(label: "PR #847", pullNumber: 847, url: "https://github.com/x/y/pull/847"),
+    ])
+    let mascotApprovalTodo = ConsoleTodo(kind: .approval, label: "승인 1건", detail: "19:04 만료")
+    let mascotTodoRowsResult = mascotTodoRows(
+        todos: [mascotApprovalTodo, mascotFailedTodo, mascotPrTodo], approvals: [mascotTestApproval], agents: [reviewAgent],
+        retryingRunIds: [], now: activityNow
+    )
+    runner.expectEqual(
+        mascotTodoRowsResult.map(\.kind), [.approval, .failedRun, .failedRun, .prReview],
+        "승인은 열린 카드에서 한 번만, 실패·PR 은 대상마다"
+    )
+    runner.expectEqual(mascotTodoRowsResult[1].title, "CODE_REVIEWER", "실패 줄 제목은 직원 표시명")
+    runner.expectEqual(mascotTodoRowsResult[1].action, .retry(runId: 41), "재시도 가능한 실패는 재시도")
+    runner.expectEqual(mascotTodoRowsResult[2].action, .openDashboard, "재시도 불가 실패는 대시보드로")
+    runner.expectEqual(mascotTodoRowsResult[3].action, .openURL("https://github.com/x/y/pull/847"), "PR 은 링크로")
+    let mascotBusyRows = mascotTodoRows(
+        todos: [mascotFailedTodo], approvals: [], agents: [], retryingRunIds: [41], now: activityNow
+    )
+    runner.expect(mascotBusyRows[0].busy, "재시도 접수된 실행은 잠근다")
+    runner.expectEqual(mascotRelativeTime(activityNow.addingTimeInterval(-30), now: activityNow), "방금", "1분 안은 방금")
+    runner.expectEqual(mascotRelativeTime(activityNow.addingTimeInterval(-7200), now: activityNow), "2시간 전", "시간 단위")
+
+    runner.suite("Mascot reply split")
+    let signed = mascotSplitReply("지연 없습니다.\n\n_이대리 (진행 현황 조회) · 실행 #9086_\n")
+    runner.expectEqual(signed.body, "지연 없습니다.", "서명 앞까지가 본문")
+    runner.expectEqual(signed.signature, "이대리 (진행 현황 조회) · 실행 #9086", "밑줄을 벗긴 서명")
+    let plain = mascotSplitReply("그냥 답\n둘째 줄")
+    runner.expectEqual(plain.body, "그냥 답\n둘째 줄", "서명이 없으면 그대로")
+    runner.expect(plain.signature == nil, "서명이 없으면 nil")
+    runner.expect(mascotSplitReply("_강조_로 시작하는 답").signature == nil, "한 줄 안의 강조는 서명이 아니다")
+    let italicEnd = mascotSplitReply("본문입니다.\n_주의 사항_")
+    runner.expectEqual(italicEnd.body, "본문입니다.\n_주의 사항_", "서명 형식이 아닌 기울임 문단은 본문에 남긴다")
+    runner.expect(italicEnd.signature == nil, "기울임 문단은 서명이 아니다")
+    runner.expectEqual(mascotSplitReply("_한 줄짜리 답_").body, "_한 줄짜리 답_", "한 줄 기울임 답의 본문이 비지 않는다")
+    let chained = mascotSplitReply("첫 답\n\n---\n\n둘째 답\n\n_이대리 연속 처리 — PM → 코드 리뷰 · 실행 #12, #13_")
+    runner.expectEqual(chained.signature, "이대리 연속 처리 — PM → 코드 리뷰 · 실행 #12, #13", "연속 처리 서명도 뗀다")
+    runner.expectEqual(chained.body, "첫 답\n\n---\n\n둘째 답", "연속 처리 본문")
+    runner.expectEqual(mascotFidgetDelay(random: 0), 15, "몸짓 간격 하한")
+    runner.expectEqual(mascotFidgetDelay(random: 1), 35, "몸짓 간격 상한")
 
     runner.suite("Mascot chatter")
     let chatterNoon = mascotTestDate("2026-10-14T03:00:00.000Z")  // 수 12:00 KST
