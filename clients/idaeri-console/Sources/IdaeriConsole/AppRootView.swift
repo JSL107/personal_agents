@@ -56,13 +56,13 @@ struct AppRootView: View {
                     store: store,
                     status: status,
                     baseURLLabel: baseURLLabel,
-                    onSend: sendCommand
+                    onSend: { text, agentTypeHint in sendCommand(text: text, agentTypeHint: agentTypeHint) }
                 )
             case .office:
                 OfficeView(
                     store: store,
                     scene: officeScene,
-                    onSend: sendCommand,
+                    onSend: { text, agentTypeHint in sendCommand(text: text, agentTypeHint: agentTypeHint) },
                     onApprove: approve,
                     onRetryRun: retryRun,
                     onReject: reject,
@@ -77,7 +77,7 @@ struct AppRootView: View {
             guard let text = notification.userInfo?["text"] as? String else {
                 return
             }
-            sendCommand(text: text, agentTypeHint: nil)
+            sendCommand(text: text, agentTypeHint: nil, persona: "USAGI")
         }
         .onReceive(NotificationCenter.default.publisher(for: .idaeriMascotRetry)) { notification in
             guard let runId = notification.userInfo?["runId"] as? Int else {
@@ -122,7 +122,7 @@ struct AppRootView: View {
     // MARK: - 리모컨 write
 
     /// 지시 전송 — 낙관적 pending 후 POST, 실패 시 롤백 표시.
-    func sendCommand(text: String, agentTypeHint: String?) {
+    func sendCommand(text: String, agentTypeHint: String?, persona: String? = nil) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             return
@@ -133,7 +133,8 @@ struct AppRootView: View {
                 try await client.postCommand(
                     text: trimmed,
                     agentTypeHint: agentTypeHint,
-                    commandId: id.uuidString
+                    commandId: id.uuidString,
+                    persona: persona
                 )
             } catch {
                 await MainActor.run { store.markCommandFailed(id: id) }
