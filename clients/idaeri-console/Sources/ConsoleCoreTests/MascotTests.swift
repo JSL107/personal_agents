@@ -183,6 +183,13 @@ func runMascotTests(_ runner: TestRunner) {
     runner.expectEqual(plain.body, "그냥 답\n둘째 줄", "서명이 없으면 그대로")
     runner.expect(plain.signature == nil, "서명이 없으면 nil")
     runner.expect(mascotSplitReply("_강조_로 시작하는 답").signature == nil, "한 줄 안의 강조는 서명이 아니다")
+    let italicEnd = mascotSplitReply("본문입니다.\n_주의 사항_")
+    runner.expectEqual(italicEnd.body, "본문입니다.\n_주의 사항_", "서명 형식이 아닌 기울임 문단은 본문에 남긴다")
+    runner.expect(italicEnd.signature == nil, "기울임 문단은 서명이 아니다")
+    runner.expectEqual(mascotSplitReply("_한 줄짜리 답_").body, "_한 줄짜리 답_", "한 줄 기울임 답의 본문이 비지 않는다")
+    let chained = mascotSplitReply("첫 답\n\n---\n\n둘째 답\n\n_이대리 연속 처리 — PM → 코드 리뷰 · 실행 #12, #13_")
+    runner.expectEqual(chained.signature, "이대리 연속 처리 — PM → 코드 리뷰 · 실행 #12, #13", "연속 처리 서명도 뗀다")
+    runner.expectEqual(chained.body, "첫 답\n\n---\n\n둘째 답", "연속 처리 본문")
     runner.expectEqual(mascotFidgetDelay(random: 0), 15, "몸짓 간격 하한")
     runner.expectEqual(mascotFidgetDelay(random: 1), 35, "몸짓 간격 상한")
 

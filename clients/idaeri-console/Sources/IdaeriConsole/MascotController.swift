@@ -238,6 +238,11 @@ import SwiftUI
     }
 
     func openCommandInput() {
+        // 할 일 목록은 생각 중·답장보다 먼저 그려진다. 열린 채 지시를 보내면 진행 표시와 답이 목록에
+        // 가려지므로, 지시 입력을 여는 순간 목록을 닫는다.
+        if statusOpen {
+            closeStatus()
+        }
         commandPrompt = mascotSay(mascotQuip(.commandPrompt, random: .random(in: 0..<1)))
         play(.hop)
         commandInputOpen = true
@@ -462,6 +467,11 @@ import SwiftUI
             return
         }
         endThinking()
+        // 답이 왔는데 할 일 목록이 열려 있으면 답이 가려진다 — 답을 먼저 보인다.
+        if statusOpen {
+            statusOpen = false
+            statusTimer?.invalidate()
+        }
         let parts = mascotSplitReply(reply)
         replyBubble = .reply(
             sound: mascotQuip(.reply, random: .random(in: 0..<1)).sound,
@@ -484,6 +494,8 @@ import SwiftUI
             || submittedApprovalId != nil
             || store.approvals.contains { !dismissedApprovalIds.contains($0.id) }
             || replyBubble != nil
+            || thinking
+            || statusOpen
     }
 
     private func refreshBubble() {

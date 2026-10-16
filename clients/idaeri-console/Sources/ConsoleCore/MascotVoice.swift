@@ -90,15 +90,20 @@ public func mascotChatterDue(
 
 /// 답장을 본문과 서명으로 나눈다.
 ///
-/// 이대리 답의 마지막 줄은 `_이대리 (진행 현황 조회) · 실행 #9086_` 같은 서명이다. 본문과 같은
-/// 크기로 섞어 두면 어디까지가 답인지 흐려지므로, 밑줄로 감싼 마지막 줄은 떼어 작게 보인다.
+/// 이대리 답의 마지막 줄은 `_이대리 (진행 현황 조회) · 실행 #9086_` 또는 연속 처리일 때
+/// `_이대리 연속 처리 — A → B · 실행 #1, #2_` 서명이다(백엔드 `dispatch-reply.util.ts`). 본문과 같은
+/// 크기로 섞어 두면 어디까지가 답인지 흐려지므로 떼어 작게 보인다.
+///
+/// **이 두 형식만 서명으로 본다.** 대화 응답·추가 입력 요청처럼 서명 없는 답도 오는데, 그 답이 기울임
+/// 문단(`_주의 사항_`)으로 끝날 때 양 끝 밑줄만 보고 떼면 본문 마지막 문단이 작게 분리되거나, 한 줄짜리
+/// 답은 본문이 통째로 비어 버린다.
 public func mascotSplitReply(_ text: String) -> (body: String, signature: String?) {
     var lines = text.components(separatedBy: "\n")
     while let last = lines.last, last.trimmingCharacters(in: .whitespaces).isEmpty {
         lines.removeLast()
     }
     guard let last = lines.last?.trimmingCharacters(in: .whitespaces),
-          last.count > 2, last.hasPrefix("_"), last.hasSuffix("_")
+          last.range(of: #"^_이대리 .+ · 실행 #\d+(, #\d+)*_$"#, options: .regularExpression) != nil
     else {
         return (lines.joined(separator: "\n"), nil)
     }

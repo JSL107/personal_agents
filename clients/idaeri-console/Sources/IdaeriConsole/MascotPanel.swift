@@ -34,6 +34,9 @@ final class MascotPanel: NSPanel {
         // 이름을 붙이는 것만으로는 저장된 위치를 읽어 오지 않는다. 끌어 놓은 자리를 재실행 뒤에도
         // 지키려면 명시적으로 읽는다. 저장값이 없으면 false 이고 위의 기본 위치가 그대로 남는다.
         setFrameUsingName("IdaeriMascotPanel")
+        // 이름으로 복원하면 저장된 **크기**까지 돌아온다. 예전 버전(340×300)에서 저장한 사용자는 높이가
+        // 줄어 화면(440)의 위쪽 — 긴 답장·할 일 목록 — 이 잘린다. 위치(아래 왼쪽 원점)만 살리고 크기는 지금 값으로.
+        setFrame(NSRect(origin: frame.origin, size: Self.size), display: false)
         keepOnScreen()
         // 모니터를 빼면 그 화면에 있던 패널은 갈 곳을 잃는다. 테두리 없는 창은 시스템이 화면 안으로
         // 당겨 주지 않으므로 화면 구성이 바뀔 때마다 다시 확인한다.
