@@ -23,7 +23,7 @@ const setup = () => {
     add: jest.fn().mockResolvedValue({ waitUntilFinished }),
   };
   const configService = {
-    get: jest.fn((key: string) =>
+    get: jest.fn((key: string): string | undefined =>
       key === 'ART_JOB_FEED_TARGET' ? 'C_ART' : undefined,
     ),
   };
@@ -59,6 +59,7 @@ const setup = () => {
     queue,
     waitUntilFinished,
     agentRunService,
+    configService,
   };
 };
 
@@ -166,6 +167,32 @@ describe('ArtJobFeedDispatcher', () => {
     keywords.load.mockRejectedValue(new Error('db down'));
     const outcome = await dispatcher.dispatch(input('[원화] 관련 공고 찾아줘'));
     expect(outcome.formattedText).toBe('새 공고 1건을 채널에 올렸어요.');
+  });
+
+  it('공고를 빼는 방법을 물으면 「관심 없음」 버튼을 안내하고 쓰지 않는다', async () => {
+    const { dispatcher, input, keywords, configService, agentRunService } =
+      setup();
+    configService.get.mockImplementation((key: string) =>
+      key === 'ART_JOB_FEED_TARGET'
+        ? 'C_ART'
+        : key === 'ART_JOB_FEED_MENTION_USER_ID'
+          ? 'U_ART'
+          : undefined,
+    );
+    const outcome = await dispatcher.dispatch(
+      input('이거 필요 없는 건 어떻게 빼?'),
+    );
+    expect(outcome.formattedText).toContain('「관심 없음」');
+    expect(keywords.remove).not.toHaveBeenCalled();
+    expect(agentRunService.execute).not.toHaveBeenCalled();
+  });
+
+  it('버튼이 달리지 않는 설정이면 「관심 없음」을 안내하지 않는다', async () => {
+    const { dispatcher, input } = setup();
+    const outcome = await dispatcher.dispatch(
+      input('이거 필요 없는 건 어떻게 빼?'),
+    );
+    expect(outcome.formattedText).not.toContain('관심 없음');
   });
 
   it('목록 조회 문장은 가져오기를 돌리지 않는다', async () => {

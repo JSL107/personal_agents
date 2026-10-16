@@ -126,6 +126,24 @@ describe('parseArtJobFeedCommand', () => {
     expect(parseArtJobFeedCommand(text as string)).toEqual(expected);
   });
 
+  // 2026-10-15 eval h-thread-art-digest-1014 — 「어떻게」가 키워드로 뽑혀 제거 목록을 되물었다.
+  it.each([
+    '이거 필요 없는 건 어떻게 빼?',
+    '공고중에서 필요하지 않은 공고를 제외하는 방법 알려줘.',
+    '공고 가져오는 방법 알려줘',
+    '화풍 키워드는 어떡해 추가해?',
+  ])('방법을 묻는 「%s」는 명령으로 읽지 않는다', (text) => {
+    expect(parseArtJobFeedCommand(text)).toEqual({ kind: 'UNKNOWN' });
+  });
+
+  it('목록 되묻기 뒤의 방법 질문은 목록 답으로 합치지 않는다', () => {
+    const prior = parseArtJobFeedCommand('3D 키워드 추가해줘');
+    const text = '제외하는 방법 알려줘';
+    expect(
+      mergeArtJobFeedCommands(prior, parseArtJobFeedCommand(text), text),
+    ).toEqual({ kind: 'UNKNOWN' });
+  });
+
   it('비정상 키워드를 버린다', () => {
     expect(
       parseArtJobFeedCommand(
