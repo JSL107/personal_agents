@@ -285,6 +285,33 @@ describe('ArtJobFeedCronConsumer', () => {
     expect(repository.markNotified).toHaveBeenCalledTimes(3);
   });
 
+  it('공고가 계속 나와도 상한(10쪽)에서 멈춘다', async () => {
+    const { consumer, source } = makeConsumer({
+      pages: Array.from({ length: 12 }, (_, index) => ({
+        received: 1,
+        listings: [CHARACTER(String(1000 - index))],
+      })),
+    });
+
+    await consumer.process(JOB as never);
+
+    expect(source.fetchLatest).toHaveBeenCalledTimes(10);
+  });
+
+  it('뒤쪽 페이지가 행은 있는데 파싱 0이면 목록 끝으로 보지 않고 실패한다', async () => {
+    const { consumer, slackNotifier } = makeConsumer({
+      pages: [
+        { received: 1, listings: [CHARACTER('2')] },
+        { received: 40, listings: [] },
+      ],
+    });
+
+    await expect(consumer.process(JOB as never)).rejects.toThrow(
+      '2쪽 40행을 받았지만 파싱 0건',
+    );
+    expect(slackNotifier.postMessage).not.toHaveBeenCalled();
+  });
+
   it('이미 본 공고만 되풀이하는 쪽에서 멈춘다', async () => {
     const repeated = { received: 1, listings: [CHARACTER('1')] };
     const { consumer, source } = makeConsumer({

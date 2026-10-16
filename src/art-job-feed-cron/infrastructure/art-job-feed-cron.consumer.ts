@@ -268,6 +268,13 @@ export class ArtJobFeedCronConsumer extends ObservedWorkerHost {
     for (let page = 1; page <= MAX_LIST_PAGES_PER_RUN; page += 1) {
       const result = await this.source.fetchLatest(page);
       received += result.received;
+      // 행은 받았는데 파싱이 0 이면 그 쪽의 마크업이 바뀐 것이다. 목록 끝으로 오인해 멈추면 앞 쪽에서 모은
+      // 공고 때문에 전체 파싱 0 경보도 울리지 않아 뒤쪽 공고를 조용히 놓친다(#855 리뷰).
+      if (result.received > 0 && result.listings.length === 0) {
+        throw new Error(
+          `게임잡 목록 ${page}쪽 ${result.received}행을 받았지만 파싱 0건 — 마크업 변경 의심`,
+        );
+      }
       let added = 0;
       for (const listing of result.listings) {
         if (!bySourceId.has(listing.sourceId)) {
