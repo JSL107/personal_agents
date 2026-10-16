@@ -131,6 +131,7 @@ export const analyzeSajuDay = (
 const yinYangOf = ({ isYang }: StemInfo): string => (isYang ? '양' : '음');
 
 // 프롬프트에 그대로 싣는 사실 목록. 모델이 다시 계산하지 않게 "확정값" 으로 준다.
+// 십성·충합 용어는 싣지 않고 뜻풀이만 싣는다 — 모델이 본 용어는 본문으로 새어 나온다.
 export const formatSajuFacts = (analysis: SajuDayAnalysis): string[] => {
   const { dayMaster, elementCounts, todayStem, todayBranch } = analysis;
   const distribution = ELEMENTS.map(
@@ -145,8 +146,8 @@ export const formatSajuFacts = (analysis: SajuDayAnalysis): string[] => {
   const facts = [
     `- 타고난 중심 기운(일간): ${dayMaster.element}(${yinYangOf(dayMaster)})`,
     `- 타고난 오행 분포: ${distribution} — 가장 많은 기운: ${abundant.join('·')}${missing.length > 0 ? `, 없는 기운: ${missing.join('·')}` : ''}`,
-    `- 오늘 천간의 기운: ${todayStem.element}(${yinYangOf(todayStem)}) → 받는 사람에게 ${TEN_GOD_MEANINGS[todayStem.tenGod]} [${todayStem.tenGod}]`,
-    `- 오늘 지지의 기운: ${todayBranch.element}(${yinYangOf(todayBranch)}) → 받는 사람에게 ${TEN_GOD_MEANINGS[todayBranch.tenGod]} [${todayBranch.tenGod}]`,
+    `- 오늘 천간의 기운: ${todayStem.element}(${yinYangOf(todayStem)}) → 받는 사람에게 ${TEN_GOD_MEANINGS[todayStem.tenGod]}`,
+    `- 오늘 지지의 기운: ${todayBranch.element}(${yinYangOf(todayBranch)}) → 받는 사람에게 ${TEN_GOD_MEANINGS[todayBranch.tenGod]}`,
   ];
   for (const element of new Set([todayStem.element, todayBranch.element])) {
     if (elementCounts[element] === 0) {
@@ -161,7 +162,7 @@ export const formatSajuFacts = (analysis: SajuDayAnalysis): string[] => {
   }
   for (const relation of analysis.branchRelations) {
     facts.push(
-      `- 오늘 지지와 타고난 ${relation.natalLabel} 지지(${EARTHLY_BRANCHES_HANGUL[EARTHLY_BRANCHES.indexOf(relation.natalBranch)]}): ${BRANCH_RELATION_MEANINGS[relation.kind]} [${relation.kind}]`,
+      `- 오늘 지지와 타고난 ${relation.natalLabel} 지지(${EARTHLY_BRANCHES_HANGUL[EARTHLY_BRANCHES.indexOf(relation.natalBranch)]}): ${BRANCH_RELATION_MEANINGS[relation.kind]}`,
     );
   }
   return facts;

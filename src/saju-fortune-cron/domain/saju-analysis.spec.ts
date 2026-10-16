@@ -111,6 +111,21 @@ describe('formatSajuFacts', () => {
     expect(facts.join('\n')).not.toMatch(/[\u4E00-\u9FFF]/);
   });
 
+  it('충·합이 있으면 어느 기둥의 어떤 지지와인지 한글 뜻풀이로 적고, 용어는 싣지 않는다', () => {
+    const clash = formatSajuFacts(analyzeSajuDay(SAMPLE_EARTH, '癸亥'));
+    expect(clash).toContain(
+      '- 오늘 지지와 타고난 시주 지지(사): 부딪힘 — 변화, 이동, 마음이 흔들림',
+    );
+    const harmony = formatSajuFacts(analyzeSajuDay(SAMPLE_EARTH, '甲子'));
+    expect(harmony).toContain(
+      '- 오늘 지지와 타고난 월주 지지(축): 맞물림 — 끌림, 협력, 묶임',
+    );
+    const allFacts = [...clash, ...harmony].join('\n');
+    expect(allFacts).not.toMatch(
+      /편재|정재|식신|상관|정관|편관|비견|겁재|정인|편인|충|합/,
+    );
+  });
+
   it('가장 많은 기운이 오늘 또 들어오면 조절할 날이라고 적는다', () => {
     const facts = formatSajuFacts(analyzeSajuDay(SAMPLE_EARTH, '戊辰'));
     expect(facts).toContainEqual(
