@@ -31,24 +31,24 @@ public func mascotActivityPose(_ department: Department) -> MascotPose {
     }
 }
 
-/// 지금 보일 작업 그림. 가장 최근에 시작한 이대리 실행의 부서를 따르고, 이대리 실행이 없고
-/// 내 Claude Code·Codex 세션만 돌고 있으면 노트북 타이핑. 아무것도 없으면 nil.
-public func mascotActivity(
-    runs: [ConsoleRun], agents: [ConsoleAgent], sessions: [ConsoleSession], now: Date
-) -> MascotPose? {
+/// 지금 보일 작업 그림. 가장 최근에 시작한 이대리 실행의 부서를 따른다. 없으면 nil.
+///
+/// 내 Claude Code·Codex 세션은 보지 않는다 — 우사기는 이대리를 다루는 창구라, 이대리 바깥의 일까지
+/// 알려 주면 이대리가 일하는지 헷갈린다.
+public func mascotActivity(runs: [ConsoleRun], agents: [ConsoleAgent], now: Date) -> MascotPose? {
     let latest = mascotVisibleRuns(runs, now: now).max { left, right in
         (officeParseIsoDate(left.startedAt) ?? .distantPast) < (officeParseIsoDate(right.startedAt) ?? .distantPast)
     }
-    if let latest {
-        let department = agents.first(where: { $0.agentType == latest.agentType })?.department
-        return mascotActivityPose(departmentFromRaw(department))
+    guard let latest else {
+        return nil
     }
-    return sessions.contains(where: \.isActive) ? .typing : nil
+    let department = agents.first(where: { $0.agentType == latest.agentType })?.department
+    return mascotActivityPose(departmentFromRaw(department))
 }
 
-/// 머리 위 배지 숫자 — 돌고 있는 이대리 실행 + 일하고 있는 내 세션.
-public func mascotBusyCount(runs: [ConsoleRun], sessions: [ConsoleSession], now: Date) -> Int {
-    mascotVisibleRuns(runs, now: now).count + sessions.filter(\.isActive).count
+/// 머리 위 배지 숫자 — 돌고 있는 이대리 실행만 센다(내 세션은 세지 않는다 — `mascotActivity` 와 같은 이유).
+public func mascotBusyCount(runs: [ConsoleRun], now: Date) -> Int {
+    mascotVisibleRuns(runs, now: now).count
 }
 
 /// `방금`·`N분 전`·`N시간 전`·`N일 전`.

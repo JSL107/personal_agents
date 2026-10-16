@@ -52,7 +52,7 @@ func mascotFramesPerSecond(_ pose: MascotPose) -> Double {
     case .happy:
         // 춤 4장 — 초당 6장이면 한 바퀴 0.67초, 2초 동안 세 바퀴.
         return 6
-    case .working, .dangle, .planning, .reviewing, .evaluating, .counting, .writing, .fixing, .typing:
+    case .working, .dangle, .planning, .reviewing, .evaluating, .counting, .writing, .fixing:
         return 6
     case .thinking, .reading, .hover:
         return 4

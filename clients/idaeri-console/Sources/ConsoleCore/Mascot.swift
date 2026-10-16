@@ -52,15 +52,13 @@ public enum MascotPose: String, CaseIterable, Sendable {
     case counting
     case writing
     case fixing
-    /// 이대리 실행 없이 내 Claude Code·Codex 세션만 돌 때(노트북 타이핑).
-    case typing
 
     /// 이 그림이 없을 때 대신 쓸 그림. 새 포즈는 그림이 생기기 전까지 기존 다섯 장으로 버틴다.
     public var fallback: MascotPose? {
         switch self {
         case .idle:
             return nil
-        case .thinking, .planning, .reviewing, .evaluating, .counting, .writing, .fixing, .typing:
+        case .thinking, .planning, .reviewing, .evaluating, .counting, .writing, .fixing:
             return .working
         case .blink, .working, .approval, .failed, .reading, .happy, .dangle, .hover, .poke:
             return .idle

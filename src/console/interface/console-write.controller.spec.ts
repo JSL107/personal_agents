@@ -1,8 +1,10 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { validate } from 'class-validator';
 
 import { SessionInjectService } from '../../local-sessions/application/session-inject.service';
 import { ConsoleWriteService } from '../application/console-write.service';
 import { ConsoleWriteController } from './console-write.controller';
+import { ConsoleCommandDto } from './dto/console-command.dto';
 
 function makeController() {
   const service = {
@@ -20,6 +22,30 @@ function makeController() {
 }
 
 describe('ConsoleWriteController', () => {
+  it('persona를 service로 전달한다', () => {
+    const { controller, service } = makeController();
+    controller.sendCommand({ text: '안녕', persona: 'USAGI' });
+    expect(service.sendCommand).toHaveBeenCalledWith(
+      expect.objectContaining({ persona: 'USAGI' }),
+    );
+  });
+
+  it('persona는 USAGI만 허용한다', async () => {
+    const valid = Object.assign(new ConsoleCommandDto(), {
+      text: '안녕',
+      persona: 'USAGI',
+    });
+    const invalid = Object.assign(new ConsoleCommandDto(), {
+      text: '안녕',
+      persona: 'X',
+    });
+    expect(await validate(valid)).toHaveLength(0);
+    expect(await validate(invalid)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ property: 'persona' }),
+      ]),
+    );
+  });
   it('command 는 service.sendCommand 위임 후 accepted 반환', () => {
     const { controller, service } = makeController();
     const result = controller.sendCommand({

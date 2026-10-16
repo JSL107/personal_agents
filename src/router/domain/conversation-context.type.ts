@@ -11,3 +11,5 @@ export interface ConversationContext {
   // 직전 turn 의 worker AgentRun id. worker 가 이전 결과를 이어받을 때 참조.
   priorAgentRunId?: number;
 }
+
+export type ReplyPersona = 'USAGI';

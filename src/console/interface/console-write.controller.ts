@@ -38,6 +38,7 @@ export class ConsoleWriteController {
       text: dto.text,
       agentTypeHint: dto.agentTypeHint as AgentType | undefined,
       commandId: dto.commandId,
+      ...(dto.persona ? { persona: dto.persona } : {}),
     });
     return { accepted: true };
   }
