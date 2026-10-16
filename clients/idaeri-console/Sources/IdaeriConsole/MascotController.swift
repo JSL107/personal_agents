@@ -11,6 +11,25 @@ import SwiftUI
     @Published private(set) var blinking = false
     @Published private(set) var bubble: MascotBubble?
     @Published private(set) var commandInputOpen = false
+    /// 보낸 지시의 답을 기다리는 중. 화면은 작업 자세·통통 튀기·점 세 개로 "돌고 있다" 를 보인다.
+    @Published private(set) var thinking = false
+    /// 한 번 재생하는 몸짓 그림(`happy`·`poke`). 짧게 켜졌다 꺼진다.
+    @Published private(set) var flourish: MascotPose?
+    /// 지금 하는 일의 소품 그림. 없으면 nil.
+    @Published private(set) var activity: MascotPose?
+    /// 머리 위 배지 숫자 — 돌고 있는 이대리 실행 + 일하는 내 세션.
+    @Published private(set) var busyCount = 0
+    /// 클릭으로 연 진행 목록. 다시 누르거나 [닫기], 45초 뒤 닫힌다.
+    private var statusOpen = false
+    private var statusTimer: Timer?
+    private var flourishTimer: Timer?
+    private var thinkingSince: Date?
+    private var thinkingDoneSince: Date?
+    /// "생각 중" 말풍선 문구. 보낼 때 한 번 고른다.
+    private var thinkingLine = ""
+    private var fidgetTimer: Timer?
+    /// 기다리는 동안만 5초마다 다시 본다 — 답 없이 끝나는 유예(20초)·상한(15분)은 시간이 지나야 판정된다.
+    private var thinkingTimer: Timer?
     /// 화면이 한 번 재생할 몸짓. `id` 가 바뀔 때마다 재생한다(같은 몸짓을 연달아 줄 수 있게).
     @Published private(set) var motion = MascotMotion(kind: .hop, id: 0)
     /// 지시 입력창의 안내 문구. 열 때마다 한 번 고른다.
@@ -30,6 +49,31 @@ import SwiftUI
             if value != nil {
                 lastSpokeAt = Date()
             }
+        }
+    }
+
+    /// 그림 자세. 지시를 기다리는 동안은 쉬는 중이어도 작업 자세로 보인다(승인·실패가 우선).
+    var displayMood: MascotMood {
+        thinking && mood == .idle ? .working : mood
+    }
+
+    /// 답장 말풍선이 열려 있는가 — 열려 있는 동안 쪽지를 읽는 그림을 쓴다.
+    var isReading: Bool {
+        if case .reply = bubble {
+            return true
+        }
+        return false
+    }
+
+    /// 기쁨 춤을 보이는 시간. 4장 반복 춤이라 1.2초면 한 바퀴도 못 돌고 끝나 눈에 안 띈다 — 두 바퀴 남짓.
+    private let mascotHappySeconds: TimeInterval = 2
+
+    /// 한 번 몸짓 그림을 잠깐 띄운다.
+    func flourish(_ pose: MascotPose, seconds: TimeInterval) {
+        flourish = pose
+        flourishTimer?.invalidate()
+        flourishTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.flourish = nil }
         }
     }
 
@@ -102,21 +146,82 @@ import SwiftUI
             Task { @MainActor [weak self] in self?.refresh() }
         }
         scheduleBlink()
+        scheduleFidget()
     }
 
-    /// 캐릭터를 한 번 눌렀을 때. 브리핑이 있으면 브리핑을, 없으면 소리만 낸다.
+    /// 평소 몸짓. 가만히 눈만 깜빡이면 멈춘 그림처럼 보여, 15~35초마다 한 번 무언가 한다.
+    /// 말풍선이 떠 있거나 승인·실패 자세일 때는 쉰다 — 읽는 중에 움직이면 방해가 된다.
+    private func scheduleFidget() {
+        fidgetTimer?.invalidate()
+        fidgetTimer = Timer.scheduledTimer(
+            withTimeInterval: mascotFidgetDelay(random: .random(in: 0..<1)), repeats: false
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if self.bubble == nil, self.mood == .idle || self.mood == .working {
+                    let kinds: [MascotMotion.Kind] = self.mood == .working
+                        ? [.hop, .sway] : [.lookAround, .hop, .sway, .lookAround]
+                    self.play(kinds.randomElement() ?? .sway)
+                }
+                self.scheduleFidget()
+            }
+        }
+    }
+
+    /// 캐릭터를 한 번 눌렀을 때 — 진행 목록을 펴고 접는다.
     func poke() {
         play(.squish)
-        guard store.briefing != nil else {
-            showTransient(.reaction(mascotSay(mascotQuip(.poke, random: .random(in: 0..<1)))), duration: 4)
-            return
+        flourish(.poke, seconds: 0.8)
+        statusOpen ? closeStatus() : openStatus()
+    }
+
+    func openStatus() {
+        statusOpen = true
+        statusTimer?.invalidate()
+        statusTimer = Timer.scheduledTimer(withTimeInterval: 45, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.closeStatus() }
         }
-        showBriefingNow()
+        refreshBubble()
+    }
+
+    /// 할 일 줄의 버튼. 재시도는 대시보드 [재시도]와 같은 `AppRootView.retryRun` 경로를 탄다.
+    func perform(_ action: MascotTodoRow.Action) {
+        switch action {
+        case .openDashboard:
+            showDashboard()
+        case let .retry(runId):
+            NotificationCenter.default.post(name: .idaeriMascotRetry, object: nil, userInfo: ["runId": runId])
+        case let .openURL(raw):
+            if let url = URL(string: raw) {
+                NSWorkspace.shared.open(url)
+            }
+        }
+    }
+
+    func closeStatus() {
+        statusOpen = false
+        statusTimer?.invalidate()
+        refreshBubble()
     }
 
     func showBriefingNow() {
         guard let briefing = store.briefing else { return }
         showTransient(.briefing(voicedBriefingLines(briefing)), duration: 20)
+    }
+
+    /// 진행 목록 머리 — 브리핑(할 일 한 줄 + 연속 기록). 같은 내용엔 같은 소리.
+    private func statusHeader() -> [String] {
+        guard let briefing = store.briefing else {
+            return []
+        }
+        var lines = mascotBriefingLines(briefing: briefing)
+        if !lines.isEmpty {
+            let key = lines[0]
+            lines[0] = briefing.todos.isEmpty
+                ? mascotSay(mascotQuip(.briefingClear, random: steadyRandom(key)))
+                : mascotSay(mascotQuip(.briefingTodo, random: steadyRandom(key)), key)
+        }
+        return lines
     }
 
     /// 브리핑 첫 줄(할 일)에 우사기 소리를 입힌다. 연속 기록 줄은 그대로 둔다.
@@ -133,6 +238,11 @@ import SwiftUI
     }
 
     func openCommandInput() {
+        // 할 일 목록은 생각 중·답장보다 먼저 그려진다. 열린 채 지시를 보내면 진행 표시와 답이 목록에
+        // 가려지므로, 지시 입력을 여는 순간 목록을 닫는다.
+        if statusOpen {
+            closeStatus()
+        }
         commandPrompt = mascotSay(mascotQuip(.commandPrompt, random: .random(in: 0..<1)))
         play(.hop)
         commandInputOpen = true
@@ -148,6 +258,14 @@ import SwiftUI
         }
         lastMascotCommand = (trimmed, Date())
         mascotCommandId = nil
+        thinking = true
+        thinkingSince = Date()
+        thinkingDoneSince = nil
+        thinkingLine = mascotSay(mascotQuip(.thinking, random: .random(in: 0..<1)))
+        thinkingTimer?.invalidate()
+        thinkingTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.queueRefresh() }
+        }
         replyBubble = nil
         replyTimer?.invalidate()
         failedNoticeCommandId = nil
@@ -242,6 +360,14 @@ import SwiftUI
            !store.approvals.contains(where: { $0.id == submittedApprovalId }) || store.approvalNotice != nil {
             self.submittedApprovalId = nil
         }
+        let nextActivity = mascotActivity(runs: store.runs, agents: store.agents, sessions: store.sessions, now: now)
+        if activity != nextActivity {
+            activity = nextActivity
+        }
+        let nextBusy = mascotBusyCount(runs: store.runs, sessions: store.sessions, now: now)
+        if busyCount != nextBusy {
+            busyCount = nextBusy
+        }
         scheduleGraceRecheck(now: now)
         refreshCommandResult()
         maybeShowBriefing(now: now)
@@ -284,6 +410,7 @@ import SwiftUI
     /// 게다가 `.done` 기록은 5초 정리 루프가 지운다. 그래서 답장은 이벤트로 받는다(`receive`).
     private func refreshCommandResult() {
         bindMascotCommandId()
+        refreshThinking()
         guard let mascotCommandId,
               let command = store.pendingCommands.first(where: { $0.id == mascotCommandId }),
               command.phase == .failed
@@ -297,6 +424,40 @@ import SwiftUI
         }
     }
 
+    /// "생각 중" 을 언제 내릴지. 답(`command.answered`)이 오면 `showReply` 가 내린다. 여기서는 답 없이
+    /// 끝나는 길을 막는다 — 실패, 실행이 끝났는데 답이 안 오는 경우(20초 유예), 너무 오래 걸리는 경우.
+    private func refreshThinking() {
+        guard thinking else {
+            return
+        }
+        let now = Date()
+        let command = mascotCommandId.flatMap { id in store.pendingCommands.first(where: { $0.id == id }) }
+        if command?.phase == .failed {
+            endThinking()
+            return
+        }
+        if command?.phase == .done || (mascotCommandId != nil && command == nil) {
+            let since = thinkingDoneSince ?? now
+            thinkingDoneSince = since
+            if now.timeIntervalSince(since) >= 20 {
+                endThinking()
+            }
+            return
+        }
+        if let thinkingSince, now.timeIntervalSince(thinkingSince) >= mascotThinkingTimeoutSeconds {
+            endThinking()
+            showTransient(.reaction(mascotSay(mascotQuip(.slow, random: 0))), duration: 12)
+        }
+    }
+
+    private func endThinking() {
+        thinkingTimer?.invalidate()
+        thinkingTimer = nil
+        thinking = false
+        thinkingSince = nil
+        thinkingDoneSince = nil
+    }
+
     /// 마스코트가 보낸 지시의 답장만 띄운다. 대화 기록이 아니라 지시 id 로 짝을 맞춰야 앞 지시의
     /// 늦은 답이 새 지시의 답으로 보이지 않는다.
     private func showReply(commandId: String, message: String) {
@@ -305,12 +466,24 @@ import SwiftUI
         guard let mascotCommandId, commandId == mascotCommandId.uuidString, !reply.isEmpty else {
             return
         }
-        replyBubble = .reply(mascotSay(mascotQuip(.reply, random: .random(in: 0..<1)), reply))
-        play(.hop)
-        replyTimer?.invalidate()
-        replyTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: false) { [weak self] _ in
-            Task { @MainActor [weak self] in self?.closeReply() }
+        endThinking()
+        // 답이 왔는데 할 일 목록이 열려 있으면 답이 가려진다 — 답을 먼저 보인다.
+        if statusOpen {
+            statusOpen = false
+            statusTimer?.invalidate()
         }
+        let parts = mascotSplitReply(reply)
+        replyBubble = .reply(
+            sound: mascotQuip(.reply, random: .random(in: 0..<1)).sound,
+            body: parts.body,
+            signature: parts.signature
+        )
+        // 깡충 한 번으로는 눈길이 닿기 전에 끝난다. 두 번 뛰고, 답장은 [닫기]를 누를 때까지 남긴다 —
+        // 30초 뒤 사라지면 자리를 비운 사이 온 답을 놓친다.
+        play(.hop)
+        flourish(.happy, seconds: mascotHappySeconds)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in self?.play(.hop) }
+        replyTimer?.invalidate()
     }
 
     /// 브리핑보다 우선하는 말풍선이 지금 떠야 하는가 — `refreshBubble` 의 우선순위와 같은 조건.
@@ -321,6 +494,8 @@ import SwiftUI
             || submittedApprovalId != nil
             || store.approvals.contains { !dismissedApprovalIds.contains($0.id) }
             || replyBubble != nil
+            || thinking
+            || statusOpen
     }
 
     private func refreshBubble() {
@@ -346,6 +521,19 @@ import SwiftUI
         }
         if commandInputOpen {
             setBubble(.commandInput)
+            return
+        }
+        // 사용자가 직접 연 목록이라 승인 말풍선보다 먼저 보인다. 승인 대기도 목록 맨 위에 있다.
+        if statusOpen {
+            setBubble(.status(
+                header: statusHeader(),
+                todos: mascotTodoRows(
+                    todos: store.briefing?.todos ?? [], approvals: store.approvals, agents: store.agents,
+                    retryingRunIds: store.retryingRunIds, now: Date()
+                ),
+                busyCount: busyCount,
+                notice: store.runRetryNotice
+            ))
             return
         }
         // 승인 통지를 보낸 뒤 스토어가 카드를 숨기기 전까지 같은 버튼을 다시 그리지 않는다.
@@ -379,6 +567,10 @@ import SwiftUI
             return
         }
         approvalShown = nil
+        if thinking, replyBubble == nil {
+            setBubble(.thinking(thinkingLine))
+            return
+        }
         setBubble(replyBubble ?? briefingBubble ?? reactionBubble)
     }
 
@@ -425,6 +617,7 @@ import SwiftUI
                 saveReactionLedger(now: now)
                 showTransient(.reaction(mascotSay(mascotQuip(.cheer, random: .random(in: 0..<1)))), duration: 8)
                 play(.hop)
+                flourish(.happy, seconds: mascotHappySeconds)
             }
         }
         queueRefresh()
@@ -492,7 +685,7 @@ import SwiftUI
                     self?.refreshBubble()
                 }
             }
-        case .notice, .commandInput, .approval, .reply:
+        case .notice, .commandInput, .status, .approval, .thinking, .reply:
             break
         }
         refreshBubble()
@@ -526,6 +719,10 @@ struct MascotMotion: Equatable {
         case shake
         /// 말랑 눌림 — 클릭.
         case squish
+        /// 좌우 둘러보기 — 평소 몸짓.
+        case lookAround
+        /// 몸 흔들기 — 평소 몸짓.
+        case sway
     }
 
     let kind: Kind
