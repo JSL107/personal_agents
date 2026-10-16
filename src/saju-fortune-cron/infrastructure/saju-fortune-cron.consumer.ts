@@ -30,6 +30,9 @@ const SENT_GUARD_TTL_SECONDS = 90_000;
 // 6줄 지시를 어긴 장문이 DM 을 덮지 않게 자른다.
 const MAXIMUM_FORTUNE_LENGTH = 1_200;
 const INCIDENT_KEY = cronIncidentKey('Saju Fortune Cron');
+const MAXIMUM_GENERATION_ATTEMPTS = 2;
+// CJK 통합 한자. 받는 사람이 읽지 못한 「己土는 오늘 癸水를…」 같은 응답을 거른다.
+const HANJA_PATTERN = /[\u4E00-\u9FFF]/;
 
 interface DeliverFortuneInput {
   recipient: SajuFortuneRecipient;
@@ -107,17 +110,11 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
       return;
     }
 
-    const completion = await this.modelRouter.route({
-      agentType: AgentType.PM,
-      request: {
-        prompt: buildSajuFortunePrompt({ recipient, todayKst, todayPillar }),
-      },
-      noContractPreamble: true,
+    const fortune = await this.generateFortune({
+      recipient,
+      todayKst,
+      todayPillar,
     });
-    const fortune = completion.text.trim().slice(0, MAXIMUM_FORTUNE_LENGTH);
-    if (fortune.length === 0) {
-      throw new Error('운세 응답이 비어 있음');
-    }
 
     // stalled 재처리로 같은 사람이 동시에 두 번 처리되면 뒤쪽은 여기서 막힌다.
     const firstRun = await this.cronIdempotency.acquireOnce(
@@ -138,6 +135,30 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
       throw error;
     }
     this.logger.log(`Saju Fortune 발송 완료 — ${recipient.slackUserId}`);
+  }
+
+  // 한자 금지는 프롬프트 지시라 코드가 다시 본다. 섞였으면 한 번 다시 만들고, 그래도 섞이면
+  // 경고만 남기고 그대로 보낸다 — 그날 운세가 아예 안 가는 것보다 한자 몇 자가 낫다.
+  private async generateFortune(input: DeliverFortuneInput): Promise<string> {
+    let fortune = '';
+    for (let attempt = 1; attempt <= MAXIMUM_GENERATION_ATTEMPTS; attempt++) {
+      const completion = await this.modelRouter.route({
+        agentType: AgentType.PM,
+        request: { prompt: buildSajuFortunePrompt(input) },
+        noContractPreamble: true,
+      });
+      fortune = completion.text.trim().slice(0, MAXIMUM_FORTUNE_LENGTH);
+      if (fortune.length === 0) {
+        throw new Error('운세 응답이 비어 있음');
+      }
+      if (!HANJA_PATTERN.test(fortune)) {
+        return fortune;
+      }
+    }
+    this.logger.warn(
+      `Saju Fortune 한자 섞인 응답 — ${MAXIMUM_GENERATION_ATTEMPTS}회 생성 후 그대로 발송 (${input.recipient.slackUserId})`,
+    );
+    return fortune;
   }
 
   // fire-and-forget — NotificationQueue 의 사건 단위 Slack DM. 수신자는 payload 가 아니라
