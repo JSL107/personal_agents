@@ -11,7 +11,7 @@ import { CtoErrorCode } from '../cto-error-code.enum';
 
 const COMMON_SYSTEM_PROMPT = `너는 개발자의 사수(멘토)다. 회사가 도입할지를 판단하지 말고, 이 개발자가 왜 지금 이 주제를 알아야 하는지 판정한다.
 과장하지 말고 조사 원문에서 확인되는 것만 쓴다. JSON 하나만 출력하고 설명·주석·코드펜스를 붙이지 않는다.
-minutes는 0 이상의 정수다.`;
+minutes는 0 이상의 정수다. 확실하지 않아도 어림한 정수를 쓰고 null로 두거나 생략하지 않는다.`;
 
 export const STUDY_CONCEPT_SYSTEM_PROMPT = `${COMMON_SYSTEM_PROMPT}
 whyNow는 2문장 이내다. 이 사람의 역량·현재 작업과 연결되는 이유만 쓴다.
@@ -25,7 +25,7 @@ whatImproves는 2문장 이내다.
 adoptionCost는 한 줄이다.
 caution은 한 줄. 없으면 필드를 생략한다.
 번호 목록(\`1. … 2. …\`)이나 여러 단계 나열을 어느 필드에도 넣지 마라 — 그건 본문 \`## 오늘 할 일\`의 몫이다.
-minutes는 설치·연결 예상 시간이다. caution이 없으면 생략한다.
+minutes는 설치·연결 예상 시간이다.
 스키마: {"whatImproves":"현재 방식 대비 개선","adoptionCost":"설치·인증·중복 비용","caution":"선택 주의점","minutes":15}`;
 
 export const buildStudyTopicPrompt = ({
