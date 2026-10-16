@@ -268,6 +268,54 @@ describe('ArtJobFeedCronConsumer', () => {
     expect(slackNotifier.postMessage).not.toHaveBeenCalled();
   });
 
+  // 2026-10-16: 앞 2쪽만 읽어 기능 개시 전 공고 67건이 한 번도 안 나갔다.
+  it('목록을 빈 쪽이 나올 때까지 끝까지 읽는다', async () => {
+    const { consumer, source, repository } = makeConsumer({
+      pages: [
+        { received: 1, listings: [CHARACTER('3')] },
+        { received: 1, listings: [CHARACTER('2')] },
+        { received: 1, listings: [CHARACTER('1')] },
+      ],
+    });
+
+    await consumer.process(JOB as never);
+
+    // 3쪽 + 빈 4쪽에서 멈춘다
+    expect(source.fetchLatest).toHaveBeenCalledTimes(4);
+    expect(repository.markNotified).toHaveBeenCalledTimes(3);
+  });
+
+  it('이미 본 공고만 되풀이하는 쪽에서 멈춘다', async () => {
+    const repeated = { received: 1, listings: [CHARACTER('1')] };
+    const { consumer, source } = makeConsumer({
+      pages: Array.from({ length: 10 }, () => repeated),
+    });
+
+    await consumer.process(JOB as never);
+
+    expect(source.fetchLatest).toHaveBeenCalledTimes(2);
+  });
+
+  it('상한은 최신 공고가 먼저 채우고 남는 자리에 밀린 공고가 들어간다', async () => {
+    const page = (from: number) => ({
+      received: 6,
+      listings: Array.from({ length: 6 }, (_, index) => {
+        return CHARACTER(String(from - index));
+      }),
+    });
+    const { consumer, repository } = makeConsumer({
+      pages: [page(100), page(94)],
+    });
+
+    await consumer.process(JOB as never);
+
+    expect(
+      repository.markNotified.mock.calls.map(
+        ([input]: [{ listing: ArtJobListing }]) => input.listing.sourceId,
+      ),
+    ).toEqual(['100', '99', '98', '97', '96', '95', '94', '93', '92', '91']);
+  });
+
   it('첫 실행은 상한(10건)만 게시하고 나머지는 SEED 로 표시한다', async () => {
     const many = Array.from({ length: 13 }, (_, index) => {
       return CHARACTER(String(index + 1));

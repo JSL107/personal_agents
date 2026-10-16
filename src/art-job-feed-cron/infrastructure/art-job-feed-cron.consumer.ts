@@ -46,7 +46,7 @@ import {
   ART_JOB_FEED_CRON_QUEUE,
   ArtJobFeedCronJobData,
   ArtJobFeedRunResult,
-  LIST_PAGES_PER_RUN,
+  MAX_LIST_PAGES_PER_RUN,
   MAX_POSTINGS_PER_RUN,
 } from '../domain/art-job-feed-cron.type';
 
@@ -265,13 +265,19 @@ export class ArtJobFeedCronConsumer extends ObservedWorkerHost {
   private async collect(): Promise<CollectedListings> {
     let received = 0;
     const bySourceId = new Map<string, ArtJobListing>();
-    for (let page = 1; page <= LIST_PAGES_PER_RUN; page += 1) {
+    for (let page = 1; page <= MAX_LIST_PAGES_PER_RUN; page += 1) {
       const result = await this.source.fetchLatest(page);
       received += result.received;
+      let added = 0;
       for (const listing of result.listings) {
         if (!bySourceId.has(listing.sourceId)) {
           bySourceId.set(listing.sourceId, listing);
+          added += 1;
         }
+      }
+      // 빈 쪽이나 이미 본 공고만 돌려주는 쪽(마지막 쪽을 되풀이하는 경우)이면 끝까지 읽은 것이다.
+      if (added === 0) {
+        break;
       }
     }
     return { received, listings: [...bySourceId.values()] };
