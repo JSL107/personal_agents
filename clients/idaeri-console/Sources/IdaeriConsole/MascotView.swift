@@ -100,18 +100,13 @@ struct MascotView: View {
             )
             .rotationEffect(.degrees((hovering ? -5 : 0) + shakeAngle), anchor: .bottom)
             .offset(y: hopOffset + bounce)
-            .onChange(of: controller.thinking) { thinking in
-                // 기다리는 동안 통통 — "돌고 있다" 를 몸으로 보인다. 끝나면 제자리로.
-                if thinking {
-                    withAnimation(.easeInOut(duration: 0.32).repeatForever(autoreverses: true)) { bounce = -7 }
-                } else {
-                    withAnimation(.easeOut(duration: 0.2)) { bounce = 0 }
-                }
-            }
+            .onChange(of: controller.thinking) { _ in updateBounce() }
+            .onChange(of: controller.activity) { _ in updateBounce() }
             .onAppear {
                 withAnimation(.easeInOut(duration: 1.8).repeatForever(autoreverses: true)) {
                     breathing = true
                 }
+                updateBounce()
             }
             .onHover { inside in
                 withAnimation(.spring(response: 0.25, dampingFraction: 0.55)) {
@@ -140,6 +135,18 @@ struct MascotView: View {
             .onTapGesture(count: 2) { controller.openCommandInput() }
             .onTapGesture(count: 1) { controller.poke() }
             .gesture(dragGesture)
+    }
+
+    /// 지시를 기다리거나 소품을 들고 일하는 동안 통통 튄다 — "돌고 있다" 를 몸으로 보인다.
+    /// 소품 그림은 한 장이라 그대로 두면 멈춘 그림처럼 보인다. 기다림은 크게, 일은 작고 느리게.
+    private func updateBounce() {
+        if controller.thinking {
+            withAnimation(.easeInOut(duration: 0.32).repeatForever(autoreverses: true)) { bounce = -7 }
+        } else if controller.activity != nil {
+            withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) { bounce = -3 }
+        } else {
+            withAnimation(.easeOut(duration: 0.2)) { bounce = 0 }
+        }
     }
 
     /// 몸짓 재생. macOS 13 에는 키프레임 애니메이션이 없어 짧은 단계를 시간차로 잇는다.
