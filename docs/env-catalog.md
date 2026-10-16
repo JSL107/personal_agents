@@ -2,7 +2,7 @@
 
 # 환경변수 카탈로그
 
-SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 175개.
+SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 174개.
 설명은 각 변수 주석의 첫 문장 발췌 — 상세는 app.config.ts 주석 참조. `.env.example` 동기는 `pnpm check:env`.
 
 ## 인프라 (앱 부팅 필수)
@@ -240,7 +240,6 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `HERMES_WATCHDOG_CRON` | ❌ | BullMQ cron (default 매일 08:30 — `30 8 * * *`, 아침신문 08:00 직후). |
 | `HERMES_WATCHDOG_TIMEZONE` | ❌ | default Asia/Seoul. |
 | `HERMES_HOME` | ❌ | Hermes 홈 디렉터리. 미설정 시 `~/.hermes`. |
-| `SAJU_FORTUNE_OWNER_SLACK_USER_ID` | ❌ | 실패 알림 수신자. 미설정 시 모듈 비활성. |
 | `SAJU_FORTUNE_RECIPIENTS` | ❌ | `U123\|이름\|丙寅 辛卯 壬戌 庚子\|07:30;U456\|이름\|...` — 기둥은 만세력에서 확인한 년·월·일(·시)주. 시각을 모르면 3개. 끝의 발송 시각(HH:MM)은 생략 가능. 형식이 틀린 항목은 부팅 로그에 번호만 남기고 뺀다. |
 | `SAJU_FORTUNE_CRON` | ❌ | 발송 시각을 안 적은 사람의 BullMQ cron (default 매일 08:00 — `0 8 * * *`). 시간대는 KST 고정이다(일진·발송 가드가 KST 날짜 기준). |
 | `ART_JOB_FEED_TARGET` | ❌ | 게시 채널(`C...`). 미설정 시 모듈 비활성. |

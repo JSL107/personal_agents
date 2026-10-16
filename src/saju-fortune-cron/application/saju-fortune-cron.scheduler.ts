@@ -19,7 +19,7 @@ import {
 const SAJU_FORTUNE_CRON_JOB_NAME = 'saju-fortune-cron';
 
 // 매일 사주 운세 DM — JobApplicationNudgeCronScheduler 패턴 그대로.
-// owner(실패 알림 수신자) 와 받는 사람 목록이 둘 다 있어야 켜진다. 남에게 가는 발송이라 기본은 꺼짐.
+// 유효한 받는 사람이 한 명이라도 있으면 켜진다. 실패 알림은 공용 CRON_FAILURE_ALERT_OWNER_SLACK_USER_ID 로 간다.
 @Injectable()
 export class SajuFortuneCronScheduler implements OnApplicationBootstrap {
   private readonly logger = new Logger(SajuFortuneCronScheduler.name);
@@ -31,7 +31,6 @@ export class SajuFortuneCronScheduler implements OnApplicationBootstrap {
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
-    const owner = this.readNonEmpty('SAJU_FORTUNE_OWNER_SLACK_USER_ID', '');
     const { recipients, invalidEntryNumbers } = parseSajuFortuneRecipients(
       this.configService.get<string>('SAJU_FORTUNE_RECIPIENTS'),
     );
@@ -40,9 +39,9 @@ export class SajuFortuneCronScheduler implements OnApplicationBootstrap {
         `SAJU_FORTUNE_RECIPIENTS 형식 오류 — ${invalidEntryNumbers.join(', ')}번째 항목 제외`,
       );
     }
-    if (!owner || recipients.length === 0) {
+    if (recipients.length === 0) {
       this.logger.log(
-        'Saju Fortune Cron 비활성 (SAJU_FORTUNE_OWNER_SLACK_USER_ID 또는 유효한 SAJU_FORTUNE_RECIPIENTS 없음).',
+        'Saju Fortune Cron 비활성 (유효한 SAJU_FORTUNE_RECIPIENTS 없음).',
       );
       await this.cleanupExistingRepeatables();
       return;
@@ -70,20 +69,17 @@ export class SajuFortuneCronScheduler implements OnApplicationBootstrap {
     }
 
     for (const [cron, recipientSlackUserIds] of slackUserIdsByCron) {
-      const payload: SajuFortuneCronJobData = {
-        ownerSlackUserId: owner,
-        recipientSlackUserIds,
-      };
+      const payload: SajuFortuneCronJobData = { recipientSlackUserIds };
       await this.queue.add(SAJU_FORTUNE_CRON_JOB_NAME, payload, {
         repeat: { pattern: cron, tz },
-        jobId: `saju-fortune-cron:${owner}:${cron}`,
+        jobId: `saju-fortune-cron:${cron}`,
         removeOnComplete: 20,
         removeOnFail: 20,
         attempts: 2,
         backoff: { type: 'exponential', delay: 60_000 },
       });
       this.logger.log(
-        `Saju Fortune Cron 활성화 — owner=${owner}, 받는 사람 ${recipientSlackUserIds.length}명, cron="${cron}" (${tz})`,
+        `Saju Fortune Cron 활성화 — 받는 사람 ${recipientSlackUserIds.length}명, cron="${cron}" (${tz})`,
       );
     }
     await cancelCatchUpsDueSoon(this.queue, catchUps, this.logger);

@@ -685,17 +685,12 @@ export class EnvironmentVariables {
   JOB_APPLICATION_NUDGE_TIMEZONE?: string;
 
   // ====== Saju Fortune Cron — 매일 사주 운세 DM ======
-  // 남에게 가는 발송이라 두 값이 다 있어야 켜진다.
-  // - SAJU_FORTUNE_OWNER_SLACK_USER_ID: 실패 알림 수신자. 미설정 시 모듈 비활성.
+  // 유효한 받는 사람이 있어야 켜진다. 실패 알림은 공용 CRON_FAILURE_ALERT_OWNER_SLACK_USER_ID 로 간다.
   // - SAJU_FORTUNE_RECIPIENTS: `U123|이름|丙寅 辛卯 壬戌 庚子|07:30;U456|이름|...` — 기둥은 만세력에서
   //   확인한 년·월·일(·시)주. 시각을 모르면 3개. 끝의 발송 시각(HH:MM)은 생략 가능.
   //   형식이 틀린 항목은 부팅 로그에 번호만 남기고 뺀다.
   // - SAJU_FORTUNE_CRON: 발송 시각을 안 적은 사람의 BullMQ cron (default 매일 08:00 — `0 8 * * *`).
   //   시간대는 KST 고정이다(일진·발송 가드가 KST 날짜 기준).
-  @IsOptional()
-  @IsString()
-  SAJU_FORTUNE_OWNER_SLACK_USER_ID?: string;
-
   @IsOptional()
   @IsString()
   SAJU_FORTUNE_RECIPIENTS?: string;

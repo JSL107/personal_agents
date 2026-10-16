@@ -57,7 +57,7 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
   }
 
   async process(job: Job<SajuFortuneCronJobData>): Promise<void> {
-    const { ownerSlackUserId, recipientSlackUserIds } = job.data;
+    const { recipientSlackUserIds } = job.data;
     // "오늘"은 한 번만 계산해 일진·헤더·발송 가드가 같은 날짜를 쓰게 한다.
     const todayKst = getTodayKstDate();
     const todayPillar = dayPillarOf(todayKst);
@@ -85,7 +85,7 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
       const error = new Error(
         `사주 운세 발송 실패 ${failedNames.length}/${recipients.length}명: ${failedNames.join(', ')}`,
       );
-      this.notifyOwnerFailure(ownerSlackUserId, error);
+      this.notifyFailure(error);
       throw error;
     }
     this.notificationPublisher?.publishRecovery(INCIDENT_KEY);
@@ -140,15 +140,17 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
     this.logger.log(`Saju Fortune 발송 완료 — ${recipient.slackUserId}`);
   }
 
-  // fire-and-forget — NotificationQueue 의 사건 단위 Slack DM. 받는 사람이 아니라 owner 에게만 간다.
-  private notifyOwnerFailure(ownerSlackUserId: string, error: Error): void {
+  // fire-and-forget — NotificationQueue 의 사건 단위 Slack DM. 수신자는 payload 가 아니라
+  // CRON_FAILURE_ALERT_OWNER_SLACK_USER_ID 로 정해진다(notification.consumer ownerId) — 받는 사람에겐 안 간다.
+  // ownerSlackUserId 는 CronFailureJobData 의 필수 칸이지만 읽는 곳이 없어 비워 둔다.
+  private notifyFailure(error: Error): void {
     if (!this.notificationPublisher) {
       return;
     }
     this.notificationPublisher.publishCronFailure({
       cronName: 'Saju Fortune Cron',
       incidentKey: INCIDENT_KEY,
-      ownerSlackUserId,
+      ownerSlackUserId: '',
       errorMessage: error.message,
     });
   }
