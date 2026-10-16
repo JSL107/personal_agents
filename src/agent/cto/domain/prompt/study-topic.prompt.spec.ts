@@ -34,7 +34,8 @@ describe('study topic prompt', () => {
       expect(prompt).toContain('본문 `## 오늘 할 일`의 몫이다');
       expect(prompt).toContain('null로 두거나 생략하지 않는다');
     }
-    // caution 생략 지시가 minutes 문장에 붙으면 모델이 minutes 를 null 로 낸다 (2026-10-16 run 9130).
+    // 2026-10-16 run 9130 이 minutes: null 로 실패했다. 원문이 남지 않아 원인은 확정하지 못했고,
+    // minutes 문장 끝에 붙어 있던 caution 생략 지시를 가장 유력한 후보로 보고 뗐다.
     expect(STUDY_TOOL_SYSTEM_PROMPT).not.toContain(
       'minutes는 설치·연결 예상 시간이다. caution',
     );
