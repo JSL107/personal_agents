@@ -4,8 +4,8 @@ import { ConfigService } from '@nestjs/config';
 import { Queue } from 'bullmq';
 
 import {
+  cancelCatchUpsDueSoon,
   enqueueMissedRuns,
-  snapshotMissedRuns,
 } from '../../common/queue/missed-repeatable-run';
 import {
   ART_JOB_DEADLINE_CRON,
@@ -30,7 +30,10 @@ export class ArtJobDeadlineCronScheduler implements OnApplicationBootstrap {
 
   async onApplicationBootstrap(): Promise<void> {
     const recipient = this.readOrNull('ART_JOB_FEED_MENTION_USER_ID');
-    const missedRuns = await snapshotMissedRuns(this.queue);
+    // 비활성이면 보충도 넣지 않는다 — 정리만 하고 끝난다.
+    const catchUps = recipient
+      ? await enqueueMissedRuns(this.queue, this.logger)
+      : new Map<string, string>();
     await this.cleanupExistingRepeatables();
     if (!recipient) {
       this.logger.log(
@@ -56,7 +59,7 @@ export class ArtJobDeadlineCronScheduler implements OnApplicationBootstrap {
     this.logger.log(
       `Art Job Deadline Cron 활성화 — recipient=${recipient}, cron="${ART_JOB_DEADLINE_CRON}" (${ART_JOB_DEADLINE_TIMEZONE})`,
     );
-    await enqueueMissedRuns(this.queue, missedRuns, this.logger);
+    await cancelCatchUpsDueSoon(this.queue, catchUps, this.logger);
   }
 
   private readOrNull(key: string): string | null {

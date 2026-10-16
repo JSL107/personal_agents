@@ -4,8 +4,8 @@ import { ConfigService } from '@nestjs/config';
 import { Queue } from 'bullmq';
 
 import {
+  cancelCatchUpsDueSoon,
   enqueueMissedRuns,
-  snapshotMissedRuns,
 } from '../../common/queue/missed-repeatable-run';
 import {
   AUTOPILOT_PLAYBOOK,
@@ -77,7 +77,17 @@ export class AutopilotScheduler implements OnApplicationBootstrap {
     }
 
     const target = this.readTarget('AUTOPILOT_TARGET', owner);
-    const missedRuns = await snapshotMissedRuns(this.queue);
+    // 보충은 지금 플레이북에 있는 CRON 그룹만 — 빠진 그룹을 넣으면 consumer 가 「미등록 그룹」
+    // 고장 알림을 낸다. 투자 라인은 장 시각에 묶인 작업(체결·손절·시세 점검)이라 늦게 돌리면
+    // 엉뚱한 시점의 값으로 처리한다. 하루 빠지는 편이 낫다.
+    const catchUpGroupKeys = new Set(
+      AUTOPILOT_PLAYBOOK.filter(
+        (entry) => entry.trigger.kind === 'CRON' && entry.line !== 'invest',
+      ).map((entry) => entry.digestGroup ?? entry.id),
+    );
+    const catchUps = await enqueueMissedRuns(this.queue, this.logger, {
+      shouldCatchUp: (groupKey) => catchUpGroupKeys.has(groupKey),
+    });
     await this.cleanupExistingRepeatables();
 
     const groups = new Map<string, PlaybookEntry[]>();
@@ -94,11 +104,6 @@ export class AutopilotScheduler implements OnApplicationBootstrap {
       }
     }
 
-    const investGroupKeys = new Set(
-      [...groups]
-        .filter(([, entries]) => entries[0].line === 'invest')
-        .map(([groupKey]) => groupKey),
-    );
     for (const [groupKey, entries] of groups) {
       const primary = entries[0];
       if (primary.trigger.kind !== 'CRON') {
@@ -131,11 +136,7 @@ export class AutopilotScheduler implements OnApplicationBootstrap {
         `Autopilot 그룹 활성화 — ${groupKey}(${entries.length} task), cron="${schedule}" (${tz}), target=${groupTarget}`,
       );
     }
-    // 투자 라인은 장 시각에 묶인 작업(체결·손절·시세 점검)이라 늦게 돌리면 엉뚱한 시점의
-    // 값으로 처리한다. 하루 빠지는 편이 낫다.
-    await enqueueMissedRuns(this.queue, missedRuns, this.logger, {
-      shouldCatchUp: (groupKey) => !investGroupKeys.has(groupKey),
-    });
+    await cancelCatchUpsDueSoon(this.queue, catchUps, this.logger);
   }
 
   /**

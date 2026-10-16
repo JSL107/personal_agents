@@ -1,9 +1,9 @@
 import { Logger } from '@nestjs/common';
 
 import {
+  cancelCatchUpsDueSoon,
   enqueueMissedRuns,
   MISSED_RUN_MIN_GAP_MS,
-  snapshotMissedRuns,
 } from './missed-repeatable-run';
 
 const NOW = 1_800_000_000_000;
@@ -19,39 +19,27 @@ const makeQueue = (repeatables: Repeatable[]) => ({
     opts: { attempts: 2, backoff: { type: 'exponential', delay: 60_000 } },
   })),
   add: jest.fn().mockResolvedValue(undefined),
+  remove: jest.fn().mockResolvedValue(1),
 });
 
-const logger = { log: jest.fn(), warn: jest.fn() } as unknown as Logger;
-
-describe('snapshotMissedRuns', () => {
-  it('대기 회차 시각이 지난 repeatable 만 이름별로 모은다', async () => {
-    const queue = makeQueue([
-      { key: 'a', name: 'daily', next: NOW - 60_000 },
-      { key: 'b', name: 'future', next: NOW + 60_000 },
-      { key: 'c', name: 'unknown' },
-    ]);
-
-    const missed = await snapshotMissedRuns(queue as never, NOW);
-
-    expect([...missed]).toEqual([['daily', NOW - 60_000]]);
-  });
-});
+const makeLogger = () =>
+  ({ log: jest.fn(), warn: jest.fn() }) as unknown as Logger;
 
 describe('enqueueMissedRuns', () => {
-  it('놓친 회차를 대기 job 의 data·재시도 옵션 그대로 한 번 넣는다', async () => {
+  it('지나간 대기 회차를 그 job 의 data·재시도 옵션 그대로 한 번 넣는다', async () => {
     const missedAt = NOW - 60 * 60_000;
-    const queue = makeQueue([{ key: 'k1', name: 'daily', next: NOW + DAY }]);
+    const queue = makeQueue([
+      { key: 'k1', name: 'daily', next: missedAt },
+      { key: 'k2', name: 'future', next: NOW + 60_000 },
+      { key: 'k3', name: 'unknown' },
+    ]);
 
-    await enqueueMissedRuns(
-      queue as never,
-      new Map([['daily', missedAt]]),
-      logger,
-      {
-        now: NOW,
-      },
-    );
+    const catchUps = await enqueueMissedRuns(queue as never, makeLogger(), {
+      now: NOW,
+    });
 
-    expect(queue.getJob).toHaveBeenCalledWith(`repeat:k1:${NOW + DAY}`);
+    expect(queue.getJob).toHaveBeenCalledWith(`repeat:k1:${missedAt}`);
+    expect(queue.add).toHaveBeenCalledTimes(1);
     expect(queue.add).toHaveBeenCalledWith(
       'daily',
       { owner: 'U1' },
@@ -62,63 +50,83 @@ describe('enqueueMissedRuns', () => {
       }),
     );
     expect(queue.add.mock.calls[0][2]).not.toHaveProperty('repeat');
+    expect([...catchUps]).toEqual([['daily', `catchup-daily-${missedAt}`]]);
   });
 
-  it('다음 정기 회차가 1시간 안이면 보충하지 않는다 — 고빈도 주기는 곧 다시 돈다', async () => {
+  it('제외 대상은 넣지 않는다', async () => {
+    const queue = makeQueue([{ key: 'k1', name: 'paper', next: NOW - 1 }]);
+
+    const catchUps = await enqueueMissedRuns(queue as never, makeLogger(), {
+      now: NOW,
+      shouldCatchUp: (name) => name !== 'paper',
+    });
+
+    expect(queue.add).not.toHaveBeenCalled();
+    expect(catchUps.size).toBe(0);
+  });
+
+  it('대기 job 을 못 찾으면 경고만 남기고 넣지 않는다', async () => {
+    const queue = makeQueue([{ key: 'k1', name: 'daily', next: NOW - 1 }]);
+    queue.getJob.mockResolvedValueOnce(undefined as never);
+    const logger = makeLogger();
+
+    await enqueueMissedRuns(queue as never, logger, { now: NOW });
+
+    expect(queue.add).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalled();
+  });
+
+  it('add 가 실패하면 그대로 던진다 — repeatable 을 지우기 전이라 다음 부팅이 다시 찾는다', async () => {
+    const queue = makeQueue([{ key: 'k1', name: 'daily', next: NOW - 1 }]);
+    queue.add.mockRejectedValueOnce(new Error('redis down'));
+
+    await expect(
+      enqueueMissedRuns(queue as never, makeLogger(), { now: NOW }),
+    ).rejects.toThrow('redis down');
+  });
+});
+
+describe('cancelCatchUpsDueSoon', () => {
+  it('다음 정기 회차가 1시간 안이면 보충을 취소한다 — 고빈도 주기는 곧 다시 돈다', async () => {
     const queue = makeQueue([
       { key: 'k1', name: 'sweep', next: NOW + MISSED_RUN_MIN_GAP_MS },
+      { key: 'k2', name: 'daily', next: NOW + DAY },
     ]);
 
-    await enqueueMissedRuns(
+    await cancelCatchUpsDueSoon(
       queue as never,
-      new Map([['sweep', NOW - 1]]),
-      logger,
-      {
-        now: NOW,
-      },
+      new Map([
+        ['sweep', 'catchup-sweep-1'],
+        ['daily', 'catchup-daily-1'],
+      ]),
+      makeLogger(),
+      NOW,
     );
 
-    expect(queue.add).not.toHaveBeenCalled();
+    expect(queue.remove).toHaveBeenCalledTimes(1);
+    expect(queue.remove).toHaveBeenCalledWith('catchup-sweep-1');
   });
 
-  it('제외 대상은 보충하지 않는다', async () => {
-    const queue = makeQueue([{ key: 'k1', name: 'paper', next: NOW + DAY }]);
-
-    await enqueueMissedRuns(
-      queue as never,
-      new Map([['paper', NOW - 1]]),
-      logger,
-      {
-        now: NOW,
-        shouldCatchUp: (name) => name !== 'paper',
-      },
-    );
-
-    expect(queue.add).not.toHaveBeenCalled();
-  });
-
-  it('놓친 회차가 없으면 큐를 다시 읽지도 않는다', async () => {
+  it('보충이 없으면 큐를 읽지도 않는다', async () => {
     const queue = makeQueue([]);
 
-    await enqueueMissedRuns(queue as never, new Map(), logger);
+    await cancelCatchUpsDueSoon(queue as never, new Map(), makeLogger(), NOW);
 
     expect(queue.getRepeatableJobs).not.toHaveBeenCalled();
   });
 
-  it('대기 job 을 못 찾으면 경고만 남기고 넣지 않는다', async () => {
-    const queue = makeQueue([{ key: 'k1', name: 'daily', next: NOW + DAY }]);
-    queue.getJob.mockResolvedValueOnce(undefined as never);
+  it('취소에 실패해도 던지지 않는다 — 부팅을 막지 않는다', async () => {
+    const queue = makeQueue([{ key: 'k1', name: 'sweep', next: NOW + 1 }]);
+    queue.remove.mockRejectedValueOnce(new Error('locked'));
+    const logger = makeLogger();
 
-    await enqueueMissedRuns(
+    await cancelCatchUpsDueSoon(
       queue as never,
-      new Map([['daily', NOW - 1]]),
+      new Map([['sweep', 'catchup-sweep-1']]),
       logger,
-      {
-        now: NOW,
-      },
+      NOW,
     );
 
-    expect(queue.add).not.toHaveBeenCalled();
     expect(logger.warn).toHaveBeenCalled();
   });
 });

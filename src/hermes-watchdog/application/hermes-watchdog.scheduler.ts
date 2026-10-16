@@ -4,8 +4,8 @@ import { ConfigService } from '@nestjs/config';
 import { Queue } from 'bullmq';
 
 import {
+  cancelCatchUpsDueSoon,
   enqueueMissedRuns,
-  snapshotMissedRuns,
 } from '../../common/queue/missed-repeatable-run';
 import {
   DEFAULT_HERMES_WATCHDOG_CRON,
@@ -47,7 +47,7 @@ export class HermesWatchdogScheduler implements OnApplicationBootstrap {
       DEFAULT_HERMES_WATCHDOG_TIMEZONE,
     );
 
-    const missedRuns = await snapshotMissedRuns(this.queue);
+    const catchUps = await enqueueMissedRuns(this.queue, this.logger);
     await this.cleanupExistingRepeatables();
 
     const payload: HermesWatchdogJobData = { ownerSlackUserId: owner };
@@ -64,7 +64,7 @@ export class HermesWatchdogScheduler implements OnApplicationBootstrap {
     this.logger.log(
       `Hermes Watchdog 활성화 — owner=${owner}, cron="${cron}" (${tz})`,
     );
-    await enqueueMissedRuns(this.queue, missedRuns, this.logger);
+    await cancelCatchUpsDueSoon(this.queue, catchUps, this.logger);
   }
 
   private readOwnerOrNull(): string | null {

@@ -566,13 +566,14 @@ describe('AutopilotScheduler', () => {
       ...makeQueue(),
       getRepeatableJobs: jest
         .fn()
-        .mockResolvedValueOnce(missed) // 보충 대상 스냅샷
+        .mockResolvedValueOnce(missed) // 보충 (정리 전)
         .mockResolvedValueOnce(missed) // 정리
-        .mockResolvedValue(registered), // 재등록 뒤
+        .mockResolvedValue(registered), // 재등록 뒤 취소 판정
       getJob: jest.fn().mockResolvedValue({
         data: { ownerSlackUserId: 'U1', target: 'U1' },
         opts: { attempts: 2 },
       }),
+      remove: jest.fn(),
     };
     const config = {
       get: jest.fn((key: string) =>
@@ -587,5 +588,14 @@ describe('AutopilotScheduler', () => {
       .map((call: unknown[]) => (call[2] as { jobId: string }).jobId)
       .filter((jobId: string) => jobId.startsWith('catchup-'));
     expect(catchUpIds).toEqual([`catchup-morning-${now - 60_000}`]);
+    expect(queue.remove).not.toHaveBeenCalled();
+    // 보충은 정리보다 먼저 들어간다 — 사이에 죽어도 다음 부팅이 다시 찾게.
+    expect(
+      queue.add.mock.invocationCallOrder[
+        queue.add.mock.calls.findIndex((call: unknown[]) =>
+          String((call[2] as { jobId: string }).jobId).startsWith('catchup-'),
+        )
+      ],
+    ).toBeLessThan(queue.removeRepeatableByKey.mock.invocationCallOrder[0]);
   });
 });
