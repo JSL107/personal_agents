@@ -4,6 +4,10 @@ import { ConfigService } from '@nestjs/config';
 import { Queue } from 'bullmq';
 
 import {
+  enqueueMissedRuns,
+  snapshotMissedRuns,
+} from '../../common/queue/missed-repeatable-run';
+import {
   DEFAULT_JOB_APPLICATION_NUDGE_CRON,
   DEFAULT_JOB_APPLICATION_NUDGE_TIMEZONE,
   JOB_APPLICATION_NUDGE_CRON_QUEUE,
@@ -44,6 +48,7 @@ export class JobApplicationNudgeCronScheduler implements OnApplicationBootstrap 
       DEFAULT_JOB_APPLICATION_NUDGE_TIMEZONE,
     );
 
+    const missedRuns = await snapshotMissedRuns(this.queue);
     await this.cleanupExistingRepeatables();
 
     const payload: JobApplicationNudgeCronJobData = {
@@ -63,6 +68,7 @@ export class JobApplicationNudgeCronScheduler implements OnApplicationBootstrap 
     this.logger.log(
       `Job Application Nudge Cron 활성화 — owner=${owner}, target=${target}, cron="${cron}" (${tz})`,
     );
+    await enqueueMissedRuns(this.queue, missedRuns, this.logger);
   }
 
   private readOwnerOrNull(): string | null {

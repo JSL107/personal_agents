@@ -4,6 +4,10 @@ import { ConfigService } from '@nestjs/config';
 import { Queue } from 'bullmq';
 
 import {
+  enqueueMissedRuns,
+  snapshotMissedRuns,
+} from '../../common/queue/missed-repeatable-run';
+import {
   ART_JOB_DEADLINE_CRON,
   ART_JOB_DEADLINE_CRON_QUEUE,
   ART_JOB_DEADLINE_TIMEZONE,
@@ -26,6 +30,7 @@ export class ArtJobDeadlineCronScheduler implements OnApplicationBootstrap {
 
   async onApplicationBootstrap(): Promise<void> {
     const recipient = this.readOrNull('ART_JOB_FEED_MENTION_USER_ID');
+    const missedRuns = await snapshotMissedRuns(this.queue);
     await this.cleanupExistingRepeatables();
     if (!recipient) {
       this.logger.log(
@@ -51,6 +56,7 @@ export class ArtJobDeadlineCronScheduler implements OnApplicationBootstrap {
     this.logger.log(
       `Art Job Deadline Cron 활성화 — recipient=${recipient}, cron="${ART_JOB_DEADLINE_CRON}" (${ART_JOB_DEADLINE_TIMEZONE})`,
     );
+    await enqueueMissedRuns(this.queue, missedRuns, this.logger);
   }
 
   private readOrNull(key: string): string | null {

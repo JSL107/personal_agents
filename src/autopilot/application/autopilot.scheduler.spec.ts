@@ -551,4 +551,41 @@ describe('AutopilotScheduler', () => {
       repeat: { pattern: '0 9,18 * * 5', tz: 'Asia/Seoul' },
     });
   });
+
+  it('앱이 꺼진 사이 놓친 회차는 보충하되 투자 라인 그룹은 보충하지 않는다', async () => {
+    const now = Date.now();
+    const missed = [
+      { key: 'm', name: 'morning', next: now - 60_000 },
+      { key: 'p', name: 'paper-order-fill', next: now - 60_000 },
+    ];
+    const registered = [
+      { key: 'm', name: 'morning', next: now + 24 * 60 * 60_000 },
+      { key: 'p', name: 'paper-order-fill', next: now + 24 * 60 * 60_000 },
+    ];
+    const queue = {
+      ...makeQueue(),
+      getRepeatableJobs: jest
+        .fn()
+        .mockResolvedValueOnce(missed) // 보충 대상 스냅샷
+        .mockResolvedValueOnce(missed) // 정리
+        .mockResolvedValue(registered), // 재등록 뒤
+      getJob: jest.fn().mockResolvedValue({
+        data: { ownerSlackUserId: 'U1', target: 'U1' },
+        opts: { attempts: 2 },
+      }),
+    };
+    const config = {
+      get: jest.fn((key: string) =>
+        key === 'AUTOPILOT_OWNER_SLACK_USER_ID' ? 'U1' : undefined,
+      ),
+    };
+    const scheduler = new AutopilotScheduler(queue as never, config as never);
+
+    await scheduler.onApplicationBootstrap();
+
+    const catchUpIds = queue.add.mock.calls
+      .map((call: unknown[]) => (call[2] as { jobId: string }).jobId)
+      .filter((jobId: string) => jobId.startsWith('catchup-'));
+    expect(catchUpIds).toEqual([`catchup-morning-${now - 60_000}`]);
+  });
 });

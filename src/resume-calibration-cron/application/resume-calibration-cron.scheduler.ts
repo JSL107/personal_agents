@@ -4,6 +4,10 @@ import { ConfigService } from '@nestjs/config';
 import { Queue } from 'bullmq';
 
 import {
+  enqueueMissedRuns,
+  snapshotMissedRuns,
+} from '../../common/queue/missed-repeatable-run';
+import {
   DEFAULT_RESUME_CALIBRATION_CRON,
   DEFAULT_RESUME_CALIBRATION_TIMEZONE,
   RESUME_CALIBRATION_CRON_QUEUE,
@@ -43,6 +47,7 @@ export class ResumeCalibrationCronScheduler implements OnApplicationBootstrap {
       DEFAULT_RESUME_CALIBRATION_TIMEZONE,
     );
 
+    const missedRuns = await snapshotMissedRuns(this.queue);
     await this.cleanupExistingRepeatables();
 
     const payload: ResumeCalibrationCronJobData = {
@@ -62,6 +67,7 @@ export class ResumeCalibrationCronScheduler implements OnApplicationBootstrap {
     this.logger.log(
       `Resume Calibration Cron 활성화 — owner=${owner}, target=${target}, cron="${cron}" (${tz})`,
     );
+    await enqueueMissedRuns(this.queue, missedRuns, this.logger);
   }
 
   private readOwnerOrNull(): string | null {

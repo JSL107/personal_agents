@@ -4,6 +4,10 @@ import { ConfigService } from '@nestjs/config';
 import { Queue } from 'bullmq';
 
 import {
+  enqueueMissedRuns,
+  snapshotMissedRuns,
+} from '../../common/queue/missed-repeatable-run';
+import {
   DEFAULT_STUDY_BRIEF_CRON,
   DEFAULT_STUDY_BRIEF_TIMEZONE,
   STUDY_BRIEF_CRON_QUEUE,
@@ -40,6 +44,7 @@ export class StudyBriefCronScheduler implements OnApplicationBootstrap {
       'STUDY_BRIEF_TIMEZONE',
       DEFAULT_STUDY_BRIEF_TIMEZONE,
     );
+    const missedRuns = await snapshotMissedRuns(this.queue);
     await this.cleanupExistingRepeatables();
 
     const payload: StudyBriefCronJobData = {
@@ -58,6 +63,7 @@ export class StudyBriefCronScheduler implements OnApplicationBootstrap {
     this.logger.log(
       `Study Brief Cron 활성화 — owner=${owner}, target=${target}, cron="${cron}" (${timezone})`,
     );
+    await enqueueMissedRuns(this.queue, missedRuns, this.logger);
   }
 
   private readOwnerOrNull(): string | null {

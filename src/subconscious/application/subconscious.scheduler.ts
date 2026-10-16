@@ -4,6 +4,10 @@ import { ConfigService } from '@nestjs/config';
 import { Queue } from 'bullmq';
 
 import {
+  enqueueMissedRuns,
+  snapshotMissedRuns,
+} from '../../common/queue/missed-repeatable-run';
+import {
   SUBCONSCIOUS_TICK_QUEUE,
   SubconsciousTickJobData,
 } from '../domain/subconscious-tick.type';
@@ -60,6 +64,7 @@ export class SubconsciousScheduler implements OnApplicationBootstrap {
     }
 
     const ownerTrimmed = owner.trim();
+    const missedRuns = await snapshotMissedRuns(this.queue);
     await this.cleanupExistingRepeatables();
 
     const schedule = this.readNonEmpty(
@@ -83,6 +88,7 @@ export class SubconsciousScheduler implements OnApplicationBootstrap {
     this.logger.log(
       `Subconscious 활성화 — owner="${ownerTrimmed}", cron="${schedule}" (${DEFAULT_SUBCONSCIOUS_TIMEZONE})`,
     );
+    await enqueueMissedRuns(this.queue, missedRuns, this.logger);
   }
 
   private readNonEmpty(key: string, fallback: string): string {
