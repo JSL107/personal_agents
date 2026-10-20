@@ -10,6 +10,13 @@ const EARTHLY_BRANCHES_HANGUL = '자축인묘진사오미신유술해';
 // 지지가 품은 대표 천간(본기). 지지의 오행·음양·십성은 이 천간으로 본다.
 const BRANCH_MAIN_STEMS = '癸己甲乙戊丙丁己庚辛戊壬';
 const PILLAR_LABELS = ['년주', '월주', '일주', '시주'];
+// 기둥이 뜻하는 삶의 자리. 없으면 모델이 "타고난 일상의 자리" 처럼 모호하게 지어 풀어 쓴다.
+const PILLAR_MEANINGS: Record<string, string> = {
+  년주: '뿌리·집안',
+  월주: '일터·사회생활',
+  일주: '나 자신·가까운 관계',
+  시주: '앞날·계획',
+};
 const CLASH_DISTANCE = 6;
 
 const TEN_GODS = [
@@ -162,7 +169,7 @@ export const formatSajuFacts = (analysis: SajuDayAnalysis): string[] => {
   }
   for (const relation of analysis.branchRelations) {
     facts.push(
-      `- 오늘 지지와 타고난 ${relation.natalLabel} 지지(${EARTHLY_BRANCHES_HANGUL[EARTHLY_BRANCHES.indexOf(relation.natalBranch)]}): ${BRANCH_RELATION_MEANINGS[relation.kind]}`,
+      `- 오늘 지지와 타고난 ${relation.natalLabel} 지지(${EARTHLY_BRANCHES_HANGUL[EARTHLY_BRANCHES.indexOf(relation.natalBranch)]}, ${PILLAR_MEANINGS[relation.natalLabel]}의 자리): ${BRANCH_RELATION_MEANINGS[relation.kind]}`,
     );
   }
   return facts;

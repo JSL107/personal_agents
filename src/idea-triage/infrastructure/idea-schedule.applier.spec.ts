@@ -139,6 +139,8 @@ describe('IdeaScheduleApplier', () => {
   });
 
   it('일정 등록 직후 단계 기록을 남겨, 판정 기록 갱신이 실패한 뒤 다시 승인해도 일정을 또 만들지 않는다', async () => {
+    // 제안일(10-16) 당일로 고정한다 — 고정하지 않으면 그날이 지난 뒤 오늘로 당겨 등록돼 기대 날짜가 어긋난다.
+    jest.useFakeTimers().setSystemTime(new Date('2026-10-16T03:00:00Z'));
     const { repository, registerSchedule } = createMocks();
     const done: string[] = [];
     const progress = {
