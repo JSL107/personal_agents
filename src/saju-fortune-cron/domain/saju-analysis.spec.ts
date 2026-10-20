@@ -114,11 +114,15 @@ describe('formatSajuFacts', () => {
   it('충·합이 있으면 어느 기둥의 어떤 지지와인지 한글 뜻풀이로 적고, 용어는 싣지 않는다', () => {
     const clash = formatSajuFacts(analyzeSajuDay(SAMPLE_EARTH, '癸亥'));
     expect(clash).toContain(
-      '- 오늘 지지와 타고난 시주 지지(사): 부딪힘 — 변화, 이동, 마음이 흔들림',
+      '- 오늘 지지와 타고난 시주 지지(사, 앞날·계획의 자리): 부딪힘 — 변화, 이동, 마음이 흔들림',
+    );
+    // 2026-10-20 실제 발송분에서 "타고난 일상의 자리" 로 모호하게 나왔던 일주 충.
+    expect(formatSajuFacts(analyzeSajuDay(SAMPLE_EARTH, '丁卯'))).toContain(
+      '- 오늘 지지와 타고난 일주 지지(유, 나 자신·가까운 관계의 자리): 부딪힘 — 변화, 이동, 마음이 흔들림',
     );
     const harmony = formatSajuFacts(analyzeSajuDay(SAMPLE_EARTH, '甲子'));
     expect(harmony).toContain(
-      '- 오늘 지지와 타고난 월주 지지(축): 맞물림 — 끌림, 협력, 묶임',
+      '- 오늘 지지와 타고난 월주 지지(축, 일터·사회생활의 자리): 맞물림 — 끌림, 협력, 묶임',
     );
     const allFacts = [...clash, ...harmony].join('\n');
     expect(allFacts).not.toMatch(
