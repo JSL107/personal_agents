@@ -250,9 +250,8 @@ describe('PortfolioPublishAutopilotTask', () => {
     const result = await task.run(context);
 
     expect(result.skip).toBe(false);
-    expect(result.summaryText).toContain(
-      '이력서 감사 — 약함 1건 / 근거없음 0건 (총 1건)',
-    );
+    expect(result.summaryText).toContain('이력서 감사 — 약함 1건 (총 1건)');
+    expect(result.summaryText).not.toContain('근거없음 0건');
     expect(result.detailText).toContain('배포 안정화');
     expect(result.detailText).toContain('결과 수치와 영향 범위가 없다.');
     expect(result.detailText).toContain('수치 필요');
@@ -340,6 +339,7 @@ describe('PortfolioPublishAutopilotTask', () => {
 
     expect(result.skip).toBe(false);
     expect(result.summaryText).toContain('가드 경고');
+    expect(result.summaryText).not.toMatch(/ 0(건)?( |$)/m);
     expect(result.detailText).toContain('미판정');
     expect(result.detailText).toContain('폐기 1 / 누락 1');
   });
