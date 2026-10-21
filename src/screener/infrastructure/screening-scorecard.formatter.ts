@@ -1,5 +1,9 @@
 import { BuildScreeningScorecardResult } from '../application/build-screening-scorecard.usecase';
 import {
+  RANK_IC_MINIMUM_ITEMS,
+  ScreeningRankIcSummary,
+} from '../domain/screening-rank-ic';
+import {
   SCORECARD_TOP_RANK_LIMIT,
   ScreeningScorecardArm,
   ScreeningScorecardExtreme,
@@ -85,7 +89,48 @@ const formatStrategy = (strategy: ScreeningScorecardStrategy): string[] => {
         ` (회차 ${strategy.cutoffRunCount}개 평균, 보여준 것 − 상한 밖)`,
     );
   }
+  lines.push(formatRankIc(strategy.rankIc));
   return lines;
+};
+
+const formatSigned = (value: number | null, fractionDigits: number): string => {
+  if (value === null) {
+    return '-';
+  }
+  const rounded = value.toFixed(fractionDigits);
+  return `${Number(rounded) > 0 ? '+' : ''}${rounded}`;
+};
+
+// 점수 축. 표본 회차 수를 전체와 나눠 적는다 — 겹치는 회차를 뺀 수라 위 격차의 회차 수보다
+// 훨씬 작고, 그 사실이 안 보이면 같은 표본으로 낸 값처럼 읽힌다.
+const formatRankIc = (rankIc: ScreeningRankIcSummary): string => {
+  // 뺀 회차를 사유별로 적는다. 사유 하나로 뭉뚱그리면 실제와 다른 결측 사유가 카드에 남는다.
+  const excluded = [
+    rankIc.partialRunCount > 0
+      ? `통과 일부만 저장 ${rankIc.partialRunCount}개`
+      : null,
+    rankIc.tooFewItemRunCount > 0
+      ? `종목 ${RANK_IC_MINIMUM_ITEMS}개 미만 ${rankIc.tooFewItemRunCount}개`
+      : null,
+    rankIc.undefinedRunCount > 0
+      ? `수익률이 전부 같음 ${rankIc.undefinedRunCount}개`
+      : null,
+  ].filter((reason): reason is string => reason !== null);
+  if (rankIc.sampledRunCount === 0) {
+    return excluded.length === 0
+      ? '  순위 상관 - — 회차 없음'
+      : `  순위 상관 - — 상관을 낸 회차 없음 (제외: ${excluded.join(' · ')})`;
+  }
+  const excludedSuffix =
+    excluded.length === 0 ? '' : ` · 제외: ${excluded.join(' · ')}`;
+  const line =
+    `  순위 상관 ${formatSigned(rankIc.meanIc, 3)}` +
+    ` · 양수 ${rankIc.positiveRunCount}/${rankIc.sampledRunCount}` +
+    ` · t ${formatSigned(rankIc.tStatistic, 1)}` +
+    ` (구간 안 겹치는 회차 ${rankIc.sampledRunCount}/${rankIc.eligibleRunCount}개${excludedSuffix})`;
+  return rankIc.sampledRunCount < TREND_MINIMUM_SAMPLE
+    ? `${line} — 회차가 ${TREND_MINIMUM_SAMPLE}개 미만이라 아직 추세 아님`
+    : line;
 };
 
 // 표에 적히는 값과 같은 자리에서 부호를 본다. 원값으로 판정하면 부동소수 잔여
@@ -198,6 +243,7 @@ export const formatScreeningScorecard = (
     `*스크리닝 성적 카드 — ${result.asOf.toISOString().slice(0, 10)}*`,
     '같은 날 후보에 올랐지만 사지 않은 종목을 대조군으로 잡습니다. 진입이 양쪽 다 기준일 다음 거래일 시가라 그 주 장세는 상쇄되고, 남는 차이가 종목 선택의 몫입니다.',
     '`상한 밖` 은 규칙은 통과했지만 프롬프트에 실리지 않아 모델이 본 적 없는 종목입니다. 재는 것이 선택이 아니라 순위 상한이라 위 두 갈래와 나눠 적습니다.',
+    '`순위 상관` 은 회차마다 순위가 높은 종목이 실제로 더 올랐는지를 −1~+1 로 잰 값입니다(+ 면 순위가 맞음). 보유 구간이 겹치는 회차는 같은 등락을 두 번 세므로 겹치지 않는 회차만 쓰고, t 가 ±2 안이면 0 과 구분되지 않습니다.',
   ];
   for (const horizon of result.horizons) {
     lines.push('');

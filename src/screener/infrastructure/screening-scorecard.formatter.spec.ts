@@ -20,6 +20,9 @@ const row = (
   bought: false,
   tickerCode: '000000',
   tickerName: '테스트',
+  entryTradeDate: new Date('2026-09-01T00:00:00.000Z'),
+  horizonTradeDate: new Date('2026-09-08T00:00:00.000Z'),
+  runFullyStored: true,
   ...overrides,
 });
 
@@ -45,6 +48,40 @@ const result = (
 });
 
 describe('formatScreeningScorecard', () => {
+  it('순위 상관을 표본 회차 수와 함께 적고, 회차가 적으면 추세가 아니라고 붙인다', () => {
+    const text = formatScreeningScorecard(
+      result(
+        [5, 4, 3, 2, 1].map((returnPct, index) =>
+          row({ rank: index + 1, returnPct }),
+        ),
+      ),
+    );
+
+    expect(text).toContain(
+      '  순위 상관 +1.000 · 양수 1/1 · t - (구간 안 겹치는 회차 1/1개) — 회차가 10개 미만이라 아직 추세 아님',
+    );
+  });
+
+  it('상관을 낸 회차가 없으면 뺀 회차를 실제 사유별로 적는다', () => {
+    const tooFew = formatScreeningScorecard(result([row({ bought: true })]));
+    expect(tooFew).toContain(
+      '  순위 상관 - — 상관을 낸 회차 없음 (제외: 종목 5개 미만 1개)',
+    );
+
+    // 종목은 충분하지만 수익률이 전부 같아 상관이 정의되지 않는 회차와, 옛 일부 저장 회차.
+    const mixed = formatScreeningScorecard(
+      result([
+        ...[1, 2, 3, 4, 5].map((rank) => row({ rank, returnPct: 3 })),
+        ...[1, 2, 3, 4, 5].map((rank) =>
+          row({ runId: 2, rank, returnPct: rank, runFullyStored: false }),
+        ),
+      ]),
+    );
+    expect(mixed).toContain(
+      '  순위 상관 - — 상관을 낸 회차 없음 (제외: 통과 일부만 저장 1개 · 수익률이 전부 같음 1개)',
+    );
+  });
+
   it('산 것과 안 산 것을 나란히 세우고 격차를 적는다', () => {
     const text = formatScreeningScorecard(
       result([
