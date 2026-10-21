@@ -3,8 +3,10 @@ import { validate } from 'class-validator';
 
 import { SessionInjectService } from '../../local-sessions/application/session-inject.service';
 import { ConsoleWriteService } from '../application/console-write.service';
+import { GenerateMascotChatterUsecase } from '../application/generate-mascot-chatter.usecase';
 import { ConsoleWriteController } from './console-write.controller';
 import { ConsoleCommandDto } from './dto/console-command.dto';
+import { MascotChatterDto } from './dto/mascot-chatter.dto';
 
 function makeController() {
   const service = {
@@ -14,14 +16,43 @@ function makeController() {
     retryRun: jest.fn().mockResolvedValue(undefined),
   };
   const sessionInject = { inject: jest.fn() };
+  const chatter = {
+    execute: jest
+      .fn()
+      .mockResolvedValue({ line: null, suggestion: null, asks: false }),
+  };
   const controller = new ConsoleWriteController(
     service as unknown as ConsoleWriteService,
     sessionInject as unknown as SessionInjectService,
+    chatter as unknown as GenerateMascotChatterUsecase,
   );
-  return { controller, service, sessionInject };
+  return { controller, service, sessionInject, chatter };
 }
 
 describe('ConsoleWriteController', () => {
+  it('거절한 후보를 chatter usecase로 전달한다', async () => {
+    const { controller, chatter } = makeController();
+    const result = await controller.mascotChatter({
+      declinedAgentTypes: ['PM'],
+    });
+    expect(chatter.execute).toHaveBeenCalledWith({
+      declinedAgentTypes: ['PM'],
+    });
+    expect(result).toEqual({ line: null, suggestion: null, asks: false });
+  });
+
+  it('declinedAgentTypes가 배열이 아니면 DTO 검증에서 거절한다', async () => {
+    const invalid = Object.assign(new MascotChatterDto(), {
+      declinedAgentTypes: 'PM',
+    });
+    const errors = await validate(invalid);
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ property: 'declinedAgentTypes' }),
+      ]),
+    );
+  });
+
   it('persona를 service로 전달한다', () => {
     const { controller, service } = makeController();
     controller.sendCommand({ text: '안녕', persona: 'USAGI' });
