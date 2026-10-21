@@ -7,6 +7,7 @@ export interface MascotChatterSuggestion {
 }
 
 export interface MascotChatterResult {
+  chatterId: string | null;
   line: string | null;
   suggestion: MascotChatterSuggestion | null;
   asks: boolean;

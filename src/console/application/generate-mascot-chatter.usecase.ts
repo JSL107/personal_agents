@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
@@ -20,6 +22,7 @@ import { SuggestNextWorkUsecase } from './suggest-next-work.usecase';
 export const MASCOT_CHATTER_MAX_LENGTH = 80;
 const MEMORY_TEXT_MAX_LENGTH = 200;
 const MEMORY_TURN_LIMIT = 4;
+const CHATTER_CONFIRM_TTL_MS = 5 * 60 * 1000;
 const TIME_FORMATTER = new Intl.DateTimeFormat('ko-KR', {
   timeZone: 'Asia/Seoul',
   weekday: 'long',
@@ -39,10 +42,18 @@ interface ChatterContext {
   candidates: readonly WorkSuggestion[];
 }
 
+interface PendingChatter {
+  chatterId: string;
+  line: string;
+  conversationKey: string | null;
+  createdAtMs: number;
+}
+
 @Injectable()
 export class GenerateMascotChatterUsecase {
   private readonly logger = new Logger(GenerateMascotChatterUsecase.name);
   private inFlight: Promise<MascotChatterResult> | null = null;
+  private pendingChatter: PendingChatter | null = null;
 
   constructor(
     private readonly config: ConfigService,
@@ -66,6 +77,33 @@ export class GenerateMascotChatterUsecase {
     };
     void task.then(clearInFlight, clearInFlight);
     return task;
+  }
+
+  async confirmShown(chatterId: string): Promise<boolean> {
+    const pending = this.pendingChatter;
+    if (!pending || pending.chatterId !== chatterId) {
+      return false;
+    }
+    this.pendingChatter = null;
+    if (Date.now() - pending.createdAtMs >= CHATTER_CONFIRM_TTL_MS) {
+      return false;
+    }
+    if (!pending.conversationKey) {
+      return false;
+    }
+    try {
+      await this.conversationMemory.appendTurn(pending.conversationKey, {
+        role: 'assistant',
+        text: pending.line,
+        agentType: null,
+        agentRunId: null,
+        timestampMs: Date.now(),
+      });
+      return true;
+    } catch (error) {
+      this.logger.warn(`우사기 대화 기억 저장 실패: ${String(error)}`);
+      return false;
+    }
   }
 
   private async generate(
@@ -149,20 +187,15 @@ export class GenerateMascotChatterUsecase {
       this.logger.debug(`우사기 제안 index 무시: ${String(index)}`);
     }
     const suggestion = validIndex ? context.candidates[index - 1] : null;
-    if (context.conversationKey) {
-      try {
-        await this.conversationMemory.appendTurn(context.conversationKey, {
-          role: 'assistant',
-          text: line,
-          agentType: null,
-          agentRunId: null,
-          timestampMs: Date.now(),
-        });
-      } catch (error) {
-        this.logger.warn(`우사기 대화 기억 저장 실패: ${String(error)}`);
-      }
-    }
+    const chatterId = randomUUID();
+    this.pendingChatter = {
+      chatterId,
+      line,
+      conversationKey: context.conversationKey,
+      createdAtMs: Date.now(),
+    };
     return {
+      chatterId,
       line,
       suggestion,
       asks: typeof output.asks === 'boolean' ? output.asks : false,
@@ -214,6 +247,12 @@ export class GenerateMascotChatterUsecase {
   private failure(
     reason: NonNullable<MascotChatterResult['reason']>,
   ): MascotChatterResult {
-    return { line: null, suggestion: null, asks: false, reason };
+    return {
+      chatterId: null,
+      line: null,
+      suggestion: null,
+      asks: false,
+      reason,
+    };
   }
 }

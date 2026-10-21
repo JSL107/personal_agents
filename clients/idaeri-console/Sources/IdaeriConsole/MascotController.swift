@@ -256,17 +256,24 @@ import SwiftUI
         refreshBubble()
     }
 
-    func sendCommand(_ text: String, agentTypeHint: String? = nil) {
+    func sendCommand(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             return
         }
+        beginWaitingForAnswer(text: trimmed)
+        NotificationCenter.default.post(name: .idaeriMascotCommand, object: nil, userInfo: ["text": trimmed])
+        bindMascotCommandId()
+        closeCommandInput()
+    }
+
+    private func beginWaitingForAnswer(text: String) {
         closeChatter()
         let now = Date()
         conversationTurns = mascotAppendTurn(
-            conversationTurns, MascotTurn(role: .user, text: trimmed, at: now), now: now
+            conversationTurns, MascotTurn(role: .user, text: text, at: now), now: now
         )
-        lastMascotCommand = (trimmed, Date())
+        lastMascotCommand = (text, Date())
         mascotCommandId = nil
         thinking = true
         thinkingSince = Date()
@@ -279,13 +286,6 @@ import SwiftUI
         replyBubble = nil
         replyTimer?.invalidate()
         failedNoticeCommandId = nil
-        var commandInfo: [String: String] = ["text": trimmed]
-        if let agentTypeHint {
-            commandInfo["agentTypeHint"] = agentTypeHint
-        }
-        NotificationCenter.default.post(name: .idaeriMascotCommand, object: nil, userInfo: commandInfo)
-        bindMascotCommandId()
-        closeCommandInput()
     }
 
     func closeCommandInput() {
@@ -453,14 +453,21 @@ import SwiftUI
                 let sound = mascotQuip(.chatter, random: .random(in: 0..<1)).sound
                 let suggestion = line?.suggestion
                 let asks = line?.asks ?? false
-                let now = Date()
-                self.conversationTurns = mascotAppendTurn(
-                    self.conversationTurns, MascotTurn(role: .usagi, text: text, at: now), now: now
-                )
                 if suggestion != nil || asks {
                     self.showTransient(.chatter(sound: sound, line: text, suggestion: suggestion, asks: asks), duration: 30)
                 } else {
                     self.showTransient(.reaction("\(sound) \(text)"), duration: 8)
+                }
+                if self.bubble == self.reactionBubble {
+                    let now = Date()
+                    self.conversationTurns = mascotAppendTurn(
+                        self.conversationTurns, MascotTurn(role: .usagi, text: text, at: now), now: now
+                    )
+                }
+                if let chatterId = line?.chatterId, self.bubble == self.reactionBubble {
+                    Task {
+                        try? await self.client.postMascotChatterShown(chatterId: chatterId)
+                    }
                 }
             } else {
                 self.showTransient(
@@ -473,7 +480,13 @@ import SwiftUI
 
     func acceptChatter(_ suggestion: MascotChatterSuggestion) {
         closeChatter()
-        sendCommand("\(suggestion.displayName) 해 줘", agentTypeHint: suggestion.agentType)
+        beginWaitingForAnswer(text: suggestion.displayName)
+        NotificationCenter.default.post(
+            name: .idaeriMascotAcceptSuggestion, object: nil,
+            userInfo: ["agentType": suggestion.agentType, "displayName": suggestion.displayName]
+        )
+        bindMascotCommandId()
+        closeCommandInput()
     }
 
     func declineChatter(_ suggestion: MascotChatterSuggestion) {

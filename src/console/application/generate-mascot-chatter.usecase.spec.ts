@@ -104,10 +104,11 @@ describe('GenerateMascotChatterUsecase', () => {
     usecase = moduleRef.get(GenerateMascotChatterUsecase);
   });
 
-  it('정상 JSON의 한 마디와 후보를 매핑하고 대화 기억에 남긴다', async () => {
+  it('정상 JSON의 한 마디와 후보를 매핑하고 표시 확인 전에는 기억하지 않는다', async () => {
     const result = await usecase.execute({ declinedAgentTypes: [] });
 
     expect(result).toEqual({
+      chatterId: expect.any(String),
       line: '오늘 할 일을 살펴볼까?',
       suggestion: FIRST_SUGGESTION,
       asks: true,
@@ -116,6 +117,8 @@ describe('GenerateMascotChatterUsecase', () => {
       slackUserId: OWNER_ID,
       channelId: CONSOLE_CHANNEL_ID,
     });
+    expect(memory.appendTurn).not.toHaveBeenCalled();
+    expect(await usecase.confirmShown(result.chatterId!)).toBe(true);
     expect(memory.appendTurn).toHaveBeenCalledWith(MEMORY_KEY, {
       role: 'assistant',
       text: '오늘 할 일을 살펴볼까?',
@@ -135,6 +138,7 @@ describe('GenerateMascotChatterUsecase', () => {
     const result = await usecase.execute({ declinedAgentTypes: [] });
 
     expect(result).toEqual({
+      chatterId: expect.any(String),
       line: '잠깐 쉬어도 좋아!',
       suggestion: null,
       asks: false,
@@ -157,11 +161,12 @@ describe('GenerateMascotChatterUsecase', () => {
       const result = await usecase.execute({ declinedAgentTypes: [] });
 
       expect(result).toEqual({
+        chatterId: expect.any(String),
         line: '같이 살펴보자!',
         suggestion: null,
         asks: false,
       });
-      expect(memory.appendTurn).toHaveBeenCalledTimes(1);
+      expect(memory.appendTurn).not.toHaveBeenCalled();
     },
   );
 
@@ -179,6 +184,7 @@ describe('GenerateMascotChatterUsecase', () => {
     const result = await usecase.execute({ declinedAgentTypes: [] });
 
     expect(result).toEqual({
+      chatterId: null,
       line: null,
       suggestion: null,
       asks: false,
@@ -191,6 +197,7 @@ describe('GenerateMascotChatterUsecase', () => {
     modelRouter.route.mockResolvedValue(completion('{"line":'));
 
     await expect(usecase.execute({ declinedAgentTypes: [] })).resolves.toEqual({
+      chatterId: null,
       line: null,
       suggestion: null,
       asks: false,
@@ -206,19 +213,67 @@ describe('GenerateMascotChatterUsecase', () => {
 
     const result = await usecase.execute({ declinedAgentTypes: [] });
 
-    expect(result).toEqual({ line: '앞 뒤 끝', suggestion: null, asks: false });
+    expect(result).toEqual({
+      chatterId: expect.any(String),
+      line: '앞 뒤 끝',
+      suggestion: null,
+      asks: false,
+    });
   });
 
   it('모델 호출 예외는 MODEL_FAILED 결과로 돌려준다', async () => {
     modelRouter.route.mockRejectedValue(new Error('model unavailable'));
 
     await expect(usecase.execute({ declinedAgentTypes: [] })).resolves.toEqual({
+      chatterId: null,
       line: null,
       suggestion: null,
       asks: false,
       reason: 'MODEL_FAILED',
     });
     expect(memory.appendTurn).not.toHaveBeenCalled();
+  });
+
+  it('알 수 없는 ID와 두 번째 확인은 기억하지 않는다', async () => {
+    const result = await usecase.execute({ declinedAgentTypes: [] });
+
+    expect(await usecase.confirmShown('unknown')).toBe(false);
+    expect(memory.appendTurn).not.toHaveBeenCalled();
+    expect(await usecase.confirmShown(result.chatterId!)).toBe(true);
+    expect(await usecase.confirmShown(result.chatterId!)).toBe(false);
+    expect(memory.appendTurn).toHaveBeenCalledTimes(1);
+  });
+
+  it('5분이 지난 한 마디는 기억하지 않는다', async () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(1_000);
+    try {
+      const result = await usecase.execute({ declinedAgentTypes: [] });
+      now.mockReturnValue(1_000 + 5 * 60 * 1000);
+
+      expect(await usecase.confirmShown(result.chatterId!)).toBe(false);
+      expect(memory.appendTurn).not.toHaveBeenCalled();
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it('새 한 마디가 이전 표시 대기 항목을 대체한다', async () => {
+    const first = await usecase.execute({ declinedAgentTypes: [] });
+    const second = await usecase.execute({ declinedAgentTypes: [] });
+
+    expect(first.chatterId).not.toBe(second.chatterId);
+    expect(await usecase.confirmShown(first.chatterId!)).toBe(false);
+    expect(await usecase.confirmShown(second.chatterId!)).toBe(true);
+    expect(memory.appendTurn).toHaveBeenCalledTimes(1);
+  });
+
+  it('기억 저장이 실패하면 false를 반환하고 재시도해 중복 저장하지 않는다', async () => {
+    memory.appendTurn.mockRejectedValue(new Error('memory unavailable'));
+    const result = await usecase.execute({ declinedAgentTypes: [] });
+
+    expect(await usecase.confirmShown(result.chatterId!)).toBe(false);
+    expect(await usecase.confirmShown(result.chatterId!)).toBe(false);
+    expect(memory.appendTurn).toHaveBeenCalledTimes(1);
   });
 
   it('거절한 후보를 프롬프트에서 빼고 남은 후보를 1번으로 매핑한다', async () => {

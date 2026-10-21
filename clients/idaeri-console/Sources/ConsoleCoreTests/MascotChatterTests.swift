@@ -20,14 +20,16 @@ func runMascotChatterTests(_ runner: TestRunner) {
     runner.suite("Mascot chatter decoding")
     let withoutSuggestion = try! JSONDecoder().decode(
         MascotChatterLine.self,
-        from: Data(#"{"line":"오늘도 차근차근 하자","suggestion":null,"asks":false}"#.utf8)
+        from: Data(#"{"chatterId":null,"line":"오늘도 차근차근 하자","suggestion":null,"asks":false}"#.utf8)
     )
+    runner.expectNil(withoutSuggestion.chatterId, "id 없음")
     runner.expectEqual(withoutSuggestion.line, "오늘도 차근차근 하자", "본문")
     runner.expectNil(withoutSuggestion.suggestion, "제안 없음")
     let withSuggestion = try! JSONDecoder().decode(
         MascotChatterLine.self,
-        from: Data(#"{"line":"계획 세울까?","suggestion":{"agentType":"PM","displayName":"PM","reason":"할 일 정리"},"asks":true}"#.utf8)
+        from: Data(#"{"chatterId":"chatter-1","line":"계획 세울까?","suggestion":{"agentType":"PM","displayName":"PM","reason":"할 일 정리"},"asks":true}"#.utf8)
     )
+    runner.expectEqual(withSuggestion.chatterId, "chatter-1", "표시 확인 id")
     runner.expectEqual(withSuggestion.suggestion?.agentType, "PM", "제안 타입")
     runner.expectEqual(withSuggestion.suggestion?.reason, "할 일 정리", "제안 이유")
     runner.expect(withSuggestion.asks, "질문 여부")
@@ -41,4 +43,23 @@ func runMascotChatterTests(_ runner: TestRunner) {
     runner.expectEqual(request.value(forHTTPHeaderField: "x-console-token"), "secret", "토큰")
     let body = try! JSONDecoder().decode([String: [String]].self, from: request.httpBody!)
     runner.expectEqual(body["declinedAgentTypes"], ["PM"], "거절한 후보")
+
+    let accept = try! buildMascotSuggestionAcceptRequest(
+        baseURL: URL(string: "http://127.0.0.1:3002")!, agentType: "CODE_REVIEWER",
+        commandId: "command-1", persona: "USAGI", token: "secret"
+    )
+    runner.expectEqual(accept.url?.path, "/v1/console/mascot/suggestion/accept", "제안 수락 경로")
+    runner.expectEqual(accept.httpMethod, "POST", "제안 수락 method")
+    runner.expectEqual(accept.value(forHTTPHeaderField: "x-console-token"), "secret", "제안 수락 토큰")
+    let acceptBody = try! JSONDecoder().decode([String: String].self, from: accept.httpBody!)
+    runner.expectEqual(acceptBody["agentType"], "CODE_REVIEWER", "제안 타입")
+    runner.expectEqual(acceptBody["commandId"], "command-1", "지시 id")
+    runner.expectEqual(acceptBody["persona"], "USAGI", "페르소나")
+
+    let shown = buildMascotChatterShownRequest(
+        baseURL: URL(string: "http://127.0.0.1:3002")!, chatterId: "chatter-1", token: "secret"
+    )
+    runner.expectEqual(shown.url?.path, "/v1/console/mascot/chatter/chatter-1/shown", "표시 확인 경로")
+    runner.expectEqual(shown.httpMethod, "POST", "표시 확인 method")
+    runner.expectEqual(shown.value(forHTTPHeaderField: "x-console-token"), "secret", "표시 확인 토큰")
 }

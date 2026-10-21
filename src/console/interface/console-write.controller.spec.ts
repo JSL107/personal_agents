@@ -7,10 +7,12 @@ import { GenerateMascotChatterUsecase } from '../application/generate-mascot-cha
 import { ConsoleWriteController } from './console-write.controller';
 import { ConsoleCommandDto } from './dto/console-command.dto';
 import { MascotChatterDto } from './dto/mascot-chatter.dto';
+import { MascotSuggestionAcceptDto } from './dto/mascot-suggestion-accept.dto';
 
 function makeController() {
   const service = {
     sendCommand: jest.fn(),
+    acceptSuggestion: jest.fn().mockResolvedValue(undefined),
     applyApproval: jest.fn().mockResolvedValue(undefined),
     cancelApproval: jest.fn().mockResolvedValue(undefined),
     retryRun: jest.fn().mockResolvedValue(undefined),
@@ -20,6 +22,7 @@ function makeController() {
     execute: jest
       .fn()
       .mockResolvedValue({ line: null, suggestion: null, asks: false }),
+    confirmShown: jest.fn().mockResolvedValue(true),
   };
   const controller = new ConsoleWriteController(
     service as unknown as ConsoleWriteService,
@@ -30,6 +33,41 @@ function makeController() {
 }
 
 describe('ConsoleWriteController', () => {
+  it('표시된 chatter ID를 확인하고 기억 여부를 반환한다', async () => {
+    const { controller, chatter } = makeController();
+    await expect(controller.mascotChatterShown('line-1')).resolves.toEqual({
+      remembered: true,
+    });
+    expect(chatter.confirmShown).toHaveBeenCalledWith('line-1');
+  });
+
+  it('제안 수락은 service에 위임한 뒤 accepted를 반환한다', async () => {
+    const { controller, service } = makeController();
+    await expect(
+      controller.acceptSuggestion({
+        agentType: 'CODE_REVIEWER',
+        commandId: 'c1',
+        persona: 'USAGI',
+      }),
+    ).resolves.toEqual({ accepted: true });
+    expect(service.acceptSuggestion).toHaveBeenCalledWith({
+      agentType: 'CODE_REVIEWER',
+      commandId: 'c1',
+      persona: 'USAGI',
+    });
+  });
+
+  it('제안 수락 DTO는 비어 있는 agentType과 잘못된 persona를 거절한다', async () => {
+    const invalid = Object.assign(new MascotSuggestionAcceptDto(), {
+      agentType: '',
+      persona: 'X',
+    });
+    const errors = await validate(invalid);
+    expect(errors.map((error) => error.property)).toEqual(
+      expect.arrayContaining(['agentType', 'persona']),
+    );
+  });
+
   it('거절한 후보를 chatter usecase로 전달한다', async () => {
     const { controller, chatter } = makeController();
     const result = await controller.mascotChatter({

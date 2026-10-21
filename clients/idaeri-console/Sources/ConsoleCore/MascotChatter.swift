@@ -9,6 +9,7 @@ public struct MascotChatterSuggestion: Decodable, Equatable, Sendable {
 
 /// `POST /v1/console/mascot/chatter` 의 data payload. line 이 없으면 고정 문구로 대체한다.
 public struct MascotChatterLine: Decodable, Equatable, Sendable {
+    public let chatterId: String?
     public let line: String?
     public let suggestion: MascotChatterSuggestion?
     public let asks: Bool
@@ -58,6 +59,12 @@ struct MascotChatterRequestBody: Encodable {
     let declinedAgentTypes: [String]
 }
 
+struct MascotSuggestionAcceptBody: Encodable {
+    let agentType: String
+    let commandId: String?
+    let persona: String?
+}
+
 /// 혼잣말 write 요청을 만든다. 서버의 loopback guard 와 token header 를 그대로 따른다.
 public func buildMascotChatterRequest(
     baseURL: URL, declinedAgentTypes: [String], token: String?
@@ -70,5 +77,32 @@ public func buildMascotChatterRequest(
         request.setValue(token, forHTTPHeaderField: "x-console-token")
     }
     request.httpBody = try JSONEncoder().encode(MascotChatterRequestBody(declinedAgentTypes: declinedAgentTypes))
+    return request
+}
+
+public func buildMascotSuggestionAcceptRequest(
+    baseURL: URL, agentType: String, commandId: String?, persona: String?, token: String?
+) throws -> URLRequest {
+    let url = baseURL.appendingPathComponent("v1/console/mascot/suggestion/accept")
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    if let token {
+        request.setValue(token, forHTTPHeaderField: "x-console-token")
+    }
+    request.httpBody = try JSONEncoder().encode(
+        MascotSuggestionAcceptBody(agentType: agentType, commandId: commandId, persona: persona)
+    )
+    return request
+}
+
+public func buildMascotChatterShownRequest(baseURL: URL, chatterId: String, token: String?) -> URLRequest {
+    let url = baseURL.appendingPathComponent("v1/console/mascot/chatter")
+        .appendingPathComponent(chatterId).appendingPathComponent("shown")
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    if let token {
+        request.setValue(token, forHTTPHeaderField: "x-console-token")
+    }
     return request
 }
