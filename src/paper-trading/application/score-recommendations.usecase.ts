@@ -23,6 +23,10 @@ import {
   calculateShadowPerformance,
 } from '../domain/shadow-performance';
 import {
+  calculateUnexecutedRecommendations,
+  UnexecutedRecommendationScore,
+} from '../domain/unexecuted-recommendation';
+import {
   PaperTradingPrismaRepository,
   SaveRecommendationScoreInput,
   SaveRecommendationScorePeriodInput,
@@ -67,6 +71,7 @@ export interface AccountRecommendationScore {
   score: StrategyRecommendationScore;
   meanExcessReturnRate: string | null;
   meanShadowReturnRate: string | null;
+  unexecuted: UnexecutedRecommendationScore;
   // 평가일 지수가 아직 안 들어와 초과수익 집계가 통째로 막힌 회차인가.
   evaluationBenchmarkMissing: boolean;
   portfolio: PortfolioPerformance;
@@ -184,6 +189,12 @@ export class ScoreRecommendationsUsecase {
         cycles: accountMatched.cycles,
         dailyPrices: validDailyPrices,
       });
+      const unexecuted = calculateUnexecutedRecommendations({
+        strategy,
+        recommendations: data.unexecutedRecommendations,
+        dailyPrices: validDailyPrices,
+        benchmarkCloses: data.benchmarkCloses,
+      });
       const benchmark = calculateBenchmarkPerformance({
         cycles: accountMatched.cycles,
         evaluationDate: asOf,
@@ -271,6 +282,7 @@ export class ScoreRecommendationsUsecase {
         score,
         meanExcessReturnRate: benchmark.meanExcessReturnRate,
         meanShadowReturnRate,
+        unexecuted,
         evaluationBenchmarkMissing: benchmark.evaluationBenchmarkMissing,
         portfolio,
         classifications,
@@ -380,12 +392,26 @@ const toSaveInput = (
   averageHoldingDays: account.score.averageHoldingDays,
   meanExcessReturnRate: account.meanExcessReturnRate,
   meanShadowReturnRate: account.meanShadowReturnRate,
+  unexecutedCount: account.unexecuted.recommendationCount,
+  unexecutedScoredCount: account.unexecuted.scoredCount,
+  unexecutedNotDueCount: account.unexecuted.notDueCount,
+  unexecutedHitCount: account.unexecuted.hitCount,
+  unexecutedHitRate: account.unexecuted.hitRate,
+  unexecutedMeanReturnRate: account.unexecuted.meanReturnRate,
+  unexecutedMeanExcessReturnRate: account.unexecuted.meanExcessReturnRate,
   snapshotCount: account.portfolio.snapshotCount,
   accountReturnRate: account.portfolio.accountReturnRate,
   maximumDrawdown: account.portfolio.maximumDrawdown,
   turnoverRate: account.portfolio.turnoverRate,
   cumulativeCost: account.portfolio.cumulativeCost,
-  exclusions: { ...account.exclusions },
+  exclusions: {
+    ...account.exclusions,
+    unexecutedDuplicate: account.unexecuted.duplicateCount,
+    unexecutedUnresolved: account.unexecuted.unresolvedCount,
+    unexecutedUnavailable: account.unexecuted.unavailableCount,
+    unexecutedBenchmarkUnavailable:
+      account.unexecuted.benchmarkUnavailableCount,
+  },
 });
 
 const toSavePeriodInputs = (

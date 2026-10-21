@@ -65,9 +65,36 @@ export interface CalculateBenchmarkPerformanceResult {
   evaluationBenchmarkMissing: boolean;
 }
 
-const SHADOW_HOLDING_ROWS: Record<RecommendationCycle['strategy'], number> = {
+export const SHADOW_HOLDING_ROWS: Record<
+  RecommendationCycle['strategy'],
+  number
+> = {
   LONG_TERM: 60,
   SWING: 5,
+};
+
+export const calculateCloseToCloseReturnRate = (
+  entryDailyPrice: ShadowDailyPriceInput,
+  exitDailyPrice: ShadowDailyPriceInput,
+  quantity: number | MoneyValue,
+): MoneyValue => {
+  const entryGrossAmount = entryDailyPrice.close.times(quantity);
+  const exitGrossAmount = exitDailyPrice.close.times(quantity);
+  const entryCost = calculateTradeCost({
+    market: entryDailyPrice.market,
+    side: 'BUY',
+    grossAmount: entryGrossAmount,
+    tradeDate: entryDailyPrice.tradeDate,
+  });
+  const exitCost = calculateTradeCost({
+    market: exitDailyPrice.market,
+    side: 'SELL',
+    grossAmount: exitGrossAmount,
+    tradeDate: exitDailyPrice.tradeDate,
+  });
+  const entryTotal = entryGrossAmount.plus(entryCost.fee).plus(entryCost.tax);
+  const exitTotal = exitGrossAmount.minus(exitCost.fee).minus(exitCost.tax);
+  return exitTotal.dividedBy(entryTotal).minus(1);
 };
 
 const sameDate = (left: Date, right: Date): boolean =>
@@ -136,25 +163,6 @@ export const calculateShadowPerformance = (
 
     // 현재 adjusted=true 수집에서는 close == adjClose인 조정 계열이다.
     // 수집 정책이 바뀌면 양 끝 저장 close 계열과 그림자 계산 의미를 재검토해야 한다.
-    const entryGrossAmount = entryDailyPrice.close.times(
-      cycle.buyTrade.quantity,
-    );
-    const exitGrossAmount = exitDailyPrice.close.times(cycle.buyTrade.quantity);
-    const entryCost = calculateTradeCost({
-      market: entryDailyPrice.market,
-      side: 'BUY',
-      grossAmount: entryGrossAmount,
-      tradeDate: entryDailyPrice.tradeDate,
-    });
-    const exitCost = calculateTradeCost({
-      market: exitDailyPrice.market,
-      side: 'SELL',
-      grossAmount: exitGrossAmount,
-      tradeDate: exitDailyPrice.tradeDate,
-    });
-    const entryTotal = entryGrossAmount.plus(entryCost.fee).plus(entryCost.tax);
-    const exitTotal = exitGrossAmount.minus(exitCost.fee).minus(exitCost.tax);
-
     // 실제는 다음 거래일 시가, 그림자는 같은 거래일 저장 종가 진입이라 비교에는 진입 기준 차이도 섞인다.
     performances.push({
       orderId: cycle.orderId,
@@ -163,7 +171,11 @@ export const calculateShadowPerformance = (
       exitTradeDate: exitDailyPrice.tradeDate,
       entryClose: entryDailyPrice.close.toString(),
       exitClose: exitDailyPrice.close.toString(),
-      returnRate: exitTotal.dividedBy(entryTotal).minus(1).toString(),
+      returnRate: calculateCloseToCloseReturnRate(
+        entryDailyPrice,
+        exitDailyPrice,
+        cycle.buyTrade.quantity,
+      ).toString(),
     });
   }
 
