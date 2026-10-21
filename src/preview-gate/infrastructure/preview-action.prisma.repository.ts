@@ -192,15 +192,18 @@ export class PreviewActionPrismaRepository implements PreviewActionRepositoryPor
     kind,
     payloadPath,
     payloadValue,
+    status,
   }: {
     kind: string;
     payloadPath: string[];
     payloadValue: string | number;
+    status?: PreviewStatus;
   }): Promise<number> {
     return this.prisma.previewAction.count({
       where: {
         kind,
         payload: { path: payloadPath, equals: payloadValue },
+        ...(status ? { status } : {}),
       },
     });
   }
