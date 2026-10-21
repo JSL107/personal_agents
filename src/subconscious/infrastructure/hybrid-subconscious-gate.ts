@@ -44,7 +44,7 @@ export class HybridSubconsciousGate implements SubconsciousGate {
   private async shadow(changes: RedactedChange[]): Promise<GateDecision[]> {
     const [legacyResult, jevResult] = await Promise.allSettled([
       this.legacyGate.judge(changes),
-      this.jevGate.evaluate(changes),
+      this.jevGate.evaluateShadow(changes),
     ]);
 
     if (jevResult.status === 'rejected') {

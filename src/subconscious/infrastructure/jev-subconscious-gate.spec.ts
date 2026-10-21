@@ -209,6 +209,46 @@ describe('JevSubconsciousGate', () => {
     );
   });
 
+  it('shadow 판정은 AgentRun 없이 같은 결과를 돌려주고, 실패는 그대로 던진다', async () => {
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          model: 'jev-1.13.0',
+          answers: {
+            promote_0: { type: 'noul', noul: 0.99 },
+            agent_0: {
+              type: 'choice',
+              choice: AgentType.CODE_REVIEWER,
+              confidence: 0.99,
+            },
+          },
+        }),
+      })
+      .mockRejectedValueOnce(
+        new Error('This operation was aborted'),
+      ) as typeof fetch;
+    const execute = jest.fn();
+    const gate = Reflect.construct(JevSubconsciousGate, [
+      makeConfig({ TYPESAFE_API_KEY: 'test-key' }),
+      { execute } as unknown as Partial<AgentRunService>,
+    ]) as JevSubconsciousGate;
+
+    const evaluation = await gate.evaluateShadow([makeChange('pr-1')]);
+    expect(evaluation.confidentDecisions).toEqual([
+      expect.objectContaining({
+        changeKey: 'pr-1',
+        promote: true,
+        suggestedAgentType: AgentType.CODE_REVIEWER,
+      }),
+    ]);
+    await expect(gate.evaluateShadow([makeChange('pr-2')])).rejects.toThrow(
+      'This operation was aborted',
+    );
+    expect(execute).not.toHaveBeenCalled();
+  });
+
   it('API 키가 없으면 호출하지 않고 실패한다', async () => {
     const fetchMock = jest.fn();
     global.fetch = fetchMock as typeof fetch;
