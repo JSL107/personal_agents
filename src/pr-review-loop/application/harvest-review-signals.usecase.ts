@@ -49,6 +49,14 @@ interface PullRequestCardGroup {
 // 순서가 뒤집히면 기각 이유가 유실된다. 사람이 반박을 적는 데 걸리는 시간이라 넉넉히 잡는다.
 const REJECTION_REPLY_GRACE_MS = 24 * 60 * 60 * 1000;
 
+// 리액션 없이 답글만 있는 카드를 LLM 판정에 넘기기 전에 기다리는 시간.
+// 규약(docs/pr-review-bot-protocol.md)은 "답글을 먼저, 이모지를 나중에" 라서 답글과 👍 사이에
+// 몇 초 틈이 생긴다. 그 틈에 수확이 돌면 판정기가 답글만 보고 결론을 내 카드를 닫고, 뒤이어
+// 달린 👍 는 영영 읽히지 않는다. 실측: 카드 #1679·#1724 는 답글 → 6~11초 뒤 👍 → 그 10초 뒤
+// 판정기가 REJECTED 로 확정했고, 두 기각 이유가 규약 재료로 남았다(#1724 는 실제로 규약 노출).
+// 스윕이 5분 간격이라 10분이면 최소 한 회차는 이모지를 볼 기회가 생긴다.
+const REPLY_JUDGE_GRACE_MS = 10 * 60 * 1000;
+
 // 👎 와 답글 판정(수용)이 어긋난 카드를 사람 몫으로 두는 기간. 지나면 리액션대로 기각을 확정한다.
 // 같은 답글을 다시 물어 결론을 뒤집는 대신 사람의 명시적 신호(👎 + 답글)를 따른다 — 확인된
 // 두 건(#1118·#860)은 모두 판정기가 반박 답글을 수용으로 읽었고 👎 쪽이 맞았다. 반대로 👎 를
@@ -432,8 +440,16 @@ export class HarvestReviewSignalsUsecase {
           });
           outcome.stale += 1;
           break;
-        case 'NEEDS_JUDGE':
+        case 'NEEDS_JUDGE': {
           if (thread === null) {
+            outcome.skipped += 1;
+            break;
+          }
+          // lastReplyAt 이 파싱 불가면 NaN 이라 비교가 false — 유예 전 동작대로 바로 판정한다.
+          // 👎 유예와 같은 정책이다. 시각을 모르면 상한도 걸 수 없다.
+          const sinceReplyMs =
+            Date.now() - new Date(signal.lastReplyAt).getTime();
+          if (sinceReplyMs < REPLY_JUDGE_GRACE_MS) {
             outcome.skipped += 1;
             break;
           }
@@ -444,6 +460,7 @@ export class HarvestReviewSignalsUsecase {
             ownerReplyBody: signal.ownerReplyBody,
           });
           break;
+        }
         case 'NONE':
           // 반응이 없어도 지적을 말없이 고쳤을 수 있다. 열린 PR 의 인라인 카드만
           // 후속 커밋 해소 판정 후보로 모은다(위치가 없으면 겹침을 계산할 수 없다).

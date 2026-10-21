@@ -1616,6 +1616,79 @@ describe('HarvestReviewSignalsUsecase', () => {
     });
   });
 
+  it('방금 단 답글은 판정기에 넘기지 않고 이모지를 기다린다', async () => {
+    // 규약이 "답글 먼저, 이모지 나중" 이라 그 몇 초 틈에 판정하면 뒤이은 👍 가 버려진다.
+    // 실측 카드 #1679·#1724: "맞습니다, 다만 이번 PR 에서는…" 답글이 👍 보다 먼저 판정돼 기각됐다.
+    const { usecase, github, repository, judge } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: null,
+      pullRequestState: 'OPEN',
+      truncated: false,
+      threads: [
+        reviewThread({
+          replies: [
+            {
+              databaseId: 556,
+              authorLogin: 'owner',
+              body: '정확한 지적입니다. 다만 이번 PR 에서는 고치지 않습니다',
+              createdAt: new Date().toISOString(),
+              reactions: [],
+            },
+          ],
+        }),
+      ],
+    });
+
+    const outcome = await usecase.execute();
+
+    expect(judge.execute).not.toHaveBeenCalled();
+    expect(repository.markDecided).not.toHaveBeenCalled();
+    expect(outcome.skipped).toBe(1);
+  });
+
+  it('유예 중 답글 뒤에 👍 가 달리면 판정기 없이 리액션대로 채택한다', async () => {
+    const { usecase, github, repository, judge } = buildDependencies();
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    const now = Date.now();
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: null,
+      pullRequestState: 'OPEN',
+      truncated: false,
+      threads: [
+        reviewThread({
+          reactions: [
+            {
+              content: 'THUMBS_UP',
+              userLogin: 'owner',
+              createdAt: new Date(now - 5_000).toISOString(),
+            },
+          ],
+          replies: [
+            {
+              databaseId: 556,
+              authorLogin: 'owner',
+              body: '정확한 지적입니다. 다만 이번 PR 에서는 고치지 않습니다',
+              createdAt: new Date(now - 15_000).toISOString(),
+              reactions: [],
+            },
+          ],
+        }),
+      ],
+    });
+
+    await usecase.execute();
+
+    expect(judge.execute).not.toHaveBeenCalled();
+    expect(repository.markDecided).toHaveBeenCalledWith({
+      id: 1,
+      status: 'ACKED',
+      rejectReason: null,
+      acceptReply: '정확한 지적입니다. 다만 이번 PR 에서는 고치지 않습니다',
+      githubThreadNodeId: 'PRRT_555',
+    });
+  });
+
   it('답글이 그대로면 다음 회차에 같은 답글을 다시 판정하지 않는다', async () => {
     // UNCLEAR 는 카드를 OPEN 으로 남기므로, 가드가 없으면 5분마다 같은 답글로 CLI 를
     // 다시 태운다. 해소 판정에는 같은 checkpoint 가 이미 있다.
