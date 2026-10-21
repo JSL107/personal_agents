@@ -1,51 +1,5 @@
 import ConsoleCore
-import SpriteKit
 import SwiftUI
-
-/// 한글이 뭉개지지 않는 최소 크기. 라틴 문자보다 획이 많아 하한이 높다.
-///
-/// 값은 `ConsoleCore` 가 단일 소스로 갖는다 — 문패가 이름표를 덮지 않을 높이를 계산하려면
-/// 순수 경계(회귀 테스트가 닿는 곳)가 이 하한을 알아야 하기 때문이다.
-let officeNameplateMinFontSize = CGFloat(officeNameplateMinFontSizeValue)
-let officeZoneLabelMinFontSize = CGFloat(officeZoneLabelMinFontSizeValue)
-/// 좌상단 전사 요약(HUD)의 최소 크기. 씬 안의 이름표가 아니라 화면에 얹는 글이라 따로 둔다.
-let officeHudMinFontSize: CGFloat = 13
-/// 좌상단 전사 요약(HUD) 판의 그리기 순서(overlayLayer 안에서의 로컬 zPosition).
-///
-/// 구역 문패(overlayLayer 자식, zPosition 미지정 = 0)보다는 위에 그려야 겹쳐도 이기고,
-/// 커서 옆 쪽지 판(`makeHoverTooltip`, zPosition 100)보다는 아래여야 한다 — 쪽지가 늘
-/// 최상단이어야 하는 이유는 그 판 자체의 주석에 있다(가림 방지).
-let officeHudZPosition: CGFloat = 50
-
-/// 책상 스탠드 빛 웅덩이 반지름(도트). `OfficeLightTexture.deskGlow` 텍스처의 한 변이
-/// 이 값의 두 배가 된다 — 너무 크면 옆 책상까지 물들어 누구 자리가 켜졌는지 흐려진다.
-let officeDeskGlowRadius = 13
-/// 빛 웅덩이 색. 벽등 켜짐 색(`OfficeLightLayer.lampColor`)과 같은 계열의 따뜻한 호박색 —
-/// 스탠드도 벽등도 같은 실내 조명이라 색이 갈리면 두 광원처럼 읽힌다.
-///
-/// 처음엔 책상 나무색에 가까운 옅은 호박색(0.82,0.45)을 썼는데, `.add` 로 얹어도 바탕색과
-/// 겹쳐 실측 렌더에서 거의 안 보였다 — 채도를 올리고 세기(strength)도 함께 올려야
-/// 나무 위에서 도드라진다.
-let officeDeskGlowColor = OfficeColor(red: 1.00, green: 0.74, blue: 0.28)
-/// 웅덩이 중심의 최대 알파. `.add` 로 얹으므로 1에 가까우면 책상 위가 하얗게 날아간다.
-let officeDeskGlowStrength: Double = 0.8
-/// 책상 자식 노드 중 그리는 순서(desk 노드 기준 로컬 zPosition). 책상 상판(0) 보다는 위,
-/// 소품(0.01)보다는 아래 — 빛 웅덩이가 상판에 깔리고 그 위에 소품·서류가 놓인 그림이어야 한다.
-let officeDeskGlowZPosition: CGFloat = 0.005
-
-/// 대표 경고등 반지름(도트). 책상 스탠드(13)보다 좁게 잡는다 — 대표 머리 위 좁은 자리에
-/// 얹는 등이라, 너무 크면 왕관 문패 판까지 물들여 글자가 묻힌다.
-let officeAlarmGlowRadius = 9
-/// 경고등 색. 실패 상태가 이미 쓰는 코랄 레드(`agentStatePaletteRGBA(.failed)`)를 그대로
-/// 끌어온다 — "위험"을 뜻하는 색을 화면 안에서 따로 또 정의하면 어느 쪽이 진짜 위급
-/// 신호인지 헷갈린다.
-let officeAlarmGlowColor: OfficeColor = {
-    let rgb = agentStatePaletteRGBA(.failed)
-    return OfficeColor(red: rgb.red, green: rgb.green, blue: rgb.blue)
-}()
-/// 경고등 중심의 최대 알파. `.add` 로 얹으므로 책상 스탠드(0.8)보다 살짝 세게 잡아야
-/// "방치됐다"는 신호가 배경에 묻히지 않는다.
-let officeAlarmGlowStrength: Double = 0.9
 
 // MARK: - 간격
 
@@ -110,16 +64,7 @@ enum Layout {
     static let windowMinHeight: CGFloat = 560
     /// 탭 안쪽 내용의 최소 높이. 탭 전환 막대만큼 창보다 낮다.
     static let contentMinHeight: CGFloat = 520
-    static let officeMinWidth: CGFloat = 640
     static let officeInspectorWidth: CGFloat = 300
-    static let selectedOfficeMinWidth: CGFloat = officeMinWidth + officeInspectorWidth
-    /// 탭 전환 막대가 창 세로에서 가져가는 높이 — 세그먼트 피커(24) + 위아래 여백 + 구분선 1.
-    ///
-    /// 창 크기를 도면 배율에서 거꾸로 잡을 때 **이만큼을 먼저 빼야 한다.** 오피스 씬은 창이
-    /// 아니라 이 막대 아래를 받으므로, 창 세로를 그대로 도면 요구치와 견주면 매번 41px 을
-    /// 더 가진 것으로 착각한다(타이틀바까지 더하면 73px — 계단 하나가 40px 인 이 화면에서는
-    /// 두 계단에 가까운 오차다).
-    static let tabHeaderHeight: CGFloat = 24 + Spacing.sm * 2 + 1
     static let sheetMinWidth: CGFloat = 380
     static let editorMinHeight: CGFloat = 120
 }
@@ -163,19 +108,13 @@ enum Typography {
 }
 
 /// 상태 6종의 표시 속성(색·한글 라벨). 색 값은 ConsoleCore 의 팔레트(agentStatePaletteRGBA)를
-/// 단일 소스로 참조한다 — SwiftUI Color(대시보드)와 SKColor(오피스 씬)가 같은 색을 쓴다.
+/// 단일 소스로 참조한다.
 /// 백엔드가 소유하는 말풍선(bubble)과 달리, 색·라벨은 앱 표현 계층의 소유다.
 extension ConsoleAgentState {
     /// 카드 강조색(테두리·상단 바). 배경은 이 색의 옅은 tint 로 파생한다.
     var accentColor: Color {
         let rgb = agentStatePaletteRGBA(self)
         return Color(red: rgb.red, green: rgb.green, blue: rgb.blue)
-    }
-
-    /// SpriteKit 노드용 색(accentColor 와 같은 팔레트).
-    var skColor: SKColor {
-        let rgb = agentStatePaletteRGBA(self)
-        return SKColor(red: rgb.red, green: rgb.green, blue: rgb.blue, alpha: 1)
     }
 
     /// 카드 배경 tint.
@@ -251,41 +190,11 @@ extension PendingPhase {
     }
 }
 
-/// 부서의 표시 속성(색·아이콘). 색 값은 ConsoleCore 의 부서 팔레트를 단일 소스로 참조한다.
+/// 부서 강조색은 ConsoleCore 의 부서 팔레트를 단일 소스로 참조한다.
 extension Department {
     /// 부서 강조색(범례·아이콘 SwiftUI 표시용).
     var accentColor: Color {
         let rgb = agentDepartmentPaletteRGBA(self)
         return Color(red: rgb.red, green: rgb.green, blue: rgb.blue)
-    }
-
-    /// SpriteKit 아이콘 tint 색(accentColor 와 같은 팔레트).
-    var skColor: SKColor {
-        let rgb = agentDepartmentPaletteRGBA(self)
-        return SKColor(red: rgb.red, green: rgb.green, blue: rgb.blue, alpha: 1)
-    }
-
-    /// 토큰 채움 tint(낮은 불투명도 — 상태 링 가독성 보존).
-    var fillTintColor: SKColor {
-        let rgb = agentDepartmentPaletteRGBA(self)
-        return SKColor(red: rgb.red, green: rgb.green, blue: rgb.blue, alpha: 0.20)
-    }
-
-    /// 부서 대표 SF Symbol 이름(시스템 제공, macOS 13 존재 확인된 것만).
-    var iconSymbolName: String {
-        switch self {
-        case .planning:
-            return "list.bullet"
-        case .quality:
-            return "magnifyingglass"
-        case .evaluation:
-            return "chart.bar.fill"
-        case .treasury:
-            return "dollarsign.circle.fill"
-        case .content:
-            return "square.and.pencil"
-        case .internalOps:
-            return "gearshape.fill"
-        }
     }
 }

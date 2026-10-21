@@ -2,7 +2,7 @@ import ConsoleCore
 import SwiftUI
 
 /// 승인 카드 상세 시트 — previewText 전문 + 만료 시각 + 승인/거절.
-/// DashboardView 와 OfficeView 가 공유한다. 닫기(선택 해제)는 호출한 뷰가 콜백 안에서 처리한다.
+/// 대시보드의 승인 상세. 닫기(선택 해제)는 호출한 뷰가 콜백 안에서 처리한다.
 struct ApprovalDetailSheet: View {
     let approval: ConsoleApproval
     let onApprove: (String) -> Void
