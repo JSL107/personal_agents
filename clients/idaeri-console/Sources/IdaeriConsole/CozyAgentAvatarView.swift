@@ -1,7 +1,7 @@
 import ConsoleCore
 import SwiftUI
 
-/// A small, scalable coworker illustration shared by dashboard and office surfaces.
+/// A small, scalable coworker illustration for agent details.
 struct CozyAgentAvatarView: View {
     let appearance: CozyAgentAppearance
     let mood: CozyAgentMood
@@ -39,7 +39,7 @@ struct CozyAgentAvatarView: View {
                     pose: pose
                 ) {
                     avatarShadow(in: proxy.size)
-                    // Dashboard portraits are height-bound. The office correction also accounts
+                    // Dashboard portraits are height-bound. The correction also accounts
                     // for its width cap, so applying it here made equal cards visibly inconsistent.
                     let opticalScale = cozyDashboardCharacterVisualScale(
                         assetIndex: appearance.assetIndex,

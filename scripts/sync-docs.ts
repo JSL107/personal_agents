@@ -33,7 +33,6 @@ import { join, resolve } from 'node:path';
 
 import { getMetadataStorage } from 'class-validator';
 
-import { AGENT_CONTRACTS } from '../src/agent-registry/agent-contract';
 import { AGENT_REGISTRY } from '../src/agent-registry/agent-registry';
 import { EnvironmentVariables } from '../src/config/app.config';
 import { AGENT_TO_PROVIDER } from '../src/model-router/domain/agent-provider.map';
@@ -43,16 +42,10 @@ const APP_CONFIG_PATH = join(REPO_ROOT, 'src', 'config', 'app.config.ts');
 const AGENT_CATALOG_PATH = join(REPO_ROOT, 'docs', 'agent-catalog.md');
 const ENV_CATALOG_PATH = join(REPO_ROOT, 'docs', 'env-catalog.md');
 
-/** 오피스 화면이 사람에게 붙이는 한글 직책표(agentType → 이름표). */
+/** 콘솔 카드가 사용하는 한글 직책표(agentType → 이름표). */
 const CONSOLE_ROLE_PATH = join(
   REPO_ROOT,
   'clients/idaeri-console/Sources/ConsoleCore/AgentRole.swift',
-);
-
-/** 오피스 자리 배치 검사가 쓰는 인원 표본. 사규의 실제 인원·부서를 재현해야 한다. */
-const CONSOLE_SAMPLE_PATH = join(
-  REPO_ROOT,
-  'clients/idaeri-console/Sources/ConsoleCoreTests/OfficeFloorPlanTests.swift',
 );
 
 const GENERATED_BANNER =
@@ -256,18 +249,7 @@ function stripSwiftLineComments(source: string): string {
     .join('\n');
 }
 
-/**
- * 오피스 화면(Swift)이 사규의 사람을 전부 알고 있는지 확인한다.
- *
- * 백엔드에 에이전트를 추가해도 콘솔은 컴파일이 깨지지 않는다 — 직책이 없으면 조용히 영문
- * 표시명으로 폴백하고, 검사 표본이 예전 인원에 머물러도 자리 배치 단언은 그대로 통과한다.
- * 실제로 `PAPER_TRADE`·`PAPER_RECOMMEND` 가 그렇게 빠져, 성장 부서가 8명인데 6명으로
- * 검사되는 동안 이름표 셋이 서로를 덮고 있었다. 사람이 늘었다는 사실은 사규만 알고 있으므로
- * 여기서 잇는다.
- *
- * 부서까지 대조하는 것은 표본의 **인원수만** 맞추면 방마다 몇 명인지가 어긋나 자리 부족이
- * 다른 방에서 검사되기 때문이다.
- */
+/** 콘솔 카드의 직책표가 사규의 이름과 일치하는지 확인한다. */
 function assertConsoleAgentSync(): void {
   const declared = AGENT_REGISTRY.map((entry) => entry.agentType);
 
@@ -295,19 +277,13 @@ function assertConsoleAgentSync(): void {
   const unlabeled = declared.filter((type) => !labeled.has(type));
   if (unlabeled.length > 0) {
     throw new Error(
-      `[sync-docs] 오피스 한글 닉네임이 없는 에이전트: ${unlabeled.join(', ')}\n` +
-        `  ${toRepoRelative(CONSOLE_ROLE_PATH)} 의 agentRoleLabel 에 추가하세요(이름표가 겹치지 않게 7자 이내).\n` +
+      `[sync-docs] 콘솔 한글 닉네임이 없는 에이전트: ${unlabeled.join(', ')}\n` +
+        `  ${toRepoRelative(CONSOLE_ROLE_PATH)} 의 agentRoleLabel 에 추가하세요.\n` +
         '  없으면 그 사람만 영문 표시명으로 폴백해 이름표가 뒤섞입니다.',
     );
   }
 
-  // 값까지 명부와 같아야 한다.
-  //
-  // 앱은 서버 `nickname` 을 우선하고 Swift 표는 구버전 서버 폴백으로만 쓴다. 그래서 두 값이
-  // 갈려도 실행은 조용히 돌아간다 — 그런데 **오피스 이름표가 겹치는지 재는 게이트**
-  // (`OfficeNameplateFitTests`)는 Swift 표를 재고, 화면에 실제로 뜨는 이름은 서버 값이다.
-  // 두 값이 갈리는 순간 그 게이트는 화면에 없는 이름을 재게 되고, 겹침은 게이트 밖에서 생긴다
-  // (이 레포는 이름표 겹침으로 PR #266·#268 을 이미 겪었다).
+  // 서버 nickname과 앱 폴백 직책표가 갈리면 카드의 표시가 연결 상태에 따라 바뀐다.
   const drifted = AGENT_REGISTRY.filter(
     (entry) => labeled.get(entry.agentType) !== entry.nickname,
   ).map(
@@ -319,55 +295,7 @@ function assertConsoleAgentSync(): void {
       `[sync-docs] 담당자 닉네임이 명부와 앱에서 갈렸습니다:\n` +
         drifted.map((line) => `  - ${line}`).join('\n') +
         `\n  ${toRepoRelative(CONSOLE_ROLE_PATH)} 의 agentRoleLabel 을 명부 값으로 맞추세요.\n` +
-        '  갈린 채 두면 이름표 겹침 검사가 화면에 없는 이름을 재게 됩니다.',
-    );
-  }
-
-  const sampleSource = stripSwiftLineComments(
-    readFileSync(CONSOLE_SAMPLE_PATH, 'utf8'),
-  );
-  const sampled = new Map<string, string>();
-  // 같은 사람이 두 방에 적히면 Map 이 덮어써서 조용히 하나로 합쳐진다 — 파싱 단계에서 잡는다.
-  const duplicated: string[] = [];
-  for (const group of sampleSource.matchAll(
-    /planAgents\(\s*\.(\w+),\s*\[([^\]]*)\]/gu,
-  )) {
-    for (const quoted of group[2].matchAll(/"(\w+)"/gu)) {
-      if (sampled.has(quoted[1])) {
-        duplicated.push(quoted[1]);
-      }
-      sampled.set(quoted[1], group[1]);
-    }
-  }
-  // Department 의 값이 곧 Swift enum case 이름이라(`internalOps`) 그대로 견줄 수 있다.
-  const declaredTypes = new Set<string>(declared);
-  const missing = declared.filter((type) => !sampled.has(type));
-  // **표본에만 있는 사람도 실패다.** 사규에서 에이전트를 지웠는데 표본에 남으면 유령 인원으로
-  // 자리·이름표 검사가 계속 돌아, 멀쩡한 배치 변경을 막거나 실제 구성의 회귀를 놓친다.
-  // 같은 파일 `assertEnvEntries` 가 누락과 초과를 함께 보는 것과 같은 이유다.
-  const unexpected = [...sampled.keys()].filter(
-    (type) => !declaredTypes.has(type),
-  );
-  const misplaced = declared
-    .filter((type) => sampled.has(type))
-    .filter((type) => sampled.get(type) !== AGENT_CONTRACTS[type].department)
-    .map(
-      (type) =>
-        `${type}(표본 ${sampled.get(type)} ≠ 사규 ${AGENT_CONTRACTS[type].department})`,
-    );
-  if (
-    missing.length > 0 ||
-    unexpected.length > 0 ||
-    misplaced.length > 0 ||
-    duplicated.length > 0
-  ) {
-    throw new Error(
-      `[sync-docs] 오피스 자리 검사 표본이 사규와 다릅니다(사규 ${declared.length}명 / 표본 ${sampled.size}명).\n` +
-        `  누락: ${missing.join(', ') || '없음'}\n` +
-        `  초과: ${unexpected.join(', ') || '없음'}\n` +
-        `  부서 불일치: ${misplaced.join(', ') || '없음'}\n` +
-        `  중복: ${[...new Set(duplicated)].join(', ') || '없음'}\n` +
-        `  ${toRepoRelative(CONSOLE_SAMPLE_PATH)} 의 sampleAgents 를 맞추세요 — 표본이 실제 인원을 재현해야 자리 부족·이름표 겹침이 검사에 걸립니다.`,
+        '  갈린 채 두면 카드의 표시가 연결 상태에 따라 달라집니다.',
     );
   }
 }
