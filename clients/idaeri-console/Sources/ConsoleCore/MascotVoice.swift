@@ -79,7 +79,9 @@ public func mascotSay(_ quip: MascotQuip, _ info: String? = nil) -> String {
 }
 
 /// 혼잣말을 꺼내도 되는 조용한 시간. 사람이 자리에 있을 법한 시간에만 말한다.
-public let mascotChatterQuietSeconds: TimeInterval = 20 * 60
+public let mascotChatterQuietSeconds: TimeInterval = 5 * 60
+public let mascotChatterDailyMax = 12
+public let mascotChatterChance = 0.5
 
 /// 지금 혼잣말을 해도 되는가 — 쉬는 중이고, 오래 조용했고, 근무 시간 안일 때.
 public func mascotChatterDue(

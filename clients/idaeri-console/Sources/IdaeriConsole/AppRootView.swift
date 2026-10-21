@@ -61,6 +61,14 @@ struct AppRootView: View {
             }
             sendCommand(text: text, agentTypeHint: nil, persona: "USAGI")
         }
+        .onReceive(NotificationCenter.default.publisher(for: .idaeriMascotAcceptSuggestion)) { notification in
+            guard let agentType = notification.userInfo?["agentType"] as? String,
+                  let displayName = notification.userInfo?["displayName"] as? String
+            else {
+                return
+            }
+            acceptSuggestion(agentType: agentType, displayName: displayName)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .idaeriMascotRetry)) { notification in
             guard let runId = notification.userInfo?["runId"] as? Int else {
                 return
@@ -117,6 +125,19 @@ struct AppRootView: View {
                     agentTypeHint: agentTypeHint,
                     commandId: id.uuidString,
                     persona: persona
+                )
+            } catch {
+                await MainActor.run { store.markCommandFailed(id: id) }
+            }
+        }
+    }
+
+    func acceptSuggestion(agentType: String, displayName: String) {
+        let id = store.enqueueCommand(text: displayName, agentTypeHint: agentType)
+        Task {
+            do {
+                try await client.postSuggestionAccept(
+                    agentType: agentType, commandId: id.uuidString, persona: "USAGI"
                 )
             } catch {
                 await MainActor.run { store.markCommandFailed(id: id) }

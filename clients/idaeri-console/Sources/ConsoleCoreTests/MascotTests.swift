@@ -180,10 +180,17 @@ func runMascotTests(_ runner: TestRunner) {
 
     runner.suite("Mascot chatter")
     let chatterNoon = mascotTestDate("2026-10-14T03:00:00.000Z")  // 수 12:00 KST
-    let longAgo = chatterNoon.addingTimeInterval(-mascotChatterQuietSeconds)
+    let longAgo = chatterNoon.addingTimeInterval(-300)
     runner.expect(
         mascotChatterDue(mood: .idle, lastSpokeAt: longAgo, now: chatterNoon, calendar: mascotTestCalendar()),
-        "쉬는 중·20분 조용·근무 시간이면 혼잣말"
+        "쉬는 중·5분 조용·근무 시간이면 혼잣말"
+    )
+    runner.expect(
+        !mascotChatterDue(
+            mood: .idle, lastSpokeAt: chatterNoon.addingTimeInterval(-299), now: chatterNoon,
+            calendar: mascotTestCalendar()
+        ),
+        "5분 직전에는 혼잣말 안 함"
     )
     runner.expect(
         !mascotChatterDue(

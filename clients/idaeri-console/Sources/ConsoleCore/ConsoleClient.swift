@@ -431,6 +431,35 @@ public actor ConsoleClient {
         try await sendExpectingSuccess(request)
     }
 
+    /// `POST /v1/console/mascot/chatter` — 서버가 만든 한 마디를 공통 data 봉투에서 꺼낸다.
+    public func postMascotChatter(declinedAgentTypes: [String]) async throws -> MascotChatterLine {
+        let request = try buildMascotChatterRequest(
+            baseURL: baseURL, declinedAgentTypes: declinedAgentTypes, token: token
+        )
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw ConsoleClientError.notHTTP
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw ConsoleClientError.badStatus(http.statusCode)
+        }
+        return try JSONDecoder().decode(MascotChatterEnvelope.self, from: data).data
+    }
+
+    /// 검증된 현재 제안만 전용 경로로 수락한다.
+    public func postSuggestionAccept(agentType: String, commandId: String?, persona: String? = nil) async throws {
+        let request = try buildMascotSuggestionAcceptRequest(
+            baseURL: baseURL, agentType: agentType, commandId: commandId, persona: persona, token: token
+        )
+        try await sendExpectingSuccess(request)
+    }
+
+    /// 실제로 표시한 혼잣말만 서버의 대화 기억에 반영한다.
+    public func postMascotChatterShown(chatterId: String) async throws {
+        let request = buildMascotChatterShownRequest(baseURL: baseURL, chatterId: chatterId, token: token)
+        try await sendExpectingSuccess(request)
+    }
+
     /// `POST /v1/console/sessions/:id/inject` — 로컬 세션에 작업 주입. 동기 응답으로 결과 확정.
     public func postInject(sessionId: String, text: String) async throws -> InjectOutcome {
         let request = try buildInjectRequest(

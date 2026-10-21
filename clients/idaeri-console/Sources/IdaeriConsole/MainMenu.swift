@@ -56,6 +56,9 @@ extension Notification.Name {
     /// 마스코트 지시도 기존 화면의 낙관적 전송·실패 처리 경로를 쓴다.
     static let idaeriMascotCommand = Notification.Name("idaeri.mascotCommand")
 
+    /// 마스코트 제안 수락은 일반 자유 입력과 분리한다.
+    static let idaeriMascotAcceptSuggestion = Notification.Name("idaeri.mascotAcceptSuggestion")
+
     /// 마스코트 할 일 목록의 [재시도]도 대시보드와 같은 재시도 경로를 쓴다.
     static let idaeriMascotRetry = Notification.Name("idaeri.mascotRetry")
 

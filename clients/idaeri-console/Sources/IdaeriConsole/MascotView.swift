@@ -8,9 +8,10 @@ enum MascotBubble: Equatable {
     case status(header: [String], todos: [MascotTodoRow], busyCount: Int, notice: String?)
     case approval(id: String, headline: String, title: String, more: Int, submitted: Bool, armed: Bool)
     case thinking(String)
-    case reply(sound: String, body: String, signature: String?)
+    case reply(sound: String, body: String, signature: String?, history: [MascotTurn])
     case briefing([String])
     case reaction(String)
+    case chatter(sound: String, line: String, suggestion: MascotChatterSuggestion?, asks: Bool)
 }
 
 private struct MascotHitRects: PreferenceKey {
@@ -292,8 +293,23 @@ struct MascotView: View {
                 )
             case let .thinking(line):
                 MascotThinkingLine(text: line)
-            case let .reply(sound, body, signature):
+            case let .reply(sound, body, signature, history):
                 Text(sound).font(.system(size: 14, weight: .bold))
+                if !history.isEmpty {
+                    // 패널 높이는 고정이다. 기록 4줄이 각각 두 줄로 접혀도 답장 입력 버튼이
+                    // 캐릭터 뒤로 밀리지 않도록 기록과 본문에 각각 스크롤 높이 상한을 둔다.
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 3) {
+                            ForEach(Array(history.suffix(4).enumerated()), id: \.offset) { _, turn in
+                                Text("\(turn.role == .user ? "나" : "우사기"): \(turn.text)")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                    }
+                    .frame(height: min(CGFloat(min(history.count, 4)) * 32, 80))
+                }
                 // 긴 답은 잘라 버리지 않고 스크롤한다. 마크다운(굵게·기울임·코드)은 이대리 답이 실제로 쓴다.
                 // 짧은 답은 내용 높이만큼만, 180pt 를 넘는 답만 스크롤한다. 높이 상한(`maxHeight`)만 걸면
                 // 제안받은 높이를 다 차지해 말풍선 가운데가 크게 빈다 — 본문 높이를 재서 그만큼만 쓴다.
@@ -303,7 +319,7 @@ struct MascotView: View {
                             Color.clear.preference(key: MascotReplyHeight.self, value: geometry.size.height)
                         })
                 }
-                .frame(height: min(max(replyHeight, 18), 180))
+                .frame(height: min(max(replyHeight, 18), history.isEmpty ? 180 : 72))
                 .onPreferenceChange(MascotReplyHeight.self) { replyHeight = $0 }
                 if let signature {
                     Text(signature).font(.caption).foregroundColor(.secondary)
@@ -333,6 +349,30 @@ struct MascotView: View {
                 ForEach(lines, id: \.self) { line in Text(line) }
             case let .reaction(message):
                 Text(message)
+            case let .chatter(sound, line, suggestion, asks):
+                Text(sound).font(.system(size: 14, weight: .bold))
+                Text(line).lineLimit(4)
+                if let suggestion {
+                    Text("\(suggestion.displayName) 할까? — \(suggestion.reason)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(3)
+                    HStack {
+                        Spacer()
+                        Button("해 줘") { controller.acceptChatter(suggestion) }
+                        Button("나중에") { controller.declineChatter(suggestion) }
+                    }
+                }
+                if asks {
+                    HStack {
+                        Spacer()
+                        Button("답하기") {
+                            controller.closeChatter()
+                            controller.openCommandInput()
+                        }
+                        Button("닫기") { controller.closeChatter() }
+                    }
+                }
             }
         }
         .font(.system(size: 13))

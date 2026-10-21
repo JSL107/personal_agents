@@ -1,4 +1,4 @@
-import { ServiceUnavailableException } from '@nestjs/common';
+import { ConflictException, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { AgentType } from '../../model-router/domain/model-router.type';
@@ -24,6 +24,9 @@ function makeService(owner?: string) {
     consume: jest.fn(),
   };
   const replayFailedRun = { prepare: jest.fn() };
+  const suggestNextWork = {
+    execute: jest.fn().mockResolvedValue({ suggestions: [] }),
+  };
   const service = new ConsoleWriteService(
     config,
     chainOrchestrator as never,
@@ -31,6 +34,7 @@ function makeService(owner?: string) {
     cancelPreview as never,
     pendingTurns as never,
     replayFailedRun as never,
+    suggestNextWork as never,
   );
   return {
     service,
@@ -39,10 +43,66 @@ function makeService(owner?: string) {
     applyPreview,
     cancelPreview,
     pendingTurns,
+    suggestNextWork,
   };
 }
 
 describe('ConsoleWriteService', () => {
+  describe('acceptSuggestion', () => {
+    it('현재 제안에 없으면 409를 반환하고 체인을 실행하지 않는다', async () => {
+      const { service, chainOrchestrator, suggestNextWork, pendingTurns } =
+        makeService(OWNER);
+      suggestNextWork.execute.mockResolvedValue({
+        suggestions: [{ agentType: AgentType.PM }],
+      });
+
+      const result = service.acceptSuggestion({ agentType: 'CODE_REVIEWER' });
+
+      await expect(result).rejects.toBeInstanceOf(ConflictException);
+      expect(chainOrchestrator.run).not.toHaveBeenCalled();
+      expect(pendingTurns.peek).not.toHaveBeenCalled();
+      expect(pendingTurns.consume).not.toHaveBeenCalled();
+    });
+
+    it('현재 제안이면 본문 없이 worker를 시작하고 pending turn은 보존한다', async () => {
+      const { service, chainOrchestrator, suggestNextWork, pendingTurns } =
+        makeService(OWNER);
+      pendingTurns.peek.mockReturnValue({
+        kind: 'AWAITING_INPUT',
+        agentType: AgentType.WORK_REVIEWER,
+      });
+      suggestNextWork.execute.mockResolvedValue({
+        suggestions: [{ agentType: AgentType.CODE_REVIEWER }],
+      });
+
+      await service.acceptSuggestion({
+        agentType: AgentType.CODE_REVIEWER,
+        commandId: 'c1',
+        persona: 'USAGI',
+      });
+
+      expect(chainOrchestrator.run).toHaveBeenCalledWith({
+        slackUserId: OWNER,
+        agentTypeHint: AgentType.CODE_REVIEWER,
+        text: undefined,
+        commandId: 'c1',
+        persona: 'USAGI',
+      });
+      expect(pendingTurns.peek).not.toHaveBeenCalled();
+      expect(pendingTurns.consume).not.toHaveBeenCalled();
+    });
+
+    it('owner가 없으면 후보 조회와 실행 전에 거절한다', async () => {
+      const { service, suggestNextWork, chainOrchestrator } =
+        makeService(undefined);
+      await expect(
+        service.acceptSuggestion({ agentType: AgentType.PM }),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+      expect(suggestNextWork.execute).not.toHaveBeenCalled();
+      expect(chainOrchestrator.run).not.toHaveBeenCalled();
+    });
+  });
+
   it.each(['normal', 'awaiting', 'suggestion'])(
     '%s 경로에서 persona를 체인에 전달한다',
     (path) => {

@@ -4,6 +4,7 @@ import { AgentRunModule } from '../agent-run/agent-run.module';
 import { LoopbackOnlyGuard } from '../common/guard/loopback-only.guard';
 import { LocalSessionsModule } from '../local-sessions/local-sessions.module';
 import { MemoryVacuumModule } from '../memory-vacuum/memory-vacuum.module';
+import { ModelRouterModule } from '../model-router/model-router.module';
 import { PrReviewPublishModule } from '../pr-review-loop/pr-review-publish.module';
 import { RouterModule } from '../router/router.module';
 import { RunReplayModule } from '../run-replay/run-replay.module';
@@ -14,6 +15,7 @@ import { BuildLedgerUsecase } from './application/build-ledger.usecase';
 import { BuildPresidentBriefingUsecase } from './application/build-president-briefing.usecase';
 import { ConsoleReadService } from './application/console-read.service';
 import { ConsoleWriteService } from './application/console-write.service';
+import { GenerateMascotChatterUsecase } from './application/generate-mascot-chatter.usecase';
 import { ListDeliveriesUsecase } from './application/list-deliveries.usecase';
 import { PendingConsoleTurnStore } from './application/pending-console-turn.store';
 import { PreconditionChainOrchestrator } from './application/precondition-chain.orchestrator';
@@ -32,6 +34,7 @@ import { ConsoleWriteController } from './interface/console-write.controller';
 @Module({
   imports: [
     MemoryVacuumModule,
+    ModelRouterModule,
     AgentRunModule,
     LocalSessionsModule,
     PrReviewPublishModule,
@@ -51,6 +54,7 @@ import { ConsoleWriteController } from './interface/console-write.controller';
     BuildPresidentBriefingUsecase,
     ConsoleReadService,
     ConsoleWriteService,
+    GenerateMascotChatterUsecase,
     ListDeliveriesUsecase,
     ConsoleReadGuard,
     LoopbackOnlyGuard,

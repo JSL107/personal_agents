@@ -7,8 +7,10 @@ import { AllExceptionsFilter } from './../src/common/filter/all-exceptions.filte
 import { LoopbackOnlyGuard } from './../src/common/guard/loopback-only.guard';
 import { ResponseInterceptor } from './../src/common/interceptor/response.interceptor';
 import { ConsoleWriteService } from './../src/console/application/console-write.service';
+import { GenerateMascotChatterUsecase } from './../src/console/application/generate-mascot-chatter.usecase';
 import { PendingConsoleTurnStore } from './../src/console/application/pending-console-turn.store';
 import { PreconditionChainOrchestrator } from './../src/console/application/precondition-chain.orchestrator';
+import { SuggestNextWorkUsecase } from './../src/console/application/suggest-next-work.usecase';
 import { ConsoleWriteController } from './../src/console/interface/console-write.controller';
 import { SessionInjectService } from './../src/local-sessions/application/session-inject.service';
 import { ApplyPreviewUsecase } from './../src/preview-gate/application/apply-preview.usecase';
@@ -42,6 +44,8 @@ describe('POST /v1/console/runs/:id/retry (e2e)', () => {
         { provide: CancelPreviewUsecase, useValue: {} },
         { provide: PendingConsoleTurnStore, useValue: {} },
         { provide: SessionInjectService, useValue: {} },
+        { provide: SuggestNextWorkUsecase, useValue: {} },
+        { provide: GenerateMascotChatterUsecase, useValue: {} },
       ],
     }).compile();
 

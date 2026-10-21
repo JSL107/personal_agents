@@ -23,6 +23,7 @@ import {
   buildDispatchReplyText,
   collectDispatchRunIds,
 } from '../../router/domain/dispatch-reply.util';
+import { CONSOLE_CHANNEL_ID } from '../domain/console-conversation.constant';
 import { resolveChain } from '../domain/precondition-chain.map';
 import { ConsoleEventBus } from './console-event-bus.service';
 import { PendingConsoleTurnStore } from './pending-console-turn.store';
@@ -30,7 +31,6 @@ import { SuggestNextWorkUsecase } from './suggest-next-work.usecase';
 
 const MAX_CHAIN_DEPTH = 3;
 const DEFAULT_IMPACT_RECENT_DAYS = 7;
-const CONSOLE_CHANNEL_ID = 'CONSOLE';
 const CONSOLE_ANSWER_MAX_CHARS = 8000;
 // 콘솔은 answered 전문을 별도 시트에서 열 수 있어, 화면을 보호하는 방어 상한만 유지한다.
 const CONSOLE_ANSWER_TRUNCATION_SUFFIX = '\n\n…(길어서 여기까지만 보여드려요)';

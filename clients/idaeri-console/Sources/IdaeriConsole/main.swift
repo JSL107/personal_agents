@@ -172,7 +172,7 @@ window.contentView = NSHostingView(
 window.makeKeyAndOrderFront(nil)
 // Swift 5 최상위 코드는 actor 비격리지만 이 실행 지점은 AppKit 메인 스레드다.
 let mascot = MainActor.assumeIsolated { () -> MascotController in
-    let controller = MascotController(store: store)
+    let controller = MascotController(store: store, client: client)
     controller.show()
     return controller
 }
