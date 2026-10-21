@@ -4,7 +4,10 @@ import { CronIdempotencyService } from '../../common/queue/cron-idempotency.serv
 import { CRON_SENT_GUARD_TTL_SECONDS } from '../../common/queue/worker-options.constant';
 import { getTodayKstDate } from '../../common/util/kst-date.util';
 import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
-import { autopilotTaskIncidentKey } from '../../notification/domain/notification.type';
+import {
+  AUTOPILOT_TASK_CRON_NAME_PREFIX,
+  autopilotTaskIncidentKey,
+} from '../../notification/domain/notification.type';
 import { CreatePreviewUsecase } from '../../preview-gate/application/create-preview.usecase';
 import {
   PREVIEW_ACTION_REPOSITORY_PORT,
@@ -299,7 +302,7 @@ export class AutopilotOrchestrator {
           error instanceof Error ? error.stack : undefined,
         );
         this.notificationPublisher?.publishCronFailure({
-          cronName: `Autopilot task ${entry.taskId}`,
+          cronName: `${AUTOPILOT_TASK_CRON_NAME_PREFIX}${entry.taskId}`,
           incidentKey: autopilotTaskIncidentKey(entry.taskId),
           ownerSlackUserId,
           errorMessage: message,

@@ -58,8 +58,10 @@ export const formatInputTruncationNotice = (
 };
 
 // lineage 라벨 prefix — PRO-2 의 어제↔오늘 추적성을 한눈에 보여줌. 라벨 없는 구버전 plan 은 prefix 생략.
+// NEW 는 표시하지 않는다. 계획 대부분이 NEW 라 모든 줄에 🆕 가 붙으면 아무것도 구분하지 못하고,
+// 정작 눈에 띄어야 할 이월(🔁)·연기(⏭)가 묻힌다 — 표시가 없는 줄이 새 일이다.
 const LINEAGE_LABEL: Record<NonNullable<TaskItem['lineage']>, string> = {
-  NEW: '🆕 ',
+  NEW: '',
   CARRIED: '🔁 ',
   POSTPONED: '⏭ ',
 };
