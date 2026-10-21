@@ -353,9 +353,10 @@ describe('formatDailyPlan — lineage 라벨 (PRO-2)', () => {
     reasoning: 'r',
   };
 
-  it('NEW / CARRIED / POSTPONED 라벨이 각 task 앞에 prefix 로 붙는다', () => {
+  it('CARRIED / POSTPONED 만 prefix 를 붙이고 NEW 는 표시하지 않는다', () => {
     const output = format(planWithLineage).summary;
-    expect(output).toContain('🆕');
+    expect(output).not.toContain('🆕');
+    expect(output).toContain('• PRD 검토');
     expect(output).toContain('🔁');
     expect(output).toContain('⏭');
   });

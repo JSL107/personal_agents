@@ -18,6 +18,8 @@ export const CLAUDE_AUTH_INCIDENT_KEY = 'claude-auth';
 export const HERMES_SNAPSHOT_INCIDENT_KEY = 'hermes:snapshot';
 export const HERMES_SCHEDULER_INCIDENT_KEY = 'hermes:scheduler';
 export const cronIncidentKey = (cronName: string): string => `cron:${cronName}`;
+// 장애 원장 label 의 접두어. 아침 브리핑이 이 접두어를 떼고 task 이름표로 바꿔 싣는다.
+export const AUTOPILOT_TASK_CRON_NAME_PREFIX = 'Autopilot task ';
 export const autopilotTaskIncidentKey = (taskId: string): string =>
   `task:${taskId}`;
 export const hermesJobIncidentKey = (jobIdOrName: string): string =>

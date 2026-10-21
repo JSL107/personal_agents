@@ -25,6 +25,16 @@ import {
 export const PORTFOLIO_PUBLISH_FAILURE_HEADER =
   '⚠️ *포트폴리오 사이트 발행 실패*';
 
+// 0건 항목은 적지 않는다. "약함 3건 / 근거없음 0건", "강등 1 / 폐기 0 / 누락 0 / 앞세우기 반려 0" 처럼
+// 0 이 섞이면 읽을 것만 늘고, 이 줄을 접어 싣는 아침 한 통(morning-briefing)에서 한 줄이 두 줄로 넘친다.
+// 고칠 문장 누락(rewriteMissing)도 경고 조건이라 여기 넣는다 — 빠지면 그것만 있는 회차에 빈 경고가 나간다.
+const joinNonZero = (counts: Array<[string, number]>): string =>
+  counts
+    .filter(([, count]) => count > 0)
+    .map(([label, count]) => `${label} ${count}건`)
+    // ' · ' 는 아침 한 통이 불릿끼리 잇는 구분자라 여기서 쓰면 어디까지가 한 불릿인지 안 보인다.
+    .join(', ');
+
 @Injectable()
 export class PortfolioPublishAutopilotTask implements AutopilotTask {
   readonly id = 'portfolio-publish';
@@ -163,7 +173,10 @@ export class PortfolioPublishAutopilotTask implements AutopilotTask {
     }
     if (auditResult && (weakCount > 0 || missingCount > 0)) {
       summaryLines.push(
-        `• 📋 이력서 감사 — 약함 ${weakCount}건 / 근거없음 ${missingCount}건 (총 ${auditResult.items.length}건)`,
+        `• 📋 이력서 감사 — ${joinNonZero([
+          ['약함', weakCount],
+          ['근거없음', missingCount],
+        ])} (총 ${auditResult.items.length}건)`,
       );
     }
     if (auditResult && jdConcernCount > 0) {
@@ -173,7 +186,13 @@ export class PortfolioPublishAutopilotTask implements AutopilotTask {
     }
     if (auditResult && hasGuardConcern) {
       summaryLines.push(
-        `• ⚠️ 이력서 감사 가드 경고 — 강등 ${auditResult.guard.demotedTitles.length} / 폐기 ${auditResult.guard.droppedTitles.length} / 누락 ${auditResult.guard.unjudgedTitles.length} / 앞세우기 반려 ${auditResult.guard.droppedHighlights.length}`,
+        `• ⚠️ 이력서 감사 가드 경고 — ${joinNonZero([
+          ['강등', auditResult.guard.demotedTitles.length],
+          ['폐기', auditResult.guard.droppedTitles.length],
+          ['누락', auditResult.guard.unjudgedTitles.length],
+          ['고칠 문장 누락', auditResult.guard.rewriteMissing.length],
+          ['앞세우기 반려', auditResult.guard.droppedHighlights.length],
+        ])}`,
       );
     }
     if (auditNote) {
