@@ -41,6 +41,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -90,6 +91,10 @@ AIHOT_MAX_BYTES = 1_000_000
 AIHOT_MAX_CANDIDATES = 5
 
 # ── 오늘의 도구 코너 ──
+# hermes 는 스크립트를 120초에 끊고, 그러면 그날 브리핑이 통째로 사라진다(cron/scheduler.py `_DEFAULT_SCRIPT_TIMEOUT`).
+# 도구 코너는 뉴스 수집 뒤에 돌므로, 시작부터 이 시간 안에 끝낼 수 없는 소스는 건너뛰어 뉴스만이라도 나가게 한다.
+_STARTED_AT = time.monotonic()
+TOOL_DEADLINE_SEC = 100
 # 스크립트 전체 상한(120초) 안에 Tavily·AIHOT 과 함께 들어가도록 소스당 짧게 둔다.
 TOOL_TIMEOUT_SEC = 10
 # 요즘IT RSS 는 본문 전체를 실어 약 0.9MB 다(2026-10-21 실측).
@@ -524,12 +529,17 @@ def load_recent_sent_urls() -> set[str]:
 
 
 def collect_tools(
-    scan: Callable[[str], str] | None, ledger: list[dict], exclude: set[str]
+    scan: Callable[[str], str] | None, ledger: list[dict], exclude: set[str], started_at: float = _STARTED_AT
 ) -> tuple[list[str], list[str]]:
     """도구 후보를 소스마다 최대 TOOL_CANDIDATES_PER_SOURCE 건씩 모은다. (출력 줄, 실패 소스) 를 돌려준다."""
     lines: list[str] = []
     failures: list[str] = []
+    # 소스 하나가 가장 오래 기다리는 경우는 AIHOT 재시도(앞서 실패했으면 캐시가 없다)다.
+    longest_wait = max(TOOL_TIMEOUT_SEC, AIHOT_TIMEOUT_SEC)
     for name, fetch in TOOL_SOURCES:
+        if time.monotonic() - started_at > TOOL_DEADLINE_SEC - longest_wait:
+            failures.append(f"{name} 시간 부족으로 건너뜀")
+            continue
         try:
             articles = fetch()
         # 덧붙인 코너라 소스 하나의 어떤 실패도 뉴스 브리핑을 끌고 내려가면 안 된다.
@@ -740,6 +750,10 @@ def self_check() -> None:
     briefing = "## Prompt\n2. 후보 https://not-chosen.example/x\n## Response\n- 고른 것 https://github.com/o/r/\n"
     assert sent_urls([briefing]) == {"https://github.com/o/r"}
 
+
+    # 시간 예산을 넘겼으면 네트워크를 건드리지 않고 모든 소스를 건너뛴다.
+    skipped_lines, skipped = collect_tools(None, [], set(), started_at=time.monotonic() - TOOL_DEADLINE_SEC)
+    assert skipped_lines == [] and len(skipped) == len(TOOL_SOURCES), skipped
     print("self-check ok")
 
 
