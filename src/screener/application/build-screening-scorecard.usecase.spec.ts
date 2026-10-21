@@ -1,3 +1,4 @@
+import { ScreeningScorecardRow } from '../domain/screening-scorecard';
 import { ScreeningHistoryPrismaRepository } from '../infrastructure/screening-history.prisma.repository';
 import { BuildScreeningScorecardUsecase } from './build-screening-scorecard.usecase';
 
@@ -77,5 +78,99 @@ describe('BuildScreeningScorecardUsecase', () => {
     expect(previousFridayScoring.getTime()).toBeLessThan(
       currentSince.getTime(),
     );
+  });
+
+  describe('findSelectionGap', () => {
+    const scorecardRow = (input: {
+      strategy: string;
+      runId: number;
+      bought: boolean;
+      returnPct: number;
+    }): ScreeningScorecardRow => ({
+      ruleVersion: 7,
+      rank: 1,
+      presented: true,
+      tickerCode: '005930',
+      tickerName: '삼성전자',
+      entryTradeDate: asOf('2026-10-01'),
+      horizonTradeDate: asOf('2026-10-08'),
+      runFullyStored: true,
+      ...input,
+    });
+
+    it('기준 시점을 조회 상한으로 넘긴다 — look-ahead 차단', async () => {
+      const stub = buildStub();
+
+      await buildUsecase(stub).findSelectionGap({
+        strategy: 'SWING',
+        horizonDays: 5,
+        asOfMax: asOf('2026-10-20'),
+      });
+
+      expect(stub.findScorecardRows).toHaveBeenCalledWith(5, {
+        horizonTradeDateMax: asOf('2026-10-20'),
+      });
+    });
+
+    it('요청한 전략의 회차별 격차만 꺼낸다', async () => {
+      const stub = buildStub();
+      stub.findScorecardRows.mockResolvedValue([
+        scorecardRow({
+          strategy: 'SWING',
+          runId: 1,
+          bought: true,
+          returnPct: 3,
+        }),
+        scorecardRow({
+          strategy: 'SWING',
+          runId: 1,
+          bought: false,
+          returnPct: 1,
+        }),
+        scorecardRow({
+          strategy: 'SWING',
+          runId: 2,
+          bought: true,
+          returnPct: 0,
+        }),
+        scorecardRow({
+          strategy: 'SWING',
+          runId: 2,
+          bought: false,
+          returnPct: 4,
+        }),
+        scorecardRow({
+          strategy: 'LONG_TERM',
+          runId: 3,
+          bought: true,
+          returnPct: 9,
+        }),
+        scorecardRow({
+          strategy: 'LONG_TERM',
+          runId: 3,
+          bought: false,
+          returnPct: 0,
+        }),
+      ]);
+
+      const result = await buildUsecase(stub).findSelectionGap({
+        strategy: 'SWING',
+        horizonDays: 5,
+        asOfMax: asOf('2026-10-20'),
+      });
+
+      // 회차 1: +2, 회차 2: −4 → 평균 −1
+      expect(result).toEqual({ horizonDays: 5, gapPct: -1, gapRunCount: 2 });
+    });
+
+    it('그 전략의 행이 없으면 격차 null · 회차 0 — 0%p 로 위장하지 않는다', async () => {
+      const result = await buildUsecase(buildStub()).findSelectionGap({
+        strategy: 'SWING',
+        horizonDays: 5,
+        asOfMax: asOf('2026-10-20'),
+      });
+
+      expect(result).toEqual({ horizonDays: 5, gapPct: null, gapRunCount: 0 });
+    });
   });
 });

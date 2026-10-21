@@ -88,6 +88,14 @@ export interface ScreeningScorecardStrategy {
   rankIc: ScreeningRankIcSummary;
 }
 
+// 회차별 (산 것 평균 − 보고도 안 산 것 평균) 의 평균. 추천 프롬프트가 읽는 최소 필드다.
+export interface SelectionGapSummary {
+  horizonDays: number;
+  // 양쪽이 다 있는 회차가 없으면 null.
+  gapPct: number | null;
+  gapRunCount: number;
+}
+
 export interface ScreeningScorecardHorizon {
   horizonDays: number;
   // 이 지평으로 채점된 전체 건수(상한 밖 포함).
