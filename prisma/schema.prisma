@@ -961,6 +961,16 @@ model RecommendationScore {
   meanExcessReturnRate Decimal? @map("mean_excess_return_rate") @db.Decimal(9, 4)
   meanShadowReturnRate Decimal? @map("mean_shadow_return_rate") @db.Decimal(9, 4)
 
+  // 실계좌 지표와 섞지 않는 별도 표본. 2026-10-21 프롬프트 현금 제거 이후 본격적으로 쌓인다.
+  // 기존 행을 유지하기 위해 필수 건수 컬럼에는 default 를 둔다.
+  unexecutedCount                Int      @default(0) @map("unexecuted_count")
+  unexecutedScoredCount          Int      @default(0) @map("unexecuted_scored_count")
+  unexecutedNotDueCount          Int      @default(0) @map("unexecuted_not_due_count")
+  unexecutedHitCount             Int      @default(0) @map("unexecuted_hit_count")
+  unexecutedHitRate              Decimal? @map("unexecuted_hit_rate") @db.Decimal(9, 4)
+  unexecutedMeanReturnRate       Decimal? @map("unexecuted_mean_return_rate") @db.Decimal(9, 4)
+  unexecutedMeanExcessReturnRate Decimal? @map("unexecuted_mean_excess_return_rate") @db.Decimal(9, 4)
+
   snapshotCount     Int      @map("snapshot_count")
   accountReturnRate Decimal? @map("account_return_rate") @db.Decimal(9, 4)
   maximumDrawdown   Decimal? @map("maximum_drawdown") @db.Decimal(9, 4)

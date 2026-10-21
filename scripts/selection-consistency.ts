@@ -96,12 +96,15 @@ const loadEligibleRuns = async (): Promise<EligibleRun[]> => {
       decidedAt?: string;
       systemPrompt?: string | null;
       prompt?: string | null;
+      purchasableCash?: number;
       parameters?: { maximumWeightPercent?: number };
     };
     if (!snapshot.prompt || !snapshot.systemPrompt || !snapshot.decidedAt) {
       return [];
     }
-    const inputs = parseRecommendationPrompt(snapshot.prompt);
+    const inputs = parseRecommendationPrompt(snapshot.prompt, {
+      purchasableCash: snapshot.purchasableCash,
+    });
     if (!hasBuyingHeadroom(inputs)) {
       return [];
     }
@@ -458,12 +461,15 @@ const loadPerformanceRuns = async (): Promise<PerformanceRun[]> => {
   return screeningRuns.flatMap((run) => {
     const snapshot = run.agentRun?.inputSnapshot as {
       prompt?: string | null;
+      purchasableCash?: number;
       decidedAt?: string;
     };
     if (run.agentRunId === null || !snapshot?.prompt || !snapshot.decidedAt) {
       return [];
     }
-    const inputs = parseRecommendationPrompt(snapshot.prompt);
+    const inputs = parseRecommendationPrompt(snapshot.prompt, {
+      purchasableCash: snapshot.purchasableCash,
+    });
     const presentedCodes = run.items.map((item) => item.ticker.code);
     const returnsByHorizon = new Map<number, Map<string, number>>();
     for (const item of run.items) {

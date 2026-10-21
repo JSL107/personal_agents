@@ -34,6 +34,7 @@ import {
   RecommendationTradeInput,
 } from '../domain/recommendation-score';
 import { settlementDateOf } from '../domain/trade-calendar';
+import type { UnexecutedRecommendationInput } from '../domain/unexecuted-recommendation';
 
 // 전체 훑기(findAllAccounts)는 어느 계좌인지 밝혀야 하므로 이름을 함께 싣는다.
 export interface PaperAccountNamedRecord extends PaperAccountRecord {
@@ -357,6 +358,13 @@ export interface SaveRecommendationScoreInput {
   averageHoldingDays: string | null;
   meanExcessReturnRate: string | null;
   meanShadowReturnRate: string | null;
+  unexecutedCount: number;
+  unexecutedScoredCount: number;
+  unexecutedNotDueCount: number;
+  unexecutedHitCount: number;
+  unexecutedHitRate: string | null;
+  unexecutedMeanReturnRate: string | null;
+  unexecutedMeanExcessReturnRate: string | null;
   snapshotCount: number;
   accountReturnRate: string | null;
   maximumDrawdown: string | null;
@@ -385,6 +393,7 @@ export interface RecommendationScoreData {
   dailyPrices: RecommendationScoreDailyPriceRecord[];
   benchmarkCloses: Array<{ tradeDate: Date; close: MoneyValue }>;
   snapshots: RecommendationScoreSnapshotRecord[];
+  unexecutedRecommendations: UnexecutedRecommendationInput[];
 }
 
 // 채점(초과수익)과 리포트 곡선이 같은 지수를 읽어야 한다. 값이 갈리면 조회가 0건이 되고,
@@ -392,6 +401,20 @@ export interface RecommendationScoreData {
 // 적재하는 쪽은 `screener/application/collect-benchmark-closes.usecase.ts` 다 — 그쪽 심볼을
 // 바꾸면 여기도 함께 바꿔야 한다.
 const BENCHMARK_SYMBOL = 'KOSPI';
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const parseDateOnly = (value: unknown): Date | null => {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return null;
+  }
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return Number.isNaN(date.getTime()) ||
+    date.toISOString().slice(0, 10) !== value
+    ? null
+    : date;
+};
 
 const isUniqueConstraintError = (error: unknown): boolean => {
   if (typeof error !== 'object' || error === null || !('code' in error)) {
@@ -414,10 +437,97 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
   ): Promise<RecommendationScoreData> {
     const accounts = await this.prisma.paperAccount.findMany({
       where: { name: { in: ['LONG_TERM', 'SWING'] } },
-      select: { id: true, name: true, seedAmount: true },
+      select: { id: true, name: true, seedAmount: true, openedAt: true },
       orderBy: { id: 'asc' },
     });
+    if (accounts.length === 0) {
+      return {
+        accounts: [],
+        orders: [],
+        sellOrders: [],
+        recommendationTrades: [],
+        cashEvents: [],
+        portfolioTrades: [],
+        dailyPrices: [],
+        benchmarkCloses: [],
+        snapshots: [],
+        unexecutedRecommendations: [],
+      };
+    }
     const accountIds = accounts.map((account) => account.id);
+    const earliestAccountOpening = accounts.reduce(
+      (earliest, account) =>
+        account.openedAt < earliest ? account.openedAt : earliest,
+      accounts[0].openedAt,
+    );
+    const agentRuns = await this.prisma.agentRun.findMany({
+      where: {
+        agentType: 'PAPER_RECOMMEND',
+        status: 'SUCCEEDED',
+        startedAt: { gte: earliestAccountOpening },
+      },
+      select: { id: true, output: true, startedAt: true },
+      orderBy: { id: 'asc' },
+    });
+    const unresolvedRecommendations: Array<{
+      agentRunId: number;
+      strategy: 'LONG_TERM' | 'SWING';
+      code: string;
+      recommendedOn: Date;
+    }> = [];
+    for (const agentRun of agentRuns) {
+      if (!isRecord(agentRun.output)) {
+        continue;
+      }
+      const { strategy, skipped } = agentRun.output;
+      const recommendedOn = parseDateOnly(agentRun.output.dataAsOf);
+      const account = accounts.find((candidate) => candidate.name === strategy);
+      if (
+        (strategy !== 'LONG_TERM' && strategy !== 'SWING') ||
+        account === undefined ||
+        agentRun.startedAt < account.openedAt ||
+        !Array.isArray(skipped) ||
+        recommendedOn === null ||
+        recommendedOn > input.asOf ||
+        (input.from !== undefined && recommendedOn < input.from)
+      ) {
+        continue;
+      }
+      for (const item of skipped) {
+        if (
+          isRecord(item) &&
+          item.side === 'BUY' &&
+          item.reason === 'INSUFFICIENT_CASH' &&
+          typeof item.code === 'string' &&
+          item.code.length > 0
+        ) {
+          unresolvedRecommendations.push({
+            agentRunId: agentRun.id,
+            strategy,
+            code: item.code,
+            recommendedOn,
+          });
+        }
+      }
+    }
+    const codes = [
+      ...new Set(unresolvedRecommendations.map((item) => item.code)),
+    ];
+    const tickers =
+      codes.length === 0
+        ? []
+        : await this.prisma.ticker.findMany({
+            where: { market: 'KR', code: { in: codes } },
+            select: { id: true, code: true },
+          });
+    const tickerIdByCode = new Map(
+      tickers.map((ticker) => [ticker.code, ticker.id]),
+    );
+    const unexecutedRecommendations: UnexecutedRecommendationInput[] =
+      unresolvedRecommendations.map((item) => ({
+        ...item,
+        tickerId: tickerIdByCode.get(item.code) ?? null,
+      }));
     const decidedAt = input.from
       ? { gte: input.from, lte: input.asOf }
       : { lte: input.asOf };
@@ -555,12 +665,36 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
       },
       orderBy: [{ tradeDate: 'asc' }, { id: 'asc' }],
     });
-    const priceDate = earliestBuyTradeDate
-      ? { gte: earliestBuyTradeDate, lte: input.asOf }
+    const earliestRecommendationDate =
+      unexecutedRecommendations.reduce<Date | null>(
+        (earliest, recommendation) =>
+          recommendation.tickerId !== null &&
+          (earliest === null || recommendation.recommendedOn < earliest)
+            ? recommendation.recommendedOn
+            : earliest,
+        null,
+      );
+    const earliestPriceDate =
+      earliestBuyTradeDate === null
+        ? earliestRecommendationDate
+        : earliestRecommendationDate === null ||
+            earliestBuyTradeDate < earliestRecommendationDate
+          ? earliestBuyTradeDate
+          : earliestRecommendationDate;
+    const priceTickerIds = [
+      ...new Set([
+        ...tickerIds,
+        ...unexecutedRecommendations
+          .map((recommendation) => recommendation.tickerId)
+          .filter((tickerId): tickerId is number => tickerId !== null),
+      ]),
+    ];
+    const priceDate = earliestPriceDate
+      ? { gte: earliestPriceDate, lte: input.asOf }
       : null;
     const dailyPrices = priceDate
       ? await this.prisma.dailyPrice.findMany({
-          where: { tickerId: { in: tickerIds }, tradeDate: priceDate },
+          where: { tickerId: { in: priceTickerIds }, tradeDate: priceDate },
           select: {
             tickerId: true,
             tradeDate: true,
@@ -629,6 +763,7 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
       })),
       benchmarkCloses,
       snapshots,
+      unexecutedRecommendations,
     };
   }
 
@@ -717,6 +852,13 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
           averageHoldingDays: input.averageHoldingDays,
           meanExcessReturnRate: input.meanExcessReturnRate,
           meanShadowReturnRate: input.meanShadowReturnRate,
+          unexecutedCount: input.unexecutedCount,
+          unexecutedScoredCount: input.unexecutedScoredCount,
+          unexecutedNotDueCount: input.unexecutedNotDueCount,
+          unexecutedHitCount: input.unexecutedHitCount,
+          unexecutedHitRate: input.unexecutedHitRate,
+          unexecutedMeanReturnRate: input.unexecutedMeanReturnRate,
+          unexecutedMeanExcessReturnRate: input.unexecutedMeanExcessReturnRate,
           snapshotCount: input.snapshotCount,
           accountReturnRate: input.accountReturnRate,
           maximumDrawdown: input.maximumDrawdown,

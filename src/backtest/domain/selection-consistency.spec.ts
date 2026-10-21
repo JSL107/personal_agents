@@ -20,11 +20,10 @@ const indicatorsOf = (close: number): StockIndicators =>
 
 describe('selection-consistency', () => {
   describe('parseRecommendationPrompt', () => {
-    it('운영 프롬프트 빌더가 만든 문자열에서 현금·보유·후보·종가를 되살린다', () => {
+    it('운영 프롬프트와 스냅샷 현금에서 보유·후보·종가를 되살린다', () => {
       const prompt =
         buildPaperRecommendationPrompt({
           strategy: 'SWING',
-          purchasableCash: 4_973_723,
           accountValuation: 8_086_033,
           maximumWeightPercent: 20,
           positions: [
@@ -54,7 +53,9 @@ describe('selection-consistency', () => {
           ],
         }) + '\n\n[지난 성적]\n누적 수익률 -3%';
 
-      expect(parseRecommendationPrompt(prompt)).toEqual({
+      expect(
+        parseRecommendationPrompt(prompt, { purchasableCash: 4_973_723 }),
+      ).toEqual({
         purchasableCash: 4_973_723,
         accountValuation: 8_086_033,
         positions: [{ code: '020560', quantity: 193 }],
@@ -106,6 +107,22 @@ describe('selection-consistency', () => {
       expect(() => parseRecommendationPrompt('계좌 평가액: 100')).toThrow(
         '매수 가능 현금',
       );
+    });
+
+    it('프롬프트 현금이 있으면 스냅샷 값보다 우선한다', () => {
+      expect(
+        parseRecommendationPrompt('매수 가능 현금: 123\n계좌 평가액: 100', {
+          purchasableCash: 456,
+        }).purchasableCash,
+      ).toBe(123);
+    });
+
+    it('구형 프롬프트의 현금 줄이 잘못되면 스냅샷 값으로 덮지 않는다', () => {
+      expect(() =>
+        parseRecommendationPrompt('매수 가능 현금: 잘못됨\n계좌 평가액: 100', {
+          purchasableCash: 456,
+        }),
+      ).toThrow('매수 가능 현금');
     });
   });
 
