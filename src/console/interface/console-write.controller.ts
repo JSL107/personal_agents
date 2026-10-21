@@ -43,6 +43,8 @@ export class ConsoleWriteController {
   ): Promise<MascotChatterResult> {
     return await this.generateMascotChatter.execute({
       declinedAgentTypes: dto.declinedAgentTypes ?? [],
+      trigger: dto.trigger ?? 'IDLE',
+      since: dto.since ? new Date(dto.since) : undefined,
     });
   }
 

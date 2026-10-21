@@ -11,5 +11,8 @@ export interface MascotChatterResult {
   line: string | null;
   suggestion: MascotChatterSuggestion | null;
   asks: boolean;
-  reason?: 'MODEL_FAILED' | 'INVALID_JSON' | 'INVALID_LINE';
+  hasEvents: boolean;
+  reason?: 'MODEL_FAILED' | 'INVALID_JSON' | 'INVALID_LINE' | 'NOTHING_TO_SAY';
 }
+
+export type MascotChatterTrigger = 'IDLE' | 'EVENTS' | 'RETURN' | 'PROGRESS';
