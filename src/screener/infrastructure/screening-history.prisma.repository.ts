@@ -263,6 +263,8 @@ export class ScreeningHistoryPrismaRepository {
       },
       select: {
         returnPct: true,
+        entryTradeDate: true,
+        horizonTradeDate: true,
         item: {
           select: {
             rank: true,
@@ -325,6 +327,8 @@ export class ScreeningHistoryPrismaRepository {
       ),
       tickerCode: row.item.ticker.code,
       tickerName: row.item.ticker.name,
+      entryTradeDate: row.entryTradeDate,
+      horizonTradeDate: row.horizonTradeDate,
     }));
   }
 

@@ -20,6 +20,8 @@ const row = (
   bought: false,
   tickerCode: '000000',
   tickerName: '테스트',
+  entryTradeDate: new Date('2026-09-01T00:00:00.000Z'),
+  horizonTradeDate: new Date('2026-09-08T00:00:00.000Z'),
   ...overrides,
 });
 
@@ -45,6 +47,26 @@ const result = (
 });
 
 describe('formatScreeningScorecard', () => {
+  it('순위 상관을 표본 회차 수와 함께 적고, 회차가 적으면 추세가 아니라고 붙인다', () => {
+    const text = formatScreeningScorecard(
+      result(
+        [5, 4, 3, 2, 1].map((returnPct, index) =>
+          row({ rank: index + 1, returnPct }),
+        ),
+      ),
+    );
+
+    expect(text).toContain(
+      '  순위 상관 +1.000 · 양수 1/1 · t - (구간 안 겹치는 회차 1/1개) — 회차가 10개 미만이라 아직 추세 아님',
+    );
+  });
+
+  it('종목 5개 이상인 회차가 없으면 순위 상관을 비워 둔 이유를 적는다', () => {
+    const text = formatScreeningScorecard(result([row({ bought: true })]));
+
+    expect(text).toContain('  순위 상관 - — 종목 5개 이상인 회차가 없음');
+  });
+
   it('산 것과 안 산 것을 나란히 세우고 격차를 적는다', () => {
     const text = formatScreeningScorecard(
       result([
