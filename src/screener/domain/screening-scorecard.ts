@@ -11,6 +11,8 @@
 //
 // 판단하지 않는다 — 값을 고치거나 규칙을 제안하는 것은 다음 단계다. 여기서는 사실만 센다.
 
+import { ScreeningRankIcSummary, summarizeRankIc } from './screening-rank-ic';
+
 // 순위 신호를 보는 구간. 원장에는 통과 전체가 남지만 이 축은 프롬프트에 실린 것 안에서만
 // 센다 — 모델이 고른 순위와 견주는 값이라 모집단이 같아야 한다.
 export const SCORECARD_TOP_RANK_LIMIT = 5;
@@ -31,6 +33,12 @@ export interface ScreeningScorecardRow {
   bought: boolean;
   tickerCode: string;
   tickerName: string;
+  // 이 성적의 진입일(기준일 다음 거래일)과 평가일. 순위 상관이 보유 구간이 겹치는 회차를
+  // 가려낼 때만 쓴다(`screening-rank-ic.ts`).
+  entryTradeDate: Date;
+  horizonTradeDate: Date;
+  // 그 회차에 규칙 통과 종목이 전부 저장됐는가. 순위 상관이 모집단이 다른 회차를 뺄 때 쓴다.
+  runFullyStored: boolean;
 }
 
 export interface ScreeningScorecardArm {
@@ -75,6 +83,9 @@ export interface ScreeningScorecardStrategy {
   // 안 산 것 중 최고 · 산 것 중 최악. 전략당 한 건씩이라 종목 수에 비례해 부풀지 않는다.
   bestMissed: ScreeningScorecardExtreme | null;
   worstBought: ScreeningScorecardExtreme | null;
+  // 스크리너 순위가 사후 수익을 맞혔는가. 위 축들과 달리 모델 선택이 아니라 점수 자체를 재므로
+  // 통과 전체(상한 밖 포함)를 모집단으로 쓴다.
+  rankIc: ScreeningRankIcSummary;
 }
 
 export interface ScreeningScorecardHorizon {
@@ -235,6 +246,7 @@ const summarizeStrategy = (
     topRankCount: topRank.length,
     bestMissed: toExtreme(bestOf(notBought)),
     worstBought: toExtreme(worstOf(bought)),
+    rankIc: summarizeRankIc(rows),
   };
 };
 

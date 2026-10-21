@@ -31,6 +31,9 @@ const horizonWithSample = buildScorecardHorizon({
       bought: true,
       tickerCode: '000000',
       tickerName: '테스트',
+      entryTradeDate: new Date('2026-09-01T00:00:00.000Z'),
+      horizonTradeDate: new Date('2026-09-08T00:00:00.000Z'),
+      runFullyStored: true,
     },
     {
       strategy: 'SWING',
@@ -42,6 +45,9 @@ const horizonWithSample = buildScorecardHorizon({
       bought: false,
       tickerCode: '000001',
       tickerName: '대조',
+      entryTradeDate: new Date('2026-09-01T00:00:00.000Z'),
+      horizonTradeDate: new Date('2026-09-08T00:00:00.000Z'),
+      runFullyStored: true,
     },
   ],
 });
