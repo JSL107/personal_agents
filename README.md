@@ -312,12 +312,16 @@ Slack 설정: Event Subscriptions 에 `app_mention` + `message.im` + `reaction_a
 
 <br>
 
-Slack 없이 회사 전체를 눈으로 보고 조작하는 네이티브 관제 앱(Swift 약 18.8k 줄, SwiftUI + SpriteKit). Xcode 프로젝트 없이 Swift Package 로 빌드한다.
+Slack 없이 회사 전체를 눈으로 보고 조작하는 네이티브 관제 앱(SwiftUI). Xcode 프로젝트 없이 Swift Package 로 빌드한다.
 
 | 탭 | 내용 |
 |---|---|
-| 대시보드 | 에이전트 28종 회사사람형 닉네임·개인 사무실 카드 · 최근 run · 승인 대기 · 로컬 CLI 세션 |
-| 오피스 | 부서별 업무 성격을 담은 모듈형 2.5D 코지 오피스 — 사원은 좌석·회의·대기 위치에 배치되고 상태는 발밑 링과 동작으로 표시 |
+| 캘린더 (기본) | 일정과 등록 폼 |
+| 대시보드 | 에이전트 28종 카드 · 최근 run · 승인 대기 · 로컬 CLI 세션 |
+| 보고서 | 업무 보고와 요약 |
+| 에이전트 | 직원별 상태와 상세 정보 |
+
+오피스 화면은 2026-10-21 제거했다.
 
 - **읽기** — `GET /v1/console/{snapshot,agents,runs,approvals,briefing,ledger}` + `GET /v1/console/stream`(SSE) 로 실시간 반영. 같은 머신(loopback)은 그대로 통과하고, **원격에서 읽으려면 `CONSOLE_REMOTE_TOKEN` 과 같은 값을 `x-console-token` 헤더로** 보내야 한다(미설정이면 원격은 아예 막힌다). 스냅샷에 세션 경로·pid 가, 스트림에 워커 산출물이 실려 나가기 때문이다.
 - **쓰기** — `POST /v1/console/command`(지시) · `approvals/:id/{apply,cancel}`(승인·거절) · `sessions/:sessionId/inject`(유휴 CLI 세션에 작업 주입). 기존 dispatch·PreviewGate usecase 에 위임하므로 Slack 경로와 판정이 갈리지 않는다. `CONSOLE_OWNER_SLACK_USER_ID` 가 없으면 쓰기는 503 으로 막힌다.

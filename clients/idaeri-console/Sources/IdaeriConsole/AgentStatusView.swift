@@ -1,7 +1,7 @@
 import ConsoleCore
 import SwiftUI
 
-/// 에이전트 상태 탭. 담당자 한 명당 방 장면 카드 한 장으로, 누가 어떤 상태인지와 지시 입구를 모은다.
+/// 에이전트 상태 탭. 담당자 한 명당 카드 한 장으로, 누가 어떤 상태인지와 지시 입구를 모은다.
 ///
 /// 원래 대시보드 탭이었다. 카드 한 장이 470pt 라 한 화면에 여섯 장이면 끝나고, 운영 숫자는
 /// 머리 칩 한 줄로 밀려 "관제판" 이 아니라 "캐릭터 도감" 으로 읽혔다(2026-10-06 사용자 피드백).
@@ -12,6 +12,12 @@ struct AgentStatusView: View {
     /// 연결 대상 표시용(빈 상태 안내에 노출). 동작에는 영향 없음.
     let baseURLLabel: String
     let onSend: (String, String?) -> Void
+    var onApprove: (String) -> Void = { _ in }
+    var onReject: (String) -> Void = { _ in }
+    var onRetryRun: (Int) -> Void = { _ in }
+    @State private var selectedAgent: ConsoleAgent?
+    @State private var selectedApproval: ConsoleApproval?
+    @State private var commandText = ""
 
     // 열 수를 3으로 고정하면 카드 폭(minimum 300)이 못 들어가는 창에서 카드끼리 겹친다
     // (300*3 + spacing 16*2 + padding 24*2 = 980, 창 최소폭은 720이라 항상 재현됨).
@@ -75,6 +81,10 @@ struct AgentStatusView: View {
                                     agent: agent,
                                     pendingCommands: store.pendingCommands,
                                     onSend: onSend,
+                                    onInspect: {
+                                        commandText = ""
+                                        selectedAgent = agent
+                                    },
                                     onAcknowledge: {
                                         store.acknowledgeCompletion(agentType: agent.agentType)
                                     }
@@ -88,6 +98,59 @@ struct AgentStatusView: View {
         }
         .background(CozyPalette.canvas)
         .frame(minWidth: Layout.windowMinWidth, minHeight: Layout.contentMinHeight)
+        .sheet(item: $selectedAgent) { selected in
+            let agent = store.agents.first { $0.agentType == selected.agentType } ?? selected
+            AgentInspectorView(
+                agent: agent,
+                approval: approvalFor(agentType: agent.agentType, in: store.approvals),
+                commandText: $commandText,
+                onClose: { selectedAgent = nil },
+                onSend: { agentType in
+                    onSend(commandText, agentType)
+                    commandText = ""
+                    selectedAgent = nil
+                },
+                onApprovalDetail: { selectedApproval = $0 },
+                onApprove: { id in
+                    onApprove(id)
+                    selectedAgent = nil
+                },
+                onReject: { id in
+                    onReject(id)
+                    selectedAgent = nil
+                },
+                ledgerLines: agentLedgerLines(
+                    store.ledger?.entry(for: agent.agentType),
+                    serverTime: store.ledger?.serverTime ?? ""
+                ),
+                isStalled: store.stalledAgentTypes.contains(agent.agentType),
+                retryRunId: retryTarget(
+                    agentType: agent.agentType,
+                    todos: store.briefing?.todos ?? []
+                )?.runId,
+                isRetrying: retryTarget(
+                    agentType: agent.agentType,
+                    todos: store.briefing?.todos ?? []
+                )?.runId.map { store.retryingRunIds.contains($0) } ?? false,
+                retryNotice: store.runRetryNotice,
+                onRetry: onRetryRun
+            )
+            .sheet(item: $selectedApproval) { approval in
+                ApprovalDetailSheet(
+                    approval: approval,
+                    onApprove: { id in
+                        onApprove(id)
+                        selectedApproval = nil
+                        selectedAgent = nil
+                    },
+                    onReject: { id in
+                        onReject(id)
+                        selectedApproval = nil
+                        selectedAgent = nil
+                    }
+                )
+            }
+        }
     }
 
     // MARK: - 헤더

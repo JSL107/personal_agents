@@ -1,12 +1,11 @@
 import ConsoleCore
-import SpriteKit
 import SwiftUI
 
 // 백엔드의 보관된 작업 제안과 앱의 제안 카드를 같은 30분에 만료시킨다.
 private let answeredCommandTTL: TimeInterval = 30 * 60
 
 /// 콘솔 루트. 공유 ConsoleStore 의 연결(스냅샷+SSE+백오프)을 소유하고,
-/// 캘린더·대시보드·에이전트·오피스 탭을 전환한다. 모든 탭이 같은 store 를 관측한다.
+/// 캘린더·대시보드·보고서·에이전트 탭을 전환한다. 모든 탭이 같은 store 를 관측한다.
 struct AppRootView: View {
     let client: ConsoleClient
     let baseURLLabel: String
@@ -21,15 +20,6 @@ struct AppRootView: View {
     /// 첫 화면은 캘린더다(2026-09-18 결정) — 마감·신청·예약을 Slack 에 등록한 뒤 이 화면에서
     /// 확인하는 것이 목표라, 앱을 열자마자 그 확인이 보여야 한다.
     @State private var tab: ConsoleTab = .calendar
-    @State private var selectedOfficeAgent: String?
-    /// 탭을 떠나도 직원의 위치와 진행 중인 연출을 보존한다.
-    @State private var officeScene: OfficeScene = {
-        let scene = OfficeScene(size: CGSize(width: 900, height: 600))
-        scene.scaleMode = .resizeFill
-        return scene
-    }()
-    /// 3D 화면도 같은 이유로 여기서 붙든다(웹뷰째로).
-    @StateObject private var office3D = Office3DController()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -56,18 +46,10 @@ struct AppRootView: View {
                     store: store,
                     status: status,
                     baseURLLabel: baseURLLabel,
-                    onSend: { text, agentTypeHint in sendCommand(text: text, agentTypeHint: agentTypeHint) }
-                )
-            case .office:
-                OfficeView(
-                    store: store,
-                    scene: officeScene,
                     onSend: { text, agentTypeHint in sendCommand(text: text, agentTypeHint: agentTypeHint) },
                     onApprove: approve,
-                    onRetryRun: retryRun,
                     onReject: reject,
-                    selectedAgent: $selectedOfficeAgent,
-                    office3D: office3D
+                    onRetryRun: retryRun
                 )
             }
         }

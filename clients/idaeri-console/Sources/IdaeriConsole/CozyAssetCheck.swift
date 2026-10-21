@@ -70,15 +70,6 @@ func runCozyAssetCheck() -> Bool {
             valid = false
         }
     }
-    let showcaseIndices = populatedDemoAgents().map {
-        cozyAgentAppearance(agentType: $0.agentType, department: $0.resolvedDepartment).assetIndex
-    }
-    let expectedShowcaseIndices = Set(0..<cozyCharacterAssetCount)
-    if showcaseIndices.count != cozyCharacterAssetCount
-        || Set(showcaseIndices) != expectedShowcaseIndices {
-        fputs("cozy showcase roster does not cover every character asset exactly once\n", stderr)
-        valid = false
-    }
     // **포즈 열한 종을 전원분 건다.** 한때는 포즈 원화가 몇 명분뿐이라 "적어도 한 장은
     // 있는지" 를 이름으로 하나씩 적어 확인했는데, 그 목록은 사람이 늘 때 조용히 빠진다 —
     // 적어 둔 인덱스만 보고 새로 생긴 인덱스는 아무도 안 본다. 이제 전원분이 들어왔으므로
@@ -212,8 +203,6 @@ func runCozyAssetCheck() -> Bool {
     let roomAssets = [
         "planning-shell", "quality-shell", "evaluation-shell",
         "treasury-shell", "content-shell", "internalOps-shell",
-        "meeting-shell", "president-shell", "pantry-shell",
-        "shared-oak-corridor",
     ]
     for name in roomAssets {
         guard let url = Bundle.module.url(
@@ -222,52 +211,6 @@ func runCozyAssetCheck() -> Bool {
             fputs("missing or unreadable cozy room asset: \(name).png\n", stderr)
             valid = false
             continue
-        }
-    }
-    let furnitureAssets = [
-        "workstation", "chair", "sofa", "meeting-table", "coffee-table",
-        "bookshelf", "coffee-station",
-        "planning-board-table", "quality-review-station", "evaluation-kpi-console",
-        "treasury-ledger-console", "content-storyboard-station", "internal-ops-control-desk",
-        "vacuum-robot", "waste-bin", "dust-pile",
-        "door-closed", "door-open", "desk-items",
-    ]
-    for name in furnitureAssets {
-        guard let url = Bundle.module.url(
-            forResource: name, withExtension: "png", subdirectory: "cozy/furniture-3d"
-        ), let image = NSImage(contentsOf: url),
-              let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-            fputs("missing or unreadable cozy furniture asset: \(name).png\n", stderr)
-            valid = false
-            continue
-        }
-        let alphaInfo = cgImage.alphaInfo
-        if alphaInfo == .none || alphaInfo == .noneSkipFirst || alphaInfo == .noneSkipLast {
-            fputs("cozy furniture asset has no alpha channel: \(name).png\n", stderr)
-            valid = false
-        }
-        // 배경이 통째로 불투명하면 바닥 위에 흰 사각형이 얹힌다. 생성형 에셋에서 실제로
-        // 겪은 사고라(먼지 그림이 체크무늬 배경째 들어왔다) 새로 받는 바닥 소품은 전부 검사한다.
-        if [
-            "vacuum-robot", "waste-bin", "dust-pile",
-            "door-closed", "door-open", "desk-items",
-        ].contains(name),
-           let provider = cgImage.dataProvider,
-           let data = provider.data, let bytes = CFDataGetBytePtr(data) {
-            let bytesPerPixel = cgImage.bitsPerPixel / 8
-            let alphaOffset = alphaInfo == .first || alphaInfo == .premultipliedFirst
-                ? 0 : bytesPerPixel - 1
-            let cornerOffsets = [
-                0,
-                (cgImage.width - 1) * bytesPerPixel,
-                (cgImage.height - 1) * cgImage.bytesPerRow,
-                (cgImage.height - 1) * cgImage.bytesPerRow
-                    + (cgImage.width - 1) * bytesPerPixel,
-            ]
-            if !cornerOffsets.contains(where: { bytes[$0 + alphaOffset] < 245 }) {
-                fputs("cozy floor prop appears to have an opaque background: \(name).png\n", stderr)
-                valid = false
-            }
         }
     }
     let dashboardAccentAssets = [
@@ -291,7 +234,7 @@ func runCozyAssetCheck() -> Bool {
         }
     }
     if valid {
-        print("cozy asset check passed: 9 modular rooms + 1 shared oak floor + \(furnitureAssets.count) interactive furniture assets + \(dashboardAccentAssets.count) dashboard accents + \(cozyCharacterAssetCount) transparent characters + \(cozyMechanicPoses.count) designated mechanic poses + \(requiredPoseAssets.count) production pose assets + \(requiredWalkAssets.count) walk assets")
+        print("cozy asset check passed: 6 department rooms + \(dashboardAccentAssets.count) dashboard accents + \(cozyCharacterAssetCount) transparent characters + \(cozyMechanicPoses.count) designated mechanic poses + \(requiredPoseAssets.count) production pose assets + \(requiredWalkAssets.count) walk assets")
     }
     return valid
 }
