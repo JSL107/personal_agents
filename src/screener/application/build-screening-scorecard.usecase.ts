@@ -4,6 +4,7 @@ import { SCREENING_OUTCOME_HORIZONS } from '../domain/screening-outcome';
 import {
   buildScorecardHorizon,
   ScreeningScorecardHorizon,
+  SelectionGapSummary,
 } from '../domain/screening-scorecard';
 import { ScreeningHistoryPrismaRepository } from '../infrastructure/screening-history.prisma.repository';
 
@@ -13,6 +14,13 @@ const NEWLY_SCORED_WINDOW_DAYS = 7;
 
 export interface BuildScreeningScorecardOptions {
   asOf: Date;
+}
+
+export interface FindSelectionGapInput {
+  strategy: string;
+  horizonDays: number;
+  // 이 시점까지 확정된 성적만 쓴다 (look-ahead 차단).
+  asOfMax: Date;
 }
 
 export interface BuildScreeningScorecardResult {
@@ -62,5 +70,28 @@ export class BuildScreeningScorecardUsecase {
       );
     }
     return { asOf: options.asOf, horizons };
+  }
+
+  // 주간 카드와 같은 계산(`perRunGap`)으로 한 전략의 선택 격차만 꺼낸다. 같은 이름의 숫자가
+  // 카드와 프롬프트에서 다르게 나오지 않도록 계산을 따로 두지 않는다.
+  async findSelectionGap(
+    input: FindSelectionGapInput,
+  ): Promise<SelectionGapSummary> {
+    const horizon = buildScorecardHorizon({
+      horizonDays: input.horizonDays,
+      rows: await this.repository.findScorecardRows(input.horizonDays, {
+        horizonTradeDateMax: input.asOfMax,
+      }),
+      newlyScoredCount: 0,
+      pendingRunCount: 0,
+    });
+    const found = horizon.strategies.find(
+      (strategy) => strategy.strategy === input.strategy,
+    );
+    return {
+      horizonDays: input.horizonDays,
+      gapPct: found?.gapPct ?? null,
+      gapRunCount: found?.gapRunCount ?? 0,
+    };
   }
 }

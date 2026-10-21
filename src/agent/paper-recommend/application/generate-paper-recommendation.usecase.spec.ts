@@ -10,6 +10,7 @@ import { ModelRouterUsecase } from '../../../model-router/application/model-rout
 import { ModelProviderName } from '../../../model-router/domain/model-router.type';
 import { OpenPaperAccountUsecase } from '../../../paper-trading/application/open-paper-account.usecase';
 import { PaperTradingPrismaRepository } from '../../../paper-trading/infrastructure/paper-trading.prisma.repository';
+import { BuildScreeningScorecardUsecase } from '../../../screener/application/build-screening-scorecard.usecase';
 import { ScreenUniverseUsecase } from '../../../screener/application/screen-universe.usecase';
 import { ResolveStrategyParametersUsecase } from '../../../strategy-parameter/application/resolve-strategy-parameters.usecase';
 import {
@@ -63,6 +64,9 @@ describe('GeneratePaperRecommendationUsecase', () => {
   const strategyParameters = {
     execute: jest.fn(),
   } as unknown as jest.Mocked<ResolveStrategyParametersUsecase>;
+  const screeningScorecard = {
+    findSelectionGap: jest.fn(),
+  } as unknown as jest.Mocked<BuildScreeningScorecardUsecase>;
   // 공휴일 없는 달력. `jest.fn` 이 아니라서 `resetAllMocks` 에 지워지지 않는다.
   const loadNoHolidays = async (): Promise<HolidayCalendar> =>
     holidayCalendarOf([]);
@@ -86,6 +90,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
       agentRunService,
       strategyParameters,
       holidayCalendar,
+      screeningScorecard,
     );
     // 활성 행이 코드 상수와 같은 상태가 기본이다 — 이 PR 은 값을 옮긴 것이지 바꾼 것이 아니다.
     strategyParameters.execute.mockResolvedValue({
@@ -113,6 +118,11 @@ describe('GeneratePaperRecommendationUsecase', () => {
     repository.findPositionsWithTicker.mockResolvedValue([]);
     repository.findLatestValuation.mockResolvedValue(null);
     repository.findLatestRecommendationScore.mockResolvedValue(null);
+    screeningScorecard.findSelectionGap.mockResolvedValue({
+      horizonDays: 5,
+      gapPct: 2.1,
+      gapRunCount: 12,
+    });
     screenUniverse.execute.mockImplementation(async ({ strategy }) => ({
       strategy,
       ruleVersion: 2,
@@ -1511,6 +1521,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
       hitCount: 3,
       meanReturnRate: -0.0393,
       meanExcessReturnRate: -0.0206,
+      excessSampleCount: 12,
       maximumLoss: -0.1943,
     });
 
@@ -1518,9 +1529,62 @@ describe('GeneratePaperRecommendationUsecase', () => {
 
     const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
     expect(prompt).toContain('추천 성적');
-    expect(prompt).toContain('청산 10건 중 적중 3건');
+    expect(prompt).toContain('청산 10건');
+    expect(prompt).not.toContain('적중');
     expect(prompt).toContain('지수를 따라가지 못했다');
+    expect(prompt).toContain('5거래일 뒤 평균 +2.1%p');
     expect(prompt).toContain('채울 의무가 없다');
+  });
+
+  it('선택 격차는 전략별 · 5거래일 · 기준 시점 상한으로 조회한다 — look-ahead 차단', async () => {
+    repository.findLatestRecommendationScore.mockResolvedValue({
+      asOf: new Date('2026-08-21'),
+      closedCount: 10,
+      hitCount: 3,
+      meanReturnRate: -0.0393,
+      meanExcessReturnRate: -0.0206,
+      excessSampleCount: 12,
+      maximumLoss: -0.1943,
+    });
+
+    await usecase.execute({ decidedAt });
+
+    const calls = screeningScorecard.findSelectionGap.mock.calls.map(
+      ([input]) => input,
+    );
+    expect(new Set(calls.map((input) => input.strategy))).toEqual(
+      new Set(['LONG_TERM', 'SWING']),
+    );
+    for (const input of calls) {
+      expect(input.horizonDays).toBe(5);
+      expect(input.asOfMax).toEqual(decidedAt);
+    }
+  });
+
+  it('선택 격차 조회가 실패해도 코스피 대비 성적은 싣는다', async () => {
+    repository.findLatestRecommendationScore.mockResolvedValue({
+      asOf: new Date('2026-08-21'),
+      closedCount: 10,
+      hitCount: 3,
+      meanReturnRate: -0.0393,
+      meanExcessReturnRate: -0.0206,
+      excessSampleCount: 12,
+      maximumLoss: -0.1943,
+    });
+    screeningScorecard.findSelectionGap.mockRejectedValue(new Error('db down'));
+
+    const result = await usecase.execute({ decidedAt });
+
+    expect(result.completed.length).toBeGreaterThan(0);
+    const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
+    expect(prompt).toContain('코스피 대비');
+    expect(prompt).toContain('안 고른 후보 대비: 조회하지 못했다');
+  });
+
+  it('채점 이력이 없으면 선택 격차도 조회하지 않는다', async () => {
+    await usecase.execute({ decidedAt });
+
+    expect(screeningScorecard.findSelectionGap).not.toHaveBeenCalled();
   });
 
   it('전략별로 그 전략의 성적만 조회한다', async () => {
