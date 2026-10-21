@@ -1536,7 +1536,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
     expect(prompt).toContain('채울 의무가 없다');
   });
 
-  it('선택 격차는 전략별 · 5거래일 · 기준 시점 상한으로 조회한다 — look-ahead 차단', async () => {
+  it('선택 격차는 전략별 · 5거래일 · 채점 기준일 상한으로 조회한다 — 성적표 머리의 기준일과 맞춘다', async () => {
     repository.findLatestRecommendationScore.mockResolvedValue({
       asOf: new Date('2026-08-21'),
       closedCount: 10,
@@ -1557,7 +1557,9 @@ describe('GeneratePaperRecommendationUsecase', () => {
     );
     for (const input of calls) {
       expect(input.horizonDays).toBe(5);
-      expect(input.asOfMax).toEqual(decidedAt);
+      // decidedAt(판단 시각)이 아니라 채점표의 asOf 다. 채점표는 금요일에만 저장되므로
+      // 판단 시각으로 자르면 격차만 더 최근 기간을 담는다.
+      expect(input.asOfMax).toEqual(new Date('2026-08-21'));
     }
   });
 
