@@ -204,13 +204,19 @@ export const isRetryableCodexError = (error: unknown): boolean => {
   return retryable;
 };
 
-// codex 는 429 를 내부에서 몇 번 재시도한 뒤 `exceeded retry limit, last status: 429 Too Many
+// codex 는 429 를 내부에서 몇 번 재시도한 뒤 `ERROR: exceeded retry limit, last status: 429 Too Many
 // Requests` 를 stderr 에 남기고 exit=1 로 끝난다. 그 stderr tail 이 비정상 종료 에러 메시지에 실린다.
-// 숫자 429 만으로는 판별하지 않는다 — stderr tail 에는 프롬프트 본문도 섞여 들어온다.
-const CODEX_RATE_LIMIT_SIGNAL_REGEX = /too many requests/i;
+// tail 앞쪽에는 프롬프트 본문이 섞이므로(429 를 다루는 코드 리뷰 등) 메시지 전체가 아니라
+// **마지막 줄**이 CLI 오류 형식일 때만 순간 제한으로 본다.
+const CODEX_RATE_LIMIT_LINE_REGEX = /^ERROR: .*last status: 429\b/;
 
-export const isCodexRateLimitError = (error: unknown): boolean =>
-  error instanceof Error && CODEX_RATE_LIMIT_SIGNAL_REGEX.test(error.message);
+export const isCodexRateLimitError = (error: unknown): boolean => {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const lastLine = error.message.trimEnd().split('\n').at(-1) ?? '';
+  return CODEX_RATE_LIMIT_LINE_REGEX.test(lastLine.trim());
+};
 
 export const computeCodexRetryBackoffMs = (error?: unknown): number => {
   const [baseMs, jitterRangeMs] = isCodexRateLimitError(error)

@@ -332,6 +332,20 @@ describe('computeCodexRetryBackoffMs', () => {
       computeCodexRetryBackoffMs(new Error('exit=1): 학생 429명 대상 점검')),
     ).toBe(1000);
   });
+
+  it('프롬프트 본문에 429 오류 문구가 있어도 마지막 줄이 다른 오류면 일반 backoff 다', () => {
+    jest.spyOn(Math, 'random').mockReturnValue(0);
+    const promptEchoed = new Error(
+      [
+        'codex CLI 비정상 종료 (exit=1): 리뷰 대상 로그',
+        'ERROR: exceeded retry limit, last status: 429 Too Many Requests',
+        '위 Too Many Requests 처리 코드를 봐 주세요.',
+        'ERROR: stream disconnected before completion',
+      ].join('\n'),
+    );
+
+    expect(computeCodexRetryBackoffMs(promptEchoed)).toBe(1000);
+  });
 });
 
 describe('computeQuotaBlockUntilMs', () => {
