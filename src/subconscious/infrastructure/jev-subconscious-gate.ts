@@ -94,13 +94,7 @@ export class JevSubconsciousGate {
 
   async evaluate(changes: RedactedChange[]): Promise<JevEvaluation> {
     if (changes.length === 0) {
-      return {
-        decisions: [],
-        confidentDecisions: [],
-        fallbackChanges: [],
-        scores: [],
-        model: this.model,
-      };
+      return this.emptyEvaluation();
     }
 
     const outcome = await this.agentRunService.execute<JevEvaluation>({
@@ -127,6 +121,27 @@ export class JevSubconsciousGate {
       },
     });
     return outcome.result;
+  }
+
+  // shadow 모드 전용 — agent_run 을 남기지 않는다. shadow 는 운영 판정에 쓰이지 않고 성공·실패가
+  // 모두 shadow 원장(HybridSubconsciousGate.recordShadow, 실패는 error 칸)에 남는다. agent_run 으로
+  // 감싸면 로컬 Kev 가 응답하지 않는 날마다 사용자 영향 없는 FAILED 가 실패 통계에 섞였다
+  // (Jev 행 FAILED 9건, 2026-10-07~21 전부 이 경로의 15초 타임아웃 abort).
+  async evaluateShadow(changes: RedactedChange[]): Promise<JevEvaluation> {
+    if (changes.length === 0) {
+      return this.emptyEvaluation();
+    }
+    return this.evaluateWithJev(changes);
+  }
+
+  private emptyEvaluation(): JevEvaluation {
+    return {
+      decisions: [],
+      confidentDecisions: [],
+      fallbackChanges: [],
+      scores: [],
+      model: this.model,
+    };
   }
 
   private async evaluateWithJev(
