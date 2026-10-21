@@ -14,7 +14,11 @@ import { LoopbackOnlyGuard } from '../../common/guard/loopback-only.guard';
 import { SessionInjectService } from '../../local-sessions/application/session-inject.service';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { ConsoleWriteService } from '../application/console-write.service';
+import { GenerateMascotChatterUsecase } from '../application/generate-mascot-chatter.usecase';
+import { MascotChatterResult } from '../domain/mascot-chatter.type';
 import { ConsoleCommandDto } from './dto/console-command.dto';
+import { MascotChatterDto } from './dto/mascot-chatter.dto';
+import { MascotSuggestionAcceptDto } from './dto/mascot-suggestion-accept.dto';
 import { SessionInjectDto } from './dto/session-inject.dto';
 
 // 콘솔 리모컨 write 표면 — 지시·승인·실패 재시도(접수 202) + 거절(await 200).
@@ -29,7 +33,40 @@ export class ConsoleWriteController {
   constructor(
     private readonly consoleWrite: ConsoleWriteService,
     private readonly sessionInject: SessionInjectService,
+    private readonly generateMascotChatter: GenerateMascotChatterUsecase,
   ) {}
+
+  @Post('mascot/chatter')
+  @HttpCode(200)
+  async mascotChatter(
+    @Body() dto: MascotChatterDto,
+  ): Promise<MascotChatterResult> {
+    return await this.generateMascotChatter.execute({
+      declinedAgentTypes: dto.declinedAgentTypes ?? [],
+    });
+  }
+
+  @Post('mascot/chatter/:chatterId/shown')
+  @HttpCode(200)
+  async mascotChatterShown(
+    @Param('chatterId') chatterId: string,
+  ): Promise<{ remembered: boolean }> {
+    const remembered = await this.generateMascotChatter.confirmShown(chatterId);
+    return { remembered };
+  }
+
+  @Post('mascot/suggestion/accept')
+  @HttpCode(202)
+  async acceptSuggestion(
+    @Body() dto: MascotSuggestionAcceptDto,
+  ): Promise<{ accepted: true }> {
+    await this.consoleWrite.acceptSuggestion({
+      agentType: dto.agentType,
+      commandId: dto.commandId,
+      ...(dto.persona ? { persona: dto.persona } : {}),
+    });
+    return { accepted: true };
+  }
 
   @Post('command')
   @HttpCode(202)

@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   Injectable,
   Logger,
   ServiceUnavailableException,
@@ -17,10 +18,17 @@ import {
   ConsoleChainInput,
   PreconditionChainOrchestrator,
 } from './precondition-chain.orchestrator';
+import { SuggestNextWorkUsecase } from './suggest-next-work.usecase';
 
 interface ConsoleCommandInput {
   text: string;
   agentTypeHint?: AgentType;
+  commandId?: string;
+  persona?: ReplyPersona;
+}
+
+interface MascotSuggestionAcceptInput {
+  agentType: string;
   commandId?: string;
   persona?: ReplyPersona;
 }
@@ -38,7 +46,27 @@ export class ConsoleWriteService {
     private readonly cancelPreview: CancelPreviewUsecase,
     private readonly pendingTurns: PendingConsoleTurnStore,
     private readonly replayFailedRun: ReplayFailedRunUsecase,
+    private readonly suggestNextWork: SuggestNextWorkUsecase,
   ) {}
+
+  async acceptSuggestion(input: MascotSuggestionAcceptInput): Promise<void> {
+    const slackUserId = this.requireOwner();
+    const { suggestions } = await this.suggestNextWork.execute();
+    const suggestion = suggestions.find(
+      (candidate) => candidate.agentType === input.agentType,
+    );
+    if (!suggestion) {
+      throw new ConflictException('지금은 제안 목록에 없는 작업입니다.');
+    }
+
+    this.runChain({
+      slackUserId,
+      agentTypeHint: suggestion.agentType,
+      text: undefined,
+      commandId: input.commandId,
+      ...(input.persona ? { persona: input.persona } : {}),
+    });
+  }
 
   sendCommand(input: ConsoleCommandInput): void {
     const slackUserId = this.requireOwner();

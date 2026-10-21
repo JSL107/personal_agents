@@ -89,6 +89,7 @@ import SwiftUI
 
     let panel = MascotPanel()
     private let store: ConsoleStore
+    private let client: ConsoleClient
     private var subscriptions: Set<AnyCancellable> = []
     private var minuteTimer: Timer?
     private var graceTimer: Timer?
@@ -106,6 +107,8 @@ import SwiftUI
     private var briefingBubble: MascotBubble?
     private var reactionBubble: MascotBubble?
     private var replyBubble: MascotBubble?
+    private var chatterRequestActive = false
+    private var conversationTurns: [MascotTurn] = []
     private var lastMascotCommand: (text: String, sentAt: Date)?
     /// 마스코트가 보낸 지시의 id. 답장(`command.answered`)을 이 id 로만 받는다.
     private var mascotCommandId: UUID?
@@ -115,8 +118,9 @@ import SwiftUI
     private let reactionFile: URL
     private let briefingSlotKey = "mascotLastBriefingSlot"
 
-    init(store: ConsoleStore) {
+    init(store: ConsoleStore, client: ConsoleClient) {
         self.store = store
+        self.client = client
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("IdaeriConsole", isDirectory: true)
         reactionFile = support.appendingPathComponent("mascot-reactions.json")
@@ -243,6 +247,7 @@ import SwiftUI
         if statusOpen {
             closeStatus()
         }
+        closeChatter()
         commandPrompt = mascotSay(mascotQuip(.commandPrompt, random: .random(in: 0..<1)))
         play(.hop)
         commandInputOpen = true
@@ -256,7 +261,19 @@ import SwiftUI
         guard !trimmed.isEmpty else {
             return
         }
-        lastMascotCommand = (trimmed, Date())
+        beginWaitingForAnswer(text: trimmed)
+        NotificationCenter.default.post(name: .idaeriMascotCommand, object: nil, userInfo: ["text": trimmed])
+        bindMascotCommandId()
+        closeCommandInput()
+    }
+
+    private func beginWaitingForAnswer(text: String) {
+        closeChatter()
+        let now = Date()
+        conversationTurns = mascotAppendTurn(
+            conversationTurns, MascotTurn(role: .user, text: text, at: now), now: now
+        )
+        lastMascotCommand = (text, Date())
         mascotCommandId = nil
         thinking = true
         thinkingSince = Date()
@@ -269,9 +286,6 @@ import SwiftUI
         replyBubble = nil
         replyTimer?.invalidate()
         failedNoticeCommandId = nil
-        NotificationCenter.default.post(name: .idaeriMascotCommand, object: nil, userInfo: ["text": trimmed])
-        bindMascotCommandId()
-        closeCommandInput()
     }
 
     func closeCommandInput() {
@@ -401,20 +415,95 @@ import SwiftUI
         refreshBubble()
     }
 
-    /// 오래 조용하면 가끔 혼잣말을 한다. 하루 3번·확률 0.35 — 매분 확인하므로 확률을 낮게 둔다.
+    /// 오래 조용하면 서버가 현재 상황을 보고 만든 한 마디를 받아 말한다.
     private func maybeChatter(now: Date) {
-        guard bubble == nil,
+        guard !chatterRequestActive, bubble == nil, !thinking, !commandInputOpen,
               mascotChatterDue(mood: mood, lastSpokeAt: lastSpokeAt, now: now, calendar: .current),
               reactionLedger.fireDaily(
-                  prefix: "chatter", max: 3, chance: 0.35,
+                  prefix: "chatter", max: mascotChatterDailyMax, chance: mascotChatterChance,
                   random: .random(in: 0..<1), now: now, calendar: .current
               )
         else {
             return
         }
         saveReactionLedger(now: now)
-        showTransient(.reaction(mascotSay(mascotQuip(.chatter, random: .random(in: 0..<1)))), duration: 8)
-        play(.hop)
+        chatterRequestActive = true
+        let day = Self.dayString(now: now)
+        let declined = reactionLedger.fired.keys.compactMap { key -> String? in
+            let prefix = "declined:"
+            let suffix = ":\(day)"
+            guard key.hasPrefix(prefix), key.hasSuffix(suffix) else {
+                return nil
+            }
+            return String(key.dropFirst(prefix.count).dropLast(suffix.count))
+        }.sorted()
+        Task { [weak self] in
+            guard let self else { return }
+            let line: MascotChatterLine?
+            do {
+                line = try await self.client.postMascotChatter(declinedAgentTypes: declined)
+            } catch {
+                line = nil
+            }
+            self.chatterRequestActive = false
+            guard self.bubble == nil, self.mood == .idle, !self.thinking, !self.commandInputOpen else {
+                return
+            }
+            if let text = line?.line, !text.isEmpty {
+                let sound = mascotQuip(.chatter, random: .random(in: 0..<1)).sound
+                let suggestion = line?.suggestion
+                let asks = line?.asks ?? false
+                if suggestion != nil || asks {
+                    self.showTransient(.chatter(sound: sound, line: text, suggestion: suggestion, asks: asks), duration: 30)
+                } else {
+                    self.showTransient(.reaction("\(sound) \(text)"), duration: 8)
+                }
+                if self.bubble == self.reactionBubble {
+                    let now = Date()
+                    self.conversationTurns = mascotAppendTurn(
+                        self.conversationTurns, MascotTurn(role: .usagi, text: text, at: now), now: now
+                    )
+                }
+                if let chatterId = line?.chatterId, self.bubble == self.reactionBubble {
+                    Task {
+                        try? await self.client.postMascotChatterShown(chatterId: chatterId)
+                    }
+                }
+            } else {
+                self.showTransient(
+                    .reaction(mascotSay(mascotQuip(.chatter, random: .random(in: 0..<1)))), duration: 8
+                )
+            }
+            self.play(.hop)
+        }
+    }
+
+    func acceptChatter(_ suggestion: MascotChatterSuggestion) {
+        closeChatter()
+        beginWaitingForAnswer(text: suggestion.displayName)
+        NotificationCenter.default.post(
+            name: .idaeriMascotAcceptSuggestion, object: nil,
+            userInfo: ["agentType": suggestion.agentType, "displayName": suggestion.displayName]
+        )
+        bindMascotCommandId()
+        closeCommandInput()
+    }
+
+    func declineChatter(_ suggestion: MascotChatterSuggestion) {
+        let now = Date()
+        if reactionLedger.fireOnce("declined:\(suggestion.agentType):\(Self.dayString(now: now))", now: now) {
+            saveReactionLedger(now: now)
+        }
+        closeChatter()
+    }
+
+    func closeChatter() {
+        guard case .chatter = reactionBubble else {
+            return
+        }
+        reactionBubble = nil
+        reactionTimer?.invalidate()
+        refreshBubble()
     }
 
     /// 보낸 지시가 store 에 올라간 id 를 잡아 둔다. 통지는 `AppRootView` 가 받아 기록을 만들므로
@@ -498,10 +587,16 @@ import SwiftUI
             statusTimer?.invalidate()
         }
         let parts = mascotSplitReply(reply)
+        let now = Date()
+        let history = mascotLiveTurns(conversationTurns, now: now)
+        conversationTurns = mascotAppendTurn(
+            history, MascotTurn(role: .usagi, text: parts.body, at: now), now: now
+        )
         replyBubble = .reply(
             sound: mascotQuip(.reply, random: .random(in: 0..<1)).sound,
             body: parts.body,
-            signature: parts.signature
+            signature: parts.signature,
+            history: Array(history.suffix(4))
         )
         // 깡충 한 번으로는 눈길이 닿기 전에 끝난다. 두 번 뛰고, 답장은 [닫기]를 누를 때까지 남긴다 —
         // 30초 뒤 사라지면 자리를 비운 사이 온 답을 놓친다.
@@ -701,7 +796,7 @@ import SwiftUI
                     self?.refreshBubble()
                 }
             }
-        case .reaction:
+        case .reaction, .chatter:
             reactionBubble = value
             reactionTimer?.invalidate()
             reactionTimer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { [weak self] _ in
