@@ -23,6 +23,28 @@ describe('PreviewActionPrismaRepository.countByPayloadValue', () => {
       },
     });
   });
+
+  it('status 를 주면 그 상태의 카드만 센다', async () => {
+    const count = jest.fn().mockResolvedValue(1);
+    const repository = new PreviewActionPrismaRepository({
+      previewAction: { count },
+    } as unknown as PrismaService);
+
+    await repository.countByPayloadValue({
+      kind: 'BLOG_GITHUB_PUBLISH',
+      payloadPath: ['pageId'],
+      payloadValue: 'page-1',
+      status: 'APPLIED',
+    });
+
+    expect(count).toHaveBeenCalledWith({
+      where: {
+        kind: 'BLOG_GITHUB_PUBLISH',
+        payload: { path: ['pageId'], equals: 'page-1' },
+        status: 'APPLIED',
+      },
+    });
+  });
 });
 
 describe('PreviewActionPrismaRepository.countOutcomesByKind', () => {

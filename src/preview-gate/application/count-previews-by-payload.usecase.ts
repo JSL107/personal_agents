@@ -4,11 +4,13 @@ import {
   PREVIEW_ACTION_REPOSITORY_PORT,
   PreviewActionRepositoryPort,
 } from '../domain/port/preview-action.repository.port';
+import { PreviewStatus } from '../domain/preview-action.type';
 
 export interface CountPreviewsByPayloadInput {
   readonly kind: string;
   readonly payloadPath: string[];
   readonly payloadValue: string;
+  readonly status?: PreviewStatus;
 }
 
 @Injectable()

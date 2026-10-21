@@ -15,6 +15,11 @@ import { RetryRunUsecase } from '../../agent-run/application/retry-run.usecase';
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
 import { AgentRunRange } from '../../common/domain/agent-run-range.type';
 import { PaperTradingPrismaRepository } from '../../paper-trading/infrastructure/paper-trading.prisma.repository';
+import { CountPreviewsByPayloadUsecase } from '../../preview-gate/application/count-previews-by-payload.usecase';
+import {
+  PREVIEW_KIND,
+  PREVIEW_STATUS,
+} from '../../preview-gate/domain/preview-action.type';
 import {
   ReplayRejection,
   ReplayRejectionCode,
@@ -85,6 +90,7 @@ export class ReplayFailedRunUsecase {
     private readonly agentRunService: AgentRunService,
     private readonly watchVideoUsecase: WatchVideoUsecase,
     private readonly inFlightLock: ReplayInFlightLock,
+    private readonly countPreviewsByPayload: CountPreviewsByPayloadUsecase,
   ) {}
 
   /**
@@ -129,6 +135,41 @@ export class ReplayFailedRunUsecase {
 
   isReplaying(runId: number): boolean {
     return this.inFlightLock.isRetrying(runId);
+  }
+
+  /**
+   * 실패했지만 그 사이 다른 실행이 같은 일을 끝내 다시 돌릴 일이 없는지.
+   *
+   * 콘솔 브리핑은 agentType 별 "오늘 마지막으로 끝난 실행" 만 보므로, 성공 뒤에 늦게 정리된
+   * 실패(스윕의 stale IN_PROGRESS)나 이미 발행된 초안을 다시 돌린 실패가 성공을 덮어 "재시도"
+   * 가 계속 뜬다. 그 버튼을 누르면 초안을 못 찾아 실패가 또 쌓인다(2026-10-21 run #9656 → #9686).
+   */
+  async isAlreadySettled(runId: number): Promise<boolean> {
+    const payload = await this.retryRunUsecase.execute({ id: runId });
+    if (payload?.agentType !== 'BLOG_PUBLISH') {
+      return false;
+    }
+    return await this.isDraftPublished(payload.inputSnapshot?.pageId);
+  }
+
+  // 발행은 초안(pageId) 단위다. 그 초안의 발행 카드가 승인됐으면 Notion 상태가 바뀌어 같은 입력으로
+  // 다시 돌려도 BLOG_DRAFT_NOT_FOUND 로 끝난다. 재시도는 실행 나이를 묻지 않으므로 기간으로
+  // 자르지 않고 그 초안의 카드를 직접 센다 — 오래된 실패를 골라 누르면 창 밖 카드가 빠져 통과한다.
+  //
+  // 실행 성공(SUCCEEDED)으로 판정하지 않는다 — 성공은 카드를 만들었다는 뜻일 뿐이다. 카드가 만료되면
+  // 초안은 그대로 남아 다시 돌릴 가치가 있다(2026-10-20 run #9555: 같은 초안의 앞선 성공 2건이
+  // 모두 만료된 카드였다).
+  private async isDraftPublished(pageId: string | undefined): Promise<boolean> {
+    if (typeof pageId !== 'string' || pageId === '') {
+      return false;
+    }
+    const appliedCount = await this.countPreviewsByPayload.execute({
+      kind: PREVIEW_KIND.BLOG_GITHUB_PUBLISH,
+      payloadPath: ['pageId'],
+      payloadValue: pageId,
+      status: PREVIEW_STATUS.APPLIED,
+    });
+    return appliedCount > 0;
   }
 
   private async judge({
@@ -322,7 +363,13 @@ export class ReplayFailedRunUsecase {
           ReplayRejectionCode.NOT_SUPPORTED,
           `AgentRun #${runId} (BLOG) 은 Hermes 에이전트 실행이라 retry-run 을 지원하지 않습니다. 같은 요청을 자연어로 다시 멘션해주세요 (예: "@이대리 … 블로그 써줘").`,
         );
-      case 'BLOG_PUBLISH':
+      case 'BLOG_PUBLISH': {
+        if (await this.isDraftPublished(snapshot.pageId)) {
+          return reject(
+            ReplayRejectionCode.NOT_REPRODUCIBLE,
+            `AgentRun #${runId} (BLOG_PUBLISH) 의 초안은 다른 실행의 발행 카드가 승인돼 이미 발행됐습니다.`,
+          );
+        }
         return ready(
           'BLOG_PUBLISH',
           runId,
@@ -336,6 +383,7 @@ export class ReplayFailedRunUsecase {
             }),
           ),
         );
+      }
       case 'CAREER_MATE':
         return reject(
           ReplayRejectionCode.NOT_SUPPORTED,

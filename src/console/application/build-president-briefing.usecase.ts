@@ -145,12 +145,31 @@ export class BuildPresidentBriefingUsecase {
         if (medianIntervalDays === null || medianIntervalDays < 1) {
           return null;
         }
+        // 그 사이 다른 실행이 같은 일을 끝냈으면(예: 초안 발행 카드 승인) 다시 돌릴 일이 없다 —
+        // 재시도를 눌러도 실패만 쌓인다.
+        if (await this.isAlreadySettled(runId)) {
+          return null;
+        }
         return { agentType, runId, medianIntervalDays };
       }),
     );
     return candidates.filter(
       (candidate): candidate is FailedAgentCandidate => candidate !== null,
     );
+  }
+
+  // 조회가 흔들리면 띄우는 쪽으로 둔다 — 숨긴 실패는 아무도 다시 보지 않는다.
+  private async isAlreadySettled(runId: number): Promise<boolean> {
+    try {
+      return await this.replayFailedRun.isAlreadySettled(runId);
+    } catch (error) {
+      this.logger.warn(
+        `run #${runId} 처리 여부 확인 실패 — 할 일에 그대로 띄운다: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return false;
+    }
   }
 
   private async measureCycleDays(agentType: string): Promise<number | null> {
