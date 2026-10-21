@@ -779,7 +779,7 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
         '',
         '*할 일*',
         '• *승인 대기 3장* — 블로그 후보 · 경력 반영 · GitHub 발행',
-        '• 🔴 *장애* — Autopilot task paper-recommend · 2일째',
+        '• 🔴 *장애* — 모의투자 추천 실패 · 2일째',
         '• *공고 1건* — 하마랩 (목록은 스레드)',
         '',
         '*어제 · 오늘*',

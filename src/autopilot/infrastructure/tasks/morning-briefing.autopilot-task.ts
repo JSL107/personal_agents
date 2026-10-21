@@ -30,6 +30,7 @@ import {
   StoredJobPosting,
 } from '../../../job-feed/domain/port/job-posting.repository.port';
 import { formatJobFeedDigest } from '../../../job-feed/infrastructure/job-feed.formatter';
+import { AUTOPILOT_TASK_CRON_NAME_PREFIX } from '../../../notification/domain/notification.type';
 import { FindAllOpenPreviewsUsecase } from '../../../preview-gate/application/find-all-open-previews.usecase';
 import {
   PREVIEW_KIND,
@@ -133,6 +134,42 @@ const toApprovalLabel = (preview: PreviewAction): string => {
   return firstLine.length <= APPROVAL_LABEL_MAX_LENGTH
     ? firstLine
     : `${firstLine.slice(0, APPROVAL_LABEL_MAX_LENGTH)}…`;
+};
+
+// 장애 원장의 이름은 오케스트레이터가 `Autopilot task <taskId>` 로 남긴다(autopilot.orchestrator 의 cronName).
+// 아침에 그대로 실으면 "Autopilot task blog-github-publish" 처럼 코드 이름이 보여 무엇이 멈췄는지
+// 한 번 더 해석해야 한다. 이름표가 없는 task 는 id 를 그대로 둔다 — 숨기는 것보다 어색한 편이 낫다.
+const TASK_DISPLAY_NAME: Partial<Record<string, string>> = {
+  'blog-github-publish': '블로그 GitHub 발행',
+  'portfolio-publish': '포트폴리오 발행',
+  'portfolio-warmup': '포트폴리오 사이트 깨우기',
+  'paper-trading': '모의투자',
+  'paper-recommend': '모의투자 추천',
+  'paper-order-fill': '모의투자 체결',
+  'paper-score': '모의투자 채점',
+  'evening-retro-publish': '저녁 마감',
+  'morning-briefing': '아침 브리핑',
+  'po-shadow': 'PO 검토',
+  secretariat: '비서실',
+  'work-reviewer': '업무일지',
+  'daily-eval': '하루 평가',
+  'stock-monitor': '주식 모니터링',
+  'stock-monitor-us': '미국 주식 모니터링',
+  'job-feed': '공고 수집',
+  'job-feed-gap': '공고 갭 분석',
+  'study-applicability': '공부 적용 판정',
+  'study-deepdive': '공부 딥다이브',
+  'weekly-summary': '주간 요약',
+  'impact-report': '임팩트 리포트',
+  'cuj-check': 'CUJ 점검',
+};
+
+const toIncidentLabel = (label: string): string => {
+  if (!label.startsWith(AUTOPILOT_TASK_CRON_NAME_PREFIX)) {
+    return label;
+  }
+  const taskId = label.slice(AUTOPILOT_TASK_CRON_NAME_PREFIX.length).trim();
+  return `${TASK_DISPLAY_NAME[taskId] ?? taskId} 실패`;
 };
 
 // KST 달력일(YYYY-MM-DD). Date 를 넘기므로 formatKstDate 의 파싱 실패 분기(null)는 오지 않는다.
@@ -386,7 +423,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
         seenSince: new Date(now.getTime() - INCIDENT_SEEN_WINDOW_DAYS * DAY_MS),
       });
       return rows.map((row) => ({
-        label: row.label,
+        label: toIncidentLabel(row.label),
         dayCount: countKstDaysBetween(row.openedAt, now) + 1,
       }));
     } catch (error: unknown) {
