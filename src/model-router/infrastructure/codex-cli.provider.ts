@@ -39,7 +39,10 @@ const CODEX_PROBE_PROMPT = 'Reply with the single word: OK';
 // `--ignore-user-config` 로 사용자 config.toml 을 안 읽으면 모델 설정도 함께 사라진다.
 // (미지정 시 reasoning effort 가 none 으로 떨어져 리뷰 품질이 조용히 바뀜 — 실측 확인)
 // 사용자의 대화형 codex 설정과 분리해 이대리 워커가 쓰는 모델을 여기서 고정한다.
-export const CODEX_MODEL = 'gpt-5.6-sol';
+// 고정한 대가로 구 모델이 막혀도 따라가지 못한다 — 2026-10-20 19:41 부터 gpt-5.6-sol 이
+// ChatGPT 계정에서 한 줄 호출에도 429 를 돌려줘(주간 사용량 8%, 할당량 무관) 전 워커가 실패했다.
+// 429 가 계속되면 재시도 대기(#873) 전에 이 모델이 아직 열려 있는지부터 확인한다.
+export const CODEX_MODEL = 'gpt-6-sol';
 export const CODEX_REASONING_EFFORT = 'high';
 
 // codex CLI 가 사용량 한도(ChatGPT 구독 쿼터)에 닿으면 exit=0 이어도 output-last-message 가 비고,
