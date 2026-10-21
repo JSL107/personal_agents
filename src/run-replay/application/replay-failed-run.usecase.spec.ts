@@ -45,7 +45,7 @@ const setup = (payload: unknown) => {
     agentRunService: { setParentId: jest.fn().mockResolvedValue(undefined) },
     watchVideoUsecase: agentUsecase(),
     inFlightLock: new ReplayInFlightLock(),
-    findRecentAppliedPreviews: { execute: jest.fn().mockResolvedValue([]) },
+    countPreviewsByPayload: { execute: jest.fn().mockResolvedValue(0) },
   };
   const usecase = new ReplayFailedRunUsecase(
     ...(Object.values(dependencies) as unknown as ConstructorParameters<
@@ -143,32 +143,26 @@ describe('ReplayFailedRunUsecase', () => {
       pageId: 'page-1',
       publishedAt: '2026-10-17T00:00:00.000Z',
     });
-    const appliedCard = (pageId: string) => ({
-      kind: 'BLOG_GITHUB_PUBLISH',
-      payload: { pageId },
-    });
 
     it('같은 초안의 발행 카드가 승인됐으면 NOT_REPRODUCIBLE 로 막고 발행을 부르지 않는다', async () => {
-      const { prepare, findRecentAppliedPreviews, publishNotionDraftUsecase } =
+      const { prepare, countPreviewsByPayload, publishNotionDraftUsecase } =
         setup(blogRun);
-      findRecentAppliedPreviews.execute.mockResolvedValue([
-        appliedCard('other-page'),
-        appliedCard('page-1'),
-      ]);
+      countPreviewsByPayload.execute.mockResolvedValue(1);
 
       expectRejected(await prepare(), ReplayRejectionCode.NOT_REPRODUCIBLE);
-      expect(findRecentAppliedPreviews.execute).toHaveBeenCalledWith(
-        expect.objectContaining({ kind: 'BLOG_GITHUB_PUBLISH' }),
-      );
+      // 기간으로 자르지 않는다 — 재시도는 실행 나이를 묻지 않아 창 밖 카드가 빠지면 통과한다.
+      expect(countPreviewsByPayload.execute).toHaveBeenCalledWith({
+        kind: 'BLOG_GITHUB_PUBLISH',
+        payloadPath: ['pageId'],
+        payloadValue: 'page-1',
+        status: 'APPLIED',
+      });
       expect(publishNotionDraftUsecase.execute).not.toHaveBeenCalled();
     });
 
     // 실행 성공만으로는 판정하지 않는다 — 카드가 만료되면 초안은 그대로다 (run #9555).
-    it('승인된 카드가 다른 초안 것뿐이면 그대로 재실행한다', async () => {
-      const { prepare, findRecentAppliedPreviews } = setup(blogRun);
-      findRecentAppliedPreviews.execute.mockResolvedValue([
-        appliedCard('other-page'),
-      ]);
+    it('승인된 카드가 없으면 그대로 재실행한다', async () => {
+      const { prepare } = setup(blogRun);
       expect(await prepare()).toMatchObject({
         kind: 'READY',
         agentType: 'BLOG_PUBLISH',
@@ -176,26 +170,24 @@ describe('ReplayFailedRunUsecase', () => {
     });
 
     it('pageId 가 없는 옛 스냅샷은 조회 없이 재실행한다', async () => {
-      const { prepare, findRecentAppliedPreviews } = setup(
+      const { prepare, countPreviewsByPayload } = setup(
         failedRun('BLOG_PUBLISH', { titleQuery: '제목' }),
       );
       expect(await prepare()).toMatchObject({ kind: 'READY' });
-      expect(findRecentAppliedPreviews.execute).not.toHaveBeenCalled();
+      expect(countPreviewsByPayload.execute).not.toHaveBeenCalled();
     });
 
     it('isAlreadySettled 는 같은 판정을 콘솔 브리핑에 내준다', async () => {
-      const { usecase, findRecentAppliedPreviews } = setup(blogRun);
+      const { usecase, countPreviewsByPayload } = setup(blogRun);
       expect(await usecase.isAlreadySettled(42)).toBe(false);
-      findRecentAppliedPreviews.execute.mockResolvedValue([
-        appliedCard('page-1'),
-      ]);
+      countPreviewsByPayload.execute.mockResolvedValue(1);
       expect(await usecase.isAlreadySettled(42)).toBe(true);
     });
 
     it('isAlreadySettled 는 다른 agentType 이면 조회하지 않고 false', async () => {
-      const { usecase, findRecentAppliedPreviews } = setup(failedRun('PM'));
+      const { usecase, countPreviewsByPayload } = setup(failedRun('PM'));
       expect(await usecase.isAlreadySettled(42)).toBe(false);
-      expect(findRecentAppliedPreviews.execute).not.toHaveBeenCalled();
+      expect(countPreviewsByPayload.execute).not.toHaveBeenCalled();
     });
   });
 

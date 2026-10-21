@@ -47,7 +47,7 @@ describe('RetryRunHandler BLOG_PUBLISH', () => {
     dependencies[11] = agentRunService;
     dependencies[13] = new ReplayInFlightLock();
     // 같은 초안의 발행 카드가 승인된 적이 없어야 재실행이 열린다.
-    dependencies[14] = { execute: jest.fn().mockResolvedValue([]) };
+    dependencies[14] = { execute: jest.fn().mockResolvedValue(0) };
     // 판정·디스패치는 replay 유스케이스로 옮겼다 — 그 생성자에 같은 목을 넣어 Slack 경로 전체를 그대로 검증한다.
     const replayFailedRunUsecase = Reflect.construct(
       ReplayFailedRunUsecase,
