@@ -20,7 +20,14 @@ export type HarvestSignal =
       // (`REJECTION_REPLY_GRACE_MS`).
       reactedAt: string;
     }
-  | { kind: 'NEEDS_JUDGE'; replyBody: string; ownerReplyBody: string | null }
+  | {
+      kind: 'NEEDS_JUDGE';
+      replyBody: string;
+      ownerReplyBody: string | null;
+      // 마지막 사람 답글 시각. 답글 직후 달릴 리액션을 기다리는 데 쓴다
+      // (`REPLY_JUDGE_GRACE_MS`).
+      lastReplyAt: string;
+    }
   | { kind: 'STALE' }
   | { kind: 'NONE' };
 
@@ -127,7 +134,13 @@ export const resolveHarvestSignal = ({
     }
 
     if (replyBody !== null) {
-      return { kind: 'NEEDS_JUDGE', replyBody, ownerReplyBody };
+      // createdAt 은 ISO 문자열이라 사전순 비교가 곧 시각 비교다(위 답글 필터와 같다).
+      const lastReplyAt = humanReplies.reduce(
+        (latest, comment) =>
+          comment.createdAt > latest ? comment.createdAt : latest,
+        humanReplies[0].createdAt,
+      );
+      return { kind: 'NEEDS_JUDGE', replyBody, ownerReplyBody, lastReplyAt };
     }
   }
 

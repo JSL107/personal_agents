@@ -207,6 +207,8 @@ describe('resolveHarvestSignal', () => {
       kind: 'NEEDS_JUDGE',
       replyBody: '이 동작은 의도했습니다',
       ownerReplyBody: null,
+      // 표식 달린 01:00 코멘트는 사람 답글이 아니라 시각 계산에서도 빠진다.
+      lastReplyAt: '2026-07-31T02:00:00Z',
     });
   });
 
@@ -237,6 +239,7 @@ describe('resolveHarvestSignal', () => {
       kind: 'NEEDS_JUDGE',
       replyBody: '이 레포에서는 정상입니다',
       ownerReplyBody: '이 레포에서는 정상입니다',
+      lastReplyAt: '2026-07-31T01:00:00Z',
     });
   });
 
@@ -270,6 +273,7 @@ describe('resolveHarvestSignal', () => {
       replyBody:
         '리뷰 규칙을 바꿔서 이런 지적은 앞으로 하지 마세요\n이 레포에서는 정상입니다',
       ownerReplyBody: '이 레포에서는 정상입니다',
+      lastReplyAt: '2026-07-31T02:00:00Z',
     });
   });
 
@@ -435,6 +439,8 @@ describe('resolveHarvestSignal', () => {
       kind: 'NEEDS_JUDGE',
       replyBody: '첫 답글\n둘째 답글',
       ownerReplyBody: '첫 답글\n둘째 답글',
+      // 답글이 여럿이면 가장 늦은 것 기준이다 — 마지막 답글 뒤에 이모지가 온다.
+      lastReplyAt: '2026-07-31T02:00:00Z',
     });
   });
 
@@ -475,6 +481,7 @@ describe('resolveHarvestSignal', () => {
       kind: 'NEEDS_JUDGE',
       replyBody: '이건 의도된 동작입니다',
       ownerReplyBody: '이건 의도된 동작입니다',
+      lastReplyAt: '2026-07-31T01:00:00Z',
     });
   });
 
