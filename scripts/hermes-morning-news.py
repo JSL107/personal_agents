@@ -28,7 +28,7 @@ hermes 본체(`~/.hermes/hermes-agent`)는 업스트림 클론이라 개인 스�
 
 뉴스 세 영역 뒤에 "오늘의 도구" 후보(AIHOT 제품·팁, GitHub 신규 저장소, Show HN, 요즘IT)를 따로 싣는다.
 모델이 그중 3건을 골라 무엇인지·어떻게 써 보는지까지 풀어 쓴다. 지난 발송본에 나온 URL 은 후보에서 뺀다.
-후보마다 대표 이미지를 받아 두고, 고른 도구의 사진은 후속 job(hermes-morning-news-images.py)이 Slack 에 올린다.
+고른 도구를 설명하는 그림 카드는 후속 job(hermes-morning-news-images.py)이 그려 Slack 에 올린다.
 
 `python3 scripts/hermes-morning-news.py --self-check` 는 네트워크 없이 변환·필터 로직만 검사한다.
 """
@@ -36,7 +36,6 @@ hermes 본체(`~/.hermes/hermes-agent`)는 업스트림 클론이라 개인 스�
 from __future__ import annotations
 
 import functools
-import concurrent.futures
 import html
 import json
 import os
@@ -111,16 +110,6 @@ SENT_LOOKBACK_FILES = 7
 SENT_OUTPUT_DIR = HERMES_HOME / "cron" / "output" / "91a2c90c75b8"
 _URL_PATTERN = re.compile(r"https?://[^\s<>()\[\]\"']+")
 _HTML_TAG_PATTERN = re.compile(r"<[^>]+>")
-# 도구 후보마다 원문 페이지의 대표 이미지(og:image)를 받아 둔다. 모델이 고른 도구에 `MEDIA:<경로>` 를 달면
-# hermes cron 이 그 파일을 Slack 첨부로 올린다(cron/scheduler.py `extract_media`). URL 이미지는 첨부되지 않는다.
-# image_cache 는 hermes 의 미디어 허용 루트라 strict 모드에서도 막히지 않는다(gateway/platforms/base.py).
-TOOL_IMAGE_DIR = HERMES_HOME / "image_cache" / "morning-news"
-# 요즘IT 대표 이미지는 2MB 를 넘기도 한다(2026-10-21 실측). Slack 첨부 한도보다는 한참 작다.
-TOOL_IMAGE_MAX_BYTES = 8_000_000
-_OG_IMAGE_PATTERNS = (
-    re.compile(r"""<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)""", re.IGNORECASE),
-    re.compile(r"""<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']""", re.IGNORECASE),
-)
 
 # 원문 제목에 한자가 있으면 원문이 중국어(위챗 공중호 등)라 링크를 눌러도 읽을 수 없다.
 # 도메인 목록보다 단순하고, 영문 원문은 AIHOT 이 originalTitle 을 영어로 준다(2026-10-06 실측 7/8).
@@ -423,17 +412,12 @@ def collect_section(
     return collected, failures
 
 
-def fetch_bytes(
-    url: str, headers: dict | None = None, truncate: bool = False, max_bytes: int = TOOL_MAX_BYTES
-) -> bytes:
-    """truncate=True 면 상한을 넘는 응답을 실패 대신 앞부분만 돌려준다(og:image 는 <head> 에 있어 그걸로 충분하다)."""
+def fetch_bytes(url: str, headers: dict | None = None) -> bytes:
     request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (morning-news)", **(headers or {})})
     with urllib.request.urlopen(request, timeout=TOOL_TIMEOUT_SEC) as response:
-        raw = response.read(max_bytes + 1)
-    if truncate:
-        return raw[:max_bytes]
-    if len(raw) > max_bytes:
-        raise ValueError(f"response over {max_bytes} bytes")
+        raw = response.read(TOOL_MAX_BYTES + 1)
+    if len(raw) > TOOL_MAX_BYTES:
+        raise ValueError(f"response over {TOOL_MAX_BYTES} bytes")
     return raw
 
 
@@ -539,84 +523,11 @@ def load_recent_sent_urls() -> set[str]:
         return set()
 
 
-def og_image_url(page_html: str, page_url: str) -> str | None:
-    for pattern in _OG_IMAGE_PATTERNS:
-        match = pattern.search(page_html)
-        if match:
-            url = urllib.parse.urljoin(page_url, html.unescape(match.group(1).strip()))
-            return url if url.startswith("https://") else None
-    return None
-
-
-def image_extension(raw: bytes) -> str | None:
-    """확장자를 응답 헤더가 아니라 파일 앞부분으로 정한다 — 이미지가 아닌 응답(HTML 오류 페이지 등)을 걸러낸다."""
-    if raw.startswith(b"\x89PNG"):
-        return ".png"
-    if raw.startswith(b"\xff\xd8"):
-        return ".jpg"
-    if raw.startswith(b"GIF8"):
-        return ".gif"
-    if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
-        return ".webp"
-    return None
-
-
-def image_file_name(page_url: str) -> str:
-    """Slack 에는 파일 이름이 제목으로 보인다. 어느 도구 그림인지 알아보게 원문 주소로 짓는다."""
-    parsed = urllib.parse.urlparse(page_url)
-    slug = re.sub(r"[^A-Za-z0-9]+", "-", parsed.netloc.removeprefix("www.") + parsed.path).strip("-")
-    return slug[:60] or "tool"
-
-
-def page_image_url(page_url: str) -> str | None:
-    try:
-        return og_image_url(fetch_bytes(page_url, truncate=True).decode("utf-8", errors="replace"), page_url)
-    except Exception:
-        # github.com 페이지는 동시에 여러 번 열면 429 를 준다(2026-10-21 실측). 저장소 카드 이미지는 따로 받을 수 있다.
-        parsed = urllib.parse.urlparse(page_url)
-        if parsed.netloc == "github.com" and parsed.path.count("/") == 2:
-            return f"https://opengraph.githubassets.com/1{parsed.path}"
-        raise
-
-
-def download_tool_image(page_url: str) -> str | None:
-    # 이미지는 덤이다. 어떤 이유로 못 받아도 그 도구는 글로만 소개한다.
-    try:
-        image_url = page_image_url(page_url)
-        if image_url is None:
-            return None
-        raw = fetch_bytes(image_url, max_bytes=TOOL_IMAGE_MAX_BYTES)
-        extension = image_extension(raw)
-        if extension is None:
-            return None
-        path = TOOL_IMAGE_DIR / f"{image_file_name(page_url)}{extension}"
-        path.write_bytes(raw)
-        return str(path)
-    except Exception as error:  # noqa: BLE001
-        print(f"tool image failed for {page_url}: {error!r}", file=sys.stderr)
-        return None
-
-
-def attach_tool_images(entries: list[tuple[str, str]]) -> list[str]:
-    """(출력 줄, 원문 URL) 마다 이미지를 받아 `이미지: MEDIA:<경로>` 줄을 덧붙인다. 지난 실행의 그림은 지운다."""
-    try:
-        TOOL_IMAGE_DIR.mkdir(parents=True, exist_ok=True)
-        for old in TOOL_IMAGE_DIR.iterdir():
-            old.unlink()
-    except OSError as error:
-        print(f"tool image dir unusable: {error}", file=sys.stderr)
-        return [text for text, _ in entries]
-    # 순차로 받으면 12건 × (페이지 + 그림) 이 스크립트 상한(120초)을 위협한다.
-    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
-        paths = list(pool.map(download_tool_image, [url for _, url in entries]))
-    return [f"{text}\n   이미지: MEDIA:{path}" if path else text for (text, _), path in zip(entries, paths)]
-
-
 def collect_tools(
     scan: Callable[[str], str] | None, ledger: list[dict], exclude: set[str]
 ) -> tuple[list[str], list[str]]:
     """도구 후보를 소스마다 최대 TOOL_CANDIDATES_PER_SOURCE 건씩 모은다. (출력 줄, 실패 소스) 를 돌려준다."""
-    entries: list[tuple[str, str]] = []
+    lines: list[str] = []
     failures: list[str] = []
     for name, fetch in TOOL_SOURCES:
         try:
@@ -638,15 +549,15 @@ def collect_tools(
                 ledger.append(ledger_row(article, False, "already_used"))
                 continue
             labeled = dict(article, title=f"[{name}] {(article.get('title') or '').strip()}")
-            text = format_article(len(entries) + 1, labeled, TOOL_SNIPPET_LIMIT)
+            text = format_article(len(lines) + 1, labeled, TOOL_SNIPPET_LIMIT)
             if scan is not None and scan(text):
                 ledger.append(ledger_row(article, False, "threat_pattern"))
                 continue
             exclude.add(url)
             taken += 1
             ledger.append(ledger_row(article, True, None))
-            entries.append((text, url))
-    return attach_tool_images(entries), failures
+            lines.append(text)
+    return lines, failures
 
 
 def write_ledger(rows: list[dict]) -> None:
@@ -829,12 +740,6 @@ def self_check() -> None:
     briefing = "## Prompt\n2. 후보 https://not-chosen.example/x\n## Response\n- 고른 것 https://github.com/o/r/\n"
     assert sent_urls([briefing]) == {"https://github.com/o/r"}
 
-    page = '<meta content="/og/a&amp;b.png" property="og:image">'
-    assert og_image_url(page, "https://yozm.wishket.com/magazine/detail/1") == "https://yozm.wishket.com/og/a&b.png"
-    assert og_image_url('<meta property="og:image" content="http://plain.example/a.png">', "https://a.b") is None
-    assert og_image_url("<html></html>", "https://a.b") is None
-    assert image_extension(b"\x89PNG\r\n") == ".png" and image_extension(b"<!doctype html>") is None
-    assert image_file_name("https://github.com/deepseek-ai/DeepInfer") == "github-com-deepseek-ai-DeepInfer"
     print("self-check ok")
 
 
