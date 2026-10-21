@@ -26,20 +26,29 @@ docs/superpowers/plans/2026-10-06-morning-news-aihot.md.
 
 hermes 본체(`~/.hermes/hermes-agent`)는 업스트림 클론이라 개인 스크립트를 두지 않는다.
 
-`python3 scripts/hermes-morning-news.py --self-check` 는 네트워크 없이 AIHOT 변환·필터 로직만 검사한다.
+뉴스 세 영역 뒤에 "오늘의 도구" 후보(AIHOT 제품·팁, GitHub 신규 저장소, Show HN, 요즘IT)를 따로 싣는다.
+모델이 그중 3건을 골라 무엇인지·어떻게 써 보는지까지 풀어 쓴다. 지난 발송본에 나온 URL 은 후보에서 뺀다.
+후보마다 대표 이미지를 받아 두고, 고른 도구의 사진은 후속 job(hermes-morning-news-images.py)이 Slack 에 올린다.
+
+`python3 scripts/hermes-morning-news.py --self-check` 는 네트워크 없이 변환·필터 로직만 검사한다.
 """
 
 from __future__ import annotations
 
+import functools
+import concurrent.futures
+import html
 import json
 import os
 import re
 import sys
+import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Callable
+from xml.etree import ElementTree
 
 TAVILY_ENDPOINT = "https://api.tavily.com/search"
 # hermes 는 스크립트 자식 프로세스에 HERMES_HOME 을 항상 주입한다(cron/scheduler.py).
@@ -80,6 +89,38 @@ AIHOT_TIMEOUT_SEC = 15
 AIHOT_MAX_BYTES = 1_000_000
 # AI 영역에 싣는 AIHOT 후보 상한. 넘치면 Tavily 후보가 사실상 묻혀 영어권 검색 시각이 사라진다.
 AIHOT_MAX_CANDIDATES = 5
+
+# ── 오늘의 도구 코너 ──
+# 스크립트 전체 상한(120초) 안에 Tavily·AIHOT 과 함께 들어가도록 소스당 짧게 둔다.
+TOOL_TIMEOUT_SEC = 10
+# 요즘IT RSS 는 본문 전체를 실어 약 0.9MB 다(2026-10-21 실측).
+TOOL_MAX_BYTES = 2_000_000
+TOOL_CANDIDATES_PER_SOURCE = 3
+# 도구 소개는 "어떻게 써 보나"까지 쓰므로 뉴스보다 길게 싣는다. 4소스 × 3건 × 이 길이가 컨텍스트에 더해진다.
+TOOL_SNIPPET_LIMIT = 300
+AIHOT_TOOL_CATEGORIES = {"ai-products", "tip"}
+GITHUB_ENDPOINT = "https://api.github.com/search/repositories"
+GITHUB_NEW_REPO_DAYS = 7
+GITHUB_MIN_STARS = 200
+HN_ENDPOINT = "https://hn.algolia.com/api/v1/search"
+HN_MIN_POINTS = 50
+YOZM_FEED = "https://yozm.wishket.com/magazine/feed/"
+# 최근 발송본에 실린 URL 은 도구 후보에서 뺀다. 요즘IT RSS 에는 발행일이 없고 GitHub 스타 순위는
+# 며칠씩 그대로라, 이걸 안 하면 같은 도구를 매일 소개한다. 파일 수 기준이라 수동 재실행이 있으면 며칠 짧아진다.
+SENT_LOOKBACK_FILES = 7
+SENT_OUTPUT_DIR = HERMES_HOME / "cron" / "output" / "91a2c90c75b8"
+_URL_PATTERN = re.compile(r"https?://[^\s<>()\[\]\"']+")
+_HTML_TAG_PATTERN = re.compile(r"<[^>]+>")
+# 도구 후보마다 원문 페이지의 대표 이미지(og:image)를 받아 둔다. 모델이 고른 도구에 `MEDIA:<경로>` 를 달면
+# hermes cron 이 그 파일을 Slack 첨부로 올린다(cron/scheduler.py `extract_media`). URL 이미지는 첨부되지 않는다.
+# image_cache 는 hermes 의 미디어 허용 루트라 strict 모드에서도 막히지 않는다(gateway/platforms/base.py).
+TOOL_IMAGE_DIR = HERMES_HOME / "image_cache" / "morning-news"
+# 요즘IT 대표 이미지는 2MB 를 넘기도 한다(2026-10-21 실측). Slack 첨부 한도보다는 한참 작다.
+TOOL_IMAGE_MAX_BYTES = 8_000_000
+_OG_IMAGE_PATTERNS = (
+    re.compile(r"""<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)""", re.IGNORECASE),
+    re.compile(r"""<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']""", re.IGNORECASE),
+)
 
 # 원문 제목에 한자가 있으면 원문이 중국어(위챗 공중호 등)라 링크를 눌러도 읽을 수 없다.
 # 도메인 목록보다 단순하고, 영문 원문은 AIHOT 이 originalTitle 을 영어로 준다(2026-10-06 실측 7/8).
@@ -228,8 +269,12 @@ def search_news(api_key: str, query: str) -> list[dict]:
     return [dict(article, source="tavily") for article in results if isinstance(article, dict)]
 
 
+@functools.lru_cache(maxsize=1)
 def fetch_aihot() -> dict:
-    """AIHOT JSON 을 받아 dict 로 돌려준다. 네트워크·디코드 실패와 과대 응답은 예외로 올린다."""
+    """AIHOT JSON 을 받아 dict 로 돌려준다. 네트워크·디코드 실패와 과대 응답은 예외로 올린다.
+
+    AI 영역과 도구 코너가 같은 응답을 쓰므로 한 번만 받는다(실패는 캐시되지 않아 도구 코너가 한 번 더 시도한다).
+    """
     request = urllib.request.Request(AIHOT_ENDPOINT, headers={"User-Agent": AIHOT_USER_AGENT})
     with urllib.request.urlopen(request, timeout=AIHOT_TIMEOUT_SEC) as response:
         raw = response.read(AIHOT_MAX_BYTES + 1)
@@ -265,6 +310,7 @@ def select_aihot_items(body: dict) -> tuple[list[dict], list[tuple[dict, str]]]:
             "published_date": item.get("publishedAt"),
             # 요약은 AIHOT 편집부의 중국어 요약이다. 모델이 한국어로 옮긴다(job 프롬프트).
             "content": item.get("summary") if isinstance(item.get("summary"), str) else "",
+            "category": item.get("category"),
         }
         if not article["title"] or not article["url"]:
             dropped.append((article, "no_original"))
@@ -296,13 +342,13 @@ _INVISIBLE_TRANSLATION = dict.fromkeys(
 )
 
 
-def format_article(index: int, article: dict) -> str:
+def format_article(index: int, article: dict, snippet_limit: int = SNIPPET_LIMIT) -> str:
     title = (article.get("title") or "(제목 없음)").strip()
     url = (article.get("url") or "").strip()
     published = normalize_published(article.get("published_date"))
     snippet = " ".join((article.get("content") or "").split())
-    if len(snippet) > SNIPPET_LIMIT:
-        snippet = snippet[:SNIPPET_LIMIT] + "…"
+    if len(snippet) > snippet_limit:
+        snippet = snippet[:snippet_limit] + "…"
     # 기사에서 온 값은 전부 이 한 줄을 통과한다 — 제목·스니펫·URL 어디에 섞여 있어도 여기서 벗겨진다.
     return f"{index}. [{published}] {title}\n   {snippet}\n   {url}".translate(_INVISIBLE_TRANSLATION)
 
@@ -377,6 +423,232 @@ def collect_section(
     return collected, failures
 
 
+def fetch_bytes(
+    url: str, headers: dict | None = None, truncate: bool = False, max_bytes: int = TOOL_MAX_BYTES
+) -> bytes:
+    """truncate=True 면 상한을 넘는 응답을 실패 대신 앞부분만 돌려준다(og:image 는 <head> 에 있어 그걸로 충분하다)."""
+    request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (morning-news)", **(headers or {})})
+    with urllib.request.urlopen(request, timeout=TOOL_TIMEOUT_SEC) as response:
+        raw = response.read(max_bytes + 1)
+    if truncate:
+        return raw[:max_bytes]
+    if len(raw) > max_bytes:
+        raise ValueError(f"response over {max_bytes} bytes")
+    return raw
+
+
+# 아래 *_tools 는 응답을 기사 dict 로만 바꾸는 순수 함수다(--self-check 가 고정 샘플로 검사한다).
+def aihot_tools(body: dict) -> list[dict]:
+    kept, _ = select_aihot_items(body)
+    return [article for article in kept if article.get("category") in AIHOT_TOOL_CATEGORIES]
+
+
+def github_tools(body: dict) -> list[dict]:
+    return [
+        {
+            "source": "github",
+            "title": f"{repo.get('full_name')} (스타 {repo.get('stargazers_count')})",
+            "url": repo["html_url"],
+            "published_date": repo.get("created_at"),
+            "content": repo.get("description") or "",
+        }
+        for repo in body.get("items", [])
+        if isinstance(repo, dict) and isinstance(repo.get("html_url"), str)
+    ]
+
+
+def hn_tools(body: dict) -> list[dict]:
+    hits = [hit for hit in body.get("hits", []) if isinstance(hit, dict) and isinstance(hit.get("points"), int)]
+    hits.sort(key=lambda hit: hit["points"], reverse=True)
+    return [
+        {
+            "source": "hn",
+            "title": f"{hit.get('title')} ({hit['points']}점)",
+            # 링크 없는 Show HN 은 토론 글 자체가 소개다.
+            "url": hit.get("url") or f"https://news.ycombinator.com/item?id={hit.get('objectID')}",
+            "published_date": hit.get("created_at"),
+            "content": html.unescape(_HTML_TAG_PATTERN.sub(" ", hit.get("story_text") or "")),
+        }
+        for hit in hits
+    ]
+
+
+def yozm_tools(raw: bytes) -> list[dict]:
+    """요즘IT RSS 를 최신순 그대로 바꾼다. RSS 에 발행일이 없어 날짜는 비워 둔다(2026-10-21 실측)."""
+    return [
+        {
+            "source": "yozm",
+            "title": item.findtext("title") or "",
+            "url": (item.findtext("link") or "").strip(),
+            "published_date": None,
+            "content": item.findtext("description") or "",
+        }
+        for item in ElementTree.fromstring(raw).iter("item")
+    ]
+
+
+def fetch_github_tools() -> list[dict]:
+    since = (datetime.now(KST) - timedelta(days=GITHUB_NEW_REPO_DAYS)).strftime("%Y-%m-%d")
+    query = urllib.parse.urlencode(
+        {"q": f"created:>{since} stars:>{GITHUB_MIN_STARS}", "sort": "stars", "order": "desc", "per_page": 10}
+    )
+    raw = fetch_bytes(f"{GITHUB_ENDPOINT}?{query}", {"Accept": "application/vnd.github+json"})
+    return github_tools(json.loads(raw))
+
+
+def fetch_hn_tools() -> list[dict]:
+    since = int(datetime.now(timezone.utc).timestamp()) - 86_400
+    query = urllib.parse.urlencode(
+        {"tags": "show_hn", "numericFilters": f"created_at_i>{since},points>{HN_MIN_POINTS}", "hitsPerPage": 20}
+    )
+    return hn_tools(json.loads(fetch_bytes(f"{HN_ENDPOINT}?{query}")))
+
+
+TOOL_SOURCES: list[tuple[str, Callable[[], list[dict]]]] = [
+    ("AIHOT", lambda: aihot_tools(fetch_aihot())),
+    ("GitHub", fetch_github_tools),
+    ("HN", fetch_hn_tools),
+    ("요즘IT", lambda: yozm_tools(fetch_bytes(YOZM_FEED))),
+]
+
+
+def normalize_url(url: str) -> str:
+    return url.strip().rstrip("/.,")
+
+
+def sent_urls(texts: list[str]) -> set[str]:
+    """발송본에서 모델이 실제로 쓴 URL 만 뽑는다.
+
+    출력 파일에는 프롬프트(=후보 전체)도 함께 있어서, `## Response` 뒤만 봐야 고르지 않은 후보까지 빠지지 않는다.
+    """
+    urls: set[str] = set()
+    for text in texts:
+        _, marker, response = text.rpartition("## Response")
+        if marker:
+            urls.update(normalize_url(url) for url in _URL_PATTERN.findall(response))
+    return urls
+
+
+def load_recent_sent_urls() -> set[str]:
+    # 못 읽으면 중복 제외만 빠질 뿐 브리핑은 나가야 한다.
+    try:
+        files = sorted(SENT_OUTPUT_DIR.glob("*.md"))[-SENT_LOOKBACK_FILES:]
+        return sent_urls([path.read_text(encoding="utf-8", errors="replace") for path in files])
+    except OSError as error:
+        print(f"sent briefing read failed: {error}", file=sys.stderr)
+        return set()
+
+
+def og_image_url(page_html: str, page_url: str) -> str | None:
+    for pattern in _OG_IMAGE_PATTERNS:
+        match = pattern.search(page_html)
+        if match:
+            url = urllib.parse.urljoin(page_url, html.unescape(match.group(1).strip()))
+            return url if url.startswith("https://") else None
+    return None
+
+
+def image_extension(raw: bytes) -> str | None:
+    """확장자를 응답 헤더가 아니라 파일 앞부분으로 정한다 — 이미지가 아닌 응답(HTML 오류 페이지 등)을 걸러낸다."""
+    if raw.startswith(b"\x89PNG"):
+        return ".png"
+    if raw.startswith(b"\xff\xd8"):
+        return ".jpg"
+    if raw.startswith(b"GIF8"):
+        return ".gif"
+    if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        return ".webp"
+    return None
+
+
+def image_file_name(page_url: str) -> str:
+    """Slack 에는 파일 이름이 제목으로 보인다. 어느 도구 그림인지 알아보게 원문 주소로 짓는다."""
+    parsed = urllib.parse.urlparse(page_url)
+    slug = re.sub(r"[^A-Za-z0-9]+", "-", parsed.netloc.removeprefix("www.") + parsed.path).strip("-")
+    return slug[:60] or "tool"
+
+
+def page_image_url(page_url: str) -> str | None:
+    try:
+        return og_image_url(fetch_bytes(page_url, truncate=True).decode("utf-8", errors="replace"), page_url)
+    except Exception:
+        # github.com 페이지는 동시에 여러 번 열면 429 를 준다(2026-10-21 실측). 저장소 카드 이미지는 따로 받을 수 있다.
+        parsed = urllib.parse.urlparse(page_url)
+        if parsed.netloc == "github.com" and parsed.path.count("/") == 2:
+            return f"https://opengraph.githubassets.com/1{parsed.path}"
+        raise
+
+
+def download_tool_image(page_url: str) -> str | None:
+    # 이미지는 덤이다. 어떤 이유로 못 받아도 그 도구는 글로만 소개한다.
+    try:
+        image_url = page_image_url(page_url)
+        if image_url is None:
+            return None
+        raw = fetch_bytes(image_url, max_bytes=TOOL_IMAGE_MAX_BYTES)
+        extension = image_extension(raw)
+        if extension is None:
+            return None
+        path = TOOL_IMAGE_DIR / f"{image_file_name(page_url)}{extension}"
+        path.write_bytes(raw)
+        return str(path)
+    except Exception as error:  # noqa: BLE001
+        print(f"tool image failed for {page_url}: {error!r}", file=sys.stderr)
+        return None
+
+
+def attach_tool_images(entries: list[tuple[str, str]]) -> list[str]:
+    """(출력 줄, 원문 URL) 마다 이미지를 받아 `이미지: MEDIA:<경로>` 줄을 덧붙인다. 지난 실행의 그림은 지운다."""
+    try:
+        TOOL_IMAGE_DIR.mkdir(parents=True, exist_ok=True)
+        for old in TOOL_IMAGE_DIR.iterdir():
+            old.unlink()
+    except OSError as error:
+        print(f"tool image dir unusable: {error}", file=sys.stderr)
+        return [text for text, _ in entries]
+    # 순차로 받으면 12건 × (페이지 + 그림) 이 스크립트 상한(120초)을 위협한다.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+        paths = list(pool.map(download_tool_image, [url for _, url in entries]))
+    return [f"{text}\n   이미지: MEDIA:{path}" if path else text for (text, _), path in zip(entries, paths)]
+
+
+def collect_tools(
+    scan: Callable[[str], str] | None, ledger: list[dict], exclude: set[str]
+) -> tuple[list[str], list[str]]:
+    """도구 후보를 소스마다 최대 TOOL_CANDIDATES_PER_SOURCE 건씩 모은다. (출력 줄, 실패 소스) 를 돌려준다."""
+    entries: list[tuple[str, str]] = []
+    failures: list[str] = []
+    for name, fetch in TOOL_SOURCES:
+        try:
+            articles = fetch()
+        # 덧붙인 코너라 소스 하나의 어떤 실패도 뉴스 브리핑을 끌고 내려가면 안 된다.
+        except Exception as error:  # noqa: BLE001
+            failures.append(f"{name} {type(error).__name__}")
+            print(f"tool source '{name}' failed: {error!r}", file=sys.stderr)
+            continue
+        taken = 0
+        for article in articles:
+            if taken >= TOOL_CANDIDATES_PER_SOURCE:
+                break
+            url = normalize_url(article.get("url") or "")
+            if not url:
+                ledger.append(ledger_row(article, False, "no_url"))
+                continue
+            if url in exclude:
+                ledger.append(ledger_row(article, False, "already_used"))
+                continue
+            labeled = dict(article, title=f"[{name}] {(article.get('title') or '').strip()}")
+            text = format_article(len(entries) + 1, labeled, TOOL_SNIPPET_LIMIT)
+            if scan is not None and scan(text):
+                ledger.append(ledger_row(article, False, "threat_pattern"))
+                continue
+            exclude.add(url)
+            taken += 1
+            ledger.append(ledger_row(article, True, None))
+            entries.append((text, url))
+    return attach_tool_images(entries), failures
+
+
 def write_ledger(rows: list[dict]) -> None:
     # 원장은 사후 분석용이다. 쓰기에 실패해도 브리핑은 나가야 하므로 stderr 에만 남긴다.
     try:
@@ -406,6 +678,7 @@ def main() -> int:
 
     total = 0
     ledger: list[dict] = []
+    news_urls: set[str] = set()
     for section in SECTIONS:
         print(f"### {section['label']}")
         articles, failures = collect_section(api_key, section, ledger)
@@ -440,6 +713,7 @@ def main() -> int:
                 continue
             if url:
                 seen_urls.add(url)
+                news_urls.add(normalize_url(url))
             if len(key) >= TITLE_KEY_MIN_LENGTH:
                 seen_titles.add(key)
             if article.get("source") == "aihot":
@@ -464,7 +738,19 @@ def main() -> int:
         print()
 
     print(f"(총 후보 {total}건)")
-    print(f"collected {total} articles", file=sys.stderr)
+    print()
+
+    # 뉴스 후보와 최근 발송본에 이미 나온 것은 도구 후보에서 뺀다.
+    print("### 오늘의 도구 후보 (AIHOT 제품·팁 · GitHub 최근 7일 신규 저장소 · Show HN 24시간 · 요즘IT 최신글)")
+    tool_lines, tool_failures = collect_tools(scan, ledger, load_recent_sent_urls() | news_urls)
+    for line in tool_lines:
+        print(line)
+    if not tool_lines:
+        print("- 도구 후보를 수집하지 못했습니다.")
+    if tool_failures:
+        print(f"   (일부 소스 수집 실패: {', '.join(tool_failures)})")
+
+    print(f"collected {total} articles, {len(tool_lines)} tools", file=sys.stderr)
     write_ledger(ledger)
     return 0
 
@@ -522,6 +808,33 @@ def self_check() -> None:
     assert title_key("OpenAI와 마이크로소프트 - 협력 확대") != title_key("OpenAI와 마이크로소프트 - 협력 종료")
     assert title_key("코스피 +1.2% 마감…외국인 순매수") != title_key("코스피 -1.2% 마감…외국인 순매수")
     assert len(title_key("[속보] 마감시황")) < TITLE_KEY_MIN_LENGTH
+
+    # 도구 코너: AIHOT 은 제품·팁만, 다른 소스는 형태만 바꾼다.
+    tool_sample = {"items": [dict(item("Product A", "https://a.example/p"), category="ai-products"),
+                             dict(item("Industry B", "https://b.example/i"), category="industry")]}
+    assert [article["title"] for article in aihot_tools(tool_sample)] == ["Product A"]
+    repos = github_tools({"items": [{"full_name": "o/r", "html_url": "https://github.com/o/r",
+                                     "stargazers_count": 1944, "description": None}, "broken"]})
+    assert repos == [{"source": "github", "title": "o/r (스타 1944)", "url": "https://github.com/o/r",
+                      "published_date": None, "content": ""}], repos
+    hits = hn_tools({"hits": [{"title": "Show HN: low", "points": 60, "objectID": "1"},
+                              {"title": "Show HN: high", "points": 120, "url": "https://x.dev", "story_text": "<p>it&#x27;s</p>"}]})
+    assert [hit["url"] for hit in hits] == ["https://x.dev", "https://news.ycombinator.com/item?id=1"]
+    assert hits[0]["content"].split() == ["it's"]
+    feed = ("<rss><channel><item><title>클로드 코드 팁</title><link>https://yozm.wishket.com/magazine/detail/3993</link>"
+            "<description>요약</description></item></channel></rss>").encode("utf-8")
+    assert yozm_tools(feed)[0]["url"] == "https://yozm.wishket.com/magazine/detail/3993"
+
+    # 발송본 중복 제외는 모델이 쓴 부분(Response)만 본다 — 프롬프트에 실린 후보 URL 은 제외 대상이 아니다.
+    briefing = "## Prompt\n2. 후보 https://not-chosen.example/x\n## Response\n- 고른 것 https://github.com/o/r/\n"
+    assert sent_urls([briefing]) == {"https://github.com/o/r"}
+
+    page = '<meta content="/og/a&amp;b.png" property="og:image">'
+    assert og_image_url(page, "https://yozm.wishket.com/magazine/detail/1") == "https://yozm.wishket.com/og/a&b.png"
+    assert og_image_url('<meta property="og:image" content="http://plain.example/a.png">', "https://a.b") is None
+    assert og_image_url("<html></html>", "https://a.b") is None
+    assert image_extension(b"\x89PNG\r\n") == ".png" and image_extension(b"<!doctype html>") is None
+    assert image_file_name("https://github.com/deepseek-ai/DeepInfer") == "github-com-deepseek-ai-DeepInfer"
     print("self-check ok")
 
 
