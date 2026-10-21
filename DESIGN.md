@@ -1,5 +1,7 @@
 # Design
 
+> 2026-10-21 오피스 탭(SpriteKit 2D·3D)과 `clients/office-web` 를 제거했다. 아래 오피스 관련 서술은 당시 설계 기록으로 남긴다.
+
 ## Source of truth
 
 - Status: Active
@@ -56,10 +58,8 @@
 ## Components
 
 - `DashboardView`, `AgentCardView`: 카드 계층과 상태/행동.
-- `OfficeScene`, `OfficeView`: 타일 로직, 2.5D 투영, 선택과 이동.
-- `CozyOfficeNodeFactory`: 방 shell과 독립 가구 노드.
-- `CozyCharacterArtworkNode`, `SpriteLoader`: 동일 캐릭터의 pose별 자산과 fallback.
-- Asset ownership: `Resources/cozy/rooms`, `Resources/cozy/furniture-3d`, `Resources/cozy/characters`.
+- `CozyAgentAvatarView`, `AgentPortraitView`, `SpriteLoader`: 동일 캐릭터의 pose별 자산과 부서 방 배경.
+- Asset ownership: `Resources/cozy/rooms`, `Resources/cozy/props`, `Resources/cozy/characters`.
 
 ## Accessibility
 

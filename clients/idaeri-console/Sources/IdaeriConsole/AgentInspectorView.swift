@@ -1,7 +1,7 @@
 import ConsoleCore
 import SwiftUI
 
-/// The single inspector surface used by the live office and deterministic captures.
+/// 에이전트 탭의 담당자 상세 화면.
 struct AgentInspectorView: View {
     let agent: ConsoleAgent
     let approval: ConsoleApproval?

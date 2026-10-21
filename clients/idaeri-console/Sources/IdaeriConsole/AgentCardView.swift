@@ -7,6 +7,7 @@ struct AgentCardView: View {
     /// 전체 pending 목록 — 카드는 자신의 agentType 에 매칭되는 항목만 걸러 배지로 보여준다.
     let pendingCommands: [PendingCommand]
     let onSend: (String, String?) -> Void
+    let onInspect: () -> Void
     /// 완료를 눈으로 확인했다는 표시. 서버 창이 만료되기를 기다리지 않고 카드를 대기로 내린다.
     let onAcknowledge: () -> Void
 
@@ -115,6 +116,7 @@ struct AgentCardView: View {
                 Spacer(minLength: 0)
 
                 HStack(spacing: Spacing.sm) {
+                    Button("상세", action: onInspect)
                     if agent.canReceiveCommand {
                         Button { showSheet = true } label: {
                             Text(primaryAction.label)

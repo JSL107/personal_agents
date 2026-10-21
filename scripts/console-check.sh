@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 콘솔(픽셀 오피스) 검증 게이트 — 한 명령으로 모아 둔다.
+# 콘솔 검증 게이트 — 한 명령으로 모아 둔다.
 #
 #   pnpm console:check
 #
@@ -10,12 +10,10 @@
 #
 # 흩어져 있으면 "돌려야 하는 줄 몰랐다" 가 생긴다. 각 게이트가 무엇을 보는지:
 #   swift build             타입·컴파일
-#   ConsoleCoreTests        배치·조판·색 규칙 (단언 9700+)
-#   --asset-check           에셋이 다 있고 크기가 기대와 같은지 (방·가구·캐릭터·포즈·걸음)
+#   ConsoleCoreTests        남은 화면·모델의 회귀 단언
+#   --asset-check           남은 에셋이 다 있고 크기가 기대와 같은지
 #   --crop-check            투명 여백 잘라내기 계약 (몸 경계 보존·여백 유지·여백 상한)
 #   --prewarm-check         워밍이 백그라운드에서 캐시를 채우는지 (중복 접힘 + 적재)
-#   --meeting-check         회의 지시 뒤 주최자의 .working 이 회의를 끊지 않는지 (+ 참석자 대조군)
-#   --color-check           오피스 렌더 픽셀의 실제 밝기 (통로·바닥·가구·셔츠 대역)
 #   --render-dashboard      대시보드 카드가 실제로 그려지는지 (라이트·다크 두 장)
 #   --render-calendar       캘린더 격자·머리글이 그려지는지 (5주 달·6주 달)
 #   --render-schedule-compose  등록 폼이 그려지는지 (빈 폼·채운 폼+실패·길이 초과)
@@ -28,8 +26,6 @@
 # `--asset-check` 는 머지 직후부터 183장 중 163건을 "unexpected dimensions" 로 떨어뜨리며
 # 종료 코드 1 을 내고 있었다(#622 가 발견해 기대 크기를 상수로 모았다). **묶음에 없는 검사는
 # 돌지 않고, 돌지 않는 검사는 깨진 채로 오래 산다.** 새 `--*-check` 를 만들면 여기 함께 넣을 것.
-#
-# 색 실측은 백엔드가 필요 없다(고정 명단으로 굽는다). 시각도 고정하므로 회차마다 같은 값이 나온다.
 set -euo pipefail
 
 CONSOLE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../clients/idaeri-console" && pwd)"
@@ -42,7 +38,7 @@ echo "── ConsoleCoreTests"
 swift run ConsoleCoreTests
 
 # 에셋 결손·크기는 **가장 먼저** 본다. 그림이 없거나 크기가 어긋난 상태에서는 아래 검사들이
-# 무엇을 통과시켰는지가 의미를 잃는다 — 크롭 계약도 색 대역도 그 그림을 전제로 재기 때문이다.
+# 무엇을 통과시켰는지가 의미를 잃는다 — 크롭 계약도 그 그림을 전제로 재기 때문이다.
 echo "── 에셋 목록·크기 (--asset-check)"
 swift run IdaeriConsole --asset-check
 
@@ -51,12 +47,6 @@ swift run IdaeriConsole --crop-check
 
 echo "── 워밍 계약 (--prewarm-check)"
 swift run IdaeriConsole --prewarm-check
-
-echo "── 회의 연출 (--meeting-check)"
-swift run IdaeriConsole --meeting-check
-
-echo "── 색 실측 (--color-check)"
-swift run IdaeriConsole --color-check
 
 # 대시보드는 픽셀 대역을 재지 않고 "굽히는지" 만 본다 — 카드가 SwiftUI 조판에서 터지거나
 # 스프라이트가 번들에서 사라지면 여기서 exit 1 이 된다. 산출물은 눈으로 볼 때만 쓰므로

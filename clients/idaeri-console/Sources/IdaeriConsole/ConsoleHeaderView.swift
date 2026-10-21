@@ -8,7 +8,6 @@ enum ConsoleTab: Hashable {
     case dashboard
     case reports
     case agents
-    case office
 }
 
 /// 창 맨 위 머리글 — 신호등·앱 이름·탭 전환·연결 상태.
@@ -35,7 +34,7 @@ struct ConsoleHeaderView: View {
                         .foregroundStyle(CozyPalette.butter)
                 }
                 .frame(width: 32, height: 32)
-                Text("이대리 오피스")
+                Text("이대리 콘솔")
                     .font(.title3.bold())
                     .foregroundStyle(CozyPalette.ink)
             }
@@ -47,7 +46,6 @@ struct ConsoleHeaderView: View {
                 Label("대시보드", systemImage: "chart.bar.xaxis").tag(ConsoleTab.dashboard)
                 Label("보고서", systemImage: "doc.text").tag(ConsoleTab.reports)
                 Label("에이전트", systemImage: "rectangle.grid.2x2.fill").tag(ConsoleTab.agents)
-                Label("오피스", systemImage: "person.3.fill").tag(ConsoleTab.office)
             }
             .pickerStyle(.segmented)
             .fixedSize()
