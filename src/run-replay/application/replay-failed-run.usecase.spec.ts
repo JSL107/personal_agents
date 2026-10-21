@@ -45,6 +45,7 @@ const setup = (payload: unknown) => {
     agentRunService: { setParentId: jest.fn().mockResolvedValue(undefined) },
     watchVideoUsecase: agentUsecase(),
     inFlightLock: new ReplayInFlightLock(),
+    findRecentAppliedPreviews: { execute: jest.fn().mockResolvedValue([]) },
   };
   const usecase = new ReplayFailedRunUsecase(
     ...(Object.values(dependencies) as unknown as ConstructorParameters<
@@ -53,7 +54,7 @@ const setup = (payload: unknown) => {
   );
   const prepare = (requesterSlackUserId = OWNER) =>
     usecase.prepare({ runId: 42, requesterSlackUserId });
-  return { prepare, ...dependencies };
+  return { prepare, usecase, ...dependencies };
 };
 
 const failedRun = (agentType: string, inputSnapshot: unknown = {}) => ({
@@ -131,6 +132,70 @@ describe('ReplayFailedRunUsecase', () => {
       );
       paperTradingRepository.hasOrdersForRecommendation.mockResolvedValue(true);
       expectRejected(await prepare(), ReplayRejectionCode.NOT_REPRODUCIBLE);
+    });
+  });
+
+  // 발행은 초안 단위다. 그 초안의 발행 카드가 승인됐으면 Notion 상태가 바뀌어 다시 돌려도
+  // BLOG_DRAFT_NOT_FOUND 로 끝나고, 실패만 하나 더 쌓인다 (2026-10-21 run #9656 → #9686).
+  describe('이미 발행된 BLOG_PUBLISH 초안', () => {
+    const blogRun = failedRun('BLOG_PUBLISH', {
+      slackUserId: OWNER,
+      pageId: 'page-1',
+      publishedAt: '2026-10-17T00:00:00.000Z',
+    });
+    const appliedCard = (pageId: string) => ({
+      kind: 'BLOG_GITHUB_PUBLISH',
+      payload: { pageId },
+    });
+
+    it('같은 초안의 발행 카드가 승인됐으면 NOT_REPRODUCIBLE 로 막고 발행을 부르지 않는다', async () => {
+      const { prepare, findRecentAppliedPreviews, publishNotionDraftUsecase } =
+        setup(blogRun);
+      findRecentAppliedPreviews.execute.mockResolvedValue([
+        appliedCard('other-page'),
+        appliedCard('page-1'),
+      ]);
+
+      expectRejected(await prepare(), ReplayRejectionCode.NOT_REPRODUCIBLE);
+      expect(findRecentAppliedPreviews.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'BLOG_GITHUB_PUBLISH' }),
+      );
+      expect(publishNotionDraftUsecase.execute).not.toHaveBeenCalled();
+    });
+
+    // 실행 성공만으로는 판정하지 않는다 — 카드가 만료되면 초안은 그대로다 (run #9555).
+    it('승인된 카드가 다른 초안 것뿐이면 그대로 재실행한다', async () => {
+      const { prepare, findRecentAppliedPreviews } = setup(blogRun);
+      findRecentAppliedPreviews.execute.mockResolvedValue([
+        appliedCard('other-page'),
+      ]);
+      expect(await prepare()).toMatchObject({
+        kind: 'READY',
+        agentType: 'BLOG_PUBLISH',
+      });
+    });
+
+    it('pageId 가 없는 옛 스냅샷은 조회 없이 재실행한다', async () => {
+      const { prepare, findRecentAppliedPreviews } = setup(
+        failedRun('BLOG_PUBLISH', { titleQuery: '제목' }),
+      );
+      expect(await prepare()).toMatchObject({ kind: 'READY' });
+      expect(findRecentAppliedPreviews.execute).not.toHaveBeenCalled();
+    });
+
+    it('isAlreadySettled 는 같은 판정을 콘솔 브리핑에 내준다', async () => {
+      const { usecase, findRecentAppliedPreviews } = setup(blogRun);
+      expect(await usecase.isAlreadySettled(42)).toBe(false);
+      findRecentAppliedPreviews.execute.mockResolvedValue([
+        appliedCard('page-1'),
+      ]);
+      expect(await usecase.isAlreadySettled(42)).toBe(true);
+    });
+
+    it('isAlreadySettled 는 다른 agentType 이면 조회하지 않고 false', async () => {
+      const { usecase, findRecentAppliedPreviews } = setup(failedRun('PM'));
+      expect(await usecase.isAlreadySettled(42)).toBe(false);
+      expect(findRecentAppliedPreviews.execute).not.toHaveBeenCalled();
     });
   });
 

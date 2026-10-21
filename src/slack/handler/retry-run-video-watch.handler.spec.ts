@@ -33,7 +33,7 @@ const setup = (inputSnapshot: Record<string, unknown>) => {
     }),
   };
   const agentRunService = { setParentId: jest.fn() };
-  const dependencies: object[] = Array.from({ length: 14 }, () => ({}));
+  const dependencies: object[] = Array.from({ length: 15 }, () => ({}));
   dependencies[0] = retryRunUsecase;
   dependencies[11] = agentRunService;
   dependencies[12] = watchVideoUsecase;

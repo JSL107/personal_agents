@@ -49,6 +49,7 @@ describe('BuildPresidentBriefingUsecase', () => {
   let findPreviewDayOutcomes: { execute: jest.Mock };
   let findingRepository: { countOpenPostedByPullRequest: jest.Mock };
   let replayingRunIds: Set<number>;
+  let isAlreadySettled: jest.Mock;
 
   beforeEach(async () => {
     agentRunService = {
@@ -58,6 +59,7 @@ describe('BuildPresidentBriefingUsecase', () => {
       findRecentSucceededRuns: jest.fn().mockResolvedValue([]),
     };
     replayingRunIds = new Set();
+    isAlreadySettled = jest.fn().mockResolvedValue(false);
     findAllOpenPreviews = { execute: jest.fn().mockResolvedValue([]) };
     findPreviewDayOutcomes = { execute: jest.fn().mockResolvedValue([]) };
     findingRepository = {
@@ -81,6 +83,7 @@ describe('BuildPresidentBriefingUsecase', () => {
           provide: ReplayFailedRunUsecase,
           useValue: {
             isReplaying: (runId: number) => replayingRunIds.has(runId),
+            isAlreadySettled,
           },
         },
       ],
@@ -174,6 +177,37 @@ describe('BuildPresidentBriefingUsecase', () => {
     expect(briefing.todos).toHaveLength(1);
     expect(briefing.todos[0].kind).toBe(ConsoleTodoKind.FAILED_RUN);
     expect(briefing.todos[0].label).toBe('PM 재시도');
+  });
+
+  // 성공 뒤에 늦게 정리된 실패가 "오늘 마지막 실행" 이 되면 재시도가 계속 뜨고, 누르면 이미
+  // 발행된 초안을 못 찾아 실패가 또 쌓인다 (2026-10-21 run #9656 → #9686).
+  describe('다른 실행이 이미 끝낸 실패', () => {
+    beforeEach(() => {
+      agentRunService.findRecentlyFinishedRuns.mockResolvedValue([
+        { agentType: 'BLOG_PUBLISH', status: 'FAILED', runId: 9686 },
+      ]);
+      agentRunService.findRecentSucceededRuns.mockResolvedValue([
+        succeededRun(1, '2026-10-20T10:00:00Z'),
+        succeededRun(2, '2026-10-18T10:00:00Z'),
+      ]);
+    });
+
+    it('할 일로 올리지 않는다', async () => {
+      isAlreadySettled.mockResolvedValue(true);
+
+      const briefing = await usecase.execute();
+
+      expect(isAlreadySettled).toHaveBeenCalledWith(9686);
+      expect(briefing.todos).toEqual([]);
+    });
+
+    it('확인 조회가 실패하면 숨기지 않고 띄운다', async () => {
+      isAlreadySettled.mockRejectedValue(new Error('DB 흔들림'));
+
+      const briefing = await usecase.execute();
+
+      expect(briefing.todos[0]?.label).toBe('BLOG_PUBLISH 재시도');
+    });
   });
 
   // 말풍선은 합친 한 줄을 쓰지만, 대시보드는 대상마다 버튼을 그린다. id 를 하나만 실으면
