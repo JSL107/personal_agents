@@ -431,6 +431,21 @@ public actor ConsoleClient {
         try await sendExpectingSuccess(request)
     }
 
+    /// `POST /v1/console/mascot/chatter` — 서버가 만든 한 마디를 공통 data 봉투에서 꺼낸다.
+    public func postMascotChatter(declinedAgentTypes: [String]) async throws -> MascotChatterLine {
+        let request = try buildMascotChatterRequest(
+            baseURL: baseURL, declinedAgentTypes: declinedAgentTypes, token: token
+        )
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw ConsoleClientError.notHTTP
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw ConsoleClientError.badStatus(http.statusCode)
+        }
+        return try JSONDecoder().decode(MascotChatterEnvelope.self, from: data).data
+    }
+
     /// `POST /v1/console/sessions/:id/inject` — 로컬 세션에 작업 주입. 동기 응답으로 결과 확정.
     public func postInject(sessionId: String, text: String) async throws -> InjectOutcome {
         let request = try buildInjectRequest(

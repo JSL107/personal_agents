@@ -59,7 +59,9 @@ struct AppRootView: View {
             guard let text = notification.userInfo?["text"] as? String else {
                 return
             }
-            sendCommand(text: text, agentTypeHint: nil, persona: "USAGI")
+            sendCommand(
+                text: text, agentTypeHint: notification.userInfo?["agentTypeHint"] as? String, persona: "USAGI"
+            )
         }
         .onReceive(NotificationCenter.default.publisher(for: .idaeriMascotRetry)) { notification in
             guard let runId = notification.userInfo?["runId"] as? Int else {
