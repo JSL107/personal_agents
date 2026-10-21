@@ -27,7 +27,6 @@ describe('buildPaperRecommendationPrompt', () => {
   it('전략, 보유 종목, 후보와 JSON 출력 제약을 포함한다', () => {
     const prompt = buildPaperRecommendationPrompt({
       strategy: 'LONG_TERM',
-      purchasableCash: 7_000_000,
       accountValuation: 10_000_000,
       maximumWeightPercent: 20,
       positions: [
@@ -57,7 +56,8 @@ describe('buildPaperRecommendationPrompt', () => {
     expect(prompt).toContain('최대 3종');
     expect(prompt).toContain('20%');
     expect(prompt).toContain('재매수 금지');
-    expect(prompt).toContain('매수 가능 현금: 7000000');
+    expect(prompt).not.toContain('매수 가능 현금');
+    expect(prompt).toContain('살 만한 종목의 매수');
     expect(prompt).toContain('계좌 평가액: 10000000');
     expect(prompt).toContain(JSON.stringify(indicators));
     expect(prompt).toContain('지표 없음');
@@ -103,6 +103,7 @@ describe('buildPaperRecommendationPrompt', () => {
     // 상한을 프롬프트가 따로 적어 두면 제약 코드와 갈린다 — 넘긴 값을 읽어 쓰는지 확인한다.
     expect(systemPrompt).toContain('최대 3종');
     expect(systemPrompt).toContain('종목당 20%');
+    expect(systemPrompt).toContain('현금 잔고는 시스템이 판단한다');
   });
 
   // 값이 DB 로 내려간 뒤에도 프롬프트가 상수에 고정돼 있으면, 모델은 20% 인 줄 알고 고르는데
@@ -116,7 +117,6 @@ describe('buildPaperRecommendationPrompt', () => {
 
     const userPrompt = buildPaperRecommendationPrompt({
       strategy: 'SWING',
-      purchasableCash: 1_000_000,
       accountValuation: 1_000_000,
       maximumWeightPercent: 12.5,
       positions: [],
@@ -131,7 +131,6 @@ describe('buildPaperRecommendationPrompt', () => {
   it('업종이 없는 종목은 미분류로 적는다', () => {
     const prompt = buildPaperRecommendationPrompt({
       strategy: 'SWING',
-      purchasableCash: 1_000_000,
       accountValuation: 1_000_000,
       maximumWeightPercent: 20,
       positions: [],

@@ -233,8 +233,35 @@ describe('CUJ detectors', () => {
           }),
         ),
       ).toBe(
-        '장기투자 제안이 모두 제약에 걸려 주문 0건 (현금 부족, 보유하지 않은 종목 매도)',
+        '장기투자 제안이 모두 제약에 걸려 주문 0건 (보유하지 않은 종목 매도)',
       );
+    });
+
+    it('현금 부족만으로 전량 제외된 회차는 경보하지 않는다', () => {
+      expect(
+        detailOf(
+          paper('LONG_TERM', {
+            ...held,
+            emptyReason: { code: 'ALL_FILTERED', detail: null },
+            skipped: [{ side: 'BUY', code: '1', reason: 'INSUFFICIENT_CASH' }],
+          }),
+        ),
+      ).toBeUndefined();
+    });
+
+    it('현금 부족과 후보 외 종목이 섞이면 후보 외 종목만 경보한다', () => {
+      expect(
+        detailOf(
+          paper('LONG_TERM', {
+            ...held,
+            emptyReason: { code: 'ALL_FILTERED', detail: null },
+            skipped: [
+              { side: 'BUY', code: '1', reason: 'INSUFFICIENT_CASH' },
+              { side: 'BUY', code: '2', reason: 'NOT_IN_CANDIDATES' },
+            ],
+          }),
+        ),
+      ).toContain('후보');
     });
 
     it('전량 제외인데 제외 기록이 비면 기록 불일치로 경보한다', () => {

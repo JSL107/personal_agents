@@ -212,6 +212,8 @@ const paperRunProblems = (output: unknown, yesterday: string): string[] => {
     // 아래 미종결 주문 검사가 따로 잡는다.
     const reasons = new Set(output.skipped.map(skipReasonOf));
     reasons.delete('PENDING_ORDER_EXISTS');
+    // 추천과 주문은 분리되어 있다. 현금 부족 미집행은 정상이며 별도 채점한다.
+    reasons.delete('INSUFFICIENT_CASH');
     if (output.skipped.length === 0) {
       problems.push('제안이 모두 걸렸다는데 걸린 기록이 없음');
     } else if (reasons.size > 0) {

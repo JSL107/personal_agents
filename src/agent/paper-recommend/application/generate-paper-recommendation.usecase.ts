@@ -56,8 +56,8 @@ const DEFAULT_STRATEGIES: PaperRecommendationStrategy[] = [
   'SWING',
 ];
 
-// 잔고에서 지급일 미도래 배당을 뺀 매수 여력. 모델에게 보여줄 때와 실제 수량을 배정할 때가
-// 같은 값을 써야 "모델이 본 현금" 과 "배정된 현금" 이 갈리지 않는다.
+// 잔고에서 지급일 미도래 배당을 뺀 매수 여력. 모델에는 보여주지 않고 주문 제약과
+// 회차 입력 기록에만 사용한다.
 const subtractPendingDividend = (input: {
   cashBalance: MoneyValue;
   corporateActions: InvariantCorporateActionRow[];
@@ -264,10 +264,8 @@ export class GeneratePaperRecommendationUsecase {
           indicatorSources.map((stock) => [stock.code, stock.sector]),
         );
         const scorecard = await this.buildScorecard(strategy, decidedAt);
-        // 모델에게는 잔고가 아니라 매수 여력을 보여준다. 배당은 권리락일에 잔고로 잡히지만
-        // 지급일까지 쓸 수 없어(코람코더원리츠는 8/28 락, 11/27 지급) 잔고를 그대로 실으면
-        // 받지도 않은 돈을 근거로 매수를 고른다. 실제 수량을 정하는 아래 제약 함수와 같은
-        // 기준을 써야 모델이 본 현금과 배정된 현금이 갈리지 않는다.
+        // 모델은 현금을 보지 않는다. 매수 가능액은 제약 함수가 사용하고, 실행 스냅샷에
+        // 따로 남겨 추천과 주문 결과를 사후 측정할 수 있게 한다.
         //
         // 잔고를 위에서 읽어 둔 것으로 쓰지 않는다. 그 사이 스크리닝이 수십 초를 쓰므로,
         // 그동안 배당이 반영되면 옛 잔고에서 새 미수를 빼 실제로 쓸 수 있는 돈이 사라진다.
@@ -279,7 +277,6 @@ export class GeneratePaperRecommendationUsecase {
         const prompt =
           buildPaperRecommendationPrompt({
             strategy,
-            purchasableCash: Number(purchasableCash.toString()),
             accountValuation,
             maximumWeightPercent: parameters.maximumWeightPercent,
             positions: positions.map((position) => ({
@@ -305,6 +302,7 @@ export class GeneratePaperRecommendationUsecase {
           decidedAt: decidedAt.toISOString(),
           systemPrompt,
           prompt,
+          purchasableCash: Number(purchasableCash.toString()),
           ruleVersion: screen.ruleVersion,
           // 이 회차가 실제로 쓴 값. `ruleVersion` 은 스크리너 규칙의 버전이라 파라미터를
           // 바꿔도 움직이지 않는다 — 값이 바뀌기 시작하면 두 회차를 가를 축이 이것뿐이다.
