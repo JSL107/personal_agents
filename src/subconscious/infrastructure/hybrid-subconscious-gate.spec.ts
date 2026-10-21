@@ -74,11 +74,25 @@ describe('HybridSubconsciousGate', () => {
 
   it('shadow 모드는 실제 결과를 기존 LLM에서만 가져온다', async () => {
     const legacy = { judge: jest.fn().mockResolvedValue([legacyDecision]) };
-    const jev = { evaluate: jest.fn().mockResolvedValue(evaluation) };
+    const jev = { evaluateShadow: jest.fn().mockResolvedValue(evaluation) };
     const gate = makeGate('shadow', jev, legacy);
 
     await expect(gate.judge([change])).resolves.toEqual([legacyDecision]);
-    expect(jev.evaluate).toHaveBeenCalledWith([change]);
+    expect(jev.evaluateShadow).toHaveBeenCalledWith([change]);
+  });
+
+  // shadow 실패는 shadow 원장의 error 칸이 맡는다. agent_run 을 남기는 evaluate 로 가면
+  // 사용자 영향 없는 타임아웃이 FAILED 로 실패 통계에 섞인다.
+  it('shadow 모드는 agent_run 을 남기는 evaluate 를 부르지 않는다', async () => {
+    const legacy = { judge: jest.fn().mockResolvedValue([legacyDecision]) };
+    const jev = {
+      evaluate: jest.fn(),
+      evaluateShadow: jest.fn().mockRejectedValue(new Error('aborted')),
+    };
+    const gate = makeGate('shadow', jev, legacy);
+
+    await expect(gate.judge([change])).resolves.toEqual([legacyDecision]);
+    expect(jev.evaluate).not.toHaveBeenCalled();
   });
 
   it('hybrid 모드는 확신 높은 Jev 결과와 fallback LLM 결과를 합친다', async () => {
@@ -105,7 +119,7 @@ describe('HybridSubconsciousGate', () => {
 
   it('shadow 모드는 변경마다 shadow 점수와 legacy 판정을 한 행으로 남긴다', async () => {
     const legacy = { judge: jest.fn().mockResolvedValue([legacyDecision]) };
-    const jev = { evaluate: jest.fn().mockResolvedValue(evaluation) };
+    const jev = { evaluateShadow: jest.fn().mockResolvedValue(evaluation) };
     const shadowRepository = {
       recordMany: jest.fn().mockResolvedValue(undefined),
     };
@@ -133,7 +147,9 @@ describe('HybridSubconsciousGate', () => {
   it('shadow 호출이 실패해도 error 행을 남기고 legacy 결과를 돌려준다', async () => {
     const legacy = { judge: jest.fn().mockResolvedValue([legacyDecision]) };
     const jev = {
-      evaluate: jest.fn().mockRejectedValue(new Error('connect ECONNREFUSED')),
+      evaluateShadow: jest
+        .fn()
+        .mockRejectedValue(new Error('connect ECONNREFUSED')),
       model: 'kev-latest',
     };
     const shadowRepository = {
@@ -156,7 +172,7 @@ describe('HybridSubconsciousGate', () => {
 
   it('shadow 저장이 실패해도 legacy 결과를 돌려준다', async () => {
     const legacy = { judge: jest.fn().mockResolvedValue([legacyDecision]) };
-    const jev = { evaluate: jest.fn().mockResolvedValue(evaluation) };
+    const jev = { evaluateShadow: jest.fn().mockResolvedValue(evaluation) };
     const shadowRepository = {
       recordMany: jest.fn().mockRejectedValue(new Error('db down')),
     };
@@ -169,7 +185,7 @@ describe('HybridSubconsciousGate', () => {
     const legacy = {
       judge: jest.fn().mockRejectedValue(new Error('llm down')),
     };
-    const jev = { evaluate: jest.fn().mockResolvedValue(evaluation) };
+    const jev = { evaluateShadow: jest.fn().mockResolvedValue(evaluation) };
     const shadowRepository = {
       recordMany: jest.fn().mockResolvedValue(undefined),
     };
