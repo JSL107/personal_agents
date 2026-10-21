@@ -21,9 +21,18 @@ export interface RankIcRow {
   returnPct: number;
   entryTradeDate: Date;
   horizonTradeDate: Date;
+  // 그 회차에 규칙 통과 종목이 전부 저장됐는가(저장 종목 수 = `passedCount`). 회차 단위 값이다.
+  runFullyStored: boolean;
 }
 
 export interface ScreeningRankIcSummary {
+  // 통과 전체가 저장되지 않아 뺀 회차 수(2026-09-04 이전은 프롬프트에 실린 20종목만 남았다).
+  // 실린 것만 있는 회차는 상위 20위 안의 상관이고, 전체가 있는 회차는 통과 전체의 상관이라
+  // 한 평균에 섞으면 서로 다른 모집단의 값이 합쳐진다.
+  partialRunCount: number;
+  // 상관을 내지 못한 회차를 사유별로 센다. 표본이 0 일 때 카드가 실제 사유를 적게 하려는 값이다.
+  tooFewItemRunCount: number;
+  undefinedRunCount: number;
   // 종목이 하한 이상이라 상관을 낸 회차 수.
   eligibleRunCount: number;
   // 그중 보유 구간이 서로 겹치지 않게 고른 회차 수. 아래 값은 모두 이 회차들로 낸다.
@@ -94,9 +103,9 @@ export const spearmanCorrelation = (
   right: number[],
 ): number | null => pearson(averageRanks(left), averageRanks(right));
 
-const toRunIc = (rows: RankIcRow[]): RunIc | null => {
+const toRunIc = (rows: RankIcRow[]): RunIc | 'TOO_FEW' | 'UNDEFINED' => {
   if (rows.length < RANK_IC_MINIMUM_ITEMS) {
-    return null;
+    return 'TOO_FEW';
   }
   // 순위 1위가 점수 최고다. 역순으로 넣어야 +가 "순위가 맞았다" 가 된다.
   const ic = spearmanCorrelation(
@@ -104,7 +113,7 @@ const toRunIc = (rows: RankIcRow[]): RunIc | null => {
     rows.map((row) => row.returnPct),
   );
   if (ic === null) {
-    return null;
+    return 'UNDEFINED';
   }
   // 봉 수로 센 지평이라 종목마다 평가일이 다를 수 있다. 회차의 구간은 가장 이른 진입부터
   // 가장 늦은 평가까지로 넓게 잡는다 — 좁게 잡으면 겹친 회차가 표본에 들어온다.
@@ -154,11 +163,29 @@ export const summarizeRankIc = (rows: RankIcRow[]): ScreeningRankIcSummary => {
     found.push(row);
     byRun.set(row.runId, found);
   }
-  const eligible = [...byRun.values()]
-    .map(toRunIc)
-    .filter((run): run is RunIc => run !== null);
+  let partialRunCount = 0;
+  let tooFewItemRunCount = 0;
+  let undefinedRunCount = 0;
+  const eligible: RunIc[] = [];
+  for (const runRows of byRun.values()) {
+    if (!runRows[0].runFullyStored) {
+      partialRunCount += 1;
+      continue;
+    }
+    const runIc = toRunIc(runRows);
+    if (runIc === 'TOO_FEW') {
+      tooFewItemRunCount += 1;
+    } else if (runIc === 'UNDEFINED') {
+      undefinedRunCount += 1;
+    } else {
+      eligible.push(runIc);
+    }
+  }
   const sampled = pickNonOverlapping(eligible).map((run) => run.ic);
   return {
+    partialRunCount,
+    tooFewItemRunCount,
+    undefinedRunCount,
     eligibleRunCount: eligible.length,
     sampledRunCount: sampled.length,
     meanIc: sampled.length === 0 ? null : mean(sampled),
