@@ -954,6 +954,31 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
     expect(out.summaryText).toContain('🔴 *장애* — task &lt;x&gt; · 1일째');
   });
 
+  it('이름표가 없는 Autopilot task 는 접두어만 떼고 task id 를 그대로 싣는다', async () => {
+    const digestRepository = {
+      ...emptyDigestRepository(),
+      findOpenIncidents: jest
+        .fn()
+        .mockResolvedValue([
+          { label: 'Autopilot task brand-new-task', openedAt: new Date() },
+        ]),
+    };
+    const task = buildTask(
+      generateDailyPlan(),
+      humanize(),
+      emptyStockRepository(),
+      listSchedulesUsecase(),
+      { digestRepository },
+    );
+
+    const out = await task.run(CTX);
+
+    expect(out.summaryText).toContain(
+      '🔴 *장애* — brand-new-task 실패 · 1일째',
+    );
+    expect(out.summaryText).not.toContain('Autopilot task');
+  });
+
   it('주말 아침에는 수집 정지를 판정하지 않는다 — 수집은 평일만 돈다', async () => {
     const task = buildTask(
       generateDailyPlan(),

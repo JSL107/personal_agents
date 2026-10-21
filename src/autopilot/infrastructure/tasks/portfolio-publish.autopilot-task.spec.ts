@@ -310,6 +310,33 @@ describe('PortfolioPublishAutopilotTask', () => {
     expect(result.detailText).toContain('앞세우기 반려 1');
   });
 
+  it('고칠 문장 누락만 있는 회차도 가드 경고에 그 항목을 적는다 — 빈 경고로 나가지 않는다', async () => {
+    const { task, audit } = createFixture();
+    audit.execute.mockResolvedValueOnce({
+      result: {
+        ...AUDIT_RESULT,
+        items: [],
+        guard: {
+          ...AUDIT_RESULT.guard,
+          demotedTitles: [],
+          droppedTitles: [],
+          unjudgedTitles: [],
+          droppedHighlights: [],
+          rewriteMissing: ['문장 없는 성과'],
+        },
+      },
+      modelUsed: 'codex-cli',
+      agentRunId: 2,
+    });
+
+    const result = await task.run(context);
+
+    expect(result.skip).toBe(false);
+    expect(result.summaryText).toContain(
+      '• ⚠️ 이력서 감사 가드 경고 — 고칠 문장 누락 1건',
+    );
+  });
+
   it('발행 변화가 없어도 미판정·폐기 같은 guard 이상 징후를 보고한다', async () => {
     const { task, audit } = createFixture();
     audit.execute.mockResolvedValueOnce({
