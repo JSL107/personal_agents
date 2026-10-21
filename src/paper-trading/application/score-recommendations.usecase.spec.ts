@@ -687,6 +687,65 @@ describe('ScoreRecommendationsUsecase', () => {
     jest.useRealTimers();
   });
 
+  // 현금이 묶여 실계좌 보유가 없는 계좌에서도 못 산 추천의 청산일이 평가일이면 그날 지수가
+  // 필요하다. 실계좌 결손만 보면 불완전한 미집행 초과수익이 원장에 영구히 남는다.
+  it('못 산 추천의 평가일 지수가 없으면 실계좌 결손이 없어도 원장에 남기지 않는다', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-13T03:00:00.000Z'));
+    const asOf = new Date('2026-08-13T00:00:00.000Z');
+    const tradeDates = [
+      '2026-08-06',
+      '2026-08-07',
+      '2026-08-10',
+      '2026-08-11',
+      '2026-08-12',
+      '2026-08-13',
+    ];
+    repository.loadRecommendationScoreData.mockResolvedValue({
+      unexecutedRecommendations: [
+        {
+          agentRunId: 1,
+          strategy: 'SWING',
+          tickerId: 200,
+          code: '000200',
+          recommendedOn: new Date('2026-08-06T00:00:00.000Z'),
+        },
+      ],
+      cashEvents: [],
+      sellOrders: [],
+      accounts: [{ id: 8, name: 'SWING', seedAmount: decimal('1000') }],
+      orders: [],
+      recommendationTrades: [],
+      portfolioTrades: [],
+      dailyPrices: tradeDates.map((tradeDate) => ({
+        tickerId: 200,
+        tradeDate: new Date(`${tradeDate}T00:00:00.000Z`),
+        close: decimal('1000'),
+        market: 'KOSPI',
+      })),
+      // 진입일 지수만 있고 평가일(=청산일) 지수는 아직 수집 전이다.
+      benchmarkCloses: [
+        {
+          tradeDate: new Date('2026-08-06T00:00:00.000Z'),
+          close: decimal('2500'),
+        },
+      ],
+      snapshots: [],
+    });
+    const usecase = new ScoreRecommendationsUsecase(
+      repository as unknown as PaperTradingPrismaRepository,
+      NO_HOLIDAYS,
+    );
+
+    const result = await usecase.execute({ asOf });
+
+    expect(result.accounts[0].unexecuted.scoredCount).toBe(1);
+    expect(result.accounts[0].unexecuted.benchmarkUnavailableCount).toBe(1);
+    expect(result.evaluationBenchmarkMissing).toBe(true);
+    expect(result.persisted).toBe(false);
+    expect(repository.saveRecommendationScores).not.toHaveBeenCalled();
+    jest.useRealTimers();
+  });
+
   // 주간 채점(금 20:10)의 금요일이 추석(2026-09-25)이던 회차의 재현. 휴장일에는 지수가 없어
   // 기준일을 그 날로 두면 위 가드에 걸려 저장되지 않고, 과거 기준일 재채점도 막혀 있어
   // 그 주 성적이 원장에서 영구히 빠졌다(최신 as_of=09-18).

@@ -341,10 +341,13 @@ export class ScoreRecommendationsUsecase {
     // "평가일 지수가 없다" 만으로는 부족하다. 평가일 전에 모두 청산된 계좌는 각 추천의
     // 초과수익이 매도일 지수만으로 온전히 산출되므로, 그런 회차까지 막으면 멀쩡한 성적이
     // 원장에 남지 못한다. 추천이 0건인 회차도 같은 이유로 통과한다(빠진 것이 없다).
+    // 못 산 추천도 청산일이 평가일이면 같은 이유로 초과수익에서 빠진다. 현금이 묶여 실계좌
+    // 보유가 없는 계좌는 위 실계좌 결손이 0이라, 이쪽을 함께 보지 않으면 불완전한 성적이 남는다.
     const evaluationBenchmarkMissing = accounts.some(
       (account) =>
         account.evaluationBenchmarkMissing &&
-        account.exclusions.benchmarkUnavailable > 0,
+        (account.exclusions.benchmarkUnavailable > 0 ||
+          account.unexecuted.benchmarkUnavailableCount > 0),
     );
     const persisted =
       command.from === undefined &&
