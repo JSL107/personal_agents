@@ -277,6 +277,8 @@ export class ScreeningHistoryPrismaRepository {
                 strategy: true,
                 asOf: true,
                 ruleVersion: true,
+                passedCount: true,
+                _count: { select: { items: true } },
               },
             },
           },
@@ -329,6 +331,8 @@ export class ScreeningHistoryPrismaRepository {
       tickerName: row.item.ticker.name,
       entryTradeDate: row.entryTradeDate,
       horizonTradeDate: row.horizonTradeDate,
+      // 2026-09-04 이전 회차는 프롬프트에 실린 종목만 저장돼 이 값이 거짓이다(실측 회차별 11개).
+      runFullyStored: row.item.run._count.items === row.item.run.passedCount,
     }));
   }
 

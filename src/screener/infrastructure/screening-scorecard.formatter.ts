@@ -104,14 +104,30 @@ const formatSigned = (value: number | null, fractionDigits: number): string => {
 // 점수 축. 표본 회차 수를 전체와 나눠 적는다 — 겹치는 회차를 뺀 수라 위 격차의 회차 수보다
 // 훨씬 작고, 그 사실이 안 보이면 같은 표본으로 낸 값처럼 읽힌다.
 const formatRankIc = (rankIc: ScreeningRankIcSummary): string => {
+  // 뺀 회차를 사유별로 적는다. 사유 하나로 뭉뚱그리면 실제와 다른 결측 사유가 카드에 남는다.
+  const excluded = [
+    rankIc.partialRunCount > 0
+      ? `통과 일부만 저장 ${rankIc.partialRunCount}개`
+      : null,
+    rankIc.tooFewItemRunCount > 0
+      ? `종목 ${RANK_IC_MINIMUM_ITEMS}개 미만 ${rankIc.tooFewItemRunCount}개`
+      : null,
+    rankIc.undefinedRunCount > 0
+      ? `수익률이 전부 같음 ${rankIc.undefinedRunCount}개`
+      : null,
+  ].filter((reason): reason is string => reason !== null);
   if (rankIc.sampledRunCount === 0) {
-    return `  순위 상관 - — 종목 ${RANK_IC_MINIMUM_ITEMS}개 이상인 회차가 없음`;
+    return excluded.length === 0
+      ? '  순위 상관 - — 회차 없음'
+      : `  순위 상관 - — 상관을 낸 회차 없음 (제외: ${excluded.join(' · ')})`;
   }
+  const excludedSuffix =
+    excluded.length === 0 ? '' : ` · 제외: ${excluded.join(' · ')}`;
   const line =
     `  순위 상관 ${formatSigned(rankIc.meanIc, 3)}` +
     ` · 양수 ${rankIc.positiveRunCount}/${rankIc.sampledRunCount}` +
     ` · t ${formatSigned(rankIc.tStatistic, 1)}` +
-    ` (구간 안 겹치는 회차 ${rankIc.sampledRunCount}/${rankIc.eligibleRunCount}개)`;
+    ` (구간 안 겹치는 회차 ${rankIc.sampledRunCount}/${rankIc.eligibleRunCount}개${excludedSuffix})`;
   return rankIc.sampledRunCount < TREND_MINIMUM_SAMPLE
     ? `${line} — 회차가 ${TREND_MINIMUM_SAMPLE}개 미만이라 아직 추세 아님`
     : line;

@@ -12,6 +12,7 @@ const run = (
   returns: number[],
   entry = '2026-09-01',
   horizon = '2026-09-08',
+  runFullyStored = true,
 ): RankIcRow[] =>
   returns.map((returnPct, index) => ({
     runId,
@@ -19,6 +20,7 @@ const run = (
     returnPct,
     entryTradeDate: day(entry),
     horizonTradeDate: day(horizon),
+    runFullyStored,
   }));
 
 describe('spearmanCorrelation', () => {
@@ -41,19 +43,34 @@ describe('summarizeRankIc', () => {
     expect(summarizeRankIc(run(1, [1, 2, 3, 4, 5])).meanIc).toBeCloseTo(-1, 12);
   });
 
-  it('종목이 5개 미만이거나 수익률이 전부 같은 회차는 세지 않는다', () => {
+  it('종목이 5개 미만이거나 수익률이 전부 같은 회차는 사유별로 세고 표본에서 뺀다', () => {
     const summary = summarizeRankIc([
       ...run(1, [4, 3, 2, 1]),
       ...run(2, [0, 0, 0, 0, 0]),
     ]);
 
     expect(summary).toEqual({
+      partialRunCount: 0,
+      tooFewItemRunCount: 1,
+      undefinedRunCount: 1,
       eligibleRunCount: 0,
       sampledRunCount: 0,
       meanIc: null,
       positiveRunCount: 0,
       tStatistic: null,
     });
+  });
+
+  it('통과 일부만 저장된 회차는 모집단이 달라 섞지 않는다', () => {
+    const summary = summarizeRankIc([
+      // 실린 상위 5종목만 남은 옛 회차. 순서가 맞아도 표본에 들어오면 안 된다.
+      ...run(1, [5, 4, 3, 2, 1], '2026-08-20', '2026-08-27', false),
+      ...run(2, [1, 2, 3, 4, 5], '2026-09-10', '2026-09-17'),
+    ]);
+
+    expect(summary.partialRunCount).toBe(1);
+    expect(summary.eligibleRunCount).toBe(1);
+    expect(summary.meanIc).toBeCloseTo(-1, 12);
   });
 
   it('보유 구간이 겹치는 회차는 빼고 최신 회차부터 고른다', () => {

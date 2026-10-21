@@ -37,6 +37,8 @@ export interface ScreeningScorecardRow {
   // 가려낼 때만 쓴다(`screening-rank-ic.ts`).
   entryTradeDate: Date;
   horizonTradeDate: Date;
+  // 그 회차에 규칙 통과 종목이 전부 저장됐는가. 순위 상관이 모집단이 다른 회차를 뺄 때 쓴다.
+  runFullyStored: boolean;
 }
 
 export interface ScreeningScorecardArm {
