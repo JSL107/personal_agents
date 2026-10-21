@@ -26,6 +26,12 @@ export const LLM_CLI_TIMEOUT_MS = 300_000;
 export const LLM_CLI_MAX_ATTEMPTS = 2;
 export const LLM_CLI_RETRY_BACKOFF_BASE_MS = 1_000;
 export const LLM_CLI_RETRY_BACKOFF_JITTER_MS = 1_000;
+// codex 가 `429 Too Many Requests` 로 끊긴 경우의 backoff. 구독 한도 소진이 아니라 짧은 시간에
+// 호출이 몰려 걸리는 순간 제한이라, 1초 뒤 재시도는 같은 창 안에서 다시 429 를 맞는다
+// (2026-10-20 19:41~19:42 · 10-21 08:05~08:06 — 일괄 실행 직후 5건이 1~2분 안에 연달아 실패,
+// 앞뒤 호출은 성공). 관측된 제한 구간(최소 75초)을 넘기도록 잡는다.
+export const LLM_CLI_RATE_LIMIT_BACKOFF_BASE_MS = 90_000;
+export const LLM_CLI_RATE_LIMIT_BACKOFF_JITTER_MS = 30_000;
 
 // attempt 당 자식 프로세스 부대비용 예산 — mkdtemp 2회(workDir/homeDir) + spawn + rm -rf 2회.
 // 실측은 수십~수백 ms 수준이라 넉넉히 잡는다. worst-case 를 조금 크게 잡는 쪽이 안전하다:
@@ -36,7 +42,10 @@ const LLM_CLI_PROCESS_OVERHEAD_MS = 2_000;
 const PRIMARY_PROVIDER_WORST_CASE_MS =
   LLM_CLI_MAX_ATTEMPTS * LLM_CLI_TIMEOUT_MS +
   (LLM_CLI_MAX_ATTEMPTS - 1) *
-    (LLM_CLI_RETRY_BACKOFF_BASE_MS + LLM_CLI_RETRY_BACKOFF_JITTER_MS) +
+    Math.max(
+      LLM_CLI_RETRY_BACKOFF_BASE_MS + LLM_CLI_RETRY_BACKOFF_JITTER_MS,
+      LLM_CLI_RATE_LIMIT_BACKOFF_BASE_MS + LLM_CLI_RATE_LIMIT_BACKOFF_JITTER_MS,
+    ) +
   LLM_CLI_MAX_ATTEMPTS * LLM_CLI_PROCESS_OVERHEAD_MS;
 
 // 폴백(claude) 예산. ClaudeCliProvider 는 bounded retry 를 하지 않으므로 timeout 1회 + 부대비용.

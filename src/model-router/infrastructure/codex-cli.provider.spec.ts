@@ -311,6 +311,27 @@ describe('computeCodexRetryBackoffMs', () => {
 
     expect(computeCodexRetryBackoffMs()).toBe(1999);
   });
+
+  it('429 로 끝난 실패는 순간 제한 창을 넘기도록 90초 이상 기다린다', () => {
+    jest.spyOn(Math, 'random').mockReturnValue(0);
+    const rateLimited = new Error(
+      'codex CLI 비정상 종료 (exit=1): ...\nERROR: exceeded retry limit, last status: 429 Too Many Requests',
+    );
+
+    expect(computeCodexRetryBackoffMs(rateLimited)).toBe(90_000);
+  });
+
+  it('429 가 아닌 실패는 종전 1초대 backoff 를 유지한다', () => {
+    jest.spyOn(Math, 'random').mockReturnValue(0);
+
+    expect(computeCodexRetryBackoffMs(new Error('temporary failure'))).toBe(
+      1000,
+    );
+    // stderr tail 에 섞인 프롬프트 본문의 숫자 429 는 순간 제한 신호가 아니다.
+    expect(
+      computeCodexRetryBackoffMs(new Error('exit=1): 학생 429명 대상 점검')),
+    ).toBe(1000);
+  });
 });
 
 describe('computeQuotaBlockUntilMs', () => {

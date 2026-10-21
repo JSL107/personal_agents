@@ -7,6 +7,8 @@ import { Injectable, Logger } from '@nestjs/common';
 
 import {
   LLM_CLI_MAX_ATTEMPTS,
+  LLM_CLI_RATE_LIMIT_BACKOFF_BASE_MS,
+  LLM_CLI_RATE_LIMIT_BACKOFF_JITTER_MS,
   LLM_CLI_RETRY_BACKOFF_BASE_MS,
   LLM_CLI_RETRY_BACKOFF_JITTER_MS,
   LLM_CLI_TIMEOUT_MS,
@@ -202,9 +204,19 @@ export const isRetryableCodexError = (error: unknown): boolean => {
   return retryable;
 };
 
-export const computeCodexRetryBackoffMs = (): number => {
-  const jitterMs = Math.floor(Math.random() * CODEX_RETRY_BACKOFF_JITTER_MS);
-  return CODEX_RETRY_BACKOFF_BASE_MS + jitterMs;
+// codex 는 429 를 내부에서 몇 번 재시도한 뒤 `exceeded retry limit, last status: 429 Too Many
+// Requests` 를 stderr 에 남기고 exit=1 로 끝난다. 그 stderr tail 이 비정상 종료 에러 메시지에 실린다.
+// 숫자 429 만으로는 판별하지 않는다 — stderr tail 에는 프롬프트 본문도 섞여 들어온다.
+const CODEX_RATE_LIMIT_SIGNAL_REGEX = /too many requests/i;
+
+export const isCodexRateLimitError = (error: unknown): boolean =>
+  error instanceof Error && CODEX_RATE_LIMIT_SIGNAL_REGEX.test(error.message);
+
+export const computeCodexRetryBackoffMs = (error?: unknown): number => {
+  const [baseMs, jitterRangeMs] = isCodexRateLimitError(error)
+    ? [LLM_CLI_RATE_LIMIT_BACKOFF_BASE_MS, LLM_CLI_RATE_LIMIT_BACKOFF_JITTER_MS]
+    : [CODEX_RETRY_BACKOFF_BASE_MS, CODEX_RETRY_BACKOFF_JITTER_MS];
+  return baseMs + Math.floor(Math.random() * jitterRangeMs);
 };
 
 type CodexSpawnResult = {
@@ -333,7 +345,7 @@ export class CodexCliProvider implements ModelProviderPort {
           );
           throw error;
         }
-        const backoffMs = computeCodexRetryBackoffMs();
+        const backoffMs = computeCodexRetryBackoffMs(error);
         this.logger.warn(
           `codex 호출 실패 (attempt ${attempt}/${CODEX_MAX_ATTEMPTS}, ${attemptSeconds}s 소요) — 재시도 ${backoffMs}ms 후: ${message}`,
         );
