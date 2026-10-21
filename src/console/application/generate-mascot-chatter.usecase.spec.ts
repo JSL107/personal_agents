@@ -508,6 +508,19 @@ describe('GenerateMascotChatterUsecase', () => {
     expect(modelRouter.route).not.toHaveBeenCalled();
   });
 
+  it('끝난 일 조회가 실패하면 말할 거리 없음과 구분해 CONTEXT_FAILED 로 답하고 모델을 부르지 않는다', async () => {
+    runs.findFinishedRunsSince.mockRejectedValue(new Error('db unavailable'));
+
+    const result = await usecase.execute({
+      declinedAgentTypes: [],
+      trigger: 'EVENTS',
+    });
+
+    expect(result.reason).toBe('CONTEXT_FAILED');
+    expect(result.line).toBeNull();
+    expect(modelRouter.route).not.toHaveBeenCalled();
+  });
+
   it('since가 미래 또는 24시간보다 오래되면 24시간 전으로 제한한다', async () => {
     const now = Date.now();
     runs.findFinishedRunsSince.mockResolvedValue([]);

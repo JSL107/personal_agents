@@ -65,6 +65,7 @@ interface ChatterContext {
 interface RunContext {
   lines: string[];
   hasEvents: boolean;
+  lookupFailed: boolean;
 }
 
 interface PendingChatter {
@@ -142,6 +143,9 @@ export class GenerateMascotChatterUsecase {
   ): Promise<MascotChatterResult> {
     const now = new Date();
     const runContext = await this.collectRunContext(input, now);
+    if (runContext.lookupFailed) {
+      return this.failure('CONTEXT_FAILED');
+    }
     if (
       (input.trigger === 'EVENTS' || input.trigger === 'PROGRESS') &&
       runContext.lines.length === 0
@@ -254,7 +258,7 @@ export class GenerateMascotChatterUsecase {
     now: Date,
   ): Promise<RunContext> {
     if (input.trigger === 'IDLE') {
-      return { lines: [], hasEvents: false };
+      return { lines: [], hasEvents: false, lookupFailed: false };
     }
     try {
       if (input.trigger === 'PROGRESS') {
@@ -264,7 +268,7 @@ export class GenerateMascotChatterUsecase {
             now.getTime() - run.startedAt.getTime() >= PROGRESS_MIN_RUN_MS,
         );
         if (elapsedRuns.length === 0) {
-          return { lines: [], hasEvents: false };
+          return { lines: [], hasEvents: false, lookupFailed: false };
         }
         const names = await this.getDisplayNames();
         return {
@@ -275,6 +279,7 @@ export class GenerateMascotChatterUsecase {
             return `[진행 중] ${names.get(run.agentType) ?? run.agentType} ${minutes}분째`;
           }),
           hasEvents: false,
+          lookupFailed: false,
         };
       }
       const proposedSince =
@@ -294,7 +299,7 @@ export class GenerateMascotChatterUsecase {
         .filter(isNoteworthyRun)
         .slice(0, NOTEWORTHY_RUN_LIMIT);
       if (noteworthy.length === 0) {
-        return { lines: [], hasEvents: false };
+        return { lines: [], hasEvents: false, lookupFailed: false };
       }
       const names = await this.getDisplayNames();
       return {
@@ -305,10 +310,11 @@ export class GenerateMascotChatterUsecase {
           return `[끝난 일] ${name} ${status} ${RUN_TIME_FORMATTER.format(run.endedAt)}${summary}`;
         }),
         hasEvents: true,
+        lookupFailed: false,
       };
     } catch (error) {
       this.logger.warn(`우사기 작업 맥락 조회 실패: ${String(error)}`);
-      return { lines: [], hasEvents: false };
+      return { lines: [], hasEvents: false, lookupFailed: true };
     }
   }
 

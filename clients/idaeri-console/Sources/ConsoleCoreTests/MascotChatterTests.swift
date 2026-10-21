@@ -76,6 +76,25 @@ func runMascotChatterTests(_ runner: TestRunner) {
         "응답을 기다리는 동안 끝난 두 실행은 다음 알림으로 남긴다"
     )
 
+    runner.suite("Mascot shown events response")
+    // 실제로 한 마디를 띄운 경우도 같은 규칙 — 요청 때 2건을 보고했고 모델 답을 기다리는 동안 1건이 더
+    // 끝났으면, 그 1건은 0 으로 지우지 않고 다음 EVENTS 의 몫으로 남는다.
+    runner.expectEqual(
+        mascotUnreportedFinishedCount(currentCount: 3, countAtRequest: 2), 1,
+        "말한 뒤에도 응답 대기 중 끝난 실행은 남긴다"
+    )
+
+    runner.suite("Mascot return retry")
+    runner.expect(!mascotShouldRetryReturn(reason: nil, transportFailed: false, shown: true), "띄웠으면 복귀 계기를 접는다")
+    runner.expect(mascotShouldRetryReturn(reason: nil, transportFailed: true, shown: false), "서버에 못 닿으면 다시 시도")
+    runner.expect(
+        mascotShouldRetryReturn(reason: "CONTEXT_FAILED", transportFailed: false, shown: false), "조회 실패면 다시 시도"
+    )
+    runner.expect(mascotShouldRetryReturn(reason: nil, transportFailed: false, shown: false), "급한 말풍선에 밀렸으면 다시 시도")
+    runner.expect(
+        !mascotShouldRetryReturn(reason: "MODEL_FAILED", transportFailed: false, shown: false), "모델 실패는 매분 되풀이하지 않는다"
+    )
+
     runner.suite("Mascot chatter request")
     let request = try! buildMascotChatterRequest(
         baseURL: URL(string: "http://127.0.0.1:3002")!, trigger: .returning,
@@ -113,6 +132,11 @@ func runMascotChatterTests(_ runner: TestRunner) {
                                awaySince: officeNow.addingTimeInterval(-mascotAwaySeconds), finishedSinceLastTalk: 1),
         now: officeNow, calendar: calendar
     ), .returning, "복귀가 일보다 우선하며 최소 간격을 무시")
+    runner.expectEqual(mascotNextTalkTrigger(
+        state: MascotTalkState(copying: state, userIdleSeconds: 5 * 60,
+                               awaySince: officeNow.addingTimeInterval(-40 * 60)),
+        now: officeNow, calendar: calendar
+    ), .returning, "1분 틱 사이에 돌아와 가만히 읽고 있어도 복귀로 본다")
     runner.expectNil(mascotNextTalkTrigger(
         state: MascotTalkState(copying: state, lastSpokeAt: officeNow.addingTimeInterval(-179),
                                finishedSinceLastTalk: 1), now: officeNow, calendar: calendar
