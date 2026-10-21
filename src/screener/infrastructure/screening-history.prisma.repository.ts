@@ -253,13 +253,20 @@ export class ScreeningHistoryPrismaRepository {
   // 실행이 성공한 회차만 대상이다. 추천이 실패한 날은 회차만 남고 주문이 없어, 그대로
   // 세면 실린 종목 전부가 "보고도 안 샀다" 로 집계돼 대조군이 오염된다
   // (findUnscoredRuns 와 같은 이유·같은 조건).
+  //
+  // `horizonTradeDateMax` 는 look-ahead 차단이다. 추천 프롬프트가 과거 시점으로 재현될 때
+  // 그 시점 이후에 확정된 성적이 섞이면 결과를 알고 내린 판단이 된다. 주간 카드는 넘기지 않는다.
   async findScorecardRows(
     horizonDays: number,
+    options: { horizonTradeDateMax?: Date } = {},
   ): Promise<ScreeningScorecardRow[]> {
     const outcomes = await this.prisma.screeningItemOutcome.findMany({
       where: {
         horizonDays,
         item: { run: { agentRun: { status: 'SUCCEEDED' } } },
+        ...(options.horizonTradeDateMax === undefined
+          ? {}
+          : { horizonTradeDate: { lte: options.horizonTradeDateMax } }),
       },
       select: {
         returnPct: true,

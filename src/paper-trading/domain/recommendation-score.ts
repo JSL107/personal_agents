@@ -693,5 +693,8 @@ export interface RecommendationScoreSummary {
   hitCount: number;
   meanReturnRate: number | null;
   meanExcessReturnRate: number | null;
+  // 초과수익 평균에 실제로 들어간 추천 수. 청산 건수와 다르다 — 보유 중인 추천도 평가일
+  // 기준으로 들어가고, 지수 기록이 빈 건은 빠진다(`calculateBenchmarkPerformance`).
+  excessSampleCount: number;
   maximumLoss: number | null;
 }

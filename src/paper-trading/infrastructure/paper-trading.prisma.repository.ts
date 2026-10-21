@@ -795,10 +795,12 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
       select: {
         asOf: true,
         closedCount: true,
+        openCount: true,
         hitCount: true,
         meanReturnRate: true,
         meanExcessReturnRate: true,
         maximumLoss: true,
+        exclusions: true,
       },
     });
     if (row === null) {
@@ -810,6 +812,13 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
       hitCount: row.hitCount,
       meanReturnRate: toRateOrNull(row.meanReturnRate),
       meanExcessReturnRate: toRateOrNull(row.meanExcessReturnRate),
+      // 초과수익은 청산 + 보유 중 추천에서 지수 기록이 빈 건을 뺀 표본으로 계산된다.
+      excessSampleCount: Math.max(
+        0,
+        row.closedCount +
+          row.openCount -
+          benchmarkUnavailableOf(row.exclusions),
+      ),
       maximumLoss: toRateOrNull(row.maximumLoss),
     };
   }
@@ -2098,3 +2107,17 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
     };
   }
 }
+
+// `exclusions` 는 Json 컬럼이라 키가 없거나 숫자가 아닐 수 있다. 그때는 0 으로 본다 —
+// 표본을 실제보다 크게 셀 수 있지만, 이 키가 생긴 뒤의 행은 항상 숫자를 담는다.
+const benchmarkUnavailableOf = (exclusions: Prisma.JsonValue): number => {
+  if (
+    exclusions === null ||
+    typeof exclusions !== 'object' ||
+    Array.isArray(exclusions)
+  ) {
+    return 0;
+  }
+  const value = exclusions.benchmarkUnavailable;
+  return typeof value === 'number' ? value : 0;
+};

@@ -25,10 +25,12 @@ import {
   PaperTradingPrismaRepository,
   PendingPaperOrderInput,
 } from '../../../paper-trading/infrastructure/paper-trading.prisma.repository';
+import { BuildScreeningScorecardUsecase } from '../../../screener/application/build-screening-scorecard.usecase';
 import {
   ScreenUniverseResult,
   ScreenUniverseUsecase,
 } from '../../../screener/application/screen-universe.usecase';
+import { SelectionGapSummary } from '../../../screener/domain/screening-scorecard';
 import { ResolveStrategyParametersUsecase } from '../../../strategy-parameter/application/resolve-strategy-parameters.usecase';
 import { constrainPaperRecommendation } from '../domain/paper-recommendation.constraint';
 import { parsePaperRecommendation } from '../domain/paper-recommendation.parser';
@@ -50,6 +52,10 @@ import {
 import { renderRecommendationScorecard } from '../domain/prompt/recommendation-scorecard';
 
 const PAPER_ACCOUNT_SEED_AMOUNT = '10000000';
+
+// 성적표의 "보고도 안 고른 후보 대비" 가 보는 지평. 20거래일은 아직 회차가 적어(10-21 기준
+// 전략당 12건) 5거래일을 쓴다.
+const SELECTION_GAP_HORIZON_DAYS = 5;
 
 const DEFAULT_STRATEGIES: PaperRecommendationStrategy[] = [
   'LONG_TERM',
@@ -154,6 +160,7 @@ export class GeneratePaperRecommendationUsecase {
     private readonly strategyParameters: ResolveStrategyParametersUsecase,
     @Inject(HOLIDAY_CALENDAR_PORT)
     private readonly holidayCalendar: HolidayCalendarPort,
+    private readonly screeningScorecard: BuildScreeningScorecardUsecase,
   ) {}
 
   async execute(
@@ -700,7 +707,12 @@ export class GeneratePaperRecommendationUsecase {
         strategy,
         asOfMax: decidedAt,
       });
-      const block = renderRecommendationScorecard(latest);
+      const block = renderRecommendationScorecard(
+        latest,
+        latest === null
+          ? null
+          : await this.findSelectionGap(strategy, latest.asOf),
+      );
       if (block.length > 0 && latest !== null) {
         this.logger.log(
           `추천 성적표 주입 (${strategy}): ${latest.asOf.toISOString().slice(0, 10)} 누적 · 청산 ${latest.closedCount}건`,
@@ -712,6 +724,31 @@ export class GeneratePaperRecommendationUsecase {
         `추천 성적표 조회 실패, 성적 없이 진행: ${error instanceof Error ? error.message : String(error)}`,
       );
       return '';
+    }
+  }
+
+  // 선택 격차는 성적표의 한 줄이라 따로 best-effort 로 감싼다. 이 조회가 실패했다고 코스피
+  // 대비 성적까지 버리면 모델은 다시 아무 근거 없이 판단하게 된다.
+  //
+  // 상한은 `decidedAt` 이 아니라 채점 기준일(`scoreAsOf`)이다. 채점표는 금요일에만 저장되고
+  // (`DEFAULT_PAPER_SCORE_CRON`) 격차 원재료는 평일마다 채점되므로, 판단 시각으로 자르면 두 줄이
+  // 같은 "~까지 누적" 머리 아래에서 서로 다른 기간을 말하게 된다. 채점 기준일은 판단 시각보다
+  // 늦을 수 없어 look-ahead 차단도 그대로 성립한다.
+  private async findSelectionGap(
+    strategy: PaperRecommendationStrategy,
+    scoreAsOf: Date,
+  ): Promise<SelectionGapSummary | null> {
+    try {
+      return await this.screeningScorecard.findSelectionGap({
+        strategy,
+        horizonDays: SELECTION_GAP_HORIZON_DAYS,
+        asOfMax: scoreAsOf,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `선택 격차 조회 실패, 그 줄 없이 진행: ${errorMessageOf(error)}`,
+      );
+      return null;
     }
   }
 }
