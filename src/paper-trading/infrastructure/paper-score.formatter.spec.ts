@@ -32,6 +32,19 @@ const RESULT: ScoreRecommendationsResult = {
       },
       meanExcessReturnRate: '0.0234',
       meanShadowReturnRate: '0.08',
+      unexecuted: {
+        recommendationCount: 4,
+        duplicateCount: 1,
+        unresolvedCount: 0,
+        scoredCount: 2,
+        notDueCount: 1,
+        unavailableCount: 0,
+        hitCount: 1,
+        hitRate: '0.5',
+        meanReturnRate: '0.1234',
+        meanExcessReturnRate: '0.0234',
+        benchmarkUnavailableCount: 0,
+      },
       evaluationBenchmarkMissing: false,
       portfolio: {
         snapshotCount: 8,
@@ -75,6 +88,9 @@ describe('formatPaperScoreReport', () => {
     );
     expect(text).toContain('계좌 수익률 +15% · MDD -4% · 회전율 1.25배');
     expect(text).toContain('누적 비용 1,234.5원 · 실제 스냅샷 8건');
+    expect(text).toContain(
+      '못 산 추천 2건 채점 · 적중 50% · 평균 +12.34% · 초과 +2.34% (원 4 · 중복 1 · 대기 1)',
+    );
     expect(text).toContain('*LONG_TERM* · 규칙 v2');
   });
 
@@ -138,6 +154,9 @@ describe('formatPaperScoreReport', () => {
     expect(text).toContain('진입 기준 차이');
     expect(text).toContain('현재 저장 close는 조정 계열');
     expect(text).toContain('수집 방식 변경 시 그림자 계산을 재검토');
+    expect(text).toContain(
+      '못 산 추천은 추천일 종가 진입·명목 200만원 가정, 실계좌 성적과 별개',
+    );
   });
 
   it('빈 표본도 생략하지 않고 산출 불가와 0건을 보고한다', () => {
@@ -161,6 +180,11 @@ describe('formatPaperScoreReport', () => {
           },
           meanExcessReturnRate: null,
           meanShadowReturnRate: null,
+          unexecuted: {
+            ...RESULT.accounts[0].unexecuted,
+            recommendationCount: 0,
+            scoredCount: 0,
+          },
           evaluationBenchmarkMissing: false,
           portfolio: {
             snapshotCount: 0,
@@ -185,5 +209,24 @@ describe('formatPaperScoreReport', () => {
     expect(text).toContain('추천 0건');
     expect(text).toContain('적중 0/0 (-)');
     expect(text).toContain('평균 - · 중앙값 - · 최대 손실 -');
+    expect(text).toContain('못 산 추천 없음');
+  });
+
+  it('미집행 추천의 종목·시세·지수 결손을 카드에 구분해 표시한다', () => {
+    const text = formatPaperScoreReport({
+      ...RESULT,
+      accounts: [
+        {
+          ...RESULT.accounts[0],
+          unexecuted: {
+            ...RESULT.accounts[0].unexecuted,
+            unresolvedCount: 1,
+            unavailableCount: 2,
+            benchmarkUnavailableCount: 3,
+          },
+        },
+      ],
+    });
+    expect(text).toContain('종목 미해결 1 · 시세 결손 2 · 지수 결손 3');
   });
 });

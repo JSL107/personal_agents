@@ -250,7 +250,15 @@ describe('GeneratePaperRecommendationUsecase', () => {
       expect.objectContaining({
         strategy: 'LONG_TERM',
         systemPrompt: expect.stringContaining('한국 주식 모의투자 추천'),
+        purchasableCash: 10_000_000,
         ruleVersion: expect.any(Number),
+      }),
+    );
+    expect(modelRouter.route).toHaveBeenCalledWith(
+      expect.objectContaining({
+        request: expect.objectContaining({
+          prompt: expect.not.stringContaining('매수 가능 현금'),
+        }),
       }),
     );
   });
@@ -493,7 +501,10 @@ describe('GeneratePaperRecommendationUsecase', () => {
 
     const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
     expect(prompt).toContain(JSON.stringify({ ...indicators, close: 70_000 }));
-    expect(prompt).toContain('매수 가능 현금: 7000000');
+    expect(prompt).not.toContain('매수 가능 현금');
+    expect(updateInputSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({ purchasableCash: 7_000_000 }),
+    );
     expect(prompt).toContain('계좌 평가액: 9000000');
     expect(prompt).not.toContain('지표 없음');
     // 업종이 스크리닝 결과에서 프롬프트까지 이어지는지 두 경로를 따로 단언한다.
@@ -511,8 +522,8 @@ describe('GeneratePaperRecommendationUsecase', () => {
   });
 
   // 코람코더원리츠 특별배당(8/28 락, 11/27 지급)처럼 지급 전 배당이 잔고에 섞여 있으면,
-  // 잔고를 그대로 실은 프롬프트가 모델에게 없는 돈을 보여준다. 그 회차 추천 전부가 오염된다.
-  it('지급일 전 배당은 모델에게 보여줄 현금에서 뺀다', async () => {
+  // 매수 가능액은 모델에게 보이지 않고 실행 기록과 주문 제약에만 쓰인다.
+  it('지급일 전 배당은 기록·주문용 매수 가능액에서 뺀다', async () => {
     repository.findAccountByName.mockResolvedValue({
       id: 41,
       seedAmount: new Prisma.Decimal('10000000'),
@@ -538,8 +549,11 @@ describe('GeneratePaperRecommendationUsecase', () => {
     await usecase.execute({ strategies: ['LONG_TERM'], decidedAt });
 
     const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
-    expect(prompt).toContain('매수 가능 현금: 775952');
+    expect(prompt).not.toContain('매수 가능 현금');
     expect(prompt).not.toContain('2106271');
+    expect(updateInputSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({ purchasableCash: 775_952 }),
+    );
   });
 
   it('후보 밖 보유 종목 매도 주문에 includedIndicators 근거를 저장한다', async () => {

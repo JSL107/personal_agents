@@ -99,6 +99,24 @@ export const formatPaperScoreReport = (
 
   for (const account of result.accounts) {
     const score = account.score;
+    const unexecuted = account.unexecuted;
+    const unexecutedDiagnostics = [
+      unexecuted.unresolvedCount > 0
+        ? `종목 미해결 ${unexecuted.unresolvedCount}`
+        : null,
+      unexecuted.unavailableCount > 0
+        ? `시세 결손 ${unexecuted.unavailableCount}`
+        : null,
+      unexecuted.benchmarkUnavailableCount > 0
+        ? `지수 결손 ${unexecuted.benchmarkUnavailableCount}`
+        : null,
+    ].filter((item): item is string => item !== null);
+    const unexecutedDetails = [
+      `원 ${unexecuted.recommendationCount}`,
+      `중복 ${unexecuted.duplicateCount}`,
+      `대기 ${unexecuted.notDueCount}`,
+      ...unexecutedDiagnostics,
+    ].join(' · ');
     lines.push(
       '',
       `*${account.strategy}* · ${formatRuleVersions(account.ruleVersions, account.unknownRuleVersionCount)} · ${formatExitBands(account.exitBands, account.bandlessSellCount)}`,
@@ -108,6 +126,9 @@ export const formatPaperScoreReport = (
       `평균 보유 ${formatDays(score.averageHoldingDays)} · 평균 초과 ${formatRate(account.meanExcessReturnRate)} · 그림자 평균 ${formatShadowRate(account.meanShadowReturnRate, account.exclusions.shadowNotDue)}`,
       `계좌 수익률 ${formatRate(account.portfolio.accountReturnRate)} · MDD ${formatRate(account.portfolio.maximumDrawdown)} · 회전율 ${account.portfolio.turnoverRate === null ? '-' : `${formatDecimal(account.portfolio.turnoverRate)}배`}`,
       `누적 비용 ${formatDecimal(account.portfolio.cumulativeCost)}원 · 실제 스냅샷 ${account.portfolio.snapshotCount}건`,
+      unexecuted.recommendationCount === 0
+        ? '못 산 추천 없음'
+        : `못 산 추천 ${unexecuted.scoredCount}건 채점 · 적중 ${formatUnsignedRate(unexecuted.hitRate)} · 평균 ${formatRate(unexecuted.meanReturnRate)} · 초과 ${formatRate(unexecuted.meanExcessReturnRate)} (${unexecutedDetails})`,
     );
     if (score.closedCount < 5) {
       lines.push(
@@ -137,6 +158,7 @@ export const formatPaperScoreReport = (
     '',
     '_해석 한계: 실제는 다음 거래일 시가, 그림자는 같은 날 종가로 진입하므로 실제-그림자 차이에는 매도 판단뿐 아니라 진입 기준 차이도 포함됩니다._',
     '_현재 저장 close는 조정 계열입니다. 수집 방식 변경 시 그림자 계산을 재검토해야 합니다._',
+    '_못 산 추천은 추천일 종가 진입·명목 200만원 가정, 실계좌 성적과 별개입니다._',
   );
   return lines.join('\n');
 };

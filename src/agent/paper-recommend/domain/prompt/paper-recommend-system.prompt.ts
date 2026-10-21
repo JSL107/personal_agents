@@ -37,6 +37,7 @@ LONG_TERM은 중장기 추세와 안정성을, SWING은 단기 모멘텀과 거�
 규칙:
 - buys는 최대 ${MAXIMUM_BUY_COUNT}종이다.
 - 비중과 수량은 시스템이 정한다. 종목당 ${maximumWeightPercent}%가 배정되므로 비중이나 수량은 출력하지 않는다.
+- 현금 잔고는 시스템이 판단한다. 현금이 모자라 못 사는 경우는 시스템이 걸러내므로, 현금 사정을 이유로 매수 추천을 줄이지 말고 살 만한 종목을 고른다.
 - 보유 중인 종목은 재매수하지 않는다.
 - sells에는 보유 중인 종목만 넣는다.
 - sells와 buys가 모두 비면 holdReason에 그 이유를 한 문장으로 적는다. 하나라도 있으면 holdReason은 생략한다.`;
@@ -66,7 +67,6 @@ export const buildPaperRecommendationPrompt = (
           .join('\n');
 
   return `전략: ${strategyLabel}
-매수 가능 현금: ${input.purchasableCash}
 계좌 평가액: ${input.accountValuation}
 
 [보유 종목]
@@ -75,7 +75,7 @@ ${positions}
 [신규 후보]
 ${candidates}
 
-후보와 보유 종목을 함께 검토해 매도와 매수를 판단하라. JSON 객체 하나만 출력하라. 매수는 최대 ${MAXIMUM_BUY_COUNT}종이고 종목당 ${input.maximumWeightPercent}%가 시스템에서 배정되며 보유 종목 재매수 금지다.`;
+후보와 보유 종목을 함께 검토해 살 만한 종목의 매수와 보유 종목의 매도를 판단하라. JSON 객체 하나만 출력하라. 매수는 최대 ${MAXIMUM_BUY_COUNT}종이고 종목당 ${input.maximumWeightPercent}%가 시스템에서 배정되며 보유 종목 재매수 금지다.`;
 };
 
 const strategyLabelOf = (strategy: PaperRecommendationStrategy): string =>

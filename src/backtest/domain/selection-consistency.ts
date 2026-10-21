@@ -12,7 +12,7 @@ import { PaperRecommendation } from '../../agent/paper-recommend/domain/paper-re
  * 판정 문턱은 측정 전에 정했다 — 결과를 보고 바꾸면 이 측정의 의미가 사라진다.
  */
 
-// 판정 대상: 모델이 본 매수 가능 현금이 평가액의 18% 이상인 회차. 종목당 20% 배정에서
+// 판정 대상: 회차의 매수 가능 현금이 평가액의 18% 이상인 회차. 종목당 20% 배정에서
 // 한 종목도 못 사는 회차는 "아무것도 안 산다" 가 저절로 맞아 일치도를 부풀린다.
 export const HEADROOM_RATIO = 0.18;
 export const CONSISTENCY_HIGH = 0.8;
@@ -40,7 +40,7 @@ export interface RecommendationPromptInputs {
 }
 
 // 2026-08-28 까지의 프롬프트는 업종 괄호가 없고 현금 줄이 `현금 잔액:` 이었다(배당 미수를
-// 빼기 전). 어느 쪽이든 그 회차 모델이 본 현금이다.
+// 빼기 전). 신형 프롬프트에는 현금이 없어 실행 스냅샷 값을 쓴다.
 const POSITION_LINE = /^(\S+) (.+?)(?: \[.*\])? \((\d+)주 보유\)$/u;
 const CANDIDATE_LINE = /^(\S+) (.+?)(?: \[.*\])? \(screen score (-?[\d.]+)\)$/u;
 const CASH_PREFIXES = ['매수 가능 현금: ', '현금 잔액: '];
@@ -48,14 +48,23 @@ const INDICATOR_PREFIX = '지표: ';
 const EMPTY_SECTION = '없음';
 
 /**
- * `buildPaperRecommendationPrompt` 가 만든 문자열에서 제약 함수 입력을 되살린다.
+ * `buildPaperRecommendationPrompt` 가 만든 문자열과 실행 스냅샷에서 제약 함수 입력을 되살린다.
  * 형식이 어긋나면 지어내지 않고 던진다 — 틀린 현금으로 계산한 일치도는 없는 것보다 나쁘다.
  */
 export const parseRecommendationPrompt = (
   prompt: string,
+  options?: { purchasableCash?: number },
 ): RecommendationPromptInputs => {
   const lines = prompt.split('\n');
-  const purchasableCash = readNumberLine(lines, CASH_PREFIXES);
+  const hasCashLine = lines.some((line) =>
+    CASH_PREFIXES.some((prefix) => line.startsWith(prefix)),
+  );
+  const purchasableCash = hasCashLine
+    ? readNumberLine(lines, CASH_PREFIXES)
+    : options?.purchasableCash;
+  if (purchasableCash === undefined || !Number.isFinite(purchasableCash)) {
+    throw new Error('프롬프트에서 "매수 가능 현금:" 값을 읽지 못했습니다.');
+  }
   const accountValuation = readNumberLine(lines, ['계좌 평가액: ']);
   const positions: PromptPosition[] = [];
   const candidates: PromptCandidate[] = [];

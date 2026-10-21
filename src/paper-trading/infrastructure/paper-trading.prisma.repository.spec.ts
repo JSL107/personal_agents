@@ -28,6 +28,8 @@ describe('PaperTradingPrismaRepository pending orders', () => {
     // 결제일 계산이 읽는 공휴일 달력. 기본은 공휴일 없음.
     scheduleItem: { findMany: jest.fn() },
     paperAccount: { findMany: jest.fn() },
+    agentRun: { findMany: jest.fn() },
+    ticker: { findMany: jest.fn() },
     paperCorporateAction: { findMany: jest.fn() },
     paperTrade: { findMany: jest.fn() },
     dailyPrice: { findMany: jest.fn() },
@@ -62,6 +64,8 @@ describe('PaperTradingPrismaRepository pending orders', () => {
     transaction.paperOrder.createMany.mockResolvedValue({ count: 2 });
     transaction.paperOrder.updateMany.mockResolvedValue({ count: 1 });
     prisma.paperAccount.findMany.mockResolvedValue([]);
+    prisma.agentRun.findMany.mockResolvedValue([]);
+    prisma.ticker.findMany.mockResolvedValue([]);
     prisma.paperOrder.findMany.mockResolvedValue([]);
     prisma.paperTrade.findMany.mockResolvedValue([]);
     prisma.dailyPrice.findMany.mockResolvedValue([]);
@@ -77,8 +81,18 @@ describe('PaperTradingPrismaRepository pending orders', () => {
     const from = new Date('2026-07-01T00:00:00.000Z');
     const asOf = new Date('2026-08-13T00:00:00.000Z');
     prisma.paperAccount.findMany.mockResolvedValue([
-      { id: 7, name: 'LONG_TERM', seedAmount: new Prisma.Decimal('10000000') },
-      { id: 8, name: 'SWING', seedAmount: new Prisma.Decimal('10000000') },
+      {
+        id: 7,
+        name: 'LONG_TERM',
+        seedAmount: new Prisma.Decimal('10000000'),
+        openedAt: new Date('2026-06-01T00:00:00.000Z'),
+      },
+      {
+        id: 8,
+        name: 'SWING',
+        seedAmount: new Prisma.Decimal('10000000'),
+        openedAt: new Date('2026-06-15T00:00:00.000Z'),
+      },
     ]);
     prisma.paperOrder.findMany.mockResolvedValue([
       {
@@ -114,7 +128,7 @@ describe('PaperTradingPrismaRepository pending orders', () => {
 
     expect(prisma.paperAccount.findMany).toHaveBeenCalledWith({
       where: { name: { in: ['LONG_TERM', 'SWING'] } },
-      select: { id: true, name: true, seedAmount: true },
+      select: { id: true, name: true, seedAmount: true, openedAt: true },
       orderBy: { id: 'asc' },
     });
     expect(prisma.paperOrder.findMany).toHaveBeenCalledWith({
@@ -218,7 +232,12 @@ describe('PaperTradingPrismaRepository pending orders', () => {
     );
     const asOf = new Date('2026-08-13T00:00:00.000Z');
     prisma.paperAccount.findMany.mockResolvedValue([
-      { id: 7, name: 'LONG_TERM', seedAmount: new Prisma.Decimal('10000000') },
+      {
+        id: 7,
+        name: 'LONG_TERM',
+        seedAmount: new Prisma.Decimal('10000000'),
+        openedAt: new Date('2026-06-01T00:00:00.000Z'),
+      },
     ]);
 
     await repository.loadRecommendationScoreData({ asOf });
@@ -233,6 +252,274 @@ describe('PaperTradingPrismaRepository pending orders', () => {
         where: expect.objectContaining({ tradeDate: { lte: asOf } }),
       }),
     );
+  });
+
+  it('미집행 추천은 유효한 output만 읽고 미해결 종목도 건수 집계를 위해 보존한다', async () => {
+    const repository = new PaperTradingPrismaRepository(
+      prisma as unknown as PrismaService,
+    );
+    const from = new Date('2026-08-01T00:00:00.000Z');
+    const asOf = new Date('2026-08-13T00:00:00.000Z');
+    prisma.paperAccount.findMany.mockResolvedValue([
+      {
+        id: 7,
+        name: 'LONG_TERM',
+        seedAmount: new Prisma.Decimal('10000000'),
+        openedAt: new Date('2026-07-01T00:00:00.000Z'),
+      },
+    ]);
+    prisma.agentRun.findMany.mockResolvedValue(
+      [
+        {
+          id: 1,
+          output: {
+            strategy: 'LONG_TERM',
+            dataAsOf: '2026-08-10',
+            skipped: [
+              { side: 'BUY', reason: 'INSUFFICIENT_CASH', code: '123456' },
+              { side: 'BUY', reason: 'INSUFFICIENT_CASH', code: '999999' },
+              { side: 'SELL', reason: 'INSUFFICIENT_CASH', code: '123456' },
+            ],
+          },
+        },
+        {
+          id: 2,
+          output: {
+            strategy: 'SWING',
+            dataAsOf: null,
+            skipped: [
+              { side: 'BUY', reason: 'INSUFFICIENT_CASH', code: '123456' },
+            ],
+          },
+        },
+        {
+          id: 3,
+          output: {
+            strategy: 'SWING',
+            dataAsOf: '2026-02-30',
+            skipped: [
+              { side: 'BUY', reason: 'INSUFFICIENT_CASH', code: '123456' },
+            ],
+          },
+        },
+        {
+          id: 4,
+          output: {
+            strategy: 'SWING',
+            dataAsOf: '2026-08-14',
+            skipped: [
+              { side: 'BUY', reason: 'INSUFFICIENT_CASH', code: '123456' },
+            ],
+          },
+        },
+        {
+          id: 5,
+          output: {
+            strategy: 'SWING',
+            dataAsOf: '2026-07-31',
+            skipped: [
+              { side: 'BUY', reason: 'INSUFFICIENT_CASH', code: '123456' },
+            ],
+          },
+        },
+        {
+          id: 6,
+          output: {
+            strategy: 'INVALID',
+            dataAsOf: '2026-08-10',
+            skipped: [
+              { side: 'BUY', reason: 'INSUFFICIENT_CASH', code: '123456' },
+            ],
+          },
+        },
+        { id: 7, output: 'invalid json shape' },
+      ].map((agentRun) => ({
+        ...agentRun,
+        startedAt: new Date('2026-08-10T10:00:00.000Z'),
+      })),
+    );
+    prisma.ticker.findMany.mockResolvedValue([{ id: 71, code: '123456' }]);
+
+    const result = await repository.loadRecommendationScoreData({ from, asOf });
+
+    expect(prisma.agentRun.findMany).toHaveBeenCalledWith({
+      where: {
+        agentType: 'PAPER_RECOMMEND',
+        status: 'SUCCEEDED',
+        startedAt: { gte: new Date('2026-07-01T00:00:00.000Z') },
+      },
+      select: { id: true, output: true, startedAt: true },
+      orderBy: { id: 'asc' },
+    });
+    expect(prisma.ticker.findMany).toHaveBeenCalledWith({
+      where: { market: 'KR', code: { in: ['123456', '999999'] } },
+      select: { id: true, code: true },
+    });
+    expect(result.unexecutedRecommendations).toEqual([
+      {
+        agentRunId: 1,
+        strategy: 'LONG_TERM',
+        tickerId: 71,
+        code: '123456',
+        recommendedOn: new Date('2026-08-10T00:00:00.000Z'),
+      },
+      {
+        agentRunId: 1,
+        strategy: 'LONG_TERM',
+        tickerId: null,
+        code: '999999',
+        recommendedOn: new Date('2026-08-10T00:00:00.000Z'),
+      },
+    ]);
+    expect(prisma.dailyPrice.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          tickerId: { in: [71] },
+          tradeDate: { gte: new Date('2026-08-10T00:00:00.000Z'), lte: asOf },
+        },
+      }),
+    );
+    expect(prisma.benchmarkDailyClose.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          symbol: 'KOSPI',
+          tradeDate: { gte: new Date('2026-08-10T00:00:00.000Z'), lte: asOf },
+        },
+      }),
+    );
+  });
+
+  it('실거래보다 이른 미집행 추천일과 두 종목 집합을 일봉 조회에 반영한다', async () => {
+    const repository = new PaperTradingPrismaRepository(
+      prisma as unknown as PrismaService,
+    );
+    const asOf = new Date('2026-08-13T00:00:00.000Z');
+    prisma.paperAccount.findMany.mockResolvedValue([
+      {
+        id: 7,
+        name: 'LONG_TERM',
+        seedAmount: new Prisma.Decimal('10000000'),
+        openedAt: new Date('2026-07-01T00:00:00.000Z'),
+      },
+    ]);
+    prisma.agentRun.findMany.mockResolvedValue([
+      {
+        id: 1,
+        startedAt: new Date('2026-08-01T10:00:00.000Z'),
+        output: {
+          strategy: 'LONG_TERM',
+          dataAsOf: '2026-08-01',
+          skipped: [
+            { side: 'BUY', reason: 'INSUFFICIENT_CASH', code: '999999' },
+          ],
+        },
+      },
+    ]);
+    prisma.ticker.findMany.mockResolvedValue([{ id: 99, code: '999999' }]);
+    prisma.paperOrder.findMany.mockResolvedValue([
+      {
+        id: 301,
+        accountId: 7,
+        tickerId: 71,
+        side: 'BUY',
+        strategy: 'LONG_TERM',
+        status: 'FILLED',
+        quantity: new Prisma.Decimal('1'),
+      },
+    ]);
+    prisma.paperTrade.findMany
+      .mockResolvedValueOnce([
+        {
+          id: 501,
+          orderId: 301,
+          accountId: 7,
+          tickerId: 71,
+          side: 'BUY',
+          quantity: new Prisma.Decimal('1'),
+          price: new Prisma.Decimal('10000'),
+          fee: new Prisma.Decimal('0'),
+          tax: new Prisma.Decimal('0'),
+          realizedPnl: null,
+          tradeDate: new Date('2026-08-10T00:00:00.000Z'),
+        },
+      ])
+      .mockResolvedValue([]);
+
+    await repository.loadRecommendationScoreData({ asOf });
+
+    expect(prisma.dailyPrice.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          tickerId: { in: [71, 99] },
+          tradeDate: { gte: new Date('2026-08-01T00:00:00.000Z'), lte: asOf },
+        },
+      }),
+    );
+  });
+
+  it('추천일은 기준일 안이면 늦게 실행한 회차도 읽고 전략 계좌 개설 전 회차는 제외한다', async () => {
+    const repository = new PaperTradingPrismaRepository(
+      prisma as unknown as PrismaService,
+    );
+    const asOf = new Date('2026-08-13T00:00:00.000Z');
+    prisma.paperAccount.findMany.mockResolvedValue([
+      {
+        id: 7,
+        name: 'LONG_TERM',
+        seedAmount: new Prisma.Decimal('10000000'),
+        openedAt: new Date('2026-07-01T00:00:00.000Z'),
+      },
+      {
+        id: 8,
+        name: 'SWING',
+        seedAmount: new Prisma.Decimal('10000000'),
+        openedAt: new Date('2026-08-01T00:00:00.000Z'),
+      },
+    ]);
+    prisma.agentRun.findMany.mockResolvedValue([
+      {
+        id: 1,
+        startedAt: new Date('2026-07-20T10:00:00.000Z'),
+        output: {
+          strategy: 'SWING',
+          dataAsOf: '2026-07-20',
+          skipped: [
+            { side: 'BUY', reason: 'INSUFFICIENT_CASH', code: '123456' },
+          ],
+        },
+      },
+      {
+        id: 2,
+        startedAt: new Date('2026-08-20T10:00:00.000Z'),
+        output: {
+          strategy: 'SWING',
+          dataAsOf: '2026-08-10',
+          skipped: [
+            { side: 'BUY', reason: 'INSUFFICIENT_CASH', code: '123456' },
+          ],
+        },
+      },
+    ]);
+    prisma.ticker.findMany.mockResolvedValue([{ id: 71, code: '123456' }]);
+
+    const result = await repository.loadRecommendationScoreData({ asOf });
+
+    expect(prisma.agentRun.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          startedAt: { gte: new Date('2026-07-01T00:00:00.000Z') },
+        }),
+      }),
+    );
+    expect(result.unexecutedRecommendations).toEqual([
+      {
+        agentRunId: 2,
+        strategy: 'SWING',
+        tickerId: 71,
+        code: '123456',
+        recommendedOn: new Date('2026-08-10T00:00:00.000Z'),
+      },
+    ]);
   });
 
   it('한 계좌의 PENDING 주문 묶음을 계좌 잠금 transaction에서 저장한다', async () => {
@@ -815,6 +1102,13 @@ describe('PaperTradingPrismaRepository 추천 채점 저장', () => {
     averageHoldingDays: '1',
     meanExcessReturnRate: null,
     meanShadowReturnRate: null,
+    unexecutedCount: 3,
+    unexecutedScoredCount: 1,
+    unexecutedNotDueCount: 1,
+    unexecutedHitCount: 1,
+    unexecutedHitRate: '1',
+    unexecutedMeanReturnRate: '0.02',
+    unexecutedMeanExcessReturnRate: '0.01',
     snapshotCount: 1,
     accountReturnRate: '0.1',
     maximumDrawdown: null,
@@ -858,6 +1152,23 @@ describe('PaperTradingPrismaRepository 추천 채점 저장', () => {
     expect(prisma.recommendationScorePeriod.deleteMany).toHaveBeenCalledWith({
       where: { accountId: 7, asOf },
     });
+  });
+
+  it('미집행 추천 지표를 create와 update 양쪽에 별도로 저장한다', async () => {
+    await repository.saveRecommendationScores([cumulative], []);
+
+    const argument = prisma.recommendationScore.upsert.mock.calls[0][0];
+    const expected = {
+      unexecutedCount: 3,
+      unexecutedScoredCount: 1,
+      unexecutedNotDueCount: 1,
+      unexecutedHitCount: 1,
+      unexecutedHitRate: '1',
+      unexecutedMeanReturnRate: '0.02',
+      unexecutedMeanExcessReturnRate: '0.01',
+    };
+    expect(argument.create).toEqual(expect.objectContaining(expected));
+    expect(argument.update).toEqual(expect.objectContaining(expected));
   });
 
   it('이번 회차의 구간이 0개인 계좌도 옛 구간을 지운다', async () => {
