@@ -7,6 +7,8 @@ import { Injectable, Logger } from '@nestjs/common';
 
 import {
   LLM_CLI_MAX_ATTEMPTS,
+  LLM_CLI_RATE_LIMIT_BACKOFF_BASE_MS,
+  LLM_CLI_RATE_LIMIT_BACKOFF_JITTER_MS,
   LLM_CLI_RETRY_BACKOFF_BASE_MS,
   LLM_CLI_RETRY_BACKOFF_JITTER_MS,
   LLM_CLI_TIMEOUT_MS,
@@ -202,9 +204,25 @@ export const isRetryableCodexError = (error: unknown): boolean => {
   return retryable;
 };
 
-export const computeCodexRetryBackoffMs = (): number => {
-  const jitterMs = Math.floor(Math.random() * CODEX_RETRY_BACKOFF_JITTER_MS);
-  return CODEX_RETRY_BACKOFF_BASE_MS + jitterMs;
+// codex 는 429 를 내부에서 몇 번 재시도한 뒤 `ERROR: exceeded retry limit, last status: 429 Too Many
+// Requests` 를 stderr 에 남기고 exit=1 로 끝난다. 그 stderr tail 이 비정상 종료 에러 메시지에 실린다.
+// tail 앞쪽에는 프롬프트 본문이 섞이므로(429 를 다루는 코드 리뷰 등) 메시지 전체가 아니라
+// **마지막 줄**이 CLI 오류 형식일 때만 순간 제한으로 본다.
+const CODEX_RATE_LIMIT_LINE_REGEX = /^ERROR: .*last status: 429\b/;
+
+export const isCodexRateLimitError = (error: unknown): boolean => {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const lastLine = error.message.trimEnd().split('\n').at(-1) ?? '';
+  return CODEX_RATE_LIMIT_LINE_REGEX.test(lastLine.trim());
+};
+
+export const computeCodexRetryBackoffMs = (error?: unknown): number => {
+  const [baseMs, jitterRangeMs] = isCodexRateLimitError(error)
+    ? [LLM_CLI_RATE_LIMIT_BACKOFF_BASE_MS, LLM_CLI_RATE_LIMIT_BACKOFF_JITTER_MS]
+    : [CODEX_RETRY_BACKOFF_BASE_MS, CODEX_RETRY_BACKOFF_JITTER_MS];
+  return baseMs + Math.floor(Math.random() * jitterRangeMs);
 };
 
 type CodexSpawnResult = {
@@ -333,7 +351,7 @@ export class CodexCliProvider implements ModelProviderPort {
           );
           throw error;
         }
-        const backoffMs = computeCodexRetryBackoffMs();
+        const backoffMs = computeCodexRetryBackoffMs(error);
         this.logger.warn(
           `codex 호출 실패 (attempt ${attempt}/${CODEX_MAX_ATTEMPTS}, ${attemptSeconds}s 소요) — 재시도 ${backoffMs}ms 후: ${message}`,
         );
