@@ -11,7 +11,7 @@ enum MascotBubble: Equatable {
     case reply(sound: String, body: String, signature: String?, history: [MascotTurn])
     case briefing([String])
     case reaction(String)
-    case chatter(sound: String, line: String, suggestion: MascotChatterSuggestion?, asks: Bool)
+    case chatter(sound: String, line: String, suggestion: MascotChatterSuggestion?, asks: Bool, showDashboard: Bool)
 }
 
 private struct MascotHitRects: PreferenceKey {
@@ -349,9 +349,15 @@ struct MascotView: View {
                 ForEach(lines, id: \.self) { line in Text(line) }
             case let .reaction(message):
                 Text(message)
-            case let .chatter(sound, line, suggestion, asks):
+            case let .chatter(sound, line, suggestion, asks, showDashboard):
                 Text(sound).font(.system(size: 14, weight: .bold))
                 Text(line).lineLimit(4)
+                if showDashboard {
+                    HStack {
+                        Spacer()
+                        Button("보기") { controller.perform(.openDashboard) }
+                    }
+                }
                 if let suggestion {
                     Text("\(suggestion.displayName) 할까? — \(suggestion.reason)")
                         .font(.caption)

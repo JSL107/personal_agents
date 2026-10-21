@@ -7,12 +7,36 @@ public struct MascotChatterSuggestion: Decodable, Equatable, Sendable {
     public let reason: String
 }
 
-/// `POST /v1/console/mascot/chatter` 의 data payload. line 이 없으면 고정 문구로 대체한다.
+/// `POST /v1/console/mascot/chatter` 의 data payload. 옛 서버에는 hasEvents 가 없다.
 public struct MascotChatterLine: Decodable, Equatable, Sendable {
     public let chatterId: String?
     public let line: String?
     public let suggestion: MascotChatterSuggestion?
     public let asks: Bool
+    public let hasEvents: Bool
+    public let reason: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case chatterId, line, suggestion, asks, hasEvents, reason
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        chatterId = try values.decodeIfPresent(String.self, forKey: .chatterId)
+        line = try values.decodeIfPresent(String.self, forKey: .line)
+        suggestion = try values.decodeIfPresent(MascotChatterSuggestion.self, forKey: .suggestion)
+        asks = try values.decode(Bool.self, forKey: .asks)
+        hasEvents = try values.decodeIfPresent(Bool.self, forKey: .hasEvents) ?? false
+        reason = try values.decodeIfPresent(String.self, forKey: .reason)
+    }
+}
+
+/// 우사기가 말을 꺼낸 이유. 서버 DTO 의 trigger 값과 일치한다.
+public enum MascotTalkTrigger: String, Sendable {
+    case idle = "IDLE"
+    case events = "EVENTS"
+    case returning = "RETURN"
+    case progress = "PROGRESS"
 }
 
 /// 답장 말풍선에 보여 줄, 앱 프로세스 안의 최근 대화 한 줄.
@@ -56,6 +80,8 @@ struct MascotChatterEnvelope: Decodable {
 }
 
 struct MascotChatterRequestBody: Encodable {
+    let trigger: String
+    let since: String?
     let declinedAgentTypes: [String]
 }
 
@@ -65,9 +91,9 @@ struct MascotSuggestionAcceptBody: Encodable {
     let persona: String?
 }
 
-/// 혼잣말 write 요청을 만든다. 서버의 loopback guard 와 token header 를 그대로 따른다.
+/// 말을 꺼낼 계기와 조회 시작 시각을 서버에 보낸다. loopback guard 와 token header 는 그대로 따른다.
 public func buildMascotChatterRequest(
-    baseURL: URL, declinedAgentTypes: [String], token: String?
+    baseURL: URL, trigger: MascotTalkTrigger, since: Date?, declinedAgentTypes: [String], token: String?
 ) throws -> URLRequest {
     let url = baseURL.appendingPathComponent("v1/console/mascot/chatter")
     var request = URLRequest(url: url)
@@ -76,7 +102,10 @@ public func buildMascotChatterRequest(
     if let token {
         request.setValue(token, forHTTPHeaderField: "x-console-token")
     }
-    request.httpBody = try JSONEncoder().encode(MascotChatterRequestBody(declinedAgentTypes: declinedAgentTypes))
+    request.httpBody = try JSONEncoder().encode(MascotChatterRequestBody(
+        trigger: trigger.rawValue, since: since.map { ISO8601DateFormatter().string(from: $0) },
+        declinedAgentTypes: declinedAgentTypes
+    ))
     return request
 }
 
