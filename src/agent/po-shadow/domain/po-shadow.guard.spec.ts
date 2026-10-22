@@ -11,7 +11,7 @@ const FACTS: PlanRealityFact[] = [
   },
   {
     id: 'failed:CODE_REVIEWER:run-7',
-    kind: 'WORKER_FAILED',
+    kind: 'UNPLANNED_MENTION',
     label: 'Code Reviewer 실행 실패',
     detail: 'MODEL_COMPLETION_FAILED',
   },

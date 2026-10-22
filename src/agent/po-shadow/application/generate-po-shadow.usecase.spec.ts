@@ -66,7 +66,7 @@ const emptyContext = (): PoShadowContext => ({
   activePullRequests: [],
   newMentions: [],
   notionTasks: [],
-  failedRunsToday: [],
+  ownGithubLogin: null,
   mergedPullRequests: [],
   mergedLookupAvailable: true,
   degradedSources: [],
@@ -98,7 +98,7 @@ const mismatchContext = (): PoShadowContext => ({
   activePullRequests: [],
   newMentions: [],
   notionTasks: [],
-  failedRunsToday: [],
+  ownGithubLogin: null,
   mergedPullRequests: [],
   mergedLookupAvailable: true,
   degradedSources: [],
@@ -324,6 +324,7 @@ describe('GeneratePoShadowUsecase', () => {
         factSummary: ['릴리즈 체크 — 외부 상태로 자동 확인 불가'],
         droppedFindingCount: 0,
         degradedSources: [],
+        reportedFacts: [{ id: 'unverifiable:user:release-check' }],
       },
     });
     expect(agentRunServiceExecute).toHaveBeenCalledTimes(1);
@@ -666,6 +667,198 @@ describe('GeneratePoShadowUsecase', () => {
 
   // 회수 배선 — 도메인 순수 함수(finding-recovery.spec)와 별개로 usecase 가 원장·GitHub·요약을
   // 실제로 이어 붙이는지 본다. 커밋 전 검토에서 잡은 결함이 전부 이 배선에 있었다.
+  // 실측(10-13~22): 같은 상태가 매일 다시 검토를 켜 정오 PO 가 10일 내내 나갔다.
+  describe('이미 알린 사실', () => {
+    const STALLED_ID = 'stalled:acme/app#264';
+    const humanMention = {
+      channelId: 'C1',
+      channelName: 'dev',
+      channelType: 'public_channel' as const,
+      authorUserId: 'U9',
+      ts: '1730000000.000100',
+      text: '<@U1> 배포 일정 확인 부탁',
+      permalink: undefined,
+    };
+
+    beforeEach(() => {
+      agentRunServiceFindLatest.mockImplementation(
+        async ({ agentType }: { agentType: AgentType }) =>
+          agentType === AgentType.PM
+            ? { id: 99, output: mismatchPlan, endedAt: new Date() }
+            : {
+                id: 50,
+                output: { findings: [], reportedFacts: [{ id: STALLED_ID }] },
+                endedAt: new Date(),
+              },
+      );
+      contextCollectorCollect.mockResolvedValue(mismatchContext());
+    });
+
+    it('직전 회차가 이미 알린 어긋남뿐이면 모델 없이 조용히 끝낸다', async () => {
+      const result = await usecase.execute({
+        extraContext: '',
+        slackUserId: 'U1',
+      });
+
+      expect(modelRouter.route).not.toHaveBeenCalled();
+      expect(result.result.quiet).toBe(true);
+      expect(agentRunServiceFindLatest).toHaveBeenCalledWith({
+        agentType: AgentType.PO_SHADOW,
+        slackUserId: 'U1',
+      });
+    });
+
+    it('다음 회차가 비교할 사실 상태를 리포트에 남긴다', async () => {
+      const result = await usecase.execute({
+        extraContext: '',
+        slackUserId: 'U1',
+      });
+
+      expect(result.result.reportedFacts).toEqual([{ id: STALLED_ID }]);
+    });
+
+    it('근거가 남은 지적이 없으면 새 사실을 알린 것으로 기록하지 않는다', async () => {
+      contextCollectorCollect.mockResolvedValue({
+        ...mismatchContext(),
+        newMentions: [humanMention],
+      });
+      modelRouter.route.mockResolvedValue({
+        text: JSON.stringify(
+          modelReport([
+            {
+              factIds: ['made-up:1'],
+              point: '근거 없는 지적',
+              suggestion: '아무것도 안 한다.',
+            },
+          ]),
+        ),
+        modelUsed: 'codex-cli',
+        provider: ModelProviderName.CHATGPT,
+      } satisfies CompletionResponse);
+
+      const result = await usecase.execute({
+        extraContext: '',
+        slackUserId: 'U1',
+      });
+
+      expect(result.result.findings).toEqual([]);
+      // 이미 알린 STALLED 만 남고 이번에 새로 생긴 멘션은 빠진다 — 다음 회차에 다시 새 것이다.
+      expect(result.result.reportedFacts).toEqual([{ id: STALLED_ID }]);
+    });
+
+    it('새 사실로 검토가 켜져도 이미 알린 사실은 맥락에만 두고 인용하면 버린다', async () => {
+      contextCollectorCollect.mockResolvedValue({
+        ...mismatchContext(),
+        newMentions: [humanMention],
+      });
+      const mentionId = 'mention:C1:1730000000.000100';
+      modelRouter.route.mockResolvedValue({
+        text: JSON.stringify(
+          modelReport([
+            {
+              factIds: [STALLED_ID],
+              point: '#264 업로드 개선이 멈춰 있습니다.',
+              suggestion: '리뷰어를 지정한다.',
+            },
+            {
+              factIds: [mentionId],
+              point: '배포 일정 문의가 들어왔습니다.',
+              suggestion: '오후 첫 일로 답한다.',
+            },
+          ]),
+        ),
+        modelUsed: 'codex-cli',
+        provider: ModelProviderName.CHATGPT,
+      } satisfies CompletionResponse);
+
+      const result = await usecase.execute({
+        extraContext: '',
+        slackUserId: 'U1',
+      });
+
+      const prompt: string = modelRouter.route.mock.calls[0][0].request.prompt;
+      const contextSection = prompt.slice(prompt.indexOf('[이미 알린 사실'));
+      expect(contextSection).toContain(`id: ${STALLED_ID}`);
+      expect(prompt.slice(0, prompt.indexOf('[이미 알린 사실'))).not.toContain(
+        `id: ${STALLED_ID}`,
+      );
+      expect(result.result.findings.map((finding) => finding.factIds)).toEqual([
+        [mentionId],
+      ]);
+      expect(result.result.droppedFindingCount).toBe(1);
+    });
+
+    it('사용자가 상황을 적어 보낸 회차는 이미 알린 사실도 인용할 수 있다', async () => {
+      const result = await usecase.execute({
+        extraContext: '릴리즈 오늘로 변경',
+        slackUserId: 'U1',
+      });
+
+      expect(result.result.findings.map((finding) => finding.factIds)).toEqual([
+        [STALLED_ID],
+      ]);
+    });
+
+    it('담당 목록 조회가 실패한 회차는 그 목록에서 나오는 직전 상태를 이어 둔다', async () => {
+      contextCollectorCollect.mockResolvedValue({
+        ...mismatchContext(),
+        assignedTasks: null,
+        degradedSources: ['GitHub 담당 목록'],
+      });
+
+      const result = await usecase.execute({
+        extraContext: '',
+        slackUserId: 'U1',
+      });
+
+      expect(result.result.reportedFacts).toContainEqual({ id: STALLED_ID });
+    });
+
+    it('PR 진행 신호만 실패해도 대기 사실은 이어 두되, 목표 조회만 실패하면 이어 두지 않는다', async () => {
+      contextCollectorCollect.mockResolvedValue({
+        ...mismatchContext(),
+        waitingItems: [],
+        degradedSources: ['GitHub PR 진행 신호'],
+      });
+      const engagementDown = await usecase.execute({
+        extraContext: '',
+        slackUserId: 'U1',
+      });
+
+      contextCollectorCollect.mockResolvedValue({
+        ...mismatchContext(),
+        waitingItems: [],
+      });
+      goalFindActive.mockRejectedValue(new Error('goal db down'));
+      const goalDown = await usecase.execute({
+        extraContext: '',
+        slackUserId: 'U1',
+      });
+
+      expect(engagementDown.result.reportedFacts).toContainEqual({
+        id: STALLED_ID,
+      });
+      expect(goalDown.result.reportedFacts).not.toContainEqual({
+        id: STALLED_ID,
+      });
+    });
+
+    it('직전 상태 조회가 실패하면 모든 사실을 새 것으로 보고 검토한다', async () => {
+      agentRunServiceFindLatest.mockImplementation(
+        async ({ agentType }: { agentType: AgentType }) => {
+          if (agentType === AgentType.PM) {
+            return { id: 99, output: mismatchPlan, endedAt: new Date() };
+          }
+          throw new Error('db down');
+        },
+      );
+
+      await usecase.execute({ extraContext: '', slackUserId: 'U1' });
+
+      expect(modelRouter.route).toHaveBeenCalled();
+    });
+  });
+
   describe('직전 지적 회수', () => {
     const priorRun = (factIds: string[], daysAgo: number) => ({
       id: 77,

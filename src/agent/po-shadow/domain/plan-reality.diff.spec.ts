@@ -2,6 +2,7 @@ import { GithubPullRequestSummary } from '../../../github/domain/github.type';
 import { DailyPlan, TaskItem } from '../../pm/domain/pm-agent.type';
 import {
   buildPlanRealityFacts,
+  findNovelFactIds,
   hasPlanRealityMismatch,
   PlanRealityFact,
 } from './plan-reality.diff';
@@ -44,7 +45,7 @@ const emptyContext = (): PoShadowContext => ({
   activePullRequests: [],
   newMentions: [],
   notionTasks: [],
-  failedRunsToday: [],
+  ownGithubLogin: null,
   mergedPullRequests: [],
   mergedLookupAvailable: true,
   degradedSources: [],
@@ -85,7 +86,9 @@ describe('buildPlanRealityFacts — 계획대로 끝낸 항목', () => {
     expect(facts).toHaveLength(1);
     expect(facts[0].kind).toBe('PLANNED_MERGED');
     expect(facts[0].id).toBe('merged:acme/app#264');
-    expect(hasPlanRealityMismatch(facts)).toBe(false);
+    expect(hasPlanRealityMismatch(facts, findNovelFactIds(facts, null))).toBe(
+      false,
+    );
   });
 
   it('repository 표기가 어긋나도 번호가 하나면 머지로 맞춘다', () => {
@@ -110,7 +113,9 @@ describe('buildPlanRealityFacts — 계획대로 끝낸 항목', () => {
     const facts = buildPlanRealityFacts(plan, context);
 
     expect(facts[0].kind).toBe('PLANNED_NOT_FOUND');
-    expect(hasPlanRealityMismatch(facts)).toBe(true);
+    expect(hasPlanRealityMismatch(facts, findNovelFactIds(facts, null))).toBe(
+      true,
+    );
   });
 
   it('머지 조회를 못 한 회차에는 부재를 근거로 삼지 않는다', () => {
@@ -123,7 +128,9 @@ describe('buildPlanRealityFacts — 계획대로 끝낸 항목', () => {
     const facts = buildPlanRealityFacts(plan, context);
 
     expect(facts).toEqual([]);
-    expect(hasPlanRealityMismatch(facts)).toBe(false);
+    expect(hasPlanRealityMismatch(facts, findNovelFactIds(facts, null))).toBe(
+      false,
+    );
   });
 
   it('담당 목록 조회가 실패한 회차에는 부재를 근거로 삼지 않는다', () => {
@@ -137,7 +144,9 @@ describe('buildPlanRealityFacts — 계획대로 끝낸 항목', () => {
     const facts = buildPlanRealityFacts(plan, context);
 
     expect(facts).toEqual([]);
-    expect(hasPlanRealityMismatch(facts)).toBe(false);
+    expect(hasPlanRealityMismatch(facts, findNovelFactIds(facts, null))).toBe(
+      false,
+    );
   });
 });
 
@@ -422,6 +431,79 @@ describe('buildPlanRealityFacts', () => {
     ]);
   });
 
+  // 실측(10-13~22): 새 계획 밖 항목 16건이 전부 본인이 연 PR 이었고 매일 검토를 켰다.
+  it('본인이 연 계획 밖 항목은 지적 대상이 아닌 별도 사실로 남긴다', () => {
+    const plan = buildPlan({
+      topPriority: buildTask({
+        id: 'user-task',
+        title: '사용자 인터뷰',
+        source: 'USER_INPUT',
+      }),
+    });
+    const pullRequest = (number: number, authorLogin: string) => ({
+      number,
+      title: `PR ${number}`,
+      repo: 'acme/api',
+      url: `https://github.com/acme/api/pull/${number}`,
+      draft: false,
+      updatedAt: '2026-08-19T00:00:00.000Z',
+      requestedReviewers: [],
+      isApproved: false,
+      authorLogin,
+    });
+    const context = emptyContext();
+    context.ownGithubLogin = 'ME';
+    context.assignedTasks = {
+      issues: [],
+      pullRequests: [pullRequest(8, 'me'), pullRequest(9, 'teammate')],
+    };
+
+    const facts = buildPlanRealityFacts(plan, context);
+    const githubFacts = facts.filter((fact) => fact.id.includes('acme/api'));
+
+    expect(githubFacts.map((fact) => [fact.id, fact.kind])).toEqual([
+      ['self-authored:acme/api#8', 'UNPLANNED_SELF_AUTHORED'],
+      ['unplanned:acme/api#9', 'UNPLANNED_ASSIGNED'],
+    ]);
+    expect(
+      hasPlanRealityMismatch(
+        [githubFacts[0]],
+        findNovelFactIds([githubFacts[0]], null),
+      ),
+    ).toBe(false);
+  });
+
+  it('본인 login 을 모르면 작성자와 무관하게 계획 밖으로 본다', () => {
+    const context = emptyContext();
+    context.assignedTasks = {
+      issues: [
+        {
+          number: 4,
+          title: 'API 문서 보완',
+          repo: 'acme/api',
+          url: 'https://github.com/acme/api/issues/4',
+          labels: [],
+          updatedAt: '2026-08-19T00:00:00.000Z',
+          authorLogin: 'me',
+        },
+      ],
+      pullRequests: [],
+    };
+
+    const facts = buildPlanRealityFacts(
+      buildPlan({
+        topPriority: buildTask({
+          id: 'user-task',
+          title: '사용자 인터뷰',
+          source: 'USER_INPUT',
+        }),
+      }),
+      context,
+    );
+
+    expect(facts.map((fact) => fact.kind)).toContain('UNPLANNED_ASSIGNED');
+  });
+
   it('계획 이후 새 멘션은 channelId와 ts로 안정 키를 만든다', () => {
     const plan = buildPlan({
       topPriority: buildTask({
@@ -452,58 +534,6 @@ describe('buildPlanRealityFacts', () => {
       detail: 'release에서 계획 이후 새 멘션',
       url: 'https://slack.com/archives/C123/p1787072400000100',
     });
-  });
-
-  it('실패 런은 agentType과 endedAt으로 안정 키를 만들고 이유를 남긴다', () => {
-    const plan = buildPlan({
-      topPriority: buildTask({
-        id: 'user-task',
-        title: '사용자 인터뷰',
-        source: 'USER_INPUT',
-      }),
-    });
-    const context = emptyContext();
-    context.failedRunsToday = [
-      {
-        agentType: 'BE_TEST',
-        reason: '테스트 타임아웃',
-        endedAt: new Date('2026-08-19T04:30:00.000Z'),
-      },
-    ];
-
-    const facts = buildPlanRealityFacts(plan, context);
-
-    expect(facts.find((fact) => fact.kind === 'WORKER_FAILED')).toEqual({
-      id: 'failed:BE_TEST:2026-08-19T04:30:00.000Z',
-      kind: 'WORKER_FAILED',
-      label: 'BE_TEST 작업',
-      detail: '실패 — 테스트 타임아웃',
-    });
-  });
-
-  it('실패 사실은 한국어 담당 이름과 풀어 쓴 스위퍼 사유로 적는다 (#816 리뷰)', () => {
-    const context = emptyContext();
-    context.failedRunsToday = [
-      {
-        agentType: 'CODE_REVIEWER',
-        reason: 'swept: stale IN_PROGRESS',
-        endedAt: new Date('2026-08-19T04:30:00.000Z'),
-      },
-    ];
-
-    const fact = buildPlanRealityFacts(
-      buildPlan({
-        topPriority: buildTask({
-          id: 'user-task',
-          title: '사용자 인터뷰',
-          source: 'USER_INPUT',
-        }),
-      }),
-      context,
-    ).find((item) => item.kind === 'WORKER_FAILED');
-
-    expect(fact?.label).toBe('코드 리뷰 작업');
-    expect(fact?.detail).toBe('실패 — 30분 넘게 끝나지 않아 자동으로 정리됨');
   });
 
   it('topPriority, morning, afternoon에 같은 ID가 반복돼도 계획 사실은 한 번만 만든다', () => {
@@ -544,20 +574,12 @@ describe('buildPlanRealityFacts', () => {
         permalink: undefined,
       },
     ];
-    context.failedRunsToday = [
-      {
-        agentType: 'BE_TEST',
-        reason: '테스트 타임아웃',
-        endedAt: new Date('2026-08-19T04:30:00.000Z'),
-      },
-    ];
 
     const facts = buildPlanRealityFacts(plan, context);
 
     expect(facts.map((fact) => fact.id)).toEqual([
       'unverifiable:notion-page-1',
       'mention:C123:1787072400.000100',
-      'failed:BE_TEST:2026-08-19T04:30:00.000Z',
     ]);
   });
 });
@@ -587,7 +609,14 @@ describe('hasPlanRealityMismatch', () => {
       },
     ];
 
-    expect(hasPlanRealityMismatch(quietFacts)).toBe(false);
-    expect(hasPlanRealityMismatch(mismatchFacts)).toBe(true);
+    expect(
+      hasPlanRealityMismatch(quietFacts, findNovelFactIds(quietFacts, null)),
+    ).toBe(false);
+    expect(
+      hasPlanRealityMismatch(
+        mismatchFacts,
+        findNovelFactIds(mismatchFacts, null),
+      ),
+    ).toBe(true);
   });
 });
