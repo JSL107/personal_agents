@@ -132,9 +132,7 @@ export class PoShadowContextCollector {
     planEndedAt: Date;
     degradedSources: string[];
   }): Promise<MergedPullRequestLookup> {
-    const author = this.configService
-      .get<string>('IMPACT_REPORT_GITHUB_AUTHOR')
-      ?.trim();
+    const author = this.readOwnGithubLogin();
     // author 를 모르면 조회 자체를 못 한다. 빈 배열을 "머지된 게 없다" 로 쓰면 계획대로
     // 끝낸 PR 이 곧바로 미발견으로 잡히므로, 확인하지 못했다는 사실을 그대로 넘긴다.
     if (!author) {
@@ -183,9 +181,11 @@ export class PoShadowContextCollector {
       });
       // 봇이 보낸 멘션(이대리의 손절·공고 알림 등)은 계획 밖 요청이 아니다. 실측(10-13~22)
       // 상 이 사실 6건이 전부 봇 알림이었고 사람이 부른 멘션은 0건이었다.
-      return mentions.filter(
-        (mention) =>
-          mention.fromBot !== true && isPostedAfter({ mention, planEndedAt }),
+      const humanMentions = mentions.filter(
+        (mention) => mention.fromBot !== true,
+      );
+      return humanMentions.filter((mention) =>
+        isPostedAfter({ mention, planEndedAt }),
       );
     } catch (error: unknown) {
       degradedSources.push(DEGRADED_SOURCE_LABEL.MENTIONS);
@@ -212,12 +212,12 @@ export class PoShadowContextCollector {
     }
   }
 
-  // 머지 조회와 같은 env 를 쓴다 — 본인 login 을 두 군데서 따로 정하지 않는다.
+  // 머지 조회의 author 와 본인 작성 판별이 이 한 곳에서 읽는다 — 본인 login 을 두 군데서 따로 정하지 않는다.
   private readOwnGithubLogin(): string | null {
-    return (
-      this.configService.get<string>('IMPACT_REPORT_GITHUB_AUTHOR')?.trim() ||
-      null
-    );
+    const login = this.configService
+      .get<string>('IMPACT_REPORT_GITHUB_AUTHOR')
+      ?.trim();
+    return login || null;
   }
 
   // 분류가 실패하면 원본 PR 은 남지만 "방치" 판정이 통째로 사라진다 — 대기 중인 PR 이
