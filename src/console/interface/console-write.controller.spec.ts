@@ -75,6 +75,8 @@ describe('ConsoleWriteController', () => {
     });
     expect(chatter.execute).toHaveBeenCalledWith({
       declinedAgentTypes: ['PM'],
+      trigger: 'IDLE',
+      since: undefined,
     });
     expect(result).toEqual({ line: null, suggestion: null, asks: false });
   });
@@ -89,6 +91,33 @@ describe('ConsoleWriteController', () => {
         expect.objectContaining({ property: 'declinedAgentTypes' }),
       ]),
     );
+  });
+
+  it('chatter trigger와 since를 검증하고 Date로 전달한다', async () => {
+    const { controller, chatter } = makeController();
+    const since = '2026-10-21T02:30:00.000Z';
+    await controller.mascotChatter({
+      trigger: 'RETURN',
+      since,
+    });
+    expect(chatter.execute).toHaveBeenCalledWith({
+      declinedAgentTypes: [],
+      trigger: 'RETURN',
+      since: new Date(since),
+    });
+
+    const invalidTrigger = Object.assign(new MascotChatterDto(), {
+      trigger: 'OTHER',
+    });
+    const invalidSince = Object.assign(new MascotChatterDto(), {
+      since: 'yesterday',
+    });
+    expect(
+      (await validate(invalidTrigger)).map((error) => error.property),
+    ).toContain('trigger');
+    expect(
+      (await validate(invalidSince)).map((error) => error.property),
+    ).toContain('since');
   });
 
   it('persona를 service로 전달한다', () => {

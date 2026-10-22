@@ -41,6 +41,7 @@ const buildRepo = (
   searchByKeyword: jest.fn().mockResolvedValue([]),
   findActiveRuns: jest.fn().mockResolvedValue([]),
   findRecentlyFinishedRuns: jest.fn().mockResolvedValue([]),
+  findFinishedRunsSince: jest.fn().mockResolvedValue([]),
   findRunStatus: jest.fn().mockResolvedValue(null),
   findLatestConversationRun: jest.fn().mockResolvedValue(null),
   findFailedRunsSince: jest.fn().mockResolvedValue([]),

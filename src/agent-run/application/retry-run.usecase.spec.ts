@@ -38,6 +38,7 @@ describe('RetryRunUsecase', () => {
     findLatestSweepReview: jest.fn().mockResolvedValue(null),
     countUnsuccessfulSweepReviews: jest.fn().mockResolvedValue(0),
     findRecentlyFinishedRuns: jest.fn().mockResolvedValue([]),
+    findFinishedRunsSince: jest.fn().mockResolvedValue([]),
     findRunStatus: jest.fn().mockResolvedValue(null),
     findLatestConversationRun: jest.fn().mockResolvedValue(null),
     findFailedRunsSince: jest.fn().mockResolvedValue([]),

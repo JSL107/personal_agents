@@ -41,6 +41,7 @@ import {
   FailedAgentRunSnapshot,
   FailedRunDetail,
   FindLatestSweepReviewQuery,
+  FinishedRunDigest,
   InputSnapshotEquals,
   LatestSweepReview,
   RecentlyFinishedRun,
@@ -685,6 +686,14 @@ export class AgentRunService implements OnApplicationBootstrap {
     since?: Date;
   }): Promise<RecentlyFinishedRun[]> {
     return await this.repository.findRecentlyFinishedRuns(input);
+  }
+
+  // 마스코트 대화 — 끝난 일의 개별 기록을 시각 순으로 읽는다.
+  async findFinishedRunsSince(input: {
+    since: Date;
+    limit: number;
+  }): Promise<FinishedRunDigest[]> {
+    return await this.repository.findFinishedRunsSince(input);
   }
 
   // 대화 응답 — 직전 작업의 실제 상태. 대화 기억에 실행 id 가 남은 worker 용.

@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import ConsoleCore
+import CoreGraphics
 import SwiftUI
 
 /// 스토어의 사건을 짧은 말풍선으로 바꾸고, 상시 패널의 타이머를 소유한다.
@@ -36,6 +37,11 @@ import SwiftUI
     @Published private(set) var commandPrompt = mascotSay(mascotQuip(.commandPrompt, random: 0))
     /// 마지막으로 말풍선을 띄운 시각. 혼잣말은 이때부터 오래 조용할 때만 꺼낸다.
     private var lastSpokeAt = Date()
+    /// 실제로 띄운 능동 말풍선 이후의 종료 이벤트만 다음 요약에 싣는다.
+    private var lastTalkAt = Date()
+    private var awaySince: Date?
+    private var finishedSinceLastTalk = 0
+    private var lastProgressAt: Date?
 
     private func setMood(_ value: MascotMood) {
         if mood != value {
@@ -411,23 +417,60 @@ import SwiftUI
         refreshCommandResult()
         maybeShowBriefing(now: now)
         maybeReactToWorkload(now: now)
-        maybeChatter(now: now)
+        maybeTalk(now: now)
         refreshBubble()
     }
 
-    /// 오래 조용하면 서버가 현재 상황을 보고 만든 한 마디를 받아 말한다.
-    private func maybeChatter(now: Date) {
-        guard !chatterRequestActive, bubble == nil, !thinking, !commandInputOpen,
-              mascotChatterDue(mood: mood, lastSpokeAt: lastSpokeAt, now: now, calendar: .current),
-              reactionLedger.fireDaily(
-                  prefix: "chatter", max: mascotChatterDailyMax, chance: mascotChatterChance,
-                  random: .random(in: 0..<1), now: now, calendar: .current
-              )
-        else {
+    /// 사람이 돌아오거나 볼 만한 일이 생기면 서버가 만든 한 마디를 받아 말한다.
+    private func maybeTalk(now: Date) {
+        let userIdleSeconds = CGEventSource.secondsSinceLastEventType(
+            .combinedSessionState, eventType: CGEventType(rawValue: ~0)!
+        )
+        if userIdleSeconds >= mascotAwaySeconds, awaySince == nil {
+            awaySince = now.addingTimeInterval(-userIdleSeconds)
+        }
+        guard !chatterRequestActive, bubble == nil, !thinking, !commandInputOpen, !hasPriorityBubble else {
             return
+        }
+        let longestRunningSeconds = store.runs.filter { $0.status == "IN_PROGRESS" && $0.finishedAt == nil }
+            .compactMap { officeParseIsoDate($0.startedAt).map { now.timeIntervalSince($0) } }.max()
+        let dayPrefix = "talk:\(Self.dayString(now: now)):"
+        let talkedToday = reactionLedger.fired.keys.filter { $0.hasPrefix(dayPrefix) }.count
+        let state = MascotTalkState(
+            lastSpokeAt: lastSpokeAt, userIdleSeconds: userIdleSeconds, awaySince: awaySince,
+            finishedSinceLastTalk: finishedSinceLastTalk, longestRunningSeconds: longestRunningSeconds,
+            lastProgressAt: lastProgressAt, mood: mood, talkedToday: talkedToday,
+            idleChanceRoll: .random(in: 0..<1)
+        )
+        guard let trigger = mascotNextTalkTrigger(state: state, now: now, calendar: .current) else {
+            return
+        }
+        if trigger == .idle, !reactionLedger.fireDaily(
+            prefix: "chatter", max: mascotChatterDailyMax, chance: 1,
+            random: 0, now: now, calendar: .current
+        ) {
+            return
+        }
+        guard reactionLedger.fireDaily(
+            prefix: "talk", max: mascotTalkDailyMax, chance: 1,
+            random: 0, now: now, calendar: .current
+        ) else {
+            return
+        }
+        let since: Date? = switch trigger {
+        case .returning: awaySince
+        case .events: lastTalkAt
+        case .idle, .progress: nil
+        }
+        if trigger == .progress {
+            lastProgressAt = now
         }
         saveReactionLedger(now: now)
         chatterRequestActive = true
+        // 서버는 이 요청을 받은 시점까지 끝난 실행을 본다. 응답이 오기까지 끝난 실행은 다음 조회가 맡도록
+        // 조회 기준(`lastTalkAt`)은 응답 시각이 아니라 요청 시각까지만 옮긴다.
+        let requestStartedAt = Date()
+        let finishedCountAtRequest = finishedSinceLastTalk
         let day = Self.dayString(now: now)
         let declined = reactionLedger.fired.keys.compactMap { key -> String? in
             let prefix = "declined:"
@@ -440,42 +483,93 @@ import SwiftUI
         Task { [weak self] in
             guard let self else { return }
             let line: MascotChatterLine?
+            var transportFailed = false
             do {
-                line = try await self.client.postMascotChatter(declinedAgentTypes: declined)
+                line = try await self.client.postMascotChatter(
+                    trigger: trigger, since: since, declinedAgentTypes: declined
+                )
             } catch {
                 line = nil
+                transportFailed = true
             }
             self.chatterRequestActive = false
-            guard self.bubble == nil, self.mood == .idle, !self.thinking, !self.commandInputOpen else {
-                return
+            let shown = self.presentTalk(
+                trigger: trigger, line: line,
+                finishedCountAtRequest: finishedCountAtRequest, requestStartedAt: requestStartedAt
+            )
+            // 복귀 계기는 결과를 본 뒤에 접는다. 요청 전에 지우면 서버에 못 닿거나 조회가 실패했을 때
+            // 복귀 인사를 다시 할 길이 없다.
+            if trigger == .returning,
+               !mascotShouldRetryReturn(reason: line?.reason, transportFailed: transportFailed, shown: shown) {
+                self.awaySince = nil
             }
-            if let text = line?.line, !text.isEmpty {
-                let sound = mascotQuip(.chatter, random: .random(in: 0..<1)).sound
-                let suggestion = line?.suggestion
-                let asks = line?.asks ?? false
-                if suggestion != nil || asks {
-                    self.showTransient(.chatter(sound: sound, line: text, suggestion: suggestion, asks: asks), duration: 30)
-                } else {
-                    self.showTransient(.reaction("\(sound) \(text)"), duration: 8)
-                }
-                if self.bubble == self.reactionBubble {
-                    let now = Date()
-                    self.conversationTurns = mascotAppendTurn(
-                        self.conversationTurns, MascotTurn(role: .usagi, text: text, at: now), now: now
-                    )
-                }
-                if let chatterId = line?.chatterId, self.bubble == self.reactionBubble {
-                    Task {
-                        try? await self.client.postMascotChatterShown(chatterId: chatterId)
-                    }
-                }
-            } else {
-                self.showTransient(
-                    .reaction(mascotSay(mascotQuip(.chatter, random: .random(in: 0..<1)))), duration: 8
-                )
+            if shown {
+                self.play(.hop)
             }
-            self.play(.hop)
         }
+    }
+
+    /// 받은 한 마디를 띄우고, 띄웠는지를 돌려준다. 종료 카운터는 요청 전에 센 만큼만 소비한다.
+    private func presentTalk(
+        trigger: MascotTalkTrigger, line: MascotChatterLine?,
+        finishedCountAtRequest: Int, requestStartedAt: Date
+    ) -> Bool {
+        let consumeReported = {
+            self.lastTalkAt = requestStartedAt
+            self.finishedSinceLastTalk = mascotUnreportedFinishedCount(
+                currentCount: self.finishedSinceLastTalk, countAtRequest: finishedCountAtRequest
+            )
+        }
+        if trigger == .events, line?.reason == "NOTHING_TO_SAY" {
+            // 조회는 됐고 볼 일이 없었다 — 그 실행들을 다시 묻지 않는다. 조회 기준은 옮기지 않아도 서버가
+            // 다시 걸러 낸다.
+            self.finishedSinceLastTalk = mascotUnreportedFinishedCount(
+                currentCount: self.finishedSinceLastTalk, countAtRequest: finishedCountAtRequest
+            )
+        }
+        guard self.bubble == nil, !self.hasPriorityBubble, !self.thinking, !self.commandInputOpen else {
+            return false
+        }
+        if let text = line?.line, !text.isEmpty {
+            let sound = mascotQuip(.chatter, random: .random(in: 0..<1)).sound
+            let suggestion = line?.suggestion
+            let asks = line?.asks ?? false
+            let showDashboard = line?.hasEvents ?? false
+            if suggestion != nil || asks || showDashboard {
+                self.showTransient(.chatter(
+                    sound: sound, line: text, suggestion: suggestion, asks: asks, showDashboard: showDashboard
+                ), duration: 30)
+            } else {
+                let duration: TimeInterval = trigger == .events || trigger == .returning ? 12 : 8
+                self.showTransient(.reaction("\(sound) \(text)"), duration: duration)
+            }
+            guard self.bubble == self.reactionBubble else {
+                return false
+            }
+            let now = Date()
+            consumeReported()
+            self.conversationTurns = mascotAppendTurn(
+                self.conversationTurns, MascotTurn(role: .usagi, text: text, at: now), now: now
+            )
+            if let chatterId = line?.chatterId {
+                Task {
+                    try? await self.client.postMascotChatterShown(chatterId: chatterId)
+                }
+            }
+            return true
+        }
+        if trigger == .idle {
+            self.showTransient(
+                .reaction(mascotSay(mascotQuip(.chatter, random: .random(in: 0..<1)))), duration: 8
+            )
+            guard self.bubble == self.reactionBubble else {
+                return false
+            }
+            consumeReported()
+            return true
+        }
+        // NOTHING_TO_SAY 도 이미 사용한 일일 횟수는 되돌리지 않는다. 상한을 넉넉하게 둔 단순 계약이다.
+        return false
     }
 
     func acceptChatter(_ suggestion: MascotChatterSuggestion) {
@@ -728,17 +822,8 @@ import SwiftUI
         if case let .commandAnswered(commandId, message) = event {
             showReply(commandId: commandId, message: message)
         }
-        if case let .runFinished(run) = event, run.status == "SUCCEEDED" {
-            let now = Date()
-            if reactionLedger.fireDaily(
-                prefix: "cheer", max: 2, chance: 0.3,
-                random: Double.random(in: 0..<1), now: now, calendar: .current
-            ) {
-                saveReactionLedger(now: now)
-                showTransient(.reaction(mascotSay(mascotQuip(.cheer, random: .random(in: 0..<1)))), duration: 8)
-                play(.hop)
-                flourish(.happy, seconds: mascotHappySeconds)
-            }
+        if case let .runFinished(run) = event, run.status == "SUCCEEDED" || run.status == "FAILED" {
+            finishedSinceLastTalk += 1
         }
         queueRefresh()
     }

@@ -432,9 +432,11 @@ public actor ConsoleClient {
     }
 
     /// `POST /v1/console/mascot/chatter` — 서버가 만든 한 마디를 공통 data 봉투에서 꺼낸다.
-    public func postMascotChatter(declinedAgentTypes: [String]) async throws -> MascotChatterLine {
+    public func postMascotChatter(
+        trigger: MascotTalkTrigger, since: Date?, declinedAgentTypes: [String]
+    ) async throws -> MascotChatterLine {
         let request = try buildMascotChatterRequest(
-            baseURL: baseURL, declinedAgentTypes: declinedAgentTypes, token: token
+            baseURL: baseURL, trigger: trigger, since: since, declinedAgentTypes: declinedAgentTypes, token: token
         )
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else {

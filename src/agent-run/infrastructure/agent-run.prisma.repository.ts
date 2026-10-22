@@ -48,6 +48,7 @@ import {
   FailInProgressRunsInput,
   FindLatestSweepReviewQuery,
   FinishAgentRunInput,
+  FinishedRunDigest,
   InputSnapshotEquals,
   LatestRunRow,
   LatestSweepReview,
@@ -772,6 +773,48 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
       }
       return [];
     });
+  }
+
+  // output 은 임의 JSON 이라 Prisma select 로 error 키만 가져올 수 없다. SQL 에서 200자로
+  // 자른 오류 문구만 전송한다. 성공 산출물에는 공통의 짧은 요약 컬럼이 없어 null 로 둔다.
+  async findFinishedRunsSince({
+    since,
+    limit,
+  }: {
+    since: Date;
+    limit: number;
+  }): Promise<FinishedRunDigest[]> {
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        id: number;
+        agent_type: string;
+        trigger_type: string | null;
+        status: 'SUCCEEDED' | 'FAILED';
+        ended_at: Date;
+        summary: string | null;
+      }>
+    >`
+      SELECT
+        id, agent_type, trigger_type, status, ended_at,
+        CASE WHEN status = 'FAILED'
+          THEN substring(output->>'error' from 1 for 200)
+          ELSE NULL
+        END AS summary
+      FROM agent_run
+      WHERE ended_at >= ${since}
+        AND status IN ('SUCCEEDED', 'FAILED')
+      ORDER BY ended_at DESC
+      LIMIT ${limit}
+    `;
+
+    return rows.map((row) => ({
+      runId: row.id,
+      agentType: row.agent_type,
+      triggerType: row.trigger_type,
+      status: row.status,
+      endedAt: row.ended_at,
+      summary: row.summary,
+    }));
   }
 
   async aggregateSucceededCounts({

@@ -83,6 +83,91 @@ public let mascotChatterQuietSeconds: TimeInterval = 5 * 60
 public let mascotChatterDailyMax = 12
 public let mascotChatterChance = 0.5
 
+public let mascotTalkDailyMax = 40
+public let mascotTalkMinGapSeconds: TimeInterval = 180
+public let mascotAwaySeconds: TimeInterval = 15 * 60
+public let mascotProgressGapSeconds: TimeInterval = 10 * 60
+public let mascotProgressMinRunSeconds: TimeInterval = 120
+
+/// 응답(빈 EVENTS 든 실제로 말한 한 마디든)은 요청 전에 끝난 실행만 소비한다. 서버는 요청을 받은 순간의
+/// 실행을 조회하므로, 모델 답을 기다리는 동안 도착한 종료 이벤트는 다음 알림으로 남겨야 한다.
+public func mascotUnreportedFinishedCount(currentCount: Int, countAtRequest: Int) -> Int {
+    max(0, currentCount - countAtRequest)
+}
+
+/// 복귀 인사를 다음 틱에 다시 시도할지. 화면에 띄웠으면 끝, 모델까지 갔다가 실패했으면 같은 실패를 매분
+/// 되풀이하지 않도록 접는다. 서버에 닿지 못했거나(`transportFailed`) 조회가 실패했거나(`CONTEXT_FAILED`),
+/// 응답은 왔는데 더 급한 말풍선 때문에 못 띄웠으면(사유 없음) 다시 시도한다.
+public func mascotShouldRetryReturn(reason: String?, transportFailed: Bool, shown: Bool) -> Bool {
+    if shown {
+        return false
+    }
+    if transportFailed {
+        return true
+    }
+    return reason == nil || reason == "CONTEXT_FAILED"
+}
+
+/// 말할 계기를 고르는 데 필요한, 현재 시점의 관찰값.
+public struct MascotTalkState {
+    public var lastSpokeAt: Date
+    public var userIdleSeconds: TimeInterval
+    public var awaySince: Date?
+    public var finishedSinceLastTalk: Int
+    public var longestRunningSeconds: TimeInterval?
+    public var lastProgressAt: Date?
+    public var mood: MascotMood
+    public var talkedToday: Int
+    public var idleChanceRoll: Double
+
+    public init(
+        lastSpokeAt: Date, userIdleSeconds: TimeInterval, awaySince: Date?, finishedSinceLastTalk: Int,
+        longestRunningSeconds: TimeInterval?, lastProgressAt: Date?, mood: MascotMood,
+        talkedToday: Int, idleChanceRoll: Double
+    ) {
+        self.lastSpokeAt = lastSpokeAt
+        self.userIdleSeconds = userIdleSeconds
+        self.awaySince = awaySince
+        self.finishedSinceLastTalk = finishedSinceLastTalk
+        self.longestRunningSeconds = longestRunningSeconds
+        self.lastProgressAt = lastProgressAt
+        self.mood = mood
+        self.talkedToday = talkedToday
+        self.idleChanceRoll = idleChanceRoll
+    }
+}
+
+/// 복귀, 끝난 일, 진행 상황, 혼잣말 순서로 한 가지 계기만 고른다.
+public func mascotNextTalkTrigger(state: MascotTalkState, now: Date, calendar: Calendar) -> MascotTalkTrigger? {
+    let hour = calendar.component(.hour, from: now)
+    guard hour >= officeArrivalHour, hour < officeDepartureHour,
+          state.talkedToday < mascotTalkDailyMax, state.userIdleSeconds < mascotAwaySeconds else {
+        return nil
+    }
+    // 자리 비움은 유휴가 15분을 넘어야 기록되고, 유휴 시간은 입력이 있어야만 줄어든다. 그래서 기록이 남아
+    // 있는데 지금 유휴가 15분 미만이면 그사이 입력이 있었다는 뜻 — 곧 돌아온 것이다. "막 돌아옴(60초 미만)"
+    // 으로 좁히면 1분 틱 사이에 돌아와 가만히 읽고 있는 경우를 다음 입력 때까지 놓친다.
+    if state.awaySince != nil {
+        return .returning
+    }
+    let quietSeconds = now.timeIntervalSince(state.lastSpokeAt)
+    guard quietSeconds >= mascotTalkMinGapSeconds else {
+        return nil
+    }
+    if state.finishedSinceLastTalk > 0 {
+        return .events
+    }
+    if let longest = state.longestRunningSeconds, longest >= mascotProgressMinRunSeconds,
+       state.lastProgressAt.map({ now.timeIntervalSince($0) >= mascotProgressGapSeconds }) ?? true {
+        return .progress
+    }
+    if state.mood == .idle, quietSeconds >= mascotChatterQuietSeconds,
+       state.idleChanceRoll < mascotChatterChance {
+        return .idle
+    }
+    return nil
+}
+
 /// 지금 혼잣말을 해도 되는가 — 쉬는 중이고, 오래 조용했고, 근무 시간 안일 때.
 public func mascotChatterDue(
     mood: MascotMood, lastSpokeAt: Date, now: Date, calendar: Calendar
