@@ -955,7 +955,37 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
     expect(out.summaryText).toContain('🔴 *장애* — task &lt;x&gt; · 1일째');
   });
 
-  it('지난 24시간에 닫힌 사건을 해결 줄로 싣는다 — 해결 DM 대신이다', async () => {
+  it('직전 아침 이후 닫힌 사건을 해결 줄로 싣는다 — 아침이 전날보다 늦게 돌아도 틈이 없다', async () => {
+    // 전날 아침 08:31 발송 → 오늘 09:02 실행. "지금 - 24시간"(어제 09:02)이면 08:31~09:02 해결이 빠진다.
+    const previousMorning = new Date('2026-06-16T08:31:00+09:00');
+    const findLatestDeliveryBefore = jest
+      .fn()
+      .mockResolvedValue(previousMorning);
+    const digestRepository = {
+      ...emptyDigestRepository(),
+      findResolvedIncidentLabels: jest.fn().mockResolvedValue([]),
+    };
+    const task = buildTask(
+      generateDailyPlan(),
+      humanize(),
+      emptyStockRepository(),
+      listSchedulesUsecase(),
+      { digestRepository, cujLedgerReader: { findLatestDeliveryBefore } },
+    );
+
+    await task.run(CTX);
+
+    expect(findLatestDeliveryBefore).toHaveBeenCalledWith(
+      'morning-briefing',
+      expect.any(Date),
+    );
+    const { since } = digestRepository.findResolvedIncidentLabels.mock
+      .calls[0][0] as { since: Date };
+    // 원장은 조회 뒤에 쓰이므로 10분 당겨 겹친다.
+    expect(since).toEqual(new Date('2026-06-16T08:21:00+09:00'));
+  });
+
+  it('직전 아침 기록이 없으면 24시간 전부터 해결 줄을 싣는다 — 해결 DM 대신이다', async () => {
     const digestRepository = {
       ...emptyDigestRepository(),
       findResolvedIncidentLabels: jest
