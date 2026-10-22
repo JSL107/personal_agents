@@ -18,14 +18,18 @@ import { buildFindingReferences } from '../domain/finding-reference';
 import {
   buildFindingRecoveryFacts,
   buildPlanRealityFacts,
+  carryForwardPriorFindings,
   DEGRADED_PRIOR_REPORT,
   DEGRADED_UNCOMPARABLE,
   extractPriorFindingKeys,
   FindingRecoveryResult,
+  findNovelFactIds,
   hasPlanRealityMismatch,
   PlanRealityFact,
   PriorFinding,
+  readReportedFactStates,
   RecoveryLifecycle,
+  toReportedFactStates,
   withdrawStalledReasons,
 } from '../domain/plan-reality.diff';
 import { PoShadowException } from '../domain/po-shadow.exception';
@@ -36,6 +40,7 @@ import {
   PoShadowFinding,
   PoShadowRecoverySummary,
   PoShadowReport,
+  ReportedFactState,
 } from '../domain/po-shadow.type';
 import { PoShadowErrorCode } from '../domain/po-shadow-error-code.enum';
 import {
@@ -132,10 +137,14 @@ export class GeneratePoShadowUsecase {
       planEndedAt: snapshot.endedAt,
     });
     const planFacts = buildPlanRealityFacts(plan, context);
+    const previousReportedFacts = await this.loadPreviousReportedFacts({
+      slackUserId,
+    });
     const recovery = await this.recoverPriorFindings({
       slackUserId,
       context,
       now,
+      previousReportedFacts,
     });
     // 활성 목표가 0개면 사실·프롬프트 블록·inputSnapshot 키를 하나도 만들지 않는다 —
     // 목표를 쓰지 않는 사용자의 출력은 단계 3 이전과 같아야 한다.
@@ -156,8 +165,17 @@ export class GeneratePoShadowUsecase {
     // 사용자가 "릴리즈 오늘로 변경" 같은 상황을 직접 적어 보냈다면 사실표가 조용해도 검토한다.
     // 어긋남만으로 갈림길을 정하면 사용자가 친 말이 evidence 에만 저장되고 답은
     // "계획대로 진행 중" 으로 나간다.
+    const novelFactIds = findNovelFactIds(facts, previousReportedFacts);
     const needsReview =
-      hasPlanRealityMismatch(facts) || trimmedExtra.length > 0;
+      hasPlanRealityMismatch(facts, novelFactIds) || trimmedExtra.length > 0;
+    // 모델이 지적으로 인용할 수 있는 사실. 이미 알린 사실은 맥락으로만 보여 주고 인용은 코드가 막는다
+    // — 프롬프트로만 막으면 지켜진 회차에만 지켜진다. 사용자가 직접 상황을 적어 보낸 회차는 그 말에
+    // 답해야 하므로 이미 알린 사실도 인용을 허용한다. 본인이 연 항목은 어느 경우에도 지적 대상이 아니다.
+    const citableFacts = facts.filter(
+      (fact) =>
+        fact.kind !== 'UNPLANNED_SELF_AUTHORED' &&
+        (trimmedExtra.length > 0 || novelFactIds.has(fact.id)),
+    );
 
     return this.agentRunService.execute({
       agentType: AgentType.PO_SHADOW,
@@ -197,13 +215,24 @@ export class GeneratePoShadowUsecase {
           : []),
       ],
       run: async () => {
+        // 다음 회차가 "새로 바뀐 사실" 과 미이동 나이를 가르는 기준(`readReportedFactStates`).
+        // 모델 결과를 본 뒤에야 무엇이 실제로 전달됐는지 알 수 있어 inputSnapshot 이 아니라 리포트에 싣는다.
+        const reportStates = (undeliveredFactIds: Set<string>) =>
+          toReportedFactStates(facts, {
+            undeliveredFactIds,
+            previousStates: previousReportedFacts,
+            carryPreviousStates: degradedSources.length > 0,
+          });
         if (!needsReview) {
           const report = withGoalCheckIns(
-            buildQuietReport({
-              facts,
-              degradedSources,
-              recoverySummary,
-            }),
+            {
+              ...buildQuietReport({
+                facts,
+                degradedSources,
+                recoverySummary,
+              }),
+              reportedFacts: reportStates(new Set()),
+            },
             goalCollection.checkIns,
           );
           return {
@@ -216,7 +245,8 @@ export class GeneratePoShadowUsecase {
           planJson: JSON.stringify(plan, null, 2),
           planEndedAt: snapshot.endedAt.toISOString(),
           planAgentRunId: snapshot.id,
-          facts,
+          citableFacts,
+          contextFacts: facts.filter((fact) => !citableFacts.includes(fact)),
           extraContext: trimmedExtra,
           goals: goalCollection.goals,
         });
@@ -231,7 +261,7 @@ export class GeneratePoShadowUsecase {
         const parsedReport = parsePoShadowReport(completion.text);
         const guardedReport = buildGuardedReport({
           report: parsedReport,
-          facts,
+          facts: citableFacts,
           degradedSources,
           recoverySummary,
         });
@@ -242,6 +272,12 @@ export class GeneratePoShadowUsecase {
               guardedReport.findings,
               facts,
               buildGithubTitleByKey(context),
+            ),
+            // 근거가 남은 지적이 하나도 없으면 새 사실은 대표에게 전달되지 않았다 — 다음 회차에 다시 띄운다.
+            // 모델이 3건 한도로 일부만 고른 것은 우선순위 판단이므로 전달된 것으로 본다(인용 안 한 사실까지
+            // 매일 다시 켜면 같은 사실이 매일 검토를 켜던 원래 문제로 돌아간다).
+            reportedFacts: reportStates(
+              guardedReport.findings.length === 0 ? novelFactIds : new Set(),
             ),
           },
           goalCollection.checkIns,
@@ -313,16 +349,41 @@ export class GeneratePoShadowUsecase {
     };
   }
 
+  // 직전 PO 회차가 남긴 사실 상태. 조회가 실패하면 null(비교 기준 없음)로 두어 모든 사실을 새 것으로
+  // 본다 — 이 기능이 생기기 전과 같은 동작이라, 조회 실패가 지적을 삼키는 쪽으로 가지 않는다.
+  private async loadPreviousReportedFacts({
+    slackUserId,
+  }: {
+    slackUserId: string;
+  }): Promise<ReportedFactState[] | null> {
+    try {
+      const previousRun = await this.agentRunService.findLatestSucceededRun({
+        agentType: AgentType.PO_SHADOW,
+        slackUserId,
+      });
+      return previousRun === null
+        ? null
+        : readReportedFactStates(previousRun.output);
+    } catch (error: unknown) {
+      this.logger.warn(
+        `직전 PO 사실 상태 조회 실패 (모든 사실을 새 것으로 보고 진행): ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return null;
+    }
+  }
+
   // 직전 회차들이 지적한 키가 어떻게 끝났는지 회수한다. 원장 조회 1회 + 담당 목록에 없는 키에
   // 대해서만 GitHub 단건 조회(실측상 하루 한 자릿수)를 돈다.
   private async recoverPriorFindings({
     slackUserId,
     context,
     now,
+    previousReportedFacts,
   }: {
     slackUserId: string;
     context: PoShadowContext;
     now: Date;
+    previousReportedFacts: ReportedFactState[] | null;
   }): Promise<FindingRecoveryResult & { degradedSources: string[] }> {
     const degradedSources = [...context.degradedSources];
     const empty: FindingRecoveryResult = {
@@ -350,11 +411,14 @@ export class GeneratePoShadowUsecase {
       malformedRunCount = parsedRuns.filter(
         (run) => run.factIds === null,
       ).length;
-      priorFindings = extractPriorFindingKeys(
-        parsedRuns.map((run) => ({
-          factIds: run.factIds ?? [],
-          endedAt: run.endedAt,
-        })),
+      priorFindings = carryForwardPriorFindings(
+        extractPriorFindingKeys(
+          parsedRuns.map((run) => ({
+            factIds: run.factIds ?? [],
+            endedAt: run.endedAt,
+          })),
+        ),
+        previousReportedFacts,
       );
     } catch (error: unknown) {
       // 조회·해석 실패를 "지적 없음" 과 같은 빈 배열로 두면 미해결 항목이 조용히 사라진다.
@@ -564,7 +628,8 @@ interface BuildPromptInput {
   planJson: string;
   planEndedAt: string;
   planAgentRunId: number;
-  facts: PlanRealityFact[];
+  citableFacts: PlanRealityFact[];
+  contextFacts: PlanRealityFact[];
   extraContext: string;
   goals: ProductGoalRecord[];
 }
@@ -573,7 +638,8 @@ const buildPrompt = ({
   planJson,
   planEndedAt,
   planAgentRunId,
-  facts,
+  citableFacts,
+  contextFacts,
   extraContext,
   goals,
 }: BuildPromptInput): string => {
@@ -587,7 +653,10 @@ const buildPrompt = ({
     // 경계를 다시 씌운다.
     wrapUntrustedInput(planJson),
     '[정오 사실표]',
-    buildFactTable({ facts }),
+    buildFactTable({ facts: citableFacts }),
+    // 직전 회차에 이미 알린 사실. 같은 지적을 매일 되풀이하지 않도록 인용 대상에서 뺀다.
+    '[이미 알린 사실 — 맥락으로만 읽는다]',
+    buildFactTable({ facts: contextFacts }),
     // 사용자가 직접 적어 보낸 상황이라 경계를 씌우지 않는다. 이 워커에서 명령권자는 사용자다.
     '[추가 컨텍스트]',
     extraContext.length > 0 ? extraContext : '(없음)',

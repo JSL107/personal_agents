@@ -175,6 +175,8 @@ const buildDeadlineRiskFact = ({
   kind: 'GOAL_DEADLINE_RISK',
   label: truncate(goal.title),
   detail: `${formatDaysLeft(daysLeft)} · 붙은 열린 항목 ${linkedOpenCount}건`,
+  // 임박(1)·당일(2)·초과(3). 같은 목표가 매일 다시 켜지지 않되, 단계가 오른 날은 새 사실로 다시 알린다.
+  sequence: daysLeft > 0 ? 1 : daysLeft === 0 ? 2 : 3,
 });
 
 const buildCheckIn = ({

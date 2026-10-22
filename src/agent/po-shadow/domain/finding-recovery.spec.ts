@@ -1,10 +1,14 @@
 import {
   buildFindingRecoveryFacts,
+  carryForwardPriorFindings,
   extractPriorFindingKeys,
+  findNovelFactIds,
   hasPlanRealityMismatch,
   PlanRealityFact,
+  readReportedFactStates,
   RecoveryLifecycle,
   toComparableKey,
+  toReportedFactStates,
 } from './plan-reality.diff';
 import { PoShadowContext } from './po-shadow.type';
 
@@ -23,7 +27,7 @@ const contextWith = (
   mergedLookupAvailable: true,
   newMentions: [],
   notionTasks: [],
-  failedRunsToday: [],
+  ownGithubLogin: null,
   degradedSources: [],
   ...overrides,
 });
@@ -367,21 +371,239 @@ describe('hasPlanRealityMismatch — 검토를 켜는 조건', () => {
     kind: PlanRealityFact['kind'],
     sequence?: number,
   ): PlanRealityFact => ({ id: 'x', kind, label: 'l', detail: 'd', sequence });
+  // 직전 상태를 모르는 회차 — 모든 사실이 새 것이다.
+  const firstRun = (facts: PlanRealityFact[]): boolean =>
+    hasPlanRealityMismatch(facts, findNovelFactIds(facts, null));
 
   it('sequence 1 인 UNMOVED 만 있으면 quiet 를 유지한다', () => {
-    expect(hasPlanRealityMismatch([fact('FINDING_UNMOVED', 1)])).toBe(false);
+    expect(firstRun([fact('FINDING_UNMOVED', 1)])).toBe(false);
   });
 
   it('sequence 2 부터 검토를 켠다', () => {
-    expect(hasPlanRealityMismatch([fact('FINDING_UNMOVED', 2)])).toBe(true);
+    expect(firstRun([fact('FINDING_UNMOVED', 2)])).toBe(true);
   });
 
-  it('ABANDONED 는 항상 켠다 — 포기는 대표가 알아야 한다', () => {
-    expect(hasPlanRealityMismatch([fact('FINDING_ABANDONED')])).toBe(true);
+  it('ABANDONED 는 처음 확인한 회차에 켠다 — 포기는 대표가 알아야 한다', () => {
+    expect(firstRun([fact('FINDING_ABANDONED')])).toBe(true);
   });
 
-  it('MERGED·UNASSIGNED 는 켜지 않는다', () => {
-    expect(hasPlanRealityMismatch([fact('FINDING_MERGED')])).toBe(false);
-    expect(hasPlanRealityMismatch([fact('FINDING_UNASSIGNED')])).toBe(false);
+  it('MERGED·UNASSIGNED·본인이 연 항목은 켜지 않는다', () => {
+    expect(firstRun([fact('FINDING_MERGED')])).toBe(false);
+    expect(firstRun([fact('FINDING_UNASSIGNED')])).toBe(false);
+    expect(firstRun([fact('UNPLANNED_SELF_AUTHORED')])).toBe(false);
+  });
+
+  // 실측(10-13~22): 머지 없이 닫힌 PR 이 닷새 연속 같은 사실로 검토를 켰다.
+  it('직전 회차가 이미 올린 ABANDONED 는 다시 켜지 않는다', () => {
+    const facts = [fact('FINDING_ABANDONED')];
+    const previous = toReportedFactStates(facts);
+
+    expect(
+      hasPlanRealityMismatch(facts, findNovelFactIds(facts, previous)),
+    ).toBe(false);
+  });
+
+  it('UNMOVED 는 구간이 올라간 회차에만 다시 켠다', () => {
+    const yesterday = toReportedFactStates([fact('FINDING_UNMOVED', 2)]);
+
+    const same = [fact('FINDING_UNMOVED', 2)];
+    const crossed = [fact('FINDING_UNMOVED', 3)];
+
+    expect(
+      hasPlanRealityMismatch(same, findNovelFactIds(same, yesterday)),
+    ).toBe(false);
+    expect(
+      hasPlanRealityMismatch(crossed, findNovelFactIds(crossed, yesterday)),
+    ).toBe(true);
+  });
+
+  it('1구간에서 2구간으로 넘어간 날 켠다', () => {
+    const yesterday = toReportedFactStates([fact('FINDING_UNMOVED', 1)]);
+    const today = [fact('FINDING_UNMOVED', 2)];
+
+    expect(
+      hasPlanRealityMismatch(today, findNovelFactIds(today, yesterday)),
+    ).toBe(true);
+  });
+});
+
+describe('findNovelFactIds', () => {
+  const fact = (id: string, sequence?: number): PlanRealityFact => ({
+    id,
+    kind: 'PLANNED_STALLED',
+    label: 'l',
+    detail: 'd',
+    sequence,
+  });
+
+  it('직전 상태를 모르면 전부 새 것으로 본다 — 모르는 채로 지적을 삼키지 않는다', () => {
+    expect(findNovelFactIds([fact('a'), fact('b')], null)).toEqual(
+      new Set(['a', 'b']),
+    );
+  });
+
+  it('직전에 없던 id 만 새 것이다', () => {
+    const previous = toReportedFactStates([fact('a')]);
+
+    expect(findNovelFactIds([fact('a'), fact('b')], previous)).toEqual(
+      new Set(['b']),
+    );
+  });
+
+  it('구간이 내려가면 새 것이 아니다', () => {
+    const previous = toReportedFactStates([fact('a', 3)]);
+
+    expect(findNovelFactIds([fact('a', 2)], previous)).toEqual(new Set());
+  });
+});
+
+describe('toReportedFactStates', () => {
+  const fact = (id: string): PlanRealityFact => ({
+    id,
+    kind: 'PLANNED_STALLED',
+    label: 'l',
+    detail: 'd',
+  });
+
+  // 담당 조회가 죽은 날 GitHub 사실이 0건이 된다. 그 빈자리를 저장하면 다음 날 전부 다시 켜진다.
+  it('조회가 실패한 회차는 이번에 못 만든 직전 상태를 이어 둔다', () => {
+    const previous = toReportedFactStates([fact('a'), fact('b')]);
+
+    expect(
+      toReportedFactStates([fact('b'), fact('c')], {
+        previousStates: previous,
+        carryPreviousStates: true,
+      }),
+    ).toEqual([{ id: 'b' }, { id: 'c' }, { id: 'a' }]);
+  });
+
+  it('정상 회차는 이번 사실만 남긴다', () => {
+    expect(
+      toReportedFactStates([fact('c')], {
+        previousStates: toReportedFactStates([fact('a')]),
+      }),
+    ).toEqual([{ id: 'c' }]);
+  });
+
+  // 근거 검증에서 지적이 전부 버려진 회차는 아무것도 알리지 못했다 — 다음 회차에 다시 새 것이어야 한다.
+  it('전달되지 않은 새 사실은 직전 상태로 남겨 다음 회차에 다시 새 것으로 보이게 한다', () => {
+    const unmoved = (sequence: number): PlanRealityFact => ({
+      id: `finding-unmoved:${KEY}`,
+      kind: 'FINDING_UNMOVED',
+      label: 'l',
+      detail: 'd',
+      sequence,
+      firstReportedAt: day(14).toISOString(),
+    });
+    const previous = toReportedFactStates([unmoved(1)]);
+    const today = [unmoved(2), fact('new')];
+
+    const stored = toReportedFactStates(today, {
+      previousStates: previous,
+      undeliveredFactIds: findNovelFactIds(today, previous),
+    });
+
+    expect(stored).toEqual(previous);
+    expect(hasPlanRealityMismatch(today, findNovelFactIds(today, stored))).toBe(
+      true,
+    );
+  });
+});
+
+describe('readReportedFactStates', () => {
+  it('기록 전 회차(필드 없음)는 null 이다', () => {
+    expect(readReportedFactStates({ slackUserId: 'U1' })).toBeNull();
+    expect(readReportedFactStates(null)).toBeNull();
+  });
+
+  it('저장한 상태를 그대로 읽고 형태가 깨진 줄은 버린다', () => {
+    const states = toReportedFactStates([
+      {
+        id: `finding-unmoved:${KEY}`,
+        kind: 'FINDING_UNMOVED',
+        label: 'l',
+        detail: 'd',
+        sequence: 2,
+        firstReportedAt: day(15).toISOString(),
+      },
+    ]);
+
+    expect(
+      readReportedFactStates({ reportedFacts: [...states, { id: 3 }] }),
+    ).toEqual(states);
+  });
+});
+
+describe('carryForwardPriorFindings — 미이동 나이 고정', () => {
+  const unmovedState = (key: string, firstReportedAt: Date) => ({
+    id: `finding-unmoved:${key}`,
+    sequence: 3,
+    firstReportedAt: firstReportedAt.toISOString(),
+  });
+
+  // 실측: 최초 인용이 30일 창 밖으로 밀리면 창 안의 다음 인용이 최초가 되어 나이가 줄었다.
+  it('직전 회차가 들고 있던 더 이른 최초 시각을 이어받는다', () => {
+    const result = carryForwardPriorFindings(
+      [{ key: KEY, firstReportedAt: day(20) }],
+      [unmovedState(KEY, day(29))],
+    );
+
+    expect(result).toEqual([{ key: KEY, firstReportedAt: day(29) }]);
+  });
+
+  it('창 안의 시각이 더 이르면 그대로 둔다', () => {
+    const result = carryForwardPriorFindings(
+      [{ key: KEY, firstReportedAt: day(29) }],
+      [unmovedState(KEY, day(20))],
+    );
+
+    expect(result).toEqual([{ key: KEY, firstReportedAt: day(29) }]);
+  });
+
+  it('창에서 사라진 키도 직전 회차가 미이동으로 들고 있었으면 계속 추적한다', () => {
+    const result = carryForwardPriorFindings([], [unmovedState(KEY, day(35))]);
+
+    expect(result).toEqual([{ key: KEY, firstReportedAt: day(35) }]);
+    const recovered = buildFindingRecoveryFacts({
+      priorFindings: result,
+      context: contextWith({
+        assignedTasks: {
+          issues: [],
+          pullRequests: [
+            {
+              number: 264,
+              title: 't',
+              repo: 'acme/app',
+              url: 'https://github.com/acme/app/pull/264',
+              draft: false,
+              updatedAt: day(1).toISOString(),
+              requestedReviewers: [],
+              isApproved: false,
+            },
+          ],
+        },
+      }),
+      lifecycles: new Map(),
+      now: NOW,
+    });
+    expect(recovered.facts[0]).toMatchObject({
+      kind: 'FINDING_UNMOVED',
+      sequence: 5,
+      firstReportedAt: day(35).toISOString(),
+    });
+  });
+
+  it('미이동이 아닌 상태와 직전 상태가 없는 경우는 건드리지 않는다', () => {
+    const prior = [{ key: KEY, firstReportedAt: day(3) }];
+
+    expect(carryForwardPriorFindings(prior, null)).toEqual(prior);
+    expect(
+      carryForwardPriorFindings(prior, [
+        {
+          id: `finding-abandoned:${KEY}`,
+          firstReportedAt: day(40).toISOString(),
+        },
+      ]),
+    ).toEqual(prior);
   });
 });

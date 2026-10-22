@@ -1,5 +1,3 @@
-import { toTaskLabel } from '../../../agent-registry/agent-registry';
-import { describeFailureReason } from '../../../agent-run/domain/agent-run.type';
 import {
   GithubIssue,
   GithubPullRequest,
@@ -7,7 +5,7 @@ import {
 } from '../../../github/domain/github.type';
 import { WaitingItem } from '../../../github/domain/pr-engagement.type';
 import { DailyPlan, TaskItem } from '../../pm/domain/pm-agent.type';
-import { PoShadowContext } from './po-shadow.type';
+import { PoShadowContext, ReportedFactState } from './po-shadow.type';
 
 export type PlanRealityFactKind =
   | 'PLANNED_MERGED'
@@ -15,8 +13,9 @@ export type PlanRealityFactKind =
   | 'PLANNED_NOT_FOUND'
   | 'PLANNED_UNVERIFIABLE'
   | 'UNPLANNED_ASSIGNED'
+  // 본인이 연 계획 밖 항목. 근거 줄에는 남기되 검토를 켜지 않고 지적 대상도 아니다.
+  | 'UNPLANNED_SELF_AUTHORED'
   | 'UNPLANNED_MENTION'
-  | 'WORKER_FAILED'
   // 회수(직전 회차 지적의 종결 상태) — 아래 네 종류가 전수를 덮는다.
   | 'FINDING_MERGED'
   | 'FINDING_UNMOVED'
@@ -33,9 +32,12 @@ export interface PlanRealityFact {
   label: string;
   detail: string;
   url?: string;
-  // 회수 사실 전용 — 최초 지적 후 몇 번째 7일 구간인지. `detail` 은 렌더 전용이므로
-  // 카운트를 문자열에서 되읽지 않는다(문구를 손보면 조용히 리셋되는 구조를 피한다).
+  // 같은 사실이 악화된 단계. 회수 사실은 최초 지적 후 몇 번째 7일 구간인지, 목표 기한 위험은
+  // 임박·당일·초과 단계다. 다음 회차가 이 값이 오른 것을 "새로 바뀐 사실" 로 본다(findNovelFactIds).
+  // `detail` 은 렌더 전용이므로 단계를 문자열에서 되읽지 않는다(문구를 손보면 조용히 리셋되는 구조를 피한다).
   sequence?: number;
+  // FINDING_UNMOVED 전용 — 최초 지적 시각(ISO). 다음 회차가 이어받아 나이를 고정한다(ReportedFactState).
+  firstReportedAt?: string;
 }
 
 // 직전 회차가 지적한 키 하나. `firstReportedAt` 은 그 키를 **가장 처음** 지적한 회차의 endedAt 이다
@@ -79,6 +81,7 @@ interface ActualGithubItem {
   title: string;
   url: string;
   type: 'ISSUE' | 'PULL_REQUEST';
+  authorLogin?: string;
 }
 
 const MISMATCH_KINDS = new Set<PlanRealityFactKind>([
@@ -86,7 +89,6 @@ const MISMATCH_KINDS = new Set<PlanRealityFactKind>([
   'PLANNED_NOT_FOUND',
   'UNPLANNED_ASSIGNED',
   'UNPLANNED_MENTION',
-  'WORKER_FAILED',
   // GOAL_UNSERVED 는 넣지 않는다 — 잡무·버그 수정 때문에 거의 매일 나와 매일 검토가 켜진다.
   'GOAL_DEADLINE_RISK',
 ]);
@@ -115,6 +117,7 @@ export const DEGRADED_PRIOR_REPORT = '직전 PO 보고';
 export const DEGRADED_UNCOMPARABLE = '직전 지적 대조 불가';
 
 const MILLISECONDS_PER_DAY = 86_400_000;
+const UNMOVED_FACT_ID_PREFIX = 'finding-unmoved';
 
 const NATURAL_GITHUB_KEY_PATTERN = /^[^/#\s]+\/[^#\s]+#\d+$/;
 const GITHUB_NUMBER_PATTERN = /#(\d+)\b/;
@@ -179,9 +182,21 @@ export const buildPlanRealityFacts = (
   }
 
   for (const actualItem of actualItems) {
-    if (!plannedActualKeys.has(actualItem.key)) {
-      facts.push(buildUnplannedAssignedFact(actualItem));
+    if (plannedActualKeys.has(actualItem.key)) {
+      continue;
     }
+    // 본인이 연 항목은 계획 뒤에 본인이 시작한 일이다. 실측(10-13~22) 상 새 계획 밖 항목
+    // 16건이 전부 본인 PR 이었다 — 자기 행동을 자기에게 "계획과 다르다" 고 알리지 않는다.
+    // GitHub login 은 대소문자를 가리지 않는다.
+    const selfAuthored =
+      context.ownGithubLogin !== null &&
+      actualItem.authorLogin?.toLowerCase() ===
+        context.ownGithubLogin.toLowerCase();
+    facts.push(
+      selfAuthored
+        ? buildSelfAuthoredFact(actualItem)
+        : buildUnplannedAssignedFact(actualItem),
+    );
   }
 
   for (const mention of context.newMentions) {
@@ -194,30 +209,158 @@ export const buildPlanRealityFacts = (
     });
   }
 
-  for (const failedRun of context.failedRunsToday) {
-    facts.push({
-      id: `failed:${failedRun.agentType}:${failedRun.endedAt.toISOString()}`,
-      kind: 'WORKER_FAILED',
-      label: `${toTaskLabel(failedRun.agentType)} 작업`,
-      detail: `실패 — ${describeFailureReason(failedRun.reason)}`,
-    });
-  }
-
   return facts;
 };
 
-// 검토(모델 호출)를 켤지. kind 만 보는 정적 Set 으로는 "연속 2회일 때만" 을 표현할 수 없어
-// FINDING_UNMOVED 만 술어로 뺀다 — sequence 가 이미 그 정보를 들고 있으므로 kind 를 쪼개면
-// 같은 사실을 두 이름으로 부르게 된다. 이 함수의 프로덕션 호출부는 usecase 한 곳뿐이다.
-export const hasPlanRealityMismatch = (facts: PlanRealityFact[]): boolean => {
+// 검토(모델 호출)를 켤지. **새로 바뀐** 사실만 본다 — 같은 상태를 매일 다시 띄우면(실측 10-13~22:
+// 머지 없이 닫힌 PR 이 닷새 연속 헤드라인) 어긋남 판정이 "어긋난 상태가 있다" 로 바뀌어 매일 켜진다.
+// 이 함수의 프로덕션 호출부는 usecase 한 곳뿐이다.
+export const hasPlanRealityMismatch = (
+  facts: PlanRealityFact[],
+  novelFactIds: Set<string>,
+): boolean => {
   return facts.some(
-    (fact) =>
-      MISMATCH_KINDS.has(fact.kind) ||
-      // 포기는 드물고(30일 실측 2건) 대표가 알아야 할 사건이라 항상 켠다.
-      fact.kind === 'FINDING_ABANDONED' ||
-      (fact.kind === 'FINDING_UNMOVED' &&
-        (fact.sequence ?? 0) >= UNMOVED_REVIEW_SEQUENCE),
+    (fact) => novelFactIds.has(fact.id) && isMismatchFact(fact),
   );
+};
+
+// kind 만 보는 정적 Set 으로는 "2구간 이상일 때만" 을 표현할 수 없어 FINDING_UNMOVED 만 술어로 뺀다.
+const isMismatchFact = (fact: PlanRealityFact): boolean =>
+  MISMATCH_KINDS.has(fact.kind) ||
+  // 포기는 대표가 알아야 할 사건이다. 새로 바뀐 사실만 보므로 처음 확인한 회차에 한 번 켜진다.
+  fact.kind === 'FINDING_ABANDONED' ||
+  (fact.kind === 'FINDING_UNMOVED' &&
+    (fact.sequence ?? 0) >= UNMOVED_REVIEW_SEQUENCE);
+
+// 직전 회차 사실표에 없던 사실, 또는 있었지만 구간(sequence)이 올라간 사실. 직전 상태를 모르면
+// (첫 회차·기록 전 회차) 전부 새 것으로 본다 — 모르는 채로 조용히 넘기는 쪽이 더 위험하다.
+export const findNovelFactIds = (
+  facts: PlanRealityFact[],
+  previousStates: ReportedFactState[] | null,
+): Set<string> => {
+  if (previousStates === null) {
+    return new Set(facts.map((fact) => fact.id));
+  }
+  const previousById = new Map(
+    previousStates.map((state) => [state.id, state]),
+  );
+  return new Set(
+    facts
+      .filter((fact) => {
+        const previous = previousById.get(fact.id);
+        return (
+          previous === undefined ||
+          (fact.sequence ?? 0) > (previous.sequence ?? 0)
+        );
+      })
+      .map((fact) => fact.id),
+  );
+};
+
+interface ToReportedFactStatesOptions {
+  // 대표에게 실제로 전달되지 않은 이번 회차의 새 사실. 직전 상태를 그대로 두어 다음 회차에 다시 새 것으로
+  // 보이게 한다 — 알리지 못한 지적이 "이미 알림" 으로 묻히지 않게(근거 검증에서 지적이 전부 버려진 회차 등).
+  undeliveredFactIds?: Set<string>;
+  previousStates?: ReportedFactState[] | null;
+  // 조회가 실패한 회차에만 넘긴다. 그 회차는 실패한 소스의 사실을 만들지 못하는데, 빈자리를 그대로
+  // 저장하면 다음 회차에 같은 사실이 전부 새 것으로 보여 한꺼번에 다시 켜지고 미이동 나이도 끊긴다.
+  carryPreviousStates?: boolean;
+}
+
+export const toReportedFactStates = (
+  facts: PlanRealityFact[],
+  {
+    undeliveredFactIds = new Set(),
+    previousStates = null,
+    carryPreviousStates = false,
+  }: ToReportedFactStatesOptions = {},
+): ReportedFactState[] => {
+  const previousById = new Map(
+    (previousStates ?? []).map((state) => [state.id, state]),
+  );
+  const current = facts.flatMap((fact): ReportedFactState[] => {
+    if (undeliveredFactIds.has(fact.id)) {
+      const previous = previousById.get(fact.id);
+      return previous ? [previous] : [];
+    }
+    return [toReportedFactState(fact)];
+  });
+  if (!carryPreviousStates) {
+    return current;
+  }
+  const currentIds = new Set(facts.map((fact) => fact.id));
+  return [
+    ...current,
+    ...(previousStates ?? []).filter((state) => !currentIds.has(state.id)),
+  ];
+};
+
+const toReportedFactState = (fact: PlanRealityFact): ReportedFactState => ({
+  id: fact.id,
+  ...(fact.sequence !== undefined ? { sequence: fact.sequence } : {}),
+  ...(fact.firstReportedAt !== undefined
+    ? { firstReportedAt: fact.firstReportedAt }
+    : {}),
+});
+
+// 직전 PO 회차의 리포트(output)에서 읽는다. 필드가 없으면(기록 전 회차) null — "비교 기준 없음" 이다.
+export const readReportedFactStates = (
+  report: unknown,
+): ReportedFactState[] | null => {
+  if (typeof report !== 'object' || report === null) {
+    return null;
+  }
+  const value = (report as Record<string, unknown>).reportedFacts;
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  return value.filter(isReportedFactState);
+};
+
+const isReportedFactState = (value: unknown): value is ReportedFactState => {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.id === 'string' &&
+    (record.sequence === undefined || typeof record.sequence === 'number') &&
+    (record.firstReportedAt === undefined ||
+      typeof record.firstReportedAt === 'string')
+  );
+};
+
+// 미이동 지적의 최초 시각을 직전 회차에서 이어받는다. 30일 원장 창만으로 재구성하면 최초 인용이 창
+// 밖으로 밀릴 때 나이가 줄어든다(실측: puppeteer#52 가 21일↔28일을 오감, #153 은 28일→7일).
+// 창에서 사라진 키도 직전 회차가 미이동으로 들고 있었으면 계속 추적한다.
+export const carryForwardPriorFindings = (
+  priorFindings: PriorFinding[],
+  previousStates: ReportedFactState[] | null,
+): PriorFinding[] => {
+  const firstSeen = new Map(
+    priorFindings.map((prior) => [prior.key, prior.firstReportedAt]),
+  );
+  for (const state of previousStates ?? []) {
+    if (
+      !state.id.startsWith(`${UNMOVED_FACT_ID_PREFIX}:`) ||
+      state.firstReportedAt === undefined
+    ) {
+      continue;
+    }
+    const carried = new Date(state.firstReportedAt);
+    if (Number.isNaN(carried.getTime())) {
+      continue;
+    }
+    const key = state.id.slice(UNMOVED_FACT_ID_PREFIX.length + 1);
+    const known = firstSeen.get(key);
+    if (known === undefined || carried < known) {
+      firstSeen.set(key, carried);
+    }
+  }
+  return [...firstSeen.entries()].map(([key, firstReportedAt]) => ({
+    key,
+    firstReportedAt,
+  }));
 };
 
 // 회수 대상 키를 직전 회차들의 지적에서 뽑는다. 같은 키는 **가장 처음** 지적한 회차만 남긴다.
@@ -296,6 +439,7 @@ const buildActualIssue = (issue: GithubIssue): ActualGithubItem => ({
   title: issue.title,
   url: issue.url,
   type: 'ISSUE',
+  ...(issue.authorLogin ? { authorLogin: issue.authorLogin } : {}),
 });
 
 const buildActualPullRequest = (
@@ -306,6 +450,7 @@ const buildActualPullRequest = (
   title: pullRequest.title,
   url: pullRequest.url,
   type: 'PULL_REQUEST',
+  ...(pullRequest.authorLogin ? { authorLogin: pullRequest.authorLogin } : {}),
 });
 
 const groupActualItemsByNumber = (
@@ -453,6 +598,17 @@ const buildUnplannedAssignedFact = (
   kind: 'UNPLANNED_ASSIGNED',
   label: truncateLabel(actualItem.title),
   detail: '계획에 없는 담당 항목',
+  url: actualItem.url,
+});
+
+// id 접두어가 회수 대조 대상(COMPARABLE_FACT_PREFIXES)이 아니므로 인용돼도 다음 회차 지적으로 추적되지 않는다.
+const buildSelfAuthoredFact = (
+  actualItem: ActualGithubItem,
+): PlanRealityFact => ({
+  id: `self-authored:${actualItem.key}`,
+  kind: 'UNPLANNED_SELF_AUTHORED',
+  label: truncateLabel(actualItem.title),
+  detail: '계획 뒤 직접 연 항목',
   url: actualItem.url,
 });
 
@@ -627,7 +783,7 @@ const buildUnmovedFact = ({
 }): PlanRealityFact => {
   const elapsed = `${sequence * RECOVERY_SEQUENCE_DAYS}일째 미이동`;
   return {
-    id: `finding-unmoved:${prior.key}`,
+    id: `${UNMOVED_FACT_ID_PREFIX}:${prior.key}`,
     kind: 'FINDING_UNMOVED',
     label: toRecoveryLabel(prior.key),
     // reason 은 오늘의 waitingItems 에서 찾는다 — 사실표의 PLANNED_STALLED 존재에 기대지 않는다
@@ -635,6 +791,7 @@ const buildUnmovedFact = ({
     detail: reason === null ? elapsed : `${elapsed} — ${reason}`,
     url: toGithubUrl(prior.key),
     sequence,
+    firstReportedAt: prior.firstReportedAt.toISOString(),
   };
 };
 
