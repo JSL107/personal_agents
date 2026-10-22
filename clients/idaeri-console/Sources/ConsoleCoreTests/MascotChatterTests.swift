@@ -2,6 +2,26 @@ import Foundation
 
 @testable import ConsoleCore
 
+private extension MascotTalkState {
+    init(
+        copying source: MascotTalkState, lastSpokeAt: Date? = nil, userIdleSeconds: TimeInterval? = nil,
+        awaySince: Date? = nil, finishedSinceLastTalk: Int? = nil, longestRunningSeconds: TimeInterval? = nil,
+        lastProgressAt: Date? = nil, mood: MascotMood? = nil, talkedToday: Int? = nil,
+        idleChanceRoll: Double? = nil
+    ) {
+        self.init(
+            lastSpokeAt: lastSpokeAt ?? source.lastSpokeAt,
+            userIdleSeconds: userIdleSeconds ?? source.userIdleSeconds,
+            awaySince: awaySince ?? source.awaySince,
+            finishedSinceLastTalk: finishedSinceLastTalk ?? source.finishedSinceLastTalk,
+            longestRunningSeconds: longestRunningSeconds ?? source.longestRunningSeconds,
+            lastProgressAt: lastProgressAt ?? source.lastProgressAt,
+            mood: mood ?? source.mood, talkedToday: talkedToday ?? source.talkedToday,
+            idleChanceRoll: idleChanceRoll ?? source.idleChanceRoll
+        )
+    }
+}
+
 func runMascotChatterTests(_ runner: TestRunner) {
     runner.suite("Mascot chatter conversation")
     let now = Date(timeIntervalSinceReferenceDate: 1_000_000)
@@ -25,6 +45,7 @@ func runMascotChatterTests(_ runner: TestRunner) {
     runner.expectNil(withoutSuggestion.chatterId, "id 없음")
     runner.expectEqual(withoutSuggestion.line, "오늘도 차근차근 하자", "본문")
     runner.expectNil(withoutSuggestion.suggestion, "제안 없음")
+    runner.expectEqual(withoutSuggestion.hasEvents, false, "예전 응답에는 끝난 일 없음")
     let withSuggestion = try! JSONDecoder().decode(
         MascotChatterLine.self,
         from: Data(#"{"chatterId":"chatter-1","line":"계획 세울까?","suggestion":{"agentType":"PM","displayName":"PM","reason":"할 일 정리"},"asks":true}"#.utf8)
@@ -33,16 +54,124 @@ func runMascotChatterTests(_ runner: TestRunner) {
     runner.expectEqual(withSuggestion.suggestion?.agentType, "PM", "제안 타입")
     runner.expectEqual(withSuggestion.suggestion?.reason, "할 일 정리", "제안 이유")
     runner.expect(withSuggestion.asks, "질문 여부")
+    let withEvents = try! JSONDecoder().decode(
+        MascotChatterLine.self,
+        from: Data(#"{"chatterId":"chatter-2","line":"일이 끝났어","suggestion":null,"asks":false,"hasEvents":true}"#.utf8)
+    )
+    runner.expect(withEvents.hasEvents, "끝난 일이 있으면 보기 버튼을 띄운다")
+    let emptyEvents = try! JSONDecoder().decode(
+        MascotChatterLine.self,
+        from: Data(#"{"chatterId":null,"line":null,"suggestion":null,"asks":false,"hasEvents":false,"reason":"NOTHING_TO_SAY"}"#.utf8)
+    )
+    runner.expectEqual(emptyEvents.reason, "NOTHING_TO_SAY", "말할 거리 없음 사유를 읽는다")
+    runner.expectNil(withEvents.reason, "정상 응답에는 사유가 없어도 된다")
+
+    runner.suite("Mascot empty events response")
+    runner.expectEqual(
+        mascotUnreportedFinishedCount(currentCount: 1, countAtRequest: 1), 0,
+        "요청 전 내부 실행만 끝났으면 반복 EVENTS를 막는다"
+    )
+    runner.expectEqual(
+        mascotUnreportedFinishedCount(currentCount: 3, countAtRequest: 1), 2,
+        "응답을 기다리는 동안 끝난 두 실행은 다음 알림으로 남긴다"
+    )
+
+    runner.suite("Mascot shown events response")
+    // 실제로 한 마디를 띄운 경우도 같은 규칙 — 요청 때 2건을 보고했고 모델 답을 기다리는 동안 1건이 더
+    // 끝났으면, 그 1건은 0 으로 지우지 않고 다음 EVENTS 의 몫으로 남는다.
+    runner.expectEqual(
+        mascotUnreportedFinishedCount(currentCount: 3, countAtRequest: 2), 1,
+        "말한 뒤에도 응답 대기 중 끝난 실행은 남긴다"
+    )
+
+    runner.suite("Mascot return retry")
+    runner.expect(!mascotShouldRetryReturn(reason: nil, transportFailed: false, shown: true), "띄웠으면 복귀 계기를 접는다")
+    runner.expect(mascotShouldRetryReturn(reason: nil, transportFailed: true, shown: false), "서버에 못 닿으면 다시 시도")
+    runner.expect(
+        mascotShouldRetryReturn(reason: "CONTEXT_FAILED", transportFailed: false, shown: false), "조회 실패면 다시 시도"
+    )
+    runner.expect(mascotShouldRetryReturn(reason: nil, transportFailed: false, shown: false), "급한 말풍선에 밀렸으면 다시 시도")
+    runner.expect(
+        !mascotShouldRetryReturn(reason: "MODEL_FAILED", transportFailed: false, shown: false), "모델 실패는 매분 되풀이하지 않는다"
+    )
 
     runner.suite("Mascot chatter request")
     let request = try! buildMascotChatterRequest(
-        baseURL: URL(string: "http://127.0.0.1:3002")!, declinedAgentTypes: ["PM"], token: "secret"
+        baseURL: URL(string: "http://127.0.0.1:3002")!, trigger: .returning,
+        since: Date(timeIntervalSince1970: 0), declinedAgentTypes: ["PM"], token: "secret"
     )
     runner.expectEqual(request.httpMethod, "POST", "method")
     runner.expectEqual(request.url?.path, "/v1/console/mascot/chatter", "경로")
     runner.expectEqual(request.value(forHTTPHeaderField: "x-console-token"), "secret", "토큰")
-    let body = try! JSONDecoder().decode([String: [String]].self, from: request.httpBody!)
-    runner.expectEqual(body["declinedAgentTypes"], ["PM"], "거절한 후보")
+    let body = try! JSONSerialization.jsonObject(with: request.httpBody!) as! [String: Any]
+    runner.expectEqual(body["declinedAgentTypes"] as? [String], ["PM"], "거절한 후보")
+    runner.expectEqual(body["trigger"] as? String, "RETURN", "복귀 계기")
+    runner.expectEqual(body["since"] as? String, "1970-01-01T00:00:00Z", "UTC ISO8601 시작 시각")
+
+    runner.suite("Mascot talk trigger")
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let officeNow = calendar.date(from: DateComponents(year: 2026, month: 10, day: 21, hour: 12))!
+    let state = MascotTalkState(
+        lastSpokeAt: officeNow.addingTimeInterval(-600), userIdleSeconds: 0, awaySince: nil,
+        finishedSinceLastTalk: 0, longestRunningSeconds: nil, lastProgressAt: nil,
+        mood: .idle, talkedToday: 0, idleChanceRoll: 0
+    )
+    runner.expectEqual(mascotNextTalkTrigger(state: state, now: officeNow, calendar: calendar), .idle, "idle")
+    runner.expectNil(mascotNextTalkTrigger(
+        state: state, now: officeNow.addingTimeInterval(-4 * 3600), calendar: calendar
+    ), "근무시간 밖")
+    runner.expectNil(mascotNextTalkTrigger(
+        state: MascotTalkState(copying: state, talkedToday: mascotTalkDailyMax), now: officeNow, calendar: calendar
+    ), "하루 상한")
+    runner.expectNil(mascotNextTalkTrigger(
+        state: MascotTalkState(copying: state, userIdleSeconds: mascotAwaySeconds), now: officeNow, calendar: calendar
+    ), "자리를 비운 동안 침묵")
+    runner.expectEqual(mascotNextTalkTrigger(
+        state: MascotTalkState(copying: state, lastSpokeAt: officeNow, userIdleSeconds: 0,
+                               awaySince: officeNow.addingTimeInterval(-mascotAwaySeconds), finishedSinceLastTalk: 1),
+        now: officeNow, calendar: calendar
+    ), .returning, "복귀가 일보다 우선하며 최소 간격을 무시")
+    runner.expectEqual(mascotNextTalkTrigger(
+        state: MascotTalkState(copying: state, userIdleSeconds: 5 * 60,
+                               awaySince: officeNow.addingTimeInterval(-40 * 60)),
+        now: officeNow, calendar: calendar
+    ), .returning, "1분 틱 사이에 돌아와 가만히 읽고 있어도 복귀로 본다")
+    runner.expectNil(mascotNextTalkTrigger(
+        state: MascotTalkState(copying: state, lastSpokeAt: officeNow.addingTimeInterval(-179),
+                               finishedSinceLastTalk: 1), now: officeNow, calendar: calendar
+    ), "3분 미만")
+    runner.expectEqual(mascotNextTalkTrigger(
+        state: MascotTalkState(copying: state, finishedSinceLastTalk: 1, longestRunningSeconds: 600),
+        now: officeNow, calendar: calendar
+    ), .events, "끝난 일이 진행 상황보다 우선")
+    runner.expectEqual(mascotNextTalkTrigger(
+        state: MascotTalkState(copying: state,
+                               finishedSinceLastTalk: mascotUnreportedFinishedCount(currentCount: 1, countAtRequest: 1),
+                               longestRunningSeconds: 600), now: officeNow, calendar: calendar
+    ), .progress, "빈 EVENTS 이후 진행 상황을 다시 고른다")
+    runner.expectEqual(mascotNextTalkTrigger(
+        state: MascotTalkState(copying: state, longestRunningSeconds: mascotProgressMinRunSeconds),
+        now: officeNow, calendar: calendar
+    ), .progress, "2분 진행")
+    runner.expectNil(mascotNextTalkTrigger(
+        state: MascotTalkState(copying: state, longestRunningSeconds: mascotProgressMinRunSeconds - 1,
+                               mood: .working), now: officeNow, calendar: calendar
+    ), "2분 미만 진행")
+    runner.expectNil(mascotNextTalkTrigger(
+        state: MascotTalkState(copying: state, longestRunningSeconds: 600,
+                               lastProgressAt: officeNow.addingTimeInterval(-599), mood: .working),
+        now: officeNow, calendar: calendar
+    ), "진행 알림 10분 미만")
+    runner.expectEqual(mascotNextTalkTrigger(
+        state: MascotTalkState(copying: state, longestRunningSeconds: 600,
+                               lastProgressAt: officeNow.addingTimeInterval(-600), mood: .working),
+        now: officeNow, calendar: calendar
+    ), .progress, "진행 알림 10분 경계")
+    runner.expectNil(mascotNextTalkTrigger(
+        state: MascotTalkState(copying: state, idleChanceRoll: mascotChatterChance),
+        now: officeNow, calendar: calendar
+    ), "idle 확률 경계")
 
     let accept = try! buildMascotSuggestionAcceptRequest(
         baseURL: URL(string: "http://127.0.0.1:3002")!, agentType: "CODE_REVIEWER",

@@ -246,6 +246,16 @@ export interface RecentlyFinishedRun {
   runId: number;
 }
 
+// 마스코트 대화 — 종료 시각 순으로 조회한 개별 런. 큰 output JSON 은 반환하지 않는다.
+export interface FinishedRunDigest {
+  runId: number;
+  agentType: string;
+  triggerType: string | null;
+  status: 'SUCCEEDED' | 'FAILED';
+  endedAt: Date;
+  summary: string | null;
+}
+
 // 비서실 브리핑 — 최근 N분 안에 끝난 실패 런 **전건**과 그 이유.
 // `RecentlyFinishedRun` 과 둘 다 필요한 이유: 저쪽은 agentType 별 "최신 1건" 이라
 // (1) 같은 에이전트가 몇 번 실패했는지 셀 수 없고 (2) 실패 이유를 담지 않는다.
@@ -412,6 +422,11 @@ export interface AgentRunRepositoryPort {
     withinMinutes: number;
     since?: Date;
   }): Promise<RecentlyFinishedRun[]>;
+  // 마스코트 대화 — agentType 별 축약 없이 최신 종료 런부터 최대 limit 건.
+  findFinishedRunsSince(input: {
+    since: Date;
+    limit: number;
+  }): Promise<FinishedRunDigest[]>;
   // 대화 기억에 남은 실행 id 의 상태. 없으면 null.
   findRunStatus(id: number): Promise<WorkRunStatus | null>;
   // 한 대화(inputSnapshot.conversationKey 또는 답장 스레드 키 replyThreadKey 가 같은)의 한 worker

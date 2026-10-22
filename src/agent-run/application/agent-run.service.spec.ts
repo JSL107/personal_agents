@@ -46,6 +46,7 @@ describe('AgentRunService', () => {
     findLatestSweepReview: jest.fn().mockResolvedValue(null),
     countUnsuccessfulSweepReviews: jest.fn().mockResolvedValue(0),
     findRecentlyFinishedRuns: jest.fn().mockResolvedValue([]),
+    findFinishedRunsSince: jest.fn().mockResolvedValue([]),
     findRunStatus: jest.fn().mockResolvedValue(null),
     findLatestConversationRun: jest.fn().mockResolvedValue(null),
     findFailedRunsSince: jest.fn().mockResolvedValue([]),
@@ -1197,6 +1198,31 @@ describe('AgentRunService', () => {
 
       expect(repository.findActiveRuns).toHaveBeenCalledTimes(1);
       expect(result).toBe(active);
+    });
+  });
+
+  describe('findFinishedRunsSince — 마스코트 종료 이벤트 조회', () => {
+    it('시각과 건수 조건을 repository 에 위임한다', async () => {
+      const since = new Date('2026-10-21T03:00:00.000Z');
+      const finished = [
+        {
+          runId: 7,
+          agentType: AgentType.PM,
+          triggerType: TriggerType.SLACK_COMMAND_TODAY,
+          status: 'SUCCEEDED' as const,
+          endedAt: since,
+          summary: null,
+        },
+      ];
+      repository.findFinishedRunsSince.mockResolvedValue(finished);
+
+      const result = await service.findFinishedRunsSince({ since, limit: 30 });
+
+      expect(repository.findFinishedRunsSince).toHaveBeenCalledWith({
+        since,
+        limit: 30,
+      });
+      expect(result).toBe(finished);
     });
   });
 

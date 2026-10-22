@@ -1,4 +1,4 @@
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as request from 'supertest';
@@ -52,6 +52,9 @@ describe('POST /v1/console/runs/:id/retry (e2e)', () => {
     app = moduleFixture.createNestApplication();
     app.useGlobalFilters(new AllExceptionsFilter());
     app.useGlobalInterceptors(new ResponseInterceptor());
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }),
+    );
     await app.init();
   });
 
@@ -116,5 +119,18 @@ describe('POST /v1/console/runs/:id/retry (e2e)', () => {
 
     expect(response.status).toBe(400);
     expect(prepare).not.toHaveBeenCalled();
+  });
+
+  it('mascot chatter의 잘못된 trigger와 since는 400', async () => {
+    const endpoint = request(app.getHttpAdapter().getInstance()).post(
+      '/v1/console/mascot/chatter',
+    );
+    const invalidTrigger = await endpoint.send({ trigger: 'UNKNOWN' });
+    expect(invalidTrigger.status).toBe(400);
+
+    const invalidSince = await request(app.getHttpAdapter().getInstance())
+      .post('/v1/console/mascot/chatter')
+      .send({ trigger: 'EVENTS', since: 'not-a-date' });
+    expect(invalidSince.status).toBe(400);
   });
 });

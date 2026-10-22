@@ -754,6 +754,63 @@ describe('AgentRunPrismaRepository.findRecentlyFinishedRuns', () => {
   });
 });
 
+describe('AgentRunPrismaRepository.findFinishedRunsSince', () => {
+  it('종료 상태만 최신순으로 제한 조회하고 실패 요약은 DB 에서 200자로 자른다', async () => {
+    const since = new Date('2026-10-21T03:00:00.000Z');
+    const endedAt = new Date('2026-10-21T03:01:00.000Z');
+    const queryRaw = jest.fn().mockResolvedValue([
+      {
+        id: 7,
+        agent_type: 'PM',
+        trigger_type: 'SLACK_COMMAND_TODAY',
+        status: 'FAILED',
+        ended_at: endedAt,
+        summary: '오류',
+      },
+      {
+        id: 6,
+        agent_type: 'CODE_REVIEWER',
+        trigger_type: 'PR_REVIEW_SWEEP',
+        status: 'SUCCEEDED',
+        ended_at: since,
+        summary: null,
+      },
+    ]);
+    const prismaMock = { $queryRaw: queryRaw } as unknown as PrismaService;
+    const repository = new AgentRunPrismaRepository(prismaMock);
+
+    const result = await repository.findFinishedRunsSince({ since, limit: 30 });
+
+    expect(result).toEqual([
+      {
+        runId: 7,
+        agentType: 'PM',
+        triggerType: 'SLACK_COMMAND_TODAY',
+        status: 'FAILED',
+        endedAt,
+        summary: '오류',
+      },
+      {
+        runId: 6,
+        agentType: 'CODE_REVIEWER',
+        triggerType: 'PR_REVIEW_SWEEP',
+        status: 'SUCCEEDED',
+        endedAt: since,
+        summary: null,
+      },
+    ]);
+    expect(queryRaw).toHaveBeenCalledTimes(1);
+    const [query] = queryRaw.mock.calls[0] as [TemplateStringsArray];
+    const sql = query.join(' ');
+    expect(sql).toContain("substring(output->>'error' from 1 for 200)");
+    expect(sql).toContain("status IN ('SUCCEEDED', 'FAILED')");
+    expect(sql).toContain('ended_at >= ');
+    expect(sql).toContain('ORDER BY ended_at DESC');
+    expect(sql).toContain('LIMIT ');
+    expect(sql).not.toMatch(/\bSELECT\s+\*/i);
+  });
+});
+
 describe('AgentRunPrismaRepository.findLatestSweepReview', () => {
   const buildRepository = (
     row: unknown,
