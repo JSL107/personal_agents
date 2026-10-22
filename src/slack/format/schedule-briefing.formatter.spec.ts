@@ -29,13 +29,13 @@ describe('formatUpcomingLine', () => {
     expect(formatUpcomingLine([], TODAY)).toBe('');
   });
 
-  it('오늘 마감은 D-day 로 표시한다', () => {
+  it('오늘 마감은 「오늘」 묶음에 싣는다 — 머리글과 겹치는 D-day 표기는 뺀다', () => {
     const line = formatUpcomingLine(
       [item('자동차세', '2026-09-18T00:00:00.000Z')],
       TODAY,
     );
-    expect(line).toContain('자동차세');
-    expect(line).toContain('D-day');
+    expect(line).toContain('🟡 *오늘* (1)\n• 자동차세');
+    expect(line).not.toContain('D-day');
   });
 
   it('앞으로 남은 날은 D-n 으로 표시한다', () => {
@@ -103,7 +103,40 @@ describe('formatUpcomingLine', () => {
       [item('지난 것', '2026-09-16T00:00:00.000Z')],
       TODAY,
     );
-    expect(line).toContain('📌 마감 —');
+    expect(line).toContain('📌 *마감 1건*');
     expect(line).not.toContain('다가오는');
+  });
+
+  it('지남 / 오늘 / 다가옴 으로 묶어 한 건에 한 줄씩 싣는다 — 한 줄로 이으면 열 건 넘는 날 읽을 수 없다', () => {
+    const line = formatUpcomingLine(
+      [
+        item('지난 것', '2026-09-16T00:00:00.000Z'),
+        item('오늘 것', '2026-09-18T00:00:00.000Z'),
+        item('다음 것', '2026-09-21T00:00:00.000Z'),
+      ],
+      TODAY,
+    );
+    expect(line).toBe(
+      [
+        '',
+        '',
+        '📌 *마감 3건*',
+        '🔴 *지남* (1)',
+        '• 지난 것 `D+2`',
+        '🟡 *오늘* (1)',
+        '• 오늘 것',
+        '⚪ *다가옴* (1)',
+        '• 다음 것 `D-3`',
+      ].join('\n'),
+    );
+  });
+
+  it('빈 묶음은 머리글도 싣지 않는다', () => {
+    const line = formatUpcomingLine(
+      [item('다음 것', '2026-09-21T00:00:00.000Z')],
+      TODAY,
+    );
+    expect(line).not.toContain('지남');
+    expect(line).not.toContain('오늘');
   });
 });
