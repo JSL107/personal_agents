@@ -466,15 +466,41 @@ describe('toReportedFactStates', () => {
   });
 
   // 담당 조회가 죽은 날 GitHub 사실이 0건이 된다. 그 빈자리를 저장하면 다음 날 전부 다시 켜진다.
-  it('조회가 실패한 회차는 이번에 못 만든 직전 상태를 이어 둔다', () => {
-    const previous = toReportedFactStates([fact('a'), fact('b')]);
+  it('조회가 실패한 출처의 사실만 직전 상태를 이어 둔다', () => {
+    const previous = [
+      { id: 'stalled:acme/app#1' },
+      { id: `finding-unmoved:${KEY}`, sequence: 2 },
+      { id: 'mention:C1:1' },
+    ];
 
     expect(
-      toReportedFactStates([fact('b'), fact('c')], {
+      toReportedFactStates([fact('goal-unserved:today')], {
         previousStates: previous,
-        carryPreviousStates: true,
+        degradedFactSources: ['GITHUB_ASSIGNED'],
       }),
-    ).toEqual([{ id: 'b' }, { id: 'c' }, { id: 'a' }]);
+    ).toEqual([
+      { id: 'goal-unserved:today' },
+      { id: 'stalled:acme/app#1' },
+      { id: `finding-unmoved:${KEY}`, sequence: 2 },
+    ]);
+  });
+
+  // #885 리뷰: 다른 출처가 실패한 날 정상 조회에서 풀린 대기까지 이어 두면, 같은 대기가 다시 생겨도
+  // 새 사실로 잡히지 않는다.
+  it('실패하지 않은 출처에서 해소된 사실은 이어 두지 않는다', () => {
+    const stored = toReportedFactStates([], {
+      previousStates: [{ id: 'stalled:acme/app#1' }],
+      degradedFactSources: ['PRODUCT_GOAL'],
+    });
+    const stalledAgain = [fact('stalled:acme/app#1')];
+
+    expect(stored).toEqual([]);
+    expect(
+      hasPlanRealityMismatch(
+        stalledAgain,
+        findNovelFactIds(stalledAgain, stored),
+      ),
+    ).toBe(true);
   });
 
   it('정상 회차는 이번 사실만 남긴다', () => {
@@ -531,6 +557,28 @@ describe('readReportedFactStates', () => {
     expect(
       readReportedFactStates({ reportedFacts: [...states, { id: 3 }] }),
     ).toEqual(states);
+  });
+});
+
+describe('extractPriorFindingKeys — 본인이 연 항목', () => {
+  // #885 리뷰: 배포 전 "계획 밖" 으로 인용된 본인 PR 이 회수 경로로 미이동이 되어 검토를 다시 켜면 안 된다.
+  it('본인이 연 항목의 계획 밖 인용은 회수하지 않고, 다른 이유의 인용은 그대로 추적한다', () => {
+    const result = extractPriorFindingKeys(
+      [
+        {
+          factIds: [`unplanned:${KEY}`, 'unplanned:acme/app#9'],
+          endedAt: day(10),
+        },
+        { factIds: ['stalled:acme/app#5'], endedAt: day(9) },
+        { factIds: ['unplanned:acme/app#5'], endedAt: day(8) },
+      ],
+      new Set([KEY, 'acme/app#5']),
+    );
+
+    expect(result).toEqual([
+      { key: 'acme/app#9', firstReportedAt: day(10) },
+      { key: 'acme/app#5', firstReportedAt: day(9) },
+    ]);
   });
 });
 

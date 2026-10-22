@@ -24,7 +24,7 @@ const MILLISECONDS_PER_HOUR = 3_600_000;
 // 창이라 더 짧다.
 const MERGED_PULL_REQUEST_LIMIT = 20;
 
-const DEGRADED_SOURCE_LABEL = {
+export const DEGRADED_SOURCE_LABEL = {
   ASSIGNED: 'GitHub 담당 목록',
   MERGED: 'GitHub 머지 목록',
   ENGAGEMENT: 'GitHub PR 진행 신호',

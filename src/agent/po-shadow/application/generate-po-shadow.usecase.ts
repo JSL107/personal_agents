@@ -19,9 +19,11 @@ import {
   buildFindingRecoveryFacts,
   buildPlanRealityFacts,
   carryForwardPriorFindings,
+  collectSelfAuthoredKeys,
   DEGRADED_PRIOR_REPORT,
   DEGRADED_UNCOMPARABLE,
   extractPriorFindingKeys,
+  FactSource,
   FindingRecoveryResult,
   findNovelFactIds,
   hasPlanRealityMismatch,
@@ -57,7 +59,10 @@ import { parsePoShadowReport } from '../domain/prompt/po-shadow.parser';
 import { PO_SHADOW_OUTPUT_SCHEMA } from '../domain/prompt/po-shadow.schema';
 import { collectStoredFactIds } from '../domain/prompt/po-shadow-report.coercer';
 import { PO_SHADOW_SYSTEM_PROMPT } from '../domain/prompt/po-shadow-system.prompt';
-import { PoShadowContextCollector } from './po-shadow-context.collector';
+import {
+  DEGRADED_SOURCE_LABEL,
+  PoShadowContextCollector,
+} from './po-shadow-context.collector';
 
 const STALENESS_THRESHOLD_MS = 18 * 60 * 60 * 1000;
 // 회수 대상을 찾는 원장 조회 창. 실측(2026-09-10) 상 지적 키의 최장 지속이 17일이라 30일이면
@@ -221,7 +226,11 @@ export class GeneratePoShadowUsecase {
           toReportedFactStates(facts, {
             undeliveredFactIds,
             previousStates: previousReportedFacts,
-            carryPreviousStates: degradedSources.length > 0,
+            degradedFactSources: collectDegradedFactSources({
+              context,
+              recoveryDegradedSources: recovery.degradedSources,
+              goalDegraded: goalCollection.degraded,
+            }),
           });
         if (!needsReview) {
           const report = withGoalCheckIns(
@@ -417,6 +426,7 @@ export class GeneratePoShadowUsecase {
             factIds: run.factIds ?? [],
             endedAt: run.endedAt,
           })),
+          collectSelfAuthoredKeys(context),
         ),
         previousReportedFacts,
       );
@@ -521,6 +531,38 @@ const buildGithubTitleByKey = (context: PoShadowContext): Map<string, string> =>
       ...context.mergedPullRequests,
     ].map((item) => [`${item.repo}#${item.number}`, item.title]),
   );
+
+// 이번 회차에 조회가 실패해 사실을 만들지 못한 출처. 멘션은 id 가 메시지마다 달라 이어 둘 상태가 없다.
+const collectDegradedFactSources = ({
+  context,
+  recoveryDegradedSources,
+  goalDegraded,
+}: {
+  context: PoShadowContext;
+  recoveryDegradedSources: string[];
+  goalDegraded: boolean;
+}): FactSource[] => {
+  const sources: FactSource[] = [];
+  if (context.assignedTasks === null) {
+    sources.push('GITHUB_ASSIGNED');
+  }
+  if (!context.mergedLookupAvailable) {
+    sources.push('GITHUB_MERGED');
+  }
+  if (context.degradedSources.includes(DEGRADED_SOURCE_LABEL.ENGAGEMENT)) {
+    sources.push('PR_ENGAGEMENT');
+  }
+  if (
+    recoveryDegradedSources.includes(DEGRADED_PRIOR_REPORT) ||
+    recoveryDegradedSources.includes(DEGRADED_UNCOMPARABLE)
+  ) {
+    sources.push('PRIOR_REPORT');
+  }
+  if (goalDegraded) {
+    sources.push('PRODUCT_GOAL');
+  }
+  return sources;
+};
 
 interface BuildQuietReportInput {
   facts: PlanRealityFact[];
