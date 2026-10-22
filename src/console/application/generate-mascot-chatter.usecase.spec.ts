@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 
@@ -578,5 +579,82 @@ describe('GenerateMascotChatterUsecase', () => {
     await Promise.all([idle, events, duplicate]);
 
     expect(modelRouter.route).toHaveBeenCalledTimes(2);
+  });
+
+  describe('호출 결과 로그', () => {
+    let log: jest.SpyInstance;
+    let warn: jest.SpyInstance;
+
+    beforeEach(() => {
+      log = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+      warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    });
+
+    afterEach(() => {
+      log.mockRestore();
+      warn.mockRestore();
+    });
+
+    const resultLines = (): string[] =>
+      log.mock.calls
+        .map(([message]) => String(message))
+        .filter((message) => message.startsWith('우사기 한 마디 —'));
+
+    it('성공은 계기와 글자 수를, 실패는 사유를 한 줄 남긴다', async () => {
+      modelRouter.route.mockResolvedValueOnce(
+        completion('{"line":"안녕","suggestionIndex":null}'),
+      );
+      await usecase.execute({ declinedAgentTypes: [], trigger: 'IDLE' });
+      runs.findFinishedRunsSince.mockResolvedValue([]);
+      await usecase.execute({ declinedAgentTypes: [], trigger: 'EVENTS' });
+
+      expect(resultLines()).toEqual([
+        '우사기 한 마디 — 계기 IDLE · 성공 2자',
+        '우사기 한 마디 — 계기 EVENTS · NOTHING_TO_SAY',
+      ]);
+    });
+
+    it('진행 중인 요청을 공유한 호출도 한 줄 남기고, 생성 결과는 한 번만 남긴다', async () => {
+      let releaseCompletion: (value: CompletionResponse) => void = () =>
+        undefined;
+      modelRouter.route.mockReturnValue(
+        new Promise<CompletionResponse>((resolve) => {
+          releaseCompletion = resolve;
+        }),
+      );
+
+      const first = usecase.execute({
+        declinedAgentTypes: [],
+        trigger: 'IDLE',
+      });
+      const shared = usecase.execute({
+        declinedAgentTypes: [],
+        trigger: 'IDLE',
+      });
+      releaseCompletion(completion('{"line":"안녕","suggestionIndex":null}'));
+      await Promise.all([first, shared]);
+
+      expect(resultLines()).toEqual([
+        '우사기 한 마디 — 계기 IDLE · 진행 중인 요청 결과 공유',
+        '우사기 한 마디 — 계기 IDLE · 성공 2자',
+      ]);
+    });
+
+    it('생성이 예외로 끝나면 경고를 남기고 예외를 그대로 던진다', async () => {
+      const failure = new Error('boom');
+      jest
+        .spyOn(
+          usecase as unknown as { generate: () => Promise<unknown> },
+          'generate',
+        )
+        .mockRejectedValueOnce(failure);
+
+      await expect(
+        usecase.execute({ declinedAgentTypes: [], trigger: 'IDLE' }),
+      ).rejects.toBe(failure);
+      expect(warn).toHaveBeenCalledWith(
+        '우사기 한 마디 — 계기 IDLE · 예외 Error: boom',
+      );
+    });
   });
 });

@@ -96,11 +96,29 @@ export class GenerateMascotChatterUsecase {
 
   // 같은 계기의 동시 요청만 공유한다. 다른 계기는 각자의 실행 맥락을 읽어야 한다.
   execute(input: GenerateMascotChatterInput): Promise<MascotChatterResult> {
+    // 호출마다 계기와 결과를 한 줄 남긴다. 없으면 "우사기가 조용하다" 를 두고 모델이 실패했는지, 말할 거리가
+    // 없었는지, 앱이 아예 부르지 않았는지를 가를 수 없다(2026-10-22). 공유된 호출·예외로 끝난 호출도 남긴다.
     const pending = this.inFlight.get(input.trigger);
     if (pending) {
+      this.logger.log(
+        `우사기 한 마디 — 계기 ${input.trigger} · 진행 중인 요청 결과 공유`,
+      );
       return pending;
     }
-    const task = this.generate(input);
+    const task = this.generate(input).then(
+      (result) => {
+        this.logger.log(
+          `우사기 한 마디 — 계기 ${input.trigger} · ${result.reason ?? `성공 ${result.line?.length ?? 0}자`}${result.suggestion ? ' · 제안 있음' : ''}`,
+        );
+        return result;
+      },
+      (error: unknown) => {
+        this.logger.warn(
+          `우사기 한 마디 — 계기 ${input.trigger} · 예외 ${String(error)}`,
+        );
+        throw error;
+      },
+    );
     this.inFlight.set(input.trigger, task);
     const clearInFlight = (): void => {
       if (this.inFlight.get(input.trigger) === task) {
