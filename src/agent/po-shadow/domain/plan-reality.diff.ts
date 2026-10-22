@@ -187,13 +187,8 @@ export const buildPlanRealityFacts = (
     }
     // 본인이 연 항목은 계획 뒤에 본인이 시작한 일이다. 실측(10-13~22) 상 새 계획 밖 항목
     // 16건이 전부 본인 PR 이었다 — 자기 행동을 자기에게 "계획과 다르다" 고 알리지 않는다.
-    // GitHub login 은 대소문자를 가리지 않는다.
-    const selfAuthored =
-      context.ownGithubLogin !== null &&
-      actualItem.authorLogin?.toLowerCase() ===
-        context.ownGithubLogin.toLowerCase();
     facts.push(
-      selfAuthored
+      isSelfAuthored(actualItem, context.ownGithubLogin)
         ? buildSelfAuthoredFact(actualItem)
         : buildUnplannedAssignedFact(actualItem),
     );
@@ -257,14 +252,48 @@ export const findNovelFactIds = (
   );
 };
 
+// 조회가 실패하면 사라지는 사실의 출처. 실패한 출처의 사실만 직전 상태를 이어 둔다 — 출처를 가리지 않고
+// 이어 두면 정상 조회에서 해소된 사실(예: 대기가 풀린 stalled)까지 남아, 같은 상태가 다시 생겨도 새 사실로
+// 잡히지 않는다(#885 리뷰).
+export type FactSource =
+  | 'GITHUB_ASSIGNED'
+  | 'GITHUB_MERGED'
+  | 'PR_ENGAGEMENT'
+  | 'PRIOR_REPORT'
+  | 'PRODUCT_GOAL';
+
+const FINDING_FACT_ID_PREFIXES = [
+  'finding-unmoved',
+  'finding-merged',
+  'finding-abandoned',
+  'finding-unassigned',
+];
+
+// 각 출처가 없으면 만들어지지 않는 사실의 id 접두어. 회수 사실은 담당 목록 없이도 만들지 않는다
+// (buildFindingRecoveryFacts 의 assignedLookupFailed), 목표 기한 위험은 담당 목록의 열린 항목으로 판정한다.
+const FACT_ID_PREFIXES_BY_SOURCE: Record<FactSource, string[]> = {
+  GITHUB_ASSIGNED: [
+    'stalled',
+    'not-found',
+    'unplanned',
+    'self-authored',
+    'goal-deadline',
+    ...FINDING_FACT_ID_PREFIXES,
+  ],
+  GITHUB_MERGED: ['merged', 'not-found'],
+  PR_ENGAGEMENT: ['stalled'],
+  PRIOR_REPORT: FINDING_FACT_ID_PREFIXES,
+  PRODUCT_GOAL: ['goal-deadline', 'goal-unserved'],
+};
+
 interface ToReportedFactStatesOptions {
   // 대표에게 실제로 전달되지 않은 이번 회차의 새 사실. 직전 상태를 그대로 두어 다음 회차에 다시 새 것으로
   // 보이게 한다 — 알리지 못한 지적이 "이미 알림" 으로 묻히지 않게(근거 검증에서 지적이 전부 버려진 회차 등).
   undeliveredFactIds?: Set<string>;
   previousStates?: ReportedFactState[] | null;
-  // 조회가 실패한 회차에만 넘긴다. 그 회차는 실패한 소스의 사실을 만들지 못하는데, 빈자리를 그대로
-  // 저장하면 다음 회차에 같은 사실이 전부 새 것으로 보여 한꺼번에 다시 켜지고 미이동 나이도 끊긴다.
-  carryPreviousStates?: boolean;
+  // 이번 회차에 조회가 실패한 출처. 그 출처의 사실은 만들어지지 못했는데, 빈자리를 그대로 저장하면
+  // 다음 회차에 같은 사실이 전부 새 것으로 보여 한꺼번에 다시 켜지고 미이동 나이도 끊긴다.
+  degradedFactSources?: FactSource[];
 }
 
 export const toReportedFactStates = (
@@ -272,7 +301,7 @@ export const toReportedFactStates = (
   {
     undeliveredFactIds = new Set(),
     previousStates = null,
-    carryPreviousStates = false,
+    degradedFactSources = [],
   }: ToReportedFactStatesOptions = {},
 ): ReportedFactState[] => {
   const previousById = new Map(
@@ -285,13 +314,20 @@ export const toReportedFactStates = (
     }
     return [toReportedFactState(fact)];
   });
-  if (!carryPreviousStates) {
+  const carriedPrefixes = new Set(
+    degradedFactSources.flatMap((source) => FACT_ID_PREFIXES_BY_SOURCE[source]),
+  );
+  if (carriedPrefixes.size === 0) {
     return current;
   }
   const currentIds = new Set(facts.map((fact) => fact.id));
   return [
     ...current,
-    ...(previousStates ?? []).filter((state) => !currentIds.has(state.id)),
+    ...(previousStates ?? []).filter(
+      (state) =>
+        !currentIds.has(state.id) &&
+        carriedPrefixes.has(state.id.slice(0, state.id.indexOf(':'))),
+    ),
   ];
 };
 
@@ -366,14 +402,22 @@ export const carryForwardPriorFindings = (
 // 회수 대상 키를 직전 회차들의 지적에서 뽑는다. 같은 키는 **가장 처음** 지적한 회차만 남긴다.
 // 접두어 판별만으로 충분하다 — 실측상 not-found 도 정규형 owner/repo#N 이고,
 // unverifiable 은 전부 rollover:N 이라 GitHub 항목이 아니다.
+//
+// `selfAuthoredKeys` 는 본인이 연 항목이다. 그 항목을 "계획 밖" 으로 인용한 지적(`unplanned:`)은 이제
+// 지적이 아니므로 회수하지 않는다 — 배포 전에 인용된 것이 미이동으로 다시 검토를 켜지 않게(#885 리뷰).
+// 같은 항목이라도 대기(`stalled:`) 등 다른 이유로 인용됐으면 그대로 추적한다.
 export const extractPriorFindingKeys = (
   runs: { factIds: string[]; endedAt: Date }[],
+  selfAuthoredKeys: Set<string> = new Set(),
 ): PriorFinding[] => {
   const firstSeen = new Map<string, Date>();
   for (const run of runs) {
     for (const factId of run.factIds) {
       const key = toComparableKey(factId);
       if (key === null) {
+        continue;
+      }
+      if (factId.startsWith('unplanned:') && selfAuthoredKeys.has(key)) {
         continue;
       }
       const known = firstSeen.get(key);
@@ -432,6 +476,23 @@ const collectActualGithubItems = (
   }
   return [...uniqueItems.values()];
 };
+
+// GitHub login 은 대소문자를 가리지 않는다. 본인 login 을 모르면 판별하지 않는다.
+const isSelfAuthored = (
+  item: ActualGithubItem,
+  ownGithubLogin: string | null,
+): boolean =>
+  ownGithubLogin !== null &&
+  item.authorLogin?.toLowerCase() === ownGithubLogin.toLowerCase();
+
+export const collectSelfAuthoredKeys = (
+  context: PoShadowContext,
+): Set<string> =>
+  new Set(
+    collectActualGithubItems(context)
+      .filter((item) => isSelfAuthored(item, context.ownGithubLogin))
+      .map((item) => item.key),
+  );
 
 const buildActualIssue = (issue: GithubIssue): ActualGithubItem => ({
   key: `${issue.repo}#${issue.number}`,

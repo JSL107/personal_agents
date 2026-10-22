@@ -799,6 +799,50 @@ describe('GeneratePoShadowUsecase', () => {
       ]);
     });
 
+    it('담당 목록 조회가 실패한 회차는 그 목록에서 나오는 직전 상태를 이어 둔다', async () => {
+      contextCollectorCollect.mockResolvedValue({
+        ...mismatchContext(),
+        assignedTasks: null,
+        degradedSources: ['GitHub 담당 목록'],
+      });
+
+      const result = await usecase.execute({
+        extraContext: '',
+        slackUserId: 'U1',
+      });
+
+      expect(result.result.reportedFacts).toContainEqual({ id: STALLED_ID });
+    });
+
+    it('PR 진행 신호만 실패해도 대기 사실은 이어 두되, 목표 조회만 실패하면 이어 두지 않는다', async () => {
+      contextCollectorCollect.mockResolvedValue({
+        ...mismatchContext(),
+        waitingItems: [],
+        degradedSources: ['GitHub PR 진행 신호'],
+      });
+      const engagementDown = await usecase.execute({
+        extraContext: '',
+        slackUserId: 'U1',
+      });
+
+      contextCollectorCollect.mockResolvedValue({
+        ...mismatchContext(),
+        waitingItems: [],
+      });
+      goalFindActive.mockRejectedValue(new Error('goal db down'));
+      const goalDown = await usecase.execute({
+        extraContext: '',
+        slackUserId: 'U1',
+      });
+
+      expect(engagementDown.result.reportedFacts).toContainEqual({
+        id: STALLED_ID,
+      });
+      expect(goalDown.result.reportedFacts).not.toContainEqual({
+        id: STALLED_ID,
+      });
+    });
+
     it('직전 상태 조회가 실패하면 모든 사실을 새 것으로 보고 검토한다', async () => {
       agentRunServiceFindLatest.mockImplementation(
         async ({ agentType }: { agentType: AgentType }) => {
