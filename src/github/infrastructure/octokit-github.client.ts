@@ -1274,6 +1274,7 @@ export class OctokitGithubClient implements GithubClientPort {
       labels: extractLabels(item.labels),
       updatedAt: item.updated_at,
       body: item.body ?? undefined,
+      ...(item.user?.login ? { authorLogin: item.user.login } : {}),
     };
   }
 
@@ -1287,6 +1288,7 @@ export class OctokitGithubClient implements GithubClientPort {
       updatedAt: item.updated_at,
       requestedReviewers: [],
       isApproved: false, // listMyAssignedTasks 가 reviews 조회 후 덮어씀.
+      ...(item.user?.login ? { authorLogin: item.user.login } : {}),
     };
   }
 }
@@ -1366,6 +1368,7 @@ type SearchItem = {
   draft?: boolean;
   pull_request?: unknown;
   labels?: Array<{ name?: string } | string>;
+  user?: { login?: string } | null;
 };
 
 const extractRepo = (repositoryUrl: string): string => {

@@ -6,6 +6,8 @@ export interface GithubIssue {
   labels: string[];
   updatedAt: string; // ISO 8601
   body?: string;
+  // 작성자 login. 검색 결과에서만 채운다 — 정오 PO 가 "본인이 연 항목" 을 계획 밖 지적에서 가른다.
+  authorLogin?: string;
 }
 
 export interface GithubPullRequest {
@@ -19,6 +21,8 @@ export interface GithubPullRequest {
   // 리뷰가 끝나 머지만 남은 PR 표식. reviewer 별 최신 review 가 APPROVED 인 경우 true.
   // Morning Briefing 에서는 제외하고, 수동 /today 에서는 LLM 후순위 판단용 라벨로 노출한다.
   isApproved: boolean;
+  // GithubIssue.authorLogin 과 같다.
+  authorLogin?: string;
 }
 
 export interface AssignedTasks {
