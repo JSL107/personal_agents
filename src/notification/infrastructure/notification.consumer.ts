@@ -7,7 +7,10 @@ import { Job } from 'bullmq';
 import { ObservedWorkerHost } from '../../common/queue/observed-worker-host';
 import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
 import { PrismaService } from '../../prisma/prisma.service';
-import { DeliveryKind } from '../../slack/domain/slack-delivery.type';
+import {
+  DeliveryKind,
+  SLACK_DELIVERY_SUPPRESS_REASON,
+} from '../../slack/domain/slack-delivery.type';
 import { SlackService } from '../../slack/slack.service';
 import { NotificationPublisher } from '../application/notification-publisher.service';
 import {
@@ -312,28 +315,31 @@ export class NotificationConsumer
       }
       return;
     }
+    // 해결은 DM 으로 보내지 않는다 — 다음 아침 브리핑이 `resolvedAt` 을 읽어 "✅ 해결" 한 줄로
+    // 싣는다(평일 6통 목표, 2026-10-22 사용자 결정). 고친 뒤에 오는 알림은 할 일이 아니라서
+    // 따로 울릴 이유가 없다. 원장에는 전문을 남겨 콘솔에서 볼 수 있게 한다. 기록 실패가 해결을
+    // 막으면 사건이 열린 채로 남아 아침마다 "장애" 로 뜨므로, 실패는 로그만 남기고 닫는다.
     const ownerId = this.ownerId(key);
     if (!ownerId) {
       this.logger.warn(
-        `해결 알림 owner 미설정 — 사건을 조용히 닫습니다. key=${key}`,
+        `해결 기록 owner 미설정 — 사건을 조용히 닫습니다. key=${key}`,
       );
     } else {
       const kind: DeliveryKind =
         key === CLAUDE_AUTH_INCIDENT_KEY
           ? 'alert:claude-auth'
           : 'alert:cron-failure';
-      const sent = await this.sendOrLog(
-        {
-          key,
-          label: incident.label,
-          ownerId,
+      try {
+        await this.slackService.recordSuppressedDelivery({
           kind,
-          errorMessage: incident.lastError,
-        },
-        this.resolveText(incident, now),
-      );
-      if (!sent) {
-        return;
+          target: ownerId,
+          text: this.resolveText(incident, now),
+          reason: SLACK_DELIVERY_SUPPRESS_REASON.CONSOLE_ROUTE,
+        });
+      } catch (error: unknown) {
+        this.logger.warn(
+          `해결 원장 기록 실패 — 사건은 닫는다 (key=${key}): ${String(error)}`,
+        );
       }
     }
     try {
@@ -352,7 +358,7 @@ export class NotificationConsumer
     const lines = [
       `⚠️ *고장 발생* — ${alert.label}`,
       `오류: ${alert.errorMessage.slice(0, 1500)}`,
-      '_같은 고장이 이어지는 동안은 하루 1번만 다시 알립니다. 정상으로 돌면 해결 알림을 보냅니다._',
+      '_같은 고장이 이어지는 동안은 하루 1번만 다시 알립니다. 정상으로 돌면 다음 아침 브리핑에 해결로 적습니다._',
     ];
     if (expiredPrevious) {
       lines.push(

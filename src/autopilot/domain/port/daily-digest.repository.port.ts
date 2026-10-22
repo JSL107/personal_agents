@@ -27,6 +27,15 @@ export interface DailyDigestRepositoryPort {
   // 아직 닫히지 않은 사건. `seenSince` 이후 다시 실패한 것만 — 해결 신호가 영영 오지 않는
   // 사건(폐지된 task 등)이 매일 아침 "N일째" 로 남는 것을 막는다.
   findOpenIncidents(input: { seenSince: Date }): Promise<OpenIncidentRow[]>;
+  // `since` 이후 닫힌 사건의 이름(원장 label 그대로). 해결 DM 대신 아침 한 줄로 알리는 재료다.
+  findResolvedIncidentLabels(input: { since: Date }): Promise<string[]>;
+  // 그 시각 이후 그 대상에 나간 그 종류의 첫 본문 메시지 ts. 다른 그룹을 이 메시지의 댓글로
+  // 달 때 쓴다(autopilot.orchestrator 의 THREAD_UNDER_GROUP). 없으면 null.
+  findFirstTopLevelMessageTs(input: {
+    kind: string;
+    target: string;
+    since: Date;
+  }): Promise<string | null>;
   // 그 시각 이후 만든 가장 최근 공부 브리프.
   findLatestStudyBrief(input: {
     ownerUserId: string;
