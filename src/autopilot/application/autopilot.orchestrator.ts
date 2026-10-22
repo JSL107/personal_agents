@@ -29,6 +29,10 @@ import {
   AutopilotTaskResult,
 } from '../domain/autopilot-task.port';
 import { PlaybookEntry } from '../domain/playbook.type';
+import {
+  DAILY_DIGEST_REPOSITORY_PORT,
+  DailyDigestRepositoryPort,
+} from '../domain/port/daily-digest.repository.port';
 
 // autopilot preview(저녁 회고→블로그/경력 발행 후보 등)는 하루 1회 cron 발화라, 당일 승인을
 // 놓쳐도 다음 발화 직전까지 유효하도록 24h. (기존 1h 는 저녁 카드를 자주 EXPIRED 로 흘려보냄)
@@ -78,6 +82,15 @@ export const NOTIFY_OWNER_TASK_IDS: ReadonlySet<string> = new Set([
   'paper-intraday-stop',
 ]);
 
+// 채널 본문으로 따로 내지 않고 그날 다른 그룹 본문의 댓글로 다는 그룹 — 키: 이 그룹, 값: 부모 그룹.
+// 평일 채널 메시지 6통 목표(2026-10-22 사용자 결정): 정오 PO 검토는 매일 나가 하루 1통을 고정으로
+// 차지했다. 그날 아침 메시지 아래에 달아 "오늘 계획 → 오전 결과" 를 한 스레드에서 보게 한다.
+// 부모 본문을 못 찾으면(아침 발송 실패·조회 실패) 종전대로 채널 본문으로 낸다 — 유실보다 1통이 낫다.
+// NOTIFY_OWNER_TASK_IDS 와 같은 이유로 playbook 이 아니라 여기 둔다(task 성격이 아니라 발송 정책).
+export const THREAD_UNDER_GROUP: Readonly<Record<string, string>> = {
+  noon: 'morning',
+};
+
 const withOwnerMention = (
   text: string,
   target: string,
@@ -111,6 +124,10 @@ export class AutopilotOrchestrator {
     private readonly previewRepository: PreviewActionRepositoryPort,
     @Optional()
     private readonly notificationPublisher?: NotificationPublisher,
+    // THREAD_UNDER_GROUP 의 부모 본문 조회 전용. 없으면 모든 그룹이 채널 본문으로 나간다.
+    @Optional()
+    @Inject(DAILY_DIGEST_REPOSITORY_PORT)
+    private readonly digestRepository?: DailyDigestRepositoryPort,
   ) {
     this.tasks = new Map(tasks.map((task) => [task.id, task]));
   }
@@ -393,6 +410,10 @@ export class AutopilotOrchestrator {
     // job-feed 는 후처리가 알림 표식을 찍으므로 그 공고들이 영영 다시 안 뜬다. 상세를 못 보낸
     // task 는 후처리를 건너뛰고 다음 회차에 다시 보낸다(중복 > 유실, onDelivered 계약과 동일).
     const detailUndelivered = new Set<number>();
+    // 승인 카드를 달 스레드(대상별). 평일 채널 메시지 6통 목표(2026-10-22 사용자 결정)로 저녁 카드
+    // 2~3장을 따로 내지 않고 그 회차 본문의 댓글로 단다. 본문이 없거나 ts 를 못 받은 대상은 종전대로
+    // 채널에 낸다. 카드 갱신(chat.update)은 좌표만 쓰므로 댓글이어도 그대로 동작한다.
+    const cardThreadTsByTarget = new Map<string, string>();
 
     await this.recordEmptyItems(groupKey, targets, emptyItems);
 
@@ -442,9 +463,13 @@ export class AutopilotOrchestrator {
           items.length === 1 && items[0].headline && items[0].image
             ? items[0]
             : undefined;
-        const joinedSummary = items
-          .map((item) => item.summary)
-          .join('\n\n────────\n\n');
+        // 승인 카드는 이 본문의 댓글로 달린다(아래 카드 루프) — 본문만 보고도 있는 줄 알게 한 줄 붙인다.
+        const joinedSummary = [
+          items.map((item) => item.summary).join('\n\n────────\n\n'),
+          ...(previews.length > 0
+            ? [`✋ 승인 카드 ${previews.length}장 — 이 메시지 댓글에 있습니다`]
+            : []),
+        ].join('\n\n');
         // 요약이 한 메시지로 합쳐지므로 미리보기 설정도 메시지 단위다. 한 항목이라도
         // 끄기를 요청하면 끈다 — 켜 두면 그 항목의 링크가 미리보기로 펼쳐져, 정작
         // 끄려던 이유(요약이 미리보기에 파묻힘)가 그대로 남는다.
@@ -466,6 +491,11 @@ export class AutopilotOrchestrator {
           // 업로드나 이미지 처리 대기가 실패하면 `mainImage` 가 비고, 그 target 의
           // 발송만 종전 배치(요약이 메인, 그림이 스레드)로 돌아간다. 그림 하나 때문에
           // 그날 수익률 보고를 잃지 않게 하는 갈림길이다.
+          const parentTs = await this.findParentThreadTs(
+            groupKey,
+            resolved,
+            firedAtKst,
+          );
           let mainImage: { fileId: string; altText: string } | undefined;
           if (imageFirstItem?.image) {
             try {
@@ -504,6 +534,7 @@ export class AutopilotOrchestrator {
                 : text,
               ...(unfurlLinks === false ? { unfurlLinks: false } : {}),
               ...(image ? { image } : {}),
+              ...(parentTs ? { threadTs: parentTs } : {}),
             });
           };
 
@@ -529,6 +560,10 @@ export class AutopilotOrchestrator {
             ({ ts } = await postMain(undefined));
           }
           if (ts) {
+            // 본문이 부모 그룹의 댓글로 나갔으면 이 회차의 버튼·상세·카드도 같은 스레드에 단다.
+            // 댓글의 ts 를 thread_ts 로 쓰면 슬랙이 스레드를 하나 더 열지 않으므로 부모 ts 를 쓴다.
+            const threadRootTs = parentTs ?? ts;
+            cardThreadTsByTarget.set(resolved, threadRootTs);
             // 판정 버튼은 스레드 첫 댓글로 둔다. 상세 뒤에 두면 앞선 task 의 상세가 몇 화면을
             // 차지해 버튼이 스레드 맨 아래에 묻힌다(2026-10-01 실측). 판정할 문장은 댓글 머리에
             // 인용으로 실려 있어 위로 되짚지 않아도 된다. 실패해도 요약은 이미 나갔으니 무르지
@@ -542,7 +577,7 @@ export class AutopilotOrchestrator {
                     itemKinds: [item.taskId],
                     target: resolved,
                     text: buildRunVerdictFallbackText(runVerdict.facets),
-                    threadTs: ts,
+                    threadTs: threadRootTs,
                     runVerdict,
                   });
                 } catch (error: unknown) {
@@ -584,7 +619,7 @@ export class AutopilotOrchestrator {
                     itemKinds: [item.taskId],
                     target: resolved,
                     text: threadText,
-                    threadTs: ts,
+                    threadTs: threadRootTs,
                     // 미리보기 설정은 스레드 댓글에도 걸어야 한다 — 링크를 여럿 싣는
                     // 목록형 카드(job-feed)는 그 링크가 detail 에 있으므로, 메인에만
                     // 걸면 정작 링크가 있는 쪽에서 미리보기가 그대로 펼쳐진다.
@@ -635,7 +670,7 @@ export class AutopilotOrchestrator {
                 try {
                   await this.slackNotifier.uploadTextFile({
                     target: resolved,
-                    threadTs: ts,
+                    threadTs: threadRootTs,
                     content: item.file.content,
                     filename: item.file.filename,
                     title: item.file.title,
@@ -654,7 +689,7 @@ export class AutopilotOrchestrator {
                 try {
                   await this.slackNotifier.uploadImage({
                     target: resolved,
-                    threadTs: ts,
+                    threadTs: threadRootTs,
                     png: item.image.png,
                     filename: item.image.filename,
                     title: item.image.title,
@@ -808,6 +843,7 @@ export class AutopilotOrchestrator {
           const { channelId, messageTs } =
             await this.slackNotifier.postPreviewMessage({
               target: resolved,
+              threadTs: cardThreadTsByTarget.get(resolved),
               // 방금 만든 카드 그대로 — id 는 저장된 것, 나머지는 task 가 만든 것.
               preview: {
                 id: created.id,
@@ -845,6 +881,34 @@ export class AutopilotOrchestrator {
     this.logger.log(
       `Autopilot[${groupKey}] — 발송 완료 ${targets.length}건 (${entries.length} task, preview ${previews.length})`,
     );
+  }
+
+  // THREAD_UNDER_GROUP 대상이면 그날 부모 그룹 본문의 ts. 조회가 실패하면 undefined — 채널 본문으로
+  // 내보내는 쪽이 안전하다(여기서 던지면 멱등 가드 롤백·재시도로 같은 회차가 반복된다).
+  private async findParentThreadTs(
+    groupKey: string,
+    target: string,
+    firedAtKst: string,
+  ): Promise<string | undefined> {
+    const parentGroupKey = THREAD_UNDER_GROUP[groupKey];
+    if (!parentGroupKey || !this.digestRepository) {
+      return undefined;
+    }
+    try {
+      const found = await this.digestRepository.findFirstTopLevelMessageTs({
+        kind: `autopilot:${parentGroupKey}`,
+        target,
+        since: new Date(`${firedAtKst}T00:00:00+09:00`),
+      });
+      return found ?? undefined;
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Autopilot[${groupKey}] 부모 본문(${parentGroupKey}) 조회 실패 — 채널 본문으로 발송: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return undefined;
+    }
   }
 
   // 이 슬롯 완주 표식 — stalled 재큐가 다시 들어와도 진입부에서 끊기게 한다.

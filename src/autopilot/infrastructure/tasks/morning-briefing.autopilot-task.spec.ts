@@ -47,6 +47,7 @@ const listSchedulesUsecase = () =>
 // 계획 전문만 보는 테스트가 그대로 돈다.
 const emptyDigestRepository = () => ({
   findOpenIncidents: jest.fn().mockResolvedValue([]),
+  findResolvedIncidentLabels: jest.fn().mockResolvedValue([]),
   findLatestStudyBrief: jest.fn().mockResolvedValue(null),
   findLatestConsoleText: jest.fn().mockResolvedValue(null),
   countDuePaperOrders: jest
@@ -775,7 +776,7 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
 
     expect(out.summaryText).toBe(
       [
-        '☀️ *6/17(수) 아침* — 할 일 5 (승인 3 · 장애 1 · 공고 1)',
+        '☀️ *6/17(수) 아침* — 🔴 장애: 모의투자 추천 실패 · ✋ 승인 3 · 공고 1',
         '',
         '*할 일*',
         '• *승인 대기 3장* — 블로그 후보 · 경력 반영 · GitHub 발행',
@@ -890,7 +891,7 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
     const out = await task.run(CTX);
 
     // 첫 줄만 보고 판단하는 메시지라 수집 정지는 할 일(장애)로 세어 첫 줄에 드러난다.
-    expect(out.summaryText).toContain('아침* — 장애 1');
+    expect(out.summaryText).toContain('아침* — 🔴 장애: 공고 수집 멈춤');
     expect(out.summaryText).toContain(
       '🔴 *장애* — 공고 수집 멈춤 — 마지막 수집',
     );
@@ -952,6 +953,37 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
       '*회사 1순위* — &lt;!channel&gt; 확인 &amp; 배포',
     );
     expect(out.summaryText).toContain('🔴 *장애* — task &lt;x&gt; · 1일째');
+  });
+
+  it('지난 24시간에 닫힌 사건을 해결 줄로 싣는다 — 해결 DM 대신이다', async () => {
+    const digestRepository = {
+      ...emptyDigestRepository(),
+      findResolvedIncidentLabels: jest
+        .fn()
+        .mockResolvedValue([
+          'Autopilot task blog-github-publish',
+          'Study Brief Cron',
+        ]),
+    };
+    const task = buildTask(
+      generateDailyPlan(),
+      humanize(),
+      emptyStockRepository(),
+      listSchedulesUsecase(),
+      { digestRepository },
+    );
+
+    const out = await task.run(CTX);
+
+    // 해결 줄에서는 "… 실패" 를 뗀다 — "해결 — 블로그 GitHub 발행 실패" 로 읽히지 않게.
+    expect(out.summaryText).toContain(
+      '• ✅ *해결* — 블로그 GitHub 발행 · Study Brief Cron',
+    );
+    const { since } = digestRepository.findResolvedIncidentLabels.mock
+      .calls[0][0] as { since: Date };
+    expect(Date.now() - since.getTime()).toBeGreaterThanOrEqual(
+      24 * 60 * 60 * 1000,
+    );
   });
 
   it('이름표가 없는 Autopilot task 는 접두어만 떼고 task id 를 그대로 싣는다', async () => {
@@ -1044,7 +1076,7 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
 
     expect(out.skip).toBe(false);
     expect(out.summaryText?.split('\n')[0]).toBe(
-      '☀️ *6/17(수) 아침* — 할 일 2 (승인 1 · 장애 1)',
+      '☀️ *6/17(수) 아침* — 🔴 장애: 오늘 계획 생성 실패 — codex quota · ✋ 승인 1',
     );
     expect(out.summaryText).toContain(
       '🔴 *장애* — 오늘 계획 생성 실패 — codex quota',

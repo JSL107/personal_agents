@@ -7,6 +7,7 @@ import {
   AutopilotAllTasksFailedError,
   AutopilotOrchestrator,
   NOTIFY_OWNER_TASK_IDS,
+  THREAD_UNDER_GROUP,
 } from './autopilot.orchestrator';
 
 const T0_ENTRY: PlaybookEntry = {
@@ -40,6 +41,203 @@ describe('AutopilotOrchestrator', () => {
       (taskId) => !playbookTaskIds.has(taskId),
     );
     expect(missing).toEqual([]);
+  });
+
+  describe('채널 통수 줄이기 — 다른 본문의 댓글로 단다', () => {
+    const okGuard = () =>
+      ({
+        acquireOnce: jest.fn().mockResolvedValue(true),
+        isDone: jest.fn().mockResolvedValue(false),
+      }) as never;
+
+    // 그룹 키가 바뀌면 대조 없이 조용히 채널 본문으로 돌아간다(멘션 목록과 같은 위험).
+    it('댓글 대상 그룹·부모 그룹은 모두 playbook 의 digestGroup 에 실재한다', () => {
+      const groups = new Set(
+        AUTOPILOT_PLAYBOOK.map((entry) => entry.digestGroup).filter(Boolean),
+      );
+      for (const [child, parent] of Object.entries(THREAD_UNDER_GROUP)) {
+        expect(groups).toContain(child);
+        expect(groups).toContain(parent);
+      }
+    });
+
+    it('정오 그룹은 그날 아침 본문의 댓글로 나가고, 판정 버튼·상세도 같은 스레드에 단다', async () => {
+      const task = makeTask('po-shadow', {
+        skip: false,
+        summaryText: 'PO',
+        detailText: 'PO_DETAIL',
+        runVerdicts: [{ agentRunId: 9, facets: ['po_first_action'] }],
+      });
+      const postMessage = jest.fn().mockResolvedValue({ ts: 'REPLY_TS' });
+      const findFirstTopLevelMessageTs = jest
+        .fn()
+        .mockResolvedValue('MORNING_TS');
+      const orchestrator = new AutopilotOrchestrator(
+        [task] as never,
+        { postMessage } as never,
+        okGuard(),
+        { execute: jest.fn() } as never,
+        { attachSlackMessage: jest.fn() } as never,
+        undefined,
+        { findFirstTopLevelMessageTs } as never,
+      );
+
+      await orchestrator.runGroup(
+        'noon',
+        [makeEntry('po-shadow', 'po-shadow')],
+        'U1',
+        'C1',
+      );
+
+      const firedAtKst = getTodayKstDate();
+      expect(findFirstTopLevelMessageTs).toHaveBeenCalledWith({
+        kind: 'autopilot:morning',
+        target: 'C1',
+        since: new Date(`${firedAtKst}T00:00:00+09:00`),
+      });
+      // 본문·버튼·상세 모두 아침 스레드 — 댓글의 ts(REPLY_TS)로 스레드를 새로 열지 않는다.
+      expect(postMessage).toHaveBeenCalledTimes(3);
+      for (const [input] of postMessage.mock.calls) {
+        expect(input.threadTs).toBe('MORNING_TS');
+      }
+      expect(postMessage.mock.calls[0][0].text).toBe('PO');
+    });
+
+    it('아침 본문을 못 찾거나 조회가 실패하면 종전대로 채널 본문으로 낸다', async () => {
+      for (const lookup of [
+        jest.fn().mockResolvedValue(null),
+        jest.fn().mockRejectedValue(new Error('db down')),
+      ]) {
+        const task = makeTask('po-shadow', { skip: false, summaryText: 'PO' });
+        const postMessage = jest.fn().mockResolvedValue({ ts: 'TS1' });
+        const orchestrator = new AutopilotOrchestrator(
+          [task] as never,
+          { postMessage } as never,
+          okGuard(),
+          { execute: jest.fn() } as never,
+          { attachSlackMessage: jest.fn() } as never,
+          undefined,
+          { findFirstTopLevelMessageTs: lookup } as never,
+        );
+
+        await orchestrator.runGroup(
+          'noon',
+          [makeEntry('po-shadow', 'po-shadow')],
+          'U1',
+          'C1',
+        );
+
+        expect(postMessage).toHaveBeenCalledTimes(1);
+        expect(postMessage.mock.calls[0][0].threadTs).toBeUndefined();
+      }
+    });
+
+    it('다른 그룹은 부모 본문을 찾지 않는다', async () => {
+      const task = makeTask('weekly-summary', {
+        skip: false,
+        summaryText: 'E',
+      });
+      const findFirstTopLevelMessageTs = jest.fn();
+      const postMessage = jest.fn().mockResolvedValue({ ts: 'TS1' });
+      const orchestrator = new AutopilotOrchestrator(
+        [task] as never,
+        { postMessage } as never,
+        okGuard(),
+        { execute: jest.fn() } as never,
+        { attachSlackMessage: jest.fn() } as never,
+        undefined,
+        { findFirstTopLevelMessageTs } as never,
+      );
+
+      await orchestrator.runGroup('evening', [T0_ENTRY], 'U1', 'C1');
+
+      expect(findFirstTopLevelMessageTs).not.toHaveBeenCalled();
+      expect(postMessage.mock.calls[0][0].threadTs).toBeUndefined();
+    });
+
+    it('승인 카드는 그 회차 본문의 댓글로 달고, 본문에 카드가 있다는 줄을 붙인다', async () => {
+      const task = makeTask('evening-retro-publish', {
+        skip: false,
+        summaryText: '마감',
+        previews: [
+          {
+            kind: PREVIEW_KIND.EVENING_BLOG_PUBLISH,
+            payload: { pageId: 'p1' },
+            previewText: '블로그',
+          },
+          {
+            kind: PREVIEW_KIND.BLOG_GITHUB_PUBLISH,
+            payload: { pageId: 'p2' },
+            previewText: 'GitHub',
+          },
+        ],
+      });
+      const postMessage = jest.fn().mockResolvedValue({ ts: 'EVENING_TS' });
+      const postPreviewMessage = jest
+        .fn()
+        .mockResolvedValue({ channelId: 'C1', messageTs: 'CARD_TS' });
+      const attachSlackMessage = jest.fn();
+      const orchestrator = new AutopilotOrchestrator(
+        [task] as never,
+        { postMessage, postPreviewMessage } as never,
+        okGuard(),
+        { execute: jest.fn().mockResolvedValue({ id: 'pa1' }) } as never,
+        { attachSlackMessage } as never,
+      );
+
+      await orchestrator.runGroup(
+        'evening',
+        [makeEntry('evening-retro-publish', 'evening-retro-publish')],
+        'U1',
+        'C1',
+      );
+
+      expect(postMessage.mock.calls[0][0].text).toBe(
+        '마감\n\n✋ 승인 카드 2장 — 이 메시지 댓글에 있습니다',
+      );
+      expect(postPreviewMessage).toHaveBeenCalledTimes(2);
+      for (const [input] of postPreviewMessage.mock.calls) {
+        expect(input).toMatchObject({ target: 'C1', threadTs: 'EVENING_TS' });
+      }
+      // 카드 갱신 좌표는 댓글 메시지 그대로 저장된다(chat.update 는 댓글에도 동작).
+      expect(attachSlackMessage).toHaveBeenCalledWith({
+        id: 'pa1',
+        slackChannelId: 'C1',
+        slackMessageTs: 'CARD_TS',
+      });
+    });
+
+    it('본문 없이 카드만 낸 회차는 종전대로 채널에 카드를 낸다', async () => {
+      const task = makeTask('preference-learning', {
+        skip: true,
+        preview: {
+          kind: PREVIEW_KIND.EVENING_BLOG_PUBLISH,
+          payload: { pageId: 'p1' },
+          previewText: '카드',
+        },
+      });
+      const postMessage = jest.fn();
+      const postPreviewMessage = jest
+        .fn()
+        .mockResolvedValue({ channelId: 'C1', messageTs: '1.1' });
+      const orchestrator = new AutopilotOrchestrator(
+        [task] as never,
+        { postMessage, postPreviewMessage } as never,
+        okGuard(),
+        { execute: jest.fn().mockResolvedValue({ id: 'pa1' }) } as never,
+        { attachSlackMessage: jest.fn() } as never,
+      );
+
+      await orchestrator.runGroup(
+        'preference-learning',
+        [makeEntry('preference-learning', 'preference-learning')],
+        'U1',
+        'C1',
+      );
+
+      expect(postMessage).not.toHaveBeenCalled();
+      expect(postPreviewMessage.mock.calls[0][0].threadTs).toBeUndefined();
+    });
   });
 
   it('단일 항목 그룹 정상 → 1 task 실행, 1 발송', async () => {
@@ -2658,7 +2856,10 @@ describe('AutopilotOrchestrator', () => {
     await orchestrator.runGroup('evening', [T0_ENTRY], 'U1', ', ,');
 
     expect(postMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ target: 'U1', text: '본문' }),
+      expect.objectContaining({
+        target: 'U1',
+        text: expect.stringContaining('본문'),
+      }),
     );
     expect(postPreviewMessage).toHaveBeenCalledWith(
       expect.objectContaining({ target: 'U1' }),

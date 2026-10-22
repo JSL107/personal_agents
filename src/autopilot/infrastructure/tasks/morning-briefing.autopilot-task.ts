@@ -172,6 +172,10 @@ const toIncidentLabel = (label: string): string => {
   return `${TASK_DISPLAY_NAME[taskId] ?? taskId} 실패`;
 };
 
+// "해결 — 블로그 GitHub 발행 실패" 처럼 읽히지 않게 해결 줄에서는 " 실패" 를 뗀다.
+const toResolvedLabel = (label: string): string =>
+  toIncidentLabel(label).replace(/ 실패$/, '');
+
 // KST 달력일(YYYY-MM-DD). Date 를 넘기므로 formatKstDate 의 파싱 실패 분기(null)는 오지 않는다.
 const getKstDateOf = (date: Date): string =>
   formatKstDate(date.toISOString()) ?? date.toISOString().slice(0, 10);
@@ -277,6 +281,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
       study,
       portfolio,
       ledgerGapIncidents,
+      resolvedIncidents,
     ] = await Promise.all([
       this.loadApprovalLabels(ownerSlackUserId, now),
       this.loadIncidents(now),
@@ -291,6 +296,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
       ),
       this.loadPortfolio(now),
       this.loadLedgerGapIncidents(firedAtKst),
+      this.loadResolvedIncidents(now),
     ]);
 
     // 그날 회차에서 감지한 문제도 장애로 센다 — 첫 줄만 보고 열지 정하는 메시지라, 아래 줄에만
@@ -314,6 +320,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
       firedAtKst,
       approvalLabels,
       incidents: [...incidents, ...detectedIncidents],
+      resolvedIncidents,
       postings: posting.postings,
       invest,
       company: plan.company
@@ -428,6 +435,21 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
       }));
     } catch (error: unknown) {
       this.logger.warn(`열린 장애 조회 실패 — 줄 생략: ${String(error)}`);
+      return [];
+    }
+  }
+
+  // 해결 알림은 DM 으로 나가지 않는다(notification.consumer) — 지난 24시간에 닫힌 사건을 여기서 한 줄로 알린다.
+  // ponytail: 창을 "직전 아침 발송 이후" 가 아니라 24시간으로 잡았다. 아침이 늦게 나간 날은 경계 근처의
+  // 해결이 두 번 또는 0번 실릴 수 있다 — 문제가 되면 직전 회차의 발송 시각을 기준으로 바꾼다.
+  private async loadResolvedIncidents(now: Date): Promise<string[]> {
+    try {
+      const labels = await this.digestRepository.findResolvedIncidentLabels({
+        since: new Date(now.getTime() - DAY_MS),
+      });
+      return labels.map(toResolvedLabel);
+    } catch (error: unknown) {
+      this.logger.warn(`해결된 장애 조회 실패 — 줄 생략: ${String(error)}`);
       return [];
     }
   }
