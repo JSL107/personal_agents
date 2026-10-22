@@ -570,7 +570,7 @@ describe('MorningBriefingAutopilotTask', () => {
 
       const out = await task.run(CTX);
 
-      expect(out.detailText).toContain('📌 마감 —');
+      expect(out.detailText).toContain('📌 *마감 1건*');
       expect(out.detailText).toContain('자동차세');
     });
 
@@ -643,7 +643,7 @@ describe('MorningBriefingAutopilotTask', () => {
       const out = await task.run(CTX);
 
       expect(out.detailText).toContain('자동 수집된 할 일이 없습니다');
-      expect(out.detailText).toContain('📌 마감 —');
+      expect(out.detailText).toContain('📌 *마감 1건*');
       expect(out.detailText).toContain('자동차세');
     });
 
@@ -657,7 +657,7 @@ describe('MorningBriefingAutopilotTask', () => {
 
       const out = await task.run(CTX);
 
-      expect(out.detailText).not.toContain('📌 마감 —');
+      expect(out.detailText).not.toContain('📌 *마감 1건*');
     });
 
     // 장식 쿼리 하나가 본체를 죽이면 안 된다 — appendPortfolioValue 와 같은 원칙.
@@ -674,7 +674,7 @@ describe('MorningBriefingAutopilotTask', () => {
       const out = await task.run(CTX);
 
       expect(out.skip).toBe(false);
-      expect(out.detailText).not.toContain('📌 마감 —');
+      expect(out.detailText).not.toContain('📌 *마감 1건*');
       expect(out.detailText?.length).toBeGreaterThan(0);
     });
   });
