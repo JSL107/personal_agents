@@ -100,7 +100,14 @@ export class GenerateMascotChatterUsecase {
     if (pending) {
       return pending;
     }
-    const task = this.generate(input);
+    // 호출마다 계기와 결과를 한 줄 남긴다. 없으면 "우사기가 조용하다" 를 두고 모델이 실패했는지, 말할 거리가
+    // 없었는지, 앱이 아예 부르지 않았는지를 가를 수 없다(2026-10-22).
+    const task = this.generate(input).then((result) => {
+      this.logger.log(
+        `우사기 한 마디 — 계기 ${input.trigger} · ${result.reason ?? `성공 ${result.line?.length ?? 0}자`}${result.suggestion ? ' · 제안 있음' : ''}`,
+      );
+      return result;
+    });
     this.inFlight.set(input.trigger, task);
     const clearInFlight = (): void => {
       if (this.inFlight.get(input.trigger) === task) {

@@ -445,12 +445,6 @@ import SwiftUI
         guard let trigger = mascotNextTalkTrigger(state: state, now: now, calendar: .current) else {
             return
         }
-        if trigger == .idle, !reactionLedger.fireDaily(
-            prefix: "chatter", max: mascotChatterDailyMax, chance: 1,
-            random: 0, now: now, calendar: .current
-        ) {
-            return
-        }
         guard reactionLedger.fireDaily(
             prefix: "talk", max: mascotTalkDailyMax, chance: 1,
             random: 0, now: now, calendar: .current

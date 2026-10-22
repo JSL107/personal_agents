@@ -80,10 +80,23 @@ public func mascotSay(_ quip: MascotQuip, _ info: String? = nil) -> String {
 
 /// 혼잣말을 꺼내도 되는 조용한 시간. 사람이 자리에 있을 법한 시간에만 말한다.
 public let mascotChatterQuietSeconds: TimeInterval = 5 * 60
-public let mascotChatterDailyMax = 12
 public let mascotChatterChance = 0.5
 
 public let mascotTalkDailyMax = 40
+/// 하루 배분보다 앞서 쓸 수 있는 여유. 출근 직후에도 몇 마디는 하게 둔다.
+public let mascotTalkPaceAllowance = 3
+
+/// 혼잣말을 지금 해도 하루 배분을 넘지 않는가.
+///
+/// "5분 조용 + 확률 0.5" 만 두면 사실상 5~6분마다 말해 상한을 출근 첫 한 시간에 다 쓰고 나머지는 침묵한다
+/// (2026-10-22 실측: 혼잣말 12번이 09:05~10:05 에 몰림). 근무 시간 중 지난 비율만큼만 쓰게 해 하루에 고르게
+/// 편다. 끝난 일·복귀·진행 상황은 사건이 있을 때만 나오므로 이 배분을 받지 않는다.
+public func mascotIdlePaceAllows(talkedToday: Int, now: Date, calendar: Calendar) -> Bool {
+    let start = calendar.date(bySettingHour: officeArrivalHour, minute: 0, second: 0, of: now) ?? now
+    let workSeconds = TimeInterval(officeDepartureHour - officeArrivalHour) * 3600
+    let elapsed = min(1, max(0, now.timeIntervalSince(start) / workSeconds))
+    return talkedToday < Int(Double(mascotTalkDailyMax) * elapsed) + mascotTalkPaceAllowance
+}
 public let mascotTalkMinGapSeconds: TimeInterval = 180
 public let mascotAwaySeconds: TimeInterval = 15 * 60
 public let mascotProgressGapSeconds: TimeInterval = 10 * 60
@@ -162,7 +175,8 @@ public func mascotNextTalkTrigger(state: MascotTalkState, now: Date, calendar: C
         return .progress
     }
     if state.mood == .idle, quietSeconds >= mascotChatterQuietSeconds,
-       state.idleChanceRoll < mascotChatterChance {
+       state.idleChanceRoll < mascotChatterChance,
+       mascotIdlePaceAllows(talkedToday: state.talkedToday, now: now, calendar: calendar) {
         return .idle
     }
     return nil
