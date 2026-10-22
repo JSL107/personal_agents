@@ -22,18 +22,28 @@ const openRow = () => ({
 describe('NotificationConsumer', () => {
   const setup = () => {
     const postMessage = jest.fn().mockResolvedValue(undefined);
+    const recordSuppressedDelivery = jest.fn().mockResolvedValue(undefined);
     const findUnique = jest.fn().mockResolvedValue(null);
     const upsert = jest.fn().mockResolvedValue(undefined);
     const update = jest.fn().mockResolvedValue(undefined);
     const add = jest.fn().mockResolvedValue(undefined);
     const get = jest.fn().mockReturnValue('U-owner');
     const consumer = new NotificationConsumer(
-      { postMessage } as never,
+      { postMessage, recordSuppressedDelivery } as never,
       { get } as never,
       { alertIncident: { findUnique, upsert, update } } as never,
       { publishDelayedRecovery: add } as never,
     );
-    return { consumer, postMessage, findUnique, upsert, update, add, get };
+    return {
+      consumer,
+      postMessage,
+      recordSuppressedDelivery,
+      findUnique,
+      upsert,
+      update,
+      add,
+      get,
+    };
   };
   const failure = () =>
     ({
@@ -137,7 +147,14 @@ describe('NotificationConsumer', () => {
   });
 
   it('실패 → 성공 → 재실패 → 최신 성공이면 최신 성공의 지연 확인이 사건을 닫는다', async () => {
-    const { consumer, findUnique, postMessage, update, add } = setup();
+    const {
+      consumer,
+      findUnique,
+      postMessage,
+      recordSuppressedDelivery,
+      update,
+      add,
+    } = setup();
     const reFailedAt = new Date('2026-10-06T15:10:00.000Z');
     findUnique.mockResolvedValue({ ...openRow(), lastSeenAt: reFailedAt });
     // 옛 성공(재실패 이전)의 지연 확인은 낡은 신호로 버려진다.
@@ -163,7 +180,8 @@ describe('NotificationConsumer', () => {
     expect(add).toHaveBeenCalledTimes(1);
     jest.setSystemTime(new Date('2026-10-06T15:40:00.000Z'));
     await consumer.process(latest as never);
-    expect(postMessage).toHaveBeenCalledWith(
+    expect(postMessage).not.toHaveBeenCalled();
+    expect(recordSuppressedDelivery).toHaveBeenCalledWith(
       expect.objectContaining({ text: expect.stringContaining('해결') }),
     );
     expect(update).toHaveBeenCalledWith(
@@ -190,23 +208,40 @@ describe('NotificationConsumer', () => {
     );
   });
 
-  it('조용한 시간 후 recovery 는 DM 성공 후 닫고 DM 실패면 열어 둔다', async () => {
+  it('조용한 시간 후 recovery 는 DM 없이 원장에만 남기고 닫는다 — 해결은 다음 아침 브리핑이 알린다', async () => {
     jest.useFakeTimers().setSystemTime(new Date('2026-10-06T15:29:00.000Z'));
-    const { consumer, findUnique, postMessage, update } = setup();
+    const {
+      consumer,
+      findUnique,
+      postMessage,
+      recordSuppressedDelivery,
+      update,
+    } = setup();
     findUnique.mockResolvedValue(openRow());
     await consumer.process(recovery() as never);
-    expect(postMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ text: expect.stringContaining('해결') }),
+    expect(postMessage).not.toHaveBeenCalled();
+    expect(recordSuppressedDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'alert:cron-failure',
+        target: 'U-owner',
+        reason: 'CONSOLE_ROUTE',
+        text: expect.stringContaining('해결'),
+      }),
     );
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { resolvedAt: expect.any(Date) } }),
     );
-    expect(postMessage.mock.invocationCallOrder[0]).toBeLessThan(
-      update.mock.invocationCallOrder[0],
-    );
-    postMessage.mockRejectedValue(new Error('slack down'));
+  });
+
+  it('해결 원장 기록이 실패해도 사건은 닫는다 — 열린 채 두면 아침마다 장애로 뜬다', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-10-06T15:29:00.000Z'));
+    const { consumer, findUnique, recordSuppressedDelivery, update } = setup();
+    findUnique.mockResolvedValue(openRow());
+    recordSuppressedDelivery.mockRejectedValue(new Error('db down'));
     await consumer.process(recovery() as never);
-    expect(update).toHaveBeenCalledTimes(1);
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { resolvedAt: expect.any(Date) } }),
+    );
   });
 
   it('마지막 실패보다 이른 성공 신호는 낡은 것으로 버린다', async () => {

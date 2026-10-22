@@ -29,6 +29,45 @@ export class PrismaDailyDigestRepository implements DailyDigestRepositoryPort {
     });
   }
 
+  async findResolvedIncidentLabels({
+    since,
+  }: {
+    since: Date;
+  }): Promise<string[]> {
+    const rows = await this.prisma.alertIncident.findMany({
+      where: { resolvedAt: { gte: since } },
+      select: { label: true },
+      orderBy: { resolvedAt: 'asc' },
+    });
+    return rows.map((row) => row.label);
+  }
+
+  async findFirstTopLevelMessageTs({
+    kind,
+    target,
+    since,
+  }: {
+    kind: string;
+    target: string;
+    since: Date;
+  }): Promise<string | null> {
+    // 가장 이른 것 — 같은 그룹이 본문 뒤에 남기는 통지(카드 보류 등)도 같은 종류의 본문이라
+    // 최신을 고르면 그 통지 아래에 달린다.
+    const found = await this.prisma.slackDelivery.findFirst({
+      where: {
+        kind,
+        target,
+        status: SLACK_DELIVERY_STATUS.SENT,
+        threadTs: null,
+        messageTs: { not: null },
+        createdAt: { gte: since },
+      },
+      select: { messageTs: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    return found?.messageTs ?? null;
+  }
+
   async findLatestStudyBrief({
     ownerUserId,
     since,
