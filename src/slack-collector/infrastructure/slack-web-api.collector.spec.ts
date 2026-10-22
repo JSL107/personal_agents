@@ -50,6 +50,18 @@ describe('SlackWebApiCollector', () => {
             ts: '1700000000.001',
           },
           { text: '관련없는 메시지', user: 'U888', ts: '1700000001.000' },
+          {
+            text: '<@U123> *장중 손절*',
+            user: 'UBOT',
+            bot_id: 'B1',
+            ts: '1700000003.000',
+          },
+          // 예전 통합(bot_id 없이 subtype 만 있는 메시지)도 봇으로 본다.
+          {
+            text: '<@U123> 배포 완료',
+            subtype: 'bot_message',
+            ts: '1700000004.000',
+          },
         ],
         D1: [{ text: '<@U123> DM 임', user: 'U222', ts: '1700000002.000' }],
       },
@@ -58,15 +70,22 @@ describe('SlackWebApiCollector', () => {
 
     const mentions = await collector.listMyMentions({ slackUserId: 'U123' });
 
-    expect(mentions).toHaveLength(2);
+    expect(mentions).toHaveLength(4);
     expect(mentions[0]).toMatchObject({
       channelId: 'C1',
       channelName: 'general',
       channelType: 'public_channel',
       authorUserId: 'U999',
       text: expect.stringContaining('<@U123>'),
+      fromBot: false,
     });
-    expect(mentions[1]).toMatchObject({
+    // 봇이 보낸 메시지도 수집은 하되 표시한다 — 거를지는 소비자가 정한다.
+    expect(mentions[1]).toMatchObject({ authorUserId: 'UBOT', fromBot: true });
+    expect(mentions[2]).toMatchObject({
+      authorUserId: undefined,
+      fromBot: true,
+    });
+    expect(mentions[3]).toMatchObject({
       channelId: 'D1',
       channelType: 'im',
     });

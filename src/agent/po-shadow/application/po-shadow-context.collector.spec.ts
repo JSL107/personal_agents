@@ -1,7 +1,5 @@
 import { ConfigService } from '@nestjs/config';
 
-import { AgentRunService } from '../../../agent-run/application/agent-run.service';
-import { FailedRunDetail } from '../../../agent-run/domain/port/agent-run.repository.port';
 import { ClassifyPullRequestEngagementUsecase } from '../../../github/application/classify-pr-engagement.usecase';
 import { ListAssignedTasksUsecase } from '../../../github/application/list-assigned-tasks.usecase';
 import {
@@ -78,18 +76,11 @@ const notionTask: NotionTask = {
   properties: { 상태: '진행 중', 우선순위: '높음' },
 };
 
-const failedRun: FailedRunDetail = {
-  agentType: 'CODE_REVIEWER',
-  reason: 'CLI timeout',
-  endedAt: new Date('2026-08-19T02:00:00.000Z'),
-};
-
 interface CollectorDependencies {
   listAssignedTasks: { execute: jest.Mock };
   classifyEngagement: { execute: jest.Mock };
   listMyMentions: { execute: jest.Mock };
   listActiveTasks: { execute: jest.Mock };
-  agentRunService: { findFailedRunsSince: jest.Mock };
   configService: { get: jest.Mock };
   githubClient: { listAuthorMergedPullRequestsSince: jest.Mock };
 }
@@ -140,9 +131,6 @@ const createDependencies = (): CollectorDependencies => ({
   listActiveTasks: {
     execute: jest.fn().mockResolvedValue([notionTask]),
   },
-  agentRunService: {
-    findFailedRunsSince: jest.fn().mockResolvedValue([failedRun]),
-  },
   configService: {
     get: jest
       .fn()
@@ -162,7 +150,6 @@ const createCollector = ({
   classifyEngagement,
   listMyMentions,
   listActiveTasks,
-  agentRunService,
   configService,
   githubClient,
 }: CollectorDependencies): PoShadowContextCollector =>
@@ -171,7 +158,6 @@ const createCollector = ({
     classifyEngagement as unknown as ClassifyPullRequestEngagementUsecase,
     listMyMentions as unknown as ListMyMentionsUsecase,
     listActiveTasks as unknown as ListActiveTasksUsecase,
-    agentRunService as unknown as AgentRunService,
     configService as unknown as ConfigService,
     githubClient as unknown as GithubClientPort,
   );
@@ -198,7 +184,7 @@ describe('PoShadowContextCollector', () => {
       waitingItems: [waitingItem],
       newMentions: [mention],
       notionTasks: [notionTask],
-      failedRunsToday: [failedRun],
+      ownGithubLogin: 'JSL107',
       mergedPullRequests: [mergedPullRequest],
       mergedLookupAvailable: true,
       degradedSources: [],
@@ -219,16 +205,12 @@ describe('PoShadowContextCollector', () => {
     expect(dependencies.classifyEngagement.execute).toHaveBeenCalledWith(
       assignedTasks.pullRequests,
     );
-    expect(
-      dependencies.agentRunService.findFailedRunsSince,
-    ).toHaveBeenCalledWith({ withinMinutes: 1440, slackUserId: 'U123' });
   });
 
-  it('첫 fetch가 끝나기 전에 독립적인 다섯 fetch를 모두 시작한다', async () => {
+  it('첫 fetch가 끝나기 전에 독립적인 네 fetch를 모두 시작한다', async () => {
     const assignedTasksDeferred = createDeferred<AssignedTasks>();
     const mentionsDeferred = createDeferred<SlackMention[]>();
     const notionTasksDeferred = createDeferred<NotionTask[]>();
-    const failedRunsDeferred = createDeferred<FailedRunDetail[]>();
     const mergedDeferred = createDeferred<GithubPullRequestSummary[]>();
     const dependencies = createDependencies();
     dependencies.githubClient.listAuthorMergedPullRequestsSince.mockReturnValue(
@@ -243,9 +225,6 @@ describe('PoShadowContextCollector', () => {
     dependencies.listActiveTasks.execute.mockReturnValue(
       notionTasksDeferred.promise,
     );
-    dependencies.agentRunService.findFailedRunsSince.mockReturnValue(
-      failedRunsDeferred.promise,
-    );
     const collector = createCollector(dependencies);
 
     const collection = collector.collect({
@@ -257,16 +236,12 @@ describe('PoShadowContextCollector', () => {
     expect(dependencies.listMyMentions.execute).toHaveBeenCalledTimes(1);
     expect(dependencies.listActiveTasks.execute).toHaveBeenCalledTimes(1);
     expect(
-      dependencies.agentRunService.findFailedRunsSince,
-    ).toHaveBeenCalledTimes(1);
-    expect(
       dependencies.githubClient.listAuthorMergedPullRequestsSince,
     ).toHaveBeenCalledTimes(1);
 
     assignedTasksDeferred.resolve(assignedTasks);
     mentionsDeferred.resolve([mention]);
     notionTasksDeferred.resolve([notionTask]);
-    failedRunsDeferred.resolve([failedRun]);
     mergedDeferred.resolve([mergedPullRequest]);
 
     await expect(collection).resolves.toEqual({
@@ -275,7 +250,7 @@ describe('PoShadowContextCollector', () => {
       waitingItems: [waitingItem],
       newMentions: [mention],
       notionTasks: [notionTask],
-      failedRunsToday: [failedRun],
+      ownGithubLogin: 'JSL107',
       mergedPullRequests: [mergedPullRequest],
       mergedLookupAvailable: true,
       degradedSources: [],
@@ -323,17 +298,13 @@ describe('PoShadowContextCollector', () => {
   it.each([
     ['Slack 멘션', 'listMyMentions', 'newMentions'],
     ['Notion task', 'listActiveTasks', 'notionTasks'],
-    ['실패 run', 'agentRunService', 'failedRunsToday'],
   ] as const)(
     '%s 실패 시 해당 배열만 비운다',
     async (_label, dependencyName, resultName) => {
       const dependencies = createDependencies();
-      const dependency = dependencies[dependencyName];
-      const method =
-        'execute' in dependency
-          ? dependency.execute
-          : dependency.findFailedRunsSince;
-      method.mockRejectedValue(new Error(`${dependencyName} unavailable`));
+      dependencies[dependencyName].execute.mockRejectedValue(
+        new Error(`${dependencyName} unavailable`),
+      );
       const collector = createCollector(dependencies);
 
       const context = await collector.collect({
@@ -380,9 +351,6 @@ describe('PoShadowContextCollector', () => {
     dependencies.listActiveTasks.execute.mockRejectedValue(
       new Error('Notion unavailable'),
     );
-    dependencies.agentRunService.findFailedRunsSince.mockRejectedValue(
-      new Error('AgentRun unavailable'),
-    );
     dependencies.githubClient.listAuthorMergedPullRequestsSince.mockRejectedValue(
       new Error('GitHub search unavailable'),
     );
@@ -399,7 +367,7 @@ describe('PoShadowContextCollector', () => {
       waitingItems: [],
       newMentions: [],
       notionTasks: [],
-      failedRunsToday: [],
+      ownGithubLogin: 'JSL107',
       mergedPullRequests: [],
       mergedLookupAvailable: false,
       degradedSources: [
@@ -407,7 +375,6 @@ describe('PoShadowContextCollector', () => {
         'GitHub 머지 목록',
         'Slack 멘션',
         'Notion 태스크',
-        '실행 원장',
       ],
     });
   });
@@ -443,6 +410,29 @@ describe('PoShadowContextCollector', () => {
     expect(context.newMentions).toEqual([]);
   });
 
+  // 실측(10-13~22): "계획 이후 새 멘션" 6건이 전부 이대리 자신의 알림(장중 손절·공고)이었다.
+  it('봇이 보낸 멘션은 계획 밖 요청으로 세지 않는다', async () => {
+    const dependencies = createDependencies();
+    const botMention: SlackMention = {
+      ...mention,
+      ts: '1787103001.000100',
+      text: '<@U123> *장중 손절*',
+      fromBot: true,
+    };
+    dependencies.listMyMentions.execute.mockResolvedValue([
+      mention,
+      botMention,
+    ]);
+    const collector = createCollector(dependencies);
+
+    const context = await collector.collect({
+      slackUserId: 'U123',
+      planEndedAt: PLAN_ENDED_AT,
+    });
+
+    expect(context.newMentions).toEqual([mention]);
+  });
+
   it('머지 조회 author env 가 없으면 조회를 건너뛰되 실패로 세지 않는다', async () => {
     const dependencies = createDependencies();
     dependencies.configService.get.mockReturnValue(undefined);
@@ -461,5 +451,6 @@ describe('PoShadowContextCollector', () => {
     // 사실은 남겨 미발견 판정이 서지 않게 한다.
     expect(context.mergedLookupAvailable).toBe(false);
     expect(context.degradedSources).toEqual([]);
+    expect(context.ownGithubLogin).toBeNull();
   });
 });

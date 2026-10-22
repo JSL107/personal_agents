@@ -1,8 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-import { AgentRunService } from '../../../agent-run/application/agent-run.service';
-import { FailedRunDetail } from '../../../agent-run/domain/port/agent-run.repository.port';
 import { ClassifyPullRequestEngagementUsecase } from '../../../github/application/classify-pr-engagement.usecase';
 import { ListAssignedTasksUsecase } from '../../../github/application/list-assigned-tasks.usecase';
 import {
@@ -21,19 +19,17 @@ import { PoShadowContext } from '../domain/po-shadow.type';
 
 const MIN_MENTION_SINCE_HOURS = 1;
 const MAX_MENTION_SINCE_HOURS = 12;
-const MINUTES_PER_DAY = 1440;
 const MILLISECONDS_PER_HOUR = 3_600_000;
 // 반나절치 머지 상한. Impact Reporter 의 하루 상한(20)과 같은 자릿수로 두되, 정오까지의
 // 창이라 더 짧다.
 const MERGED_PULL_REQUEST_LIMIT = 20;
 
-const DEGRADED_SOURCE_LABEL = {
+export const DEGRADED_SOURCE_LABEL = {
   ASSIGNED: 'GitHub 담당 목록',
   MERGED: 'GitHub 머지 목록',
   ENGAGEMENT: 'GitHub PR 진행 신호',
   MENTIONS: 'Slack 멘션',
   NOTION: 'Notion 태스크',
-  FAILED_RUNS: '실행 원장',
 } as const;
 
 interface MergedPullRequestLookup {
@@ -56,7 +52,6 @@ export class PoShadowContextCollector {
     private readonly classifyEngagement: ClassifyPullRequestEngagementUsecase,
     private readonly listMyMentionsUsecase: ListMyMentionsUsecase,
     private readonly listActiveTasksUsecase: ListActiveTasksUsecase,
-    private readonly agentRunService: AgentRunService,
     private readonly configService: ConfigService,
     @Inject(GITHUB_CLIENT_PORT)
     private readonly githubClient: GithubClientPort,
@@ -68,24 +63,18 @@ export class PoShadowContextCollector {
   }: CollectPoShadowContextInput): Promise<PoShadowContext> {
     const sinceHours = this.calculateSinceHours({ planEndedAt });
     const degradedSources: string[] = [];
-    const [
-      assignedTasks,
-      mergedLookup,
-      newMentions,
-      notionTasks,
-      failedRunsToday,
-    ] = await Promise.all([
-      this.fetchAssignedTasksOrNull({ degradedSources }),
-      this.fetchMergedPullRequestsOrEmpty({ planEndedAt, degradedSources }),
-      this.fetchMentionsOrEmpty({
-        slackUserId,
-        sinceHours,
-        planEndedAt,
-        degradedSources,
-      }),
-      this.fetchNotionTasksOrEmpty({ degradedSources }),
-      this.fetchFailedRunsOrEmpty({ slackUserId, degradedSources }),
-    ]);
+    const [assignedTasks, mergedLookup, newMentions, notionTasks] =
+      await Promise.all([
+        this.fetchAssignedTasksOrNull({ degradedSources }),
+        this.fetchMergedPullRequestsOrEmpty({ planEndedAt, degradedSources }),
+        this.fetchMentionsOrEmpty({
+          slackUserId,
+          sinceHours,
+          planEndedAt,
+          degradedSources,
+        }),
+        this.fetchNotionTasksOrEmpty({ degradedSources }),
+      ]);
 
     const githubContext = await this.classifyPullRequests({
       assignedTasks,
@@ -100,7 +89,7 @@ export class PoShadowContextCollector {
       mergedLookupAvailable: mergedLookup.available,
       newMentions,
       notionTasks,
-      failedRunsToday,
+      ownGithubLogin: this.readOwnGithubLogin(),
       degradedSources,
     };
   }
@@ -143,9 +132,7 @@ export class PoShadowContextCollector {
     planEndedAt: Date;
     degradedSources: string[];
   }): Promise<MergedPullRequestLookup> {
-    const author = this.configService
-      .get<string>('IMPACT_REPORT_GITHUB_AUTHOR')
-      ?.trim();
+    const author = this.readOwnGithubLogin();
     // author 를 모르면 조회 자체를 못 한다. 빈 배열을 "머지된 게 없다" 로 쓰면 계획대로
     // 끝낸 PR 이 곧바로 미발견으로 잡히므로, 확인하지 못했다는 사실을 그대로 넘긴다.
     if (!author) {
@@ -192,7 +179,12 @@ export class PoShadowContextCollector {
         slackUserId,
         sinceHours,
       });
-      return mentions.filter((mention) =>
+      // 봇이 보낸 멘션(이대리의 손절·공고 알림 등)은 계획 밖 요청이 아니다. 실측(10-13~22)
+      // 상 이 사실 6건이 전부 봇 알림이었고 사람이 부른 멘션은 0건이었다.
+      const humanMentions = mentions.filter(
+        (mention) => mention.fromBot !== true,
+      );
+      return humanMentions.filter((mention) =>
         isPostedAfter({ mention, planEndedAt }),
       );
     } catch (error: unknown) {
@@ -220,28 +212,12 @@ export class PoShadowContextCollector {
     }
   }
 
-  // 이 검토는 한 사람의 계획을 본다. 사용자를 한정하지 않으면 다른 사용자의 실패가
-  // WORKER_FAILED 사실로 들어가 남의 실패 사유가 카드와 원장 evidence 에 실린다
-  // (PM 조회를 slackUserId 로 한정한 것과 같은 이유).
-  private async fetchFailedRunsOrEmpty({
-    slackUserId,
-    degradedSources,
-  }: {
-    slackUserId: string;
-    degradedSources: string[];
-  }): Promise<FailedRunDetail[]> {
-    try {
-      return await this.agentRunService.findFailedRunsSince({
-        withinMinutes: MINUTES_PER_DAY,
-        slackUserId,
-      });
-    } catch (error: unknown) {
-      degradedSources.push(DEGRADED_SOURCE_LABEL.FAILED_RUNS);
-      this.logger.warn(
-        `실패 AgentRun 수집 실패 (해당 컨텍스트 없이 계속 진행): ${this.errorMessage(error)}`,
-      );
-      return [];
-    }
+  // 머지 조회의 author 와 본인 작성 판별이 이 한 곳에서 읽는다 — 본인 login 을 두 군데서 따로 정하지 않는다.
+  private readOwnGithubLogin(): string | null {
+    const login = this.configService
+      .get<string>('IMPACT_REPORT_GITHUB_AUTHOR')
+      ?.trim();
+    return login || null;
   }
 
   // 분류가 실패하면 원본 PR 은 남지만 "방치" 판정이 통째로 사라진다 — 대기 중인 PR 이

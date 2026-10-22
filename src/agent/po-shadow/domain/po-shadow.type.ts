@@ -1,5 +1,4 @@
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
-import { FailedRunDetail } from '../../../agent-run/domain/port/agent-run.repository.port';
 import {
   AssignedTasks,
   GithubPullRequest,
@@ -20,8 +19,10 @@ export interface PoShadowContext {
   mergedLookupAvailable: boolean;
   newMentions: SlackMention[];
   notionTasks: NotionTask[];
-  failedRunsToday: FailedRunDetail[];
-  // 수집에 실패한 소스의 한국어 라벨. 빈 배열이면 5개 소스를 모두 실제로 조회했다는 뜻이다.
+  // 본인 GitHub login. 본인이 연 항목은 "계획에 없던 일" 로 지적하지 않는다 — 자기 행동을 자기에게
+  // 알리는 셈이라서다. null 이면 판별할 수 없어 지금처럼 모두 계획 밖으로 본다.
+  ownGithubLogin: string | null;
+  // 수집에 실패한 소스의 한국어 라벨. 빈 배열이면 4개 소스를 모두 실제로 조회했다는 뜻이다.
   // 조회가 죽은 회차와 진짜 평온한 회차는 글자가 같으면 안 된다.
   degradedSources: string[];
 }
@@ -67,6 +68,14 @@ export interface PoShadowRecoverySummary {
   reasonWithdrawnKeys?: string[];
 }
 
+// 이 회차가 사실표에 무엇을 어떤 상태로 올렸는지. 다음 회차가 "새로 바뀐 사실" 과 미이동 나이를 가르는
+// 기준이다(`readReportedFactStates`). PO 는 도메인 테이블에 쓰지 않으므로 리포트에 싣는다.
+export interface ReportedFactState {
+  id: string;
+  sequence?: number;
+  firstReportedAt?: string;
+}
+
 export interface PoShadowReport {
   schemaVersion: 2;
   quiet: boolean;
@@ -87,4 +96,6 @@ export interface PoShadowReport {
   goalCheckIns?: string[];
   // findings 와 같은 인덱스. 코드가 채우고, 이 필드가 없는 회차(2026-10 이전)는 링크 없이 렌더한다.
   findingReferences?: PoShadowFindingReference[][];
+  // 코드가 채운다. 이 필드가 없는 회차(2026-10-22 이전)는 비교 기준이 없어 다음 회차가 모든 사실을 새 것으로 본다.
+  reportedFacts?: ReportedFactState[];
 }

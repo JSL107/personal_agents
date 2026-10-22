@@ -44,7 +44,7 @@ const contextWith = (
   mergedLookupAvailable: true,
   newMentions: [],
   notionTasks: [],
-  failedRunsToday: [],
+  ownGithubLogin: null,
   degradedSources: [],
 });
 
@@ -118,7 +118,20 @@ describe('buildProductGoalFacts', () => {
       kind: 'GOAL_DEADLINE_RISK',
       label: '보존기간 파일 파기',
       detail: '기한 D-5 · 붙은 열린 항목 1건',
+      sequence: 1,
     });
+  });
+
+  // 같은 목표가 매일 다시 켜지지 않되, 임박 → 당일 → 초과로 악화된 날은 새 사실이어야 한다.
+  it('기한 위험은 임박·당일·초과 단계를 sequence 로 올린다', () => {
+    const stageOn = (dueDate: string): number | undefined =>
+      build([goal({ dueDate: new Date(dueDate) })], {
+        context: contextWith(['보존기간 파기 배치 추가']),
+      }).facts.find((fact) => fact.kind === 'GOAL_DEADLINE_RISK')?.sequence;
+
+    expect(stageOn('2026-10-13T00:00:00Z')).toBe(1);
+    expect(stageOn('2026-10-08T00:00:00Z')).toBe(2);
+    expect(stageOn('2026-10-06T00:00:00Z')).toBe(3);
   });
 
   it('기한이 멀거나 붙은 열린 항목이 없으면 기한 위험이 아니다', () => {

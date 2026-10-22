@@ -100,6 +100,8 @@ export class SlackWebApiCollector implements SlackCollectorPort {
           channelName: channel.name ?? undefined,
           channelType: resolveChannelType(channel),
           authorUserId: message.user ?? undefined,
+          fromBot:
+            message.bot_id !== undefined || message.subtype === 'bot_message',
           ts: message.ts ?? '',
           text: message.text,
           permalink: undefined,
