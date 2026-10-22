@@ -18,7 +18,13 @@ import { Logger } from '@nestjs/common';
 // 발송 경로 구분. 한 메시지가 두 번 기록되지 않도록 값을 아는 쪽만 넘긴다 —
 // 기본값 `reply` 는 사용자가 먼저 부른 응답(슬래시·멘션·블로그 답장), `push` 계열은
 // 이대리가 먼저 밀어내는 자율 메시지다. "안 읽게 된다" 의 대상은 후자다.
-export type SlackSendOrigin = 'push' | 'push-thread' | 'reply' | 'card';
+// `card-thread` 는 본문 댓글로 단 승인 카드다 — 채널 통수(push·card)에서 빠져야 해서 따로 센다.
+export type SlackSendOrigin =
+  | 'push'
+  | 'push-thread'
+  | 'reply'
+  | 'card'
+  | 'card-thread';
 
 // cron 요약은 여러 task 의 요약을 이 구분선으로 이어 붙여 한 메시지로 보낸다
 // (`autopilot.orchestrator.ts` 의 `mainText`). 3,000자가 하나짜리인지 넷을 붙인 것인지에 따라

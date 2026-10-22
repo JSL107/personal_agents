@@ -554,7 +554,7 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     });
     recordSlackSendLength({
       text: preview.previewText,
-      origin: 'card',
+      origin: threadTs ? 'card-thread' : 'card',
       blocks: blocks.length,
     });
     // 발송 원장 기록은 postMessage·postProposalMessage 와 같다 — 성공은 SENT, 실패는 FAILED 로 남기고

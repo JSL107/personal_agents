@@ -28,6 +28,8 @@ export interface MorningDigestInput {
   // 열린 승인 카드의 짧은 이름(카드마다 하나). 같은 이름이 여럿이면 묶어 센다.
   approvalLabels: string[];
   incidents: MorningIncident[];
+  // 지난 아침 이후 닫힌 사건의 이름. 해결 DM 을 보내지 않으므로 여기가 해결을 알리는 유일한 자리다.
+  resolvedIncidents: string[];
   // null = 공고 수집이 꺼져 있다(줄 자체를 내지 않는다). [] = 켜져 있으나 새 공고 없음.
   postings: MorningPosting[] | null;
   invest: { buyCount: number; sellCount: number } | null;
@@ -89,25 +91,48 @@ export const formatMorningDigest = (input: MorningDigestInput): string => {
     );
   }
 
-  const kinds = [
-    input.approvalLabels.length > 0
-      ? `승인 ${input.approvalLabels.length}`
-      : null,
-    input.incidents.length > 0 ? `장애 ${input.incidents.length}` : null,
-    postings.length > 0 ? `공고 ${postings.length}` : null,
-  ].filter((kind): kind is string => kind !== null);
-  const totalCount =
-    input.approvalLabels.length + input.incidents.length + postings.length;
+  // 첫 줄은 급한 순서(장애 → 승인 → 공고)로 종류를 적고, 맨 앞 종류만 이름까지 붙인다.
+  // 개수만 있으면 "장애 1" 이 무엇이 멈춘 건지 열어 봐야 안다 — 첫 줄만 보고 열지 정하려면
+  // 가장 급한 것의 이름이 보여야 한다(2026-10-22 사용자 결정). 나머지는 개수만 둬 알림
+  // 미리보기에서 잘리지 않게 한다.
+  const kinds: { short: string; named: string }[] = [];
+  if (input.incidents.length > 0) {
+    const count = input.incidents.length;
+    const first = escapeSlackMrkdwn(input.incidents[0].label);
+    kinds.push({
+      short: `🔴 장애 ${count}`,
+      named:
+        count === 1
+          ? `🔴 장애: ${first}`
+          : `🔴 장애 ${count}: ${first} 외 ${count - 1}`,
+    });
+  }
+  if (input.approvalLabels.length > 0) {
+    const count = input.approvalLabels.length;
+    kinds.push({
+      short: `✋ 승인 ${count}`,
+      named: `✋ 승인 ${count} (${escapeSlackMrkdwn(countByLabel(input.approvalLabels))})`,
+    });
+  }
+  if (postings.length > 0) {
+    kinds.push({
+      short: `공고 ${postings.length}`,
+      named: `공고 ${postings.length}: ${formatPostingNames(postings)}`,
+    });
+  }
   const day = formatTradeDay(input.firedAtKst);
-  // 종류가 하나뿐이면 "할 일 10 · 공고 10" 처럼 같은 숫자가 두 번 보인다 — 종류만 적는다.
   const header =
-    totalCount === 0
+    kinds.length === 0
       ? `☀️ *${day} 아침* — 손댈 것 없음`
-      : kinds.length === 1
-        ? `☀️ *${day} 아침* — ${kinds[0]}`
-        : `☀️ *${day} 아침* — 할 일 ${totalCount} (${kinds.join(' · ')})`;
+      : `☀️ *${day} 아침* — ${[kinds[0].named, ...kinds.slice(1).map((kind) => kind.short)].join(' · ')}`;
 
   const rest: string[] = [];
+  // 해결 알림은 따로 DM 하지 않고 다음 아침 한 줄로 모은다(notification.consumer 의 해결 경로).
+  if (input.resolvedIncidents.length > 0) {
+    rest.push(
+      `• ✅ *해결* — ${escapeSlackMrkdwn(input.resolvedIncidents.join(' · '))}`,
+    );
+  }
   if (input.invest) {
     rest.push(
       `• *투자* — 오늘 시가 매수 ${input.invest.buyCount} · 매도 ${input.invest.sellCount} 예정`,
