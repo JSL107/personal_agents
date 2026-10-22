@@ -119,6 +119,17 @@ export const DEGRADED_UNCOMPARABLE = '직전 지적 대조 불가';
 const MILLISECONDS_PER_DAY = 86_400_000;
 const UNMOVED_FACT_ID_PREFIX = 'finding-unmoved';
 
+type RecoveryFactKind =
+  | 'FINDING_MERGED'
+  | 'FINDING_ABANDONED'
+  | 'FINDING_UNASSIGNED';
+
+const RECOVERY_FACT_ID_PREFIX: Record<RecoveryFactKind, string> = {
+  FINDING_MERGED: 'finding-merged',
+  FINDING_ABANDONED: 'finding-abandoned',
+  FINDING_UNASSIGNED: 'finding-unassigned',
+};
+
 const NATURAL_GITHUB_KEY_PATTERN = /^[^/#\s]+\/[^#\s]+#\d+$/;
 const GITHUB_NUMBER_PATTERN = /#(\d+)\b/;
 // 멘션 본문을 그대로 label 에 넣으면 카드 한 줄이 화면을 넘긴다. 원문은 permalink 로 따라간다.
@@ -220,12 +231,19 @@ export const hasPlanRealityMismatch = (
 };
 
 // kind 만 보는 정적 Set 으로는 "2구간 이상일 때만" 을 표현할 수 없어 FINDING_UNMOVED 만 술어로 뺀다.
-const isMismatchFact = (fact: PlanRealityFact): boolean =>
-  MISMATCH_KINDS.has(fact.kind) ||
+const isMismatchFact = (fact: PlanRealityFact): boolean => {
+  if (MISMATCH_KINDS.has(fact.kind)) {
+    return true;
+  }
   // 포기는 대표가 알아야 할 사건이다. 새로 바뀐 사실만 보므로 처음 확인한 회차에 한 번 켜진다.
-  fact.kind === 'FINDING_ABANDONED' ||
-  (fact.kind === 'FINDING_UNMOVED' &&
-    (fact.sequence ?? 0) >= UNMOVED_REVIEW_SEQUENCE);
+  if (fact.kind === 'FINDING_ABANDONED') {
+    return true;
+  }
+  if (fact.kind !== 'FINDING_UNMOVED') {
+    return false;
+  }
+  return (fact.sequence ?? 0) >= UNMOVED_REVIEW_SEQUENCE;
+};
 
 // 직전 회차 사실표에 없던 사실, 또는 있었지만 구간(sequence)이 올라간 사실. 직전 상태를 모르면
 // (첫 회차·기록 전 회차) 전부 새 것으로 본다 — 모르는 채로 조용히 넘기는 쪽이 더 위험하다.
@@ -239,17 +257,15 @@ export const findNovelFactIds = (
   const previousById = new Map(
     previousStates.map((state) => [state.id, state]),
   );
-  return new Set(
-    facts
-      .filter((fact) => {
-        const previous = previousById.get(fact.id);
-        return (
-          previous === undefined ||
-          (fact.sequence ?? 0) > (previous.sequence ?? 0)
-        );
-      })
-      .map((fact) => fact.id),
-  );
+  const isNovel = (fact: PlanRealityFact): boolean => {
+    const previous = previousById.get(fact.id);
+    if (previous === undefined) {
+      return true;
+    }
+    return (fact.sequence ?? 0) > (previous.sequence ?? 0);
+  };
+  const novelFacts = facts.filter(isNovel);
+  return new Set(novelFacts.map((fact) => fact.id));
 };
 
 // 조회가 실패하면 사라지는 사실의 출처. 실패한 출처의 사실만 직전 상태를 이어 둔다 — 출처를 가리지 않고
@@ -263,10 +279,8 @@ export type FactSource =
   | 'PRODUCT_GOAL';
 
 const FINDING_FACT_ID_PREFIXES = [
-  'finding-unmoved',
-  'finding-merged',
-  'finding-abandoned',
-  'finding-unassigned',
+  UNMOVED_FACT_ID_PREFIX,
+  ...Object.values(RECOVERY_FACT_ID_PREFIX),
 ];
 
 // 각 출처가 없으면 만들어지지 않는 사실의 id 접두어. 회수 사실은 담당 목록 없이도 만들지 않는다
@@ -287,12 +301,10 @@ const FACT_ID_PREFIXES_BY_SOURCE: Record<FactSource, string[]> = {
 };
 
 interface ToReportedFactStatesOptions {
-  // 대표에게 실제로 전달되지 않은 이번 회차의 새 사실. 직전 상태를 그대로 두어 다음 회차에 다시 새 것으로
-  // 보이게 한다 — 알리지 못한 지적이 "이미 알림" 으로 묻히지 않게(근거 검증에서 지적이 전부 버려진 회차 등).
+  // 직전 상태를 그대로 남겨 다음 회차에 다시 새 것으로 보이게 할 사실(전달 판정은 호출부).
   undeliveredFactIds?: Set<string>;
   previousStates?: ReportedFactState[] | null;
-  // 이번 회차에 조회가 실패한 출처. 그 출처의 사실은 만들어지지 못했는데, 빈자리를 그대로 저장하면
-  // 다음 회차에 같은 사실이 전부 새 것으로 보여 한꺼번에 다시 켜지고 미이동 나이도 끊긴다.
+  // 이번 회차에 조회가 실패한 출처. 빈자리를 그대로 저장하면 다음 회차에 같은 사실이 전부 새 것으로 보인다.
   degradedFactSources?: FactSource[];
 }
 
@@ -321,14 +333,14 @@ export const toReportedFactStates = (
     return current;
   }
   const currentIds = new Set(facts.map((fact) => fact.id));
-  return [
-    ...current,
-    ...(previousStates ?? []).filter(
-      (state) =>
-        !currentIds.has(state.id) &&
-        carriedPrefixes.has(state.id.slice(0, state.id.indexOf(':'))),
-    ),
-  ];
+  const isCarried = (state: ReportedFactState): boolean => {
+    if (currentIds.has(state.id)) {
+      return false;
+    }
+    return carriedPrefixes.has(state.id.slice(0, state.id.indexOf(':')));
+  };
+  const carriedStates = (previousStates ?? []).filter(isCarried);
+  return [...current, ...carriedStates];
 };
 
 const toReportedFactState = (fact: PlanRealityFact): ReportedFactState => ({
@@ -358,12 +370,19 @@ const isReportedFactState = (value: unknown): value is ReportedFactState => {
     return false;
   }
   const record = value as Record<string, unknown>;
-  return (
-    typeof record.id === 'string' &&
-    (record.sequence === undefined || typeof record.sequence === 'number') &&
-    (record.firstReportedAt === undefined ||
-      typeof record.firstReportedAt === 'string')
-  );
+  if (typeof record.id !== 'string') {
+    return false;
+  }
+  if (record.sequence !== undefined && typeof record.sequence !== 'number') {
+    return false;
+  }
+  if (
+    record.firstReportedAt !== undefined &&
+    typeof record.firstReportedAt !== 'string'
+  ) {
+    return false;
+  }
+  return true;
 };
 
 // 미이동 지적의 최초 시각을 직전 회차에서 이어받는다. 30일 원장 창만으로 재구성하면 최초 인용이 창
@@ -373,30 +392,44 @@ export const carryForwardPriorFindings = (
   priorFindings: PriorFinding[],
   previousStates: ReportedFactState[] | null,
 ): PriorFinding[] => {
-  const firstSeen = new Map(
-    priorFindings.map((prior) => [prior.key, prior.firstReportedAt]),
+  if (previousStates === null) {
+    return priorFindings;
+  }
+  const earliestByKey = new Map(
+    priorFindings.map((prior) => [prior.key, prior]),
   );
-  for (const state of previousStates ?? []) {
+  for (const state of previousStates) {
+    const carried = toCarriedFinding(state);
+    if (carried === null) {
+      continue;
+    }
+    const known = earliestByKey.get(carried.key);
     if (
-      !state.id.startsWith(`${UNMOVED_FACT_ID_PREFIX}:`) ||
-      state.firstReportedAt === undefined
+      known === undefined ||
+      carried.firstReportedAt < known.firstReportedAt
     ) {
-      continue;
-    }
-    const carried = new Date(state.firstReportedAt);
-    if (Number.isNaN(carried.getTime())) {
-      continue;
-    }
-    const key = state.id.slice(UNMOVED_FACT_ID_PREFIX.length + 1);
-    const known = firstSeen.get(key);
-    if (known === undefined || carried < known) {
-      firstSeen.set(key, carried);
+      earliestByKey.set(carried.key, carried);
     }
   }
-  return [...firstSeen.entries()].map(([key, firstReportedAt]) => ({
-    key,
+  return [...earliestByKey.values()];
+};
+
+// 직전 회차의 미이동 상태만 이어받는다. 최초 시각이 없거나 깨진 상태는 버린다.
+const toCarriedFinding = (state: ReportedFactState): PriorFinding | null => {
+  if (!state.id.startsWith(`${UNMOVED_FACT_ID_PREFIX}:`)) {
+    return null;
+  }
+  if (state.firstReportedAt === undefined) {
+    return null;
+  }
+  const firstReportedAt = new Date(state.firstReportedAt);
+  if (Number.isNaN(firstReportedAt.getTime())) {
+    return null;
+  }
+  return {
+    key: state.id.slice(UNMOVED_FACT_ID_PREFIX.length + 1),
     firstReportedAt,
-  }));
+  };
 };
 
 // 회수 대상 키를 직전 회차들의 지적에서 뽑는다. 같은 키는 **가장 처음** 지적한 회차만 남긴다.
@@ -854,15 +887,4 @@ const buildUnmovedFact = ({
     sequence,
     firstReportedAt: prior.firstReportedAt.toISOString(),
   };
-};
-
-type RecoveryFactKind =
-  | 'FINDING_MERGED'
-  | 'FINDING_ABANDONED'
-  | 'FINDING_UNASSIGNED';
-
-const RECOVERY_FACT_ID_PREFIX: Record<RecoveryFactKind, string> = {
-  FINDING_MERGED: 'finding-merged',
-  FINDING_ABANDONED: 'finding-abandoned',
-  FINDING_UNASSIGNED: 'finding-unassigned',
 };
