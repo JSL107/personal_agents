@@ -20,6 +20,23 @@ const toDayLabel = (dueDate: Date, today: Date): string => {
   return `D-${remaining}`;
 };
 
+type DueGroup = 'overdue' | 'today' | 'upcoming';
+
+const DUE_GROUP_ORDER: DueGroup[] = ['overdue', 'today', 'upcoming'];
+
+const DUE_GROUP_HEADER: Record<DueGroup, string> = {
+  overdue: '🔴 *지남*',
+  today: '🟡 *오늘*',
+  upcoming: '⚪ *다가옴*',
+};
+
+const toDueGroup = (label: string): DueGroup => {
+  if (label === 'D-day') {
+    return 'today';
+  }
+  return label.startsWith('D+') ? 'overdue' : 'upcoming';
+};
+
 export const formatUpcomingLine = (
   items: ScheduleItemRecord[],
   today: Date,
@@ -34,13 +51,32 @@ export const formatUpcomingLine = (
   if (open.length === 0) {
     return '';
   }
-  const parts = open.map((item) => {
+  // 한 줄에 `·` 로 이어 붙이면 열 건이 넘는 날 문단 하나가 돼 무엇이 지났고 무엇이 오늘인지
+  // 눈으로 가를 수 없었다(2026-10-22 사용자 지적). 지남 / 오늘 / 다가옴 으로 묶고 한 건에 한 줄을 쓴다.
+  const groups: Record<DueGroup, string[]> = {
+    overdue: [],
+    today: [],
+    upcoming: [],
+  };
+  for (const item of open) {
+    const label = toDayLabel(item.dueDate, today);
     // 제목은 사용자가 친 원문이다. `<`·`>`·`&` 를 막지 않으면 Slack 이 `<...>` 를 링크 태그로
     // 읽어 텍스트가 사라진다 — `schedule.formatter.ts` 와 같은 처리다.
-    return `${escapeSlackMrkdwn(item.title)}(${toDayLabel(item.dueDate, today)})`;
-  });
+    const title = escapeSlackMrkdwn(item.title);
+    const group = toDueGroup(label);
+    // 「오늘」 묶음 안에서 `D-day` 는 머리글과 같은 말이라 뺀다.
+    groups[group].push(
+      group === 'today' ? `• ${title}` : `• ${title} \`${label}\``,
+    );
+  }
+  const sections = DUE_GROUP_ORDER.filter(
+    (group) => groups[group].length > 0,
+  ).map(
+    (group) =>
+      `${DUE_GROUP_HEADER[group]} (${groups[group].length})\n${groups[group].join('\n')}`,
+  );
   // 머리글은 **「다가오는」 이 아니라 「마감」** 이다. 조회에 하한이 없어 기한이 지난 미완
-  // 항목(`D+n`)이 같은 줄에 섞이므로, "다가오는" 이라고 쓰면 줄의 절반이 거짓이 된다.
-  // 놓친 마감을 보여주는 것이 이 줄의 목적이라 머리글이 그것을 부정해서는 안 된다.
-  return `\n📌 마감 — ${parts.join(' · ')}`;
+  // 항목(`D+n`)이 같은 블록에 섞이므로, "다가오는" 이라고 쓰면 절반이 거짓이 된다.
+  // 놓친 마감을 보여주는 것이 이 블록의 목적이라 머리글이 그것을 부정해서는 안 된다.
+  return `\n\n📌 *마감 ${open.length}건*\n${sections.join('\n')}`;
 };
