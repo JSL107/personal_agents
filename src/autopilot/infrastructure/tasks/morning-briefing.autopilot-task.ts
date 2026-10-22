@@ -86,6 +86,9 @@ const MAXIMUM_HOLDING_AGE_DAYS = 7;
 // 마감 줄이 내다보는 앞쪽 폭. 이보다 먼 마감은 오늘 아침에 할 일이 아니다.
 const UPCOMING_WINDOW_DAYS = 7;
 const DAY_MS = 24 * 60 * 60 * 1000;
+// 해결 줄 조회 하한을 직전 아침 원장 시각보다 이만큼 당긴다. 원장은 조회 뒤(발송 후)에 쓰이므로 그 사이
+// 해결을 놓치지 않게 겹친다. 아침 한 회차(계획 생성 포함)가 이보다 길면 늘린다.
+const RESOLVED_WINDOW_OVERLAP_MS = 10 * 60 * 1000;
 
 const ageInDaysOf = (date: Date): number =>
   (Date.now() - date.getTime()) / (24 * 60 * 60 * 1000);
@@ -296,7 +299,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
       ),
       this.loadPortfolio(now),
       this.loadLedgerGapIncidents(firedAtKst),
-      this.loadResolvedIncidents(now),
+      this.loadResolvedIncidents(firedAtKst, now),
     ]);
 
     // 그날 회차에서 감지한 문제도 장애로 센다 — 첫 줄만 보고 열지 정하는 메시지라, 아래 줄에만
@@ -439,13 +442,26 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
     }
   }
 
-  // 해결 알림은 DM 으로 나가지 않는다(notification.consumer) — 지난 24시간에 닫힌 사건을 여기서 한 줄로 알린다.
-  // ponytail: 창을 "직전 아침 발송 이후" 가 아니라 24시간으로 잡았다. 아침이 늦게 나간 날은 경계 근처의
-  // 해결이 두 번 또는 0번 실릴 수 있다 — 문제가 되면 직전 회차의 발송 시각을 기준으로 바꾼다.
-  private async loadResolvedIncidents(now: Date): Promise<string[]> {
+  // 해결 알림은 DM 으로 나가지 않는다(notification.consumer) — 직전 아침 이후 닫힌 사건을 여기서 한 줄로 알린다.
+  // 하한을 "지금 - 24시간" 으로 잡으면 아침이 전날보다 늦게 도는 날(08:31 → 09:01 실측) 그 사이 해결이
+  // 어느 아침에도 안 실린다. 해결 DM 이 없으므로 그 건은 영영 전달되지 않는다 — 그래서 직전 아침이
+  // 원장에 남긴 마지막 시각을 하한으로 쓴다. 그 기록은 이 조회보다 늦게(발송 뒤) 쓰이므로 여유를 빼
+  // 겹치게 한다(경계의 해결이 두 번 실릴 수는 있다 — 유실보다 중복). 직전 기록이 없으면 24시간.
+  private async loadResolvedIncidents(
+    firedAtKst: string,
+    now: Date,
+  ): Promise<string[]> {
     try {
+      const previousMorning =
+        await this.cujLedgerReader.findLatestDeliveryBefore(
+          this.id,
+          getLedgerWatchTodayStart(firedAtKst),
+        );
+      const since = previousMorning
+        ? new Date(previousMorning.getTime() - RESOLVED_WINDOW_OVERLAP_MS)
+        : new Date(now.getTime() - DAY_MS);
       const labels = await this.digestRepository.findResolvedIncidentLabels({
-        since: new Date(now.getTime() - DAY_MS),
+        since,
       });
       return labels.map(toResolvedLabel);
     } catch (error: unknown) {
