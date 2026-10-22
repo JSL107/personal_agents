@@ -119,25 +119,31 @@ func runMascotChatterTests(_ runner: TestRunner) {
     )
     runner.expectEqual(mascotNextTalkTrigger(state: state, now: officeNow, calendar: calendar), .idle, "idle")
 
-    runner.suite("Mascot idle pacing")
-    let nineAM = calendar.date(from: DateComponents(year: 2026, month: 10, day: 21, hour: 9))!
-    let tenAM = calendar.date(from: DateComponents(year: 2026, month: 10, day: 21, hour: 10))!
-    // 10시 = 근무 12시간 중 1/12 경과 → 40 × 1/12 = 3(내림) + 여유 3 = 6번까지.
-    runner.expect(mascotIdlePaceAllows(talkedToday: 2, now: nineAM, calendar: calendar), "출근 직후에도 여유만큼은 말한다")
-    runner.expect(!mascotIdlePaceAllows(talkedToday: 3, now: nineAM, calendar: calendar), "출근 직후 여유를 넘으면 쉰다")
-    runner.expect(mascotIdlePaceAllows(talkedToday: 5, now: tenAM, calendar: calendar), "10시엔 6번 미만이면 말한다")
-    runner.expect(!mascotIdlePaceAllows(talkedToday: 6, now: tenAM, calendar: calendar), "10시에 6번이면 배분을 넘어 쉰다")
-    let tenAMState = MascotTalkState(copying: state, lastSpokeAt: tenAM.addingTimeInterval(-600))
-    runner.expectEqual(mascotNextTalkTrigger(
-        state: MascotTalkState(copying: tenAMState, talkedToday: 5), now: tenAM, calendar: calendar
-    ), .idle, "배분 안이면 혼잣말을 고른다")
-    runner.expectNil(mascotNextTalkTrigger(
-        state: MascotTalkState(copying: tenAMState, talkedToday: 6), now: tenAM, calendar: calendar
-    ), "배분을 넘으면 혼잣말을 고르지 않는다")
-    runner.expectEqual(mascotNextTalkTrigger(
-        state: MascotTalkState(copying: tenAMState, finishedSinceLastTalk: 1, talkedToday: 6),
-        now: tenAM, calendar: calendar
-    ), .events, "끝난 일은 배분과 상관없이 말한다")
+    runner.suite("Mascot idle interval")
+    runner.expectEqual(mascotIdleMinIntervalSeconds, 18 * 60, "근무 12시간 ÷ 하루 40번 = 18분")
+    var recentIdle = state
+    recentIdle.lastIdleAt = officeNow.addingTimeInterval(-(mascotIdleMinIntervalSeconds - 1))
+    runner.expectNil(
+        mascotNextTalkTrigger(state: recentIdle, now: officeNow, calendar: calendar), "직전 혼잣말 18분 미만이면 쉰다"
+    )
+    var oldIdle = state
+    oldIdle.lastIdleAt = officeNow.addingTimeInterval(-mascotIdleMinIntervalSeconds)
+    runner.expectEqual(
+        mascotNextTalkTrigger(state: oldIdle, now: officeNow, calendar: calendar), .idle, "18분 지나면 다시 말한다"
+    )
+    // 15시에 앱을 처음 켜도(오늘 0번) 쌓인 몫이 없다 — 한 번 말하면 다시 18분을 기다린다.
+    var lateStart = state
+    lateStart.talkedToday = 0
+    lateStart.lastIdleAt = officeNow.addingTimeInterval(-60)
+    runner.expectNil(
+        mascotNextTalkTrigger(state: lateStart, now: officeNow, calendar: calendar), "늦게 켜도 못 쓴 몫을 몰아 쓰지 않는다"
+    )
+    var eventsWhileResting = recentIdle
+    eventsWhileResting.finishedSinceLastTalk = 1
+    runner.expectEqual(
+        mascotNextTalkTrigger(state: eventsWhileResting, now: officeNow, calendar: calendar), .events,
+        "끝난 일은 혼잣말 간격과 상관없이 말한다"
+    )
     runner.expectNil(mascotNextTalkTrigger(
         state: state, now: officeNow.addingTimeInterval(-4 * 3600), calendar: calendar
     ), "근무시간 밖")

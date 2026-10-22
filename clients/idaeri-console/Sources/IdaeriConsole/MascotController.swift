@@ -42,6 +42,7 @@ import SwiftUI
     private var awaySince: Date?
     private var finishedSinceLastTalk = 0
     private var lastProgressAt: Date?
+    private var lastIdleAt: Date?
 
     private func setMood(_ value: MascotMood) {
         if mood != value {
@@ -440,7 +441,7 @@ import SwiftUI
             lastSpokeAt: lastSpokeAt, userIdleSeconds: userIdleSeconds, awaySince: awaySince,
             finishedSinceLastTalk: finishedSinceLastTalk, longestRunningSeconds: longestRunningSeconds,
             lastProgressAt: lastProgressAt, mood: mood, talkedToday: talkedToday,
-            idleChanceRoll: .random(in: 0..<1)
+            idleChanceRoll: .random(in: 0..<1), lastIdleAt: lastIdleAt
         )
         guard let trigger = mascotNextTalkTrigger(state: state, now: now, calendar: .current) else {
             return
@@ -498,6 +499,9 @@ import SwiftUI
                 self.awaySince = nil
             }
             if shown {
+                if trigger == .idle {
+                    self.lastIdleAt = Date()
+                }
                 self.play(.hop)
             }
         }

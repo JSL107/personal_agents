@@ -83,20 +83,15 @@ public let mascotChatterQuietSeconds: TimeInterval = 5 * 60
 public let mascotChatterChance = 0.5
 
 public let mascotTalkDailyMax = 40
-/// 하루 배분보다 앞서 쓸 수 있는 여유. 출근 직후에도 몇 마디는 하게 둔다.
-public let mascotTalkPaceAllowance = 3
 
-/// 혼잣말을 지금 해도 하루 배분을 넘지 않는가.
+/// 혼잣말 사이 최소 간격 — 근무 시간을 하루 상한으로 나눈 값(12시간 ÷ 40 = 18분).
 ///
 /// "5분 조용 + 확률 0.5" 만 두면 사실상 5~6분마다 말해 상한을 출근 첫 한 시간에 다 쓰고 나머지는 침묵한다
-/// (2026-10-22 실측: 혼잣말 12번이 09:05~10:05 에 몰림). 근무 시간 중 지난 비율만큼만 쓰게 해 하루에 고르게
-/// 편다. 끝난 일·복귀·진행 상황은 사건이 있을 때만 나오므로 이 배분을 받지 않는다.
-public func mascotIdlePaceAllows(talkedToday: Int, now: Date, calendar: Calendar) -> Bool {
-    let start = calendar.date(bySettingHour: officeArrivalHour, minute: 0, second: 0, of: now) ?? now
-    let workSeconds = TimeInterval(officeDepartureHour - officeArrivalHour) * 3600
-    let elapsed = min(1, max(0, now.timeIntervalSince(start) / workSeconds))
-    return talkedToday < Int(Double(mascotTalkDailyMax) * elapsed) + mascotTalkPaceAllowance
-}
+/// (2026-10-22 실측: 혼잣말 12번이 09:05~10:05 에 몰림). "지난 시간 비율만큼" 같은 누적 몫으로 막으면 앱을
+/// 늦게 켰을 때 못 쓴 몫이 한꺼번에 풀려 몰리는 시각만 옮겨 간다(#882 리뷰). 직전 혼잣말과의 간격으로 막으면
+/// 쌓이는 몫이 없어 언제 켜도 고르게 나온다. 끝난 일·복귀·진행 상황은 사건이 있을 때만 나오므로 이 간격과 무관하다.
+public let mascotIdleMinIntervalSeconds: TimeInterval =
+    TimeInterval(officeDepartureHour - officeArrivalHour) * 3600 / TimeInterval(mascotTalkDailyMax)
 public let mascotTalkMinGapSeconds: TimeInterval = 180
 public let mascotAwaySeconds: TimeInterval = 15 * 60
 public let mascotProgressGapSeconds: TimeInterval = 10 * 60
@@ -132,12 +127,15 @@ public struct MascotTalkState {
     public var mood: MascotMood
     public var talkedToday: Int
     public var idleChanceRoll: Double
+    /// 마지막으로 혼잣말을 띄운 시각. 없으면 오늘(앱을 켠 뒤) 아직 혼잣말을 안 했다.
+    public var lastIdleAt: Date?
 
     public init(
         lastSpokeAt: Date, userIdleSeconds: TimeInterval, awaySince: Date?, finishedSinceLastTalk: Int,
         longestRunningSeconds: TimeInterval?, lastProgressAt: Date?, mood: MascotMood,
-        talkedToday: Int, idleChanceRoll: Double
+        talkedToday: Int, idleChanceRoll: Double, lastIdleAt: Date? = nil
     ) {
+        self.lastIdleAt = lastIdleAt
         self.lastSpokeAt = lastSpokeAt
         self.userIdleSeconds = userIdleSeconds
         self.awaySince = awaySince
@@ -176,7 +174,7 @@ public func mascotNextTalkTrigger(state: MascotTalkState, now: Date, calendar: C
     }
     if state.mood == .idle, quietSeconds >= mascotChatterQuietSeconds,
        state.idleChanceRoll < mascotChatterChance,
-       mascotIdlePaceAllows(talkedToday: state.talkedToday, now: now, calendar: calendar) {
+       state.lastIdleAt.map({ now.timeIntervalSince($0) >= mascotIdleMinIntervalSeconds }) ?? true {
         return .idle
     }
     return nil
