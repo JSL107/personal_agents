@@ -230,7 +230,7 @@
 - [x] 보고서 원문과 명시된 file:line을 대조한다.
 - [x] fallback·BullMQ backoff·quota clamp·LLM retry 실행 의미를 검산한다.
 - [x] L4 쌍 선정·주식 평단 상태·선호 학습·리뷰 판정의 상하류 호출 경로를 끝까지 추적한다.
-- [ ] Postgres에서 14일 실패, daily_plan 결손, L4 밴드 쌍을 재집계한다.
+- [x] Postgres에서 14일 실패, daily_plan 결손, L4 밴드 쌍을 재집계한다. → 2026-10-23 최근 14일 창으로 대체 집계(아래 Review). 8월 보고서 창의 수치는 재현하지 않았다.
 - [x] 각 항목을 확인/반박/부분정확으로 판정하고 반증을 명시한다.
 - [x] 결과와 미검증 리스크를 Review에 기록한다.
 
@@ -239,6 +239,8 @@
 - 코드 10항목 대조 완료: 확인 4건, 부분정확 6건, 전면 반박 0건.
 - 핵심 반증: Autopilot retry는 그룹 전멸 시에만 발동하며, L4 상위 5쌍은 신규 memory/supersede로 바뀐다. 주식 상태 줄은 평일·성공 점검 종목에 한한다.
 - DB 재집계는 현재 샌드박스에서 Docker socket `permission denied`, `127.0.0.1:5434` `Operation not permitted`로 미완료. 보고서의 34/30건·daily_plan 결손·120쌍은 독립 확인하지 못했다.
+- 2026-10-23 재집계(KST 10-09 ~ 10-22, 14일, `agent_run.started_at` 기준, 독립 집계 여러 벌이 같은 값): 전체 2,127건 중 `FAILED` 45건. 실패 상위는 CODE_REVIEWER 15 · HUMANIZER 7 · SUBCONSCIOUS_GATE 7 · BLOG_PUBLISH 6 · CTO_STUDY 5. 45건 중 11건은 정리 작업이 닫은 `swept: stale IN_PROGRESS`. 평일 중 PM 성공 run 이 없는 날은 0일. L4 밴드 쌍은 다시 세지 않았다.
+- 집계 함정: `started_at` 은 시간대 없는 형식에 UTC 값이라 `started_at AT TIME ZONE 'Asia/Seoul'` 로 날짜를 자르면 하루 밀린다(`docs/superpowers/plans/2026-10-23-remaining-work-inventory.md` §6).
 
 ---
 
