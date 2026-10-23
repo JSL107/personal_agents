@@ -116,16 +116,10 @@ export class SuggestNextWorkUsecase {
   }
 }
 
-// 일정 등록은 주기로 돌리는 일이 아니라 사용자가 날짜·이름을 줘야 하는 일이다. 제안을 수락하면
-// 문장 없이 실행돼, 대화와 무관하게 "무엇을 등록할까요?" 만 돌아온다(2026-10-23 콘솔 9:24·10:45).
-// 다른 입력형 worker 는 입력이 없으면 BAD_REQUEST 를 던져 콘솔 입력 요청으로 이어지지만, 일정
-// worker 는 되묻기를 정상 답으로 돌려 그 경로를 타지 않는다.
-const NON_SUGGESTABLE_AGENT_TYPES: ReadonlySet<string> = new Set([
-  AgentType.SCHEDULE,
-]);
-
+// 일정 등록은 주기로 돌리는 일이 아니다. 제안을 수락하면 문장 없이 실행돼 맥락과 무관하게
+// "무엇을 등록할까요?" 만 돌아온다(2026-10-23 콘솔).
 const isAvailableCandidate = (agent: ConsoleAgent): boolean =>
-  !NON_SUGGESTABLE_AGENT_TYPES.has(agent.agentType) &&
+  agent.agentType !== AgentType.SCHEDULE &&
   agent.state !== ConsoleAgentState.IN_PROGRESS &&
   agent.state !== ConsoleAgentState.AWAITING_APPROVAL;
 
