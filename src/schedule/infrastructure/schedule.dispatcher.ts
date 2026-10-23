@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
+import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import {
   findHypotheticalMarker,
@@ -25,7 +26,9 @@ import {
   parseScheduleCommand,
   ScheduleCommand,
 } from '../domain/parse-schedule-command';
+import { ScheduleException } from '../domain/schedule.exception';
 import { PlainDate } from '../domain/schedule.type';
+import { ScheduleErrorCode } from '../domain/schedule-error-code.enum';
 import { isScheduleLookup } from '../domain/schedule-lookup';
 
 interface MergedScheduleCommand {
@@ -45,6 +48,15 @@ export class ScheduleDispatcher implements AgentDispatcher {
   ) {}
 
   async dispatch(input: DispatchInput): Promise<DispatchOutcome> {
+    // 빈 문장은 되묻기 대신 BAD_REQUEST — 콘솔이 입력 요청으로 바꿔 다음 입력을 이 worker 로 잇는다.
+    if (!input.text?.trim()) {
+      throw new ScheduleException({
+        code: ScheduleErrorCode.INPUT_REQUIRED,
+        message:
+          '등록할 일정을 날짜와 이름으로 적어주세요 (예: 9월 30일 자동차세).',
+        status: DomainStatus.BAD_REQUEST,
+      });
+    }
     const today = todayInKst(new Date());
     // 조회 문장은 등록 파서에 넣지 않는다 — 문장 전체가 제목으로 읽혀 날짜를 되묻거나("이번주 일정
     // 알려줘") 바로 등록된다("오늘 할 일"). 등록된 일정으로 답한다.

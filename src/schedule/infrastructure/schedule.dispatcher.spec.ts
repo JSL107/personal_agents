@@ -1,7 +1,9 @@
+import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { AnswerScheduleQuestionUsecase } from '../application/answer-schedule-question.usecase';
 import { RegisterScheduleUsecase } from '../application/register-schedule.usecase';
 import { ScheduleStatus } from '../domain/schedule.type';
+import { ScheduleErrorCode } from '../domain/schedule-error-code.enum';
 import { ScheduleDispatcher } from './schedule.dispatcher';
 
 const createUsecase = (): RegisterScheduleUsecase => {
@@ -104,6 +106,32 @@ describe('ScheduleDispatcher', () => {
       output: { scheduleId: 1, title: '자동차세' },
     });
   });
+
+  it.each([undefined, '', '   '])(
+    '문장 없이(%p) 불리면 되묻기 답 대신 BAD_REQUEST 를 던진다 — 콘솔이 입력 요청으로 잇는다',
+    async (text) => {
+      const usecase = createUsecase();
+      const answer = createAnswer();
+      const dispatcher = new ScheduleDispatcher(
+        usecase,
+        answer,
+        createAgentRunService() as never,
+      );
+
+      await expect(
+        dispatcher.dispatch({
+          source: 'REMOTE_CONSOLE',
+          slackUserId: 'U1',
+          text,
+        }),
+      ).rejects.toMatchObject({
+        errorCode: ScheduleErrorCode.INPUT_REQUIRED,
+        status: DomainStatus.BAD_REQUEST,
+      });
+      expect(usecase.execute).not.toHaveBeenCalled();
+      expect(answer.execute).not.toHaveBeenCalled();
+    },
+  );
 
   it('날짜가 없으면 등록하지 않고 되묻는다', async () => {
     const usecase = createUsecase();
