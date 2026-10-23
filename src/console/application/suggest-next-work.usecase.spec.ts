@@ -106,6 +106,28 @@ describe('SuggestNextWorkUsecase', () => {
     expect(result.alsoDueCount).toBe(0);
   });
 
+  it('일정 등록은 주기가 밀려도 제안하지 않는다 — 수락하면 문장 없이 실행돼 되묻기만 돌아온다', async () => {
+    const { usecase, agentRunService } = make({
+      agents: [
+        { agentType: AgentType.SCHEDULE, displayName: '일정' },
+        { agentType: AgentType.PM, displayName: 'PM' },
+      ],
+      runsByAgentType: {
+        [AgentType.SCHEDULE]: succeededAt(10, 11, 12),
+        [AgentType.PM]: succeededAt(2, 3, 4),
+      },
+    });
+
+    const result = await usecase.execute();
+
+    expect(
+      result.suggestions.map((suggestion) => suggestion.agentType),
+    ).toEqual([AgentType.PM]);
+    expect(agentRunService.findRecentSucceededRuns).not.toHaveBeenCalledWith(
+      expect.objectContaining({ agentType: AgentType.SCHEDULE }),
+    );
+  });
+
   it('같은 KST 날짜의 여러 성공을 한 날로 세어 주기를 계산한다', async () => {
     const { usecase } = make({
       agents: [{ agentType: AgentType.PM, displayName: 'PM' }],

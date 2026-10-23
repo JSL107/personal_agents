@@ -24,6 +24,20 @@ func installMainMenu(on application: NSApplication) -> MainMenuBridge {
     applicationMenuItem.submenu = applicationMenu
     mainMenu.addItem(applicationMenuItem)
 
+    // ⌘C·⌘V·⌘A 는 이 메뉴의 단축키로만 응답 체인에 전달된다. 없으면 우사기 답을 선택해도 복사되지 않는다.
+    // target 을 비워 두면 포커스된 텍스트(선택 가능한 Text·TextField)가 받는다.
+    let editMenuItem = NSMenuItem()
+    let editMenu = NSMenu(title: "편집")
+    editMenu.addItem(withTitle: "실행 취소", action: Selector(("undo:")), keyEquivalent: "z")
+    editMenu.addItem(withTitle: "실행 복귀", action: Selector(("redo:")), keyEquivalent: "Z")
+    editMenu.addItem(.separator())
+    editMenu.addItem(withTitle: "오려두기", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+    editMenu.addItem(withTitle: "복사하기", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+    editMenu.addItem(withTitle: "붙여넣기", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+    editMenu.addItem(withTitle: "전체 선택", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+    editMenuItem.submenu = editMenu
+    mainMenu.addItem(editMenuItem)
+
     let commandMenuItem = NSMenuItem()
     let commandMenu = NSMenu(title: "지시")
     let mascotMenuItem = NSMenuItem(

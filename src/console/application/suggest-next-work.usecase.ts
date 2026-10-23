@@ -116,7 +116,10 @@ export class SuggestNextWorkUsecase {
   }
 }
 
+// 일정 등록은 주기로 돌리는 일이 아니다. 제안을 수락하면 문장 없이 실행돼 맥락과 무관하게
+// "무엇을 등록할까요?" 만 돌아온다(2026-10-23 콘솔).
 const isAvailableCandidate = (agent: ConsoleAgent): boolean =>
+  agent.agentType !== AgentType.SCHEDULE &&
   agent.state !== ConsoleAgentState.IN_PROGRESS &&
   agent.state !== ConsoleAgentState.AWAITING_APPROVAL;
 
