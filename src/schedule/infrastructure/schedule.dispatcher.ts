@@ -48,10 +48,8 @@ export class ScheduleDispatcher implements AgentDispatcher {
   ) {}
 
   async dispatch(input: DispatchInput): Promise<DispatchOutcome> {
-    // 문장 없이 불리면(콘솔에서 담당자만 고른 지시 등) 되묻기 문장을 답으로 돌리지 않고 BAD_REQUEST 를
-    // 던진다 — 콘솔은 이것을 입력 요청으로 바꿔 다음 입력을 이 worker 로 곧장 잇는다. 되묻기를 답으로
-    // 돌리면 다음 입력이 분류기로 가 맥락이 끊긴다(2026-10-23).
-    if ((input.text ?? '').trim().length === 0) {
+    // 빈 문장은 되묻기 대신 BAD_REQUEST — 콘솔이 입력 요청으로 바꿔 다음 입력을 이 worker 로 잇는다.
+    if (!input.text?.trim()) {
       throw new ScheduleException({
         code: ScheduleErrorCode.INPUT_REQUIRED,
         message:
