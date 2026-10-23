@@ -58,6 +58,8 @@ export class ConsoleWriteService {
     if (!suggestion) {
       throw new ConflictException('지금은 제안 목록에 없는 작업입니다.');
     }
+    // 이 경로는 분류기를 거치지 않아 Router 로그만으로는 왜 그 worker 가 돌았는지 보이지 않는다.
+    this.logger.log(`콘솔 할 일 제안 수락 → ${suggestion.agentType}`);
 
     this.runChain({
       slackUserId,
