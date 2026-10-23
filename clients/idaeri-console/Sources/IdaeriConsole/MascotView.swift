@@ -305,6 +305,7 @@ struct MascotView: View {
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                                     .lineLimit(2)
+                                    .textSelection(.enabled)
                             }
                         }
                     }
@@ -351,7 +352,7 @@ struct MascotView: View {
                 Text(message)
             case let .chatter(sound, line, suggestion, asks, showDashboard):
                 Text(sound).font(.system(size: 14, weight: .bold))
-                Text(line).lineLimit(4)
+                Text(line).lineLimit(4).textSelection(.enabled)
                 if showDashboard {
                     HStack {
                         Spacer()
