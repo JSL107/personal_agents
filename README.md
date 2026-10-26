@@ -361,6 +361,7 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 | `DATABASE_URL` · `REDIS_HOST` / `REDIS_PORT` | ✅ | PostgreSQL(5434) · Redis(6381) |
 | `SLACK_BOT_TOKEN` / `_APP_TOKEN` / `_SIGNING_SECRET` | ⭕ | 3개 모두 있어야 봇 활성 (Socket Mode) |
 | `GITHUB_TOKEN` · `NOTION_TOKEN` / `NOTION_TASK_DB_IDS` | ⭕ | 미설정 시 해당 연동 skip |
+| `GITHUB_REVIEW_BOT_TOKEN` / `_LOGIN` / `_REPOS` | ❌ | PR 리뷰 봇 전용 계정. `_REPOS` 에 적힌 레포에서만 PR 쓰기를 봇으로 한다. 미설정 시 `GITHUB_TOKEN` 계정 |
 | `WATCH_SCRIPT_PATH` | ⭕ | Video Watch의 `watch.py` 경로. 미설정 시 유튜브 분석 워커 비활성화 |
 | `*_WEBHOOK_SECRET` · `GITHUB_WEBHOOK_*` | ⭕ | webhook 검증 · 자동 발화 가드 |
 | `AUTOPILOT_OWNER_SLACK_USER_ID` · `AUTOPILOT_TARGET` | ⭕ | cron 전체 게이트 · 발송 대상(콤마 다중) |

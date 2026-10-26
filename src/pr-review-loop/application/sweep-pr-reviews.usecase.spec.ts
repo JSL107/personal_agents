@@ -6,6 +6,7 @@ import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { GithubClientPort } from '../../github/domain/port/github-client.port';
 import { CodexQuotaExceededException } from '../../model-router/infrastructure/codex-cli.provider';
 import { PublishFindingsService } from './publish-findings.service';
+import { ReviewWriterResolver } from './review-writer.resolver';
 import { SweepPrReviewsUsecase } from './sweep-pr-reviews.usecase';
 
 // 스윕이 조회에서 받는 값은 식별자뿐이다 — 상세(title/body/증감)는 받지 않는다.
@@ -94,14 +95,25 @@ describe('SweepPrReviewsUsecase', () => {
   const minutesAgo = (minutes: number): Date =>
     new Date(Date.now() - minutes * 60 * 1000);
 
-  const buildUsecase = (values: Record<string, string | undefined>) =>
-    new SweepPrReviewsUsecase(
-      github as unknown as GithubClientPort,
+  const buildUsecase = (
+    values: Record<string, string | undefined>,
+    bot: { addIssueComment: jest.Mock } | null = null,
+  ): SweepPrReviewsUsecase => {
+    const config = buildConfig(values);
+    const client = github as unknown as GithubClientPort;
+    return new SweepPrReviewsUsecase(
+      client,
       reviewUsecase as unknown as ReviewPullRequestUsecase,
       agentRunService as unknown as AgentRunService,
       publishService as unknown as PublishFindingsService,
-      buildConfig(values),
+      config,
+      new ReviewWriterResolver(
+        config,
+        client,
+        bot as unknown as GithubClientPort | null,
+      ),
     );
+  };
 
   const ENABLED = {
     PR_REVIEW_LOOP_ENABLED: 'true',
@@ -967,6 +979,29 @@ describe('SweepPrReviewsUsecase', () => {
       // 요약은 한 줄로 눌러 인용한다 — 줄바꿈이 남으면 인용 밖으로 새어 나간다.
       const [{ body }] = github.addIssueComment.mock.calls[0];
       expect(body).toContain('> 요약 첫 줄 요약 둘째 줄');
+    });
+
+    it('봇 레포면 지적 없음 코멘트를 봇 계정으로 단다', async () => {
+      noFindings();
+      const bot = { addIssueComment: jest.fn().mockResolvedValue(undefined) };
+
+      await buildUsecase(
+        {
+          ...ENABLED,
+          PR_REVIEW_INLINE_DRYRUN: 'false',
+          GITHUB_REVIEW_BOT_LOGIN: 'idaeri-bot',
+          GITHUB_REVIEW_BOT_REPOS: 'JSL107/personal_agents',
+        },
+        bot,
+      ).execute();
+
+      expect(bot.addIssueComment).toHaveBeenCalledWith(
+        expect.objectContaining({
+          repo: 'JSL107/personal_agents',
+          number: 180,
+        }),
+      );
+      expect(github.addIssueComment).not.toHaveBeenCalled();
     });
 
     it('지적이 없어도 위험 지도는 같은 스냅샷·연습 모드로 넘긴다', async () => {

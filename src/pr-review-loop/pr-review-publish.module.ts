@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { GithubModule } from '../github/github.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { PublishFindingsService } from './application/publish-findings.service';
+import { ReviewWriterResolver } from './application/review-writer.resolver';
 import { PR_REVIEW_FINDING_REPOSITORY_PORT } from './domain/port/pr-review-finding.repository.port';
 import { PrReviewFindingPrismaRepository } from './infrastructure/pr-review-finding.prisma.repository';
 
@@ -10,11 +11,16 @@ import { PrReviewFindingPrismaRepository } from './infrastructure/pr-review-find
   imports: [PrismaModule, GithubModule],
   providers: [
     PublishFindingsService,
+    ReviewWriterResolver,
     {
       provide: PR_REVIEW_FINDING_REPOSITORY_PORT,
       useClass: PrReviewFindingPrismaRepository,
     },
   ],
-  exports: [PublishFindingsService, PR_REVIEW_FINDING_REPOSITORY_PORT],
+  exports: [
+    PublishFindingsService,
+    ReviewWriterResolver,
+    PR_REVIEW_FINDING_REPOSITORY_PORT,
+  ],
 })
 export class PrReviewPublishModule {}

@@ -76,6 +76,21 @@ export class EnvironmentVariables {
   @IsString()
   GITHUB_TOKEN?: string;
 
+  // PR 리뷰 루프가 PR 에 쓰는 일(인라인 지적·묶음 코멘트·위험 지도·스레드 resolve)만 맡는 봇 계정.
+  // 셋 다 있어야 켜지고, GITHUB_REVIEW_BOT_REPOS(콤마 구분 owner/repo)에 적힌 레포에서만 봇으로 쓴다.
+  // 그 밖의 레포와 조회는 GITHUB_TOKEN 계정 그대로. 봇은 그 레포에 Write 이상 collaborator 여야 한다.
+  @IsOptional()
+  @IsString()
+  GITHUB_REVIEW_BOT_TOKEN?: string;
+
+  @IsOptional()
+  @IsString()
+  GITHUB_REVIEW_BOT_LOGIN?: string;
+
+  @IsOptional()
+  @IsString()
+  GITHUB_REVIEW_BOT_REPOS?: string;
+
   // Video Watch 외부 분석 스크립트 경로. 미설정 또는 파일 없음이면 해당 워커만 비활성화된다.
   @IsOptional()
   @IsString()

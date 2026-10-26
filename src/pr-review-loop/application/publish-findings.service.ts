@@ -9,6 +9,7 @@ import {
 import {
   GITHUB_CLIENT_PORT,
   GithubClientPort,
+  IssueCommentSummary,
 } from '../../github/domain/port/github-client.port';
 import {
   FileHunkRanges,
@@ -40,6 +41,7 @@ import {
   buildRiskMapCommentBody,
   RISK_MAP_COMMENT_TAG,
 } from '../domain/risk-map-comment.body';
+import { ReviewWriter, ReviewWriterResolver } from './review-writer.resolver';
 
 const AGENT_TYPE = 'CODE_REVIEWER';
 
@@ -66,11 +68,42 @@ export interface UpsertRiskMapInput {
   findings: ReviewFinding[];
   dryRun: boolean;
   allowlistRaw: string | undefined;
-  // 봇이 코멘트를 다는 계정(GITHUB_WEBHOOK_OWNER_LOGIN). 있으면 이 계정이 쓴 위험 지도만 고쳐 쓴다 —
-  // 표식만 보면 남이 흉내 낸 코멘트를 고치려다 403 을 받고 위험 지도가 영영 안 달린다. 대소문자는
-  // 수확기(sameLogin)처럼 무시한다. 비어 있거나 공백뿐이면 표식만으로 찾는다.
-  ownerLogin: string | undefined;
 }
+
+// 이 계정이 쓴 코멘트인가. 표식만 보면 남이 흉내 낸 코멘트를 고치려다 403 을 받고 위험 지도가 영영
+// 안 달린다. 대소문자는 수확기(sameLogin)처럼 무시한다. 계정 login 을 모르면 표식만으로 찾는다.
+const isWrittenBy = (writer: ReviewWriter, authorLogin: string): boolean => {
+  const login = writer.login?.trim() ?? '';
+  return login.length === 0 || sameLogin(authorLogin, login);
+};
+
+interface RiskMapComment {
+  writer: ReviewWriter;
+  comment: IssueCommentSummary;
+}
+
+// 앞선 계정(지금 쓰는 계정)이 단 지도를 먼저 찾는다. 찾은 지도는 그 지도를 쓴 계정으로 고쳐야 한다 —
+// 봇은 사용자 계정이 단 코멘트를 고칠 수 있다고 보장되지 않는다.
+const findRiskMapComment = ({
+  writers,
+  comments,
+}: {
+  writers: ReviewWriter[];
+  comments: IssueCommentSummary[];
+}): RiskMapComment | null => {
+  for (const writer of writers) {
+    const comment = comments.find(
+      (item) =>
+        item.body.startsWith(IDAERI_REVIEW_MARKER) &&
+        item.body.includes(RISK_MAP_COMMENT_TAG) &&
+        isWrittenBy(writer, item.authorLogin),
+    );
+    if (comment !== undefined) {
+      return { writer, comment };
+    }
+  }
+  return null;
+};
 
 @Injectable()
 export class PublishFindingsService {
@@ -85,6 +118,7 @@ export class PublishFindingsService {
     private readonly githubClient: GithubClientPort,
     @Inject(PR_REVIEW_FINDING_REPOSITORY_PORT)
     private readonly repository: PrReviewFindingRepositoryPort,
+    private readonly writers: ReviewWriterResolver,
   ) {}
 
   async publish(input: PublishFindingsInput): Promise<PublishOutcome> {
@@ -220,28 +254,24 @@ export class PublishFindingsService {
         repo: input.repo,
         number: input.pullNumber,
       });
-      const ownerLogin = input.ownerLogin?.trim() ?? '';
-      const found = comments.find(
-        (comment) =>
-          (ownerLogin.length === 0 ||
-            sameLogin(comment.authorLogin, ownerLogin)) &&
-          comment.body.startsWith(IDAERI_REVIEW_MARKER) &&
-          comment.body.includes(RISK_MAP_COMMENT_TAG),
-      );
-      if (found === undefined) {
-        await this.githubClient.addIssueComment({
+      // 봇 전환 전에 사용자 계정이 단 지도도 찾는다. 지금 계정으로만 찾으면 전환 시점에 열려 있던 PR 에
+      // 지도가 두 개 남는다.
+      const writers = this.writers.candidatesFor(input.repo);
+      const match = findRiskMapComment({ writers, comments });
+      if (match === null) {
+        await writers[0].client.addIssueComment({
           repo: input.repo,
           number: input.pullNumber,
           body,
         });
         return;
       }
-      if (found.body === body) {
+      if (match.comment.body === body) {
         return;
       }
-      await this.githubClient.updateIssueComment({
+      await match.writer.client.updateIssueComment({
         repo: input.repo,
-        commentId: found.id,
+        commentId: match.comment.id,
         body,
       });
     } catch (error: unknown) {
@@ -268,7 +298,7 @@ export class PublishFindingsService {
       return;
     }
     try {
-      await this.githubClient.addIssueComment({
+      await this.writers.forRepo(input.repo).client.addIssueComment({
         repo: input.repo,
         number: input.pullNumber,
         body: buildPartialReviewCommentBody(note),
@@ -358,18 +388,20 @@ export class PublishFindingsService {
 
     let posted: { commentId: string; nodeId: string };
     try {
-      posted = await this.githubClient.createReviewComment({
-        repo: input.repo,
-        pullNumber: input.pullNumber,
-        commitSha: input.headSha,
-        filePath,
-        line: snapped,
-        body: buildFindingCommentBody({
-          category: finding.category,
-          severity: finding.severity,
-          body: finding.body,
-        }),
-      });
+      posted = await this.writers
+        .forRepo(input.repo)
+        .client.createReviewComment({
+          repo: input.repo,
+          pullNumber: input.pullNumber,
+          commitSha: input.headSha,
+          filePath,
+          line: snapped,
+          body: buildFindingCommentBody({
+            category: finding.category,
+            severity: finding.severity,
+            body: finding.body,
+          }),
+        });
     } catch (error: unknown) {
       this.logger.warn(
         `인라인 게시 실패, 일반 코멘트로 강등 (${filePath}:${snapped ?? 'file'}): ${
@@ -417,7 +449,7 @@ export class PublishFindingsService {
       ...fallback.map((item) => `- ${item.body}`),
     ];
     try {
-      await this.githubClient.addIssueComment({
+      await this.writers.forRepo(input.repo).client.addIssueComment({
         repo: input.repo,
         number: input.pullNumber,
         body: lines.join('\n'),
