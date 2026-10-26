@@ -56,4 +56,22 @@ describe('humanize research input', () => {
       arxivIds: [],
     });
   });
+
+  it('upstream 처리 기록은 실린 항목의 커밋(마지막으로 실은 커밋)으로만 전진한다', () => {
+    const previous = {
+      humanizerMaxRunId: null,
+      blogPostIds: [],
+      upstreamHead: 'a1',
+      arxivIds: [],
+    };
+
+    const advanced = advanceProcessed({
+      previous,
+      included: [item(HumanizeResearchSource.UPSTREAM, 'upstream:b2', 'diff')],
+    });
+    const notIncluded = advanceProcessed({ previous, included: [] });
+
+    expect(advanced.upstreamHead).toBe('b2');
+    expect(notIncluded.upstreamHead).toBe('a1');
+  });
 });

@@ -100,6 +100,18 @@ export interface UpstreamRange {
   args: string[];
 }
 
+export interface UpstreamCommit {
+  hash: string;
+  subject: string;
+  patch: string;
+}
+
+export interface UpstreamSelection {
+  text: string;
+  lastHash: string;
+  deferredCount: number;
+}
+
 export interface ArxivFields {
   id: string;
   title: string;

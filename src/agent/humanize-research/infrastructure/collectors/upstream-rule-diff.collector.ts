@@ -10,10 +10,11 @@ import {
   GitResult,
   HumanizeResearchSource,
   Processed,
+  UpstreamCommit,
 } from '../../domain/humanize-research.type';
 import {
   chooseUpstreamRange,
-  composeUpstreamText,
+  selectUpstreamCommits,
 } from '../../domain/upstream-range';
 
 const RULES_PATH = 'skills/humanize-korean/';
@@ -23,7 +24,7 @@ const GIT_OUTPUT_LIMIT = 100_000;
 const GIT_ERROR_PREVIEW = 200;
 
 // shell 없이 argv를 그대로 넘긴다. 정본 저장소에는 fetch 외의 쓰기 명령을 실행하지 않는다.
-// stderr 를 stdout 에 섞으면 rev-parse 해시에 경고문이 붙고, 조각마다 toString 하면
+// stderr 를 stdout 에 섞으면 커밋 목록에 경고문이 끼고, 조각마다 toString 하면
 // 한글 커밋 제목이 조각 경계에서 깨진다 — 스트림 단위 utf8 디코딩으로 받는다.
 export const runGit = ({
   directory,
@@ -64,10 +65,6 @@ export class UpstreamRuleDiffCollector {
         this.configService.get<string>('HUMANIZE_RULES_REPO_PATH'),
       );
       await this.checked({ directory, args: ['fetch', 'upstream'] });
-      const head = await this.checked({
-        directory,
-        args: ['rev-parse', 'upstream/main'],
-      });
       const isAncestor = await this.isAncestor({
         directory,
         priorHead: processed.upstreamHead,
@@ -76,34 +73,28 @@ export class UpstreamRuleDiffCollector {
         priorHead: processed.upstreamHead,
         isAncestor,
       });
-      const commits = await this.checked({
-        directory,
-        args: ['log', '--format=%h %s', ...range.args, '--', RULES_PATH],
+      const commits = await this.listCommits({ directory, range: range.args });
+      const selection = selectUpstreamCommits({
+        commits,
+        budget: OUTPUT_BUDGET,
       });
-      if (commits.trim().length === 0) {
+      if (!selection) {
         return {
           source: HumanizeResearchSource.UPSTREAM,
           status: CollectionStatus.EMPTY,
           items: [],
         };
       }
-      const patch = await this.checked({
-        directory,
-        args: ['log', '--format=%h %s', '-p', ...range.args, '--', RULES_PATH],
-      });
-      const text = composeUpstreamText({
-        commits,
-        patch,
-        budget: OUTPUT_BUDGET,
-      });
+      // id 는 upstream/main 끝이 아니라 마지막으로 실은 커밋이다. 처리 기록이 이 값까지만
+      // 전진해야 예산 때문에 못 실은 커밋을 다음 회차가 본다.
       return {
         source: HumanizeResearchSource.UPSTREAM,
         status: CollectionStatus.OK,
         items: [
           {
-            id: `upstream:${head.trim()}`,
+            id: `upstream:${selection.lastHash}`,
             source: HumanizeResearchSource.UPSTREAM,
-            text,
+            text: selection.text,
           },
         ],
       };
@@ -135,6 +126,42 @@ export class UpstreamRuleDiffCollector {
     });
     const ancestor = result.exitCode === 0;
     return ancestor;
+  }
+
+  private async listCommits({
+    directory,
+    range,
+  }: {
+    directory: string;
+    range: string[];
+  }): Promise<UpstreamCommit[]> {
+    const log = await this.checked({
+      directory,
+      args: [
+        'log',
+        '--reverse',
+        '--format=%H%x09%s',
+        ...range,
+        '--',
+        RULES_PATH,
+      ],
+    });
+    const headers = log
+      .split('\n')
+      .filter((line) => line.length > 0)
+      .map((line) => {
+        const [hash, ...subject] = line.split('\t');
+        return { hash, subject: subject.join('\t') };
+      });
+    return await Promise.all(
+      headers.map(async ({ hash, subject }) => {
+        const patch = await this.checked({
+          directory,
+          args: ['show', '--format=', hash, '--', RULES_PATH],
+        });
+        return { hash, subject, patch };
+      }),
+    );
   }
 
   private async checked({
