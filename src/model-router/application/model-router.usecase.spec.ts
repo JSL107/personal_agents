@@ -95,6 +95,26 @@ describe('ModelRouterUsecase', () => {
     });
   });
 
+  describe('provider 지정', () => {
+    it('provider 를 넘기면 agentType 매핑 대신 그 provider 를 primary 로 쓴다', async () => {
+      claudeProvider.complete.mockResolvedValue({
+        text: 'ok',
+        modelUsed: 'claude-cli',
+        provider: ModelProviderName.CLAUDE,
+      });
+
+      const result = await usecase.route({
+        agentType: AgentType.HUMANIZE_RESEARCH,
+        provider: ModelProviderName.CLAUDE,
+        noFallback: true,
+        request: { prompt: 'hi' },
+      });
+
+      expect(result.provider).toBe(ModelProviderName.CLAUDE);
+      expect(chatgptProvider.complete).not.toHaveBeenCalled();
+    });
+  });
+
   describe('직무 계약 머리말 주입', () => {
     beforeEach(() => {
       chatgptProvider.complete.mockResolvedValue({

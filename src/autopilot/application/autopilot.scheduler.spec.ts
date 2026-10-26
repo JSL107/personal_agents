@@ -76,8 +76,9 @@ describe('AutopilotScheduler', () => {
     //   + holiday-sync(주간 한국 공휴일 동기화, 단독 그룹)
     //   + study-applicability(오늘의 공부 적용 판정, 단독 그룹)
     //   + idea-triage(평일 아이디어 판정, 단독 그룹)
-    //   + cuj-check(매일 핵심 여정 점검, 단독 그룹) = 37그룹.
-    expect(queue.add).toHaveBeenCalledTimes(37);
+    //   + cuj-check(매일 핵심 여정 점검, 단독 그룹)
+    //   + humanize-research(주간 윤문 규칙 dry-run, 단독 그룹) = 38그룹.
+    expect(queue.add).toHaveBeenCalledTimes(38);
     expect(addCalls).toContain('idea-triage');
     expect(addCalls).toContain('memory-vacuum');
     expect(addCalls).toContain('holiday-sync');

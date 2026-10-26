@@ -904,6 +904,16 @@ export class EnvironmentVariables {
   @IsString()
   HUMANIZE_REPORTS_ENABLED?: string;
 
+  // 윤문 규칙 연구 dry-run. 'true' 일 때만 주간 cron 이 수집과 모델 호출을 시작한다.
+  @IsOptional()
+  @IsString()
+  HUMANIZE_RESEARCH_ENABLED?: string;
+
+  // 정본 humanize-korean 저장소. 미설정 시 ~/.claude/skills/humanize-korean.
+  @IsOptional()
+  @IsString()
+  HUMANIZE_RULES_REPO_PATH?: string;
+
   // BRIEFING_WAITING_SECTION_ENABLED: 'false' 면 아침 브리핑 완료/대기 PR 분류 섹션 OFF. 미설정 시 활성(기본 ON).
   @IsOptional()
   @IsString()

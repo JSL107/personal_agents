@@ -356,6 +356,11 @@ export class ReplayFailedRunUsecase {
           ReplayRejectionCode.NOT_SUPPORTED,
           `AgentRun #${runId} (BLOG_REVISION) 은 28일을 되짚는 누적 집계라 회차 하나가 실패해도 다음 주 회차가 같은 범위를 다시 셉니다. 지금 수치를 확인하려면 \`node --env-file=.env -r ts-node/register/transpile-only scripts/blog-revision-report.ts\` 를 실행해주세요.`,
         );
+      case 'HUMANIZE_RESEARCH':
+        return reject(
+          ReplayRejectionCode.NOT_SUPPORTED,
+          `AgentRun #${runId} (HUMANIZE_RESEARCH) 은 처리 id 가 성공 회차에서만 전진하므로 실패하면 다음 주 회차가 같은 재료를 다시 봅니다. 지금 제안을 확인하려면 \`pnpm humanize:research\` 를 실행해주세요.`,
+        );
       case 'PAPER_RECOMMEND':
         return await this.preparePaperRecommend(runId, snapshot);
       case 'BLOG':

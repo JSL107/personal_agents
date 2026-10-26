@@ -6,6 +6,7 @@ import { BlogModule } from '../agent/blog/blog.module';
 import { CareerMateModule } from '../agent/career-mate/career-mate.module';
 import { CeoModule } from '../agent/ceo/ceo.module';
 import { CtoModule } from '../agent/cto/cto.module';
+import { HumanizeResearchModule } from '../agent/humanize-research/humanize-research.module';
 import { ImpactReporterModule } from '../agent/impact-reporter/impact-reporter.module';
 import { GenerateOpsAdviceUsecase } from '../agent/ops-supervisor/application/generate-ops-advice.usecase';
 import { PaperRecommendModule } from '../agent/paper-recommend/paper-recommend.module';
@@ -67,6 +68,7 @@ import { CujCheckAutopilotTask } from './infrastructure/tasks/cuj-check.autopilo
 import { DocsSyncAuditTask } from './infrastructure/tasks/docs-sync-audit.autopilot-task';
 import { EveningRetroPublishTask } from './infrastructure/tasks/evening-retro-publish.autopilot-task';
 import { HolidaySyncAutopilotTask } from './infrastructure/tasks/holiday-sync.autopilot-task';
+import { HumanizeResearchAutopilotTask } from './infrastructure/tasks/humanize-research.autopilot-task';
 import { IdeaTriageAutopilotTask } from './infrastructure/tasks/idea-triage.autopilot-task';
 import { ImpactReportAutopilotTask } from './infrastructure/tasks/impact-report.autopilot-task';
 import { JobFeedAutopilotTask } from './infrastructure/tasks/job-feed.autopilot-task';
@@ -111,6 +113,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     BullModule.registerQueue({ name: AUTOPILOT_CRON_QUEUE }),
     GithubModule,
     BlogModule,
+    HumanizeResearchModule,
     CareerMateModule,
     ModelRouterModule,
     PoEvalModule,
@@ -183,6 +186,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     EveningRetroPublishTask,
     BlogGithubPublishAutopilotTask,
     BlogRevisionReportAutopilotTask,
+    HumanizeResearchAutopilotTask,
     OpsSupervisorAutopilotTask,
     StockAlertScoringAutopilotTask,
     ScreeningOutcomeScoringAutopilotTask,
@@ -286,6 +290,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         eveningRetro: EveningRetroPublishTask,
         blogGithubPublish: BlogGithubPublishAutopilotTask,
         blogRevisionReport: BlogRevisionReportAutopilotTask,
+        humanizeResearch: HumanizeResearchAutopilotTask,
         opsSupervisor: OpsSupervisorAutopilotTask,
         stockMonitor: StockMonitorAutopilotTask,
         stockMonitorUs: StockMonitorAutopilotTask,
@@ -328,6 +333,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         eveningRetro,
         blogGithubPublish,
         blogRevisionReport,
+        humanizeResearch,
         opsSupervisor,
         stockMonitor,
         stockMonitorUs,
@@ -371,6 +377,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         EveningRetroPublishTask,
         BlogGithubPublishAutopilotTask,
         BlogRevisionReportAutopilotTask,
+        HumanizeResearchAutopilotTask,
         OpsSupervisorAutopilotTask,
         STOCK_MONITOR_KR_TASK,
         STOCK_MONITOR_US_TASK,

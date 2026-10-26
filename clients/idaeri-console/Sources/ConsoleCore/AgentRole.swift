@@ -64,6 +64,8 @@ public func agentRoleLabel(for agentType: String) -> String? {
     // 세 글자를 유지한다.
     case "BLOG_REVISION":
         return "한교정"
+    case "HUMANIZE_RESEARCH":
+        return "연규칙"
     // 경영 — 사용자인 대표와 헷갈리지 않게 이 워커의 실제 업무인 총평을 닉네임에 남긴다.
     case "CEO":
         return "이총평"

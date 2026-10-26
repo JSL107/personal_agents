@@ -94,12 +94,26 @@ describe('ReplayFailedRunUsecase', () => {
       'VACATION',
       'DELAY_REPORT',
       'BLOG_REVISION',
+      'HUMANIZE_RESEARCH',
       'BLOG',
       'CAREER_MATE',
       'JOB_APPLICATION',
     ])('%s 는 재실행 개념이 없어 NOT_SUPPORTED', async (agentType) => {
       const { prepare } = setup(failedRun(agentType));
       expectRejected(await prepare(), ReplayRejectionCode.NOT_SUPPORTED);
+    });
+
+    it('HUMANIZE_RESEARCH 거절은 성공 회차의 처리 기록과 수동 스크립트를 안내한다', async () => {
+      const { prepare } = setup(failedRun('HUMANIZE_RESEARCH'));
+      const preparation = await prepare();
+      expect(preparation).toMatchObject({
+        kind: 'REJECTED',
+        code: ReplayRejectionCode.NOT_SUPPORTED,
+        message: expect.stringContaining('처리 id 가 성공 회차에서만 전진'),
+      });
+      if (preparation.kind === 'REJECTED') {
+        expect(preparation.message).toContain('pnpm humanize:research');
+      }
     });
 
     it('처음 보는 종류는 UNKNOWN_AGENT_TYPE', async () => {

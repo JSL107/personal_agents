@@ -29,6 +29,8 @@ export enum AgentType {
   // 블로그 수정률 주간 보고 — 수정 패턴 규칙 추출은 model-router 를 실제로 한 번 호출하고,
   // 수정률 집계 자체는 순수 계산으로 처리한다(autopilot 원장 기록용 내부 에이전트).
   BLOG_REVISION = 'BLOG_REVISION',
+  // 윤문 규칙 개선안을 편집 제안으로 내는 주간 dry-run. 파일 변경은 하지 않는다.
+  HUMANIZE_RESEARCH = 'HUMANIZE_RESEARCH',
   // 이직 메이트 — merged PR 합성 → 역량 프로필 허브 + 이력서/포트폴리오 (자연어 멘션 전용).
   // 프로필 합성 시 model-router 경유 (구조화 JSON 강점 → Claude).
   CAREER_MATE = 'CAREER_MATE',

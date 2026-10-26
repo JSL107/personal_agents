@@ -364,6 +364,8 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 | `WATCH_SCRIPT_PATH` | ⭕ | Video Watch의 `watch.py` 경로. 미설정 시 유튜브 분석 워커 비활성화 |
 | `*_WEBHOOK_SECRET` · `GITHUB_WEBHOOK_*` | ⭕ | webhook 검증 · 자동 발화 가드 |
 | `AUTOPILOT_OWNER_SLACK_USER_ID` · `AUTOPILOT_TARGET` | ⭕ | cron 전체 게이트 · 발송 대상(콤마 다중) |
+| `HUMANIZE_RESEARCH_ENABLED` | ❌ | 윤문 규칙 연구 주간 dry-run. `true` 일 때만 자동 수집·제안을 실행하며 기본 OFF |
+| `HUMANIZE_RULES_REPO_PATH` | ❌ | 윤문 규칙 정본 저장소 경로. 기본 `~/.claude/skills/humanize-korean` |
 | `SUBCONSCIOUS_GATE_MODE` | ❌ | `legacy`(기존 LLM) · `shadow`(Jev 비교만) · `hybrid`(확신 높은 Jev 우선). 기본 `legacy` |
 | `TYPESAFE_API_KEY` · `SUBCONSCIOUS_JEV_MODEL` | ⭕ | Jev 게이트를 켤 때 필요한 TypeSafe 인증키와 모델 버전 |
 | `SUBCONSCIOUS_JEV_API_URL` | ⭕ | Jev 호환 엔드포인트. 로컬 Kev(`pnpm kev:start`)로 shadow 비교할 때 지정, 로컬 주소면 키 불필요 |

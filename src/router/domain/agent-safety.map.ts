@@ -71,6 +71,8 @@ export const AGENT_SAFETY_LEVEL: Record<AgentType, AgentSafetyLevel> = {
   [AgentType.BLOG]: AgentSafetyLevel.WRITE,
   // 수정률 보고와 규칙 추출 결과만 원장에 남기는 autopilot 전용 worker.
   [AgentType.BLOG_REVISION]: AgentSafetyLevel.READ_ONLY,
+  // 제안과 원장만 남기는 dry-run. 정본 저장소에 반영하지 않는다.
+  [AgentType.HUMANIZE_RESEARCH]: AgentSafetyLevel.READ_ONLY,
   // GeneratePaperRecommendationUsecase → saveRecommendationAtomically 로 추천과 모의 주문을
   // 트랜잭션 안에서 저장한다 (paperAccount.update · paperOrder 생성).
   [AgentType.PAPER_RECOMMEND]: AgentSafetyLevel.WRITE,

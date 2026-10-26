@@ -77,15 +77,19 @@ export class ModelRouterUsecase {
     request,
     noFallback,
     noContractPreamble,
+    provider,
   }: {
     agentType: AgentType;
     request: CompletionRequest;
     noFallback?: boolean;
+    // agentType 의 매핑 대신 이 provider 를 primary 로 쓴다. 같은 입력을 provider 별로
+    // 받아야 하는 호출자(윤문 연구의 모델 글 표본)용 — 원장 기록은 그대로 남는다.
+    provider?: ModelProviderName;
     // 직무 계약 머리말을 붙이지 않는다. provider 선택만을 위해 남의 agentType 을 빌려 쓰는
     // 호출자가 명시적으로 끈다 — 아래 주입 지점 주석 참조.
     noContractPreamble?: boolean;
   }): Promise<CompletionResponse> {
-    const primaryName = AGENT_TO_PROVIDER[agentType];
+    const primaryName = provider ?? AGENT_TO_PROVIDER[agentType];
     if (!primaryName) {
       throw new ModelRouterException({
         code: ModelRouterErrorCode.UNKNOWN_AGENT_TYPE,

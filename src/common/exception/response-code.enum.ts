@@ -21,6 +21,9 @@ export enum ResponseCode {
   // Paper Recommend — PaperRecommendationErrorCode 와 1:1 동기화
   PAPER_RECOMMEND_INVALID_MODEL_OUTPUT = 'PAPER_RECOMMEND_INVALID_MODEL_OUTPUT',
 
+  // Humanize Research — HumanizeResearchErrorCode 와 1:1 동기화
+  HUMANIZE_RESEARCH_INVALID_RESPONSE = 'HUMANIZE_RESEARCH_INVALID_RESPONSE',
+
   // PM Agent — PmAgentErrorCode 와 1:1 동기화
   PM_AGENT_EMPTY_TASKS_INPUT = 'PM_AGENT_EMPTY_TASKS_INPUT',
   PM_AGENT_INVALID_MODEL_OUTPUT = 'PM_AGENT_INVALID_MODEL_OUTPUT',

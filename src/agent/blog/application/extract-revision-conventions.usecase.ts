@@ -3,6 +3,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { extractJsonObjectText } from '../../../common/util/llm-json-extract.util';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
+import { hasRevisedLines } from '../domain/has-revised-lines';
 import { REVISION_CONVENTIONS_OUTPUT_SCHEMA } from '../domain/prompt/blog-publish.schema';
 import {
   CONVENTION_SOURCE_LIMIT,
@@ -24,18 +25,6 @@ export interface ExtractRevisionConventionsResult {
 interface ConventionModelOutput {
   conventions?: unknown;
 }
-
-/**
- * 실제로 줄이 바뀐 글인가.
- *
- * `count.percent` 로 거르면 안 된다 — 반올림이라 긴 글에서 한두 줄만 고친 회차가 0% 로
- * 떨어진다. 반대로 이 검사를 아예 빼면 「그대로 둔 글」만 셋인 주에 `(없음)` 뿐인 입력으로
- * 모델이 규칙을 지어내고, 그 규칙이 이후 모든 편집에 실린다. 실측상 한 회차 9편 중 3편이
- * 0% 였으므로 드문 경우가 아니다.
- */
-const hasRevisedLines = (row: BlogRevisionRow): boolean =>
-  (row.changes?.addedLines.length ?? 0) > 0 ||
-  (row.changes?.removedLines.length ?? 0) > 0;
 
 /**
  * 편집 계약을 이루는 식별자. 이 토큰을 언급하는 규칙은 버린다.
