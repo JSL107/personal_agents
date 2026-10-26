@@ -101,7 +101,8 @@ export const buildBlogEditPrompt = (input: {
       ? []
       : [
           '[재요청]',
-          `직전 정리 결과는 원문의 ${Math.round(input.previousRatio * 100)}% 로 줄어 하한(${Math.round(
+          // 내림으로 적는다. 반올림하면 59.5% 이상이 "60% 로 줄어 하한(60%)에 못 미쳐" 로 모순된다.
+          `직전 정리 결과는 원문의 ${Math.floor(input.previousRatio * 100)}% 로 줄어 하한(${Math.round(
             MIN_EDITED_BODY_RATIO * 100,
           )}%)에 못 미쳐 발행이 끊겼다. 다시 정리하되 원문의 ${Math.round(
             EDIT_RETRY_TARGET_RATIO * 100,
