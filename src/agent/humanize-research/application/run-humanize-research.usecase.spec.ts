@@ -1,4 +1,6 @@
-import { readFile } from 'node:fs/promises';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { ConfigService } from '@nestjs/config';
 
@@ -15,7 +17,13 @@ import { UpstreamRuleDiffCollector } from '../infrastructure/collectors/upstream
 import { ModelSampleCollector } from '../infrastructure/model-sample.collector';
 import { RunHumanizeResearchUsecase } from './run-humanize-research.usecase';
 
-jest.mock('node:fs/promises', () => ({ readFile: jest.fn() }));
+// 실제 정본(~/.claude/skills/humanize-korean)에 기대지 않는다 — CI 에는 정본이 없다.
+const createRulesRepository = (): string => {
+  const repository = mkdtempSync(join(tmpdir(), 'humanize-rules-'));
+  mkdirSync(join(repository, 'references'));
+  writeFileSync(join(repository, 'references/quick-rules.md'), 'quick rules');
+  return repository;
+};
 
 const empty = (source: HumanizeResearchSource) => ({
   source,
@@ -35,9 +43,8 @@ describe('RunHumanizeResearchUsecase', () => {
     }),
   };
   const modelRouter = { route: jest.fn() };
-  const config = {
-    get: jest.fn().mockReturnValue('~/.claude/skills/humanize-korean'),
-  };
+  const rulesRepository = createRulesRepository();
+  const config = { get: jest.fn().mockReturnValue(rulesRepository) };
   const humanizer = { collect: jest.fn() };
   const blog = { collect: jest.fn() };
   const upstream = { collect: jest.fn() };
@@ -64,7 +71,7 @@ describe('RunHumanizeResearchUsecase', () => {
     upstream.collect.mockResolvedValue(empty(HumanizeResearchSource.UPSTREAM));
     arxiv.collect.mockResolvedValue(empty(HumanizeResearchSource.ARXIV));
     samples.collect.mockResolvedValue(empty(HumanizeResearchSource.SAMPLE));
-    jest.mocked(readFile).mockResolvedValue('quick rules');
+    config.get.mockReturnValue(rulesRepository);
     modelRouter.route.mockResolvedValue({
       text: '{"proposals":[],"injectionNotices":[]}',
       modelUsed: 'codex',
@@ -76,7 +83,6 @@ describe('RunHumanizeResearchUsecase', () => {
     expect(result.skippedForNoSources).toBe(true);
     expect(result.output.sources).toHaveLength(5);
     expect(modelRouter.route).not.toHaveBeenCalled();
-    expect(readFile).not.toHaveBeenCalled();
   });
 
   it('한 출처가 실패해도 나머지 자료로 제안하고 실패 사유를 남긴다', async () => {
