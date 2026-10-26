@@ -31,6 +31,7 @@ export const AUTOPILOT_DELIVERY_ROUTE: Readonly<
   'run-retro': 'console',
   'cuj-check': 'slack',
   'blog-revision-report': 'console',
+  'humanize-research': 'slack',
   'run-sweeper': 'console',
   'preview-sweeper': 'console',
   'ops-supervisor': 'console',

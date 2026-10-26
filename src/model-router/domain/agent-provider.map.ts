@@ -27,6 +27,7 @@ export const AGENT_TO_PROVIDER: Record<AgentType, ModelProviderName> = {
   // 규칙 추출 1회만 route() 를 타고 집계 자체는 순수 계산이다. INVEST/PAPER_TRADE sentinel 과
   // 달리 실제 호출이 있는 autopilot 전용 에이전트다.
   [AgentType.BLOG_REVISION]: ModelProviderName.CHATGPT,
+  [AgentType.HUMANIZE_RESEARCH]: ModelProviderName.CHATGPT,
   [AgentType.CAREER_MATE]: ModelProviderName.CHATGPT,
   [AgentType.JOB_APPLICATION]: ModelProviderName.CHATGPT,
   [AgentType.SUBCONSCIOUS_GATE]: ModelProviderName.CHATGPT,

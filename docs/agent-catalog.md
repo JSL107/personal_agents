@@ -2,7 +2,7 @@
 
 # 에이전트 카탈로그
 
-이대리의 에이전트 32종. SoT: `src/agent-registry/agent-registry.ts` + `AGENT_TO_PROVIDER`(`src/model-router/domain/agent-provider.map.ts`).
+이대리의 에이전트 33종. SoT: `src/agent-registry/agent-registry.ts` + `AGENT_TO_PROVIDER`(`src/model-router/domain/agent-provider.map.ts`).
 드리프트는 `pnpm docs:check` 가 차단하고, agentType 집합 정합성은 `agent-registry.spec.ts` 가 강제한다.
 
 | 닉네임 | 기술 이름 | AgentType | 슬래시 | 모델 | 진입 usecase | 설명 |
@@ -20,6 +20,7 @@
 | 문바름 | Docs Audit Evaluator | `DOCS_AUDIT_EVALUATOR` | — (webhook/자동) | CHATGPT | `src/docs-audit/infrastructure/codex-docs-judge.adapter.ts` | docs-sync-audit Layer 2 — 문서 수정안이 코드 사실과 일치하는지 채점 (슬래시 없음, 내부 전용) |
 | 문고침 | Docs Audit Optimizer | `DOCS_AUDIT_OPTIMIZER` | — (webhook/자동) | CHATGPT | `src/docs-audit/infrastructure/codex-docs-judge.adapter.ts` | docs-sync-audit Layer 2 — 코드 변경 기준 문서 수정안 생성 (슬래시 없음, 내부 전용) |
 | 하루미 | Evening Retro Publish | `EVENING_RETRO` | — (webhook/자동) | CHATGPT | `src/autopilot/infrastructure/tasks/evening-retro-publish.autopilot-task.ts` | 저녁 회고→발행 후보 — 오늘 한 일 회고 + 블로그/경력 발행 후보 (슬래시 없음, autopilot 전용) |
+| 연규칙 | Humanize Research | `HUMANIZE_RESEARCH` | — (webhook/자동) | CHATGPT | `src/agent/humanize-research/application/run-humanize-research.usecase.ts` | 윤문 근거를 모아 편집 제안을 내는 주간 dry-run |
 | 윤다정 | Humanizer | `HUMANIZER` | — (webhook/자동) | CHATGPT | `src/humanize/application/humanize.service.ts` | 자동 보고서 서술 필드 윤문 (AI 티 제거, 슬래시 없음, 내부 전용) |
 | 이심사 | Idea Triage | `IDEA_TRIAGE` | — (webhook/자동) | CHATGPT | `src/idea-triage/application/judge-idea.usecase.ts` | 아이디어 채널의 새 글을 판정하고 승인 후 내부 일정을 등록한다 |
 | 이보람 | Impact Reporter | `IMPACT_REPORTER` | `/impact-report` | CHATGPT | `src/agent/impact-reporter/application/generate-impact-report.usecase.ts` | PR 임팩트 리포트 생성 |

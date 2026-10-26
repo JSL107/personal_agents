@@ -26,6 +26,7 @@ export enum TriggerType {
   // 주간 블로그 수정률 집계. 다른 cron 트리거와 마찬가지로 태스크별 고유 값을 둔다 —
   // 범용 'CRON' 하나로 묶으면 trigger_type 으로 어느 cron 이 돌렸는지 가릴 수 없다.
   WEEKLY_BLOG_REVISION_CRON = 'WEEKLY_BLOG_REVISION_CRON',
+  WEEKLY_HUMANIZE_RESEARCH_CRON = 'WEEKLY_HUMANIZE_RESEARCH_CRON',
   SLACK_COMMAND_TODAY = 'SLACK_COMMAND_TODAY',
   SLACK_COMMAND_WORKLOG = 'SLACK_COMMAND_WORKLOG',
   SLACK_COMMAND_REVIEW_PR = 'SLACK_COMMAND_REVIEW_PR',
