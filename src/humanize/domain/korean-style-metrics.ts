@@ -1,3 +1,4 @@
+import { countOccurrences } from '../../common/util/text-occurrence.util';
 import {
   KoreanStyleCompositionMetrics,
   measureKoreanStyleComposition,
@@ -785,7 +786,8 @@ const countClauses = (sentence: string): number =>
   (sentence.match(/,/g) ?? []).length +
   (sentence.match(GO_CONNECTIVE) ?? []).length +
   CLAUSE_CONNECTIVES.reduce(
-    (count, connective) => count + sentence.split(connective).length - 1,
+    (count, connective) =>
+      count + countOccurrences({ source: sentence, text: connective }),
     0,
   );
 

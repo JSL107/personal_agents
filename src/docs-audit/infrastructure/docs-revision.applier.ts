@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
+import { countOccurrences } from '../../common/util/text-occurrence.util';
 import {
   DocEdit,
   DocsRevision,
@@ -35,7 +36,10 @@ export class DocsRevisionApplier {
       let content = original;
       const applied: DocEdit[] = [];
       for (const edit of edits) {
-        const occurrences = content.split(edit.oldString).length - 1;
+        const occurrences = countOccurrences({
+          source: content,
+          text: edit.oldString,
+        });
         if (occurrences !== 1) {
           continue; // 매칭 0/다중 — 안전상 skip
         }
