@@ -502,7 +502,11 @@ export class PublishNotionDraftUsecase {
     });
 
     // 2) 편집 — 요지를 정하고 발행할 만한 글로 추린다. 익명화(치환)와 계약이 반대라 호출을 나눈다.
-    const edited = await this.editDraft(target, anonymized, context);
+    const edited = await this.editDraftWithinBudget(
+      target,
+      anonymized,
+      context,
+    );
     if (!edited.publishable) {
       await this.holdDraft(target, context, edited.reason);
       return {
@@ -951,11 +955,37 @@ export class PublishNotionDraftUsecase {
     }
   }
 
+  // 모델은 "원문의 60% 이상" 을 글자 수로 세지 못해 하한 바로 아래로 자르는 회차가 잦다
+  // (2026-10-23·25 저녁 발행이 55%·57% 로 끊겨 이틀 장애). 그날 발행을 통째로 버리기 전에
+  // 직전 비율을 알려 주고 한 번만 다시 맡긴다. 두 번째도 모자라면 호출부 가드가 그대로 끊는다.
+  private async editDraftWithinBudget(
+    draft: NotionDraftPage,
+    anonymized: AnonymizedBlogDraft,
+    context: PublishCandidateContext,
+  ): Promise<EditedBlogDraft> {
+    const first = await this.editDraft(draft, anonymized, context);
+    if (!first.publishable) {
+      return first;
+    }
+    // 판정식은 assertNotOverTrimmed 와 같게 둔다 — 갈리면 재시도 없이 끊기거나 헛재시도한다.
+    const beforeLength = anonymized.body.trim().length;
+    const afterLength = first.body.trim().length;
+    if (afterLength >= beforeLength * MIN_EDITED_BODY_RATIO) {
+      return first;
+    }
+    const ratio = afterLength / beforeLength;
+    this.logger.warn(
+      `블로그 편집 과삭제(원문의 ${Math.round(ratio * 100)}%) — 비율을 알려 주고 편집을 한 번 다시 맡깁니다`,
+    );
+    return await this.editDraft(draft, anonymized, context, ratio);
+  }
+
   // 편집 단계 — 익명화된 본문을 받아 요지를 정하고 발행 가능 여부까지 판정한다.
   private async editDraft(
     draft: NotionDraftPage,
     anonymized: AnonymizedBlogDraft,
     context: PublishCandidateContext,
+    previousRatio?: number,
   ): Promise<EditedBlogDraft> {
     // 코드블록은 표식으로 가려 보낸다. 프롬프트로 금지해도 세 번 중 두 번 손대기 때문이다
     // (실측: 실제 주소를 예시 주소로 바꾸고, 없던 `max-age=60` 과 가짜 ETag 를 덧붙였다).
@@ -973,6 +1003,7 @@ export class PublishNotionDraftUsecase {
           tags: draft.tags,
           summary: draft.summary,
           markdown: masked,
+          previousRatio,
         }),
       },
     });
