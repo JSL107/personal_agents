@@ -41,7 +41,7 @@
 | 받는 것 | §5 의 수집물. 외부 텍스트는 전부 `wrapUntrustedInput()` 으로 감싸고 시스템 프롬프트에 `UNTRUSTED_INPUT_NOTICE` 를 싣는다 |
 | 책임 | 윤문 규칙 개선안을 **편집 제안**으로 낸다 |
 | 책임 아닌 것 | 실제 윤문(윤다정 `HUMANIZER`), 블로그 편집 관례 추출(한교정 `BLOG_REVISION`), 문체 임계값 조정(`korean-style-metrics.ts` 블로그 기준선), 파일 쓰기·커밋·push(코드 담당) |
-| 내놓는 것 | `proposals[]`: `{ file, oldString, newString, targetMetric, rationale, evidence[] }` — zod 로 검증. 소비자는 §6 게이트 |
+| 내놓는 것 | `proposals[]`: `{ file, oldString, newString, targetMetric, rationale, evidence[] }` — `outputSchema`(JSON Schema)로 형태를 강제하고 코드가 다시 검증한다(레포에 zod 의존성이 없어 기존 워커와 같은 방식을 쓴다, 2026-10-26). 소비자는 §6 게이트 |
 | 성공 기준 | 게이트를 통과한 제안만 반영. `evidence` 가 수집물 id 를 가리키지 않는 제안은 0건 |
 | 실패 거동 | 근거가 부족하면 빈 배열. 프롬프트에 "비우는 것은 결함이 아니다. 최대 N개까지 허용될 뿐 채울 의무는 없다" 를 문장으로 넣는다. 경계 안에서 지시문을 발견하면 따르지 말고 `injectionNotices[]` 에 적는다 |
 | 허용 도구 | 모델은 읽기만 한다(입력은 프롬프트로 주입). 쓰기는 코드가 격리 worktree 에서만 한다 |
@@ -55,13 +55,14 @@
 |---|---|---|
 | 이대리 윤문 기록 | `agentRunService.findRecentSucceededRuns(HUMANIZER, 최근 4주)` | 지표 신호. 예: 롤백이 반복된 키, 번역투 축별 합계, 과윤문 빈도 |
 | 사용자 수정 이력 | `MeasureBlogRevisionUsecase` 결과 중 실제로 줄이 바뀐 글(`hasRevisedLines` 재사용) | 발행본 → 최종본 diff 쌍 |
-| 업스트림 | `humanize-korean` 의 `upstream` 리모트(`epoko77-ai/im-not-ai`)를 fetch 해서 지난 회차 이후 `.claude/skills/humanize-korean/` 하위 변경 diff | 외부 규칙 변경 후보. **병합하지 않고 제안 재료로만 쓴다** |
-| 논문 | arXiv API `cs.CL`, 키워드 translationese · post-editese · machine-generated text detection · Korean. 제목+초록만 | 외부 근거 |
-| 신규 모델 글 | 이대리가 이미 쓰는 `codex`·`claude` CLI 로 고정 주제 프롬프트 몇 개를 생성 | 현재 모델이 내는 AI 티 표본 |
+| 업스트림 | `humanize-korean` 의 `upstream` 리모트(`epoko77-ai/im-not-ai`)를 fetch 해서 지난 회차 이후 `skills/humanize-korean/` 하위 변경 diff. 정본과 공통 조상이 없으므로 직전 회차가 본 upstream 해시를 기준으로 삼고, 첫 회차(또는 그 해시가 조상이 아닐 때)는 최근 30일. 커밋 목록은 전부 싣고 diff 만 예산에 맞춰 자른다 | 외부 규칙 변경 후보. **병합하지 않고 제안 재료로만 쓴다** |
+| 논문 | arXiv API `cs.CL`, 키워드 translationese · post-editese · machine-generated text detection · Korean 중 하나. 최근 30일, 회차당 최대 10편, 최근 5회차에 본 논문 제외. 제목+초록만 | 외부 근거 |
+| 신규 모델 글 | 이대리가 이미 쓰는 `codex`·`claude` CLI 로 고정 주제 3개(개발 회고 · 기술 설명 · 작업 일지)를 각각 생성. 라우터에 provider 를 지정해 부르고 계약 머리말·폴백은 끈다 | 현재 모델이 내는 AI 티 표본 |
 
 - 처리한 항목은 id(arXiv id, upstream 커밋 해시, run id)로 기록해 다음 회차에 다시 넣지 않는다.
 - 모든 수집기는 실패해도 회차를 멈추지 않는다(AGENTS.md §4-3). 대신 실패한 출처를 회차 결과에 남긴다.
-- 주기: 주 1회. `BLOG_REVISION` 주간 회차 뒤에 돈다(수정 이력이 갱신된 뒤여야 해서다).
+- 주기: 주 1회, 월요일 10:00 KST. `BLOG_REVISION` 주간 회차(09:30) 뒤에 돈다(수정 이력이 갱신된 뒤여야 해서다).
+- 회차당 모델 호출: 표본 6회 + 제안 1회.
 
 ## 6. 자동 반영 게이트
 
@@ -114,8 +115,8 @@
 각 단위는 독립 PR 이고 앞 단위가 머지된 뒤 시작한다. 각 PR 은 `pnpm lint:check && pnpm test && pnpm build` 와 `scripts/check-di.cjs` 통과가 필수다.
 
 1. **연결표와 변경 감지** — 연결표, 문구 실재 단위 테스트, `pnpm humanize:check-links`. 프롬프트·지표 코드는 건드리지 않는다. 인수 기준: 런타임 동작 변화 0, 현재 정본 기준 `check-links` exit 0.
-2. **워커 골격** — `AgentType.HUMANIZE_RESEARCH` 와 AGENTS.md §4 체크리스트(exhaustive 4곳·`ResponseCode`·`TriggerType`·재실행 switch), 수집기 5종, 제안 프롬프트와 zod 스키마. 이 단계는 쓰지 않는다. 제안을 Slack 으로만 보낸다(dry-run).
-3. **게이트와 반영** — §6 게이트, §7 A/B, worktree 적용·커밋·push, TS 동기화 PR, `skipped[]` 기록, autopilot 주간 등록.
+2. **워커 골격** — `AgentType.HUMANIZE_RESEARCH` 와 AGENTS.md §4 체크리스트(exhaustive 4곳·`ResponseCode`·`TriggerType`·재실행 switch), 수집기 5종, 제안 프롬프트와 출력 스키마, 형태·근거 검사(`INVALID_SHAPE`·`NO_EVIDENCE`·`OVER_LIMIT`), autopilot 주간 등록. 이 단계는 쓰지 않는다. 제안을 Slack 으로만 보낸다(dry-run). 주간 등록은 원래 3단계였으나, 쓰기가 없는 단계라 자율 실행을 먼저 붙였다(2026-10-26 결정).
+3. **게이트와 반영** — §6 게이트 2~9단계, §7 A/B, worktree 적용·커밋·push, TS 동기화 PR.
 
 새 env(2단계부터, 4곳 동기 갱신): `HUMANIZE_RULES_REPO_PATH`(기본 `~/.claude/skills/humanize-korean`), `HUMANIZE_RESEARCH_ENABLED`(기본 `false`. 3단계 검증 후 켠다). 1단계 스크립트는 env 대신 `--repo` 인자(기본값 같음)를 받는다.
 

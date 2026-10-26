@@ -2,7 +2,7 @@
 
 # 환경변수 카탈로그
 
-SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 174개.
+SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 176개.
 설명은 각 변수 주석의 첫 문장 발췌 — 상세는 app.config.ts 주석 참조. `.env.example` 동기는 `pnpm check:env`.
 
 ## 인프라 (앱 부팅 필수)
@@ -194,6 +194,8 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `SUBCONSCIOUS_DROP_SAMPLE_DAILY_CAP` | ❌ | 위 표본 카드의 KST 하루 상한. 미설정 시 3. 시간당 승격 예산과는 별도로 센다. |
 | `PREFERENCE_PROFILE_INJECTION_ENABLED` | ❌ | 학습된 프로필을 브리핑/윤문/라우팅에 주입(미설정=OFF). |
 | `HUMANIZE_REPORTS_ENABLED` | ❌ | 'false' 면 자동 보고서 윤문 OFF(기존 동작). 미설정 시 활성(기본 ON). |
+| `HUMANIZE_RESEARCH_ENABLED` | ❌ | 윤문 규칙 연구 dry-run. 'true' 일 때만 주간 cron 이 수집과 모델 호출을 시작한다. |
+| `HUMANIZE_RULES_REPO_PATH` | ❌ | 정본 humanize-korean 저장소. 미설정 시 ~/.claude/skills/humanize-korean. |
 | `SUBCONSCIOUS_SCHEDULE` | ❌ | Subconscious tick BullMQ cron 표현식 (Asia/Seoul 기준). |
 | `SUBCONSCIOUS_PROMOTION_BUDGET_PER_HOUR` | ❌ | Subconscious 시간당 최대 proposal 건수 (슬라이딩 1시간 윈도우, Redis ZSET). |
 

@@ -26,6 +26,7 @@
     "docs:sync": "ts-node scripts/sync-docs.ts",
     "docs:check": "ts-node scripts/sync-docs.ts --check",
     "humanize:check-links": "ts-node scripts/check-humanize-rule-links.ts",
+    "humanize:research": "node --env-file=.env -r ts-node/register/transpile-only scripts/humanize-research.ts",
     "harness:replay": "ts-node scripts/harness-replay.ts",
     "eval:nl-answer": "ts-node scripts/nl-answer-eval.ts",
     "eval:classifier": "ts-node scripts/nl-answer-eval.ts --classifier",

@@ -1,9 +1,9 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 
+import { expandHomePath } from '../src/common/util/expand-home-path.util';
 import { HUMANIZE_RULE_LINKS } from '../src/humanize/domain/humanize-rule-links';
 import {
   compareLinks,
@@ -23,6 +23,7 @@ import {
   PythonSnapshots,
   UpstreamSnapshots,
 } from '../src/humanize/domain/humanize-rule-links.type';
+import { DEFAULT_HUMANIZE_RULES_REPO_PATH } from '../src/humanize/domain/humanize-rules-repository';
 
 const snapshotFile = resolve(
   __dirname,
@@ -40,7 +41,7 @@ const parseOptions = ({ argumentsList }: ParseOptionsParams): CheckOptions => {
   });
   const repository = values.repo
     ? resolve(values.repo)
-    : join(homedir(), '.claude/skills/humanize-korean');
+    : expandHomePath(DEFAULT_HUMANIZE_RULES_REPO_PATH);
   return { repository, accept: values.accept };
 };
 

@@ -305,6 +305,21 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     // 요구하면 규칙 추출 JSON 계약과 충돌하므로 모델 머리말은 넣지 않는다.
     skipPreamble: true,
   },
+  [AgentType.HUMANIZE_RESEARCH]: {
+    department: Department.CONTENT,
+    job: '윤문 근거를 모아 정본 규칙의 편집 제안을 낸다',
+    deliverableFields: [
+      'sources',
+      'droppedForBudget',
+      'proposals',
+      'skipped',
+      'injectionNotices',
+      'processed',
+    ],
+    requireEvidence: false,
+    // 원장 output 은 usecase 가 수집 상태와 검증 결과를 조립한다.
+    skipPreamble: true,
+  },
   [AgentType.CAREER_MATE]: stub(
     Department.CONTENT,
     '머지된 PR 을 합성해 역량 프로필과 이력서를 만든다',

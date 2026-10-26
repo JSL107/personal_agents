@@ -147,6 +147,16 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
       '블로그 수정률 주간 보고와 반복 수정 규칙 추출 (슬래시 없음, autopilot 전용)',
   },
   {
+    agentType: AgentType.HUMANIZE_RESEARCH,
+    displayName: 'Humanize Research',
+    nickname: '연규칙',
+    taskLabel: '윤문 규칙 연구',
+    slashCommands: [],
+    usecasePath:
+      'src/agent/humanize-research/application/run-humanize-research.usecase.ts',
+    description: '윤문 근거를 모아 편집 제안을 내는 주간 dry-run',
+  },
+  {
     agentType: AgentType.CAREER_MATE,
     displayName: 'Career Mate',
     nickname: '강성장',
