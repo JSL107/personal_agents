@@ -1,3 +1,5 @@
+import { parseHeaderPath } from '../../agent/code-reviewer/domain/diff-added-lines';
+
 // 프롬프트에 실리는 파일 목록·증감 줄 수를 재생 diff에서 다시 센다. 현재 PR 값을 그대로 두면
 // 모델이 보는 diff와 메타데이터가 어긋난다(카드 이후 커밋이 더 붙은 PR).
 export interface DiffSummary {
@@ -10,38 +12,6 @@ export interface DiffSummary {
   additions: number;
   deletions: number;
 }
-
-// 비ASCII 경로는 git(core.quotePath 기본값)이 `+++ "b/\355\225\234.ts"` 처럼 따옴표로 감싸고 8진수로 이스케이프한다.
-// 이 헤더를 못 읽으면 `current` 가 앞 파일에 머물러 이 파일의 증감이 앞 파일에 더해진다.
-const GIT_PATH_ESCAPES: Record<string, string> = {
-  t: '\t',
-  n: '\n',
-  '"': '"',
-  '\\': '\\',
-};
-
-const parseHeaderPath = (
-  line: string,
-  marker: '--- a/' | '+++ b/',
-): string | undefined => {
-  if (line.startsWith(marker)) {
-    return line.slice(marker.length).trim();
-  }
-  const quoted = `${marker.slice(0, 4)}"${marker.slice(4)}`;
-  const trimmed = line.trimEnd();
-  if (!trimmed.startsWith(quoted) || !trimmed.endsWith('"')) {
-    return undefined;
-  }
-  // 8진수 이스케이프는 UTF-8 바이트 하나씩이다 — latin1 로 바이트를 모은 뒤 UTF-8 로 다시 읽는다.
-  const bytes = trimmed
-    .slice(quoted.length, -1)
-    .replace(/\\([0-7]{3}|.)/g, (_, code: string) =>
-      code.length === 3
-        ? String.fromCharCode(parseInt(code, 8))
-        : (GIT_PATH_ESCAPES[code] ?? code),
-    );
-  return Buffer.from(bytes, 'latin1').toString('utf-8');
-};
 
 export const summarizeDiff = (diff: string): DiffSummary => {
   const changedFiles: string[] = [];

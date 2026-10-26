@@ -1,6 +1,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { ReviewFinding } from '../../agent/code-reviewer/domain/code-reviewer.type';
+import { computeRiskMap } from '../../agent/code-reviewer/domain/risk-map';
+import {
+  PullRequestDetail,
+  PullRequestDiff,
+} from '../../github/domain/github.type';
 import {
   GITHUB_CLIENT_PORT,
   GithubClientPort,
@@ -19,6 +24,7 @@ import {
   IDAERI_REVIEW_MARKER,
 } from '../domain/finding-comment.body';
 import { buildFindingFingerprint } from '../domain/finding-fingerprint';
+import { sameLogin } from '../domain/harvest-signal';
 import {
   PR_REVIEW_FINDING_REPOSITORY_PORT,
   PrReviewFindingRepositoryPort,
@@ -30,6 +36,10 @@ import {
 } from '../domain/pr-review-finding.type';
 import { PublishOutcome } from '../domain/publish-outcome.type';
 import { isRepoAllowed, planPublication } from '../domain/publish-policy';
+import {
+  buildRiskMapCommentBody,
+  RISK_MAP_COMMENT_TAG,
+} from '../domain/risk-map-comment.body';
 
 const AGENT_TYPE = 'CODE_REVIEWER';
 
@@ -48,9 +58,27 @@ export interface PublishFindingsInput {
   allowlistRaw: string | undefined;
 }
 
+export interface UpsertRiskMapInput {
+  repo: string;
+  pullNumber: number;
+  detail: PullRequestDetail;
+  diff: PullRequestDiff;
+  findings: ReviewFinding[];
+  dryRun: boolean;
+  allowlistRaw: string | undefined;
+  // 봇이 코멘트를 다는 계정(GITHUB_WEBHOOK_OWNER_LOGIN). 있으면 이 계정이 쓴 위험 지도만 고쳐 쓴다 —
+  // 표식만 보면 남이 흉내 낸 코멘트를 고치려다 403 을 받고 위험 지도가 영영 안 달린다. 대소문자는
+  // 수확기(sameLogin)처럼 무시한다. 비어 있거나 공백뿐이면 표식만으로 찾는다.
+  ownerLogin: string | undefined;
+}
+
 @Injectable()
 export class PublishFindingsService {
   private readonly logger = new Logger(PublishFindingsService.name);
+  // PR 별 위험 지도 갱신을 한 줄로 세운다. `/review-pr` 와 스윕이 같은 PR 을 동시에 돌면 둘 다 "없음" 을
+  // 보고 코멘트를 두 개 단다. 두 경로가 한 프로세스 안이라 메모리 체인으로 충분하다.
+  // ponytail: 프로세스를 여럿 띄우면 이 직렬화는 무력하다 — 그때는 DB 잠금이 필요하다.
+  private readonly riskMapQueue = new Map<string, Promise<void>>();
 
   constructor(
     @Inject(GITHUB_CLIENT_PORT)
@@ -140,6 +168,89 @@ export class PublishFindingsService {
     }
 
     return outcome;
+  }
+
+  // 승인자용 위험 지도를 PR 코멘트 하나로 남긴다. push 뒤 재리뷰에서는 새로 달지 않고 그 코멘트를
+  // 고쳐 쓴다 — 회차마다 쌓이면 어느 것이 최신인지 읽는 사람이 가려야 한다.
+  // 지적 카드와 달리 지적 0건이어도 단다(위험은 지적 유무와 별개다). 게시 범위는 지적과 같은 허용 목록·
+  // 연습 모드를 따른다. 안내일 뿐이라 실패해도 리뷰·게시 결과를 바꾸지 않는다.
+  async upsertRiskMap(input: UpsertRiskMapInput): Promise<void> {
+    const key = `${input.repo}#${input.pullNumber}`;
+    const previous = this.riskMapQueue.get(key) ?? Promise.resolve();
+    const current = previous.then(() => this.upsertRiskMapNow(input));
+    this.riskMapQueue.set(key, current);
+    try {
+      return await current;
+    } finally {
+      if (this.riskMapQueue.get(key) === current) {
+        this.riskMapQueue.delete(key);
+      }
+    }
+  }
+
+  private async upsertRiskMapNow(input: UpsertRiskMapInput): Promise<void> {
+    const label = `${input.repo}#${input.pullNumber}`;
+    // 계산도 try 안에 둔다 — 스윕은 이 뒤에 지적 카드를 게시하므로, 여기서 새는 예외가 카드 게시를 막는다.
+    try {
+      const map = computeRiskMap({
+        detail: input.detail,
+        diff: input.diff,
+        findings: input.findings,
+      });
+      if (input.dryRun || !isRepoAllowed(input.repo, input.allowlistRaw)) {
+        this.logger.log(
+          `위험 지도 미게시 (${label}, ${input.dryRun ? '연습 모드' : '허용 목록 밖'}): ${map.level} ${map.score}/100`,
+        );
+        return;
+      }
+      // 리뷰하는 사이 새 커밋이 올라왔으면 쓰지 않는다 — 새 head 의 리뷰가 따로 돈다. 직렬화만으로는
+      // 늦게 끝난 옛 스냅샷이 최신 지도를 덮어쓰는 것을 막지 못한다.
+      const headSha = await this.githubClient.getPullRequestHeadSha({
+        repo: input.repo,
+        number: input.pullNumber,
+      });
+      if (headSha !== input.detail.headSha) {
+        this.logger.log(
+          `위험 지도 미게시 (${label}, 리뷰한 커밋 ${input.detail.headSha.slice(0, 7)} 이 최신 head ${headSha.slice(0, 7)} 가 아님)`,
+        );
+        return;
+      }
+      const body = buildRiskMapCommentBody(map);
+      const comments = await this.githubClient.listIssueComments({
+        repo: input.repo,
+        number: input.pullNumber,
+      });
+      const ownerLogin = input.ownerLogin?.trim() ?? '';
+      const found = comments.find(
+        (comment) =>
+          (ownerLogin.length === 0 ||
+            sameLogin(comment.authorLogin, ownerLogin)) &&
+          comment.body.startsWith(IDAERI_REVIEW_MARKER) &&
+          comment.body.includes(RISK_MAP_COMMENT_TAG),
+      );
+      if (found === undefined) {
+        await this.githubClient.addIssueComment({
+          repo: input.repo,
+          number: input.pullNumber,
+          body,
+        });
+        return;
+      }
+      if (found.body === body) {
+        return;
+      }
+      await this.githubClient.updateIssueComment({
+        repo: input.repo,
+        commentId: found.id,
+        body,
+      });
+    } catch (error: unknown) {
+      this.logger.warn(
+        `위험 지도 게시 실패 (${label}): ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   // diff 가 잘렸으면 PR 에 따로 알린다 — 카드만 보면 전체를 본 리뷰로 읽힌다.

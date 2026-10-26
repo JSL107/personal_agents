@@ -60,7 +60,7 @@ export interface ResolveHarvestSignalInput {
  * 로 확정되는데, owner 판정만 어긋나 `ownerReplyBody` 가 null 이 되어 학습 재료가 사라진다.
  * 에러가 아니라 빈 규약이라 발견이 늦는다. repo 조회에 건 정책과 같은 이유다.
  */
-const sameLogin = (left: string | null, right: string | null): boolean =>
+export const sameLogin = (left: string | null, right: string | null): boolean =>
   left !== null &&
   right !== null &&
   left.trim().toLowerCase() === right.trim().toLowerCase();

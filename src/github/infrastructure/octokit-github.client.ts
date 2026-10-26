@@ -6,6 +6,8 @@ import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { GithubException } from '../domain/github.exception';
 import {
   AssignedTasks,
+  ChangedFileStat,
+  ChangedFileStatus,
   CreateReviewCommentInput,
   CreateReviewCommentResult,
   GithubIssue,
@@ -27,8 +29,10 @@ import {
   GetPullRequestDiffOptions,
   GithubClientPort,
   GithubItemLifecycle,
+  IssueCommentSummary,
   ListAssignedTasksOptions,
   ListAuthorMergedPullRequestsOptions,
+  ListIssueCommentsInput,
   ListOpenPullRequestRefsOptions,
   ListReviewThreadsResult,
   ListTreeInput,
@@ -41,6 +45,7 @@ import {
   RepoTree,
   ReviewThread,
   SearchCodeInput,
+  UpdateIssueCommentInput,
 } from '../domain/port/github-client.port';
 import {
   MergeableState,
@@ -109,7 +114,7 @@ const RESOLVE_REVIEW_THREAD_MUTATION = `
 
 type ChangedFileList = Pick<
   PullRequestDetail,
-  'changedFiles' | 'changedLinesByFile'
+  'changedFiles' | 'changedLinesByFile' | 'changedFileStatsByFile'
 >;
 
 interface GraphqlPageInfo {
@@ -233,13 +238,12 @@ export class OctokitGithubClient implements GithubClientPort {
       });
 
       const totalCount = prResponse.data.changed_files;
-      const { changedFiles, changedLinesByFile } = await this.fetchChangedFiles(
-        {
+      const { changedFiles, changedLinesByFile, changedFileStatsByFile } =
+        await this.fetchChangedFiles({
           owner,
           repoName,
           pullNumber: number,
-        },
-      );
+        });
 
       return {
         number,
@@ -255,6 +259,7 @@ export class OctokitGithubClient implements GithubClientPort {
         changedFiles,
         changedFilesTotalCount: totalCount,
         changedLinesByFile,
+        changedFileStatsByFile,
         changedFilesTruncated:
           totalCount > changedFiles.length || totalCount > CHANGED_FILES_MAX,
         additions: prResponse.data.additions,
@@ -305,6 +310,7 @@ export class OctokitGithubClient implements GithubClientPort {
   }): Promise<ChangedFileList> {
     const changedFiles: string[] = [];
     const changedLinesByFile: Record<string, number> = {};
+    const changedFileStatsByFile: Record<string, ChangedFileStat> = {};
     const iterator = this.octokit!.paginate.iterator(
       this.octokit!.rest.pulls.listFiles,
       {
@@ -318,12 +324,16 @@ export class OctokitGithubClient implements GithubClientPort {
       for (const file of page.data) {
         changedFiles.push(file.filename);
         changedLinesByFile[file.filename] = file.additions + file.deletions;
+        changedFileStatsByFile[file.filename] = {
+          status: toChangedFileStatus(file.status),
+          deletions: file.deletions,
+        };
         if (changedFiles.length >= CHANGED_FILES_MAX) {
-          return { changedFiles, changedLinesByFile };
+          return { changedFiles, changedLinesByFile, changedFileStatsByFile };
         }
       }
     }
-    return { changedFiles, changedLinesByFile };
+    return { changedFiles, changedLinesByFile, changedFileStatsByFile };
   }
 
   async getPullRequestDiff({
@@ -425,6 +435,73 @@ export class OctokitGithubClient implements GithubClientPort {
       throw this.wrapRequestFailed(
         error,
         `GitHub ${repo}#${number} 코멘트 추가 실패`,
+      );
+    }
+  }
+
+  async getPullRequestHeadSha({
+    repo,
+    number,
+  }: PullRequestRef): Promise<string> {
+    this.assertOctokitConfigured();
+    const [owner, repoName] = parseRepo(repo);
+    try {
+      const response = await this.octokit!.rest.pulls.get({
+        owner,
+        repo: repoName,
+        pull_number: number,
+      });
+      return response.data.head.sha;
+    } catch (error: unknown) {
+      throw this.wrapRequestFailed(
+        error,
+        `GitHub ${repo}#${number} head 조회 실패`,
+      );
+    }
+  }
+
+  async listIssueComments({
+    repo,
+    number,
+  }: ListIssueCommentsInput): Promise<IssueCommentSummary[]> {
+    this.assertOctokitConfigured();
+    const [owner, repoName] = parseRepo(repo);
+    try {
+      const comments = await this.octokit!.paginate(
+        this.octokit!.rest.issues.listComments,
+        { owner, repo: repoName, issue_number: number, per_page: 100 },
+      );
+      return comments.map((comment) => ({
+        id: comment.id,
+        body: comment.body ?? '',
+        authorLogin: comment.user?.login ?? '',
+      }));
+    } catch (error: unknown) {
+      throw this.wrapRequestFailed(
+        error,
+        `GitHub ${repo}#${number} 코멘트 조회 실패`,
+      );
+    }
+  }
+
+  async updateIssueComment({
+    repo,
+    commentId,
+    body,
+  }: UpdateIssueCommentInput): Promise<void> {
+    this.assertOctokitConfigured();
+    const [owner, repoName] = parseRepo(repo);
+    try {
+      await this.octokit!.rest.issues.updateComment({
+        owner,
+        repo: repoName,
+        comment_id: commentId,
+        body,
+      });
+    } catch (error: unknown) {
+      throw this.wrapRequestFailed(
+        error,
+        `GitHub ${repo} 코멘트 ${commentId} 수정 실패`,
       );
     }
   }
@@ -1376,6 +1453,12 @@ const extractRepo = (repositoryUrl: string): string => {
   const match = repositoryUrl.match(/\/repos\/([^/]+\/[^/]+)$/);
   return match ? match[1] : repositoryUrl;
 };
+
+// `pulls.listFiles` 의 status 중 위험 지도가 구분하는 셋만 남긴다(copied·changed·unchanged → modified).
+const toChangedFileStatus = (status: string): ChangedFileStatus =>
+  status === 'added' || status === 'removed' || status === 'renamed'
+    ? status
+    : 'modified';
 
 // "owner/repo" 형태의 string 을 [owner, repo] 로 분리한다.
 const parseRepo = (repo: string): [string, string] => {
