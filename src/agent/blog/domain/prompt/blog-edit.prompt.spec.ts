@@ -1,4 +1,5 @@
 import {
+  buildBlogEditPrompt,
   buildBlogEditSystemPrompt,
   MIN_EDITED_BODY_RATIO,
 } from './blog-edit.prompt';
@@ -97,5 +98,26 @@ describe('BLOG_EDIT_SYSTEM_PROMPT — 맺음과 반복', () => {
       '마지막 절에서 앞 절의 내용을 다시 요약하는 문단',
     );
     expect(trimmed).toContain('도입의 한 곳만 남긴다');
+  });
+});
+
+describe('buildBlogEditPrompt — 과삭제 재요청', () => {
+  const baseInput = {
+    title: '제목',
+    category: 'backend',
+    tags: [],
+    summary: '요약',
+    markdown: '본문',
+  };
+
+  it('직전 비율이 없으면 재요청 안내를 붙이지 않는다', () => {
+    expect(buildBlogEditPrompt(baseInput)).not.toContain('[재요청]');
+  });
+
+  // 리뷰 지적 — 반올림하면 59.5% 가 "60% 로 줄어 하한(60%)에 못 미쳐" 로 모순된다.
+  it('하한 바로 아래(59.5%)는 내림으로 적어 하한과 모순되지 않는다', () => {
+    const prompt = buildBlogEditPrompt({ ...baseInput, previousRatio: 0.595 });
+
+    expect(prompt).toContain('원문의 59% 로 줄어 하한(60%)에 못 미쳐');
   });
 });
