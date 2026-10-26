@@ -41,6 +41,7 @@ describe('ReviewPullRequestUsecase', () => {
   let githubClient: jest.Mocked<GithubClientPort>;
   let configGet: jest.Mock;
   let publishFindings: jest.Mock;
+  let upsertRiskMap: jest.Mock;
   let usecase: ReviewPullRequestUsecase;
 
   beforeEach(() => {
@@ -60,6 +61,9 @@ describe('ReviewPullRequestUsecase', () => {
       getPullRequestDiff: jest.fn(),
       compareCommits: jest.fn(),
       addIssueComment: jest.fn(),
+      getPullRequestHeadSha: jest.fn(),
+      listIssueComments: jest.fn(),
+      updateIssueComment: jest.fn(),
       createIssue: jest.fn(),
       listAuthorMergedPullRequestsSince: jest.fn(),
       listAuthorOpenPullRequests: jest.fn(),
@@ -79,6 +83,7 @@ describe('ReviewPullRequestUsecase', () => {
     };
     configGet = jest.fn();
     publishFindings = jest.fn().mockResolvedValue({});
+    upsertRiskMap = jest.fn().mockResolvedValue(undefined);
 
     usecase = new ReviewPullRequestUsecase(
       modelRouter as unknown as ModelRouterUsecase,
@@ -86,7 +91,10 @@ describe('ReviewPullRequestUsecase', () => {
       githubClient,
       undefined,
       { get: configGet } as unknown as ConfigService,
-      { publish: publishFindings } as unknown as PublishFindingsService,
+      {
+        publish: publishFindings,
+        upsertRiskMap,
+      } as unknown as PublishFindingsService,
     );
 
     githubClient.getPullRequest.mockResolvedValue({
@@ -292,6 +300,30 @@ describe('ReviewPullRequestUsecase', () => {
       }
     },
   );
+
+  it('게시하는 리뷰는 같은 스냅샷·지적·연습 모드로 위험 지도를 단다', async () => {
+    configGet.mockImplementation((key: string) =>
+      key === 'PR_REVIEW_INLINE_REPOS' ? 'foo/bar' : undefined,
+    );
+
+    const result = await usecase.execute({
+      prRef: 'foo/bar#34',
+      slackUserId: 'U123',
+      publish: true,
+      dryRun: true,
+    });
+
+    expect(upsertRiskMap).toHaveBeenCalledWith(
+      expect.objectContaining({
+        repo: 'foo/bar',
+        pullNumber: 34,
+        detail: expect.objectContaining({ number: 34 }),
+        findings: result.result.findings,
+        dryRun: true,
+        allowlistRaw: 'foo/bar',
+      }),
+    );
+  });
 
   it('publish 를 요청하지 않으면 게시 결과가 없다', async () => {
     const result = await usecase.execute({
@@ -589,6 +621,9 @@ describe('ReviewPullRequestUsecase — conversationContext', () => {
       getPullRequestDiff: jest.fn(),
       compareCommits: jest.fn(),
       addIssueComment: jest.fn(),
+      getPullRequestHeadSha: jest.fn(),
+      listIssueComments: jest.fn(),
+      updateIssueComment: jest.fn(),
       createIssue: jest.fn(),
       listAuthorMergedPullRequestsSince: jest.fn(),
       listAuthorOpenPullRequests: jest.fn(),
@@ -933,6 +968,9 @@ describe('ReviewPullRequestUsecase × 학습 규약', () => {
         .fn()
         .mockResolvedValue({ diff: '+x', truncated: false, bytes: 2 }),
       addIssueComment: jest.fn(),
+      getPullRequestHeadSha: jest.fn(),
+      listIssueComments: jest.fn(),
+      updateIssueComment: jest.fn(),
       listAuthorMergedPullRequestsSince: jest.fn(),
       listAuthorOpenPullRequests: jest.fn(),
       listOpenPullRequestRefs: jest.fn(),

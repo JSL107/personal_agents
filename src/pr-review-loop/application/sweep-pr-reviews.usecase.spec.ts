@@ -83,7 +83,9 @@ describe('SweepPrReviewsUsecase', () => {
       'findLatestSweepReview' | 'countUnsuccessfulSweepReviews' | 'execute'
     >
   >;
-  let publishService: jest.Mocked<Pick<PublishFindingsService, 'publish'>>;
+  let publishService: jest.Mocked<
+    Pick<PublishFindingsService, 'publish' | 'upsertRiskMap'>
+  >;
 
   // 판정 테스트용 — 절대 시각이 아닌 "현재로부터 N시간/분 전"으로 만들어 시간 흐름에
   // 영향받지 않게 한다.
@@ -142,6 +144,7 @@ describe('SweepPrReviewsUsecase', () => {
         dropped: 0,
         duplicate: 0,
       }),
+      upsertRiskMap: jest.fn().mockResolvedValue(undefined),
     };
   });
 
@@ -964,6 +967,25 @@ describe('SweepPrReviewsUsecase', () => {
       // 요약은 한 줄로 눌러 인용한다 — 줄바꿈이 남으면 인용 밖으로 새어 나간다.
       const [{ body }] = github.addIssueComment.mock.calls[0];
       expect(body).toContain('> 요약 첫 줄 요약 둘째 줄');
+    });
+
+    it('지적이 없어도 위험 지도는 같은 스냅샷·연습 모드로 넘긴다', async () => {
+      noFindings();
+
+      await buildUsecase({
+        ...ENABLED,
+        PR_REVIEW_INLINE_DRYRUN: 'false',
+      }).execute();
+
+      expect(publishService.upsertRiskMap).toHaveBeenCalledWith(
+        expect.objectContaining({
+          repo: 'JSL107/personal_agents',
+          pullNumber: 180,
+          findings: [],
+          dryRun: false,
+        }),
+      );
+      expect(publishService.publish).not.toHaveBeenCalled();
     });
 
     it('잘린 diff 를 본 리뷰면 모델 판단과 무관하게 본 바이트/전체 바이트를 붙인다', async () => {

@@ -1,3 +1,5 @@
+import { listAddedLines } from './diff-added-lines';
+
 // diff 의 추가된 줄에서 화면에 안 보이는 문자를 찾는다 (Trojan Source · 숨은 프롬프트 주입).
 //
 // 지우지 않고 찾기만 한다. 리뷰 대상 코드를 바꾸면 리뷰어가 공격 자체를 못 보게 되고,
@@ -79,66 +81,26 @@ const isPartOfEmoji = (chars: string[], index: number): boolean => {
 const toCodePointLabel = (codePoint: number): string =>
   `U+${codePoint.toString(16).toUpperCase().padStart(4, '0')}`;
 
-// 줄 수를 생략하면 1 이다(`@@ -3 +3 @@`).
-const HUNK_HEADER = /^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
-
-// hunk 헤더가 알려 준 줄 수만큼을 본문으로 센다. 본문 안의 `+++ `·`--- ` 는 헤더가 아니라
-// `++ x` 를 추가하거나 `-- x` 를 지운 줄이다 — 접두사만 보면 추가 줄을 헤더로 오인해 검사를 건너뛴다.
+// 추가된 줄만 본다 — 줄 단위 순회는 listAddedLines 가 맡는다.
 export const findHiddenUnicode = (diff: string): HiddenCharFinding[] => {
   const findings: HiddenCharFinding[] = [];
-  let file = '(알 수 없는 파일)';
-  let nextLine = 0;
-  let oldRemaining = 0;
-  let newRemaining = 0;
-
-  for (const raw of diff.split('\n')) {
-    if (oldRemaining <= 0 && newRemaining <= 0) {
-      if (raw.startsWith('+++ ')) {
-        file = raw.slice(4).replace(/^b\//, '');
-        continue;
+  for (const { file, line, text } of listAddedLines(diff)) {
+    const chars = Array.from(text);
+    chars.forEach((char, index) => {
+      const codePoint = char.codePointAt(0) ?? 0;
+      const kind = classify(codePoint);
+      const isEmojiPart =
+        (codePoint === ZWJ || isVariationSelector(codePoint)) &&
+        isPartOfEmoji(chars, index);
+      if (kind && !isEmojiPart) {
+        findings.push({
+          file,
+          line,
+          codePoint: toCodePointLabel(codePoint),
+          kind,
+        });
       }
-      const hunk = HUNK_HEADER.exec(raw);
-      if (hunk) {
-        oldRemaining = hunk[1] === undefined ? 1 : Number(hunk[1]);
-        nextLine = Number(hunk[2]);
-        newRemaining = hunk[3] === undefined ? 1 : Number(hunk[3]);
-      }
-      continue;
-    }
-    // "\ No newline at end of file" 는 줄로 세지 않는다.
-    if (raw.startsWith('\\')) {
-      continue;
-    }
-    if (raw.startsWith('+')) {
-      const chars = Array.from(raw.slice(1));
-      chars.forEach((char, index) => {
-        const codePoint = char.codePointAt(0) ?? 0;
-        const kind = classify(codePoint);
-        const isEmojiPart =
-          (codePoint === ZWJ || isVariationSelector(codePoint)) &&
-          isPartOfEmoji(chars, index);
-        if (kind && !isEmojiPart) {
-          findings.push({
-            file,
-            line: nextLine,
-            codePoint: toCodePointLabel(codePoint),
-            kind,
-          });
-        }
-      });
-      nextLine += 1;
-      newRemaining -= 1;
-      continue;
-    }
-    // 삭제 줄은 변경 후 파일에 없으므로 줄 번호를 넘기지 않는다.
-    if (raw.startsWith('-')) {
-      oldRemaining -= 1;
-      continue;
-    }
-    // 문맥 줄(공백 접두. 도구에 따라 빈 줄로 오기도 한다).
-    nextLine += 1;
-    oldRemaining -= 1;
-    newRemaining -= 1;
+    });
   }
   return findings;
 };

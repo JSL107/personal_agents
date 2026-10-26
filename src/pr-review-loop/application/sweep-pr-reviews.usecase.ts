@@ -412,6 +412,22 @@ export class SweepPrReviewsUsecase {
         // 으로 남아 다음 회차에 ready 전환 재리뷰가 한 번 더 돈다 — 같은 코드에 두 벌이다.
         isDraft: detail.isDraft,
       });
+      const allowlistRaw = this.configService.get<string>(
+        'PR_REVIEW_INLINE_REPOS',
+      );
+      // 위험 지도는 지적 유무와 별개라 아래 두 갈래(지적 없음 / 카드 게시)보다 먼저 단다.
+      await this.publishService.upsertRiskMap({
+        repo,
+        pullNumber,
+        detail,
+        diff,
+        findings: outcome.result.findings,
+        dryRun,
+        allowlistRaw,
+        ownerLogin: this.configService.get<string>(
+          'GITHUB_WEBHOOK_OWNER_LOGIN',
+        ),
+      });
       if (outcome.result.findings.length === 0) {
         // 게시할 카드는 없지만 "지적 없음" 을 단언할 수 있는지는 별개다 — 초안(reviewCommentDrafts)
         // 만 찬 응답은 findings 가 비어도 지적이 있는 리뷰다(hasNoReviewFindings).
@@ -438,7 +454,7 @@ export class SweepPrReviewsUsecase {
         findings: outcome.result.findings,
         max: this.inlineMax(),
         dryRun,
-        allowlistRaw: this.configService.get<string>('PR_REVIEW_INLINE_REPOS'),
+        allowlistRaw,
       });
       return {
         prRef,
