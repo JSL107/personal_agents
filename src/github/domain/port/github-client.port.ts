@@ -94,6 +94,24 @@ export interface AddIssueCommentInput {
   body: string;
 }
 
+export interface ListIssueCommentsInput {
+  repo: string;
+  number: number;
+}
+
+export interface IssueCommentSummary {
+  id: number;
+  body: string;
+  // 작성자 login. 탈퇴 계정 등으로 없으면 빈 문자열.
+  authorLogin: string;
+}
+
+export interface UpdateIssueCommentInput {
+  repo: string;
+  commentId: number;
+  body: string;
+}
+
 export interface CreateIssueInput {
   repo: string;
   title: string;
@@ -257,6 +275,12 @@ export interface GithubClientPort {
   // PM-2: 사용자 ✅ apply 후 Issue/PR 코멘트로 WBS subtask checklist 등을 append.
   // GitHub PAT 가 `repo` 또는 fine-grained `Issues: Read+Write` scope 가 있어야 동작.
   addIssueComment(input: AddIssueCommentInput): Promise<void>;
+
+  // 위험 지도 코멘트를 PR 당 하나로 유지하려고 기존 코멘트를 찾아 고쳐 쓴다(publish-findings.service).
+  listIssueComments(
+    input: ListIssueCommentsInput,
+  ): Promise<IssueCommentSummary[]>;
+  updateIssueComment(input: UpdateIssueCommentInput): Promise<void>;
 
   createIssue(input: CreateIssueInput): Promise<CreatedIssue>;
 

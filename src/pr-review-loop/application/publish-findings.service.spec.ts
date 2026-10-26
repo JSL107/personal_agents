@@ -1,6 +1,9 @@
 import { ReviewFinding } from '../../agent/code-reviewer/domain/code-reviewer.type';
+import { PullRequestDetail } from '../../github/domain/github.type';
 import { GithubClientPort } from '../../github/domain/port/github-client.port';
+import { IDAERI_REVIEW_MARKER } from '../domain/finding-comment.body';
 import { PrReviewFindingRepositoryPort } from '../domain/port/pr-review-finding.repository.port';
+import { RISK_MAP_COMMENT_TAG } from '../domain/risk-map-comment.body';
 import { PublishFindingsService } from './publish-findings.service';
 
 const DIFF = `--- a/src/foo.service.ts
@@ -384,5 +387,155 @@ describe('PublishFindingsService', () => {
     expect(outcome.issueComment).toBe(1);
     const total = Object.values(outcome).reduce((sum, count) => sum + count, 0);
     expect(total).toBe(findings.length);
+  });
+});
+
+describe('PublishFindingsService.upsertRiskMap', () => {
+  const OWNER = 'JSL107';
+  const TAGGED = `${IDAERI_REVIEW_MARKER} · 위험 지도\n\n예전 본문\n${RISK_MAP_COMMENT_TAG}`;
+  let github: jest.Mocked<
+    Pick<
+      GithubClientPort,
+      'addIssueComment' | 'listIssueComments' | 'updateIssueComment'
+    >
+  >;
+  let service: PublishFindingsService;
+
+  type Input = Parameters<PublishFindingsService['upsertRiskMap']>[0];
+  const input = (overrides: Partial<Input> = {}): Input => ({
+    repo: 'JSL107/personal_agents',
+    pullNumber: 180,
+    detail: {
+      changedFiles: ['src/foo.service.ts'],
+      changedFilesTruncated: false,
+      changedFilesTotalCount: 1,
+      changedLinesByFile: { 'src/foo.service.ts': 2 },
+      changedFileStatsByFile: {
+        'src/foo.service.ts': { status: 'modified', deletions: 0 },
+      },
+    } as unknown as PullRequestDetail,
+    diff: { diff: DIFF, truncated: false, bytes: Buffer.byteLength(DIFF) },
+    findings: [],
+    dryRun: false,
+    allowlistRaw: 'JSL107/personal_agents',
+    ownerLogin: OWNER,
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    github = {
+      addIssueComment: jest.fn().mockResolvedValue(undefined),
+      listIssueComments: jest.fn().mockResolvedValue([]),
+      updateIssueComment: jest.fn().mockResolvedValue(undefined),
+    };
+    service = new PublishFindingsService(
+      github as unknown as GithubClientPort,
+      {} as PrReviewFindingRepositoryPort,
+    );
+  });
+
+  it('기존 위험 지도가 없으면 새 코멘트를 단다', async () => {
+    await service.upsertRiskMap(input());
+
+    expect(github.addIssueComment).toHaveBeenCalledWith({
+      repo: 'JSL107/personal_agents',
+      number: 180,
+      body: expect.stringContaining(RISK_MAP_COMMENT_TAG),
+    });
+    expect(github.updateIssueComment).not.toHaveBeenCalled();
+  });
+
+  it('봇 계정이 쓴 위험 지도가 있으면 그 코멘트를 고쳐 쓴다', async () => {
+    github.listIssueComments.mockResolvedValue([
+      { id: 11, body: '사람이 단 코멘트', authorLogin: 'someone' },
+      { id: 22, body: TAGGED, authorLogin: OWNER },
+    ]);
+
+    await service.upsertRiskMap(input());
+
+    expect(github.updateIssueComment).toHaveBeenCalledWith({
+      repo: 'JSL107/personal_agents',
+      commentId: 22,
+      body: expect.stringContaining('위험 점수'),
+    });
+    expect(github.addIssueComment).not.toHaveBeenCalled();
+  });
+
+  it('본문이 같으면 고치지 않는다', async () => {
+    await service.upsertRiskMap(input());
+    const [{ body }] = github.addIssueComment.mock.calls[0];
+    github.addIssueComment.mockClear();
+    github.listIssueComments.mockResolvedValue([
+      { id: 22, body, authorLogin: OWNER },
+    ]);
+
+    await service.upsertRiskMap(input());
+
+    expect(github.updateIssueComment).not.toHaveBeenCalled();
+    expect(github.addIssueComment).not.toHaveBeenCalled();
+  });
+
+  it('표식을 흉내 낸 남의 코멘트는 고치지 않고 자기 코멘트를 새로 단다', async () => {
+    github.listIssueComments.mockResolvedValue([
+      { id: 33, body: TAGGED, authorLogin: 'someone' },
+      { id: 34, body: `인용: ${RISK_MAP_COMMENT_TAG}`, authorLogin: OWNER },
+    ]);
+
+    await service.upsertRiskMap(input());
+
+    expect(github.updateIssueComment).not.toHaveBeenCalled();
+    expect(github.addIssueComment).toHaveBeenCalledTimes(1);
+  });
+
+  it('봇 계정을 모르면 표식만으로 찾는다', async () => {
+    github.listIssueComments.mockResolvedValue([
+      { id: 22, body: TAGGED, authorLogin: 'whoever' },
+    ]);
+
+    await service.upsertRiskMap(input({ ownerLogin: undefined }));
+
+    expect(github.updateIssueComment).toHaveBeenCalledWith(
+      expect.objectContaining({ commentId: 22 }),
+    );
+  });
+
+  it('같은 PR 을 동시에 갱신해도 코멘트는 하나다', async () => {
+    const posted: { id: number; body: string; authorLogin: string }[] = [];
+    github.listIssueComments.mockImplementation(async () => [...posted]);
+    github.addIssueComment.mockImplementation(async ({ body }) => {
+      posted.push({ id: posted.length + 1, body, authorLogin: OWNER });
+    });
+
+    await Promise.all([
+      service.upsertRiskMap(input()),
+      service.upsertRiskMap(input({ findings: [finding()] })),
+    ]);
+
+    expect(github.addIssueComment).toHaveBeenCalledTimes(1);
+    expect(posted).toHaveLength(1);
+  });
+
+  it.each([
+    ['연습 모드', { dryRun: true }],
+    ['허용 목록 밖', { allowlistRaw: 'someone/else' }],
+  ])('%s 이면 GitHub 에 아무것도 남기지 않는다', async (_, overrides) => {
+    await service.upsertRiskMap(input(overrides));
+
+    expect(github.listIssueComments).not.toHaveBeenCalled();
+    expect(github.addIssueComment).not.toHaveBeenCalled();
+  });
+
+  it('계산이 실패해도 예외를 올리지 않는다 — 스윕의 카드 게시를 막지 않게', async () => {
+    await expect(
+      service.upsertRiskMap(input({ detail: {} as PullRequestDetail })),
+    ).resolves.toBeUndefined();
+    expect(github.addIssueComment).not.toHaveBeenCalled();
+  });
+
+  it('조회가 실패해도 예외를 올리지 않는다 — 리뷰 결과를 바꾸지 않는 안내다', async () => {
+    github.listIssueComments.mockRejectedValue(new Error('403'));
+
+    await expect(service.upsertRiskMap(input())).resolves.toBeUndefined();
+    expect(github.addIssueComment).not.toHaveBeenCalled();
   });
 });

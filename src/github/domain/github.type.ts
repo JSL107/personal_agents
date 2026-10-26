@@ -30,6 +30,14 @@ export interface AssignedTasks {
   pullRequests: GithubPullRequest[];
 }
 
+// `pulls.listFiles` 의 파일별 변경 종류. copied·changed·unchanged 는 modified 로 접는다.
+export type ChangedFileStatus = 'added' | 'removed' | 'modified' | 'renamed';
+
+export interface ChangedFileStat {
+  status: ChangedFileStatus;
+  deletions: number;
+}
+
 // 단일 PR 상세 — Code Reviewer (`/review-pr`) 가 사용한다.
 export interface PullRequestDetail {
   number: number;
@@ -53,6 +61,10 @@ export interface PullRequestDetail {
   // 파일별 바뀐 줄 수(추가 + 삭제). `pulls.listFiles` 값이라 diff 가 상한에서 잘려도 정확하다 —
   // 잘린 diff 로 세면 뒤쪽 파일이 0 이 돼 [기존 테스트] 선택 순서가 경로순으로 무너진다(#412).
   changedLinesByFile: Record<string, number>;
+  // 파일별 변경 종류·삭제 줄 수(`pulls.listFiles`). 위험 지도(risk-map.ts)만 읽는다.
+  // 선택값인 이유: 상세를 만드는 곳이 운영(octokit) 말고도 재생·테스트 fixture 30여 곳이다.
+  // 없으면 위험 지도는 변경 종류를 '수정' 으로 보고, 테스트 삭제 신호를 끄고 그 사실을 코멘트에 적는다.
+  changedFileStatsByFile?: Record<string, ChangedFileStat>;
   additions: number;
   deletions: number;
   // 리뷰 시점 head commit sha — 카드의 커밋 대조 기준선(Phase 2)이자 인라인 코멘트의 commit_id.

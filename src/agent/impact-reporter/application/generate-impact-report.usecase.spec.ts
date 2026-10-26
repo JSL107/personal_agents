@@ -56,6 +56,8 @@ describe('GenerateImpactReportUsecase', () => {
       getPullRequestDiff: jest.fn(),
       compareCommits: jest.fn(),
       addIssueComment: jest.fn(),
+      listIssueComments: jest.fn(),
+      updateIssueComment: jest.fn(),
       createIssue: jest.fn(),
       listAuthorMergedPullRequestsSince: jest.fn(),
       listAuthorOpenPullRequests: jest.fn(),
