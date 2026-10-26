@@ -82,6 +82,20 @@ describe('labelPullRequests', () => {
     expect(labels.get(7)?.reason).toBe('revert #8 Revert "feat: 결제 연동"');
     expect(labels.get(9)?.bad).toBe(true);
   });
+
+  it('번호가 앞부분만 같은 PR 은 revert 대상이 아니다', () => {
+    const labels = labelPullRequests({
+      pullRequests: [
+        pullRequest(12, 'feat: A', 1, ['src/a.ts']),
+        pullRequest(123, 'feat: B', 2, ['src/b.ts']),
+        pullRequest(130, 'Revert #123', 3, []),
+      ],
+      windowDays: 14,
+    });
+
+    expect(labels.get(12)?.bad).toBe(false);
+    expect(labels.get(123)?.bad).toBe(true);
+  });
 });
 
 describe('collectSignals', () => {
@@ -184,7 +198,8 @@ describe('calibrate', () => {
       (cell) => cell.signal === CalibrationSignal.SCHEMA,
     );
     expect(schema?.with).toEqual({ n: 2, bad: 2, rate: 1 });
-    expect(report.suggested).toEqual({ quick: 70, careful: 8 });
+    // 따로 고르면 quick 70 · careful 8 로 역전된다 — 쓸 수 없는 제안이라 내지 않는다.
+    expect(report.suggested).toEqual({ quick: null, careful: null });
   });
 
   it('동점은 반으로 치고, 문제 PR 이 없으면 AUC·제안이 없다', () => {

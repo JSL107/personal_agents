@@ -180,6 +180,11 @@ const fetchRepo = async ({
   const now = Date.parse(fetchedAt);
   const since = now - options.months * MONTH_DAYS * DAY_MS;
   const observedUntil = now - options.windowDays * DAY_MS;
+  const budget = await pullRequestBudget(octokit);
+  if (budget === 0) {
+    progress(`${repo}: 호출 여유가 없어 건너뜀 (예약 ${RATE_LIMIT_RESERVE}회)`);
+    return { repo, base: '', merged: 0, pullRequests: [] };
+  }
   const listed = await listMergedSince({ octokit, repo, since });
   const base = mostCommonBase(listed);
   const onBase = listed
@@ -195,15 +200,19 @@ const fetchRepo = async ({
   const observed = onBase.filter(
     (pullRequest) => Date.parse(pullRequest.mergedAt) <= observedUntil,
   );
-  const budget = await pullRequestBudget(octokit);
-  const sampleSize = Math.max(
+  const sampled = observed.slice(
     0,
     Math.min(options.maxPerRepo, budget - watching.length),
   );
-  const picked =
-    sampleSize === 0 ? [] : [...watching, ...observed.slice(0, sampleSize)];
+  if (sampled.length === 0) {
+    progress(
+      `${repo}: 관찰 중 ${watching.length}건을 받으면 표본에 쓸 호출 여유가 없어 건너뜀 (여유 ${budget}건)`,
+    );
+    return { repo, base, merged: onBase.length, pullRequests: [] };
+  }
+  const picked = [...watching, ...sampled];
   progress(
-    `${repo}: 머지 ${listed.length}건 중 base ${base} ${onBase.length}건 → 표본 ${Math.min(sampleSize, observed.length)}건 + 관찰 중 ${sampleSize === 0 ? 0 : watching.length}건 (호출 여유 ${budget}건)`,
+    `${repo}: 머지 ${listed.length}건 중 base ${base} ${onBase.length}건 → 표본 ${sampled.length}건 + 관찰 중 ${watching.length}건 (호출 여유 ${budget}건)`,
   );
   const pullRequests = await mapLimited(
     picked,

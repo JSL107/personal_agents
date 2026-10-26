@@ -33,13 +33,6 @@ const LABEL_IGNORED_ROLES = new Set<RiskFileRole>([
   RiskFileRole.DOC,
   RiskFileRole.LOCKFILE,
 ]);
-const ROLE_SIGNALS: [RiskFileRole, CalibrationSignal][] = [
-  [RiskFileRole.SCHEMA, CalibrationSignal.SCHEMA],
-  [RiskFileRole.INFRA, CalibrationSignal.INFRA],
-  [RiskFileRole.MANIFEST, CalibrationSignal.MANIFEST],
-  [RiskFileRole.ENV, CalibrationSignal.ENV],
-  [RiskFileRole.CONFIG, CalibrationSignal.CONFIG],
-];
 // 후보 신호: 인가·결제처럼 크기와 무관하게 위험한 경로.
 const SENSITIVE_PATH =
   /(?:^|[/._-])(?:o?auth(?:entication|orization|[nz])?|guards?|permissions?|middlewares?|payments?|billing|sessions?|credentials?|crypto|security|acl|roles?|login|passwords?)(?=$|[/._-])/i;
@@ -86,29 +79,25 @@ export const collectSignals = ({
   const codeFiles = files.filter(
     (_, index) => roles[index] === RiskFileRole.CODE,
   );
-  const flags: [boolean, CalibrationSignal][] = [
-    ...ROLE_SIGNALS.map(([role, signal]): [boolean, CalibrationSignal] => [
-      roles.includes(role),
-      signal,
-    ]),
-    [
-      removedFiles.some(
-        (path) => classifyRiskFileRole(path) === RiskFileRole.TEST,
-      ),
-      CalibrationSignal.TEST_REMOVED,
-    ],
-    [
+  // Record 라서 신호를 새로 추가하고 여기 빠뜨리면 컴파일이 막힌다 — 빠진 신호가 리포트에 0건으로 조용히 나오지 않게.
+  const on: Record<CalibrationSignal, boolean> = {
+    [CalibrationSignal.SCHEMA]: roles.includes(RiskFileRole.SCHEMA),
+    [CalibrationSignal.INFRA]: roles.includes(RiskFileRole.INFRA),
+    [CalibrationSignal.MANIFEST]: roles.includes(RiskFileRole.MANIFEST),
+    [CalibrationSignal.ENV]: roles.includes(RiskFileRole.ENV),
+    [CalibrationSignal.CONFIG]: roles.includes(RiskFileRole.CONFIG),
+    [CalibrationSignal.TEST_REMOVED]: removedFiles.some(
+      (path) => classifyRiskFileRole(path) === RiskFileRole.TEST,
+    ),
+    [CalibrationSignal.NO_TEST_TOUCHED]:
       hasCode && !roles.includes(RiskFileRole.TEST),
-      CalibrationSignal.NO_TEST_TOUCHED,
-    ],
-    [changedLines >= SIZE_SATURATION_LINES, CalibrationSignal.LARGE],
-    [
-      codeFiles.some((path) => SENSITIVE_PATH.test(path)),
-      CalibrationSignal.SENSITIVE_PATH,
-    ],
-    [hasDependencyBump(diff), CalibrationSignal.DEPENDENCY_BUMP],
-  ];
-  return flags.filter(([on]) => on).map(([, signal]) => signal);
+    [CalibrationSignal.LARGE]: changedLines >= SIZE_SATURATION_LINES,
+    [CalibrationSignal.SENSITIVE_PATH]: codeFiles.some((path) =>
+      SENSITIVE_PATH.test(path),
+    ),
+    [CalibrationSignal.DEPENDENCY_BUMP]: hasDependencyBump(diff),
+  };
+  return Object.values(CalibrationSignal).filter((signal) => on[signal]);
 };
 
 // major 가 바뀌었거나 0.x 에서 minor 가 바뀐 의존성이 하나라도 있는가.
@@ -184,7 +173,7 @@ const followsUp = ({
   if (REVERT.test(later.title)) {
     return (
       later.title.includes(earlier.title.slice(0, REVERT_TITLE_PREFIX)) ||
-      later.title.includes(`#${earlier.number}`)
+      new RegExp(`#${earlier.number}(?!\\d)`).test(later.title)
     );
   }
   if (!FIX.test(later.title)) {
@@ -269,8 +258,11 @@ const suggestThresholds = ({
     const above = cellOf(points.filter((point) => point.score >= score));
     return above.n >= MIN_THRESHOLD_SAMPLE && above.rate >= baseRate * 1.5;
   });
-  return {
-    quick: quickCandidates.at(-1) ?? null,
-    careful: carefulCandidates.at(0) ?? null,
-  };
+  const quick = quickCandidates.at(-1) ?? null;
+  const careful = carefulCandidates.at(0) ?? null;
+  // 두 기준은 따로 고르므로 quick 이 careful 을 넘을 수 있다 — 그런 제안은 쓸 수 없어 내지 않는다.
+  if (quick !== null && careful !== null && quick > careful) {
+    return { quick: null, careful: null };
+  }
+  return { quick, careful };
 };
