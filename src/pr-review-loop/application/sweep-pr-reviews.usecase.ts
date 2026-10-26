@@ -26,6 +26,7 @@ import {
   SweepPullRequestResult,
 } from '../domain/publish-outcome.type';
 import { PublishFindingsService } from './publish-findings.service';
+import { ReviewWriterResolver } from './review-writer.resolver';
 
 // 리뷰를 한 건도 돌리지 못하고 끝난 회차. 쿼터와 무관한 정상 종료다(기능 off,
 // env 미설정, allowlist 비어 있음).
@@ -89,6 +90,7 @@ export class SweepPrReviewsUsecase {
     private readonly agentRunService: AgentRunService,
     private readonly publishService: PublishFindingsService,
     private readonly configService: ConfigService,
+    private readonly writers: ReviewWriterResolver,
   ) {}
 
   async execute(): Promise<SweepExecution> {
@@ -424,9 +426,6 @@ export class SweepPrReviewsUsecase {
         findings: outcome.result.findings,
         dryRun,
         allowlistRaw,
-        ownerLogin: this.configService.get<string>(
-          'GITHUB_WEBHOOK_OWNER_LOGIN',
-        ),
       });
       if (outcome.result.findings.length === 0) {
         // 게시할 카드는 없지만 "지적 없음" 을 단언할 수 있는지는 별개다 — 초안(reviewCommentDrafts)
@@ -524,7 +523,7 @@ export class SweepPrReviewsUsecase {
     // 같은 PR_REVIEW_INLINE_REPOS 에서 나오므로(allowlistRepos) 여기 닿은 레포는 이미 허용
     // 목록 안이다. 스윕 대상과 게시 허용을 다른 키로 가르는 변경이 오면 이 지점도 함께 봐야 한다.
     try {
-      await this.githubClient.addIssueComment({
+      await this.writers.forRepo(repo).client.addIssueComment({
         repo,
         number: pullNumber,
         body: buildNoFindingsCommentBody(

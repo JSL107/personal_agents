@@ -6,6 +6,8 @@ import { ClassifyPullRequestEngagementUsecase } from './application/classify-pr-
 import { ListAssignedTasksUsecase } from './application/list-assigned-tasks.usecase';
 import {
   GITHUB_CLIENT_PORT,
+  GITHUB_REVIEW_BOT_CLIENT,
+  GithubClientPort,
   OCTOKIT_INSTANCE,
 } from './domain/port/github-client.port';
 import {
@@ -13,6 +15,15 @@ import {
   GITHUB_REQUEST_TIMEOUT_MS,
 } from './infrastructure/fetch-with-timeout';
 import { OctokitGithubClient } from './infrastructure/octokit-github.client';
+
+const createOctokit = (token: string): Octokit =>
+  new Octokit({
+    auth: token,
+    // 상한이 없으면 응답 없는 한 요청이 이 클라이언트를 쓰는 AgentRun 을 무기한 붙잡는다.
+    request: {
+      fetch: fetchWithTimeout(GITHUB_REQUEST_TIMEOUT_MS),
+    },
+  });
 
 @Module({
   providers: [
@@ -27,19 +38,24 @@ import { OctokitGithubClient } from './infrastructure/octokit-github.client';
         if (!token) {
           return null;
         }
-        return new Octokit({
-          auth: token,
-          // 상한이 없으면 응답 없는 한 요청이 이 클라이언트를 쓰는 AgentRun 을 무기한 붙잡는다.
-          request: {
-            fetch: fetchWithTimeout(GITHUB_REQUEST_TIMEOUT_MS),
-          },
-        });
+        return createOctokit(token);
       },
       inject: [ConfigService],
     },
     {
       provide: GITHUB_CLIENT_PORT,
       useClass: OctokitGithubClient,
+    },
+    {
+      provide: GITHUB_REVIEW_BOT_CLIENT,
+      useFactory: (configService: ConfigService): GithubClientPort | null => {
+        const token = configService.get<string>('GITHUB_REVIEW_BOT_TOKEN');
+        if (!token) {
+          return null;
+        }
+        return new OctokitGithubClient(createOctokit(token));
+      },
+      inject: [ConfigService],
     },
   ],
   // ReviewPullRequestUsecase / GenerateImpactReportUsecase 등 외부 모듈이
@@ -48,6 +64,7 @@ import { OctokitGithubClient } from './infrastructure/octokit-github.client';
     ListAssignedTasksUsecase,
     ClassifyPullRequestEngagementUsecase,
     GITHUB_CLIENT_PORT,
+    GITHUB_REVIEW_BOT_CLIENT,
   ],
 })
 export class GithubModule {}

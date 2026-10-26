@@ -12,6 +12,7 @@ import { LEARNING_REPOS } from '../domain/learning-repo';
 import { PrReviewFindingRepositoryPort } from '../domain/port/pr-review-finding.repository.port';
 import { PrReviewFindingRecord } from '../domain/pr-review-finding.type';
 import { HarvestReviewSignalsUsecase } from './harvest-review-signals.usecase';
+import { ReviewWriterResolver } from './review-writer.resolver';
 
 const card = (
   overrides: Partial<PrReviewFindingRecord> = {},
@@ -110,6 +111,11 @@ const buildDependencies = ({
     repository,
     judge as unknown as JudgeReviewReplyUsecase,
     resolutionJudge as unknown as JudgeFindingResolutionUsecase,
+    new ReviewWriterResolver(
+      config as unknown as ConfigService,
+      github as unknown as GithubClientPort,
+      null,
+    ),
   );
   return { usecase, github, repository, judge, resolutionJudge };
 };
