@@ -439,6 +439,27 @@ export class OctokitGithubClient implements GithubClientPort {
     }
   }
 
+  async getPullRequestHeadSha({
+    repo,
+    number,
+  }: PullRequestRef): Promise<string> {
+    this.assertOctokitConfigured();
+    const [owner, repoName] = parseRepo(repo);
+    try {
+      const response = await this.octokit!.rest.pulls.get({
+        owner,
+        repo: repoName,
+        pull_number: number,
+      });
+      return response.data.head.sha;
+    } catch (error: unknown) {
+      throw this.wrapRequestFailed(
+        error,
+        `GitHub ${repo}#${number} head 조회 실패`,
+      );
+    }
+  }
+
   async listIssueComments({
     repo,
     number,

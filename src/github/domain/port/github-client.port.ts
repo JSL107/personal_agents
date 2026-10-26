@@ -276,6 +276,8 @@ export interface GithubClientPort {
   // GitHub PAT 가 `repo` 또는 fine-grained `Issues: Read+Write` scope 가 있어야 동작.
   addIssueComment(input: AddIssueCommentInput): Promise<void>;
 
+  // PR 의 현재 head 커밋. 오래된 스냅샷의 리뷰가 최신 위험 지도를 덮어쓰지 않게 쓰기 직전에 본다.
+  getPullRequestHeadSha(ref: PullRequestRef): Promise<string>;
   // 위험 지도 코멘트를 PR 당 하나로 유지하려고 기존 코멘트를 찾아 고쳐 쓴다(publish-findings.service).
   listIssueComments(
     input: ListIssueCommentsInput,

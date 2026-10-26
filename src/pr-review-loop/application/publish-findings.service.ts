@@ -24,6 +24,7 @@ import {
   IDAERI_REVIEW_MARKER,
 } from '../domain/finding-comment.body';
 import { buildFindingFingerprint } from '../domain/finding-fingerprint';
+import { sameLogin } from '../domain/harvest-signal';
 import {
   PR_REVIEW_FINDING_REPOSITORY_PORT,
   PrReviewFindingRepositoryPort,
@@ -66,8 +67,8 @@ export interface UpsertRiskMapInput {
   dryRun: boolean;
   allowlistRaw: string | undefined;
   // 봇이 코멘트를 다는 계정(GITHUB_WEBHOOK_OWNER_LOGIN). 있으면 이 계정이 쓴 위험 지도만 고쳐 쓴다 —
-  // 표식만 보면 남이 흉내 낸 코멘트를 고치려다 403 을 받고, 그 뒤로 위험 지도가 영영 안 달린다.
-  // 없으면 표식만으로 찾는다(수확기와 같은 설정이라 운영에서는 늘 있다).
+  // 표식만 보면 남이 흉내 낸 코멘트를 고치려다 403 을 받고 위험 지도가 영영 안 달린다. 대소문자는
+  // 수확기(sameLogin)처럼 무시한다. 비어 있거나 공백뿐이면 표식만으로 찾는다.
   ownerLogin: string | undefined;
 }
 
@@ -202,15 +203,28 @@ export class PublishFindingsService {
         );
         return;
       }
+      // 리뷰하는 사이 새 커밋이 올라왔으면 쓰지 않는다 — 새 head 의 리뷰가 따로 돈다. 직렬화만으로는
+      // 늦게 끝난 옛 스냅샷이 최신 지도를 덮어쓰는 것을 막지 못한다.
+      const headSha = await this.githubClient.getPullRequestHeadSha({
+        repo: input.repo,
+        number: input.pullNumber,
+      });
+      if (headSha !== input.detail.headSha) {
+        this.logger.log(
+          `위험 지도 미게시 (${label}, 리뷰한 커밋 ${input.detail.headSha.slice(0, 7)} 이 최신 head ${headSha.slice(0, 7)} 가 아님)`,
+        );
+        return;
+      }
       const body = buildRiskMapCommentBody(map);
       const comments = await this.githubClient.listIssueComments({
         repo: input.repo,
         number: input.pullNumber,
       });
+      const ownerLogin = input.ownerLogin?.trim() ?? '';
       const found = comments.find(
         (comment) =>
-          (input.ownerLogin === undefined ||
-            comment.authorLogin === input.ownerLogin) &&
+          (ownerLogin.length === 0 ||
+            sameLogin(comment.authorLogin, ownerLogin)) &&
           comment.body.startsWith(IDAERI_REVIEW_MARKER) &&
           comment.body.includes(RISK_MAP_COMMENT_TAG),
       );

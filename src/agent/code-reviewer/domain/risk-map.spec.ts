@@ -2,15 +2,13 @@ import { ChangedFileStat } from '../../../github/domain/github.type';
 import { ReviewFinding } from './code-reviewer.type';
 import {
   CAREFUL_SCORE,
-  classifyRiskFileRole,
   computeRiskMap,
-  ComputeRiskMapInput,
   decideLevel,
-  LevelInput,
   MAX_REASONS_PER_FILE,
   QUICK_SCORE,
   START_HERE_MAX,
 } from './risk-map';
+import { ComputeRiskMapInput, LevelInput, RiskMapLevel } from './risk-map.type';
 
 interface FileFixture {
   path: string;
@@ -72,49 +70,16 @@ const buildInput = (
 // 토큰 형식 문자열은 실행 시점에 조립한다 — 소스에 리터럴로 두면 비밀 스캐너가 이 파일을 막는다.
 const fakeGithubToken = (): string => `gh${'p'}_${'a1B2c3D4e5F6'.repeat(3)}`;
 
-describe('classifyRiskFileRole', () => {
-  it.each([
-    ['src/user/user.service.ts', 'code'],
-    ['src/user/user.service.spec.ts', 'test'],
-    ['tests/Unit/SurveyTest.php', 'test'],
-    ['app/Models/Survey.php', 'code'],
-    ['src/app/home/home.component.html', 'view'],
-    ['prisma/schema.prisma', 'schema'],
-    ['database/migrations/2026_01_01_create.php', 'schema'],
-    ['.env.example', 'env'],
-    ['pnpm-lock.yaml', 'lockfile'],
-    ['package.json', 'manifest'],
-    ['requirements.txt', 'manifest'],
-    ['README.md', 'doc'],
-    ['tsconfig.build.json', 'config'],
-    ['eslint.config.mjs', 'config'],
-    ['.github/workflows/ci.yml', 'infra'],
-    ['docker-compose.yml', 'infra'],
-    // 소스 코드는 deploy/ 폴더에 있어도 인프라가 아니다.
-    ['deploy/run.ts', 'code'],
-    ['src/main.rs', 'code'],
-    ['Sources/App.swift', 'code'],
-    ['Sources/AppTests/MascotChatterTests.swift', 'test'],
-    ['src/main/java/a/UserServiceTest.java', 'test'],
-    // 문서·테스트가 스키마보다 먼저다.
-    ['docs/migrations/plan.md', 'doc'],
-    ['test/fixtures/seed.sql', 'test'],
-    ['assets/logo.png', 'other'],
-  ])('%s → %s', (path, role) => {
-    expect(classifyRiskFileRole(path)).toBe(role);
-  });
-});
-
 describe('computeRiskMap', () => {
   it('문서만 바꾼 PR 은 위험 신호가 적다', () => {
     const map = computeRiskMap(
       buildInput([{ path: 'README.md', lines: 200 }, { path: 'docs/a.md' }]),
     );
 
-    expect(map.level).toBe('pass');
+    expect(map.level).toBe(RiskMapLevel.PASS);
     expect(map.score).toBe(0);
     expect(map.startHere).toEqual([]);
-    expect(map.skimCount).toBe(2);
+    expect(map.lowCount).toBe(2);
   });
 
   it('스키마 변경은 점수와 무관하게 가볍게 확인 이상이고 목록 맨 위에 온다', () => {
@@ -126,7 +91,7 @@ describe('computeRiskMap', () => {
       ]),
     );
 
-    expect(map.level).toBe('quick');
+    expect(map.level).toBe(RiskMapLevel.QUICK);
     expect(map.levelReasons).toContain('DB 스키마·마이그레이션 변경');
     expect(map.startHere[0].path).toBe('prisma/schema.prisma');
   });
@@ -146,7 +111,7 @@ describe('computeRiskMap', () => {
     const map = computeRiskMap(buildInput(files));
 
     expect(map.score).toBeLessThan(CAREFUL_SCORE);
-    expect(map.level).not.toBe('careful');
+    expect(map.level).not.toBe(RiskMapLevel.CAREFUL);
   });
 
   it('큰 코드 변경은 위험 점수만으로 꼼꼼히 확인이 된다', () => {
@@ -158,7 +123,7 @@ describe('computeRiskMap', () => {
     const map = computeRiskMap(buildInput(files));
 
     expect(map.score).toBeGreaterThanOrEqual(CAREFUL_SCORE);
-    expect(map.level).toBe('careful');
+    expect(map.level).toBe(RiskMapLevel.CAREFUL);
     expect(map.startHere.length).toBeLessThanOrEqual(START_HERE_MAX);
   });
 
@@ -173,7 +138,7 @@ describe('computeRiskMap', () => {
       ]),
     );
 
-    expect(map.level).toBe('careful');
+    expect(map.level).toBe(RiskMapLevel.CAREFUL);
     expect(map.levelReasons).toContain('추가된 줄에 자격증명 형식 문자열');
     expect(map.startHere[0].reasons).toContain(
       '1줄 GitHub 토큰 형식 문자열 — 유출 여부 확인',
@@ -191,7 +156,7 @@ describe('computeRiskMap', () => {
       ]),
     );
 
-    expect(map.level).not.toBe('careful');
+    expect(map.level).not.toBe(RiskMapLevel.CAREFUL);
   });
 
   it('억제 지시문은 코드에서만 세고 테스트·문서에서는 세지 않는다', () => {
@@ -351,7 +316,7 @@ describe('computeRiskMap', () => {
     expect(removed.levelReasons).toContain('기존 테스트 삭제·대폭 축소');
     expect(trimmed.levelReasons).toContain('기존 테스트 삭제·대폭 축소');
     expect(trimmed.startHere[0].reasons).toContain('기존 테스트 12줄 순감');
-    expect(touched.level).toBe('pass');
+    expect(touched.level).toBe(RiskMapLevel.PASS);
   });
 
   it('테스트를 다시 쓰며 늘렸으면 삭제 줄이 많아도 축소가 아니다', () => {
@@ -360,7 +325,7 @@ describe('computeRiskMap', () => {
     );
 
     expect(map.levelReasons).not.toContain('기존 테스트 삭제·대폭 축소');
-    expect(map.level).toBe('pass');
+    expect(map.level).toBe(RiskMapLevel.PASS);
   });
 
   it('원래 테스트를 두지 않는 선언 파일에는 짝 테스트 신호를 붙이지 않는다', () => {
@@ -386,7 +351,7 @@ describe('computeRiskMap', () => {
       buildInput([{ path: 'README.md' }], { filesTruncated: true }),
     );
 
-    expect(map.level).toBe('quick');
+    expect(map.level).toBe(RiskMapLevel.QUICK);
     expect(map.levelReasons).toContain('일부 파일 미분석');
     expect(map.notes).toContain('변경 파일 11개 중 1개만 분석했습니다.');
   });
@@ -418,7 +383,7 @@ describe('computeRiskMap', () => {
 
     expect(map.score).toBe(12);
     expect(map.score).toBeLessThan(QUICK_SCORE);
-    expect(map.level).toBe('quick');
+    expect(map.level).toBe(RiskMapLevel.QUICK);
   });
 
   it('공유 상한은 파일이 아주 많아도 사라지지 않는다', () => {
@@ -476,7 +441,8 @@ describe('computeRiskMap', () => {
     );
 
     expect(map.startHere).toHaveLength(START_HERE_MAX);
-    expect(map.skimCount).toBe(3);
+    expect(map.overflowCount).toBe(3);
+    expect(map.lowCount).toBe(0);
   });
 
   it('짝 테스트를 못 보는 언어도 코드로 세고 판정 불가를 적는다', () => {
@@ -539,14 +505,14 @@ describe('computeRiskMap', () => {
       buildInput([{ path: 'src/config.ts', lines: 1, added: [line] }]),
     );
 
-    expect(map.level === 'careful').toBe(secret);
+    expect(map.level === RiskMapLevel.CAREFUL).toBe(secret);
   });
 
   it.each([
-    [24, 'pass'],
-    [25, 'quick'],
-    [59, 'quick'],
-    [60, 'careful'],
+    [24, RiskMapLevel.PASS],
+    [25, RiskMapLevel.QUICK],
+    [59, RiskMapLevel.QUICK],
+    [60, RiskMapLevel.CAREFUL],
   ])('점수 %s 점은 %s 다 (등급 경계)', (score, level) => {
     const input: LevelInput = {
       score,
@@ -587,6 +553,50 @@ describe('computeRiskMap', () => {
       findingCount: 2,
       mustFixCount: 1,
     });
+  });
+
+  it('합계 상한을 나눠 가진 파일도 표에 오른다 — 몫이 작아져도 파일 위험은 그대로다', () => {
+    const infra = computeRiskMap(
+      buildInput([
+        { path: '.github/workflows/a.yml' },
+        { path: '.github/workflows/b.yml' },
+        { path: 'docker-compose.yml' },
+      ]),
+    );
+    const migrations = computeRiskMap(
+      buildInput(
+        Array.from({ length: 10 }, (_, index) => ({
+          path: `prisma/migrations/${index}/migration.sql`,
+        })),
+      ),
+    );
+
+    expect(infra.score).toBe(12);
+    expect(infra.startHere.map((file) => file.path)).toContain(
+      'docker-compose.yml',
+    );
+    expect(migrations.score).toBe(35);
+    expect(migrations.startHere).toHaveLength(START_HERE_MAX);
+    expect(migrations.startHere[0].points).toBe(35);
+  });
+
+  it('머지 전 필수 지적이 있는 파일은 점수가 낮아도 표에 오른다', () => {
+    const findings: ReviewFinding[] = [
+      {
+        category: 'CORRECTNESS',
+        severity: 'MUST_FIX',
+        file: 'README.md',
+        line: 1,
+        body: 'x',
+      },
+    ];
+
+    const map = computeRiskMap(
+      buildInput([{ path: 'README.md' }, { path: 'docs/a.md' }], { findings }),
+    );
+
+    expect(map.startHere.map((file) => file.path)).toEqual(['README.md']);
+    expect(map.lowCount).toBe(1);
   });
 
   it('같은 입력이면 같은 결과다', () => {

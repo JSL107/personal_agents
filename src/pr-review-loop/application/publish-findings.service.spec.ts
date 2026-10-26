@@ -396,7 +396,10 @@ describe('PublishFindingsService.upsertRiskMap', () => {
   let github: jest.Mocked<
     Pick<
       GithubClientPort,
-      'addIssueComment' | 'listIssueComments' | 'updateIssueComment'
+      | 'addIssueComment'
+      | 'getPullRequestHeadSha'
+      | 'listIssueComments'
+      | 'updateIssueComment'
     >
   >;
   let service: PublishFindingsService;
@@ -406,6 +409,7 @@ describe('PublishFindingsService.upsertRiskMap', () => {
     repo: 'JSL107/personal_agents',
     pullNumber: 180,
     detail: {
+      headSha: 'head-b',
       changedFiles: ['src/foo.service.ts'],
       changedFilesTruncated: false,
       changedFilesTotalCount: 1,
@@ -425,6 +429,7 @@ describe('PublishFindingsService.upsertRiskMap', () => {
   beforeEach(() => {
     github = {
       addIssueComment: jest.fn().mockResolvedValue(undefined),
+      getPullRequestHeadSha: jest.fn().mockResolvedValue('head-b'),
       listIssueComments: jest.fn().mockResolvedValue([]),
       updateIssueComment: jest.fn().mockResolvedValue(undefined),
     };
@@ -497,6 +502,66 @@ describe('PublishFindingsService.upsertRiskMap', () => {
     expect(github.updateIssueComment).toHaveBeenCalledWith(
       expect.objectContaining({ commentId: 22 }),
     );
+  });
+
+  it('봇 계정 비교는 대소문자를 무시한다', async () => {
+    github.listIssueComments.mockResolvedValue([
+      { id: 22, body: TAGGED, authorLogin: 'jsl107' },
+    ]);
+
+    await service.upsertRiskMap(input({ ownerLogin: 'JSL107' }));
+
+    expect(github.updateIssueComment).toHaveBeenCalledWith(
+      expect.objectContaining({ commentId: 22 }),
+    );
+    expect(github.addIssueComment).not.toHaveBeenCalled();
+  });
+
+  it.each(['', '   '])(
+    '봇 계정이 빈 값(%j)이면 표식만으로 기존 코멘트를 찾는다',
+    async (ownerLogin) => {
+      github.listIssueComments.mockResolvedValue([
+        { id: 22, body: TAGGED, authorLogin: OWNER },
+      ]);
+
+      await service.upsertRiskMap(input({ ownerLogin }));
+
+      expect(github.updateIssueComment).toHaveBeenCalledWith(
+        expect.objectContaining({ commentId: 22 }),
+      );
+      expect(github.addIssueComment).not.toHaveBeenCalled();
+    },
+  );
+
+  it('리뷰한 커밋이 최신 head 가 아니면 쓰지 않는다', async () => {
+    github.getPullRequestHeadSha.mockResolvedValue('head-c');
+
+    await service.upsertRiskMap(input());
+
+    expect(github.listIssueComments).not.toHaveBeenCalled();
+    expect(github.addIssueComment).not.toHaveBeenCalled();
+  });
+
+  it('옛 커밋의 리뷰가 늦게 끝나도 최신 커밋의 지도를 덮어쓰지 않는다', async () => {
+    const posted: { id: number; body: string; authorLogin: string }[] = [];
+    github.listIssueComments.mockImplementation(async () => [...posted]);
+    github.addIssueComment.mockImplementation(async ({ body }) => {
+      posted.push({ id: 1, body, authorLogin: OWNER });
+    });
+    github.updateIssueComment.mockImplementation(async ({ body }) => {
+      posted[0] = { ...posted[0], body };
+    });
+    const latest = input({ findings: [finding()] });
+    const stale = input({
+      detail: { ...latest.detail, headSha: 'head-a' } as PullRequestDetail,
+    });
+
+    await service.upsertRiskMap(latest);
+    const latestBody = posted[0].body;
+    await service.upsertRiskMap(stale);
+
+    expect(posted).toHaveLength(1);
+    expect(posted[0].body).toBe(latestBody);
   });
 
   it('같은 PR 을 동시에 갱신해도 코멘트는 하나다', async () => {

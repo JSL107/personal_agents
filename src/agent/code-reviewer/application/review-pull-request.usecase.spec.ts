@@ -61,6 +61,7 @@ describe('ReviewPullRequestUsecase', () => {
       getPullRequestDiff: jest.fn(),
       compareCommits: jest.fn(),
       addIssueComment: jest.fn(),
+      getPullRequestHeadSha: jest.fn(),
       listIssueComments: jest.fn(),
       updateIssueComment: jest.fn(),
       createIssue: jest.fn(),
@@ -620,6 +621,7 @@ describe('ReviewPullRequestUsecase — conversationContext', () => {
       getPullRequestDiff: jest.fn(),
       compareCommits: jest.fn(),
       addIssueComment: jest.fn(),
+      getPullRequestHeadSha: jest.fn(),
       listIssueComments: jest.fn(),
       updateIssueComment: jest.fn(),
       createIssue: jest.fn(),
@@ -966,6 +968,7 @@ describe('ReviewPullRequestUsecase × 학습 규약', () => {
         .fn()
         .mockResolvedValue({ diff: '+x', truncated: false, bytes: 2 }),
       addIssueComment: jest.fn(),
+      getPullRequestHeadSha: jest.fn(),
       listIssueComments: jest.fn(),
       updateIssueComment: jest.fn(),
       listAuthorMergedPullRequestsSince: jest.fn(),

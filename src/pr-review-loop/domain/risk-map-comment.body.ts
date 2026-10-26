@@ -1,23 +1,22 @@
+import { START_HERE_MAX } from '../../agent/code-reviewer/domain/risk-map';
 import {
   RiskMap,
   RiskMapFile,
   RiskMapLevel,
-} from '../../agent/code-reviewer/domain/risk-map';
+} from '../../agent/code-reviewer/domain/risk-map.type';
 import { IDAERI_REVIEW_MARKER } from './finding-comment.body';
 
 // 위험 지도 코멘트를 PR 당 하나로 유지하는 표식. 본문 끝에 숨겨 두고 이것으로 기존 코멘트를 찾는다.
 export const RISK_MAP_COMMENT_TAG = '<!-- idaeri-risk-map -->';
 
-// pass 를 "통과 가능" 으로 단정하지 않는다 — 경로·크기만 보는 점수라 인증 우회 수정 같은 의미상
-// 위험은 못 본다(표본 sbe-api-v5#1237 이 18점). 의미 판단은 같은 회차의 인라인 리뷰가 맡는다.
+// 최하 등급을 "통과 가능" 으로 단정하지 않는다 — 경로·크기만 보는 점수라 의미상 위험(인증 우회 수정 등)은 못 본다.
 const LEVEL_LABEL: Record<RiskMapLevel, string> = {
-  pass: '✅ 위험 신호 적음',
-  quick: '👀 가볍게 확인',
-  careful: '⚠️ 꼼꼼히 확인',
+  [RiskMapLevel.PASS]: '✅ 위험 신호 적음',
+  [RiskMapLevel.QUICK]: '👀 가볍게 확인',
+  [RiskMapLevel.CAREFUL]: '⚠️ 꼼꼼히 확인',
 };
 
-// 경로는 PR 작성자가 정하는 값이다 — 표 칸과 코드 스팬을 깨는 문자, 경로를 뒤집어 보이게 하는
-// 양방향 제어문자(U+202A–202E, U+2066–2069)를 걷어낸다.
+// 경로는 PR 작성자가 정하는 값이라 표·코드 스팬을 깨는 문자와 양방향 제어문자를 걷어낸다.
 const cell = (text: string): string =>
   text.replace(/[`|\r\n\u202A-\u202E\u2066-\u2069]/g, ' ');
 
@@ -30,8 +29,7 @@ const findingCell = (file: RiskMapFile): string => {
   return `${file.findingCount}건${mustFix}`;
 };
 
-// 위험 지도는 결정론 점수라 👍/👎 로 학습할 대상이 아니다. 수확기는 리뷰 스레드(인라인)만 읽어
-// 일반 코멘트인 이 글을 보지 않고, 마커로 시작하니 스레드로 옮겨져도 자기 글 필터에 걸린다.
+// 마커로 시작해 수확기의 자기 글 필터에 걸린다 — 결정론 점수라 👍/👎 학습 대상이 아니다.
 export const buildRiskMapCommentBody = (map: RiskMap): string => {
   const lines = [
     `${IDAERI_REVIEW_MARKER} · 위험 지도`,
@@ -53,10 +51,16 @@ export const buildRiskMapCommentBody = (map: RiskMap): string => {
       ),
     );
   }
-  if (map.skimCount > 0) {
+  if (map.overflowCount > 0) {
     lines.push(
       '',
-      `나머지 ${map.skimCount}개 파일은 훑어봐도 됩니다(파일 점수 낮음).`,
+      `점수 기준을 넘었지만 목록 상한(${START_HERE_MAX}개) 밖인 파일이 ${map.overflowCount}개 더 있습니다.`,
+    );
+  }
+  if (map.lowCount > 0) {
+    lines.push(
+      '',
+      `나머지 ${map.lowCount}개 파일은 점수가 낮아 훑어봐도 됩니다.`,
     );
   }
   if (map.notes.length > 0) {

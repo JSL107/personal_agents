@@ -47,6 +47,7 @@ const buildGithubMock = (): jest.Mocked<GithubClientPort> => ({
   getPullRequestDiff: jest.fn(),
   compareCommits: jest.fn(),
   addIssueComment: jest.fn().mockResolvedValue(undefined),
+  getPullRequestHeadSha: jest.fn(),
   listIssueComments: jest.fn(),
   updateIssueComment: jest.fn(),
   createIssue: jest.fn(),

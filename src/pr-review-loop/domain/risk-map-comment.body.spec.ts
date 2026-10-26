@@ -1,4 +1,8 @@
-import { RiskMap } from '../../agent/code-reviewer/domain/risk-map';
+import {
+  RiskFileRole,
+  RiskMap,
+  RiskMapLevel,
+} from '../../agent/code-reviewer/domain/risk-map.type';
 import { IDAERI_REVIEW_MARKER } from './finding-comment.body';
 import {
   buildRiskMapCommentBody,
@@ -6,20 +10,21 @@ import {
 } from './risk-map-comment.body';
 
 const baseMap: RiskMap = {
-  level: 'quick',
+  level: RiskMapLevel.QUICK,
   score: 31,
   levelReasons: ['위험 점수 31/100', 'DB 스키마·마이그레이션 변경'],
   startHere: [
     {
       path: 'prisma/schema.prisma',
-      role: 'schema',
+      role: RiskFileRole.SCHEMA,
       points: 35,
       reasons: ['DB 스키마·마이그레이션 변경 — 데이터 유실·배포 순서 확인'],
       findingCount: 2,
       mustFixCount: 1,
     },
   ],
-  skimCount: 3,
+  lowCount: 3,
+  overflowCount: 0,
   notes: [],
 };
 
@@ -39,9 +44,7 @@ describe('buildRiskMapCommentBody', () => {
     expect(body).toContain(
       '| `prisma/schema.prisma` | 35 | DB 스키마·마이그레이션 변경 — 데이터 유실·배포 순서 확인 | 2건 (머지 전 필수 1) |',
     );
-    expect(body).toContain(
-      '나머지 3개 파일은 훑어봐도 됩니다(파일 점수 낮음).',
-    );
+    expect(body).toContain('나머지 3개 파일은 점수가 낮아 훑어봐도 됩니다.');
   });
 
   it('표를 깨는 문자가 든 경로는 걷어낸다', () => {
@@ -60,12 +63,26 @@ describe('buildRiskMapCommentBody', () => {
     const body = buildRiskMapCommentBody({
       ...baseMap,
       startHere: [],
-      skimCount: 0,
+      lowCount: 0,
       notes: ['변경 파일 400개 중 300개만 분석했습니다.'],
     });
 
     expect(body).not.toContain('여기부터 보세요');
     expect(body).not.toContain('나머지');
+    expect(body).not.toContain('목록 상한');
     expect(body).toContain('> 변경 파일 400개 중 300개만 분석했습니다.');
+  });
+
+  it('상한 밖 파일은 점수가 낮은 파일과 따로 안내한다', () => {
+    const body = buildRiskMapCommentBody({
+      ...baseMap,
+      lowCount: 2,
+      overflowCount: 4,
+    });
+
+    expect(body).toContain(
+      '점수 기준을 넘었지만 목록 상한(7개) 밖인 파일이 4개 더 있습니다.',
+    );
+    expect(body).toContain('나머지 2개 파일은 점수가 낮아 훑어봐도 됩니다.');
   });
 });
