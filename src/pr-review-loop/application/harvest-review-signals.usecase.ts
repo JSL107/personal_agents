@@ -37,6 +37,7 @@ import {
   FindingStatus,
   PrReviewFindingRecord,
 } from '../domain/pr-review-finding.type';
+import { ReviewWriterResolver } from './review-writer.resolver';
 
 interface PullRequestCardGroup {
   repo: string;
@@ -146,6 +147,7 @@ export class HarvestReviewSignalsUsecase {
     private readonly repository: PrReviewFindingRepositoryPort,
     private readonly judgeReviewReply: JudgeReviewReplyUsecase,
     private readonly judgeFindingResolution: JudgeFindingResolutionUsecase,
+    private readonly writers: ReviewWriterResolver,
   ) {}
 
   async execute(): Promise<HarvestOutcome> {
@@ -821,7 +823,9 @@ export class HarvestReviewSignalsUsecase {
 
     if (!thread.isResolved) {
       try {
-        await this.githubClient.resolveReviewThread(thread.threadId);
+        await this.writers
+          .forRepo(card.repo)
+          .client.resolveReviewThread(thread.threadId);
       } catch (error: unknown) {
         this.logger.warn(
           `PR 리뷰 스레드 resolve 실패 (${thread.threadId}) — 결정 상태 유지: ${

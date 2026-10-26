@@ -79,7 +79,7 @@ export const resolveHarvestSignal = ({
   );
 
   if (botComment) {
-    // 이대리는 owner 토큰으로 코멘트를 달기 때문에 봇 코멘트의 authorLogin 도 owner 일 수 있다.
+    // 봇 계정을 쓰지 않는 레포(와 전환 전 카드)는 owner 토큰으로 달려 봇 코멘트의 authorLogin 도 owner 일 수 있다.
     // 표식으로 걸러내지 않으면 같은 스레드의 봇 후속 코멘트를 사람 답글로 읽어
     // LLM 에게 자기 글을 판정시킨다 (Phase 2b 에서 봇이 답글로 응수하면 즉시 발생).
     const humanReplies =

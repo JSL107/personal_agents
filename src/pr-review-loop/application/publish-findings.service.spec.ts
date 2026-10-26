@@ -1,3 +1,5 @@
+import { ConfigService } from '@nestjs/config';
+
 import { ReviewFinding } from '../../agent/code-reviewer/domain/code-reviewer.type';
 import { PullRequestDetail } from '../../github/domain/github.type';
 import { GithubClientPort } from '../../github/domain/port/github-client.port';
@@ -5,6 +7,28 @@ import { IDAERI_REVIEW_MARKER } from '../domain/finding-comment.body';
 import { PrReviewFindingRepositoryPort } from '../domain/port/pr-review-finding.repository.port';
 import { RISK_MAP_COMMENT_TAG } from '../domain/risk-map-comment.body';
 import { PublishFindingsService } from './publish-findings.service';
+import { ReviewWriterResolver } from './review-writer.resolver';
+
+const buildWriters = ({
+  owner,
+  bot = null,
+  env = {},
+}: {
+  owner: unknown;
+  bot?: unknown;
+  env?: Record<string, string | undefined>;
+}): ReviewWriterResolver =>
+  new ReviewWriterResolver(
+    { get: (key: string) => env[key] } as unknown as ConfigService,
+    owner as GithubClientPort,
+    bot as GithubClientPort | null,
+  );
+
+const BOT_ENV = {
+  GITHUB_WEBHOOK_OWNER_LOGIN: 'JSL107',
+  GITHUB_REVIEW_BOT_LOGIN: 'idaeri-bot',
+  GITHUB_REVIEW_BOT_REPOS: 'JSL107/personal_agents',
+};
 
 const DIFF = `--- a/src/foo.service.ts
 +++ b/src/foo.service.ts
@@ -84,6 +108,7 @@ describe('PublishFindingsService', () => {
     service = new PublishFindingsService(
       github as unknown as GithubClientPort,
       repository,
+      buildWriters({ owner: github }),
     );
   });
 
@@ -403,6 +428,15 @@ describe('PublishFindingsService.upsertRiskMap', () => {
     >
   >;
   let service: PublishFindingsService;
+  const serviceWith = (ownerLogin: string | undefined) =>
+    new PublishFindingsService(
+      github as unknown as GithubClientPort,
+      {} as PrReviewFindingRepositoryPort,
+      buildWriters({
+        owner: github,
+        env: { GITHUB_WEBHOOK_OWNER_LOGIN: ownerLogin },
+      }),
+    );
 
   type Input = Parameters<PublishFindingsService['upsertRiskMap']>[0];
   const input = (overrides: Partial<Input> = {}): Input => ({
@@ -422,7 +456,6 @@ describe('PublishFindingsService.upsertRiskMap', () => {
     findings: [],
     dryRun: false,
     allowlistRaw: 'JSL107/personal_agents',
-    ownerLogin: OWNER,
     ...overrides,
   });
 
@@ -433,10 +466,7 @@ describe('PublishFindingsService.upsertRiskMap', () => {
       listIssueComments: jest.fn().mockResolvedValue([]),
       updateIssueComment: jest.fn().mockResolvedValue(undefined),
     };
-    service = new PublishFindingsService(
-      github as unknown as GithubClientPort,
-      {} as PrReviewFindingRepositoryPort,
-    );
+    service = serviceWith(OWNER);
   });
 
   it('기존 위험 지도가 없으면 새 코멘트를 단다', async () => {
@@ -497,7 +527,8 @@ describe('PublishFindingsService.upsertRiskMap', () => {
       { id: 22, body: TAGGED, authorLogin: 'whoever' },
     ]);
 
-    await service.upsertRiskMap(input({ ownerLogin: undefined }));
+    service = serviceWith(undefined);
+    await service.upsertRiskMap(input());
 
     expect(github.updateIssueComment).toHaveBeenCalledWith(
       expect.objectContaining({ commentId: 22 }),
@@ -509,7 +540,8 @@ describe('PublishFindingsService.upsertRiskMap', () => {
       { id: 22, body: TAGGED, authorLogin: 'jsl107' },
     ]);
 
-    await service.upsertRiskMap(input({ ownerLogin: 'JSL107' }));
+    service = serviceWith('JSL107');
+    await service.upsertRiskMap(input());
 
     expect(github.updateIssueComment).toHaveBeenCalledWith(
       expect.objectContaining({ commentId: 22 }),
@@ -524,7 +556,8 @@ describe('PublishFindingsService.upsertRiskMap', () => {
         { id: 22, body: TAGGED, authorLogin: OWNER },
       ]);
 
-      await service.upsertRiskMap(input({ ownerLogin }));
+      service = serviceWith(ownerLogin);
+      await service.upsertRiskMap(input());
 
       expect(github.updateIssueComment).toHaveBeenCalledWith(
         expect.objectContaining({ commentId: 22 }),
@@ -602,5 +635,112 @@ describe('PublishFindingsService.upsertRiskMap', () => {
 
     await expect(service.upsertRiskMap(input())).resolves.toBeUndefined();
     expect(github.addIssueComment).not.toHaveBeenCalled();
+  });
+});
+
+describe('PublishFindingsService — 봇 계정 분리', () => {
+  const TAGGED = `${IDAERI_REVIEW_MARKER} · 위험 지도\n\n예전 본문\n${RISK_MAP_COMMENT_TAG}`;
+  const buildClient = () => ({
+    createReviewComment: jest
+      .fn()
+      .mockResolvedValue({ commentId: '1', nodeId: 'PRRC_1' }),
+    addIssueComment: jest.fn().mockResolvedValue(undefined),
+    getPullRequestHeadSha: jest.fn().mockResolvedValue('head-b'),
+    listIssueComments: jest.fn().mockResolvedValue([]),
+    updateIssueComment: jest.fn().mockResolvedValue(undefined),
+  });
+  let owner: ReturnType<typeof buildClient>;
+  let bot: ReturnType<typeof buildClient>;
+  let repository: ReturnType<typeof buildRepository>;
+  let service: PublishFindingsService;
+
+  const riskMapInput = (): Parameters<
+    PublishFindingsService['upsertRiskMap']
+  >[0] => ({
+    repo: 'JSL107/personal_agents',
+    pullNumber: 180,
+    detail: {
+      headSha: 'head-b',
+      changedFiles: ['src/foo.service.ts'],
+      changedFilesTruncated: false,
+      changedFilesTotalCount: 1,
+      changedLinesByFile: { 'src/foo.service.ts': 2 },
+      changedFileStatsByFile: {
+        'src/foo.service.ts': { status: 'modified', deletions: 0 },
+      },
+    } as unknown as PullRequestDetail,
+    diff: { diff: DIFF, truncated: false, bytes: Buffer.byteLength(DIFF) },
+    findings: [],
+    dryRun: false,
+    allowlistRaw: 'JSL107/personal_agents',
+  });
+
+  beforeEach(() => {
+    owner = buildClient();
+    bot = buildClient();
+    repository = buildRepository();
+    repository.createIfAbsent.mockImplementation(
+      async (input) =>
+        ({ id: 1, ...input }) as unknown as Awaited<
+          ReturnType<PrReviewFindingRepositoryPort['createIfAbsent']>
+        >,
+    );
+    service = new PublishFindingsService(
+      owner as unknown as GithubClientPort,
+      repository,
+      buildWriters({ owner, bot, env: BOT_ENV }),
+    );
+  });
+
+  it('인라인 지적은 봇 계정으로 단다', async () => {
+    await service.publish(baseInput([finding()]));
+
+    expect(bot.createReviewComment).toHaveBeenCalledTimes(1);
+    expect(owner.createReviewComment).not.toHaveBeenCalled();
+  });
+
+  it('봇 게시가 실패하면 사용자 계정으로 돌아가지 않고 봇 계정으로 묶어 단다', async () => {
+    bot.createReviewComment.mockRejectedValue(new Error('401'));
+
+    await service.publish(baseInput([finding()]));
+
+    expect(bot.addIssueComment).toHaveBeenCalledTimes(1);
+    expect(owner.createReviewComment).not.toHaveBeenCalled();
+    expect(owner.addIssueComment).not.toHaveBeenCalled();
+  });
+
+  it('위험 지도가 없으면 봇 계정으로 새로 단다', async () => {
+    await service.upsertRiskMap(riskMapInput());
+
+    expect(bot.addIssueComment).toHaveBeenCalledTimes(1);
+    expect(owner.addIssueComment).not.toHaveBeenCalled();
+  });
+
+  it('전환 전에 사용자 계정이 단 위험 지도는 사용자 계정으로 고쳐 쓴다', async () => {
+    owner.listIssueComments.mockResolvedValue([
+      { id: 22, body: TAGGED, authorLogin: 'JSL107' },
+    ]);
+
+    await service.upsertRiskMap(riskMapInput());
+
+    expect(owner.updateIssueComment).toHaveBeenCalledWith(
+      expect.objectContaining({ commentId: 22 }),
+    );
+    expect(bot.updateIssueComment).not.toHaveBeenCalled();
+    expect(bot.addIssueComment).not.toHaveBeenCalled();
+  });
+
+  it('봇이 단 위험 지도가 있으면 사용자 계정 것보다 먼저 봇 계정으로 고쳐 쓴다', async () => {
+    owner.listIssueComments.mockResolvedValue([
+      { id: 22, body: TAGGED, authorLogin: 'JSL107' },
+      { id: 33, body: TAGGED, authorLogin: 'idaeri-bot' },
+    ]);
+
+    await service.upsertRiskMap(riskMapInput());
+
+    expect(bot.updateIssueComment).toHaveBeenCalledWith(
+      expect.objectContaining({ commentId: 33 }),
+    );
+    expect(owner.updateIssueComment).not.toHaveBeenCalled();
   });
 });

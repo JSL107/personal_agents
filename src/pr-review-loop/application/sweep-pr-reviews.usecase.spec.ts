@@ -6,6 +6,7 @@ import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { GithubClientPort } from '../../github/domain/port/github-client.port';
 import { CodexQuotaExceededException } from '../../model-router/infrastructure/codex-cli.provider';
 import { PublishFindingsService } from './publish-findings.service';
+import { ReviewWriterResolver } from './review-writer.resolver';
 import { SweepPrReviewsUsecase } from './sweep-pr-reviews.usecase';
 
 // 스윕이 조회에서 받는 값은 식별자뿐이다 — 상세(title/body/증감)는 받지 않는다.
@@ -101,6 +102,11 @@ describe('SweepPrReviewsUsecase', () => {
       agentRunService as unknown as AgentRunService,
       publishService as unknown as PublishFindingsService,
       buildConfig(values),
+      new ReviewWriterResolver(
+        buildConfig(values),
+        github as unknown as GithubClientPort,
+        null,
+      ),
     );
 
   const ENABLED = {
