@@ -17,16 +17,17 @@
     먼저 판정돼 기각된 카드가 있었다(#1679·#1724).
 - **오탐(부정확·반박) → 반박 근거를 인라인 답변으로 먼저 게시하고, 그 다음 👎**
   `... /reactions -f content=-1` (REST 값은 `+1`/`-1`)
-  🔴 **순서가 중요하다.** `harvest-signal.ts:68-72` 는 리액션을 먼저 보고 `replyBody` 가 비어 있어도
-  즉시 `REJECTED` 를 반환한다. 👎를 먼저 붙이면 다음 `*/5` 스윕이 답변보다 앞질러 돌아
-  `rejectReason: null` 로 적재되고(`harvest-review-signals.usecase.ts:262`), 카드가 종결돼
-  `status='OPEN' AND resolvedAt IS NULL` 조회에서 빠진다 — **뒤늦게 단 답변은 영영 수확되지 않는다.**
-  이유 없는 기각은 학습 재료로서 가치가 없다.
+  🔴 **순서를 지킨다.** `harvest-signal.ts:106-134` 는 리액션을 답글보다 먼저 보고 `REJECTED` 를 낸다.
+  👎 만 있고 owner 답글이 없으면 수확은 24시간(`REJECTION_REPLY_GRACE_MS`) 기다렸다가, 그래도 없으면
+  `rejectReason: null` 로 확정하고 카드를 닫는다(`harvest-review-signals.usecase.ts:417-430`, #527).
+  유예 덕에 👎 를 먼저 달아도 하루 안에 답글을 달면 이유가 수확되지만, 그 뒤에 단 답변은 영영 수확되지 않는다.
+  이유 없는 기각은 학습 재료로서 가치가 없으니 답변을 먼저 단다.
 - **멘션은 불필요**(봇이 폴링 스윕으로 읽는다). 외부 봇용 멘션 규칙은 이 봇에 적용되지 않는다.
 - **답변 본문을 `🤖 **이대리 자동 리뷰**` 로 시작하지 않는다** — 표식으로 시작하면 봇이 자기 글로 걸러내
   답변이 신호에서 빠진다(`harvest-signal.ts:91`).
-- **owner 계정 리액션만 신호로 인정**된다(`harvest-signal.ts:52`). 다른 계정의 👍👎는 무시된다.
-- 이모지가 없으면 답글을 LLM(`REVIEW_REPLY_JUDGE`)이 배치 판정한다(`harvest-signal.ts:66-75`) — 이모지를 남기면
+- **owner 와 PR 작성자의 리액션만 신호로 인정**된다(`harvest-signal.ts:107-111`, 인정 계정은
+  `harvest-review-signals.usecase.ts:279-284`). 그 밖의 계정의 👍👎는 무시된다. 기각 이유(규약 재료)는 owner 답글만 쓴다.
+- 이모지가 없으면 답글을 LLM(`REVIEW_REPLY_JUDGE`)이 배치 판정한다(`harvest-signal.ts:136-144`) — 이모지를 남기면
   그 LLM 호출과 오판 가능성을 건너뛴다. 이게 이모지를 요구하는 실질적 이유.
 - 🔴 **정탐에 👎 금지**: `REJECTED` 카드의 기각 이유는 그 레포의 **규약**이 되어 다음 리뷰
   프롬프트에 실린다(`learned-conventions.ts` — 카테고리당 기각 2건·이유 40자 이상). 정탐을 기각하면 "이 레포에서는
