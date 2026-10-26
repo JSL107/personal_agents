@@ -71,7 +71,7 @@ const buildDependencies = ({
 }: {
   enabled?: boolean;
   ownerLogin?: string | undefined;
-  bot?: Pick<GithubClientPort, 'resolveReviewThread'> | null;
+  bot?: { resolveReviewThread: jest.Mock } | null;
   env?: Record<string, string>;
 } = {}) => {
   const config = {
@@ -118,7 +118,7 @@ const buildDependencies = ({
     new ReviewWriterResolver(
       config as unknown as ConfigService,
       github as unknown as GithubClientPort,
-      bot as GithubClientPort | null,
+      bot as unknown as GithubClientPort | null,
     ),
   );
   return { usecase, github, repository, judge, resolutionJudge };

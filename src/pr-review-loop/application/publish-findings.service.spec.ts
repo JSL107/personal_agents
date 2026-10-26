@@ -5,6 +5,10 @@ import { PullRequestDetail } from '../../github/domain/github.type';
 import { GithubClientPort } from '../../github/domain/port/github-client.port';
 import { IDAERI_REVIEW_MARKER } from '../domain/finding-comment.body';
 import { PrReviewFindingRepositoryPort } from '../domain/port/pr-review-finding.repository.port';
+import {
+  CreateFindingInput,
+  PrReviewFindingRecord,
+} from '../domain/pr-review-finding.type';
 import { RISK_MAP_COMMENT_TAG } from '../domain/risk-map-comment.body';
 import { PublishFindingsService } from './publish-findings.service';
 import { ReviewWriterResolver } from './review-writer.resolver';
@@ -64,6 +68,27 @@ const buildRepository = () =>
     countAdoptionByCategory: jest.fn().mockResolvedValue([]),
   }) as unknown as jest.Mocked<PrReviewFindingRepositoryPort>;
 
+const recordFrom = (input: CreateFindingInput): PrReviewFindingRecord => ({
+  id: 1,
+  agentRunId: input.agentRunId,
+  repo: input.repo,
+  pullNumber: input.pullNumber,
+  headSha: input.headSha,
+  category: input.category,
+  severity: input.severity,
+  filePath: input.filePath,
+  line: input.line,
+  body: input.body,
+  fingerprint: input.fingerprint,
+  status: 'OPEN',
+  postMode: input.postMode,
+  githubCommentId: null,
+  githubThreadNodeId: null,
+  heldReplyHash: null,
+  heldAt: null,
+  createdAt: new Date(),
+});
+
 const baseInput = (findings: ReviewFinding[]) => ({
   agentRunId: 7,
   repo: 'JSL107/personal_agents',
@@ -85,26 +110,9 @@ describe('PublishFindingsService', () => {
   beforeEach(() => {
     github = buildGithub();
     repository = buildRepository();
-    repository.createIfAbsent.mockImplementation(async (input) => ({
-      id: 1,
-      agentRunId: input.agentRunId,
-      repo: input.repo,
-      pullNumber: input.pullNumber,
-      headSha: input.headSha,
-      category: input.category,
-      severity: input.severity,
-      filePath: input.filePath,
-      line: input.line,
-      body: input.body,
-      fingerprint: input.fingerprint,
-      status: 'OPEN',
-      postMode: input.postMode,
-      githubCommentId: null,
-      githubThreadNodeId: null,
-      heldReplyHash: null,
-      heldAt: null,
-      createdAt: new Date(),
-    }));
+    repository.createIfAbsent.mockImplementation(async (input) =>
+      recordFrom(input),
+    );
     service = new PublishFindingsService(
       github as unknown as GithubClientPort,
       repository,
@@ -679,11 +687,8 @@ describe('PublishFindingsService — 봇 계정 분리', () => {
     owner = buildClient();
     bot = buildClient();
     repository = buildRepository();
-    repository.createIfAbsent.mockImplementation(
-      async (input) =>
-        ({ id: 1, ...input }) as unknown as Awaited<
-          ReturnType<PrReviewFindingRepositoryPort['createIfAbsent']>
-        >,
+    repository.createIfAbsent.mockImplementation(async (input) =>
+      recordFrom(input),
     );
     service = new PublishFindingsService(
       owner as unknown as GithubClientPort,
