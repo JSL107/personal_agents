@@ -40,7 +40,7 @@ const ROLE_SIGNALS: [RiskFileRole, CalibrationSignal][] = [
   [RiskFileRole.ENV, CalibrationSignal.ENV],
   [RiskFileRole.CONFIG, CalibrationSignal.CONFIG],
 ];
-// 후보 신호: 인가·결제처럼 크기와 무관하게 위험한 경로(sbe-api-v5#1237 은 18점 pass 였다).
+// 후보 신호: 인가·결제처럼 크기와 무관하게 위험한 경로.
 const SENSITIVE_PATH =
   /(?:^|[/._-])(?:o?auth(?:entication|orization|[nz])?|guards?|permissions?|middlewares?|payments?|billing|sessions?|credentials?|crypto|security|acl|roles?|login|passwords?)(?=$|[/._-])/i;
 // 의존성 선언 한 줄: "name": "^1.2.3" — 앞의 범위 기호는 건너뛴다.

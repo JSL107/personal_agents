@@ -54,7 +54,7 @@ const BAD_LIST_MAX = 40;
 // 이대리 운영이 같은 토큰을 쓴다 — 이만큼은 남기고 표본을 줄인다.
 const RATE_LIMIT_RESERVE = 1500;
 // PR 하나에 드는 호출 수(상세·파일 목록·diff). 파일 100개를 넘으면 목록 페이지가 늘지만 2026-10-26 실측 평균이
-// 3.0회(sbe-api-v5 239건 ≈ 711회)라, 그런 PR 의 초과분은 RATE_LIMIT_RESERVE 가 흡수한다.
+// 3.0회라, 그런 PR 의 초과분은 RATE_LIMIT_RESERVE 가 흡수한다.
 const CALLS_PER_PULL_REQUEST = 3;
 
 @Module({
