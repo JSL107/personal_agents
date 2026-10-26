@@ -1256,6 +1256,57 @@ describe('PublishNotionDraftUsecase', () => {
     expect(createPreview.execute).not.toHaveBeenCalled();
   });
 
+  // 2026-10-23·25 저녁 발행이 55%·57% 과삭제로 이틀 연속 끊겼다. 한 번은 비율을 알려 주고 다시 맡긴다.
+  it('편집이 과삭제하면 직전 비율을 알려 주고 한 번 다시 맡겨, 두 번째가 충분하면 발행한다', async () => {
+    const editResponse = (body: string): string =>
+      JSON.stringify({
+        publishable: true,
+        reason: '요지는 분명하다.',
+        title: '안전한 제목',
+        slug: 'safe-post',
+        description: '설명',
+        body,
+      });
+    const { usecase, modelRouter, createPreview } = buildUsecase({
+      completionText: JSON.stringify({
+        slug: 'safe-post',
+        description: '설명',
+        body: '가'.repeat(400),
+      }),
+    });
+    const editPrompts: string[] = [];
+    let editCallCount = 0;
+    modelRouter.route.mockImplementation(async (input) => {
+      if (!String(input.request.systemPrompt).includes('블로그의 편집자')) {
+        return {
+          text: JSON.stringify({
+            slug: 'safe-post',
+            description: '설명',
+            body: '가'.repeat(400),
+          }),
+          modelUsed: 'codex-cli',
+        } as never;
+      }
+      editPrompts.push(String(input.request.prompt));
+      editCallCount += 1;
+      return {
+        text: editResponse('가'.repeat(editCallCount === 1 ? 220 : 300)),
+        modelUsed: 'codex-cli',
+      } as never;
+    });
+
+    const outcome = await usecase.execute({
+      titleQuery: '',
+      slackUserId: 'U1',
+    });
+
+    expect(outcome.result.status).toBe('preview');
+    expect(createPreview.execute).toHaveBeenCalled();
+    expect(editPrompts).toHaveLength(2);
+    expect(editPrompts[0]).not.toContain('[재요청]');
+    expect(editPrompts[1]).toContain('원문의 55% 로 줄어');
+  });
+
   it('편집이 제목을 바꾸면 카드에 초안 제목도 함께 보여준다', async () => {
     const { usecase } = buildUsecase({
       editText: JSON.stringify({
