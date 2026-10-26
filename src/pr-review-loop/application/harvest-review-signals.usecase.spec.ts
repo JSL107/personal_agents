@@ -66,9 +66,13 @@ const reviewThread = ({
 const buildDependencies = ({
   enabled = true,
   ownerLogin = 'owner',
+  bot = null,
+  env = {},
 }: {
   enabled?: boolean;
   ownerLogin?: string | undefined;
+  bot?: Pick<GithubClientPort, 'resolveReviewThread'> | null;
+  env?: Record<string, string>;
 } = {}) => {
   const config = {
     get: jest.fn((key: string) => {
@@ -78,7 +82,7 @@ const buildDependencies = ({
       if (key === 'GITHUB_WEBHOOK_OWNER_LOGIN') {
         return ownerLogin;
       }
-      return undefined;
+      return env[key];
     }),
   };
   const github = {
@@ -114,7 +118,7 @@ const buildDependencies = ({
     new ReviewWriterResolver(
       config as unknown as ConfigService,
       github as unknown as GithubClientPort,
-      null,
+      bot as GithubClientPort | null,
     ),
   );
   return { usecase, github, repository, judge, resolutionJudge };
@@ -214,6 +218,39 @@ describe('HarvestReviewSignalsUsecase', () => {
     expect(github.resolveReviewThread).toHaveBeenCalledWith('PRRT_555');
     expect(github.resolveReviewThread).toHaveBeenCalledWith('PRRT_556');
     expect(github.resolveReviewThread).not.toHaveBeenCalledWith('PRRT_557');
+  });
+
+  it('봇 레포의 스레드는 봇 계정으로 resolve 한다', async () => {
+    const bot = { resolveReviewThread: jest.fn().mockResolvedValue(undefined) };
+    const { usecase, github, repository } = buildDependencies({
+      bot,
+      env: {
+        GITHUB_REVIEW_BOT_LOGIN: 'idaeri-bot',
+        GITHUB_REVIEW_BOT_REPOS: 'JSL107/personal_agents',
+      },
+    });
+    repository.findOpenPostedCards.mockResolvedValue([card()]);
+    github.listReviewThreads.mockResolvedValue({
+      pullRequestAuthorLogin: 'owner',
+      pullRequestState: 'OPEN',
+      truncated: false,
+      threads: [
+        reviewThread({
+          reactions: [
+            {
+              content: 'THUMBS_UP',
+              userLogin: 'owner',
+              createdAt: '2026-07-31T01:00:00Z',
+            },
+          ],
+        }),
+      ],
+    });
+
+    await usecase.execute();
+
+    expect(bot.resolveReviewThread).toHaveBeenCalledWith('PRRT_555');
+    expect(github.resolveReviewThread).not.toHaveBeenCalled();
   });
 
   it('owner와 다른 PR 작성자의 THUMBS_UP도 ACKED로 반영한다', async () => {
