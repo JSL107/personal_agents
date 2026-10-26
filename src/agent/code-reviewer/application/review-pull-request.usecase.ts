@@ -286,9 +286,6 @@ export class ReviewPullRequestUsecase {
           findings: outcome.result.findings,
           dryRun: dryRun === true,
           allowlistRaw,
-          ownerLogin: this.configService?.get<string>(
-            'GITHUB_WEBHOOK_OWNER_LOGIN',
-          ),
         });
         // 허용 판정은 게시 서비스와 같은 순수 함수로 다시 구한다 — 새 조회는 없다. 목록 밖이면
         // 서비스는 카드만 SUPPRESSED 로 남기고 조용히 끝나, 결과 집계만으로는 "목록 밖" 과

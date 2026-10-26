@@ -15,6 +15,10 @@ export const GITHUB_CLIENT_PORT = Symbol('GITHUB_CLIENT_PORT');
 // `OctokitGithubClient` 의 생성자에서만 주입받아 테스트 시 mock Octokit 으로 교체 가능하게 한다.
 export const OCTOKIT_INSTANCE = Symbol('OCTOKIT_INSTANCE');
 
+// PR 리뷰 루프가 PR 에 쓸 때만 쓰는 봇 계정 클라이언트. GITHUB_REVIEW_BOT_TOKEN 이 없으면 null.
+// 사용자 계정으로 쓰면 사용자가 GitHub 에서 대기 중인 리뷰와 충돌해 인라인 지적이 422 로 거절된다.
+export const GITHUB_REVIEW_BOT_CLIENT = Symbol('GITHUB_REVIEW_BOT_CLIENT');
+
 export interface ListAssignedTasksOptions {
   limit?: number;
   // OPS-6: GitHub Search API 의 `updated:>=YYYY-MM-DD` qualifier 에 들어갈 ISO date.
