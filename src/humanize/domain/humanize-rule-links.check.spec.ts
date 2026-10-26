@@ -1,26 +1,33 @@
-import { HumanizeRuleLink } from './humanize-rule-links';
 import {
   compareLinks,
   extractQuickRuleRow,
-  findLocalTextOccurrences,
+  hasUnresolvedDrift,
   normalizeSnapshot,
 } from './humanize-rule-links.check';
+import {
+  HumanizeRuleLink,
+  LinkCheckResult,
+  LinkStatus,
+} from './humanize-rule-links.type';
 
 describe('humanize rule link checks', () => {
   it('normalizes line endings, trailing spaces, and outer whitespace', () => {
-    expect(normalizeSnapshot('  first  \r\nsecond \r\n  ')).toBe(
+    expect(normalizeSnapshot({ source: '  first  \r\nsecond \r\n  ' })).toBe(
       'first\nsecond',
     );
   });
 
   it('finds a single quick-rule row by exact id', () => {
     const markdown = '| A-8 | target | S1 | fix |\n| A-80 | other | S1 | fix |';
-    expect(extractQuickRuleRow(markdown, 'A-8')).toBe(
+    expect(extractQuickRuleRow({ markdown, ruleId: 'A-8' })).toBe(
       '| A-8 | target | S1 | fix |',
     );
-    expect(extractQuickRuleRow(markdown, 'A-9')).toBeNull();
+    expect(extractQuickRuleRow({ markdown, ruleId: 'A-9' })).toBeNull();
     expect(() =>
-      extractQuickRuleRow(`${markdown}\n| A-8 | duplicate | S1 | fix |`, 'A-8'),
+      extractQuickRuleRow({
+        markdown: `${markdown}\n| A-8 | duplicate | S1 | fix |`,
+        ruleId: 'A-8',
+      }),
     ).toThrow('A-8');
   });
 
@@ -30,51 +37,60 @@ describe('humanize rule link checks', () => {
         id: 'same',
         local: { file: 'a', text: 'a' },
         upstream: { kind: 'quick-rule', ruleId: 'A-1' },
-        upstreamSnapshot: 'original',
         note: 'source',
       },
       {
         id: 'changed',
         local: { file: 'a', text: 'b' },
         upstream: { kind: 'quick-rule', ruleId: 'A-2' },
-        upstreamSnapshot: 'before',
         note: 'source',
       },
       {
         id: 'missing',
         local: { file: 'a', text: 'c' },
         upstream: { kind: 'quick-rule', ruleId: 'A-3' },
-        upstreamSnapshot: 'before',
         note: 'source',
       },
       {
         id: 'local',
         local: { file: 'a', text: 'd' },
         upstream: null,
-        upstreamSnapshot: null,
         note: 'local rule',
       },
     ];
     expect(
-      compareLinks(
+      compareLinks({
         links,
-        new Map([
+        current: new Map([
           ['same', 'original\r\n'],
           ['changed', 'after'],
           ['missing', null],
         ]),
-      ),
+        snapshots: { same: 'original', changed: 'before', missing: 'before' },
+      }),
     ).toEqual([
-      { id: 'same', status: 'same' },
-      { id: 'changed', status: 'changed', before: 'before', after: 'after' },
-      { id: 'missing', status: 'missing' },
-      { id: 'local', status: 'local-only' },
+      { id: 'same', status: LinkStatus.SAME },
+      {
+        id: 'changed',
+        status: LinkStatus.CHANGED,
+        before: 'before',
+        after: 'after',
+      },
+      { id: 'missing', status: LinkStatus.MISSING },
+      { id: 'local', status: LinkStatus.LOCAL_ONLY },
     ]);
   });
 
-  it('counts non-overlapping local text occurrences', () => {
-    expect(findLocalTextOccurrences('abc abc', 'abc')).toBe(2);
-    expect(findLocalTextOccurrences('aaa', 'aa')).toBe(1);
-    expect(findLocalTextOccurrences('abc', '')).toBe(0);
-  });
+  it.each([
+    { status: LinkStatus.SAME, accept: false, expected: false },
+    { status: LinkStatus.CHANGED, accept: false, expected: true },
+    { status: LinkStatus.CHANGED, accept: true, expected: false },
+    { status: LinkStatus.MISSING, accept: true, expected: true },
+  ])(
+    'detects unresolved drift for $status with accept=$accept',
+    ({ status, accept, expected }) => {
+      const result = { id: 'link', status } as LinkCheckResult;
+      expect(hasUnresolvedDrift({ results: [result], accept })).toBe(expected);
+    },
+  );
 });
