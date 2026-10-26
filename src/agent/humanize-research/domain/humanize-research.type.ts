@@ -18,6 +18,11 @@ export enum ProposalSkipReason {
   OVER_LIMIT = 'OVER_LIMIT',
 }
 
+export enum UpstreamRangeKind {
+  ANCESTOR = 'ANCESTOR',
+  RECENT = 'RECENT',
+}
+
 export interface CollectedItem {
   id: string;
   source: HumanizeResearchSource;
@@ -52,16 +57,75 @@ export interface SkippedHumanizeResearchProposal {
   reason: ProposalSkipReason;
 }
 
+export interface ConstrainedProposals {
+  proposals: HumanizeResearchProposal[];
+  skipped: SkippedHumanizeResearchProposal[];
+}
+
+export interface ParsedResearchOutput {
+  proposals: unknown[];
+  injectionNotices: string[];
+}
+
+export interface SourceStatus {
+  source: HumanizeResearchSource;
+  status: CollectionStatus;
+  itemCount: number;
+  error?: string;
+}
+
 export interface HumanizeResearchOutput {
-  sources: Array<{
-    source: HumanizeResearchSource;
-    status: CollectionStatus;
-    itemCount: number;
-    error?: string;
-  }>;
+  sources: SourceStatus[];
   droppedForBudget: string[];
   proposals: HumanizeResearchProposal[];
   skipped: SkippedHumanizeResearchProposal[];
   injectionNotices: string[];
   processed: Processed;
+}
+
+export interface HumanizeResearchRunResult {
+  output: HumanizeResearchOutput;
+  modelUsed: string;
+  skippedForNoSources: boolean;
+}
+
+export interface ResearchInputSelection {
+  prompt: string;
+  included: CollectedItem[];
+  droppedForBudget: string[];
+}
+
+export interface UpstreamRange {
+  kind: UpstreamRangeKind;
+  args: string[];
+}
+
+export interface ArxivFields {
+  id: string;
+  title: string;
+  summary: string;
+  published: string;
+}
+
+export interface ArxivEntry {
+  id: string;
+  title: string;
+  summary: string;
+  published: Date;
+}
+
+export interface GitResult {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+}
+
+export interface SampleTopic {
+  key: string;
+  prompt: string;
+}
+
+export interface SampleOutcome {
+  item?: CollectedItem;
+  failure?: string;
 }

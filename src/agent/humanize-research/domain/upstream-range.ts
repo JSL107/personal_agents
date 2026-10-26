@@ -1,12 +1,5 @@
-export enum UpstreamRangeKind {
-  ANCESTOR = 'ANCESTOR',
-  RECENT = 'RECENT',
-}
-
-export interface UpstreamRange {
-  kind: UpstreamRangeKind;
-  args: string[];
-}
+import { EXTERNAL_LOOKBACK_DAYS } from './humanize-research.constant';
+import { UpstreamRange, UpstreamRangeKind } from './humanize-research.type';
 
 export const chooseUpstreamRange = ({
   priorHead,
@@ -23,7 +16,7 @@ export const chooseUpstreamRange = ({
   }
   return {
     kind: UpstreamRangeKind.RECENT,
-    args: ['--since=30 days ago', 'upstream/main'],
+    args: [`--since=${EXTERNAL_LOOKBACK_DAYS} days ago`, 'upstream/main'],
   };
 };
 

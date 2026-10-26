@@ -1,10 +1,10 @@
+import { HUMANIZE_RESEARCH_INPUT_LIMIT } from './humanize-research.constant';
 import {
   CollectedItem,
   HumanizeResearchSource,
 } from './humanize-research.type';
 import {
   advanceProcessed,
-  HUMANIZE_RESEARCH_INPUT_LIMIT,
   selectResearchInput,
 } from './humanize-research-input';
 

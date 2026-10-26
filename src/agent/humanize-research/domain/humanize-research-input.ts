@@ -1,11 +1,11 @@
 import { wrapUntrustedInput } from '../../../common/llm/untrusted-input.util';
+import { HUMANIZE_RESEARCH_INPUT_LIMIT } from './humanize-research.constant';
 import {
   CollectedItem,
   HumanizeResearchSource,
   Processed,
+  ResearchInputSelection,
 } from './humanize-research.type';
-
-export const HUMANIZE_RESEARCH_INPUT_LIMIT = 60_000;
 
 const PRIORITY: Record<HumanizeResearchSource, number> = {
   [HumanizeResearchSource.BLOG]: 0,
@@ -14,12 +14,6 @@ const PRIORITY: Record<HumanizeResearchSource, number> = {
   [HumanizeResearchSource.UPSTREAM]: 3,
   [HumanizeResearchSource.ARXIV]: 4,
 };
-
-export interface ResearchInputSelection {
-  prompt: string;
-  included: CollectedItem[];
-  droppedForBudget: string[];
-}
 
 const renderItem = (item: CollectedItem): string => {
   const text =
@@ -88,14 +82,12 @@ export const advanceProcessed = ({
   const upstream = included.find(
     (item) => item.source === HumanizeResearchSource.UPSTREAM,
   );
+  const upstreamHead = upstream
+    ? upstream.id.slice('upstream:'.length)
+    : previous.upstreamHead;
+  const humanizerMaxRunId = maxId > 0 ? String(maxId) : null;
   const arxivIds = included
     .filter((item) => item.source === HumanizeResearchSource.ARXIV)
     .map((item) => item.id);
-  return {
-    humanizerMaxRunId: maxId > 0 ? String(maxId) : null,
-    blogPostIds,
-    upstreamHead:
-      upstream?.id.slice('upstream:'.length) ?? previous.upstreamHead,
-    arxivIds,
-  };
+  return { humanizerMaxRunId, blogPostIds, upstreamHead, arxivIds };
 };

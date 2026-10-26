@@ -7,16 +7,24 @@ import { ConfigService } from '@nestjs/config';
 import { buildContractPreamble } from '../../../agent-registry/agent-contract';
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
-import { expandHomePath } from '../../../common/util/expand-home-path.util';
-import { DEFAULT_HUMANIZE_RULES_REPO_PATH } from '../../../humanize/domain/humanize-rules-repository';
+import { resolveHumanizeRulesRepoPath } from '../../../humanize/domain/humanize-rules-repository';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import {
+  ARXIV_DEDUP_ROUNDS,
+  HUMANIZE_RESEARCH_INPUT_LIMIT,
+  INTERNAL_LOOKBACK_DAYS,
+} from '../domain/humanize-research.constant';
+import {
+  CollectedItem,
   CollectionResult,
   CollectionStatus,
   HumanizeResearchOutput,
+  HumanizeResearchRunResult,
   HumanizeResearchSource,
   Processed,
+  ResearchInputSelection,
+  SourceStatus,
 } from '../domain/humanize-research.type';
 import {
   advanceProcessed,
@@ -36,6 +44,9 @@ import { HumanizerSignalsCollector } from '../infrastructure/collectors/humanize
 import { UpstreamRuleDiffCollector } from '../infrastructure/collectors/upstream-rule-diff.collector';
 import { ModelSampleCollector } from '../infrastructure/model-sample.collector';
 
+// 직전 ARXIV_DEDUP_ROUNDS 회차를 찾는 기간. 회차가 몇 주 끊겨도 처리 기록을 잃지 않게 넉넉히 둔다.
+const HISTORY_LOOKBACK_DAYS = 180;
+
 const EMPTY_PROCESSED: Processed = {
   humanizerMaxRunId: null,
   blogPostIds: [],
@@ -43,40 +54,48 @@ const EMPTY_PROCESSED: Processed = {
   arxivIds: [],
 };
 
-export interface HumanizeResearchRunResult {
-  output: HumanizeResearchOutput;
-  modelUsed: string;
-  skippedForNoSources: boolean;
-}
-
-const readProcessed = (value: unknown): Processed | null => {
-  const isObject = typeof value === 'object' && value !== null;
-  if (!isObject || Array.isArray(value)) {
-    return null;
-  }
-  const record = (value as Record<string, unknown>).processed;
-  const valid = typeof record === 'object' && record !== null;
-  if (!valid || Array.isArray(record)) {
-    return null;
-  }
-  const processed = record as Record<string, unknown>;
-  const humanizerMaxRunId = processed.humanizerMaxRunId;
-  const upstreamHead = processed.upstreamHead;
-  const blogPostIds = processed.blogPostIds;
-  const arxivIds = processed.arxivIds;
-  const idValid =
-    humanizerMaxRunId === null || typeof humanizerMaxRunId === 'string';
-  const headValid = upstreamHead === null || typeof upstreamHead === 'string';
-  const blogValid =
-    Array.isArray(blogPostIds) &&
-    blogPostIds.every((id) => typeof id === 'string');
-  const arxivValid =
-    Array.isArray(arxivIds) && arxivIds.every((id) => typeof id === 'string');
-  if (!idValid || !headValid || !blogValid || !arxivValid) {
-    return null;
-  }
-  return processed as unknown as Processed;
+const isStringOrNull = (value: unknown): boolean => {
+  const valid = value === null || typeof value === 'string';
+  return valid;
 };
+
+const isStringArray = (value: unknown): boolean => {
+  const valid =
+    Array.isArray(value) && value.every((id) => typeof id === 'string');
+  return valid;
+};
+
+// 원장 output 은 예전 형태가 섞일 수 있어 그대로 믿지 않는다. 형태가 다르면 첫 회차로 본다.
+const readProcessed = (output: unknown): Processed | null => {
+  const processed = (output as { processed?: unknown } | null)?.processed;
+  if (typeof processed !== 'object' || processed === null) {
+    return null;
+  }
+  const candidate = processed as Record<keyof Processed, unknown>;
+  const checks = [
+    isStringOrNull(candidate.humanizerMaxRunId),
+    isStringOrNull(candidate.upstreamHead),
+    isStringArray(candidate.blogPostIds),
+    isStringArray(candidate.arxivIds),
+  ];
+  const valid = checks.every(Boolean);
+  if (!valid) {
+    return null;
+  }
+  return candidate as Processed;
+};
+
+const toSourceStatus = ({
+  source,
+  status,
+  items,
+  error,
+}: CollectionResult): SourceStatus => ({
+  source,
+  status,
+  itemCount: items.length,
+  ...(error ? { error } : {}),
+});
 
 @Injectable()
 export class RunHumanizeResearchUsecase {
@@ -96,91 +115,28 @@ export class RunHumanizeResearchUsecase {
       await this.agentRunService.execute<HumanizeResearchRunResult>({
         agentType: AgentType.HUMANIZE_RESEARCH,
         triggerType: TriggerType.WEEKLY_HUMANIZE_RESEARCH_CRON,
-        inputSnapshot: { lookbackDays: 28, inputLimit: 60_000 },
+        inputSnapshot: {
+          lookbackDays: INTERNAL_LOOKBACK_DAYS,
+          inputLimit: HUMANIZE_RESEARCH_INPUT_LIMIT,
+        },
         run: async (context) => {
-          const history = await this.agentRunService.findRecentSucceededRuns({
-            agentType: AgentType.HUMANIZE_RESEARCH,
-            sinceDays: 180,
-            limit: 5,
-          });
-          const previous = readProcessed(history[0]?.output) ?? EMPTY_PROCESSED;
-          const recentArxivIds = history.flatMap(
-            (run) => readProcessed(run.output)?.arxivIds ?? [],
-          );
-          const collectorInput = {
-            ...previous,
-            arxivIds: [...new Set(recentArxivIds)],
-          };
-          const sources = await Promise.all([
-            this.collectSafely(HumanizeResearchSource.HUMANIZER, () =>
-              this.humanizer.collect(previous),
-            ),
-            this.collectSafely(HumanizeResearchSource.BLOG, () =>
-              this.blog.collect(previous),
-            ),
-            this.collectSafely(HumanizeResearchSource.UPSTREAM, () =>
-              this.upstream.collect(previous),
-            ),
-            this.collectSafely(HumanizeResearchSource.ARXIV, () =>
-              this.arxiv.collect(collectorInput),
-            ),
-            this.collectSafely(HumanizeResearchSource.SAMPLE, () =>
-              this.samples.collect(),
-            ),
-          ]);
+          const { previous, recentArxivIds } = await this.loadHistory();
+          const sources = await this.collectAll({ previous, recentArxivIds });
+          const sourceStatus = sources.map(toSourceStatus);
           const items = sources.flatMap((source) => source.items);
-          const sourceStatus = sources.map(
-            ({ source, status, items: sourceItems, error }) => ({
-              source,
-              status,
-              itemCount: sourceItems.length,
-              ...(error ? { error } : {}),
-            }),
-          );
           if (items.length === 0) {
-            const output: HumanizeResearchOutput = {
-              sources: sourceStatus,
-              droppedForBudget: [],
-              proposals: [],
-              skipped: [],
-              injectionNotices: [],
-              processed: advanceProcessed({ previous, included: [] }),
-            };
-            const result = {
-              output,
-              modelUsed: 'none',
-              skippedForNoSources: true,
-            };
-            return { result, output, modelUsed: 'none' };
+            const result = this.emptyResult({ sourceStatus, previous });
+            return { result, output: result.output, modelUsed: 'none' };
           }
-          const quickRules = await this.readQuickRules();
-          const contractPreamble =
-            buildContractPreamble(AgentType.HUMANIZE_RESEARCH) ?? '';
-          const selection = selectResearchInput({
-            items,
-            quickRules,
-            systemPrompt:
-              HUMANIZE_RESEARCH_SYSTEM_PROMPT + contractPreamble + '\n\n',
-          });
+          const selection = await this.selectInput(items);
           if (selection.included.length === 0) {
-            const output: HumanizeResearchOutput = {
-              sources: sourceStatus,
+            const result = this.emptyResult({
+              sourceStatus,
+              previous,
               droppedForBudget: selection.droppedForBudget,
-              proposals: [],
-              skipped: [],
-              injectionNotices: [],
-              processed: advanceProcessed({ previous, included: [] }),
-            };
-            const result = {
-              output,
-              modelUsed: 'none',
-              skippedForNoSources: true,
-            };
-            return { result, output, modelUsed: 'none' };
+            });
+            return { result, output: result.output, modelUsed: 'none' };
           }
-          const includedIds = new Set(
-            selection.included.map((item) => item.id),
-          );
           const completion = await this.modelRouter.route({
             agentType: AgentType.HUMANIZE_RESEARCH,
             request: {
@@ -190,22 +146,12 @@ export class RunHumanizeResearchUsecase {
             },
           });
           await context.recordModelResponse(completion.text);
-          const parsed = parseResearchOutput(completion.text);
-          const constrained = constrainResearchProposals({
-            proposals: parsed.proposals,
-            includedIds,
-          });
-          const processed = advanceProcessed({
+          const output = this.buildOutput({
+            completionText: completion.text,
+            selection,
+            sourceStatus,
             previous,
-            included: selection.included,
           });
-          const output: HumanizeResearchOutput = {
-            sources: sourceStatus,
-            droppedForBudget: selection.droppedForBudget,
-            ...constrained,
-            injectionNotices: parsed.injectionNotices,
-            processed,
-          };
           const result = {
             output,
             modelUsed: completion.modelUsed,
@@ -217,13 +163,126 @@ export class RunHumanizeResearchUsecase {
     return outcome.result;
   }
 
-  private async collectSafely(
-    source: HumanizeResearchSource,
-    collect: () => Promise<CollectionResult>,
-  ): Promise<CollectionResult> {
+  private async loadHistory(): Promise<{
+    previous: Processed;
+    recentArxivIds: string[];
+  }> {
+    const history = await this.agentRunService.findRecentSucceededRuns({
+      agentType: AgentType.HUMANIZE_RESEARCH,
+      sinceDays: HISTORY_LOOKBACK_DAYS,
+      limit: ARXIV_DEDUP_ROUNDS,
+    });
+    const previous = readProcessed(history[0]?.output) ?? EMPTY_PROCESSED;
+    const arxivIds = history.flatMap(
+      (run) => readProcessed(run.output)?.arxivIds ?? [],
+    );
+    return { previous, recentArxivIds: [...new Set(arxivIds)] };
+  }
+
+  private async collectAll({
+    previous,
+    recentArxivIds,
+  }: {
+    previous: Processed;
+    recentArxivIds: string[];
+  }): Promise<CollectionResult[]> {
+    return await Promise.all([
+      this.collectSafely({
+        source: HumanizeResearchSource.HUMANIZER,
+        collect: () => this.humanizer.collect(previous),
+      }),
+      this.collectSafely({
+        source: HumanizeResearchSource.BLOG,
+        collect: () => this.blog.collect(previous),
+      }),
+      this.collectSafely({
+        source: HumanizeResearchSource.UPSTREAM,
+        collect: () => this.upstream.collect(previous),
+      }),
+      this.collectSafely({
+        source: HumanizeResearchSource.ARXIV,
+        collect: () =>
+          this.arxiv.collect({ ...previous, arxivIds: recentArxivIds }),
+      }),
+      this.collectSafely({
+        source: HumanizeResearchSource.SAMPLE,
+        collect: () => this.samples.collect(),
+      }),
+    ]);
+  }
+
+  // 예산 계산에는 라우터가 붙일 계약 머리말까지 넣는다 — 빼면 실제 입력이 예산을 넘는다.
+  private async selectInput(
+    items: CollectedItem[],
+  ): Promise<ResearchInputSelection> {
+    const preamble = buildContractPreamble(AgentType.HUMANIZE_RESEARCH) ?? '';
+    return selectResearchInput({
+      items,
+      quickRules: await this.readQuickRules(),
+      systemPrompt: `${HUMANIZE_RESEARCH_SYSTEM_PROMPT}${preamble}\n\n`,
+    });
+  }
+
+  private buildOutput({
+    completionText,
+    selection,
+    sourceStatus,
+    previous,
+  }: {
+    completionText: string;
+    selection: ResearchInputSelection;
+    sourceStatus: SourceStatus[];
+    previous: Processed;
+  }): HumanizeResearchOutput {
+    const parsed = parseResearchOutput(completionText);
+    const includedIds = new Set(selection.included.map((item) => item.id));
+    const constrained = constrainResearchProposals({
+      proposals: parsed.proposals,
+      includedIds,
+    });
+    const processed = advanceProcessed({
+      previous,
+      included: selection.included,
+    });
+    return {
+      sources: sourceStatus,
+      droppedForBudget: selection.droppedForBudget,
+      ...constrained,
+      injectionNotices: parsed.injectionNotices,
+      processed,
+    };
+  }
+
+  private emptyResult({
+    sourceStatus,
+    previous,
+    droppedForBudget = [],
+  }: {
+    sourceStatus: SourceStatus[];
+    previous: Processed;
+    droppedForBudget?: string[];
+  }): HumanizeResearchRunResult {
+    const output: HumanizeResearchOutput = {
+      sources: sourceStatus,
+      droppedForBudget,
+      proposals: [],
+      skipped: [],
+      injectionNotices: [],
+      processed: advanceProcessed({ previous, included: [] }),
+    };
+    return { output, modelUsed: 'none', skippedForNoSources: true };
+  }
+
+  private async collectSafely({
+    source,
+    collect,
+  }: {
+    source: HumanizeResearchSource;
+    collect: () => Promise<CollectionResult>;
+  }): Promise<CollectionResult> {
     try {
       return await collect();
-    } catch (error) {
+    } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       return {
         source,
@@ -235,13 +294,11 @@ export class RunHumanizeResearchUsecase {
   }
 
   private async readQuickRules(): Promise<string> {
-    const configured = this.configService.get<string>(
-      'HUMANIZE_RULES_REPO_PATH',
+    const repositoryPath = resolveHumanizeRulesRepoPath(
+      this.configService.get<string>('HUMANIZE_RULES_REPO_PATH'),
     );
-    const repositoryPath = configured || DEFAULT_HUMANIZE_RULES_REPO_PATH;
-    const absolutePath = expandHomePath(repositoryPath);
     return await readFile(
-      join(absolutePath, 'references/quick-rules.md'),
+      join(repositoryPath, 'references/quick-rules.md'),
       'utf8',
     );
   }

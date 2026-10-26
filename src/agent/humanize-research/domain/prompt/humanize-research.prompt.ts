@@ -1,6 +1,6 @@
 import { UNTRUSTED_INPUT_NOTICE } from '../../../../common/llm/untrusted-input.util';
 import { OutputJsonSchema } from '../../../../model-router/domain/model-router.type';
-import { HUMANIZE_RESEARCH_MAX_PROPOSALS } from '../humanize-research-output';
+import { HUMANIZE_RESEARCH_MAX_PROPOSALS } from '../humanize-research.constant';
 
 export const HUMANIZE_RESEARCH_SYSTEM_PROMPT = [
   '윤문 규칙 개선안을 정본의 편집 제안으로 낸다. 실제 윤문은 윤다정 HUMANIZER, 블로그 편집 관례 추출은 한교정 BLOG_REVISION의 책임이다. korean-style-metrics.ts의 블로그 문체 기준선 조정과 파일 쓰기는 네 책임이 아니다.',

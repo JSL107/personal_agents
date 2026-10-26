@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import { AgentRunService } from '../../../../agent-run/application/agent-run.service';
 import { AgentType } from '../../../../model-router/domain/model-router.type';
+import { INTERNAL_LOOKBACK_DAYS } from '../../domain/humanize-research.constant';
 import {
   CollectionResult,
   CollectionStatus,
@@ -9,40 +10,82 @@ import {
   Processed,
 } from '../../domain/humanize-research.type';
 
-const LOOKBACK_DAYS = 28;
+// 실측 주당 54~74회(2026-09-21~10-19). 4주치를 넉넉히 덮는다.
 const RUN_LIMIT = 500;
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
-const tallyStrings = (value: unknown, tally: Map<string, number>): void => {
-  if (!Array.isArray(value)) {
-    return;
-  }
-  for (const key of value) {
-    if (typeof key === 'string') {
-      tally.set(key, (tally.get(key) ?? 0) + 1);
-    }
-  }
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  const isObject = typeof value === 'object' && value !== null;
+  const isPlainObject = isObject && !Array.isArray(value);
+  return isPlainObject;
 };
 
-const tallyStyleGaps = (value: unknown, tally: Map<string, number>): void => {
-  if (!Array.isArray(value)) {
-    return;
-  }
-  for (const gap of value) {
-    if (typeof gap === 'string' && gap.trim().length > 0) {
-      const axis = gap.trim().split(/\s+/u)[0];
-      tally.set(axis, (tally.get(axis) ?? 0) + 1);
-    }
-  }
+const isFiniteNumber = (value: unknown): value is number =>
+  Number.isFinite(value);
+
+const stringsOf = (value: unknown): string[] =>
+  Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
+
+const numbersOf = (value: unknown): [string, number][] =>
+  isRecord(value)
+    ? Object.entries(value).filter((entry): entry is [string, number] =>
+        isFiniteNumber(entry[1]),
+      )
+    : [];
+
+const countBy = (keys: string[]): Map<string, number> =>
+  keys.reduce(
+    (tally, key) => tally.set(key, (tally.get(key) ?? 0) + 1),
+    new Map<string, number>(),
+  );
+
+const sumBy = (entries: [string, number][]): Map<string, number> =>
+  entries.reduce(
+    (tally, [key, value]) => tally.set(key, (tally.get(key) ?? 0) + value),
+    new Map<string, number>(),
+  );
+
+// 문체 갭은 "종결체교대 18%(≤5%)" 꼴이라 앞의 축 이름만 센다.
+const styleAxesOf = (output: Record<string, unknown>): string[] =>
+  stringsOf(output.styleGaps)
+    .map((gap) => gap.trim().split(/\s+/u)[0])
+    .filter((axis) => axis.length > 0);
+
+// 보존 위반은 { lost: { code: 1, … }, injected: { … } } 꼴이다.
+const preservationCountsOf = (output: Record<string, unknown>): number[] => {
+  const directions = isRecord(output.preservationViolations)
+    ? Object.values(output.preservationViolations)
+    : [];
+  return directions.flatMap((direction) =>
+    numbersOf(direction).map(([, count]) => count),
+  );
 };
 
-const formatTally = (tally: Map<string, number>): string =>
-  [...tally.entries()]
-    .sort((left, right) => right[1] - left[1])
-    .map(([key, count]) => `${key}: ${count}`)
-    .join(', ') || '없음';
+// 원장의 번역투는 개수 축과 비율 축(inanimateSubjectPercent)이 섞여 있다.
+// 비율을 회차마다 더하면 수백 % 가 되므로 비율 축은 평균으로 낸다.
+const summarizeTranslationese = ({
+  totals,
+  runCount,
+}: {
+  totals: Map<string, number>;
+  runCount: number;
+}): Map<string, number> =>
+  new Map(
+    [...totals.entries()].map(([axis, total]) => {
+      const isPercent = axis.endsWith('Percent');
+      const label = isPercent ? `${axis}(평균)` : axis;
+      const value = isPercent ? Math.round(total / runCount) : total;
+      return [label, value];
+    }),
+  );
+
+const formatTally = (tally: Map<string, number>): string => {
+  const ranked = [...tally.entries()].sort((left, right) => right[1] - left[1]);
+  const lines = ranked.map(([key, count]) => `${key}: ${count}`);
+  const text = lines.join(', ');
+  return text || '없음';
+};
 
 @Injectable()
 export class HumanizerSignalsCollector {
@@ -52,7 +95,7 @@ export class HumanizerSignalsCollector {
     try {
       const runs = await this.agentRunService.findRecentSucceededRuns({
         agentType: AgentType.HUMANIZER,
-        sinceDays: LOOKBACK_DAYS,
+        sinceDays: INTERNAL_LOOKBACK_DAYS,
         limit: RUN_LIMIT,
       });
       const maxId = Number(processed.humanizerMaxRunId ?? 0);
@@ -64,60 +107,35 @@ export class HumanizerSignalsCollector {
           items: [],
         };
       }
-
-      const rollback = new Map<string, number>();
-      const overRewrite = new Map<string, number>();
-      const styleGap = new Map<string, number>();
-      const translationese = new Map<string, number>();
-      let preservationViolationCount = 0;
-      for (const run of fresh) {
-        if (!isRecord(run.output)) {
-          continue;
-        }
-        tallyStrings(run.output.rolledBackKeys, rollback);
-        tallyStrings(run.output.overRewrittenKeys, overRewrite);
-        tallyStyleGaps(run.output.styleGaps, styleGap);
-        if (isRecord(run.output.translationese)) {
-          for (const [axis, count] of Object.entries(
-            run.output.translationese,
-          )) {
-            if (typeof count === 'number' && Number.isFinite(count)) {
-              translationese.set(axis, (translationese.get(axis) ?? 0) + count);
-            }
-          }
-        }
-        if (isRecord(run.output.preservationViolations)) {
-          for (const direction of Object.values(
-            run.output.preservationViolations,
-          )) {
-            if (!isRecord(direction)) {
-              continue;
-            }
-            for (const count of Object.values(direction)) {
-              if (typeof count === 'number' && Number.isFinite(count)) {
-                preservationViolationCount += count;
-              }
-            }
-          }
-        }
-      }
-      // 원장의 번역투는 개수 축과 비율 축(inanimateSubjectPercent)이 섞여 있다.
-      // 비율을 회차마다 더하면 수백 % 가 되므로 비율 축은 평균으로 낸다.
-      const translationeseSummary = new Map(
-        [...translationese.entries()].map(([axis, total]) => {
-          const isPercent = axis.endsWith('Percent');
-          const value = isPercent ? Math.round(total / fresh.length) : total;
-          return [isPercent ? `${axis}(평균)` : axis, value];
-        }),
+      const outputs = fresh
+        .map((run) => run.output)
+        .filter((output): output is Record<string, unknown> =>
+          isRecord(output),
+        );
+      const translationese = summarizeTranslationese({
+        totals: sumBy(
+          outputs.flatMap((output) => numbersOf(output.translationese)),
+        ),
+        runCount: fresh.length,
+      });
+      const preservationViolationCount = outputs
+        .flatMap(preservationCountsOf)
+        .reduce((sum, count) => sum + count, 0);
+      const rollbacks = countBy(
+        outputs.flatMap((output) => stringsOf(output.rolledBackKeys)),
       );
+      const overRewrites = countBy(
+        outputs.flatMap((output) => stringsOf(output.overRewrittenKeys)),
+      );
+      const styleGaps = countBy(outputs.flatMap(styleAxesOf));
       const ids = fresh.map((run) => run.id);
       const text = [
         `윤문 회차 ${fresh.length}건`,
-        `롤백 키 빈도: ${formatTally(rollback)}`,
-        `과윤문 키 빈도: ${formatTally(overRewrite)}`,
-        `번역투 축별 합계: ${formatTally(translationeseSummary)}`,
+        `롤백 키 빈도: ${formatTally(rollbacks)}`,
+        `과윤문 키 빈도: ${formatTally(overRewrites)}`,
+        `번역투 축별 합계: ${formatTally(translationese)}`,
         `보존 위반 건수: ${preservationViolationCount}`,
-        `문체 갭 빈도: ${formatTally(styleGap)}`,
+        `문체 갭 빈도: ${formatTally(styleGaps)}`,
       ].join('\n');
       return {
         source: HumanizeResearchSource.HUMANIZER,

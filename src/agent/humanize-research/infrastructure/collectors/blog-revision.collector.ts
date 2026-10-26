@@ -3,14 +3,16 @@ import { Injectable } from '@nestjs/common';
 import { MeasureBlogRevisionUsecase } from '../../../blog/application/measure-blog-revision.usecase';
 import { hasRevisedLines } from '../../../blog/domain/has-revised-lines';
 import {
+  DAY_MS,
+  INTERNAL_LOOKBACK_DAYS,
+  statusOfItems,
+} from '../../domain/humanize-research.constant';
+import {
   CollectionResult,
   CollectionStatus,
   HumanizeResearchSource,
   Processed,
 } from '../../domain/humanize-research.type';
-
-const LOOKBACK_DAYS = 28;
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class BlogRevisionCollector {
@@ -28,12 +30,11 @@ export class BlogRevisionCollector {
     }
     try {
       const report = await this.measureBlogRevision.execute();
-      const since = Date.now() - LOOKBACK_DAYS * DAY_MS;
+      const since = Date.now() - INTERNAL_LOOKBACK_DAYS * DAY_MS;
       const processedIds = new Set(processed.blogPostIds);
       const items = report.rows
-        .filter(
-          (row) => row.publishedAt.getTime() >= since && hasRevisedLines(row),
-        )
+        .filter((row) => row.publishedAt.getTime() >= since)
+        .filter(hasRevisedLines)
         .map((row) => {
           // path 단독이면 같은 경로의 재발행을 놓친다. 발행 시각은 APPLIED 카드의 안정 값이다.
           const id = `blog:${row.path}:${row.publishedAt.toISOString()}`;
@@ -48,7 +49,7 @@ export class BlogRevisionCollector {
         .filter((item) => !processedIds.has(item.id));
       return {
         source: HumanizeResearchSource.BLOG,
-        status: items.length > 0 ? CollectionStatus.OK : CollectionStatus.EMPTY,
+        status: statusOfItems(items),
         items,
       };
     } catch (error: unknown) {

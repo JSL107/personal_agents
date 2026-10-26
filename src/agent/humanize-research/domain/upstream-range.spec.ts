@@ -1,8 +1,5 @@
-import {
-  chooseUpstreamRange,
-  composeUpstreamText,
-  UpstreamRangeKind,
-} from './upstream-range';
+import { UpstreamRangeKind } from './humanize-research.type';
+import { chooseUpstreamRange, composeUpstreamText } from './upstream-range';
 
 describe('chooseUpstreamRange', () => {
   it('이전 head가 조상이면 이어지는 범위를 사용한다', () => {
