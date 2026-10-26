@@ -83,14 +83,32 @@ export const buildBlogEditSystemPrompt = (conventions: string[]): string =>
     'publishable 이 false 면 reason 만 채우고 나머지 값은 빈 문자열로 둔다.',
   ].join('\n');
 
+// 과삭제로 다시 맡길 때 겨냥할 비율. 하한(60%)을 그대로 목표로 주면 또 그 아래로 자른다 —
+// 하한을 프롬프트에 적은 뒤에도 2026-10-23·25 두 회차가 55%·57% 로 끊겼다.
+export const EDIT_RETRY_TARGET_RATIO = 0.75;
+
 export const buildBlogEditPrompt = (input: {
   title: string;
   category: string;
   tags: string[];
   summary: string;
   markdown: string;
+  // 직전 편집이 원문 대비 몇 배로 줄었는지. 있으면 재요청 안내를 앞에 붙인다.
+  previousRatio?: number;
 }): string =>
   [
+    ...(input.previousRatio === undefined
+      ? []
+      : [
+          '[재요청]',
+          `직전 정리 결과는 원문의 ${Math.round(input.previousRatio * 100)}% 로 줄어 하한(${Math.round(
+            MIN_EDITED_BODY_RATIO * 100,
+          )}%)에 못 미쳐 발행이 끊겼다. 다시 정리하되 원문의 ${Math.round(
+            EDIT_RETRY_TARGET_RATIO * 100,
+          )}% 안팎을 남겨라.`,
+          '덜어낼 것(워킹 노트·반복·재요약)만 지우고, 요지를 받치는 설명·근거·예시 문단은 남겨라.',
+          '',
+        ]),
     '[초안 메타데이터]',
     `제목: ${input.title}`,
     `카테고리: ${input.category}`,
