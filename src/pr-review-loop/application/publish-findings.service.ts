@@ -9,6 +9,7 @@ import {
 import {
   GITHUB_CLIENT_PORT,
   GithubClientPort,
+  IssueCommentSummary,
 } from '../../github/domain/port/github-client.port';
 import {
   FileHunkRanges,
@@ -74,6 +75,34 @@ export interface UpsertRiskMapInput {
 const isWrittenBy = (writer: ReviewWriter, authorLogin: string): boolean => {
   const login = writer.login?.trim() ?? '';
   return login.length === 0 || sameLogin(authorLogin, login);
+};
+
+interface RiskMapComment {
+  writer: ReviewWriter;
+  comment: IssueCommentSummary;
+}
+
+// 앞선 계정(지금 쓰는 계정)이 단 지도를 먼저 찾는다. 찾은 지도는 그 지도를 쓴 계정으로 고쳐야 한다 —
+// 봇은 사용자 계정이 단 코멘트를 고칠 수 있다고 보장되지 않는다.
+const findRiskMapComment = ({
+  writers,
+  comments,
+}: {
+  writers: ReviewWriter[];
+  comments: IssueCommentSummary[];
+}): RiskMapComment | null => {
+  for (const writer of writers) {
+    const comment = comments.find(
+      (item) =>
+        item.body.startsWith(IDAERI_REVIEW_MARKER) &&
+        item.body.includes(RISK_MAP_COMMENT_TAG) &&
+        isWrittenBy(writer, item.authorLogin),
+    );
+    if (comment !== undefined) {
+      return { writer, comment };
+    }
+  }
+  return null;
 };
 
 @Injectable()
@@ -225,22 +254,11 @@ export class PublishFindingsService {
         repo: input.repo,
         number: input.pullNumber,
       });
-      // 봇 전환 전에 사용자 계정이 단 지도도 찾아, 그 지도를 쓴 계정으로 고친다. 지금 계정으로만 찾으면
-      // 전환 시점에 열려 있던 PR 에 지도가 두 개 남는다.
+      // 봇 전환 전에 사용자 계정이 단 지도도 찾는다. 지금 계정으로만 찾으면 전환 시점에 열려 있던 PR 에
+      // 지도가 두 개 남는다.
       const writers = this.writers.candidatesFor(input.repo);
-      const tagged = comments.filter(
-        (comment) =>
-          comment.body.startsWith(IDAERI_REVIEW_MARKER) &&
-          comment.body.includes(RISK_MAP_COMMENT_TAG),
-      );
-      const match = writers
-        .flatMap((writer) =>
-          tagged
-            .filter((comment) => isWrittenBy(writer, comment.authorLogin))
-            .map((comment) => ({ writer, comment })),
-        )
-        .at(0);
-      if (match === undefined) {
+      const match = findRiskMapComment({ writers, comments });
+      if (match === null) {
         await writers[0].client.addIssueComment({
           repo: input.repo,
           number: input.pullNumber,

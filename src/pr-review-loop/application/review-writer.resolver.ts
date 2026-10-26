@@ -41,16 +41,9 @@ export class ReviewWriterResolver {
     const login = this.configService
       .get<string>('GITHUB_REVIEW_BOT_LOGIN')
       ?.trim();
+    const repos = this.configService.get<string>('GITHUB_REVIEW_BOT_REPOS');
     // 로그인을 모르는 봇은 쓰지 않는다 — 표식만으로 찾으면 사용자 계정이 단 코멘트를 봇이 고치려 든다.
-    if (this.botClient === null || !login) {
-      return null;
-    }
-    if (
-      !isRepoAllowed(
-        repo,
-        this.configService.get<string>('GITHUB_REVIEW_BOT_REPOS'),
-      )
-    ) {
+    if (this.botClient === null || !login || !isRepoAllowed(repo, repos)) {
       return null;
     }
     return { client: this.botClient, login };

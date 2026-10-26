@@ -97,20 +97,23 @@ describe('SweepPrReviewsUsecase', () => {
 
   const buildUsecase = (
     values: Record<string, string | undefined>,
-    bot: Pick<GithubClientPort, 'addIssueComment'> | null = null,
-  ) =>
-    new SweepPrReviewsUsecase(
-      github as unknown as GithubClientPort,
+    bot: { addIssueComment: jest.Mock } | null = null,
+  ): SweepPrReviewsUsecase => {
+    const config = buildConfig(values);
+    const client = github as unknown as GithubClientPort;
+    return new SweepPrReviewsUsecase(
+      client,
       reviewUsecase as unknown as ReviewPullRequestUsecase,
       agentRunService as unknown as AgentRunService,
       publishService as unknown as PublishFindingsService,
-      buildConfig(values),
+      config,
       new ReviewWriterResolver(
-        buildConfig(values),
-        github as unknown as GithubClientPort,
-        bot as GithubClientPort | null,
+        config,
+        client,
+        bot as unknown as GithubClientPort | null,
       ),
     );
+  };
 
   const ENABLED = {
     PR_REVIEW_LOOP_ENABLED: 'true',
