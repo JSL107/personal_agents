@@ -6,6 +6,7 @@ import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { GithubException } from '../domain/github.exception';
 import {
   AssignedTasks,
+  ChangedFileList,
   ChangedFileStat,
   ChangedFileStatus,
   CreateReviewCommentInput,
@@ -111,11 +112,6 @@ const RESOLVE_REVIEW_THREAD_MUTATION = `
     resolveReviewThread(input:{threadId:$threadId}) { thread { id } }
   }
 `;
-
-type ChangedFileList = Pick<
-  PullRequestDetail,
-  'changedFiles' | 'changedLinesByFile' | 'changedFileStatsByFile'
->;
 
 interface GraphqlPageInfo {
   hasNextPage: boolean;

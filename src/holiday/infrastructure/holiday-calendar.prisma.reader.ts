@@ -11,7 +11,9 @@ import { HolidayCalendarPort } from '../domain/port/holiday-calendar.port';
 
 const logger = new Logger('HolidayCalendar');
 
-type HolidayCalendarClient = Pick<Prisma.TransactionClient, 'scheduleItem'>;
+type HolidayCalendarClient = {
+  scheduleItem: Prisma.TransactionClient['scheduleItem'];
+};
 
 // `holiday-sync` 가 넣은 공휴일 행(`schedule_item.is_holiday`)을 달력으로 읽는다.
 // 상태(완료·건너뜀)와 소유자는 보지 않는다 — 사용자가 달력에서 공휴일 칩을 완료 처리했다고

@@ -59,7 +59,9 @@ import {
   DailyDigestRepositoryPort,
 } from '../../domain/port/daily-digest.repository.port';
 import {
+  EveningCarryContext,
   EveningDigestInput,
+  EveningRetroContext,
   formatEveningDigest,
 } from '../evening-digest.formatter';
 import { MorningIncident } from '../morning-digest.formatter';
@@ -69,11 +71,6 @@ const RETRO_PR_LIMIT = 20;
 const INCIDENT_SEEN_WINDOW_DAYS = 7;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-// 마감 한 줄의 재료 중 회고와 무관한 것(투자·넘어가는 것).
-type EveningCarryContext = Pick<
-  EveningDigestInput,
-  'invest' | 'carriedApprovalCount' | 'incidents'
->;
 // 아침 계획이 실린 발송의 원장 좌표 — 오케스트레이터가 그룹 본문을 `autopilot:<그룹>` 으로 남긴다.
 const MORNING_DELIVERY_KIND = 'autopilot:morning';
 const MORNING_BRIEFING_TASK_ID = 'morning-briefing';
@@ -214,9 +211,7 @@ export class EveningRetroPublishTask implements AutopilotTask {
     // (사람 피드백 설계 §3-3). 마감 한 통은 회고 재료가 없는 날에도 나가므로 세 경로 모두에 싣는다.
     const pmPlanVerdict = await this.findTodayPmPlanVerdict(ownerSlackUserId);
     const carry = await this.loadCarryContext(ownerSlackUserId, firedAtKst);
-    const buildDigest = (
-      input: Pick<EveningDigestInput, 'keep' | 'retroFailure'>,
-    ): string =>
+    const buildDigest = (input: EveningRetroContext): string =>
       formatEveningDigest({
         firedAtKst,
         mergedPrCount: mergedPrFetchFailed ? null : mergedPrs.length,

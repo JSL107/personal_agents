@@ -8,7 +8,15 @@ export const IDAERI_ROUTER_PORT = Symbol('IDAERI_ROUTER_PORT');
 // Slack 회신 컨텍스트 — 비동기 worker(BLOG)가 백그라운드 완료 후 같은 스레드에 답장할 때 사용.
 // 동기 worker 는 무시한다. cron/슬래시/test 경로는 미주입(undefined) → 기존 동기 동작.
 // (plan: docs/superpowers/plans/2026-06-25-blog-async-relay.md Task 1)
-export interface BlogReplyContext {
+// 수신 핸들러가 만들어 BlogReplyContext 에 얹는 훅.
+export interface FinalReplyRecorders {
+  // 결과 답장의 게시 여부를 멘션 수신 기록에 남긴다. ack 가 나가면 그 멘션은 답한 것으로 닫히므로,
+  // 이것이 없으면 결과 답장이 끝내 안 나가도 어디에도 안 보인다. 둘 다 throw 하지 않는다.
+  markFinalReplyPending?: () => Promise<void>;
+  recordFinalReply?: (posted: boolean) => Promise<void>;
+}
+
+export interface BlogReplyContext extends FinalReplyRecorders {
   channel: string;
   threadTs?: string;
   // 요청이 들어온 대화의 기억 키 — 백그라운드 실행 기록에 남겨, 이 대화에서 "작업하고 있어?" 를
@@ -21,10 +29,6 @@ export interface BlogReplyContext {
   // 완료 직후 "이거 3줄 요약해줘" 가 가리킬 원문이 사라진다(2026-10-14 run 8837).
   // 실행 id 를 함께 받으면 그 turn 으로 다음 "작업 끝났어?" 가 실제 상태를 바로 조회한다.
   rememberReply?: (text: string, agentRunId?: number) => Promise<void>;
-  // 결과 답장의 게시 여부를 멘션 수신 기록에 남긴다. ack 가 나가면 그 멘션은 답한 것으로 닫히므로,
-  // 이것이 없으면 결과 답장이 끝내 안 나가도 어디에도 안 보인다. 둘 다 throw 하지 않는다.
-  markFinalReplyPending?: () => Promise<void>;
-  recordFinalReply?: (posted: boolean) => Promise<void>;
 }
 
 // dispatch 진입점 — 사용자/cron/webhook 의 발화를 manager 에 전달한다.

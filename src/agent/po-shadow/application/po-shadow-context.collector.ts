@@ -1,7 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-import { ClassifyPullRequestEngagementUsecase } from '../../../github/application/classify-pr-engagement.usecase';
+import {
+  ClassifyPullRequestEngagementUsecase,
+  EngagementSplit,
+} from '../../../github/application/classify-pr-engagement.usecase';
 import { ListAssignedTasksUsecase } from '../../../github/application/list-assigned-tasks.usecase';
 import {
   AssignedTasks,
@@ -229,7 +232,7 @@ export class PoShadowContextCollector {
   }: {
     assignedTasks: AssignedTasks | null;
     degradedSources: string[];
-  }): Promise<Pick<PoShadowContext, 'activePullRequests' | 'waitingItems'>> {
+  }): Promise<EngagementSplit> {
     if (!assignedTasks) {
       return { activePullRequests: [], waitingItems: [] };
     }

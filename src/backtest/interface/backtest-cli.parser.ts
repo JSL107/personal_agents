@@ -6,7 +6,7 @@ import {
   RankingWeights,
   SWING_VOLUME_SURGE_MINIMUM,
 } from '../../screener/domain/screener-rule';
-import { ReplayBacktestCommand } from '../application/replay-backtest.usecase';
+import { ReplayBacktestCommandBase } from '../application/replay-backtest.usecase';
 
 export const BACKTEST_CLI_USAGE =
   '사용법:\n' +
@@ -178,10 +178,7 @@ const readDelistingRecoveryRate = (argv: string[]): number => {
  * `exitBand` 는 여기 해당하지 않는다 — 백테스트에서 `null` 은 "미지정" 이 아니라
  * "밴드 없이 보유일수로만 청산" 이라는 대조군 스위치다.
  */
-export interface BacktestCliOptions extends Omit<
-  ReplayBacktestCommand,
-  'minimumTurnover60' | 'weightPercent'
-> {
+export interface BacktestCliOptions extends ReplayBacktestCommandBase {
   minimumTurnover60?: number;
   weightPercent?: number;
 }

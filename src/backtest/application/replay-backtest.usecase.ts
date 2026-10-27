@@ -92,19 +92,19 @@ export const createReplayWindowCache = (
   candidatesByAsOf: new Map(),
 });
 
-export interface ReplayBacktestCommand {
+// 파라미터 테이블이 다루는 두 값(minimumTurnover60·weightPercent)을 뺀 나머지.
+// CLI 파서는 그 두 값을 미지정(undefined)으로 둘 수 있어 이 부분만 공유한다.
+export interface ReplayBacktestCommandBase {
   strategy: ScreenStrategy;
   from: string;
   to: string;
   seedAmount: string;
-  minimumTurnover60: number;
   // 당일 상승률 상한(%). 값을 바꿔가며 "급등 당일 매수" 를 얼마나 걸러야 하는지 잰다.
   maximumDailyGainPercent: number;
   volumeSurgeMinimum: number;
   rankingWeights: RankingWeights;
   flowSlot: 1 | 2 | 3 | null;
   maximumPositions: number;
-  weightPercent: number;
   holdingTradeDays: number;
   exitBand: ExitBandThreshold | null;
   // 보유 중 상장폐지된 종목을 마지막 종가의 몇 배로 청산할지. 1 이면 마지막 종가 그대로다.
@@ -118,6 +118,11 @@ export interface ReplayBacktestCommand {
   // 슬리피지를 흉내 내려는 값이 아니라 "얼마부터 결론이 무너지나" 를 재는 손잡이다
   // (`applySlippage` 주석). 후보 산출 뒤에서만 쓰이므로 창 캐시의 정체성이 아니다.
   slippagePercent: number;
+}
+
+export interface ReplayBacktestCommand extends ReplayBacktestCommandBase {
+  minimumTurnover60: number;
+  weightPercent: number;
 }
 
 export interface ReplayBacktestResult {

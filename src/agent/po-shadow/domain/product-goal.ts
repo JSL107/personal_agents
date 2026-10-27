@@ -110,7 +110,7 @@ export const findGoalDeclarationProblem = ({
   dueDateUnreadable = false,
 }: {
   draft: ProductGoalDraft;
-  activeGoals: Pick<ProductGoalRecord, 'title'>[];
+  activeGoals: { title: string }[];
   dueDateUnreadable?: boolean;
 }): GoalDeclarationProblem | null => {
   if (draft.title.trim().length === 0) {
@@ -148,7 +148,7 @@ export const isMeasurableCriterion = (criterion: string): boolean => {
 
 // 작업 제목이 목표에 붙었는지. 대소문자는 무시한다(키워드에 영문 식별자가 섞인다).
 export const isLinkedToGoal = (
-  goal: Pick<ProductGoalRecord, 'keywords'>,
+  goal: { keywords: string[] },
   title: string,
 ): boolean => {
   const lowered = title.toLowerCase();

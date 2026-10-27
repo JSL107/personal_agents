@@ -8,9 +8,13 @@ export interface HookFsDeps {
   readonly writeJson: (path: string, data: unknown) => void;
 }
 
-export interface HookInstallOptions {
+// 제거에는 hook 명령을 넘길 필요가 없어 경로만 따로 둔다.
+export interface HookUninstallOptions {
   readonly claudeSettingsPath: string;
   readonly codexHooksPath: string;
+}
+
+export interface HookInstallOptions extends HookUninstallOptions {
   readonly stopHookCommand: string;
 }
 
@@ -111,7 +115,7 @@ export function installInjectHooks(
 }
 
 export function uninstallInjectHooks(
-  options: Omit<HookInstallOptions, 'stopHookCommand'>,
+  options: HookUninstallOptions,
   deps: HookFsDeps,
 ): { changed: string[] } {
   const changed = new Set<string>();

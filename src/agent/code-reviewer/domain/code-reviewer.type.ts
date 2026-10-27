@@ -44,7 +44,8 @@ export interface ReviewFinding {
   body: string;
 }
 
-export interface PullRequestReview {
+// findings 를 뺀 판정 본체. 구버전 모델 응답은 이 모양만 오고, 파서가 검증한 뒤 findings 를 채워 PullRequestReview 로 만든다.
+export interface PullRequestReviewCore {
   summary: string;
   riskLevel: RiskLevel;
   mustFix: string[];
@@ -54,6 +55,9 @@ export interface PullRequestReview {
   approvalRecommendation: ApprovalRecommendation;
   // approvalRecommendation === 'undetermined' 일 때만 있다 — 무엇을 못 봐서 판단할 수 없었는지 한 문장.
   undeterminedReason?: string;
+}
+
+export interface PullRequestReview extends PullRequestReviewCore {
   // 지적 낱개 목록 — 카드(PrReviewFinding)의 원본. 파서가 항상 채운다.
   // 구버전 모델 응답(findings 없음)은 mustFix/niceToHave/missingTests 에서 변환된다.
   findings: ReviewFinding[];

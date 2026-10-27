@@ -1,6 +1,6 @@
 import { DomainException } from '../../common/exception/domain.exception';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
-import { ReplayRejection, ReplayRejectionCode } from './run-replay.type';
+import { ReplayRejectionCode } from './run-replay.type';
 
 const REJECTION_STATUS: Readonly<Record<ReplayRejectionCode, DomainStatus>> = {
   [ReplayRejectionCode.NOT_FOUND]: DomainStatus.NOT_FOUND,
@@ -17,7 +17,10 @@ export class RunReplayException extends DomainException {
   readonly errorCode: ReplayRejectionCode;
   readonly status: DomainStatus;
 
-  constructor(rejection: Pick<ReplayRejection, 'code' | 'message'>) {
+  constructor(rejection: {
+    readonly code: ReplayRejectionCode;
+    readonly message: string;
+  }) {
     super(rejection.message);
     this.name = new.target.name;
     this.errorCode = rejection.code;

@@ -17,8 +17,8 @@ import { ConversationalReplyUsecase } from '../../router/application/conversatio
 import { ConversationTurn } from '../../router/domain/conversation-memory.type';
 import { buildDispatchReplyText } from '../../router/domain/dispatch-reply.util';
 import {
-  BlogReplyContext,
   DispatchResult,
+  FinalReplyRecorders,
   IDAERI_ROUTER_PORT,
   IdaeriRouterPort,
 } from '../../router/domain/idaeri-router.port';
@@ -301,7 +301,7 @@ export class RouterMessageHandler implements SlackHandler {
   // 비동기 담당(BLOG)의 결과 답장을 수신 기록에 잇는다. 백그라운드에서 불리므로 throw 하지 않는다.
   private buildFinalReplyRecorders(
     receipt: MentionReceiptRef,
-  ): Pick<BlogReplyContext, 'markFinalReplyPending' | 'recordFinalReply'> {
+  ): FinalReplyRecorders {
     return {
       markFinalReplyPending: () =>
         this.recordMentionSafely(() =>

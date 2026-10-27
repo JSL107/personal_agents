@@ -17,13 +17,8 @@ export interface SourcePhaseRunRefs {
   pmRunId?: number;
 }
 
-// CEO (P5 Meta) output.
-// schemaVersion=1 — 컨텍스트 오염 알고리즘은 외부 선례 없어 minimal 단계는 LLM 추론만.
-// 본 schema 는 workflow-phase-definition.md §4.5 의 잠정 schema (trim) — 향후 R&D plan
-// 진입 시 contextDriftReport.observations 를 정량 metric 기반으로 보강 예정.
-export interface MetaOutput {
-  range: AgentRunRange;
-  sourcePhaseRuns: SourcePhaseRunRefs;
+// LLM 이 반환하는 부분. range / sourcePhaseRuns / schemaVersion 은 manager 가 채운다.
+export interface MetaLlmOutput {
   contextDriftReport: {
     // 컨텍스트 오염 / 방향 drift 의 관찰 결과 (LLM 추론). minimal 단계는 정량 metric X.
     observations: string[];
@@ -34,5 +29,14 @@ export interface MetaOutput {
   };
   // 1~3 문장. 사용자 가시 footer 요약.
   finalSummary: string;
+}
+
+// CEO (P5 Meta) output.
+// schemaVersion=1 — 컨텍스트 오염 알고리즘은 외부 선례 없어 minimal 단계는 LLM 추론만.
+// 본 schema 는 workflow-phase-definition.md §4.5 의 잠정 schema (trim) — 향후 R&D plan
+// 진입 시 contextDriftReport.observations 를 정량 metric 기반으로 보강 예정.
+export interface MetaOutput extends MetaLlmOutput {
+  range: AgentRunRange;
+  sourcePhaseRuns: SourcePhaseRunRefs;
   schemaVersion: 1;
 }

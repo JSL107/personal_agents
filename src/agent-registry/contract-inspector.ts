@@ -1,8 +1,8 @@
 import { AgentType } from '../model-router/domain/model-router.type';
 import {
   AGENT_CONTRACTS,
-  AgentContract,
   COMPANY_FORBIDDEN_PHRASES,
+  DeliverableShape,
 } from './agent-contract';
 
 /**
@@ -151,7 +151,7 @@ const matchRatio = (match: DeliverableMatch): number =>
 
 export const pickBestMatch = (
   output: PlainObject,
-  contract: Pick<AgentContract, 'deliverableFields' | 'deliverableVariants'>,
+  contract: DeliverableShape,
 ): DeliverableMatch => {
   const candidates = [
     contract.deliverableFields,

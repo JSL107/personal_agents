@@ -89,7 +89,7 @@ type WriteFn = NodeJS.WriteStream['write'];
  * 일정 시간 뒤 재개로 바꾼다.
  */
 export const teeStreamsToFile = (
-  log: Pick<RotatingFileLog, 'write'>,
+  log: { write(chunk: string | Uint8Array): void },
   streams: NodeJS.WriteStream[],
 ): void => {
   let disabled = false;
