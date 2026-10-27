@@ -54,6 +54,8 @@ const goal = (
   id: 1,
   slackUserId: 'U1',
   title: '보존기간 파일 파기',
+  kind: 'TASK',
+  why: null,
   successCriterion: '운영 배포 완료',
   keywords: ['보존기간', '파기'],
   dueDate: null,

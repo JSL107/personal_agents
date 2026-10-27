@@ -11,7 +11,9 @@ import { ProductGoalApplier } from './product-goal.applier';
 const draft = (
   overrides: Partial<ProductGoalDraft> = {},
 ): ProductGoalDraft => ({
+  kind: 'TASK',
   title: '보존기간 파일 파기',
+  why: null,
   successCriterion: '운영 배포 완료',
   keywords: ['보존기간'],
   dueDate: '2026-12-31',
@@ -21,7 +23,9 @@ const draft = (
 const activeGoal = (id: number): ProductGoalRecord => ({
   id,
   slackUserId: 'U1',
+  kind: 'TASK',
   title: `목표 ${id}`,
+  why: null,
   successCriterion: '배포 완료',
   keywords: [`k${id}`],
   dueDate: null,
@@ -68,7 +72,9 @@ describe('ProductGoalApplier', () => {
     );
     expect(repository.create).toHaveBeenCalledWith({
       slackUserId: 'U1',
+      kind: 'TASK',
       title: '보존기간 파일 파기',
+      why: null,
       successCriterion: '운영 배포 완료',
       keywords: ['보존기간'],
       dueDate: new Date('2026-12-31T00:00:00Z'),
@@ -76,13 +82,47 @@ describe('ProductGoalApplier', () => {
     expect(result.message).toContain('목표를 저장했습니다');
   });
 
-  // 정책 3 — 승인 시점에도 달성 기준을 다시 본다.
-  it('끝을 판정할 수 없는 달성 기준은 승인돼도 저장하지 않는다', async () => {
+  it('방향 카드는 기준 없이 승인되고 kind와 why를 저장한다', async () => {
+    const result = await applier.apply(
+      previewOf({
+        action: 'CREATE',
+        draft: draft({
+          kind: 'DIRECTION',
+          why: '개인 업무를 줄이기 위해',
+          successCriterion: null,
+          keywords: [],
+        }),
+      }),
+    );
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'DIRECTION',
+        why: '개인 업무를 줄이기 위해',
+        successCriterion: null,
+      }),
+    );
+    expect(result.message).toContain('목표를 저장했습니다');
+  });
+
+  it('숙제 카드는 기준이 null이면 승인 시점에 거절한다', async () => {
     await expect(
       applier.apply(
         previewOf({
           action: 'CREATE',
-          draft: draft({ successCriterion: '개선하기' }),
+          draft: draft({ successCriterion: null }),
+        }),
+      ),
+    ).rejects.toThrow('달성 기준이 없어');
+    expect(repository.create).not.toHaveBeenCalled();
+  });
+
+  // 정책 3 — 승인 시점에도 달성 기준을 다시 본다.
+  it('빈 달성 기준의 숙제는 승인돼도 저장하지 않는다', async () => {
+    await expect(
+      applier.apply(
+        previewOf({
+          action: 'CREATE',
+          draft: draft({ successCriterion: '   ' }),
         }),
       ),
     ).rejects.toBeInstanceOf(PoShadowException);
@@ -98,8 +138,52 @@ describe('ProductGoalApplier', () => {
     );
     await expect(
       applier.apply(previewOf({ action: 'CREATE', draft: draft() })),
-    ).rejects.toThrow(`활성 목표가 이미 ${MAX_ACTIVE_PRODUCT_GOALS}개`);
+    ).rejects.toThrow(`숙제가 ${MAX_ACTIVE_PRODUCT_GOALS}개 차 있어요`);
     expect(repository.create).not.toHaveBeenCalled();
+  });
+
+  it('동시 승인 상한은 종류별로 적용한다', async () => {
+    repository.findActive.mockResolvedValue(
+      Array.from({ length: MAX_ACTIVE_PRODUCT_GOALS }, (_, index) =>
+        activeGoal(index + 1),
+      ),
+    );
+    await expect(
+      applier.apply(
+        previewOf({
+          action: 'CREATE',
+          draft: draft({
+            kind: 'DIRECTION',
+            successCriterion: null,
+            keywords: [],
+          }),
+        }),
+      ),
+    ).resolves.toMatchObject({
+      message: expect.stringContaining('목표를 저장했습니다'),
+    });
+
+    repository.findActive.mockResolvedValue([
+      { ...activeGoal(1), kind: 'DIRECTION' },
+      { ...activeGoal(2), kind: 'DIRECTION' },
+    ]);
+    await expect(
+      applier.apply(
+        previewOf({
+          action: 'CREATE',
+          draft: draft({
+            kind: 'DIRECTION',
+            successCriterion: null,
+            keywords: [],
+          }),
+        }),
+      ),
+    ).rejects.toThrow('방향 목표가 2개 차 있어요');
+    await expect(
+      applier.apply(previewOf({ action: 'CREATE', draft: draft() })),
+    ).resolves.toMatchObject({
+      message: expect.stringContaining('목표를 저장했습니다'),
+    });
   });
 
   // 같은 제목 카드 두 장을 차례로 승인하는 경우 — 선언 시점 검사는 둘 다 통과한다(#773 리뷰).

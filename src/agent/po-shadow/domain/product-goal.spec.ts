@@ -1,12 +1,14 @@
 import {
   findGoalDeclarationProblem,
-  isMeasurableCriterion,
   isProductGoalPreviewPayload,
   matchGoalsByTitle,
+  MAX_ACTIVE_DIRECTION_GOALS,
   MAX_ACTIVE_PRODUCT_GOALS,
   parseProductGoalCommand,
   ProductGoalDraft,
+  ProductGoalKind,
   ProductGoalRecord,
+  readProductGoalDraft,
 } from './product-goal';
 
 const today = { year: 2026, month: 10, day: 8 };
@@ -14,7 +16,9 @@ const today = { year: 2026, month: 10, day: 8 };
 const draft = (
   overrides: Partial<ProductGoalDraft> = {},
 ): ProductGoalDraft => ({
+  kind: 'TASK',
   title: '보존기간 파일 파기',
+  why: null,
   successCriterion: 'sbe-api-v5 운영 배포 완료',
   keywords: ['보존기간', '파기'],
   dueDate: null,
@@ -24,7 +28,9 @@ const draft = (
 const goal = (id: number, title: string): ProductGoalRecord => ({
   id,
   slackUserId: 'U1',
+  kind: 'TASK',
   title,
+  why: null,
   successCriterion: '운영 배포 완료',
   keywords: [title],
   dueDate: null,
@@ -42,7 +48,9 @@ describe('parseProductGoalCommand', () => {
     ).toEqual({
       kind: 'DECLARE',
       draft: {
+        kind: 'TASK',
         title: '보존기간 파일 파기',
+        why: null,
         successCriterion: 'sbe-api-v5 운영 배포 완료',
         // 키워드를 안 주면 제목 낱말로 채운다. 어디에나 붙는 낱말("기능"·"출시" 등)은 뺀다.
         keywords: ['보존기간', '파일', '파기'],
@@ -106,9 +114,13 @@ describe('parseProductGoalCommand', () => {
 });
 
 // 선언 초안과 겹치지 않는 제목의 활성 목표 n 개.
-const titled = (count: number): { title: string }[] =>
+const titled = (
+  count: number,
+  kind: ProductGoalKind = 'TASK',
+): { title: string; kind: ProductGoalKind }[] =>
   Array.from({ length: count }, (_, index) => ({
     title: `다른 목표 ${index}`,
+    kind,
   }));
 
 describe('findGoalDeclarationProblem', () => {
@@ -116,8 +128,6 @@ describe('findGoalDeclarationProblem', () => {
   it.each([
     [null, 'MISSING_CRITERION'],
     ['   ', 'MISSING_CRITERION'],
-    ['개선하기', 'UNMEASURABLE_CRITERION'],
-    ['업로드 품질 향상', 'UNMEASURABLE_CRITERION'],
   ])('달성 기준 %p → %s', (successCriterion, expected) => {
     expect(
       findGoalDeclarationProblem({
@@ -125,6 +135,19 @@ describe('findGoalDeclarationProblem', () => {
         activeGoals: [],
       }),
     ).toBe(expected);
+  });
+
+  // 기준 문장의 품질은 카드를 보는 사람이 판정한다 — 코드는 낱말로 거르지 않는다.
+  it.each([
+    '실제로 회사를 옮겨 새 직장에서 근무를 시작한다',
+    '사용자 불만 없게',
+  ])('숫자·완료 낱말이 없는 기준도 받는다: %s', (successCriterion) => {
+    expect(
+      findGoalDeclarationProblem({
+        draft: draft({ successCriterion }),
+        activeGoals: [],
+      }),
+    ).toBeNull();
   });
 
   // 정책 4 — 활성 목표는 상수 하나로 막는다.
@@ -148,13 +171,13 @@ describe('findGoalDeclarationProblem', () => {
     expect(
       findGoalDeclarationProblem({
         draft: draft({ title: '보존기간  파일 파기' }),
-        activeGoals: [{ title: '"보존기간 파일 파기"' }],
+        activeGoals: [{ title: '"보존기간 파일 파기"', kind: 'DIRECTION' }],
       }),
     ).toBe('DUPLICATE_TITLE');
     expect(
       findGoalDeclarationProblem({
         draft: draft({ title: '보존기간 파일 파기 2차' }),
-        activeGoals: [{ title: '보존기간 파일 파기' }],
+        activeGoals: [{ title: '보존기간 파일 파기', kind: 'TASK' }],
       }),
     ).toBeNull();
   });
@@ -180,17 +203,53 @@ describe('findGoalDeclarationProblem', () => {
       }),
     ).toBe('UNREADABLE_DUE_DATE');
   });
-});
 
-describe('isMeasurableCriterion', () => {
-  it.each([
-    ['p95 응답 300ms 이하', true],
-    ['운영 배포 완료', true],
-    ['실패율 1%', true],
-    ['개선하기', false],
-    ['더 좋게', false],
-  ])('%s → %s', (criterion, expected) => {
-    expect(isMeasurableCriterion(criterion)).toBe(expected);
+  it('방향은 기준과 키워드 없이 받되 숙제는 기준 없이 받지 않는다', () => {
+    expect(
+      findGoalDeclarationProblem({
+        draft: draft({
+          kind: 'DIRECTION',
+          successCriterion: null,
+          keywords: [],
+        }),
+        activeGoals: [],
+      }),
+    ).toBeNull();
+    expect(
+      findGoalDeclarationProblem({
+        draft: draft({ kind: 'TASK', successCriterion: null }),
+        activeGoals: [],
+      }),
+    ).toBe('MISSING_CRITERION');
+  });
+
+  it('종류별 상한은 서로의 슬롯을 차지하지 않는다', () => {
+    expect(
+      findGoalDeclarationProblem({
+        draft: draft({
+          kind: 'DIRECTION',
+          successCriterion: null,
+          keywords: [],
+        }),
+        activeGoals: titled(MAX_ACTIVE_PRODUCT_GOALS),
+      }),
+    ).toBeNull();
+    expect(
+      findGoalDeclarationProblem({
+        draft: draft({
+          kind: 'DIRECTION',
+          successCriterion: null,
+          keywords: [],
+        }),
+        activeGoals: titled(MAX_ACTIVE_DIRECTION_GOALS, 'DIRECTION'),
+      }),
+    ).toBe('DIRECTION_LIMIT_REACHED');
+    expect(
+      findGoalDeclarationProblem({
+        draft: draft(),
+        activeGoals: titled(MAX_ACTIVE_DIRECTION_GOALS, 'DIRECTION'),
+      }),
+    ).toBeNull();
   });
 });
 
@@ -229,5 +288,29 @@ describe('isProductGoalPreviewPayload', () => {
       }),
     ).toBe(false);
     expect(isProductGoalPreviewPayload({ action: 'DROP' })).toBe(false);
+  });
+
+  it('kind가 없는 구형 초안은 TASK로 정규화하고 잘못된 종류는 거른다', () => {
+    const legacy = {
+      title: '구형 목표',
+      successCriterion: '완료',
+      keywords: ['목표'],
+      dueDate: null,
+    };
+    expect(readProductGoalDraft(legacy)).toEqual({
+      ...legacy,
+      kind: 'TASK',
+      why: null,
+    });
+    expect(
+      isProductGoalPreviewPayload({ action: 'CREATE', draft: legacy }),
+    ).toBe(true);
+    expect(readProductGoalDraft({ ...legacy, kind: 'UNKNOWN' })).toBeNull();
+    expect(
+      isProductGoalPreviewPayload({
+        action: 'CREATE',
+        draft: { ...legacy, kind: 'UNKNOWN' },
+      }),
+    ).toBe(false);
   });
 });

@@ -22,6 +22,7 @@ import {
   isProductGoalPreviewPayload,
   ProductGoalDraft,
   ProductGoalRecord,
+  readProductGoalDraft,
 } from '../domain/product-goal';
 
 // 제품 목표를 DB 에 쓰는 유일한 경로. 디스패처와 PO 회차는 카드만 만들고 쓰지 않는다 —
@@ -51,22 +52,29 @@ export class ProductGoalApplier implements PreviewApplier {
     if (payload.action === 'CLOSE') {
       return this.close(preview.slackUserId, payload.goalId, payload.title);
     }
-    return this.create(preview.slackUserId, payload.draft);
+    const draft = readProductGoalDraft(payload.draft);
+    if (draft === null) {
+      throw new PoShadowException({
+        code: PoShadowErrorCode.INVALID_PRODUCT_GOAL_PAYLOAD,
+        message: 'PRODUCT_GOAL payload 형식이 맞지 않습니다.',
+        status: DomainStatus.INTERNAL,
+      });
+    }
+    return this.create(preview.slackUserId, draft);
   }
 
   private async create(
     slackUserId: string,
     draft: ProductGoalDraft,
   ): Promise<ApplyResult> {
-    if (draft.successCriterion === null) {
-      throw this.rejection('MISSING_CRITERION', []);
-    }
     // 카드를 만들 때 검사했어도 저장 직전에 다시 건다. 검사와 저장은 저장소가 직렬화 격리
     // 트랜잭션 하나로 묶는다 — 승인자가 한 명이어도 Slack 의 별도 action 요청은 동시에 처리될 수 있다.
     const result = await this.repository.createGuarded(
       {
         slackUserId,
+        kind: draft.kind,
         title: draft.title,
+        why: draft.why,
         successCriterion: draft.successCriterion,
         keywords: draft.keywords,
         dueDate:

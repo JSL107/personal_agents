@@ -1015,6 +1015,8 @@ describe('GeneratePoShadowUsecase', () => {
       id: 1,
       slackUserId: 'U1',
       title: '업로드 개선',
+      kind: 'TASK',
+      why: null,
       successCriterion: '업로드 실패율 1% 이하',
       keywords: ['업로드'],
       dueDate: null,
@@ -1078,6 +1080,143 @@ describe('GeneratePoShadowUsecase', () => {
       expect(modelRouter.route.mock.calls[0][0].request.prompt).not.toContain(
         '[활성 제품 목표]',
       );
+    });
+
+    it('방향만 있으면 목표 0개 회차와 사실표·점검·프롬프트·원장 입력이 같다', async () => {
+      agentRunServiceFindLatest.mockResolvedValue({
+        id: 99,
+        output: mismatchPlan,
+        endedAt: now,
+      });
+      contextCollectorCollect.mockResolvedValue(mismatchContext());
+
+      const withoutGoals = await usecase.execute({
+        extraContext: '',
+        slackUserId: 'U1',
+        now,
+      });
+      const baselineInput = executeInput();
+      const baselinePrompt = modelRouter.route.mock.calls[0][0].request.prompt;
+
+      goalFindActive.mockResolvedValue([
+        goalRecord({
+          id: 2,
+          title: '나만의 개인비서 만들기',
+          kind: 'DIRECTION',
+          why: '말로 업무를 처리하려고',
+          successCriterion: null,
+          keywords: [],
+          createdAt: new Date(now.getTime() - 40 * DAY),
+        }),
+      ]);
+      agentRunServiceExecute.mockClear();
+      agentRunServiceFindRecent.mockClear();
+      modelRouter.route.mockClear();
+      modelRouter.route.mockResolvedValue({
+        text: JSON.stringify(
+          modelReport([
+            {
+              factIds: ['stalled:acme/app#264'],
+              point: '#264 업로드 작업이 멈췄습니다.',
+              suggestion: '리뷰어를 지정하세요.',
+            },
+          ]),
+        ),
+        modelUsed: 'codex-cli',
+        provider: ModelProviderName.CHATGPT,
+      } satisfies CompletionResponse);
+
+      const withDirection = await usecase.execute({
+        extraContext: '',
+        slackUserId: 'U1',
+        now,
+      });
+
+      expect(withDirection.result).toEqual(withoutGoals.result);
+      expect(executeInput().inputSnapshot).toEqual(baselineInput.inputSnapshot);
+      expect(executeInput().evidence).toEqual(baselineInput.evidence);
+      expect(modelRouter.route.mock.calls[0][0].request.prompt).toBe(
+        baselinePrompt,
+      );
+      expect(withDirection.result).not.toHaveProperty('goalCheckIns');
+      expect(agentRunServiceFindRecent).toHaveBeenCalledTimes(1);
+    });
+
+    it('숙제와 방향이 섞이면 숙제만 사실·점검·프롬프트·원장 입력에 싣는다', async () => {
+      agentRunServiceFindLatest.mockResolvedValue({
+        id: 99,
+        output: mismatchPlan,
+        endedAt: now,
+      });
+      const context = mismatchContext();
+      context.mergedPullRequests = [
+        {
+          number: 5,
+          title: 'chore: 의존성 갱신',
+          body: '',
+          repo: 'acme/app',
+          url: 'https://github.com/acme/app/pull/5',
+          state: 'merged',
+          mergedAt: '2026-10-08T01:00:00.000Z',
+          updatedAt: '2026-10-08T01:00:00.000Z',
+          additions: 1,
+          deletions: 1,
+          changedFilesCount: 1,
+        },
+      ];
+      contextCollectorCollect.mockResolvedValue(context);
+      goalFindActive.mockResolvedValue([goalRecord()]);
+      const withTask = await usecase.execute({
+        extraContext: '',
+        slackUserId: 'U1',
+        now,
+      });
+      const taskInput = executeInput();
+      const taskPrompt = modelRouter.route.mock.calls[0][0].request.prompt;
+
+      goalFindActive.mockResolvedValue([
+        goalRecord(),
+        goalRecord({
+          id: 2,
+          title: '나만의 개인비서 만들기',
+          kind: 'DIRECTION',
+          why: '말로 업무를 처리하려고',
+          successCriterion: null,
+          keywords: [],
+          createdAt: new Date(now.getTime() - 40 * DAY),
+        }),
+      ]);
+      agentRunServiceExecute.mockClear();
+      modelRouter.route.mockClear();
+      modelRouter.route.mockResolvedValue({
+        text: JSON.stringify(
+          modelReport([
+            {
+              factIds: ['stalled:acme/app#264'],
+              point: '#264 업로드 작업이 멈췄습니다.',
+              suggestion: '리뷰어를 지정하세요.',
+            },
+          ]),
+        ),
+        modelUsed: 'codex-cli',
+        provider: ModelProviderName.CHATGPT,
+      } satisfies CompletionResponse);
+
+      const outcome = await usecase.execute({
+        extraContext: '',
+        slackUserId: 'U1',
+        now,
+      });
+
+      const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(prompt).toContain(
+        '업로드 개선 | 달성 기준: 업로드 실패율 1% 이하',
+      );
+      expect(prompt).toBe(taskPrompt);
+      expect(factTable().map((fact) => fact.kind)).toContain('GOAL_UNSERVED');
+      expect(executeInput().evidence).toEqual(taskInput.evidence);
+      expect(executeInput().inputSnapshot).toEqual(taskInput.inputSnapshot);
+      expect(outcome.result).toEqual(withTask.result);
     });
 
     it('목표에 안 붙은 작업은 GOAL_UNSERVED 로 사실 목록에만 싣고 검토를 켜지 않는다', async () => {

@@ -1,4 +1,8 @@
-import { GoalDeclarationProblem, ProductGoalRecord } from '../product-goal';
+import {
+  GoalDeclarationProblem,
+  ProductGoalKind,
+  ProductGoalRecord,
+} from '../product-goal';
 
 export const PRODUCT_GOAL_REPOSITORY_PORT = Symbol(
   'PRODUCT_GOAL_REPOSITORY_PORT',
@@ -6,8 +10,10 @@ export const PRODUCT_GOAL_REPOSITORY_PORT = Symbol(
 
 export interface CreateProductGoalInput {
   slackUserId: string;
+  kind: ProductGoalKind;
   title: string;
-  successCriterion: string;
+  why: string | null;
+  successCriterion: string | null;
   keywords: string[];
   dueDate: Date | null;
 }

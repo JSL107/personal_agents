@@ -466,17 +466,17 @@ model SlackDelivery {
 // RECEIVED 로 오래 남은 행 = 처리 중 프로세스가 죽었거나 멈춘 것. 원문·사용자 ID 는 두지 않는다 —
 // 원문은 channelId + messageTs 로 Slack 에서 찾고, 마스킹본은 agent_run.input_snapshot.routedText 에 있다.
 model MentionReceipt {
-  id           Int       @id @default(autoincrement())
-  source       String // app_mention | dm
-  channelId    String    @map("channel_id")
-  messageTs    String    @map("message_ts")
-  status       String // RECEIVED | REPLIED | ERROR_REPLIED | REPLY_FAILED
-  errorMessage String?   @map("error_message")
-  receivedAt   DateTime  @default(now()) @map("received_at")
-  repliedAt    DateTime? @map("replied_at")
+  id               Int       @id @default(autoincrement())
+  source           String // app_mention | dm
+  channelId        String    @map("channel_id")
+  messageTs        String    @map("message_ts")
+  status           String // RECEIVED | REPLIED | ERROR_REPLIED | REPLY_FAILED
+  errorMessage     String?   @map("error_message")
+  receivedAt       DateTime  @default(now()) @map("received_at")
+  repliedAt        DateTime? @map("replied_at")
   // 즉시 ack 뒤 결과를 따로 올리는 담당(BLOG)의 결과 답장. null 은 따로 올릴 답장이 없는 멘션.
   // PENDING | POSTED | FAILED — status 는 ack 게시로 REPLIED 가 되므로 결과 답장은 여기서만 보인다.
-  finalReplyStatus String? @map("final_reply_status")
+  finalReplyStatus String?   @map("final_reply_status")
 
   @@unique([channelId, messageTs])
   @@index([receivedAt])
@@ -1362,9 +1362,15 @@ model ProductGoal {
   id               Int       @id @default(autoincrement())
   slackUserId      String    @map("slack_user_id")
   title            String
-  // 무엇을 "달성" 으로 볼지 한 줄. 필수다 — 끝을 판정할 수 없는 목표는 저장하지 않는다.
-  successCriterion String    @map("success_criterion") @db.Text
-  // PR·이슈 제목에 이 중 하나가 들어 있으면 그 작업이 이 목표에 붙은 것으로 본다.
+  // DIRECTION(방향 — 끝 기준·키워드 없어도 됨) | TASK(숙제 — 끝 기준·키워드 필수).
+  // 기존 행과 "분기 목표는 …" 문장 선언은 TASK 다.
+  kind             String    @default("TASK")
+  // 이 목표가 중요한 이유. 없어도 된다.
+  why              String?   @db.Text
+  // 무엇을 "달성" 으로 볼지 한 줄. TASK 는 필수다(코드에서 검증) — 끝을 판정할 수 없는 숙제는
+  // 저장하지 않는다. DIRECTION 은 비울 수 있다.
+  successCriterion String?   @map("success_criterion") @db.Text
+  // PR·이슈 제목에 이 중 하나가 들어 있으면 그 작업이 이 목표에 붙은 것으로 본다. DIRECTION 은 비어 있다.
   keywords         String[]
   dueDate          DateTime? @map("due_date") @db.Date
   closedAt         DateTime? @map("closed_at")
@@ -1373,6 +1379,28 @@ model ProductGoal {
 
   @@index([slackUserId, closedAt])
   @@map("product_goal")
+}
+
+// 이대리가 먼저 던진 목표 질문 하나(goal-checkin). 열려 있는 동안(closedAt IS NULL, expiresAt > now)
+// 그 사용자의 다음 DM 을 라우터가 목표 답으로 먼저 본다. "질문 몇 번에 답 몇 번" 도 이 표로 센다.
+model GoalQuestion {
+  id               Int       @id @default(autoincrement())
+  slackUserId      String    @map("slack_user_id")
+  expiresAt        DateTime  @map("expires_at")
+  // 답으로 만든 PRODUCT_GOAL 카드. 수정하면 새 카드 id 로 바뀐다.
+  previewId        String?   @map("preview_id")
+  // TASK 끝 기준을 한 번 되물었는지. 두 번 묻지 않는다.
+  criterionAskedAt DateTime? @map("criterion_asked_at")
+  // 되물을 때의 직전 초안. 다음 답을 이것과 합쳐 다시 정리한다 — 대화 메모리는 TTL 30분이라
+  // 월요일 질문의 답 맥락을 보장하지 못한다.
+  pendingDraft     Json?     @map("pending_draft")
+  closedAt         DateTime? @map("closed_at")
+  // DECLINED | CARD_RESOLVED | LIMIT_REACHED. 만료는 행을 고치지 않는다(expiresAt 으로 판정).
+  closeReason      String?   @map("close_reason")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  @@index([slackUserId, closedAt])
+  @@map("goal_question")
 }
 
 // 게임잡 원화 공고 피드(src/art-job-feed-cron). 백엔드 job_posting 과 달리 채점 없이

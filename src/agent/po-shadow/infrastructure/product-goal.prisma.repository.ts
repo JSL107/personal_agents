@@ -9,13 +9,15 @@ import {
   CreateProductGoalResult,
   ProductGoalRepositoryPort,
 } from '../domain/port/product-goal.repository.port';
-import { ProductGoalRecord } from '../domain/product-goal';
+import { ProductGoalKind, ProductGoalRecord } from '../domain/product-goal';
 
 interface ProductGoalRow {
   id: number;
   slackUserId: string;
+  kind: string;
   title: string;
-  successCriterion: string;
+  why: string | null;
+  successCriterion: string | null;
   keywords: string[];
   dueDate: Date | null;
   closedAt: Date | null;
@@ -25,7 +27,9 @@ interface ProductGoalRow {
 const toRecord = (row: ProductGoalRow): ProductGoalRecord => ({
   id: row.id,
   slackUserId: row.slackUserId,
+  kind: row.kind as ProductGoalKind,
   title: row.title,
+  why: row.why,
   successCriterion: row.successCriterion,
   keywords: row.keywords,
   dueDate: row.dueDate,

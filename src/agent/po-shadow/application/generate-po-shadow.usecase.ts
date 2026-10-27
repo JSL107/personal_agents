@@ -151,8 +151,8 @@ export class GeneratePoShadowUsecase {
       now,
       previousReportedFacts,
     });
-    // 활성 목표가 0개면 사실·프롬프트 블록·inputSnapshot 키를 하나도 만들지 않는다 —
-    // 목표를 쓰지 않는 사용자의 출력은 단계 3 이전과 같아야 한다.
+    // 활성 숙제가 0개면 사실·프롬프트 블록·inputSnapshot 키를 하나도 만들지 않는다 —
+    // 방향만 있는 회차도 목표를 쓰지 않는 회차와 같아야 한다.
     const goalCollection = await this.collectProductGoals({
       slackUserId,
       context,
@@ -318,7 +318,10 @@ export class GeneratePoShadowUsecase {
     };
     let goals: ProductGoalRecord[];
     try {
-      goals = await this.goalRepository.findActive(slackUserId);
+      const activeGoals = await this.goalRepository.findActive(slackUserId);
+      // 방향은 키워드가 없어 사실표에 넣으면 모든 PR 이 GOAL_UNSERVED 가 된다.
+      // 방향만 있으면 목표 없는 회차와 같아야 한다.
+      goals = activeGoals.filter((goal) => goal.kind === 'TASK');
     } catch (error: unknown) {
       this.logger.warn(
         `제품 목표 조회 실패 (목표 없이 계속 진행): ${error instanceof Error ? error.message : String(error)}`,
@@ -738,7 +741,7 @@ const buildGoalSection = (goals: ProductGoalRecord[]): string => {
   const lines = goals.map((goal) => {
     const dueDate =
       goal.dueDate === null ? '없음' : goal.dueDate.toISOString().slice(0, 10);
-    return `- ${goal.title} | 달성 기준: ${goal.successCriterion} | 기한: ${dueDate}`;
+    return `- ${goal.title} | 달성 기준: ${goal.successCriterion ?? '없음'} | 기한: ${dueDate}`;
   });
   return [
     ...lines,

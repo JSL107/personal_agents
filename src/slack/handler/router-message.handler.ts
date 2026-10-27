@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { App, SayFn } from '@slack/bolt';
 import { WebClient } from '@slack/web-api';
 
+import { HandleGoalAnswerUsecase } from '../../agent/po-shadow/application/handle-goal-answer.usecase';
 import { parseTopicSelection } from '../../common/util/topic-selection.util';
 import { detectYesNoIntent } from '../../common/util/yes-no-intent.util';
 import { AgentType } from '../../model-router/domain/model-router.type';
@@ -167,6 +168,7 @@ export class RouterMessageHandler implements SlackHandler {
     private readonly findLatestPendingPreview: FindLatestPendingPreviewUsecase,
     private readonly applyPreviewUsecase: ApplyPreviewUsecase,
     private readonly cancelPreviewUsecase: CancelPreviewUsecase,
+    private readonly handleGoalAnswer: HandleGoalAnswerUsecase,
     @Inject(SLACK_DELIVERY_REPOSITORY)
     private readonly deliveryRepository: SlackDeliveryRepositoryPort,
     @Inject(MENTION_RECEIPT_REPOSITORY)
@@ -447,6 +449,19 @@ export class RouterMessageHandler implements SlackHandler {
         memoryKey,
       });
       if (handledByTopic) {
+        succeeded = true;
+        return;
+      }
+
+      const handledByGoal = await this.tryHandleGoalAnswer({
+        text,
+        slackUserId,
+        source,
+        threadTs,
+        say,
+        memoryKey,
+      });
+      if (handledByGoal) {
         succeeded = true;
         return;
       }
@@ -821,6 +836,68 @@ export class RouterMessageHandler implements SlackHandler {
       });
     }
     return true;
+  }
+
+  private async tryHandleGoalAnswer({
+    text,
+    slackUserId,
+    source,
+    threadTs,
+    say,
+    memoryKey,
+  }: {
+    text: string;
+    slackUserId: string;
+    source: 'app_mention' | 'dm';
+    threadTs: string | undefined;
+    say: SayFn;
+    memoryKey: string;
+  }): Promise<boolean> {
+    if (source !== 'dm') {
+      return false;
+    }
+    try {
+      const result = await this.handleGoalAnswer.execute({
+        slackUserId,
+        text,
+        now: new Date(),
+      });
+      if (result === null) {
+        return false;
+      }
+      await this.conversationMemory.appendTurn(memoryKey, {
+        role: 'user',
+        text,
+        agentType: AgentType.PO_SHADOW,
+        agentRunId: null,
+        timestampMs: Date.now(),
+      });
+      const blocks =
+        result.previewId === undefined
+          ? undefined
+          : buildPreviewBlocks({
+              previewText: result.replyText,
+              previewId: result.previewId,
+            });
+      await say({
+        thread_ts: threadTs,
+        text: result.replyText,
+        ...(blocks ? { blocks } : {}),
+      });
+      await this.conversationMemory.appendTurn(memoryKey, {
+        role: 'assistant',
+        text: result.replyText,
+        agentType: AgentType.PO_SHADOW,
+        agentRunId: null,
+        timestampMs: Date.now(),
+      });
+      return true;
+    } catch (error: unknown) {
+      this.logger.warn(
+        `목표 답 처리 실패 — user=${slackUserId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return false;
+    }
   }
 
   // 갭 분석 후 "N번" 주제 선택 인터셉트 — pending CAREER_JD_GAP_BLOG preview 가 있을 때만.

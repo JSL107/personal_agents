@@ -30,6 +30,10 @@ export const DEFAULT_CUJ_CHECK_TIMEZONE = 'Asia/Seoul';
 export const DEFAULT_RUN_RETRO_CRON = '0 9 * * 1';
 export const DEFAULT_RUN_RETRO_TIMEZONE = 'Asia/Seoul';
 
+// 월요일 목표 질문 — run-retro·idea-triage(09:00)와 cuj-check(09:10)를 피해 09:15에 보낸다.
+export const DEFAULT_GOAL_CHECKIN_CRON = '15 9 * * 1';
+export const DEFAULT_GOAL_CHECKIN_TIMEZONE = 'Asia/Seoul';
+
 // Run Sweeper 기본 스케줄 — 매시간 :50. 좀비 IN_PROGRESS 를 FAILED 로 정리하고 콘솔에
 // run.finished/state.changed 를 발행한다. 주 1회면 SSE 로만 갱신되는 라이브 콘솔이 최대 6일
 // "일하는 중" 오표시되므로, 매시간으로 지연을 ~1h 로 단축. 좀비 0건이면 skip(무발송)이라 스팸 없음.
