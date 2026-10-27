@@ -117,6 +117,15 @@ describe('buildProductGoalFacts', () => {
     ).toEqual({ facts: [], progressedGoalIds: [], checkIns: [] });
   });
 
+  it('키워드 없는 목표는 기한이 지나도 묻지 않는다', () => {
+    const overdue = goal({
+      title: '이직하기',
+      keywords: [],
+      dueDate: new Date('2026-10-01T00:00:00Z'),
+    });
+    expect(build([overdue]).checkIns).toEqual([]);
+  });
+
   it('키워드 없는 목표가 섞여도 목표 밖 판정은 키워드 있는 목표로 한다', () => {
     const result = build(
       [goal({ id: 2, title: '이직하기', keywords: [] }), goal()],
