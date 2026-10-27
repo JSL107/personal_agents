@@ -104,6 +104,40 @@ describe('buildProductGoalFacts', () => {
     expect(result.progressedGoalIds).toEqual([1]);
   });
 
+  it('키워드 없는 목표만 있으면 목표 밖 작업·무진행 질문을 내지 않는다', () => {
+    const keywordless = goal({
+      title: '이직하기',
+      keywords: [],
+      createdAt: new Date(now.getTime() - 40 * DAY),
+    });
+    expect(
+      build([keywordless], {
+        context: contextWith([], ['refactor(types): Pick 제거']),
+      }),
+    ).toEqual({ facts: [], progressedGoalIds: [], checkIns: [] });
+  });
+
+  it('키워드 없는 목표가 섞여도 목표 밖 판정은 키워드 있는 목표로 한다', () => {
+    const result = build(
+      [goal({ id: 2, title: '이직하기', keywords: [] }), goal()],
+      {
+        context: contextWith(
+          [],
+          ['feat(file): 보존기간 만료 파일 파기', 'fix(auth): 토큰 갱신'],
+        ),
+      },
+    );
+    expect(result.facts).toEqual([
+      {
+        id: 'goal-unserved:today',
+        kind: 'GOAL_UNSERVED',
+        label: '목표 밖 작업 1건',
+        detail: 'fix(auth): 토큰 갱신',
+      },
+    ]);
+    expect(result.progressedGoalIds).toEqual([1]);
+  });
+
   it('모든 작업이 목표에 붙으면 GOAL_UNSERVED 를 내지 않는다', () => {
     expect(build([goal()]).facts).toEqual([]);
   });
