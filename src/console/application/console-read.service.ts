@@ -14,12 +14,10 @@ import {
   MEMORY_VACUUM_PORT,
   MemoryVacuumPort,
 } from '../../memory-vacuum/domain/port/memory-vacuum.port';
+import { AgentType } from '../../model-router/domain/model-router.type';
 import { ApplyPreviewUsecase } from '../../preview-gate/application/apply-preview.usecase';
 import { FindAllOpenPreviewsUsecase } from '../../preview-gate/application/find-all-open-previews.usecase';
-import {
-  AGENT_DISPATCHER_PORT,
-  AgentDispatcher,
-} from '../../router/domain/port/agent-dispatcher.port';
+import { AGENT_DISPATCHER_PORT } from '../../router/domain/port/agent-dispatcher.port';
 import {
   ConsoleAgent,
   ConsoleAgentState,
@@ -57,7 +55,7 @@ export class ConsoleReadService {
     @Inject(MEMORY_VACUUM_PORT)
     private readonly memoryVacuum: MemoryVacuumPort,
     @Inject(AGENT_DISPATCHER_PORT)
-    dispatchers: readonly Pick<AgentDispatcher, 'agentType'>[],
+    dispatchers: readonly { agentType: AgentType }[],
   ) {
     // 라우터가 같은 토큰에서 이미 겪은 회귀(commit cbef813) — NestJS multi-provider 가
     // module 경계를 넘으면 배열이 아니라 단일 객체로 주입될 수 있다. 그때 `.some` 은

@@ -16,13 +16,8 @@ export interface SubAgentRunRefs {
   impactReporterRunId?: number;
 }
 
-// PO 통합 facade 의 output.
-// careerLog 는 사용자 외부 형식 (Notion 페이지 / 커리어 페이지) 미공유 상태에서 잠정 schema —
-// 향후 사용자가 실제 형식 공유 시 정합 조정. schemaVersion 으로 호환 추적.
-// (review omc:architect 권장 — 향후 schema 변경 시 Prisma output JSON 의 이전 row 와 구분.)
-export interface EvaluationOutput {
-  range: AgentRunRange;
-  sourceAgentRuns: SubAgentRunRefs;
+// LLM 이 반환하는 부분. range / sourceAgentRuns 는 manager 가 채움.
+export interface EvaluationLlmOutput {
   qualitative: {
     summary: string; // 전반 한 줄 요약
     blockers: string[];
@@ -38,4 +33,13 @@ export interface EvaluationOutput {
     technologies: string[];
     impact: string; // 1~2 문장
   };
+}
+
+// PO 통합 facade 의 output.
+// careerLog 는 사용자 외부 형식 (Notion 페이지 / 커리어 페이지) 미공유 상태에서 잠정 schema —
+// 향후 사용자가 실제 형식 공유 시 정합 조정. schemaVersion 으로 호환 추적.
+// (review omc:architect 권장 — 향후 schema 변경 시 Prisma output JSON 의 이전 row 와 구분.)
+export interface EvaluationOutput extends EvaluationLlmOutput {
+  range: AgentRunRange;
+  sourceAgentRuns: SubAgentRunRefs;
 }

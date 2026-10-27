@@ -1,13 +1,9 @@
 import { DomainStatus } from '../../../../common/exception/domain-status.enum';
 import { PoEvalException } from '../po-eval.exception';
-import { EvaluationOutput } from '../po-eval.type';
+import { EvaluationLlmOutput } from '../po-eval.type';
 import { PoEvalErrorCode } from '../po-eval-error-code.enum';
 
-// LLM 이 반환하는 부분 — qualitative + careerLog. range / sourceAgentRuns 는 manager 가 채움.
-export type EvaluationLlmOutput = Pick<
-  EvaluationOutput,
-  'qualitative' | 'careerLog'
->;
+export type { EvaluationLlmOutput };
 
 export const parseEvaluationOutput = (raw: string): EvaluationLlmOutput => {
   const cleaned = stripCodeFence(raw.trim());

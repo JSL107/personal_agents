@@ -57,23 +57,27 @@ const SOLD_PRICE_LOOKBACK_MS = 14 * 24 * 60 * 60 * 1000;
 // **일이 없었던 실행도** 남긴다 — holdingCount=0 이 기록되지 않으면 "감시는 켜져 있는데
 // 대상이 한 종목도 없다"는 상태가 시스템 어디에도 나타나지 않는다. 실제로 그 상태로
 // 방치되어 있었고, 그 사실이 관측되지 않은 것이 이 타입을 만든 이유다.
-interface StockMonitorAudit {
-  marketCountry: StockMarketCountry;
+// 감시 판정에서 나온 값. 잔고 동기화 결과·시장 국가는 createAudit 이 덧붙인다.
+interface StockMonitorOutcome {
   holdingCount: number;
   checkedCount: number;
   anomalyCount: number;
   failureCount: number;
   lastTradeDate: string | null;
   marketClosed: boolean;
+  // 평단 대비 임계 밖 종목 수. anomalyCount(발화)와 다르다 — 발화는 최초 진입 때만 1회지만
+  // 이 값은 회복할 때까지 계속 1 이상이라, 0 이 아닌 날이 이어지면 손실이 지속된다는 뜻이다.
+  avgPriceBreachCount: number;
+}
+
+interface StockMonitorAudit extends StockMonitorOutcome {
+  marketCountry: StockMarketCountry;
   syncedHoldings: number | null;
   zeroedHoldings: number | null;
   // 감지한 매매 건수. 0 은 "변화가 없었다", null 은 "동기화가 실패해 판정 자체를 못 했다" —
   // 둘 다 화면에는 아무 줄도 남기지 않으므로, 여기서 구분하지 않으면 감지가 죽어도 조용하다.
   // 사건의 상세는 holding_change 표에 있고 여기에는 건수만 둔다.
   holdingChangeCount: number | null;
-  // 평단 대비 임계 밖 종목 수. anomalyCount(발화)와 다르다 — 발화는 최초 진입 때만 1회지만
-  // 이 값은 회복할 때까지 계속 1 이상이라, 0 이 아닌 날이 이어지면 손실이 지속된다는 뜻이다.
-  avgPriceBreachCount: number;
   syncError: string | null;
 }
 
@@ -762,14 +766,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
 
   private createAudit(
     sync: HoldingsSyncResult,
-    monitored: Omit<
-      StockMonitorAudit,
-      | 'marketCountry'
-      | 'syncedHoldings'
-      | 'zeroedHoldings'
-      | 'holdingChangeCount'
-      | 'syncError'
-    >,
+    monitored: StockMonitorOutcome,
   ): StockMonitorAudit {
     return {
       marketCountry: this.targetMarketCountry,

@@ -21,9 +21,8 @@ type LeaveUsageRow = {
 };
 
 // businessDays 는 호출자(usecase)가 계산해 넘긴다. repo 는 저장/조회만.
-interface SaveLeaveInput extends Omit<RegisterLeaveInput, 'memo'> {
+interface SaveLeaveInput extends RegisterLeaveInput {
   businessDays: number;
-  memo?: string;
 }
 
 @Injectable()

@@ -18,7 +18,7 @@ import {
 import { ModelRouterErrorCode } from '../domain/model-router-error-code.enum';
 import {
   MODEL_CALL_LOG_PORT,
-  ModelCallLogInput,
+  ModelCallFacts,
   ModelCallLogPort,
 } from '../domain/port/model-call-log.port';
 import {
@@ -311,7 +311,7 @@ export class ModelRouterUsecase {
 
   // 모델 호출 한 번을 model_call 에 남긴다. 기다리지 않는다 — 기록이 응답을 늦추거나 실패로
   // 바꾸면 안 된다. 구현체가 이미 삼키지만 unhandled rejection 을 막으려 여기서도 받는다.
-  private recordCall(input: Omit<ModelCallLogInput, 'agentRunId'>): void {
+  private recordCall(input: ModelCallFacts): void {
     if (!this.callLog) {
       return;
     }
