@@ -14,7 +14,6 @@ import { SlackInboxModule } from '../slack-inbox/slack-inbox.module';
 import { SubconsciousEngine } from './application/subconscious.engine';
 import { SubconsciousScheduler } from './application/subconscious.scheduler';
 import { SubconsciousProposalService } from './application/subconscious-proposal.service';
-import { SubconsciousTickProcessor } from './application/subconscious-tick.processor';
 import { DROP_SAMPLE_POLICY } from './domain/port/drop-sample-policy.port';
 import { PROMOTION_BUDGET } from './domain/port/promotion-budget.port';
 import { PROPOSAL_EMITTER } from './domain/port/proposal-emitter.port';
@@ -36,6 +35,7 @@ import { SlackInboxStateSource } from './infrastructure/slack-inbox-state-source
 import { SubconsciousBaselinePrismaRepository } from './infrastructure/subconscious-baseline.prisma.repository';
 import { SubconsciousGateShadowPrismaRepository } from './infrastructure/subconscious-gate-shadow.prisma.repository';
 import { SubconsciousProposalPrismaRepository } from './infrastructure/subconscious-proposal.prisma.repository';
+import { SubconsciousTickConsumer } from './infrastructure/subconscious-tick.consumer';
 
 // SubconsciousModule — proactive engine 전체 조립.
 // Task 7 (Proposal 라이프사이클) + Task 8 (Scheduler + Processor + 전체 wiring).
@@ -137,7 +137,7 @@ import { SubconsciousProposalPrismaRepository } from './infrastructure/subconsci
     },
     SubconsciousEngine,
     SubconsciousScheduler,
-    SubconsciousTickProcessor,
+    SubconsciousTickConsumer,
   ],
   exports: [SubconsciousProposalService, PROPOSAL_EMITTER],
 })
