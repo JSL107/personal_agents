@@ -46,7 +46,11 @@ export const buildProductGoalFacts = ({
 }: BuildProductGoalFactsInput): ProductGoalFactsResult => {
   // 저장소가 활성만 돌려주지만 여기서도 거른다 — 닫힌 목표가 섞여 들어오면 이미 끝낸 목표가
   // 기한 위험과 "아직 유효한가요?" 를 계속 낸다.
-  const goals = candidateGoals.filter((goal) => goal.closedAt === null);
+  // 키워드 없는 목표(방향 목표)도 거른다 — 작업을 이을 수단이 없어 "연결 안 됨" 과 "판정 불가" 를
+  // 가를 수 없다. 섞이면 그날 머지한 PR 이 전부 목표 밖이 되고 30일 무진행 질문도 거짓으로 뜬다.
+  const goals = candidateGoals.filter(
+    (goal) => goal.closedAt === null && goal.keywords.length > 0,
+  );
   if (goals.length === 0) {
     return { facts: [], progressedGoalIds: [], checkIns: [] };
   }
