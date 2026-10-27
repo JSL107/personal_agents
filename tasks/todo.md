@@ -975,7 +975,7 @@ PR #528 에서 codex 봇이 지적한 건. **지적은 코드상 사실이지만
   `one pending review per pull request` 로 거절되고, 지금은 묶음 코멘트로 강등돼 `githubCommentId=null` 로
   학습에서 빠진다. 이 422 만 골라 강등하지 않고 카드를 `NOT_POSTED` 로 남겨 다음 스윕에 다시 게시하는 방안을
   검토한다. 재시도 상한과 PR 종료 시 처리(STALE)를 함께 정한다.
-- [ ] **봇 토큰 scope 축소.** 봇 PAT 는 classic `repo` 하나만 둔다(공개 레포만이면 `public_repo`). fine-grained 토큰은
-  남의 개인 레포에 collaborator 로 초대된 접근을 쓰지 못한다. 재발급 후 기존 토큰 폐기.
+- 봇 토큰 scope 는 축소하지 않는다(2026-10-27 결정, 현재 classic 전체 scope 유지). 바꾸게 되더라도 classic 이어야
+  한다 — fine-grained 토큰은 남의 개인 레포에 collaborator 로 초대된 접근을 쓰지 못한다.
 - [ ] **실게시 확인.** 다음 `personal_agents` PR 에서 인라인 지적의 작성자가 `idaeri-bot` 이고 카드에
   `githubCommentId` 가 저장되는지 본다(위험 지도·지적 없음 코멘트는 이 PR 에서 확인).
