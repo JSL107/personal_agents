@@ -66,11 +66,8 @@ export const DEPARTMENT_LABEL: Record<Department, string> = {
   [Department.INTERNAL_OPS]: '총무',
 };
 
-export interface AgentContract {
-  /** 소속 부서. */
-  readonly department: Department;
-  /** "오늘 할 일" 한 줄. 프롬프트 머리말에 그대로 들어간다. */
-  readonly job: string;
+// 산출물 형태 검사(pickBestMatch)가 읽는 부분. AgentContract 가 이를 확장한다.
+export interface DeliverableShape {
   /**
    * 산출물 JSON 최상위에 반드시 있어야 할 키.
    *
@@ -98,6 +95,13 @@ export interface AgentContract {
    * 내라" 고 지시하는 자리라 후보를 여럿 주면 형태가 흔들린다.
    */
   readonly deliverableVariants?: readonly (readonly string[])[];
+}
+
+export interface AgentContract extends DeliverableShape {
+  /** 소속 부서. */
+  readonly department: Department;
+  /** "오늘 할 일" 한 줄. 프롬프트 머리말에 그대로 들어간다. */
+  readonly job: string;
   /**
    * 근거(URL · PR 참조 · `파일:라인` · file/url 구조화 필드) 를 1개 이상 요구하는가.
    *

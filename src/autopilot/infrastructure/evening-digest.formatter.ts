@@ -18,14 +18,16 @@ export interface EveningNextOrders extends EveningPaperCount {
   tradeDate: string;
 }
 
-export interface EveningDigestInput {
-  firedAtKst: string;
-  // null = 머지 PR 조회가 실패했다 — "0건" 과 구분한다.
-  mergedPrCount: number | null;
+// 마감 한 줄의 재료 중 회고가 채우는 것.
+export interface EveningRetroContext {
   // 회고의 Keep 칸 — "오늘 무엇이 잘 됐나" 한 문장. 회고가 없으면 null.
   keep: string | null;
   // 회고 생성에 실패했을 때의 사유. 결과 줄은 그대로 내고 이 사실만 덧붙인다.
   retroFailure: string | null;
+}
+
+// 마감 한 줄의 재료 중 회고와 무관한 것(투자·넘어가는 것).
+export interface EveningCarryContext {
   invest: {
     returns: { accountName: string; returnRate: string }[];
     filled: EveningPaperCount;
@@ -35,6 +37,13 @@ export interface EveningDigestInput {
   } | null;
   carriedApprovalCount: number;
   incidents: MorningIncident[];
+}
+
+export interface EveningDigestInput
+  extends EveningRetroContext, EveningCarryContext {
+  firedAtKst: string;
+  // null = 머지 PR 조회가 실패했다 — "0건" 과 구분한다.
+  mergedPrCount: number | null;
 }
 
 const KEEP_MAX_LENGTH = 60;

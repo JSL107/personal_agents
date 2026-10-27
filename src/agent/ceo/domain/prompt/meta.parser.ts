@@ -1,14 +1,9 @@
 import { DomainStatus } from '../../../../common/exception/domain-status.enum';
 import { CeoException } from '../ceo.exception';
-import { MetaOutput } from '../ceo.type';
+import { MetaLlmOutput } from '../ceo.type';
 import { CeoErrorCode } from '../ceo-error-code.enum';
 
-// LLM 이 반환하는 부분 — contextDriftReport + docsQualityReport + finalSummary.
-// range / sourcePhaseRuns / schemaVersion 은 manager 가 채운다.
-export type MetaLlmOutput = Pick<
-  MetaOutput,
-  'contextDriftReport' | 'docsQualityReport' | 'finalSummary'
->;
+export type { MetaLlmOutput };
 
 export const parseMetaOutput = (raw: string): MetaLlmOutput => {
   const cleaned = stripCodeFence(raw.trim());

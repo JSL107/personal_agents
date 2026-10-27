@@ -9,6 +9,7 @@ import {
   FindingCategory,
   FindingSeverity,
   PullRequestReview,
+  PullRequestReviewCore,
   ReviewCommentDraft,
   ReviewFinding,
   RiskLevel,
@@ -173,7 +174,7 @@ const joinSummarySentences = (value: unknown): unknown => {
 
 const isPullRequestReviewShape = (
   value: unknown,
-): value is Omit<PullRequestReview, 'findings'> => {
+): value is PullRequestReviewCore => {
   if (typeof value !== 'object' || value === null) {
     return false;
   }
@@ -273,7 +274,7 @@ const toFinding = (value: unknown): ReviewFinding | null => {
 
 // 구버전 응답(findings 없음) 호환 — 3배열을 severity 로 매핑해 카드 원본을 만든다.
 const findingsFromLegacyArrays = (
-  review: Omit<PullRequestReview, 'findings'>,
+  review: PullRequestReviewCore,
 ): ReviewFinding[] => [
   ...review.mustFix.map((body) => legacyFinding(body, 'MUST_FIX')),
   ...review.niceToHave.map((body) => legacyFinding(body, 'NICE_TO_HAVE')),

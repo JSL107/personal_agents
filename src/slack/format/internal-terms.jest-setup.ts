@@ -86,10 +86,10 @@ const inspect = (source: string, value: unknown): void => {
   }
 };
 
-type Pick = (value: unknown) => unknown;
+type TextPicker = (value: unknown) => unknown;
 
 // task 결과에서는 Slack 에 실리는 문구만 본다. 카드 payload·판정 facet 에는 enum 값이 정상으로 들어 있다.
-const pickTaskText: Pick = (value) => {
+const pickTaskText: TextPicker = (value) => {
   const result = (value ?? {}) as Partial<AutopilotTaskResult>;
   return [
     result.summaryText,
@@ -109,7 +109,7 @@ const pickTaskText: Pick = (value) => {
 const inspectResult = (
   source: string,
   result: unknown,
-  pick: Pick = (value) => value,
+  pick: TextPicker = (value) => value,
 ): unknown => {
   if (result instanceof Promise) {
     void result.then(

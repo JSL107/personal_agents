@@ -153,11 +153,21 @@ interface SkippedGroup {
   reason: string;
 }
 
-interface ReplayReport {
+// 재채점이 저장된 보고서에서 읽는 부분. 전체 보고서(ReplayReport)가 이를 확장한다.
+interface SavedReplayReport {
+  options: ReplayOptions;
+  // 리뷰한 커밋을 원장에서 찾지 못해 재생하지 못한 미탐
+  unresolvedMisses: MissedFindingEntry[];
+  resolvedMisses: ResolvedMiss[];
+  missPathNotes: MissPathNote[];
+  groups: ReplayGroupReport[];
+  skipped: SkippedGroup[];
+}
+
+interface ReplayReport extends SavedReplayReport {
   generatedAt: string;
   // 재현 판정 규칙의 버전. 규칙이 다른 보고서끼리는 재현율을 비교할 수 없다.
   scorerVersion: number;
-  options: ReplayOptions;
   // 모든 회차를 합친 값. trials=1 이면 종전 보고서와 같다.
   score: { rejected: ReplayRate; fixed: ReplayRate; missed: ReplayRate };
   trials: {
@@ -183,12 +193,6 @@ interface ReplayReport {
     // 미탐 통과 판정은 이 값으로 한다(diff 안 잘린 그룹). 위 missed 는 합친 값이라 참고용.
     missedIntact?: BaselineComparison;
   };
-  // 리뷰한 커밋을 원장에서 찾지 못해 재생하지 못한 미탐
-  unresolvedMisses: MissedFindingEntry[];
-  resolvedMisses: ResolvedMiss[];
-  missPathNotes: MissPathNote[];
-  groups: ReplayGroupReport[];
-  skipped: SkippedGroup[];
 }
 
 @Module({
@@ -811,17 +815,7 @@ const readBaseline = (
 
 // 재채점할 보고서. 표본(결과 id)과 모델 출력 위치(agentRunId)만 있으면 되지만, 형식이 틀린 채로 읽으면
 // 일부 그룹이 조용히 빠진 재현율이 나오므로 그룹마다 확인한다.
-const readSavedReport = (
-  path: string,
-): Pick<
-  ReplayReport,
-  | 'options'
-  | 'groups'
-  | 'skipped'
-  | 'unresolvedMisses'
-  | 'resolvedMisses'
-  | 'missPathNotes'
-> => {
+const readSavedReport = (path: string): SavedReplayReport => {
   const report = JSON.parse(
     readFileSync(path, 'utf8'),
   ) as Partial<ReplayReport>;
