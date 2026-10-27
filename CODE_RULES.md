@@ -29,6 +29,8 @@
    - 예외: 어댑터 등록만을 계약으로 갖는 port 는 등록 대상 프레임워크의 타입을 시그니처에 노출할 수 있다.
      현재 해당하는 곳은 `src/slack/domain/port/slack-handler.port.ts` 하나이며, Bolt `App` 을 감싸는 자체 추상을 두면
      래퍼만 늘고 얻는 게 없어 의도적으로 허용한다. 새로 예외를 만들 때는 이 목록에 파일과 이유를 함께 적는다.
+   - I/O·프레임워크 런타임이 없는 순수 계산 라이브러리(`ts-pattern` 등)는 이 규칙의 대상이 아니다.
+     막으려는 것은 domain 이 HTTP·DB·큐 같은 실행 환경을 알게 되는 것이지, 분기 표현 도구가 아니다.
 2. Application Layer는 유스케이스를 조합하며 트랜잭션 경계를 가진다.
    트랜잭션의 시작/커밋/롤백은 Application Layer에서 선언하고, 실제 구현은 Infrastructure Layer(Unit of Work 등)에 위임한다.
 3. Infrastructure Layer는 DB, 외부 API, 메시징 등 구현 세부사항을 담당한다.
@@ -76,7 +78,7 @@
     - **명시 대상**: `Promise<RegisterResult>`, `Promise<ApiResponse<T>>`, `Promise<DTO>` 등 **사용자 정의 복합 타입(Custom Type)** 반환.
     - **생략 허용**: `void`/`Promise<void>`, `boolean`/`number`/`string` 등 **원시 타입(Primitive Type)** 반환.
     - **생략 허용**: `Promise<User>`, `Promise<Cohort>`, `Promise<User | null>`처럼 도메인 **엔티티(Entity)**를 그대로 반환하는 Repository/Service 메서드(추론이 자명한 경우).
-    - **생략 허용**: `Controller` (Interface Layer) 엔드포인트 라우터 핸들러 메서드(추론 및 Swagger 데코레이터 명세 우선).
+    - **생략 허용**: `Controller` (Interface Layer) 엔드포인트 라우터 핸들러 메서드(추론이 자명하고, 응답 형태는 전역 `ResponseInterceptor` 가 감싼다).
 
 13. NestJS 기본값과 동일한 `@HttpCode()` 데코레이터는 중복 선언하지 않는다.
     - 기본 상태 코드는 메서드 단위로만 정해진다. `@Post()` 는 201, `@Get()/@Put()/@Delete()/@Patch()` 등 그 외는 200 이다.
@@ -208,7 +210,8 @@ src/
 
 ### 작성 기준
 
-1. 테스트는 `Given-When-Then` 구조로 작성한다.
+1. `it()` 제목에 조건과 기대 결과를 한국어 문장으로 쓴다. (예: `it('blocker 가 null 이면 Blocker 라인을 출력하지 않는다')`)
+   준비 → 실행 → 확인 순서로 쓰되, `// Given` 같은 단계 주석은 강제하지 않는다. 케이스가 왜 필요한지는 주석으로 남긴다.
 2. UseCase 테스트에서 외부 의존성(Repository, 외부 도메인 서비스)은 Mock/Stub으로 처리한다.
 3. 회귀 버그는 재발 방지 테스트를 우선 추가한다.
 
@@ -324,7 +327,7 @@ type PaginationMeta = {
 
 1. subject는 명령형 현재 시제로 작성한다. (`사용자 추가`, `인증 버그 수정`)
 2. subject는 50자 이내로 작성한다.
-3. Prettier/ESLint를 통과하지 못하는 코드는 커밋하지 않는다(pre-commit hook으로 강제).
+3. Prettier/ESLint를 통과하지 못하는 코드는 커밋하지 않는다. 커밋 시점 hook 은 없으므로 커밋 전에 `pnpm lint:check` 를 직접 돌린다. PR 에서는 CI(`.github/workflows/ci.yml`)가 강제한다.
 
 ---
 
@@ -364,7 +367,7 @@ type PaginationMeta = {
 3. SQL 쿼리는 ORM의 파라미터 바인딩을 사용한다. Raw query에 사용자 입력을 직접 삽입하지 않는다(SQL Injection 방지).
 4. 응답에서 민감 정보(비밀번호 해시, 내부 ID 체계, 스택 트레이스 등)를 노출하지 않는다.
 5. 시크릿/API 키는 코드와 로그에서 마스킹한다.
-6. 패키지 취약점은 주기적으로 `npm audit`으로 점검한다.
+6. 패키지 취약점은 주기적으로 `pnpm audit`으로 점검한다. (이 레포는 pnpm 만 쓰며 `package-lock.json` 이 없어 `npm audit` 은 실패한다.)
 
 ---
 
@@ -372,7 +375,7 @@ type PaginationMeta = {
 
 1. **인프라 종속성 분리**: 외부 HTML 문서 구조(DOM 제어, Cheerio 쿼리 등) 및 Puppeteer/Axios 등의 라이브러리에 의존하는 네트워크 코드는 **반드시 Infrastructure Layer**에만 위치해야 한다. 도메인 레이어는 크롤링 수단이 무엇인지 몰라야 한다.
 2. **리소스 관리 (메모리 릭 방지)**: Puppeteer 사용 시 브라우저나 페이지 인스턴스는 사용 시 무조건 `try-finally` 구문을 활용하여 `close()`를 명시적으로 호출해 메모리 누수를 방지한다.
-3. **차단 우회 및 재시도 (Rate Limit/Retry)**: 타겟 서버의 차단을 피하기 위해 BullMQ의 `backoff` 설정(지수 백오프)과 재시도(retries)를 활용한다. 429(Too Many Requests)나 일시적 500 에러는 재시도 처리하고, 404/수정블가 에러 등은 즉시 실패 처리한다.
+3. **차단 우회 및 재시도 (Rate Limit/Retry)**: 타겟 서버의 차단을 피하기 위해 BullMQ의 `backoff` 설정(지수 백오프)과 재시도(retries)를 활용한다. 429(Too Many Requests)나 일시적 500 에러는 재시도 처리하고, 404 처럼 재시도해도 결과가 같은 에러는 즉시 실패 처리한다.
 4. **스레드/워커 동시성 관리**: 스크래핑 워커(Consumer)는 대상 서버에 무리를 주지 않도록 `@Processor`의 동시 처리 수(concurrency)를 서비스 제약에 맞게 조절한다.
 5. **데이터 정합성 보장(Idempotency)**: 동일한 URL에 대한 크롤링 작업은 여러번 큐에서 실행되어도 DB에서 중복 저장되지 않도록 멱등성(Idempotency)을 보장하는 방식(예: UPSERT)으로 작성해야 한다.
 

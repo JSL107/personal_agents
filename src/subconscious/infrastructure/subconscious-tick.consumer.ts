@@ -4,17 +4,17 @@ import { Job } from 'bullmq';
 
 import { ObservedWorkerHost } from '../../common/queue/observed-worker-host';
 import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
+import { SubconsciousEngine } from '../application/subconscious.engine';
 import {
   SUBCONSCIOUS_TICK_QUEUE,
   SubconsciousTickJobData,
 } from '../domain/subconscious-tick.type';
-import { SubconsciousEngine } from './subconscious.engine';
 
 // tick job → SubconsciousEngine.runTick(owner, now).
 // 실패 시 rethrow → BullMQ 재시도 (attempts=2, exponential backoff).
 @Processor(SUBCONSCIOUS_TICK_QUEUE, LONG_RUNNING_WORKER_OPTIONS)
-export class SubconsciousTickProcessor extends ObservedWorkerHost {
-  private readonly logger = new Logger(SubconsciousTickProcessor.name);
+export class SubconsciousTickConsumer extends ObservedWorkerHost {
+  private readonly logger = new Logger(SubconsciousTickConsumer.name);
 
   constructor(private readonly engine: SubconsciousEngine) {
     super();

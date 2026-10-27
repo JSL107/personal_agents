@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 
-import { plainDateToUtcDate } from './parse-due-date';
-import { PlainDate } from './schedule.type';
+import { plainDateToUtcDate } from '../domain/parse-due-date';
+import { PlainDate } from '../domain/schedule.type';
 
 export const parseDateParam = (value: string, label: string): Date => {
   const parsed = new Date(value);

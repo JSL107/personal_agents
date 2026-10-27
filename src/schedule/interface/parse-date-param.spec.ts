@@ -1,5 +1,5 @@
+import { plainDateToUtcDate } from '../domain/parse-due-date';
 import { parseDateParam, parsePlainDateParam } from './parse-date-param';
-import { plainDateToUtcDate } from './parse-due-date';
 
 describe('parseDateParam', () => {
   it('정상 날짜를 통과시킨다', () => {
