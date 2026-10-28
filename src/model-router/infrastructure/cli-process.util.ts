@@ -68,10 +68,7 @@ export const buildSafeChildEnv = ({
 
   // codex 인증 보존: parent 의 CODEX_HOME 을 명시 전달한다.
   // (HOME 을 throwaway 로 바꿨기 때문에 CLI 가 기본 추론하면 인증 파일을 못 찾는다)
-  const codexHome = process.env.CODEX_HOME ?? buildDefaultAuthDir('.codex');
-  if (codexHome) {
-    env.CODEX_HOME = codexHome;
-  }
+  env.CODEX_HOME = getCodexHomeDir();
 
   // claude 는 `CLAUDE_CONFIG_DIR` **기본값을 주입하면 안 된다** — codex 와 정반대다.
   // macOS 에서 claude CLI 의 구독 자격증명은 Keychain 에 있고 `~/.claude/.credentials.json` 은 존재하지
@@ -135,3 +132,8 @@ export const killProcessTree = (pid: number | undefined): void => {
     }
   }
 };
+
+// codex 인증·바이너리(packages)가 사는 디렉토리. 자식 env(CODEX_HOME)와 권한 프로필(packages 읽기 허용)이
+// 같은 값을 봐야 하므로 한 곳에서 정한다.
+export const getCodexHomeDir = (): string =>
+  process.env.CODEX_HOME ?? `${getRealHomeDir()}/.codex`;

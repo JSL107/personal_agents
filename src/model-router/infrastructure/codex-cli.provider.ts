@@ -1,9 +1,10 @@
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 
 import {
   LLM_CLI_MAX_ATTEMPTS,
@@ -15,13 +16,19 @@ import {
 } from '../../common/llm/llm-timeout.constant';
 import { redactPii } from '../../common/util/pii-redaction.util';
 import {
+  CodexReadLockResult,
   CompletionRequest,
   CompletionResponse,
   ModelProviderName,
   OutputJsonSchema,
 } from '../domain/model-router.type';
 import { ModelProviderPort } from '../domain/port/model-provider.port';
-import { buildSafeChildEnv, killProcessTree } from './cli-process.util';
+import {
+  buildSafeChildEnv,
+  getCodexHomeDir,
+  getRealHomeDir,
+  killProcessTree,
+} from './cli-process.util';
 
 const CODEX_EXECUTABLE = 'codex';
 // 공유 상수 — worker lockDuration(common/queue/worker-options.constant.ts) 도 이 값을 참조한다.
@@ -241,7 +248,8 @@ const delay = (ms: number): Promise<void> =>
 // API key 없이 개인 구독 쿼터로 PM / Work Reviewer 에이전트를 굴리기 위한 경로다.
 // - 출력은 --output-last-message 로 임시 파일에 떨어뜨려 파싱 안정성을 확보 (stdout 은 진행 로그 섞임).
 // - 프롬프트는 argv 가 아니라 **stdin 으로 전달** — argv 는 `ps aux` 로 host 의 다른 프로세스가 볼 수 있어 Slack 입력이 유출될 수 있다.
-// - cwd / HOME 모두 throwaway 임시 디렉토리로 격리해 prompt-injected agent 의 repo / ~/.ssh 접근을 차단.
+// - cwd / HOME 은 throwaway 임시 디렉토리. 기본 위치만 바꿀 뿐이고, prompt-injected agent 의 repo / ~/.ssh
+//   읽기 차단은 buildCodexPermissionArgs 의 권한 프로필이 맡는다.
 
 // `--ephemeral` 로 띄우면 스레드가 저장소에 남지 않는데, codex 는 그 상태에서도 collab(서브에이전트)
 // 도구를 모델에게 그대로 노출한다. 모델이 full-history fork 를 시도하면 부모 스레드를 못 찾아
@@ -256,8 +264,8 @@ const delay = (ms: number): Promise<void> =>
 // **강제 게이트가 아니라 완화다** — "collab 으로 서브에이전트를 띄워라" 는 명시 유도에도 억제가
 // 이기는 것까지는 확인했지만, 프롬프트 준수는 보장이 아니므로 timeout 방어를 걷어내면 안 된다.
 //
-// 네트워크 차단도 같은 자리에서 알린다. 아래 buildCodexArgs 가 `--sandbox read-only` 로 띄우는데,
-// 그 정책은 모델이 생성한 셸 명령의 외부 통신을 막는다. 모델은 그 사실을 모른 채 입력에 없는 값을
+// 네트워크 차단도 같은 자리에서 알린다. 아래 buildCodexPermissionArgs 의 권한 프로필은 모델이 생성한
+// 셸 명령의 외부 통신을 막는다. 모델은 그 사실을 모른 채 입력에 없는 값을
 // 보충하려고 `curl`/`gh` 를 시도하고, DNS 부터 실패하는 호출을 반복하다 timeout(300s)을 통째로
 // 태운다 (실측 2026-09-11, career-mate PR 회고: `curl .../pulls/550` → `Could not resolve host`).
 // 프롬프트에 값을 채워 주는 것이 1차 방어이고(호출자 책임), 이 문장은 그것이 빠진 회차에서
@@ -282,12 +290,116 @@ export const buildCodexPrompt = ({
   return `[System Instructions]\n${instructions}\n\n[User]\n${prompt}`;
 };
 
+// 모델이 실행하는 셸 명령의 읽기 범위를 잠그는 codex 권한 프로필.
+//
+// `--sandbox read-only` 는 쓰기·네트워크만 막고 디스크 전체 읽기를 허용한다 — 프롬프트 주입된 모델이
+// 이대리 레포의 .env, /private/tmp 아래 worktree 의 .env 를 읽을 수 있었다 (2026-10-28 codex-cli 0.164.0
+// 실측. cwd·throwaway HOME 은 기본 위치만 바꿀 뿐 절대경로 읽기를 막지 못한다).
+// 실측으로 확인한 규칙 (docs/superpowers/specs/2026-10-28-review-repo-read-design.md §2-2):
+// - `--sandbox` 와 함께 넘기면 프로필이 조용히 무시되고 전체 읽기로 돌아간다. 둘을 섞지 않는다.
+// - `:minimal` 은 /private/tmp 를 읽기 허용하므로 deny 를 명시한다. 더 구체적인 read 항목은 deny 안에서도
+//   읽힌다 — TMPDIR 이 /private/tmp 이거나 비어 tmpdir() 가 /tmp 여도 workDir 은 읽히고 형제 경로는
+//   막힌다 (2026-10-28 실측, /tmp 심링크 경유 우회도 차단).
+// - codex 바이너리 경로를 열지 않으면 세션 생성이 `sandbox-exec: execvp() … Operation not permitted` 로
+//   죽는다. CODEX_HOME 전체가 아니라 packages 만 연다 (auth.json 보호).
+// - 경로는 실제 HOME 기준 절대경로로 쓴다. 자식의 HOME 은 throwaway 라 `~` 를 쓰면 엉뚱한 곳으로 풀린다.
+// 프로필이 실제로 먹는지는 verifyCodexReadLock 이 부팅 때 확인한다.
+export const CODEX_PERMISSION_PROFILE = 'idaeri_read_lock';
+export const CODEX_DENIED_READ_ROOT = '/private/tmp';
+
+export const buildCodexPermissionArgs = ({
+  workDir,
+  extraReadableRoots = [],
+}: {
+  workDir: string;
+  extraReadableRoots?: readonly string[];
+}): string[] => {
+  const readableRoots = [
+    workDir,
+    ...extraReadableRoots,
+    `${getRealHomeDir()}/.local/bin`,
+    `${getCodexHomeDir()}/packages`,
+  ];
+  // TOML 인라인 테이블 키 — JSON 문자열 이스케이프가 TOML basic string 과 호환된다.
+  const entries = [
+    '":minimal"="read"',
+    ...readableRoots.map((root) => `${JSON.stringify(root)}="read"`),
+    `${JSON.stringify(CODEX_DENIED_READ_ROOT)}="deny"`,
+  ];
+  return [
+    '-c',
+    `default_permissions="${CODEX_PERMISSION_PROFILE}"`,
+    '-c',
+    `permissions.${CODEX_PERMISSION_PROFILE}.filesystem={${entries.join(',')}}`,
+  ];
+};
+
+const READ_LOCK_CHECK_TIMEOUT_MS = 15_000;
+
+// 프로필이 조용히 무시되는 실패(위 `--sandbox` 혼용, CLI 버전 변경)를 잡는 canary 점검.
+// `codex sandbox` 로 같은 권한 인자를 걸고 cat 을 두 번 돌린다 (모델 호출 없음).
+// - 차단 영역의 canary 파일은 읽히면 안 된다.
+// - readablePath 는 읽혀야 한다 — 이 대조군이 없으면 샌드박스가 아예 안 뜬 경우(execvp 거부 등)도
+//   "막혔다" 로 오판한다.
+export const verifyCodexReadLock = async ({
+  permissionArgs,
+  readablePath,
+}: {
+  permissionArgs: readonly string[];
+  readablePath: string;
+}): Promise<CodexReadLockResult> => {
+  const canaryDir = await mkdtemp(
+    join(CODEX_DENIED_READ_ROOT, 'idaeri-canary-'),
+  );
+  const canaryFile = join(canaryDir, 'canary.txt');
+  const catInSandbox = async (path: string): Promise<boolean> => {
+    try {
+      // promisify 를 호출 시점에 한다 — 모듈 로드 때 붙잡으면 테스트가 execFile 을 갈아끼울 수 없다.
+      await promisify(execFile)(
+        CODEX_EXECUTABLE,
+        ['sandbox', ...permissionArgs, '--', 'cat', path],
+        {
+          env: buildSafeChildEnv({ cwd: canaryDir, homeDir: canaryDir }),
+          timeout: READ_LOCK_CHECK_TIMEOUT_MS,
+        },
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  try {
+    await writeFile(canaryFile, 'canary', 'utf-8');
+    const allowedPathReadable = await catInSandbox(readablePath);
+    if (!allowedPathReadable) {
+      return {
+        locked: false,
+        reason: `허용 경로도 읽지 못함 — 샌드박스 기동 실패 또는 codex 미설치 (${readablePath})`,
+      };
+    }
+    const canaryReadable = await catInSandbox(canaryFile);
+    if (canaryReadable) {
+      return {
+        locked: false,
+        reason: `차단 경로가 읽힘 — 권한 프로필이 무시됨 (${canaryFile})`,
+      };
+    }
+    return { locked: true };
+  } finally {
+    await rm(canaryDir, { recursive: true, force: true });
+  }
+};
+
 export const buildCodexArgs = ({
   outputFile,
+  permissionArgs,
   schemaFile,
   imagePaths,
 }: {
   outputFile: string;
+  // buildCodexPermissionArgs 결과. `--sandbox` 플래그와 함께 쓰면 무시되므로 여기서 대신 건다.
+  permissionArgs: readonly string[];
   // 지정 시 codex 가 이 스키마를 벗어난 최종 응답을 만들지 못한다.
   // 파일이 없거나 JSON 으로 안 읽히면 codex 는 모델 호출 전에 exit 1 로 끊는다(실측) —
   // 스키마를 걸었다고 믿는데 조용히 안 걸리는 상태는 생기지 않는다.
@@ -296,8 +408,7 @@ export const buildCodexArgs = ({
 }): string[] => [
   'exec',
   '--skip-git-repo-check',
-  '--sandbox',
-  'read-only',
+  ...permissionArgs,
   '--ephemeral',
   // 사용자 `~/.codex/config.toml` 을 자식 codex 에서 아예 읽지 않는다 (auth 는 CODEX_HOME 유지).
   // buildSafeChildEnv 가 구독 인증을 살리려고 CODEX_HOME 을 실경로로 넘기는 대가로 설정 전체가
@@ -322,12 +433,20 @@ export const buildCodexArgs = ({
 ];
 
 @Injectable()
-export class CodexCliProvider implements ModelProviderPort {
+export class CodexCliProvider
+  implements ModelProviderPort, OnApplicationBootstrap
+{
   readonly name = ModelProviderName.CHATGPT;
   private readonly logger = new Logger(CodexCliProvider.name);
   private readonly timeoutMs: number = CODEX_DEFAULT_TIMEOUT_MS;
   private quotaBlockedUntilMs: number | null = null;
   private quotaBlockedResetHint: string | undefined;
+
+  // 부팅을 막지 않게 기다리지 않는다. 실패해도 호출은 계속한다 — 잠금이 안 먹으면 잠금 도입 전과 같은
+  // 상태일 뿐이고, codex 를 막으면 전 에이전트가 이 잠금 밖의 claude 폴백으로 옮겨 갈 뿐이다.
+  onApplicationBootstrap(): void {
+    void this.checkReadLock();
+  }
 
   async complete(request: CompletionRequest): Promise<CompletionResponse> {
     let lastError: unknown;
@@ -385,6 +504,32 @@ export class CodexCliProvider implements ModelProviderPort {
     }
   }
 
+  private async checkReadLock(): Promise<void> {
+    const workDir = await mkdtemp(join(tmpdir(), 'idaeri-codex-'));
+    try {
+      const readablePath = join(workDir, 'probe.txt');
+      await writeFile(readablePath, 'probe', 'utf-8');
+      const result = await verifyCodexReadLock({
+        permissionArgs: buildCodexPermissionArgs({ workDir }),
+        readablePath,
+      });
+      if (result.locked) {
+        this.logger.log(
+          'codex 읽기 범위 잠금 확인 (canary 차단, workDir 허용)',
+        );
+        return;
+      }
+      this.logger.error(
+        `codex 읽기 범위 잠금 점검 실패 — 모델이 디스크 전체를 읽을 수 있다: ${result.reason}`,
+      );
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`codex 읽기 범위 잠금 점검 불가: ${message}`);
+    } finally {
+      await rm(workDir, { recursive: true, force: true });
+    }
+  }
+
   private async completeOnce(
     request: CompletionRequest,
     timeoutMs: number = this.timeoutMs,
@@ -404,6 +549,7 @@ export class CodexCliProvider implements ModelProviderPort {
       );
       const args = buildCodexArgs({
         outputFile,
+        permissionArgs: buildCodexPermissionArgs({ workDir }),
         schemaFile,
         imagePaths: request.imagePaths,
       });

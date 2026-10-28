@@ -1,4 +1,10 @@
+import * as childProcess from 'node:child_process';
+import * as fsPromises from 'node:fs/promises';
 import { writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { basename, join } from 'node:path';
+
+import { Logger } from '@nestjs/common';
 
 import {
   CompletionRequest,
@@ -7,8 +13,11 @@ import {
 } from '../domain/model-router.type';
 import {
   buildCodexArgs,
+  buildCodexPermissionArgs,
   buildCodexPrompt,
+  CODEX_DENIED_READ_ROOT,
   CODEX_MODEL,
+  CODEX_PERMISSION_PROFILE,
   CODEX_REASONING_EFFORT,
   CodexCliProvider,
   CodexQuotaExceededException,
@@ -18,6 +27,7 @@ import {
   computeQuotaBlockUntilMs,
   detectCodexQuotaExhaustion,
   isRetryableCodexError,
+  verifyCodexReadLock,
 } from './codex-cli.provider';
 
 type ProviderWithCompleteOnce = {
@@ -87,13 +97,67 @@ describe('buildCodexPrompt', () => {
   });
 });
 
+const PERMISSION_ARGS = [
+  '-c',
+  'default_permissions="p"',
+  '-c',
+  'permissions.p.filesystem={}',
+];
+
+describe('buildCodexPermissionArgs', () => {
+  const originalHome = process.env.HOME;
+  const originalCodexHome = process.env.CODEX_HOME;
+
+  beforeEach(() => {
+    process.env.HOME = '/Users/me';
+    delete process.env.CODEX_HOME;
+  });
+
+  afterEach(() => {
+    process.env.HOME = originalHome;
+    if (originalCodexHome === undefined) {
+      delete process.env.CODEX_HOME;
+    } else {
+      process.env.CODEX_HOME = originalCodexHome;
+    }
+  });
+
+  it('프로필 선택과 파일시스템 규칙을 -c 짝으로 넘긴다', () => {
+    expect(buildCodexPermissionArgs({ workDir: '/var/w' })).toEqual([
+      '-c',
+      `default_permissions="${CODEX_PERMISSION_PROFILE}"`,
+      '-c',
+      `permissions.${CODEX_PERMISSION_PROFILE}.filesystem={":minimal"="read","/var/w"="read","/Users/me/.local/bin"="read","/Users/me/.codex/packages"="read","${CODEX_DENIED_READ_ROOT}"="deny"}`,
+    ]);
+  });
+
+  it('extraReadableRoots 를 읽기 허용에 더하고, CODEX_HOME 이 있으면 그 packages 만 연다', () => {
+    process.env.CODEX_HOME = '/opt/codex-home';
+    const [, , , filesystem] = buildCodexPermissionArgs({
+      workDir: '/var/w',
+      extraReadableRoots: ['/var/snapshot'],
+    });
+    expect(filesystem).toContain('"/var/snapshot"="read"');
+    expect(filesystem).toContain('"/opt/codex-home/packages"="read"');
+    expect(filesystem).not.toContain('"/opt/codex-home"="read"');
+  });
+});
+
 describe('buildCodexArgs', () => {
+  it('--sandbox 를 넘기지 않는다 (함께 넘기면 권한 프로필이 조용히 무시된다)', () => {
+    const args = buildCodexArgs({
+      outputFile: '/tmp/out.txt',
+      permissionArgs: PERMISSION_ARGS,
+    });
+    expect(args).not.toContain('--sandbox');
+    expect(args).not.toContain('-s');
+  });
+
   it('이미지가 없거나 빈 배열이면 기존 argv 를 그대로 유지한다', () => {
     const expected = [
       'exec',
       '--skip-git-repo-check',
-      '--sandbox',
-      'read-only',
+      ...PERMISSION_ARGS,
       '--ephemeral',
       '--ignore-user-config',
       '-c',
@@ -105,15 +169,25 @@ describe('buildCodexArgs', () => {
       '-o',
       '/tmp/out.txt',
     ];
-    expect(buildCodexArgs({ outputFile: '/tmp/out.txt' })).toEqual(expected);
     expect(
-      buildCodexArgs({ outputFile: '/tmp/out.txt', imagePaths: [] }),
+      buildCodexArgs({
+        outputFile: '/tmp/out.txt',
+        permissionArgs: PERMISSION_ARGS,
+      }),
+    ).toEqual(expected);
+    expect(
+      buildCodexArgs({
+        outputFile: '/tmp/out.txt',
+        permissionArgs: PERMISSION_ARGS,
+        imagePaths: [],
+      }),
     ).toEqual(expected);
   });
 
   it('이미지 두 장을 전달 순서대로 -o 앞에 붙인다', () => {
     const args = buildCodexArgs({
       outputFile: '/tmp/out.txt',
+      permissionArgs: PERMISSION_ARGS,
       imagePaths: ['/tmp/a.jpg', '/tmp/b.png'],
     });
     expect(args.slice(-6)).toEqual([
@@ -126,24 +200,32 @@ describe('buildCodexArgs', () => {
     ]);
   });
 
-  it('read-only 샌드박스 / ephemeral / 출력 파일 경로 플래그를 포함한다', () => {
-    const args = buildCodexArgs({ outputFile: '/tmp/out.txt' });
+  it('권한 프로필 / ephemeral / 출력 파일 경로 플래그를 포함한다', () => {
+    const args = buildCodexArgs({
+      outputFile: '/tmp/out.txt',
+      permissionArgs: PERMISSION_ARGS,
+    });
     expect(args[0]).toBe('exec');
     expect(args).toContain('--skip-git-repo-check');
-    expect(args).toContain('--sandbox');
-    expect(args).toContain('read-only');
+    expect(args).toEqual(expect.arrayContaining(PERMISSION_ARGS));
     expect(args).toContain('--ephemeral');
     expect(args).toContain('-o');
     expect(args).toContain('/tmp/out.txt');
   });
 
   it('사용자 config.toml 을 읽지 않는다 (config 유래 MCP 서버·플러그인·hook 차단)', () => {
-    const args = buildCodexArgs({ outputFile: '/tmp/out.txt' });
+    const args = buildCodexArgs({
+      outputFile: '/tmp/out.txt',
+      permissionArgs: PERMISSION_ARGS,
+    });
     expect(args).toContain('--ignore-user-config');
   });
 
   it('config 를 무시해도 모델 설정은 -c 와 짝지어 재주입한다 (effort 가 none 으로 떨어지지 않게)', () => {
-    const args = buildCodexArgs({ outputFile: '/tmp/out.txt' });
+    const args = buildCodexArgs({
+      outputFile: '/tmp/out.txt',
+      permissionArgs: PERMISSION_ARGS,
+    });
     // 값만 배열에 있어도 앞에 `-c` 가 없으면 override 가 먹지 않으므로 짝까지 확인한다.
     const modelIndex = args.indexOf(`model="${CODEX_MODEL}"`);
     expect(modelIndex).toBeGreaterThan(0);
@@ -157,20 +239,27 @@ describe('buildCodexArgs', () => {
   });
 
   it('positional prompt 를 argv 로 넘기지 않는다 (stdin 전달이라 `--` 등 terminator 불필요)', () => {
-    const args = buildCodexArgs({ outputFile: '/tmp/out.txt' });
+    const args = buildCodexArgs({
+      outputFile: '/tmp/out.txt',
+      permissionArgs: PERMISSION_ARGS,
+    });
     // 마지막 항목은 -o 뒤의 outputFile 이어야 한다.
     expect(args[args.length - 1]).toBe('/tmp/out.txt');
     expect(args).not.toContain('--');
   });
 
   it('schemaFile 이 없으면 --output-schema 를 붙이지 않는다 (기존 호출 인자 불변)', () => {
-    const args = buildCodexArgs({ outputFile: '/tmp/out.txt' });
+    const args = buildCodexArgs({
+      outputFile: '/tmp/out.txt',
+      permissionArgs: PERMISSION_ARGS,
+    });
     expect(args).not.toContain('--output-schema');
   });
 
   it('schemaFile 을 주면 --output-schema 와 짝지어 넘긴다', () => {
     const args = buildCodexArgs({
       outputFile: '/tmp/out.txt',
+      permissionArgs: PERMISSION_ARGS,
       schemaFile: '/tmp/schema.json',
     });
     // 값만 있고 앞에 플래그가 없으면 codex 가 positional prompt 로 읽어버리므로 짝까지 확인한다.
@@ -699,5 +788,96 @@ describe('CodexCliProvider.probeReadiness (절전 직후 준비 확인)', () => 
       expect.objectContaining({ prompt: expect.any(String) }),
       30_000,
     );
+  });
+});
+
+type SandboxCatCallback = (error: Error | null, result?: object) => void;
+
+// 경로별로 sandbox cat 성공 여부를 정한다. 마지막 인자가 cat 대상 경로다.
+const mockSandboxCat = (isReadable: (path: string) => boolean): string[] => {
+  const catPaths: string[] = [];
+  // canary 는 macOS 의 /private/tmp 에 만든다. CI(Linux)에는 그 경로가 없으니 OS 임시 폴더로 돌린다.
+  const realMkdtemp = fsPromises.mkdtemp;
+  jest
+    .spyOn(fsPromises, 'mkdtemp')
+    .mockImplementation((prefix) =>
+      realMkdtemp(join(tmpdir(), basename(String(prefix)))),
+    );
+  // jest setup 이 provider 를 먼저 로드하므로 jest.mock 이 아니라 모듈 속성을 갈아끼운다.
+  jest.spyOn(childProcess, 'execFile').mockImplementation(((
+    _file: string,
+    args: string[],
+    _options: object,
+    callback: SandboxCatCallback,
+  ) => {
+    const path = args[args.length - 1];
+    catPaths.push(path);
+    if (isReadable(path)) {
+      callback(null, { stdout: '', stderr: '' });
+    } else {
+      callback(new Error('Operation not permitted'));
+    }
+  }) as unknown as typeof childProcess.execFile);
+  return catPaths;
+};
+
+describe('verifyCodexReadLock', () => {
+  const readablePath = '/var/w/probe.txt';
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('허용 경로는 읽히고 canary 는 막히면 locked 다', async () => {
+    const catPaths = mockSandboxCat((path) => path === readablePath);
+    await expect(
+      verifyCodexReadLock({ permissionArgs: ['-c', 'x'], readablePath }),
+    ).resolves.toEqual({ locked: true });
+    expect(catPaths[0]).toBe(readablePath);
+    expect(catPaths[1]).toMatch(/canary\.txt$/);
+    expect(fsPromises.mkdtemp).toHaveBeenCalledWith(
+      join(CODEX_DENIED_READ_ROOT, 'idaeri-canary-'),
+    );
+  });
+
+  it('canary 가 읽히면 프로필이 무시된 것으로 판정한다', async () => {
+    mockSandboxCat(() => true);
+    const result = await verifyCodexReadLock({
+      permissionArgs: [],
+      readablePath,
+    });
+    expect(result).toMatchObject({ locked: false });
+    expect(result.locked === false && result.reason).toContain(
+      '차단 경로가 읽힘',
+    );
+  });
+
+  it('허용 경로도 못 읽으면 canary 를 보지 않고 샌드박스 기동 실패로 판정한다', async () => {
+    const catPaths = mockSandboxCat(() => false);
+    const result = await verifyCodexReadLock({
+      permissionArgs: [],
+      readablePath,
+    });
+    expect(result.locked === false && result.reason).toContain(
+      '허용 경로도 읽지 못함',
+    );
+    // canary 를 이어서 보면 "막혔다" 가 나와 통과로 오판할 수 있다.
+    expect(catPaths).toEqual([readablePath]);
+  });
+
+  it('부팅 점검이 실패해도 예외 없이 ERROR 로그만 남긴다 (fail-open 은 의도)', async () => {
+    mockSandboxCat(() => false);
+    const errorSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+    const provider = new CodexCliProvider() as unknown as {
+      checkReadLock: () => Promise<void>;
+    };
+
+    await expect(provider.checkReadLock()).resolves.toBeUndefined();
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('codex 읽기 범위 잠금 점검 실패'),
+    );
+    errorSpy.mockRestore();
   });
 });
