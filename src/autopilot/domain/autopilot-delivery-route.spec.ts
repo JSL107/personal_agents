@@ -59,6 +59,7 @@ describe('AUTOPILOT_DELIVERY_ROUTE', () => {
         .sort(),
     ).toEqual(consoleTaskIds.sort());
     expect(resolveAutopilotDeliveryRoute('paper-score')).toBe('slack');
+    expect(resolveAutopilotDeliveryRoute('goal-checkin')).toBe('slack');
     // 저녁 회고의 pm_plan 판정 버튼은 아침 발송 원장에 morning-briefing 이 SENT 로 있어야 붙는다.
     expect(resolveAutopilotDeliveryRoute('morning-briefing')).toBe('slack');
     // 저녁 마감 한 통과 판정 버튼(retro·pm_plan)이 실리는 자리.

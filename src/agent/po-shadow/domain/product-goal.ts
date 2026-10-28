@@ -1,19 +1,33 @@
 import { parseDueDate } from '../../../schedule/domain/parse-due-date';
 import { PlainDate } from '../../../schedule/domain/schedule.type';
 
-// 활성 목표 상한. 선언 검사·applier 재검사·안내 문구가 모두 이 값 하나를 읽는다 — 숫자를 따로
+// 활성 TASK 목표 상한. 선언 검사·applier 재검사·안내 문구가 모두 이 값 하나를 읽는다 — 숫자를 따로
 // 적으면 한쪽만 바뀌었을 때 "3개까지" 라고 안내하면서 4개째를 저장하게 된다.
 export const MAX_ACTIVE_PRODUCT_GOALS = 3;
-// 붙은 진행 없이 이 일수가 지나면 "아직 유효한가요?" 를 묻는다.
-export const STALE_GOAL_DAYS = 30;
+export const MAX_ACTIVE_DIRECTION_GOALS = 2;
+export const GOAL_PREVIEW_TTL_MS = 60 * 60 * 1_000;
 // 기한까지 이 일수 이하이고 붙은 열린 항목이 있으면 GOAL_DEADLINE_RISK 를 낸다. 임의값이다.
 export const GOAL_DEADLINE_RISK_DAYS = 7;
+
+// 목표 종류의 단일 출처. 타입·모델 출력 스키마·저장소 읽기·payload 검사가 모두 이 배열을 읽는다 —
+// 값을 곳곳에 따로 적으면 한 곳만 바뀌었을 때 컴파일러가 못 잡는 불일치가 생긴다.
+export const PRODUCT_GOAL_KINDS = ['DIRECTION', 'TASK'] as const;
+export type ProductGoalKind = (typeof PRODUCT_GOAL_KINDS)[number];
+
+export const isProductGoalKind = (value: unknown): value is ProductGoalKind =>
+  PRODUCT_GOAL_KINDS.some((kind) => kind === value);
+
+// null·빈 문자열·공백만 있는 문자열을 "비었다" 로 본다.
+export const isBlank = (value: string | null): boolean =>
+  value === null || value.trim() === '';
 
 export interface ProductGoalRecord {
   id: number;
   slackUserId: string;
+  kind: ProductGoalKind;
   title: string;
-  successCriterion: string;
+  why: string | null;
+  successCriterion: string | null;
   keywords: string[];
   // @db.Date 라 UTC 자정으로 온다.
   dueDate: Date | null;
@@ -23,7 +37,9 @@ export interface ProductGoalRecord {
 
 // 저장 전 목표 초안. 확인 카드 payload 로 그대로 실리므로 JSON 으로 왕복 가능한 값만 둔다.
 export interface ProductGoalDraft {
+  kind: ProductGoalKind;
   title: string;
+  why: string | null;
   successCriterion: string | null;
   keywords: string[];
   // YYYY-MM-DD. 없으면 null.
@@ -41,13 +57,13 @@ export type ProductGoalCommand =
 export type GoalDeclarationProblem =
   | 'MISSING_TITLE'
   | 'MISSING_CRITERION'
-  | 'UNMEASURABLE_CRITERION'
   | 'MISSING_KEYWORDS'
   | 'UNREADABLE_DUE_DATE'
   // 같은 제목의 활성 목표가 이미 있다. 받아 주면 닫기가 정확 일치 둘을 모호하다고 거절해
   // 어떤 자연어로도 닫을 수 없는 목표가 슬롯을 영구히 차지한다(#773 리뷰).
   | 'DUPLICATE_TITLE'
-  | 'ACTIVE_LIMIT_REACHED';
+  | 'ACTIVE_LIMIT_REACHED'
+  | 'DIRECTION_LIMIT_REACHED';
 
 const SLACK_MENTION = /<@[^>]+>/g;
 const DECLARE_PATTERN = /(?:분기|제품)\s*목표\s*(?:는|은|:)\s*([\s\S]+)$/;
@@ -77,13 +93,6 @@ const GENERIC_TITLE_WORDS = new Set([
 ]);
 const MIN_KEYWORD_LENGTH = 2;
 
-// ponytail: 판정 가능성을 "숫자 또는 완료형 낱말" 로만 본다. "응답 품질을 사용자 불만 없게" 처럼
-// 숫자·표지 없이도 판정 가능한 문장은 되물음을 받는다 — 되묻기 한 번이 비용이고, 반대로 "개선하기" 가
-// 저장되는 쪽은 목표가 영원히 안 끝난다. 오탐이 잦으면 표지 목록을 늘린다.
-const COMPLETION_MARKER =
-  /(출시|배포|머지|완료|종료|전환|제거|폐지|삭제|이관|통과|오픈|런칭|릴리[즈스]|마감|승인|계약|도입|적용|이하|이상|미만|초과|없음)/;
-const DIGIT = /\d/;
-
 export const parseProductGoalCommand = (
   text: string,
   today: PlainDate,
@@ -110,17 +119,29 @@ export const findGoalDeclarationProblem = ({
   dueDateUnreadable = false,
 }: {
   draft: ProductGoalDraft;
-  activeGoals: { title: string }[];
+  activeGoals: { title: string; kind: ProductGoalKind }[];
   dueDateUnreadable?: boolean;
 }): GoalDeclarationProblem | null => {
   if (draft.title.trim().length === 0) {
     return 'MISSING_TITLE';
   }
-  if (draft.successCriterion === null || draft.successCriterion.trim() === '') {
-    return 'MISSING_CRITERION';
+  const title = normalizeTitle(draft.title);
+  if (activeGoals.some((goal) => normalizeTitle(goal.title) === title)) {
+    return 'DUPLICATE_TITLE';
   }
-  if (!isMeasurableCriterion(draft.successCriterion)) {
-    return 'UNMEASURABLE_CRITERION';
+  if (draft.kind === 'DIRECTION') {
+    const directionCount = activeGoals.filter(
+      (goal) => goal.kind === 'DIRECTION',
+    ).length;
+    return directionCount >= MAX_ACTIVE_DIRECTION_GOALS
+      ? 'DIRECTION_LIMIT_REACHED'
+      : null;
+  }
+  // 기준이 "있는지" 만 본다. 그 문장으로 끝을 알 수 있는지는 뜻을 읽어야 하는 판단이라 코드가 하지
+  // 않는다 — 확인 카드에 기준이 그대로 실리고 사람이 보고 승인한다. 낱말 목록으로 거르던 시절에는
+  // "새 직장에서 근무를 시작한다" 처럼 끝이 분명한 기준도 떨어졌다(2026-10-27 실측).
+  if (isBlank(draft.successCriterion)) {
+    return 'MISSING_CRITERION';
   }
   if (draft.keywords.length === 0) {
     return 'MISSING_KEYWORDS';
@@ -128,22 +149,11 @@ export const findGoalDeclarationProblem = ({
   if (dueDateUnreadable) {
     return 'UNREADABLE_DUE_DATE';
   }
-  const title = normalizeTitle(draft.title);
-  if (activeGoals.some((goal) => normalizeTitle(goal.title) === title)) {
-    return 'DUPLICATE_TITLE';
-  }
-  if (activeGoals.length >= MAX_ACTIVE_PRODUCT_GOALS) {
+  const taskCount = activeGoals.filter((goal) => goal.kind === 'TASK').length;
+  if (taskCount >= MAX_ACTIVE_PRODUCT_GOALS) {
     return 'ACTIVE_LIMIT_REACHED';
   }
   return null;
-};
-
-export const isMeasurableCriterion = (criterion: string): boolean => {
-  const trimmed = criterion.trim();
-  return (
-    trimmed.length > 0 &&
-    (DIGIT.test(trimmed) || COMPLETION_MARKER.test(trimmed))
-  );
 };
 
 // 작업 제목이 목표에 붙었는지. 대소문자는 무시한다(키워드에 영문 식별자가 섞인다).
@@ -193,7 +203,9 @@ const parseDeclaration = (
   return {
     kind: 'DECLARE',
     draft: {
+      kind: 'TASK',
       title: segments.title,
+      why: null,
       successCriterion: segments.criterion ?? null,
       keywords,
       dueDate: dueDate === null ? null : toPlainDateString(dueDate),
@@ -251,7 +263,7 @@ const splitKeywords = (value: string): string[] =>
       .filter((keyword) => keyword.length > 0),
   );
 
-const extractTitleKeywords = (title: string): string[] =>
+export const extractTitleKeywords = (title: string): string[] =>
   dedupe(
     title
       .split(TITLE_WORD_SEPARATOR)
@@ -292,19 +304,52 @@ export const isProductGoalPreviewPayload = (
   return record.action === 'CREATE' && isDraft(record.draft);
 };
 
-const isDraft = (value: unknown): value is ProductGoalDraft => {
+export const readProductGoalDraft = (
+  value: unknown,
+): ProductGoalDraft | null => {
   if (typeof value !== 'object' || value === null) {
-    return false;
+    return null;
   }
   const record = value as Record<string, unknown>;
-  return (
-    typeof record.title === 'string' &&
-    (record.successCriterion === null ||
-      typeof record.successCriterion === 'string') &&
-    Array.isArray(record.keywords) &&
-    record.keywords.every((keyword) => typeof keyword === 'string') &&
-    (record.dueDate === null ||
-      (typeof record.dueDate === 'string' &&
-        /^\d{4}-\d{2}-\d{2}$/.test(record.dueDate)))
-  );
+  const kind = record.kind === undefined ? 'TASK' : record.kind;
+  const why = record.why === undefined ? null : record.why;
+  if (!isProductGoalKind(kind)) {
+    return null;
+  }
+  if (why !== null && typeof why !== 'string') {
+    return null;
+  }
+  if (typeof record.title !== 'string') {
+    return null;
+  }
+  if (
+    record.successCriterion !== null &&
+    typeof record.successCriterion !== 'string'
+  ) {
+    return null;
+  }
+  if (
+    !Array.isArray(record.keywords) ||
+    !record.keywords.every((keyword) => typeof keyword === 'string')
+  ) {
+    return null;
+  }
+  if (
+    record.dueDate !== null &&
+    (typeof record.dueDate !== 'string' ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(record.dueDate))
+  ) {
+    return null;
+  }
+  return {
+    kind,
+    title: record.title,
+    why,
+    successCriterion: record.successCriterion,
+    keywords: record.keywords,
+    dueDate: record.dueDate,
+  };
 };
+
+const isDraft = (value: unknown): value is ProductGoalDraft =>
+  readProductGoalDraft(value) !== null;

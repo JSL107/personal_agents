@@ -1,5 +1,6 @@
 import { App } from '@slack/bolt';
 
+import { HandleGoalAnswerUsecase } from '../../agent/po-shadow/application/handle-goal-answer.usecase';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { ApplyPreviewUsecase } from '../../preview-gate/application/apply-preview.usecase';
@@ -38,6 +39,7 @@ const buildHandler = (
     findLatestPendingPreview?: FindLatestPendingPreviewUsecase;
     applyPreviewUsecase?: ApplyPreviewUsecase;
     cancelPreviewUsecase?: CancelPreviewUsecase;
+    handleGoalAnswer?: HandleGoalAnswerUsecase;
     deliveryRepository?: SlackDeliveryRepositoryPort;
     mentionReceiptRepository?: MentionReceiptRepositoryPort;
   } = {},
@@ -76,6 +78,11 @@ const buildHandler = (
     findLatestPendingPreview,
     applyPreviewUsecase,
     cancelPreviewUsecase,
+    options.handleGoalAnswer ??
+      ({
+        execute: jest.fn().mockResolvedValue(null),
+        findOpenQuestionCard: jest.fn().mockResolvedValue(undefined),
+      } as unknown as HandleGoalAnswerUsecase),
     deliveryRepository,
     options.mentionReceiptRepository ?? {
       recordReceived: jest.fn().mockResolvedValue(undefined),
@@ -183,6 +190,178 @@ const invokeHandler = async (
   await handler({ event: event as Record<string, unknown>, say, client });
   return { say, client };
 };
+
+describe('RouterMessageHandler — 목표 질문 DM 인터셉트', () => {
+  const dispatchResult: DispatchResult = {
+    agentRunId: 12,
+    workerType: AgentType.PM,
+    output: {},
+    modelUsed: 'mock',
+    formattedText: '일반 응답',
+  };
+
+  it('DM 목표 카드에 승인 블록을 붙이고 일반 dispatch를 건너뛴다', async () => {
+    const { app, getHandler } = buildAppMock();
+    const router = { dispatch: jest.fn().mockResolvedValue(dispatchResult) };
+    const handleGoalAnswer = {
+      execute: jest
+        .fn()
+        .mockResolvedValue({ replyText: '목표 카드', previewId: 'p1' }),
+    };
+    buildHandler(router, {
+      handleGoalAnswer: handleGoalAnswer as unknown as HandleGoalAnswerUsecase,
+    }).register(app);
+    const { say } = await invokeHandler(getHandler('message'), {
+      type: 'message',
+      user: 'U_USER',
+      text: '개인비서 만들기',
+      ts: '1.1',
+      channel: 'D_DM',
+      channel_type: 'im',
+    });
+    expect(handleGoalAnswer.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        slackUserId: 'U_USER',
+        text: '개인비서 만들기',
+      }),
+    );
+    expect(say).toHaveBeenCalledWith(
+      expect.objectContaining({ text: '목표 카드', blocks: expect.any(Array) }),
+    );
+    expect(router.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('채널 멘션은 목표 답으로 넘기지 않는다', async () => {
+    const { app, getHandler } = buildAppMock();
+    const router = { dispatch: jest.fn().mockResolvedValue(dispatchResult) };
+    const handleGoalAnswer = { execute: jest.fn() };
+    buildHandler(router, {
+      handleGoalAnswer: handleGoalAnswer as unknown as HandleGoalAnswerUsecase,
+    }).register(app);
+    await invokeHandler(getHandler('app_mention'), {
+      type: 'app_mention',
+      user: 'U_USER',
+      text: '<@BOT> 개인비서 만들기',
+      ts: '1.1',
+      channel: 'C_CHANNEL',
+    });
+    expect(handleGoalAnswer.execute).not.toHaveBeenCalled();
+    expect(router.dispatch).toHaveBeenCalled();
+  });
+
+  it('목표 답이 아니면 일반 dispatch로 진행한다', async () => {
+    const { app, getHandler } = buildAppMock();
+    const router = { dispatch: jest.fn().mockResolvedValue(dispatchResult) };
+    buildHandler(router).register(app);
+    await invokeHandler(getHandler('message'), {
+      type: 'message',
+      user: 'U_USER',
+      text: '오늘 일정',
+      ts: '1.1',
+      channel: 'D_DM',
+      channel_type: 'im',
+    });
+    expect(router.dispatch).toHaveBeenCalled();
+  });
+
+  // 월요일 질문에 "응" 이라고 답했는데 그 사이 쌓인 다른 카드(목표 [닫기] 등)가 승인되면 안 된다.
+  it('목표 질문이 열려 있으면 "응" 을 다른 카드에 적용하지 않고 목표 답으로 넘긴다', async () => {
+    const { app, getHandler } = buildAppMock();
+    const router = { dispatch: jest.fn().mockResolvedValue(dispatchResult) };
+    const applyPreviewUsecase = { execute: jest.fn() };
+    const handleGoalAnswer = {
+      execute: jest
+        .fn()
+        .mockResolvedValue({ replyText: '한 줄로 말해 주세요' }),
+      findOpenQuestionCard: jest.fn().mockResolvedValue({ card: null }),
+    };
+    buildHandler(router, {
+      findLatestPendingPreview: {
+        execute: jest.fn().mockResolvedValue(
+          buildPendingPreview({
+            id: 'close-card',
+            kind: PREVIEW_KIND.PRODUCT_GOAL,
+          }),
+        ),
+      } as unknown as FindLatestPendingPreviewUsecase,
+      applyPreviewUsecase:
+        applyPreviewUsecase as unknown as ApplyPreviewUsecase,
+      handleGoalAnswer: handleGoalAnswer as unknown as HandleGoalAnswerUsecase,
+    }).register(app);
+    await invokeHandler(getHandler('message'), {
+      type: 'message',
+      user: 'U_USER',
+      text: '응',
+      ts: '1.1',
+      channel: 'D_DM',
+      channel_type: 'im',
+    });
+    expect(applyPreviewUsecase.execute).not.toHaveBeenCalled();
+    expect(handleGoalAnswer.execute).toHaveBeenCalled();
+  });
+
+  it('질문 카드보다 최근 카드가 있어도 "응" 은 질문 카드에 적용한다', async () => {
+    const { app, getHandler } = buildAppMock();
+    const router = { dispatch: jest.fn().mockResolvedValue(dispatchResult) };
+    const pending = buildPendingPreview({
+      id: 'goal-card',
+      kind: PREVIEW_KIND.PRODUCT_GOAL,
+    });
+    const applyPreviewUsecase = {
+      execute: jest
+        .fn()
+        .mockResolvedValue({ preview: pending, resultText: '' }),
+    };
+    const handleGoalAnswer = {
+      execute: jest.fn(),
+      findOpenQuestionCard: jest.fn().mockResolvedValue({ card: pending }),
+    };
+    buildHandler(router, {
+      // 질문 카드보다 더 최근 카드가 있어도 질문 카드에 적용한다.
+      findLatestPendingPreview: {
+        execute: jest
+          .fn()
+          .mockResolvedValue(buildPendingPreview({ id: 'newer-card' })),
+      } as unknown as FindLatestPendingPreviewUsecase,
+      applyPreviewUsecase:
+        applyPreviewUsecase as unknown as ApplyPreviewUsecase,
+      handleGoalAnswer: handleGoalAnswer as unknown as HandleGoalAnswerUsecase,
+    }).register(app);
+    await invokeHandler(getHandler('message'), {
+      type: 'message',
+      user: 'U_USER',
+      text: '응',
+      ts: '1.1',
+      channel: 'D_DM',
+      channel_type: 'im',
+    });
+    expect(applyPreviewUsecase.execute).toHaveBeenCalledWith({
+      previewId: 'goal-card',
+      slackUserId: 'U_USER',
+    });
+    expect(handleGoalAnswer.execute).not.toHaveBeenCalled();
+  });
+
+  it('목표 처리 오류가 나도 일반 dispatch로 진행한다', async () => {
+    const { app, getHandler } = buildAppMock();
+    const router = { dispatch: jest.fn().mockResolvedValue(dispatchResult) };
+    const handleGoalAnswer = {
+      execute: jest.fn().mockRejectedValue(new Error('DB unavailable')),
+    };
+    buildHandler(router, {
+      handleGoalAnswer: handleGoalAnswer as unknown as HandleGoalAnswerUsecase,
+    }).register(app);
+    await invokeHandler(getHandler('message'), {
+      type: 'message',
+      user: 'U_USER',
+      text: '개인비서 만들기',
+      ts: '1.1',
+      channel: 'D_DM',
+      channel_type: 'im',
+    });
+    expect(router.dispatch).toHaveBeenCalled();
+  });
+});
 
 describe('RouterMessageHandler — app_mention', () => {
   it('app_mention + message 이벤트 둘 다 등록', () => {
