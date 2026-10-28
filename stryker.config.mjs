@@ -6,7 +6,12 @@ const mutateIndex = process.argv.findIndex(
   (arg) => arg === '--mutate' || arg === '-m',
 );
 const target = mutateIndex === -1 ? undefined : process.argv[mutateIndex + 1];
-if (!target?.endsWith('.ts') || target.endsWith('.spec.ts')) {
+// 글롭(`src/**/*.ts`)·쉼표 목록도 Stryker 는 받지만 spec 을 하나로 정할 수 없어 막는다.
+if (
+  !target?.endsWith('.ts') ||
+  target.endsWith('.spec.ts') ||
+  /[*?{}[\],]/.test(target)
+) {
   throw new Error(
     '변이 대상 .ts 파일 하나를 넘겨야 한다: pnpm mutate src/<경로>/<파일>.ts',
   );
