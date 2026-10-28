@@ -78,12 +78,12 @@
 
 11. 함수 파라미터는 읽기 쉽고 확장이 용이하도록 **객체 구조 분해 할당(`{}`) 방식**을 권장한다.
 
-    단, Passport의 `validate` 메서드처럼 라이브러리에서 인자 순서(Positional Arguments)를 강제하는 경우는 예외로 한다.
+    단, `ExceptionFilter.catch(exception, host)`·`NestInterceptor.intercept(context, next)` 처럼 프레임워크 인터페이스가 인자 순서(Positional Arguments)를 강제하는 경우는 예외로 한다.
 
 12. 함수/메서드가 값을 반환한다면 원칙적으로 반환 타입을 명시해 인터페이스(계약)를 명확히 한다.
-    - **명시 대상**: `Promise<RegisterResult>`, `Promise<ApiResponse<T>>`, `Promise<DTO>` 등 **사용자 정의 복합 타입(Custom Type)** 반환.
+    - **명시 대상**: `Promise<AgentRunOutcome<T>>`, `Promise<ApiResponse<T>>`, `Promise<DTO>` 등 **사용자 정의 복합 타입(Custom Type)** 반환.
     - **생략 허용**: `void`/`Promise<void>`, `boolean`/`number`/`string` 등 **원시 타입(Primitive Type)** 반환.
-    - **생략 허용**: `Promise<User>`, `Promise<Cohort>`, `Promise<User | null>`처럼 도메인 **엔티티(Entity)**를 그대로 반환하는 Repository/Service 메서드(추론이 자명한 경우).
+    - **생략 허용**: `Promise<PreviewAction>`, `Promise<PreviewAction | null>`처럼 도메인 **엔티티(Entity)**를 그대로 반환하는 Repository/Service 메서드(추론이 자명한 경우).
     - **생략 허용**: `Controller` (Interface Layer) 엔드포인트 라우터 핸들러 메서드(추론이 자명하고, 응답 형태는 전역 `ResponseInterceptor` 가 감싼다).
 
 13. NestJS 기본값과 동일한 `@HttpCode()` 데코레이터는 중복 선언하지 않는다.
@@ -114,12 +114,12 @@
 
 | 대상                        | 규칙                                    | 예시                                     |
 | --------------------------- | --------------------------------------- | ---------------------------------------- |
-| 클래스/인터페이스/타입/Enum | PascalCase                              | `UserService`, `OrderStatus`             |
-| 변수/함수/메서드            | camelCase                               | `findUserById`, `isActive`               |
+| 클래스/인터페이스/타입/Enum | PascalCase                              | `AgentRunService`, `AgentRunStatus`      |
+| 변수/함수/메서드            | camelCase                               | `findLatestSucceededRun`, `isActive`     |
 | 상수 (모듈 스코프)          | UPPER_SNAKE_CASE                        | `MAX_RETRY_COUNT`                        |
-| 파일명                      | kebab-case                              | `user.repository.ts`                     |
-| NestJS 파일                 | `{name}.{role}.ts`                      | `user.service.ts`, `order.controller.ts` |
-| 테스트 파일                 | `{name}.spec.ts` / `{name}.e2e-spec.ts` | `user.service.spec.ts`                   |
+| 파일명                      | kebab-case                              | `agent-run.prisma.repository.ts`         |
+| NestJS 파일                 | `{name}.{role}.ts`                      | `agent-run.service.ts`, `crawler.controller.ts` |
+| 테스트 파일                 | `{name}.spec.ts` / `{name}.e2e-spec.ts` | `agent-run.service.spec.ts`, `console.e2e-spec.ts` |
 
 #### Repository / Port 네이밍 규칙
 
@@ -187,7 +187,7 @@ src/
     domain/               # Entity, Value Object, Repository Interface, Domain Service, Aggregate
     application/          # UseCase, Command, Query, DTO
     infrastructure/       # Repository 구현체, Queue Consumer
-    interface/            # Controller, Resolver, DTO(Request/Response), Queue Provider
+    interface/            # Controller, DTO(Request/Response), Slack handler, Queue Provider
     {domain}.module.ts
   common/                 # 공통 응답, 필터, 인터셉터, 데코레이터, 유틸
   config/                 # 환경 설정
@@ -229,11 +229,12 @@ src/
 공통 응답은 아래 형태를 기본으로 한다.
 
 `code`는 비즈니스 결과 코드로 HTTP Status Code와 별개로 세부 결과를 표현한다.
-성공 시 `"SUCCESS"`, 실패 시 도메인 의미를 담은 `UPPER_SNAKE_CASE`를 사용한다. (예: `"USER_NOT_FOUND"`, `"ORDER_ALREADY_CANCELLED"`)
+값은 `ResponseCode` enum(`src/common/exception/response-code.enum.ts`)에서 고른다. 성공 시 `"SUCCESS"`, 실패 시 도메인 의미를 담은 `UPPER_SNAKE_CASE`를 사용한다. (예: `"CRAWL_TARGET_NOT_FOUND"`, `"PM_AGENT_INVALID_MODEL_OUTPUT"`)
 
 ```ts
+// src/common/response/api-response.type.ts
 type ApiResponse<T> = {
-  code: string;
+  code: ResponseCode;
   message: string;
   data: T | null;
   meta?: {
@@ -247,15 +248,15 @@ type ApiResponse<T> = {
 ```ts
 // 400 Bad Request
 {
-  "code": "INVALID_INPUT",
-  "message": "이메일 형식이 올바르지 않습니다.",
+  "code": "INVALID_CRAWL_URL",
+  "message": "유효하지 않은 크롤링 URL입니다: not-a-url",
   "data": null
 }
 
 // 404 Not Found
 {
-  "code": "USER_NOT_FOUND",
-  "message": "사용자를 찾을 수 없습니다.",
+  "code": "CRAWL_TARGET_NOT_FOUND",
+  "message": "복구 불가능한 크롤링 대상 오류가 발생했습니다. (404) https://example.com/gone",
   "data": null
 }
 ```
@@ -267,7 +268,7 @@ type ApiResponse<T> = {
 ### URI / HTTP Method
 
 1. URI는 리소스 중심 명사로 설계하고, 동작은 HTTP Method로 표현한다.
-2. URI는 소문자 kebab-case를 사용한다. (`/user-profiles`, `/order-items`)
+2. URI는 소문자 kebab-case를 사용한다. (`/v1/crawl-jobs`)
 3. HTTP Status Code는 의미에 맞게 사용한다.
 4. 엔드포인트/DTO 네이밍은 일관된 REST 규칙을 따른다.
 
@@ -284,7 +285,7 @@ type ApiResponse<T> = {
 
 ### 버저닝
 
-1. URI 경로에 버전을 포함한다. (`/v1/users`, `/v2/orders`)
+1. URI 경로에 버전을 포함한다. (`/v1/crawl-jobs`, `/v1/console`)
 2. 하위 호환이 불가능한 변경은 버전을 올린다. 필드 추가 등 하위 호환 변경은 동일 버전에서 허용한다.
 
 ### 페이지네이션
@@ -349,14 +350,14 @@ type PaginationMeta = {
 
 ## 10) 로깅 규칙 (SHOULD)
 
-1. NestJS 기본 `Logger`를 사용하고, 운영 환경에서는 JSON 구조화 로그로 출력한다.
+1. NestJS 기본 `Logger`를 사용한다. (JSON 구조화 로그 설정은 아직 없다 — `main.ts` 는 기본 로거 그대로다.)
 2. 로그 레벨 기준:
 
 | 레벨      | 용도                                           |
 | --------- | ---------------------------------------------- |
 | `error`   | 처리되지 않은 예외, 시스템 장애                |
 | `warn`    | 비정상이지만 복구 가능한 상황                  |
-| `log`     | 주요 비즈니스 이벤트 (주문 생성, 결제 완료 등) |
+| `log`     | 주요 비즈니스 이벤트 (에이전트 실행 완료, 승인 카드 발행 등) |
 | `debug`   | 개발 시 흐름 추적용 (운영 환경에서는 비활성화) |
 | `verbose` | 상세 디버깅 (로컬 전용)                        |
 
