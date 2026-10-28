@@ -33,6 +33,7 @@
 | 빌드 (type 검증 포함) | `pnpm build` |
 | 모듈 DI 연결 검사 (build 후, DB 연결 없이 그래프만) | `node --env-file=.env scripts/check-di.cjs` (CI 는 `pnpm check:di`) |
 | schema 변경 시 | `pnpm prisma format` |
+| 변이 검사 (수동, 파일 하나, 완료 조건 아님 — README 「변이 검사」) | `pnpm mutate src/<경로>/<파일>.ts` |
 
 **완료 조건** — 하나라도 exit 0 이 아니면 끝난 것 X. 고치거나, 보고하고 멈춘다.
 
