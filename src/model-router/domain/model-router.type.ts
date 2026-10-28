@@ -120,3 +120,8 @@ export interface CompletionResponse {
   modelUsed: string;
   provider: ModelProviderName;
 }
+
+// verifyCodexReadLock(codex 권한 프로필 canary 점검) 결과. 실패일 때만 reason 을 강제한다.
+export type CodexReadLockResult =
+  | { locked: true }
+  | { locked: false; reason: string };
