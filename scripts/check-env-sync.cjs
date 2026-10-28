@@ -5,7 +5,7 @@
  * check-env-sync — env 드리프트 게이트
  *
  * 단일 소스(SoT): `src/config/app.config.ts` 의 `EnvironmentVariables` class.
- * CLAUDE.md §2 #7 "새 env 추가 시 4곳 동기" 규칙 중 (.env.example ↔ app.config.ts)
+ * AGENTS.md §5 "새 env 추가 시 4곳 동기" 규칙 중 (.env.example ↔ app.config.ts)
  * 동기를 자동 강제한다. (README 동기는 v1 범위 외 — 후속 후보.)
  *
  * 규칙
@@ -127,7 +127,7 @@ function main() {
       console.error(`  - ${message}`);
     }
     console.error(
-      '\n수정: .env.example 과 src/config/app.config.ts 를 동기화하세요 (CLAUDE.md §2 #7).',
+      '\n수정: .env.example 과 src/config/app.config.ts 를 동기화하세요 (AGENTS.md §5).',
     );
     process.exitCode = 1;
     return;
