@@ -81,6 +81,7 @@ describe('ReviewPullRequestUsecase', () => {
       getFileFromBranch: jest.fn(),
       searchCode: jest.fn(),
       listTree: jest.fn(),
+      downloadTarball: jest.fn(),
     };
     configGet = jest.fn();
     publishFindings = jest.fn().mockResolvedValue({});
@@ -669,6 +670,7 @@ describe('ReviewPullRequestUsecase — conversationContext', () => {
       getFileFromBranch: jest.fn(),
       searchCode: jest.fn(),
       listTree: jest.fn(),
+      downloadTarball: jest.fn(),
     };
 
     usecase = new ReviewPullRequestUsecase(
@@ -1058,6 +1060,7 @@ describe('ReviewPullRequestUsecase × 학습 규약', () => {
       getFileFromBranch: jest.fn(),
       searchCode: jest.fn(),
       listTree: jest.fn(),
+      downloadTarball: jest.fn(),
     };
     const findingRepository = {
       findRejectionsForConventions: jest.fn().mockResolvedValue([]),
