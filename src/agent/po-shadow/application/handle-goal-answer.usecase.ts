@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { extractJsonObjectText } from '../../../common/util/llm-json-extract.util';
+import { detectYesNoIntent } from '../../../common/util/yes-no-intent.util';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { CancelPreviewUsecase } from '../../../preview-gate/application/cancel-preview.usecase';
@@ -34,6 +35,7 @@ import {
   parseProductGoalCommand,
   ProductGoalDraft,
   readProductGoalDraft,
+  toPlainDateString,
 } from '../domain/product-goal';
 import {
   buildGoalDraftPrompt,
@@ -43,6 +45,7 @@ import {
 
 const RETRY_TEXT = '🧭 지금 정리가 잘 안 됐어요. 한 번만 다시 말해 주시겠어요?';
 const DECLINE_TEXT = '🧭 알겠어요. 다음 주 월요일에 다시 여쭤볼게요.';
+const TELL_ME_TEXT = '🧭 좋아요. 어떤 목표인지 한 줄로 말해 주세요.';
 const MAX_TITLE_LENGTH = 80;
 const MAX_KEYWORDS = 6;
 
@@ -81,6 +84,20 @@ export class HandleGoalAnswerUsecase {
     private readonly modelRouter: ModelRouterUsecase,
   ) {}
 
+  // 열린 질문이 있으면 그 질문이 만든 카드 id(없으면 null)를, 질문이 없으면 undefined 를 돌려준다.
+  // 라우터의 자연어 Y/N 인터셉터가 읽는다 — 질문에 "응" 으로 답했는데 그 사이 쌓인 다른 카드
+  // (목표 [닫기]·아이디어 카드 등)가 승인되지 않도록, 열린 질문 중에는 질문 자신의 카드에만 Y/N 을 적용한다.
+  async findOpenQuestionPreviewId({
+    slackUserId,
+    now,
+  }: {
+    slackUserId: string;
+    now: Date;
+  }): Promise<string | null | undefined> {
+    const question = await this.questions.findOpen({ slackUserId, now });
+    return question === null ? undefined : question.previewId;
+  }
+
   async execute({
     slackUserId,
     text,
@@ -116,9 +133,30 @@ export class HandleGoalAnswerUsecase {
       previousPreview === null
         ? readProductGoalDraft(question.pendingDraft)
         : readPreviewDraft(previousPreview.payload);
-    const response = await this.draftResponse({ text, priorDraft });
+    // "목표 있어요?" 에 "응"/"없어" 만 답한 경우. 모델을 부르지 않고 바로 받는다.
+    if (priorDraft === null) {
+      const intent = detectYesNoIntent(text);
+      if (intent === 'yes') {
+        return { replyText: TELL_ME_TEXT };
+      }
+      if (intent === 'no') {
+        await this.questions.close({
+          id: question.id,
+          reason: 'DECLINED',
+          at: now,
+        });
+        return { replyText: DECLINE_TEXT };
+      }
+    }
+    const response = await this.draftResponse({
+      text,
+      priorDraft,
+      today: toPlainDateString(todayInKst(now)),
+    });
     if (response === null) {
-      return { replyText: RETRY_TEXT };
+      // 이미 목표 흐름에 들어온 대화(되묻기·카드 수정)만 다시 말해 달라고 한다. 첫 답에서 모델이
+      // 실패하면 라우터로 넘긴다 — 72시간 동안 평범한 DM 이 "다시 말해 주세요" 에 막히지 않게.
+      return priorDraft === null ? null : { replyText: RETRY_TEXT };
     }
     if (response.intent === 'NOT_A_GOAL') {
       return null;
@@ -136,6 +174,13 @@ export class HandleGoalAnswerUsecase {
     }
 
     let draft = response.goal;
+    // 모델이 연도를 잘못 짚어 과거 기한을 내면 다음 점검에서 곧바로 "기한 지남" 이 된다. 버리고 기한 없음으로 둔다.
+    if (
+      draft.dueDate !== null &&
+      draft.dueDate < toPlainDateString(todayInKst(now))
+    ) {
+      draft = { ...draft, dueDate: null };
+    }
     let convertedToDirection = false;
     // 기준이 비었을 때만 되묻는다. 기준 문장의 품질은 카드를 보고 사람이 판정한다
     // (findGoalDeclarationProblem 의 MISSING_CRITERION 과 같은 기준).
@@ -211,9 +256,11 @@ export class HandleGoalAnswerUsecase {
   private async draftResponse({
     text,
     priorDraft,
+    today,
   }: {
     text: string;
     priorDraft: unknown;
+    today: string;
   }): Promise<DraftResponse | null> {
     try {
       const completion = await this.modelRouter.route({
@@ -223,6 +270,7 @@ export class HandleGoalAnswerUsecase {
           systemPrompt: GOAL_DRAFT_SYSTEM_PROMPT,
           prompt: buildGoalDraftPrompt({
             text,
+            today,
             priorDraft: priorDraft ?? undefined,
           }),
           outputSchema: GOAL_DRAFT_OUTPUT_SCHEMA,

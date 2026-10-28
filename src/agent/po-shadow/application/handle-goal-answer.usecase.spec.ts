@@ -265,15 +265,85 @@ describe('HandleGoalAnswerUsecase', () => {
     expect(fixture.createPreview.execute).not.toHaveBeenCalled();
   });
 
-  it('모델 실패와 잘못된 kind는 재요청하고 표지를 유지한다', async () => {
+  it('첫 답에서 모델이 실패하면 표지를 유지한 채 라우터로 넘긴다', async () => {
     const fixture = setup();
     fixture.modelRouter.route.mockRejectedValueOnce(
       new Error('model unavailable'),
     );
-    expect((await fixture.execute())?.replyText).toContain('다시 말해');
-    fixture.answer('GOAL', { ...DIRECTION, kind: 'OTHER' });
-    expect((await fixture.execute())?.replyText).toContain('다시 말해');
+    expect(await fixture.execute('블로그 초안 써줘')).toBeNull();
     expect(fixture.questions.close).not.toHaveBeenCalled();
+  });
+
+  it('되묻기 중에 모델 실패·잘못된 kind 가 나오면 다시 말해 달라고 한다', async () => {
+    const fixture = setup();
+    fixture.questions.findOpen.mockResolvedValue(
+      buildQuestion({ criterionAskedAt: NOW, pendingDraft: TASK }),
+    );
+    fixture.modelRouter.route.mockRejectedValueOnce(
+      new Error('model unavailable'),
+    );
+    expect((await fixture.execute('운영 배포되면'))?.replyText).toContain(
+      '다시 말해',
+    );
+    fixture.answer('GOAL', { ...DIRECTION, kind: 'OTHER' });
+    expect((await fixture.execute('운영 배포되면'))?.replyText).toContain(
+      '다시 말해',
+    );
+    expect(fixture.questions.close).not.toHaveBeenCalled();
+  });
+
+  it('"응" 만 답하면 모델 없이 목표를 말해 달라고 한다', async () => {
+    const fixture = setup();
+    expect((await fixture.execute('응'))?.replyText).toContain('한 줄로');
+    expect(fixture.modelRouter.route).not.toHaveBeenCalled();
+    expect(fixture.questions.close).not.toHaveBeenCalled();
+  });
+
+  it('"아니" 만 답하면 모델 없이 거절로 닫는다', async () => {
+    const fixture = setup();
+    expect((await fixture.execute('아니'))?.replyText).toContain('다음 주');
+    expect(fixture.modelRouter.route).not.toHaveBeenCalled();
+    expect(fixture.questions.close).toHaveBeenCalledWith({
+      id: 1,
+      reason: 'DECLINED',
+      at: NOW,
+    });
+  });
+
+  it('모델이 과거 기한을 내면 기한 없음으로 카드를 만든다', async () => {
+    const fixture = setup();
+    fixture.answer('GOAL', { ...TASK, dueDate: '2025-10-31' });
+    await fixture.execute('이번 달 말까지 오피스 일정 표시');
+    expect(fixture.createPreview.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          draft: expect.objectContaining({ dueDate: null }),
+        }),
+      }),
+    );
+    expect(fixture.modelRouter.route.mock.calls[0][0].request.prompt).toContain(
+      '오늘(KST): 2026-10-27',
+    );
+  });
+
+  it('열린 질문의 카드 id 를 알려 준다 — 질문이 없으면 undefined', async () => {
+    const fixture = setup();
+    fixture.questions.findOpen.mockResolvedValueOnce(
+      buildQuestion({ previewId: 'card-1' }),
+    );
+    expect(
+      await fixture.usecase.findOpenQuestionPreviewId({
+        slackUserId: 'U1',
+        now: NOW,
+      }),
+    ).toBe('card-1');
+    fixture.questions.findOpen.mockResolvedValueOnce(null);
+    expect(
+      await fixture.usecase.findOpenQuestionPreviewId({
+        slackUserId: 'U1',
+        now: NOW,
+      }),
+    ).toBeUndefined();
   });
 
   it('열린 표지가 없으면 모델을 호출하지 않는다', async () => {

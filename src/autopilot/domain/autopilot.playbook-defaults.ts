@@ -30,7 +30,7 @@ export const DEFAULT_CUJ_CHECK_TIMEZONE = 'Asia/Seoul';
 export const DEFAULT_RUN_RETRO_CRON = '0 9 * * 1';
 export const DEFAULT_RUN_RETRO_TIMEZONE = 'Asia/Seoul';
 
-// 월요일 목표 질문 — run-retro·idea-triage(09:00)와 cuj-check(09:10)를 피해 09:15에 보낸다.
+// 월요일 목표 점검 — run-retro·idea-triage(09:00)와 cuj-check(09:10)를 피해 09:15에 보낸다.
 export const DEFAULT_GOAL_CHECKIN_CRON = '15 9 * * 1';
 export const DEFAULT_GOAL_CHECKIN_TIMEZONE = 'Asia/Seoul';
 

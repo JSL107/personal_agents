@@ -1,4 +1,10 @@
 import {
+  FORGOTTEN_GOAL_DAYS,
+  GoalCheckinPlan,
+  StaleGoal,
+  TaskGoalStatus,
+} from '../../agent/po-shadow/domain/goal-checkin';
+import {
   GoalDeclarationProblem,
   MAX_ACTIVE_DIRECTION_GOALS,
   MAX_ACTIVE_PRODUCT_GOALS,
@@ -144,3 +150,61 @@ export const formatGoalCloseAmbiguous = (
 
 const formatDueDate = (dueDate: Date | null): string =>
   dueDate === null ? '' : ` (기한 ${dueDate.toISOString().slice(0, 10)})`;
+
+export const GOAL_QUESTION_TEXT =
+  '🧭 요즘 머릿속에 있는 목표가 있어요? 크기 상관없이 대충 말해 주세요. 제가 정리해서 보여 드릴게요.';
+
+type GoalCheckinReport = Extract<GoalCheckinPlan, { kind: 'CHECKIN' }>;
+
+// 월요일 목표 점검 DM. 잊은·기한 지난 목표의 [닫기] 카드는 이 메시지 뒤에 따로 붙는다.
+export const formatGoalCheckin = (plan: GoalCheckinReport): string => {
+  const sections = [
+    '🗓️ *이번 주 목표 점검*',
+    ...plan.tasks.map((task) =>
+      formatTaskStatus(task, plan.mergedLookupAvailable),
+    ),
+    ...plan.staleGoals.map(formatStaleGoal),
+    ...plan.directions.map(
+      (goal) => `🧭 *${escapeSlackMrkdwn(goal.title)}* (방향)`,
+    ),
+  ];
+  if (plan.drawOutDirection !== null) {
+    sections.push(
+      `이번 달 *${escapeSlackMrkdwn(plan.drawOutDirection.title)}* 쪽으로 꼭 되게 하고 싶은 일이 있어요? 말해 주시면 숙제로 정리해 드릴게요.`,
+    );
+  }
+  if (!plan.mergedLookupAvailable && plan.tasks.length > 0) {
+    sections.push(
+      '_GitHub 머지 기록을 못 읽어 숙제의 관련 작업은 비워 뒀어요._',
+    );
+  }
+  return sections.join('\n\n');
+};
+
+const formatTaskStatus = (
+  task: TaskGoalStatus,
+  mergedLookupAvailable: boolean,
+): string => {
+  const parts = [`✅ *${escapeSlackMrkdwn(task.goal.title)}*`];
+  if (mergedLookupAvailable) {
+    parts.push(
+      task.recentPullRequestNumbers.length === 0
+        ? '지난주 관련 작업 없음'
+        : `지난주 관련 작업 ${task.recentPullRequestNumbers.length}건 (${task.recentPullRequestNumbers.map((number) => `#${number}`).join(', ')})`,
+    );
+  }
+  if (task.goal.dueDate !== null && task.daysLeft !== null) {
+    parts.push(
+      `기한 ${task.goal.dueDate.toISOString().slice(5, 10)} (D-${task.daysLeft})`,
+    );
+  }
+  return parts.join(' — ');
+};
+
+const formatStaleGoal = ({ goal, reason }: StaleGoal): string => {
+  const why =
+    reason.kind === 'OVERDUE'
+      ? `기한 ${reason.daysOverdue}일 지남`
+      : `최근 ${FORGOTTEN_GOAL_DAYS}일 관련 작업 없음`;
+  return `⏰ *${escapeSlackMrkdwn(goal.title)}* — ${why}. 아직 유효한가요? 아래 카드로 닫을 수 있어요.`;
+};

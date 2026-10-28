@@ -7,6 +7,7 @@ import {
   CloseGoalQuestionInput,
   CreateGoalQuestionInput,
   FindOpenGoalQuestionInput,
+  FindRecentGoalQuestionsInput,
   GoalQuestionRecord,
   GoalQuestionRepositoryPort,
   MarkGoalQuestionCriterionAskedInput,
@@ -42,6 +43,18 @@ export class GoalQuestionPrismaRepository implements GoalQuestionRepositoryPort 
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     });
     return row ? toRecord(row) : null;
+  }
+
+  async findRecent({
+    slackUserId,
+    limit,
+  }: FindRecentGoalQuestionsInput): Promise<GoalQuestionRecord[]> {
+    const rows = await this.prisma.goalQuestion.findMany({
+      where: { slackUserId },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: limit,
+    });
+    return rows.map(toRecord);
   }
 
   async attachPreview({

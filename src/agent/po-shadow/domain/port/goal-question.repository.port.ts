@@ -33,6 +33,11 @@ export interface FindOpenGoalQuestionInput {
   now: Date;
 }
 
+export interface FindRecentGoalQuestionsInput {
+  slackUserId: string;
+  limit: number;
+}
+
 export interface AttachGoalQuestionPreviewInput {
   id: number;
   previewId: string;
@@ -55,6 +60,10 @@ export interface GoalQuestionRepositoryPort {
   findOpen(
     input: FindOpenGoalQuestionInput,
   ): Promise<GoalQuestionRecord | null>;
+  // 최신순. 만료·닫힘 여부와 무관하게 센다.
+  findRecent(
+    input: FindRecentGoalQuestionsInput,
+  ): Promise<GoalQuestionRecord[]>;
   attachPreview(input: AttachGoalQuestionPreviewInput): Promise<void>;
   markCriterionAsked(input: MarkGoalQuestionCriterionAskedInput): Promise<void>;
   close(input: CloseGoalQuestionInput): Promise<void>;

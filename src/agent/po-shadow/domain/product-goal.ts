@@ -6,8 +6,6 @@ import { PlainDate } from '../../../schedule/domain/schedule.type';
 export const MAX_ACTIVE_PRODUCT_GOALS = 3;
 export const MAX_ACTIVE_DIRECTION_GOALS = 2;
 export const GOAL_PREVIEW_TTL_MS = 60 * 60 * 1_000;
-// 붙은 진행 없이 이 일수가 지나면 "아직 유효한가요?" 를 묻는다.
-export const STALE_GOAL_DAYS = 30;
 // 기한까지 이 일수 이하이고 붙은 열린 항목이 있으면 GOAL_DEADLINE_RISK 를 낸다. 임의값이다.
 export const GOAL_DEADLINE_RISK_DAYS = 7;
 

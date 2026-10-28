@@ -816,6 +816,19 @@ export class RouterMessageHandler implements SlackHandler {
     if (pending.kind === PREVIEW_KIND.CAREER_JD_GAP_BLOG && intent === 'yes') {
       return false;
     }
+    // 목표 질문이 열려 있으면 Y/N 은 그 질문이 만든 카드에만 적용한다. "목표 있어요?" 에 "응" 이라고
+    // 답했는데 그 사이 쌓인 다른 카드(목표 [닫기]·아이디어 카드)가 승인되면 안 된다 — 목표 답 인터셉터로 넘긴다.
+    const openQuestionPreviewId =
+      await this.handleGoalAnswer.findOpenQuestionPreviewId({
+        slackUserId,
+        now: new Date(),
+      });
+    if (
+      openQuestionPreviewId !== undefined &&
+      openQuestionPreviewId !== pending.id
+    ) {
+      return false;
+    }
     if (intent === 'yes') {
       await this.handlePreviewApply({
         preview: pending,

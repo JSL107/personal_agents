@@ -1253,7 +1253,7 @@ describe('GeneratePoShadowUsecase', () => {
         '릴리즈 체크 — 외부 상태로 자동 확인 불가',
         '목표 밖 작업 1건 — chore: 의존성 갱신',
       ]);
-      expect(executeInput().inputSnapshot.goalProgress).toEqual([]);
+      expect(executeInput().inputSnapshot).not.toHaveProperty('goalProgress');
     });
 
     it('기한 임박 + 붙은 열린 항목이 있으면 검토를 켜고 목표를 프롬프트에 싣는다', async () => {
@@ -1278,63 +1278,16 @@ describe('GeneratePoShadowUsecase', () => {
       expect(prompt).toContain('judgments 에만');
     });
 
-    it('묵은 목표는 리포트에 "아직 유효한가요?" 를 싣는다', async () => {
+    // 묵은 목표·기한 지난 목표의 "아직 유효한가요?" 는 월요일 목표 점검(goal-checkin)으로 옮겼다 —
+    // 일일 보고에도 남기면 같은 목표를 두 곳에서 묻는다.
+    it('묵은 목표·기한 지난 목표도 일일 리포트에는 점검 질문을 싣지 않는다', async () => {
       goalFindActive.mockResolvedValue([
-        goalRecord({ createdAt: new Date(now.getTime() - 40 * DAY) }),
+        goalRecord({
+          createdAt: new Date(now.getTime() - 40 * DAY),
+          dueDate: new Date('2026-10-01T00:00:00.000Z'),
+        }),
       ]);
       contextCollectorCollect.mockResolvedValue(emptyContext());
-
-      const outcome = await usecase.execute({
-        extraContext: '',
-        slackUserId: 'U1',
-        now,
-      });
-
-      expect(outcome.result.goalCheckIns).toEqual([
-        '"업로드 개선" — 30일 넘게 붙은 진행 없음. 이 목표 아직 유효한가요?',
-      ]);
-    });
-
-    it('직전 회차의 진행 기록이 있으면 묵었다고 하지 않는다', async () => {
-      goalFindActive.mockResolvedValue([
-        goalRecord({ createdAt: new Date(now.getTime() - 40 * DAY) }),
-      ]);
-      contextCollectorCollect.mockResolvedValue(emptyContext());
-      agentRunServiceFindRecent.mockResolvedValue([
-        {
-          id: 50,
-          output: null,
-          inputSnapshot: { goalProgress: [1] },
-          endedAt: new Date(now.getTime() - 5 * DAY),
-        },
-      ]);
-
-      const outcome = await usecase.execute({
-        extraContext: '',
-        slackUserId: 'U1',
-        now,
-      });
-
-      expect(outcome.result).not.toHaveProperty('goalCheckIns');
-    });
-
-    // 30일 창 안 회차가 상한보다 많을 때 오래된 회차가 잘리면 그 안에만 있던 진행을 놓친다(#773 리뷰).
-    it('41번째보다 오래된 회차에만 진행이 있어도 30일 안이면 묵었다고 하지 않는다', async () => {
-      goalFindActive.mockResolvedValue([
-        goalRecord({ createdAt: new Date(now.getTime() - 40 * DAY) }),
-      ]);
-      contextCollectorCollect.mockResolvedValue(emptyContext());
-      // 최신순 60회차(약 24일치). 진행은 51번째 회차(20일 전)에만 있다.
-      const runs = Array.from({ length: 60 }, (_, index) => ({
-        id: 1000 - index,
-        output: null,
-        inputSnapshot: { goalProgress: index === 50 ? [1] : [] },
-        endedAt: new Date(now.getTime() - index * 0.4 * DAY),
-      }));
-      // 실제 저장소처럼 limit 을 지킨다 — 상한이 창보다 작으면 51번째가 잘린다.
-      agentRunServiceFindRecent.mockImplementation(
-        async ({ limit }: { limit: number }) => runs.slice(0, limit),
-      );
 
       const outcome = await usecase.execute({
         extraContext: '',

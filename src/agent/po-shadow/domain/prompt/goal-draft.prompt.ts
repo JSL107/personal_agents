@@ -50,12 +50,18 @@ TASK는 "오피스 화면에 오늘 일정 띄우기"처럼 끝낼 수 있는 �
 
 export const buildGoalDraftPrompt = ({
   text,
+  today,
   priorDraft,
 }: {
   text: string;
+  // YYYY-MM-DD (KST). "이번 달 말" 같은 상대 기한을 이 날짜 기준으로 YYYY-MM-DD 로 바꾸게 한다.
+  today: string;
   priorDraft?: unknown;
 }): string => {
-  const parts = [`사용자 답변:\n${wrapUntrustedInput(text)}`];
+  const parts = [
+    `오늘(KST): ${today}. dueDate 는 YYYY-MM-DD 로, 기한을 말하지 않았으면 null 로 낸다.`,
+    `사용자 답변:\n${wrapUntrustedInput(text)}`,
+  ];
   if (priorDraft !== undefined) {
     parts.push(`이전 초안:\n${wrapUntrustedInput(JSON.stringify(priorDraft))}`);
   }
