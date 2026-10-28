@@ -36,7 +36,7 @@
 
 **완료 조건** — 하나라도 exit 0 이 아니면 끝난 것 X. 고치거나, 보고하고 멈춘다.
 
-1. 코드 변경: `pnpm lint:check && pnpm test && pnpm build` 3중 green + `check:di` green. `check:di` 는 3중 green 이 못 보는 DI 배선 오류를 잡는다.
+1. 코드 변경: `pnpm lint:check && pnpm test && pnpm build` 3중 green + `check:di` green. `check:di` 는 3중 green 이 못 보는 DI 배선 오류를 잡는다. CI `verify` 가 항상 함께 돌리는 `pnpm check:env && pnpm docs:check && pnpm check:invariants && pnpm test:e2e` 도 green 이어야 한다 (합쳐 10초 안팎).
 2. env / agent-registry / `AgentType` 변경 시 추가: `pnpm docs:sync` 후 `pnpm docs:check` green — 생성 문서 `docs/env-catalog.md`·`docs/agent-catalog.md` 가 코드와 어긋나면 CI `verify` 가 실패한다. `docs/` 는 gitignore 지만 이 카탈로그는 tracked 라 `git add -f docs/env-catalog.md` 로 스테이징. **codex-flow 위임 시 이 단계를 codex 프롬프트와 `.ai/design.md` 검증 항목에도 명시할 것** (codex 는 명시한 게이트만 실행한다).
 
 ### 브랜치 / worktree 격리
