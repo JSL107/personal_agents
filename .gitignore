@@ -95,3 +95,7 @@ scripts/__*.ts
 # **앞 슬래시로 레포 루트에 한정한다.** `output/` 로 쓰면 모든 깊이의 동명 디렉터리가
 # 걸려, 어딘가에 생길 `src/**/output/` 까지 조용히 변경 목록에서 빠진다.
 /output/
+
+# 변이 검사(Stryker) 산출물. `pnpm mutate <파일>` 이 만드는 리포트와 샌드박스 사본.
+/reports/mutation/
+/.stryker-tmp/

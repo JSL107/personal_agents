@@ -492,9 +492,19 @@ pnpm param-search --from 2021-10-01 --to 2026-08-31 --take-profit 5,10,15 --stop
                                                # 파라미터 후보를 창마다 재생해 walk-forward 로 비교 (보고만)
 pnpm kev:start | kev:status | kev:stop         # 로컬 Kev(Jev 호환 결정 모델) 서버 — subconscious shadow 비교용
 pnpm subconscious:calibrate                    # shadow 원장 × 사람 판정으로 게이트 문턱 보정표 출력 (DB 읽기 전용)
+pnpm mutate src/<경로>/<파일>.ts               # 파일 하나 변이 검사 — 테스트가 허술한 곳 찾기 (수동, 약 3~4분)
 ```
 
 > **DB 변경**: `prisma/schema.prisma` 수정 → `pnpm db:push`(synchronize, Prisma Client 자동 재생성) → 앱 재시작.
+
+> **변이 검사**: 중요한 도메인 로직을 고친 뒤 그 파일 하나에만 수동으로 돌린다. CI 에는 넣지 않았다.
+> 코드에 작은 변형(`>` → `>=`, 조건을 `true` 로 등)을 하나씩 넣어 같은 폴더의 `<파일>.spec.ts` 를 돌리고,
+> 테스트가 여전히 통과한 변형(Survived)을 보여준다. 결과는 `reports/mutation/mutation.html`.
+> 한 번에 하나만 돌린다 — 여러 개를 동시에 돌리면 Timeout 이 쌓이고, Timeout 은 "잡힘" 으로 세어져 점수가 부풀려진다.
+> 결과에 Timeout 이 많으면 부하를 줄이고 다시 잰다.
+> **찾는 것은 "테스트가 허술한 곳" 이지 "빠진 요구사항" 이 아니다.** 코드에 없는 조건은 변형할 대상도 없다 —
+> #902 버그(키워드 없는 목표 필터 누락)는 수정 전 코드에 돌려도 잡히지 않았다. 남은 Survived 중에는
+> 결과가 같아 어떤 테스트로도 죽일 수 없는 등가 변형도 있으니 100% 를 목표로 삼지 않는다.
 
 > **백테스트**: 과거 주가를 재생해 "그때 이 규칙대로 샀으면 어떻게 됐을지"를 계산한다. DB 에 쓰지 않는다.
 > `--turnover-min` `--max-positions` `--weight` `--hold` `--seed` `--stop-loss` `--take-profit` `--delisting-recovery` 로 규칙을 바꿔가며 성적을 비교한다.
