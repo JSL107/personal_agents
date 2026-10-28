@@ -27,7 +27,7 @@ const HEADING_LINE = new RegExp(`^\\*([^*]{1,${HEADER_TEXT_LIMIT}})\\*$`);
 // 이런 줄은 승격을 포기하고 본문 section 으로 남긴다 — 최악이라야 현행 렌더와 같다.
 const HEADER_UNSAFE_CHARACTER = /[<>&`_~]/;
 
-type SlackBlock = Record<string, unknown>;
+export type SlackBlock = Record<string, unknown>;
 
 // Slack 의 mrkdwn 상태는 block 사이로 이어지지 않는다 — 코드블록이 두 section 에 걸치면
 // 뒷 조각이 평범한 글로 렌더돼 서식이 깨지고 그 안의 Slack 문법까지 해석된다.

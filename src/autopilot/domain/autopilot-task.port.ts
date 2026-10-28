@@ -49,6 +49,12 @@ export interface AutopilotRunVerdictRequest {
   quote?: string;
 }
 
+export interface AutopilotVerdictCard {
+  // 알림용 대체 문구.
+  text: string;
+  blocks: Record<string, unknown>[];
+}
+
 export interface AutopilotTaskResult {
   // 게시할 내용 없으면 skip=true → 오케스트레이터가 전달 안 함(빈 알림 방지).
   skip: boolean;
@@ -100,6 +106,9 @@ export interface AutopilotTaskResult {
   // 한 task 가 여러 실행을 판정받을 수 있다 — 저녁 회고 task 는 그날 아침 계획(PM) 실행도 함께 싣는다.
   // 실행마다 댓글이 하나다(버튼을 누른 뒤 댓글을 다시 그릴 때 그 실행의 판정만 읽는다).
   runVerdicts?: AutopilotRunVerdictRequest[];
+  // 실행 여러 건을 한 통에 묶은 판정 카드(월요일 아침의 주간 판정). 블록은 task 가 다 만들어 넘기고
+  // orchestrator 는 runVerdicts 와 같은 자리(상세 뒤, 승인 카드 앞)에 댓글로 싣는다.
+  verdictCards?: AutopilotVerdictCard[];
   // T1_PREVIEW 전용 — 있으면 orchestrator 가 PreviewGate 승인 버튼 발송.
   preview?: AutopilotPreviewRequest;
   // T1_PREVIEW 전용 — 있으면 orchestrator 가 preview 단수와 합쳐 각각 PreviewGate 카드 발송.

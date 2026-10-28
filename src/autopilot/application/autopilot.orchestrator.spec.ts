@@ -1467,7 +1467,7 @@ describe('AutopilotOrchestrator', () => {
         { attachSlackMessage: jest.fn() } as never,
       );
 
-    it('판정을 요청한 task 에만 버튼 댓글을 붙이고, 스레드 첫 댓글로 둔다', async () => {
+    it('판정을 요청한 task 에만 버튼 댓글을 붙이고, 상세 댓글 뒤에 둔다', async () => {
       const retroTask = makeTask('evening-retro-publish', {
         skip: false,
         summaryText: 'RETRO',
@@ -1509,15 +1509,73 @@ describe('AutopilotOrchestrator', () => {
         target: 'C1',
         text: 'EVAL\n\n────────\n\nRETRO',
       });
-      // 스레드 순서: 판정 버튼 → 앞 task 상세 → 판정 task 상세. 다른 task 의 상세 순서는 그대로다.
+      // 스레드 순서: 앞 task 상세 → 판정 task 상세(판정할 회고) → 판정 버튼. 회고보다 버튼이 먼저 보이면
+      // 무엇을 판정하는지 모른다(2026-10-28 피드백).
       const threadCalls = postMessageMock.mock.calls
         .map(([input]) => input)
         .filter((input) => input.threadTs === 'TS1');
-      expect(threadCalls[0].runVerdict).toBeDefined();
-      expect(threadCalls.slice(1).map((input) => input.text)).toEqual([
+      expect(threadCalls.slice(0, 2).map((input) => input.text)).toEqual([
         'EVAL_DETAIL',
         'RETRO_DETAIL',
       ]);
+      expect(threadCalls[2].runVerdict).toBeDefined();
+    });
+
+    it('판정 버튼은 그 task 의 상세 바로 뒤에 붙는다 — 뒤 task 의 상세보다 먼저다', async () => {
+      const retroTask = makeTask('evening-retro-publish', {
+        skip: false,
+        summaryText: 'RETRO',
+        detailText: 'RETRO_DETAIL',
+        runVerdicts: [{ agentRunId: 42, facets: ['overall'] }],
+      });
+      const otherTask = makeTask('weekly-summary', {
+        skip: false,
+        summaryText: 'EVAL',
+        detailText: 'EVAL_DETAIL',
+      });
+      const postMessageMock = jest.fn().mockResolvedValue({ ts: 'TS1' });
+      await buildOrchestrator([retroTask, otherTask], postMessageMock).runGroup(
+        'evening',
+        [
+          makeEntry('evening-retro-publish', 'evening-retro-publish'),
+          makeEntry('weekly-summary', 'weekly-summary'),
+        ],
+        'U1',
+        'C1',
+      );
+
+      const threadCalls = postMessageMock.mock.calls
+        .map(([input]) => input)
+        .filter((input) => input.threadTs === 'TS1');
+      expect(
+        threadCalls.map((input) => (input.runVerdict ? 'VERDICT' : input.text)),
+      ).toEqual(['RETRO_DETAIL', 'VERDICT', 'EVAL_DETAIL']);
+    });
+
+    it('주간 판정 카드는 블록을 그대로 실어 상세 뒤 스레드 댓글로 붙인다', async () => {
+      const blocks = [{ type: 'section', text: { type: 'mrkdwn', text: 'X' } }];
+      const morningTask = makeTask('morning-briefing', {
+        skip: false,
+        summaryText: 'MORNING',
+        detailText: 'PLAN',
+        verdictCards: [{ text: '주간 판정', blocks }],
+      });
+      const postMessageMock = jest.fn().mockResolvedValue({ ts: 'TS1' });
+      await buildOrchestrator([morningTask], postMessageMock).runGroup(
+        'morning',
+        [makeEntry('morning-briefing', 'morning-briefing')],
+        'U1',
+        'C1',
+      );
+
+      const threadCalls = postMessageMock.mock.calls
+        .map(([input]) => input)
+        .filter((input) => input.threadTs === 'TS1');
+      expect(threadCalls.map((input) => input.text)).toEqual([
+        'PLAN',
+        '주간 판정',
+      ]);
+      expect(threadCalls[1].blocks).toBe(blocks);
     });
 
     it('한 task 가 실행 여러 개를 판정받으면 실행마다 댓글을 따로, 요청 순서대로 붙인다', async () => {

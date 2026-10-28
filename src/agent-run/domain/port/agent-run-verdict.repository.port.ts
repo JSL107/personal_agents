@@ -1,4 +1,5 @@
 import { RunVerdictFacet, RunVerdictSource } from '../run-verdict';
+import { RunVerdictDigestRun } from '../run-verdict-digest';
 
 export const AGENT_RUN_VERDICT_REPOSITORY_PORT = Symbol(
   'AGENT_RUN_VERDICT_REPOSITORY_PORT',
@@ -39,4 +40,12 @@ export interface AgentRunVerdictRepositoryPort {
     sinceDays: number;
     untilDays?: number;
   }): Promise<AgentVerdictCountRow[]>;
+  // 주간 판정 카드의 재료 — 창 안에 시작한 그 사용자의 성공 실행 중 매일 버튼이 붙는 cron 실행
+  // (RUN_VERDICT_DIGEST_SOURCES)과, 각 실행에 이미 판정이 내려진 축. 사용자로 거르지 않으면 소유자가
+  // 바뀐 주에 이전 소유자의 계획·회고가 새 소유자 스레드에 인용된다.
+  findRunsForVerdictDigest(input: {
+    slackUserId: string;
+    since: Date;
+    until: Date;
+  }): Promise<RunVerdictDigestRun[]>;
 }

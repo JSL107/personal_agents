@@ -62,6 +62,8 @@ interface DigestDeps {
   jobPostingRepository?: Record<string, jest.Mock>;
   digestRepository?: Record<string, jest.Mock>;
   config?: Record<string, string>;
+  verdictRepository?: { findRunsForVerdictDigest: jest.Mock };
+  deliveryRepository?: { findSince: jest.Mock };
 }
 
 const buildTask = (
@@ -90,6 +92,12 @@ const buildTask = (
     { get: (key: string) => deps.config?.[key] } as never,
     (deps.cujLedgerReader ?? {
       findLatestDeliveryBefore: jest.fn().mockResolvedValue(null),
+    }) as never,
+    (deps.verdictRepository ?? {
+      findRunsForVerdictDigest: jest.fn().mockResolvedValue([]),
+    }) as never,
+    (deps.deliveryRepository ?? {
+      findSince: jest.fn().mockResolvedValue([]),
     }) as never,
   );
 
@@ -341,6 +349,218 @@ describe('MorningBriefingAutopilotTask', () => {
     expect(result.summaryText).not.toContain('*판단 근거*');
     expect(result.detailText).toContain('*판단 근거*');
     expect(result.detailText).toContain('*어제 이월*');
+  });
+
+  describe('주간 판정 카드 — 월요일 아침에만, 지난주 판정 안 된 실행을 싣는다', () => {
+    const planTask = () =>
+      ({
+        execute: jest.fn().mockRejectedValue(new Error('계획 실패')),
+      }) as never;
+    const humanize = () => ({ humanize: jest.fn() }) as never;
+
+    const morningSent = {
+      kind: 'autopilot:morning',
+      itemKinds: ['morning-briefing'],
+      threadTs: null,
+      status: 'SENT',
+    };
+
+    it('월요일이면 지난주 월 0시 ~ 이번 주 월 0시(KST) 실행을 묻고 축별 카드를 싣는다', async () => {
+      const findRunsForVerdictDigest = jest.fn().mockResolvedValue([
+        {
+          id: 7,
+          agentType: 'PM',
+          // 10-27(화) 08:00 KST
+          startedAt: new Date('2026-10-26T23:00:00.000Z'),
+          output: {
+            topPriority: { title: '감사로그 요구사항 작성' },
+            morning: [],
+          },
+          judgedFacets: [],
+        },
+        {
+          id: 8,
+          agentType: 'PM',
+          startedAt: new Date('2026-10-27T23:00:00.000Z'),
+          output: { topPriority: { title: '이미 판정됨' } },
+          judgedFacets: ['pm_plan'],
+        },
+      ]);
+      const task = buildTask(
+        planTask(),
+        humanize(),
+        emptyStockRepository(),
+        listSchedulesUsecase(),
+        {
+          verdictRepository: { findRunsForVerdictDigest },
+          deliveryRepository: {
+            findSince: jest.fn().mockResolvedValue([morningSent]),
+          },
+        },
+      );
+
+      const result = await task.run({
+        ownerSlackUserId: 'U1',
+        firedAtKst: '2026-11-02',
+      });
+
+      expect(findRunsForVerdictDigest).toHaveBeenCalledWith({
+        slackUserId: 'U1',
+        since: new Date('2026-10-25T15:00:00.000Z'),
+        until: new Date('2026-11-01T15:00:00.000Z'),
+      });
+      expect(result.verdictCards).toHaveLength(1);
+      expect(result.verdictCards?.[0].text).toBe(
+        '🗓️ 아침 계획 주간 판정 — 지난주 판정 안 된 1건',
+      );
+      expect(JSON.stringify(result.verdictCards?.[0].blocks)).toContain(
+        '*10/27(화)*\\n*아침 계획*\\n> 감사로그 요구사항 작성',
+      );
+    });
+
+    it('아침 메시지가 나가지 않은 날의 계획은 묻지 않는다 — 본 적 없는 계획이다', async () => {
+      const findSince = jest
+        .fn()
+        // 10-27: 아침 본문이 실패, 10-28: 정상 발송
+        .mockResolvedValueOnce([{ ...morningSent, status: 'FAILED' }])
+        .mockResolvedValueOnce([morningSent]);
+      const task = buildTask(
+        planTask(),
+        humanize(),
+        emptyStockRepository(),
+        listSchedulesUsecase(),
+        {
+          verdictRepository: {
+            findRunsForVerdictDigest: jest.fn().mockResolvedValue([
+              {
+                id: 7,
+                agentType: 'PM',
+                startedAt: new Date('2026-10-26T23:00:00.000Z'),
+                output: { topPriority: { title: 'A' } },
+                judgedFacets: [],
+              },
+              {
+                id: 8,
+                agentType: 'PM',
+                startedAt: new Date('2026-10-27T23:00:00.000Z'),
+                output: { topPriority: { title: 'B' } },
+                judgedFacets: [],
+              },
+            ]),
+          },
+          deliveryRepository: { findSince },
+        },
+      );
+
+      const result = await task.run({
+        ownerSlackUserId: 'U1',
+        firedAtKst: '2026-11-02',
+      });
+
+      expect(findSince).toHaveBeenNthCalledWith(
+        1,
+        new Date('2026-10-26T15:00:00.000Z'),
+        new Date('2026-10-27T15:00:00.000Z'),
+      );
+      const body = JSON.stringify(result.verdictCards?.[0].blocks);
+      expect(body).not.toContain('> A');
+      expect(body).toContain('> B');
+    });
+
+    it('저녁 회고·PO 도 그날 결과가 실제로 나간 실행만 묻는다 — 발송이 실패한 날은 뺀다', async () => {
+      const retro = (id: number, startedAt: string) => ({
+        id,
+        agentType: 'EVENING_RETRO',
+        startedAt: new Date(startedAt),
+        output: { retrospective: { problem: `문제 ${id}` } },
+        judgedFacets: [],
+      });
+      const findSince = jest
+        .fn()
+        // 10-27: 저녁 본문 실패(기록 없음), 10-28: 회고 상세 댓글까지 SENT
+        .mockResolvedValueOnce([morningSent])
+        .mockResolvedValueOnce([
+          {
+            kind: 'autopilot:evening',
+            itemKinds: ['evening-retro-publish'],
+            threadTs: '1.0',
+            status: 'SENT',
+          },
+        ]);
+      const task = buildTask(
+        planTask(),
+        humanize(),
+        emptyStockRepository(),
+        listSchedulesUsecase(),
+        {
+          verdictRepository: {
+            findRunsForVerdictDigest: jest
+              .fn()
+              .mockResolvedValue([
+                retro(1, '2026-10-27T10:00:00.000Z'),
+                retro(2, '2026-10-28T10:00:00.000Z'),
+              ]),
+          },
+          deliveryRepository: { findSince },
+        },
+      );
+
+      const result = await task.run({
+        ownerSlackUserId: 'U1',
+        firedAtKst: '2026-11-02',
+      });
+
+      expect(result.verdictCards).toHaveLength(1);
+      const body = JSON.stringify(result.verdictCards?.[0].blocks);
+      expect(body).not.toContain('문제 1');
+      expect(body).toContain('문제 2');
+      expect(result.verdictCards?.[0].text).toBe(
+        '🌙 저녁 회고 주간 판정 — 지난주 판정 안 된 1건',
+      );
+    });
+
+    it('월요일이 아니면 조회하지 않는다', async () => {
+      const findRunsForVerdictDigest = jest.fn();
+      const task = buildTask(
+        planTask(),
+        humanize(),
+        emptyStockRepository(),
+        listSchedulesUsecase(),
+        { verdictRepository: { findRunsForVerdictDigest } },
+      );
+
+      const result = await task.run({
+        ownerSlackUserId: 'U1',
+        firedAtKst: '2026-11-03',
+      });
+
+      expect(findRunsForVerdictDigest).not.toHaveBeenCalled();
+      expect(result.verdictCards).toBeUndefined();
+    });
+
+    it('조회가 실패해도 아침 한 통은 나가고 카드만 빠진다', async () => {
+      const task = buildTask(
+        planTask(),
+        humanize(),
+        emptyStockRepository(),
+        listSchedulesUsecase(),
+        {
+          verdictRepository: {
+            findRunsForVerdictDigest: jest
+              .fn()
+              .mockRejectedValue(new Error('DB 끊김')),
+          },
+        },
+      );
+
+      const result = await task.run({
+        ownerSlackUserId: 'U1',
+        firedAtKst: '2026-11-02',
+      });
+
+      expect(result.skip).toBe(false);
+      expect(result.verdictCards).toBeUndefined();
+    });
   });
 
   it('EMPTY_TASKS_INPUT 면 안내문 반환(skip=false)', async () => {
