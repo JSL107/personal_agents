@@ -13,7 +13,7 @@
 **이대리** — Slack 기반 멀티 에이전트 업무 자동화 봇. NestJS + Prisma + PostgreSQL + BullMQ + Slack Bolt(Socket Mode).
 
 - **패키지 매니저: `pnpm@9.15.9`** — `npm` / `yarn` 사용 금지 (`packageManager` 필드로 강제).
-- Node 22.12+ (`engines` 로 명시 — 하한 22.12 는 puppeteer 25 요구), NestJS 11, Prisma 6, Slack Bolt 4, BullMQ. **NestJS 11 은 Express 5** — 라우트 와일드카드 문법과 `req.query` 파서가 4 와 다르다.
+- Node 22.13+ (`engines` 로 명시 — puppeteer 25 는 22.12, `eslint-visitor-keys@5` 는 22.13 을 요구), NestJS 11, Prisma 6, Slack Bolt 4, BullMQ. **NestJS 11 은 Express 5** — 라우트 와일드카드 문법과 `req.query` 파서가 4 와 다르다.
 - DB: **PostgreSQL @ 5434**, Redis @ 6381 (로컬 docker). 앱은 `PORT=3002`. 다른 포트 가정 X.
 - LLM: `codex` CLI (ChatGPT 구독) + `claude` CLI (Claude Max 구독). 자식 프로세스 spawn 으로만 호출 — 직접 API SDK 사용 X, API key 불필요. 라우팅은 §6.
 - **Router (Hierarchical Manager Pattern)**: 자연어 멘션 (`@이대리 ...`) → `IdaeriRouterUsecase` → `IntentClassifierUsecase` (multi-turn 5 turn / TTL 30분) → 등록된 worker dispatcher 중 1 (목록은 `router.module.ts` 의 `inject` 배열이 정본) → handoff chain (audit log via `AgentRun.parentId`). 슬래시는 기존 핸들러 유지 (병행).
