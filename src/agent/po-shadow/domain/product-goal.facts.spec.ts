@@ -1,5 +1,9 @@
 import { PoShadowContext } from './po-shadow.type';
-import { ProductGoalRecord, STALE_GOAL_DAYS } from './product-goal';
+import {
+  GOAL_DEADLINE_RISK_DAYS,
+  ProductGoalRecord,
+  STALE_GOAL_DAYS,
+} from './product-goal';
 import {
   buildProductGoalFacts,
   collectLastProgressAt,
@@ -298,6 +302,103 @@ describe('buildProductGoalFacts — 진행 근거', () => {
   });
 });
 
+// 변이 테스트(Stryker)로 드러난 빈틈 — 호출자가 보는 결과(사실·질문·묶음 요약)로 경계값을 고정한다.
+describe('buildProductGoalFacts — 경계와 묶음', () => {
+  const dueIn = (days: number): Date => new Date(Date.UTC(2026, 9, 8 + days)); // now 의 KST 날짜(2026-10-08) 기준 UTC 자정
+  const riskFacts = (dueDate: Date, title = '보존기간 파일 파기') =>
+    build([goal({ dueDate, title })], {
+      context: contextWith(['보존기간 파기 배치 추가']),
+    }).facts.filter((fact) => fact.kind === 'GOAL_DEADLINE_RISK');
+
+  it('목표가 둘이면 작업이 둘 중 하나에만 붙어도 목표 밖이 아니다', () => {
+    const result = build(
+      [goal(), goal({ id: 2, title: '인증 개편', keywords: ['인증'] })],
+      { context: contextWith([], ['feat(file): 보존기간 파기']) },
+    );
+    expect(result.facts).toEqual([]);
+    expect(result.progressedGoalIds).toEqual([1]);
+  });
+
+  it('목표 밖 작업이 3건이면 전부 보이고 "외 N건" 은 붙지 않는다', () => {
+    const result = build([goal()], {
+      context: contextWith([], ['a 작업', 'b 작업', 'c 작업']),
+    });
+    expect(result.facts[0]).toMatchObject({
+      label: '목표 밖 작업 3건',
+      detail: 'a 작업 · b 작업 · c 작업',
+    });
+  });
+
+  it('목표 밖 작업이 4건이면 앞 3건만 보이고 나머지는 "외 N건" 으로 센다', () => {
+    const result = build([goal()], {
+      context: contextWith([], ['a 작업', 'b 작업', 'c 작업', 'd 작업']),
+    });
+    expect(result.facts[0]).toMatchObject({
+      label: '목표 밖 작업 4건',
+      detail: 'a 작업 · b 작업 · c 작업 외 1건',
+    });
+  });
+
+  it('담당 작업 조회를 못 한 회차는 열린 항목 0건으로 보고 기한 위험을 내지 않는다', () => {
+    const result = build([goal({ dueDate: dueIn(3) })], {
+      context: { ...contextWith(), assignedTasks: null },
+    });
+    expect(result.facts).toEqual([]);
+  });
+
+  it('기한이 정확히 GOAL_DEADLINE_RISK_DAYS 일 남았으면 기한 위험이다', () => {
+    expect(riskFacts(dueIn(GOAL_DEADLINE_RISK_DAYS))).toHaveLength(1);
+    expect(riskFacts(dueIn(GOAL_DEADLINE_RISK_DAYS + 1))).toHaveLength(0);
+  });
+
+  it('붙은 열린 항목 수는 목표에 붙은 것만 센다', () => {
+    const result = build([goal({ dueDate: dueIn(3) })], {
+      context: contextWith(['보존기간 파기 배치', '파기 2차', '무관한 작업']),
+    });
+    expect(result.facts[0]).toMatchObject({
+      detail: '기한 D-3 · 붙은 열린 항목 2건',
+    });
+  });
+
+  it('기한 위험 문구: 초과는 "N일 지남", 당일은 "D-0"', () => {
+    expect(riskFacts(dueIn(-2))[0].detail).toBe(
+      '기한 2일 지남 · 붙은 열린 항목 1건',
+    );
+    expect(riskFacts(dueIn(0))[0].detail).toBe('기한 D-0 · 붙은 열린 항목 1건');
+  });
+
+  it('기한이 오늘이면 아직 지났다고 묻지 않는다', () => {
+    const result = build([goal({ dueDate: dueIn(0) })], {
+      context: contextWith([], ['fix: 무관한 수정']),
+    });
+    expect(result.checkIns).toEqual([]);
+  });
+
+  it('마지막 진행이 목표를 만든 시각보다 앞서면 만든 시각부터 센다', () => {
+    const result = build([goal()], {
+      context: contextWith([], ['fix: 무관한 수정']),
+      lastProgressAtByGoalId: new Map([
+        [1, new Date(now.getTime() - 100 * DAY)],
+      ]),
+    });
+    expect(result.checkIns).toEqual([]);
+  });
+
+  describe('라벨 다듬기', () => {
+    it('제목 앞뒤 공백을 떼고 안의 연속 공백·줄바꿈은 한 칸으로 줄인다', () => {
+      expect(riskFacts(dueIn(3), '  보존기간   파기\n마무리  ')[0].label).toBe(
+        '보존기간 파기 마무리',
+      );
+    });
+
+    it('30자까지는 그대로, 넘으면 30자 뒤에 …', () => {
+      const exact = '가'.repeat(30);
+      expect(riskFacts(dueIn(3), exact)[0].label).toBe(exact);
+      expect(riskFacts(dueIn(3), `${exact}나`)[0].label).toBe(`${exact}…`);
+    });
+  });
+});
+
 describe('collectLastProgressAt', () => {
   it('목표별 가장 최근 진행 회차를 고르고 형태가 다른 값은 건너뛴다', () => {
     const older = new Date('2026-09-20T00:00:00Z');
@@ -314,5 +415,33 @@ describe('collectLastProgressAt', () => {
         [2, older],
       ]),
     );
+  });
+
+  it('더 오래된 회차가 뒤에 와도 가장 최근 진행 시각을 지킨다', () => {
+    const older = new Date('2026-09-20T00:00:00Z');
+    const newer = new Date('2026-10-01T00:00:00Z');
+    expect(
+      collectLastProgressAt([
+        { inputSnapshot: { goalProgress: [1] }, endedAt: newer },
+        { inputSnapshot: { goalProgress: [1] }, endedAt: older },
+      ]),
+    ).toEqual(new Map([[1, newer]]));
+  });
+
+  it('객체가 아닌 기록과 안전한 정수가 아닌 목표 id 는 던지지 않고 건너뛴다', () => {
+    const endedAt = new Date('2026-10-01T00:00:00Z');
+    expect(
+      collectLastProgressAt([
+        { inputSnapshot: undefined, endedAt },
+        { inputSnapshot: 'invalid', endedAt },
+        { inputSnapshot: {}, endedAt },
+        {
+          inputSnapshot: {
+            goalProgress: [1, 1.5, Number.MAX_SAFE_INTEGER + 1, '2'],
+          },
+          endedAt,
+        },
+      ]),
+    ).toEqual(new Map([[1, endedAt]]));
   });
 });
