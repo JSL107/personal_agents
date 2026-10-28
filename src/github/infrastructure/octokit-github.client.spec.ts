@@ -435,6 +435,7 @@ describe('OctokitGithubClient', () => {
         truncated: false,
         bytes: 6,
         omittedPaths: [],
+        omittedDiff: '',
       });
     });
 
@@ -484,6 +485,35 @@ describe('OctokitGithubClient', () => {
 
         expect(result.diff).toBe(section(path));
         expect(result.omittedPaths).toEqual([]);
+      });
+
+      it('뺀 파일의 원문은 비밀값 탐지용으로 따로 돌려준다', async () => {
+        const result = await fetch(
+          section('src/a.ts') + section('dist/app.js'),
+        );
+
+        expect(result.omittedDiff).toBe(section('dist/app.js'));
+      });
+
+      describe('이름이 바뀐 파일', () => {
+        const renamed = (from: string, to: string): string =>
+          `diff --git a/${from} b/${to}\nsimilarity index 90%\nrename from ${from}\nrename to ${to}\n@@ -1 +1 @@\n+changed\n`;
+
+        it('소스 파일을 dist/ 로 옮긴 변경은 남긴다', async () => {
+          const diff = renamed('src/app.js', 'dist/app.js');
+
+          const result = await fetch(diff);
+
+          expect(result.diff).toBe(diff);
+          expect(result.omittedPaths).toEqual([]);
+        });
+
+        it('옛 경로와 새 경로가 모두 노이즈면 뺀다', async () => {
+          const result = await fetch(renamed('dist/old.js', 'dist/new.js'));
+
+          expect(result.diff).toBe('');
+          expect(result.omittedPaths).toEqual(['dist/new.js']);
+        });
       });
 
       // 뺀 만큼 동작 코드가 상한 안에 들어와야 이 기능의 의미가 있다.
@@ -572,6 +602,7 @@ describe('OctokitGithubClient', () => {
           truncated: false,
           bytes: Buffer.byteLength(diff),
           omittedPaths: [],
+          omittedDiff: '',
         });
       });
     });

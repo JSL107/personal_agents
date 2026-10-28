@@ -349,12 +349,13 @@ export class OctokitGithubClient implements GithubClientPort {
         pull_number: number,
         mediaType: { format: 'diff' },
       });
-      const { diff, omittedPaths } = omitNoiseFiles(
+      const { diff, omittedPaths, omittedDiff } = omitNoiseFiles(
         response.data as unknown as string,
       );
       return {
         ...truncateDiff(diff, maxBytes, { testFilesLast: true }),
         omittedPaths,
+        omittedDiff,
       };
     } catch (error: unknown) {
       throw this.wrapRequestFailed(error, `PR #${number} diff 조회 실패`);
@@ -1669,30 +1670,44 @@ const NOISE_FILE_PATH = new RegExp(
   ].join('|'),
 );
 
-// `diff --git` 헤더의 b/ 경로. 비ASCII 경로는 git 이 따옴표로 감싸므로 따옴표만 벗긴다(moveTestFilesLast 참고).
-const diffSectionPath = (section: string): string | undefined => {
+interface DiffSectionPaths {
+  from: string;
+  to: string;
+}
+
+// `diff --git a/<옛 경로> b/<새 경로>` 헤더의 두 경로. 비ASCII 경로는 git 이 따옴표로 감싸므로 따옴표만 벗긴다.
+const diffSectionPaths = (section: string): DiffSectionPaths | undefined => {
   const header = section.split('\n', 1)[0];
-  if (!header.startsWith('diff --git ')) {
+  const matched = header.match(/^diff --git "?a\/(.*?)"? "?b\/(.*?)"?$/);
+  if (matched === null) {
     return undefined;
   }
-  return header.match(/ "?b\/(.*?)"?$/)?.[1];
+  return { from: matched[1], to: matched[2] };
 };
 
 // 상한으로 자르기 전에 뺀다 — 뺀 만큼 동작 코드가 상한 안에 더 들어온다. 뺀 경로는 프롬프트에 알린다.
+// 이름이 바뀐 섹션은 옛 경로와 새 경로가 둘 다 노이즈일 때만 뺀다 — 소스 파일을 dist/ 로 옮긴
+// 변경을 새 경로만 보고 숨기지 않는다.
 const omitNoiseFiles = (
   diff: string,
-): { diff: string; omittedPaths: string[] } => {
+): { diff: string; omittedPaths: string[]; omittedDiff: string } => {
   const kept: string[] = [];
+  const omitted: string[] = [];
   const omittedPaths: string[] = [];
   for (const section of diff.split(/^(?=diff --git )/m)) {
-    const path = diffSectionPath(section);
-    if (path !== undefined && NOISE_FILE_PATH.test(path)) {
-      omittedPaths.push(path);
+    const paths = diffSectionPaths(section);
+    if (
+      paths !== undefined &&
+      NOISE_FILE_PATH.test(paths.from) &&
+      NOISE_FILE_PATH.test(paths.to)
+    ) {
+      omitted.push(section);
+      omittedPaths.push(paths.to);
     } else {
       kept.push(section);
     }
   }
-  return { diff: kept.join(''), omittedPaths };
+  return { diff: kept.join(''), omittedPaths, omittedDiff: omitted.join('') };
 };
 
 // `diff --git a/<경로> b/<경로>` 단위로 나누고, 같은 무리 안의 순서는 유지한다.
@@ -1702,8 +1717,8 @@ const omitNoiseFiles = (
 const moveTestFilesLast = (diff: string): string => {
   const sections = diff.split(/^(?=diff --git )/m);
   const isTest = (section: string): boolean => {
-    const path = diffSectionPath(section);
-    return path !== undefined && TEST_FILE_PATH.test(path);
+    const paths = diffSectionPaths(section);
+    return paths !== undefined && TEST_FILE_PATH.test(paths.to);
   };
   return [
     ...sections.filter((section) => !isTest(section)),

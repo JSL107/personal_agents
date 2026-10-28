@@ -102,7 +102,11 @@ export const computeRiskMap = ({
   const untested = collectUntestedItems(context);
   const addedLines = listAddedLines(diff.diff);
   const suppressionItems = collectSuppressionItems({ context, addedLines });
-  const tokenItems = collectTokenItems(addedLines);
+  // 빌드 산출물에는 환경 변수 값이 그대로 박혀 나오기도 해서, 리뷰에서 뺀 파일도 비밀값은 본다.
+  const tokenItems = collectTokenItems([
+    ...addedLines,
+    ...listAddedLines(diff.omittedDiff ?? ''),
+  ]);
   const items: RiskItem[] = [
     ...collectChangeItems(context),
     ...testItems,
