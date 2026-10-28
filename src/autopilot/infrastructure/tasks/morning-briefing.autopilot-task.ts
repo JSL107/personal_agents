@@ -12,8 +12,16 @@ import { formatPortfolioValue } from '../../../agent/stock/infrastructure/stock-
 import { StockMonitorPrismaRepository } from '../../../agent/stock/infrastructure/stock-monitor.prisma.repository';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import {
+  AGENT_RUN_VERDICT_REPOSITORY_PORT,
+  AgentRunVerdictRepositoryPort,
+} from '../../../agent-run/domain/port/agent-run-verdict.repository.port';
+import {
+  RunVerdictDigestCard,
+  selectRunVerdictDigestCards,
+} from '../../../agent-run/domain/run-verdict-digest';
+import {
   countKstDaysBetween,
-  formatKstDate,
+  getKstDateOf,
   getKstDayStartAsUtc,
 } from '../../../common/util/kst-date.util';
 import { HumanizeService } from '../../../humanize/application/humanize.service';
@@ -41,8 +49,14 @@ import {
   plainDateToUtcDate,
   todayInKst,
 } from '../../../schedule/domain/parse-due-date';
+import {
+  SLACK_DELIVERY_REPOSITORY,
+  SlackDeliveryRepositoryPort,
+  SlackDeliveryStatRow,
+} from '../../../slack/domain/port/slack-delivery.repository.port';
 import { formatDailyPlan } from '../../../slack/format/daily-plan.formatter';
 import { formatModelFooter } from '../../../slack/format/model-footer.formatter';
+import { buildRunVerdictDigestPages } from '../../../slack/format/run-verdict-message.builder';
 import { formatUpcomingLine } from '../../../slack/format/schedule-briefing.formatter';
 import { formatWaitingSection } from '../../../slack/format/waiting-section.formatter';
 import {
@@ -53,6 +67,7 @@ import {
   AutopilotTask,
   AutopilotTaskContext,
   AutopilotTaskResult,
+  AutopilotVerdictCard,
 } from '../../domain/autopilot-task.port';
 import {
   getLedgerWatchTodayStart,
@@ -68,6 +83,7 @@ import {
   DAILY_DIGEST_REPOSITORY_PORT,
   DailyDigestRepositoryPort,
 } from '../../domain/port/daily-digest.repository.port';
+import { isRunResultDelivered } from '../../domain/run-delivery';
 import {
   formatMorningDigest,
   MorningDigestInput,
@@ -113,6 +129,26 @@ const isWeekendKst = (firedAtKst: string): boolean => {
   const day = new Date(`${firedAtKst}T00:00:00.000Z`).getUTCDay();
   return day === 0 || day === 6;
 };
+
+// 축 카드 하나를 슬랙 메시지로 — 블록 상한을 넘으면 여러 통이다.
+const toVerdictCardMessages = (
+  card: RunVerdictDigestCard,
+): AutopilotVerdictCard[] => {
+  const entries = card.entries.map((entry) => ({
+    agentRunId: entry.agentRunId,
+    facets: entry.facets,
+    dateLabel: formatTradeDay(getKstDateOf(entry.startedAt)),
+    quote: entry.quote,
+  }));
+  const pages = buildRunVerdictDigestPages({ heading: card.heading, entries });
+  const text = `${card.heading} — 지난주 판정 안 된 ${card.entries.length}건`;
+  return pages.map((blocks) => ({ text, blocks }));
+};
+
+const isMondayKst = (firedAtKst: string): boolean =>
+  new Date(`${firedAtKst}T00:00:00.000Z`).getUTCDay() === 1;
+
+const WEEK_MS = 7 * DAY_MS;
 
 // 승인 대기 줄에 적을 카드 이름. 첫 줄만 보고 무엇인지 알 수 있는 짧은 이름이어야 한다.
 const APPROVAL_KIND_LABEL: Partial<Record<string, string>> = {
@@ -178,10 +214,6 @@ const toIncidentLabel = (label: string): string => {
 // "해결 — 블로그 GitHub 발행 실패" 처럼 읽히지 않게 해결 줄에서는 " 실패" 를 뗀다.
 const toResolvedLabel = (label: string): string =>
   toIncidentLabel(label).replace(/ 실패$/, '');
-
-// KST 달력일(YYYY-MM-DD). Date 를 넘기므로 formatKstDate 의 파싱 실패 분기(null)는 오지 않는다.
-const getKstDateOf = (date: Date): string =>
-  formatKstDate(date.toISOString()) ?? date.toISOString().slice(0, 10);
 
 const truncate = (text: string, maxLength: number): string =>
   text.length <= maxLength ? text : `${text.slice(0, maxLength)}…`;
@@ -268,6 +300,10 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
     private readonly configService: ConfigService,
     @Inject(CUJ_LEDGER_READER_PORT)
     private readonly cujLedgerReader: CujLedgerReaderPort,
+    @Inject(AGENT_RUN_VERDICT_REPOSITORY_PORT)
+    private readonly verdictRepository: AgentRunVerdictRepositoryPort,
+    @Inject(SLACK_DELIVERY_REPOSITORY)
+    private readonly deliveryRepository: SlackDeliveryRepositoryPort,
   ) {}
 
   async run({
@@ -285,6 +321,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
       portfolio,
       ledgerGapIncidents,
       resolvedIncidents,
+      verdictCards,
     ] = await Promise.all([
       this.loadApprovalLabels(ownerSlackUserId, now),
       this.loadIncidents(now),
@@ -300,6 +337,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
       this.loadPortfolio(now),
       this.loadLedgerGapIncidents(firedAtKst),
       this.loadResolvedIncidents(firedAtKst, now),
+      this.loadWeeklyVerdictCards(ownerSlackUserId, firedAtKst),
     ]);
 
     // 그날 회차에서 감지한 문제도 장애로 센다 — 첫 줄만 보고 열지 정하는 메시지라, 아래 줄에만
@@ -344,12 +382,66 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
       detailIsOnlyCopy: true,
       // 공고 링크가 스레드에, 계획 링크가 본문에 실린다 — 미리보기가 펼쳐지면 한 줄씩 둔 목적이 묻힌다.
       unfurlLinks: false,
+      ...(verdictCards.length > 0 ? { verdictCards } : {}),
       // 선점은 공고 목록(스레드)이 실제로 나간 뒤에만 — 스레드가 실패하면 오케스트레이터가
       // 이 콜백을 건너뛰어 다음 날 같은 공고가 다시 뜬다(중복 > 유실).
       ...(postings.length > 0
         ? { onDelivered: async (): Promise<void> => this.claim(postings) }
         : {}),
     };
+  }
+
+  // 월요일 아침에만 — 지난주(월 0시 ~ 이번 주 월 0시, KST) 매일 버튼으로 판정받지 못한 실행을 축별 카드로
+  // 묶어 이 아침 스레드에 싣는다. 새 채널 메시지를 만들지 않으려고 아침 한 통의 댓글로 둔다
+  // (2026-10-22-slack-send-reduction.md: 평일 채널 메시지 6통 목표). 클릭이 다음 날 오전에 몰리는
+  // 모양(2026-10-08-slack-send-analysis.md §3-③)에 맞춘 시각이기도 하다.
+  // ponytail: 월요일이 공휴일이라 아침 회차가 안 돌면 그 주 카드는 건너뛴다 — 잦아지면 "그 주 첫 아침" 으로.
+  private async loadWeeklyVerdictCards(
+    ownerSlackUserId: string,
+    firedAtKst: string,
+  ): Promise<AutopilotVerdictCard[]> {
+    if (!isMondayKst(firedAtKst)) {
+      return [];
+    }
+    try {
+      const until = new Date(`${firedAtKst}T00:00:00.000+09:00`);
+      const runs = await this.verdictRepository.findRunsForVerdictDigest({
+        slackUserId: ownerSlackUserId,
+        since: new Date(until.getTime() - WEEK_MS),
+        until,
+      });
+      // 결과가 사람에게 나간 실행만 묻는다 — 매일 버튼도 본문이 나간 회차에만 붙었다.
+      const deliveredByDay = await this.loadDeliveredDays(runs);
+      const shownRuns = runs.filter((run) =>
+        isRunResultDelivered({
+          agentType: run.agentType,
+          deliveries: deliveredByDay.get(getKstDateOf(run.startedAt)) ?? [],
+        }),
+      );
+      const cards = selectRunVerdictDigestCards(shownRuns);
+      return cards.flatMap(toVerdictCardMessages);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`주간 판정 카드 조회 실패 — 이번 주 생략: ${message}`);
+      return [];
+    }
+  }
+
+  // 실행이 있는 날마다 그날 하루의 발송 원장. 원장 행에 시각이 없어 날짜 창으로 묻는다(주 5~7회, 병렬).
+  private async loadDeliveredDays(
+    runs: { startedAt: Date }[],
+  ): Promise<Map<string, SlackDeliveryStatRow[]>> {
+    const days = [...new Set(runs.map((run) => getKstDateOf(run.startedAt)))];
+    const rows = await Promise.all(
+      days.map((day) => {
+        const dayStart = new Date(`${day}T00:00:00.000+09:00`);
+        return this.deliveryRepository.findSince(
+          dayStart,
+          new Date(dayStart.getTime() + DAY_MS),
+        );
+      }),
+    );
+    return new Map(days.map((day, index) => [day, rows[index]]));
   }
 
   private async buildPlanSection(

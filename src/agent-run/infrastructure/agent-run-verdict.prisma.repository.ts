@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { PrismaService } from '../../prisma/prisma.service';
+import { AgentRunStatus } from '../domain/agent-run.type';
 import {
   AgentRunVerdictRepositoryPort,
   AgentVerdictCountRow,
@@ -8,6 +9,10 @@ import {
   RunVerdictRow,
 } from '../domain/port/agent-run-verdict.repository.port';
 import { getRunVerdictPolarity } from '../domain/run-verdict';
+import {
+  RUN_VERDICT_DIGEST_SOURCES,
+  RunVerdictDigestRun,
+} from '../domain/run-verdict-digest';
 
 @Injectable()
 export class AgentRunVerdictPrismaRepository implements AgentRunVerdictRepositoryPort {
@@ -89,5 +94,51 @@ export class AgentRunVerdictPrismaRepository implements AgentRunVerdictRepositor
       counts.set(agentType, row);
     }
     return [...counts.values()];
+  }
+
+  // countByAgentType 과 같은 이유로 조인 대신 두 번 묻는다. 창은 일주일, 대상은 하루 3건 남짓이다.
+  async findRunsForVerdictDigest({
+    slackUserId,
+    since,
+    until,
+  }: {
+    slackUserId: string;
+    since: Date;
+    until: Date;
+  }): Promise<RunVerdictDigestRun[]> {
+    const runs = await this.prisma.agentRun.findMany({
+      where: {
+        status: AgentRunStatus.SUCCEEDED,
+        startedAt: { gte: since, lt: until },
+        inputSnapshot: { path: ['slackUserId'], equals: slackUserId },
+        OR: RUN_VERDICT_DIGEST_SOURCES.map(({ agentType, triggerType }) => ({
+          agentType,
+          triggerType,
+        })),
+      },
+      select: { id: true, agentType: true, startedAt: true, output: true },
+      orderBy: { startedAt: 'asc' },
+    });
+    if (runs.length === 0) {
+      return [];
+    }
+    const verdicts = await this.prisma.agentRunVerdict.findMany({
+      where: { agentRunId: { in: runs.map((run) => run.id) } },
+      select: { agentRunId: true, facet: true },
+    });
+    const judgedFacetsByRunId = new Map<number, string[]>();
+    for (const { agentRunId, facet } of verdicts) {
+      judgedFacetsByRunId.set(agentRunId, [
+        ...(judgedFacetsByRunId.get(agentRunId) ?? []),
+        facet,
+      ]);
+    }
+    return runs.map((run) => ({
+      id: run.id,
+      agentType: run.agentType,
+      startedAt: run.startedAt,
+      output: run.output,
+      judgedFacets: judgedFacetsByRunId.get(run.id) ?? [],
+    }));
   }
 }

@@ -27,6 +27,10 @@ export const formatKstDate = (
   return KST_DATE_FORMATTER.format(date);
 };
 
+// Date 의 KST 달력일(YYYY-MM-DD). Date 를 받으므로 formatKstDate 의 파싱 실패 분기가 없다.
+export const getKstDateOf = (date: Date): string =>
+  KST_DATE_FORMATTER.format(date);
+
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 

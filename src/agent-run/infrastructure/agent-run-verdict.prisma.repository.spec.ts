@@ -80,4 +80,47 @@ describe('AgentRunVerdictPrismaRepository', () => {
     ).resolves.toEqual([]);
     expect(runFindMany).not.toHaveBeenCalled();
   });
+
+  it('주간 카드 재료는 그 사용자의 cron 실행만 묻고, 실행마다 이미 판정된 축을 붙인다', async () => {
+    const since = new Date('2026-10-25T15:00:00.000Z');
+    const until = new Date('2026-11-01T15:00:00.000Z');
+    const startedAt = new Date('2026-10-27T10:00:00.000Z');
+    const runFindMany = jest.fn().mockResolvedValue([
+      { id: 1, agentType: 'EVENING_RETRO', startedAt, output: {} },
+      { id: 2, agentType: 'PM', startedAt, output: {} },
+    ]);
+    const verdictFindMany = jest.fn().mockResolvedValue([
+      { agentRunId: 1, facet: 'retro_problem' },
+      { agentRunId: 1, facet: 'overall' },
+    ]);
+    const repository = new AgentRunVerdictPrismaRepository({
+      agentRun: { findMany: runFindMany },
+      agentRunVerdict: { findMany: verdictFindMany },
+    } as never);
+
+    const runs = await repository.findRunsForVerdictDigest({
+      slackUserId: 'U1',
+      since,
+      until,
+    });
+
+    expect(runFindMany.mock.calls[0][0].where).toEqual({
+      status: 'SUCCEEDED',
+      startedAt: { gte: since, lt: until },
+      inputSnapshot: { path: ['slackUserId'], equals: 'U1' },
+      // 수동 /today 처럼 매일 버튼이 나간 적 없는 실행은 묻지 않는다.
+      OR: [
+        {
+          agentType: 'EVENING_RETRO',
+          triggerType: 'AUTOPILOT_EVENING_RETRO_CRON',
+        },
+        { agentType: 'PO_SHADOW', triggerType: 'AUTOPILOT_PO_SHADOW_CRON' },
+        { agentType: 'PM', triggerType: 'MORNING_BRIEFING_CRON' },
+      ],
+    });
+    expect(runs.map((run) => [run.id, run.judgedFacets])).toEqual([
+      [1, ['retro_problem', 'overall']],
+      [2, []],
+    ]);
+  });
 });
