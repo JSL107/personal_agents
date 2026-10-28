@@ -7,6 +7,7 @@ import {
   RUN_VERDICT_FACETS,
   RunVerdictFacet,
 } from '../../agent-run/domain/run-verdict';
+import { SlackBlock } from './message-blocks.builder';
 
 // 버튼마다 action_id 가 다르다(한 actions 블록 안에서 action_id 는 겹칠 수 없다). 핸들러는
 // 이 접두사로 한 번에 받는다.
@@ -46,35 +47,19 @@ export const formatRunVerdictQuote = (
   return label ? `*${label}*\n> ${escaped}` : `> ${escaped}`;
 };
 
-export interface RunVerdictActionMessage {
-  text?: string;
-  blocks?: Array<Record<string, unknown>>;
-}
-
-// 누른 메시지 — 슬랙이 action body 에 원래 메시지(알림 문구·블록)를 실어 보낸다. 없거나 모양이 다르면 그 칸이 빈다.
-export const readRunVerdictActionMessage = (
-  body: unknown,
-): RunVerdictActionMessage => {
-  const message = (body as { message?: { text?: unknown; blocks?: unknown } })
-    ?.message;
-  return {
-    ...(typeof message?.text === 'string' && message.text.length > 0
-      ? { text: message.text }
-      : {}),
-    ...(Array.isArray(message?.blocks)
-      ? { blocks: message.blocks as Array<Record<string, unknown>> }
-      : {}),
-  };
-};
-
 // 버튼을 누른 action body 의 원래 판정 댓글에서 인용 블록의 mrkdwn 을 되읽는다. 없거나 모양이
 // 다르면 undefined — 인용 없이 다시 그린다(판정 저장은 이미 끝났으니 인용 하나로 갱신을 막지 않는다).
-export const readRunVerdictQuote = (body: unknown): string | undefined => {
-  const found = readRunVerdictActionMessage(body).blocks?.find(
+export const readRunVerdictQuote = (
+  blocks: SlackBlock[] | undefined,
+): string | undefined => {
+  const found = blocks?.find(
     (block) => block.block_id === RUN_VERDICT_QUOTE_BLOCK_ID,
   );
-  const text = (found as { text?: { text?: unknown } } | undefined)?.text?.text;
-  return typeof text === 'string' && text.length > 0 ? text : undefined;
+  const text = (found?.text as { text?: unknown } | undefined)?.text;
+  if (typeof text !== 'string' || text.length === 0) {
+    return undefined;
+  }
+  return text;
 };
 
 // 버튼 값 — 슬랙이 그대로 되돌려 주는 입력이다. 사람 이름·본문은 싣지 않는다(설계 §3 공통 규칙).
@@ -89,24 +74,43 @@ interface RunVerdictButtonValue {
 
 export type RunVerdictSelection = RunVerdictButtonValue;
 
-export type RunVerdictChoices = Partial<
-  Record<RunVerdictFacet, { slackUserId: string; verdict: string }[]>
+// 한 사람이 한 축에 내린 판정.
+export interface RunVerdictChoice {
+  slackUserId: string;
+  verdict: string;
+}
+
+// 실행 하나에 내려진 판정 — 축마다 누른 사람 모두. 메시지는 채널에 하나라 누른 사람을 다 적는다.
+export type RunVerdictChoices = ReadonlyMap<
+  RunVerdictFacet,
+  RunVerdictChoice[]
 >;
 
 // 축마다 "물음 + 상태" 줄의 block_id. 누른 뒤 핸들러가 메시지에서 이 줄만 찾아 상태를 다시 쓴다 —
 // 한 메시지에 실행이 여럿 실리는 주간 카드도 같은 방식으로 갱신된다.
 const RUN_VERDICT_STATUS_BLOCK_ID_PATTERN = /^run-verdict-status:(\d+):(\w+)$/;
 
-const toRunVerdictStatusBlockId = (
-  agentRunId: number,
-  facet: RunVerdictFacet,
-): string => `run-verdict-status:${agentRunId}:${facet}`;
+export interface RunVerdictStatusTarget {
+  agentRunId: number;
+  facet: RunVerdictFacet;
+}
+
+const toRunVerdictStatusBlockId = ({
+  agentRunId,
+  facet,
+}: RunVerdictStatusTarget): string =>
+  `run-verdict-status:${agentRunId}:${facet}`;
+
+interface RunVerdictStatusInput {
+  facet: RunVerdictFacet;
+  chosen: RunVerdictChoice[];
+}
 
 // 판정 전이면 물음만 둔다. "판정 전" 꼬리표는 읽을 거리만 늘렸다.
-const formatRunVerdictStatus = (
-  facet: RunVerdictFacet,
-  chosen: { slackUserId: string; verdict: string }[],
-): string => {
+const formatRunVerdictStatus = ({
+  facet,
+  chosen,
+}: RunVerdictStatusInput): string => {
   const question = `*${RUN_VERDICT_FACETS[facet].question}*`;
   if (chosen.length === 0) {
     return question;
@@ -120,57 +124,63 @@ const formatRunVerdictStatus = (
   return `${question}\n✅ 판정됨: ${picked} _(바꾸려면 다시 누르기)_`;
 };
 
+interface RunVerdictFacetBlocksInput extends RunVerdictStatusInput {
+  agentRunId: number;
+  // 버튼 값에 함께 싣는, 이 메시지에 나간 실행의 축 목록(RunVerdictButtonValue.facets).
+  facets: RunVerdictFacet[];
+}
+
 const buildRunVerdictFacetBlocks = ({
   agentRunId,
   facet,
   facets,
   chosen,
-}: {
+}: RunVerdictFacetBlocksInput): SlackBlock[] => {
+  const buttons = Object.entries(RUN_VERDICT_FACETS[facet].verdicts).map(
+    ([verdict, label]) => ({
+      type: 'button',
+      action_id: `${RUN_VERDICT_ACTION_PREFIX}${facet}:${verdict}`,
+      text: { type: 'plain_text', text: label },
+      value: JSON.stringify({ agentRunId, facet, verdict, facets }),
+    }),
+  );
+  return [
+    {
+      type: 'section',
+      block_id: toRunVerdictStatusBlockId({ agentRunId, facet }),
+      text: { type: 'mrkdwn', text: formatRunVerdictStatus({ facet, chosen }) },
+    },
+    {
+      type: 'actions',
+      block_id: `run-verdict:${agentRunId}:${facet}`,
+      elements: buttons,
+    },
+  ];
+};
+
+interface RunVerdictBlocksInput {
   agentRunId: number;
-  facet: RunVerdictFacet;
   facets: RunVerdictFacet[];
-  chosen: { slackUserId: string; verdict: string }[];
-}): Array<Record<string, unknown>> => [
-  {
-    type: 'section',
-    block_id: toRunVerdictStatusBlockId(agentRunId, facet),
-    text: { type: 'mrkdwn', text: formatRunVerdictStatus(facet, chosen) },
-  },
-  {
-    type: 'actions',
-    block_id: `run-verdict:${agentRunId}:${facet}`,
-    elements: Object.entries(RUN_VERDICT_FACETS[facet].verdicts).map(
-      ([verdict, label]) => ({
-        type: 'button',
-        action_id: `${RUN_VERDICT_ACTION_PREFIX}${facet}:${verdict}`,
-        text: { type: 'plain_text', text: label },
-        value: JSON.stringify({ agentRunId, facet, verdict, facets }),
-      }),
-    ),
-  },
-];
+  // `formatRunVerdictQuote` 결과 또는 원래 댓글에서 되읽은 값. 없으면 인용 블록을 내지 않는다.
+  quoteMrkdwn?: string;
+  // 이미 내린 판정. 댓글은 채널에 하나라 누른 사람 모두를 적는다.
+  verdicts: RunVerdictChoices;
+}
 
 export const buildRunVerdictBlocks = ({
   agentRunId,
   facets,
   verdicts,
   quoteMrkdwn,
-}: {
-  agentRunId: number;
-  facets: RunVerdictFacet[];
-  // `formatRunVerdictQuote` 결과 또는 원래 댓글에서 되읽은 값. 없으면 인용 블록을 내지 않는다.
-  quoteMrkdwn?: string;
-  // 이미 내린 판정(축 → 사람별 값). 댓글은 채널에 하나라 누른 사람 모두를 적는다.
-  verdicts: RunVerdictChoices;
-}): Array<Record<string, unknown>> => [
-  {
+}: RunVerdictBlocksInput): SlackBlock[] => {
+  const heading: SlackBlock = {
     type: 'section',
     text: {
       type: 'mrkdwn',
       text: `*${getRunVerdictHeading(facets)}* — 누른 것만 판정으로 셉니다.`,
     },
-  },
-  ...(quoteMrkdwn
+  };
+  const quote: SlackBlock[] = quoteMrkdwn
     ? [
         {
           type: 'section',
@@ -178,16 +188,17 @@ export const buildRunVerdictBlocks = ({
           text: { type: 'mrkdwn', text: quoteMrkdwn },
         },
       ]
-    : []),
-  ...facets.flatMap((facet) =>
+    : [];
+  const facetBlocks = facets.flatMap((facet) =>
     buildRunVerdictFacetBlocks({
       agentRunId,
       facet,
       facets,
-      chosen: verdicts[facet] ?? [],
+      chosen: verdicts.get(facet) ?? [],
     }),
-  ),
-];
+  );
+  return [heading, ...quote, ...facetBlocks];
+};
 
 export interface RunVerdictDigestCardEntry {
   agentRunId: number;
@@ -197,79 +208,88 @@ export interface RunVerdictDigestCardEntry {
   quote: string;
 }
 
+// 주간 카드 한 통의 블록. 슬랙 메시지 한 통에 싣는 단위다.
+export type RunVerdictDigestPage = SlackBlock[];
+
 // 슬랙 메시지 한 통의 블록 상한은 50 이다. 넘으면 발송 자체가 거부되므로 넘치는 실행은 다음 통으로 넘긴다
 // — 버리면 그 주의 판정 기회가 조용히 사라진다.
 const SLACK_MESSAGE_BLOCK_LIMIT = 50;
+// 머리 한 블록.
+const DIGEST_HEADER_BLOCK_COUNT = 1;
 
-const paginateDigestEntries = (
+// 날짜·인용 1 + 축마다 물음·버튼 2
+const countEntryBlocks = (entry: RunVerdictDigestCardEntry): number =>
+  1 + entry.facets.length * 2;
+
+const countGroupBlocks = (group: RunVerdictDigestCardEntry[]): number =>
+  group.reduce(
+    (total, entry) => total + countEntryBlocks(entry),
+    DIGEST_HEADER_BLOCK_COUNT,
+  );
+
+// 앞에서부터 채우고, 다음 실행이 상한을 넘기면 새 묶음을 연다.
+const groupDigestEntries = (
   entries: RunVerdictDigestCardEntry[],
-): RunVerdictDigestCardEntry[][] => {
-  const pages: RunVerdictDigestCardEntry[][] = [];
-  let page: RunVerdictDigestCardEntry[] = [];
-  let used = 1;
-  for (const entry of entries) {
-    // 날짜·인용 1 + 축마다 물음·버튼 2
-    const cost = 1 + entry.facets.length * 2;
-    if (page.length > 0 && used + cost > SLACK_MESSAGE_BLOCK_LIMIT) {
-      pages.push(page);
-      page = [];
-      used = 1;
+): RunVerdictDigestCardEntry[][] =>
+  entries.reduce<RunVerdictDigestCardEntry[][]>((groups, entry) => {
+    const last = groups.at(-1);
+    const fits =
+      last !== undefined &&
+      countGroupBlocks(last) + countEntryBlocks(entry) <=
+        SLACK_MESSAGE_BLOCK_LIMIT;
+    if (fits) {
+      last.push(entry);
+      return groups;
     }
-    page.push(entry);
-    used += cost;
-  }
-  return page.length > 0 ? [...pages, page] : pages;
+    return [...groups, [entry]];
+  }, []);
+
+const buildDigestEntryBlocks = (
+  entry: RunVerdictDigestCardEntry,
+): SlackBlock[] => {
+  const quote = formatRunVerdictQuote(
+    entry.quote,
+    getRunVerdictQuoteLabel(entry.facets),
+  );
+  const facetBlocks = entry.facets.flatMap((facet) =>
+    buildRunVerdictFacetBlocks({
+      agentRunId: entry.agentRunId,
+      facet,
+      facets: entry.facets,
+      chosen: [],
+    }),
+  );
+  const dateAndQuote: SlackBlock = {
+    type: 'section',
+    text: { type: 'mrkdwn', text: `*${entry.dateLabel}*\n${quote}` },
+  };
+  return [dateAndQuote, ...facetBlocks];
 };
+
+interface RunVerdictDigestInput {
+  heading: string;
+  entries: RunVerdictDigestCardEntry[];
+}
 
 // 주간 판정 카드 — 축(agentType) 하나에 한 통(넘치면 여러 통). 실행마다 날짜·인용 한 블록, 축마다 물음 + 버튼.
 export const buildRunVerdictDigestPages = ({
   heading,
   entries,
-}: {
-  heading: string;
-  entries: RunVerdictDigestCardEntry[];
-}): Array<Array<Record<string, unknown>>> => {
-  const pages = paginateDigestEntries(entries);
-  return pages.map((page, index) => [
+}: RunVerdictDigestInput): RunVerdictDigestPage[] => {
+  const groups = groupDigestEntries(entries);
+  const pageMark = (index: number): string =>
+    groups.length > 1 ? ` (${index + 1}/${groups.length})` : '';
+  return groups.map((group, index) => [
     {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text:
-          `*${heading}* — 지난주 판정 안 된 ${entries.length}건, 누른 것만 셉니다.` +
-          (pages.length > 1 ? ` (${index + 1}/${pages.length})` : ''),
+        text: `*${heading}* — 지난주 판정 안 된 ${entries.length}건, 누른 것만 셉니다.${pageMark(index)}`,
       },
     },
-    ...page.flatMap((entry) => {
-      const quote = formatRunVerdictQuote(
-        entry.quote,
-        getRunVerdictQuoteLabel(entry.facets),
-      );
-      return [
-        {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: `*${entry.dateLabel}*${quote ? `\n${quote}` : ''}`,
-          },
-        },
-        ...entry.facets.flatMap((facet) =>
-          buildRunVerdictFacetBlocks({
-            agentRunId: entry.agentRunId,
-            facet,
-            facets: entry.facets,
-            chosen: [],
-          }),
-        ),
-      ];
-    }),
+    ...group.flatMap(buildDigestEntryBlocks),
   ]);
 };
-
-export interface RunVerdictStatusTarget {
-  agentRunId: number;
-  facet: RunVerdictFacet;
-}
 
 const parseRunVerdictStatusBlockId = (
   blockId: unknown,
@@ -286,31 +306,39 @@ const parseRunVerdictStatusBlockId = (
 
 // 메시지에 실린 상태 줄 전부. 비어 있으면 상태 줄 block_id 를 달기 전(2026-10-28 이전)에 나간 댓글이다.
 export const readRunVerdictStatusTargets = (
-  blocks: Array<Record<string, unknown>>,
-): RunVerdictStatusTarget[] =>
-  blocks
-    .map((block) => parseRunVerdictStatusBlockId(block.block_id))
-    .filter((target): target is RunVerdictStatusTarget => target !== undefined);
+  blocks: SlackBlock[],
+): RunVerdictStatusTarget[] => {
+  const targets = blocks.map((block) =>
+    parseRunVerdictStatusBlockId(block.block_id),
+  );
+  return targets.filter(
+    (target): target is RunVerdictStatusTarget => target !== undefined,
+  );
+};
+
+interface RefreshRunVerdictStatusesInput {
+  blocks: SlackBlock[];
+  // 실행 id → 그 실행에 내려진 판정.
+  verdictsByRun: ReadonlyMap<number, RunVerdictChoices>;
+}
 
 // 상태 줄만 원장 값으로 다시 쓰고 나머지 블록(머리·인용·버튼)은 그대로 둔다. 상태 줄을 전부 다시
 // 쓰므로 action body 의 메시지가 직전 갱신보다 오래된 사본이어도 결과는 최신이다.
-export const refreshRunVerdictStatuses = (
-  blocks: Array<Record<string, unknown>>,
-  verdictsByRun: ReadonlyMap<number, RunVerdictChoices>,
-): Array<Record<string, unknown>> =>
+export const refreshRunVerdictStatuses = ({
+  blocks,
+  verdictsByRun,
+}: RefreshRunVerdictStatusesInput): SlackBlock[] =>
   blocks.map((block) => {
     const target = parseRunVerdictStatusBlockId(block.block_id);
     if (!target) {
       return block;
     }
-    const chosen = verdictsByRun.get(target.agentRunId)?.[target.facet] ?? [];
-    return {
-      ...block,
-      text: {
-        type: 'mrkdwn',
-        text: formatRunVerdictStatus(target.facet, chosen),
-      },
-    };
+    const chosen = verdictsByRun.get(target.agentRunId)?.get(target.facet);
+    const text = formatRunVerdictStatus({
+      facet: target.facet,
+      chosen: chosen ?? [],
+    });
+    return { ...block, text: { type: 'mrkdwn', text } };
   });
 
 // 허용 목록 밖이면 null — 저장하지 않는다. 버튼 값은 클라이언트에서 온 입력이다.

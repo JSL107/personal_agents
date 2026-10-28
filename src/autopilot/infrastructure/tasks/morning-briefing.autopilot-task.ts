@@ -15,10 +15,13 @@ import {
   AGENT_RUN_VERDICT_REPOSITORY_PORT,
   AgentRunVerdictRepositoryPort,
 } from '../../../agent-run/domain/port/agent-run-verdict.repository.port';
-import { selectRunVerdictDigestCards } from '../../../agent-run/domain/run-verdict-digest';
+import {
+  RunVerdictDigestCard,
+  selectRunVerdictDigestCards,
+} from '../../../agent-run/domain/run-verdict-digest';
 import {
   countKstDaysBetween,
-  formatKstDate,
+  getKstDateOf,
   getKstDayStartAsUtc,
 } from '../../../common/util/kst-date.util';
 import { HumanizeService } from '../../../humanize/application/humanize.service';
@@ -127,6 +130,21 @@ const isWeekendKst = (firedAtKst: string): boolean => {
   return day === 0 || day === 6;
 };
 
+// 축 카드 하나를 슬랙 메시지로 — 블록 상한을 넘으면 여러 통이다.
+const toVerdictCardMessages = (
+  card: RunVerdictDigestCard,
+): AutopilotVerdictCard[] => {
+  const entries = card.entries.map((entry) => ({
+    agentRunId: entry.agentRunId,
+    facets: entry.facets,
+    dateLabel: formatTradeDay(getKstDateOf(entry.startedAt)),
+    quote: entry.quote,
+  }));
+  const pages = buildRunVerdictDigestPages({ heading: card.heading, entries });
+  const text = `${card.heading} — 지난주 판정 안 된 ${card.entries.length}건`;
+  return pages.map((blocks) => ({ text, blocks }));
+};
+
 const isMondayKst = (firedAtKst: string): boolean =>
   new Date(`${firedAtKst}T00:00:00.000Z`).getUTCDay() === 1;
 
@@ -196,10 +214,6 @@ const toIncidentLabel = (label: string): string => {
 // "해결 — 블로그 GitHub 발행 실패" 처럼 읽히지 않게 해결 줄에서는 " 실패" 를 뗀다.
 const toResolvedLabel = (label: string): string =>
   toIncidentLabel(label).replace(/ 실패$/, '');
-
-// KST 달력일(YYYY-MM-DD). Date 를 넘기므로 formatKstDate 의 파싱 실패 분기(null)는 오지 않는다.
-const getKstDateOf = (date: Date): string =>
-  formatKstDate(date.toISOString()) ?? date.toISOString().slice(0, 10);
 
 const truncate = (text: string, maxLength: number): string =>
   text.length <= maxLength ? text : `${text.slice(0, maxLength)}…`;
@@ -399,25 +413,13 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
       // 결과가 사람에게 나간 실행만 묻는다 — 매일 버튼도 본문이 나간 회차에만 붙었다.
       const deliveredByDay = await this.loadDeliveredDays(runs);
       const shownRuns = runs.filter((run) =>
-        isRunResultDelivered(
-          run.agentType,
-          deliveredByDay.get(getKstDateOf(run.startedAt)) ?? [],
-        ),
+        isRunResultDelivered({
+          agentType: run.agentType,
+          deliveries: deliveredByDay.get(getKstDateOf(run.startedAt)) ?? [],
+        }),
       );
-      return selectRunVerdictDigestCards(shownRuns).flatMap((card) =>
-        buildRunVerdictDigestPages({
-          heading: card.heading,
-          entries: card.entries.map((entry) => ({
-            agentRunId: entry.agentRunId,
-            facets: entry.facets,
-            dateLabel: formatTradeDay(getKstDateOf(entry.startedAt)),
-            quote: entry.quote,
-          })),
-        }).map((blocks) => ({
-          text: `${card.heading} — 지난주 판정 안 된 ${card.entries.length}건`,
-          blocks,
-        })),
-      );
+      const cards = selectRunVerdictDigestCards(shownRuns);
+      return cards.flatMap(toVerdictCardMessages);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(`주간 판정 카드 조회 실패 — 이번 주 생략: ${message}`);

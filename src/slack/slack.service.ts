@@ -343,7 +343,7 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
               blocks: buildRunVerdictBlocks({
                 agentRunId: runVerdict.agentRunId,
                 facets: runVerdict.facets,
-                verdicts: {},
+                verdicts: new Map(),
                 quoteMrkdwn: formatRunVerdictQuote(
                   runVerdict.quote,
                   getRunVerdictQuoteLabel(runVerdict.facets),

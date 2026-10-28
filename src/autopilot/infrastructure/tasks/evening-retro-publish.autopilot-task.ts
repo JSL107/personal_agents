@@ -569,7 +569,10 @@ export class EveningRetroPublishTask implements AutopilotTask {
       const deliveries = await this.deliveryRepository.findSince(
         getKstDayStartAsUtc(),
       );
-      const morningDelivered = isRunResultDelivered(AgentType.PM, deliveries);
+      const morningDelivered = isRunResultDelivered({
+        agentType: AgentType.PM,
+        deliveries,
+      });
       if (!morningDelivered) {
         this.logger.log(
           `아침 브리핑 발송 기록 없음 — 계획 판정 생략 (agentRunId=${found.id})`,

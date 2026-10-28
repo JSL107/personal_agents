@@ -1,4 +1,5 @@
 import {
+  extractActionMessage,
   extractActionMessageRef,
   extractInputValue,
 } from './action-body.parser';
@@ -49,5 +50,26 @@ describe('extractActionMessageRef — 이벤트가 난 카드 좌표', () => {
     expect(extractActionMessageRef({})).toBeNull();
     expect(extractActionMessageRef({ channel: { id: 'C3' } })).toBeNull();
     expect(extractActionMessageRef({ message: { ts: '444' } })).toBeNull();
+  });
+});
+
+describe('extractActionMessage — 누른 원래 메시지', () => {
+  it('알림 문구와 블록을 돌려준다', () => {
+    const blocks = [{ type: 'section', block_id: 'b1' }];
+    expect(
+      extractActionMessage({ message: { text: '주간 판정', blocks } }),
+    ).toEqual({
+      text: '주간 판정',
+      blocks,
+    });
+  });
+
+  // 블록이 없다는 것과 빈 배열은 다르다 — 호출부는 블록이 없으면 다시 그리지 않는다.
+  it('모양이 다른 칸은 비운다', () => {
+    expect(
+      extractActionMessage({ message: { text: '', blocks: 'x' } }),
+    ).toEqual({});
+    expect(extractActionMessage({})).toEqual({});
+    expect(extractActionMessage(null)).toEqual({});
   });
 });
