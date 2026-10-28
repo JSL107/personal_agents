@@ -1,7 +1,7 @@
 name: CI
 
-# 이대리 검증 게이트 — CLAUDE.md §2 #2 "3중 green"(lint:check + test + build) +
-# §2 #7 "env 동기"(check:env)를 push/PR 마다 자동 강제한다.
+# 이대리 검증 게이트 — AGENTS.md §1 완료 조건 "3중 green"(lint:check + test + build) +
+# §5 "env 동기"(check:env)를 push/PR 마다 자동 강제한다.
 # 배포는 포함하지 않는다(org 규칙 §9: prod 배포 자동화 금지). 검증 전용.
 
 on:

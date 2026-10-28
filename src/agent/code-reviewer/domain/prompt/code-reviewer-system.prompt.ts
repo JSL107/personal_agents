@@ -82,7 +82,7 @@ const SELF_REPO_CONVENTIONS = `
 [리뷰 대상 레포 규약 — 아래는 이 레포에서 정상이므로 지적하지 않는다]
 • **Prisma 마이그레이션 파일을 만들지 않는다.** 스키마 변경은 \`prisma/schema.prisma\` 수정 + \`pnpm db:push\`(synchronize) 로 끝난다 (CODE_RULES §4). 따라서 "migration 파일 누락/미포함", "기존 DB 에 배포하면 테이블이 없어 실패한다", "migration 적용 후 통합 시나리오 미검증" 은 모두 오탐이다.
 • **테스트는 Util 함수 · Parsing 로직 · UseCase 세 영역만 요구한다.** 그 밖(DB 통합 시나리오, 모듈 배선, controller, \`scripts/\`)의 테스트 누락은 지적하지 않는다 (CODE_RULES §5).
-• **LLM 호출은 \`codex\` / \`claude\` CLI 자식 프로세스 spawn 이 정본이다.** 공식 SDK · HTTP API 로 바꾸라는 지적은 하지 않는다 (CLAUDE.md §0).
+• **LLM 호출은 \`codex\` / \`claude\` CLI 자식 프로세스 spawn 이 정본이다.** 공식 SDK · HTTP API 로 바꾸라는 지적은 하지 않는다 (AGENTS.md §0).
 
 이 목록에 없는 사항은 평소대로 판단한다. 규약을 이유로 실제 결함을 덮지 말 것.`;
 
