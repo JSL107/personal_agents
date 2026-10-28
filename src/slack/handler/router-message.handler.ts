@@ -801,32 +801,27 @@ export class RouterMessageHandler implements SlackHandler {
     say: SayFn;
     memoryKey: string;
   }): Promise<boolean> {
-    const pending = await this.findLatestPendingPreview.execute({
-      slackUserId,
-    });
-    if (!pending) {
-      return false;
-    }
     const intent = detectYesNoIntent(text);
     if (intent === null) {
+      return false;
+    }
+    // 목표 질문이 진행 중이면 Y/N 은 그 질문의 카드에만 적용한다. 그 사이 쌓인 다른 카드(목표 [닫기]·
+    // 아이디어 카드)가 질문에 대한 "응" 으로 승인되거나, 더 최근 카드 때문에 질문 카드의 승인이 막히면 안 된다.
+    // 질문에 카드가 아직 없으면 Y/N 을 적용하지 않고 목표 답 인터셉터로 넘긴다.
+    const questionCard = await this.handleGoalAnswer.findOpenQuestionCard({
+      slackUserId,
+      now: new Date(),
+    });
+    const pending =
+      questionCard === undefined
+        ? await this.findLatestPendingPreview.execute({ slackUserId })
+        : questionCard.card;
+    if (!pending) {
       return false;
     }
     // CAREER_JD_GAP_BLOG 은 applier 가 없어 apply 불가 — "응" 류는 번호 선택(tryHandleGapTopicSelection)
     // 으로 흘려보낸다. "아니"/취소는 applier 불필요한 cancel 경로라 그대로 허용(포매터의 "취소하려면 아니" 유지).
     if (pending.kind === PREVIEW_KIND.CAREER_JD_GAP_BLOG && intent === 'yes') {
-      return false;
-    }
-    // 목표 질문이 열려 있으면 Y/N 은 그 질문이 만든 카드에만 적용한다. "목표 있어요?" 에 "응" 이라고
-    // 답했는데 그 사이 쌓인 다른 카드(목표 [닫기]·아이디어 카드)가 승인되면 안 된다 — 목표 답 인터셉터로 넘긴다.
-    const openQuestionPreviewId =
-      await this.handleGoalAnswer.findOpenQuestionPreviewId({
-        slackUserId,
-        now: new Date(),
-      });
-    if (
-      openQuestionPreviewId !== undefined &&
-      openQuestionPreviewId !== pending.id
-    ) {
       return false;
     }
     if (intent === 'yes') {

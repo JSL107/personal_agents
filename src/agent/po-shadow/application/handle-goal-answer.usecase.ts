@@ -13,6 +13,7 @@ import {
 import {
   PREVIEW_KIND,
   PREVIEW_STATUS,
+  PreviewAction,
 } from '../../../preview-gate/domain/preview-action.type';
 import { todayInKst } from '../../../schedule/domain/parse-due-date';
 import { escapeSlackMrkdwn } from '../../../slack/format/mrkdwn.util';
@@ -22,6 +23,8 @@ import {
 } from '../../../slack/format/product-goal.formatter';
 import {
   GOAL_QUESTION_REPOSITORY_PORT,
+  GoalQuestionCloseReason,
+  GoalQuestionRecord,
   GoalQuestionRepositoryPort,
 } from '../domain/port/goal-question.repository.port';
 import {
@@ -68,6 +71,19 @@ interface DraftResponse {
   otherGoalTitles: string[];
 }
 
+// 열린 질문 하나의 현재 상태.
+// - card: 질문이 만든 PENDING 카드. 없으면 null(아직 카드 전이거나, 승인 뒤 남은 목표를 이어 받는 중).
+// - finished: 카드가 처리됐고 이어 받을 목표도 없다 — 다음 DM 에서 질문을 닫는다.
+interface QuestionState {
+  question: GoalQuestionRecord;
+  card: PreviewAction | null;
+  finished: boolean;
+}
+
+export interface OpenQuestionCard {
+  card: PreviewAction | null;
+}
+
 @Injectable()
 export class HandleGoalAnswerUsecase {
   private readonly logger = new Logger(HandleGoalAnswerUsecase.name);
@@ -84,18 +100,22 @@ export class HandleGoalAnswerUsecase {
     private readonly modelRouter: ModelRouterUsecase,
   ) {}
 
-  // 열린 질문이 있으면 그 질문이 만든 카드 id(없으면 null)를, 질문이 없으면 undefined 를 돌려준다.
-  // 라우터의 자연어 Y/N 인터셉터가 읽는다 — 질문에 "응" 으로 답했는데 그 사이 쌓인 다른 카드
-  // (목표 [닫기]·아이디어 카드 등)가 승인되지 않도록, 열린 질문 중에는 질문 자신의 카드에만 Y/N 을 적용한다.
-  async findOpenQuestionPreviewId({
+  // 라우터의 자연어 Y/N 인터셉터가 읽는다. 진행 중인 질문이 있으면 Y/N 은 그 질문의 카드에만 적용한다 —
+  // 질문에 "응" 으로 답했는데 그 사이 쌓인 다른 카드(목표 [닫기]·아이디어 카드 등)가 승인되거나, 반대로
+  // 더 최근 카드 때문에 질문 카드의 승인이 막히면 안 된다. card 가 null 이면 Y/N 을 적용하지 않는다.
+  // 진행 중인 질문이 없으면 undefined — 평소처럼 가장 최근 카드에 적용한다.
+  async findOpenQuestionCard({
     slackUserId,
     now,
   }: {
     slackUserId: string;
     now: Date;
-  }): Promise<string | null | undefined> {
-    const question = await this.questions.findOpen({ slackUserId, now });
-    return question === null ? undefined : question.previewId;
+  }): Promise<OpenQuestionCard | undefined> {
+    const state = await this.loadQuestionState({ slackUserId, now });
+    if (state === null || state.finished) {
+      return undefined;
+    }
+    return { card: state.card };
   }
 
   async execute({
@@ -103,24 +123,15 @@ export class HandleGoalAnswerUsecase {
     text,
     now,
   }: HandleGoalAnswerInput): Promise<HandleGoalAnswerResult | null> {
-    const question = await this.questions.findOpen({ slackUserId, now });
-    if (question === null) {
+    const state = await this.loadQuestionState({ slackUserId, now });
+    if (state === null) {
       return null;
     }
     if (parseProductGoalCommand(text, todayInKst(now)).kind !== 'NONE') {
       return null;
     }
-
-    const previousPreview =
-      question.previewId === null
-        ? null
-        : await this.previews.findById(question.previewId);
-    if (
-      question.previewId !== null &&
-      (previousPreview === null ||
-        previousPreview.status !== PREVIEW_STATUS.PENDING ||
-        previousPreview.expiresAt <= now)
-    ) {
+    const { question, card: previousPreview } = state;
+    if (state.finished) {
       await this.questions.close({
         id: question.id,
         reason: 'CARD_RESOLVED',
@@ -140,11 +151,7 @@ export class HandleGoalAnswerUsecase {
         return { replyText: TELL_ME_TEXT };
       }
       if (intent === 'no') {
-        await this.questions.close({
-          id: question.id,
-          reason: 'DECLINED',
-          at: now,
-        });
+        await this.closeQuestion({ state, reason: 'DECLINED', now });
         return { replyText: DECLINE_TEXT };
       }
     }
@@ -162,11 +169,7 @@ export class HandleGoalAnswerUsecase {
       return null;
     }
     if (response.intent === 'DECLINE') {
-      await this.questions.close({
-        id: question.id,
-        reason: 'DECLINED',
-        at: now,
-      });
+      await this.closeQuestion({ state, reason: 'DECLINED', now });
       return { replyText: DECLINE_TEXT };
     }
     if (response.goal === null) {
@@ -219,11 +222,7 @@ export class HandleGoalAnswerUsecase {
         problem === 'ACTIVE_LIMIT_REACHED' ||
         problem === 'DIRECTION_LIMIT_REACHED'
       ) {
-        await this.questions.close({
-          id: question.id,
-          reason: 'LIMIT_REACHED',
-          at: now,
-        });
+        await this.closeQuestion({ state, reason: 'LIMIT_REACHED', now });
       }
       return { replyText: formatGoalProblem(problem, activeGoals) };
     }
@@ -233,16 +232,17 @@ export class HandleGoalAnswerUsecase {
       otherGoalTitles: response.otherGoalTitles,
       directionCriterionHint: convertedToDirection,
     });
-    if (previousPreview !== null) {
-      await this.cancelPreview.execute({
-        previewId: previousPreview.id,
-        slackUserId,
-      });
-    }
+    // 새 카드를 만들고 질문에 붙인 뒤에야 이전 카드를 취소한다. 순서를 뒤집으면 새 카드 생성이
+    // 실패했을 때 승인할 카드가 하나도 남지 않고, 질문은 취소된 카드를 가리켜 다음 DM 에서 닫힌다.
     const created = await this.createPreview.execute({
       slackUserId,
       kind: PREVIEW_KIND.PRODUCT_GOAL,
-      payload: { action: 'CREATE', draft, origin: 'GOAL_QUESTION' },
+      payload: {
+        action: 'CREATE',
+        draft,
+        origin: 'GOAL_QUESTION',
+        otherGoalTitles: response.otherGoalTitles,
+      },
       previewText,
       ttlMs: GOAL_PREVIEW_TTL_MS,
     });
@@ -250,7 +250,71 @@ export class HandleGoalAnswerUsecase {
       id: question.id,
       previewId: created.id,
     });
+    if (previousPreview !== null) {
+      await this.cancelQuietly(previousPreview, slackUserId);
+    }
     return { replyText: previewText, previewId: created.id };
+  }
+
+  private async loadQuestionState({
+    slackUserId,
+    now,
+  }: {
+    slackUserId: string;
+    now: Date;
+  }): Promise<QuestionState | null> {
+    const question = await this.questions.findOpen({ slackUserId, now });
+    if (question === null) {
+      return null;
+    }
+    if (question.previewId === null) {
+      return { question, card: null, finished: false };
+    }
+    const preview = await this.previews.findById(question.previewId);
+    if (
+      preview !== null &&
+      preview.status === PREVIEW_STATUS.PENDING &&
+      preview.expiresAt > now
+    ) {
+      return { question, card: preview, finished: false };
+    }
+    // 승인된 카드에 함께 말한 목표가 남아 있으면 질문을 이어 간다 — 카드가 "승인 뒤 다시 말해 주세요"
+    // 라고 안내하므로, 다음 답을 다시 초안으로 받아야 한다.
+    const continuing =
+      preview !== null &&
+      preview.status === PREVIEW_STATUS.APPLIED &&
+      readOtherGoalTitles(preview.payload).length > 0;
+    return { question, card: null, finished: !continuing };
+  }
+
+  // 질문을 닫을 때 그 질문의 대기 카드도 취소한다. 남겨 두면 다른 대화의 "응" 이 거절한 목표를 저장한다.
+  private async closeQuestion({
+    state,
+    reason,
+    now,
+  }: {
+    state: QuestionState;
+    reason: GoalQuestionCloseReason;
+    now: Date;
+  }): Promise<void> {
+    await this.questions.close({ id: state.question.id, reason, at: now });
+    if (state.card !== null) {
+      await this.cancelQuietly(state.card, state.question.slackUserId);
+    }
+  }
+
+  // 이전 카드 취소는 정리 단계라 실패해도 답을 막지 않는다 — 남은 카드는 TTL 로 만료된다.
+  private async cancelQuietly(
+    preview: PreviewAction,
+    slackUserId: string,
+  ): Promise<void> {
+    try {
+      await this.cancelPreview.execute({ previewId: preview.id, slackUserId });
+    } catch (error: unknown) {
+      this.logger.warn(
+        `목표 카드 취소 실패 — preview=${preview.id}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 
   private async draftResponse({
@@ -288,6 +352,16 @@ export class HandleGoalAnswerUsecase {
     }
   }
 }
+
+const readOtherGoalTitles = (payload: unknown): string[] => {
+  if (typeof payload !== 'object' || payload === null) {
+    return [];
+  }
+  const titles = (payload as Record<string, unknown>).otherGoalTitles;
+  return Array.isArray(titles)
+    ? titles.filter((title): title is string => typeof title === 'string')
+    : [];
+};
 
 const readPreviewDraft = (payload: unknown): ProductGoalDraft | null => {
   if (typeof payload !== 'object' || payload === null) {

@@ -81,7 +81,7 @@ const buildHandler = (
     options.handleGoalAnswer ??
       ({
         execute: jest.fn().mockResolvedValue(null),
-        findOpenQuestionPreviewId: jest.fn().mockResolvedValue(undefined),
+        findOpenQuestionCard: jest.fn().mockResolvedValue(undefined),
       } as unknown as HandleGoalAnswerUsecase),
     deliveryRepository,
     options.mentionReceiptRepository ?? {
@@ -273,7 +273,7 @@ describe('RouterMessageHandler — 목표 질문 DM 인터셉트', () => {
       execute: jest
         .fn()
         .mockResolvedValue({ replyText: '한 줄로 말해 주세요' }),
-      findOpenQuestionPreviewId: jest.fn().mockResolvedValue(null),
+      findOpenQuestionCard: jest.fn().mockResolvedValue({ card: null }),
     };
     buildHandler(router, {
       findLatestPendingPreview: {
@@ -300,7 +300,7 @@ describe('RouterMessageHandler — 목표 질문 DM 인터셉트', () => {
     expect(handleGoalAnswer.execute).toHaveBeenCalled();
   });
 
-  it('대조군 — 열린 질문이 만든 카드에는 "응" 을 적용한다', async () => {
+  it('질문 카드보다 최근 카드가 있어도 "응" 은 질문 카드에 적용한다', async () => {
     const { app, getHandler } = buildAppMock();
     const router = { dispatch: jest.fn().mockResolvedValue(dispatchResult) };
     const pending = buildPendingPreview({
@@ -314,11 +314,14 @@ describe('RouterMessageHandler — 목표 질문 DM 인터셉트', () => {
     };
     const handleGoalAnswer = {
       execute: jest.fn(),
-      findOpenQuestionPreviewId: jest.fn().mockResolvedValue('goal-card'),
+      findOpenQuestionCard: jest.fn().mockResolvedValue({ card: pending }),
     };
     buildHandler(router, {
+      // 질문 카드보다 더 최근 카드가 있어도 질문 카드에 적용한다.
       findLatestPendingPreview: {
-        execute: jest.fn().mockResolvedValue(pending),
+        execute: jest
+          .fn()
+          .mockResolvedValue(buildPendingPreview({ id: 'newer-card' })),
       } as unknown as FindLatestPendingPreviewUsecase,
       applyPreviewUsecase:
         applyPreviewUsecase as unknown as ApplyPreviewUsecase,
