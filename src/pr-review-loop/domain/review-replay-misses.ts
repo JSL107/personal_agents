@@ -16,6 +16,9 @@ export interface MissedFindingEntry {
   line: number;
   body: string;
   headSha?: string;
+  // 사람이 붙이는 표시 — diff 밖 파일을 봐야 보이는 결함인가. `--repo-read` 실험이 이 묶음을 따로 센다.
+  // id 계산(missedFindingId)에는 넣지 않는다: 표시를 고쳐도 같은 결함이다.
+  outsideDiff?: boolean;
 }
 
 export interface ParsedMisses {
@@ -51,6 +54,9 @@ export const parseMissedFindings = (raw: unknown): ParsedMisses => {
       (typeof entry.headSha === 'string' && entry.headSha !== '')
         ? null
         : 'headSha 는 비지 않은 문자열',
+      entry.outsideDiff === undefined || typeof entry.outsideDiff === 'boolean'
+        ? null
+        : 'outsideDiff 는 boolean',
     ].filter((problem): problem is string => problem !== null);
     if (problems.length > 0) {
       errors.push(`${index}번 항목: ${problems.join(', ')}`);
@@ -65,10 +71,27 @@ export const parseMissedFindings = (raw: unknown): ParsedMisses => {
       ...(entry.headSha === undefined
         ? {}
         : { headSha: entry.headSha as string }),
+      ...(entry.outsideDiff === undefined
+        ? {}
+        : { outsideDiff: entry.outsideDiff as boolean }),
     });
   });
   return { entries, errors };
 };
+
+// outsideDiff 로 표시된 미탐의 id. 재채점에서 표시를 교체 파일(flaggedBy)로 고쳤으면 그 표시를 쓰되,
+// id 는 원래 목록(misses)에서 만든다 — 결과와 이어지는 id 가 원래 목록 것이라서다(pairReplacementMisses 와 같다).
+// 두 목록은 같은 순서·같은 길이여야 하고, 그 검사는 pairReplacementMisses 가 먼저 한다.
+export const outsideDiffMissIds = ({
+  misses,
+  flaggedBy = misses,
+}: {
+  misses: readonly MissedFindingEntry[];
+  flaggedBy?: readonly MissedFindingEntry[];
+}): number[] =>
+  misses
+    .filter((_, index) => flaggedBy[index]?.outsideDiff === true)
+    .map(missedFindingId);
 
 // 미탐은 카드 id 가 없어 내용에서 고정 id 를 만든다(음수 — 카드 id 와 겹치지 않게).
 // 목록 순서로 번호를 매기면 순서를 바꾸거나 다른 항목을 넣었을 때 다른 결함이 같은 id 를 받아,

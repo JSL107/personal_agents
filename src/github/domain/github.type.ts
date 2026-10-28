@@ -124,3 +124,21 @@ export interface CreateReviewCommentResult {
   commentId: string; // BigInt 를 문자열로
   nodeId: string; // GraphQL resolve(Phase 2) 대상
 }
+
+export enum TarballDownloadKind {
+  OK = 'OK',
+  // 압축 기준 상한을 넘어 본문을 버렸다.
+  TOO_LARGE = 'TOO_LARGE',
+}
+
+export interface TarballDownloaded {
+  kind: TarballDownloadKind.OK;
+  data: Buffer;
+}
+
+export interface TarballTooLarge {
+  kind: TarballDownloadKind.TOO_LARGE;
+  bytes: number;
+}
+
+export type TarballDownload = TarballDownloaded | TarballTooLarge;

@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { TarballDownloadKind } from '../../../github/domain/github.type';
 import { GithubClientPort } from '../../../github/domain/port/github-client.port';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import {
@@ -13,9 +14,14 @@ import {
 import { PublishFindingsService } from '../../../pr-review-loop/application/publish-findings.service';
 import { ReviewWriterResolver } from '../../../pr-review-loop/application/review-writer.resolver';
 import { CodeReviewerException } from '../domain/code-reviewer.exception';
-import { PullRequestReview } from '../domain/code-reviewer.type';
+import {
+  PullRequestReview,
+  RepoReadStatus,
+} from '../domain/code-reviewer.type';
 import { CodeReviewerErrorCode } from '../domain/code-reviewer-error-code.enum';
+import { buildRepoSnapshotSection } from '../domain/prompt/code-reviewer-system.prompt';
 import { MIN_REASON_LENGTH } from '../domain/prompt/learned-conventions';
+import * as repoSnapshotModule from '../infrastructure/repo-snapshot';
 import {
   buildReviewPrompt,
   ReviewPullRequestUsecase,
@@ -81,6 +87,7 @@ describe('ReviewPullRequestUsecase', () => {
       getFileFromBranch: jest.fn(),
       searchCode: jest.fn(),
       listTree: jest.fn(),
+      downloadTarball: jest.fn(),
     };
     configGet = jest.fn();
     publishFindings = jest.fn().mockResolvedValue({});
@@ -614,6 +621,147 @@ describe('ReviewPullRequestUsecase', () => {
       }),
     ).rejects.toBeInstanceOf(CodeReviewerException);
   });
+  describe('repoRead (리뷰 재생 전용 레포 사본)', () => {
+    let extract: jest.SpyInstance;
+    let dispose: jest.Mock;
+    let updateInputSnapshot: jest.Mock;
+
+    beforeEach(() => {
+      dispose = jest.fn().mockResolvedValue(undefined);
+      // jest setup 이 usecase 를 먼저 로드해 jest.mock 이 안 먹는다 — 모듈 속성을 갈아끼운다.
+      extract = jest
+        .spyOn(repoSnapshotModule, 'extractRepoSnapshot')
+        .mockResolvedValue({ root: '/var/snap', dispose });
+      updateInputSnapshot = jest.fn().mockResolvedValue(undefined);
+      agentRunServiceExecute.mockImplementation(async (input) => {
+        const execution = await input.run({
+          agentRunId: 55,
+          updateInputSnapshot,
+        });
+        return {
+          result: execution.result,
+          modelUsed: execution.modelUsed,
+          agentRunId: 55,
+        };
+      });
+      githubClient.downloadTarball.mockResolvedValue({
+        kind: TarballDownloadKind.OK,
+        data: Buffer.from('tgz'),
+      });
+    });
+
+    afterEach(() => {
+      extract.mockRestore();
+    });
+
+    const routedRequest = (): {
+      prompt: string;
+      readableRoots?: string[];
+    } => modelRouter.route.mock.calls[0][0].request;
+
+    it('미지정이면 사본을 받지 않고 요청·스냅샷·결과가 종전과 같다', async () => {
+      const outcome = await usecase.execute({
+        prRef: 'foo/bar#34',
+        slackUserId: 'U1',
+      });
+
+      expect(githubClient.downloadTarball).not.toHaveBeenCalled();
+      expect(routedRequest().readableRoots).toBeUndefined();
+      expect(routedRequest().prompt).not.toContain('[repo snapshot]');
+      expect(modelRouter.route.mock.calls[0][0].noFallback).toBeUndefined();
+      expect(updateInputSnapshot).not.toHaveBeenCalled();
+      expect(outcome).not.toHaveProperty('repoRead');
+    });
+
+    it('켜면 headSha 사본을 열고 폴백을 끄며 USED 를 남긴다', async () => {
+      const outcome = await usecase.execute({
+        prRef: 'foo/bar#34',
+        slackUserId: 'U1',
+        repoRead: true,
+      });
+
+      expect(githubClient.downloadTarball).toHaveBeenCalledWith({
+        repo: 'foo/bar',
+        ref: 'sha',
+        maxBytes: 268_435_456,
+      });
+      expect(routedRequest().readableRoots).toEqual(['/var/snap']);
+      expect(routedRequest().prompt).toContain(
+        buildRepoSnapshotSection('/var/snap'),
+      );
+      expect(modelRouter.route.mock.calls[0][0].noFallback).toBe(true);
+      expect(updateInputSnapshot).toHaveBeenCalledWith(
+        expect.objectContaining({
+          prRef: 'foo/bar#34',
+          repoRead: RepoReadStatus.USED,
+        }),
+      );
+      expect(outcome.repoRead).toBe(RepoReadStatus.USED);
+      expect(dispose).toHaveBeenCalledTimes(1);
+    });
+
+    it('상한을 넘으면 사본 없이 리뷰하고 SKIPPED_TOO_LARGE 를 남긴다', async () => {
+      githubClient.downloadTarball.mockResolvedValue({
+        kind: TarballDownloadKind.TOO_LARGE,
+        bytes: 60_000_000,
+      });
+
+      const outcome = await usecase.execute({
+        prRef: 'foo/bar#34',
+        slackUserId: 'U1',
+        repoRead: true,
+      });
+
+      expect(extract).not.toHaveBeenCalled();
+      expect(routedRequest().readableRoots).toBeUndefined();
+      expect(routedRequest().prompt).not.toContain('[repo snapshot]');
+      expect(outcome.repoRead).toBe(RepoReadStatus.SKIPPED_TOO_LARGE);
+    });
+
+    it('다운로드·해제가 실패하면 사본 없이 리뷰하고 FAILED 를 남긴다', async () => {
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      extract.mockRejectedValue(new Error('tar boom'));
+
+      const outcome = await usecase.execute({
+        prRef: 'foo/bar#34',
+        slackUserId: 'U1',
+        repoRead: true,
+      });
+
+      expect(routedRequest().readableRoots).toBeUndefined();
+      expect(outcome.repoRead).toBe(RepoReadStatus.FAILED);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('tar boom'));
+      warn.mockRestore();
+    });
+
+    it('원장 스냅샷 갱신이 실패해도 사본을 지운다', async () => {
+      updateInputSnapshot.mockRejectedValue(new Error('db down'));
+
+      await expect(
+        usecase.execute({
+          prRef: 'foo/bar#34',
+          slackUserId: 'U1',
+          repoRead: true,
+        }),
+      ).rejects.toThrow('db down');
+      expect(dispose).toHaveBeenCalledTimes(1);
+    });
+
+    it('리뷰가 실패해도 사본을 지운다', async () => {
+      modelRouter.route.mockRejectedValue(new Error('codex down'));
+
+      await expect(
+        usecase.execute({
+          prRef: 'foo/bar#34',
+          slackUserId: 'U1',
+          repoRead: true,
+        }),
+      ).rejects.toThrow('codex down');
+      expect(dispose).toHaveBeenCalledTimes(1);
+    });
+  });
 });
 
 describe('ReviewPullRequestUsecase — conversationContext', () => {
@@ -669,6 +817,7 @@ describe('ReviewPullRequestUsecase — conversationContext', () => {
       getFileFromBranch: jest.fn(),
       searchCode: jest.fn(),
       listTree: jest.fn(),
+      downloadTarball: jest.fn(),
     };
 
     usecase = new ReviewPullRequestUsecase(
@@ -1058,6 +1207,7 @@ describe('ReviewPullRequestUsecase × 학습 규약', () => {
       getFileFromBranch: jest.fn(),
       searchCode: jest.fn(),
       listTree: jest.fn(),
+      downloadTarball: jest.fn(),
     };
     const findingRepository = {
       findRejectionsForConventions: jest.fn().mockResolvedValue([]),

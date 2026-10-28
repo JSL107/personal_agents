@@ -402,6 +402,35 @@ export const summarizeTrialsByTruncation = (
   };
 };
 
+// ── diff 밖 미탐 분리 ──────────────────────────────────────────────────────
+// 레포 사본 실험(--repo-read)의 주 지표. 사람이 outsideDiff 로 표시한 미탐과 나머지를 나눠 센다.
+
+export interface OutsideDiffSplit {
+  outside: TrialSummary;
+  inside: TrialSummary;
+}
+
+export const summarizeMissedByOutsideDiff = ({
+  trialResults,
+  outsideIds,
+}: {
+  trialResults: readonly (readonly FindingReplayResult[])[];
+  outsideIds: ReadonlySet<number>;
+}): OutsideDiffSplit => ({
+  outside: summarizeTrials(
+    trialResults.map((results) =>
+      results.filter((result) => outsideIds.has(result.id)),
+    ),
+    'MISSED',
+  ),
+  inside: summarizeTrials(
+    trialResults.map((results) =>
+      results.filter((result) => !outsideIds.has(result.id)),
+    ),
+    'MISSED',
+  ),
+});
+
 // ── 기준선 비교 ────────────────────────────────────────────────────────────
 // 두 실행의 회차별 재현율 범위(최소~최대)가 겹치면 차이를 회차 변동과 구분할 수 없다고 본다.
 // 어느 쪽이든 1회뿐이면 변동 폭을 모르므로 판정하지 않는다 — 점 하나끼리의 차이는 무엇이든 될 수 있다.
@@ -554,6 +583,8 @@ export interface BaselineSummaries {
   missed?: TrialSummary;
   // 미탐의 diff 안 잘린 그룹. 분리 집계 전 보고서에는 없다.
   missedIntact?: TrialSummary;
+  // outsideDiff 로 표시된 미탐(레포 사본 실험의 주 지표). 표시 없이 돈 보고서에는 없다.
+  missedOutsideDiff?: TrialSummary;
 }
 
 export const readBaselineSummaries = (
@@ -568,6 +599,7 @@ export const readBaselineSummaries = (
       fixed?: TrialSummary;
       missed?: unknown;
       byDiffTruncation?: { missed?: { intact?: unknown } };
+      missedByOutsideDiff?: { outside?: unknown };
     };
     score?: { rejected?: ReplayRate; fixed?: ReplayRate };
   };
@@ -579,11 +611,22 @@ export const readBaselineSummaries = (
     if (missedIntact !== undefined && !isTrialSummary(missedIntact)) {
       return null;
     }
+    const outsideDiff = trials.missedByOutsideDiff?.outside;
+    if (
+      trials.missedByOutsideDiff !== undefined &&
+      !isTrialSummary(outsideDiff)
+    ) {
+      return null;
+    }
+    const missedOutsideDiff = isTrialSummary(outsideDiff)
+      ? outsideDiff
+      : undefined;
     return {
       rejected: trials.rejected,
       fixed: trials.fixed,
       ...(trials.missed === undefined ? {} : { missed: trials.missed }),
       ...(missedIntact === undefined ? {} : { missedIntact }),
+      ...(missedOutsideDiff === undefined ? {} : { missedOutsideDiff }),
     };
   }
   if (isReplayRate(score?.rejected) && isReplayRate(score?.fixed)) {

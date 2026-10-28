@@ -16,6 +16,7 @@ import {
 import {
   PullRequestDetail,
   PullRequestDiff,
+  TarballDownloadKind,
 } from '../../../github/domain/github.type';
 import {
   GITHUB_CLIENT_PORT,
@@ -38,6 +39,8 @@ import { isRepoAllowed } from '../../../pr-review-loop/domain/publish-policy';
 import { ConversationContext } from '../../../router/domain/conversation-context.type';
 import {
   PullRequestReview,
+  RepoReadStatus,
+  RepoSnapshotAttempt,
   ReviewPullRequestInput,
 } from '../domain/code-reviewer.type';
 import {
@@ -59,6 +62,7 @@ import {
 import { parsePrReference } from '../domain/pr-reference.parser';
 import {
   buildRepoConventions,
+  buildRepoSnapshotSection,
   CODE_REVIEWER_SYSTEM_PROMPT,
 } from '../domain/prompt/code-reviewer-system.prompt';
 import {
@@ -77,8 +81,12 @@ import {
   RELATED_CODE_MAX_BYTES,
   RelatedCodeSection,
 } from '../domain/related-code';
+import { extractRepoSnapshot } from '../infrastructure/repo-snapshot';
 
 const DEFAULT_INLINE_MAX = 4;
+// 레포 사본(tarball) 압축 기준 상한 — 넘는 레포는 사본 없이 종전대로 리뷰한다.
+// 이대리 레포가 압축 217MB(콘솔 PNG 에셋, 2026-10-28 실측)라 50MB 로는 측정 대상이 전부 빠졌다.
+export const REPO_SNAPSHOT_MAX_BYTES = 268_435_456;
 
 // 게시 단계에서 실제로 일어난 일. 사용자에게 게시 여부를 알릴 근거는 이것뿐이다 — 리뷰 모델은
 // 네트워크가 막힌 채 돌아 게시 결과를 알 수 없는데, 이게 없던 동안 "게시 미확인" 같은 문장을
@@ -97,6 +105,8 @@ export type PullRequestPublication =
 // 게시를 시도하지 않은 회차(publish false·스윕·리뷰 실패 전 단계)는 publication 이 없다.
 export type ReviewPullRequestOutcome = AgentRunOutcome<PullRequestReview> & {
   publication?: PullRequestPublication;
+  // repoRead 를 켠 회차만 있다.
+  repoRead?: RepoReadStatus;
 };
 // 이름 하나당 사용처를 실을 파일 수와 파일당 구간 수. 검색 결과는 관련도 순이다.
 const USAGE_FILES_PER_SYMBOL = 3;
@@ -168,6 +178,7 @@ export class ReviewPullRequestUsecase {
     publish,
     excludeConventionFindingIds,
     noFallback,
+    repoRead,
   }: ReviewPullRequestInput): Promise<ReviewPullRequestOutcome> {
     // INVALID_PR_REFERENCE 는 파싱 시점에 즉시 예외.
     const ref = parsePrReference(prRef);
@@ -175,29 +186,31 @@ export class ReviewPullRequestUsecase {
       triggerType ?? TriggerType.SLACK_COMMAND_REVIEW_PR;
     let reviewedDetail: PullRequestDetail | undefined;
     let reviewedDiff: PullRequestDiff | undefined;
+    let repoReadStatus: RepoReadStatus | undefined;
+    const inputSnapshot = {
+      prRef,
+      repo: ref.repo,
+      pullNumber: ref.number,
+      slackUserId,
+      // 스윕 경로만 채운다 — findLatestSweepReview 가 읽는 판정 근거.
+      ...(dryRun === undefined ? {} : { dryRun }),
+      ...(isDraft === undefined ? {} : { isDraft }),
+      // 게시 의도를 스냅샷에 남긴다. /retry-run 은 이 스냅샷만 보고 재실행하므로,
+      // 남기지 않으면 최초에 게시하기로 한 리뷰가 재실행에서 조용히 미게시로 빠진다.
+      // 스윕은 publish 를 넘기지 않아 키 자체가 없고, 재실행도 종전대로 미게시다.
+      ...(publish === undefined ? {} : { publish }),
+    };
 
-    const outcome = await this.agentRunService.execute({
+    const executed = await this.agentRunService.execute({
       agentType: AgentType.CODE_REVIEWER,
       triggerType: effectiveTriggerType,
-      inputSnapshot: {
-        prRef,
-        repo: ref.repo,
-        pullNumber: ref.number,
-        slackUserId,
-        // 스윕 경로만 채운다 — findLatestSweepReview 가 읽는 판정 근거.
-        ...(dryRun === undefined ? {} : { dryRun }),
-        ...(isDraft === undefined ? {} : { isDraft }),
-        // 게시 의도를 스냅샷에 남긴다. /retry-run 은 이 스냅샷만 보고 재실행하므로,
-        // 남기지 않으면 최초에 게시하기로 한 리뷰가 재실행에서 조용히 미게시로 빠진다.
-        // 스윕은 publish 를 넘기지 않아 키 자체가 없고, 재실행도 종전대로 미게시다.
-        ...(publish === undefined ? {} : { publish }),
-      },
+      inputSnapshot,
       evidence: this.buildInitialEvidence({
         prRef,
         slackUserId,
         triggerType: effectiveTriggerType,
       }),
-      run: async () => {
+      run: async ({ updateInputSnapshot }) => {
         // 호출자가 이미 조회한 스냅샷이 있으면 그대로 쓴다 — 리뷰와 후속 게시가 같은
         // headSha·diff 를 보게 하고, GitHub API 왕복도 줄인다.
         const [detail, diff] = snapshot
@@ -219,43 +232,79 @@ export class ReviewPullRequestUsecase {
             this.buildDiffContext(detail, diff),
           ]);
 
-        // 규약은 diff 뒤에 붙인다 — "이건 지적하지 말라" 류 지시는 diff 를 다 읽은 뒤
-        // 마지막에 있는 편이 긴 컨텍스트에서 덜 묻힌다. 손으로 적은 규약과 기각에서
-        // 학습한 규약을 나란히 두어 같은 무게로 읽히게 한다.
-        const prompt =
-          buildReviewPrompt({
-            detail,
-            diff,
-            conversationContext,
-            relatedCode,
-            companionSpecs,
-          }) +
-          buildRepoConventions(detail.repo) +
-          learnedConventions;
+        const repoSnapshot =
+          repoRead === true ? await this.openRepoSnapshot(detail) : undefined;
+        const snapshotRoot =
+          repoSnapshot?.status === RepoReadStatus.USED
+            ? repoSnapshot.snapshot.root
+            : undefined;
+        // 사본을 연 뒤의 모든 단계가 실패해도 사본은 지운다.
+        try {
+          if (repoSnapshot !== undefined) {
+            repoReadStatus = repoSnapshot.status;
+            await updateInputSnapshot({
+              ...inputSnapshot,
+              repoRead: repoSnapshot.status,
+            });
+          }
 
-        const completion = await this.modelRouter.route({
-          agentType: AgentType.CODE_REVIEWER,
-          request: {
-            prompt,
-            systemPrompt: CODE_REVIEWER_SYSTEM_PROMPT,
-          },
-          ...(noFallback === true ? { noFallback: true } : {}),
-        });
+          // 규약은 diff 뒤에 붙인다 — "이건 지적하지 말라" 류 지시는 diff 를 다 읽은 뒤
+          // 마지막에 있는 편이 긴 컨텍스트에서 덜 묻힌다. 손으로 적은 규약과 기각에서
+          // 학습한 규약을 나란히 두어 같은 무게로 읽히게 한다. 사본 안내는 그 앞에 둔다.
+          const prompt =
+            buildReviewPrompt({
+              detail,
+              diff,
+              conversationContext,
+              relatedCode,
+              companionSpecs,
+            }) +
+            (snapshotRoot === undefined
+              ? ''
+              : buildRepoSnapshotSection(snapshotRoot)) +
+            buildRepoConventions(detail.repo) +
+            learnedConventions;
 
-        // 짝이 틀린 판정(보류·등급)은 파서가 보정한다 — 모델 출력을 코드가 고쳤다는 사실은 남긴다.
-        const review = parsePullRequestReview(completion.text, (message) => {
-          this.logger.warn(
-            `PR 리뷰 판정 보정 (${ref.repo}#${ref.number}): ${message}`,
-          );
-        });
+          const completion = await this.modelRouter.route({
+            agentType: AgentType.CODE_REVIEWER,
+            request: {
+              prompt,
+              systemPrompt: CODE_REVIEWER_SYSTEM_PROMPT,
+              ...(snapshotRoot === undefined
+                ? {}
+                : { readableRoots: [snapshotRoot] }),
+            },
+            // 사본을 켠 회차는 폴백을 끈다 — claude CLI 는 읽기 범위를 잠그지 못해 사본 경로를 거부하고,
+            // 사본 없이 돈 회차가 실험군에 섞이면 비교가 무효다.
+            ...(noFallback === true || repoRead === true
+              ? { noFallback: true }
+              : {}),
+          });
 
-        return {
-          result: review,
-          modelUsed: completion.modelUsed,
-          output: review as unknown as Record<string, unknown>,
-        };
+          // 짝이 틀린 판정(보류·등급)은 파서가 보정한다 — 모델 출력을 코드가 고쳤다는 사실은 남긴다.
+          const review = parsePullRequestReview(completion.text, (message) => {
+            this.logger.warn(
+              `PR 리뷰 판정 보정 (${ref.repo}#${ref.number}): ${message}`,
+            );
+          });
+
+          return {
+            result: review,
+            modelUsed: completion.modelUsed,
+            output: review as unknown as Record<string, unknown>,
+          };
+        } finally {
+          if (repoSnapshot?.status === RepoReadStatus.USED) {
+            await repoSnapshot.snapshot.dispose();
+          }
+        }
       },
     });
+
+    const outcome: ReviewPullRequestOutcome =
+      repoReadStatus === undefined
+        ? executed
+        : { ...executed, repoRead: repoReadStatus };
 
     if (
       publish === true &&
@@ -317,6 +366,32 @@ export class ReviewPullRequestUsecase {
     }
 
     return outcome;
+  }
+
+  // 사본을 못 열면 리뷰를 멈추지 않고 사본 없이 진행한다 — 상태로 남겨 재생 비교가 그 회차를 뺀다.
+  private async openRepoSnapshot(
+    detail: PullRequestDetail,
+  ): Promise<RepoSnapshotAttempt> {
+    try {
+      const tarball = await this.githubClient.downloadTarball({
+        repo: detail.repo,
+        ref: detail.headSha,
+        maxBytes: REPO_SNAPSHOT_MAX_BYTES,
+      });
+      if (tarball.kind === TarballDownloadKind.TOO_LARGE) {
+        this.logger.warn(
+          `레포 사본 생략 (${detail.repo}#${detail.number}) — ${tarball.bytes} bytes, 상한 ${REPO_SNAPSHOT_MAX_BYTES}`,
+        );
+        return { status: RepoReadStatus.SKIPPED_TOO_LARGE };
+      }
+      const snapshot = await extractRepoSnapshot({ tarball: tarball.data });
+      return { status: RepoReadStatus.USED, snapshot };
+    } catch (error: unknown) {
+      this.logger.warn(
+        `레포 사본 실패 (${detail.repo}#${detail.number}), 사본 없이 진행: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return { status: RepoReadStatus.FAILED };
+    }
   }
 
   private inlineMax(): number {

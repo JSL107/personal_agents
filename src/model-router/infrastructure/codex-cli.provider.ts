@@ -21,6 +21,7 @@ import {
   CompletionResponse,
   ModelProviderName,
   OutputJsonSchema,
+  ReadLockProbeInput,
 } from '../domain/model-router.type';
 import { ModelProviderPort } from '../domain/port/model-provider.port';
 import {
@@ -189,6 +190,17 @@ export class CodexQuotaExceededException extends Error {
 // 응답 시간 초과를 일반 실패와 구분하기 위한 전용 예외.
 // 문구(`codex CLI 응답 시간 초과 (...)`)로 판정하지 않는 이유는 이 레포의 다른 판정과 같다 —
 // 소비자가 생산자의 메시지 형식을 들고 있으면 문구가 바뀌는 순간 조용히 오분류된다.
+// 읽기 허용 경로를 연 호출에서 잠금 점검이 실패했다. 일시 장애가 아니라 환경 문제(프로필 무시·CLI 변경)라
+// 호출자는 재시도하지 말고 멈춰야 한다 — 그래서 문구가 아니라 타입으로 구분한다.
+export class CodexReadLockException extends Error {
+  constructor(readonly reason: string) {
+    super(
+      `codex 읽기 범위 잠금 확인 실패 — 읽기 허용 경로를 열지 않는다: ${reason}`,
+    );
+    this.name = 'CodexReadLockException';
+  }
+}
+
 export class CodexTimeoutException extends Error {
   constructor(readonly timeoutMs: number) {
     super(`codex CLI 응답 시간 초과 (${timeoutMs}ms)`);
@@ -449,6 +461,9 @@ export class CodexCliProvider
   }
 
   async complete(request: CompletionRequest): Promise<CompletionResponse> {
+    if (request.readableRoots?.length) {
+      await this.assertReadLock({ extraReadableRoots: request.readableRoots });
+    }
     let lastError: unknown;
 
     for (let attempt = 1; attempt <= CODEX_MAX_ATTEMPTS; attempt += 1) {
@@ -505,14 +520,8 @@ export class CodexCliProvider
   }
 
   private async checkReadLock(): Promise<void> {
-    const workDir = await mkdtemp(join(tmpdir(), 'idaeri-codex-'));
     try {
-      const readablePath = join(workDir, 'probe.txt');
-      await writeFile(readablePath, 'probe', 'utf-8');
-      const result = await verifyCodexReadLock({
-        permissionArgs: buildCodexPermissionArgs({ workDir }),
-        readablePath,
-      });
+      const result = await this.probeReadLock();
       if (result.locked) {
         this.logger.log(
           'codex 읽기 범위 잠금 확인 (canary 차단, workDir 허용)',
@@ -525,8 +534,43 @@ export class CodexCliProvider
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error(`codex 읽기 범위 잠금 점검 불가: ${message}`);
+    }
+  }
+
+  // 실제 호출과 같은 모양의 권한 인자(extraReadableRoots 포함)로 canary 점검을 돌린다.
+  private async probeReadLock({
+    extraReadableRoots,
+  }: ReadLockProbeInput = {}): Promise<CodexReadLockResult> {
+    const workDir = await mkdtemp(join(tmpdir(), 'idaeri-codex-'));
+    try {
+      const readablePath = join(workDir, 'probe.txt');
+      await writeFile(readablePath, 'probe', 'utf-8');
+      const permissionArgs = buildCodexPermissionArgs({
+        workDir,
+        extraReadableRoots,
+      });
+      return await verifyCodexReadLock({ permissionArgs, readablePath });
     } finally {
       await rm(workDir, { recursive: true, force: true });
+    }
+  }
+
+  // 읽기 허용 경로를 여는 호출은 부팅 점검(fail-open)과 달리 잠금이 확인돼야만 진행한다 — 잠금이 풀린
+  // 채 경로를 건네면 리뷰 대상 PR 의 주입 문구가 디스크 전체를 읽게 만들 수 있다. 점검 자체가 예외로
+  // 끝나도(임시 폴더 생성 실패 등) 잠금을 확인하지 못한 것이므로 같은 예외로 바꾼다 — 호출자가 재시도하지
+  // 않고 멈추는 기준이 이 타입이다.
+  private async assertReadLock({
+    extraReadableRoots,
+  }: ReadLockProbeInput): Promise<void> {
+    const result = await this.probeReadLock({ extraReadableRoots }).catch(
+      (error: unknown) => {
+        throw new CodexReadLockException(
+          `점검 불가: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      },
+    );
+    if (!result.locked) {
+      throw new CodexReadLockException(result.reason);
     }
   }
 
@@ -547,9 +591,13 @@ export class CodexCliProvider
         workDir,
         request.outputSchema,
       );
+      const permissionArgs = buildCodexPermissionArgs({
+        workDir,
+        extraReadableRoots: request.readableRoots,
+      });
       const args = buildCodexArgs({
         outputFile,
-        permissionArgs: buildCodexPermissionArgs({ workDir }),
+        permissionArgs,
         schemaFile,
         imagePaths: request.imagePaths,
       });

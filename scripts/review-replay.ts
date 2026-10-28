@@ -14,6 +14,8 @@
  * --diff-max-bytes <N> 은 재생 diff 의 절단 상한을 바꾼다(기본은 운영과 같은 클라이언트 기본값). 상한을 정하는 실험용이다.
  * --full-file-list 는 변경 파일 목록을 잘리지 않은 diff 에서 센다(운영처럼). 기본은 잘린 diff 기준이라, 상한을 넘는
  * PR 에서는 잘린 뒤쪽 파일이 목록에서 빠진다. 켜면 이전 보고서와 입력이 달라지므로 같은 플래그끼리만 비교한다.
+ * --repo-read 는 리뷰 모델에 headSha 시점 레포 사본을 읽기 전용으로 연다(실험). 사본이 안 열린 회차는 skipped 로 빠지고,
+ * 미탐 파일에 outsideDiff 표시가 있으면 표시된 미탐과 나머지를 나눠 센다. 끈 보고서를 --baseline 으로 붙여 비교한다.
  * --rescore <보고서> 는 모델을 부르지 않고, 그 보고서의 모델 출력(원장 agent_run.output)을 현재 판정 규칙으로
  * 다시 매긴다. 판정 규칙이 바뀐 뒤 기준선을 쿼터 없이 다시 만드는 용도다. --baseline 과 함께 쓸 수 있고,
  * --misses 를 주면 미탐 본문·줄·경로를 그 파일(보고서가 쓴 미탐 파일과 같은 순서)로 바꿔 채점한다.
@@ -30,6 +32,7 @@ import { PrReviewFinding } from '@prisma/client';
 
 import { ReviewPullRequestUsecase } from '../src/agent/code-reviewer/application/review-pull-request.usecase';
 import { CodeReviewerModule } from '../src/agent/code-reviewer/code-reviewer.module';
+import { RepoReadStatus } from '../src/agent/code-reviewer/domain/code-reviewer.type';
 import { TriggerType } from '../src/agent-run/domain/agent-run.type';
 import {
   PullRequestDetail,
@@ -49,6 +52,7 @@ import {
   intactMissedIdsOf,
   isSameSample,
   LabeledFinding,
+  OutsideDiffSplit,
   readBaselineSummaries,
   REPLAY_SCORER_VERSION,
   ReplayedFinding,
@@ -60,6 +64,7 @@ import {
   scoreReplay,
   scorerVersionOf,
   skippedCountOf,
+  summarizeMissedByOutsideDiff,
   summarizeTrials,
   summarizeTrialsByTruncation,
   TrialSummary,
@@ -69,6 +74,7 @@ import { summarizeDiff } from '../src/pr-review-loop/domain/review-replay-diff';
 import {
   MissedFindingEntry,
   missedFindingId,
+  outsideDiffMissIds,
   pairReplacementMisses,
   parseMissedFindings,
   resolveMissPath,
@@ -99,6 +105,7 @@ interface MissPathNote {
   candidates?: string[];
 }
 import { ModelRouterException } from '../src/model-router/domain/model-router.exception';
+import { CodexReadLockException } from '../src/model-router/infrastructure/codex-cli.provider';
 import { retryReplayTrial } from '../src/pr-review-loop/domain/review-replay-retry';
 import { PrismaModule } from '../src/prisma/prisma.module';
 import { PrismaService } from '../src/prisma/prisma.service';
@@ -123,6 +130,9 @@ interface ReplayOptions {
   // 변경 파일 목록을 잘리지 않은 diff 에서 센다(운영은 API 가 전체 목록을 준다). 기본은 꺼짐 — 켜면
   // 이전 보고서와 입력이 달라져 비교할 수 없다.
   fullFileList: boolean;
+  // 리뷰 모델에 headSha 시점 레포 사본을 읽기 전용으로 연다(실험). 사본이 열리지 않은 회차는 skipped 로 뺀다.
+  // 끈 보고서를 --baseline 으로 붙여 비교하는 것이 이 플래그의 용도다.
+  repoRead?: boolean;
 }
 
 interface ReplayGroup {
@@ -141,6 +151,8 @@ interface ReplayGroupReport {
   modelUsed: string;
   elapsedMs: number;
   diffTruncated: boolean;
+  // --repo-read 회차만 있다. 점수에 들어간 그룹은 늘 USED 다(아니면 skipped).
+  repoRead?: RepoReadStatus;
   results: FindingReplayResult[];
 }
 
@@ -174,6 +186,8 @@ interface ReplayReport extends SavedReplayReport {
     rejected: TrialSummary;
     fixed: TrialSummary;
     missed?: TrialSummary;
+    // 미탐을 사람이 붙인 outsideDiff 표시로 나눈 것. 표시된 미탐이 있을 때만 있다.
+    missedByOutsideDiff?: OutsideDiffSplit;
     // 위 값을 diff 잘림 여부로 나눈 것. 잘린 그룹은 입력 누락과 모델 미탐이 섞인다.
     byDiffTruncation: {
       rejected: TruncationSplit;
@@ -192,6 +206,8 @@ interface ReplayReport extends SavedReplayReport {
     missed?: BaselineComparison;
     // 미탐 통과 판정은 이 값으로 한다(diff 안 잘린 그룹). 위 missed 는 합친 값이라 참고용.
     missedIntact?: BaselineComparison;
+    // --repo-read 실험의 주 지표 — outsideDiff 표시 미탐. 양쪽 보고서에 다 있을 때만.
+    missedOutsideDiff?: BaselineComparison;
   };
 }
 
@@ -221,6 +237,8 @@ interface ReplayRun {
   // 합친 점수(score)용. 회차별 결과를 모두 이은 것이다.
   pairs: ReplayPair[];
   hasMisses: boolean;
+  // outsideDiff: true 로 표시된 미탐 id.
+  outsideDiffMissIds: number[];
   notes: string[];
 }
 
@@ -366,13 +384,17 @@ const replay = async (
               triggerType: TriggerType.MANUAL,
               snapshot,
               noFallback: true,
+              ...(options.repoRead === true ? { repoRead: true } : {}),
               ...(holdoutIds === undefined
                 ? {}
                 : { excludeConventionFindingIds: holdoutIds }),
             });
           },
           {
-            isRetryable: (error) => error instanceof ModelRouterException,
+            // 잠금 실패는 환경 문제라 기다려도 안 풀린다 — 그룹마다 1·3분씩 태우지 않고 아래에서 실행을 멈춘다.
+            isRetryable: (error) =>
+              error instanceof ModelRouterException &&
+              !(error.cause instanceof CodexReadLockException),
             sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
             onRetry: (error, attempt, delayMs) =>
               console.error(
@@ -380,6 +402,19 @@ const replay = async (
               ),
           },
         );
+        // 사본 없이 돈 회차가 실험군 점수에 섞이면 비교가 무효다.
+        if (options.repoRead === true && outcome.repoRead !== 'USED') {
+          skipped.push(
+            toSkipped(
+              group,
+              trial,
+              new Error(
+                `레포 사본 미사용 (${outcome.repoRead ?? '상태 없음'}) — 실험군에서 뺀다`,
+              ),
+            ),
+          );
+          continue;
+        }
         const groupPairs = group.findings.map(
           (labeled): ReplayPair => ({
             labeled,
@@ -397,9 +432,18 @@ const replay = async (
           modelUsed: outcome.modelUsed,
           elapsedMs: Date.now() - startedAt,
           diffTruncated: snapshot.diff.truncated,
+          ...(outcome.repoRead === undefined
+            ? {}
+            : { repoRead: outcome.repoRead }),
           results: groupScore.results,
         });
       } catch (error: unknown) {
+        if (
+          error instanceof ModelRouterException &&
+          error.cause instanceof CodexReadLockException
+        ) {
+          throw error;
+        }
         skipped.push(toSkipped(group, trial, error));
       }
     }
@@ -413,6 +457,7 @@ const replay = async (
     missPathNotes,
     pairs,
     hasMisses: misses.length > 0,
+    outsideDiffMissIds: outsideDiffMissIds({ misses }),
     notes: [],
   };
 };
@@ -573,6 +618,16 @@ const rescore = async (
     missPathNotes: saved.missPathNotes,
     pairs,
     hasMisses: saved.options.misses !== undefined,
+    // 표시는 교체 파일이 있으면 그쪽을 따른다 — 점수가 교체 파일 본문으로 매겨지므로 분류도 같은 입력을 쓴다.
+    outsideDiffMissIds:
+      saved.options.misses === undefined
+        ? []
+        : outsideDiffMissIds({
+            misses: readMisses(saved.options.misses),
+            ...(replacementPath === undefined
+              ? {}
+              : { flaggedBy: readMisses(replacementPath) }),
+          }),
     notes: [
       `재채점: ${path} 의 모델 출력을 판정 규칙 v${REPLAY_SCORER_VERSION} 로 다시 매겼다 (모델 호출 없음)`,
       ...notes,
@@ -606,6 +661,14 @@ const writeReport = (
     ...(run.hasMisses
       ? { missed: summarizeTrials(trialResults, 'MISSED') }
       : {}),
+    ...(run.outsideDiffMissIds.length === 0
+      ? {}
+      : {
+          missedByOutsideDiff: summarizeMissedByOutsideDiff({
+            trialResults,
+            outsideIds: new Set(run.outsideDiffMissIds),
+          }),
+        }),
     byDiffTruncation: {
       rejected: summarizeTrialsByTruncation(
         reportGroups,
@@ -667,6 +730,16 @@ const writeReport = (
               : {
                   missed: compareWithBaseline(trials.missed, baselineMissed),
                 }),
+            ...(trials.missedByOutsideDiff === undefined ||
+            baselineReport.summaries.missedOutsideDiff === undefined
+              ? {}
+              : {
+                  missedOutsideDiff: compareWithBaseline(
+                    trials.missedByOutsideDiff.outside,
+                    baselineReport.summaries.missedOutsideDiff,
+                    'MISSED',
+                  ),
+                }),
             // 기준선에 미탐이 없어도 이 줄은 낸다 — 빠지면 미탐 판정 기준이 콘솔에서 조용히 사라진다.
             ...(trials.byDiffTruncation.missed === undefined
               ? {}
@@ -707,6 +780,20 @@ const writeReport = (
       ...(trials.byDiffTruncation.missed === undefined
         ? []
         : formatSplitLines(trials.byDiffTruncation.missed)),
+      ...(trials.missedByOutsideDiff === undefined
+        ? []
+        : [
+            formatTrialLine(
+              '  └ diff 밖 표시',
+              trials.missedByOutsideDiff.outside,
+            ),
+            formatTrialLine('  └ 그 외', trials.missedByOutsideDiff.inside),
+          ]),
+      ...(options.repoRead === true
+        ? [
+            `레포 사본 사용 그룹 ${reportGroups.length} · 사본 없이 돌아 뺀 그룹 ${skipped.filter((group) => group.reason.startsWith('레포 사본 미사용')).length}`,
+          ]
+        : []),
       ...(unresolvedMisses.length === 0
         ? []
         : [`미탐 중 리뷰 커밋을 못 찾아 뺀 것 ${unresolvedMisses.length}`]),
@@ -754,6 +841,14 @@ const writeReport = (
             ...(report.baseline.missed === undefined
               ? []
               : [formatBaselineLine('미탐 재현', report.baseline.missed)]),
+            ...(report.baseline.missedOutsideDiff === undefined
+              ? []
+              : [
+                  formatBaselineLine(
+                    '미탐 재현(diff 밖 표시, repo-read 주 지표)',
+                    report.baseline.missedOutsideDiff,
+                  ),
+                ]),
             ...(report.baseline.missedIntact === undefined
               ? []
               : [
@@ -1068,6 +1163,7 @@ const readOptions = (): ReplayOptions => {
     rescore: readOption('rescore'),
     diffMaxBytes: readOptionalInteger('diff-max-bytes', 1),
     fullFileList: process.argv.includes('--full-file-list'),
+    repoRead: process.argv.includes('--repo-read'),
   };
   if (ids !== undefined) {
     return { ids, ...common };

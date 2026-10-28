@@ -1,7 +1,7 @@
 import { Octokit } from '@octokit/rest';
 
 import { GithubException } from '../domain/github.exception';
-import { PullRequestDiff } from '../domain/github.type';
+import { PullRequestDiff, TarballDownloadKind } from '../domain/github.type';
 import { GithubErrorCode } from '../domain/github-error-code.enum';
 import {
   computeIsApprovedFromReviews,
@@ -274,6 +274,55 @@ describe('OctokitGithubClient', () => {
         tree_sha: 'head-sha',
         recursive: 'true',
       });
+    });
+  });
+
+  describe('downloadTarball', () => {
+    it('ref 시점 tarball 을 Buffer 로 돌려준다', async () => {
+      const downloadTarballArchive = jest
+        .fn()
+        .mockResolvedValue({ data: new Uint8Array([1, 2, 3]).buffer });
+      const client = new OctokitGithubClient({
+        rest: { repos: { downloadTarballArchive } },
+      } as unknown as Octokit);
+
+      await expect(
+        client.downloadTarball({ repo: 'o/r', ref: 'head-sha', maxBytes: 3 }),
+      ).resolves.toEqual({
+        kind: TarballDownloadKind.OK,
+        data: Buffer.from([1, 2, 3]),
+      });
+      expect(downloadTarballArchive).toHaveBeenCalledWith({
+        owner: 'o',
+        repo: 'r',
+        ref: 'head-sha',
+      });
+    });
+
+    it('상한을 넘으면 본문 없이 TOO_LARGE 와 크기를 돌려준다', async () => {
+      const downloadTarballArchive = jest
+        .fn()
+        .mockResolvedValue({ data: new Uint8Array(4).buffer });
+      const client = new OctokitGithubClient({
+        rest: { repos: { downloadTarballArchive } },
+      } as unknown as Octokit);
+
+      await expect(
+        client.downloadTarball({ repo: 'o/r', ref: 'head-sha', maxBytes: 3 }),
+      ).resolves.toEqual({ kind: TarballDownloadKind.TOO_LARGE, bytes: 4 });
+    });
+
+    it('요청 실패는 GithubException 으로 감싼다', async () => {
+      const downloadTarballArchive = jest
+        .fn()
+        .mockRejectedValue(new Error('boom'));
+      const client = new OctokitGithubClient({
+        rest: { repos: { downloadTarballArchive } },
+      } as unknown as Octokit);
+
+      await expect(
+        client.downloadTarball({ repo: 'o/r', ref: 'head-sha', maxBytes: 3 }),
+      ).rejects.toBeInstanceOf(GithubException);
     });
   });
 

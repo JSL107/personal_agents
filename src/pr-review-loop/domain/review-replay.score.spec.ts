@@ -16,6 +16,7 @@ import {
   scoreReplay,
   scorerVersionOf,
   skippedCountOf,
+  summarizeMissedByOutsideDiff,
   summarizeTrials,
   summarizeTrialsByTruncation,
   TrialSummary,
@@ -536,6 +537,35 @@ describe('intactMissedIdsOf', () => {
   });
 });
 
+describe('summarizeMissedByOutsideDiff', () => {
+  const missed = (id: number, reproduced: boolean): FindingReplayResult => ({
+    id,
+    label: 'MISSED',
+    reproduced,
+  });
+
+  it('표시된 미탐과 나머지를 회차별로 나눠 센다', () => {
+    const split = summarizeMissedByOutsideDiff({
+      trialResults: [
+        [missed(-1, true), missed(-2, false)],
+        [missed(-1, false), missed(-2, false)],
+      ],
+      outsideIds: new Set([-1]),
+    });
+
+    expect(split.outside).toMatchObject({
+      total: 1,
+      rates: [1, 0],
+      anyTrial: 1,
+    });
+    expect(split.inside).toMatchObject({
+      total: 1,
+      rates: [0, 0],
+      anyTrial: 0,
+    });
+  });
+});
+
 describe('readBaselineSummaries', () => {
   it('미탐 안 잘림 집계를 byDiffTruncation 에서 읽는다', () => {
     const intact = summaryOf([0.46, 0.69, 0.62]);
@@ -561,6 +591,25 @@ describe('readBaselineSummaries', () => {
           fixed: summaryOf([0.5]),
           byDiffTruncation: { missed: { intact: { total: 3 } } },
         },
+      }),
+    ).toBeNull();
+  });
+
+  it('diff 밖 표시 미탐 집계를 missedByOutsideDiff 에서 읽고, 형식이 틀리면 거부한다', () => {
+    const outside = summaryOf([0.2, 0.4]);
+    const base = { rejected: summaryOf([0.1]), fixed: summaryOf([0.5]) };
+
+    expect(
+      readBaselineSummaries({
+        trials: {
+          ...base,
+          missedByOutsideDiff: { outside, inside: summaryOf([0.5, 0.5]) },
+        },
+      })?.missedOutsideDiff,
+    ).toEqual(outside);
+    expect(
+      readBaselineSummaries({
+        trials: { ...base, missedByOutsideDiff: { outside: { total: 3 } } },
       }),
     ).toBeNull();
   });

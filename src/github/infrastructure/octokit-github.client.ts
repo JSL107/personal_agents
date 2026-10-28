@@ -16,6 +16,8 @@ import {
   GithubPullRequestSummary,
   PullRequestDetail,
   PullRequestDiff,
+  TarballDownload,
+  TarballDownloadKind,
 } from '../domain/github.type';
 import { GithubErrorCode } from '../domain/github-error-code.enum';
 import {
@@ -25,6 +27,7 @@ import {
   CompareCommitsOptions,
   CreatedIssue,
   CreateIssueInput,
+  DownloadTarballInput,
   GetFileFromBranchInput,
   GetFileFromBranchResult,
   GetPullRequestDiffOptions,
@@ -961,6 +964,33 @@ export class OctokitGithubClient implements GithubClientPort {
       throw this.wrapRequestFailed(
         error,
         `GitHub ${repo} 트리 조회 실패 (${ref})`,
+      );
+    }
+  }
+
+  async downloadTarball({
+    repo,
+    ref,
+    maxBytes,
+  }: DownloadTarballInput): Promise<TarballDownload> {
+    this.assertOctokitConfigured();
+    const [owner, repoName] = parseRepo(repo);
+    try {
+      // ponytail: 크기는 받은 뒤에 잰다 — 상한 밖 레포도 메모리에 한 번 다 올라온다. 운영 경로에 붙일 때 스트리밍으로.
+      const response = await this.octokit!.rest.repos.downloadTarballArchive({
+        owner,
+        repo: repoName,
+        ref,
+      });
+      const data = Buffer.from(response.data as ArrayBuffer);
+      if (data.byteLength > maxBytes) {
+        return { kind: TarballDownloadKind.TOO_LARGE, bytes: data.byteLength };
+      }
+      return { kind: TarballDownloadKind.OK, data };
+    } catch (error: unknown) {
+      throw this.wrapRequestFailed(
+        error,
+        `GitHub ${repo} tarball 다운로드 실패 (${ref})`,
       );
     }
   }
