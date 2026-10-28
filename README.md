@@ -390,7 +390,7 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 | `CAREER_LOG_NOTION_PAGE_ID` · `CAREER_*_NOTION_PAGE_ID` | ⭕ | careerLog · 이력서/포트폴리오 Notion 적재 대상 |
 | `BLOG_PUBLISH_REPO` · `BLOG_PUBLISH_BRANCH` · `BLOG_MASK_FORBIDDEN_TERMS` · `BLOG_NOTION_STATUS_DRAFT_VALUE` · `BLOG_NOTION_STATUS_HOLD_VALUE` · `BLOG_GITHUB_PUBLISH_ENABLED` | ⭕ | `/blog-publish` 대상 저장소·브랜치·익명화 금지어·Notion 초안/보류 상태값과 저녁 GitHub 발행 승인 카드 스위치. 금지어 목록이 비면 발행 차단. 보류 상태값 기본은 `보류` — 편집 단계가 발행 부적합으로 판정한 초안이 여기로 옮겨져 큐를 막지 않는다 |
 | `PORTFOLIO_SITE_URL` | ⭕ | 포트폴리오 사이트 주소. autopilot 이 08~23시 10분마다 `/backend/health` 를 불러 무료 플랜에서 잠든 API 를 깨운다. 비우면 워밍업 슬롯이 꺼진다 |
-| `AUTOPILOT_PORTFOLIO_WARMUP_SCHEDULE` · `_TIMEZONE` | ⭕ | 워밍업 발화 시각 override(기본 `*/10 8-23 * * *`, Asia/Seoul). 24시간으로 넓히면 Render 무료 플랜 월 750시간을 넘겨 사이트가 월말까지 정지될 수 있다 |
+| `AUTOPILOT_PORTFOLIO_WARMUP_SCHEDULE` · `_TIMEZONE` | ⭕ | 워밍업 발화 시각 override(기본 `*/10 8-23 * * *`, Asia/Seoul). 24시간으로 넓히면 Render 무료 플랜 월 시간 한도를 넘는다 |
 | `PORTFOLIO_AUTOMATION_TOKEN` | ⭕ | 포트폴리오 사이트 발행용 자동화 토큰(사이트 쪽 `AUTOMATION_TOKEN` 과 같은 값). 비우면 발행 슬롯이 꺼진다 |
 | `PORTFOLIO_ANONYMIZED_OWNERS` | ⭕ | 공개 포트폴리오에 저장소 이름을 남기지 않을 GitHub owner 목록(쉼표 구분). 해당 성과는 slug 가 `company-<해시>-pr-<번호>` 가 되고 PR 링크를 싣지 않는다. 비우면 익명화하지 않는다 |
 | `AUTOPILOT_PORTFOLIO_PUBLISH_SCHEDULE` · `_TIMEZONE` | ⭕ | 발행 발화 시각 override(기본 `0 23 * * *`, Asia/Seoul) |
@@ -400,11 +400,11 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 | `ART_JOB_FEED_CRON` · `_TIMEZONE` | ❌ | 게시 시각 override(기본 `0 9,18 * * *`, Asia/Seoul) |
 | `JOB_FEED_ENABLED` | ❌ | 백엔드 채용공고 자동 수집(점핏·랠릿·원티드) 마스터 스위치. `true` 가 아니면 수집·채점·알림 자체가 skip |
 | `JOB_FEED_YEARS` · `JOB_FEED_LOCATIONS` | ❌ | 연차(0~50)·지역(쉼표 구분) 매칭 축. 미설정 시 각 축을 중립으로 채점 |
-| `JOB_FEED_MATCH_THRESHOLD` | ❌ | 알림·상세수집 최소 매칭 점수(0~100, 기본 80). 실측 228건 분포에서 60점은 93%가 통과해 필터 구실을 못 해 80으로 올렸다(80~100점 대만 95건, 42%) |
-| `JOB_FEED_GAP_ANALYSIS_TOP_N` | ❌ | 상위 매칭 몇 건을 커리어 갭 분석 후보로 넘길지(0~2, 기본 1). 모델 호출 순차 실행 1건의 worst-case(606초)가 실행 시간 예산(525.6초)을 이미 넘어, 2로 두면 후보가 2건 이상인 날마다 경과 시간 가드가 항상 2번째를 다음 회차로 미룬다 |
+| `JOB_FEED_MATCH_THRESHOLD` | ❌ | 알림·상세수집 최소 매칭 점수(0~100, 기본 80) |
+| `JOB_FEED_GAP_ANALYSIS_TOP_N` | ❌ | 상위 매칭 몇 건을 커리어 갭 분석 후보로 넘길지(0~2, 기본 1). 실행 시간 예산 때문에 한 회차에 사실상 1건만 처리된다 |
 | `JOB_FEED_DETAIL_LIMIT` | ❌ | 실행당 상세 페이지를 가져올 최대 건수(1~100, 기본 20) |
 | `JOB_FEED_AVOID_SKILLS` | ❌ | 기피 기술(쉼표 구분). 사전에서 빼지 않고 저장은 그대로 두되, 하나라도 요구하는 공고를 알림 후보에서만 뺀다(설정을 바꾸면 다시 보인다) |
-| `STUDY_DIAGRAM_WIDTH_PX` · `STUDY_DIAGRAM_MIN_FONT_PX` · `STUDY_DIAGRAM_MAX_HEIGHT_PX` | ❌ | 오늘의 공부 그림(`STUDY_DIAGRAM_ENABLED`)의 캔버스 폭 · 최소 글자 높이 · 세로 상한(px). 실측으로 확정한 값을 넣는다 |
+| `STUDY_DIAGRAM_WIDTH_PX` · `STUDY_DIAGRAM_MIN_FONT_PX` · `STUDY_DIAGRAM_MAX_HEIGHT_PX` | ❌ | 오늘의 공부 그림(`STUDY_DIAGRAM_ENABLED`)의 캔버스 폭 · 최소 글자 높이 · 세로 상한(px) |
 | `STUDY_APPLY_ISSUE_REPO` | ❌ | 오늘의 공부 적용 판정(매일 08:05)이 APPLY 일 때 승인 카드 → issue 를 만들 레포(`owner/repo`). 미설정이면 판정만 저장한다 |
 
 **기본 OFF 인 기능 스위치** — `'true'` 로 켠다. `STOCK_MONITOR_ENABLED`(보유 종목 모니터링) · `PAPER_TRADING_ENABLED`(모의투자 평가) · `SCREENER_ENABLED`(KRX 유니버스·시세 수집) · `SUBCONSCIOUS_ENABLED`(proactive engine) · `PR_REVIEW_LOOP_ENABLED`(PR 리뷰 스윕) · `AUTOPILOT_PREFERENCE_LEARNING_ENABLED`(주간 선호 학습) · `PREFERENCE_PROFILE_INJECTION_ENABLED`(학습 프로필 주입) · `JOB_FEED_ENABLED`(채용공고 자동 수집) · `STUDY_DIAGRAM_ENABLED`(오늘의 공부 그림 첨부).
@@ -426,10 +426,9 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 
 1. [api.slack.com/apps](https://api.slack.com/apps) 에서 앱 생성 → **Socket Mode** 활성화 → App-Level Token(`connections:write`) = `SLACK_APP_TOKEN`
 2. **OAuth & Permissions** → Bot Token Scopes 에 `commands` `chat:write` `app_mentions:read` `im:history` `files:write` `files:read` `reactions:read` `channels:history` `groups:history` → install → Bot Token = `SLACK_BOT_TOKEN`
-   - `files:write` 는 장마감 리포트 차트를 이미지로 올리는 데 쓴다. 없으면 업로드가 `missing_scope` 로 막히는데 요약·상세는 그대로 나가므로 **그림만 조용히 빠진다** — 로그의 `스레드 이미지 업로드 실패` 경고가 유일한 신호다.
-   - `files:read` 는 그 차트를 **메인 메시지로 올릴 때** 쓴다. 올린 파일을 슬랙이 이미지로 처리했는지 `files.info` 로 확인한 뒤 메시지를 보내는데(안 기다리면 이미지 자리가 빈 채로 뜬다), 이 스코프가 없으면 그 확인이 `missing_scope` 로 막혀 **매 회차 종전 배치(요약이 메인·그림이 스레드)로 물러선다**. 그림이 나오긴 하므로 겉보기로는 고장이 아니고, 로그의 `그림을 메인에 싣지 못해 종전 배치로 발송` 경고가 유일한 신호다. 채널에 공유되지 않은 파일이 회차마다 하나씩 쌓이는 것도 이때다.
-   - `channels:history` · `groups:history` 는 채널 메시지를 다시 읽는 데 쓴다. ① 채널 알림 스레드에서 이대리를 불렀을 때 부모 메시지(알림 본문)를 읽고, ② 채널 메시지에 단 이모지 반응의 원문을 조회한다(반응 핸들러 3종이 이벤트를 받은 뒤 `conversations.replies`·`conversations.history` 를 부른다). 없으면 `missing_scope` 로 조회가 실패해 **"이거"가 무엇인지 모른 채 답한다** — 로그의 `스레드 부모 조회 실패` 경고가 유일한 신호다. 반응도 같다 — 이벤트는 도착하지만 원문 조회가 실패해 신호·수집함·할 일이 저장되지 않고 경고 로그만 남는다. DM 은 `im:history` 로 충분하다.
-   - `reactions:read` 는 이모지 반응(👍/👎 선호 신호, ✋ 수집함, 📌 할 일)을 받는 데 쓴다. 5번의 `reaction_added` 구독과 **둘 다** 있어야 이벤트가 들어오고, 채널 메시지에 단 반응을 저장하려면 위 history 권한도 필요하다. 빠져 있어도 에러는 나지 않는다. 다만 `slack_reaction_signal`·`slack_inbox_item` 이 0행인 것만으로 이 설정이 빠졌다고 단정할 수는 없다 — 둘 다 있어도 0행인 경우가 있었다.
+   - `files:write` · `files:read` — 장마감 리포트 차트 이미지 업로드. 없으면 그림만 빠지고 에러는 나지 않는다.
+   - `channels:history` · `groups:history` — 채널 알림 스레드의 부모 메시지와 채널 메시지에 단 반응의 원문 조회. DM 은 `im:history` 로 충분하다.
+   - `reactions:read` — 이모지 반응(👍/👎 선호 신호, ✋ 수집함, 📌 할 일) 수신. 5번의 `reaction_added` 구독도 함께 있어야 한다.
    - 이미 설치한 앱에 스코프를 더했으면 **Reinstall to Workspace** 로 재설치해야 토큰에 반영된다(설정 화면에 추가만 해도 기존 토큰은 그대로다).
 3. **Basic Information** → Signing Secret = `SLACK_SIGNING_SECRET`
 4. **Slash Commands** 에 위 [슬래시 커맨드](#-인터페이스) 표의 명령 전부 등록 (또는 **App Manifest** 의 `slash_commands` 배열로 일괄 선언 후 Reinstall)
@@ -504,39 +503,11 @@ pnpm mutate src/<경로>/<파일>.ts               # 파일 하나 변이 검사
 
 > **DB 변경**: `prisma/schema.prisma` 수정 → `pnpm db:push`(synchronize, Prisma Client 자동 재생성) → 앱 재시작.
 
-> **변이 검사**: 중요한 도메인 로직을 고친 뒤 그 파일 하나에만 수동으로 돌린다. CI 에는 넣지 않았다.
-> 코드에 작은 변형(`>` → `>=`, 조건을 `true` 로 등)을 하나씩 넣어 같은 폴더의 `<파일>.spec.ts` 를 돌리고,
-> 테스트가 여전히 통과한 변형(Survived)을 보여준다. 결과는 `reports/mutation/mutation.html`.
-> 한 번에 하나만 돌린다 — 여러 개를 동시에 돌리면 Timeout 이 쌓이고, Timeout 은 "잡힘" 으로 세어져 점수가 부풀려진다.
-> 결과에 Timeout 이 많으면 부하를 줄이고 다시 잰다.
-> **찾는 것은 "테스트가 허술한 곳" 이지 "빠진 요구사항" 이 아니다.** 코드에 없는 조건은 변형할 대상도 없다 —
-> #902 버그(키워드 없는 목표 필터 누락)는 수정 전 코드에 돌려도 잡히지 않았다. 남은 Survived 중에는
-> 결과가 같아 어떤 테스트로도 죽일 수 없는 등가 변형도 있으니 100% 를 목표로 삼지 않는다.
+> **변이 검사**: 고친 파일 하나에 수동으로 돌려, 테스트가 못 잡는 코드 변형을 찾는다(CI 미포함). 결과는 `reports/mutation/mutation.html`. 한 번에 하나만 돌린다.
 
-> **백테스트**: 과거 주가를 재생해 "그때 이 규칙대로 샀으면 어떻게 됐을지"를 계산한다. DB 에 쓰지 않는다.
-> `--turnover-min` `--max-positions` `--weight` `--hold` `--seed` `--stop-loss` `--take-profit` `--delisting-recovery` 로 규칙을 바꿔가며 성적을 비교한다.
-> LLM 은 쓰지 않고 "스크리너 점수 상위 N종 기계적 매수" 로 대체하므로 같은 인자면 항상 같은 결과가 나온다.
-> 유니버스 전체를 메모리에 올리므로 구간이 길면 `NODE_OPTIONS=--max-old-space-size=4096` 을 앞에 붙인다
-> (Windows 는 `set NODE_OPTIONS=--max-old-space-size=4096` 을 먼저 실행한다).
->
-> 성적을 읽기 전 알아야 할 한계 — **슬리피지 미반영**(시가에 원하는 수량이 다 체결된다고 본다), 거래정지·상하한가 미반영,
-> 그리고 **LLM 부재**(실전은 codex 가 고르지만 재생은 규칙만 남긴 기준선이다). 수수료·거래세는 실제 계산기를 그대로 쓴다.
-> 원래 한계였던 **생존 편향은 절반만 걷혔다** — 재생 유니버스를 시작일 기준으로 잡아 구간 중 폐지된 종목도 살아 있던 날까지 재생하지만,
-> 그건 DB 에 행이 있는 종목에 한한다. 유니버스 동기화는 KRX 의 **현재** 목록만 받아오므로(`sync-universe.usecase.ts`)
-> 수집을 시작하기 전에 이미 폐지된 종목은 표본에 아예 없다. 역사적 유니버스를 따로 수집하기 전까지는 이 편향이 남는다.
-> 과거 깊이도 `before` 커서 백필로 상장일까지 소급할 수 있어 고정 상한이 아니다(실제 깊이는 백필을 어디까지 돌렸는지에 달렸다).
-> 배경은 [설계서 §12](./docs/superpowers/specs/2026-08-16-paper-trading-backtest-design.md) 에 있다 — 그날의 스냅샷이라 위 두 항목은 이후 바뀌었다.
+> **백테스트**: 과거 주가를 재생해 규칙의 성적을 계산한다. LLM 없이 결정론으로 돌고 DB 에 쓰지 않는다. 슬리피지·거래정지는 반영하지 않는다. 구간이 길면 `NODE_OPTIONS=--max-old-space-size=4096` 을 앞에 붙인다.
 
-> **파라미터 탐색**: 백테스트를 여러 번 돌려 "어떤 값이 나은가" 를 비교한다. 구간을 6개월 창으로 잘라
-> 창마다 후보를 재생하고, **앞선 창들로 고른 값이 다음 창에서 현행값을 이겼는지**(walk-forward)로 판정한다.
-> 표본 밖 구간을 한 번만 여는 방식은 루프가 반복되면 그 구간에 맞춰진 값이 뽑히지만, 창을 미끄러뜨리면
-> 창이 하나 늘 때마다 표본 밖 판정이 하나 늘어 닳지 않는다.
-> `--take-profit` `--stop-loss` `--turnover-min` `--weight` 에 쉼표로 후보를 주면 그 축들의 전수 조합을 돈다.
-> **값을 주지 않은 축은 `strategy_parameter` 활성 행(현행값)으로 고정**되므로 축 하나만 훑을 수 있다.
-> **이 도구는 보고만 한다** — 활성 행을 바꾸지 않는다(원장 목표 12 의 PR ③ 범위).
-> 창 하나 안에서는 파라미터와 무관한 후보 산출(재생 시간의 97%)을 조합끼리 나눠 쓰므로 조합 하나를
-> 더하는 비용이 약 0.8초다. 대신 창 하나가 메모리를 2GB 넘게 쓰므로
-> `NODE_OPTIONS=--max-old-space-size=6144` 을 앞에 붙인다.
+> **파라미터 탐색**: 쉼표로 준 후보 조합을 6개월 창마다 재생해 walk-forward 로 비교한다. 값을 주지 않은 축은 현행값으로 고정되고, 활성 파라미터는 바꾸지 않는다(보고만). `NODE_OPTIONS=--max-old-space-size=6144` 을 앞에 붙인다.
 
 ---
 
