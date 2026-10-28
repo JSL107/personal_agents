@@ -33,6 +33,8 @@ export interface RiskMapPullRequest {
 export interface RiskMapDiff {
   diff: string;
   truncated: boolean;
+  // 리뷰 diff 에서 뺀 파일(lockfile·빌드 산출물 등)의 원문. 비밀값 탐지만 본다.
+  omittedDiff?: string;
 }
 
 export interface ComputeRiskMapInput {
