@@ -75,6 +75,7 @@ describe('GenerateImpactReportUsecase', () => {
       getFileFromBranch: jest.fn(),
       searchCode: jest.fn(),
       listTree: jest.fn(),
+      downloadTarball: jest.fn(),
     };
     configGet = jest.fn().mockReturnValue(undefined);
 
