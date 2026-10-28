@@ -426,7 +426,7 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 
 1. [api.slack.com/apps](https://api.slack.com/apps) 에서 앱 생성 → **Socket Mode** 활성화 → App-Level Token(`connections:write`) = `SLACK_APP_TOKEN`
 2. **OAuth & Permissions** → Bot Token Scopes 에 `commands` `chat:write` `app_mentions:read` `im:history` `files:write` `files:read` `reactions:read` `channels:history` `groups:history` → install → Bot Token = `SLACK_BOT_TOKEN`
-   - `files:write` · `files:read` — 장마감 리포트 차트 이미지 업로드. 없으면 그림만 빠지고 에러는 나지 않는다.
+   - `files:write` · `files:read` — 장마감 리포트 차트 이미지 업로드. `files:write` 가 없으면 그림만 빠지고, `files:read` 가 없으면 그림이 메인 대신 스레드로 간다. 둘 다 에러 없이 경고 로그만 남는다.
    - `channels:history` · `groups:history` — 채널 알림 스레드의 부모 메시지와 채널 메시지에 단 반응의 원문 조회. DM 은 `im:history` 로 충분하다.
    - `reactions:read` — 이모지 반응(👍/👎 선호 신호, ✋ 수집함, 📌 할 일) 수신. 5번의 `reaction_added` 구독도 함께 있어야 한다.
    - 이미 설치한 앱에 스코프를 더했으면 **Reinstall to Workspace** 로 재설치해야 토큰에 반영된다(설정 화면에 추가만 해도 기존 토큰은 그대로다).
@@ -505,7 +505,7 @@ pnpm mutate src/<경로>/<파일>.ts               # 파일 하나 변이 검사
 
 > **변이 검사**: 고친 파일 하나에 수동으로 돌려, 테스트가 못 잡는 코드 변형을 찾는다(CI 미포함). 결과는 `reports/mutation/mutation.html`. 한 번에 하나만 돌린다.
 
-> **백테스트**: 과거 주가를 재생해 규칙의 성적을 계산한다. LLM 없이 결정론으로 돌고 DB 에 쓰지 않는다. 슬리피지·거래정지는 반영하지 않는다. 구간이 길면 `NODE_OPTIONS=--max-old-space-size=4096` 을 앞에 붙인다.
+> **백테스트**: 과거 주가를 재생해 규칙의 성적을 계산한다. LLM 없이 결정론으로 돌고 DB 에 쓰지 않는다. 슬리피지·거래정지는 반영하지 않고, 수집 시작 전에 상장폐지된 종목은 표본에 없어 생존 편향이 남는다(성적이 실제보다 좋게 나올 수 있다). 구간이 길면 `NODE_OPTIONS=--max-old-space-size=4096` 을 앞에 붙인다.
 
 > **파라미터 탐색**: 쉼표로 준 후보 조합을 6개월 창마다 재생해 walk-forward 로 비교한다. 값을 주지 않은 축은 현행값으로 고정되고, 활성 파라미터는 바꾸지 않는다(보고만). `NODE_OPTIONS=--max-old-space-size=6144` 을 앞에 붙인다.
 
