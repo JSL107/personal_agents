@@ -72,4 +72,29 @@ describe('ReviewWriterResolver', () => {
 
     expect(writers).toEqual([{ client: OWNER_CLIENT, login: 'JSL107' }]);
   });
+  describe('publishAllowlistRaw', () => {
+    it('INLINE 목록에 봇 목록을 더한다', () => {
+      const raw = build({
+        env: { ...BOT_ENV, PR_REVIEW_INLINE_REPOS: 'org/api' },
+      }).publishAllowlistRaw();
+
+      expect(raw).toBe('org/api,JSL107/personal_agents, JSL107/blog');
+    });
+
+    it.each([
+      ['봇 토큰이 없으면', null, BOT_ENV],
+      [
+        '봇 로그인이 없으면',
+        BOT_CLIENT,
+        { ...BOT_ENV, GITHUB_REVIEW_BOT_LOGIN: undefined },
+      ],
+    ])('%s 봇 목록은 더하지 않는다', (_label, bot, env) => {
+      const raw = build({
+        env: { ...env, PR_REVIEW_INLINE_REPOS: 'org/api' },
+        bot,
+      }).publishAllowlistRaw();
+
+      expect(raw).toBe('org/api');
+    });
+  });
 });

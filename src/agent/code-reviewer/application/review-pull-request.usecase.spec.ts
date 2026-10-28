@@ -11,6 +11,7 @@ import {
   ModelProviderName,
 } from '../../../model-router/domain/model-router.type';
 import { PublishFindingsService } from '../../../pr-review-loop/application/publish-findings.service';
+import { ReviewWriterResolver } from '../../../pr-review-loop/application/review-writer.resolver';
 import { CodeReviewerException } from '../domain/code-reviewer.exception';
 import { PullRequestReview } from '../domain/code-reviewer.type';
 import { CodeReviewerErrorCode } from '../domain/code-reviewer-error-code.enum';
@@ -323,6 +324,34 @@ describe('ReviewPullRequestUsecase', () => {
         allowlistRaw: 'foo/bar',
       }),
     );
+  });
+
+  it('봇 목록에만 적힌 레포도 스윕과 같은 허용 목록으로 게시한다', async () => {
+    const withWriters = new ReviewPullRequestUsecase(
+      modelRouter as unknown as ModelRouterUsecase,
+      { execute: agentRunServiceExecute } as unknown as AgentRunService,
+      githubClient,
+      undefined,
+      { get: configGet } as unknown as ConfigService,
+      {
+        publish: publishFindings,
+        upsertRiskMap,
+      } as unknown as PublishFindingsService,
+      {
+        publishAllowlistRaw: () => 'foo/bar',
+      } as unknown as ReviewWriterResolver,
+    );
+
+    const result = await withWriters.execute({
+      prRef: 'foo/bar#34',
+      slackUserId: 'U123',
+      publish: true,
+    });
+
+    expect(publishFindings).toHaveBeenCalledWith(
+      expect.objectContaining({ allowlistRaw: 'foo/bar' }),
+    );
+    expect(result.publication?.kind).toBe('POSTED');
   });
 
   it('publish 를 요청하지 않으면 게시 결과가 없다', async () => {

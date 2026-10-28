@@ -14,6 +14,7 @@ import { LatestSweepReview } from '../../agent-run/domain/port/agent-run.reposit
 import {
   GITHUB_CLIENT_PORT,
   GithubClientPort,
+  OpenPullRequestRef,
 } from '../../github/domain/port/github-client.port';
 import { extractCodexQuota } from '../../model-router/application/extract-codex-quota';
 import { AgentType } from '../../model-router/domain/model-router.type';
@@ -189,22 +190,55 @@ export class SweepPrReviewsUsecase {
   // 스윕은 PR 의 repo 와 number 만 쓴다. 그래서 상세를 함께 받던
   // listAuthorOpenPullRequests 대신 검색 결과만 돌려주는 조회를 쓴다 — PR 하나마다
   // 치던 상세 조회가 통째로 사라진다.
+  //
+  // 리뷰 봇이 다는 레포는 누가 올린 PR 이든 리뷰하고, 나머지 레포는 owner 가 올린 PR 만 본다 —
+  // owner 계정으로 남의 PR 에 코멘트를 달면 본인이 직접 리뷰한 것처럼 보인다. 작성자 조건이
+  // 달라 한 쿼리로 묶을 수 없으므로 검색은 그룹당 한 번, 회차당 최대 두 번이다.
   private async listOpenPullRequests({
     repos,
     ownerLogin,
   }: {
     repos: string[];
     ownerLogin: string;
-  }) {
+  }): Promise<OpenPullRequestRef[]> {
     const since = new Date(
       Date.now() - OPEN_PR_LOOKBACK_DAYS * 24 * 60 * 60 * 1000,
     )
       .toISOString()
       .slice(0, 10);
+    const botRepos = repos.filter((repo) => this.writers.usesBot(repo));
+    const ownerRepos = repos.filter((repo) => !this.writers.usesBot(repo));
+    const groups = await Promise.all([
+      this.searchOpenPullRequests({
+        repos: ownerRepos,
+        author: ownerLogin,
+        since,
+      }),
+      this.searchOpenPullRequests({ repos: botRepos, since }),
+    ]);
+    return groups
+      .flat()
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      .slice(0, OPEN_PR_FETCH_LIMIT);
+  }
+
+  // 한 그룹의 조회가 실패해도 다른 그룹은 리뷰한다.
+  private async searchOpenPullRequests({
+    repos,
+    author,
+    since,
+  }: {
+    repos: string[];
+    author?: string;
+    since: string;
+  }): Promise<OpenPullRequestRef[]> {
+    if (repos.length === 0) {
+      return [];
+    }
     try {
       return await this.githubClient.listOpenPullRequestRefs({
         repos,
-        author: ownerLogin,
+        author,
         sinceIsoDate: since,
         limit: OPEN_PR_FETCH_LIMIT,
       });
@@ -414,9 +448,7 @@ export class SweepPrReviewsUsecase {
         // 으로 남아 다음 회차에 ready 전환 재리뷰가 한 번 더 돈다 — 같은 코드에 두 벌이다.
         isDraft: detail.isDraft,
       });
-      const allowlistRaw = this.configService.get<string>(
-        'PR_REVIEW_INLINE_REPOS',
-      );
+      const allowlistRaw = this.writers.publishAllowlistRaw();
       // 위험 지도는 지적 유무와 별개라 아래 두 갈래(지적 없음 / 카드 게시)보다 먼저 단다.
       await this.publishService.upsertRiskMap({
         repo,
@@ -520,7 +552,7 @@ export class SweepPrReviewsUsecase {
       return;
     }
     // 게시 허용 판정(isRepoAllowed)을 여기서 다시 하지 않는다 — 스윕이 도는 레포 목록 자체가
-    // 같은 PR_REVIEW_INLINE_REPOS 에서 나오므로(allowlistRepos) 여기 닿은 레포는 이미 허용
+    // 같은 publishAllowlistRaw 에서 나오므로(allowlistRepos) 여기 닿은 레포는 이미 허용
     // 목록 안이다. 스윕 대상과 게시 허용을 다른 키로 가르는 변경이 오면 이 지점도 함께 봐야 한다.
     try {
       await this.writers.forRepo(repo).client.addIssueComment({
@@ -608,13 +640,12 @@ export class SweepPrReviewsUsecase {
   }
 
   private allowlistRepos(): string[] {
-    const raw = this.configService.get<string>('PR_REVIEW_INLINE_REPOS');
-    if (!raw) {
-      return [];
-    }
-    return raw
+    // 두 목록에 모두 적힌 레포를 두 번 검색하지 않는다.
+    const repos = this.writers
+      .publishAllowlistRaw()
       .split(',')
       .map((item) => item.trim())
       .filter((item) => item.length > 0);
+    return [...new Set(repos)];
   }
 }

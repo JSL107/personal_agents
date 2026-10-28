@@ -1092,6 +1092,23 @@ describe('OctokitGithubClient', () => {
 
     // GitHub 검색 응답의 draft 는 optional 이다. 누락을 draft 로 접으면 ready 전환 재리뷰가
     // 한 번 더 돌아 이미 리뷰가 끝난 PR 에 코멘트가 두 벌 달린다.
+    it('작성자를 주지 않으면 author 조건 없이 검색한다', async () => {
+      const { octokit, search } = buildOctokit([]);
+      const client = new OctokitGithubClient(octokit);
+
+      await client.listOpenPullRequestRefs({
+        repos: ['org/a'],
+        sinceIsoDate: '2026-08-31',
+        limit: 50,
+      });
+
+      expect(search).toHaveBeenCalledWith(
+        expect.objectContaining({
+          q: 'repo:org/a is:pr is:open updated:>=2026-08-31',
+        }),
+      );
+    });
+
     it('draft 필드가 없는 응답은 ready 로 본다', async () => {
       const { octokit } = buildOctokit([
         item('org/a', 5, '2026-09-03T00:00:00Z'),
