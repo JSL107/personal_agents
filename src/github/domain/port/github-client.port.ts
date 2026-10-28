@@ -6,6 +6,7 @@ import {
   GithubPullRequestSummary,
   PullRequestDetail,
   PullRequestDiff,
+  TarballDownload,
 } from '../github.type';
 import { PullRequestEngagementSignals } from '../pr-engagement.type';
 
@@ -254,6 +255,14 @@ export interface RepoTree {
   truncated: boolean;
 }
 
+export interface DownloadTarballInput {
+  repo: string; // "owner/repo"
+  // 커밋 SHA 권장 — 브랜치 이름이면 받는 사이 내용이 바뀔 수 있다.
+  ref: string;
+  // 압축 기준 상한(bytes). 넘으면 본문을 버리고 TOO_LARGE 를 돌려준다.
+  maxBytes: number;
+}
+
 export interface SearchCodeInput {
   repo: string; // "owner/repo"
   // 검색어. repo 한정 qualifier 는 어댑터가 붙인다.
@@ -345,6 +354,9 @@ export interface GithubClientPort {
 
   // 레포 전체 파일 목록을 재귀 트리 1회로 가져온다. 리뷰가 변경 파일의 대응 테스트를 짝짓는 데 쓴다.
   listTree(input: ListTreeInput): Promise<RepoTree>;
+
+  // ref 시점 레포 전체(tar.gz). `.git` 이 없어 토큰이 결과물에 남지 않는다 — 토큰은 요청 헤더에만 실린다.
+  downloadTarball(input: DownloadTarballInput): Promise<TarballDownload>;
 
   // 아침 브리핑 완료/대기 분류용 PR 신호 보강. best-effort — 실패/캡 초과 PR 은
   // 중립 신호(mergeableState='unknown', 모든 flag false)로 채워 분류 시 ACTIVE 로 떨어진다.
