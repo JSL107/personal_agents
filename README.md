@@ -2,13 +2,13 @@
 
 # 🤖 이대리 · personal_agents
 
-**Slack 에서 PM · BE · 리뷰어 · CTO · PO · CEO 를 1인 개발자가 부리는 멀티 에이전트 업무 자동화 봇**
+**Slack 에서 PM · 리뷰어 · PO · CEO 를 1인 개발자가 부리는 멀티 에이전트 업무 자동화 봇**
 
 수동 슬래시 · 자연어 멘션 · GitHub Webhook · 자동 Cron 을 한 백엔드로 묶는다.
 
 [![CI](https://img.shields.io/github/actions/workflow/status/JSL107/personal_agents/ci.yml?branch=main&style=flat-square&logo=githubactions&logoColor=white&label=CI)](https://github.com/JSL107/personal_agents/actions)
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)
-![NestJS](https://img.shields.io/badge/NestJS-10-E0234E?style=flat-square&logo=nestjs&logoColor=white)
+![NestJS](https://img.shields.io/badge/NestJS-11-E0234E?style=flat-square&logo=nestjs&logoColor=white)
 ![Prisma](https://img.shields.io/badge/Prisma-6-2D3748?style=flat-square&logo=prisma&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=flat-square&logo=postgresql&logoColor=white)
 ![Slack Bolt](https://img.shields.io/badge/Slack%20Bolt-4-4A154B?style=flat-square&logo=slack&logoColor=white)
@@ -22,13 +22,13 @@
 
 ## ✨ 무엇을 하나
 
-GitHub · Notion · Slack · 증권 시세를 연결해 **회사 롤플레이 역할**(PM · BE · Code Reviewer · CTO · PO · CEO …), **개인 업무**(이직 메이트 · 지원 추적 · 휴가 · 블로그), **투자 라인**(종목 감시 · 모의투자 추천·채점)을 함께 수행하는 1인 개발자용 비서 백엔드.
+GitHub · Notion · Slack · 증권 시세를 연결해 **회사 롤플레이 역할**(PM · Work Reviewer · Code Reviewer · PO · CEO …), **개인 업무**(이직 메이트 · 지원 추적 · 휴가 · 블로그), **투자 라인**(종목 감시 · 모의투자 추천·채점)을 함께 수행하는 1인 개발자용 비서 백엔드.
 
 | | |
 |---|---|
 | 🗣️ **두 가지 진입** | Slack slash command, 또는 `@이대리 오늘 plan 짜줘` 자연어 멘션·DM |
-| 🎭 **회사 롤플레이** | 한 사람이 PM · BE · 리뷰어 · CTO · PO · CEO 역할을 LLM 워커로 분담 |
-| ⚡ **자동 실행** | 출근/퇴근/주간 cron 34슬롯 + GitHub webhook 으로 사용자 입력 없이 돈다 — 대부분은 Slack 으로 보고하고, 뒷정리·폴링 성격의 4슬롯은 처리한 게 있을 때만 알린다 |
+| 🎭 **회사 롤플레이** | 한 사람이 PM · 리뷰어 · PO · CEO 역할을 LLM 워커로 분담 |
+| ⚡ **자동 실행** | 출근/퇴근/주간 cron + GitHub webhook 으로 사용자 입력 없이 돈다 — 대부분은 Slack 으로 보고하고, 뒷정리·폴링 성격의 4슬롯은 처리한 게 있을 때만 알린다 |
 | 📈 **투자 라인** | KRX 전종목을 훑어 후보를 추리고, 가상 계좌로 사고팔아 추천 규칙의 성적을 남긴다 |
 | 🧠 **장기 기억** | 과거 작업을 pgvector 의미검색으로 회상해 분류·리뷰 품질 강화 |
 | 🔁 **자기 학습** | PR 리뷰의 채택/기각을 수확해 다음 리뷰 프롬프트에 되먹인다 |
@@ -52,7 +52,7 @@ flowchart TD
 
     R["Router<br/>Intent Classifier"]
     MR["Model Router<br/>codex CLI · 격리 spawn"]
-    WK["16 Dispatch Workers (자연어·슬래시)<br/>32 AgentTypes 전체 — 내부 자동화 포함<br/>PM · BE · Reviewer · CTO · PO · CEO<br/>이직 메이트 · 지원 추적 · 휴가 · 블로그"]
+    WK["Dispatch Workers (자연어·슬래시)<br/>+ 내부 자동화 에이전트<br/>PM · Reviewer · PO · CEO<br/>이직 메이트 · 지원 추적 · 휴가 · 블로그"]
     IV["투자 라인<br/>screener · market-data<br/>paper-trading · backtest"]
     PG{"Preview Gate<br/>✅ / ❌"}
     EXT["Slack · Notion · GitHub"]
@@ -83,7 +83,7 @@ src/{domain}/
   infrastructure/ # Port 어댑터 (DB · 큐 · 외부 API)
   interface/      # Controller, DTO, 큐 Provider
 src/common, src/config, src/prisma   # 공통 · env 검증 · PrismaService(Global)
-prisma/schema.prisma                 # DB 단일 소스 (36 models — 절반이 시세·모의투자)
+prisma/schema.prisma                 # DB 단일 소스 (상당수가 시세·모의투자 모델)
 ```
 
 ---
@@ -124,7 +124,7 @@ NestJS 11 + DDD/Hexagonal · Prisma 6 + PostgreSQL · Redis/BullMQ · Slack Bolt
 
 **🔀 자연어 라우터 (V3 Hierarchical Manager)**
 
-멘션 하나가 워커에 닿기까지 LLM 호출은 한 번뿐이다. Intent Classifier 가 의도를 분류해 16개 워커 중 하나로 넘긴다.
+멘션 하나가 워커에 닿기까지 LLM 호출은 한 번뿐이다. Intent Classifier 가 의도를 분류해 등록된 워커 중 하나로 넘긴다(목록은 [router.module.ts](src/router/router.module.ts) 의 `inject` 배열).
 
 직전 대화를 기억한다 — 사용자·채널·스레드 단위로 5턴, TTL 30분(Redis, 실패 시 in-memory fallback). 그래서 "그거 분배해" 같은 지시대명사가 직전 실행을 자동으로 가리킨다.
 
@@ -183,7 +183,7 @@ pnpm dev              # watch 모드 기동
 
 > **사전 요구사항** — Node 22.13+, pnpm 9+, Docker, 로그인된 `codex` CLI(ChatGPT). CLI 는 prompt-injection 방지를 위해 임시 디렉토리 + env allowlist 로 격리 실행한다([cli-process.util.ts](src/model-router/infrastructure/cli-process.util.ts)).
 >
-> **검증** — 로컬은 `pnpm lint:check && pnpm test && pnpm build` 3중 green. CI 는 여기에 `check:env` · `docs:check` · `check:invariants` 를 더 돌린다.
+> **검증** — 로컬은 `pnpm lint:check && pnpm test && pnpm build` 3중 green + `node --env-file=.env scripts/check-di.cjs`(DI 배선). CI 는 여기에 `check:env` · `docs:check` · `check:invariants` · `test:e2e` 를 더 돌린다.
 
 ---
 
@@ -192,7 +192,7 @@ pnpm dev              # watch 모드 기동
 | 진입 | 무엇 | 인증·게이트 |
 |---|---|---|
 | **슬래시 커맨드** | 에이전트 호출 · 휴가 · 운영 | Slack Socket Mode |
-| **자연어 멘션·DM** | Router 가 16개 워커 중 하나로 분류·dispatch | `app_mention` + `message.im` 구독 |
+| **자연어 멘션·DM** | Router 가 워커 중 하나로 분류·dispatch | `app_mention` + `message.im` 구독 |
 | **GitHub Webhook** | issue/PR 이벤트로 자동 발화 | HMAC 서명 검증 |
 | **Autopilot cron** | 출근·퇴근·주간 정기 실행 | `AUTOPILOT_OWNER_SLACK_USER_ID` |
 | **macOS 콘솔 앱** | Slack 없이 회사 전체를 보고 조작 | `CONSOLE_OWNER_SLACK_USER_ID` |
@@ -223,9 +223,9 @@ pnpm dev              # watch 모드 기동
 - **BLOG · 이직 메이트 · 지원 추적** — 자연어 전용. 기존 Notion 초안 발행은 `BLOG_PUBLISH`가 자연어와 `/blog-publish`를 모두 지원
 - **VACATION** — `/휴가` 와 자연어 둘 다 지원
 
-Slack 설정: Event Subscriptions 에 `app_mention` + `message.im` + `reaction_added`, Bot scope 에 `app_mentions:read` + `im:history` + `reactions:read` + `channels:history` + `groups:history`. 뒤의 두 history 권한은 채널 메시지를 다시 읽을 때 쓴다 — 채널 알림 스레드에서 멘션했을 때 부모 메시지를 맥락으로 읽거나, 채널 메시지에 단 반응의 원문을 조회할 때다.
+필요한 이벤트 구독과 Bot scope 는 아래 [Slack 봇 최초 설정](#-설정)에 모아 두었다.
 
-아이디어 판정은 평일 09:00 KST에 `IDEA_CHANNEL_ID`의 최근 최상위 글을 최대 10건 읽어 개발 가치를 판단한다. 판정 답글과 개발 대상의 ✅/❌ 일정 승인 카드는 원글 스레드에 붙는다. ✅ 승인 뒤 내부 `ScheduleItem`에 일정이 등록된다. 봇을 해당 채널에 초대해야 하며, 공개·비공개 채널 기록 조회에는 각각 `channels:history`·`groups:history` 권한이 필요하다.
+아이디어 판정은 평일 09:00 KST에 `IDEA_CHANNEL_ID`의 최근 최상위 글을 최대 10건 읽어 개발 가치를 판단한다. 판정 답글과 개발 대상의 ✅/❌ 일정 승인 카드는 원글 스레드에 붙는다. ✅ 승인 뒤 내부 `ScheduleItem`에 일정이 등록된다. 봇을 해당 채널에 초대해야 한다.
 
 </details>
 
@@ -249,14 +249,16 @@ Slack 설정: Event Subscriptions 에 `app_mention` + `message.im` + `reaction_a
 
 <br>
 
-`AUTOPILOT_OWNER_SLACK_USER_ID` 한 값으로 전체가 켜지고, 없으면 전부 비활성이다. 선언은 [autopilot.playbook.ts](src/autopilot/domain/autopilot.playbook.ts) 에 **34슬롯**이 있고, 아래는 그것을 성격별로 묶은 것이다.
+`AUTOPILOT_OWNER_SLACK_USER_ID` 한 값으로 전체가 켜지고, 없으면 전부 비활성이다. 선언의 정본은 [autopilot.playbook.ts](src/autopilot/domain/autopilot.playbook.ts)(기본 시각은 `autopilot.playbook-defaults.ts`)이고, 아래는 그것을 성격별로 묶은 것이다.
 
 **하루 리듬** — 같은 시각의 항목은 digest 로 묶여 메시지 1개로 온다.
 
 | 시간 (Asia/Seoul) | 동작 |
 |---|---|
+| 💼 평일 07:00 · 07:30 | 백엔드 채용공고 수집 → 상위 매칭 갭 분석 (`JOB_FEED_ENABLED`) — 새 공고는 아침 한 통에 실린다 |
 | 🌄 매일 07:30 · 08:05 · 08:10 | 오늘의 공부 브리프 → 적용 판정 · 딥다이브(블로그 초안) — 채널에는 안 보내고 아침 한 통에 한 줄로 실린다 |
 | 🌅 매일 08:30 | 아침 한 통 — 할 일(승인 대기·장애·새 공고) + 투자·회사(PM 계획 최우선)·공부·어제 포트폴리오 한 줄씩. PM 계획 전문·공고 목록은 스레드. 비서실 결산은 콘솔 원장 |
+| 💡 평일 09:00 | 아이디어 채널 판정 (`IDEA_CHANNEL_ID`) — 원글 스레드에 답글과 일정 승인 카드 |
 | 🚦 매일 09:10 | CUJ 점검 — 전날과 오늘 아침의 여섯 핵심 여정이 깨진 경우에만 Slack 알림 |
 | 🕐 매일 13:00 | PO Shadow — 오전 동안 계획이 틀어졌을 때만 발송(조용한 날은 원장에만) |
 | 🌆 매일 19:40 | 저녁 마감 한 통 — 오늘 머지·회고 핵심 / 투자(수익률·체결·다음 체결일 예정) / 넘어가는 것 한 줄씩. 회고 전문·발행 후보는 스레드, 승인 카드(블로그·경력·GitHub)는 바로 아래. Worklog·Daily Eval 은 콘솔 원장. 모의투자 추천(19:30) 뒤에 둔다 |
@@ -276,6 +278,7 @@ Slack 설정: Event Subscriptions 에 `app_mention` + `message.im` + `reaction_a
 | 평일 09:00~15:00 (10분) | 미체결 모의 주문 체결 처리 |
 | 평일 09:30~15:20 (5분) | 모의계좌 장중 손절 — 손절선 이탈이면 그 시점 현재가로 즉시 청산 |
 | 📅 금 20:10 | 추천 성적표 집계 (벤치마크 대비) |
+| 📅 금 20:20 | 스크리닝 주간 성적 카드 ("산 것 / 안 산 것" 대조) |
 
 **주간 · 월간**
 
@@ -284,8 +287,13 @@ Slack 설정: Event Subscriptions 에 `app_mention` + `message.im` + `reaction_a
 | 📅 금 17:00 | Weekly Summary (Worklog 1주 + CEO meta) |
 | 📅 토 09:00 | Impact Report (`--recent`, 본인 머지 PR 종합) |
 | 📅 일 10:00 / 11:00 / 12:00 | Knowledge-Lint · Docs Audit · Preference Learning |
+| 📅 일 09:00 | Memory Vacuum (세션 기억 색인 청소 — 색인 백업 후 손실 없는 정리만) |
 | 📅 일 18:00 | CEO Meta |
+| 📅 월 05:00 | 한국 공휴일 동기화 (`KOREAN_HOLIDAY_API_KEY` 없으면 건너뜀) |
 | 📅 월 09:00 | Run-Retro (주간 실행 통계 회고) |
+| 📅 월 09:15 | PO Shadow 주간 목표 점검 (owner DM) |
+| 📅 월 09:30 | 블로그 수정률 주간 보고 |
+| 📅 월 10:00 | 윤문 규칙 연구 dry-run (`HUMANIZE_RESEARCH_ENABLED`) |
 | 📅 매월 1일 09:00 | Ops Supervisor (운영 점검) |
 | 🗂️ 매일 19:00 | AI CLI 환경 스냅샷 내보내기 (sync repo 설정 시) |
 | 🗂️ 매일 10:00 | 다른 PC의 AI CLI 환경 스냅샷 감지·승인 카드 생성 (sync repo 설정 시) |
@@ -299,7 +307,7 @@ Slack 설정: Event Subscriptions 에 `app_mention` + `message.im` + `reaction_a
 | 매시 50분 | 좀비 run 정리 |
 | 08~23시 10분마다 | 포트폴리오 사이트 워밍업 |
 
-> 스케줄·타임존은 `AUTOPILOT_<ID>_SCHEDULE` / `_TIMEZONE` 으로 덮어쓴다. 여기서 `<ID>` 는 **그룹명이 아니라 그룹의 첫 항목 id** 다(morning 그룹은 `SECRETARIAT`, noon 그룹은 `ASSIGN`, evening 그룹은 `WORK_REVIEWER`).
+> 스케줄·타임존은 `AUTOPILOT_<ID>_SCHEDULE` / `_TIMEZONE` 으로 덮어쓴다. 여기서 `<ID>` 는 **그룹명이 아니라 그룹의 첫 항목 id** 다(morning 그룹은 `SECRETARIAT`, noon 그룹은 `PO_SHADOW`, evening 그룹은 `WORK_REVIEWER`).
 
 > 주식·모의투자 알림은 플레이북에서 `line: 'invest'` 로 묶여 있어 `AUTOPILOT_INVEST_TARGET` 하나로 전용 채널에 보낼 수 있다. 미설정 시 `AUTOPILOT_TARGET`(없으면 owner DM)을 그대로 쓴다. 채널로 보내려면 봇이 그 채널에 초대돼 있어야 한다.
 >
@@ -352,7 +360,7 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 
 <br>
 
-단일 source-of-truth 는 [app.config.ts](src/config/app.config.ts) 의 `EnvironmentVariables` (class-validator 강제). **전체 140개 목록은 자동 생성 문서 [docs/env-catalog.md](./docs/env-catalog.md)** 에 있고 `pnpm docs:sync` 로 갱신한다. `.env.example` 동기 확인은 `pnpm check:env`.
+단일 source-of-truth 는 [app.config.ts](src/config/app.config.ts) 의 `EnvironmentVariables` (class-validator 강제). **전체 목록은 자동 생성 문서 [docs/env-catalog.md](./docs/env-catalog.md)** 에 있고 `pnpm docs:sync` 로 갱신한다. `.env.example` 동기 확인은 `pnpm check:env`.
 
 아래는 처음 띄울 때 실제로 만지는 것만 추렸다.
 
@@ -381,7 +389,7 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 | `VACATION_HIRE_DATE` · `VACATION_FIRST_YEAR_ADVANCE_DAYS` | ❌ | 휴가 계산 입사일(YYYY-MM-DD)과 1년차 선지급 일수(1~11). 선지급을 설정하면 1년차 부여가 그 값으로 고정되고 2년차 15일은 그대로 — 없으면 한 달에 1일씩 계산 |
 | `CAREER_LOG_NOTION_PAGE_ID` · `CAREER_*_NOTION_PAGE_ID` | ⭕ | careerLog · 이력서/포트폴리오 Notion 적재 대상 |
 | `BLOG_PUBLISH_REPO` · `BLOG_PUBLISH_BRANCH` · `BLOG_MASK_FORBIDDEN_TERMS` · `BLOG_NOTION_STATUS_DRAFT_VALUE` · `BLOG_NOTION_STATUS_HOLD_VALUE` · `BLOG_GITHUB_PUBLISH_ENABLED` | ⭕ | `/blog-publish` 대상 저장소·브랜치·익명화 금지어·Notion 초안/보류 상태값과 저녁 GitHub 발행 승인 카드 스위치. 금지어 목록이 비면 발행 차단. 보류 상태값 기본은 `보류` — 편집 단계가 발행 부적합으로 판정한 초안이 여기로 옮겨져 큐를 막지 않는다 |
-| `PORTFOLIO_SITE_URL` | ⭕ | 포트폴리오 사이트 주소. autopilot 이 08~24시 10분마다 `/backend/health` 를 불러 무료 플랜에서 잠든 API 를 깨운다. 비우면 워밍업 슬롯이 꺼진다 |
+| `PORTFOLIO_SITE_URL` | ⭕ | 포트폴리오 사이트 주소. autopilot 이 08~23시 10분마다 `/backend/health` 를 불러 무료 플랜에서 잠든 API 를 깨운다. 비우면 워밍업 슬롯이 꺼진다 |
 | `AUTOPILOT_PORTFOLIO_WARMUP_SCHEDULE` · `_TIMEZONE` | ⭕ | 워밍업 발화 시각 override(기본 `*/10 8-23 * * *`, Asia/Seoul). 24시간으로 넓히면 Render 무료 플랜 월 750시간을 넘겨 사이트가 월말까지 정지될 수 있다 |
 | `PORTFOLIO_AUTOMATION_TOKEN` | ⭕ | 포트폴리오 사이트 발행용 자동화 토큰(사이트 쪽 `AUTOMATION_TOKEN` 과 같은 값). 비우면 발행 슬롯이 꺼진다 |
 | `PORTFOLIO_ANONYMIZED_OWNERS` | ⭕ | 공개 포트폴리오에 저장소 이름을 남기지 않을 GitHub owner 목록(쉼표 구분). 해당 성과는 slug 가 `company-<해시>-pr-<번호>` 가 되고 PR 링크를 싣지 않는다. 비우면 익명화하지 않는다 |
@@ -407,7 +415,7 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 
 **기본 ON 이라 끌 때만 만지는 것** — `'false'` 로 끈다. `HUMANIZE_REPORTS_ENABLED`(보고서 자동 윤문) · `BRIEFING_WAITING_SECTION_ENABLED`(아침 브리핑 PR 분류 섹션) · `EVENING_RETRO_PUBLISH_ENABLED`(저녁 회고 발행 후보) · `BLOG_GITHUB_PUBLISH_ENABLED`(저녁 Notion 초안 GitHub 발행 승인 카드) · `STUDY_DEEPDIVE_ENABLED`(오늘의 공부 → 블로그 초안 딥다이브 확장) · `AUTOPILOT_KNOWLEDGE_LINT_L4_ENABLED`(모순 판정).
 
-**Model provider** — 전체 에이전트의 primary 는 ChatGPT(Codex CLI) 다. codex 가 실패하면 Claude(`ClaudeCliProvider`, `CLAUDE_CODE_OAUTH_TOKEN` 인증)로 한 번 재시도하고, 둘 다 실패해야 최종 실패로 처리한다(쿼터 소진 시 reset 시각 안내). 다만 출력 스키마를 강제하는 요청은 폴백하지 않는다 — claude CLI 에 `--output-schema` 에 해당하는 인자가 없어 형태 보장이 사라지기 때문이다.
+**Model provider** — 라우팅·폴백 규칙은 위 [기반](#-만든-것) 설명과 같다. Claude 폴백은 `CLAUDE_CODE_OAUTH_TOKEN` 이 있으면 그 토큰으로, 없으면 macOS Keychain 으로 인증한다. 출력 스키마를 강제하는 요청이 폴백하지 않는 이유는 claude CLI 에 `--output-schema` 에 해당하는 인자가 없어 형태 보장이 사라지기 때문이다.
 
 </details>
 
@@ -424,7 +432,7 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
    - `reactions:read` 는 이모지 반응(👍/👎 선호 신호, ✋ 수집함, 📌 할 일)을 받는 데 쓴다. 5번의 `reaction_added` 구독과 **둘 다** 있어야 이벤트가 들어오고, 채널 메시지에 단 반응을 저장하려면 위 history 권한도 필요하다. 빠져 있어도 에러는 나지 않는다. 다만 `slack_reaction_signal`·`slack_inbox_item` 이 0행인 것만으로 이 설정이 빠졌다고 단정할 수는 없다 — 둘 다 있어도 0행인 경우가 있었다.
    - 이미 설치한 앱에 스코프를 더했으면 **Reinstall to Workspace** 로 재설치해야 토큰에 반영된다(설정 화면에 추가만 해도 기존 토큰은 그대로다).
 3. **Basic Information** → Signing Secret = `SLACK_SIGNING_SECRET`
-4. **Slash Commands** 에 15종(`/blog-publish` 포함) 등록 (또는 **App Manifest** 의 `slash_commands` 배열로 일괄 선언 후 Reinstall)
+4. **Slash Commands** 에 위 [슬래시 커맨드](#-인터페이스) 표의 명령 전부 등록 (또는 **App Manifest** 의 `slash_commands` 배열로 일괄 선언 후 Reinstall)
 5. **Event Subscriptions** → `app_mention` + `message.im` + `reaction_added` 구독 → Reinstall
 6. `.env` 채운 뒤 `pnpm dev` → `이대리 Slack 봇이 Socket Mode 로 기동되었습니다.` 로그 확인
 
@@ -473,7 +481,6 @@ node scripts/export-ai-cli-env.cjs ./ai-cli-env-export   # 기존 PC 에서 내�
 
 - [ ] **투자 라인 3단계** — ① 모의투자 고도화(모의와 실전의 격차를 줄이는 일이지 모의 성적을 올리는 일이 아니다) → ② 실거래(승인 카드를 누르면 주문이 나가는 형태, Preview Gate 그대로 재사용) → ③ 추천 서비스. 확정된 제약 둘: **토스는 주문 API 를 공개하지 않아** 실거래에는 별도 증권사가 필요하고, ③은 코드가 아니라 법적 요건(유사투자자문업)의 문제다. 자세한 것은 [tasks/goals-invest-line.md](./tasks/goals-invest-line.md)
 - [ ] **토론 모드** — 멀티 에이전트가 한 주제로 의견을 교환·반박하며 합의안을 도출 (현재 단일 워커 dispatch → 다자 debate 로 확장)
-- [ ] **BE 자율 개발 hardening** — 승인형 sandbox apply/test + PR open preview 는 구현됨. 남은 과제는 실패 시 self-correction retry, 더 넓은 repo/테스트 매트릭스, 운영 가드 강화
 - [ ] **운영 전환** — `prisma db push`(synchronize) → `prisma migrate dev` 마이그레이션 워크플로우
 
 ---
