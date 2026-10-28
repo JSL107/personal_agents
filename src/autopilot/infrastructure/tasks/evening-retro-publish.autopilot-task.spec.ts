@@ -238,7 +238,7 @@ describe('EveningRetroPublishTask', () => {
     expect(result.skip).toBe(false);
     expect(modelRouter.route).not.toHaveBeenCalled();
     expect(result.summaryText).toContain('🌙 *7/3(금) 마감*');
-    expect(result.summaryText).toContain('• 오늘  PR 0건 머지');
+    expect(result.summaryText).toContain('*오늘 한 일*  PR 0건 머지');
     expect(result.previews).toBeUndefined();
   });
 
@@ -1017,7 +1017,7 @@ describe('EveningRetroPublishTask', () => {
           },
           {
             id: 70,
-            output: {},
+            output: { topPriority: { title: '감사로그 요구사항 작성' } },
             endedAt: new Date(),
             triggerType: TriggerType.MORNING_BRIEFING_CRON,
           },
@@ -1026,10 +1026,14 @@ describe('EveningRetroPublishTask', () => {
 
       const result = await task.run(CTX);
 
-      // 수동 /today(77)는 아침 보고로 나간 계획이 아니라 건너뛴다.
+      // 수동 /today(77)는 아침 보고로 나간 계획이 아니라 건너뛴다. 저녁에 판정하므로 계획 내용을 인용한다.
       expect(result.runVerdicts).toEqual([
         { agentRunId: 1, facets: ['overall'] },
-        { agentRunId: 70, facets: ['pm_plan'] },
+        {
+          agentRunId: 70,
+          facets: ['pm_plan'],
+          quote: '감사로그 요구사항 작성',
+        },
       ]);
     });
 
@@ -1199,9 +1203,19 @@ describe('EveningRetroPublishTask', () => {
       expect(result.summaryText).toBe(
         [
           '🌙 *7/3(금) 마감*',
-          '• 오늘  PR 1건 머지 · 핵심: 자연어 오실행 방지 가드를 넣었다.',
-          '• 투자  장기 -0.06% · 스윙 +1.2% · 오늘 체결 매수 2 · 매도 1 · 7/6(월) 시가 매수 1 · 매도 3 예정',
-          '• 넘어감  승인 대기 1장 · 🔴 Autopilot task paper-recommend 2일째',
+          '',
+          '*오늘 한 일*  PR 1건 머지',
+          '> 자연어 오실행 방지 가드를 넣었다.',
+          '',
+          '*투자*',
+          '• 장기 수익률  -0.06%',
+          '• 스윙 수익률  +1.2%',
+          '• 오늘 체결  매수 2 · 매도 1',
+          '• 7/6(월) 시가  매수 1 · 매도 3 예정',
+          '',
+          '*넘어감*',
+          '• 승인 대기 1장',
+          '• 🔴 Autopilot task paper-recommend 2일째',
         ].join('\n'),
       );
       expect(result.detailText).toContain('오늘의 회고');
@@ -1223,7 +1237,7 @@ describe('EveningRetroPublishTask', () => {
       const result = await task.run(CTX);
 
       expect(result.summaryText).toContain(
-        '• 투자  장기 0% · 내일 추천 집계 전',
+        '*투자*\n• 장기 수익률  0%\n• 다음 체결  추천 집계 전',
       );
     });
 
@@ -1236,7 +1250,7 @@ describe('EveningRetroPublishTask', () => {
 
       const result = await task.run(CTX);
 
-      expect(result.summaryText).not.toContain('• 투자');
+      expect(result.summaryText).not.toContain('*투자*');
     });
 
     it('(t-3b) 평가 스냅샷이 없어도 내일 예정 주문이 있으면 투자 줄을 낸다', async () => {
@@ -1251,7 +1265,7 @@ describe('EveningRetroPublishTask', () => {
       const result = await task.run(CTX);
 
       expect(result.summaryText).toContain(
-        '• 투자  7/6(월) 시가 매수 2 · 매도 0 예정',
+        '*투자*\n• 7/6(월) 시가  매수 2 · 매도 0 예정',
       );
     });
 
@@ -1269,10 +1283,10 @@ describe('EveningRetroPublishTask', () => {
 
       expect(result.skip).toBe(false);
       expect(result.summaryText).toContain(
-        '• 오늘  ⚠️ 머지 PR 조회 실패 — 건수 미상',
+        '*오늘 한 일*  ⚠️ 머지 PR 조회 실패 — 건수 미상',
       );
       expect(result.summaryText).not.toContain('PR 0건 머지');
-      expect(result.summaryText).toContain('• 투자  장기 +1%');
+      expect(result.summaryText).toContain('• 장기 수익률  +1%');
     });
 
     it('(t-4) 회고 생성이 실패해도 결과 줄은 내고 실패 사실만 덧붙인다', async () => {
@@ -1285,7 +1299,7 @@ describe('EveningRetroPublishTask', () => {
 
       const result = await task.run(CTX);
 
-      expect(result.summaryText).toContain('• 오늘  PR 1건 머지');
+      expect(result.summaryText).toContain('*오늘 한 일*  PR 1건 머지');
       expect(result.summaryText).toContain('⚠️ 회고 자동 생성 실패(quota)');
       expect(result.previews).toBeUndefined();
     });
@@ -1312,7 +1326,7 @@ describe('EveningRetroPublishTask', () => {
 
       expect(result.skip).toBe(false);
       expect(result.summaryText).toContain('🌙 *7/3(금) 마감*');
-      expect(result.summaryText).not.toContain('• 투자');
+      expect(result.summaryText).not.toContain('*투자*');
     });
   });
 });

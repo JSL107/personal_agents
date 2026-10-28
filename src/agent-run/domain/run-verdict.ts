@@ -5,20 +5,24 @@
 // 버튼 값은 슬랙에서 되돌아오는 입력이라, 핸들러가 여기 목록으로 다시 검사한다 — 목록 밖 값은 저장하지 않는다.
 // `heading` 은 판정 댓글 머리 — 한 댓글의 축은 한 실행 몫이라 첫 축의 값을 쓴다.
 // `quoteLabel` 은 판정 대상 문장을 인용할 때 붙이는 이름이다. 인용이 없는 축은 비운다.
+// `question` 은 버튼 바로 위에 싣는 물음이다. 이름표(`label`)만 두었더니 "문제 칸" 같은 내부 용어라
+// 무엇을 고르라는 건지 읽히지 않았다(2026-10-28 사용자 피드백). 버튼만 보고 답할 수 있게 쓴다.
 export const RUN_VERDICT_FACETS = {
   // 저녁 회고 KPT 의 문제 칸 — 지어낸 것인지 사람이 가른다(2026-09-18-evening-retro-kpt-design.md §3-2).
   retro_problem: {
     heading: '🌙 저녁 회고 판정',
-    label: '문제 칸',
-    quoteLabel: '문제 칸',
+    quoteLabel: '회고가 꼽은 아쉬운 점',
+    question: '이 아쉬운 점, 실제로 있었던 일인가요?',
     verdicts: {
-      REAL: '실제로 아쉬웠던 것',
+      REAL: '실제로 있었음',
       FABRICATED: '지어낸 것',
     },
   },
   overall: {
     heading: '🌙 저녁 회고 판정',
-    label: '회고 전체',
+    // 주간 카드에서 아쉬운 점이 이미 판정되고 회고 전체만 남았을 때 회고 내용을 인용한다.
+    quoteLabel: '회고 내용',
+    question: '이 회고, 하루를 돌아보는 데 쓸모 있었나요?',
     verdicts: {
       GOOD: '👍 쓸모 있음',
       BAD: '👎 헛다리',
@@ -28,8 +32,8 @@ export const RUN_VERDICT_FACETS = {
   // 제안이라, 합치면 "맞았음 비율" 이 그 둘을 구분하지 못한다(설계 §3-2).
   po_first_action: {
     heading: '🎯 PO 대행 판정',
-    label: '먼저 이것부터',
     quoteLabel: '먼저 이것부터',
+    question: '이 제안, 맞았나요?',
     verdicts: {
       GOOD: '👍 맞았음',
       KNOWN: '이미 알던 것',
@@ -39,7 +43,8 @@ export const RUN_VERDICT_FACETS = {
   // 아침 계획은 하루를 보낸 뒤에야 판단할 수 있어 저녁 스레드에서 묻는다(설계 §3-3).
   pm_plan: {
     heading: '🗓️ 오늘 아침 계획 판정',
-    label: '오늘 계획',
+    quoteLabel: '아침 계획',
+    question: '아침 계획, 실제 하루에 쓸모 있었나요?',
     verdicts: {
       GOOD: '👍 쓸모 있었음',
       BAD: '👎 헛다리',
@@ -49,8 +54,8 @@ export const RUN_VERDICT_FACETS = {
   string,
   {
     heading: string;
-    label: string;
     quoteLabel?: string;
+    question: string;
     verdicts: Record<string, string>;
   }
 >;
