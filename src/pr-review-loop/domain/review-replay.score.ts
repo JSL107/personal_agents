@@ -554,6 +554,8 @@ export interface BaselineSummaries {
   missed?: TrialSummary;
   // 미탐의 diff 안 잘린 그룹. 분리 집계 전 보고서에는 없다.
   missedIntact?: TrialSummary;
+  // outsideDiff 로 표시된 미탐(레포 사본 실험의 주 지표). 표시 없이 돈 보고서에는 없다.
+  missedOutsideDiff?: TrialSummary;
 }
 
 export const readBaselineSummaries = (
@@ -568,6 +570,7 @@ export const readBaselineSummaries = (
       fixed?: TrialSummary;
       missed?: unknown;
       byDiffTruncation?: { missed?: { intact?: unknown } };
+      missedByOutsideDiff?: { outside?: unknown };
     };
     score?: { rejected?: ReplayRate; fixed?: ReplayRate };
   };
@@ -579,11 +582,22 @@ export const readBaselineSummaries = (
     if (missedIntact !== undefined && !isTrialSummary(missedIntact)) {
       return null;
     }
+    const outsideDiff = trials.missedByOutsideDiff?.outside;
+    if (
+      trials.missedByOutsideDiff !== undefined &&
+      !isTrialSummary(outsideDiff)
+    ) {
+      return null;
+    }
+    const missedOutsideDiff = isTrialSummary(outsideDiff)
+      ? outsideDiff
+      : undefined;
     return {
       rejected: trials.rejected,
       fixed: trials.fixed,
       ...(trials.missed === undefined ? {} : { missed: trials.missed }),
       ...(missedIntact === undefined ? {} : { missedIntact }),
+      ...(missedOutsideDiff === undefined ? {} : { missedOutsideDiff }),
     };
   }
   if (isReplayRate(score?.rejected) && isReplayRate(score?.fixed)) {
