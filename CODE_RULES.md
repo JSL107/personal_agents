@@ -112,13 +112,13 @@
 
 ### 네이밍 컨벤션
 
-| 대상                        | 규칙                                    | 예시                                     |
-| --------------------------- | --------------------------------------- | ---------------------------------------- |
-| 클래스/인터페이스/타입/Enum | PascalCase                              | `AgentRunService`, `AgentRunStatus`      |
-| 변수/함수/메서드            | camelCase                               | `findLatestSucceededRun`, `isActive`     |
-| 상수 (모듈 스코프)          | UPPER_SNAKE_CASE                        | `MAX_RETRY_COUNT`                        |
-| 파일명                      | kebab-case                              | `agent-run.prisma.repository.ts`         |
-| NestJS 파일                 | `{name}.{role}.ts`                      | `agent-run.service.ts`, `crawler.controller.ts` |
+| 대상                        | 규칙                                    | 예시                                               |
+| --------------------------- | --------------------------------------- | -------------------------------------------------- |
+| 클래스/인터페이스/타입/Enum | PascalCase                              | `AgentRunService`, `AgentRunStatus`                |
+| 변수/함수/메서드            | camelCase                               | `findLatestSucceededRun`, `isActive`               |
+| 상수 (모듈 스코프)          | UPPER_SNAKE_CASE                        | `MAX_RETRY_COUNT`                                  |
+| 파일명                      | kebab-case                              | `agent-run.prisma.repository.ts`                   |
+| NestJS 파일                 | `{name}.{role}.ts`                      | `agent-run.service.ts`, `crawler.controller.ts`    |
 | 테스트 파일                 | `{name}.spec.ts` / `{name}.e2e-spec.ts` | `agent-run.service.spec.ts`, `console.e2e-spec.ts` |
 
 #### Repository / Port 네이밍 규칙
