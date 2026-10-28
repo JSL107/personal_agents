@@ -723,6 +723,12 @@ export const buildReviewPrompt = ({
   const diffNote = diff.truncated
     ? `\n\n(diff 가 ${diff.bytes} bytes 라 ${Buffer.byteLength(diff.diff, 'utf-8')} bytes 까지만 잘려서 전달됨 — 잘린 뒷부분은 모를 수 있음. 동작 코드를 먼저 싣고 테스트 파일(.spec·test/ 등)을 뒤로 미뤘으므로, changed files 에 있는데 diff 에 안 보이는 테스트는 누락이 아니라 잘린 것이다)`
     : '';
+  // 뺀 파일을 모르면 changed files 에 있는데 diff 에 없는 lockfile 등을 "누락" 으로 지적한다.
+  const omittedPaths = diff.omittedPaths ?? [];
+  const omittedNote =
+    omittedPaths.length > 0
+      ? `\n\n(리뷰할 필요가 없는 파일 ${omittedPaths.length}개는 diff 에서 뺐다 — lockfile·스냅샷·압축본·소스맵·dist. 이 파일들은 지적하지 않는다: ${listPaths(omittedPaths)})`
+      : '';
   // diff 는 그대로 두고, 안 보이는 문자가 있다는 사실만 diff 앞에 알린다.
   const hiddenChars = findHiddenUnicode(diff.diff);
   const hiddenCharNote =
@@ -766,7 +772,7 @@ export const buildReviewPrompt = ({
       ? wrapUntrustedInput(redactInjectionPhrases(detail.body))
       : '(없음)',
     '',
-    `[diff]${diffNote}${hiddenCharNote}`,
+    `[diff]${diffNote}${omittedNote}${hiddenCharNote}`,
     wrapUntrustedInput(['```diff', diff.diff, '```'].join('\n')),
   );
 

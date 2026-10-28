@@ -83,6 +83,10 @@ export interface PullRequestDiff {
   diff: string; // unified diff
   truncated: boolean; // maxBytes 초과로 잘렸는지
   bytes: number;
+  // 리뷰할 가치가 없어 diff 에서 뺀 파일(lockfile·스냅샷·빌드 산출물 등). bytes 는 뺀 뒤 기준이다.
+  omittedPaths?: string[];
+  // 뺀 파일의 diff 원문. 리뷰에는 싣지 않지만 비밀값 탐지는 빌드 산출물까지 봐야 한다.
+  omittedDiff?: string;
 }
 
 // `/impact-report --recent <N>d` 다중 PR 종합용 lightweight summary.

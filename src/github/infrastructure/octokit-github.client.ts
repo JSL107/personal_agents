@@ -349,9 +349,14 @@ export class OctokitGithubClient implements GithubClientPort {
         pull_number: number,
         mediaType: { format: 'diff' },
       });
-      return truncateDiff(response.data as unknown as string, maxBytes, {
-        testFilesLast: true,
-      });
+      const { diff, omittedPaths, omittedDiff } = omitNoiseFiles(
+        response.data as unknown as string,
+      );
+      return {
+        ...truncateDiff(diff, maxBytes, { testFilesLast: true }),
+        omittedPaths,
+        omittedDiff,
+      };
     } catch (error: unknown) {
       throw this.wrapRequestFailed(error, `PR #${number} diff 조회 실패`);
     }
@@ -1648,6 +1653,63 @@ const truncateDiff = (
 const TEST_FILE_PATH =
   /\.(spec|test)\.[cm]?[jt]sx?$|(^|\/)(test|tests|__tests__)\//;
 
+// 사람이 리뷰하지 않는 파일. 큰 PR 에서 120KB 상한을 이런 파일이 먹으면 정작 동작 코드가 잘린다.
+// 판단이 들어가지 않는 것만 둔다 — 마이그레이션·번역 파일은 리뷰할 가치가 있어 남긴다.
+const NOISE_FILE_PATH = new RegExp(
+  [
+    // lockfile
+    '(^|/)(pnpm-lock\\.yaml|package-lock\\.json|npm-shrinkwrap\\.json|yarn\\.lock|bun\\.lockb?|Cargo\\.lock|poetry\\.lock|Pipfile\\.lock|uv\\.lock|composer\\.lock|Gemfile\\.lock|go\\.sum)$',
+    // 테스트 스냅샷
+    '(^|/)__snapshots__/',
+    '\\.snap$',
+    // 압축본·소스맵
+    '\\.min\\.(js|css)$',
+    '\\.map$',
+    // 빌드 산출물
+    '(^|/)dist/',
+  ].join('|'),
+);
+
+interface DiffSectionPaths {
+  from: string;
+  to: string;
+}
+
+// `diff --git a/<옛 경로> b/<새 경로>` 헤더의 두 경로. 비ASCII 경로는 git 이 따옴표로 감싸므로 따옴표만 벗긴다.
+const diffSectionPaths = (section: string): DiffSectionPaths | undefined => {
+  const header = section.split('\n', 1)[0];
+  const matched = header.match(/^diff --git "?a\/(.*?)"? "?b\/(.*?)"?$/);
+  if (matched === null) {
+    return undefined;
+  }
+  return { from: matched[1], to: matched[2] };
+};
+
+// 상한으로 자르기 전에 뺀다 — 뺀 만큼 동작 코드가 상한 안에 더 들어온다. 뺀 경로는 프롬프트에 알린다.
+// 이름이 바뀐 섹션은 옛 경로와 새 경로가 둘 다 노이즈일 때만 뺀다 — 소스 파일을 dist/ 로 옮긴
+// 변경을 새 경로만 보고 숨기지 않는다.
+const omitNoiseFiles = (
+  diff: string,
+): { diff: string; omittedPaths: string[]; omittedDiff: string } => {
+  const kept: string[] = [];
+  const omitted: string[] = [];
+  const omittedPaths: string[] = [];
+  for (const section of diff.split(/^(?=diff --git )/m)) {
+    const paths = diffSectionPaths(section);
+    if (
+      paths !== undefined &&
+      NOISE_FILE_PATH.test(paths.from) &&
+      NOISE_FILE_PATH.test(paths.to)
+    ) {
+      omitted.push(section);
+      omittedPaths.push(paths.to);
+    } else {
+      kept.push(section);
+    }
+  }
+  return { diff: kept.join(''), omittedPaths, omittedDiff: omitted.join('') };
+};
+
 // `diff --git a/<경로> b/<경로>` 단위로 나누고, 같은 무리 안의 순서는 유지한다.
 // 헤더 앞 머리말이 있으면 테스트가 아닌 쪽에 남아 맨 앞을 지킨다.
 // 비ASCII 경로는 git 이 `"b/test/\355\225\234.spec.ts"` 처럼 따옴표로 감싸고 8진수로 이스케이프한다.
@@ -1655,13 +1717,8 @@ const TEST_FILE_PATH =
 const moveTestFilesLast = (diff: string): string => {
   const sections = diff.split(/^(?=diff --git )/m);
   const isTest = (section: string): boolean => {
-    const header = section.split('\n', 1)[0];
-    const path = header.match(/ "?b\/(.*?)"?$/)?.[1];
-    return (
-      header.startsWith('diff --git ') &&
-      path !== undefined &&
-      TEST_FILE_PATH.test(path)
-    );
+    const paths = diffSectionPaths(section);
+    return paths !== undefined && TEST_FILE_PATH.test(paths.to);
   };
   return [
     ...sections.filter((section) => !isTest(section)),

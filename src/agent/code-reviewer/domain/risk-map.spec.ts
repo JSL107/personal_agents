@@ -145,6 +145,26 @@ describe('computeRiskMap', () => {
     );
   });
 
+  // 빌드 산출물은 리뷰 diff 에서 빠지지만, 환경 변수 값이 그대로 박혀 나올 수 있어 비밀값은 본다.
+  it('리뷰 diff 에서 뺀 파일의 자격증명도 잡는다', () => {
+    const input = buildInput([{ path: 'dist/app.js', lines: 1 }]);
+    const omittedDiff = [
+      'diff --git a/dist/app.js b/dist/app.js',
+      '--- a/dist/app.js',
+      '+++ b/dist/app.js',
+      '@@ -1,0 +1,1 @@',
+      `+const token = '${fakeGithubToken()}';`,
+    ].join('\n');
+
+    const map = computeRiskMap({
+      ...input,
+      diff: { ...input.diff, omittedDiff },
+    });
+
+    expect(map.level).toBe(RiskMapLevel.CAREFUL);
+    expect(map.levelReasons).toContain('추가된 줄에 자격증명 형식 문자열');
+  });
+
   it('반복 문자로 된 문서 예시 토큰은 유출로 보지 않는다', () => {
     const map = computeRiskMap(
       buildInput([

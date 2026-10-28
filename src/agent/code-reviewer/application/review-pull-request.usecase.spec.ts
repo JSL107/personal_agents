@@ -935,6 +935,49 @@ describe('buildReviewPrompt', () => {
     // 테스트를 뒤로 미뤄 잘랐다는 사실 — 모르면 잘린 테스트를 누락으로 지적한다.
     expect(text).toContain('누락이 아니라 잘린 것');
   });
+
+  it('diff 에서 뺀 파일이 있으면 그 목록을 알린다 — 모르면 lockfile 을 누락으로 지적한다', () => {
+    const detail = {
+      number: 1,
+      title: 't',
+      body: '',
+      repo: 'a/b',
+      url: 'u',
+      baseRef: 'main',
+      baseSha: 'base-sha-main',
+      headRef: 'h',
+      authorLogin: 'm',
+      mergedAt: null,
+      changedFiles: [],
+      changedFilesTotalCount: 0,
+      changedLinesByFile: {},
+      changedFilesTruncated: false,
+      additions: 0,
+      deletions: 0,
+      headSha: 'sha',
+      isDraft: false,
+    };
+
+    const withOmitted = buildReviewPrompt({
+      detail,
+      diff: {
+        diff: 'short',
+        truncated: false,
+        bytes: 5,
+        omittedPaths: ['pnpm-lock.yaml', 'dist/index.js'],
+      },
+    });
+    const withoutOmitted = buildReviewPrompt({
+      detail,
+      diff: { diff: 'short', truncated: false, bytes: 5, omittedPaths: [] },
+    });
+
+    expect(withOmitted).toContain(
+      '리뷰할 필요가 없는 파일 2개는 diff 에서 뺐다',
+    );
+    expect(withOmitted).toContain('pnpm-lock.yaml, dist/index.js');
+    expect(withoutOmitted).not.toContain('diff 에서 뺐다');
+  });
 });
 describe('ReviewPullRequestUsecase × 학습 규약', () => {
   const validReview: PullRequestReview = {
