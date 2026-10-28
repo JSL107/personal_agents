@@ -16,6 +16,7 @@ import {
 } from '../../common/llm/llm-timeout.constant';
 import { redactPii } from '../../common/util/pii-redaction.util';
 import {
+  CodexReadLockResult,
   CompletionRequest,
   CompletionResponse,
   ModelProviderName,
@@ -334,10 +335,6 @@ export const buildCodexPermissionArgs = ({
   ];
 };
 
-export type CodexReadLockResult =
-  | { locked: true }
-  | { locked: false; reason: string };
-
 const READ_LOCK_CHECK_TIMEOUT_MS = 15_000;
 
 // 프로필이 조용히 무시되는 실패(위 `--sandbox` 혼용, CLI 버전 변경)를 잡는 canary 점검.
@@ -374,13 +371,15 @@ export const verifyCodexReadLock = async ({
 
   try {
     await writeFile(canaryFile, 'canary', 'utf-8');
-    if (!(await catInSandbox(readablePath))) {
+    const allowedPathReadable = await catInSandbox(readablePath);
+    if (!allowedPathReadable) {
       return {
         locked: false,
         reason: `허용 경로도 읽지 못함 — 샌드박스 기동 실패 또는 codex 미설치 (${readablePath})`,
       };
     }
-    if (await catInSandbox(canaryFile)) {
+    const canaryReadable = await catInSandbox(canaryFile);
+    if (canaryReadable) {
       return {
         locked: false,
         reason: `차단 경로가 읽힘 — 권한 프로필이 무시됨 (${canaryFile})`,
