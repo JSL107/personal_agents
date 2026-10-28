@@ -28,6 +28,8 @@ hermes 본체(`~/.hermes/hermes-agent`)는 업스트림 클론이라 개인 스�
 
 뉴스 세 영역 뒤에 "오늘의 도구" 후보(AIHOT 제품·팁, GitHub 신규 저장소, Show HN, 요즘IT)를 따로 싣는다.
 모델이 그중 3건을 골라 무엇인지·어떻게 써 보는지까지 풀어 쓴다. 지난 발송본에 나온 URL 은 후보에서 뺀다.
+GitHub 후보에는 README 앞부분(설치·사용 절 먼저)을 붙여 "써 보려면"을 쓸 근거를 준다.
+job 프롬프트 사본은 `scripts/hermes-morning-news.prompt.md`(실행 정본은 `~/.hermes/cron/jobs.json`).
 고른 도구를 설명하는 그림 카드는 후속 job(hermes-morning-news-images.py)이 그려 Slack 에 올린다.
 
 `python3 scripts/hermes-morning-news.py --self-check` 는 네트워크 없이 변환·필터 로직만 검사한다.
@@ -106,6 +108,17 @@ AIHOT_TOOL_CATEGORIES = {"ai-products", "tip"}
 GITHUB_ENDPOINT = "https://api.github.com/search/repositories"
 GITHUB_NEW_REPO_DAYS = 7
 GITHUB_MIN_STARS = 200
+# GitHub 후보 설명은 저장소 한 줄 소개뿐이라 모델이 흐름·"써 보려면"을 채울 사실이 없다(10-22~28 카드 21장 중
+# "링크에서 확인" 15장). 채택된 후보에만 README 앞부분을 붙인다. 3건 × 이 길이가 입력에 더해지는데,
+# 아침신문 입력은 약 16.5K 토큰이고 codex TTFB 감시가 꺼지는 25K(agent/chat_completion_helpers.py) 아래여야 한다.
+README_EXCERPT_LIMIT = 1_200
+# 설치·사용 절을 README 앞쪽으로 당겨 싣는다. 중국어 README 도 GitHub 상위에 자주 오른다(2026-10-28 후보 3건 중 2건).
+_README_USAGE_HEADING = re.compile(
+    r"install|getting started|quick ?start|usage|how to use|setup|설치|사용법|시작하기|安装|使用|运行|快速开始", re.IGNORECASE
+)
+_README_HEADING = re.compile(r"^#{1,6}\s", re.MULTILINE)
+_README_NOISE = re.compile(r"!\[[^\]]*\]\([^)]*\)|<[^>]+>|```\w*")
+_README_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 HN_ENDPOINT = "https://hn.algolia.com/api/v1/search"
 HN_MIN_POINTS = 50
 YOZM_FEED = "https://yozm.wishket.com/magazine/feed/"
@@ -485,6 +498,43 @@ def fetch_github_tools() -> list[dict]:
     return github_tools(json.loads(raw))
 
 
+def readme_excerpt(markdown: str) -> str:
+    """README 를 절 단위로 나눠 설치·사용 절을 앞에 두고, 그림·배지·태그를 걷어 README_EXCERPT_LIMIT 로 자른다."""
+    starts = [0] + [match.start() for match in _README_HEADING.finditer(markdown)]
+    sections = [markdown[start:end] for start, end in zip(starts, starts[1:] + [len(markdown)])]
+    usage: list[str] = []
+    rest: list[str] = []
+    # 설치 절 아래 하위 절(`## Installation` → `### With pip`)에 명령이 있는 README 가 많아 하위 절째 옮긴다.
+    usage_level = 0
+    for section in sections:
+        level = len(section) - len(section.lstrip("#"))
+        if usage_level and level > usage_level:
+            usage.append(section)
+            continue
+        usage_level = 0
+        if level and _README_USAGE_HEADING.search(section.split("\n", 1)[0]):
+            usage_level = level
+            usage.append(section)
+        else:
+            rest.append(section)
+    text = _README_LINK.sub(r"\1", _README_NOISE.sub(" ", "\n".join(usage + rest)))
+    # 줄 경계를 "; " 로 남긴다. 공백 하나로 이으면 여러 줄 명령이 `cd x npm ci` 처럼 한 명령으로 읽힌다.
+    text = "; ".join(" ".join(line.split()) for line in text.splitlines() if line.strip())
+    return text[:README_EXCERPT_LIMIT] + "…" if len(text) > README_EXCERPT_LIMIT else text
+
+
+def with_readme(article: dict) -> dict:
+    """GitHub 후보에 README 발췌를 붙인다. 못 받아도 한 줄 소개만으로 후보는 살린다."""
+    path = urllib.parse.urlparse(article.get("url") or "").path.strip("/")
+    try:
+        raw = fetch_bytes(f"https://api.github.com/repos/{path}/readme", {"Accept": "application/vnd.github.raw"})
+    except Exception as error:  # noqa: BLE001 — README 는 덧붙이는 정보라 어떤 실패도 후보를 버릴 이유가 아니다
+        print(f"github readme '{path}' failed: {error!r}", file=sys.stderr)
+        return article
+    excerpt = readme_excerpt(raw.decode("utf-8", errors="replace"))
+    return dict(article, content=f"{article.get('content') or ''} README: {excerpt}") if excerpt else article
+
+
 def fetch_hn_tools() -> list[dict]:
     since = int(datetime.now(timezone.utc).timestamp()) - 86_400
     query = urllib.parse.urlencode(
@@ -548,6 +598,8 @@ def collect_tools(
             print(f"tool source '{name}' failed: {error!r}", file=sys.stderr)
             continue
         taken = 0
+        # 인젝션 선별로 빠진 후보도 README 를 이미 받았으므로, 채택 수가 아니라 요청 수로 센다.
+        readme_left = TOOL_CANDIDATES_PER_SOURCE
         for article in articles:
             if taken >= TOOL_CANDIDATES_PER_SOURCE:
                 break
@@ -559,7 +611,18 @@ def collect_tools(
                 ledger.append(ledger_row(article, False, "already_used"))
                 continue
             labeled = dict(article, title=f"[{name}] {(article.get('title') or '').strip()}")
-            text = format_article(len(lines) + 1, labeled, TOOL_SNIPPET_LIMIT)
+            snippet_limit = TOOL_SNIPPET_LIMIT
+            # README 는 실릴 후보에만, 소스당 TOOL_CANDIDATES_PER_SOURCE 회까지, 시간 예산이 남았을 때만 받는다.
+            # 모자라면 한 줄 소개로 간다.
+            if (
+                article.get("source") == "github"
+                and readme_left > 0
+                and time.monotonic() - started_at < TOOL_DEADLINE_SEC - TOOL_TIMEOUT_SEC
+            ):
+                readme_left -= 1
+                labeled = with_readme(labeled)
+                snippet_limit += README_EXCERPT_LIMIT + len(" README: …")
+            text = format_article(len(lines) + 1, labeled, snippet_limit)
             if scan is not None and scan(text):
                 ledger.append(ledger_row(article, False, "threat_pattern"))
                 continue
@@ -749,6 +812,13 @@ def self_check() -> None:
     # 발송본 중복 제외는 모델이 쓴 부분(Response)만 본다 — 프롬프트에 실린 후보 URL 은 제외 대상이 아니다.
     briefing = "## Prompt\n2. 후보 https://not-chosen.example/x\n## Response\n- 고른 것 https://github.com/o/r/\n"
     assert sent_urls([briefing]) == {"https://github.com/o/r"}
+
+    # README 발췌: 설치 절이 맨 앞으로 오고, 그림·태그·코드펜스 표식은 걷히되 명령은 남는다. 서두의 "install" 은 절로 치지 않는다.
+    readme = ("# Tool\nno install needed ![b](x.svg) <img src=y>\n## Features\n[fast](https://x)\n## Installation\n"
+              "### With pip\n```bash\npip install tool\ntool init\n```\n## License\nMIT\n")
+    expected = "## Installation; ### With pip; pip install tool; tool init; # Tool; no install needed; ## Features; fast; ## License; MIT"
+    assert readme_excerpt(readme) == expected, readme_excerpt(readme)
+    assert len(readme_excerpt("x" * 5000)) == README_EXCERPT_LIMIT + 1
 
 
     # 시간 예산을 넘겼으면 네트워크를 건드리지 않고 모든 소스를 건너뛴다.
