@@ -135,7 +135,7 @@ describe('formatPullRequestPublication', () => {
   it.each([
     [
       { kind: 'NOT_ALLOWED' as const, repo: 'o/r' },
-      '게시 허용 목록(PR_REVIEW_INLINE_REPOS)에 없어요',
+      '게시 허용 목록(PR_REVIEW_INLINE_REPOS·GITHUB_REVIEW_BOT_REPOS)에 없어요',
     ],
     [{ kind: 'FAILED' as const, message: '403' }, '게시에 실패했어요'],
     [
