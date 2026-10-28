@@ -106,7 +106,7 @@ export const formatPullRequestPublication = (
 ): string => {
   switch (publication.kind) {
     case 'NOT_ALLOWED':
-      return `_GitHub 에 게시하지 않았어요 — ${escapeSlackMrkdwn(publication.repo)} 가 게시 허용 목록(PR_REVIEW_INLINE_REPOS)에 없어요._`;
+      return `_GitHub 에 게시하지 않았어요 — ${escapeSlackMrkdwn(publication.repo)} 가 게시 허용 목록(PR_REVIEW_INLINE_REPOS·GITHUB_REVIEW_BOT_REPOS)에 없어요._`;
     case 'FAILED':
       // 예외 원문은 로그에만 남긴다 — 외부 API 응답·내부 경로가 사용자 메시지로 새지 않게(#747 리뷰).
       return '_GitHub 게시에 실패했어요 — 리뷰 결과는 위와 같아요. 원인은 서버 로그에 남겼어요._';

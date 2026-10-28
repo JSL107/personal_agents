@@ -672,6 +672,156 @@ describe('SweepPrReviewsUsecase', () => {
     });
   });
 
+  describe('작성자 범위', () => {
+    const BOT_CONFIG = {
+      GITHUB_REVIEW_BOT_LOGIN: 'idaeri-bot',
+      GITHUB_REVIEW_BOT_REPOS: 'org/bot-repo',
+    };
+    const bot = { addIssueComment: jest.fn() };
+
+    it('봇이 다는 레포는 작성자를 가리지 않고, 나머지는 owner PR 만 조회한다', async () => {
+      await buildUsecase(
+        {
+          ...ENABLED,
+          ...BOT_CONFIG,
+          PR_REVIEW_INLINE_REPOS: 'org/bot-repo,org/owner-repo',
+        },
+        bot,
+      ).execute();
+
+      expect(github.listOpenPullRequestRefs).toHaveBeenCalledTimes(2);
+      expect(github.listOpenPullRequestRefs).toHaveBeenCalledWith({
+        repos: ['org/owner-repo'],
+        author: 'JSL107',
+        sinceIsoDate: expect.any(String),
+        limit: 50,
+      });
+      expect(github.listOpenPullRequestRefs).toHaveBeenCalledWith({
+        repos: ['org/bot-repo'],
+        author: undefined,
+        sinceIsoDate: expect.any(String),
+        limit: 50,
+      });
+    });
+
+    // 봇 레포 목록에 있어도 봇 클라이언트가 없으면 owner 계정으로 쓰게 된다 — 그때 남의 PR 에
+    // 달면 owner 가 직접 리뷰한 것처럼 보인다.
+    it('봇 토큰이 없으면 봇 레포 목록에 있어도 owner PR 만 조회한다', async () => {
+      await buildUsecase({
+        ...ENABLED,
+        ...BOT_CONFIG,
+        PR_REVIEW_INLINE_REPOS: 'org/bot-repo',
+      }).execute();
+
+      expect(github.listOpenPullRequestRefs).toHaveBeenCalledTimes(1);
+      expect(github.listOpenPullRequestRefs).toHaveBeenCalledWith(
+        expect.objectContaining({ repos: ['org/bot-repo'], author: 'JSL107' }),
+      );
+    });
+
+    it('봇 목록에만 적은 레포도 훑고, 두 목록에 겹친 레포는 한 번만 검색한다', async () => {
+      await buildUsecase(
+        {
+          ...ENABLED,
+          GITHUB_REVIEW_BOT_LOGIN: 'idaeri-bot',
+          GITHUB_REVIEW_BOT_REPOS: 'org/bot-only,JSL107/personal_agents',
+        },
+        bot,
+      ).execute();
+
+      expect(github.listOpenPullRequestRefs).toHaveBeenCalledTimes(1);
+      expect(github.listOpenPullRequestRefs).toHaveBeenCalledWith(
+        expect.objectContaining({
+          repos: ['JSL107/personal_agents', 'org/bot-only'],
+          author: undefined,
+        }),
+      );
+    });
+
+    it('봇이 꺼져 있으면 봇 목록에만 적은 레포는 훑지 않는다', async () => {
+      await buildUsecase({
+        ...ENABLED,
+        GITHUB_REVIEW_BOT_LOGIN: 'idaeri-bot',
+        GITHUB_REVIEW_BOT_REPOS: 'org/bot-only',
+      }).execute();
+
+      expect(github.listOpenPullRequestRefs).toHaveBeenCalledWith(
+        expect.objectContaining({
+          repos: ['JSL107/personal_agents'],
+          author: 'JSL107',
+        }),
+      );
+    });
+
+    it('INLINE 목록이 비어도 봇 목록만으로 스윕이 돈다', async () => {
+      await buildUsecase(
+        {
+          ...ENABLED,
+          PR_REVIEW_INLINE_REPOS: '',
+          ...BOT_CONFIG,
+        },
+        bot,
+      ).execute();
+
+      expect(github.listOpenPullRequestRefs).toHaveBeenCalledWith(
+        expect.objectContaining({ repos: ['org/bot-repo'], author: undefined }),
+      );
+    });
+
+    it('두 그룹 결과를 갱신 시각 최신순으로 합치고, 한쪽 조회 실패는 다른 쪽을 막지 않는다', async () => {
+      const ownerPr = {
+        ...OPEN_PR,
+        repo: 'org/owner-repo',
+        number: 1,
+        updatedAt: '2026-10-01T00:00:00Z',
+      };
+      const newerBotPr = {
+        ...OPEN_PR,
+        repo: 'org/bot-repo',
+        number: 2,
+        updatedAt: '2026-10-02T00:00:00Z',
+      };
+      github.listOpenPullRequestRefs.mockImplementation(
+        ({ author }: { author?: string }) =>
+          Promise.resolve(author ? [ownerPr] : [newerBotPr]),
+      );
+      const reviewed = (): string[] =>
+        reviewUsecase.execute.mock.calls.map(
+          ([input]: [{ prRef: string }]) => input.prRef,
+        );
+
+      await buildUsecase(
+        {
+          ...ENABLED,
+          ...BOT_CONFIG,
+          PR_REVIEW_INLINE_REPOS: 'org/bot-repo,org/owner-repo',
+        },
+        bot,
+      ).execute();
+      expect(reviewed().slice(0, 2)).toEqual([
+        'org/bot-repo#2',
+        'org/owner-repo#1',
+      ]);
+
+      reviewUsecase.execute.mockClear();
+      github.listOpenPullRequestRefs.mockImplementation(
+        ({ author }: { author?: string }) =>
+          author
+            ? Promise.reject(new Error('rate limit'))
+            : Promise.resolve([newerBotPr]),
+      );
+      await buildUsecase(
+        {
+          ...ENABLED,
+          ...BOT_CONFIG,
+          PR_REVIEW_INLINE_REPOS: 'org/bot-repo,org/owner-repo',
+        },
+        bot,
+      ).execute();
+      expect(reviewed()).toEqual(['org/bot-repo#2']);
+    });
+  });
+
   // 조회가 식별자만 받게 되면서 merged_at 으로 걸러 주던 자리가 사라졌다. 검색 인덱스
   // 지연으로 `is:open` 에 남은 머지된 PR 에 리뷰 코멘트가 달리면 되돌릴 수 없다.
   it('검색 결과에 남은 머지된 PR 은 리뷰하지 않는다', async () => {

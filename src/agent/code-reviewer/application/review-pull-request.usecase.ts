@@ -24,6 +24,7 @@ import {
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { PublishFindingsService } from '../../../pr-review-loop/application/publish-findings.service';
+import { ReviewWriterResolver } from '../../../pr-review-loop/application/review-writer.resolver';
 import {
   isLearningRepo,
   isSelfRepo,
@@ -151,6 +152,9 @@ export class ReviewPullRequestUsecase {
     @Optional()
     @Inject(PublishFindingsService)
     private readonly publishFindingsService?: PublishFindingsService,
+    @Optional()
+    @Inject(ReviewWriterResolver)
+    private readonly writers?: ReviewWriterResolver,
   ) {}
 
   async execute({
@@ -259,9 +263,10 @@ export class ReviewPullRequestUsecase {
       reviewedDetail !== undefined &&
       reviewedDiff !== undefined
     ) {
-      const allowlistRaw = this.configService?.get<string>(
-        'PR_REVIEW_INLINE_REPOS',
-      );
+      // 스윕과 같은 목록을 쓴다 — 봇 목록에만 적힌 레포도 게시된다.
+      const allowlistRaw =
+        this.writers?.publishAllowlistRaw() ??
+        this.configService?.get<string>('PR_REVIEW_INLINE_REPOS');
       try {
         const published = await this.publishFindingsService.publish({
           agentRunId: outcome.agentRunId,
