@@ -79,6 +79,20 @@ export const parseMissedFindings = (raw: unknown): ParsedMisses => {
   return { entries, errors };
 };
 
+// outsideDiff 로 표시된 미탐의 id. 재채점에서 표시를 교체 파일(flaggedBy)로 고쳤으면 그 표시를 쓰되,
+// id 는 원래 목록(misses)에서 만든다 — 결과와 이어지는 id 가 원래 목록 것이라서다(pairReplacementMisses 와 같다).
+// 두 목록은 같은 순서·같은 길이여야 하고, 그 검사는 pairReplacementMisses 가 먼저 한다.
+export const outsideDiffMissIds = ({
+  misses,
+  flaggedBy = misses,
+}: {
+  misses: readonly MissedFindingEntry[];
+  flaggedBy?: readonly MissedFindingEntry[];
+}): number[] =>
+  misses
+    .filter((_, index) => flaggedBy[index]?.outsideDiff === true)
+    .map(missedFindingId);
+
 // 미탐은 카드 id 가 없어 내용에서 고정 id 를 만든다(음수 — 카드 id 와 겹치지 않게).
 // 목록 순서로 번호를 매기면 순서를 바꾸거나 다른 항목을 넣었을 때 다른 결함이 같은 id 를 받아,
 // 기준선의 표본 동일성 판정이 틀린다. 같은 결함이면 목록이 바뀌어도 같은 id 가 나온다.

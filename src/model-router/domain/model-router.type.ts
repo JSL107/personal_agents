@@ -125,6 +125,11 @@ export interface CompletionResponse {
 }
 
 // verifyCodexReadLock(codex 권한 프로필 canary 점검) 결과. 실패일 때만 reason 을 강제한다.
+export interface ReadLockProbeInput {
+  // 호출이 열려는 읽기 허용 경로. 점검도 같은 경로를 연 프로필로 돌아야 실제 호출과 같은 조건이다.
+  extraReadableRoots?: readonly string[];
+}
+
 export type CodexReadLockResult =
   | { locked: true }
   | { locked: false; reason: string };

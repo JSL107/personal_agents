@@ -402,6 +402,35 @@ export const summarizeTrialsByTruncation = (
   };
 };
 
+// ── diff 밖 미탐 분리 ──────────────────────────────────────────────────────
+// 레포 사본 실험(--repo-read)의 주 지표. 사람이 outsideDiff 로 표시한 미탐과 나머지를 나눠 센다.
+
+export interface OutsideDiffSplit {
+  outside: TrialSummary;
+  inside: TrialSummary;
+}
+
+export const summarizeMissedByOutsideDiff = ({
+  trialResults,
+  outsideIds,
+}: {
+  trialResults: readonly (readonly FindingReplayResult[])[];
+  outsideIds: ReadonlySet<number>;
+}): OutsideDiffSplit => ({
+  outside: summarizeTrials(
+    trialResults.map((results) =>
+      results.filter((result) => outsideIds.has(result.id)),
+    ),
+    'MISSED',
+  ),
+  inside: summarizeTrials(
+    trialResults.map((results) =>
+      results.filter((result) => !outsideIds.has(result.id)),
+    ),
+    'MISSED',
+  ),
+});
+
 // ── 기준선 비교 ────────────────────────────────────────────────────────────
 // 두 실행의 회차별 재현율 범위(최소~최대)가 겹치면 차이를 회차 변동과 구분할 수 없다고 본다.
 // 어느 쪽이든 1회뿐이면 변동 폭을 모르므로 판정하지 않는다 — 점 하나끼리의 차이는 무엇이든 될 수 있다.

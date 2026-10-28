@@ -920,6 +920,22 @@ describe('CodexCliProvider readableRoots', () => {
     expect(spawnSpy).not.toHaveBeenCalled();
   });
 
+  // 점검이 예외로 끝나도 재생 스크립트가 재시도 없이 멈추는 기준(CodexReadLockException)으로 와야 한다.
+  it('잠금 점검 자체가 예외로 끝나도 CodexReadLockException 으로 실패한다', async () => {
+    jest.spyOn(fsPromises, 'mkdtemp').mockRejectedValue(new Error('ENOSPC'));
+    const provider = new CodexCliProvider();
+    const spawnSpy = stubSpawn(provider as unknown as ProviderWithSpawnCodex);
+
+    const failure = provider.complete({
+      prompt: 'p',
+      readableRoots: ['/var/repo-copy'],
+    });
+
+    await expect(failure).rejects.toBeInstanceOf(CodexReadLockException);
+    await expect(failure).rejects.toThrow('점검 불가: ENOSPC');
+    expect(spawnSpy).not.toHaveBeenCalled();
+  });
+
   it('잠금 점검은 실제 호출과 같은 읽기 허용 경로로 돈다', async () => {
     mockSandboxCat((path) => !path.endsWith('canary.txt'));
     const execFileSpy = childProcess.execFile as unknown as jest.Mock;
