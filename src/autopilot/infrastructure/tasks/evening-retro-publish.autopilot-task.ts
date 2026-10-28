@@ -17,6 +17,7 @@ import { groupPrRefsByRepo } from '../../../agent/career-mate/domain/group-pr-re
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { RunVerdictFacet } from '../../../agent-run/domain/run-verdict';
+import { formatPmPlanQuote } from '../../../agent-run/domain/run-verdict-digest';
 import {
   countKstDaysBetween,
   getKstDayStartAsUtc,
@@ -41,7 +42,6 @@ import {
   SLACK_DELIVERY_REPOSITORY,
   SlackDeliveryRepositoryPort,
 } from '../../../slack/domain/port/slack-delivery.repository.port';
-import { SLACK_DELIVERY_STATUS } from '../../../slack/domain/slack-delivery.type';
 import {
   escapeSlackMrkdwn,
   isSafeHttpUrl,
@@ -58,6 +58,7 @@ import {
   DAILY_DIGEST_REPOSITORY_PORT,
   DailyDigestRepositoryPort,
 } from '../../domain/port/daily-digest.repository.port';
+import { isRunResultDelivered } from '../../domain/run-delivery';
 import {
   EveningCarryContext,
   EveningDigestInput,
@@ -72,8 +73,6 @@ const INCIDENT_SEEN_WINDOW_DAYS = 7;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 // 아침 계획이 실린 발송의 원장 좌표 — 오케스트레이터가 그룹 본문을 `autopilot:<그룹>` 으로 남긴다.
-const MORNING_DELIVERY_KIND = 'autopilot:morning';
-const MORNING_BRIEFING_TASK_ID = 'morning-briefing';
 // 메인 메시지에 세울 후보 수. 나머지는 스레드 댓글로 내린다 — 후보를 전부 본문에 펼치면
 // 한 화면을 넘겨 정작 회고 문단이 밀려난다.
 const SUMMARY_CANDIDATE_LIMIT = 3;
@@ -570,20 +569,22 @@ export class EveningRetroPublishTask implements AutopilotTask {
       const deliveries = await this.deliveryRepository.findSince(
         getKstDayStartAsUtc(),
       );
-      const morningDelivered = deliveries.some(
-        (delivery) =>
-          delivery.kind === MORNING_DELIVERY_KIND &&
-          delivery.itemKinds.includes(MORNING_BRIEFING_TASK_ID) &&
-          delivery.threadTs === null &&
-          delivery.status === SLACK_DELIVERY_STATUS.SENT,
-      );
+      const morningDelivered = isRunResultDelivered(AgentType.PM, deliveries);
       if (!morningDelivered) {
         this.logger.log(
           `아침 브리핑 발송 기록 없음 — 계획 판정 생략 (agentRunId=${found.id})`,
         );
         return [];
       }
-      return [{ agentRunId: found.id, facets: ['pm_plan'] }];
+      // 판정 댓글은 저녁에 보이므로 무슨 계획이었는지 인용이 있어야 답할 수 있다(2026-10-28 피드백).
+      const quote = formatPmPlanQuote(found.output);
+      return [
+        {
+          agentRunId: found.id,
+          facets: ['pm_plan'],
+          ...(quote ? { quote } : {}),
+        },
+      ];
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(`아침 계획 실행 조회 실패 — 계획 판정 생략: ${message}`);

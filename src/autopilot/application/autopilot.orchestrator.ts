@@ -209,6 +209,8 @@ export class AutopilotOrchestrator {
       notifyOwner?: boolean;
       // 스레드에 붙일 판정 버튼. 요약 본문과 따로 댓글로 나간다(task 결과 주석 참조).
       runVerdicts?: AutopilotTaskResult['runVerdicts'];
+      // 스레드에 붙일 주간 판정 카드(task 결과 주석 참조).
+      verdictCards?: AutopilotTaskResult['verdictCards'];
     }[] = [];
     // 카드는 자기를 낸 task 의 item 인덱스를 함께 들고 다닌다. `requiresDetailDelivery` 카드가
     // "내 전문이 실제로 나갔나" 를 아래에서 확인하려면 이 연결선이 필요하다 — items 와 previews 는
@@ -301,6 +303,7 @@ export class AutopilotOrchestrator {
               unfurlLinks: result.unfurlLinks,
               notifyOwner: NOTIFY_OWNER_TASK_IDS.has(entry.taskId),
               runVerdicts: result.runVerdicts,
+              verdictCards: result.verdictCards,
             });
           }
         }
@@ -564,31 +567,6 @@ export class AutopilotOrchestrator {
             // 댓글의 ts 를 thread_ts 로 쓰면 슬랙이 스레드를 하나 더 열지 않으므로 부모 ts 를 쓴다.
             const threadRootTs = parentTs ?? ts;
             cardThreadTsByTarget.set(resolved, threadRootTs);
-            // 판정 버튼은 스레드 첫 댓글로 둔다. 상세 뒤에 두면 앞선 task 의 상세가 몇 화면을
-            // 차지해 버튼이 스레드 맨 아래에 묻힌다(2026-10-01 실측). 판정할 문장은 댓글 머리에
-            // 인용으로 실려 있어 위로 되짚지 않아도 된다. 실패해도 요약은 이미 나갔으니 무르지
-            // 않지만, 그날 판정 기회가 사라진 것이라 로그로 남긴다(누름률을 셀 때 "버튼이 안
-            // 나간 날" 을 가려낼 유일한 흔적이다). 다른 task 의 상세 순서는 그대로다.
-            for (const item of items) {
-              for (const runVerdict of item.runVerdicts ?? []) {
-                try {
-                  await this.slackNotifier.postMessage({
-                    kind: `autopilot:${groupKey}`,
-                    itemKinds: [item.taskId],
-                    target: resolved,
-                    text: buildRunVerdictFallbackText(runVerdict.facets),
-                    threadTs: threadRootTs,
-                    runVerdict,
-                  });
-                } catch (error: unknown) {
-                  const message =
-                    error instanceof Error ? error.message : String(error);
-                  this.logger.warn(
-                    `Autopilot[${groupKey}] 판정 버튼 발송 실패 (agentRunId=${runVerdict.agentRunId}): ${message}`,
-                  );
-                }
-              }
-            }
             for (const [index, item] of items.entries()) {
               // 그림이 메인으로 간 회차는 요약도 스레드로 내려간다 — 채널에 남는 것은
               // 헤드라인과 그림뿐이고, 종목별 내역은 답글을 펼쳐야 보인다. 상세가 따로
@@ -705,6 +683,48 @@ export class AutopilotOrchestrator {
                   );
                 }
               }
+              // 판정 버튼은 그 task 의 상세 바로 뒤, 다음 task 의 상세·승인 카드 앞에 둔다. 10-01 에는 상세에
+              // 묻히지 않게 첫 댓글로 올렸으나, 판정할 회고보다 버튼이 먼저 보여 무엇을 판정하는지 모른다는
+              // 피드백이 나왔다(2026-10-28). 상세 → 판정이 붙어 있어야 읽은 자리에서 바로 누른다.
+              // 실패해도 요약은 이미 나갔으니 무르지 않지만, 그날 판정 기회가 사라진 것이라 로그로 남긴다
+              // (누름률을 셀 때 "버튼이 안 나간 날" 을 가려낼 유일한 흔적이다).
+              for (const runVerdict of item.runVerdicts ?? []) {
+                try {
+                  await this.slackNotifier.postMessage({
+                    kind: `autopilot:${groupKey}`,
+                    itemKinds: [item.taskId],
+                    target: resolved,
+                    text: buildRunVerdictFallbackText(runVerdict.facets),
+                    threadTs: threadRootTs,
+                    runVerdict,
+                  });
+                } catch (error: unknown) {
+                  const message =
+                    error instanceof Error ? error.message : String(error);
+                  this.logger.warn(
+                    `Autopilot[${groupKey}] 판정 버튼 발송 실패 (agentRunId=${runVerdict.agentRunId}): ${message}`,
+                  );
+                }
+              }
+              // 주간 판정 카드(월요일 아침) — 매일 버튼과 같은 자리, 같은 실패 처리다.
+              for (const card of item.verdictCards ?? []) {
+                try {
+                  await this.slackNotifier.postMessage({
+                    kind: `autopilot:${groupKey}`,
+                    itemKinds: [item.taskId],
+                    target: resolved,
+                    text: card.text,
+                    threadTs: threadRootTs,
+                    blocks: card.blocks,
+                  });
+                } catch (error: unknown) {
+                  const message =
+                    error instanceof Error ? error.message : String(error);
+                  this.logger.warn(
+                    `Autopilot[${groupKey}] 주간 판정 카드 발송 실패: ${message}`,
+                  );
+                }
+              }
             }
           } else {
             // 메인 메시지 ts 미반환(Slack API 이상 등) — 스레드 상세를 붙일 수 없어 skip.
@@ -721,7 +741,10 @@ export class AutopilotOrchestrator {
               }
             }
             const skippedVerdictCount = items.reduce(
-              (total, item) => total + (item.runVerdicts?.length ?? 0),
+              (total, item) =>
+                total +
+                (item.runVerdicts?.length ?? 0) +
+                (item.verdictCards?.length ?? 0),
               0,
             );
             if (skippedVerdictCount > 0) {
