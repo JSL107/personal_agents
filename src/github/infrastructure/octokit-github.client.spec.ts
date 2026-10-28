@@ -430,7 +430,74 @@ describe('OctokitGithubClient', () => {
         maxBytes: 6,
       });
 
-      expect(result).toEqual({ diff: '한글', truncated: false, bytes: 6 });
+      expect(result).toEqual({
+        diff: '한글',
+        truncated: false,
+        bytes: 6,
+        omittedPaths: [],
+      });
+    });
+
+    describe('리뷰할 필요 없는 파일을 뺀다', () => {
+      const section = (path: string): string =>
+        `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n@@ -1 +1 @@\n+${path}\n`;
+      const fetch = async (
+        diff: string,
+        maxBytes?: number,
+      ): Promise<PullRequestDiff> => {
+        const get = jest.fn().mockResolvedValue({ data: diff });
+        const octokit = {
+          rest: { pulls: { get } },
+        } as unknown as Octokit;
+        return await new OctokitGithubClient(octokit).getPullRequestDiff({
+          repo: 'foo/bar',
+          number: 1,
+          maxBytes,
+        });
+      };
+
+      it.each([
+        'pnpm-lock.yaml',
+        'apps/web/package-lock.json',
+        'yarn.lock',
+        'go.sum',
+        'src/__snapshots__/view.spec.ts.snap',
+        'public/app.min.js',
+        'public/app.js.map',
+        'packages/ui/dist/index.js',
+      ])('%s 는 빼고 경로를 남긴다', async (path) => {
+        const result = await fetch(section('src/a.ts') + section(path));
+
+        expect(result.diff).toBe(section('src/a.ts'));
+        expect(result.omittedPaths).toEqual([path]);
+        expect(result.bytes).toBe(Buffer.byteLength(section('src/a.ts')));
+      });
+
+      it.each([
+        'prisma/migrations/1_init/migration.sql',
+        'src/i18n/ko.json',
+        'src/lockfile.ts',
+        'src/distribution.ts',
+        'package.json',
+      ])('%s 는 리뷰 대상으로 남긴다', async (path) => {
+        const result = await fetch(section(path));
+
+        expect(result.diff).toBe(section(path));
+        expect(result.omittedPaths).toEqual([]);
+      });
+
+      // 뺀 만큼 동작 코드가 상한 안에 들어와야 이 기능의 의미가 있다.
+      it('상한으로 자르기 전에 빼서, 뺀 파일만큼 동작 코드가 더 들어온다', async () => {
+        const code = section('src/a.ts') + section('src/b.ts');
+
+        const result = await fetch(
+          section('pnpm-lock.yaml') + code,
+          Buffer.byteLength(code),
+        );
+
+        expect(result.truncated).toBe(false);
+        expect(result.diff).toBe(code);
+      });
     });
 
     describe('넘칠 때 테스트 파일을 뒤로 보낸다', () => {
@@ -504,6 +571,7 @@ describe('OctokitGithubClient', () => {
           diff,
           truncated: false,
           bytes: Buffer.byteLength(diff),
+          omittedPaths: [],
         });
       });
     });
