@@ -136,6 +136,13 @@ describe('planGoalCheckin', () => {
       });
     });
 
+    it('기한이 오늘이면 아직 지났다고 묻지 않는다', () => {
+      const result = plan({
+        goals: [direction({ dueDate: new Date('2026-11-02T00:00:00.000Z') })],
+      });
+      expect(result).toMatchObject({ kind: 'CHECKIN', staleGoals: [] });
+    });
+
     it('숙제가 없으면 가장 최근 방향에 끌어내기 질문을 붙인다', () => {
       const older = direction({
         id: 10,
