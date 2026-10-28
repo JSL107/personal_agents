@@ -1189,11 +1189,11 @@ export class OctokitGithubClient implements GithubClientPort {
     // 낸 조건을 스윕이 물려받은 것이었다. 집계 쪽(listAuthorOpenPullRequests)은 그대로 둔다.
     // 같은 PR 을 draft 때와 ready 때 두 번 리뷰하는 판정은 호출자(judgeLatestReview) 몫이다.
     const authorQualifier = author ? ` author:${author}` : '';
-    const q = `${repoQualifier} is:pr is:open${authorQualifier} updated:>=${sinceIsoDate}`;
+    const searchQuery = `${repoQualifier} is:pr is:open${authorQualifier} updated:>=${sinceIsoDate}`;
     let searchResponse;
     try {
       searchResponse = await this.octokit!.rest.search.issuesAndPullRequests({
-        q,
+        q: searchQuery,
         per_page: perPage,
         sort: 'updated',
         order: 'desc',
