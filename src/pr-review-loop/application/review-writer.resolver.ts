@@ -31,6 +31,26 @@ export class ReviewWriterResolver {
     return this.botFor(repo) ?? this.owner();
   }
 
+  // 봇 계정으로 쓰는 레포인지. 스윕은 이 레포만 작성자를 가리지 않고 리뷰한다.
+  usesBot(repo: string): boolean {
+    return this.botFor(repo) !== null;
+  }
+
+  // 리뷰·게시를 허용하는 레포 목록(콤마 구분 원문). PR_REVIEW_INLINE_REPOS 에 봇이 쓰는 레포를
+  // 더한다 — 봇 레포는 GITHUB_REVIEW_BOT_REPOS 에만 적어도 리뷰된다. 봇을 못 쓰면 봇 목록은
+  // 더하지 않는다: 사용자 계정으로 남의 PR 에 코멘트가 달린다.
+  publishAllowlistRaw(): string {
+    const inlineRepos =
+      this.configService.get<string>('PR_REVIEW_INLINE_REPOS') ?? '';
+    const botRepos =
+      this.botLogin() === undefined
+        ? ''
+        : (this.configService.get<string>('GITHUB_REVIEW_BOT_REPOS') ?? '');
+    return [inlineRepos, botRepos]
+      .filter((item) => item.trim().length > 0)
+      .join(',');
+  }
+
   // 지금 쓰는 계정이 앞, 봇 전환 전에 사용자 계정이 단 코멘트를 찾기 위한 사용자 계정이 뒤.
   candidatesFor(repo: string): ReviewWriter[] {
     const bot = this.botFor(repo);
@@ -38,15 +58,27 @@ export class ReviewWriterResolver {
   }
 
   private botFor(repo: string): ReviewWriter | null {
-    const login = this.configService
-      .get<string>('GITHUB_REVIEW_BOT_LOGIN')
-      ?.trim();
+    const login = this.botLogin();
     const repos = this.configService.get<string>('GITHUB_REVIEW_BOT_REPOS');
-    // 로그인을 모르는 봇은 쓰지 않는다 — 표식만으로 찾으면 사용자 계정이 단 코멘트를 봇이 고치려 든다.
-    if (this.botClient === null || !login || !isRepoAllowed(repo, repos)) {
+    if (
+      this.botClient === null ||
+      login === undefined ||
+      !isRepoAllowed(repo, repos)
+    ) {
       return null;
     }
     return { client: this.botClient, login };
+  }
+
+  // 로그인을 모르는 봇은 쓰지 않는다 — 표식만으로 찾으면 사용자 계정이 단 코멘트를 봇이 고치려 든다.
+  private botLogin(): string | undefined {
+    if (this.botClient === null) {
+      return undefined;
+    }
+    const login = this.configService
+      .get<string>('GITHUB_REVIEW_BOT_LOGIN')
+      ?.trim();
+    return login ? login : undefined;
   }
 
   private owner(): ReviewWriter {

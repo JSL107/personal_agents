@@ -348,7 +348,7 @@ describe('CodeReviewerDispatcher', () => {
       });
 
       expect(outcome.formattedText).toContain(
-        '게시 허용 목록(PR_REVIEW_INLINE_REPOS)에 없어요',
+        '게시 허용 목록(PR_REVIEW_INLINE_REPOS·GITHUB_REVIEW_BOT_REPOS)에 없어요',
       );
     });
   });

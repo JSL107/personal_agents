@@ -151,7 +151,8 @@ export interface ListOpenPullRequestRefsOptions {
   // "owner/repo" 목록. GitHub 검색은 같은 qualifier 를 여러 번 쓰면 OR 로 묶으므로
   // 레포마다 따로 검색하지 않고 한 번(목록이 길면 쿼리 길이 상한만큼 나눠서)에 친다.
   repos: string[];
-  author: string;
+  // 없으면 작성자를 가리지 않는다 — 리뷰 봇이 다는 레포는 누가 올린 PR 이든 리뷰한다.
+  author?: string;
   // ISO date (YYYY-MM-DD). 이 시각 이후 갱신된 열린 PR 만.
   sinceIsoDate: string;
   // 전체 결과 상한 (레포별이 아니라 합계). updatedAt DESC 로 자른다.
