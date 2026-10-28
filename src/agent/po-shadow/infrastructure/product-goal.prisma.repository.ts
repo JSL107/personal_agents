@@ -9,7 +9,7 @@ import {
   CreateProductGoalResult,
   ProductGoalRepositoryPort,
 } from '../domain/port/product-goal.repository.port';
-import { ProductGoalKind, ProductGoalRecord } from '../domain/product-goal';
+import { isProductGoalKind, ProductGoalRecord } from '../domain/product-goal';
 
 interface ProductGoalRow {
   id: number;
@@ -27,7 +27,8 @@ interface ProductGoalRow {
 const toRecord = (row: ProductGoalRow): ProductGoalRecord => ({
   id: row.id,
   slackUserId: row.slackUserId,
-  kind: row.kind as ProductGoalKind,
+  // DB 기본값이 TASK 다. 알 수 없는 값도 숙제로 읽어 기존 행과 같게 다룬다.
+  kind: isProductGoalKind(row.kind) ? row.kind : 'TASK',
   title: row.title,
   why: row.why,
   successCriterion: row.successCriterion,

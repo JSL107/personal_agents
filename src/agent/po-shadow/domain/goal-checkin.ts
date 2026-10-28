@@ -5,7 +5,7 @@ import {
 import { GoalQuestionRecord } from './port/goal-question.repository.port';
 import { isLinkedToGoal, ProductGoalRecord } from './product-goal';
 
-const MILLISECONDS_PER_DAY = 86_400_000;
+export const MILLISECONDS_PER_DAY = 86_400_000;
 // 숙제 줄에 "지난주 관련 작업" 으로 보여 줄 머지 창.
 export const GOAL_CHECKIN_RECENT_DAYS = 7;
 // 이 기간 동안 붙은 머지가 없으면 잊은 목표로 보고 [닫기] 를 단다(설계 §4-3 "2주 연속").

@@ -3,18 +3,23 @@ import {
   wrapUntrustedInput,
 } from '../../../../common/llm/untrusted-input.util';
 import { OutputJsonSchema } from '../../../../model-router/domain/model-router.type';
+import { PRODUCT_GOAL_KINDS } from '../product-goal';
+
+// 모델 답의 의도. 출력 스키마와 응답 검사(handle-goal-answer)가 이 배열 하나를 읽는다.
+export const GOAL_DRAFT_INTENTS = ['GOAL', 'DECLINE', 'NOT_A_GOAL'] as const;
+export type GoalDraftIntent = (typeof GOAL_DRAFT_INTENTS)[number];
 
 export const GOAL_DRAFT_OUTPUT_SCHEMA: OutputJsonSchema = {
   type: 'object',
   properties: {
-    intent: { type: 'string', enum: ['GOAL', 'DECLINE', 'NOT_A_GOAL'] },
+    intent: { type: 'string', enum: [...GOAL_DRAFT_INTENTS] },
     goal: {
       anyOf: [
         { type: 'null' },
         {
           type: 'object',
           properties: {
-            kind: { type: 'string', enum: ['DIRECTION', 'TASK'] },
+            kind: { type: 'string', enum: [...PRODUCT_GOAL_KINDS] },
             title: { type: 'string' },
             why: { type: ['string', 'null'] },
             successCriterion: { type: ['string', 'null'] },

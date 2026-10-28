@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import {
   FORGOTTEN_GOAL_DAYS,
   MergedWork,
+  MILLISECONDS_PER_DAY,
   planGoalCheckin,
 } from '../../../agent/po-shadow/domain/goal-checkin';
 import {
@@ -15,7 +16,10 @@ import {
   PRODUCT_GOAL_REPOSITORY_PORT,
   ProductGoalRepositoryPort,
 } from '../../../agent/po-shadow/domain/port/product-goal.repository.port';
-import { ProductGoalPreviewPayload } from '../../../agent/po-shadow/domain/product-goal';
+import {
+  ProductGoalPreviewPayload,
+  ProductGoalRecord,
+} from '../../../agent/po-shadow/domain/product-goal';
 import {
   GITHUB_CLIENT_PORT,
   GithubClientPort,
@@ -27,12 +31,12 @@ import {
   GOAL_QUESTION_TEXT,
 } from '../../../slack/format/product-goal.formatter';
 import {
+  AutopilotPreviewRequest,
   AutopilotTask,
   AutopilotTaskContext,
   AutopilotTaskResult,
 } from '../../domain/autopilot-task.port';
 
-const MILLISECONDS_PER_DAY = 86_400_000;
 // 쉬기 판정에 필요한 만큼만 읽는다(planGoalCheckin 이 최근 2건을 본다).
 const RECENT_QUESTION_LIMIT = 2;
 // 2주 머지는 실측상 수십 건이다. 상한에 걸리면 오래된 쪽이 잘려 잊은 목표가 거짓으로 뜰 수 있다.
@@ -86,40 +90,32 @@ export class GoalCheckinAutopilotTask implements AutopilotTask {
     if (plan.kind === 'SKIP') {
       return { skip: true };
     }
-    const asksQuestion =
-      plan.kind === 'ASK_FOR_GOALS' || plan.drawOutDirection !== null;
+    if (plan.kind === 'ASK_FOR_GOALS') {
+      return {
+        skip: false,
+        summaryText: GOAL_QUESTION_TEXT,
+        onDelivered: this.markQuestionAsked(ownerSlackUserId, now),
+      };
+    }
     return {
       skip: false,
-      summaryText:
-        plan.kind === 'ASK_FOR_GOALS'
-          ? GOAL_QUESTION_TEXT
-          : formatGoalCheckin(plan),
-      previews:
-        plan.kind === 'CHECKIN'
-          ? plan.staleGoals.map(({ goal }) => {
-              const payload: ProductGoalPreviewPayload = {
-                action: 'CLOSE',
-                goalId: goal.id,
-                title: goal.title,
-              };
-              return {
-                kind: PREVIEW_KIND.PRODUCT_GOAL,
-                payload,
-                previewText: formatGoalClosePreview(goal),
-                ttlMs: CLOSE_CARD_TTL_MS,
-              };
-            })
-          : undefined,
-      // 표지는 질문이 실제로 나간 뒤에만 남긴다 — 발송이 실패했는데 표지가 남으면 72시간 동안
-      // 그 사용자의 평범한 DM 을 목표 답으로 가로챈다.
-      onDelivered: asksQuestion
-        ? async () => {
-            await this.goalQuestionRepository.create({
-              slackUserId: ownerSlackUserId,
-              expiresAt: new Date(now.getTime() + GOAL_QUESTION_TTL_MS),
-            });
-          }
-        : undefined,
+      summaryText: formatGoalCheckin(plan),
+      previews: plan.staleGoals.map(({ goal }) => toCloseCardRequest(goal)),
+      onDelivered:
+        plan.drawOutDirection === null
+          ? undefined
+          : this.markQuestionAsked(ownerSlackUserId, now),
+    };
+  }
+
+  // 표지는 질문이 실제로 나간 뒤에만 남긴다(onDelivered) — 발송이 실패했는데 표지가 남으면 72시간 동안
+  // 그 사용자의 평범한 DM 을 목표 답으로 가로챈다.
+  private markQuestionAsked(slackUserId: string, now: Date) {
+    return async (): Promise<void> => {
+      await this.goalQuestionRepository.create({
+        slackUserId,
+        expiresAt: new Date(now.getTime() + GOAL_QUESTION_TTL_MS),
+      });
     };
   }
 
@@ -157,3 +153,19 @@ export class GoalCheckinAutopilotTask implements AutopilotTask {
     }
   }
 }
+
+const toCloseCardRequest = (
+  goal: ProductGoalRecord,
+): AutopilotPreviewRequest => {
+  const payload: ProductGoalPreviewPayload = {
+    action: 'CLOSE',
+    goalId: goal.id,
+    title: goal.title,
+  };
+  return {
+    kind: PREVIEW_KIND.PRODUCT_GOAL,
+    payload,
+    previewText: formatGoalClosePreview(goal),
+    ttlMs: CLOSE_CARD_TTL_MS,
+  };
+};

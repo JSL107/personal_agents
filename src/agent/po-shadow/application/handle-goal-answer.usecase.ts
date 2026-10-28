@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { isMatching, P } from 'ts-pattern';
 
 import { extractJsonObjectText } from '../../../common/util/llm-json-extract.util';
 import { detectYesNoIntent } from '../../../common/util/yes-no-intent.util';
@@ -35,7 +36,9 @@ import {
   extractTitleKeywords,
   findGoalDeclarationProblem,
   GOAL_PREVIEW_TTL_MS,
+  isBlank,
   parseProductGoalCommand,
+  PRODUCT_GOAL_KINDS,
   ProductGoalDraft,
   readProductGoalDraft,
   toPlainDateString,
@@ -44,6 +47,7 @@ import {
   buildGoalDraftPrompt,
   GOAL_DRAFT_OUTPUT_SCHEMA,
   GOAL_DRAFT_SYSTEM_PROMPT,
+  GoalDraftIntent,
 } from '../domain/prompt/goal-draft.prompt';
 
 const RETRY_TEXT = '🧭 지금 정리가 잘 안 됐어요. 한 번만 다시 말해 주시겠어요?';
@@ -63,10 +67,8 @@ export interface HandleGoalAnswerResult {
   previewId?: string;
 }
 
-type DraftIntent = 'GOAL' | 'DECLINE' | 'NOT_A_GOAL';
-
 interface DraftResponse {
-  intent: DraftIntent;
+  intent: GoalDraftIntent;
   goal: ProductGoalDraft | null;
   otherGoalTitles: string[];
 }
@@ -163,7 +165,10 @@ export class HandleGoalAnswerUsecase {
     if (response === null) {
       // 이미 목표 흐름에 들어온 대화(되묻기·카드 수정)만 다시 말해 달라고 한다. 첫 답에서 모델이
       // 실패하면 라우터로 넘긴다 — 72시간 동안 평범한 DM 이 "다시 말해 주세요" 에 막히지 않게.
-      return priorDraft === null ? null : { replyText: RETRY_TEXT };
+      if (priorDraft === null) {
+        return null;
+      }
+      return { replyText: RETRY_TEXT };
     }
     if (response.intent === 'NOT_A_GOAL') {
       return null;
@@ -187,10 +192,7 @@ export class HandleGoalAnswerUsecase {
     let convertedToDirection = false;
     // 기준이 비었을 때만 되묻는다. 기준 문장의 품질은 카드를 보고 사람이 판정한다
     // (findGoalDeclarationProblem 의 MISSING_CRITERION 과 같은 기준).
-    if (
-      draft.kind === 'TASK' &&
-      (draft.successCriterion === null || draft.successCriterion.trim() === '')
-    ) {
+    if (draft.kind === 'TASK' && isBlank(draft.successCriterion)) {
       if (question.criterionAskedAt === null) {
         await this.questions.markCriterionAsked({
           id: question.id,
@@ -371,59 +373,42 @@ const readPreviewDraft = (payload: unknown): ProductGoalDraft | null => {
   return readProductGoalDraft(record.draft);
 };
 
+// 모델 답의 형태. outputSchema 를 걸었어도 코드가 다시 건다 — 형태가 어긋난 답을 카드로 만들지 않는다.
+const NON_GOAL_ANSWER = { intent: P.union('DECLINE', 'NOT_A_GOAL') } as const;
+const GOAL_ANSWER = {
+  intent: 'GOAL',
+  goal: {
+    kind: P.union(...PRODUCT_GOAL_KINDS),
+    title: P.string.maxLength(MAX_TITLE_LENGTH),
+    why: P.union(P.string, null),
+    successCriterion: P.union(P.string, null),
+    keywords: P.array(P.string),
+    dueDate: P.union(P.string, null),
+  },
+  otherGoalTitles: P.array(P.string.maxLength(MAX_TITLE_LENGTH)),
+} as const;
+
 const readDraftResponse = (value: unknown): DraftResponse | null => {
-  if (typeof value !== 'object' || value === null) {
-    return null;
-  }
-  const record = value as Record<string, unknown>;
   // 목표 아님·거절이면 나머지 칸은 쓰지 않는다. 모델이 덤으로 채웠다고 재요청하면
   // 엉뚱한 DM 에 "다시 말해 주세요" 가 나간다.
-  if (record.intent === 'DECLINE' || record.intent === 'NOT_A_GOAL') {
-    return { intent: record.intent, goal: null, otherGoalTitles: [] };
+  if (isMatching(NON_GOAL_ANSWER, value)) {
+    return { intent: value.intent, goal: null, otherGoalTitles: [] };
   }
   if (
-    !Array.isArray(record.otherGoalTitles) ||
-    !record.otherGoalTitles.every(
-      (title) => typeof title === 'string' && title.length <= MAX_TITLE_LENGTH,
-    )
+    !isMatching(GOAL_ANSWER, value) ||
+    value.goal.keywords.length > MAX_KEYWORDS
   ) {
     return null;
   }
-  if (record.intent !== 'GOAL') {
-    return null;
-  }
-  if (typeof record.goal !== 'object' || record.goal === null) {
-    return null;
-  }
-  const rawGoal = record.goal as Record<string, unknown>;
-  if (
-    (rawGoal.kind !== 'DIRECTION' && rawGoal.kind !== 'TASK') ||
-    !('why' in rawGoal) ||
-    !('successCriterion' in rawGoal) ||
-    !('keywords' in rawGoal) ||
-    !('dueDate' in rawGoal)
-  ) {
-    return null;
-  }
-  if (rawGoal.dueDate !== null && typeof rawGoal.dueDate !== 'string') {
-    return null;
-  }
-  const normalizedGoal = {
-    ...rawGoal,
-    dueDate:
-      typeof rawGoal.dueDate === 'string' && isActualDate(rawGoal.dueDate)
-        ? rawGoal.dueDate
-        : null,
+  const { goal, otherGoalTitles } = value;
+  // 달력에 없는 날짜(2026-02-30 등)는 기한 없음으로 둔다.
+  const dueDate =
+    goal.dueDate !== null && isActualDate(goal.dueDate) ? goal.dueDate : null;
+  return {
+    intent: 'GOAL',
+    goal: { ...goal, dueDate },
+    otherGoalTitles,
   };
-  const goal = readProductGoalDraft(normalizedGoal);
-  if (
-    goal === null ||
-    goal.title.length > MAX_TITLE_LENGTH ||
-    goal.keywords.length > MAX_KEYWORDS
-  ) {
-    return null;
-  }
-  return { intent: 'GOAL', goal, otherGoalTitles: record.otherGoalTitles };
 };
 
 const isActualDate = (value: string): boolean => {

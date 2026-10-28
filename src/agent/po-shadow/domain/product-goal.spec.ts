@@ -1,5 +1,7 @@
 import {
   findGoalDeclarationProblem,
+  isBlank,
+  isProductGoalKind,
   isProductGoalPreviewPayload,
   matchGoalsByTitle,
   MAX_ACTIVE_DIRECTION_GOALS,
@@ -312,5 +314,23 @@ describe('isProductGoalPreviewPayload', () => {
         draft: { ...legacy, kind: 'UNKNOWN' },
       }),
     ).toBe(false);
+  });
+});
+
+describe('isBlank / isProductGoalKind', () => {
+  it.each([
+    [null, true],
+    ['', true],
+    ['   ', true],
+    ['운영 배포', false],
+  ])('isBlank(%p) === %p', (value, expected) => {
+    expect(isBlank(value)).toBe(expected);
+  });
+
+  it('목표 종류는 PRODUCT_GOAL_KINDS 의 값만 받는다', () => {
+    expect(isProductGoalKind('DIRECTION')).toBe(true);
+    expect(isProductGoalKind('TASK')).toBe(true);
+    expect(isProductGoalKind('task')).toBe(false);
+    expect(isProductGoalKind(undefined)).toBe(false);
   });
 });

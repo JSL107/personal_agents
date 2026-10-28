@@ -115,17 +115,12 @@ export class AutopilotScheduler implements OnApplicationBootstrap {
       const { pattern: schedule, tz } = resolveCronSchedule(primary, (key) =>
         this.configService.get<string>(key),
       );
-      // owner-dm 은 AUTOPILOT_TARGET 과 무관하게 owner 에게 직접 보낸다.
       // 그룹 안에서 라인이 섞이지 않는 것은 validatePlaybook 이 부팅 때 보장한다.
-      let groupTarget = target;
-      if (primary.line === 'owner-dm') {
-        groupTarget = owner;
-      } else if (primary.line) {
-        groupTarget = this.readTarget(
-          LINE_TARGET_ENV_KEYS[primary.line],
-          target,
-        );
-      }
+      const groupTarget = this.resolveGroupTarget({
+        line: primary.line,
+        owner,
+        target,
+      });
       this.warnIgnoredScheduleOverrides(groupKey, entries);
       const payload: AutopilotJobData = {
         ownerSlackUserId: owner,
@@ -197,6 +192,26 @@ export class AutopilotScheduler implements OnApplicationBootstrap {
    * 정상 문법이다. 오설정을 삼키지 않도록 경고를 남기되, 부팅 1회라 3분마다 도는 고빈도
    * 그룹에서도 알람이 도배되지 않는다.
    */
+  // owner-dm 은 AUTOPILOT_TARGET 과 무관하게 owner 에게 직접 보낸다. 투자 등 라인은 전용 env 를,
+  // 라인이 없으면 공통 target 을 쓴다.
+  private resolveGroupTarget({
+    line,
+    owner,
+    target,
+  }: {
+    line: PlaybookLine | undefined;
+    owner: string;
+    target: string;
+  }): string {
+    if (line === 'owner-dm') {
+      return owner;
+    }
+    if (line === undefined) {
+      return target;
+    }
+    return this.readTarget(LINE_TARGET_ENV_KEYS[line], target);
+  }
+
   private readTarget(key: string, fallback: string): string {
     const raw = this.configService.get<string>(key);
     const targets = (raw ?? '')

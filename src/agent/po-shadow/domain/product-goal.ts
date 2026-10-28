@@ -9,7 +9,17 @@ export const GOAL_PREVIEW_TTL_MS = 60 * 60 * 1_000;
 // 기한까지 이 일수 이하이고 붙은 열린 항목이 있으면 GOAL_DEADLINE_RISK 를 낸다. 임의값이다.
 export const GOAL_DEADLINE_RISK_DAYS = 7;
 
-export type ProductGoalKind = 'DIRECTION' | 'TASK';
+// 목표 종류의 단일 출처. 타입·모델 출력 스키마·저장소 읽기·payload 검사가 모두 이 배열을 읽는다 —
+// 값을 곳곳에 따로 적으면 한 곳만 바뀌었을 때 컴파일러가 못 잡는 불일치가 생긴다.
+export const PRODUCT_GOAL_KINDS = ['DIRECTION', 'TASK'] as const;
+export type ProductGoalKind = (typeof PRODUCT_GOAL_KINDS)[number];
+
+export const isProductGoalKind = (value: unknown): value is ProductGoalKind =>
+  PRODUCT_GOAL_KINDS.some((kind) => kind === value);
+
+// null·빈 문자열·공백만 있는 문자열을 "비었다" 로 본다.
+export const isBlank = (value: string | null): boolean =>
+  value === null || value.trim() === '';
 
 export interface ProductGoalRecord {
   id: number;
@@ -130,7 +140,7 @@ export const findGoalDeclarationProblem = ({
   // 기준이 "있는지" 만 본다. 그 문장으로 끝을 알 수 있는지는 뜻을 읽어야 하는 판단이라 코드가 하지
   // 않는다 — 확인 카드에 기준이 그대로 실리고 사람이 보고 승인한다. 낱말 목록으로 거르던 시절에는
   // "새 직장에서 근무를 시작한다" 처럼 끝이 분명한 기준도 떨어졌다(2026-10-27 실측).
-  if (draft.successCriterion === null || draft.successCriterion.trim() === '') {
+  if (isBlank(draft.successCriterion)) {
     return 'MISSING_CRITERION';
   }
   if (draft.keywords.length === 0) {
@@ -303,7 +313,7 @@ export const readProductGoalDraft = (
   const record = value as Record<string, unknown>;
   const kind = record.kind === undefined ? 'TASK' : record.kind;
   const why = record.why === undefined ? null : record.why;
-  if (kind !== 'TASK' && kind !== 'DIRECTION') {
+  if (!isProductGoalKind(kind)) {
     return null;
   }
   if (why !== null && typeof why !== 'string') {
