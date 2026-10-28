@@ -16,6 +16,7 @@ import {
   scoreReplay,
   scorerVersionOf,
   skippedCountOf,
+  summarizeMissedByOutsideDiff,
   summarizeTrials,
   summarizeTrialsByTruncation,
   TrialSummary,
@@ -533,6 +534,35 @@ describe('intactMissedIdsOf', () => {
     };
 
     expect(intactMissedIdsOf(report)).toEqual([-5, -2]);
+  });
+});
+
+describe('summarizeMissedByOutsideDiff', () => {
+  const missed = (id: number, reproduced: boolean): FindingReplayResult => ({
+    id,
+    label: 'MISSED',
+    reproduced,
+  });
+
+  it('표시된 미탐과 나머지를 회차별로 나눠 센다', () => {
+    const split = summarizeMissedByOutsideDiff({
+      trialResults: [
+        [missed(-1, true), missed(-2, false)],
+        [missed(-1, false), missed(-2, false)],
+      ],
+      outsideIds: new Set([-1]),
+    });
+
+    expect(split.outside).toMatchObject({
+      total: 1,
+      rates: [1, 0],
+      anyTrial: 1,
+    });
+    expect(split.inside).toMatchObject({
+      total: 1,
+      rates: [0, 0],
+      anyTrial: 0,
+    });
   });
 });
 

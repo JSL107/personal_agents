@@ -52,6 +52,7 @@ import {
   intactMissedIdsOf,
   isSameSample,
   LabeledFinding,
+  OutsideDiffSplit,
   readBaselineSummaries,
   REPLAY_SCORER_VERSION,
   ReplayedFinding,
@@ -63,6 +64,7 @@ import {
   scoreReplay,
   scorerVersionOf,
   skippedCountOf,
+  summarizeMissedByOutsideDiff,
   summarizeTrials,
   summarizeTrialsByTruncation,
   TrialSummary,
@@ -72,6 +74,7 @@ import { summarizeDiff } from '../src/pr-review-loop/domain/review-replay-diff';
 import {
   MissedFindingEntry,
   missedFindingId,
+  outsideDiffMissIds,
   pairReplacementMisses,
   parseMissedFindings,
   resolveMissPath,
@@ -184,7 +187,7 @@ interface ReplayReport extends SavedReplayReport {
     fixed: TrialSummary;
     missed?: TrialSummary;
     // 미탐을 사람이 붙인 outsideDiff 표시로 나눈 것. 표시된 미탐이 있을 때만 있다.
-    missedByOutsideDiff?: { outside: TrialSummary; inside: TrialSummary };
+    missedByOutsideDiff?: OutsideDiffSplit;
     // 위 값을 diff 잘림 여부로 나눈 것. 잘린 그룹은 입력 누락과 모델 미탐이 섞인다.
     byDiffTruncation: {
       rejected: TruncationSplit;
@@ -454,7 +457,7 @@ const replay = async (
     missPathNotes,
     pairs,
     hasMisses: misses.length > 0,
-    outsideDiffMissIds: outsideDiffMissIdsOf(misses),
+    outsideDiffMissIds: outsideDiffMissIds({ misses }),
     notes: [],
   };
 };
@@ -615,10 +618,16 @@ const rescore = async (
     missPathNotes: saved.missPathNotes,
     pairs,
     hasMisses: saved.options.misses !== undefined,
+    // 표시는 교체 파일이 있으면 그쪽을 따른다 — 점수가 교체 파일 본문으로 매겨지므로 분류도 같은 입력을 쓴다.
     outsideDiffMissIds:
       saved.options.misses === undefined
         ? []
-        : outsideDiffMissIdsOf(readMisses(saved.options.misses)),
+        : outsideDiffMissIds({
+            misses: readMisses(saved.options.misses),
+            ...(replacementPath === undefined
+              ? {}
+              : { flaggedBy: readMisses(replacementPath) }),
+          }),
     notes: [
       `재채점: ${path} 의 모델 출력을 판정 규칙 v${REPLAY_SCORER_VERSION} 로 다시 매겼다 (모델 호출 없음)`,
       ...notes,
@@ -655,10 +664,10 @@ const writeReport = (
     ...(run.outsideDiffMissIds.length === 0
       ? {}
       : {
-          missedByOutsideDiff: splitByOutsideDiff(
+          missedByOutsideDiff: summarizeMissedByOutsideDiff({
             trialResults,
-            new Set(run.outsideDiffMissIds),
-          ),
+            outsideIds: new Set(run.outsideDiffMissIds),
+          }),
         }),
     byDiffTruncation: {
       rejected: summarizeTrialsByTruncation(
@@ -857,25 +866,6 @@ const writeReport = (
       '',
     ].join('\n'),
   );
-};
-
-const outsideDiffMissIdsOf = (
-  misses: readonly MissedFindingEntry[],
-): number[] =>
-  misses.filter((miss) => miss.outsideDiff === true).map(missedFindingId);
-
-const splitByOutsideDiff = (
-  trialResults: readonly (readonly FindingReplayResult[])[],
-  outsideIds: ReadonlySet<number>,
-): { outside: TrialSummary; inside: TrialSummary } => {
-  const pick = (outside: boolean): FindingReplayResult[][] =>
-    trialResults.map((results) =>
-      results.filter((result) => outsideIds.has(result.id) === outside),
-    );
-  return {
-    outside: summarizeTrials(pick(true), 'MISSED'),
-    inside: summarizeTrials(pick(false), 'MISSED'),
-  };
 };
 
 const toSkipped = (

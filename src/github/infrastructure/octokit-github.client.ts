@@ -16,6 +16,8 @@ import {
   GithubPullRequestSummary,
   PullRequestDetail,
   PullRequestDiff,
+  TarballDownload,
+  TarballDownloadKind,
 } from '../domain/github.type';
 import { GithubErrorCode } from '../domain/github-error-code.enum';
 import {
@@ -47,7 +49,6 @@ import {
   RepoTree,
   ReviewThread,
   SearchCodeInput,
-  TarballDownload,
   UpdateIssueCommentInput,
 } from '../domain/port/github-client.port';
 import {
@@ -983,9 +984,9 @@ export class OctokitGithubClient implements GithubClientPort {
       });
       const data = Buffer.from(response.data as ArrayBuffer);
       if (data.byteLength > maxBytes) {
-        return { kind: 'TOO_LARGE', bytes: data.byteLength };
+        return { kind: TarballDownloadKind.TOO_LARGE, bytes: data.byteLength };
       }
-      return { kind: 'OK', data };
+      return { kind: TarballDownloadKind.OK, data };
     } catch (error: unknown) {
       throw this.wrapRequestFailed(
         error,

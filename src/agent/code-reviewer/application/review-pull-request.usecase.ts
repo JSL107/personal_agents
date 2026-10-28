@@ -16,6 +16,7 @@ import {
 import {
   PullRequestDetail,
   PullRequestDiff,
+  TarballDownloadKind,
 } from '../../../github/domain/github.type';
 import {
   GITHUB_CLIENT_PORT,
@@ -39,6 +40,7 @@ import { ConversationContext } from '../../../router/domain/conversation-context
 import {
   PullRequestReview,
   RepoReadStatus,
+  RepoSnapshotAttempt,
   ReviewPullRequestInput,
 } from '../domain/code-reviewer.type';
 import {
@@ -79,14 +81,12 @@ import {
   RELATED_CODE_MAX_BYTES,
   RelatedCodeSection,
 } from '../domain/related-code';
-import {
-  extractRepoSnapshot,
-  RepoSnapshot,
-} from '../infrastructure/repo-snapshot';
+import { extractRepoSnapshot } from '../infrastructure/repo-snapshot';
 
 const DEFAULT_INLINE_MAX = 4;
 // 레포 사본(tarball) 압축 기준 상한 — 넘는 레포는 사본 없이 종전대로 리뷰한다.
-export const REPO_SNAPSHOT_MAX_BYTES = 52_428_800;
+// 이대리 레포가 압축 217MB(콘솔 PNG 에셋, 2026-10-28 실측)라 50MB 로는 측정 대상이 전부 빠졌다.
+export const REPO_SNAPSHOT_MAX_BYTES = 268_435_456;
 
 // 게시 단계에서 실제로 일어난 일. 사용자에게 게시 여부를 알릴 근거는 이것뿐이다 — 리뷰 모델은
 // 네트워크가 막힌 채 돌아 게시 결과를 알 수 없는데, 이게 없던 동안 "게시 미확인" 같은 문장을
@@ -234,9 +234,11 @@ export class ReviewPullRequestUsecase {
 
         const repoSnapshot =
           repoRead === true ? await this.openRepoSnapshot(detail) : undefined;
-        const snapshotRoot = repoSnapshot?.snapshot?.root;
+        const snapshotRoot =
+          repoSnapshot?.status === RepoReadStatus.USED
+            ? repoSnapshot.snapshot.root
+            : undefined;
         // 사본을 연 뒤의 모든 단계가 실패해도 사본은 지운다.
-        let completion;
         try {
           if (repoSnapshot !== undefined) {
             repoReadStatus = repoSnapshot.status;
@@ -263,7 +265,7 @@ export class ReviewPullRequestUsecase {
             buildRepoConventions(detail.repo) +
             learnedConventions;
 
-          completion = await this.modelRouter.route({
+          const completion = await this.modelRouter.route({
             agentType: AgentType.CODE_REVIEWER,
             request: {
               prompt,
@@ -278,22 +280,24 @@ export class ReviewPullRequestUsecase {
               ? { noFallback: true }
               : {}),
           });
+
+          // 짝이 틀린 판정(보류·등급)은 파서가 보정한다 — 모델 출력을 코드가 고쳤다는 사실은 남긴다.
+          const review = parsePullRequestReview(completion.text, (message) => {
+            this.logger.warn(
+              `PR 리뷰 판정 보정 (${ref.repo}#${ref.number}): ${message}`,
+            );
+          });
+
+          return {
+            result: review,
+            modelUsed: completion.modelUsed,
+            output: review as unknown as Record<string, unknown>,
+          };
         } finally {
-          await repoSnapshot?.snapshot?.dispose();
+          if (repoSnapshot?.status === RepoReadStatus.USED) {
+            await repoSnapshot.snapshot.dispose();
+          }
         }
-
-        // 짝이 틀린 판정(보류·등급)은 파서가 보정한다 — 모델 출력을 코드가 고쳤다는 사실은 남긴다.
-        const review = parsePullRequestReview(completion.text, (message) => {
-          this.logger.warn(
-            `PR 리뷰 판정 보정 (${ref.repo}#${ref.number}): ${message}`,
-          );
-        });
-
-        return {
-          result: review,
-          modelUsed: completion.modelUsed,
-          output: review as unknown as Record<string, unknown>,
-        };
       },
     });
 
@@ -367,28 +371,26 @@ export class ReviewPullRequestUsecase {
   // 사본을 못 열면 리뷰를 멈추지 않고 사본 없이 진행한다 — 상태로 남겨 재생 비교가 그 회차를 뺀다.
   private async openRepoSnapshot(
     detail: PullRequestDetail,
-  ): Promise<{ status: RepoReadStatus; snapshot?: RepoSnapshot }> {
+  ): Promise<RepoSnapshotAttempt> {
     try {
       const tarball = await this.githubClient.downloadTarball({
         repo: detail.repo,
         ref: detail.headSha,
         maxBytes: REPO_SNAPSHOT_MAX_BYTES,
       });
-      if (tarball.kind === 'TOO_LARGE') {
+      if (tarball.kind === TarballDownloadKind.TOO_LARGE) {
         this.logger.warn(
           `레포 사본 생략 (${detail.repo}#${detail.number}) — ${tarball.bytes} bytes, 상한 ${REPO_SNAPSHOT_MAX_BYTES}`,
         );
-        return { status: 'SKIPPED_TOO_LARGE' };
+        return { status: RepoReadStatus.SKIPPED_TOO_LARGE };
       }
-      return {
-        status: 'USED',
-        snapshot: await extractRepoSnapshot(tarball.data),
-      };
+      const snapshot = await extractRepoSnapshot({ tarball: tarball.data });
+      return { status: RepoReadStatus.USED, snapshot };
     } catch (error: unknown) {
       this.logger.warn(
         `레포 사본 실패 (${detail.repo}#${detail.number}), 사본 없이 진행: ${error instanceof Error ? error.message : String(error)}`,
       );
-      return { status: 'FAILED' };
+      return { status: RepoReadStatus.FAILED };
     }
   }
 

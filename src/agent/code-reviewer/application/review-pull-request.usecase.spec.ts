@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { TarballDownloadKind } from '../../../github/domain/github.type';
 import { GithubClientPort } from '../../../github/domain/port/github-client.port';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import {
@@ -13,7 +14,10 @@ import {
 import { PublishFindingsService } from '../../../pr-review-loop/application/publish-findings.service';
 import { ReviewWriterResolver } from '../../../pr-review-loop/application/review-writer.resolver';
 import { CodeReviewerException } from '../domain/code-reviewer.exception';
-import { PullRequestReview } from '../domain/code-reviewer.type';
+import {
+  PullRequestReview,
+  RepoReadStatus,
+} from '../domain/code-reviewer.type';
 import { CodeReviewerErrorCode } from '../domain/code-reviewer-error-code.enum';
 import { buildRepoSnapshotSection } from '../domain/prompt/code-reviewer-system.prompt';
 import { MIN_REASON_LENGTH } from '../domain/prompt/learned-conventions';
@@ -641,7 +645,7 @@ describe('ReviewPullRequestUsecase', () => {
         };
       });
       githubClient.downloadTarball.mockResolvedValue({
-        kind: 'OK',
+        kind: TarballDownloadKind.OK,
         data: Buffer.from('tgz'),
       });
     });
@@ -679,7 +683,7 @@ describe('ReviewPullRequestUsecase', () => {
       expect(githubClient.downloadTarball).toHaveBeenCalledWith({
         repo: 'foo/bar',
         ref: 'sha',
-        maxBytes: 52_428_800,
+        maxBytes: 268_435_456,
       });
       expect(routedRequest().readableRoots).toEqual(['/var/snap']);
       expect(routedRequest().prompt).toContain(
@@ -687,15 +691,18 @@ describe('ReviewPullRequestUsecase', () => {
       );
       expect(modelRouter.route.mock.calls[0][0].noFallback).toBe(true);
       expect(updateInputSnapshot).toHaveBeenCalledWith(
-        expect.objectContaining({ prRef: 'foo/bar#34', repoRead: 'USED' }),
+        expect.objectContaining({
+          prRef: 'foo/bar#34',
+          repoRead: RepoReadStatus.USED,
+        }),
       );
-      expect(outcome.repoRead).toBe('USED');
+      expect(outcome.repoRead).toBe(RepoReadStatus.USED);
       expect(dispose).toHaveBeenCalledTimes(1);
     });
 
     it('상한을 넘으면 사본 없이 리뷰하고 SKIPPED_TOO_LARGE 를 남긴다', async () => {
       githubClient.downloadTarball.mockResolvedValue({
-        kind: 'TOO_LARGE',
+        kind: TarballDownloadKind.TOO_LARGE,
         bytes: 60_000_000,
       });
 
@@ -708,7 +715,7 @@ describe('ReviewPullRequestUsecase', () => {
       expect(extract).not.toHaveBeenCalled();
       expect(routedRequest().readableRoots).toBeUndefined();
       expect(routedRequest().prompt).not.toContain('[repo snapshot]');
-      expect(outcome.repoRead).toBe('SKIPPED_TOO_LARGE');
+      expect(outcome.repoRead).toBe(RepoReadStatus.SKIPPED_TOO_LARGE);
     });
 
     it('다운로드·해제가 실패하면 사본 없이 리뷰하고 FAILED 를 남긴다', async () => {
@@ -724,7 +731,7 @@ describe('ReviewPullRequestUsecase', () => {
       });
 
       expect(routedRequest().readableRoots).toBeUndefined();
-      expect(outcome.repoRead).toBe('FAILED');
+      expect(outcome.repoRead).toBe(RepoReadStatus.FAILED);
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('tar boom'));
       warn.mockRestore();
     });

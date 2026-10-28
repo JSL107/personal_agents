@@ -6,6 +6,7 @@ import {
   GithubPullRequestSummary,
   PullRequestDetail,
   PullRequestDiff,
+  TarballDownload,
 } from '../github.type';
 import { PullRequestEngagementSignals } from '../pr-engagement.type';
 
@@ -261,10 +262,6 @@ export interface DownloadTarballInput {
   // 압축 기준 상한(bytes). 넘으면 본문을 버리고 TOO_LARGE 를 돌려준다.
   maxBytes: number;
 }
-
-export type TarballDownload =
-  | { kind: 'OK'; data: Buffer }
-  | { kind: 'TOO_LARGE'; bytes: number };
 
 export interface SearchCodeInput {
   repo: string; // "owner/repo"

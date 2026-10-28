@@ -1,5 +1,6 @@
 import {
   missedFindingId,
+  outsideDiffMissIds,
   pairReplacementMisses,
   parseMissedFindings,
   resolveMissPath,
@@ -175,5 +176,28 @@ describe('pairReplacementMisses', () => {
 
     expect(labeled).toEqual([]);
     expect(errors[0]).toContain('0번');
+  });
+});
+
+describe('outsideDiffMissIds', () => {
+  const plain = { ...valid, line: 1 };
+  const flagged = { ...valid, line: 2, outsideDiff: true };
+
+  it('표시된 미탐의 id 만 낸다', () => {
+    expect(outsideDiffMissIds({ misses: [plain, flagged] })).toEqual([
+      missedFindingId(flagged),
+    ]);
+  });
+
+  // 재채점 교체 파일로 표시를 고치면 그 표시를 따르되, 결과와 이어지는 id 는 원래 항목 것이어야 한다.
+  it('교체 목록의 표시를 쓰고 id 는 원래 목록에서 만든다', () => {
+    const replaced = { ...plain, body: '본문 교체', outsideDiff: true };
+
+    expect(
+      outsideDiffMissIds({
+        misses: [plain, flagged],
+        flaggedBy: [replaced, plain],
+      }),
+    ).toEqual([missedFindingId(plain)]);
   });
 });
