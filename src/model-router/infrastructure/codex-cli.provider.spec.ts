@@ -22,6 +22,7 @@ import {
   CodexCliProvider,
   CodexQuotaExceededException,
   CodexQuotaScanner,
+  CodexReadLockException,
   CodexTimeoutException,
   computeCodexRetryBackoffMs,
   computeQuotaBlockUntilMs,
@@ -879,5 +880,65 @@ describe('verifyCodexReadLock', () => {
       expect.stringContaining('codex 읽기 범위 잠금 점검 실패'),
     );
     errorSpy.mockRestore();
+  });
+});
+
+describe('CodexCliProvider readableRoots', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  const stubSpawn = (provider: ProviderWithSpawnCodex): jest.SpyInstance =>
+    jest.spyOn(provider, 'spawnCodex').mockImplementation(async ({ args }) => {
+      const outputFile = args[args.indexOf('-o') + 1];
+      await writeFile(outputFile, 'ok');
+      return { quotaDetection: { exhausted: false } };
+    });
+
+  it('읽기 허용 경로를 권한 프로필에 더하고 --sandbox 는 넘기지 않는다', async () => {
+    mockSandboxCat((path) => !path.endsWith('canary.txt'));
+    const provider = new CodexCliProvider();
+    const spawnSpy = stubSpawn(provider as unknown as ProviderWithSpawnCodex);
+
+    await expect(
+      provider.complete({ prompt: 'p', readableRoots: ['/var/repo-copy'] }),
+    ).resolves.toMatchObject({ text: 'ok' });
+
+    const args: string[] = spawnSpy.mock.calls[0][0].args;
+    expect(args).not.toContain('--sandbox');
+    expect(args.join(' ')).toContain('"/var/repo-copy"="read"');
+  });
+
+  it('잠금 점검에서 canary 가 읽히면 codex 를 띄우지 않고 실패한다', async () => {
+    mockSandboxCat(() => true);
+    const provider = new CodexCliProvider();
+    const spawnSpy = stubSpawn(provider as unknown as ProviderWithSpawnCodex);
+
+    await expect(
+      provider.complete({ prompt: 'p', readableRoots: ['/var/repo-copy'] }),
+    ).rejects.toBeInstanceOf(CodexReadLockException);
+    expect(spawnSpy).not.toHaveBeenCalled();
+  });
+
+  it('잠금 점검은 실제 호출과 같은 읽기 허용 경로로 돈다', async () => {
+    mockSandboxCat((path) => !path.endsWith('canary.txt'));
+    const execFileSpy = childProcess.execFile as unknown as jest.Mock;
+    const provider = new CodexCliProvider();
+    stubSpawn(provider as unknown as ProviderWithSpawnCodex);
+
+    await provider.complete({ prompt: 'p', readableRoots: ['/var/repo-copy'] });
+
+    const sandboxArgs: string[] = execFileSpy.mock.calls[0][1];
+    expect(sandboxArgs.join(' ')).toContain('"/var/repo-copy"="read"');
+  });
+
+  it('읽기 허용 경로가 없으면 잠금 점검을 호출마다 돌리지 않는다', async () => {
+    const catPaths = mockSandboxCat(() => true);
+    const provider = new CodexCliProvider();
+    stubSpawn(provider as unknown as ProviderWithSpawnCodex);
+
+    await provider.complete({ prompt: 'p' });
+
+    expect(catPaths).toEqual([]);
   });
 });
