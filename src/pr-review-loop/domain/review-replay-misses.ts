@@ -16,6 +16,9 @@ export interface MissedFindingEntry {
   line: number;
   body: string;
   headSha?: string;
+  // 사람이 붙이는 표시 — diff 밖 파일을 봐야 보이는 결함인가. `--repo-read` 실험이 이 묶음을 따로 센다.
+  // id 계산(missedFindingId)에는 넣지 않는다: 표시를 고쳐도 같은 결함이다.
+  outsideDiff?: boolean;
 }
 
 export interface ParsedMisses {
@@ -51,6 +54,9 @@ export const parseMissedFindings = (raw: unknown): ParsedMisses => {
       (typeof entry.headSha === 'string' && entry.headSha !== '')
         ? null
         : 'headSha 는 비지 않은 문자열',
+      entry.outsideDiff === undefined || typeof entry.outsideDiff === 'boolean'
+        ? null
+        : 'outsideDiff 는 boolean',
     ].filter((problem): problem is string => problem !== null);
     if (problems.length > 0) {
       errors.push(`${index}번 항목: ${problems.join(', ')}`);
@@ -65,6 +71,9 @@ export const parseMissedFindings = (raw: unknown): ParsedMisses => {
       ...(entry.headSha === undefined
         ? {}
         : { headSha: entry.headSha as string }),
+      ...(entry.outsideDiff === undefined
+        ? {}
+        : { outsideDiff: entry.outsideDiff as boolean }),
     });
   });
   return { entries, errors };

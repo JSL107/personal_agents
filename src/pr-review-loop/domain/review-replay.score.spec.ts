@@ -565,6 +565,25 @@ describe('readBaselineSummaries', () => {
     ).toBeNull();
   });
 
+  it('diff 밖 표시 미탐 집계를 missedByOutsideDiff 에서 읽고, 형식이 틀리면 거부한다', () => {
+    const outside = summaryOf([0.2, 0.4]);
+    const base = { rejected: summaryOf([0.1]), fixed: summaryOf([0.5]) };
+
+    expect(
+      readBaselineSummaries({
+        trials: {
+          ...base,
+          missedByOutsideDiff: { outside, inside: summaryOf([0.5, 0.5]) },
+        },
+      })?.missedOutsideDiff,
+    ).toEqual(outside);
+    expect(
+      readBaselineSummaries({
+        trials: { ...base, missedByOutsideDiff: { outside: { total: 3 } } },
+      }),
+    ).toBeNull();
+  });
+
   it('반복 측정 보고서는 trials 를 그대로 읽는다', () => {
     const rejected = summaryOf([0.2, 0.3]);
     const fixed = summaryOf([0.8, 0.9]);

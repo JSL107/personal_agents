@@ -47,6 +47,27 @@ describe('parseMissedFindings', () => {
     ]);
   });
 
+  // 레포 사본 실험은 "diff 밖 파일을 봐야 보이는" 미탐만 따로 센다 — 표시가 틀리게 들어오면 분리 집계가 오염된다.
+  it('outsideDiff 는 boolean 일 때만 싣고, 다른 값은 사유를 남긴다', () => {
+    const { entries, errors } = parseMissedFindings([
+      { ...valid, outsideDiff: true },
+      { ...valid, outsideDiff: false },
+      { ...valid, outsideDiff: 'yes' },
+    ]);
+
+    expect(entries).toEqual([
+      { ...valid, outsideDiff: true },
+      { ...valid, outsideDiff: false },
+    ]);
+    expect(errors).toEqual(['2번 항목: outsideDiff 는 boolean']);
+  });
+
+  it('outsideDiff 표시는 미탐 id 를 바꾸지 않는다', () => {
+    expect(missedFindingId({ ...valid, outsideDiff: true })).toBe(
+      missedFindingId(valid),
+    );
+  });
+
   it('배열이 아니면 오류', () => {
     expect(parseMissedFindings({}).errors).toEqual(['최상위가 배열이 아니다']);
   });
