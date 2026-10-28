@@ -1,5 +1,8 @@
 import * as childProcess from 'node:child_process';
+import * as fsPromises from 'node:fs/promises';
 import { writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { basename, join } from 'node:path';
 
 import { Logger } from '@nestjs/common';
 
@@ -793,6 +796,13 @@ type SandboxCatCallback = (error: Error | null, result?: object) => void;
 // 경로별로 sandbox cat 성공 여부를 정한다. 마지막 인자가 cat 대상 경로다.
 const mockSandboxCat = (isReadable: (path: string) => boolean): string[] => {
   const catPaths: string[] = [];
+  // canary 는 macOS 의 /private/tmp 에 만든다. CI(Linux)에는 그 경로가 없으니 OS 임시 폴더로 돌린다.
+  const realMkdtemp = fsPromises.mkdtemp;
+  jest
+    .spyOn(fsPromises, 'mkdtemp')
+    .mockImplementation((prefix) =>
+      realMkdtemp(join(tmpdir(), basename(String(prefix)))),
+    );
   // jest setup 이 provider 를 먼저 로드하므로 jest.mock 이 아니라 모듈 속성을 갈아끼운다.
   jest.spyOn(childProcess, 'execFile').mockImplementation(((
     _file: string,
@@ -824,7 +834,10 @@ describe('verifyCodexReadLock', () => {
       verifyCodexReadLock({ permissionArgs: ['-c', 'x'], readablePath }),
     ).resolves.toEqual({ locked: true });
     expect(catPaths[0]).toBe(readablePath);
-    expect(catPaths[1]).toMatch(new RegExp(`^${CODEX_DENIED_READ_ROOT}/`));
+    expect(catPaths[1]).toMatch(/canary\.txt$/);
+    expect(fsPromises.mkdtemp).toHaveBeenCalledWith(
+      join(CODEX_DENIED_READ_ROOT, 'idaeri-canary-'),
+    );
   });
 
   it('canary 가 읽히면 프로필이 무시된 것으로 판정한다', async () => {
