@@ -169,7 +169,7 @@ if (a) { if (b) { ... } }        // → ts-pattern 의 match 검토
 - Codex 는 `mkdtemp` 로 만든 throwaway HOME 을 쓰고, 인증은 실제 `CODEX_HOME` 을 전달해 보존한다. Claude 는 OAuth token 이 있으면 throwaway HOME 을 쓰고, 없으면 Keychain 인증을 위해 실제 HOME 을 쓴다. `CLAUDE_CONFIG_DIR` 는 기본값을 주입하지 않고 부모가 `CLAUDE_CONFIG_DIR` 또는 `CLAUDE_HOME` 을 명시했을 때만 전달한다 (이유는 §8).
 - 단 현재 `SAFE_ENV_KEYS` 에는 `XDG_CONFIG_HOME` / `XDG_DATA_HOME` / `XDG_CACHE_HOME` 도 부모 값 그대로 forward 된다 — XDG 가 export 된 환경에서는 자식 CLI 가 그 디렉토리들도 읽을 수 있다. 시크릿이 들어 있을 가능성이 있으면 allowlist 에서 제외하거나 throwaway 경로로 override 할 것.
 - prompt 는 **argv 가 아니라 stdin** 으로 전달. `ps aux` 로 prompt 노출되면 안 됨.
-- spawn 에 `cwd: workDir` 필수 — codex agent 가 repo 파일 못 읽도록.
+- spawn 에 `cwd: workDir` 필수 — 단 cwd 는 기본 위치만 바꿀 뿐 절대경로 읽기는 막지 못한다. codex 의 읽기 범위는 `buildCodexPermissionArgs` 권한 프로필이 잠근다 (workDir·codex 바이너리만 허용, `/private/tmp` 차단). `--sandbox` 를 함께 넘기면 프로필이 조용히 무시되고 디스크 전체 읽기로 돌아가므로 섞지 말 것 — 부팅 시 `verifyCodexReadLock` canary 가 확인하고 실패하면 ERROR 로그를 남긴다. claude 폴백 경로는 이 프로필의 대상이 아니다.
 
 ### Credential
 - `.env` 는 git 제외. 절대 커밋하지 말 것. GitHub PAT / Slack token 을 코드에 하드코딩하지 말 것.
