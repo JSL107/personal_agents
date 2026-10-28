@@ -1,3 +1,5 @@
+import { SlackBlock } from '../format/message-blocks.builder';
+
 // Slack Bolt block_actions body 에서 button 의 value (previewId) 추출.
 // body 의 정확한 타입은 Bolt 가 union 으로 노출하므로 안전하게 narrowing.
 export const extractActionValue = (body: unknown): string | null => {
@@ -75,6 +77,32 @@ export const extractActionMessageRef = (
     return null;
   }
   return { channel, ts };
+};
+
+export interface ActionMessage {
+  text?: string;
+  blocks?: SlackBlock[];
+}
+
+// 버튼을 누른 원래 메시지(알림 문구·블록). 슬랙이 action body 에 실어 보낸다. 모양이 다른 칸은 비운다 —
+// 블록이 없는 채로 다시 그리면 메시지가 통째로 바뀌므로 호출부가 그 경우를 가른다.
+export const extractActionMessage = (body: unknown): ActionMessage => {
+  if (typeof body !== 'object' || body === null) {
+    return {};
+  }
+  const message = (body as { message?: unknown }).message;
+  if (typeof message !== 'object' || message === null) {
+    return {};
+  }
+  const { text, blocks } = message as { text?: unknown; blocks?: unknown };
+  const found: ActionMessage = {};
+  if (typeof text === 'string' && text.length > 0) {
+    found.text = text;
+  }
+  if (Array.isArray(blocks)) {
+    found.blocks = blocks as SlackBlock[];
+  }
+  return found;
 };
 
 const firstString = (candidates: unknown[]): string | null => {

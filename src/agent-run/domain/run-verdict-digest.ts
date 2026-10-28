@@ -1,3 +1,4 @@
+import { getKstDateOf } from '../../common/util/kst-date.util';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { TriggerType } from './agent-run.type';
 import { RunVerdictFacet } from './run-verdict';
@@ -106,12 +107,10 @@ const describeRun = (run: RunVerdictDigestRun): RunVerdictTarget | null => {
       const summary = ['keep', 'tryNext', 'carryOver']
         .map((key) => readText(retrospective?.[key]))
         .find((text) => text !== undefined);
-      return {
-        facets,
-        quote: facets.includes('retro_problem')
-          ? problem
-          : (summary ?? problem),
-      };
+      const quote = facets.includes('retro_problem')
+        ? problem
+        : (summary ?? problem);
+      return { facets, quote };
     }
     case AgentType.PO_SHADOW: {
       const headline = readText(output?.headline);
@@ -130,9 +129,6 @@ const describeRun = (run: RunVerdictDigestRun): RunVerdictTarget | null => {
   }
 };
 
-const toKstDate = (date: Date): string =>
-  new Date(date.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
-
 // 같은 날 같은 종류의 실행이 여럿이면 마지막 것만 남긴다. 발송이 실패하면 오케스트레이터가 다시 던져
 // BullMQ 가 task 를 다시 돌리므로, 앞선 실행은 사람에게 나가지 않았고 마지막 시도가 나간 것이다.
 // 매일 저녁의 아침 계획 판정도 그날 마지막 실행 한 건만 묻는다.
@@ -143,7 +139,7 @@ const keepLatestPerDay = (
 ): RunVerdictDigestRun[] => {
   const latest = new Map<string, RunVerdictDigestRun>();
   for (const run of runs) {
-    const key = `${run.agentType}:${toKstDate(run.startedAt)}`;
+    const key = `${run.agentType}:${getKstDateOf(run.startedAt)}`;
     const kept = latest.get(key);
     if (!kept || kept.startedAt < run.startedAt) {
       latest.set(key, run);
@@ -152,32 +148,36 @@ const keepLatestPerDay = (
   return [...latest.values()];
 };
 
+// 인용이 없으면 일주일 뒤에 무엇을 판정하는지 알 수 없다 — 버튼만 있는 항목은 내지 않는다.
+const toDigestEntry = (run: RunVerdictDigestRun): RunVerdictDigestEntry[] => {
+  const target = describeRun(run);
+  if (!target?.quote || target.facets.length === 0) {
+    return [];
+  }
+  return [
+    {
+      agentRunId: run.id,
+      startedAt: run.startedAt,
+      facets: target.facets,
+      quote: target.quote,
+    },
+  ];
+};
+
+const byStartedAt = (
+  left: RunVerdictDigestRun,
+  right: RunVerdictDigestRun,
+): number => left.startedAt.getTime() - right.startedAt.getTime();
+
 // 판정 안 된 축만 남긴 실행을 agentType 별 카드로 묶는다. 카드 순서는 RUN_VERDICT_DIGEST_SOURCES,
 // 카드 안은 실행 시각 순. 묻을 것이 없는 카드는 내지 않는다.
 export const selectRunVerdictDigestCards = (
   runs: RunVerdictDigestRun[],
 ): RunVerdictDigestCard[] => {
-  const candidates = keepLatestPerDay(runs);
-  return RUN_VERDICT_DIGEST_SOURCES.map(({ agentType, heading }) => ({
-    agentType,
-    heading,
-    entries: candidates
-      .filter((run) => run.agentType === agentType)
-      .sort((a, b) => a.startedAt.getTime() - b.startedAt.getTime())
-      .flatMap((run): RunVerdictDigestEntry[] => {
-        const target = describeRun(run);
-        // 인용이 없으면 일주일 뒤에 무엇을 판정하는지 알 수 없다 — 버튼만 있는 항목은 내지 않는다.
-        if (!target?.quote || target.facets.length === 0) {
-          return [];
-        }
-        return [
-          {
-            agentRunId: run.id,
-            startedAt: run.startedAt,
-            facets: target.facets,
-            quote: target.quote,
-          },
-        ];
-      }),
-  })).filter((card) => card.entries.length > 0);
+  const candidates = keepLatestPerDay(runs).sort(byStartedAt);
+  const cards = RUN_VERDICT_DIGEST_SOURCES.map(({ agentType, heading }) => {
+    const ofType = candidates.filter((run) => run.agentType === agentType);
+    return { agentType, heading, entries: ofType.flatMap(toDigestEntry) };
+  });
+  return cards.filter((card) => card.entries.length > 0);
 };

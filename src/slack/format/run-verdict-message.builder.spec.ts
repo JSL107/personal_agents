@@ -25,7 +25,7 @@ describe('run-verdict-message.builder', () => {
     const blocks = buildRunVerdictBlocks({
       agentRunId: 6300,
       facets: ['retro_problem', 'overall'],
-      verdicts: {},
+      verdicts: new Map(),
     }) as Block[];
 
     const buttons = buttonsOf(blocks);
@@ -53,7 +53,7 @@ describe('run-verdict-message.builder', () => {
     const blocks = buildRunVerdictBlocks({
       agentRunId: 9,
       facets: ['po_first_action'],
-      verdicts: {},
+      verdicts: new Map(),
     }) as Block[];
 
     expect(buttonsOf(blocks).map((button) => button.action_id)).toEqual([
@@ -86,7 +86,7 @@ describe('run-verdict-message.builder', () => {
     const blocks = buildRunVerdictBlocks({
       agentRunId: 1,
       facets: ['overall'],
-      verdicts: {},
+      verdicts: new Map(),
     }) as Block[];
 
     expect(
@@ -100,12 +100,15 @@ describe('run-verdict-message.builder', () => {
     const blocks = buildRunVerdictBlocks({
       agentRunId: 1,
       facets: ['retro_problem', 'overall'],
-      verdicts: {
-        overall: [
-          { slackUserId: 'U1', verdict: 'BAD' },
-          { slackUserId: 'U2', verdict: 'GOOD' },
+      verdicts: new Map([
+        [
+          'overall',
+          [
+            { slackUserId: 'U1', verdict: 'BAD' },
+            { slackUserId: 'U2', verdict: 'GOOD' },
+          ],
         ],
-      },
+      ]),
     }) as Block[];
 
     const texts = blocks.map((block) => block.text?.text ?? '');
@@ -192,10 +195,12 @@ describe('run-verdict-message.builder', () => {
         ],
       });
 
-      const refreshed = refreshRunVerdictStatuses(
+      const refreshed = refreshRunVerdictStatuses({
         blocks,
-        new Map([[2, { pm_plan: [{ slackUserId: 'U1', verdict: 'BAD' }] }]]),
-      ) as Block[];
+        verdictsByRun: new Map([
+          [2, new Map([['pm_plan', [{ slackUserId: 'U1', verdict: 'BAD' }]]])],
+        ]),
+      }) as Block[];
 
       const texts = refreshed.map((block) => block.text?.text ?? '');
       expect(texts).toContain('*아침 계획, 실제 하루에 쓸모 있었나요?*');
@@ -259,7 +264,7 @@ describe('run-verdict-message.builder', () => {
       const blocks = buildRunVerdictBlocks({
         agentRunId: 1,
         facets: ['retro_problem', 'overall'],
-        verdicts: {},
+        verdicts: new Map(),
         quoteMrkdwn: formatRunVerdictQuote('확인 없이 결론을 썼다', '문제 칸'),
       }) as (Block & { block_id?: string })[];
 
@@ -273,7 +278,7 @@ describe('run-verdict-message.builder', () => {
       const blocks = buildRunVerdictBlocks({
         agentRunId: 1,
         facets: ['overall'],
-        verdicts: {},
+        verdicts: new Map(),
         quoteMrkdwn: formatRunVerdictQuote('   '),
       }) as (Block & { block_id?: string })[];
 
@@ -299,14 +304,14 @@ describe('run-verdict-message.builder', () => {
       const first = buildRunVerdictBlocks({
         agentRunId: 1,
         facets: ['overall'],
-        verdicts: {},
+        verdicts: new Map(),
         quoteMrkdwn: formatRunVerdictQuote('A & B', '문제 칸'),
       });
-      const reread = readRunVerdictQuote({ message: { blocks: first } });
+      const reread = readRunVerdictQuote(first);
       const redrawn = buildRunVerdictBlocks({
         agentRunId: 1,
         facets: ['overall'],
-        verdicts: {},
+        verdicts: new Map(),
         quoteMrkdwn: reread,
       });
 
@@ -315,9 +320,8 @@ describe('run-verdict-message.builder', () => {
     });
 
     it('인용 블록이 없는 댓글을 되읽으면 undefined', () => {
-      expect(readRunVerdictQuote({ message: { blocks: [] } })).toBeUndefined();
-      expect(readRunVerdictQuote({})).toBeUndefined();
-      expect(readRunVerdictQuote(null)).toBeUndefined();
+      expect(readRunVerdictQuote([])).toBeUndefined();
+      expect(readRunVerdictQuote(undefined)).toBeUndefined();
     });
   });
 });

@@ -8,8 +8,10 @@ import {
 import {
   isRunVerdictFacet,
   RUN_VERDICT_SOURCE,
+  RunVerdictFacet,
 } from '../../agent-run/domain/run-verdict';
 import {
+  extractActionMessage,
   extractActionMessageRef,
   extractActionUserId,
   extractActionValue,
@@ -19,12 +21,13 @@ import {
   buildRunVerdictBlocks,
   buildRunVerdictFallbackText,
   parseRunVerdictValue,
-  readRunVerdictActionMessage,
   readRunVerdictQuote,
   readRunVerdictStatusTargets,
   refreshRunVerdictStatuses,
   RUN_VERDICT_ACTION_PATTERN,
+  RunVerdictChoice,
   RunVerdictChoices,
+  RunVerdictStatusTarget,
 } from '../format/run-verdict-message.builder';
 import { toUserFacingErrorMessage } from './slack-handler.helper';
 
@@ -102,12 +105,11 @@ export class RunVerdictActionHandler implements SlackHandler {
           await this.serializeByMessage(
             `${messageRef.channel}:${messageRef.ts}`,
             async () => {
-              const message = readRunVerdictActionMessage(body);
+              const { text, blocks } = extractActionMessage(body);
               // 블록을 못 읽은 채 다시 그리면 주간 카드 전체가 이 실행 하나짜리 댓글로 덮인다 — 갱신을 포기한다.
-              if (!message.blocks) {
+              if (!blocks) {
                 throw new Error('원래 메시지 블록을 읽지 못했습니다');
               }
-              const blocks = message.blocks;
               const targets = readRunVerdictStatusTargets(blocks);
               // 상태 줄 block_id 가 없으면 그 표시를 달기 전에 나간 댓글이다 — 종전처럼 이 실행 몫으로
               // 댓글 전체를 다시 그린다(새 모양으로 바뀐다).
@@ -120,29 +122,21 @@ export class RunVerdictActionHandler implements SlackHandler {
                     agentRunId,
                     facets,
                     verdicts: await this.loadVerdicts(agentRunId),
-                    quoteMrkdwn: readRunVerdictQuote(body),
+                    quoteMrkdwn: readRunVerdictQuote(blocks),
                   }) as never,
                 });
                 return;
               }
-              const runIds = [
-                ...new Set(targets.map((target) => target.agentRunId)),
-              ];
-              const verdicts = await Promise.all(
-                runIds.map((runId) => this.loadVerdicts(runId)),
-              );
-              const verdictsByRun = new Map(
-                runIds.map((runId, index) => [runId, verdicts[index]]),
-              );
+              const verdictsByRun = await this.loadVerdictsByRun(targets);
               await client.chat.update({
                 channel: messageRef.channel,
                 ts: messageRef.ts,
                 // 주간 카드는 축이 여럿 실려 버튼 값의 축으로 대체 문구를 만들 수 없다 — 원래 문구를 유지한다.
-                text: message.text ?? buildRunVerdictFallbackText(facets),
-                blocks: refreshRunVerdictStatuses(
+                text: text ?? buildRunVerdictFallbackText(facets),
+                blocks: refreshRunVerdictStatuses({
                   blocks,
                   verdictsByRun,
-                ) as never,
+                }) as never,
               });
             },
           );
@@ -164,16 +158,32 @@ export class RunVerdictActionHandler implements SlackHandler {
 
   private async loadVerdicts(agentRunId: number): Promise<RunVerdictChoices> {
     const rows = await this.verdictRepository.findByRun(agentRunId);
-    const verdicts: RunVerdictChoices = {};
-    for (const row of rows) {
-      if (isRunVerdictFacet(row.facet)) {
-        (verdicts[row.facet] ??= []).push({
-          slackUserId: row.slackUserId,
-          verdict: row.verdict,
-        });
+    const verdicts = new Map<RunVerdictFacet, RunVerdictChoice[]>();
+    for (const { facet, slackUserId, verdict } of rows) {
+      if (isRunVerdictFacet(facet)) {
+        verdicts.set(facet, [
+          ...(verdicts.get(facet) ?? []),
+          { slackUserId, verdict },
+        ]);
       }
     }
     return verdicts;
+  }
+
+  // 메시지에 실린 실행마다 판정을 읽는다(주간 카드는 실행이 여럿). 실행끼리 독립이라 함께 묻는다.
+  private async loadVerdictsByRun(
+    targets: RunVerdictStatusTarget[],
+  ): Promise<Map<number, RunVerdictChoices>> {
+    const runIds = new Set(targets.map(({ agentRunId }) => agentRunId));
+    const entries = await Promise.all(
+      [...runIds].map(
+        async (runId): Promise<[number, RunVerdictChoices]> => [
+          runId,
+          await this.loadVerdicts(runId),
+        ],
+      ),
+    );
+    return new Map(entries);
   }
 
   private serializeByMessage(
