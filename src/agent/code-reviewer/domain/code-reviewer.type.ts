@@ -93,4 +93,11 @@ export interface ReviewPullRequestInput {
   isDraft?: boolean;
   // 사용자 온디맨드 진입점만 true로 명시한다. 미지정/false면 리뷰 결과만 반환한다.
   publish?: boolean;
+  // 리뷰 재생 전용(`pnpm review:replay --repo-read`) — headSha 시점 레포 사본을 모델에 읽기 전용으로 연다.
+  // 효과를 재기 전이라 운영 경로(스윕·/review-pr·dispatcher)는 넘기지 않는다.
+  repoRead?: boolean;
 }
+
+// repoRead 를 켠 회차에서 사본이 실제로 열렸는가. USED 가 아닌 회차는 사본 없이 종전대로 돌았다 —
+// 재생 비교에서 빼야 실험군이 섞이지 않는다.
+export type RepoReadStatus = 'USED' | 'SKIPPED_TOO_LARGE' | 'FAILED';
