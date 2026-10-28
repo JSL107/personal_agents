@@ -1015,6 +1015,8 @@ describe('GeneratePoShadowUsecase', () => {
       id: 1,
       slackUserId: 'U1',
       title: '업로드 개선',
+      kind: 'TASK',
+      why: null,
       successCriterion: '업로드 실패율 1% 이하',
       keywords: ['업로드'],
       dueDate: null,
@@ -1080,6 +1082,143 @@ describe('GeneratePoShadowUsecase', () => {
       );
     });
 
+    it('방향만 있으면 목표 0개 회차와 사실표·점검·프롬프트·원장 입력이 같다', async () => {
+      agentRunServiceFindLatest.mockResolvedValue({
+        id: 99,
+        output: mismatchPlan,
+        endedAt: now,
+      });
+      contextCollectorCollect.mockResolvedValue(mismatchContext());
+
+      const withoutGoals = await usecase.execute({
+        extraContext: '',
+        slackUserId: 'U1',
+        now,
+      });
+      const baselineInput = executeInput();
+      const baselinePrompt = modelRouter.route.mock.calls[0][0].request.prompt;
+
+      goalFindActive.mockResolvedValue([
+        goalRecord({
+          id: 2,
+          title: '나만의 개인비서 만들기',
+          kind: 'DIRECTION',
+          why: '말로 업무를 처리하려고',
+          successCriterion: null,
+          keywords: [],
+          createdAt: new Date(now.getTime() - 40 * DAY),
+        }),
+      ]);
+      agentRunServiceExecute.mockClear();
+      agentRunServiceFindRecent.mockClear();
+      modelRouter.route.mockClear();
+      modelRouter.route.mockResolvedValue({
+        text: JSON.stringify(
+          modelReport([
+            {
+              factIds: ['stalled:acme/app#264'],
+              point: '#264 업로드 작업이 멈췄습니다.',
+              suggestion: '리뷰어를 지정하세요.',
+            },
+          ]),
+        ),
+        modelUsed: 'codex-cli',
+        provider: ModelProviderName.CHATGPT,
+      } satisfies CompletionResponse);
+
+      const withDirection = await usecase.execute({
+        extraContext: '',
+        slackUserId: 'U1',
+        now,
+      });
+
+      expect(withDirection.result).toEqual(withoutGoals.result);
+      expect(executeInput().inputSnapshot).toEqual(baselineInput.inputSnapshot);
+      expect(executeInput().evidence).toEqual(baselineInput.evidence);
+      expect(modelRouter.route.mock.calls[0][0].request.prompt).toBe(
+        baselinePrompt,
+      );
+      expect(withDirection.result).not.toHaveProperty('goalCheckIns');
+      expect(agentRunServiceFindRecent).toHaveBeenCalledTimes(1);
+    });
+
+    it('숙제와 방향이 섞이면 숙제만 사실·점검·프롬프트·원장 입력에 싣는다', async () => {
+      agentRunServiceFindLatest.mockResolvedValue({
+        id: 99,
+        output: mismatchPlan,
+        endedAt: now,
+      });
+      const context = mismatchContext();
+      context.mergedPullRequests = [
+        {
+          number: 5,
+          title: 'chore: 의존성 갱신',
+          body: '',
+          repo: 'acme/app',
+          url: 'https://github.com/acme/app/pull/5',
+          state: 'merged',
+          mergedAt: '2026-10-08T01:00:00.000Z',
+          updatedAt: '2026-10-08T01:00:00.000Z',
+          additions: 1,
+          deletions: 1,
+          changedFilesCount: 1,
+        },
+      ];
+      contextCollectorCollect.mockResolvedValue(context);
+      goalFindActive.mockResolvedValue([goalRecord()]);
+      const withTask = await usecase.execute({
+        extraContext: '',
+        slackUserId: 'U1',
+        now,
+      });
+      const taskInput = executeInput();
+      const taskPrompt = modelRouter.route.mock.calls[0][0].request.prompt;
+
+      goalFindActive.mockResolvedValue([
+        goalRecord(),
+        goalRecord({
+          id: 2,
+          title: '나만의 개인비서 만들기',
+          kind: 'DIRECTION',
+          why: '말로 업무를 처리하려고',
+          successCriterion: null,
+          keywords: [],
+          createdAt: new Date(now.getTime() - 40 * DAY),
+        }),
+      ]);
+      agentRunServiceExecute.mockClear();
+      modelRouter.route.mockClear();
+      modelRouter.route.mockResolvedValue({
+        text: JSON.stringify(
+          modelReport([
+            {
+              factIds: ['stalled:acme/app#264'],
+              point: '#264 업로드 작업이 멈췄습니다.',
+              suggestion: '리뷰어를 지정하세요.',
+            },
+          ]),
+        ),
+        modelUsed: 'codex-cli',
+        provider: ModelProviderName.CHATGPT,
+      } satisfies CompletionResponse);
+
+      const outcome = await usecase.execute({
+        extraContext: '',
+        slackUserId: 'U1',
+        now,
+      });
+
+      const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(prompt).toContain(
+        '업로드 개선 | 달성 기준: 업로드 실패율 1% 이하',
+      );
+      expect(prompt).toBe(taskPrompt);
+      expect(factTable().map((fact) => fact.kind)).toContain('GOAL_UNSERVED');
+      expect(executeInput().evidence).toEqual(taskInput.evidence);
+      expect(executeInput().inputSnapshot).toEqual(taskInput.inputSnapshot);
+      expect(outcome.result).toEqual(withTask.result);
+    });
+
     it('목표에 안 붙은 작업은 GOAL_UNSERVED 로 사실 목록에만 싣고 검토를 켜지 않는다', async () => {
       goalFindActive.mockResolvedValue([goalRecord()]);
       contextCollectorCollect.mockResolvedValue({
@@ -1114,7 +1253,7 @@ describe('GeneratePoShadowUsecase', () => {
         '릴리즈 체크 — 외부 상태로 자동 확인 불가',
         '목표 밖 작업 1건 — chore: 의존성 갱신',
       ]);
-      expect(executeInput().inputSnapshot.goalProgress).toEqual([]);
+      expect(executeInput().inputSnapshot).not.toHaveProperty('goalProgress');
     });
 
     it('기한 임박 + 붙은 열린 항목이 있으면 검토를 켜고 목표를 프롬프트에 싣는다', async () => {
@@ -1139,63 +1278,16 @@ describe('GeneratePoShadowUsecase', () => {
       expect(prompt).toContain('judgments 에만');
     });
 
-    it('묵은 목표는 리포트에 "아직 유효한가요?" 를 싣는다', async () => {
+    // 묵은 목표·기한 지난 목표의 "아직 유효한가요?" 는 월요일 목표 점검(goal-checkin)으로 옮겼다 —
+    // 일일 보고에도 남기면 같은 목표를 두 곳에서 묻는다.
+    it('묵은 목표·기한 지난 목표도 일일 리포트에는 점검 질문을 싣지 않는다', async () => {
       goalFindActive.mockResolvedValue([
-        goalRecord({ createdAt: new Date(now.getTime() - 40 * DAY) }),
+        goalRecord({
+          createdAt: new Date(now.getTime() - 40 * DAY),
+          dueDate: new Date('2026-10-01T00:00:00.000Z'),
+        }),
       ]);
       contextCollectorCollect.mockResolvedValue(emptyContext());
-
-      const outcome = await usecase.execute({
-        extraContext: '',
-        slackUserId: 'U1',
-        now,
-      });
-
-      expect(outcome.result.goalCheckIns).toEqual([
-        '"업로드 개선" — 30일 넘게 붙은 진행 없음. 이 목표 아직 유효한가요?',
-      ]);
-    });
-
-    it('직전 회차의 진행 기록이 있으면 묵었다고 하지 않는다', async () => {
-      goalFindActive.mockResolvedValue([
-        goalRecord({ createdAt: new Date(now.getTime() - 40 * DAY) }),
-      ]);
-      contextCollectorCollect.mockResolvedValue(emptyContext());
-      agentRunServiceFindRecent.mockResolvedValue([
-        {
-          id: 50,
-          output: null,
-          inputSnapshot: { goalProgress: [1] },
-          endedAt: new Date(now.getTime() - 5 * DAY),
-        },
-      ]);
-
-      const outcome = await usecase.execute({
-        extraContext: '',
-        slackUserId: 'U1',
-        now,
-      });
-
-      expect(outcome.result).not.toHaveProperty('goalCheckIns');
-    });
-
-    // 30일 창 안 회차가 상한보다 많을 때 오래된 회차가 잘리면 그 안에만 있던 진행을 놓친다(#773 리뷰).
-    it('41번째보다 오래된 회차에만 진행이 있어도 30일 안이면 묵었다고 하지 않는다', async () => {
-      goalFindActive.mockResolvedValue([
-        goalRecord({ createdAt: new Date(now.getTime() - 40 * DAY) }),
-      ]);
-      contextCollectorCollect.mockResolvedValue(emptyContext());
-      // 최신순 60회차(약 24일치). 진행은 51번째 회차(20일 전)에만 있다.
-      const runs = Array.from({ length: 60 }, (_, index) => ({
-        id: 1000 - index,
-        output: null,
-        inputSnapshot: { goalProgress: index === 50 ? [1] : [] },
-        endedAt: new Date(now.getTime() - index * 0.4 * DAY),
-      }));
-      // 실제 저장소처럼 limit 을 지킨다 — 상한이 창보다 작으면 51번째가 잘린다.
-      agentRunServiceFindRecent.mockImplementation(
-        async ({ limit }: { limit: number }) => runs.slice(0, limit),
-      );
 
       const outcome = await usecase.execute({
         extraContext: '',

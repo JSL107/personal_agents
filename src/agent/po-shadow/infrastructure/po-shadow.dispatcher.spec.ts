@@ -15,6 +15,8 @@ const activeGoal = (id: number, title = `목표 ${id}`): ProductGoalRecord => ({
   id,
   slackUserId: 'U1',
   title,
+  kind: 'TASK',
+  why: null,
   successCriterion: '배포 완료',
   keywords: [title],
   dueDate: null,
@@ -65,7 +67,9 @@ describe('PoShadowDispatcher — 제품 목표', () => {
         payload: {
           action: 'CREATE',
           draft: {
+            kind: 'TASK',
             title: '보존기간 파일 파기',
+            why: null,
             successCriterion: '운영 배포 완료',
             keywords: ['보존기간', '파일', '파기'],
             dueDate: '2026-12-31',
@@ -79,17 +83,17 @@ describe('PoShadowDispatcher — 제품 목표', () => {
   });
 
   // 정책 3 — 달성 기준 없는 목표는 카드도 만들지 않고 되묻는다.
-  it.each([
-    ['이번 분기 목표는 업로드 안정화', '달성 기준이 없어'],
-    [
-      '이번 분기 목표는 업로드 안정화, 달성 기준은 개선하기',
-      '끝을 판정할 수 없어',
-    ],
-  ])('%s → 되묻는다', async (text, expected) => {
-    const outcome = await dispatch(text);
+  it('달성 기준이 없으면 되묻는다', async () => {
+    const outcome = await dispatch('이번 분기 목표는 업로드 안정화');
     expect(createPreview.execute).not.toHaveBeenCalled();
     expect(outcome.preview).toBeUndefined();
-    expect(outcome.formattedText).toContain(expected);
+    expect(outcome.formattedText).toContain('달성 기준이 없어');
+  });
+
+  // 기준 문장의 품질은 코드가 아니라 카드를 보는 사람이 판정한다.
+  it('숫자·완료 낱말이 없는 기준도 카드에 실어 사람에게 묻는다', async () => {
+    await dispatch('이번 분기 목표는 업로드 안정화, 달성 기준은 개선하기');
+    expect(createPreview.execute).toHaveBeenCalledTimes(1);
   });
 
   // 정책 4 — 4번째 선언은 카드 없이 닫을 목표를 묻는다.
@@ -147,7 +151,7 @@ describe('PoShadowDispatcher — 제품 목표', () => {
     repository.findActive.mockResolvedValue([activeGoal(4, '업로드 안정화')]);
     const outcome = await dispatch('목표 보여줘');
     expect(outcome.agentRunId).toBe(0);
-    expect(outcome.formattedText).toContain('활성 제품 목표 1/3');
+    expect(outcome.formattedText).toContain('활성 목표* — 숙제 1/3 · 방향 0/2');
     expect(outcome.formattedText).toContain('업로드 안정화');
   });
 

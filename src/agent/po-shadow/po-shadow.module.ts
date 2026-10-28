@@ -6,6 +6,7 @@ import { ModelRouterModule } from '../../model-router/model-router.module';
 import { NotionModule } from '../../notion/notion.module';
 import { SlackCollectorModule } from '../../slack-collector/slack-collector.module';
 import { GeneratePoShadowUsecase } from './application/generate-po-shadow.usecase';
+import { HandleGoalAnswerUsecase } from './application/handle-goal-answer.usecase';
 import { PoShadowContextCollector } from './application/po-shadow-context.collector';
 import { PoShadowDispatcher } from './infrastructure/po-shadow.dispatcher';
 import { ProductGoalModule } from './product-goal.module';
@@ -21,9 +22,14 @@ import { ProductGoalModule } from './product-goal.module';
   ],
   providers: [
     GeneratePoShadowUsecase,
+    HandleGoalAnswerUsecase,
     PoShadowContextCollector,
     PoShadowDispatcher,
   ],
-  exports: [GeneratePoShadowUsecase, PoShadowDispatcher],
+  exports: [
+    GeneratePoShadowUsecase,
+    HandleGoalAnswerUsecase,
+    PoShadowDispatcher,
+  ],
 })
 export class PoShadowModule {}

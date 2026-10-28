@@ -13,6 +13,7 @@ import { PaperRecommendModule } from '../agent/paper-recommend/paper-recommend.m
 import { PmAgentModule } from '../agent/pm/pm-agent.module';
 import { PoEvalModule } from '../agent/po-eval/po-eval.module';
 import { PoShadowModule } from '../agent/po-shadow/po-shadow.module';
+import { ProductGoalModule } from '../agent/po-shadow/product-goal.module';
 import { SyncHoldingsUsecase } from '../agent/stock/application/sync-holdings.usecase';
 import { StockMonitorPrismaRepository } from '../agent/stock/infrastructure/stock-monitor.prisma.repository';
 import { StockModule } from '../agent/stock/stock.module';
@@ -67,6 +68,7 @@ import { BlogRevisionReportAutopilotTask } from './infrastructure/tasks/blog-rev
 import { CujCheckAutopilotTask } from './infrastructure/tasks/cuj-check.autopilot-task';
 import { DocsSyncAuditTask } from './infrastructure/tasks/docs-sync-audit.autopilot-task';
 import { EveningRetroPublishTask } from './infrastructure/tasks/evening-retro-publish.autopilot-task';
+import { GoalCheckinAutopilotTask } from './infrastructure/tasks/goal-checkin.autopilot-task';
 import { HolidaySyncAutopilotTask } from './infrastructure/tasks/holiday-sync.autopilot-task';
 import { HumanizeResearchAutopilotTask } from './infrastructure/tasks/humanize-research.autopilot-task';
 import { IdeaTriageAutopilotTask } from './infrastructure/tasks/idea-triage.autopilot-task';
@@ -125,6 +127,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     CtoModule,
     ImpactReporterModule,
     PoShadowModule,
+    ProductGoalModule,
     AgentRunModule,
     EpisodicMemoryModule,
     MemoryVacuumModule,
@@ -164,6 +167,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     },
     PoEvalAutopilotTask,
     PoShadowAutopilotTask,
+    GoalCheckinAutopilotTask,
     SecretariatAutopilotTask,
     MorningBriefingAutopilotTask,
     WorkReviewerAutopilotTask,
@@ -269,6 +273,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
       provide: AUTOPILOT_TASKS,
       useFactory: (
         poShadow: PoShadowAutopilotTask,
+        goalCheckin: GoalCheckinAutopilotTask,
         poEval: PoEvalAutopilotTask,
         secretariat: SecretariatAutopilotTask,
         morning: MorningBriefingAutopilotTask,
@@ -312,6 +317,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         jobFeedGap: JobFeedGapAutopilotTask,
       ) => [
         poShadow,
+        goalCheckin,
         poEval,
         secretariat,
         morning,
@@ -356,6 +362,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
       ],
       inject: [
         PoShadowAutopilotTask,
+        GoalCheckinAutopilotTask,
         PoEvalAutopilotTask,
         SecretariatAutopilotTask,
         MorningBriefingAutopilotTask,

@@ -26,6 +26,7 @@ export const AUTOPILOT_DELIVERY_ROUTE: Readonly<
   secretariat: 'console',
   'morning-briefing': 'slack',
   'po-shadow': 'slack',
+  'goal-checkin': 'slack',
   'weekly-summary': 'slack',
   'impact-report': 'slack',
   'run-retro': 'console',

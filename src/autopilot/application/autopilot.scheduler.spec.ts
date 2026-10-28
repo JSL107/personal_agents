@@ -77,8 +77,10 @@ describe('AutopilotScheduler', () => {
     //   + study-applicability(오늘의 공부 적용 판정, 단독 그룹)
     //   + idea-triage(평일 아이디어 판정, 단독 그룹)
     //   + cuj-check(매일 핵심 여정 점검, 단독 그룹)
-    //   + humanize-research(주간 윤문 규칙 dry-run, 단독 그룹) = 38그룹.
-    expect(queue.add).toHaveBeenCalledTimes(38);
+    //   + humanize-research(주간 윤문 규칙 dry-run, 단독 그룹)
+    //   + goal-checkin(월요일 owner DM 질문, 단독 그룹) = 39그룹.
+    expect(queue.add).toHaveBeenCalledTimes(39);
+    expect(addCalls).toContain('goal-checkin');
     expect(addCalls).toContain('idea-triage');
     expect(addCalls).toContain('memory-vacuum');
     expect(addCalls).toContain('holiday-sync');
@@ -114,6 +116,32 @@ describe('AutopilotScheduler', () => {
     expect(addCalls).toContain('ai-cli-env-apply');
     expect(addCalls).toContain('job-feed');
     expect(addCalls).toContain('job-feed-gap');
+  });
+
+  it('owner-dm 그룹은 AUTOPILOT_TARGET 을 무시하고 owner ID로 보낸다', async () => {
+    const queue = makeQueue();
+    const config = {
+      get: jest.fn((key: string) => {
+        if (key === 'AUTOPILOT_OWNER_SLACK_USER_ID') {
+          return 'U1';
+        }
+        if (key === 'AUTOPILOT_TARGET') {
+          return 'C-channel';
+        }
+        return undefined;
+      }),
+    };
+    const scheduler = new AutopilotScheduler(queue as never, config as never);
+
+    await scheduler.onApplicationBootstrap();
+
+    const goalCall = queue.add.mock.calls.find(
+      (call: unknown[]) => call[0] === 'goal-checkin',
+    );
+    expect(goalCall?.[1]).toEqual({ ownerSlackUserId: 'U1', target: 'U1' });
+    expect(goalCall?.[2]).toMatchObject({
+      repeat: { pattern: '15 9 * * 1', tz: 'Asia/Seoul' },
+    });
   });
 
   it('evening 그룹 스케줄은 첫 항목(work-reviewer) env 기반 → 19:40', async () => {

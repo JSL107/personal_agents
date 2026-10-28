@@ -91,9 +91,6 @@ export interface PoShadowReport {
   degradedSources: string[];
   // factSummary·degradedSources 와 같은 자리 — 코드가 채운다. 모델에게는 null 을 요구한다.
   recoverySummary: PoShadowRecoverySummary | null;
-  // 묵은 목표 질문("이 목표 아직 유효한가요?"). 코드가 채우고, 없으면 키 자체가 없다 —
-  // 활성 목표가 없는 사용자의 리포트 형태를 단계 3 이전과 같게 둔다.
-  goalCheckIns?: string[];
   // findings 와 같은 인덱스. 코드가 채우고, 이 필드가 없는 회차(2026-10 이전)는 링크 없이 렌더한다.
   findingReferences?: PoShadowFindingReference[][];
   // 코드가 채운다. 이 필드가 없는 회차(2026-10-22 이전)는 비교 기준이 없어 다음 회차가 모든 사실을 새 것으로 본다.

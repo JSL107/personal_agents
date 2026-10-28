@@ -15,7 +15,8 @@ export interface EventTrigger {
 export type PlaybookTrigger = CronTrigger | EventTrigger;
 
 // 알림 성격이 다른 묶음. 라인마다 발송 대상을 따로 둘 수 있다(AUTOPILOT_<LINE>_TARGET).
-export type PlaybookLine = 'invest' | 'career' | 'review';
+// owner-dm 은 env 없이 항상 owner DM 으로 보낸다. 답을 DM 으로 받아야 하는 질문용.
+export type PlaybookLine = 'invest' | 'career' | 'review' | 'owner-dm';
 
 export interface PlaybookEntry {
   id: string; // 안정 식별자(job name·멱등 키·로그). 예: 'daily-eval'

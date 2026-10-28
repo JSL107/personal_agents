@@ -29,6 +29,7 @@ import {
 } from '../domain/port/product-goal.repository.port';
 import {
   findGoalDeclarationProblem,
+  GOAL_PREVIEW_TTL_MS,
   matchGoalsByTitle,
   parseProductGoalCommand,
   ProductGoalDraft,
@@ -36,7 +37,7 @@ import {
 } from '../domain/product-goal';
 
 // 확인 카드 유효 시간. 선언 직후 승인하는 흐름이라 길게 둘 이유가 없다.
-const GOAL_PREVIEW_TTL_MS = 60 * 60 * 1_000;
+export { GOAL_PREVIEW_TTL_MS } from '../domain/product-goal';
 
 // PO_SHADOW worker 의 Router dispatcher.
 // 제품 목표 선언·조회·닫기는 결정론 파서가 먼저 가른다(ScheduleDispatcher 와 같은 방식).

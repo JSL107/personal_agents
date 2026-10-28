@@ -11,6 +11,8 @@ import {
   DEFAULT_DAILY_EVAL_TIMEZONE,
   DEFAULT_DOCS_AUDIT_CRON,
   DEFAULT_DOCS_AUDIT_TIMEZONE,
+  DEFAULT_GOAL_CHECKIN_CRON,
+  DEFAULT_GOAL_CHECKIN_TIMEZONE,
   DEFAULT_HOLIDAY_SYNC_CRON,
   DEFAULT_HOLIDAY_SYNC_TIMEZONE,
   DEFAULT_HUMANIZE_RESEARCH_CRON,
@@ -242,6 +244,17 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       timezone: DEFAULT_RUN_RETRO_TIMEZONE,
     },
     riskTier: 'T0_AUTO',
+  },
+  {
+    id: 'goal-checkin',
+    taskId: 'goal-checkin',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_GOAL_CHECKIN_CRON,
+      timezone: DEFAULT_GOAL_CHECKIN_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
+    line: 'owner-dm',
   },
   // 주간 블로그 수정률 — 발행한 글을 사람이 얼마나 다시 썼는지. 이 파이프라인에서 글의 품질을
   // 판정하는 유일한 자리다. 읽기만 하고 모델도 부르지 않아 T0_AUTO.

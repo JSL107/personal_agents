@@ -98,6 +98,24 @@ describe('AUTOPILOT_PLAYBOOK', () => {
     });
   });
 
+  it('goal-checkin 은 월요일 09:15 KST owner DM 독립 그룹이다', () => {
+    const goalCheckin = AUTOPILOT_PLAYBOOK.find(
+      (entry) => entry.id === 'goal-checkin',
+    );
+
+    expect(goalCheckin).toMatchObject({
+      taskId: 'goal-checkin',
+      riskTier: 'T0_AUTO',
+      line: 'owner-dm',
+      trigger: {
+        kind: 'CRON',
+        schedule: '15 9 * * 1',
+        timezone: 'Asia/Seoul',
+      },
+    });
+    expect(goalCheckin?.digestGroup).toBeUndefined();
+  });
+
   it('주식 알림 사후 채점을 평일 18시 독립 T0 task로 포함한다', () => {
     const scoring = AUTOPILOT_PLAYBOOK.find(
       (entry) => entry.id === 'stock-alert-scoring',
