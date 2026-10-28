@@ -502,13 +502,24 @@ def readme_excerpt(markdown: str) -> str:
     """README 를 절 단위로 나눠 설치·사용 절을 앞에 두고, 그림·배지·태그를 걷어 README_EXCERPT_LIMIT 로 자른다."""
     starts = [0] + [match.start() for match in _README_HEADING.finditer(markdown)]
     sections = [markdown[start:end] for start, end in zip(starts, starts[1:] + [len(markdown)])]
-    usage = [
-        section for section in sections
-        if section.startswith("#") and _README_USAGE_HEADING.search(section.split("\n", 1)[0])
-    ]
-    ordered = usage + [section for section in sections if section not in usage]
-    text = _README_LINK.sub(r"\1", _README_NOISE.sub(" ", "\n".join(ordered)))
-    text = " ".join(text.split())
+    usage: list[str] = []
+    rest: list[str] = []
+    # 설치 절 아래 하위 절(`## Installation` → `### With pip`)에 명령이 있는 README 가 많아 하위 절째 옮긴다.
+    usage_level = 0
+    for section in sections:
+        level = len(section) - len(section.lstrip("#"))
+        if usage_level and level > usage_level:
+            usage.append(section)
+            continue
+        usage_level = 0
+        if level and _README_USAGE_HEADING.search(section.split("\n", 1)[0]):
+            usage_level = level
+            usage.append(section)
+        else:
+            rest.append(section)
+    text = _README_LINK.sub(r"\1", _README_NOISE.sub(" ", "\n".join(usage + rest)))
+    # 줄 경계를 "; " 로 남긴다. 공백 하나로 이으면 여러 줄 명령이 `cd x npm ci` 처럼 한 명령으로 읽힌다.
+    text = "; ".join(" ".join(line.split()) for line in text.splitlines() if line.strip())
     return text[:README_EXCERPT_LIMIT] + "…" if len(text) > README_EXCERPT_LIMIT else text
 
 
@@ -587,6 +598,8 @@ def collect_tools(
             print(f"tool source '{name}' failed: {error!r}", file=sys.stderr)
             continue
         taken = 0
+        # 인젝션 선별로 빠진 후보도 README 를 이미 받았으므로, 채택 수가 아니라 요청 수로 센다.
+        readme_left = TOOL_CANDIDATES_PER_SOURCE
         for article in articles:
             if taken >= TOOL_CANDIDATES_PER_SOURCE:
                 break
@@ -599,8 +612,14 @@ def collect_tools(
                 continue
             labeled = dict(article, title=f"[{name}] {(article.get('title') or '').strip()}")
             snippet_limit = TOOL_SNIPPET_LIMIT
-            # README 는 채택될 후보에만 받는다(최대 3회). 시간 예산이 남았을 때만 — 모자라면 한 줄 소개로 간다.
-            if article.get("source") == "github" and time.monotonic() - started_at < TOOL_DEADLINE_SEC - TOOL_TIMEOUT_SEC:
+            # README 는 실릴 후보에만, 소스당 TOOL_CANDIDATES_PER_SOURCE 회까지, 시간 예산이 남았을 때만 받는다.
+            # 모자라면 한 줄 소개로 간다.
+            if (
+                article.get("source") == "github"
+                and readme_left > 0
+                and time.monotonic() - started_at < TOOL_DEADLINE_SEC - TOOL_TIMEOUT_SEC
+            ):
+                readme_left -= 1
                 labeled = with_readme(labeled)
                 snippet_limit += README_EXCERPT_LIMIT + len(" README: …")
             text = format_article(len(lines) + 1, labeled, snippet_limit)
@@ -795,8 +814,10 @@ def self_check() -> None:
     assert sent_urls([briefing]) == {"https://github.com/o/r"}
 
     # README 발췌: 설치 절이 맨 앞으로 오고, 그림·태그·코드펜스 표식은 걷히되 명령은 남는다. 서두의 "install" 은 절로 치지 않는다.
-    readme = "# Tool\nno install needed ![b](x.svg) <img src=y>\n## Features\n[fast](https://x)\n## Installation\n```bash\npip install tool\n```\n"
-    assert readme_excerpt(readme) == "## Installation pip install tool # Tool no install needed ## Features fast", readme_excerpt(readme)
+    readme = ("# Tool\nno install needed ![b](x.svg) <img src=y>\n## Features\n[fast](https://x)\n## Installation\n"
+              "### With pip\n```bash\npip install tool\ntool init\n```\n## License\nMIT\n")
+    expected = "## Installation; ### With pip; pip install tool; tool init; # Tool; no install needed; ## Features; fast; ## License; MIT"
+    assert readme_excerpt(readme) == expected, readme_excerpt(readme)
     assert len(readme_excerpt("x" * 5000)) == README_EXCERPT_LIMIT + 1
 
 
