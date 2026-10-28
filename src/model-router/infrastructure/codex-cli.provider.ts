@@ -30,8 +30,6 @@ import {
   killProcessTree,
 } from './cli-process.util';
 
-const execFileAsync = promisify(execFile);
-
 const CODEX_EXECUTABLE = 'codex';
 // 공유 상수 — worker lockDuration(common/queue/worker-options.constant.ts) 도 이 값을 참조한다.
 const CODEX_DEFAULT_TIMEOUT_MS = LLM_CLI_TIMEOUT_MS;
@@ -299,8 +297,9 @@ export const buildCodexPrompt = ({
 // 실측. cwd·throwaway HOME 은 기본 위치만 바꿀 뿐 절대경로 읽기를 막지 못한다).
 // 실측으로 확인한 규칙 (docs/superpowers/specs/2026-10-28-review-repo-read-design.md §2-2):
 // - `--sandbox` 와 함께 넘기면 프로필이 조용히 무시되고 전체 읽기로 돌아간다. 둘을 섞지 않는다.
-// - `:minimal` 은 /private/tmp 를 읽기 허용하므로 deny 를 명시한다 (deny 가 그 아래 read 보다 우선).
-//   workDir 은 tmpdir()(/var/folders) 라 이 deny 에 걸리지 않는다.
+// - `:minimal` 은 /private/tmp 를 읽기 허용하므로 deny 를 명시한다. 더 구체적인 read 항목은 deny 안에서도
+//   읽힌다 — TMPDIR 이 /private/tmp 이거나 비어 tmpdir() 가 /tmp 여도 workDir 은 읽히고 형제 경로는
+//   막힌다 (2026-10-28 실측, /tmp 심링크 경유 우회도 차단).
 // - codex 바이너리 경로를 열지 않으면 세션 생성이 `sandbox-exec: execvp() … Operation not permitted` 로
 //   죽는다. CODEX_HOME 전체가 아니라 packages 만 연다 (auth.json 보호).
 // - 경로는 실제 HOME 기준 절대경로로 쓴다. 자식의 HOME 은 throwaway 라 `~` 를 쓰면 엉뚱한 곳으로 풀린다.
@@ -355,7 +354,8 @@ export const verifyCodexReadLock = async ({
   const canaryFile = join(canaryDir, 'canary.txt');
   const catInSandbox = async (path: string): Promise<boolean> => {
     try {
-      await execFileAsync(
+      // promisify 를 호출 시점에 한다 — 모듈 로드 때 붙잡으면 테스트가 execFile 을 갈아끼울 수 없다.
+      await promisify(execFile)(
         CODEX_EXECUTABLE,
         ['sandbox', ...permissionArgs, '--', 'cat', path],
         {
