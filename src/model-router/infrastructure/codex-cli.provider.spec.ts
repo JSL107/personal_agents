@@ -1,4 +1,7 @@
+import * as childProcess from 'node:child_process';
 import { writeFile } from 'node:fs/promises';
+
+import { Logger } from '@nestjs/common';
 
 import {
   CompletionRequest,
@@ -21,6 +24,7 @@ import {
   computeQuotaBlockUntilMs,
   detectCodexQuotaExhaustion,
   isRetryableCodexError,
+  verifyCodexReadLock,
 } from './codex-cli.provider';
 
 type ProviderWithCompleteOnce = {
@@ -781,5 +785,86 @@ describe('CodexCliProvider.probeReadiness (절전 직후 준비 확인)', () => 
       expect.objectContaining({ prompt: expect.any(String) }),
       30_000,
     );
+  });
+});
+
+type SandboxCatCallback = (error: Error | null, result?: object) => void;
+
+// 경로별로 sandbox cat 성공 여부를 정한다. 마지막 인자가 cat 대상 경로다.
+const mockSandboxCat = (isReadable: (path: string) => boolean): string[] => {
+  const catPaths: string[] = [];
+  // jest setup 이 provider 를 먼저 로드하므로 jest.mock 이 아니라 모듈 속성을 갈아끼운다.
+  jest.spyOn(childProcess, 'execFile').mockImplementation(((
+    _file: string,
+    args: string[],
+    _options: object,
+    callback: SandboxCatCallback,
+  ) => {
+    const path = args[args.length - 1];
+    catPaths.push(path);
+    if (isReadable(path)) {
+      callback(null, { stdout: '', stderr: '' });
+    } else {
+      callback(new Error('Operation not permitted'));
+    }
+  }) as unknown as typeof childProcess.execFile);
+  return catPaths;
+};
+
+describe('verifyCodexReadLock', () => {
+  const readablePath = '/var/w/probe.txt';
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('허용 경로는 읽히고 canary 는 막히면 locked 다', async () => {
+    const catPaths = mockSandboxCat((path) => path === readablePath);
+    await expect(
+      verifyCodexReadLock({ permissionArgs: ['-c', 'x'], readablePath }),
+    ).resolves.toEqual({ locked: true });
+    expect(catPaths[0]).toBe(readablePath);
+    expect(catPaths[1]).toMatch(new RegExp(`^${CODEX_DENIED_READ_ROOT}/`));
+  });
+
+  it('canary 가 읽히면 프로필이 무시된 것으로 판정한다', async () => {
+    mockSandboxCat(() => true);
+    const result = await verifyCodexReadLock({
+      permissionArgs: [],
+      readablePath,
+    });
+    expect(result).toMatchObject({ locked: false });
+    expect(result.locked === false && result.reason).toContain(
+      '차단 경로가 읽힘',
+    );
+  });
+
+  it('허용 경로도 못 읽으면 canary 를 보지 않고 샌드박스 기동 실패로 판정한다', async () => {
+    const catPaths = mockSandboxCat(() => false);
+    const result = await verifyCodexReadLock({
+      permissionArgs: [],
+      readablePath,
+    });
+    expect(result.locked === false && result.reason).toContain(
+      '허용 경로도 읽지 못함',
+    );
+    // canary 를 이어서 보면 "막혔다" 가 나와 통과로 오판할 수 있다.
+    expect(catPaths).toEqual([readablePath]);
+  });
+
+  it('부팅 점검이 실패해도 예외 없이 ERROR 로그만 남긴다 (fail-open 은 의도)', async () => {
+    mockSandboxCat(() => false);
+    const errorSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+    const provider = new CodexCliProvider() as unknown as {
+      checkReadLock: () => Promise<void>;
+    };
+
+    await expect(provider.checkReadLock()).resolves.toBeUndefined();
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('codex 읽기 범위 잠금 점검 실패'),
+    );
+    errorSpy.mockRestore();
   });
 });
