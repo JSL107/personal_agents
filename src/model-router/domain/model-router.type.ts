@@ -113,6 +113,9 @@ export interface CompletionRequest {
   outputSchema?: OutputJsonSchema;
   // codex 전용 로컬 절대경로 이미지. 지원하지 않는 provider 는 요청을 거부한다.
   imagePaths?: readonly string[];
+  // codex 전용 — 모델이 셸로 읽어도 되는 절대경로(리뷰 재생의 레포 사본). 권한 프로필에 더해지고,
+  // 호출 전 잠금 점검을 통과해야 실행한다. 읽기 차단이 없는 provider 는 요청을 거부한다.
+  readableRoots?: readonly string[];
 }
 
 export interface CompletionResponse {

@@ -191,6 +191,12 @@ export class ClaudeCliProvider implements ModelProviderPort {
     if (request.imagePaths?.length) {
       throw new Error('claude CLI 는 이미지 첨부를 지원하지 않습니다.');
     }
+    // 읽기 범위를 잠글 수단이 없다 — 받으면 디스크 전체를 읽을 수 있는 모델에 경로를 건네게 된다.
+    if (request.readableRoots?.length) {
+      throw new Error(
+        'claude CLI 는 읽기 허용 경로(readableRoots)를 지원하지 않습니다.',
+      );
+    }
 
     // claude CLI 에는 codex 의 `--output-schema` 에 해당하는 인자가 없다. 호출자가 스키마를
     // 걸었는데 여기로 라우팅되면 형태 강제 없이 프롬프트 지시만 남으므로, 그 사실을 소리내어

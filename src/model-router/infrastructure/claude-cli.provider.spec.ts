@@ -18,6 +18,16 @@ describe('ClaudeCliProvider image rejection', () => {
       provider.complete({ prompt: 'x', imagePaths: ['/tmp/frame.jpg'] }),
     ).rejects.toThrow(/claude CLI.*이미지/);
   });
+
+  // 읽기 범위를 잠글 수단이 없는 CLI 에 레포 사본 경로를 건네면 안 된다.
+  it('읽기 허용 경로 요청은 CLI 호출 전에 거부한다', async () => {
+    const provider = new ClaudeCliProvider(
+      {} as ConstructorParameters<typeof ClaudeCliProvider>[0],
+    );
+    await expect(
+      provider.complete({ prompt: 'x', readableRoots: ['/var/r'] }),
+    ).rejects.toThrow(/claude CLI.*readableRoots/);
+  });
 });
 
 describe('buildClaudeArgs', () => {
