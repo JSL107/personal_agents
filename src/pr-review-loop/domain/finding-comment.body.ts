@@ -18,6 +18,19 @@ export const buildFindingCommentBody = ({
 }: BuildFindingCommentBodyInput): string =>
   `${IDAERI_REVIEW_MARKER} · ${category} / ${severity}\n\n${body.trim()}`;
 
+// 코드에 붙일 수 없는 지적(경로가 diff 밖이거나 파일 단위 게시까지 거절됨)을 PR 코멘트 하나로 모은다.
+// 머리말은 위험 지도·판단 보류 같은 다른 PR 코멘트와 같은 계열로, 항목마다 카테고리/심각도를 붙여
+// 줄 지적과 같은 정보를 준다. 본문이 여러 줄이면 둘째 줄부터 들여써 목록 항목 안에 남긴다.
+export const buildPrWideFindingsCommentBody = (
+  findings: BuildFindingCommentBodyInput[],
+): string => {
+  const items = findings.map(
+    ({ category, severity, body }) =>
+      `- **${category} / ${severity}** — ${body.trim().replace(/\n/g, '\n  ')}`,
+  );
+  return `${IDAERI_REVIEW_MARKER} · PR 전체 의견\n\n${items.join('\n')}`;
+};
+
 // 지적 0건으로 끝난 스윕 리뷰가 PR 에 남기는 코멘트.
 //
 // 지적 카드가 아니므로 pr_review_finding 에 적재하지 않는다 — 수확기는 저장된 카드의

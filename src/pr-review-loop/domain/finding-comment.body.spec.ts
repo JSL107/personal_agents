@@ -3,6 +3,7 @@ import {
   buildFindingCommentBody,
   buildNoFindingsCommentBody,
   buildPartialReviewCommentBody,
+  buildPrWideFindingsCommentBody,
   IDAERI_REVIEW_MARKER,
 } from './finding-comment.body';
 
@@ -17,6 +18,33 @@ describe('buildFindingCommentBody', () => {
     expect(body).toBe(
       `${IDAERI_REVIEW_MARKER} · RELIABILITY / MUST_FIX\n\n첫 줄\n둘째 줄`,
     );
+  });
+});
+
+describe('buildPrWideFindingsCommentBody', () => {
+  it('PR 전체 의견 머리말 아래 지적마다 카테고리·심각도를 붙인 항목을 둔다', () => {
+    const body = buildPrWideFindingsCommentBody([
+      {
+        category: 'CORRECTNESS',
+        severity: 'NICE_TO_HAVE',
+        body: ' 범위가 다르다 ',
+      },
+      { category: 'TEST', severity: 'MISSING_TEST', body: '테스트가 없다' },
+    ]);
+
+    expect(body).toBe(
+      `${IDAERI_REVIEW_MARKER} · PR 전체 의견\n\n` +
+        '- **CORRECTNESS / NICE_TO_HAVE** — 범위가 다르다\n' +
+        '- **TEST / MISSING_TEST** — 테스트가 없다',
+    );
+  });
+
+  it('여러 줄 본문은 둘째 줄부터 들여써 목록 항목 밖으로 새지 않는다', () => {
+    const body = buildPrWideFindingsCommentBody([
+      { category: 'RELIABILITY', severity: 'MUST_FIX', body: '첫 줄\n둘째 줄' },
+    ]);
+
+    expect(body).toContain('- **RELIABILITY / MUST_FIX** — 첫 줄\n  둘째 줄');
   });
 });
 

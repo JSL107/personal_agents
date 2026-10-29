@@ -22,6 +22,7 @@ import {
   buildDiffCoverageNote,
   buildFindingCommentBody,
   buildPartialReviewCommentBody,
+  buildPrWideFindingsCommentBody,
   IDAERI_REVIEW_MARKER,
 } from '../domain/finding-comment.body';
 import { buildFindingFingerprint } from '../domain/finding-fingerprint';
@@ -146,7 +147,10 @@ export class PublishFindingsService {
 
     const canPost = isRepoAllowed(input.repo, input.allowlistRaw);
     const hunks = parseDiffHunks(input.diff);
-    const fallback: { record: PrReviewFindingRecord; body: string }[] = [];
+    const fallback: {
+      record: PrReviewFindingRecord;
+      finding: ReviewFinding;
+    }[] = [];
 
     for (const finding of plan.toPost) {
       const record = await this.createCard({
@@ -194,7 +198,7 @@ export class PublishFindingsService {
     }
 
     if (fallback.length > 0) {
-      await this.postGroupedComment({ input, fallback, outcome });
+      await this.postPrWideComment({ input, fallback, outcome });
     }
 
     if (canPost) {
@@ -347,7 +351,9 @@ export class PublishFindingsService {
     return await this.repository.createIfAbsent(createInput);
   }
 
-  // 1) 줄 단위 → 2) 파일 단위 → 3) 일반 코멘트 묶음. 지적이 조용히 유실되지 않게 한다.
+  // 1) 줄 단위 → 2) 같은 파일에 파일 단위 → 3) PR 전체 의견 코멘트. 지적이 조용히 유실되지 않게 한다.
+  // 1·2 는 리뷰 스레드라 👍/👎·답글·Resolve 가 수확되지만, 3 은 일반 코멘트라 수확되지 않는다 —
+  // 그래서 파일이 diff 에 있으면 3 으로 가기 전에 반드시 2 를 거친다.
   private async postWithFallback({
     input,
     finding,
@@ -361,16 +367,16 @@ export class PublishFindingsService {
     record: PrReviewFindingRecord;
     hunks: FileHunkRanges[];
     outcome: PublishOutcome;
-    fallback: { record: PrReviewFindingRecord; body: string }[];
+    fallback: { record: PrReviewFindingRecord; finding: ReviewFinding }[];
   }): Promise<void> {
     const filePath = finding.file;
     // diff 에 없는 경로는 GitHub 이 422 로 거절한다 — 모델이 file 자리에 "PR 본문" 같은
-    // 라벨을 넣는 경우가 실제로 있었다(#492). 헛호출 없이 곧장 묶음 코멘트로 보낸다.
+    // 라벨을 넣는 경우가 실제로 있었다(#492). 헛호출 없이 곧장 PR 전체 의견으로 보낸다.
     if (
       filePath === undefined ||
       !hunks.some((file) => file.filePath === filePath)
     ) {
-      fallback.push({ record, body: finding.body });
+      fallback.push({ record, finding });
       return;
     }
 
@@ -386,34 +392,31 @@ export class PublishFindingsService {
             maxDistance: SNAP_MAX_DISTANCE,
           });
 
-    let posted: { commentId: string; nodeId: string };
-    try {
-      posted = await this.writers
-        .forRepo(input.repo)
-        .client.createReviewComment({
-          repo: input.repo,
-          pullNumber: input.pullNumber,
-          commitSha: input.headSha,
-          filePath,
-          line: snapped,
-          body: buildFindingCommentBody({
-            category: finding.category,
-            severity: finding.severity,
-            body: finding.body,
-          }),
-        });
-    } catch (error: unknown) {
-      this.logger.warn(
-        `인라인 게시 실패, 일반 코멘트로 강등 (${filePath}:${snapped ?? 'file'}): ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-      fallback.push({ record, body: finding.body });
+    let line = snapped;
+    let posted = await this.tryCreateReviewComment({
+      input,
+      finding,
+      filePath,
+      line,
+    });
+    // 줄 게시가 거절되면(스냅한 줄이 GitHub 기준 diff 와 어긋나는 등) 같은 파일에 파일 단위로 한 번 더 —
+    // 파일 머리라도 스레드로 남아야 수확된다. 처음부터 파일 단위였으면 다시 시도할 것이 없다.
+    if (posted === null && line !== null) {
+      line = null;
+      posted = await this.tryCreateReviewComment({
+        input,
+        finding,
+        filePath,
+        line,
+      });
+    }
+    if (posted === null) {
+      fallback.push({ record, finding });
       return;
     }
 
     // 게시는 이미 성공했다 — DB 상태 갱신 실패는 지적 유실이 아니므로 집계·폴백에 영향을 주지 않는다.
-    if (snapped === null) {
+    if (line === null) {
       outcome.file += 1;
     } else {
       outcome.inline += 1;
@@ -421,42 +424,74 @@ export class PublishFindingsService {
     try {
       await this.repository.markPosted({
         id: record.id,
-        postMode: snapped === null ? 'FILE' : 'INLINE',
+        postMode: line === null ? 'FILE' : 'INLINE',
         githubCommentId: posted.commentId,
         githubThreadNodeId: posted.nodeId,
       });
     } catch (error: unknown) {
       this.logger.warn(
-        `게시 성공, DB 상태 갱신 실패 (${filePath}:${snapped ?? 'file'}): ${
+        `게시 성공, DB 상태 갱신 실패 (${filePath}:${line ?? 'file'}): ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
     }
   }
 
-  private async postGroupedComment({
+  // 실패는 null 로 돌려준다 — 강등 여부는 호출부가 정한다.
+  private async tryCreateReviewComment({
+    input,
+    finding,
+    filePath,
+    line,
+  }: {
+    input: PublishFindingsInput;
+    finding: ReviewFinding;
+    filePath: string;
+    line: number | null;
+  }): Promise<{ commentId: string; nodeId: string } | null> {
+    try {
+      return await this.writers.forRepo(input.repo).client.createReviewComment({
+        repo: input.repo,
+        pullNumber: input.pullNumber,
+        commitSha: input.headSha,
+        filePath,
+        line,
+        body: buildFindingCommentBody({
+          category: finding.category,
+          severity: finding.severity,
+          body: finding.body,
+        }),
+      });
+    } catch (error: unknown) {
+      this.logger.warn(
+        `${line === null ? '파일 단위' : '인라인'} 게시 실패 (${filePath}:${line ?? 'file'}): ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return null;
+    }
+  }
+
+  private async postPrWideComment({
     input,
     fallback,
     outcome,
   }: {
     input: PublishFindingsInput;
-    fallback: { record: PrReviewFindingRecord; body: string }[];
+    fallback: { record: PrReviewFindingRecord; finding: ReviewFinding }[];
     outcome: PublishOutcome;
   }): Promise<void> {
-    const lines = [
-      `${IDAERI_REVIEW_MARKER} — 줄 앵커를 찾지 못해 묶어서 남깁니다.`,
-      '',
-      ...fallback.map((item) => `- ${item.body}`),
-    ];
     try {
       await this.writers.forRepo(input.repo).client.addIssueComment({
         repo: input.repo,
         number: input.pullNumber,
-        body: lines.join('\n'),
+        body: buildPrWideFindingsCommentBody(
+          fallback.map((item) => item.finding),
+        ),
       });
     } catch (error: unknown) {
       this.logger.error(
-        `일반 코멘트 강등까지 실패 — 카드는 NOT_POSTED 로 남는다: ${
+        `PR 전체 의견 게시까지 실패 — 카드는 NOT_POSTED 로 남는다: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
@@ -464,7 +499,7 @@ export class PublishFindingsService {
       return;
     }
 
-    // 게시는 이미 성공했다(묶음 코멘트 1건). 카드별 DB 상태 갱신 실패는 지적 유실이 아니므로
+    // 게시는 이미 성공했다(PR 전체 의견 코멘트 1건). 카드별 DB 상태 갱신 실패는 지적 유실이 아니므로
     // 집계는 게시 결과만 반영하고, markPosted 실패는 로그만 남긴다.
     for (const item of fallback) {
       outcome.issueComment += 1;
