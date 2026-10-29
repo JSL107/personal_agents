@@ -9,7 +9,7 @@ import { realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 
-import { buildTarball } from '../domain/__fixtures__/tar-archive';
+import { buildTarball, paxRecord } from '../domain/__fixtures__/tar-archive';
 import {
   extractRepoSnapshot,
   removeOrphanRepoSnapshots,
@@ -139,6 +139,37 @@ describe('extractRepoSnapshot', () => {
       expect(existsSync(join(snapshot.root, 'src/we[ird].key'))).toBe(false);
       expect(existsSync(join(snapshot.root, '.env.example'))).toBe(true);
       expect(existsSync(join(snapshot.root, 'src/index.ts'))).toBe(true);
+    } finally {
+      await snapshot.dispose();
+    }
+  });
+
+  // 파서가 이름 전체를 읽는 것과 bsdtar 가 그 이름으로 실제로 빼는 것은 따로다 — 해제까지 확인한다.
+  it('pax 경로에 줄바꿈이 든 비밀 파일도 실제 해제에서 빠진다', async () => {
+    const tarball = buildTarball({
+      entries: [
+        { path: `${TOP}/`, type: '5' },
+        {
+          path: 'PaxHeader',
+          type: 'x',
+          body: paxRecord({ key: 'path', value: `${TOP}/a\nb/` }),
+        },
+        { path: `${TOP}/placeholder-dir/`, type: '5' },
+        {
+          path: 'PaxHeader',
+          type: 'x',
+          body: paxRecord({ key: 'path', value: `${TOP}/a\nb/.env` }),
+        },
+        { path: `${TOP}/placeholder`, body: 'SECRET=1' },
+        { path: `${TOP}/keep.ts`, body: 'export {};' },
+      ],
+    });
+
+    const snapshot = await extractRepoSnapshot({ tarball });
+    try {
+      expect(existsSync(join(snapshot.root, 'a\nb'))).toBe(true);
+      expect(existsSync(join(snapshot.root, 'a\nb/.env'))).toBe(false);
+      expect(existsSync(join(snapshot.root, 'keep.ts'))).toBe(true);
     } finally {
       await snapshot.dispose();
     }
