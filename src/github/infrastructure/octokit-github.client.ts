@@ -976,7 +976,8 @@ export class OctokitGithubClient implements GithubClientPort {
     this.assertOctokitConfigured();
     const [owner, repoName] = parseRepo(repo);
     try {
-      // ponytail: 크기는 받은 뒤에 잰다 — 상한 밖 레포도 메모리에 한 번 다 올라온다. 운영 경로에 붙일 때 스트리밍으로.
+      // ponytail: 크기는 받은 뒤에 잰다 — 상한 밖 레포도 메모리에 한 번 다 올라온다. 운영 스윕에는 압축 크기를
+      // 실측해 상한 안인 레포만 PR_REVIEW_REPO_READ_REPOS 에 넣는다는 전제로 둔다. 넘는 레포를 켤 때 스트리밍으로.
       const response = await this.octokit!.rest.repos.downloadTarballArchive({
         owner,
         repo: repoName,

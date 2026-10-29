@@ -1,5 +1,5 @@
 import { buildTar, paxRecord } from './__fixtures__/tar-archive';
-import { findUnsafeTarEntries } from './tar-entry-guard';
+import { findUnsafeTarEntries, listTarEntryNames } from './tar-entry-guard';
 
 const TOP = 'o-r-abc';
 
@@ -94,5 +94,36 @@ describe('findUnsafeTarEntries', () => {
     expect(findUnsafeTarEntries({ tar })).toEqual([
       'tar 헤더를 읽지 못했다 (offset 0)',
     ]);
+  });
+
+  // pax 레코드는 길이로 끊는다 — 값 안의 줄바꿈에서 자르면 이름이 짧아져 검사를 비껴간다.
+  it('pax path 값에 줄바꿈이 있어도 이름 전체를 읽는다', () => {
+    const tar = buildTar({
+      entries: [
+        {
+          path: 'PaxHeader',
+          type: 'x',
+          body: paxRecord({ key: 'path', value: `${TOP}/a\nb/.env` }),
+        },
+        { path: 'placeholder', body: 'SECRET=1' },
+      ],
+    });
+
+    expect(listTarEntryNames({ tar })).toEqual([`${TOP}/a\nb/.env`]);
+  });
+
+  it('pax path 값의 줄바꿈 뒤에 숨긴 `..` 도 잡는다', () => {
+    const tar = buildTar({
+      entries: [
+        {
+          path: 'PaxHeader',
+          type: 'x',
+          body: paxRecord({ key: 'path', value: `${TOP}/a\n/../../evil` }),
+        },
+        { path: 'placeholder', body: 'x' },
+      ],
+    });
+
+    expect(findUnsafeTarEntries({ tar })).toHaveLength(1);
   });
 });
