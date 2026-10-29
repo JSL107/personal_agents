@@ -251,19 +251,56 @@ describe('PublishFindingsService', () => {
     expect(outcome.file).toBe(1);
   });
 
-  it('인라인·파일 게시가 모두 실패하면 남은 카드를 일반 코멘트로 묶어 올린다', async () => {
+  it('줄 게시가 거절되면 같은 파일에 파일 단위로 다시 단다 — 스레드여야 수확된다', async () => {
+    github.createReviewComment
+      .mockRejectedValueOnce(new Error('422'))
+      .mockResolvedValueOnce({ commentId: '559', nodeId: 'PRRC_g' });
+
+    const outcome = await service.publish(baseInput([finding()]));
+
+    expect(github.createReviewComment).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ filePath: 'src/foo.service.ts', line: 12 }),
+    );
+    expect(github.createReviewComment).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ filePath: 'src/foo.service.ts', line: null }),
+    );
+    expect(outcome.file).toBe(1);
+    expect(github.addIssueComment).not.toHaveBeenCalled();
+    expect(repository.markPosted).toHaveBeenCalledWith(
+      expect.objectContaining({
+        postMode: 'FILE',
+        githubCommentId: '559',
+        githubThreadNodeId: 'PRRC_g',
+      }),
+    );
+  });
+
+  it('처음부터 파일 단위였는데 거절되면 재시도 없이 PR 전체 의견으로 간다', async () => {
+    github.createReviewComment.mockRejectedValue(new Error('422'));
+    github.addIssueComment.mockResolvedValue(undefined);
+
+    const outcome = await service.publish(baseInput([finding({ line: 900 })]));
+
+    expect(github.createReviewComment).toHaveBeenCalledTimes(1);
+    expect(outcome.issueComment).toBe(1);
+  });
+
+  it('줄·파일 게시가 모두 실패하면 PR 전체 의견 코멘트로 올린다', async () => {
     github.createReviewComment.mockRejectedValue(new Error('422'));
     github.addIssueComment.mockResolvedValue(undefined);
 
     const outcome = await service.publish(baseInput([finding()]));
 
+    expect(github.createReviewComment).toHaveBeenCalledTimes(2);
     expect(github.addIssueComment).toHaveBeenCalledWith(
       expect.objectContaining({
         repo: 'JSL107/personal_agents',
         number: 180,
-        body: expect.stringContaining(
-          '🤖 **이대리 자동 리뷰** — 줄 앵커를 찾지 못해 묶어서 남깁니다.',
-        ),
+        body:
+          '🤖 **이대리 자동 리뷰** · PR 전체 의견\n\n' +
+          '- **RELIABILITY / MUST_FIX** — 트랜잭션 밖에서 저장한다',
       }),
     );
     expect(outcome.issueComment).toBe(1);
@@ -386,7 +423,7 @@ describe('PublishFindingsService', () => {
     expect(github.addIssueComment).not.toHaveBeenCalled();
   });
 
-  it('묶음 게시 중 카드 하나의 markPosted 가 실패해도 카운터 합은 입력과 일치한다', async () => {
+  it('PR 전체 의견 게시 중 카드 하나의 markPosted 가 실패해도 카운터 합은 입력과 일치한다', async () => {
     github.createReviewComment.mockRejectedValue(new Error('422'));
     github.addIssueComment.mockResolvedValue(undefined);
     repository.markPosted
@@ -407,9 +444,10 @@ describe('PublishFindingsService', () => {
     expect(total).toBe(findings.length);
   });
 
-  it('카드 일부만 게시에 실패해도 성공분은 인라인, 실패분은 묶음으로 격리된다', async () => {
+  it('카드 일부만 게시에 실패해도 성공분은 인라인, 실패분은 PR 전체 의견으로 격리된다', async () => {
     github.createReviewComment
       .mockResolvedValueOnce({ commentId: '700', nodeId: 'PRRC_f' })
+      .mockRejectedValueOnce(new Error('422'))
       .mockRejectedValueOnce(new Error('422'));
     github.addIssueComment.mockResolvedValue(undefined);
 

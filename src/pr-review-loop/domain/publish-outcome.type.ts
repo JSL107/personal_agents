@@ -2,7 +2,7 @@
 export interface PublishOutcome {
   inline: number; // 줄 단위 인라인 게시 성공
   file: number; // 줄 앵커 실패 → 파일 단위 강등
-  issueComment: number; // 인라인·파일 모두 실패 → 일반 코멘트 묶음
+  issueComment: number; // 경로가 diff 밖이거나 파일 단위까지 실패 → PR 전체 의견 코멘트
   dryRun: number; // 연습 모드 (게시 안 함)
   notPosted: number; // allowlist 밖 또는 모든 경로 실패
   dropped: number; // 게시 상한 초과
