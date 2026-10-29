@@ -126,4 +126,20 @@ describe('findUnsafeTarEntries', () => {
 
     expect(findUnsafeTarEntries({ tar })).toHaveLength(1);
   });
+
+  // 길이는 10진수만 받는다. Number() 처럼 `0x19`·`1e1` 을 받아들이면 bsdtar 가 버리는 레코드를
+  // 여기서만 읽어, 검사한 이름과 실제로 풀리는 이름이 달라진다.
+  it('10진수가 아닌 pax 길이 레코드는 읽지 않는다', () => {
+    const record = paxRecord({ key: 'path', value: `${TOP}/.env` });
+    const length = record.slice(0, record.indexOf(' '));
+    const hexRecord = `0x${Number(length).toString(16)}${record.slice(length.length)}`;
+    const tar = buildTar({
+      entries: [
+        { path: 'PaxHeader', type: 'x', body: hexRecord },
+        { path: `${TOP}/placeholder`, body: 'x' },
+      ],
+    });
+
+    expect(listTarEntryNames({ tar })).toEqual([`${TOP}/placeholder`]);
+  });
 });

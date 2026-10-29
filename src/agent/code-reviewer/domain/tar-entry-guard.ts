@@ -36,8 +36,14 @@ const readPaxRecords = (body: Buffer): Map<string, string> => {
   let offset = 0;
   while (offset < body.length) {
     const space = body.indexOf(0x20, offset);
-    const length = Number(body.subarray(offset, space).toString('ascii'));
-    if (space === -1 || !Number.isInteger(length) || length <= 0) {
+    if (space === -1) {
+      break;
+    }
+    // 길이는 10진수만 받는다 — `0x19`·`1e1` 을 받아들이면 bsdtar 가 버리는 레코드를 여기서만 읽어
+    // 검사한 이름과 실제로 풀리는 이름이 갈린다. 길이가 1 이상이라 offset 은 매번 늘고 루프는 끝난다.
+    const digits = body.subarray(offset, space).toString('ascii');
+    const length = Number(digits);
+    if (!/^\d+$/.test(digits) || length <= 0) {
       break;
     }
     // 끝의 줄바꿈 한 글자는 레코드 구분자다.
