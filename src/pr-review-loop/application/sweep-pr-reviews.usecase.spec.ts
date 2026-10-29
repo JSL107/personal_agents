@@ -671,13 +671,19 @@ describe('SweepPrReviewsUsecase', () => {
       clock.mockRestore();
     });
 
+    // 예산은 사본 리뷰를 켠 레포가 있을 때만 건다 — 스위치를 비우면 종전 동작 그대로다.
+    const REPO_READ_ON = {
+      ...ENABLED,
+      PR_REVIEW_REPO_READ_REPOS: 'JSL107/personal_agents',
+    };
+
     it('180초를 넘긴 뒤에는 새 리뷰를 시작하지 않는다', async () => {
       reviewUsecase.execute.mockImplementation(async () => {
         now += 180_000;
         return REVIEW_OUTCOME;
       });
 
-      await buildUsecase(ENABLED).execute();
+      await buildUsecase(REPO_READ_ON).execute();
 
       expect(reviewUsecase.execute).toHaveBeenCalledTimes(1);
     });
@@ -691,7 +697,7 @@ describe('SweepPrReviewsUsecase', () => {
         };
       });
 
-      await buildUsecase(ENABLED).execute();
+      await buildUsecase(REPO_READ_ON).execute();
 
       expect(reviewUsecase.execute).toHaveBeenCalledTimes(1);
     });
@@ -699,6 +705,17 @@ describe('SweepPrReviewsUsecase', () => {
     it('예산 안이면 기존 상한(3건)까지 리뷰한다', async () => {
       reviewUsecase.execute.mockImplementation(async () => {
         now += 50_000;
+        return REVIEW_OUTCOME;
+      });
+
+      await buildUsecase(REPO_READ_ON).execute();
+
+      expect(reviewUsecase.execute).toHaveBeenCalledTimes(3);
+    });
+
+    it('사본 리뷰 스위치가 비어 있으면 예산 없이 기존 상한(3건)까지 리뷰한다', async () => {
+      reviewUsecase.execute.mockImplementation(async () => {
+        now += 200_000;
         return REVIEW_OUTCOME;
       });
 
