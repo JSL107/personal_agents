@@ -153,10 +153,11 @@ export class SweepPrReviewsUsecase implements OnApplicationBootstrap {
     const pullRequests = await this.listOpenPullRequests({ repos, ownerLogin });
     const roundStartedAt = Date.now();
     for (const pullRequest of pullRequests) {
+      const budgetSpent = Date.now() - roundStartedAt >= SWEEP_ROUND_BUDGET_MS;
       if (
         reviewed >= NEW_REVIEW_LIMIT_PER_SWEEP ||
         quotaStopped ||
-        Date.now() - roundStartedAt >= SWEEP_ROUND_BUDGET_MS
+        budgetSpent
       ) {
         break;
       }

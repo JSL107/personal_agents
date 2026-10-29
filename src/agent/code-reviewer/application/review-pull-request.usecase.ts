@@ -286,40 +286,43 @@ export class ReviewPullRequestUsecase {
                 : {}),
             });
 
-          let completion: CompletionResponse;
-          try {
-            completion = await callModel(snapshotRoot);
-          } catch (error: unknown) {
-            if (snapshotRoot === undefined || repoReadFallback !== true) {
-              throw error;
-            }
-            const reason = classifyRepoReadFailure(error);
-            const message = `레포 사본 리뷰 실패 (${ref.repo}#${ref.number}, ${reason}) — 사본 없이 다시 리뷰: ${error instanceof Error ? error.message : String(error)}`;
-            // 읽기 잠금 실패는 일시 장애가 아니라 환경 문제(프로필 무시·CLI 변경)라 묻히지 않게 error 로 남긴다.
-            if (reason === RepoReadFallbackReason.READ_LOCK) {
-              this.logger.error(message);
-            } else {
-              this.logger.warn(message);
-            }
-            // 사본은 더 쓰지 않는다. finally 의 dispose 와 두 번 불려도 rm -rf force 라 안전하다.
-            if (repoSnapshot?.status === RepoReadStatus.USED) {
-              await repoSnapshot.snapshot.dispose();
-            }
-            repoReadStatus = RepoReadStatus.FELL_BACK;
-            // 기록은 best-effort — 원장 쓰기 실패로 리뷰까지 잃지 않는다.
+          // 사본 호출이 실패하면 사본 없이 한 번 더 부른다(repoReadFallback 을 켠 호출만).
+          const completeReview = async (): Promise<CompletionResponse> => {
             try {
-              await updateInputSnapshot({
-                ...inputSnapshot,
-                repoRead: RepoReadStatus.FELL_BACK,
-                repoReadFallbackReason: reason,
-              });
-            } catch (snapshotError: unknown) {
-              this.logger.warn(
-                `레포 사본 후퇴 기록 실패 (${ref.repo}#${ref.number}): ${snapshotError instanceof Error ? snapshotError.message : String(snapshotError)}`,
-              );
+              return await callModel(snapshotRoot);
+            } catch (error: unknown) {
+              if (snapshotRoot === undefined || repoReadFallback !== true) {
+                throw error;
+              }
+              const reason = classifyRepoReadFailure(error);
+              const message = `레포 사본 리뷰 실패 (${ref.repo}#${ref.number}, ${reason}) — 사본 없이 다시 리뷰: ${error instanceof Error ? error.message : String(error)}`;
+              // 읽기 잠금 실패는 일시 장애가 아니라 환경 문제(프로필 무시·CLI 변경)라 묻히지 않게 error 로 남긴다.
+              if (reason === RepoReadFallbackReason.READ_LOCK) {
+                this.logger.error(message);
+              } else {
+                this.logger.warn(message);
+              }
+              // 사본은 더 쓰지 않는다. finally 의 dispose 와 두 번 불려도 rm -rf force 라 안전하다.
+              if (repoSnapshot?.status === RepoReadStatus.USED) {
+                await repoSnapshot.snapshot.dispose();
+              }
+              repoReadStatus = RepoReadStatus.FELL_BACK;
+              // 기록은 best-effort — 원장 쓰기 실패로 리뷰까지 잃지 않는다.
+              try {
+                await updateInputSnapshot({
+                  ...inputSnapshot,
+                  repoRead: RepoReadStatus.FELL_BACK,
+                  repoReadFallbackReason: reason,
+                });
+              } catch (snapshotError: unknown) {
+                this.logger.warn(
+                  `레포 사본 후퇴 기록 실패 (${ref.repo}#${ref.number}): ${snapshotError instanceof Error ? snapshotError.message : String(snapshotError)}`,
+                );
+              }
+              return await callModel(undefined);
             }
-            completion = await callModel(undefined);
-          }
+          };
+          const completion = await completeReview();
 
           // 짝이 틀린 판정(보류·등급)은 파서가 보정한다 — 모델 출력을 코드가 고쳤다는 사실은 남긴다.
           const review = parsePullRequestReview(completion.text, (message) => {

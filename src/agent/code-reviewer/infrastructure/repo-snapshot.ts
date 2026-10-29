@@ -135,6 +135,7 @@ export const removeOrphanRepoSnapshots = async ({
   tmpRoot = tmpdir(),
   isAlive = isProcessAlive,
 }: {
+  // 테스트가 임시 폴더와 생존 판정을 바꿔 끼우려고 연다. 운영 호출(부팅 훅)은 인자 없이 부른다.
   tmpRoot?: string;
   isAlive?: (pid: number) => boolean;
 } = {}): Promise<string[]> => {

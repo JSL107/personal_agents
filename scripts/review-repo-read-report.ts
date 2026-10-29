@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 
 import { TriggerType } from '../src/agent-run/domain/agent-run.type';
 import { AgentType } from '../src/model-router/domain/model-router.type';
@@ -28,11 +28,19 @@ const readDays = (argv: readonly string[]): number => {
   return days;
 };
 
-const snapshotField = (snapshot: unknown, key: string): string | undefined => {
-  if (typeof snapshot !== 'object' || snapshot === null) {
+// input_snapshot 은 Prisma Json 이다. 객체가 아니면(배열·스칼라·null) 값이 없는 것으로 본다.
+const snapshotField = (
+  snapshot: Prisma.JsonValue,
+  key: string,
+): string | undefined => {
+  if (
+    snapshot === null ||
+    typeof snapshot !== 'object' ||
+    Array.isArray(snapshot)
+  ) {
     return undefined;
   }
-  const value = (snapshot as Record<string, unknown>)[key];
+  const value = snapshot[key];
   return typeof value === 'string' ? value : undefined;
 };
 

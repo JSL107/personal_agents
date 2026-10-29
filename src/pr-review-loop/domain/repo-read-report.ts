@@ -47,11 +47,22 @@ export interface RepoReadReport {
   };
 }
 
-const countBy = (values: readonly string[]): Record<string, number> =>
-  values.reduce<Record<string, number>>(
-    (counts, value) => ({ ...counts, [value]: (counts[value] ?? 0) + 1 }),
-    {},
-  );
+interface ReportWindow {
+  from: Date;
+  // 끝(미포함). 현재 구간은 끝이 없다.
+  to?: Date;
+}
+
+const isInWindow = (at: Date, window: ReportWindow): boolean =>
+  at >= window.from && (window.to === undefined || at < window.to);
+
+const countBy = (values: readonly string[]): Record<string, number> => {
+  const counts: Record<string, number> = {};
+  for (const value of values) {
+    counts[value] = (counts[value] ?? 0) + 1;
+  }
+  return counts;
+};
 
 const median = (values: readonly number[]): number | null => {
   if (values.length === 0) {
@@ -59,10 +70,14 @@ const median = (values: readonly number[]): number | null => {
   }
   const sorted = [...values].sort((left, right) => left - right);
   const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 1
-    ? sorted[middle]
-    : (sorted[middle - 1] + sorted[middle]) / 2;
+  if (sorted.length % 2 === 1) {
+    return sorted[middle];
+  }
+  return (sorted[middle - 1] + sorted[middle]) / 2;
 };
+
+const definedValues = (values: readonly (string | undefined)[]): string[] =>
+  values.filter((value): value is string => value !== undefined);
 
 const adoptionOf = (cards: readonly RepoReadCardRow[]): AdoptionWindow => {
   const adopted = cards.filter((card) =>
@@ -72,11 +87,78 @@ const adoptionOf = (cards: readonly RepoReadCardRow[]): AdoptionWindow => {
     (card) => card.status === REJECTED_STATUS,
   ).length;
   const total = adopted + rejected;
+  const ratePercent =
+    total < ADOPTION_MIN_SAMPLE ? null : Math.round((adopted / total) * 100);
+  return { adopted, rejected, ratePercent };
+};
+
+const decidedIn = (
+  cards: readonly RepoReadCardRow[],
+  window: ReportWindow,
+): RepoReadCardRow[] =>
+  cards.filter(
+    (card) => card.decidedAt !== null && isInWindow(card.decidedAt, window),
+  );
+
+const postModesCreatedIn = (
+  cards: readonly RepoReadCardRow[],
+  window: ReportWindow,
+): Record<string, number> =>
+  countBy(
+    cards
+      .filter((card) => isInWindow(card.createdAt, window))
+      .map((card) => card.postMode),
+  );
+
+const summarizeOneRepo = ({
+  repo,
+  runs,
+  cards,
+  current,
+  previous,
+}: {
+  repo: string;
+  // 이 레포의 행만 받는다.
+  runs: readonly RepoReadRunRow[];
+  cards: readonly RepoReadCardRow[];
+  current: ReportWindow;
+  previous: ReportWindow;
+}): RepoReadReport => {
+  const currentRuns = runs.filter((row) => isInWindow(row.startedAt, current));
+  const durations = currentRuns
+    .map((row) => row.durationMs)
+    .filter((value): value is number => value !== null);
+  const usedDurations = currentRuns
+    .filter((row) => row.repoRead === 'USED')
+    .map((row) => row.durationMs)
+    .filter((value): value is number => value !== null);
+  const repoReadCounts = countBy(
+    definedValues(currentRuns.map((row) => row.repoRead)),
+  );
+  const fallbackReasonCounts = countBy(
+    definedValues(currentRuns.map((row) => row.repoReadFallbackReason)),
+  );
+  const maxDurationMs = durations.length === 0 ? null : Math.max(...durations);
+  const over600sCount = durations.filter(
+    (value) => value > OVER_DURATION_MS,
+  ).length;
+  const adoption = {
+    current: adoptionOf(decidedIn(cards, current)),
+    previous: adoptionOf(decidedIn(cards, previous)),
+  };
+  const postModeCounts = {
+    current: postModesCreatedIn(cards, current),
+    previous: postModesCreatedIn(cards, previous),
+  };
   return {
-    adopted,
-    rejected,
-    ratePercent:
-      total < ADOPTION_MIN_SAMPLE ? null : Math.round((adopted / total) * 100),
+    repo,
+    repoReadCounts,
+    fallbackReasonCounts,
+    usedMedianMs: median(usedDurations),
+    maxDurationMs,
+    over600sCount,
+    adoption,
+    postModeCounts,
   };
 };
 
@@ -92,68 +174,21 @@ export const summarizeRepoRead = ({
   windowStart: Date;
   previousWindowStart: Date;
 }): RepoReadReport[] => {
+  const current: ReportWindow = { from: windowStart };
+  const previous: ReportWindow = { from: previousWindowStart, to: windowStart };
   const repos = [
     ...new Set([
       ...runs.map((row) => row.repo),
       ...cards.map((row) => row.repo),
     ]),
   ].sort();
-  const inCurrent = (at: Date): boolean => at >= windowStart;
-  const inPrevious = (at: Date): boolean =>
-    at >= previousWindowStart && at < windowStart;
-
-  return repos.map((repo) => {
-    const currentRuns = runs.filter(
-      (row) => row.repo === repo && inCurrent(row.startedAt),
-    );
-    const repoCards = cards.filter((card) => card.repo === repo);
-    const durations = currentRuns
-      .map((row) => row.durationMs)
-      .filter((value): value is number => value !== null);
-    return {
+  return repos.map((repo) =>
+    summarizeOneRepo({
       repo,
-      repoReadCounts: countBy(
-        currentRuns
-          .map((row) => row.repoRead)
-          .filter((value): value is string => value !== undefined),
-      ),
-      fallbackReasonCounts: countBy(
-        currentRuns
-          .map((row) => row.repoReadFallbackReason)
-          .filter((value): value is string => value !== undefined),
-      ),
-      usedMedianMs: median(
-        currentRuns
-          .filter((row) => row.repoRead === 'USED' && row.durationMs !== null)
-          .map((row) => row.durationMs as number),
-      ),
-      maxDurationMs: durations.length === 0 ? null : Math.max(...durations),
-      over600sCount: durations.filter((value) => value > OVER_DURATION_MS)
-        .length,
-      adoption: {
-        current: adoptionOf(
-          repoCards.filter(
-            (card) => card.decidedAt !== null && inCurrent(card.decidedAt),
-          ),
-        ),
-        previous: adoptionOf(
-          repoCards.filter(
-            (card) => card.decidedAt !== null && inPrevious(card.decidedAt),
-          ),
-        ),
-      },
-      postModeCounts: {
-        current: countBy(
-          repoCards
-            .filter((card) => inCurrent(card.createdAt))
-            .map((card) => card.postMode),
-        ),
-        previous: countBy(
-          repoCards
-            .filter((card) => inPrevious(card.createdAt))
-            .map((card) => card.postMode),
-        ),
-      },
-    };
-  });
+      runs: runs.filter((row) => row.repo === repo),
+      cards: cards.filter((card) => card.repo === repo),
+      current,
+      previous,
+    }),
+  );
 };
