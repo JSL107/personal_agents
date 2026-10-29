@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { ReviewPullRequestUsecase } from '../../agent/code-reviewer/application/review-pull-request.usecase';
+import * as repoSnapshotModule from '../../agent/code-reviewer/infrastructure/repo-snapshot';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { GithubClientPort } from '../../github/domain/port/github-client.port';
 import { CodexQuotaExceededException } from '../../model-router/infrastructure/codex-cli.provider';
@@ -620,6 +621,120 @@ describe('SweepPrReviewsUsecase', () => {
     });
     expect(reviewUsecase.execute).not.toHaveBeenCalled();
     expect(results).toEqual([]);
+  });
+
+  describe('레포 사본 리뷰 (PR_REVIEW_REPO_READ_REPOS)', () => {
+    it('목록에 든 레포의 PR 만 사본 리뷰와 후퇴를 켠다', async () => {
+      github.listOpenPullRequestRefs.mockResolvedValue([
+        OPEN_PR,
+        { ...OPEN_PR, repo: 'org/other', number: 181 },
+      ]);
+
+      await buildUsecase({
+        ...ENABLED,
+        PR_REVIEW_INLINE_REPOS: 'JSL107/personal_agents,org/other',
+        PR_REVIEW_REPO_READ_REPOS: 'JSL107/personal_agents',
+      }).execute();
+
+      const inputs = reviewUsecase.execute.mock.calls.map(([input]) => input);
+      const self = inputs.find((input) => input.prRef.endsWith('#180'));
+      const other = inputs.find((input) => input.prRef.endsWith('#181'));
+      expect(self).toMatchObject({ repoRead: true, repoReadFallback: true });
+      expect(other).not.toHaveProperty('repoRead');
+      expect(other).not.toHaveProperty('repoReadFallback');
+    });
+
+    it('미설정이면 어떤 PR 에도 사본 리뷰를 켜지 않는다', async () => {
+      await buildUsecase(ENABLED).execute();
+
+      const [input] = reviewUsecase.execute.mock.calls[0];
+      expect(input).not.toHaveProperty('repoRead');
+      expect(input).not.toHaveProperty('repoReadFallback');
+    });
+  });
+
+  describe('회차 시간 예산', () => {
+    const many = Array.from({ length: 5 }, (_, index) => ({
+      ...OPEN_PR,
+      number: 300 + index,
+    }));
+    let now: number;
+    let clock: jest.SpyInstance;
+
+    beforeEach(() => {
+      now = 1_800_000_000_000;
+      clock = jest.spyOn(Date, 'now').mockImplementation(() => now);
+      github.listOpenPullRequestRefs.mockResolvedValue(many);
+    });
+
+    afterEach(() => {
+      clock.mockRestore();
+    });
+
+    it('180초를 넘긴 뒤에는 새 리뷰를 시작하지 않는다', async () => {
+      reviewUsecase.execute.mockImplementation(async () => {
+        now += 180_000;
+        return REVIEW_OUTCOME;
+      });
+
+      await buildUsecase(ENABLED).execute();
+
+      expect(reviewUsecase.execute).toHaveBeenCalledTimes(1);
+    });
+
+    it('지적 0건 리뷰도 예산을 넘기면 회차를 끝낸다', async () => {
+      reviewUsecase.execute.mockImplementation(async () => {
+        now += 200_000;
+        return {
+          ...REVIEW_OUTCOME,
+          result: { ...REVIEW_OUTCOME.result, mustFix: [], findings: [] },
+        };
+      });
+
+      await buildUsecase(ENABLED).execute();
+
+      expect(reviewUsecase.execute).toHaveBeenCalledTimes(1);
+    });
+
+    it('예산 안이면 기존 상한(3건)까지 리뷰한다', async () => {
+      reviewUsecase.execute.mockImplementation(async () => {
+        now += 50_000;
+        return REVIEW_OUTCOME;
+      });
+
+      await buildUsecase(ENABLED).execute();
+
+      expect(reviewUsecase.execute).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  describe('onApplicationBootstrap', () => {
+    it('죽은 프로세스가 남긴 사본을 지운다', async () => {
+      const remove = jest
+        .spyOn(repoSnapshotModule, 'removeOrphanRepoSnapshots')
+        .mockResolvedValue(['/tmp/idaeri-review-repo-1-x']);
+
+      await buildUsecase(ENABLED).onApplicationBootstrap();
+
+      expect(remove).toHaveBeenCalledTimes(1);
+      remove.mockRestore();
+    });
+
+    it('정리가 실패해도 부팅을 막지 않는다', async () => {
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      const remove = jest
+        .spyOn(repoSnapshotModule, 'removeOrphanRepoSnapshots')
+        .mockRejectedValue(new Error('EACCES'));
+
+      await expect(
+        buildUsecase(ENABLED).onApplicationBootstrap(),
+      ).resolves.toBeUndefined();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('EACCES'));
+      remove.mockRestore();
+      warn.mockRestore();
+    });
   });
 
   it('스윕 1회의 신규 리뷰는 상한(3건)까지만', async () => {
