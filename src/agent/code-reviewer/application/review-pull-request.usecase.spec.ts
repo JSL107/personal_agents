@@ -11,11 +11,17 @@ import {
   CompletionResponse,
   ModelProviderName,
 } from '../../../model-router/domain/model-router.type';
+import {
+  CodexQuotaExceededException,
+  CodexReadLockException,
+  CodexTimeoutException,
+} from '../../../model-router/infrastructure/codex-cli.provider';
 import { PublishFindingsService } from '../../../pr-review-loop/application/publish-findings.service';
 import { ReviewWriterResolver } from '../../../pr-review-loop/application/review-writer.resolver';
 import { CodeReviewerException } from '../domain/code-reviewer.exception';
 import {
   PullRequestReview,
+  RepoReadFallbackReason,
   RepoReadStatus,
 } from '../domain/code-reviewer.type';
 import { CodeReviewerErrorCode } from '../domain/code-reviewer-error-code.enum';
@@ -760,6 +766,156 @@ describe('ReviewPullRequestUsecase', () => {
         }),
       ).rejects.toThrow('codex down');
       expect(dispose).toHaveBeenCalledTimes(1);
+    });
+
+    const okCompletion = (): CompletionResponse => ({
+      text: JSON.stringify(validReview),
+      modelUsed: 'claude-cli',
+      provider: ModelProviderName.CLAUDE,
+    });
+
+    it('사본을 실제로 넘기지 않으면 폴백을 끄지 않는다', async () => {
+      githubClient.downloadTarball.mockResolvedValue({
+        kind: TarballDownloadKind.TOO_LARGE,
+        bytes: 300_000_000,
+      });
+
+      await usecase.execute({
+        prRef: 'foo/bar#34',
+        slackUserId: 'U1',
+        repoRead: true,
+      });
+
+      expect(modelRouter.route.mock.calls[0][0].noFallback).toBeUndefined();
+    });
+
+    it('사본 호출이 실패하면 사본 없이 한 번 더 리뷰하고 FELL_BACK 과 사유를 남긴다', async () => {
+      modelRouter.route
+        .mockRejectedValueOnce(new CodexTimeoutException(300_000))
+        .mockResolvedValueOnce(okCompletion());
+
+      const outcome = await usecase.execute({
+        prRef: 'foo/bar#34',
+        slackUserId: 'U1',
+        repoRead: true,
+        repoReadFallback: true,
+        dryRun: true,
+        isDraft: false,
+      });
+
+      expect(modelRouter.route).toHaveBeenCalledTimes(2);
+      const retry = modelRouter.route.mock.calls[1][0];
+      expect(retry.request.readableRoots).toBeUndefined();
+      expect(retry.request.prompt).not.toContain('[repo snapshot]');
+      expect(retry.noFallback).toBeUndefined();
+      expect(outcome.result).toEqual(validReview);
+      expect(outcome.repoRead).toBe(RepoReadStatus.FELL_BACK);
+      expect(updateInputSnapshot).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          prRef: 'foo/bar#34',
+          dryRun: true,
+          isDraft: false,
+          repoRead: RepoReadStatus.FELL_BACK,
+          repoReadFallbackReason: RepoReadFallbackReason.TIMEOUT,
+        }),
+      );
+      expect(dispose).toHaveBeenCalled();
+    });
+
+    it('codex 쿼터가 막혀 있어도 후퇴 리뷰로 끝내고 QUOTA 를 남긴다', async () => {
+      modelRouter.route
+        .mockRejectedValueOnce(
+          Object.assign(new Error('route failed'), {
+            cause: { lastError: new CodexQuotaExceededException('10:00') },
+          }),
+        )
+        .mockResolvedValueOnce(okCompletion());
+
+      const outcome = await usecase.execute({
+        prRef: 'foo/bar#34',
+        slackUserId: 'U1',
+        repoRead: true,
+        repoReadFallback: true,
+      });
+
+      expect(outcome.result).toEqual(validReview);
+      expect(updateInputSnapshot).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          repoReadFallbackReason: RepoReadFallbackReason.QUOTA,
+        }),
+      );
+    });
+
+    it('repoReadFallback 없이는(재생) 사본 호출 실패를 그대로 올린다', async () => {
+      modelRouter.route.mockRejectedValue(new CodexTimeoutException(300_000));
+
+      await expect(
+        usecase.execute({
+          prRef: 'foo/bar#34',
+          slackUserId: 'U1',
+          repoRead: true,
+          noFallback: true,
+        }),
+      ).rejects.toBeInstanceOf(CodexTimeoutException);
+      expect(modelRouter.route).toHaveBeenCalledTimes(1);
+    });
+
+    it('후퇴 재실행은 호출자가 명시한 noFallback 을 따른다', async () => {
+      modelRouter.route
+        .mockRejectedValueOnce(new Error('codex down'))
+        .mockResolvedValueOnce(okCompletion());
+
+      await usecase.execute({
+        prRef: 'foo/bar#34',
+        slackUserId: 'U1',
+        repoRead: true,
+        repoReadFallback: true,
+        noFallback: true,
+      });
+
+      expect(modelRouter.route.mock.calls[1][0].noFallback).toBe(true);
+    });
+
+    it('후퇴 기록이 실패해도 리뷰는 끝낸다', async () => {
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      modelRouter.route
+        .mockRejectedValueOnce(new Error('codex down'))
+        .mockResolvedValueOnce(okCompletion());
+      updateInputSnapshot
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(new Error('db down'));
+
+      const outcome = await usecase.execute({
+        prRef: 'foo/bar#34',
+        slackUserId: 'U1',
+        repoRead: true,
+        repoReadFallback: true,
+      });
+
+      expect(outcome.result).toEqual(validReview);
+      expect(outcome.repoRead).toBe(RepoReadStatus.FELL_BACK);
+      warn.mockRestore();
+    });
+
+    it('읽기 잠금 실패로 후퇴하면 error 로그를 남긴다', async () => {
+      const error = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+      modelRouter.route
+        .mockRejectedValueOnce(new CodexReadLockException('canary 읽힘'))
+        .mockResolvedValueOnce(okCompletion());
+
+      await usecase.execute({
+        prRef: 'foo/bar#34',
+        slackUserId: 'U1',
+        repoRead: true,
+        repoReadFallback: true,
+      });
+
+      expect(error).toHaveBeenCalledWith(expect.stringContaining('READ_LOCK'));
+      error.mockRestore();
     });
   });
 });

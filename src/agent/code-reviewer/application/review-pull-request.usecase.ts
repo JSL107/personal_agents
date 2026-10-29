@@ -23,7 +23,10 @@ import {
   GithubClientPort,
 } from '../../../github/domain/port/github-client.port';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
-import { AgentType } from '../../../model-router/domain/model-router.type';
+import {
+  AgentType,
+  CompletionResponse,
+} from '../../../model-router/domain/model-router.type';
 import { PublishFindingsService } from '../../../pr-review-loop/application/publish-findings.service';
 import { ReviewWriterResolver } from '../../../pr-review-loop/application/review-writer.resolver';
 import {
@@ -39,6 +42,7 @@ import { isRepoAllowed } from '../../../pr-review-loop/domain/publish-policy';
 import { ConversationContext } from '../../../router/domain/conversation-context.type';
 import {
   PullRequestReview,
+  RepoReadFallbackReason,
   RepoReadStatus,
   RepoSnapshotAttempt,
   ReviewPullRequestInput,
@@ -82,6 +86,7 @@ import {
   RelatedCodeSection,
 } from '../domain/related-code';
 import { extractRepoSnapshot } from '../infrastructure/repo-snapshot';
+import { classifyRepoReadFailure } from './repo-read-fallback';
 
 const DEFAULT_INLINE_MAX = 4;
 // 레포 사본(tarball) 압축 기준 상한 — 넘는 레포는 사본 없이 종전대로 리뷰한다.
@@ -179,6 +184,7 @@ export class ReviewPullRequestUsecase {
     excludeConventionFindingIds,
     noFallback,
     repoRead,
+    repoReadFallback,
   }: ReviewPullRequestInput): Promise<ReviewPullRequestOutcome> {
     // INVALID_PR_REFERENCE 는 파싱 시점에 즉시 예외.
     const ref = parsePrReference(prRef);
@@ -251,7 +257,7 @@ export class ReviewPullRequestUsecase {
           // 규약은 diff 뒤에 붙인다 — "이건 지적하지 말라" 류 지시는 diff 를 다 읽은 뒤
           // 마지막에 있는 편이 긴 컨텍스트에서 덜 묻힌다. 손으로 적은 규약과 기각에서
           // 학습한 규약을 나란히 두어 같은 무게로 읽히게 한다. 사본 안내는 그 앞에 둔다.
-          const prompt =
+          const buildPrompt = (root: string | undefined): string =>
             buildReviewPrompt({
               detail,
               diff,
@@ -259,27 +265,61 @@ export class ReviewPullRequestUsecase {
               relatedCode,
               companionSpecs,
             }) +
-            (snapshotRoot === undefined
-              ? ''
-              : buildRepoSnapshotSection(snapshotRoot)) +
+            (root === undefined ? '' : buildRepoSnapshotSection(root)) +
             buildRepoConventions(detail.repo) +
             learnedConventions;
 
-          const completion = await this.modelRouter.route({
-            agentType: AgentType.CODE_REVIEWER,
-            request: {
-              prompt,
-              systemPrompt: CODE_REVIEWER_SYSTEM_PROMPT,
-              ...(snapshotRoot === undefined
-                ? {}
-                : { readableRoots: [snapshotRoot] }),
-            },
-            // 사본을 켠 회차는 폴백을 끈다 — claude CLI 는 읽기 범위를 잠그지 못해 사본 경로를 거부하고,
-            // 사본 없이 돈 회차가 실험군에 섞이면 비교가 무효다.
-            ...(noFallback === true || repoRead === true
-              ? { noFallback: true }
-              : {}),
-          });
+          const callModel = (
+            root: string | undefined,
+          ): Promise<CompletionResponse> =>
+            this.modelRouter.route({
+              agentType: AgentType.CODE_REVIEWER,
+              request: {
+                prompt: buildPrompt(root),
+                systemPrompt: CODE_REVIEWER_SYSTEM_PROMPT,
+                ...(root === undefined ? {} : { readableRoots: [root] }),
+              },
+              // 사본을 넘기는 호출은 폴백을 끈다 — claude CLI 는 읽기 범위를 잠그지 못해 사본 경로를
+              // 거부한다. 사본을 못 연 회차는 종전 리뷰라 폴백을 그대로 둔다.
+              ...(noFallback === true || root !== undefined
+                ? { noFallback: true }
+                : {}),
+            });
+
+          let completion: CompletionResponse;
+          try {
+            completion = await callModel(snapshotRoot);
+          } catch (error: unknown) {
+            if (snapshotRoot === undefined || repoReadFallback !== true) {
+              throw error;
+            }
+            const reason = classifyRepoReadFailure(error);
+            const message = `레포 사본 리뷰 실패 (${ref.repo}#${ref.number}, ${reason}) — 사본 없이 다시 리뷰: ${error instanceof Error ? error.message : String(error)}`;
+            // 읽기 잠금 실패는 일시 장애가 아니라 환경 문제(프로필 무시·CLI 변경)라 묻히지 않게 error 로 남긴다.
+            if (reason === RepoReadFallbackReason.READ_LOCK) {
+              this.logger.error(message);
+            } else {
+              this.logger.warn(message);
+            }
+            // 사본은 더 쓰지 않는다. finally 의 dispose 와 두 번 불려도 rm -rf force 라 안전하다.
+            if (repoSnapshot?.status === RepoReadStatus.USED) {
+              await repoSnapshot.snapshot.dispose();
+            }
+            repoReadStatus = RepoReadStatus.FELL_BACK;
+            // 기록은 best-effort — 원장 쓰기 실패로 리뷰까지 잃지 않는다.
+            try {
+              await updateInputSnapshot({
+                ...inputSnapshot,
+                repoRead: RepoReadStatus.FELL_BACK,
+                repoReadFallbackReason: reason,
+              });
+            } catch (snapshotError: unknown) {
+              this.logger.warn(
+                `레포 사본 후퇴 기록 실패 (${ref.repo}#${ref.number}): ${snapshotError instanceof Error ? snapshotError.message : String(snapshotError)}`,
+              );
+            }
+            completion = await callModel(undefined);
+          }
 
           // 짝이 틀린 판정(보류·등급)은 파서가 보정한다 — 모델 출력을 코드가 고쳤다는 사실은 남긴다.
           const review = parsePullRequestReview(completion.text, (message) => {
