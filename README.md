@@ -145,7 +145,7 @@ NestJS 11 + DDD/Hexagonal · Prisma 6 + PostgreSQL · Redis/BullMQ · Slack Bolt
 
 **🔁 스스로 배우는 코드 리뷰**
 
-봇이 PR diff 를 읽어 인라인 코멘트로 지적을 달고(`PR_REVIEW_INLINE_REPOS` allowlist — 본인 PR 만. 리뷰 봇 계정을 켜면 `GITHUB_REVIEW_BOT_REPOS` 의 레포는 누가 올린 PR 이든 리뷰한다), 사람이 남긴 👍/👎·답글을 스윕이 수확해 채택/기각을 판정한다.
+봇이 PR diff 를 읽어 인라인 코멘트로 지적을 달고(`PR_REVIEW_INLINE_REPOS` allowlist — 본인 PR 만. 리뷰 봇 계정을 켜면 `GITHUB_REVIEW_BOT_REPOS` 의 레포는 누가 올린 PR 이든 리뷰한다), 사람이 남긴 👍/👎·답글을 스윕이 수확해 채택/기각을 판정한다. `PR_REVIEW_REPO_READ_REPOS` 에 적은 레포는 리뷰 모델이 PR head 시점 레포 사본(비밀 파일 제외)을 읽기 전용으로 열어 diff 밖 호출부·설정까지 확인한다. 사본 리뷰가 실패하면 같은 회차에 사본 없이 다시 리뷰한다.
 
 기각된 지적은 자기 저장소에 한해 그 기각 이유가 **규약**이 되어 다음 리뷰의 프롬프트에 실린다(유효기간이 지나면 저절로 빠진다). 예시로 덧붙이기만 하던 이전 방식은 같은 지적이 3연속 기각되고도 계속 나왔다 — 그래서 예시가 아니라 규약이다. 사례를 쌓던 episodic 경로는 읽는 곳이 사라져 걷어냈다.
 

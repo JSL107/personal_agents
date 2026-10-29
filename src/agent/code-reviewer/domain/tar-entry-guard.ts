@@ -29,14 +29,32 @@ const readString = ({
   return raw.subarray(0, end === -1 ? raw.length : end).toString('utf-8');
 };
 
-// "<len> <key>=<value>\n" 레코드 묶음에서 path·linkpath 만 꺼낸다.
+// "<len> <key>=<value>\n" 레코드 묶음에서 path·linkpath 만 꺼낸다. len 은 레코드 전체 바이트 수다 —
+// 값에 줄바꿈이 들어갈 수 있어 줄 단위로 자르면 이름이 짧아져 검사를 비껴간다. 형식이 깨지면 거기서 멈춘다.
 const readPaxRecords = (body: Buffer): Map<string, string> => {
   const records = new Map<string, string>();
-  for (const line of body.toString('utf-8').split('\n')) {
-    const match = /^\d+ ([^=]+)=(.*)$/.exec(line);
-    if (match !== null) {
-      records.set(match[1], match[2]);
+  let offset = 0;
+  while (offset < body.length) {
+    const space = body.indexOf(0x20, offset);
+    if (space === -1) {
+      break;
     }
+    // 길이는 10진수만 받는다 — `0x19`·`1e1` 을 받아들이면 bsdtar 가 버리는 레코드를 여기서만 읽어
+    // 검사한 이름과 실제로 풀리는 이름이 갈린다. 길이가 1 이상이라 offset 은 매번 늘고 루프는 끝난다.
+    const digits = body.subarray(offset, space).toString('ascii');
+    const length = Number(digits);
+    if (!/^\d+$/.test(digits) || length <= 0) {
+      break;
+    }
+    // 끝의 줄바꿈 한 글자는 레코드 구분자다.
+    const record = body
+      .subarray(space + 1, offset + length - 1)
+      .toString('utf-8');
+    const separator = record.indexOf('=');
+    if (separator > 0) {
+      records.set(record.slice(0, separator), record.slice(separator + 1));
+    }
+    offset += length;
   }
   return records;
 };
@@ -78,9 +96,20 @@ const unsafeReason = ({
     : `링크 대상이 사본 밖이다: ${path} -> ${linkPath}`;
 };
 
-/** 위험한 항목의 사유 목록. 비어 있으면 풀어도 된다. 형식을 읽지 못하면 그 사실도 사유로 낸다. */
-export const findUnsafeTarEntries = ({ tar }: { tar: Buffer }): string[] => {
-  const reasons: string[] = [];
+interface TarEntry {
+  path: string;
+  type: string;
+  linkPath: string;
+}
+
+interface TarEntries {
+  entries: TarEntry[];
+  // 헤더를 읽지 못해 거기서 멈췄으면 그 사유. 앞서 읽은 항목은 entries 에 남는다.
+  error?: string;
+}
+
+const readTarEntries = (tar: Buffer): TarEntries => {
+  const entries: TarEntry[] = [];
   let offset = 0;
   // 다음 항목에만 적용되는 긴 이름(pax 'x' · GNU 'L'/'K').
   let pendingPath: string | undefined;
@@ -96,8 +125,7 @@ export const findUnsafeTarEntries = ({ tar }: { tar: Buffer }): string[] => {
       8,
     );
     if (Number.isNaN(size)) {
-      reasons.push(`tar 헤더를 읽지 못했다 (offset ${offset})`);
-      break;
+      return { entries, error: `tar 헤더를 읽지 못했다 (offset ${offset})` };
     }
     const type = readString({ block, offset: 156, length: 1 });
     const bodyStart = offset + BLOCK;
@@ -130,11 +158,24 @@ export const findUnsafeTarEntries = ({ tar }: { tar: Buffer }): string[] => {
       pendingLinkPath ?? readString({ block, offset: 157, length: 100 });
     pendingPath = undefined;
     pendingLinkPath = undefined;
-
-    const reason = unsafeReason({ path, type, linkPath });
-    if (reason !== null) {
-      reasons.push(reason);
-    }
+    entries.push({ path, type, linkPath });
   }
-  return reasons;
+  return { entries };
 };
+
+/** 위험한 항목의 사유 목록. 비어 있으면 풀어도 된다. 형식을 읽지 못하면 그 사실도 사유로 낸다. */
+export const findUnsafeTarEntries = ({ tar }: { tar: Buffer }): string[] => {
+  const { entries, error } = readTarEntries(tar);
+  const reasons = entries
+    .map((entry) => unsafeReason(entry))
+    .filter((reason): reason is string => reason !== null);
+  return error === undefined ? reasons : [...reasons, error];
+};
+
+/** 아카이브에 적힌 그대로의 항목 경로(최상위 디렉터리 포함). 해제 때 특정 항목을 뺄 이름으로 쓴다. */
+export const listTarEntryNames = ({ tar }: { tar: Buffer }): string[] =>
+  readTarEntries(tar).entries.map((entry) => entry.path);
+
+/** 사본 루트 기준 경로 — 해제 때 벗기는 최상위 디렉터리를 뗀다. */
+export const toSnapshotRelativePath = (path: string): string =>
+  stripTopLevel(path);

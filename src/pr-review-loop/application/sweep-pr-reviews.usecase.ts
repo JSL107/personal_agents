@@ -1,10 +1,16 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  OnApplicationBootstrap,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { ReviewPullRequestUsecase } from '../../agent/code-reviewer/application/review-pull-request.usecase';
 import { CodeReviewerException } from '../../agent/code-reviewer/domain/code-reviewer.exception';
 import { CodeReviewerErrorCode } from '../../agent/code-reviewer/domain/code-reviewer-error-code.enum';
 import { hasNoReviewFindings } from '../../agent/code-reviewer/domain/review-emptiness';
+import { removeOrphanRepoSnapshots } from '../../agent/code-reviewer/infrastructure/repo-snapshot';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import {
   AgentRunStatus,
@@ -41,6 +47,14 @@ const emptySweep = (): SweepExecution => ({ results: [], quotaStopped: false });
 // 리뷰 시간(30~140초) 기준 420초로 여유가 있다. 주기가 3분(2026-08-06)까지 짧아졌으므로
 // 처리량은 시간당 20건 → 60건으로 오히려 는다.
 const NEW_REVIEW_LIMIT_PER_SWEEP = 3;
+// 회차가 새 리뷰를 시작할 수 있는 시간. 넘기면 남은 PR 은 다음 회차가 맡는다.
+// 스윕 주기(DEFAULT_PR_REVIEW_SWEEP_CRON, 3분)와 같게 둔다 — 레포 사본 리뷰(120~285초)는 이 예산 때문에
+// 회차당 사실상 1건이 되고, 종전 리뷰(약 82초)는 2~3건이 돈다. 결과 상태(사본 사용·후퇴·실패)가 아니라
+// 시간으로 끊는 이유는 가장 오래 걸리는 회차가 후퇴·실패 쪽이라서다 — 상태로 끊으면 codex 가 불안정한
+// 날 3건이 모두 후퇴를 밟아 다른 cron 을 굶긴다. 이미 시작한 리뷰는 끊지 않으므로 상한이 아니라 예산이다.
+// 사본 리뷰를 켠 레포(PR_REVIEW_REPO_READ_REPOS)가 있을 때만 건다 — 스위치를 비우면 종전 동작 그대로라
+// 되돌리기가 env 하나로 끝난다.
+const SWEEP_ROUND_BUDGET_MS = 180_000;
 // 열린 PR 조회 기간. 오래 방치된 PR 까지 매번 훑지 않는다.
 const OPEN_PR_LOOKBACK_DAYS = 14;
 // 한 회차에 훑을 열린 PR 상한. 레포별 20 이던 것이 전체 합계 50 으로 바뀌었다 —
@@ -81,7 +95,7 @@ const ALREADY_MERGED = 'ALREADY_MERGED';
 type SweepDecision = 'REVIEW' | 'SKIP';
 
 @Injectable()
-export class SweepPrReviewsUsecase {
+export class SweepPrReviewsUsecase implements OnApplicationBootstrap {
   private readonly logger = new Logger(SweepPrReviewsUsecase.name);
 
   constructor(
@@ -93,6 +107,21 @@ export class SweepPrReviewsUsecase {
     private readonly configService: ConfigService,
     private readonly writers: ReviewWriterResolver,
   ) {}
+
+  // 리뷰 도중 프로세스가 죽으면 사본(회사 코드 포함)이 임시 폴더에 남는다 — 부팅 때 치운다.
+  // 재생 CLI 는 이 모듈을 불러오지 않으므로 재생 부팅에는 돌지 않는다. 정리 실패로 부팅을 막지 않는다.
+  async onApplicationBootstrap(): Promise<void> {
+    try {
+      const removed = await removeOrphanRepoSnapshots();
+      if (removed.length > 0) {
+        this.logger.log(`남은 레포 사본 ${removed.length}개 정리`);
+      }
+    } catch (error: unknown) {
+      this.logger.warn(
+        `남은 레포 사본 정리 실패: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
 
   async execute(): Promise<SweepExecution> {
     if (!this.isEnabled()) {
@@ -123,8 +152,16 @@ export class SweepPrReviewsUsecase {
     // 열린 PR 은 레포를 묶어 한 번에 조회한다 — 레포마다 따로 치면 회차마다 짧은 간격의
     // 연속 검색이 되어 GitHub secondary rate limit 에 걸렸다(실측: 3분마다 403 반복).
     const pullRequests = await this.listOpenPullRequests({ repos, ownerLogin });
+    const roundStartedAt = Date.now();
+    const roundBudgeted = this.repoReadRepos().length > 0;
     for (const pullRequest of pullRequests) {
-      if (reviewed >= NEW_REVIEW_LIMIT_PER_SWEEP || quotaStopped) {
+      const budgetSpent =
+        roundBudgeted && Date.now() - roundStartedAt >= SWEEP_ROUND_BUDGET_MS;
+      if (
+        reviewed >= NEW_REVIEW_LIMIT_PER_SWEEP ||
+        quotaStopped ||
+        budgetSpent
+      ) {
         break;
       }
       const prRef = `${pullRequest.repo}#${pullRequest.number}`;
@@ -442,6 +479,11 @@ export class SweepPrReviewsUsecase {
         triggerType: TriggerType.PR_REVIEW_SWEEP,
         snapshot: { detail, diff },
         dryRun,
+        // 사본을 쓰다 실패하면 같은 회차에 사본 없이 다시 리뷰한다 — 사본 때문에 리뷰가 빠지거나
+        // 재시도 예산을 깎지 않게 한다.
+        ...(this.isRepoReadEnabled(repo)
+          ? { repoRead: true, repoReadFallback: true }
+          : {}),
         // 후보 선별에 쓴 검색 결과가 아니라 방금 조회한 상세의 값을 남긴다. 검색 인덱스는
         // 조금 늦어(같은 지연을 위 mergedAt 가드가 이미 전제로 둔다) ready 가 된 PR 이
         // draft 로 조회될 수 있는데, 그 값을 기록하면 완성본을 리뷰하고도 "draft 때 리뷰함"
@@ -637,6 +679,17 @@ export class SweepPrReviewsUsecase {
       return DEFAULT_INLINE_MAX;
     }
     return parsed;
+  }
+
+  private isRepoReadEnabled(repo: string): boolean {
+    return this.repoReadRepos().includes(repo);
+  }
+
+  private repoReadRepos(): string[] {
+    return (this.configService.get<string>('PR_REVIEW_REPO_READ_REPOS') ?? '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
   }
 
   private allowlistRepos(): string[] {

@@ -93,9 +93,12 @@ export interface ReviewPullRequestInput {
   isDraft?: boolean;
   // 사용자 온디맨드 진입점만 true로 명시한다. 미지정/false면 리뷰 결과만 반환한다.
   publish?: boolean;
-  // 리뷰 재생 전용(`pnpm review:replay --repo-read`) — headSha 시점 레포 사본을 모델에 읽기 전용으로 연다.
-  // 효과를 재기 전이라 운영 경로(스윕·/review-pr·dispatcher)는 넘기지 않는다.
+  // headSha 시점 레포 사본을 모델에 읽기 전용으로 연다. 재생(`pnpm review:replay --repo-read`)과
+  // PR 리뷰 스윕(`PR_REVIEW_REPO_READ_REPOS` 에 든 레포)만 넘긴다. /review-pr·dispatcher 는 넘기지 않는다.
   repoRead?: boolean;
+  // 사본을 넘긴 호출이 실패하면 사본 없이 한 번 더 리뷰한다(FELL_BACK). 스윕만 켠다 — 재생은 사본 유무가
+  // 비교 변수라 실패를 그대로 드러내야 하고, 읽기 잠금 실패 때 실행을 멈추는 계약도 지켜야 한다.
+  repoReadFallback?: boolean;
 }
 
 // repoRead 를 켠 회차에서 사본이 실제로 열렸는가. USED 가 아닌 회차는 사본 없이 종전대로 돌았다 —
@@ -104,6 +107,17 @@ export enum RepoReadStatus {
   USED = 'USED',
   SKIPPED_TOO_LARGE = 'SKIPPED_TOO_LARGE',
   FAILED = 'FAILED',
+  // 사본을 넘긴 호출이 실패해 사본 없이 다시 리뷰했다(호출자가 repoReadFallback 을 켠 회차만).
+  FELL_BACK = 'FELL_BACK',
+}
+
+// 사본 호출이 왜 실패했나. 예외 타입으로 가른다 — 문구 매칭은 생산자 문구가 바뀌면 조용히 어긋난다.
+export enum RepoReadFallbackReason {
+  TIMEOUT = 'TIMEOUT',
+  // 읽기 잠금 점검 실패 — 일시 장애가 아니라 환경 문제(프로필 무시·CLI 변경)다.
+  READ_LOCK = 'READ_LOCK',
+  QUOTA = 'QUOTA',
+  OTHER = 'OTHER',
 }
 
 // 리뷰 모델에게 읽기 전용으로 열어 줄 PR 시점 레포 사본. 만드는 쪽은 infrastructure/repo-snapshot.ts.
