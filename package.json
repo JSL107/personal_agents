@@ -56,6 +56,7 @@
     "review:unlearn": "ts-node scripts/unlearn-review-card.ts",
     "review:dry": "ts-node scripts/review-pr-dry.ts",
     "review:replay": "ts-node scripts/review-replay.ts",
+    "review:repo-read-report": "ts-node scripts/review-repo-read-report.ts",
     "review:calibrate": "ts-node scripts/risk-calibrate.ts",
     "study:diagram": "ts-node scripts/study-diagram.ts",
     "study:applicability": "ts-node scripts/study-applicability.ts",

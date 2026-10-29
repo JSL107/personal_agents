@@ -993,6 +993,12 @@ export class EnvironmentVariables {
   @IsString()
   PR_REVIEW_INLINE_REPOS?: string;
 
+  // 리뷰 모델이 PR head 시점 레포 사본을 읽기 전용으로 열 레포 (콤마 구분 "owner/repo").
+  // 미설정/빈 값 → 꺼짐. 켜기 전 레포 tarball 압축 크기 256MB 이하 확인. 변경은 재시작 후 반영.
+  @IsOptional()
+  @IsString()
+  PR_REVIEW_REPO_READ_REPOS?: string;
+
   // 연습 모드가 기본값 — `false` (string) 일 때만 실제 게시하고, 미설정을 포함한 그 외에는 GitHub 게시도 카드 저장도 없이 Slack 요약만 낸다.
   @IsOptional()
   @IsString()
