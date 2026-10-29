@@ -3,6 +3,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ReviewFinding } from '../../agent/code-reviewer/domain/code-reviewer.type';
 import { computeRiskMap } from '../../agent/code-reviewer/domain/risk-map';
 import {
+  CreateReviewCommentResult,
   PullRequestDetail,
   PullRequestDiff,
 } from '../../github/domain/github.type';
@@ -392,24 +393,26 @@ export class PublishFindingsService {
             maxDistance: SNAP_MAX_DISTANCE,
           });
 
-    let line = snapped;
-    let posted = await this.tryCreateReviewComment({
-      input,
-      finding,
-      filePath,
-      line,
-    });
-    // 줄 게시가 거절되면(스냅한 줄이 GitHub 기준 diff 와 어긋나는 등) 같은 파일에 파일 단위로 한 번 더 —
-    // 파일 머리라도 스레드로 남아야 수확된다. 처음부터 파일 단위였으면 다시 시도할 것이 없다.
-    if (posted === null && line !== null) {
-      line = null;
-      posted = await this.tryCreateReviewComment({
+    const inline =
+      snapped === null
+        ? null
+        : await this.tryCreateReviewComment({
+            input,
+            finding,
+            filePath,
+            line: snapped,
+          });
+    // 줄 게시가 거절되면(스냅한 줄이 GitHub 기준 diff 와 어긋나는 등) 같은 파일에 파일 단위로 —
+    // 파일 머리라도 스레드로 남아야 수확된다. 스냅할 줄이 없을 때도 같은 파일 단위 한 번이다.
+    const posted =
+      inline ??
+      (await this.tryCreateReviewComment({
         input,
         finding,
         filePath,
-        line,
-      });
-    }
+        line: null,
+      }));
+    const line = inline === null ? null : snapped;
     if (posted === null) {
       fallback.push({ record, finding });
       return;
@@ -448,7 +451,7 @@ export class PublishFindingsService {
     finding: ReviewFinding;
     filePath: string;
     line: number | null;
-  }): Promise<{ commentId: string; nodeId: string } | null> {
+  }): Promise<CreateReviewCommentResult | null> {
     try {
       return await this.writers.forRepo(input.repo).client.createReviewComment({
         repo: input.repo,
