@@ -1,5 +1,6 @@
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { AgentType } from '../../model-router/domain/model-router.type';
+import { formatNeedsDate } from '../../slack/format/schedule.formatter';
 import { AnswerScheduleQuestionUsecase } from '../application/answer-schedule-question.usecase';
 import { RegisterScheduleUsecase } from '../application/register-schedule.usecase';
 import { ScheduleStatus } from '../domain/schedule.type';
@@ -474,6 +475,31 @@ describe('직전 대화 일정 등록', () => {
         }),
       }),
     );
+  });
+  it('직전 대화를 가리키지 않는 평범한 요청은 추출에 날짜가 없으면 오늘로 등록하지 않고 날짜를 되묻는다', async () => {
+    const register = createUsecase();
+    const extract = {
+      execute: jest.fn().mockResolvedValue({
+        title: '자동차세',
+        dueDate: null,
+        memo: '',
+        modelUsed: 'model',
+      }),
+    };
+    const dispatcher = new ScheduleDispatcher(
+      register,
+      createAnswer(),
+      createAgentRunService() as never,
+      extract as never,
+    );
+    const result = await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '자동차세 등록해줘',
+      priorTurns,
+    });
+    expect(register.execute).not.toHaveBeenCalled();
+    expect(result.formattedText).toBe(formatNeedsDate('자동차세'));
   });
   it('완전한 파서 결과가 있어도 참조 추출 실패 시 등록하지 않는다', async () => {
     const register = createUsecase();

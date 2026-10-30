@@ -3418,6 +3418,25 @@ describe('RouterMessageHandler — Slack 대화 기록과 사진', () => {
     ]);
   });
 
+  it('조회 대상 발화자는 DM 에서만 넘기고 채널 멘션에서는 넘기지 않는다', async () => {
+    const dmCase = setup({ failure: true });
+    await invokeHandler(dmCase.getHandler('message'), event());
+    expect(dmCase.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ slackUserId: 'U_USER' }),
+    );
+    const channelCase = setup({ failure: true });
+    await invokeHandler(channelCase.getHandler('app_mention'), {
+      type: 'app_mention',
+      user: 'U_USER',
+      channel: 'C_CHANNEL',
+      ts: messageTs,
+      text: '<@UBOT> 최근 실행 어때?',
+    });
+    expect(channelCase.reply).toHaveBeenCalledWith(
+      expect.not.objectContaining({ slackUserId: expect.anything() }),
+    );
+  });
+
   it('사진만 보낸 메시지도 메시지 없음 안내로 끊지 않는다', async () => {
     const testCase = setup({ failure: true });
     const { say } = await invokeHandler(

@@ -38,7 +38,8 @@ export interface SlackTranscriptMessage {
 export interface ToTranscriptTurnsInput {
   messages: readonly SlackTranscriptMessage[];
   speakerUserId: string;
-  // 있으면 이 봇이 쓴 글의 꼬리표만 대화 답으로 인정한다 — 채널 스레드의 다른 봇이 같은 꼬리표를 달 수 있다.
+  // 이 봇이 쓴 글의 꼬리표만 대화 답으로 인정한다 — 채널 스레드의 다른 봇이 같은 꼬리표를 달 수 있다.
+  // 모르면(auth.test 실패) 꼬리표가 있어도 자동 발송 글로 다룬다.
   selfBotId?: string;
   excludeTs?: string;
   imageLabels?: ReadonlyMap<string, readonly number[]>;
@@ -121,7 +122,8 @@ const classify = (
   const isIdaeriReply =
     message.botId !== undefined &&
     message.metadata?.eventType === IDAERI_REPLY_EVENT_TYPE &&
-    (selfBotId === undefined || message.botId === selfBotId);
+    selfBotId !== undefined &&
+    message.botId === selfBotId;
   return {
     message,
     source: isIdaeriReply ? 'IDAERI_REPLY' : 'AUTO_POST',

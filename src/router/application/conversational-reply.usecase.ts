@@ -165,7 +165,13 @@ export class ConversationalReplyUsecase {
         ...(hasAttachments
           ? {
               fallbackWithoutAttachments: {
-                notice: `사진 ${imagePaths.length}장과 기록 폴더 ${readableRoots.length}개가 있었지만 이번 답에서는 볼 수 없었다. 답 첫머리에 그 사실을 밝혀라.`,
+                prompt: buildFallbackPrompt({
+                  text,
+                  priorTurns,
+                  workStatus,
+                  lookups,
+                  imageCount: imagePaths.length + (unseenImageCount ?? 0),
+                }),
               },
             }
           : {}),
@@ -422,6 +428,35 @@ export const buildSystemPrompt = ({
     .filter((line): line is string => line !== undefined)
     .join('\n');
 };
+
+// 첨부를 볼 수 없는 폴백(Claude)용 프롬프트. 폴더 경로 안내와 사진 번호를 빼고, 못 본 사실을 밝히게 한다.
+// 원장·발송 기록은 텍스트라 그대로 싣는다.
+export const buildFallbackPrompt = ({
+  text,
+  priorTurns,
+  workStatus,
+  lookups,
+  imageCount,
+}: {
+  text: string;
+  priorTurns: ConversationTurn[];
+  workStatus?: string;
+  lookups?: ConversationLookups;
+  imageCount: number;
+}): string =>
+  [
+    buildPrompt({
+      text,
+      priorTurns,
+      workStatus,
+      ...(lookups
+        ? { lookups: { ...lookups, readableRoots: [], rootGuide: [] } }
+        : {}),
+      unseenImageCount: imageCount,
+    }),
+    '',
+    '이번 답에서는 첨부 사진과 기록 폴더를 볼 수 없었다. 답 첫머리에 그 사실을 밝혀라.',
+  ].join('\n');
 
 export const buildPrompt = ({
   text,

@@ -141,7 +141,7 @@ describe('Slack 대화 기록 경계', () => {
     });
     expect(transcript.map((turn) => turn.agentRunId)).toEqual([2, 3, null]);
   });
-  it('selfBotId 를 모르면 꼬리표만으로 이대리 답으로 본다', () => {
+  it('selfBotId 를 모르면 꼬리표가 있어도 자동 발송 글로 다룬다', () => {
     const [turn] = toTranscriptTurns({
       speakerUserId: 'U1',
       messages: [
@@ -154,7 +154,8 @@ describe('Slack 대화 기록 경계', () => {
         },
       ],
     });
-    expect(turn.role).toBe('assistant');
+    expect(turn.role).toBe('user');
+    expect(isAutoPostTurn(turn)).toBe(true);
   });
   it('기억의 assistant 턴과는 짝짓지 않는다', () => {
     const [turn] = toTranscriptTurns({

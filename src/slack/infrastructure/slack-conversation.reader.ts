@@ -40,11 +40,19 @@ export class SlackConversationReader {
   private botIdPromise?: Promise<string | undefined>;
 
   async selfBotId(client: WebClient): Promise<string | undefined> {
+    // 실패는 기억하지 않는다 — 기억하면 그동안 자기 봇 확인 없이 꼬리표만으로 이대리 답을 판정하게 된다.
     this.botIdPromise ??= client.auth
       .test()
-      .then((response) => response.bot_id)
-      .catch(() => undefined);
-    return this.botIdPromise;
+      .then((response) => response.bot_id);
+    try {
+      return await this.botIdPromise;
+    } catch (error: unknown) {
+      this.botIdPromise = undefined;
+      this.logger.warn(
+        `자기 봇 id 조회 실패 — 이번 회차는 꼬리표 글도 참고 자료로 다룬다: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return undefined;
+    }
   }
 
   async read(
@@ -55,10 +63,12 @@ export class SlackConversationReader {
     }
     try {
       if (input.threadTs) {
-        const messages = await this.readThread(
-          input.client,
-          input.channelId,
-          input.threadTs,
+        // 처리하는 사이 스레드에 새로 달린 글은 이 질문의 앞선 대화가 아니다.
+        const messages = (
+          await this.readThread(input.client, input.channelId, input.threadTs)
+        ).filter(
+          (message) =>
+            !input.messageTs || Number(message.ts) < Number(input.messageTs),
         );
         return messages.length > THREAD_MESSAGE_LIMIT
           ? [messages[0], ...messages.slice(-(THREAD_MESSAGE_LIMIT - 1))]

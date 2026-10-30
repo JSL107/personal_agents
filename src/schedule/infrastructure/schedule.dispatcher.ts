@@ -107,7 +107,9 @@ export class ScheduleDispatcher implements AgentDispatcher {
         priorTurns,
         today,
       });
-      if (extracted) {
+      // 날짜를 오늘로 채우는 것은 직전 대화를 가리킨 요청일 때만이다. "자동차세 등록해줘" 처럼
+      // 날짜만 빠진 평범한 요청은 지금처럼 날짜를 되묻는다.
+      if (extracted && (extracted.dueDate !== null || reference)) {
         return this.registerFromConversation(input, extracted, today);
       }
       if (reference) {

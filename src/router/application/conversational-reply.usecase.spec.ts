@@ -486,8 +486,14 @@ describe('ConversationalReply — reply() (route(PM) 경유 호출)', () => {
     expect(call.request.prompt).toContain('[최근 실행 기록]');
     expect(call.request.prompt).toContain('[최근 발송 기록]');
     expect(call.request.prompt).toContain('[직접 열어 볼 수 있는 폴더]');
-    expect(call.fallbackWithoutAttachments.notice).toContain('사진 2장');
-    expect(call.fallbackWithoutAttachments.notice).toContain('답 첫머리에');
+    // 폴백(Claude)은 읽기 잠금이 없으므로 폴더 경로 안내·사진 번호를 넘기지 않는다.
+    const fallbackPrompt: string = call.fallbackWithoutAttachments.prompt;
+    expect(fallbackPrompt).not.toContain('[직접 열어 볼 수 있는 폴더]');
+    expect(fallbackPrompt).not.toContain('/tmp/repo');
+    expect(fallbackPrompt).not.toContain('첨부된 사진 번호');
+    expect(fallbackPrompt).toContain('사진 3장은 보지 못했다');
+    expect(fallbackPrompt).toContain('[최근 실행 기록]');
+    expect(fallbackPrompt).toContain('답 첫머리에');
     expect(release).toHaveBeenCalledTimes(1);
   });
 

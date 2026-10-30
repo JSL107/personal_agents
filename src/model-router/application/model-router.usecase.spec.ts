@@ -60,7 +60,7 @@ describe('ModelRouterUsecase', () => {
     usecase = new ModelRouterUsecase(chatgptProvider, claudeProvider);
   });
 
-  it('fallbackWithoutAttachments 면 이미지와 읽기 폴더를 떼고 notice 를 붙인다', async () => {
+  it('fallbackWithoutAttachments 면 이미지와 읽기 폴더를 떼고 호출자가 준 프롬프트로 폴백한다', async () => {
     chatgptProvider.complete.mockRejectedValue(new Error('실패'));
     claudeProvider.complete.mockResolvedValue({
       text: 'ok',
@@ -75,11 +75,11 @@ describe('ModelRouterUsecase', () => {
         imagePaths: ['/image'],
         readableRoots: ['/records'],
       },
-      fallbackWithoutAttachments: { notice: '볼 수 없음' },
+      fallbackWithoutAttachments: { prompt: '첨부 안내 없는 프롬프트' },
     });
     expect(claudeProvider.complete).toHaveBeenCalledWith(
       expect.objectContaining({
-        prompt: '질문\n\n볼 수 없음',
+        prompt: '첨부 안내 없는 프롬프트',
         imagePaths: undefined,
         readableRoots: undefined,
       }),
@@ -99,12 +99,12 @@ describe('ModelRouterUsecase', () => {
       agentType: AgentType.PM,
       noContractPreamble: true,
       request: { prompt: '질문', readableRoots: ['/records'] },
-      fallbackWithoutAttachments: { notice: '볼 수 없음' },
+      fallbackWithoutAttachments: { prompt: '첨부 안내 없는 프롬프트' },
     });
     expect(claudeProvider.complete).toHaveBeenCalledWith(
       expect.objectContaining({
         readableRoots: undefined,
-        prompt: '질문\n\n볼 수 없음',
+        prompt: '첨부 안내 없는 프롬프트',
       }),
     );
   });
@@ -125,14 +125,14 @@ describe('ModelRouterUsecase', () => {
           agentType: AgentType.PM,
           request,
           noFallback: gate === 'noFallback',
-          fallbackWithoutAttachments: { notice: '볼 수 없음' },
+          fallbackWithoutAttachments: { prompt: '첨부 안내 없는 프롬프트' },
         }),
       ).rejects.toThrow();
       expect(claudeProvider.complete).not.toHaveBeenCalled();
     },
   );
 
-  it('첨부가 없으면 notice 없이 기존 폴백을 사용한다', async () => {
+  it('첨부가 없으면 원래 프롬프트로 기존 폴백을 사용한다', async () => {
     chatgptProvider.complete.mockRejectedValue(new Error('실패'));
     claudeProvider.complete.mockResolvedValue({
       text: 'ok',
@@ -143,7 +143,7 @@ describe('ModelRouterUsecase', () => {
       agentType: AgentType.PM,
       noContractPreamble: true,
       request: { prompt: '질문' },
-      fallbackWithoutAttachments: { notice: '볼 수 없음' },
+      fallbackWithoutAttachments: { prompt: '첨부 안내 없는 프롬프트' },
     });
     expect(claudeProvider.complete).toHaveBeenCalledWith({ prompt: '질문' });
   });

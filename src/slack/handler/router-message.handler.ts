@@ -697,7 +697,9 @@ export class RouterMessageHandler implements SlackHandler {
             text,
             priorTurns: transcriptTurns,
             memoryTurns: priorTurns,
-            slackUserId,
+            // 원장·발송 기록·폴더 조회는 DM 에서만 연다 — 채널 스레드 답은 다른 사람에게 보이고,
+            // 그 스레드의 남의 글·사진에 든 지시가 owner 의 기록을 채널에 답하게 만들 수 있다.
+            ...(source === 'dm' ? { slackUserId } : {}),
             images: downloaded.images,
             unseenImageCount:
               imageSelection.skippedCount + downloaded.failedCount,

@@ -83,7 +83,9 @@ export class ModelRouterUsecase {
     agentType: AgentType;
     request: CompletionRequest;
     noFallback?: boolean;
-    fallbackWithoutAttachments?: { notice: string };
+    // 이미지·읽기 폴더가 붙은 요청이 primary 에서 실패하면 첨부를 떼고 이 프롬프트로 폴백한다.
+    // 원래 프롬프트를 그대로 쓰지 않는 이유: 폴더 경로 안내가 남으면 읽기 잠금이 없는 Claude 에 경로를 건네게 된다.
+    fallbackWithoutAttachments?: { prompt: string };
     // agentType 의 매핑 대신 이 provider 를 primary 로 쓴다. 같은 입력을 provider 별로
     // 받아야 하는 호출자(윤문 연구의 모델 글 표본)용 — 원장 기록은 그대로 남는다.
     provider?: ModelProviderName;
@@ -194,14 +196,14 @@ export class ModelRouterUsecase {
           routedRequest.imagePaths?.length ||
           routedRequest.readableRoots?.length,
         );
-        // 폴백은 첨부를 볼 수 없으므로 제거하고 그 사실을 프롬프트에 알린다.
+        // 폴백은 첨부를 볼 수 없으므로 떼고, 첨부 안내가 없는 호출자 프롬프트로 바꾼다.
         const fallbackRequest =
           fallbackWithoutAttachments && hasAttachments
             ? {
                 ...routedRequest,
                 imagePaths: undefined,
                 readableRoots: undefined,
-                prompt: `${routedRequest.prompt}\n\n${fallbackWithoutAttachments.notice}`,
+                prompt: fallbackWithoutAttachments.prompt,
               }
             : routedRequest;
         const completion = await fallback.complete(fallbackRequest);

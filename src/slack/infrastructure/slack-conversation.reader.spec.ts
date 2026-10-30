@@ -194,3 +194,36 @@ it('Slack 응답의 bot_id·metadata·files·reply_count 를 옮기고 없는 te
     },
   ]);
 });
+
+it('selfBotId 조회 실패는 기억하지 않고 다음 회차에 다시 묻는다', async () => {
+  const authTest = jest
+    .fn()
+    .mockRejectedValueOnce(new Error('일시 실패'))
+    .mockResolvedValue({ bot_id: 'B' });
+  const client = { auth: { test: authTest } } as unknown as WebClient;
+  const reader = new SlackConversationReader();
+  expect(await reader.selfBotId(client)).toBeUndefined();
+  expect(await reader.selfBotId(client)).toBe('B');
+  expect(authTest).toHaveBeenCalledTimes(2);
+});
+
+it('스레드에서 현재 메시지와 그 뒤에 달린 글은 뺀다', async () => {
+  const replies = jest.fn().mockResolvedValue({
+    messages: [
+      { ts: '1.0', text: '부모' },
+      { ts: '2.0', text: '앞선 답' },
+      { ts: '3.0', text: '현재 질문' },
+      { ts: '4.0', text: '나중 글' },
+    ],
+  });
+  const reader = new SlackConversationReader();
+  const messages = await reader.read({
+    client: { conversations: { replies } } as unknown as WebClient,
+    channelId: 'C1',
+    isDirectMessage: false,
+    threadTs: '1.0',
+    messageTs: '3.0',
+    nowMs: 0,
+  });
+  expect(messages?.map((message) => message.ts)).toEqual(['1.0', '2.0']);
+});
