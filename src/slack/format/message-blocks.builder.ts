@@ -1,5 +1,6 @@
 import {
   breakProseIntoSentences,
+  convertMarkdownBold,
   isCodeFenceLine,
   linkifyBareUrls,
 } from './mrkdwn.util';
@@ -114,7 +115,9 @@ export const buildReadableBlocks = (text: string): SlackBlock[] | null => {
 export const toReadableMessage = (
   text: string,
 ): { text: string; blocks?: SlackBlock[] } => {
-  const linked = breakProseIntoSentences(linkifyBareUrls(text));
+  const linked = breakProseIntoSentences(
+    linkifyBareUrls(convertMarkdownBold(text)),
+  );
   const blocks = buildReadableBlocks(linked);
   return blocks ? { text: linked, blocks } : { text: linked };
 };

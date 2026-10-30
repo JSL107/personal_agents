@@ -1,4 +1,8 @@
-import { breakProseIntoSentences, linkifyBareUrls } from './mrkdwn.util';
+import {
+  breakProseIntoSentences,
+  convertMarkdownBold,
+  linkifyBareUrls,
+} from './mrkdwn.util';
 
 describe('breakProseIntoSentences', () => {
   // 실제 PM 산출물과 같은 모양 — 문장마다 링크가 붙는다. 링크 없는 짧은 표본으로 재면
@@ -137,5 +141,32 @@ describe('breakProseIntoSentences — 인라인 코드 보존', () => {
       '설정 파일 `a. b. c` 안의 값을 오늘 자로 갱신하고 관련 검증 항목을 함께 묶어 두었다. 뒷 문장도 충분히 길게 이어 붙여 임계값을 넘긴다.';
 
     expect(breakProseIntoSentences(source)).toContain('`a. b. c`');
+  });
+});
+
+describe('convertMarkdownBold', () => {
+  it('Markdown 굵게를 Slack 굵게로 바꾼다', () => {
+    expect(convertMarkdownBold('**이유는 확인할 수 없어요.** 다만')).toBe(
+      '*이유는 확인할 수 없어요.* 다만',
+    );
+  });
+
+  it('바로 붙은 글자가 있으면 굵게 표시만 걷어낸다 — Slack 이 그리지 못한다', () => {
+    expect(convertMarkdownBold('**한 개만 나왔는지**는 몰라요')).toBe(
+      '한 개만 나왔는지는 몰라요',
+    );
+  });
+
+  it('맨 URL 안의 `**` 는 주소의 일부라 건드리지 않는다', () => {
+    expect(convertMarkdownBold('https://x.test/a**b**c 와 **굵게**')).toBe(
+      'https://x.test/a**b**c 와 *굵게*',
+    );
+  });
+
+  it('코드블록과 인라인 코드 안의 별표는 건드리지 않는다', () => {
+    const source = '```\n**raw**\n```\n`a**b**c` 와 **굵게**';
+    expect(convertMarkdownBold(source)).toBe(
+      '```\n**raw**\n```\n`a**b**c` 와 *굵게*',
+    );
   });
 });

@@ -135,3 +135,37 @@ const breakLineIntoSentences = (line: string): string => {
 
 export const breakProseIntoSentences = (text: string): string =>
   mapOutsideCodeFence(text, breakLineIntoSentences);
+
+// 모델은 Markdown 굵게(`**x**`)로 쓰는데 Slack 은 `*x*` 만 굵게 그려, 별표가 날것으로 보였다(2026-10-30 DM).
+// 바로 붙은 글자가 있으면(`**x**는`) Slack 이 `*x*` 도 굵게 그리지 않으므로 그때는 표시만 걷어낸다.
+const MARKDOWN_BOLD = /(^|.)\*\*([^*\n]+?)\*\*(?=(.|$))/gu;
+const WORD_CHARACTER = /[\p{L}\p{N}]/u;
+
+const toSlackBold = (
+  _match: string,
+  before: string,
+  inner: string,
+  after: string,
+): string => {
+  const touchesWord = WORD_CHARACTER.test(before) || WORD_CHARACTER.test(after);
+  if (touchesWord) {
+    return `${before}${inner}`;
+  }
+  return `${before}*${inner}*`;
+};
+
+// 맨 URL 안의 `**` 는 주소의 일부다 — 바꾸면 링크 대상이 달라진다(PR #923 리뷰).
+const BARE_URL_TOKEN = new RegExp(`(${BARE_URL.source})`);
+
+const convertBoldOutsideUrls = (part: string): string =>
+  part
+    .split(BARE_URL_TOKEN)
+    .map((segment, index) =>
+      index % 2 === 1 ? segment : segment.replace(MARKDOWN_BOLD, toSlackBold),
+    )
+    .join('');
+
+export const convertMarkdownBold = (text: string): string =>
+  mapOutsideCodeFence(text, (line) =>
+    mapUnprotected(line, convertBoldOutsideUrls),
+  );
