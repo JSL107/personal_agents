@@ -38,11 +38,6 @@ export interface ListUsageInput {
   slackUserId: string;
 }
 
-export interface CancelLeaveInput {
-  slackUserId: string;
-  usageId: number;
-}
-
 export interface CancelLeaveResult {
   canceledId: number;
   balance: VacationBalance;

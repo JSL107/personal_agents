@@ -1,5 +1,6 @@
 import { MetaOutput } from '../../agent/ceo/domain/ceo.type';
 import { FormattedReport } from './formatted-report.type';
+import { escapeSlackMrkdwn } from './mrkdwn.util';
 
 // CEO worker (P5 Meta) Slack 답글 formatter.
 // summary:
@@ -66,6 +67,3 @@ const formatSourceFooter = (output: MetaOutput): string => {
     missing.length > 0 ? ` · missing: ${missing.join(', ')}` : '';
   return `_합성 source: ${parts.join(', ')}${missingPart} (schemaVersion=${output.schemaVersion})_`;
 };
-
-const escapeSlackMrkdwn = (text: string): string =>
-  text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
