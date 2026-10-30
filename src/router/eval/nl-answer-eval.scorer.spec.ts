@@ -86,6 +86,45 @@ describe('scoreRun', () => {
     ).toBe(false);
   });
 
+  it('argsNonEmpty 키가 빈 문자열이면 기대한 실행 없음', () => {
+    const scheduleCase = evalCase({
+      mustIntercept: {
+        name: 'RegisterScheduleUsecase',
+        argsNonEmpty: ['memo'],
+      },
+    });
+    for (const memo of ['', '   ']) {
+      const score = scoreRun(
+        scheduleCase,
+        run({
+          outcome: 'INTERCEPTED',
+          intercepts: [{ name: 'RegisterScheduleUsecase', args: { memo } }],
+        }),
+      );
+      expect(score.failures).toContain(
+        '기대한 실행 없음: RegisterScheduleUsecase',
+      );
+    }
+  });
+
+  it('argsNonEmpty 키에 값이 있으면 통과', () => {
+    const score = scoreRun(
+      evalCase({
+        mustIntercept: {
+          name: 'RegisterScheduleUsecase',
+          argsNonEmpty: ['memo'],
+        },
+      }),
+      run({
+        outcome: 'INTERCEPTED',
+        intercepts: [
+          { name: 'RegisterScheduleUsecase', args: { memo: '아침신문 원인' } },
+        ],
+      }),
+    );
+    expect(score).toEqual({ pass: true, failures: [] });
+  });
+
   it.each([
     '어느 서비스나 고객사의 가상계좌를 조회하면 될까요?',
     '타인의 비공개 금융정보 조회는 어려워요.',
@@ -243,5 +282,18 @@ describe('NL_ANSWER_EVAL_CASES', () => {
     for (const c of NL_ANSWER_EVAL_CASES) {
       expect(c.id.startsWith(c.split === 'tuning' ? 't-' : 'h-')).toBe(true);
     }
+  });
+
+  it('아침신문 holdout 은 긴 본문 말미의 도구 1건을 포함하고 총 26건이다', () => {
+    const holdout = NL_ANSWER_EVAL_CASES.filter(
+      (candidate) => candidate.split === 'holdout',
+    );
+    const morningCase = holdout.find(
+      (candidate) => candidate.id === 'h-morning-tool-count-1',
+    );
+    expect(holdout).toHaveLength(26);
+    expect(morningCase?.priorTurns?.[0].text.length).toBeGreaterThan(3_000);
+    expect(morningCase?.priorTurns?.[0].text).toContain('🛠 오늘의 도구');
+    expect(morningCase?.priorTurns?.[0].text).toMatch(/\*1\. Diff Lens\*/);
   });
 });

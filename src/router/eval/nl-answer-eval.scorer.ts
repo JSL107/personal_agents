@@ -27,6 +27,12 @@ const includesArgs = (
 ): boolean =>
   Object.entries(expected).every(([key, value]) => args[key] === value);
 
+const hasNonEmptyArgs = (
+  args: Record<string, unknown>,
+  keys: string[],
+): boolean =>
+  keys.every((key) => typeof args[key] === 'string' && args[key].trim() !== '');
+
 export const scoreRun = (evalCase: EvalCase, run: EvalRunRecord): EvalScore => {
   const failures: string[] = [];
   const expect = evalCase.expect;
@@ -50,12 +56,14 @@ export const scoreRun = (evalCase: EvalCase, run: EvalRunRecord): EvalScore => {
   }
 
   if (expect.mustIntercept !== undefined) {
-    const { name, argsInclude } = expect.mustIntercept;
+    const { name, argsInclude, argsNonEmpty } = expect.mustIntercept;
     const hit = run.intercepts.some(
       (intercept) =>
         intercept.name === name &&
         (argsInclude === undefined ||
-          includesArgs(intercept.args, argsInclude)),
+          includesArgs(intercept.args, argsInclude)) &&
+        (argsNonEmpty === undefined ||
+          hasNonEmptyArgs(intercept.args, argsNonEmpty)),
     );
     if (!hit) {
       failures.push(`기대한 실행 없음: ${name}`);

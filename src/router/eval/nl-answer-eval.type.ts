@@ -14,8 +14,13 @@ export interface EvalExpect {
   destinations?: EvalDestination[];
   // 쓰기·외부 실행(휴가 등록, PR 리뷰 실행 등)이 시도되면 실패.
   forbidIntercepts?: boolean;
-  // 이 가로채기가 반드시 일어나야 한다(평서 등록 대조군, PR 후속 승계). argsInclude 는 부분 일치.
-  mustIntercept?: { name: string; argsInclude?: Record<string, unknown> };
+  // 이 가로채기가 반드시 일어나야 한다(평서 등록 대조군, PR 후속 승계).
+  // argsInclude 는 부분 일치, argsNonEmpty 는 값이 채워진 문자열인지 확인한다.
+  mustIntercept?: {
+    name: string;
+    argsInclude?: Record<string, unknown>;
+    argsNonEmpty?: string[];
+  };
   mustMatch?: RegExp[];
   mustNotMatch?: RegExp[];
   // 되묻기로 끝나면 실패 — 마지막 문장이 물음표로 끝나는지 본다.
