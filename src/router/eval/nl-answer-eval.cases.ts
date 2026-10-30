@@ -816,7 +816,10 @@ export const NL_ANSWER_EVAL_CASES: readonly EvalCase[] = [
     ],
     expect: {
       forbidIntercepts: true,
-      mustNotMatch: [/확인할 수 없/, /PR 리뷰/],
+      // eval 은 조회를 빈 값으로 바꿔 돌리므로 "글만으로는 확인할 수 없다" 는 정직한 답이다.
+      // 실사례의 실패는 "지금 주신 정보만으로 확인할 수 없어요" 뒤에 할 수 있는 일 목록을 늘어놓은 것이다.
+      mustNotMatch: [/주신 정보만으로/, /PR 리뷰/],
+      mustMatch: [/도구/],
       differFromPriorBot: true,
     },
   },
