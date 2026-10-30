@@ -126,10 +126,9 @@ export const readNonEmptyConfig = ({
   key: string;
   fallback: string;
 }): string => {
-  const raw = configService.get<string>(key);
-  if (!raw) {
+  const trimmed = configService.get<string>(key)?.trim() ?? '';
+  if (trimmed.length === 0) {
     return fallback;
   }
-  const trimmed = raw.trim();
-  return trimmed.length > 0 ? trimmed : fallback;
+  return trimmed;
 };
