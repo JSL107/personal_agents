@@ -413,7 +413,9 @@ export class NotionApiClient implements NotionClientPort {
     return work;
   }
 
-  // mutex 안에서 실제 Notion 호출 수행. 기존 page 있으면 재사용, 없으면 create + post-create dedupe.
+  // mutex 안에서 실제 Notion 호출 수행. 기존 page 있으면 재사용, 없으면 create.
+  // 생성 뒤 중복 정리(post-create dedupe)는 하지 않는다 — 같은 프로세스 안의 동시 호출은 위 mutex 가 막고,
+  // 여러 프로세스가 동시에 만드는 경우는 막지 못한다(클래스 상단 주석의 싱글 프로세스 전제).
   private async resolveDayPage(
     databaseId: string,
     title: string,
