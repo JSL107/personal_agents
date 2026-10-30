@@ -27,8 +27,10 @@ docs/superpowers/plans/2026-10-06-morning-news-aihot.md.
 hermes 본체(`~/.hermes/hermes-agent`)는 업스트림 클론이라 개인 스크립트를 두지 않는다.
 
 뉴스 세 영역 뒤에 "오늘의 도구" 후보(AIHOT 제품·팁, GitHub 신규 저장소, Show HN, 요즘IT)를 따로 싣는다.
-모델이 그중 3건을 골라 무엇인지·어떻게 써 보는지까지 풀어 쓴다. 지난 발송본에 나온 URL 은 후보에서 뺀다.
-GitHub 후보에는 README 앞부분(설치·사용 절 먼저)을 붙여 "써 보려면"을 쓸 근거를 준다.
+모델이 그중 최대 3건을 골라 무엇인지·어떻게 써 보는지까지 풀어 쓴다. 지난 발송본에 나온 URL 은 후보에서 뺀다.
+GitHub 후보는 토픽 검색(claude-code·agent-skills·claude-skills·mcp)을 앞세우고 스타순 일반 검색으로 보충한다.
+크랙·미끼로 보이는 저장소 이름은 거른다. 후보에는 README 앞부분(설치·사용 절 먼저)을 붙여 "써 보려면"을 쓸 근거를 준다.
+도구 후보 뒤에는 내 스킬 목록(이름·한 줄 설명)을 실어, 모델이 후보와 대응되는 내 스킬을 알려 주게 한다.
 job 프롬프트 사본은 `scripts/hermes-morning-news.prompt.md`(실행 정본은 `~/.hermes/cron/jobs.json`).
 고른 도구를 설명하는 그림 카드는 후속 job(hermes-morning-news-images.py)이 그려 Slack 에 올린다.
 
@@ -41,8 +43,10 @@ import functools
 import html
 import json
 import os
+import pwd
 import re
 import sys
+import tempfile
 import time
 import urllib.parse
 import urllib.request
@@ -119,6 +123,25 @@ _README_USAGE_HEADING = re.compile(
 _README_HEADING = re.compile(r"^#{1,6}\s", re.MULTILINE)
 _README_NOISE = re.compile(r"!\[[^\]]*\]\([^)]*\)|<[^>]+>|```\w*")
 _README_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+# 토픽 검색은 개발자 도구에 직접 맞는 저장소를 먼저 얻는다(일반 스타순 검색은 광고 차단·단어 앱이 상위를 차지했다 — 2026-10-30).
+# 검색 1회는 토픽 1개다. `topic:a topic:b` 는 AND 라 OR 가 안 된다. 신규 저장소라 스타 문턱은 낮게 둔다.
+GITHUB_TOPICS = ["claude-code", "agent-skills", "claude-skills", "mcp"]
+GITHUB_TOPIC_MIN_STARS = 20
+# 크랙·미끼 저장소 이름 거르기. 오탐을 줄이려고 저장소 이름(소유자 제외)을 토큰으로 쪼개 두 경우만 잡는다:
+# 단독으로 의심스러운 낱말, 또는 유명 상용 앱 이름 + 무료·크랙 유인어 조합(`Canva-Pro`, `Windows-Optimizer`).
+# `Pro`·`Optimizer` 단독은 정상 저장소에도 흔해 통과시킨다.
+BAIT_NAME_TOKENS = {"cracked", "keygen", "warez", "nulled"}
+BAIT_BRAND_TOKENS = {"canva", "photoshop", "office", "windows", "autocad", "adobe", "netflix", "spotify", "idm", "capcut"}
+# `crack`·`activator`·`unlocked` 는 `crack-the-interview-kit` 처럼 정상 이름에도 나와 상용 앱 이름과 함께일 때만 잡는다.
+BAIT_LURE_TOKENS = {"pro", "premium", "free", "full", "download", "optimizer", "activate", "activator", "license", "lifetime",
+                    "crack", "unlocked"}
+
+# 내 스킬 목록. 도구 후보가 내 스킬과 대응되면 모델이 짝을 지어 알려 주는 데 쓴다.
+# hermes 는 프로필 기능이 켜지면 HOME 을 바꾸므로 Path.home() 대신 계정 홈을 직접 찾는다.
+MY_SKILLS_DIR = Path(pwd.getpwuid(os.getuid()).pw_dir) / ".claude" / "skills"
+MY_SKILL_DESC_LIMIT = 50
+# 입력 예산: 아침신문 입력 약 18.6K 토큰 + 이 블록 + 프롬프트 증가분이 25K 아래여야 한다(RATIONALE.md 계산).
+MY_SKILLS_MAX_CHARS = 2_400
 HN_ENDPOINT = "https://hn.algolia.com/api/v1/search"
 HN_MIN_POINTS = 50
 YOZM_FEED = "https://yozm.wishket.com/magazine/feed/"
@@ -489,13 +512,54 @@ def yozm_tools(raw: bytes) -> list[dict]:
     ]
 
 
+def is_bait_repo(url: str) -> bool:
+    """저장소 이름이 크랙·미끼로 보이면 True. 소유자 이름은 보지 않는다(`Sourcecladrag/Windows-Optimizer` 는 이름만으로 잡는다)."""
+    name = urllib.parse.urlparse(url).path.strip("/").rpartition("/")[2].lower()
+    tokens = set(re.split(r"[^a-z0-9]+", name))
+    return bool(tokens & BAIT_NAME_TOKENS) or bool(tokens & BAIT_BRAND_TOKENS and tokens & BAIT_LURE_TOKENS)
+
+
+def merge_github_tools(batches: list[list[dict]]) -> list[dict]:
+    """검색 결과 묶음들을 순위별로 번갈아 합치고 URL 중복을 뺀다.
+
+    스타순으로 이어 붙이면 상위 3건이 한 토픽(`claude-code` 64건)으로 채워져 다른 토픽이 보이지 않는다.
+    """
+    merged: list[dict] = []
+    seen: set[str] = set()
+    for rank in range(max((len(batch) for batch in batches), default=0)):
+        for batch in batches:
+            if rank < len(batch) and batch[rank]["url"].lower() not in seen:
+                seen.add(batch[rank]["url"].lower())
+                merged.append(batch[rank])
+    return merged
+
+
 def fetch_github_tools() -> list[dict]:
     since = (datetime.now(KST) - timedelta(days=GITHUB_NEW_REPO_DAYS)).strftime("%Y-%m-%d")
-    query = urllib.parse.urlencode(
-        {"q": f"created:>{since} stars:>{GITHUB_MIN_STARS}", "sort": "stars", "order": "desc", "per_page": 10}
-    )
-    raw = fetch_bytes(f"{GITHUB_ENDPOINT}?{query}", {"Accept": "application/vnd.github+json"})
-    return github_tools(json.loads(raw))
+    # 소스당 3건만 쓰므로 토픽이 4개면 뒤쪽은 늘 밀린다. 시작 토픽을 날마다 돌려 네 토픽이 고르게 나오게 한다.
+    offset = datetime.now(KST).timetuple().tm_yday % len(GITHUB_TOPICS)
+    topics = GITHUB_TOPICS[offset:] + GITHUB_TOPICS[:offset]
+    queries = [f"topic:{topic} created:>{since} stars:>{GITHUB_TOPIC_MIN_STARS}" for topic in topics]
+    queries.append(f"created:>{since} stars:>{GITHUB_MIN_STARS}")
+    batches: list[list[dict]] = []
+    last_error: Exception | None = None
+    for query in queries:
+        # 뒤에 HN·요즘IT·README 가 남아 있으므로 검색에 쓸 수 있는 시간을 그만큼 남겨 둔다.
+        if time.monotonic() - _STARTED_AT > TOOL_DEADLINE_SEC - 3 * TOOL_TIMEOUT_SEC:
+            print(f"github search skipped (time budget): {query}", file=sys.stderr)
+            continue
+        params = urllib.parse.urlencode({"q": query, "sort": "stars", "order": "desc", "per_page": 10})
+        try:
+            raw = fetch_bytes(f"{GITHUB_ENDPOINT}?{params}", {"Accept": "application/vnd.github+json"})
+            batches.append(github_tools(json.loads(raw)))
+        # 비인증 검색은 분당 10회라 중간에 403 이 날 수 있다. 일부만 성공해도 그 후보로 간다.
+        except Exception as error:  # noqa: BLE001
+            last_error = error
+            print(f"github search '{query}' failed: {error!r}", file=sys.stderr)
+    # 전부 실패했을 때만 소스 실패로 올려 호출부가 "GitHub <오류>" 로 표기하게 한다.
+    if not batches and last_error is not None:
+        raise last_error
+    return merge_github_tools(batches)
 
 
 def readme_excerpt(markdown: str) -> str:
@@ -521,6 +585,72 @@ def readme_excerpt(markdown: str) -> str:
     # 줄 경계를 "; " 로 남긴다. 공백 하나로 이으면 여러 줄 명령이 `cd x npm ci` 처럼 한 명령으로 읽힌다.
     text = "; ".join(" ".join(line.split()) for line in text.splitlines() if line.strip())
     return text[:README_EXCERPT_LIMIT] + "…" if len(text) > README_EXCERPT_LIMIT else text
+
+
+def parse_skill_frontmatter(text: str) -> tuple[str, str]:
+    """SKILL.md 맨 위 frontmatter 의 (name, description). 한 줄·따옴표·`>`/`|` 여러 줄 설명을 읽고, 없으면 빈 문자열."""
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return "", ""
+    fields: dict[str, str] = {}
+    key = ""
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        match = re.match(r"^([A-Za-z_-]+):\s*(.*)$", line)
+        if match:
+            key = match.group(1)
+            value = match.group(2).strip()
+            fields[key] = "" if value in (">", "|", ">-", "|-") else value.strip("\"'")
+        elif key and line[:1] in (" ", "\t"):
+            fields[key] = f"{fields.get(key, '')} {line.strip()}".strip()
+    return fields.get("name", ""), fields.get("description", "")
+
+
+def load_my_skills(root: Path = MY_SKILLS_DIR) -> list[dict]:
+    """내 스킬을 이름순 [{name, description, path}] 로 돌려준다. 디렉터리가 없거나 못 읽으면 빈 목록.
+
+    `_archive`·`.trash` 처럼 `_`·`.` 로 시작하거나 SKILL.md 가 없는 디렉터리(`synced` 등)는 스킬이 아니다.
+    심볼릭 링크 스킬(`caveman -> ../../.agents/skills/caveman`)은 따라간다.
+    """
+    skills: list[dict] = []
+    try:
+        entries = sorted(root.iterdir())
+    except OSError as error:
+        print(f"skills dir read failed: {error}", file=sys.stderr)
+        return []
+    for entry in entries:
+        path = entry / "SKILL.md"
+        if entry.name[:1] in (".", "_") or not path.is_file():
+            continue
+        try:
+            with path.open(encoding="utf-8", errors="replace") as skill_file:
+                head = skill_file.read(4_000)
+        except OSError as error:
+            print(f"skill read failed '{entry.name}': {error}", file=sys.stderr)
+            continue
+        name, description = parse_skill_frontmatter(head)
+        skills.append({"name": name or entry.name, "description": description, "path": path})
+    return sorted(skills, key=lambda skill: skill["name"])
+
+
+def format_my_skills(skills: list[dict], scan: Callable[[str], str] | None = None) -> list[str]:
+    """`- 이름: 설명` 줄들. 설명은 MY_SKILL_DESC_LIMIT 자로 자르고 전체는 MY_SKILLS_MAX_CHARS 를 넘기지 않는다."""
+    lines: list[str] = []
+    used = 0
+    for index, skill in enumerate(skills):
+        description = " ".join(skill["description"].split())
+        if len(description) > MY_SKILL_DESC_LIMIT:
+            description = description[:MY_SKILL_DESC_LIMIT] + "…"
+        line = f"- {skill['name']}: {description}".translate(_INVISIBLE_TRANSLATION)
+        if scan is not None and scan(line):
+            continue
+        if used + len(line) + 1 > MY_SKILLS_MAX_CHARS:
+            lines.append(f"- (외 {len(skills) - index}개 생략)")
+            break
+        used += len(line) + 1
+        lines.append(line)
+    return lines
 
 
 def with_readme(article: dict) -> dict:
@@ -609,6 +739,9 @@ def collect_tools(
                 continue
             if url in exclude:
                 ledger.append(ledger_row(article, False, "already_used"))
+                continue
+            if article.get("source") == "github" and is_bait_repo(url):
+                ledger.append(ledger_row(article, False, "bait_name"))
                 continue
             labeled = dict(article, title=f"[{name}] {(article.get('title') or '').strip()}")
             snippet_limit = TOOL_SNIPPET_LIMIT
@@ -734,6 +867,14 @@ def main() -> int:
     if tool_failures:
         print(f"   (일부 소스 수집 실패: {', '.join(tool_failures)})")
 
+    # 모델이 도구 후보와 대응되는 내 스킬을 알려 주게 한다. 없거나 못 읽으면 이 블록만 빠진다.
+    skill_lines = format_my_skills(load_my_skills(), scan)
+    if skill_lines:
+        print()
+        print("### 내 스킬 목록 (후보와 대응되는 것이 있을 때만 쓰는 참고용 · 이름: 설명)")
+        for line in skill_lines:
+            print(line)
+
     print(f"collected {total} articles, {len(tool_lines)} tools", file=sys.stderr)
     write_ledger(ledger)
     return 0
@@ -820,6 +961,54 @@ def self_check() -> None:
     assert readme_excerpt(readme) == expected, readme_excerpt(readme)
     assert len(readme_excerpt("x" * 5000)) == README_EXCERPT_LIMIT + 1
 
+    # 미끼 이름 필터: 크랙·유명 앱+유인어 조합만 잡고, `Pro`·`Optimizer` 단독이나 소유자 이름은 건드리지 않는다.
+    for bait in ("https://github.com/UniteCuttlefishBolt/Canva-Pro", "https://github.com/Sourcecladrag/Windows-Optimizer",
+                 "https://github.com/x/photoshop_cracked", "https://github.com/x/Some-Keygen-2026",
+                 "https://github.com/x/office-crack"):
+        assert is_bait_repo(bait), bait
+    for fine in ("https://github.com/crack-labs/claude-code-hooks", "https://github.com/x/adam-optimizer",
+                 "https://github.com/x/pro-mcp-server", "https://github.com/x/windows-mcp", "https://github.com/x/office-hours-skill",
+                 "https://github.com/x/crack-the-interview-kit", "https://github.com/x/skill-activator"):
+        assert not is_bait_repo(fine), fine
+
+    # 토픽 결과 병합: 순위별로 번갈아 담고(한 토픽이 상위를 독식하지 않게), 여러 토픽에 걸린 저장소는 한 번만.
+    def repo(name: str) -> dict:
+        return {"url": f"https://github.com/o/{name}"}
+
+    merged = merge_github_tools([[repo("a1"), repo("a2"), repo("shared")], [repo("b1"), repo("SHARED")], []])
+    assert [article["url"].rsplit("/", 1)[1].lower() for article in merged] == ["a1", "b1", "a2", "shared"], merged
+    assert merge_github_tools([]) == [] and merge_github_tools([[], []]) == []
+
+    # frontmatter: 한 줄·따옴표·`>` 여러 줄 설명, frontmatter 없음.
+    assert parse_skill_frontmatter("---\nname: a\ndescription: one line\n---\nbody") == ("a", "one line")
+    assert parse_skill_frontmatter('---\nname: b\ndescription: "quoted"\n---\n') == ("b", "quoted")
+    folded = "---\nname: c\ndescription: >\n  first\n  second\nversion: 1\n---\n"
+    assert parse_skill_frontmatter(folded) == ("c", "first second")
+    assert parse_skill_frontmatter("# no frontmatter") == ("", "")
+
+    # 내 스킬 목록: 비스킬 디렉터리(_·. 시작, SKILL.md 없음)는 빼고 이름순, 심볼릭 링크는 따라간다. 없는 디렉터리는 빈 목록.
+    with tempfile.TemporaryDirectory() as workdir:
+        root = Path(workdir) / "skills"
+        for dirname, body in (("zeta", "---\nname: zeta\ndescription: Z skill\n---\n"), ("alpha", "---\ndescription: no name field\n---\n"),
+                              ("_archive", "---\nname: old\n---\n"), (".trash", "---\nname: t\n---\n")):
+            (root / dirname).mkdir(parents=True)
+            (root / dirname / "SKILL.md").write_text(body, encoding="utf-8")
+        (root / "synced").mkdir()
+        (Path(workdir) / "real").mkdir()
+        (Path(workdir) / "real" / "SKILL.md").write_text("---\nname: linked\ndescription: L\n---\n", encoding="utf-8")
+        (root / "linked").symlink_to(Path(workdir) / "real")
+        loaded = load_my_skills(root)
+        assert [skill["name"] for skill in loaded] == ["alpha", "linked", "zeta"], loaded
+        assert load_my_skills(Path(workdir) / "missing") == []
+
+    # 목록 상한: 설명은 잘리고, 스킬이 아무리 많아도 전체가 MY_SKILLS_MAX_CHARS 를 넘지 않으며 생략 수를 알린다. 스캐너에 걸린 줄은 뺀다.
+    many = [{"name": f"skill-{n:03d}", "description": "가" * 200} for n in range(100)]
+    capped = format_my_skills(many)
+    assert sum(len(line) + 1 for line in capped) <= MY_SKILLS_MAX_CHARS + 40, len(capped)
+    assert capped[0] == f"- skill-000: {'가' * MY_SKILL_DESC_LIMIT}…" and "생략" in capped[-1], capped[-1]
+    assert format_my_skills(many[:3]) == [f"- skill-00{n}: {'가' * MY_SKILL_DESC_LIMIT}…" for n in range(3)]
+    assert format_my_skills([{"name": "evil", "description": "bad"}, {"name": "ok", "description": "fine"}],
+                            scan=lambda text: "x" if "bad" in text else "") == ["- ok: fine"]
 
     # 시간 예산을 넘겼으면 네트워크를 건드리지 않고 모든 소스를 건너뛴다.
     skipped_lines, skipped = collect_tools(None, [], set(), started_at=time.monotonic() - TOOL_DEADLINE_SEC)
