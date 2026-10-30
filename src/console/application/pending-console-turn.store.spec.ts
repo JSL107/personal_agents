@@ -6,7 +6,7 @@ const SUGGESTIONS: readonly WorkSuggestion[] = [
   {
     agentType: AgentType.PM,
     displayName: 'PM',
-    reason: '마지막 성공 2일 전 · 평소 1일 주기',
+    reason: '2일째 안 했어요 (보통 1일마다 하던 일)',
   },
 ];
 
