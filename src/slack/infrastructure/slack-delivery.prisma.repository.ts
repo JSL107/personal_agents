@@ -97,4 +97,39 @@ export class SlackDeliveryPrismaRepository implements SlackDeliveryRepositoryPor
       status: row.status as SlackDeliveryStatus,
     }));
   }
+
+  async findRecent({
+    since,
+    limit,
+  }: {
+    since: Date;
+    limit: number;
+  }): Promise<SlackDeliveryListRow[]> {
+    const rows = await this.prisma.slackDelivery.findMany({
+      where: { createdAt: { gte: since } },
+      select: {
+        id: true,
+        kind: true,
+        itemKinds: true,
+        threadTs: true,
+        target: true,
+        channelId: true,
+        messageTs: true,
+        status: true,
+        suppressReason: true,
+        textPreview: true,
+        fullText: true,
+        errorMessage: true,
+        reactionCount: true,
+        replyCount: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+    return rows.map((row) => ({
+      ...row,
+      status: row.status as SlackDeliveryStatus,
+    }));
+  }
 }

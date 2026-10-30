@@ -259,6 +259,11 @@ export class EnvironmentVariables {
   @IsString()
   AUTOPILOT_OWNER_SLACK_USER_ID?: string;
 
+  // owner 대화 답변이 열 수 있는 Hermes cron 출력 폴더. 미설정 시 조회하지 않는다.
+  @IsOptional()
+  @IsString()
+  HERMES_CRON_OUTPUT_DIR?: string;
+
   @IsOptional()
   @IsString()
   AUTOPILOT_TARGET?: string;
