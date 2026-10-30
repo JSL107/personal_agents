@@ -81,6 +81,10 @@ export interface PrReviewFindingRepositoryPort {
 
   markPosted(input: MarkPostedInput): Promise<void>;
 
+  findUnpostedOpenCards(
+    input: HasAnyForPullRequestInput,
+  ): Promise<PrReviewFindingRecord[]>;
+
   findOpenPostedCards(): Promise<PrReviewFindingRecord[]>;
 
   markDecided(input: MarkDecidedInput): Promise<void>;

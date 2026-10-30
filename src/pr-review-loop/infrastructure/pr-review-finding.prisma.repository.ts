@@ -77,6 +77,17 @@ export class PrReviewFindingPrismaRepository implements PrReviewFindingRepositor
     });
   }
 
+  async findUnpostedOpenCards({
+    repo,
+    pullNumber,
+  }: HasAnyForPullRequestInput): Promise<PrReviewFindingRecord[]> {
+    const rows = await this.prisma.prReviewFinding.findMany({
+      where: { repo, pullNumber, status: 'OPEN', postMode: 'NOT_POSTED' },
+      orderBy: { id: 'asc' },
+    });
+    return rows.map((row) => this.toRecord(row));
+  }
+
   async findOpenPostedCards(): Promise<PrReviewFindingRecord[]> {
     const where = {
       status: 'OPEN',

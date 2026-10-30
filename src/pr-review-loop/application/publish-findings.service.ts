@@ -47,6 +47,10 @@ import { ReviewWriter, ReviewWriterResolver } from './review-writer.resolver';
 
 const AGENT_TYPE = 'CODE_REVIEWER';
 
+// 이보다 젊은 NOT_POSTED 카드는 다른 경로가 아직 게시하는 중일 수 있어 복구하지 않는다(recoverUnposted 참조).
+// 게시는 몇 초면 끝나고 스윕 주기가 3분이라, 5분이면 진행 중인 게시와 겹치지 않으면서 다음 회차에 바로 집힌다.
+const UNPOSTED_RECOVERY_MIN_AGE_MS = 5 * 60 * 1000;
+
 export interface PublishFindingsInput {
   agentRunId: number;
   repo: string;
@@ -209,6 +213,156 @@ export class PublishFindingsService {
     return outcome;
   }
 
+  async recoverUnposted({
+    repo,
+    pullNumber,
+    dryRun,
+    allowlistRaw,
+  }: {
+    repo: string;
+    pullNumber: number;
+    dryRun: boolean;
+    allowlistRaw: string | undefined;
+  }): Promise<number> {
+    if (dryRun || !isRepoAllowed(repo, allowlistRaw)) {
+      return 0;
+    }
+    try {
+      // 막 만든 카드는 다른 게시 경로(수동 /review-pr 의 publish)가 지금 올리는 중일 수 있다.
+      // 그 사이에 복구가 끼면 같은 지적이 두 번 달린다. 게시는 몇 초면 끝나므로 일정 시간이 지나도
+      // NOT_POSTED 인 카드만 실패한 것으로 본다.
+      const settledBefore = Date.now() - UNPOSTED_RECOVERY_MIN_AGE_MS;
+      const cards = (
+        await this.repository.findUnpostedOpenCards({ repo, pullNumber })
+      ).filter((record) => record.createdAt.getTime() <= settledBefore);
+      if (cards.length === 0) {
+        return 0;
+      }
+      const client = this.writers.forRepo(repo).client;
+      const [threadResult, comments] = await Promise.all([
+        client.listReviewThreads({ repo, number: pullNumber }),
+        client.listIssueComments({ repo, number: pullNumber }),
+      ]);
+      // 잘린 목록을 부재로 판단하면 이미 게시한 카드를 중복 게시한다.
+      if (threadResult.truncated) {
+        throw new Error('리뷰 스레드 목록이 잘렸습니다');
+      }
+      // 열린 PR 검색은 인덱스가 늦어 이미 머지·종료된 PR 을 섞어 준다. 닫힌 PR 에는 올리지 않는다.
+      if (threadResult.pullRequestState !== 'OPEN') {
+        return 0;
+      }
+      // 코멘트 하나는 카드 하나에만 대응시킨다. 스레드에는 파일 경로가 없어 본문만으로 맞추는데, 두 파일에
+      // 같은 문장의 카드가 있고 하나만 올라갔다면 둘 다 "게시됨" 으로 접혀 나머지 하나가 사라진다.
+      const usedThreadComments = new Set<number>();
+      const usedIssueItems = new Set<string>();
+      const remaining: {
+        record: PrReviewFindingRecord;
+        finding: ReviewFinding;
+      }[] = [];
+      let recovered = 0;
+      for (const record of cards) {
+        const finding: ReviewFinding = {
+          category: record.category,
+          severity: record.severity,
+          body: record.body,
+          ...(record.filePath === null ? {} : { file: record.filePath }),
+          ...(record.line === null ? {} : { line: record.line }),
+        };
+        const body = buildFindingCommentBody(finding);
+        const isUnusedMatch = (item: { databaseId: number; body: string }) =>
+          item.body === body && !usedThreadComments.has(item.databaseId);
+        const thread = threadResult.threads.find((item) =>
+          item.comments.some(isUnusedMatch),
+        );
+        const comment = thread?.comments.find(isUnusedMatch);
+        const issueBody = buildPrWideFindingsCommentBody([finding])
+          .split('\n\n')
+          .slice(1)
+          .join('\n\n');
+        const issue = comments.find(
+          (item) =>
+            item.body.includes(issueBody) &&
+            !usedIssueItems.has(`${item.id}|${issueBody}`),
+        );
+        if (thread && comment) {
+          usedThreadComments.add(comment.databaseId);
+          await this.repository.markPosted({
+            id: record.id,
+            postMode: record.line === null ? 'FILE' : 'INLINE',
+            githubCommentId: String(comment.databaseId),
+            githubThreadNodeId: thread.threadId,
+          });
+          recovered += 1;
+        } else if (issue) {
+          usedIssueItems.add(`${issue.id}|${issueBody}`);
+          await this.repository.markPosted({
+            id: record.id,
+            postMode: 'ISSUE_COMMENT',
+            githubCommentId: String(issue.id),
+            githubThreadNodeId: null,
+          });
+          recovered += 1;
+        } else {
+          remaining.push({ record, finding });
+        }
+      }
+      if (remaining.length === 0) {
+        return recovered;
+      }
+      const [headSha, diff] = await Promise.all([
+        this.githubClient.getPullRequestHeadSha({ repo, number: pullNumber }),
+        this.githubClient.getPullRequestDiff({ repo, number: pullNumber }),
+      ]);
+      const input: PublishFindingsInput = {
+        agentRunId: 0,
+        repo,
+        pullNumber,
+        headSha,
+        diff: diff.diff,
+        diffTotalBytes: diff.bytes,
+        findings: [],
+        max: 0,
+        dryRun,
+        allowlistRaw,
+      };
+      const outcome: PublishOutcome = {
+        inline: 0,
+        file: 0,
+        issueComment: 0,
+        dryRun: 0,
+        notPosted: 0,
+        dropped: 0,
+        duplicate: 0,
+      };
+      const fallback: {
+        record: PrReviewFindingRecord;
+        finding: ReviewFinding;
+      }[] = [];
+      const hunks = parseDiffHunks(diff.diff);
+      for (const item of remaining) {
+        // 카드를 만든 뒤 push 가 있었으면 저장된 줄 번호가 지금 코드의 그 줄이라는 보장이 없다.
+        // 스냅은 20줄까지 끌어당겨 엉뚱한 코드에 붙일 수 있으니, 줄을 버리고 그 파일 단위 스레드로 올린다.
+        await this.postWithFallback({
+          input,
+          ...item,
+          hunks,
+          outcome,
+          fallback,
+          skipLineAnchor: item.record.headSha !== headSha,
+        });
+      }
+      if (fallback.length > 0) {
+        await this.postPrWideComment({ input, fallback, outcome });
+      }
+      return recovered + outcome.inline + outcome.file + outcome.issueComment;
+    } catch (error: unknown) {
+      this.logger.warn(
+        `미게시 지적 복구 실패 (${repo}#${pullNumber}): ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return 0;
+    }
+  }
+
   // 승인자용 위험 지도를 PR 코멘트 하나로 남긴다. push 뒤 재리뷰에서는 새로 달지 않고 그 코멘트를
   // 고쳐 쓴다 — 회차마다 쌓이면 어느 것이 최신인지 읽는 사람이 가려야 한다.
   // 지적 카드와 달리 지적 0건이어도 단다(위험은 지적 유무와 별개다). 게시 범위는 지적과 같은 허용 목록·
@@ -362,6 +516,7 @@ export class PublishFindingsService {
     hunks,
     outcome,
     fallback,
+    skipLineAnchor = false,
   }: {
     input: PublishFindingsInput;
     finding: ReviewFinding;
@@ -369,6 +524,8 @@ export class PublishFindingsService {
     hunks: FileHunkRanges[];
     outcome: PublishOutcome;
     fallback: { record: PrReviewFindingRecord; finding: ReviewFinding }[];
+    // 줄 위치를 믿을 수 없을 때(복구 시점의 head 가 카드의 head 와 다름) 줄 게시를 건너뛰고 파일 단위로 올린다.
+    skipLineAnchor?: boolean;
   }): Promise<void> {
     const filePath = finding.file;
     // diff 에 없는 경로는 GitHub 이 422 로 거절한다 — 모델이 file 자리에 "PR 본문" 같은
@@ -383,8 +540,9 @@ export class PublishFindingsService {
 
     // line 이 없어도 파일 단위로 강등하지 않는다 — 파일 헤더에 붙은 코멘트는 어느 줄에 대한
     // 지적인지 보이지 않아 리뷰로서 쓸모가 없다. 그 파일 첫 변경 줄에 인라인으로 붙인다.
-    const snapped =
-      finding.line === undefined
+    const snapped = skipLineAnchor
+      ? null
+      : finding.line === undefined
         ? firstCommentableLine({ hunks, filePath })
         : snapToCommentableLine({
             hunks,

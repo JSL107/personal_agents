@@ -40,6 +40,23 @@ describe('PrReviewFindingPrismaRepository', () => {
     );
   });
 
+  it('PR 의 열린 미게시 카드만 id 순서로 조회한다', async () => {
+    prisma.prReviewFinding.findMany.mockResolvedValue([]);
+    await repository.findUnpostedOpenCards({
+      repo: 'owner/repo',
+      pullNumber: 12,
+    });
+    expect(prisma.prReviewFinding.findMany).toHaveBeenCalledWith({
+      where: {
+        repo: 'owner/repo',
+        pullNumber: 12,
+        status: 'OPEN',
+        postMode: 'NOT_POSTED',
+      },
+      orderBy: { id: 'asc' },
+    });
+  });
+
   it('생성된 행을 도메인 레코드로 변환한다 (BigInt → string)', async () => {
     prisma.prReviewFinding.create.mockResolvedValue({
       id: 1,
