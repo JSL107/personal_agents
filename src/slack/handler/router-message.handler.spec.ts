@@ -3279,6 +3279,44 @@ describe('RouterMessageHandler — Slack 대화 기록과 사진', () => {
     ]);
   });
 
+  it('스레드 안 file_share 에 files 가 없으면 history 가 아니라 그 스레드의 replies 에서 보충한다', async () => {
+    const testCase = setup({ failure: true });
+    const history = jest.fn().mockResolvedValue({ messages: [] });
+    const replies = jest.fn().mockResolvedValue({
+      messages: [
+        { ts: '1000.000100', text: '부모' },
+        { ts: messageTs, files: [imageFile] },
+      ],
+    });
+    const client = {
+      reactions: {
+        add: jest.fn().mockResolvedValue({ ok: true }),
+        remove: jest.fn().mockResolvedValue({ ok: true }),
+      },
+      conversations: { history, replies },
+    };
+    await testCase.getHandler('message')({
+      event: {
+        ...event({ subtype: 'file_share' }),
+        thread_ts: '1000.000100',
+      },
+      say: jest.fn(),
+      client,
+    });
+    expect(history).not.toHaveBeenCalled();
+    expect(replies).toHaveBeenCalledWith({
+      channel: 'D_DM',
+      ts: '1000.000100',
+      latest: messageTs,
+      inclusive: true,
+    });
+    expect(testCase.download).toHaveBeenCalledWith([
+      expect.objectContaining({
+        file: expect.objectContaining({ id: 'F_IMAGE' }),
+      }),
+    ]);
+  });
+
   it('DM 의 다른 subtype(message_changed)은 버린다', async () => {
     const testCase = setup();
     await invokeHandler(

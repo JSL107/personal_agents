@@ -366,6 +366,7 @@ export class RouterMessageHandler implements SlackHandler {
     client,
     channelId,
     messageTs,
+    threadTs,
     files,
     fileShare,
   }: CurrentFilesInput): Promise<SlackTranscriptFile[]> {
@@ -373,12 +374,20 @@ export class RouterMessageHandler implements SlackHandler {
       return files;
     }
     try {
-      const response = await client.conversations.history({
-        channel: channelId,
-        latest: messageTs,
-        inclusive: true,
-        limit: 1,
-      });
+      // 스레드 답글은 conversations.history 에 나오지 않는다(2026-10-30 실측) — 스레드 안이면 replies 로 찾는다.
+      const response = threadTs
+        ? await client.conversations.replies({
+            channel: channelId,
+            ts: threadTs,
+            latest: messageTs,
+            inclusive: true,
+          })
+        : await client.conversations.history({
+            channel: channelId,
+            latest: messageTs,
+            inclusive: true,
+            limit: 1,
+          });
       const message = response.messages?.find((item) => item.ts === messageTs);
       return readEventFiles(message?.files);
     } catch (error) {
@@ -503,6 +512,7 @@ export class RouterMessageHandler implements SlackHandler {
       client,
       channelId,
       messageTs,
+      threadTs: replyToTs,
       files,
       fileShare,
     });
@@ -1601,6 +1611,8 @@ interface CurrentFilesInput {
   client: WebClient;
   channelId: string;
   messageTs?: string;
+  // 실제 thread_ts. 최상위 메시지면 없다.
+  threadTs?: string;
   files: SlackTranscriptFile[];
   fileShare: boolean;
 }

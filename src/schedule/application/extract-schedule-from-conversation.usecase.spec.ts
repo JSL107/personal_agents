@@ -16,9 +16,10 @@ describe('ExtractScheduleFromConversationUsecase', () => {
   } as unknown as ModelRouterUsecase);
   beforeEach(() => route.mockReset());
   it.each([
-    [{ title: '일정', dueDate: '2026-02-30', memo: '' }, '없는 날짜'],
-    [{ title: '가'.repeat(61), dueDate: null, memo: '' }, '긴 제목'],
-    [{ title: '일정', dueDate: '내일', memo: '' }, 'ISO 가 아닌 날짜'],
+    [{ title: '일정', dueDate: '2026-02-30', memo: '원인' }, '없는 날짜'],
+    [{ title: '가'.repeat(61), dueDate: null, memo: '원인' }, '긴 제목'],
+    [{ title: '일정', dueDate: '내일', memo: '원인' }, 'ISO 가 아닌 날짜'],
+    [{ title: '일정', dueDate: null, memo: '  ' }, '빈 메모'],
   ])('%s 는 %s 이므로 탈락한다', async (value, reason) => {
     expect(reason).toBeTruthy();
     route.mockResolvedValue({
@@ -59,7 +60,7 @@ describe('ExtractScheduleFromConversationUsecase', () => {
   });
   it('자동 발송 글은 변환 단계의 경계를 유지한 채 한 번만 싣는다', async () => {
     route.mockResolvedValue({
-      text: JSON.stringify({ title: '일정', dueDate: null, memo: '' }),
+      text: JSON.stringify({ title: '일정', dueDate: null, memo: '원인' }),
       modelUsed: 'model',
     });
     await usecase.execute({

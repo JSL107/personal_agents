@@ -34,7 +34,7 @@ const OUTPUT_SCHEMA: OutputJsonSchema = {
         { type: 'null' },
       ],
     },
-    memo: { type: 'string', maxLength: 1000 },
+    memo: { type: 'string', minLength: 1, maxLength: 1000 },
   },
   required: ['title', 'dueDate', 'memo'],
   additionalProperties: false,
@@ -126,11 +126,15 @@ const readTitle = (value: unknown): string | null => {
   return title;
 };
 
+// 앞 대화를 가리킨 요청에서 추출을 켜는 목적이 그 내용을 메모로 싣는 것이라, 빈 메모는 추출 실패로 본다.
 const readMemo = (value: unknown): string | null => {
   if (typeof value !== 'string') {
     return null;
   }
-  const memo = value.slice(0, MEMO_MAX_LENGTH);
+  const memo = value.trim().slice(0, MEMO_MAX_LENGTH);
+  if (memo.length === 0) {
+    return null;
+  }
   return memo;
 };
 
