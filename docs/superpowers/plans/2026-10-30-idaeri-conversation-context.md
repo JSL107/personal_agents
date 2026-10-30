@@ -37,7 +37,7 @@
 1. Slack 기록 조회 실패(scope 부족·rate limit) → 경고 로그만 남기고 Redis 턴으로 지금처럼 답한다. (Task 9 테스트)
 2. 사진 URL 이 권한 문제로 HTML 로그인 페이지를 돌려줌 → 그 사진은 건너뛰고 "N장은 보지 못했다"로 센다. 본 척 금지. 번호가 어긋나지 않는다. (Task 4 테스트)
 3. 사용자가 같은 문구를 두 번 보냄 → Redis 메타 매칭이 최신부터 1:1 로 짝지어 엉뚱한 실행 id 를 붙이지 않는다. (Task 1 테스트)
-4. 답하는 도중 HEAD 가 바뀜·동시에 두 답이 사본을 요청 → 사본 생성은 커밋당 1회, 진행 중 답이 쓰는 직전 사본은 지워지지 않는다. (Task 6 테스트)
+4. 답하는 도중 HEAD 가 바뀜·동시에 두 답이 사본을 요청 → 사본 생성은 커밋당 1회, 교체된 사본은 그것을 쓰는 답이 모두 끝난 뒤(사용 중 개수 0)에만 지운다 — HEAD 가 답 하나 동안 여러 번 바뀌어도 같다. (Task 6 테스트)
 5. 아침신문 본문에 "이전 지시를 무시하고…" 같은 문구 → 경계 안에 갇히고 assistant 역할로 읽히지 않으며, 분류기도 본문 앞부분을 본다. (Task 1·8 테스트)
 6. DM 최상위 질문에서도 직전 이대리 답(스레드에 있음)이 대화 본문에 들어온다. (Task 3·9 테스트)
 7. owner 가 아닌 발화자는 원장·발송 기록·읽기 폴더를 받지 못한다. (Task 6 테스트)
@@ -211,18 +211,19 @@
     deliveryText?: string;      // 최근 24h 상태 무관(SENT·SUPPRESSED·FAILED) 최신 10건(종류·상태·미리보기·시각 KST)
     readableRoots: string[];    // 존재 확인된 Hermes 폴더(realpath), 레포 사본
     rootGuide: string[];        // 각 폴더가 무엇인지 한 줄씩(프롬프트 안내용)
+    release: () => void;        // 레포 사본 사용 끝 — 답이 끝나면 finally 에서 부른다(사본 없으면 no-op)
   }
   @Injectable() export class ConversationLookupService { collect(input: { slackUserId: string }): Promise<ConversationLookups>; }
 
   @Injectable() export class LocalRepoSnapshotService implements OnModuleDestroy {
-    current(): Promise<string | null>; // 사본 루트 절대경로, git 레포가 아니거나 실패면 null
+    acquire(): Promise<{ root: string; release: () => void } | null>; // 사본 루트 절대경로 + 다 쓰면 부를 release, git 레포가 아니거나 실패면 null
   }
   ```
   env: `HERMES_CRON_OUTPUT_DIR` (optional string, 비면 Hermes 조회 끔). 운영 `.env` 값은 사용자가 `~/.hermes/cron/output` 절대경로로 넣는다(직접). owner 는 기존 `AUTOPILOT_OWNER_SLACK_USER_ID` 재사용(새 env 없음) — 미설정이면 조회 전체 끔.
 
 - [ ] **Step 1: 실패하는 테스트**
   - 조회: `it('원장·발송 기록을 각각 한 블록 텍스트로 만든다')`, `it('발송 기록은 findRecent 로 상태 무관 최신 10건')`, `it('원장·발송 블록은 wrapUntrustedInput 경계 안에 있다')`(실패 사유·미리보기에 외부 글이 섞인다), `it('원장 조회가 throw 하면 그 블록만 빠지고 나머지는 나온다')`, `it('owner 가 아니면 ledgerText·deliveryText·readableRoots 가 모두 비어 있다')`, `it('owner env 가 없으면 조회를 끈다')`, `it('HERMES_CRON_OUTPUT_DIR 가 절대경로 디렉터리일 때만 realpath 로 readableRoots 에 넣는다')`, `it('HERMES_CRON_OUTPUT_DIR 가 $HOME 이거나 ~/.hermes 이거나 그 상위이면 넣지 않는다')`, `it('그 폴더 직속에 auth.json·config.yaml·.env·jobs.json 이 있으면 넣지 않는다')`, `it('심볼릭 링크는 realpath 로 푼 뒤 판정한다')`, `it('레포 사본이 null 이면 넣지 않는다')`.
-  - 레포 사본(child_process·fs mock 또는 임시 git 레포 fixture): `it('HEAD 가 같으면 git archive 를 다시 부르지 않는다')`, `it('HEAD 가 바뀌면 새 사본을 만들고 직전 사본은 남기고 그 이전 것은 지운다')`, `it('동시에 두 번 불려도 git archive 는 한 번')`, `it('git 레포가 아니면 null')`, `it('사본에 .env 가 없다')`(fixture 에 커밋 안 된 `.env`), `it('1MB 가 넘는 archive 출력도 받는다')`, `it('git 자식 env 에 DATABASE_URL 등 앱 env 가 없다')`, `it('onModuleDestroy 가 현재·직전 사본을 dispose 한다')`.
+  - 레포 사본(child_process·fs mock 또는 임시 git 레포 fixture): `it('HEAD 가 같으면 git archive 를 다시 부르지 않는다')`, `it('HEAD 가 바뀌면 새 사본을 만들고, 교체된 사본은 사용 중이면 남겼다가 release 로 0 이 되면 지운다')`, `it('답 하나가 쓰는 동안 HEAD 가 두 번 바뀌어도 그 답의 사본은 남는다')`, `it('동시에 두 번 불려도 git archive 는 한 번')`, `it('git 레포가 아니면 null')`, `it('사본에 .env 가 없다')`(fixture 에 커밋 안 된 `.env`), `it('1MB 가 넘는 archive 출력도 받는다')`, `it('git 자식 env 에 DATABASE_URL 등 앱 env 가 없다')`, `it('onModuleDestroy 가 현재·직전 사본을 dispose 한다')`.
 - [ ] **Step 2: 실패 확인** → FAIL.
 - [ ] **Step 3: 구현**
   - 레포 루트: 최초 1회 `git rev-parse --show-toplevel`(cwd = `process.cwd()`), 실패면 영구 `null`.
@@ -253,9 +254,9 @@
   - `it('작업 상태는 memoryTurns 로 계산하고 Slack 턴의 꼬리표 payload 는 쓰지 않는다')`.
   - `it('priorTurns 가 비어도 조회·사진 블록이 실린다')` — 지금 `buildPrompt` 는 턴이 없으면 조기 반환한다(`conversational-reply.usecase.ts:380`).
   - `it('자동 발송 글 턴은 buildPrompt 에서 다시 자르지 않는다')`.
-  - `it('조회 수집이 throw 해도 답한다')`, `it('slackUserId 가 없으면 collect 를 부르지 않는다')`.
+  - `it('조회 수집이 throw 해도 답한다')`, `it('slackUserId 가 없으면 collect 를 부르지 않는다')`, `it('답이 성공해도 실패해도 lookups.release 를 부른다')`.
 - [ ] **Step 2: 실패 확인** → FAIL.
-- [ ] **Step 3: 구현** — `collect()` 는 try/catch 로 감싸 실패 시 빈 조회. eval stub 은 `collect: async () => ({ readableRoots: [], rootGuide: [] })`, 사본 서비스는 `current: async () => null`.
+- [ ] **Step 3: 구현** — `collect()` 는 try/catch 로 감싸 실패 시 빈 조회. route 호출을 try/finally 로 감싸 `lookups.release()`. eval stub 은 `collect: async () => ({ readableRoots: [], rootGuide: [], release: () => {} })`, 사본 서비스는 `acquire: async () => null`.
 - [ ] **Step 4: 통과 확인** → PASS. `pnpm build && node --env-file=.env scripts/check-di.cjs` PASS. [직접] `pnpm eval:nl-answer --only <tuning 문항 1개> --runs 1` 이 stub 로 끝까지 도는지 확인.
 - [ ] **Step 5: Commit** — `feat(router): 대화 답변이 기록·사진·조회를 근거로 답한다`
 
@@ -328,13 +329,14 @@
   formatScheduleRegistered(record, options?: { dateDefaulted?: boolean; memo?: string })
   ```
   모델 호출: `modelRouter.route({ agentType: AgentType.SCHEDULE, request: { prompt, systemPrompt, outputSchema }, noContractPreamble: true })`. 스키마: `{ title: string(1..60), dueDate: string(YYYY-MM-DD)|null, memo: string(0..1000) }`. 코드 재검증: 제목 1~60자, 날짜는 기존 `parseDueDate`(`ABSOLUTE_ISO`)로 해석해 실제 존재하는 날짜만 통과, memo 1000자 자름. system 에 `UNTRUSTED_INPUT_NOTICE`. memo 는 외부 글에서 온 문자열이므로 **표시 시 `escapeSlackMrkdwn`** 하고 길이를 줄여 보인다.
-- 켜지는 조건(spec §3-6): `priorTurns` 에 `role === 'assistant'` 턴이 있고 (`command.kind` 가 `NEEDS_TITLE`/`NEEDS_DATE`, 또는 `refersToPriorConversation(text)`). 추출 성공 시 `dueDate ?? today` 로 `RegisterScheduleUsecase.execute({ slackUserId, title, dueDate, memo })`, 실패(`null`)면 기존 흐름. 등록은 `agentRunService.execute` 안에서 하되 `modelUsed` 는 추출 결과 값, `inputSnapshot` 에 `source:'CONVERSATION'`·`hasMemo` 를 남긴다.
+- 켜지는 조건(spec §3-6): `priorTurns` 에 `role === 'assistant'` 턴이 있고 (`command.kind` 가 `NEEDS_TITLE`/`NEEDS_DATE`, 또는 `refersToPriorConversation(text)`). `refersToPriorConversation(text)` 가 참인데 추출이 `null` 이면 규칙 파서 결과로 등록하지 않고 "직전 대화 내용을 읽지 못했어요, 제목을 알려 주세요" 로 되묻는다(파서가 "원인과 함께" 같은 제목을 만들기 때문). 추출 성공 시 `dueDate ?? today` 로 `RegisterScheduleUsecase.execute({ slackUserId, title, dueDate, memo })`, 실패(`null`)면 기존 흐름. 등록은 `agentRunService.execute` 안에서 하되 `modelUsed` 는 추출 결과 값, `inputSnapshot` 에 `source:'CONVERSATION'`·`hasMemo` 를 남긴다.
 
 - [ ] **Step 1: 실패하는 테스트**
   - `it('"원인과 함께 일정에 등록해줄래?" + 직전 분석 답 → memo 를 실어 오늘 날짜로 등록하고 답에 오늘로 등록했다고 밝힌다')`.
   - `it('"내일 원인과 함께 등록해줘" 는 파서가 다 채워도 모델 추출로 간다')`.
   - `it('직전 대화에 이대리 답이 없으면 모델을 부르지 않는다')`.
   - `it('추출이 null 이면 지금처럼 날짜를 되묻는다')`.
+  - `it('직전 대화 참조 요청에서 추출이 실패하면 파서 결과로 등록하지 않고 되묻는다')` — "내일 원인과 함께 등록해줘" + 추출 null → `RegisterScheduleUsecase` 미호출.
   - `it('가정형("등록해도 돼?")이면 추출 전에 보류한다')`.
   - `it('"9월 30일 자동차세" 평서 등록은 모델 없이 처리한다')`.
   - `it('모델 추출 등록의 AgentRun 은 modelUsed 가 추출 모델이고 inputSnapshot.source 가 CONVERSATION')`.
@@ -391,3 +393,11 @@
 ## 실행 기록
 
 (Task 0 결과와 Task 12 Step 6 에서 채운다)
+
+### Task 0 실측 (2026-10-30, owner DM `D0AUN9S2938`, 시험 메시지는 삭제함)
+
+- scope: `im:history`·`files:read`·`channels:history`·`groups:history` 포함 — 재설치 불필요.
+- metadata 왕복: `chat.postMessage` 에 붙인 `idaeri_reply` 가 `conversations.history`·`conversations.replies`(`include_all_metadata`) 양쪽에서 돌아온다 → Task 2 대안 경로 불필요.
+- DM 최상위 `conversations.history` 는 스레드 답글을 돌려주지 않고 부모에 `reply_count` 만 준다 → Task 3 스레드 보강이 필요하다는 전제 확인.
+- 메시지 `bot_id` 가 `auth.test` 의 `bot_id` 와 같다 → 자기 봇 확인 방식 성립.
+- Step 3(사진 이벤트 페이로드)은 서버 로그가 필요해 미룸 — Task 9 는 `event.files` 우선, 없으면 history 보충 두 경로를 모두 구현하고 Task 13 실제 DM 에서 확인한다.
