@@ -233,7 +233,7 @@ def self_check() -> None:
         "## Prompt\n🛠 오늘의 도구 후보\n*9. 프롬프트 속 가짜*\n- 흐름: a → b → c\n- 뭔가요: x\n"
         "## Response\n📈 경제\n- **코스피 1. 상승** — 요약\n\n🛠 오늘의 도구\n\n"
         "*1. DeepInfer*\n- **뭔가요:** 추론 엔진이에요.\n- 왜 볼 만한가: 속도.\n"
-        "- 흐름: 모델 가중치 → DeepInfer로 서빙 → 빠른 응답\n- 출처: https://github.com/deepseek-ai/DeepInfer\n\n"
+        "- 흐름: 모델 가중치 → DeepInfer로 서빙 → 빠른 응답\n· ↔ 내 스킬: 테스트\n- 출처: https://github.com/deepseek-ai/DeepInfer\n\n"
         "**2. 흐름 없는 도구**\n- 뭔가요: 그림 없음\n- 출처: https://yozm.wishket.com/magazine/detail/1\n\n"
         "*3. <script>alert(1)</script>*\n- 뭔가요: a & b\n- 흐름: 넣고 → 뺀다\n- 출처: https://tessl.io/blog/x\n\n"
         "2026년 10월 21일 · 뉴스 9건\n"
