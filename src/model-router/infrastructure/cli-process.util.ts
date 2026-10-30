@@ -138,10 +138,13 @@ export const killProcessTree = (pid: number | undefined): void => {
 // exit) 파이프 버퍼(약 64KB)를 넘는 payload 쓰기가 stdin 스트림에 EPIPE 'error' 를 낸다. `child.on('error')`
 // 는 spawn 실패만 받으므로 이 리스너가 없으면 uncaught 로 봇 프로세스 전체가 죽는다. 실패 사유는 provider 의
 // 'close' 핸들러가 종료 코드·stderr 로 이미 보고하므로 여기서는 삼킨다.
-export const writeStdinAndClose = (
-  child: ChildProcess,
-  payload: string,
-): void => {
+export const writeStdinAndClose = ({
+  child,
+  payload,
+}: {
+  child: ChildProcess;
+  payload: string;
+}): void => {
   child.stdin?.on('error', () => undefined);
   child.stdin?.end(payload);
 };

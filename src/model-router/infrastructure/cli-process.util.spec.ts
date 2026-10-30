@@ -235,7 +235,7 @@ describe('writeStdinAndClose', () => {
       child.on('close', resolve);
     });
 
-    writeStdinAndClose(child, 'x'.repeat(1_000_000));
+    writeStdinAndClose({ child, payload: 'x'.repeat(1_000_000) });
 
     await expect(closed).resolves.toBe(3);
   });
