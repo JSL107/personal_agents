@@ -22,7 +22,8 @@ const BARE_URL = /https?:\/\/[^\s<>|]+/g;
 // 변환에서 제외할 구간 — 이미 이름이 붙은 링크(`<url|이름>`)와 인라인 코드(`` `...` ``).
 // 인라인 코드를 빼면 `` `https://github.com/o/r/pull/2` `` 의 백틱이 링크 문법 안으로 말려 들어가
 // `` `<https://...` |r #2> `` 처럼 통째로 깨진다.
-const PROTECTED_TOKEN = /(<[^<>]*>|`[^`]*`)/;
+// 이중 백틱(``` `` a `b` `` ```)은 안에 백틱을 품을 수 있어 단일 백틱보다 먼저 본다(PR #923 리뷰).
+const PROTECTED_TOKEN = /(<[^<>]*>|``.+?``|`[^`]+`)/;
 const URL_TRAILING_PUNCTUATION = /[.,;:!?)\]}'"]+$/;
 const GITHUB_ISSUE_URL =
   /^https?:\/\/github\.com\/[^/]+\/([^/]+)\/(?:pull|issues)\/(\d+)/;
@@ -47,25 +48,40 @@ const mapUnprotected = (
     .map((part, index) => (index % 2 === 1 ? part : transform(part)))
     .join('');
 
-// ``` 코드블록 안은 통째로 건너뛴다 — 사용자가 그대로 복사해 쓰는 원문이라 한 글자도 바꾸면 안 된다.
+// 코드블록 안은 통째로 건너뛴다 — 사용자가 그대로 복사해 쓰는 원문이라 한 글자도 바꾸면 안 된다.
 // fence 가 닫히지 않은 입력이면 그 뒤 전체를 코드로 보고 통과시킨다(안전한 실패).
-export const isCodeFenceLine = (line: string): boolean =>
-  line.trimStart().startsWith('```');
+// Markdown 처럼 연 기호와 같은 기호로만 닫는다 — ``` 블록 안의 `~~~` 줄은 코드다(PR #923 리뷰).
+const CODE_FENCE_MARKERS = ['```', '~~~'] as const;
+
+export type CodeFenceLineKind = 'fence' | 'code' | 'text';
+
+// 줄을 순서대로 넣으면 그 줄이 fence 인지, 코드블록 안인지, 일반 글인지 알려 준다.
+export const createCodeFenceTracker = (): ((
+  line: string,
+) => CodeFenceLineKind) => {
+  let openMarker: string | null = null;
+  return (line) => {
+    const marker = CODE_FENCE_MARKERS.find((candidate) =>
+      line.trimStart().startsWith(candidate),
+    );
+    const opensOrCloses =
+      marker !== undefined && (openMarker === null || openMarker === marker);
+    if (opensOrCloses) {
+      openMarker = openMarker === null ? marker : null;
+      return 'fence';
+    }
+    return openMarker === null ? 'text' : 'code';
+  };
+};
 
 const mapOutsideCodeFence = (
   text: string,
   transformLine: (line: string) => string,
 ): string => {
-  let insideCodeFence = false;
+  const classify = createCodeFenceTracker();
   return text
     .split('\n')
-    .map((line) => {
-      if (isCodeFenceLine(line)) {
-        insideCodeFence = !insideCodeFence;
-        return line;
-      }
-      return insideCodeFence ? line : transformLine(line);
-    })
+    .map((line) => (classify(line) === 'text' ? transformLine(line) : line))
     .join('\n');
 };
 

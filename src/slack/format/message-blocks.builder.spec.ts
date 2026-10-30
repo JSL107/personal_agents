@@ -157,3 +157,9 @@ describe('toReadableMessage — Markdown 굵게', () => {
     });
   });
 });
+
+describe('buildReadableBlocks — `~~~` 코드블록 보호', () => {
+  it('`~~~` 안의 `*강조*` 줄은 제목으로 올리지 않는다', () => {
+    expect(buildReadableBlocks('~~~\n*코드*\n~~~\n본문')).toBeNull();
+  });
+});
