@@ -546,6 +546,11 @@ describe('RouterMessageHandler — app_mention', () => {
       expect.objectContaining({ text: expect.stringContaining('완료') }),
     );
     expect(say.mock.calls[1][0]).not.toHaveProperty('blocks');
+    // 재시도로 나간 답도 다음 회차가 이대리 답으로 읽도록 실행 정보 꼬리표를 유지한다.
+    expect(say.mock.calls[1][0].metadata).toEqual({
+      event_type: 'idaeri_reply',
+      event_payload: { agentType: AgentType.PM, agentRunId: 99 },
+    });
     expect(
       say.mock.calls.every(([message]) => !message.text.includes('처리 실패')),
     ).toBe(true);
