@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { fetchDailyBarsWithRateLimitRetry } from '../../market-data/domain/fetch-daily-bars-with-rate-limit-retry';
 import { DailyBar } from '../../market-data/domain/market-data.type';
@@ -7,6 +7,7 @@ import {
   MarketDataPort,
 } from '../../market-data/domain/port/market-data.port';
 import { PaperMarket, TradeSide } from '../domain/paper-account.type';
+import { PendingOrderFillResult } from '../domain/port/paper-order-ledger.port';
 import { getKstClock } from '../domain/trade-calendar';
 import {
   DuePaperOrderRecord,
@@ -97,6 +98,8 @@ const toDetail = (
 
 @Injectable()
 export class FillPendingOrdersUsecase {
+  private readonly logger = new Logger(FillPendingOrdersUsecase.name);
+
   constructor(
     private readonly repository: PaperTradingPrismaRepository,
     @Inject(MARKET_DATA_PORT) private readonly marketData: MarketDataPort,
@@ -202,17 +205,30 @@ export class FillPendingOrdersUsecase {
       }
       return true;
     }
-    const fill = await this.executeOrder.execute({
-      orderId: order.id,
-      accountId: order.accountId,
-      tickerId: order.tickerId,
-      market,
-      side: order.side,
-      requestedQuantity: order.quantity.toString(),
-      price: todayBar.open.toString(),
-      tradeDate,
-      strategy: order.strategy,
-    });
+    let fill: PendingOrderFillResult;
+    try {
+      fill = await this.executeOrder.execute({
+        orderId: order.id,
+        accountId: order.accountId,
+        tickerId: order.tickerId,
+        market,
+        side: order.side,
+        requestedQuantity: order.quantity.toString(),
+        price: todayBar.open.toString(),
+        tradeDate,
+        strategy: order.strategy,
+      });
+    } catch (error: unknown) {
+      // 주문은 id 순으로 돈다. 한 주문이 매 회차 같은 이유로 throw 하면(정수가 아닌 수량 등) 뒤 주문 전부와
+      // 장 마감 일괄 만료가 함께 멈춘다. 이 주문은 PENDING 으로 두고 넘어간다. 오늘 봉은 이미 봤으므로
+      // 시가 누락 분기처럼 true — 그래야 이 주문 하나뿐인 날에도 장 마감 일괄 만료가 같은 날 정리한다.
+      this.logger.warn(
+        `체결 실패 order=${order.id}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      result.lookupFailure += 1;
+      result.details.push(toDetail(order, 'LOOKUP_FAILURE'));
+      return true;
+    }
     if (fill.status === 'FILLED') {
       result.filled += 1;
       result.details.push(
