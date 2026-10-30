@@ -122,3 +122,75 @@ it('selfBotId 는 조회 결과를 캐시하고 실패하면 undefined 를 반�
   authTest.mockRejectedValue(new Error('실패'));
   await expect(failedReader.selfBotId(client)).resolves.toBeUndefined();
 });
+
+it('DM 부모에 reply_count 가 없으면 replies 를 부르지 않는다', async () => {
+  const history = jest.fn().mockResolvedValue({
+    messages: [
+      { ts: '1', text: '질문' },
+      { ts: '2', reply_count: 0 },
+    ],
+  });
+  const replies = jest.fn();
+  const reader = new SlackConversationReader();
+
+  const messages = await reader.read({
+    client: { conversations: { history, replies } } as unknown as WebClient,
+    channelId: 'D',
+    isDirectMessage: true,
+    nowMs: 100000000,
+  });
+
+  expect(replies).not.toHaveBeenCalled();
+  expect(messages).toHaveLength(2);
+});
+
+it('Slack 응답의 bot_id·metadata·files·reply_count 를 옮기고 없는 text 는 빈 문자열로 둔다', async () => {
+  const replies = jest.fn().mockResolvedValue({
+    messages: [
+      {
+        ts: '1',
+        bot_id: 'B1',
+        reply_count: 2,
+        metadata: {
+          event_type: 'idaeri_reply',
+          event_payload: { agentRunId: 42 },
+        },
+        files: [
+          {
+            id: 'F1',
+            mimetype: 'image/jpeg',
+            size: 123,
+            url_private_download: 'https://files.slack.com/one',
+          },
+        ],
+      },
+    ],
+  });
+  const reader = new SlackConversationReader();
+
+  const messages = await reader.read({
+    client: { conversations: { replies } } as unknown as WebClient,
+    channelId: 'D',
+    isDirectMessage: true,
+    threadTs: '1',
+    nowMs: 0,
+  });
+
+  expect(messages).toEqual([
+    {
+      ts: '1',
+      text: '',
+      botId: 'B1',
+      replyCount: 2,
+      metadata: { eventType: 'idaeri_reply', eventPayload: { agentRunId: 42 } },
+      files: [
+        {
+          id: 'F1',
+          mimetype: 'image/jpeg',
+          size: 123,
+          urlPrivateDownload: 'https://files.slack.com/one',
+        },
+      ],
+    },
+  ]);
+});

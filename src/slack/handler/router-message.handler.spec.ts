@@ -242,6 +242,11 @@ describe('RouterMessageHandler — 목표 질문 DM 인터셉트', () => {
     expect(say).toHaveBeenCalledWith(
       expect.objectContaining({ text: '목표 카드', blocks: expect.any(Array) }),
     );
+    expect(say).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: { event_type: 'idaeri_reply', event_payload: {} },
+      }),
+    );
     expect(router.dispatch).not.toHaveBeenCalled();
   });
 
@@ -721,6 +726,11 @@ describe('RouterMessageHandler — app_mention', () => {
     const sayText = say.mock.calls[0][0].text as string;
     expect(sayText).toContain('mock body');
     expect(sayText).toContain('_이대리 (오늘 계획) · 실행 #99_');
+    // 라우터가 넘긴 실행 꼬리표를 기본 꼬리표로 덮으면 다음 턴의 실행 참조가 사라진다.
+    expect(say.mock.calls[0][0].metadata).toEqual({
+      event_type: 'idaeri_reply',
+      event_payload: { agentType: AgentType.PM, agentRunId: 99 },
+    });
   });
 
   // 2026-10-14 run 8837 — 비동기 블로그 완료 답장이 기억에 없어 다음 턴 "이거 요약해줘" 가 원문을 못 봤다.
@@ -1018,6 +1028,7 @@ describe('RouterMessageHandler — app_mention', () => {
     expect(say).toHaveBeenCalledWith(
       expect.objectContaining({
         text: '안녕하세요! 무엇을 도와드릴까요?',
+        metadata: { event_type: 'idaeri_reply', event_payload: {} },
       }),
     );
   });
@@ -1385,6 +1396,7 @@ describe('RouterMessageHandler — app_mention', () => {
         text: expect.stringContaining('내부 오류'),
       }),
     );
+    expect(say.mock.calls[0][0]).not.toHaveProperty('metadata');
   });
 });
 
@@ -2533,6 +2545,7 @@ describe('RouterMessageHandler — 자연어 Y/N preview 인터셉트', () => {
     expect(say).toHaveBeenCalledWith(
       expect.objectContaining({
         text: expect.stringContaining('적용 완료'),
+        metadata: { event_type: 'idaeri_reply', event_payload: {} },
       }),
     );
   });
@@ -2669,6 +2682,7 @@ describe('RouterMessageHandler — 자연어 Y/N preview 인터셉트', () => {
     expect(say).toHaveBeenCalledWith(
       expect.objectContaining({
         text: expect.stringContaining('취소'),
+        metadata: { event_type: 'idaeri_reply', event_payload: {} },
       }),
     );
   });
@@ -2785,7 +2799,7 @@ describe('RouterMessageHandler — 갭 분석 주제선택 인터셉트', () => 
       { findLatestPendingPreview, cancelPreviewUsecase },
     ).register(app);
 
-    await invokeHandler(getHandler('app_mention'), {
+    const { say } = await invokeHandler(getHandler('app_mention'), {
       ...baseEvent,
       text: '<@UBOT> 2번',
     });
@@ -2796,6 +2810,14 @@ describe('RouterMessageHandler — 갭 분석 주제선택 인터셉트', () => 
     });
     expect(dispatch).toHaveBeenCalledWith(
       expect.objectContaining({ agentTypeHint: AgentType.BLOG, text: 'B글' }),
+    );
+    expect(say).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: {
+          event_type: 'idaeri_reply',
+          event_payload: { agentType: AgentType.BLOG, agentRunId: 50 },
+        },
+      }),
     );
   });
 
