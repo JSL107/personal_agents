@@ -101,7 +101,7 @@ describe('SuggestNextWorkUsecase', () => {
       result.suggestions.map((suggestion) => suggestion.agentType),
     ).toEqual([AgentType.PM]);
     expect(result.suggestions[0]?.reason).toBe(
-      '마지막 성공 2일 전 · 평소 1일 주기',
+      '2일째 안 했어요 (보통 1일마다 하던 일)',
     );
     expect(result.alsoDueCount).toBe(0);
   });
@@ -128,6 +128,28 @@ describe('SuggestNextWorkUsecase', () => {
     );
   });
 
+  it('블로그 초안도 주기가 밀려도 제안하지 않는다 — 쓸 주제 문장이 있어야 시작된다', async () => {
+    const { usecase, agentRunService } = make({
+      agents: [
+        { agentType: AgentType.BLOG, displayName: 'Blog' },
+        { agentType: AgentType.PM, displayName: 'PM' },
+      ],
+      runsByAgentType: {
+        [AgentType.BLOG]: succeededAt(15, 16, 17),
+        [AgentType.PM]: succeededAt(2, 3, 4),
+      },
+    });
+
+    const result = await usecase.execute();
+
+    expect(
+      result.suggestions.map((suggestion) => suggestion.agentType),
+    ).toEqual([AgentType.PM]);
+    expect(agentRunService.findRecentSucceededRuns).not.toHaveBeenCalledWith(
+      expect.objectContaining({ agentType: AgentType.BLOG }),
+    );
+  });
+
   it('같은 KST 날짜의 여러 성공을 한 날로 세어 주기를 계산한다', async () => {
     const { usecase } = make({
       agents: [{ agentType: AgentType.PM, displayName: 'PM' }],
@@ -147,7 +169,7 @@ describe('SuggestNextWorkUsecase', () => {
       {
         agentType: AgentType.PM,
         displayName: 'PM',
-        reason: '마지막 성공 2일 전 · 평소 1일 주기',
+        reason: '2일째 안 했어요 (보통 1일마다 하던 일)',
       },
     ]);
     expect(result.skippedUnknownCycle).toBe(0);
@@ -175,7 +197,7 @@ describe('SuggestNextWorkUsecase', () => {
       const result = await usecase.execute();
 
       expect(result.suggestions[0]?.reason).toBe(
-        '마지막 성공 2일 전 · 평소 1일 주기',
+        '2일째 안 했어요 (보통 1일마다 하던 일)',
       );
       expect(result.skippedUnknownCycle).toBe(0);
       expect(warnSpy).toHaveBeenCalledWith(
@@ -197,7 +219,7 @@ describe('SuggestNextWorkUsecase', () => {
     const result = await usecase.execute();
 
     expect(result.suggestions[0]?.reason).toBe(
-      '마지막 성공 2일 전 · 평소 2일 주기',
+      '2일째 안 했어요 (보통 2일마다 하던 일)',
     );
   });
 
@@ -240,7 +262,7 @@ describe('SuggestNextWorkUsecase', () => {
     const result = await usecase.execute();
 
     expect(result.suggestions[0]?.reason).toBe(
-      '마지막 성공 1일 전 · 평소 1일 주기',
+      '1일째 안 했어요 (보통 1일마다 하던 일)',
     );
     expect(result.skippedUnknownCycle).toBe(0);
   });
