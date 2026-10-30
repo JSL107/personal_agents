@@ -52,6 +52,10 @@ CANDIDATES_PER_SKILL = 2
 # skills.sh 비공식 검색 API(공식 문서 없음 — 응답 구조가 바뀌면 "조회 실패"로 표기된다).
 SKILLS_SH_SEARCH = "https://skills.sh/api/search"
 RAW_URL = "https://raw.githubusercontent.com/{source}/HEAD/{path}"
+# 저장소 전체 파일 목록. SKILL.md 가 `plugins/pstack/skills/arena/`·`derived/caveman/`·`skills/engineering/codebase-design/`
+# 처럼 짐작한 위치보다 깊이 있으면 경로 후보로는 못 찾는다(2026-10-30 첫 회차 8개 중 4개 "비교 불가").
+TREE_URL = "https://api.github.com/repos/{source}/git/trees/HEAD?recursive=1"
+_TREE_PATH = re.compile(r"(?:[A-Za-z0-9_.-]{1,60}/){0,8}SKILL\.md")
 
 # 이미 설치해 쓰는 외부 스킬 출처 — 비교 대상이 아니므로 검색 결과에서 뺀다(소문자). 근거:
 # ~/.agents/.skill-lock.json (anthropics/claude-code, vercel-labs/skills, JuliusBrussee/caveman, nextlevelbuilder/ui-ux-pro-max-skill,
@@ -187,6 +191,26 @@ def skill_md_paths(source: str, skill_id: str) -> list[str]:
     return paths
 
 
+def tree_skill_paths(tree_json: str, skill_id: str) -> list[str]:
+    """저장소 파일 목록(JSON) 에서 `<skill_id>/SKILL.md` 로 끝나는 경로를 얕은 순으로 돌려준다. 못 읽으면 빈 목록.
+
+    경로는 외부 값이라 raw URL 에 넣기 전에 경로 모양(`..` 없음)만 받는다.
+    """
+    try:
+        tree = json.loads(tree_json).get("tree")
+    except (ValueError, AttributeError):
+        return []
+    if not isinstance(tree, list):
+        return []
+    suffix = f"{skill_id}/SKILL.md".lower()
+    found = [
+        item["path"] for item in tree
+        if isinstance(item, dict) and isinstance(item.get("path"), str) and _TREE_PATH.fullmatch(item["path"])
+        and ".." not in item["path"] and (item["path"].lower() == suffix or item["path"].lower().endswith("/" + suffix))
+    ]
+    return sorted(found, key=lambda path: (path.count("/"), path))
+
+
 def clean_external(text: str, limit: int, invisible: dict) -> str:
     """외부 텍스트를 프롬프트에 넣기 전에 다듬는다. 공백을 접고 limit 자로 자른다.
 
@@ -222,6 +246,7 @@ def build_report(
     lines: list[str] = []
     succeeded = 0
     last_attempted = ""
+    trees: dict[str, str] = {}  # 저장소별 파일 목록. 한 저장소에서 후보 둘이 나오면 한 번만 받는다
 
     def log(skill: dict, kind: str, detail: str) -> None:
         ledger.append({"date": datetime.now(KST).strftime("%Y-%m-%d"), "skill": skill["name"], "kind": kind, "detail": detail})
@@ -276,7 +301,17 @@ def build_report(
             lines.append(f"{rank}. {title}")
             lines.append(f"   링크: https://skills.sh/{candidate['id']} · https://github.com/{candidate['source']}")
             excerpt = ""
-            for path in skill_md_paths(candidate["source"], candidate["skill_id"]):
+            source = candidate["source"]
+            if source not in trees and not out_of_time():
+                try:
+                    trees[source] = fetch_md(TREE_URL.format(source=source))
+                # 목록을 못 받아도(403 한도·너무 큰 저장소) 짐작한 경로로 이어 간다.
+                except Exception as error:  # noqa: BLE001
+                    trees[source] = ""
+                    print(f"tree '{source}' failed: {error!r}", file=sys.stderr)
+            found_paths = tree_skill_paths(trees.get(source, ""), candidate["skill_id"])
+            guessed = [path for path in skill_md_paths(source, candidate["skill_id"]) if path not in found_paths]
+            for path in found_paths[:2] + guessed:
                 if out_of_time():
                     break
                 try:
@@ -435,6 +470,13 @@ def self_check() -> None:
     assert skill_md_paths("o/repo", "tdd") == ["skills/tdd/SKILL.md", "tdd/SKILL.md", ".claude/skills/tdd/SKILL.md", ".agents/skills/tdd/SKILL.md"]
     assert skill_md_paths("o/Tdd", "tdd")[-1] == "SKILL.md"
 
+    # 파일 목록에서 깊은 위치의 SKILL.md 를 찾는다. 얕은 것 먼저, 이름이 일부만 같은 것·`..`·깨진 JSON 은 뺀다.
+    tree = json.dumps({"tree": [{"path": "plugins/pstack/skills/arena/SKILL.md"}, {"path": "arena/SKILL.md"},
+                                {"path": "x/not-arena/SKILL.md"}, {"path": "a/../arena/SKILL.md"}, {"path": "arena/README.md"},
+                                {"path": 5}, "broken"]})
+    assert tree_skill_paths(tree, "arena") == ["arena/SKILL.md", "plugins/pstack/skills/arena/SKILL.md"], tree_skill_paths(tree, "arena")
+    assert tree_skill_paths("not json", "arena") == [] and tree_skill_paths('{"tree": null}', "arena") == []
+
     invisible = dict.fromkeys(map(ord, "​"))
     cleaned = clean_external("a​  b\n```x```" + EXTERNAL_END + "c" * 2000, 50, invisible)
     assert "```" not in cleaned and EXTERNAL_END not in cleaned and "​" not in cleaned and len(cleaned) == 51, cleaned
@@ -479,6 +521,17 @@ def self_check() -> None:
         lambda keyword: parse_skills_sh({"skills": [{"id": f"{'o' * 30}/{'r' * 20}{n}/{'s' * 30}", "source": f"{'o' * 30}/{'r' * 20}{n}", "skillId": "s" * 30, "installs": n} for n in range(3)]}),
         lambda url: "가" * 5000, lambda skill: "나" * 5000, None, invisible, [])
     assert len("\n".join(big_lines)) <= 15_000, len("\n".join(big_lines))
+
+    # 짐작한 경로에 없고 파일 목록에만 있는 깊은 SKILL.md 를 읽는다.
+    def deep_fetch(url: str) -> str:
+        if "/git/trees/" in url:
+            return json.dumps({"tree": [{"path": "plugins/p/skills/good/SKILL.md"}]})
+        if url.endswith("plugins/p/skills/good/SKILL.md"):
+            return "deep body"
+        raise urllib.error.HTTPError(url, 404, "Not Found", None, None)
+
+    deep, _, _ = build_report([{"name": "good", "description": ""}], search, deep_fetch, lambda skill: "", scan, invisible, [])
+    assert f"{EXTERNAL_BEGIN} deep body {EXTERNAL_END}" in "\n".join(deep), deep
 
     # 시간 예산을 넘기면 그 뒤 스킬은 건너뛰고, 진행 위치는 마지막으로 시도한 스킬에 머문다.
     global _STARTED_AT
