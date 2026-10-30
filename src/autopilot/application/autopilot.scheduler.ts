@@ -6,6 +6,7 @@ import { Queue } from 'bullmq';
 import {
   cancelCatchUpsDueSoon,
   enqueueMissedRuns,
+  removeAllRepeatables,
 } from '../../common/queue/missed-repeatable-run';
 import {
   AUTOPILOT_PLAYBOOK,
@@ -75,7 +76,7 @@ export class AutopilotScheduler implements OnApplicationBootstrap {
       this.logger.log(
         'Autopilot 비활성 (AUTOPILOT_OWNER_SLACK_USER_ID 미설정).',
       );
-      await this.cleanupExistingRepeatables();
+      await removeAllRepeatables(this.queue);
       return;
     }
 
@@ -91,7 +92,7 @@ export class AutopilotScheduler implements OnApplicationBootstrap {
     const catchUps = await enqueueMissedRuns(this.queue, this.logger, {
       shouldCatchUp: (groupKey) => catchUpGroupKeys.has(groupKey),
     });
-    await this.cleanupExistingRepeatables();
+    await removeAllRepeatables(this.queue);
 
     const groups = new Map<string, PlaybookEntry[]>();
     for (const entry of AUTOPILOT_PLAYBOOK) {
@@ -228,12 +229,5 @@ export class AutopilotScheduler implements OnApplicationBootstrap {
       );
     }
     return fallback;
-  }
-
-  private async cleanupExistingRepeatables(): Promise<void> {
-    const repeatables = await this.queue.getRepeatableJobs();
-    for (const job of repeatables) {
-      await this.queue.removeRepeatableByKey(job.key);
-    }
   }
 }

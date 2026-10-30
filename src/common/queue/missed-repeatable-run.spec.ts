@@ -1,9 +1,12 @@
 import { Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 import {
   cancelCatchUpsDueSoon,
   enqueueMissedRuns,
   MISSED_RUN_MIN_GAP_MS,
+  readNonEmptyConfig,
+  removeAllRepeatables,
 } from './missed-repeatable-run';
 
 const NOW = 1_800_000_000_000;
@@ -128,5 +131,46 @@ describe('cancelCatchUpsDueSoon', () => {
     );
 
     expect(logger.warn).toHaveBeenCalled();
+  });
+});
+
+describe('removeAllRepeatables', () => {
+  it('등록된 모든 반복 작업을 키 순서대로 제거한다', async () => {
+    const queue = {
+      getRepeatableJobs: jest
+        .fn()
+        .mockResolvedValue([{ key: 'k1' }, { key: 'k2' }]),
+      removeRepeatableByKey: jest.fn().mockResolvedValue(true),
+    };
+
+    await removeAllRepeatables(queue as never);
+
+    expect(queue.removeRepeatableByKey.mock.calls).toEqual([['k1'], ['k2']]);
+  });
+});
+
+describe('readNonEmptyConfig', () => {
+  it.each([undefined, '', '   '])(
+    '설정값이 %p 이면 기본값을 반환한다',
+    (value) => {
+      const configService = {
+        get: jest.fn().mockReturnValue(value),
+      } as unknown as ConfigService;
+
+      expect(
+        readNonEmptyConfig({ configService, key: 'KEY', fallback: 'default' }),
+      ).toBe('default');
+      expect(configService.get).toHaveBeenCalledWith('KEY');
+    },
+  );
+
+  it('설정값이 있으면 앞뒤 공백을 제거해 반환한다', () => {
+    const configService = {
+      get: jest.fn().mockReturnValue('  value  '),
+    } as unknown as ConfigService;
+
+    expect(
+      readNonEmptyConfig({ configService, key: 'KEY', fallback: 'default' }),
+    ).toBe('value');
   });
 });

@@ -6,6 +6,8 @@ import { Queue } from 'bullmq';
 import {
   cancelCatchUpsDueSoon,
   enqueueMissedRuns,
+  readNonEmptyConfig,
+  removeAllRepeatables,
 } from '../../common/queue/missed-repeatable-run';
 import {
   SUBCONSCIOUS_TICK_QUEUE,
@@ -59,18 +61,19 @@ export class SubconsciousScheduler implements OnApplicationBootstrap {
       this.logger.log(
         'Subconscious 비활성 (SUBCONSCIOUS_ENABLED !== "true" 또는 AUTOPILOT_OWNER_SLACK_USER_ID 미설정).',
       );
-      await this.cleanupExistingRepeatables();
+      await removeAllRepeatables(this.queue);
       return;
     }
 
     const ownerTrimmed = owner.trim();
     const catchUps = await enqueueMissedRuns(this.queue, this.logger);
-    await this.cleanupExistingRepeatables();
+    await removeAllRepeatables(this.queue);
 
-    const schedule = this.readNonEmpty(
-      'SUBCONSCIOUS_SCHEDULE',
-      DEFAULT_SUBCONSCIOUS_SCHEDULE,
-    );
+    const schedule = readNonEmptyConfig({
+      configService: this.configService,
+      key: 'SUBCONSCIOUS_SCHEDULE',
+      fallback: DEFAULT_SUBCONSCIOUS_SCHEDULE,
+    });
 
     const payload: SubconsciousTickJobData = {
       ownerSlackUserId: ownerTrimmed,
@@ -89,21 +92,5 @@ export class SubconsciousScheduler implements OnApplicationBootstrap {
       `Subconscious 활성화 — owner="${ownerTrimmed}", cron="${schedule}" (${DEFAULT_SUBCONSCIOUS_TIMEZONE})`,
     );
     await cancelCatchUpsDueSoon(this.queue, catchUps, this.logger);
-  }
-
-  private readNonEmpty(key: string, fallback: string): string {
-    const raw = this.configService.get<string>(key);
-    if (!raw) {
-      return fallback;
-    }
-    const trimmed = raw.trim();
-    return trimmed.length > 0 ? trimmed : fallback;
-  }
-
-  private async cleanupExistingRepeatables(): Promise<void> {
-    const repeatables = await this.queue.getRepeatableJobs();
-    for (const job of repeatables) {
-      await this.queue.removeRepeatableByKey(job.key);
-    }
   }
 }

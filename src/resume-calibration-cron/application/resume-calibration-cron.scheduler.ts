@@ -6,6 +6,8 @@ import { Queue } from 'bullmq';
 import {
   cancelCatchUpsDueSoon,
   enqueueMissedRuns,
+  readNonEmptyConfig,
+  removeAllRepeatables,
 } from '../../common/queue/missed-repeatable-run';
 import {
   DEFAULT_RESUME_CALIBRATION_CRON,
@@ -33,22 +35,28 @@ export class ResumeCalibrationCronScheduler implements OnApplicationBootstrap {
       this.logger.log(
         'Resume Calibration Cron 비활성 (RESUME_CALIBRATION_OWNER_SLACK_USER_ID 미설정).',
       );
-      await this.cleanupExistingRepeatables();
+      await removeAllRepeatables(this.queue);
       return;
     }
 
-    const target = this.readNonEmpty('RESUME_CALIBRATION_TARGET', owner);
-    const cron = this.readNonEmpty(
-      'RESUME_CALIBRATION_CRON',
-      DEFAULT_RESUME_CALIBRATION_CRON,
-    );
-    const tz = this.readNonEmpty(
-      'RESUME_CALIBRATION_TIMEZONE',
-      DEFAULT_RESUME_CALIBRATION_TIMEZONE,
-    );
+    const target = readNonEmptyConfig({
+      configService: this.configService,
+      key: 'RESUME_CALIBRATION_TARGET',
+      fallback: owner,
+    });
+    const cron = readNonEmptyConfig({
+      configService: this.configService,
+      key: 'RESUME_CALIBRATION_CRON',
+      fallback: DEFAULT_RESUME_CALIBRATION_CRON,
+    });
+    const tz = readNonEmptyConfig({
+      configService: this.configService,
+      key: 'RESUME_CALIBRATION_TIMEZONE',
+      fallback: DEFAULT_RESUME_CALIBRATION_TIMEZONE,
+    });
 
     const catchUps = await enqueueMissedRuns(this.queue, this.logger);
-    await this.cleanupExistingRepeatables();
+    await removeAllRepeatables(this.queue);
 
     const payload: ResumeCalibrationCronJobData = {
       ownerSlackUserId: owner,
@@ -79,21 +87,5 @@ export class ResumeCalibrationCronScheduler implements OnApplicationBootstrap {
     }
     const trimmed = raw.trim();
     return trimmed.length > 0 ? trimmed : null;
-  }
-
-  private readNonEmpty(key: string, fallback: string): string {
-    const raw = this.configService.get<string>(key);
-    if (!raw) {
-      return fallback;
-    }
-    const trimmed = raw.trim();
-    return trimmed.length > 0 ? trimmed : fallback;
-  }
-
-  private async cleanupExistingRepeatables(): Promise<void> {
-    const repeatables = await this.queue.getRepeatableJobs();
-    for (const job of repeatables) {
-      await this.queue.removeRepeatableByKey(job.key);
-    }
   }
 }

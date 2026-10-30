@@ -6,6 +6,7 @@ import { Queue } from 'bullmq';
 import {
   cancelCatchUpsDueSoon,
   enqueueMissedRuns,
+  removeAllRepeatables,
 } from '../../common/queue/missed-repeatable-run';
 import {
   ART_JOB_FEED_CRON_QUEUE,
@@ -37,7 +38,7 @@ export class ArtJobFeedCronScheduler implements OnApplicationBootstrap {
     const catchUps = payload
       ? await enqueueMissedRuns(this.queue, this.logger)
       : new Map<string, string>();
-    await this.cleanupExistingRepeatables();
+    await removeAllRepeatables(this.queue);
     if (!payload) {
       this.logger.log('Art Job Feed Cron 비활성 (ART_JOB_FEED_TARGET 미설정).');
       return;
@@ -63,12 +64,5 @@ export class ArtJobFeedCronScheduler implements OnApplicationBootstrap {
       `Art Job Feed Cron 활성화 — target=${payload.target}, cron="${cron}" (${tz})`,
     );
     await cancelCatchUpsDueSoon(this.queue, catchUps, this.logger);
-  }
-
-  private async cleanupExistingRepeatables(): Promise<void> {
-    const repeatables = await this.queue.getRepeatableJobs();
-    for (const job of repeatables) {
-      await this.queue.removeRepeatableByKey(job.key);
-    }
   }
 }

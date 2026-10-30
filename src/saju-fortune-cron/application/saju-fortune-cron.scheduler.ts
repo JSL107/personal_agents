@@ -6,6 +6,8 @@ import { Queue } from 'bullmq';
 import {
   cancelCatchUpsDueSoon,
   enqueueMissedRuns,
+  readNonEmptyConfig,
+  removeAllRepeatables,
 } from '../../common/queue/missed-repeatable-run';
 import {
   dailyCronOf,
@@ -43,18 +45,19 @@ export class SajuFortuneCronScheduler implements OnApplicationBootstrap {
       this.logger.log(
         'Saju Fortune Cron 비활성 (유효한 SAJU_FORTUNE_RECIPIENTS 없음).',
       );
-      await this.cleanupExistingRepeatables();
+      await removeAllRepeatables(this.queue);
       return;
     }
 
-    const defaultCron = this.readNonEmpty(
-      'SAJU_FORTUNE_CRON',
-      DEFAULT_SAJU_FORTUNE_CRON,
-    );
+    const defaultCron = readNonEmptyConfig({
+      configService: this.configService,
+      key: 'SAJU_FORTUNE_CRON',
+      fallback: DEFAULT_SAJU_FORTUNE_CRON,
+    });
     const tz = SAJU_FORTUNE_TIMEZONE;
 
     const catchUps = await enqueueMissedRuns(this.queue, this.logger);
-    await this.cleanupExistingRepeatables();
+    await removeAllRepeatables(this.queue);
 
     // 발송 시각이 같은 사람끼리 잡 하나로 묶는다 — 사람마다 다른 시각에 받게 하기 위해서다.
     const slackUserIdsByCron = new Map<string, string[]>();
@@ -83,21 +86,5 @@ export class SajuFortuneCronScheduler implements OnApplicationBootstrap {
       );
     }
     await cancelCatchUpsDueSoon(this.queue, catchUps, this.logger);
-  }
-
-  private readNonEmpty(key: string, fallback: string): string {
-    const raw = this.configService.get<string>(key);
-    if (!raw) {
-      return fallback;
-    }
-    const trimmed = raw.trim();
-    return trimmed.length > 0 ? trimmed : fallback;
-  }
-
-  private async cleanupExistingRepeatables(): Promise<void> {
-    const repeatables = await this.queue.getRepeatableJobs();
-    for (const job of repeatables) {
-      await this.queue.removeRepeatableByKey(job.key);
-    }
   }
 }
