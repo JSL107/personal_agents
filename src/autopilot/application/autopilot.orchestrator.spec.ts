@@ -204,6 +204,7 @@ describe('AutopilotOrchestrator', () => {
         id: 'pa1',
         slackChannelId: 'C1',
         slackMessageTs: 'CARD_TS',
+        slackThreadTs: 'EVENING_TS',
       });
     });
 

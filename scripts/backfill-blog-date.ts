@@ -153,6 +153,7 @@ const main = async (): Promise<void> => {
         id: result.previewId,
         slackChannelId: posted.channel as string,
         slackMessageTs: posted.ts,
+        slackThreadTs: posted.ts,
       });
 
       // 전문은 스레드로. 카드 요약만 보고 ✅ 를 누르면 익명화 실패를 잡을 수 없다.

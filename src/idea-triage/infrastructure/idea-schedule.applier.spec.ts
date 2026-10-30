@@ -34,6 +34,7 @@ const preview: PreviewAction = {
   cancelledAt: null,
   slackChannelId: null,
   slackMessageTs: null,
+  slackThreadTs: null,
   lastFailedAt: null,
   lastFailureReason: null,
   applyProgress: null,

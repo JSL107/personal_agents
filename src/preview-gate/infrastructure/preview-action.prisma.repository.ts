@@ -47,6 +47,7 @@ export class PreviewActionPrismaRepository implements PreviewActionRepositoryPor
         expiresAt,
         slackChannelId: null,
         slackMessageTs: null,
+        slackThreadTs: null,
       },
     });
     return toDomain(row);
@@ -73,6 +74,38 @@ export class PreviewActionPrismaRepository implements PreviewActionRepositoryPor
       orderBy: { createdAt: 'desc' },
     });
     return row ? toDomain(row) : null;
+  }
+
+  async findPendingAnswerCandidates({
+    slackUserId,
+    now,
+    slackChannelId,
+    slackThreadTs,
+    createdSince,
+    limit,
+  }: {
+    slackUserId: string;
+    now: Date;
+    slackChannelId?: string;
+    slackThreadTs?: string;
+    createdSince?: Date;
+    limit: number;
+  }): Promise<PreviewAction[]> {
+    const rows = await this.prisma.previewAction.findMany({
+      where: {
+        slackUserId,
+        status: PREVIEW_STATUS.PENDING,
+        expiresAt: { gt: now },
+        ...(slackChannelId === undefined ? {} : { slackChannelId }),
+        ...(slackThreadTs === undefined ? {} : { slackThreadTs }),
+        ...(createdSince === undefined
+          ? {}
+          : { createdAt: { gte: createdSince } }),
+      },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+    return rows.map(toDomain);
   }
 
   async transition({
@@ -415,12 +448,28 @@ export class PreviewActionPrismaRepository implements PreviewActionRepositoryPor
     id: string;
     slackChannelId: string;
     slackMessageTs: string;
+    slackThreadTs: string;
   }): Promise<void> {
     await this.prisma.previewAction.update({
       where: { id: input.id },
       data: {
         slackChannelId: input.slackChannelId,
         slackMessageTs: input.slackMessageTs,
+        slackThreadTs: input.slackThreadTs,
+      },
+    });
+  }
+
+  async attachSlackThread(input: {
+    id: string;
+    slackChannelId: string;
+    slackThreadTs: string;
+  }): Promise<void> {
+    await this.prisma.previewAction.update({
+      where: { id: input.id },
+      data: {
+        slackChannelId: input.slackChannelId,
+        slackThreadTs: input.slackThreadTs,
       },
     });
   }
@@ -517,6 +566,7 @@ const toDomain = (row: {
   cancelledAt: Date | null;
   slackChannelId: string | null;
   slackMessageTs: string | null;
+  slackThreadTs: string | null;
   lastFailedAt: Date | null;
   lastFailureReason: string | null;
   applyProgress: Prisma.JsonValue;
@@ -548,6 +598,7 @@ const toDomain = (row: {
     cancelledAt: row.cancelledAt,
     slackChannelId: row.slackChannelId,
     slackMessageTs: row.slackMessageTs,
+    slackThreadTs: row.slackThreadTs,
     lastFailedAt: row.lastFailedAt,
     lastFailureReason: row.lastFailureReason,
     applyProgress: toApplyProgress(row.applyProgress),

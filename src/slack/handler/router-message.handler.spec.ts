@@ -5,8 +5,11 @@ import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { ApplyPreviewUsecase } from '../../preview-gate/application/apply-preview.usecase';
 import { CancelPreviewUsecase } from '../../preview-gate/application/cancel-preview.usecase';
+import { FindAnswerablePreviewUsecase } from '../../preview-gate/application/find-answerable-preview.usecase';
 import { FindLatestPendingPreviewUsecase } from '../../preview-gate/application/find-latest-pending-preview.usecase';
+import { RecordPreviewThreadUsecase } from '../../preview-gate/application/record-preview-thread.usecase';
 import {
+  PREVIEW_ANSWER_AMBIGUOUS_TEXT,
   PREVIEW_KIND,
   PREVIEW_STATUS,
   PreviewAction,
@@ -37,6 +40,8 @@ const buildHandler = (
     conversationalReply?: ConversationalReplyUsecase;
     conversationMemory?: ConversationMemoryService;
     findLatestPendingPreview?: FindLatestPendingPreviewUsecase;
+    findAnswerablePreview?: FindAnswerablePreviewUsecase;
+    recordPreviewThread?: RecordPreviewThreadUsecase;
     applyPreviewUsecase?: ApplyPreviewUsecase;
     cancelPreviewUsecase?: CancelPreviewUsecase;
     handleGoalAnswer?: HandleGoalAnswerUsecase;
@@ -76,6 +81,14 @@ const buildHandler = (
     conversationMemory,
     conversationalReply,
     findLatestPendingPreview,
+    options.findAnswerablePreview ??
+      ({
+        execute: jest.fn().mockResolvedValue({ status: 'NONE' }),
+      } as unknown as FindAnswerablePreviewUsecase),
+    options.recordPreviewThread ??
+      ({
+        execute: jest.fn().mockResolvedValue(undefined),
+      } as unknown as RecordPreviewThreadUsecase),
     applyPreviewUsecase,
     cancelPreviewUsecase,
     options.handleGoalAnswer ??
@@ -107,6 +120,7 @@ const buildPendingPreview = (
   cancelledAt: null,
   slackChannelId: null,
   slackMessageTs: null,
+  slackThreadTs: null,
   lastFailedAt: null,
   lastFailureReason: null,
   applyProgress: null,
@@ -317,12 +331,10 @@ describe('RouterMessageHandler — 목표 질문 DM 인터셉트', () => {
       findOpenQuestionCard: jest.fn().mockResolvedValue({ card: pending }),
     };
     buildHandler(router, {
-      // 질문 카드보다 더 최근 카드가 있어도 질문 카드에 적용한다.
-      findLatestPendingPreview: {
-        execute: jest
-          .fn()
-          .mockResolvedValue(buildPendingPreview({ id: 'newer-card' })),
-      } as unknown as FindLatestPendingPreviewUsecase,
+      // 같은 자리에 다른 카드가 없으면 DM 의 "응" 은 열린 목표 질문 카드에 적용한다.
+      findAnswerablePreview: {
+        execute: jest.fn().mockResolvedValue({ status: 'NONE' }),
+      } as unknown as FindAnswerablePreviewUsecase,
       applyPreviewUsecase:
         applyPreviewUsecase as unknown as ApplyPreviewUsecase,
       handleGoalAnswer: handleGoalAnswer as unknown as HandleGoalAnswerUsecase,
@@ -1848,14 +1860,355 @@ describe('RouterMessageHandler — 자연어 Y/N preview 인터셉트', () => {
     channel: 'C_CHANNEL',
   };
 
+  it('다른 스레드의 카드에는 응답하지 않고 일반 dispatch로 넘긴다', async () => {
+    const { app, getHandler } = buildAppMock();
+    const dispatch = jest.fn().mockResolvedValue({
+      agentRunId: 1,
+      workerType: AgentType.PM,
+      output: {},
+      modelUsed: 'mock',
+      formattedText: '일반 응답',
+    });
+    const findAnswerablePreview = {
+      execute: jest.fn().mockResolvedValue({ status: 'NONE' }),
+    };
+    const applyPreviewUsecase = { execute: jest.fn() };
+    buildHandler(
+      { dispatch },
+      {
+        findAnswerablePreview:
+          findAnswerablePreview as unknown as FindAnswerablePreviewUsecase,
+        applyPreviewUsecase:
+          applyPreviewUsecase as unknown as ApplyPreviewUsecase,
+      },
+    ).register(app);
+
+    await invokeHandler(getHandler('app_mention'), {
+      ...baseEvent,
+      thread_ts: 'thread-X',
+      text: '<@UBOT> 응',
+    });
+
+    expect(findAnswerablePreview.execute).toHaveBeenCalledWith({
+      slackUserId: 'U_USER',
+      now: expect.any(Date),
+      scope: {
+        kind: 'SLACK_THREAD',
+        channelId: 'C_CHANNEL',
+        threadTs: 'thread-X',
+      },
+    });
+    expect(applyPreviewUsecase.execute).not.toHaveBeenCalled();
+    expect(dispatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('카드 스레드에서 응답하면 해당 카드를 적용한다', async () => {
+    const { app, getHandler } = buildAppMock();
+    const dispatch = jest.fn();
+    const pending = buildPendingPreview({
+      slackChannelId: 'C_CHANNEL',
+      slackThreadTs: 'thread-Y',
+    });
+    const findAnswerablePreview = {
+      execute: jest.fn().mockResolvedValue({ status: 'ONE', preview: pending }),
+    };
+    const applyPreviewUsecase = {
+      execute: jest
+        .fn()
+        .mockResolvedValue({ preview: pending, resultText: '완료' }),
+    };
+    buildHandler(
+      { dispatch },
+      {
+        findAnswerablePreview:
+          findAnswerablePreview as unknown as FindAnswerablePreviewUsecase,
+        applyPreviewUsecase:
+          applyPreviewUsecase as unknown as ApplyPreviewUsecase,
+      },
+    ).register(app);
+
+    await invokeHandler(getHandler('app_mention'), {
+      ...baseEvent,
+      thread_ts: 'thread-Y',
+      text: '<@UBOT> 응',
+    });
+
+    expect(findAnswerablePreview.execute).toHaveBeenCalledWith({
+      slackUserId: 'U_USER',
+      now: expect.any(Date),
+      scope: {
+        kind: 'SLACK_THREAD',
+        channelId: 'C_CHANNEL',
+        threadTs: 'thread-Y',
+      },
+    });
+    expect(applyPreviewUsecase.execute).toHaveBeenCalledWith({
+      previewId: pending.id,
+      slackUserId: 'U_USER',
+    });
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  // 채널 멘션은 봇이 늘 스레드로 답한다. 채널 최상위 "응" 은 가리킬 카드가 없으므로 카드를 찾지도 않는다
+  // — 30분 창을 채널에도 열면 같은 채널 다른 스레드의 외부 쓰기 카드가 승인된다(#926 리뷰).
+  it('채널 최상위 "응" 은 카드를 조회하지 않고 일반 dispatch로 넘긴다', async () => {
+    const { app, getHandler } = buildAppMock();
+    const dispatch = jest.fn().mockResolvedValue({
+      agentRunId: 1,
+      workerType: AgentType.PM,
+      output: {},
+      modelUsed: 'mock',
+      formattedText: '일반 응답',
+    });
+    const findAnswerablePreview = { execute: jest.fn() };
+    const applyPreviewUsecase = { execute: jest.fn() };
+    buildHandler(
+      { dispatch },
+      {
+        findAnswerablePreview:
+          findAnswerablePreview as unknown as FindAnswerablePreviewUsecase,
+        applyPreviewUsecase:
+          applyPreviewUsecase as unknown as ApplyPreviewUsecase,
+      },
+    ).register(app);
+
+    await invokeHandler(getHandler('app_mention'), {
+      ...baseEvent,
+      text: '<@UBOT> 응',
+    });
+
+    expect(findAnswerablePreview.execute).not.toHaveBeenCalled();
+    expect(applyPreviewUsecase.execute).not.toHaveBeenCalled();
+    expect(dispatch).toHaveBeenCalledTimes(1);
+  });
+
+  // 목표 질문 문답은 DM 에서만 한다. 채널 스레드의 "응" 이 열린 목표 질문 카드를 고르면 안 된다(#926 리뷰).
+  it('채널 스레드의 "응" 은 열린 목표 질문 카드 대신 그 스레드의 카드를 적용한다', async () => {
+    const { app, getHandler } = buildAppMock();
+    const dispatch = jest.fn();
+    const threadCard = buildPendingPreview({ id: 'thread-card' });
+    const findAnswerablePreview = {
+      execute: jest
+        .fn()
+        .mockResolvedValue({ status: 'ONE', preview: threadCard }),
+    };
+    const applyPreviewUsecase = {
+      execute: jest
+        .fn()
+        .mockResolvedValue({ preview: threadCard, resultText: '완료' }),
+    };
+    const handleGoalAnswer = {
+      execute: jest.fn(),
+      findOpenQuestionCard: jest.fn().mockResolvedValue({
+        card: buildPendingPreview({
+          id: 'goal-card',
+          kind: PREVIEW_KIND.PRODUCT_GOAL,
+        }),
+      }),
+    };
+    buildHandler(
+      { dispatch },
+      {
+        findAnswerablePreview:
+          findAnswerablePreview as unknown as FindAnswerablePreviewUsecase,
+        applyPreviewUsecase:
+          applyPreviewUsecase as unknown as ApplyPreviewUsecase,
+        handleGoalAnswer:
+          handleGoalAnswer as unknown as HandleGoalAnswerUsecase,
+      },
+    ).register(app);
+
+    await invokeHandler(getHandler('app_mention'), {
+      ...baseEvent,
+      thread_ts: 'thread-Y',
+      text: '<@UBOT> 응',
+    });
+
+    expect(handleGoalAnswer.findOpenQuestionCard).not.toHaveBeenCalled();
+    expect(applyPreviewUsecase.execute).toHaveBeenCalledWith({
+      previewId: 'thread-card',
+      slackUserId: 'U_USER',
+    });
+  });
+
+  it('DM 에서 목표 질문 카드와 같은 자리의 다른 카드가 함께 있으면 실행하지 않고 안내한다', async () => {
+    const { app, getHandler } = buildAppMock();
+    const dispatch = jest.fn();
+    const findAnswerablePreview = {
+      execute: jest.fn().mockResolvedValue({
+        status: 'ONE',
+        preview: buildPendingPreview({ id: 'other-card' }),
+      }),
+    };
+    const applyPreviewUsecase = { execute: jest.fn() };
+    const cancelPreviewUsecase = { execute: jest.fn() };
+    const handleGoalAnswer = {
+      execute: jest.fn(),
+      findOpenQuestionCard: jest.fn().mockResolvedValue({
+        card: buildPendingPreview({
+          id: 'goal-card',
+          kind: PREVIEW_KIND.PRODUCT_GOAL,
+        }),
+      }),
+    };
+    buildHandler(
+      { dispatch },
+      {
+        findAnswerablePreview:
+          findAnswerablePreview as unknown as FindAnswerablePreviewUsecase,
+        applyPreviewUsecase:
+          applyPreviewUsecase as unknown as ApplyPreviewUsecase,
+        cancelPreviewUsecase:
+          cancelPreviewUsecase as unknown as CancelPreviewUsecase,
+        handleGoalAnswer:
+          handleGoalAnswer as unknown as HandleGoalAnswerUsecase,
+      },
+    ).register(app);
+
+    const { say } = await invokeHandler(getHandler('message'), {
+      type: 'message',
+      user: 'U_USER',
+      text: '응',
+      ts: '1.1',
+      channel: 'D_DM',
+      channel_type: 'im',
+    });
+
+    expect(findAnswerablePreview.execute).toHaveBeenCalledWith({
+      slackUserId: 'U_USER',
+      now: expect.any(Date),
+      scope: { kind: 'SLACK_TOP_LEVEL', channelId: 'D_DM' },
+    });
+    expect(applyPreviewUsecase.execute).not.toHaveBeenCalled();
+    expect(cancelPreviewUsecase.execute).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(say).toHaveBeenCalledWith(
+      expect.objectContaining({ text: PREVIEW_ANSWER_AMBIGUOUS_TEXT }),
+    );
+  });
+
+  it('같은 대화에 카드가 둘 이상이면 안내하고 아무 카드도 실행하지 않는다', async () => {
+    const { app, getHandler } = buildAppMock();
+    const dispatch = jest.fn();
+    const applyPreviewUsecase = { execute: jest.fn() };
+    const cancelPreviewUsecase = { execute: jest.fn() };
+    const conversationMemory = new ConversationMemoryService();
+    buildHandler(
+      { dispatch },
+      {
+        conversationMemory,
+        findAnswerablePreview: {
+          execute: jest.fn().mockResolvedValue({ status: 'AMBIGUOUS' }),
+        } as unknown as FindAnswerablePreviewUsecase,
+        applyPreviewUsecase:
+          applyPreviewUsecase as unknown as ApplyPreviewUsecase,
+        cancelPreviewUsecase:
+          cancelPreviewUsecase as unknown as CancelPreviewUsecase,
+      },
+    ).register(app);
+
+    const { say } = await invokeHandler(getHandler('app_mention'), {
+      ...baseEvent,
+      thread_ts: 'thread-Y',
+      text: '<@UBOT> 응',
+    });
+
+    expect(say).toHaveBeenCalledWith({
+      thread_ts: 'thread-Y',
+      text: expect.stringContaining('카드의 버튼으로 골라 주세요'),
+    });
+    expect(applyPreviewUsecase.execute).not.toHaveBeenCalled();
+    expect(cancelPreviewUsecase.execute).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
+    const key = conversationMemory.buildKey({
+      slackUserId: 'U_USER',
+      channelId: 'C_CHANNEL',
+      threadTs: 'thread-Y',
+    });
+    expect(
+      (await conversationMemory.getRecentTurns(key)).map((turn) => turn.role),
+    ).toEqual(['user', 'assistant']);
+  });
+
+  it('router가 올린 카드의 채널과 스레드를 기록한다', async () => {
+    const { app, getHandler } = buildAppMock();
+    const recordPreviewThread = {
+      execute: jest.fn().mockResolvedValue(undefined),
+    };
+    const dispatch = jest.fn().mockResolvedValue({
+      agentRunId: 1,
+      workerType: AgentType.PM,
+      output: {},
+      modelUsed: 'mock',
+      formattedText: '승인 카드',
+      preview: { id: 'preview-1', content: '카드 내용' },
+    });
+    buildHandler(
+      { dispatch },
+      {
+        recordPreviewThread:
+          recordPreviewThread as unknown as RecordPreviewThreadUsecase,
+      },
+    ).register(app);
+
+    const { say } = await invokeHandler(getHandler('app_mention'), {
+      ...baseEvent,
+      text: '<@UBOT> 작업해줘',
+    });
+
+    expect(recordPreviewThread.execute).toHaveBeenCalledWith({
+      id: 'preview-1',
+      slackChannelId: 'C_CHANNEL',
+      slackThreadTs: baseEvent.ts,
+    });
+    expect(say).toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining('카드 내용') }),
+    );
+  });
+
+  it('카드 스레드 기록이 실패해도 router 답변은 게시한다', async () => {
+    const { app, getHandler } = buildAppMock();
+    const recordPreviewThread = {
+      execute: jest.fn().mockRejectedValue(new Error('db unavailable')),
+    };
+    const dispatch = jest.fn().mockResolvedValue({
+      agentRunId: 1,
+      workerType: AgentType.PM,
+      output: {},
+      modelUsed: 'mock',
+      formattedText: '승인 카드',
+      preview: { id: 'preview-1', content: '카드 내용' },
+    });
+    buildHandler(
+      { dispatch },
+      {
+        recordPreviewThread:
+          recordPreviewThread as unknown as RecordPreviewThreadUsecase,
+      },
+    ).register(app);
+
+    const { say } = await invokeHandler(getHandler('app_mention'), {
+      ...baseEvent,
+      text: '<@UBOT> 작업해줘',
+    });
+
+    expect(recordPreviewThread.execute).toHaveBeenCalledTimes(1);
+    expect(say).toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining('카드 내용') }),
+    );
+    expect(say).not.toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining('오류') }),
+    );
+  });
+
   it('pending preview 있음 + "응" → ApplyPreviewUsecase 호출 (dispatch 미호출)', async () => {
     const { app, getHandler } = buildAppMock();
     const dispatch = jest.fn();
     const idaeriRouter: IdaeriRouterPort = { dispatch };
     const pending = buildPendingPreview();
-    const findLatestPendingPreview = {
-      execute: jest.fn().mockResolvedValue(pending),
-    } as unknown as FindLatestPendingPreviewUsecase;
+    const findAnswerablePreview = {
+      execute: jest.fn().mockResolvedValue({ status: 'ONE', preview: pending }),
+    } as unknown as FindAnswerablePreviewUsecase;
     const applyPreviewUsecase = {
       execute: jest.fn().mockResolvedValue({
         preview: pending,
@@ -1867,13 +2220,15 @@ describe('RouterMessageHandler — 자연어 Y/N preview 인터셉트', () => {
     } as unknown as CancelPreviewUsecase;
 
     buildHandler(idaeriRouter, {
-      findLatestPendingPreview,
+      findAnswerablePreview,
       applyPreviewUsecase,
       cancelPreviewUsecase,
     }).register(app);
 
     const { say } = await invokeHandler(getHandler('app_mention'), {
       ...baseEvent,
+      // 채널 멘션은 카드가 달린 스레드 안의 답만 카드에 묶인다.
+      thread_ts: '1729999999.000001',
       text: '<@UBOT> 응',
     });
 
@@ -1906,9 +2261,11 @@ describe('RouterMessageHandler — 자연어 Y/N preview 인터셉트', () => {
     buildHandler(
       { dispatch },
       {
-        findLatestPendingPreview: {
-          execute: jest.fn().mockResolvedValue(pending),
-        } as unknown as FindLatestPendingPreviewUsecase,
+        findAnswerablePreview: {
+          execute: jest
+            .fn()
+            .mockResolvedValue({ status: 'ONE', preview: pending }),
+        } as unknown as FindAnswerablePreviewUsecase,
         applyPreviewUsecase,
         cancelPreviewUsecase: {
           execute: jest.fn(),
@@ -1918,6 +2275,8 @@ describe('RouterMessageHandler — 자연어 Y/N preview 인터셉트', () => {
 
     const { say } = await invokeHandler(getHandler('app_mention'), {
       ...baseEvent,
+      // 채널 멘션은 카드가 달린 스레드 안의 답만 카드에 묶인다.
+      thread_ts: '1729999999.000001',
       text: '<@UBOT> 응',
     });
 
@@ -1954,13 +2313,14 @@ describe('RouterMessageHandler — 자연어 Y/N preview 인터셉트', () => {
     buildHandler(
       { dispatch },
       {
-        findLatestPendingPreview: {
-          execute: jest
-            .fn()
-            .mockResolvedValue(
-              buildPendingPreview({ kind: PREVIEW_KIND.PM_WRITE_BACK }),
-            ),
-        } as unknown as FindLatestPendingPreviewUsecase,
+        findAnswerablePreview: {
+          execute: jest.fn().mockResolvedValue({
+            status: 'ONE',
+            preview: buildPendingPreview({
+              kind: PREVIEW_KIND.PM_WRITE_BACK,
+            }),
+          }),
+        } as unknown as FindAnswerablePreviewUsecase,
         applyPreviewUsecase,
         cancelPreviewUsecase,
       },
@@ -1990,9 +2350,11 @@ describe('RouterMessageHandler — 자연어 Y/N preview 인터셉트', () => {
     buildHandler(
       { dispatch },
       {
-        findLatestPendingPreview: {
-          execute: jest.fn().mockResolvedValue(pending),
-        } as unknown as FindLatestPendingPreviewUsecase,
+        findAnswerablePreview: {
+          execute: jest
+            .fn()
+            .mockResolvedValue({ status: 'ONE', preview: pending }),
+        } as unknown as FindAnswerablePreviewUsecase,
         applyPreviewUsecase,
         cancelPreviewUsecase,
       },
@@ -2000,6 +2362,8 @@ describe('RouterMessageHandler — 자연어 Y/N preview 인터셉트', () => {
 
     const { say } = await invokeHandler(getHandler('app_mention'), {
       ...baseEvent,
+      // 채널 멘션은 카드가 달린 스레드 안의 답만 카드에 묶인다.
+      thread_ts: '1729999999.000001',
       text: '<@UBOT> 아니',
     });
 
@@ -2032,9 +2396,9 @@ describe('RouterMessageHandler — 자연어 Y/N preview 인터셉트', () => {
     buildHandler(
       { dispatch },
       {
-        findLatestPendingPreview: {
-          execute: jest.fn().mockResolvedValue(null),
-        } as unknown as FindLatestPendingPreviewUsecase,
+        findAnswerablePreview: {
+          execute: jest.fn().mockResolvedValue({ status: 'NONE' }),
+        } as unknown as FindAnswerablePreviewUsecase,
         applyPreviewUsecase,
       },
     ).register(app);
@@ -2067,9 +2431,12 @@ describe('RouterMessageHandler — 자연어 Y/N preview 인터셉트', () => {
     buildHandler(
       { dispatch },
       {
-        findLatestPendingPreview: {
-          execute: jest.fn().mockResolvedValue(buildPendingPreview()),
-        } as unknown as FindLatestPendingPreviewUsecase,
+        findAnswerablePreview: {
+          execute: jest.fn().mockResolvedValue({
+            status: 'ONE',
+            preview: buildPendingPreview(),
+          }),
+        } as unknown as FindAnswerablePreviewUsecase,
         applyPreviewUsecase,
         cancelPreviewUsecase,
       },

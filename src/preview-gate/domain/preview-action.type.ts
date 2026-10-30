@@ -63,6 +63,14 @@ export const PREVIEW_STATUS = {
 export type PreviewStatus =
   (typeof PREVIEW_STATUS)[keyof typeof PREVIEW_STATUS];
 
+// 자연어 "응/아니" 를 스레드 밖(최상위 메시지·콘솔)에서 받았을 때, 그 답이 가리킬 수 있는 카드의 나이 상한.
+// 대화 기억 TTL(30분)과 같다 — 그보다 오래된 카드는 "지금 대화" 의 카드라고 볼 근거가 없다.
+export const PREVIEW_ANSWER_WINDOW_MS = 30 * 60 * 1000;
+
+// 답할 수 있는 카드가 둘 이상일 때의 안내. 추측해 하나를 실행하지 않는다 — 외부에 쓰는 카드가 섞여 있다.
+export const PREVIEW_ANSWER_AMBIGUOUS_TEXT =
+  '어느 카드에 대한 답인지 정할 수 없어 실행하지 않았어요. 카드의 버튼으로 골라 주세요.';
+
 // 반영이 진행 중이라는 흔적. `preview_action.apply_progress` 에 이 형태 그대로 담긴다.
 //
 // 반영을 시작할 때 새기고 끝나면 지우므로, **남아 있다는 것 자체가 중단의 증거**다.
@@ -107,6 +115,7 @@ export interface PreviewAction {
   // A 경로 카드 좌표 — 없으면(B/C 경로) null. chat.update 대상 판별에 사용.
   slackChannelId: string | null;
   slackMessageTs: string | null;
+  slackThreadTs: string | null;
   // 승인 후 실행이 실패한 마지막 흔적. 실패해도 status 는 PENDING 이라 상태만으로는 실패를 셀 수 없다.
   lastFailedAt: Date | null;
   lastFailureReason: string | null;

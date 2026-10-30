@@ -28,6 +28,7 @@ const buildPreview = (
   cancelledAt: null,
   slackChannelId: null,
   slackMessageTs: null,
+  slackThreadTs: null,
   lastFailedAt: null,
   lastFailureReason: null,
   applyProgress: null,
@@ -40,6 +41,7 @@ const buildRepo = (
   create: jest.fn(),
   findById: jest.fn().mockResolvedValue(preview),
   findLatestPendingForUser: jest.fn().mockResolvedValue(null),
+  findPendingAnswerCandidates: jest.fn().mockResolvedValue([]),
   updatePayload: jest.fn(),
   countOutcomesByKind: jest.fn().mockResolvedValue([]),
   countByPayloadValue: jest.fn().mockResolvedValue(0),
@@ -53,6 +55,7 @@ const buildRepo = (
       Promise.resolve(buildPreview({ ...(preview ?? {}), id, status: to })),
     ),
   attachSlackMessage: jest.fn().mockResolvedValue(undefined),
+  attachSlackThread: jest.fn().mockResolvedValue(undefined),
   recordApplyFailure: jest.fn().mockResolvedValue(undefined),
   beginApply: jest.fn().mockResolvedValue({
     pid: process.pid,

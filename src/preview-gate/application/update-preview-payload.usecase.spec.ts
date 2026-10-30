@@ -22,6 +22,7 @@ const buildPreview = (overrides: Partial<PreviewAction> = {}): PreviewAction =>
     cancelledAt: null,
     slackChannelId: null,
     slackMessageTs: null,
+    slackThreadTs: null,
     ...overrides,
   }) as PreviewAction;
 

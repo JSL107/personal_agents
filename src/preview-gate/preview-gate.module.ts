@@ -8,9 +8,11 @@ import { CountPreviewsByPayloadUsecase } from './application/count-previews-by-p
 import { CreatePreviewUsecase } from './application/create-preview.usecase';
 import { ExpirePreviewsUsecase } from './application/expire-previews.usecase';
 import { FindAllOpenPreviewsUsecase } from './application/find-all-open-previews.usecase';
+import { FindAnswerablePreviewUsecase } from './application/find-answerable-preview.usecase';
 import { FindLatestPendingPreviewUsecase } from './application/find-latest-pending-preview.usecase';
 import { FindPreviewDayOutcomesUsecase } from './application/find-preview-day-outcomes.usecase';
 import { FindRecentAppliedPreviewsUsecase } from './application/find-recent-applied-previews.usecase';
+import { RecordPreviewThreadUsecase } from './application/record-preview-thread.usecase';
 import { ResumeInterruptedAppliesUsecase } from './application/resume-interrupted-applies.usecase';
 import { UpdatePreviewPayloadUsecase } from './application/update-preview-payload.usecase';
 import { PREVIEW_ACTION_REPOSITORY_PORT } from './domain/port/preview-action.repository.port';
@@ -44,6 +46,8 @@ import {
     CancelPreviewUsecase,
     ExpirePreviewsUsecase,
     FindLatestPendingPreviewUsecase,
+    FindAnswerablePreviewUsecase,
+    RecordPreviewThreadUsecase,
     FindAllOpenPreviewsUsecase,
     FindRecentAppliedPreviewsUsecase,
     FindPreviewDayOutcomesUsecase,
@@ -93,6 +97,8 @@ import {
     CancelPreviewUsecase,
     ExpirePreviewsUsecase,
     FindLatestPendingPreviewUsecase,
+    FindAnswerablePreviewUsecase,
+    RecordPreviewThreadUsecase,
     FindAllOpenPreviewsUsecase,
     FindRecentAppliedPreviewsUsecase,
     FindPreviewDayOutcomesUsecase,
