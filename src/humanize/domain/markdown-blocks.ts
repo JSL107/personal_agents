@@ -269,18 +269,25 @@ const ANONYMIZED_SOURCE_TAIL_PATTERN =
 // ``a ` [의역]`` 처럼 안쪽 백틱에서 스팬이 일찍 닫혀 리터럴이 지워진다(리뷰 지적).
 const INLINE_CODE_SPAN_PATTERN = /(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)/g;
 
-// 인라인 코드 밖에서만 태그를 지운다. 태그를 리터럴 예시로 쓴 자리라 그 안은 남긴다.
-const removeScaffoldTags = (line: string): string => {
+// 인라인 코드 밖에서만 치환한다. 코드 스팬은 리터럴 예시라 그 안은 남긴다.
+const replaceOutsideInlineCode = (
+  line: string,
+  replace: (text: string) => string,
+): string => {
   let result = '';
   let cursor = 0;
   for (const span of line.matchAll(INLINE_CODE_SPAN_PATTERN)) {
     const start = span.index ?? 0;
-    result +=
-      line.slice(cursor, start).replace(SCAFFOLD_TAG_PATTERN, '') + span[0];
+    result += replace(line.slice(cursor, start)) + span[0];
     cursor = start + span[0].length;
   }
-  return result + line.slice(cursor).replace(SCAFFOLD_TAG_PATTERN, '');
+  return result + replace(line.slice(cursor));
 };
+
+const removeScaffoldTags = (line: string): string =>
+  replaceOutsideInlineCode(line, (text) =>
+    text.replace(SCAFFOLD_TAG_PATTERN, ''),
+  );
 const BLANK_LINE_PATTERN = /^\s*$/;
 
 /**
@@ -330,6 +337,32 @@ export const stripPublishScaffolding = (markdown: string): string => {
       isProtected(index) ? line : removeScaffoldTags(line),
     )
     .filter((_line, index) => !removed.has(index))
+    .join('\n');
+};
+
+// 연결어미 뒤 쉼표(`읽고, `·`했는데, `). 윤문 프롬프트에 「쉼표를 빼라」가 있어도 발행본에 남았다
+// (2026-10-30, AG-UI 글 — 독자가 「필요 없는 쉼표」로 지적). 프롬프트는 집행이 없어 여기서 지운다.
+// 어미는 연결어미로 확실한 꼴만 잡는다. `고,`·`면,` 은 명사 나열(`경고, 오류`·`화면, 표`)과
+// 철자가 같아 흔한 명사의 앞 글자를 제외했다 — 놓치는 쪽은 쉼표가 남을 뿐이고, 잘못 지우면
+// 나열이 깨진다. `~는지,` 는 나열에 쓰이는 자리라 대상이 아니다.
+const CONNECTIVE_COMMA_PATTERN =
+  /(?<=[가-힣])(지만|[는은인한던]데|[어아해돼여워와져쳐려봐]서|면서|며|니까|므로|(?<![참최재창광경원신공사보])고|(?<![화측정표국전단방일대외내지양문장평이])면),(?=[ \t]+\S)/g;
+
+/**
+ * 산문의 연결어미 뒤 쉼표를 걷어낸다. 코드 펜스·들여쓴 줄·인라인 코드는 건드리지 않는다.
+ */
+export const stripConnectiveCommas = (markdown: string): string => {
+  const { lines, blocks } = scanMarkdownBlocks(markdown);
+  const fenced = collectFencedLineIndexes(lines, blocks);
+
+  return lines
+    .map((line, index) =>
+      fenced.has(index) || INDENTED_LINE_PATTERN.test(line)
+        ? line
+        : replaceOutsideInlineCode(line, (text) =>
+            text.replace(CONNECTIVE_COMMA_PATTERN, '$1'),
+          ),
+    )
     .join('\n');
 };
 
