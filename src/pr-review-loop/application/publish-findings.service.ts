@@ -253,7 +253,15 @@ export class PublishFindingsService {
       }
       // 코멘트 하나는 카드 하나에만 대응시킨다. 스레드에는 파일 경로가 없어 본문만으로 맞추는데, 두 파일에
       // 같은 문장의 카드가 있고 하나만 올라갔다면 둘 다 "게시됨" 으로 접혀 나머지 하나가 사라진다.
-      const usedThreadComments = new Set<number>();
+      // 이미 다른 카드(정상 게시된 같은 문장의 카드 포함)에 붙은 코멘트도 처음부터 "사용됨" 으로 둔다 — 미게시 카드끼리만
+      // 맞추면, 정상 게시된 카드의 코멘트에 실패한 카드가 붙어 그 지적이 끝내 안 올라간다(#931 리뷰).
+      const linkedCommentIds = await this.repository.findLinkedCommentIds({
+        repo,
+        pullNumber,
+      });
+      const usedThreadComments = new Set<number>(
+        linkedCommentIds.map(Number).filter(Number.isFinite),
+      );
       const usedIssueItems = new Set<string>();
       const remaining: {
         record: PrReviewFindingRecord;

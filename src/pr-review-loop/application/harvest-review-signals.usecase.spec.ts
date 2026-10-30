@@ -101,6 +101,7 @@ const buildDependencies = ({
     markPosted: jest.fn(),
     findOpenPostedCards: jest.fn(),
     findUnpostedOpenCards: jest.fn(),
+    findLinkedCommentIds: jest.fn(),
     markDecided: jest.fn().mockResolvedValue(undefined),
     markThreadResolved: jest.fn().mockResolvedValue(undefined),
     markContradictionHeld: jest.fn().mockResolvedValue(undefined),

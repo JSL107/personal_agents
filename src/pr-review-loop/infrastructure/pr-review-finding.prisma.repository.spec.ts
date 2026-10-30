@@ -57,6 +57,23 @@ describe('PrReviewFindingPrismaRepository', () => {
     });
   });
 
+  it('PR 카드에 연결된 코멘트 id 를 문자열로 돌려준다 (BigInt → string)', async () => {
+    prisma.prReviewFinding.findMany.mockResolvedValue([
+      { githubCommentId: BigInt('3002400100200') },
+    ]);
+    await expect(
+      repository.findLinkedCommentIds({ repo: 'owner/repo', pullNumber: 12 }),
+    ).resolves.toEqual(['3002400100200']);
+    expect(prisma.prReviewFinding.findMany).toHaveBeenCalledWith({
+      where: {
+        repo: 'owner/repo',
+        pullNumber: 12,
+        githubCommentId: { not: null },
+      },
+      select: { githubCommentId: true },
+    });
+  });
+
   it('생성된 행을 도메인 레코드로 변환한다 (BigInt → string)', async () => {
     prisma.prReviewFinding.create.mockResolvedValue({
       id: 1,

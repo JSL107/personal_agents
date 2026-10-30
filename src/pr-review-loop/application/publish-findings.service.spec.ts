@@ -76,6 +76,7 @@ const buildRepository = () =>
     markPosted: jest.fn(),
     findOpenPostedCards: jest.fn(),
     findUnpostedOpenCards: jest.fn(),
+    findLinkedCommentIds: jest.fn().mockResolvedValue([]),
     markDecided: jest.fn(),
     markThreadResolved: jest.fn(),
     countAdoptionByCategory: jest.fn().mockResolvedValue([]),
@@ -352,6 +353,56 @@ describe('PublishFindingsService', () => {
     expect(github.createReviewComment).toHaveBeenCalledTimes(1);
     expect(repository.markPosted).toHaveBeenCalledWith(
       expect.objectContaining({ id: 1, githubCommentId: '42' }),
+    );
+    expect(repository.markPosted).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 2, githubCommentId: '9' }),
+    );
+  });
+
+  // 같은 문장의 카드가 다른 파일에 하나 정상 게시돼 있고 하나만 실패했다. 실패 카드가 정상 카드의 코멘트에
+  // "게시됨" 으로 붙으면 그 지적이 끝내 안 올라간다 — 이미 다른 카드에 붙은 코멘트는 대상에서 뺀다(#931 리뷰).
+  it('다른 카드에 이미 연결된 코멘트에는 미게시 카드를 붙이지 않는다', async () => {
+    const missing = {
+      ...settledCard(cardInput('문제', 'src/foo.service.ts')),
+      id: 2,
+    };
+    repository.findUnpostedOpenCards.mockResolvedValue([missing]);
+    repository.findLinkedCommentIds.mockResolvedValue(['42']);
+    github.listReviewThreads.mockResolvedValue({
+      threads: [
+        {
+          threadId: 'thread',
+          isResolved: false,
+          comments: [
+            {
+              databaseId: 42,
+              body: `${IDAERI_REVIEW_MARKER} · RELIABILITY / MUST_FIX\n\n문제`,
+              authorLogin: null,
+              createdAt: '',
+              reactions: [],
+            },
+          ],
+        },
+      ],
+      pullRequestAuthorLogin: null,
+      pullRequestState: 'OPEN',
+      truncated: false,
+    });
+    github.listIssueComments.mockResolvedValue([]);
+    github.getPullRequestHeadSha.mockResolvedValue('abc1234');
+    github.getPullRequestDiff.mockResolvedValue({
+      diff: DIFF,
+      bytes: DIFF.length,
+      truncated: false,
+    });
+    github.createReviewComment.mockResolvedValue({
+      commentId: '9',
+      nodeId: 'thread-2',
+    });
+    expect(await service.recoverUnposted(baseInput([]))).toBe(1);
+    expect(github.createReviewComment).toHaveBeenCalledTimes(1);
+    expect(repository.markPosted).not.toHaveBeenCalledWith(
+      expect.objectContaining({ githubCommentId: '42' }),
     );
     expect(repository.markPosted).toHaveBeenCalledWith(
       expect.objectContaining({ id: 2, githubCommentId: '9' }),

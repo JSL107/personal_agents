@@ -85,6 +85,9 @@ export interface PrReviewFindingRepositoryPort {
     input: HasAnyForPullRequestInput,
   ): Promise<PrReviewFindingRecord[]>;
 
+  // 이 PR 의 카드가 이미 붙어 있는 GitHub 코멘트 id. 미게시 카드 복구가 남의 코멘트를 제 것으로 잡지 않게 한다.
+  findLinkedCommentIds(input: HasAnyForPullRequestInput): Promise<string[]>;
+
   findOpenPostedCards(): Promise<PrReviewFindingRecord[]>;
 
   markDecided(input: MarkDecidedInput): Promise<void>;

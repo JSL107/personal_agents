@@ -88,6 +88,19 @@ export class PrReviewFindingPrismaRepository implements PrReviewFindingRepositor
     return rows.map((row) => this.toRecord(row));
   }
 
+  async findLinkedCommentIds({
+    repo,
+    pullNumber,
+  }: HasAnyForPullRequestInput): Promise<string[]> {
+    const rows = await this.prisma.prReviewFinding.findMany({
+      where: { repo, pullNumber, githubCommentId: { not: null } },
+      select: { githubCommentId: true },
+    });
+    return rows.flatMap((row) =>
+      row.githubCommentId === null ? [] : [row.githubCommentId.toString()],
+    );
+  }
+
   async findOpenPostedCards(): Promise<PrReviewFindingRecord[]> {
     const where = {
       status: 'OPEN',
