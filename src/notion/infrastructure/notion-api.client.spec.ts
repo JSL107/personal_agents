@@ -565,3 +565,109 @@ describe('replaceAllBlocks', () => {
     );
   });
 });
+
+// 같은 페이지의 교체 작업은 페이지별 사슬로 한 줄로 선다. 이 사슬은 세 번 고쳐진 자리라(N≥3 이면 첫 건만
+// 직렬화되던 race, finally 를 별도 promise 로 분기해 생긴 unhandled rejection) 동시 호출로 직접 확인한다.
+describe('페이지별 교체 직렬화', () => {
+  // 바깥에서 풀 수 있는 promise — 첫 호출의 append 를 붙잡아 두고 그동안 다른 호출이 끼어드는지 본다.
+  const deferred = (): {
+    promise: Promise<void>;
+    resolve: () => void;
+    reject: (error: Error) => void;
+  } => {
+    let resolve = (): void => undefined;
+    let reject = (error: Error): void => void error;
+    const promise = new Promise<void>((onResolve, onReject) => {
+      resolve = onResolve;
+      reject = onReject;
+    });
+    return { promise, resolve, reject };
+  };
+  const flush = async (): Promise<void> => {
+    for (let index = 0; index < 10; index += 1) {
+      await Promise.resolve();
+    }
+  };
+  const buildBlockClient = (append: jest.Mock) => {
+    const list = jest.fn().mockResolvedValue({
+      results: [],
+      has_more: false,
+      next_cursor: null,
+    });
+    const client = {
+      blocks: { children: { list, append }, delete: jest.fn() },
+    };
+    return {
+      list,
+      adapter: new NotionApiClient(client as never, {} as never),
+    };
+  };
+  const blocks = [{ type: 'heading' as const, text: 'H' }];
+
+  it.each(['replaceAllBlocks', 'replaceCheckInSection'] as const)(
+    '%s — 같은 페이지 세 번 동시 호출은 하나씩 차례로 실행된다',
+    async (method) => {
+      const first = deferred();
+      const second = deferred();
+      const append = jest
+        .fn()
+        .mockReturnValueOnce(first.promise)
+        .mockReturnValueOnce(second.promise)
+        .mockResolvedValue({});
+      const { list, adapter } = buildBlockClient(append);
+
+      const calls = [1, 2, 3].map(() =>
+        adapter[method]({ pageId: 'PAGE', blocks }),
+      );
+      await flush();
+      // 첫 호출이 append 에서 멈춘 동안 두 번째·세 번째는 기존 블록 조회조차 시작하지 않는다.
+      expect(list).toHaveBeenCalledTimes(1);
+
+      // 예전 버그는 "첫 호출만 기다리기" 였다 — 첫 호출이 끝나면 2·3번째가 함께 풀려 겹쳤다.
+      // 두 번째를 붙잡아 둔 동안 세 번째가 시작하지 않아야 사슬이 끝까지 이어진 것이다.
+      first.resolve();
+      await flush();
+      expect(list).toHaveBeenCalledTimes(2);
+
+      second.resolve();
+      await Promise.all(calls);
+      expect(list).toHaveBeenCalledTimes(3);
+      expect(append).toHaveBeenCalledTimes(3);
+    },
+  );
+
+  it.each(['replaceAllBlocks', 'replaceCheckInSection'] as const)(
+    '%s — 앞 호출이 실패해도 뒤 호출은 실행된다',
+    async (method) => {
+      const append = jest
+        .fn()
+        .mockRejectedValueOnce(new Error('append 실패'))
+        .mockResolvedValue({});
+      const { adapter } = buildBlockClient(append);
+
+      const failed = adapter[method]({ pageId: 'PAGE', blocks });
+      const next = adapter[method]({ pageId: 'PAGE', blocks });
+
+      await expect(failed).rejects.toThrow();
+      await expect(next).resolves.toBeUndefined();
+      expect(append).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it('다른 페이지끼리는 서로 기다리지 않는다', async () => {
+    const first = deferred();
+    const append = jest
+      .fn()
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValue({});
+    const { list, adapter } = buildBlockClient(append);
+
+    const slow = adapter.replaceAllBlocks({ pageId: 'PAGE-A', blocks });
+    const other = adapter.replaceAllBlocks({ pageId: 'PAGE-B', blocks });
+    await expect(other).resolves.toBeUndefined();
+    expect(list).toHaveBeenCalledTimes(2);
+
+    first.resolve();
+    await slow;
+  });
+});
