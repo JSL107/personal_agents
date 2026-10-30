@@ -152,6 +152,26 @@ export class SweepPrReviewsUsecase implements OnApplicationBootstrap {
     // 열린 PR 은 레포를 묶어 한 번에 조회한다 — 레포마다 따로 치면 회차마다 짧은 간격의
     // 연속 검색이 되어 GitHub secondary rate limit 에 걸렸다(실측: 3분마다 403 반복).
     const pullRequests = await this.listOpenPullRequests({ repos, ownerLogin });
+    // 리뷰 상한과 쿼터로 루프가 끊겨도 열린 PR 전부의 미게시 카드는 복구한다.
+    for (const pullRequest of pullRequests) {
+      try {
+        const count = await this.publishService.recoverUnposted({
+          repo: pullRequest.repo,
+          pullNumber: pullRequest.number,
+          dryRun: this.isDryRun(),
+          allowlistRaw: this.writers.publishAllowlistRaw(),
+        });
+        if (count > 0) {
+          this.logger.log(
+            `미게시 지적 복구 (${pullRequest.repo}#${pullRequest.number}): ${count}건`,
+          );
+        }
+      } catch (error: unknown) {
+        this.logger.warn(
+          `미게시 지적 복구 실패 (${pullRequest.repo}#${pullRequest.number}): ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
     const roundStartedAt = Date.now();
     const roundBudgeted = this.repoReadRepos().length > 0;
     for (const pullRequest of pullRequests) {
@@ -429,10 +449,11 @@ export class SweepPrReviewsUsecase implements OnApplicationBootstrap {
   }): Promise<SweepPullRequestResult | null | typeof ALREADY_MERGED> {
     const prRef = `${repo}#${pullNumber}`;
     const dryRun = this.isDryRun();
-    // 리뷰 usecase 는 자기 AgentRun 을 열고 실패 시 스스로 FAILED 로 마감한다. 그 지점을 넘은
-    // 뒤의 실패까지 여기서 또 기록하면 한 번의 실패가 원장에 2건으로 남아 재시도 예산이 두 배
-    // 속도로 닳는다. 원장에 기록될 주체가 아직 없는 구간(조회 단계)만 이 usecase 가 책임진다.
-    let reviewUsecaseEntered = false;
+    // 어느 단계에서 실패했는지에 따라 원장 기록 주체가 갈린다. 리뷰 usecase 는 자기 AgentRun 을 열고 실패 시
+    // 스스로 FAILED 로 마감하므로 REVIEW 단계 실패는 여기서 또 기록하지 않는다(한 번의 실패가 2건이 되어
+    // 재시도 예산이 두 배로 닳는다). 조회(FETCH) 실패는 기록할 주체가 아직 없고, 리뷰가 성공한 뒤의
+    // 게시(PUBLISH) 실패는 성공 행을 덮을 실패 행이 있어야 다음 회차가 다시 리뷰하므로 이 usecase 가 기록한다.
+    let stage: SweepStage = 'FETCH';
     try {
       // 상세와 diff 는 병렬로 조회한다. 두 요청은 어차피 원자적이지 않아 그 사이 push 가
       // 들어오면 "옛 headSha + 새 diff" 스냅샷이 만들어지는데, 순차로 바꾸면 그 창이
@@ -472,7 +493,7 @@ export class SweepPrReviewsUsecase implements OnApplicationBootstrap {
       // 여기서 조회한 스냅샷을 리뷰에도 그대로 넘긴다 — 리뷰가 재조회하면 그 사이 push 된
       // 커밋 때문에 "지적은 새 diff 기준, 게시는 옛 headSha·옛 diff 기준"으로 갈려 인라인
       // 앵커가 어긋난다(2026-07-31 리뷰 지적).
-      reviewUsecaseEntered = true;
+      stage = 'REVIEW';
       const outcome = await this.reviewPullRequestUsecase.execute({
         prRef,
         slackUserId,
@@ -490,6 +511,7 @@ export class SweepPrReviewsUsecase implements OnApplicationBootstrap {
         // 으로 남아 다음 회차에 ready 전환 재리뷰가 한 번 더 돈다 — 같은 코드에 두 벌이다.
         isDraft: detail.isDraft,
       });
+      stage = 'PUBLISH';
       const allowlistRaw = this.writers.publishAllowlistRaw();
       // 위험 지도는 지적 유무와 별개라 아래 두 갈래(지적 없음 / 카드 게시)보다 먼저 단다.
       await this.publishService.upsertRiskMap({
@@ -538,7 +560,7 @@ export class SweepPrReviewsUsecase implements OnApplicationBootstrap {
       this.logger.error(
         `PR 리뷰 스윕 실패 (${prRef}): ${error instanceof Error ? error.message : String(error)}`,
       );
-      if (!reviewUsecaseEntered) {
+      if (stage !== 'REVIEW') {
         await this.recordFailedSweepRun({
           prRef,
           repo,
@@ -702,3 +724,6 @@ export class SweepPrReviewsUsecase implements OnApplicationBootstrap {
     return [...new Set(repos)];
   }
 }
+
+// reviewAndPublish 가 지금 어느 단계에 있는지. 실패 원장을 누가 남길지 가른다.
+type SweepStage = 'FETCH' | 'REVIEW' | 'PUBLISH';

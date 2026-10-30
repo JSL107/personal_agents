@@ -86,7 +86,10 @@ describe('SweepPrReviewsUsecase', () => {
     >
   >;
   let publishService: jest.Mocked<
-    Pick<PublishFindingsService, 'publish' | 'upsertRiskMap'>
+    Pick<
+      PublishFindingsService,
+      'publish' | 'upsertRiskMap' | 'recoverUnposted'
+    >
   >;
 
   // 판정 테스트용 — 절대 시각이 아닌 "현재로부터 N시간/분 전"으로 만들어 시간 흐름에
@@ -148,6 +151,7 @@ describe('SweepPrReviewsUsecase', () => {
         .mockImplementation(({ run }) => run({ agentRunId: 99 })),
     } as never;
     publishService = {
+      recoverUnposted: jest.fn().mockResolvedValue(0),
       publish: jest.fn().mockResolvedValue({
         inline: 0,
         file: 0,
@@ -159,6 +163,48 @@ describe('SweepPrReviewsUsecase', () => {
       }),
       upsertRiskMap: jest.fn().mockResolvedValue(undefined),
     };
+  });
+
+  it('이미 성공한 리뷰도 미게시 카드 복구를 실행한다', async () => {
+    agentRunService.findLatestSweepReview.mockResolvedValue({
+      status: 'SUCCEEDED',
+      dryRun: false,
+      isDraft: false,
+    } as never);
+    await buildUsecase({
+      ...ENABLED,
+      PR_REVIEW_INLINE_DRYRUN: 'false',
+    }).execute();
+    expect(publishService.recoverUnposted).toHaveBeenCalledWith(
+      expect.objectContaining({
+        repo: OPEN_PR.repo,
+        pullNumber: OPEN_PR.number,
+        dryRun: false,
+      }),
+    );
+    expect(reviewUsecase.execute).not.toHaveBeenCalled();
+  });
+
+  it('복구 실패는 리뷰를 막지 않는다', async () => {
+    github.listOpenPullRequestRefs.mockResolvedValue([
+      OPEN_PR,
+      { ...OPEN_PR, number: 181 },
+    ]);
+    publishService.recoverUnposted.mockRejectedValueOnce(new Error('offline'));
+    await buildUsecase(ENABLED).execute();
+    expect(reviewUsecase.execute).toHaveBeenCalledTimes(2);
+  });
+
+  it('리뷰 성공 후 게시 실패는 실패 원장을 기록한다', async () => {
+    publishService.publish.mockRejectedValue(new Error('write failed'));
+    await buildUsecase(ENABLED).execute();
+    expect(agentRunService.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('리뷰 자체 실패는 실패 원장을 중복 기록하지 않는다', async () => {
+    reviewUsecase.execute.mockRejectedValue(new Error('review failed'));
+    await buildUsecase(ENABLED).execute();
+    expect(agentRunService.execute).not.toHaveBeenCalled();
   });
 
   it('마스터 스위치가 꺼져 있으면 아무것도 하지 않는다', async () => {

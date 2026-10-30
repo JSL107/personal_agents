@@ -77,6 +77,30 @@ export class PrReviewFindingPrismaRepository implements PrReviewFindingRepositor
     });
   }
 
+  async findUnpostedOpenCards({
+    repo,
+    pullNumber,
+  }: HasAnyForPullRequestInput): Promise<PrReviewFindingRecord[]> {
+    const rows = await this.prisma.prReviewFinding.findMany({
+      where: { repo, pullNumber, status: 'OPEN', postMode: 'NOT_POSTED' },
+      orderBy: { id: 'asc' },
+    });
+    return rows.map((row) => this.toRecord(row));
+  }
+
+  async findLinkedCommentIds({
+    repo,
+    pullNumber,
+  }: HasAnyForPullRequestInput): Promise<string[]> {
+    const rows = await this.prisma.prReviewFinding.findMany({
+      where: { repo, pullNumber, githubCommentId: { not: null } },
+      select: { githubCommentId: true },
+    });
+    return rows.flatMap((row) =>
+      row.githubCommentId === null ? [] : [row.githubCommentId.toString()],
+    );
+  }
+
   async findOpenPostedCards(): Promise<PrReviewFindingRecord[]> {
     const where = {
       status: 'OPEN',

@@ -63,6 +63,8 @@ export interface ReviewThreadComment {
 export interface ReviewThread {
   threadId: string;
   isResolved: boolean;
+  // 스레드가 달린 파일 경로. 조회 응답에 없으면 비어 있다 — 미게시 카드 복구가 같은 문장의 다른 파일 지적과 가를 때 쓴다.
+  path?: string;
   comments: ReviewThreadComment[];
 }
 
