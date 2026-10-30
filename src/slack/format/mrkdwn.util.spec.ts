@@ -170,3 +170,37 @@ describe('convertMarkdownBold', () => {
     );
   });
 });
+
+describe('코드 보호 — `~~~` 펜스와 이중 백틱', () => {
+  it('`~~~` 코드블록 안은 바꾸지 않는다', () => {
+    const source = '~~~\n**raw** https://github.com/o/r/pull/2\n~~~\n**굵게**';
+    expect(convertMarkdownBold(linkifyBareUrls(source))).toBe(
+      '~~~\n**raw** https://github.com/o/r/pull/2\n~~~\n*굵게*',
+    );
+  });
+
+  it('``` 블록 안의 `~~~` 줄은 블록을 닫지 않는다', () => {
+    const source = '```\n~~~\n**raw**\n```\n**굵게**';
+    expect(convertMarkdownBold(source)).toBe('```\n~~~\n**raw**\n```\n*굵게*');
+  });
+
+  it('열린 블록 안의 `~~~js`·` ```js ` 줄은 블록을 닫지 않는다', () => {
+    expect(convertMarkdownBold('~~~\n~~~js\n**raw**\n~~~\n**굵게**')).toBe(
+      '~~~\n~~~js\n**raw**\n~~~\n*굵게*',
+    );
+    expect(convertMarkdownBold('```\n```js\n**raw**\n```\n**굵게**')).toBe(
+      '```\n```js\n**raw**\n```\n*굵게*',
+    );
+  });
+
+  it('이중 백틱 안의 GitHub 주소는 링크로 접지 않는다', () => {
+    const source = '``https://github.com/o/r/pull/2``';
+    expect(linkifyBareUrls(source)).toBe(source);
+  });
+
+  it('이중 백틱 인라인 코드 안은 바꾸지 않는다 — 안에 백틱이 있어도', () => {
+    expect(convertMarkdownBold('``a `x` **b**`` 와 **굵게**')).toBe(
+      '``a `x` **b**`` 와 *굵게*',
+    );
+  });
+});

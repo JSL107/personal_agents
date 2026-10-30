@@ -22,7 +22,8 @@ const BARE_URL = /https?:\/\/[^\s<>|]+/g;
 // 변환에서 제외할 구간 — 이미 이름이 붙은 링크(`<url|이름>`)와 인라인 코드(`` `...` ``).
 // 인라인 코드를 빼면 `` `https://github.com/o/r/pull/2` `` 의 백틱이 링크 문법 안으로 말려 들어가
 // `` `<https://...` |r #2> `` 처럼 통째로 깨진다.
-const PROTECTED_TOKEN = /(<[^<>]*>|`[^`]*`)/;
+// 이중 백틱(``` `` a `b` `` ```)은 안에 백틱을 품을 수 있어 단일 백틱보다 먼저 본다(PR #923 리뷰).
+const PROTECTED_TOKEN = /(<[^<>]*>|``.+?``|`[^`]+`)/;
 const URL_TRAILING_PUNCTUATION = /[.,;:!?)\]}'"]+$/;
 const GITHUB_ISSUE_URL =
   /^https?:\/\/github\.com\/[^/]+\/([^/]+)\/(?:pull|issues)\/(\d+)/;
@@ -47,26 +48,56 @@ const mapUnprotected = (
     .map((part, index) => (index % 2 === 1 ? part : transform(part)))
     .join('');
 
-// ``` 코드블록 안은 통째로 건너뛴다 — 사용자가 그대로 복사해 쓰는 원문이라 한 글자도 바꾸면 안 된다.
+// 코드블록 안은 통째로 건너뛴다 — 사용자가 그대로 복사해 쓰는 원문이라 한 글자도 바꾸면 안 된다.
 // fence 가 닫히지 않은 입력이면 그 뒤 전체를 코드로 보고 통과시킨다(안전한 실패).
-export const isCodeFenceLine = (line: string): boolean =>
-  line.trimStart().startsWith('```');
+// Markdown 처럼 연 기호와 같은 기호로만 닫는다 — ``` 블록 안의 `~~~` 줄은 코드다(PR #923 리뷰).
+const CODE_FENCE_MARKERS = ['```', '~~~'] as const;
+
+export type CodeFenceLineKind = 'fence' | 'code' | 'text';
+
+const findFenceMarker = (line: string): string | undefined =>
+  CODE_FENCE_MARKERS.find((marker) => line.trimStart().startsWith(marker));
+
+// 각 줄이 fence 인지, 코드블록 안인지, 일반 글인지를 같은 순서의 배열로 돌려준다.
+export const classifyCodeFenceLines = (
+  lines: readonly string[],
+): CodeFenceLineKind[] => {
+  const kinds: CodeFenceLineKind[] = [];
+  // 블록은 한 줄에서 열려 몇 줄 뒤에 닫히므로 연 기호를 줄 사이에 기억한다. null = 블록 밖.
+  let openMarker: string | null = null;
+  for (const line of lines) {
+    const marker = findFenceMarker(line);
+    if (openMarker === null) {
+      if (marker === undefined) {
+        kinds.push('text');
+        continue;
+      }
+      openMarker = marker;
+      kinds.push('fence');
+      continue;
+    }
+    // 닫는 줄은 기호만 있어야 한다 — 블록 안의 ` ```js ` 같은 줄은 코드다(CommonMark, PR #930 리뷰).
+    const closesBlock = line.trim() === openMarker;
+    if (closesBlock) {
+      openMarker = null;
+      kinds.push('fence');
+      continue;
+    }
+    kinds.push('code');
+  }
+  return kinds;
+};
 
 const mapOutsideCodeFence = (
   text: string,
   transformLine: (line: string) => string,
 ): string => {
-  let insideCodeFence = false;
-  return text
-    .split('\n')
-    .map((line) => {
-      if (isCodeFenceLine(line)) {
-        insideCodeFence = !insideCodeFence;
-        return line;
-      }
-      return insideCodeFence ? line : transformLine(line);
-    })
-    .join('\n');
+  const lines = text.split('\n');
+  const kinds = classifyCodeFenceLines(lines);
+  const mapped = lines.map((line, index) =>
+    kinds[index] === 'text' ? transformLine(line) : line,
+  );
+  return mapped.join('\n');
 };
 
 export const linkifyBareUrls = (text: string): string =>
