@@ -109,6 +109,19 @@ describe('ConversationalReply — buildSystemPrompt (self-context)', () => {
     expect(prompt).toContain('거짓이 됩니다');
   });
 
+  // #938 리뷰: 근거 목록에 현재 메시지를 빠뜨리면 이번 발화에만 있는 사실을 못 쓰고, 일반 지식 금지를
+  // 답 전체에 걸면 개념 설명과 부딪힌다 — 금지는 원문 요약·설명에만 건다.
+  it('현재 사용자 메시지를 근거로 쓰고, 일반 지식 금지는 원문 요약·설명에만 건다', () => {
+    const prompt = buildSystemPrompt({});
+    expect(prompt).toContain('[현재 사용자 메시지]·[이전 대화]');
+    expect(prompt).toMatch(
+      /요약·설명할 때는 그 원문에 없는 사실을 일반 지식으로 보태지 마세요/,
+    );
+    expect(prompt).toContain(
+      '일반 개념 설명·브레인스토밍·의견은 일반 지식으로 답해도 됩니다',
+    );
+  });
+
   it('거짓 자동실행 안내 제거 — 과거 "alias 매칭해 진행합니다" 문구가 더는 없다', () => {
     const prompt = buildSystemPrompt({ repoLabel: 'foo/bar' });
     expect(prompt).not.toContain('alias 매칭해 진행');
@@ -167,7 +180,7 @@ describe('ConversationalReply — buildSystemPrompt (self-context)', () => {
         // 2026-10-15 원화 공고 대화 기능 안내와 실행하지 않은 요청의 거짓 수락 금지
         // 외부 기록 경계 안내를 system prompt 에 추가했다.
         // 2026-10-30 일반 경로의 금지 문장 묶음을 「답의 원칙」 세 줄로 줄였다(eval holdout 27문항×2 25/27 = 정리 전, 흔들린 5문항×3 13/15 > 정리 전 9/15)
-        '4e24edd1f8c81d3a92c5ac968b067c2cb33676541e0b065d793adcdd23ccceed',
+        '68aca84eb11dac4a730c01807432440830a8177d223a9e93e73d9bcbd512738a',
       );
     },
   );
