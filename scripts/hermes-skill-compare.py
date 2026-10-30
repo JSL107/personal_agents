@@ -211,6 +211,21 @@ def tree_skill_paths(tree_json: str, skill_id: str) -> list[str]:
     return sorted(found, key=lambda path: (path.count("/"), path))
 
 
+def skill_md_order(tree_json: str, source: str, skill_id: str) -> list[str]:
+    """SKILL.md 를 시도할 경로 순서. 관례 위치(skill_md_paths)가 먼저고, 목록에만 있는 깊은 위치는 그 뒤에 최대 2개.
+
+    같은 skill_id 가 여러 곳에 있는 저장소(`deprecated/x`·`skills/x`)에서 목록 순서가 관례 위치를 앞지르면
+    예전에 맞게 찾던 파일 대신 다른 사본을 비교한다. 목록이 있으면 없는 관례 위치는 건너뛰어 요청을 아낀다.
+    """
+    found = tree_skill_paths(tree_json, skill_id)
+    guessed = skill_md_paths(source, skill_id)
+    if not found:
+        return guessed
+    lowered = {path.lower(): path for path in found}
+    conventional = [lowered[path.lower()] for path in guessed if path.lower() in lowered]
+    return conventional + [path for path in found if path not in conventional][:2]
+
+
 def clean_external(text: str, limit: int, invisible: dict) -> str:
     """외부 텍스트를 프롬프트에 넣기 전에 다듬는다. 공백을 접고 limit 자로 자른다.
 
@@ -309,9 +324,7 @@ def build_report(
                 except Exception as error:  # noqa: BLE001
                     trees[source] = ""
                     print(f"tree '{source}' failed: {error!r}", file=sys.stderr)
-            found_paths = tree_skill_paths(trees.get(source, ""), candidate["skill_id"])
-            guessed = [path for path in skill_md_paths(source, candidate["skill_id"]) if path not in found_paths]
-            for path in found_paths[:2] + guessed:
+            for path in skill_md_order(trees.get(source, ""), source, candidate["skill_id"]):
                 if out_of_time():
                     break
                 try:
@@ -476,6 +489,10 @@ def self_check() -> None:
                                 {"path": 5}, "broken"]})
     assert tree_skill_paths(tree, "arena") == ["arena/SKILL.md", "plugins/pstack/skills/arena/SKILL.md"], tree_skill_paths(tree, "arena")
     assert tree_skill_paths("not json", "arena") == [] and tree_skill_paths('{"tree": null}', "arena") == []
+    # 관례 위치가 목록에 있으면 그것이 먼저다. 같은 깊이의 다른 사본(deprecated/)이 사전순으로 앞서도 밀린다.
+    twins = json.dumps({"tree": [{"path": "deprecated/x/SKILL.md"}, {"path": "skills/x/SKILL.md"}]})
+    assert skill_md_order(twins, "o/r", "x") == ["skills/x/SKILL.md", "deprecated/x/SKILL.md"], skill_md_order(twins, "o/r", "x")
+    assert skill_md_order("", "o/r", "x") == skill_md_paths("o/r", "x")  # 목록이 없으면 예전 순서 그대로
 
     invisible = dict.fromkeys(map(ord, "​"))
     cleaned = clean_external("a​  b\n```x```" + EXTERNAL_END + "c" * 2000, 50, invisible)
