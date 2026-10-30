@@ -179,7 +179,7 @@ export class ConversationalReplyUsecase {
         // 붙으면 이 usecase 가 요구하는 1~3문장 대화 응답과 충돌한다.
         noContractPreamble: true,
       });
-      const reply = completion.text.trim();
+      const reply = stripLocalPathLinks(completion.text.trim());
       if (routingMissRunId !== undefined) {
         await this.agentRunService?.attachModelResponse({
           agentRunId: routingMissRunId,
@@ -431,6 +431,12 @@ export const buildSystemPrompt = ({
 
 // 첨부를 볼 수 없는 폴백(Claude)용 프롬프트. 폴더 경로 안내와 사진 번호를 빼고, 못 본 사실을 밝히게 한다.
 // 원장·발송 기록은 텍스트라 그대로 싣는다.
+// 모델이 읽은 파일을 `[이름](/절대경로)` 로 인용하면 이름만 남긴다. Slack 은 이 문법을 링크로 바꾸지 않아
+// 경로가 그대로 보이고, 임시 사본 경로처럼 사용자에게 의미 없는 내부 구조가 드러난다(2026-10-30 실제 DM).
+// 프롬프트로도 막지만 지켜진 회차에만 지켜지므로 보내기 전에 한 번 더 거른다.
+export const stripLocalPathLinks = (text: string): string =>
+  text.replace(/\[([^\]\n]+)\]\((?:\/|~\/)[^)\s]*\)/g, '$1');
+
 export const buildFallbackPrompt = ({
   text,
   priorTurns,
@@ -489,7 +495,7 @@ export const buildPrompt = ({
           '',
           '[직접 열어 볼 수 있는 폴더]',
           ...lookups.rootGuide,
-          '직접 열어 본 내용만 근거로 말하고, 무엇을 봤는지 답에 밝히세요.',
+          '직접 열어 본 내용만 근거로 말하고, 무엇을 봤는지 답에 밝히세요. 단 파일·폴더 경로와 [이름](주소) 같은 링크 문법은 쓰지 말고 "오늘 아침 실행 기록", "레포의 아침신문 프롬프트"처럼 말로 밝히세요.',
         ]
       : []),
   ];

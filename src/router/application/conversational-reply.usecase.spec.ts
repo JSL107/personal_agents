@@ -19,6 +19,7 @@ import {
   buildSystemPrompt,
   ConversationalReplyUsecase,
   formatWorkStatus,
+  stripLocalPathLinks,
 } from './conversational-reply.usecase';
 
 describe('ConversationalReply — buildSystemPrompt (self-context)', () => {
@@ -999,5 +1000,22 @@ describe('ConversationalReply — 직전 작업 상태', () => {
     expect(prompt).toContain(
       '아무 작업도 시작되지 않았음을 솔직히 말하세요. [직전 작업 상태] 가 있으면 그 상태를 따르세요.',
     );
+  });
+});
+
+describe('stripLocalPathLinks', () => {
+  it('로컬 절대경로 링크는 이름만 남긴다', () => {
+    expect(
+      stripLocalPathLinks(
+        '[오늘 아침 실행 기록](/Users/me/.hermes/cron/output/a/2026-10-30.md)을 보니 [레포 기준](/var/folders/x/T/idaeri-review-repo-1-a/scripts/p.md)과 달라요.',
+      ),
+    ).toBe('오늘 아침 실행 기록을 보니 레포 기준과 달라요.');
+  });
+  it('홈 경로 링크도 이름만 남긴다', () => {
+    expect(stripLocalPathLinks('[기록](~/.hermes/x.md)')).toBe('기록');
+  });
+  it('웹 주소 링크와 일반 대괄호는 건드리지 않는다', () => {
+    const text = '[문서](https://example.com) 와 [사진 1번 첨부]';
+    expect(stripLocalPathLinks(text)).toBe(text);
   });
 });
