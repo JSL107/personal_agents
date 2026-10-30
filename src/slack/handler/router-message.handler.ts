@@ -49,6 +49,7 @@ import {
   SlackDeliveryRepositoryPort,
 } from '../domain/port/slack-delivery.repository.port';
 import { SlackHandler } from '../domain/port/slack-handler.port';
+import { stripMentionPrefix } from '../domain/slack-mention';
 import { toReadableSlackArgs } from '../format/message-blocks.builder';
 import { buildPreviewBlocks } from '../format/preview-message.builder';
 import { toUserFacingErrorMessage } from './slack-handler.helper';
@@ -1411,7 +1412,5 @@ const resolveReplyBlocks = (
   return undefined;
 };
 
-// Slack 멘션 prefix `<@U....>` 를 모두 제거 + 앞뒤 공백 trim.
-// (사용자가 "<@BOT> 안녕" 형태로 보낸 경우 "안녕" 만 추출.)
-export const stripMentionPrefix = (text: string): string =>
-  text.replace(/<@[A-Z0-9]+>\s*/g, '').trim();
+// 멘션 접두사 제거는 domain(slack-mention.ts)으로 옮겼다. 기존 import 경로(nl-answer-eval 스크립트 등)를 지킨다.
+export { stripMentionPrefix };

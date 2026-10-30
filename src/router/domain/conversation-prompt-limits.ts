@@ -1,0 +1,3 @@
+export const PRIOR_TURN_TEXT_CAP = 1500;
+export const AUTO_POST_TEXT_CAP = 6000;
+export const CONVERSATION_PROMPT_TURN_LIMIT = 30;

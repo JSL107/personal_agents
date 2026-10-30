@@ -12,6 +12,7 @@ import { AgentType } from '../../model-router/domain/model-router.type';
 import { SELF_REPO } from '../../pr-review-loop/domain/learning-repo';
 import { ReplyPersona } from '../domain/conversation-context.type';
 import { ConversationTurn } from '../domain/conversation-memory.type';
+import { PRIOR_TURN_TEXT_CAP } from '../domain/conversation-prompt-limits';
 import { describeEnabledPassiveCapabilities } from '../domain/passive-capability';
 import {
   AGENT_DISPATCHER_PORT,
@@ -28,7 +29,6 @@ import {
 const PRIOR_TURN_LIMIT = 5;
 // 사용자 발화는 짧지만, 스레드 원글(공고 피드·알림)과 이대리 자신의 직전 답은 길다. 200자로 자르면
 // "이거 뭔데?" 가 가리키는 글의 앞부분만 보고 답한다(2026-10-08 run 7585, 10-13 run 8292).
-const PRIOR_TURN_TEXT_CAP = 1500;
 // 실행 id 가 없는 작업 turn(비동기 BLOG ack)은 같은 대화에서 turn 시각보다 이만큼 앞서 시작된
 // 실행까지 그 작업으로 본다. 비동기 실행은 ack 를 남기기 직전에 시작하므로 짧게 잡는다 — 길면
 // 같은 대화의 더 이전 실행(보류된 요청 앞의 초안 등)이 잡힌다. 몇 분 뒤 남는 완료 답장 turn 은
