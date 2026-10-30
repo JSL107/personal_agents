@@ -70,6 +70,87 @@ describe('parseDiffHunks', () => {
   });
 });
 
+describe('hunk 본문의 헤더 유사 줄', () => {
+  const diff = `diff --git a/db/q.sql b/db/q.sql
+--- a/db/q.sql
++++ b/db/q.sql
+@@ -1,2 +1,2 @@
+--- legacy comment
+-old
++++ x
++new
+@@ -50,2 +50,2 @@
+-old
+-previous
++new
++next
+`;
+
+  it('삭제 본문이 이전 파일을 바꾸지 않는다', () => {
+    expect(parseDiffBaseHunks(diff)).toEqual([
+      {
+        filePath: 'db/q.sql',
+        ranges: [
+          { start: 1, end: 2 },
+          { start: 50, end: 51 },
+        ],
+      },
+    ]);
+  });
+
+  it('추가 본문이 신규 파일을 바꾸지 않는다', () => {
+    expect(parseDiffHunks(diff)).toEqual([
+      {
+        filePath: 'db/q.sql',
+        ranges: [
+          { start: 1, end: 2 },
+          { start: 50, end: 51 },
+        ],
+      },
+    ]);
+  });
+});
+
+// 삭제·추가 줄이 붙어 나와 헤더 한 쌍처럼 보이는 본문(`-- count;` → `++ count;`). 앞 줄이 파일 머리말이
+// 아니므로 파일 경계가 아니다.
+describe('hunk 본문의 헤더 한 쌍 유사 줄', () => {
+  const diff = `diff --git a/src/counter.js b/src/counter.js
+index 1111111..2222222 100644
+--- a/src/counter.js
++++ b/src/counter.js
+@@ -3,1 +3,1 @@
+--- count;
++++ count;
+@@ -40,1 +40,1 @@
+-old();
++next();
+`;
+
+  it('이전 파일 기준 범위가 모두 원래 파일에 붙는다', () => {
+    expect(parseDiffBaseHunks(diff)).toEqual([
+      {
+        filePath: 'src/counter.js',
+        ranges: [
+          { start: 3, end: 3 },
+          { start: 40, end: 40 },
+        ],
+      },
+    ]);
+  });
+
+  it('신규 파일 기준 범위가 모두 원래 파일에 붙는다', () => {
+    expect(parseDiffHunks(diff)).toEqual([
+      {
+        filePath: 'src/counter.js',
+        ranges: [
+          { start: 3, end: 3 },
+          { start: 40, end: 40 },
+        ],
+      },
+    ]);
+  });
+});
+
 describe('snapToCommentableLine', () => {
   const hunks = parseDiffHunks(DIFF);
 
