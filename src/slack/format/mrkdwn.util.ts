@@ -141,15 +141,20 @@ export const breakProseIntoSentences = (text: string): string =>
 const MARKDOWN_BOLD = /(^|.)\*\*([^*\n]+?)\*\*(?=(.|$))/gu;
 const WORD_CHARACTER = /[\p{L}\p{N}]/u;
 
+const toSlackBold = (
+  _match: string,
+  before: string,
+  inner: string,
+  after: string,
+): string => {
+  const touchesWord = WORD_CHARACTER.test(before) || WORD_CHARACTER.test(after);
+  if (touchesWord) {
+    return `${before}${inner}`;
+  }
+  return `${before}*${inner}*`;
+};
+
 export const convertMarkdownBold = (text: string): string =>
   mapOutsideCodeFence(text, (line) =>
-    mapUnprotected(line, (part) =>
-      part.replace(
-        MARKDOWN_BOLD,
-        (_match, before: string, inner: string, after: string) =>
-          WORD_CHARACTER.test(before) || WORD_CHARACTER.test(after)
-            ? `${before}${inner}`
-            : `${before}*${inner}*`,
-      ),
-    ),
+    mapUnprotected(line, (part) => part.replace(MARKDOWN_BOLD, toSlackBold)),
   );
