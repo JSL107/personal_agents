@@ -90,6 +90,7 @@ const LIST_REVIEW_THREADS_QUERY = `
           nodes {
             id
             isResolved
+            path
             comments(first:20) {
               nodes {
                 databaseId
@@ -140,6 +141,7 @@ interface ReviewThreadGraphqlComment {
 interface ReviewThreadGraphqlNode {
   id: string;
   isResolved: boolean;
+  path: string | null;
   comments: {
     nodes: ReviewThreadGraphqlComment[];
     pageInfo: GraphqlPageInfo;
@@ -657,6 +659,7 @@ export class OctokitGithubClient implements GithubClientPort {
     return {
       threadId: thread.id,
       isResolved: thread.isResolved,
+      ...(thread.path ? { path: thread.path } : {}),
       comments: thread.comments.nodes.map((comment) => {
         if (comment.reactions.pageInfo.hasNextPage) {
           this.logger.warn(
