@@ -269,25 +269,36 @@ const ANONYMIZED_SOURCE_TAIL_PATTERN =
 // ``a ` [의역]`` 처럼 안쪽 백틱에서 스팬이 일찍 닫혀 리터럴이 지워진다(리뷰 지적).
 const INLINE_CODE_SPAN_PATTERN = /(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)/g;
 
+type ReplaceOutsideInlineCodeInput = {
+  text: string;
+  replace: (prose: string) => string;
+};
+
 // 인라인 코드 밖에서만 치환한다. 코드 스팬은 리터럴 예시라 그 안은 남긴다.
-const replaceOutsideInlineCode = (
-  line: string,
-  replace: (text: string) => string,
-): string => {
-  let result = '';
-  let cursor = 0;
-  for (const span of line.matchAll(INLINE_CODE_SPAN_PATTERN)) {
-    const start = span.index ?? 0;
-    result += replace(line.slice(cursor, start)) + span[0];
-    cursor = start + span[0].length;
-  }
-  return result + replace(line.slice(cursor));
+// 코드 스팬 사이의 산문 조각을 잘라 각각 치환하고, 조각 뒤에 그 코드 스팬을 다시 붙인다.
+const replaceOutsideInlineCode = ({
+  text,
+  replace,
+}: ReplaceOutsideInlineCodeInput): string => {
+  const spans = [...text.matchAll(INLINE_CODE_SPAN_PATTERN)];
+  const proseStarts = [
+    0,
+    ...spans.map((span) => (span.index ?? 0) + span[0].length),
+  ];
+  const pieces = proseStarts.map((start, order) => {
+    const span = spans.at(order);
+    const prose = text.slice(start, span?.index ?? text.length);
+    return replace(prose) + (span?.[0] ?? '');
+  });
+  const replaced = pieces.join('');
+  return replaced;
 };
 
 const removeScaffoldTags = (line: string): string =>
-  replaceOutsideInlineCode(line, (text) =>
-    text.replace(SCAFFOLD_TAG_PATTERN, ''),
-  );
+  replaceOutsideInlineCode({
+    text: line,
+    replace: (prose) => prose.replace(SCAFFOLD_TAG_PATTERN, ''),
+  });
 const BLANK_LINE_PATTERN = /^\s*$/;
 
 /**
@@ -342,28 +353,47 @@ export const stripPublishScaffolding = (markdown: string): string => {
 
 // 연결어미 뒤 쉼표(`읽고, `·`했는데, `). 윤문 프롬프트에 「쉼표를 빼라」가 있어도 발행본에 남았다
 // (2026-10-30, AG-UI 글 — 독자가 「필요 없는 쉼표」로 지적). 프롬프트는 집행이 없어 여기서 지운다.
-// 어미는 연결어미로 확실한 꼴만 잡는다. `고,`·`면,` 은 명사 나열(`경고, 오류`·`화면, 표`)과
-// 철자가 같아 흔한 명사의 앞 글자를 제외했다 — 놓치는 쪽은 쉼표가 남을 뿐이고, 잘못 지우면
-// 나열이 깨진다. `~는지,` 는 나열에 쓰이는 자리라 대상이 아니다.
+// 어미는 연결어미로 확실한 꼴만 잡는다. `고,`·`면,` 은 명사(`로고, 경고, 화면`)와 철자가 같아
+// 시제·`하다`·`있다` 꼴처럼 동사로 확실한 앞 글자가 붙은 것만 지운다 — `읽고,` 같은 자리는
+// 놓치지만 쉼표가 남을 뿐이고, 명사를 잘못 지우면 나열이 깨진다(PR #939 리뷰 지적).
+// `~는지,` 는 나열에 쓰이는 자리라 대상이 아니다. 앞에 한글이 붙어야 하는 조건은 홀로 명사가 되는
+// 한 글자 꼴(`며`·`라면`)에만 건다 — 전체에 걸면 `수 있고,` 처럼 띄어 쓴 두 글자 꼴을 놓친다.
 const CONNECTIVE_COMMA_PATTERN =
-  /(?<=[가-힣])(지만|[는은인한던]데|[어아해돼여워와져쳐려봐]서|면서|며|니까|므로|(?<![참최재창광경원신공사보])고|(?<![화측정표국전단방일대외내지양문장평이])면),(?=[ \t]+\S)/g;
+  /(지만|[는은인한던]데|[어아해돼여워와져쳐려봐]서|면서|니까|므로|[하되있없않았었였했됐겠이]고|[하되있없않았었였했됐겠]면|(?<=[가-힣])(?:며|으면|다면|라면)),(?=[ \t]+\S)/g;
+
+const removeConnectiveCommas = (prose: string): string =>
+  prose.replace(CONNECTIVE_COMMA_PATTERN, '$1');
 
 /**
- * 산문의 연결어미 뒤 쉼표를 걷어낸다. 코드 펜스·들여쓴 줄·인라인 코드는 건드리지 않는다.
+ * 산문의 연결어미 뒤 쉼표를 걷어낸다. 코드 펜스·들여쓴 코드블록·인라인 코드는 건드리지 않는다.
+ *
+ * 빈 줄로 나뉜 블록 단위로 다룬다. 인라인 코드는 줄을 넘어갈 수 있어서, 줄마다 따로 보면 여는
+ * 백틱과 닫는 백틱이 갈려 코드 안의 쉼표를 지운다(PR #939 리뷰 지적). 쉼표만 지우므로 블록의
+ * 줄 수는 그대로다.
  */
 export const stripConnectiveCommas = (markdown: string): string => {
   const { lines, blocks } = scanMarkdownBlocks(markdown);
-  const fenced = collectFencedLineIndexes(lines, blocks);
-
-  return lines
-    .map((line, index) =>
-      fenced.has(index) || INDENTED_LINE_PATTERN.test(line)
-        ? line
-        : replaceOutsideInlineCode(line, (text) =>
-            text.replace(CONNECTIVE_COMMA_PATTERN, '$1'),
-          ),
-    )
-    .join('\n');
+  const nextLines = [...lines];
+  // 4칸 들여쓴 코드블록은 문단을 끊지 못해 항상 빈 줄 뒤 첫 줄부터 들여쓰여 있다.
+  const editableBlocks = blocks.filter(
+    (block) =>
+      !FENCE_PATTERN.test(lines[block.startLine]) &&
+      !INDENTED_LINE_PATTERN.test(lines[block.startLine]),
+  );
+  editableBlocks.forEach((block) => {
+    const text = lines.slice(block.startLine, block.endLine + 1).join('\n');
+    const stripped = replaceOutsideInlineCode({
+      text,
+      replace: removeConnectiveCommas,
+    });
+    nextLines.splice(
+      block.startLine,
+      block.endLine - block.startLine + 1,
+      ...stripped.split('\n'),
+    );
+  });
+  const result = nextLines.join('\n');
+  return result;
 };
 
 // 펜스 코드블록만 원문 그대로 뽑는다. 편집 단계가 코드를 바꾸지 않았는지 대조하는 데 쓴다 —
