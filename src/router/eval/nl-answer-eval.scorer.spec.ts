@@ -284,14 +284,14 @@ describe('NL_ANSWER_EVAL_CASES', () => {
     }
   });
 
-  it('아침신문 holdout 은 긴 본문 말미의 도구 1건을 포함하고 총 26건이다', () => {
+  it('아침신문 holdout 은 긴 본문 말미의 도구 1건을 포함하고 총 27건이다(2026-10-30 실제 DM 확인 문항 포함)', () => {
     const holdout = NL_ANSWER_EVAL_CASES.filter(
       (candidate) => candidate.split === 'holdout',
     );
     const morningCase = holdout.find(
       (candidate) => candidate.id === 'h-morning-tool-count-1',
     );
-    expect(holdout).toHaveLength(26);
+    expect(holdout).toHaveLength(27);
     expect(morningCase?.priorTurns?.[0].text.length).toBeGreaterThan(3_000);
     expect(morningCase?.priorTurns?.[0].text).toContain('🛠 오늘의 도구');
     expect(morningCase?.priorTurns?.[0].text).toMatch(/\*1\. Diff Lens\*/);

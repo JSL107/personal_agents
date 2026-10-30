@@ -824,6 +824,25 @@ export const NL_ANSWER_EVAL_CASES: readonly EvalCase[] = [
     },
   },
   {
+    id: 'h-schedule-with-then',
+    split: 'holdout',
+    note: '2026-10-30 실제 DM 확인 — "그러면" 으로 앞 대화를 받은 등록 요청이 문장 조각 제목으로 등록됐다(일정 #78)',
+    text: '그러면 내가 고칠수있게 일정등록해줄래?',
+    priorTurns: [
+      user('오늘 도구 왜한개야?'),
+      bot(
+        '오늘 아침 실행 기록을 다시 봤어요. 당시 선정 기준이 개발에 바로 쓰는 도구만 허용하고 글·사례는 제외해서 dontallow 하나만 실렸어요. 레포의 아침신문 프롬프트에는 글·사례도 고를 수 있게 적혀 있지만 오늘 아침 발송에는 그 기준이 적용되지 않았습니다.',
+      ),
+    ],
+    expect: {
+      destinations: [AgentType.SCHEDULE],
+      mustIntercept: {
+        name: 'RegisterScheduleUsecase',
+        argsNonEmpty: ['memo'],
+      },
+    },
+  },
+  {
     id: 'h-schedule-with-cause',
     split: 'holdout',
     note: '2026-10-30 아침신문 DM 실사례 — 직전 분석의 원인을 일정 메모에 보존한다',
