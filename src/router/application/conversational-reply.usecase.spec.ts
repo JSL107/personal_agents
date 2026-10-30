@@ -3,14 +3,17 @@ import { createHash } from 'node:crypto';
 import { ConfigService } from '@nestjs/config';
 
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
+import { UNTRUSTED_INPUT_NOTICE } from '../../common/llm/untrusted-input.util';
 import { ModelRouterUsecase } from '../../model-router/application/model-router.usecase';
 import {
   AgentType,
   ModelProviderName,
 } from '../../model-router/domain/model-router.type';
+import { AUTO_POST_LABEL } from '../domain/auto-post-turn';
 import { ConversationTurn } from '../domain/conversation-memory.type';
 import { AgentDispatcher } from '../domain/port/agent-dispatcher.port';
 import { WORKER_CAPABILITIES } from '../domain/worker-capability';
+import { ConversationLookupService } from './conversation-lookup.service';
 import {
   buildPrompt,
   buildSystemPrompt,
@@ -160,7 +163,8 @@ describe('ConversationalReply — buildSystemPrompt (self-context)', () => {
         // 2026-10-14 진행 여부는 [직전 작업 상태] 실제 기록으로 답한다 — "대기 중" 추측 예시 제거(run 8886)
         // 2026-10-14 반말 질문에도 존댓말로 — 같은 스레드에서 말투가 오갔다("작업하고 있어?" 실측 10회 중 4회 반말)
         // 2026-10-15 원화 공고 대화 기능 안내와 실행하지 않은 요청의 거짓 수락 금지
-        '65bba6b732cdc3af25458e0321821f11681df7689ee9841027b3aef636703291',
+        // 외부 기록 경계 안내를 system prompt 에 추가했다.
+        '6ffa0e4375a4aaec97adf7de097b9c8ad044c0dfef19f58bc59c192c9583846b',
       );
     },
   );
@@ -291,9 +295,9 @@ describe('ConversationalReply — buildPrompt (role-tagged turn lines)', () => {
     ...overrides,
   });
 
-  it('prior turns 가 없으면 단순한 [사용자 메시지] 블록만 출력', () => {
+  it('prior turns 가 없으면 [현재 사용자 메시지] 블록을 출력한다', () => {
     const prompt = buildPrompt({ text: '안녕', priorTurns: [] });
-    expect(prompt).toContain('[사용자 메시지]');
+    expect(prompt).toContain('[현재 사용자 메시지]');
     expect(prompt).toContain('안녕');
     expect(prompt).not.toContain('[이전 대화');
   });
@@ -351,16 +355,54 @@ describe('ConversationalReply — buildPrompt (role-tagged turn lines)', () => {
     expect(prompt).not.toContain('[assistant] 레거시');
   });
 
-  it('최근 5 turn 만 포함 (prompt 폭증 방지)', () => {
-    const turns = Array.from({ length: 8 }, (_, idx) =>
-      baseTurn({ text: `turn-${idx + 1}` }),
+  it('턴 12개를 주면 12개 모두 싣는다', () => {
+    const turns = Array.from({ length: 12 }, (_, index) =>
+      baseTurn({ text: `turn-${index + 1}` }),
     );
     const prompt = buildPrompt({ text: '?', priorTurns: turns });
-    expect(prompt).not.toContain('turn-1');
-    expect(prompt).not.toContain('turn-2');
-    expect(prompt).not.toContain('turn-3');
-    expect(prompt).toContain('turn-4');
-    expect(prompt).toContain('turn-8');
+    expect(prompt).toContain('turn-1');
+    expect(prompt).toContain('turn-12');
+  });
+
+  it('30개를 넘으면 최근 30개만 싣는다', () => {
+    const turns = Array.from({ length: 32 }, (_, index) =>
+      baseTurn({ text: `turn-${index + 1}` }),
+    );
+    const prompt = buildPrompt({ text: '?', priorTurns: turns });
+    expect(prompt).not.toContain('turn-1 ');
+    expect(prompt).not.toContain('turn-2 ');
+    expect(prompt).toContain('turn-3');
+    expect(prompt).toContain('turn-32');
+  });
+
+  it('priorTurns 가 비어도 조회·사진 블록이 실린다', () => {
+    const prompt = buildPrompt({
+      text: '무엇이 보여?',
+      priorTurns: [],
+      lookups: {
+        ledgerText: '실행 한 건',
+        deliveryText: '발송 한 건',
+        readableRoots: ['/tmp/repo'],
+        rootGuide: ['레포: /tmp/repo'],
+        release: jest.fn(),
+      },
+      images: [{ index: 1, path: '/tmp/one.png' }],
+      unseenImageCount: 2,
+    });
+    expect(prompt).toContain('[최근 실행 기록]');
+    expect(prompt).toContain('[최근 발송 기록]');
+    expect(prompt).toContain('[직접 열어 볼 수 있는 폴더]');
+    expect(prompt).toContain('첨부된 사진 번호: 1');
+    expect(prompt).toContain('사진 2장은 보지 못했다');
+  });
+
+  it('자동 발송 글 턴은 buildPrompt 에서 다시 자르지 않는다', () => {
+    const text = `${AUTO_POST_LABEL}${'가'.repeat(1600)}마지막`;
+    const prompt = buildPrompt({
+      text: '?',
+      priorTurns: [baseTurn({ text })],
+    });
+    expect(prompt).toContain('마지막');
   });
 
   it('1500자 초과 turn 은 truncate (cost 통제)', () => {
@@ -403,6 +445,113 @@ describe('ConversationalReply — reply() (route(PM) 경유 호출)', () => {
     ({
       get: jest.fn().mockReturnValue('JSL107/personal_agents'),
     }) as unknown as ConfigService;
+
+  it('system prompt 에 UNTRUSTED_INPUT_NOTICE 를 싣는다', () => {
+    expect(buildSystemPrompt({})).toContain(UNTRUSTED_INPUT_NOTICE);
+  });
+
+  it('사진과 조회 폴더를 route 에 넘기고 폴백 때 못 본 사실을 밝히게 한다', async () => {
+    const route = jest.fn().mockResolvedValue({ text: '답', modelUsed: 'm' });
+    const release = jest.fn();
+    const collect = jest.fn().mockResolvedValue({
+      ledgerText: '실행 기록',
+      deliveryText: '발송 기록',
+      readableRoots: ['/tmp/repo'],
+      rootGuide: ['레포 사본: /tmp/repo'],
+      release,
+    });
+    const usecase = new ConversationalReplyUsecase(
+      { route } as unknown as ModelRouterUsecase,
+      buildConfigService(),
+      [] as AgentDispatcher[],
+      undefined,
+      { collect } as unknown as ConversationLookupService,
+    );
+    await usecase.reply({
+      text: '봐 줘',
+      priorTurns: [],
+      slackUserId: 'U1',
+      images: [
+        { index: 1, path: '/tmp/one.png' },
+        { index: 3, path: '/tmp/three.jpg' },
+      ],
+      unseenImageCount: 1,
+    });
+    expect(collect).toHaveBeenCalledWith({ slackUserId: 'U1' });
+    const call = route.mock.calls[0][0];
+    expect(call.request.imagePaths).toEqual(['/tmp/one.png', '/tmp/three.jpg']);
+    expect(call.request.readableRoots).toEqual(['/tmp/repo']);
+    expect(call.request.prompt).toContain('첨부된 사진 번호: 1,3');
+    expect(call.request.prompt).toContain('사진 1장은 보지 못했다');
+    expect(call.request.prompt).toContain('[최근 실행 기록]');
+    expect(call.request.prompt).toContain('[최근 발송 기록]');
+    expect(call.request.prompt).toContain('[직접 열어 볼 수 있는 폴더]');
+    expect(call.fallbackWithoutAttachments.notice).toContain('사진 2장');
+    expect(call.fallbackWithoutAttachments.notice).toContain('답 첫머리에');
+    expect(release).toHaveBeenCalledTimes(1);
+  });
+
+  it('사진도 폴더도 없으면 fallbackWithoutAttachments 를 넘기지 않는다', async () => {
+    const route = jest.fn().mockResolvedValue({ text: '답', modelUsed: 'm' });
+    const usecase = new ConversationalReplyUsecase(
+      { route } as unknown as ModelRouterUsecase,
+      buildConfigService(),
+      [] as AgentDispatcher[],
+    );
+    await usecase.reply({ text: '안녕', priorTurns: [] });
+    expect(route.mock.calls[0][0].fallbackWithoutAttachments).toBeUndefined();
+  });
+
+  it('조회 수집이 throw 해도 답한다', async () => {
+    const route = jest.fn().mockResolvedValue({ text: '답', modelUsed: 'm' });
+    const collect = jest.fn().mockRejectedValue(new Error('조회 실패'));
+    const usecase = new ConversationalReplyUsecase(
+      { route } as unknown as ModelRouterUsecase,
+      buildConfigService(),
+      [] as AgentDispatcher[],
+      undefined,
+      { collect } as unknown as ConversationLookupService,
+    );
+    await expect(
+      usecase.reply({ text: '안녕', priorTurns: [], slackUserId: 'U1' }),
+    ).resolves.toBe('답');
+    expect(route).toHaveBeenCalledTimes(1);
+  });
+
+  it('slackUserId 가 없으면 collect 를 부르지 않는다', async () => {
+    const route = jest.fn().mockResolvedValue({ text: '답', modelUsed: 'm' });
+    const collect = jest.fn();
+    const usecase = new ConversationalReplyUsecase(
+      { route } as unknown as ModelRouterUsecase,
+      buildConfigService(),
+      [] as AgentDispatcher[],
+      undefined,
+      { collect } as unknown as ConversationLookupService,
+    );
+    await usecase.reply({ text: '안녕', priorTurns: [] });
+    expect(collect).not.toHaveBeenCalled();
+  });
+
+  it('route 실패해도 lookups.release 를 부른다', async () => {
+    const route = jest.fn().mockRejectedValue(new Error('모델 실패'));
+    const release = jest.fn();
+    const collect = jest.fn().mockResolvedValue({
+      readableRoots: [],
+      rootGuide: [],
+      release,
+    });
+    const usecase = new ConversationalReplyUsecase(
+      { route } as unknown as ModelRouterUsecase,
+      buildConfigService(),
+      [] as AgentDispatcher[],
+      undefined,
+      { collect } as unknown as ConversationLookupService,
+    );
+    await expect(
+      usecase.reply({ text: '안녕', priorTurns: [], slackUserId: 'U1' }),
+    ).rejects.toThrow('모델 실패');
+    expect(release).toHaveBeenCalledTimes(1);
+  });
 
   it('우사기 persona를 모델 systemPrompt에 반영한다', async () => {
     const route = jest.fn().mockResolvedValue({ text: '안녕', modelUsed: 'm' });
@@ -561,6 +710,33 @@ describe('ConversationalReply — 직전 작업 상태', () => {
       timestampMs: 1_700_000_000_000,
     },
   ];
+
+  it('작업 상태는 memoryTurns 로 계산하고 Slack 턴의 꼬리표 payload 는 쓰지 않는다', async () => {
+    const route = jest.fn().mockResolvedValue({ text: '네', modelUsed: 'm' });
+    const findRunStatus = jest
+      .fn()
+      .mockResolvedValue({ status: 'SUCCEEDED', failureReason: null });
+    const usecase = new ConversationalReplyUsecase(
+      { route } as unknown as ModelRouterUsecase,
+      { get: () => undefined } as unknown as ConfigService,
+      [] as AgentDispatcher[],
+      { findRunStatus } as unknown as AgentRunService,
+    );
+    const slackTurns = [
+      {
+        ...syncWorkTurns[1],
+        text: 'Slack 답',
+        agentRunId: 9999,
+      },
+    ];
+    await usecase.reply({
+      text: '끝났어?',
+      priorTurns: slackTurns,
+      memoryTurns: syncWorkTurns,
+    });
+    expect(findRunStatus).toHaveBeenCalledWith(4242);
+    expect(route.mock.calls[0][0].request.prompt).toContain('Slack 답');
+  });
 
   const buildUsecase = ({
     findRunStatus = jest.fn(),

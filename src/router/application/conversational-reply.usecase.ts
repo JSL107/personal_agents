@@ -7,12 +7,17 @@ import {
   AgentRunStatus,
   describeFailureReason,
 } from '../../agent-run/domain/agent-run.type';
+import { UNTRUSTED_INPUT_NOTICE } from '../../common/llm/untrusted-input.util';
 import { ModelRouterUsecase } from '../../model-router/application/model-router.usecase';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { SELF_REPO } from '../../pr-review-loop/domain/learning-repo';
+import { isAutoPostTurn } from '../domain/auto-post-turn';
 import { ReplyPersona } from '../domain/conversation-context.type';
 import { ConversationTurn } from '../domain/conversation-memory.type';
-import { PRIOR_TURN_TEXT_CAP } from '../domain/conversation-prompt-limits';
+import {
+  CONVERSATION_PROMPT_TURN_LIMIT,
+  PRIOR_TURN_TEXT_CAP,
+} from '../domain/conversation-prompt-limits';
 import { describeEnabledPassiveCapabilities } from '../domain/passive-capability';
 import {
   AGENT_DISPATCHER_PORT,
@@ -22,11 +27,35 @@ import {
   WORKER_CAPABILITIES,
   WorkerCapability,
 } from '../domain/worker-capability';
+import {
+  ConversationLookups,
+  ConversationLookupService,
+} from './conversation-lookup.service';
 
-// prompt 폭증 방지 — 최근 5 turn 정도면 충분한 컨텍스트. 너무 많으면 cost + latency 폭증.
-// 한 turn 은 role=user 또는 role=assistant 1개 — 즉 한 사용자 ↔ 봇 round trip 은 최대 2 turn 소비.
-// MAX_TURNS (memory service) = 5 와 통일.
-const PRIOR_TURN_LIMIT = 5;
+interface ConversationImage {
+  index: number;
+  path: string;
+}
+
+interface ConversationReplyInput {
+  text: string;
+  // 프롬프트에 싣는 대화 본문(Slack 기록, 조회 실패 시 Redis 기억).
+  priorTurns: ConversationTurn[];
+  // Redis 기억. 작업 상태는 이것으로 계산한다 — Redis 는 5턴·30분이라 오래된 작업을 "직전 작업" 으로 잡지 않는다.
+  memoryTurns?: ConversationTurn[];
+  // owner 일 때만 원장·발송 기록·폴더 조회를 연다. 없으면(eval·콘솔) 조회하지 않는다.
+  slackUserId?: string;
+  images?: readonly ConversationImage[];
+  unseenImageCount?: number;
+  unresolvedStreak?: number;
+  // 지금 대화의 기억 키(스레드 안이면 스레드 키). 실행 id 가 없는 작업 turn(비동기 BLOG)은 이 대화에서
+  // 시작되거나 이 대화에 답장하는 실행만 찾는다 — 없으면 그런 turn 의 상태는 싣지 않는다.
+  conversationKey?: string;
+  // 라우터가 이 회차를 남긴 ROUTER run. 있으면 답을 그 행의 모델 응답 원문으로 남긴다 —
+  // 없으면 원장에는 "못 골랐다" 만 있고 이대리가 뭐라고 답했는지는 사라진다.
+  routingMissRunId?: number;
+  persona?: ReplyPersona;
+}
 // 사용자 발화는 짧지만, 스레드 원글(공고 피드·알림)과 이대리 자신의 직전 답은 길다. 200자로 자르면
 // "이거 뭔데?" 가 가리키는 글의 앞부분만 보고 답한다(2026-10-08 run 7585, 10-13 run 8292).
 // 실행 id 가 없는 작업 turn(비동기 BLOG ack)은 같은 대화에서 turn 시각보다 이만큼 앞서 시작된
@@ -64,6 +93,8 @@ export class ConversationalReplyUsecase {
     // 답을 담당 못 고른 회차의 원장 행에 붙인다. 없으면 기록만 건너뛴다.
     @Optional()
     private readonly agentRunService?: AgentRunService,
+    @Optional()
+    private readonly conversationLookupService?: ConversationLookupService,
   ) {
     const registered = dispatchers.map((dispatcher) => dispatcher.agentType);
     this.capabilities = WORKER_CAPABILITIES.filter(({ agentType }) =>
@@ -77,22 +108,15 @@ export class ConversationalReplyUsecase {
   async reply({
     text,
     priorTurns,
+    memoryTurns,
+    slackUserId,
+    images,
+    unseenImageCount,
     unresolvedStreak,
     routingMissRunId,
     conversationKey,
     persona,
-  }: {
-    text: string;
-    priorTurns: ConversationTurn[];
-    unresolvedStreak?: number;
-    // 지금 대화의 기억 키(스레드 안이면 스레드 키). 실행 id 가 없는 작업 turn(비동기 BLOG)은 이 대화에서
-    // 시작되거나 이 대화에 답장하는 실행만 찾는다 — 없으면 그런 turn 의 상태는 싣지 않는다.
-    conversationKey?: string;
-    // 라우터가 이 회차를 남긴 ROUTER run. 있으면 답을 그 행의 모델 응답 원문으로 남긴다 —
-    // 없으면 원장에는 "못 골랐다" 만 있고 이대리가 뭐라고 답했는지는 사라진다.
-    routingMissRunId?: number;
-    persona?: ReplyPersona;
-  }): Promise<string> {
+  }: ConversationReplyInput): Promise<string> {
     const systemPrompt = buildSystemPrompt({
       // 이대리 자신의 레포. 대화 응답이 "우리 레포" 를 지칭할 때 쓰는 이름이라 상수로 족하다.
       repoLabel: SELF_REPO,
@@ -105,14 +129,46 @@ export class ConversationalReplyUsecase {
       persona,
     });
     const workStatus = await this.describeLatestWorkStatus({
-      priorTurns,
+      priorTurns: memoryTurns ?? priorTurns,
       conversationKey,
     });
-    const prompt = buildPrompt({ text, priorTurns, workStatus });
+    let lookups: ConversationLookups | undefined;
+    if (slackUserId && this.conversationLookupService) {
+      try {
+        lookups = await this.conversationLookupService.collect({ slackUserId });
+      } catch (error: unknown) {
+        this.logger.warn(
+          `대화 조회 실패 — 조회 없이 답한다: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+    const prompt = buildPrompt({
+      text,
+      priorTurns,
+      workStatus,
+      lookups,
+      images,
+      unseenImageCount,
+    });
+    const imagePaths = images?.map((image) => image.path) ?? [];
+    const readableRoots = lookups?.readableRoots ?? [];
+    const hasAttachments = imagePaths.length > 0 || readableRoots.length > 0;
     try {
       const completion = await this.modelRouter.route({
         agentType: AgentType.PM,
-        request: { prompt, systemPrompt },
+        request: {
+          prompt,
+          systemPrompt,
+          ...(imagePaths.length > 0 ? { imagePaths } : {}),
+          ...(readableRoots.length > 0 ? { readableRoots } : {}),
+        },
+        ...(hasAttachments
+          ? {
+              fallbackWithoutAttachments: {
+                notice: `사진 ${imagePaths.length}장과 기록 폴더 ${readableRoots.length}개가 있었지만 이번 답에서는 볼 수 없었다. 답 첫머리에 그 사실을 밝혀라.`,
+              },
+            }
+          : {}),
         // PM provider 를 빌려 쓸 뿐 실제 PM 업무가 아니다. 계약 머리말의 산출물 규격이
         // 붙으면 이 usecase 가 요구하는 1~3문장 대화 응답과 충돌한다.
         noContractPreamble: true,
@@ -130,6 +186,8 @@ export class ConversationalReplyUsecase {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(`Conversational fallback 실패: ${message}`);
       throw error;
+    } finally {
+      lookups?.release();
     }
   }
 
@@ -359,6 +417,7 @@ export const buildSystemPrompt = ({
     `- 실제로 실행하지 않은 요청에 "이해했어요", "반영할게요", "추가해 둘게요", "처리했어요"처럼 받아들였거나 처리될 것처럼 답하지 마세요. 못 하는 일은 못 한다고 먼저 말하세요.`,
     workRequestLine,
     answerLengthLine,
+    UNTRUSTED_INPUT_NOTICE,
   ]
     .filter((line): line is string => line !== undefined)
     .join('\n');
@@ -368,21 +427,51 @@ export const buildPrompt = ({
   text,
   priorTurns,
   workStatus,
+  lookups,
+  images,
+  unseenImageCount,
 }: {
   text: string;
   priorTurns: ConversationTurn[];
   workStatus?: string;
+  lookups?: ConversationLookups;
+  images?: readonly ConversationImage[];
+  unseenImageCount?: number;
 }): string => {
-  const recent = priorTurns.slice(-PRIOR_TURN_LIMIT);
+  const recent = priorTurns.slice(-CONVERSATION_PROMPT_TURN_LIMIT);
   const workStatusLines = workStatus
     ? ['', `[직전 작업 상태 (실제 실행 기록)]`, workStatus]
     : [];
-  if (recent.length === 0) {
-    return `[사용자 메시지]\n${text}\n\n위 메시지에 답하세요.`;
-  }
-  const turnLines = recent.map((turn, idx) => {
+  const lookupLines = [
+    ...(lookups?.ledgerText
+      ? ['', '[최근 실행 기록]', lookups.ledgerText]
+      : []),
+    ...(lookups?.deliveryText
+      ? ['', '[최근 발송 기록]', lookups.deliveryText]
+      : []),
+    ...(lookups?.rootGuide.length
+      ? [
+          '',
+          '[직접 열어 볼 수 있는 폴더]',
+          ...lookups.rootGuide,
+          '직접 열어 본 내용만 근거로 말하고, 무엇을 봤는지 답에 밝히세요.',
+        ]
+      : []),
+  ];
+  const imageLines = [
+    ...(images?.length
+      ? [
+          '',
+          `첨부된 사진 번호: ${images.map((image) => image.index).join(',')}`,
+        ]
+      : []),
+    ...((unseenImageCount ?? 0) > 0
+      ? [`사진 ${unseenImageCount}장은 보지 못했다. 본 척하지 마세요.`]
+      : []),
+  ];
+  const turnLines = recent.map((turn, index) => {
     const truncated =
-      turn.text.length > PRIOR_TURN_TEXT_CAP
+      !isAutoPostTurn(turn) && turn.text.length > PRIOR_TURN_TEXT_CAP
         ? `${turn.text.slice(0, PRIOR_TURN_TEXT_CAP)}…`
         : turn.text;
     // role 미설정 (legacy entry) 은 ConversationMemory.parseTurn 이 'user' 로 정규화하지만
@@ -390,12 +479,14 @@ export const buildPrompt = ({
     const role = turn.role === 'assistant' ? 'assistant' : 'user';
     const workerTag =
       role === 'user' && turn.agentType ? ` (worker=${turn.agentType})` : '';
-    return `${idx + 1}. [${role}]${workerTag} ${truncated}`;
+    return `${index + 1}. [${role}]${workerTag} ${truncated}`;
   });
   return [
-    `[이전 대화 (오래된 순)]`,
+    ...(turnLines.length ? ['[이전 대화 (오래된 순)]'] : []),
     ...turnLines,
     ...workStatusLines,
+    ...lookupLines,
+    ...imageLines,
     '',
     `[현재 사용자 메시지]`,
     text,
