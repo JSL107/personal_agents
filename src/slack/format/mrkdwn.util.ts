@@ -154,7 +154,18 @@ const toSlackBold = (
   return `${before}*${inner}*`;
 };
 
+// 맨 URL 안의 `**` 는 주소의 일부다 — 바꾸면 링크 대상이 달라진다(PR #923 리뷰).
+const BARE_URL_TOKEN = new RegExp(`(${BARE_URL.source})`);
+
+const convertBoldOutsideUrls = (part: string): string =>
+  part
+    .split(BARE_URL_TOKEN)
+    .map((segment, index) =>
+      index % 2 === 1 ? segment : segment.replace(MARKDOWN_BOLD, toSlackBold),
+    )
+    .join('');
+
 export const convertMarkdownBold = (text: string): string =>
   mapOutsideCodeFence(text, (line) =>
-    mapUnprotected(line, (part) => part.replace(MARKDOWN_BOLD, toSlackBold)),
+    mapUnprotected(line, convertBoldOutsideUrls),
   );

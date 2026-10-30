@@ -157,6 +157,12 @@ describe('convertMarkdownBold', () => {
     );
   });
 
+  it('맨 URL 안의 `**` 는 주소의 일부라 건드리지 않는다', () => {
+    expect(convertMarkdownBold('https://x.test/a**b**c 와 **굵게**')).toBe(
+      'https://x.test/a**b**c 와 *굵게*',
+    );
+  });
+
   it('코드블록과 인라인 코드 안의 별표는 건드리지 않는다', () => {
     const source = '```\n**raw**\n```\n`a**b**c` 와 **굵게**';
     expect(convertMarkdownBold(source)).toBe(
