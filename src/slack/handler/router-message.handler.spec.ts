@@ -525,6 +525,45 @@ describe('RouterMessageHandler — app_mention', () => {
     );
   });
 
+  // toReadableSlackArgs 는 소제목(*제목*)이 있으면 blocks 를 자동으로 만든다. 재시도가 그걸 다시 실으면
+  // 방금 거절된 블록을 그대로 보낸다 — 재시도에는 텍스트만 가야 한다(#932 리뷰).
+  it('소제목이 있는 답변도 텍스트 재시도에는 blocks 를 싣지 않는다', async () => {
+    const { app, getHandler } = buildAppMock();
+    const dispatch = jest.fn().mockResolvedValue({
+      agentRunId: 99,
+      workerType: AgentType.PM,
+      output: {},
+      modelUsed: 'mock',
+      formattedText: '*오늘 할 일*\n- 리뷰 답변 정리\n- 배포 확인',
+    });
+    buildHandler({ dispatch }).register(app);
+    const say = jest
+      .fn()
+      .mockRejectedValueOnce(slackPlatformError('invalid_blocks'))
+      .mockResolvedValue(undefined);
+    const client = {
+      reactions: {
+        add: jest.fn().mockResolvedValue({ ok: true }),
+        remove: jest.fn().mockResolvedValue({ ok: true }),
+      },
+    };
+    await getHandler('app_mention')({
+      event: {
+        type: 'app_mention',
+        user: 'U_USER',
+        text: '<@UBOT> 작업',
+        ts: '1.1',
+        channel: 'C_CHANNEL',
+      },
+      say,
+      client,
+    });
+    expect(say).toHaveBeenCalledTimes(2);
+    expect(say.mock.calls[0][0]).toHaveProperty('blocks');
+    expect(say.mock.calls[1][0]).not.toHaveProperty('blocks');
+    expect(say.mock.calls[1][0].text).toContain('리뷰 답변 정리');
+  });
+
   it('두 게시 시도가 실패해도 처리 실패 응답 없이 종료한다', async () => {
     const { app, getHandler } = buildAppMock();
     const dispatch = jest.fn().mockResolvedValue({

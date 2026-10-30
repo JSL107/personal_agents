@@ -939,10 +939,9 @@ export class RouterMessageHandler implements SlackHandler {
         `답변 게시 실패, 텍스트 재시도 — ${context}: ${error instanceof Error ? error.message : String(error)}`,
       );
       try {
-        await say({
-          thread_ts: threadTs,
-          ...toReadableSlackArgs(routerReplyText),
-        });
+        // 텍스트만 보낸다. toReadableSlackArgs 는 소제목이 있으면 blocks 도 만들어, 그걸 다시 실으면
+        // 방금 거절된 블록을 그대로 다시 보내게 된다.
+        await say({ thread_ts: threadTs, text: readableReply.text });
       } catch (retryError: unknown) {
         this.logger.warn(
           `답변 재게시 실패 — ${context}: ${retryError instanceof Error ? retryError.message : String(retryError)}`,
