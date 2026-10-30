@@ -245,6 +245,37 @@ describe('RouterMessageHandler — 목표 질문 DM 인터셉트', () => {
     expect(router.dispatch).not.toHaveBeenCalled();
   });
 
+  it('목표 답 저장 후 게시가 실패해도 일반 dispatch를 건너뛴다', async () => {
+    const { app, getHandler } = buildAppMock();
+    const router = { dispatch: jest.fn().mockResolvedValue(dispatchResult) };
+    const handleGoalAnswer = {
+      execute: jest.fn().mockResolvedValue({ replyText: '목표 카드' }),
+    };
+    buildHandler(router, {
+      handleGoalAnswer: handleGoalAnswer as unknown as HandleGoalAnswerUsecase,
+    }).register(app);
+    const say = jest.fn().mockRejectedValue(slackPlatformError('rate_limited'));
+    const client = {
+      reactions: {
+        add: jest.fn().mockResolvedValue({ ok: true }),
+        remove: jest.fn().mockResolvedValue({ ok: true }),
+      },
+    };
+    await getHandler('message')({
+      event: {
+        type: 'message',
+        user: 'U_USER',
+        text: '개인비서 만들기',
+        ts: '1.1',
+        channel: 'D_DM',
+        channel_type: 'im',
+      },
+      say,
+      client,
+    });
+    expect(router.dispatch).not.toHaveBeenCalled();
+  });
+
   it('채널 멘션은 목표 답으로 넘기지 않는다', async () => {
     const { app, getHandler } = buildAppMock();
     const router = { dispatch: jest.fn().mockResolvedValue(dispatchResult) };
@@ -375,7 +406,50 @@ describe('RouterMessageHandler — 목표 질문 DM 인터셉트', () => {
   });
 });
 
+// Slack 이 요청을 받아 거절한 오류 — 메시지가 올라가지 않은 것이 확실한 경우(@slack/web-api 의 코드 형태).
+const slackPlatformError = (reason: string): Error =>
+  Object.assign(new Error(`An API error occurred: ${reason}`), {
+    code: 'slack_webapi_platform_error',
+  });
+
 describe('RouterMessageHandler — app_mention', () => {
+  // 응답만 끊긴 오류는 Slack 이 이미 올렸을 수 있다. 다시 보내면 같은 답이 두 번 달린다.
+  it('게시 여부가 불확실한 오류(네트워크)는 다시 보내지 않는다', async () => {
+    const { app, getHandler } = buildAppMock();
+    const dispatch = jest.fn().mockResolvedValue({
+      agentRunId: 99,
+      workerType: AgentType.PM,
+      output: {},
+      modelUsed: 'mock',
+      formattedText: '완료',
+    });
+    buildHandler({ dispatch }).register(app);
+    const say = jest.fn().mockRejectedValue(
+      Object.assign(new Error('socket hang up'), {
+        code: 'slack_webapi_request_error',
+      }),
+    );
+    const client = {
+      reactions: {
+        add: jest.fn().mockResolvedValue({ ok: true }),
+        remove: jest.fn().mockResolvedValue({ ok: true }),
+      },
+    };
+    await getHandler('app_mention')({
+      event: {
+        type: 'app_mention',
+        user: 'U_USER',
+        text: '<@UBOT> 작업',
+        ts: '1.1',
+        channel: 'C_CHANNEL',
+      },
+      say,
+      client,
+    });
+    expect(say).toHaveBeenCalledTimes(1);
+    expect(dispatch).toHaveBeenCalledTimes(1);
+  });
+
   it('app_mention + message 이벤트 둘 다 등록', () => {
     const { app } = buildAppMock();
     const idaeriRouter: IdaeriRouterPort = { dispatch: jest.fn() };
@@ -384,6 +458,224 @@ describe('RouterMessageHandler — app_mention', () => {
 
     expect(app.event).toHaveBeenCalledWith('app_mention', expect.any(Function));
     expect(app.event).toHaveBeenCalledWith('message', expect.any(Function));
+  });
+
+  it('블록 게시가 실패하면 일반 텍스트로 재시도하고 처리 실패로 기록하지 않는다', async () => {
+    const { app, getHandler } = buildAppMock();
+    const dispatch = jest.fn().mockResolvedValue({
+      agentRunId: 99,
+      workerType: AgentType.PM,
+      output: {},
+      modelUsed: 'mock',
+      formattedText: '완료',
+      slackBlocks: [
+        { type: 'section', text: { type: 'mrkdwn', text: '완료' } },
+      ],
+    });
+    const conversationMemory = new ConversationMemoryService();
+    const appendTurn = jest.spyOn(conversationMemory, 'appendTurn');
+    const recordOutcome = jest.fn().mockResolvedValue(undefined);
+    buildHandler(
+      { dispatch },
+      {
+        conversationMemory,
+        mentionReceiptRepository: {
+          recordReceived: jest.fn().mockResolvedValue(undefined),
+          recordOutcome,
+          recordFinalReply: jest.fn().mockResolvedValue(undefined),
+        },
+      },
+    ).register(app);
+    const say = jest
+      .fn()
+      .mockRejectedValueOnce(slackPlatformError('invalid_blocks'))
+      .mockResolvedValue(undefined);
+    const client = {
+      reactions: {
+        add: jest.fn().mockResolvedValue({ ok: true }),
+        remove: jest.fn().mockResolvedValue({ ok: true }),
+      },
+    };
+    await getHandler('app_mention')({
+      event: {
+        type: 'app_mention',
+        user: 'U_USER',
+        text: '<@UBOT> 작업',
+        ts: '1.1',
+        channel: 'C_CHANNEL',
+      },
+      say,
+      client,
+    });
+    expect(say).toHaveBeenCalledTimes(2);
+    expect(say.mock.calls[0][0]).toHaveProperty('blocks');
+    expect(say.mock.calls[1][0]).toEqual(
+      expect.objectContaining({ text: expect.stringContaining('완료') }),
+    );
+    expect(say.mock.calls[1][0]).not.toHaveProperty('blocks');
+    expect(
+      say.mock.calls.every(([message]) => !message.text.includes('처리 실패')),
+    ).toBe(true);
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(
+      appendTurn.mock.calls.filter(([, turn]) => turn.role === 'user'),
+    ).toHaveLength(1);
+    expect(recordOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'REPLIED' }),
+    );
+  });
+
+  // toReadableSlackArgs 는 소제목(*제목*)이 있으면 blocks 를 자동으로 만든다. 재시도가 그걸 다시 실으면
+  // 방금 거절된 블록을 그대로 보낸다 — 재시도에는 텍스트만 가야 한다(#932 리뷰).
+  it('소제목이 있는 답변도 텍스트 재시도에는 blocks 를 싣지 않는다', async () => {
+    const { app, getHandler } = buildAppMock();
+    const dispatch = jest.fn().mockResolvedValue({
+      agentRunId: 99,
+      workerType: AgentType.PM,
+      output: {},
+      modelUsed: 'mock',
+      formattedText: '*오늘 할 일*\n- 리뷰 답변 정리\n- 배포 확인',
+    });
+    buildHandler({ dispatch }).register(app);
+    const say = jest
+      .fn()
+      .mockRejectedValueOnce(slackPlatformError('invalid_blocks'))
+      .mockResolvedValue(undefined);
+    const client = {
+      reactions: {
+        add: jest.fn().mockResolvedValue({ ok: true }),
+        remove: jest.fn().mockResolvedValue({ ok: true }),
+      },
+    };
+    await getHandler('app_mention')({
+      event: {
+        type: 'app_mention',
+        user: 'U_USER',
+        text: '<@UBOT> 작업',
+        ts: '1.1',
+        channel: 'C_CHANNEL',
+      },
+      say,
+      client,
+    });
+    expect(say).toHaveBeenCalledTimes(2);
+    expect(say.mock.calls[0][0]).toHaveProperty('blocks');
+    expect(say.mock.calls[1][0]).not.toHaveProperty('blocks');
+    expect(say.mock.calls[1][0].text).toContain('리뷰 답변 정리');
+  });
+
+  it('두 게시 시도가 실패해도 처리 실패 응답 없이 종료한다', async () => {
+    const { app, getHandler } = buildAppMock();
+    const dispatch = jest.fn().mockResolvedValue({
+      agentRunId: 99,
+      workerType: AgentType.PM,
+      output: {},
+      modelUsed: 'mock',
+      formattedText: '완료',
+    });
+    const recordOutcome = jest.fn().mockResolvedValue(undefined);
+    buildHandler(
+      { dispatch },
+      {
+        mentionReceiptRepository: {
+          recordReceived: jest.fn().mockResolvedValue(undefined),
+          recordOutcome,
+          recordFinalReply: jest.fn(),
+        },
+      },
+    ).register(app);
+    const say = jest.fn().mockRejectedValue(slackPlatformError('rate_limited'));
+    const client = {
+      reactions: {
+        add: jest.fn().mockResolvedValue({ ok: true }),
+        remove: jest.fn().mockResolvedValue({ ok: true }),
+      },
+    };
+    await expect(
+      getHandler('app_mention')({
+        event: {
+          type: 'app_mention',
+          user: 'U_USER',
+          text: '<@UBOT> 작업',
+          ts: '1.1',
+          channel: 'C_CHANNEL',
+        },
+        say,
+        client,
+      }),
+    ).resolves.toBeUndefined();
+    expect(say).toHaveBeenCalledTimes(2);
+    expect(
+      say.mock.calls.every(([message]) => !message.text.includes('처리 실패')),
+    ).toBe(true);
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(recordOutcome).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'REPLY_FAILED' }),
+    );
+  });
+
+  it('텍스트 재시도가 성공하면 preview 스레드를 기록한다', async () => {
+    const { app, getHandler } = buildAppMock();
+    const dispatch = jest.fn().mockResolvedValue({
+      agentRunId: 99,
+      workerType: AgentType.PM,
+      output: {},
+      modelUsed: 'mock',
+      formattedText: '완료',
+      preview: { id: 'preview-1' },
+    });
+    const recordPreviewThread = {
+      execute: jest.fn().mockResolvedValue(undefined),
+    };
+    buildHandler(
+      { dispatch },
+      {
+        recordPreviewThread:
+          recordPreviewThread as unknown as RecordPreviewThreadUsecase,
+      },
+    ).register(app);
+    const say = jest
+      .fn()
+      .mockRejectedValueOnce(slackPlatformError('invalid_blocks'))
+      .mockResolvedValue(undefined);
+    const client = {
+      reactions: {
+        add: jest.fn().mockResolvedValue({ ok: true }),
+        remove: jest.fn().mockResolvedValue({ ok: true }),
+      },
+    };
+    await getHandler('app_mention')({
+      event: {
+        type: 'app_mention',
+        user: 'U_USER',
+        text: '<@UBOT> 작업',
+        ts: '1.1',
+        channel: 'C_CHANNEL',
+      },
+      say,
+      client,
+    });
+    expect(recordPreviewThread.execute).toHaveBeenCalledWith({
+      id: 'preview-1',
+      slackChannelId: 'C_CHANNEL',
+      slackThreadTs: '1.1',
+    });
+  });
+
+  it('dispatch 실패는 기존 처리 실패 응답을 보낸다', async () => {
+    const { app, getHandler } = buildAppMock();
+    const dispatch = jest.fn().mockRejectedValue(new Error('실패'));
+    buildHandler({ dispatch }).register(app);
+    const { say } = await invokeHandler(getHandler('app_mention'), {
+      type: 'app_mention',
+      user: 'U_USER',
+      text: '<@UBOT> 작업',
+      ts: '1.1',
+      channel: 'C_CHANNEL',
+    });
+    expect(say).toHaveBeenCalledWith(
+      expect.objectContaining({ text: expect.stringContaining('처리 실패') }),
+    );
   });
 
   it('멘션 prefix 제거 후 router.dispatch 호출 + formattedText + footer 응답', async () => {
@@ -2709,9 +3001,9 @@ describe('RouterMessageHandler — 멘션 수신 기록', () => {
         remove: jest.fn().mockResolvedValue({ ok: true }),
       },
     };
-    await expect(handler({ event: mention, say, client })).rejects.toThrow(
-      'channel_not_found',
-    );
+    await expect(
+      handler({ event: mention, say, client }),
+    ).resolves.toBeUndefined();
     expect(receipts.recordOutcome).toHaveBeenCalledWith({
       ...ref,
       status: 'REPLY_FAILED',
