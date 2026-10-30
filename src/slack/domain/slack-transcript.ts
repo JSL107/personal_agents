@@ -1,7 +1,10 @@
 import { wrapUntrustedInput } from '../../common/llm/untrusted-input.util';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { AUTO_POST_LABEL } from '../../router/domain/auto-post-turn';
-import { ConversationTurn } from '../../router/domain/conversation-memory.type';
+import {
+  ConversationTurn,
+  ConversationTurnRole,
+} from '../../router/domain/conversation-memory.type';
 import {
   AUTO_POST_TEXT_CAP,
   PRIOR_TURN_TEXT_CAP,
@@ -66,52 +69,90 @@ export const toTranscriptTurns = ({
   imageLabels,
   memoryTurns = [],
 }: ToTranscriptTurnsInput): ConversationTurn[] => {
-  const sourced = dedupeAndSort(messages, excludeTs).map((message) =>
-    classify(message, speakerUserId, selfBotId),
+  const ordered = dedupeAndSort({ messages, excludeTs });
+  const sourced = ordered.map((message) =>
+    classify({ message, speakerUserId, selfBotId }),
   );
-  const memoryMatches = matchSpeakerTurnsToMemory(sourced, memoryTurns);
-  return sourced.map((item, index) => {
-    const labels = imageLabels
-      ?.get(item.message.ts)
-      ?.map((imageIndex) => `[사진 ${imageIndex}번 첨부]`)
-      .join(' ');
-    const text = renderText(item);
-    const matched = memoryMatches.get(index);
-    const replyMeta =
-      item.source === 'IDAERI_REPLY'
-        ? readReplyPayload(item.message.metadata?.eventPayload)
-        : undefined;
-    return {
-      role: item.source === 'IDAERI_REPLY' ? 'assistant' : 'user',
-      text: labels ? `${text}\n${labels}` : text,
-      agentType: replyMeta?.agentType ?? matched?.agentType ?? null,
-      agentRunId: replyMeta?.agentRunId ?? matched?.agentRunId ?? null,
-      timestampMs: Math.floor(Number(item.message.ts) * 1000),
-    };
+  const memoryMatches = matchSpeakerTurnsToMemory({ sourced, memoryTurns });
+  const turns = sourced.map((item, index) =>
+    buildTurn({ item, matched: memoryMatches.get(index), imageLabels }),
+  );
+  return turns;
+};
+
+interface BuildTurnInput {
+  item: SourcedMessage;
+  matched: ConversationTurn | undefined;
+  imageLabels: ReadonlyMap<string, readonly number[]> | undefined;
+}
+
+const buildTurn = ({
+  item,
+  matched,
+  imageLabels,
+}: BuildTurnInput): ConversationTurn => {
+  const isIdaeriReply = item.source === 'IDAERI_REPLY';
+  // 이대리 답은 꼬리표의 실행 정보를, 발화자 글은 Redis 매칭 결과를 쓴다.
+  const replyPayload = isIdaeriReply
+    ? readReplyPayload(item.message.metadata?.eventPayload)
+    : undefined;
+  const role: ConversationTurnRole = isIdaeriReply ? 'assistant' : 'user';
+  const text = appendImageLabels({
+    text: renderText(item),
+    labels: imageLabels?.get(item.message.ts),
   });
+  const agentType = replyPayload?.agentType ?? matched?.agentType ?? null;
+  const agentRunId = replyPayload?.agentRunId ?? matched?.agentRunId ?? null;
+  const timestampMs = Math.floor(Number(item.message.ts) * 1000);
+  return { role, text, agentType, agentRunId, timestampMs };
 };
 
-const dedupeAndSort = (
-  messages: readonly SlackTranscriptMessage[],
-  excludeTs: string | undefined,
-): SlackTranscriptMessage[] => {
+const appendImageLabels = ({
+  text,
+  labels,
+}: {
+  text: string;
+  labels: readonly number[] | undefined;
+}): string => {
+  if (!labels || labels.length === 0) {
+    return text;
+  }
+  const labelText = labels
+    .map((imageIndex) => `[사진 ${imageIndex}번 첨부]`)
+    .join(' ');
+  return `${text}\n${labelText}`;
+};
+
+const dedupeAndSort = ({
+  messages,
+  excludeTs,
+}: {
+  messages: readonly SlackTranscriptMessage[];
+  excludeTs: string | undefined;
+}): SlackTranscriptMessage[] => {
+  const sorted = [...messages].sort(
+    (left, right) => Number(left.ts) - Number(right.ts),
+  );
   const seen = new Set<string>();
-  return [...messages]
-    .sort((left, right) => Number(left.ts) - Number(right.ts))
-    .filter((message) => {
-      if (message.ts === excludeTs || seen.has(message.ts)) {
-        return false;
-      }
-      seen.add(message.ts);
-      return true;
-    });
+  const unique = sorted.filter((message) => {
+    if (message.ts === excludeTs || seen.has(message.ts)) {
+      return false;
+    }
+    seen.add(message.ts);
+    return true;
+  });
+  return unique;
 };
 
-const classify = (
-  message: SlackTranscriptMessage,
-  speakerUserId: string,
-  selfBotId: string | undefined,
-): SourcedMessage => {
+const classify = ({
+  message,
+  speakerUserId,
+  selfBotId,
+}: {
+  message: SlackTranscriptMessage;
+  speakerUserId: string;
+  selfBotId: string | undefined;
+}): SourcedMessage => {
   if (!message.botId && message.user === speakerUserId) {
     return {
       message,
@@ -124,19 +165,18 @@ const classify = (
     message.metadata?.eventType === IDAERI_REPLY_EVENT_TYPE &&
     selfBotId !== undefined &&
     message.botId === selfBotId;
-  return {
-    message,
-    source: isIdaeriReply ? 'IDAERI_REPLY' : 'AUTO_POST',
-    originalText: message.text.trim(),
-  };
+  const source: TurnSource = isIdaeriReply ? 'IDAERI_REPLY' : 'AUTO_POST';
+  const originalText = message.text.trim();
+  return { message, source, originalText };
 };
 
 // 자르기는 경계로 감싸기 전에 한다 — 감싼 뒤 자르면 닫는 표식이 잘려 경계가 열린 채 끝난다.
 const renderText = ({ source, originalText }: SourcedMessage): string => {
-  if (source === 'AUTO_POST') {
-    return `${AUTO_POST_LABEL}\n${wrapUntrustedInput(originalText.slice(0, AUTO_POST_TEXT_CAP))}`;
+  if (source !== 'AUTO_POST') {
+    return originalText.slice(0, PRIOR_TURN_TEXT_CAP);
   }
-  return originalText.slice(0, PRIOR_TURN_TEXT_CAP);
+  const wrapped = wrapUntrustedInput(originalText.slice(0, AUTO_POST_TEXT_CAP));
+  return `${AUTO_POST_LABEL}\n${wrapped}`;
 };
 
 interface ReplyPayload {
@@ -147,18 +187,19 @@ interface ReplyPayload {
 const readReplyPayload = (
   payload: Record<string, unknown> | undefined,
 ): ReplyPayload => {
-  const agentType = payload?.agentType;
-  const agentRunId = payload?.agentRunId;
-  return {
-    agentType: isAgentType(agentType) ? agentType : null,
-    // 원장 id 는 양의 정수다 — 작업 상태 조회(conversational-reply)도 `> 0` 만 실행으로 본다.
-    agentRunId:
-      typeof agentRunId === 'number' &&
-      Number.isInteger(agentRunId) &&
-      agentRunId > 0
-        ? agentRunId
-        : null,
-  };
+  const agentType = isAgentType(payload?.agentType) ? payload.agentType : null;
+  const agentRunId = readAgentRunId(payload?.agentRunId);
+  return { agentType, agentRunId };
+};
+
+// 원장 id 는 양의 정수다 — 작업 상태 조회(conversational-reply)도 `> 0` 만 실행으로 본다.
+const readAgentRunId = (value: unknown): number | null => {
+  const isPositiveInteger =
+    typeof value === 'number' && Number.isInteger(value) && value > 0;
+  if (!isPositiveInteger) {
+    return null;
+  }
+  return value;
 };
 
 const isAgentType = (value: unknown): value is AgentType =>
@@ -167,10 +208,13 @@ const isAgentType = (value: unknown): value is AgentType =>
 
 // 발화자 턴을 최신부터 거꾸로 훑어, 아직 안 쓴 같은 원문의 기억 턴과 1:1 로 짝짓는다.
 // 같은 문구를 두 번 보냈을 때 한 기억 턴이 두 Slack 턴에 붙지 않게 하려는 것이다.
-const matchSpeakerTurnsToMemory = (
-  sourced: readonly SourcedMessage[],
-  memoryTurns: readonly ConversationTurn[],
-): Map<number, ConversationTurn> => {
+const matchSpeakerTurnsToMemory = ({
+  sourced,
+  memoryTurns,
+}: {
+  sourced: readonly SourcedMessage[];
+  memoryTurns: readonly ConversationTurn[];
+}): Map<number, ConversationTurn> => {
   const matches = new Map<number, ConversationTurn>();
   const usedMemoryIndexes = new Set<number>();
   for (let index = sourced.length - 1; index >= 0; index -= 1) {
@@ -184,11 +228,9 @@ const matchSpeakerTurnsToMemory = (
       memoryIndex -= 1
     ) {
       const memory = memoryTurns[memoryIndex];
-      if (
-        !usedMemoryIndexes.has(memoryIndex) &&
-        memory.role !== 'assistant' &&
-        memory.text.trim() === item.originalText
-      ) {
+      const isSameUserText =
+        memory.role !== 'assistant' && memory.text.trim() === item.originalText;
+      if (!usedMemoryIndexes.has(memoryIndex) && isSameUserText) {
         usedMemoryIndexes.add(memoryIndex);
         matches.set(index, memory);
         break;
@@ -208,10 +250,14 @@ export interface IdaeriReplyMetadata {
 export const buildIdaeriReplyMetadata = ({
   agentType,
   agentRunId,
-}: ReplyPayload): IdaeriReplyMetadata => ({
-  event_type: IDAERI_REPLY_EVENT_TYPE,
-  event_payload: {
-    ...(agentType === null ? {} : { agentType }),
-    ...(agentRunId === null ? {} : { agentRunId }),
-  },
-});
+}: ReplyPayload): IdaeriReplyMetadata => {
+  // null 은 싣지 않는다 — 읽는 쪽(readReplyPayload)이 없는 값을 null 로 되돌린다.
+  const eventPayload: Record<string, string | number> = {};
+  if (agentType !== null) {
+    eventPayload.agentType = agentType;
+  }
+  if (agentRunId !== null) {
+    eventPayload.agentRunId = agentRunId;
+  }
+  return { event_type: IDAERI_REPLY_EVENT_TYPE, event_payload: eventPayload };
+};

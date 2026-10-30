@@ -36,6 +36,12 @@ import { PlainDate } from '../domain/schedule.type';
 import { ScheduleErrorCode } from '../domain/schedule-error-code.enum';
 import { isScheduleLookup } from '../domain/schedule-lookup';
 
+interface RegisterFromConversationInput {
+  input: DispatchInput;
+  extracted: ExtractedSchedule;
+  today: PlainDate;
+}
+
 interface MergedScheduleCommand {
   command: ScheduleCommand;
   mergedPriorText?: string;
@@ -101,14 +107,15 @@ export class ScheduleDispatcher implements AgentDispatcher {
     // 모델 추출은 직전 대화를 가리키는 요청일 때만 켠다. 대화 본문이 DM 24시간 기록이라 이대리 답은
     // 거의 항상 있어서, 날짜만 빠진 평범한 요청("자동차세 등록해줘")에도 켜면 앞 대화의 무관한 날짜로
     // 되묻지 않고 등록된다. 평범한 요청은 지금처럼 규칙 파서와 되묻기로 처리한다.
-    if (reference && priorTurns.some((turn) => turn.role === 'assistant')) {
+    const hasIdaeriReply = priorTurns.some((turn) => turn.role === 'assistant');
+    if (reference && hasIdaeriReply) {
       const extracted = await this.extractSchedule.execute({
         text: input.text,
         priorTurns,
         today,
       });
       if (extracted) {
-        return this.registerFromConversation(input, extracted, today);
+        return this.registerFromConversation({ input, extracted, today });
       }
       // 참조 요청인데 추출이 실패하면 파서 결과("원인과 함께" 같은 제목)로 등록하지 않는다.
       return this.toOutcome(
@@ -162,11 +169,11 @@ export class ScheduleDispatcher implements AgentDispatcher {
     };
   }
 
-  private async registerFromConversation(
-    input: DispatchInput,
-    extracted: ExtractedSchedule,
-    today: PlainDate,
-  ): Promise<DispatchOutcome> {
+  private async registerFromConversation({
+    input,
+    extracted,
+    today,
+  }: RegisterFromConversationInput): Promise<DispatchOutcome> {
     const dueDate = extracted.dueDate ?? today;
     const outcome = await this.agentRunService.execute({
       agentType: AgentType.SCHEDULE,
@@ -197,14 +204,17 @@ export class ScheduleDispatcher implements AgentDispatcher {
         };
       },
     });
+    // 대화에서 날짜를 못 찾아 오늘로 채웠으면 그 사실을 답에 밝힌다.
+    const dateDefaulted = extracted.dueDate === null;
+    const formattedText = formatScheduleRegistered(outcome.result, {
+      dateDefaulted,
+      memo: extracted.memo,
+    });
     return {
       agentRunId: outcome.agentRunId,
       output: outcome.result,
       modelUsed: outcome.modelUsed,
-      formattedText: formatScheduleRegistered(outcome.result, {
-        dateDefaulted: extracted.dueDate === null,
-        memo: extracted.memo,
-      }),
+      formattedText,
     };
   }
 

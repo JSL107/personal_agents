@@ -6,6 +6,7 @@ import { ConfigService } from '@nestjs/config';
 
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { wrapUntrustedInput } from '../../common/llm/untrusted-input.util';
+import { formatKstDateTime } from '../../common/util/kst-date.util';
 import { getRealHomeDir } from '../../model-router/infrastructure/cli-process.util';
 import {
   SLACK_DELIVERY_REPOSITORY,
@@ -29,13 +30,6 @@ const FORBIDDEN_HERMES_FILES = new Set([
   '.env',
   'jobs.json',
 ]);
-
-const kstTime = (date: Date): string =>
-  new Intl.DateTimeFormat('ko-KR', {
-    timeZone: 'Asia/Seoul',
-    dateStyle: 'short',
-    timeStyle: 'short',
-  }).format(date);
 
 @Injectable()
 export class ConversationLookupService {
@@ -78,12 +72,12 @@ export class ConversationLookupService {
       const lines = [
         ...active.map(
           (run) =>
-            `${run.agentType} · ${run.status} · ${kstTime(run.startedAt)} KST`,
+            `${run.agentType} · ${run.status} · ${formatKstDateTime(run.startedAt)} KST`,
         ),
         ...finished.map((run) => {
           const failureReason =
             run.status === 'FAILED' ? ` · ${run.summary ?? '사유 미기록'}` : '';
-          return `${run.agentType} · ${run.status}${failureReason} · ${kstTime(run.endedAt)} KST`;
+          return `${run.agentType} · ${run.status}${failureReason} · ${formatKstDateTime(run.endedAt)} KST`;
         }),
       ];
       if (lines.length > 0) {
@@ -103,7 +97,7 @@ export class ConversationLookupService {
           deliveries
             .map(
               (delivery) =>
-                `${delivery.kind} · ${delivery.status} · ${delivery.textPreview} · ${kstTime(delivery.createdAt)} KST`,
+                `${delivery.kind} · ${delivery.status} · ${delivery.textPreview} · ${formatKstDateTime(delivery.createdAt)} KST`,
             )
             .join('\n'),
         );

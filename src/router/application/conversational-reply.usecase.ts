@@ -132,16 +132,7 @@ export class ConversationalReplyUsecase {
       priorTurns: memoryTurns ?? priorTurns,
       conversationKey,
     });
-    let lookups: ConversationLookups | undefined;
-    if (slackUserId && this.conversationLookupService) {
-      try {
-        lookups = await this.conversationLookupService.collect({ slackUserId });
-      } catch (error: unknown) {
-        this.logger.warn(
-          `대화 조회 실패 — 조회 없이 답한다: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-    }
+    const lookups = await this.collectLookups(slackUserId);
     const prompt = buildPrompt({
       text,
       priorTurns,
@@ -153,28 +144,28 @@ export class ConversationalReplyUsecase {
     const imagePaths = images?.map((image) => image.path) ?? [];
     const readableRoots = lookups?.readableRoots ?? [];
     const hasAttachments = imagePaths.length > 0 || readableRoots.length > 0;
+    // 폴백은 내려받은 사진도 못 보므로 못 본 사진 수에 함께 센다.
+    const fallbackUnseenImageCount =
+      imagePaths.length + (unseenImageCount ?? 0);
+    // 첨부가 있을 때만 폴백용 프롬프트를 만든다 — 없으면 원래 프롬프트로 종전 폴백을 탄다.
+    const fallbackWithoutAttachments = hasAttachments
+      ? {
+          prompt: buildFallbackPrompt({
+            text,
+            priorTurns,
+            workStatus,
+            lookups,
+            imageCount: fallbackUnseenImageCount,
+          }),
+        }
+      : undefined;
+    // 빈 배열은 provider 들이 "첨부 없음" 으로 읽는다(`?.length` 판정).
+    const request = { prompt, systemPrompt, imagePaths, readableRoots };
     try {
       const completion = await this.modelRouter.route({
         agentType: AgentType.PM,
-        request: {
-          prompt,
-          systemPrompt,
-          ...(imagePaths.length > 0 ? { imagePaths } : {}),
-          ...(readableRoots.length > 0 ? { readableRoots } : {}),
-        },
-        ...(hasAttachments
-          ? {
-              fallbackWithoutAttachments: {
-                prompt: buildFallbackPrompt({
-                  text,
-                  priorTurns,
-                  workStatus,
-                  lookups,
-                  imageCount: imagePaths.length + (unseenImageCount ?? 0),
-                }),
-              },
-            }
-          : {}),
+        request,
+        fallbackWithoutAttachments,
         // PM provider 를 빌려 쓸 뿐 실제 PM 업무가 아니다. 계약 머리말의 산출물 규격이
         // 붙으면 이 usecase 가 요구하는 1~3문장 대화 응답과 충돌한다.
         noContractPreamble: true,
@@ -194,6 +185,23 @@ export class ConversationalReplyUsecase {
       throw error;
     } finally {
       lookups?.release();
+    }
+  }
+
+  // 원장·발송 기록·폴더 조회. owner DM(slackUserId 가 넘어온 경우)만 시도하고, 실패해도 답은 막지 않는다.
+  private async collectLookups(
+    slackUserId: string | undefined,
+  ): Promise<ConversationLookups | undefined> {
+    if (!slackUserId || !this.conversationLookupService) {
+      return undefined;
+    }
+    try {
+      return await this.conversationLookupService.collect({ slackUserId });
+    } catch (error: unknown) {
+      this.logger.warn(
+        `대화 조회 실패 — 조회 없이 답한다: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return undefined;
     }
   }
 

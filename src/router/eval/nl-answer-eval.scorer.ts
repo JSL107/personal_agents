@@ -1,5 +1,7 @@
 import {
   EvalCase,
+  EvalExpect,
+  EvalIntercept,
   EvalRunRecord,
   EvalScore,
   EvalSplit,
@@ -33,6 +35,24 @@ const hasNonEmptyArgs = (
 ): boolean =>
   keys.every((key) => typeof args[key] === 'string' && args[key].trim() !== '');
 
+// 가로챈 실행이 기대와 맞는가 — 이름이 같고, 지정한 인자 조건(일치·비어 있지 않음)을 모두 만족한다.
+const matchesExpectedIntercept = ({
+  intercept,
+  expected,
+}: {
+  intercept: EvalIntercept;
+  expected: NonNullable<EvalExpect['mustIntercept']>;
+}): boolean => {
+  const sameName = intercept.name === expected.name;
+  const includesExpectedArgs =
+    expected.argsInclude === undefined ||
+    includesArgs(intercept.args, expected.argsInclude);
+  const hasRequiredArgs =
+    expected.argsNonEmpty === undefined ||
+    hasNonEmptyArgs(intercept.args, expected.argsNonEmpty);
+  return sameName && includesExpectedArgs && hasRequiredArgs;
+};
+
 export const scoreRun = (evalCase: EvalCase, run: EvalRunRecord): EvalScore => {
   const failures: string[] = [];
   const expect = evalCase.expect;
@@ -56,17 +76,12 @@ export const scoreRun = (evalCase: EvalCase, run: EvalRunRecord): EvalScore => {
   }
 
   if (expect.mustIntercept !== undefined) {
-    const { name, argsInclude, argsNonEmpty } = expect.mustIntercept;
-    const hit = run.intercepts.some(
-      (intercept) =>
-        intercept.name === name &&
-        (argsInclude === undefined ||
-          includesArgs(intercept.args, argsInclude)) &&
-        (argsNonEmpty === undefined ||
-          hasNonEmptyArgs(intercept.args, argsNonEmpty)),
+    const expected = expect.mustIntercept;
+    const hit = run.intercepts.some((intercept) =>
+      matchesExpectedIntercept({ intercept, expected }),
     );
     if (!hit) {
-      failures.push(`기대한 실행 없음: ${name}`);
+      failures.push(`기대한 실행 없음: ${expected.name}`);
     }
   }
 

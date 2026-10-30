@@ -208,7 +208,10 @@ const renderAutoPostTurn = (text: string): string => {
       ? text.slice(startIndex + UNTRUSTED_INPUT_START.length, endIndex).trim()
       : text.slice(AUTO_POST_LABEL.length).trim();
   // 이미 감싼 Slack 본문을 다시 300자로 제한하고 경계를 닫아 지시처럼 읽히지 않게 한다.
-  return `- [자동 발송 글]\n${wrapUntrustedInput(body.slice(0, CLASSIFIER_AUTO_POST_TEXT_CAP))}`;
+  const wrappedExcerpt = wrapUntrustedInput(
+    body.slice(0, CLASSIFIER_AUTO_POST_TEXT_CAP),
+  );
+  return `- [자동 발송 글]\n${wrappedExcerpt}`;
 };
 
 const truncate = (text: string): string =>
