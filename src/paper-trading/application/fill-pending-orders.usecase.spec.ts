@@ -235,6 +235,41 @@ describe('FillPendingOrdersUsecase', () => {
     ).toEqual(['005930', '000660', '035420']);
   });
 
+  it('한 주문의 체결이 throw 해도 뒤 주문을 체결하고 장 마감 일괄 만료까지 진행한다', async () => {
+    const { usecase, repository, executeOrder } = createFixture();
+    repository.findDuePendingOrders.mockResolvedValue([
+      dueOrder({ quantity: decimal('0.5') }),
+      dueOrder({ id: 102, tickerId: 22, tossSymbol: '000660' }),
+    ]);
+    executeOrder.execute
+      .mockRejectedValueOnce(new Error('국내 주식 수량은 정수여야 합니다.'))
+      .mockResolvedValueOnce({ status: 'FILLED', quantity: '10' });
+
+    await expect(
+      usecase.execute({ executedAt: new Date('2026-08-13T06:31:00.000Z') }),
+    ).resolves.toMatchObject({
+      window: 'AFTER_CLOSE',
+      attempted: 2,
+      filled: 1,
+      lookupFailure: 1,
+    });
+    expect(executeOrder.execute).toHaveBeenCalledTimes(2);
+    expect(repository.expireDuePendingOrders).toHaveBeenCalled();
+  });
+
+  it('체결이 throw 한 주문뿐인 장 마감에도 일괄 만료로 같은 날 정리한다', async () => {
+    const { usecase, executeOrder, repository } = createFixture();
+    executeOrder.execute.mockRejectedValueOnce(
+      new Error('국내 주식 수량은 정수여야 합니다.'),
+    );
+
+    await usecase.execute({
+      executedAt: new Date('2026-08-13T06:31:00.000Z'),
+    });
+
+    expect(repository.expireDuePendingOrders).toHaveBeenCalled();
+  });
+
   it('KST 15:30분 전체는 scheduler 지연이 있어도 처리 창에 포함한다', async () => {
     const { usecase } = createFixture();
 

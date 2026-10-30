@@ -53,6 +53,16 @@ export class ExpirePreviewsUsecase {
     });
     let sweptCount = 0;
     for (const preview of expiredPreviews) {
+      // 반영 중에도 DB 상태는 PENDING 이다. 승인이 만료 직전에 시작돼 반영이 길면(경력 반영 실측 30분대)
+      // 여기서 EXPIRED 로 바꾸고 canceller 를 돌린 뒤, 반영이 끝나며 APPLIED 로 덮어써 부작용은 났는데
+      // 연동 레코드는 취소된 채 남는다. 사용자 거절(`CancelPreviewUsecase`)과 같은 기준으로 건너뛴다 —
+      // 반영이 끝나면 APPLIED 가 되거나, 실패해 endedAt 이 찍힌 뒤 다음 스윕이 만료한다.
+      if (
+        preview.applyProgress !== null &&
+        preview.applyProgress.endedAt === undefined
+      ) {
+        continue;
+      }
       try {
         // 목록을 뽑은 시점과 여기 사이에 사용자가 ✅/❌ 를 누를 수 있다. id 만 보고 덮어쓰면
         // 방금 APPLIED 가 된 row 를 EXPIRED 로 되돌리고, 아래 만료 후처리까지 돌아 이미
