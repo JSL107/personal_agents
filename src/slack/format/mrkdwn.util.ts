@@ -135,3 +135,21 @@ const breakLineIntoSentences = (line: string): string => {
 
 export const breakProseIntoSentences = (text: string): string =>
   mapOutsideCodeFence(text, breakLineIntoSentences);
+
+// 모델은 Markdown 굵게(`**x**`)로 쓰는데 Slack 은 `*x*` 만 굵게 그려, 별표가 날것으로 보였다(2026-10-30 DM).
+// 바로 붙은 글자가 있으면(`**x**는`) Slack 이 `*x*` 도 굵게 그리지 않으므로 그때는 표시만 걷어낸다.
+const MARKDOWN_BOLD = /(^|.)\*\*([^*\n]+?)\*\*(?=(.|$))/gu;
+const WORD_CHARACTER = /[\p{L}\p{N}]/u;
+
+export const convertMarkdownBold = (text: string): string =>
+  mapOutsideCodeFence(text, (line) =>
+    mapUnprotected(line, (part) =>
+      part.replace(
+        MARKDOWN_BOLD,
+        (_match, before: string, inner: string, after: string) =>
+          WORD_CHARACTER.test(before) || WORD_CHARACTER.test(after)
+            ? `${before}${inner}`
+            : `${before}*${inner}*`,
+      ),
+    ),
+  );
