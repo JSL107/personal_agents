@@ -88,7 +88,8 @@ describe('ConversationalReply — buildSystemPrompt (self-context)', () => {
   it('거짓 실행 약속 금지 — "해볼게요" 류 미래 실행 약속을 하지 말라는 지침이 포함된다', () => {
     const prompt = buildSystemPrompt({ repoLabel: 'foo/bar' });
     expect(prompt).toContain('실행 약속 금지');
-    expect(prompt).toMatch(/어떤 작업도 실제로 실행하지 않/);
+    // 2026-10-30 부터 대화 답변은 조회는 한다 — 금지 대상은 쓰기·실행 약속이다.
+    expect(prompt).toMatch(/쓰기·실행을 하지 않/);
     // 금지 대상 예시("해볼게요")가 프롬프트에 명시돼 LLM 이 회피 대상을 알 수 있어야 한다.
     expect(prompt).toContain('해볼게요');
   });
@@ -165,7 +166,8 @@ describe('ConversationalReply — buildSystemPrompt (self-context)', () => {
         // 2026-10-14 반말 질문에도 존댓말로 — 같은 스레드에서 말투가 오갔다("작업하고 있어?" 실측 10회 중 4회 반말)
         // 2026-10-15 원화 공고 대화 기능 안내와 실행하지 않은 요청의 거짓 수락 금지
         // 외부 기록 경계 안내를 system prompt 에 추가했다.
-        '6ffa0e4375a4aaec97adf7de097b9c8ad044c0dfef19f58bc59c192c9583846b',
+        // 2026-10-30 일반 경로의 금지 문장 묶음을 「답의 원칙」 세 줄로 줄였다(eval holdout 27문항×2 25/27 = 정리 전, 흔들린 5문항×3 13/15 > 정리 전 9/15)
+        '4e24edd1f8c81d3a92c5ac968b067c2cb33676541e0b065d793adcdd23ccceed',
       );
     },
   );
