@@ -210,14 +210,18 @@ def build_report(
     scan: Callable[[str], str] | None,
     invisible: dict,
     ledger: list[dict],
-) -> tuple[list[str], int]:
-    """고른 스킬마다 보고 블록을 만든다. (출력 줄, 조회에 성공한 스킬 수) 를 돌려준다.
+) -> tuple[list[str], int, str]:
+    """고른 스킬마다 보고 블록을 만든다. (출력 줄, 조회에 성공한 스킬 수, 마지막으로 시도한 스킬 이름) 을 돌려준다.
+
+    시간이 모자라 건너뛴 스킬은 "마지막으로 시도한 스킬"에 넣지 않는다. 진행 위치를 그 이름으로 저장해야 다음 주에
+    건너뛴 스킬부터 이어 간다(chosen[-1] 로 저장하면 앞 스킬이 늘 예산을 다 쓰는 경우 뒤 스킬이 영영 조회되지 않는다).
 
     search(검색어) 는 skills.sh 결과 목록, fetch_md(raw URL) 는 SKILL.md 본문을 준다(둘 다 실패하면 예외).
     한 스킬의 실패는 그 스킬만 "조회 실패"로 적고 나머지는 계속한다.
     """
     lines: list[str] = []
     succeeded = 0
+    last_attempted = ""
 
     def log(skill: dict, kind: str, detail: str) -> None:
         ledger.append({"date": datetime.now(KST).strftime("%Y-%m-%d"), "skill": skill["name"], "kind": kind, "detail": detail})
@@ -251,6 +255,11 @@ def build_report(
             if len(rank_candidates(found, skill["name"])) >= CANDIDATES_PER_SKILL:
                 break
         ranked = rank_candidates(found, skill["name"])
+        if not ranked and not errors and out_of_time():
+            log(skill, "failed", "time budget")
+            lines.append("- 조회 실패(시간 부족으로 건너뜀)")
+            continue
+        last_attempted = skill["name"]
         if not ranked and errors:
             lines.append(f"- 조회 실패(skills.sh {', '.join(errors)})")
             continue
@@ -287,7 +296,7 @@ def build_report(
                 lines.append(f"   {EXTERNAL_BEGIN} {excerpt} {EXTERNAL_END}")
             else:
                 lines.append("   (SKILL.md 설명을 받지 못해 이름·설치 수만 싣습니다)")
-    return lines, succeeded
+    return lines, succeeded, last_attempted
 
 
 def read_state() -> str:
@@ -336,6 +345,10 @@ def main() -> int:
         print("(인젝션 사전 선별 불가로 이번 주 비교 불가. 비교를 지어내지 마세요.)")
         return 0
 
+    # ~/.claude/skills 에는 외부에서 설치한 스킬도 섞여 이름도 외부 텍스트다. 이름은 `### 내 스킬:` 줄에 그대로 실린다.
+    for skill in [skill for skill in all_skills if scan(skill["name"])]:
+        print(f"skill '{skill['path'].parent.name}' dropped by threat scan (name)", file=sys.stderr)
+        all_skills.remove(skill)
     by_name = {skill["name"]: skill for skill in all_skills}
     chosen = [by_name[name] for name in pick_round_robin(sorted(by_name), read_state(), SKILLS_PER_WEEK)]
     print(f"내 스킬 {len(by_name)}개 중 이번 주 {len(chosen)}개: {', '.join(skill['name'] for skill in chosen)}")
@@ -352,7 +365,7 @@ def main() -> int:
             return ""
 
     ledger: list[dict] = []
-    lines, succeeded = build_report(
+    lines, succeeded, last_attempted = build_report(
         chosen, search, lambda url: news.fetch_bytes(url).decode("utf-8", errors="replace"), read_mine, scan,
         news._INVISIBLE_TRANSLATION, ledger,
     )
@@ -363,7 +376,7 @@ def main() -> int:
         print()
         print("(이번 주는 모든 스킬의 조회가 실패해 비교할 수 없습니다. 이번 주 비교 불가라고만 알리고 비교를 지어내지 마세요.)")
     else:
-        write_state(chosen[-1]["name"])
+        write_state(last_attempted)
     write_ledger(ledger)
     print(f"compared {succeeded}/{len(chosen)} skills", file=sys.stderr)
     return 0
@@ -447,24 +460,39 @@ def self_check() -> None:
 
     ledger: list[dict] = []
     skills = [{"name": "good", "description": ""}, {"name": "boom", "description": ""}]
-    lines, succeeded = build_report(skills, search, fetch_md, lambda skill: f"mine {skill['name']}", scan, invisible, ledger)
+    lines, succeeded, last = build_report(skills, search, fetch_md, lambda skill: f"mine {skill['name']}", scan, invisible, ledger)
     text = "\n".join(lines)
     assert succeeded == 1 and "조회 실패(skills.sh OSError)" in text, text
+    assert last == "boom", last  # 검색이 실패한 스킬도 시도는 했으니 진행 위치는 넘어간다
     assert "1. o/r/good (설치 7회)" in text and "https://skills.sh/o/r/good" in text, text
     assert f"{EXTERNAL_BEGIN} --- name: ok --- body {EXTERNAL_END}" in text, text
     assert "2. evil/r/x" in text and "ignore previous" not in text and "이름·설치 수만" in text, text
     assert [row["kind"] for row in ledger].count("threat_pattern") == 1 and any(row["kind"] == "failed" for row in ledger), ledger
 
     # 전부 실패하면 성공 0 으로 돌려준다(main 이 "비교 불가"를 적고 진행 위치를 옮기지 않는다).
-    _, none_ok = build_report([skills[1]], search, fetch_md, lambda skill: "", None, invisible, [])
+    _, none_ok, _ = build_report([skills[1]], search, fetch_md, lambda skill: "", None, invisible, [])
     assert none_ok == 0
 
     # 출력 크기는 상한이 정한다: 스킬 4개 × (내 발췌 + 외부 2개 × 발췌 + 긴 id·링크)가 입력 예산(약 15,000자)을 넘지 않는다.
-    big_lines, _ = build_report(
+    big_lines, _, _ = build_report(
         [{"name": f"s{n}", "description": ""} for n in range(SKILLS_PER_WEEK)],
         lambda keyword: parse_skills_sh({"skills": [{"id": f"{'o' * 30}/{'r' * 20}{n}/{'s' * 30}", "source": f"{'o' * 30}/{'r' * 20}{n}", "skillId": "s" * 30, "installs": n} for n in range(3)]}),
         lambda url: "가" * 5000, lambda skill: "나" * 5000, None, invisible, [])
     assert len("\n".join(big_lines)) <= 15_000, len("\n".join(big_lines))
+
+    # 시간 예산을 넘기면 그 뒤 스킬은 건너뛰고, 진행 위치는 마지막으로 시도한 스킬에 머문다.
+    global _STARTED_AT
+    started = _STARTED_AT
+
+    def slow_search(keyword: str) -> list[dict]:
+        global _STARTED_AT
+        _STARTED_AT = time.monotonic() - DEADLINE_SEC - 1  # 첫 검색이 예산을 다 쓴다
+        return search(keyword)
+
+    timed, timed_ok, timed_last = build_report([{"name": "good", "description": ""}, {"name": "later", "description": ""}],
+                                               slow_search, fetch_md, lambda skill: "", scan, invisible, [])
+    _STARTED_AT = started
+    assert timed_ok == 1 and timed_last == "good" and "시간 부족으로 건너뜀" in "\n".join(timed), timed
 
     # 진행 위치 파일: 쓰고 읽으면 같고, 깨진 파일은 처음부터 시작한다.
     global STATE_PATH

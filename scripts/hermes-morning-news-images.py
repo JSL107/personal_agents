@@ -42,6 +42,8 @@ KST = timezone(timedelta(hours=9))
 
 # 도식 칸 이름. 흐름이 세 칸이 아니면(두 칸·네 칸) 가운데 강조만 하고 이름표는 붙이지 않는다.
 STEP_LABELS = ("넣으면", "이 도구가", "결과")
+# 글·사례 카드(응답에 '종류: 글' 불릿)는 흐름이 '다루는 문제 → 해법 → 얻는 것'이라 이름표도 그에 맞춘다.
+ARTICLE_STEP_LABELS = ("문제", "해법", "얻는 것")
 # 출처 배지. 모델이 쓴 링크 주소로 정한다 — 모델에게 출처 이름을 따로 쓰게 하면 한 군데가 더 틀릴 수 있다.
 SOURCE_BADGES = (
     ("github.com", "GitHub", "#24292f"),
@@ -50,9 +52,9 @@ SOURCE_BADGES = (
 )
 DEFAULT_BADGE_COLOR = "#e8590c"
 
-_FIELD_NAMES = {"뭔가요": "what", "왜 볼 만한가": "why", "흐름": "flow", "출처": "url"}
+_FIELD_NAMES = {"뭔가요": "what", "왜 볼 만한가": "why", "흐름": "flow", "출처": "url", "종류": "kind"}
 _TITLE_PATTERN = re.compile(r"^(\d+)\.\s*(.+)$")
-_BULLET_PATTERN = re.compile(r"^[-•·]\s*(뭔가요|왜 볼 만한가|흐름|출처)\s*:\s*(.+)$")
+_BULLET_PATTERN = re.compile(r"^[-•·]\s*(뭔가요|왜 볼 만한가|흐름|출처|종류)\s*:\s*(.+)$")
 
 
 def parse_tools(briefing: str) -> list[dict]:
@@ -93,9 +95,10 @@ def card_html(tool: dict) -> str:
     label, color = source_badge(tool.get("url", ""))
     flow = tool["flow"]
     middle = len(flow) // 2
+    labels = ARTICLE_STEP_LABELS if tool.get("kind") == "글" else STEP_LABELS
     steps = []
     for index, step in enumerate(flow):
-        caption = STEP_LABELS[index] if len(flow) == len(STEP_LABELS) else str(index + 1)
+        caption = labels[index] if len(flow) == len(labels) else str(index + 1)
         css_class = "step tool" if index == middle else "step"
         steps.append(f'<div class="{css_class}"><span class="label">{escape(caption)}</span><span>{escape(step)}</span></div>')
     why = f'<div class="why"><b>왜 볼 만한가</b> · {escape(tool["why"])}</div>' if tool.get("why") else ""
@@ -254,6 +257,11 @@ def self_check() -> None:
     unsafe = card_html(tools[1])
     assert "<script>" not in unsafe and "&lt;script&gt;" in unsafe and "a &amp; b" in unsafe
     assert "넣으면" not in unsafe  # 두 칸 흐름은 번호만 붙인다
+    article = parse_tools("## Response\n🛠 오늘의 도구\n*1. 회귀 줄이기*\n- 뭔가요: 글\n- 종류: 글\n"
+                          "- 흐름: 배포 후 회귀 → 스모크 테스트 → 배포 전 차단\n- 출처: https://yozm.wishket.com/x\n")
+    assert article[0]["kind"] == "글", article
+    article_page = card_html(article[0])
+    assert "문제" in article_page and "해법" in article_page and "넣으면" not in article_page
     print("self-check ok")
 
 
