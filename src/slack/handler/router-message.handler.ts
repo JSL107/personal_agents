@@ -50,6 +50,7 @@ import {
 } from '../domain/port/slack-delivery.repository.port';
 import { SlackHandler } from '../domain/port/slack-handler.port';
 import { stripMentionPrefix } from '../domain/slack-mention';
+import { buildIdaeriReplyMetadata } from '../domain/slack-transcript';
 import { toReadableSlackArgs } from '../format/message-blocks.builder';
 import { buildPreviewBlocks } from '../format/preview-message.builder';
 import { toUserFacingErrorMessage } from './slack-handler.helper';
@@ -121,13 +122,31 @@ type ReplyTracker = {
 
 // 게시가 한 번이라도 성공했으면 답이 나간 것이다. 오류 안내였다면 ERROR_REPLIED 로 가른다.
 // 아무것도 못 올렸으면 마지막 게시 오류(없으면 게시 시도 자체가 없었음)를 남긴다.
+// 이대리가 보내는 모든 답에 기본 꼬리표를 붙인다 — 다음 회차가 Slack 기록에서 이 글을 자기 답으로 읽는다.
+// 호출자가 실행 정보를 담은 꼬리표를 이미 줬으면 그대로 둔다.
+const withIdaeriReplyMetadata = (
+  message: Parameters<SayFn>[0],
+): Parameters<SayFn>[0] => {
+  const metadata = buildIdaeriReplyMetadata({
+    agentType: null,
+    agentRunId: null,
+  });
+  if (typeof message === 'string') {
+    return { text: message, metadata };
+  }
+  return { ...message, metadata: message.metadata ?? metadata };
+};
+
 const trackReplies = (say: SayFn): ReplyTracker => {
   let posted = false;
   let errorReply = false;
   let postError: string | undefined;
   const trackedSay: SayFn = async (message) => {
     try {
-      const response = await say(message);
+      // 오류 안내는 대화 답이 아니므로 꼬리표를 붙이지 않는다.
+      const response = await say(
+        errorReply ? message : withIdaeriReplyMetadata(message),
+      );
       posted = true;
       return response;
     } catch (error: unknown) {
@@ -924,10 +943,16 @@ export class RouterMessageHandler implements SlackHandler {
     // blocks 를 못 그리는 클라이언트의 폴백으로 함께 싣는다.
     const readableReply = toReadableSlackArgs(routerReplyText);
     const replyBlocks = resolveReplyBlocks(result, readableReply.text);
+    // 실행 정보를 꼬리표에 싣는다 — 다음 회차가 Slack 기록에서 이 답의 담당·실행 id 를 읽는다.
+    const metadata = buildIdaeriReplyMetadata({
+      agentType: result.workerType,
+      agentRunId: result.agentRunId,
+    });
     try {
       await say({
         thread_ts: threadTs,
         ...readableReply,
+        metadata,
         ...(replyBlocks !== undefined ? { blocks: replyBlocks as never } : {}),
       });
     } catch (error: unknown) {
@@ -945,7 +970,7 @@ export class RouterMessageHandler implements SlackHandler {
       try {
         // 텍스트만 보낸다. toReadableSlackArgs 는 소제목이 있으면 blocks 도 만들어, 그걸 다시 실으면
         // 방금 거절된 블록을 그대로 다시 보내게 된다.
-        await say({ thread_ts: threadTs, text: readableReply.text });
+        await say({ thread_ts: threadTs, text: readableReply.text, metadata });
       } catch (retryError: unknown) {
         this.logger.warn(
           `답변 재게시 실패 — ${context}: ${retryError instanceof Error ? retryError.message : String(retryError)}`,
@@ -971,6 +996,7 @@ export class RouterMessageHandler implements SlackHandler {
         await say({
           thread_ts: threadTs,
           ...toReadableSlackArgs(result.preview.content),
+          metadata,
         });
       } catch (error: unknown) {
         this.logger.warn(
@@ -1159,7 +1185,14 @@ export class RouterMessageHandler implements SlackHandler {
       timestampMs: Date.now(),
     });
     const replyText = buildDispatchReplyText(result);
-    await say({ thread_ts: threadTs, ...toReadableSlackArgs(replyText) });
+    await say({
+      thread_ts: threadTs,
+      ...toReadableSlackArgs(replyText),
+      metadata: buildIdaeriReplyMetadata({
+        agentType: result.workerType,
+        agentRunId: result.agentRunId,
+      }) as never,
+    });
     await this.conversationMemory.appendTurn(memoryKey, {
       role: 'assistant',
       text: replyText,

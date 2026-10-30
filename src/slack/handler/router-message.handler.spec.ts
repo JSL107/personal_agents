@@ -2408,6 +2408,7 @@ describe('RouterMessageHandler — 자연어 Y/N preview 인터셉트', () => {
     expect(say).toHaveBeenCalledWith({
       thread_ts: 'thread-Y',
       text: expect.stringContaining('카드의 버튼으로 골라 주세요'),
+      metadata: { event_type: 'idaeri_reply', event_payload: {} },
     });
     expect(applyPreviewUsecase.execute).not.toHaveBeenCalled();
     expect(cancelPreviewUsecase.execute).not.toHaveBeenCalled();

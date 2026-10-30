@@ -197,9 +197,10 @@ const matchSpeakerTurnsToMemory = (
 };
 
 // 이대리 대화 답에 붙이는 Slack metadata. Slack API 필드명(snake_case)을 그대로 쓴다.
+// event_payload 값 타입은 Slack SDK MessageMetadata 와 맞춘다 — 넓히면 say/chat.postMessage 에 형변환이 필요해진다.
 export interface IdaeriReplyMetadata {
   event_type: string;
-  event_payload: Record<string, unknown>;
+  event_payload: Record<string, string | number>;
 }
 
 export const buildIdaeriReplyMetadata = ({
