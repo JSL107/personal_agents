@@ -29,7 +29,7 @@ import { ConsoleWriteController } from './interface/console-write.controller';
 // 콘솔 관제 모듈 — 읽기(REST) + 실시간(SSE) + 리모컨 write(지시/승인).
 // read 경로는 부작용 0 이지만 ConsoleReadGuard(원격이면 토큰) 뒤에 둔다 — 스냅샷·스트림이
 // 세션 경로와 워커 산출물을 실어 나른다. write 경로는 LoopbackOnlyGuard 뒤에서 기존 usecase 에 위임한다.
-// FindAllOpenPreviewsUsecase·ApplyPreviewUsecase·CancelPreviewUsecase 는 PreviewGateModule.forRoot(global) 가,
+// FindAllOpenPreviewsUsecase·FindAnswerablePreviewUsecase·ApplyPreviewUsecase·CancelPreviewUsecase 는 PreviewGateModule.forRoot(global) 가,
 // ConsoleEventBus 는 ConsoleEventBusModule(@Global) 이, IDAERI_ROUTER_PORT 는 RouterModule 이 제공한다.
 @Module({
   imports: [

@@ -124,6 +124,8 @@ model PreviewAction {
   // ephemeral(B) / 카드 없음(C) 경로는 null 로 남아 갱신이 조용히 skip 된다.
   slackChannelId    String?   @map("slack_channel_id")
   slackMessageTs    String?   @map("slack_message_ts")
+  // 카드가 놓인 Slack 스레드의 root ts. 최상위 카드면 카드 자신의 ts이며 자연어 승인 답변을 묶는 키다.
+  slackThreadTs     String?   @map("slack_thread_ts")
   // 승인 후 실행이 실패한 마지막 흔적. 실패해도 status 는 PENDING 을 유지하므로(사용자가 거부한
   // 것이 아니다) 상태만으로는 실패를 셀 수 없다 — 실패 후 다시 눌러 성공하면 APPLIED 로 끝나고,
   // 포기하면 무응답 만료와 똑같이 EXPIRED 가 된다. 두 경우를 가르는 유일한 근거가 이 두 값이다.

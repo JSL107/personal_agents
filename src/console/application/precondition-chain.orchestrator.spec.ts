@@ -56,8 +56,8 @@ function make(recentDays?: string) {
     putSuggestions: jest.fn(),
     putAwaitingInput: jest.fn(),
   };
-  const findLatestPendingPreview = {
-    execute: jest.fn().mockResolvedValue(null),
+  const findAnswerablePreview = {
+    execute: jest.fn().mockResolvedValue({ status: 'NONE' }),
   };
   const applyPreview = { execute: jest.fn() };
   const cancelPreview = { execute: jest.fn() };
@@ -68,7 +68,7 @@ function make(recentDays?: string) {
     config,
     suggestNextWork as never,
     pendingTurns as never,
-    findLatestPendingPreview as never,
+    findAnswerablePreview as never,
     applyPreview as never,
     cancelPreview as never,
   );
@@ -79,7 +79,7 @@ function make(recentDays?: string) {
     consoleEvents,
     suggestNextWork,
     pendingTurns,
-    findLatestPendingPreview,
+    findAnswerablePreview,
     applyPreview,
     cancelPreview,
   };
@@ -511,14 +511,17 @@ describe('PreconditionChainOrchestrator', () => {
     const {
       orchestrator,
       handleConversationTurn,
-      findLatestPendingPreview,
+      findAnswerablePreview,
       applyPreview,
       consoleEvents,
     } = make();
-    findLatestPendingPreview.execute.mockResolvedValue({
-      id: 'p1',
-      kind: 'CAREER_PROFILE',
-      status: 'PENDING',
+    findAnswerablePreview.execute.mockResolvedValue({
+      status: 'ONE',
+      preview: {
+        id: 'p1',
+        kind: 'CAREER_PROFILE',
+        status: 'PENDING',
+      },
     });
     applyPreview.execute.mockResolvedValue({ resultText: '반영했습니다.' });
 
@@ -527,6 +530,11 @@ describe('PreconditionChainOrchestrator', () => {
     expect(applyPreview.execute).toHaveBeenCalledWith({
       previewId: 'p1',
       slackUserId: 'U1',
+    });
+    expect(findAnswerablePreview.execute).toHaveBeenCalledWith({
+      slackUserId: 'U1',
+      now: expect.any(Date),
+      scope: { kind: 'CONSOLE' },
     });
     expect(handleConversationTurn.execute).not.toHaveBeenCalled();
     expect(consoleEvents.publish).toHaveBeenCalledWith({
@@ -540,13 +548,16 @@ describe('PreconditionChainOrchestrator', () => {
     const {
       orchestrator,
       handleConversationTurn,
-      findLatestPendingPreview,
+      findAnswerablePreview,
       cancelPreview,
     } = make();
-    findLatestPendingPreview.execute.mockResolvedValue({
-      id: 'p1',
-      kind: 'CAREER_PROFILE',
-      status: 'PENDING',
+    findAnswerablePreview.execute.mockResolvedValue({
+      status: 'ONE',
+      preview: {
+        id: 'p1',
+        kind: 'CAREER_PROFILE',
+        status: 'PENDING',
+      },
     });
 
     await orchestrator.run({
@@ -562,10 +573,34 @@ describe('PreconditionChainOrchestrator', () => {
     expect(handleConversationTurn.execute).not.toHaveBeenCalled();
   });
 
+  it('답할 카드가 둘 이상이면 적용이나 dispatch 없이 버튼 선택을 안내한다', async () => {
+    const {
+      orchestrator,
+      handleConversationTurn,
+      findAnswerablePreview,
+      applyPreview,
+      cancelPreview,
+      consoleEvents,
+    } = make();
+    findAnswerablePreview.execute.mockResolvedValue({ status: 'AMBIGUOUS' });
+
+    await orchestrator.run({ slackUserId: 'U1', text: '응', commandId: 'c1' });
+
+    expect(applyPreview.execute).not.toHaveBeenCalled();
+    expect(cancelPreview.execute).not.toHaveBeenCalled();
+    expect(handleConversationTurn.execute).not.toHaveBeenCalled();
+    expect(consoleEvents.publish).toHaveBeenCalledWith({
+      type: 'command.answered',
+      commandId: 'c1',
+      message:
+        '어느 카드에 대한 답인지 정할 수 없어 실행하지 않았어요. 카드의 버튼으로 골라 주세요.',
+    });
+  });
+
   it('preview 조회가 실패하면 인터셉트를 포기하고 일반 dispatch로 폴백한다', async () => {
-    const { orchestrator, handleConversationTurn, findLatestPendingPreview } =
+    const { orchestrator, handleConversationTurn, findAnswerablePreview } =
       make();
-    findLatestPendingPreview.execute.mockRejectedValue(
+    findAnswerablePreview.execute.mockRejectedValue(
       new Error('preview 저장소 장애'),
     );
     handleConversationTurn.execute.mockResolvedValue(ok('PM'));
@@ -590,14 +625,17 @@ describe('PreconditionChainOrchestrator', () => {
     const {
       orchestrator,
       conversationMemory,
-      findLatestPendingPreview,
+      findAnswerablePreview,
       applyPreview,
       consoleEvents,
     } = make();
-    findLatestPendingPreview.execute.mockResolvedValue({
-      id: 'p1',
-      kind: 'CAREER_PROFILE',
-      status: 'PENDING',
+    findAnswerablePreview.execute.mockResolvedValue({
+      status: 'ONE',
+      preview: {
+        id: 'p1',
+        kind: 'CAREER_PROFILE',
+        status: 'PENDING',
+      },
     });
     applyPreview.execute.mockResolvedValue({ resultText: '반영했습니다.' });
     conversationMemory.appendTurn.mockRejectedValue(new Error('redis down'));
@@ -635,12 +673,15 @@ describe('PreconditionChainOrchestrator', () => {
   });
 
   it('긴 응답 문장은 yes/no 인터셉트 없이 일반 dispatch를 수행한다', async () => {
-    const { orchestrator, handleConversationTurn, findLatestPendingPreview } =
+    const { orchestrator, handleConversationTurn, findAnswerablePreview } =
       make();
-    findLatestPendingPreview.execute.mockResolvedValue({
-      id: 'p1',
-      kind: 'CAREER_PROFILE',
-      status: 'PENDING',
+    findAnswerablePreview.execute.mockResolvedValue({
+      status: 'ONE',
+      preview: {
+        id: 'p1',
+        kind: 'CAREER_PROFILE',
+        status: 'PENDING',
+      },
     });
     handleConversationTurn.execute.mockResolvedValue(ok('PM'));
 
@@ -654,12 +695,15 @@ describe('PreconditionChainOrchestrator', () => {
   });
 
   it('CAREER_JD_GAP_BLOG의 응은 일반 dispatch로 통과한다', async () => {
-    const { orchestrator, handleConversationTurn, findLatestPendingPreview } =
+    const { orchestrator, handleConversationTurn, findAnswerablePreview } =
       make();
-    findLatestPendingPreview.execute.mockResolvedValue({
-      id: 'p1',
-      kind: 'CAREER_JD_GAP_BLOG',
-      status: 'PENDING',
+    findAnswerablePreview.execute.mockResolvedValue({
+      status: 'ONE',
+      preview: {
+        id: 'p1',
+        kind: 'CAREER_JD_GAP_BLOG',
+        status: 'PENDING',
+      },
     });
     handleConversationTurn.execute.mockResolvedValue(ok('PM'));
 

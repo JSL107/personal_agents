@@ -16,6 +16,7 @@ const buildPreview = (
   cancelledAt: null,
   slackChannelId: 'C1',
   slackMessageTs: '111.222',
+  slackThreadTs: '111.222',
   lastFailedAt: null,
   lastFailureReason: null,
   applyProgress: null,

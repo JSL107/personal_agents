@@ -36,6 +36,14 @@ export interface PreviewActionRepositoryPort {
     slackUserId: string;
     now: Date;
   }): Promise<PreviewAction | null>;
+  findPendingAnswerCandidates(input: {
+    slackUserId: string;
+    now: Date;
+    slackChannelId?: string;
+    slackThreadTs?: string;
+    createdSince?: Date;
+    limit: number;
+  }): Promise<PreviewAction[]>;
   // PENDING → status 전이. appliedAt / cancelledAt 은 status 에 맞춰 채워진다.
   // 멱등성: 이미 APPLIED/CANCELLED/EXPIRED 인 row 는 호출자 (usecase) 가 미리 검증해 막는다.
   transition(input: {
@@ -135,6 +143,12 @@ export interface PreviewActionRepositoryPort {
     id: string;
     slackChannelId: string;
     slackMessageTs: string;
+    slackThreadTs: string;
+  }): Promise<void>;
+  attachSlackThread(input: {
+    id: string;
+    slackChannelId: string;
+    slackThreadTs: string;
   }): Promise<void>;
   // 만료됐지만 아직 PENDING 인 카드 — preview-sweeper 가 EXPIRED 전이 + 카드 갱신 대상으로 소비.
   findExpiredPending(input: {

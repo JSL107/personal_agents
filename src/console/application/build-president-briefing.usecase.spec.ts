@@ -21,6 +21,7 @@ const openPreview = (expiresAt: Date): unknown => ({
   cancelledAt: null,
   slackChannelId: null,
   slackMessageTs: null,
+  slackThreadTs: null,
 });
 
 const openPull = (

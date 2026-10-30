@@ -8,8 +8,12 @@ import { detectYesNoIntent } from '../../common/util/yes-no-intent.util';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { ApplyPreviewUsecase } from '../../preview-gate/application/apply-preview.usecase';
 import { CancelPreviewUsecase } from '../../preview-gate/application/cancel-preview.usecase';
-import { FindLatestPendingPreviewUsecase } from '../../preview-gate/application/find-latest-pending-preview.usecase';
 import {
+  AnswerablePreviewResult,
+  FindAnswerablePreviewUsecase,
+} from '../../preview-gate/application/find-answerable-preview.usecase';
+import {
+  PREVIEW_ANSWER_AMBIGUOUS_TEXT,
   PREVIEW_KIND,
   PreviewAction,
 } from '../../preview-gate/domain/preview-action.type';
@@ -66,7 +70,7 @@ export class PreconditionChainOrchestrator {
     private readonly config: ConfigService,
     private readonly suggestNextWork: SuggestNextWorkUsecase,
     private readonly pendingTurns: PendingConsoleTurnStore,
-    private readonly findLatestPendingPreview: FindLatestPendingPreviewUsecase,
+    private readonly findAnswerablePreview: FindAnswerablePreviewUsecase,
     private readonly applyPreview: ApplyPreviewUsecase,
     private readonly cancelPreview: CancelPreviewUsecase,
   ) {}
@@ -205,10 +209,12 @@ export class PreconditionChainOrchestrator {
     }
     // 조회 실패는 인터셉트 포기로 접는다 — preview 저장소 장애가 일반 콘솔 대화의
     // dispatch 까지 막으면 안 된다 (이 인터셉트는 있으면 좋은 지름길이지 관문이 아니다).
-    let pending: PreviewAction | null;
+    let answerable: AnswerablePreviewResult;
     try {
-      pending = await this.findLatestPendingPreview.execute({
+      answerable = await this.findAnswerablePreview.execute({
         slackUserId: input.slackUserId,
+        now: new Date(),
+        scope: { kind: 'CONSOLE' },
       });
     } catch (error: unknown) {
       this.logger.warn(
@@ -216,9 +222,15 @@ export class PreconditionChainOrchestrator {
       );
       return false;
     }
-    if (!pending) {
+    if (answerable.status === 'NONE') {
       return false;
     }
+    if (answerable.status === 'AMBIGUOUS') {
+      await this.rememberPreviewTurn(input, input.text ?? '');
+      this.publishPreviewAnswer(input, PREVIEW_ANSWER_AMBIGUOUS_TEXT);
+      return true;
+    }
+    const pending: PreviewAction = answerable.preview;
     if (pending.kind === PREVIEW_KIND.CAREER_JD_GAP_BLOG && intent === 'yes') {
       return false;
     }
