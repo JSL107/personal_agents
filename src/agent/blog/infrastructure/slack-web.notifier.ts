@@ -2,6 +2,8 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { WebClient } from '@slack/web-api';
 
 import { appendIntegrationHint } from '../../../common/domain/integration-failure-hint';
+import { AgentType } from '../../../model-router/domain/model-router.type';
+import { buildIdaeriReplyMetadata } from '../../../slack/domain/slack-transcript';
 import { toReadableSlackArgs } from '../../../slack/format/message-blocks.builder';
 import {
   BlogSlackNotifierPort,
@@ -40,6 +42,10 @@ export class SlackWebNotifier implements BlogSlackNotifierPort {
         channel,
         ...(threadTs ? { thread_ts: threadTs } : {}),
         ...toReadableSlackArgs(text),
+        metadata: buildIdaeriReplyMetadata({
+          agentType: AgentType.BLOG,
+          agentRunId: null,
+        }),
       });
       return true;
     } catch (error: unknown) {

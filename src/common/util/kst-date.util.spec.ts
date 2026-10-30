@@ -1,5 +1,6 @@
 import {
   formatKstDate,
+  formatKstDateTime,
   getKstDayStartAsUtc,
   getTodayKstDate,
 } from './kst-date.util';
@@ -67,5 +68,18 @@ describe('getKstDayStartAsUtc', () => {
     const result = getKstDayStartAsUtc(6);
 
     expect(result.toISOString()).toBe('2026-07-01T15:00:00.000Z');
+  });
+});
+
+describe('formatKstDateTime', () => {
+  it('UTC 시각을 KST 날짜·24시간 시각으로 바꾼다', () => {
+    expect(formatKstDateTime(new Date('2026-10-29T23:05:00Z'))).toBe(
+      '2026-10-30 08:05',
+    );
+  });
+  it('자정은 00 시로 쓴다', () => {
+    expect(formatKstDateTime(new Date('2026-10-29T15:00:00Z'))).toBe(
+      '2026-10-30 00:00',
+    );
   });
 });

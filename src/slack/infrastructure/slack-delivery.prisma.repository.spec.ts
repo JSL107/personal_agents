@@ -156,4 +156,21 @@ describe('SlackDeliveryPrismaRepository', () => {
       }),
     );
   });
+
+  it('상태와 무관한 발송 기록을 최신 10건으로 조회한다', async () => {
+    findMany.mockResolvedValue([]);
+    const since = new Date('2026-10-29T00:00:00Z');
+
+    await expect(repository.findRecent({ since, limit: 10 })).resolves.toEqual(
+      [],
+    );
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { createdAt: { gte: since } },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+      }),
+    );
+  });
 });

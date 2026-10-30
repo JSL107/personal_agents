@@ -1,6 +1,13 @@
 import { ScheduleItemRecord } from '../../schedule/domain/schedule.type';
 import { escapeSlackMrkdwn } from './mrkdwn.util';
 
+// dateDefaulted: 대화에서 날짜를 못 찾아 오늘로 채웠다는 사실을 답에 밝힌다(설계 §3-6).
+// memo: 대화에서 옮긴 원인 메모 — 외부 글에서 왔을 수 있어 escape 하고 앞부분만 보인다.
+interface ScheduleRegisteredOptions {
+  dateDefaulted?: boolean;
+  memo?: string;
+}
+
 const toKoreanDate = (date: Date): string => {
   return `${date.getUTCMonth() + 1}월 ${date.getUTCDate()}일`;
 };
@@ -12,9 +19,16 @@ const toKoreanDate = (date: Date): string => {
 //    `*` 하나로 비대칭이 생겨 그 줄 전체 렌더가 깨진다. escape 는 `*` 를 다루지 않는다.
 export const formatScheduleRegistered = (
   record: ScheduleItemRecord,
+  options?: ScheduleRegisteredOptions,
 ): string => {
   const title = escapeSlackMrkdwn(record.title);
-  return `*등록했습니다* — ${title} · ${toKoreanDate(record.dueDate)}`;
+  const dateNotice = options?.dateDefaulted
+    ? ' (날짜가 없어 오늘로 등록했어요)'
+    : '';
+  const memo = options?.memo
+    ? `\n메모: ${escapeSlackMrkdwn(options.memo.slice(0, 200))}${options.memo.length > 200 ? '…' : ''}`
+    : '';
+  return `*등록했습니다* — ${title} · ${toKoreanDate(record.dueDate)}${dateNotice}${memo}`;
 };
 
 export const formatNeedsDate = (title: string): string => {

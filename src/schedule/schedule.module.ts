@@ -6,9 +6,11 @@ import { AgentRunModule } from '../agent-run/agent-run.module';
 import { LoopbackOnlyGuard } from '../common/guard/loopback-only.guard';
 import { ConsoleReadGuard } from '../console/interface/console-read.guard';
 import { FactAnswerModule } from '../fact-answer/fact-answer.module';
+import { ModelRouterModule } from '../model-router/model-router.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AnswerScheduleQuestionUsecase } from './application/answer-schedule-question.usecase';
 import { DeleteScheduleUsecase } from './application/delete-schedule.usecase';
+import { ExtractScheduleFromConversationUsecase } from './application/extract-schedule-from-conversation.usecase';
 import { ListSchedulesUsecase } from './application/list-schedules.usecase';
 import { MarkScheduleAsHolidayUsecase } from './application/mark-schedule-as-holiday.usecase';
 import { RegisterConsoleScheduleUsecase } from './application/register-console-schedule.usecase';
@@ -26,10 +28,11 @@ import {
 import { ScheduleConsoleController } from './interface/schedule-console.controller';
 
 @Module({
-  imports: [AgentRunModule, FactAnswerModule, PrismaModule],
+  imports: [AgentRunModule, FactAnswerModule, PrismaModule, ModelRouterModule],
   controllers: [ScheduleConsoleController],
   providers: [
     { provide: SCHEDULE_REPOSITORY_PORT, useClass: SchedulePrismaRepository },
+    ExtractScheduleFromConversationUsecase,
     RegisterScheduleUsecase,
     RegisterConsoleScheduleUsecase,
     ListSchedulesUsecase,

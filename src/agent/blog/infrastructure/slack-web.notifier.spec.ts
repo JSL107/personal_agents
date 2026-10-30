@@ -18,6 +18,10 @@ describe('SlackWebNotifier', () => {
       channel: 'C1',
       thread_ts: 'T1',
       text: '완료',
+      metadata: {
+        event_type: 'idaeri_reply',
+        event_payload: { agentType: 'BLOG' },
+      },
     });
   });
 
@@ -29,7 +33,14 @@ describe('SlackWebNotifier', () => {
 
     await notifier.notify({ channel: 'C1', text: '완료' });
 
-    expect(postMessage).toHaveBeenCalledWith({ channel: 'C1', text: '완료' });
+    expect(postMessage).toHaveBeenCalledWith({
+      channel: 'C1',
+      text: '완료',
+      metadata: {
+        event_type: 'idaeri_reply',
+        event_payload: { agentType: 'BLOG' },
+      },
+    });
   });
 
   it('게시하면 true 를 돌려준다', async () => {

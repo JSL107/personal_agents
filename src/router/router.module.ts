@@ -40,6 +40,8 @@ import { PaperTradingModule } from '../paper-trading/paper-trading.module';
 import { PreferenceProfileModule } from '../preference-profile/preference-profile.module';
 import { ScheduleDispatcher } from '../schedule/infrastructure/schedule.dispatcher';
 import { ScheduleModule } from '../schedule/schedule.module';
+import { SlackDeliveryModule } from '../slack/slack-delivery.module';
+import { ConversationLookupService } from './application/conversation-lookup.service';
 import { ConversationMemoryService } from './application/conversation-memory.service';
 import { ConversationalReplyUsecase } from './application/conversational-reply.usecase';
 import { HandleConversationTurnUsecase } from './application/handle-conversation-turn.usecase';
@@ -51,6 +53,7 @@ import {
   AgentDispatcher,
 } from './domain/port/agent-dispatcher.port';
 import { ROUTING_NO_RUN_PORT } from './domain/port/routing-no-run.port';
+import { LocalRepoSnapshotService } from './infrastructure/local-repo-snapshot.service';
 import { RoutingNoRunPrismaRepository } from './infrastructure/routing-no-run.prisma.repository';
 
 // V3 비전 봇 쪼개기 — Hierarchical Manager Pattern 진입점.
@@ -86,11 +89,14 @@ import { RoutingNoRunPrismaRepository } from './infrastructure/routing-no-run.pr
     ScheduleModule,
     VideoWatchModule,
     ArtJobFeedChatModule,
+    SlackDeliveryModule,
   ],
   providers: [
     IntentClassifierUsecase,
     // intent classifier 가 UNKNOWN 반환 시 RouterMessageHandler 가 fallback 으로 호출 — 자연어 응답.
     ConversationalReplyUsecase,
+    ConversationLookupService,
+    LocalRepoSnapshotService,
     HandleConversationTurnUsecase,
     // V3 §봇 쪼개기 follow-up — ConversationMemory 는 Redis 백엔드로 multi-instance / 재시작 안전.
     // REDIS_HOST/PORT 는 BullMQ 와 동일 env 재사용 (별도 connection — bullmq 의 maxRetries=null

@@ -63,4 +63,8 @@ export interface SlackDeliveryRepositoryPort {
   // until 은 선택 — 주어지면 createdAt < until 로 끝을 닫는다(기간이 고정된 주간 요약용).
   findSince(since: Date, until?: Date): Promise<SlackDeliveryStatRow[]>;
   findByStatus(input: SlackDeliveryListInput): Promise<SlackDeliveryListRow[]>;
+  findRecent(input: {
+    since: Date;
+    limit: number;
+  }): Promise<SlackDeliveryListRow[]>;
 }

@@ -72,7 +72,7 @@
   - `IDAERI_REPLY_EVENT_TYPE = 'idaeri_reply'`.
   - `SlackTranscriptFile { id; mimetype; size; urlPrivateDownload }`, `SlackTranscriptMessage { ts; user?; botId?; text; metadata?: { eventType; eventPayload }; replyCount?: number; threadTs?: string; files }`.
   - `ToTranscriptTurnsInput { messages; speakerUserId; selfBotId?: string; excludeTs?; imageLabels?: ReadonlyMap<string, readonly number[]> }` — `selfBotId` 가 있으면 그 봇의 글에 붙은 꼬리표만 assistant 로 인정한다.
-  - `toTranscriptTurns(input): ConversationTurn[]`, `enrichFromMemory(transcript, memoryTurns): ConversationTurn[]`.
+  - `toTranscriptTurns(input): ConversationTurn[]` — 입력에 `memoryTurns?: readonly ConversationTurn[]` 를 받아 발화자 글을 **자르기 전 원문**으로 Redis 턴과 1:1 매칭한다(별도 `enrichFromMemory` 함수는 두지 않는다 — 두 함수 사이로 원문을 넘길 통로가 없어 구현 때 합쳤다).
 
 - [ ] **Step 1: 실패하는 테스트 작성** — `slack-transcript.spec.ts`
   - `it('발화자 글은 user, 멘션 접두사를 뗀다')`: `{user:'U1', text:'<@UBOT> 왜 안돼'}` → `{role:'user', text:'왜 안돼', agentType:null}`.
@@ -84,7 +84,7 @@
   - `it('일반 글은 1500자, 자동 발송 글은 6000자에서 경계로 감싸기 전 원문에 자른다')` — 7000자 자동 발송 글도 `</untrusted-input>` 으로 끝난다.
   - `it('imageLabels 가 있으면 본문 끝에 [사진 1번 첨부] 를 단다')`.
   - `it('timestampMs 는 ts 초를 밀리초로 바꾼 값')`: `'1730246400.000100'` → `1730246400000`.
-  - `enrichFromMemory`: `it('사용자 턴은 같은 문구의 Redis 턴에서 agentType·agentRunId 를 받는다')`, `it('같은 문구 두 번이면 최신끼리 1:1 로 짝짓는다')` — transcript `[A, A]`, memory `[A(run 1), A(run 2)]` → `[run 1, run 2]`; memory 에 하나뿐이면 마지막 transcript 턴만 채운다. `it('assistant 턴과 이미 agentType 이 있는 턴은 건드리지 않는다')`. `it('자동 발송 글·다른 사람 글은 매칭 대상이 아니다')`. `it('1500자를 넘는 긴 사용자 글도 원문 일치로 매칭된다')`.
+  - Redis 매칭(`memoryTurns`): `it('사용자 턴은 같은 문구의 Redis 턴에서 agentType·agentRunId 를 받는다')`, `it('같은 문구 두 번이면 최신끼리 1:1 로 짝짓는다')` — transcript `[A, A]`, memory `[A(run 1), A(run 2)]` → `[run 1, run 2]`; memory 에 하나뿐이면 마지막 transcript 턴만 채운다. `it('assistant 턴과 이미 agentType 이 있는 턴은 건드리지 않는다')`. `it('자동 발송 글·다른 사람 글은 매칭 대상이 아니다')`. `it('1500자를 넘는 긴 사용자 글도 원문 일치로 매칭된다')`.
 - [ ] **Step 2: 실패 확인** — `pnpm jest src/slack/domain/slack-transcript.spec.ts` → FAIL(모듈 없음).
 - [ ] **Step 3: 구현** — 위 시그니처. 이동한 `stripMentionPrefix`·상수는 handler/usecase 에서 import 한다(값을 두 곳에 적지 않는다). 매칭은 **원문** `text.trim()` 완전 일치, 뒤에서부터 소비. 자르기·경계 감싸기·표식은 매칭 뒤에 한다.
 - [ ] **Step 4: 통과 확인** — 같은 명령 + `pnpm jest src/slack/handler/router-message.handler.spec.ts src/router/application/conversational-reply.usecase.spec.ts` PASS(re-export·상수 이동 회귀), `pnpm build` PASS(`scripts/nl-answer-eval.ts` 의 handler import 유지).
@@ -288,7 +288,7 @@
   2. 빈 텍스트 + 이미지 있음 → 텍스트를 `[사진 N장 첨부]` 로 두고 진행. 텍스트가 있으면 바꾸지 않는다.
   3. Redis `priorTurns`(지금 코드 그대로)는 `unresolvedStreak`·`priorAgentRunId`·가로채기·`reply({ memoryTurns })` 에 계속 쓴다.
   3-1. Slack 리더는 **가로채기 3종(응/아니·갭 주제·목표 답)이 모두 처리하지 않은 뒤, `dispatch` 직전**에 부른다 — 가로채기 답에는 대화 본문이 필요 없다. `selfBotId` 를 함께 받아 `toTranscriptTurns` 에 넘긴다.
-  4. `SlackConversationReader.read` 의 스레드 판정은 **실제 `thread_ts`(`replyToTs`)** 로 한다(DM·채널 최상위 모두 `threadTs === messageTs` 라 `threadTs` 로는 못 가른다). `latest` 는 현재 `messageTs`. 결과가 `null` 이 아니면 `enrichFromMemory(toTranscriptTurns(...), redisTurns)` 를 **대화 본문**으로 삼아 `dispatch({ priorTurns })` 와 `reply({ priorTurns, slackUserId })` 에 넘긴다. `null` 이면 Redis 턴을 그대로 넘긴다.
+  4. `SlackConversationReader.read` 의 스레드 판정은 **실제 `thread_ts`(`replyToTs`)** 로 한다(DM·채널 최상위 모두 `threadTs === messageTs` 라 `threadTs` 로는 못 가른다). `latest` 는 현재 `messageTs`. 결과가 `null` 이 아니면 `toTranscriptTurns({ ..., memoryTurns: redisTurns })` 를 **대화 본문**으로 삼아 `dispatch({ priorTurns })` 와 `reply({ priorTurns, slackUserId })` 에 넘긴다. `null` 이면 Redis 턴을 그대로 넘긴다.
   5. 사진 후보는 리더 결과 + 현재 메시지 `event.files` 로 만든다 — 리더가 `null`(채널 최상위 멘션)이어도 현재 파일은 처리한다. 사진 내려받기는 대화 답변 분기(catch 의 `isIntentClassifyFailed`)에서만 하고 `finally` 에서 `dispose`. 실패·건너뜀 수는 `unseenImageCount` 로 넘긴다.
 - [ ] **Step 1: 실패하는 테스트**
   - `it('DM file_share 메시지를 처리한다')`, `it('DM 의 다른 subtype(message_changed)은 버린다')`.

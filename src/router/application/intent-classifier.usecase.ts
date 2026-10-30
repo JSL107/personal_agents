@@ -1,5 +1,11 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
+import {
+  UNTRUSTED_INPUT_END,
+  UNTRUSTED_INPUT_NOTICE,
+  UNTRUSTED_INPUT_START,
+  wrapUntrustedInput,
+} from '../../common/llm/untrusted-input.util';
 import { EpisodeSearchHit } from '../../episodic-memory/domain/episode.type';
 import {
   EPISODIC_MEMORY_PORT,
@@ -14,6 +20,7 @@ import {
   PREFERENCE_PROFILE_PORT,
   PreferenceProfilePort,
 } from '../../preference-profile/domain/port/preference-profile.port';
+import { AUTO_POST_LABEL, isAutoPostTurn } from '../domain/auto-post-turn';
 import { ConversationTurn } from '../domain/conversation-memory.type';
 import { IntentClassification } from '../domain/intent-classification.type';
 import {
@@ -29,11 +36,13 @@ import { INTENT_CLASSIFIER_SYSTEM_PROMPT } from '../domain/prompt/intent-classif
 //
 // agentType 매핑: AgentType.PM 의 provider (CHATGPT) 를 분류기로 차용 — 짧은 출력 / 빠른 latency.
 //
-// priorTurns: 자연어 multi-turn 메모리 (5턴/30분). 있으면 "[직전 대화]" 섹션 prepend.
+// priorTurns: 자연어 multi-turn 맥락. 최근 10턴을 "[직전 대화]" 섹션에 prepend.
 // episodicHits: episodic 장기기억의 유사 과거 작업 (옵셔널). 있으면 "[유사 과거 작업]" few-shot
 // 섹션 prepend — "이런 요청은 보통 어느 worker 로 갔는지" 힌트로 분류 정확도 ↑.
 const EPISODIC_FEWSHOT_LIMIT = 3;
 const EPISODIC_CONTENT_MAX_CHARS = 100;
+const CLASSIFIER_TURN_LIMIT = 10;
+const CLASSIFIER_AUTO_POST_TEXT_CAP = 300;
 // 라우팅 불가 타입을 걸러낸 뒤에도 few-shot 을 채울 수 있도록 여유를 두고 뽑는다.
 const EPISODIC_SEARCH_LIMIT = EPISODIC_FEWSHOT_LIMIT * 3;
 
@@ -79,9 +88,15 @@ export class IntentClassifierUsecase {
     const routingBlock = this.preferenceProfile
       ? await this.preferenceProfile.getInjectionBlock('routing')
       : '';
-    const systemPrompt = routingBlock
+    const baseSystemPrompt = routingBlock
       ? `${INTENT_CLASSIFIER_SYSTEM_PROMPT}\n\n${routingBlock}`
       : INTENT_CLASSIFIER_SYSTEM_PROMPT;
+    const hasAutoPost = priorTurns
+      ?.slice(-CLASSIFIER_TURN_LIMIT)
+      .some(isAutoPostTurn);
+    const systemPrompt = hasAutoPost
+      ? `${baseSystemPrompt}\n\n${UNTRUSTED_INPUT_NOTICE}`
+      : baseSystemPrompt;
     const completion = await this.modelRouter.route({
       agentType: AgentType.PM,
       request: {
@@ -146,7 +161,11 @@ const buildPrompt = (
 
   if (priorTurns && priorTurns.length > 0) {
     sections.push('[직전 대화]');
-    for (const turn of priorTurns) {
+    for (const turn of priorTurns.slice(-CLASSIFIER_TURN_LIMIT)) {
+      if (isAutoPostTurn(turn)) {
+        sections.push(renderAutoPostTurn(turn.text));
+        continue;
+      }
       // role 라벨은 시스템 프롬프트의 계약이다 — "[assistant] 는 봇 자신의 직전 응답" 을 전제로
       // 「합의된 작업의 실행 지시」/「순수 재촉」 두 규칙이 분기한다. 라벨 없이 전부 "사용자:" 로
       // 렌더링하면 봇 발화가 사용자 발화로 둔갑해 두 규칙 모두 판별 근거를 잃는다.
@@ -179,6 +198,20 @@ const buildPrompt = (
   sections.push('[이번 입력]');
   sections.push(text);
   return sections.join('\n');
+};
+
+const renderAutoPostTurn = (text: string): string => {
+  const startIndex = text.indexOf(UNTRUSTED_INPUT_START);
+  const endIndex = text.indexOf(UNTRUSTED_INPUT_END);
+  const body =
+    startIndex >= 0 && endIndex > startIndex
+      ? text.slice(startIndex + UNTRUSTED_INPUT_START.length, endIndex).trim()
+      : text.slice(AUTO_POST_LABEL.length).trim();
+  // 이미 감싼 Slack 본문을 다시 300자로 제한하고 경계를 닫아 지시처럼 읽히지 않게 한다.
+  const wrappedExcerpt = wrapUntrustedInput(
+    body.slice(0, CLASSIFIER_AUTO_POST_TEXT_CAP),
+  );
+  return `- [자동 발송 글]\n${wrappedExcerpt}`;
 };
 
 const truncate = (text: string): string =>
