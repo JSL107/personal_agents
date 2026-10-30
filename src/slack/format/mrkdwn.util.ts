@@ -76,7 +76,9 @@ export const classifyCodeFenceLines = (
       kinds.push('fence');
       continue;
     }
-    if (marker === openMarker) {
+    // 닫는 줄은 기호만 있어야 한다 — 블록 안의 ` ```js ` 같은 줄은 코드다(CommonMark, PR #930 리뷰).
+    const closesBlock = line.trim() === openMarker;
+    if (closesBlock) {
       openMarker = null;
       kinds.push('fence');
       continue;
