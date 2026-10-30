@@ -199,6 +199,97 @@ describe('ApplyCorporateActionUsecase 수량 조정', () => {
     );
   });
 
+  it('병합으로 보유 수량이 소수가 되면 원장을 바꾸지 않고 거부한다', async () => {
+    const repository = splitRepository();
+    const usecase = new ApplyCorporateActionUsecase(
+      repository as unknown as PaperTradingPrismaRepository,
+    );
+
+    // 100주 × 0.333 = 33.3주 — 단주 정산 없이 반영하면 소수 주가 매도 주문으로 흘러간다.
+    await expect(
+      usecase.execute({
+        accountName: 'LONG_TERM',
+        tickerCode: '417310',
+        kind: 'MERGE',
+        exDate: new Date('2026-09-10T00:00:00.000Z'),
+        quantityRatio: '0.333',
+        dryRun: false,
+      }),
+    ).rejects.toThrow('정수');
+  });
+
+  // 계좌 미지정 명령은 모든 계좌를 돈다. 계좌별로 보유 수량이 다르게 나오는 repository.
+  const multiAccountRepository = (
+    quantityByAccountId: Record<number, string>,
+  ) =>
+    splitRepository({
+      findAllAccounts: jest.fn().mockResolvedValue([
+        {
+          id: 5,
+          name: 'LONG_TERM',
+          seedAmount: decimal('10000000'),
+          cashBalance: decimal('775952'),
+        },
+        {
+          id: 6,
+          name: 'SWING',
+          seedAmount: decimal('10000000'),
+          cashBalance: decimal('500000'),
+        },
+      ]),
+      findPosition: jest.fn((accountId: number) =>
+        Promise.resolve({
+          id: accountId,
+          accountId,
+          tickerId: 178,
+          quantity: decimal(quantityByAccountId[accountId]),
+          avgPrice: decimal('10000'),
+        }),
+      ),
+      findQuantityAtDate: jest.fn((accountId: number) =>
+        Promise.resolve(decimal(quantityByAccountId[accountId])),
+      ),
+    });
+
+  it('권리락일 전에 전량 매도해 수량이 0인 계좌는 건너뛰고 보유 계좌에만 적용한다', async () => {
+    const repository = multiAccountRepository({ 5: '0', 6: '100' });
+    const usecase = new ApplyCorporateActionUsecase(
+      repository as unknown as PaperTradingPrismaRepository,
+    );
+
+    await usecase.execute({
+      tickerCode: '417310',
+      kind: 'SPLIT',
+      exDate: new Date('2026-09-10T00:00:00.000Z'),
+      quantityRatio: '2',
+      dryRun: false,
+    });
+
+    expect(repository.applyCorporateActionAtomically).toHaveBeenCalledTimes(1);
+    expect(repository.applyCorporateActionAtomically).toHaveBeenCalledWith(
+      expect.objectContaining({ accountId: 6 }),
+    );
+  });
+
+  it('뒤 계좌가 단주로 거부되면 앞 계좌에도 적용하지 않는다', async () => {
+    // 100주 × 0.5 = 50주(정수) · 3주 × 0.5 = 1.5주(단주)
+    const repository = multiAccountRepository({ 5: '100', 6: '3' });
+    const usecase = new ApplyCorporateActionUsecase(
+      repository as unknown as PaperTradingPrismaRepository,
+    );
+
+    await expect(
+      usecase.execute({
+        tickerCode: '417310',
+        kind: 'MERGE',
+        exDate: new Date('2026-09-10T00:00:00.000Z'),
+        quantityRatio: '0.5',
+        dryRun: false,
+      }),
+    ).rejects.toThrow('정수');
+    expect(repository.applyCorporateActionAtomically).not.toHaveBeenCalled();
+  });
+
   // 권리락일 뒤에 매매가 있으면 현재 수량에 권리와 무관한 주식이 섞여 있다. 그대로 조정하면
   // 나중에 산 주식까지 쪼개고 그 사이 판 주식은 빠뜨려 수량·평단이 함께 망가진다.
   it('권리락일 이후 매매가 있으면 소급 적용을 거부한다', async () => {

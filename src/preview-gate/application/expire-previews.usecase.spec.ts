@@ -209,6 +209,56 @@ describe('ExpirePreviewsUsecase', () => {
   // 무응답 만료도 kind 별 후처리를 받아야 한다. 이게 없으면 연동 레코드(PreferenceProposal 등)가
   // PENDING 으로 영구 잔류하고, 선호 학습의 쿼터 가드가 그 PENDING 을 보고 7일간 skip 한다
   // (preference-learning.autopilot-task.ts:68-77).
+  it('반영 중(endedAt 없음)인 만료 카드는 전이도 canceller 도 부르지 않는다', async () => {
+    const repo = buildKindPreservingRepo([
+      {
+        ...buildPreview('p-1', PREVIEW_KIND.PREFERENCE_PROFILE),
+        applyProgress: {
+          pid: 1,
+          startedAt: '2026-07-01T11:50:00Z',
+          attempts: 1,
+          done: [],
+        },
+      },
+    ]);
+    const canceller: jest.Mocked<PreviewCanceller> = {
+      kind: PREVIEW_KIND.PREFERENCE_PROFILE,
+      onCancel: jest.fn().mockResolvedValue(undefined),
+    };
+    const usecase = new ExpirePreviewsUsecase(repo, [canceller], buildCard());
+
+    await expect(usecase.execute({ now })).resolves.toBe(0);
+
+    expect(repo.transitionIfStatus).not.toHaveBeenCalled();
+    expect(canceller.onCancel).not.toHaveBeenCalled();
+  });
+
+  // 대조군 — 흔적이 남아 있어도 끝난 시도(실패로 endedAt 이 찍힘)는 만료한다. "applyProgress 가
+  // 있으면 건너뛴다" 로 고치면 실패한 카드가 영영 만료되지 않는데, 그것을 이 케이스가 잡는다.
+  it('끝난 반영 흔적(endedAt 있음)의 만료 카드는 만료한다', async () => {
+    const repo = buildKindPreservingRepo([
+      {
+        ...buildPreview('p-1', PREVIEW_KIND.PREFERENCE_PROFILE),
+        applyProgress: {
+          pid: 1,
+          startedAt: '2026-07-01T11:50:00Z',
+          endedAt: '2026-07-01T11:51:00Z',
+          attempts: 1,
+          done: [],
+        },
+      },
+    ]);
+    const canceller: jest.Mocked<PreviewCanceller> = {
+      kind: PREVIEW_KIND.PREFERENCE_PROFILE,
+      onCancel: jest.fn().mockResolvedValue(undefined),
+    };
+    const usecase = new ExpirePreviewsUsecase(repo, [canceller], buildCard());
+
+    await expect(usecase.execute({ now })).resolves.toBe(1);
+
+    expect(canceller.onCancel).toHaveBeenCalledTimes(1);
+  });
+
   it('만료 처리 시 kind 일치 canceller 를 EXPIRED 사유로 호출한다', async () => {
     const repo = buildKindPreservingRepo([
       buildPreview('p-1', PREVIEW_KIND.PREFERENCE_PROFILE),

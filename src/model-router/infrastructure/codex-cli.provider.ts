@@ -29,6 +29,7 @@ import {
   getCodexHomeDir,
   getRealHomeDir,
   killProcessTree,
+  writeStdinAndClose,
 } from './cli-process.util';
 
 const CODEX_EXECUTABLE = 'codex';
@@ -728,8 +729,7 @@ export class CodexCliProvider
 
       // prompt 는 argv 가 아니라 stdin 으로 전달 — ps aux 노출 방지 + ARG_MAX 제한 회피.
       // codex exec 는 PROMPT 위치 인자가 없으면 stdin 에서 읽는다.
-      child.stdin?.write(stdinPayload);
-      child.stdin?.end();
+      writeStdinAndClose({ child, payload: stdinPayload });
     });
   }
 
