@@ -1,7 +1,7 @@
 import {
   breakProseIntoSentences,
+  classifyCodeFenceLines,
   convertMarkdownBold,
-  isCodeFenceLine,
   linkifyBareUrls,
 } from './mrkdwn.util';
 import {
@@ -79,14 +79,15 @@ export const buildReadableBlocks = (text: string): SlackBlock[] | null => {
 
   // ``` 코드블록 안의 `*강조*` 줄을 제목으로 올리면 그 자리에서 블록이 갈려
   // 여는 fence 만 남은 조각이 생긴다 — 코드가 통째로 깨진 채 발송된다.
-  let insideCodeFence = false;
-  for (const line of trimmed.split('\n')) {
-    if (isCodeFenceLine(line)) {
-      insideCodeFence = !insideCodeFence;
+  const lines = trimmed.split('\n');
+  const kinds = classifyCodeFenceLines(lines);
+  for (const [index, line] of lines.entries()) {
+    const kind = kinds[index];
+    if (kind === 'fence') {
       buffer.push(line);
       continue;
     }
-    const heading = insideCodeFence ? null : HEADING_LINE.exec(line.trim());
+    const heading = kind === 'code' ? null : HEADING_LINE.exec(line.trim());
     if (!heading || HEADER_UNSAFE_CHARACTER.test(heading[1])) {
       buffer.push(line);
       continue;
