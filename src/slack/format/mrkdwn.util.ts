@@ -204,7 +204,14 @@ const PLACEHOLDER_END = '\uE001';
 const PLACEHOLDER = /\uE000(\d+)\uE001/g;
 const PROTECTED_TOKENS = new RegExp(PROTECTED_TOKEN.source, 'g');
 
+const PLACEHOLDER_CHARACTER = /[\uE000\uE001]/;
+
 const convertBoldAroundProtected = (line: string): string => {
+  // 원문에 자리표시자 문자가 이미 있으면 복원이 원문을 다른 토큰·undefined 로 바꾼다 — 대화 답은 외부 글을
+  // 인용할 수 있어 입력을 믿을 수 없다. 그런 줄은 종전처럼 조각별로만 바꾼다(코드가 낀 굵게는 그대로 남는다).
+  if (PLACEHOLDER_CHARACTER.test(line)) {
+    return mapUnprotected(line, convertBoldOutsideUrls);
+  }
   const protectedTokens: string[] = [];
   const masked = line.replace(PROTECTED_TOKENS, (token) => {
     protectedTokens.push(token);

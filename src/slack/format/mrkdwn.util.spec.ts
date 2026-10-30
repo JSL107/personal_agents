@@ -178,6 +178,23 @@ describe('convertMarkdownBold', () => {
     ).toBe('`dontallow` 하나만 선정됐기 때문이에요.');
   });
 
+  it('한 굵게 안에 코드·링크가 여럿이어도 각자 제자리로 되돌린다', () => {
+    expect(
+      convertMarkdownBold(
+        '**`a` 다음 <https://x.test|기록> 그리고 `b`** 끝, `c` 와 **둘째 `d`** 다만',
+      ),
+    ).toBe(
+      '*`a` 다음 <https://x.test|기록> 그리고 `b`* 끝, `c` 와 *둘째 `d`* 다만',
+    );
+  });
+
+  it('원문에 자리표시자 문자가 있으면 그 문자를 바꾸지 않는다', () => {
+    const source = '원문 \uE0000\uE001 과 `코드` 와 **굵게**';
+    expect(convertMarkdownBold(source)).toBe(
+      '원문 \uE0000\uE001 과 `코드` 와 *굵게*',
+    );
+  });
+
   it('굵게 안의 Slack 링크는 그대로 두고 굵게만 바꾼다', () => {
     expect(
       convertMarkdownBold('**<https://x.test|기록> 을 보세요** 다만'),
