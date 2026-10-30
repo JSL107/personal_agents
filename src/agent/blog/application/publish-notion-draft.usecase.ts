@@ -26,6 +26,7 @@ import {
   MarkdownStructureCounts,
   maskFencedCodeBlocks,
   restoreFencedCodeBlocks,
+  stripConnectiveCommas,
   stripPublishScaffolding,
   stripStructuralEmDashes,
 } from '../../../humanize/domain/markdown-blocks';
@@ -561,10 +562,11 @@ export class PublishNotionDraftUsecase {
     // 5) 작업용 표기 — 모델이 스스로 붙인 `[작성자 관찰]` 류 태그·`> 세 줄 요약` 류 골격 라벨·
     // 익명화된 `근거:` 꼬리줄을 걷어낸다. 지시한 프롬프트가 없어 프롬프트로는 막을 수 없었고,
     // 공개 글 39편 중 8편에 그대로 발행됐다(2026-10-13 실측).
+    // 6) 연결어미 뒤 쉼표 — 윤문 프롬프트의 「쉼표를 빼라」가 지켜지지 않아 여기서 지운다.
     const structured: HumanizeMarkdownResult = {
       ...humanized,
-      markdown: stripPublishScaffolding(
-        stripStructuralEmDashes(humanized.markdown),
+      markdown: stripConnectiveCommas(
+        stripPublishScaffolding(stripStructuralEmDashes(humanized.markdown)),
       ),
     };
 
