@@ -89,7 +89,12 @@ export class ApplyCorporateActionUsecase {
       );
     }
     const accounts = await this.findAccountTargets(command.accountName);
-    const outcomes: CorporateActionOutcome[] = [];
+    // 모든 계좌의 계산·검증(소급 거부·단주 거부)을 먼저 끝낸 뒤 적용한다. 계좌마다 계산하고 바로
+    // 적용하면 뒤 계좌가 거부될 때 앞 계좌만 반영된 채 끝나, 같은 행사가 계좌별로 갈린다.
+    const planned: {
+      account: AccountTarget;
+      mutation: ApplyCorporateActionMutation;
+    }[] = [];
     for (const account of accounts) {
       const position = await this.repository.findPosition(
         account.id,
@@ -102,9 +107,12 @@ export class ApplyCorporateActionUsecase {
         tickerId: ticker.id,
         command,
       });
-      if (mutation === null) {
-        continue;
+      if (mutation !== null) {
+        planned.push({ account, mutation });
       }
+    }
+    const outcomes: CorporateActionOutcome[] = [];
+    for (const { account, mutation } of planned) {
       if (command.dryRun) {
         outcomes.push(
           this.toOutcome({
@@ -257,7 +265,9 @@ export class ApplyCorporateActionUsecase {
       };
     }
 
-    if (!input.position) {
+    // 권리락일 전에 전량 매도한 계좌도 수량 0 포지션이 남는다. 조정할 주식이 없으니 배당의 0주와
+    // 같이 건너뛴다 — 그대로 두면 아래 단주 검사가 0주를 '1주 이상' 위반으로 거부한다.
+    if (!input.position || input.position.quantity.comparedTo(0) <= 0) {
       return null;
     }
     if (input.command.quantityRatio === undefined) {
