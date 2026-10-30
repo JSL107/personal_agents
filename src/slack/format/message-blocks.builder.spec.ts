@@ -146,3 +146,14 @@ describe('buildReadableBlocks — 나눌 수 없으면 text 경로로', () => {
     expect(buildReadableBlocks(hugeFence)).toBeNull();
   });
 });
+
+describe('toReadableMessage — Markdown 굵게', () => {
+  it('`**제목**` 한 줄은 Slack 굵게로 바뀌어 header 로 올라간다', () => {
+    const result = toReadableMessage('**요약**\n본문입니다.');
+    expect(result.text).toBe('*요약*\n본문입니다.');
+    expect(result.blocks?.[0]).toEqual({
+      type: 'header',
+      text: { type: 'plain_text', text: '요약', emoji: true },
+    });
+  });
+});
