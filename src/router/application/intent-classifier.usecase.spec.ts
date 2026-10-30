@@ -1,11 +1,17 @@
 import { Logger } from '@nestjs/common';
 
+import {
+  UNTRUSTED_INPUT_NOTICE,
+  UNTRUSTED_INPUT_START,
+  wrapUntrustedInput,
+} from '../../common/llm/untrusted-input.util';
 import { ModelRouterUsecase } from '../../model-router/application/model-router.usecase';
 import {
   AgentType,
   ModelProviderName,
 } from '../../model-router/domain/model-router.type';
 import { PreferenceProfilePort } from '../../preference-profile/domain/port/preference-profile.port';
+import { AUTO_POST_LABEL } from '../domain/auto-post-turn';
 import { buildIntentClassificationOutputSchema } from '../domain/prompt/intent-classification.schema';
 import { INTENT_CLASSIFIER_SYSTEM_PROMPT } from '../domain/prompt/intent-classifier-system.prompt';
 import { IntentClassifierUsecase } from './intent-classifier.usecase';
@@ -312,6 +318,86 @@ describe('IntentClassifierUsecase', () => {
 
       const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
       expect(prompt).toContain('[user] "오늘 plan 짜줘" → worker PM #7');
+    });
+  });
+
+  describe('자동 발송 글 렌더링', () => {
+    const response = JSON.stringify({
+      agentType: 'UNKNOWN',
+      confidence: 0,
+      reason: '',
+    });
+    const makeTurn = (text: string, agentType: AgentType | null = null) => ({
+      role: 'user' as const,
+      text,
+      agentType,
+      agentRunId: null,
+      timestampMs: Date.now(),
+    });
+
+    it('최근 10턴만 싣는다', async () => {
+      const modelRouter = makeModelRouterMock(response);
+      const usecase = new IntentClassifierUsecase(modelRouter, dispatchers);
+      await usecase.classify(
+        '이번 입력',
+        Array.from({ length: 12 }, (_, index) => makeTurn(`턴-${index}`)),
+      );
+      const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(prompt).not.toContain('"턴-0"');
+      expect(prompt).not.toContain('"턴-1"');
+      expect(prompt).toContain('"턴-2"');
+      expect(prompt).toContain('"턴-11"');
+    });
+
+    it('자동 발송 글이 있으면 system prompt 에 UNTRUSTED_INPUT_NOTICE 를 싣는다', async () => {
+      const modelRouter = makeModelRouterMock(response);
+      const usecase = new IntentClassifierUsecase(modelRouter, dispatchers);
+      await usecase.classify('이번 입력', [
+        makeTurn(`${AUTO_POST_LABEL}\n${wrapUntrustedInput('아침신문')}`),
+      ]);
+      expect(modelRouter.route.mock.calls[0][0].request.systemPrompt).toContain(
+        UNTRUSTED_INPUT_NOTICE,
+      );
+    });
+
+    it('자동 발송 글 턴은 [자동 발송 글] 로 앞 300자까지 싣고 worker 꼬리를 달지 않는다', async () => {
+      const modelRouter = makeModelRouterMock(response);
+      const usecase = new IntentClassifierUsecase(modelRouter, dispatchers);
+      await usecase.classify('이번 입력', [
+        makeTurn(
+          `${AUTO_POST_LABEL}\n${wrapUntrustedInput('가'.repeat(350))}`,
+          AgentType.PM,
+        ),
+      ]);
+      const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(prompt).toContain('[자동 발송 글]');
+      expect(prompt).toContain('가'.repeat(300));
+      expect(prompt).not.toContain('가'.repeat(301));
+      expect(prompt).not.toContain('worker PM');
+    });
+
+    it('일반 user 턴은 지금처럼 60자·worker 꼬리 유지', async () => {
+      const modelRouter = makeModelRouterMock(response);
+      const usecase = new IntentClassifierUsecase(modelRouter, dispatchers);
+      await usecase.classify('이번 입력', [
+        makeTurn('나'.repeat(80), AgentType.PM),
+      ]);
+      const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(prompt).toContain(`"${'나'.repeat(60)}…" → worker PM -`);
+    });
+
+    it('경계 마커 뒤 본문이 렌더에 남는다', async () => {
+      const modelRouter = makeModelRouterMock(response);
+      const usecase = new IntentClassifierUsecase(modelRouter, dispatchers);
+      await usecase.classify('이번 입력', [
+        makeTurn(
+          `${AUTO_POST_LABEL}\n${wrapUntrustedInput('오늘의 도구 내용')}`,
+        ),
+      ]);
+      const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
+      expect(prompt.indexOf('오늘의 도구 내용')).toBeGreaterThan(
+        prompt.indexOf(UNTRUSTED_INPUT_START),
+      );
     });
   });
 });
