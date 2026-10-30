@@ -476,12 +476,13 @@ describe('직전 대화 일정 등록', () => {
       }),
     );
   });
-  it('직전 대화를 가리키지 않는 평범한 요청은 추출에 날짜가 없으면 오늘로 등록하지 않고 날짜를 되묻는다', async () => {
+  it('직전 대화를 가리키지 않는 평범한 요청은 모델 추출 없이 날짜를 되묻는다', async () => {
     const register = createUsecase();
+    // 앞 대화의 무관한 날짜를 집어 와도 쓰이지 않아야 한다.
     const extract = {
       execute: jest.fn().mockResolvedValue({
         title: '자동차세',
-        dueDate: null,
+        dueDate: { year: 2026, month: 10, day: 31 },
         memo: '',
         modelUsed: 'model',
       }),
@@ -498,6 +499,7 @@ describe('직전 대화 일정 등록', () => {
       text: '자동차세 등록해줘',
       priorTurns,
     });
+    expect(extract.execute).not.toHaveBeenCalled();
     expect(register.execute).not.toHaveBeenCalled();
     expect(result.formattedText).toBe(formatNeedsDate('자동차세'));
   });

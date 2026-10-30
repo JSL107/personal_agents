@@ -98,26 +98,23 @@ export class ScheduleDispatcher implements AgentDispatcher {
 
     const reference = refersToPriorConversation(input.text);
     const priorTurns = input.priorTurns ?? [];
-    if (
-      priorTurns.some((turn) => turn.role === 'assistant') &&
-      (command.kind !== 'REGISTER' || reference)
-    ) {
+    // 모델 추출은 직전 대화를 가리키는 요청일 때만 켠다. 대화 본문이 DM 24시간 기록이라 이대리 답은
+    // 거의 항상 있어서, 날짜만 빠진 평범한 요청("자동차세 등록해줘")에도 켜면 앞 대화의 무관한 날짜로
+    // 되묻지 않고 등록된다. 평범한 요청은 지금처럼 규칙 파서와 되묻기로 처리한다.
+    if (reference && priorTurns.some((turn) => turn.role === 'assistant')) {
       const extracted = await this.extractSchedule.execute({
         text: input.text,
         priorTurns,
         today,
       });
-      // 날짜를 오늘로 채우는 것은 직전 대화를 가리킨 요청일 때만이다. "자동차세 등록해줘" 처럼
-      // 날짜만 빠진 평범한 요청은 지금처럼 날짜를 되묻는다.
-      if (extracted && (extracted.dueDate !== null || reference)) {
+      if (extracted) {
         return this.registerFromConversation(input, extracted, today);
       }
-      if (reference) {
-        return this.toOutcome(
-          command,
-          '직전 대화 내용을 읽지 못했어요. 제목을 알려 주세요.',
-        );
-      }
+      // 참조 요청인데 추출이 실패하면 파서 결과("원인과 함께" 같은 제목)로 등록하지 않는다.
+      return this.toOutcome(
+        command,
+        '직전 대화 내용을 읽지 못했어요. 제목을 알려 주세요.',
+      );
     }
 
     if (command.kind === 'NEEDS_TITLE') {
