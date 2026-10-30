@@ -1,10 +1,8 @@
 import { Prisma } from '@prisma/client';
 
+import { escapeSlackMrkdwn } from '../../slack/format/mrkdwn.util';
 import { EvaluateAccountResult } from '../application/evaluate-paper-account.usecase';
 import { PaperTradingStatusResult } from '../application/get-paper-trading-status.usecase';
-
-const escapeSlackMrkdwn = (text: string): string =>
-  text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 
 const addThousandsSeparators = (value: string): string => {
   const [integer, fraction] = value.split('.');
