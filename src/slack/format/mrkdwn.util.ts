@@ -196,7 +196,27 @@ const convertBoldOutsideUrls = (part: string): string =>
     )
     .join('');
 
-export const convertMarkdownBold = (text: string): string =>
-  mapOutsideCodeFence(text, (line) =>
-    mapUnprotected(line, convertBoldOutsideUrls),
+// 보호 구간(인라인 코드·Slack 링크)을 자리표시자로 잠시 바꿔 줄 전체에서 굵게를 찾는다. 조각마다 찾으면
+// `**앞 `코드` 뒤**` 처럼 코드가 가운데 낀 굵게의 여닫는 표시가 다른 조각으로 갈려 별표가 그대로 보였다
+// (2026-10-30 DM). 보호 구간 안의 `**` 는 자리표시자에 숨어 바뀌지 않는다.
+const PLACEHOLDER_START = '\uE000';
+const PLACEHOLDER_END = '\uE001';
+const PLACEHOLDER = /\uE000(\d+)\uE001/g;
+const PROTECTED_TOKENS = new RegExp(PROTECTED_TOKEN.source, 'g');
+
+const convertBoldAroundProtected = (line: string): string => {
+  const protectedTokens: string[] = [];
+  const masked = line.replace(PROTECTED_TOKENS, (token) => {
+    protectedTokens.push(token);
+    return `${PLACEHOLDER_START}${protectedTokens.length - 1}${PLACEHOLDER_END}`;
+  });
+  const converted = convertBoldOutsideUrls(masked);
+  const restored = converted.replace(
+    PLACEHOLDER,
+    (_placeholder, index: string) => protectedTokens[Number(index)],
   );
+  return restored;
+};
+
+export const convertMarkdownBold = (text: string): string =>
+  mapOutsideCodeFence(text, convertBoldAroundProtected);
