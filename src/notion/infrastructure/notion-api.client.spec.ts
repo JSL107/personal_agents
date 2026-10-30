@@ -605,12 +605,14 @@ describe('페이지별 교체 직렬화', () => {
   const blocks = [{ type: 'heading' as const, text: 'H' }];
 
   it.each(['replaceAllBlocks', 'replaceCheckInSection'] as const)(
-    '%s — 같은 페이지 세 번 동시 호출은 앞 호출이 끝나야 다음이 시작한다',
+    '%s — 같은 페이지 세 번 동시 호출은 하나씩 차례로 실행된다',
     async (method) => {
       const first = deferred();
+      const second = deferred();
       const append = jest
         .fn()
         .mockReturnValueOnce(first.promise)
+        .mockReturnValueOnce(second.promise)
         .mockResolvedValue({});
       const { list, adapter } = buildBlockClient(append);
 
@@ -621,7 +623,13 @@ describe('페이지별 교체 직렬화', () => {
       // 첫 호출이 append 에서 멈춘 동안 두 번째·세 번째는 기존 블록 조회조차 시작하지 않는다.
       expect(list).toHaveBeenCalledTimes(1);
 
+      // 예전 버그는 "첫 호출만 기다리기" 였다 — 첫 호출이 끝나면 2·3번째가 함께 풀려 겹쳤다.
+      // 두 번째를 붙잡아 둔 동안 세 번째가 시작하지 않아야 사슬이 끝까지 이어진 것이다.
       first.resolve();
+      await flush();
+      expect(list).toHaveBeenCalledTimes(2);
+
+      second.resolve();
       await Promise.all(calls);
       expect(list).toHaveBeenCalledTimes(3);
       expect(append).toHaveBeenCalledTimes(3);
