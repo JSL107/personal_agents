@@ -2,7 +2,10 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { App, SayFn } from '@slack/bolt';
 import { ErrorCode, WebClient } from '@slack/web-api';
 
-import { HandleGoalAnswerUsecase } from '../../agent/po-shadow/application/handle-goal-answer.usecase';
+import {
+  HandleGoalAnswerResult,
+  HandleGoalAnswerUsecase,
+} from '../../agent/po-shadow/application/handle-goal-answer.usecase';
 import { parseTopicSelection } from '../../common/util/topic-selection.util';
 import { detectYesNoIntent } from '../../common/util/yes-no-intent.util';
 import { AgentType } from '../../model-router/domain/model-router.type';
@@ -1008,17 +1011,53 @@ export class RouterMessageHandler implements SlackHandler {
     if (source !== 'dm') {
       return false;
     }
-    let handled = false;
+    const result = await this.saveGoalAnswer({ slackUserId, text });
+    if (result === null) {
+      return false;
+    }
+    // 여기부터는 답이 이미 저장됐다. 답장이 실패해도 처리된 발화라 라우터로 다시 넘기지 않는다 —
+    // 넘기면 같은 문장이 새 요청으로 한 번 더 처리된다.
+    await this.replyGoalAnswer({ result, text, threadTs, say, memoryKey });
+    return true;
+  }
+
+  // 목표 답을 저장한다. 목표 질문이 없거나(null) 저장 자체가 실패하면 null — 호출부가 일반 dispatch 로 넘긴다.
+  private async saveGoalAnswer({
+    slackUserId,
+    text,
+  }: {
+    slackUserId: string;
+    text: string;
+  }): Promise<HandleGoalAnswerResult | null> {
     try {
-      const result = await this.handleGoalAnswer.execute({
+      return await this.handleGoalAnswer.execute({
         slackUserId,
         text,
         now: new Date(),
       });
-      if (result === null) {
-        return false;
-      }
-      handled = true;
+    } catch (error: unknown) {
+      this.logger.warn(
+        `목표 답 처리 실패 — user=${slackUserId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return null;
+    }
+  }
+
+  // 저장된 목표 답의 답장. 실패는 경고만 남긴다.
+  private async replyGoalAnswer({
+    result,
+    text,
+    threadTs,
+    say,
+    memoryKey,
+  }: {
+    result: HandleGoalAnswerResult;
+    text: string;
+    threadTs: string | undefined;
+    say: SayFn;
+    memoryKey: string;
+  }): Promise<void> {
+    try {
       await this.conversationMemory.appendTurn(memoryKey, {
         role: 'user',
         text,
@@ -1045,12 +1084,10 @@ export class RouterMessageHandler implements SlackHandler {
         agentRunId: null,
         timestampMs: Date.now(),
       });
-      return true;
     } catch (error: unknown) {
       this.logger.warn(
-        `목표 답 처리 실패 — user=${slackUserId}: ${error instanceof Error ? error.message : String(error)}`,
+        `목표 답 저장 뒤 답장 실패(재처리 안 함): ${error instanceof Error ? error.message : String(error)}`,
       );
-      return handled;
     }
   }
 
@@ -1345,14 +1382,17 @@ const mergeQuestionCard = ({
 
 // Slack 이 요청을 받아 거절한 오류(ok:false 응답, 속도 제한)는 메시지가 올라가지 않은 것이 확실하다.
 // 그 밖의 오류(네트워크·HTTP)는 이미 올라갔는데 응답만 잃었을 수 있다.
+const REJECTED_BEFORE_POSTING_CODES: ReadonlySet<unknown> = new Set([
+  ErrorCode.PlatformError,
+  ErrorCode.RateLimitedError,
+]);
+
 const isSlackRejectedBeforePosting = (error: unknown): boolean => {
   const code =
     typeof error === 'object' && error !== null && 'code' in error
       ? (error as { code: unknown }).code
       : undefined;
-  return (
-    code === ErrorCode.PlatformError || code === ErrorCode.RateLimitedError
-  );
+  return REJECTED_BEFORE_POSTING_CODES.has(code);
 };
 
 const resolveReplyBlocks = (
