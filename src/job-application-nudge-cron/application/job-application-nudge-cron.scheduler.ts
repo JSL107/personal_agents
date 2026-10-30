@@ -6,6 +6,8 @@ import { Queue } from 'bullmq';
 import {
   cancelCatchUpsDueSoon,
   enqueueMissedRuns,
+  readNonEmptyConfig,
+  removeAllRepeatables,
 } from '../../common/queue/missed-repeatable-run';
 import {
   DEFAULT_JOB_APPLICATION_NUDGE_CRON,
@@ -34,22 +36,28 @@ export class JobApplicationNudgeCronScheduler implements OnApplicationBootstrap 
       this.logger.log(
         'Job Application Nudge Cron 비활성 (JOB_APPLICATION_NUDGE_OWNER_SLACK_USER_ID 미설정).',
       );
-      await this.cleanupExistingRepeatables();
+      await removeAllRepeatables(this.queue);
       return;
     }
 
-    const target = this.readNonEmpty('JOB_APPLICATION_NUDGE_TARGET', owner);
-    const cron = this.readNonEmpty(
-      'JOB_APPLICATION_NUDGE_CRON',
-      DEFAULT_JOB_APPLICATION_NUDGE_CRON,
-    );
-    const tz = this.readNonEmpty(
-      'JOB_APPLICATION_NUDGE_TIMEZONE',
-      DEFAULT_JOB_APPLICATION_NUDGE_TIMEZONE,
-    );
+    const target = readNonEmptyConfig({
+      configService: this.configService,
+      key: 'JOB_APPLICATION_NUDGE_TARGET',
+      fallback: owner,
+    });
+    const cron = readNonEmptyConfig({
+      configService: this.configService,
+      key: 'JOB_APPLICATION_NUDGE_CRON',
+      fallback: DEFAULT_JOB_APPLICATION_NUDGE_CRON,
+    });
+    const tz = readNonEmptyConfig({
+      configService: this.configService,
+      key: 'JOB_APPLICATION_NUDGE_TIMEZONE',
+      fallback: DEFAULT_JOB_APPLICATION_NUDGE_TIMEZONE,
+    });
 
     const catchUps = await enqueueMissedRuns(this.queue, this.logger);
-    await this.cleanupExistingRepeatables();
+    await removeAllRepeatables(this.queue);
 
     const payload: JobApplicationNudgeCronJobData = {
       ownerSlackUserId: owner,
@@ -80,21 +88,5 @@ export class JobApplicationNudgeCronScheduler implements OnApplicationBootstrap 
     }
     const trimmed = raw.trim();
     return trimmed.length > 0 ? trimmed : null;
-  }
-
-  private readNonEmpty(key: string, fallback: string): string {
-    const raw = this.configService.get<string>(key);
-    if (!raw) {
-      return fallback;
-    }
-    const trimmed = raw.trim();
-    return trimmed.length > 0 ? trimmed : fallback;
-  }
-
-  private async cleanupExistingRepeatables(): Promise<void> {
-    const repeatables = await this.queue.getRepeatableJobs();
-    for (const job of repeatables) {
-      await this.queue.removeRepeatableByKey(job.key);
-    }
   }
 }

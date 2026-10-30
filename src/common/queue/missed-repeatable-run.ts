@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Queue } from 'bullmq';
 
 // 다음 정기 회차가 이만큼 안에 오면 보충을 취소한다 — 3분·10분·매시 주기는 곧 다시 돌고,
@@ -105,4 +106,30 @@ export const cancelCatchUpsDueSoon = async (
       `놓친 회차 보충 취소 실패 — 보충이 그대로 돈다: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
+};
+
+// 놓친 회차를 보충한 뒤 이전 등록을 지워 새 스케줄로 교체한다.
+export const removeAllRepeatables = async (queue: Queue): Promise<void> => {
+  const repeatables = await queue.getRepeatableJobs();
+  for (const job of repeatables) {
+    await queue.removeRepeatableByKey(job.key);
+  }
+};
+
+// 빈 설정은 기본값을 써서 재등록할 스케줄을 유효하게 유지한다.
+export const readNonEmptyConfig = ({
+  configService,
+  key,
+  fallback,
+}: {
+  configService: ConfigService;
+  key: string;
+  fallback: string;
+}): string => {
+  const raw = configService.get<string>(key);
+  if (!raw) {
+    return fallback;
+  }
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : fallback;
 };
