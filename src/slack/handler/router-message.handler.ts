@@ -1,8 +1,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { App, SayFn } from '@slack/bolt';
-import { WebClient } from '@slack/web-api';
+import { ErrorCode, WebClient } from '@slack/web-api';
 
-import { HandleGoalAnswerUsecase } from '../../agent/po-shadow/application/handle-goal-answer.usecase';
+import {
+  HandleGoalAnswerResult,
+  HandleGoalAnswerUsecase,
+} from '../../agent/po-shadow/application/handle-goal-answer.usecase';
 import { parseTopicSelection } from '../../common/util/topic-selection.util';
 import { detectYesNoIntent } from '../../common/util/yes-no-intent.util';
 import { AgentType } from '../../model-router/domain/model-router.type';
@@ -508,51 +511,21 @@ export class RouterMessageHandler implements SlackHandler {
             : {}),
         },
       });
-      await this.conversationMemory.appendTurn(memoryKey, {
-        role: 'user',
-        text,
-        agentType: result.workerType,
-        agentRunId: result.agentRunId,
-        timestampMs: Date.now(),
-      });
-      const routerReplyText = buildDispatchReplyText(result);
-      // worker 가 카드를 만들어 보냈으면 그걸로 답한다. text 는 알림 미리보기와
-      // blocks 를 못 그리는 클라이언트의 폴백으로 함께 싣는다.
-      const readableReply = toReadableSlackArgs(routerReplyText);
-      const replyBlocks = resolveReplyBlocks(result, readableReply.text);
-      await say({
-        thread_ts: threadTs,
-        ...readableReply,
-        ...(replyBlocks !== undefined ? { blocks: replyBlocks as never } : {}),
-      });
-      if (result.preview?.id && threadTs) {
-        try {
-          await this.recordPreviewThread.execute({
-            id: result.preview.id,
-            slackChannelId: channelId,
-            slackThreadTs: threadTs,
-          });
-        } catch (error: unknown) {
-          this.logger.warn(
-            `Preview 스레드 기록 실패 — previewId=${result.preview.id}: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
-      }
-      if (result.preview?.content) {
-        await say({
-          thread_ts: threadTs,
-          ...toReadableSlackArgs(result.preview.content),
-        });
-      }
-      // 봇 응답도 메모리에 보존 — 다음 turn 의 ConversationalReply 가 자기 직전 발화를 보게 해 "이미 한 약속" 인식 가능.
-      await this.conversationMemory.appendTurn(memoryKey, {
-        role: 'assistant',
-        text: routerReplyText,
-        agentType: result.workerType,
-        agentRunId: result.agentRunId,
-        timestampMs: Date.now(),
-      });
       succeeded = true;
+      try {
+        await this.deliverDispatchReply({
+          result,
+          text,
+          memoryKey,
+          channelId,
+          threadTs,
+          say,
+        });
+      } catch (error: unknown) {
+        this.logger.warn(
+          `답변 준비 실패 — previewId=${result.preview?.id ?? '없음'} agentRunId=${result.agentRunId ?? '없음'}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
     } catch (error: unknown) {
       // INTENT_CLASSIFY_FAILED — 사용자 의도가 worker 분류 어느 것에도 매핑되지 않은 경우.
       // 단순 인사 / 안부 / 잡담일 가능성 높음 → ConversationalReply 로 자연어 한 마디 답변.
@@ -915,6 +888,111 @@ export class RouterMessageHandler implements SlackHandler {
     return true;
   }
 
+  // 작업이 끝난 뒤 게시나 기억에 실패해도 작업 실패로 안내하면 중복 실행을 유도한다.
+  private async deliverDispatchReply({
+    result,
+    text,
+    memoryKey,
+    channelId,
+    threadTs,
+    say,
+  }: {
+    result: DispatchResult;
+    text: string;
+    memoryKey: string;
+    channelId: string;
+    threadTs: string | undefined;
+    say: SayFn;
+  }): Promise<void> {
+    const context = `previewId=${result.preview?.id ?? '없음'} agentRunId=${result.agentRunId ?? '없음'}`;
+    try {
+      await this.conversationMemory.appendTurn(memoryKey, {
+        role: 'user',
+        text,
+        agentType: result.workerType,
+        agentRunId: result.agentRunId,
+        timestampMs: Date.now(),
+      });
+    } catch (error: unknown) {
+      this.logger.warn(
+        `사용자 턴 기록 실패 — ${context}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    const routerReplyText = buildDispatchReplyText(result);
+    // worker 가 카드를 만들어 보냈으면 그걸로 답한다. text 는 알림 미리보기와
+    // blocks 를 못 그리는 클라이언트의 폴백으로 함께 싣는다.
+    const readableReply = toReadableSlackArgs(routerReplyText);
+    const replyBlocks = resolveReplyBlocks(result, readableReply.text);
+    try {
+      await say({
+        thread_ts: threadTs,
+        ...readableReply,
+        ...(replyBlocks !== undefined ? { blocks: replyBlocks as never } : {}),
+      });
+    } catch (error: unknown) {
+      // 게시되지 않은 것이 확실할 때만 다시 보낸다. 네트워크·HTTP 오류는 Slack 이 이미 올렸는데 응답만
+      // 잃었을 수 있어, 다시 보내면 같은 답이 두 번 달린다.
+      if (!isSlackRejectedBeforePosting(error)) {
+        this.logger.warn(
+          `답변 게시 실패(게시 여부 불확실, 재시도 안 함) — ${context}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        return;
+      }
+      this.logger.warn(
+        `답변 게시 실패, 텍스트 재시도 — ${context}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      try {
+        // 텍스트만 보낸다. toReadableSlackArgs 는 소제목이 있으면 blocks 도 만들어, 그걸 다시 실으면
+        // 방금 거절된 블록을 그대로 다시 보내게 된다.
+        await say({ thread_ts: threadTs, text: readableReply.text });
+      } catch (retryError: unknown) {
+        this.logger.warn(
+          `답변 재게시 실패 — ${context}: ${retryError instanceof Error ? retryError.message : String(retryError)}`,
+        );
+        return;
+      }
+    }
+    if (result.preview?.id && threadTs) {
+      try {
+        await this.recordPreviewThread.execute({
+          id: result.preview.id,
+          slackChannelId: channelId,
+          slackThreadTs: threadTs,
+        });
+      } catch (error: unknown) {
+        this.logger.warn(
+          `Preview 스레드 기록 실패 — previewId=${result.preview.id}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+    if (result.preview?.content) {
+      try {
+        await say({
+          thread_ts: threadTs,
+          ...toReadableSlackArgs(result.preview.content),
+        });
+      } catch (error: unknown) {
+        this.logger.warn(
+          `Preview 내용 게시 실패 — ${context}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+    // 봇 응답도 메모리에 보존 — 다음 turn 의 ConversationalReply 가 자기 직전 발화를 보게 해 "이미 한 약속" 인식 가능.
+    try {
+      await this.conversationMemory.appendTurn(memoryKey, {
+        role: 'assistant',
+        text: routerReplyText,
+        agentType: result.workerType,
+        agentRunId: result.agentRunId,
+        timestampMs: Date.now(),
+      });
+    } catch (error: unknown) {
+      this.logger.warn(
+        `응답 턴 기록 실패 — ${context}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
   private async tryHandleGoalAnswer({
     text,
     slackUserId,
@@ -933,15 +1011,53 @@ export class RouterMessageHandler implements SlackHandler {
     if (source !== 'dm') {
       return false;
     }
+    const result = await this.saveGoalAnswer({ slackUserId, text });
+    if (result === null) {
+      return false;
+    }
+    // 여기부터는 답이 이미 저장됐다. 답장이 실패해도 처리된 발화라 라우터로 다시 넘기지 않는다 —
+    // 넘기면 같은 문장이 새 요청으로 한 번 더 처리된다.
+    await this.replyGoalAnswer({ result, text, threadTs, say, memoryKey });
+    return true;
+  }
+
+  // 목표 답을 저장한다. 목표 질문이 없거나(null) 저장 자체가 실패하면 null — 호출부가 일반 dispatch 로 넘긴다.
+  private async saveGoalAnswer({
+    slackUserId,
+    text,
+  }: {
+    slackUserId: string;
+    text: string;
+  }): Promise<HandleGoalAnswerResult | null> {
     try {
-      const result = await this.handleGoalAnswer.execute({
+      return await this.handleGoalAnswer.execute({
         slackUserId,
         text,
         now: new Date(),
       });
-      if (result === null) {
-        return false;
-      }
+    } catch (error: unknown) {
+      this.logger.warn(
+        `목표 답 처리 실패 — user=${slackUserId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return null;
+    }
+  }
+
+  // 저장된 목표 답의 답장. 실패는 경고만 남긴다.
+  private async replyGoalAnswer({
+    result,
+    text,
+    threadTs,
+    say,
+    memoryKey,
+  }: {
+    result: HandleGoalAnswerResult;
+    text: string;
+    threadTs: string | undefined;
+    say: SayFn;
+    memoryKey: string;
+  }): Promise<void> {
+    try {
       await this.conversationMemory.appendTurn(memoryKey, {
         role: 'user',
         text,
@@ -968,12 +1084,10 @@ export class RouterMessageHandler implements SlackHandler {
         agentRunId: null,
         timestampMs: Date.now(),
       });
-      return true;
     } catch (error: unknown) {
       this.logger.warn(
-        `목표 답 처리 실패 — user=${slackUserId}: ${error instanceof Error ? error.message : String(error)}`,
+        `목표 답 저장 뒤 답장 실패(재처리 안 함): ${error instanceof Error ? error.message : String(error)}`,
       );
-      return false;
     }
   }
 
@@ -1264,6 +1378,21 @@ const mergeQuestionCard = ({
     return { status: 'ONE', preview: questionCard };
   }
   return { status: 'AMBIGUOUS' };
+};
+
+// Slack 이 요청을 받아 거절한 오류(ok:false 응답, 속도 제한)는 메시지가 올라가지 않은 것이 확실하다.
+// 그 밖의 오류(네트워크·HTTP)는 이미 올라갔는데 응답만 잃었을 수 있다.
+const REJECTED_BEFORE_POSTING_CODES: ReadonlySet<unknown> = new Set([
+  ErrorCode.PlatformError,
+  ErrorCode.RateLimitedError,
+]);
+
+const isSlackRejectedBeforePosting = (error: unknown): boolean => {
+  const code =
+    typeof error === 'object' && error !== null && 'code' in error
+      ? (error as { code: unknown }).code
+      : undefined;
+  return REJECTED_BEFORE_POSTING_CODES.has(code);
 };
 
 const resolveReplyBlocks = (
