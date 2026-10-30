@@ -6,12 +6,8 @@ import {
 } from '../domain/port/preview-action.repository.port';
 import { PreviewAction } from '../domain/preview-action.type';
 
-// 자연어 Y/N 응답 흐름의 진입점 — 사용자가 "응" / "아니" 등으로 답했을 때
-// 어떤 preview 에 대한 응답인지 결정하기 위해 사용자별 최근 PENDING preview 1건 조회.
-//
-// RouterMessageHandler 가 dispatch 전 본 usecase 를 먼저 호출 → null 이면 일반 intent
-// 분류 경로로 진행, 있으면 사용자 입력을 YES/NO 패턴 매칭해 ApplyPreviewUsecase /
-// CancelPreviewUsecase 로 위임.
+// 사용자별 최근 PENDING preview 1건 조회 — 지금은 갭 분석 뒤 "N번" 주제 선택만 쓴다.
+// 자연어 "응/아니" 승인에는 쓰지 않는다: 대화와 무관한 카드를 고르므로 FindAnswerablePreviewUsecase 가 맡는다.
 @Injectable()
 export class FindLatestPendingPreviewUsecase {
   constructor(

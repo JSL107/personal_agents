@@ -129,11 +129,95 @@ describe('PreviewActionPrismaRepository.attachSlackMessage', () => {
       id: 'p-1',
       slackChannelId: 'C1',
       slackMessageTs: '111.222',
+      slackThreadTs: '111.222',
     });
 
     expect(update).toHaveBeenCalledWith({
       where: { id: 'p-1' },
-      data: { slackChannelId: 'C1', slackMessageTs: '111.222' },
+      data: {
+        slackChannelId: 'C1',
+        slackMessageTs: '111.222',
+        slackThreadTs: '111.222',
+      },
+    });
+  });
+});
+
+describe('PreviewActionPrismaRepository.attachSlackThread', () => {
+  it('스레드 좌표만 저장하고 카드 메시지 ts는 건드리지 않는다', async () => {
+    const update = jest.fn().mockResolvedValue({});
+    const repository = new PreviewActionPrismaRepository({
+      previewAction: { update },
+    } as unknown as PrismaService);
+
+    await repository.attachSlackThread({
+      id: 'p-1',
+      slackChannelId: 'C1',
+      slackThreadTs: '123.456',
+    });
+
+    expect(update).toHaveBeenCalledWith({
+      where: { id: 'p-1' },
+      data: { slackChannelId: 'C1', slackThreadTs: '123.456' },
+    });
+  });
+});
+
+describe('PreviewActionPrismaRepository.findPendingAnswerCandidates', () => {
+  it('스레드 범위의 미만료 PENDING 후보를 두 장까지만 조회한다', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const repository = new PreviewActionPrismaRepository({
+      previewAction: { findMany },
+    } as unknown as PrismaService);
+    const now = new Date('2026-10-30T12:00:00Z');
+
+    await repository.findPendingAnswerCandidates({
+      slackUserId: 'U1',
+      now,
+      slackChannelId: 'C1',
+      slackThreadTs: '123.456',
+      limit: 2,
+    });
+
+    expect(findMany).toHaveBeenCalledWith({
+      where: {
+        slackUserId: 'U1',
+        status: 'PENDING',
+        expiresAt: { gt: now },
+        slackChannelId: 'C1',
+        slackThreadTs: '123.456',
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 2,
+    });
+  });
+
+  it('최상위 범위에서는 생성 시각과 채널을 함께 제한한다', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const repository = new PreviewActionPrismaRepository({
+      previewAction: { findMany },
+    } as unknown as PrismaService);
+    const now = new Date('2026-10-30T12:00:00Z');
+    const createdSince = new Date('2026-10-30T11:30:00Z');
+
+    await repository.findPendingAnswerCandidates({
+      slackUserId: 'U1',
+      now,
+      slackChannelId: 'C1',
+      createdSince,
+      limit: 2,
+    });
+
+    expect(findMany).toHaveBeenCalledWith({
+      where: {
+        slackUserId: 'U1',
+        status: 'PENDING',
+        expiresAt: { gt: now },
+        slackChannelId: 'C1',
+        createdAt: { gte: createdSince },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 2,
     });
   });
 });
@@ -154,6 +238,7 @@ describe('PreviewActionPrismaRepository.findExpiredPending', () => {
         cancelledAt: null,
         slackChannelId: 'C1',
         slackMessageTs: '111.222',
+        slackThreadTs: '111.222',
       },
     ]);
     const prismaMock = {
@@ -191,6 +276,7 @@ describe('PreviewActionPrismaRepository.findAllOpen', () => {
         cancelledAt: null,
         slackChannelId: null,
         slackMessageTs: null,
+        slackThreadTs: null,
       },
     ]);
     const prismaMock = {
@@ -279,6 +365,7 @@ describe('PreviewActionPrismaRepository.findById — 폐지된 kind', () => {
     cancelledAt: null,
     slackChannelId: null,
     slackMessageTs: null,
+    slackThreadTs: null,
     lastFailedAt: null,
     lastFailureReason: null,
     applyProgress: null,

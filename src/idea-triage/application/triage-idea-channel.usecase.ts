@@ -275,6 +275,7 @@ export class TriageIdeaChannelUsecase {
         id: previewId,
         slackChannelId: coordinate.channelId,
         slackMessageTs: coordinate.messageTs,
+        slackThreadTs: record.messageTs,
       });
     }
     await this.triageRepository.markPosted(record.id, replyTs, previewId);

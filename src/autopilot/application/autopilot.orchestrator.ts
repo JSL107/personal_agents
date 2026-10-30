@@ -876,11 +876,14 @@ export class AutopilotOrchestrator {
               },
             });
           // 첫 타깃 좌표만 저장 — preview 행은 좌표 하나만 가진다(다중 타깃은 알려진 한계).
+          // 자연어 "응/아니" 도 이 좌표로 카드를 찾으므로 두 번째 타깃 스레드의 답은 카드를 못 찾고
+          // 일반 대화로 넘어간다(버튼은 양쪽 모두 동작). 엉뚱한 카드를 고르는 쪽이 아니라 안전한 실패다.
           if (!coordinateSaved && messageTs) {
             await this.previewRepository.attachSlackMessage({
               id: created.id,
               slackChannelId: channelId,
               slackMessageTs: messageTs,
+              slackThreadTs: cardThreadTsByTarget.get(resolved) ?? messageTs,
             });
             coordinateSaved = true;
           }

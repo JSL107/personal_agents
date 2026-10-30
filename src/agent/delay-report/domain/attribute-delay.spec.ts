@@ -27,6 +27,7 @@ const preview = (overrides: Partial<PreviewAction> = {}): PreviewAction => ({
   cancelledAt: null,
   slackChannelId: null,
   slackMessageTs: null,
+  slackThreadTs: null,
   lastFailedAt: null,
   lastFailureReason: null,
   applyProgress: null,

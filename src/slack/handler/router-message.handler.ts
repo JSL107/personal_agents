@@ -8,8 +8,11 @@ import { detectYesNoIntent } from '../../common/util/yes-no-intent.util';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { ApplyPreviewUsecase } from '../../preview-gate/application/apply-preview.usecase';
 import { CancelPreviewUsecase } from '../../preview-gate/application/cancel-preview.usecase';
+import { FindAnswerablePreviewUsecase } from '../../preview-gate/application/find-answerable-preview.usecase';
 import { FindLatestPendingPreviewUsecase } from '../../preview-gate/application/find-latest-pending-preview.usecase';
+import { RecordPreviewThreadUsecase } from '../../preview-gate/application/record-preview-thread.usecase';
 import {
+  PREVIEW_ANSWER_AMBIGUOUS_TEXT,
   PREVIEW_KIND,
   PreviewAction,
 } from '../../preview-gate/domain/preview-action.type';
@@ -169,6 +172,8 @@ export class RouterMessageHandler implements SlackHandler {
     private readonly conversationMemory: ConversationMemoryService,
     private readonly conversationalReply: ConversationalReplyUsecase,
     private readonly findLatestPendingPreview: FindLatestPendingPreviewUsecase,
+    private readonly findAnswerablePreview: FindAnswerablePreviewUsecase,
+    private readonly recordPreviewThread: RecordPreviewThreadUsecase,
     private readonly applyPreviewUsecase: ApplyPreviewUsecase,
     private readonly cancelPreviewUsecase: CancelPreviewUsecase,
     private readonly handleGoalAnswer: HandleGoalAnswerUsecase,
@@ -434,6 +439,8 @@ export class RouterMessageHandler implements SlackHandler {
       const handledByPreview = await this.tryHandlePreviewYesNo({
         text,
         slackUserId,
+        channelId,
+        userThreadTs: replyToTs,
         threadTs,
         say,
         memoryKey,
@@ -513,6 +520,19 @@ export class RouterMessageHandler implements SlackHandler {
         ...readableReply,
         ...(replyBlocks !== undefined ? { blocks: replyBlocks as never } : {}),
       });
+      if (result.preview?.id && threadTs) {
+        try {
+          await this.recordPreviewThread.execute({
+            id: result.preview.id,
+            slackChannelId: channelId,
+            slackThreadTs: threadTs,
+          });
+        } catch (error: unknown) {
+          this.logger.warn(
+            `Preview 스레드 기록 실패 — previewId=${result.preview.id}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
       if (result.preview?.content) {
         await say({
           thread_ts: threadTs,
@@ -786,20 +806,24 @@ export class RouterMessageHandler implements SlackHandler {
     }
   }
 
-  // 자연어 Y/N 응답 인터셉트 — 사용자가 직전 PreviewGate preview 에 "응 / 아니" 로 답한 경우만.
-  // 1) 사용자의 가장 최근 PENDING preview 1건 조회 (없으면 false)
+  // 자연어 Y/N 응답 인터셉트 — 사용자가 같은 대화의 PreviewGate preview 에 "응 / 아니" 로 답한 경우만.
+  // 1) 실제 Slack 스레드 또는 최상위 채널 대화에서 답할 수 있는 preview 조회
   // 2) detectYesNoIntent 로 자연어 분류 (ambiguous=null 이면 false)
   // 3) yes → apply, no → cancel
   // ConversationMemory 에는 agentType=null + agentRunId=null 로 turn 적재 (worker dispatch 아님).
   private async tryHandlePreviewYesNo({
     text,
     slackUserId,
+    channelId,
+    userThreadTs,
     threadTs,
     say,
     memoryKey,
   }: {
     text: string;
     slackUserId: string;
+    channelId: string;
+    userThreadTs: string | undefined;
     threadTs: string | undefined;
     say: SayFn;
     memoryKey: string;
@@ -815,10 +839,38 @@ export class RouterMessageHandler implements SlackHandler {
       slackUserId,
       now: new Date(),
     });
-    const pending =
+    const answerable =
       questionCard === undefined
-        ? await this.findLatestPendingPreview.execute({ slackUserId })
-        : questionCard.card;
+        ? await this.findAnswerablePreview.execute({
+            slackUserId,
+            now: new Date(),
+            scope: userThreadTs
+              ? { kind: 'SLACK_THREAD', channelId, threadTs: userThreadTs }
+              : { kind: 'SLACK_TOP_LEVEL', channelId },
+          })
+        : undefined;
+    if (answerable?.status === 'AMBIGUOUS') {
+      const replyText = PREVIEW_ANSWER_AMBIGUOUS_TEXT;
+      await this.conversationMemory.appendTurn(memoryKey, {
+        role: 'user',
+        text,
+        agentType: null,
+        agentRunId: null,
+        timestampMs: Date.now(),
+      });
+      await say({ thread_ts: threadTs, text: replyText });
+      await this.conversationMemory.appendTurn(memoryKey, {
+        role: 'assistant',
+        text: replyText,
+        agentType: null,
+        agentRunId: null,
+        timestampMs: Date.now(),
+      });
+      return true;
+    }
+    const pending =
+      questionCard?.card ??
+      (answerable?.status === 'ONE' ? answerable.preview : null);
     if (!pending) {
       return false;
     }
