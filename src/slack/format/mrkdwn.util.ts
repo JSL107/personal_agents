@@ -55,34 +55,47 @@ const CODE_FENCE_MARKERS = ['```', '~~~'] as const;
 
 export type CodeFenceLineKind = 'fence' | 'code' | 'text';
 
-// 줄을 순서대로 넣으면 그 줄이 fence 인지, 코드블록 안인지, 일반 글인지 알려 준다.
-export const createCodeFenceTracker = (): ((
-  line: string,
-) => CodeFenceLineKind) => {
+const findFenceMarker = (line: string): string | undefined =>
+  CODE_FENCE_MARKERS.find((marker) => line.trimStart().startsWith(marker));
+
+// 각 줄이 fence 인지, 코드블록 안인지, 일반 글인지를 같은 순서의 배열로 돌려준다.
+export const classifyCodeFenceLines = (
+  lines: readonly string[],
+): CodeFenceLineKind[] => {
+  const kinds: CodeFenceLineKind[] = [];
+  // 블록은 한 줄에서 열려 몇 줄 뒤에 닫히므로 연 기호를 줄 사이에 기억한다. null = 블록 밖.
   let openMarker: string | null = null;
-  return (line) => {
-    const marker = CODE_FENCE_MARKERS.find((candidate) =>
-      line.trimStart().startsWith(candidate),
-    );
-    const opensOrCloses =
-      marker !== undefined && (openMarker === null || openMarker === marker);
-    if (opensOrCloses) {
-      openMarker = openMarker === null ? marker : null;
-      return 'fence';
+  for (const line of lines) {
+    const marker = findFenceMarker(line);
+    if (openMarker === null) {
+      if (marker === undefined) {
+        kinds.push('text');
+        continue;
+      }
+      openMarker = marker;
+      kinds.push('fence');
+      continue;
     }
-    return openMarker === null ? 'text' : 'code';
-  };
+    if (marker === openMarker) {
+      openMarker = null;
+      kinds.push('fence');
+      continue;
+    }
+    kinds.push('code');
+  }
+  return kinds;
 };
 
 const mapOutsideCodeFence = (
   text: string,
   transformLine: (line: string) => string,
 ): string => {
-  const classify = createCodeFenceTracker();
-  return text
-    .split('\n')
-    .map((line) => (classify(line) === 'text' ? transformLine(line) : line))
-    .join('\n');
+  const lines = text.split('\n');
+  const kinds = classifyCodeFenceLines(lines);
+  const mapped = lines.map((line, index) =>
+    kinds[index] === 'text' ? transformLine(line) : line,
+  );
+  return mapped.join('\n');
 };
 
 export const linkifyBareUrls = (text: string): string =>
