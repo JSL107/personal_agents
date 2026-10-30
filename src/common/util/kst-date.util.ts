@@ -31,6 +31,20 @@ export const formatKstDate = (
 export const getKstDateOf = (date: Date): string =>
   KST_DATE_FORMATTER.format(date);
 
+const KST_DATE_TIME_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Seoul',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
+
+// Date 의 KST 시각(YYYY-MM-DD HH:mm). 모델 프롬프트에 싣는 기록 줄처럼 날짜와 시각이 함께 필요할 때 쓴다.
+export const formatKstDateTime = (date: Date): string =>
+  KST_DATE_TIME_FORMATTER.format(date).replace(', ', ' ');
+
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 

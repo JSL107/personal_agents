@@ -76,12 +76,16 @@ export class ModelRouterUsecase {
     agentType,
     request,
     noFallback,
+    fallbackWithoutAttachments,
     noContractPreamble,
     provider,
   }: {
     agentType: AgentType;
     request: CompletionRequest;
     noFallback?: boolean;
+    // 이미지·읽기 폴더가 붙은 요청이 primary 에서 실패하면 첨부를 떼고 이 프롬프트로 폴백한다.
+    // 원래 프롬프트를 그대로 쓰지 않는 이유: 폴더 경로 안내가 남으면 읽기 잠금이 없는 Claude 에 경로를 건네게 된다.
+    fallbackWithoutAttachments?: { prompt: string };
     // agentType 의 매핑 대신 이 provider 를 primary 로 쓴다. 같은 입력을 provider 별로
     // 받아야 하는 호출자(윤문 연구의 모델 글 표본)용 — 원장 기록은 그대로 남는다.
     provider?: ModelProviderName;
@@ -158,11 +162,13 @@ export class ModelRouterUsecase {
       // 무너진 응답을 조용히 돌려주느니 primary 실패를 그대로 올린다.
       // (해당 호출: work-reviewer · po-shadow · blog 계열 · intent-classifier)
       // 이미지도 Claude CLI 가 받을 수 없으므로 Codex 실패를 그대로 전파한다.
-      if (
-        noFallback ||
-        request.outputSchema !== undefined ||
-        request.imagePaths?.length
-      ) {
+      const hasOutputSchema = request.outputSchema !== undefined;
+      // 이미지는 Claude 가 못 받는다 — 첨부를 떼고 보내는 선택지가 없으면 폴백하지 않는다.
+      const imagesBlockFallback =
+        (request.imagePaths?.length ?? 0) > 0 &&
+        fallbackWithoutAttachments === undefined;
+      const skipFallback = noFallback || hasOutputSchema || imagesBlockFallback;
+      if (skipFallback) {
         throw this.wrapCompletionFailed({
           agentType,
           attempted: [primaryName],
@@ -188,7 +194,21 @@ export class ModelRouterUsecase {
 
       const fallback = this.resolveProvider(fallbackName);
       try {
-        const completion = await fallback.complete(routedRequest);
+        const hasAttachments = Boolean(
+          routedRequest.imagePaths?.length ||
+          routedRequest.readableRoots?.length,
+        );
+        // 폴백은 첨부를 볼 수 없으므로 떼고, 첨부 안내가 없는 호출자 프롬프트로 바꾼다.
+        const fallbackRequest =
+          fallbackWithoutAttachments && hasAttachments
+            ? {
+                ...routedRequest,
+                imagePaths: undefined,
+                readableRoots: undefined,
+                prompt: fallbackWithoutAttachments.prompt,
+              }
+            : routedRequest;
+        const completion = await fallback.complete(fallbackRequest);
         this.warnIfSlow({
           agentType,
           providerName: fallbackName,

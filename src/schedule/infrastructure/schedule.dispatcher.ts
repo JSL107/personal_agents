@@ -19,6 +19,10 @@ import {
   formatScheduleRegistered,
 } from '../../slack/format/schedule.formatter';
 import { AnswerScheduleQuestionUsecase } from '../application/answer-schedule-question.usecase';
+import {
+  ExtractedSchedule,
+  ExtractScheduleFromConversationUsecase,
+} from '../application/extract-schedule-from-conversation.usecase';
 import { RegisterScheduleUsecase } from '../application/register-schedule.usecase';
 import { todayInKst } from '../domain/parse-due-date';
 import {
@@ -26,10 +30,17 @@ import {
   parseScheduleCommand,
   ScheduleCommand,
 } from '../domain/parse-schedule-command';
+import { refersToPriorConversation } from '../domain/prior-conversation-reference';
 import { ScheduleException } from '../domain/schedule.exception';
 import { PlainDate } from '../domain/schedule.type';
 import { ScheduleErrorCode } from '../domain/schedule-error-code.enum';
 import { isScheduleLookup } from '../domain/schedule-lookup';
+
+interface RegisterFromConversationInput {
+  input: DispatchInput;
+  extracted: ExtractedSchedule;
+  today: PlainDate;
+}
 
 interface MergedScheduleCommand {
   command: ScheduleCommand;
@@ -45,6 +56,7 @@ export class ScheduleDispatcher implements AgentDispatcher {
     private readonly registerSchedule: RegisterScheduleUsecase,
     private readonly answerQuestion: AnswerScheduleQuestionUsecase,
     private readonly agentRunService: AgentRunService,
+    private readonly extractSchedule: ExtractScheduleFromConversationUsecase,
   ) {}
 
   async dispatch(input: DispatchInput): Promise<DispatchOutcome> {
@@ -90,6 +102,28 @@ export class ScheduleDispatcher implements AgentDispatcher {
       );
     }
 
+    const reference = refersToPriorConversation(input.text);
+    const priorTurns = input.priorTurns ?? [];
+    // 모델 추출은 직전 대화를 가리키는 요청일 때만 켠다. 대화 본문이 DM 24시간 기록이라 이대리 답은
+    // 거의 항상 있어서, 날짜만 빠진 평범한 요청("자동차세 등록해줘")에도 켜면 앞 대화의 무관한 날짜로
+    // 되묻지 않고 등록된다. 평범한 요청은 지금처럼 규칙 파서와 되묻기로 처리한다.
+    const hasIdaeriReply = priorTurns.some((turn) => turn.role === 'assistant');
+    if (reference && hasIdaeriReply) {
+      const extracted = await this.extractSchedule.execute({
+        text: input.text,
+        priorTurns,
+        today,
+      });
+      if (extracted) {
+        return this.registerFromConversation({ input, extracted, today });
+      }
+      // 참조 요청인데 추출이 실패하면 파서 결과("원인과 함께" 같은 제목)로 등록하지 않는다.
+      return this.toOutcome(
+        command,
+        '직전 대화 내용을 읽지 못했어요. 제목을 알려 주세요.',
+      );
+    }
+
     if (command.kind === 'NEEDS_TITLE') {
       return this.toOutcome(command, formatNeedsTitle());
     }
@@ -132,6 +166,55 @@ export class ScheduleDispatcher implements AgentDispatcher {
       output: outcome.result,
       modelUsed: outcome.modelUsed,
       formattedText: formatScheduleRegistered(outcome.result),
+    };
+  }
+
+  private async registerFromConversation({
+    input,
+    extracted,
+    today,
+  }: RegisterFromConversationInput): Promise<DispatchOutcome> {
+    const dueDate = extracted.dueDate ?? today;
+    const outcome = await this.agentRunService.execute({
+      agentType: AgentType.SCHEDULE,
+      triggerType: TriggerType.SLACK_MENTION_SCHEDULE,
+      inputSnapshot: {
+        slackUserId: input.slackUserId,
+        action: 'REGISTER',
+        title: extracted.title,
+        dueDate,
+        source: 'CONVERSATION',
+        hasMemo: extracted.memo.length > 0,
+      },
+      run: async () => {
+        const record = await this.registerSchedule.execute({
+          slackUserId: input.slackUserId,
+          title: extracted.title,
+          dueDate,
+          memo: extracted.memo,
+        });
+        return {
+          result: record,
+          modelUsed: extracted.modelUsed,
+          output: {
+            scheduleId: record.id,
+            title: record.title,
+            dueDate: record.dueDate,
+          },
+        };
+      },
+    });
+    // 대화에서 날짜를 못 찾아 오늘로 채웠으면 그 사실을 답에 밝힌다.
+    const dateDefaulted = extracted.dueDate === null;
+    const formattedText = formatScheduleRegistered(outcome.result, {
+      dateDefaulted,
+      memo: extracted.memo,
+    });
+    return {
+      agentRunId: outcome.agentRunId,
+      output: outcome.result,
+      modelUsed: outcome.modelUsed,
+      formattedText,
     };
   }
 

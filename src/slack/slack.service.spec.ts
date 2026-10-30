@@ -47,6 +47,7 @@ const mockDeliveryRepository = {
   incrementReplyCount: jest.fn().mockResolvedValue(0),
   findSince: jest.fn().mockResolvedValue([]),
   findByStatus: jest.fn().mockResolvedValue([]),
+  findRecent: jest.fn().mockResolvedValue([]),
 };
 
 const NO_TRUNCATION: PlanInputTruncation = {

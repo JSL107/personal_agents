@@ -40,6 +40,7 @@ import { NOTION_CLIENT_PORT } from '../src/notion/domain/port/notion-client.port
 import { PreviewGateModule } from '../src/preview-gate/preview-gate.module';
 import { PrismaModule } from '../src/prisma/prisma.module';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { ConversationLookupService } from '../src/router/application/conversation-lookup.service';
 import { ConversationMemoryService } from '../src/router/application/conversation-memory.service';
 import { HandleConversationTurnUsecase } from '../src/router/application/handle-conversation-turn.usecase';
 import { IntentClassifierUsecase } from '../src/router/application/intent-classifier.usecase';
@@ -62,6 +63,7 @@ import {
   EvalWriteBlockedException,
   readOnlyPrismaExtension,
 } from '../src/router/eval/read-only-prisma';
+import { LocalRepoSnapshotService } from '../src/router/infrastructure/local-repo-snapshot.service';
 import { RouterModule } from '../src/router/router.module';
 import { RegisterScheduleUsecase } from '../src/schedule/application/register-schedule.usecase';
 import { stripMentionPrefix } from '../src/slack/handler/router-message.handler';
@@ -230,6 +232,16 @@ const buildModule = async (): Promise<TestingModule> => {
     .useValue({ record: noop })
     .overrideProvider(ConversationMemoryService)
     .useValue({ getRecentTurns: async () => [], appendTurn: noop })
+    .overrideProvider(ConversationLookupService)
+    .useValue({
+      collect: async () => ({
+        readableRoots: [],
+        rootGuide: [],
+        release: noop,
+      }),
+    })
+    .overrideProvider(LocalRepoSnapshotService)
+    .useValue({ acquire: async () => null })
     // 모델 쿼터·인증 장애 알림은 운영 서버를 거쳐 실제 Slack DM 으로 나간다.
     .overrideProvider(NotificationPublisher)
     .useValue(

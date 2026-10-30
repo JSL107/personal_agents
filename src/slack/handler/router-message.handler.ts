@@ -49,8 +49,24 @@ import {
   SlackDeliveryRepositoryPort,
 } from '../domain/port/slack-delivery.repository.port';
 import { SlackHandler } from '../domain/port/slack-handler.port';
+import { stripMentionPrefix } from '../domain/slack-mention';
+import {
+  buildIdaeriReplyMetadata,
+  SlackTranscriptFile,
+  SlackTranscriptMessage,
+  toTranscriptTurns,
+} from '../domain/slack-transcript';
+import {
+  ImageSelection,
+  selectTranscriptImages,
+} from '../domain/transcript-image';
 import { toReadableSlackArgs } from '../format/message-blocks.builder';
 import { buildPreviewBlocks } from '../format/preview-message.builder';
+import { SlackConversationReader } from '../infrastructure/slack-conversation.reader';
+import {
+  DownloadedImages,
+  SlackImageDownloader,
+} from '../infrastructure/slack-image.downloader';
 import { toUserFacingErrorMessage } from './slack-handler.helper';
 
 // 사용자 메시지 위에 진행 단계 reaction 으로 시각 피드백.
@@ -79,6 +95,8 @@ type RouterMessageParams = {
   say: SayFn;
   client: WebClient;
   source: MentionSource;
+  files: SlackTranscriptFile[];
+  fileShare: boolean;
 };
 
 // channel 키에서 부모 발화 뒤 turn 중 이 스레드 몫. 게시된 스레드가 적힌 turn(비동기 완료 답장)은 그
@@ -120,13 +138,31 @@ type ReplyTracker = {
 
 // 게시가 한 번이라도 성공했으면 답이 나간 것이다. 오류 안내였다면 ERROR_REPLIED 로 가른다.
 // 아무것도 못 올렸으면 마지막 게시 오류(없으면 게시 시도 자체가 없었음)를 남긴다.
+// 이대리가 보내는 모든 답에 기본 꼬리표를 붙인다 — 다음 회차가 Slack 기록에서 이 글을 자기 답으로 읽는다.
+// 호출자가 실행 정보를 담은 꼬리표를 이미 줬으면 그대로 둔다.
+const withIdaeriReplyMetadata = (
+  message: Parameters<SayFn>[0],
+): Parameters<SayFn>[0] => {
+  const metadata = buildIdaeriReplyMetadata({
+    agentType: null,
+    agentRunId: null,
+  });
+  if (typeof message === 'string') {
+    return { text: message, metadata };
+  }
+  return { ...message, metadata: message.metadata ?? metadata };
+};
+
 const trackReplies = (say: SayFn): ReplyTracker => {
   let posted = false;
   let errorReply = false;
   let postError: string | undefined;
   const trackedSay: SayFn = async (message) => {
     try {
-      const response = await say(message);
+      // 오류 안내는 대화 답이 아니므로 꼬리표를 붙이지 않는다.
+      const response = await say(
+        errorReply ? message : withIdaeriReplyMetadata(message),
+      );
       posted = true;
       return response;
     } catch (error: unknown) {
@@ -188,6 +224,8 @@ export class RouterMessageHandler implements SlackHandler {
     private readonly deliveryRepository: SlackDeliveryRepositoryPort,
     @Inject(MENTION_RECEIPT_REPOSITORY)
     private readonly mentionReceiptRepository: MentionReceiptRepositoryPort,
+    private readonly conversationReader: SlackConversationReader,
+    private readonly imageDownloader: SlackImageDownloader,
   ) {}
 
   register(app: App): void {
@@ -229,16 +267,22 @@ export class RouterMessageHandler implements SlackHandler {
         say,
         client,
         source: 'app_mention',
+        files: readEventFiles('files' in event ? event.files : undefined),
+        fileShare: false,
       });
     });
 
-    // DM (channel_type='im') 진입. subtype 없는 user message 만 — bot 자신의 메시지 / edit /
+    // DM (channel_type='im') 진입. subtype 없는 user message 와 file_share 만 — bot 자신의 메시지 / edit /
     // delete event 등은 필터 (무한 루프 방지). 멘션 prefix 처리 X (DM 은 1:1 이라 멘션 없음).
     app.event('message', async ({ event, say, client }) => {
       if (!('channel_type' in event) || event.channel_type !== 'im') {
         return;
       }
-      if ('subtype' in event && event.subtype !== undefined) {
+      if (
+        'subtype' in event &&
+        event.subtype !== undefined &&
+        event.subtype !== 'file_share'
+      ) {
         return;
       }
       if ('bot_id' in event && event.bot_id) {
@@ -278,6 +322,8 @@ export class RouterMessageHandler implements SlackHandler {
         say,
         client,
         source: 'dm',
+        files: readEventFiles('files' in event ? event.files : undefined),
+        fileShare: 'subtype' in event && event.subtype === 'file_share',
       });
     });
   }
@@ -313,6 +359,90 @@ export class RouterMessageHandler implements SlackHandler {
         );
       }
     }
+  }
+
+  // file_share 이벤트에 파일이 빠진 경우 현재 메시지 한 건으로 보충한다.
+  private async getCurrentFiles({
+    client,
+    channelId,
+    messageTs,
+    threadTs,
+    files,
+    fileShare,
+  }: CurrentFilesInput): Promise<SlackTranscriptFile[]> {
+    if (files.length > 0 || !fileShare || !messageTs) {
+      return files;
+    }
+    try {
+      // 스레드 답글은 conversations.history 에 나오지 않는다(2026-10-30 실측) — 스레드 안이면 replies 로 찾는다.
+      const response = threadTs
+        ? await client.conversations.replies({
+            channel: channelId,
+            ts: threadTs,
+            latest: messageTs,
+            inclusive: true,
+          })
+        : await client.conversations.history({
+            channel: channelId,
+            latest: messageTs,
+            inclusive: true,
+            limit: 1,
+          });
+      const message = response.messages?.find((item) => item.ts === messageTs);
+      return readEventFiles(message?.files);
+    } catch (error) {
+      this.logger.warn(
+        `현재 메시지 파일 조회 실패: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return files;
+    }
+  }
+
+  // 분류기와 대화 답변이 같은 Slack 본문과 사진 번호를 사용하게 준비한다.
+  private async prepareConversation(
+    input: PrepareConversationInput,
+  ): Promise<PreparedConversation> {
+    const messages = await this.conversationReader.read({
+      client: input.client,
+      channelId: input.channelId,
+      isDirectMessage: input.source === 'dm',
+      threadTs: input.replyToTs,
+      messageTs: input.messageTs,
+      nowMs: Date.now(),
+    });
+    const candidates: SlackTranscriptMessage[] = [...(messages ?? [])];
+    if (input.messageTs && input.currentFiles.length > 0) {
+      const currentIndex = candidates.findIndex(
+        (message) => message.ts === input.messageTs,
+      );
+      if (currentIndex >= 0) {
+        candidates.splice(currentIndex, 1);
+      }
+      candidates.push({
+        ts: input.messageTs,
+        user: input.slackUserId,
+        text: input.text,
+        files: input.currentFiles,
+      });
+    }
+    const images = selectTranscriptImages({
+      messages: candidates,
+      currentTs: input.messageTs,
+      speakerUserId: input.slackUserId,
+    });
+    if (messages === null) {
+      return { turns: input.memoryTurns, images };
+    }
+    const selfBotId = await this.conversationReader.selfBotId(input.client);
+    const turns = toTranscriptTurns({
+      messages,
+      speakerUserId: input.slackUserId,
+      selfBotId,
+      excludeTs: input.messageTs,
+      imageLabels: images.labels,
+      memoryTurns: input.memoryTurns,
+    });
+    return { turns, images };
   }
 
   // 비동기 담당(BLOG)의 결과 답장을 수신 기록에 잇는다. 백그라운드에서 불리므로 throw 하지 않는다.
@@ -351,7 +481,7 @@ export class RouterMessageHandler implements SlackHandler {
   }
 
   private async handleRouterMessage({
-    text,
+    text: originalText,
     slackUserId,
     channelId,
     threadTs,
@@ -361,6 +491,8 @@ export class RouterMessageHandler implements SlackHandler {
     say,
     client,
     source,
+    files,
+    fileShare,
     markErrorReply,
   }: RouterMessageParams & { markErrorReply: () => void }): Promise<void> {
     if (replyToTs) {
@@ -376,6 +508,19 @@ export class RouterMessageHandler implements SlackHandler {
       }
     }
 
+    const currentFiles = await this.getCurrentFiles({
+      client,
+      channelId,
+      messageTs,
+      threadTs: replyToTs,
+      files,
+      fileShare,
+    });
+    const imageCount = currentFiles.filter((file) =>
+      file.mimetype.startsWith('image/'),
+    ).length;
+    const text =
+      originalText || (imageCount > 0 ? `[사진 ${imageCount}장 첨부]` : '');
     if (text.length === 0) {
       await say({
         thread_ts: threadTs,
@@ -439,6 +584,12 @@ export class RouterMessageHandler implements SlackHandler {
       ? this.conversationMemory.buildKey({ slackUserId, channelId, threadTs })
       : memoryKey;
     let succeeded = false;
+    let transcriptTurns = priorTurns;
+    let imageSelection: ImageSelection = {
+      selected: [],
+      skippedCount: 0,
+      labels: new Map(),
+    };
     try {
       // 자연어 Y/N → 사용자의 직전 PreviewGate preview 에 대한 응답 인터셉트.
       // 응 / ㄱㄱ / yes → ApplyPreviewUsecase. 아니 / ㄴㄴ / no → CancelPreviewUsecase.
@@ -484,11 +635,24 @@ export class RouterMessageHandler implements SlackHandler {
         return;
       }
 
+      const prepared = await this.prepareConversation({
+        client,
+        channelId,
+        source,
+        replyToTs,
+        messageTs,
+        slackUserId,
+        text,
+        currentFiles,
+        memoryTurns: priorTurns,
+      });
+      transcriptTurns = prepared.turns;
+      imageSelection = prepared.images;
       const result = await this.idaeriRouter.dispatch({
         source: 'SLACK_MESSAGE',
         slackUserId,
         text,
-        priorTurns,
+        priorTurns: transcriptTurns,
         ...(priorAgentRunId !== undefined && priorAgentRunId !== null
           ? { contextRefs: { agentRunId: priorAgentRunId } }
           : {}),
@@ -534,10 +698,21 @@ export class RouterMessageHandler implements SlackHandler {
         this.logger.log(
           `Router intent UNKNOWN — conversational fallback 으로 응답 (user=${slackUserId} text="${text.slice(0, 60)}")`,
         );
+        let downloaded: DownloadedImages | undefined;
         try {
+          downloaded = await this.imageDownloader.download(
+            imageSelection.selected,
+          );
           const reply = await this.conversationalReply.reply({
             text,
-            priorTurns,
+            priorTurns: transcriptTurns,
+            memoryTurns: priorTurns,
+            // 원장·발송 기록·폴더 조회는 DM 에서만 연다 — 채널 스레드 답은 다른 사람에게 보이고,
+            // 그 스레드의 남의 글·사진에 든 지시가 owner 의 기록을 채널에 답하게 만들 수 있다.
+            ...(source === 'dm' ? { slackUserId } : {}),
+            images: downloaded.images,
+            unseenImageCount:
+              imageSelection.skippedCount + downloaded.failedCount,
             unresolvedStreak,
             routingMissRunId: (error as RouterException).routingMissRunId,
             // 지금 대화의 키. 스레드 안이면 스레드 키라 블로그 실행의 답장 스레드 키와 맞는다 — channel 키는
@@ -576,6 +751,10 @@ export class RouterMessageHandler implements SlackHandler {
             thread_ts: threadTs,
             text: `이대리 응답 실패: ${toUserFacingErrorMessage(replyError)}`,
           });
+        } finally {
+          if (downloaded) {
+            await downloaded.dispose();
+          }
         }
       } else {
         this.logger.warn(
@@ -923,10 +1102,16 @@ export class RouterMessageHandler implements SlackHandler {
     // blocks 를 못 그리는 클라이언트의 폴백으로 함께 싣는다.
     const readableReply = toReadableSlackArgs(routerReplyText);
     const replyBlocks = resolveReplyBlocks(result, readableReply.text);
+    // 실행 정보를 꼬리표에 싣는다 — 다음 회차가 Slack 기록에서 이 답의 담당·실행 id 를 읽는다.
+    const metadata = buildIdaeriReplyMetadata({
+      agentType: result.workerType,
+      agentRunId: result.agentRunId,
+    });
     try {
       await say({
         thread_ts: threadTs,
         ...readableReply,
+        metadata,
         ...(replyBlocks !== undefined ? { blocks: replyBlocks as never } : {}),
       });
     } catch (error: unknown) {
@@ -944,7 +1129,7 @@ export class RouterMessageHandler implements SlackHandler {
       try {
         // 텍스트만 보낸다. toReadableSlackArgs 는 소제목이 있으면 blocks 도 만들어, 그걸 다시 실으면
         // 방금 거절된 블록을 그대로 다시 보내게 된다.
-        await say({ thread_ts: threadTs, text: readableReply.text });
+        await say({ thread_ts: threadTs, text: readableReply.text, metadata });
       } catch (retryError: unknown) {
         this.logger.warn(
           `답변 재게시 실패 — ${context}: ${retryError instanceof Error ? retryError.message : String(retryError)}`,
@@ -970,6 +1155,7 @@ export class RouterMessageHandler implements SlackHandler {
         await say({
           thread_ts: threadTs,
           ...toReadableSlackArgs(result.preview.content),
+          metadata,
         });
       } catch (error: unknown) {
         this.logger.warn(
@@ -1158,7 +1344,14 @@ export class RouterMessageHandler implements SlackHandler {
       timestampMs: Date.now(),
     });
     const replyText = buildDispatchReplyText(result);
-    await say({ thread_ts: threadTs, ...toReadableSlackArgs(replyText) });
+    await say({
+      thread_ts: threadTs,
+      ...toReadableSlackArgs(replyText),
+      metadata: buildIdaeriReplyMetadata({
+        agentType: result.workerType,
+        agentRunId: result.agentRunId,
+      }) as never,
+    });
     await this.conversationMemory.appendTurn(memoryKey, {
       role: 'assistant',
       text: replyText,
@@ -1411,7 +1604,51 @@ const resolveReplyBlocks = (
   return undefined;
 };
 
-// Slack 멘션 prefix `<@U....>` 를 모두 제거 + 앞뒤 공백 trim.
-// (사용자가 "<@BOT> 안녕" 형태로 보낸 경우 "안녕" 만 추출.)
-export const stripMentionPrefix = (text: string): string =>
-  text.replace(/<@[A-Z0-9]+>\s*/g, '').trim();
+// 멘션 접두사 제거는 domain(slack-mention.ts)으로 옮겼다. 기존 import 경로(nl-answer-eval 스크립트 등)를 지킨다.
+export { stripMentionPrefix };
+
+interface CurrentFilesInput {
+  client: WebClient;
+  channelId: string;
+  messageTs?: string;
+  // 실제 thread_ts. 최상위 메시지면 없다.
+  threadTs?: string;
+  files: SlackTranscriptFile[];
+  fileShare: boolean;
+}
+
+const readEventFiles = (value: unknown): SlackTranscriptFile[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter(
+      (file): file is Record<string, unknown> =>
+        typeof file === 'object' && file !== null,
+    )
+    .map((file) => ({
+      id: typeof file.id === 'string' ? file.id : '',
+      mimetype: typeof file.mimetype === 'string' ? file.mimetype : '',
+      size: typeof file.size === 'number' ? file.size : 0,
+      urlPrivateDownload:
+        typeof file.url_private_download === 'string'
+          ? file.url_private_download
+          : '',
+    }));
+};
+
+interface PrepareConversationInput {
+  client: WebClient;
+  channelId: string;
+  source: MentionSource;
+  replyToTs?: string;
+  messageTs?: string;
+  slackUserId: string;
+  text: string;
+  currentFiles: SlackTranscriptFile[];
+  memoryTurns: ConversationTurn[];
+}
+interface PreparedConversation {
+  turns: ConversationTurn[];
+  images: ImageSelection;
+}

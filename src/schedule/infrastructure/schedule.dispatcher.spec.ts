@@ -1,5 +1,6 @@
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { AgentType } from '../../model-router/domain/model-router.type';
+import { formatNeedsDate } from '../../slack/format/schedule.formatter';
 import { AnswerScheduleQuestionUsecase } from '../application/answer-schedule-question.usecase';
 import { RegisterScheduleUsecase } from '../application/register-schedule.usecase';
 import { ScheduleStatus } from '../domain/schedule.type';
@@ -49,6 +50,7 @@ describe('ScheduleDispatcher', () => {
         createUsecase(),
         createAnswer(),
         createAgentRunService() as never,
+        { execute: jest.fn().mockResolvedValue(null) } as never,
       ).agentType,
     ).toBe(AgentType.SCHEDULE);
   });
@@ -60,6 +62,7 @@ describe('ScheduleDispatcher', () => {
       usecase,
       answer,
       createAgentRunService() as never,
+      { execute: jest.fn().mockResolvedValue(null) } as never,
     );
 
     const outcome = await dispatcher.dispatch({
@@ -79,6 +82,7 @@ describe('ScheduleDispatcher', () => {
       createUsecase(),
       createAnswer(),
       agentRunService as never,
+      { execute: jest.fn().mockResolvedValue(null) } as never,
     );
 
     const registered = await dispatcher.dispatch({
@@ -116,6 +120,7 @@ describe('ScheduleDispatcher', () => {
         usecase,
         answer,
         createAgentRunService() as never,
+        { execute: jest.fn().mockResolvedValue(null) } as never,
       );
 
       await expect(
@@ -140,6 +145,7 @@ describe('ScheduleDispatcher', () => {
       usecase,
       answer,
       createAgentRunService() as never,
+      { execute: jest.fn().mockResolvedValue(null) } as never,
     );
 
     const outcome = await dispatcher.dispatch({
@@ -159,6 +165,7 @@ describe('ScheduleDispatcher', () => {
       usecase,
       answer,
       createAgentRunService() as never,
+      { execute: jest.fn().mockResolvedValue(null) } as never,
     );
 
     const outcome = await dispatcher.dispatch({
@@ -189,6 +196,7 @@ describe('ScheduleDispatcher', () => {
       usecase,
       answer,
       createAgentRunService() as never,
+      { execute: jest.fn().mockResolvedValue(null) } as never,
     );
 
     const outcome = await dispatcher.dispatch({
@@ -217,6 +225,7 @@ describe('ScheduleDispatcher', () => {
       usecase,
       answer,
       createAgentRunService() as never,
+      { execute: jest.fn().mockResolvedValue(null) } as never,
     );
 
     await dispatcher.dispatch({
@@ -244,6 +253,7 @@ describe('ScheduleDispatcher', () => {
       usecase,
       answer,
       createAgentRunService() as never,
+      { execute: jest.fn().mockResolvedValue(null) } as never,
     );
 
     const outcome = await dispatcher.dispatch({
@@ -273,6 +283,7 @@ describe('ScheduleDispatcher', () => {
       usecase,
       answer,
       createAgentRunService() as never,
+      { execute: jest.fn().mockResolvedValue(null) } as never,
     );
 
     const outcome = await dispatcher.dispatch({
@@ -301,6 +312,7 @@ describe('ScheduleDispatcher', () => {
       usecase,
       answer,
       createAgentRunService() as never,
+      { execute: jest.fn().mockResolvedValue(null) } as never,
     );
 
     const first = await dispatcher.dispatch({
@@ -337,6 +349,7 @@ describe('ScheduleDispatcher', () => {
         usecase,
         answer,
         createAgentRunService() as never,
+        { execute: jest.fn().mockResolvedValue(null) } as never,
       );
 
       const outcome = await dispatcher.dispatch({
@@ -363,6 +376,7 @@ describe('ScheduleDispatcher', () => {
       usecase,
       answer,
       createAgentRunService() as never,
+      { execute: jest.fn().mockResolvedValue(null) } as never,
     );
 
     const outcome = await dispatcher.dispatch({
@@ -392,6 +406,7 @@ describe('ScheduleDispatcher', () => {
       usecase,
       answer,
       createAgentRunService() as never,
+      { execute: jest.fn().mockResolvedValue(null) } as never,
     );
     const turn = (text: string) => ({
       role: 'user' as const,
@@ -410,5 +425,166 @@ describe('ScheduleDispatcher', () => {
 
     // "자동차세" 가 9월 30일로 등록되면 안 된다 — 조회 질문이 그 등록 흐름을 끊었다.
     expect(usecase.execute).not.toHaveBeenCalled();
+  });
+});
+
+describe('직전 대화 일정 등록', () => {
+  const priorTurns = [
+    {
+      role: 'assistant' as const,
+      text: '원인은 설정입니다',
+      agentType: null,
+      agentRunId: null,
+      timestampMs: 1,
+    },
+  ];
+  it('원인 참조를 추출해 메모와 오늘 날짜로 등록하고 모델 원장을 남긴다', async () => {
+    const register = createUsecase();
+    const agentRunService = createAgentRunService();
+    const extract = {
+      execute: jest.fn().mockResolvedValue({
+        title: '설정 수정',
+        dueDate: null,
+        memo: '<https://x|y>',
+        modelUsed: 'model',
+      }),
+    };
+    const dispatcher = new ScheduleDispatcher(
+      register,
+      createAnswer(),
+      agentRunService as never,
+      extract as never,
+    );
+    const result = await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '원인과 함께 일정에 등록해줄래?',
+      priorTurns,
+    });
+    expect(register.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ title: '설정 수정', memo: '<https://x|y>' }),
+    );
+    expect(result.modelUsed).toBe('model');
+    expect(result.formattedText).toContain('오늘로 등록');
+    expect(result.formattedText).toContain('&lt;https://x|y&gt;');
+    expect(agentRunService.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        inputSnapshot: expect.objectContaining({
+          source: 'CONVERSATION',
+          hasMemo: true,
+        }),
+      }),
+    );
+  });
+  it('직전 대화를 가리키지 않는 평범한 요청은 모델 추출 없이 날짜를 되묻는다', async () => {
+    const register = createUsecase();
+    // 앞 대화의 무관한 날짜를 집어 와도 쓰이지 않아야 한다.
+    const extract = {
+      execute: jest.fn().mockResolvedValue({
+        title: '자동차세',
+        dueDate: { year: 2026, month: 10, day: 31 },
+        memo: '',
+        modelUsed: 'model',
+      }),
+    };
+    const dispatcher = new ScheduleDispatcher(
+      register,
+      createAnswer(),
+      createAgentRunService() as never,
+      extract as never,
+    );
+    const result = await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '자동차세 등록해줘',
+      priorTurns,
+    });
+    expect(extract.execute).not.toHaveBeenCalled();
+    expect(register.execute).not.toHaveBeenCalled();
+    expect(result.formattedText).toBe(formatNeedsDate('자동차세'));
+  });
+  it('완전한 파서 결과가 있어도 참조 추출 실패 시 등록하지 않는다', async () => {
+    const register = createUsecase();
+    const extract = { execute: jest.fn().mockResolvedValue(null) };
+    const dispatcher = new ScheduleDispatcher(
+      register,
+      createAnswer(),
+      createAgentRunService() as never,
+      extract as never,
+    );
+    const result = await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '내일 원인과 함께 등록해줘',
+      priorTurns,
+    });
+    expect(extract.execute).toHaveBeenCalled();
+    expect(register.execute).not.toHaveBeenCalled();
+    expect(result.formattedText).toContain('제목을 알려');
+  });
+  it('assistant 가 없거나 가정형이면 추출하지 않는다', async () => {
+    const extract = { execute: jest.fn() };
+    const dispatcher = new ScheduleDispatcher(
+      createUsecase(),
+      createAnswer(),
+      createAgentRunService() as never,
+      extract as never,
+    );
+    await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '원인과 함께 등록해줘',
+    });
+    await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '원인과 함께 등록해도 돼?',
+      priorTurns,
+    });
+    expect(extract.execute).not.toHaveBeenCalled();
+  });
+  it('날짜가 있는 참조 요청도 모델 추출 결과를 등록한다', async () => {
+    const register = createUsecase();
+    const extract = {
+      execute: jest.fn().mockResolvedValue({
+        title: '원인 수정',
+        dueDate: { year: 2026, month: 10, day: 31 },
+        memo: '설정',
+        modelUsed: 'model',
+      }),
+    };
+    const dispatcher = new ScheduleDispatcher(
+      register,
+      createAnswer(),
+      createAgentRunService() as never,
+      extract as never,
+    );
+    await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '내일 원인과 함께 등록해줘',
+      priorTurns,
+    });
+    expect(register.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: '원인 수정',
+        dueDate: { year: 2026, month: 10, day: 31 },
+      }),
+    );
+  });
+  it('참조가 아닌 요청의 추출이 실패하면 기존 날짜 되묻기를 유지한다', async () => {
+    const dispatcher = new ScheduleDispatcher(
+      createUsecase(),
+      createAnswer(),
+      createAgentRunService() as never,
+      { execute: jest.fn().mockResolvedValue(null) } as never,
+    );
+    const result = await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '자동차세 등록해줘',
+      priorTurns,
+    });
+    expect(result.formattedText).toContain('언제');
   });
 });

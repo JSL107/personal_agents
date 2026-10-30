@@ -1,4 +1,6 @@
+import { wrapUntrustedInput } from '../../common/llm/untrusted-input.util';
 import { AgentType } from '../../model-router/domain/model-router.type';
+import { AUTO_POST_LABEL } from '../domain/auto-post-turn';
 import { ConversationTurn } from '../domain/conversation-memory.type';
 import { EvalCase } from './nl-answer-eval.type';
 
@@ -29,6 +31,24 @@ const bot = (
   agentRunId: null,
   timestampMs: 0,
 });
+
+const autoPost = (text: string): ConversationTurn =>
+  user(`${AUTO_POST_LABEL}\n${wrapUntrustedInput(text)}`);
+
+// 실제 아침신문처럼 뉴스 9건 뒤 맨 끝에 도구 1건을 둔다. 긴 본문에서 말미를 읽는지 확인한다.
+const MORNING_NEWS_BODY = [
+  ...['AI/LLM — 글로벌 동향', '한국 IT·스타트업·테크', '경제·시장'].flatMap(
+    (section, sectionIndex) => [
+      `📰 *${section}*`,
+      ...Array.from({ length: 3 }, (_, articleIndex) => {
+        const number = sectionIndex * 3 + articleIndex + 1;
+        return `*${section} 소식 ${number}*\n개발 조직이 서비스 품질을 높이기 위해 변경 이력과 운영 지표를 함께 살피고, 장애 재현 기록을 정리해 다음 배포의 검증 항목을 보강했다. 기사에서는 실험 범위와 관측한 차이를 설명하며 새 절차가 적용된 팀의 작업 흐름을 소개한다. 도입 과정에서 확인한 제약과 후속 점검 계획도 밝힌다. 같은 도구를 쓰는 조직이라도 배포 환경과 권한 범위에 따라 결과가 달라질 수 있어, 작은 범위에서 먼저 시험하고 운영 지표를 비교하라고 덧붙인다. [원문](https://example.invalid/news/${number})`;
+      }),
+    ],
+  ),
+  '2026-10-30 · 뉴스 9건',
+  '🛠 오늘의 도구\n*1. Diff Lens*\n· 뭔가요: PR 변경 줄의 위험도를 읽는 개발 도구입니다.\n· 흐름: PR diff → 변경 줄마다 위험도 채점 → 리뷰 우선순위 목록\n· 왜 볼 만한가: 검토할 줄을 먼저 고를 수 있습니다.\n· 써 보려면: `npx diff-lens scan`\n· 출처: https://example.invalid/tool',
+].join('\n\n');
 
 const MENTION = '<@U0AULUXLF9B> ';
 const PR_282 =
@@ -769,6 +789,76 @@ export const NL_ANSWER_EVAL_CASES: readonly EvalCase[] = [
       destinations: ['REPLIED'],
       forbidIntercepts: true,
       mustNotMatch: [/지원하지\s*않|못\s*해요|어려워요|기능은\s*없/],
+    },
+  },
+  // 2026-10-30 아침신문 DM 실사례: 긴 자동 발송 글의 마지막 도구 1건을 찾아야 한다.
+  {
+    id: 'h-morning-tool-count-1',
+    split: 'holdout',
+    note: '2026-10-30 아침신문 DM 실사례 — 첫 질문의 대상은 말미 오늘의 도구 1건',
+    text: '왜 스킬 아직도 한개야',
+    priorTurns: [autoPost(MORNING_NEWS_BODY)],
+    expect: {
+      forbidIntercepts: true,
+      mustNotMatch: [ASK_BACK, /어느 화면/],
+      mustMatch: [/도구/, /(1|한)\s*(건|개)/],
+    },
+  },
+  {
+    id: 'h-morning-tool-count-2',
+    split: 'holdout',
+    note: '2026-10-30 아침신문 DM 실사례 — 되물은 다음 재질문에 맥락으로 답해야 한다',
+    text: '오늘의 도구 추천이 왜 오늘도 한개냐고',
+    priorTurns: [
+      autoPost(MORNING_NEWS_BODY),
+      user('왜 스킬 아직도 한개야'),
+      bot('어느 화면에서 하나로 보이는지 알려주실 수 있나요?'),
+    ],
+    expect: {
+      forbidIntercepts: true,
+      // eval 은 조회를 빈 값으로 바꿔 돌리므로 "글만으로는 확인할 수 없다" 는 정직한 답이다.
+      // 실사례의 실패는 "지금 주신 정보만으로 확인할 수 없어요" 뒤에 할 수 있는 일 목록을 늘어놓은 것이다.
+      mustNotMatch: [/주신 정보만으로/, /PR 리뷰/],
+      mustMatch: [/도구/],
+      differFromPriorBot: true,
+    },
+  },
+  {
+    id: 'h-schedule-with-then',
+    split: 'holdout',
+    note: '2026-10-30 실제 DM 확인 — "그러면" 으로 앞 대화를 받은 등록 요청이 문장 조각 제목으로 등록됐다(일정 #78)',
+    text: '그러면 내가 고칠수있게 일정등록해줄래?',
+    priorTurns: [
+      user('오늘 도구 왜한개야?'),
+      bot(
+        '오늘 아침 실행 기록을 다시 봤어요. 당시 선정 기준이 개발에 바로 쓰는 도구만 허용하고 글·사례는 제외해서 dontallow 하나만 실렸어요. 레포의 아침신문 프롬프트에는 글·사례도 고를 수 있게 적혀 있지만 오늘 아침 발송에는 그 기준이 적용되지 않았습니다.',
+      ),
+    ],
+    expect: {
+      destinations: [AgentType.SCHEDULE],
+      mustIntercept: {
+        name: 'RegisterScheduleUsecase',
+        argsNonEmpty: ['memo'],
+      },
+    },
+  },
+  {
+    id: 'h-schedule-with-cause',
+    split: 'holdout',
+    note: '2026-10-30 아침신문 DM 실사례 — 직전 분석의 원인을 일정 메모에 보존한다',
+    text: '원인과 함께 일정에 등록해줄래?',
+    priorTurns: [
+      user('이거 왜 안돼?'),
+      bot(
+        '분석해 보니 아침신문 job 프롬프트가 도구를 1건만 고르게 돼 있는 게 의심돼요.',
+      ),
+    ],
+    expect: {
+      destinations: [AgentType.SCHEDULE],
+      mustIntercept: {
+        name: 'RegisterScheduleUsecase',
+        argsNonEmpty: ['memo'],
+      },
     },
   },
 ];

@@ -8,6 +8,7 @@ import { ConversationTurn } from '../domain/conversation-memory.type';
 // 구성: 2026-09-22 기준선(30/30, 문제지는 휘발)과 같은 틀로 재구성한 30문항 — 워커 전부, UNKNOWN,
 // 같은 PR 링크에 동사만 바꾼 경계 — 에 원화 공고(ART_JOB_FEED)와 헷갈리는 문항 14개를 더했다.
 // 2026-10-16 기록: #852 수정 전 43/44, 수정 후 44/44 (각 2회).
+// 2026-10-30: 직전 대화를 일정으로 옮기는 요청 2문항(실사례·대조군)을 더했다 — SCHEDULE 정의 보강.
 // 새 워커를 넣으면 그 워커의 대표 문장과 함께 "그 기능을 어떻게 쓰는지 묻는 질문"을 대조군으로 넣는다 —
 // #852 는 방법 질문이 새 워커의 명령으로 끌려간 사례다.
 
@@ -36,6 +37,23 @@ const turn = (
 // ArtJobFeedDispatcher 의 목록 되묻기 문구와 같은 형식.
 const askArtList = (terms: string): string =>
   `${terms} 키워드를 「허용(제목에 있으면 받기) / 제외(제목에 있으면 거르기) / 화풍(태그만)」 중 한 곳을 골라 주세요. 한 번에 한 목록에만 추가해요. 예: "화풍에 추가"`;
+
+const ANALYSIS_TURNS: ConversationTurn[] = [
+  {
+    role: 'user',
+    text: '이거 왜 안돼?',
+    agentType: null,
+    agentRunId: null,
+    timestampMs: 0,
+  },
+  {
+    role: 'assistant',
+    text: '분석해 보니 아침신문 job 프롬프트가 도구를 1건만 고르게 돼 있는 게 의심돼요.',
+    agentType: null,
+    agentRunId: null,
+    timestampMs: 0,
+  },
+];
 
 export const INTENT_CLASSIFIER_EVAL_CASES: readonly IntentClassifierEvalCase[] =
   [
@@ -229,6 +247,20 @@ export const INTENT_CLASSIFIER_EVAL_CASES: readonly IntentClassifierEvalCase[] =
       id: 'art-confuser-backend',
       text: '백엔드 채용공고 추천해줘',
       accept: ['UNKNOWN'],
+    },
+    // ── 직전 대화 내용을 일정으로 옮기는 요청(2026-10-30 아침신문 DM 실사례) ──
+    // 날짜가 없어도 SCHEDULE 이다. 같은 직전 대화 위의 질문은 대조군으로 UNKNOWN 에 남아야 한다.
+    {
+      id: 'context-analysis-then-schedule',
+      text: '원인과 함께 일정에 등록해줄래?',
+      accept: [AgentType.SCHEDULE],
+      priorTurns: ANALYSIS_TURNS,
+    },
+    {
+      id: 'context-analysis-then-question',
+      text: '방금 그거 무슨 뜻이야?',
+      accept: ['UNKNOWN'],
+      priorTurns: ANALYSIS_TURNS,
     },
     // ── 직전 대화가 원화 공고일 때 다른 요청이 끌려가지 않는가 ──
     {
