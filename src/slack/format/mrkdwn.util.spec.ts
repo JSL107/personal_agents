@@ -163,6 +163,44 @@ describe('convertMarkdownBold', () => {
     );
   });
 
+  // 2026-10-30 실제 DM: 코드가 굵게 가운데 끼면 여는·닫는 `**` 가 서로 다른 조각으로 나뉘어 별표가 그대로 보였다.
+  it('굵게 안에 인라인 코드가 끼어 있어도 Slack 굵게로 바꾼다', () => {
+    expect(
+      convertMarkdownBold(
+        '사진은 **오늘 브리핑에서 `dontallow` 하나만 선정됐기 때문** 이에요.',
+      ),
+    ).toBe('사진은 *오늘 브리핑에서 `dontallow` 하나만 선정됐기 때문* 이에요.');
+  });
+
+  it('굵게 안에 코드가 끼고 바로 글자가 붙으면 굵게 표시만 걷어낸다', () => {
+    expect(
+      convertMarkdownBold('**`dontallow` 하나만 선정됐기 때문**이에요.'),
+    ).toBe('`dontallow` 하나만 선정됐기 때문이에요.');
+  });
+
+  it('한 굵게 안에 코드·링크가 여럿이어도 각자 제자리로 되돌린다', () => {
+    expect(
+      convertMarkdownBold(
+        '**`a` 다음 <https://x.test|기록> 그리고 `b`** 끝, `c` 와 **둘째 `d`** 다만',
+      ),
+    ).toBe(
+      '*`a` 다음 <https://x.test|기록> 그리고 `b`* 끝, `c` 와 *둘째 `d`* 다만',
+    );
+  });
+
+  it('원문에 자리표시자 문자가 있으면 그 문자를 바꾸지 않는다', () => {
+    const source = '원문 \uE0000\uE001 과 `코드` 와 **굵게**';
+    expect(convertMarkdownBold(source)).toBe(
+      '원문 \uE0000\uE001 과 `코드` 와 *굵게*',
+    );
+  });
+
+  it('굵게 안의 Slack 링크는 그대로 두고 굵게만 바꾼다', () => {
+    expect(
+      convertMarkdownBold('**<https://x.test|기록> 을 보세요** 다만'),
+    ).toBe('*<https://x.test|기록> 을 보세요* 다만');
+  });
+
   it('코드블록과 인라인 코드 안의 별표는 건드리지 않는다', () => {
     const source = '```\n**raw**\n```\n`a**b**c` 와 **굵게**';
     expect(convertMarkdownBold(source)).toBe(
