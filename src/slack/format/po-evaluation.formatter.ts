@@ -1,5 +1,6 @@
 import { EvaluationOutput } from '../../agent/po-eval/domain/po-eval.type';
 import { FormattedReport } from './formatted-report.type';
+import { escapeSlackMrkdwn } from './mrkdwn.util';
 
 // PO 통합 facade 답글 formatter — summary(메인 메시지) / detail(스레드 상세 = 근거) 로 분리 렌더.
 // summary(메인):
@@ -125,6 +126,3 @@ const formatSourceFooter = (output: EvaluationOutput): string => {
     missing.length > 0 ? ` · missing: ${missing.join(', ')}` : '';
   return `_합성 source: ${sourcePart}${missingPart}_`;
 };
-
-const escapeSlackMrkdwn = (text: string): string =>
-  text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');

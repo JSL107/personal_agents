@@ -1,4 +1,5 @@
 import { NotionPlanBlock } from '../../../notion/domain/port/notion-client.port';
+import { escapeSlackMrkdwn } from '../../../slack/format/mrkdwn.util';
 import {
   CalibrationResultData,
   CareerProfileData,
@@ -378,8 +379,3 @@ export const formatPrRetro = (result: ReflectPrResult): string => {
       : []),
   ].join('\n');
 };
-
-// Slack mrkdwn control 문자 escape — LLM 출력(summary/bullet/skill명)에 의한 메시지 위조 차단.
-// (Notion 미러 경로는 어댑터가 link 를 isSafeHttpUrl 로 가드하므로 Slack mrkdwn 한정.)
-const escapeSlackMrkdwn = (text: string): string =>
-  text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');

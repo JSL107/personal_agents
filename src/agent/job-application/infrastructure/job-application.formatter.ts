@@ -1,4 +1,5 @@
 import { formatHeldWrite } from '../../../router/domain/hypothetical-utterance';
+import { escapeSlackMrkdwn } from '../../../slack/format/mrkdwn.util';
 import { plainDateToIso } from '../../vacation/domain/plain-date';
 import {
   ApplicationStatus,
@@ -17,11 +18,6 @@ const STATUS_LABEL: Record<ApplicationStatus, string> = {
 
 const statusLabel = (status: ApplicationStatus): string =>
   STATUS_LABEL[status] ?? status;
-
-// Slack mrkdwn control 문자 escape — 사용자 입력(회사/직무/메모)에 의한 메시지 위조 차단.
-// career-mate.formatter 와 동일 패턴 (& < > 만 escape — mrkdwn 링크/멘션 위조 차단에 충분).
-const escapeSlackMrkdwn = (text: string): string =>
-  text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 // 한 건을 목록 줄로 — 회사 · 직무 (상태) [부가정보].
 const recordLine = (record: JobApplicationRecord): string => {
