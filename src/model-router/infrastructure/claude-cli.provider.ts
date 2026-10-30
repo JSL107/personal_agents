@@ -18,6 +18,7 @@ import {
   buildSafeChildEnv,
   getRealHomeDir,
   killProcessTree,
+  writeStdinAndClose,
 } from './cli-process.util';
 
 const CLAUDE_EXECUTABLE = 'claude';
@@ -333,8 +334,7 @@ export class ClaudeCliProvider implements ModelProviderPort {
 
       // prompt 는 argv 가 아니라 stdin 으로 전달 — ps aux 노출 방지 + ARG_MAX 제한 회피.
       // claude -p 는 positional prompt 없이 stdin 에서 prompt 를 읽는다 (standard pipe pattern).
-      child.stdin?.write(stdinPayload);
-      child.stdin?.end();
+      writeStdinAndClose(child, stdinPayload);
     });
   }
 }

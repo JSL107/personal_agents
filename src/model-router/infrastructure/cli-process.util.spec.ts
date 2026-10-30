@@ -1,4 +1,10 @@
-import { buildSafeChildEnv, killProcessTree } from './cli-process.util';
+import { spawn } from 'node:child_process';
+
+import {
+  buildSafeChildEnv,
+  killProcessTree,
+  writeStdinAndClose,
+} from './cli-process.util';
 
 describe('buildSafeChildEnv', () => {
   const originalEnv = { ...process.env };
@@ -216,5 +222,21 @@ describe('killProcessTree', () => {
 
     expect(() => killProcessTree(999)).not.toThrow();
     spy.mockRestore();
+  });
+});
+
+describe('writeStdinAndClose', () => {
+  it('자식이 stdin 을 읽기 전에 끝나도 EPIPE 가 uncaught 로 새지 않고 close 로 종료 코드가 온다', async () => {
+    // 파이프 버퍼(약 64KB)를 넘겨야 쓰기가 끝나지 않은 채 자식이 먼저 죽는다 — 작은 payload 는 재현이 안 된다.
+    const child = spawn(process.execPath, ['-e', 'process.exit(3)'], {
+      stdio: ['pipe', 'ignore', 'ignore'],
+    });
+    const closed = new Promise<number | null>((resolve) => {
+      child.on('close', resolve);
+    });
+
+    writeStdinAndClose(child, 'x'.repeat(1_000_000));
+
+    await expect(closed).resolves.toBe(3);
   });
 });

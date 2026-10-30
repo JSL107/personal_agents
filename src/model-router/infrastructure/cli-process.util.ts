@@ -1,3 +1,4 @@
+import { ChildProcess } from 'node:child_process';
 import { homedir } from 'node:os';
 
 // CLI provider 가 자식 프로세스로 실행될 때 상속할 환경변수 allowlist.
@@ -131,6 +132,18 @@ export const killProcessTree = (pid: number | undefined): void => {
       // 이미 종료된 프로세스 — no-op.
     }
   }
+};
+
+// prompt 를 stdin 으로 넘기고 닫는다. 자식이 stdin 을 다 읽기 전에 끝나면(인증 만료·쿼터 소진의 즉시
+// exit) 파이프 버퍼(약 64KB)를 넘는 payload 쓰기가 stdin 스트림에 EPIPE 'error' 를 낸다. `child.on('error')`
+// 는 spawn 실패만 받으므로 이 리스너가 없으면 uncaught 로 봇 프로세스 전체가 죽는다. 실패 사유는 provider 의
+// 'close' 핸들러가 종료 코드·stderr 로 이미 보고하므로 여기서는 삼킨다.
+export const writeStdinAndClose = (
+  child: ChildProcess,
+  payload: string,
+): void => {
+  child.stdin?.on('error', () => undefined);
+  child.stdin?.end(payload);
 };
 
 // codex 인증·바이너리(packages)가 사는 디렉토리. 자식 env(CODEX_HOME)와 권한 프로필(packages 읽기 허용)이
