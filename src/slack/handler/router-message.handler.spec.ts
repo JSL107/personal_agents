@@ -16,6 +16,7 @@ import {
 } from '../../preview-gate/domain/preview-action.type';
 import { ConversationMemoryService } from '../../router/application/conversation-memory.service';
 import { ConversationalReplyUsecase } from '../../router/application/conversational-reply.usecase';
+import { AUTO_POST_LABEL } from '../../router/domain/auto-post-turn';
 import { ConversationTurn } from '../../router/domain/conversation-memory.type';
 import {
   DispatchInput,
@@ -26,6 +27,9 @@ import { RouterException } from '../../router/domain/router.exception';
 import { RouterErrorCode } from '../../router/domain/router-error-code.enum';
 import { MentionReceiptRepositoryPort } from '../domain/port/mention-receipt.repository.port';
 import { SlackDeliveryRepositoryPort } from '../domain/port/slack-delivery.repository.port';
+import { SlackTranscriptMessage } from '../domain/slack-transcript';
+import { SlackConversationReader } from '../infrastructure/slack-conversation.reader';
+import { SlackImageDownloader } from '../infrastructure/slack-image.downloader';
 import {
   pickThreadReplies,
   RouterMessageHandler,
@@ -47,6 +51,8 @@ const buildHandler = (
     handleGoalAnswer?: HandleGoalAnswerUsecase;
     deliveryRepository?: SlackDeliveryRepositoryPort;
     mentionReceiptRepository?: MentionReceiptRepositoryPort;
+    conversationReader?: SlackConversationReader;
+    imageDownloader?: SlackImageDownloader;
   } = {},
 ): RouterMessageHandler => {
   const conversationalReply =
@@ -102,6 +108,19 @@ const buildHandler = (
       recordOutcome: jest.fn().mockResolvedValue(undefined),
       recordFinalReply: jest.fn().mockResolvedValue(undefined),
     },
+    options.conversationReader ??
+      ({
+        read: jest.fn().mockResolvedValue(null),
+        selfBotId: jest.fn().mockResolvedValue('B_IDAERI'),
+      } as unknown as SlackConversationReader),
+    options.imageDownloader ??
+      ({
+        download: jest.fn().mockResolvedValue({
+          images: [],
+          failedCount: 0,
+          dispose: jest.fn().mockResolvedValue(undefined),
+        }),
+      } as unknown as SlackImageDownloader),
   );
 };
 
@@ -151,6 +170,14 @@ interface AppMentionEvent {
   ts?: string;
   thread_ts?: string;
   channel?: string;
+  files?: SlackEventFile[];
+}
+
+interface SlackEventFile {
+  id: string;
+  mimetype: string;
+  size: number;
+  url_private_download: string;
 }
 
 interface MessageEvent {
@@ -163,6 +190,7 @@ interface MessageEvent {
   channel_type?: 'im' | 'channel' | 'group' | 'mpim';
   subtype?: string;
   bot_id?: string;
+  files?: SlackEventFile[];
 }
 
 const buildAppMock = (): {
@@ -3120,5 +3148,325 @@ describe('pickThreadReplies', () => {
         threadKey: B_THREAD,
       }),
     ).toEqual([]);
+  });
+});
+
+describe('RouterMessageHandler — Slack 대화 기록과 사진', () => {
+  const messageTs = '1730000000.000200';
+  const imageFile: SlackEventFile = {
+    id: 'F_IMAGE',
+    mimetype: 'image/png',
+    size: 1024,
+    url_private_download: 'https://files.slack.com/test.png',
+  };
+  const dispatchResult: DispatchResult = {
+    agentRunId: 17,
+    workerType: AgentType.PM,
+    output: {},
+    modelUsed: 'mock',
+    formattedText: '작업 결과',
+  };
+  const intentFailure = () =>
+    new RouterException({
+      code: RouterErrorCode.INTENT_CLASSIFY_FAILED,
+      message: 'UNKNOWN',
+      status: DomainStatus.BAD_REQUEST,
+    });
+  const event = (overrides: Partial<MessageEvent> = {}): MessageEvent => ({
+    type: 'message',
+    user: 'U_USER',
+    channel: 'D_DM',
+    channel_type: 'im',
+    ts: messageTs,
+    text: '이게 뭐야?',
+    ...overrides,
+  });
+  const transcript = (
+    overrides: Partial<SlackTranscriptMessage> = {},
+  ): SlackTranscriptMessage => ({
+    ts: '1730000000.000100',
+    text: '이전 글',
+    files: [],
+    ...overrides,
+  });
+  const setup = ({
+    messages = null,
+    failure = false,
+    memory = new ConversationMemoryService(),
+  }: {
+    messages?: SlackTranscriptMessage[] | null;
+    failure?: boolean;
+    memory?: ConversationMemoryService;
+  } = {}) => {
+    const { app, getHandler } = buildAppMock();
+    const dispatch = failure
+      ? jest.fn().mockRejectedValue(intentFailure())
+      : jest.fn().mockResolvedValue(dispatchResult);
+    const reply = jest.fn().mockResolvedValue('대화 답변');
+    const read = jest.fn().mockResolvedValue(messages);
+    const selfBotId = jest.fn().mockResolvedValue('B_IDAERI');
+    const dispose = jest.fn().mockResolvedValue(undefined);
+    const download = jest.fn().mockResolvedValue({
+      images: [{ index: 1, path: '/tmp/image.png' }],
+      failedCount: 0,
+      dispose,
+    });
+    buildHandler(
+      { dispatch },
+      {
+        conversationalReply: { reply } as unknown as ConversationalReplyUsecase,
+        conversationMemory: memory,
+        conversationReader: {
+          read,
+          selfBotId,
+        } as unknown as SlackConversationReader,
+        imageDownloader: { download } as unknown as SlackImageDownloader,
+      },
+    ).register(app);
+    return {
+      getHandler,
+      dispatch,
+      reply,
+      read,
+      selfBotId,
+      download,
+      dispose,
+      memory,
+    };
+  };
+
+  it('DM file_share 메시지를 처리한다', async () => {
+    const testCase = setup();
+    await invokeHandler(
+      testCase.getHandler('message'),
+      event({ subtype: 'file_share', files: [imageFile] }),
+    );
+    expect(testCase.dispatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('DM file_share 이벤트에 files 가 없으면 현재 메시지 history 에서 보충한다', async () => {
+    const testCase = setup({ failure: true });
+    const history = jest.fn().mockResolvedValue({
+      messages: [{ ts: messageTs, files: [imageFile] }],
+    });
+    const client = {
+      reactions: {
+        add: jest.fn().mockResolvedValue({ ok: true }),
+        remove: jest.fn().mockResolvedValue({ ok: true }),
+      },
+      conversations: { history },
+    };
+    await testCase.getHandler('message')({
+      event: { ...event({ subtype: 'file_share' }) },
+      say: jest.fn(),
+      client,
+    });
+    expect(history).toHaveBeenCalledWith({
+      channel: 'D_DM',
+      latest: messageTs,
+      inclusive: true,
+      limit: 1,
+    });
+    expect(testCase.download).toHaveBeenCalledWith([
+      expect.objectContaining({
+        file: expect.objectContaining({ id: 'F_IMAGE' }),
+      }),
+    ]);
+  });
+
+  it('DM 의 다른 subtype(message_changed)은 버린다', async () => {
+    const testCase = setup();
+    await invokeHandler(
+      testCase.getHandler('message'),
+      event({ subtype: 'message_changed' }),
+    );
+    expect(testCase.dispatch).not.toHaveBeenCalled();
+    expect(testCase.read).not.toHaveBeenCalled();
+  });
+
+  it('DM 최상위 질문에 바로 위 자동 발송 글이 대화 본문으로 넘어간다', async () => {
+    const testCase = setup({
+      messages: [transcript({ botId: 'B_IDAERI', text: '아침신문 본문' })],
+      failure: true,
+    });
+    await invokeHandler(testCase.getHandler('message'), event());
+    const dispatchTurns = testCase.dispatch.mock.calls[0][0]
+      .priorTurns as ConversationTurn[];
+    const replyTurns = testCase.reply.mock.calls[0][0]
+      .priorTurns as ConversationTurn[];
+    expect(dispatchTurns[0].text).toContain(AUTO_POST_LABEL);
+    expect(dispatchTurns[0].text).toContain('아침신문 본문');
+    expect(replyTurns).toEqual(dispatchTurns);
+  });
+
+  it('DM 최상위 질문에 직전 스레드의 이대리 답(assistant)이 대화 본문에 들어온다', async () => {
+    const testCase = setup({
+      messages: [
+        transcript({
+          botId: 'B_IDAERI',
+          text: '직전 답변',
+          metadata: { eventType: 'idaeri_reply', eventPayload: {} },
+        }),
+      ],
+    });
+    await invokeHandler(testCase.getHandler('message'), event());
+    expect(testCase.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        priorTurns: [
+          expect.objectContaining({ role: 'assistant', text: '직전 답변' }),
+        ],
+      }),
+    );
+  });
+
+  it('스레드 여부는 replyToTs 로 판정해 리더에 threadTs 를 넘긴다 — 최상위는 undefined', async () => {
+    const testCase = setup();
+    await invokeHandler(testCase.getHandler('message'), event());
+    await invokeHandler(
+      testCase.getHandler('message'),
+      event({ ts: '1730000000.000300', thread_ts: '1730000000.000100' }),
+    );
+    expect(testCase.read.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        isDirectMessage: true,
+        threadTs: undefined,
+        messageTs,
+        nowMs: expect.any(Number),
+      }),
+    );
+    expect(testCase.read.mock.calls[1][0]).toEqual(
+      expect.objectContaining({ threadTs: '1730000000.000100' }),
+    );
+  });
+
+  it('기록 조회가 null 이면 Redis 턴을 넘긴다', async () => {
+    const memory = new ConversationMemoryService();
+    const key = memory.buildKey({ slackUserId: 'U_USER', channelId: 'D_DM' });
+    const saved = buildConversationTurn({ text: 'Redis 답변' });
+    await memory.appendTurn(key, saved);
+    const testCase = setup({ memory, failure: true });
+    await invokeHandler(testCase.getHandler('message'), event());
+    expect(testCase.dispatch.mock.calls[0][0].priorTurns).toEqual([saved]);
+    expect(testCase.reply.mock.calls[0][0].priorTurns).toEqual([saved]);
+  });
+
+  it('가로채기가 처리한 메시지는 Slack 기록을 읽지 않는다', async () => {
+    const { app, getHandler } = buildAppMock();
+    const read = jest.fn().mockResolvedValue([]);
+    buildHandler(
+      { dispatch: jest.fn() },
+      {
+        handleGoalAnswer: {
+          execute: jest.fn().mockResolvedValue({ replyText: '목표 카드' }),
+        } as unknown as HandleGoalAnswerUsecase,
+        conversationReader: { read } as unknown as SlackConversationReader,
+      },
+    ).register(app);
+    await invokeHandler(
+      getHandler('message'),
+      event({ text: '개인비서 만들기' }),
+    );
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it('reply 에 memoryTurns 로 Redis 턴을 넘긴다', async () => {
+    const memory = new ConversationMemoryService();
+    const key = memory.buildKey({ slackUserId: 'U_USER', channelId: 'D_DM' });
+    const saved = buildConversationTurn({ text: '기억 속 질문?' });
+    await memory.appendTurn(key, saved);
+    const testCase = setup({ memory, messages: [], failure: true });
+    await invokeHandler(testCase.getHandler('message'), event());
+    expect(testCase.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ memoryTurns: [saved], priorTurns: [] }),
+    );
+  });
+
+  it('리더가 null 이어도 현재 메시지의 files 로 사진을 받는다', async () => {
+    const testCase = setup({ failure: true });
+    await invokeHandler(
+      testCase.getHandler('message'),
+      event({ files: [imageFile] }),
+    );
+    expect(testCase.download).toHaveBeenCalledWith([
+      expect.objectContaining({
+        index: 1,
+        ts: messageTs,
+        file: expect.objectContaining({ id: 'F_IMAGE' }),
+      }),
+    ]);
+    expect(testCase.reply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        images: [{ index: 1, path: '/tmp/image.png' }],
+      }),
+    );
+  });
+
+  it('app_mention 사진도 현재 메시지 사진으로 받는다', async () => {
+    const testCase = setup({ failure: true });
+    await invokeHandler(testCase.getHandler('app_mention'), {
+      type: 'app_mention',
+      user: 'U_USER',
+      channel: 'C_CHANNEL',
+      ts: messageTs,
+      text: '<@UBOT> 이게 뭐야?',
+      files: [imageFile],
+    });
+    expect(testCase.download).toHaveBeenCalledWith([
+      expect.objectContaining({
+        file: expect.objectContaining({ id: 'F_IMAGE' }),
+      }),
+    ]);
+  });
+
+  it('사진만 보낸 메시지도 메시지 없음 안내로 끊지 않는다', async () => {
+    const testCase = setup({ failure: true });
+    const { say } = await invokeHandler(
+      testCase.getHandler('message'),
+      event({ text: '', files: [imageFile], subtype: 'file_share' }),
+    );
+    expect(testCase.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ text: '[사진 1장 첨부]' }),
+    );
+    expect(say).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: expect.stringContaining('메시지가 비어 있습니다'),
+      }),
+    );
+  });
+
+  it('대화 답변 분기에서만 사진을 내려받고 끝나면 dispose 한다', async () => {
+    const workerCase = setup();
+    await invokeHandler(
+      workerCase.getHandler('message'),
+      event({ files: [imageFile] }),
+    );
+    expect(workerCase.download).not.toHaveBeenCalled();
+    const replyCase = setup({ failure: true });
+    await invokeHandler(
+      replyCase.getHandler('message'),
+      event({ files: [imageFile] }),
+    );
+    expect(replyCase.download).toHaveBeenCalledTimes(1);
+    expect(replyCase.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('unresolvedStreak 는 Redis 턴 기준이다 — Slack 턴의 꼬리표 없는 답이 영향을 주지 않는다', async () => {
+    const memory = new ConversationMemoryService();
+    const key = memory.buildKey({ slackUserId: 'U_USER', channelId: 'D_DM' });
+    await memory.appendTurn(
+      key,
+      buildConversationTurn({ text: '더 도와드릴까요?' }),
+    );
+    const testCase = setup({
+      memory,
+      messages: [
+        transcript({ botId: 'B_IDAERI', text: '무엇을 도와드릴까요?' }),
+      ],
+      failure: true,
+    });
+    await invokeHandler(testCase.getHandler('message'), event());
+    expect(testCase.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ unresolvedStreak: 1 }),
+    );
   });
 });
