@@ -19,6 +19,10 @@ import {
   formatScheduleRegistered,
 } from '../../slack/format/schedule.formatter';
 import { AnswerScheduleQuestionUsecase } from '../application/answer-schedule-question.usecase';
+import {
+  ExtractedSchedule,
+  ExtractScheduleFromConversationUsecase,
+} from '../application/extract-schedule-from-conversation.usecase';
 import { RegisterScheduleUsecase } from '../application/register-schedule.usecase';
 import { todayInKst } from '../domain/parse-due-date';
 import {
@@ -26,6 +30,7 @@ import {
   parseScheduleCommand,
   ScheduleCommand,
 } from '../domain/parse-schedule-command';
+import { refersToPriorConversation } from '../domain/prior-conversation-reference';
 import { ScheduleException } from '../domain/schedule.exception';
 import { PlainDate } from '../domain/schedule.type';
 import { ScheduleErrorCode } from '../domain/schedule-error-code.enum';
@@ -45,6 +50,7 @@ export class ScheduleDispatcher implements AgentDispatcher {
     private readonly registerSchedule: RegisterScheduleUsecase,
     private readonly answerQuestion: AnswerScheduleQuestionUsecase,
     private readonly agentRunService: AgentRunService,
+    private readonly extractSchedule: ExtractScheduleFromConversationUsecase,
   ) {}
 
   async dispatch(input: DispatchInput): Promise<DispatchOutcome> {
@@ -90,6 +96,28 @@ export class ScheduleDispatcher implements AgentDispatcher {
       );
     }
 
+    const reference = refersToPriorConversation(input.text);
+    const priorTurns = input.priorTurns ?? [];
+    if (
+      priorTurns.some((turn) => turn.role === 'assistant') &&
+      (command.kind !== 'REGISTER' || reference)
+    ) {
+      const extracted = await this.extractSchedule.execute({
+        text: input.text,
+        priorTurns,
+        today,
+      });
+      if (extracted) {
+        return this.registerFromConversation(input, extracted, today);
+      }
+      if (reference) {
+        return this.toOutcome(
+          command,
+          '직전 대화 내용을 읽지 못했어요. 제목을 알려 주세요.',
+        );
+      }
+    }
+
     if (command.kind === 'NEEDS_TITLE') {
       return this.toOutcome(command, formatNeedsTitle());
     }
@@ -132,6 +160,52 @@ export class ScheduleDispatcher implements AgentDispatcher {
       output: outcome.result,
       modelUsed: outcome.modelUsed,
       formattedText: formatScheduleRegistered(outcome.result),
+    };
+  }
+
+  private async registerFromConversation(
+    input: DispatchInput,
+    extracted: ExtractedSchedule,
+    today: PlainDate,
+  ): Promise<DispatchOutcome> {
+    const dueDate = extracted.dueDate ?? today;
+    const outcome = await this.agentRunService.execute({
+      agentType: AgentType.SCHEDULE,
+      triggerType: TriggerType.SLACK_MENTION_SCHEDULE,
+      inputSnapshot: {
+        slackUserId: input.slackUserId,
+        action: 'REGISTER',
+        title: extracted.title,
+        dueDate,
+        source: 'CONVERSATION',
+        hasMemo: extracted.memo.length > 0,
+      },
+      run: async () => {
+        const record = await this.registerSchedule.execute({
+          slackUserId: input.slackUserId,
+          title: extracted.title,
+          dueDate,
+          memo: extracted.memo,
+        });
+        return {
+          result: record,
+          modelUsed: extracted.modelUsed,
+          output: {
+            scheduleId: record.id,
+            title: record.title,
+            dueDate: record.dueDate,
+          },
+        };
+      },
+    });
+    return {
+      agentRunId: outcome.agentRunId,
+      output: outcome.result,
+      modelUsed: outcome.modelUsed,
+      formattedText: formatScheduleRegistered(outcome.result, {
+        dateDefaulted: extracted.dueDate === null,
+        memo: extracted.memo,
+      }),
     };
   }
 
