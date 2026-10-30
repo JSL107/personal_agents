@@ -51,7 +51,7 @@ export class FindAnswerablePreviewUsecase {
       slackUserId,
       now,
       limit: 2,
-      ...toCandidateFilter(scope, now),
+      ...toCandidateFilter({ scope, now }),
     });
 
     if (candidates.length === 0) {
@@ -64,10 +64,13 @@ export class FindAnswerablePreviewUsecase {
   }
 }
 
-const toCandidateFilter = (
-  scope: PreviewAnswerScope,
-  now: Date,
-): AnswerCandidateFilter => {
+const toCandidateFilter = ({
+  scope,
+  now,
+}: {
+  scope: PreviewAnswerScope;
+  now: Date;
+}): AnswerCandidateFilter => {
   const createdSince = new Date(now.getTime() - PREVIEW_ANSWER_WINDOW_MS);
   switch (scope.kind) {
     case 'SLACK_THREAD':

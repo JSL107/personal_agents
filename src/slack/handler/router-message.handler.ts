@@ -8,7 +8,11 @@ import { detectYesNoIntent } from '../../common/util/yes-no-intent.util';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { ApplyPreviewUsecase } from '../../preview-gate/application/apply-preview.usecase';
 import { CancelPreviewUsecase } from '../../preview-gate/application/cancel-preview.usecase';
-import { FindAnswerablePreviewUsecase } from '../../preview-gate/application/find-answerable-preview.usecase';
+import {
+  AnswerablePreviewResult,
+  FindAnswerablePreviewUsecase,
+  PreviewAnswerScope,
+} from '../../preview-gate/application/find-answerable-preview.usecase';
 import { FindLatestPendingPreviewUsecase } from '../../preview-gate/application/find-latest-pending-preview.usecase';
 import { RecordPreviewThreadUsecase } from '../../preview-gate/application/record-preview-thread.usecase';
 import {
@@ -440,7 +444,8 @@ export class RouterMessageHandler implements SlackHandler {
         text,
         slackUserId,
         channelId,
-        userThreadTs: replyToTs,
+        source,
+        replyToTs,
         threadTs,
         say,
         memoryKey,
@@ -807,15 +812,16 @@ export class RouterMessageHandler implements SlackHandler {
   }
 
   // 자연어 Y/N 응답 인터셉트 — 사용자가 같은 대화의 PreviewGate preview 에 "응 / 아니" 로 답한 경우만.
-  // 1) 실제 Slack 스레드 또는 최상위 채널 대화에서 답할 수 있는 preview 조회
-  // 2) detectYesNoIntent 로 자연어 분류 (ambiguous=null 이면 false)
-  // 3) yes → apply, no → cancel
+  // 1) detectYesNoIntent 로 자연어 분류 (ambiguous=null 이면 false)
+  // 2) 답이 놓인 자리(스레드 / DM 최상위)의 카드와 DM 의 열린 목표 질문 카드를 모아, 정확히 한 장일 때만 고른다
+  // 3) yes → apply, no → cancel. 두 장 이상이면 실행하지 않고 버튼 선택을 안내한다
   // ConversationMemory 에는 agentType=null + agentRunId=null 로 turn 적재 (worker dispatch 아님).
   private async tryHandlePreviewYesNo({
     text,
     slackUserId,
     channelId,
-    userThreadTs,
+    source,
+    replyToTs,
     threadTs,
     say,
     memoryKey,
@@ -823,7 +829,9 @@ export class RouterMessageHandler implements SlackHandler {
     text: string;
     slackUserId: string;
     channelId: string;
-    userThreadTs: string | undefined;
+    source: MentionSource;
+    // 사용자 메시지의 실제 thread_ts — 최상위 메시지면 undefined.
+    replyToTs: string | undefined;
     threadTs: string | undefined;
     say: SayFn;
     memoryKey: string;
@@ -832,24 +840,32 @@ export class RouterMessageHandler implements SlackHandler {
     if (intent === null) {
       return false;
     }
-    // 목표 질문이 진행 중이면 Y/N 은 그 질문의 카드에만 적용한다. 그 사이 쌓인 다른 카드(목표 [닫기]·
-    // 아이디어 카드)가 질문에 대한 "응" 으로 승인되거나, 더 최근 카드 때문에 질문 카드의 승인이 막히면 안 된다.
-    // 질문에 카드가 아직 없으면 Y/N 을 적용하지 않고 목표 답 인터셉터로 넘긴다.
-    const questionCard = await this.handleGoalAnswer.findOpenQuestionCard({
-      slackUserId,
-      now: new Date(),
-    });
-    const answerable =
-      questionCard === undefined
-        ? await this.findAnswerablePreview.execute({
+    // 목표 질문 문답은 DM 에서만 한다(tryHandleGoalAnswer 도 DM 만 받는다). 채널의 "응" 에 질문 카드를 끼우면
+    // 다른 대화의 답이 목표를 저장한다. 질문에 카드가 아직 없으면 Y/N 을 적용하지 않고 목표 답 인터셉터로 넘긴다.
+    const questionCard =
+      source === 'dm'
+        ? await this.handleGoalAnswer.findOpenQuestionCard({
             slackUserId,
             now: new Date(),
-            scope: userThreadTs
-              ? { kind: 'SLACK_THREAD', channelId, threadTs: userThreadTs }
-              : { kind: 'SLACK_TOP_LEVEL', channelId },
           })
         : undefined;
-    if (answerable?.status === 'AMBIGUOUS') {
+    if (questionCard !== undefined && questionCard.card === null) {
+      return false;
+    }
+    const scope = toAnswerScope({ source, channelId, replyToTs });
+    const scoped =
+      scope === null
+        ? ({ status: 'NONE' } as const)
+        : await this.findAnswerablePreview.execute({
+            slackUserId,
+            now: new Date(),
+            scope,
+          });
+    const answerable = mergeQuestionCard({
+      scoped,
+      questionCard: questionCard?.card ?? null,
+    });
+    if (answerable.status === 'AMBIGUOUS') {
       const replyText = PREVIEW_ANSWER_AMBIGUOUS_TEXT;
       await this.conversationMemory.appendTurn(memoryKey, {
         role: 'user',
@@ -868,12 +884,10 @@ export class RouterMessageHandler implements SlackHandler {
       });
       return true;
     }
-    const pending =
-      questionCard?.card ??
-      (answerable?.status === 'ONE' ? answerable.preview : null);
-    if (!pending) {
+    if (answerable.status === 'NONE') {
       return false;
     }
+    const pending = answerable.preview;
     // CAREER_JD_GAP_BLOG 은 applier 가 없어 apply 불가 — "응" 류는 번호 선택(tryHandleGapTopicSelection)
     // 으로 흘려보낸다. "아니"/취소는 applier 불필요한 cancel 경로라 그대로 허용(포매터의 "취소하려면 아니" 유지).
     if (pending.kind === PREVIEW_KIND.CAREER_JD_GAP_BLOG && intent === 'yes') {
@@ -1214,6 +1228,44 @@ const isIntentClassifyFailed = (error: unknown): boolean =>
 // worker 가 직접 구성한 카드(slackBlocks — 예: CTO 분배의 드롭다운·실행 버튼)가 우선이고,
 // 없으면 preview 승인 카드를 그린다. 둘 다 채우는 worker 는 현재 없지만, 카드 구성을
 // worker 가 쥔 쪽이 더 구체적이라 그쪽을 앞에 둔다. 둘 다 없으면 텍스트만 보낸다.
+// 답이 놓인 자리 → 카드 조회 범위. 스레드 답은 그 스레드, 최상위 답은 DM 일 때만 같은 채널의 최근 카드.
+// 채널 멘션은 봇이 늘 스레드로 답하므로 채널 최상위 "응" 이 가리킬 카드가 없다 — 범위를 열지 않는다(null).
+const toAnswerScope = ({
+  source,
+  channelId,
+  replyToTs,
+}: {
+  source: MentionSource;
+  channelId: string;
+  replyToTs: string | undefined;
+}): PreviewAnswerScope | null => {
+  if (replyToTs !== undefined) {
+    return { kind: 'SLACK_THREAD', channelId, threadTs: replyToTs };
+  }
+  if (source === 'dm') {
+    return { kind: 'SLACK_TOP_LEVEL', channelId };
+  }
+  return null;
+};
+
+// DM 의 열린 목표 질문 카드를 범위 조회 결과와 합친다. 서로 다른 카드가 둘이면 고르지 않는다 —
+// 질문 카드를 무조건 앞세우면 같은 자리의 다른 카드에 한 답이 목표를 저장하고, 반대면 질문에 한 답이 엉뚱한 카드를 승인한다.
+const mergeQuestionCard = ({
+  scoped,
+  questionCard,
+}: {
+  scoped: AnswerablePreviewResult;
+  questionCard: PreviewAction | null;
+}): AnswerablePreviewResult => {
+  if (questionCard === null || scoped.status === 'AMBIGUOUS') {
+    return scoped;
+  }
+  if (scoped.status === 'NONE' || scoped.preview.id === questionCard.id) {
+    return { status: 'ONE', preview: questionCard };
+  }
+  return { status: 'AMBIGUOUS' };
+};
+
 const resolveReplyBlocks = (
   result: DispatchResult,
   replyText: string,
