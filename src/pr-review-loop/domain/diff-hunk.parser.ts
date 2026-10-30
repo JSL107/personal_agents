@@ -28,14 +28,37 @@ const OLD_FILE_HEADER = /^--- (?:a\/)?(.+)$/;
 const HUNK_HEADER = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/;
 const BASE_HUNK_HEADER = /^@@ -(\d+)(?:,(\d+))? \+/;
 
+// git 이 파일 헤더 바로 앞에 두는 머리말. hunk 본문 줄은 공백·`-`·`+`·`\` 로만 시작하므로 이것과 섞이지 않는다.
+const FILE_PREAMBLE =
+  /^(diff --git |index |new file mode |deleted file mode |old mode |new mode |similarity index |dissimilarity index |rename from |rename to |copy from |copy to )/;
+
+// 파일 헤더는 `--- a/…` 바로 다음 줄이 `+++ b/…` 이고, 그 앞이 파일 머리말(또는 diff 의 첫 줄)일 때만 인정한다.
+// 한 줄씩 따로 맞추면 hunk 본문의 삭제 줄 `-- 주석`(diff 에서는 `--- 주석`)이나 추가 줄 `++ x`(`+++ x`)를
+// 파일 경계로 읽어 그 뒤 hunk 를 가짜 파일에 붙인다. 한 쌍만 보면 `-- count;` → `++ count;` 처럼 삭제·추가가
+// 붙어 나오는 본문에 또 속는다. hunk 헤더의 줄 수를 세는 방식은 쓰지 않는다 — 크기 상한에서 잘린 diff 처럼
+// 줄 수가 어긋나면 그 뒤 파일을 통째로 본문으로 삼켜 더 크게 틀린다.
+const isFileHeaderPair = ({
+  lines,
+  oldIndex,
+}: {
+  lines: string[];
+  oldIndex: number;
+}): boolean =>
+  (oldIndex === 0 || FILE_PREAMBLE.test(lines[oldIndex - 1] ?? '')) &&
+  OLD_FILE_HEADER.test(lines[oldIndex] ?? '') &&
+  NEW_FILE_HEADER.test(lines[oldIndex + 1] ?? '');
+
 // unified diff 에서 파일별 "신규(오른쪽) 파일 기준 줄 범위"를 뽑는다.
 // GitHub 인라인 코멘트는 이 범위 안의 줄에만 달 수 있다.
 export const parseDiffHunks = (diff: string): FileHunkRanges[] => {
   const files: FileHunkRanges[] = [];
   let current: FileHunkRanges | null = null;
 
-  for (const rawLine of diff.split('\n')) {
-    const fileMatch = rawLine.match(NEW_FILE_HEADER);
+  const lines = diff.split('\n');
+  for (const [index, rawLine] of lines.entries()) {
+    const fileMatch = isFileHeaderPair({ lines, oldIndex: index - 1 })
+      ? rawLine.match(NEW_FILE_HEADER)
+      : null;
     if (fileMatch) {
       const filePath = fileMatch[1].trim();
       if (filePath === '/dev/null') {
@@ -104,8 +127,11 @@ export const parseDiffBaseHunks = (diff: string): FileHunkRanges[] => {
   const files: FileHunkRanges[] = [];
   let current: FileHunkRanges | null = null;
 
-  for (const rawLine of diff.split('\n')) {
-    const fileMatch = rawLine.match(OLD_FILE_HEADER);
+  const lines = diff.split('\n');
+  for (const [index, rawLine] of lines.entries()) {
+    const fileMatch = isFileHeaderPair({ lines, oldIndex: index })
+      ? rawLine.match(OLD_FILE_HEADER)
+      : null;
     if (fileMatch) {
       const filePath = fileMatch[1].trim();
       if (filePath === '/dev/null') {

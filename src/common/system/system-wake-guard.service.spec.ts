@@ -51,6 +51,38 @@ describe('SystemWakeGuard.waitUntilReady', () => {
     expect(probe).not.toHaveBeenCalled();
   });
 
+  it('절전 후 동시 호출은 같은 준비 대기를 공유한다', async () => {
+    jest.useFakeTimers();
+    const guard = new TestableWakeGuard();
+    guard.onModuleInit();
+    guard.fakeNow += 642_000;
+    const probe = jest
+      .fn()
+      .mockResolvedValueOnce(false)
+      .mockResolvedValue(true);
+    const first = guard.waitUntilReady(probe, {
+      intervalMs: 20,
+      maxWaitMs: 5_000,
+    });
+    await jest.advanceTimersByTimeAsync(1);
+    let secondResolved = false;
+    const second = guard.waitUntilReady(probe).then((result) => {
+      secondResolved = true;
+      return result;
+    });
+    await jest.advanceTimersByTimeAsync(1);
+    expect(secondResolved).toBe(false);
+    await jest.advanceTimersByTimeAsync(20);
+    const results = await Promise.all([first, second]);
+    expect(results).toEqual([
+      { waited: true, ready: true, attempts: 2 },
+      { waited: true, ready: true, attempts: 2 },
+    ]);
+    expect(probe).toHaveBeenCalledTimes(2);
+    guard.onModuleDestroy();
+    jest.useRealTimers();
+  });
+
   it('절전 감지 시 probe 가 성공할 때까지 폴링한다', async () => {
     const guard = new SystemWakeGuard();
     jest.spyOn(guard, 'justWoke').mockReturnValue(true);

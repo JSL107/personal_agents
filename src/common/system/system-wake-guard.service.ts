@@ -44,6 +44,7 @@ export class SystemWakeGuard implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(SystemWakeGuard.name);
   private lastBeatAt = Date.now();
   private heartbeat?: ReturnType<typeof setInterval>;
+  private settlePromise: Promise<WakeSettleResult> | null = null;
 
   onModuleInit(): void {
     this.lastBeatAt = this.now();
@@ -73,9 +74,30 @@ export class SystemWakeGuard implements OnModuleInit, OnModuleDestroy {
     probe: () => Promise<boolean>,
     opts: { intervalMs?: number; maxWaitMs?: number } = {},
   ): Promise<WakeSettleResult> {
+    if (this.settlePromise) {
+      return await this.settlePromise;
+    }
     if (!this.justWoke()) {
       return { waited: false, ready: true, attempts: 0 };
     }
+    const promise = this.pollUntilReady({ probe, opts });
+    this.settlePromise = promise;
+    try {
+      return await promise;
+    } finally {
+      if (this.settlePromise === promise) {
+        this.settlePromise = null;
+      }
+    }
+  }
+
+  private async pollUntilReady({
+    probe,
+    opts,
+  }: {
+    probe: () => Promise<boolean>;
+    opts: { intervalMs?: number; maxWaitMs?: number };
+  }): Promise<WakeSettleResult> {
     const intervalMs = opts.intervalMs ?? WAKE_PROBE_INTERVAL_MS;
     const maxWaitMs = opts.maxWaitMs ?? WAKE_PROBE_MAX_WAIT_MS;
     this.logger.warn(
