@@ -87,22 +87,12 @@ export class SlackConversationReader {
         .filter((message) => (message.replyCount ?? 0) > 0)
         .sort((left, right) => Number(right.ts) - Number(left.ts))
         .slice(0, DM_THREAD_ENRICH_LIMIT);
+      // 스레드 하나라도 못 읽으면 기록 전체를 버리고(바깥 catch → null) Redis 기억으로 답한다.
+      // 이대리 답은 이 스레드들에 있어, 빠진 채 돌려주면 Redis 에 남은 직전 답까지 대화 본문에서 사라진다(#933 리뷰).
       const threads = await Promise.all(
-        parents.map(async (parent) => {
-          try {
-            return await this.readThread(
-              input.client,
-              input.channelId,
-              parent.ts,
-            );
-          } catch (error) {
-            // 스레드 하나가 실패해도 나머지 기록으로 답한다.
-            this.logger.warn(
-              `Slack 스레드 보강 조회 실패 (channel=${input.channelId} ts=${parent.ts}): ${error instanceof Error ? error.message : String(error)}`,
-            );
-            return [];
-          }
-        }),
+        parents.map((parent) =>
+          this.readThread(input.client, input.channelId, parent.ts),
+        ),
       );
       const unique = new Map<string, SlackTranscriptMessage>();
       for (const message of [...history, ...threads.flat()]) {

@@ -83,7 +83,7 @@ it('DM history 와 최근 세 스레드를 합치고 중복을 제거한다', as
   ).toEqual({ agentRunId: 1 });
 });
 
-it('조회 실패는 null, 보강 실패는 나머지 기록을 돌려준다', async () => {
+it('조회 실패도, 스레드 보강 실패도 null 을 돌려줘 Redis 기억으로 답하게 한다', async () => {
   const reader = new SlackConversationReader();
   const history = jest
     .fn()
@@ -99,7 +99,7 @@ it('조회 실패는 null, 보강 실패는 나머지 기록을 돌려준다', a
       isDirectMessage: true,
       nowMs: 100000000,
     }),
-  ).resolves.toHaveLength(1);
+  ).resolves.toBeNull();
   history.mockRejectedValueOnce(new Error('실패'));
   await expect(
     reader.read({
