@@ -3,7 +3,7 @@ import { AgentType } from '../../model-router/domain/model-router.type';
 export interface WorkSuggestion {
   readonly agentType: AgentType;
   readonly displayName: string;
-  /** 사람이 읽는 근거. 예: '마지막 성공 3일 전 · 평소 1일 주기' */
+  /** 사람이 읽는 근거. 예: '3일째 안 했어요 (보통 1일마다 하던 일)' */
   readonly reason: string;
 }
 

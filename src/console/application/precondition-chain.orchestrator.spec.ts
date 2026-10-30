@@ -316,7 +316,7 @@ describe('PreconditionChainOrchestrator', () => {
         {
           agentType: AgentType.PM,
           displayName: 'PM',
-          reason: '마지막 성공 2일 전 · 평소 1일 주기',
+          reason: '2일째 안 했어요 (보통 1일마다 하던 일)',
         },
       ],
       skippedUnknownCycle: 0,
@@ -333,7 +333,7 @@ describe('PreconditionChainOrchestrator', () => {
       type: 'command.answered',
       commandId: 'c1',
       message:
-        '지금 시킬 만한 일이에요. 번호로 답해주세요.\n1. PM — 마지막 성공 2일 전 · 평소 1일 주기\n그 외 2개도 때가 됐어요.',
+        '지금 시킬 만한 일이에요. 번호로 답해주세요.\n1. PM — 2일째 안 했어요 (보통 1일마다 하던 일)\n그 외 2개도 때가 됐어요.',
     });
   });
 

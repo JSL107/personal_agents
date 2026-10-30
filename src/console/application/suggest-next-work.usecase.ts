@@ -108,7 +108,7 @@ export class SuggestNextWorkUsecase {
         suggestion: {
           agentType,
           displayName: candidate.displayName,
-          reason: `마지막 성공 ${elapsedDays}일 전 · 평소 ${medianIntervalDays}일 주기`,
+          reason: `${elapsedDays}일째 안 했어요 (보통 ${medianIntervalDays}일마다 하던 일)`,
         },
       },
       hasUnknownCycle: false,
@@ -116,10 +116,15 @@ export class SuggestNextWorkUsecase {
   }
 }
 
-// 일정 등록은 주기로 돌리는 일이 아니다. 제안을 수락하면 문장 없이 실행돼 맥락과 무관하게
-// "무엇을 등록할까요?" 만 돌아온다(2026-10-23 콘솔).
+// 일정 등록·블로그 초안은 주기로 돌리는 일이 아니다. 제안을 수락하면 문장 없이 실행돼 맥락과
+// 무관하게 "무엇을 맡길까요?" 만 돌아온다(2026-10-23 일정, 2026-10-30 블로그 콘솔).
+const NEEDS_USER_SENTENCE: ReadonlySet<string> = new Set([
+  AgentType.SCHEDULE,
+  AgentType.BLOG,
+]);
+
 const isAvailableCandidate = (agent: ConsoleAgent): boolean =>
-  agent.agentType !== AgentType.SCHEDULE &&
+  !NEEDS_USER_SENTENCE.has(agent.agentType) &&
   agent.state !== ConsoleAgentState.IN_PROGRESS &&
   agent.state !== ConsoleAgentState.AWAITING_APPROVAL;
 
