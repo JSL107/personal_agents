@@ -60,6 +60,94 @@ describe('ModelRouterUsecase', () => {
     usecase = new ModelRouterUsecase(chatgptProvider, claudeProvider);
   });
 
+  it('fallbackWithoutAttachments 면 이미지와 읽기 폴더를 떼고 notice 를 붙인다', async () => {
+    chatgptProvider.complete.mockRejectedValue(new Error('실패'));
+    claudeProvider.complete.mockResolvedValue({
+      text: 'ok',
+      modelUsed: 'claude',
+      provider: ModelProviderName.CLAUDE,
+    });
+    await usecase.route({
+      agentType: AgentType.PM,
+      noContractPreamble: true,
+      request: {
+        prompt: '질문',
+        imagePaths: ['/image'],
+        readableRoots: ['/records'],
+      },
+      fallbackWithoutAttachments: { notice: '볼 수 없음' },
+    });
+    expect(claudeProvider.complete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prompt: '질문\n\n볼 수 없음',
+        imagePaths: undefined,
+        readableRoots: undefined,
+      }),
+    );
+  });
+
+  it('읽기 폴더만 있어도 폴백에서 제거한다', async () => {
+    chatgptProvider.complete.mockRejectedValue(
+      new Error('assertReadLock 실패'),
+    );
+    claudeProvider.complete.mockResolvedValue({
+      text: 'ok',
+      modelUsed: 'claude',
+      provider: ModelProviderName.CLAUDE,
+    });
+    await usecase.route({
+      agentType: AgentType.PM,
+      noContractPreamble: true,
+      request: { prompt: '질문', readableRoots: ['/records'] },
+      fallbackWithoutAttachments: { notice: '볼 수 없음' },
+    });
+    expect(claudeProvider.complete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        readableRoots: undefined,
+        prompt: '질문\n\n볼 수 없음',
+      }),
+    );
+  });
+
+  it.each(['noFallback', 'outputSchema'] as const)(
+    '%s 가 있으면 첨부 제거 옵션보다 우선한다',
+    async (gate) => {
+      chatgptProvider.complete.mockRejectedValue(new Error('실패'));
+      const request = {
+        prompt: '질문',
+        imagePaths: ['/image'],
+        ...(gate === 'outputSchema'
+          ? { outputSchema: { type: 'object' } }
+          : {}),
+      };
+      await expect(
+        usecase.route({
+          agentType: AgentType.PM,
+          request,
+          noFallback: gate === 'noFallback',
+          fallbackWithoutAttachments: { notice: '볼 수 없음' },
+        }),
+      ).rejects.toThrow();
+      expect(claudeProvider.complete).not.toHaveBeenCalled();
+    },
+  );
+
+  it('첨부가 없으면 notice 없이 기존 폴백을 사용한다', async () => {
+    chatgptProvider.complete.mockRejectedValue(new Error('실패'));
+    claudeProvider.complete.mockResolvedValue({
+      text: 'ok',
+      modelUsed: 'claude',
+      provider: ModelProviderName.CLAUDE,
+    });
+    await usecase.route({
+      agentType: AgentType.PM,
+      noContractPreamble: true,
+      request: { prompt: '질문' },
+      fallbackWithoutAttachments: { notice: '볼 수 없음' },
+    });
+    expect(claudeProvider.complete).toHaveBeenCalledWith({ prompt: '질문' });
+  });
+
   // primary 는 전 에이전트가 ChatGPT(codex). Claude 는 2026-09-09 부터 폴백으로만 불리므로
   // primary 가 성공하는 이 블록에서는 호출 0 이어야 한다.
   describe('에이전트 → 모델 라우팅 (전부 ChatGPT)', () => {

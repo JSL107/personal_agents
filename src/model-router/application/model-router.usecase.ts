@@ -76,12 +76,14 @@ export class ModelRouterUsecase {
     agentType,
     request,
     noFallback,
+    fallbackWithoutAttachments,
     noContractPreamble,
     provider,
   }: {
     agentType: AgentType;
     request: CompletionRequest;
     noFallback?: boolean;
+    fallbackWithoutAttachments?: { notice: string };
     // agentType 의 매핑 대신 이 provider 를 primary 로 쓴다. 같은 입력을 provider 별로
     // 받아야 하는 호출자(윤문 연구의 모델 글 표본)용 — 원장 기록은 그대로 남는다.
     provider?: ModelProviderName;
@@ -161,7 +163,7 @@ export class ModelRouterUsecase {
       if (
         noFallback ||
         request.outputSchema !== undefined ||
-        request.imagePaths?.length
+        (request.imagePaths?.length && !fallbackWithoutAttachments)
       ) {
         throw this.wrapCompletionFailed({
           agentType,
@@ -188,7 +190,21 @@ export class ModelRouterUsecase {
 
       const fallback = this.resolveProvider(fallbackName);
       try {
-        const completion = await fallback.complete(routedRequest);
+        const hasAttachments = Boolean(
+          routedRequest.imagePaths?.length ||
+          routedRequest.readableRoots?.length,
+        );
+        // 폴백은 첨부를 볼 수 없으므로 제거하고 그 사실을 프롬프트에 알린다.
+        const fallbackRequest =
+          fallbackWithoutAttachments && hasAttachments
+            ? {
+                ...routedRequest,
+                imagePaths: undefined,
+                readableRoots: undefined,
+                prompt: `${routedRequest.prompt}\n\n${fallbackWithoutAttachments.notice}`,
+              }
+            : routedRequest;
+        const completion = await fallback.complete(fallbackRequest);
         this.warnIfSlow({
           agentType,
           providerName: fallbackName,
