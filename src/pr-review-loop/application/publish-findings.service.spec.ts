@@ -2,7 +2,10 @@ import { ConfigService } from '@nestjs/config';
 
 import { ReviewFinding } from '../../agent/code-reviewer/domain/code-reviewer.type';
 import { PullRequestDetail } from '../../github/domain/github.type';
-import { GithubClientPort } from '../../github/domain/port/github-client.port';
+import {
+  GithubClientPort,
+  ReviewThread,
+} from '../../github/domain/port/github-client.port';
 import { IDAERI_REVIEW_MARKER } from '../domain/finding-comment.body';
 import { PrReviewFindingRepositoryPort } from '../domain/port/pr-review-finding.repository.port';
 import {
@@ -406,6 +409,129 @@ describe('PublishFindingsService', () => {
     );
     expect(repository.markPosted).toHaveBeenCalledWith(
       expect.objectContaining({ id: 2, githubCommentId: '9' }),
+    );
+  });
+
+  const openThreads = (threads: ReviewThread[]) => ({
+    threads,
+    pullRequestAuthorLogin: null,
+    pullRequestState: 'OPEN' as const,
+    truncated: false,
+  });
+  const mockFreshDiff = () => {
+    github.getPullRequestHeadSha.mockResolvedValue('abc1234');
+    github.getPullRequestDiff.mockResolvedValue({
+      diff: DIFF,
+      bytes: DIFF.length,
+      truncated: false,
+    });
+  };
+
+  // 같은 문장의 카드 두 장 중 뒤 카드(foo.service.ts)만 실제로 올라갔다. 앞 카드(a.ts)가 그 코멘트를
+  // 가져가면 앞 카드의 지적은 안 올라가고 뒤 카드는 두 번 올라간다 — 스레드 경로까지 맞춘다(#931 리뷰).
+  it('같은 문장이라도 다른 파일 스레드의 코멘트는 그 카드의 게시물로 잡지 않는다', async () => {
+    const front = { ...settledCard(cardInput('문제', 'src/a.ts')), id: 1 };
+    const back = {
+      ...settledCard(cardInput('문제', 'src/foo.service.ts')),
+      id: 2,
+    };
+    repository.findUnpostedOpenCards.mockResolvedValue([front, back]);
+    github.listReviewThreads.mockResolvedValue(
+      openThreads([
+        {
+          threadId: 'thread-foo',
+          isResolved: false,
+          path: 'src/foo.service.ts',
+          comments: [
+            {
+              databaseId: 42,
+              body: `${IDAERI_REVIEW_MARKER} · RELIABILITY / MUST_FIX\n\n문제`,
+              authorLogin: null,
+              createdAt: '',
+              reactions: [],
+            },
+          ],
+        },
+      ]),
+    );
+    github.listIssueComments.mockResolvedValue([]);
+    mockFreshDiff();
+    expect(await service.recoverUnposted(baseInput([]))).toBe(2);
+    expect(repository.markPosted).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 2, githubCommentId: '42' }),
+    );
+    expect(repository.markPosted).not.toHaveBeenCalledWith(
+      expect.objectContaining({ id: 1, githubCommentId: '42' }),
+    );
+    // a.ts 는 diff 에 없어 PR 전체 의견으로 올라간다 — 중요한 건 앞 카드가 실제로 게시된다는 점이다.
+    expect(github.addIssueComment).toHaveBeenCalledTimes(1);
+  });
+
+  // "…문제" 항목은 "…문제가 더 있다" 항목 안에도 부분 문자열로 들어 있다. 항목 단위로 완전히 같을 때만 인정한다(#931 리뷰).
+  it('PR 전체 의견에 본문을 접두어로만 품은 다른 항목이 있으면 게시된 것으로 보지 않는다', async () => {
+    repository.findUnpostedOpenCards.mockResolvedValue([
+      settledCard(cardInput('문제', null)),
+    ]);
+    github.listReviewThreads.mockResolvedValue(openThreads([]));
+    github.listIssueComments.mockResolvedValue([
+      {
+        id: 7,
+        body: `${IDAERI_REVIEW_MARKER} · PR 전체 의견\n\n- **RELIABILITY / MUST_FIX** — 문제가 더 있다`,
+        authorLogin: '',
+      },
+    ]);
+    mockFreshDiff();
+    expect(await service.recoverUnposted(baseInput([]))).toBe(1);
+    expect(repository.markPosted).not.toHaveBeenCalledWith(
+      expect.objectContaining({ githubCommentId: '7' }),
+    );
+    expect(github.addIssueComment).toHaveBeenCalledTimes(1);
+  });
+
+  // 작성 계정을 알면 그 계정이 쓴 코멘트만 이 카드의 게시물로 본다. 남이 같은 문장을 달아 둔 스레드에 카드를
+  // 붙이면 수확기가 남의 스레드 반응을 이 카드의 판정으로 읽는다(#931 리뷰).
+  it('작성 계정을 알면 다른 사람이 단 같은 본문 코멘트는 게시물로 잡지 않는다', async () => {
+    const serviceWithLogin = new PublishFindingsService(
+      github as unknown as GithubClientPort,
+      repository,
+      buildWriters({
+        owner: github,
+        env: { GITHUB_WEBHOOK_OWNER_LOGIN: 'JSL107' },
+      }),
+    );
+    repository.findUnpostedOpenCards.mockResolvedValue([
+      settledCard(cardInput('문제', 'src/foo.service.ts')),
+    ]);
+    github.listReviewThreads.mockResolvedValue(
+      openThreads([
+        {
+          threadId: 'thread-other',
+          isResolved: false,
+          path: 'src/foo.service.ts',
+          comments: [
+            {
+              databaseId: 50,
+              body: `${IDAERI_REVIEW_MARKER} · RELIABILITY / MUST_FIX\n\n문제`,
+              authorLogin: 'someone-else',
+              createdAt: '',
+              reactions: [],
+            },
+          ],
+        },
+      ]),
+    );
+    github.listIssueComments.mockResolvedValue([]);
+    mockFreshDiff();
+    github.createReviewComment.mockResolvedValue({
+      commentId: '51',
+      nodeId: 'thread-mine',
+    });
+    expect(await serviceWithLogin.recoverUnposted(baseInput([]))).toBe(1);
+    expect(repository.markPosted).not.toHaveBeenCalledWith(
+      expect.objectContaining({ githubCommentId: '50' }),
+    );
+    expect(repository.markPosted).toHaveBeenCalledWith(
+      expect.objectContaining({ githubCommentId: '51' }),
     );
   });
 
