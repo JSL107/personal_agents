@@ -199,6 +199,25 @@ describe('ApplyCorporateActionUsecase 수량 조정', () => {
     );
   });
 
+  it('병합으로 보유 수량이 소수가 되면 원장을 바꾸지 않고 거부한다', async () => {
+    const repository = splitRepository();
+    const usecase = new ApplyCorporateActionUsecase(
+      repository as unknown as PaperTradingPrismaRepository,
+    );
+
+    // 100주 × 0.333 = 33.3주 — 단주 정산 없이 반영하면 소수 주가 매도 주문으로 흘러간다.
+    await expect(
+      usecase.execute({
+        accountName: 'LONG_TERM',
+        tickerCode: '417310',
+        kind: 'MERGE',
+        exDate: new Date('2026-09-10T00:00:00.000Z'),
+        quantityRatio: '0.333',
+        dryRun: false,
+      }),
+    ).rejects.toThrow('정수');
+  });
+
   // 권리락일 뒤에 매매가 있으면 현재 수량에 권리와 무관한 주식이 섞여 있다. 그대로 조정하면
   // 나중에 산 주식까지 쪼개고 그 사이 판 주식은 빠뜨려 수량·평단이 함께 망가진다.
   it('권리락일 이후 매매가 있으면 소급 적용을 거부한다', async () => {

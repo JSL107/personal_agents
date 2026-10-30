@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { MoneyValue } from '../../market-data/domain/market-data.type';
 import { calculateDividendAmounts } from '../domain/dividend';
+import { assertWholeShares } from '../domain/paper-account.type';
 import {
   ApplyCorporateActionMutation,
   CorporateActionKind,
@@ -273,6 +274,10 @@ export class ApplyCorporateActionUsecase {
         `${input.command.kind}의 수량 배율이 올바르지 않습니다: ${quantityRatio.toString()}`,
       );
     }
+    // 실제 증권사는 병합·무상증자의 단주를 현금으로 정산한다. 장부에 소수 주를 남기면 그 수량이 그대로
+    // 매도 주문이 되고(`createExitBandOrders`), 체결기의 `assertWholeShares` 가 매 회차 같은 주문에서 throw 한다.
+    // shortcut: 단주 현금 정산은 하지 않고 거부한다 — 단주가 생기는 행사를 실제로 맞으면 정산 규칙을 정해 넣는다.
+    assertWholeShares(input.position.quantity.times(quantityRatio));
     const quantityDelta = input.position.quantity
       .times(quantityRatio.minus(1))
       .toString();
