@@ -97,7 +97,7 @@ prisma/schema.prisma                 # DB 단일 소스 (상당수가 시세·�
 
 NestJS 11 + DDD/Hexagonal · Prisma 6 + PostgreSQL · Redis/BullMQ · Slack Bolt 4(Socket Mode).
 
-**Model Router** 는 모든 에이전트의 primary 요청을 `codex`(ChatGPT) CLI 로 보내고, 실패하면 허용된 요청에 한해 Claude CLI 로 한 번 재시도한다. `noFallback` 요청과 출력 스키마·이미지가 있는 요청은 fallback 없이 실패를 전파한다. 프롬프트는 argv 가 아닌 stdin 으로 넘겨 `ps aux` 노출을 막는다.
+**Model Router** 는 모든 에이전트의 primary 요청을 `codex`(ChatGPT) CLI 로 보내고, 실패하면 허용된 요청에 한해 Claude CLI 로 한 번 재시도한다. `noFallback` 요청과 출력 스키마가 있는 요청은 fallback 없이 실패를 전파한다. 이미지가 있는 요청도 `fallbackWithoutAttachments`가 없으면 fallback 하지 않지만, 이를 지정하면 첨부를 떼고 Claude CLI 로 재시도할 수 있다. 프롬프트는 argv 가 아닌 stdin 으로 넘겨 `ps aux` 노출을 막는다.
 
 모든 실행은 **AgentRun** 에 기록되고 근거는 EvidenceRecord 로 따라붙는다. 외부 쓰기는 **Preview Gate** 하나가 공통으로 승인을 받는다.
 
@@ -154,7 +154,7 @@ NestJS 11 + DDD/Hexagonal · Prisma 6 + PostgreSQL · Redis/BullMQ · Slack Bolt
 
 **🎭 에이전트**
 
-전체 AgentType 은 내부 자동화까지 포함하며, **종수와 최신 표는 자동 생성 문서 [docs/agent-catalog.md](./docs/agent-catalog.md) 가 기준이다.** 아래는 사용자가 직접 체감하는 것만 추린 것이다.
+전체 AgentType 은 내부 자동화까지 포함하며, **종수와 최신 표는 `AGENT_REGISTRY`와 `AGENT_TO_PROVIDER`를 바탕으로 생성한 [docs/agent-catalog.md](./docs/agent-catalog.md) 에서 확인할 수 있다.** 아래는 사용자가 직접 체감하는 것만 추린 것이다.
 
 - **회사 롤플레이** — PM `/today` · Work Reviewer `/worklog` · Code Reviewer `/review-pr` · PO Shadow `/po-shadow` · Impact Reporter `/impact-report` · PO_EVAL `/po-eval` · CEO `/ceo-review`
 - **승인형 실행** — 사용자 승인 기반 branch + commit + PR open preview (문서 감사 · 블로그 발행)
