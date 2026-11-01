@@ -4,6 +4,7 @@ import {
   maskFencedCodeBlocks,
   restoreFencedCodeBlocks,
   scanMarkdownBlocks,
+  stripConnectiveCommas,
   stripPublishScaffolding,
   stripStructuralEmDashes,
 } from './markdown-blocks';
@@ -557,5 +558,66 @@ describe('stripPublishScaffolding', () => {
     expect(stripPublishScaffolding(code)).toBe(
       '```text\n[작성자 관찰] 로그\n> 정리\n```',
     );
+  });
+});
+
+describe('stripConnectiveCommas', () => {
+  // 윤문 프롬프트에 「연결어미 뒤 쉼표를 빼라」가 있어도 발행본에 `읽고, ` 가 남았다(2026-10-30).
+  it.each([
+    ['문서를 확인하고, 정리했어요.', '문서를 확인하고 정리했어요.'],
+    ['문서를 읽었고, 정리했어요.', '문서를 읽었고 정리했어요.'],
+    ['붙일 수 있고, 지울 수 없어요.', '붙일 수 있고 지울 수 없어요.'],
+    ['충분해 보이지만, 달라져요.', '충분해 보이지만 달라져요.'],
+    ['돌려 봤는데, 실패했어요.', '돌려 봤는데 실패했어요.'],
+    ['따로 만들어서, 붙였어요.', '따로 만들어서 붙였어요.'],
+    ['응답했다면, resolved예요.', '응답했다면 resolved예요.'],
+    ['응답하면, 닫혀요.', '응답하면 닫혀요.'],
+    ['기다리면서, 확인해요.', '기다리면서 확인해요.'],
+    ['보존하며, 내보내요.', '보존하며 내보내요.'],
+    ['draft이므로, 바뀔 수 있어요.', 'draft이므로 바뀔 수 있어요.'],
+  ])('연결어미 뒤 쉼표를 지운다: %s', (input, expected) => {
+    expect(stripConnectiveCommas(input)).toBe(expected);
+  });
+
+  // 명사 나열과 철자가 같은 자리다. 지우면 나열이 깨진다.
+  it.each([
+    '로그 레벨은 정보, 경고, 오류예요.',
+    '할 일 화면, 리뷰 화면, 측면, 정면을 봐요.',
+    '참고, 최고, 광고는 명사예요.',
+    // 제외 목록 방식은 목록 밖 명사에서 깨졌다(PR #939 리뷰 — `로고 아이콘, 배너`).
+    '로고, 아이콘, 배너를 바꿨어요.',
+    '장면, 국면을 나눠요.',
+    '라면, 김밥을 샀어요.',
+    '시작됐는지, 승인을 기다리는지 보여 줘요.',
+    '읽기, 쓰기를 나눠요.',
+  ])('명사·나열 쉼표는 남긴다: %s', (input) => {
+    expect(stripConnectiveCommas(input)).toBe(input);
+  });
+
+  it('줄 끝 쉼표와 숫자 앞이 아닌 자리만 다룬다', () => {
+    expect(stripConnectiveCommas('읽고,\n다음 줄')).toBe('읽고,\n다음 줄');
+  });
+
+  it('코드 펜스·들여쓴 줄·인라인 코드는 건드리지 않는다', () => {
+    const input = [
+      '`읽고, 쓰고` 는 예시이고, 본문이에요.',
+      '',
+      '```text',
+      '읽고, 쓰고',
+      '```',
+      '',
+      '    읽고, 쓰고',
+    ].join('\n');
+
+    expect(stripConnectiveCommas(input)).toBe(
+      input.replace('예시이고, 본문', '예시이고 본문'),
+    );
+  });
+
+  // 인라인 코드는 줄을 넘어갈 수 있다. 줄마다 따로 보면 가운데 줄이 산문으로 읽힌다(PR #939 리뷰).
+  it('여러 줄에 걸친 인라인 코드 안은 건드리지 않는다', () => {
+    const input = '예시는 `첫 줄\n확인하고, 쓰고\n마지막 줄` 이에요.';
+
+    expect(stripConnectiveCommas(input)).toBe(input);
   });
 });
