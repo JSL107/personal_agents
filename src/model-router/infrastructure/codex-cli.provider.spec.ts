@@ -16,6 +16,7 @@ import {
   buildCodexPermissionArgs,
   buildCodexPrompt,
   CODEX_DENIED_READ_ROOT,
+  CODEX_FALLBACK_MODEL,
   CODEX_MODEL,
   CODEX_PERMISSION_PROFILE,
   CODEX_REASONING_EFFORT,
@@ -35,6 +36,7 @@ type ProviderWithCompleteOnce = {
   completeOnce: (
     request: CompletionRequest,
     timeoutMs?: number,
+    model?: string,
   ) => Promise<CompletionResponse>;
 };
 
@@ -237,6 +239,16 @@ describe('buildCodexArgs', () => {
     );
     expect(effortIndex).toBeGreaterThan(0);
     expect(args[effortIndex - 1]).toBe('-c');
+  });
+
+  it('model 을 넘기면 그 모델로 재주입하고 기본 모델은 빠진다', () => {
+    const args = buildCodexArgs({
+      outputFile: '/tmp/out.txt',
+      permissionArgs: PERMISSION_ARGS,
+      model: CODEX_FALLBACK_MODEL,
+    });
+    expect(args).toContain(`model="${CODEX_FALLBACK_MODEL}"`);
+    expect(args).not.toContain(`model="${CODEX_MODEL}"`);
   });
 
   it('positional prompt 를 argv 로 넘기지 않는다 (stdin 전달이라 `--` 등 terminator 불필요)', () => {
@@ -733,6 +745,38 @@ describe('CodexCliProvider.complete retry loop', () => {
 
     await expect(provider.complete(request)).rejects.toBe(quotaError);
     expect(completeOnceSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('429 로 끝난 실패의 재시도는 CODEX_FALLBACK_MODEL 로 부른다', async () => {
+    const provider = new CodexCliProvider();
+    const rateLimitError = new Error(
+      'codex CLI 비정상 종료 (exit=1): ...\nERROR: exceeded retry limit, last status: 429 Too Many Requests',
+    );
+    const completeOnceSpy = jest
+      .spyOn(provider as unknown as ProviderWithCompleteOnce, 'completeOnce')
+      .mockRejectedValueOnce(rateLimitError)
+      .mockResolvedValueOnce(response);
+
+    const resultPromise = provider.complete(request);
+    await resolveRetryDelay();
+
+    await expect(resultPromise).resolves.toEqual(response);
+    expect(completeOnceSpy.mock.calls[0][2]).toBe(CODEX_MODEL);
+    expect(completeOnceSpy.mock.calls[1][2]).toBe(CODEX_FALLBACK_MODEL);
+  });
+
+  it('429 가 아닌 실패의 재시도는 같은 모델을 쓴다', async () => {
+    const provider = new CodexCliProvider();
+    const completeOnceSpy = jest
+      .spyOn(provider as unknown as ProviderWithCompleteOnce, 'completeOnce')
+      .mockRejectedValueOnce(new Error('temporary failure'))
+      .mockResolvedValueOnce(response);
+
+    const resultPromise = provider.complete(request);
+    await resolveRetryDelay();
+
+    await expect(resultPromise).resolves.toEqual(response);
+    expect(completeOnceSpy.mock.calls[1][2]).toBe(CODEX_MODEL);
   });
 
   it('2회 모두 일반 실패하면 마지막 error 를 전파한다', async () => {
