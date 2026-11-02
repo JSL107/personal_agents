@@ -1,3 +1,7 @@
+# 프로젝트 이름을 고정한다 — 비워 두면 폴더 이름이 프로젝트가 되어, 다른 폴더(worktree)에서 db:up 하면
+# 고정된 container_name 이 "다른 프로젝트 소속" 으로 충돌한다. 아래 볼륨 이름 고정과 한 쌍이다.
+name: idaeri
+
 services:
   postgres:
     image: pgvector/pgvector:pg16
@@ -41,6 +45,11 @@ services:
       timeout: 5s
       retries: 5
 
+# 볼륨 실제 이름을 고정한다. 이름을 비워 두면 compose 가 "명령을 친 폴더(프로젝트) 이름" 을 앞에 붙여,
+# worktree 에서 db:up 하면 빈 새 볼륨이 생겨 데이터가 사라진 것처럼 보인다(2026-06-22 실제로 빈 DB 로
+# 갈아탔다). 값은 그때부터 쓰고 있는 볼륨 이름 그대로 — 데이터 이전 없이 고정만 한다.
 volumes:
   idaeri_postgres_data:
+    name: featepisodic-memory_idaeri_postgres_data
   idaeri_redis_data:
+    name: personal_agents_idaeri_redis_data
