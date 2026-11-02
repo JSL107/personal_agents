@@ -5,9 +5,9 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { gunzip } from 'node:zlib';
 
+import { isSecretFilePath } from '../../../common/util/secret-file.util';
 import { buildSafeChildEnv } from '../../../model-router/infrastructure/cli-process.util';
 import { RepoSnapshot } from '../domain/code-reviewer.type';
-import { isSecretFilePath } from '../domain/secret-file';
 import {
   findUnsafeTarEntries,
   listTarEntryNames,

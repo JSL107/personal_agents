@@ -3,6 +3,7 @@ import { Octokit } from '@octokit/rest';
 
 import { appendIntegrationHint } from '../../common/domain/integration-failure-hint';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
+import { isSecretFilePath } from '../../common/util/secret-file.util';
 import { GithubException } from '../domain/github.exception';
 import {
   AssignedTasks,
@@ -354,12 +355,13 @@ export class OctokitGithubClient implements GithubClientPort {
         pull_number: number,
         mediaType: { format: 'diff' },
       });
-      const { diff, omittedPaths, omittedDiff } = omitNoiseFiles(
+      const { diff, omittedPaths, secretPaths, omittedDiff } = omitNoiseFiles(
         response.data as unknown as string,
       );
       return {
         ...truncateDiff(diff, maxBytes, { testFilesLast: true }),
         omittedPaths,
+        secretPaths,
         omittedDiff,
       };
     } catch (error: unknown) {
@@ -1719,18 +1721,33 @@ const diffSectionPaths = (section: string): DiffSectionPaths | undefined => {
   return { from: matched[1], to: matched[2] };
 };
 
+interface OmittedDiffSections {
+  diff: string;
+  omittedPaths: string[];
+  secretPaths: string[];
+  omittedDiff: string;
+}
+
 // 상한으로 자르기 전에 뺀다 — 뺀 만큼 동작 코드가 상한 안에 더 들어온다. 뺀 경로는 프롬프트에 알린다.
 // 이름이 바뀐 섹션은 옛 경로와 새 경로가 둘 다 노이즈일 때만 뺀다 — 소스 파일을 dist/ 로 옮긴
 // 변경을 새 경로만 보고 숨기지 않는다.
-const omitNoiseFiles = (
-  diff: string,
-): { diff: string; omittedPaths: string[]; omittedDiff: string } => {
+// 비밀 파일(.env·*.pem 등)은 반대로 한쪽 경로만 걸려도 뺀다 — `.env` 를 다른 이름으로 옮긴 변경도
+// 자격증명 원문을 싣는다. 이 diff 는 LLM 프롬프트로 가므로(코드 리뷰·PR 회고) 여기가 공통 관문이다.
+// 뺀 원문은 omittedDiff 로 돌려 비밀값 탐지(risk-map)는 계속 본다.
+const omitNoiseFiles = (diff: string): OmittedDiffSections => {
   const kept: string[] = [];
   const omitted: string[] = [];
   const omittedPaths: string[] = [];
+  const secretPaths: string[] = [];
   for (const section of diff.split(/^(?=diff --git )/m)) {
     const paths = diffSectionPaths(section);
     if (
+      paths !== undefined &&
+      (isSecretFilePath(paths.from) || isSecretFilePath(paths.to))
+    ) {
+      omitted.push(section);
+      secretPaths.push(paths.to);
+    } else if (
       paths !== undefined &&
       NOISE_FILE_PATH.test(paths.from) &&
       NOISE_FILE_PATH.test(paths.to)
@@ -1741,7 +1758,12 @@ const omitNoiseFiles = (
       kept.push(section);
     }
   }
-  return { diff: kept.join(''), omittedPaths, omittedDiff: omitted.join('') };
+  return {
+    diff: kept.join(''),
+    omittedPaths,
+    secretPaths,
+    omittedDiff: omitted.join(''),
+  };
 };
 
 // `diff --git a/<경로> b/<경로>` 단위로 나누고, 같은 무리 안의 순서는 유지한다.

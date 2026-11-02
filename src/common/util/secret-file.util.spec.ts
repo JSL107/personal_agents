@@ -1,4 +1,4 @@
-import { isSecretFilePath } from './secret-file';
+import { isSecretFilePath } from './secret-file.util';
 
 describe('isSecretFilePath', () => {
   it.each([
