@@ -10,8 +10,9 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER 가 .env 에 없음}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD 가 .env 에 없음}
       POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB 가 .env 에 없음}
+    # 127.0.0.1 에만 연다 — 앱은 같은 맥에서 붙고, 원장에는 리뷰 결과·업무 기록이 쌓여 같은 망(카페 와이파이 등)에 열어 둘 이유가 없다.
     ports:
-      - '5434:5432'
+      - '127.0.0.1:5434:5432'
     volumes:
       - idaeri_postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -29,8 +30,9 @@ services:
     container_name: idaeri-redis
     restart: unless-stopped
     # 호스트 포트는 로컬에 이미 떠 있는 다른 프로젝트 Redis (6379/6380) 와 충돌하지 않도록 6381 로 분리한다.
+    # Redis 는 인증이 없어 같은 망에 열리면 큐(BullMQ job 페이로드)를 누구나 읽고 쓴다 — 127.0.0.1 에만 연다.
     ports:
-      - '6381:6379'
+      - '127.0.0.1:6381:6379'
     volumes:
       - idaeri_redis_data:/data
     healthcheck:
