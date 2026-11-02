@@ -238,6 +238,17 @@ export const isRetryableCodexError = (error: unknown): boolean => {
 // **마지막 줄**이 CLI 오류 형식일 때만 순간 제한으로 본다.
 const CODEX_RATE_LIMIT_LINE_REGEX = /^ERROR: .*last status: 429\b/;
 
+// 비정상 종료 문구에 싣는 출력 꼬리. stderr 끝부분에는 프롬프트 본문(diff 등)이 섞여 오고, 이 문구가
+// 로그·원장·호출 기록으로 퍼지므로 만들어지는 여기서 한 번 가린다. 쿼터 판별은 원문을 본
+// quotaScanner 가 따로 하고, 429 판별(마지막 `ERROR: …` 줄)은 마스킹 표식에 걸리지 않는다.
+export const formatCodexExitTail = ({
+  stderrTail,
+  stdoutTail,
+}: {
+  stderrTail: string;
+  stdoutTail: string;
+}): string => redactPii(stderrTail || stdoutTail || '(no output)');
+
 export const isCodexRateLimitError = (error: unknown): boolean => {
   if (!(error instanceof Error)) {
     return false;
@@ -728,7 +739,7 @@ export class CodexCliProvider
           resolve({ quotaDetection: quotaScanner.result });
           return;
         }
-        const suffix = stderrTail || stdoutTail || '(no output)';
+        const suffix = formatCodexExitTail({ stderrTail, stdoutTail });
         this.logger.error(`codex CLI exit=${code} tail=${suffix.slice(-200)}`);
         // exit≠0 이면서 쿼터 신호가 있으면 generic 비정상 종료 대신 전용 예외로 끊는다.
         if (quotaScanner.result.exhausted) {

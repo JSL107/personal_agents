@@ -40,6 +40,9 @@ const FALLBACK_OF: Partial<Record<ModelProviderName, ModelProviderName>> = {
 
 // model_call 오류 문자열 상한 — agent_run.output.cause 의 CAUSE_LEDGER_LIMIT 과 같은 값.
 const CALL_LOG_ERROR_LIMIT = 1_000;
+// CLI 오류 문구에는 stderr 끝부분(프롬프트 본문 포함)이 실린다 — 원장과 같은 마스킹을 건 뒤 자른다.
+const toCallLogError = (error: string | null): string | null =>
+  error === null ? null : redactPii(error).slice(0, CALL_LOG_ERROR_LIMIT);
 // 사용자 노출 문구에 싣는 fallback 실패 요지 길이. CLI stderr 는 여러 줄로 길어질 수 있어
 // 첫 줄만, 짧게 싣는다 — 전문은 model_call·원장 cause 에 있다.
 const FALLBACK_REASON_NOTICE_LIMIT = 120;
@@ -339,10 +342,9 @@ export class ModelRouterUsecase {
       .record({
         ...input,
         agentRunId: getActiveAgentRunId() ?? null,
-        primaryError:
-          input.primaryError?.slice(0, CALL_LOG_ERROR_LIMIT) ?? null,
-        fallbackError:
-          input.fallbackError?.slice(0, CALL_LOG_ERROR_LIMIT) ?? null,
+        // CLI 오류 문구에는 stderr 끝부분(프롬프트 본문 포함)이 실린다 — 원장과 같은 마스킹을 건다.
+        primaryError: toCallLogError(input.primaryError),
+        fallbackError: toCallLogError(input.fallbackError),
       })
       .catch(() => undefined);
   }

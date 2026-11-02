@@ -1,8 +1,9 @@
 import { posix } from 'node:path';
 
-// 레포 사본에서 빼는 비밀 파일. 사본을 연 리뷰 모델은 레포 안 어떤 파일이든 읽고 본문에 근거로
-// 인용할 수 있어서, 실수로 커밋된 자격증명이 모델과 PR 코멘트로 새지 않게 아예 풀지 않는다.
-// 이름만 본다 — 코드 문자열에 박힌 키는 막지 못하지만 그런 키는 이미 diff 로도 모델에 간다.
+// 모델에 보내지 않는 비밀 파일. 레포 사본(repo-snapshot.ts)에서는 아예 풀지 않고, PR diff
+// (octokit-github.client.ts omitNoiseFiles)에서는 그 파일의 섹션을 뺀다. 리뷰 모델은 받은 내용을
+// 본문에 근거로 인용할 수 있어서, 실수로 커밋된 자격증명이 모델과 PR 코멘트로 새지 않게 막는다.
+// 이름만 본다 — 코드 문자열에 박힌 키는 막지 못한다(그쪽은 redactPii 의 토큰 마스킹이 맡는다).
 const SECRET_FILE_NAMES = new Set(['.env', '.npmrc', '.pypirc', '.netrc']);
 const SECRET_FILE_EXTENSIONS = new Set([
   '.pem',

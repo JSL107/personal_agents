@@ -920,9 +920,14 @@ const describeCause = (cause: unknown): string | null => {
   return null;
 };
 
+// CLI 비정상 종료의 cause 는 stderr 끝부분이라 프롬프트 본문(diff·PR 본문)이 섞여 온다 — 원장과
+// 로그 양쪽에 남으므로 모델 응답과 같은 마스킹을 건다. 상한은 마스킹된 길이 기준이다.
 const extractCauseMessage = (error: unknown): string | null => {
   const cause = (error as { cause?: unknown } | null | undefined)?.cause;
-  return describeCause(cause)?.slice(0, CAUSE_LEDGER_LIMIT) ?? null;
+  const described = describeCause(cause);
+  return described === null
+    ? null
+    : redactPii(described).slice(0, CAUSE_LEDGER_LIMIT);
 };
 
 // 원장에 남길 모델 응답. 마스킹을 먼저 해야 상한이 마스킹된 길이 기준으로 걸린다.

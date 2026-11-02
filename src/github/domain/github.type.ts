@@ -85,6 +85,8 @@ export interface PullRequestDiff {
   bytes: number;
   // 리뷰할 가치가 없어 diff 에서 뺀 파일(lockfile·스냅샷·빌드 산출물 등). bytes 는 뺀 뒤 기준이다.
   omittedPaths?: string[];
+  // 비밀 파일(.env·*.pem 등)이라 diff 에서 뺀 경로. 원문은 모델에 보내지 않고 omittedDiff 에만 남긴다.
+  secretPaths?: string[];
   // 뺀 파일의 diff 원문. 리뷰에는 싣지 않지만 비밀값 탐지는 빌드 산출물까지 봐야 한다.
   omittedDiff?: string;
 }

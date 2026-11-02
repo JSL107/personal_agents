@@ -28,6 +28,8 @@ import {
   computeCodexRetryBackoffMs,
   computeQuotaBlockUntilMs,
   detectCodexQuotaExhaustion,
+  formatCodexExitTail,
+  isCodexRateLimitError,
   isRetryableCodexError,
   verifyCodexReadLock,
 } from './codex-cli.provider';
@@ -447,6 +449,36 @@ describe('computeCodexRetryBackoffMs', () => {
     );
 
     expect(computeCodexRetryBackoffMs(promptEchoed)).toBe(1000);
+  });
+});
+
+describe('formatCodexExitTail', () => {
+  it('stderr 에 섞인 토큰을 가리고, 429 판별 줄은 그대로 둔다', () => {
+    const tail = formatCodexExitTail({
+      stderrTail:
+        'prompt: SLACK=xoxb-' +
+        'a'.repeat(20) +
+        '\nERROR: exceeded retry limit, last status: 429 Too Many Requests',
+      stdoutTail: '',
+    });
+
+    expect(tail).toBe(
+      'prompt: SLACK=[REDACTED:slack_token]\nERROR: exceeded retry limit, last status: 429 Too Many Requests',
+    );
+    expect(
+      isCodexRateLimitError(
+        new Error(`codex CLI 비정상 종료 (exit=1): ${tail}`),
+      ),
+    ).toBe(true);
+  });
+
+  it('stderr 가 비면 stdout, 둘 다 비면 (no output) 을 쓴다', () => {
+    expect(formatCodexExitTail({ stderrTail: '', stdoutTail: 'out' })).toBe(
+      'out',
+    );
+    expect(formatCodexExitTail({ stderrTail: '', stdoutTail: '' })).toBe(
+      '(no output)',
+    );
   });
 });
 

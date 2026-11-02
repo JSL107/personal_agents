@@ -169,6 +169,17 @@ describe('buildClaudeExitErrorMessage — 사용자 향 안내', () => {
     expect(message).toMatch(/claude CLI 비정상 종료 \(exit=127\)/);
     expect(message).not.toMatch(/인증 만료/);
   });
+
+  // stderr 에 프롬프트 본문이 섞여 오고, 이 문구가 로그·원장·호출 기록으로 퍼진다.
+  it('stderr 에 섞인 토큰은 가려서 싣는다', () => {
+    const message = buildClaudeExitErrorMessage({
+      code: 2,
+      stderrTail: 'prompt: GH=ghp_' + 'a'.repeat(30),
+    });
+    expect(message).toBe(
+      'claude CLI 비정상 종료 (exit=2): prompt: GH=[REDACTED:github_pat]',
+    );
+  });
 });
 
 describe('ClaudeAuthSuspectException', () => {

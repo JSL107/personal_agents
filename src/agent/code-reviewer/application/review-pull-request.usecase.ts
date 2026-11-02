@@ -847,6 +847,12 @@ export const buildReviewPrompt = ({
     omittedPaths.length > 0
       ? `\n\n(리뷰할 필요가 없는 파일 ${omittedPaths.length}개는 diff 에서 뺐다 — lockfile·스냅샷·압축본·소스맵·dist. 이 파일들은 지적하지 않는다: ${listPaths(omittedPaths)})`
       : '';
+  // 비밀 파일은 내용을 안 보낼 뿐, PR 에 들어간 사실 자체는 지적거리다 — 노이즈와 문구를 가른다.
+  const secretPaths = diff.secretPaths ?? [];
+  const secretNote =
+    secretPaths.length > 0
+      ? `\n\n(비밀 파일로 보이는 ${secretPaths.length}개는 자격증명 보호를 위해 내용을 diff 에서 뺐다: ${listPaths(secretPaths)}. 내용을 추측하지 말고, 이런 파일이 커밋에 포함된 것이 의도인지 확인을 요청하는 지적은 해도 된다)`
+      : '';
   // diff 는 그대로 두고, 안 보이는 문자가 있다는 사실만 diff 앞에 알린다.
   const hiddenChars = findHiddenUnicode(diff.diff);
   const hiddenCharNote =
@@ -890,7 +896,7 @@ export const buildReviewPrompt = ({
       ? wrapUntrustedInput(redactInjectionPhrases(detail.body))
       : '(없음)',
     '',
-    `[diff]${diffNote}${omittedNote}${hiddenCharNote}`,
+    `[diff]${diffNote}${omittedNote}${secretNote}${hiddenCharNote}`,
     wrapUntrustedInput(['```diff', diff.diff, '```'].join('\n')),
   );
 
