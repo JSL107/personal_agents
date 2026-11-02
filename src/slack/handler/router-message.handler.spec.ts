@@ -25,6 +25,7 @@ import {
 } from '../../router/domain/idaeri-router.port';
 import { RouterException } from '../../router/domain/router.exception';
 import { RouterErrorCode } from '../../router/domain/router-error-code.enum';
+import { AnswerFortuneQuestionUsecase } from '../../saju-fortune-cron/application/answer-fortune-question.usecase';
 import { MentionReceiptRepositoryPort } from '../domain/port/mention-receipt.repository.port';
 import { SlackDeliveryRepositoryPort } from '../domain/port/slack-delivery.repository.port';
 import { SlackTranscriptMessage } from '../domain/slack-transcript';
@@ -53,6 +54,7 @@ const buildHandler = (
     mentionReceiptRepository?: MentionReceiptRepositoryPort;
     conversationReader?: SlackConversationReader;
     imageDownloader?: SlackImageDownloader;
+    answerFortuneQuestion?: AnswerFortuneQuestionUsecase;
   } = {},
 ): RouterMessageHandler => {
   const conversationalReply =
@@ -121,6 +123,10 @@ const buildHandler = (
           dispose: jest.fn().mockResolvedValue(undefined),
         }),
       } as unknown as SlackImageDownloader),
+    options.answerFortuneQuestion ??
+      ({
+        answer: jest.fn().mockResolvedValue(null),
+      } as unknown as AnswerFortuneQuestionUsecase),
   );
 };
 
@@ -3530,5 +3536,114 @@ describe('RouterMessageHandler — Slack 대화 기록과 사진', () => {
     expect(testCase.reply).toHaveBeenCalledWith(
       expect.objectContaining({ unresolvedStreak: 1 }),
     );
+  });
+});
+
+describe('RouterMessageHandler — 운세 DM 스레드 대화', () => {
+  const fortuneTs = '1730000000.000100';
+  const fortuneText =
+    '🔮 *오늘의 운세 — 2026-11-02 (경진일)*\n\n오늘은 맑은 날이야.';
+  const dispatchResult: DispatchResult = {
+    agentRunId: 21,
+    workerType: AgentType.PM,
+    output: {},
+    modelUsed: 'mock',
+    formattedText: '작업 결과',
+  };
+  const setup = ({
+    parentBotId = 'B_IDAERI',
+    answer = '오늘 저녁엔 가볍게 산책해 봐 <!here>',
+  }: { parentBotId?: string; answer?: string | null } = {}) => {
+    const { app, getHandler } = buildAppMock();
+    const dispatch = jest.fn().mockResolvedValue(dispatchResult);
+    const read = jest.fn().mockResolvedValue([
+      { ts: fortuneTs, botId: parentBotId, text: fortuneText, files: [] },
+      { ts: '1730000000.000200', user: 'U_USER', text: '연애운은?', files: [] },
+      {
+        ts: '1730000000.000300',
+        botId: 'B_IDAERI',
+        text: '마음을 표현하기 좋은 날이야',
+        files: [],
+      },
+    ]);
+    const answerMock = jest.fn().mockResolvedValue(answer);
+    buildHandler(
+      { dispatch },
+      {
+        conversationReader: {
+          read,
+          selfBotId: jest.fn().mockResolvedValue('B_IDAERI'),
+        } as unknown as SlackConversationReader,
+        answerFortuneQuestion: {
+          answer: answerMock,
+        } as unknown as AnswerFortuneQuestionUsecase,
+      },
+    ).register(app);
+    return { getHandler, dispatch, answer: answerMock };
+  };
+  const threadReply = {
+    type: 'message',
+    user: 'U_USER',
+    channel: 'D_DM',
+    channel_type: 'im',
+    ts: '1730000000.000400',
+    thread_ts: fortuneTs,
+    text: '저녁엔 뭐 하면 좋아?',
+  } as unknown as MessageEvent;
+
+  it('이 봇이 보낸 운세 DM 스레드의 질문은 운세 대화로 답하고 라우터로 넘기지 않는다', async () => {
+    const testCase = setup();
+
+    const { say } = await invokeHandler(
+      testCase.getHandler('message'),
+      threadReply,
+    );
+
+    expect(testCase.answer).toHaveBeenCalledWith({
+      slackUserId: 'U_USER',
+      fortuneMessageText: fortuneText,
+      priorTurns: [
+        { role: 'user', text: '연애운은?' },
+        { role: 'assistant', text: '마음을 표현하기 좋은 날이야' },
+      ],
+      question: '저녁엔 뭐 하면 좋아?',
+    });
+    expect(say).toHaveBeenCalledWith(
+      expect.objectContaining({
+        thread_ts: fortuneTs,
+        text: '오늘 저녁엔 가볍게 산책해 봐 &lt;!here&gt;',
+      }),
+    );
+    expect(testCase.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('운세 대화가 맡지 않으면(받는 사람 아님 등) 라우터로 넘긴다', async () => {
+    const testCase = setup({ answer: null });
+
+    await invokeHandler(testCase.getHandler('message'), threadReply);
+
+    expect(testCase.answer).toHaveBeenCalledTimes(1);
+    expect(testCase.dispatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('다른 봇이 쓴 글의 스레드는 운세 대화로 보지 않는다', async () => {
+    const testCase = setup({ parentBotId: 'B_OTHER' });
+
+    await invokeHandler(testCase.getHandler('message'), threadReply);
+
+    expect(testCase.answer).not.toHaveBeenCalled();
+    expect(testCase.dispatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('스레드가 아닌 DM 은 운세 대화로 보지 않는다', async () => {
+    const testCase = setup();
+
+    await invokeHandler(testCase.getHandler('message'), {
+      ...threadReply,
+      thread_ts: undefined,
+    } as unknown as MessageEvent);
+
+    expect(testCase.answer).not.toHaveBeenCalled();
+    expect(testCase.dispatch).toHaveBeenCalledTimes(1);
   });
 });
