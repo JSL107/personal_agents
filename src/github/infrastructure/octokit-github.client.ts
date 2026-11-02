@@ -1714,13 +1714,24 @@ interface DiffSectionPaths {
 }
 
 // `diff --git a/<옛 경로> b/<새 경로>` 헤더의 두 경로. 비ASCII 경로는 git 이 따옴표로 감싸므로 따옴표만 벗긴다.
+// 공백은 따옴표로 감싸지 않아 경로가 다를 때 헤더가 모호하다(`a/x b/.env b/y` 는 `x b/.env` → `y` 다).
+// 그래서 이름이 바뀐 섹션은 git 이 한 줄에 하나씩 적는 `rename from`/`rename to` (복사는 `copy`) 를 믿는다.
 const diffSectionPaths = (section: string): DiffSectionPaths | undefined => {
-  const header = section.split('\n', 1)[0];
-  const matched = header.match(/^diff --git "?a\/(.*?)"? "?b\/(.*?)"?$/);
+  const lines = section.split('\n');
+  const matched = lines[0].match(/^diff --git "?a\/(.*?)"? "?b\/(.*?)"?$/);
   if (matched === null) {
     return undefined;
   }
-  return { from: matched[1], to: matched[2] };
+  const extendedPath = (kind: 'from' | 'to'): string | undefined => {
+    const line = lines.find((candidate) =>
+      new RegExp(`^(rename|copy) ${kind} `).test(candidate),
+    );
+    return line?.replace(/^\S+ \S+ /, '').replace(/^"(.*)"$/, '$1');
+  };
+  return {
+    from: extendedPath('from') ?? matched[1],
+    to: extendedPath('to') ?? matched[2],
+  };
 };
 
 // 옛·새 경로 중 한쪽만 걸려도 비밀 파일 섹션이다 — `.env` 를 다른 이름으로 옮긴 변경도 원문을 싣는다.
