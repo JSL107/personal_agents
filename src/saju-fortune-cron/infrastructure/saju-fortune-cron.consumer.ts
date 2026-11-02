@@ -17,7 +17,17 @@ import {
 } from '../../slack/domain/port/slack-notifier.port';
 import { escapeSlackMrkdwn } from '../../slack/format/mrkdwn.util';
 import { dayPillarOf, pillarToHangul } from '../domain/day-pillar';
+import {
+  FORTUNE_CARD_IMAGE_PORT,
+  FortuneCardImagePort,
+} from '../domain/port/fortune-card-image.port';
 import { buildSajuFortunePrompt } from '../domain/saju-fortune.prompt';
+import {
+  buildFortuneCardImagePrompt,
+  FortuneCard,
+  ParsedFortune,
+  parseFortuneResponse,
+} from '../domain/saju-fortune-card';
 import {
   parseSajuFortuneRecipients,
   SAJU_FORTUNE_CRON_QUEUE,
@@ -27,8 +37,8 @@ import {
 
 // 발송 idempotency TTL — 25h. 다음 날 같은 시각 발사 전 만료되도록 하루보다 약간 길게.
 const SENT_GUARD_TTL_SECONDS = 90_000;
-// 6줄 지시를 어긴 장문이 DM 을 덮지 않게 자른다.
-const MAXIMUM_FORTUNE_LENGTH = 1_200;
+// 12줄 지시를 어긴 장문이 DM 을 덮지 않게 자른다. 카드 두 줄을 뗀 본문 기준.
+const MAXIMUM_FORTUNE_LENGTH = 1_500;
 const INCIDENT_KEY = cronIncidentKey('Saju Fortune Cron');
 // CJK 통합 한자. 받는 사람이 읽지 못한 「己土는 오늘 癸水를…」 같은 응답을 거른다.
 const HANJA_PATTERN = /[\u4E00-\u9FFF]/;
@@ -37,6 +47,11 @@ interface DeliverFortuneInput {
   recipient: SajuFortuneRecipient;
   todayKst: string;
   todayPillar: string;
+}
+
+interface UploadedCard {
+  fileId: string;
+  altText: string;
 }
 
 // 매일 사주 운세 DM — 받는 사람마다 LLM 1회 + DM 1회. 한 사람이 실패해도 나머지는 보낸다.
@@ -52,6 +67,8 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
     @Inject(SLACK_NOTIFIER_PORT)
     private readonly slackNotifier: SlackNotifierPort,
     private readonly cronIdempotency: CronIdempotencyService,
+    @Inject(FORTUNE_CARD_IMAGE_PORT)
+    private readonly cardImage: FortuneCardImagePort,
     @Optional()
     private readonly notificationPublisher?: NotificationPublisher,
   ) {
@@ -114,6 +131,10 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
       todayKst,
       todayPillar,
     });
+    // 업로드는 채널에 공유되지 않는 파일만 만든다 — 발송이 아니라서 가드 앞에 둔다.
+    const card = fortune.card
+      ? await this.prepareCard(recipient, fortune.card)
+      : undefined;
 
     // stalled 재처리로 같은 사람이 동시에 두 번 처리되면 뒤쪽은 여기서 막힌다.
     const firstRun = await this.cronIdempotency.acquireOnce(
@@ -123,12 +144,9 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
     if (!firstRun) {
       return;
     }
+    const text = `🔮 *오늘의 운세 — ${todayKst} (${pillarToHangul(todayPillar)}일)*\n\n${escapeSlackMrkdwn(fortune.body)}`;
     try {
-      await this.slackNotifier.postMessage({
-        kind: 'saju-fortune',
-        target: recipient.slackUserId,
-        text: `🔮 *오늘의 운세 — ${todayKst} (${pillarToHangul(todayPillar)}일)*\n\n${escapeSlackMrkdwn(fortune)}`,
-      });
+      await this.postFortune({ recipient, text, card });
     } catch (error) {
       await this.cronIdempotency.release(guardKey);
       throw error;
@@ -136,15 +154,49 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
     this.logger.log(`Saju Fortune 발송 완료 — ${recipient.slackUserId}`);
   }
 
+  // 그림이 붙은 메시지가 실패하면 글만 한 번 더 보낸다 — 그림 블록 문제로 재시도까지 계속
+  // 실패하면 그날 운세가 아예 안 간다. 글만 보내도 실패하면 예외(호출부가 가드를 풀어 재시도).
+  private async postFortune({
+    recipient,
+    text,
+    card,
+  }: {
+    recipient: SajuFortuneRecipient;
+    text: string;
+    card: UploadedCard | undefined;
+  }): Promise<void> {
+    const message = {
+      kind: 'saju-fortune' as const,
+      target: recipient.slackUserId,
+      text,
+    };
+    if (!card) {
+      await this.slackNotifier.postMessage(message);
+      return;
+    }
+    try {
+      await this.slackNotifier.postMessage({ ...message, image: card });
+    } catch (error) {
+      this.logger.warn(
+        `Saju Fortune 카드 첨부 발송 실패 — 글만 다시 보냄 (${recipient.slackUserId}): ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      await this.slackNotifier.postMessage(message);
+    }
+  }
+
   // 한자 금지는 프롬프트 지시라 코드가 다시 본다. 섞였으면 한 번만 다시 만들고, 그래도 섞이면
   // 경고만 남기고 그대로 보낸다 — 그날 운세가 아예 안 가는 것보다 한자 몇 자가 낫다.
-  private async generateFortune(input: DeliverFortuneInput): Promise<string> {
+  private async generateFortune(
+    input: DeliverFortuneInput,
+  ): Promise<ParsedFortune> {
     const first = await this.requestFortune(input);
-    if (!HANJA_PATTERN.test(first)) {
+    if (!HANJA_PATTERN.test(first.body)) {
       return first;
     }
     const second = await this.requestFortune(input);
-    if (HANJA_PATTERN.test(second)) {
+    if (HANJA_PATTERN.test(second.body)) {
       this.logger.warn(
         `Saju Fortune 한자 섞인 응답 — 재생성 후에도 남아 그대로 발송 (${input.recipient.slackUserId})`,
       );
@@ -152,17 +204,46 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
     return second;
   }
 
-  private async requestFortune(input: DeliverFortuneInput): Promise<string> {
+  private async requestFortune(
+    input: DeliverFortuneInput,
+  ): Promise<ParsedFortune> {
     const completion = await this.modelRouter.route({
       agentType: AgentType.PM,
       request: { prompt: buildSajuFortunePrompt(input) },
       noContractPreamble: true,
     });
-    const fortune = completion.text.trim().slice(0, MAXIMUM_FORTUNE_LENGTH);
-    if (fortune.length === 0) {
+    const parsed = parseFortuneResponse(completion.text);
+    const body = parsed.body.slice(0, MAXIMUM_FORTUNE_LENGTH);
+    if (body.length === 0) {
       throw new Error('운세 응답이 비어 있음');
     }
-    return fortune;
+    return { ...parsed, body };
+  }
+
+  // 카드 그림은 덤이다 — 생성·업로드가 실패하면 경고만 남기고 글만 보낸다.
+  private async prepareCard(
+    recipient: SajuFortuneRecipient,
+    card: FortuneCard,
+  ): Promise<UploadedCard | undefined> {
+    try {
+      const png = await this.cardImage.generate(
+        buildFortuneCardImagePrompt(card),
+      );
+      const altText = `오늘의 운세 카드 — ${card.title}`;
+      const { fileId } = await this.slackNotifier.uploadImageFile({
+        png,
+        filename: 'fortune-card.png',
+        title: altText,
+      });
+      return { fileId, altText };
+    } catch (error) {
+      this.logger.warn(
+        `Saju Fortune 카드 그림 실패 — 글만 발송 (${recipient.slackUserId}): ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return undefined;
+    }
   }
 
   // fire-and-forget — NotificationQueue 의 사건 단위 Slack DM. 수신자는 payload 가 아니라

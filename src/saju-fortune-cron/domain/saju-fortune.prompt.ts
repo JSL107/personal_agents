@@ -1,8 +1,36 @@
 import { pillarToHangul } from './day-pillar';
 import { analyzeSajuDay, formatSajuFacts } from './saju-analysis';
+import { CARD_SCENE_LABEL, CARD_TITLE_LABEL } from './saju-fortune-card';
 import { SajuFortuneRecipient } from './saju-fortune-cron.type';
 
 const PILLAR_LABELS = ['년주', '월주', '일주', '시주'];
+// 날마다 돌아가는 비유 소재. 소재를 주지 않으면 모델이 매일 같은 자연 비유("단단한 쇠 기운",
+// "흐르는 물")로 시작해 받는 사람에게 같은 글로 읽혔다. 같은 날짜는 항상 같은 소재라 재시도해도 안 바뀐다.
+export const METAPHOR_THEMES = [
+  '날씨와 하늘',
+  '여행길',
+  '요리와 부엌',
+  '운동 경기',
+  '음악과 노래',
+  '정원 가꾸기',
+  '바다와 항해',
+  '책과 이야기',
+  '시장과 가게',
+  '산책길',
+  '게임 한 판',
+  '계절의 변화',
+] as const;
+const MILLISECONDS_PER_DAY = 86_400_000;
+
+// todayKst: 'YYYY-MM-DD'. 날짜 형식은 dayPillarOf 가 먼저 검사한다.
+export const metaphorThemeOf = (todayKst: string): string => {
+  const days = Math.floor(
+    Date.parse(`${todayKst}T00:00:00Z`) / MILLISECONDS_PER_DAY,
+  );
+  // 날마다 한 칸씩 돌고, 소재 수만큼 지나면 처음으로 돌아온다.
+  const themeIndex = days % METAPHOR_THEMES.length;
+  return METAPHOR_THEMES[themeIndex];
+};
 
 export interface SajuFortunePromptInput {
   recipient: SajuFortuneRecipient;
@@ -34,17 +62,24 @@ export const buildSajuFortunePrompt = ({
     `- 받는 사람: ${recipient.name}`,
     `- 타고난 사주: ${natal}${hourNote}`,
     `- 오늘: ${todayKst}, 오늘 일진: ${pillarToHangul(todayPillar)}(${todayPillar})일 (이미 확정된 값이다. 다시 계산하지 말고 그대로 써라.)`,
+    `- 오늘의 비유 소재: ${metaphorThemeOf(todayKst)}`,
     '',
     '계산된 사실 (코드가 확정한 값이다. 다시 계산하지 말고 이것만 근거로 써라):',
     ...formatSajuFacts(analyzeSajuDay(recipient.natalPillars, todayPillar)),
     '',
+    '작성 형식 (이 순서 그대로, 운세 본문은 12줄 이내):',
+    '- 첫 줄: 오늘이 어떤 날인지 한 문장으로. 오늘의 비유 소재를 빌려 그린다.',
+    '- 빈 줄 하나 뒤에 다섯 줄: "총운:", "일·공부:", "사람 관계:", "돈:", "컨디션:" 으로 시작하고 각 1~2문장. 항목마다 계산된 사실 하나를 근거로 "왜 그런지"를 쉬운 말로 덧붙이고, 오늘 해 볼 만한 구체적인 행동을 하나씩 권한다.',
+    '- 빈 줄 하나 뒤에 "행운 포인트:" 한 줄(계산된 행운의 색 + 오늘 해 보면 좋은 작은 행동 하나), 이어서 "오늘의 한 마디:" 한 줄.',
+    '- 빈 줄 하나 뒤에 카드 두 줄을 붙인다. 이 두 줄은 받는 사람에게 보이지 않고 운세 카드 그림을 그리는 데만 쓴다.',
+    `  ${CARD_TITLE_LABEL} 오늘 운세를 상징하는 타로 카드 이름. 영어 대문자 2~4단어(예: THE STEADY RIVER).`,
+    `  ${CARD_SCENE_LABEL} 그 카드에 그릴 장면을 영어 한두 문장으로. 사람 얼굴과 글자는 넣지 않는다.`,
+    '',
     '작성 규칙:',
+    '- 받는 사람의 타고난 기운을 소개하는 말("너는 ~ 기운을 타고났어")로 시작하지 않는다. 매일 같은 소개가 반복되면 안 된다. 타고난 기운은 오늘 기운과 엮어 꼭 필요할 때만 짧게 언급한다.',
     '- 한자를 한 글자도 쓰지 않는다. 간지·오행은 한글로만 쓴다(예: 계해일, 물 기운, 흙 기운).',
     '- 편재·식신·충·극·합 같은 명리 용어는 한 번도 쓰지 않는다. 대신 쉬운 말로 쓴다(예: "부딪힌다", "북돋아 준다").',
-    '- 첫 문단(2~3문장): 받는 사람의 타고난 기운(일간을 오행으로 — 예: "단단한 쇠 기운")과 오늘 날의 기운이 어떻게 만나는지 비유로 쉽게 설명한다.',
-    '- 이어서 총운, 일, 사람 관계, 조심할 것을 각각 1~2문장으로 쓴다. 항목마다 위 계산된 사실 중 하나를 근거로 삼아 "왜 그런지"를 쉬운 말로 덧붙인다. 사실에 없는 관계(부딪힘·맞물림 등)를 지어내지 않는다.',
-    '- 마지막 줄에 오늘의 한 마디를 쓴다. 전체 10줄 이내.',
-    '- 타고난 사주의 기둥을 본문에 다시 나열하지 않는다.',
+    '- 사실에 없는 관계(부딪힘·맞물림 등)를 지어내지 않는다. 타고난 사주의 기둥을 본문에 다시 나열하지 않는다.',
     '- 재미로 보는 운세 말투(반말, 다정하게)로 쓴다. 사고·질병·금전 손실을 단정하거나 겁주는 말은 쓰지 않는다.',
     '- 평문으로 쓴다. 제목·표·코드블록은 쓰지 않고, 이모지는 줄 머리에 하나까지만 쓴다.',
   ].join('\n');

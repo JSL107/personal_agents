@@ -133,6 +133,16 @@ describe('formatSajuFacts', () => {
     );
   });
 
+  it('행운의 색은 가장 적은 기운의 색이고, 동률이면 오행 순서상 앞의 것이다', () => {
+    expect(formatSajuFacts(analyzeSajuDay(SAMPLE_EARTH, '戊辰'))).toContain(
+      '- 행운의 색: 초록 (타고나기를 가장 적은 나무 기운의 색 — 부족한 기운을 채워 준다)',
+    );
+    // SAMPLE_METAL 은 나무·물이 1개씩 동률.
+    expect(
+      formatSajuFacts(analyzeSajuDay(SAMPLE_METAL, '戊辰')),
+    ).toContainEqual(expect.stringContaining('행운의 색: 초록'));
+  });
+
   it('가장 많은 기운이 오늘 또 들어오면 조절할 날이라고 적는다', () => {
     const facts = formatSajuFacts(analyzeSajuDay(SAMPLE_EARTH, '戊辰'));
     expect(facts).toContainEqual(
