@@ -569,6 +569,26 @@ describe('OctokitGithubClient', () => {
         expect(result.secretPaths).toEqual(['config/app.ts']);
       });
 
+      it.each([
+        ['rename', 'x b/.env', 'diff --git a/x b/.env b/src/config.ts'],
+        [
+          'rename',
+          '"\\355\\225\\234 b/.env"',
+          'diff --git "a/\\355\\225\\234 b/.env" b/src/config.ts',
+        ],
+        ['copy', 'x b/.env', 'diff --git a/x b/.env b/src/config.ts'],
+      ])(
+        '%s 옛 경로 %s 처럼 헤더가 모호해도 확장 헤더 줄로 비밀 파일을 알아본다',
+        async (kind, from, header) => {
+          const diff = `${header}\nsimilarity index 100%\n${kind} from ${from}\n${kind} to src/config.ts\n`;
+
+          const result = await fetch(diff);
+
+          expect(result.diff).toBe('');
+          expect(result.secretPaths).toEqual(['src/config.ts']);
+        },
+      );
+
       it('뺀 파일의 원문은 비밀값 탐지용으로 따로 돌려준다', async () => {
         const result = await fetch(
           section('src/a.ts') + section('dist/app.js'),
@@ -770,6 +790,25 @@ describe('OctokitGithubClient', () => {
       });
 
       expect(result.diff).toBe(section('src/a.ts') + section('yarn.lock'));
+    });
+
+    it('헤더가 모호한 비밀 파일 rename 도 rename 줄로 알아보고 뺀다', async () => {
+      const secretRename =
+        'diff --git a/x b/.env b/src/config.ts\nsimilarity index 100%\nrename from x b/.env\nrename to src/config.ts\n';
+      const compareCommits = jest
+        .fn()
+        .mockResolvedValue({ data: section('src/a.ts') + secretRename });
+      const octokit = {
+        rest: { repos: { compareCommits } },
+      } as unknown as Octokit;
+
+      const result = await new OctokitGithubClient(octokit).compareCommits({
+        repo: 'foo/bar',
+        baseSha: 'a'.repeat(40),
+        headSha: 'b'.repeat(40),
+      });
+
+      expect(result.diff).toBe(section('src/a.ts'));
     });
   });
 
