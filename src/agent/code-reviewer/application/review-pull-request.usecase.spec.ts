@@ -1282,6 +1282,22 @@ describe('buildReviewPrompt', () => {
     );
     expect(withOmitted).toContain('pnpm-lock.yaml, dist/index.js');
     expect(withoutOmitted).not.toContain('diff 에서 뺐다');
+
+    // 비밀 파일은 "지적하지 않는다" 노이즈 문구가 아니라 별도 안내로 알린다.
+    const withSecret = buildReviewPrompt({
+      detail,
+      diff: {
+        diff: 'short',
+        truncated: false,
+        bytes: 5,
+        omittedPaths: [],
+        secretPaths: ['.env.production'],
+      },
+    });
+
+    expect(withSecret).toContain('비밀 파일로 보이는 1개는');
+    expect(withSecret).toContain('.env.production');
+    expect(withSecret).not.toContain('리뷰할 필요가 없는 파일');
   });
 });
 describe('ReviewPullRequestUsecase × 학습 규약', () => {

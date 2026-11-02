@@ -626,6 +626,28 @@ describe('ModelRouterUsecase', () => {
       });
     });
 
+    it('실패 사유에 섞인 토큰은 가려서 남긴다 (CLI stderr 에 프롬프트 본문이 실린다)', async () => {
+      chatgptProvider.complete.mockRejectedValue(
+        new Error(
+          'codex CLI 비정상 종료 (exit=1): +KEY=ghp_abcdefghijklmnopqrstuvwxyz0123',
+        ),
+      );
+      claudeProvider.complete.mockResolvedValue({
+        text: 'ok',
+        modelUsed: 'claude-cli',
+        provider: ModelProviderName.CLAUDE,
+      });
+
+      await usecase.route({
+        agentType: AgentType.PM,
+        request: { prompt: 'x' },
+      });
+
+      expect(recorded().primaryError).toBe(
+        'codex CLI 비정상 종료 (exit=1): +KEY=[REDACTED:github_pat]',
+      );
+    });
+
     it('AgentRun 스코프 안이면 그 run id 를 붙인다', async () => {
       chatgptProvider.complete.mockResolvedValue({
         text: 'ok',
