@@ -569,6 +569,24 @@ describe('OctokitGithubClient', () => {
         expect(result.secretPaths).toEqual(['config/app.ts']);
       });
 
+      it.each([
+        ['x b/.env', 'diff --git a/x b/.env b/src/config.ts'],
+        [
+          '"\\355\\225\\234 b/.env"',
+          'diff --git "a/\\355\\225\\234 b/.env" b/src/config.ts',
+        ],
+      ])(
+        '옛 경로 %s 처럼 헤더가 모호해도 rename 줄로 비밀 파일을 알아본다',
+        async (from, header) => {
+          const diff = `${header}\nsimilarity index 100%\nrename from ${from}\nrename to src/config.ts\n`;
+
+          const result = await fetch(diff);
+
+          expect(result.diff).toBe('');
+          expect(result.secretPaths).toEqual(['src/config.ts']);
+        },
+      );
+
       it('뺀 파일의 원문은 비밀값 탐지용으로 따로 돌려준다', async () => {
         const result = await fetch(
           section('src/a.ts') + section('dist/app.js'),
