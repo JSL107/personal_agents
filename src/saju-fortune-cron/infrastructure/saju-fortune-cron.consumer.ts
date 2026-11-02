@@ -144,18 +144,46 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
     if (!firstRun) {
       return;
     }
+    const text = `🔮 *오늘의 운세 — ${todayKst} (${pillarToHangul(todayPillar)}일)*\n\n${escapeSlackMrkdwn(fortune.body)}`;
     try {
-      await this.slackNotifier.postMessage({
-        kind: 'saju-fortune',
-        target: recipient.slackUserId,
-        text: `🔮 *오늘의 운세 — ${todayKst} (${pillarToHangul(todayPillar)}일)*\n\n${escapeSlackMrkdwn(fortune.body)}`,
-        ...(card ? { image: card } : {}),
-      });
+      await this.postFortune({ recipient, text, card });
     } catch (error) {
       await this.cronIdempotency.release(guardKey);
       throw error;
     }
     this.logger.log(`Saju Fortune 발송 완료 — ${recipient.slackUserId}`);
+  }
+
+  // 그림이 붙은 메시지가 실패하면 글만 한 번 더 보낸다 — 그림 블록 문제로 재시도까지 계속
+  // 실패하면 그날 운세가 아예 안 간다. 글만 보내도 실패하면 예외(호출부가 가드를 풀어 재시도).
+  private async postFortune({
+    recipient,
+    text,
+    card,
+  }: {
+    recipient: SajuFortuneRecipient;
+    text: string;
+    card: UploadedCard | undefined;
+  }): Promise<void> {
+    const message = {
+      kind: 'saju-fortune' as const,
+      target: recipient.slackUserId,
+      text,
+    };
+    if (!card) {
+      await this.slackNotifier.postMessage(message);
+      return;
+    }
+    try {
+      await this.slackNotifier.postMessage({ ...message, image: card });
+    } catch (error) {
+      this.logger.warn(
+        `Saju Fortune 카드 첨부 발송 실패 — 글만 다시 보냄 (${recipient.slackUserId}): ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      await this.slackNotifier.postMessage(message);
+    }
   }
 
   // 한자 금지는 프롬프트 지시라 코드가 다시 본다. 섞였으면 한 번만 다시 만들고, 그래도 섞이면

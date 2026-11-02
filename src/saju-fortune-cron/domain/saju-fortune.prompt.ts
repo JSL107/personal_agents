@@ -27,7 +27,9 @@ export const metaphorThemeOf = (todayKst: string): string => {
   const days = Math.floor(
     Date.parse(`${todayKst}T00:00:00Z`) / MILLISECONDS_PER_DAY,
   );
-  return METAPHOR_THEMES[days % METAPHOR_THEMES.length];
+  // 날마다 한 칸씩 돌고, 소재 수만큼 지나면 처음으로 돌아온다.
+  const themeIndex = days % METAPHOR_THEMES.length;
+  return METAPHOR_THEMES[themeIndex];
 };
 
 export interface SajuFortunePromptInput {

@@ -160,6 +160,26 @@ describe('SajuFortuneCronConsumer', () => {
     expect(postMessage.mock.calls[0][0].text).toContain('좋은 날이야');
   });
 
+  it('그림을 붙인 발송이 실패하면 글만 한 번 더 보내고 가드는 유지한다', async () => {
+    route.mockResolvedValue({
+      text: '좋은 날이야\nCARD_TITLE: THE QUIET SUN\nCARD_SCENE: A sun.',
+    });
+    postMessage
+      .mockRejectedValueOnce(new Error('invalid_blocks'))
+      .mockResolvedValue(undefined);
+
+    await consumer.process(JOB);
+
+    const forFirst = postMessage.mock.calls.filter(
+      ([input]) => input.target === 'U111',
+    );
+    expect(forFirst).toHaveLength(2);
+    expect(forFirst[0][0].image).toBeDefined();
+    expect(forFirst[1][0].image).toBeUndefined();
+    expect(forFirst[1][0].text).toContain('좋은 날이야');
+    expect(release).not.toHaveBeenCalled();
+  });
+
   it('카드 줄이 없으면 그림을 만들지 않는다', async () => {
     await consumer.process(JOB);
 

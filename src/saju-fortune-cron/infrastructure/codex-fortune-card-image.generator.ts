@@ -21,30 +21,24 @@ import { FortuneCardImagePort } from '../domain/port/fortune-card-image.port';
 const IMAGE_TIMEOUT_MS = 240_000;
 // 그림 품질은 이 값과 무관하고, 지시를 따르는 데 깊은 추론이 필요 없다.
 const IMAGE_REASONING_EFFORT = 'low';
-// thread id 는 경로 조각으로 쓰이므로 형식을 확인한다(`..` 같은 값이 섞이지 않게).
-const THREAD_ID_PATTERN = /^[0-9a-f-]{16,64}$/;
+// thread_id 는 `--json` 의 thread.started 이벤트(첫 줄)에만 있는 필드라 JSON 을 풀지 않고 바로 찾는다
+// (codex-cli 0.166.0 실측: 압축 JSON, thread_id 를 가진 줄은 하나). 직렬화 공백이 바뀌어도 읽히게 \s* 를 둔다.
+// 문자 집합을 묶는 것은 이 값이 경로 조각이 되기 때문이다(`..` 같은 값이 섞이지 않게).
+const THREAD_ID_PATTERN = /"thread_id"\s*:\s*"([0-9a-f-]{16,64})"/;
 const STDERR_TAIL_LIMIT = 2_000;
 
-export const extractThreadId = (jsonLines: string): string | undefined => {
-  for (const line of jsonLines.split('\n')) {
-    if (!line.startsWith('{')) {
-      continue;
-    }
-    try {
-      const event = JSON.parse(line) as { type?: string; thread_id?: string };
-      if (
-        event.type === 'thread.started' &&
-        typeof event.thread_id === 'string' &&
-        THREAD_ID_PATTERN.test(event.thread_id)
-      ) {
-        return event.thread_id;
-      }
-    } catch {
-      // 진행 로그 줄 — 건너뛴다.
-    }
-  }
-  return undefined;
-};
+export const extractThreadId = (output: string): string | undefined =>
+  THREAD_ID_PATTERN.exec(output)?.[1];
+
+interface CodexRunResult {
+  exitCode: number | null;
+  timedOut: boolean;
+  stdout: string;
+  stderrTail: string;
+}
+
+const removeDir = (dir: string): Promise<void> =>
+  rm(dir, { recursive: true, force: true });
 
 // 구독 codex CLI 의 이미지 생성 도구로 운세 카드를 그린다. 운영 codex 호출과 같은 격리
 // (buildSafeChildEnv·throwaway HOME·읽기 잠금 프로필·stdin 프롬프트)를 그대로 쓴다.
@@ -55,14 +49,24 @@ export class CodexFortuneCardImageGenerator implements FortuneCardImagePort {
   async generate(prompt: string): Promise<Buffer> {
     const workDir = await mkdtemp(join(tmpdir(), 'idaeri-codex-'));
     const homeDir = await mkdtemp(join(tmpdir(), 'idaeri-codex-home-'));
-    let imageDir: string | undefined;
+    const run = await this.runCodex({ workDir, homeDir, prompt }).finally(() =>
+      Promise.all([removeDir(workDir), removeDir(homeDir)]),
+    );
+    // 실패(시간 초과·비정상 종료)해도 그림이 이미 저장됐을 수 있어, 폴더는 결과와 무관하게 먼저 정하고 지운다.
+    const threadId = extractThreadId(run.stdout);
+    const imageDir = threadId
+      ? join(getCodexHomeDir(), 'generated_images', threadId)
+      : undefined;
     try {
-      const output = await this.spawnCodex({ workDir, homeDir, prompt });
-      const threadId = extractThreadId(output);
-      if (!threadId) {
+      if (run.timedOut || run.exitCode !== 0) {
+        const reason = run.timedOut
+          ? `시간 초과 ${IMAGE_TIMEOUT_MS}ms`
+          : `exit=${run.exitCode}`;
+        throw new Error(`codex 그림 생성 실패 (${reason}): ${run.stderrTail}`);
+      }
+      if (!imageDir) {
         throw new Error('codex 그림 생성 — thread id 를 찾지 못함');
       }
-      imageDir = join(getCodexHomeDir(), 'generated_images', threadId);
       const png = (await readdir(imageDir).catch(() => [])).find((name) =>
         name.endsWith('.png'),
       );
@@ -71,15 +75,16 @@ export class CodexFortuneCardImageGenerator implements FortuneCardImagePort {
       }
       return await readFile(join(imageDir, png));
     } finally {
-      await Promise.all(
-        [workDir, homeDir, imageDir]
-          .filter((dir): dir is string => dir !== undefined)
-          .map((dir) => rm(dir, { recursive: true, force: true })),
-      );
+      if (imageDir) {
+        await removeDir(imageDir);
+      }
     }
   }
 
-  private spawnCodex({
+  // 종료 코드·시간 초과는 거부하지 않고 결과로 돌려준다 — 실패한 회차의 출력에서도 그림 폴더를 찾아 지워야 한다.
+  // execFile 대신 spawn 을 쓰는 이유: 시간 초과 때 codex 가 띄운 손자 프로세스까지 그룹째 죽여야
+  // 'close' 가 온다(killProcessTree 주석 참조). execFile 의 timeout 은 자식 하나만 죽인다.
+  private runCodex({
     workDir,
     homeDir,
     prompt,
@@ -87,7 +92,7 @@ export class CodexFortuneCardImageGenerator implements FortuneCardImagePort {
     workDir: string;
     homeDir: string;
     prompt: string;
-  }): Promise<string> {
+  }): Promise<CodexRunResult> {
     const args = [
       'exec',
       '--skip-git-repo-check',
@@ -111,31 +116,33 @@ export class CodexFortuneCardImageGenerator implements FortuneCardImagePort {
         env: buildSafeChildEnv({ cwd: workDir, homeDir }),
         detached: true,
       });
-      let stdout = '';
-      let stderrTail = '';
+      const stdoutChunks: Buffer[] = [];
+      const stderrChunks: Buffer[] = [];
+      const resultOf = (
+        exitCode: number | null,
+        timedOut: boolean,
+      ): CodexRunResult => ({
+        exitCode,
+        timedOut,
+        stdout: Buffer.concat(stdoutChunks).toString(),
+        stderrTail: Buffer.concat(stderrChunks)
+          .toString()
+          .slice(-STDERR_TAIL_LIMIT),
+      });
+      // 먼저 온 쪽만 반영된다 — 시간 초과 뒤의 'close' 는 Promise 가 무시한다.
       const timer = setTimeout(() => {
         killProcessTree(child.pid);
-        reject(new Error(`codex 그림 생성 시간 초과 (${IMAGE_TIMEOUT_MS}ms)`));
+        resolve(resultOf(null, true));
       }, IMAGE_TIMEOUT_MS);
-      child.stdout?.on('data', (chunk: Buffer) => {
-        stdout += chunk.toString();
-      });
-      child.stderr?.on('data', (chunk: Buffer) => {
-        stderrTail = (stderrTail + chunk.toString()).slice(-STDERR_TAIL_LIMIT);
-      });
+      child.stdout?.on('data', (chunk: Buffer) => stdoutChunks.push(chunk));
+      child.stderr?.on('data', (chunk: Buffer) => stderrChunks.push(chunk));
       child.on('error', (error) => {
         clearTimeout(timer);
         reject(error);
       });
       child.on('close', (code) => {
         clearTimeout(timer);
-        if (code !== 0) {
-          reject(
-            new Error(`codex 그림 생성 실패 (exit=${code}): ${stderrTail}`),
-          );
-          return;
-        }
-        resolve(stdout);
+        resolve(resultOf(code, false));
       });
       writeStdinAndClose({ child, payload: prompt });
     });

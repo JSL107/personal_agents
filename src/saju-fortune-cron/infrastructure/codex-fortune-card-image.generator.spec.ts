@@ -13,6 +13,14 @@ describe('extractThreadId', () => {
     );
   });
 
+  it('콜론 주변에 공백이 있어도 읽는다', () => {
+    expect(
+      extractThreadId(
+        '{"type": "thread.started", "thread_id": "01a199b3-edb3-74d1-9755-2504f9974f70"}',
+      ),
+    ).toBe('01a199b3-edb3-74d1-9755-2504f9974f70');
+  });
+
   it('경로 조각으로 위험한 값은 받지 않는다', () => {
     expect(
       extractThreadId('{"type":"thread.started","thread_id":"../../etc"}'),

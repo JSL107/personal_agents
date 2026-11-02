@@ -157,11 +157,10 @@ export const formatSajuFacts = (analysis: SajuDayAnalysis): string[] => {
   const abundant = ELEMENTS.filter(
     (element) => elementCounts[element] === maximum,
   );
-  const minimum = Math.min(...Object.values(elementCounts));
-  // 동률이면 오행 순서상 앞의 것 — 같은 사주는 매일 같은 색이 나와야 한다.
-  const scarcest = ELEMENTS.find(
-    (element) => elementCounts[element] === minimum,
-  ) as FiveElement;
+  // 동률이면 오행 순서상 앞의 것(엄격한 < 비교) — 같은 사주는 매일 같은 색이 나와야 한다.
+  const scarcest = ELEMENTS.reduce((least, element) =>
+    elementCounts[element] < elementCounts[least] ? element : least,
+  );
 
   const facts = [
     `- 타고난 중심 기운(일간): ${dayMaster.element}(${yinYangOf(dayMaster)})`,
