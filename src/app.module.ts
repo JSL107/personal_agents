@@ -53,6 +53,7 @@ import { PreferenceProfilePreviewApplier } from './preference-profile/infrastruc
 import { PreferenceProfileCanceller } from './preference-profile/infrastructure/preference-profile.preview-canceller';
 import { PreferenceProfileModule } from './preference-profile/preference-profile.module';
 import { GithubFileVerifier } from './preview-gate/infrastructure/github-file.verifier';
+import { GithubIssueVerifier } from './preview-gate/infrastructure/github-issue.verifier';
 import { GithubPrVerifier } from './preview-gate/infrastructure/github-pr.verifier';
 import { PreviewGateModule } from './preview-gate/preview-gate.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -141,7 +142,7 @@ import { WebhookModule } from './webhook/webhook.module';
         IdeaScheduleApplier,
       ],
       // 레버 3b: apply 후 결과 검증 — DOCS_AUDIT_PR 의 PR open 을 getPullRequest 로 재확인.
-      verifiers: [GithubPrVerifier, GithubFileVerifier],
+      verifiers: [GithubPrVerifier, GithubIssueVerifier, GithubFileVerifier],
       // v2 reject-signal: PREFERENCE_PROFILE 제안 ❌ 거부 시 연결 proposal 을 REJECTED 로 기록.
       cancellers: [PreferenceProfileCanceller],
       imports: [

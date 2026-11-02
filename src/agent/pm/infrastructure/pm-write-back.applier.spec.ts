@@ -166,8 +166,23 @@ describe('PmWriteBackApplier', () => {
     const result = await applier.apply(preview);
 
     expect(github.addIssueComment).toHaveBeenCalledTimes(2);
-    // 첫 번째 실패 → 1개만 카운트.
+    // 첫 번째 실패 → 1개만 카운트하고, 실패한 task 를 메시지에 밝힌다.
     expect(result.message).toContain('GitHub 1개');
+    expect(result.message).toContain('⚠️ 실패 1개: foo/bar#1');
+  });
+
+  it('모두 성공하면 실패 안내를 붙이지 않는다', async () => {
+    const applier = new PmWriteBackApplier(
+      buildGithubMock(),
+      buildNotionMock(),
+    );
+    const preview = buildPreview({
+      tasks: [buildTask({ id: 'foo/bar#1', source: 'GITHUB' })],
+    });
+
+    const result = await applier.apply(preview);
+
+    expect(result.message).not.toContain('실패');
   });
 
   it('payload.tasks 가 누락되면 명시 예외', async () => {
@@ -192,9 +207,10 @@ describe('PmWriteBackApplier', () => {
       tasks: [buildTask({ id: 'invalid-id', source: 'GITHUB' })],
     });
 
-    // 한 task 실패는 graceful 이라 throw 안 함, 카운트만 0.
+    // 한 task 실패는 graceful 이라 throw 안 함, 카운트 0 + 실패 안내.
     const result = await applier.apply(preview);
     expect(result.message).toContain('GitHub 0개');
+    expect(result.message).toContain('⚠️ 실패 1개: invalid-id');
     expect(github.addIssueComment).not.toHaveBeenCalled();
   });
 });
