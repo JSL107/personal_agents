@@ -52,6 +52,11 @@ const CODEX_PROBE_PROMPT = 'Reply with the single word: OK';
 // ChatGPT 계정에서 한 줄 호출에도 429 를 돌려줘(주간 사용량 8%, 할당량 무관) 전 워커가 실패했다.
 // 429 가 계속되면 재시도 대기(#873) 전에 이 모델이 아직 열려 있는지부터 확인한다.
 export const CODEX_MODEL = 'gpt-6-sol';
+// 고정 모델만 429 를 내는 경우(위 2026-10-20 사고)에 재시도를 같은 모델로 하면 같은 벽에 다시 부딪힌다.
+// 429 재시도만 이 모델로 바꾼다 — 시도 횟수·대기는 그대로라 MODEL_ROUTER_WORST_CASE_MS 는 변하지 않는다.
+// 쿼터 소진·타임아웃·읽기 잠금은 모델을 바꿔도 풀리지 않으므로 지금처럼 재시도하지 않는다.
+// 이 계정에서 같은 인자(--ignore-user-config, effort high)로 응답하는 것을 2026-11-02 실호출로 확인했다.
+export const CODEX_FALLBACK_MODEL = 'gpt-6.1-terra';
 export const CODEX_REASONING_EFFORT = 'high';
 
 // codex CLI 가 사용량 한도(ChatGPT 구독 쿼터)에 닿으면 exit=0 이어도 output-last-message 가 비고,
@@ -409,8 +414,11 @@ export const buildCodexArgs = ({
   permissionArgs,
   schemaFile,
   imagePaths,
+  model = CODEX_MODEL,
 }: {
   outputFile: string;
+  // 기본은 CODEX_MODEL. 429 재시도에서만 CODEX_FALLBACK_MODEL 이 들어온다.
+  model?: string;
   // buildCodexPermissionArgs 결과. `--sandbox` 플래그와 함께 쓰면 무시되므로 여기서 대신 건다.
   permissionArgs: readonly string[];
   // 지정 시 codex 가 이 스키마를 벗어난 최종 응답을 만들지 못한다.
@@ -434,7 +442,7 @@ export const buildCodexArgs = ({
   '--ignore-user-config',
   // config 를 안 읽으면 모델 설정도 사라지므로 명시 재주입한다.
   '-c',
-  `model="${CODEX_MODEL}"`,
+  `model="${model}"`,
   '-c',
   `model_reasoning_effort="${CODEX_REASONING_EFFORT}"`,
   '--color',
@@ -466,6 +474,7 @@ export class CodexCliProvider
       await this.assertReadLock({ extraReadableRoots: request.readableRoots });
     }
     let lastError: unknown;
+    let model = CODEX_MODEL;
 
     for (let attempt = 1; attempt <= CODEX_MAX_ATTEMPTS; attempt += 1) {
       // attempt 별 실소요를 남긴다 — timeout(180s)이 실제로 듣는지 확인하는 유일한 단서다.
@@ -473,7 +482,7 @@ export class CodexCliProvider
       //  가릴 수 없었다. 상위 route() 는 총합만 알고 attempt 분해는 여기서만 보인다.)
       const attemptStartedAtMs = Date.now();
       try {
-        return await this.completeOnce(request);
+        return await this.completeOnce(request, this.timeoutMs, model);
       } catch (error: unknown) {
         lastError = error;
         const attemptSeconds = Math.max(
@@ -490,8 +499,11 @@ export class CodexCliProvider
           throw error;
         }
         const backoffMs = computeCodexRetryBackoffMs(error);
+        if (isCodexRateLimitError(error)) {
+          model = CODEX_FALLBACK_MODEL;
+        }
         this.logger.warn(
-          `codex 호출 실패 (attempt ${attempt}/${CODEX_MAX_ATTEMPTS}, ${attemptSeconds}s 소요) — 재시도 ${backoffMs}ms 후: ${message}`,
+          `codex 호출 실패 (attempt ${attempt}/${CODEX_MAX_ATTEMPTS}, ${attemptSeconds}s 소요) — 재시도 ${backoffMs}ms 후 (model=${model}): ${message}`,
         );
         await delay(backoffMs);
       }
@@ -578,6 +590,7 @@ export class CodexCliProvider
   private async completeOnce(
     request: CompletionRequest,
     timeoutMs: number = this.timeoutMs,
+    model: string = CODEX_MODEL,
   ): Promise<CompletionResponse> {
     this.throwIfQuotaBlocked();
 
@@ -601,6 +614,7 @@ export class CodexCliProvider
         permissionArgs,
         schemaFile,
         imagePaths: request.imagePaths,
+        model,
       });
       // OPS-4: 외부 CLI 로 흘려보내기 직전 토큰 류 시크릿을 redact —
       // GitHub issue body / Slack mention / Notion property 가 prompt 에 inline 으로 들어가는 surface 차단.
