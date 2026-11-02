@@ -16,7 +16,7 @@ import {
   SlackNotifierPort,
 } from '../../slack/domain/port/slack-notifier.port';
 import { escapeSlackMrkdwn } from '../../slack/format/mrkdwn.util';
-import { dayPillarOf, pillarToHangul } from '../domain/day-pillar';
+import { dayPillarOf } from '../domain/day-pillar';
 import {
   FORTUNE_CARD_IMAGE_PORT,
   FortuneCardImagePort,
@@ -29,6 +29,10 @@ import {
   parseFortuneResponse,
 } from '../domain/saju-fortune-card';
 import {
+  formatFortuneHeader,
+  HANJA_PATTERN,
+} from '../domain/saju-fortune-chat';
+import {
   parseSajuFortuneRecipients,
   SAJU_FORTUNE_CRON_QUEUE,
   SajuFortuneCronJobData,
@@ -40,8 +44,6 @@ const SENT_GUARD_TTL_SECONDS = 90_000;
 // 12줄 지시를 어긴 장문이 DM 을 덮지 않게 자른다. 카드 두 줄을 뗀 본문 기준.
 const MAXIMUM_FORTUNE_LENGTH = 1_500;
 const INCIDENT_KEY = cronIncidentKey('Saju Fortune Cron');
-// CJK 통합 한자. 받는 사람이 읽지 못한 「己土는 오늘 癸水를…」 같은 응답을 거른다.
-const HANJA_PATTERN = /[\u4E00-\u9FFF]/;
 
 interface DeliverFortuneInput {
   recipient: SajuFortuneRecipient;
@@ -144,7 +146,7 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
     if (!firstRun) {
       return;
     }
-    const text = `🔮 *오늘의 운세 — ${todayKst} (${pillarToHangul(todayPillar)}일)*\n\n${escapeSlackMrkdwn(fortune.body)}`;
+    const text = `${formatFortuneHeader(todayKst, todayPillar)}\n\n${escapeSlackMrkdwn(fortune.body)}`;
     try {
       await this.postFortune({ recipient, text, card });
     } catch (error) {

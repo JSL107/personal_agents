@@ -36,6 +36,7 @@ import {
 import { RouterException } from '../../router/domain/router.exception';
 import { RouterErrorCode } from '../../router/domain/router-error-code.enum';
 import { isUnresolvedFollowUpTurn } from '../../router/domain/unresolved-turn.util';
+import { AnswerFortuneQuestionUsecase } from '../../saju-fortune-cron/application/answer-fortune-question.usecase';
 import {
   MENTION_FINAL_REPLY_STATUS,
   MENTION_RECEIPT_REPOSITORY,
@@ -61,6 +62,7 @@ import {
   selectTranscriptImages,
 } from '../domain/transcript-image';
 import { toReadableSlackArgs } from '../format/message-blocks.builder';
+import { escapeSlackMrkdwn } from '../format/mrkdwn.util';
 import { buildPreviewBlocks } from '../format/preview-message.builder';
 import { SlackConversationReader } from '../infrastructure/slack-conversation.reader';
 import {
@@ -226,6 +228,7 @@ export class RouterMessageHandler implements SlackHandler {
     private readonly mentionReceiptRepository: MentionReceiptRepositoryPort,
     private readonly conversationReader: SlackConversationReader,
     private readonly imageDownloader: SlackImageDownloader,
+    private readonly answerFortuneQuestion: AnswerFortuneQuestionUsecase,
   ) {}
 
   register(app: App): void {
@@ -605,6 +608,24 @@ export class RouterMessageHandler implements SlackHandler {
         memoryKey,
       });
       if (handledByPreview) {
+        succeeded = true;
+        return;
+      }
+
+      // 아침 운세 DM 스레드의 질문 — 목표 답보다 먼저 본다. "운세 메시지에 단 답글" 이 더 구체적인
+      // 신호라, 기다리는 목표 질문이 있어도 운세 질문이 그쪽 답으로 저장되지 않게 한다.
+      const handledByFortune = await this.tryHandleFortuneThread({
+        client,
+        channelId,
+        source,
+        replyToTs,
+        messageTs,
+        slackUserId,
+        text,
+        threadTs,
+        say,
+      });
+      if (handledByFortune) {
         succeeded = true;
         return;
       }
@@ -1177,6 +1198,67 @@ export class RouterMessageHandler implements SlackHandler {
         `응답 턴 기록 실패 — ${context}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
+  }
+
+  // 스레드 부모가 이 봇이 보낸 운세 DM 이면 그날 사주를 근거로 답한다. 운세 스레드가 아니거나
+  // 받는 사람 목록에 없으면 false — 일반 dispatch 로 넘긴다. 답 생성 실패는 바깥 catch 가 오류 답장으로 처리한다.
+  private async tryHandleFortuneThread({
+    client,
+    channelId,
+    source,
+    replyToTs,
+    messageTs,
+    slackUserId,
+    text,
+    threadTs,
+    say,
+  }: {
+    client: WebClient;
+    channelId: string;
+    source: MentionSource;
+    replyToTs: string | undefined;
+    messageTs: string | undefined;
+    slackUserId: string;
+    text: string;
+    threadTs: string | undefined;
+    say: SayFn;
+  }): Promise<boolean> {
+    if (source !== 'dm' || !replyToTs) {
+      return false;
+    }
+    const messages = await this.conversationReader.read({
+      client,
+      channelId,
+      isDirectMessage: true,
+      threadTs: replyToTs,
+      messageTs,
+      nowMs: Date.now(),
+    });
+    const parent = messages?.find((message) => message.ts === replyToTs);
+    if (!parent?.botId) {
+      return false;
+    }
+    // 다른 봇이 같은 머리말을 쓴 글에 답하지 않게 이 봇이 쓴 글만 인정한다.
+    const selfBotId = await this.conversationReader.selfBotId(client);
+    if (parent.botId !== selfBotId) {
+      return false;
+    }
+    const answer = await this.answerFortuneQuestion.answer({
+      slackUserId,
+      fortuneMessageText: parent.text,
+      priorTurns: (messages ?? [])
+        .filter((message) => message.ts !== replyToTs)
+        .map((message) => ({
+          role: message.botId ? 'assistant' : 'user',
+          text: message.text,
+        })),
+      question: text,
+    });
+    if (answer === null) {
+      return false;
+    }
+    await say({ thread_ts: threadTs, text: escapeSlackMrkdwn(answer) });
+    return true;
   }
 
   private async tryHandleGoalAnswer({
