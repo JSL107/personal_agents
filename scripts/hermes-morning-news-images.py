@@ -109,7 +109,8 @@ padding:52px 64px;display:flex;flex-direction:column;gap:26px}}
 .top{{display:flex;gap:12px;align-items:center}}
 .chip{{color:#fff;font-weight:800;font-size:22px;padding:8px 16px;border-radius:999px;background:#16181d}}
 .chip.src{{background:{color}}}
-h1{{font-size:54px;font-weight:800;letter-spacing:-1.5px;line-height:1.15;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}}
+h1{{font-size:54px;font-weight:800;letter-spacing:-1.5px;line-height:1.15;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+word-break:keep-all;overflow-wrap:anywhere;text-wrap:balance}}
 .what{{font-size:29px;color:#3b4049;line-height:1.4;font-weight:500}}
 .flow{{display:flex;align-items:stretch;gap:12px;margin-top:6px}}
 .step{{flex:1;background:#fff;border:2px solid #dde1e7;border-radius:20px;padding:22px 22px 26px;font-size:28px;font-weight:700;
