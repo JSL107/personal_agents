@@ -35,6 +35,9 @@ describe('StudyApplyIssueApplier', () => {
       assignees: ['JSL107'],
     });
     expect(result.message).toContain('#12');
+    expect(result.artifacts).toEqual([
+      { type: 'github_issue', repo: 'JSL107/personal_agents', issueNumber: 12 },
+    ]);
     expect('resumable' in applier).toBe(false);
   });
 

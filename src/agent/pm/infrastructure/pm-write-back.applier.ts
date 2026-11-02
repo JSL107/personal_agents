@@ -75,6 +75,7 @@ export class PmWriteBackApplier implements PreviewApplier {
     const tasks = this.parsePayload(preview.payload);
     let githubCount = 0;
     let notionCount = 0;
+    const failedTaskIds: string[] = [];
 
     for (const task of tasks) {
       if (task.subtasks.length === 0) {
@@ -89,18 +90,24 @@ export class PmWriteBackApplier implements PreviewApplier {
           notionCount += 1;
         }
       } catch (error: unknown) {
-        // 한 task 실패가 전체 apply 를 막지 않도록 graceful — 결과 메시지에 카운트만 누락.
+        // 한 task 실패가 전체 apply 를 막지 않도록 graceful — 대신 실패한 task 를 결과 메시지에 밝힌다.
+        // 예외로 올려 PENDING 으로 되돌리면 재시도 때 이미 성공한 task 의 코멘트가 중복으로 달린다.
         const message = error instanceof Error ? error.message : String(error);
         this.logger.warn(
           `PM Write-back ${task.source} task ${task.id} 실패: ${message}`,
         );
+        failedTaskIds.push(task.id);
       }
     }
 
     // 코멘트/Notion append 는 클라이언트가 생성 리소스 id 를 노출하지 않아 재조회 검증 비용/한계가
     // 커서 이번 범위에서는 artifacts 비움 (검증 없이 message 만 노출). PR open 검증부터 단계 도입.
+    const summary = `GitHub ${githubCount}개, Notion ${notionCount}개 동기화 완료`;
     return {
-      message: `GitHub ${githubCount}개, Notion ${notionCount}개 동기화 완료`,
+      message:
+        failedTaskIds.length === 0
+          ? summary
+          : `${summary}\n⚠️ 실패 ${failedTaskIds.length}개: ${failedTaskIds.join(', ')} (로그 확인 후 수동 반영 필요)`,
       artifacts: [],
     };
   }
