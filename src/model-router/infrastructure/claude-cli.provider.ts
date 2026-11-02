@@ -152,7 +152,8 @@ export const buildClaudeExitErrorMessage = ({
   code: number | null;
   stderrTail: string;
 }): string => {
-  const tail = stderrTail.trim();
+  // 문구에는 가린 꼬리를 싣고, 인증 판별은 원문으로 한다(마스킹 표식에 판별 키워드가 없다).
+  const tail = redactPii(stderrTail).trim();
   if (isClaudeAuthSuspect({ code, stderrTail })) {
     const suffix = tail.length > 0 ? ` stderr=${tail}` : ' (no stderr)';
     return `claude CLI 인증 만료 / 쿼터 소진 의심 (exit=${code}). \`claude\` 를 한 번 대화형으로 실행해 재인증 또는 쿼터 reset 을 확인해주세요.${suffix}`;
@@ -317,17 +318,20 @@ export class ClaudeCliProvider implements ModelProviderPort {
           resolve(stdoutChunks.join(''));
           return;
         }
+        // 로그·예외 문구에는 가린 꼬리만 싣는다 — stderr 에 프롬프트 본문이 섞여 오고 이 문구가
+        // 로그·원장·호출 기록으로 퍼진다. 인증 판별은 원문으로 한다.
         const authSuspect = isClaudeAuthSuspect({ code, stderrTail });
+        const safeTail = redactPii(stderrTail);
         const message = buildClaudeExitErrorMessage({ code, stderrTail });
         if (authSuspect) {
           this.logger.error(
-            `claude CLI exit=${code} AUTH_SUSPECT stderr=${stderrTail.slice(-200) || '(empty)'}`,
+            `claude CLI exit=${code} AUTH_SUSPECT stderr=${safeTail.slice(-200) || '(empty)'}`,
           );
           reject(new ClaudeAuthSuspectException(message));
           return;
         }
         this.logger.error(
-          `claude CLI exit=${code} stderr=${stderrTail.slice(-200)}`,
+          `claude CLI exit=${code} stderr=${safeTail.slice(-200)}`,
         );
         reject(new Error(message));
       });

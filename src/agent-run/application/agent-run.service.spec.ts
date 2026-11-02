@@ -538,7 +538,8 @@ describe('AgentRunService', () => {
   it('cause 에 섞인 토큰은 원장에 남기기 전에 가린다 (stderr 에 프롬프트 본문이 실린다)', async () => {
     const cause = await causeOf(
       new Error(
-        'codex CLI 비정상 종료 (exit=1): +SLACK=xoxb-1234567890-abcdefghij',
+        // 반복 문자 더미 — 엔트로피가 낮아 위험 지도의 실토큰 탐지에 걸리지 않는다.
+        'codex CLI 비정상 종료 (exit=1): +SLACK=xoxb-' + 'a'.repeat(20),
       ),
     );
 
