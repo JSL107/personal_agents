@@ -23,6 +23,20 @@ describe('fortuneDateOf', () => {
     );
   });
 
+  it('Slack 이 이모지를 단축 코드로 바꿔 돌려줘도 읽는다', () => {
+    expect(
+      fortuneDateOf(':crystal_ball: *오늘의 운세 — 2026-11-02 (경진일)*\n본문'),
+    ).toBe('2026-11-02');
+  });
+
+  it('첫 줄 중간에 머리말을 인용한 글은 운세로 보지 않는다', () => {
+    expect(
+      fortuneDateOf(
+        '아침에 보낸 🔮 *오늘의 운세 — 2026-11-02 (경진일)* 말이지?',
+      ),
+    ).toBeUndefined();
+  });
+
   it('첫 줄이 운세 머리말이 아니면 undefined', () => {
     expect(fortuneDateOf('안녕\n오늘의 운세 — 2026-11-02 (경진일)')).toBe(
       undefined,

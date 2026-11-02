@@ -13,8 +13,10 @@ export const formatFortuneHeader = (
 // CJK 통합 한자. 받는 사람이 읽지 못한 「己土는 오늘 癸水를…」 같은 응답을 거른다.
 export const HANJA_PATTERN = /[\u4E00-\u9FFF]/;
 
-// Slack 이 돌려주는 text 는 mrkdwn 표식이 바뀌어 올 수 있어 날짜 부분만 본다.
-const FORTUNE_HEADER_PATTERN = /오늘의 운세 — (\d{4}-\d{2}-\d{2}) \(/;
+// 첫 줄 맨 앞에 고정한다 — 일반 답변이 머리말을 인용한 스레드를 가로채지 않게. Slack 이 돌려주는 text 는
+// 이모지를 `:crystal_ball:` 단축 코드로, 굵게 표식을 다르게 바꿔 올 수 있어 그 두 군데만 느슨하게 본다.
+const FORTUNE_HEADER_PATTERN =
+  /^(?:🔮|:crystal_ball:)\s*\*?오늘의 운세 — (\d{4}-\d{2}-\d{2}) \(/;
 
 // 운세 DM 이면 그날 날짜('YYYY-MM-DD'), 아니면 undefined.
 export const fortuneDateOf = (messageText: string): string | undefined =>
