@@ -6,6 +6,7 @@ import { ModelRouterUsecase } from '../../model-router/application/model-router.
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
 import { SlackNotifierPort } from '../../slack/domain/port/slack-notifier.port';
+import { FortuneCardImagePort } from '../domain/port/fortune-card-image.port';
 import { SajuFortuneCronJobData } from '../domain/saju-fortune-cron.type';
 import { SajuFortuneCronConsumer } from './saju-fortune-cron.consumer';
 
@@ -21,6 +22,8 @@ describe('SajuFortuneCronConsumer', () => {
   let release: jest.Mock;
   let isDone: jest.Mock;
   let publishCronFailure: jest.Mock;
+  let generateImage: jest.Mock;
+  let uploadImageFile: jest.Mock;
   let consumer: SajuFortuneCronConsumer;
 
   beforeEach(() => {
@@ -32,11 +35,14 @@ describe('SajuFortuneCronConsumer', () => {
     release = jest.fn().mockResolvedValue(undefined);
     isDone = jest.fn().mockResolvedValue(false);
     publishCronFailure = jest.fn();
+    generateImage = jest.fn().mockResolvedValue(Buffer.from('png'));
+    uploadImageFile = jest.fn().mockResolvedValue({ fileId: 'F1' });
     consumer = new SajuFortuneCronConsumer(
       { get: () => RECIPIENTS } as unknown as ConfigService,
       { route } as unknown as ModelRouterUsecase,
-      { postMessage } as unknown as SlackNotifierPort,
+      { postMessage, uploadImageFile } as unknown as SlackNotifierPort,
       { acquireOnce, release, isDone } as unknown as CronIdempotencyService,
+      { generate: generateImage } as FortuneCardImagePort,
       {
         publishCronFailure,
         publishRecovery: jest.fn(),
@@ -121,6 +127,44 @@ describe('SajuFortuneCronConsumer', () => {
 
     expect(route).toHaveBeenCalledTimes(4);
     expect(postMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it('카드 두 줄은 본문에서 떼어 그림으로 그리고, 그림과 글을 한 메시지로 보낸다', async () => {
+    route.mockResolvedValue({
+      text: '좋은 날이야\n\nCARD_TITLE: THE QUIET SUN\nCARD_SCENE: A golden sun over a field.',
+    });
+
+    await consumer.process(JOB);
+
+    expect(generateImage.mock.calls[0][0]).toContain('THE QUIET SUN');
+    expect(generateImage.mock.calls[0][0]).toContain('A golden sun');
+    const [input] = postMessage.mock.calls[0];
+    expect(input.text).toContain('좋은 날이야');
+    expect(input.text).not.toContain('CARD_');
+    expect(input.image).toEqual({
+      fileId: 'F1',
+      altText: '오늘의 운세 카드 — THE QUIET SUN',
+    });
+  });
+
+  it('그림 생성이 실패해도 글만은 보낸다', async () => {
+    route.mockResolvedValue({
+      text: '좋은 날이야\nCARD_TITLE: THE QUIET SUN\nCARD_SCENE: A sun.',
+    });
+    generateImage.mockRejectedValue(new Error('codex 시간 초과'));
+
+    await consumer.process(JOB);
+
+    expect(postMessage).toHaveBeenCalledTimes(2);
+    expect(postMessage.mock.calls[0][0].image).toBeUndefined();
+    expect(postMessage.mock.calls[0][0].text).toContain('좋은 날이야');
+  });
+
+  it('카드 줄이 없으면 그림을 만들지 않는다', async () => {
+    await consumer.process(JOB);
+
+    expect(generateImage).not.toHaveBeenCalled();
+    expect(postMessage.mock.calls[0][0].image).toBeUndefined();
   });
 
   it('오늘 이미 보낸 사람은 LLM 도 부르지 않는다', async () => {

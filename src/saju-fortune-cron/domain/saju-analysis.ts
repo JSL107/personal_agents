@@ -18,6 +18,14 @@ const PILLAR_MEANINGS: Record<string, string> = {
   시주: '앞날·계획',
 };
 const CLASH_DISTANCE = 6;
+// 오행에 대응하는 색(오방색). 행운의 색은 타고나기를 가장 적은 기운의 색으로 정한다 — 모델이 지어내지 않게.
+const ELEMENT_COLORS: Record<FiveElement, string> = {
+  나무: '초록',
+  불: '빨강',
+  흙: '노랑',
+  쇠: '흰색',
+  물: '남색',
+};
 
 const TEN_GODS = [
   ['비견', '겁재'],
@@ -149,12 +157,18 @@ export const formatSajuFacts = (analysis: SajuDayAnalysis): string[] => {
   const abundant = ELEMENTS.filter(
     (element) => elementCounts[element] === maximum,
   );
+  const minimum = Math.min(...Object.values(elementCounts));
+  // 동률이면 오행 순서상 앞의 것 — 같은 사주는 매일 같은 색이 나와야 한다.
+  const scarcest = ELEMENTS.find(
+    (element) => elementCounts[element] === minimum,
+  ) as FiveElement;
 
   const facts = [
     `- 타고난 중심 기운(일간): ${dayMaster.element}(${yinYangOf(dayMaster)})`,
     `- 타고난 오행 분포: ${distribution} — 가장 많은 기운: ${abundant.join('·')}${missing.length > 0 ? `, 없는 기운: ${missing.join('·')}` : ''}`,
     `- 오늘 천간의 기운: ${todayStem.element}(${yinYangOf(todayStem)}) → 받는 사람에게 ${TEN_GOD_MEANINGS[todayStem.tenGod]}`,
     `- 오늘 지지의 기운: ${todayBranch.element}(${yinYangOf(todayBranch)}) → 받는 사람에게 ${TEN_GOD_MEANINGS[todayBranch.tenGod]}`,
+    `- 행운의 색: ${ELEMENT_COLORS[scarcest]} (타고나기를 가장 적은 ${scarcest} 기운의 색 — 부족한 기운을 채워 준다)`,
   ];
   for (const element of new Set([todayStem.element, todayBranch.element])) {
     if (elementCounts[element] === 0) {
