@@ -54,7 +54,7 @@ export class StudyApplyIssueApplier implements PreviewApplier {
           `• <${issue.url}|#${issue.number}> ${escapeSlackMrkdwn(title)}`,
           '_구현은 issue 를 보고 직접 시작하세요._',
         ].join('\n'),
-        artifacts: [],
+        artifacts: [{ type: 'github_issue', repo, issueNumber: issue.number }],
       };
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);

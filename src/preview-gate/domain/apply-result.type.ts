@@ -3,14 +3,20 @@
 // 부작용이 실제로 반영됐는지 재확인하지 않았다. ApplyResult.artifacts 는 그 재확인 대상을
 // 구조화해 ResultVerifier 가 실제 반영을 재조회 검증하게 한다.
 //
-// 현재 검증 대상은 github_pr / github_file. artifacts 가 빈 배열이면 apply-preview 는 검증 없이
-// message 만 노출한다.
+// 현재 검증 대상은 github_pr / github_issue / github_file. artifacts 가 빈 배열이면 apply-preview 는
+// 검증 없이 message 만 노출한다.
 export type VerifiableArtifact =
   | {
       type: 'github_pr';
       // "owner/repo"
       repo: string;
       prNumber: number;
+    }
+  | {
+      type: 'github_issue';
+      // "owner/repo"
+      repo: string;
+      issueNumber: number;
     }
   | {
       type: 'github_file';
