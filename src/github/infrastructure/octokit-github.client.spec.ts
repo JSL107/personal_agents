@@ -753,6 +753,24 @@ describe('OctokitGithubClient', () => {
       expect(result.diff).not.toMatch(/�$/);
       expect(big.startsWith(result.diff)).toBe(true);
     });
+
+    // 이 diff 는 지적 해소 판정 프롬프트로 간다 — 비밀 파일 원문이 실리면 안 된다.
+    it('비밀 파일 섹션은 빼고, 노이즈 파일은 hunk 대조용으로 남긴다', async () => {
+      const input =
+        section('src/a.ts') + section('.env.production') + section('yarn.lock');
+      const compareCommits = jest.fn().mockResolvedValue({ data: input });
+      const octokit = {
+        rest: { repos: { compareCommits } },
+      } as unknown as Octokit;
+
+      const result = await new OctokitGithubClient(octokit).compareCommits({
+        repo: 'foo/bar',
+        baseSha: 'a'.repeat(40),
+        headSha: 'b'.repeat(40),
+      });
+
+      expect(result.diff).toBe(section('src/a.ts') + section('yarn.lock'));
+    });
   });
 
   describe('listMyAssignedTasks — PR isApproved 판정', () => {

@@ -387,9 +387,11 @@ export class OctokitGithubClient implements GithubClientPort {
         head: headSha,
         mediaType: { format: 'diff' },
       });
-      return truncateDiff(response.data as unknown as string, maxBytes, {
-        testFilesLast,
-      });
+      return truncateDiff(
+        omitSecretFiles(response.data as unknown as string),
+        maxBytes,
+        { testFilesLast },
+      );
     } catch (error: unknown) {
       throw this.wrapRequestFailed(
         error,
@@ -1721,6 +1723,22 @@ const diffSectionPaths = (section: string): DiffSectionPaths | undefined => {
   return { from: matched[1], to: matched[2] };
 };
 
+// 옛·새 경로 중 한쪽만 걸려도 비밀 파일 섹션이다 — `.env` 를 다른 이름으로 옮긴 변경도 원문을 싣는다.
+const isSecretSection = (paths: DiffSectionPaths): boolean =>
+  isSecretFilePath(paths.from) || isSecretFilePath(paths.to);
+
+// 커밋 비교 diff 에서 비밀 파일 섹션만 뺀다. 이 diff 도 지적 해소 판정 프롬프트로 간다
+// (harvest-review-signals → finding-resolution.prompt). 노이즈 파일은 빼지 않는다 — 해소 판정은
+// hunk 좌표로 카드 위치를 대조하므로, 리뷰 프롬프트용 거름을 그대로 쓰면 lockfile 카드의 판정이 바뀐다.
+const omitSecretFiles = (diff: string): string =>
+  diff
+    .split(/^(?=diff --git )/m)
+    .filter((section) => {
+      const paths = diffSectionPaths(section);
+      return paths === undefined || !isSecretSection(paths);
+    })
+    .join('');
+
 interface OmittedDiffSections {
   diff: string;
   omittedPaths: string[];
@@ -1741,10 +1759,7 @@ const omitNoiseFiles = (diff: string): OmittedDiffSections => {
   const secretPaths: string[] = [];
   for (const section of diff.split(/^(?=diff --git )/m)) {
     const paths = diffSectionPaths(section);
-    if (
-      paths !== undefined &&
-      (isSecretFilePath(paths.from) || isSecretFilePath(paths.to))
-    ) {
+    if (paths !== undefined && isSecretSection(paths)) {
       omitted.push(section);
       secretPaths.push(paths.to);
     } else if (
