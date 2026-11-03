@@ -1,5 +1,6 @@
 import { App } from '@slack/bolt';
 
+import { extractVideoRequest } from '../../agent/video-watch/domain/video-url.parser';
 import { HumanizeService } from '../../humanize/application/humanize.service';
 import { ReplayFailedRunUsecase } from '../../run-replay/application/replay-failed-run.usecase';
 import { ReplayInFlightLock } from '../../run-replay/application/replay-in-flight.lock';
@@ -26,6 +27,7 @@ const setup = (inputSnapshot: Record<string, unknown>) => {
       result: { answer: '재실행 답변', highlights: [] },
       report: {
         title: '영상 제목',
+        platform: 'YOUTUBE',
         videoId: 'jNQXAC9IVRw',
         frameCount: 3,
         transcriptSource: 'captions',
@@ -75,7 +77,7 @@ describe('RetryRunHandler VIDEO_WATCH', () => {
 
     expect(watchVideoUsecase.execute).toHaveBeenCalledWith({
       slackUserId: 'U1',
-      text: '훅 설정 부분 설명해줘 https://www.youtube.com/watch?v=jNQXAC9IVRw',
+      text: 'https://www.youtube.com/watch?v=jNQXAC9IVRw 훅 설정 부분 설명해줘',
       triggerType: 'FAILURE_REPLAY',
     });
     expect(respond).toHaveBeenCalledWith(
@@ -86,6 +88,40 @@ describe('RetryRunHandler VIDEO_WATCH', () => {
     expect(agentRunService.setParentId).toHaveBeenCalledWith({
       id: 43,
       parentId: 42,
+    });
+  });
+
+  it('인스타그램 스냅숏은 릴스 URL 로 복원한다', async () => {
+    const { run, watchVideoUsecase } = setup({
+      slackUserId: 'U1',
+      platform: 'INSTAGRAM',
+      videoId: 'DfQb_sJlcc1',
+      question: '요약해줘',
+    });
+
+    await run();
+
+    expect(watchVideoUsecase.execute).toHaveBeenCalledWith({
+      slackUserId: 'U1',
+      text: 'https://www.instagram.com/reel/DfQb_sJlcc1/ 요약해줘',
+      triggerType: 'FAILURE_REPLAY',
+    });
+  });
+
+  it('질문에 다른 영상 링크가 남아 있어도 저장된 영상으로 재실행한다', async () => {
+    const { run, watchVideoUsecase } = setup({
+      slackUserId: 'U1',
+      platform: 'INSTAGRAM',
+      videoId: 'DfQb_sJlcc1',
+      question: '비교해줘 https://youtu.be/jNQXAC9IVRw',
+    });
+
+    await run();
+
+    const { text } = watchVideoUsecase.execute.mock.calls[0][0];
+    expect(extractVideoRequest(text)).toMatchObject({
+      video: { platform: 'INSTAGRAM', videoId: 'DfQb_sJlcc1' },
+      question: '비교해줘 https://youtu.be/jNQXAC9IVRw',
     });
   });
 

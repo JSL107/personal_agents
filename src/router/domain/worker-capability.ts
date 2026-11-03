@@ -124,9 +124,10 @@ export const WORKER_CAPABILITIES: readonly WorkerCapability[] = [
   },
   {
     agentType: AgentType.VIDEO_WATCH,
-    classifierLine: '유튜브 링크와 함께 영상 내용을 묻거나 요약·설명을 요청',
+    classifierLine:
+      '유튜브 또는 인스타그램 릴스 링크와 함께 영상 내용을 묻거나 요약·설명·분석을 요청',
     canDo:
-      '유튜브 링크의 영상 내용을 요약·설명한다. 예: "<유튜브 링크> 이거 요약해줘"',
+      '유튜브·인스타그램 릴스 링크의 영상 내용을 요약·설명한다. 인스타그램은 자막이 없어 화면 위주로 본다. 예: "<릴스 링크> 영상분석해줘"',
   },
   {
     agentType: AgentType.ART_JOB_FEED,

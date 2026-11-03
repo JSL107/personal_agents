@@ -19,16 +19,17 @@ import {
   WatchRunnerPort,
 } from '../domain/port/watch-runner.port';
 import { VIDEO_WATCH_SYSTEM_PROMPT } from '../domain/prompt/video-watch-system.prompt';
+import { extractVideoRequest } from '../domain/video-url.parser';
 import { VideoWatchException } from '../domain/video-watch.exception';
-import { VideoWatchResult, WatchReport } from '../domain/video-watch.type';
+import {
+  VideoPlatform,
+  VideoWatchResult,
+  WatchReport,
+} from '../domain/video-watch.type';
 import { VideoWatchErrorCode } from '../domain/video-watch-error-code.enum';
 import { parseVideoWatchOutput } from '../domain/video-watch-output.parser';
 import { VIDEO_WATCH_OUTPUT_SCHEMA } from '../domain/video-watch-output.schema';
 import { parseWatchReport } from '../domain/watch-report.parser';
-import {
-  extractYoutubeQuestion,
-  extractYoutubeVideo,
-} from '../domain/youtube-url.parser';
 
 export interface WatchVideoInput {
   slackUserId: string;
@@ -40,6 +41,7 @@ export interface WatchVideoInput {
 export interface WatchVideoOutcome extends AgentRunOutcome<VideoWatchResult> {
   report: {
     title: string | null;
+    platform: VideoPlatform;
     videoId: string;
     frameCount: number;
     transcriptSource: string | null;
@@ -64,16 +66,16 @@ export class WatchVideoUsecase {
     text,
     triggerType = TriggerType.SLACK_MENTION_VIDEO_WATCH,
   }: WatchVideoInput): Promise<WatchVideoOutcome> {
-    const extracted = extractYoutubeVideo(text);
-    if (!extracted) {
+    const request = extractVideoRequest(text);
+    if (!request) {
       throw new VideoWatchException({
         code: VideoWatchErrorCode.NO_YOUTUBE_URL,
-        message: '유튜브 링크를 함께 보내 주세요.',
+        message: '유튜브나 인스타그램 릴스 링크를 함께 보내 주세요.',
         status: DomainStatus.BAD_REQUEST,
       });
     }
 
-    const question = extractYoutubeQuestion(text);
+    const { video: extracted, question } = request;
     const scriptPath = this.configService.get<string>('WATCH_SCRIPT_PATH');
     if (!scriptPath) {
       throw this.notConfigured();
@@ -91,6 +93,7 @@ export class WatchVideoUsecase {
       // slackUserId 는 /retry-run 이 "본인 실행인가" 를 가리는 데 쓴다.
       inputSnapshot: {
         slackUserId,
+        platform: extracted.platform,
         videoId: extracted.videoId,
         question,
       },
@@ -98,7 +101,11 @@ export class WatchVideoUsecase {
         {
           sourceType: 'SLACK_MENTION_VIDEO_WATCH',
           sourceId: slackUserId,
-          payload: { videoId: extracted.videoId, question },
+          payload: {
+            platform: extracted.platform,
+            videoId: extracted.videoId,
+            question,
+          },
         },
       ],
       run: async () => {
@@ -111,10 +118,15 @@ export class WatchVideoUsecase {
             await mkdtemp(join(tmpdir(), 'idaeri-watch-output-')),
           );
           homeDir = await mkdtemp(join(tmpdir(), 'idaeri-watch-home-'));
+          // 인스타그램은 자막 트랙이 없어 화면이 유일한 근거다. 영상 속 자막만 바뀌는 장면을
+          // 중복으로 버리면 30초 시험 영상에서 24장 중 1장만 남았다(2026-11-03 실측).
+          const keepSimilarFrames =
+            extracted.platform === VideoPlatform.INSTAGRAM;
           const markdown = await this.watchRunner.run({
             url: extracted.url,
             outDir,
             homeDir,
+            keepSimilarFrames,
           });
           const report = parseWatchReport(markdown, outDir);
           const completion = await this.modelRouter.route({
@@ -132,6 +144,7 @@ export class WatchVideoUsecase {
           );
           reportSummary = {
             title: report.title,
+            platform: extracted.platform,
             videoId: extracted.videoId,
             frameCount: report.frames.length,
             transcriptSource: report.transcript
@@ -154,6 +167,7 @@ export class WatchVideoUsecase {
       ...outcome,
       report: reportSummary ?? {
         title: null,
+        platform: extracted.platform,
         videoId: extracted.videoId,
         frameCount: 0,
         transcriptSource: null,

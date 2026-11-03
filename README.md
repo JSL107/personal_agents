@@ -218,7 +218,7 @@ pnpm dev              # watch 모드 기동
 
 `@이대리 …`(채널) 또는 DM 으로 보내면 Router 가 워커 중 하나로 분류해 dispatch 한다. 결과는 thread 답글로 오고 푸터에 `agentRunId` 가 붙는다.
 
-- **VIDEO_WATCH** — `@이대리 이 영상의 핵심을 설명해줘 https://youtu.be/<video-id>`처럼 유튜브 URL과 질문을 함께 보내면 자막·화면 프레임을 분석하고 근거 시각 링크를 답한다. 준비: `brew install yt-dlp ffmpeg`, `git clone --branch v0.3.2 --depth 1 https://github.com/bradautomates/claude-video.git ~/.idaeri/vendor/claude-video`, 그리고 `.env`의 `WATCH_SCRIPT_PATH`를 해당 `skills/watch/scripts/watch.py` 절대 경로로 설정한다. 실행은 로컬 엔진과 `--no-whisper`만 사용한다.
+- **VIDEO_WATCH** — `@이대리 이 영상의 핵심을 설명해줘 https://youtu.be/<video-id>`처럼 유튜브 또는 인스타그램 릴스(`instagram.com/reel/<code>`) URL과 질문을 함께 보내면 자막·화면 프레임을 분석하고 근거 시각을 답한다. 릴스는 자막이 없어 화면 위주로 보고, 근거 시각에 바로가기 링크가 붙지 않는다. 준비: `brew install yt-dlp ffmpeg`, `git clone --branch v0.3.2 --depth 1 https://github.com/bradautomates/claude-video.git ~/.idaeri/vendor/claude-video`, 그리고 `.env`의 `WATCH_SCRIPT_PATH`를 해당 `skills/watch/scripts/watch.py` 절대 경로로 설정한다. 실행은 로컬 엔진과 `--no-whisper`만 사용한다.
 
 - **BLOG · 이직 메이트 · 지원 추적** — 자연어 전용. 기존 Notion 초안 발행은 `BLOG_PUBLISH`가 자연어와 `/blog-publish`를 모두 지원
 - **VACATION** — `/휴가` 와 자연어 둘 다 지원
@@ -370,7 +370,7 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 | `SLACK_BOT_TOKEN` / `_APP_TOKEN` / `_SIGNING_SECRET` | ⭕ | 3개 모두 있어야 봇 활성 (Socket Mode) |
 | `GITHUB_TOKEN` · `NOTION_TOKEN` / `NOTION_TASK_DB_IDS` | ⭕ | 미설정 시 해당 연동 skip |
 | `GITHUB_REVIEW_BOT_TOKEN` / `_LOGIN` / `_REPOS` | ❌ | PR 리뷰 봇 전용 계정. `_REPOS` 에 적힌 레포에서만 PR 쓰기를 봇으로 한다. 미설정 시 `GITHUB_TOKEN` 계정 |
-| `WATCH_SCRIPT_PATH` | ⭕ | Video Watch의 `watch.py` 경로. 미설정 시 유튜브 분석 워커 비활성화 |
+| `WATCH_SCRIPT_PATH` | ⭕ | Video Watch의 `watch.py` 경로. 미설정 시 영상 분석 워커 비활성화 |
 | `*_WEBHOOK_SECRET` · `GITHUB_WEBHOOK_*` | ⭕ | webhook 검증 · 자동 발화 가드 |
 | `AUTOPILOT_OWNER_SLACK_USER_ID` · `AUTOPILOT_TARGET` | ⭕ | cron 전체 게이트 · 발송 대상(콤마 다중) |
 | `HERMES_CRON_OUTPUT_DIR` | ❌ | owner 대화 답변이 읽을 Hermes cron 출력 폴더의 절대경로. 미설정 시 조회 안 함 |

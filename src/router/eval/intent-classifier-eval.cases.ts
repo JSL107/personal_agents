@@ -171,6 +171,11 @@ export const INTENT_CLASSIFIER_EVAL_CASES: readonly IntentClassifierEvalCase[] =
       accept: [AgentType.VIDEO_WATCH],
     },
     {
+      id: 'video-watch-instagram',
+      text: '<https://www.instagram.com/reel/DfQb_sJlcc1/?exln=b2J0YmdtMWQzc3Bp|instagram.com/reel/DfQb_sJlcc1>\n영상분석해줘',
+      accept: [AgentType.VIDEO_WATCH],
+    },
+    {
       id: 'art-job-style',
       text: '화풍에 북미풍 추가해줘',
       accept: [AgentType.ART_JOB_FEED],

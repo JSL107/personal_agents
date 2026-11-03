@@ -180,7 +180,8 @@ describe('ConversationalReply — buildSystemPrompt (self-context)', () => {
         // 2026-10-15 원화 공고 대화 기능 안내와 실행하지 않은 요청의 거짓 수락 금지
         // 외부 기록 경계 안내를 system prompt 에 추가했다.
         // 2026-10-30 일반 경로의 금지 문장 묶음을 「답의 원칙」 세 줄로 줄였다(eval holdout 27문항×2 25/27 = 정리 전, 흔들린 5문항×3 13/15 > 정리 전 9/15)
-        '68aca84eb11dac4a730c01807432440830a8177d223a9e93e73d9bcbd512738a',
+        // 2026-11-03 VIDEO_WATCH 기능 안내에 인스타그램 릴스 추가
+        '3cf9a779fbb85184b7ec320852c03a24650d5f683c0113fdf20c510bab86fe03',
       );
     },
   );

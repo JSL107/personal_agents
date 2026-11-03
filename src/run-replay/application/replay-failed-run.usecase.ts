@@ -9,6 +9,8 @@ import { GenerateDailyPlanUsecase } from '../../agent/pm/application/generate-da
 import { GeneratePoEvaluationUsecase } from '../../agent/po-eval/application/generate-po-evaluation.usecase';
 import { GeneratePoShadowUsecase } from '../../agent/po-shadow/application/generate-po-shadow.usecase';
 import { WatchVideoUsecase } from '../../agent/video-watch/application/watch-video.usecase';
+import { buildVideoUrl } from '../../agent/video-watch/domain/video-url.parser';
+import { VideoPlatform } from '../../agent/video-watch/domain/video-watch.type';
 import { GenerateWorklogUsecase } from '../../agent/work-reviewer/application/generate-worklog.usecase';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { RetryRunUsecase } from '../../agent-run/application/retry-run.usecase';
@@ -47,6 +49,7 @@ export type PreparedReplay =
   | ReadyReplay<'PO_EVAL', OutcomeOf<GeneratePoEvaluationUsecase>>
   | ReadyReplay<'CEO', OutcomeOf<GenerateCeoMetaUsecase>>
   | (ReadyReplay<'VIDEO_WATCH', OutcomeOf<WatchVideoUsecase>> & {
+      readonly platform: VideoPlatform;
       readonly videoId: string;
     })
   | (ReadyReplay<
@@ -218,62 +221,50 @@ export class ReplayFailedRunUsecase {
           ReplayRejectionCode.NOT_SUPPORTED,
           `AgentRun #${runId} (IDEA_TRIAGE) 는 cron 회차에서 미게시 판정 재시도와 신규 수집을 처리하므로 개별 재실행을 지원하지 않습니다.`,
         );
-      case 'PM':
-        return ready(
-          'PM',
-          runId,
-          linked(() =>
-            this.generateDailyPlanUsecase.execute({
-              tasksText: snapshot.tasksText ?? '',
-              slackUserId,
-              triggerType: TriggerType.FAILURE_REPLAY,
-            }),
-          ),
+      case 'PM': {
+        const run = linked(() =>
+          this.generateDailyPlanUsecase.execute({
+            tasksText: snapshot.tasksText ?? '',
+            slackUserId,
+            triggerType: TriggerType.FAILURE_REPLAY,
+          }),
         );
-      case 'WORK_REVIEWER':
-        return ready(
-          'WORK_REVIEWER',
-          runId,
-          linked(() =>
-            this.generateWorklogUsecase.execute({
-              workText: snapshot.workText ?? '',
-              slackUserId,
-              // 다른 에이전트와 같이 재실행임을 남긴다. worklog 는 이 값으로 로컬 세션 첨부를 건너뛴다 —
-              // 스냅샷만으로는 원래 실행이 주간 요약이었는지 알 수 없어서다.
-              triggerType: TriggerType.FAILURE_REPLAY,
-            }),
-          ),
+        return ready('PM', runId, run);
+      }
+      case 'WORK_REVIEWER': {
+        const run = linked(() =>
+          this.generateWorklogUsecase.execute({
+            workText: snapshot.workText ?? '',
+            slackUserId,
+            // 다른 에이전트와 같이 재실행임을 남긴다. worklog 는 이 값으로 로컬 세션 첨부를 건너뛴다 —
+            // 스냅샷만으로는 원래 실행이 주간 요약이었는지 알 수 없어서다.
+            triggerType: TriggerType.FAILURE_REPLAY,
+          }),
         );
+        return ready('WORK_REVIEWER', runId, run);
+      }
       case 'CODE_REVIEWER': {
         const prRef = snapshot.prRef ?? '';
-        return {
-          ...ready(
-            'CODE_REVIEWER',
-            runId,
-            linked(() =>
-              this.reviewPullRequestUsecase.execute({
-                prRef,
-                slackUserId,
-                // 최초 실행이 게시하기로 했던 리뷰만 재실행에서도 게시한다.
-                // 스냅샷에 키가 없는 스윕·연습 모드 실행은 종전대로 미게시.
-                publish: snapshot.publish === true,
-              }),
-            ),
-          ),
-          prRef,
-        };
-      }
-      case 'IMPACT_REPORTER':
-        return ready(
-          'IMPACT_REPORTER',
-          runId,
-          linked(() =>
-            this.generateImpactReportUsecase.execute({
-              subject: snapshot.subject ?? '',
-              slackUserId,
-            }),
-          ),
+        const run = linked(() =>
+          this.reviewPullRequestUsecase.execute({
+            prRef,
+            slackUserId,
+            // 최초 실행이 게시하기로 했던 리뷰만 재실행에서도 게시한다.
+            // 스냅샷에 키가 없는 스윕·연습 모드 실행은 종전대로 미게시.
+            publish: snapshot.publish === true,
+          }),
         );
+        return { ...ready('CODE_REVIEWER', runId, run), prRef };
+      }
+      case 'IMPACT_REPORTER': {
+        const run = linked(() =>
+          this.generateImpactReportUsecase.execute({
+            subject: snapshot.subject ?? '',
+            slackUserId,
+          }),
+        );
+        return ready('IMPACT_REPORTER', runId, run);
+      }
       case 'PO_SHADOW': {
         if ((snapshot.extraContextLength ?? 0) > 0) {
           return reject(
@@ -281,36 +272,27 @@ export class ReplayFailedRunUsecase {
             `AgentRun #${runId} (PO_SHADOW) 는 추가 컨텍스트가 포함된 요청이라 정확히 재현할 수 없어 재실행을 지원하지 않습니다.`,
           );
         }
-        return ready(
-          'PO_SHADOW',
-          runId,
-          linked(() =>
-            this.generatePoShadowUsecase.execute({
-              extraContext: '',
-              slackUserId,
-            }),
-          ),
+        const run = linked(() =>
+          this.generatePoShadowUsecase.execute({
+            extraContext: '',
+            slackUserId,
+          }),
         );
+        return ready('PO_SHADOW', runId, run);
       }
       case 'PO_EVAL': {
         const range = toRange(snapshot.range);
-        return ready(
-          'PO_EVAL',
-          runId,
-          linked(() =>
-            this.generatePoEvaluationUsecase.execute({ slackUserId, range }),
-          ),
+        const run = linked(() =>
+          this.generatePoEvaluationUsecase.execute({ slackUserId, range }),
         );
+        return ready('PO_EVAL', runId, run);
       }
       case 'CEO': {
         const range = toRange(snapshot.range);
-        return ready(
-          'CEO',
-          runId,
-          linked(() =>
-            this.generateCeoMetaUsecase.execute({ slackUserId, range }),
-          ),
+        const run = linked(() =>
+          this.generateCeoMetaUsecase.execute({ slackUserId, range }),
         );
+        return ready('CEO', runId, run);
       }
       case 'VACATION':
         return reject(
@@ -324,6 +306,8 @@ export class ReplayFailedRunUsecase {
         );
       // 실패는 대부분 다운로드 차단·codex 일시 실패라 같은 입력으로 다시 돌릴 가치가 있다.
       // 링크 원문은 저장하지 않으므로 검증된 videoId 로 요청 문장을 복원한다.
+      // platform 이 없는 스냅숏은 인스타그램 지원 전 회차라 유튜브다.
+      // 질문에 다른 영상 링크가 남아 있을 수 있어, 첫 링크를 고르는 파서가 저장된 영상을 집도록 URL 을 앞에 둔다.
       case 'VIDEO_WATCH': {
         if (typeof snapshot.videoId !== 'string') {
           return reject(
@@ -332,22 +316,21 @@ export class ReplayFailedRunUsecase {
           );
         }
         const videoId = snapshot.videoId;
+        const platform =
+          snapshot.platform === VideoPlatform.INSTAGRAM
+            ? VideoPlatform.INSTAGRAM
+            : VideoPlatform.YOUTUBE;
         const question =
           typeof snapshot.question === 'string' ? snapshot.question : '';
-        return {
-          ...ready(
-            'VIDEO_WATCH',
-            runId,
-            linked(() =>
-              this.watchVideoUsecase.execute({
-                slackUserId,
-                text: `${question} https://www.youtube.com/watch?v=${videoId}`,
-                triggerType: TriggerType.FAILURE_REPLAY,
-              }),
-            ),
-          ),
-          videoId,
-        };
+        const text = `${buildVideoUrl({ platform, videoId })} ${question}`;
+        const run = linked(() =>
+          this.watchVideoUsecase.execute({
+            slackUserId,
+            text,
+            triggerType: TriggerType.FAILURE_REPLAY,
+          }),
+        );
+        return { ...ready('VIDEO_WATCH', runId, run), platform, videoId };
       }
       // 28일을 되짚는 누적 집계라 회차가 실패해도 데이터가 남지 않는다 — 다음 주 회차가
       // 같은 범위를 통째로 다시 본다. 지금 당장 수치를 봐야 하면 읽기 전용 스크립트가 있다.
@@ -375,19 +358,16 @@ export class ReplayFailedRunUsecase {
             `AgentRun #${runId} (BLOG_PUBLISH) 의 초안은 다른 실행의 발행 카드가 승인돼 이미 발행됐습니다.`,
           );
         }
-        return ready(
-          'BLOG_PUBLISH',
-          runId,
-          linked(() =>
-            this.publishNotionDraftUsecase.execute({
-              titleQuery: snapshot.titleQuery ?? '',
-              pageId: snapshot.pageId,
-              publishedAt: snapshot.publishedAt,
-              slackUserId,
-              triggerType: TriggerType.FAILURE_REPLAY,
-            }),
-          ),
+        const run = linked(() =>
+          this.publishNotionDraftUsecase.execute({
+            titleQuery: snapshot.titleQuery ?? '',
+            pageId: snapshot.pageId,
+            publishedAt: snapshot.publishedAt,
+            slackUserId,
+            triggerType: TriggerType.FAILURE_REPLAY,
+          }),
         );
+        return ready('BLOG_PUBLISH', runId, run);
       }
       case 'CAREER_MATE':
         return reject(
@@ -443,21 +423,21 @@ export class ReplayFailedRunUsecase {
         `AgentRun #${runId} (PAPER_RECOMMEND) 은 이미 PENDING 주문을 남겨 중복 추천 방지를 위해 재실행할 수 없습니다.`,
       );
     }
-    return {
-      ...ready('PAPER_RECOMMEND', runId, async () => {
-        const result = await this.generatePaperRecommendationUsecase.execute({
-          strategies: [strategy],
-          decidedAt,
-          triggerType: TriggerType.FAILURE_REPLAY,
-        });
-        const completed = result.completed[0];
-        if (completed) {
-          await this.linkLineage(runId, completed.agentRunId);
-        }
-        return result;
-      }),
-      strategy,
+    const run = async (): Promise<
+      OutcomeOf<GeneratePaperRecommendationUsecase>
+    > => {
+      const result = await this.generatePaperRecommendationUsecase.execute({
+        strategies: [strategy],
+        decidedAt,
+        triggerType: TriggerType.FAILURE_REPLAY,
+      });
+      const completed = result.completed[0];
+      if (completed) {
+        await this.linkLineage(runId, completed.agentRunId);
+      }
+      return result;
     };
+    return { ...ready('PAPER_RECOMMEND', runId, run), strategy };
   }
 
   private withLineage<Outcome extends { agentRunId: number }>(

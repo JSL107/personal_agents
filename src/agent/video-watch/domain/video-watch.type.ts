@@ -21,7 +21,19 @@ export interface VideoWatchResult {
   highlights: VideoWatchHighlight[];
 }
 
-export interface ExtractedYoutubeVideo {
+export enum VideoPlatform {
+  YOUTUBE = 'YOUTUBE',
+  INSTAGRAM = 'INSTAGRAM',
+}
+
+export interface ExtractedVideo {
+  platform: VideoPlatform;
+  // 유튜브는 영상 id, 인스타그램은 릴스 shortcode.
   videoId: string;
   url: string;
+}
+
+export interface ExtractedVideoRequest {
+  video: ExtractedVideo;
+  question: string;
 }

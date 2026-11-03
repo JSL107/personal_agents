@@ -18,6 +18,12 @@ sys.stdout.flush()
 time.sleep(60)
 `;
 
+const ARGV_SCRIPT = `
+import json, os, sys
+out_dir = sys.argv[sys.argv.index('--out-dir') + 1]
+open(os.path.join(out_dir, 'argv.json'), 'w').write(json.dumps(sys.argv[1:]))
+`;
+
 const isAlive = (pid: number): boolean => {
   try {
     process.kill(pid, 0);
@@ -52,6 +58,7 @@ describe('WatchCliRunner', () => {
         url: 'https://www.youtube.com/watch?v=jNQXAC9IVRw',
         outDir: workDir,
         homeDir: workDir,
+        keepSimilarFrames: false,
       })
       .then(
         () => {
@@ -65,4 +72,31 @@ describe('WatchCliRunner', () => {
 
     expect(aliveAtRejection).toBe(false);
   }, 20_000);
+
+  it.each([
+    [true, true],
+    [false, false],
+  ])(
+    'passes --no-dedup only when keepSimilarFrames=%s',
+    async (keepSimilarFrames, expected) => {
+      const scriptPath = join(workDir, 'argv.py');
+      await writeFile(scriptPath, ARGV_SCRIPT);
+      const runner = new WatchCliRunner({
+        getOrThrow: () => scriptPath,
+      } as unknown as ConfigService);
+
+      await runner.run({
+        url: 'https://www.instagram.com/reel/DfQb_sJlcc1/',
+        outDir: workDir,
+        homeDir: workDir,
+        keepSimilarFrames,
+      });
+
+      const argv = JSON.parse(
+        readFileSync(join(workDir, 'argv.json'), 'utf-8'),
+      ) as string[];
+      expect(argv.includes('--no-dedup')).toBe(expected);
+    },
+    20_000,
+  );
 });

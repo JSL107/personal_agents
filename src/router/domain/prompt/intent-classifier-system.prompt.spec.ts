@@ -15,12 +15,13 @@ describe('INTENT_CLASSIFIER_SYSTEM_PROMPT', () => {
   //           2026-10-15 ART_JOB_FEED(원화 공고 키워드·즉시 수집) 후보와 목록 되묻기 후속 규칙을 넣는다(run 9065~9074).
   //           2026-10-16 ART_JOB_FEED 에서 공고를 빼거나 받는 방법 질문을 뺀다(eval h-thread-art-digest-1014 1/3).
   //           2026-10-30 SCHEDULE 이 직전 대화를 일정으로 옮기는 요청(날짜 없음)도 받는다(아침신문 DM 실사례, eval:classifier 46/46).
+  //           2026-11-03 VIDEO_WATCH 가 인스타그램 릴스 링크도 받는다(Slack 릴스 분석 요청 실사례, eval:classifier 47/47).
   it('분류기 프롬프트 지문이 마지막으로 잰 값과 같다 — 바꾸면 분류 eval 을 다시 잰다', () => {
     expect(
       createHash('sha256')
         .update(INTENT_CLASSIFIER_SYSTEM_PROMPT)
         .digest('hex'),
-    ).toBe('32476cbec4aee3d294386c9c0b6807d5b27ce451e38d02622494dd38f2816362');
+    ).toBe('9b5d24fc7728882f092ebc218a44ca7270c1e4d0a076125bfe37053bdedeb5ba');
   });
 
   it('SCHEDULE 후보가 분류 표에 있다', () => {

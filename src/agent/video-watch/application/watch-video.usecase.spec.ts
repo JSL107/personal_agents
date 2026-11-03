@@ -96,12 +96,34 @@ describe('WatchVideoUsecase', () => {
       text: '요약해줘 https://youtu.be/jNQXAC9IVRw',
     });
     expect(route.mock.calls[0][0].request.imagePaths).toHaveLength(1);
-    const { outDir, homeDir } = runWatch.mock.calls[0][0];
+    const { outDir, homeDir, keepSimilarFrames } = runWatch.mock.calls[0][0];
+    expect(keepSimilarFrames).toBe(false);
     await expect(stat(outDir)).rejects.toThrow();
     await expect(stat(homeDir)).rejects.toThrow();
     expect(outcome.report).toMatchObject({
       videoId: 'jNQXAC9IVRw',
       frameCount: 1,
+    });
+  });
+
+  it('passes the canonical reel URL to the runner and records the platform', async () => {
+    const outcome = await usecase.execute({
+      slackUserId: 'U1',
+      text: '<https://www.instagram.com/reel/DfQb_sJlcc1/?exln=x|instagram.com/reel/DfQb_sJlcc1>\n영상분석해줘',
+    });
+    expect(runWatch.mock.calls[0][0]).toMatchObject({
+      url: 'https://www.instagram.com/reel/DfQb_sJlcc1/',
+      keepSimilarFrames: true,
+    });
+    expect(runAgent.mock.calls[0][0].inputSnapshot).toEqual({
+      slackUserId: 'U1',
+      platform: 'INSTAGRAM',
+      videoId: 'DfQb_sJlcc1',
+      question: '영상분석해줘',
+    });
+    expect(outcome.report).toMatchObject({
+      platform: 'INSTAGRAM',
+      videoId: 'DfQb_sJlcc1',
     });
   });
 
