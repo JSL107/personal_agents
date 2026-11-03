@@ -45,8 +45,12 @@ const parseYoutubeVideoId = (parsedUrl: URL): string | null => {
   return match?.[1] ?? null;
 };
 
+// /p/·/tv/·/reel(s)/ 와 앞에 계정명이 붙은 공유 링크(/<계정>/reel/<code>/)는 yt-dlp 가 같은
+// shortcode 로 받는다(2026-11-03 실측). 그래서 어느 형식이든 /reel/<code>/ 로 정규화한다.
 const parseInstagramShortcode = (parsedUrl: URL): string | null => {
-  const match = parsedUrl.pathname.match(/^\/reels?\/([^/]+)\/?$/);
+  const match = parsedUrl.pathname.match(
+    /^(?:\/[^/]+)?\/(?:reels?|p|tv)\/([^/]+)\/?$/,
+  );
   return match?.[1] ?? null;
 };
 

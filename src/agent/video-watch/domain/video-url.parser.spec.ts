@@ -29,7 +29,10 @@ describe('extractVideoRequest', () => {
     '<https://www.instagram.com/reels/DfQb_sJlcc1/|instagram.com/reels/DfQb_sJlcc1>',
     'https://instagram.com/reel/DfQb_sJlcc1',
     'https://m.instagram.com/reel/DfQb_sJlcc1/',
-  ])('accepts Instagram reel %s and drops tracking params', (url) => {
+    'https://www.instagram.com/p/DfQb_sJlcc1/?igsh=abc',
+    'https://www.instagram.com/tv/DfQb_sJlcc1/',
+    'https://www.instagram.com/yoona.code/reel/DfQb_sJlcc1/',
+  ])('accepts Instagram video link %s and drops tracking params', (url) => {
     expect(extractVideo(url)).toEqual({
       platform: VideoPlatform.INSTAGRAM,
       videoId: 'DfQb_sJlcc1',
@@ -47,6 +50,12 @@ describe('extractVideoRequest', () => {
     ).toBeNull();
     expect(extractVideo('https://www.instagram.com/yoona.code/')).toBeNull();
     expect(extractVideo('https://www.instagram.com/reel/a.b/')).toBeNull();
+    expect(
+      extractVideo('https://www.instagram.com/reels/audio/123456/'),
+    ).toBeNull();
+    expect(
+      extractVideo('https://www.instagram.com/a/b/reel/DfQb_sJlcc1/'),
+    ).toBeNull();
     expect(extractVideo('not a URL')).toBeNull();
   });
 
