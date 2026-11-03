@@ -1327,6 +1327,59 @@ describe('AgentRunService', () => {
       >;
     };
 
+    it('성공한 run 은 라우터 콜백에 id·담당을 알린다', async () => {
+      const onRunSucceeded = jest.fn();
+
+      await executeInScope({ text: '내일 계획 짜줘', onRunSucceeded });
+
+      expect(onRunSucceeded).toHaveBeenCalledWith({
+        agentRunId: expect.any(Number),
+        agentType: AgentType.PM,
+      });
+    });
+
+    it('실패한 run 은 콜백을 부르지 않는다', async () => {
+      const onRunSucceeded = jest.fn();
+
+      await expect(
+        executeInScope(
+          { text: '내일 계획 짜줘', onRunSucceeded },
+          { run: () => Promise.reject(new Error('worker down')) },
+        ),
+      ).rejects.toThrow('worker down');
+
+      expect(onRunSucceeded).not.toHaveBeenCalled();
+    });
+
+    it('콜백이 던져도 성공한 실행을 실패로 바꾸지 않는다', async () => {
+      await expect(
+        executeInScope({
+          text: '내일 계획 짜줘',
+          onRunSucceeded: () => {
+            throw new Error('memory down');
+          },
+        }),
+      ).resolves.toBeDefined();
+      expect(repository.finish).toHaveBeenCalledWith(
+        expect.objectContaining({ status: AgentRunStatus.SUCCEEDED }),
+      );
+    });
+
+    it('라우팅 기억 판정은 routedMemoryHint 로 싣는다', async () => {
+      const snapshot = await executeInScope({
+        text: '내일 계획 짜줘',
+        routedVia: 'memory',
+        memoryHint: { agentType: AgentType.PM, similarity: 0.97 },
+      });
+
+      expect(snapshot).toEqual(
+        expect.objectContaining({
+          routedVia: 'memory',
+          routedMemoryHint: { agentType: AgentType.PM, similarity: 0.97 },
+        }),
+      );
+    });
+
     it('원문·대상·경로를 워커 스냅샷 위에 얹는다 (워커 입력은 그대로 남는다)', async () => {
       const snapshot = await executeInScope({
         text: '내일 계획 짜줘',

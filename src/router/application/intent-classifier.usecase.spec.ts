@@ -118,6 +118,7 @@ describe('IntentClassifierUsecase', () => {
             agentType: 'CODE_REVIEWER',
             content: '결제 모듈 PG 리팩토링',
             score: 0.8,
+            similarity: 0.88,
             occurredAt: new Date(),
           },
         ]),
@@ -130,8 +131,13 @@ describe('IntentClassifierUsecase', () => {
 
       await usecase.classify('PG 연동 손봐줘');
 
+      // 출력 JSON(agent_run)이 아니라 요청문 짝(routing_example)을, 감쇠 없이 정확 검색한다.
       expect(episodic.searchRelevant).toHaveBeenCalledWith(
-        expect.objectContaining({ kind: 'agent_run', limit: 9 }),
+        expect.objectContaining({
+          kind: 'routing_example',
+          halfLifeDays: Number.POSITIVE_INFINITY,
+          exact: true,
+        }),
       );
       const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
       expect(prompt).toContain('[유사 과거 작업]');
@@ -152,6 +158,7 @@ describe('IntentClassifierUsecase', () => {
             agentType: 'HUMANIZER',
             content: '{"humanizedKeys":["summary"]}',
             score: 0.9,
+            similarity: 0.9,
             occurredAt: new Date(),
           },
           {
@@ -160,6 +167,7 @@ describe('IntentClassifierUsecase', () => {
             agentType: 'CODE_REVIEWER',
             content: '결제 모듈 PG 리팩토링',
             score: 0.7,
+            similarity: 0.85,
             occurredAt: new Date(),
           },
         ]),
@@ -440,5 +448,126 @@ describe('INTENT_CLASSIFIER_SYSTEM_PROMPT — 기술 학습·조사 요청 BLOG 
   it('봇이 제안한 선택지에서 사용자가 기술 주제를 고르면 BLOG 착수 지시로 분류한다', () => {
     expect(INTENT_CLASSIFIER_SYSTEM_PROMPT).toContain('[user] "프롬프트 RAG"');
     expect(INTENT_CLASSIFIER_SYSTEM_PROMPT).toMatch(/선택.*착수 지시.*BLOG/s);
+  });
+
+  describe('라우팅 기억 단축', () => {
+    const llmResponse = JSON.stringify({
+      agentType: 'PM',
+      confidence: 0.8,
+      reason: 'llm',
+    });
+    // 서로 다른 두 문장이 모두 0.97 이상이고 같은 담당 — MEMORY_SHORTCUT_RULE(T=0.93, k=2)을 넘는다.
+    const agreeingHits = [
+      {
+        id: 1,
+        agentRunId: 11,
+        agentType: 'CODE_REVIEWER',
+        content: 'PR 리뷰해줘',
+        score: 0.98,
+        similarity: 0.98,
+        occurredAt: new Date(),
+      },
+      {
+        id: 2,
+        agentRunId: 12,
+        agentType: 'CODE_REVIEWER',
+        content: '이 PR 봐줘',
+        score: 0.97,
+        similarity: 0.97,
+        occurredAt: new Date(),
+      },
+    ];
+    const build = (mode: string | undefined) => {
+      const modelRouter = makeModelRouterMock(llmResponse);
+      const episodic = {
+        record: jest.fn().mockResolvedValue(undefined),
+        searchRelevant: jest.fn().mockResolvedValue(agreeingHits),
+      };
+      const config = { get: jest.fn().mockReturnValue(mode) };
+      const usecase = new IntentClassifierUsecase(
+        modelRouter,
+        dispatchers,
+        episodic as never,
+        undefined,
+        config as never,
+      );
+      return { usecase, modelRouter, episodic };
+    };
+
+    it('on: 확신하면 LLM 을 부르지 않고 그 담당을 돌려준다', async () => {
+      const { usecase, modelRouter } = build('on');
+
+      const result = await usecase.classify('PR 리뷰해줘');
+
+      expect(modelRouter.route).not.toHaveBeenCalled();
+      expect(result.agentType).toBe(AgentType.CODE_REVIEWER);
+      expect(result.memoryShortcut).toEqual({
+        agentType: AgentType.CODE_REVIEWER,
+        similarity: 0.98,
+        applied: true,
+      });
+    });
+
+    it('on 이어도 직전 대화가 있으면 LLM 으로 분류한다', async () => {
+      const { usecase, modelRouter } = build('on');
+
+      const result = await usecase.classify('응 해줘', [
+        {
+          role: 'user',
+          text: '리뷰 해줄래?',
+          agentType: null,
+          agentRunId: null,
+        },
+      ] as never);
+
+      expect(modelRouter.route).toHaveBeenCalledTimes(1);
+      expect(result.memoryShortcut).toBeUndefined();
+    });
+
+    it('shadow: LLM 결과로 정하고 판정만 applied=false 로 싣는다', async () => {
+      const { usecase, modelRouter } = build('shadow');
+
+      const result = await usecase.classify('PR 리뷰해줘');
+
+      expect(modelRouter.route).toHaveBeenCalledTimes(1);
+      expect(result.agentType).toBe(AgentType.PM);
+      expect(result.memoryShortcut).toEqual({
+        agentType: AgentType.CODE_REVIEWER,
+        similarity: 0.98,
+        applied: false,
+      });
+    });
+
+    it.each([undefined, 'off', 'typo'])(
+      '%s: 단축 판정을 하지 않는다',
+      async (mode) => {
+        const { usecase, modelRouter } = build(mode);
+
+        const result = await usecase.classify('PR 리뷰해줘');
+
+        expect(modelRouter.route).toHaveBeenCalledTimes(1);
+        expect(result.memoryShortcut).toBeUndefined();
+      },
+    );
+
+    it('예시 저장은 정규화한 문장을 query 접두어로 routing_example 에 남긴다', async () => {
+      const { usecase, episodic } = build('off');
+
+      await usecase.rememberRoutingExample({
+        text: '<@U0AULUXLF9B>  PR\n리뷰해줘',
+        agentType: AgentType.CODE_REVIEWER,
+        agentRunId: 77,
+      });
+
+      expect(episodic.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: 'routing_example',
+          agentRunId: 77,
+          agentType: AgentType.CODE_REVIEWER,
+          content: 'PR 리뷰해줘',
+          embedAs: 'query',
+        }),
+      );
+    });
   });
 });

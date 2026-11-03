@@ -4,6 +4,7 @@ import { resolveAgentTypeByNickname } from '../../agent-registry/agent-registry'
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { runWithParentRun } from '../../agent-run/application/parent-run-context';
 import {
+  ROUTED_TEXT_TRUNCATION_MARK,
   RoutingContext,
   runWithRoutingContext,
   toLedgerRoutedText,
@@ -17,6 +18,7 @@ import {
   DispatchResult,
   IdaeriRouterPort,
 } from '../domain/idaeri-router.port';
+import { IntentClassification } from '../domain/intent-classification.type';
 import {
   AGENT_DISPATCHER_PORT,
   AgentDispatcher,
@@ -100,6 +102,7 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
       userInstruction?: string | undefined;
       routedVia: RoutedVia;
       confidence?: number;
+      memoryShortcut?: IntentClassification['memoryShortcut'];
     } = input.agentTypeHint
       ? {
           agentType: input.agentTypeHint,
@@ -112,7 +115,7 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
             userInstruction: undefined,
             routedVia: 'nickname',
           }
-        : { ...(await this.classifyOrThrow(input)), routedVia: 'classifier' };
+        : await this.classifyOrThrow(input);
     const agentType = classified.agentType;
 
     const dispatcher = this.dispatcherByType.get(agentType);
@@ -173,6 +176,25 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
           routedVia: classified.routedVia,
           ...(classified.confidence !== undefined
             ? { confidence: classified.confidence }
+            : {}),
+          ...(classified.memoryShortcut !== undefined
+            ? {
+                memoryHint: {
+                  agentType: classified.memoryShortcut.agentType,
+                  similarity: classified.memoryShortcut.similarity,
+                },
+              }
+            : {}),
+          // 첫 턴을 분류기가 정한 회차만 예시가 된다. 단축(memory) 결과를 다시 예시로 쓰면 틀린
+          // 단축이 스스로 굳고, 후속 턴 문장("응 해줘")은 단독으로 뜻이 없다.
+          ...(classified.routedVia === 'classifier' && !input.priorTurns?.length
+            ? {
+                onRunSucceeded: (run: {
+                  agentRunId: number;
+                  agentType: string;
+                }) =>
+                  this.rememberRoutingExample(input.text ?? '', agentType, run),
+              }
             : {}),
         }
       : undefined;
@@ -369,7 +391,9 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
   private async classifyOrThrow(input: DispatchInput): Promise<{
     agentType: AgentType;
     userInstruction?: string;
-    confidence: number;
+    confidence?: number;
+    routedVia: RoutedVia;
+    memoryShortcut?: IntentClassification['memoryShortcut'];
   }> {
     const text = input.text?.trim() ?? '';
     if (text.length === 0) {
@@ -416,11 +440,44 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
         'UNCLASSIFIED',
       );
     }
+    const shortcutApplied = classification.memoryShortcut?.applied === true;
     return {
       agentType: classification.agentType,
       userInstruction: classification.userInstruction,
-      confidence: classification.confidence,
+      // 단축 경로의 값은 cosine 이라 분류기 확신도와 섞지 않는다(근거는 memoryHint 에 있다).
+      ...(shortcutApplied ? {} : { confidence: classification.confidence }),
+      routedVia: shortcutApplied ? 'memory' : 'classifier',
+      ...(classification.memoryShortcut !== undefined
+        ? { memoryShortcut: classification.memoryShortcut }
+        : {}),
     };
+  }
+
+  // 라우팅 예시 저장 — 실제로 열린 run 이 고른 담당과 같을 때만. 첫 run 이 다른 타입이면 라벨이
+  // 어긋난다. 원장과 같은 마스킹 문구를 쓰고, 잘린 원문은 다른 문장과 비교할 수 없어 뺀다.
+  private rememberRoutingExample(
+    text: string,
+    agentType: AgentType,
+    run: { agentRunId: number; agentType: string },
+  ): void {
+    if (run.agentType !== agentType) {
+      return;
+    }
+    const ledgerText = toLedgerRoutedText(text);
+    if (ledgerText.endsWith(ROUTED_TEXT_TRUNCATION_MARK)) {
+      return;
+    }
+    this.intentClassifier
+      .rememberRoutingExample({
+        text: ledgerText,
+        agentType,
+        agentRunId: run.agentRunId,
+      })
+      .catch((error: unknown) => {
+        this.logger.warn(
+          `라우팅 예시 저장 실패 (swallow) — ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
   }
 }
 

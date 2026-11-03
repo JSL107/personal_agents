@@ -10,4 +10,11 @@ export interface IntentClassification {
   // 개선 항목을 우선순위화"). 직전 대화에 명시적 지시/제약이 있을 때만 채워진다 (보수적).
   // ConversationContext.userInstruction 으로 워커 실행 입력까지 전달된다.
   userInstruction?: string;
+  // 라우팅 기억 판정(routing-memory.policy). applied=true 면 LLM 없이 이 담당으로 정했다.
+  // shadow 모드에서는 applied=false 로 판정만 실어 원장에서 LLM 결과와 대조한다.
+  memoryShortcut?: {
+    agentType: AgentType;
+    similarity: number;
+    applied: boolean;
+  };
 }
