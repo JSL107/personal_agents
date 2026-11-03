@@ -221,62 +221,50 @@ export class ReplayFailedRunUsecase {
           ReplayRejectionCode.NOT_SUPPORTED,
           `AgentRun #${runId} (IDEA_TRIAGE) 는 cron 회차에서 미게시 판정 재시도와 신규 수집을 처리하므로 개별 재실행을 지원하지 않습니다.`,
         );
-      case 'PM':
-        return ready(
-          'PM',
-          runId,
-          linked(() =>
-            this.generateDailyPlanUsecase.execute({
-              tasksText: snapshot.tasksText ?? '',
-              slackUserId,
-              triggerType: TriggerType.FAILURE_REPLAY,
-            }),
-          ),
+      case 'PM': {
+        const run = linked(() =>
+          this.generateDailyPlanUsecase.execute({
+            tasksText: snapshot.tasksText ?? '',
+            slackUserId,
+            triggerType: TriggerType.FAILURE_REPLAY,
+          }),
         );
-      case 'WORK_REVIEWER':
-        return ready(
-          'WORK_REVIEWER',
-          runId,
-          linked(() =>
-            this.generateWorklogUsecase.execute({
-              workText: snapshot.workText ?? '',
-              slackUserId,
-              // 다른 에이전트와 같이 재실행임을 남긴다. worklog 는 이 값으로 로컬 세션 첨부를 건너뛴다 —
-              // 스냅샷만으로는 원래 실행이 주간 요약이었는지 알 수 없어서다.
-              triggerType: TriggerType.FAILURE_REPLAY,
-            }),
-          ),
+        return ready('PM', runId, run);
+      }
+      case 'WORK_REVIEWER': {
+        const run = linked(() =>
+          this.generateWorklogUsecase.execute({
+            workText: snapshot.workText ?? '',
+            slackUserId,
+            // 다른 에이전트와 같이 재실행임을 남긴다. worklog 는 이 값으로 로컬 세션 첨부를 건너뛴다 —
+            // 스냅샷만으로는 원래 실행이 주간 요약이었는지 알 수 없어서다.
+            triggerType: TriggerType.FAILURE_REPLAY,
+          }),
         );
+        return ready('WORK_REVIEWER', runId, run);
+      }
       case 'CODE_REVIEWER': {
         const prRef = snapshot.prRef ?? '';
-        return {
-          ...ready(
-            'CODE_REVIEWER',
-            runId,
-            linked(() =>
-              this.reviewPullRequestUsecase.execute({
-                prRef,
-                slackUserId,
-                // 최초 실행이 게시하기로 했던 리뷰만 재실행에서도 게시한다.
-                // 스냅샷에 키가 없는 스윕·연습 모드 실행은 종전대로 미게시.
-                publish: snapshot.publish === true,
-              }),
-            ),
-          ),
-          prRef,
-        };
-      }
-      case 'IMPACT_REPORTER':
-        return ready(
-          'IMPACT_REPORTER',
-          runId,
-          linked(() =>
-            this.generateImpactReportUsecase.execute({
-              subject: snapshot.subject ?? '',
-              slackUserId,
-            }),
-          ),
+        const run = linked(() =>
+          this.reviewPullRequestUsecase.execute({
+            prRef,
+            slackUserId,
+            // 최초 실행이 게시하기로 했던 리뷰만 재실행에서도 게시한다.
+            // 스냅샷에 키가 없는 스윕·연습 모드 실행은 종전대로 미게시.
+            publish: snapshot.publish === true,
+          }),
         );
+        return { ...ready('CODE_REVIEWER', runId, run), prRef };
+      }
+      case 'IMPACT_REPORTER': {
+        const run = linked(() =>
+          this.generateImpactReportUsecase.execute({
+            subject: snapshot.subject ?? '',
+            slackUserId,
+          }),
+        );
+        return ready('IMPACT_REPORTER', runId, run);
+      }
       case 'PO_SHADOW': {
         if ((snapshot.extraContextLength ?? 0) > 0) {
           return reject(
@@ -284,36 +272,27 @@ export class ReplayFailedRunUsecase {
             `AgentRun #${runId} (PO_SHADOW) 는 추가 컨텍스트가 포함된 요청이라 정확히 재현할 수 없어 재실행을 지원하지 않습니다.`,
           );
         }
-        return ready(
-          'PO_SHADOW',
-          runId,
-          linked(() =>
-            this.generatePoShadowUsecase.execute({
-              extraContext: '',
-              slackUserId,
-            }),
-          ),
+        const run = linked(() =>
+          this.generatePoShadowUsecase.execute({
+            extraContext: '',
+            slackUserId,
+          }),
         );
+        return ready('PO_SHADOW', runId, run);
       }
       case 'PO_EVAL': {
         const range = toRange(snapshot.range);
-        return ready(
-          'PO_EVAL',
-          runId,
-          linked(() =>
-            this.generatePoEvaluationUsecase.execute({ slackUserId, range }),
-          ),
+        const run = linked(() =>
+          this.generatePoEvaluationUsecase.execute({ slackUserId, range }),
         );
+        return ready('PO_EVAL', runId, run);
       }
       case 'CEO': {
         const range = toRange(snapshot.range);
-        return ready(
-          'CEO',
-          runId,
-          linked(() =>
-            this.generateCeoMetaUsecase.execute({ slackUserId, range }),
-          ),
+        const run = linked(() =>
+          this.generateCeoMetaUsecase.execute({ slackUserId, range }),
         );
+        return ready('CEO', runId, run);
       }
       case 'VACATION':
         return reject(
@@ -379,19 +358,16 @@ export class ReplayFailedRunUsecase {
             `AgentRun #${runId} (BLOG_PUBLISH) 의 초안은 다른 실행의 발행 카드가 승인돼 이미 발행됐습니다.`,
           );
         }
-        return ready(
-          'BLOG_PUBLISH',
-          runId,
-          linked(() =>
-            this.publishNotionDraftUsecase.execute({
-              titleQuery: snapshot.titleQuery ?? '',
-              pageId: snapshot.pageId,
-              publishedAt: snapshot.publishedAt,
-              slackUserId,
-              triggerType: TriggerType.FAILURE_REPLAY,
-            }),
-          ),
+        const run = linked(() =>
+          this.publishNotionDraftUsecase.execute({
+            titleQuery: snapshot.titleQuery ?? '',
+            pageId: snapshot.pageId,
+            publishedAt: snapshot.publishedAt,
+            slackUserId,
+            triggerType: TriggerType.FAILURE_REPLAY,
+          }),
         );
+        return ready('BLOG_PUBLISH', runId, run);
       }
       case 'CAREER_MATE':
         return reject(
@@ -447,21 +423,21 @@ export class ReplayFailedRunUsecase {
         `AgentRun #${runId} (PAPER_RECOMMEND) 은 이미 PENDING 주문을 남겨 중복 추천 방지를 위해 재실행할 수 없습니다.`,
       );
     }
-    return {
-      ...ready('PAPER_RECOMMEND', runId, async () => {
-        const result = await this.generatePaperRecommendationUsecase.execute({
-          strategies: [strategy],
-          decidedAt,
-          triggerType: TriggerType.FAILURE_REPLAY,
-        });
-        const completed = result.completed[0];
-        if (completed) {
-          await this.linkLineage(runId, completed.agentRunId);
-        }
-        return result;
-      }),
-      strategy,
+    const run = async (): Promise<
+      OutcomeOf<GeneratePaperRecommendationUsecase>
+    > => {
+      const result = await this.generatePaperRecommendationUsecase.execute({
+        strategies: [strategy],
+        decidedAt,
+        triggerType: TriggerType.FAILURE_REPLAY,
+      });
+      const completed = result.completed[0];
+      if (completed) {
+        await this.linkLineage(runId, completed.agentRunId);
+      }
+      return result;
     };
+    return { ...ready('PAPER_RECOMMEND', runId, run), strategy };
   }
 
   private withLineage<Outcome extends { agentRunId: number }>(
