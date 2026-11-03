@@ -438,6 +438,116 @@ describe('직전 대화 일정 등록', () => {
       timestampMs: 1,
     },
   ];
+  // 2026-11-03 실행 #11278: 지시어("그럼")만 있는 질문이 모델 추출을 거쳐 "11월 남은 일정 파악" 으로 등록됐다.
+  it.each([
+    '그럼 이중에 남은일정을 파악해볼래',
+    '그럼 그거 어떻게 생각해?',
+    '그러면 이걸로 진행하자',
+  ])(
+    '쓰기 동사 없는 참조 문장 "%s" 는 대화에서 일정을 뽑아 등록하지 않고 등록된 일정으로 답한다',
+    async (text) => {
+      const register = createUsecase();
+      const answer = createAnswer();
+      const extract = { execute: jest.fn() };
+      const dispatcher = new ScheduleDispatcher(
+        register,
+        answer,
+        createAgentRunService() as never,
+        extract as never,
+      );
+
+      await dispatcher.dispatch({
+        source: 'SLACK_MESSAGE',
+        slackUserId: 'U1',
+        text,
+        priorTurns,
+      });
+
+      expect(extract.execute).not.toHaveBeenCalled();
+      expect(register.execute).not.toHaveBeenCalled();
+      expect(answer.execute).toHaveBeenCalled();
+    },
+  );
+
+  it('쓰기 동사가 없어도 날짜를 준 참조("그럼 9월 30일")는 되묻기 후속이라 대화에서 뽑아 등록한다', async () => {
+    const register = createUsecase();
+    const answer = createAnswer();
+    const extract = {
+      execute: jest.fn().mockResolvedValue({
+        title: '자동차세',
+        dueDate: { year: 2026, month: 9, day: 30 },
+        memo: '',
+        modelUsed: 'model',
+      }),
+    };
+    const dispatcher = new ScheduleDispatcher(
+      register,
+      answer,
+      createAgentRunService() as never,
+      extract as never,
+    );
+
+    await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '그럼 9월 30일',
+      priorTurns,
+    });
+
+    expect(extract.execute).toHaveBeenCalled();
+    expect(register.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ title: '자동차세' }),
+    );
+    expect(answer.execute).not.toHaveBeenCalled();
+  });
+
+  // #957 리뷰: 제목 되묻기에 "원인 분석" 으로 답하면 "원인" 이 참조로 잡히지만, 직전 요청과 합쳐 등록이 완성된다.
+  it('제목 되묻기의 후속 답은 쓰기 동사가 없어도 조회로 바꾸지 않고 등록한다', async () => {
+    const register = createUsecase();
+    const answer = createAnswer();
+    const extract = {
+      execute: jest.fn().mockResolvedValue({
+        title: '원인 분석',
+        dueDate: { year: 2026, month: 11, day: 4 },
+        memo: '',
+        modelUsed: 'model',
+      }),
+    };
+    const dispatcher = new ScheduleDispatcher(
+      register,
+      answer,
+      createAgentRunService() as never,
+      extract as never,
+    );
+
+    await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '원인 분석',
+      priorTurns: [
+        {
+          role: 'user' as const,
+          text: '내일 일정 등록해줘',
+          agentType: AgentType.SCHEDULE,
+          agentRunId: null,
+          timestampMs: 1,
+        },
+        {
+          role: 'assistant' as const,
+          text: '어떤 일정인지 제목을 알려 주세요.',
+          agentType: AgentType.SCHEDULE,
+          agentRunId: null,
+          timestampMs: 2,
+        },
+      ],
+    });
+
+    expect(register.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ title: '원인 분석' }),
+    );
+    expect(answer.execute).not.toHaveBeenCalled();
+  });
+
   it('원인 참조를 추출해 메모와 오늘 날짜로 등록하고 모델 원장을 남긴다', async () => {
     const register = createUsecase();
     const agentRunService = createAgentRunService();
