@@ -15,7 +15,10 @@
 import { AgentRunService } from '../../src/agent-run/application/agent-run.service';
 import { AgentType } from '../../src/model-router/domain/model-router.type';
 import { IdaeriRouterUsecase } from '../../src/router/application/idaeri-router.usecase';
-import { IntentClassifierUsecase } from '../../src/router/application/intent-classifier.usecase';
+import {
+  ClassifyInput,
+  IntentClassifierUsecase,
+} from '../../src/router/application/intent-classifier.usecase';
 import {
   DispatchInput,
   DispatchResult,
@@ -116,7 +119,7 @@ export const heuristicClassify: ClassifyFn = (text) => {
 
 function asClassifier(classify: ClassifyFn): IntentClassifierUsecase {
   return {
-    classify: (text: string, priorTurns?: unknown) =>
+    classify: ({ text, priorTurns }: ClassifyInput) =>
       Promise.resolve(classify(text, priorTurns)),
   } as unknown as IntentClassifierUsecase;
 }

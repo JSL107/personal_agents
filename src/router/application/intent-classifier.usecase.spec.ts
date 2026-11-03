@@ -50,9 +50,9 @@ describe('IntentClassifierUsecase', () => {
     );
     const usecase = new IntentClassifierUsecase(modelRouter, dispatchers);
 
-    const result = await usecase.classify(
-      '백엔드에서 user repository 만들어줘',
-    );
+    const result = await usecase.classify({
+      text: '백엔드에서 user repository 만들어줘',
+    });
 
     expect(result.agentType).toBe(AgentType.CODE_REVIEWER);
     expect(result.confidence).toBe(0.85);
@@ -65,7 +65,7 @@ describe('IntentClassifierUsecase', () => {
     );
     const usecase = new IntentClassifierUsecase(modelRouter, dispatchers);
 
-    await usecase.classify('  오늘 plan  ');
+    await usecase.classify({ text: '  오늘 plan  ' });
 
     expect(modelRouter.route).toHaveBeenCalledWith({
       agentType: AgentType.PM,
@@ -95,7 +95,7 @@ describe('IntentClassifierUsecase', () => {
     );
     const usecase = new IntentClassifierUsecase(modelRouter, dispatchers);
 
-    const result = await usecase.classify('어쩌고 저쩌고');
+    const result = await usecase.classify({ text: '어쩌고 저쩌고' });
 
     expect(result.agentType).toBe('UNKNOWN');
   });
@@ -129,7 +129,7 @@ describe('IntentClassifierUsecase', () => {
         episodic as never,
       );
 
-      await usecase.classify('PG 연동 손봐줘');
+      await usecase.classify({ text: 'PG 연동 손봐줘' });
 
       // 출력 JSON(agent_run)이 아니라 요청문 짝(routing_example)을, 감쇠 없이 정확 검색한다.
       expect(episodic.searchRelevant).toHaveBeenCalledWith(
@@ -178,7 +178,7 @@ describe('IntentClassifierUsecase', () => {
         episodic as never,
       );
 
-      await usecase.classify('PG 연동 손봐줘');
+      await usecase.classify({ text: 'PG 연동 손봐줘' });
 
       const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
       expect(prompt).toContain('worker CODE_REVIEWER');
@@ -194,7 +194,7 @@ describe('IntentClassifierUsecase', () => {
         undefined,
       );
 
-      await usecase.classify('PG 연동 손봐줘');
+      await usecase.classify({ text: 'PG 연동 손봐줘' });
 
       const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
       expect(prompt).not.toContain('[유사 과거 작업]');
@@ -212,7 +212,7 @@ describe('IntentClassifierUsecase', () => {
         episodic as never,
       );
 
-      const result = await usecase.classify('PG 연동 손봐줘');
+      const result = await usecase.classify({ text: 'PG 연동 손봐줘' });
 
       expect(result.agentType).toBe(AgentType.CODE_REVIEWER);
       const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
@@ -240,7 +240,7 @@ describe('IntentClassifierUsecase', () => {
         preferenceProfile,
       );
 
-      await usecase.classify('그거 분배해줘');
+      await usecase.classify({ text: '그거 분배해줘' });
 
       const callArg = modelRouter.route.mock.calls[0][0];
       expect(callArg.request.systemPrompt).toContain(routingHint);
@@ -258,7 +258,7 @@ describe('IntentClassifierUsecase', () => {
         undefined,
       );
 
-      await usecase.classify('그거 분배해줘');
+      await usecase.classify({ text: '그거 분배해줘' });
 
       const callArg = modelRouter.route.mock.calls[0][0];
       expect(callArg.request.systemPrompt).toBe(
@@ -281,22 +281,25 @@ describe('IntentClassifierUsecase', () => {
       const modelRouter = makeModelRouterMock(unknownResponse);
       const usecase = new IntentClassifierUsecase(modelRouter, dispatchers);
 
-      await usecase.classify('프롬프트 RAG', [
-        {
-          role: 'user',
-          text: '더 딥다이브 가능해?',
-          agentType: AgentType.CODE_REVIEWER,
-          agentRunId: 42,
-          timestampMs: Date.now(),
-        },
-        {
-          role: 'assistant',
-          text: '가능해요. 어떤 주제인지 한 문장으로 짚어주세요.',
-          agentType: AgentType.CODE_REVIEWER,
-          agentRunId: 42,
-          timestampMs: Date.now(),
-        },
-      ]);
+      await usecase.classify({
+        text: '프롬프트 RAG',
+        priorTurns: [
+          {
+            role: 'user',
+            text: '더 딥다이브 가능해?',
+            agentType: AgentType.CODE_REVIEWER,
+            agentRunId: 42,
+            timestampMs: Date.now(),
+          },
+          {
+            role: 'assistant',
+            text: '가능해요. 어떤 주제인지 한 문장으로 짚어주세요.',
+            agentType: AgentType.CODE_REVIEWER,
+            agentRunId: 42,
+            timestampMs: Date.now(),
+          },
+        ],
+      });
 
       const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
       expect(prompt).toContain(
@@ -315,14 +318,17 @@ describe('IntentClassifierUsecase', () => {
       const modelRouter = makeModelRouterMock(unknownResponse);
       const usecase = new IntentClassifierUsecase(modelRouter, dispatchers);
 
-      await usecase.classify('그거 분배해', [
-        {
-          text: '오늘 plan 짜줘',
-          agentType: AgentType.PM,
-          agentRunId: 7,
-          timestampMs: Date.now(),
-        },
-      ]);
+      await usecase.classify({
+        text: '그거 분배해',
+        priorTurns: [
+          {
+            text: '오늘 plan 짜줘',
+            agentType: AgentType.PM,
+            agentRunId: 7,
+            timestampMs: Date.now(),
+          },
+        ],
+      });
 
       const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
       expect(prompt).toContain('[user] "오늘 plan 짜줘" → worker PM #7');
@@ -346,10 +352,12 @@ describe('IntentClassifierUsecase', () => {
     it('최근 10턴만 싣는다', async () => {
       const modelRouter = makeModelRouterMock(response);
       const usecase = new IntentClassifierUsecase(modelRouter, dispatchers);
-      await usecase.classify(
-        '이번 입력',
-        Array.from({ length: 12 }, (_, index) => makeTurn(`턴-${index}`)),
-      );
+      await usecase.classify({
+        text: '이번 입력',
+        priorTurns: Array.from({ length: 12 }, (_, index) =>
+          makeTurn(`턴-${index}`),
+        ),
+      });
       const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
       expect(prompt).not.toContain('"턴-0"');
       expect(prompt).not.toContain('"턴-1"');
@@ -360,9 +368,12 @@ describe('IntentClassifierUsecase', () => {
     it('자동 발송 글이 있으면 system prompt 에 UNTRUSTED_INPUT_NOTICE 를 싣는다', async () => {
       const modelRouter = makeModelRouterMock(response);
       const usecase = new IntentClassifierUsecase(modelRouter, dispatchers);
-      await usecase.classify('이번 입력', [
-        makeTurn(`${AUTO_POST_LABEL}\n${wrapUntrustedInput('아침신문')}`),
-      ]);
+      await usecase.classify({
+        text: '이번 입력',
+        priorTurns: [
+          makeTurn(`${AUTO_POST_LABEL}\n${wrapUntrustedInput('아침신문')}`),
+        ],
+      });
       expect(modelRouter.route.mock.calls[0][0].request.systemPrompt).toContain(
         UNTRUSTED_INPUT_NOTICE,
       );
@@ -371,12 +382,15 @@ describe('IntentClassifierUsecase', () => {
     it('자동 발송 글 턴은 [자동 발송 글] 로 앞 300자까지 싣고 worker 꼬리를 달지 않는다', async () => {
       const modelRouter = makeModelRouterMock(response);
       const usecase = new IntentClassifierUsecase(modelRouter, dispatchers);
-      await usecase.classify('이번 입력', [
-        makeTurn(
-          `${AUTO_POST_LABEL}\n${wrapUntrustedInput('가'.repeat(350))}`,
-          AgentType.PM,
-        ),
-      ]);
+      await usecase.classify({
+        text: '이번 입력',
+        priorTurns: [
+          makeTurn(
+            `${AUTO_POST_LABEL}\n${wrapUntrustedInput('가'.repeat(350))}`,
+            AgentType.PM,
+          ),
+        ],
+      });
       const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
       expect(prompt).toContain('[자동 발송 글]');
       expect(prompt).toContain('가'.repeat(300));
@@ -387,9 +401,10 @@ describe('IntentClassifierUsecase', () => {
     it('일반 user 턴은 지금처럼 60자·worker 꼬리 유지', async () => {
       const modelRouter = makeModelRouterMock(response);
       const usecase = new IntentClassifierUsecase(modelRouter, dispatchers);
-      await usecase.classify('이번 입력', [
-        makeTurn('나'.repeat(80), AgentType.PM),
-      ]);
+      await usecase.classify({
+        text: '이번 입력',
+        priorTurns: [makeTurn('나'.repeat(80), AgentType.PM)],
+      });
       const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
       expect(prompt).toContain(`"${'나'.repeat(60)}…" → worker PM -`);
     });
@@ -397,11 +412,14 @@ describe('IntentClassifierUsecase', () => {
     it('경계 마커 뒤 본문이 렌더에 남는다', async () => {
       const modelRouter = makeModelRouterMock(response);
       const usecase = new IntentClassifierUsecase(modelRouter, dispatchers);
-      await usecase.classify('이번 입력', [
-        makeTurn(
-          `${AUTO_POST_LABEL}\n${wrapUntrustedInput('오늘의 도구 내용')}`,
-        ),
-      ]);
+      await usecase.classify({
+        text: '이번 입력',
+        priorTurns: [
+          makeTurn(
+            `${AUTO_POST_LABEL}\n${wrapUntrustedInput('오늘의 도구 내용')}`,
+          ),
+        ],
+      });
       const prompt = modelRouter.route.mock.calls[0][0].request.prompt;
       expect(prompt.indexOf('오늘의 도구 내용')).toBeGreaterThan(
         prompt.indexOf(UNTRUSTED_INPUT_START),
@@ -497,7 +515,7 @@ describe('INTENT_CLASSIFIER_SYSTEM_PROMPT — 기술 학습·조사 요청 BLOG 
     it('on: 확신하면 LLM 을 부르지 않고 그 담당을 돌려준다', async () => {
       const { usecase, modelRouter } = build('on');
 
-      const result = await usecase.classify('PR 리뷰해줘');
+      const result = await usecase.classify({ text: 'PR 리뷰해줘' });
 
       expect(modelRouter.route).not.toHaveBeenCalled();
       expect(result.agentType).toBe(AgentType.CODE_REVIEWER);
@@ -511,14 +529,17 @@ describe('INTENT_CLASSIFIER_SYSTEM_PROMPT — 기술 학습·조사 요청 BLOG 
     it('on 이어도 직전 대화가 있으면 LLM 으로 분류한다', async () => {
       const { usecase, modelRouter } = build('on');
 
-      const result = await usecase.classify('응 해줘', [
-        {
-          role: 'user',
-          text: '리뷰 해줄래?',
-          agentType: null,
-          agentRunId: null,
-        },
-      ] as never);
+      const result = await usecase.classify({
+        text: '응 해줘',
+        priorTurns: [
+          {
+            role: 'user',
+            text: '리뷰 해줄래?',
+            agentType: null,
+            agentRunId: null,
+          },
+        ] as never,
+      });
 
       expect(modelRouter.route).toHaveBeenCalledTimes(1);
       expect(result.memoryShortcut).toBeUndefined();
@@ -528,9 +549,9 @@ describe('INTENT_CLASSIFIER_SYSTEM_PROMPT — 기술 학습·조사 요청 BLOG 
     it('priorTurns 가 있어도 첫 턴이라고 넘기면 단축 판정을 한다', async () => {
       const { usecase, modelRouter } = build('on');
 
-      const result = await usecase.classify(
-        'PR 리뷰해줘',
-        [
+      const result = await usecase.classify({
+        text: 'PR 리뷰해줘',
+        priorTurns: [
           {
             role: 'user',
             text: '어제 한 얘기',
@@ -538,8 +559,8 @@ describe('INTENT_CLASSIFIER_SYSTEM_PROMPT — 기술 학습·조사 요청 BLOG 
             agentRunId: null,
           },
         ] as never,
-        { isFirstTurn: true },
-      );
+        isFirstTurn: true,
+      });
 
       expect(modelRouter.route).not.toHaveBeenCalled();
       expect(result.memoryShortcut?.applied).toBe(true);
@@ -548,7 +569,7 @@ describe('INTENT_CLASSIFIER_SYSTEM_PROMPT — 기술 학습·조사 요청 BLOG 
     it('shadow: LLM 결과로 정하고 판정만 applied=false 로 싣는다', async () => {
       const { usecase, modelRouter } = build('shadow');
 
-      const result = await usecase.classify('PR 리뷰해줘');
+      const result = await usecase.classify({ text: 'PR 리뷰해줘' });
 
       expect(modelRouter.route).toHaveBeenCalledTimes(1);
       expect(result.agentType).toBe(AgentType.PM);
@@ -564,7 +585,7 @@ describe('INTENT_CLASSIFIER_SYSTEM_PROMPT — 기술 학습·조사 요청 BLOG 
       async (mode) => {
         const { usecase, modelRouter } = build(mode);
 
-        const result = await usecase.classify('PR 리뷰해줘');
+        const result = await usecase.classify({ text: 'PR 리뷰해줘' });
 
         expect(modelRouter.route).toHaveBeenCalledTimes(1);
         expect(result.memoryShortcut).toBeUndefined();
