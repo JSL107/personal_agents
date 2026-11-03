@@ -501,6 +501,53 @@ describe('직전 대화 일정 등록', () => {
     expect(answer.execute).not.toHaveBeenCalled();
   });
 
+  // #957 리뷰: 제목 되묻기에 "원인 분석" 으로 답하면 "원인" 이 참조로 잡히지만, 직전 요청과 합쳐 등록이 완성된다.
+  it('제목 되묻기의 후속 답은 쓰기 동사가 없어도 조회로 바꾸지 않고 등록한다', async () => {
+    const register = createUsecase();
+    const answer = createAnswer();
+    const extract = {
+      execute: jest.fn().mockResolvedValue({
+        title: '원인 분석',
+        dueDate: { year: 2026, month: 11, day: 4 },
+        memo: '',
+        modelUsed: 'model',
+      }),
+    };
+    const dispatcher = new ScheduleDispatcher(
+      register,
+      answer,
+      createAgentRunService() as never,
+      extract as never,
+    );
+
+    await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '원인 분석',
+      priorTurns: [
+        {
+          role: 'user' as const,
+          text: '내일 일정 등록해줘',
+          agentType: AgentType.SCHEDULE,
+          agentRunId: null,
+          timestampMs: 1,
+        },
+        {
+          role: 'assistant' as const,
+          text: '어떤 일정인지 제목을 알려 주세요.',
+          agentType: AgentType.SCHEDULE,
+          agentRunId: null,
+          timestampMs: 2,
+        },
+      ],
+    });
+
+    expect(register.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ title: '원인 분석' }),
+    );
+    expect(answer.execute).not.toHaveBeenCalled();
+  });
+
   it('원인 참조를 추출해 메모와 오늘 날짜로 등록하고 모델 원장을 남긴다', async () => {
     const register = createUsecase();
     const agentRunService = createAgentRunService();

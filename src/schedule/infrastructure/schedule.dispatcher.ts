@@ -114,8 +114,10 @@ export class ScheduleDispatcher implements AgentDispatcher {
     // 대화를 일정으로 옮기는 등록은 쓰기 동사가 있을 때만 한다. "그럼 이중에 남은일정을 파악해볼래" 처럼
     // 지시어만 있는 질문이 모델 추출을 거쳐 "11월 남은 일정 파악" 으로 등록됐다(2026-11-03 실행 #11278).
     // 쓰기 동사도 날짜도 없는 참조는 질문으로 보고 답한다 — 파서로 넘기면 문장 전체가 제목이 돼 날짜를
-    // 되묻는다. 날짜를 준 참조("그럼 9월 30일")는 되묻기 후속일 수 있어 지금처럼 대화에서 뽑는다.
+    // 되묻는다. 날짜를 준 참조("그럼 9월 30일")와 직전 요청에 합쳐 등록이 완성되는 제목 답("원인 분석",
+    // #957 리뷰)은 되묻기 후속이라 지금처럼 대화에서 뽑는다.
     const asksAboutConversation =
+      command.kind !== 'REGISTER' &&
       !hasScheduleWriteIntent(input.text) &&
       parseDueDate(input.text, today) === null;
     if (reference && hasIdaeriReply && asksAboutConversation) {
