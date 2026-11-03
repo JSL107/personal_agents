@@ -59,6 +59,25 @@ describe('formatVideoWatch', () => {
     expect(text).not.toContain('youtu.be');
   });
 
+  it('장면 목록은 빈 줄과 소제목으로 본문과 나누고, 장면이 없으면 소제목도 쓰지 않는다', () => {
+    const report = {
+      title: null,
+      uploader: null,
+      platform: VideoPlatform.INSTAGRAM,
+      videoId: 'DfQb_sJlcc1',
+      frameCount: 1,
+      transcriptSource: null,
+    };
+    const withHighlights = formatVideoWatch(
+      { answer: '추론: 끝', highlights: [{ timestampSec: 6, note: '카드' }] },
+      report,
+    );
+    expect(withHighlights).toContain('추론: 끝\n\n*주요 장면*\n• 00:06 카드');
+    expect(
+      formatVideoWatch({ answer: '답', highlights: [] }, report),
+    ).not.toContain('주요 장면');
+  });
+
   it('인스타그램 올린 사람 이름의 Slack 특수문자를 이스케이프한다', () => {
     const text = formatVideoWatch(
       { answer: '답', highlights: [] },

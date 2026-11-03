@@ -22,6 +22,10 @@ export const formatVideoWatch = (
     '',
     escapeSlackMrkdwn(result.answer),
   ];
+  // 본문 마지막 문단(「추론:」 등)에 목록이 붙어 그 일부로 읽히지 않게 소제목으로 나눈다.
+  if (result.highlights.length > 0) {
+    lines.push('', '*주요 장면*');
+  }
   for (const highlight of result.highlights) {
     const timestamp = formatTimestamp(highlight.timestampSec);
     // 인스타그램은 재생 시각으로 바로 가는 링크가 없어 시각만 적는다.
