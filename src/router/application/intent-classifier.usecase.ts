@@ -60,6 +60,14 @@ interface RoutableMemoryDecision {
   similarity: number;
 }
 
+export interface ClassifyInput {
+  text: string;
+  priorTurns?: ConversationTurn[];
+  // 30분 대화 기억에 직전 턴이 없었는지. priorTurns 는 DM 이면 24시간 Slack 내역까지 담아
+  // 첫 턴 판정에 쓸 수 없어 라우터가 따로 넘긴다. 미지정이면 priorTurns 가 비었는지로 판정한다.
+  isFirstTurn?: boolean;
+}
+
 @Injectable()
 export class IntentClassifierUsecase {
   private readonly logger = new Logger(IntentClassifierUsecase.name);
@@ -91,17 +99,18 @@ export class IntentClassifierUsecase {
     );
   }
 
-  async classify(
-    text: string,
-    priorTurns?: ConversationTurn[],
-  ): Promise<IntentClassification> {
+  async classify({
+    text,
+    priorTurns,
+    isFirstTurn = (priorTurns?.length ?? 0) === 0,
+  }: ClassifyInput): Promise<IntentClassification> {
     const trimmed = text.trim();
     const memoryHits = await this.recallSimilar(trimmed);
     // 직전 대화가 있으면 단축하지 않는다 — userInstruction 은 직전 대화에서만 나오고,
     // 맥락에 기대는 발화("응 해줘")는 문장만 같아도 뜻이 다르다.
     const mode = this.shortcutMode();
     const decision =
-      mode !== 'off' && !priorTurns?.length
+      mode !== 'off' && isFirstTurn
         ? this.toRoutableDecision(
             decideMemoryShortcut({
               hits: memoryHits,
