@@ -99,7 +99,7 @@ export class AnswerBlogQuestionUsecase {
           drafts: describeLookup(drafts, DRAFT_LIMIT),
           recentlyPublished: describeLookup(published, PUBLISHED_LIMIT),
           publishedRange: `최근 ${PUBLISHED_LOOKBACK_DAYS}일`,
-          note: '발행 여부는 승인된 발행 카드 기록 기준이다. 목록에 없으면 최근 기간에 발행 승인된 기록이 없다는 뜻이고, 발행 후보 목록에 있었다는 것만으로 발행된 것은 아니다. 목록이 truncated 이거나 조회에 실패했으면 "목록에 없다" 로 단정하지 말고 확인하지 못했다고 말한다.',
+          note: '발행 여부는 승인된 발행 카드 기록 기준이다. 목록에 없으면 최근 기간에 발행 승인된 기록이 없다는 뜻이고, 발행 후보 목록에 있었다는 것만으로 발행된 것은 아니다. 목록이 truncated 이거나 조회에 실패했으면 목록에 없다는 것은 기록이 없다는 근거가 되지 않는다(확인하지 못한 상태다).',
         };
         const answer = await this.factAnswer.answer({
           agentType: AgentType.BLOG_PUBLISH,
