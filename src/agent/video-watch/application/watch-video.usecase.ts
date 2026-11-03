@@ -118,10 +118,15 @@ export class WatchVideoUsecase {
             await mkdtemp(join(tmpdir(), 'idaeri-watch-output-')),
           );
           homeDir = await mkdtemp(join(tmpdir(), 'idaeri-watch-home-'));
+          // 인스타그램은 자막 트랙이 없어 화면이 유일한 근거다. 영상 속 자막만 바뀌는 장면을
+          // 중복으로 버리면 30초 시험 영상에서 24장 중 1장만 남았다(2026-11-03 실측).
+          const keepSimilarFrames =
+            extracted.platform === VideoPlatform.INSTAGRAM;
           const markdown = await this.watchRunner.run({
             url: extracted.url,
             outDir,
             homeDir,
+            keepSimilarFrames,
           });
           const report = parseWatchReport(markdown, outDir);
           const completion = await this.modelRouter.route({

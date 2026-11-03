@@ -28,7 +28,12 @@ export class WatchCliRunner implements WatchRunnerPort {
 
   constructor(private readonly configService: ConfigService) {}
 
-  run({ url, outDir, homeDir }: WatchRunnerInput): Promise<string> {
+  run({
+    url,
+    outDir,
+    homeDir,
+    keepSimilarFrames,
+  }: WatchRunnerInput): Promise<string> {
     const scriptPath =
       this.configService.getOrThrow<string>('WATCH_SCRIPT_PATH');
     return new Promise((resolve, reject) => {
@@ -46,6 +51,7 @@ export class WatchCliRunner implements WatchRunnerPort {
           '--resolution',
           '512',
           '--no-whisper',
+          ...(keepSimilarFrames ? ['--no-dedup'] : []),
           '--out-dir',
           outDir,
         ],
