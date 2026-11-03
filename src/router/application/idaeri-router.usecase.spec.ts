@@ -209,6 +209,7 @@ describe('IdaeriRouterUsecase', () => {
     expect(classifier.classify).toHaveBeenCalledWith(
       '오늘 plan 짜줘',
       undefined,
+      { isFirstTurn: true },
     );
     expect(result.workerType).toBe(AgentType.PM);
     expect(result.output).toEqual({ plan: 'classified' });
@@ -260,6 +261,7 @@ describe('IdaeriRouterUsecase', () => {
     expect(classifier.classify).toHaveBeenCalledWith(
       '이 문서를 배포해도 되는지 검토해줘',
       undefined,
+      { isFirstTurn: true },
     );
     expect(result.workerType).toBe(AgentType.BLOG);
   });
@@ -286,6 +288,7 @@ describe('IdaeriRouterUsecase', () => {
     expect(classifier.classify).toHaveBeenCalledWith(
       '윤다정님 이 문장을 다듬어줘',
       undefined,
+      { isFirstTurn: true },
     );
     expect(result.workerType).toBe(AgentType.BLOG);
   });
@@ -749,6 +752,67 @@ describe('IdaeriRouterUsecase', () => {
         ] as never,
       });
 
+      expect(seen()?.onRunSucceeded).toBeUndefined();
+    });
+
+    // DM 은 24시간 Slack 내역이 priorTurns 로 들어온다 — 그것만으로 후속 턴이 되면 DM 에서는
+    // 예시가 거의 쌓이지 않는다(#949 후속, 실측 run 11252). 첫 턴은 30분 대화 기억으로 판정한다.
+    it('priorTurns 가 있어도 30분 대화 기억에 직전 턴이 없으면 첫 턴으로 저장한다', async () => {
+      const { dispatcher, seen } = buildSpyDispatcher(AgentType.PM, () => ({
+        agentRunId: PM_RUN_ID,
+      }));
+      const classifier = buildClassifierMock({
+        agentType: AgentType.PM,
+        confidence: 0.9,
+        reason: 'r',
+      });
+      const { usecase } = buildUsecase([dispatcher], classifier);
+      const transcript = [
+        {
+          role: 'user',
+          text: '어제 한 얘기',
+          agentType: null,
+          agentRunId: null,
+        },
+      ] as never;
+
+      await usecase.dispatch({
+        source: 'SLACK_MESSAGE',
+        slackUserId: 'U1',
+        text: '오늘 할 일 정리해줘',
+        priorTurns: transcript,
+        hasRecentTurns: false,
+      });
+
+      expect(classifier.classify).toHaveBeenCalledWith(
+        '오늘 할 일 정리해줘',
+        transcript,
+        { isFirstTurn: true },
+      );
+      expect(seen()?.onRunSucceeded).toBeDefined();
+    });
+
+    it('30분 대화 기억에 직전 턴이 있으면 저장하지 않는다', async () => {
+      const { dispatcher, seen } = buildSpyDispatcher(AgentType.PM, () => ({
+        agentRunId: PM_RUN_ID,
+      }));
+      const classifier = buildClassifierMock({
+        agentType: AgentType.PM,
+        confidence: 0.9,
+        reason: 'r',
+      });
+      const { usecase } = buildUsecase([dispatcher], classifier);
+
+      await usecase.dispatch({
+        source: 'SLACK_MESSAGE',
+        slackUserId: 'U1',
+        text: '응 해줘',
+        hasRecentTurns: true,
+      });
+
+      expect(classifier.classify).toHaveBeenCalledWith('응 해줘', undefined, {
+        isFirstTurn: false,
+      });
       expect(seen()?.onRunSucceeded).toBeUndefined();
     });
 

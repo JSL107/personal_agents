@@ -749,6 +749,7 @@ describe('RouterMessageHandler — app_mention', () => {
       slackUserId: 'U_USER',
       text: '오늘 plan 짜줘',
       priorTurns: [],
+      hasRecentTurns: false,
       replyContext: {
         channel: 'C_CHANNEL',
         threadTs: '1730000000.000001',
@@ -1943,6 +1944,7 @@ describe('RouterMessageHandler — message (DM)', () => {
       slackUserId: 'U_USER',
       text: '오늘 plan 짜줘',
       priorTurns: [],
+      hasRecentTurns: false,
       replyContext: {
         channel: 'D_DMCHANNEL',
         threadTs: '1730000000.000001',
@@ -3428,6 +3430,34 @@ describe('RouterMessageHandler — Slack 대화 기록과 사진', () => {
     expect(testCase.reply).toHaveBeenCalledWith(
       expect.objectContaining({ memoryTurns: [saved], priorTurns: [] }),
     );
+  });
+
+  // DM 24시간 내역은 맥락으로만 넘기고, 첫 턴 판정은 30분 대화 기억으로 한다(#949 후속, run 11252).
+  it('DM 내역만 있고 대화 기억이 비었으면 hasRecentTurns=false', async () => {
+    const testCase = setup({
+      messages: [
+        {
+          ts: '1729990000.000001',
+          user: 'U_USER',
+          text: '어제 한 얘기',
+          files: [],
+        },
+      ],
+    });
+    await invokeHandler(testCase.getHandler('message'), event());
+    const input = testCase.dispatch.mock.calls[0][0] as DispatchInput;
+    expect(input.priorTurns?.length).toBeGreaterThan(0);
+    expect(input.hasRecentTurns).toBe(false);
+  });
+
+  it('대화 기억에 직전 턴이 있으면 hasRecentTurns=true', async () => {
+    const memory = new ConversationMemoryService();
+    const key = memory.buildKey({ slackUserId: 'U_USER', channelId: 'D_DM' });
+    await memory.appendTurn(key, buildConversationTurn({ text: '방금 질문' }));
+    const testCase = setup({ memory, messages: [] });
+    await invokeHandler(testCase.getHandler('message'), event());
+    const input = testCase.dispatch.mock.calls[0][0] as DispatchInput;
+    expect(input.hasRecentTurns).toBe(true);
   });
 
   it('리더가 null 이어도 현재 메시지의 files 로 사진을 받는다', async () => {
