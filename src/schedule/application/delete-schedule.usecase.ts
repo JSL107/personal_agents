@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   NotFoundException,
@@ -9,6 +10,7 @@ import {
   SCHEDULE_REPOSITORY_PORT,
   ScheduleRepositoryPort,
 } from '../domain/port/schedule.repository.port';
+import { ScheduleSource, ScheduleStatus } from '../domain/schedule.type';
 
 export interface DeleteScheduleInput {
   id: number;
@@ -36,6 +38,25 @@ export class DeleteScheduleUsecase {
       throw new BadRequestException(
         '공휴일은 삭제할 수 없습니다. 완료 또는 건너뜀으로 처리해 주세요.',
       );
+    }
+    if (found.source && found.source !== ScheduleSource.MANUAL) {
+      if (found.status === ScheduleStatus.SKIPPED) {
+        return;
+      }
+      const updated = await this.repository.transition({
+        id: input.id,
+        slackUserId: input.slackUserId,
+        from: found.status,
+        to: ScheduleStatus.SKIPPED,
+        now: new Date(),
+        actor: 'USER',
+      });
+      if (!updated) {
+        throw new ConflictException(
+          '일정 상태가 변경되었습니다. 다시 시도해 주세요.',
+        );
+      }
+      return;
     }
     await this.repository.deleteById(input.id);
   }

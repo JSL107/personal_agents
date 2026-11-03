@@ -15,6 +15,8 @@ import { ListSchedulesUsecase } from './application/list-schedules.usecase';
 import { MarkScheduleAsHolidayUsecase } from './application/mark-schedule-as-holiday.usecase';
 import { RegisterConsoleScheduleUsecase } from './application/register-console-schedule.usecase';
 import { RegisterScheduleUsecase } from './application/register-schedule.usecase';
+import { ScheduleFollowUpUsecase } from './application/schedule-follow-up.usecase';
+import { UpdateScheduleFieldsUsecase } from './application/update-schedule-fields.usecase';
 import { UpdateScheduleStatusUsecase } from './application/update-schedule-status.usecase';
 import { SCHEDULE_REPOSITORY_PORT } from './domain/port/schedule.repository.port';
 import { SCHEDULE_NOTIFIER_PORT } from './domain/port/schedule-notifier.port';
@@ -39,6 +41,8 @@ import { ScheduleConsoleController } from './interface/schedule-console.controll
     AnswerScheduleQuestionUsecase,
     MarkScheduleAsHolidayUsecase,
     UpdateScheduleStatusUsecase,
+    UpdateScheduleFieldsUsecase,
+    ScheduleFollowUpUsecase,
     DeleteScheduleUsecase,
     ScheduleDispatcher,
     { provide: SCHEDULE_NOTIFIER_PORT, useClass: ScheduleSlackNotifier },
@@ -66,6 +70,8 @@ import { ScheduleConsoleController } from './interface/schedule-console.controll
     ListSchedulesUsecase,
     MarkScheduleAsHolidayUsecase,
     UpdateScheduleStatusUsecase,
+    UpdateScheduleFieldsUsecase,
+    ScheduleFollowUpUsecase,
     DeleteScheduleUsecase,
     ScheduleDispatcher,
   ],

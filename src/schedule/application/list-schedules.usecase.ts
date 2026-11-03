@@ -4,7 +4,10 @@ import {
   SCHEDULE_REPOSITORY_PORT,
   ScheduleRepositoryPort,
 } from '../domain/port/schedule.repository.port';
-import { ScheduleItemRecord } from '../domain/schedule.type';
+import {
+  DatedScheduleItemRecord,
+  ScheduleItemRecord,
+} from '../domain/schedule.type';
 
 export interface ListSchedulesInput {
   slackUserId: string;
@@ -20,7 +23,17 @@ export class ListSchedulesUsecase {
     private readonly repository: ScheduleRepositoryPort,
   ) {}
 
-  async execute(input: ListSchedulesInput): Promise<ScheduleItemRecord[]> {
+  async execute(input: ListSchedulesInput): Promise<DatedScheduleItemRecord[]> {
     return await this.repository.findByDateRange(input);
+  }
+
+  async tracking(
+    input: Required<ListSchedulesInput>,
+  ): Promise<ScheduleItemRecord[]> {
+    return await this.repository.findTrackingMonth(input);
+  }
+
+  async undated(slackUserId: string): Promise<ScheduleItemRecord[]> {
+    return await this.repository.findUndated(slackUserId);
   }
 }

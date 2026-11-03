@@ -46,7 +46,10 @@ export const formatUpcomingLine = (
   // `from` 을 넘기지 않는다) 거르지 않으면 해가 갈수록 `신정(D+265) · 설날(D+240) · …` 이
   // 끝없이 쌓인다. 달력에서는 그대로 보이고 완료·건너뜀도 된다 — 브리핑 한 줄에서만 뺀다.
   const open = items.filter(
-    (item) => item.status === ScheduleStatus.OPEN && !item.isHoliday,
+    (item) =>
+      item.status === ScheduleStatus.OPEN &&
+      !item.isHoliday &&
+      item.dueDate !== null,
   );
   if (open.length === 0) {
     return '';
@@ -59,6 +62,9 @@ export const formatUpcomingLine = (
     upcoming: [],
   };
   for (const item of open) {
+    if (item.dueDate === null) {
+      continue;
+    }
     const label = toDayLabel(item.dueDate, today);
     // 제목은 사용자가 친 원문이다. `<`·`>`·`&` 를 막지 않으면 Slack 이 `<...>` 를 링크 태그로
     // 읽어 텍스트가 사라진다 — `schedule.formatter.ts` 와 같은 처리다.

@@ -13,8 +13,8 @@ import { AgentType } from '../../model-router/domain/model-router.type';
 import { ConversationTurn } from '../../router/domain/conversation-memory.type';
 import { plainDateToUtcDate } from '../domain/parse-due-date';
 import {
+  DatedScheduleItemRecord,
   PlainDate,
-  ScheduleItemRecord,
   ScheduleStatus,
 } from '../domain/schedule.type';
 import { ListSchedulesUsecase } from './list-schedules.usecase';
@@ -29,7 +29,7 @@ interface AnswerScheduleQuestionCommand {
 }
 
 interface FormatScheduleFactsInput {
-  schedules: ScheduleItemRecord[];
+  schedules: DatedScheduleItemRecord[];
   todayUtc: Date;
 }
 

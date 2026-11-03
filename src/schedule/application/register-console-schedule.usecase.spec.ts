@@ -48,6 +48,30 @@ describe('RegisterConsoleScheduleUsecase', () => {
     expect(result).toBe(record);
   });
 
+  it('마감 시각이 있고 알림을 지정하지 않으면 한 시간 전을 저장한다', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-11-05T04:00:00Z'));
+    try {
+      const { usecase, registerSchedule } = build();
+      await usecase.execute({
+        ...input,
+        dueDate: { year: 2026, month: 11, day: 5 },
+        dueTime: '15:00',
+      });
+      expect(registerSchedule.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ remindAt: new Date('2026-11-05T05:00:00Z') }),
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+  it('알림을 명시적으로 끄면 자동으로 채우지 않는다', async () => {
+    const { usecase, registerSchedule } = build();
+    await usecase.execute({ ...input, dueTime: '15:00', remindAt: null });
+    expect(registerSchedule.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ remindAt: null }),
+    );
+  });
+
   it('저장이 실패하면 알리지 않는다 — 저장되지 않은 일정을 등록됐다고 알리면 안 된다', async () => {
     const { usecase, registerSchedule, notifier } = build();
     registerSchedule.execute.mockRejectedValue(new Error('db down'));
