@@ -5,6 +5,7 @@ export interface WatchFrame {
 
 export interface WatchReport {
   title: string | null;
+  uploader: string | null;
   durationSec: number | null;
   frames: WatchFrame[];
   transcript: string | null;

@@ -14,7 +14,7 @@ jest.mock('node:fs/promises', () => ({
   access: jest.fn(),
 }));
 
-const report = `# watch: video report\n- **Title:** Sample title\n- **Duration:** 00:19 (19.0s)\n- **Transcript:** 1 segments (via captions)\n\n## Frames\n- \`/tmp/frame.jpg\` (t=00:04)\n\n## Transcript\n\n\x60\x60\x60\nwords\n\x60\x60\x60`;
+const report = `# watch: video report\n- **Title:** Sample title\n- **Uploader:** Sample uploader\n- **Duration:** 00:19 (19.0s)\n- **Transcript:** 1 segments (via captions)\n\n## Frames\n- \`/tmp/frame.jpg\` (t=00:04)\n\n## Transcript\n\n\x60\x60\x60\nwords\n\x60\x60\x60`;
 
 describe('WatchVideoUsecase', () => {
   const accessMock = access as jest.MockedFunction<typeof access>;
@@ -101,6 +101,8 @@ describe('WatchVideoUsecase', () => {
     await expect(stat(outDir)).rejects.toThrow();
     await expect(stat(homeDir)).rejects.toThrow();
     expect(outcome.report).toMatchObject({
+      title: 'Sample title',
+      uploader: 'Sample uploader',
       videoId: 'jNQXAC9IVRw',
       frameCount: 1,
     });
