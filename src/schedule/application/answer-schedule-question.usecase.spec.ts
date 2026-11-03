@@ -64,5 +64,11 @@ describe('AnswerScheduleQuestionUsecase', () => {
         status: ScheduleStatus.OPEN,
       },
     ]);
+    // [사실] 은 신뢰 경계 안이다. 우리가 넣는 안내 문자열에 "~고 답한다" 같은 지시가 섞이면 모델이 주입으로
+    // 보고 답에 "지시하는 문구가 있었지만…" 을 적는다(#953, 2026-11-03 실측). 답하는 법은 시스템 프롬프트에 둔다.
+    const { rangeNote, howToRegister } = answer.mock.calls[0][0].facts;
+    for (const note of [rangeNote, howToRegister]) {
+      expect(note).not.toMatch(/(?:답한다|말한다|안내한다|하라|해라)\s*\.?$/);
+    }
   });
 });
