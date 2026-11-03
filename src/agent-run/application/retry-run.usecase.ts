@@ -44,7 +44,8 @@ export interface AgentRetryInputSnapshot {
   publishedAt?: string;
   prompt?: string;
   ruleVersion?: number;
-  videoId?: string; // VIDEO_WATCH — 검증된 11자 ID (링크 원문은 저장하지 않는다)
+  platform?: string; // VIDEO_WATCH — YOUTUBE | INSTAGRAM. 없으면 인스타그램 지원 전 유튜브 회차
+  videoId?: string; // VIDEO_WATCH — 검증된 유튜브 ID 또는 릴스 shortcode (링크 원문은 저장하지 않는다)
   question?: string; // VIDEO_WATCH
 }
 

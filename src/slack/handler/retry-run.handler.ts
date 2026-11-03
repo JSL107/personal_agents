@@ -155,7 +155,7 @@ export class RetryRunHandler implements SlackHandler {
         });
         return;
       case 'VIDEO_WATCH': {
-        const videoId = prepared.videoId;
+        const { platform, videoId } = prepared;
         let report: Awaited<ReturnType<typeof prepared.run>>['report'] | null =
           null;
         await runAgentCommand({
@@ -172,6 +172,7 @@ export class RetryRunHandler implements SlackHandler {
               result,
               report ?? {
                 title: null,
+                platform,
                 videoId,
                 frameCount: 0,
                 transcriptSource: null,

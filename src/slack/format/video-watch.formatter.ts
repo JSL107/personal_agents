@@ -1,8 +1,12 @@
-import { VideoWatchResult } from '../../agent/video-watch/domain/video-watch.type';
+import {
+  VideoPlatform,
+  VideoWatchResult,
+} from '../../agent/video-watch/domain/video-watch.type';
 import { escapeSlackMrkdwn } from './mrkdwn.util';
 
 export interface VideoWatchReportSummary {
   title: string | null;
+  platform: VideoPlatform;
   videoId: string;
   frameCount: number;
   transcriptSource: string | null;
@@ -18,9 +22,13 @@ export const formatVideoWatch = (
     escapeSlackMrkdwn(result.answer),
   ];
   for (const highlight of result.highlights) {
-    lines.push(
-      `• <https://youtu.be/${report.videoId}?t=${highlight.timestampSec}|${formatTimestamp(highlight.timestampSec)}> ${escapeSlackMrkdwn(highlight.note)}`,
-    );
+    const timestamp = formatTimestamp(highlight.timestampSec);
+    // 인스타그램은 재생 시각으로 바로 가는 링크가 없어 시각만 적는다.
+    const anchor =
+      report.platform === VideoPlatform.YOUTUBE
+        ? `<https://youtu.be/${report.videoId}?t=${highlight.timestampSec}|${timestamp}>`
+        : timestamp;
+    lines.push(`• ${anchor} ${escapeSlackMrkdwn(highlight.note)}`);
   }
   lines.push(
     '',

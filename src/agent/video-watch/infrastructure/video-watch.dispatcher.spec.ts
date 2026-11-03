@@ -14,6 +14,7 @@ describe('VideoWatchDispatcher', () => {
       result: { answer: '답변', highlights: [] },
       report: {
         title: null,
+        platform: 'YOUTUBE',
         videoId: 'jNQXAC9IVRw',
         frameCount: 0,
         transcriptSource: null,
