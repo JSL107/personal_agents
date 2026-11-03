@@ -42,6 +42,7 @@ describe('EpisodicMemoryService', () => {
       content: '회의 잡아줘',
       embedAs: 'query',
       occurredAt: new Date(),
+      skipIfSameContent: true,
     });
     await service.record({
       kind: 'agent_run',
@@ -53,6 +54,13 @@ describe('EpisodicMemoryService', () => {
       'query',
       'passage',
     ]);
+    expect(
+      repository.insert.mock.calls.map(
+        (call) =>
+          (call as unknown as [{ skipIfSameContent?: boolean }])[0]
+            .skipIfSameContent,
+      ),
+    ).toEqual([true, undefined]);
   });
 
   it('searchRelevant: similarity 는 감쇠 없는 cosine, exact 는 repository 로 넘긴다', async () => {

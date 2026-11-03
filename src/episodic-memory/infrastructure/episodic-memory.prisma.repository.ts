@@ -11,6 +11,7 @@ interface InsertEpisodeRow {
   content: string;
   embedding: number[];
   occurredAt: Date;
+  skipIfSameContent?: boolean;
 }
 
 interface VectorSearchRow {
@@ -28,18 +29,31 @@ interface VectorSearchRow {
 export class EpisodicMemoryPrismaRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async insert(input: InsertEpisodeRow): Promise<void> {
+  // 넣은 행 수(0 또는 1)를 돌려준다 — skipIfSameContent 로 건너뛰면 0.
+  async insert(input: InsertEpisodeRow): Promise<number> {
     const vector = this.toVectorLiteral(input.embedding);
-    await this.prisma.$executeRaw`
+    // shortcut: 동시에 같은 문장이 둘 들어오면 둘 다 들어갈 수 있다 — 판정이 같은 문장을 접으므로
+    // 결과는 같다. 사본이 실제로 쌓이면 (kind, agent_type, content) unique 인덱스로 올린다.
+    const duplicateGuard = input.skipIfSameContent
+      ? Prisma.sql`WHERE NOT EXISTS (
+          SELECT 1 FROM episodic_memory
+          WHERE kind = ${input.kind}::text
+            AND agent_type IS NOT DISTINCT FROM ${input.agentType ?? null}::text
+            AND content = ${input.content}::text
+            AND superseded_at IS NULL
+        )`
+      : Prisma.empty;
+    return await this.prisma.$executeRaw`
       INSERT INTO episodic_memory (kind, agent_run_id, agent_type, content, embedding, occurred_at)
-      VALUES (
-        ${input.kind},
-        ${input.agentRunId ?? null},
-        ${input.agentType ?? null},
-        ${input.content},
+      -- VALUES 가 아니라 SELECT 라 열 타입으로 추론되지 않을 수 있어 캐스트를 명시한다.
+      SELECT
+        ${input.kind}::text,
+        ${input.agentRunId ?? null}::integer,
+        ${input.agentType ?? null}::text,
+        ${input.content}::text,
         ${vector}::vector,
-        ${input.occurredAt}
-      )
+        ${input.occurredAt}::timestamp
+      ${duplicateGuard}
     `;
   }
 

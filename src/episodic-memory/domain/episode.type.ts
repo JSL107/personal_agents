@@ -20,6 +20,9 @@ export interface RecordEpisodeInput {
   // 임베딩 접두어. 기본 'passage'. 질의와 같은 모양의 짧은 문장(routing_example)은 'query' 로
   // 저장해야 같은 문장의 cosine 이 1 에 붙는다 — passage/query 로 엇갈리면 0.94 안팎에 머문다.
   embedAs?: 'query' | 'passage';
+  // 같은 kind·agentType·content 가 이미 있으면 넣지 않는다. 반복 요청의 사본이 검색 상한(LIMIT)을
+  // 채워 다른 문장을 밀어내지 않게 한다(routing_example).
+  skipIfSameContent?: boolean;
 }
 
 export interface SearchEpisodesInput {

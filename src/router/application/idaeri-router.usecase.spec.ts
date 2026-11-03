@@ -1132,6 +1132,45 @@ describe('IdaeriRouterUsecase', () => {
       });
     });
 
+    // shadow 에서 기억은 담당을 골랐는데 LLM 은 UNKNOWN — 단축을 켜면 잘못 보낼 표본이라 남겨야 한다.
+    it('UNKNOWN 회차에도 shadow 판정을 memoryHint 로 남긴다', async () => {
+      let seen: RoutingContext | undefined;
+      const classifier = buildClassifierMock({
+        agentType: 'UNKNOWN',
+        confidence: 0.3,
+        reason: '잡담',
+        memoryShortcut: {
+          agentType: AgentType.SCHEDULE,
+          similarity: 0.95,
+          applied: false,
+        },
+      });
+      const agentRunService = {
+        setParentId: jest.fn().mockResolvedValue(undefined),
+        execute: jest.fn(async ({ run }: { run: () => unknown }) => {
+          seen = claimRoutingContext();
+          await run();
+        }),
+      } as unknown as jest.Mocked<AgentRunService>;
+      const { usecase } = buildUsecase([], classifier, agentRunService);
+
+      await expect(
+        usecase.dispatch({
+          source: 'SLACK_MESSAGE',
+          slackUserId: 'U1',
+          text: '오늘 회의 너무 길었다',
+        }),
+      ).rejects.toBeDefined();
+
+      expect(seen).toEqual({
+        text: '오늘 회의 너무 길었다',
+        routedTo: 'UNKNOWN',
+        routedVia: 'classifier',
+        confidence: 0.3,
+        memoryHint: { agentType: AgentType.SCHEDULE, similarity: 0.95 },
+      });
+    });
+
     // 분류기 파서는 AgentType 전체를 허용하므로 dispatcher 없는 워커가 나올 수 있다.
     // 그건 명백한 오분류 표본이라 고른 대상까지 남겨야 한다.
     it('미등록 담당자를 골랐으면 그 이름을 routedTo 로 남긴다', async () => {

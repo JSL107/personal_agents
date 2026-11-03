@@ -347,6 +347,7 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
       routedTo: string;
       routedVia: RoutedVia;
       confidence?: number;
+      memoryHint?: RoutingContext['memoryHint'];
     },
     outcome: RoutingMissOutcome,
   ): Promise<never> {
@@ -436,6 +437,16 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
           routedTo: 'UNKNOWN',
           routedVia: 'classifier',
           confidence: classification.confidence,
+          // shadow 에서 기억은 담당을 골랐는데 LLM 이 UNKNOWN 인 회차 — 단축을 켜면 잘못 보낼
+          // 바로 그 표본이라 재평가 대조에 꼭 남긴다(codex review #949 P2).
+          ...(classification.memoryShortcut !== undefined
+            ? {
+                memoryHint: {
+                  agentType: classification.memoryShortcut.agentType,
+                  similarity: classification.memoryShortcut.similarity,
+                },
+              }
+            : {}),
         },
         'UNCLASSIFIED',
       );

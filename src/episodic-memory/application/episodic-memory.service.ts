@@ -59,6 +59,7 @@ export class EpisodicMemoryService
         content,
         embedding,
         occurredAt: input.occurredAt,
+        skipIfSameContent: input.skipIfSameContent,
       });
     } catch (error) {
       this.logger.warn(
