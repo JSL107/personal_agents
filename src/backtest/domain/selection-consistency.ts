@@ -48,6 +48,16 @@ const INDICATOR_PREFIX = '지표: ';
 const EMPTY_SECTION = '없음';
 
 /**
+ * 모델이 현금을 본 회차인가. #870(2026-10-21) 부터 프롬프트에서 현금 줄을 뺐다 — 그 전후는
+ * 같은 후보를 받아도 모델이 다르게 고를 수 있어 성과 비교에서 나눠 본다. 날짜가 아니라
+ * 프롬프트로 가르는 이유는 실제 반영 시점이 머지 시각이 아니라 앱 재시작 시각이라서다.
+ */
+export const promptShowsCash = (prompt: string): boolean =>
+  prompt
+    .split('\n')
+    .some((line) => CASH_PREFIXES.some((prefix) => line.startsWith(prefix)));
+
+/**
  * `buildPaperRecommendationPrompt` 가 만든 문자열과 실행 스냅샷에서 제약 함수 입력을 되살린다.
  * 형식이 어긋나면 지어내지 않고 던진다 — 틀린 현금으로 계산한 일치도는 없는 것보다 나쁘다.
  */
@@ -56,10 +66,7 @@ export const parseRecommendationPrompt = (
   options?: { purchasableCash?: number },
 ): RecommendationPromptInputs => {
   const lines = prompt.split('\n');
-  const hasCashLine = lines.some((line) =>
-    CASH_PREFIXES.some((prefix) => line.startsWith(prefix)),
-  );
-  const purchasableCash = hasCashLine
+  const purchasableCash = promptShowsCash(prompt)
     ? readNumberLine(lines, CASH_PREFIXES)
     : options?.purchasableCash;
   if (purchasableCash === undefined || !Number.isFinite(purchasableCash)) {
