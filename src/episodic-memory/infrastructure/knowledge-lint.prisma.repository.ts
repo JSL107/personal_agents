@@ -27,6 +27,10 @@ export interface BandPairRow {
 // Knowledge-Lint 전용 조회 — episodic_memory 무결성 점검용 raw SQL.
 // 판정(임계값 적용/이슈 분류)은 service 책임 — 여기선 후보 행만 반환한다(헥사고날: 비즈니스 규칙을 SQL 로 흘리지 않음).
 // EpisodicMemoryPrismaRepository 와 같은 테이블을 보지만 책임(record/search vs lint)이 달라 분리.
+// routing_example 은 점검하지 않는다. 짧고 비슷한 요청문이 본질이라 근접 중복·모순 후보가 부풀고,
+// 비슷한 문장끼리 정리되면 라우터의 "서로 다른 문장 k개 합의" 근거가 줄어든다.
+const LINT_KIND_FILTER = Prisma.sql`AND a.kind <> 'routing_example'`;
+
 @Injectable()
 export class KnowledgeLintPrismaRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -69,6 +73,7 @@ export class KnowledgeLintPrismaRepository {
       ) n
       WHERE a.embedding IS NOT NULL
         AND a.superseded_at IS NULL
+        ${LINT_KIND_FILTER}
         AND n.distance <= ${input.maxDistance}
       ORDER BY n.distance ASC
       LIMIT ${input.scanLimit}
@@ -107,6 +112,7 @@ export class KnowledgeLintPrismaRepository {
     return Prisma.sql`
       a.superseded_at IS NULL
         AND a.embedding IS NOT NULL
+        ${LINT_KIND_FILTER}
         AND EXISTS (
           SELECT 1
           FROM episodic_memory b
@@ -180,6 +186,7 @@ export class KnowledgeLintPrismaRepository {
       ) n
       WHERE a.embedding IS NOT NULL
         AND a.superseded_at IS NULL
+        ${LINT_KIND_FILTER}
         AND n.distance > ${input.minDistance}
         AND n.distance <= ${input.maxDistance}
       ORDER BY n.distance ASC
