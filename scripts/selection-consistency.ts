@@ -16,6 +16,7 @@ import {
   modalFrequency,
   pairwiseAgreement,
   parseRecommendationPrompt,
+  promptShowsCash,
   RecommendationPromptInputs,
   ReplayAnswer,
   ruleAgreement,
@@ -383,6 +384,8 @@ interface PerformanceRun {
   pendingBuyCodes: Set<string>;
   // 프롬프트 후보와 원장의 실린 목록이 어긋난 회차. 어느 쪽이 모델이 본 것인지 가릴 수 없어 뺀다.
   promptMismatch: boolean;
+  // 모델이 현금을 본 회차(#870 이전 프롬프트). 판정은 전체로 내고 전후는 서술용으로만 가른다.
+  cashShown: boolean;
   returnsByHorizon: Map<number, Map<string, number>>;
 }
 
@@ -495,6 +498,7 @@ const loadPerformanceRuns = async (): Promise<PerformanceRun[]> => {
         promptMismatch:
           inputs.candidates.map((candidate) => candidate.code).join(',') !==
           presentedCodes.join(','),
+        cashShown: promptShowsCash(snapshot.prompt),
         returnsByHorizon,
       },
     ];
@@ -513,6 +517,8 @@ const runPerformance = async (): Promise<void> => {
   for (const [horizonText, weeks] of Object.entries(PERFORMANCE_BLOCK_WEEKS)) {
     const horizon = Number(horizonText);
     const gaps: BlockValue[] = [];
+    const cashShownGaps: BlockValue[] = [];
+    const cashHiddenGaps: BlockValue[] = [];
     const disagreements: number[] = [];
     const abstainedRuleReturns: number[] = [];
     let overlap = 0;
@@ -565,10 +571,12 @@ const runPerformance = async (): Promise<void> => {
         excluded.missingOutcome += 1;
         continue;
       }
-      gaps.push({
+      const blockValue = {
         block: performanceBlockKey(run.strategy, run.asOf, weeks),
         value: gap.gapPct,
-      });
+      };
+      gaps.push(blockValue);
+      (run.cashShown ? cashShownGaps : cashHiddenGaps).push(blockValue);
       overlap += gap.overlapCount;
       picks += k;
       if (gap.disagreementGapPct !== null) {
@@ -600,6 +608,15 @@ const runPerformance = async (): Promise<void> => {
       const values = gaps.filter((gap) => gap.block.startsWith(`${strategy}:`));
       console.log(
         `  (서술용) ${strategy} D 평균 ${formatPct(mean(values.map((gap) => gap.value)))}%p — 회차 ${values.length}`,
+      );
+    }
+    for (const [label, cohort] of [
+      ['현금 보임(#870 전)', cashShownGaps],
+      ['현금 숨김(#870 후)', cashHiddenGaps],
+    ] as const) {
+      const cohortInterval = blockBootstrapInterval(cohort);
+      console.log(
+        `  (서술용) ${label} D ${cohortInterval === null ? '값 없음' : `${formatPct(cohortInterval.mean)}%p [95% ${formatPct(cohortInterval.lower)} ~ ${formatPct(cohortInterval.upper)}] 블록 ${cohortInterval.blocks}`} — 회차 ${cohort.length} · 판정표 적용 시 ${decidePerformanceVerdict(cohortInterval, EQUIVALENCE_MARGIN_PCT[horizon])}`,
       );
     }
     console.log(

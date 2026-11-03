@@ -3,6 +3,7 @@ import {
   decidePerformanceAction,
   decidePerformanceVerdict,
   pairedGap,
+  PERFORMANCE_BLOCK_WEEKS,
   performanceBlockKey,
   ruleCounterfactualPicks,
 } from './selection-performance';
@@ -107,6 +108,27 @@ describe('performanceBlockKey', () => {
     );
   });
 
+  it('5거래일 블록(2주)은 W34~W35 를 묶고 W36 부터 다음 블록', () => {
+    const weeks = PERFORMANCE_BLOCK_WEEKS[5];
+    const first = performanceBlockKey('SWING', new Date('2026-08-17'), weeks);
+    expect(performanceBlockKey('SWING', new Date('2026-08-28'), weeks)).toBe(
+      first,
+    );
+    expect(
+      performanceBlockKey('SWING', new Date('2026-08-31'), weeks),
+    ).not.toBe(first);
+  });
+
+  it('20거래일 블록(8주)의 번호 3 은 2027-02-01 에 시작한다 — 원장의 재측정일 근거', () => {
+    const weeks = PERFORMANCE_BLOCK_WEEKS[20];
+    expect(performanceBlockKey('SWING', new Date('2027-01-29'), weeks)).toBe(
+      'SWING:8w:2',
+    );
+    expect(performanceBlockKey('SWING', new Date('2027-02-01'), weeks)).toBe(
+      'SWING:8w:3',
+    );
+  });
+
   it('전략이 다르면 다른 블록', () => {
     expect(performanceBlockKey('SWING', new Date('2026-08-20'), 1)).not.toBe(
       performanceBlockKey('LONG_TERM', new Date('2026-08-20'), 1),
@@ -128,6 +150,10 @@ describe('decidePerformanceVerdict', () => {
     [-0.5, 0.5, 'EQUIVALENT'],
     [-0.6, 0.4, 'INCONCLUSIVE'],
     [-2, 2, 'INCONCLUSIVE'],
+    // 마진 안에서 0 을 넘는 구간은 실익 없는 차이 — 우위가 아니라 동등이다.
+    [0.1, 0.4, 'EQUIVALENT'],
+    [-0.4, -0.1, 'EQUIVALENT'],
+    [0.1, 0.6, 'MODEL_BETTER'],
   ])('구간 [%p, %p] → %s', (lower, upper, expected) => {
     expect(decidePerformanceVerdict(interval(lower, upper), 0.5)).toBe(
       expected,
