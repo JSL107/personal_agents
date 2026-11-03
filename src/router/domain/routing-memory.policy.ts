@@ -44,10 +44,14 @@ export const ROUTING_FEWSHOT_LIMIT = 3;
 // 한 번 검색으로 단축 판정과 few-shot 을 함께 뽑는다 — 담당별 1개 × 3 과 서로 다른 문장 k 개를 채울 여유.
 export const ROUTING_MEMORY_SEARCH_LIMIT = 20;
 
-/** 저장·검색·백필이 같은 모양의 문장을 보도록 Slack 멘션 토큰과 공백 차이를 지운다. */
+/**
+ * 저장·검색·백필이 같은 모양의 문장을 보도록 Slack 멘션 토큰, 굵게·코드 서식 기호(`*`, `` ` ``),
+ * 공백 차이를 지운다. 서식이 붙은 같은 문장이 다른 문장처럼 멀어지지 않게 한다.
+ */
 export const normalizeRoutingText = (text: string): string =>
   text
     .replace(/<@[A-Z0-9]+>/g, ' ')
+    .replace(/[`*]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
 
