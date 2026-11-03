@@ -193,7 +193,7 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
             : {}),
           // 첫 턴을 분류기가 정한 회차만 예시가 된다. 단축(memory) 결과를 다시 예시로 쓰면 틀린
           // 단축이 스스로 굳고, 후속 턴 문장("응 해줘")은 단독으로 뜻이 없다.
-          ...(classified.routedVia === 'classifier' && !input.priorTurns?.length
+          ...(classified.routedVia === 'classifier' && resolveFirstTurn(input)
             ? {
                 onRunSucceeded: (run: {
                   agentRunId: number;
@@ -424,10 +424,11 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
       });
     }
 
-    const classification = await this.intentClassifier.classify(
+    const classification = await this.intentClassifier.classify({
       text,
-      input.priorTurns,
-    );
+      priorTurns: input.priorTurns,
+      isFirstTurn: resolveFirstTurn(input),
+    });
     if (classification.agentType === 'UNKNOWN') {
       this.logger.warn(
         `Router intent classifier UNKNOWN — text="${text.slice(0, 60)}" reason="${classification.reason}"`,
@@ -504,6 +505,15 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
       });
   }
 }
+
+// 라우팅 기억의 저장·단축 대상인 첫 턴인지 — 30분 대화 기억 기준(DispatchInput.isFirstTurn).
+const resolveFirstTurn = (input: DispatchInput): boolean => {
+  if (input.isFirstTurn !== undefined) {
+    return input.isFirstTurn;
+  }
+  const priorTurnCount = input.priorTurns?.length ?? 0;
+  return priorTurnCount === 0;
+};
 
 // HandoffSpec.passthroughInput 안 'text' 필드를 표준 키로 인정 — 다음 worker 가 text 로 받는다.
 // 다른 키가 필요한 경우는 follow-up plan 의 typed Handoff 도입 시 분기.

@@ -15,7 +15,9 @@ import { normalizeRoutingText } from '../src/router/domain/routing-memory.policy
 //
 // 운영 저장 조건(라우터 rememberRoutingExample)과 같은 것만 고른다: 분류기 경로 · SUCCEEDED ·
 // 실제 run 담당 = 분류 결과 · 잘리지 않은 원문. 원장에는 직전 대화 유무가 없어 parent_id 가 없는
-// 행만 쓴다(보수적 근사 — 단독으로 뜻이 서는 후속 턴 일부를 잃는다).
+// 행만 쓴다. 운영 기준(30분 대화 기억에 직전 턴 없음)의 근사다.
+// shortcut: 앞 턴에 run 이 없는 후속 턴(스레드 첫 답글 등)은 parent_id 가 비어 걸러지지 않는다
+// (2026-11-03 run 11246, 손으로 지움). 원장에 첫 턴 여부를 남기게 되면 그 값으로 바꾼다.
 // 멱등: 같은 agent_run_id 의 routing_example 이 있으면 건너뛴다(운영 저장도 같은 키).
 //
 //   pnpm exec ts-node scripts/backfill-routing-examples.ts            # 미리보기(변경 없음, 원문 미출력)
