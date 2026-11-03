@@ -172,6 +172,7 @@ export class RetryRunHandler implements SlackHandler {
               result,
               report ?? {
                 title: null,
+                uploader: null,
                 platform,
                 videoId,
                 frameCount: 0,

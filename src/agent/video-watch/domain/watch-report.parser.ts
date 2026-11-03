@@ -57,6 +57,7 @@ export const parseWatchReport = (
   }
 
   const titleMatch = markdown.match(/^- \*\*Title:\*\* (.*)$/m);
+  const uploaderMatch = markdown.match(/^- \*\*Uploader:\*\* (.*)$/m);
   const sourceMatch = markdown.match(
     /^- \*\*Transcript:\*\* .*?\(via (.+)\)$/m,
   );
@@ -68,6 +69,7 @@ export const parseWatchReport = (
 
   return {
     title: titleMatch?.[1] ?? null,
+    uploader: uploaderMatch?.[1] ?? null,
     durationSec: parseDuration(markdown),
     frames: parseFrames(markdown, outDir),
     transcript,

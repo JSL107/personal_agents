@@ -41,6 +41,7 @@ export interface WatchVideoInput {
 export interface WatchVideoOutcome extends AgentRunOutcome<VideoWatchResult> {
   report: {
     title: string | null;
+    uploader: string | null;
     platform: VideoPlatform;
     videoId: string;
     frameCount: number;
@@ -144,6 +145,7 @@ export class WatchVideoUsecase {
           );
           reportSummary = {
             title: report.title,
+            uploader: report.uploader,
             platform: extracted.platform,
             videoId: extracted.videoId,
             frameCount: report.frames.length,
@@ -167,6 +169,7 @@ export class WatchVideoUsecase {
       ...outcome,
       report: reportSummary ?? {
         title: null,
+        uploader: null,
         platform: extracted.platform,
         videoId: extracted.videoId,
         frameCount: 0,
