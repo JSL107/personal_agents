@@ -566,6 +566,8 @@ describe('INTENT_CLASSIFIER_SYSTEM_PROMPT — 기술 학습·조사 요청 BLOG 
           agentType: AgentType.CODE_REVIEWER,
           content: 'PR 리뷰해줘',
           embedAs: 'query',
+          // 반복 요청의 사본이 검색 상한을 채워 다른 문장을 밀어내지 않게.
+          skipIfSameContent: true,
         }),
       );
     });

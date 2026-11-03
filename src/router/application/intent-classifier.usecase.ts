@@ -178,6 +178,7 @@ export class IntentClassifierUsecase {
       content,
       embedAs: 'query',
       occurredAt: new Date(),
+      skipIfSameContent: true,
     });
   }
 

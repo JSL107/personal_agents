@@ -140,7 +140,7 @@ async function main(): Promise<void> {
     for (const row of targets) {
       const content = normalizeRoutingText(row.routed_text ?? '');
       const [embedding] = await embedder.embed([content], 'query');
-      await repository.insert({
+      const count = await repository.insert({
         kind: 'routing_example',
         agentRunId: row.id,
         agentType: row.agent_type,
@@ -148,8 +148,11 @@ async function main(): Promise<void> {
         embedding,
         // 시점 정직: 성공이 확정된 시각. 운영 저장도 성공 직후다.
         occurredAt: row.ended_at as Date,
+        skipIfSameContent: true,
       });
-      inserted.push(row.id);
+      if (count > 0) {
+        inserted.push(row.id);
+      }
     }
     mkdirSync(BACKUP_DIR, { recursive: true });
     const logPath = join(
