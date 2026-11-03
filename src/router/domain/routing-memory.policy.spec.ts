@@ -19,6 +19,16 @@ describe('normalizeRoutingText', () => {
       '이 영상 요약해줘',
     );
   });
+
+  // 실측 run 11252: 안내문을 복사해 `*\`지금 뭐 하고 있어?\`*` 로 들어왔다.
+  it('굵게·코드 서식 기호를 지운다', () => {
+    expect(normalizeRoutingText('*`지금 뭐 하고 있어?`*')).toBe(
+      '지금 뭐 하고 있어?',
+    );
+    expect(normalizeRoutingText('```어제 실패한 거 있어?```')).toBe(
+      '어제 실패한 거 있어?',
+    );
+  });
 });
 
 describe('decideMemoryShortcut', () => {
