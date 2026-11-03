@@ -13,7 +13,7 @@ import { LocalEmbedder } from './infrastructure/local-embedder.adapter';
 
 // PrismaService / ConfigService 는 각각 @Global() PrismaModule / isGlobal ConfigModule 로
 // 전역 제공되므로 별도 imports 불필요.
-const DEFAULT_EMBED_MODEL = 'Xenova/multilingual-e5-small';
+export const DEFAULT_EMBED_MODEL = 'Xenova/multilingual-e5-small';
 
 @Module({
   // ContradictionJudgeModule(CONTRADICTION_JUDGE_PORT export) → KnowledgeLintService 의 옵셔널 judge 주입.

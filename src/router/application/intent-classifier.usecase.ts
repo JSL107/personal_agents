@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 import {
   UNTRUSTED_INPUT_END,
@@ -30,6 +31,14 @@ import {
 import { parseIntentClassification } from '../domain/prompt/intent-classification.parser';
 import { buildIntentClassificationOutputSchema } from '../domain/prompt/intent-classification.schema';
 import { INTENT_CLASSIFIER_SYSTEM_PROMPT } from '../domain/prompt/intent-classifier-system.prompt';
+import {
+  decideMemoryShortcut,
+  MEMORY_SHORTCUT_RULE,
+  MemoryShortcutDecision,
+  normalizeRoutingText,
+  pickRoutingFewshot,
+  ROUTING_MEMORY_SEARCH_LIMIT,
+} from '../domain/routing-memory.policy';
 
 // 자연어 메시지를 AgentType 으로 1회 LLM 분류. AgentRun 만들지 않는 internal LLM call.
 // (plan: docs/superpowers/plans/2026-05-07-agent-communication-topology.md §6.1)
@@ -37,14 +46,19 @@ import { INTENT_CLASSIFIER_SYSTEM_PROMPT } from '../domain/prompt/intent-classif
 // agentType 매핑: AgentType.PM 의 provider (CHATGPT) 를 분류기로 차용 — 짧은 출력 / 빠른 latency.
 //
 // priorTurns: 자연어 multi-turn 맥락. 최근 10턴을 "[직전 대화]" 섹션에 prepend.
-// episodicHits: episodic 장기기억의 유사 과거 작업 (옵셔널). 있으면 "[유사 과거 작업]" few-shot
-// 섹션 prepend — "이런 요청은 보통 어느 worker 로 갔는지" 힌트로 분류 정확도 ↑.
-const EPISODIC_FEWSHOT_LIMIT = 3;
+// episodicHits: 과거 (요청문 → 담당) 짝(routing_example) 중 비슷한 것. 있으면 "[유사 과거 작업]"
+// few-shot 섹션 prepend — "이런 요청은 보통 어느 worker 로 갔는지" 힌트.
+// 같은 검색 결과로 라우팅 기억 단축도 판정한다(ROUTER_MEMORY_SHORTCUT_MODE).
 const EPISODIC_CONTENT_MAX_CHARS = 100;
 const CLASSIFIER_TURN_LIMIT = 10;
 const CLASSIFIER_AUTO_POST_TEXT_CAP = 300;
-// 라우팅 불가 타입을 걸러낸 뒤에도 few-shot 을 채울 수 있도록 여유를 두고 뽑는다.
-const EPISODIC_SEARCH_LIMIT = EPISODIC_FEWSHOT_LIMIT * 3;
+
+type MemoryShortcutMode = 'off' | 'shadow' | 'on';
+
+interface RoutableMemoryDecision {
+  agentType: AgentType;
+  similarity: number;
+}
 
 @Injectable()
 export class IntentClassifierUsecase {
@@ -54,12 +68,9 @@ export class IntentClassifierUsecase {
 
   constructor(
     private readonly modelRouter: ModelRouterUsecase,
-    // few-shot 후보를 "실제로 라우팅 가능한 worker" 로 한정하기 위한 등록 목록.
-    // AgentRunService 는 성공한 run 의 output 을 전부 episodic 에 적재하는데, 그 안에는
-    // 사용자가 부를 수 없는 내부 계측 실행(HUMANIZER · SUBCONSCIOUS_GATE 등)도 섞인다.
-    // 그것이 few-shot 예시로 들어가면 classifier 가 미등록 agentType 을 답할 수 있고,
-    // parser 는 AgentType 전체를 허용하므로 그대로 통과해 IdaeriRouterUsecase 가
-    // UNSUPPORTED_AGENT_TYPE 으로 **사용자 요청을 실패시킨다.**
+    // few-shot·단축 후보를 "실제로 라우팅 가능한 worker" 로 한정하기 위한 등록 목록.
+    // 과거 예시의 담당이 그 뒤 폐지·미등록됐을 수 있다. 그것이 예시로 들어가거나 단축되면
+    // IdaeriRouterUsecase 가 UNSUPPORTED_AGENT_TYPE 으로 **사용자 요청을 실패시킨다.**
     @Inject(AGENT_DISPATCHER_PORT)
     private readonly dispatchers: AgentDispatcher[],
     // episodic 은 옵셔널 — RouterModule 이 EpisodicMemoryModule 을 import 하면 주입,
@@ -70,6 +81,8 @@ export class IntentClassifierUsecase {
     @Optional()
     @Inject(PREFERENCE_PROFILE_PORT)
     private readonly preferenceProfile?: PreferenceProfilePort,
+    @Optional()
+    private readonly configService?: ConfigService,
   ) {
     // 분류 후보를 바로 위 dispatchers 에서 받는다 — few-shot 을 걸러내는 근거(라우팅 가능 여부)와
     // 같은 소스여야 "예시로는 안 보여주는데 스키마로는 고를 수 있는" 값이 생기지 않는다.
@@ -83,7 +96,32 @@ export class IntentClassifierUsecase {
     priorTurns?: ConversationTurn[],
   ): Promise<IntentClassification> {
     const trimmed = text.trim();
-    const episodicHits = await this.recallSimilar(trimmed);
+    const memoryHits = await this.recallSimilar(trimmed);
+    // 직전 대화가 있으면 단축하지 않는다 — userInstruction 은 직전 대화에서만 나오고,
+    // 맥락에 기대는 발화("응 해줘")는 문장만 같아도 뜻이 다르다.
+    const mode = this.shortcutMode();
+    const decision =
+      mode !== 'off' && !priorTurns?.length
+        ? this.toRoutableDecision(
+            decideMemoryShortcut({
+              hits: memoryHits,
+              rule: MEMORY_SHORTCUT_RULE,
+            }),
+          )
+        : null;
+    if (decision !== null && mode === 'on') {
+      this.logger.log(
+        `Intent memory shortcut — text="${trimmed.slice(0, 40)}" → ${decision.agentType} (similarity=${decision.similarity.toFixed(3)})`,
+      );
+      return {
+        agentType: decision.agentType,
+        // cosine 은 확신도가 아니다. 라우터는 이 경로의 confidence 를 원장에 싣지 않는다.
+        confidence: decision.similarity,
+        reason: `routing memory shortcut (similarity=${decision.similarity.toFixed(3)})`,
+        memoryShortcut: { ...decision, applied: true },
+      };
+    }
+    const episodicHits = pickRoutingFewshot({ hits: memoryHits });
     const prompt = buildPrompt(trimmed, priorTurns, episodicHits);
     const routingBlock = this.preferenceProfile
       ? await this.preferenceProfile.getInjectionBlock('routing')
@@ -110,9 +148,67 @@ export class IntentClassifierUsecase {
     });
     const classification = parseIntentClassification(completion.text);
     this.logger.log(
-      `Intent classified — text="${trimmed.slice(0, 40)}" priorTurns=${priorTurns?.length ?? 0} episodic=${episodicHits.length} → ${classification.agentType} (confidence=${classification.confidence})`,
+      `Intent classified — text="${trimmed.slice(0, 40)}" priorTurns=${priorTurns?.length ?? 0} episodic=${episodicHits.length} → ${classification.agentType} (confidence=${classification.confidence})${decision ? ` memory=${decision.agentType}` : ''}`,
     );
-    return classification;
+    if (decision === null) {
+      return classification;
+    }
+    return {
+      ...classification,
+      memoryShortcut: { ...decision, applied: false },
+    };
+  }
+
+  /**
+   * 라우팅 예시 저장 — 라우터가 첫 턴 분류 결과로 실행이 성공했을 때만 부른다(자격 판정은 라우터 몫).
+   * 저장·검색이 같은 정규화와 같은 접두어('query')를 써야 같은 문장의 cosine 이 1 에 붙는다.
+   */
+  async rememberRoutingExample(input: {
+    text: string;
+    agentType: AgentType;
+    agentRunId: number;
+  }): Promise<void> {
+    if (!this.episodicMemory) {
+      return;
+    }
+    const content = normalizeRoutingText(input.text);
+    if (content.length === 0) {
+      return;
+    }
+    await this.episodicMemory.record({
+      kind: 'routing_example',
+      agentRunId: input.agentRunId,
+      agentType: input.agentType,
+      content,
+      embedAs: 'query',
+      occurredAt: new Date(),
+      skipIfSameContent: true,
+    });
+  }
+
+  // 모르는 값은 off — app.config 가 부팅에서 막지만, 판정부도 켜진 쪽으로 기울지 않는다.
+  private shortcutMode(): MemoryShortcutMode {
+    const mode = this.configService?.get<string>('ROUTER_MEMORY_SHORTCUT_MODE');
+    if (mode === 'shadow' || mode === 'on') {
+      return mode;
+    }
+    return 'off';
+  }
+
+  // 판정의 담당은 DB 문자열이다. 등록된 dispatcher 에서 찾은 AgentType 만 쓰고, 없으면 단축하지 않는다.
+  private toRoutableDecision(
+    decision: MemoryShortcutDecision | null,
+  ): RoutableMemoryDecision | null {
+    if (decision === null) {
+      return null;
+    }
+    const dispatcher = this.dispatchers.find(
+      (candidate) => candidate.agentType === decision.agentType,
+    );
+    if (dispatcher === undefined) {
+      return null;
+    }
+    return { agentType: dispatcher.agentType, similarity: decision.similarity };
   }
 
   // best-effort — episodic 미주입 또는 검색 실패 시 빈 배열(분류 본 흐름 비차단).
@@ -138,11 +234,14 @@ export class IntentClassifierUsecase {
     }
     try {
       const hits = await this.episodicMemory.searchRelevant({
-        query,
-        kind: 'agent_run',
-        limit: EPISODIC_SEARCH_LIMIT,
+        query: normalizeRoutingText(query),
+        kind: 'routing_example',
+        limit: ROUTING_MEMORY_SEARCH_LIMIT,
+        // 감쇠를 끈다 — 같은 문장의 판정이 날짜에 따라 바뀌면 안 된다. 정렬도 순수 cosine 순.
+        halfLifeDays: Number.POSITIVE_INFINITY,
+        exact: true,
       });
-      return this.keepRoutableHits(hits).slice(0, EPISODIC_FEWSHOT_LIMIT);
+      return this.keepRoutableHits(hits);
     } catch (error) {
       this.logger.warn(
         `Episodic recall 실패 (few-shot 없이 분류 계속): ${error instanceof Error ? error.message : String(error)}`,

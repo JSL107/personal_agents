@@ -26,8 +26,24 @@ export interface RoutingContext {
   readonly routedTo: string;
   /** 고른 경로 — 분류기를 탄 회차만 골라 채점하려면 셋을 구분해야 한다. */
   readonly routedVia: RoutedVia;
-  /** 분류기 확신도. hint·nickname 경로에는 없다. */
+  /** 분류기 확신도. hint·nickname·memory 경로에는 없다. */
   readonly confidence?: number;
+  /**
+   * 라우팅 기억 판정 — 단축했으면(routedVia='memory') 그 근거, shadow 면 "단축했다면 고를 담당".
+   * 원장에서 LLM 결과와 대조하려고 싣는다.
+   */
+  readonly memoryHint?: {
+    readonly agentType: string;
+    readonly similarity: number;
+  };
+  /**
+   * 이 근거를 가져간 run 이 SUCCEEDED 로 끝난 직후 불린다. 무엇을 할지(예: 라우팅 예시 저장)는
+   * 라우터가 정한다 — agent-run 은 라우팅 의미를 모른 채 "성공했다" 만 알린다.
+   */
+  readonly onRunSucceeded?: (run: {
+    readonly agentRunId: number;
+    readonly agentType: string;
+  }) => void;
 }
 
 interface RoutingContextSlot {

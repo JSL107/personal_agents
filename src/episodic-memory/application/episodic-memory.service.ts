@@ -48,7 +48,10 @@ export class EpisodicMemoryService
       if (content.trim().length === 0) {
         return;
       }
-      const [embedding] = await this.embedder.embed([content], 'passage');
+      const [embedding] = await this.embedder.embed(
+        [content],
+        input.embedAs ?? 'passage',
+      );
       await this.repository.insert({
         kind: input.kind,
         agentRunId: input.agentRunId,
@@ -56,6 +59,7 @@ export class EpisodicMemoryService
         content,
         embedding,
         occurredAt: input.occurredAt,
+        skipIfSameContent: input.skipIfSameContent,
       });
     } catch (error) {
       this.logger.warn(
@@ -73,6 +77,7 @@ export class EpisodicMemoryService
       kind: input.kind,
       agentType: input.agentType,
       limit: input.limit * CANDIDATE_MULTIPLIER,
+      exact: input.exact,
     });
 
     const halfLifeDays = input.halfLifeDays ?? DEFAULT_HALF_LIFE_DAYS;
@@ -88,6 +93,7 @@ export class EpisodicMemoryService
           agentType: row.agentType,
           content: row.content,
           score: similarity * recencyWeight,
+          similarity,
           occurredAt: row.occurredAt,
         };
       })
