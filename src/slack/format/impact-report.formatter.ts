@@ -7,9 +7,9 @@ const SUMMARY_QUANT_LIMIT = 3;
 // /impact-report 결과 — summary(헤드라인+핵심) / detail(전체 섹션) 로 분리 렌더.
 export const formatImpactReport = (report: ImpactReport): FormattedReport => {
   const summaryLines: string[] = [
-    `*임팩트 보고서* — ${report.subject}`,
+    `*임팩트 보고서*: ${report.subject}`,
     '',
-    `📌 *Headline*: ${report.headline}`,
+    `📌 *한 줄 요약*: ${report.headline}`,
   ];
   if (report.quantitative.length > 0) {
     summaryLines.push(

@@ -28,11 +28,11 @@ export const formatScheduleRegistered = (
   const memo = options?.memo
     ? `\n메모: ${escapeSlackMrkdwn(options.memo.slice(0, 200))}${options.memo.length > 200 ? '…' : ''}`
     : '';
-  return `*등록했습니다* — ${title} · ${toKoreanDate(record.dueDate)}${dateNotice}${memo}`;
+  return `*등록했습니다*: ${title} · ${toKoreanDate(record.dueDate)}${dateNotice}${memo}`;
 };
 
 export const formatNeedsDate = (title: string): string => {
-  return `${escapeSlackMrkdwn(title)} — *언제까지인가요?* (예: 9월 30일, 내일, 다음주 월요일)`;
+  return `${escapeSlackMrkdwn(title)}: *언제까지인가요?* (예: 9월 30일, 내일, 다음주 월요일)`;
 };
 
 export const formatNeedsTitle = (): string => {

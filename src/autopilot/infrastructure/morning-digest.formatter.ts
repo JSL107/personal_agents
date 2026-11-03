@@ -23,6 +23,12 @@ export interface MorningPosting {
   title: string;
 }
 
+export interface MorningTodo {
+  title: string;
+  url: string | null;
+  dayCount: number | null;
+}
+
 export interface MorningDigestInput {
   firedAtKst: string;
   // 열린 승인 카드의 짧은 이름(카드마다 하나). 같은 이름이 여럿이면 묶어 센다.
@@ -34,7 +40,9 @@ export interface MorningDigestInput {
   postings: MorningPosting[] | null;
   invest: { buyCount: number; sellCount: number } | null;
   // PM 계획의 최우선 1건. 회사 일의 "먼저 이것부터" 출처는 이것 하나다(§5 결정 갱신).
-  company: { title: string; url: string | null } | null;
+  todos: MorningTodo[] | null;
+  planFailure: string | null;
+  schedules: string[] | null;
   study: { topic: string; url: string | null } | null;
   // 어제 23시 포트폴리오 발행 보고를 한 줄로 접은 것. 보고가 없던 날은 null.
   portfolio: string | null;
@@ -73,90 +81,65 @@ const formatPostingNames = (postings: MorningPosting[]): string => {
 };
 
 export const formatMorningDigest = (input: MorningDigestInput): string => {
-  const postings = input.postings ?? [];
-  const todo: string[] = [];
-  if (input.approvalLabels.length > 0) {
-    todo.push(
-      `• *승인 대기 ${input.approvalLabels.length}장* — ${escapeSlackMrkdwn(countByLabel(input.approvalLabels))}`,
-    );
-  }
-  for (const incident of input.incidents) {
-    const days =
-      incident.dayCount === null ? '' : ` · ${incident.dayCount}일째`;
-    todo.push(`• 🔴 *장애* — ${escapeSlackMrkdwn(incident.label)}${days}`);
-  }
-  if (postings.length > 0) {
-    todo.push(
-      `• *공고 ${postings.length}건* — ${formatPostingNames(postings)} (목록은 스레드)`,
-    );
-  }
-
-  // 첫 줄은 급한 순서(장애 → 승인 → 공고)로 종류를 적고, 맨 앞 종류만 이름까지 붙인다.
-  // 개수만 있으면 "장애 1" 이 무엇이 멈춘 건지 열어 봐야 안다 — 첫 줄만 보고 열지 정하려면
-  // 가장 급한 것의 이름이 보여야 한다(2026-10-22 사용자 결정). 나머지는 개수만 둬 알림
-  // 미리보기에서 잘리지 않게 한다.
-  const kinds: { short: string; named: string }[] = [];
-  if (input.incidents.length > 0) {
-    const count = input.incidents.length;
-    const first = escapeSlackMrkdwn(input.incidents[0].label);
-    kinds.push({
-      short: `🔴 장애 ${count}`,
-      named:
-        count === 1
-          ? `🔴 장애: ${first}`
-          : `🔴 장애 ${count}: ${first} 외 ${count - 1}`,
-    });
-  }
-  if (input.approvalLabels.length > 0) {
-    const count = input.approvalLabels.length;
-    kinds.push({
-      short: `✋ 승인 ${count}`,
-      named: `✋ 승인 ${count} (${escapeSlackMrkdwn(countByLabel(input.approvalLabels))})`,
-    });
-  }
-  if (postings.length > 0) {
-    kinds.push({
-      short: `공고 ${postings.length}`,
-      named: `공고 ${postings.length}: ${formatPostingNames(postings)}`,
-    });
-  }
-  const day = formatTradeDay(input.firedAtKst);
-  const header =
-    kinds.length === 0
-      ? `☀️ *${day} 아침* — 손댈 것 없음`
-      : `☀️ *${day} 아침* — ${[kinds[0].named, ...kinds.slice(1).map((kind) => kind.short)].join(' · ')}`;
-
+  const header = `☀️ *${formatTradeDay(input.firedAtKst)} 아침*${input.incidents.length ? ` 🔴 장애 ${input.incidents.length}` : ''}`;
+  const todos =
+    input.todos === null
+      ? [
+          `• 오늘 계획을 만들지 못했어요${input.planFailure ? ` (${escapeSlackMrkdwn(input.planFailure)})` : ''}`,
+        ]
+      : input.todos.length === 0
+        ? ['• 오늘 자동 수집된 할 일이 없어요']
+        : [
+            ...input.todos
+              .slice(0, 5)
+              .map(
+                (todo) =>
+                  `• ${link(todo.title, todo.url)}${todo.dayCount === null ? '' : ` (${todo.dayCount}일째)`}`,
+              ),
+            ...(input.todos.length > 5
+              ? [`• 외 ${input.todos.length - 5}개`]
+              : []),
+          ];
+  const incidents = [
+    ...input.incidents.map(
+      (incident) =>
+        `• ${escapeSlackMrkdwn(incident.label)}${incident.dayCount === null ? '' : ` (${incident.dayCount}일째)`}`,
+    ),
+    ...input.resolvedIncidents.map(
+      (label) => `• ${escapeSlackMrkdwn(label)}, 지금은 복구됨`,
+    ),
+  ];
   const rest: string[] = [];
-  // 해결 알림은 따로 DM 하지 않고 다음 아침 한 줄로 모은다(notification.consumer 의 해결 경로).
-  if (input.resolvedIncidents.length > 0) {
+  if (input.approvalLabels.length) {
     rest.push(
-      `• ✅ *해결* — ${escapeSlackMrkdwn(input.resolvedIncidents.join(' · '))}`,
+      `• 승인 대기 ${input.approvalLabels.length}장 (${escapeSlackMrkdwn(countByLabel(input.approvalLabels))})`,
     );
   }
   if (input.invest) {
     rest.push(
-      `• *투자* — 오늘 시가 매수 ${input.invest.buyCount} · 매도 ${input.invest.sellCount} 예정`,
+      `• 투자: 오늘 시가 매수 ${input.invest.buyCount}, 매도 ${input.invest.sellCount} 예정`,
     );
   }
-  if (input.company) {
+  if (input.postings?.length) {
     rest.push(
-      `• *회사 1순위* — ${link(input.company.title, input.company.url)}`,
+      `• 새 공고 ${input.postings.length}건 (${formatPostingNames(input.postings)}), 목록은 댓글에`,
     );
   }
   if (input.study) {
     rest.push(
-      `• *공부* — ${link(input.study.topic, input.study.url)} · ${STUDY_MINUTES}분`,
+      `• 공부: ${link(input.study.topic, input.study.url)} ${STUDY_MINUTES}분`,
     );
   }
   if (input.portfolio) {
-    rest.push(`• *포트폴리오* — 어제 ${escapeSlackMrkdwn(input.portfolio)}`);
+    rest.push(`• 포트폴리오: 어제 ${escapeSlackMrkdwn(input.portfolio)}`);
   }
-
-  // 소제목은 `*…*` 만 있는 줄이어야 공통 렌더(message-blocks.builder)가 제목 블록 + 구분선으로 올린다.
-  // 앞에 이모지를 붙이면 한 소제목만 본문 글씨로 남아 두 소제목의 크기가 달라진다.
   return [
     header,
-    ...(todo.length > 0 ? ['', '*할 일*', ...todo] : []),
-    ...(rest.length > 0 ? ['', '*어제 · 오늘*', ...rest] : []),
+    '',
+    '*오늘 할 일*',
+    ...todos,
+    ...(incidents.length ? ['', '*어제 장애*', ...incidents] : []),
+    ...(input.schedules?.length ? ['', '*오늘 일정*', ...input.schedules] : []),
+    ...(rest.length ? ['', '*그 밖에*', ...rest] : []),
   ].join('\n');
 };

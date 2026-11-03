@@ -9,6 +9,13 @@ import {
   sanitizeForSlackLink,
 } from './mrkdwn.util';
 
+const readableText = (value: string): string =>
+  escapeSlackMrkdwn(value).replace(
+    /(?<![\w(])#(\d+)\s+([^·.,\n]+)/g,
+    (_match, number: string, label: string) =>
+      `${label.trim()}(#${number})${label.match(/\s+$/)?.[0] ?? ''}`,
+  );
+
 export interface PoShadowFormatOptions {
   // true 면 지적별 근거 줄과 지난 지적 통계를 빼고 `formatPoShadowDetail` 이 스레드로 싣는다.
   // 스레드가 없는 슬래시 응답은 기본값(false)으로 전부 한 통에 싣는다.
@@ -28,9 +35,9 @@ export const formatPoShadowReport = (
   // `*…*` 만 있는 줄이라 공통 렌더가 제목 블록으로 올린다. 몇 가지를 말하는지 먼저 보여 준다.
   const title =
     report.findings.length > 0
-      ? `*PO 검토 — 계획과 다른 점 ${report.findings.length}가지*`
+      ? `*PO 검토: 계획과 다른 점 ${report.findings.length}가지*`
       : '*PO 검토*';
-  const sections = [title, `🎯 *먼저* ${escapeSlackMrkdwn(report.headline)}`];
+  const sections = [title, `🎯 *먼저* ${readableText(report.headline)}`];
 
   if (report.findings.length > 0) {
     sections.push(formatFindings(report, !detailInThread));
@@ -75,7 +82,7 @@ export const formatPoShadowDetail = (report: PoShadowReport): string | null => {
     const evidence = report.findings
       .map((_, index) => report.factSummary[index])
       .map((fact, index) =>
-        fact === undefined ? null : `${index + 1}. ${escapeSlackMrkdwn(fact)}`,
+        fact === undefined ? null : `${index + 1}. ${readableText(fact)}`,
       )
       .filter((line): line is string => line !== null);
     if (evidence.length > 0) {
@@ -95,7 +102,7 @@ const formatJudgments = (judgments: string[]): string | null => {
     return null;
   }
   return judgments
-    .map((judgment) => `🤔 _추정_ ${escapeSlackMrkdwn(judgment)}`)
+    .map((judgment) => `🤔 _추정_ ${readableText(judgment)}`)
     .join('\n');
 };
 
@@ -130,7 +137,7 @@ const formatRecoveryBlock = (
   }
 
   // 대조군(지적하지 않은 항목의 이동률)은 아직 재지 않는다 — 맨 숫자를 비율처럼 읽지 않게 밝힌다.
-  return `${head}\n  ${parts.join(' · ')}\n  _비교 대상 없음 — 지적하지 않은 항목의 이동률은 아직 재지 않습니다._`;
+  return `${head}\n  ${parts.join(' · ')}\n  _비교 대상 없음: 지적하지 않은 항목의 이동률은 아직 재지 않습니다._`;
 };
 
 const formatDegradedLine = (degradedSources: string[]): string | null => {
@@ -138,15 +145,15 @@ const formatDegradedLine = (degradedSources: string[]): string | null => {
     return null;
   }
   const escapedSources = degradedSources.map(escapeSlackMrkdwn).join(' · ');
-  return `⚠️ _${escapedSources} 조회 실패 — 이 회차는 해당 근거 없이 판단했습니다._`;
+  return `⚠️ _${escapedSources} 조회 실패: 이 회차는 해당 근거 없이 판단했습니다._`;
 };
 
 const formatQuietReport = (report: PoShadowReport): string => {
-  const escapedFacts = report.factSummary.map(escapeSlackMrkdwn);
+  const escapedFacts = report.factSummary.map(readableText);
   const headLine =
     escapedFacts.length === 0
-      ? '✅ *PO 검토* — 계획대로 진행 중'
-      : `✅ *PO 검토* — 계획대로 진행 중 (${escapedFacts.join(' · ')})`;
+      ? '✅ *PO 검토*: 계획대로 진행 중'
+      : `✅ *PO 검토*: 계획대로 진행 중 (${escapedFacts.join(' · ')})`;
   const blocks = [headLine];
   const recoveryBlock = formatRecoveryBlock(report.recoverySummary);
   if (recoveryBlock) {
@@ -182,17 +189,17 @@ const formatFindings = (
 ): string =>
   report.findings
     .map((finding, index) => {
-      const point = escapeSlackMrkdwn(finding.point);
-      const suggestion = escapeSlackMrkdwn(finding.suggestion);
+      const point = readableText(finding.point);
+      const suggestion = readableText(finding.suggestion);
       const references = formatReferences(report.findingReferences?.[index]);
       const findingLines = `${index + 1}. ${point}${references}\n      → ${suggestion}`;
       const fact = report.factSummary[index];
       if (!includeEvidence || fact === undefined) {
         return findingLines;
       }
-      return `${findingLines}\n      근거: ${escapeSlackMrkdwn(fact)}`;
+      return `${findingLines}\n      근거: ${readableText(fact)}`;
     })
     .join('\n');
 
 const formatEvidenceLines = (factSummary: string[]): string =>
-  factSummary.map((fact) => `근거: ${escapeSlackMrkdwn(fact)}`).join('\n');
+  factSummary.map((fact) => `근거: ${readableText(fact)}`).join('\n');

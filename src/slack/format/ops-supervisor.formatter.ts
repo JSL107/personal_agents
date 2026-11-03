@@ -27,10 +27,10 @@ export const formatOpsSupervisor = (
   if (anomalies.length === 0) {
     const agentCount = profiles.agents.length;
     const previewCount = profiles.previews.length;
-    return `✅ *운영 감독관* — ${firedAtKst} · 지난 30일 품질 이상 없음 (${agentCount}개 에이전트·${previewCount}개 preview 종류 점검)`;
+    return `✅ *운영 감독관*: ${firedAtKst} · 지난 30일 품질 이상 없음 (${agentCount}개 에이전트·${previewCount}개 preview 종류 점검)`;
   }
 
-  const header = `🩺 *운영 감독관* — ${firedAtKst} · 품질 이상 ${anomalies.length}건 (최근 30일)`;
+  const header = `🩺 *운영 감독관*: ${firedAtKst} · 품질 이상 ${anomalies.length}건 (최근 30일)`;
   const lines = anomalies.map(
     (item) => `• ${ICON[item.kind]} ${describeKey(item)}: ${item.detail}`,
   );

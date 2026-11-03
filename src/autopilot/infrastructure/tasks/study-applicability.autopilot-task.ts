@@ -121,9 +121,9 @@ export class StudyApplicabilityAutopilotTask implements AutopilotTask {
           throw error;
         }
         const message = error instanceof Error ? error.message : String(error);
-        this.logger.warn(`적용 판정 중단 — 다음 회차에 이어서: ${message}`);
+        this.logger.warn(`적용 판정 중단: 다음 회차에 이어서: ${message}`);
         collected.lines.push(
-          `_⚠️ 오늘의 공부 적용 판정 1건 실패 — 다음 회차에 다시 시도합니다: ${escapeSlackMrkdwn(message.slice(0, 200))}_`,
+          `_⚠️ 오늘의 공부 적용 판정 1건 실패: 다음 회차에 다시 시도합니다: ${escapeSlackMrkdwn(message.slice(0, 200))}_`,
         );
         break;
       }
@@ -197,17 +197,17 @@ export class StudyApplicabilityAutopilotTask implements AutopilotTask {
     note: string,
     collected: CollectedCards,
   ): void {
-    const line = `🧭 *오늘의 공부 적용 판정* — ${escapeSlackMrkdwn(brief.topic)} · 적용 제안 1건${note}`;
+    const line = `🧭 *오늘의 공부 적용 판정*: ${escapeSlackMrkdwn(brief.topic)} · 적용 제안 1건${note}`;
     const repo = this.config.get<string>('STUDY_APPLY_ISSUE_REPO')?.trim();
     if (!repo) {
       collected.lines.push(
-        `${line} (STUDY_APPLY_ISSUE_REPO 미설정 — 카드 생략, 설정하면 다음 회차에 카드가 나갑니다)`,
+        `${line} (STUDY_APPLY_ISSUE_REPO 미설정: 카드 생략, 설정하면 다음 회차에 카드가 나갑니다)`,
       );
       return;
     }
     if (!GITHUB_REPO_PATTERN.test(repo)) {
       collected.lines.push(
-        `${line} (STUDY_APPLY_ISSUE_REPO 가 owner/repo 형식이 아님 — 카드 생략, 고치면 다음 회차에 카드가 나갑니다)`,
+        `${line} (STUDY_APPLY_ISSUE_REPO 가 owner/repo 형식이 아님: 카드 생략, 고치면 다음 회차에 카드가 나갑니다)`,
       );
       return;
     }

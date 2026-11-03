@@ -127,7 +127,7 @@ export const formatPrReviewSweep = ({
   // 수확은 멀쩡하고 리뷰만 끊긴 회차에서는 쿼터와 무관한 수가 "대기 중" 으로 보인다.
   // 정확한 잔량은 로그에 있다.
   if (quotaStopped) {
-    lines.push('⏸️ 모델 쿼터 소진으로 이번 회차 중단 — 다음 회차에 재시도');
+    lines.push('⏸️ 모델 쿼터 소진으로 이번 회차 중단: 다음 회차에 재시도');
   }
   if (harvestCounts.length > 0) {
     lines.push(harvestCounts.join(' · '));
@@ -136,7 +136,7 @@ export const formatPrReviewSweep = ({
   // 보류가 조용한 영구 미결이 된다(9/8 설계 1단계가 정한 "Slack 으로 한 건 알린다").
   if (harvest.newlyHeld.length > 0) {
     lines.push(
-      '⏸️ 판정 보류 — 👎 와 답글 판정이 어긋남. 👎 가 맞으면 그대로 두면 72시간 뒤 기각 확정, 수용이면 👎 를 지운다.',
+      '⏸️ 판정 보류: 👎 와 답글 판정이 어긋남. 👎 가 맞으면 그대로 두면 72시간 뒤 기각 확정, 수용이면 👎 를 지운다.',
       ...harvest.newlyHeld.map(formatHeldFinding),
     );
   }
@@ -200,7 +200,7 @@ export const formatPrReviewSweep = ({
     // 모든 카운터가 0 인 결과는 현재 호출 경로에서 도달 불가(스윕이 findings 0건이면 게시 자체를 안 함).
     // 그래도 빈 목록이면 "— " 뒤가 비어 나가므로 대체 라벨로 막는다.
     lines.push(
-      `${icon} \`${escapeSlackMrkdwn(result.prRef)}\` — ${counts.length > 0 ? counts.join(' · ') : '게시 없음'}`,
+      `${icon} \`${escapeSlackMrkdwn(result.prRef)}\`: ${counts.length > 0 ? counts.join(' · ') : '게시 없음'}`,
     );
   }
   return lines.join('\n');

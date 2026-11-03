@@ -22,7 +22,7 @@ export class PreviewSweeperAutopilotTask implements AutopilotTask {
     }
     return {
       skip: false,
-      summaryText: `🧹 *만료 카드 정리* — 승인 없이 만료된 승인 카드 ${swept}건의 버튼을 제거`,
+      summaryText: `🧹 *만료 카드 정리*: 승인 없이 만료된 승인 카드 ${swept}건의 버튼을 제거`,
     };
   }
 }

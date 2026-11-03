@@ -20,12 +20,12 @@ import { HumanizeService } from '../../../humanize/application/humanize.service'
 import { humanizeDailyReview } from '../../../humanize/application/humanize-report.adapter';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { formatDailyReview } from '../../../slack/format/daily-review.formatter';
-import { formatModelFooter } from '../../../slack/format/model-footer.formatter';
 import {
   AutopilotTask,
   AutopilotTaskContext,
   AutopilotTaskResult,
 } from '../../domain/autopilot-task.port';
+import { formatTradeDay } from '../paper-number.formatter';
 
 const DAILY_MERGED_PULL_REQUEST_LIMIT = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -88,7 +88,7 @@ export class WorkReviewerAutopilotTask implements AutopilotTask {
         : '';
       return {
         skip: false,
-        summaryText: `_📋 Work Reviewer — ${firedAtKst} skip_\n오늘 작성된 PM plan 이 없어 worklog 자동 생성을 건너뜁니다. \`/today\` 로 plan 을 먼저 만들어주세요.${evidenceReason}`,
+        summaryText: `_📋 업무 회고 ${formatTradeDay(firedAtKst)} 건너뜀_\n오늘 작성된 PM plan 이 없어 worklog 자동 생성을 건너뜁니다. \`/today\` 로 plan 을 먼저 만들어주세요.${evidenceReason}`,
       };
     }
 
@@ -111,9 +111,8 @@ export class WorkReviewerAutopilotTask implements AutopilotTask {
       );
       const formatted = formatDailyReview(humanized);
       const summaryText =
-        `📝 *Work Reviewer — ${firedAtKst} (19:40 KST 자동 worklog)*\n\n` +
-        formatted.summary;
-      const detailText = formatted.detail + formatModelFooter(outcome);
+        `📝 *업무 회고 ${formatTradeDay(firedAtKst)}*\n\n` + formatted.summary;
+      const detailText = formatted.detail;
       return { skip: false, summaryText, detailText };
     } catch (error) {
       if (
@@ -122,7 +121,7 @@ export class WorkReviewerAutopilotTask implements AutopilotTask {
       ) {
         return {
           skip: false,
-          summaryText: `_📋 Work Reviewer — ${firedAtKst} skip_\n오늘 worklog 작업 입력이 비어 있습니다. \`/worklog <오늘 한 일>\` 로 직접 입력해주세요.`,
+          summaryText: `_📋 업무 회고 ${formatTradeDay(firedAtKst)} 건너뜀_\n오늘 worklog 작업 입력이 비어 있습니다. \`/worklog <오늘 한 일>\` 로 직접 입력해주세요.`,
         };
       }
       throw error;

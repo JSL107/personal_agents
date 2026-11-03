@@ -8,7 +8,6 @@ import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { HumanizeService } from '../../../humanize/application/humanize.service';
 import { humanizeImpactReport } from '../../../humanize/application/humanize-report.adapter';
 import { formatImpactReport } from '../../../slack/format/impact-report.formatter';
-import { formatModelFooter } from '../../../slack/format/model-footer.formatter';
 import {
   AutopilotTask,
   AutopilotTaskContext,
@@ -55,9 +54,9 @@ export class ImpactReportAutopilotTask implements AutopilotTask {
       );
       const formatted = formatImpactReport(humanized);
       const summaryText =
-        `📊 *Impact Report — ${firedAtKst} (최근 ${days}일 자동 종합)*\n\n` +
+        `📊 *Impact Report: ${firedAtKst} (최근 ${days}일 자동 종합)*\n\n` +
         formatted.summary;
-      const detailText = formatted.detail + formatModelFooter(outcome);
+      const detailText = formatted.detail;
       return { skip: false, summaryText, detailText };
     } catch (error) {
       if (error instanceof ImpactReporterException) {
@@ -66,11 +65,11 @@ export class ImpactReportAutopilotTask implements AutopilotTask {
           ImpactReporterErrorCode.RECENT_MODE_NO_RESULTS
         ) {
           this.logger.warn(
-            `Impact Report skip — 최근 ${days}일 머지·진행 중 PR 0건 (owner=${ownerSlackUserId})`,
+            `Impact Report skip: 최근 ${days}일 머지·진행 중 PR 0건 (owner=${ownerSlackUserId})`,
           );
           return {
             skip: true,
-            emptyReason: `🪶 *Impact Report — ${firedAtKst} skip*\n_최근 ${days}일 머지·진행 중 PR 0건. 다음 실행에 다시 시도합니다._`,
+            emptyReason: `🪶 *Impact Report: ${firedAtKst} skip*\n_최근 ${days}일 머지·진행 중 PR 0건. 다음 실행에 다시 시도합니다._`,
           };
         }
         if (
@@ -82,7 +81,7 @@ export class ImpactReportAutopilotTask implements AutopilotTask {
           );
           return {
             skip: false,
-            summaryText: `⚠️ *Impact Report — ${firedAtKst} skip*\n_env 누락 (\`IMPACT_REPORT_GITHUB_AUTHOR\`) — cron 활성 상태에서 recent mode 사용 위해 봇 .env 확인 필요._`,
+            summaryText: `⚠️ *Impact Report: ${firedAtKst} skip*\n_env 누락 (\`IMPACT_REPORT_GITHUB_AUTHOR\`): cron 활성 상태에서 recent mode 사용 위해 봇 .env 확인 필요._`,
           };
         }
       }
@@ -98,7 +97,7 @@ export class ImpactReportAutopilotTask implements AutopilotTask {
     const parsed = Number.parseInt(raw.trim(), 10);
     if (!Number.isFinite(parsed) || parsed < DAYS_MIN || parsed > DAYS_MAX) {
       this.logger.warn(
-        `IMPACT_REPORT_RECENT_DAYS="${raw}" 비유효 — default ${DAYS_DEFAULT}일로 fallback.`,
+        `IMPACT_REPORT_RECENT_DAYS="${raw}" 비유효: default ${DAYS_DEFAULT}일로 fallback.`,
       );
       return DAYS_DEFAULT;
     }

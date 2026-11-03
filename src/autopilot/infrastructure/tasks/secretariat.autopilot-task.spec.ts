@@ -65,15 +65,15 @@ describe('SecretariatAutopilotTask', () => {
 
     expect(result.skip).toBe(false);
     const text = result.summaryText ?? '';
-    expect(text).toContain('📋 *비서실* — 2026-08-03 · 지난 24시간');
-    expect(text).toContain('*① 완료* — 1건 · 오늘 계획 1');
-    expect(text).toContain('*② 진행 중* — 없음');
-    expect(text).toContain('*③ 대표 승인 대기* — 없음');
+    expect(text).toContain('📋 *비서실*: 2026-08-03 · 지난 24시간');
+    expect(text).toContain('*① 완료*: 1건 · 오늘 계획 1');
+    expect(text).toContain('*② 진행 중*: 없음');
+    expect(text).toContain('*③ 대표 승인 대기*: 없음');
     expect(text).toContain(
-      '*④ 막힌 것* — 1종\n   • 코드 리뷰 1건 — 모델 호출 실패 (CHATGPT)',
+      '*④ 막힌 것*: 1종\n   • 코드 리뷰 1건: 모델 호출 실패 (CHATGPT)',
     );
     // 실패 1건은 결정거리가 아니다 — 다음 슬롯이 재시도한다.
-    expect(text).toContain('*⑤ 오늘 결정할 것* — 없음');
+    expect(text).toContain('*⑤ 오늘 결정할 것*: 없음');
   });
 
   // `unresolvedAgentTypes` 는 "실패 이력이 있어도 최신 종료가 성공이면 막힌 것에서 뺀다" 는
@@ -101,7 +101,7 @@ describe('SecretariatAutopilotTask', () => {
 
     const text = (await run(task)).summaryText ?? '';
 
-    expect(text).toContain('*④ 막힌 것* — 없음');
+    expect(text).toContain('*④ 막힌 것*: 없음');
   });
 
   it('owner 가 아닌 사용자의 승인 카드는 싣지 않는다', async () => {
@@ -124,7 +124,7 @@ describe('SecretariatAutopilotTask', () => {
 
     const text = (await run(task)).summaryText ?? '';
 
-    expect(text).toContain('*③ 대표 승인 대기* — 1건');
+    expect(text).toContain('*③ 대표 승인 대기*: 1건');
     expect(text).toContain('내 카드');
     expect(text).not.toContain('남의 카드');
   });

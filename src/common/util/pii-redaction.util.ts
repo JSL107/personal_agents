@@ -46,7 +46,9 @@ interface PiiPattern {
 
 const PII_PATTERNS: readonly PiiPattern[] = [
   // Slack: xoxb-/xoxp-/xoxa-/xoxr-/xoxs- prefix + 영숫자/하이픈
-  { type: 'slack_token', regex: /\bxox[abprs]-[A-Za-z0-9-]{10,}/g },
+  { type: 'slack_token', regex: /\bxox[abprs]-[A-Za-z0-9-]{3,}/g },
+  { type: 'url_credentials', regex: /https?:\/\/[^\s:@/]+:[^\s@/]+@/g },
+  { type: 'password', regex: /\b(password|passwd|pwd)\s*[=:]\s*\S+/gi },
   // GitHub PAT: classic(ghp_) / fine-grained(github_pat_)
   { type: 'github_pat', regex: /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}/g },
   { type: 'github_pat', regex: /\bgithub_pat_[A-Za-z0-9_]{20,}/g },
@@ -69,6 +71,14 @@ const PII_PATTERNS: readonly PiiPattern[] = [
 // 입력 text 의 의미적 컨텍스트는 보존하면서 (자리 표식 유지) 시크릿 본문만 제거.
 export const redactPii = (text: string): string =>
   PII_PATTERNS.reduce(
-    (current, { type, regex }) => current.replace(regex, `[REDACTED:${type}]`),
+    (current, { type, regex }) =>
+      current.replace(
+        regex,
+        type === 'url_credentials'
+          ? 'https://***@'
+          : type === 'password'
+            ? '$1=***'
+            : `[REDACTED:${type}]`,
+      ),
     text,
   );

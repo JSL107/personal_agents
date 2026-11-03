@@ -31,7 +31,7 @@ const formatChange = (trend: RevisionTrend): string => {
 
 const formatRow = (row: BlogRevisionRow): string => {
   const name = row.path.replace(/^.*\//, '').replace(/\.md$/, '');
-  return `• ${row.count.percent}% — ${name}`;
+  return `• ${row.count.percent}%: ${name}`;
 };
 
 /**
@@ -59,7 +59,7 @@ export const formatBlogRevision = (
   }
 
   const lines = [
-    `📝 *블로그 수정률* — 최근 2주 *${trend.recent.averagePercent}%* (${trend.recent.postCount}편)`,
+    `📝 *블로그 수정률*: 최근 2주 *${trend.recent.averagePercent}%* (${trend.recent.postCount}편)`,
     `발행한 글을 사람이 다시 쓴 비율입니다. ${formatChange(trend)}. 낮을수록 손댈 데가 적었다는 뜻이에요.`,
   ];
 

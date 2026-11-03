@@ -33,7 +33,6 @@ import { summarizeDeliveries } from '../../../slack/domain/slack-delivery-summar
 import { formatCeoMetaOutput } from '../../../slack/format/ceo-meta.formatter';
 import { formatDailyReview } from '../../../slack/format/daily-review.formatter';
 import { FormattedReport } from '../../../slack/format/formatted-report.type';
-import { formatModelFooter } from '../../../slack/format/model-footer.formatter';
 import {
   AutopilotTask,
   AutopilotTaskContext,
@@ -128,7 +127,7 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
           `Weekly Summary 실적 조회 실패로 회고 생성을 보류합니다: ${evidence.evidenceUnavailableReason}`,
         );
       }
-      const notice = `_📋 Weekly Summary — ${firedAtKst} skip_\n이번 주 PM AgentRun 기록이 없습니다. Weekly Summary 를 생성하지 않습니다.`;
+      const notice = `_📋 Weekly Summary: ${firedAtKst} skip_\n이번 주 PM AgentRun 기록이 없습니다. Weekly Summary 를 생성하지 않습니다.`;
       // 실적을 확인하지 못한 회차(env IMPACT_REPORT_GITHUB_AUTHOR 미설정 등)는 "빈 주" 가 아니라
       // 설정 결함이다. 원장에 묻지 않고 사유와 함께 Slack 으로 보내 고치게 한다.
       if (evidence.evidenceUnavailableReason) {
@@ -164,10 +163,9 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
       await humanizeDailyReview(worklogOutcome.result, this.humanizeService),
     );
     const worklogSummary =
-      `📝 *Weekly Summary — ${firedAtKst} (금 17:00 KST 자동 주간 worklog)*\n\n` +
+      `📝 *Weekly Summary: ${firedAtKst} (금 17:00 KST 자동 주간 worklog)*\n\n` +
       worklogFormatted.summary;
-    const worklogDetail =
-      worklogFormatted.detail + formatModelFooter(worklogOutcome);
+    const worklogDetail = worklogFormatted.detail;
 
     const ceo = await this.buildCeoMeta(ownerSlackUserId, firedAtKst);
 
@@ -211,7 +209,7 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
         .slice(0, 3)
         .map((group) => `${group.key} ${group.suppressedConsoleRoute}`)
         .join(' · ');
-      return `🗄️ *콘솔로 돌린 발송* — 이번 주 ${count}건 (${topKinds}) · 본문은 콘솔 GET /v1/console/deliveries`;
+      return `🗄️ *콘솔로 돌린 발송*: 이번 주 ${count}건 (${topKinds}) · 본문은 콘솔 GET /v1/console/deliveries`;
     } catch (error: unknown) {
       this.logger.warn(
         `Weekly Summary 콘솔 발송 집계 조회 실패: ${error instanceof Error ? error.message : String(error)}`,
@@ -228,10 +226,10 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
   ): Promise<string> {
     const runs = await this.loadPoShadowRuns(ownerSlackUserId);
     if (runs === null) {
-      return '🔁 *PO 회수 대조* — 회차 조회 실패로 이번 주 지표 생략';
+      return '🔁 *PO 회수 대조*: 회차 조회 실패로 이번 주 지표 생략';
     }
     if (runs.length === 0) {
-      return '🔁 *PO 회수 대조* — 이번 주 PO 회차 없음';
+      return '🔁 *PO 회수 대조*: 이번 주 PO 회차 없음';
     }
     const uncomparableCount = runs.filter((run) =>
       hasDegradedSource(run.output, DEGRADED_UNCOMPARABLE),
@@ -240,10 +238,10 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
     const percentage = Math.round(ratio * 100);
     const alert =
       ratio >= UNCOMPARABLE_ALERT_RATIO
-        ? ` ⚠️ 임계(${Math.round(UNCOMPARABLE_ALERT_RATIO * 100)}%) 초과 — 3주 연속이면 회수 기반 재검토`
+        ? ` ⚠️ 임계(${Math.round(UNCOMPARABLE_ALERT_RATIO * 100)}%) 초과: 3주 연속이면 회수 기반 재검토`
         : '';
     return (
-      `🔁 *PO 회수 대조* — ${runs.length}회차 중 ${uncomparableCount}회차 대조 불가 ` +
+      `🔁 *PO 회수 대조*: ${runs.length}회차 중 ${uncomparableCount}회차 대조 불가 ` +
       `(${percentage}%)${alert}`
     );
   }
@@ -327,8 +325,8 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
       );
       return {
         summary:
-          `🧭 *주간 자동 회고 — ${firedAtKst}*\n\n` + ceoFormatted.summary,
-        detail: ceoFormatted.detail + formatModelFooter(ceoOutcome),
+          `🧭 *주간 자동 회고: ${firedAtKst}*\n\n` + ceoFormatted.summary,
+        detail: ceoFormatted.detail,
       };
     } catch (error) {
       if (
@@ -336,16 +334,16 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
         error.ceoErrorCode === CeoErrorCode.NO_PO_EVAL_RUN
       ) {
         this.logger.warn(
-          `Weekly Summary CEO meta skip — PO_EVAL run 없음 (owner=${ownerSlackUserId}): ${(error as Error).message}`,
+          `Weekly Summary CEO meta skip: PO_EVAL run 없음 (owner=${ownerSlackUserId}): ${(error as Error).message}`,
         );
         return { summary: '', detail: '' };
       }
       this.logger.error(
-        `Weekly Summary CEO meta 실패 — 예상 외 에러 (owner=${ownerSlackUserId})`,
+        `Weekly Summary CEO meta 실패: 예상 외 에러 (owner=${ownerSlackUserId})`,
         error,
       );
       return {
-        summary: `_🧭 주간 자동 회고 — ${firedAtKst} 실패_\n_예상 외 에러로 주간 총평을 만들지 못했습니다. 로그를 확인해주세요._`,
+        summary: `_🧭 주간 자동 회고: ${firedAtKst} 실패_\n_예상 외 에러로 주간 총평을 만들지 못했습니다. 로그를 확인해주세요._`,
         detail: '',
       };
     }

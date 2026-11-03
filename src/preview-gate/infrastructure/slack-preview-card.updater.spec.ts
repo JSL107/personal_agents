@@ -24,6 +24,52 @@ const buildPreview = (
 });
 
 describe('SlackPreviewCardUpdater', () => {
+  it.each([
+    'APPLYING',
+    'APPLIED',
+    'CANCELLED',
+    'EXPIRED',
+    'APPLY_FAILED',
+  ] as const)('%s 갱신에는 짧은 카드 문구를 유지한다', async (state) => {
+    const update = jest.fn().mockResolvedValue({});
+    const updater = new SlackPreviewCardUpdater({ chat: { update } } as never);
+
+    await updater.update({
+      preview: buildPreview({ previewText: '긴 전문', slackText: '짧은 카드' }),
+      state,
+    });
+
+    const args = update.mock.calls[0][0];
+    expect(args.text).toBe('짧은 카드');
+    expect(JSON.stringify(args.blocks)).toContain('짧은 카드');
+    expect(JSON.stringify(args.blocks)).not.toContain('긴 전문');
+  });
+
+  it('명시한 결과 문구는 짧은 카드보다 우선한다', async () => {
+    const update = jest.fn().mockResolvedValue({});
+    const updater = new SlackPreviewCardUpdater({ chat: { update } } as never);
+
+    await updater.update({
+      preview: buildPreview({ previewText: '긴 전문', slackText: '짧은 카드' }),
+      state: 'APPLIED',
+      resultText: '발행 완료',
+    });
+
+    expect(update.mock.calls[0][0].text).toBe('발행 완료');
+  });
+
+  it('옛 카드에는 원래 전문을 사용한다', async () => {
+    const update = jest.fn().mockResolvedValue({});
+    const updater = new SlackPreviewCardUpdater({ chat: { update } } as never);
+
+    await updater.update({
+      preview: buildPreview({ previewText: '옛 카드 전문', slackText: null }),
+      state: 'EXPIRED',
+    });
+
+    expect(update.mock.calls[0][0].text).toBe('옛 카드 전문');
+  });
+
   it('좌표가 있으면 chat.update 를 호출한다', async () => {
     const update = jest.fn().mockResolvedValue({});
     const client = { chat: { update } } as never;

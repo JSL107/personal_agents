@@ -8,7 +8,7 @@ import { DomainException } from '../../common/exception/domain.exception';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { ObservedWorkerHost } from '../../common/queue/observed-worker-host';
 import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
-import { formatModelFooter } from '../../slack/format/model-footer.formatter';
+import { formatAiHandoff } from '../../notification/domain/incident-message';
 import { formatPullRequestReview } from '../../slack/format/pull-request-review.formatter';
 import { SlackService } from '../../slack/slack.service';
 import {
@@ -43,17 +43,55 @@ export class WebhookCodeReviewerConsumer extends ObservedWorkerHost {
         triggerType: TriggerType.WEBHOOK,
       });
       // AgentRunOutcome<PullRequestReview>.result 가 review 본체 — formatter 가 받는 type.
-      // model + agentRunId footer 는 별도 helper 로 append (수동 /review-pr 동일 패턴).
-      const text =
-        formatPullRequestReview({
-          prRef,
-          review: outcome.result,
-        }) + formatModelFooter(outcome);
-      await this.slackService.postMessage({
+      const text = formatPullRequestReview({
+        prRef,
+        prTitle: outcome.prTitle,
+        review: outcome.result,
+      });
+      const posted = await this.slackService.postMessage({
         kind: 'code-review-webhook',
         target: slackUserId,
         text,
       });
+      const review = outcome.result;
+      const findings = [
+        ...review.mustFix,
+        ...review.niceToHave,
+        ...review.missingTests,
+        ...review.reviewCommentDrafts.map((draft) => draft.body),
+        ...review.findings.map((finding) => finding.body),
+      ];
+      if (posted.ts && findings.length > 0) {
+        const files = [
+          ...review.reviewCommentDrafts,
+          ...review.findings,
+        ].flatMap((finding) =>
+          finding.file
+            ? [`${finding.file}${finding.line ? `:${finding.line}` : ''}`]
+            : [],
+        );
+        const match = /^([^#]+)#(\d+)$/.exec(prRef);
+        const link = match
+          ? `https://github.com/${match[1]}/pull/${match[2]}`
+          : prRef;
+        try {
+          await this.slackService.postMessage({
+            kind: 'code-review-webhook',
+            target: slackUserId,
+            threadTs: posted.ts,
+            text: formatAiHandoff({
+              feature: `${link} ${outcome.prTitle ?? review.summary}`,
+              errorMessage: [...new Set(findings)].join('\n'),
+              files: [...new Set(files)],
+              checkCommand: null,
+            }),
+          });
+        } catch (error: unknown) {
+          this.logger.warn(
+            `Webhook code-reviewer AI 스레드 실패: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
       this.logger.log(
         `Webhook code-reviewer 완료 — ${prRef} (agentRunId=${outcome.agentRunId})`,
       );

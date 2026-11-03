@@ -40,7 +40,7 @@ export class PrReviewSweepAutopilotTask implements AutopilotTask {
   async run(context: AutopilotTaskContext): Promise<AutopilotTaskResult> {
     void context;
     if (this.running) {
-      this.logger.log('앞 회차가 아직 도는 중 — 이번 회차 skip');
+      this.logger.log('앞 회차가 아직 도는 중: 이번 회차 skip');
       return { skip: true };
     }
     this.running = true;
@@ -57,7 +57,7 @@ export class PrReviewSweepAutopilotTask implements AutopilotTask {
       harvest = await this.harvestUsecase.execute();
     } catch (error: unknown) {
       this.logger.warn(
-        `PR 리뷰 반응 수확 실패 — 신규 리뷰 스윕 계속: ${
+        `PR 리뷰 반응 수확 실패: 신규 리뷰 스윕 계속: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );

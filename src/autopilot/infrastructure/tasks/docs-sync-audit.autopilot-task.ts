@@ -46,7 +46,7 @@ export class DocsSyncAuditTask implements AutopilotTask {
       });
       return {
         skip: false,
-        summaryText: `⏸️ *문서 점검* — ${firedAtKst} · 건너뜀 (\`DOCS_AUDIT_ENABLED=false\`)`,
+        summaryText: `⏸️ *문서 점검*: ${firedAtKst} · 건너뜀 (\`DOCS_AUDIT_ENABLED=false\`)`,
       };
     }
 
@@ -116,7 +116,7 @@ export class DocsSyncAuditTask implements AutopilotTask {
       summaryText:
         summaryText.length > 0
           ? summaryText
-          : `✅ *문서 점검* — ${firedAtKst} · 문서↔코드 드리프트 없음 (결정론·의미 점검)`,
+          : `✅ *문서 점검*: ${firedAtKst} · 문서↔코드 드리프트 없음 (결정론·의미 점검)`,
     };
   }
 }

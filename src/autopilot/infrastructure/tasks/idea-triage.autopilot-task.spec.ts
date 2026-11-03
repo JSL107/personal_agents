@@ -33,7 +33,7 @@ describe('IdeaTriageAutopilotTask', () => {
     await expect(task.run(context)).resolves.toEqual({
       skip: false,
       summaryText:
-        '💡 아이디어 3건 판정 — 만든다 1 · 고치고 만든다 1 · 접는다 1 (실패 1)',
+        '💡 아이디어 3건 판정: 만든다 1 · 고치고 만든다 1 · 접는다 1 (실패 1)',
     });
   });
 });

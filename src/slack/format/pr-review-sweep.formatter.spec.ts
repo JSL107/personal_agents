@@ -52,7 +52,7 @@ const adoption = (
 };
 
 describe('formatPrReviewSweep', () => {
-  it('새로 보류된 카드를 푸는 방법과 스레드 링크로 알린다 — 건수만으로는 사람이 결론을 못 낸다', () => {
+  it('새로 보류된 카드를 푸는 방법과 스레드 링크로 알린다: 건수만으로는 사람이 결론을 못 낸다', () => {
     const text = formatPrReviewSweep({
       harvest: harvest({
         contradicted: 1,
@@ -82,7 +82,7 @@ describe('formatPrReviewSweep', () => {
     });
 
     expect(text).toContain('보류 1');
-    expect(text).not.toContain('판정 보류 —');
+    expect(text).not.toContain('판정 보류: ');
   });
 
   it('PR 별 게시 결과를 한 줄씩 렌더한다', () => {
@@ -170,7 +170,7 @@ describe('formatPrReviewSweep', () => {
     });
 
     expect(text).toContain('게시 없음');
-    expect(text).toContain('🟢 `a/b#1` —');
+    expect(text).toContain('🟢 `a/b#1`: ');
   });
 
   it('수확 결과는 0이 아닌 항목만 한 줄로 렌더한다', () => {
@@ -189,7 +189,7 @@ describe('formatPrReviewSweep', () => {
     expect(text).not.toContain('skip');
   });
 
-  it('보류(contradicted)만 있어도 수확 줄에 실린다 — 사람이 봐야 하는 카드다', () => {
+  it('보류(contradicted)만 있어도 수확 줄에 실린다: 사람이 봐야 하는 카드다', () => {
     // 👎 와 답글이 어긋나 확정을 미룬 카드. 이 값이 요약에서 빠지면 카드가 조용히
     // OPEN 에 쌓인다(카드 57 사고).
     const text = formatPrReviewSweep({
@@ -379,7 +379,7 @@ describe('formatPrReviewSweep', () => {
     expect(text).not.toContain('→');
   });
 
-  it('채택률 줄에 구간 길이와 집계 대상 레포를 밝힌다 — 이상 있을 때와 없을 때 모두', () => {
+  it('채택률 줄에 구간 길이와 집계 대상 레포를 밝힌다: 이상 있을 때와 없을 때 모두', () => {
     // 누적인지 구간인지 안 적으면 읽는 사람이 전체 성적으로 오해한다.
     // 레포도 마찬가지다 — 이 숫자는 학습 규약이 실리는 레포 하나씩 따로 센 값이라,
     // 밝히지 않으면 여러 레포를 리뷰하는 사용자가 전체 성적으로 읽는다.

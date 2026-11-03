@@ -22,7 +22,7 @@ export const formatSearchRuns = (result: SearchAgentRunsResult): string => {
   const header = `*🔍 "${safeKeyword}" 매칭 ${result.rows.length}건${result.truncated ? ' (더 있을 수 있음)' : ''}*`;
   const lines = result.rows.map((row) => {
     const date = toShortDateKst(row.endedAt);
-    return `• \`[${row.agentType} #${row.id}]\` ${date} — _${escapeMrkdwn(row.snippet)}_`;
+    return `• \`[${row.agentType} #${row.id}]\` ${date}: _${escapeMrkdwn(row.snippet)}_`;
   });
   const footer = result.truncated
     ? '_더 좁히려면 키워드 추가 / 또는 `/retry-run <id>` 로 재실행._'

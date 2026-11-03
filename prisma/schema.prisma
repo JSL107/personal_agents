@@ -116,6 +116,7 @@ model PreviewAction {
   status            String
   // 생성 시점 사용자에게 보여진 "preview text" — apply 결과 메시지에서 다시 노출하기 위해 그대로 저장.
   previewText       String    @map("preview_text") @db.Text
+  slackText         String?   @map("slack_text") @db.Text
   expiresAt         DateTime  @map("expires_at")
   createdAt         DateTime  @default(now()) @map("created_at")
   appliedAt         DateTime? @map("applied_at")

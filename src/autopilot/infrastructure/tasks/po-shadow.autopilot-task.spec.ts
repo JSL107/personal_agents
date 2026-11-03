@@ -77,7 +77,7 @@ describe('PoShadowAutopilotTask', () => {
 
     expect(result).toEqual({
       skip: true,
-      emptyReason: '✅ *PO 검토* — 계획대로 진행 중 (#10 머지 완료)',
+      emptyReason: '✅ *PO 검토*: 계획대로 진행 중 (머지 완료(#10))',
     });
     expect(humanizeService.humanize).not.toHaveBeenCalled();
     expect(usecase.execute).toHaveBeenCalledWith({
@@ -108,7 +108,7 @@ describe('PoShadowAutopilotTask', () => {
     expect(result.summaryText).toContain('🤔 _추정_ 윤문 목적 충돌');
     // 근거는 스레드로 내려간다.
     expect(result.summaryText).not.toContain('근거:');
-    expect(result.detailText).toContain('1. #264 원본 사실');
+    expect(result.detailText).toContain('1. 원본 사실(#264)');
     expect(result.summaryText).not.toContain('원문 헤드라인');
     // 판정 버튼은 이 실행에 귀속되고, 인용은 화면에 나간 윤문본 헤드라인이다.
     expect(result.runVerdicts).toEqual([

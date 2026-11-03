@@ -29,8 +29,8 @@ import {
  * 원장이 비어 결번으로 오탐한다.
  */
 const NOT_CONFIGURED_NOTICE =
-  '🪶 *블로그 수정률 — skip*\n_BLOG_PUBLISH_REPO·BLOG_PUBLISH_BRANCH 미설정이라 집계하지 않았습니다._';
-const NO_RECENT_POSTS_NOTICE = `🪶 *블로그 수정률 — skip*\n_최근 ${REVISION_WINDOW_DAYS}일 발행 글이 없어 보고할 수치가 없습니다._`;
+  '🪶 *블로그 수정률: skip*\n_BLOG_PUBLISH_REPO·BLOG_PUBLISH_BRANCH 미설정이라 집계하지 않았습니다._';
+const NO_RECENT_POSTS_NOTICE = `🪶 *블로그 수정률: skip*\n_최근 ${REVISION_WINDOW_DAYS}일 발행 글이 없어 보고할 수치가 없습니다._`;
 
 @Injectable()
 export class BlogRevisionReportAutopilotTask implements AutopilotTask {

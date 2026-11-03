@@ -6,7 +6,6 @@ import { appendBlockReasonGuidance } from '../../common/domain/block-reason';
 import { DomainException } from '../../common/exception/domain.exception';
 import { FormattedReport } from '../format/formatted-report.type';
 import { toReadableSlackArgs } from '../format/message-blocks.builder';
-import { formatModelFooter } from '../format/model-footer.formatter';
 
 // FormattedReport → summary + '\n\n' + detail 합본 문자열. string 은 그대로 통과.
 const toSlackText = (formatted: FormattedReport | string): string => {
@@ -84,9 +83,7 @@ export const runAgentCommand = async <T>(args: {
     await respond({
       response_type: 'ephemeral',
       replace_original: true,
-      ...toReadableSlackArgs(
-        toSlackText(await format(outcome.result)) + formatModelFooter(outcome),
-      ),
+      ...toReadableSlackArgs(toSlackText(await format(outcome.result))),
     });
     if (onOutcome) {
       try {

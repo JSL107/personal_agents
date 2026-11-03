@@ -151,7 +151,7 @@ describe('PoShadowDispatcher — 제품 목표', () => {
     repository.findActive.mockResolvedValue([activeGoal(4, '업로드 안정화')]);
     const outcome = await dispatch('목표 보여줘');
     expect(outcome.agentRunId).toBe(0);
-    expect(outcome.formattedText).toContain('활성 목표* — 숙제 1/3 · 방향 0/2');
+    expect(outcome.formattedText).toContain('활성 목표*: 숙제 1/3 · 방향 0/2');
     expect(outcome.formattedText).toContain('업로드 안정화');
   });
 

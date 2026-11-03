@@ -5,7 +5,7 @@ it('drift + 제안 있으면 mrkdwn 텍스트, 깨끗하면 빈 문자열', () =
     {
       deterministic: {
         inSync: false,
-        details: ['docs:check FAIL — agent-catalog'],
+        details: ['docs:check FAIL: agent-catalog'],
       },
       proposals: [
         {

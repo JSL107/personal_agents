@@ -37,7 +37,7 @@ describe('PrReviewSweepAutopilotTask', () => {
     expect(task.id).toBe('pr-review-sweep');
   });
 
-  it('결과가 없으면 skip — 15분마다 빈 알림을 보내지 않는다', async () => {
+  it('결과가 없으면 skip: 15분마다 빈 알림을 보내지 않는다', async () => {
     sweepUsecase.execute.mockResolvedValue({
       results: [],
       quotaStopped: false,
@@ -236,7 +236,7 @@ describe('PrReviewSweepAutopilotTask', () => {
     await expect(task.run(CONTEXT)).resolves.toEqual({ skip: true });
   });
 
-  it('보류(contradicted)만 있어도 알림을 보낸다 — 사람이 손대야 풀린다', async () => {
+  it('보류(contradicted)만 있어도 알림을 보낸다: 사람이 손대야 풀린다', async () => {
     // hasHarvestResult 가 이 카운터를 안 보면 보류만 있는 회차가 통째로 skip 되어
     // 카드가 조용히 OPEN 에 쌓인다(👎 + 수용 답글 모순, 카드 57 사고).
     harvestUsecase.execute.mockResolvedValue({
@@ -298,7 +298,7 @@ describe('PrReviewSweepAutopilotTask', () => {
     expect(result.guardKeySuffix).toBe('held-4.12');
   });
 
-  it('보류가 처음 생긴 회차와 이어진 다음 회차는 같은 접미사다 — 같은 보류 요약을 두 번 보내지 않는다', async () => {
+  it('보류가 처음 생긴 회차와 이어진 다음 회차는 같은 접미사다: 같은 보류 요약을 두 번 보내지 않는다', async () => {
     const outcome = (newlyHeld: { id: number }[]) => ({
       acked: 0,
       fixed: 0,
@@ -405,7 +405,7 @@ describe('PrReviewSweepAutopilotTask', () => {
     expect(result.guardKeySuffix).toBe('cards-JSL107/personal_agents#180x3');
   });
 
-  it('새로 게시한 카드가 있으면 PR 별 지문을 접미사에 싣는다 — 오후에 달린 지적이 묻히지 않게', async () => {
+  it('새로 게시한 카드가 있으면 PR 별 지문을 접미사에 싣는다: 오후에 달린 지적이 묻히지 않게', async () => {
     sweepUsecase.execute.mockResolvedValue({
       quotaStopped: false,
       results: [
@@ -498,7 +498,7 @@ describe('PrReviewSweepAutopilotTask', () => {
   // 🔴 이 회차가 skip 되지 않으면 접미사가 비어 기본 날짜 키로 발송된다. 그날 첫 발송이
   // 접미사 키를 소비했다면 기본 키는 아직 미소비라 그대로 통과해, 새 내용이 없는데도 요약이
   // 한 번 더 나간다(실측 2026-09-11 09:06:15 과 같은 형태).
-  it('이미 있는 카드(duplicate)만 나온 회차는 skip 한다 — 기본 날짜 키를 소비하지 않게', async () => {
+  it('이미 있는 카드(duplicate)만 나온 회차는 skip 한다: 기본 날짜 키를 소비하지 않게', async () => {
     sweepUsecase.execute.mockResolvedValue({
       quotaStopped: false,
       results: [

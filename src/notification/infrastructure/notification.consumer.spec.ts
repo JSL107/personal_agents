@@ -67,7 +67,7 @@ describe('NotificationConsumer', () => {
     expect(postMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         kind: 'alert:cron-failure',
-        text: expect.stringContaining('고장 발생'),
+        text: expect.stringContaining('멈췄어요'),
       }),
     );
     expect(upsert).toHaveBeenCalledWith(
@@ -78,6 +78,24 @@ describe('NotificationConsumer', () => {
     );
     postMessage.mockRejectedValue(new Error('slack down'));
     await consumer.process(failure());
+    expect(upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it('본문 뒤 AI 스레드가 실패해도 사건은 열린 것으로 기록한다', async () => {
+    const { consumer, postMessage, upsert } = setup();
+    postMessage
+      .mockResolvedValueOnce({ ts: '1.0' })
+      .mockRejectedValueOnce(new Error('thread down'));
+    await consumer.process(failure());
+    expect(postMessage).toHaveBeenCalledTimes(2);
+    expect(postMessage.mock.calls[0][0].text).not.toContain('boom 312.4s');
+    expect(postMessage.mock.calls[1][0]).toEqual(
+      expect.objectContaining({
+        target: 'U-owner',
+        threadTs: '1.0',
+        text: expect.stringContaining('AI에 맡길 때'),
+      }),
+    );
     expect(upsert).toHaveBeenCalledTimes(1);
   });
 
@@ -97,7 +115,7 @@ describe('NotificationConsumer', () => {
     await consumer.process(failure());
     expect(postMessage).toHaveBeenCalledWith(
       expect.objectContaining({
-        text: expect.stringContaining('아직 고장 중'),
+        text: expect.stringContaining('아직 멈춰 있어요'),
       }),
     );
     expect(update).toHaveBeenLastCalledWith(
@@ -182,7 +200,7 @@ describe('NotificationConsumer', () => {
     await consumer.process(latest as never);
     expect(postMessage).not.toHaveBeenCalled();
     expect(recordSuppressedDelivery).toHaveBeenCalledWith(
-      expect.objectContaining({ text: expect.stringContaining('해결') }),
+      expect.objectContaining({ text: expect.stringContaining('복구됐어요') }),
     );
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { resolvedAt: expect.any(Date) } }),
@@ -225,7 +243,7 @@ describe('NotificationConsumer', () => {
         kind: 'alert:cron-failure',
         target: 'U-owner',
         reason: 'CONSOLE_ROUTE',
-        text: expect.stringContaining('해결'),
+        text: expect.stringContaining('복구됐어요'),
       }),
     );
     expect(update).toHaveBeenCalledWith(

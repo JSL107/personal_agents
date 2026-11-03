@@ -18,7 +18,7 @@ export interface PreviewCardPort {
   update(input: {
     preview: PreviewAction;
     state: PreviewCardState;
-    // APPLIED 등에서 카드 본문에 덧붙일 결과 텍스트. 없으면 preview.previewText 만.
+    // APPLIED 등의 결과 문구. 없으면 slackText, 구버전 행은 previewText 를 쓴다.
     resultText?: string;
   }): Promise<void>;
 }

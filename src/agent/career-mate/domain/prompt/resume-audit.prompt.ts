@@ -1,4 +1,5 @@
 import { DomainStatus } from '../../../../common/exception/domain-status.enum';
+import { READER_WRITING_RULES } from '../../../../common/llm/reader-writing-rules';
 import { CareerMateException } from '../career-mate.exception';
 import {
   AuditHighlight,
@@ -56,6 +57,8 @@ jdFindings 규칙:
 - 있으면 공고를 한 줄씩 훑어 요구사항을 뽑는다. 공고에 적힌 것은 "MUST"/"PREFERRED",
   적혀 있지 않지만 문맥상 요구되는 것은 "IMPLICIT".
 - 각 요구를 위 판정 기준으로 판정한다.
+
+${READER_WRITING_RULES}
 
 스키마:
 {"verdict":"한 줄 총평","items":[{"title":"...","status":"PROVEN|WEAK|MISSING","quote":"...","why":"...","rewrite":{"before":"...","after":"...","frame":"STAR3|STAR4"}}],"highlights":[{"title":"...","reason":"..."}],"jdFindings":[{"requirement":"...","priority":"MUST|PREFERRED|IMPLICIT","status":"PROVEN|WEAK|MISSING","quote":"...","why":"..."}],"rejectionRisks":[{"reason":"...","rebuttal":"..."}]}`;

@@ -18,15 +18,15 @@ const ICON: Record<RunAnomalyKind, string> = {
 // kind 별 사후 해석 힌트(사실은 detail, 해석은 여기 — presentation 책임).
 const HINT: Record<RunAnomalyKind, string> = {
   FAILURE_SPIKE: '',
-  LATENCY_CEILING: ' — 인증/쿼터 소진 의심',
-  AGENT_DISAPPEARED: ' — cron 사망 의심',
-  TOTAL_SILENCE: ' — 시스템 전체 점검 필요',
-  CHAIN_FAILURE: ' — 체인 중단 지점 확인',
+  LATENCY_CEILING: ': 인증/쿼터 소진 의심',
+  AGENT_DISAPPEARED: ': cron 사망 의심',
+  TOTAL_SILENCE: ': 시스템 전체 점검 필요',
+  CHAIN_FAILURE: ': 체인 중단 지점 확인',
   // 실행은 성공했는데 산출물 형식이 계약과 다른 상태다. 한 AgentType 을 성격이 다른 워커가
   // 나눠 쓰면 한쪽이 남의 계약으로 채점돼 이 값이 통째로 내려간다.
   CONTRACT_SCORE:
-    ' — 산출물 형식이 계약과 어긋남(워커가 이름을 나눠 쓰는지 확인)',
-  MISSING_WEEKLY: ' — 주간 cron 결번 의심',
+    ': 산출물 형식이 계약과 어긋남(워커가 이름을 나눠 쓰는지 확인)',
+  MISSING_WEEKLY: ': 주간 cron 결번 의심',
 };
 
 // 조용한 계기판: 이상 0건이면 1줄 하트비트, 있으면 해당 항목만. LLM 없이 순수 포맷.
@@ -37,15 +37,15 @@ export const formatRunRetro = (
 ): string => {
   if (anomalies.length === 0) {
     const total = current.reduce((sum, row) => sum + row.total, 0);
-    return `✅ *주간 회고* — ${firedAtKst} · 이상 없음 (${total}건 무장애, 최근 7일)`;
+    return `✅ *주간 회고*: ${firedAtKst} · 이상 없음 (${total}건 무장애, 최근 7일)`;
   }
 
   const isTotalSilence = anomalies.some(
     (item) => item.kind === 'TOTAL_SILENCE',
   );
   const header = isTotalSilence
-    ? `🚨 *주간 회고* — ${firedAtKst} · 전체 침묵 (최근 7일)`
-    : `🚨 *주간 회고* — ${firedAtKst} · 이상 ${anomalies.length}건 감지 (최근 7일)`;
+    ? `🚨 *주간 회고*: ${firedAtKst} · 전체 침묵 (최근 7일)`
+    : `🚨 *주간 회고*: ${firedAtKst} · 이상 ${anomalies.length}건 감지 (최근 7일)`;
 
   const lines = anomalies.map((item) => {
     const label = item.agentType ? `${toTaskLabel(item.agentType)}: ` : '';

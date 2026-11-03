@@ -40,10 +40,19 @@ describe('formatPullRequestReview', () => {
       },
     });
 
-    expect(text).toContain('위험도: ⚪ UNKNOWN · 권고: ⏸️ 판단 보류');
-    expect(text).toContain('*판단 보류 이유*');
+    expect(text).toContain('판단 보류');
     expect(text).toContain('핵심 파일이 잘린 diff 에 없다');
     expect(text).not.toContain(NO_FINDING_NOTICE);
+  });
+
+  it('PR 제목이 있으면 요약 대신 제목으로 본문을 연다', () => {
+    const text = formatPullRequestReview({
+      prRef: 'owner/repo#1',
+      prTitle: '로그인 오류 수정',
+      review: { ...baseReview(), summary: '모델이 쓴 요약' },
+    });
+    expect(text).toContain('*로그인 오류 수정 리뷰*');
+    expect(text).not.toContain('*모델이 쓴 요약 리뷰*');
   });
 
   it('지적이 하나도 없으면 지적 없음을 명시한다', () => {
@@ -83,6 +92,46 @@ describe('formatPullRequestReview', () => {
 
     expect(text).not.toContain(NO_FINDING_NOTICE);
     expect(text).toContain('변경 요약');
+    expect(text).toContain('고칠 것 1개');
+  });
+
+  it('본문 요약과 지적에서 비밀 값과 코드 펜스를 제거한다', () => {
+    const text = formatPullRequestReview({
+      prRef: 'owner/repo#1',
+      review: {
+        ...baseReview(),
+        summary: '로그인 오류 password=hunter2',
+        mustFix: ['토큰 xoxb-123-abc 가 노출됩니다.'],
+        findings: [finding('자격증명 https://u:p@h/x 가 노출됩니다.')],
+        approvalRecommendation: 'undetermined',
+        undeterminedReason: '검증 실패 pwd=secret ```',
+      },
+    });
+    expect(text).toContain('로그인 오류');
+    expect(text).not.toMatch(/hunter2|xoxb-123-abc|u:p@|pwd=secret|```/);
+  });
+
+  it('본문에는 쉬운 한 줄 요약만 쓰고 지적 원문과 내부 설정명을 숨긴다', () => {
+    const text = formatPullRequestReview({
+      prRef: 'owner/repo#1',
+      review: {
+        ...baseReview(),
+        summary: '로그인 오류 수정',
+        mustFix: [
+          '로그인 시 토큰 검증이 빠졌습니다. 원문 상세: PR_REVIEW_INLINE_REPOS',
+        ],
+        reviewCommentDrafts: [
+          { file: 'src/auth.ts', line: 12, body: '원문 상세: secret' },
+        ],
+      },
+    });
+
+    expect(text).toContain('*로그인 오류 수정 리뷰*');
+    expect(text).toContain('고칠 것 2개');
+    expect(text).toContain('• 로그인 시 토큰 검증이 빠졌습니다.');
+    expect(text).not.toContain('원문 상세');
+    expect(text).not.toContain('PR_REVIEW_INLINE_REPOS');
+    expect(text).not.toContain('src/auth.ts');
   });
 });
 
@@ -135,7 +184,7 @@ describe('formatPullRequestPublication', () => {
   it.each([
     [
       { kind: 'NOT_ALLOWED' as const, repo: 'o/r' },
-      '게시 허용 목록(PR_REVIEW_INLINE_REPOS·GITHUB_REVIEW_BOT_REPOS)에 없어요',
+      '게시 대상에 등록되지 않았어요',
     ],
     [{ kind: 'FAILED' as const, message: '403' }, '게시에 실패했어요'],
     [

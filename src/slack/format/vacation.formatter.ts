@@ -55,8 +55,8 @@ export const formatUsageList = (records: LeaveUsageRecord[]): string => {
     return '*📋 휴가 내역*\n\n등록된 휴가 내역이 없습니다.';
   }
   const rows = records.map((record) => {
-    const memo = record.memo ? ` — ${record.memo}` : '';
-    return `• [#${record.id}] ${rangeText(record)} (${record.businessDays}영업일)${memo}`;
+    const memo = record.memo ? `: ${record.memo}` : '';
+    return `• 기록 ${record.id}번: ${rangeText(record)} (${record.businessDays}영업일)${memo}`;
   });
   return ['*📋 휴가 내역*', '', ...rows].join('\n');
 };
@@ -66,7 +66,7 @@ export const formatCanceled = ({
   balance,
 }: CancelLeaveResult): string => {
   return [
-    `*🗑️ 휴가 기록 #${canceledId} 취소 완료*`,
+    `*🗑️ 휴가 기록 ${canceledId}번 취소 완료*`,
     '',
     ...balanceLines(balance),
   ].join('\n');
@@ -75,9 +75,9 @@ export const formatCanceled = ({
 export const formatInvalidCommand = (): string => {
   return [
     '사용법을 확인해주세요:',
-    '• `/휴가` 또는 `/휴가 잔여` — 현재 잔여',
-    '• `/휴가 사용 2026-07-01~2026-07-03 [메모]` — 사용 등록',
-    '• `/휴가 내역` — 사용 내역',
-    '• `/휴가 취소 <id>` — 등록 취소',
+    '• `/휴가` 또는 `/휴가 잔여`: 현재 잔여',
+    '• `/휴가 사용 2026-07-01~2026-07-03 [메모]`: 사용 등록',
+    '• `/휴가 내역`: 사용 내역',
+    '• `/휴가 취소 <id>`: 등록 취소',
   ].join('\n');
 };

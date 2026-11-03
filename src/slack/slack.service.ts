@@ -548,23 +548,26 @@ export class SlackService implements OnModuleInit, OnModuleDestroy {
     // 카드는 blocks 로만 나가 toReadableSlackArgs 를 지나지 않는다 — 계측이 여기서 따로 붙는다.
     const blocks = buildPreviewBlocks({
       previewText: preview.previewText,
+      slackText: preview.slackText,
       previewId: preview.id,
       kind: preview.kind,
       payload: preview.payload,
     });
     recordSlackSendLength({
-      text: preview.previewText,
+      text: preview.slackText ?? preview.previewText,
       origin: threadTs ? 'card-thread' : 'card',
       blocks: blocks.length,
     });
     // 발송 원장 기록은 postMessage·postProposalMessage 와 같다 — 성공은 SENT, 실패는 FAILED 로 남기고
     // 예외는 그대로 던진다. 승인 카드가 원장 밖에 있으면 하루에 무엇이 나갔는지 셀 때 카드만 빠진다.
-    const textPreview = buildTextPreview(preview.previewText);
+    const textPreview = buildTextPreview(
+      preview.slackText ?? preview.previewText,
+    );
     try {
       const response = await this.postChat({
         channel: target,
         ...(threadTs ? { thread_ts: threadTs } : {}),
-        text: preview.previewText,
+        text: preview.slackText ?? preview.previewText,
         // Bolt 의 blocks union 은 매우 엄격 (KnownBlock) — Block Kit JSON 을 그대로 쓰기 위해 narrow cast.
         blocks: blocks as never,
       });

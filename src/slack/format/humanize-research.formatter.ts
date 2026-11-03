@@ -40,7 +40,7 @@ const preview = (value: string): string => {
 export const formatHumanizeResearch = (
   output: HumanizeResearchOutput,
 ): string => {
-  const lines = ['🔬 *윤문 규칙 연구 — dry-run*'];
+  const lines = ['🔬 *윤문 규칙 연구: dry-run*'];
 
   if (output.proposals.length === 0) {
     lines.push('근거 부족으로 제안 없음');
@@ -58,7 +58,7 @@ export const formatHumanizeResearch = (
 
   lines.push('', '*출처 상태*');
   for (const source of output.sources) {
-    const error = source.error ? ` — ${escapeField(source.error)}` : '';
+    const error = source.error ? `: ${escapeField(source.error)}` : '';
     lines.push(
       `• ${SOURCE_LABELS[source.source]}: ${STATUS_LABELS[source.status]} (${source.itemCount}건)${error}`,
     );

@@ -1,6 +1,13 @@
 import { redactPii } from './pii-redaction.util';
 
 describe('redactPii', () => {
+  it('URL 자격증명과 password를 마스킹한다', () => {
+    const text = redactPii('https://u:p@h/x password=hunter2 pwd:abc');
+    expect(text).not.toMatch(/u:p@|hunter2|pwd:abc/);
+    expect(text).toContain('https://***@');
+    expect(text).toContain('password=***');
+  });
+
   it('Slack bot token (xoxb-) 을 [REDACTED:slack_token] 으로 치환', () => {
     const input = 'context xoxb-1234567890-abcdefghijklmnopqrstuv tail';
     expect(redactPii(input)).toBe('context [REDACTED:slack_token] tail');

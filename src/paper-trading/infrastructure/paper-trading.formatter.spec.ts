@@ -65,13 +65,13 @@ const RESULT: EvaluateAccountResult = {
 describe('formatPaperAccountHeadline', () => {
   it('계좌명·평가액·수익률만 한 줄로 낸다', () => {
     expect(formatPaperAccountHeadline('LONG_TERM', RESULT)).toBe(
-      '• LONG_TERM 1,040,000원 · *+4%*',
+      '• 장기투자 1,040,000원 · *+4%*',
     );
   });
 
   it('평가에 실패한 계좌도 한 줄을 차지한다 — 빠지면 계좌가 없던 것처럼 보인다', () => {
     expect(formatPaperAccountHeadline('SWING', null)).toBe(
-      '• SWING ⚠️ 평가 실패',
+      '• 단기매매 ⚠️ 평가 실패',
     );
   });
 
@@ -82,7 +82,7 @@ describe('formatPaperAccountHeadline', () => {
         totalValue: null,
         returnRate: null,
       }),
-    ).toBe('• LONG_TERM - · *-*');
+    ).toBe('• 장기투자 - · *-*');
   });
 });
 
@@ -90,7 +90,7 @@ describe('formatPaperTradingReport', () => {
   it('종목 행과 계좌 요약을 Slack mrkdwn으로 출력하고 종목명을 escape한다', () => {
     const text = formatPaperTradingReport(RESULT);
 
-    expect(text).toContain('*가상 매매 장마감 평가 — 2026-08-11*');
+    expect(text).toContain('*가상 매매 장마감 평가: 2026-08-11*');
     expect(text).toContain('*삼성&lt;&amp;&gt;* (`005930`)');
     expect(text).toContain(
       '10주 · 평단 10,000원 · 현재가 12,000원 · 평가액 120,000원 · 손익률 +20%',
@@ -316,7 +316,7 @@ describe('formatPaperTradingReport', () => {
     });
 
     expect(text).toContain(
-      '⚠️ 스냅샷 미적재 — 모든 보유 종목의 시세가 실행일보다 오래되었습니다.',
+      '⚠️ 스냅샷 미적재: 모든 보유 종목의 시세가 실행일보다 오래되었습니다.',
     );
     expect(text).toContain('*삼성&lt;&amp;&gt;* (`005930`)');
     expect(text).toContain('현금 800,000원');
@@ -350,7 +350,7 @@ describe('formatPaperTradingStatus', () => {
   it('최신 스냅샷 기준 수익률·평가액과 기준 날짜를 함께 출력한다', () => {
     const text = formatPaperTradingStatus(STATUS);
 
-    expect(text).toContain('*가상 계좌 현황 — DEFAULT*');
+    expect(text).toContain('*가상 계좌 현황: 기본*');
     expect(text).toContain('최근 평가 (2026-08-12)');
     expect(text).toContain('총 평가액 *10,120,000원*');
     // 최신(+1.2%)이어야 한다 — 정렬을 잘못 집으면 전일(+0.8%)이 나온다.
@@ -438,8 +438,8 @@ describe('formatPaperPortfolioStatus', () => {
       SWING,
     ]);
 
-    expect(text).toContain('*가상 계좌 현황 — LONG_TERM*');
-    expect(text).toContain('*가상 계좌 현황 — SWING*');
+    expect(text).toContain('*가상 계좌 현황: 장기투자*');
+    expect(text).toContain('*가상 계좌 현황: 단기매매*');
     expect(text).toContain('---');
     // 전략별 수익률이 각각 살아 있어야 한다 (합산·평균으로 뭉개면 둘 다 사라진다).
     expect(text).toContain('수익률 *+1.2%*');
@@ -449,7 +449,7 @@ describe('formatPaperPortfolioStatus', () => {
   it('계좌가 1개면 구분선 없이 그 계좌만 보여준다', () => {
     const text = formatPaperPortfolioStatus([SWING]);
 
-    expect(text).toContain('*가상 계좌 현황 — SWING*');
+    expect(text).toContain('*가상 계좌 현황: 단기매매*');
     expect(text).not.toContain('---');
   });
 

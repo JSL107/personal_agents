@@ -7,7 +7,6 @@ import { parseBlogPublishArgs } from '../../agent/blog/domain/blog-publish-args'
 import { AgentRunOutcome } from '../../agent-run/application/agent-run.service';
 import { SlackHandler } from '../domain/port/slack-handler.port';
 import { toReadableSlackArgs } from '../format/message-blocks.builder';
-import { formatModelFooter } from '../format/model-footer.formatter';
 import { buildPreviewBlocks } from '../format/preview-message.builder';
 import { toUserFacingErrorMessage } from './slack-handler.helper';
 
@@ -59,7 +58,7 @@ export const respondBlogPublishOutcome = async (
     await respond({
       response_type: 'ephemeral',
       replace_original: true,
-      ...toReadableSlackArgs(result.message + formatModelFooter(outcome)),
+      ...toReadableSlackArgs(result.message),
     });
     return;
   }
@@ -75,6 +74,6 @@ export const respondBlogPublishOutcome = async (
   await respond({
     response_type: 'ephemeral',
     replace_original: false,
-    ...toReadableSlackArgs(result.content + formatModelFooter(outcome)),
+    ...toReadableSlackArgs(result.content),
   });
 };

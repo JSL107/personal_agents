@@ -22,7 +22,7 @@ export const formatBlogDraft = (result: BlogDraftResult): string => {
     lines.push(`${linkLabel}: ${sanitizeForSlackLink(result.notionUrl)}`);
   } else {
     lines.push(
-      'Notion 링크를 확인하지 못했습니다 — "블로그 초안" DB 를 확인해주세요.',
+      'Notion 링크를 확인하지 못했습니다: "블로그 초안" DB 를 확인해주세요.',
     );
   }
   if (result.published) {
@@ -39,7 +39,7 @@ export const formatBlogDraft = (result: BlogDraftResult): string => {
         : result.publishError,
     );
     lines.push(
-      `⚠️ _발행 상태 전환에 실패했습니다. Notion 에서 상태를 직접 "발행" 으로 바꿔주세요 — ${reason}_`,
+      `⚠️ _발행 상태 전환에 실패했습니다. Notion 에서 상태를 직접 "발행" 으로 바꿔주세요: ${reason}_`,
     );
   } else {
     lines.push(

@@ -34,7 +34,7 @@ const formatRank = (value: number | null): string =>
 
 const formatArm = (label: string, arm: ScreeningScorecardArm): string => {
   if (arm.count === 0) {
-    return `  ${label} 0건 — 해당 없음`;
+    return `  ${label} 0건: 해당 없음`;
   }
   return (
     `  ${label} ${arm.count}건` +
@@ -67,7 +67,7 @@ const formatStrategy = (strategy: ScreeningScorecardStrategy): string[] => {
   // 못해 빠지므로 위 두 줄의 건수와도 다른 수다.
   const gap =
     strategy.gapPct === null
-      ? '  격차 - — 산 것과 안 산 것이 함께 있는 회차가 없어 비교 대상이 없음'
+      ? '  격차 -: 산 것과 안 산 것이 함께 있는 회차가 없어 비교 대상이 없음'
       : `  격차 ${formatPercent(strategy.gapPct, '%p')}` +
         ` (회차 ${strategy.gapRunCount}개 평균, 산 것 − 안 산 것)`;
   lines.push(gap);
@@ -118,8 +118,8 @@ const formatRankIc = (rankIc: ScreeningRankIcSummary): string => {
   ].filter((reason): reason is string => reason !== null);
   if (rankIc.sampledRunCount === 0) {
     return excluded.length === 0
-      ? '  순위 상관 - — 회차 없음'
-      : `  순위 상관 - — 상관을 낸 회차 없음 (제외: ${excluded.join(' · ')})`;
+      ? '  순위 상관 -: 회차 없음'
+      : `  순위 상관 -: 상관을 낸 회차 없음 (제외: ${excluded.join(' · ')})`;
   }
   const excludedSuffix =
     excluded.length === 0 ? '' : ` · 제외: ${excluded.join(' · ')}`;
@@ -129,7 +129,7 @@ const formatRankIc = (rankIc: ScreeningRankIcSummary): string => {
     ` · t ${formatSigned(rankIc.tStatistic, 1)}` +
     ` (구간 안 겹치는 회차 ${rankIc.sampledRunCount}/${rankIc.eligibleRunCount}개${excludedSuffix})`;
   return rankIc.sampledRunCount < TREND_MINIMUM_SAMPLE
-    ? `${line} — 회차가 ${TREND_MINIMUM_SAMPLE}개 미만이라 아직 추세 아님`
+    ? `${line}: 회차가 ${TREND_MINIMUM_SAMPLE}개 미만이라 아직 추세 아님`
     : line;
 };
 
@@ -203,7 +203,7 @@ const formatSampleCaveat = (
   const detail = thin
     .map(({ strategy, axes }) => `${strategy.strategy} ${axes.join('·')}`)
     .join(', ');
-  return `표본이 ${TREND_MINIMUM_SAMPLE} 미만인 축이 있습니다(${detail}) — 이 격차는 아직 추세가 아닙니다.`;
+  return `표본이 ${TREND_MINIMUM_SAMPLE} 미만인 축이 있습니다(${detail}): 이 격차는 아직 추세가 아닙니다.`;
 };
 
 const formatHorizon = (horizon: ScreeningScorecardHorizon): string[] => {
@@ -211,12 +211,12 @@ const formatHorizon = (horizon: ScreeningScorecardHorizon): string[] => {
   // 것과 채점이 고장난 것을 가릴 수 없다.
   if (horizon.sampleCount === 0) {
     return [
-      `*${horizon.horizonDays}거래일 지평* — 표본 없음` +
+      `*${horizon.horizonDays}거래일 지평*: 표본 없음` +
         ` (채점 대기 회차 ${horizon.pendingRunCount}건)`,
     ];
   }
   const lines = [
-    `*${horizon.horizonDays}거래일 지평* — 표본 ${horizon.sampleCount}건` +
+    `*${horizon.horizonDays}거래일 지평*: 표본 ${horizon.sampleCount}건` +
       // 전체만 적으면 상한 밖이 쌓일수록 이 수가 산 것/안 산 것 비교에 쓰인 수처럼 읽힌다.
       ` (보여준 것 ${horizon.presentedSampleCount}건)` +
       ` · 최근 7일 신규 ${horizon.newlyScoredCount}건` +
@@ -240,7 +240,7 @@ export const formatScreeningScorecard = (
   result: BuildScreeningScorecardResult,
 ): string => {
   const lines = [
-    `*스크리닝 성적 카드 — ${result.asOf.toISOString().slice(0, 10)}*`,
+    `*스크리닝 성적 카드: ${result.asOf.toISOString().slice(0, 10)}*`,
     '같은 날 후보에 올랐지만 사지 않은 종목을 대조군으로 잡습니다. 진입이 양쪽 다 기준일 다음 거래일 시가라 그 주 장세는 상쇄되고, 남는 차이가 종목 선택의 몫입니다.',
     '`상한 밖` 은 규칙은 통과했지만 프롬프트에 실리지 않아 모델이 본 적 없는 종목입니다. 재는 것이 선택이 아니라 순위 상한이라 위 두 갈래와 나눠 적습니다.',
     '`순위 상관` 은 회차마다 순위가 높은 종목이 실제로 더 올랐는지를 −1~+1 로 잰 값입니다(+ 면 순위가 맞음). 보유 구간이 겹치는 회차는 같은 등락을 두 번 세므로 겹치지 않는 회차만 쓰고, t 가 ±2 안이면 0 과 구분되지 않습니다.',
@@ -259,7 +259,7 @@ const formatExtreme = (
 ): string =>
   `  ${strategy} ${extreme.tickerName}(${extreme.tickerCode})` +
   ` 순위 ${extreme.rank}위 ${formatPercent(extreme.returnPct)}` +
-  ` — ${poolCount}건 중 1건`;
+  `: ${poolCount}건 중 1건`;
 
 // 스레드 댓글로 나가는 상세. 지평·전략당 각 1건씩만 실으므로 종목 수가 늘어도 길이가
 // 늘지 않는다. 절삭이 아니라는 것이 드러나게 분모(`N건 중 1건`)를 함께 적는다.
@@ -296,7 +296,7 @@ export const formatScreeningScorecardDetail = (
   }
   const lines: string[] = [];
   if (missed.length > 0) {
-    lines.push('*놓친 최고 — 후보에 있었지만 안 산 것*');
+    lines.push('*놓친 최고: 후보에 있었지만 안 산 것*');
     lines.push(...missed);
   }
   if (worst.length > 0) {

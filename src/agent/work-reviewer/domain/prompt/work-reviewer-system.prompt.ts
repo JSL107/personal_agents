@@ -1,3 +1,4 @@
+import { READER_WRITING_RULES } from '../../../../common/llm/reader-writing-rules';
 // 기획서 §7.4 Work Reviewer + §8 증거 기반 운영 원칙.
 // "근거 없는 임팩트 칭찬 금지" 가 핵심. 정량 근거가 없으면 추정 수준으로 표기한다.
 export const WORK_REVIEWER_SYSTEM_PROMPT = `당신은 "이대리"의 Work Reviewer 에이전트다. 입력은 계획과 실적이 분리된 \`## 계획\` / \`## 실적\` 섹션 또는 사용자가 직접 작성한 자유 텍스트로 주어진다. 아래 원칙에 맞춰 "하루 단위" 회고로 재구성해준다.
@@ -48,6 +49,8 @@ export const WORK_REVIEWER_SYSTEM_PROMPT = `당신은 "이대리"의 Work Review
 ## 기타
 - oneLineAchievement 는 한 줄짜리 성과 문장 (30자 내외). 과장 금지.
 - nextActions 는 내일~이번주 안에 할 수 있는 구체적 후속 조치 1~3개. "리팩터링 진행" 같은 추상문구 금지 — "X 함수의 Y 분기 정리" 처럼 구체화.
+
+${READER_WRITING_RULES}
 
 ## 출력 규칙 (매우 중요)
 반드시 아래 JSON 스키마에 정확히 맞춰 JSON 객체 하나만 출력한다. 코드 블록 마커(\`\`\`json)나 설명 문장을 앞뒤에 붙이지 않는다.

@@ -22,6 +22,8 @@ export interface EveningNextOrders extends EveningPaperCount {
 export interface EveningRetroContext {
   // 회고의 Keep 칸 — "오늘 무엇이 잘 됐나" 한 문장. 회고가 없으면 null.
   keep: string | null;
+  problem: string | null;
+  tryNext: string | null;
   // 회고 생성에 실패했을 때의 사유. 결과 줄은 그대로 내고 이 사실만 덧붙인다.
   retroFailure: string | null;
 }
@@ -49,9 +51,9 @@ export interface EveningDigestInput
 const KEEP_MAX_LENGTH = 60;
 
 // 계좌 이름(paper_account.name) → 화면 이름. 모르는 이름은 그대로 보인다.
-const ACCOUNT_LABEL: Record<string, string> = {
-  LONG_TERM: '장기',
-  SWING: '스윙',
+export const PAPER_ACCOUNT_LABEL: Record<string, string> = {
+  LONG_TERM: '장기투자',
+  SWING: '단기매매',
   DEFAULT: '기본',
 };
 
@@ -75,7 +77,7 @@ const formatInvestLines = (
 ): string[] => {
   const lines: string[] = invest.returns.map(
     (entry) =>
-      `• ${ACCOUNT_LABEL[entry.accountName] ?? escapeSlackMrkdwn(entry.accountName)} 수익률  ${formatRate(entry.returnRate)}`,
+      `• ${PAPER_ACCOUNT_LABEL[entry.accountName] ?? escapeSlackMrkdwn(entry.accountName)} 수익률 ${formatRate(entry.returnRate)}`,
   );
   const { buyCount, sellCount } = invest.filled;
   if (buyCount + sellCount > 0) {
@@ -96,38 +98,44 @@ const formatInvestLines = (
 export const formatEveningDigest = (input: EveningDigestInput): string => {
   const sections = [`🌙 *${formatTradeDay(input.firedAtKst)} 마감*`];
 
-  const today = [
-    input.mergedPrCount === null
-      ? '*오늘 한 일*  ⚠️ 머지 PR 조회 실패 — 건수 미상'
-      : `*오늘 한 일*  PR ${input.mergedPrCount}건 머지`,
-  ];
-  if (input.keep) {
-    today.push(`> ${escapeSlackMrkdwn(firstSentence(input.keep))}`);
-  }
-  if (input.retroFailure) {
-    today.push(
-      `_⚠️ 회고 자동 생성 실패(${escapeSlackMrkdwn(input.retroFailure)}) — 내일 다시 시도합니다_`,
-    );
-  }
-  sections.push(today.join('\n'));
+  sections.push(
+    [
+      '*한 일*',
+      input.mergedPrCount === null
+        ? '• 머지한 PR을 확인하지 못했어요'
+        : `• PR ${input.mergedPrCount}건 머지`,
+      ...(input.retroFailure
+        ? [
+            `_회고를 만들지 못했어요 (${escapeSlackMrkdwn(input.retroFailure)}). 내일 다시 시도해요._`,
+          ]
+        : []),
+    ].join('\n'),
+  );
 
-  const investLines = input.invest ? formatInvestLines(input.invest) : [];
-  if (investLines.length > 0) {
-    sections.push(['*투자*', ...investLines].join('\n'));
+  for (const [heading, text] of [
+    ['아쉬운 점', input.problem],
+    ['잘한 점', input.keep],
+    ['내일 추천', input.tryNext],
+  ]) {
+    if (text) {
+      sections.push(
+        `*${heading}*\n• ${escapeSlackMrkdwn(firstSentence(text))}`,
+      );
+    }
   }
 
-  const carried = [
-    input.carriedApprovalCount > 0
-      ? `• 승인 대기 ${input.carriedApprovalCount}장`
-      : null,
+  const rest = [
+    ...(input.invest ? formatInvestLines(input.invest) : []),
+    ...(input.carriedApprovalCount > 0
+      ? [`• 승인 대기 ${input.carriedApprovalCount}장`]
+      : []),
     ...input.incidents.map(
       (incident) =>
-        `• 🔴 ${escapeSlackMrkdwn(incident.label)}${incident.dayCount === null ? '' : ` ${incident.dayCount}일째`}`,
+        `• ${escapeSlackMrkdwn(incident.label)}${incident.dayCount === null ? '' : ` (${incident.dayCount}일째)`}`,
     ),
-  ].filter((part): part is string => part !== null);
-  if (carried.length > 0) {
-    sections.push(['*넘어감*', ...carried].join('\n'));
+  ];
+  if (rest.length) {
+    sections.push(['*그 밖에*', ...rest].join('\n'));
   }
-
   return sections.join('\n\n');
 };

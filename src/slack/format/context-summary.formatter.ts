@@ -10,7 +10,7 @@ const WORKLOG_LABEL = toTaskLabel(AgentType.WORK_REVIEWER);
 export const formatContextSummary = (summary: ContextSummary): string => {
   const githubLine = summary.github.fetchSucceeded
     ? `✅ Issue ${summary.github.issueCount}건 / PR ${summary.github.pullRequestCount}건`
-    : `⚠ 수집 실패 (GITHUB_TOKEN 또는 권한 확인)`;
+    : `⚠ 수집 실패 (연결 설정 또는 권한 확인)`;
 
   const lines: string[] = [
     '*컨텍스트 재수집 결과*',
@@ -20,10 +20,10 @@ export const formatContextSummary = (summary: ContextSummary): string => {
     `*Slack*: 본인 멘션 ${summary.slack.mentionCount}건 (최근 ${summary.slack.sinceHours}h)`,
     '',
     summary.previousPlan
-      ? `*직전 ${PLAN_LABEL}*: #${summary.previousPlan.agentRunId} (${summary.previousPlan.endedAt.slice(0, 10)})`
+      ? `*직전 ${PLAN_LABEL}*: ${summary.previousPlan.endedAt.slice(0, 10)}`
       : `*직전 ${PLAN_LABEL}*: 없음`,
     summary.previousWorklog
-      ? `*직전 ${WORKLOG_LABEL}*: #${summary.previousWorklog.agentRunId} (${summary.previousWorklog.endedAt.slice(0, 10)})`
+      ? `*직전 ${WORKLOG_LABEL}*: ${summary.previousWorklog.endedAt.slice(0, 10)}`
       : `*직전 ${WORKLOG_LABEL}*: 없음`,
   ];
 
