@@ -35,6 +35,7 @@ export interface CheckTransitionInput {
   to: ScheduleStatus;
   isHoliday: boolean;
 }
+// 같은 상태 전이는 completedAt을 덮어 기록을 흐릴 수 있어 거부한다.
 export const checkTransition = ({
   from,
   to,

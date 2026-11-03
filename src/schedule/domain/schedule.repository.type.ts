@@ -1,11 +1,16 @@
 import {
   FollowUpTrigger,
   ScheduleEventKind,
+  ScheduleItemRecord,
   ScheduleSource,
   ScheduleStatus,
 } from './schedule.type';
 
-export type ScheduleActor = 'USER' | 'COLLECTOR' | 'SWEEP';
+export enum ScheduleActor {
+  USER = 'USER',
+  COLLECTOR = 'COLLECTOR',
+  SWEEP = 'SWEEP',
+}
 
 export interface TransitionInput {
   id: number;
@@ -134,7 +139,7 @@ export interface AddEventInput {
 }
 
 export interface ScheduleDetail {
-  item: import('./schedule.type').ScheduleItemRecord;
+  item: ScheduleItemRecord;
   followUps: ScheduleFollowUpRecord[];
   events: ScheduleEventRecord[];
   pendingFollowUpCount: number;
@@ -143,4 +148,8 @@ export interface ScheduleDetail {
 export interface FindScheduleDetailInput {
   id: number;
   slackUserId: string;
+}
+
+export interface CountPendingFollowUpsInput {
+  scheduleItemIds: number[];
 }

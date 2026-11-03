@@ -33,18 +33,16 @@ export class ScheduleFollowUpUsecase {
   async withPendingCounts(
     items: ScheduleItemRecord[],
   ): Promise<ScheduleItemRecord[]> {
-    return await Promise.all(
-      items.map(async (item) => {
-        const found = await this.repository.findDetail({
-          id: item.id,
-          slackUserId: item.slackUserId,
-        });
-        return {
-          ...item,
-          pendingFollowUpCount: found?.pendingFollowUpCount ?? 0,
-        };
-      }),
-    );
+    if (items.length === 0) {
+      return [];
+    }
+    const counts = await this.repository.countPendingFollowUps({
+      scheduleItemIds: items.map((item) => item.id),
+    });
+    return items.map((item) => ({
+      ...item,
+      pendingFollowUpCount: counts.get(item.id) ?? 0,
+    }));
   }
 
   async add(input: AddFollowUpInput): Promise<ScheduleFollowUpRecord> {

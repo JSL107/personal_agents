@@ -10,6 +10,7 @@ import {
   SCHEDULE_REPOSITORY_PORT,
   ScheduleRepositoryPort,
 } from '../domain/port/schedule.repository.port';
+import { ScheduleActor } from '../domain/schedule.repository.type';
 import { ScheduleSource, ScheduleStatus } from '../domain/schedule.type';
 
 export interface DeleteScheduleInput {
@@ -49,7 +50,7 @@ export class DeleteScheduleUsecase {
         from: found.status,
         to: ScheduleStatus.SKIPPED,
         now: new Date(),
-        actor: 'USER',
+        actor: ScheduleActor.USER,
       });
       if (!updated) {
         throw new ConflictException(

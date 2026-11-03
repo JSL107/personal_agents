@@ -55,11 +55,14 @@ export class UpdateScheduleFieldsUsecase {
     }
     const patch = { ...input.patch };
     if (!found.dueTime && patch.dueTime && patch.remindAt === undefined) {
-      patch.remindAt = computeAutoRemindAt({
+      const autoRemindAt = computeAutoRemindAt({
         dueDate,
         dueTime: patch.dueTime,
         now: new Date(),
       });
+      if (autoRemindAt !== null) {
+        patch.remindAt = autoRemindAt;
+      }
     }
     return {
       patch,

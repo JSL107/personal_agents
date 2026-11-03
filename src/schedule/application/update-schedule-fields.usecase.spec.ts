@@ -36,6 +36,27 @@ describe('UpdateScheduleFieldsUsecase', () => {
       expected: { dueDate: found.dueDate, startDate: null, dueTime: '09:00' },
     });
   });
+  it('자동 알림 시각이 이미 지났으면 기존 수동 알림 시각을 유지한다', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-11-05T06:00:00Z'));
+    try {
+      const manualRemindAt = new Date('2026-11-06T02:00:00Z');
+      const record = { ...found, dueTime: null, remindAt: manualRemindAt };
+      const repository = {
+        findById: jest.fn().mockResolvedValue(record),
+        updateFields: jest.fn().mockResolvedValue(record),
+      } as unknown as ScheduleRepositoryPort;
+      await new UpdateScheduleFieldsUsecase(repository).execute({
+        id: 1,
+        slackUserId: 'U1',
+        patch: { dueTime: '15:00' },
+      });
+      expect(repository.updateFields).toHaveBeenCalledWith(
+        expect.objectContaining({ patch: { dueTime: '15:00' } }),
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
   it('시작일이 마감일보다 늦으면 거부한다', async () => {
     const repository = {
       findById: jest.fn().mockResolvedValue(found),

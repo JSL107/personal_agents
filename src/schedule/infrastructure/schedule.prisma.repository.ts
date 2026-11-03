@@ -13,11 +13,13 @@ import {
   AddFollowUpInput,
   AddNoteInput,
   CollectedScheduleInput,
+  CountPendingFollowUpsInput,
   DueClaimInput,
   FindScheduleDetailInput,
   MarkFollowUpNotifiedInput,
   MarkRemindedInput,
   PersistScheduleFieldsInput,
+  ScheduleActor,
   ScheduleDetail,
   ScheduleEventRecord,
   ScheduleFollowUpRecord,
@@ -118,6 +120,15 @@ const toEvent = (row: {
   dedupeKey: string | null;
   occurredAt: Date;
 }): ScheduleEventRecord => ({ ...row, kind: row.kind as ScheduleEventKind });
+
+const isUniqueViolation = (error: unknown): boolean => {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    error.code === 'P2002'
+  );
+};
 
 @Injectable()
 export class SchedulePrismaRepository implements ScheduleRepositoryPort {
@@ -222,6 +233,7 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
       }
       const data: Prisma.ScheduleItemUpdateManyMutationInput = {
         status: input.to,
+        completedAt: input.to === ScheduleStatus.DONE ? input.now : null,
         ...input.patch,
       };
       if (
@@ -229,22 +241,13 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
         input.patch.remindAt?.getTime() !== before.remindAt?.getTime()
       ) {
         data.remindedAt = null;
+        data.deliveryClaimedAt = null;
       }
       if (
         input.to === ScheduleStatus.IN_PROGRESS &&
         before.startedAt === null
       ) {
         data.startedAt = input.now;
-      }
-      if (input.to === ScheduleStatus.DONE) {
-        data.completedAt = input.now;
-      }
-      if (
-        input.to === ScheduleStatus.OPEN &&
-        (input.from === ScheduleStatus.DONE ||
-          input.from === ScheduleStatus.SKIPPED)
-      ) {
-        data.completedAt = null;
       }
       const updated = await client.scheduleItem.updateMany({
         where: {
@@ -260,7 +263,7 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
       }
       if (
         input.to === ScheduleStatus.DONE ||
-        (input.from === ScheduleStatus.DONE && input.to === ScheduleStatus.OPEN)
+        input.from === ScheduleStatus.DONE
       ) {
         await client.scheduleFollowUp.updateMany({
           where: {
@@ -315,18 +318,7 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
       });
       return toRecord(created);
     } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2002'
-      ) {
-        return 'DUPLICATE';
-      }
-      if (
-        typeof error === 'object' &&
-        error !== null &&
-        'code' in error &&
-        error.code === 'P2002'
-      ) {
+      if (isUniqueViolation(error)) {
         return 'DUPLICATE';
       }
       throw error;
@@ -344,10 +336,11 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
     }
     const data: Prisma.ScheduleItemUpdateManyMutationInput = { ...input.patch };
     if (
-      'remindAt' in input.patch &&
+      input.patch.remindAt !== undefined &&
       input.patch.remindAt?.getTime() !== found.remindAt?.getTime()
     ) {
       data.remindedAt = null;
+      data.deliveryClaimedAt = null;
     }
     const updated = await this.prisma.scheduleItem.updateMany({
       where: {
@@ -553,7 +546,7 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
           from: ScheduleStatus.CANDIDATE,
           to: ScheduleStatus.SKIPPED,
           now,
-          actor: 'SWEEP',
+          actor: ScheduleActor.SWEEP,
         }),
       ),
     );
@@ -565,7 +558,7 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
   ): Promise<ScheduleFollowUpRecord | null> {
     const owner = await this.prisma.scheduleItem.findFirst({
       where: { id: input.scheduleItemId, slackUserId: input.slackUserId },
-      select: { id: true },
+      select: { id: true, status: true },
     });
     if (!owner) {
       return null;
@@ -576,7 +569,12 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
         recipient: input.recipient,
         topic: input.topic,
         trigger: input.trigger,
-        triggerAt: input.triggerAt ?? null,
+        triggerAt:
+          input.trigger === FollowUpTrigger.ON_DONE
+            ? owner.status === ScheduleStatus.DONE
+              ? new Date()
+              : null
+            : (input.triggerAt ?? null),
       },
     });
     return toFollowUp(created);
@@ -651,22 +649,25 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
       });
       return toEvent(created);
     } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2002'
-      ) {
-        return 'DUPLICATE';
-      }
-      if (
-        typeof error === 'object' &&
-        error !== null &&
-        'code' in error &&
-        error.code === 'P2002'
-      ) {
+      if (isUniqueViolation(error)) {
         return 'DUPLICATE';
       }
       throw error;
     }
+  }
+
+  async countPendingFollowUps({
+    scheduleItemIds,
+  }: CountPendingFollowUpsInput): Promise<Map<number, number>> {
+    if (scheduleItemIds.length === 0) {
+      return new Map();
+    }
+    const counts = await this.prisma.scheduleFollowUp.groupBy({
+      by: ['scheduleItemId'],
+      where: { scheduleItemId: { in: scheduleItemIds }, notifiedAt: null },
+      _count: { _all: true },
+    });
+    return new Map(counts.map((row) => [row.scheduleItemId, row._count._all]));
   }
 
   async findDetail({

@@ -64,6 +64,24 @@ describe('RegisterConsoleScheduleUsecase', () => {
       jest.useRealTimers();
     }
   });
+  it('자동 알림 시각이 이미 지났으면 remindAt을 지정하지 않는다', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-11-05T06:00:00Z'));
+    try {
+      const { usecase, registerSchedule } = build();
+      await usecase.execute({
+        ...input,
+        dueDate: { year: 2026, month: 11, day: 5 },
+        dueTime: '15:00',
+      });
+      expect(registerSchedule.execute).toHaveBeenCalledWith({
+        ...input,
+        dueDate: { year: 2026, month: 11, day: 5 },
+        dueTime: '15:00',
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
   it('알림을 명시적으로 끄면 자동으로 채우지 않는다', async () => {
     const { usecase, registerSchedule } = build();
     await usecase.execute({ ...input, dueTime: '15:00', remindAt: null });

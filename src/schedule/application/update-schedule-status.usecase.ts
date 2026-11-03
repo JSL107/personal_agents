@@ -10,6 +10,7 @@ import {
   SCHEDULE_REPOSITORY_PORT,
   ScheduleRepositoryPort,
 } from '../domain/port/schedule.repository.port';
+import { ScheduleActor } from '../domain/schedule.repository.type';
 import {
   ScheduleDateSnapshot,
   ScheduleFieldsPatch,
@@ -63,7 +64,7 @@ export class UpdateScheduleStatusUsecase {
       from: found.status,
       to: input.status,
       now: new Date(),
-      actor: 'USER',
+      actor: ScheduleActor.USER,
       ...(input.patch && { patch: input.patch }),
       ...(input.expected && { expected: input.expected }),
     });
