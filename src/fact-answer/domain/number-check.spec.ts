@@ -110,6 +110,24 @@ describe('checkAnswerNumbers', () => {
     ).toEqual(['번호 9']);
   });
 
+  it('사실 문자열 안의 번호("추천 판정(#878)")는 답에 그대로 옮겨도 통과한다', () => {
+    const facts = { schedules: [{ title: '추천 성적표 효과 판정(#878)' }] };
+    expect(
+      checkAnswerNumbers({
+        reply: '• 11월 11일 추천 성적표 효과 판정(#878)',
+        facts: { ...facts, due: '2026-11-11' },
+        question: '이번달 일정',
+      }).ok,
+    ).toBe(true);
+    expect(
+      checkAnswerNumbers({
+        reply: '#879 일정이 있어요.',
+        facts,
+        question: '이번달 일정',
+      }).unexpected,
+    ).toEqual(['번호 879']);
+  });
+
   it('"3번째" 는 번호가 아니라 수량으로 본다 — 기록 번호가 아니라 수치와 대조한다', () => {
     expect(
       checkAnswerNumbers({
