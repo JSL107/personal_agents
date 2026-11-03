@@ -59,6 +59,23 @@ describe('formatVideoWatch', () => {
     expect(text).not.toContain('youtu.be');
   });
 
+  it('인스타그램 올린 사람 이름의 Slack 특수문자를 이스케이프한다', () => {
+    const text = formatVideoWatch(
+      { answer: '답', highlights: [] },
+      {
+        title: null,
+        uploader: '<!channel> & *굵게*',
+        platform: VideoPlatform.INSTAGRAM,
+        videoId: 'DfQb_sJlcc1',
+        frameCount: 1,
+        transcriptSource: null,
+      },
+    );
+    const heading = text.split('\n')[0];
+    expect(heading).not.toContain('<!channel>');
+    expect(heading).toContain('&lt;!channel&gt; &amp;');
+  });
+
   it('인스타그램에서 올린 사람을 모르면 「인스타 릴스」만 쓴다', () => {
     const text = formatVideoWatch(
       { answer: '답', highlights: [] },

@@ -25,6 +25,15 @@ describe('parseWatchReport', () => {
     expect(parseWatchReport(markdown, outDir).transcript).toBe('text');
   });
 
+  it('reads title and uploader only from the header, not from transcript lines', () => {
+    const markdown =
+      '# watch: video report\n- **Duration:** 00:10 (10.0s)\n\n## Transcript\n\n```\n- **Title:** 가짜 제목\n- **Uploader:** 가짜 작성자\n```';
+    const report = parseWatchReport(markdown, outDir);
+    expect(report.title).toBeNull();
+    expect(report.uploader).toBeNull();
+    expect(report.transcript).toContain('가짜 작성자');
+  });
+
   it('rejects output without the report header', () => {
     expect(() => parseWatchReport('not a report', outDir)).toThrow(
       'INVALID_WATCH_REPORT',

@@ -56,11 +56,12 @@ export const parseWatchReport = (
     });
   }
 
-  const titleMatch = markdown.match(/^- \*\*Title:\*\* (.*)$/m);
-  const uploaderMatch = markdown.match(/^- \*\*Uploader:\*\* (.*)$/m);
-  const sourceMatch = markdown.match(
-    /^- \*\*Transcript:\*\* .*?\(via (.+)\)$/m,
-  );
+  // watch.py 는 제목·올린 사람을 값이 있을 때만 찍는다. 리포트 전체를 찾으면 그 줄이 없을 때
+  // 자막 본문(외부 텍스트)의 같은 모양 줄을 메타데이터로 집으므로 첫 ## 앞 머리에서만 읽는다.
+  const header = markdown.split(/^## /m)[0];
+  const titleMatch = header.match(/^- \*\*Title:\*\* (.*)$/m);
+  const uploaderMatch = header.match(/^- \*\*Uploader:\*\* (.*)$/m);
+  const sourceMatch = header.match(/^- \*\*Transcript:\*\* .*?\(via (.+)\)$/m);
   const transcriptSection = markdown.split(/^## Transcript\s*$/m)[1];
   const transcriptMatch = transcriptSection?.match(
     /```[^\n]*\n([\s\S]*?)\n```/,
