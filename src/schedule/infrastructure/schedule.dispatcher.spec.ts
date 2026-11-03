@@ -548,6 +548,46 @@ describe('직전 대화 일정 등록', () => {
     expect(answer.execute).not.toHaveBeenCalled();
   });
 
+  // #957 이대리 리뷰: 제목 되묻기 중이면 질문도 직전 요청과 합쳐 REGISTER 가 된다. 조회 동사가 있는
+  // 질문은 그 병합보다 먼저 조회로 걸러져야 한다.
+  it('제목 되묻기 중에 온 조회 질문은 직전 요청과 합치지 않고 답한다', async () => {
+    const register = createUsecase();
+    const answer = createAnswer();
+    const extract = { execute: jest.fn() };
+    const dispatcher = new ScheduleDispatcher(
+      register,
+      answer,
+      createAgentRunService() as never,
+      extract as never,
+    );
+
+    await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '그럼 이중에 남은일정을 파악해볼래',
+      priorTurns: [
+        {
+          role: 'user' as const,
+          text: '내일 일정 등록해줘',
+          agentType: AgentType.SCHEDULE,
+          agentRunId: null,
+          timestampMs: 1,
+        },
+        {
+          role: 'assistant' as const,
+          text: '어떤 일정인지 제목을 알려 주세요.',
+          agentType: AgentType.SCHEDULE,
+          agentRunId: null,
+          timestampMs: 2,
+        },
+      ],
+    });
+
+    expect(extract.execute).not.toHaveBeenCalled();
+    expect(register.execute).not.toHaveBeenCalled();
+    expect(answer.execute).toHaveBeenCalled();
+  });
+
   it('원인 참조를 추출해 메모와 오늘 날짜로 등록하고 모델 원장을 남긴다', async () => {
     const register = createUsecase();
     const agentRunService = createAgentRunService();
