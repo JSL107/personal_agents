@@ -641,13 +641,13 @@ export const NL_ANSWER_EVAL_CASES: readonly EvalCase[] = [
   {
     id: 'h-instagram-video-1006',
     split: 'holdout',
-    note: '2026-10-06 run 7199 — 원장 후보 추출(pnpm eval:nl-candidates)로 찾은 첫 문항. 2026-11-03 부터 영상 워커가 인스타그램 릴스도 받는다',
+    note: '2026-10-06 run 7199 — 원장 후보 추출(pnpm eval:nl-candidates)로 찾은 첫 문항. 2026-11-03 #950 부터 영상 워커가 릴스를 받아, 「할 수 있어?」에 답하는 대신 바로 분석한다',
     text: `${MENTION}<https://www.instagram.com/reels/DeG_NGxhQ3E/|instagram.com/reels/DeG_NGxhQ3E>\n이거 영상 분석 할 수 있어?`,
-    // 릴스도 분석할 수 있다고 답해야 한다. "못 한다"·되묻기는 실패.
+    // 영상 워커는 eval 에서 실행하지 않으므로 라우팅만 잰다(acceptStubRoutes). 분석 결과는 워커 단위 테스트가 맡는다.
     expect: {
+      destinations: [AgentType.VIDEO_WATCH],
+      acceptStubRoutes: [AgentType.VIDEO_WATCH],
       forbidIntercepts: true,
-      mustMatch: [/릴스|인스타/],
-      mustNotMatch: [ASK_BACK, /(분석|볼)\s*수\s*없/],
     },
   },
   // ── holdout: 2026-10-14 원장 후보(pnpm eval:nl-candidates --days 14) ──
