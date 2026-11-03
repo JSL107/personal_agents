@@ -24,7 +24,7 @@ import {
   ExtractScheduleFromConversationUsecase,
 } from '../application/extract-schedule-from-conversation.usecase';
 import { RegisterScheduleUsecase } from '../application/register-schedule.usecase';
-import { todayInKst } from '../domain/parse-due-date';
+import { parseDueDate, todayInKst } from '../domain/parse-due-date';
 import {
   mergeScheduleCommands,
   parseScheduleCommand,
@@ -34,7 +34,10 @@ import { refersToPriorConversation } from '../domain/prior-conversation-referenc
 import { ScheduleException } from '../domain/schedule.exception';
 import { PlainDate } from '../domain/schedule.type';
 import { ScheduleErrorCode } from '../domain/schedule-error-code.enum';
-import { isScheduleLookup } from '../domain/schedule-lookup';
+import {
+  hasScheduleWriteIntent,
+  isScheduleLookup,
+} from '../domain/schedule-lookup';
 
 interface RegisterFromConversationInput {
   input: DispatchInput;
@@ -108,6 +111,16 @@ export class ScheduleDispatcher implements AgentDispatcher {
     // 거의 항상 있어서, 날짜만 빠진 평범한 요청("자동차세 등록해줘")에도 켜면 앞 대화의 무관한 날짜로
     // 되묻지 않고 등록된다. 평범한 요청은 지금처럼 규칙 파서와 되묻기로 처리한다.
     const hasIdaeriReply = priorTurns.some((turn) => turn.role === 'assistant');
+    // 대화를 일정으로 옮기는 등록은 쓰기 동사가 있을 때만 한다. "그럼 이중에 남은일정을 파악해볼래" 처럼
+    // 지시어만 있는 질문이 모델 추출을 거쳐 "11월 남은 일정 파악" 으로 등록됐다(2026-11-03 실행 #11278).
+    // 쓰기 동사도 날짜도 없는 참조는 질문으로 보고 답한다 — 파서로 넘기면 문장 전체가 제목이 돼 날짜를
+    // 되묻는다. 날짜를 준 참조("그럼 9월 30일")는 되묻기 후속일 수 있어 지금처럼 대화에서 뽑는다.
+    const asksAboutConversation =
+      !hasScheduleWriteIntent(input.text) &&
+      parseDueDate(input.text, today) === null;
+    if (reference && hasIdaeriReply && asksAboutConversation) {
+      return this.answer(input, today, { kind: 'LOOKUP' });
+    }
     if (reference && hasIdaeriReply) {
       const extracted = await this.extractSchedule.execute({
         text: input.text,
