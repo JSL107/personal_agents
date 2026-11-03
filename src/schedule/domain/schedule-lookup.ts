@@ -5,7 +5,8 @@
 // 제목 "할 일" 로 바로 등록된다(2026-10-08 실측). 조회 문장이면 등록 경로에 넣지 않는다.
 
 const LOOKUP_NOUN = '(?:일정|할\\s*일|마감|스케줄|예약)';
-const LOOKUP_VERB = '(?:뭐|무엇|알려|보여|있어|있나|있지|확인|목록|정리|남았)';
+const LOOKUP_VERB =
+  '(?:뭐|무엇|알려|보여|있어|있나|있지|확인|목록|정리|남았|파악|말해)';
 const PERIOD = '(?:오늘|내일|모레|이번\\s*주|다음\\s*주|이번\\s*달|다음\\s*달)';
 
 // 이미 등록된 상태를 가리키는 표현("등록되어 있는", "잡혀있는", "추가해 둔") — 쓰기 지시가 아니다.
@@ -26,6 +27,9 @@ const LOOKUP_PATTERNS: readonly RegExp[] = [
 const WRITE_INTENT =
   /(?:등록|추가|넣어|잡아)(?!\s*(?:되|된|돼|한|해\s*(?:둔|놓은|놓았|놨)))/;
 
+export const hasScheduleWriteIntent = (text: string): boolean =>
+  WRITE_INTENT.test(text);
+
 export const isScheduleLookup = (text: string): boolean =>
-  !WRITE_INTENT.test(text) &&
+  !hasScheduleWriteIntent(text) &&
   LOOKUP_PATTERNS.some((pattern) => pattern.test(text));
