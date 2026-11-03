@@ -28,6 +28,15 @@ describe('normalizeRoutingText', () => {
     expect(normalizeRoutingText('```어제 실패한 거 있어?```')).toBe(
       '어제 실패한 거 있어?',
     );
+    expect(normalizeRoutingText('오늘 *회의* 잡아줘')).toBe('오늘 회의 잡아줘');
+  });
+
+  // 서식이 아닌 `*` 까지 지우면 다른 요청이 같은 문장으로 접힌다(이대리 리뷰 #954).
+  it('단어 안의 * 는 내용이라 남긴다', () => {
+    expect(normalizeRoutingText('2*3 계산해줘')).toBe('2*3 계산해줘');
+    expect(normalizeRoutingText('src/**/*.ts 파일 찾아줘')).toBe(
+      'src/**/*.ts 파일 찾아줘',
+    );
   });
 });
 

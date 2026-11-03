@@ -45,13 +45,16 @@ export const ROUTING_FEWSHOT_LIMIT = 3;
 export const ROUTING_MEMORY_SEARCH_LIMIT = 20;
 
 /**
- * 저장·검색·백필이 같은 모양의 문장을 보도록 Slack 멘션 토큰, 굵게·코드 서식 기호(`*`, `` ` ``),
- * 공백 차이를 지운다. 서식이 붙은 같은 문장이 다른 문장처럼 멀어지지 않게 한다.
+ * 저장·검색·백필이 같은 모양의 문장을 보도록 Slack 멘션 토큰, 서식 기호, 공백 차이를 지운다.
+ * 서식이 붙은 같은 문장이 다른 문장처럼 멀어지지 않게 한다.
+ * - 백틱은 Slack 에서 언제나 코드 서식이라 모두 지운다.
+ * - `*` 는 단어 양끝의 굵게 표시만 지운다. `2*3`·`src/**\/*.ts` 같은 내용은 남긴다(이대리 리뷰 #954).
  */
 export const normalizeRoutingText = (text: string): string =>
   text
     .replace(/<@[A-Z0-9]+>/g, ' ')
-    .replace(/[`*]/g, '')
+    .replace(/`+/g, '')
+    .replace(/(^|\s)\*+|\*+(?=\s|$)/g, '$1')
     .replace(/\s+/g, ' ')
     .trim();
 
