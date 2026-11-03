@@ -3,6 +3,7 @@ import {
   decidePerformanceAction,
   decidePerformanceVerdict,
   pairedGap,
+  PERFORMANCE_BLOCK_WEEKS,
   performanceBlockKey,
   ruleCounterfactualPicks,
 } from './selection-performance';
@@ -104,6 +105,27 @@ describe('performanceBlockKey', () => {
     expect(performanceBlockKey('SWING', new Date('2026-09-11'), 4)).toBe(first);
     expect(performanceBlockKey('SWING', new Date('2026-09-14'), 4)).not.toBe(
       first,
+    );
+  });
+
+  it('5거래일 블록(2주)은 W34~W35 를 묶고 W36 부터 다음 블록', () => {
+    const weeks = PERFORMANCE_BLOCK_WEEKS[5];
+    const first = performanceBlockKey('SWING', new Date('2026-08-17'), weeks);
+    expect(performanceBlockKey('SWING', new Date('2026-08-28'), weeks)).toBe(
+      first,
+    );
+    expect(
+      performanceBlockKey('SWING', new Date('2026-08-31'), weeks),
+    ).not.toBe(first);
+  });
+
+  it('20거래일 블록(8주)의 번호 3 은 2027-02-01 에 시작한다 — 원장의 재측정일 근거', () => {
+    const weeks = PERFORMANCE_BLOCK_WEEKS[20];
+    expect(performanceBlockKey('SWING', new Date('2027-01-29'), weeks)).toBe(
+      'SWING:8w:2',
+    );
+    expect(performanceBlockKey('SWING', new Date('2027-02-01'), weeks)).toBe(
+      'SWING:8w:3',
     );
   });
 
