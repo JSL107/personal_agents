@@ -28,6 +28,11 @@ interface AnswerScheduleQuestionCommand {
   parsedIntent: Record<string, unknown>;
 }
 
+interface FormatScheduleFactsInput {
+  schedules: ScheduleItemRecord[];
+  todayUtc: Date;
+}
+
 // 사실로 넘기는 일정 범위 — 지난 2주(놓친 마감 확인용)와 앞으로 1년. 개인 일정이라 1년치도 많지 않고,
 // 두 달로 자르면 "내년 1월 일정" 같은 조회가 범위 밖이라 "없다" 로 잘못 답한다(#753 리뷰).
 const LOOKBACK_DAYS = 14;
@@ -93,7 +98,7 @@ export class AnswerScheduleQuestionUsecase {
           text,
           priorTurns,
           facts,
-          fallbackText: formatScheduleFacts(schedules, todayUtc),
+          fallbackText: formatScheduleFacts({ schedules, todayUtc }),
         });
         return {
           result: answer,
@@ -117,21 +122,20 @@ export class AnswerScheduleQuestionUsecase {
 
 // 폴백은 질문의 기간을 모른다. 조회 범위(지난 2주~1년) 전체와 완료 건까지 찍으면 "이번달" 질문에 목록이
 // 쏟아진다(2026-11-03 실측) — 오늘 이후 남은 일정만 보인다.
-const formatScheduleFacts = (
-  schedules: ScheduleItemRecord[],
-  todayUtc: Date,
-): string => {
+const formatScheduleFacts = ({
+  schedules,
+  todayUtc,
+}: FormatScheduleFactsInput): string => {
   const upcoming = schedules.filter(
     (record) =>
       record.status === ScheduleStatus.OPEN &&
       record.dueDate.getTime() >= todayUtc.getTime(),
   );
-  return upcoming.length === 0
-    ? '오늘 이후 남은 일정이 없어요.'
-    : [
-        '*📅 오늘 이후 남은 일정*',
-        ...upcoming.map(
-          (record) => `• ${toIsoDate(record.dueDate)} ${record.title}`,
-        ),
-      ].join('\n');
+  if (upcoming.length === 0) {
+    return '오늘 이후 남은 일정이 없어요.';
+  }
+  const lines = upcoming.map(
+    (record) => `• ${toIsoDate(record.dueDate)} ${record.title}`,
+  );
+  return ['*📅 오늘 이후 남은 일정*', ...lines].join('\n');
 };

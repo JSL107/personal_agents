@@ -114,4 +114,38 @@ describe('AnswerScheduleQuestionUsecase', () => {
       ].join('\n'),
     );
   });
+
+  it('남은 일정이 없으면 폴백은 지난·완료 건 대신 "남은 일정이 없다" 고 말한다', async () => {
+    const done = {
+      ...item('완료한 일', '2026-10-20'),
+      status: ScheduleStatus.DONE,
+    };
+    const listExecute = jest
+      .fn()
+      .mockResolvedValue([item('지난 일', '2026-10-01'), done]);
+    const execute = jest.fn(async (input) => {
+      const r = await input.run({ agentRunId: 73 });
+      return { result: r.result, modelUsed: r.modelUsed, agentRunId: 73 };
+    });
+    const answer = jest
+      .fn()
+      .mockResolvedValue({ text: '답', usedFallback: false, modelUsed: 'm' });
+    const usecase = new AnswerScheduleQuestionUsecase(
+      { execute: listExecute } as unknown as ListSchedulesUsecase,
+      { execute } as unknown as AgentRunService,
+      { answer } as unknown as FactAnswerUsecase,
+    );
+
+    await usecase.execute({
+      slackUserId: 'U1',
+      today: { year: 2026, month: 10, day: 7 },
+      text: '이번 달 일정 뭐 있어?',
+      priorTurns: [],
+      parsedIntent: { kind: 'NEEDS_TITLE' },
+    });
+
+    expect(answer.mock.calls[0][0].fallbackText).toBe(
+      '오늘 이후 남은 일정이 없어요.',
+    );
+  });
 });
