@@ -674,6 +674,8 @@ export class RouterMessageHandler implements SlackHandler {
         slackUserId,
         text,
         priorTurns: transcriptTurns,
+        // transcriptTurns 는 DM 이면 24시간 내역까지 담는다. 첫 턴 판정은 30분 대화 기억으로 한다.
+        hasRecentTurns: priorTurns.length > 0,
         ...(priorAgentRunId !== undefined && priorAgentRunId !== null
           ? { contextRefs: { agentRunId: priorAgentRunId } }
           : {}),

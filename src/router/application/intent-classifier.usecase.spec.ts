@@ -524,6 +524,27 @@ describe('INTENT_CLASSIFIER_SYSTEM_PROMPT — 기술 학습·조사 요청 BLOG 
       expect(result.memoryShortcut).toBeUndefined();
     });
 
+    // DM 의 24시간 내역은 맥락으로만 쓰고, 첫 턴 여부는 라우터가 넘긴 값으로 정한다.
+    it('priorTurns 가 있어도 첫 턴이라고 넘기면 단축 판정을 한다', async () => {
+      const { usecase, modelRouter } = build('on');
+
+      const result = await usecase.classify(
+        'PR 리뷰해줘',
+        [
+          {
+            role: 'user',
+            text: '어제 한 얘기',
+            agentType: null,
+            agentRunId: null,
+          },
+        ] as never,
+        { isFirstTurn: true },
+      );
+
+      expect(modelRouter.route).not.toHaveBeenCalled();
+      expect(result.memoryShortcut?.applied).toBe(true);
+    });
+
     it('shadow: LLM 결과로 정하고 판정만 applied=false 로 싣는다', async () => {
       const { usecase, modelRouter } = build('shadow');
 
