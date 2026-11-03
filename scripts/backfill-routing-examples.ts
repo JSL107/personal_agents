@@ -138,6 +138,10 @@ async function main(): Promise<void> {
     const repository = new EpisodicMemoryPrismaRepository(prisma as never);
     const inserted: number[] = [];
     for (const row of targets) {
+      // skipReason 이 이미 걸렀지만 컴파일러는 그 사실을 모른다 — 단언 대신 여기서 직접 좁힌다.
+      if (row.ended_at === null) {
+        continue;
+      }
       const content = normalizeRoutingText(row.routed_text ?? '');
       const [embedding] = await embedder.embed([content], 'query');
       const count = await repository.insert({
@@ -147,7 +151,7 @@ async function main(): Promise<void> {
         content,
         embedding,
         // 시점 정직: 성공이 확정된 시각. 운영 저장도 성공 직후다.
-        occurredAt: row.ended_at as Date,
+        occurredAt: row.ended_at,
         skipIfSameContent: true,
       });
       if (count > 0) {

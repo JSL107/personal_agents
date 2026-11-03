@@ -19,6 +19,18 @@ export interface MemoryShortcutDecision {
   similarity: number;
 }
 
+export interface DecideMemoryShortcutInput {
+  hits: RoutingMemoryHit[];
+  rule: MemoryShortcutRule;
+}
+
+// T: 호출부의 hit 타입(EpisodeSearchHit 등)을 그대로 돌려주려고 받는다 — 도메인이 바깥 타입을 몰라도 된다.
+export interface PickRoutingFewshotInput<T extends RoutingMemoryHit> {
+  hits: T[];
+  floor?: number;
+  limit?: number;
+}
+
 // 잠정값 — 2026-11-02 사전 등록 스윕에서 기준(단축 ≥9/101 · 오분류 ≤1)을 만족한 칸이 없었다.
 // 그래서 단축은 기본 off 이고, 이 값은 shadow 관측용이다: 운영 풀(예시 33건)에서 오분류 0 인 칸 중
 // 가장 많이 걸린 칸(2/101). 값을 바꾸면 사전 등록 평가를 처음부터 다시 한다.
@@ -39,7 +51,7 @@ export const normalizeRoutingText = (text: string): string =>
     .replace(/\s+/g, ' ')
     .trim();
 
-const bySimilarityDesc = (hits: RoutingMemoryHit[]): RoutingMemoryHit[] =>
+const bySimilarityDesc = <T extends RoutingMemoryHit>(hits: T[]): T[] =>
   [...hits].sort((first, second) => second.similarity - first.similarity);
 
 /**
@@ -48,10 +60,10 @@ const bySimilarityDesc = (hits: RoutingMemoryHit[]): RoutingMemoryHit[] =>
  * 같은 (문장, 담당) 은 하나로 접는다 — 같은 문장 3벌이 k=3 합의를 위조하지 못하게. 같은 문장이
  * 서로 다른 담당으로 남아 있으면 둘 다 남겨 불일치로 떨어지게 한다.
  */
-export const decideMemoryShortcut = (
-  hits: RoutingMemoryHit[],
-  rule: MemoryShortcutRule,
-): MemoryShortcutDecision | null => {
+export const decideMemoryShortcut = ({
+  hits,
+  rule,
+}: DecideMemoryShortcutInput): MemoryShortcutDecision | null => {
   const seen = new Set<string>();
   const distinct: RoutingMemoryHit[] = [];
   for (const hit of bySimilarityDesc(hits)) {
@@ -77,14 +89,14 @@ export const decideMemoryShortcut = (
 };
 
 /** few-shot 예시: floor 이상, 담당마다 가장 가까운 1개, 최대 limit 개. 한 담당으로 쏠리지 않게 한다. */
-export const pickRoutingFewshot = <T extends RoutingMemoryHit>(
-  hits: T[],
-  floor: number = ROUTING_FEWSHOT_FLOOR,
-  limit: number = ROUTING_FEWSHOT_LIMIT,
-): T[] => {
+export const pickRoutingFewshot = <T extends RoutingMemoryHit>({
+  hits,
+  floor = ROUTING_FEWSHOT_FLOOR,
+  limit = ROUTING_FEWSHOT_LIMIT,
+}: PickRoutingFewshotInput<T>): T[] => {
   const picked: T[] = [];
   const workers = new Set<string>();
-  for (const hit of bySimilarityDesc(hits) as T[]) {
+  for (const hit of bySimilarityDesc(hits)) {
     if (hit.agentType === null || hit.similarity < floor) {
       continue;
     }
