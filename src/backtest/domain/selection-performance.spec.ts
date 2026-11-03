@@ -128,6 +128,10 @@ describe('decidePerformanceVerdict', () => {
     [-0.5, 0.5, 'EQUIVALENT'],
     [-0.6, 0.4, 'INCONCLUSIVE'],
     [-2, 2, 'INCONCLUSIVE'],
+    // 마진 안에서 0 을 넘는 구간은 실익 없는 차이 — 우위가 아니라 동등이다.
+    [0.1, 0.4, 'EQUIVALENT'],
+    [-0.4, -0.1, 'EQUIVALENT'],
+    [0.1, 0.6, 'MODEL_BETTER'],
   ])('구간 [%p, %p] → %s', (lower, upper, expected) => {
     expect(decidePerformanceVerdict(interval(lower, upper), 0.5)).toBe(
       expected,

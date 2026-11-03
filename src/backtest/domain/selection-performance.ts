@@ -19,11 +19,13 @@ export const EQUIVALENCE_MARGIN_PCT: Readonly<Record<number, number>> = {
   20: 1.0,
 };
 
-// 블록 길이(주)는 지평 이상이어야 한다. 20거래일 창은 4주 동안 겹쳐 주 단위로 자르면
-// 이웃 블록이 같은 가격 경로를 공유해 구간이 좁게 나온다.
+// 블록 길이(주)는 지평의 2배다. 지평과 같은 길이면 블록 끝 회차(5거래일이면 금요일)의 창이
+// 다음 블록 첫 회차와 거의 다 겹쳐 이웃 블록이 같은 가격 경로를 공유하고, 구간이 좁게
+// 나온다 — 좁아진 구간은 판정이 나오는 쪽으로만 틀린다. 2026-11-03 11-20 재측정 전 재등록
+// (#739 리뷰가 남긴 기준 변경, 측정 전 커밋). 20거래일은 8블록이 차는 날이 그만큼 늦어진다.
 export const PERFORMANCE_BLOCK_WEEKS: Readonly<Record<number, number>> = {
-  5: 1,
-  20: 4,
+  5: 2,
+  20: 8,
 };
 
 // 블록 경계의 기준 월요일 — 성적이 처음 채점된 회차(2026-08-20)가 속한 ISO 주.
@@ -122,7 +124,11 @@ export type PerformanceVerdict =
   | 'EQUIVALENT'
   | 'INCONCLUSIVE';
 
-/** 사전 등록 판정표. 점추정이 아니라 95% 구간 경계로 가른다. */
+/**
+ * 사전 등록 판정표. 점추정이 아니라 95% 구간 경계로 가른다. 동등을 우위보다 먼저 본다 —
+ * 구간이 마진 안에 있으면서 0 을 넘으면(예: [0.1, 0.4]) 실익 없는 차이이므로 우위로 내지
+ * 않는다 (2026-11-03 재등록, 측정 전 커밋).
+ */
 export const decidePerformanceVerdict = (
   interval: Interval | null,
   marginPct: number,
@@ -130,14 +136,14 @@ export const decidePerformanceVerdict = (
   if (interval === null || interval.blocks < PERFORMANCE_MINIMUM_BLOCKS) {
     return 'INSUFFICIENT';
   }
+  if (interval.lower >= -marginPct && interval.upper <= marginPct) {
+    return 'EQUIVALENT';
+  }
   if (interval.lower > 0) {
     return 'MODEL_BETTER';
   }
   if (interval.upper < 0) {
     return 'RULE_BETTER';
-  }
-  if (interval.lower >= -marginPct && interval.upper <= marginPct) {
-    return 'EQUIVALENT';
   }
   return 'INCONCLUSIVE';
 };

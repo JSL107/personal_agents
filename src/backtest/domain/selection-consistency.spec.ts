@@ -11,6 +11,7 @@ import {
   modalFrequency,
   pairwiseAgreement,
   parseRecommendationPrompt,
+  promptShowsCash,
   RecommendationPromptInputs,
   ruleAgreement,
 } from './selection-consistency';
@@ -19,6 +20,16 @@ const indicatorsOf = (close: number): StockIndicators =>
   ({ close, ma5: close, isAligned: true }) as unknown as StockIndicators;
 
 describe('selection-consistency', () => {
+  describe('promptShowsCash', () => {
+    it('현금 줄이 있는 옛 프롬프트(두 형식)만 참이다', () => {
+      expect(promptShowsCash('보유\n매수 가능 현금: 1000\n후보')).toBe(true);
+      expect(promptShowsCash('현금 잔액: 1000')).toBe(true);
+      expect(promptShowsCash('보유\n후보\n현금은 시스템이 판단한다')).toBe(
+        false,
+      );
+    });
+  });
+
   describe('parseRecommendationPrompt', () => {
     it('운영 프롬프트와 스냅샷 현금에서 보유·후보·종가를 되살린다', () => {
       const prompt =
