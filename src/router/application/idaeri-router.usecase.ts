@@ -50,6 +50,12 @@ interface HandoffChainState {
   visited: AgentType[];
 }
 
+interface RememberRoutingExampleInput {
+  text: string;
+  agentType: AgentType;
+  run: { agentRunId: number; agentType: string };
+}
+
 @Injectable()
 export class IdaeriRouterUsecase implements IdaeriRouterPort {
   private readonly logger = new Logger(IdaeriRouterUsecase.name);
@@ -193,7 +199,11 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
                   agentRunId: number;
                   agentType: string;
                 }) =>
-                  this.rememberRoutingExample(input.text ?? '', agentType, run),
+                  this.rememberRoutingExample({
+                    text: input.text ?? '',
+                    agentType,
+                    run,
+                  }),
               }
             : {}),
         }
@@ -311,6 +321,9 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
           agentRunId: outcome.agentRunId,
           reusedAgentRun: outcome.reusedAgentRun === true,
           modelUsed: outcome.modelUsed,
+          // 일정 되묻기처럼 run 이 없는 회차도 shadow 대조에서 빠지지 않게(이대리 리뷰 #949).
+          memoryAgentType: routing.memoryHint?.agentType ?? null,
+          memorySimilarity: routing.memoryHint?.similarity ?? null,
         })
         .catch(() => undefined);
     } catch (error: unknown) {
@@ -466,11 +479,11 @@ export class IdaeriRouterUsecase implements IdaeriRouterPort {
 
   // 라우팅 예시 저장 — 실제로 열린 run 이 고른 담당과 같을 때만. 첫 run 이 다른 타입이면 라벨이
   // 어긋난다. 원장과 같은 마스킹 문구를 쓰고, 잘린 원문은 다른 문장과 비교할 수 없어 뺀다.
-  private rememberRoutingExample(
-    text: string,
-    agentType: AgentType,
-    run: { agentRunId: number; agentType: string },
-  ): void {
+  private rememberRoutingExample({
+    text,
+    agentType,
+    run,
+  }: RememberRoutingExampleInput): void {
     if (run.agentType !== agentType) {
       return;
     }

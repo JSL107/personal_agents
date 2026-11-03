@@ -34,6 +34,7 @@ import { INTENT_CLASSIFIER_SYSTEM_PROMPT } from '../domain/prompt/intent-classif
 import {
   decideMemoryShortcut,
   MEMORY_SHORTCUT_RULE,
+  MemoryShortcutDecision,
   normalizeRoutingText,
   pickRoutingFewshot,
   ROUTING_MEMORY_SEARCH_LIMIT,
@@ -53,6 +54,11 @@ const CLASSIFIER_TURN_LIMIT = 10;
 const CLASSIFIER_AUTO_POST_TEXT_CAP = 300;
 
 type MemoryShortcutMode = 'off' | 'shadow' | 'on';
+
+interface RoutableMemoryDecision {
+  agentType: AgentType;
+  similarity: number;
+}
 
 @Injectable()
 export class IntentClassifierUsecase {
@@ -96,25 +102,26 @@ export class IntentClassifierUsecase {
     const mode = this.shortcutMode();
     const decision =
       mode !== 'off' && !priorTurns?.length
-        ? decideMemoryShortcut(memoryHits, MEMORY_SHORTCUT_RULE)
+        ? this.toRoutableDecision(
+            decideMemoryShortcut({
+              hits: memoryHits,
+              rule: MEMORY_SHORTCUT_RULE,
+            }),
+          )
         : null;
     if (decision !== null && mode === 'on') {
       this.logger.log(
         `Intent memory shortcut — text="${trimmed.slice(0, 40)}" → ${decision.agentType} (similarity=${decision.similarity.toFixed(3)})`,
       );
       return {
-        agentType: decision.agentType as AgentType,
+        agentType: decision.agentType,
         // cosine 은 확신도가 아니다. 라우터는 이 경로의 confidence 를 원장에 싣지 않는다.
         confidence: decision.similarity,
         reason: `routing memory shortcut (similarity=${decision.similarity.toFixed(3)})`,
-        memoryShortcut: {
-          agentType: decision.agentType as AgentType,
-          similarity: decision.similarity,
-          applied: true,
-        },
+        memoryShortcut: { ...decision, applied: true },
       };
     }
-    const episodicHits = pickRoutingFewshot(memoryHits);
+    const episodicHits = pickRoutingFewshot({ hits: memoryHits });
     const prompt = buildPrompt(trimmed, priorTurns, episodicHits);
     const routingBlock = this.preferenceProfile
       ? await this.preferenceProfile.getInjectionBlock('routing')
@@ -143,16 +150,13 @@ export class IntentClassifierUsecase {
     this.logger.log(
       `Intent classified — text="${trimmed.slice(0, 40)}" priorTurns=${priorTurns?.length ?? 0} episodic=${episodicHits.length} → ${classification.agentType} (confidence=${classification.confidence})${decision ? ` memory=${decision.agentType}` : ''}`,
     );
-    return decision === null
-      ? classification
-      : {
-          ...classification,
-          memoryShortcut: {
-            agentType: decision.agentType as AgentType,
-            similarity: decision.similarity,
-            applied: false,
-          },
-        };
+    if (decision === null) {
+      return classification;
+    }
+    return {
+      ...classification,
+      memoryShortcut: { ...decision, applied: false },
+    };
   }
 
   /**
@@ -185,7 +189,26 @@ export class IntentClassifierUsecase {
   // 모르는 값은 off — app.config 가 부팅에서 막지만, 판정부도 켜진 쪽으로 기울지 않는다.
   private shortcutMode(): MemoryShortcutMode {
     const mode = this.configService?.get<string>('ROUTER_MEMORY_SHORTCUT_MODE');
-    return mode === 'shadow' || mode === 'on' ? mode : 'off';
+    if (mode === 'shadow' || mode === 'on') {
+      return mode;
+    }
+    return 'off';
+  }
+
+  // 판정의 담당은 DB 문자열이다. 등록된 dispatcher 에서 찾은 AgentType 만 쓰고, 없으면 단축하지 않는다.
+  private toRoutableDecision(
+    decision: MemoryShortcutDecision | null,
+  ): RoutableMemoryDecision | null {
+    if (decision === null) {
+      return null;
+    }
+    const dispatcher = this.dispatchers.find(
+      (candidate) => candidate.agentType === decision.agentType,
+    );
+    if (dispatcher === undefined) {
+      return null;
+    }
+    return { agentType: dispatcher.agentType, similarity: decision.similarity };
   }
 
   // best-effort — episodic 미주입 또는 검색 실패 시 빈 배열(분류 본 흐름 비차단).

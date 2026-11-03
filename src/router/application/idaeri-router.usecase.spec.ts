@@ -1024,7 +1024,48 @@ describe('IdaeriRouterUsecase', () => {
         agentRunId: 0,
         reusedAgentRun: false,
         modelUsed: 'deterministic',
+        memoryAgentType: null,
+        memorySimilarity: null,
       });
+    });
+
+    // 일정 되묻기처럼 run 이 없는 회차도 shadow 대조에 들어와야 한다(이대리 리뷰 #949).
+    it('shadow 판정이 있으면 run 이 없는 회차에도 남긴다', async () => {
+      jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+      const noRun = { record: jest.fn().mockResolvedValue(undefined) };
+      const usecase = new IdaeriRouterUsecase(
+        [
+          buildDispatcher(AgentType.SCHEDULE, () => ({
+            agentRunId: 0,
+            modelUsed: 'deterministic',
+          })),
+        ],
+        buildClassifierMock({
+          agentType: AgentType.SCHEDULE,
+          confidence: 0.9,
+          reason: '일정 등록',
+          memoryShortcut: {
+            agentType: AgentType.SCHEDULE,
+            similarity: 0.96,
+            applied: false,
+          },
+        }),
+        buildAgentRunServiceMock(),
+        noRun,
+      );
+
+      await usecase.dispatch({
+        source: 'SLACK_MESSAGE',
+        slackUserId: 'U1',
+        text: '회의 잡아줘',
+      });
+
+      expect(noRun.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          memoryAgentType: AgentType.SCHEDULE,
+          memorySimilarity: 0.96,
+        }),
+      );
     });
 
     it('재사용한 과거 run 이면 reusedAgentRun 과 그 id 를 남긴다', async () => {
