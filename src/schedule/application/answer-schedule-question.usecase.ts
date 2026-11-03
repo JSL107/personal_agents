@@ -12,7 +12,11 @@ import {
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { ConversationTurn } from '../../router/domain/conversation-memory.type';
 import { plainDateToUtcDate } from '../domain/parse-due-date';
-import { PlainDate, ScheduleItemRecord } from '../domain/schedule.type';
+import {
+  PlainDate,
+  ScheduleItemRecord,
+  ScheduleStatus,
+} from '../domain/schedule.type';
 import { ListSchedulesUsecase } from './list-schedules.usecase';
 
 interface AnswerScheduleQuestionCommand {
@@ -89,7 +93,7 @@ export class AnswerScheduleQuestionUsecase {
           text,
           priorTurns,
           facts,
-          fallbackText: formatScheduleFacts(schedules),
+          fallbackText: formatScheduleFacts(schedules, todayUtc),
         });
         return {
           result: answer,
@@ -111,13 +115,23 @@ export class AnswerScheduleQuestionUsecase {
   }
 }
 
-const formatScheduleFacts = (schedules: ScheduleItemRecord[]): string =>
-  schedules.length === 0
-    ? '등록된 일정이 없어요.'
+// 폴백은 질문의 기간을 모른다. 조회 범위(지난 2주~1년) 전체와 완료 건까지 찍으면 "이번달" 질문에 목록이
+// 쏟아진다(2026-11-03 실측) — 오늘 이후 남은 일정만 보인다.
+const formatScheduleFacts = (
+  schedules: ScheduleItemRecord[],
+  todayUtc: Date,
+): string => {
+  const upcoming = schedules.filter(
+    (record) =>
+      record.status === ScheduleStatus.OPEN &&
+      record.dueDate.getTime() >= todayUtc.getTime(),
+  );
+  return upcoming.length === 0
+    ? '오늘 이후 남은 일정이 없어요.'
     : [
-        '*📅 등록된 일정*',
-        ...schedules.map(
-          (record) =>
-            `• ${toIsoDate(record.dueDate)} ${record.title} (${record.status})`,
+        '*📅 오늘 이후 남은 일정*',
+        ...upcoming.map(
+          (record) => `• ${toIsoDate(record.dueDate)} ${record.title}`,
         ),
       ].join('\n');
+};

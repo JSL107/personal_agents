@@ -89,6 +89,11 @@ const collectFacts = (value: unknown, sets: FactSets, key?: string): void => {
   }
   if (typeof value === 'string') {
     const extracted = extractDates(value);
+    // 문자열 안의 번호("추천 판정(#878)")도 식별자다. 안 모으면 제목을 그대로 옮긴 답이 "근거 없는 번호" 로
+    // 걸려 폴백된다(2026-11-03 실측, 실행 #11257).
+    for (const match of extracted.rest.matchAll(ID_TOKEN)) {
+      sets.ids.add(Number(match[1] ?? match[2]));
+    }
     addDates(sets, extracted);
     sets.numbers.push(...numbersIn(extracted.rest));
     return;
