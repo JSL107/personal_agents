@@ -93,7 +93,7 @@ export enum AgentType {
   // 슬래시/ResponseCode/retry-run 비대상 (사용자가 직접 부르지 않는 내부 타입 —
   // SUBCONSCIOUS_GATE 선례). dispatcher 도 없어 자연어·별명으로 도달할 수 없다.
   ROUTER = 'ROUTER',
-  // Slack 자연어 멘션으로 유튜브 영상 자막과 화면 프레임을 분석한다.
+  // Slack 자연어 멘션으로 유튜브·인스타그램 릴스 영상 자막과 화면 프레임을 분석한다.
   VIDEO_WATCH = 'VIDEO_WATCH',
   ART_JOB_FEED = 'ART_JOB_FEED',
 }

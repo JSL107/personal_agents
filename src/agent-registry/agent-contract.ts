@@ -377,7 +377,7 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
   ),
   [AgentType.VIDEO_WATCH]: {
     department: Department.QUALITY,
-    job: '유튜브 영상의 자막과 화면을 분석해 질문에 답한다',
+    job: '유튜브·인스타그램 릴스 영상의 자막과 화면을 분석해 질문에 답한다',
     deliverableFields: ['answer', 'highlights'],
     requireEvidence: false,
   },

@@ -9,6 +9,8 @@ import { GenerateDailyPlanUsecase } from '../../agent/pm/application/generate-da
 import { GeneratePoEvaluationUsecase } from '../../agent/po-eval/application/generate-po-evaluation.usecase';
 import { GeneratePoShadowUsecase } from '../../agent/po-shadow/application/generate-po-shadow.usecase';
 import { WatchVideoUsecase } from '../../agent/video-watch/application/watch-video.usecase';
+import { buildVideoUrl } from '../../agent/video-watch/domain/video-url.parser';
+import { VideoPlatform } from '../../agent/video-watch/domain/video-watch.type';
 import { GenerateWorklogUsecase } from '../../agent/work-reviewer/application/generate-worklog.usecase';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { RetryRunUsecase } from '../../agent-run/application/retry-run.usecase';
@@ -47,6 +49,7 @@ export type PreparedReplay =
   | ReadyReplay<'PO_EVAL', OutcomeOf<GeneratePoEvaluationUsecase>>
   | ReadyReplay<'CEO', OutcomeOf<GenerateCeoMetaUsecase>>
   | (ReadyReplay<'VIDEO_WATCH', OutcomeOf<WatchVideoUsecase>> & {
+      readonly platform: VideoPlatform;
       readonly videoId: string;
     })
   | (ReadyReplay<
@@ -324,6 +327,7 @@ export class ReplayFailedRunUsecase {
         );
       // 실패는 대부분 다운로드 차단·codex 일시 실패라 같은 입력으로 다시 돌릴 가치가 있다.
       // 링크 원문은 저장하지 않으므로 검증된 videoId 로 요청 문장을 복원한다.
+      // platform 이 없는 스냅숏은 인스타그램 지원 전 회차라 유튜브다.
       case 'VIDEO_WATCH': {
         if (typeof snapshot.videoId !== 'string') {
           return reject(
@@ -332,6 +336,10 @@ export class ReplayFailedRunUsecase {
           );
         }
         const videoId = snapshot.videoId;
+        const platform =
+          snapshot.platform === VideoPlatform.INSTAGRAM
+            ? VideoPlatform.INSTAGRAM
+            : VideoPlatform.YOUTUBE;
         const question =
           typeof snapshot.question === 'string' ? snapshot.question : '';
         return {
@@ -341,11 +349,12 @@ export class ReplayFailedRunUsecase {
             linked(() =>
               this.watchVideoUsecase.execute({
                 slackUserId,
-                text: `${question} https://www.youtube.com/watch?v=${videoId}`,
+                text: `${question} ${buildVideoUrl(platform, videoId)}`,
                 triggerType: TriggerType.FAILURE_REPLAY,
               }),
             ),
           ),
+          platform,
           videoId,
         };
       }

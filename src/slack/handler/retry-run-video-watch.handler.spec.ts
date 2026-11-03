@@ -26,6 +26,7 @@ const setup = (inputSnapshot: Record<string, unknown>) => {
       result: { answer: '재실행 답변', highlights: [] },
       report: {
         title: '영상 제목',
+        platform: 'YOUTUBE',
         videoId: 'jNQXAC9IVRw',
         frameCount: 3,
         transcriptSource: 'captions',
@@ -86,6 +87,23 @@ describe('RetryRunHandler VIDEO_WATCH', () => {
     expect(agentRunService.setParentId).toHaveBeenCalledWith({
       id: 43,
       parentId: 42,
+    });
+  });
+
+  it('인스타그램 스냅숏은 릴스 URL 로 복원한다', async () => {
+    const { run, watchVideoUsecase } = setup({
+      slackUserId: 'U1',
+      platform: 'INSTAGRAM',
+      videoId: 'DfQb_sJlcc1',
+      question: '요약해줘',
+    });
+
+    await run();
+
+    expect(watchVideoUsecase.execute).toHaveBeenCalledWith({
+      slackUserId: 'U1',
+      text: '요약해줘 https://www.instagram.com/reel/DfQb_sJlcc1/',
+      triggerType: 'FAILURE_REPLAY',
     });
   });
 

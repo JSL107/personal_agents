@@ -309,10 +309,11 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
     agentType: AgentType.VIDEO_WATCH,
     displayName: 'Video Watch',
     nickname: '영상봄',
-    taskLabel: '유튜브 영상 분석',
+    taskLabel: '유튜브·인스타 릴스 영상 분석',
     slashCommands: [],
     usecasePath: 'src/agent/video-watch/application/watch-video.usecase.ts',
-    description: '유튜브 영상 자막과 화면 프레임 분석 (자연어 멘션)',
+    description:
+      '유튜브·인스타그램 릴스 영상 자막과 화면 프레임 분석 (자연어 멘션)',
   },
   {
     agentType: AgentType.ART_JOB_FEED,
