@@ -328,6 +328,7 @@ export class ReplayFailedRunUsecase {
       // 실패는 대부분 다운로드 차단·codex 일시 실패라 같은 입력으로 다시 돌릴 가치가 있다.
       // 링크 원문은 저장하지 않으므로 검증된 videoId 로 요청 문장을 복원한다.
       // platform 이 없는 스냅숏은 인스타그램 지원 전 회차라 유튜브다.
+      // 질문에 다른 영상 링크가 남아 있을 수 있어, 첫 링크를 고르는 파서가 저장된 영상을 집도록 URL 을 앞에 둔다.
       case 'VIDEO_WATCH': {
         if (typeof snapshot.videoId !== 'string') {
           return reject(
@@ -342,21 +343,15 @@ export class ReplayFailedRunUsecase {
             : VideoPlatform.YOUTUBE;
         const question =
           typeof snapshot.question === 'string' ? snapshot.question : '';
-        return {
-          ...ready(
-            'VIDEO_WATCH',
-            runId,
-            linked(() =>
-              this.watchVideoUsecase.execute({
-                slackUserId,
-                text: `${question} ${buildVideoUrl(platform, videoId)}`,
-                triggerType: TriggerType.FAILURE_REPLAY,
-              }),
-            ),
-          ),
-          platform,
-          videoId,
-        };
+        const text = `${buildVideoUrl({ platform, videoId })} ${question}`;
+        const run = linked(() =>
+          this.watchVideoUsecase.execute({
+            slackUserId,
+            text,
+            triggerType: TriggerType.FAILURE_REPLAY,
+          }),
+        );
+        return { ...ready('VIDEO_WATCH', runId, run), platform, videoId };
       }
       // 28일을 되짚는 누적 집계라 회차가 실패해도 데이터가 남지 않는다 — 다음 주 회차가
       // 같은 범위를 통째로 다시 본다. 지금 당장 수치를 봐야 하면 읽기 전용 스크립트가 있다.

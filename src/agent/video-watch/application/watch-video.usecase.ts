@@ -19,7 +19,7 @@ import {
   WatchRunnerPort,
 } from '../domain/port/watch-runner.port';
 import { VIDEO_WATCH_SYSTEM_PROMPT } from '../domain/prompt/video-watch-system.prompt';
-import { extractVideo, extractVideoQuestion } from '../domain/video-url.parser';
+import { extractVideoRequest } from '../domain/video-url.parser';
 import { VideoWatchException } from '../domain/video-watch.exception';
 import {
   VideoPlatform,
@@ -66,8 +66,8 @@ export class WatchVideoUsecase {
     text,
     triggerType = TriggerType.SLACK_MENTION_VIDEO_WATCH,
   }: WatchVideoInput): Promise<WatchVideoOutcome> {
-    const extracted = extractVideo(text);
-    if (!extracted) {
+    const request = extractVideoRequest(text);
+    if (!request) {
       throw new VideoWatchException({
         code: VideoWatchErrorCode.NO_YOUTUBE_URL,
         message: '유튜브나 인스타그램 릴스 링크를 함께 보내 주세요.',
@@ -75,7 +75,7 @@ export class WatchVideoUsecase {
       });
     }
 
-    const question = extractVideoQuestion(text);
+    const { video: extracted, question } = request;
     const scriptPath = this.configService.get<string>('WATCH_SCRIPT_PATH');
     if (!scriptPath) {
       throw this.notConfigured();

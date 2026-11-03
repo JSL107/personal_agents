@@ -1,7 +1,10 @@
-import { extractVideo, extractVideoQuestion } from './video-url.parser';
-import { VideoPlatform } from './video-watch.type';
+import { extractVideoRequest } from './video-url.parser';
+import { ExtractedVideo, VideoPlatform } from './video-watch.type';
 
-describe('extractVideo', () => {
+const extractVideo = (text: string): ExtractedVideo | null =>
+  extractVideoRequest(text)?.video ?? null;
+
+describe('extractVideoRequest', () => {
   it('extracts the first valid YouTube URL and removes its token from the question', () => {
     expect(
       extractVideo('설명해줘 <https://youtu.be/jNQXAC9IVRw|영상> 다른 말'),
@@ -47,17 +50,17 @@ describe('extractVideo', () => {
     expect(extractVideo('not a URL')).toBeNull();
   });
 
-  it('removes the video URL from the question and supplies a default when empty', () => {
-    expect(extractVideoQuestion('설명해줘 https://youtu.be/jNQXAC9IVRw')).toBe(
-      '설명해줘',
-    );
-    expect(extractVideoQuestion('https://youtu.be/jNQXAC9IVRw')).toBe(
+  it('removes the chosen video URL from the question and supplies a default when empty', () => {
+    expect(
+      extractVideoRequest('설명해줘 https://youtu.be/jNQXAC9IVRw')?.question,
+    ).toBe('설명해줘');
+    expect(extractVideoRequest('https://youtu.be/jNQXAC9IVRw')?.question).toBe(
       '이 영상을 요약해줘',
     );
     expect(
-      extractVideoQuestion(
+      extractVideoRequest(
         'https://www.instagram.com/reel/DfQb_sJlcc1/?exln=x\n영상분석해줘',
-      ),
+      )?.question,
     ).toBe('영상분석해줘');
   });
 });

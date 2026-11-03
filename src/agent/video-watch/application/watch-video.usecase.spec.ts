@@ -105,6 +105,26 @@ describe('WatchVideoUsecase', () => {
     });
   });
 
+  it('passes the canonical reel URL to the runner and records the platform', async () => {
+    const outcome = await usecase.execute({
+      slackUserId: 'U1',
+      text: '<https://www.instagram.com/reel/DfQb_sJlcc1/?exln=x|instagram.com/reel/DfQb_sJlcc1>\n영상분석해줘',
+    });
+    expect(runWatch.mock.calls[0][0].url).toBe(
+      'https://www.instagram.com/reel/DfQb_sJlcc1/',
+    );
+    expect(runAgent.mock.calls[0][0].inputSnapshot).toEqual({
+      slackUserId: 'U1',
+      platform: 'INSTAGRAM',
+      videoId: 'DfQb_sJlcc1',
+      question: '영상분석해줘',
+    });
+    expect(outcome.report).toMatchObject({
+      platform: 'INSTAGRAM',
+      videoId: 'DfQb_sJlcc1',
+    });
+  });
+
   it('removes both temp dirs when the watch runner fails', async () => {
     runWatch.mockRejectedValue(new Error('runner failed'));
     await expect(

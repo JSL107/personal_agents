@@ -32,3 +32,8 @@ export interface ExtractedVideo {
   videoId: string;
   url: string;
 }
+
+export interface ExtractedVideoRequest {
+  video: ExtractedVideo;
+  question: string;
+}
