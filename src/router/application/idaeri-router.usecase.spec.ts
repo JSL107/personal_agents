@@ -206,11 +206,10 @@ describe('IdaeriRouterUsecase', () => {
       text: '오늘 plan 짜줘',
     });
 
-    expect(classifier.classify).toHaveBeenCalledWith(
-      '오늘 plan 짜줘',
-      undefined,
-      { isFirstTurn: true },
-    );
+    expect(classifier.classify).toHaveBeenCalledWith({
+      text: '오늘 plan 짜줘',
+      isFirstTurn: true,
+    });
     expect(result.workerType).toBe(AgentType.PM);
     expect(result.output).toEqual({ plan: 'classified' });
   });
@@ -258,11 +257,10 @@ describe('IdaeriRouterUsecase', () => {
       text: '이 문서를 배포해도 되는지 검토해줘',
     });
 
-    expect(classifier.classify).toHaveBeenCalledWith(
-      '이 문서를 배포해도 되는지 검토해줘',
-      undefined,
-      { isFirstTurn: true },
-    );
+    expect(classifier.classify).toHaveBeenCalledWith({
+      text: '이 문서를 배포해도 되는지 검토해줘',
+      isFirstTurn: true,
+    });
     expect(result.workerType).toBe(AgentType.BLOG);
   });
 
@@ -285,11 +283,10 @@ describe('IdaeriRouterUsecase', () => {
       text: '윤다정님 이 문장을 다듬어줘',
     });
 
-    expect(classifier.classify).toHaveBeenCalledWith(
-      '윤다정님 이 문장을 다듬어줘',
-      undefined,
-      { isFirstTurn: true },
-    );
+    expect(classifier.classify).toHaveBeenCalledWith({
+      text: '윤다정님 이 문장을 다듬어줘',
+      isFirstTurn: true,
+    });
     expect(result.workerType).toBe(AgentType.BLOG);
   });
 
@@ -781,14 +778,14 @@ describe('IdaeriRouterUsecase', () => {
         slackUserId: 'U1',
         text: '오늘 할 일 정리해줘',
         priorTurns: transcript,
-        hasRecentTurns: false,
+        isFirstTurn: true,
       });
 
-      expect(classifier.classify).toHaveBeenCalledWith(
-        '오늘 할 일 정리해줘',
-        transcript,
-        { isFirstTurn: true },
-      );
+      expect(classifier.classify).toHaveBeenCalledWith({
+        text: '오늘 할 일 정리해줘',
+        priorTurns: transcript,
+        isFirstTurn: true,
+      });
       expect(seen()?.onRunSucceeded).toBeDefined();
     });
 
@@ -807,10 +804,11 @@ describe('IdaeriRouterUsecase', () => {
         source: 'SLACK_MESSAGE',
         slackUserId: 'U1',
         text: '응 해줘',
-        hasRecentTurns: true,
+        isFirstTurn: false,
       });
 
-      expect(classifier.classify).toHaveBeenCalledWith('응 해줘', undefined, {
+      expect(classifier.classify).toHaveBeenCalledWith({
+        text: '응 해줘',
         isFirstTurn: false,
       });
       expect(seen()?.onRunSucceeded).toBeUndefined();

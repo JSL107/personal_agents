@@ -52,10 +52,10 @@ export interface DispatchInput {
   // 지시대명사 ("그거 분배해") 의 prior worker 추론 정확도 ↑. dispatch 자체에는 영향 X —
   // classifier 호출 시 systemPrompt 컨텍스트로만 사용.
   priorTurns?: ConversationTurn[];
-  // 30분 대화 기억(Redis)에 직전 턴이 있었는지 — 라우팅 기억의 저장·단축은 첫 턴만 대상이다.
+  // 30분 대화 기억(Redis)에 직전 턴이 없었는지 — 라우팅 기억의 저장·단축은 첫 턴만 대상이다.
   // priorTurns 는 DM 이면 24시간 Slack 내역까지 담아 첫 턴 판정에 쓸 수 없다(#949 후속).
-  // 미주입이면 priorTurns 가 대화 기억에서만 온 것으로 보고 그 길이로 판정한다(콘솔 등).
-  hasRecentTurns?: boolean;
+  // 미주입이면 priorTurns 가 대화 기억에서만 온 것으로 보고 비었는지로 판정한다(콘솔 등).
+  isFirstTurn?: boolean;
   // 워커 실행 입력까지 전달되는 대화 맥락. 보통 router 가 classify 결과(userInstruction) +
   // contextRefs.agentRunId 로 직접 구성해 dispatcher 에 넘긴다 (외부 주입 시 그대로 사용).
   conversationContext?: ConversationContext;

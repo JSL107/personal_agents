@@ -534,10 +534,10 @@ const runClassifierEval = async (): Promise<void> => {
         const base = { caseId: evalCase.id, runIndex };
         let recorded: ClassifierRunRecord;
         try {
-          const classification = await classifier.classify(
-            evalCase.text,
-            evalCase.priorTurns,
-          );
+          const classification = await classifier.classify({
+            text: evalCase.text,
+            priorTurns: evalCase.priorTurns,
+          });
           recorded = {
             ...base,
             agentType: classification.agentType,
