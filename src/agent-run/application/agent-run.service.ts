@@ -432,6 +432,14 @@ export class AgentRunService implements OnApplicationBootstrap {
       // Episodic Memory 적재 — fire-and-forget(await 안 함). 임베딩 모델 로드/추론이 본 흐름을
       // 지연시키지 않도록 떼어내고, record 내부가 이미 실패 swallow 하지만 unhandled rejection 방지로 catch.
       this.recordEpisode(id, agentType, execution.output);
+      // 라우터에게 성공을 알린다 — 부수 기록이라 던져도 성공한 실행을 실패로 바꾸지 않는다.
+      try {
+        routing?.onRunSucceeded?.({ agentRunId: id, agentType });
+      } catch (error: unknown) {
+        this.logger.warn(
+          `AgentRun #${id} 라우팅 성공 알림 실패 (swallow): ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
 
       return {
         result: execution.result,
@@ -884,6 +892,9 @@ const withRoutingContext = (
     routedVia: routing.routedVia,
     ...(routing.confidence !== undefined
       ? { routedConfidence: routing.confidence }
+      : {}),
+    ...(routing.memoryHint !== undefined
+      ? { routedMemoryHint: routing.memoryHint }
       : {}),
   };
 };

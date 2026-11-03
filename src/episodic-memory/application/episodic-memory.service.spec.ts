@@ -30,6 +30,70 @@ describe('EpisodicMemoryService', () => {
     expect(inserted.embedding).toHaveLength(384);
   });
 
+  // 질의와 같은 모양의 짧은 문장은 query 로 저장해야 같은 문장의 cosine 이 1 에 붙는다.
+  it('record: embedAs 를 임베더 접두어로 넘기고, 없으면 passage', async () => {
+    const repository = createRepositoryMock();
+    const embedder = new MockEmbedder(384);
+    const embed = jest.spyOn(embedder, 'embed');
+    const service = new EpisodicMemoryService(embedder, repository as never);
+
+    await service.record({
+      kind: 'routing_example',
+      content: '회의 잡아줘',
+      embedAs: 'query',
+      occurredAt: new Date(),
+      skipIfSameContent: true,
+    });
+    await service.record({
+      kind: 'agent_run',
+      content: '{}',
+      occurredAt: new Date(),
+    });
+
+    expect(embed.mock.calls.map((call) => (call as unknown[])[1])).toEqual([
+      'query',
+      'passage',
+    ]);
+    expect(
+      repository.insert.mock.calls.map(
+        (call) =>
+          (call as unknown as [{ skipIfSameContent?: boolean }])[0]
+            .skipIfSameContent,
+      ),
+    ).toEqual([true, undefined]);
+  });
+
+  it('searchRelevant: similarity 는 감쇠 없는 cosine, exact 는 repository 로 넘긴다', async () => {
+    const repository = createRepositoryMock();
+    repository.searchByVector.mockResolvedValue([
+      {
+        id: 1,
+        agentRunId: 1,
+        agentType: 'PM',
+        content: 'a',
+        distance: 0.1,
+        occurredAt: new Date('2020-01-01T00:00:00Z'),
+      },
+    ]);
+    const service = new EpisodicMemoryService(
+      new MockEmbedder(384),
+      repository as never,
+    );
+
+    const [hit] = await service.searchRelevant({
+      query: 'a',
+      kind: 'routing_example',
+      limit: 5,
+      exact: true,
+    });
+
+    expect(hit.similarity).toBeCloseTo(0.9);
+    expect(hit.score).toBeLessThan(hit.similarity);
+    expect(repository.searchByVector).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'routing_example', exact: true }),
+    );
+  });
+
   it('record: repository 실패는 swallow(throw하지 않음 — 본 흐름 보호)', async () => {
     const repository = createRepositoryMock();
     repository.insert.mockRejectedValue(new Error('db down'));

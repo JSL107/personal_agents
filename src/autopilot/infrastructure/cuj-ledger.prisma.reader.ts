@@ -27,6 +27,7 @@ const ROUTED_VIA: Record<RoutedVia, true> = {
   classifier: true,
   hint: true,
   nickname: true,
+  memory: true,
 };
 
 const isRecordValue = (value: unknown): value is Record<string, unknown> =>

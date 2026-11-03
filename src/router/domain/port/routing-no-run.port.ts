@@ -10,6 +10,9 @@ export interface RoutingNoRunInput {
   agentRunId: number;
   reusedAgentRun: boolean;
   modelUsed: string;
+  // 라우팅 기억 단축 판정 — 판정이 없으면 null. agent_run 의 routedMemoryHint 와 같은 값.
+  memoryAgentType: string | null;
+  memorySimilarity: number | null;
 }
 
 export interface RoutingNoRunPort {

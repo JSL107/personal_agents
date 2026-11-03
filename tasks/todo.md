@@ -1,3 +1,19 @@
+# 라우팅 기억 단축 (2026-11-02)
+
+설계·사전 등록: `docs/superpowers/plans/2026-11-02-routing-memory-shortcut.md` · worktree `/private/tmp/pa-routing-memory` (`feat/routing-memory-shortcut`)
+
+- [x] episodic-memory: `routing_example` kind · `embedAs` · `similarity` · 정확 검색 · knowledge-lint 제외
+- [x] router: 정규화·판정 정책(`routing-memory.policy.ts`) + spec
+- [x] router: few-shot 교체(`recallSimilar`) · 단축 분기 · `routedVia='memory'`
+- [x] agent-run: `RoutingContext.onRunSucceeded` 호출 · shadow 판정 원장 기록
+- [x] env `ROUTER_MEMORY_SHORTCUT_MODE` 4곳 + `pnpm docs:sync`
+- [x] 백필 스크립트 + dry-run (33건) → owner 승인 후 `--apply` 35건 (2026-11-03, 그새 SCHEDULE 2건 추가 · 되돌리기 id 는 `~/.idaeri-backups/routing-example-backfill-2026-11-02T23-55-36-423Z.json`)
+- [x] 오프라인 스윕 → T·k·floor 동결(상수 커밋 전 기록) → LLM 평가 202회 이내 → 결과 표
+- [x] 게이트: lint:check · test · build · check:di · check:env · docs:check · check:invariants · test:e2e
+- [x] 리뷰 패스 (메인 루프)
+
+---
+
 # 모의투자 장중 손절 (2026-08-25)
 
 **Goal:** `.ai/design.md` §구현 1~9대로 장중 5분 주기 손절 판정, 현재가 즉시 체결, Slack 보고를 구현한다.

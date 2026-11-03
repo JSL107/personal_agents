@@ -1285,17 +1285,20 @@ model ModelCall {
 // 원장에서 같은 모양이 된다. agent_run 에 ROUTER 행으로 넣지 않는 이유: 콘솔 doneToday·
 // 대표 브리핑 완료 합계·비서실 완료 목록이 agentType 필터 없이 SUCCEEDED 를 세서 오염된다.
 model RoutingNoRun {
-  id             Int      @id @default(autoincrement())
-  routedTo       String   @map("routed_to")
-  routedVia      String   @map("routed_via")
-  confidence     Float?
+  id               Int      @id @default(autoincrement())
+  routedTo         String   @map("routed_to")
+  routedVia        String   @map("routed_via")
+  confidence       Float?
   // agent_run.input_snapshot.routedText 와 같은 규칙(PII 마스킹 + 500자 상한).
-  routedText     String   @map("routed_text")
+  routedText       String   @map("routed_text")
   // dispatcher 가 돌려준 id — 0 은 run 없음, 양수면 재사용한 과거 run.
-  agentRunId     Int      @map("agent_run_id")
-  reusedAgentRun Boolean  @map("reused_agent_run")
-  modelUsed      String   @map("model_used")
-  createdAt      DateTime @default(now()) @map("created_at")
+  agentRunId       Int      @map("agent_run_id")
+  reusedAgentRun   Boolean  @map("reused_agent_run")
+  modelUsed        String   @map("model_used")
+  // 라우팅 기억 단축 판정(shadow 관측). agent_run 의 input_snapshot.routedMemoryHint 와 같은 값이다.
+  memoryAgentType  String?  @map("memory_agent_type")
+  memorySimilarity Float?   @map("memory_similarity")
+  createdAt        DateTime @default(now()) @map("created_at")
 
   @@index([createdAt])
   @@map("routing_no_run")
