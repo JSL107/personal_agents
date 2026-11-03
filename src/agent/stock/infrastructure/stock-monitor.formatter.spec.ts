@@ -49,8 +49,8 @@ describe('formatPortfolioExposure', () => {
     };
 
     expect(formatPortfolioExposure(exposure)).toBe(
-      '🌎 *자산 배분* — 미국 주식 84% · 코스피 하락 베팅 15% · 미분류 1%\n' +
-        '_달러 자산 84% — 환율이 내리면 원화 평가액도 함께 줄어듭니다_',
+      '🌎 *자산 배분*: 미국 주식 84% · 코스피 하락 베팅 15% · 미분류 1%\n' +
+        '_달러 자산 84%: 환율이 내리면 원화 평가액도 함께 줄어듭니다_',
     );
   });
 
@@ -60,7 +60,7 @@ describe('formatPortfolioExposure', () => {
         buckets: [{ label: '한국 주식', ratio: 100 }],
         fxUsdRatio: 0,
       }),
-    ).toBe('🌎 *자산 배분* — 한국 주식 100%');
+    ).toBe('🌎 *자산 배분*: 한국 주식 100%');
   });
 });
 
@@ -333,7 +333,7 @@ describe('formatAvgPriceStatuses', () => {
 
     expect(result).toBe(
       '📌 *평균 매입가(산 가격)보다 크게 벌어진 1종목*\n' +
-        '• *KODEX 인버스* — 3,003원에 사서 지금 1,933원, -35.7%\n' +
+        '• *KODEX 인버스*: 3,003원에 사서 지금 1,933원, -35.7%\n' +
         '  500주 보유 · 평가손 535,476원 (경보선 -20%)',
     );
   });
@@ -368,7 +368,7 @@ describe('formatHoldingChanges', () => {
 
     expect(result).toBe(
       '💼 *잔고 변화 1건*\n' +
-        '• *KODEX 인버스* — 추가 매수 50주 → 80주, 평단 11,044.7원 → 10,800원',
+        '• *KODEX 인버스*: 추가 매수 50주 → 80주, 평단 11,044.7원 → 10,800원',
     );
   });
 
@@ -436,7 +436,7 @@ describe('formatHoldingChanges', () => {
     ]);
 
     expect(result).toContain(
-      '🇺🇸 *PFE* — 신규 매수 62.0845주 (평단 USD 26.8245)',
+      '🇺🇸 *PFE*: 신규 매수 62.0845주 (평단 USD 26.8245)',
     );
   });
 

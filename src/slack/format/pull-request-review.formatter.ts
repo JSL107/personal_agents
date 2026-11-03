@@ -1,70 +1,52 @@
 import { PullRequestPublication } from '../../agent/code-reviewer/application/review-pull-request.usecase';
 import { PullRequestReview } from '../../agent/code-reviewer/domain/code-reviewer.type';
 import { hasNoReviewFindings } from '../../agent/code-reviewer/domain/review-emptiness';
+import { redactPii } from '../../common/util/pii-redaction.util';
 import { escapeSlackMrkdwn } from './mrkdwn.util';
 
-const RISK_LEVEL_LABEL: Record<PullRequestReview['riskLevel'], string> = {
-  low: '🟢 LOW',
-  medium: '🟡 MEDIUM',
-  high: '🔴 HIGH',
-  unknown: '⚪ UNKNOWN',
-};
-
-const APPROVAL_LABEL: Record<
-  PullRequestReview['approvalRecommendation'],
-  string
-> = {
-  approve: '✅ Approve',
-  request_changes: '✋ Request changes',
-  comment: '💬 Comment',
-  undetermined: '⏸️ 판단 보류',
+const shortIssue = (value: string): string => {
+  const firstLine = value.split('\n')[0].trim();
+  const firstSentence = firstLine.split(/(?<=[.!?。])\s/)[0];
+  return redactPii(firstSentence)
+    .replace(/```/g, "'''")
+    .replace(/\b[A-Z][A-Z0-9_]{5,}\b/g, '내부 설정')
+    .slice(0, 80);
 };
 
 // /review-pr 결과 — PullRequestReview 를 한국어 Slack 마크다운으로 렌더.
 export const formatPullRequestReview = ({
   prRef,
+  prTitle,
   review,
 }: {
   prRef: string;
+  prTitle?: string;
   review: PullRequestReview;
 }): string => {
+  const issues = [
+    ...review.mustFix,
+    ...review.niceToHave,
+    ...review.missingTests,
+    ...review.findings.map((finding) => finding.body),
+  ];
+  const uniqueIssues = [...new Set(issues)];
+  const draftCount = review.reviewCommentDrafts.filter(
+    (draft) => !uniqueIssues.includes(draft.body),
+  ).length;
+  const title =
+    shortIssue(prTitle ?? review.summary) ||
+    shortIssue(review.summary) ||
+    prRef;
   const lines: string[] = [
-    `*PR 리뷰 — ${prRef}*`,
-    `위험도: ${RISK_LEVEL_LABEL[review.riskLevel]} · 권고: ${APPROVAL_LABEL[review.approvalRecommendation]}`,
-    '',
-    '*요약*',
-    escapeSlackMrkdwn(review.summary),
+    `*${escapeSlackMrkdwn(title)} 리뷰*`,
+    `고칠 것 ${uniqueIssues.length + draftCount}개`,
+    ...uniqueIssues.map((issue) => `• ${escapeSlackMrkdwn(shortIssue(issue))}`),
+    ...Array.from({ length: draftCount }, () => '• 추가 검토 의견이 있어요.'),
   ];
 
   if (review.undeterminedReason !== undefined) {
     lines.push(
-      '',
-      '*판단 보류 이유*',
-      escapeSlackMrkdwn(review.undeterminedReason),
-    );
-  }
-
-  if (review.mustFix.length > 0) {
-    lines.push(
-      '',
-      '*Must-Fix*',
-      ...review.mustFix.map((item) => `• ${escapeSlackMrkdwn(item)}`),
-    );
-  }
-
-  if (review.niceToHave.length > 0) {
-    lines.push(
-      '',
-      '*Nice-to-have*',
-      ...review.niceToHave.map((item) => `• ${escapeSlackMrkdwn(item)}`),
-    );
-  }
-
-  if (review.missingTests.length > 0) {
-    lines.push(
-      '',
-      '*누락 테스트*',
-      ...review.missingTests.map((item) => `• ${escapeSlackMrkdwn(item)}`),
+      `판단 보류: ${escapeSlackMrkdwn(shortIssue(review.undeterminedReason))}`,
     );
   }
 
@@ -76,24 +58,7 @@ export const formatPullRequestReview = ({
     hasNoReviewFindings(review) &&
     review.approvalRecommendation !== 'undetermined'
   ) {
-    lines.push(
-      '',
-      '*지적 사항 없음* — 이번 diff 에서 고칠 것을 찾지 못했습니다.',
-    );
-  }
-
-  if (review.reviewCommentDrafts.length > 0) {
-    lines.push('', '*리뷰 코멘트 초안*');
-    for (const draft of review.reviewCommentDrafts) {
-      const location =
-        draft.file && draft.line
-          ? `\`${draft.file}:${draft.line}\` `
-          : draft.file
-            ? `\`${draft.file}\` `
-            : '';
-      // location(파일:라인)은 백틱 인라인 코드라 escape 제외, body(자유텍스트)만 escape.
-      lines.push(`• ${location}${escapeSlackMrkdwn(draft.body)}`);
-    }
+    lines.push('*지적 사항 없음*');
   }
 
   return lines.join('\n');
@@ -106,10 +71,10 @@ export const formatPullRequestPublication = (
 ): string => {
   switch (publication.kind) {
     case 'NOT_ALLOWED':
-      return `_GitHub 에 게시하지 않았어요 — ${escapeSlackMrkdwn(publication.repo)} 가 게시 허용 목록(PR_REVIEW_INLINE_REPOS·GITHUB_REVIEW_BOT_REPOS)에 없어요._`;
+      return '_GitHub 게시 대상에 등록되지 않았어요._';
     case 'FAILED':
       // 예외 원문은 로그에만 남긴다 — 외부 API 응답·내부 경로가 사용자 메시지로 새지 않게(#747 리뷰).
-      return '_GitHub 게시에 실패했어요 — 리뷰 결과는 위와 같아요. 원인은 서버 로그에 남겼어요._';
+      return '_GitHub 게시에 실패했어요. 리뷰 결과는 위와 같아요. 원인은 서버 로그에 남겼어요._';
     case 'DRY_RUN':
       return `_연습 모드라 GitHub 에 게시하지 않았어요 (게시 대상 ${publication.outcome.dryRun}건)._`;
     case 'POSTED': {

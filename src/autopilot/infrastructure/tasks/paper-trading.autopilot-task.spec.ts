@@ -210,8 +210,8 @@ describe('PaperTradingAutopilotTask', () => {
     const result = await task.run(context);
 
     expect(result.skip).toBe(true);
-    expect(result.emptyReason).toContain('*[LONG_TERM]*');
-    expect(result.emptyReason).toContain('*[SWING]*');
+    expect(result.emptyReason).toContain('*[장기투자]*');
+    expect(result.emptyReason).toContain('*[단기매매]*');
     expect(agentRun.execute).toHaveBeenCalledWith(
       expect.objectContaining({
         agentType: AgentType.PAPER_TRADE,
@@ -285,7 +285,7 @@ describe('PaperTradingAutopilotTask', () => {
 
     expect(result.skip).toBe(true);
     expect(result.summaryText).toBeUndefined();
-    expect(result.emptyReason).toContain('*[LONG_TERM]*');
+    expect(result.emptyReason).toContain('*[장기투자]*');
     // 보내지 않을 그림은 만들지 않는다.
     expect(reportImage.execute).not.toHaveBeenCalled();
   });
@@ -309,7 +309,7 @@ describe('PaperTradingAutopilotTask', () => {
 
     expect(result.skip).toBe(false);
     expect(result.summaryText).toContain(
-      '청산 예약 — 다음 거래일 시가 매도 0건 · 이미 예약돼 있던 매도 1건',
+      '청산 예약: 다음 거래일 시가 매도 0건 · 이미 예약돼 있던 매도 1건',
     );
   });
 
@@ -331,9 +331,9 @@ describe('PaperTradingAutopilotTask', () => {
     const result = await task.run(context);
 
     expect(result.summaryText).toContain(
-      '청산 예약 — 다음 거래일 시가 매도 1건',
+      '청산 예약: 다음 거래일 시가 매도 1건',
     );
-    expect(result.summaryText).toContain('[LONG_TERM] 121440 익절 밴드 도달');
+    expect(result.summaryText).toContain('[장기투자] 121440 익절 밴드 도달');
   });
 
   // 실패 계좌가 섞여 있어도 성공한 계좌의 청산은 그 회차에 걸려야 한다.
@@ -361,7 +361,7 @@ describe('PaperTradingAutopilotTask', () => {
     });
 
     await expect(task.run(context)).rejects.toThrow(
-      '가상 계좌 2개 중 1개를 평가하지 못했습니다 — SWING: 시세 조회 실패 (평가 완료: LONG_TERM)',
+      '가상 계좌 2개 중 1개를 평가하지 못했습니다: 단기매매: 시세 조회 실패 (평가 완료: 장기투자)',
     );
   });
 
@@ -374,7 +374,7 @@ describe('PaperTradingAutopilotTask', () => {
     });
 
     await expect(task.run(context)).rejects.toThrow(
-      '가상 계좌 2개 중 2개를 평가하지 못했습니다 — LONG_TERM: 시세 조회 실패 / SWING: 계좌 상태 불일치',
+      '가상 계좌 2개 중 2개를 평가하지 못했습니다: 장기투자: 시세 조회 실패 / 단기매매: 계좌 상태 불일치',
     );
   });
 
@@ -398,7 +398,7 @@ describe('PaperTradingAutopilotTask', () => {
     const result = await task.run(context);
 
     expect(result.summaryText).toContain(
-      '스냅샷 미적재 — 모든 보유 종목의 시세가 실행일보다 오래되었습니다.',
+      '스냅샷 미적재: 모든 보유 종목의 시세가 실행일보다 오래되었습니다.',
     );
     const run = agentRun.execute.mock.calls[0][0].run;
     const execution = await run({ agentRunId: 71 });
@@ -434,7 +434,7 @@ describe('PaperTradingAutopilotTask', () => {
     expect(result.detailImage).toEqual({
       png,
       filename: 'paper-return-2026-08-11.png',
-      title: '모의투자 수익률 — 2026-08-11',
+      title: '모의투자 수익률: 2026-08-11',
     });
   });
 
@@ -445,19 +445,17 @@ describe('PaperTradingAutopilotTask', () => {
       reportImage: {
         png: Buffer.from('fake-png'),
         filename: 'paper-return-2026-08-11.png',
-        title: '모의투자 수익률 — 2026-08-11',
+        title: '모의투자 수익률: 2026-08-11',
       },
     });
 
     const result = await task.run(context);
 
-    expect(result.headlineText).toContain(
-      '*모의투자 장마감 평가 — 2026-08-11*',
-    );
-    expect(result.headlineText).toContain('• LONG_TERM');
-    expect(result.headlineText).toContain('• SWING');
+    expect(result.headlineText).toContain('*모의투자 장마감 평가: 2026-08-11*');
+    expect(result.headlineText).toContain('• 장기투자');
+    expect(result.headlineText).toContain('• 단기매매');
     // 종목별 내역은 헤드라인이 아니라 요약(=스레드로 내려갈 본문)에 남는다.
-    expect(result.headlineText).not.toContain('*[LONG_TERM]*');
+    expect(result.headlineText).not.toContain('*[장기투자]*');
   });
 
   it('계좌가 0건이면 헤드라인도 없다 — 뒤집을 그림도 그때는 없다', async () => {
@@ -476,7 +474,7 @@ describe('PaperTradingAutopilotTask', () => {
     const outcome = await task.run(context);
 
     expect(outcome.skip).toBe(false);
-    expect(outcome.summaryText).toContain('*[LONG_TERM]*');
+    expect(outcome.summaryText).toContain('*[장기투자]*');
     expect(outcome.detailImage).toBeUndefined();
   });
 });

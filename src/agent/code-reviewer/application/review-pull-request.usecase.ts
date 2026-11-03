@@ -109,6 +109,7 @@ export type PullRequestPublication =
 
 // 게시를 시도하지 않은 회차(publish false·스윕·리뷰 실패 전 단계)는 publication 이 없다.
 export type ReviewPullRequestOutcome = AgentRunOutcome<PullRequestReview> & {
+  prTitle?: string;
   publication?: PullRequestPublication;
   // repoRead 를 켠 회차만 있다.
   repoRead?: RepoReadStatus;
@@ -344,10 +345,13 @@ export class ReviewPullRequestUsecase {
       },
     });
 
-    const outcome: ReviewPullRequestOutcome =
-      repoReadStatus === undefined
-        ? executed
-        : { ...executed, repoRead: repoReadStatus };
+    const outcome: ReviewPullRequestOutcome = {
+      ...executed,
+      ...(repoReadStatus === undefined ? {} : { repoRead: repoReadStatus }),
+      ...(reviewedDetail === undefined
+        ? {}
+        : { prTitle: reviewedDetail.title }),
+    };
 
     if (
       publish === true &&

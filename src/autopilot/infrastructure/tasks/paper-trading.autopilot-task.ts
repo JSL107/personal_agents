@@ -28,6 +28,7 @@ import {
   AutopilotTaskContext,
   AutopilotTaskResult,
 } from '../../domain/autopilot-task.port';
+import { PAPER_ACCOUNT_LABEL } from '../evening-digest.formatter';
 
 interface PaperTradingAccountAudit {
   accountName: string;
@@ -105,12 +106,15 @@ const buildExitBandText = (exitBand: ApplyExitBandResult): string => {
     return '';
   }
   const lines = exitBand.accounts.flatMap((account) =>
-    account.reasons.map((reason) => `• [${account.accountName}] ${reason}`),
+    account.reasons.map(
+      (reason) =>
+        `• [${PAPER_ACCOUNT_LABEL[account.accountName] ?? account.accountName}] ${reason}`,
+    ),
   );
   const pendingCount = countPendingExitSells(exitBand);
   const pendingText =
     pendingCount > 0 ? ` · 이미 예약돼 있던 매도 ${pendingCount}건` : '';
-  return `\n\n*청산 예약 — 다음 거래일 시가 매도 ${exitBand.createdCount}건${pendingText}*\n${lines.join('\n')}`;
+  return `\n\n*청산 예약: 다음 거래일 시가 매도 ${exitBand.createdCount}건${pendingText}*\n${lines.join('\n')}`;
 };
 
 // 계좌가 여러 개면 어느 계좌의 평가인지가 리포트에서 드러나야 한다. 포매터는 계좌 이름을
@@ -119,14 +123,14 @@ const buildSummaryText = (result: EvaluateAllAccountsResult): string => {
   if (result.accounts.length === 0) {
     return (
       '*가상 매매 장마감 평가*\n\n' +
-      '⚠️ 평가할 가상 계좌가 없습니다 — 모의투자 추천이 계좌를 열기 전이거나 계좌가 삭제되었습니다.'
+      '⚠️ 평가할 가상 계좌가 없습니다: 모의투자 추천이 계좌를 열기 전이거나 계좌가 삭제되었습니다.'
     );
   }
   return result.accounts
     .map((entry) => {
-      const heading = `*[${entry.accountName}]*`;
+      const heading = `*[${PAPER_ACCOUNT_LABEL[entry.accountName] ?? entry.accountName}]*`;
       if (!entry.evaluation) {
-        return `${heading}\n⚠️ 평가 실패 — ${entry.failureReason ?? '사유 미상'}`;
+        return `${heading}\n⚠️ 평가 실패: ${entry.failureReason ?? '사유 미상'}`;
       }
       return `${heading}\n${formatPaperTradingReport(entry.evaluation)}`;
     })
@@ -146,7 +150,7 @@ const buildHeadlineText = (
   const tradeDate = result.accounts.find((entry) => entry.evaluation?.tradeDate)
     ?.evaluation?.tradeDate;
   return [
-    `*모의투자 장마감 평가 — ${tradeDate ?? '거래일 미확정'}*`,
+    `*모의투자 장마감 평가: ${tradeDate ?? '거래일 미확정'}*`,
     ...result.accounts.map((entry) =>
       formatPaperAccountHeadline(entry.accountName, entry.evaluation),
     ),
@@ -222,12 +226,15 @@ export class PaperTradingAutopilotTask implements AutopilotTask {
           const detail = failedEntries
             .map(
               (entry) =>
-                `${entry.accountName}: ${entry.failureReason ?? '사유 미상'}`,
+                `${PAPER_ACCOUNT_LABEL[entry.accountName] ?? entry.accountName}: ${entry.failureReason ?? '사유 미상'}`,
             )
             .join(' / ');
           const evaluatedNames = evaluations.accounts
             .filter((entry) => entry.evaluation)
-            .map((entry) => entry.accountName);
+            .map(
+              (entry) =>
+                PAPER_ACCOUNT_LABEL[entry.accountName] ?? entry.accountName,
+            );
           const evaluatedText =
             evaluatedNames.length > 0
               ? ` (평가 완료: ${evaluatedNames.join(', ')})`
@@ -240,13 +247,14 @@ export class PaperTradingAutopilotTask implements AutopilotTask {
               ? ` / 밴드 청산 ${exitBand.createdCount}건은 예약 완료: ${exitBand.accounts
                   .flatMap((account) =>
                     account.reasons.map(
-                      (reason) => `[${account.accountName}] ${reason}`,
+                      (reason) =>
+                        `[${PAPER_ACCOUNT_LABEL[account.accountName] ?? account.accountName}] ${reason}`,
                     ),
                   )
                   .join(', ')}`
               : '';
           throw new Error(
-            `가상 계좌 ${evaluations.accounts.length}개 중 ${failedEntries.length}개를 평가하지 못했습니다 — ${detail}${evaluatedText}${exitBandText}`,
+            `가상 계좌 ${evaluations.accounts.length}개 중 ${failedEntries.length}개를 평가하지 못했습니다: ${detail}${evaluatedText}${exitBandText}`,
           );
         }
         // 청산 예약이 없는 날은 채널에 내지 않고 원장(SUPPRESSED/EMPTY)에만 남긴다. 계좌별 수익률은
@@ -285,7 +293,7 @@ export class PaperTradingAutopilotTask implements AutopilotTask {
                 detailImage: {
                   png: reportImage.png,
                   filename: reportImage.filename,
-                  title: reportImage.title,
+                  title: reportImage.title.replace(/\s*—\s*/g, ': '),
                 },
               }
             : {}),

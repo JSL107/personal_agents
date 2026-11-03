@@ -40,7 +40,7 @@ export const formatScreenResult = (result: ScreenUniverseResult): string => {
     return `${index + 1}\t${stock.code}\t${stock.name}\t${stock.krxMarket ?? '-'}\t${stock.score.toFixed(2)}\t${formatTurnover60(stock.indicators.turnover60)}\t${strategyValues}`;
   });
   return [
-    `스크리닝 결과 — ${result.strategy}, 규칙 v${result.ruleVersion}, 기준일 ${result.asOf ?? '-'}, 기준일 제외 ${result.staleCount.toLocaleString('en-US')}종목, 통과 ${result.passedCount.toLocaleString('en-US')}종목` +
+    `스크리닝 결과: ${result.strategy}, 규칙 v${result.ruleVersion}, 기준일 ${result.asOf ?? '-'}, 기준일 제외 ${result.staleCount.toLocaleString('en-US')}종목, 통과 ${result.passedCount.toLocaleString('en-US')}종목` +
       formatHighFallback(result),
     `순위\t종목코드\t종목명\t시장\t점수\tturnover60(억원)\t${strategyHeaders}`,
     ...lines,

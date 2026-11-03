@@ -8,7 +8,7 @@ export const formatBackfillSummary = (result: BackfillPricesResult): string => {
   // 못하고 끊긴 것이므로 따로 세우고 사유를 적는다.
   if (result.stalled > 0) {
     lines.push(
-      `⚠ 커서가 진전하지 않아 끊은 종목 ${result.stalled}종목 — 같은 페이지가 반복됐다는 뜻이며 목표 기간까지 받지 못했습니다.`,
+      `⚠ 커서가 진전하지 않아 끊은 종목 ${result.stalled}종목: 같은 페이지가 반복됐다는 뜻이며 목표 기간까지 받지 못했습니다.`,
     );
   }
   return lines.join('\n');

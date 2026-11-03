@@ -101,7 +101,7 @@ const formatLastCollectedAt = (lastCollectedAt: Date | null): string => {
   );
 
   if (elapsedHours >= STALE_COLLECTION_HOURS) {
-    return `_⚠️ 마지막 수집: ${timestamp} (${elapsedHours}시간 전 — 수집이 멈췄을 수 있습니다)_`;
+    return `_⚠️ 마지막 수집: ${timestamp} (${elapsedHours}시간 전: 수집이 멈췄을 수 있습니다)_`;
   }
   return `_마지막 수집: ${timestamp}_`;
 };
@@ -138,10 +138,10 @@ export const formatJobFeedDigest = ({
   const summaryLines: string[] = [];
 
   if (postings.length === 0) {
-    summaryLines.push(`*새 백엔드 공고* — ${cardDate}`);
+    summaryLines.push(`*새 백엔드 공고*: ${cardDate}`);
     summaryLines.push('조건에 맞는 공고가 없습니다.');
   } else {
-    summaryLines.push(`*새 백엔드 공고 ${postings.length}건* — ${cardDate}`);
+    summaryLines.push(`*새 백엔드 공고 ${postings.length}건*: ${cardDate}`);
   }
 
   // 각주는 메인에 남긴다. 스레드로 내리면 접힌 채라, 수집이 멈췄다는 신호를 펼쳐 보기
@@ -151,7 +151,7 @@ export const formatJobFeedDigest = ({
   summaryLines.push(formatLastCollectedAt(lastCollectedAt));
 
   if (scoreSkipReason) {
-    summaryLines.push(`_⚠️ 채점 건너뜀 — ${scoreSkipReason}_`);
+    summaryLines.push(`_⚠️ 채점 건너뜀: ${scoreSkipReason}_`);
   }
 
   if (outcomes.length > 0) {
@@ -185,7 +185,7 @@ export const formatJobFeedDigest = ({
     // 사실상 항상 같은 값이었다 — 회사명 시작 위치만 줄마다 어긋나 세로로
     // 훑을 수 없었다.
     detailLines.push(
-      `*${escapeMrkdwn(posting.company)}* — <${posting.detailUrl}|${escapeMrkdwn(
+      `*${escapeMrkdwn(posting.company)}*: <${posting.detailUrl}|${escapeMrkdwn(
         posting.title,
       )}>`,
     );

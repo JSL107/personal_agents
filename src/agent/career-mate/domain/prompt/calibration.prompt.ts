@@ -1,4 +1,5 @@
 import { DomainStatus } from '../../../../common/exception/domain-status.enum';
+import { READER_WRITING_RULES } from '../../../../common/llm/reader-writing-rules';
 import { CareerMateException } from '../career-mate.exception';
 import { CalibrationResultData, CareerProfileData } from '../career-mate.type';
 import { CareerMateErrorCode } from '../career-mate-error-code.enum';
@@ -16,6 +17,8 @@ export const CALIBRATION_SYSTEM_PROMPT = `너는 2026년 채용 시장 기준에
 - actionItems: 우선순위 개선 액션(구체적, 실행가능).
 - verdict: 한 줄 총평 + 현재 기준 적합도.
 과장 금지. 프로필에서 확인되는 것만.
+
+${READER_WRITING_RULES}
 
 스키마:
 {"verdict":"...","aiSlopRisks":["..."],"underQuantified":["..."],"outdatedPhrasing":["..."],"missingKeywords":["..."],"actionItems":["..."]}`;

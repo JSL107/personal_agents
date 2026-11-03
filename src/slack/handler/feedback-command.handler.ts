@@ -48,7 +48,7 @@ export class FeedbackCommandHandler implements SlackHandler {
         await respond({
           response_type: 'ephemeral',
           replace_original: true,
-          text: `AgentRun #${runId} 피드백 저장 완료 (${accepted ? '✅ accept' : '❌ reject'}${comment ? ` — ${comment}` : ''})`,
+          text: `실행 ${runId}번 피드백을 저장했어요 (${accepted ? '✅ 채택' : '❌ 기각'}${comment ? `, ${comment}` : ''})`,
         });
       } catch (error: unknown) {
         this.logger.error(

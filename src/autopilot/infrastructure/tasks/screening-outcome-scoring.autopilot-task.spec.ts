@@ -66,7 +66,7 @@ describe('ScreeningOutcomeScoringAutopilotTask', () => {
 
     expect(result).toEqual({
       skip: false,
-      summaryText: '스크리닝 사후 채점 — 5거래일 12건',
+      summaryText: '스크리닝 사후 채점: 5거래일 12건',
     });
   });
 });

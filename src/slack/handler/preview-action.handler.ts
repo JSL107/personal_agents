@@ -41,13 +41,13 @@ export class PreviewActionHandler implements SlackHandler {
         await respond({
           response_type: 'ephemeral',
           replace_original: true,
-          ...toReadableSlackArgs(`✅ Preview 적용 완료 — ${resultText}`),
+          ...toReadableSlackArgs(`✅ 적용 완료: ${resultText}`),
         });
       } catch (error: unknown) {
         await respond({
           response_type: 'ephemeral',
           replace_original: true,
-          text: `Preview 적용 실패: ${toUserFacingErrorMessage(error)}`,
+          text: `적용 실패: ${toUserFacingErrorMessage(error)}`,
         });
       }
     });
@@ -64,13 +64,13 @@ export class PreviewActionHandler implements SlackHandler {
         await respond({
           response_type: 'ephemeral',
           replace_original: true,
-          text: '❌ Preview 취소됨 — 부작용 없이 마감되었습니다.',
+          text: '❌ 취소했어요. 다른 변경은 없어요.',
         });
       } catch (error: unknown) {
         await respond({
           response_type: 'ephemeral',
           replace_original: true,
-          text: `Preview 취소 실패: ${toUserFacingErrorMessage(error)}`,
+          text: `취소 실패: ${toUserFacingErrorMessage(error)}`,
         });
       }
     });

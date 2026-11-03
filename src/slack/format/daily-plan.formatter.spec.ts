@@ -93,7 +93,7 @@ describe('formatDailyPlan', () => {
 
     expect(result.detail).toContain('*정체 항목 (결정 필요)*');
     expect(result.detail).toContain(
-      '<https://github.com/repo/app/pull/1|오래된 PR> (5일째) — 종결/위임/보류',
+      '<https://github.com/repo/app/pull/1|오래된 PR> (5일째): 종결/위임/보류',
     );
     expect(result.summary).toContain('정체 항목 1건');
   });
@@ -166,7 +166,7 @@ describe('formatInputTruncationNotice', () => {
   });
 });
 
-describe('formatDailyPlan — 입력 절단 안내', () => {
+describe('formatDailyPlan: 입력 절단 안내', () => {
   it('잘렸으면 메인 끝, 스레드 안내 앞에 한 줄로 붙인다', () => {
     const result = formatDailyPlan(plan(), {
       ...NO_TRUNCATION,

@@ -29,7 +29,7 @@ const formatNeedsHuman = (outcome: VacuumOutcome): string => {
     .slice(0, 3)
     .map((candidate) => `${candidate.prefix}(${candidate.count})`)
     .join(' · ');
-  const tail = candidates.length > 0 ? ` — 묶음 후보 ${candidates}` : '';
+  const tail = candidates.length > 0 ? `: 묶음 후보 ${candidates}` : '';
   return `⚠️ ${outcome.project}: 청소 뒤에도 ${toKilobytes(outcome.remainingOverflowBytes)} 초과${tail}`;
 };
 
@@ -55,12 +55,12 @@ export const formatMemoryVacuum = (
     failures.length === 0
   ) {
     return [
-      `🤖 기억 청소 — ${firedAtKst}`,
+      `🤖 기억 청소: ${firedAtKst}`,
       `프로젝트 ${outcomes.length}곳 이상 없음 (상한 ${toKilobytes(INDEX_SIZE_LIMIT_BYTES)})`,
     ].join('\n');
   }
 
-  const lines = [`🤖 기억 청소 — ${firedAtKst}`];
+  const lines = [`🤖 기억 청소: ${firedAtKst}`];
   for (const outcome of cleaned) {
     lines.push(
       `• ${outcome.project}: ${formatActions(outcome)} (${toKilobytes(outcome.before.indexBytes)} → ${toKilobytes(outcome.nextIndexBytes)})`,
@@ -71,7 +71,7 @@ export const formatMemoryVacuum = (
   }
   for (const outcome of atRisk) {
     lines.push(
-      `• ${outcome.project}: ${toKilobytes(outcome.before.indexBytes)} — 상한에 근접`,
+      `• ${outcome.project}: ${toKilobytes(outcome.before.indexBytes)}: 상한에 근접`,
     );
   }
   for (const failure of failures) {

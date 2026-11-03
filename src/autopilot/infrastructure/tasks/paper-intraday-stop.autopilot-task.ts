@@ -21,6 +21,7 @@ import {
   AutopilotTaskContext,
   AutopilotTaskResult,
 } from '../../domain/autopilot-task.port';
+import { PAPER_ACCOUNT_LABEL } from '../evening-digest.formatter';
 import {
   formatKstTime,
   formatQuantity,
@@ -74,7 +75,7 @@ const formatReturnRate = (returnRatePercent: number): string =>
   `${RETURN_RATE_FORMATTER.format(returnRatePercent)}%`;
 
 const formatFill = (fill: IntradayStopFill): string =>
-  ` • [${fill.accountName}] ${fill.tickerCode} ` +
+  ` • [${PAPER_ACCOUNT_LABEL[fill.accountName] ?? escapeSlackMrkdwn(fill.accountName)}] ${fill.tickerCode} ` +
   `${escapeSlackMrkdwn(fill.tickerName)} ${formatQuantity(fill.quantity)}주 ` +
   `@ ${formatWon(fill.price)} (${formatReturnRate(fill.returnRatePercent)})`;
 
@@ -94,20 +95,20 @@ const formatUnfilled = (result: ApplyIntradayStopResult): string | null => {
   if (unexplainedCount > 0) {
     reasons.push(`기타 체결 미완료 ${unexplainedCount}건`);
   }
-  return ` • 손절 판정 후 미체결 ${unfilledCount}건 — ${reasons.join(' · ')}`;
+  return ` • 손절 판정 후 미체결 ${unfilledCount}건: ${reasons.join(' · ')}`;
 };
 
 const formatResult = (result: ApplyIntradayStopResult): AutopilotTaskResult => {
   if (result.window === 'BEFORE_OPEN') {
     return {
       skip: true,
-      summaryText: '장중 손절 시간 창 이전 — 주문 미처리',
+      summaryText: '장중 손절 시간 창 이전: 주문 미처리',
     };
   }
   if (result.window === 'AFTER_CLOSE') {
     return {
       skip: true,
-      summaryText: '장중 손절 시간 창 종료 — 주문 미처리',
+      summaryText: '장중 손절 시간 창 종료: 주문 미처리',
     };
   }
   // 장중 5분 주기라 "손절 0건" 을 매번 보내면 하루 70장이다. 알릴 것이 있을 때만 카드를 낸다.
@@ -141,37 +142,39 @@ const formatResult = (result: ApplyIntradayStopResult): AutopilotTaskResult => {
     `${formatTradeDay(clock.tradeDate)} ${formatKstTime(clock.minutes)}` +
     (result.filledCount > 0 ? ' 현재가' : '');
   const lines = [
-    `*장중 손절* — ${asOfText} · ${result.filledCount}건 청산`,
+    `*장중 손절*: ${asOfText} · ${result.filledCount}건 청산`,
     ...result.fills.map(formatFill),
   ];
   if (result.priceErrorCount > 0) {
     lines.push(
-      ` • 시세 조회 실패 ${result.priceErrorCount}건 — 시세 공급자 쪽 문제일 수 있습니다. 그 종목은 이번 회차에 손절 판정을 받지 못했습니다`,
+      ` • 시세 조회 실패 ${result.priceErrorCount}건: 시세 공급자 쪽 문제일 수 있습니다. 그 종목은 이번 회차에 손절 판정을 받지 못했습니다`,
       // 종목과 사유가 없으면 한도 초과·타임아웃·공급 중단이 같은 문장으로 보이고, 그러면
       // 이 카드를 받아도 무엇을 확인해야 하는지 알 수 없다.
       ...result.priceErrors.map(
-        (description) => `   - ${escapeSlackMrkdwn(description)}`,
+        (description) =>
+          `   - ${escapeSlackMrkdwn(description).replace(/\s*—\s*/g, ': ')}`,
       ),
     );
   }
   if (result.notTradedCount > 0 && result.inspectedCount > 0) {
     lines.push(
-      ` • 오늘 거래가 없는 종목 ${result.notTradedCount}건 — 거래정지 여부를 확인해 주세요`,
+      ` • 오늘 거래가 없는 종목 ${result.notTradedCount}건: 거래정지 여부를 확인해 주세요`,
     );
   }
   if (result.corporateActions.length > 0) {
     lines.push(
-      ` • 기업행동 의심으로 손절 판정 보류 ${result.corporateActionCount}건 — ` +
+      ` • 기업행동 의심으로 손절 판정 보류 ${result.corporateActionCount}건: ` +
         `그 종목은 이번 회차에 청산되지 않았습니다. 배당락이면 받을 배당금이, ` +
         `분할이면 늘어난 수량이 장부에 아직 없으니 확인이 필요합니다`,
       ...result.corporateActions.map(
-        (description) => `   - ${escapeSlackMrkdwn(description)}`,
+        (description) =>
+          `   - ${escapeSlackMrkdwn(description).replace(/\s*—\s*/g, ': ')}`,
       ),
     );
   }
   if (result.fillFailureCount > 0) {
     lines.push(
-      ` • 손절 주문을 만들었으나 체결하지 못해 되돌림 ${result.fillFailureCount}건 — 다음 회차가 새 현재가로 다시 판정합니다`,
+      ` • 손절 주문을 만들었으나 체결하지 못해 되돌림 ${result.fillFailureCount}건: 다음 회차가 새 현재가로 다시 판정합니다`,
     );
   }
   const unfilledLine = formatUnfilled(result);
@@ -180,10 +183,10 @@ const formatResult = (result: ApplyIntradayStopResult): AutopilotTaskResult => {
   }
   if (result.accountFailures.length > 0) {
     lines.push(
-      ` • 계좌 ${result.accountFailureCount}개는 처리 중 오류로 건너뛰었습니다 — ${result.accountFailures
+      ` • 계좌 ${result.accountFailureCount}개는 처리 중 오류로 건너뛰었습니다: ${result.accountFailures
         .map(
           (failure) =>
-            `${failure.accountName}: ${escapeSlackMrkdwn(failure.reason)}`,
+            `${PAPER_ACCOUNT_LABEL[failure.accountName] ?? escapeSlackMrkdwn(failure.accountName)}: ${escapeSlackMrkdwn(failure.reason)}`,
         )
         .join(' / ')}`,
     );

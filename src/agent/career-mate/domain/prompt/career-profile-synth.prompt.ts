@@ -1,4 +1,5 @@
 import { DomainStatus } from '../../../../common/exception/domain-status.enum';
+import { READER_WRITING_RULES } from '../../../../common/llm/reader-writing-rules';
 import { GithubPullRequestSummary } from '../../../../github/domain/github.type';
 import { CareerMateException } from '../career-mate.exception';
 import { CareerProfileData } from '../career-mate.type';
@@ -14,6 +15,8 @@ export const CAREER_PROFILE_SYNTH_SYSTEM_PROMPT = `너는 개발자의 merged PR
 - star 는 situation/task/action/result 각 1~2문장.
 - skills.category 는 LANGUAGE | FRAMEWORK | DOMAIN | TOOL 중 하나, proficiency 는 FAMILIAR | PROFICIENT | EXPERT 중 하나(증거 PR 수/난이도로 판단).
 - 과장 금지. PR 에서 확인되는 것만.
+
+${READER_WRITING_RULES}
 
 스키마:
 {

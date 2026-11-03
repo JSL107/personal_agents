@@ -2,7 +2,10 @@ import {
   ScheduleItemRecord,
   ScheduleStatus,
 } from '../../schedule/domain/schedule.type';
-import { formatUpcomingLine } from './schedule-briefing.formatter';
+import {
+  formatScheduleLines,
+  formatUpcomingLine,
+} from './schedule-briefing.formatter';
 
 const TODAY = new Date('2026-09-18T00:00:00.000Z');
 
@@ -140,5 +143,27 @@ describe('formatUpcomingLine', () => {
     );
     expect(line).not.toContain('지남');
     expect(line).not.toContain('오늘');
+  });
+});
+
+describe('formatScheduleLines', () => {
+  it('오늘과 지난 미완 일정만 읽기 쉬운 줄로 낸다', () => {
+    expect(
+      formatScheduleLines(
+        [
+          { ...item('팀 회의', '2026-09-18T00:00:00.000Z'), dueTime: '14:00' },
+          item('이력서 제출', '2026-09-18T00:00:00.000Z'),
+          item('보고서 제출', '2026-09-15T00:00:00.000Z'),
+          item('내일', '2026-09-19T00:00:00.000Z'),
+          item('완료', '2026-09-18T00:00:00.000Z', ScheduleStatus.DONE),
+          item('공휴일', '2026-09-18T00:00:00.000Z', ScheduleStatus.OPEN, true),
+        ],
+        TODAY,
+      ),
+    ).toEqual([
+      '• 14:00 팀 회의',
+      '• 이력서 제출 (오늘)',
+      '• 보고서 제출 (3일 지남)',
+    ]);
   });
 });

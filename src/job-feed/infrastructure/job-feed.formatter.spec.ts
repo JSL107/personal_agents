@@ -92,7 +92,7 @@ describe('formatJobFeedDigest', () => {
         return line.includes('토스');
       });
       expect(companyLine).toBe(
-        '*토스* — <https://example.test/1|백엔드 개발자>',
+        '*토스*: <https://example.test/1|백엔드 개발자>',
       );
     });
 
@@ -329,7 +329,7 @@ describe('formatJobFeedDigest', () => {
     it('메인은 건수와 날짜만 제목으로 낸다', () => {
       const { summary } = render([posting(), posting({ id: 2 })]);
       expect(summary.split('\n')[0]).toBe(
-        '*새 백엔드 공고 2건* — 8월 31일 (월)',
+        '*새 백엔드 공고 2건*: 8월 31일 (월)',
       );
     });
 

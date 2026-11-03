@@ -1,7 +1,7 @@
 import { ApplicabilityStats } from '../../study-brief-cron/domain/port/study-brief.repository.port';
 
 const REVIEW_CRITERIA =
-  '_재검토 기준(배포 후 두 번째 요약부터): 채택+거절 5건 미만 · 적용 0건 또는 80% 이상 · 강등이 원 적용의 절반 이상 — 하나라도 해당하면 루프를 다시 설계하거나 접는다._';
+  '_재검토 기준(배포 후 두 번째 요약부터): 채택+거절 5건 미만 · 적용 0건 또는 80% 이상 · 강등이 원 적용의 절반 이상: 하나라도 해당하면 루프를 다시 설계하거나 접는다._';
 
 export const formatStudyApplicabilityStats = (
   stats: ApplicabilityStats,

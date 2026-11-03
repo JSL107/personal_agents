@@ -4,11 +4,8 @@ import { Prisma } from '@prisma/client';
 
 import { GenerateDailyPlanUsecase } from '../../../agent/pm/application/generate-daily-plan.usecase';
 import { PmAgentException } from '../../../agent/pm/domain/pm-agent.exception';
-import { TaskItem } from '../../../agent/pm/domain/pm-agent.type';
 import { PmAgentErrorCode } from '../../../agent/pm/domain/pm-agent-error-code.enum';
-import { summarizePortfolioValue } from '../../../agent/stock/domain/portfolio-exposure';
 import { USD_KRW_PAIR } from '../../../agent/stock/domain/stock-monitor.type';
-import { formatPortfolioValue } from '../../../agent/stock/infrastructure/stock-monitor.formatter';
 import { StockMonitorPrismaRepository } from '../../../agent/stock/infrastructure/stock-monitor.prisma.repository';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import {
@@ -46,19 +43,12 @@ import {
 } from '../../../preview-gate/domain/preview-action.type';
 import { ListSchedulesUsecase } from '../../../schedule/application/list-schedules.usecase';
 import {
-  plainDateToUtcDate,
-  todayInKst,
-} from '../../../schedule/domain/parse-due-date';
-import {
   SLACK_DELIVERY_REPOSITORY,
   SlackDeliveryRepositoryPort,
   SlackDeliveryStatRow,
 } from '../../../slack/domain/port/slack-delivery.repository.port';
-import { formatDailyPlan } from '../../../slack/format/daily-plan.formatter';
-import { formatModelFooter } from '../../../slack/format/model-footer.formatter';
 import { buildRunVerdictDigestPages } from '../../../slack/format/run-verdict-message.builder';
-import { formatUpcomingLine } from '../../../slack/format/schedule-briefing.formatter';
-import { formatWaitingSection } from '../../../slack/format/waiting-section.formatter';
+import { formatScheduleLines } from '../../../slack/format/schedule-briefing.formatter';
 import {
   findLastFireBefore,
   resolveTaskCronSchedule,
@@ -88,19 +78,22 @@ import {
   formatMorningDigest,
   MorningDigestInput,
   MorningIncident,
+  MorningTodo,
 } from '../morning-digest.formatter';
 import { formatTradeDay } from '../paper-number.formatter';
-import { PORTFOLIO_PUBLISH_FAILURE_HEADER } from './portfolio-publish.autopilot-task';
+import {
+  PORTFOLIO_BULLET_SEPARATOR,
+  PORTFOLIO_PUBLISH_FAILURE_HEADER,
+  PORTFOLIO_REASON_SEPARATOR,
+} from './portfolio-publish.autopilot-task';
 
 // 환율을 저장하는 것은 저녁 감시라 아침에는 늘 어제 값이 최신이다. 연휴를 감안해도 이만큼
 // 묵었으면 환산이 자산 규모를 왜곡하므로, 그때는 자산 줄 자체를 내지 않는다.
 const MAXIMUM_FX_RATE_AGE_DAYS = 7;
 // 잔고 동기화가 멈춘 채 며칠 지나면 수량 자체가 옛것이다. 평가액은 계산되지만 그것은
 // 지금 자산이 아니다 — 환율에 상한을 둔 것과 같은 이유로 그때는 줄을 내지 않는다.
-const MAXIMUM_HOLDING_AGE_DAYS = 7;
 
 // 마감 줄이 내다보는 앞쪽 폭. 이보다 먼 마감은 오늘 아침에 할 일이 아니다.
-const UPCOMING_WINDOW_DAYS = 7;
 const DAY_MS = 24 * 60 * 60 * 1000;
 // 해결 줄 조회 하한을 직전 아침 원장 시각보다 이만큼 당긴다. 원장은 조회 뒤(발송 후)에 쓰이므로 그 사이
 // 해결을 놓치지 않게 겹친다. 아침 한 회차(계획 생성 포함)가 이보다 길면 늘린다.
@@ -123,7 +116,6 @@ const PORTFOLIO_LINE_MAX_LENGTH = 150;
 const FAILURE_REASON_MAX_LENGTH = 80;
 const PORTFOLIO_TASK_ID = 'portfolio-publish';
 const APPROVAL_LABEL_MAX_LENGTH = 20;
-const THREAD_SEPARATOR = '\n\n────────\n\n';
 
 const isWeekendKst = (firedAtKst: string): boolean => {
   const day = new Date(`${firedAtKst}T00:00:00.000Z`).getUTCDay();
@@ -141,7 +133,7 @@ const toVerdictCardMessages = (
     quote: entry.quote,
   }));
   const pages = buildRunVerdictDigestPages({ heading: card.heading, entries });
-  const text = `${card.heading} — 지난주 판정 안 된 ${card.entries.length}건`;
+  const text = `${card.heading}: 지난주 판정 안 된 ${card.entries.length}건`;
   return pages.map((blocks) => ({ text, blocks }));
 };
 
@@ -227,10 +219,15 @@ type PortfolioReport =
 const readPortfolioReport = (fullText: string): PortfolioReport | null => {
   const summaryPart = fullText.split('\n\n')[0] ?? '';
   if (summaryPart.startsWith(PORTFOLIO_PUBLISH_FAILURE_HEADER)) {
-    const reason = summaryPart
+    const remainder = summaryPart
       .slice(PORTFOLIO_PUBLISH_FAILURE_HEADER.length)
-      .replace(/^\s*—\s*/, '')
-      .trim();
+      .trimStart();
+    // 기존 원장의 줄표 구분자도 계속 읽는다. 저장된 보고는 다시 생성되지 않는다.
+    const reason = (
+      remainder.startsWith(PORTFOLIO_REASON_SEPARATOR)
+        ? remainder.slice(PORTFOLIO_REASON_SEPARATOR.length)
+        : remainder.replace(/^—\s*/, '')
+    ).trim();
     return { kind: 'failure', reason };
   }
   const bullets = summaryPart
@@ -247,7 +244,9 @@ const readPortfolioReport = (fullText: string): PortfolioReport | null => {
     line: truncate(
       `발행 · ${bullets
         .map((bullet) =>
-          bullet.replace(/^(📋|📌)\s*/u, '').replace(/ — /g, ': '),
+          bullet
+            .replace(/^(📋|📌)\s*/u, '')
+            .replace(/ — /g, PORTFOLIO_BULLET_SEPARATOR),
         )
         .join(' · ')}`,
       PORTFOLIO_LINE_MAX_LENGTH,
@@ -256,10 +255,7 @@ const readPortfolioReport = (fullText: string): PortfolioReport | null => {
 };
 
 interface PlanSection {
-  // 스레드에 실을 계획 전문(지금까지 메인에 있던 요약 + 상세).
-  thread: string;
-  company: TaskItem | null;
-  // 계획 생성이 실패했으면 그 사유. 아침 메시지 본체는 그대로 나가고 이것만 장애 줄로 오른다.
+  todos: MorningTodo[] | null;
   failure: string | null;
 }
 
@@ -322,6 +318,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
       ledgerGapIncidents,
       resolvedIncidents,
       verdictCards,
+      schedules,
     ] = await Promise.all([
       this.loadApprovalLabels(ownerSlackUserId, now),
       this.loadIncidents(now),
@@ -338,19 +335,17 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
       this.loadLedgerGapIncidents(firedAtKst),
       this.loadResolvedIncidents(firedAtKst, now),
       this.loadWeeklyVerdictCards(ownerSlackUserId, firedAtKst),
+      this.loadScheduleLines(ownerSlackUserId, firedAtKst),
     ]);
 
     // 그날 회차에서 감지한 문제도 장애로 센다 — 첫 줄만 보고 열지 정하는 메시지라, 아래 줄에만
     // 경고를 두면 첫 줄이 "손댈 것 없음" 인 채로 문제가 묻힌다.
     const detectedIncidents: MorningIncident[] = [
-      ...(plan.failure
-        ? [{ label: `오늘 계획 생성 실패 — ${plan.failure}`, dayCount: null }]
-        : []),
       ...(posting.staleIncident ? [posting.staleIncident] : []),
       ...(portfolio?.kind === 'failure'
         ? [
             {
-              label: `포트폴리오 사이트 발행 실패 — ${truncate(portfolio.reason, FAILURE_REASON_MAX_LENGTH)}`,
+              label: `포트폴리오 사이트 발행 실패: ${truncate(portfolio.reason, FAILURE_REASON_MAX_LENGTH)}`,
               dayCount: null,
             },
           ]
@@ -364,9 +359,9 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
       resolvedIncidents,
       postings: posting.postings,
       invest,
-      company: plan.company
-        ? { title: plan.company.title, url: plan.company.url ?? null }
-        : null,
+      todos: plan.todos,
+      planFailure: plan.failure,
+      schedules,
       study,
       portfolio: portfolio?.kind === 'report' ? portfolio.line : null,
     };
@@ -375,9 +370,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
     return {
       skip: false,
       summaryText: formatMorningDigest(digestInput),
-      detailText: [plan.thread, posting.thread]
-        .filter((part): part is string => Boolean(part))
-        .join(THREAD_SEPARATOR),
+      detailText: posting.thread ?? '',
       // PM 계획 전문은 이제 스레드에만 있다. 스레드가 실패하면 채널에 대신 붙인다(중복 > 유실).
       detailIsOnlyCopy: true,
       // 공고 링크가 스레드에, 계획 링크가 본문에 실린다 — 미리보기가 펼쳐지면 한 줄씩 둔 목적이 묻힌다.
@@ -457,35 +450,34 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
         outcome.result.plan,
         this.humanizeService,
       );
-      const formatted = formatDailyPlan(
-        humanizedPlan,
-        outcome.result.inputTruncation,
-      );
-      const planSummary = await this.appendUpcomingSchedules(
-        await this.appendPortfolioValue(
-          formatted.summary + formatWaitingSection(outcome.result.waitingItems),
-        ),
-        ownerSlackUserId,
-      );
-      return {
-        thread: `${planSummary}\n\n${formatted.detail}${formatModelFooter(outcome)}`,
-        company: humanizedPlan.topPriority,
-        failure: null,
-      };
+      const seen = new Set<string>();
+      const todos = [
+        humanizedPlan.topPriority,
+        ...humanizedPlan.morning,
+        ...humanizedPlan.afternoon,
+      ]
+        .filter((task) => {
+          if (seen.has(task.id)) {
+            return false;
+          }
+          seen.add(task.id);
+          return true;
+        })
+        .map((task) => ({
+          title: task.title,
+          url: task.url ?? null,
+          dayCount:
+            humanizedPlan.stalledTasks?.find(
+              (stalled) => stalled.id === task.id,
+            )?.daysStalled ?? null,
+        }));
+      return { todos, failure: null };
     } catch (error) {
       if (
         error instanceof PmAgentException &&
         error.pmAgentErrorCode === PmAgentErrorCode.EMPTY_TASKS_INPUT
       ) {
-        // 할 일이 없는 날에도 자산과 마감은 말해 준다 — 할 일이 없는 날이야말로 마감 알림이
-        // 가장 필요한 날이다. 그 안내는 계획 전문 자리(스레드)에 그대로 둔다.
-        const emptyTasksText = await this.appendUpcomingSchedules(
-          await this.appendPortfolioValue(
-            '오늘 자동 수집된 할 일이 없습니다 (GitHub/Notion/Slack 모두 비어있음). 필요하면 `/today <할 일>` 로 직접 입력해주세요.',
-          ),
-          ownerSlackUserId,
-        );
-        return { thread: emptyTasksText, company: null, failure: null };
+        return { todos: [], failure: null };
       }
       // 계획 생성 실패가 아침 메시지 전체를 지우면 안 된다 — 승인 대기·장애·공고·공부·포트폴리오는
       // 계획과 무관한 정보이고, 그 원래 발송은 콘솔로 옮겨져 이 메시지가 유일한 표면이다.
@@ -495,8 +487,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
         `아침 계획 생성 실패 — 나머지 줄은 그대로 발송: ${reason}`,
       );
       return {
-        thread: `_⚠️ 오늘 계획을 만들지 못했습니다 — ${reason}_`,
-        company: null,
+        todos: null,
         failure: truncate(reason, FAILURE_REASON_MAX_LENGTH),
       };
     }
@@ -602,7 +593,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
         return null;
       }
       return {
-        label: `${label} 기록 없음 — 마지막 기록 ${formatTradeDay(getKstDateOf(latestBeforeToday))}`,
+        label: `${label} 기록 없음, 마지막 기록 ${formatTradeDay(getKstDateOf(latestBeforeToday))}`,
         dayCount: null,
       };
     } catch (error: unknown) {
@@ -650,8 +641,8 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
         staleIncident: isStale
           ? {
               label: lastCollectedAt
-                ? `공고 수집 멈춤 — 마지막 수집 ${formatTradeDay(getKstDateOf(lastCollectedAt))}`
-                : '공고 수집된 적 없음 — 수집 설정 확인',
+                ? `공고 수집 멈춤, 마지막 수집 ${formatTradeDay(getKstDateOf(lastCollectedAt))}`
+                : '공고 수집된 적 없음, 수집 설정 확인',
               dayCount: null,
             }
           : null,
@@ -733,67 +724,20 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
     }
   }
 
-  // 자산 한 줄은 브리핑의 곁다리다. 조회가 실패해도 브리핑 본체는 나가야 한다 —
-  // 장식 쿼리 하나가 본체를 죽이는 것을 이 레포에서 이미 겪었다.
-  private async appendPortfolioValue(summaryText: string): Promise<string> {
-    try {
-      const positions = await this.stockRepository.findPortfolioPositions();
-      if (positions.length === 0) {
-        return summaryText;
-      }
-      const holdingAgeDays = Math.min(
-        ...positions.map((position) => ageInDaysOf(position.holdingDate)),
-      );
-      if (holdingAgeDays > MAXIMUM_HOLDING_AGE_DAYS) {
-        this.logger.warn(
-          `잔고가 ${Math.floor(holdingAgeDays)}일 전 값이라 자산 요약을 생략합니다.`,
-        );
-        return summaryText;
-      }
-      const rate = await this.resolveUsdKrwRate();
-      const value = summarizePortfolioValue(positions, rate);
-      const valueText = formatPortfolioValue(value);
-      if (!valueText) {
-        return summaryText;
-      }
-      return `${summaryText}\n\n${valueText}`;
-    } catch (error) {
-      this.logger.warn(`자산 요약 생략 — ${(error as Error).message}`);
-      return summaryText;
-    }
-  }
-
-  // 마감 한 줄도 자산 줄과 같은 곁다리다. 조회가 실패해도 브리핑 본체는 나가야 한다 —
-  // 장식이 본체를 죽이면 안 된다.
-  private async appendUpcomingSchedules(
-    text: string,
+  private async loadScheduleLines(
     ownerSlackUserId: string,
-  ): Promise<string> {
-    // **하한(`from`)을 넘기지 않는다.** 오늘을 하한으로 두면 어제 놓친 미완 마감이 조회에서
-    // 통째로 빠져, 처리도 건너뜀도 안 한 항목이 조용히 사라진다 — 놓친 마감을 알리는 것이
-    // 이 기능의 목적이라 그 하한이 목적을 거스른다. 포맷터의 `D+n`(지난 마감) 분기가
-    // 프로덕션에서 도달 불가였던 것도 같은 이유다(`schedule-briefing.formatter.ts`).
-    // 임의의 되짚기 폭(예: 90일)을 두지 않은 것은 그 경계 밖에서 같은 실종이 되살아나서다.
-    //
-    // 상한(`to`)은 **KST 달력일의 UTC 자정** 에 맞춘다. `dueDate` 가 `@db.Date` 라 같은
-    // 표현이어야 라벨 반올림이 어긋나지 않는다 — 시각이 붙으면 밤에 내일 마감이 `D-day` 로
-    // 찍힌다(2026-09-18 실측).
-    //
-    // 완료·건너뜀은 여기서 거르지 않는다 — `formatUpcomingLine` 이 `OPEN` 만 남기므로
-    // 거르는 자리를 둘로 늘리면 둘이 갈릴 때 어느 쪽이 정본인지 알 수 없어진다.
-    const todayCalendarDay = plainDateToUtcDate(todayInKst(new Date()));
-    const weekLater = new Date(
-      todayCalendarDay.getTime() + UPCOMING_WINDOW_DAYS * DAY_MS,
-    );
+    firedAtKst: string,
+  ): Promise<string[] | null> {
+    const today = new Date(`${firedAtKst}T00:00:00.000Z`);
     try {
       const items = await this.listSchedules.execute({
         slackUserId: ownerSlackUserId,
-        to: weekLater,
+        to: today,
       });
-      return text + formatUpcomingLine(items, todayCalendarDay);
+      return formatScheduleLines(items, today);
     } catch (error: unknown) {
       this.logger.warn(`마감 줄 생성 실패: ${String(error)}`);
-      return text;
+      return null;
     }
   }
 

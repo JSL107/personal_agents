@@ -127,12 +127,12 @@ export class CujCheckAutopilotTask implements AutopilotTask {
       hour12: false,
     }).format(now);
     const lines = violations.map(
-      ({ title, detail }) => `• ${title} — ${escapeSlackMrkdwn(detail)}`,
+      ({ title, detail }) => `• ${title}: ${escapeSlackMrkdwn(detail)}`,
     );
     return {
       skip: false,
       summaryText: [
-        `*CUJ 점검 — ${dateLabel} ${timeLabel}*`,
+        `*CUJ 점검: ${dateLabel} ${timeLabel}*`,
         `깨진 여정 ${violations.length}건`,
         ...lines,
       ].join('\n'),
@@ -152,7 +152,7 @@ export class CujCheckAutopilotTask implements AutopilotTask {
       violations.push({
         cuj,
         title: CUJ_TITLES[cuj - 1],
-        detail: `확인 불가 — ${message}`,
+        detail: `확인 불가: ${message}`,
       });
     }
   }

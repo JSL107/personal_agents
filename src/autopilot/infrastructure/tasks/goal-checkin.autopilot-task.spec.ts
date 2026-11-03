@@ -81,7 +81,7 @@ describe('GoalCheckinAutopilotTask', () => {
 
     const result = await task.run(context);
 
-    expect(result.summaryText).toContain('⏰ *이직하기* — 기한 2일 지남');
+    expect(result.summaryText).toContain('⏰ *이직하기*: 기한 2일 지남');
     expect(result.previews).toEqual([
       expect.objectContaining({
         kind: 'PRODUCT_GOAL',

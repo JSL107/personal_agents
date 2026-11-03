@@ -26,7 +26,7 @@ export class IdeaTriageAutopilotTask implements AutopilotTask {
     }
     return {
       skip: false,
-      summaryText: `💡 아이디어 ${result.judged}건 판정 — 만든다 ${result.byVerdict.BUILD} · 고치고 만든다 ${result.byVerdict.REVISE_THEN_BUILD} · 접는다 ${result.byVerdict.DROP} (실패 ${result.failed})`,
+      summaryText: `💡 아이디어 ${result.judged}건 판정: 만든다 ${result.byVerdict.BUILD} · 고치고 만든다 ${result.byVerdict.REVISE_THEN_BUILD} · 접는다 ${result.byVerdict.DROP} (실패 ${result.failed})`,
     };
   }
 }

@@ -14,7 +14,7 @@ describe('formatCeoMetaOutput', () => {
   it('summary 에 finalSummary 와 드리프트 헤더가 포함된다', () => {
     const { summary } = formatCeoMetaOutput(base);
     expect(summary).toContain('본 주는 phase 흐름 정상.');
-    expect(summary).toContain('🧭 총평 — 최근 7일');
+    expect(summary).toContain('🧭 총평: 최근 7일');
   });
 
   it('detail 에 observations 와 findings 전체가 담긴다', () => {
@@ -25,9 +25,10 @@ describe('formatCeoMetaOutput', () => {
     expect(detail).toContain('문서 품질 개선');
   });
 
-  it('detail 에 source footer 가 포함된다', () => {
+  it('detail 에 내부 출처와 스키마 표기를 노출하지 않는다', () => {
     const { detail } = formatCeoMetaOutput(base);
-    expect(detail).toContain('poEval=#1');
-    expect(detail).toContain('pm=#2');
+    expect(detail).not.toContain('합성 source');
+    expect(detail).not.toContain('missing:');
+    expect(detail).not.toContain('schemaVersion');
   });
 });

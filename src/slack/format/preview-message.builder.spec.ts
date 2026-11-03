@@ -58,6 +58,23 @@ describe('chunkMrkdwnText — Slack section 3000자 한계 대응', () => {
 });
 
 describe('buildPreviewBlocks', () => {
+  it('slackText가 있으면 짧은 문장만 그린다', () => {
+    const blocks = buildPreviewBlocks({
+      previewText: '전문',
+      slackText: '짧게',
+      previewId: 'p1',
+    });
+    expect(JSON.stringify(blocks)).toContain('짧게');
+    expect(JSON.stringify(blocks)).not.toContain('전문');
+  });
+
+  it('slackText가 없는 옛 행은 previewText로 그린다', () => {
+    expect(
+      JSON.stringify(
+        buildPreviewBlocks({ previewText: '전문', previewId: 'p1' }),
+      ),
+    ).toContain('전문');
+  });
   it('짧은 text — 1 section + 1 actions block', () => {
     const blocks = buildPreviewBlocks({
       previewText: '동기화 후보 3건 검토 후 ✅ 누르세요.',

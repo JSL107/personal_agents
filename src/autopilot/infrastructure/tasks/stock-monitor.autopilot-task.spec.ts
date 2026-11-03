@@ -476,10 +476,10 @@ describe('StockMonitorAutopilotTask', () => {
     expect(result.emptyReason).toContain('💼 *잔고 변화 2건*');
     expect(result.skip).toBe(true);
     expect(result.emptyReason).toContain(
-      '• *SamsungElec* — 추가 매수 10주 → 20주, 평단 100원 → 95원',
+      '• *SamsungElec*: 추가 매수 10주 → 20주, 평단 100원 → 95원',
     );
     expect(result.emptyReason).toContain(
-      '• 🇺🇸 *PFE* — 신규 매수 62.0845주 (평단 USD 26.8245)',
+      '• 🇺🇸 *PFE*: 신규 매수 62.0845주 (평단 USD 26.8245)',
     );
     // 감시 판정 요약을 밀어내지 않고 그 뒤에 붙는다.
     expect(result.emptyReason).toMatch(/주식 모니터링[\s\S]*잔고 변화/);
@@ -509,7 +509,7 @@ describe('StockMonitorAutopilotTask', () => {
       '📌 *평균 매입가(산 가격)보다 크게 벌어진 1종목*',
     );
     expect(result.emptyReason).toContain(
-      '• *SamsungElec* — 100원에 사서 지금 64원, -36.0%',
+      '• *SamsungElec*: 100원에 사서 지금 64원, -36.0%',
     );
     expect(result.emptyReason).toContain(
       '  10주 보유 · 평가손 360원 (경보선 -20%)',
@@ -537,7 +537,7 @@ describe('StockMonitorAutopilotTask', () => {
 
     expect(result.skip).toBe(false);
     expect(result.summaryText).toContain(
-      '↩️ *경보선 안으로 돌아온 종목* — SamsungElec',
+      '↩️ *경보선 안으로 돌아온 종목*: SamsungElec',
     );
     expect(result.summaryText).not.toContain('크게 벌어진');
     expect(recordedRuns[0].output).toMatchObject({
@@ -578,7 +578,7 @@ describe('StockMonitorAutopilotTask', () => {
 
     expect(result.skip).toBe(false);
     expect(result.summaryText).toContain(
-      '↩️ *경보선 안으로 돌아온 종목* — SamsungElec',
+      '↩️ *경보선 안으로 돌아온 종목*: SamsungElec',
     );
   });
 
@@ -954,7 +954,7 @@ describe('StockMonitorAutopilotTask', () => {
     ).run(context);
 
     expect(result.skip).toBe(false);
-    expect(result.summaryText).toContain('• *SamsungElec* — 전량 매도 (10주)');
+    expect(result.summaryText).toContain('• *SamsungElec*: 전량 매도 (10주)');
     expect(recordedRuns[0].output).toMatchObject({
       holdingCount: 0,
       holdingChangeCount: 1,
@@ -1043,7 +1043,7 @@ describe('StockMonitorAutopilotTask', () => {
     expect(result.skip).toBe(true);
     expect(result.emptyReason).toContain('📉 *주식 모니터링*');
     expect(result.emptyReason).toContain(
-      '🌎 *자산 배분* — 미국 주식 50% · 코스피 하락 베팅 50%',
+      '🌎 *자산 배분*: 미국 주식 50% · 코스피 하락 베팅 50%',
     );
   });
 
@@ -1187,7 +1187,7 @@ describe('StockMonitorAutopilotTask', () => {
     expect(result.skip).toBe(true);
     expect(result.emptyReason).toContain('새 거래일 시세가 없어');
     expect(result.emptyReason).toContain(
-      '🌎 *자산 배분* — 미국 주식 50% · 코스피 하락 베팅 50%',
+      '🌎 *자산 배분*: 미국 주식 50% · 코스피 하락 베팅 50%',
     );
   });
 
@@ -1262,7 +1262,7 @@ describe('StockMonitorAutopilotTask', () => {
       '📌 *평균 매입가(산 가격)보다 크게 벌어진 1종목*',
     );
     expect(result.emptyReason).toContain(
-      '• *SamsungElec* — 100원에 사서 지금 64원, -36.0%',
+      '• *SamsungElec*: 100원에 사서 지금 64원, -36.0%',
     );
     expect(recordedRuns[0].output).toMatchObject({
       marketClosed: true,

@@ -27,13 +27,12 @@ import {
   AUTOPILOT_TASK_TRACE_PORT,
   AutopilotTaskTracePort,
 } from '../../domain/port/autopilot-task-trace.port';
+import { PAPER_ACCOUNT_LABEL } from '../evening-digest.formatter';
 import { formatMoney, formatTradeDay } from '../paper-number.formatter';
 
 const STRATEGIES: PaperRecommendationStrategy[] = ['LONG_TERM', 'SWING'];
-const STRATEGY_LABELS: Record<PaperRecommendationStrategy, string> = {
-  LONG_TERM: '장기',
-  SWING: '스윙',
-};
+const STRATEGY_LABELS: Record<PaperRecommendationStrategy, string> =
+  PAPER_ACCOUNT_LABEL;
 const SKIP_REASON_LABELS: Record<PaperRecommendationSkipReason, string> = {
   ALREADY_HELD: '보유 중·중복',
   NOT_IN_CANDIDATES: '후보 이탈',
@@ -103,7 +102,7 @@ const formatResult = (
   return {
     skip: false,
     summaryText: [
-      `*모의투자 추천* — ${headline}${timing}`,
+      `*모의투자 추천*: ${headline}${timing}`,
       ...summarySections,
     ].join('\n'),
     ...(detailSections.length > 0
@@ -152,7 +151,7 @@ const formatCompletedDetail = (
     `*${STRATEGY_LABELS[completed.strategy]} 제외 상세*`,
     ...completed.skipped.map(
       (skip) =>
-        ` • 제외 ${sideLabel(skip.side)} ${escapeSlackMrkdwn(skip.name)}(${skip.code}) — ` +
+        ` • 제외 ${sideLabel(skip.side)} ${escapeSlackMrkdwn(skip.name)}(${skip.code}): ` +
         SKIP_REASON_LABELS[skip.reason],
     ),
   ].join('\n');
@@ -163,19 +162,19 @@ const emptyReasonLine = (completed: PaperRecommendationSuccess): string => {
   if (completed.emptyReason) {
     switch (completed.emptyReason.code) {
       case 'NO_MARKET_DATA':
-        return ' • 시세 데이터 없음 — 주문 생성 안 됨';
+        return ' • 시세 데이터 없음: 주문 생성 안 됨';
       case 'NO_CANDIDATES':
         return ' • 조건을 통과한 후보 종목 없음';
       case 'ALL_FILTERED':
         return ' • 추천이 모두 제외돼 주문 없음';
       case 'MODEL_HELD':
         return completed.emptyReason.detail
-          ? ` • 보유 유지 판단 — ${escapeSlackMrkdwn(completed.emptyReason.detail)}`
+          ? ` • 보유 유지 판단: ${escapeSlackMrkdwn(completed.emptyReason.detail)}`
           : ' • 보유 유지 판단 (사유 미기재)';
     }
   }
   if (completed.dataAsOf === null) {
-    return ' • 시세 데이터 없음 — 주문 생성 안 됨';
+    return ' • 시세 데이터 없음: 주문 생성 안 됨';
   }
   if (completed.skipped.length > 0) {
     return ' • 추천이 모두 제외돼 주문 없음';
@@ -199,7 +198,7 @@ const formatReturnRate = (returnRate: number | null): string => {
 };
 
 const formatFailureSummary = (failure: PaperRecommendationFailure): string =>
-  `*${STRATEGY_LABELS[failure.strategy]}* 실패 — ` +
+  `*${STRATEGY_LABELS[failure.strategy]}* 실패: ` +
   escapeSlackMrkdwn(firstLineOf(failure.message));
 
 const formatFailureDetail = (failure: PaperRecommendationFailure): string =>
@@ -226,7 +225,7 @@ const formatSkipSummary = (completed: PaperRecommendationSuccess): string => {
   const reasonText = [...counts.entries()]
     .map(([reason, count]) => `${SKIP_REASON_LABELS[reason]} ${count}`)
     .join(', ');
-  return ` • 제외 ${completed.skipped.length}건 — ${reasonText}`;
+  return ` • 제외 ${completed.skipped.length}건: ${reasonText}`;
 };
 
 const sideLabel = (side: 'BUY' | 'SELL'): string =>
@@ -267,11 +266,11 @@ export class PaperRecommendAutopilotTask implements AutopilotTask {
         gateEnabled: true,
         candidateCount: null,
         llmCalled: false,
-        detail: '휴장일 — 추천 판단 건너뜀',
+        detail: '휴장일: 추천 판단 건너뜀',
       });
       return {
         skip: true,
-        summaryText: `휴장일(${context.firedAtKst}) — 모의투자 추천 판단 건너뜀`,
+        summaryText: `휴장일(${context.firedAtKst}): 모의투자 추천 판단 건너뜀`,
       };
     }
     const result = await this.generateRecommendation.execute({

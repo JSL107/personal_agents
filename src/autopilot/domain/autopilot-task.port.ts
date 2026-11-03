@@ -13,6 +13,7 @@ export interface AutopilotPreviewRequest {
   kind: PreviewKind;
   payload: unknown;
   previewText: string;
+  slackText?: string | null;
   // 개별 카드 보존 기간. 미지정이면 orchestrator 기본값(24시간)을 사용한다.
   ttlMs?: number;
   // 승인 근거가 카드 밖(같은 task 의 `detailText` = 스레드 전문)에 있는 카드만 켠다.

@@ -32,8 +32,8 @@ export const formatStudyBrief = ({
     const extracted = extractThreeLineSummary(reportMd);
     const title =
       verdict.kind === 'CONCEPT'
-        ? `📚 *오늘의 공부 — ${safeTopic}*   ·  ${verdict.minutes}분`
-        : `🔧 *오늘의 도구 — ${safeTopic}*   ·  설치 ${verdict.minutes}분`;
+        ? `📚 *오늘의 공부: ${safeTopic}*   ·  ${verdict.minutes}분`
+        : `🔧 *오늘의 도구: ${safeTopic}*   ·  설치 ${verdict.minutes}분`;
     const summary = [
       title,
       '',
@@ -51,7 +51,7 @@ export const formatStudyBrief = ({
   const summary = match(verdict)
     .with({ kind: 'CONCEPT' }, (concept) =>
       [
-        `📚 *오늘의 공부 — ${safeTopic}*   ·  ${concept.minutes}분`,
+        `📚 *오늘의 공부: ${safeTopic}*   ·  ${concept.minutes}분`,
         '',
         `*왜 지금 나한테* ${escapeStudyMrkdwn(concept.whyNow)}`,
         `*어디에 닿나* ${escapeStudyMrkdwn(concept.whereItLands)}`,
@@ -59,7 +59,7 @@ export const formatStudyBrief = ({
     )
     .with({ kind: 'TOOL' }, (tool) => {
       const lines = [
-        `🔧 *오늘의 도구 — ${safeTopic}*   ·  설치 ${tool.minutes}분`,
+        `🔧 *오늘의 도구: ${safeTopic}*   ·  설치 ${tool.minutes}분`,
         '',
         `*뭐가 좋아지나* ${escapeStudyMrkdwn(tool.whatImproves)}`,
         `*붙이는 비용* ${escapeStudyMrkdwn(tool.adoptionCost)}`,

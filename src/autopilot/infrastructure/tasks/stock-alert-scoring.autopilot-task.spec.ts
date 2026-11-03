@@ -52,7 +52,7 @@ describe('StockAlertScoringAutopilotTask', () => {
     });
     expect(result).toEqual({
       skip: false,
-      summaryText: '주식 알림 사후 채점 — 1건 채점',
+      summaryText: '주식 알림 사후 채점: 1건 채점',
     });
   });
 

@@ -19,7 +19,7 @@ export const formatCeoMetaOutput = (output: MetaOutput): FormattedReport => {
   const rangeLabel = output.range === 'WEEK' ? '최근 7일' : '최근 24시간';
 
   const summaryLines: string[] = [];
-  summaryLines.push(`*🧭 총평 — ${rangeLabel}*`);
+  summaryLines.push(`*🧭 총평: ${rangeLabel}*`);
   if (output.finalSummary.trim().length > 0) {
     summaryLines.push('');
     summaryLines.push(`_${escapeSlackMrkdwn(output.finalSummary)}_`);
@@ -45,25 +45,8 @@ export const formatCeoMetaOutput = (output: MetaOutput): FormattedReport => {
     detailLines.push('_본 주간 문서 관찰 없음._');
   }
 
-  detailLines.push('');
-  detailLines.push(formatSourceFooter(output));
-
   return {
     summary: summaryLines.join('\n'),
     detail: detailLines.join('\n'),
   };
-};
-
-const formatSourceFooter = (output: MetaOutput): string => {
-  const refs = output.sourcePhaseRuns;
-  const parts: string[] = [`poEval=#${refs.poEvalRunId}`];
-  const missing: string[] = [];
-  if (refs.pmRunId !== undefined) {
-    parts.push(`pm=#${refs.pmRunId}`);
-  } else {
-    missing.push('pm');
-  }
-  const missingPart =
-    missing.length > 0 ? ` · missing: ${missing.join(', ')}` : '';
-  return `_합성 source: ${parts.join(', ')}${missingPart} (schemaVersion=${output.schemaVersion})_`;
 };

@@ -12,7 +12,6 @@ import { CreatePreviewUsecase } from '../../preview-gate/application/create-prev
 import { PREVIEW_KIND } from '../../preview-gate/domain/preview-action.type';
 import { SlackHandler } from '../domain/port/slack-handler.port';
 import { formatCeoMetaOutput } from '../format/ceo-meta.formatter';
-import { formatModelFooter } from '../format/model-footer.formatter';
 import { formatEvaluationOutput } from '../format/po-evaluation.formatter';
 import { buildPreviewBlocks } from '../format/preview-message.builder';
 import {
@@ -94,9 +93,7 @@ export class PhaseCommandHandler implements SlackHandler {
           this.humanizeService,
         );
         const formatted = formatEvaluationOutput(humanized);
-        const text =
-          `${formatted.summary}\n\n${formatted.detail}` +
-          formatModelFooter(outcome);
+        const text = formatted.summary;
         const payload: PoEvalCareerlogPayload = {
           notionPageId: this.careerLogNotionPageId,
           period: outcome.result.careerLog.period,

@@ -12,7 +12,7 @@ import { formatDailyPlan } from '../format/daily-plan.formatter';
 import { formatDailyReview } from '../format/daily-review.formatter';
 import { formatImpactReport } from '../format/impact-report.formatter';
 import { formatPoShadowReport } from '../format/po-shadow.formatter';
-import { formatPullRequestReview } from '../format/pull-request-review.formatter';
+import { formatPullRequestReviewResponse } from '../format/pull-request-review-response';
 import { formatSearchRuns } from '../format/search-runs.formatter';
 import { runAgentCommand, runEphemeral } from './slack-handler.helper';
 
@@ -113,7 +113,7 @@ export class AgentCommandHandler implements SlackHandler {
       if (subject.length === 0) {
         await ack({
           response_type: 'ephemeral',
-          text: '사용법: `/impact-report <PR 링크 또는 task 설명>` (예: `/impact-report PR #34 — GitHub 커넥터 추가`)',
+          text: '사용법: `/impact-report <PR 링크 또는 작업 설명>` (예: `/impact-report GitHub 커넥터 추가`)',
         });
         return;
       }
@@ -149,17 +149,22 @@ export class AgentCommandHandler implements SlackHandler {
         text: `이대리가 PR ${prRef} 를 리뷰하는 중입니다 (15~40초 소요)...`,
       });
 
+      let prTitle: string | undefined;
       await runAgentCommand({
         respond,
         logger: this.logger,
         commandLabel: '/review-pr',
-        execute: () =>
-          this.reviewPullRequestUsecase.execute({
+        execute: async () => {
+          const outcome = await this.reviewPullRequestUsecase.execute({
             prRef,
             slackUserId: command.user_id,
             publish: true,
-          }),
-        format: (review) => formatPullRequestReview({ prRef, review }),
+          });
+          prTitle = outcome.prTitle;
+          return outcome;
+        },
+        format: (review) =>
+          formatPullRequestReviewResponse({ prRef, prTitle, review }),
       });
     });
 
@@ -170,7 +175,7 @@ export class AgentCommandHandler implements SlackHandler {
       if (keyword.length === 0) {
         await ack({
           response_type: 'ephemeral',
-          text: '사용법: `/search-runs <키워드>` (예: `/search-runs 결제`). 본인 누적 AgentRun 의 output / 입력에서 키워드 매칭 — 최근순 최대 10건.',
+          text: '사용법: `/search-runs <키워드>` (예: `/search-runs 결제`). 본인 실행 기록의 결과와 입력을 최근순으로 최대 10건 찾습니다.',
         });
         return;
       }

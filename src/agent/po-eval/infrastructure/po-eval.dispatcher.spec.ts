@@ -13,9 +13,9 @@ const sampleOutput: EvaluationOutput = {
     impactReporterRunId: 103,
   },
   qualitative: {
-    summary: '한 주를 마무리 — Router 도입.',
-    blockers: ['Codex 쿼터 모니터링'],
-    wins: ['Router scaffold 합의'],
+    summary: 'PR #34 — 자연어 요청 처리 도입.',
+    blockers: ['모델 사용량 확인'],
+    wins: ['자연어 요청 처리 방식 합의'],
   },
   careerLog: {
     schemaVersion: 1,
@@ -79,9 +79,13 @@ describe('PoEvalDispatcher', () => {
     expect(outcome.modelUsed).toBe('claude-cli');
     expect(typeof outcome.formattedText).toBe('string');
     expect(outcome.formattedText.length).toBeGreaterThan(0);
-    // formatEvaluationOutput 출력 — period / 한 주 요약 포함.
-    expect(outcome.formattedText).toContain('2026-W21');
-    expect(outcome.formattedText).toContain('한 주를 마무리 — Router 도입._H');
+    // formatEvaluationOutput 출력에는 기간과 한 주 요약이 있다.
+    expect(outcome.formattedText).toContain('최근 7일');
+    expect(outcome.formattedText).toContain(
+      '코드 변경, 자연어 요청 처리 도입._H',
+    );
+    expect(outcome.formattedText).not.toContain('—');
+    expect(outcome.formattedText).not.toContain('#34');
     expect(outcome.output).toBe(sampleOutput);
     expect(
       (outcome.output as EvaluationOutput).qualitative.summary,

@@ -69,7 +69,7 @@ export const buildStudyApplyPreviewText = ({
     escapeSlackMrkdwn(text.slice(0, FIELD_MAX));
   const proposal = judgement.proposal;
   return [
-    `🧭 *오늘의 공부 적용 제안* — ${escape(topic)}`,
+    `🧭 *오늘의 공부 적용 제안*: ${escape(topic)}`,
     '',
     `*${escape(proposal?.title ?? '')}*`,
     `• 문제: ${escape(proposal?.problem ?? '')}`,
@@ -79,7 +79,7 @@ export const buildStudyApplyPreviewText = ({
     '*근거*',
     ...judgement.citations.map(
       (citation) =>
-        `• \`${citation.filePath}:${citation.startLine}-${citation.endLine}\` — ${escape(citation.why)}`,
+        `• \`${citation.filePath}:${citation.startLine}-${citation.endLine}\`: ${escape(citation.why)}`,
     ),
     '',
     `✅ 승인 시 \`${escape(repo)}\` 에 issue 가 생성됩니다. 구현은 하지 않습니다.`,

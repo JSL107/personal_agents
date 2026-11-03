@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 
+import { PAPER_ACCOUNT_LABEL } from '../../autopilot/infrastructure/evening-digest.formatter';
 import { escapeSlackMrkdwn } from '../../slack/format/mrkdwn.util';
 import { EvaluateAccountResult } from '../application/evaluate-paper-account.usecase';
 import { PaperTradingStatusResult } from '../application/get-paper-trading-status.usecase';
@@ -14,6 +15,9 @@ const addThousandsSeparators = (value: string): string => {
 
 const formatDecimal = (value: string): string =>
   addThousandsSeparators(new Prisma.Decimal(value).toString());
+
+const formatAccountName = (name: string): string =>
+  escapeSlackMrkdwn(PAPER_ACCOUNT_LABEL[name] ?? name);
 
 const formatMoney = (value: string | null): string =>
   value === null ? '-' : `${formatDecimal(value)}원`;
@@ -47,7 +51,7 @@ export const formatPaperTradingStatus = (
   // findRecentSnapshots 는 tradeDate desc 로 조회한다 — [0] 이 최신 평가다.
   const latest = status.snapshots.at(0);
   const lines = [
-    `*가상 계좌 현황 — ${escapeSlackMrkdwn(status.account.name)}*`,
+    `*가상 계좌 현황: ${formatAccountName(status.account.name)}*`,
     '',
   ];
   if (latest) {
@@ -56,7 +60,7 @@ export const formatPaperTradingStatus = (
     );
   } else {
     lines.push(
-      '_아직 평가 스냅샷이 없어요 — 장마감 평가가 한 번도 적재되지 않았습니다._',
+      '_아직 평가 스냅샷이 없어요: 장마감 평가가 한 번도 적재되지 않았습니다._',
     );
   }
   lines.push(
@@ -98,7 +102,7 @@ export const formatPaperPortfolioStatus = (
   statuses: PaperTradingStatusResult[],
 ): string => {
   if (statuses.length === 0) {
-    return '가상 매매 계좌가 아직 없어요 — 계좌가 열리면 여기서 수익률을 보여드릴게요.';
+    return '가상 매매 계좌가 아직 없어요: 계좌가 열리면 여기서 수익률을 보여드릴게요.';
   }
   return statuses.map(formatPaperTradingStatus).join('\n\n---\n\n');
 };
@@ -110,7 +114,7 @@ export const formatPaperAccountHeadline = (
   accountName: string,
   result: EvaluateAccountResult | null,
 ): string => {
-  const name = escapeSlackMrkdwn(accountName);
+  const name = formatAccountName(accountName);
   if (!result) {
     return `• ${name} ⚠️ 평가 실패`;
   }
@@ -121,10 +125,10 @@ export const formatPaperTradingReport = (
   result: EvaluateAccountResult,
 ): string => {
   const lines = [
-    `*가상 매매 장마감 평가 — ${result.tradeDate ?? '거래일 미확정'}*`,
+    `*가상 매매 장마감 평가: ${result.tradeDate ?? '거래일 미확정'}*`,
   ];
   if (result.skipped) {
-    lines.push(`⚠️ 스냅샷 미적재 — ${result.skipReason ?? '사유 미상'}`);
+    lines.push(`⚠️ 스냅샷 미적재: ${result.skipReason ?? '사유 미상'}`);
   }
   lines.push('');
 
