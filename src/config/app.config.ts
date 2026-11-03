@@ -841,6 +841,13 @@ export class EnvironmentVariables {
   @IsIn(['legacy', 'shadow', 'hybrid'])
   SUBCONSCIOUS_GATE_MODE?: string;
 
+  // 라우팅 기억 단축. off(기본) · shadow(판정만 원장에 기록, LLM 으로 라우팅) · on(확신하면 LLM 생략).
+  // 오타가 "켠 줄 알았는데 꺼진" 상태로 숨지 않도록 부팅에서 막는다. 빈 값은 off.
+  @IsOptional()
+  @ValidateIf((_, value: unknown) => value !== '')
+  @IsIn(['off', 'shadow', 'on'])
+  ROUTER_MEMORY_SHORTCUT_MODE?: string;
+
   // TypeSafe Jev API 인증키. 게이트 모드가 legacy이면 필요하지 않다.
   @IsOptional()
   @IsString()

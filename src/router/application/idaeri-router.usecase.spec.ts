@@ -41,6 +41,7 @@ const buildClassifierMock = (
 ): jest.Mocked<IntentClassifierUsecase> =>
   ({
     classify: jest.fn().mockResolvedValue(classification),
+    rememberRoutingExample: jest.fn().mockResolvedValue(undefined),
   }) as unknown as jest.Mocked<IntentClassifierUsecase>;
 
 // execute 는 진짜와 같은 모양으로 둔다 — run 콜백을 실제로 돌리고 그 거절을 되던진다.
@@ -626,7 +627,150 @@ describe('IdaeriRouterUsecase', () => {
         routedTo: AgentType.PM,
         routedVia: 'classifier',
         confidence: 0.93,
+        // 첫 턴 분류 → 실행이 성공하면 라우팅 예시로 저장한다.
+        onRunSucceeded: expect.any(Function),
       });
+    });
+
+    // 단축은 분류기 확신도가 아니라 cosine 이라 confidence 를 싣지 않고, 결과를 다시 예시로 쓰지 않는다.
+    it('라우팅 기억 단축 경로는 memory 로 싣고 근거만 남기며 예시로 저장하지 않는다', async () => {
+      const { dispatcher, seen } = buildSpyDispatcher(AgentType.PM, () => ({
+        agentRunId: PM_RUN_ID,
+      }));
+      const classifier = buildClassifierMock({
+        agentType: AgentType.PM,
+        confidence: 0.97,
+        reason: 'routing memory shortcut',
+        memoryShortcut: {
+          agentType: AgentType.PM,
+          similarity: 0.97,
+          applied: true,
+        },
+      });
+      const { usecase } = buildUsecase([dispatcher], classifier);
+
+      await usecase.dispatch({
+        source: 'SLACK_MESSAGE',
+        slackUserId: 'U1',
+        text: '오늘 계획 짜줘',
+      });
+
+      expect(seen()).toEqual({
+        text: '오늘 계획 짜줘',
+        routedTo: AgentType.PM,
+        routedVia: 'memory',
+        memoryHint: { agentType: AgentType.PM, similarity: 0.97 },
+      });
+    });
+
+    it('shadow 판정은 classifier 경로에 근거로만 얹는다', async () => {
+      const { dispatcher, seen } = buildSpyDispatcher(AgentType.PM, () => ({
+        agentRunId: PM_RUN_ID,
+      }));
+      const classifier = buildClassifierMock({
+        agentType: AgentType.PM,
+        confidence: 0.9,
+        reason: 'llm',
+        memoryShortcut: {
+          agentType: AgentType.SCHEDULE,
+          similarity: 0.95,
+          applied: false,
+        },
+      });
+      const { usecase } = buildUsecase([dispatcher], classifier);
+
+      await usecase.dispatch({
+        source: 'SLACK_MESSAGE',
+        slackUserId: 'U1',
+        text: '오늘 계획 짜줘',
+      });
+
+      expect(seen()).toEqual(
+        expect.objectContaining({
+          routedVia: 'classifier',
+          confidence: 0.9,
+          memoryHint: { agentType: AgentType.SCHEDULE, similarity: 0.95 },
+        }),
+      );
+    });
+
+    it('성공한 run 이 고른 담당과 같을 때만 마스킹한 원문을 예시로 저장한다', async () => {
+      const { dispatcher, seen } = buildSpyDispatcher(AgentType.PM, () => ({
+        agentRunId: PM_RUN_ID,
+      }));
+      const classifier = buildClassifierMock({
+        agentType: AgentType.PM,
+        confidence: 0.9,
+        reason: 'r',
+      });
+      const { usecase } = buildUsecase([dispatcher], classifier);
+      await usecase.dispatch({
+        source: 'SLACK_MESSAGE',
+        slackUserId: 'U1',
+        text: '내일 뭐부터 하지?',
+      });
+
+      seen()?.onRunSucceeded?.({
+        agentRunId: 7,
+        agentType: AgentType.HUMANIZER,
+      });
+      expect(classifier.rememberRoutingExample).not.toHaveBeenCalled();
+
+      seen()?.onRunSucceeded?.({ agentRunId: 8, agentType: AgentType.PM });
+      expect(classifier.rememberRoutingExample).toHaveBeenCalledWith({
+        text: '내일 뭐부터 하지?',
+        agentType: AgentType.PM,
+        agentRunId: 8,
+      });
+    });
+
+    it('직전 대화가 있으면 예시로 저장하지 않는다', async () => {
+      const { dispatcher, seen } = buildSpyDispatcher(AgentType.PM, () => ({
+        agentRunId: PM_RUN_ID,
+      }));
+      const classifier = buildClassifierMock({
+        agentType: AgentType.PM,
+        confidence: 0.9,
+        reason: 'r',
+      });
+      const { usecase } = buildUsecase([dispatcher], classifier);
+
+      await usecase.dispatch({
+        source: 'SLACK_MESSAGE',
+        slackUserId: 'U1',
+        text: '응 해줘',
+        priorTurns: [
+          {
+            role: 'user',
+            text: '계획 짜줄래?',
+            agentType: null,
+            agentRunId: null,
+          },
+        ] as never,
+      });
+
+      expect(seen()?.onRunSucceeded).toBeUndefined();
+    });
+
+    it('잘린 원문은 예시로 저장하지 않는다', async () => {
+      const { dispatcher, seen } = buildSpyDispatcher(AgentType.PM, () => ({
+        agentRunId: PM_RUN_ID,
+      }));
+      const classifier = buildClassifierMock({
+        agentType: AgentType.PM,
+        confidence: 0.9,
+        reason: 'r',
+      });
+      const { usecase } = buildUsecase([dispatcher], classifier);
+      await usecase.dispatch({
+        source: 'SLACK_MESSAGE',
+        slackUserId: 'U1',
+        text: '가'.repeat(600),
+      });
+
+      seen()?.onRunSucceeded?.({ agentRunId: 9, agentType: AgentType.PM });
+
+      expect(classifier.rememberRoutingExample).not.toHaveBeenCalled();
     });
 
     // 슬래시는 분류기를 타지 않는다. confidence 를 실으면 분류기가 낸 값처럼 보여 채점이 오염된다.
