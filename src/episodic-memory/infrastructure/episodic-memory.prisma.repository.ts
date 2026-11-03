@@ -48,8 +48,14 @@ export class EpisodicMemoryPrismaRepository {
     kind?: EpisodeKind;
     agentType?: string;
     limit: number;
+    exact?: boolean;
   }): Promise<VectorSearchRow[]> {
     const vector = this.toVectorLiteral(input.embedding);
+    // `+ 0` 은 정렬식이 HNSW 연산자와 달라지게 해 인덱스를 못 타게 한다(정확 검색). 근사 검색은
+    // 후보를 먼저 뽑고 kind 로 거르므로, 행이 적은 kind 는 결과가 비어 버릴 수 있다.
+    const orderBy = input.exact
+      ? Prisma.sql`ORDER BY (embedding <=> ${vector}::vector) + 0`
+      : Prisma.sql`ORDER BY embedding <=> ${vector}::vector`;
     const rows = await this.prisma.$queryRaw<
       Array<{
         id: number;
@@ -73,7 +79,7 @@ export class EpisodicMemoryPrismaRepository {
         AND superseded_at IS NULL
         ${input.kind != null ? Prisma.sql`AND kind = ${input.kind}` : Prisma.empty}
         ${input.agentType != null ? Prisma.sql`AND agent_type = ${input.agentType}` : Prisma.empty}
-      ORDER BY embedding <=> ${vector}::vector
+      ${orderBy}
       LIMIT ${input.limit}
     `;
     return rows.map((row) => ({
