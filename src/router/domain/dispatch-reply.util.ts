@@ -1,3 +1,4 @@
+import { formatRunIdLine } from '../../common/util/run-id-line.util';
 import { DispatchResult } from './idaeri-router.port';
 
 // 이 dispatch 가 원장에 남긴 AgentRun id — 본 실행 다음 핸드오프 순서. 0 은 run 을 남기지 않은
@@ -13,7 +14,7 @@ export const buildDispatchReplyText = (result: DispatchResult): string => {
   return [result, ...(result.handoffResults ?? [])]
     .map((entry) =>
       entry.agentRunId > 0
-        ? `${entry.formattedText}\n_실행 번호 \`${entry.agentRunId}\` (다시 돌리기·의견 남기기에 써요)_`
+        ? `${entry.formattedText}\n${formatRunIdLine(entry.agentRunId)}`
         : entry.formattedText,
     )
     .join('\n\n---\n\n');

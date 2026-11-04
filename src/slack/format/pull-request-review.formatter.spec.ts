@@ -130,6 +130,35 @@ describe('formatPullRequestReview', () => {
     expect(text).toContain('• 널 검사 누락');
   });
 
+  it('findings 전용 지적은 심각도별로 묶고 기존 세 목록과 중복하지 않는다', () => {
+    const text = formatPullRequestReview({
+      prRef: 'owner/repo#1',
+      review: {
+        ...baseReview(),
+        mustFix: ['기존 필수'],
+        niceToHave: ['기존 개선'],
+        missingTests: ['기존 테스트'],
+        findings: [
+          finding('기존 필수'),
+          finding('새 필수'),
+          { ...finding('새 개선'), severity: 'NICE_TO_HAVE' },
+          { ...finding('새 테스트'), severity: 'MISSING_TEST' },
+          { ...finding('기존 개선'), severity: 'NICE_TO_HAVE' },
+          { ...finding('기존 테스트'), severity: 'MISSING_TEST' },
+          finding('새 필수'),
+        ],
+      },
+    });
+
+    expect(text).toContain('꼭 고칠 것 2개\n• 기존 필수\n• 새 필수');
+    expect(text).toContain(
+      '고려할 것 4개\n• 기존 개선\n• 기존 테스트\n• 새 개선\n• 새 테스트',
+    );
+    expect(text.match(/• 새 필수/g)).toHaveLength(1);
+    expect(text.match(/• 기존 개선/g)).toHaveLength(1);
+    expect(text.match(/• 기존 테스트/g)).toHaveLength(1);
+  });
+
   it('본문 요약과 지적에서 비밀 값과 코드 펜스를 제거한다', () => {
     const text = formatPullRequestReview({
       prRef: 'owner/repo#1',

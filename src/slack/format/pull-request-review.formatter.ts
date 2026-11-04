@@ -20,15 +20,27 @@ export const formatPullRequestReview = ({
   prTitle?: string;
   review: PullRequestReview;
 }): string => {
-  const issues = [
+  const listedIssues = [
     ...review.mustFix,
     ...review.niceToHave,
     ...review.missingTests,
-    ...review.findings.map((finding) => finding.body),
   ];
-  const uniqueIssues = [...new Set(issues)];
+  const seenIssues = new Set(listedIssues);
+  const mustFix = [...review.mustFix];
+  const considerations = [...review.niceToHave, ...review.missingTests];
+  for (const finding of review.findings) {
+    if (seenIssues.has(finding.body)) {
+      continue;
+    }
+    seenIssues.add(finding.body);
+    if (finding.severity === 'MUST_FIX') {
+      mustFix.push(finding.body);
+    } else {
+      considerations.push(finding.body);
+    }
+  }
   const draftCount = review.reviewCommentDrafts.filter(
-    (draft) => !uniqueIssues.includes(draft.body),
+    (draft) => !seenIssues.has(draft.body),
   ).length;
   const title =
     shortIssue(prTitle ?? review.summary) ||
@@ -38,32 +50,22 @@ export const formatPullRequestReview = ({
     `*${escapeSlackMrkdwn(title)} 리뷰*`,
     `위험도: ${{ low: '낮음', medium: '보통', high: '높음', unknown: '확인 불가' }[review.riskLevel]}`,
     `권고: ${{ approve: '승인', request_changes: '수정 요청', comment: '검토 필요', undetermined: '검토 필요' }[review.approvalRecommendation]}`,
-    ...(review.mustFix.length
+    ...(mustFix.length
       ? [
-          `꼭 고칠 것 ${review.mustFix.length}개`,
-          ...review.mustFix.map(
+          `꼭 고칠 것 ${mustFix.length}개`,
+          ...mustFix.map(
             (issue) => `• ${escapeSlackMrkdwn(shortIssue(issue))}`,
           ),
         ]
       : []),
-    ...(review.niceToHave.length + review.missingTests.length
+    ...(considerations.length
       ? [
-          `고려할 것 ${review.niceToHave.length + review.missingTests.length}개`,
-          ...[...review.niceToHave, ...review.missingTests].map(
+          `고려할 것 ${considerations.length}개`,
+          ...considerations.map(
             (issue) => `• ${escapeSlackMrkdwn(shortIssue(issue))}`,
           ),
         ]
       : []),
-    ...uniqueIssues
-      .filter(
-        (issue) =>
-          ![
-            ...review.mustFix,
-            ...review.niceToHave,
-            ...review.missingTests,
-          ].includes(issue),
-      )
-      .map((issue) => `• ${escapeSlackMrkdwn(shortIssue(issue))}`),
     ...Array.from({ length: draftCount }, () => '• 추가 검토 의견이 있어요.'),
   ];
 

@@ -26,6 +26,19 @@ describe('incident messages', () => {
     ).toContain('오류: &lt;!here&gt; &amp; &gt;');
   });
 
+  it('URL의 호스트가 1500자 뒤에 있어도 오류의 비밀번호를 가린다', () => {
+    const password = 'very-long-database-password-that-must-not-leak';
+    const text = formatAiHandoff({
+      feature: 'x',
+      errorMessage: `${'a'.repeat(1460)} postgresql://user:${password}@host/db`,
+      files: [],
+      checkCommand: null,
+    });
+    expect(text).not.toContain(password);
+    expect(text).not.toContain(password.slice(0, 20));
+    expect(text).toContain('postgresql://***@host/db');
+  });
+
   it('사건 제목은 고정된 작업 조사로 쓰고 원인과 조치, 만료 안내를 보인다', () => {
     expect(
       formatIncidentOpen({
