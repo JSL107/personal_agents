@@ -248,7 +248,9 @@ export class PublishPortfolioSiteUsecase {
       const row = rowBySlug.get(group.key) ?? null;
       const memberPrs = buildMemberPrs(group.accomplishments);
       const coverHash = computeCoverHash(memberPrs);
-      const regenerate = shouldRegenerateCover(row, coverHash);
+      // 사이트에서 카드가 사라졌으면 구성이 같아도 표지를 다시 짓는다 — create 는 표지가 있어야 하고,
+      // 없으면 apply 가 그 카드를 매 회차 조용히 건너뛰어 영영 복구되지 않는다.
+      const regenerate = !site || shouldRegenerateCover(row, coverHash);
       const processLines = buildProcessLines(group);
       const normalized = normalizeTechStack(
         group.accomplishments.map((item) => item.techTags),

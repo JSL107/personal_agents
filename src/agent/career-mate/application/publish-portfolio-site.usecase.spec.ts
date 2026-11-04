@@ -309,6 +309,16 @@ describe('PublishPortfolioSiteUsecase 계획과 적용', () => {
       expect(body).not.toHaveProperty(key);
     }
   });
+  it('구성이 같아도 사이트에서 사라진 카드는 표지를 다시 지어 생성한다', async () => {
+    const fixture = createFixture();
+    await fixture.usecase.execute({ slackUserId: 'U1' });
+    fixture.sites.splice(0, fixture.sites.length);
+    const result = await fixture.usecase.execute({ slackUserId: 'U1' });
+    expect(result.createdProjects).toEqual([SLUG]);
+    expect(fixture.client.createProject).toHaveBeenCalledWith(
+      expect.objectContaining({ slug: SLUG, title: '새 제목' }),
+    );
+  });
   it('update 본문에는 published·featured·싱크 메타가 없다', async () => {
     const plan = await createFixture().usecase.plan({ slackUserId: 'U1' });
     for (const key of [
