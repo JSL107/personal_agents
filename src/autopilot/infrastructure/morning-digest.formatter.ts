@@ -1,3 +1,11 @@
+import type {
+  MorningTodoLine,
+  MorningTodoSections,
+} from '../../schedule/application/build-morning-todos.usecase';
+import {
+  TODAY_TODO_BODY_MAX,
+  WAITING_BODY_MAX,
+} from '../../schedule/domain/daily-todo.constant';
 import {
   escapeSlackMrkdwn,
   isSafeHttpUrl,
@@ -41,6 +49,7 @@ export interface MorningDigestInput {
   invest: { buyCount: number; sellCount: number } | null;
   // PM 계획의 최우선 1건. 회사 일의 "먼저 이것부터" 출처는 이것 하나다(§5 결정 갱신).
   todos: MorningTodo[] | null;
+  todoSections: MorningTodoSections;
   planFailure: string | null;
   schedules: string[] | null;
   upcomingSchedules: string[] | null;
@@ -84,8 +93,16 @@ const formatPostingNames = (postings: MorningPosting[]): string => {
   return rest > 0 ? `${names.join(' · ')} 외 ${rest}` : names.join(' · ');
 };
 
-export const formatMorningTodo = (todo: MorningTodo): string =>
-  `• ${link(todo.title, todo.url)}${todo.dayCount === null ? '' : ` (${todo.dayCount}일째)`}`;
+export const formatMorningTodo = (todo: MorningTodoLine): string => {
+  const parts = [
+    ...(todo.dayCount >= 2 ? [`${todo.dayCount}일째`] : []),
+    ...(todo.detail ? [escapeSlackMrkdwn(todo.detail)] : []),
+  ];
+  return `• ${link(todo.title, todo.url)}${parts.length > 0 ? ` (${parts.join(', ')})` : ''}`;
+};
+
+export const formatMorningWaitingTodo = (todo: MorningTodoLine): string =>
+  `• ${link(todo.title, todo.url)}${todo.detail ? ` (${escapeSlackMrkdwn(todo.detail)})` : ''}`;
 
 export const formatMorningDigest = (input: MorningDigestInput): string => {
   const incidentLabels = [
@@ -118,20 +135,38 @@ export const formatMorningDigest = (input: MorningDigestInput): string => {
     );
   }
   const header = `☀️ *${formatTradeDay(input.firedAtKst)} 아침*${kinds.length ? ` · ${kinds.join(' · ')}` : ''}`;
-  const todos =
-    input.todos === null
-      ? [
-          `• 오늘 계획을 만들지 못했어요${input.planFailure ? ` (${escapeSlackMrkdwn(input.planFailure)})` : ''}`,
-        ]
-      : input.todos.length === 0
-        ? ['• 오늘 자동 수집된 할 일이 없어요']
-        : [
-            ...input.todos.slice(0, 5).map(formatMorningTodo),
-            ...(input.todos.length > 5
-              ? [`• 외 ${input.todos.length - 5}개`]
-              : []),
-          ];
+  const todoSections = input.todoSections;
+  const todos = todoSections.loadFailed
+    ? ['• 오늘 할 일을 불러오지 못했어요']
+    : [
+        ...(todoSections.today.length === 0
+          ? ['• 오늘 할 일이 없어요']
+          : [
+              ...todoSections.today
+                .slice(0, TODAY_TODO_BODY_MAX)
+                .map(formatMorningTodo),
+              ...(todoSections.today.length > TODAY_TODO_BODY_MAX
+                ? [`• 외 ${todoSections.today.length - TODAY_TODO_BODY_MAX}개`]
+                : []),
+            ]),
+        ...(todoSections.unstarted.length > 0
+          ? [
+              `• 시작 안 한 일 ${todoSections.unstarted.length}개 (목록은 댓글에)`,
+            ]
+          : []),
+      ];
+  const waiting = todoSections.loadFailed
+    ? []
+    : [
+        ...todoSections.waiting
+          .slice(0, WAITING_BODY_MAX)
+          .map(formatMorningWaitingTodo),
+        ...(todoSections.waiting.length > WAITING_BODY_MAX
+          ? [`• 외 ${todoSections.waiting.length - WAITING_BODY_MAX}개`]
+          : []),
+      ];
   const incidents = [
+    ...(input.todos === null ? ['• 오늘 계획 생성 실패'] : []),
     ...input.incidents.map(
       (incident) =>
         `• ${escapeSlackMrkdwn(incident.label)}${incident.dayCount === null ? '' : ` (${incident.dayCount}일째)`}`,
@@ -172,6 +207,10 @@ export const formatMorningDigest = (input: MorningDigestInput): string => {
     '',
     '*오늘 할 일*',
     ...todos,
+    ...formatSection(
+      `남 기다리는 일 ${todoSections.waiting.length}개`,
+      waiting,
+    ),
     ...formatSection('어제 장애', incidents),
     ...formatSection('오늘 일정', input.schedules ?? []),
     ...formatSection('다가오는 마감', input.upcomingSchedules ?? []),

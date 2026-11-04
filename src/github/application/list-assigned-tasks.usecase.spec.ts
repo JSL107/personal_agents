@@ -29,6 +29,8 @@ const buildClientMock = (
   addLabelsToIssue: jest.fn(),
   pushBranchAndOpenPr: jest.fn(),
   fetchPullRequestEngagement: jest.fn(),
+  fetchAuthorPullRequestSignals: jest.fn(),
+  fetchReviewWaits: jest.fn(),
   createReviewComment: jest.fn(),
   listReviewThreads: jest.fn(),
   resolveReviewThread: jest.fn(),

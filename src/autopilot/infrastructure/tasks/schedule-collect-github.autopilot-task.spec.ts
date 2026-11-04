@@ -2,6 +2,9 @@ import { ConfigService } from '@nestjs/config';
 
 import { ListAssignedTasksUsecase } from '../../../github/application/list-assigned-tasks.usecase';
 import { GithubClientPort } from '../../../github/domain/port/github-client.port';
+import { CloseFinishedIssuesUsecase } from '../../../schedule/application/close-finished-issues.usecase';
+import { GenerateShortTitlesUsecase } from '../../../schedule/application/generate-short-titles.usecase';
+import { ReconcilePullRequestsUsecase } from '../../../schedule/application/reconcile-pull-requests.usecase';
 import { ScheduleRepositoryPort } from '../../../schedule/domain/port/schedule.repository.port';
 import { ScheduleCollectionStateRepositoryPort } from '../../../schedule/domain/port/schedule-collection-state.repository.port';
 import {
@@ -63,17 +66,28 @@ describe('ScheduleCollectGithubAutopilotTask', () => {
     getItemLifecycle: jest.fn(),
   };
   const config = { get: jest.fn() };
+  const closeFinishedIssues = { execute: jest.fn() };
+  const generateShortTitles = { execute: jest.fn() };
   const makeTask = () =>
     new ScheduleCollectGithubAutopilotTask(
       repository as unknown as ScheduleRepositoryPort,
       stateRepository as unknown as ScheduleCollectionStateRepositoryPort,
       assigned as unknown as ListAssignedTasksUsecase,
-      github as unknown as GithubClientPort,
+      new ReconcilePullRequestsUsecase(
+        repository as unknown as ScheduleRepositoryPort,
+        stateRepository as unknown as ScheduleCollectionStateRepositoryPort,
+        github as unknown as GithubClientPort,
+        config as unknown as ConfigService,
+      ),
       config as unknown as ConfigService,
+      closeFinishedIssues as unknown as CloseFinishedIssuesUsecase,
+      generateShortTitles as unknown as GenerateShortTitlesUsecase,
     );
 
   beforeEach(() => {
     jest.clearAllMocks();
+    closeFinishedIssues.execute.mockResolvedValue(undefined);
+    generateShortTitles.execute.mockResolvedValue(undefined);
     config.get.mockImplementation((key: string) =>
       key === 'CONSOLE_OWNER_SLACK_USER_ID' ? 'U1' : 'JSL107',
     );
@@ -233,7 +247,7 @@ describe('ScheduleCollectGithubAutopilotTask', () => {
         url: 'https://github.com/Acme/API/pull/8',
         body: 'closes #12',
         state: 'merged',
-        mergedAt: '2026-11-04T05:00:00Z',
+        mergedAt: '2026-11-01T05:00:00Z',
       },
     ]);
     await makeTask().run();
@@ -254,7 +268,7 @@ describe('ScheduleCollectGithubAutopilotTask', () => {
   it('머지 PR을 처음 발견하면 업무를 만든 뒤 DONE으로 전이하고 PR_MERGED 사건을 기록한다', async () => {
     assigned.execute.mockResolvedValue({ issues: [], pullRequests: [] });
     github.listAuthorMergedPullRequestsSince.mockResolvedValue([
-      { ...pullRequest, state: 'merged', mergedAt: '2026-11-04T05:00:00Z' },
+      { ...pullRequest, state: 'merged', mergedAt: '2026-11-01T05:00:00Z' },
     ]);
     repository.findById.mockResolvedValue({
       ...taskItem,
@@ -265,6 +279,19 @@ describe('ScheduleCollectGithubAutopilotTask', () => {
       expect.objectContaining({
         event: expect.objectContaining({ kind: ScheduleEventKind.PR_MERGED }),
         transitionTo: ScheduleStatus.DONE,
+      }),
+    );
+  });
+
+  it('머지 PR의 완료 시각은 수집 시각이 아닌 머지 시각이다', async () => {
+    assigned.execute.mockResolvedValue({ issues: [], pullRequests: [] });
+    github.listAuthorMergedPullRequestsSince.mockResolvedValue([
+      { ...pullRequest, state: 'merged', mergedAt: '2026-11-01T05:00:00Z' },
+    ]);
+    await makeTask().run();
+    expect(repository.recordEventAndTransition).toHaveBeenCalledWith(
+      expect.objectContaining({
+        completedAt: new Date('2026-11-01T05:00:00Z'),
       }),
     );
   });
@@ -290,6 +317,28 @@ describe('ScheduleCollectGithubAutopilotTask', () => {
     });
     expect(repository.recordEventAndTransition).toHaveBeenCalledWith(
       expect.objectContaining({ transitionTo: ScheduleStatus.SKIPPED }),
+    );
+  });
+
+  it('lifecycle에서 확인한 머지 시각도 완료 시각으로 기록한다', async () => {
+    repository.findBySource.mockResolvedValue([
+      {
+        ...taskItem,
+        source: ScheduleSource.GITHUB_PR,
+        sourceKey: pullRequest.url,
+        status: ScheduleStatus.IN_PROGRESS,
+      },
+    ]);
+    github.getItemLifecycle.mockResolvedValue({
+      state: 'closed',
+      mergedAt: '2026-11-01T05:00:00Z',
+      isPullRequest: true,
+    });
+    await makeTask().run();
+    expect(repository.recordEventAndTransition).toHaveBeenCalledWith(
+      expect.objectContaining({
+        completedAt: new Date('2026-11-01T05:00:00Z'),
+      }),
     );
   });
 
@@ -355,6 +404,36 @@ describe('ScheduleCollectGithubAutopilotTask', () => {
     );
     expect(repository.createCollected).not.toHaveBeenCalled();
     expect(repository.transition).not.toHaveBeenCalled();
+  });
+
+  it('같은 회차에 새로 모은 이슈에 PR을 연결한다', async () => {
+    let issueCreated = false;
+    repository.createCollected.mockImplementation(
+      async (input: { source: ScheduleSource }) => {
+        if (input.source === ScheduleSource.GITHUB_ISSUE) {
+          issueCreated = true;
+        }
+        return taskItem;
+      },
+    );
+    repository.findAllByOwner.mockImplementation(async () =>
+      issueCreated ? [taskItem] : [],
+    );
+    github.listAuthorOpenPullRequests.mockResolvedValue([
+      { ...pullRequest, body: 'closes #12' },
+    ]);
+
+    await makeTask().run();
+
+    expect(repository.recordEventAndTransition).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: expect.objectContaining({
+          scheduleItemId: taskItem.id,
+          kind: ScheduleEventKind.PR_LINKED,
+        }),
+      }),
+    );
+    expect(repository.createCollected).toHaveBeenCalledTimes(1);
   });
 
   it('이슈 참조가 둘 이상 업무에 맞으면 어느 쪽에도 연결하거나 생성하지 않는다', async () => {

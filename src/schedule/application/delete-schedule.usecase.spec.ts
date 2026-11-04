@@ -6,9 +6,11 @@ import {
   ScheduleSource,
   ScheduleStatus,
 } from '../domain/schedule.type';
+import { buildScheduleItemRecord } from '../domain/schedule-item.fixture';
 import { DeleteScheduleUsecase } from './delete-schedule.usecase';
 
 const found: ScheduleItemRecord = {
+  ...buildScheduleItemRecord(),
   id: 1,
   slackUserId: 'U1',
   title: '자동차세',

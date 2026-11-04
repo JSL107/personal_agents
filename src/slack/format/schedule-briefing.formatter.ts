@@ -140,20 +140,9 @@ const formatScheduleLine = ({
 };
 
 export const formatTrackingLines = ({
-  undatedInProgress,
   candidateCount,
 }: TrackingLinesInput): string[] => {
   const lines: string[] = [];
-  if (undatedInProgress.length > 0) {
-    const titles = undatedInProgress
-      .slice(0, 5)
-      .map((item) => escapeSlackMrkdwn(item.title))
-      .join(' · ');
-    const remaining = undatedInProgress.length - 5;
-    lines.push(
-      `진행 중 ${undatedInProgress.length}건: ${titles}${remaining > 0 ? ` 외 ${remaining}건` : ''}`,
-    );
-  }
   if (candidateCount > 0) {
     lines.push(`새 후보 ${candidateCount}건`);
   }

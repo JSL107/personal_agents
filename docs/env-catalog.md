@@ -2,7 +2,7 @@
 
 # 환경변수 카탈로그
 
-SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 191개.
+SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 192개.
 설명은 각 변수 주석의 첫 문장 발췌 — 상세는 app.config.ts 주석 참조. `.env.example` 동기는 `pnpm check:env`.
 
 ## 인프라 (앱 부팅 필수)
@@ -250,6 +250,7 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `SCHEDULE_NOTION_ASSIGNEE_VALUE` | ❌ | — |
 | `SCHEDULE_NOTION_STATUS_PROPERTY` | ❌ | — |
 | `SCHEDULE_NOTION_DONE_VALUES` | ❌ | — |
+| `SCHEDULE_NOTION_DROPPED_VALUES` | ❌ | — |
 | `SCHEDULE_NOTION_DUE_PROPERTY` | ❌ | — |
 | `MEMORY_VACUUM_PROJECTS_ROOT` | ❌ | 세션 기억 색인 청소(memory-vacuum)가 훑을 프로젝트 루트. |
 | `HERMES_WATCHDOG_OWNER_SLACK_USER_ID` | ❌ | 점검 주체. |

@@ -60,6 +60,8 @@ const buildGithubMock = (): jest.Mocked<GithubClientPort> => ({
   addLabelsToIssue: jest.fn(),
   pushBranchAndOpenPr: jest.fn(),
   fetchPullRequestEngagement: jest.fn(),
+  fetchAuthorPullRequestSignals: jest.fn(),
+  fetchReviewWaits: jest.fn(),
   createReviewComment: jest.fn(),
   listReviewThreads: jest.fn(),
   resolveReviewThread: jest.fn(),
@@ -71,6 +73,7 @@ const buildGithubMock = (): jest.Mocked<GithubClientPort> => ({
 });
 
 const buildNotionMock = (): jest.Mocked<NotionClientPort> => ({
+  getPageStatus: jest.fn(),
   listActiveTasks: jest.fn(),
   queryDraftPages: jest.fn(),
   getPageMarkdown: jest.fn(),

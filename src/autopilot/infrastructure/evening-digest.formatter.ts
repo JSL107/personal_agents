@@ -1,6 +1,15 @@
 import { Prisma } from '@prisma/client';
 
-import { escapeSlackMrkdwn } from '../../slack/format/mrkdwn.util';
+import type {
+  EveningLine,
+  EveningTodoSummary,
+} from '../../schedule/application/build-evening-todo-summary.usecase';
+import { EVENING_LIST_MAX } from '../../schedule/domain/daily-todo.constant';
+import {
+  escapeSlackMrkdwn,
+  isSafeHttpUrl,
+  sanitizeForSlackLink,
+} from '../../slack/format/mrkdwn.util';
 import { MorningIncident } from './morning-digest.formatter';
 import { formatTradeDay } from './paper-number.formatter';
 
@@ -46,6 +55,7 @@ export interface EveningDigestInput
   firedAtKst: string;
   // null = 머지 PR 조회가 실패했다 — "0건" 과 구분한다.
   mergedPrCount: number | null;
+  todoSummary?: EveningTodoSummary;
 }
 
 const KEEP_MAX_LENGTH = 60;
@@ -69,6 +79,22 @@ const firstSentence = (text: string): string => {
     ? sentence
     : `${sentence.slice(0, KEEP_MAX_LENGTH)}…`;
 };
+
+const formatEveningLine = (line: EveningLine): string => {
+  const title =
+    line.url && isSafeHttpUrl(line.url)
+      ? `<${sanitizeForSlackLink(line.url)}|${sanitizeForSlackLink(line.title)}>`
+      : escapeSlackMrkdwn(line.title);
+  const outside = line.outsideMorningList ? ' (아침 목록 밖)' : '';
+  return `• ${title}${line.detail ? ` (${escapeSlackMrkdwn(line.detail)})` : ''}${outside}`;
+};
+
+const formatEveningLines = (lines: EveningLine[]): string[] => [
+  ...lines.slice(0, EVENING_LIST_MAX).map(formatEveningLine),
+  ...(lines.length > EVENING_LIST_MAX
+    ? [`• 외 ${lines.length - EVENING_LIST_MAX}개`]
+    : []),
+];
 
 // 투자 줄은 항목마다 한 줄 — 한 줄에 `·` 로 이어 붙였더니 수익률과 체결 건수가 섞여 읽혔다
 // (2026-10-28 피드백). 항목 이름을 앞에 두어 숫자만 훑어도 무엇인지 보이게 한다.
@@ -97,20 +123,69 @@ const formatInvestLines = (
 // 건수 옆에 붙지 않게 한다.
 export const formatEveningDigest = (input: EveningDigestInput): string => {
   const sections = [`🌙 *${formatTradeDay(input.firedAtKst)} 마감*`];
-
-  sections.push(
-    [
-      '*한 일*',
-      input.mergedPrCount === null
-        ? '• 머지한 PR을 확인하지 못했어요'
-        : `• PR ${input.mergedPrCount}건 머지`,
-      ...(input.retroFailure
-        ? [
-            `_회고를 만들지 못했어요 (${escapeSlackMrkdwn(input.retroFailure)}). 내일 다시 시도해요._`,
-          ]
-        : []),
-    ].join('\n'),
-  );
+  const summary = input.todoSummary;
+  const doneLines =
+    summary && !summary.loadFailed
+      ? [
+          ...formatEveningLines(summary.done),
+          ...(summary.extraMergedPrCount > 0
+            ? [`• 그 밖에 머지한 PR ${summary.extraMergedPrCount}건`]
+            : []),
+          ...(input.mergedPrCount === null
+            ? ['• 머지한 PR을 확인하지 못했어요']
+            : []),
+        ]
+      : [
+          input.mergedPrCount === null
+            ? '• 머지한 PR을 확인하지 못했어요'
+            : `• PR ${input.mergedPrCount}건 머지`,
+        ];
+  if (doneLines.length > 0 || input.retroFailure) {
+    sections.push(
+      [
+        '*한 일*',
+        ...doneLines,
+        ...(input.retroFailure
+          ? [
+              `_회고를 만들지 못했어요 (${escapeSlackMrkdwn(input.retroFailure)}). 내일 다시 시도해요._`,
+            ]
+          : []),
+      ].join('\n'),
+    );
+  }
+  if (summary && !summary.loadFailed) {
+    if (summary.notDone.length > 0) {
+      sections.push(
+        ['*못 한 일*', ...formatEveningLines(summary.notDone)].join('\n'),
+      );
+    }
+    const numbers: string[] = [];
+    if (summary.ratio && summary.ratio.total > 0) {
+      numbers.push(
+        `• 아침 할 일 ${summary.ratio.total}개 중 ${summary.ratio.done}개 끝냄 (${Math.round((summary.ratio.done / summary.ratio.total) * 100)}%)`,
+      );
+    }
+    if (summary.waiting && summary.waiting.count > 0) {
+      numbers.push(
+        `• 남을 기다린 일 ${summary.waiting.count}개${summary.waiting.atLeast ? ' 이상' : ''}${summary.waiting.longest ? `, 가장 긴 것은 ${escapeSlackMrkdwn(summary.waiting.longest)}` : ''}`,
+      );
+    }
+    if (
+      summary.backlog &&
+      summary.backlog.myTurn +
+        summary.backlog.waiting +
+        summary.backlog.unknown >
+        0
+    ) {
+      const { myTurn, waiting, unknown } = summary.backlog;
+      numbers.push(
+        `• 밀린 일 ${myTurn + waiting + unknown}개: 내 차례 ${myTurn}개, 남 기다림 ${waiting}개, 확인 못 함 ${unknown}개`,
+      );
+    }
+    if (numbers.length > 0) {
+      sections.push(['*숫자로 보면*', ...numbers].join('\n'));
+    }
+  }
 
   for (const [heading, text] of [
     ['아쉬운 점', input.problem],

@@ -5,6 +5,7 @@ export interface NotionTaskFilterConfig {
   assigneeValue: string;
   statusProperties: string[];
   doneValues: string[];
+  droppedValues: string[];
   dueProperty?: string;
 }
 

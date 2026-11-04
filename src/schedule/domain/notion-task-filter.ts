@@ -5,6 +5,29 @@ import {
   NotionTaskFilterConfig,
 } from './notion-task-filter.type';
 
+export type NotionStatus = 'DONE' | 'DROPPED' | 'ACTIVE';
+
+export const readNotionStatus = (
+  properties: Record<string, string>,
+  config: NotionTaskFilterConfig,
+): NotionStatus => {
+  if (
+    config.statusProperties.some((property) =>
+      config.droppedValues.includes(properties[property]),
+    )
+  ) {
+    return 'DROPPED';
+  }
+  if (
+    config.statusProperties.some((property) =>
+      config.doneValues.includes(properties[property]),
+    )
+  ) {
+    return 'DONE';
+  }
+  return 'ACTIVE';
+};
+
 export const filterMyNotionTask = (
   task: NotionTask,
   config: NotionTaskFilterConfig,
@@ -15,10 +38,7 @@ export const filterMyNotionTask = (
   if (!assignees.includes(config.assigneeValue)) {
     return null;
   }
-  const isDone = config.statusProperties.some((property) =>
-    config.doneValues.includes(task.properties[property]),
-  );
-  if (isDone) {
+  if (readNotionStatus(task.properties, config) !== 'ACTIVE') {
     return null;
   }
   const dateText = config.dueProperty

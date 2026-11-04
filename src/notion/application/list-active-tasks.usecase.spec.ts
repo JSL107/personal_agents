@@ -18,6 +18,7 @@ describe('ListActiveTasksUsecase', () => {
       ? T
       : never,
   ): jest.Mocked<NotionClientPort> => ({
+    getPageStatus: jest.fn(),
     listActiveTasks: jest.fn().mockResolvedValue(fixture),
     queryDraftPages: jest.fn(),
     getPageMarkdown: jest.fn(),

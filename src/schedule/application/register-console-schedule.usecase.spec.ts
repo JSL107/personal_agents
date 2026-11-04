@@ -1,4 +1,5 @@
 import { ScheduleItemRecord, ScheduleStatus } from '../domain/schedule.type';
+import { buildScheduleItemRecord } from '../domain/schedule-item.fixture';
 import { RegisterConsoleScheduleUsecase } from './register-console-schedule.usecase';
 import { RegisterScheduleUsecase } from './register-schedule.usecase';
 
@@ -7,6 +8,7 @@ import { RegisterScheduleUsecase } from './register-schedule.usecase';
 // 이 알림을 같은 채널에서 두 번 받는다. 그 경계가 이 스위트가 지키는 것이다.
 describe('RegisterConsoleScheduleUsecase', () => {
   const record: ScheduleItemRecord = {
+    ...buildScheduleItemRecord(),
     id: 1,
     slackUserId: 'U123',
     title: '자동차세 납부',

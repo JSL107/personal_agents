@@ -44,7 +44,12 @@ import {
   PREVIEW_KIND,
   PreviewAction,
 } from '../../../preview-gate/domain/preview-action.type';
+import { BuildMorningTodosUsecase } from '../../../schedule/application/build-morning-todos.usecase';
 import { ListSchedulesUsecase } from '../../../schedule/application/list-schedules.usecase';
+import {
+  TODAY_TODO_BODY_MAX,
+  WAITING_BODY_MAX,
+} from '../../../schedule/domain/daily-todo.constant';
 import { ScheduleStatus } from '../../../schedule/domain/schedule.type';
 import {
   SLACK_DELIVERY_REPOSITORY,
@@ -61,6 +66,7 @@ import {
   findLastFireBefore,
   resolveTaskCronSchedule,
 } from '../../application/autopilot-schedule';
+import { findMorningDelivered } from '../../application/morning-delivery';
 import {
   AutopilotTask,
   AutopilotTaskContext,
@@ -85,6 +91,7 @@ import { isRunResultDelivered } from '../../domain/run-delivery';
 import {
   formatMorningDigest,
   formatMorningTodo,
+  formatMorningWaitingTodo,
   MorningDigestInput,
   MorningIncident,
   MorningTodo,
@@ -294,6 +301,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
     private readonly verdictRepository: AgentRunVerdictRepositoryPort,
     @Inject(SLACK_DELIVERY_REPOSITORY)
     private readonly deliveryRepository: SlackDeliveryRepositoryPort,
+    private readonly buildMorningTodos: BuildMorningTodosUsecase,
   ) {}
 
   async run({
@@ -301,6 +309,15 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
     firedAtKst,
   }: AutopilotTaskContext): Promise<AutopilotTaskResult> {
     const now = new Date();
+    const ownerId =
+      this.configService.get<string>('CONSOLE_OWNER_SLACK_USER_ID')?.trim() ||
+      null;
+    if (ownerId && ownerId !== ownerSlackUserId) {
+      this.logger.warn(
+        `업무 소유자 ${ownerId}와 아침 브리핑 소유자 ${ownerSlackUserId}가 다릅니다.`,
+      );
+    }
+    await this.buildMorningTodos.reconcileBeforeListing({ ownerId, now });
     const plan = await this.buildPlanSection(ownerSlackUserId);
     const [
       approvalLabels,
@@ -353,6 +370,19 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
         : []),
       ...ledgerGapIncidents,
     ];
+    const morningDelivered = await findMorningDelivered({
+      deliveryRepository: this.deliveryRepository,
+      firedAtKst,
+    });
+    // 보냈는지 모르면(null) 보낸 것으로 본다. 이미 있는 그날 목록을 지키는 쪽이 저녁 기준을 덜 망가뜨린다.
+    const alreadyDelivered = morningDelivered ?? true;
+    const todoSections = await this.buildMorningTodos.execute({
+      ownerId,
+      kstDate: firedAtKst,
+      now,
+      alreadyReconciled: true,
+      alreadyDelivered,
+    });
     const digestInput: MorningDigestInput = {
       firedAtKst,
       approvalLabels,
@@ -361,6 +391,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
       postings: posting.postings,
       invest,
       todos: plan.todos,
+      todoSections,
       planFailure: plan.failure,
       schedules: schedules.today,
       upcomingSchedules: schedules.upcoming,
@@ -375,9 +406,19 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
       skip: false,
       summaryText: formatMorningDigest(digestInput),
       detailText: [
-        ...(plan.todos && plan.todos.length > 5
+        ...(todoSections.today.length > TODAY_TODO_BODY_MAX
           ? [
-              `*오늘 할 일 전체*\n${plan.todos.map(formatMorningTodo).join('\n')}`,
+              `*오늘 할 일 전체*\n${todoSections.today.map(formatMorningTodo).join('\n')}`,
+            ]
+          : []),
+        ...(todoSections.waiting.length > WAITING_BODY_MAX
+          ? [
+              `*남 기다리는 일 전체*\n${todoSections.waiting.map(formatMorningWaitingTodo).join('\n')}`,
+            ]
+          : []),
+        ...(todoSections.unstarted.length > 0
+          ? [
+              `*시작 안 한 일*\n${todoSections.unstarted.map(formatMorningTodo).join('\n')}`,
             ]
           : []),
         ...(posting.thread ? [posting.thread] : []),
@@ -735,36 +776,17 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
     }
   }
 
-  // 기한 없는 진행 중 업무와 만료 전 후보 수. 조회가 하나 실패해도 그 줄만 빠지고 브리핑은 나간다.
-  // 기한 없는 진행 중 업무와 만료 전 후보 수. 조회가 하나 실패해도 그 줄만 빠지고 브리핑은 나간다.
-  // `Promise.resolve().then` 으로 감싸 동기 예외(메서드 부재 등)도 그 줄의 실패로 가둔다.
   private async loadTrackingLines(ownerSlackUserId: string): Promise<string[]> {
-    const [undated, candidateCount] = await Promise.all([
-      Promise.resolve()
-        .then(() => this.listSchedules.undated(ownerSlackUserId))
-        .catch((error: unknown) => {
-          this.logger.warn(`기한 없는 업무 조회 실패: ${String(error)}`);
-          return [];
-        }),
-      Promise.resolve()
-        .then(() =>
-          this.listSchedules.countActiveCandidates({
-            slackUserId: ownerSlackUserId,
-            now: new Date(),
-          }),
-        )
-        .catch((error: unknown) => {
-          this.logger.warn(`후보 수 조회 실패: ${String(error)}`);
-          return 0;
-        }),
-    ]);
-    const undatedInProgress = undated.filter(
-      (item) => item.status === ScheduleStatus.IN_PROGRESS,
-    );
-    return formatTrackingLines({
-      undatedInProgress,
-      candidateCount,
-    });
+    try {
+      const candidateCount = await this.listSchedules.countActiveCandidates({
+        slackUserId: ownerSlackUserId,
+        now: new Date(),
+      });
+      return formatTrackingLines({ candidateCount });
+    } catch (error) {
+      this.logger.warn(`후보 수 조회 실패: ${String(error)}`);
+      return [];
+    }
   }
 
   private async loadScheduleLines(

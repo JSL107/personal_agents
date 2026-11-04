@@ -1,5 +1,5 @@
 import { NotionTask } from '../../notion/domain/notion.type';
-import { filterMyNotionTask } from './notion-task-filter';
+import { filterMyNotionTask, readNotionStatus } from './notion-task-filter';
 import { NotionTaskFilterConfig } from './notion-task-filter.type';
 
 describe('filterMyNotionTask', () => {
@@ -8,6 +8,7 @@ describe('filterMyNotionTask', () => {
     assigneeValue: '김준석',
     statusProperties: ['상태'],
     doneValues: ['완료', 'Done'],
+    droppedValues: [],
     dueProperty: '마감일',
   };
   const task: NotionTask = {
@@ -62,6 +63,41 @@ describe('filterMyNotionTask', () => {
         config,
       ),
     ).toBeNull();
+  });
+
+  it('DROPPED 값이 DONE 값보다 먼저다', () => {
+    const both = {
+      ...config,
+      statusProperties: ['상태', '진행단계'],
+      droppedValues: ['중복'],
+    };
+    expect(readNotionStatus({ 상태: '완료', 진행단계: '중복' }, both)).toBe(
+      'DROPPED',
+    );
+  });
+
+  it('수집은 DONE·DROPPED 를 모두 거른다', () => {
+    const both = { ...config, droppedValues: ['중복'] };
+    expect(
+      filterMyNotionTask(
+        { ...task, properties: { ...task.properties, 상태: '중복' } },
+        both,
+      ),
+    ).toBeNull();
+    expect(
+      filterMyNotionTask(
+        { ...task, properties: { ...task.properties, 상태: '완료' } },
+        both,
+      ),
+    ).toBeNull();
+  });
+
+  it('DROPPED_VALUES 가 비어 있으면 지금과 같다', () => {
+    expect(readNotionStatus(task.properties, config)).toBe('ACTIVE');
+    expect(readNotionStatus({ ...task.properties, 상태: '완료' }, config)).toBe(
+      'DONE',
+    );
+    expect(filterMyNotionTask(task, config)).not.toBeNull();
   });
 
   it('단일 날짜의 시간은 버리고 기한만 설정한다', () => {

@@ -395,7 +395,7 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 | `AUTOPILOT_SCHEDULE_REMINDER_SCHEDULE` · `_TIMEZONE` | ⭕ | 업무 알림 발화 주기 override(기본 `*/5 * * * *`, Asia/Seoul) |
 | `AUTOPILOT_SCHEDULE_COLLECT_NOTION_SCHEDULE` · `_TIMEZONE` | ⭕ | 업무 자동 수집 주기 override(기본 `*/30 9-19 * * 1-5`, Asia/Seoul) |
 | `SCHEDULE_NOTION_ASSIGNEE_PROPERTY` · `SCHEDULE_NOTION_ASSIGNEE_VALUE` | ⭕ | Notion 자동 수집 대상 담당자 속성명·완전 일치 값. 둘 중 하나가 비면 수집 꺼짐 |
-| `SCHEDULE_NOTION_STATUS_PROPERTY` · `SCHEDULE_NOTION_DONE_VALUES` · `SCHEDULE_NOTION_DUE_PROPERTY` | ⭕ | 상태 속성명 목록(쉼표 구분, 기본 `상태` — 하나라도 완료 값이면 제외)·완료 상태값 목록(쉼표 구분)·마감일 속성명. 미설정 값은 필터링/기한 설정을 생략 |
+| `SCHEDULE_NOTION_STATUS_PROPERTY` · `SCHEDULE_NOTION_DONE_VALUES` · `SCHEDULE_NOTION_DROPPED_VALUES` · `SCHEDULE_NOTION_DUE_PROPERTY` | ⭕ | 상태 속성명 목록(쉼표 구분, 기본 `상태` — 하나라도 완료 값이면 제외)·완료·그만둔 상태값 목록(쉼표 구분)·마감일 속성명. 미설정 값은 필터링/기한 설정을 생략 |
 | `AUTOPILOT_PORTFOLIO_WARMUP_SCHEDULE` · `_TIMEZONE` | ⭕ | 워밍업 발화 시각 override(기본 `*/10 8-23 * * *`, Asia/Seoul). 24시간으로 넓히면 Render 무료 플랜 월 시간 한도를 넘는다 |
 | `PORTFOLIO_AUTOMATION_TOKEN` | ⭕ | 포트폴리오 사이트 발행용 자동화 토큰(사이트 쪽 `AUTOMATION_TOKEN` 과 같은 값). 비우면 발행 슬롯이 꺼진다 |
 | `PORTFOLIO_ANONYMIZED_OWNERS` | ⭕ | 공개 포트폴리오에 저장소 이름을 남기지 않을 GitHub owner 목록(쉼표 구분). 해당 성과는 slug 가 `company-<해시>-pr-<번호>` 가 되고 PR 링크를 싣지 않는다. 비우면 익명화하지 않는다 |
