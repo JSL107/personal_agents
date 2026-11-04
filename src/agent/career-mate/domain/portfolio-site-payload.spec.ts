@@ -345,6 +345,26 @@ describe('slug 이 겹치는 저장소', () => {
 });
 
 describe('익명 묶음의 작업 문장', () => {
+  it('저장소 토큰을 품은 복합어 전체를 가린다', () => {
+    const work = {
+      ...accomplishment('A', [
+        evidence(1, '2026-06-01T01:00:00Z', 'acme-corp/internal-api'),
+      ]),
+      bullet: 'internal-api-backendconfig 설정을 바꿨다',
+    };
+    const { groups } = groupAccomplishments(profile([work]), {
+      anonymizedOwners: ['acme-corp'],
+    });
+    const payload = buildPortfolioSitePayload({
+      profile: profile([]),
+      groups,
+      namings: [naming(groups[0].key)],
+      skippedTitles: [],
+    });
+
+    expect(payload.projects[0].process).toEqual(['사내 저장소 설정을 바꿨다']);
+  });
+
   it('저장소 이름을 가린다', () => {
     // slug·링크를 접어도 문장에 이름이 남으면 같은 것이 그대로 드러난다.
     const work = {

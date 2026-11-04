@@ -1,48 +1,37 @@
 import { ConfigService } from '@nestjs/config';
 
-import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { CronIdempotencyService } from '../../../common/queue/cron-idempotency.service';
+import { GithubClientPort } from '../../../github/domain/port/github-client.port';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { CareerProfileData } from '../domain/career-mate.type';
 import { CareerProfileRepositoryPort } from '../domain/port/career-profile.repository.port';
 import {
   PortfolioSiteClientPort,
   PortfolioSiteProject,
+  PortfolioSiteSkillGroup,
 } from '../domain/port/portfolio-site.client.port';
-import { BuildCareerProfileUsecase } from './build-career-profile.usecase';
+import {
+  PortfolioSyncCardRepositoryPort,
+  PortfolioSyncCardRow,
+} from '../domain/port/portfolio-sync-card.repository.port';
 import { PublishPortfolioSiteUsecase } from './publish-portfolio-site.usecase';
 
+const SLUG = 'jsl107-personal-agents';
+const REPO = 'JSL107/personal_agents';
 const PROFILE: CareerProfileData = {
   summary: '백엔드 개발자',
-  skills: [
-    {
-      name: 'TypeScript',
-      category: 'LANGUAGE',
-      proficiency: 'EXPERT',
-      evidence: [
-        {
-          repo: 'JSL107/personal_agents',
-          pr: 313,
-          url: 'https://github.com/JSL107/personal_agents/pull/313',
-        },
-      ],
-    },
-  ],
+  skills: [],
   accomplishments: [
     {
       title: '백테스트 재생 루프',
-      bullet: '과거를 재생해 성적을 낸다. 실패 3회를 0회로 줄였다',
-      star: {
-        situation: '비교할 수 없었다',
-        task: '재생 루프 설계',
-        action: 'usecase 구현',
-        result: '수치 비교 가능',
-      },
-      techTags: ['TypeScript'],
+      bullet: '실패 3회를 0회로 줄였다',
+      star: { situation: '문제', task: '과제', action: '행동', result: '결과' },
+      techTags: ['TypeScript', 'NestJS'],
       evidence: [
         {
-          repo: 'JSL107/personal_agents',
+          repo: REPO,
           pr: 313,
-          url: 'https://github.com/JSL107/personal_agents/pull/313',
+          url: `https://github.com/${REPO}/pull/313`,
           mergedAt: '2026-08-14T01:00:00Z',
         },
       ],
@@ -50,403 +39,482 @@ const PROFILE: CareerProfileData = {
   ],
   meta: { githubLogin: 'JSL107', windowStart: '2026-06-01', prCount: 3 },
 };
-
-const SLUG = 'jsl107-personal-agents';
-
-const createFixture = (
-  clientOverrides: Partial<PortfolioSiteClientPort> = {},
-  latest: {
-    profileJson: CareerProfileData;
-    agentRunId: number | null;
-  } | null = {
-    profileJson: PROFILE,
-    agentRunId: 77,
+const site = (
+  overrides: Partial<PortfolioSiteProject> = {},
+): PortfolioSiteProject => ({
+  id: 'p1',
+  slug: SLUG,
+  published: true,
+  sortOrder: 1,
+  data: {
+    slug: SLUG,
+    title: '이전 제목',
+    summary: '이전 요약',
+    problem: '이전 문제',
+    result: '실패 3회를 0회로 줄였다',
+    keyContributions: ['실패 3회 → 0회'],
+    process: ['실패 3회를 0회로 줄였다'],
+    techStack: ['TypeScript', 'NestJS'],
+    period: '2026.08',
+    links: {},
   },
-  anonymizedOwners: string | undefined = undefined,
-) => {
-  const client: PortfolioSiteClientPort = {
-    listProjects: jest.fn().mockResolvedValue([]),
-    createProject: jest
-      .fn()
-      .mockImplementation(async (data: Record<string, unknown>) => ({
-        id: 'p1',
-        slug: String(data.slug),
-        published: false,
-        data,
-      })),
-    updateProject: jest
-      .fn()
-      .mockImplementation(
-        async (id: string, data: Record<string, unknown>) =>
-          ({ id, slug: SLUG, published: true, data }) as PortfolioSiteProject,
-      ),
-    listSkillGroups: jest.fn().mockResolvedValue([]),
-    createSkillGroup: jest
-      .fn()
-      .mockImplementation(async (data: Record<string, unknown>) => ({
-        id: 'g1',
-        sortOrder: 1,
-        data,
-      })),
-    updateSkillGroup: jest
-      .fn()
-      .mockImplementation(
-        async (id: string, data: Record<string, unknown>) => ({
-          id,
-          sortOrder: 1,
-          data,
-        }),
-      ),
-    ...clientOverrides,
+  ...overrides,
+});
+const row = (
+  overrides: Partial<PortfolioSyncCardRow> = {},
+): PortfolioSyncCardRow => ({
+  slug: SLUG,
+  siteProjectId: 'p1',
+  repo: REPO.toLowerCase(),
+  topicIndex: 1,
+  memberPrs: [`${REPO.toLowerCase()}#313`],
+  coverOf: null,
+  status: 'ACTIVE',
+  inheritPublished: false,
+  lastSentSortOrder: 1,
+  ...overrides,
+});
+interface FixtureOptions {
+  rows?: PortfolioSyncCardRow[];
+  sites?: PortfolioSiteProject[];
+  profile?: CareerProfileData;
+  anonymizedOwners?: string;
+  modelOutput?: (keys: string[]) => string;
+}
+const createFixture = (options: FixtureOptions = {}) => {
+  const rows = [...(options.rows ?? [row()])];
+  const sites = [...(options.sites ?? [site()])];
+  const repository: PortfolioSyncCardRepositoryPort = {
+    findAll: jest.fn(async () => rows.map((item) => ({ ...item }))),
+    upsertActive: jest.fn(async (input) => {
+      const index = rows.findIndex((item) => item.slug === input.slug);
+      const next: PortfolioSyncCardRow = {
+        ...row(),
+        ...rows[index],
+        ...input,
+        status: 'ACTIVE',
+        inheritPublished: rows[index]?.inheritPublished ?? false,
+        lastSentSortOrder:
+          input.lastSentSortOrder ?? rows[index]?.lastSentSortOrder ?? null,
+      };
+      if (index < 0) {
+        rows.push(next);
+      } else {
+        rows[index] = next;
+      }
+    }),
+    clearCoverOf: jest.fn(async (slugs) => {
+      for (const item of rows) {
+        if (slugs.includes(item.slug)) {
+          item.coverOf = null;
+        }
+      }
+    }),
+    createMany: jest.fn(async (items) => {
+      for (const item of items) {
+        rows.push({
+          ...item,
+          status: 'ACTIVE',
+          inheritPublished: false,
+          lastSentSortOrder: null,
+        });
+      }
+    }),
   };
-  const repository = {
-    save: jest.fn(),
-    findLatestBySlackUser: jest
-      .fn()
-      .mockResolvedValue(
-        latest ? { id: 1, ...latest, createdAt: new Date() } : null,
-      ),
-  } as unknown as CareerProfileRepositoryPort;
-  const buildProfile = {
-    execute: jest.fn().mockResolvedValue({ result: PROFILE, agentRunId: 99 }),
-  } as unknown as BuildCareerProfileUsecase;
-  // 모델은 묶음마다 이름을 돌려준다 — 발행 배선 테스트라 이름 품질은 여기서 보지 않는다.
-  const modelRouter = {
-    route: jest
-      .fn()
-      .mockImplementation(
-        async ({ request }: { request: { prompt: string } }) => {
-          const keys = [...request.prompt.matchAll(/^key: (.+)$/gm)].map(
-            (match) => match[1],
-          );
-          return {
-            text: JSON.stringify({
-              projects: keys.map((key) => ({
-                key,
-                title: `${key} 프로젝트`,
-                summary: '한 문장',
-                problem: '문제',
-                result: '결과',
-                highlights: ['실패 3회 → 0회'],
-              })),
-            }),
-          };
-        },
-      ),
-  } as unknown as ModelRouterUsecase;
-
-  return {
-    usecase: new PublishPortfolioSiteUsecase(
-      repository,
-      buildProfile,
-      client,
-      {
-        get: (key: string) =>
-          key === 'PORTFOLIO_ANONYMIZED_OWNERS' ? anonymizedOwners : undefined,
-      } as unknown as ConfigService,
-      modelRouter,
+  const skillGroups: PortfolioSiteSkillGroup[] = [];
+  const client: PortfolioSiteClientPort = {
+    listProjects: jest.fn(async () =>
+      sites.map((item) => ({ ...item, data: { ...item.data } })),
     ),
-    modelRouter,
+    createProject: jest.fn(async (data) => {
+      if (sites.some((item) => item.slug === data.slug)) {
+        throw new Error('HTTP 409');
+      }
+      const next: PortfolioSiteProject = {
+        id: `p${sites.length + 1}`,
+        slug: String(data.slug),
+        published: data.published === true,
+        sortOrder: Number(data.sortOrder ?? 0),
+        data: { ...data },
+      };
+      sites.push(next);
+      return next;
+    }),
+    updateProject: jest.fn(async (id, data) => {
+      const found = sites.find((item) => item.id === id);
+      if (!found) {
+        throw new Error('HTTP 404');
+      }
+      found.data = { ...found.data, ...data };
+      if ('sortOrder' in data) {
+        found.sortOrder = Number(data.sortOrder);
+      }
+      return { ...found, data: { ...found.data } };
+    }),
+    listSkillGroups: jest.fn(async () => skillGroups),
+    createSkillGroup: jest.fn(async (data) => {
+      const next = { id: 'g1', sortOrder: 1, data };
+      skillGroups.push(next);
+      return next;
+    }),
+    updateSkillGroup: jest.fn(async (id, data) => ({ id, sortOrder: 1, data })),
+  };
+  const modelRouter = {
+    route: jest.fn(async ({ request }: { request: { prompt: string } }) => {
+      const keys = [...request.prompt.matchAll(/^key: (.+)$/gm)].map(
+        (match) => match[1],
+      );
+      return {
+        text:
+          options.modelOutput?.(keys) ??
+          JSON.stringify({
+            projects: keys.map((key) => ({
+              key,
+              title: '새 제목',
+              summary: '새 요약',
+              problem: '새 문제',
+              result: '실패 3회를 0회로 줄였다',
+              highlights: ['실패 3회 → 0회'],
+            })),
+          }),
+      };
+    }),
+  } as unknown as ModelRouterUsecase;
+  const profileRepository = {
+    findLatestBySlackUser: jest.fn(async () => ({
+      id: 1,
+      profileJson: options.profile ?? PROFILE,
+      agentRunId: 77,
+      createdAt: new Date(),
+    })),
+  } as unknown as CareerProfileRepositoryPort;
+  const github = {
+    isRepositoryPublic: jest.fn(async () => false),
+  } as unknown as GithubClientPort;
+  const lock = new CronIdempotencyService();
+  const usecase = new PublishPortfolioSiteUsecase(
+    profileRepository,
     client,
-    buildProfile,
+    {
+      get: (key: string) =>
+        key === 'PORTFOLIO_ANONYMIZED_OWNERS'
+          ? options.anonymizedOwners
+          : undefined,
+    } as unknown as ConfigService,
+    modelRouter,
+    repository,
+    github,
+    lock,
+  );
+  return {
+    usecase,
+    rows,
+    sites,
+    client,
+    repository,
+    modelRouter,
+    github,
+    lock,
   };
 };
 
-describe('PublishPortfolioSiteUsecase', () => {
-  it('PORTFOLIO_ANONYMIZED_OWNERS 설정이 발행 본문까지 닿는다', async () => {
-    // 익명화 로직 자체는 도메인 테스트가 지킨다. 여기서 지키는 것은 배선이다 — 설정을 읽지
-    // 못하면 도메인 테스트는 전부 초록인데 운영 발행만 저장소 이름을 그대로 내보낸다.
-    const { usecase, client } = createFixture({}, undefined, 'jsl107');
-
-    await usecase.execute({ slackUserId: 'U1' });
-
-    const [created] = (client.createProject as jest.Mock).mock.calls[0] as [
-      Record<string, unknown>,
-    ];
-    expect(String(created.slug)).toMatch(/^company-[0-9a-f]{6}$/);
-    expect(created.links).toEqual({});
+describe('PublishPortfolioSiteUsecase 계획과 적용', () => {
+  it('채택 목록이 사이트와 정확히 맞으면 apply 때만 DB 행을 만든다', async () => {
+    const fixture = createFixture({ rows: [] });
+    const plan = await fixture.usecase.plan({ slackUserId: 'U1' });
+    expect(plan.adoption?.mismatch).toBeUndefined();
+    expect(fixture.repository.createMany).not.toHaveBeenCalled();
+    await fixture.usecase.apply({ plan });
+    expect(fixture.repository.createMany).toHaveBeenCalledTimes(1);
+    expect(fixture.rows).toHaveLength(1);
   });
 
-  it('설정이 비어 있으면 저장소 이름을 그대로 쓴다', async () => {
-    // 대조군 — 위 테스트가 "항상 익명화" 로도 통과하지 않게 한다.
-    const { usecase, client } = createFixture();
-
-    await usecase.execute({ slackUserId: 'U1' });
-
-    const [created] = (client.createProject as jest.Mock).mock.calls[0] as [
-      Record<string, unknown>,
-    ];
-    expect(created.slug).toBe(SLUG);
+  it('채택 목록이 사이트와 다르면 적용 전에 중단한다', async () => {
+    const fixture = createFixture({ rows: [], sites: [] });
+    const plan = await fixture.usecase.plan({ slackUserId: 'U1' });
+    expect(plan.adoption?.mismatch?.onlyInPlan).toEqual([SLUG]);
+    const result = await fixture.usecase.apply({ plan });
+    expect(result.aborted).toBeTruthy();
+    expect(fixture.repository.createMany).not.toHaveBeenCalled();
+    expect(fixture.client.createProject).not.toHaveBeenCalled();
   });
 
-  it('사이트에 없는 성과는 새로 만든다', async () => {
-    const { usecase, client } = createFixture();
-
-    const result = await usecase.execute({ slackUserId: 'U1' });
-
-    expect(result.createdProjects).toEqual([SLUG]);
-    expect(result.updatedProjects).toEqual([]);
-    expect(client.createProject).toHaveBeenCalledWith(
-      expect.objectContaining({ slug: SLUG, published: false }),
-    );
+  it('plan은 DB와 사이트에 쓰지 않는다', async () => {
+    const fixture = createFixture();
+    const plan = await fixture.usecase.plan({ slackUserId: 'U1' });
+    expect(plan.cards).toHaveLength(1);
+    expect(fixture.repository.upsertActive).not.toHaveBeenCalled();
+    expect(fixture.client.updateProject).not.toHaveBeenCalled();
   });
-
-  it('같은 slug 가 이미 있으면 새로 만들지 않고 갱신한다 (멱등)', async () => {
-    const { usecase, client } = createFixture({
-      listProjects: jest
-        .fn()
-        .mockResolvedValue([
-          { id: 'existing-1', slug: SLUG, published: true, data: {} },
-        ]),
-    });
-
-    const result = await usecase.execute({ slackUserId: 'U1' });
-
-    expect(result.createdProjects).toEqual([]);
-    expect(result.updatedProjects).toEqual([SLUG]);
-    expect(client.createProject).not.toHaveBeenCalled();
-    expect(client.updateProject).toHaveBeenCalledWith(
-      'existing-1',
-      expect.objectContaining({ slug: SLUG }),
-    );
+  it('빈 테이블의 execute는 채택을 요구하고 쓰지 않는다', async () => {
+    const fixture = createFixture({ rows: [] });
+    const result = await fixture.usecase.execute({ slackUserId: 'U1' });
+    expect(result.adoptionRequired).toBe(true);
+    expect(fixture.client.updateProject).not.toHaveBeenCalled();
+    expect(fixture.repository.createMany).not.toHaveBeenCalled();
   });
-
-  it('갱신할 때 published 를 건드리지 않는다 (사람이 게시한 것을 되돌리지 않는다)', async () => {
-    const { usecase, client } = createFixture({
-      listProjects: jest
-        .fn()
-        .mockResolvedValue([
-          { id: 'existing-1', slug: SLUG, published: true, data: {} },
-        ]),
-    });
-
-    await usecase.execute({ slackUserId: 'U1' });
-
-    const [, payload] = (client.updateProject as jest.Mock).mock.calls[0];
-    expect('published' in payload).toBe(false);
+  it('계획 뒤 DB가 바뀌면 fingerprint 불일치로 쓰지 않는다', async () => {
+    const fixture = createFixture();
+    const plan = await fixture.usecase.plan({ slackUserId: 'U1' });
+    fixture.rows[0].coverOf = 'changed';
+    const result = await fixture.usecase.apply({ plan });
+    expect(result.aborted).toMatch(/싱크 상태가 바뀌었습니다/);
+    expect(fixture.client.updateProject).not.toHaveBeenCalled();
+    expect(fixture.repository.upsertActive).not.toHaveBeenCalled();
   });
-
-  it('갱신할 때 featured 도 건드리지 않는다 (대표작 지정이 매일 풀리면 안 된다)', async () => {
-    const { usecase, client } = createFixture({
-      listProjects: jest
-        .fn()
-        .mockResolvedValue([
-          { id: 'existing-1', slug: SLUG, published: true, data: {} },
-        ]),
-    });
-
-    await usecase.execute({ slackUserId: 'U1' });
-
-    const [, payload] = (client.updateProject as jest.Mock).mock.calls[0];
-    // 사이트는 "필드가 있으면 덮는다" 라서 값을 넣지 않는 것이 유일한 보존 방법이다.
-    expect('featured' in payload).toBe(false);
-    // 내용 필드는 그대로 실려야 한다(표지는 별도 규칙 — 아래 '표지 보존' 참조).
-    expect(payload.process).toEqual([
-      '과거를 재생해 성적을 낸다. 실패 3회를 0회로 줄였다',
-    ]);
-  });
-
-  it('프로젝트 1건이 실패해도 스킬 그룹 발행은 계속한다', async () => {
-    const { usecase, client } = createFixture({
-      createProject: jest.fn().mockRejectedValue(new Error('HTTP 409')),
-    });
-
-    const result = await usecase.execute({ slackUserId: 'U1' });
-
-    expect(result.failures).toEqual([
-      { target: `project:${SLUG}`, reason: 'HTTP 409' },
-    ]);
-    expect(client.createSkillGroup).toHaveBeenCalled();
-    expect(result.createdSkillGroups).toEqual(['Languages']);
-  });
-
-  it('스킬 그룹은 제목으로 맞춰 갱신한다', async () => {
-    const { usecase, client } = createFixture({
-      listSkillGroups: jest
-        .fn()
-        .mockResolvedValue([
-          { id: 'g-lang', sortOrder: 1, data: { title: 'Languages' } },
-        ]),
-    });
-
-    const result = await usecase.execute({ slackUserId: 'U1' });
-
-    expect(result.updatedSkillGroups).toEqual(['Languages']);
-    expect(client.updateSkillGroup).toHaveBeenCalledWith(
-      'g-lang',
-      expect.objectContaining({ title: 'Languages' }),
-    );
-  });
-
-  it('저장된 프로필이 없으면 그 자리에서 만들어 쓴다', async () => {
-    const { usecase, buildProfile } = createFixture({}, null);
-
-    const result = await usecase.execute({ slackUserId: 'U1' });
-
-    expect(buildProfile.execute).toHaveBeenCalledWith({ slackUserId: 'U1' });
-    expect(result.agentRunId).toBe(99);
-  });
-
-  it('발행 후 목록을 다시 읽어 확인한다 (쓰기 응답만 믿지 않는다)', async () => {
-    const listProjects = jest
-      .fn()
-      .mockResolvedValueOnce([]) // 발행 전
-      .mockResolvedValueOnce([
-        { id: 'p1', slug: SLUG, published: false, data: {} },
-      ]); // 발행 후 재조회
-    const { usecase } = createFixture({ listProjects });
-
-    const result = await usecase.execute({ slackUserId: 'U1' });
-
-    expect(listProjects).toHaveBeenCalledTimes(2);
-    expect(result.missingAfterPublish).toEqual([]);
-  });
-
-  it('재조회에 없으면 저장이 안 된 것으로 보고한다', async () => {
-    // 사이트가 200을 주고도 실제로 저장하지 않은 경우 — 쓰기 응답만 보면 성공으로 읽힌다.
-    const listProjects = jest
-      .fn()
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([]);
-    const { usecase } = createFixture({ listProjects });
-
-    const result = await usecase.execute({ slackUserId: 'U1' });
-
-    expect(result.missingAfterPublish).toEqual([SLUG]);
-  });
-
-  it('재조회 자체가 터지면 실패로 기록하고 미확인을 비운다', async () => {
-    const listProjects = jest
-      .fn()
-      .mockResolvedValueOnce([])
-      .mockRejectedValueOnce(new Error('timeout'));
-    const { usecase } = createFixture({ listProjects });
-
-    const result = await usecase.execute({ slackUserId: 'U1' });
-
-    expect(result.failures).toEqual([{ target: 'verify', reason: 'timeout' }]);
-    expect(result.missingAfterPublish).toEqual([]);
-  });
-});
-
-describe('표지 보존', () => {
-  it('갱신할 때 제목·서술을 다시 보내지 않는다', async () => {
-    // 모델은 같은 묶음에도 회차마다 다른 이름을 짓는다(실측 10건 중 7건 변동). 매번 실어
-    // 보내면 프로젝트 이름이 매일 흔들리고 사람이 고친 제목도 덮인다.
-    const { usecase, client } = createFixture({
-      listProjects: jest
-        .fn()
-        .mockResolvedValue([
-          { id: 'existing-1', slug: SLUG, published: true, data: {} },
-        ]),
-    });
-
-    await usecase.execute({ slackUserId: 'U1' });
-
-    const [, payload] = (client.updateProject as jest.Mock).mock.calls[0];
-    expect('title' in payload).toBe(false);
-    expect('summary' in payload).toBe(false);
-    expect('problem' in payload).toBe(false);
-    expect('result' in payload).toBe(false);
-    // 내용은 계속 갱신된다 — 새 작업이 붙어도 목록에 반영돼야 한다.
-    expect(payload.process).toEqual([
-      '과거를 재생해 성적을 낸다. 실패 3회를 0회로 줄였다',
-    ]);
-    expect(payload.period).toBe('2026.08');
-  });
-
-  it('처음 만들 때는 표지를 싣는다', async () => {
-    const { usecase, client } = createFixture();
-
-    await usecase.execute({ slackUserId: 'U1' });
-
-    const [created] = (client.createProject as jest.Mock).mock.calls[0];
-    expect(created.title).toBe(`${SLUG} 프로젝트`);
-  });
-});
-
-describe('카드 성과 줄 채우기', () => {
-  it('기존 프로젝트에 성과 줄이 없으면 채운다', async () => {
-    // 표지와 달리 지금 발행된 항목에는 값 자체가 없다. 갱신에서 아예 빼면 이미 올라간
-    // 프로젝트는 영영 빈 카드로 남는다 — 첫 회차에 백필되어야 한다.
-    const { usecase, client } = createFixture({
-      listProjects: jest
-        .fn()
-        .mockResolvedValue([
-          { id: 'existing-1', slug: SLUG, published: true, data: {} },
-        ]),
-    });
-
-    await usecase.execute({ slackUserId: 'U1' });
-
-    const [, payload] = (client.updateProject as jest.Mock).mock.calls[0];
-    expect(payload.keyContributions).toEqual(['실패 3회 → 0회']);
-  });
-
-  it('이미 성과 줄이 있으면 덮지 않는다', async () => {
-    // 모델 생성물이라 매 회차 덮으면 카드가 흔들리고, 사람이 편집기에서 고친 줄도 사라진다.
-    const { usecase, client } = createFixture({
-      listProjects: jest.fn().mockResolvedValue([
-        {
-          id: 'existing-1',
-          slug: SLUG,
-          published: true,
-          data: { keyContributions: ['사람이 고친 줄'] },
-        },
-      ]),
-    });
-
-    await usecase.execute({ slackUserId: 'U1' });
-
-    const [, payload] = (client.updateProject as jest.Mock).mock.calls[0];
-    expect('keyContributions' in payload).toBe(false);
-  });
-
-  it('모델이 성과 줄을 주지 않으면 빈 값으로 덮지 않는다', async () => {
-    const { usecase, client, modelRouter } = createFixture({
-      listProjects: jest
-        .fn()
-        .mockResolvedValue([
-          { id: 'existing-1', slug: SLUG, published: true, data: {} },
-        ]),
-    });
-    (modelRouter.route as jest.Mock).mockImplementation(
-      async ({ request }: { request: { prompt: string } }) => {
-        const keys = [...request.prompt.matchAll(/^key: (.+)$/gm)].map(
-          (match) => match[1],
-        );
-        return {
-          text: JSON.stringify({
-            projects: keys.map((key) => ({
-              key,
-              title: `${key} 프로젝트`,
-              summary: '한 문장',
-              problem: '문제',
-              result: '결과',
-              highlights: [],
-            })),
-          }),
-        };
+  it('계획 뒤 사이트 링크가 바뀌면 적용 전에 중단한다', async () => {
+    const previous = site({
+      data: {
+        ...site().data,
+        links: { github: 'https://github.com/old/repo' },
       },
+    });
+    const fixture = createFixture({ sites: [previous] });
+    const plan = await fixture.usecase.plan({ slackUserId: 'U1' });
+    fixture.sites[0].data.links = { github: 'https://github.com/human/edited' };
+    const result = await fixture.usecase.apply({ plan });
+    expect(result.aborted).toMatch(/사이트 카드가 바뀌었습니다/);
+    expect(fixture.client.updateProject).not.toHaveBeenCalled();
+  });
+  it('계획 뒤 사이트 순서가 바뀌면 적용 전에 중단한다', async () => {
+    const fixture = createFixture({
+      rows: [row({ lastSentSortOrder: null })],
+      sites: [site({ sortOrder: 7 })],
+    });
+    const plan = await fixture.usecase.plan({ slackUserId: 'U1' });
+    expect(plan.cards[0].body.sortOrder).toBe(1);
+    fixture.sites[0].sortOrder = 9;
+    const result = await fixture.usecase.apply({ plan });
+    expect(result.aborted).toMatch(/사이트 카드가 바뀌었습니다/);
+    expect(fixture.client.updateProject).not.toHaveBeenCalled();
+  });
+  it('같은 입력의 두 번째 회차는 모델과 표지 쓰기를 건너뛴다', async () => {
+    const fixture = createFixture();
+    await fixture.usecase.execute({ slackUserId: 'U1' });
+    const firstCalls = (fixture.modelRouter.route as jest.Mock).mock.calls
+      .length;
+    (fixture.client.updateProject as jest.Mock).mockClear();
+    await fixture.usecase.execute({ slackUserId: 'U1' });
+    expect((fixture.modelRouter.route as jest.Mock).mock.calls).toHaveLength(
+      firstCalls,
     );
-
-    await usecase.execute({ slackUserId: 'U1' });
-
-    const [, payload] = (client.updateProject as jest.Mock).mock.calls[0];
-    expect('keyContributions' in payload).toBe(false);
+    const [, body] = (fixture.client.updateProject as jest.Mock).mock.calls[0];
+    for (const key of [
+      'title',
+      'summary',
+      'problem',
+      'result',
+      'keyContributions',
+    ]) {
+      expect(body).not.toHaveProperty(key);
+    }
+  });
+  it('구성이 같아도 사이트에서 사라진 카드는 표지를 다시 지어 생성한다', async () => {
+    const fixture = createFixture();
+    await fixture.usecase.execute({ slackUserId: 'U1' });
+    fixture.sites.splice(0, fixture.sites.length);
+    const result = await fixture.usecase.execute({ slackUserId: 'U1' });
+    expect(result.createdProjects).toEqual([SLUG]);
+    expect(fixture.client.createProject).toHaveBeenCalledWith(
+      expect.objectContaining({ slug: SLUG, title: '새 제목' }),
+    );
+  });
+  it('성과 줄이 전부 빠지면 줄마다 제외 사유를 실어 한 번 더 요청한다', async () => {
+    const fixture = createFixture({
+      modelOutput: (keys) =>
+        JSON.stringify({
+          projects: keys.map((key) => ({
+            key,
+            title: '새 제목',
+            summary: '새 요약',
+            problem: '새 문제',
+            result: '실패 3회를 0회로 줄였다',
+            highlights: ['실패 30회 → 0회'],
+          })),
+        }),
+    });
+    const plan = await fixture.usecase.plan({ slackUserId: 'U1' });
+    const calls = (fixture.modelRouter.route as jest.Mock).mock.calls;
+    expect(calls).toHaveLength(2);
+    expect(calls[1][0].request.prompt).toContain(
+      `- ${SLUG}: "실패 30회 → 0회" — 과정 10줄에 없는 숫자`,
+    );
+    expect(plan.report.coverRetry).toEqual([SLUG]);
+  });
+  it('update 본문에는 published·featured·싱크 메타가 없다', async () => {
+    const plan = await createFixture().usecase.plan({ slackUserId: 'U1' });
+    for (const key of [
+      'published',
+      'featured',
+      'coverOf',
+      'memberPrs',
+      'coverHash',
+      'siteProjectId',
+    ]) {
+      expect(plan.cards[0].body).not.toHaveProperty(key);
+    }
+  });
+  it('모델이 카드를 빠뜨리면 표지를 보내지 않고 coverOf를 유지한다', async () => {
+    const fixture = createFixture({
+      modelOutput: () => JSON.stringify({ projects: [] }),
+    });
+    const plan = await fixture.usecase.plan({ slackUserId: 'U1' });
+    expect(plan.cards[0].coverPassed).toBe(false);
+    expect(plan.cards[0].body).not.toHaveProperty('title');
+    await fixture.usecase.apply({ plan });
+    expect(fixture.rows[0].coverOf).toBeNull();
+  });
+  it('모델 파손과 기존 숫자 위반 시 위반 필드만 비운다', async () => {
+    const prior = site({
+      data: {
+        ...site().data,
+        result: '근거 없는 99회',
+        keyContributions: ['근거 없는 99회'],
+      },
+    });
+    const fixture = createFixture({
+      sites: [prior],
+      modelOutput: () => '파손된 JSON',
+    });
+    const plan = await fixture.usecase.plan({ slackUserId: 'U1' });
+    expect(plan.cards[0].body).toMatchObject({
+      result: '',
+      keyContributions: [],
+    });
+    expect(plan.cards[0].body).not.toHaveProperty('title');
+  });
+  it('잠금 선점 시 실행을 거절하고 쓰지 않는다', async () => {
+    const fixture = createFixture();
+    await fixture.lock.acquireOnce('portfolio-publish:lock', 900);
+    await expect(
+      fixture.usecase.execute({ slackUserId: 'U1' }),
+    ).rejects.toThrow(/이미 실행 중/);
+    expect(fixture.client.updateProject).not.toHaveBeenCalled();
+    await fixture.lock.release('portfolio-publish:lock');
+  });
+  it('사람이 바꾼 sortOrder는 보존한다', async () => {
+    const plan = await createFixture({
+      sites: [site({ sortOrder: 7 })],
+    }).usecase.plan({ slackUserId: 'U1' });
+    expect(plan.cards[0].body).not.toHaveProperty('sortOrder');
+    expect(plan.report.sortOrderKeptByHuman).toEqual([SLUG]);
+  });
+  it('기존 links의 video·docs는 보존하며 github만 제거한다', async () => {
+    const previous = site({
+      data: {
+        ...site().data,
+        links: {
+          video: 'https://video.test',
+          docs: 'https://docs.test',
+          github: 'https://github.com/old/repo',
+        },
+      },
+    });
+    const plan = await createFixture({ sites: [previous] }).usecase.plan({
+      slackUserId: 'U1',
+    });
+    expect(plan.cards[0].body.links).toEqual({
+      video: 'https://video.test',
+      docs: 'https://docs.test',
+    });
   });
 
-  it('저장된 프로필이 없으면 넘겨받은 triggerType 으로 만든다', async () => {
-    const { usecase, buildProfile } = createFixture({}, null);
-
-    await usecase.execute({
-      slackUserId: 'U1',
-      triggerType: TriggerType.AUTOPILOT_PORTFOLIO_PUBLISH_CRON,
+  it('프로필의 bullet만 바뀌고 PR 집합이 같으면 표지를 다시 만들지 않는다', async () => {
+    const fixture = createFixture();
+    await fixture.usecase.execute({ slackUserId: 'U1' });
+    const calls = (fixture.modelRouter.route as jest.Mock).mock.calls.length;
+    const previous = fixture.sites[0].data;
+    const updatedProfile: CareerProfileData = {
+      ...PROFILE,
+      accomplishments: [
+        {
+          ...PROFILE.accomplishments[0],
+          bullet: '사망 3회를 0회로 줄인 운영 재구성',
+        },
+      ],
+    };
+    const second = createFixture({
+      rows: fixture.rows,
+      sites: fixture.sites,
+      profile: updatedProfile,
     });
-
-    expect(buildProfile.execute).toHaveBeenCalledWith({
-      slackUserId: 'U1',
-      triggerType: TriggerType.AUTOPILOT_PORTFOLIO_PUBLISH_CRON,
-    });
+    await second.usecase.execute({ slackUserId: 'U1' });
+    expect(second.modelRouter.route).not.toHaveBeenCalled();
+    expect(second.sites[0].data.title).toBe(previous.title);
+    expect(calls).toBeGreaterThan(0);
   });
+
+  it.each([1, 2])(
+    '%i번째 사이트 쓰기 실패 후 재실행하면 정상 실행 상태로 수렴한다',
+    async (failureAt) => {
+      const secondRepo = 'AAA/sample';
+      const secondSlug = 'aaa-sample';
+      const secondWork = {
+        ...PROFILE.accomplishments[0],
+        title: '두 번째 작업',
+        evidence: [
+          {
+            repo: secondRepo,
+            pr: 2,
+            url: `https://github.com/${secondRepo}/pull/2`,
+            mergedAt: '2026-08-15T01:00:00Z',
+          },
+        ],
+      };
+      const profile = {
+        ...PROFILE,
+        accomplishments: [...PROFILE.accomplishments, secondWork],
+      };
+      const initialRows = [
+        row(),
+        row({
+          slug: secondSlug,
+          repo: secondRepo.toLowerCase(),
+          memberPrs: ['aaa/sample#2'],
+          siteProjectId: 'p2',
+        }),
+      ];
+      const initialSites = [
+        site(),
+        site({
+          id: 'p2',
+          slug: secondSlug,
+          data: { ...site().data, slug: secondSlug },
+        }),
+      ];
+      const clean = createFixture({
+        profile,
+        rows: initialRows.map((item) => ({ ...item })),
+        sites: initialSites.map((item) => ({
+          ...item,
+          data: { ...item.data },
+        })),
+      });
+      await clean.usecase.execute({ slackUserId: 'U1' });
+
+      const retry = createFixture({
+        profile,
+        rows: initialRows.map((item) => ({ ...item })),
+        sites: initialSites.map((item) => ({
+          ...item,
+          data: { ...item.data },
+        })),
+      });
+      const update = retry.client.updateProject as jest.Mock;
+      const normalUpdate = update.getMockImplementation();
+      for (let index = 1; index < failureAt; index += 1) {
+        update.mockImplementationOnce(normalUpdate!);
+      }
+      update.mockRejectedValueOnce(new Error('일시 오류'));
+      const first = await retry.usecase.execute({ slackUserId: 'U1' });
+      expect(first.failures).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ reason: '일시 오류' }),
+        ]),
+      );
+      await retry.usecase.execute({ slackUserId: 'U1' });
+      expect(retry.sites).toEqual(clean.sites);
+      expect(retry.rows).toEqual(clean.rows);
+    },
+  );
 });
