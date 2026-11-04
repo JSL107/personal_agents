@@ -2,20 +2,25 @@ import { redactPii } from '../../common/util/pii-redaction.util';
 import { escapeSlackMrkdwn } from '../../slack/format/mrkdwn.util';
 
 export const describeIncidentCause = (errorMessage: string): string | null => {
-  if (/Not logged in|401|unauthorized|token.*expired/i.test(errorMessage)) {
-    return '로그인이 만료된 것 같아요';
-  }
-  if (/quota|rate limit|429/i.test(errorMessage)) {
-    return '사용량 한도에 걸렸어요';
-  }
-  if (/timeout|timed out|ETIMEDOUT/i.test(errorMessage)) {
-    return '응답 시간이 초과됐어요';
-  }
-  if (/ECONNREFUSED|ENOTFOUND|socket hang up/i.test(errorMessage)) {
-    return '연결이 끊겼어요';
-  }
-  return null;
+  const found = INCIDENT_CAUSES.find(({ pattern }) =>
+    pattern.test(errorMessage),
+  );
+  return found?.cause ?? null;
 };
+
+// 위에서부터 처음 맞는 원인을 쓴다. 새 원인은 이 표에 한 줄 더한다.
+const INCIDENT_CAUSES: { pattern: RegExp; cause: string }[] = [
+  {
+    pattern: /Not logged in|401|unauthorized|token.*expired/i,
+    cause: '로그인이 만료된 것 같아요',
+  },
+  { pattern: /quota|rate limit|429/i, cause: '사용량 한도에 걸렸어요' },
+  { pattern: /timeout|timed out|ETIMEDOUT/i, cause: '응답 시간이 초과됐어요' },
+  {
+    pattern: /ECONNREFUSED|ENOTFOUND|socket hang up/i,
+    cause: '연결이 끊겼어요',
+  },
+];
 
 export const formatIncidentOpen = ({
   label,

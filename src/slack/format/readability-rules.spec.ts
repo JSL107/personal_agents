@@ -35,6 +35,12 @@ describe('findReadabilityViolations', () => {
     ]);
     expect(
       findReadabilityViolations('_model: codex-cli · run #11198_'),
-    ).toEqual(['run #11198', 'codex-cli']);
+    ).toEqual(['codex-cli', 'run #11198']);
+  });
+});
+
+describe('findReadabilityViolations 겹침', () => {
+  it('run 번호 안의 #번호를 단독 번호로 또 보고하지 않는다', () => {
+    expect(findReadabilityViolations('run #11198')).toEqual(['run #11198']);
   });
 });

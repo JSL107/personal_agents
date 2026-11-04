@@ -68,22 +68,37 @@ const PII_PATTERNS: readonly PiiPattern[] = [
 // PII 패턴들을 순회하며 토큰 류 시크릿을 마스킹한다.
 // 입력 text 의 의미적 컨텍스트는 보존하면서 (자리 표식 유지) 시크릿 본문만 제거.
 export const redactPii = (text: string): string => {
-  const credentialsRedacted = text.replace(
-    /([a-z][a-z0-9+.-]*:\/\/)[^\s:@/]+:[^\s]+@(?=[^\s/@]+(?::\d+)?(?:\/|[\s?#]|$))/gi,
-    '$1***@',
+  const valuesRedacted = VALUE_REDACTIONS.reduce(
+    (current, { regex, replacement }) => current.replace(regex, replacement),
+    text,
   );
-  const keysRedacted = credentialsRedacted
-    .replace(/\b(Bearer\s+)[^\s;,]+/gi, '$1***')
-    .replace(
-      /("?(?:password|passwd|pwd|token|secret|api_key|apikey|access_token)"?\s*[=:]\s*)(["'])(?:\\.|(?!\2)[^\\])*\2/gi,
-      '$1$2***$2',
-    )
-    .replace(
-      /\b(password|passwd|pwd|token|secret|api_key|apikey|access_token)(\s*[=:]\s*)([^\s"';,]+)/gi,
-      '$1$2***',
-    );
-  return PII_PATTERNS.reduce(
+  const redacted = PII_PATTERNS.reduce(
     (current, { type, regex }) => current.replace(regex, `[REDACTED:${type}]`),
-    keysRedacted,
+    valuesRedacted,
   );
+  return redacted;
 };
+
+// 이름이 붙은 값(URL 자격증명·Bearer·password= 등)은 이름을 남기고 값만 가린다.
+// 순서가 중요하다 — 따옴표로 감싼 값을 먼저 지워야 맨값 패턴이 따옴표 안 일부만 가리는 일이 없다.
+const SECRET_KEYS =
+  'password|passwd|pwd|token|secret|api_key|apikey|access_token';
+const VALUE_REDACTIONS: { regex: RegExp; replacement: string }[] = [
+  {
+    regex:
+      /([a-z][a-z0-9+.-]*:\/\/)[^\s:@/]+:[^\s]+@(?=[^\s/@]+(?::\d+)?(?:\/|[\s?#]|$))/gi,
+    replacement: '$1***@',
+  },
+  { regex: /\b(Bearer\s+)[^\s;,]+/gi, replacement: '$1***' },
+  {
+    regex: new RegExp(
+      `("?(?:${SECRET_KEYS})"?\\s*[=:]\\s*)(["'])(?:\\\\.|(?!\\2)[^\\\\])*\\2`,
+      'gi',
+    ),
+    replacement: '$1$2***$2',
+  },
+  {
+    regex: new RegExp(`\\b(${SECRET_KEYS})(\\s*[=:]\\s*)([^\\s"';,]+)`, 'gi'),
+    replacement: '$1$2***',
+  },
+];

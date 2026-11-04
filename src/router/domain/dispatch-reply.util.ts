@@ -11,11 +11,15 @@ export const collectDispatchRunIds = (result: DispatchResult): number[] =>
   ].filter((agentRunId) => agentRunId > 0);
 
 export const buildDispatchReplyText = (result: DispatchResult): string => {
-  return [result, ...(result.handoffResults ?? [])]
-    .map((entry) =>
-      entry.agentRunId > 0
-        ? `${entry.formattedText}\n${formatRunIdLine(entry.agentRunId)}`
-        : entry.formattedText,
-    )
-    .join('\n\n---\n\n');
+  const entries = [result, ...(result.handoffResults ?? [])];
+  const blocks = entries.map(withRunIdLine);
+  return blocks.join('\n\n---\n\n');
+};
+
+// 실행 번호 0 은 원장에 run 을 남기지 않은 분기라 번호 줄을 붙이지 않는다.
+const withRunIdLine = (entry: DispatchResult): string => {
+  if (entry.agentRunId <= 0) {
+    return entry.formattedText;
+  }
+  return `${entry.formattedText}\n${formatRunIdLine(entry.agentRunId)}`;
 };

@@ -84,22 +84,26 @@ export const formatUpcomingLine = (
 export const formatScheduleLines = (
   items: ScheduleItemRecord[],
   today: Date,
-): string[] =>
-  items
-    .filter(
-      (item) =>
-        item.status === ScheduleStatus.OPEN &&
-        !item.isHoliday &&
-        item.dueDate <= today,
-    )
-    .map((item) => {
-      const days = Math.round(
-        (today.getTime() - item.dueDate.getTime()) / DAY_MS,
-      );
-      const title = escapeSlackMrkdwn(item.title);
-      return days > 0
-        ? `• ${title} (${days}일 지남)`
-        : item.dueTime
-          ? `• ${item.dueTime} ${title}`
-          : `• ${title} (오늘)`;
-    });
+): string[] => {
+  const dueItems = items.filter((item) => isOpenAndDueBy(item, today));
+  return dueItems.map((item) => formatScheduleLine(item, today));
+};
+
+const isOpenAndDueBy = (item: ScheduleItemRecord, today: Date): boolean =>
+  item.status === ScheduleStatus.OPEN &&
+  !item.isHoliday &&
+  item.dueDate <= today;
+
+const formatScheduleLine = (item: ScheduleItemRecord, today: Date): string => {
+  const daysOverdue = Math.round(
+    (today.getTime() - item.dueDate.getTime()) / DAY_MS,
+  );
+  const title = escapeSlackMrkdwn(item.title);
+  if (daysOverdue > 0) {
+    return `• ${title} (${daysOverdue}일 지남)`;
+  }
+  if (item.dueTime) {
+    return `• ${item.dueTime} ${title}`;
+  }
+  return `• ${title} (오늘)`;
+};

@@ -9,8 +9,8 @@ import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { ObservedWorkerHost } from '../../common/queue/observed-worker-host';
 import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
 import { formatRunIdLine } from '../../common/util/run-id-line.util';
-import { formatAiHandoff } from '../../notification/domain/incident-message';
 import { formatPullRequestReview } from '../../slack/format/pull-request-review.formatter';
+import { formatReviewAiHandoff } from '../../slack/format/pull-request-review-response';
 import { SlackService } from '../../slack/slack.service';
 import {
   CODE_REVIEWER_QUEUE,
@@ -55,33 +55,12 @@ export class WebhookCodeReviewerConsumer extends ObservedWorkerHost {
         target: slackUserId,
         text: withRunId,
       });
-      const review = outcome.result;
-      const findings = [
-        ...review.mustFix,
-        ...review.niceToHave,
-        ...review.missingTests,
-        ...review.reviewCommentDrafts.map((draft) => draft.body),
-        ...review.findings.map((finding) => finding.body),
-      ];
-      if (findings.length > 0) {
-        const files = [
-          ...review.reviewCommentDrafts,
-          ...review.findings,
-        ].flatMap((finding) =>
-          finding.file
-            ? [`${finding.file}${finding.line ? `:${finding.line}` : ''}`]
-            : [],
-        );
-        const match = /^([^#]+)#(\d+)$/.exec(prRef);
-        const link = match
-          ? `https://github.com/${match[1]}/pull/${match[2]}`
-          : prRef;
-        const handoff = formatAiHandoff({
-          feature: `${link} ${outcome.prTitle ?? review.summary}`,
-          errorMessage: [...new Set(findings)].join('\n'),
-          files: [...new Set(files)],
-          checkCommand: null,
-        });
+      const handoff = formatReviewAiHandoff({
+        prRef,
+        prTitle: outcome.prTitle,
+        review: outcome.result,
+      });
+      if (handoff !== null) {
         try {
           await this.slackService.postMessage({
             kind: 'code-review-webhook',

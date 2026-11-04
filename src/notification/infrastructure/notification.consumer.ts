@@ -20,6 +20,7 @@ import {
   INCIDENT_QUIET_MS,
   normalizeIncidentCause,
 } from '../domain/alert-incident.policy';
+import { toAutopilotTaskDisplayName } from '../domain/autopilot-task-display-name';
 import {
   describeIncidentCause,
   formatAiHandoff,
@@ -41,10 +42,10 @@ import {
 
 const DEDUPE_WINDOW_MS = 30 * 60 * 1000;
 const DATABASE_FALLBACK_MARKER = '_사건 원장 접근 실패: 중복 억제 없이 발송_';
-const cronTaskLabel = (cronName: string): string => {
-  const label = toTaskLabel(cronName);
-  return label === cronName ? '예약 작업' : label;
-};
+// `Autopilot task <id>` 는 작업 이름표로, 그 밖(`Hermes …` 등)은 에이전트 이름표가 있으면 그것으로,
+// 없으면 원래 이름 그대로 둔다. 서로 다른 장애가 한 이름으로 합쳐지면 아침 장애 줄에서 가려낼 수 없다.
+const cronTaskLabel = (cronName: string): string =>
+  toAutopilotTaskDisplayName(cronName) ?? toTaskLabel(cronName);
 
 export const shouldFireAlert = ({
   lastFiredAtMs,
@@ -395,16 +396,24 @@ export class NotificationConsumer
   }
 
   private resolveText(incident: AlertIncident, now: Date): string {
+    const label = this.resolvedLabel(incident);
+    const duration = formatIncidentDuration(
+      now.getTime() - incident.openedAt.getTime(),
+    );
     return formatIncidentResolved({
-      label: incident.key.startsWith('cron:')
-        ? cronTaskLabel(incident.key.slice('cron:'.length))
-        : incident.label,
-      duration: formatIncidentDuration(
-        now.getTime() - incident.openedAt.getTime(),
-      ),
+      label,
+      duration,
       occurrences: incident.occurrences,
       causes: incident.causes,
     });
+  }
+
+  // 예전 cron 사건 행은 이름이 원문 cronName 이라 키에서 다시 이름표를 만든다.
+  private resolvedLabel(incident: AlertIncident): string {
+    if (!incident.key.startsWith('cron:')) {
+      return incident.label;
+    }
+    return cronTaskLabel(incident.key.slice('cron:'.length));
   }
 
   private async sendFallback(alert: FailureAlert): Promise<void> {
