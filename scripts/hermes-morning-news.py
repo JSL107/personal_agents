@@ -534,19 +534,33 @@ def yozm_tools(raw: bytes) -> list[dict]:
     ]
 
 
-def geeknews_items(raw: bytes) -> list[dict]:
-    """GeekNews Atom 피드를 최신순 그대로 바꾼다. 링크 대신 `id` 를 쓴다 — 링크에는 utm 꼬리가 붙는다."""
+def geeknews_items(raw: bytes, now: datetime | None = None) -> list[dict]:
+    """GeekNews Atom 피드를 최신순 그대로 바꾼다. 링크 대신 `id` 를 쓴다 — 링크에는 utm 꼬리가 붙는다.
+
+    job 프롬프트가 "발행일 기준 최근 RECENCY_DAYS 일 이내로 이미 걸러져 있다" 고 말하므로 Tavily(days=)와 같은 기준으로
+    거른다. 발행일을 읽지 못한 글은 그 약속을 지킬 수 없어 뺀다.
+    """
     atom = "{http://www.w3.org/2005/Atom}"
-    return [
-        {
+    cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=RECENCY_DAYS)
+    items: list[dict] = []
+    for entry in ElementTree.fromstring(raw).iter(f"{atom}entry"):
+        published = entry.findtext(f"{atom}published") or ""
+        try:
+            published_at = datetime.fromisoformat(published.strip().replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if published_at.tzinfo is None:
+            published_at = published_at.replace(tzinfo=timezone.utc)
+        if published_at < cutoff:
+            continue
+        items.append({
             "source": "geeknews",
             "title": entry.findtext(f"{atom}title") or "",
             "url": (entry.findtext(f"{atom}id") or "").strip(),
-            "published_date": entry.findtext(f"{atom}published"),
+            "published_date": published,
             "content": html.unescape(_HTML_TAG_PATTERN.sub(" ", entry.findtext(f"{atom}content") or "")),
-        }
-        for entry in ElementTree.fromstring(raw).iter(f"{atom}entry")
-    ]
+        })
+    return items
 
 
 def is_bait_repo(url: str) -> bool:
@@ -992,10 +1006,15 @@ def self_check() -> None:
             "<link rel='alternate' href='https://news.hada.io/topic?id=36549&amp;utm_source=geeknews' />"
             "<id>https://news.hada.io/topic?id=36549</id><published>2026-11-04T08:32:30+09:00</published>"
             "<content type='html'><![CDATA[<ul><li><strong>Safari</strong> &amp; 다크</li></ul>]]></content></entry></feed>").encode("utf-8")
-    geek = geeknews_items(atom)
+    now = datetime(2026, 11, 4, 9, 0, tzinfo=KST)
+    geek = geeknews_items(atom, now)
     assert geek[0]["url"] == "https://news.hada.io/topic?id=36549" and geek[0]["title"] == "Safari 27.3 다크 모드", geek
     assert geek[0]["content"].split() == ["Safari", "&", "다크"], geek[0]["content"]
     assert normalize_published(geek[0]["published_date"]) == "2026-11-04 08:32"
+    # 최근 RECENCY_DAYS 일 밖이거나 발행일을 못 읽는 글은 뺀다(프롬프트의 "최근 3일 이내" 약속).
+    stale = atom.replace(b"2026-11-04T08:32:30", b"2026-10-30T08:32:30")
+    undated = atom.replace(b"<published>2026-11-04T08:32:30+09:00</published>", b"")
+    assert geeknews_items(stale, now) == [] and geeknews_items(undated, now) == []
 
     # 발송본 중복 제외는 모델이 쓴 부분(Response)만 본다 — 프롬프트에 실린 후보 URL 은 제외 대상이 아니다.
     briefing = "## Prompt\n2. 후보 https://not-chosen.example/x\n## Response\n- 고른 것 https://github.com/o/r/\n"

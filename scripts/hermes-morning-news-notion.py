@@ -27,7 +27,6 @@ import json
 import os
 import pwd
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -61,6 +60,7 @@ CLAUDE_TIMEOUT_SEC = 100
 SAFE_ENV_KEYS = ("PATH", "USER", "LOGNAME", "LANG", "LC_ALL", "SHELL", "TERM", "TMPDIR")
 AUTH_ENV_KEYS = ("CLAUDE_CODE_OAUTH_TOKEN",)
 REAL_HOME = Path(pwd.getpwuid(os.getuid()).pw_dir)
+NATIVE_CLAUDE = REAL_HOME / ".local" / "bin" / "claude"
 
 # 영역 헤더 → 분야. None 이면 싣지 않는 영역. 헤더는 모델이 이모지·굵게를 붙여 쓰므로 앞부분 일치로 본다.
 SECTION_FIELDS = (
@@ -312,9 +312,11 @@ def child_env(parent: dict) -> dict:
 
 def run_claude(prompt: str) -> dict:
     # PATH 를 믿지 않는다. hermes gateway 의 PATH 에는 nvm 의 옛 npm 판(2.1.220)이 먼저 잡히는데, 그 판은 --mcp-config 의
-    # Notion MCP 를 붙이지 않고 --tools "" 도 무시해 기본 도구를 연다(2026-11-04 실측). 네이티브 설치본을 먼저 쓴다.
-    native = REAL_HOME / ".local" / "bin" / "claude"
-    claude = str(native) if native.exists() else shutil.which("claude") or "claude"
+    # Notion MCP 를 붙이지 않고 --tools "" 도 무시해 기본 도구를 연다(2026-11-04 실측). 네이티브 설치본만 쓰고, 없으면
+    # PATH 로 대체하지 않고 실패로 알린다 — 대체하면 뉴스 문구가 든 프롬프트에 도구 제한이 풀린다.
+    if not NATIVE_CLAUDE.exists():
+        raise RuntimeError(f"네이티브 claude 없음: {NATIVE_CLAUDE}")
+    claude = str(NATIVE_CLAUDE)
     env = child_env(os.environ)
     tools = "mcp__notion__notion-fetch,mcp__notion__notion-query-data-sources,mcp__notion__notion-create-pages"
     with tempfile.TemporaryDirectory() as workdir:
