@@ -43,6 +43,16 @@ describe('filterMyNotionTask', () => {
     expect(filterMyNotionTask(work, config)).toBeNull();
   });
 
+  it('담당자 값 끝 쉼표가 담당자 없는 업무를 통과시키지 않는다', () => {
+    const unassigned: NotionTask = {
+      ...task,
+      properties: { ...task.properties, 담당자: '' },
+    };
+    expect(
+      filterMyNotionTask(unassigned, { ...config, assigneeValue: '김준석,' }),
+    ).toBeNull();
+  });
+
   it('담당자 부분 일치는 제외한다', () => {
     expect(
       filterMyNotionTask(task, { ...config, assigneeValue: '김준' }),
