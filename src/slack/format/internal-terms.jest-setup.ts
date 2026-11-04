@@ -3,8 +3,8 @@ import { join, relative } from 'node:path';
 
 import * as ts from 'typescript';
 
-import { AutopilotTaskResult } from '../../autopilot/domain/autopilot-task.port';
 import { findInternalTerms } from './internal-terms';
+import { pickTaskText } from './internal-terms.picker';
 import { findReadabilityViolations } from './readability-rules';
 
 // 모든 spec 의 렌더 결과에서 내부 식별자를 찾는다(`internal-terms.ts`).
@@ -91,23 +91,6 @@ const inspect = (source: string, value: unknown): void => {
 };
 
 type TextPicker = (value: unknown) => unknown;
-
-// task 결과에서는 Slack 에 실리는 문구만 본다. 카드 payload·판정 facet 에는 enum 값이 정상으로 들어 있다.
-const pickTaskText: TextPicker = (value) => {
-  const result = (value ?? {}) as Partial<AutopilotTaskResult>;
-  return [
-    result.summaryText,
-    result.detailText,
-    result.headlineText,
-    // 이미지·파일 제목도 Slack 에 그대로 보인다(orchestrator 가 제목·대체 텍스트로 싣는다).
-    result.detailImage?.title,
-    result.detailFile?.title,
-    result.detailFile?.content,
-    result.preview?.previewText,
-    ...(result.previews ?? []).map((preview) => preview.previewText),
-    ...(result.runVerdicts ?? []).map((verdict) => verdict.quote),
-  ];
-};
 
 // 반환값이 Promise 면 풀린 값을 본다. 원래 반환값은 그대로 돌려줘 동작을 바꾸지 않는다.
 const inspectResult = (
