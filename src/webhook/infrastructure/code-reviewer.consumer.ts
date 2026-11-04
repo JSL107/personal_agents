@@ -8,6 +8,7 @@ import { DomainException } from '../../common/exception/domain.exception';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { ObservedWorkerHost } from '../../common/queue/observed-worker-host';
 import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
+import { formatRunIdLine } from '../../common/util/run-id-line.util';
 import { formatAiHandoff } from '../../notification/domain/incident-message';
 import { formatPullRequestReview } from '../../slack/format/pull-request-review.formatter';
 import { SlackService } from '../../slack/slack.service';
@@ -48,7 +49,7 @@ export class WebhookCodeReviewerConsumer extends ObservedWorkerHost {
         prTitle: outcome.prTitle,
         review: outcome.result,
       });
-      const withRunId = `${text}\n_실행 번호 \`${outcome.agentRunId}\` (다시 돌리기·의견 남기기에 써요)_`;
+      const withRunId = `${text}\n${formatRunIdLine(outcome.agentRunId)}`;
       const posted = await this.slackService.postMessage({
         kind: 'code-review-webhook',
         target: slackUserId,

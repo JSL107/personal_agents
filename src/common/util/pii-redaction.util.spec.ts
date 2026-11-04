@@ -18,6 +18,20 @@ describe('redactPii', () => {
     );
   });
 
+  it('작은따옴표로 감싼 비밀 값의 공백까지 모두 가린다', () => {
+    expect(
+      redactPii(
+        "password='hello world' token='a b' secret='c d' api_key='e f'",
+      ),
+    ).toBe("password='***' token='***' secret='***' api_key='***'");
+  });
+
+  it('JSON 비밀 값 안의 이스케이프된 큰따옴표 뒤까지 모두 가린다', () => {
+    expect(redactPii(String.raw`{"password":"abc\"def"} tail`)).toBe(
+      '{"password":"***"} tail',
+    );
+  });
+
   it('Authorization Bearer와 일반 Bearer 토큰을 가린다', () => {
     expect(
       redactPii('Authorization: Bearer opaque123; Bearer second-token'),

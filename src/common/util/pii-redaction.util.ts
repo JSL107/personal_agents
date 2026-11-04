@@ -75,11 +75,11 @@ export const redactPii = (text: string): string => {
   const keysRedacted = credentialsRedacted
     .replace(/\b(Bearer\s+)[^\s;,]+/gi, '$1***')
     .replace(
-      /("?(?:password|passwd|pwd|token|secret|api_key|apikey|access_token)"?\s*[=:]\s*)"[^"]*"/gi,
-      '$1"***"',
+      /("?(?:password|passwd|pwd|token|secret|api_key|apikey|access_token)"?\s*[=:]\s*)(["'])(?:\\.|(?!\2)[^\\])*\2/gi,
+      '$1$2***$2',
     )
     .replace(
-      /\b(password|passwd|pwd|token|secret|api_key|apikey|access_token)(\s*[=:]\s*)([^\s";,]+)/gi,
+      /\b(password|passwd|pwd|token|secret|api_key|apikey|access_token)(\s*[=:]\s*)([^\s"';,]+)/gi,
       '$1$2***',
     );
   return PII_PATTERNS.reduce(

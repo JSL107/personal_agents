@@ -6,6 +6,7 @@ import { GenerateCeoMetaUsecase } from '../../agent/ceo/application/generate-ceo
 import { GeneratePoEvaluationUsecase } from '../../agent/po-eval/application/generate-po-evaluation.usecase';
 import { PoEvalCareerlogPayload } from '../../agent/po-eval/infrastructure/po-eval-careerlog.applier';
 import { AgentRunRange } from '../../common/domain/agent-run-range.type';
+import { formatRunIdLine } from '../../common/util/run-id-line.util';
 import { HumanizeService } from '../../humanize/application/humanize.service';
 import { humanizeEvaluationOutput } from '../../humanize/application/humanize-report.adapter';
 import { CreatePreviewUsecase } from '../../preview-gate/application/create-preview.usecase';
@@ -93,7 +94,7 @@ export class PhaseCommandHandler implements SlackHandler {
           this.humanizeService,
         );
         const formatted = formatEvaluationOutput(humanized);
-        const text = `${formatted.summary}\n\n${formatted.detail}`;
+        const text = `${formatted.summary}\n\n${formatted.detail}\n${formatRunIdLine(outcome.agentRunId)}`;
         const payload: PoEvalCareerlogPayload = {
           notionPageId: this.careerLogNotionPageId,
           period: outcome.result.careerLog.period,

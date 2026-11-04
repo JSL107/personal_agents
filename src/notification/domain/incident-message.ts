@@ -91,9 +91,10 @@ export const formatAiHandoff = ({
   files: string[];
   checkCommand: string | null;
 }): string => {
+  const redactedError = redactPii(errorMessage).slice(0, 1500);
   const content = [
     `대상: ${feature}`,
-    `오류: ${errorMessage.slice(0, 1500)}`,
+    `오류: ${redactedError}`,
     ...(files.length ? [`파일: ${files.join(', ')}`] : []),
     ...(checkCommand ? [`확인 명령: ${checkCommand}`] : []),
   ].join('\n');

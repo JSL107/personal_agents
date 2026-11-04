@@ -4,6 +4,7 @@ import { RespondFn } from '@slack/bolt';
 import { AgentRunOutcome } from '../../agent-run/application/agent-run.service';
 import { appendBlockReasonGuidance } from '../../common/domain/block-reason';
 import { DomainException } from '../../common/exception/domain.exception';
+import { formatRunIdLine } from '../../common/util/run-id-line.util';
 import { FormattedReport } from '../format/formatted-report.type';
 import { toReadableSlackArgs } from '../format/message-blocks.builder';
 
@@ -83,7 +84,7 @@ export const runAgentCommand = async <T>(args: {
       response_type: 'ephemeral',
       replace_original: true,
       ...toReadableSlackArgs(
-        `${toSlackText(await format(outcome.result))}\n_실행 번호 \`${outcome.agentRunId}\` (다시 돌리기·의견 남기기에 써요)_`,
+        `${toSlackText(await format(outcome.result))}\n${formatRunIdLine(outcome.agentRunId)}`,
       ),
     });
     if (onOutcome) {

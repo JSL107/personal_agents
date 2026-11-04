@@ -50,5 +50,11 @@ describe('PhaseCommandHandler', () => {
     expect(respond.mock.calls[0][0].text).toContain('평가 요약');
     expect(respond.mock.calls[0][0].text).toContain('이력서 기록 초안');
     expect(respond.mock.calls[0][0].text).toContain('PR 3건 머지');
+    expect(respond.mock.calls[0][0].text).toContain(
+      '_실행 번호 `1` (다시 돌리기·의견 남기기에 써요)_',
+    );
+    expect(JSON.stringify(respond.mock.calls[0][0].blocks)).toContain(
+      '_실행 번호 `1` (다시 돌리기·의견 남기기에 써요)_',
+    );
   });
 });
