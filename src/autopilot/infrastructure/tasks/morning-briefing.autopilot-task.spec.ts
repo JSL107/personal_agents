@@ -260,7 +260,8 @@ describe('MorningBriefingAutopilotTask', () => {
 
       expect(text).not.toContain('CUJ 점검');
       expect(text).toContain('주간 실행 회고 기록 없음');
-      expect(text).toContain('오늘 계획을 만들지 못했어요 (계획 장애)');
+      expect(text).toContain('• 오늘 계획을 만들지 못했어요\n');
+      expect(text).not.toContain('계획 장애');
     });
   });
 
@@ -1351,7 +1352,11 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
 
   it('PM 계획 생성이 실패해도 나머지 줄은 나가고 실패는 할 일 칸에 나온다', async () => {
     const task = buildTask(
-      { execute: jest.fn().mockRejectedValue(new Error('codex quota')) },
+      {
+        execute: jest
+          .fn()
+          .mockRejectedValue(new Error('codex quota token=sk-live-secret')),
+      },
       humanize(),
       emptyStockRepository(),
       listSchedulesUsecase(),
@@ -1371,10 +1376,11 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
       '☀️ *6/17(수) 아침* · 🔴 장애: 오늘 계획 생성 실패 · ✋ 승인 1',
     );
     expect(out.summaryText).toContain(
-      '*오늘 할 일*\n• 오늘 계획을 만들지 못했어요 (codex quota)',
+      '*오늘 할 일*\n• 오늘 계획을 만들지 못했어요 (사용량 한도에 걸렸어요)',
     );
     expect(out.summaryText).toContain('• 승인 대기 1장 (경력 반영)');
     expect(out.summaryText).not.toContain('*어제 장애*');
+    expect(out.summaryText).not.toContain('sk-live-secret');
     expect(out.detailText).toBe('');
   });
 
@@ -1397,7 +1403,7 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
     const out = await task.run(CTX);
 
     expect(out.summaryText).toContain(
-      '*어제 장애*\n• 포트폴리오 사이트 발행 실패: 사이트 401',
+      '*어제 장애*\n• 포트폴리오 사이트 발행 실패 (로그인이 만료된 것 같아요)',
     );
     expect(out.summaryText).not.toContain('• 포트폴리오: 어제');
   });
@@ -1423,7 +1429,7 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
     const out = await task.run(CTX);
 
     expect(out.summaryText).toContain(
-      '• 포트폴리오 사이트 발행 실패: 사이트 API 401',
+      '• 포트폴리오 사이트 발행 실패 (로그인이 만료된 것 같아요)',
     );
     expect(out.summaryText).not.toContain('실패: :');
   });

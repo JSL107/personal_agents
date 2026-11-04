@@ -38,6 +38,7 @@ import {
 } from '../../../job-feed/domain/port/job-posting.repository.port';
 import { formatJobFeedDigest } from '../../../job-feed/infrastructure/job-feed.formatter';
 import { toAutopilotTaskDisplayName } from '../../../notification/domain/autopilot-task-display-name';
+import { describeIncidentCause } from '../../../notification/domain/incident-message';
 import { FindAllOpenPreviewsUsecase } from '../../../preview-gate/application/find-all-open-previews.usecase';
 import {
   PREVIEW_KIND,
@@ -120,7 +121,6 @@ const STALE_COLLECTION_MS = 48 * 60 * 60 * 1000;
 const PORTFOLIO_LOOKBACK_MS = 24 * 60 * 60 * 1000;
 const PORTFOLIO_LINE_MAX_LENGTH = 150;
 // 장애 줄에 실을 실패 사유 길이. 전문은 원장·로그에 있다.
-const FAILURE_REASON_MAX_LENGTH = 80;
 const PORTFOLIO_TASK_ID = 'portfolio-publish';
 const APPROVAL_LABEL_MAX_LENGTH = 20;
 
@@ -176,6 +176,16 @@ const toApprovalLabel = (preview: PreviewAction): string => {
 
 // 예전 장애 원장 행은 오케스트레이터의 cronName(`Autopilot task <taskId>`)을 이름으로 갖고 있다.
 // 그대로 실으면 코드 이름이 보이므로 이름표로 바꾼다. 새 행은 알림 단계에서 이미 이름표다.
+// 오류 원문은 비밀값이 섞일 수 있어 본문에 싣지 않는다. 원인 사전에 있는 것만 쉬운 말로 붙이고,
+// 원문은 로그에만 남는다.
+const withPlainCause = (label: string, rawReason: string): string => {
+  const cause = describeIncidentCause(rawReason);
+  if (cause === null) {
+    return label;
+  }
+  return `${label} (${cause})`;
+};
+
 const toIncidentLabel = (label: string): string => {
   const displayName = toAutopilotTaskDisplayName(label);
   if (displayName === null) {
@@ -328,7 +338,10 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
       ...(portfolio?.kind === 'failure'
         ? [
             {
-              label: `포트폴리오 사이트 발행 실패: ${truncate(portfolio.reason, FAILURE_REASON_MAX_LENGTH)}`,
+              label: withPlainCause(
+                '포트폴리오 사이트 발행 실패',
+                portfolio.reason,
+              ),
               dayCount: null,
             },
           ]
@@ -480,7 +493,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
       );
       return {
         todos: null,
-        failure: truncate(reason, FAILURE_REASON_MAX_LENGTH),
+        failure: describeIncidentCause(reason),
       };
     }
   }
