@@ -66,14 +66,33 @@ const LINEAGE_LABEL: Record<NonNullable<TaskItem['lineage']>, string> = {
   POSTPONED: '⏭ ',
 };
 
+const readablePlanText = (text: string): string =>
+  text
+    .replace(/\s*—\s*/g, ', ')
+    .replace(/\b(?:codex|claude)(?:-cli)?\b/gi, '모델')
+    .replace(/(?<![\w(])#\d+\b/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+const readableTaskTitle = (title: string): string => {
+  const readable = readablePlanText(title);
+  if (readable === 'PR 리뷰') {
+    return '코드 리뷰';
+  }
+  if (readable === 'PR') {
+    return '코드 변경';
+  }
+  return readable || '할 일';
+};
+
 // url 이 있으면 Slack 마크다운 링크로 감싸 PR/Issue/Notion 으로 즉시 이동 가능 (PRO-2+ 이슈 A).
 // http(s) 스킴이 아니면 broken link 회피 위해 단순 텍스트로 fallback (codex P0 지적).
 // title/url 둘 다 mrkdwn-safe 로 sanitize 해 `|` / `>` / `<` 가 섞여도 링크 파싱 안 깨짐.
 const renderTitleWithLink = (task: TaskItem): string => {
   if (task.url && task.url.length > 0 && isSafeHttpUrl(task.url)) {
-    return `<${sanitizeForSlackLink(task.url)}|${sanitizeForSlackLink(task.title)}>`;
+    return `<${sanitizeForSlackLink(task.url)}|${sanitizeForSlackLink(readableTaskTitle(task.title))}>`;
   }
-  return task.title;
+  return readableTaskTitle(task.title);
 };
 
 const renderTaskLine = (task: TaskItem): string => {
@@ -83,7 +102,10 @@ const renderTaskLine = (task: TaskItem): string => {
   const wbs =
     task.subtasks.length > 0
       ? `\n${task.subtasks
-          .map((s) => `   • ${s.title} (${s.estimatedMinutes}m)`)
+          .map(
+            (s) =>
+              `   • ${readableTaskTitle(s.title)} (${s.estimatedMinutes}m)`,
+          )
           .join('\n')}`
       : '';
   return `• ${lineage}${critical}${titled}${wbs}`;
@@ -92,9 +114,9 @@ const renderTaskLine = (task: TaskItem): string => {
 const renderStalledTaskLine = (task: StalledTask): string => {
   const title =
     task.url && task.url.length > 0 && isSafeHttpUrl(task.url)
-      ? `<${sanitizeForSlackLink(task.url)}|${sanitizeForSlackLink(task.title)}>`
-      : task.title;
-  return `• ${title} (${task.daysStalled}일째) — 종결/위임/보류`;
+      ? `<${sanitizeForSlackLink(task.url)}|${sanitizeForSlackLink(readableTaskTitle(task.title))}>`
+      : readableTaskTitle(task.title);
+  return `• ${title} (${task.daysStalled}일째): 종결/위임/보류`;
 };
 
 // summary(메인) = 오늘 할 일만 — 과제 목록 · Blocker · 예상 소요.
@@ -126,7 +148,7 @@ export const formatDailyPlan = (
   ];
 
   if (plan.blocker) {
-    summaryLines.push('', `*Blocker*: ${plan.blocker}`);
+    summaryLines.push('', `*Blocker*: ${readablePlanText(plan.blocker)}`);
   }
 
   summaryLines.push('', `*예상 소요*: ${plan.estimatedHours}시간`);
@@ -140,7 +162,7 @@ export const formatDailyPlan = (
   const detailSections: string[] = [];
 
   if (plan.reasoning.trim().length > 0) {
-    detailSections.push(`*판단 근거*\n${plan.reasoning}`);
+    detailSections.push(`*판단 근거*\n${readablePlanText(plan.reasoning)}`);
   }
 
   // 이월 항목이 없어도 analysisReasoning 이 있으면 "왜 drop 했는지" 설명을 노출 —
@@ -149,10 +171,12 @@ export const formatDailyPlan = (
   if (rolledOverTasks.length > 0 || analysisReasoning.length > 0) {
     const rolloverLines = ['*어제 이월*'];
     if (rolledOverTasks.length > 0) {
-      rolloverLines.push(...rolledOverTasks.map((t) => `• ${t}`));
+      rolloverLines.push(
+        ...rolledOverTasks.map((t) => `• ${readablePlanText(t)}`),
+      );
     }
     if (analysisReasoning.length > 0) {
-      rolloverLines.push(`_이월 근거_: ${analysisReasoning}`);
+      rolloverLines.push(`_이월 근거_: ${readablePlanText(analysisReasoning)}`);
     }
     detailSections.push(rolloverLines.join('\n'));
   }

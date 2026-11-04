@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { AlertIncident } from '@prisma/client';
 import { Job } from 'bullmq';
 
+import { toTaskLabel } from '../../agent-registry/agent-registry';
 import { ObservedWorkerHost } from '../../common/queue/observed-worker-host';
 import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -19,6 +20,14 @@ import {
   INCIDENT_QUIET_MS,
   normalizeIncidentCause,
 } from '../domain/alert-incident.policy';
+import { toAutopilotTaskDisplayName } from '../domain/autopilot-task-display-name';
+import {
+  describeIncidentCause,
+  formatAiHandoff,
+  formatIncidentOpen,
+  formatIncidentRemind,
+  formatIncidentResolved,
+} from '../domain/incident-message';
 import {
   CLAUDE_AUTH_INCIDENT_KEY,
   ClaudeAuthSuspectJobData,
@@ -32,7 +41,11 @@ import {
 } from '../domain/notification.type';
 
 const DEDUPE_WINDOW_MS = 30 * 60 * 1000;
-const DATABASE_FALLBACK_MARKER = '_사건 원장 접근 실패 — 중복 억제 없이 발송_';
+const DATABASE_FALLBACK_MARKER = '_사건 원장 접근 실패: 중복 억제 없이 발송_';
+// `Autopilot task <id>` 는 작업 이름표로, 그 밖(`Hermes …` 등)은 에이전트 이름표가 있으면 그것으로,
+// 없으면 원래 이름 그대로 둔다. 서로 다른 장애가 한 이름으로 합쳐지면 아침 장애 줄에서 가려낼 수 없다.
+const cronTaskLabel = (cronName: string): string =>
+  toAutopilotTaskDisplayName(cronName) ?? toTaskLabel(cronName);
 
 export const shouldFireAlert = ({
   lastFiredAtMs,
@@ -69,6 +82,7 @@ interface FailureAlert {
   errorMessage: string;
   ownerId: string;
   kind: DeliveryKind;
+  rawCronName?: string;
 }
 
 // job 생성 시각. BullMQ 가 항상 채우지만 테스트·수동 호출에 대비해 현재 시각으로 떨어진다.
@@ -143,7 +157,7 @@ export class NotificationConsumer
   private claudeFailure(payload: ClaudeAuthSuspectJobData): FailureAlert {
     return {
       key: CLAUDE_AUTH_INCIDENT_KEY,
-      label: 'claude CLI 인증 의심',
+      label: 'AI 로그인',
       errorMessage: payload.exitMessage,
       ownerId: this.ownerId(CLAUDE_AUTH_INCIDENT_KEY),
       kind: 'alert:claude-auth',
@@ -153,7 +167,8 @@ export class NotificationConsumer
   private cronFailure(payload: CronFailureJobData): FailureAlert {
     return {
       key: payload.incidentKey ?? cronIncidentKey(payload.cronName),
-      label: payload.cronName,
+      label: cronTaskLabel(payload.cronName),
+      rawCronName: payload.cronName,
       errorMessage: payload.errorMessage,
       ownerId: this.ownerId(cronIncidentKey(payload.cronName)),
       kind: 'alert:cron-failure',
@@ -354,23 +369,17 @@ export class NotificationConsumer
     }
   }
 
-  private openText(alert: FailureAlert, expiredPrevious: boolean): string {
-    const lines = [
-      `⚠️ *고장 발생* — ${alert.label}`,
-      `오류: ${alert.errorMessage.slice(0, 1500)}`,
-      '_같은 고장이 이어지는 동안은 하루 1번만 다시 알립니다. 정상으로 돌면 다음 아침 브리핑에 해결로 적습니다._',
-    ];
-    if (expiredPrevious) {
-      lines.push(
-        '_이전 사건은 24시간 동안 재발이 없어 닫았습니다(해결 확인은 아님)._',
-      );
-    }
-    if (alert.key === CLAUDE_AUTH_INCIDENT_KEY) {
-      lines.push(
-        '_조치: `claude` 를 대화형으로 한 번 실행해 재인증하거나 쿼터 reset window 를 확인하세요._',
-      );
-    }
-    return lines.join('\n');
+  private openText(alert: FailureAlert, expiredPrevious = false): string {
+    return formatIncidentOpen({
+      label: alert.label,
+      cause: describeIncidentCause(alert.errorMessage),
+      nextRunAt: null,
+      action:
+        alert.key === CLAUDE_AUTH_INCIDENT_KEY
+          ? '`claude`를 대화형으로 한 번 실행해 다시 로그인하거나 사용량 한도 초기화 시각을 확인해 주세요.'
+          : null,
+      expiredPrevious,
+    });
   }
 
   private remindText(
@@ -378,14 +387,33 @@ export class NotificationConsumer
     dayCount: number,
     occurrences: number,
   ): string {
-    return `🔁 *아직 고장 중* — ${alert.label} · ${dayCount}일째, ${occurrences}회 발생\n오류: ${alert.errorMessage.slice(0, 1500)}`;
+    return formatIncidentRemind({
+      label: alert.label,
+      dayCount,
+      occurrences,
+      cause: describeIncidentCause(alert.errorMessage),
+    });
   }
 
   private resolveText(incident: AlertIncident, now: Date): string {
+    const label = this.resolvedLabel(incident);
     const duration = formatIncidentDuration(
       now.getTime() - incident.openedAt.getTime(),
     );
-    return `✅ *해결* — ${incident.label} · ${duration} 지속, ${incident.occurrences}회 발생\n원인: ${incident.causes.join(' / ')}`;
+    return formatIncidentResolved({
+      label,
+      duration,
+      occurrences: incident.occurrences,
+      causes: incident.causes,
+    });
+  }
+
+  // 예전 cron 사건 행은 이름이 원문 cronName 이라 키에서 다시 이름표를 만든다.
+  private resolvedLabel(incident: AlertIncident): string {
+    if (!incident.key.startsWith('cron:')) {
+      return incident.label;
+    }
+    return cronTaskLabel(incident.key.slice('cron:'.length));
   }
 
   private async sendFallback(alert: FailureAlert): Promise<void> {
@@ -394,7 +422,7 @@ export class NotificationConsumer
     if (!shouldFireAlert({ lastFiredAtMs, nowMs })) {
       return;
     }
-    const text = `${this.openText(alert, false)}\n${DATABASE_FALLBACK_MARKER}`;
+    const text = `${this.openText(alert)}\n${DATABASE_FALLBACK_MARKER}`;
     const sent = await this.sendOrLog(alert, text);
     if (sent) {
       this.lastFiredAtByKey.set(alert.key, nowMs);
@@ -403,11 +431,60 @@ export class NotificationConsumer
 
   private async sendOrLog(alert: FailureAlert, text: string): Promise<boolean> {
     try {
-      await this.slackService.postMessage({
+      const posted = await this.slackService.postMessage({
         kind: alert.kind,
         target: alert.ownerId,
         text,
       });
+      if (posted?.ts) {
+        try {
+          await this.slackService.postMessage({
+            kind: alert.kind,
+            target: alert.ownerId,
+            threadTs: posted.ts,
+            text: formatAiHandoff({
+              feature: alert.rawCronName ?? alert.label,
+              errorMessage: alert.errorMessage,
+              files: [],
+              checkCommand: null,
+            }),
+          });
+        } catch (error: unknown) {
+          try {
+            await this.slackService.postMessage({
+              kind: alert.kind,
+              target: alert.ownerId,
+              text: formatAiHandoff({
+                feature: alert.rawCronName ?? alert.label,
+                errorMessage: alert.errorMessage,
+                files: [],
+                checkCommand: null,
+              }),
+            });
+          } catch (fallbackError: unknown) {
+            this.logger.error(
+              `AI 블록 전송 실패 (key=${alert.key}): ${String(error)}; ${String(fallbackError)}`,
+            );
+          }
+        }
+      } else {
+        await this.slackService
+          .postMessage({
+            kind: alert.kind,
+            target: alert.ownerId,
+            text: formatAiHandoff({
+              feature: alert.rawCronName ?? alert.label,
+              errorMessage: alert.errorMessage,
+              files: [],
+              checkCommand: null,
+            }),
+          })
+          .catch((error: unknown) => {
+            this.logger.error(
+              `AI 블록 전송 실패 (key=${alert.key}): ${String(error)}`,
+            );
+          });
+      }
       this.logger.log(`알람 전송 — ${alert.key} → owner=${alert.ownerId}`);
       return true;
     } catch (error: unknown) {

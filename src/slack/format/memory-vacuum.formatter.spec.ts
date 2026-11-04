@@ -72,7 +72,7 @@ describe('formatMemoryVacuum', () => {
   it('실패는 사유와 함께 드러낸다', () => {
     const text = format({
       outcomes: [],
-      failures: [{ project: 'locked', reason: '색인 읽기 실패 — EACCES' }],
+      failures: [{ project: 'locked', reason: '색인 읽기 실패: EACCES' }],
     });
 
     expect(text).toContain('locked');

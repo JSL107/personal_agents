@@ -2,7 +2,7 @@ import { ImpactReport } from '../../agent/impact-reporter/domain/impact-reporter
 import { formatImpactReport } from './impact-report.formatter';
 
 const base: ImpactReport = {
-  subject: 'PR #1',
+  subject: '첨부 오류 고치기(#1)',
   headline: '핵심 한 줄',
   quantitative: ['q1', 'q2', 'q3', 'q4'],
   qualitative: '질적 영향 문단',
@@ -16,6 +16,8 @@ describe('formatImpactReport', () => {
   it('summary 에 헤드라인과 핵심 근거(최대 3개)만 담는다', () => {
     const { summary } = formatImpactReport(base);
     expect(summary).toContain('핵심 한 줄');
+    expect(summary).toContain('📌 *한 줄 요약*: 핵심 한 줄');
+    expect(summary).not.toContain('Headline');
     expect(summary).toContain('q1');
     expect(summary).toContain('q3');
     expect(summary).not.toContain('q4'); // 상위 3개 cap

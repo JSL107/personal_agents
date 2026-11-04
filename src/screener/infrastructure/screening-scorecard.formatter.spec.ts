@@ -58,14 +58,14 @@ describe('formatScreeningScorecard', () => {
     );
 
     expect(text).toContain(
-      '  순위 상관 +1.000 · 양수 1/1 · t - (구간 안 겹치는 회차 1/1개) — 회차가 10개 미만이라 아직 추세 아님',
+      '  순위 상관 +1.000 · 양수 1/1 · t - (구간 안 겹치는 회차 1/1개): 회차가 10개 미만이라 아직 추세 아님',
     );
   });
 
   it('상관을 낸 회차가 없으면 뺀 회차를 실제 사유별로 적는다', () => {
     const tooFew = formatScreeningScorecard(result([row({ bought: true })]));
     expect(tooFew).toContain(
-      '  순위 상관 - — 상관을 낸 회차 없음 (제외: 종목 5개 미만 1개)',
+      '  순위 상관 -: 상관을 낸 회차 없음 (제외: 종목 5개 미만 1개)',
     );
 
     // 종목은 충분하지만 수익률이 전부 같아 상관이 정의되지 않는 회차와, 옛 일부 저장 회차.
@@ -78,7 +78,7 @@ describe('formatScreeningScorecard', () => {
       ]),
     );
     expect(mixed).toContain(
-      '  순위 상관 - — 상관을 낸 회차 없음 (제외: 통과 일부만 저장 1개 · 수익률이 전부 같음 1개)',
+      '  순위 상관 -: 상관을 낸 회차 없음 (제외: 통과 일부만 저장 1개 · 수익률이 전부 같음 1개)',
     );
   });
 
@@ -90,7 +90,7 @@ describe('formatScreeningScorecard', () => {
       ]),
     );
 
-    expect(text).toContain('*5거래일 지평* — 표본 2건 (보여준 것 2건)');
+    expect(text).toContain('*5거래일 지평*: 표본 2건 (보여준 것 2건)');
     expect(text).toContain('산 것    1건 · 평균 +10.00%');
     expect(text).toContain('안 산 것 1건 · 평균 +4.00%');
     // 수치만으로는 누적 평균 차와 구분되지 않는다. 기여 회차 수를 함께 적어야
@@ -108,7 +108,7 @@ describe('formatScreeningScorecard', () => {
     );
 
     // 헤더의 표본 수가 비교 모집단처럼 읽히지 않게 둘을 나눠 적는다.
-    expect(text).toContain('*5거래일 지평* — 표본 3건 (보여준 것 2건)');
+    expect(text).toContain('*5거래일 지평*: 표본 3건 (보여준 것 2건)');
     expect(text).toContain('상한 밖  1건 · 평균 -20.00%');
     // 보여준 것 평균(+7.00%) − 상한 밖 평균(-20.00%).
     expect(text).toContain(
@@ -125,7 +125,7 @@ describe('formatScreeningScorecard', () => {
       result([row({ presented: true, bought: true, returnPct: 10 })]),
     );
 
-    expect(text).toContain('상한 밖  0건 — 해당 없음');
+    expect(text).toContain('상한 밖  0건: 해당 없음');
     expect(text).not.toContain('절단 격차');
   });
 
@@ -134,9 +134,9 @@ describe('formatScreeningScorecard', () => {
   it('표본 없는 지평도 축을 남기고 대기 회차 수를 밝힌다', () => {
     const text = formatScreeningScorecard(result([row({ returnPct: 1 })]));
 
-    expect(text).toContain('*20거래일 지평* — 표본 없음 (채점 대기 회차 14건)');
+    expect(text).toContain('*20거래일 지평*: 표본 없음 (채점 대기 회차 14건)');
     // 빈칸이나 0% 같은 값이 그 자리에 나가면 안 된다.
-    expect(text).not.toContain('*20거래일 지평* — 표본 0건');
+    expect(text).not.toContain('*20거래일 지평*: 표본 0건');
     expect(text).not.toMatch(/20거래일 지평\*[^\n]*평균/u);
   });
 
@@ -227,9 +227,9 @@ describe('formatScreeningScorecard', () => {
       result([row({ bought: true, returnPct: 7 })]),
     );
 
-    expect(text).toContain('안 산 것 0건 — 해당 없음');
+    expect(text).toContain('안 산 것 0건: 해당 없음');
     expect(text).toContain(
-      '격차 - — 산 것과 안 산 것이 함께 있는 회차가 없어 비교 대상이 없음',
+      '격차 -: 산 것과 안 산 것이 함께 있는 회차가 없어 비교 대상이 없음',
     );
   });
 
@@ -286,7 +286,7 @@ describe('formatScreeningScorecard', () => {
     );
 
     expect(text).toContain(
-      '격차 - — 산 것과 안 산 것이 함께 있는 회차가 없어 비교 대상이 없음',
+      '격차 -: 산 것과 안 산 것이 함께 있는 회차가 없어 비교 대상이 없음',
     );
     expect(text).not.toContain('이 격차는 아직 추세가 아닙니다');
   });
@@ -312,9 +312,9 @@ describe('formatScreeningScorecardDetail', () => {
       ]),
     );
 
-    expect(detail).toContain('금호전기(001210) 순위 1위 +33.50% — 2건 중 1건');
+    expect(detail).toContain('금호전기(001210) 순위 1위 +33.50%: 2건 중 1건');
     expect(detail).toContain(
-      '미래에셋생명(085620) 순위 1위 -11.45% — 1건 중 1건',
+      '미래에셋생명(085620) 순위 1위 -11.45%: 1건 중 1건',
     );
   });
 

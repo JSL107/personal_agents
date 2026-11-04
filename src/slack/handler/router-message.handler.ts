@@ -1478,9 +1478,7 @@ export class RouterMessageHandler implements SlackHandler {
       });
       await say({
         thread_ts: threadTs,
-        ...toReadableSlackArgs(
-          `✅ 적용 완료 (${preview.kind})\n\n${resultText}`,
-        ),
+        ...toReadableSlackArgs(`✅ 적용 완료\n\n${resultText}`),
       });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);

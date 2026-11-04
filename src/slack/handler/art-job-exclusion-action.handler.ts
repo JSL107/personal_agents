@@ -90,7 +90,7 @@ export class ArtJobExclusionActionHandler implements SlackHandler {
           await respond({
             response_type: 'ephemeral',
             replace_original: false,
-            text: '반영하지 못했어요 — 버튼 정보를 읽지 못했습니다.',
+            text: '반영하지 못했어요. 버튼 정보를 읽지 못했습니다.',
           });
           return;
         }

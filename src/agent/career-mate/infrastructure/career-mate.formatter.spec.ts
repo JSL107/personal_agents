@@ -236,7 +236,7 @@ describe('career-mate.formatter', () => {
     const { full } = formatResumeAudit(result);
 
     expect(full).toContain('*먼저 이것부터* [근거없음] 근거 없는 성과');
-    expect(full).toContain('1. *입증 성과* — 공고의 MUST 와 대응');
+    expect(full).toContain('1. *입증 성과*: 공고의 MUST 와 대응');
     // 두 섹션은 항목별 판정보다 위에 있어야 한다 — 아래에 두면 12건을 다 읽어야 결론이 나온다.
     expect(full.indexOf('먼저 이것부터')).toBeLessThan(
       full.indexOf('*항목별 판정*'),

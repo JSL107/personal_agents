@@ -80,3 +80,30 @@ export const formatUpcomingLine = (
   // 놓친 마감을 보여주는 것이 이 블록의 목적이라 머리글이 그것을 부정해서는 안 된다.
   return `\n\n📌 *마감 ${open.length}건*\n${sections.join('\n')}`;
 };
+
+export const formatScheduleLines = (
+  items: ScheduleItemRecord[],
+  today: Date,
+): string[] => {
+  const dueItems = items.filter((item) => isOpenAndDueBy(item, today));
+  return dueItems.map((item) => formatScheduleLine(item, today));
+};
+
+const isOpenAndDueBy = (item: ScheduleItemRecord, today: Date): boolean =>
+  item.status === ScheduleStatus.OPEN &&
+  !item.isHoliday &&
+  item.dueDate <= today;
+
+const formatScheduleLine = (item: ScheduleItemRecord, today: Date): string => {
+  const daysOverdue = Math.round(
+    (today.getTime() - item.dueDate.getTime()) / DAY_MS,
+  );
+  const title = escapeSlackMrkdwn(item.title);
+  if (daysOverdue > 0) {
+    return `• ${title} (${daysOverdue}일 지남)`;
+  }
+  if (item.dueTime) {
+    return `• ${item.dueTime} ${title}`;
+  }
+  return `• ${title} (오늘)`;
+};

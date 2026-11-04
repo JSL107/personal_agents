@@ -37,8 +37,8 @@ export const formatDailyReview = (review: DailyReview): FormattedReport => {
   if (review.improvementBeforeAfter) {
     detailLines.push(
       '*개선 전/후*',
-      `• Before: ${escapeSlackMrkdwn(review.improvementBeforeAfter.before)}`,
-      `• After: ${escapeSlackMrkdwn(review.improvementBeforeAfter.after)}`,
+      `• 바뀌기 전: ${escapeSlackMrkdwn(review.improvementBeforeAfter.before)}`,
+      `• 바뀐 뒤: ${escapeSlackMrkdwn(review.improvementBeforeAfter.after)}`,
       '',
     );
   }

@@ -4,9 +4,9 @@ import { RespondFn } from '@slack/bolt';
 import { AgentRunOutcome } from '../../agent-run/application/agent-run.service';
 import { appendBlockReasonGuidance } from '../../common/domain/block-reason';
 import { DomainException } from '../../common/exception/domain.exception';
+import { formatRunIdLine } from '../../common/util/run-id-line.util';
 import { FormattedReport } from '../format/formatted-report.type';
 import { toReadableSlackArgs } from '../format/message-blocks.builder';
-import { formatModelFooter } from '../format/model-footer.formatter';
 
 // FormattedReport → summary + '\n\n' + detail 합본 문자열. string 은 그대로 통과.
 const toSlackText = (formatted: FormattedReport | string): string => {
@@ -62,8 +62,7 @@ export const runEphemeral = async <T>(args: {
   }
 };
 
-// /today, /worklog 등 AgentRunOutcome<T> 를 반환하는 모델 호출 명령용 — format 결과 끝에
-// `_model: codex-cli · run #N_` 푸터 자동 부착 (PRO-3).
+// /today, /worklog 등 AgentRunOutcome<T> 를 반환하는 명령에는 실행 번호를 붙인다.
 // format 은 string 또는 FormattedReport 를 반환 가능 — FormattedReport 는 summary+detail 합본으로 렌더.
 //
 // onOutcome — 실행 성공 후 부가 처리(재시도 계보 연결 등). 사용자 응답을 보낸 뒤 호출하며,
@@ -85,7 +84,7 @@ export const runAgentCommand = async <T>(args: {
       response_type: 'ephemeral',
       replace_original: true,
       ...toReadableSlackArgs(
-        toSlackText(await format(outcome.result)) + formatModelFooter(outcome),
+        `${toSlackText(await format(outcome.result))}\n${formatRunIdLine(outcome.agentRunId)}`,
       ),
     });
     if (onOutcome) {

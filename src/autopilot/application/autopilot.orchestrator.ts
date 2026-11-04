@@ -859,6 +859,7 @@ export class AutopilotOrchestrator {
           kind: preview.kind,
           payload: preview.payload,
           previewText: preview.previewText,
+          slackText: preview.slackText,
           ttlMs: preview.ttlMs ?? PREVIEW_TTL_MS,
         });
         let coordinateSaved = false;
@@ -872,6 +873,7 @@ export class AutopilotOrchestrator {
                 id: created.id,
                 kind: preview.kind,
                 previewText: preview.previewText,
+                slackText: preview.slackText,
                 payload: preview.payload,
               },
             });

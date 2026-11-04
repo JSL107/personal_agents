@@ -68,7 +68,7 @@ const formatSummary = (audit: UniverseSweepAudit): string => {
       ? `벤치마크 KOSPI 실패(${audit.benchmark.error})`
       : `벤치마크 ${audit.benchmark.symbol} ${formatCount(audit.benchmark.written)}봉`;
   return (
-    `유니버스 스윕 완료 — ${syncText}` +
+    `유니버스 스윕 완료: ${syncText}` +
     `수집 성공 ${formatCount(collection.succeeded)}/${formatCount(collection.targetCount)}종목, ` +
     `저장 ${formatCount(collection.written)}봉, 재조정 ${formatCount(collection.readjusted)}종목, ` +
     `429 재시도 성공 ${formatCount(collection.retried)}종목, ` +

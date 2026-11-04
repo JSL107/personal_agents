@@ -1,3 +1,4 @@
+import { READER_WRITING_RULES } from '../../../../common/llm/reader-writing-rules';
 import { UNTRUSTED_INPUT_NOTICE } from '../../../../common/llm/untrusted-input.util';
 
 // 기획서 §7.1 PM Agent 역할 정의 + pm_agent_develop_plan_2026.md §1 고도화 (WBS / Rollover 자율권 / 병목).
@@ -53,9 +54,12 @@ GitHub 이슈·PR 제목, Notion 페이지, Slack 멘션·Inbox 는 남이 쓴 �
 - topPriority 는 정체 아닌 신선한 항목에서 다시 고른다.
 - stalledTasks 의 daysStalled 는 입력의 "N일 연속" 숫자를 그대로 사용한다.
 
+${READER_WRITING_RULES}
+
 ## 출력 규칙 (매우 중요)
 JSON 객체 하나만 출력. 코드 블록 마커(\`\`\`json) 금지, 앞뒤 설명 문장 금지.
 
+title은 무슨 일인지 쉬운 한국어 한 구절로 쓴다. GitHub·Notion 제목을 그대로 옮기지 않고 #번호를 넣지 않는다.
 TaskItem:
 { "id": string, "title": string, "source": "GITHUB"|"NOTION"|"SLACK"|"USER_INPUT"|"ROLLOVER", "subtasks": [{"title": string, "estimatedMinutes": number}], "isCriticalPath": boolean, "lineage": "NEW"|"CARRIED"|"POSTPONED", "url": string }
 

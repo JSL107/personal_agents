@@ -82,7 +82,7 @@ describe('CujCheckAutopilotTask', () => {
     const result = await task.run(context);
     expect(result.skip).toBe(false);
     expect(result.summaryText).toContain('깨진 여정 1건');
-    expect(result.summaryText).toContain('PR 리뷰 — 실패 3건 / 전체 4건');
+    expect(result.summaryText).toContain('PR 리뷰: 실패 3건 / 전체 4건');
     expect(result.summaryText).not.toContain('승인 반영');
   });
 
@@ -117,8 +117,8 @@ describe('CujCheckAutopilotTask', () => {
     reader.readPrReviews.mockRejectedValue(new Error('reader <down>'));
     reader.readFailedPreviews.mockResolvedValue([{ kind: 'PUBLISH' }]);
     const result = await task.run(context);
-    expect(result.summaryText).toContain('PR 리뷰 — 확인 불가');
+    expect(result.summaryText).toContain('PR 리뷰: 확인 불가');
     expect(result.summaryText).toContain('reader &lt;down&gt;');
-    expect(result.summaryText).toContain('승인 반영 — 반영 실패 1건');
+    expect(result.summaryText).toContain('승인 반영: 반영 실패 1건');
   });
 });

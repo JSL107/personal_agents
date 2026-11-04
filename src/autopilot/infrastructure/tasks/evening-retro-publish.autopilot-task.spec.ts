@@ -238,7 +238,7 @@ describe('EveningRetroPublishTask', () => {
     expect(result.skip).toBe(false);
     expect(modelRouter.route).not.toHaveBeenCalled();
     expect(result.summaryText).toContain('🌙 *7/3(금) 마감*');
-    expect(result.summaryText).toContain('*오늘 한 일*  PR 0건 머지');
+    expect(result.summaryText).toContain('*한 일*\n• PR 0건 머지');
     expect(result.previews).toBeUndefined();
   });
 
@@ -494,7 +494,10 @@ describe('EveningRetroPublishTask', () => {
     );
 
     expect(blogPreview?.previewText).toBe(
-      '📝 *블로그 후보 70점* · 「T」 · 근거 회사 실무 sbe-api-v5#864\n✅ 누르면 이 PR 들로 본문을 써 Notion 초안으로 올립니다 — GitHub 공개 발행은 따로 묻습니다.',
+      '📝 *블로그 후보 70점* · 「T」 · 근거 회사 실무 sbe-api-v5#864\n✅ 누르면 이 PR 들로 본문을 써 Notion 초안으로 올립니다. GitHub 공개 발행은 따로 묻습니다.',
+    );
+    expect(blogPreview?.slackText).toBe(
+      '📝 *블로그 발행할까요?*\n제목: T\n어디로: 노션 블로그\n왜: 실제 PR 근거가 충분하다.\n_승인하면 초안을 만들어 노션에 올려요._',
     );
   });
 
@@ -537,6 +540,64 @@ describe('EveningRetroPublishTask', () => {
     // label·hint 만으로는 "왜 적어야 하는지"(코드에 안 남는다)가 전달되지 않는다.
     expect(careerPreview?.previewText).toContain('코드에는 남지 않는 정보');
     expect(careerPreview?.previewText).toContain('아래 칸에 적으면');
+    expect(careerPreview?.slackText).toContain('• sbe-api-v5: 1건');
+    expect(careerPreview?.slackText).toContain('• personal_agents: 1건');
+  });
+
+  it('블로그 카드의 외부 제목과 사유에서 Slack 제어문자를 이스케이프한다', async () => {
+    const routeResult = {
+      ...RETRO_RESPONSE,
+      text: JSON.stringify({
+        retrospective: { keep: 'r' },
+        candidates: [
+          {
+            title: '<!here> 알림',
+            keywords: ['k'],
+            blogValueScore: 70,
+            reason: '<!here> 근거',
+            sourceRefs: ['schoolbell-e/sbe-api-v5#864'],
+            outline: [],
+          },
+        ],
+        prNotes: [],
+      }),
+    };
+    const { task } = makeTask({
+      prs: [PR_ITEM],
+      worklogRuns: [],
+      dailyEvalRuns: [],
+      routeResult,
+    });
+    const result = await task.run(CTX);
+    const blogPreview = result.previews?.find(
+      (preview) => preview.kind === PREVIEW_KIND.EVENING_BLOG_PUBLISH,
+    );
+
+    expect(blogPreview?.slackText).toContain('제목: &lt;!here&gt; 알림');
+    expect(blogPreview?.slackText).toContain('왜: &lt;!here&gt; 근거');
+  });
+
+  it('경력 카드에 상한으로 제외한 건수를 한 줄로 알리고 저장소 이름을 이스케이프한다', async () => {
+    const prs = Array.from({ length: 9 }, (_, index) => ({
+      ...PR_ITEM,
+      repo: 'JSL107/a&b',
+      number: index + 1,
+    }));
+    const { task } = makeTask({
+      prs,
+      worklogRuns: [],
+      dailyEvalRuns: [],
+      routeResult: RETRO_RESPONSE,
+    });
+
+    const result = await task.run(CTX);
+    const careerPreview = result.previews?.find(
+      (preview) => preview.kind === PREVIEW_KIND.EVENING_CAREER_REFLECT,
+    );
+
+    expect(careerPreview?.slackText).toContain('상한 초과 1건 제외');
+    expect(careerPreview?.slackText).toContain('• a&amp;b: 8건');
+    expect(careerPreview?.slackText).not.toContain('• a&b');
   });
 
   it('(i) 저녁 회고 LLM 호출은 기존 1회만 수행한다', async () => {
@@ -699,7 +760,7 @@ describe('EveningRetroPublishTask', () => {
     expect(result.detailText).toContain('제목95');
     expect(result.detailText).toContain('4건 중 상위 3건');
     expect(result.detailText).toContain('제목80');
-    expect(result.detailText).toContain('발행 후보 전체 — 4건');
+    expect(result.detailText).toContain('발행 후보 전체: 4건');
   });
 
   it('(o-2) 긴 이유는 문장 한복판이 아니라 문장 경계에서 끊는다', async () => {
@@ -789,8 +850,8 @@ describe('EveningRetroPublishTask', () => {
 
     // 키워드는 `제목 — 키워드` 꼴로만 붙는다. 한 글자 'k' 를 그대로 찾으면 다른 문구에
     // 우연히 걸리므로 접미사 형태로 대조한다.
-    expect(result.summaryText).not.toContain('— k');
-    expect(result.detailText).toContain('— k');
+    expect(result.summaryText).not.toContain(': k');
+    expect(result.detailText).toContain(': k');
   });
 
   // 빈 칸을 숨기면 "오늘 문제가 없었다" 와 "그런 칸이 원래 없다" 가 화면에서 같아진다.
@@ -1204,18 +1265,18 @@ describe('EveningRetroPublishTask', () => {
         [
           '🌙 *7/3(금) 마감*',
           '',
-          '*오늘 한 일*  PR 1건 머지',
-          '> 자연어 오실행 방지 가드를 넣었다.',
+          '*한 일*\n• PR 1건 머지',
           '',
-          '*투자*',
-          '• 장기 수익률  -0.06%',
-          '• 스윙 수익률  +1.2%',
+          '*잘한 점*',
+          '• 자연어 오실행 방지 가드를 넣었다.',
+          '',
+          '*그 밖에*',
+          '• 장기투자 수익률 -0.06%',
+          '• 단기매매 수익률 +1.2%',
           '• 오늘 체결  매수 2 · 매도 1',
           '• 7/6(월) 시가  매수 1 · 매도 3 예정',
-          '',
-          '*넘어감*',
           '• 승인 대기 1장',
-          '• 🔴 Autopilot task paper-recommend 2일째',
+          '• Autopilot task paper-recommend (2일째)',
         ].join('\n'),
       );
       expect(result.detailText).toContain('오늘의 회고');
@@ -1237,7 +1298,7 @@ describe('EveningRetroPublishTask', () => {
       const result = await task.run(CTX);
 
       expect(result.summaryText).toContain(
-        '*투자*\n• 장기 수익률  0%\n• 다음 체결  추천 집계 전',
+        '*그 밖에*\n• 장기투자 수익률 0%\n• 다음 체결  추천 집계 전',
       );
     });
 
@@ -1265,7 +1326,7 @@ describe('EveningRetroPublishTask', () => {
       const result = await task.run(CTX);
 
       expect(result.summaryText).toContain(
-        '*투자*\n• 7/6(월) 시가  매수 2 · 매도 0 예정',
+        '*그 밖에*\n• 7/6(월) 시가  매수 2 · 매도 0 예정',
       );
     });
 
@@ -1283,10 +1344,10 @@ describe('EveningRetroPublishTask', () => {
 
       expect(result.skip).toBe(false);
       expect(result.summaryText).toContain(
-        '*오늘 한 일*  ⚠️ 머지 PR 조회 실패 — 건수 미상',
+        '*한 일*\n• 머지한 PR을 확인하지 못했어요',
       );
       expect(result.summaryText).not.toContain('PR 0건 머지');
-      expect(result.summaryText).toContain('• 장기 수익률  +1%');
+      expect(result.summaryText).toContain('• 장기투자 수익률 +1%');
     });
 
     it('(t-4) 회고 생성이 실패해도 결과 줄은 내고 실패 사실만 덧붙인다', async () => {
@@ -1299,8 +1360,8 @@ describe('EveningRetroPublishTask', () => {
 
       const result = await task.run(CTX);
 
-      expect(result.summaryText).toContain('*오늘 한 일*  PR 1건 머지');
-      expect(result.summaryText).toContain('⚠️ 회고 자동 생성 실패(quota)');
+      expect(result.summaryText).toContain('*한 일*\n• PR 1건 머지');
+      expect(result.summaryText).toContain('회고를 만들지 못했어요 (quota)');
       expect(result.previews).toBeUndefined();
     });
 

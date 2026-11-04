@@ -19,13 +19,13 @@ const recordWithTitle = (title: string): ScheduleItemRecord => ({
 });
 
 describe('schedule.formatter', () => {
-  it('제목의 제어문자를 이스케이프한다 — 안 하면 Slack 이 <...> 를 링크 태그로 읽어 텍스트가 사라진다', () => {
+  it('제목의 제어문자를 이스케이프한다: 안 하면 Slack 이 <...> 를 링크 태그로 읽어 텍스트가 사라진다', () => {
     const text = formatScheduleRegistered(recordWithTitle('<b> & 정리'));
     expect(text).toContain('&lt;b&gt; &amp; 정리');
     expect(text).not.toContain('<b>');
   });
 
-  it('사용자 제목을 굵게 감싸지 않는다 — 제목 속 별표 하나로 그 줄 렌더가 깨진다', () => {
+  it('사용자 제목을 굵게 감싸지 않는다: 제목 속 별표 하나로 그 줄 렌더가 깨진다', () => {
     const text = formatScheduleRegistered(recordWithTitle('A*B 신청'));
     expect(text).toContain('A*B 신청');
     expect(text).not.toContain('*A*B 신청*');

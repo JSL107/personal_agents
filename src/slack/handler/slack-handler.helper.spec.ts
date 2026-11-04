@@ -140,7 +140,10 @@ describe('runAgentCommand', () => {
     expect(respond).toHaveBeenCalledTimes(1);
     const arg = (respond as jest.Mock).mock.calls[0][0] as { text: string };
     expect(arg.text).toContain('📋 오늘의 계획');
-    expect(arg.text).toContain('_model: codex-cli · run #42_');
+    expect(arg.text).toContain(
+      '_실행 번호 `42` (다시 돌리기·의견 남기기에 써요)_',
+    );
+    expect(arg.text).not.toContain('run #42');
   });
 
   it('async format 결과를 기다린 뒤 응답에 사용한다', async () => {
@@ -285,6 +288,6 @@ describe('runAgentCommand — onOutcome 후처리', () => {
     });
     const arg = (respond as jest.Mock).mock.calls[0][0] as { text: string };
     expect(arg.text).toContain('📋 오늘의 계획');
-    expect(arg.text).toContain('_model: codex-cli · run #42_');
+    expect(arg.text).not.toContain('run #42');
   });
 });

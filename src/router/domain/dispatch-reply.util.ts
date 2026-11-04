@@ -1,4 +1,4 @@
-import { toTaskLabel } from '../../agent-registry/agent-registry';
+import { formatRunIdLine } from '../../common/util/run-id-line.util';
 import { DispatchResult } from './idaeri-router.port';
 
 // 이 dispatch 가 원장에 남긴 AgentRun id — 본 실행 다음 핸드오프 순서. 0 은 run 을 남기지 않은
@@ -11,31 +11,15 @@ export const collectDispatchRunIds = (result: DispatchResult): number[] =>
   ].filter((agentRunId) => agentRunId > 0);
 
 export const buildDispatchReplyText = (result: DispatchResult): string => {
-  const handoffs = result.handoffResults ?? [];
-  if (result.agentRunId === 0 && handoffs.length === 0) {
-    return result.formattedText;
+  const entries = [result, ...(result.handoffResults ?? [])];
+  const blocks = entries.map(withRunIdLine);
+  return blocks.join('\n\n---\n\n');
+};
+
+// 실행 번호 0 은 원장에 run 을 남기지 않은 분기라 번호 줄을 붙이지 않는다.
+const withRunIdLine = (entry: DispatchResult): string => {
+  if (entry.agentRunId <= 0) {
+    return entry.formattedText;
   }
-  if (handoffs.length === 0) {
-    return `${result.formattedText}\n\n_이대리 (${toTaskLabel(result.workerType)}) · 실행 #${result.agentRunId}_`;
-  }
-  const bodies = [
-    result.formattedText,
-    ...handoffs.map((handoff) => handoff.formattedText),
-  ];
-  const workerSequence = [
-    result.workerType,
-    ...handoffs.map((handoff) => handoff.workerType),
-  ]
-    .map(toTaskLabel)
-    .join(' → ');
-  const agentRunIds = [
-    result.agentRunId,
-    ...handoffs.map((handoff) => handoff.agentRunId),
-  ]
-    .map((agentRunId) => `#${agentRunId}`)
-    .join(', ');
-  return [
-    bodies.join('\n\n---\n\n'),
-    `_이대리 연속 처리 — ${workerSequence} · 실행 ${agentRunIds}_`,
-  ].join('\n\n');
+  return `${entry.formattedText}\n${formatRunIdLine(entry.agentRunId)}`;
 };

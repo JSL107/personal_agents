@@ -98,6 +98,9 @@ describe('RunVerdictActionHandler', () => {
     expect(respond).toHaveBeenCalledWith(
       expect.objectContaining({ response_type: 'ephemeral' }),
     );
+    expect(respond.mock.calls[0][0].text).toBe(
+      '판정을 저장하지 못했습니다. 버튼 값을 읽지 못했습니다.',
+    );
   });
 
   it('누르면 저장하고 그 댓글을 판정됨으로 다시 그린다 — 다시 누르면 새 값으로 덮어쓴다', async () => {

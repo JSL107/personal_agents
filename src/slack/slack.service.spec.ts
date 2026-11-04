@@ -36,7 +36,6 @@ import { SLACK_DELIVERY_STATUS } from './domain/slack-delivery.type';
 import { formatContextSummary } from './format/context-summary.formatter';
 import { formatDailyPlan } from './format/daily-plan.formatter';
 import { formatDailyReview } from './format/daily-review.formatter';
-import { formatModelFooter } from './format/model-footer.formatter';
 import { formatPullRequestReview } from './format/pull-request-review.formatter';
 import { formatQuotaStats } from './format/quota-stats.formatter';
 import { shouldRefreshSocketAfterDrift, SlackService } from './slack.service';
@@ -138,7 +137,7 @@ describe('formatDailyPlan', () => {
 
 describe('formatDailyReview', () => {
   const base: DailyReview = {
-    summary: 'PM Agent / Work Reviewer 구현',
+    summary: '하루 업무 회고 작성',
     impact: {
       quantitative: ['unit test +12건', 'CLI 격리 범위 +3항목'],
       qualitative: 'prompt-injection 리스크 제거',
@@ -158,13 +157,15 @@ describe('formatDailyReview', () => {
     const output = `${summary}\n\n${detail}`;
 
     expect(output).toContain('*오늘 한 일*');
-    expect(output).toContain('PM Agent / Work Reviewer 구현');
+    expect(output).toContain('하루 업무 회고 작성');
     expect(output).toContain('*정량 근거*');
     expect(output).toContain('• unit test +12건');
     expect(output).toContain('*질적 영향*');
     expect(output).toContain('*개선 전/후*');
-    expect(output).toContain('• Before: codex 가 parent env/HOME 상속');
-    expect(output).toContain('• After: throwaway HOME + stdin prompt 로 격리');
+    expect(output).toContain('• 바뀌기 전: codex 가 parent env/HOME 상속');
+    expect(output).toContain(
+      '• 바뀐 뒤: throwaway HOME + stdin prompt 로 격리',
+    );
     expect(output).toContain('*다음 액션*');
     expect(output).toContain('• /review-pr 설계');
     expect(output).toContain(
@@ -233,22 +234,20 @@ describe('formatPullRequestReview', () => {
     findings: [],
   };
 
-  it('PR ref / 위험도 / 권고 / 모든 섹션 출력', () => {
+  it('PR 이름 / 고칠 것 수 / 쉬운 한 줄 요약 출력', () => {
     const output = formatPullRequestReview({
       prRef: 'foo/bar#34',
       review: base,
     });
 
-    expect(output).toContain('*PR 리뷰 — foo/bar#34*');
-    expect(output).toContain('🟡 MEDIUM');
-    expect(output).toContain('✋ Request changes');
-    expect(output).toContain('*Must-Fix*');
+    expect(output).toContain('*GitHub 커넥터 추가 리뷰*');
+    expect(output).toContain('꼭 고칠 것 1개');
+    expect(output).toContain('고려할 것 2개');
     expect(output).toContain('• 에러 마스킹 필요');
-    expect(output).toContain('*Nice-to-have*');
-    expect(output).toContain('*누락 테스트*');
-    expect(output).toContain('*리뷰 코멘트 초안*');
-    expect(output).toContain('• `src/x.ts:10` 여기 위험');
-    expect(output).toContain('• 전반적으로 OK');
+    expect(output).toContain('• 주석 보강');
+    expect(output).not.toContain('src/x.ts:10');
+    expect(output).toContain('• 추가 검토 의견이 있어요.');
+    expect(output).not.toContain('전반적으로 OK');
   });
 
   it('빈 섹션은 헤더 자체를 생략', () => {
@@ -263,22 +262,20 @@ describe('formatPullRequestReview', () => {
       },
     });
 
-    expect(output).not.toContain('*Must-Fix*');
-    expect(output).not.toContain('*Nice-to-have*');
-    expect(output).not.toContain('*누락 테스트*');
-    expect(output).not.toContain('*리뷰 코멘트 초안*');
+    expect(output).not.toContain('고칠 것 0개');
+    expect(output).toContain('*지적 사항 없음*');
   });
 
-  it('riskLevel low + approve 라벨 매핑', () => {
+  it('riskLevel low + approve 에도 같은 쉬운 본문을 쓴다', () => {
     const output = formatPullRequestReview({
       prRef: 'a/b#1',
       review: { ...base, riskLevel: 'low', approvalRecommendation: 'approve' },
     });
-    expect(output).toContain('🟢 LOW');
-    expect(output).toContain('✅ Approve');
+    expect(output).toContain('*GitHub 커넥터 추가 리뷰*');
+    expect(output).not.toContain('LOW');
   });
 
-  it('reviewCommentDrafts 의 file/line 누락 시 location prefix 생략', () => {
+  it('reviewCommentDrafts 의 file/line 은 본문에서 생략', () => {
     const output = formatPullRequestReview({
       prRef: 'a/b#1',
       review: {
@@ -286,8 +283,9 @@ describe('formatPullRequestReview', () => {
         reviewCommentDrafts: [{ body: '단순 코멘트' }],
       },
     });
-    expect(output).toContain('• 단순 코멘트');
-    expect(output).not.toContain('``');
+    expect(output).toContain('• 추가 검토 의견이 있어요.');
+    expect(output).not.toContain('단순 코멘트');
+    expect(output).not.toContain('src/x.ts');
   });
 
   it('LLM 자유텍스트(요약/코멘트)의 mrkdwn control 문자를 escape 한다', () => {
@@ -304,33 +302,9 @@ describe('formatPullRequestReview', () => {
     });
     expect(output).toContain('Promise&lt;T&gt; &amp; &lt;script&gt;');
     expect(output).toContain('a &amp;&amp; b 처리');
-    expect(output).toContain('&lt;img&gt; 삽입 위험');
+    expect(output).not.toContain('&lt;img&gt; 삽입 위험');
     expect(output).not.toContain('<script>');
-    // 파일 경로는 백틱 인라인 코드라 escape 하지 않는다.
-    expect(output).toContain('`src/x.ts:3`');
-  });
-});
-
-describe('formatModelFooter', () => {
-  it('AgentRunOutcome 의 modelUsed 와 agentRunId 를 한 줄 footer 로 렌더', () => {
-    const footer = formatModelFooter({
-      result: {},
-      modelUsed: 'codex-cli',
-      agentRunId: 42,
-    });
-
-    expect(footer).toBe('\n\n_model: codex-cli · run #42_');
-  });
-
-  it('result 타입과 무관하게 동작 — generic 푸터', () => {
-    const footer = formatModelFooter({
-      result: { plan: 'whatever' },
-      modelUsed: 'claude-cli',
-      agentRunId: 7,
-    });
-
-    expect(footer).toContain('claude-cli');
-    expect(footer).toContain('run #7');
+    expect(output).not.toContain('src/x.ts:3');
   });
 });
 
@@ -394,9 +368,8 @@ describe('formatDailyPlan — url 링크 (PRO-2+ 이슈 A)', () => {
       reasoning: 'r',
     };
     const output = format(plan).summary;
-    expect(output).toContain(
-      '<https://github.com/foo/bar/pull/707|PR #707 리뷰>',
-    );
+    expect(output).toContain('<https://github.com/foo/bar/pull/707|코드 리뷰>');
+    expect(output).not.toContain('#707 리뷰');
   });
 
   it('url 이 없거나 빈 문자열이면 단순 텍스트로 렌더', () => {
@@ -458,20 +431,6 @@ describe('formatDailyPlan — url 링크 (PRO-2+ 이슈 A)', () => {
     expect(linkMatch).not.toBeNull();
     expect(linkMatch?.[0]).not.toContain('<bad>');
     expect(linkMatch?.[0]).not.toContain('악성<title>');
-  });
-});
-
-describe('formatModelFooter — sanitize (codex P1 / omc P2 fix)', () => {
-  it('modelUsed 에 mrkdwn 특수문자가 섞여도 footer 가 안 깨짐', () => {
-    const footer = formatModelFooter({
-      result: {},
-      modelUsed: 'evil<model>|name',
-      agentRunId: 7,
-    });
-    expect(footer).not.toContain('<model>');
-    expect(footer).not.toContain('|name');
-    expect(footer).toContain('evilmodelname');
-    expect(footer).toContain('run #7');
   });
 });
 
@@ -846,6 +805,21 @@ describe('SlackService.postPreviewMessage — 스레드 좌표', () => {
     return { service, postMessageMock };
   };
 
+  it('짧은 문구가 있으면 발송 본문과 원장 미리보기에도 짧은 문구를 쓴다', async () => {
+    mockDeliveryRepository.record.mockReset().mockResolvedValue(undefined);
+    const { service, postMessageMock } = buildPreviewService();
+    await service.postPreviewMessage({
+      target: 'C1',
+      preview: { ...preview, slackText: '짧은 카드' },
+    });
+    expect(postMessageMock).toHaveBeenCalledWith(
+      expect.objectContaining({ text: '짧은 카드' }),
+    );
+    expect(mockDeliveryRepository.record).toHaveBeenCalledWith(
+      expect.objectContaining({ textPreview: '짧은 카드' }),
+    );
+  });
+
   it('threadTs 가 있으면 승인 카드를 원글 스레드에 보낸다', async () => {
     const { service, postMessageMock } = buildPreviewService();
     await service.postPreviewMessage({
@@ -1165,8 +1139,8 @@ describe('formatContextSummary (HOTFIX-1)', () => {
     expect(output).toContain('Issue 3건 / PR 1건');
     expect(output).toContain('활성 task 2건');
     expect(output).toContain('본인 멘션 5건');
-    expect(output).toContain('직전 오늘 계획*: #99 (2026-04-26)');
-    expect(output).toContain('직전 업무 정리*: #100 (2026-04-26)');
+    expect(output).toContain('직전 오늘 계획*: 2026-04-26');
+    expect(output).toContain('직전 업무 정리*: 2026-04-26');
   });
 
   it('GitHub fetch 실패 시 ⚠ 라인 노출 + Notion/Slack 은 그대로', () => {
@@ -1205,8 +1179,8 @@ describe('formatQuotaStats (OPS-1)', () => {
       },
     };
     const output = formatQuotaStats(result);
-    expect(output).toContain('최근 24시간 (rolling)');
-    expect(output).toContain('기록 없음');
+    expect(output).toContain('최근 24시간');
+    expect(output).toContain('실행 기록이 없어요');
   });
 
   it('provider 별 count 내림차순으로 출력 + 합계 라인', () => {
@@ -1239,12 +1213,13 @@ describe('formatQuotaStats (OPS-1)', () => {
     const output = formatQuotaStats(result);
 
     expect(output).toContain('최근 7일');
-    expect(output).toContain('codex-cli — 5회');
-    expect(output).toContain('claude-cli — 3회');
-    // codex-cli (5회) 가 claude-cli (3회) 보다 위에 있어야 함
-    expect(output.indexOf('codex-cli')).toBeLessThan(
-      output.indexOf('claude-cli'),
+    expect(output).toContain('기본 처리: 5회');
+    expect(output).toContain('예비 처리: 3회');
+    expect(output.indexOf('기본 처리')).toBeLessThan(
+      output.indexOf('예비 처리'),
     );
+    expect(output).not.toContain('codex-cli');
+    expect(output).not.toContain('claude-cli');
     expect(output).toContain('*합계*: 8회');
     // 120_000 ms = 2.0분
     expect(output).toContain('총 2.0분');

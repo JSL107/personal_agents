@@ -67,10 +67,10 @@ describe('PaperOrderFillAutopilotTask', () => {
 
     expect(result.summaryText).toContain('매수 1건 146만 · 매도 1건 193만');
     expect(result.summaryText).toContain(
-      ' • [장기] 매수 *코메론*(049430) 71주 @20,550원 = 146만',
+      ' • [장기투자] 매수 *코메론*(049430) 71주 @20,550원 = 146만',
     );
     expect(result.summaryText).toContain(
-      ' • [스윙] 매도 *아이진*(185490) 985주 @1,955원 = 193만',
+      ' • [단기매매] 매도 *아이진*(185490) 985주 @1,955원 = 193만',
     );
   });
 
@@ -93,7 +93,7 @@ describe('PaperOrderFillAutopilotTask', () => {
       '체결 0건, 대기 주문 3건은 아래 사유로 처리 못 함',
     );
     expect(result.summaryText).toContain(
-      ' • 미체결 [장기] 매수 *코메론*(049430) 71주 — 현금 부족(주문 취소됨)',
+      ' • 미체결 [장기투자] 매수 *코메론*(049430) 71주: 현금 부족(주문 취소됨)',
     );
     expect(result.summaryText).toContain('시세를 못 받음(다음 회차 재시도)');
     expect(result.summaryText).toContain(
@@ -107,7 +107,7 @@ describe('PaperOrderFillAutopilotTask', () => {
     const result = await task.run(context);
 
     expect(result.summaryText).toContain(
-      ' • 장 마감까지 체결가를 못 받아 만료 2건 — 주문은 사라지고 다음 추천을 기다립니다',
+      ' • 장 마감까지 체결가를 못 받아 만료 2건: 주문은 사라지고 다음 추천을 기다립니다',
     );
   });
 
@@ -157,10 +157,10 @@ describe('PaperOrderFillAutopilotTask', () => {
     const result = await task.run(context);
 
     expect(result.summaryText).toContain(
-      ' • 미체결 [장기] 매수 *아이진*(185490) 71주 — 체결가 조회 실패(주문 취소됨)',
+      ' • 미체결 [장기투자] 매수 *아이진*(185490) 71주: 체결가 조회 실패(주문 취소됨)',
     );
     expect(result.summaryText).toContain(
-      ' • 장 마감까지 체결가를 못 받아 만료 1건 — 주문은 사라지고 다음 추천을 기다립니다',
+      ' • 장 마감까지 체결가를 못 받아 만료 1건: 주문은 사라지고 다음 추천을 기다립니다',
     );
     // 같은 카드가 "재시도" 와 "주문 소멸" 을 동시에 말하면 안 된다.
     expect(result.summaryText).not.toContain('다음 회차 재시도');
@@ -172,7 +172,7 @@ describe('PaperOrderFillAutopilotTask', () => {
     const result = await task.run(context);
 
     expect(result.summaryText).toBe(
-      '*모의투자 체결* — 대기 중인 주문이 없어 체결 0건',
+      '*모의투자 체결*: 대기 중인 주문이 없어 체결 0건',
     );
   });
 
@@ -181,7 +181,7 @@ describe('PaperOrderFillAutopilotTask', () => {
 
     await expect(task.run(context)).resolves.toEqual({
       skip: true,
-      summaryText: '모의투자 체결 시간 창 이전 — 주문 미처리',
+      summaryText: '모의투자 체결 시간 창 이전: 주문 미처리',
     });
   });
 

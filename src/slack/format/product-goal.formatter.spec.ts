@@ -108,7 +108,7 @@ describe('formatGoalCreatePreview', () => {
     });
     expect(text).toContain('• 종류: ✅ 숙제');
     expect(text).toContain(
-      '함께 말한 목표: 문서 정리, 배포 점검 — 승인 뒤 다시 말해 주세요.',
+      '함께 말한 목표: 문서 정리, 배포 점검: 승인 뒤 다시 말해 주세요.',
     );
   });
 });

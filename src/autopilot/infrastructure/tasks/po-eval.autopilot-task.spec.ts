@@ -66,27 +66,25 @@ describe('PoEvalAutopilotTask', () => {
     const out = await task.run(CTX);
 
     expect(out.skip).toBe(false);
-    expect(out.summaryText).toContain('Daily Eval');
+    expect(out.summaryText).toContain('하루 평가');
     // 저녁 메인 중복의 원천이라 메인에는 건수만 남기고 내용은 스레드 맨 앞으로 옮긴다.
-    expect(out.summaryText).toContain('Wins 2 · Blockers 1');
+    expect(out.summaryText).toContain('잘된 것 2 · 막힌 것 1');
     expect(out.summaryText).not.toContain('회고요약_H');
     expect(out.summaryText).not.toContain('PR 28건');
     expect(out.summaryText).not.toContain('스모크 공백');
     expect(out.detailText).toContain('회고요약_H');
     expect(out.detailText).toContain('PR 28건_H');
     expect(out.detailText).toContain('스모크 공백_H');
-    expect(out.detailText!.indexOf('Wins')).toBeLessThan(
-      out.detailText!.indexOf('careerLog'),
-    );
+    expect(out.detailText).not.toContain('정량 성과');
     // 메인엔 건수뿐이라 상세가 유일한 사본 — 스레드 실패 시 채널 대피 대상이어야 한다.
     expect(out.detailIsOnlyCopy).toBe(true);
     // 근거(합성 source · careerLog · model 푸터)는 스레드(detailText)로 내려가고 메인에는 없다.
     expect(out.summaryText).not.toContain('합성 source');
-    expect(out.detailText).toContain('합성 source');
-    expect(out.detailText).toContain('workReviewer=#10');
-    expect(out.detailText).toContain('careerLog');
+    expect(out.detailText).not.toContain('합성 source');
+    expect(out.detailText).not.toContain('workReviewer=#10');
+    expect(out.detailText).not.toContain('careerLog');
     expect(out.detailText).toContain('오늘 핵심 활동._H');
-    expect(out.detailText).toContain('run #50');
+    expect(out.detailText).not.toContain('run #50');
     expect(execute).toHaveBeenCalledWith(
       expect.objectContaining({ slackUserId: 'U1', range: 'TODAY' }),
     );
@@ -109,7 +107,7 @@ describe('PoEvalAutopilotTask', () => {
     const out = await task.run(CTX);
 
     expect(out.skip).toBe(true);
-    expect(out.emptyReason).toContain('오늘 sub-agent');
+    expect(out.emptyReason).toContain('오늘 회고할 자료가 없어요');
     expect(out.summaryText).toBeUndefined();
   });
 
@@ -124,7 +122,7 @@ describe('PoEvalAutopilotTask', () => {
   });
 
   // 저녁 다이제스트에서 업무 회고 「정량 근거」와 careerLog 「정량 성과」가 같은 숫자를 두 번 싣던 것.
-  describe('careerLog 정량 성과 — 같은 메시지에 이미 나간 숫자는 다시 싣지 않는다', () => {
+  describe('careerLog 정량 성과를 상세에 보여 준다', () => {
     const NOW = new Date('2026-06-17T10:05:00Z');
     const worklogRun = (overrides: Record<string, unknown> = {}) => ({
       id: 10,
@@ -211,7 +209,7 @@ describe('PoEvalAutopilotTask', () => {
         makeAgentRunService([latestWorklogRun]),
       ).run(CTX);
 
-    it('업무 회고에 나간 숫자만 빼고, 업무 회고에 없던 정량 항목과 정성 성과는 남긴다', async () => {
+    it('업무 회고에 같은 숫자가 있어도 저장할 정량·정성 성과를 보여 준다', async () => {
       const out = await runTask(
         worklogRun({
           endedAt: new Date(),
@@ -221,10 +219,8 @@ describe('PoEvalAutopilotTask', () => {
 
       expect(out.detailText).toContain('*정량 성과*');
       expect(out.detailText).toContain('파일 255개 수정');
-      expect(out.detailText).not.toContain('PR 28건 머지');
-      expect(out.detailText).toContain(
-        '정량 성과 2건은 업무 회고(run #10) 「정량 근거」와 같은 숫자라',
-      );
+      expect(out.detailText).toContain('PR 28건 머지');
+      expect(out.detailText).not.toContain('run #');
       expect(out.detailText).toContain('*정성 성과*');
     });
 

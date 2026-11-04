@@ -273,7 +273,7 @@ describe('WeeklySummaryAutopilotTask', () => {
     expect(out.detailText).toContain('정량 근거');
     expect(out.detailText).toContain('질적 영향');
     expect(out.detailText).toContain('다음 액션');
-    expect(out.detailText).toContain('run #42');
+    expect(out.detailText).not.toContain('run #42');
     expect(worklogExecute.mock.calls[0][0].workText).toContain(
       '(plan 파싱 불가)',
     );

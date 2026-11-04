@@ -60,6 +60,29 @@ function makeFixture(): DispatcherFixture {
 }
 
 describe('CodeReviewerDispatcher', () => {
+  it('자연어 리뷰의 상세 지적을 마스킹된 AI 전달 블록으로 보존한다', async () => {
+    const { dispatcher, reviewPullRequestExecute } = makeFixture();
+    reviewPullRequestExecute.mockResolvedValue({
+      result: {
+        ...review,
+        mustFix: ['인증 우회를 고쳐야 합니다. 자세한 재현 절차가 있습니다.'],
+      },
+      modelUsed: 'codex',
+      agentRunId: 7,
+      prTitle: '로그인 오류 수정',
+    });
+
+    const outcome = await dispatcher.dispatch({
+      ...baseInput,
+      text: 'owner/repo#42',
+    });
+
+    expect(outcome.formattedText).toContain(
+      'AI에 맡길 때 아래 내용을 복사하세요.',
+    );
+    expect(outcome.formattedText).toContain('*로그인 오류 수정 리뷰*');
+    expect(outcome.formattedText).toContain('자세한 재현 절차가 있습니다.');
+  });
   beforeEach(() => {
     jest.useFakeTimers();
     jest.setSystemTime(new Date('2026-07-27T12:00:00.000Z'));
@@ -348,8 +371,9 @@ describe('CodeReviewerDispatcher', () => {
       });
 
       expect(outcome.formattedText).toContain(
-        '게시 허용 목록(PR_REVIEW_INLINE_REPOS·GITHUB_REVIEW_BOT_REPOS)에 없어요',
+        'GitHub 게시 대상에 등록되지 않았어요',
       );
+      expect(outcome.formattedText).not.toContain('PR_REVIEW_INLINE_REPOS');
     });
   });
 });

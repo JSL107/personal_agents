@@ -39,7 +39,7 @@ const FORBIDDEN_PATTERNS: RegExp[] = [
 
 // 사용자가 실제로 찾아보거나 복사할 대상은 허용한다 — 지우면 보고서가 쓸모를 잃는다.
 // 검사 전에 이 부분을 지운다.
-const ALLOWED_SPANS: RegExp[] = [
+export const ALLOWED_SPANS: RegExp[] = [
   // 코드 블록·인라인 코드. 개발용으로 일부러 식별자를 보여 주는 자리다 — `/search-runs` 의
   // `[CODE_REVIEWER #42]` 는 그 런을 다시 찾는 열쇠라 #816 에서 남겼다.
   /```[\s\S]*?```/g,

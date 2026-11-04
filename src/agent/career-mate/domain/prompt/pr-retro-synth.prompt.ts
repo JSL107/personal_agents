@@ -1,4 +1,5 @@
 import { DomainStatus } from '../../../../common/exception/domain-status.enum';
+import { READER_WRITING_RULES } from '../../../../common/llm/reader-writing-rules';
 import {
   PullRequestDetail,
   PullRequestDiff,
@@ -19,6 +20,8 @@ export const PR_RETRO_SYNTH_SYSTEM_PROMPT = `너는 개발자의 단일 PR 하�
 - narrative 는 이 PR 회고 서술 3~6문장: 무엇이 문제였고, 어떤 의사결정·트레이드오프가 있었고, 무엇을 배웠는지. 수치·파일경로·고유명사는 보존.
 - [작업 맥락] 은 사용자가 직접 적은 "이 작업이 서비스에 무엇을 했는지"다. 코드에 남지 않는 사실이므로 지표의 출처로 인정한다 — 거기 문자로 적힌 값도 원문 그대로 옮긴다.
 - 입력에 [작업 맥락] 절이 없으면 사용자·매출·비용·처리량 영향을 추측해 쓰지 않는다. 없는 수치를 지어내느니 그 문장을 아예 쓰지 않는다.
+
+${READER_WRITING_RULES}
 
 스키마:
 {
@@ -115,6 +118,8 @@ export const MULTI_PR_RETRO_SYNTH_SYSTEM_PROMPT = `너는 개발자의 "이어�
 - narrative 는 이 작업 흐름 회고 4~7문장: 무엇이 문제였고, PR 들을 관통하는 어떤 의사결정·트레이드오프가 있었고, 무엇을 배웠는지. 수치·파일경로·고유명사는 보존.
 - [작업 맥락] 은 사용자가 직접 적은 "이 작업이 서비스에 무엇을 했는지"다. 코드에 남지 않는 사실이므로 지표의 출처로 인정한다 — 거기 문자로 적힌 값도 원문 그대로 옮긴다.
 - 입력에 [작업 맥락] 절이 없으면 사용자·매출·비용·처리량 영향을 추측해 쓰지 않는다. 없는 수치를 지어내느니 그 문장을 아예 쓰지 않는다.
+
+${READER_WRITING_RULES}
 
 스키마:
 {

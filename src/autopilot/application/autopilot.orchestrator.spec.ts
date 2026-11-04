@@ -2018,6 +2018,7 @@ describe('AutopilotOrchestrator', () => {
       kind: 'EVENING_BLOG_PUBLISH',
       payload: { a: 1 },
       previewText: 'A',
+      slackText: '짧은 A',
     };
     const previewB = {
       kind: 'EVENING_CAREER_REFLECT',
@@ -2071,7 +2072,15 @@ describe('AutopilotOrchestrator', () => {
       'C1',
     );
     expect(createPreview.execute).toHaveBeenCalledTimes(2);
+    expect(createPreview.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ previewText: 'A', slackText: '짧은 A' }),
+    );
     expect(slackNotifier.postPreviewMessage).toHaveBeenCalledTimes(2);
+    expect(slackNotifier.postPreviewMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        preview: expect.objectContaining({ slackText: '짧은 A' }),
+      }),
+    );
     // preview 별로 좌표 저장 — 각 preview 행은 좌표 하나(첫 타깃)만 가진다.
     expect(previewRepository.attachSlackMessage).toHaveBeenCalledTimes(2);
   });

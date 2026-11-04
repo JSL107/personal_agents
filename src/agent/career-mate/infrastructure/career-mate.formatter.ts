@@ -34,7 +34,7 @@ export const formatResume = (data: CareerProfileData): string => {
     .join('\n');
   const skills = data.skills.map((s) => escapeSlackMrkdwn(s.name)).join(', ');
   return [
-    `*이력서 — 성과*`,
+    `*이력서 성과*`,
     bullets || '(성과 없음)',
     ``,
     `*기술 스택*`,
@@ -54,7 +54,7 @@ export const formatGapReport = (data: GapAnalysisData): string => {
   const topics = data.topics
     .map(
       (t, i) =>
-        `${i + 1}. ${escapeSlackMrkdwn(t.title)} — _${escapeSlackMrkdwn(t.rationale)}_`,
+        `${i + 1}. ${escapeSlackMrkdwn(t.title)}: _${escapeSlackMrkdwn(t.rationale)}_`,
     )
     .join('\n');
   return [
@@ -183,7 +183,7 @@ export const formatResumeAudit = (
     `약함 ${weakCount}건 / 근거없음 ${missingCount}건 (총 ${result.items.length}건)`,
     escapeSlackMrkdwn(result.verdict),
     guardTouched > 0
-      ? `_위 총평은 모델이 가드 개입 전에 쓴 것입니다 — 가드가 ${guardTouched}건을 조정했으니 항목별 판정을 기준으로 보세요._`
+      ? `_위 총평은 모델이 가드 개입 전에 쓴 것입니다. 가드가 ${guardTouched}건을 조정했으니 항목별 판정을 기준으로 보세요._`
       : '',
   ]
     .filter((line) => line.length > 0)
@@ -200,7 +200,7 @@ export const formatResumeAudit = (
   );
   const topFixLines = topFix
     ? [
-        `*먼저 이것부터* [${AUDIT_STATUS_LABEL[topFix.status]}] ${escapeSlackMrkdwn(topFix.title)} — ${escapeSlackMrkdwn(topFix.why)}`,
+        `*먼저 이것부터* [${AUDIT_STATUS_LABEL[topFix.status]}] ${escapeSlackMrkdwn(topFix.title)}: ${escapeSlackMrkdwn(topFix.why)}`,
         ...(topFix.rewrite
           ? [`  이렇게 고치세요: ${escapeSlackMrkdwn(topFix.rewrite.after)}`]
           : []),
@@ -208,11 +208,11 @@ export const formatResumeAudit = (
     : [];
   const highlightLines = result.highlights.map(
     (highlight, index) =>
-      `${index + 1}. *${escapeSlackMrkdwn(highlight.title)}* — ${escapeSlackMrkdwn(highlight.reason)}`,
+      `${index + 1}. *${escapeSlackMrkdwn(highlight.title)}*: ${escapeSlackMrkdwn(highlight.reason)}`,
   );
   const itemLines = result.items.flatMap((item) => {
     const lines = [
-      `• *[${AUDIT_STATUS_LABEL[item.status]}] ${escapeSlackMrkdwn(item.title)}* — ${escapeSlackMrkdwn(item.why)}`,
+      `• *[${AUDIT_STATUS_LABEL[item.status]}] ${escapeSlackMrkdwn(item.title)}*: ${escapeSlackMrkdwn(item.why)}`,
     ];
     if (item.rewrite) {
       lines.push(
@@ -223,11 +223,11 @@ export const formatResumeAudit = (
   });
   const jdLines = result.jdFindings.map(
     (finding) =>
-      `• [${finding.priority}/${AUDIT_STATUS_LABEL[finding.status]}] ${escapeSlackMrkdwn(finding.requirement)} — ${escapeSlackMrkdwn(finding.why)}`,
+      `• [${finding.priority}/${AUDIT_STATUS_LABEL[finding.status]}] ${escapeSlackMrkdwn(finding.requirement)}: ${escapeSlackMrkdwn(finding.why)}`,
   );
   const riskLines = result.rejectionRisks.map((risk) => {
     const rebuttal = risk.rebuttal
-      ? ` — 반박: ${escapeSlackMrkdwn(risk.rebuttal)}`
+      ? `, 반박: ${escapeSlackMrkdwn(risk.rebuttal)}`
       : '';
     return `• ${escapeSlackMrkdwn(risk.reason)}${rebuttal}`;
   });
@@ -235,7 +235,7 @@ export const formatResumeAudit = (
   // 약하다고 판정하고 고칠 문장을 주지 않은 항목 — 사용자가 무엇을 고칠지 못 받은 자리다.
   const rewriteMissingLine =
     result.guard.rewriteMissing.length > 0
-      ? `*고칠 문장 누락* ${result.guard.rewriteMissing.length}건 — ${result.guard.rewriteMissing.map((title) => escapeSlackMrkdwn(title)).join(', ')}`
+      ? `*고칠 문장 누락* ${result.guard.rewriteMissing.length}건: ${result.guard.rewriteMissing.map((title) => escapeSlackMrkdwn(title)).join(', ')}`
       : '';
   const source = result.jdSource
     ? `*목표 공고* ${escapeSlackMrkdwn(result.jdSource.company)} / ${escapeSlackMrkdwn(result.jdSource.role)}`
@@ -353,7 +353,7 @@ export const formatPrRetro = (result: ReflectPrResult): string => {
   const star = a.star;
   const prList = a.evidence.map((e) => `${e.repo}#${e.pr}`).join(', ');
   return [
-    `*PR 회고 — ${escapeSlackMrkdwn(a.title)}*`,
+    `*PR 회고: ${escapeSlackMrkdwn(a.title)}*`,
     `_반영한 PR: ${escapeSlackMrkdwn(prList)}_`,
     escapeSlackMrkdwn(result.narrative),
     ``,

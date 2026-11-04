@@ -21,11 +21,11 @@ describe('formatSecretariat', () => {
   it('비어 있으면 다섯 항목 모두 "없음" 으로 낸다', () => {
     const text = render({});
 
-    expect(text).toContain('*① 완료* — 없음');
-    expect(text).toContain('*② 진행 중* — 없음');
-    expect(text).toContain('*③ 대표 승인 대기* — 없음');
-    expect(text).toContain('*④ 막힌 것* — 없음');
-    expect(text).toContain('*⑤ 오늘 결정할 것* — 없음');
+    expect(text).toContain('*① 완료*: 없음');
+    expect(text).toContain('*② 진행 중*: 없음');
+    expect(text).toContain('*③ 대표 승인 대기*: 없음');
+    expect(text).toContain('*④ 막힌 것*: 없음');
+    expect(text).toContain('*⑤ 오늘 결정할 것*: 없음');
   });
 
   describe('① 완료 축약', () => {
@@ -37,7 +37,7 @@ describe('formatSecretariat', () => {
         ],
       });
 
-      expect(text).toContain('*① 완료* — 9건 · 오늘 계획 7 · 주간 총평 2');
+      expect(text).toContain('*① 완료*: 9건 · 오늘 계획 7 · 주간 총평 2');
     });
 
     it('5종을 넘으면 나머지를 "외 N종" 으로 접는다', () => {
@@ -49,7 +49,7 @@ describe('formatSecretariat', () => {
 
       const text = render({ completed });
 
-      expect(text).toContain('*① 완료* — 8건 ·');
+      expect(text).toContain('*① 완료*: 8건 ·');
       expect(text).toContain('외 3종');
     });
   });
@@ -63,10 +63,10 @@ describe('formatSecretariat', () => {
 
       const text = render({ approvals });
 
-      expect(text).toContain('*③ 대표 승인 대기* — 5건');
-      expect(text).toContain('• 카드 0 —');
-      expect(text).toContain('• 카드 2 —');
-      expect(text).not.toContain('• 카드 3 —');
+      expect(text).toContain('*③ 대표 승인 대기*: 5건');
+      expect(text).toContain('• 카드 0: ');
+      expect(text).toContain('• 카드 2: ');
+      expect(text).not.toContain('• 카드 3: ');
       expect(text).toContain('외 2건');
     });
 
@@ -79,9 +79,9 @@ describe('formatSecretariat', () => {
         ],
       });
 
-      expect(text).toContain('• A — 30분 뒤 만료');
-      expect(text).toContain('• B — 5시간 뒤 만료');
-      expect(text).toContain('• C — 곧 만료');
+      expect(text).toContain('• A: 30분 뒤 만료');
+      expect(text).toContain('• B: 5시간 뒤 만료');
+      expect(text).toContain('• C: 곧 만료');
     });
   });
 
@@ -123,7 +123,7 @@ describe('formatSecretariat', () => {
       });
 
       expect(text).toContain(
-        '*⑤ 오늘 결정할 것* — 블로그 발행 승인 (3시간 뒤 만료)',
+        '*⑤ 오늘 결정할 것*: 블로그 발행 승인 (3시간 뒤 만료)',
       );
     });
 
@@ -139,7 +139,7 @@ describe('formatSecretariat', () => {
       });
 
       expect(text).toContain(
-        '오늘 계획 3건 실패, 아직 복구 안 됨 — 모델 호출 실패',
+        '오늘 계획 3건 실패, 아직 복구 안 됨: 모델 호출 실패',
       );
       expect(text).not.toContain('연속');
     });
@@ -167,10 +167,10 @@ describe('formatSecretariat', () => {
       });
 
       expect(text).toContain(
-        '*① 완료* — 215건 · 코드 리뷰 129 · 모의투자 계좌 85 · RETIRED_WORKER 1',
+        '*① 완료*: 215건 · 코드 리뷰 129 · 모의투자 계좌 85 · RETIRED_WORKER 1',
       );
-      expect(text).toContain('*② 진행 중* — 자율 제안 거르기');
-      expect(text).toContain('• 보고서 문장 다듬기 2건 — 모델 호출 실패');
+      expect(text).toContain('*② 진행 중*: 자율 제안 거르기');
+      expect(text).toContain('• 보고서 문장 다듬기 2건: 모델 호출 실패');
       expect(text).toContain('보유 종목 감시 1건 실패');
       expect(text).not.toMatch(
         /CODE_REVIEWER|PAPER_TRADE|SUBCONSCIOUS_GATE|HUMANIZER|INVEST\b/,
@@ -195,10 +195,10 @@ describe('formatSecretariat', () => {
         },
       });
       expect(text).toContain(
-        '코드 리뷰 1건 — 30분 넘게 끝나지 않아 자동으로 정리됨',
+        '코드 리뷰 1건: 30분 넘게 끝나지 않아 자동으로 정리됨',
       );
       expect(text).toContain(
-        '코드 리뷰 2건 실패, 아직 복구 안 됨 — 30분 넘게 끝나지 않아 자동으로 정리됨',
+        '코드 리뷰 2건 실패, 아직 복구 안 됨: 30분 넘게 끝나지 않아 자동으로 정리됨',
       );
       expect(text).not.toContain('swept');
     });

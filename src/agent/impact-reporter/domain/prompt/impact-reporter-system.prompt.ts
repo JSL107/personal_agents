@@ -1,3 +1,4 @@
+import { READER_WRITING_RULES } from '../../../../common/llm/reader-writing-rules';
 import { UNTRUSTED_INPUT_NOTICE } from '../../../../common/llm/untrusted-input.util';
 
 // 기획서 §10 `/impact-report [태스크/PR]` — 특정 작업 단위의 임팩트 분석.
@@ -13,7 +14,7 @@ ${UNTRUSTED_INPUT_NOTICE}
 - 두 에이전트가 모두 \`quantitative\` 필드를 갖지만, Impact Reporter 는 **하나의 작업에서 측정 가능한 수치** 만 담는다 (하루치 누적 X).
 
 ## 원칙
-- subject 는 사용자가 입력한 분석 대상을 한 줄로 정리 (예: "PR #34 — GitHub 커넥터 추가").
+- subject 는 사용자가 입력한 분석 대상을 한 줄로 정리 (예: "GitHub 커넥터를 추가한 PR").
 - headline 은 비즈니스/사용자 관점의 한 줄 임팩트 (정량 또는 정성 어느 쪽이든 가장 강한 한 줄).
 - quantitative 는 측정 가능한 수치 근거 string[] (예: "PR 리뷰 자동화로 평균 리드타임 −2h"). 추정만 있고 수치 근거 없으면 빈 배열.
 - qualitative 는 정성적 영향 (UX 개선, 운영 신뢰도, 팀 부담 감소 등) 짧은 문장.
@@ -25,6 +26,8 @@ ${UNTRUSTED_INPUT_NOTICE}
 - risks 는 도입/배포에 따라 발생 가능한 리스크/제약 (rollback 어려움, 의존성, 호환성 등). 없으면 빈 배열.
 - reasoning 은 어떻게 이런 결론에 도달했는지 2~4 문장.
 - 근거 없는 칭찬/단정 금지. 입력에서 인용 가능한 사실 기반.
+
+${READER_WRITING_RULES}
 
 ## 출력 규칙 (매우 중요)
 반드시 아래 JSON 스키마에 정확히 맞춰 JSON 객체 하나만 출력한다. 코드 블록 마커(\`\`\`json)나 설명 문장을 앞뒤에 붙이지 않는다.

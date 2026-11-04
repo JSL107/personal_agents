@@ -119,7 +119,7 @@ describe('PaperIntradayStopAutopilotTask', () => {
 
     await expect(task.run(context)).resolves.toEqual({
       skip: true,
-      summaryText: '장중 손절 시간 창 이전 — 주문 미처리',
+      summaryText: '장중 손절 시간 창 이전: 주문 미처리',
     });
   });
 
@@ -130,7 +130,7 @@ describe('PaperIntradayStopAutopilotTask', () => {
 
     await expect(task.run(context)).resolves.toEqual({
       skip: true,
-      summaryText: '장중 손절 시간 창 종료 — 주문 미처리',
+      summaryText: '장중 손절 시간 창 종료: 주문 미처리',
     });
   });
 
@@ -179,11 +179,11 @@ describe('PaperIntradayStopAutopilotTask', () => {
     await expect(task.run(context)).resolves.toEqual({
       skip: false,
       summaryText:
-        '*장중 손절* — 8/11(화) 09:32 · 0건 청산\n' +
-        ' • 기업행동 의심으로 손절 판정 보류 1건 — 그 종목은 이번 회차에 청산되지 ' +
+        '*장중 손절*: 8/11(화) 09:32 · 0건 청산\n' +
+        ' • 기업행동 의심으로 손절 판정 보류 1건: 그 종목은 이번 회차에 청산되지 ' +
         '않았습니다. 배당락이면 받을 배당금이, 분할이면 늘어난 수량이 장부에 아직 ' +
         '없으니 확인이 필요합니다\n' +
-        '   - 코람코더원리츠(417310) 가격이 전일 대비 0.2136배로 변했습니다 — ' +
+        '   - 코람코더원리츠(417310) 가격이 전일 대비 0.2136배로 변했습니다: ' +
         '하루 가격제한(±30%) 밖이라 분할·병합·배당락 또는 시세 오류로 봅니다.',
     });
   });
@@ -219,8 +219,8 @@ describe('PaperIntradayStopAutopilotTask', () => {
       '계좌 2개는 처리 중 오류로 건너뛰었습니다',
     );
     // 건수만 남기면 원장을 봐도 무엇을 볼지 알 수 없다.
-    expect(result.summaryText).toContain('SWING: db down');
-    expect(result.summaryText).toContain('LONG_TERM: timeout');
+    expect(result.summaryText).toContain('단기매매: db down');
+    expect(result.summaryText).toContain('장기투자: timeout');
   });
 
   it('체결 내역을 raw 계좌명과 escape된 종목명으로 정확히 포맷한다', async () => {
@@ -252,9 +252,9 @@ describe('PaperIntradayStopAutopilotTask', () => {
     await expect(task.run(context)).resolves.toEqual({
       skip: false,
       summaryText:
-        '*장중 손절* — 8/11(화) 09:32 현재가 · 2건 청산\n' +
-        ' • [SWING] 008930 한미사이언스 32주 @ 46,100원 (-18.28%)\n' +
-        ' • [LONG<&>] 020120 키다리&lt;스튜디오&gt; 1,358주 @ 4,900원 (-7.55%)',
+        '*장중 손절*: 8/11(화) 09:32 현재가 · 2건 청산\n' +
+        ' • [단기매매] 008930 한미사이언스 32주 @ 46,100원 (-18.28%)\n' +
+        ' • [LONG&lt;&amp;&gt;] 020120 키다리&lt;스튜디오&gt; 1,358주 @ 4,900원 (-7.55%)',
     });
   });
 
@@ -266,8 +266,8 @@ describe('PaperIntradayStopAutopilotTask', () => {
     await expect(task.run(context)).resolves.toEqual({
       skip: false,
       summaryText:
-        '*장중 손절* — 8/11(화) 09:32 · 0건 청산\n' +
-        ' • 시세 조회 실패 3건 — 시세 공급자 쪽 문제일 수 있습니다. 그 종목은 이번 회차에 손절 판정을 받지 못했습니다',
+        '*장중 손절*: 8/11(화) 09:32 · 0건 청산\n' +
+        ' • 시세 조회 실패 3건: 시세 공급자 쪽 문제일 수 있습니다. 그 종목은 이번 회차에 손절 판정을 받지 못했습니다',
     });
   });
 
@@ -286,8 +286,8 @@ describe('PaperIntradayStopAutopilotTask', () => {
     await expect(task.run(context)).resolves.toEqual({
       skip: false,
       summaryText:
-        '*장중 손절* — 8/11(화) 09:32 · 0건 청산\n' +
-        ' • 시세 조회 실패 2건 — 시세 공급자 쪽 문제일 수 있습니다. 그 종목은 이번 회차에 손절 판정을 받지 못했습니다\n' +
+        '*장중 손절*: 8/11(화) 09:32 · 0건 청산\n' +
+        ' • 시세 조회 실패 2건: 시세 공급자 쪽 문제일 수 있습니다. 그 종목은 이번 회차에 손절 판정을 받지 못했습니다\n' +
         '   - 종목&lt;&amp;&gt;(005930): 토스증권 일봉 조회 실패: HTTP 500 Internal Server Error\n' +
         '   - 코람코더원리츠(417310): 쓸 수 없는 종가 0',
     });
@@ -306,8 +306,8 @@ describe('PaperIntradayStopAutopilotTask', () => {
     await expect(task.run(context)).resolves.toEqual({
       skip: false,
       summaryText:
-        '*장중 손절* — 8/11(화) 09:32 · 0건 청산\n' +
-        ' • 손절 판정 후 미체결 2건 — 기존 매도 주문 대기 1건 · 보유 수량 없음 1건',
+        '*장중 손절*: 8/11(화) 09:32 · 0건 청산\n' +
+        ' • 손절 판정 후 미체결 2건: 기존 매도 주문 대기 1건 · 보유 수량 없음 1건',
     });
   });
 
@@ -324,8 +324,8 @@ describe('PaperIntradayStopAutopilotTask', () => {
     await expect(task.run(context)).resolves.toEqual({
       skip: false,
       summaryText:
-        '*장중 손절* — 8/11(화) 09:32 · 0건 청산\n' +
-        ' • 손절 판정 후 미체결 3건 — 기존 매도 주문 대기 1건 · 보유 수량 없음 1건 · 기타 체결 미완료 1건',
+        '*장중 손절*: 8/11(화) 09:32 · 0건 청산\n' +
+        ' • 손절 판정 후 미체결 3건: 기존 매도 주문 대기 1건 · 보유 수량 없음 1건 · 기타 체결 미완료 1건',
     });
   });
 
@@ -377,12 +377,12 @@ describe('PaperIntradayStopAutopilotTask', () => {
       result: {
         skip: false,
         summaryText:
-          '*장중 손절* — 8/11(화) 09:32 현재가 · 1건 청산\n' +
-          ' • [SWING] 008930 한미사이언스 32주 @ 46,100원 (-18.28%)\n' +
-          ' • 시세 조회 실패 2건 — 시세 공급자 쪽 문제일 수 있습니다. 그 종목은 이번 회차에 손절 판정을 받지 못했습니다\n' +
+          '*장중 손절*: 8/11(화) 09:32 현재가 · 1건 청산\n' +
+          ' • [단기매매] 008930 한미사이언스 32주 @ 46,100원 (-18.28%)\n' +
+          ' • 시세 조회 실패 2건: 시세 공급자 쪽 문제일 수 있습니다. 그 종목은 이번 회차에 손절 판정을 받지 못했습니다\n' +
           '   - 한미사이언스(008930): 토스증권 일봉 조회 실패: HTTP 500 Internal Server Error\n' +
           '   - 키다리스튜디오(020120): 쓸 수 없는 종가 0\n' +
-          ' • 손절 판정 후 미체결 2건 — 기존 매도 주문 대기 1건 · 보유 수량 없음 1건',
+          ' • 손절 판정 후 미체결 2건: 기존 매도 주문 대기 1건 · 보유 수량 없음 1건',
       },
       modelUsed: 'deterministic',
       output: {

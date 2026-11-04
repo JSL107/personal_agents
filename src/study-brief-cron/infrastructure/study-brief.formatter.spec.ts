@@ -16,7 +16,7 @@ describe('formatStudyBrief', () => {
         '## 세 줄 요약\n첫 문장\n둘째 문장\n셋째 문장\n\n## 알아야 할 것\n- 상세',
     });
 
-    expect(rendered.summary).toContain('오늘의 공부 — Durable execution');
+    expect(rendered.summary).toContain('오늘의 공부: Durable execution');
     expect(rendered.summary).toContain('첫 문장\n둘째 문장\n셋째 문장');
     expect(rendered.summary).toContain(
       '<https://notion.so/PAGE|Notion에서 전체 읽기>',
@@ -59,7 +59,7 @@ describe('formatStudyBrief', () => {
 
     expect(rendered.summary).toBe(
       [
-        '📚 *오늘의 공부 — Durable execution*   ·  30분',
+        '📚 *오늘의 공부: Durable execution*   ·  30분',
         '',
         '*왜 지금 나한테* 재시도 설계에 필요',
         '*어디에 닿나* src/agent-run 모듈',
@@ -101,7 +101,7 @@ describe('formatStudyBrief', () => {
 
     expect(rendered.summary).toBe(
       [
-        '🔧 *오늘의 도구 — context7*   ·  설치 10분',
+        '🔧 *오늘의 도구: context7*   ·  설치 10분',
         '',
         '*뭐가 좋아지나* 문서 검색 개선',
         '*붙이는 비용* 낮음',

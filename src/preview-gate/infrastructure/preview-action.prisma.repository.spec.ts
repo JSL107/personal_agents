@@ -359,6 +359,7 @@ describe('PreviewActionPrismaRepository.findById — 폐지된 kind', () => {
     payload: {},
     status: 'APPLIED',
     previewText: '옛 카드',
+    slackText: null,
     expiresAt: new Date('2026-08-03T01:00:00Z'),
     createdAt: new Date('2026-08-03T00:00:00Z'),
     appliedAt: new Date('2026-08-03T00:10:00Z'),
@@ -379,6 +380,31 @@ describe('PreviewActionPrismaRepository.findById — 폐지된 kind', () => {
     return new PreviewActionPrismaRepository(prismaMock);
   };
 
+  it('새 카드의 긴 전문과 짧은 문구를 함께 저장한다', async () => {
+    const create = jest.fn().mockResolvedValue({
+      ...rowOf('EVENING_BLOG_PUBLISH'),
+      previewText: '전문',
+      slackText: '짧게',
+    });
+    const repository = new PreviewActionPrismaRepository({
+      previewAction: { create },
+    } as unknown as PrismaService);
+
+    const saved = await repository.create({
+      slackUserId: 'U1',
+      kind: 'EVENING_BLOG_PUBLISH',
+      payload: {},
+      previewText: '전문',
+      slackText: '짧게',
+      ttlMs: 60_000,
+    });
+
+    expect(create.mock.calls[0][0].data).toEqual(
+      expect.objectContaining({ previewText: '전문', slackText: '짧게' }),
+    );
+    expect(saved.slackText).toBe('짧게');
+  });
+
   // 실행 경로는 사라졌지만 원장에 종결 카드가 남아 있는 kind — 상수를 지우면 이 조회가 예외로 끊긴다.
   it.each(['BE_SANDBOX_APPLY', 'SESSION_INJECT'])(
     '%s 행을 예외 없이 도메인으로 변환한다',
@@ -386,6 +412,7 @@ describe('PreviewActionPrismaRepository.findById — 폐지된 kind', () => {
       const preview = await repositoryReturning(kind).findById('p1');
 
       expect(preview?.kind).toBe(kind);
+      expect(preview?.slackText).toBeNull();
     },
   );
 

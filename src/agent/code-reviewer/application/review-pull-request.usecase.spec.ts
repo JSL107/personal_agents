@@ -179,6 +179,7 @@ describe('ReviewPullRequestUsecase', () => {
     });
 
     expect(result.result).toEqual(validReview);
+    expect(result.prTitle).toBe('feat: foo');
     expect(result.modelUsed).toBe('claude-cli');
     expect(result.agentRunId).toBe(55);
     expect(githubClient.getPullRequest).toHaveBeenCalledWith({
@@ -211,6 +212,7 @@ describe('ReviewPullRequestUsecase', () => {
       result: validReview,
       modelUsed: 'claude-cli',
       agentRunId: 55,
+      prTitle: 'feat: foo',
     });
     expect(publishFindings).not.toHaveBeenCalled();
   });
@@ -430,6 +432,7 @@ describe('ReviewPullRequestUsecase', () => {
       result: validReview,
       modelUsed: 'claude-cli',
       agentRunId: 55,
+      prTitle: 'feat: foo',
       // 리뷰는 유지하되, 게시가 실패했다는 사실은 사용자에게 알릴 수 있게 싣는다.
       publication: { kind: 'FAILED', message: 'GitHub publish failed' },
     });
@@ -454,6 +457,7 @@ describe('ReviewPullRequestUsecase', () => {
       result: validReview,
       modelUsed: 'claude-cli',
       agentRunId: 55,
+      prTitle: 'feat: foo',
     });
   });
 

@@ -155,7 +155,7 @@ export const formatHoldingChanges = (changes: HoldingChange[]): string => {
       change.currency === 'USD'
         ? `🇺🇸 *${change.symbol}*`
         : `*${change.tickerName}*`;
-    lines.push(`• ${tickerLabel} — ${describeHoldingChange(change)}`);
+    lines.push(`• ${tickerLabel}: ${describeHoldingChange(change)}`);
   }
   return lines.join('\n');
 };
@@ -170,12 +170,12 @@ export const formatPortfolioExposure = (
   const bucketText = exposure.buckets
     .map((bucket) => `${bucket.label} ${bucket.ratio}%`)
     .join(' · ');
-  const exposureLine = `🌎 *자산 배분* — ${bucketText}`;
+  const exposureLine = `🌎 *자산 배분*: ${bucketText}`;
   if (exposure.fxUsdRatio === 0) {
     return exposureLine;
   }
   // "환노출 94%" 는 그 자체로는 좋은 상태인지 나쁜 상태인지 읽히지 않는다. 무엇이 달라지는지까지 적는다.
-  return `${exposureLine}\n_달러 자산 ${exposure.fxUsdRatio}% — 환율이 내리면 원화 평가액도 함께 줄어듭니다_`;
+  return `${exposureLine}\n_달러 자산 ${exposure.fxUsdRatio}%: 환율이 내리면 원화 평가액도 함께 줄어듭니다_`;
 };
 
 // 아침에 듣는 자산 한 줄. 노출 비중(어디에 쏠려 있나)과 다른 축이다 — 얼마이고 얼마 벌었나.
@@ -189,9 +189,9 @@ export const formatPortfolioValue = (value: PortfolioValue | null): string => {
     return '';
   }
   const profitText = `${formatSignedMoney(value.profit)} (${formatSignedPercent(value.profitRate)})`;
-  const headline = `💰 *내 자산* — ${formatAssetAmount(value.totalValue)} · 매입가 대비 ${profitText}`;
+  const headline = `💰 *내 자산*: ${formatAssetAmount(value.totalValue)} · 매입가 대비 ${profitText}`;
   const fxNote =
-    '달러 자산은 지금 환율로 환산했습니다 — 두 숫자 모두 환율이 움직인 몫은 빠져 있습니다';
+    '달러 자산은 지금 환율로 환산했습니다: 두 숫자 모두 환율이 움직인 몫은 빠져 있습니다';
   if (value.dailyChange === null || value.dailyChangeRate === null) {
     // 직전 봉이 없는 종목이 섞이면 어제 대비를 내지 않는다. 줄이 통째로 빠지면 "왜 없지" 가
     // 되므로 이유를 적는다.
@@ -228,7 +228,7 @@ export const formatAvgPriceStatuses = (statuses: AvgPriceStatus[]): string => {
     const boughtAt = formatDisplayPrice(status.avgPrice, status.currency);
     const nowAt = formatDisplayPrice(status.currentPrice, status.currency);
     lines.push(
-      `• *${status.tickerName}* — ${boughtAt}에 사서 지금 ${nowAt}, ${status.percent.toFixed(1)}%`,
+      `• *${status.tickerName}*: ${boughtAt}에 사서 지금 ${nowAt}, ${status.percent.toFixed(1)}%`,
     );
     lines.push(
       `  ${formatQuantity(status.quantity.toString())} 보유 · ${formatValuationDelta(status)} (경보선 ${status.threshold}%)`,
@@ -243,7 +243,7 @@ export const formatAvgPriceRecoveries = (tickerNames: string[]): string => {
   if (tickerNames.length === 0) {
     return '';
   }
-  return `↩️ *경보선 안으로 돌아온 종목* — ${tickerNames.join(' · ')}`;
+  return `↩️ *경보선 안으로 돌아온 종목*: ${tickerNames.join(' · ')}`;
 };
 
 // 종목마다 기준일이 다르면 그 사실을 적는다. 헤더의 "(YYYY-MM-DD 종가 기준)" 은 종목별
@@ -258,7 +258,7 @@ const formatOlderBaseDates = (baseDates?: StockBaseDate[]): string => {
   // "하루 전" 이라고 쓰지 않는다. 뒤처진 폭은 종목마다 다르고 이틀 이상일 수도 있어
   // (그 종목만 봉을 못 받은 날이 이어지면 그렇게 된다) 단정하면 카드가 사실과 어긋난다.
   // 얼마나 뒤처졌는지는 함께 적은 날짜가 말한다.
-  return `_기준일이 다른 종목: ${listed} — 최신 봉이 아직 안 들어와 이전 거래일 값입니다_`;
+  return `_기준일이 다른 종목: ${listed}: 최신 봉이 아직 안 들어와 이전 거래일 값입니다_`;
 };
 
 const MARGIN_AXIS_LABEL: Record<AlertMargin['kind'], string> = {
@@ -284,7 +284,7 @@ const formatNearestMargin = (margin?: AlertMargin | null): string => {
       ? `±${margin.threshold}%`
       : `${margin.threshold >= 0 ? '+' : ''}${margin.threshold}%`;
   return (
-    `_경보선에 가장 가까운 종목: ${margin.tickerName} — ` +
+    `_경보선에 가장 가까운 종목: ${margin.tickerName}: ` +
     `${MARGIN_AXIS_LABEL[margin.kind]} ${formatMarginPercent(margin.currentPercent)}, ` +
     `경보선 ${thresholdText} 까지 ${margin.marginPoint.toFixed(1)}%p_`
   );
@@ -308,7 +308,7 @@ export const formatStockMonitorSummary = (
     // failures 에는 시세 조회 실패뿐 아니라 저장 실패·알림 복구 실패·채점용 보강 실패가 함께 담기고,
     // 그중에는 종목 단위가 아닌 항목(보강 조회 실패)도 있다. 원인은 아래 각 줄이 말하므로 헤더는 건수만 센다.
     lines.push(
-      `⚠️ *주식 모니터링 — 점검하지 못한 항목 ${context.failures.length}건*`,
+      `⚠️ *주식 모니터링: 점검하지 못한 항목 ${context.failures.length}건*`,
     );
     for (const failure of context.failures) {
       lines.push(`• ${failure}`);
@@ -319,7 +319,7 @@ export const formatStockMonitorSummary = (
     // 관측한 사실(새 거래일 봉이 없다)과 추정(휴장)을 구분해 적는다. 시세 지연·수집 이상도 같은 조건을
     // 만들므로 "열리지 않았다" 로 단정하면 고장이 정상 휴장으로 읽힌다.
     lines.push(
-      `📉 *주식 모니터링* — ${marketLabel} 새 거래일 시세가 없어 점검을 건너뜁니다 (휴장 추정, 마지막 거래일 ${context.lastTradeDate})`,
+      `📉 *주식 모니터링*: ${marketLabel} 새 거래일 시세가 없어 점검을 건너뜁니다 (휴장 추정, 마지막 거래일 ${context.lastTradeDate})`,
     );
     // 휴장 경로에서도 기준일은 갈릴 수 있다. 종목마다 마지막으로 저장된 거래일이 다르면
     // (그 종목만 봉을 못 받은 날이 있었으면) 전 종목에 새 봉이 없는 날에도 각자 다른 날짜에
@@ -330,7 +330,7 @@ export const formatStockMonitorSummary = (
 
   if (anomalies.length === 0) {
     lines.push(
-      `📉 *주식 모니터링* — ${marketLabel} ${context.checkedCount}종목 점검, 새 경보 없음 (${context.lastTradeDate} 종가 기준)`,
+      `📉 *주식 모니터링*: ${marketLabel} ${context.checkedCount}종목 점검, 새 경보 없음 (${context.lastTradeDate} 종가 기준)`,
     );
     pushIfPresent(lines, formatOlderBaseDates(context.olderBaseDates));
     pushIfPresent(lines, formatNearestMargin(context.nearestMargin));
@@ -339,7 +339,7 @@ export const formatStockMonitorSummary = (
   }
 
   lines.push(
-    `📉 *주식 모니터링* — ${marketLabel} ${context.checkedCount}종목 중 ${anomalies.length}건 경보 (${context.lastTradeDate} 종가 기준)`,
+    `📉 *주식 모니터링*: ${marketLabel} ${context.checkedCount}종목 중 ${anomalies.length}건 경보 (${context.lastTradeDate} 종가 기준)`,
   );
   pushIfPresent(lines, formatOlderBaseDates(context.olderBaseDates));
   for (const anomaly of anomalies) {
@@ -356,7 +356,7 @@ export const formatStockMonitorSummary = (
         ? `경보선 ±${anomaly.threshold}%`
         : `경보선 ${anomaly.threshold}%`;
     lines.push(
-      `• ${tickerLabel} — ${anomaly.detail}${priceDisplay} (${thresholdText})`,
+      `• ${tickerLabel}: ${anomaly.detail}${priceDisplay} (${thresholdText})`,
     );
   }
   return lines.join('\n');

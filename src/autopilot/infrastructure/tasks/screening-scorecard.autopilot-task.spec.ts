@@ -93,9 +93,9 @@ describe('ScreeningScorecardAutopilotTask', () => {
     const result = await buildTask(execute).run(context);
 
     expect(result.skip).toBe(false);
-    expect(result.summaryText).toContain('*5거래일 지평* — 표본 2건');
+    expect(result.summaryText).toContain('*5거래일 지평*: 표본 2건');
     expect(result.summaryText).toContain(
-      '*20거래일 지평* — 표본 없음 (채점 대기 회차 14건)',
+      '*20거래일 지평*: 표본 없음 (채점 대기 회차 14건)',
     );
     expect(result.detailText).toContain('놓친 최고');
   });

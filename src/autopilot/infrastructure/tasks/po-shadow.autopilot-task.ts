@@ -49,13 +49,13 @@ export class PoShadowAutopilotTask implements AutopilotTask {
         if (error.poShadowErrorCode === PoShadowErrorCode.NO_RECENT_PLAN) {
           return {
             skip: false,
-            summaryText: `⏸️ *PO 대행* — ${firedAtKst} · 건너뜀 (최근 계획 없음 — 아침 계획이 만들어지지 않으면 이 검토도 함께 멈춥니다)`,
+            summaryText: `⏸️ *PO 대행*: ${firedAtKst} · 건너뜀 (최근 계획 없음: 아침 계획이 만들어지지 않으면 이 검토도 함께 멈춥니다)`,
           };
         }
         if (error.poShadowErrorCode === PoShadowErrorCode.STALE_PLAN) {
           return {
             skip: false,
-            summaryText: `⏸️ *PO 대행* — ${firedAtKst} · 건너뜀 (계획이 오래돼 검토 대상 아님)`,
+            summaryText: `⏸️ *PO 대행*: ${firedAtKst} · 건너뜀 (계획이 오래돼 검토 대상 아님)`,
           };
         }
       }

@@ -34,7 +34,7 @@ describe('KnowledgeLintAutopilotTask', () => {
             type: 'near_duplicate',
             episodeId: 1,
             relatedId: 2,
-            detail: '중복 후보 — 차이 0.000',
+            detail: '중복 후보: 차이 0.000',
             occurredAt: new Date(),
           },
         ],
@@ -91,7 +91,7 @@ describe('KnowledgeLintAutopilotTask', () => {
           {
             type: 'embedding_null',
             episodeId: 9,
-            detail: '검색 색인 누락 — 비슷한 기억 찾기에서 빠짐',
+            detail: '검색 색인 누락: 비슷한 기억 찾기에서 빠짐',
             occurredAt: new Date(),
           },
         ],

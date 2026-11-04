@@ -67,7 +67,7 @@ describe('formatBlogRevision', () => {
       NOW,
     );
 
-    expect(text).toContain('90% — rough');
+    expect(text).toContain('90%: rough');
   });
 
   it('짝을 못 찾은 글이 있으면 편수를 함께 밝힌다', () => {

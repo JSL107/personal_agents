@@ -18,6 +18,7 @@ import {
   AutopilotTaskContext,
   AutopilotTaskResult,
 } from '../../domain/autopilot-task.port';
+import { PAPER_ACCOUNT_LABEL } from '../evening-digest.formatter';
 import {
   formatMoney,
   formatQuantity,
@@ -25,16 +26,11 @@ import {
   formatWon,
 } from '../paper-number.formatter';
 
-const ACCOUNT_LABELS: Record<string, string> = {
-  LONG_TERM: '장기',
-  SWING: '스윙',
-};
-
 const formatResult = (result: FillPendingOrdersResult): AutopilotTaskResult => {
   if (result.window === 'BEFORE_OPEN') {
     return {
       skip: true,
-      summaryText: '모의투자 체결 시간 창 이전 — 주문 미처리',
+      summaryText: '모의투자 체결 시간 창 이전: 주문 미처리',
     };
   }
   const filled = result.details.filter((detail) => detail.outcome === 'FILLED');
@@ -47,13 +43,13 @@ const formatResult = (result: FillPendingOrdersResult): AutopilotTaskResult => {
     ...filled.filter((detail) => detail.side === 'SELL'),
   ];
   const lines = [
-    `*모의투자 체결* — ${formatHeadline(result, filled)}`,
+    `*모의투자 체결*: ${formatHeadline(result, filled)}`,
     ...buyFirst.map(formatFilledLine),
     ...unfilled.map(formatUnfilledLine),
   ];
   if (result.bulkExpired > 0) {
     lines.push(
-      ` • 장 마감까지 체결가를 못 받아 만료 ${result.bulkExpired}건 — 주문은 사라지고 다음 추천을 기다립니다`,
+      ` • 장 마감까지 체결가를 못 받아 만료 ${result.bulkExpired}건: 주문은 사라지고 다음 추천을 기다립니다`,
     );
   }
   // 이미 처리된 주문(겹친 실행·수동 fill)은 어느 집계에도 안 잡혀 상세에서 조용히 빠진다.
@@ -97,7 +93,7 @@ const formatFilledLine = (detail: PaperOrderFillDetail): string =>
   `@${formatWon(detail.price ?? '0')} = ${formatMoney(amountOf(detail))}`;
 
 const formatUnfilledLine = (detail: PaperOrderFillDetail): string =>
-  ` • 미체결 ${describeOrder(detail)} ${formatQuantity(detail.quantity)}주 — ` +
+  ` • 미체결 ${describeOrder(detail)} ${formatQuantity(detail.quantity)}주: ` +
   unfilledReason(detail);
 
 const unfilledReason = (detail: PaperOrderFillDetail): string => {
@@ -115,7 +111,7 @@ const describeOrder = (detail: PaperOrderFillDetail): string =>
   `*${escapeSlackMrkdwn(detail.tickerName)}*(${detail.tickerCode})`;
 
 const accountLabel = (accountName: string): string =>
-  ACCOUNT_LABELS[accountName] ?? escapeSlackMrkdwn(accountName);
+  PAPER_ACCOUNT_LABEL[accountName] ?? escapeSlackMrkdwn(accountName);
 
 const sideLabel = (side: TradeSide): string =>
   side === 'BUY' ? '매수' : '매도';

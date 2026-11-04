@@ -33,11 +33,11 @@ export const formatGoalList = (goals: ProductGoalRecord[]): string => {
     const criterion =
       goal.successCriterion === null
         ? ''
-        : ` — 달성 기준: ${escapeSlackMrkdwn(goal.successCriterion)}`;
+        : `: 달성 기준: ${escapeSlackMrkdwn(goal.successCriterion)}`;
     return `• *${escapeSlackMrkdwn(goal.title)}*${criterion}${formatDueDate(goal.dueDate)}\n  키워드: ${escapeSlackMrkdwn(goal.keywords.join(', '))}`;
   });
   return [
-    `🧭 *활성 목표* — 숙제 ${taskCount}/${MAX_ACTIVE_PRODUCT_GOALS} · 방향 ${directionCount}/${MAX_ACTIVE_DIRECTION_GOALS}`,
+    `🧭 *활성 목표*: 숙제 ${taskCount}/${MAX_ACTIVE_PRODUCT_GOALS} · 방향 ${directionCount}/${MAX_ACTIVE_DIRECTION_GOALS}`,
     ...lines,
   ].join('\n');
 };
@@ -76,7 +76,7 @@ export const formatGoalCreatePreview = (
   }
   if (options.otherGoalTitles?.length) {
     const titles = options.otherGoalTitles.map(escapeSlackMrkdwn).join(', ');
-    lines.push(`_함께 말한 목표: ${titles} — 승인 뒤 다시 말해 주세요._`);
+    lines.push(`_함께 말한 목표: ${titles}: 승인 뒤 다시 말해 주세요._`);
   }
   lines.push(
     options.conversation
@@ -198,7 +198,7 @@ const formatTaskStatus = (
       `기한 ${task.goal.dueDate.toISOString().slice(5, 10)} (D-${task.daysLeft})`,
     );
   }
-  return parts.join(' — ');
+  return parts.join(': ');
 };
 
 const formatStaleGoal = ({ goal, reason }: StaleGoal): string => {
@@ -206,5 +206,5 @@ const formatStaleGoal = ({ goal, reason }: StaleGoal): string => {
     reason.kind === 'OVERDUE'
       ? `기한 ${reason.daysOverdue}일 지남`
       : `최근 ${FORGOTTEN_GOAL_DAYS}일 관련 작업 없음`;
-  return `⏰ *${escapeSlackMrkdwn(goal.title)}* — ${why}. 아직 유효한가요? 아래 카드로 닫을 수 있어요.`;
+  return `⏰ *${escapeSlackMrkdwn(goal.title)}*: ${why}. 아직 유효한가요? 아래 카드로 닫을 수 있어요.`;
 };

@@ -1,3 +1,4 @@
+import { READER_WRITING_RULES } from '../../../../common/llm/reader-writing-rules';
 // 본 turn 에서 review omc:architect 권장에 따라 cap 상수를 prompt 파일에 명시.
 // 각 sub-agent output 의 직렬화 결과를 이 상수로 truncate (UTF-8 byte 기준 — slack-inbox.service 패턴).
 export const MAX_SUB_AGENT_OUTPUT_BYTES = 2_000;
@@ -12,6 +13,8 @@ Work Reviewer (회고), PO Shadow (PRD 재검토), Impact Reporter (영향 분�
 - [PO Shadow 직전 output]
 - [Impact Reporter 직전 output]
 모든 섹션이 비어 있는 경우는 없다 (미리 검증됨).
+
+${READER_WRITING_RULES}
 
 ## 출력 schema
 - qualitative.summary: 1 문장. 전반 회고.

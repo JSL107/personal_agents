@@ -1,3 +1,4 @@
+import { READER_WRITING_RULES } from '../../../../common/llm/reader-writing-rules';
 import { MAXIMUM_BUY_COUNT } from '../paper-recommendation.constraint';
 import {
   BuildPaperRecommendationPromptInput,
@@ -20,6 +21,8 @@ LONG_TERM은 중장기 추세와 안정성을, SWING은 단기 모멘텀과 거�
 사용자 prompt의 보유 종목은 매도 여부를 판단하고, 후보 종목 안에서만 신규 매수를 추천한다.
 종목명 뒤 대괄호는 업종이다. 업종은 제시된 값만 쓴다 — '미분류'는 업종을 모른다는 뜻이고,
 종목명으로 업종을 추측해 근거로 삼지 않는다.
+
+${READER_WRITING_RULES}
 
 반드시 아래 두 형태 중 하나의 JSON 객체 하나만 출력한다. 코드 fence와 설명은 출력하지 않는다.
 매수나 매도가 있을 때:

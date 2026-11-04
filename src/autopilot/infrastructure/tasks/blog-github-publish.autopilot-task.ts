@@ -13,6 +13,7 @@ import { AgentRunService } from '../../../agent-run/application/agent-run.servic
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { PREVIEW_KIND } from '../../../preview-gate/domain/preview-action.type';
+import { escapeSlackMrkdwn } from '../../../slack/format/mrkdwn.util';
 import {
   AutopilotTask,
   AutopilotTaskContext,
@@ -21,7 +22,7 @@ import {
 
 // 저녁 카드는 다이제스트와 따로 오는 메시지라 "아래" 에 전문이 없다. 전문이 실제로 있는 곳을 적는다.
 export const EVENING_BLOG_CONFIRM_LINE =
-  '전문은 저녁 마감 메시지 스레드의 .md 첨부 — 익명화가 맞는지 열어 본 뒤 ✅ / ❌';
+  '전문은 저녁 마감 메시지 스레드의 .md 첨부: 익명화가 맞는지 열어 본 뒤 ✅ / ❌';
 
 // 카드 첫 줄로 접어 넣어 본문에서는 빼는 줄. 승인은 읽지 않고 눌리므로(분석 보고 §5 질문 3)
 // 판단에 필요한 것(무엇이 · 어디로 · 공개되는지)을 첫 줄 하나에 모은다.
@@ -147,7 +148,7 @@ export class BlogGithubPublishAutopilotTask implements AutopilotTask {
       // 댓글 본문이 아니라 파일로 올린다 — 댓글로 펼치면 한 화면을 넘겨 스레드를 덮는다.
       // 슬랙은 파일을 접힌 미리보기로 보여 주고 누르면 전문이 열린다. 승인 전에 글을 외부
       // (공개 저장소·Notion)에 미리 쓰는 링크는 쓰지 않는다 — 그것이 이 게이트가 막는 일이다.
-      detailText: `*발행될 파일* \`${candidate.path}\` — 전문은 아래 첨부 파일로 확인하세요.`,
+      detailText: `*발행될 파일* \`${candidate.path}\`: 전문은 아래 첨부 파일로 확인하세요.`,
       detailFile: {
         content: candidate.content,
         filename: candidate.path.split('/').at(-1) ?? 'post.md',
@@ -161,6 +162,13 @@ export class BlogGithubPublishAutopilotTask implements AutopilotTask {
           title: candidate.title,
           path: candidate.path,
         }),
+        slackText: `🌐 *GitHub에 공개할까요?*\n제목: ${escapeSlackMrkdwn(candidate.title)}\n첫 문단: ${escapeSlackMrkdwn(
+          candidate.content
+            .replace(/^---\n[\s\S]*?\n---\s*/, '')
+            .trim()
+            .split(/\n\s*\n/)[0]
+            .slice(0, 120),
+        )}\n공개 저장소 ${escapeSlackMrkdwn(candidate.path)} 에 그대로 올라가요. 전문은 저녁 메시지 스레드의 첨부 파일에서 확인해 주세요.`,
         // 전문 파일이 못 나간 회차에는 카드도 만들지 않는다. 카드 본문은 "첨부한 전문을 확인한 뒤"
         // 라고 적고 있는데, 그 전문이 유실되면 확인할 것이 없는 채로 승인 버튼만 남는다.
         // Notion 원본으로 대신 확인할 수도 없다 — 커밋되는 것은 익명화를 거친 글이라
