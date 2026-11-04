@@ -8,9 +8,8 @@ import {
   holidayCalendarOf,
   isPublicBusinessDay,
 } from '../../holiday/domain/business-calendar';
+import { kstStartOfDay } from './parse-due-date';
 import { PlainDate } from './schedule.type';
-
-const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 
 export const computeCandidateExpiresAt = (
   createdAt: Date,
@@ -28,7 +27,5 @@ export const computeCandidateExpiresAt = (
     }
   }
   const nextDay = addDays(cursor, 1);
-  return new Date(
-    Date.UTC(nextDay.year, nextDay.month - 1, nextDay.day) - KST_OFFSET_MS,
-  );
+  return kstStartOfDay(nextDay);
 };

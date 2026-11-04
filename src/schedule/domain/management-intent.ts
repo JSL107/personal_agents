@@ -11,6 +11,48 @@ const TIME_MARKER = /\d{1,2}\s*시|\d{1,2}:\d{2}/;
 const FOLLOW_UP_MARKER = /끝나면.*(?:한테|에게).*(?:공유|전달|연락)/;
 const NOTE_MARKER = /남겨\s*줘|메모/;
 
+interface DateTimeParts {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+  offsetHour: number;
+  offsetMinute: number;
+  daysInMonth: number;
+}
+
+const isValidDateTimeParts = ({
+  year,
+  month,
+  day,
+  hour,
+  minute,
+  second,
+  offsetHour,
+  offsetMinute,
+  daysInMonth,
+}: DateTimeParts): boolean => {
+  const ranges = [
+    { value: year, min: 100, max: Infinity },
+    { value: month, min: 1, max: 12 },
+    { value: day, min: 1, max: daysInMonth },
+    { value: hour, min: 0, max: 23 },
+    { value: minute, min: 0, max: 59 },
+    { value: second, min: 0, max: 59 },
+    { value: offsetHour, min: 0, max: 14 },
+    { value: offsetMinute, min: 0, max: 59 },
+  ];
+  const allPartsInRange = ranges.every(({ value, min, max }) => {
+    const inRange = value >= min && value <= max;
+    return inRange;
+  });
+  const offsetWithinLimit = offsetHour !== 14 || offsetMinute === 0;
+  const valid = allPartsInRange && offsetWithinLimit;
+  return valid;
+};
+
 export const hasManagementMarker = (text: string): boolean =>
   STATUS_MARKER.test(text) ||
   (REMIND_MARKER.test(text) && TIME_MARKER.test(text)) ||
@@ -61,19 +103,18 @@ const readDate = (value: unknown): Date | null => {
   const offsetHour = offset === 'Z' ? 0 : Number(offset.slice(1, 3));
   const offsetMinute = offset === 'Z' ? 0 : Number(offset.slice(4, 6));
   const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
-  if (
-    year < 100 ||
-    month < 1 ||
-    month > 12 ||
-    day < 1 ||
-    day > daysInMonth ||
-    hour > 23 ||
-    minute > 59 ||
-    second > 59 ||
-    offsetHour > 14 ||
-    offsetMinute > 59 ||
-    (offsetHour === 14 && offsetMinute !== 0)
-  ) {
+  const validDateTimeParts = isValidDateTimeParts({
+    year,
+    month,
+    day,
+    hour,
+    minute,
+    second,
+    offsetHour,
+    offsetMinute,
+    daysInMonth,
+  });
+  if (!validDateTimeParts) {
     return null;
   }
   const date = new Date(value);

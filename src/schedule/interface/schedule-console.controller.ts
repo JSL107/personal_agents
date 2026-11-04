@@ -20,19 +20,13 @@ import { DeleteScheduleUsecase } from '../application/delete-schedule.usecase';
 import { ListSchedulesUsecase } from '../application/list-schedules.usecase';
 import { RegisterConsoleScheduleUsecase } from '../application/register-console-schedule.usecase';
 import { ScheduleFollowUpUsecase } from '../application/schedule-follow-up.usecase';
-import { UpdateScheduleFieldsUsecase } from '../application/update-schedule-fields.usecase';
-import { UpdateScheduleStatusUsecase } from '../application/update-schedule-status.usecase';
+import { UpdateScheduleUsecase } from '../application/update-schedule.usecase';
 import { plainDateToUtcDate } from '../domain/parse-due-date';
 import {
   ScheduleEventRecord,
-  ScheduleFieldsPatch,
   ScheduleFollowUpRecord,
 } from '../domain/schedule.repository.type';
-import {
-  FollowUpTrigger,
-  ScheduleEventKind,
-  ScheduleItemRecord,
-} from '../domain/schedule.type';
+import { FollowUpTrigger, ScheduleItemRecord } from '../domain/schedule.type';
 import { CreateFollowUpDto } from './dto/create-follow-up.dto';
 import { CreateNoteDto } from './dto/create-note.dto';
 import { CreateScheduleDto } from './dto/create-schedule.dto';
@@ -55,10 +49,9 @@ export class ScheduleConsoleController {
   constructor(
     private readonly listSchedules: ListSchedulesUsecase,
     private readonly registerSchedule: RegisterConsoleScheduleUsecase,
-    private readonly updateStatus: UpdateScheduleStatusUsecase,
     private readonly deleteSchedule: DeleteScheduleUsecase,
     private readonly configService: ConfigService,
-    private readonly updateFields: UpdateScheduleFieldsUsecase,
+    private readonly updateSchedule: UpdateScheduleUsecase,
     private readonly followUp: ScheduleFollowUpUsecase,
   ) {}
 
@@ -109,16 +102,11 @@ export class ScheduleConsoleController {
   async detail(
     @Param('id', ParseIntPipe) id: number,
   ): Promise<ScheduleConsoleDetail> {
-    const found = await this.followUp.detail({
+    const detail = await this.followUp.detail({
       id,
       slackUserId: this.requireOwner(),
     });
-    return {
-      ...found,
-      linkedPullRequests: found.events.filter(
-        (event) => event.kind === ScheduleEventKind.PR_LINKED,
-      ),
-    };
+    return detail;
   }
 
   @Post('schedules')
@@ -141,12 +129,9 @@ export class ScheduleConsoleController {
         ? parsePlainDateParam(dto.startDate, 'startDate')
         : undefined,
       dueTime: dto.dueTime,
-      remindAt:
-        dto.remindAt === null
-          ? null
-          : dto.remindAt
-            ? parseOffsetDate(dto.remindAt)
-            : undefined,
+      remindAt: parseOptionalOffsetDate(
+        dto.remindAt === '' ? undefined : dto.remindAt,
+      ),
       // 공백만 남은 메모는 아예 없는 것으로 둔다 — 빈 문자열을 저장하면 상세 패널이
       // 메모 줄을 그리고 거기에 아무것도 없다.
       memo: memo ? memo : undefined,
@@ -163,54 +148,31 @@ export class ScheduleConsoleController {
     if (Object.values(dto).every((value) => value === undefined)) {
       throw new BadRequestException('수정할 내용을 입력하세요.');
     }
-    const slackUserId = this.requireOwner();
-    const patch: ScheduleFieldsPatch = {};
-    if (dto.title !== undefined) {
-      const title = dto.title.trim();
-      if (!title) {
-        throw new BadRequestException('제목을 입력하세요.');
-      }
-      patch.title = title;
-    }
-    if (dto.dueDate !== undefined) {
-      patch.dueDate = plainDateToUtcDate(
-        parsePlainDateParam(dto.dueDate, 'dueDate'),
-      );
-    }
-    if (dto.startDate !== undefined) {
-      patch.startDate =
-        dto.startDate === null
-          ? null
-          : plainDateToUtcDate(parsePlainDateParam(dto.startDate, 'startDate'));
-    }
-    if (dto.dueTime !== undefined) {
-      patch.dueTime = dto.dueTime;
-    }
-    if (dto.remindAt !== undefined) {
-      patch.remindAt =
-        dto.remindAt === null ? null : parseOffsetDate(dto.remindAt);
-    }
-    const hasFields = Object.keys(patch).length > 0;
-    const preparedPatch =
-      dto.status && hasFields
-        ? await this.updateFields.prepare({ id, slackUserId, patch })
-        : undefined;
-    const item = dto.status
-      ? await this.updateStatus.execute({
-          id,
-          status: dto.status,
-          slackUserId,
-          ...(preparedPatch && {
-            patch: preparedPatch.patch,
-            expected: preparedPatch.expected,
-          }),
-        })
-      : hasFields
-        ? await this.updateFields.execute({ id, slackUserId, patch })
-        : null;
-    if (!item) {
-      throw new BadRequestException('수정할 내용을 입력하세요.');
-    }
+    const item = await this.updateSchedule.execute({
+      id,
+      slackUserId: this.requireOwner(),
+      status: dto.status,
+      patch: {
+        ...(dto.title !== undefined && { title: dto.title }),
+        ...(dto.dueDate !== undefined && {
+          dueDate: plainDateToUtcDate(
+            parsePlainDateParam(dto.dueDate, 'dueDate'),
+          ),
+        }),
+        ...(dto.startDate !== undefined && {
+          startDate:
+            dto.startDate === null
+              ? null
+              : plainDateToUtcDate(
+                  parsePlainDateParam(dto.startDate, 'startDate'),
+                ),
+        }),
+        ...(dto.dueTime !== undefined && { dueTime: dto.dueTime }),
+        ...(dto.remindAt !== undefined && {
+          remindAt: parseOptionalOffsetDate(dto.remindAt),
+        }),
+      },
+    });
     return view === 'tracking' ? item : projectItemForLegacy(item);
   }
 
@@ -297,4 +259,13 @@ const parseOffsetDate = (value: string): Date => {
     throw new BadRequestException('유효한 알림 시각을 입력하세요.');
   }
   return parsed;
+};
+
+const parseOptionalOffsetDate = (
+  value: string | null | undefined,
+): Date | null | undefined => {
+  if (value === null || value === undefined) {
+    return value;
+  }
+  return parseOffsetDate(value);
 };

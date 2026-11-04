@@ -1169,8 +1169,7 @@ export class OctokitGithubClient implements GithubClientPort {
 
     const itemsToFetch = searchResponse.data.items.slice(0, perPage);
 
-    let detailFailureCount = 0;
-    const details = await Promise.all(
+    const results = await Promise.all(
       itemsToFetch.map(async (item) => {
         const itemRepo = repo ?? extractRepo(item.repository_url);
         const [owner, repoName] = parseRepo(itemRepo);
@@ -1183,7 +1182,7 @@ export class OctokitGithubClient implements GithubClientPort {
           // 검색-상세 race: is:open 검색 후 상세 조회 사이에 머지된 PR 은 merged 결과셋과
           // 중복되므로 skip (merged 메서드의 merged_at null-skip 과 대칭).
           if (detail.data.merged_at) {
-            return null;
+            return { summary: null, failed: false };
           }
           const summary: GithubPullRequestSummary = {
             number: item.number,
@@ -1200,18 +1199,18 @@ export class OctokitGithubClient implements GithubClientPort {
             createdAt: detail.data.created_at,
             headRef: detail.data.head?.ref,
           };
-          return summary;
+          return { summary, failed: false };
         } catch (error: unknown) {
-          detailFailureCount += 1;
           const message =
             error instanceof Error ? error.message : String(error);
           this.logger.warn(
             `GitHub open PR ${itemRepo}#${item.number} 상세 조회 실패 (skip): ${message}`,
           );
-          return null;
+          return { summary: null, failed: true };
         }
       }),
     );
+    const detailFailureCount = results.filter(({ failed }) => failed).length;
 
     if (throwOnDetailFailure && detailFailureCount > 0) {
       throw this.wrapRequestFailed(
@@ -1220,9 +1219,11 @@ export class OctokitGithubClient implements GithubClientPort {
       );
     }
 
-    return details
+    const details = results.map(({ summary }) => summary);
+    const sortedDetails = details
       .filter((d): d is NonNullable<typeof d> => d !== null)
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    return sortedDetails;
   }
 
   // 열린 PR 의 repo#number 만 조회한다 — PR 상세(pulls.get)를 치지 않고 검색 결과만 쓴다.

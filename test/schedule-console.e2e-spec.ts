@@ -9,8 +9,7 @@ import { DeleteScheduleUsecase } from '../src/schedule/application/delete-schedu
 import { ListSchedulesUsecase } from '../src/schedule/application/list-schedules.usecase';
 import { RegisterConsoleScheduleUsecase } from '../src/schedule/application/register-console-schedule.usecase';
 import { ScheduleFollowUpUsecase } from '../src/schedule/application/schedule-follow-up.usecase';
-import { UpdateScheduleFieldsUsecase } from '../src/schedule/application/update-schedule-fields.usecase';
-import { UpdateScheduleStatusUsecase } from '../src/schedule/application/update-schedule-status.usecase';
+import { UpdateScheduleUsecase } from '../src/schedule/application/update-schedule.usecase';
 import { ScheduleConsoleController } from '../src/schedule/interface/schedule-console.controller';
 
 describe('ScheduleConsoleController HTTP', () => {
@@ -39,13 +38,9 @@ describe('ScheduleConsoleController HTTP', () => {
           provide: RegisterConsoleScheduleUsecase,
           useValue: { execute: jest.fn() },
         },
-        {
-          provide: UpdateScheduleStatusUsecase,
-          useValue: { execute: jest.fn() },
-        },
         { provide: DeleteScheduleUsecase, useValue: { execute: jest.fn() } },
         {
-          provide: UpdateScheduleFieldsUsecase,
+          provide: UpdateScheduleUsecase,
           useValue: { execute: jest.fn() },
         },
         { provide: ScheduleFollowUpUsecase, useValue: followUp },

@@ -16,16 +16,27 @@ import {
 import { ScheduleReminderAutopilotTask } from './schedule-reminder.autopilot-task';
 
 const claimAt = new Date('2026-11-04T05:00:00Z');
-const item = {
+const buildItem = (
+  overrides: Partial<ScheduleItemRecord> = {},
+): ScheduleItemRecord => ({
   id: 7,
   slackUserId: 'U1',
   title: '결제 API',
+  dueDate: null,
+  dueTime: null,
+  linkUrl: null,
+  memo: null,
   status: ScheduleStatus.OPEN,
+  completedAt: null,
+  isHoliday: false,
   remindAt: new Date('2026-11-04T04:00:00Z'),
   deliveryClaimedAt: claimAt,
   sourceUrl: null,
-} as ScheduleItemRecord;
-const followUp = {
+  ...overrides,
+});
+const buildFollowUp = (
+  overrides: Partial<ScheduleFollowUpRecord> = {},
+): ScheduleFollowUpRecord => ({
   id: 9,
   scheduleItemId: 7,
   recipient: 'PM',
@@ -36,7 +47,10 @@ const followUp = {
   notifiedAt: null,
   sentAt: null,
   deliveryClaimedAt: claimAt,
-} as ScheduleFollowUpRecord;
+  ...overrides,
+});
+const item = buildItem();
+const followUp = buildFollowUp();
 
 describe('ScheduleReminderAutopilotTask', () => {
   const repository = {

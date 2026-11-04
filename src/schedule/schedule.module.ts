@@ -19,6 +19,7 @@ import { MarkScheduleAsHolidayUsecase } from './application/mark-schedule-as-hol
 import { RegisterConsoleScheduleUsecase } from './application/register-console-schedule.usecase';
 import { RegisterScheduleUsecase } from './application/register-schedule.usecase';
 import { ScheduleFollowUpUsecase } from './application/schedule-follow-up.usecase';
+import { UpdateScheduleUsecase } from './application/update-schedule.usecase';
 import { UpdateScheduleFieldsUsecase } from './application/update-schedule-fields.usecase';
 import { UpdateScheduleStatusUsecase } from './application/update-schedule-status.usecase';
 import { SCHEDULE_REPOSITORY_PORT } from './domain/port/schedule.repository.port';
@@ -53,6 +54,7 @@ import { ScheduleConsoleController } from './interface/schedule-console.controll
     MarkScheduleAsHolidayUsecase,
     UpdateScheduleStatusUsecase,
     UpdateScheduleFieldsUsecase,
+    UpdateScheduleUsecase,
     ScheduleFollowUpUsecase,
     DeleteScheduleUsecase,
     DraftFollowUpMessageUsecase,

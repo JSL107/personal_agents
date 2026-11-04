@@ -101,6 +101,32 @@ describe('management intent', () => {
       }),
     ).toBeNull();
   });
+
+  it.each([
+    { remindAt: '0099-01-01T00:00:00Z', accepted: false },
+    { remindAt: '2099-00-01T00:00:00Z', accepted: false },
+    { remindAt: '2099-13-01T00:00:00Z', accepted: false },
+    { remindAt: '2099-01-00T00:00:00Z', accepted: false },
+    { remindAt: '2099-02-29T00:00:00Z', accepted: false },
+    { remindAt: '2099-12-31T23:59:59+13:59', accepted: true },
+    { remindAt: '2099-12-31T24:00:00Z', accepted: false },
+    { remindAt: '2099-12-31T23:60:00Z', accepted: false },
+    { remindAt: '2099-12-31T23:59:60Z', accepted: false },
+    { remindAt: '2099-12-31T23:59:59+14:00', accepted: true },
+    { remindAt: '2099-12-31T23:59:59+14:01', accepted: false },
+    { remindAt: '2099-12-31T23:59:59+15:00', accepted: false },
+    { remindAt: '2099-12-31T23:59:59+13:60', accepted: false },
+  ])(
+    '날짜·시각·오프셋 경계 %s의 허용 여부를 유지한다',
+    ({ remindAt, accepted }) => {
+      const parsed = parseManagementIntent({
+        action: ManagementAction.REMIND,
+        titleQuery: '결제 API',
+        remindAt,
+      });
+      expect(parsed !== null).toBe(accepted);
+    },
+  );
 });
 
 it('초가 생략된 오프셋 ISO 시각도 알림으로 받아들인다', () => {

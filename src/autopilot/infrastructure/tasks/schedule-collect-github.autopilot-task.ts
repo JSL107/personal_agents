@@ -414,14 +414,14 @@ export class ScheduleCollectGithubAutopilotTask implements AutopilotTask {
       (event) => event.kind === ScheduleEventKind.STATUS_CHANGED,
     );
     const payload = latestStatus?.payload;
-    return (
-      typeof payload === 'object' &&
-      payload !== null &&
-      'actor' in payload &&
-      'to' in payload &&
-      payload.actor === ScheduleActor.COLLECTOR &&
-      payload.to === ScheduleStatus.SKIPPED
-    );
+    if (typeof payload !== 'object' || payload === null) {
+      return false;
+    }
+    const actor = 'actor' in payload ? payload.actor : undefined;
+    const to = 'to' in payload ? payload.to : undefined;
+    const skippedByCollector =
+      actor === ScheduleActor.COLLECTOR && to === ScheduleStatus.SKIPPED;
+    return skippedByCollector;
   }
 
   private async noteSourceEdit({

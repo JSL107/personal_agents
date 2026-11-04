@@ -27,9 +27,9 @@ export const filterMyNotionTask = (
   const dates = dateText?.split('→').map((part) => part.trim().slice(0, 10));
   const first = dates?.[0] ? parsePlainDate(dates[0]) : null;
   const second = dates?.[1] ? parsePlainDate(dates[1]) : null;
-  return {
-    title: task.title.slice(0, 200),
-    startDate: second ? first : null,
-    dueDate: second ?? first,
-  };
+  const isRange = second !== null;
+  const startDate = isRange ? first : null;
+  const dueDate = isRange ? second : first;
+  const title = task.title.slice(0, 200);
+  return { title, startDate, dueDate };
 };

@@ -13,7 +13,11 @@ import {
   ScheduleFollowUpRecord,
   UpdateFollowUpInput,
 } from '../domain/schedule.repository.type';
-import { ScheduleItemRecord } from '../domain/schedule.type';
+import { ScheduleEventKind, ScheduleItemRecord } from '../domain/schedule.type';
+
+export interface ScheduleDetailWithPullRequests extends ScheduleDetail {
+  linkedPullRequests: ScheduleEventRecord[];
+}
 
 @Injectable()
 export class ScheduleFollowUpUsecase {
@@ -22,12 +26,17 @@ export class ScheduleFollowUpUsecase {
     private readonly repository: ScheduleRepositoryPort,
   ) {}
 
-  async detail(input: FindScheduleDetailInput): Promise<ScheduleDetail> {
+  async detail(
+    input: FindScheduleDetailInput,
+  ): Promise<ScheduleDetailWithPullRequests> {
     const found = await this.repository.findDetail(input);
     if (!found) {
       throw new NotFoundException('해당 일정을 찾을 수 없습니다.');
     }
-    return found;
+    const linkedPullRequests = found.events.filter(
+      (event) => event.kind === ScheduleEventKind.PR_LINKED,
+    );
+    return { ...found, linkedPullRequests };
   }
 
   async withPendingCounts(

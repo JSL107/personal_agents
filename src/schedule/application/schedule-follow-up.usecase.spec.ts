@@ -1,9 +1,37 @@
 import { NotFoundException } from '@nestjs/common';
 
 import { ScheduleRepositoryPort } from '../domain/port/schedule.repository.port';
+import { ScheduleEventKind } from '../domain/schedule.type';
 import { ScheduleFollowUpUsecase } from './schedule-follow-up.usecase';
 
 describe('ScheduleFollowUpUsecase', () => {
+  it('상세 응답에 PR 연결 이벤트만 별도 목록으로 담는다', async () => {
+    const linked = {
+      id: 1,
+      scheduleItemId: 2,
+      kind: ScheduleEventKind.PR_LINKED,
+      payload: { number: 963 },
+      dedupeKey: null,
+      occurredAt: new Date('2026-11-04T00:00:00.000Z'),
+    };
+    const noted = { ...linked, id: 2, kind: ScheduleEventKind.NOTE };
+    const detail = {
+      item: { id: 2 },
+      followUps: [],
+      events: [linked, noted],
+      pendingFollowUpCount: 0,
+    };
+    const repository = {
+      findDetail: jest.fn().mockResolvedValue(detail),
+    } as unknown as ScheduleRepositoryPort;
+    const result = await new ScheduleFollowUpUsecase(repository).detail({
+      id: 2,
+      slackUserId: 'U1',
+    });
+    expect(result).toEqual({ ...detail, linkedPullRequests: [linked] });
+    expect(result.events).toEqual([linked, noted]);
+  });
+
   it('여러 업무의 미발송 개수를 한 번에 조회한다', async () => {
     const countPendingFollowUps = jest
       .fn()

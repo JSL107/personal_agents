@@ -1,5 +1,6 @@
 import {
   DatedScheduleItemRecord,
+  isUnfinished,
   ScheduleItemRecord,
   ScheduleStatus,
 } from '../../schedule/domain/schedule.type';
@@ -90,29 +91,41 @@ export const formatUpcomingLine = (
   return `\n\n📌 *마감 ${open.length}건*\n${sections.join('\n')}`;
 };
 
-export const formatScheduleLines = (
-  items: ScheduleItemRecord[],
-  today: Date,
-): string[] => {
-  const dueItems = items.filter((item) => isOpenAndDueBy(item, today));
-  return dueItems.map((item) => formatScheduleLine(item, today));
+export const formatScheduleLines = ({
+  items,
+  today,
+}: {
+  items: ScheduleItemRecord[];
+  today: Date;
+}): string[] => {
+  const dueItems = items.filter((item): item is DatedScheduleItemRecord =>
+    isOpenAndDueBy({ item, today }),
+  );
+  return dueItems.map((item) => formatScheduleLine({ item, today }));
 };
 
 // 「📌 마감」 줄과 같은 미완 기준 — 진행 중도 싣고 후보·기한 없음은 뺀다.
-const isOpenAndDueBy = (
-  item: ScheduleItemRecord,
-  today: Date,
-): item is DatedScheduleItemRecord =>
-  (item.status === ScheduleStatus.OPEN ||
-    item.status === ScheduleStatus.IN_PROGRESS) &&
-  !item.isHoliday &&
-  item.dueDate !== null &&
-  item.dueDate <= today;
+const isOpenAndDueBy = ({
+  item,
+  today,
+}: {
+  item: ScheduleItemRecord;
+  today: Date;
+}): boolean => {
+  const unfinished =
+    isUnfinished(item.status) && item.status !== ScheduleStatus.CANDIDATE;
+  const due = item.dueDate !== null && item.dueDate <= today;
+  const openAndDue = unfinished && !item.isHoliday && due;
+  return openAndDue;
+};
 
-const formatScheduleLine = (
-  item: DatedScheduleItemRecord,
-  today: Date,
-): string => {
+const formatScheduleLine = ({
+  item,
+  today,
+}: {
+  item: DatedScheduleItemRecord;
+  today: Date;
+}): string => {
   const daysOverdue = Math.round(
     (today.getTime() - item.dueDate.getTime()) / DAY_MS,
   );

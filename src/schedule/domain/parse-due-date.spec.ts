@@ -1,4 +1,9 @@
-import { parseDueDate, plainDateToUtcDate, todayInKst } from './parse-due-date';
+import {
+  kstStartOfDay,
+  parseDueDate,
+  plainDateToUtcDate,
+  todayInKst,
+} from './parse-due-date';
 
 const TODAY = { year: 2026, month: 9, day: 18 };
 
@@ -94,6 +99,13 @@ describe('plainDateToUtcDate', () => {
   it('@db.Date 컬럼에 날짜가 하루 밀리지 않도록 UTC 자정으로 만든다', () => {
     const converted = plainDateToUtcDate({ year: 2026, month: 9, day: 30 });
     expect(converted.toISOString()).toBe('2026-09-30T00:00:00.000Z');
+  });
+});
+
+describe('kstStartOfDay', () => {
+  it('달력 날짜의 KST 자정을 UTC 시각으로 변환한다', () => {
+    const converted = kstStartOfDay({ year: 2026, month: 11, day: 1 });
+    expect(converted.toISOString()).toBe('2026-10-31T15:00:00.000Z');
   });
 });
 

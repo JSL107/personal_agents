@@ -8,8 +8,7 @@ import { DeleteScheduleUsecase } from '../application/delete-schedule.usecase';
 import { ListSchedulesUsecase } from '../application/list-schedules.usecase';
 import { RegisterConsoleScheduleUsecase } from '../application/register-console-schedule.usecase';
 import { ScheduleFollowUpUsecase } from '../application/schedule-follow-up.usecase';
-import { UpdateScheduleFieldsUsecase } from '../application/update-schedule-fields.usecase';
-import { UpdateScheduleStatusUsecase } from '../application/update-schedule-status.usecase';
+import { UpdateScheduleUsecase } from '../application/update-schedule.usecase';
 import {
   DatedScheduleItemRecord,
   ScheduleStatus,
@@ -38,11 +37,10 @@ describe('ScheduleConsoleController', () => {
       tracking: jest.fn().mockResolvedValue([record]),
       undated: jest.fn().mockResolvedValue([]),
     };
-    const updateStatus: jest.Mocked<
-      Pick<UpdateScheduleStatusUsecase, 'execute'>
-    > = {
-      execute: jest.fn().mockResolvedValue(record),
-    };
+    const updateSchedule: jest.Mocked<Pick<UpdateScheduleUsecase, 'execute'>> =
+      {
+        execute: jest.fn().mockResolvedValue(record),
+      };
     const deleteSchedule: jest.Mocked<Pick<DeleteScheduleUsecase, 'execute'>> =
       {
         execute: jest.fn().mockResolvedValue(undefined),
@@ -55,16 +53,13 @@ describe('ScheduleConsoleController', () => {
     const configService: jest.Mocked<Pick<ConfigService, 'get'>> = {
       get: jest.fn().mockReturnValue(ownerConfigValue),
     };
-    const updateFields = {
-      execute: jest.fn().mockResolvedValue(record),
-      prepare: jest.fn(),
-    };
     const followUp = {
       detail: jest.fn().mockResolvedValue({
         item: record,
         followUps: [],
         events: [],
         pendingFollowUpCount: 0,
+        linkedPullRequests: [],
       }),
       withPendingCounts: jest
         .fn()
@@ -76,20 +71,18 @@ describe('ScheduleConsoleController', () => {
     const controller = new ScheduleConsoleController(
       listSchedules as unknown as ListSchedulesUsecase,
       registerSchedule as unknown as RegisterConsoleScheduleUsecase,
-      updateStatus as unknown as UpdateScheduleStatusUsecase,
       deleteSchedule as unknown as DeleteScheduleUsecase,
       configService as unknown as ConfigService,
-      updateFields as unknown as UpdateScheduleFieldsUsecase,
+      updateSchedule as unknown as UpdateScheduleUsecase,
       followUp as unknown as ScheduleFollowUpUsecase,
     );
     return {
       controller,
       listSchedules,
       registerSchedule,
-      updateStatus,
+      updateSchedule,
       deleteSchedule,
       configService,
-      updateFields,
       followUp,
     };
   };
@@ -186,6 +179,18 @@ describe('ScheduleConsoleController', () => {
       );
     });
 
+    it('빈 알림 문자열은 등록 입력에서 생략한다', async () => {
+      const { controller, registerSchedule } = buildController('U123');
+      await controller.create({
+        title: '분기 보고서 제출',
+        dueDate: '2026-09-30',
+        remindAt: '',
+      });
+      expect(registerSchedule.execute).toHaveBeenCalledWith(
+        expect.objectContaining({ remindAt: undefined }),
+      );
+    });
+
     it('공백만 친 제목은 400 으로 끊는다 — MaxLength 만으로는 통과한다', async () => {
       const { controller, registerSchedule } = buildController('U123');
 
@@ -216,8 +221,8 @@ describe('ScheduleConsoleController', () => {
 
   describe('update', () => {
     it('옛 앱의 PATCH 응답도 진행 중을 OPEN으로 투영한다', async () => {
-      const { controller, updateStatus } = buildController('U123');
-      updateStatus.execute.mockResolvedValueOnce({
+      const { controller, updateSchedule } = buildController('U123');
+      updateSchedule.execute.mockResolvedValueOnce({
         ...record,
         status: ScheduleStatus.IN_PROGRESS,
       });
@@ -227,41 +232,51 @@ describe('ScheduleConsoleController', () => {
       expect(result.status).toBe(ScheduleStatus.OPEN);
     });
 
-    it('상태와 필드를 함께 수정하면 단일 전이에 필드를 전달한다', async () => {
-      const { controller, updateStatus, updateFields } =
-        buildController('U123');
-      const expected = {
-        dueDate: record.dueDate,
-        startDate: null,
-        dueTime: null,
-      };
-      updateFields.prepare = jest
-        .fn()
-        .mockResolvedValue({ patch: { title: '변경' }, expected });
+    it('상태와 필드를 함께 수정하면 입력을 usecase에 전달한다', async () => {
+      const { controller, updateSchedule } = buildController('U123');
       await controller.update(
         1,
         { status: ScheduleStatus.DONE, title: '변경' },
         'tracking',
       );
-      expect(updateFields.execute).not.toHaveBeenCalled();
-      expect(updateStatus.execute).toHaveBeenCalledWith(
-        expect.objectContaining({ patch: { title: '변경' }, expected }),
-      );
+      expect(updateSchedule.execute).toHaveBeenCalledWith({
+        id: 1,
+        slackUserId: 'U123',
+        status: ScheduleStatus.DONE,
+        patch: { title: '변경' },
+      });
     });
 
     it('id·status 와 함께 소유자를 넘긴다 — 변경도 조회와 같은 범위로 묶는다', async () => {
-      const { controller, updateStatus } = buildController('U123');
+      const { controller, updateSchedule } = buildController('U123');
 
       const result = await controller.update(1, {
         status: ScheduleStatus.DONE,
       });
 
-      expect(updateStatus.execute).toHaveBeenCalledWith({
+      expect(updateSchedule.execute).toHaveBeenCalledWith({
         id: 1,
         status: ScheduleStatus.DONE,
         slackUserId: 'U123',
+        patch: {},
       });
       expect(result).toBe(record);
+    });
+
+    it('빈 본문은 usecase 호출 전에 400으로 끊는다', async () => {
+      const { controller, updateSchedule } = buildController('U123');
+      await expect(controller.update(1, {})).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(updateSchedule.execute).not.toHaveBeenCalled();
+    });
+
+    it('수정 입력의 빈 알림 문자열은 400으로 끊는다', async () => {
+      const { controller, updateSchedule } = buildController('U123');
+      await expect(controller.update(1, { remindAt: '' })).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(updateSchedule.execute).not.toHaveBeenCalled();
     });
   });
 

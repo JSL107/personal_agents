@@ -758,10 +758,11 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
           return 0;
         }),
     ]);
+    const undatedInProgress = undated.filter(
+      (item) => item.status === ScheduleStatus.IN_PROGRESS,
+    );
     return formatTrackingLines({
-      undatedInProgress: undated.filter(
-        (item) => item.status === ScheduleStatus.IN_PROGRESS,
-      ),
+      undatedInProgress,
       candidateCount,
     });
   }
@@ -792,7 +793,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
           );
           return `• ${formatTradeDay(item.dueDate.toISOString().slice(0, 10))} ${escapeSlackMrkdwn(item.title)} (D-${days})`;
         });
-      return { today: formatScheduleLines(items, today), upcoming };
+      return { today: formatScheduleLines({ items, today }), upcoming };
     } catch (error: unknown) {
       this.logger.warn(`마감 줄 생성 실패: ${String(error)}`);
       return { today: null, upcoming: null };

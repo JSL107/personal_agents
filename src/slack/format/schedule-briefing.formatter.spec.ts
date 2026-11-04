@@ -185,21 +185,21 @@ describe('업무 추적 브리핑', () => {
 describe('formatScheduleLines', () => {
   it('진행 중도 미완으로 싣고 후보·기한 없음은 뺀다', () => {
     expect(
-      formatScheduleLines(
-        [
+      formatScheduleLines({
+        items: [
           item('진행', '2026-09-18T00:00:00.000Z', ScheduleStatus.IN_PROGRESS),
           item('후보', '2026-09-18T00:00:00.000Z', ScheduleStatus.CANDIDATE),
           { ...item('기한 없음', '2026-09-18T00:00:00.000Z'), dueDate: null },
         ],
-        TODAY,
-      ),
+        today: TODAY,
+      }),
     ).toEqual(['• 진행 (오늘)']);
   });
 
   it('오늘과 지난 미완 일정만 읽기 쉬운 줄로 낸다', () => {
     expect(
-      formatScheduleLines(
-        [
+      formatScheduleLines({
+        items: [
           { ...item('팀 회의', '2026-09-18T00:00:00.000Z'), dueTime: '14:00' },
           item('이력서 제출', '2026-09-18T00:00:00.000Z'),
           item('보고서 제출', '2026-09-15T00:00:00.000Z'),
@@ -207,8 +207,8 @@ describe('formatScheduleLines', () => {
           item('완료', '2026-09-18T00:00:00.000Z', ScheduleStatus.DONE),
           item('공휴일', '2026-09-18T00:00:00.000Z', ScheduleStatus.OPEN, true),
         ],
-        TODAY,
-      ),
+        today: TODAY,
+      }),
     ).toEqual([
       '• 14:00 팀 회의',
       '• 이력서 제출 (오늘)',

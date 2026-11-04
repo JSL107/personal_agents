@@ -42,10 +42,11 @@ export class DraftFollowUpMessageUsecase {
             },
             noContractPreamble: true,
           });
+          const draft = completion.text.trim();
           return {
-            result: completion.text.trim(),
+            result: draft,
             modelUsed: completion.modelUsed,
-            output: { draft: completion.text.trim() },
+            output: { draft },
           };
         },
       });
