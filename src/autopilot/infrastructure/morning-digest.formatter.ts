@@ -165,16 +165,19 @@ export const formatMorningDigest = (input: MorningDigestInput): string => {
   if (input.asset) {
     rest.push(`• 자산: ${input.asset}`);
   }
-  return [
+  const lines = [
     header,
     '',
     '*오늘 할 일*',
     ...todos,
-    ...(incidents.length ? ['', '*어제 장애*', ...incidents] : []),
-    ...(input.schedules?.length ? ['', '*오늘 일정*', ...input.schedules] : []),
-    ...(input.upcomingSchedules?.length
-      ? ['', '*다가오는 마감*', ...input.upcomingSchedules]
-      : []),
-    ...(rest.length ? ['', '*그 밖에*', ...rest] : []),
-  ].join('\n');
+    ...formatSection('어제 장애', incidents),
+    ...formatSection('오늘 일정', input.schedules ?? []),
+    ...formatSection('다가오는 마감', input.upcomingSchedules ?? []),
+    ...formatSection('그 밖에', rest),
+  ];
+  return lines.join('\n');
 };
+
+// 빈 칸은 소제목까지 통째로 그리지 않는다.
+const formatSection = (title: string, lines: string[]): string[] =>
+  lines.length > 0 ? ['', `*${title}*`, ...lines] : [];

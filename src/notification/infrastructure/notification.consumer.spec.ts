@@ -153,18 +153,26 @@ describe('NotificationConsumer', () => {
     expect(postMessage.mock.calls[1][0].text).toContain('대상: PM');
   });
 
-  it('등록되지 않은 cron 이름은 본문에서 숨기고 AI 블록에만 원문을 둔다', async () => {
-    const { consumer, postMessage } = setup();
-    postMessage.mockResolvedValueOnce({ ts: '1.0' });
-    await consumer.process(failure());
-    expect(postMessage.mock.calls[0][0].text).toContain(
-      '*예약 작업* 작업이 멈췄어요',
-    );
-    expect(postMessage.mock.calls[0][0].text).not.toContain('Study Brief Cron');
-    expect(postMessage.mock.calls[1][0].text).toContain(
-      '대상: Study Brief Cron',
-    );
-  });
+  it.each([
+    ['Autopilot task blog-github-publish', '블로그 GitHub 발행'],
+    ['Autopilot task universe-sweep', 'universe-sweep'],
+    ['Study Brief Cron', 'Study Brief Cron'],
+  ])(
+    'cron 이름 %s 는 서로 구분되는 이름표 %s 로 알린다',
+    async (cronName, label) => {
+      const { consumer, postMessage } = setup();
+      postMessage.mockResolvedValueOnce({ ts: '1.0' });
+      await consumer.process({
+        name: NOTIFICATION_JOB.CRON_FAILURE,
+        data: { cronName, ownerSlackUserId: 'U1', errorMessage: 'boom' },
+      } as never);
+      expect(postMessage.mock.calls[0][0].text).toContain(
+        `*${label}* 작업이 멈췄어요`,
+      );
+      expect(postMessage.mock.calls[0][0].text).not.toContain('예약 작업');
+      expect(postMessage.mock.calls[1][0].text).toContain(`대상: ${cronName}`);
+    },
+  );
 
   it('SILENT 는 횟수를 늘리고 REMIND DM 실패는 발송 시각을 보존한다', async () => {
     jest.useFakeTimers().setSystemTime(new Date('2026-10-06T14:59:30.000Z'));

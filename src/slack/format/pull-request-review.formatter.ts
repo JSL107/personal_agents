@@ -7,7 +7,9 @@ import { escapeSlackMrkdwn } from './mrkdwn.util';
 const shortIssue = (value: string): string => {
   const firstLine = value.split('\n')[0].trim();
   const firstSentence = firstLine.split(/(?<=[.!?。])\s/)[0];
-  return redactPii(firstSentence).replace(/```/g, "'''").slice(0, 80);
+  const redacted = redactPii(firstSentence);
+  const fenceSafe = redacted.replace(/```/g, "'''");
+  return fenceSafe.slice(0, 80);
 };
 
 // /review-pr 결과 — PullRequestReview 를 한국어 Slack 마크다운으로 렌더.
