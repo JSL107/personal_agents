@@ -1,5 +1,7 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 
+import { computeAutoRemindAt } from '../domain/auto-remind-at';
+import { plainDateToUtcDate } from '../domain/parse-due-date';
 import {
   SCHEDULE_NOTIFIER_PORT,
   ScheduleNotifierPort,
@@ -29,7 +31,23 @@ export class RegisterConsoleScheduleUsecase {
   ) {}
 
   async execute(input: RegisterScheduleInput): Promise<ScheduleItemRecord> {
-    const record = await this.registerSchedule.execute(input);
+    const dueDate = plainDateToUtcDate(input.dueDate);
+    if (input.startDate && plainDateToUtcDate(input.startDate) > dueDate) {
+      throw new BadRequestException('시작일은 마감일보다 늦을 수 없습니다.');
+    }
+    const reminder =
+      input.remindAt === undefined && input.dueTime
+        ? computeAutoRemindAt({
+            dueDate,
+            dueTime: input.dueTime,
+            now: new Date(),
+          })
+        : input.remindAt;
+    const shouldSetReminder =
+      reminder !== undefined && (reminder !== null || input.remindAt === null);
+    const record = await this.registerSchedule.execute(
+      shouldSetReminder ? { ...input, remindAt: reminder } : input,
+    );
     // 발송 실패는 포트 계약상 삼켜진다(그 주석 참조). `await` 하는 것은 순서를 결정적으로
     // 두기 위해서다 — 버려 두면 응답이 먼저 나가고 알림은 다음 회차에 뜨거나 안 뜨는데,
     // 어느 쪽인지 밖에서 알 수 없다.

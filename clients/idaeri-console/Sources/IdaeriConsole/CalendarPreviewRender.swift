@@ -54,7 +54,12 @@ private let calendarPreviewSchedules: [ScheduleItem] = [
     ),
     ScheduleItem(
         id: 5, title: "국민연금 신고", dueDate: "2026-09-30T00:00:00.000Z",
-        linkUrl: nil, memo: nil, status: .open
+        linkUrl: nil, memo: nil, status: .inProgress,
+        startDate: "2026-09-22T00:00:00.000Z"
+    ),
+    ScheduleItem(
+        id: 7, title: "회의 후 공유", dueDate: "2026-09-30T00:00:00.000Z",
+        linkUrl: nil, memo: nil, status: .candidate
     ),
 ]
 

@@ -73,6 +73,7 @@ export class NotionApiClient implements NotionClientPort {
     databaseIds,
     perDatabaseLimit = DEFAULT_PER_DB_LIMIT,
     lastEditedSinceIsoDateTime,
+    requireAllDatabases = false,
   }: ListActiveTasksOptions = {}): Promise<NotionTask[]> {
     if (!this.client) {
       throw new NotionException({
@@ -110,14 +111,21 @@ export class NotionApiClient implements NotionClientPort {
     }
 
     // 대상 DB 가 전부 실패하면 호출부에는 "할 일 0건" 으로만 보여 "정말 비었다" 와 구분되지 않는다.
-    // 부분 실패는 살아 있는 DB 결과가 있으니 기존대로 skip + warn 이고, 전량 실패만 예외로 올린다.
+    // 일반 호출자의 부분 실패는 기존대로 skip + warn. 수집기는 커서가 앞서가지 않도록
+    // requireAllDatabases 로 일부 실패도 예외로 받는다.
     // 소비처 3곳은 이미 실패 배선을 갖고 있다 — PM / PO Shadow 는 try/catch 로 degrade 하고
     // (PO Shadow 는 degradedSources 표시까지), 잠재의식은 engine 이 baseline 전진을 건너뛴다.
     // 예외가 없던 동안에는 권한이 끊겨도 "항목이 전부 사라졌다" 로 읽혀 baseline 이 그대로 전진했다.
-    if (failedDbCount === targetDbs.length) {
+    if (
+      failedDbCount === targetDbs.length ||
+      (requireAllDatabases && failedDbCount > 0)
+    ) {
       throw new NotionException({
         code: NotionErrorCode.REQUEST_FAILED,
-        message: `Notion task DB ${targetDbs.length}건 조회가 모두 실패해 "빈 DB" 와 구분할 수 없다. 통합 연결(Connections) 공유 여부와 DB ID 를 확인할 것.`,
+        message:
+          failedDbCount === targetDbs.length
+            ? `Notion task DB ${targetDbs.length}건 조회가 모두 실패해 "빈 DB" 와 구분할 수 없다. 통합 연결(Connections) 공유 여부와 DB ID 를 확인할 것.`
+            : `Notion task DB ${targetDbs.length}건 중 ${failedDbCount}건 조회 실패. 통합 연결(Connections) 공유 여부와 DB ID 를 확인할 것.`,
         status: DomainStatus.BAD_GATEWAY,
       });
     }

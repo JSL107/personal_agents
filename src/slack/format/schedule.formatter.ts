@@ -8,7 +8,7 @@ interface ScheduleRegisteredOptions {
   memo?: string;
 }
 
-const toKoreanDate = (date: Date): string => {
+export const toKoreanDate = (date: Date): string => {
   return `${date.getUTCMonth() + 1}월 ${date.getUTCDate()}일`;
 };
 
@@ -28,7 +28,8 @@ export const formatScheduleRegistered = (
   const memo = options?.memo
     ? `\n메모: ${escapeSlackMrkdwn(options.memo.slice(0, 200))}${options.memo.length > 200 ? '…' : ''}`
     : '';
-  return `*등록했습니다*: ${title} · ${toKoreanDate(record.dueDate)}${dateNotice}${memo}`;
+  const dueLabel = record.dueDate ? toKoreanDate(record.dueDate) : '기한 없음';
+  return `*등록했습니다*: ${title} · ${dueLabel}${dateNotice}${memo}`;
 };
 
 export const formatNeedsDate = (title: string): string => {

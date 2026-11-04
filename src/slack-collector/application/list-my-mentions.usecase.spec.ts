@@ -16,6 +16,7 @@ describe('ListMyMentionsUsecase', () => {
     ];
     const collector: jest.Mocked<SlackCollectorPort> = {
       listMyMentions: jest.fn().mockResolvedValue(fixture),
+      getPermalink: jest.fn(),
     };
     const usecase = new ListMyMentionsUsecase(collector);
 

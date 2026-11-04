@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 
 import {
   AgentRunOutcome,
@@ -13,6 +13,7 @@ import { AgentType } from '../../model-router/domain/model-router.type';
 import { ConversationTurn } from '../../router/domain/conversation-memory.type';
 import { plainDateToUtcDate } from '../domain/parse-due-date';
 import {
+  DatedScheduleItemRecord,
   PlainDate,
   ScheduleItemRecord,
   ScheduleStatus,
@@ -29,8 +30,9 @@ interface AnswerScheduleQuestionCommand {
 }
 
 interface FormatScheduleFactsInput {
-  schedules: ScheduleItemRecord[];
+  schedules: DatedScheduleItemRecord[];
   todayUtc: Date;
+  undated: ScheduleItemRecord[] | null;
 }
 
 // 사실로 넘기는 일정 범위 — 지난 2주(놓친 마감 확인용)와 앞으로 1년. 개인 일정이라 1년치도 많지 않고,
@@ -47,6 +49,7 @@ const toIsoDate = (date: Date): string => date.toISOString().slice(0, 10);
 // (plan: docs/superpowers/plans/2026-10-07-nl-answer-fidelity.md §4 3단계)
 @Injectable()
 export class AnswerScheduleQuestionUsecase {
+  private readonly logger = new Logger(AnswerScheduleQuestionUsecase.name);
   constructor(
     private readonly listSchedules: ListSchedulesUsecase,
     private readonly agentRunService: AgentRunService,
@@ -76,8 +79,27 @@ export class AnswerScheduleQuestionUsecase {
           to,
         });
         // 공휴일 동기화가 넣은 행은 사용자가 등록한 일정이 아니다.
-        const schedules = records.filter((record) => !record.isHoliday);
+        const schedules = records.filter(
+          (record) =>
+            !record.isHoliday && record.status !== ScheduleStatus.CANDIDATE,
+        );
+        const undated = await this.listSchedules
+          .undated(slackUserId)
+          .catch((error: unknown) => {
+            this.logger.warn(`기한 없는 업무 조회 실패: ${String(error)}`);
+            return null;
+          });
+        const unfinishedUndated = undated?.filter(
+          (item) =>
+            item.status === ScheduleStatus.OPEN ||
+            item.status === ScheduleStatus.IN_PROGRESS,
+        );
         const facts = {
+          undated:
+            unfinishedUndated?.map((item) => ({
+              title: item.title,
+              status: item.status,
+            })) ?? null,
           today: toIsoDate(todayUtc),
           range: { from: toIsoDate(from), to: toIsoDate(to) },
           schedules: schedules.map((record) => ({
@@ -98,7 +120,11 @@ export class AnswerScheduleQuestionUsecase {
           text,
           priorTurns,
           facts,
-          fallbackText: formatScheduleFacts({ schedules, todayUtc }),
+          fallbackText: formatScheduleFacts({
+            schedules,
+            todayUtc,
+            undated: unfinishedUndated ?? null,
+          }),
         });
         return {
           result: answer,
@@ -125,17 +151,23 @@ export class AnswerScheduleQuestionUsecase {
 const formatScheduleFacts = ({
   schedules,
   todayUtc,
+  undated,
 }: FormatScheduleFactsInput): string => {
   const upcoming = schedules.filter(
     (record) =>
-      record.status === ScheduleStatus.OPEN &&
+      (record.status === ScheduleStatus.OPEN ||
+        record.status === ScheduleStatus.IN_PROGRESS) &&
       record.dueDate.getTime() >= todayUtc.getTime(),
   );
-  if (upcoming.length === 0) {
+  if (upcoming.length === 0 && undated?.length === 0) {
     return '오늘 이후 남은 일정이 없어요.';
   }
   const lines = upcoming.map(
     (record) => `• ${toIsoDate(record.dueDate)} ${record.title}`,
   );
-  return ['*📅 오늘 이후 남은 일정*', ...lines].join('\n');
+  const undatedLines =
+    undated === null
+      ? ['기한 없는 업무를 조회하지 못했어요.']
+      : undated.map((item) => `• 기한 없음 ${item.title}`);
+  return ['*📅 오늘 이후 남은 일정*', ...lines, ...undatedLines].join('\n');
 };

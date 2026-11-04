@@ -68,6 +68,33 @@ func runCalendarDayListTests(_ t: TestRunner) {
 
     // 치운 항목만 있는 날도 목록은 비지 않는다 — 여기가 비면 되돌릴 입구가 사라진다.
     do {
+        let items = [
+            sample(id: 1, title: "완료", day: "2026-09-30", status: .done),
+            sample(id: 2, title: "진행 중", day: "2026-09-30", status: .inProgress),
+            sample(id: 3, title: "후보", day: "2026-09-30", status: .candidate),
+            ScheduleItem(
+                id: 4, title: "시작일만 해당", dueDate: "2026-10-02T00:00:00.000Z",
+                linkUrl: nil, memo: nil, status: .open,
+                startDate: "2026-09-30T00:00:00.000Z"
+            ),
+            ScheduleItem(
+                id: 5, title: "같은 날 시작·마감", dueDate: "2026-09-30T00:00:00.000Z",
+                linkUrl: nil, memo: nil, status: .open,
+                startDate: "2026-09-30T00:00:00.000Z"
+            ),
+            ScheduleItem(
+                id: 6, title: "기한 없는 시작", dueDate: nil,
+                linkUrl: nil, memo: nil, status: .open,
+                startDate: "2026-09-30T00:00:00.000Z"
+            ),
+        ]
+        let list = daySchedules(items: items, dayKey: "2026-09-30")
+        t.expectEqual(list.map { $0.id }, [2, 3, 4, 5, 1], "진행 중·후보·시작일 항목이 미완으로 위")
+        t.expectEqual(list.count, 5, "시작일과 마감일이 같아도 한 번만 표시")
+        t.expectEqual(list.contains { $0.id == 6 }, false, "기한 없는 항목은 날짜 칸에서 제외")
+    }
+
+    do {
         let items = [sample(id: 1, title: "치움", day: "2026-09-05", status: .done)]
         t.expectEqual(daySchedules(items: items, dayKey: "2026-09-05").count, 1, "치운 날도 목록엔 남아 되돌릴 수 있다")
     }

@@ -44,6 +44,8 @@ export interface MorningDigestInput {
   planFailure: string | null;
   schedules: string[] | null;
   upcomingSchedules: string[] | null;
+  // 기한 없는 진행 중·새 후보 줄(캘린더 업무 트래킹). 없으면 빈 배열.
+  tracking: string[];
   asset: string | null;
   study: { topic: string; url: string | null } | null;
   // 어제 23시 포트폴리오 발행 보고를 한 줄로 접은 것. 보고가 없던 날은 null.
@@ -138,7 +140,7 @@ export const formatMorningDigest = (input: MorningDigestInput): string => {
       (label) => `• ${escapeSlackMrkdwn(label)}, 지금은 복구됨`,
     ),
   ];
-  const rest: string[] = [];
+  const rest: string[] = input.tracking.map((line) => `• ${line}`);
   if (input.approvalLabels.length) {
     rest.push(
       `• 승인 대기 ${input.approvalLabels.length}장 (${escapeSlackMrkdwn(countByLabel(input.approvalLabels))})`,

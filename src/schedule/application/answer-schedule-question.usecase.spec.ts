@@ -33,7 +33,10 @@ describe('AnswerScheduleQuestionUsecase', () => {
       .fn()
       .mockResolvedValue({ text: '답', usedFallback: false, modelUsed: 'm' });
     const usecase = new AnswerScheduleQuestionUsecase(
-      { execute: listExecute } as unknown as ListSchedulesUsecase,
+      {
+        execute: listExecute,
+        undated: jest.fn().mockResolvedValue([]),
+      } as unknown as ListSchedulesUsecase,
       { execute } as unknown as AgentRunService,
       { answer } as unknown as FactAnswerUsecase,
     );
@@ -93,7 +96,10 @@ describe('AnswerScheduleQuestionUsecase', () => {
       .fn()
       .mockResolvedValue({ text: '답', usedFallback: false, modelUsed: 'm' });
     const usecase = new AnswerScheduleQuestionUsecase(
-      { execute: listExecute } as unknown as ListSchedulesUsecase,
+      {
+        execute: listExecute,
+        undated: jest.fn().mockResolvedValue([]),
+      } as unknown as ListSchedulesUsecase,
       { execute } as unknown as AgentRunService,
       { answer } as unknown as FactAnswerUsecase,
     );
@@ -131,7 +137,10 @@ describe('AnswerScheduleQuestionUsecase', () => {
       .fn()
       .mockResolvedValue({ text: '답', usedFallback: false, modelUsed: 'm' });
     const usecase = new AnswerScheduleQuestionUsecase(
-      { execute: listExecute } as unknown as ListSchedulesUsecase,
+      {
+        execute: listExecute,
+        undated: jest.fn().mockResolvedValue([]),
+      } as unknown as ListSchedulesUsecase,
       { execute } as unknown as AgentRunService,
       { answer } as unknown as FactAnswerUsecase,
     );
@@ -149,3 +158,80 @@ describe('AnswerScheduleQuestionUsecase', () => {
     );
   });
 });
+
+it('기한 없는 OPEN과 IN_PROGRESS를 사실로 보내고 후보는 제외한다', async () => {
+  const undated = jest.fn().mockResolvedValue([
+    { ...item('열린 업무', '2026-10-07'), dueDate: null },
+    {
+      ...item('진행 업무', '2026-10-07'),
+      dueDate: null,
+      status: ScheduleStatus.IN_PROGRESS,
+    },
+    {
+      ...item('후보 업무', '2026-10-07'),
+      dueDate: null,
+      status: ScheduleStatus.CANDIDATE,
+    },
+  ]);
+  const answer = jest
+    .fn()
+    .mockResolvedValue({ text: '답', usedFallback: false, modelUsed: 'm' });
+  const execute = jest.fn(async ({ run }) => ({
+    result: (await run({})).result,
+  }));
+  const usecase = new AnswerScheduleQuestionUsecase(
+    { execute: jest.fn().mockResolvedValue([]), undated } as never,
+    { execute } as never,
+    { answer } as never,
+  );
+  await usecase.execute({
+    slackUserId: 'U1',
+    today: { year: 2026, month: 10, day: 7 },
+    text: '할 일',
+    priorTurns: [],
+    parsedIntent: {},
+  });
+  expect(answer.mock.calls[0][0].facts.undated).toEqual([
+    { title: '열린 업무', status: ScheduleStatus.OPEN },
+    { title: '진행 업무', status: ScheduleStatus.IN_PROGRESS },
+  ]);
+});
+
+it.each([true, false])(
+  '기한 없는 업무 조회의 성공(%s)과 실패를 폴백에 구분한다',
+  async (success) => {
+    const undated = success
+      ? jest.fn().mockResolvedValue([
+          {
+            ...item('기한 없는 진행', '2026-10-07'),
+            dueDate: null,
+            status: ScheduleStatus.IN_PROGRESS,
+          },
+        ])
+      : jest.fn().mockRejectedValue(new Error('DB 오류'));
+    const answer = jest.fn().mockResolvedValue({
+      text: '답',
+      usedFallback: true,
+      modelUsed: 'fallback',
+    });
+    const usecase = new AnswerScheduleQuestionUsecase(
+      { execute: jest.fn().mockResolvedValue([]), undated } as never,
+      {
+        execute: jest.fn(async ({ run }) => ({
+          result: (await run({})).result,
+        })),
+      } as never,
+      { answer } as never,
+    );
+    await usecase.execute({
+      slackUserId: 'U1',
+      today: { year: 2026, month: 10, day: 7 },
+      text: '할 일',
+      priorTurns: [],
+      parsedIntent: {},
+    });
+    expect(answer.mock.calls[0][0].fallbackText).toContain(
+      success ? '기한 없는 진행' : '기한 없는 업무를 조회하지 못했어요',
+    );
+  },
+);

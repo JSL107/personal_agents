@@ -81,6 +81,10 @@ private func normalizedCalendar(_ calendar: Calendar) -> Calendar {
 public enum ScheduleFieldLimit {
     public static let title = 200
     public static let memo = 2_000
+    // src/schedule/interface/dto/create-follow-up.dto.ts 및 create-note.dto.ts 의 @MaxLength와 짝.
+    public static let recipient = 100
+    public static let topic = 200
+    public static let note = 500
 }
 
 /// 상한을 넘은 글자 수(넘지 않으면 0).

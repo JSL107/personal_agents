@@ -59,6 +59,10 @@ import {
   DEFAULT_RUN_RETRO_TIMEZONE,
   DEFAULT_RUN_SWEEPER_CRON,
   DEFAULT_RUN_SWEEPER_TIMEZONE,
+  DEFAULT_SCHEDULE_COLLECT_CRON,
+  DEFAULT_SCHEDULE_COLLECT_TIMEZONE,
+  DEFAULT_SCHEDULE_REMINDER_CRON,
+  DEFAULT_SCHEDULE_REMINDER_TIMEZONE,
   DEFAULT_SCREENING_OUTCOME_SCORING_CRON,
   DEFAULT_SCREENING_OUTCOME_SCORING_TIMEZONE,
   DEFAULT_SCREENING_SCORECARD_CRON,
@@ -464,6 +468,50 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       timezone: DEFAULT_HOLIDAY_SYNC_TIMEZONE,
     },
     riskTier: 'T0_AUTO',
+  },
+  {
+    id: 'schedule-reminder',
+    taskId: 'schedule-reminder',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_SCHEDULE_REMINDER_CRON,
+      timezone: DEFAULT_SCHEDULE_REMINDER_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
+    line: 'owner-dm',
+  },
+  {
+    id: 'schedule-collect-notion',
+    taskId: 'schedule-collect-notion',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_SCHEDULE_COLLECT_CRON,
+      timezone: DEFAULT_SCHEDULE_COLLECT_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
+    digestGroup: 'schedule-collect',
+  },
+  {
+    id: 'schedule-collect-slack',
+    taskId: 'schedule-collect-slack',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_SCHEDULE_COLLECT_CRON,
+      timezone: DEFAULT_SCHEDULE_COLLECT_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
+    digestGroup: 'schedule-collect',
+  },
+  {
+    id: 'schedule-collect-github',
+    taskId: 'schedule-collect-github',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_SCHEDULE_COLLECT_CRON,
+      timezone: DEFAULT_SCHEDULE_COLLECT_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
+    digestGroup: 'schedule-collect',
   },
   // 아이디어 채널 분류 — 평일 오전 #이대리_아이디어 새 글을 판정해 원글 스레드에 답한다.
   // T1_PREVIEW: 일정 등록은 스레드의 승인 카드 ✅ 뒤에서만 일어난다. IDEA_CHANNEL_ID 미설정 시 skip.

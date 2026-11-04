@@ -1,4 +1,10 @@
-import { IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsISO8601,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+} from 'class-validator';
 
 // 콘솔 캘린더의 등록 폼이 보내는 몸통.
 //
@@ -20,6 +26,21 @@ export class CreateScheduleDto {
 
   @IsString()
   dueDate!: string;
+
+  @IsOptional()
+  @IsString()
+  startDate?: string;
+
+  @IsOptional()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/)
+  dueTime?: string;
+
+  @IsOptional()
+  @IsISO8601({ strict: true })
+  @Matches(
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/,
+  )
+  remindAt?: string | null;
 
   @IsOptional()
   @IsString()

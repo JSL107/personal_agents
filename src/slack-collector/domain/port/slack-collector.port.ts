@@ -12,8 +12,10 @@ export interface ListMyMentionsOptions {
   // 채널/메시지 fetch 안전망. 봇이 합류한 채널이 너무 많을 때 폭주 방지.
   maxChannels?: number;
   maxMessagesPerChannel?: number;
+  failOnChannelError?: boolean;
 }
 
 export interface SlackCollectorPort {
   listMyMentions(options: ListMyMentionsOptions): Promise<SlackMention[]>;
+  getPermalink(channelId: string, ts: string): Promise<string | undefined>;
 }

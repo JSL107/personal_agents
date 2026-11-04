@@ -324,6 +324,23 @@ func runModelsTests(_ t: TestRunner) {
     // 필드가 실린 응답은 그대로 읽는다 — 달력의 빨간 날과 브리핑 제외가 이 값에 달려 있다.
     do {
         let json = """
+        [{"id":8,"title":"새 상태","dueDate":null,"linkUrl":null,"memo":null,"status":"WHATEVER","source":"GITHUB_PR"},
+         {"id":9,"title":"기한 없음","linkUrl":null,"memo":null,"status":"IN_PROGRESS","startDate":"2026-11-04T00:00:00.000Z"}]
+        """.data(using: .utf8)!
+        let items = try JSONDecoder().decode([ScheduleItem].self, from: json)
+        t.expectEqual(items.count, 2, "새 값이 섞여도 일정 배열 전체 디코딩")
+        t.expectEqual(items[0].status, .open, "모르는 상태는 OPEN")
+        t.expectNil(items[0].dueDay, "dueDate null 은 날짜 칸에서 제외")
+        t.expectNil(items[1].dueDay, "dueDate 키 없음도 허용")
+        t.expectEqual(items[1].status, .inProgress, "진행 중 상태")
+        t.expectEqual(items[1].startDay, "2026-11-04", "시작일 날짜 키")
+        t.expectEqual(items[0].source, "GITHUB_PR", "새 출처도 그대로 수용")
+    } catch {
+        t.fail("추적 일정 배열 디코딩 실패: \(error)")
+    }
+
+    do {
+        let json = """
         {"id":6,"title":"추석","dueDate":"2026-09-25T00:00:00.000Z","linkUrl":null,"memo":null,"status":"OPEN","isHoliday":true}
         """.data(using: .utf8)!
         let item = try JSONDecoder().decode(ScheduleItem.self, from: json)
@@ -333,6 +350,21 @@ func runModelsTests(_ t: TestRunner) {
     }
 
     // 백엔드는 화면이 안 쓰는 필드(slackUserId·dueTime·completedAt)도 함께 내려준다.
+    do {
+        let json = """
+        {"item":{"id":10,"title":"배포","dueDate":null,"status":"CANDIDATE"},
+         "followUps":[{"id":2,"scheduleItemId":10,"recipient":"PM","topic":"결과 공유","trigger":"ON_DONE","triggerAt":null,"draft":"배포했습니다","notifiedAt":null,"sentAt":null,"deliveryClaimedAt":null}],
+         "events":[{"id":3,"scheduleItemId":10,"kind":"PR_LINKED","payload":{"url":"https://github.com/a/b/pull/1","number":1},"dedupeKey":null,"occurredAt":"2026-11-04T00:00:00.000Z"}],
+         "linkedPullRequests":[],"pendingFollowUpCount":1}
+        """.data(using: .utf8)!
+        let detail = try JSONDecoder().decode(ScheduleDetail.self, from: json)
+        t.expectEqual(detail.item.status, .candidate, "상세 업무 상태")
+        t.expectEqual(detail.followUps[0].draft, "배포했습니다", "연락 초안")
+        t.expectEqual(detail.events[0].payload.number, 1, "PR 번호 payload")
+    } catch {
+        t.fail("업무 상세 디코딩 실패: \(error)")
+    }
+
     // 그것들이 섞여 있어도 디코딩이 깨지지 않아야 한다.
     do {
         let json = """
