@@ -203,15 +203,15 @@ describe('PaperTradingAutopilotTask', () => {
     );
   });
 
-  it('계좌별 평가를 원장 감사와 원장 전용 요약(청산 없는 날)에 함께 남긴다', async () => {
+  it('계좌별 평가를 원장 감사와 채널 요약(청산 없는 날)에 함께 남긴다', async () => {
     const { task, agentRun, exitBand } = createFixture();
     exitBand.execute.mockResolvedValue({ accounts: [], createdCount: 0 });
 
     const result = await task.run(context);
 
-    expect(result.skip).toBe(true);
-    expect(result.emptyReason).toContain('*[장기투자]*');
-    expect(result.emptyReason).toContain('*[단기매매]*');
+    expect(result.skip).toBe(false);
+    expect(result.summaryText).toContain('*[장기투자]*');
+    expect(result.summaryText).toContain('*[단기매매]*');
     expect(agentRun.execute).toHaveBeenCalledWith(
       expect.objectContaining({
         agentType: AgentType.PAPER_TRADE,
@@ -277,17 +277,28 @@ describe('PaperTradingAutopilotTask', () => {
     });
   });
 
-  it('청산 예약이 없으면 채널에 내지 않고 계좌별 평가를 원장(emptyReason)에만 남긴다', async () => {
-    const { task, exitBand, reportImage } = createFixture();
+  // 청산 있는 날만 보내던 시기(#778)에는 추이 그림이 생성조차 안 돼 성적을 추적할 수 없었다.
+  it('청산 예약이 없는 날도 그림과 요약을 채널로 낸다', async () => {
+    const png = Buffer.from('fake-png');
+    const { task, exitBand } = createFixture({
+      reportImage: {
+        png,
+        filename: 'paper-return-2026-08-11.png',
+        title: '모의투자 수익률 — 2026-08-11',
+      },
+    });
     exitBand.execute.mockResolvedValue({ accounts: [], createdCount: 0 });
 
     const result = await task.run(context);
 
-    expect(result.skip).toBe(true);
-    expect(result.summaryText).toBeUndefined();
-    expect(result.emptyReason).toContain('*[장기투자]*');
-    // 보내지 않을 그림은 만들지 않는다.
-    expect(reportImage.execute).not.toHaveBeenCalled();
+    expect(result.skip).toBe(false);
+    expect(result.emptyReason).toBeUndefined();
+    expect(result.summaryText).toContain('*[장기투자]*');
+    expect(result.detailImage).toEqual({
+      png,
+      filename: 'paper-return-2026-08-11.png',
+      title: '모의투자 수익률: 2026-08-11',
+    });
   });
 
   it('재시도 회차처럼 생성은 0이어도 이미 예약된 청산 매도가 있으면 채널로 알린다', async () => {
