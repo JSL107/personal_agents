@@ -35,7 +35,7 @@
 | 최취향 | Preference Learning | `PREFERENCE_LEARNING` | — (webhook/자동) | CHATGPT | `src/preference-profile/application/preference-inference.adapter.ts` | 주간 선호 학습 — 신호 배치 → 선호 프로필 diff 추론 (슬래시 없음, 내부 전용) |
 | 정판단 | Review Reply Judge | `REVIEW_REPLY_JUDGE` | — (webhook/자동) | CHATGPT | `src/agent/review-reply-judge/application/judge-review-reply.usecase.ts` | PR 리뷰 답변 수용 여부 판정 |
 | 길잡이 | Router | `ROUTER` | — (webhook/자동) | CHATGPT | `src/router/application/idaeri-router.usecase.ts` | 요청을 담당자에게 넘기는 설비 — 넘기지 못한 요청(분류 실패·미등록 담당자)만 기록한다 |
-| 오마감 | Schedule | `SCHEDULE` | — (webhook/자동) | CHATGPT | `src/schedule/application/register-schedule.usecase.ts` | 마감·신청·예약 등록 — 자연어 날짜 표현을 해석해 등록 (자연어 멘션 전용, LLM 미사용) |
+| 오마감 | Schedule | `SCHEDULE` | — (webhook/자동) | CHATGPT | `src/schedule/application/register-schedule.usecase.ts` | 마감·신청·예약 등록과 업무 상태·알림·연락할 일·메모 관리 (자연어 멘션, 대화 추출에 LLM 사용) |
 | 제안나 | Subconscious Gate | `SUBCONSCIOUS_GATE` | — (webhook/자동) | CHATGPT | `src/subconscious/infrastructure/llm-subconscious-gate.ts` | 내부 proactive 게이트 — 상태 변화를 promote/drop 분류 (슬래시 없음, 내부 전용) |
 | 오휴가 | Vacation | `VACATION` | `/휴가` | CHATGPT | `src/agent/vacation/application/calculate-balance.usecase.ts` | 휴가 잔여 계산 (자연어 파라미터 추출에만 LLM 사용) |
 | 영상봄 | Video Watch | `VIDEO_WATCH` | — (webhook/자동) | CHATGPT | `src/agent/video-watch/application/watch-video.usecase.ts` | 유튜브·인스타그램 릴스 영상 자막과 화면 프레임 분석 (자연어 멘션) |

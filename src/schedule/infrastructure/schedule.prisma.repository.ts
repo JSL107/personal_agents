@@ -13,12 +13,15 @@ import {
   AddFollowUpInput,
   AddNoteInput,
   CollectedScheduleInput,
+  CountActiveCandidatesInput,
   CountPendingFollowUpsInput,
   DueClaimInput,
   FindScheduleDetailInput,
+  FindUnfinishedInput,
   MarkFollowUpNotifiedInput,
   MarkRemindedInput,
   PersistScheduleFieldsInput,
+  SaveFollowUpDraftInput,
   ScheduleActor,
   ScheduleDetail,
   ScheduleEventRecord,
@@ -207,6 +210,25 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
     return rows.map(toRecord);
   }
 
+  async findUnfinished(
+    input: FindUnfinishedInput,
+  ): Promise<ScheduleItemRecord[]> {
+    const rows = await this.prisma.scheduleItem.findMany({
+      where: {
+        slackUserId: input.slackUserId,
+        status: {
+          in: [
+            ScheduleStatus.OPEN,
+            ScheduleStatus.IN_PROGRESS,
+            ScheduleStatus.CANDIDATE,
+          ],
+        },
+      },
+      orderBy: [{ id: 'asc' }],
+    });
+    return rows.map(toRecord);
+  }
+
   async findById(id: number): Promise<ScheduleItemRecord | null> {
     const found = await this.prisma.scheduleItem.findUnique({ where: { id } });
     if (!found) {
@@ -359,6 +381,20 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
     return current ? toRecord(current) : null;
   }
 
+  async countActiveCandidates({
+    slackUserId,
+    now,
+  }: CountActiveCandidatesInput): Promise<number> {
+    return this.prisma.scheduleItem.count({
+      where: {
+        slackUserId,
+        status: ScheduleStatus.CANDIDATE,
+        source: ScheduleSource.SLACK_MENTION,
+        candidateExpiresAt: { gt: now },
+      },
+    });
+  }
+
   async claimDueReminders(input: DueClaimInput): Promise<ScheduleItemRecord[]> {
     const stale = new Date(input.now.getTime() - 600_000);
     const rows = await this.prisma.scheduleItem.findMany({
@@ -488,6 +524,19 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
     });
   }
 
+  async saveFollowUpDraft(input: SaveFollowUpDraftInput): Promise<boolean> {
+    const updated = await this.prisma.scheduleFollowUp.updateMany({
+      where: {
+        id: input.id,
+        deliveryClaimedAt: input.claimAt,
+        notifiedAt: null,
+        draft: null,
+      },
+      data: { draft: input.draft },
+    });
+    return updated.count === 1;
+  }
+
   async markFollowUpNotified(
     input: MarkFollowUpNotifiedInput,
   ): Promise<boolean> {
@@ -600,6 +649,7 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
       (input.topic !== undefined && input.topic !== found.topic)
     ) {
       data.draft = null;
+      data.deliveryClaimedAt = null;
     }
     if (
       input.triggerAt !== undefined &&

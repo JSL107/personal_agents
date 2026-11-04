@@ -16,6 +16,7 @@ const base = (
   planFailure: null,
   schedules: [],
   upcomingSchedules: [],
+  tracking: [],
   asset: null,
   study: null,
   portfolio: null,
@@ -131,5 +132,17 @@ describe('formatMorningDigest', () => {
     );
     expect(text).toContain('*다가오는 마감*\n• 11/7(토) 이력서 제출 (D-3)');
     expect(text).toContain('*그 밖에*\n• 자산: 140만원 · 매입가 대비 +25%');
+  });
+
+  it('업무 추적 줄은 그 밖에 칸 맨 앞에 붙는다', () => {
+    const text = formatMorningDigest(
+      base({
+        tracking: ['진행 중 1건: 결제 API', '새 후보 2건'],
+        asset: '1,000원',
+      }),
+    );
+    expect(text).toContain(
+      '*그 밖에*\n• 진행 중 1건: 결제 API\n• 새 후보 2건\n• 자산: 1,000원',
+    );
   });
 });

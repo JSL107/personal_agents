@@ -4,6 +4,7 @@ import {
   SCHEDULE_REPOSITORY_PORT,
   ScheduleRepositoryPort,
 } from '../domain/port/schedule.repository.port';
+import { CountActiveCandidatesInput } from '../domain/schedule.repository.type';
 import {
   DatedScheduleItemRecord,
   ScheduleItemRecord,
@@ -31,6 +32,12 @@ export class ListSchedulesUsecase {
     input: Required<ListSchedulesInput>,
   ): Promise<ScheduleItemRecord[]> {
     return await this.repository.findTrackingMonth(input);
+  }
+
+  async countActiveCandidates(
+    input: CountActiveCandidatesInput,
+  ): Promise<number> {
+    return this.repository.countActiveCandidates(input);
   }
 
   async undated(slackUserId: string): Promise<ScheduleItemRecord[]> {

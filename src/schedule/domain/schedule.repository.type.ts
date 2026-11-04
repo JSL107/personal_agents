@@ -84,6 +84,12 @@ export interface MarkFollowUpNotifiedInput {
   now: Date;
 }
 
+export interface SaveFollowUpDraftInput {
+  id: number;
+  claimAt: Date;
+  draft: string;
+}
+
 export interface ScheduleFollowUpRecord {
   id: number;
   scheduleItemId: number;
@@ -152,4 +158,13 @@ export interface FindScheduleDetailInput {
 
 export interface CountPendingFollowUpsInput {
   scheduleItemIds: number[];
+}
+
+export interface CountActiveCandidatesInput {
+  slackUserId: string;
+  now: Date;
+}
+
+export interface FindUnfinishedInput {
+  slackUserId: string;
 }

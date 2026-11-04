@@ -3,12 +3,15 @@ import {
   AddFollowUpInput,
   AddNoteInput,
   CollectedScheduleInput,
+  CountActiveCandidatesInput,
   CountPendingFollowUpsInput,
   DueClaimInput,
   FindScheduleDetailInput,
+  FindUnfinishedInput,
   MarkFollowUpNotifiedInput,
   MarkRemindedInput,
   PersistScheduleFieldsInput,
+  SaveFollowUpDraftInput,
   ScheduleDetail,
   ScheduleEventRecord,
   ScheduleFollowUpRecord,
@@ -59,6 +62,7 @@ export interface ScheduleRepositoryPort {
     input: Required<FindByDateRangeInput>,
   ): Promise<ScheduleItemRecord[]>;
   findUndated(slackUserId: string): Promise<ScheduleItemRecord[]>;
+  findUnfinished(input: FindUnfinishedInput): Promise<ScheduleItemRecord[]>;
   findById(id: number): Promise<ScheduleItemRecord | null>;
   updateStatus(input: UpdateStatusInput): Promise<ScheduleItemRecord>;
   transition(input: TransitionInput): Promise<ScheduleItemRecord | null>;
@@ -68,10 +72,12 @@ export interface ScheduleRepositoryPort {
   updateFields(
     input: PersistScheduleFieldsInput,
   ): Promise<ScheduleItemRecord | null>;
+  countActiveCandidates(input: CountActiveCandidatesInput): Promise<number>;
   claimDueReminders(input: DueClaimInput): Promise<ScheduleItemRecord[]>;
   claimDueFollowUps(input: DueClaimInput): Promise<ScheduleFollowUpRecord[]>;
   markReminded(input: MarkRemindedInput): Promise<boolean>;
   markFollowUpNotified(input: MarkFollowUpNotifiedInput): Promise<boolean>;
+  saveFollowUpDraft(input: SaveFollowUpDraftInput): Promise<boolean>;
   expireCandidates(now: Date): Promise<number>;
   addFollowUp(input: AddFollowUpInput): Promise<ScheduleFollowUpRecord | null>;
   updateFollowUp(

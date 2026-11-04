@@ -93,6 +93,7 @@ import { PreferenceLearningAutopilotTask } from './infrastructure/tasks/preferen
 import { PreviewSweeperAutopilotTask } from './infrastructure/tasks/preview-sweeper.autopilot-task';
 import { RunRetroAutopilotTask } from './infrastructure/tasks/run-retro.autopilot-task';
 import { RunSweeperAutopilotTask } from './infrastructure/tasks/run-sweeper.autopilot-task';
+import { ScheduleReminderAutopilotTask } from './infrastructure/tasks/schedule-reminder.autopilot-task';
 import { ScreeningOutcomeScoringAutopilotTask } from './infrastructure/tasks/screening-outcome-scoring.autopilot-task';
 import { ScreeningScorecardAutopilotTask } from './infrastructure/tasks/screening-scorecard.autopilot-task';
 import { SecretariatAutopilotTask } from './infrastructure/tasks/secretariat.autopilot-task';
@@ -196,6 +197,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     ScreeningOutcomeScoringAutopilotTask,
     ScreeningScorecardAutopilotTask,
     PrReviewSweepAutopilotTask,
+    ScheduleReminderAutopilotTask,
     PaperTradingAutopilotTask,
     UniverseSweepAutopilotTask,
     PaperRecommendAutopilotTask,
@@ -303,6 +305,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         screeningOutcomeScoring: ScreeningOutcomeScoringAutopilotTask,
         screeningScorecard: ScreeningScorecardAutopilotTask,
         prReviewSweep: PrReviewSweepAutopilotTask,
+        scheduleReminder: ScheduleReminderAutopilotTask,
         paperTrading: PaperTradingAutopilotTask,
         universeSweep: UniverseSweepAutopilotTask,
         paperRecommend: PaperRecommendAutopilotTask,
@@ -347,6 +350,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         screeningOutcomeScoring,
         screeningScorecard,
         prReviewSweep,
+        scheduleReminder,
         paperTrading,
         universeSweep,
         paperRecommend,
@@ -392,6 +396,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         ScreeningOutcomeScoringAutopilotTask,
         ScreeningScorecardAutopilotTask,
         PrReviewSweepAutopilotTask,
+        ScheduleReminderAutopilotTask,
         PaperTradingAutopilotTask,
         UniverseSweepAutopilotTask,
         PaperRecommendAutopilotTask,

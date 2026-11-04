@@ -92,6 +92,19 @@ describe('SchedulePrismaRepository 업무 트래킹', () => {
     deliveryClaimedAt: null,
   };
 
+  it('소유자의 미완 업무를 기한 제한 없이 읽는다', async () => {
+    const findMany = jest.fn().mockResolvedValue([row]);
+    const repository = new SchedulePrismaRepository({
+      scheduleItem: { findMany },
+    } as unknown as PrismaService);
+    const found = await repository.findUnfinished({ slackUserId: 'U1' });
+    expect(findMany.mock.calls[0][0].where).toEqual({
+      slackUserId: 'U1',
+      status: { in: ['OPEN', 'IN_PROGRESS', 'CANDIDATE'] },
+    });
+    expect(found).toHaveLength(1);
+  });
+
   it('월 추적 조회는 시작일과 마감일 중 하나가 범위에 들면 돌려준다', async () => {
     const findMany = jest.fn().mockResolvedValue([row]);
     const repository = new SchedulePrismaRepository({
@@ -230,6 +243,60 @@ describe('SchedulePrismaRepository 업무 트래킹', () => {
 });
 
 describe('알림 선점 시점 재검증', () => {
+  it('초안은 같은 선점이며 아직 미발송·초안 없는 연락만 저장한다', async () => {
+    const claimAt = new Date('2026-11-04T05:00:00Z');
+    const updateMany = jest.fn().mockResolvedValue({ count: 1 });
+    const repository = new SchedulePrismaRepository({
+      scheduleFollowUp: { updateMany },
+    } as unknown as PrismaService);
+    expect(
+      await repository.saveFollowUpDraft({ id: 8, claimAt, draft: '초안' }),
+    ).toBe(true);
+    expect(updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 8,
+        deliveryClaimedAt: claimAt,
+        notifiedAt: null,
+        draft: null,
+      },
+      data: { draft: '초안' },
+    });
+  });
+
+  it('연락 대상이 바뀌면 기존 초안과 선점을 함께 지운다', async () => {
+    const found = {
+      id: 8,
+      scheduleItemId: 7,
+      recipient: 'PM',
+      topic: '배포',
+      trigger: 'AT_TIME',
+      triggerAt: new Date('2026-11-04T05:00:00Z'),
+      draft: '이전 초안',
+      deliveryClaimedAt: new Date('2026-11-04T05:01:00Z'),
+      notifiedAt: null,
+      sentAt: null,
+    };
+    const update = jest.fn().mockResolvedValue({
+      ...found,
+      recipient: 'CEO',
+      draft: null,
+      deliveryClaimedAt: null,
+    });
+    const repository = new SchedulePrismaRepository({
+      scheduleFollowUp: {
+        findFirst: jest.fn().mockResolvedValue(found),
+        update,
+      },
+    } as unknown as PrismaService);
+    await repository.updateFollowUp({
+      id: 8,
+      slackUserId: 'U1',
+      recipient: 'CEO',
+    });
+    expect(update.mock.calls[0][0].data).toEqual(
+      expect.objectContaining({ draft: null, deliveryClaimedAt: null }),
+    );
+  });
   it('조회 후 알림 시각이 바뀐 행을 선점하지 않도록 시각 조건을 다시 건다', async () => {
     const now = new Date('2026-11-05T05:00:00Z');
     const findMany = jest.fn().mockResolvedValue([{ id: 1 }]);
@@ -785,5 +852,24 @@ describe('알림 시각 미변경', () => {
     expect(updateMany.mock.calls[0][0].data).not.toHaveProperty(
       'deliveryClaimedAt',
     );
+  });
+});
+
+it('만료 전 Slack 후보를 마감일 유무와 관계없이 센다', async () => {
+  const count = jest.fn().mockResolvedValue(2);
+  const repository = new SchedulePrismaRepository({
+    scheduleItem: { count },
+  } as never);
+  const now = new Date('2026-11-03T00:00:00Z');
+  expect(
+    await repository.countActiveCandidates({ slackUserId: 'U1', now }),
+  ).toBe(2);
+  expect(count).toHaveBeenCalledWith({
+    where: {
+      slackUserId: 'U1',
+      status: 'CANDIDATE',
+      source: 'SLACK_MENTION',
+      candidateExpiresAt: { gt: now },
+    },
   });
 });

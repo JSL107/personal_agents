@@ -10,8 +10,10 @@ import { ModelRouterModule } from '../model-router/model-router.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AnswerScheduleQuestionUsecase } from './application/answer-schedule-question.usecase';
 import { DeleteScheduleUsecase } from './application/delete-schedule.usecase';
+import { DraftFollowUpMessageUsecase } from './application/draft-follow-up-message.usecase';
 import { ExtractScheduleFromConversationUsecase } from './application/extract-schedule-from-conversation.usecase';
 import { ListSchedulesUsecase } from './application/list-schedules.usecase';
+import { ManageScheduleFromConversationUsecase } from './application/manage-schedule-from-conversation.usecase';
 import { MarkScheduleAsHolidayUsecase } from './application/mark-schedule-as-holiday.usecase';
 import { RegisterConsoleScheduleUsecase } from './application/register-console-schedule.usecase';
 import { RegisterScheduleUsecase } from './application/register-schedule.usecase';
@@ -39,11 +41,13 @@ import { ScheduleConsoleController } from './interface/schedule-console.controll
     RegisterConsoleScheduleUsecase,
     ListSchedulesUsecase,
     AnswerScheduleQuestionUsecase,
+    ManageScheduleFromConversationUsecase,
     MarkScheduleAsHolidayUsecase,
     UpdateScheduleStatusUsecase,
     UpdateScheduleFieldsUsecase,
     ScheduleFollowUpUsecase,
     DeleteScheduleUsecase,
+    DraftFollowUpMessageUsecase,
     ScheduleDispatcher,
     { provide: SCHEDULE_NOTIFIER_PORT, useClass: ScheduleSlackNotifier },
     ConsoleReadGuard,
@@ -73,6 +77,8 @@ import { ScheduleConsoleController } from './interface/schedule-console.controll
     UpdateScheduleFieldsUsecase,
     ScheduleFollowUpUsecase,
     DeleteScheduleUsecase,
+    DraftFollowUpMessageUsecase,
+    SCHEDULE_REPOSITORY_PORT,
     ScheduleDispatcher,
   ],
 })

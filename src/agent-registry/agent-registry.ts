@@ -354,7 +354,7 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
     slashCommands: [],
     usecasePath: 'src/schedule/application/register-schedule.usecase.ts',
     description:
-      '마감·신청·예약 등록 — 자연어 날짜 표현을 해석해 등록 (자연어 멘션 전용, LLM 미사용)',
+      '마감·신청·예약 등록과 업무 상태·알림·연락할 일·메모 관리 (자연어 멘션, 대화 추출에 LLM 사용)',
   },
   {
     agentType: AgentType.IDEA_TRIAGE,

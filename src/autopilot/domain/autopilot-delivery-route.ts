@@ -49,6 +49,7 @@ export const AUTOPILOT_DELIVERY_ROUTE: Readonly<
   'stock-monitor-us': 'slack',
   'memory-vacuum': 'console',
   'holiday-sync': 'console',
+  'schedule-reminder': 'slack',
   'knowledge-lint': 'console',
   'docs-sync-audit': 'console',
   'preference-learning': 'slack',

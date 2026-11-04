@@ -53,7 +53,10 @@ import {
 } from '../../../slack/domain/port/slack-delivery.repository.port';
 import { escapeSlackMrkdwn } from '../../../slack/format/mrkdwn.util';
 import { buildRunVerdictDigestPages } from '../../../slack/format/run-verdict-message.builder';
-import { formatScheduleLines } from '../../../slack/format/schedule-briefing.formatter';
+import {
+  formatScheduleLines,
+  formatTrackingLines,
+} from '../../../slack/format/schedule-briefing.formatter';
 import {
   findLastFireBefore,
   resolveTaskCronSchedule,
@@ -310,6 +313,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
       resolvedIncidents,
       verdictCards,
       schedules,
+      tracking,
       asset,
     ] = await Promise.all([
       this.loadApprovalLabels(ownerSlackUserId, now),
@@ -328,6 +332,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
       this.loadResolvedIncidents(firedAtKst, now),
       this.loadWeeklyVerdictCards(ownerSlackUserId, firedAtKst),
       this.loadScheduleLines(ownerSlackUserId, firedAtKst),
+      this.loadTrackingLines(ownerSlackUserId),
       this.loadPortfolioValue(),
     ]);
 
@@ -359,6 +364,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
       planFailure: plan.failure,
       schedules: schedules.today,
       upcomingSchedules: schedules.upcoming,
+      tracking,
       asset,
       study,
       portfolio: portfolio?.kind === 'report' ? portfolio.line : null,
@@ -729,6 +735,37 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
     }
   }
 
+  // 기한 없는 진행 중 업무와 만료 전 후보 수. 조회가 하나 실패해도 그 줄만 빠지고 브리핑은 나간다.
+  // 기한 없는 진행 중 업무와 만료 전 후보 수. 조회가 하나 실패해도 그 줄만 빠지고 브리핑은 나간다.
+  // `Promise.resolve().then` 으로 감싸 동기 예외(메서드 부재 등)도 그 줄의 실패로 가둔다.
+  private async loadTrackingLines(ownerSlackUserId: string): Promise<string[]> {
+    const [undated, candidateCount] = await Promise.all([
+      Promise.resolve()
+        .then(() => this.listSchedules.undated(ownerSlackUserId))
+        .catch((error: unknown) => {
+          this.logger.warn(`기한 없는 업무 조회 실패: ${String(error)}`);
+          return [];
+        }),
+      Promise.resolve()
+        .then(() =>
+          this.listSchedules.countActiveCandidates({
+            slackUserId: ownerSlackUserId,
+            now: new Date(),
+          }),
+        )
+        .catch((error: unknown) => {
+          this.logger.warn(`후보 수 조회 실패: ${String(error)}`);
+          return 0;
+        }),
+    ]);
+    return formatTrackingLines({
+      undatedInProgress: undated.filter(
+        (item) => item.status === ScheduleStatus.IN_PROGRESS,
+      ),
+      candidateCount,
+    });
+  }
+
   private async loadScheduleLines(
     ownerSlackUserId: string,
     firedAtKst: string,
@@ -743,7 +780,8 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
       const upcoming = items
         .filter(
           (item) =>
-            item.status === ScheduleStatus.OPEN &&
+            (item.status === ScheduleStatus.OPEN ||
+              item.status === ScheduleStatus.IN_PROGRESS) &&
             !item.isHoliday &&
             item.dueDate > today &&
             item.dueDate <= windowEnd,

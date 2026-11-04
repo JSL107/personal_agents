@@ -2,7 +2,7 @@
 
 # 환경변수 카탈로그
 
-SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 182개.
+SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 184개.
 설명은 각 변수 주석의 첫 문장 발췌 — 상세는 app.config.ts 주석 참조. `.env.example` 동기는 `pnpm check:env`.
 
 ## 인프라 (앱 부팅 필수)
@@ -66,7 +66,9 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `AUTOPILOT_PORTFOLIO_WARMUP_TIMEZONE` | ❌ | — |
 | `AUTOPILOT_DAILY_EVAL_SCHEDULE` | ❌ | — |
 | `AUTOPILOT_DAILY_EVAL_TIMEZONE` | ❌ | — |
-| `AUTOPILOT_SECRETARIAT_SCHEDULE` | ❌ | morning 그룹(비서실 + 아침 브리핑) 스케줄. 스케줄러가 그룹 **첫 항목 id** 로 키를 만들므로 이 그룹의 대표 키는 secretariat 이다. |
+| `AUTOPILOT_SCHEDULE_REMINDER_SCHEDULE` | ❌ | morning 그룹(비서실 + 아침 브리핑) 스케줄. 스케줄러가 그룹 **첫 항목 id** 로 키를 만들므로 이 그룹의 대표 키는 secretariat 이다. |
+| `AUTOPILOT_SCHEDULE_REMINDER_TIMEZONE` | ❌ | — |
+| `AUTOPILOT_SECRETARIAT_SCHEDULE` | ❌ | — |
 | `AUTOPILOT_SECRETARIAT_TIMEZONE` | ❌ | — |
 | `AUTOPILOT_MORNING_BRIEFING_SCHEDULE` | ❌ | deprecated — morning 그룹 첫 항목이 secretariat 으로 바뀌면서 더 이상 읽히지 않는다. |
 | `AUTOPILOT_MORNING_BRIEFING_TIMEZONE` | ❌ | — |
