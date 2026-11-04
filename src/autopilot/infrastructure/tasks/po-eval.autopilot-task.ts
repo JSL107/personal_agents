@@ -113,7 +113,7 @@ export class PoEvalAutopilotTask implements AutopilotTask {
       // 내용은 버리지 않고 스레드 맨 앞으로 옮긴다. 수동 /po-eval 은 이 task 를 거치지 않아 종전대로다.
       const { wins, blockers } = humanized.qualitative;
       const summaryText = `🌅 *하루 평가 ${formatTradeDay(firedAtKst)}* · 잘된 것 ${wins.length} · 막힌 것 ${blockers.length}, 내용은 스레드`;
-      const detailText = formatted.summary;
+      const detailText = `${formatted.summary}\n\n${formatted.detail}`;
       // 메인엔 건수뿐이라 상세가 유일한 사본이다 — 스레드 실패 시 채널로 대피시킨다.
       return { skip: false, summaryText, detailText, detailIsOnlyCopy: true };
     } catch (error) {

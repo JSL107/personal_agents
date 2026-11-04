@@ -93,7 +93,7 @@ export class PhaseCommandHandler implements SlackHandler {
           this.humanizeService,
         );
         const formatted = formatEvaluationOutput(humanized);
-        const text = formatted.summary;
+        const text = `${formatted.summary}\n\n${formatted.detail}`;
         const payload: PoEvalCareerlogPayload = {
           notionPageId: this.careerLogNotionPageId,
           period: outcome.result.careerLog.period,
@@ -111,7 +111,7 @@ export class PhaseCommandHandler implements SlackHandler {
           replace_original: true,
           text,
           blocks: buildPreviewBlocks({
-            previewText: `${text}\n\n_📝 위 careerLog 를 Notion 페이지에 적재하시려면 ✅ 적용 (30분 안)._`,
+            previewText: `${text}\n\n_📝 위 이력서 기록을 Notion 페이지에 저장하려면 ✅ 적용 (30분 안)._`,
             previewId: preview.id,
           }) as never,
         });

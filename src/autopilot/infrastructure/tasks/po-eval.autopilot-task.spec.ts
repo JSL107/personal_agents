@@ -83,7 +83,7 @@ describe('PoEvalAutopilotTask', () => {
     expect(out.detailText).not.toContain('합성 source');
     expect(out.detailText).not.toContain('workReviewer=#10');
     expect(out.detailText).not.toContain('careerLog');
-    expect(out.detailText).not.toContain('오늘 핵심 활동._H');
+    expect(out.detailText).toContain('오늘 핵심 활동._H');
     expect(out.detailText).not.toContain('run #50');
     expect(execute).toHaveBeenCalledWith(
       expect.objectContaining({ slackUserId: 'U1', range: 'TODAY' }),
@@ -122,7 +122,7 @@ describe('PoEvalAutopilotTask', () => {
   });
 
   // 저녁 다이제스트에서 업무 회고 「정량 근거」와 careerLog 「정량 성과」가 같은 숫자를 두 번 싣던 것.
-  describe('careerLog 정량 성과 — 같은 메시지에 이미 나간 숫자는 다시 싣지 않는다', () => {
+  describe('careerLog 정량 성과를 상세에 보여 준다', () => {
     const NOW = new Date('2026-06-17T10:05:00Z');
     const worklogRun = (overrides: Record<string, unknown> = {}) => ({
       id: 10,
@@ -209,7 +209,7 @@ describe('PoEvalAutopilotTask', () => {
         makeAgentRunService([latestWorklogRun]),
       ).run(CTX);
 
-    it('업무 회고에 나간 숫자만 빼고, 업무 회고에 없던 정량 항목과 정성 성과는 남긴다', async () => {
+    it('업무 회고에 같은 숫자가 있어도 저장할 정량·정성 성과를 보여 준다', async () => {
       const out = await runTask(
         worklogRun({
           endedAt: new Date(),
@@ -217,11 +217,11 @@ describe('PoEvalAutopilotTask', () => {
         }),
       );
 
-      expect(out.detailText).not.toContain('*정량 성과*');
-      expect(out.detailText).not.toContain('파일 255개 수정');
-      expect(out.detailText).not.toContain('PR 28건 머지');
+      expect(out.detailText).toContain('*정량 성과*');
+      expect(out.detailText).toContain('파일 255개 수정');
+      expect(out.detailText).toContain('PR 28건 머지');
       expect(out.detailText).not.toContain('run #');
-      expect(out.detailText).not.toContain('*정성 성과*');
+      expect(out.detailText).toContain('*정성 성과*');
     });
 
     it('30분 안의 수동 /worklog 가 최신이면 정량 성과를 하나도 빼지 않는다', async () => {
@@ -233,8 +233,8 @@ describe('PoEvalAutopilotTask', () => {
         }),
       );
 
-      expect(out.detailText).not.toContain('PR 28건 머지');
-      expect(out.detailText).not.toContain('8,552줄');
+      expect(out.detailText).toContain('PR 28건 머지');
+      expect(out.detailText).toContain('8,552줄');
       expect(out.detailText).not.toContain('생략합니다');
     });
   });

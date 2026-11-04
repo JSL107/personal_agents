@@ -5,7 +5,9 @@ import { Prisma } from '@prisma/client';
 import { GenerateDailyPlanUsecase } from '../../../agent/pm/application/generate-daily-plan.usecase';
 import { PmAgentException } from '../../../agent/pm/domain/pm-agent.exception';
 import { PmAgentErrorCode } from '../../../agent/pm/domain/pm-agent-error-code.enum';
+import { summarizePortfolioValue } from '../../../agent/stock/domain/portfolio-exposure';
 import { USD_KRW_PAIR } from '../../../agent/stock/domain/stock-monitor.type';
+import { formatPortfolioValue } from '../../../agent/stock/infrastructure/stock-monitor.formatter';
 import { StockMonitorPrismaRepository } from '../../../agent/stock/infrastructure/stock-monitor.prisma.repository';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import {
@@ -42,11 +44,13 @@ import {
   PreviewAction,
 } from '../../../preview-gate/domain/preview-action.type';
 import { ListSchedulesUsecase } from '../../../schedule/application/list-schedules.usecase';
+import { ScheduleStatus } from '../../../schedule/domain/schedule.type';
 import {
   SLACK_DELIVERY_REPOSITORY,
   SlackDeliveryRepositoryPort,
   SlackDeliveryStatRow,
 } from '../../../slack/domain/port/slack-delivery.repository.port';
+import { escapeSlackMrkdwn } from '../../../slack/format/mrkdwn.util';
 import { buildRunVerdictDigestPages } from '../../../slack/format/run-verdict-message.builder';
 import { formatScheduleLines } from '../../../slack/format/schedule-briefing.formatter';
 import {
@@ -76,6 +80,7 @@ import {
 import { isRunResultDelivered } from '../../domain/run-delivery';
 import {
   formatMorningDigest,
+  formatMorningTodo,
   MorningDigestInput,
   MorningIncident,
   MorningTodo,
@@ -90,10 +95,12 @@ import {
 // 환율을 저장하는 것은 저녁 감시라 아침에는 늘 어제 값이 최신이다. 연휴를 감안해도 이만큼
 // 묵었으면 환산이 자산 규모를 왜곡하므로, 그때는 자산 줄 자체를 내지 않는다.
 const MAXIMUM_FX_RATE_AGE_DAYS = 7;
+const MAXIMUM_HOLDING_AGE_DAYS = 7;
 // 잔고 동기화가 멈춘 채 며칠 지나면 수량 자체가 옛것이다. 평가액은 계산되지만 그것은
 // 지금 자산이 아니다 — 환율에 상한을 둔 것과 같은 이유로 그때는 줄을 내지 않는다.
 
 // 마감 줄이 내다보는 앞쪽 폭. 이보다 먼 마감은 오늘 아침에 할 일이 아니다.
+const UPCOMING_WINDOW_DAYS = 7;
 const DAY_MS = 24 * 60 * 60 * 1000;
 // 해결 줄 조회 하한을 직전 아침 원장 시각보다 이만큼 당긴다. 원장은 조회 뒤(발송 후)에 쓰이므로 그 사이
 // 해결을 놓치지 않게 겹친다. 아침 한 회차(계획 생성 포함)가 이보다 길면 늘린다.
@@ -319,6 +326,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
       resolvedIncidents,
       verdictCards,
       schedules,
+      asset,
     ] = await Promise.all([
       this.loadApprovalLabels(ownerSlackUserId, now),
       this.loadIncidents(now),
@@ -336,6 +344,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
       this.loadResolvedIncidents(firedAtKst, now),
       this.loadWeeklyVerdictCards(ownerSlackUserId, firedAtKst),
       this.loadScheduleLines(ownerSlackUserId, firedAtKst),
+      this.loadPortfolioValue(),
     ]);
 
     // 그날 회차에서 감지한 문제도 장애로 센다 — 첫 줄만 보고 열지 정하는 메시지라, 아래 줄에만
@@ -361,7 +370,9 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
       invest,
       todos: plan.todos,
       planFailure: plan.failure,
-      schedules,
+      schedules: schedules.today,
+      upcomingSchedules: schedules.upcoming,
+      asset,
       study,
       portfolio: portfolio?.kind === 'report' ? portfolio.line : null,
     };
@@ -370,8 +381,15 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
     return {
       skip: false,
       summaryText: formatMorningDigest(digestInput),
-      detailText: posting.thread ?? '',
-      // PM 계획 전문은 이제 스레드에만 있다. 스레드가 실패하면 채널에 대신 붙인다(중복 > 유실).
+      detailText: [
+        ...(plan.todos && plan.todos.length > 5
+          ? [
+              `*오늘 할 일 전체*\n${plan.todos.map(formatMorningTodo).join('\n')}`,
+            ]
+          : []),
+        ...(posting.thread ? [posting.thread] : []),
+      ].join('\n\n'),
+      // 할 일 전체와 공고 목록은 스레드에 싣는다. 실패하면 채널에 대신 붙인다(중복 > 유실).
       detailIsOnlyCopy: true,
       // 공고 링크가 스레드에, 계획 링크가 본문에 실린다 — 미리보기가 펼쳐지면 한 줄씩 둔 목적이 묻힌다.
       unfurlLinks: false,
@@ -727,16 +745,59 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
   private async loadScheduleLines(
     ownerSlackUserId: string,
     firedAtKst: string,
-  ): Promise<string[] | null> {
+  ): Promise<{ today: string[] | null; upcoming: string[] | null }> {
     const today = new Date(`${firedAtKst}T00:00:00.000Z`);
+    const windowEnd = new Date(today.getTime() + UPCOMING_WINDOW_DAYS * DAY_MS);
     try {
       const items = await this.listSchedules.execute({
         slackUserId: ownerSlackUserId,
-        to: today,
+        to: windowEnd,
       });
-      return formatScheduleLines(items, today);
+      const upcoming = items
+        .filter(
+          (item) =>
+            item.status === ScheduleStatus.OPEN &&
+            !item.isHoliday &&
+            item.dueDate > today &&
+            item.dueDate <= windowEnd,
+        )
+        .map((item) => {
+          const days = Math.round(
+            (item.dueDate.getTime() - today.getTime()) / DAY_MS,
+          );
+          return `• ${formatTradeDay(item.dueDate.toISOString().slice(0, 10))} ${escapeSlackMrkdwn(item.title)} (D-${days})`;
+        });
+      return { today: formatScheduleLines(items, today), upcoming };
     } catch (error: unknown) {
       this.logger.warn(`마감 줄 생성 실패: ${String(error)}`);
+      return { today: null, upcoming: null };
+    }
+  }
+
+  private async loadPortfolioValue(): Promise<string | null> {
+    try {
+      const positions = await this.stockRepository.findPortfolioPositions();
+      if (positions.length === 0) {
+        return null;
+      }
+      const holdingAgeDays = Math.min(
+        ...positions.map((position) => ageInDaysOf(position.holdingDate)),
+      );
+      if (holdingAgeDays > MAXIMUM_HOLDING_AGE_DAYS) {
+        this.logger.warn(
+          `잔고가 ${Math.floor(holdingAgeDays)}일 전 값이라 자산 요약을 생략합니다.`,
+        );
+        return null;
+      }
+      const rate = await this.resolveUsdKrwRate();
+      const value = summarizePortfolioValue(positions, rate);
+      const formatted = formatPortfolioValue(value);
+      if (!formatted) {
+        return null;
+      }
+      return formatted.split('\n')[0].replace(/^💰 \*내 자산\*: /u, '');
+    } catch (error: unknown) {
+      this.logger.warn(`자산 요약 생략: ${String(error)}`);
       return null;
     }
   }

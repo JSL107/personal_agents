@@ -29,6 +29,41 @@ const finding = (body: string): ReviewFinding => ({
 });
 
 describe('formatPullRequestReview', () => {
+  it.each([
+    ['low', 'approve', '낮음', '승인'],
+    ['medium', 'comment', '보통', '검토 필요'],
+    ['high', 'request_changes', '높음', '수정 요청'],
+    ['unknown', 'undetermined', '확인 불가', '검토 필요'],
+  ] as const)(
+    '위험도 %s와 권고 %s를 한국어로 표시한다',
+    (riskLevel, approvalRecommendation, risk, recommendation) => {
+      const text = formatPullRequestReview({
+        prRef: 'o/r#1',
+        review: { ...baseReview(), riskLevel, approvalRecommendation },
+      });
+      expect(text).toContain(`위험도: ${risk}`);
+      expect(text).toContain(`권고: ${recommendation}`);
+      expect(text).not.toMatch(/(?:꼭 고칠 것|고려할 것) 0개/);
+    },
+  );
+  it('위험도와 권고 및 지적 종류별 개수를 표시한다', () => {
+    const text = formatPullRequestReview({
+      prRef: 'o/r#1',
+      review: {
+        ...baseReview(),
+        riskLevel: 'high',
+        approvalRecommendation: 'request_changes',
+        mustFix: ['API_TOKEN 확인'],
+        niceToHave: ['개선'],
+        missingTests: ['테스트'],
+      },
+    });
+    expect(text).toContain('위험도: 높음');
+    expect(text).toContain('권고: 수정 요청');
+    expect(text).toContain('꼭 고칠 것 1개');
+    expect(text).toContain('고려할 것 2개');
+    expect(text).toContain('API_TOKEN 확인');
+  });
   it('판단 보류면 보류 라벨과 이유를 내고 "지적 사항 없음" 을 붙이지 않는다 — 못 본 것이지 안전한 게 아니다', () => {
     const text = formatPullRequestReview({
       prRef: 'owner/repo#1',
@@ -92,7 +127,7 @@ describe('formatPullRequestReview', () => {
 
     expect(text).not.toContain(NO_FINDING_NOTICE);
     expect(text).toContain('변경 요약');
-    expect(text).toContain('고칠 것 1개');
+    expect(text).toContain('• 널 검사 누락');
   });
 
   it('본문 요약과 지적에서 비밀 값과 코드 펜스를 제거한다', () => {
@@ -127,7 +162,7 @@ describe('formatPullRequestReview', () => {
     });
 
     expect(text).toContain('*로그인 오류 수정 리뷰*');
-    expect(text).toContain('고칠 것 2개');
+    expect(text).toContain('꼭 고칠 것 1개');
     expect(text).toContain('• 로그인 시 토큰 검증이 빠졌습니다.');
     expect(text).not.toContain('원문 상세');
     expect(text).not.toContain('PR_REVIEW_INLINE_REPOS');

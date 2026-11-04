@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { AlertIncident } from '@prisma/client';
 import { Job } from 'bullmq';
 
+import { toTaskLabel } from '../../agent-registry/agent-registry';
 import { ObservedWorkerHost } from '../../common/queue/observed-worker-host';
 import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -40,6 +41,10 @@ import {
 
 const DEDUPE_WINDOW_MS = 30 * 60 * 1000;
 const DATABASE_FALLBACK_MARKER = '_사건 원장 접근 실패: 중복 억제 없이 발송_';
+const cronTaskLabel = (cronName: string): string => {
+  const label = toTaskLabel(cronName);
+  return label === cronName ? '예약 작업' : label;
+};
 
 export const shouldFireAlert = ({
   lastFiredAtMs,
@@ -76,6 +81,7 @@ interface FailureAlert {
   errorMessage: string;
   ownerId: string;
   kind: DeliveryKind;
+  rawCronName?: string;
 }
 
 // job 생성 시각. BullMQ 가 항상 채우지만 테스트·수동 호출에 대비해 현재 시각으로 떨어진다.
@@ -160,7 +166,8 @@ export class NotificationConsumer
   private cronFailure(payload: CronFailureJobData): FailureAlert {
     return {
       key: payload.incidentKey ?? cronIncidentKey(payload.cronName),
-      label: payload.cronName,
+      label: cronTaskLabel(payload.cronName),
+      rawCronName: payload.cronName,
       errorMessage: payload.errorMessage,
       ownerId: this.ownerId(cronIncidentKey(payload.cronName)),
       kind: 'alert:cron-failure',
@@ -201,7 +208,7 @@ export class NotificationConsumer
     const cause = normalizeIncidentCause(alert.errorMessage);
     const decision = decideOnFailure({ incident, key: alert.key, now });
     if (decision.action === 'OPEN') {
-      const text = this.openText(alert);
+      const text = this.openText(alert, decision.expiredPrevious);
       const sent = await this.sendOrLog(alert, text);
       if (!sent) {
         return;
@@ -361,11 +368,16 @@ export class NotificationConsumer
     }
   }
 
-  private openText(alert: FailureAlert): string {
+  private openText(alert: FailureAlert, expiredPrevious = false): string {
     return formatIncidentOpen({
       label: alert.label,
       cause: describeIncidentCause(alert.errorMessage),
       nextRunAt: null,
+      action:
+        alert.key === CLAUDE_AUTH_INCIDENT_KEY
+          ? '`claude`를 대화형으로 한 번 실행해 다시 로그인하거나 사용량 한도 초기화 시각을 확인해 주세요.'
+          : null,
+      expiredPrevious,
     });
   }
 
@@ -384,11 +396,14 @@ export class NotificationConsumer
 
   private resolveText(incident: AlertIncident, now: Date): string {
     return formatIncidentResolved({
-      label: incident.label,
+      label: incident.key.startsWith('cron:')
+        ? cronTaskLabel(incident.key.slice('cron:'.length))
+        : incident.label,
       duration: formatIncidentDuration(
         now.getTime() - incident.openedAt.getTime(),
       ),
       occurrences: incident.occurrences,
+      causes: incident.causes,
     });
   }
 
@@ -419,17 +434,47 @@ export class NotificationConsumer
             target: alert.ownerId,
             threadTs: posted.ts,
             text: formatAiHandoff({
-              feature: alert.label,
+              feature: alert.rawCronName ?? alert.label,
               errorMessage: alert.errorMessage,
               files: [],
               checkCommand: null,
             }),
           });
         } catch (error: unknown) {
-          this.logger.warn(
-            `AI 스레드 발송 실패 (key=${alert.key}): ${String(error)}`,
-          );
+          try {
+            await this.slackService.postMessage({
+              kind: alert.kind,
+              target: alert.ownerId,
+              text: formatAiHandoff({
+                feature: alert.rawCronName ?? alert.label,
+                errorMessage: alert.errorMessage,
+                files: [],
+                checkCommand: null,
+              }),
+            });
+          } catch (fallbackError: unknown) {
+            this.logger.error(
+              `AI 블록 전송 실패 (key=${alert.key}): ${String(error)}; ${String(fallbackError)}`,
+            );
+          }
         }
+      } else {
+        await this.slackService
+          .postMessage({
+            kind: alert.kind,
+            target: alert.ownerId,
+            text: formatAiHandoff({
+              feature: alert.rawCronName ?? alert.label,
+              errorMessage: alert.errorMessage,
+              files: [],
+              checkCommand: null,
+            }),
+          })
+          .catch((error: unknown) => {
+            this.logger.error(
+              `AI 블록 전송 실패 (key=${alert.key}): ${String(error)}`,
+            );
+          });
       }
       this.logger.log(`알람 전송 — ${alert.key} → owner=${alert.ownerId}`);
       return true;

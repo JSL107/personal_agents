@@ -12,7 +12,9 @@ const baseResult: DispatchResult = {
 
 describe('buildDispatchReplyText', () => {
   it('root 결과는 기존 Slack footer와 함께 반환한다', () => {
-    expect(buildDispatchReplyText(baseResult)).toBe('루트 결과');
+    expect(buildDispatchReplyText(baseResult)).toBe(
+      '루트 결과\n_실행 번호 `42` (다시 돌리기·의견 남기기에 써요)_',
+    );
   });
 
   it('handoff 결과는 구분선과 chain footer로 결합한다', () => {
@@ -28,7 +30,9 @@ describe('buildDispatchReplyText', () => {
           },
         ],
       }),
-    ).toBe('루트 결과\n\n---\n\n자식 결과');
+    ).toBe(
+      '루트 결과\n_실행 번호 `42` (다시 돌리기·의견 남기기에 써요)_\n\n---\n\n자식 결과\n_실행 번호 `43` (다시 돌리기·의견 남기기에 써요)_',
+    );
   });
 
   it('async ack sentinel은 footer 없이 본문만 반환한다', () => {

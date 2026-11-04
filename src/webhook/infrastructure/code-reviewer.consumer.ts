@@ -48,10 +48,11 @@ export class WebhookCodeReviewerConsumer extends ObservedWorkerHost {
         prTitle: outcome.prTitle,
         review: outcome.result,
       });
+      const withRunId = `${text}\n_실행 번호 \`${outcome.agentRunId}\` (다시 돌리기·의견 남기기에 써요)_`;
       const posted = await this.slackService.postMessage({
         kind: 'code-review-webhook',
         target: slackUserId,
-        text,
+        text: withRunId,
       });
       const review = outcome.result;
       const findings = [
@@ -61,7 +62,7 @@ export class WebhookCodeReviewerConsumer extends ObservedWorkerHost {
         ...review.reviewCommentDrafts.map((draft) => draft.body),
         ...review.findings.map((finding) => finding.body),
       ];
-      if (posted.ts && findings.length > 0) {
+      if (findings.length > 0) {
         const files = [
           ...review.reviewCommentDrafts,
           ...review.findings,
@@ -74,22 +75,31 @@ export class WebhookCodeReviewerConsumer extends ObservedWorkerHost {
         const link = match
           ? `https://github.com/${match[1]}/pull/${match[2]}`
           : prRef;
+        const handoff = formatAiHandoff({
+          feature: `${link} ${outcome.prTitle ?? review.summary}`,
+          errorMessage: [...new Set(findings)].join('\n'),
+          files: [...new Set(files)],
+          checkCommand: null,
+        });
         try {
           await this.slackService.postMessage({
             kind: 'code-review-webhook',
             target: slackUserId,
-            threadTs: posted.ts,
-            text: formatAiHandoff({
-              feature: `${link} ${outcome.prTitle ?? review.summary}`,
-              errorMessage: [...new Set(findings)].join('\n'),
-              files: [...new Set(files)],
-              checkCommand: null,
-            }),
+            ...(posted.ts ? { threadTs: posted.ts } : {}),
+            text: handoff,
           });
         } catch (error: unknown) {
-          this.logger.warn(
-            `Webhook code-reviewer AI 스레드 실패: ${error instanceof Error ? error.message : String(error)}`,
-          );
+          try {
+            await this.slackService.postMessage({
+              kind: 'code-review-webhook',
+              target: slackUserId,
+              text: handoff,
+            });
+          } catch (fallbackError: unknown) {
+            this.logger.error(
+              `Webhook code-reviewer AI 블록 전송 실패: ${String(error)}; ${String(fallbackError)}`,
+            );
+          }
         }
       }
       this.logger.log(

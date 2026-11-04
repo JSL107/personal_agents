@@ -540,6 +540,64 @@ describe('EveningRetroPublishTask', () => {
     // label·hint 만으로는 "왜 적어야 하는지"(코드에 안 남는다)가 전달되지 않는다.
     expect(careerPreview?.previewText).toContain('코드에는 남지 않는 정보');
     expect(careerPreview?.previewText).toContain('아래 칸에 적으면');
+    expect(careerPreview?.slackText).toContain('• sbe-api-v5: 1건');
+    expect(careerPreview?.slackText).toContain('• personal_agents: 1건');
+  });
+
+  it('블로그 카드의 외부 제목과 사유에서 Slack 제어문자를 이스케이프한다', async () => {
+    const routeResult = {
+      ...RETRO_RESPONSE,
+      text: JSON.stringify({
+        retrospective: { keep: 'r' },
+        candidates: [
+          {
+            title: '<!here> 알림',
+            keywords: ['k'],
+            blogValueScore: 70,
+            reason: '<!here> 근거',
+            sourceRefs: ['schoolbell-e/sbe-api-v5#864'],
+            outline: [],
+          },
+        ],
+        prNotes: [],
+      }),
+    };
+    const { task } = makeTask({
+      prs: [PR_ITEM],
+      worklogRuns: [],
+      dailyEvalRuns: [],
+      routeResult,
+    });
+    const result = await task.run(CTX);
+    const blogPreview = result.previews?.find(
+      (preview) => preview.kind === PREVIEW_KIND.EVENING_BLOG_PUBLISH,
+    );
+
+    expect(blogPreview?.slackText).toContain('제목: &lt;!here&gt; 알림');
+    expect(blogPreview?.slackText).toContain('왜: &lt;!here&gt; 근거');
+  });
+
+  it('경력 카드에 상한으로 제외한 건수를 한 줄로 알리고 저장소 이름을 이스케이프한다', async () => {
+    const prs = Array.from({ length: 9 }, (_, index) => ({
+      ...PR_ITEM,
+      repo: 'JSL107/a&b',
+      number: index + 1,
+    }));
+    const { task } = makeTask({
+      prs,
+      worklogRuns: [],
+      dailyEvalRuns: [],
+      routeResult: RETRO_RESPONSE,
+    });
+
+    const result = await task.run(CTX);
+    const careerPreview = result.previews?.find(
+      (preview) => preview.kind === PREVIEW_KIND.EVENING_CAREER_REFLECT,
+    );
+
+    expect(careerPreview?.slackText).toContain('상한 초과 1건 제외');
+    expect(careerPreview?.slackText).toContain('• a&amp;b: 8건');
+    expect(careerPreview?.slackText).not.toContain('• a&b');
   });
 
   it('(i) 저녁 회고 LLM 호출은 기존 1회만 수행한다', async () => {

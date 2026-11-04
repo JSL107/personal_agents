@@ -731,7 +731,9 @@ describe('PreconditionChainOrchestrator', () => {
       .map((call) => call[0])
       .filter((event) => event.type === 'command.answered')
       .map((event) => event.message);
-    expect(answeredMessages).toEqual(['최종 산출물']);
+    expect(answeredMessages).toEqual([
+      '최종 산출물\n_실행 번호 `1` (다시 돌리기·의견 남기기에 써요)_',
+    ]);
 
     // 산출물을 숨기는 것과 같은 이유로 기억에서도 뺀다 — 사용자가 말하지도 보지도 않은 turn 이
     // 5턴 한도를 먹으면 실제 발화가 밀려난다. 선행(PO_EVAL)만 false, 최종(CEO)은 true.
