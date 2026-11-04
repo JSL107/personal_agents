@@ -14,6 +14,7 @@ export interface PortfolioSyncPlanCard {
   coverPassed: boolean;
   coverWasPublic: boolean;
   sortOrderSent: number | null;
+  sortOrderOwned: number | null;
   body: Record<string, unknown>;
 }
 

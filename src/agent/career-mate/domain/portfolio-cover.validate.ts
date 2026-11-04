@@ -27,7 +27,8 @@ const isWorkCount = (text: string): boolean => WORK_COUNT_PATTERN.test(text);
 
 const validResultSentences = (text: string, processLines: string[]): string[] =>
   text
-    .split(/(?<=다\.)|\.\s+|\n+/)
+    // 마침표를 문장 쪽에 남긴 채 나눈다. 다시 이을 때 구분자를 붙이면 「다..」가 된다.
+    .split(/(?<=[.!?])\s+|\n+/)
     .map((sentence) => sentence.trim())
     .filter((sentence) => sentence.length > 0)
     .filter((sentence) => !isWorkCount(sentence))
@@ -65,7 +66,7 @@ export const validateCover = (
     result: (resultSentences.length > 0
       ? resultSentences
       : previousSentences
-    ).join('. '),
+    ).join(' '),
     highlights,
     removedHighlights,
     retryHighlights:

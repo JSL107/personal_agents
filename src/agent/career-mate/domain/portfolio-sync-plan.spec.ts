@@ -168,13 +168,17 @@ describe('portfolio sync 계획 함수', () => {
         current: 0,
         lastSent: null,
       }),
-    ).toEqual({ sortOrderSent: 1, keptByHuman: false });
+    ).toEqual({ sortOrderSent: 1, sortOrderOwned: 1, keptByHuman: false });
     expect(
       decideSortOrder({ action: 'update', target: 1, current: 9, lastSent: 2 }),
-    ).toEqual({ sortOrderSent: null, keptByHuman: true });
+    ).toEqual({ sortOrderSent: null, sortOrderOwned: null, keptByHuman: true });
     expect(
       decideSortOrder({ action: 'update', target: 1, current: 2, lastSent: 2 }),
-    ).toEqual({ sortOrderSent: 1, keptByHuman: false });
+    ).toEqual({ sortOrderSent: 1, sortOrderOwned: 1, keptByHuman: false });
+    // 사이트 쓰기 뒤 DB 기록이 실패했던 회차: 사이트는 목표값, lastSent 는 옛 값
+    expect(
+      decideSortOrder({ action: 'update', target: 3, current: 3, lastSent: 7 }),
+    ).toEqual({ sortOrderSent: null, sortOrderOwned: 3, keptByHuman: false });
     expect(
       decideSortOrder({
         action: 'update',
@@ -182,7 +186,7 @@ describe('portfolio sync 계획 함수', () => {
         current: 1,
         lastSent: null,
       }),
-    ).toEqual({ sortOrderSent: null, keptByHuman: false });
+    ).toEqual({ sortOrderSent: null, sortOrderOwned: 1, keptByHuman: false });
   });
 
   it('DB 행 순서와 무관하게 fingerprint가 같고 빈 테이블은 empty다', () => {

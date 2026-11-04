@@ -54,6 +54,7 @@ const card = (
   coverPassed: false,
   coverWasPublic: false,
   sortOrderSent: null,
+  sortOrderOwned: null,
   body,
 });
 

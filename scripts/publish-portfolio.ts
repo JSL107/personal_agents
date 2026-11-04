@@ -147,6 +147,8 @@ const hasFailure = (
   result.postCheckViolations.length > 0 ||
   result.notInPlan.length > 0 ||
   result.planViolations.length > 0 ||
+  // 채택 전이면 아무것도 쓰지 않았다 — 성공 종료로 두면 자동화가 미발행을 정상으로 읽는다.
+  result.adoptionRequired ||
   result.aborted !== null;
 
 const main = async (): Promise<void> => {

@@ -214,6 +214,9 @@ export const mergeGithubLink = ({
 
 export interface SortOrderDecision {
   sortOrderSent: number | null;
+  // 이번 회차 뒤 사이트 값이 봇의 목표와 같다고 볼 수 있으면 그 값. lastSentSortOrder 로 기록한다.
+  // 보내지 않았어도(이미 목표값) 기록해야 한다 — 비워 두면 다음에 사람이 바꾼 순서를 봇이 덮는다.
+  sortOrderOwned: number | null;
   keptByHuman: boolean;
 }
 
@@ -229,13 +232,19 @@ export const decideSortOrder = ({
   lastSent: number | null;
 }): SortOrderDecision => {
   if (action === 'create') {
-    return { sortOrderSent: target, keptByHuman: false };
+    return {
+      sortOrderSent: target,
+      sortOrderOwned: target,
+      keptByHuman: false,
+    };
+  }
+  // 사이트가 이미 목표값이면 충돌이 없다. 직전 회차에 사이트 쓰기는 됐는데 DB 기록이 실패한
+  // 경우도 여기서 회복된다 — 그대로 두면 그 차이를 사람의 편집으로 오인해 자동 정렬이 멈춘다.
+  if (current === target) {
+    return { sortOrderSent: null, sortOrderOwned: target, keptByHuman: false };
   }
   if (lastSent !== null && lastSent !== current) {
-    return { sortOrderSent: null, keptByHuman: true };
+    return { sortOrderSent: null, sortOrderOwned: null, keptByHuman: true };
   }
-  return {
-    sortOrderSent: target === current ? null : target,
-    keptByHuman: false,
-  };
+  return { sortOrderSent: target, sortOrderOwned: target, keptByHuman: false };
 };

@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
@@ -141,6 +141,8 @@ const ALLOWED_BODY_KEYS = new Set([
 
 @Injectable()
 export class PublishPortfolioSiteUsecase {
+  private readonly logger = new Logger(PublishPortfolioSiteUsecase.name);
+
   constructor(
     @Inject(CAREER_PROFILE_REPOSITORY_PORT)
     private readonly repository: CareerProfileRepositoryPort,
@@ -204,7 +206,11 @@ export class PublishPortfolioSiteUsecase {
     );
     // 계획은 저장을 하지 않는다. 프로필이 없으면 별도 프로필 생성이 필요하다.
     if (!latest) {
-      throw new Error('저장된 경력 프로필이 없습니다');
+      throw new CareerMateException({
+        code: CareerMateErrorCode.NO_EVIDENCE,
+        message:
+          '저장된 경력 프로필이 없습니다 — 먼저 프로필을 만들어야 발행할 수 있습니다',
+      });
     }
     const profile = latest.profileJson;
     const rows = await this.cards.findAll();
@@ -252,7 +258,11 @@ export class PublishPortfolioSiteUsecase {
       if (!group.anonymized) {
         try {
           isPublic = await this.github.isRepositoryPublic(group.repo);
-        } catch {
+        } catch (error) {
+          // 모르면 비공개로 본다 — 비공개 저장소 주소를 공개 카드에 싣는 쪽이 더 나쁘다.
+          this.logger.warn(
+            `저장소 공개 여부 확인 실패 ${group.repo} — ${message(error)}`,
+          );
           isPublic = false;
         }
       }
@@ -309,6 +319,7 @@ export class PublishPortfolioSiteUsecase {
         coverPassed: false,
         coverWasPublic: site?.published ?? false,
         sortOrderSent: order.sortOrderSent,
+        sortOrderOwned: order.sortOrderOwned,
         body,
       });
       if (regenerate) {
@@ -360,7 +371,9 @@ export class PublishPortfolioSiteUsecase {
           completion.text,
           prompts.map((prompt) => prompt.key),
         );
-      } catch {
+      } catch (error) {
+        // 표지 호출이 통째로 실패해도 과정·기술·링크 갱신은 계속한다. 대상 카드는 coverFailed 로 보고된다.
+        this.logger.warn(`포트폴리오 표지 생성 실패 — ${message(error)}`);
         namings = [];
       }
       const retries: CoverPromptCard[] = [];
@@ -441,8 +454,11 @@ export class PublishPortfolioSiteUsecase {
               }
             }
           }
-        } catch {
-          /* 재요청 실패 시 빈 배열을 유지한다. */
+        } catch (error) {
+          // 재요청 실패 시 빈 배열을 유지한다.
+          this.logger.warn(
+            `포트폴리오 성과 줄 재요청 실패 — ${message(error)}`,
+          );
         }
       }
     }
@@ -584,8 +600,8 @@ export class PublishPortfolioSiteUsecase {
           coverOf: card.coverPassed
             ? card.coverHash
             : (rowBySlug.get(card.slug)?.coverOf ?? null),
-          ...(card.sortOrderSent !== null
-            ? { lastSentSortOrder: card.sortOrderSent }
+          ...(card.sortOrderOwned !== null
+            ? { lastSentSortOrder: card.sortOrderOwned }
             : {}),
         });
         (card.action === 'create'

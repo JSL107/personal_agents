@@ -65,6 +65,15 @@ describe('표지 검증', () => {
     expect(result?.result).toBe('사망 3회가 0회로 줄었다');
   });
 
+  it('남은 결과 문장을 이을 때 마침표가 겹치지 않는다', () => {
+    const result = validateCover(
+      cover({ result: '사망이 줄었다. 3개 PR 을 냈다. 관제가 쉬워졌다.' }),
+      ['사망 3회 → 0회'],
+      '',
+    );
+    expect(result?.result).toBe('사망이 줄었다. 관제가 쉬워졌다.');
+  });
+
   it('성과 줄이 전부 제거되고 과정에 숫자가 있으면 한 번 더 요청한다', () => {
     const result = validateCover(
       cover({ highlights: ['테스트 3개 통과'] }),
