@@ -8,7 +8,7 @@ const base: AuthorPullRequestSignals = {
   mergeableState: 'unknown',
   isApproved: false,
   pendingReviewers: [],
-  latestChangesRequest: null,
+  changesRequestedBy: [],
   observed: true,
 };
 
@@ -16,14 +16,10 @@ describe('classifyAuthorPullRequestTurn', () => {
   it.each([
     [{ observed: false, draft: true }, 'UNKNOWN', null],
     [{ draft: true }, 'MY_TURN', '드래프트'],
-    [
-      { latestChangesRequest: { reviewer: 'a', submittedAt: '2026-01-01' } },
-      'MY_TURN',
-      '수정 요청 받음',
-    ],
+    [{ changesRequestedBy: ['a'] }, 'MY_TURN', '수정 요청 받음'],
     [
       {
-        latestChangesRequest: { reviewer: 'a', submittedAt: '2026-01-01' },
+        changesRequestedBy: ['a'],
         pendingReviewers: ['a'],
       },
       'WAITING_OTHERS',
@@ -48,6 +44,11 @@ describe('classifyAuthorPullRequestTurn', () => {
         pendingReviewers: [
           ...('pendingReviewers' in overrides
             ? overrides.pendingReviewers
+            : []),
+        ],
+        changesRequestedBy: [
+          ...('changesRequestedBy' in overrides
+            ? overrides.changesRequestedBy
             : []),
         ],
       }),

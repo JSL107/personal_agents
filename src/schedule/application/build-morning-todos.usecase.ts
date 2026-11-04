@@ -46,14 +46,18 @@ interface RankedItem {
   resolved: ResolvedTurn;
   dayCount: number;
 }
+interface CollectedTodos {
+  sections: MorningTodoSections;
+  entries: DailyTodoEntryInput[];
+}
 const failed = (): MorningTodoSections => ({
   loadFailed: true,
   today: [],
   waiting: [],
   unstarted: [],
 });
-const compare = (a: RankedItem, b: RankedItem): number =>
-  b.dayCount - a.dayCount || a.item.id - b.item.id;
+const compare = (left: RankedItem, right: RankedItem): number =>
+  right.dayCount - left.dayCount || left.item.id - right.item.id;
 const line = ({ item, resolved, dayCount }: RankedItem): MorningTodoLine => ({
   title: displayTitle(item),
   url: item.sourceUrl ?? item.linkUrl,
@@ -113,8 +117,43 @@ export class BuildMorningTodosUsecase {
     if (!alreadyReconciled) {
       await this.reconcileBeforeListing({ ownerId, now });
     }
-    let sections: MorningTodoSections;
-    let entries: DailyTodoEntryInput[];
+    const collected = await this.collect({ ownerId, now });
+    const sections = collected?.sections ?? failed();
+    const entries = collected?.entries ?? [];
+    try {
+      if (alreadyDelivered) {
+        const found = await this.dailyTodoRepository.findForDate({
+          slackUserId: ownerId,
+          kstDate,
+        });
+        if (found) {
+          return sections;
+        }
+      }
+      await this.dailyTodoRepository.replaceForDate({
+        slackUserId: ownerId,
+        kstDate,
+        status: sections.loadFailed
+          ? 'LOAD_FAILED'
+          : entries.length
+            ? 'LISTED'
+            : 'EMPTY',
+        entries,
+      });
+    } catch (error) {
+      // 목록은 이미 만들었으니 아침에는 그대로 보여 준다. 저녁은 저장된 목록이 없으면 「아침 목록 없음」으로 다룬다.
+      this.logger.warn(`오늘 할 일 저장 실패: ${String(error)}`);
+    }
+    return sections;
+  }
+
+  private async collect({
+    ownerId,
+    now,
+  }: {
+    ownerId: string;
+    now: Date;
+  }): Promise<CollectedTodos | null> {
     try {
       const items = (await this.repository.findUndated(ownerId)).filter(
         (item) => item.dueDate === null && !item.isHoliday,
@@ -145,13 +184,13 @@ export class BuildMorningTodosUsecase {
         .filter((entry) => entry.resolved.turn === 'WAITING_OTHERS')
         .sort(compare);
       const ordered = [...mine, ...unknown, ...waiting];
-      entries = ordered.map(({ item, resolved: turn }, position) => ({
+      const entries = ordered.map(({ item, resolved: turn }, position) => ({
         scheduleItemId: item.id,
         turn: turn.turn,
         observed: turn.observed,
         position,
       }));
-      sections = {
+      const sections: MorningTodoSections = {
         loadFailed: false,
         today: [...mine, ...unknown].map(line),
         waiting: waiting.map(line),
@@ -164,35 +203,10 @@ export class BuildMorningTodosUsecase {
             detail: null,
           })),
       };
+      return { sections, entries };
     } catch (error) {
       this.logger.warn(`오늘 할 일 조회 실패: ${String(error)}`);
-      sections = failed();
-      entries = [];
+      return null;
     }
-    try {
-      if (alreadyDelivered) {
-        const found = await this.dailyTodoRepository.findForDate({
-          slackUserId: ownerId,
-          kstDate,
-        });
-        if (found) {
-          return sections;
-        }
-      }
-      await this.dailyTodoRepository.replaceForDate({
-        slackUserId: ownerId,
-        kstDate,
-        status: sections.loadFailed
-          ? 'LOAD_FAILED'
-          : entries.length
-            ? 'LISTED'
-            : 'EMPTY',
-        entries,
-      });
-    } catch (error) {
-      // 목록은 이미 만들었으니 아침에는 그대로 보여 준다. 저녁은 저장된 목록이 없으면 「아침 목록 없음」으로 다룬다.
-      this.logger.warn(`오늘 할 일 저장 실패: ${String(error)}`);
-    }
-    return sections;
   }
 }

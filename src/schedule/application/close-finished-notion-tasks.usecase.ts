@@ -55,14 +55,18 @@ export class CloseFinishedNotionTasksUsecase {
     ].slice(0, AUTO_COMPLETE_CHECK_MAX);
     for (const item of batch) {
       this.cursorId = item.id;
-      await this.closeIfFinished(item, input);
+      await this.closeIfFinished({ item, ...input });
     }
   }
 
-  private async closeIfFinished(
-    item: ScheduleItemRecord,
-    { ownerId, now, config }: CloseFinishedNotionTasksInput,
-  ): Promise<void> {
+  private async closeIfFinished({
+    item,
+    ownerId,
+    now,
+    config,
+  }: CloseFinishedNotionTasksInput & {
+    item: ScheduleItemRecord;
+  }): Promise<void> {
     if (!item.sourceKey) {
       return;
     }
@@ -95,7 +99,10 @@ export class CloseFinishedNotionTasksUsecase {
         now,
         ...(status === 'DONE'
           ? {
-              completedAt: toSourceCompletedAt(page.lastEditedTime, now),
+              completedAt: toSourceCompletedAt({
+                source: page.lastEditedTime,
+                now,
+              }),
             }
           : {}),
         actor: ScheduleActor.COLLECTOR,

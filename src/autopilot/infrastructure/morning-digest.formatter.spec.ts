@@ -3,11 +3,15 @@ import {
   MorningDigestInput,
 } from './morning-digest.formatter';
 
-const todoLine = (
-  title: string,
+const todoLine = ({
+  title,
   dayCount = 1,
-  detail: string | null = null,
-) => ({
+  detail = null,
+}: {
+  title: string;
+  dayCount?: number;
+  detail?: string | null;
+}) => ({
   title,
   url: null,
   dayCount,
@@ -43,8 +47,14 @@ describe('formatMorningDigest', () => {
           todoSections: {
             loadFailed: false,
             today: [
-              { ...todoLine('상벌점 입장 링크 확인'), url: 'https://g/1' },
-              todoLine('공지 첨부파일 저장 오류 고치기', 3),
+              {
+                ...todoLine({ title: '상벌점 입장 링크 확인' }),
+                url: 'https://g/1',
+              },
+              todoLine({
+                title: '공지 첨부파일 저장 오류 고치기',
+                dayCount: 3,
+              }),
             ],
             waiting: [],
             unstarted: [],
@@ -86,7 +96,7 @@ describe('formatMorningDigest', () => {
   });
   it('할 일을 다섯 개까지 보여준다', () => {
     const today = Array.from({ length: 7 }, (_, index) =>
-      todoLine(String(index)),
+      todoLine({ title: String(index) }),
     );
     expect(
       formatMorningDigest(
@@ -169,7 +179,7 @@ describe('formatMorningDigest', () => {
 
   it('남 기다리는 일은 3줄까지만 쓰고 0개면 칸을 뺀다', () => {
     const waiting = Array.from({ length: 5 }, (_, index) =>
-      todoLine(`대기 ${index}`),
+      todoLine({ title: `대기 ${index}` }),
     );
     const text = formatMorningDigest(
       base({
@@ -190,7 +200,7 @@ describe('formatMorningDigest', () => {
           loadFailed: false,
           today: [],
           waiting: [],
-          unstarted: [todoLine('첫째'), todoLine('둘째')],
+          unstarted: [todoLine({ title: '첫째' }), todoLine({ title: '둘째' })],
         },
       }),
     );
@@ -221,11 +231,17 @@ describe('formatMorningDigest', () => {
         todoSections: {
           loadFailed: false,
           today: [
-            todoLine('충돌', 3, '충돌 있음'),
-            todoLine('승인', 1, '승인됨'),
-            todoLine('미관측', 4),
+            todoLine({ title: '충돌', dayCount: 3, detail: '충돌 있음' }),
+            todoLine({ title: '승인', dayCount: 1, detail: '승인됨' }),
+            todoLine({ title: '미관측', dayCount: 4 }),
           ],
-          waiting: [todoLine('리뷰', 5, '리뷰 요청 후 3일째 답 없음')],
+          waiting: [
+            todoLine({
+              title: '리뷰',
+              dayCount: 5,
+              detail: '리뷰 요청 후 3일째 답 없음',
+            }),
+          ],
           unstarted: [],
         },
       }),
@@ -241,9 +257,9 @@ describe('formatMorningDigest', () => {
       base({
         todoSections: {
           loadFailed: false,
-          today: [todoLine('내 차례')],
-          waiting: [todoLine('상대 차례')],
-          unstarted: [todoLine('시작 전')],
+          today: [todoLine({ title: '내 차례' })],
+          waiting: [todoLine({ title: '상대 차례' })],
+          unstarted: [todoLine({ title: '시작 전' })],
         },
       }),
     );

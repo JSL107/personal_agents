@@ -20,7 +20,7 @@ export interface AuthorPullRequestSignals {
   mergeableState: MergeableState;
   isApproved: boolean;
   pendingReviewers: string[];
-  latestChangesRequest: { reviewer: string; submittedAt: string } | null;
+  changesRequestedBy: string[];
   observed: boolean;
 }
 export interface AuthorTurnResult {

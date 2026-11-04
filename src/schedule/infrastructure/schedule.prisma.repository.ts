@@ -47,11 +47,15 @@ import {
 import { ScheduleErrorCode } from '../domain/schedule-error-code.enum';
 import { TransitionInTransactionInput } from './schedule.prisma.repository.type';
 
-const validateCompletedAt = (
-  to: ScheduleStatus | null,
-  completedAt: Date | undefined,
-  now: Date,
-): void => {
+const validateCompletedAt = ({
+  to,
+  completedAt,
+  now,
+}: {
+  to: ScheduleStatus | null;
+  completedAt: Date | undefined;
+  now: Date;
+}): void => {
   if (
     completedAt !== undefined &&
     (to !== ScheduleStatus.DONE ||
@@ -331,7 +335,11 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
   }
 
   async transition(input: TransitionInput): Promise<ScheduleItemRecord | null> {
-    validateCompletedAt(input.to, input.completedAt, input.now);
+    validateCompletedAt({
+      to: input.to,
+      completedAt: input.completedAt,
+      now: input.now,
+    });
     return await this.prisma.$transaction(async (client) =>
       this.transitionInTransaction({ client, input }),
     );
@@ -876,7 +884,11 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
   async recordEventAndTransition(
     input: RecordEventAndTransitionInput,
   ): Promise<RecordedEventTransition | 'DUPLICATE'> {
-    validateCompletedAt(input.transitionTo, input.completedAt, input.now);
+    validateCompletedAt({
+      to: input.transitionTo,
+      completedAt: input.completedAt,
+      now: input.now,
+    });
     let eventCreateUniqueViolation = false;
     try {
       return await this.prisma.$transaction(async (client) => {

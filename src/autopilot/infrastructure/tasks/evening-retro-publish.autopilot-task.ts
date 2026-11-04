@@ -50,6 +50,7 @@ import {
   isSafeHttpUrl,
   sanitizeForSlackLink,
 } from '../../../slack/format/mrkdwn.util';
+import { findMorningDelivered } from '../../application/morning-delivery';
 import {
   AutopilotPreviewRequest,
   AutopilotRunVerdictRequest,
@@ -179,20 +180,12 @@ export class EveningRetroPublishTask implements AutopilotTask {
           })
       : [];
 
-    const dayStart = new Date(`${firedAtKst}T00:00:00.000+09:00`);
-    let morningDelivered = false;
-    try {
-      const deliveries = await this.deliveryRepository.findSince(
-        dayStart,
-        new Date(dayStart.getTime() + DAY_MS),
-      );
-      morningDelivered = isRunResultDelivered({
-        agentType: AgentType.PM,
-        deliveries,
-      });
-    } catch (error) {
-      this.logger.warn(`아침 발송 기록 조회 실패: ${String(error)}`);
-    }
+    const foundMorningDelivery = await findMorningDelivered({
+      deliveryRepository: this.deliveryRepository,
+      firedAtKst,
+    });
+    // 보냈는지 모르면(null) 아침 목록을 쓰지 않는다. 보내지 않은 목록을 저녁 기준으로 삼지 않기 위해서다.
+    const morningDelivered = foundMorningDelivery ?? false;
     const todoSummary = await this.buildEveningSummary.execute({
       ownerId,
       kstDate: firedAtKst,
@@ -266,13 +259,11 @@ export class EveningRetroPublishTask implements AutopilotTask {
           ));
 
     // 회고 재료가 하나도 없는 날도 하루를 닫는 신호(투자·넘어가는 것)는 낸다 — 회고만 건너뛴다.
-    if (
-      mergedPrs.length === 0 &&
-      !worklogText &&
-      !dailyEvalText &&
-      todoSummary.done.length === 0 &&
-      todoSummary.notDone.length === 0
-    ) {
+    const hasRetroMaterial =
+      mergedPrs.length > 0 || Boolean(worklogText) || Boolean(dailyEvalText);
+    const hasTodoFacts =
+      todoSummary.done.length > 0 || todoSummary.notDone.length > 0;
+    if (!hasRetroMaterial && !hasTodoFacts) {
       return {
         skip: false,
         summaryText: buildDigest({
@@ -308,6 +299,15 @@ export class EveningRetroPublishTask implements AutopilotTask {
           hasDailyEval: dailyEvalText !== null,
         },
         run: async () => {
+          const todoFacts = todoSummary.loadFailed
+            ? null
+            : JSON.stringify({
+                done: todoSummary.done,
+                notDone: todoSummary.notDone,
+                ratio: todoSummary.ratio,
+                waiting: todoSummary.waiting,
+                backlog: todoSummary.backlog,
+              });
           const completion = await this.modelRouter.route({
             agentType: AgentType.EVENING_RETRO,
             request: {
@@ -316,15 +316,7 @@ export class EveningRetroPublishTask implements AutopilotTask {
                 openPrs,
                 worklogText,
                 dailyEvalText,
-                todoFacts: todoSummary.loadFailed
-                  ? null
-                  : JSON.stringify({
-                      done: todoSummary.done,
-                      notDone: todoSummary.notDone,
-                      ratio: todoSummary.ratio,
-                      waiting: todoSummary.waiting,
-                      backlog: todoSummary.backlog,
-                    }),
+                todoFacts,
               }),
               systemPrompt: EVENING_RETRO_SYSTEM_PROMPT,
             },

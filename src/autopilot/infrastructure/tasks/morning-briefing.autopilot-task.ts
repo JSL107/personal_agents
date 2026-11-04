@@ -37,7 +37,6 @@ import {
   StoredJobPosting,
 } from '../../../job-feed/domain/port/job-posting.repository.port';
 import { formatJobFeedDigest } from '../../../job-feed/infrastructure/job-feed.formatter';
-import { AgentType } from '../../../model-router/domain/model-router.type';
 import { toAutopilotTaskDisplayName } from '../../../notification/domain/autopilot-task-display-name';
 import { describeIncidentCause } from '../../../notification/domain/incident-message';
 import { FindAllOpenPreviewsUsecase } from '../../../preview-gate/application/find-all-open-previews.usecase';
@@ -67,6 +66,7 @@ import {
   findLastFireBefore,
   resolveTaskCronSchedule,
 } from '../../application/autopilot-schedule';
+import { findMorningDelivered } from '../../application/morning-delivery';
 import {
   AutopilotTask,
   AutopilotTaskContext,
@@ -370,22 +370,12 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
         : []),
       ...ledgerGapIncidents,
     ];
-    const dayStart = new Date(`${firedAtKst}T00:00:00.000+09:00`);
-    let alreadyDelivered = false;
-    try {
-      const deliveries = await this.deliveryRepository.findSince(
-        dayStart,
-        new Date(dayStart.getTime() + DAY_MS),
-      );
-      alreadyDelivered = isRunResultDelivered({
-        agentType: AgentType.PM,
-        deliveries,
-      });
-    } catch (error) {
-      // 보냈는지 모르면 보낸 것으로 본다. 이미 있는 그날 목록을 지키는 쪽이 저녁 기준을 덜 망가뜨린다.
-      alreadyDelivered = true;
-      this.logger.warn(`아침 발송 기록 조회 실패: ${String(error)}`);
-    }
+    const morningDelivered = await findMorningDelivered({
+      deliveryRepository: this.deliveryRepository,
+      firedAtKst,
+    });
+    // 보냈는지 모르면(null) 보낸 것으로 본다. 이미 있는 그날 목록을 지키는 쪽이 저녁 기준을 덜 망가뜨린다.
+    const alreadyDelivered = morningDelivered ?? true;
     const todoSections = await this.buildMorningTodos.execute({
       ownerId,
       kstDate: firedAtKst,

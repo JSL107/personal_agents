@@ -368,7 +368,12 @@ export class ReconcilePullRequestsUsecase {
       transitionTo: to,
       now,
       ...(kind === ScheduleEventKind.PR_MERGED && pullRequest.mergedAt
-        ? { completedAt: toSourceCompletedAt(pullRequest.mergedAt, now) }
+        ? {
+            completedAt: toSourceCompletedAt({
+              source: pullRequest.mergedAt,
+              now,
+            }),
+          }
         : {}),
       actor: ScheduleActor.COLLECTOR,
     });
@@ -400,7 +405,7 @@ export class ReconcilePullRequestsUsecase {
         transitionFrom: [ScheduleStatus.OPEN, ScheduleStatus.IN_PROGRESS],
         transitionTo: ScheduleStatus.DONE,
         now,
-        completedAt: toSourceCompletedAt(lifecycle.mergedAt, now),
+        completedAt: toSourceCompletedAt({ source: lifecycle.mergedAt, now }),
         actor: ScheduleActor.COLLECTOR,
       });
       return;

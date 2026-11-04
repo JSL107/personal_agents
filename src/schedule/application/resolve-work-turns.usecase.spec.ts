@@ -16,7 +16,7 @@ const signal = (
   mergeableState: 'clean',
   isApproved: false,
   pendingReviewers: [],
-  latestChangesRequest: null,
+  changesRequestedBy: [],
   observed: true,
   ...overrides,
 });

@@ -106,7 +106,10 @@ export class CloseFinishedIssuesUsecase {
         now,
         ...(!skipped
           ? {
-              completedAt: toSourceCompletedAt(lifecycle.closedAt, now),
+              completedAt: toSourceCompletedAt({
+                source: lifecycle.closedAt,
+                now,
+              }),
             }
           : {}),
         actor: ScheduleActor.COLLECTOR,

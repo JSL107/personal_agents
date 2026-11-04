@@ -56,31 +56,18 @@ export class ResolveWorkTurnsUsecase {
     now,
   }: ResolveWorkTurnsInput): Promise<Map<number, ResolvedTurn>> {
     const result = new Map<number, ResolvedTurn>();
-    let links = new Map<number, string[]>();
-    let linksFailed = false;
-    try {
-      links = await this.repository.findOpenLinkedPullRequestUrls(
-        items
-          .filter((item) => item.source !== ScheduleSource.GITHUB_PR)
-          .map((item) => item.id),
-      );
-    } catch (error) {
-      this.logger.warn(
-        `연결 PR 조회 실패: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      linksFailed = true;
-    }
+    const links = await this.findLinks(items);
     const refsByItem = new Map<number, PullRequestRef[]>();
     const refs = new Map<string, PullRequestRef>();
     for (const item of items) {
-      if (linksFailed && item.source !== ScheduleSource.GITHUB_PR) {
+      if (links === null && item.source !== ScheduleSource.GITHUB_PR) {
         result.set(item.id, unknown(false));
         continue;
       }
       const urls =
         item.source === ScheduleSource.GITHUB_PR
           ? [item.sourceKey ?? '']
-          : (links.get(item.id) ?? []);
+          : (links?.get(item.id) ?? []);
       if (urls.length === 0) {
         result.set(item.id, unknown(true));
         continue;
@@ -101,15 +88,8 @@ export class ResolveWorkTurnsUsecase {
     if (refs.size === 0) {
       return result;
     }
-    let signals: AuthorPullRequestSignals[];
-    try {
-      signals = await this.github.fetchAuthorPullRequestSignals([
-        ...refs.values(),
-      ]);
-    } catch (error) {
-      this.logger.warn(
-        `PR 신호 조회 실패: ${error instanceof Error ? error.message : String(error)}`,
-      );
+    const signals = await this.fetchSignals([...refs.values()]);
+    if (signals === null) {
       for (const id of refsByItem.keys()) {
         result.set(id, unknown(false));
       }
@@ -185,5 +165,35 @@ export class ResolveWorkTurnsUsecase {
       }
     }
     return result;
+  }
+
+  private async findLinks(
+    items: ScheduleItemRecord[],
+  ): Promise<Map<number, string[]> | null> {
+    try {
+      return await this.repository.findOpenLinkedPullRequestUrls(
+        items
+          .filter((item) => item.source !== ScheduleSource.GITHUB_PR)
+          .map((item) => item.id),
+      );
+    } catch (error) {
+      this.logger.warn(
+        `연결 PR 조회 실패: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return null;
+    }
+  }
+
+  private async fetchSignals(
+    refs: PullRequestRef[],
+  ): Promise<AuthorPullRequestSignals[] | null> {
+    try {
+      return await this.github.fetchAuthorPullRequestSignals(refs);
+    } catch (error) {
+      this.logger.warn(
+        `PR 신호 조회 실패: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return null;
+    }
   }
 }

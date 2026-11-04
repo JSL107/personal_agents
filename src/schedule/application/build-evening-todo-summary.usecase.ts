@@ -87,10 +87,13 @@ const empty = (loadFailed: boolean): EveningTodoSummary => ({
   backlog: null,
 });
 
-const line = (
-  item: ScheduleItemRecord,
-  outsideMorningList: boolean,
-): EveningLine => ({
+const line = ({
+  item,
+  outsideMorningList,
+}: {
+  item: ScheduleItemRecord;
+  outsideMorningList: boolean;
+}): EveningLine => ({
   title: displayTitle(item),
   url: item.sourceUrl ?? item.linkUrl,
   detail: null,
@@ -108,8 +111,15 @@ const turnRank = (resolved: ResolvedTurn): number => {
   }
 };
 
-const inRange = (date: Date | null, from: Date, to: Date): boolean =>
-  date !== null && date >= from && date < to;
+const inRange = ({
+  date,
+  from,
+  to,
+}: {
+  date: Date | null;
+  from: Date;
+  to: Date;
+}): boolean => date !== null && date >= from && date < to;
 
 @Injectable()
 export class BuildEveningTodoSummaryUsecase {
@@ -151,7 +161,7 @@ export class BuildEveningTodoSummaryUsecase {
       ).filter(
         (item) =>
           item.status === ScheduleStatus.DONE &&
-          inRange(item.completedAt, from, to),
+          inRange({ date: item.completedAt, from, to }),
       );
       const list = morningDelivered
         ? await this.dailyTodoRepository.findForDate({
@@ -163,7 +173,10 @@ export class BuildEveningTodoSummaryUsecase {
       const entries = hasMorningList ? list.entries : [];
       const listedIds = new Set(entries.map((entry) => entry.scheduleItemId));
       const done = completed.map((item) =>
-        line(item, hasMorningList && !listedIds.has(item.id)),
+        line({
+          item,
+          outsideMorningList: hasMorningList && !listedIds.has(item.id),
+        }),
       );
       const mergedForDoneItems =
         await this.repository.findMergedPullRequestUrls(
@@ -203,7 +216,7 @@ export class BuildEveningTodoSummaryUsecase {
         (item) =>
           item.status === ScheduleStatus.IN_PROGRESS && item.dueDate === null,
       );
-      const ranked = await this.rank(undated, now);
+      const ranked = await this.rank({ items: undated, now });
       const counts = this.countRemaining(ranked);
       return {
         loadFailed: false,
@@ -256,7 +269,11 @@ export class BuildEveningTodoSummaryUsecase {
             const item = records.get(entry.scheduleItemId);
             return (
               item?.status === ScheduleStatus.DONE &&
-              inRange(item.completedAt, input.from, input.to)
+              inRange({
+                date: item.completedAt,
+                from: input.from,
+                to: input.to,
+              })
             );
           }).length,
           total: ratioEntries.length,
@@ -271,7 +288,7 @@ export class BuildEveningTodoSummaryUsecase {
             item.status,
           ),
       );
-    const ranked = await this.rank(remaining, input.now);
+    const ranked = await this.rank({ items: remaining, now: input.now });
     const counts = this.countRemaining(ranked);
     const notDone = ranked.map(({ item, resolved, dayCount }) => {
       const turnText =
@@ -285,7 +302,7 @@ export class BuildEveningTodoSummaryUsecase {
         ...(dayCount >= 2 ? [`${dayCount}일째`] : []),
         ...(turnText ? [turnText] : []),
       ].join(', ');
-      return { ...line(item, false), detail };
+      return { ...line({ item, outsideMorningList: false }), detail };
     });
     return {
       loadFailed: false,
@@ -299,10 +316,13 @@ export class BuildEveningTodoSummaryUsecase {
     };
   }
 
-  private async rank(
-    items: ScheduleItemRecord[],
-    now: Date,
-  ): Promise<RankedItem[]> {
+  private async rank({
+    items,
+    now,
+  }: {
+    items: ScheduleItemRecord[];
+    now: Date;
+  }): Promise<RankedItem[]> {
     const turns = await this.resolve.execute({ items, now });
     return items
       .map((item) => ({
@@ -329,14 +349,16 @@ export class BuildEveningTodoSummaryUsecase {
       .map(({ resolved }) => resolved.wait)
       .filter((wait) => wait?.days !== null && wait?.days !== undefined)
       .sort((left, right) => (right?.days ?? 0) - (left?.days ?? 0))[0];
-    return {
-      waiting: waiting.length
+    const waitingSummary =
+      waiting.length > 0
         ? {
             count: waiting.length,
             atLeast: ranked.some(({ resolved }) => !resolved.observed),
             longest: longest?.label ?? null,
           }
-        : null,
+        : null;
+    return {
+      waiting: waitingSummary,
       backlog: {
         myTurn: ranked.filter(({ resolved }) => resolved.turn === 'MY_TURN')
           .length,

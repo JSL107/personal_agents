@@ -1,8 +1,50 @@
 import { Octokit } from '@octokit/rest';
 
+import { classifyAuthorPullRequestTurn } from '../domain/classify-author-pr-turn';
 import { OctokitGithubClient } from './octokit-github.client';
 
 describe('내 PR 신호 조회', () => {
+  it('서로 다른 두 사람이 수정 요청하고 마지막 요청자만 재요청되면 내 차례다', async () => {
+    const client = new OctokitGithubClient({
+      rest: {
+        pulls: {
+          get: jest.fn().mockResolvedValue({
+            data: {
+              state: 'open',
+              draft: false,
+              mergeable_state: 'unknown',
+              requested_reviewers: [{ login: 'bob' }],
+              requested_teams: [],
+            },
+          }),
+          listReviews: jest.fn(),
+        },
+      },
+      paginate: jest.fn().mockResolvedValue([
+        {
+          state: 'CHANGES_REQUESTED',
+          submitted_at: '2026-01-01',
+          user: { login: 'alice', type: 'User' },
+        },
+        {
+          state: 'CHANGES_REQUESTED',
+          submitted_at: '2026-01-02',
+          user: { login: 'bob', type: 'User' },
+        },
+      ]),
+    } as unknown as Octokit);
+
+    const [signals] = await client.fetchAuthorPullRequestSignals([
+      { repo: 'o/r', number: 1 },
+    ]);
+
+    expect(signals.changesRequestedBy).toEqual(['alice', 'bob']);
+    expect(classifyAuthorPullRequestTurn(signals)).toEqual({
+      turn: 'MY_TURN',
+      reason: '수정 요청 받음',
+    });
+  });
+
   it('팀 slug와 사람의 최신 결정 리뷰를 수집한다', async () => {
     const get = jest.fn().mockResolvedValue({
       data: {
@@ -50,7 +92,7 @@ describe('내 PR 신호 조회', () => {
         mergeableState: 'clean',
         isApproved: false,
         pendingReviewers: ['alice', 'team'],
-        latestChangesRequest: { reviewer: 'carol', submittedAt: '2026-01-04' },
+        changesRequestedBy: ['carol'],
         observed: true,
       },
     ]);
