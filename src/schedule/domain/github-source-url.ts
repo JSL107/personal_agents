@@ -1,3 +1,4 @@
+import { PullRequestRef } from '../../github/domain/port/github-client.port';
 import {
   GithubItemUrlInput,
   GithubSourceUrlInput,
@@ -17,3 +18,9 @@ export const normalizeGithubPullRequestUrl = ({
   number,
 }: GithubSourceUrlInput): string =>
   githubItemUrl({ repo, kind: 'pull', number });
+export const parsePullRequestUrl = (url: string): PullRequestRef | null => {
+  const found = url.match(
+    /^https:\/\/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)$/i,
+  );
+  return found ? { repo: found[1], number: Number(found[2]) } : null;
+};

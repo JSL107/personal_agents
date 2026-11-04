@@ -1,3 +1,4 @@
+import { AuthorPullRequestSignals } from '../author-pr-signals.type';
 import {
   AssignedTasks,
   CreateReviewCommentInput,
@@ -9,6 +10,7 @@ import {
   TarballDownload,
 } from '../github.type';
 import { PullRequestEngagementSignals } from '../pr-engagement.type';
+import { ReviewWait, ReviewWaitInput } from '../review-wait';
 
 export const GITHUB_CLIENT_PORT = Symbol('GITHUB_CLIENT_PORT');
 
@@ -274,6 +276,10 @@ export interface SearchCodeInput {
 }
 
 export interface GithubClientPort {
+  fetchAuthorPullRequestSignals(
+    refs: PullRequestRef[],
+  ): Promise<AuthorPullRequestSignals[]>;
+  fetchReviewWaits(input: ReviewWaitInput[]): Promise<ReviewWait[]>;
   listMyAssignedTasks(
     options?: ListAssignedTasksOptions,
   ): Promise<AssignedTasks>;

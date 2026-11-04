@@ -5,4 +5,3 @@ export const SHORT_TITLE_MAX_LENGTH = 30;
 export const FALLBACK_TITLE_MAX_LENGTH = 40;
 export const SHORT_TITLE_BATCH_MAX = 20;
 export const AUTO_COMPLETE_CHECK_MAX = 20;
-export const AUTHOR_PR_SIGNAL_MAX = 30;

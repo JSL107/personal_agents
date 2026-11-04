@@ -7,12 +7,12 @@ import { ListAssignedTasksUsecase } from '../../../github/application/list-assig
 import {
   GITHUB_CLIENT_PORT,
   GithubClientPort,
-  PullRequestRef,
 } from '../../../github/domain/port/github-client.port';
 import { resolveCollectionLowerBound } from '../../../schedule/application/collection-window';
 import {
   normalizeGithubIssueUrl,
   normalizeGithubPullRequestUrl,
+  parsePullRequestUrl,
 } from '../../../schedule/domain/github-source-url';
 import { matchPullRequest } from '../../../schedule/domain/match-pull-request';
 import {
@@ -445,10 +445,3 @@ export class ScheduleCollectGithubAutopilotTask implements AutopilotTask {
 
 const repoTitle = (repo: string, title: string): string =>
   `[${repo.split('/').at(-1) ?? repo}] ${title}`.slice(0, 200);
-
-const parsePullRequestUrl = (url: string): PullRequestRef | null => {
-  const found = url.match(
-    /^https:\/\/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)$/i,
-  );
-  return found ? { repo: found[1], number: Number(found[2]) } : null;
-};
