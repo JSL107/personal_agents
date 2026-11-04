@@ -439,6 +439,33 @@ describe('MorningBriefingAutopilotTask', () => {
     expect(result.detailText).toContain('*시작 안 한 일*\n• 시작 전 업무');
   });
 
+  it('발송 기록 조회가 실패하면 보낸 것으로 보고 기존 목록을 지킨다', async () => {
+    const buildMorningTodos = {
+      execute: jest.fn().mockResolvedValue({
+        loadFailed: false,
+        today: [],
+        waiting: [],
+        unstarted: [],
+      }),
+    };
+    const deliveryRepository = {
+      findSince: jest.fn().mockRejectedValue(new Error('원장 조회 실패')),
+    };
+    const task = buildTask(
+      { execute: jest.fn().mockRejectedValue(new Error('계획 실패')) },
+      { humanize: jest.fn() },
+      emptyStockRepository(),
+      listSchedulesUsecase(),
+      { buildMorningTodos, deliveryRepository },
+    );
+
+    await task.run(CTX);
+
+    expect(buildMorningTodos.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ alreadyDelivered: true }),
+    );
+  });
+
   it('이미 발송된 아침이면 목록 작성에 전달 완료를 알린다', async () => {
     const buildMorningTodos = {
       execute: jest.fn().mockResolvedValue({

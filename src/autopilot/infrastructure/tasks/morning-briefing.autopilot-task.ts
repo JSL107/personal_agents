@@ -382,6 +382,8 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
         deliveries,
       });
     } catch (error) {
+      // 보냈는지 모르면 보낸 것으로 본다. 이미 있는 그날 목록을 지키는 쪽이 저녁 기준을 덜 망가뜨린다.
+      alreadyDelivered = true;
       this.logger.warn(`아침 발송 기록 조회 실패: ${String(error)}`);
     }
     const todoSections = await this.buildMorningTodos.execute({
