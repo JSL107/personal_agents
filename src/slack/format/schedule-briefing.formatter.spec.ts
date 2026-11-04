@@ -2,6 +2,7 @@ import {
   ScheduleItemRecord,
   ScheduleStatus,
 } from '../../schedule/domain/schedule.type';
+import { buildScheduleItemRecord } from '../../schedule/domain/schedule-item.fixture';
 import {
   formatScheduleLines,
   formatTrackingLines,
@@ -16,6 +17,7 @@ const item = (
   status = ScheduleStatus.OPEN,
   isHoliday = false,
 ): ScheduleItemRecord => ({
+  ...buildScheduleItemRecord(),
   id: 1,
   slackUserId: 'U1',
   title,

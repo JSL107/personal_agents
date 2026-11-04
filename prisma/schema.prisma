@@ -1311,6 +1311,8 @@ model ScheduleItem {
   id                 Int                @id @default(autoincrement())
   slackUserId        String             @map("slack_user_id")
   title              String
+  shortTitle         String?            @map("short_title")
+  shortTitleBasis    String?            @map("short_title_basis")
   dueDate            DateTime?          @map("due_date") @db.Date
   dueTime            String?            @map("due_time")
   linkUrl            String?            @map("link_url")
@@ -1516,4 +1518,29 @@ model ArtJobKeywordChange {
 
   @@index([createdAt])
   @@map("art_job_keyword_change")
+}
+
+model DailyTodoList {
+  id          Int              @id @default(autoincrement())
+  slackUserId String           @map("slack_user_id")
+  kstDate     String           @map("kst_date")
+  status      String
+  createdAt   DateTime         @default(now()) @map("created_at")
+  entries     DailyTodoEntry[]
+
+  @@unique([slackUserId, kstDate])
+  @@map("daily_todo_list")
+}
+
+model DailyTodoEntry {
+  id             Int           @id @default(autoincrement())
+  listId         Int           @map("list_id")
+  list           DailyTodoList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  scheduleItemId Int           @map("schedule_item_id")
+  turn           String
+  observed       Boolean
+  position       Int
+
+  @@unique([listId, scheduleItemId])
+  @@map("daily_todo_entry")
 }

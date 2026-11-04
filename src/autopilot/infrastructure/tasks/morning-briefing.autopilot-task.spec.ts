@@ -10,6 +10,7 @@ import {
   ScheduleItemRecord,
   ScheduleStatus,
 } from '../../../schedule/domain/schedule.type';
+import { buildScheduleItemRecord } from '../../../schedule/domain/schedule-item.fixture';
 import { MorningBriefingAutopilotTask } from './morning-briefing.autopilot-task';
 
 const NO_TRUNCATION = {
@@ -772,6 +773,7 @@ describe('MorningBriefingAutopilotTask', () => {
         .mockResolvedValue({ reasoning: '테스트 계획', analysisReasoning: '' }),
     };
     const dueSoon: ScheduleItemRecord = {
+      ...buildScheduleItemRecord(),
       id: 1,
       slackUserId: 'U1',
       title: '자동차세',

@@ -1,11 +1,13 @@
 import { ScheduleStatus } from '../../schedule/domain/schedule.type';
 import { ScheduleItemRecord } from '../../schedule/domain/schedule.type';
+import { buildScheduleItemRecord } from '../../schedule/domain/schedule-item.fixture';
 import {
   formatNeedsDate,
   formatScheduleRegistered,
 } from './schedule.formatter';
 
 const recordWithTitle = (title: string): ScheduleItemRecord => ({
+  ...buildScheduleItemRecord(),
   id: 1,
   slackUserId: 'U1',
   title,

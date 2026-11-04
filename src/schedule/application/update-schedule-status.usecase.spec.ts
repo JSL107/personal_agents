@@ -6,9 +6,11 @@ import {
 
 import { ScheduleRepositoryPort } from '../domain/port/schedule.repository.port';
 import { ScheduleItemRecord, ScheduleStatus } from '../domain/schedule.type';
+import { buildScheduleItemRecord } from '../domain/schedule-item.fixture';
 import { UpdateScheduleStatusUsecase } from './update-schedule-status.usecase';
 
 const baseRecord: ScheduleItemRecord = {
+  ...buildScheduleItemRecord(),
   id: 1,
   slackUserId: 'U1',
   title: '자동차세',

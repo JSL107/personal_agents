@@ -18,6 +18,7 @@ export interface TransitionInput {
   from: ScheduleStatus;
   to: ScheduleStatus;
   now: Date;
+  completedAt?: Date;
   actor: ScheduleActor;
   patch?: ScheduleFieldsPatch;
   expected?: ScheduleDateSnapshot;
@@ -156,6 +157,7 @@ export interface RecordEventAndTransitionInput {
   transitionFrom: ScheduleStatus[];
   transitionTo: ScheduleStatus | null;
   now: Date;
+  completedAt?: Date;
   actor: ScheduleActor;
 }
 
@@ -193,4 +195,10 @@ export interface FindBySourceKeyInput {
   slackUserId: string;
   source: ScheduleSource;
   sourceKey: string;
+}
+
+export interface FindCompletedBetweenInput {
+  slackUserId: string;
+  from: Date;
+  to: Date;
 }

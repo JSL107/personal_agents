@@ -8,6 +8,7 @@ import {
   ScheduleRepositoryPort,
   UpdateStatusInput,
 } from '../domain/port/schedule.repository.port';
+import { ScheduleException } from '../domain/schedule.exception';
 import {
   AddEventInput,
   AddFollowUpInput,
@@ -18,6 +19,7 @@ import {
   DueClaimInput,
   FindBySourceInput,
   FindBySourceKeyInput,
+  FindCompletedBetweenInput,
   FindScheduleDetailInput,
   FindUnfinishedInput,
   MarkFollowUpNotifiedInput,
@@ -41,10 +43,30 @@ import {
   ScheduleSource,
   ScheduleStatus,
 } from '../domain/schedule.type';
+import { ScheduleErrorCode } from '../domain/schedule-error-code.enum';
 import { TransitionInTransactionInput } from './schedule.prisma.repository.type';
+
+const validateCompletedAt = (
+  to: ScheduleStatus | null,
+  completedAt: Date | undefined,
+  now: Date,
+): void => {
+  if (
+    completedAt !== undefined &&
+    (to !== ScheduleStatus.DONE ||
+      !Number.isFinite(completedAt.getTime()) ||
+      completedAt > now)
+  ) {
+    throw new ScheduleException({
+      code: ScheduleErrorCode.INVALID_COMPLETED_AT,
+      message: '유효하지 않은 완료 시각입니다.',
+    });
+  }
+};
 
 interface ScheduleItemRow {
   id: number;
+  createdAt: Date;
   slackUserId: string;
   title: string;
   dueDate: Date | null;
@@ -83,6 +105,7 @@ const buildDueDateFilter = (input: FindByDateRangeInput): DueDateFilter => {
 const toRecord = (row: ScheduleItemRow): ScheduleItemRecord => {
   return {
     id: row.id,
+    createdAt: row.createdAt,
     slackUserId: row.slackUserId,
     title: row.title,
     dueDate: row.dueDate,
@@ -215,6 +238,19 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
     return rows.map(toRecord);
   }
 
+  async findCompletedBetween(
+    input: FindCompletedBetweenInput,
+  ): Promise<ScheduleItemRecord[]> {
+    const rows = await this.prisma.scheduleItem.findMany({
+      where: {
+        slackUserId: input.slackUserId,
+        status: ScheduleStatus.DONE,
+        completedAt: { gte: input.from, lt: input.to },
+      },
+    });
+    return rows.map(toRecord);
+  }
+
   async findUnfinished(
     input: FindUnfinishedInput,
   ): Promise<ScheduleItemRecord[]> {
@@ -282,6 +318,7 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
   }
 
   async transition(input: TransitionInput): Promise<ScheduleItemRecord | null> {
+    validateCompletedAt(input.to, input.completedAt, input.now);
     return await this.prisma.$transaction(async (client) =>
       this.transitionInTransaction({ client, input }),
     );
@@ -299,7 +336,10 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
     }
     const data: Prisma.ScheduleItemUpdateManyMutationInput = {
       status: input.to,
-      completedAt: input.to === ScheduleStatus.DONE ? input.now : null,
+      completedAt:
+        input.to === ScheduleStatus.DONE
+          ? (input.completedAt ?? input.now)
+          : null,
       ...input.patch,
     };
     if (
@@ -754,6 +794,7 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
   async recordEventAndTransition(
     input: RecordEventAndTransitionInput,
   ): Promise<RecordedEventTransition | 'DUPLICATE'> {
+    validateCompletedAt(input.transitionTo, input.completedAt, input.now);
     let eventCreateUniqueViolation = false;
     try {
       return await this.prisma.$transaction(async (client) => {
@@ -791,6 +832,7 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
             from: before.status as ScheduleStatus,
             to: input.transitionTo,
             now: input.now,
+            completedAt: input.completedAt,
             actor: input.actor,
           },
         });

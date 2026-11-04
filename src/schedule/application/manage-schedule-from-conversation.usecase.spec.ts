@@ -10,9 +10,11 @@ import {
   UNTRUSTED_INPUT_START,
 } from '../../common/llm/untrusted-input.util';
 import { ScheduleItemRecord, ScheduleStatus } from '../domain/schedule.type';
+import { buildScheduleItemRecord } from '../domain/schedule-item.fixture';
 import { ManageScheduleFromConversationUsecase } from './manage-schedule-from-conversation.usecase';
 
 const item: ScheduleItemRecord = {
+  ...buildScheduleItemRecord(),
   id: 7,
   slackUserId: 'U1',
   title: '결제 API',

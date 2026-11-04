@@ -155,6 +155,7 @@ export enum ResponseCode {
   INVALID_APPLICABILITY_OUTPUT = 'INVALID_APPLICABILITY_OUTPUT',
 
   // Schedule — ScheduleErrorCode 와 1:1 동기화
+  SCHEDULE_INVALID_COMPLETED_AT = 'SCHEDULE_INVALID_COMPLETED_AT',
   SCHEDULE_INPUT_REQUIRED = 'SCHEDULE_INPUT_REQUIRED',
 
   // Subconscious — SubconsciousErrorCode 와 1:1 동기화

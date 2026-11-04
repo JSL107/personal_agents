@@ -1,11 +1,13 @@
 import { findByTitle } from './find-by-title';
 import { ScheduleItemRecord, ScheduleStatus } from './schedule.type';
+import { buildScheduleItemRecord } from './schedule-item.fixture';
 
 const item = (
   id: number,
   title: string,
   status = ScheduleStatus.OPEN,
 ): ScheduleItemRecord => ({
+  ...buildScheduleItemRecord(),
   id,
   slackUserId: 'U1',
   title,

@@ -13,12 +13,14 @@ import {
   ScheduleItemRecord,
   ScheduleStatus,
 } from '../../../schedule/domain/schedule.type';
+import { buildScheduleItemRecord } from '../../../schedule/domain/schedule-item.fixture';
 import { ScheduleReminderAutopilotTask } from './schedule-reminder.autopilot-task';
 
 const claimAt = new Date('2026-11-04T05:00:00Z');
 const buildItem = (
   overrides: Partial<ScheduleItemRecord> = {},
 ): ScheduleItemRecord => ({
+  ...buildScheduleItemRecord(),
   id: 7,
   slackUserId: 'U1',
   title: '결제 API',

@@ -8,6 +8,7 @@ import {
   DueClaimInput,
   FindBySourceInput,
   FindBySourceKeyInput,
+  FindCompletedBetweenInput,
   FindScheduleDetailInput,
   FindUnfinishedInput,
   MarkFollowUpNotifiedInput,
@@ -66,6 +67,9 @@ export interface ScheduleRepositoryPort {
     input: Required<FindByDateRangeInput>,
   ): Promise<ScheduleItemRecord[]>;
   findUndated(slackUserId: string): Promise<ScheduleItemRecord[]>;
+  findCompletedBetween(
+    input: FindCompletedBetweenInput,
+  ): Promise<ScheduleItemRecord[]>;
   findUnfinished(input: FindUnfinishedInput): Promise<ScheduleItemRecord[]>;
   findAllByOwner(slackUserId: string): Promise<ScheduleItemRecord[]>;
   findBySource(input: FindBySourceInput): Promise<ScheduleItemRecord[]>;

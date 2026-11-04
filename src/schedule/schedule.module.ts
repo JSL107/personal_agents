@@ -22,9 +22,11 @@ import { ScheduleFollowUpUsecase } from './application/schedule-follow-up.usecas
 import { UpdateScheduleUsecase } from './application/update-schedule.usecase';
 import { UpdateScheduleFieldsUsecase } from './application/update-schedule-fields.usecase';
 import { UpdateScheduleStatusUsecase } from './application/update-schedule-status.usecase';
+import { DAILY_TODO_REPOSITORY_PORT } from './domain/port/daily-todo.repository.port';
 import { SCHEDULE_REPOSITORY_PORT } from './domain/port/schedule.repository.port';
 import { SCHEDULE_COLLECTION_STATE_REPOSITORY_PORT } from './domain/port/schedule-collection-state.repository.port';
 import { SCHEDULE_NOTIFIER_PORT } from './domain/port/schedule-notifier.port';
+import { DailyTodoPrismaRepository } from './infrastructure/daily-todo.prisma.repository';
 import { ScheduleDispatcher } from './infrastructure/schedule.dispatcher';
 import { SchedulePrismaRepository } from './infrastructure/schedule.prisma.repository';
 import { ScheduleCollectionStatePrismaRepository } from './infrastructure/schedule-collection-state.prisma.repository';
@@ -39,6 +41,10 @@ import { ScheduleConsoleController } from './interface/schedule-console.controll
   imports: [AgentRunModule, FactAnswerModule, PrismaModule, ModelRouterModule],
   controllers: [ScheduleConsoleController],
   providers: [
+    {
+      provide: DAILY_TODO_REPOSITORY_PORT,
+      useClass: DailyTodoPrismaRepository,
+    },
     { provide: SCHEDULE_REPOSITORY_PORT, useClass: SchedulePrismaRepository },
     {
       provide: SCHEDULE_COLLECTION_STATE_REPOSITORY_PORT,
@@ -80,6 +86,7 @@ import { ScheduleConsoleController } from './interface/schedule-console.controll
     },
   ],
   exports: [
+    DAILY_TODO_REPOSITORY_PORT,
     RegisterScheduleUsecase,
     ListSchedulesUsecase,
     MarkScheduleAsHolidayUsecase,
