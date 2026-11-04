@@ -337,7 +337,9 @@ describe('ScheduleCollectGithubAutopilotTask', () => {
     );
   });
 
-  it('lifecycle 조회가 실패하면 이미 조회한 이슈도 저장하지 않고 커서를 유지한다', async () => {
+  // 레포가 지워지거나 권한이 사라진 PR 하나가 매 회차 404 를 내도 수집 전체가 멈추면 안 된다.
+  // 조회 실패를 닫힘으로 보지 않는 원칙은 그 PR 만 건너뛰는 것으로 지킨다 — 다음 회차가 다시 확인한다.
+  it('lifecycle 조회가 실패한 PR 만 건너뛰고 나머지 수집과 커서 전진은 계속한다', async () => {
     repository.findBySource.mockResolvedValue([
       {
         ...taskItem,
@@ -348,8 +350,11 @@ describe('ScheduleCollectGithubAutopilotTask', () => {
     ]);
     github.getItemLifecycle.mockRejectedValue(new Error('not found'));
     await makeTask().run();
-    expect(repository.createCollected).not.toHaveBeenCalled();
+    expect(repository.createCollected).toHaveBeenCalled();
     expect(repository.transition).not.toHaveBeenCalled();
-    expect(stateRepository.markSucceeded).not.toHaveBeenCalled();
+    expect(stateRepository.markSucceeded).toHaveBeenCalledWith(
+      ScheduleSource.GITHUB_PR,
+      expect.any(Date),
+    );
   });
 });

@@ -146,10 +146,21 @@ export class ScheduleCollectGithubAutopilotTask implements AutopilotTask {
         if (!ref) {
           continue;
         }
-        lifecycleObservations.push({
-          item,
-          lifecycle: await this.github.getItemLifecycle(ref),
-        });
+        // 조회 실패는 닫힘이 아니다 — 그 PR 만 건너뛰고 다음 회차가 다시 확인한다. 전체를
+        // 실패시키면 지워진 레포의 PR 하나가 매 회차 GitHub 수집을 통째로 막는다.
+        try {
+          lifecycleObservations.push({
+            item,
+            lifecycle: await this.github.getItemLifecycle(ref),
+          });
+        } catch (error) {
+          this.logger.warn(
+            appendIntegrationHint(
+              `PR 상태 확인 실패(${item.sourceKey}): ${error instanceof Error ? error.message : String(error)}`,
+              error,
+            ),
+          );
+        }
       }
       for (const issue of assignedTasks.issues) {
         await this.collectIssue({ issue, ownerId, now });
