@@ -91,7 +91,7 @@ describe('formatPaperScoreReport', () => {
     expect(text).toContain(
       '못 산 추천 2건 채점 · 적중 50% · 평균 +12.34% · 초과 +2.34% (원 4 · 중복 1 · 대기 1)',
     );
-    expect(text).toContain('*LONG_TERM* · 규칙 v2');
+    expect(text).toContain('*장기투자* · 규칙 v2');
   });
 
   // 저장하지 않은 회차를 조용히 넘기면, 손으로 과거를 재채점한 숫자를 원장에 있는 성적으로
@@ -117,12 +117,12 @@ describe('formatPaperScoreReport', () => {
         ],
       });
 
-    expect(render([2, 3], 0)).toContain('*LONG_TERM* · 규칙 v2·v3 혼합');
+    expect(render([2, 3], 0)).toContain('*장기투자* · 규칙 v2·v3 혼합');
     // 알려진 버전만 세면 섞인 표본이 순수한 v2 성적처럼 보인다 — 미기록도 함께 적는다.
-    expect(render([2], 3)).toContain('*LONG_TERM* · 규칙 v2 + 미기록 3건');
-    expect(render([], 3)).toContain('*LONG_TERM* · 규칙 미기록 3건');
+    expect(render([2], 3)).toContain('*장기투자* · 규칙 v2 + 미기록 3건');
+    expect(render([], 3)).toContain('*장기투자* · 규칙 미기록 3건');
     // 추천이 아예 없는 계좌를 "미기록" 으로 적으면 없는 표본이 있는 것처럼 읽힌다.
-    expect(render([], 0)).toContain('*LONG_TERM* · 규칙 -');
+    expect(render([], 0)).toContain('*장기투자* · 규칙 -');
   });
 
   it('청산 밴드가 섞였거나 밴드 밖에서 팔린 집계를 그대로 드러낸다', () => {

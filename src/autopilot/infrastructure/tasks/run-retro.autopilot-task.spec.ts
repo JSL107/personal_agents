@@ -282,7 +282,7 @@ describe('RunRetroAutopilotTask', () => {
   });
 });
 
-describe('RunRetroAutopilotTask — 체인 관측', () => {
+describe('RunRetroAutopilotTask: 체인 관측', () => {
   const healthyStats: AgentRunStatRow[] = [
     { agentType: 'PM', total: 11, failed: 0, failRate: 0, avgDurationMs: 1000 },
   ];
@@ -305,7 +305,7 @@ describe('RunRetroAutopilotTask — 체인 관측', () => {
     const result = await task.run(context);
 
     expect(result.skip).toBe(false);
-    expect(result.summaryText).toContain('#42');
+    expect(result.summaryText).toContain('실행 42번');
     expect(result.summaryText).toContain('CTO');
   });
 

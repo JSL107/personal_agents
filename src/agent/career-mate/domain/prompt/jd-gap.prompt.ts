@@ -1,4 +1,5 @@
 import { DomainStatus } from '../../../../common/exception/domain-status.enum';
+import { READER_WRITING_RULES } from '../../../../common/llm/reader-writing-rules';
 import {
   UNTRUSTED_INPUT_NOTICE,
   wrapUntrustedInput,
@@ -18,6 +19,8 @@ ${UNTRUSTED_INPUT_NOTICE}
 - gaps: JD 요구 중 부족/미입증.
 - topics: 갭을 메우는 블로그/학습 주제 3개. 각 title(한 줄) + rationale(어떤 갭을 왜 메우는지). 프로필의 실제 경험과 연결.
 - 과장 금지. 프로필·JD 에서 확인되는 것만.
+
+${READER_WRITING_RULES}
 
 스키마:
 {"fitSummary":"2~3문장","have":["..."],"gaps":["..."],"topics":[{"title":"...","rationale":"..."}]}`;

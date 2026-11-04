@@ -6,13 +6,13 @@ import { GenerateCeoMetaUsecase } from '../../agent/ceo/application/generate-ceo
 import { GeneratePoEvaluationUsecase } from '../../agent/po-eval/application/generate-po-evaluation.usecase';
 import { PoEvalCareerlogPayload } from '../../agent/po-eval/infrastructure/po-eval-careerlog.applier';
 import { AgentRunRange } from '../../common/domain/agent-run-range.type';
+import { formatRunIdLine } from '../../common/util/run-id-line.util';
 import { HumanizeService } from '../../humanize/application/humanize.service';
 import { humanizeEvaluationOutput } from '../../humanize/application/humanize-report.adapter';
 import { CreatePreviewUsecase } from '../../preview-gate/application/create-preview.usecase';
 import { PREVIEW_KIND } from '../../preview-gate/domain/preview-action.type';
 import { SlackHandler } from '../domain/port/slack-handler.port';
 import { formatCeoMetaOutput } from '../format/ceo-meta.formatter';
-import { formatModelFooter } from '../format/model-footer.formatter';
 import { formatEvaluationOutput } from '../format/po-evaluation.formatter';
 import { buildPreviewBlocks } from '../format/preview-message.builder';
 import {
@@ -94,9 +94,7 @@ export class PhaseCommandHandler implements SlackHandler {
           this.humanizeService,
         );
         const formatted = formatEvaluationOutput(humanized);
-        const text =
-          `${formatted.summary}\n\n${formatted.detail}` +
-          formatModelFooter(outcome);
+        const text = `${formatted.summary}\n\n${formatted.detail}\n${formatRunIdLine(outcome.agentRunId)}`;
         const payload: PoEvalCareerlogPayload = {
           notionPageId: this.careerLogNotionPageId,
           period: outcome.result.careerLog.period,
@@ -114,7 +112,7 @@ export class PhaseCommandHandler implements SlackHandler {
           replace_original: true,
           text,
           blocks: buildPreviewBlocks({
-            previewText: `${text}\n\n_📝 위 careerLog 를 Notion 페이지에 적재하시려면 ✅ 적용 (30분 안)._`,
+            previewText: `${text}\n\n_📝 위 이력서 기록을 Notion 페이지에 저장하려면 ✅ 적용 (30분 안)._`,
             previewId: preview.id,
           }) as never,
         });

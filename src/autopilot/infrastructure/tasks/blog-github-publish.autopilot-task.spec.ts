@@ -121,14 +121,14 @@ describe('BlogGithubPublishAutopilotTask', () => {
         status: 'skipped',
         cause: 'hold',
         message:
-          "'강의 정리' 은 발행하지 않고 보류로 옮겼습니다 — 필기 수준이다.",
+          "'강의 정리' 은 발행하지 않고 보류로 옮겼습니다: 필기 수준이다.",
       },
     });
 
     await expect(task.run(CONTEXT)).resolves.toEqual({
       skip: false,
       summaryText:
-        "'강의 정리' 은 발행하지 않고 보류로 옮겼습니다 — 필기 수준이다.",
+        "'강의 정리' 은 발행하지 않고 보류로 옮겼습니다: 필기 수준이다.",
     });
   });
 
@@ -258,6 +258,24 @@ describe('BlogGithubPublishAutopilotTask', () => {
       READY_CANDIDATE.status === 'ready' ? READY_CANDIDATE.payload : undefined,
     );
     expect(result.preview?.requiresDetailDelivery).toBe(true);
+    expect(result.preview?.slackText).toBe(
+      '🌐 *GitHub에 공개할까요?*\n제목: 안전한 글\n첫 문단: 본문\n공개 저장소 src/content/posts/2026-08-18-safe-post.md 에 그대로 올라가요. 전문은 저녁 메시지 스레드의 첨부 파일에서 확인해 주세요.',
+    );
+  });
+
+  it('GitHub 승인 카드의 외부 제목과 첫 문단에서 Slack 제어문자를 이스케이프한다', async () => {
+    const { task } = buildTask({
+      candidate: {
+        ...READY_CANDIDATE,
+        title: '<!here> 글',
+        content: '<!here> 본문',
+      } as BlogPublishCandidate,
+    });
+
+    const result = await task.run(CONTEXT);
+
+    expect(result.preview?.slackText).toContain('제목: &lt;!here&gt; 글');
+    expect(result.preview?.slackText).toContain('첫 문단: &lt;!here&gt; 본문');
   });
 
   it('기본 ON에서 준비된 후보를 orchestrator용 단수 preview로 반환한다', async () => {
@@ -287,7 +305,7 @@ describe('BlogGithubPublishAutopilotTask', () => {
 
 // 저녁 발행은 이 task 로만 돈다 — usecase 의 `execute` 는 수동 `/blog-publish` 전용이다.
 // 계측을 usecase 쪽에만 넣으면 매일 도는 회차가 통째로 빠진다.
-describe('BlogGithubPublishAutopilotTask — 단계 경계 계측', () => {
+describe('BlogGithubPublishAutopilotTask: 단계 경계 계측', () => {
   it('단계별 구조 수치를 원장 output 에 남긴다', async () => {
     const stages: BlogStageStructure[] = [
       {
@@ -348,7 +366,7 @@ describe('BlogGithubPublishAutopilotTask — 단계 경계 계측', () => {
 
 // 이 경로가 pageId 를 안 남기면, 실패·차단 회차가 어느 글 때문이었는지 원장에 없다 —
 // 큐가 막혀도 무엇이 막고 있는지 조회할 수 없고, 후순위 로직도 판정 근거를 잃는다.
-describe('BlogGithubPublishAutopilotTask — 선택한 초안 기록', () => {
+describe('BlogGithubPublishAutopilotTask: 선택한 초안 기록', () => {
   it('고른 초안의 pageId 를 원장 스냅샷에 남긴다', async () => {
     const { task, publishNotionDraft, updateInputSnapshot } = buildTask({});
 

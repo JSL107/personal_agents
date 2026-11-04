@@ -13,7 +13,7 @@ export const formatWaitingSection = (items: WaitingItem[]): string => {
       item.url.length > 0 && isSafeHttpUrl(item.url)
         ? `<${sanitizeForSlackLink(item.url)}|${sanitizeForSlackLink(item.title)}>`
         : item.title;
-    lines.push(`• ${titled} — _${item.reason}_`);
+    lines.push(`• ${titled}: _${item.reason}_`);
   }
   return lines.join('\n');
 };

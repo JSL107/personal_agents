@@ -8,14 +8,13 @@ import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { SucceededAgentRunSnapshot } from '../../../agent-run/domain/port/agent-run.repository.port';
 import { HumanizeService } from '../../../humanize/application/humanize.service';
 import { humanizeEvaluationOutput } from '../../../humanize/application/humanize-report.adapter';
-import { AgentType } from '../../../model-router/domain/model-router.type';
-import { formatModelFooter } from '../../../slack/format/model-footer.formatter';
 import { formatEvaluationOutput } from '../../../slack/format/po-evaluation.formatter';
 import {
   AutopilotTask,
   AutopilotTaskContext,
   AutopilotTaskResult,
 } from '../../domain/autopilot-task.port';
+import { formatTradeDay } from '../paper-number.formatter';
 
 // 업무 회고 run 이 "이번 저녁 다이제스트에서 방금 나간 것" 으로 볼 수 있는 시간 폭. evening 그룹은
 // work-reviewer → daily-eval 을 연달아 돌리므로 그 사이는 수 분이다. 수동 /worklog 는 시간이 아니라
@@ -108,42 +107,13 @@ export class PoEvalAutopilotTask implements AutopilotTask {
         outcome.result,
         this.humanizeService,
       );
-      const workReviewerRunId =
-        outcome.result.sourceAgentRuns.workReviewerRunId;
-      const [latestWorklogRun] =
-        workReviewerRunId === undefined
-          ? []
-          : await this.agentRunService.findRecentSucceededRuns({
-              agentType: AgentType.WORK_REVIEWER,
-              slackUserId: ownerSlackUserId,
-              sinceDays: 1,
-              limit: 1,
-            });
-      const shownQuantitative =
-        workReviewerRunId === undefined
-          ? null
-          : findQuantitativeShownInDigest(
-              workReviewerRunId,
-              latestWorklogRun,
-              new Date(),
-            );
-      const formatted = formatEvaluationOutput(
-        humanized,
-        workReviewerRunId !== undefined && shownQuantitative
-          ? {
-              quantitativeShownElsewhere: {
-                workReviewerRunId,
-                isShown: (item) => isCoveredByWorklog(item, shownQuantitative),
-              },
-            }
-          : {},
-      );
+      const formatted = formatEvaluationOutput(humanized);
       // 저녁 메인에는 한 줄만 둔다. 평가 요약·Wins·Blockers 는 같은 메시지의 업무 회고 「오늘 한 일」·
       // 저녁 회고 KPT 와 같은 사실을 되풀이해, 메인 중복의 원천이었다(설계 2026-10-02 evening-digest-dedup).
       // 내용은 버리지 않고 스레드 맨 앞으로 옮긴다. 수동 /po-eval 은 이 task 를 거치지 않아 종전대로다.
       const { wins, blockers } = humanized.qualitative;
-      const summaryText = `🌅 *Daily Eval — ${firedAtKst} (19:40 KST 자동 회고)* · Wins ${wins.length} · Blockers ${blockers.length} — 내용은 스레드`;
-      const detailText = `${formatted.summary}\n\n${formatted.detail}${formatModelFooter(outcome)}`;
+      const summaryText = `🌅 *하루 평가 ${formatTradeDay(firedAtKst)}* · 잘된 것 ${wins.length} · 막힌 것 ${blockers.length}, 내용은 스레드`;
+      const detailText = `${formatted.summary}\n\n${formatted.detail}`;
       // 메인엔 건수뿐이라 상세가 유일한 사본이다 — 스레드 실패 시 채널로 대피시킨다.
       return { skip: false, summaryText, detailText, detailIsOnlyCopy: true };
     } catch (error) {
@@ -153,7 +123,7 @@ export class PoEvalAutopilotTask implements AutopilotTask {
       ) {
         return {
           skip: true,
-          emptyReason: `🌙 *Daily Eval — ${firedAtKst} skip*\n_오늘 sub-agent (Work Reviewer / PO Shadow / Impact Reporter) run 부재로 회고 대상 없음. 내일 19:40 KST 에 다시 시도합니다._`,
+          emptyReason: `🌙 *하루 평가 ${formatTradeDay(firedAtKst)} 건너뜀*\n_오늘 회고할 자료가 없어요. 내일 다시 시도해요._`,
         };
       }
       throw error;

@@ -80,7 +80,7 @@ export class JobFeedAutopilotTask implements AutopilotTask {
       // 프로필 생성은 GitHub 조회와 모델 호출을 동반한다.
       return {
         skip: false,
-        summaryText: `*백엔드 공고 수집* — 커리어 프로필이 없어 채점을 건너뜁니다. (수집 ${collected.upsert.created}건)`,
+        summaryText: `*백엔드 공고 수집*: 커리어 프로필이 없어 채점을 건너뜁니다. (수집 ${collected.upsert.created}건)`,
       };
     }
 

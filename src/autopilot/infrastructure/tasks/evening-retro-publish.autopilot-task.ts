@@ -230,7 +230,12 @@ export class EveningRetroPublishTask implements AutopilotTask {
     if (mergedPrs.length === 0 && !worklogText && !dailyEvalText) {
       return {
         skip: false,
-        summaryText: buildDigest({ keep: null, retroFailure: null }),
+        summaryText: buildDigest({
+          keep: null,
+          problem: null,
+          tryNext: null,
+          retroFailure: null,
+        }),
         ...(pmPlanVerdict.length > 0 ? { runVerdicts: pmPlanVerdict } : {}),
       };
     }
@@ -300,9 +305,15 @@ export class EveningRetroPublishTask implements AutopilotTask {
         keep: parsed.retrospective.malformed
           ? null
           : (parsed.retrospective.keep?.trim() ?? null) || null,
+        problem: parsed.retrospective.malformed
+          ? null
+          : parsed.retrospective.problem?.trim() || null,
+        tryNext: parsed.retrospective.malformed
+          ? null
+          : parsed.retrospective.tryNext?.trim() || null,
         retroFailure: null,
       });
-      const retroText = `🌙 *오늘의 회고 — ${firedAtKst}*\n\n${this.formatReflectionText(
+      const retroText = `🌙 *오늘의 회고 ${firedAtKst}*\n\n${this.formatReflectionText(
         parsed.retrospective,
       )}\n\n${this.formatCandidateHeading(
         parsed.candidates.length,
@@ -342,7 +353,8 @@ export class EveningRetroPublishTask implements AutopilotTask {
         previews.push({
           kind: PREVIEW_KIND.EVENING_BLOG_PUBLISH,
           payload,
-          previewText: `📝 *블로그 후보 ${top.blogValueScore}점* · 「${top.title}」 · 근거 ${sourceLabel} ${sourceRefsText}\n✅ 누르면 이 PR 들로 본문을 써 Notion 초안으로 올립니다 — GitHub 공개 발행은 따로 묻습니다.`,
+          previewText: `📝 *블로그 후보 ${top.blogValueScore}점* · 「${top.title}」 · 근거 ${sourceLabel} ${sourceRefsText}\n✅ 누르면 이 PR 들로 본문을 써 Notion 초안으로 올립니다. GitHub 공개 발행은 따로 묻습니다.`,
+          slackText: `📝 *블로그 발행할까요?*\n제목: ${escapeSlackMrkdwn(top.title)}\n어디로: 노션 블로그\n왜: ${escapeSlackMrkdwn(top.reason.split('\n')[0])}\n_승인하면 초안을 만들어 노션에 올려요._`,
         });
       }
       // 경력 카드 — 저장소별로 나눠 회고한다. 하루치를 한 덩어리로 넘기면 서로 무관한 PR 이
@@ -357,6 +369,10 @@ export class EveningRetroPublishTask implements AutopilotTask {
         );
         const droppedNote =
           droppedRefCount > 0 ? ` · 상한 초과 ${droppedRefCount}건 제외` : '';
+        const repoCountLines = groups.map(
+          (group) =>
+            `• ${escapeSlackMrkdwn(group.repo.split('/').at(-1) ?? group.repo)}: ${group.refs.length}건`,
+        );
         previews.push({
           kind: PREVIEW_KIND.EVENING_CAREER_REFLECT,
           payload: {
@@ -367,7 +383,8 @@ export class EveningRetroPublishTask implements AutopilotTask {
           // 원본은 GitHub 에 있고 메모는 그 사본이었다(분석 보고 §4 3-1).
           // 아래 입력칸 안내는 한 줄로 남긴다. 입력칸의 label·hint 만으로는 "코드에 남지 않는
           // 정보라서 적는다" 는 이유가 전달되지 않는다.
-          previewText: `💼 *경력 반영 ${reflectedCount}건* · 저장소 ${groups.length}곳${droppedNote} → 이력서 프로필·포트폴리오 Notion\n${groupedRefsText}\n_(선택) 이 작업이 사용자·비용·처리량에 한 일을 아래 칸에 적으면 이력서 문장이 그 근거를 씁니다 — 코드에는 남지 않는 정보입니다._`,
+          previewText: `💼 *경력 반영 ${reflectedCount}건* · 저장소 ${groups.length}곳${droppedNote} → 이력서 프로필·포트폴리오 Notion\n${groupedRefsText}\n_(선택) 이 작업이 사용자·비용·처리량에 한 일을 아래 칸에 적으면 이력서 문장이 그 근거를 씁니다. 코드에는 남지 않는 정보입니다._`,
+          slackText: `💼 *경력 기록에 반영할까요?*\n머지한 PR ${reflectedCount}건을 이력서 프로필과 포트폴리오에 반영해요.${droppedNote}\n${repoCountLines.join('\n')}`,
         });
       }
 
@@ -403,6 +420,8 @@ export class EveningRetroPublishTask implements AutopilotTask {
         skip: false,
         summaryText: buildDigest({
           keep: null,
+          problem: null,
+          tryNext: null,
           retroFailure: message.slice(0, 120),
         }),
         ...(pmPlanVerdict.length > 0 ? { runVerdicts: pmPlanVerdict } : {}),
@@ -528,7 +547,7 @@ export class EveningRetroPublishTask implements AutopilotTask {
     openPrFetchFailed: boolean,
   ): string {
     if (!authorLogin) {
-      return '\n\n_⚠️ `IMPACT_REPORT_GITHUB_AUTHOR` 가 없어 머지 PR 을 조회하지 않았습니다 — 근거 없이 쓴 회고입니다._';
+      return '\n\n_⚠️ `IMPACT_REPORT_GITHUB_AUTHOR` 가 없어 머지 PR 을 조회하지 않았습니다. 근거 없이 쓴 회고입니다._';
     }
     // 열린 PR 조회가 깨지면 「미완」 칸의 근거가 통째로 없는 채로 회고가 나간다. 그 사실을
     // 로그에만 두면 「미완: 없음」 이 "다 끝냈다" 로 읽힌다 — 이 보고에서 유일하게 무시되지
@@ -666,7 +685,7 @@ export class EveningRetroPublishTask implements AutopilotTask {
     if (totalCount <= SUMMARY_CANDIDATE_LIMIT) {
       return '*발행 후보(가치 점수)*';
     }
-    return `*발행 후보(가치 점수)* — ${totalCount}건 중 상위 ${SUMMARY_CANDIDATE_LIMIT}건 (전체는 스레드에)`;
+    return `*발행 후보(가치 점수)*: ${totalCount}건 중 상위 ${SUMMARY_CANDIDATE_LIMIT}건 (전체는 스레드에)`;
   }
 
   /**
@@ -701,11 +720,11 @@ export class EveningRetroPublishTask implements AutopilotTask {
       );
       const sourceRefsText = this.formatSourceRefsText(candidate.sourceRefs);
       const keywordsText = candidate.keywords.join(', ');
-      const keywordSuffix = keywordsText ? ` — ${keywordsText}` : '';
+      const keywordSuffix = keywordsText ? `: ${keywordsText}` : '';
       return `• (${candidate.blogValueScore}점) ${candidate.title}${keywordSuffix}\n    ${sourceLabel} · ${sourceRefsText}\n    ${candidate.reason}`;
     });
 
-    return `*발행 후보 전체 — ${candidates.length}건*\n${lines.join('\n')}`;
+    return `*발행 후보 전체: ${candidates.length}건*\n${lines.join('\n')}`;
   }
 
   private formatGroupedPrRefs(pullRequests: EveningPrInput[]): string {

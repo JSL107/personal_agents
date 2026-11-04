@@ -38,13 +38,13 @@ describe('formatKnowledgeLint', () => {
           type: 'near_duplicate',
           episodeId: 1,
           relatedId: 2,
-          detail: '중복 후보 — 차이 0.010',
+          detail: '중복 후보: 차이 0.010',
           occurredAt,
         },
         {
           type: 'embedding_null',
           episodeId: 9,
-          detail: '검색 색인 누락 — 비슷한 기억 찾기에서 빠짐',
+          detail: '검색 색인 누락: 비슷한 기억 찾기에서 빠짐',
           occurredAt,
         },
       ],
@@ -54,9 +54,9 @@ describe('formatKnowledgeLint', () => {
 
     expect(text).toContain('기억 점검');
     expect(text).toContain('중복 후보 1건');
-    expect(text).toContain('#1 ↔ #2');
+    expect(text).toContain('기억 1 ↔ 기억 2');
     expect(text).toContain('검색 색인 누락 1건');
-    expect(text).toContain('#9');
+    expect(text).toContain('기억 9');
   });
 
   it('중복 섹션에 발송 뒤 정리할 건수를 예고한다', () => {
@@ -64,7 +64,7 @@ describe('formatKnowledgeLint', () => {
       type: 'near_duplicate',
       episodeId: 1,
       relatedId: 2,
-      detail: '중복 후보 — 차이 0.000',
+      detail: '중복 후보: 차이 0.000',
       occurredAt,
     };
 
@@ -83,7 +83,7 @@ describe('formatKnowledgeLint', () => {
         {
           type: 'embedding_null',
           episodeId: 9,
-          detail: '검색 색인 누락 — 비슷한 기억 찾기에서 빠짐',
+          detail: '검색 색인 누락: 비슷한 기억 찾기에서 빠짐',
           occurredAt,
         },
       ],
@@ -119,7 +119,7 @@ describe('formatKnowledgeLint', () => {
           type: 'contradiction',
           episodeId: 1,
           relatedId: 2,
-          detail: '모순 후보 — 결론 충돌',
+          detail: '모순 후보: 결론 충돌',
           occurredAt,
         },
       ],
@@ -128,7 +128,7 @@ describe('formatKnowledgeLint', () => {
     );
 
     expect(text).toContain('모순 후보 1건');
-    expect(text).toContain('#1 ↔ #2');
+    expect(text).toContain('기억 1 ↔ 기억 2');
     expect(text).toContain('결론 충돌');
   });
 
@@ -139,7 +139,7 @@ describe('formatKnowledgeLint', () => {
           type: 'contradiction',
           episodeId: 3,
           relatedId: 4,
-          detail: '모순 후보 — *강조* _이탤릭_ `코드`',
+          detail: '모순 후보: *강조* _이탤릭_ `코드`',
           occurredAt,
         },
       ],
@@ -171,7 +171,7 @@ describe('formatKnowledgeLint', () => {
     expect(text).toContain('모순 판정 꺼짐');
   });
 
-  // 아래 세 건이 codex 리뷰(PR #269 P2)가 지적한 위장 경로다 — L4 를 끝까지 못 돌린 회차에
+  // 아래 세 건이 codex 리뷰(PR 기억 269 P2)가 지적한 위장 경로다 — L4 를 끝까지 못 돌린 회차에
   // ✅ "이상 없음" 을 내보내면 점검 장애가 정상으로 보인다.
   it('쿼터로 L4 가 중단됐으면 0건이어도 ✅ 를 쓰지 않는다', () => {
     const text = format([], '2026-06-28', {
@@ -207,7 +207,7 @@ describe('formatKnowledgeLint', () => {
           type: 'near_duplicate',
           episodeId: 1,
           relatedId: 2,
-          detail: '중복 후보 — 차이 0.000',
+          detail: '중복 후보: 차이 0.000',
           occurredAt,
         },
       ],
@@ -228,7 +228,7 @@ describe('formatKnowledgeLint', () => {
           type: 'near_duplicate',
           episodeId: 1,
           relatedId: 2,
-          detail: '중복 후보 — 차이 0.000',
+          detail: '중복 후보: 차이 0.000',
           occurredAt,
         },
       ],
@@ -249,7 +249,7 @@ describe('formatKnowledgeLint', () => {
           type: 'near_duplicate',
           episodeId: 1,
           relatedId: 2,
-          detail: '중복 후보 — 차이 0.000',
+          detail: '중복 후보: 차이 0.000',
           occurredAt,
         },
       ],
@@ -267,7 +267,7 @@ describe('formatKnowledgeLint', () => {
         {
           type: 'embedding_null',
           episodeId: 9,
-          detail: '검색 색인 누락 — 비슷한 기억 찾기에서 빠짐',
+          detail: '검색 색인 누락: 비슷한 기억 찾기에서 빠짐',
           occurredAt,
         },
       ],

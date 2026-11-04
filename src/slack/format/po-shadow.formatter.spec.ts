@@ -22,7 +22,7 @@ const base: PoShadowReport = {
   degradedSources: [],
 };
 
-describe('formatPoShadowReport — 조회 실패 표시', () => {
+describe('formatPoShadowReport: 조회 실패 표시', () => {
   it('조용한 날에도 못 본 소스를 밝힌다', () => {
     const rendered = formatPoShadowReport({
       ...base,
@@ -63,13 +63,13 @@ describe('formatPoShadowReport', () => {
       findings: [],
       judgments: [],
       recoverySummary: null,
-      factSummary: ['#10 머지 완료', '사용자 입력 일정 확인 불가'],
+      factSummary: ['머지 완료(#10)', '사용자 입력 일정 확인 불가'],
       droppedFindingCount: 0,
       degradedSources: [],
     });
 
     expect(rendered).toBe(
-      '✅ *PO 검토* — 계획대로 진행 중 (#10 머지 완료 · 사용자 입력 일정 확인 불가)',
+      '✅ *PO 검토*: 계획대로 진행 중 (머지 완료(#10) · 사용자 입력 일정 확인 불가)',
     );
   });
 
@@ -86,17 +86,17 @@ describe('formatPoShadowReport', () => {
       degradedSources: [],
     });
 
-    expect(rendered).toBe('✅ *PO 검토* — 계획대로 진행 중');
+    expect(rendered).toBe('✅ *PO 검토*: 계획대로 진행 중');
   });
 
   it('non-quiet 결과는 결론 뒤에 지적과 같은 인덱스의 근거를 렌더한다', () => {
     const rendered = formatPoShadowReport(base);
     const sections = rendered.split('\n\n');
 
-    expect(sections[0]).toBe('*PO 검토 — 계획과 다른 점 1가지*');
-    expect(sections[1]).toBe('🎯 *먼저* #264 업로드 차단부터 해소한다.');
+    expect(sections[0]).toBe('*PO 검토: 계획과 다른 점 1가지*');
+    expect(sections[1]).toBe('🎯 *먼저* 업로드 차단부터 해소한다(#264).');
     expect(sections[2]).toBe(
-      '1. #264 업로드가 멈췄다\n      → 리뷰어를 지정한다\n      근거: #264 업로드 차단 · 리뷰 0건',
+      '1. 업로드가 멈췄다(#264)\n      → 리뷰어를 지정한다\n      근거: 업로드 차단(#264) · 리뷰 0건',
     );
   });
 
@@ -116,13 +116,13 @@ describe('formatPoShadowReport', () => {
 
     const main = formatPoShadowReport(report, { detailInThread: true });
     expect(main).toContain(
-      '1. #264 업로드가 멈췄다\n      → 리뷰어를 지정한다',
+      '1. 업로드가 멈췄다(#264)\n      → 리뷰어를 지정한다',
     );
     expect(main).not.toContain('근거:');
     expect(main).not.toContain('지난 지적');
 
     const detail = formatPoShadowDetail(report);
-    expect(detail).toContain('*지적별 근거*\n1. #264 업로드 차단 · 리뷰 0건');
+    expect(detail).toContain('*지적별 근거*\n1. 업로드 차단(#264) · 리뷰 0건');
     expect(detail).toContain('🔁 *지난 지적 4건*');
   });
 
@@ -143,7 +143,7 @@ describe('formatPoShadowReport', () => {
       { detailInThread: true },
     );
     expect(rendered).toContain(
-      '1. #264 업로드가 멈췄다\n      • <https://github.com/o/r/pull/3922|sbe-conduct-api#3922 학교 관리자용>\n      • &lt;!channel&gt; 워커\n      → 리뷰어를 지정한다',
+      '1. 업로드가 멈췄다(#264)\n      • <https://github.com/o/r/pull/3922|sbe-conduct-api#3922 학교 관리자용>\n      • &lt;!channel&gt; 워커\n      → 리뷰어를 지정한다',
     );
   });
 
@@ -196,11 +196,11 @@ describe('formatPoShadowReport', () => {
     const rendered = formatPoShadowReport({
       ...base,
       findings: [],
-      factSummary: ['#264 리뷰 0건', '#975 새 담당 PR'],
+      factSummary: ['리뷰 0건(#264)', '새 담당 PR(#975)'],
     });
 
     expect(rendered).toContain(
-      '🎯 *먼저* #264 업로드 차단부터 해소한다.\n\n근거: #264 리뷰 0건\n근거: #975 새 담당 PR',
+      '🎯 *먼저* 업로드 차단부터 해소한다(#264).\n\n근거: 리뷰 0건(#264)\n근거: 새 담당 PR(#975)',
     );
   });
 
@@ -265,12 +265,12 @@ describe('formatPoShadowReport', () => {
     });
 
     expect(rendered).toBe(
-      '✅ *PO 검토* — 계획대로 진행 중 (&lt;fact&gt; &amp; evidence)',
+      '✅ *PO 검토*: 계획대로 진행 중 (&lt;fact&gt; &amp; evidence)',
     );
   });
 });
 
-describe('회수 블록 — factSummary 가 아니라 독립 블록으로 낸다', () => {
+describe('회수 블록: factSummary 가 아니라 독립 블록으로 낸다', () => {
   const summary = {
     merged: 5,
     unresolved: 6,

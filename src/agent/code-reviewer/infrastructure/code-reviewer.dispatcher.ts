@@ -17,10 +17,8 @@ import {
   AgentDispatcher,
   DispatchOutcome,
 } from '../../../router/domain/port/agent-dispatcher.port';
-import {
-  formatPullRequestPublication,
-  formatPullRequestReview,
-} from '../../../slack/format/pull-request-review.formatter';
+import { formatPullRequestPublication } from '../../../slack/format/pull-request-review.formatter';
+import { formatPullRequestReviewResponse } from '../../../slack/format/pull-request-review-response';
 import { ReviewPullRequestUsecase } from '../application/review-pull-request.usecase';
 import { CodeReviewerException } from '../domain/code-reviewer.exception';
 import { CodeReviewerErrorCode } from '../domain/code-reviewer-error-code.enum';
@@ -89,7 +87,11 @@ export class CodeReviewerDispatcher implements AgentDispatcher {
       output: outcome.result,
       modelUsed: outcome.modelUsed,
       formattedText: [
-        formatPullRequestReview({ prRef, review: outcome.result }),
+        formatPullRequestReviewResponse({
+          prRef,
+          prTitle: outcome.prTitle,
+          review: outcome.result,
+        }),
         ...(outcome.publication !== undefined
           ? ['', formatPullRequestPublication(outcome.publication)]
           : []),

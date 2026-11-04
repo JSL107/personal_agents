@@ -59,7 +59,7 @@ const formatDecision = (
   }
   // "연속" 이라고 쓰지 않는다 — 관측 창 안의 실패 건수일 뿐, 사이에 성공이 있었는지는
   // 이 숫자로 알 수 없다. 다만 마지막 종료가 실패인 것만 여기까지 오므로 미복구는 확실하다.
-  return `${toTaskLabel(decision.agentType)} ${decision.count}건 실패, 아직 복구 안 됨 — ${escapeSlackMrkdwn(describeFailureReason(decision.reason))}`;
+  return `${toTaskLabel(decision.agentType)} ${decision.count}건 실패, 아직 복구 안 됨: ${escapeSlackMrkdwn(describeFailureReason(decision.reason))}`;
 };
 
 /**
@@ -73,27 +73,27 @@ export const formatSecretariat = (
   firedAtKst: string,
   now: Date,
 ): string => {
-  const lines = [`📋 *비서실* — ${firedAtKst} · 지난 24시간`, ''];
+  const lines = [`📋 *비서실*: ${firedAtKst} · 지난 24시간`, ''];
 
-  lines.push(`*① 완료* — ${formatCompleted(digest.completed)}`);
+  lines.push(`*① 완료*: ${formatCompleted(digest.completed)}`);
 
   const inProgress =
     digest.inProgress.length === 0
       ? '없음'
       : digest.inProgress.map(toTaskLabel).join(' · ');
-  lines.push(`*② 진행 중* — ${inProgress}`);
+  lines.push(`*② 진행 중*: ${inProgress}`);
 
   if (digest.approvals.length === 0) {
-    lines.push('*③ 대표 승인 대기* — 없음');
+    lines.push('*③ 대표 승인 대기*: 없음');
   } else {
-    lines.push(`*③ 대표 승인 대기* — ${digest.approvals.length}건`);
+    lines.push(`*③ 대표 승인 대기*: ${digest.approvals.length}건`);
     lines.push(
       ...withOverflow(
         digest.approvals
           .slice(0, DETAIL_LINE_LIMIT)
           .map(
             (row) =>
-              `   • ${escapeSlackMrkdwn(row.label)} — ${formatRemaining(row.expiresAt, now)}`,
+              `   • ${escapeSlackMrkdwn(row.label)}: ${formatRemaining(row.expiresAt, now)}`,
           ),
         digest.approvals.length,
       ),
@@ -101,23 +101,23 @@ export const formatSecretariat = (
   }
 
   if (digest.blocked.length === 0) {
-    lines.push('*④ 막힌 것* — 없음');
+    lines.push('*④ 막힌 것*: 없음');
   } else {
-    lines.push(`*④ 막힌 것* — ${digest.blocked.length}종`);
+    lines.push(`*④ 막힌 것*: ${digest.blocked.length}종`);
     lines.push(
       ...withOverflow(
         digest.blocked
           .slice(0, DETAIL_LINE_LIMIT)
           .map(
             (row) =>
-              `   • ${toTaskLabel(row.agentType)} ${row.count}건 — ${escapeSlackMrkdwn(describeFailureReason(row.reason))}`,
+              `   • ${toTaskLabel(row.agentType)} ${row.count}건: ${escapeSlackMrkdwn(describeFailureReason(row.reason))}`,
           ),
         digest.blocked.length,
       ),
     );
   }
 
-  lines.push(`*⑤ 오늘 결정할 것* — ${formatDecision(digest.decision, now)}`);
+  lines.push(`*⑤ 오늘 결정할 것*: ${formatDecision(digest.decision, now)}`);
 
   return lines.join('\n');
 };

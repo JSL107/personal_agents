@@ -33,6 +33,10 @@ describe('formatDailyReview', () => {
     expect(detail).toContain('코드 품질 개선');
     expect(detail).toContain('수동 배포');
     expect(detail).toContain('자동 배포');
+    expect(detail).toContain('• 바뀌기 전: 수동 배포');
+    expect(detail).toContain('• 바뀐 뒤: 자동 배포');
+    expect(detail).not.toContain('Before:');
+    expect(detail).not.toContain('After:');
     expect(detail).toContain('리뷰 요청');
     expect(detail).toContain('문서 업데이트');
   });

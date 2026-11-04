@@ -31,7 +31,7 @@ describe('PaperRecommendAutopilotTask', () => {
           task.run({ ownerSlackUserId: 'U1', firedAtKst }),
         ).resolves.toEqual({
           skip: true,
-          summaryText: `휴장일(${firedAtKst}) — 모의투자 추천 판단 건너뜀`,
+          summaryText: `휴장일(${firedAtKst}): 모의투자 추천 판단 건너뜀`,
         });
         expect(recommendation.execute).not.toHaveBeenCalled();
         expect(trace.record).toHaveBeenCalledWith({
@@ -40,7 +40,7 @@ describe('PaperRecommendAutopilotTask', () => {
           gateEnabled: true,
           candidateCount: null,
           llmCalled: false,
-          detail: '휴장일 — 추천 판단 건너뜀',
+          detail: '휴장일: 추천 판단 건너뜀',
         });
       },
     );
@@ -126,11 +126,11 @@ describe('PaperRecommendAutopilotTask', () => {
     ).resolves.toEqual({
       skip: false,
       summaryText:
-        '*모의투자 추천* — 장기 1건 · 스윙 0건 · 8/18(화) 시가 체결 예정\n' +
-        '*장기* 매수 1 · 매도 0 | 현금 405만 · 보유 3종목 · 평가 1,012만\n' +
+        '*모의투자 추천*: 장기투자 1건 · 단기매매 0건 · 8/18(화) 시가 체결 예정\n' +
+        '*장기투자* 매수 1 · 매도 0 | 현금 405만 · 보유 3종목 · 평가 1,012만\n' +
         ' • 매수 코웨이(021240) 20주 ≈ 195만\n' +
         '   판단: 장기 성장\n' +
-        '*스윙* 주문 없음 | 현금 9,000원 · 보유 6종목 · 평가 987만\n' +
+        '*단기매매* 주문 없음 | 현금 9,000원 · 보유 6종목 · 평가 987만\n' +
         ' • 매수·매도 추천 없음',
       // 제외·실패가 없으면 요약에 없는 내용이 없으므로 스레드 상세를 만들지 않는다.
     });
@@ -162,12 +162,12 @@ describe('PaperRecommendAutopilotTask', () => {
     ).resolves.toEqual({
       skip: false,
       summaryText:
-        '*모의투자 추천* — 장기 실패 · 스윙 실패\n' +
-        '*장기* 실패 — 모델 호출 실패\n' +
-        '*스윙* 실패 — 스크리너 실패',
+        '*모의투자 추천*: 장기투자 실패 · 단기매매 실패\n' +
+        '*장기투자* 실패: 모델 호출 실패\n' +
+        '*단기매매* 실패: 스크리너 실패',
       detailText:
-        '*장기 실패 상세*\n모델 호출 실패\n\n' +
-        '*스윙 실패 상세*\n스크리너 실패\nDB timeout',
+        '*장기투자 실패 상세*\n모델 호출 실패\n\n' +
+        '*단기매매 실패 상세*\n스크리너 실패\nDB timeout',
     });
   });
 
@@ -287,13 +287,13 @@ describe('PaperRecommendAutopilotTask', () => {
     });
 
     expect(result.summaryText).toContain(
-      ' • 제외 3건 — 현금 부족 2, 보유 중·중복 1',
+      ' • 제외 3건: 현금 부족 2, 보유 중·중복 1',
     );
     expect(result.detailText).toBe(
-      '*스윙 제외 상세*\n' +
-        ' • 제외 매수 첫째(000001) — 현금 부족\n' +
-        ' • 제외 매수 둘째(000002) — 현금 부족\n' +
-        ' • 제외 매수 셋째(000003) — 보유 중·중복',
+      '*단기매매 제외 상세*\n' +
+        ' • 제외 매수 첫째(000001): 현금 부족\n' +
+        ' • 제외 매수 둘째(000002): 현금 부족\n' +
+        ' • 제외 매수 셋째(000003): 보유 중·중복',
     );
   });
 
@@ -367,18 +367,18 @@ describe('PaperRecommendAutopilotTask', () => {
     });
 
     expect(result.summaryText).toContain(
-      ' • 시세 데이터 없음 — 주문 생성 안 됨',
+      ' • 시세 데이터 없음: 주문 생성 안 됨',
     );
     expect(result.summaryText).not.toContain('매수·매도 추천 없음');
   });
   it.each([
-    ['NO_MARKET_DATA', null, '시세 데이터 없음 — 주문 생성 안 됨'],
+    ['NO_MARKET_DATA', null, '시세 데이터 없음: 주문 생성 안 됨'],
     ['NO_CANDIDATES', null, '조건을 통과한 후보 종목 없음'],
     ['ALL_FILTERED', null, '추천이 모두 제외돼 주문 없음'],
     [
       'MODEL_HELD',
       '관망 <근거> & 대기',
-      '보유 유지 판단 — 관망 &lt;근거&gt; &amp; 대기',
+      '보유 유지 판단: 관망 &lt;근거&gt; &amp; 대기',
     ],
     ['MODEL_HELD', null, '보유 유지 판단 (사유 미기재)'],
   ])('%s 이유를 저장된 코드로 표시한다', async (code, detail, line) => {
@@ -497,9 +497,9 @@ describe('PaperRecommendAutopilotTask', () => {
       firedAtKst: '2026-08-17',
     });
 
-    expect(result.summaryText).toContain(' • 제외 1건 — 보유 중·중복 1');
+    expect(result.summaryText).toContain(' • 제외 1건: 보유 중·중복 1');
     expect(result.summaryText).toContain(
-      ' • 시세 데이터 없음 — 주문 생성 안 됨',
+      ' • 시세 데이터 없음: 주문 생성 안 됨',
     );
     expect(result.summaryText).not.toContain('평가 1,012만(');
   });
@@ -652,14 +652,14 @@ describe('PaperRecommendAutopilotTask', () => {
     });
 
     expect(result.summaryText).toBe(
-      '*모의투자 추천* — 장기 실패 · 스윙 1건 · 8/18(화) 시가 체결 예정\n' +
-        '*장기* 실패 — 모델 호출 실패\n' +
-        '*스윙* 매수 1 · 매도 0 | 현금 25만 · 보유 6종목 · 평가 1,021만(+2.08%)\n' +
+      '*모의투자 추천*: 장기투자 실패 · 단기매매 1건 · 8/18(화) 시가 체결 예정\n' +
+        '*장기투자* 실패: 모델 호출 실패\n' +
+        '*단기매매* 매수 1 · 매도 0 | 현금 25만 · 보유 6종목 · 평가 1,021만(+2.08%)\n' +
         ' • 매수 DN오토모티브(007340) 26주 ≈ 153만\n' +
         '   판단: 모멘텀 안정',
     );
     expect(result.detailText).toBe(
-      '*장기 실패 상세*\n모델 호출 실패\n쿼터 소진',
+      '*장기투자 실패 상세*\n모델 호출 실패\n쿼터 소진',
     );
   });
 });

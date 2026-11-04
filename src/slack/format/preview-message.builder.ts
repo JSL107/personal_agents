@@ -18,11 +18,13 @@ export const SECTION_MRKDWN_LIMIT = 2950;
 // previewText 가 SECTION_MRKDWN_LIMIT 초과 시 newline boundary 우선 chunk 분할 → section 다중.
 export const buildPreviewBlocks = ({
   previewText,
+  slackText,
   previewId,
   kind,
   payload,
 }: {
   previewText: string;
+  slackText?: string | null;
   previewId: string;
   // 아래 둘은 선택. 주지 않으면 카드는 종전대로 본문 + 버튼만이다.
   // 경력 반영 카드에만 승인 전 "작업 맥락" 입력칸이 묶음(저장소) 수만큼 더 붙는다.
@@ -32,7 +34,7 @@ export const buildPreviewBlocks = ({
   // 카드 본문에도 맨 주소 접기를 적용한다 — 승인 카드는 사용자가 가장 오래 들여다보는 화면이라
   // 주소 한 줄이 판단 근거를 밀어내면 안 된다. 이미 `<url|이름>` 인 링크는 그대로 통과한다(멱등).
   const chunks = chunkMrkdwnText(
-    linkifyBareUrls(previewText),
+    linkifyBareUrls(slackText ?? previewText),
     SECTION_MRKDWN_LIMIT,
   );
   return [

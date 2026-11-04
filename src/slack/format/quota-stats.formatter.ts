@@ -1,24 +1,36 @@
 import { QuotaStatsResult } from '../../agent-run/application/get-quota-stats.usecase';
 
+const providerLabel = (provider: string): string => {
+  switch (provider) {
+    case 'codex-cli':
+      return '기본 처리';
+    case 'claude-cli':
+      return '예비 처리';
+    case 'mock':
+      return '시험 처리';
+    default:
+      return '기타 처리';
+  }
+};
+
 // /quota 결과 — 사용자의 agent_run 사용량 통계 (provider 별 count + 평균/총 duration).
 // 모델 호출 없는 DB 집계라 footer 미부착. since 시각은 ISO 그대로 노출 (사후 분석용).
 export const formatQuotaStats = (stats: QuotaStatsResult): string => {
   // TODAY 는 자정 기준이 아닌 rolling 24h — UTC 자정 기준이라고 오해하지 않도록 라벨에 명시 (V3 audit B3 P9).
-  const rangeLabel =
-    stats.range === 'WEEK' ? '최근 7일' : '최근 24시간 (rolling)';
+  const rangeLabel = stats.range === 'WEEK' ? '최근 7일' : '최근 24시간';
   if (stats.totals.count === 0) {
     return [
-      `*Quota 사용량 — ${rangeLabel}*`,
+      `*사용량: ${rangeLabel}*`,
       '',
-      `_${stats.sinceIso} 이후 본인 명의 agent_run 기록 없음._`,
+      `_${stats.sinceIso} 이후 실행 기록이 없어요._`,
     ].join('\n');
   }
 
   const lines: string[] = [
-    `*Quota 사용량 — ${rangeLabel}*`,
-    `_since ${stats.sinceIso}_`,
+    `*사용량: ${rangeLabel}*`,
+    `_시작 시각 ${stats.sinceIso}_`,
     '',
-    '*Provider 별*',
+    '*처리 방식별*',
   ];
 
   // count 내림차순 — 가장 많이 쓴 provider 가 위로.
@@ -27,7 +39,7 @@ export const formatQuotaStats = (stats: QuotaStatsResult): string => {
     const avgSec = (row.avgDurationMs / 1000).toFixed(1);
     const totalSec = (row.totalDurationMs / 1000).toFixed(1);
     lines.push(
-      `• ${row.cliProvider} — ${row.count}회, 평균 ${avgSec}s · 총 ${totalSec}s`,
+      `• ${providerLabel(row.cliProvider)}: ${row.count}회, 평균 ${avgSec}초 · 총 ${totalSec}초`,
     );
   }
 

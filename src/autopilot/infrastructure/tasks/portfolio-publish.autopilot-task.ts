@@ -24,6 +24,8 @@ import {
 // 이 머리로 실패를 알아보고 "장애" 로 올린다(morning-briefing.autopilot-task.ts) — 문구를 바꾸면 함께 바뀐다.
 export const PORTFOLIO_PUBLISH_FAILURE_HEADER =
   '⚠️ *포트폴리오 사이트 발행 실패*';
+export const PORTFOLIO_REASON_SEPARATOR = ': ';
+export const PORTFOLIO_BULLET_SEPARATOR = ': ';
 
 // 0건 항목은 적지 않는다. "약함 3건 / 근거없음 0건", "강등 1 / 폐기 0 / 누락 0 / 앞세우기 반려 0" 처럼
 // 0 이 섞이면 읽을 것만 늘고, 이 줄을 접어 싣는 아침 한 통(morning-briefing)에서 한 줄이 두 줄로 넘친다.
@@ -65,7 +67,7 @@ export class PortfolioPublishAutopilotTask implements AutopilotTask {
       this.logger.error(`포트폴리오 사이트 발행 실패 — ${reason}`);
       return {
         skip: false,
-        summaryText: `${PORTFOLIO_PUBLISH_FAILURE_HEADER} — ${reason}`,
+        summaryText: `${PORTFOLIO_PUBLISH_FAILURE_HEADER}${PORTFOLIO_REASON_SEPARATOR}${reason}`,
       };
     }
 
@@ -81,7 +83,7 @@ export class PortfolioPublishAutopilotTask implements AutopilotTask {
       auditResult = outcome.result;
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
-      auditNote = `⚠️ 감사 실패 — ${reason}`;
+      auditNote = `⚠️ 감사 실패: ${reason}`;
       this.logger.warn(auditNote);
     }
 
@@ -147,7 +149,7 @@ export class PortfolioPublishAutopilotTask implements AutopilotTask {
     const summaryLines = ['📁 *포트폴리오 사이트 발행*'];
     if (result.createdProjects.length > 0) {
       summaryLines.push(
-        `• 새 프로젝트 ${result.createdProjects.length}건 (비공개 초안 — 편집기에서 게시하면 공개)`,
+        `• 새 프로젝트 ${result.createdProjects.length}건 (비공개 초안, 편집기에서 게시하면 공개)`,
       );
     }
     if (result.createdSkillGroups.length > 0) {
@@ -173,7 +175,7 @@ export class PortfolioPublishAutopilotTask implements AutopilotTask {
     }
     if (auditResult && (weakCount > 0 || missingCount > 0)) {
       summaryLines.push(
-        `• 📋 이력서 감사 — ${joinNonZero([
+        `• 📋 이력서 감사${PORTFOLIO_BULLET_SEPARATOR}${joinNonZero([
           ['약함', weakCount],
           ['근거없음', missingCount],
         ])} (총 ${auditResult.items.length}건)`,
@@ -186,7 +188,7 @@ export class PortfolioPublishAutopilotTask implements AutopilotTask {
     }
     if (auditResult && hasGuardConcern) {
       summaryLines.push(
-        `• ⚠️ 이력서 감사 가드 경고 — ${joinNonZero([
+        `• ⚠️ 이력서 감사 가드 경고${PORTFOLIO_BULLET_SEPARATOR}${joinNonZero([
           ['강등', auditResult.guard.demotedTitles.length],
           ['폐기', auditResult.guard.droppedTitles.length],
           ['누락', auditResult.guard.unjudgedTitles.length],
@@ -223,15 +225,17 @@ export class PortfolioPublishAutopilotTask implements AutopilotTask {
     }
     if (result.unnamedKeys.length > 0) {
       lines.push(
-        `이름 없음: ${result.unnamedKeys.join(', ')} — 그 저장소의 작업이 통째로 빠졌다`,
+        `이름 없음: ${result.unnamedKeys.join(', ')}. 그 저장소의 작업이 통째로 빠졌다`,
       );
     }
     for (const failure of result.failures) {
-      lines.push(`실패 ${failure.target} — ${failure.reason}`);
+      lines.push(
+        `실패 ${failure.target}${PORTFOLIO_REASON_SEPARATOR}${failure.reason}`,
+      );
     }
     if (result.missingAfterPublish.length > 0) {
       lines.push(
-        `발행 확인: 재조회에 없는 slug ${result.missingAfterPublish.join(', ')} — 사이트 저장이 실제로 안 됐을 수 있다`,
+        `발행 확인: 재조회에 없는 slug ${result.missingAfterPublish.join(', ')}. 사이트 저장이 실제로 안 됐을 수 있다`,
       );
     } else if (
       result.createdProjects.length > 0 ||

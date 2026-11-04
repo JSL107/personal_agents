@@ -243,11 +243,11 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
       }
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(
-        `주식 모니터링 실패 — 감지된 매매 ${detectedChanges.length}건은 그대로 알린다: ${message}`,
+        `주식 모니터링 실패: 감지된 매매 ${detectedChanges.length}건은 그대로 알린다: ${message}`,
       );
       return {
         skip: false,
-        summaryText: `_⚠️ 주식 모니터링 실패 — ${message.slice(0, 200)}. 다음 슬롯에 재시도됩니다._\n\n${changeText}`,
+        summaryText: `_⚠️ 주식 모니터링 실패: ${message.slice(0, 200)}. 다음 슬롯에 재시도됩니다._\n\n${changeText}`,
       };
     }
   }
@@ -345,7 +345,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
         .map(({ holding, today }) => inspectAvgPriceStatus(holding, today))
         .filter((status): status is AvgPriceStatus => status !== null);
       this.logger.log(
-        `주식 모니터링 — 휴장(추정), 마지막 거래일 ${lastTradeDate}`,
+        `주식 모니터링: 휴장(추정), 마지막 거래일 ${lastTradeDate}`,
       );
       const rateDate = lastTradeDate
         ? new Date(`${lastTradeDate}T00:00:00.000Z`)
@@ -489,7 +489,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
             collectStatus(holding, today, yesterday);
           } catch (error) {
             failures.push(
-              `${holding.symbol}: 알림 복구 실패 — ${(error as Error).message}`,
+              `${holding.symbol}: 알림 복구 실패: ${(error as Error).message}`,
             );
           }
           continue;
@@ -530,7 +530,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
         });
       } catch (error) {
         failures.push(
-          `${holding.symbol}: 저장 실패 — ${(error as Error).message}`,
+          `${holding.symbol}: 저장 실패: ${(error as Error).message}`,
         );
         continue;
       }
@@ -546,7 +546,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
     );
 
     this.logger.log(
-      `주식 모니터링 — ${holdings.length}종목, 발화 ${anomalies.length}건, 실패 ${failures.length}건, 채점용 시세 보강 ${backfilledCount}종목`,
+      `주식 모니터링: ${holdings.length}종목, 발화 ${anomalies.length}건, 실패 ${failures.length}건, 채점용 시세 보강 ${backfilledCount}종목`,
     );
 
     // 한 종목도 점검하지 못했는데 실패만 쌓였다면 그 실행은 실패다. 여기서 정상 반환하면
@@ -561,7 +561,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
     // "⚠️ … 자동 생성 실패" 한 줄을 남긴다. 알림이 사라지지 않는다.
     if (checkedCount === 0 && failures.length > 0) {
       throw new Error(
-        `보유 ${holdings.length}종목을 한 건도 점검하지 못했습니다 — ${failures.slice(0, 3).join(' / ')}`,
+        `보유 ${holdings.length}종목을 한 건도 점검하지 못했습니다: ${failures.slice(0, 3).join(' / ')}`,
       );
     }
 
@@ -639,7 +639,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
         horizonDays: DEFAULT_HORIZON_DAYS,
       });
     } catch (error) {
-      failures.push(`채점용 시세 보강 조회 실패 — ${(error as Error).message}`);
+      failures.push(`채점용 시세 보강 조회 실패: ${(error as Error).message}`);
       return 0;
     }
 
@@ -656,7 +656,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
         );
         const today = bars.at(-1);
         if (!today) {
-          failures.push(`${target.symbol}: 채점용 시세 보강 — 봉 없음`);
+          failures.push(`${target.symbol}: 채점용 시세 보강: 봉 없음`);
           continue;
         }
         await this.repository.upsertDailyPrice({
@@ -672,7 +672,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
         backfilledCount += 1;
       } catch (error) {
         failures.push(
-          `${target.symbol}: 채점용 시세 보강 실패 — ${(error as Error).message}`,
+          `${target.symbol}: 채점용 시세 보강 실패: ${(error as Error).message}`,
         );
       }
     }
@@ -706,7 +706,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
         }
       } catch (error) {
         this.logger.warn(
-          `${change.symbol} 매도 전 시세 조회 실패 — 이탈 변화로 본다: ${(error as Error).message}`,
+          `${change.symbol} 매도 전 시세 조회 실패: 이탈 변화로 본다: ${(error as Error).message}`,
         );
         count += 1;
       }
@@ -790,7 +790,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const cappedMessage = message.slice(0, 200);
-      this.logger.warn(`잔고 동기화 실패 — ${cappedMessage}`);
+      this.logger.warn(`잔고 동기화 실패: ${cappedMessage}`);
       return {
         synced: null,
         zeroed: null,
@@ -827,7 +827,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
     // 커밋하므로(트랜잭션 없음), 중간 실패 시 앞 종목만 갱신된 혼합 상태가 된다.
     // 종목 간 참조 무결성이 없어 각 종목은 옛 값 아니면 새 값 — 어느 쪽도 유효했던 값이라
     // 데이터 문제는 아니지만, 무엇이 갱신됐는지 단정할 수 없다는 사실은 그대로 알려야 한다.
-    const warning = `⚠️ 잔고 동기화 실패 — ${syncError}. 일부 종목의 평단·보유수량이 갱신되지 않았을 수 있습니다.`;
+    const warning = `⚠️ 잔고 동기화 실패: ${syncError}. 일부 종목의 평단·보유수량이 갱신되지 않았을 수 있습니다.`;
     const summaryText = result.summaryText
       ? `${warning}\n\n${result.summaryText}`
       : warning;
@@ -852,7 +852,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
         failures.length > 0 ? `종목 처리 실패 ${failures.length}건` : null,
         syncError ? '잔고 동기화 실패' : null,
       ].filter((reason): reason is string => reason !== null);
-      this.logger.log(`포트폴리오 노출 생략 — ${reasons.join(', ')}`);
+      this.logger.log(`포트폴리오 노출 생략: ${reasons.join(', ')}`);
       return result;
     }
 
@@ -870,7 +870,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
       return { ...result, summaryText };
     } catch (error) {
       this.logger.warn(
-        `포트폴리오 노출 계산 실패 — ${(error as Error).message}`,
+        `포트폴리오 노출 계산 실패: ${(error as Error).message}`,
       );
       return result;
     }
@@ -881,7 +881,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
     try {
       fetchedRate = await this.marketData.fetchUsdKrwRate();
     } catch (error) {
-      this.logger.warn(`환율 조회 실패 — ${(error as Error).message}`);
+      this.logger.warn(`환율 조회 실패: ${(error as Error).message}`);
     }
 
     const normalizedFetchedRate = fetchedRate
@@ -895,7 +895,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
           rate: normalizedFetchedRate,
         });
       } catch (error) {
-        this.logger.warn(`환율 저장 실패 — ${(error as Error).message}`);
+        this.logger.warn(`환율 저장 실패: ${(error as Error).message}`);
       }
       return normalizedFetchedRate;
     }
@@ -907,7 +907,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
       });
       return storedRate ? normalizePositiveDecimal(storedRate) : null;
     } catch (error) {
-      this.logger.warn(`환율 재조회 실패 — ${(error as Error).message}`);
+      this.logger.warn(`환율 재조회 실패: ${(error as Error).message}`);
       return null;
     }
   }
@@ -930,7 +930,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
               .toFixed(0)
           : undefined;
       } catch (error) {
-        this.logger.warn(`환율 환산 실패 — ${(error as Error).message}`);
+        this.logger.warn(`환율 환산 실패: ${(error as Error).message}`);
       }
       return {
         symbol: holding.symbol,

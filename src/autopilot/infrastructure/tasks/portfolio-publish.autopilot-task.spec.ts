@@ -6,7 +6,12 @@ import {
   PublishPortfolioSiteUsecase,
 } from '../../../agent/career-mate/application/publish-portfolio-site.usecase';
 import { ResumeAuditResult } from '../../../agent/career-mate/domain/career-mate.type';
-import { PortfolioPublishAutopilotTask } from './portfolio-publish.autopilot-task';
+import {
+  PORTFOLIO_BULLET_SEPARATOR,
+  PORTFOLIO_PUBLISH_FAILURE_HEADER,
+  PORTFOLIO_REASON_SEPARATOR,
+  PortfolioPublishAutopilotTask,
+} from './portfolio-publish.autopilot-task';
 
 const context = { ownerSlackUserId: 'U1', firedAtKst: '2026-08-18' };
 
@@ -157,6 +162,9 @@ describe('PortfolioPublishAutopilotTask', () => {
     expect(result.skip).toBe(false);
     expect(result.summaryText).toContain('발행 실패');
     expect(result.summaryText).toContain('PORTFOLIO_SITE_URL 미설정');
+    expect(result.summaryText).toBe(
+      `${PORTFOLIO_PUBLISH_FAILURE_HEADER}${PORTFOLIO_REASON_SEPARATOR}PORTFOLIO_SITE_URL 미설정`,
+    );
     expect(audit.execute).not.toHaveBeenCalled();
   });
 
@@ -215,7 +223,7 @@ describe('PortfolioPublishAutopilotTask', () => {
     expect(result.summaryText).toContain('새 프로젝트 1건');
     expect(result.detailText).toContain('a-pr-1');
     expect(`${result.summaryText}\n${result.detailText}`).toContain(
-      '감사 실패 — audit timeout',
+      '감사 실패: audit timeout',
     );
     expect(publish.execute.mock.invocationCallOrder[0]).toBeLessThan(
       audit.execute.mock.invocationCallOrder[0],
@@ -250,7 +258,9 @@ describe('PortfolioPublishAutopilotTask', () => {
     const result = await task.run(context);
 
     expect(result.skip).toBe(false);
-    expect(result.summaryText).toContain('이력서 감사 — 약함 1건 (총 1건)');
+    expect(result.summaryText).toContain(
+      `이력서 감사${PORTFOLIO_BULLET_SEPARATOR}약함 1건 (총 1건)`,
+    );
     expect(result.summaryText).not.toContain('근거없음 0건');
     expect(result.detailText).toContain('배포 안정화');
     expect(result.detailText).toContain('결과 수치와 영향 범위가 없다.');
@@ -333,7 +343,7 @@ describe('PortfolioPublishAutopilotTask', () => {
 
     expect(result.skip).toBe(false);
     expect(result.summaryText).toContain(
-      '• ⚠️ 이력서 감사 가드 경고 — 고칠 문장 누락 1건',
+      `• ⚠️ 이력서 감사 가드 경고${PORTFOLIO_BULLET_SEPARATOR}고칠 문장 누락 1건`,
     );
   });
 

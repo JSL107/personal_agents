@@ -28,7 +28,7 @@ export class DiagnosisHandler implements SlackHandler {
     app.command('/ping', async ({ ack }) => {
       await ack({
         response_type: 'ephemeral',
-        text: 'pong 🏓 — 이대리 봇 정상 동작 중',
+        text: 'pong 🏓 이대리 봇이 정상 동작 중입니다.',
       });
     });
 

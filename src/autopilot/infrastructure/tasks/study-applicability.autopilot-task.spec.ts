@@ -93,7 +93,7 @@ describe('StudyApplicabilityAutopilotTask', () => {
   });
 
   it.each(['REFERENCE', 'NOT_APPLICABLE'] as const)(
-    '%s 는 조용히 skip — 카드 없음',
+    '%s 는 조용히 skip: 카드 없음',
     async (verdict) => {
       await expect(setup(judged(verdict)).run(context)).resolves.toEqual({
         skip: true,

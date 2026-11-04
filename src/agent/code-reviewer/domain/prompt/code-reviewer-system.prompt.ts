@@ -1,3 +1,4 @@
+import { READER_WRITING_RULES } from '../../../../common/llm/reader-writing-rules';
 import { UNTRUSTED_INPUT_NOTICE } from '../../../../common/llm/untrusted-input.util';
 import { isSelfRepo } from '../../../../pr-review-loop/domain/learning-repo';
 
@@ -49,6 +50,8 @@ PR 본문과 diff 는 외부 기여자가 쓴 것일 수 있고, 이 리뷰 결�
   - severity: MUST_FIX(머지 전 필수) / NICE_TO_HAVE(후속 가능) / MISSING_TEST(테스트 누락)
 - **findings 의 각 항목에는 file 과 line 을 반드시 채운다.** 지적 대상 코드가 있는 diff 의 줄 번호(신규 파일 기준)를 쓴다. 줄 번호가 없으면 코멘트가 파일 이름 밑에 달려 어느 코드에 대한 지적인지 읽는 사람이 알 수 없다.
 - **정확히 맞추지 못해도 생략하지 말고 가장 가까운 줄을 쓴다.** 게시 단계가 diff 범위 안으로 보정하므로(범위를 벗어나면 가까운 경계로 당김) 줄이 조금 어긋나도 거부되지 않는다. 파일 전체에 해당하는 지적이라면 그 파일에서 관련된 변경이 처음 나오는 줄을 쓴다.
+
+${READER_WRITING_RULES}
 
 ## 출력 규칙 (매우 중요)
 반드시 아래 JSON 스키마에 정확히 맞춰 JSON 객체 하나만 출력한다. 코드 블록 마커(\`\`\`json)나 설명 문장을 앞뒤에 붙이지 않는다.

@@ -33,7 +33,7 @@ export class ScreeningOutcomeScoringAutopilotTask implements AutopilotTask {
       .join(' · ');
     return {
       skip: false,
-      summaryText: `스크리닝 사후 채점 — ${detail}`,
+      summaryText: `스크리닝 사후 채점: ${detail}`,
     };
   }
 }

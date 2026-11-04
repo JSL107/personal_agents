@@ -8,8 +8,9 @@ import { DomainException } from '../../common/exception/domain.exception';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { ObservedWorkerHost } from '../../common/queue/observed-worker-host';
 import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
-import { formatModelFooter } from '../../slack/format/model-footer.formatter';
+import { formatRunIdLine } from '../../common/util/run-id-line.util';
 import { formatPullRequestReview } from '../../slack/format/pull-request-review.formatter';
+import { formatReviewAiHandoff } from '../../slack/format/pull-request-review-response';
 import { SlackService } from '../../slack/slack.service';
 import {
   CODE_REVIEWER_QUEUE,
@@ -43,17 +44,44 @@ export class WebhookCodeReviewerConsumer extends ObservedWorkerHost {
         triggerType: TriggerType.WEBHOOK,
       });
       // AgentRunOutcome<PullRequestReview>.result 가 review 본체 — formatter 가 받는 type.
-      // model + agentRunId footer 는 별도 helper 로 append (수동 /review-pr 동일 패턴).
-      const text =
-        formatPullRequestReview({
-          prRef,
-          review: outcome.result,
-        }) + formatModelFooter(outcome);
-      await this.slackService.postMessage({
+      const text = formatPullRequestReview({
+        prRef,
+        prTitle: outcome.prTitle,
+        review: outcome.result,
+      });
+      const withRunId = `${text}\n${formatRunIdLine(outcome.agentRunId)}`;
+      const posted = await this.slackService.postMessage({
         kind: 'code-review-webhook',
         target: slackUserId,
-        text,
+        text: withRunId,
       });
+      const handoff = formatReviewAiHandoff({
+        prRef,
+        prTitle: outcome.prTitle,
+        review: outcome.result,
+      });
+      if (handoff !== null) {
+        try {
+          await this.slackService.postMessage({
+            kind: 'code-review-webhook',
+            target: slackUserId,
+            ...(posted.ts ? { threadTs: posted.ts } : {}),
+            text: handoff,
+          });
+        } catch (error: unknown) {
+          try {
+            await this.slackService.postMessage({
+              kind: 'code-review-webhook',
+              target: slackUserId,
+              text: handoff,
+            });
+          } catch (fallbackError: unknown) {
+            this.logger.error(
+              `Webhook code-reviewer AI 블록 전송 실패: ${String(error)}; ${String(fallbackError)}`,
+            );
+          }
+        }
+      }
       this.logger.log(
         `Webhook code-reviewer 완료 — ${prRef} (agentRunId=${outcome.agentRunId})`,
       );

@@ -108,6 +108,7 @@ export interface PreviewAction {
   payload: unknown;
   status: PreviewStatus;
   previewText: string;
+  slackText?: string | null;
   expiresAt: Date;
   createdAt: Date;
   appliedAt: Date | null;
@@ -129,6 +130,7 @@ export interface CreatePreviewInput {
   kind: PreviewKind;
   payload: unknown;
   previewText: string;
+  slackText?: string | null;
   // ttl 초과시 사용자가 ✅ 눌러도 EXPIRED 로 거절. default 1h 권고.
   ttlMs: number;
 }
@@ -147,6 +149,7 @@ export interface PreviewCardMessage {
   id: string;
   kind: PreviewKind;
   previewText: string;
+  slackText?: string | null;
   // kind 별 자유 JSON. 카드 빌더가 종류를 보고 해석한다.
   payload: unknown;
 }

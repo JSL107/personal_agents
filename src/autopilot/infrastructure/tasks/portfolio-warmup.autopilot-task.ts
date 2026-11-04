@@ -92,14 +92,14 @@ export class PortfolioWarmupAutopilotTask implements AutopilotTask {
     if (outcome.ok) {
       this.consecutiveFailures = 0;
       this.logger.log(
-        `포트폴리오 사이트 워밍업 성공 — ${outcome.elapsedMs}ms (깨어 있음)`,
+        `포트폴리오 사이트 워밍업 성공: ${outcome.elapsedMs}ms (깨어 있음)`,
       );
       return { skip: true };
     }
 
     this.consecutiveFailures += 1;
     this.logger.warn(
-      `포트폴리오 사이트 워밍업 실패 ${this.consecutiveFailures}회 연속 — ${outcome.reason}`,
+      `포트폴리오 사이트 워밍업 실패 ${this.consecutiveFailures}회 연속: ${outcome.reason}`,
     );
     if (this.consecutiveFailures < FAILURE_ALERT_THRESHOLD) {
       return { skip: true };
@@ -110,7 +110,7 @@ export class PortfolioWarmupAutopilotTask implements AutopilotTask {
     return {
       skip: false,
       summaryText: [
-        `⚠️ *포트폴리오 사이트 응답 없음* — ${this.consecutiveFailures}회 연속 실패`,
+        `⚠️ *포트폴리오 사이트 응답 없음*: ${this.consecutiveFailures}회 연속 실패`,
         `사유: ${outcome.reason}`,
         `대상: ${siteUrl.trim()}`,
       ].join('\n'),

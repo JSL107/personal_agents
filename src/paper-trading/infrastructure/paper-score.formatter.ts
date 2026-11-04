@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 
+import { PAPER_ACCOUNT_LABEL } from '../../autopilot/infrastructure/evening-digest.formatter';
 import { ScoreRecommendationsResult } from '../application/score-recommendations.usecase';
 
 const formatDecimal = (value: string): string => {
@@ -94,7 +95,7 @@ export const formatPaperScoreReport = (
   result: ScoreRecommendationsResult,
 ): string => {
   const lines = [
-    `*모의투자 추천 성적 — ${result.asOf.toISOString().slice(0, 10)}*`,
+    `*모의투자 추천 성적: ${result.asOf.toISOString().slice(0, 10)}*`,
   ];
 
   for (const account of result.accounts) {
@@ -119,7 +120,7 @@ export const formatPaperScoreReport = (
     ].join(' · ');
     lines.push(
       '',
-      `*${account.strategy}* · ${formatRuleVersions(account.ruleVersions, account.unknownRuleVersionCount)} · ${formatExitBands(account.exitBands, account.bandlessSellCount)}`,
+      `*${PAPER_ACCOUNT_LABEL[account.strategy] ?? account.strategy}* · ${formatRuleVersions(account.ruleVersions, account.unknownRuleVersionCount)} · ${formatExitBands(account.exitBands, account.bandlessSellCount)}`,
       `추천 ${score.recommendationCount}건 · 체결 ${score.closedCount + score.openCount}건(청산 ${score.closedCount}·보유 ${score.openCount}) · 미체결 ${score.expiredCount}건`,
       `적중 ${score.hitCount}/${score.closedCount} (${formatUnsignedRate(score.hitRate)})`,
       `평균 ${formatRate(score.meanReturnRate)} · 중앙값 ${formatRate(score.medianReturnRate)} · 최대 손실 ${formatRate(score.maximumLoss)}`,
@@ -132,7 +133,7 @@ export const formatPaperScoreReport = (
     );
     if (score.closedCount < 5) {
       lines.push(
-        `⚠️ 청산 표본 5건 미만(${score.closedCount}건) — 수치를 단정적으로 해석하지 마세요.`,
+        `⚠️ 청산 표본 5건 미만(${score.closedCount}건): 수치를 단정적으로 해석하지 마세요.`,
       );
     }
   }
@@ -140,12 +141,12 @@ export const formatPaperScoreReport = (
   if (result.evaluationBenchmarkMissing) {
     lines.push(
       '',
-      `⚠️ 평가일(${result.asOf.toISOString().slice(0, 10)}) 코스피 지수가 원장에 없습니다 — 보유 중인 추천과 그날 매도분이 초과수익 집계에서 빠졌습니다(결손 ${result.exclusions.benchmarkUnavailable}건). 반쪽 성적이 정본으로 남지 않도록 저장은 건너뜁니다. 지수 수집(평일 18:30)이 아직 안 돌았을 수도, 그 수집이 실패했을 수도 있습니다 — 수집 시각이 지났다면 유니버스 스윕 결과를 확인하세요.`,
+      `⚠️ 평가일(${result.asOf.toISOString().slice(0, 10)}) 코스피 지수가 원장에 없습니다: 보유 중인 추천과 그날 매도분이 초과수익 집계에서 빠졌습니다(결손 ${result.exclusions.benchmarkUnavailable}건). 반쪽 성적이 정본으로 남지 않도록 저장은 건너뜁니다. 지수 수집(평일 18:30)이 아직 안 돌았을 수도, 그 수집이 실패했을 수도 있습니다: 수집 시각이 지났다면 유니버스 스윕 결과를 확인하세요.`,
     );
   } else if (!result.persisted) {
     lines.push(
       '',
-      '⚠️ 이 회차는 원장에 저장하지 않았습니다 — 과거 기준일 재채점이거나 구간 집계입니다. 주문 상태는 시점 복원이 안 되므로 이 숫자는 그날의 성적과 다를 수 있습니다.',
+      '⚠️ 이 회차는 원장에 저장하지 않았습니다: 과거 기준일 재채점이거나 구간 집계입니다. 주문 상태는 시점 복원이 안 되므로 이 숫자는 그날의 성적과 다를 수 있습니다.',
     );
   }
 

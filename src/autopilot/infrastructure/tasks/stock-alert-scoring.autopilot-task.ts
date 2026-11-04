@@ -57,7 +57,7 @@ export class StockAlertScoringAutopilotTask implements AutopilotTask {
     }
     return {
       skip: false,
-      summaryText: `주식 알림 사후 채점 — ${scoredCount}건 채점`,
+      summaryText: `주식 알림 사후 채점: ${scoredCount}건 채점`,
     };
   }
 }

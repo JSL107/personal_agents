@@ -36,12 +36,12 @@ const describeDuplicateCount = (
   truncated: boolean,
 ): string => {
   if (truncated) {
-    return `*중복 후보 ${total}건 이상* _— 가까운 순 ${shown}건만 표시 · 차이가 0에 가까울수록 같은 내용_`;
+    return `*중복 후보 ${total}건 이상* _: 가까운 순 ${shown}건만 표시 · 차이가 0에 가까울수록 같은 내용_`;
   }
   if (total > shown) {
-    return `*중복 후보 ${total}건* _— 가까운 순 ${shown}건만 표시 · 차이가 0에 가까울수록 같은 내용_`;
+    return `*중복 후보 ${total}건* _: 가까운 순 ${shown}건만 표시 · 차이가 0에 가까울수록 같은 내용_`;
   }
-  return `*중복 후보 ${shown}건* _— 차이가 0에 가까울수록 같은 내용_`;
+  return `*중복 후보 ${shown}건* _: 차이가 0에 가까울수록 같은 내용_`;
 };
 
 export const formatKnowledgeLint = (
@@ -65,9 +65,9 @@ export const formatKnowledgeLint = (
   // 알리면 점검 장애가 정상으로 위장되고, 그건 이 하트비트가 없애려던 실패 모드 그 자체다.
   if (issues.length === 0) {
     if (incomplete) {
-      return `⚠️ *기억 점검* — ${firedAtKst} · 모순 판정을 끝내지 못해 "이상 없음" 을 확정하지 못했습니다 (${scope})`;
+      return `⚠️ *기억 점검*: ${firedAtKst} · 모순 판정을 끝내지 못해 "이상 없음" 을 확정하지 못했습니다 (${scope})`;
     }
-    return `✅ *기억 점검* — ${firedAtKst} · 이대리가 쌓아 둔 작업 기억 이상 없음 (${scope})`;
+    return `✅ *기억 점검*: ${firedAtKst} · 이대리가 쌓아 둔 작업 기억 이상 없음 (${scope})`;
   }
 
   const duplicates = issues.filter((issue) => issue.type === 'near_duplicate');
@@ -77,12 +77,12 @@ export const formatKnowledgeLint = (
   );
 
   const sections: string[] = [
-    `🧹 *기억 점검* — ${firedAtKst} (이대리가 쌓아 둔 작업 기억)`,
+    `🧹 *기억 점검*: ${firedAtKst} (이대리가 쌓아 둔 작업 기억)`,
   ];
 
   // 이슈가 있는 회차에도 L4 미완주는 알린다 — 아래 목록이 전부라고 오해하지 않게.
   if (incomplete) {
-    sections.push(`⚠️ _${scope} — 아래 목록이 전부가 아닐 수 있습니다._`);
+    sections.push(`⚠️ _${scope}: 아래 목록이 전부가 아닐 수 있습니다._`);
   }
 
   if (duplicates.length > 0) {
@@ -101,7 +101,7 @@ export const formatKnowledgeLint = (
     );
     for (const issue of duplicates) {
       sections.push(
-        `• #${issue.episodeId} ↔ #${issue.relatedId} — ${issue.detail}`,
+        `• 기억 ${issue.episodeId} ↔ 기억 ${issue.relatedId}: ${issue.detail}`,
       );
     }
   }
@@ -109,7 +109,7 @@ export const formatKnowledgeLint = (
   if (nulls.length > 0) {
     sections.push(`*검색 색인 누락 ${nulls.length}건*`);
     for (const issue of nulls) {
-      sections.push(`• #${issue.episodeId} — ${issue.detail}`);
+      sections.push(`• 기억 ${issue.episodeId}: ${issue.detail}`);
     }
   }
 
@@ -117,7 +117,7 @@ export const formatKnowledgeLint = (
     sections.push(`⚠️ *모순 후보 ${contradictions.length}건*`);
     for (const issue of contradictions) {
       sections.push(
-        `• #${issue.episodeId} ↔ #${issue.relatedId} — ${sanitizeMrkdwn(issue.detail)}`,
+        `• 기억 ${issue.episodeId} ↔ 기억 ${issue.relatedId}: ${sanitizeMrkdwn(issue.detail)}`,
       );
     }
   }

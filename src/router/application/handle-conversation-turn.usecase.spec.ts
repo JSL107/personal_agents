@@ -253,7 +253,7 @@ describe('HandleConversationTurnUsecase', () => {
       expect.objectContaining({
         role: 'assistant',
         // 사용자에게 보인 답변과 같은 텍스트 — buildDispatchReplyText 가 붙인 footer 포함.
-        text: '오늘 계획을 정리했습니다.\n\n_이대리 (오늘 계획) · 실행 #42_',
+        text: '오늘 계획을 정리했습니다.\n_실행 번호 `42` (다시 돌리기·의견 남기기에 써요)_',
         agentType: AgentType.PM,
         agentRunId: 42,
       }),

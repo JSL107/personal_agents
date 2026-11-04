@@ -76,7 +76,7 @@ export class SubconsciousProposalActionHandler implements SlackHandler {
           await respond({
             response_type: 'ephemeral',
             replace_original: true,
-            text: '❌ 제안 무시됨 — 부작용 없이 마감되었습니다.',
+            text: '❌ 제안을 무시하고 마감했어요. 변경 사항은 없어요.',
           });
         } catch (error: unknown) {
           await respond({

@@ -1,3 +1,4 @@
+import { READER_WRITING_RULES } from '../../common/llm/reader-writing-rules';
 import {
   UNTRUSTED_INPUT_NOTICE,
   wrapUntrustedInput,
@@ -20,6 +21,8 @@ export const FACT_ANSWER_SYSTEM_PROMPT = `당신은 "이대리" 라는 한 사�
 - 숫자는 [사실] 과 [질문] 에 있는 값, 그리고 그 값들의 덧셈·뺄셈 결과만 쓴다. 없는 값은 지어내지 말고 "기록에 없어요" 라고 말한다.
 - 무엇을 실행하겠다고 약속하지 않는다("등록해 둘게요" 금지). 슬래시 명령(\`/휴가\` 등)을 안내하지 않는다.
 - 내부 용어(worker, facts, JSON, 분류기)를 쓰지 않는다.
+
+${READER_WRITING_RULES}
 
 ## 입력 신뢰 경계
 ${UNTRUSTED_INPUT_NOTICE}

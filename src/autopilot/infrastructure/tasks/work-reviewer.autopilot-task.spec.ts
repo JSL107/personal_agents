@@ -126,12 +126,12 @@ describe('WorkReviewerAutopilotTask', () => {
     const result = await task.run(CTX);
 
     expect(result.skip).toBe(false);
-    expect(result.summaryText).toContain('📝 *Work Reviewer —');
-    expect(result.summaryText).toContain('2026-06-17');
+    expect(result.summaryText).toContain('📝 *업무 회고');
+    expect(result.summaryText).toContain('6/17(수)');
     expect(result.summaryText).not.toContain('질적 영향'); // detail 내용은 summaryText 에 없음
     expect(result.detailText).toBeDefined();
     expect(result.detailText).toContain('질적 영향'); // detail 섹션
-    expect(result.detailText).toContain('run #7'); // footer
+    expect(result.detailText).not.toContain('run #7');
     expect(humanizeService.humanize).toHaveBeenCalled();
     expect(execute).toHaveBeenCalledWith(
       expect.objectContaining({ slackUserId: 'U1' }),

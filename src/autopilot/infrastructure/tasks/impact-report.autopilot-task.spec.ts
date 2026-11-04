@@ -49,12 +49,12 @@ describe('ImpactReportAutopilotTask', () => {
     const result = await task.run(CTX);
 
     expect(result.skip).toBe(false);
-    expect(result.summaryText).toContain('📊 *Impact Report —');
+    expect(result.summaryText).toContain('📊 *Impact Report: ');
     expect(result.summaryText).toContain('2026-06-17');
     expect(result.summaryText).not.toContain('판단 근거'); // detail 내용은 summaryText 에 없음
     expect(result.detailText).toBeDefined();
     expect(result.detailText).toContain('판단 근거'); // detail 섹션
-    expect(result.detailText).toContain('run #1'); // footer
+    expect(result.detailText).not.toContain('run #1');
     expect(humanizeService.humanize).toHaveBeenCalled();
   });
 

@@ -67,7 +67,7 @@ describe('NotificationConsumer', () => {
     expect(postMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         kind: 'alert:cron-failure',
-        text: expect.stringContaining('고장 발생'),
+        text: expect.stringContaining('멈췄어요'),
       }),
     );
     expect(upsert).toHaveBeenCalledWith(
@@ -80,6 +80,99 @@ describe('NotificationConsumer', () => {
     await consumer.process(failure());
     expect(upsert).toHaveBeenCalledTimes(1);
   });
+
+  it('본문 뒤 AI 스레드가 실패하면 같은 대상의 최상위 메시지로 다시 보낸다', async () => {
+    const { consumer, postMessage, upsert } = setup();
+    postMessage
+      .mockResolvedValueOnce({ ts: '1.0' })
+      .mockRejectedValueOnce(new Error('thread down'));
+    await consumer.process(failure());
+    expect(postMessage).toHaveBeenCalledTimes(3);
+    expect(postMessage.mock.calls[0][0].text).not.toContain('boom 312.4s');
+    expect(postMessage.mock.calls[1][0]).toEqual(
+      expect.objectContaining({
+        target: 'U-owner',
+        threadTs: '1.0',
+        text: expect.stringContaining('AI에 맡길 때'),
+      }),
+    );
+    expect(postMessage.mock.calls[2][0]).toEqual(
+      expect.objectContaining({
+        target: 'U-owner',
+        text: expect.stringContaining('AI에 맡길 때'),
+      }),
+    );
+    expect(postMessage.mock.calls[2][0]).not.toHaveProperty('threadTs');
+    expect(upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it('AI 블록의 스레드와 최상위 전송이 모두 실패하면 error로 기록한다', async () => {
+    const { consumer, postMessage } = setup();
+    const error = jest
+      .spyOn(
+        (
+          consumer as never as {
+            logger: { error: (...args: unknown[]) => void };
+          }
+        ).logger,
+        'error',
+      )
+      .mockImplementation();
+    postMessage
+      .mockResolvedValueOnce({ ts: '1.0' })
+      .mockRejectedValueOnce(new Error('thread down'))
+      .mockRejectedValueOnce(new Error('fallback down'));
+    await consumer.process(failure());
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('AI'));
+  });
+
+  it('본문 발송에 ts가 없어도 AI 블록을 최상위로 전송한다', async () => {
+    const { consumer, postMessage } = setup();
+    await consumer.process(failure());
+    expect(postMessage).toHaveBeenCalledTimes(2);
+    expect(postMessage.mock.calls[1][0]).toEqual(
+      expect.objectContaining({
+        target: 'U-owner',
+        text: expect.stringContaining('AI에 맡길 때'),
+      }),
+    );
+    expect(postMessage.mock.calls[1][0]).not.toHaveProperty('threadTs');
+  });
+
+  it('cron 이름은 본문에서 작업 라벨로 바꾸고 AI 블록에만 원문을 둔다', async () => {
+    const { consumer, postMessage } = setup();
+    postMessage.mockResolvedValueOnce({ ts: '1.0' });
+    await consumer.process({
+      name: NOTIFICATION_JOB.CRON_FAILURE,
+      data: { cronName: 'PM', errorMessage: 'timeout' },
+    } as never);
+    expect(postMessage.mock.calls[0][0].text).toContain(
+      '*오늘 계획* 작업이 멈췄어요',
+    );
+    expect(postMessage.mock.calls[0][0].text).not.toContain('PM');
+    expect(postMessage.mock.calls[1][0].text).toContain('대상: PM');
+  });
+
+  it.each([
+    ['Autopilot task blog-github-publish', '블로그 GitHub 발행'],
+    ['Autopilot task universe-sweep', 'universe-sweep'],
+    ['Study Brief Cron', 'Study Brief Cron'],
+  ])(
+    'cron 이름 %s 는 서로 구분되는 이름표 %s 로 알린다',
+    async (cronName, label) => {
+      const { consumer, postMessage } = setup();
+      postMessage.mockResolvedValueOnce({ ts: '1.0' });
+      await consumer.process({
+        name: NOTIFICATION_JOB.CRON_FAILURE,
+        data: { cronName, ownerSlackUserId: 'U1', errorMessage: 'boom' },
+      } as never);
+      expect(postMessage.mock.calls[0][0].text).toContain(
+        `*${label}* 작업이 멈췄어요`,
+      );
+      expect(postMessage.mock.calls[0][0].text).not.toContain('예약 작업');
+      expect(postMessage.mock.calls[1][0].text).toContain(`대상: ${cronName}`);
+    },
+  );
 
   it('SILENT 는 횟수를 늘리고 REMIND DM 실패는 발송 시각을 보존한다', async () => {
     jest.useFakeTimers().setSystemTime(new Date('2026-10-06T14:59:30.000Z'));
@@ -97,7 +190,7 @@ describe('NotificationConsumer', () => {
     await consumer.process(failure());
     expect(postMessage).toHaveBeenCalledWith(
       expect.objectContaining({
-        text: expect.stringContaining('아직 고장 중'),
+        text: expect.stringContaining('아직 멈춰 있어요'),
       }),
     );
     expect(update).toHaveBeenLastCalledWith(
@@ -182,7 +275,7 @@ describe('NotificationConsumer', () => {
     await consumer.process(latest as never);
     expect(postMessage).not.toHaveBeenCalled();
     expect(recordSuppressedDelivery).toHaveBeenCalledWith(
-      expect.objectContaining({ text: expect.stringContaining('해결') }),
+      expect.objectContaining({ text: expect.stringContaining('복구됐어요') }),
     );
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { resolvedAt: expect.any(Date) } }),
@@ -225,11 +318,30 @@ describe('NotificationConsumer', () => {
         kind: 'alert:cron-failure',
         target: 'U-owner',
         reason: 'CONSOLE_ROUTE',
-        text: expect.stringContaining('해결'),
+        text: expect.stringContaining('복구됐어요'),
       }),
     );
     expect(update).toHaveBeenCalledWith(
       expect.objectContaining({ data: { resolvedAt: expect.any(Date) } }),
+    );
+  });
+
+  it('이미 한글로 저장된 cron 사건도 복구 제목에 작업 라벨을 유지한다', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-10-06T15:29:00.000Z'));
+    const { consumer, findUnique, recordSuppressedDelivery } = setup();
+    findUnique.mockResolvedValue({
+      ...openRow(),
+      key: 'cron:PM',
+      label: '오늘 계획',
+    });
+    await consumer.process({
+      ...recovery(),
+      data: { incidentKey: 'cron:PM' },
+    } as never);
+    expect(recordSuppressedDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: expect.stringContaining('*오늘 계획* 작업이 복구됐어요'),
+      }),
     );
   });
 
@@ -291,7 +403,7 @@ describe('NotificationConsumer', () => {
     findUnique.mockRejectedValue(new Error('db down'));
     await consumer.process(failure());
     await consumer.process(failure());
-    expect(postMessage).toHaveBeenCalledTimes(1);
+    expect(postMessage).toHaveBeenCalledTimes(2);
     expect(postMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         text: expect.stringContaining('사건 원장 접근 실패'),
@@ -300,7 +412,7 @@ describe('NotificationConsumer', () => {
     await expect(consumer.process(recovery() as never)).rejects.toThrow(
       'db down',
     );
-    expect(postMessage).toHaveBeenCalledTimes(1);
+    expect(postMessage).toHaveBeenCalledTimes(2);
   });
 
   it('claude 실패 kind 와 누락 owner 설정을 확인한다', async () => {
@@ -312,6 +424,7 @@ describe('NotificationConsumer', () => {
     expect(postMessage).toHaveBeenCalledWith(
       expect.objectContaining({ kind: 'alert:claude-auth' }),
     );
+    expect(postMessage.mock.calls[0][0].text).toContain('조치:');
     expect(
       findMissingAlertOwnerKeys({
         CLAUDE_AUTH_ALERT_OWNER_SLACK_USER_ID: ' ',

@@ -1,8 +1,11 @@
-import { readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
-import { AutopilotTaskResult } from '../../autopilot/domain/autopilot-task.port';
+import * as ts from 'typescript';
+
 import { findInternalTerms } from './internal-terms';
+import { pickTaskText } from './internal-terms.picker';
+import { findReadabilityViolations } from './readability-rules';
 
 // 모든 spec 의 렌더 결과에서 내부 식별자를 찾는다(`internal-terms.ts`).
 //
@@ -80,6 +83,7 @@ const collectStrings = (value: unknown, depth = 0): string[] => {
 const inspect = (source: string, value: unknown): void => {
   for (const text of collectStrings(value)) {
     const terms = findInternalTerms(text);
+    terms.push(...findReadabilityViolations(text));
     if (terms.length > 0) {
       violations.push({ source, terms, text });
     }
@@ -87,23 +91,6 @@ const inspect = (source: string, value: unknown): void => {
 };
 
 type TextPicker = (value: unknown) => unknown;
-
-// task 결과에서는 Slack 에 실리는 문구만 본다. 카드 payload·판정 facet 에는 enum 값이 정상으로 들어 있다.
-const pickTaskText: TextPicker = (value) => {
-  const result = (value ?? {}) as Partial<AutopilotTaskResult>;
-  return [
-    result.summaryText,
-    result.detailText,
-    result.headlineText,
-    // 이미지·파일 제목도 Slack 에 그대로 보인다(orchestrator 가 제목·대체 텍스트로 싣는다).
-    result.detailImage?.title,
-    result.detailFile?.title,
-    result.detailFile?.content,
-    result.preview?.previewText,
-    ...(result.previews ?? []).map((preview) => preview.previewText),
-    ...(result.runVerdicts ?? []).map((verdict) => verdict.quote),
-  ];
-};
 
 // 반환값이 Promise 면 풀린 값을 본다. 원래 반환값은 그대로 돌려줘 동작을 바꾸지 않는다.
 const inspectResult = (
@@ -182,6 +169,42 @@ for (const path of listSourceFiles(SRC_ROOT)) {
     );
   } else if (label.endsWith('.autopilot-task.ts')) {
     wrapExports(path, (_name, value) => (isClass(value) ? 'run' : null));
+  } else if (label === 'notification/domain/incident-message.ts') {
+    wrapExports(path, (_name, value) =>
+      typeof value === 'function' && !isClass(value) ? 'result' : null,
+    );
+  } else if (
+    label.startsWith('slack/handler/') &&
+    label.endsWith('.handler.ts')
+  ) {
+    const source = ts.createSourceFile(
+      path,
+      readFileSync(path, 'utf8'),
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    for (const statement of source.statements) {
+      if (
+        !ts.isVariableStatement(statement) ||
+        !statement.modifiers?.some(
+          (modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword,
+        )
+      ) {
+        continue;
+      }
+      for (const declaration of statement.declarationList.declarations) {
+        if (
+          ts.isIdentifier(declaration.name) &&
+          declaration.initializer &&
+          (ts.isStringLiteral(declaration.initializer) ||
+            ts.isNoSubstitutionTemplateLiteral(declaration.initializer))
+        ) {
+          const name = `${label} ${declaration.name.text}`;
+          wrappedSources.add(name);
+          inspect(name, declaration.initializer.text);
+        }
+      }
+    }
   } else if (label === 'slack/format/message-blocks.builder.ts') {
     wrapExports(path, (name) =>
       name === 'toReadableSlackArgs' || name === 'toImageAttachedSlackArgs'

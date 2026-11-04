@@ -58,8 +58,8 @@ describe('PaperTradeDispatcher', () => {
     // 이름으로 조회하면 전략 계좌가 늘 때 조용히 빠진다 — executeAll 이어야 한다.
     expect(executeAll).toHaveBeenCalledWith({ snapshotLimit: 5 });
     expect(JSON.stringify(executeAll.mock.calls)).not.toContain('DEFAULT');
-    expect(outcome.formattedText).toContain('*가상 계좌 현황 — LONG_TERM*');
-    expect(outcome.formattedText).toContain('*가상 계좌 현황 — SWING*');
+    expect(outcome.formattedText).toContain('*가상 계좌 현황: 장기투자*');
+    expect(outcome.formattedText).toContain('*가상 계좌 현황: 단기매매*');
     expect(outcome.output).toEqual([LONG_TERM, SWING]);
   });
 

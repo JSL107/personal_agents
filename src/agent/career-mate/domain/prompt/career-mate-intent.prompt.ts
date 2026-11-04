@@ -1,4 +1,5 @@
 import { DomainStatus } from '../../../../common/exception/domain-status.enum';
+import { READER_WRITING_RULES } from '../../../../common/llm/reader-writing-rules';
 import { CareerMateException } from '../career-mate.exception';
 import { CareerMateAction, CareerMateIntent } from '../career-mate.type';
 import { CareerMateErrorCode } from '../career-mate-error-code.enum';
@@ -19,6 +20,8 @@ action 은 다음 중 하나:
   만들기·점검은 "정리해줘", "점검해줘", "감사해줘" 처럼 작업을 시킬 때만 고른다.
 
 입력에 [이전 대화] 가 있으면 생략된 말을 이해하는 데만 쓴다. 분류 대상은 [이번 메시지] 다.
+
+${READER_WRITING_RULES}
 
 출력 예시:
 {"action":"BUILD_PROFILE","windowMonths":12}

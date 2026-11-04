@@ -11,13 +11,13 @@ describe('formatSearchRuns', () => {
     ...overrides,
   });
 
-  it('rows 0 — 빈 결과 안내 텍스트 + 키워드 일반화 권장', () => {
+  it('rows 0: 빈 결과 안내 텍스트 + 키워드 일반화 권장', () => {
     const text = formatSearchRuns(buildResult({ rows: [], truncated: false }));
     expect(text).toContain('"결제" 매칭 0건');
     expect(text).toContain('일반화');
   });
 
-  it('rows N — 헤더에 건수 + 각 row 가 `[agentType #id]` 형태로 노출', () => {
+  it('rows N: 헤더에 건수 + 각 row 가 `[agentType #id]` 형태로 노출', () => {
     const text = formatSearchRuns(
       buildResult({
         rows: [
@@ -46,7 +46,7 @@ describe('formatSearchRuns', () => {
     expect(text).toContain('/retry-run');
   });
 
-  it('truncated=true — 헤더에 "(더 있을 수 있음)" + footer 에 키워드 좁히기 권장', () => {
+  it('truncated=true: 헤더에 "(더 있을 수 있음)" + footer 에 키워드 좁히기 권장', () => {
     const text = formatSearchRuns(
       buildResult({
         rows: [
@@ -84,7 +84,7 @@ describe('formatSearchRuns', () => {
     expect(text).toContain('\\`code\\`');
   });
 
-  it('snippet 의 angle bracket / & 도 entity 화 — Slack link/mention 형태 차단', () => {
+  it('snippet 의 angle bracket / & 도 entity 화: Slack link/mention 형태 차단', () => {
     const text = formatSearchRuns(
       buildResult({
         rows: [
@@ -106,7 +106,7 @@ describe('formatSearchRuns', () => {
     expect(text).not.toContain('<@U999>');
   });
 
-  it('keyword 자체에 mrkdwn meta 문자 있어도 header escape — layout 깨짐 없음', () => {
+  it('keyword 자체에 mrkdwn meta 문자 있어도 header escape: layout 깨짐 없음', () => {
     const text = formatSearchRuns(
       buildResult({
         keyword: '*bold*',
@@ -134,6 +134,6 @@ describe('formatSearchRuns', () => {
     );
 
     expect(text).toContain('2026-05-31');
-    expect(text).not.toContain('2026-05-30 —');
+    expect(text).not.toContain('2026-05-30: ');
   });
 });

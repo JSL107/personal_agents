@@ -765,7 +765,7 @@ describe('RouterMessageHandler — app_mention', () => {
     );
     const sayText = say.mock.calls[0][0].text as string;
     expect(sayText).toContain('mock body');
-    expect(sayText).toContain('_이대리 (오늘 계획) · 실행 #99_');
+    expect(sayText).not.toContain('실행 #99');
     // 라우터가 넘긴 실행 꼬리표를 기본 꼬리표로 덮으면 다음 턴의 실행 참조가 사라진다.
     expect(say.mock.calls[0][0].metadata).toEqual({
       event_type: 'idaeri_reply',
@@ -849,7 +849,7 @@ describe('RouterMessageHandler — app_mention', () => {
     expect(sayText).toContain('PM body');
     expect(sayText).toContain('BE body');
     expect(sayText).toContain('---');
-    expect(sayText).toContain('오늘 계획 → 코드 리뷰 · 실행 #1, #2');
+    expect(sayText).not.toContain('실행 #');
   });
 
   it('비동기 ack(agentRunId=0)면 footer 없이 안내 formattedText 만 say', async () => {
@@ -2601,7 +2601,7 @@ describe('RouterMessageHandler — 자연어 Y/N preview 인터셉트', () => {
     const applyPreviewUsecase = {
       execute: jest.fn().mockResolvedValue({
         preview: pending,
-        resultText: '🚀 BE chain 실행 완료 — 2/2건 성공',
+        resultText: '🚀 BE 작업 실행 완료: 2/2건 성공',
       }),
     } as unknown as ApplyPreviewUsecase;
 
@@ -2634,7 +2634,7 @@ describe('RouterMessageHandler — 자연어 Y/N preview 인터셉트', () => {
     expect(dispatch).not.toHaveBeenCalled();
     expect(say).toHaveBeenCalledWith(
       expect.objectContaining({
-        text: expect.stringContaining('BE chain 실행 완료'),
+        text: expect.stringContaining('BE 작업 실행 완료'),
       }),
     );
   });

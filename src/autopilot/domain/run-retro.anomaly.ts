@@ -219,7 +219,7 @@ export const detectChainFailureAnomalies = (
   const anomalies: RunAnomaly[] = shown.map((summary) => ({
     agentType: summary.rootAgentType,
     kind: 'CHAIN_FAILURE',
-    detail: `root #${summary.rootRunId} — ${summary.failedAgentTypes.map(toTaskLabel).join(', ')} 실패 (체인 ${summary.nodeCount}단계)`,
+    detail: `실행 ${summary.rootRunId}번: ${summary.failedAgentTypes.map(toTaskLabel).join(', ')} 실패 (체인 ${summary.nodeCount}단계)`,
   }));
   const hidden = broken.length - shown.length;
   if (hidden > 0) {

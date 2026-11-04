@@ -112,7 +112,7 @@ describe('detectChainFailureAnomalies — 체인 실패 지목', () => {
     expect(anomalies).toHaveLength(1);
     expect(anomalies[0].kind).toBe('CHAIN_FAILURE');
     expect(anomalies[0].agentType).toBe('PM');
-    expect(anomalies[0].detail).toContain('#42');
+    expect(anomalies[0].detail).toContain('실행 42번');
     expect(anomalies[0].detail).toContain('CTO');
   });
 

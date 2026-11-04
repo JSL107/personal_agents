@@ -13,7 +13,7 @@ const baseResult: DispatchResult = {
 describe('buildDispatchReplyText', () => {
   it('root 결과는 기존 Slack footer와 함께 반환한다', () => {
     expect(buildDispatchReplyText(baseResult)).toBe(
-      '루트 결과\n\n_이대리 (오늘 계획) · 실행 #42_',
+      '루트 결과\n_실행 번호 `42` (다시 돌리기·의견 남기기에 써요)_',
     );
   });
 
@@ -31,7 +31,7 @@ describe('buildDispatchReplyText', () => {
         ],
       }),
     ).toBe(
-      '루트 결과\n\n---\n\n자식 결과\n\n_이대리 연속 처리 — 오늘 계획 → 코드 리뷰 · 실행 #42, #43_',
+      '루트 결과\n_실행 번호 `42` (다시 돌리기·의견 남기기에 써요)_\n\n---\n\n자식 결과\n_실행 번호 `43` (다시 돌리기·의견 남기기에 써요)_',
     );
   });
 

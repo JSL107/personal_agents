@@ -34,7 +34,7 @@ export class AiCliEnvSnapshotAutopilotTask implements AutopilotTask {
     return {
       skip: false,
       summaryText:
-        `🗂️ AI CLI 환경 스냅샷 갱신 — Claude 플러그인 ${claude?.plugins ?? 0}·MCP ${claude?.mcpServers ?? 0} / ` +
+        `🗂️ AI CLI 환경 스냅샷 갱신: Claude 플러그인 ${claude?.plugins ?? 0}·MCP ${claude?.mcpServers ?? 0} / ` +
         `Codex 플러그인 ${codex?.plugins ?? 0}·MCP ${codex?.mcpServers ?? 0}`,
     };
   }

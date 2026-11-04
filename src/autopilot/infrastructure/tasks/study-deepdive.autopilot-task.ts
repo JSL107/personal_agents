@@ -43,7 +43,7 @@ export class StudyDeepdiveAutopilotTask implements AutopilotTask {
     }
     return {
       skip: false,
-      summaryText: `오늘의 공부 '${result.topic}' 를 블로그 초안으로 펼쳤습니다 (${result.bodyLength.toLocaleString('ko-KR')}자) — ${result.notionUrl}`,
+      summaryText: `오늘의 공부 '${result.topic}' 를 블로그 초안으로 펼쳤습니다 (${result.bodyLength.toLocaleString('ko-KR')}자): ${result.notionUrl}`,
     };
   }
 }

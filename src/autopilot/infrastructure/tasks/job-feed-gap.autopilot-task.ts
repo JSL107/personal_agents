@@ -132,16 +132,16 @@ export class JobFeedGapAutopilotTask implements AutopilotTask {
           outcome.agentRunId,
         );
         summaries.push(
-          `*${escapeMrkdwn(candidate.company)} — ${escapeMrkdwn(candidate.title)}*\n${outcome.result.fitSummary}\n부족: ${outcome.result.gaps.slice(0, 3).join(', ')}`,
+          `*${escapeMrkdwn(candidate.company)}: ${escapeMrkdwn(candidate.title)}*\n${outcome.result.fitSummary}\n부족: ${outcome.result.gaps.slice(0, 3).join(', ')}`,
         );
       } catch (error) {
         // 한 건이 실패해도 나머지를 계속한다. 쿼터 소진이면 그 사실이 카드에 남아야 한다.
         const reason = error instanceof Error ? error.message : String(error);
         this.logger.warn(
-          `job-feed 갭 분석 실패 — ${candidate.company}: ${reason}`,
+          `job-feed 갭 분석 실패: ${candidate.company}: ${reason}`,
         );
         summaries.push(
-          `⚠️ ${escapeMrkdwn(candidate.company)} 갭 분석 실패 — ${escapeMrkdwn(reason)}`,
+          `⚠️ ${escapeMrkdwn(candidate.company)} 갭 분석 실패: ${escapeMrkdwn(reason)}`,
         );
       }
     }
@@ -152,7 +152,7 @@ export class JobFeedGapAutopilotTask implements AutopilotTask {
       // 다음 회차에 다시 후보로 잡힌다.
       const remaining = candidates.length - summaries.length;
       this.logger.warn(
-        `job-feed 갭 분석 — 실행 시간 예산 초과 우려로 ${remaining}건 건너뜀`,
+        `job-feed 갭 분석: 실행 시간 예산 초과 우려로 ${remaining}건 건너뜀`,
       );
       summaries.push(
         `⏱️ 남은 ${remaining}건은 실행 시간 예산 초과 우려로 다음 회차로 미룹니다.`,

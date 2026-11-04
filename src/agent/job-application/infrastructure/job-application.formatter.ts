@@ -31,7 +31,7 @@ const recordLine = (record: JobApplicationRecord): string => {
     extras.push(`팔로업 ${plainDateToIso(record.nextFollowUpAt)}`);
   }
   const suffix = extras.length > 0 ? ` · ${extras.join(' · ')}` : '';
-  return `• *${company}* — ${role} (${statusLabel(record.status)})${suffix}`;
+  return `• *${company}*: ${role} (${statusLabel(record.status)})${suffix}`;
 };
 
 export const formatApplicationList = (
@@ -49,7 +49,7 @@ export const formatAdded = (record: JobApplicationRecord): string => {
   const role = escapeSlackMrkdwn(record.role);
   const lines = [
     `*✅ 지원 등록 완료*`,
-    `• *${company}* — ${role} (${statusLabel(record.status)})`,
+    `• *${company}*: ${role} (${statusLabel(record.status)})`,
     `• 지원일: ${plainDateToIso(record.appliedAt)}`,
     record.deadline ? `• 마감: ${plainDateToIso(record.deadline)}` : null,
   ];
@@ -61,7 +61,7 @@ export const formatUpdated = (record: JobApplicationRecord): string => {
   const role = escapeSlackMrkdwn(record.role);
   return [
     `*🔄 상태 변경 완료*`,
-    `• *${company}* — ${role}`,
+    `• *${company}*: ${role}`,
     `• 현재 상태: ${statusLabel(record.status)}`,
   ].join('\n');
 };

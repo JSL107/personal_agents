@@ -129,7 +129,7 @@ export class KnowledgeLintAutopilotTask implements AutopilotTask {
                   maxDistance: DUPLICATE_MAX_DISTANCE,
                 });
               this.logger.log(
-                `중복 정리 — 예고 ${outcome.duplicateSupersedable}건, 실제 ${superseded}건 superseded`,
+                `중복 정리: 예고 ${outcome.duplicateSupersedable}건, 실제 ${superseded}건 superseded`,
               );
             }
           : undefined,

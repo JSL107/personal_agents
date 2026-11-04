@@ -150,7 +150,7 @@ describe('MorningBriefingAutopilotTask', () => {
 
       const text = await runWith(find);
 
-      expect(text).toContain('CUJ 점검 기록 없음 — 마지막 기록 10/15(목)');
+      expect(text).toContain('CUJ 점검 기록 없음, 마지막 기록 10/15(목)');
     });
 
     it('오늘 0시 이전 기록만 묻는다 — 늦게 돈 회차에서 오늘 실행이 지난 결번을 가리지 않게', async () => {
@@ -202,9 +202,7 @@ describe('MorningBriefingAutopilotTask', () => {
 
       const text = await runWith(find, '2026-10-20');
 
-      expect(text).toContain(
-        '주간 실행 회고 기록 없음 — 마지막 기록 10/12(월)',
-      );
+      expect(text).toContain('주간 실행 회고 기록 없음, 마지막 기록 10/12(월)');
     });
 
     it('주간 실행 회고는 회차 전인 다음 월요일 아침까지 조용하다', async () => {
@@ -262,7 +260,8 @@ describe('MorningBriefingAutopilotTask', () => {
 
       expect(text).not.toContain('CUJ 점검');
       expect(text).toContain('주간 실행 회고 기록 없음');
-      expect(text).toContain('오늘 계획 생성 실패');
+      expect(text).toContain('• 오늘 계획을 만들지 못했어요\n');
+      expect(text).not.toContain('계획 장애');
     });
   });
 
@@ -304,17 +303,19 @@ describe('MorningBriefingAutopilotTask', () => {
 
     expect(out.skip).toBe(false);
     expect(out.summaryText).toBeTruthy();
-    // 계획 전문(요약·판단 근거)은 통째로 스레드에 있다. 메인은 아침 한 통 형식이다.
+    // 메인에는 할 일만 싣고 PM 계획 전문은 보내지 않는다.
     expect(out.summaryText).not.toContain('*판단 근거*');
     expect(out.summaryText).toContain('☀️ *6/17(수) 아침*');
-    expect(out.detailText).toContain('👇 판단 근거');
-    expect(out.detailText).toContain('*판단 근거*');
+    expect(out.summaryText).toContain('*오늘 할 일*\n• 작업1');
+    expect(out.detailText).toBe('');
+    expect(out.summaryText).not.toContain('codex-cli');
+    expect(out.summaryText).not.toContain('run #');
     expect(execute).toHaveBeenCalledWith(
       expect.objectContaining({ slackUserId: 'U1', tasksText: '' }),
     );
   });
 
-  it('plan 을 윤문하고 대기 섹션을 summaryText 에 합성한다', async () => {
+  it('plan 을 윤문한 할 일만 summaryText 에 싣는다', async () => {
     const outcome = {
       result: {
         plan: basePlan,
@@ -343,12 +344,73 @@ describe('MorningBriefingAutopilotTask', () => {
       ownerSlackUserId: 'U1',
       firedAtKst: '2026-06-30',
     });
-    expect(result.detailText).toContain('대기 중');
-    expect(result.detailText).toContain('머지만 남음');
-    // 윤문된 판단 근거·이월도 스레드로 간다 — 메인에는 안내 줄만 남는다.
+    expect(result.summaryText).toContain('*오늘 할 일*\n• 작업1');
     expect(result.summaryText).not.toContain('*판단 근거*');
-    expect(result.detailText).toContain('*판단 근거*');
-    expect(result.detailText).toContain('*어제 이월*');
+    expect(result.summaryText).not.toContain('머지만 남음');
+    expect(result.detailText).toBe('');
+  });
+
+  it('할 일이 여섯 개면 전문을 공고 스레드보다 먼저 싣는다', async () => {
+    const tasks = Array.from({ length: 6 }, (_, index) => ({
+      ...mockTask,
+      id: `task-${index}`,
+      title: `작업 ${index + 1}`,
+    }));
+    const plan = {
+      ...basePlan,
+      topPriority: tasks[0],
+      morning: tasks.slice(1),
+      afternoon: [],
+    };
+    const task = buildTask(
+      {
+        execute: jest.fn().mockResolvedValue({
+          result: {
+            plan,
+            sources: [],
+            waitingItems: [],
+            inputTruncation: NO_TRUNCATION,
+          },
+          agentRunId: 1,
+        }),
+      },
+      {
+        humanize: jest
+          .fn()
+          .mockResolvedValue({ reasoning: '계획', analysisReasoning: '' }),
+      },
+      emptyStockRepository(),
+      listSchedulesUsecase(),
+      {
+        config: { JOB_FEED_ENABLED: 'true' },
+        listNotifiable: {
+          execute: jest.fn().mockResolvedValue([
+            {
+              source: 'jumpit',
+              sourceId: 'a',
+              company: 'A',
+              title: '개발자',
+              normalizedKey: 'a',
+              detailUrl: 'https://jumpit.example/a',
+              skillTags: ['NestJS'],
+              locations: ['서울'],
+              minYears: 3,
+              maxYears: 7,
+              matchScore: 92,
+            },
+          ]),
+        },
+      },
+    );
+
+    const out = await task.run(CTX);
+
+    expect(out.summaryText).toContain('• 외 1개');
+    expect(out.detailText).toContain('*오늘 할 일 전체*');
+    expect(out.detailText).toContain('• 작업 6');
+    expect(out.detailText!.indexOf('*오늘 할 일 전체*')).toBeLessThan(
+      out.detailText!.indexOf('*새 백엔드 공고 1건*'),
+    );
   });
 
   describe('주간 판정 카드 — 월요일 아침에만, 지난주 판정 안 된 실행을 싣는다', () => {
@@ -411,7 +473,7 @@ describe('MorningBriefingAutopilotTask', () => {
       });
       expect(result.verdictCards).toHaveLength(1);
       expect(result.verdictCards?.[0].text).toBe(
-        '🗓️ 아침 계획 주간 판정 — 지난주 판정 안 된 1건',
+        '🗓️ 아침 계획 주간 판정: 지난주 판정 안 된 1건',
       );
       expect(JSON.stringify(result.verdictCards?.[0].blocks)).toContain(
         '*10/27(화)*\\n*아침 계획*\\n> 감사로그 요구사항 작성',
@@ -515,7 +577,7 @@ describe('MorningBriefingAutopilotTask', () => {
       expect(body).not.toContain('문제 1');
       expect(body).toContain('문제 2');
       expect(result.verdictCards?.[0].text).toBe(
-        '🌙 저녁 회고 주간 판정 — 지난주 판정 안 된 1건',
+        '🌙 저녁 회고 주간 판정: 지난주 판정 안 된 1건',
       );
     });
 
@@ -582,11 +644,11 @@ describe('MorningBriefingAutopilotTask', () => {
     const out = await task.run(CTX);
 
     expect(out.skip).toBe(false);
-    expect(out.detailText).toContain('오늘 자동 수집된 할 일이 없습니다');
+    expect(out.summaryText).toContain('• 오늘 자동 수집된 할 일이 없어요');
   });
 
   describe('자산 한 줄', () => {
-    const planOutcome = {
+    const outcome = {
       result: {
         plan: basePlan,
         sources: [],
@@ -596,10 +658,10 @@ describe('MorningBriefingAutopilotTask', () => {
       modelUsed: 'codex-cli',
       agentRunId: 10,
     };
-    const humanized = {
+    const humanize = {
       humanize: jest
         .fn()
-        .mockResolvedValue({ reasoning: '테스트 계획', analysisReasoning: '' }),
+        .mockResolvedValue({ reasoning: '테스트', analysisReasoning: '' }),
     };
     const holding = {
       region: 'KR',
@@ -611,143 +673,85 @@ describe('MorningBriefingAutopilotTask', () => {
       previousClose: new Prisma.Decimal('110'),
       holdingDate: new Date(),
     };
-
-    it('보유가 있으면 브리핑 끝에 자산 줄을 붙인다', async () => {
+    const runWith = async (
+      positions: unknown,
+      rate: unknown = null,
+      plan: unknown = outcome,
+    ) => {
       const task = buildTask(
-        { execute: jest.fn().mockResolvedValue(planOutcome) } as never,
-        humanized as unknown as HumanizeService,
         {
-          findPortfolioPositions: jest.fn().mockResolvedValue([holding]),
-          findLatestFxRate: jest.fn().mockResolvedValue(null),
-        } as never,
+          execute:
+            plan instanceof Error
+              ? jest.fn().mockRejectedValue(plan)
+              : jest.fn().mockResolvedValue(plan),
+        },
+        humanize,
+        {
+          findPortfolioPositions:
+            positions instanceof Error
+              ? jest.fn().mockRejectedValue(positions)
+              : jest.fn().mockResolvedValue(positions),
+          findLatestFxRate: jest.fn().mockResolvedValue(rate),
+        },
         listSchedulesUsecase(),
       );
+      return await task.run(CTX);
+    };
 
-      const out = await task.run(CTX);
-
-      expect(out.detailText).toContain('내 자산');
-      expect(out.detailText).toContain('매입가 대비');
+    it('보유가 있으면 그 밖에 자산 한 줄을 낸다', async () => {
+      const out = await runWith([holding]);
+      expect(out.summaryText).toContain(
+        '*그 밖에*\n• 자산: 1,200원 · 매입가 대비',
+      );
+      expect(out.summaryText).not.toContain('내 자산');
     });
-
-    // 장식 쿼리 하나가 본체를 죽이면 안 된다.
-    it('자산 조회가 실패해도 브리핑 본문은 그대로 나간다', async () => {
-      const task = buildTask(
-        { execute: jest.fn().mockResolvedValue(planOutcome) } as never,
-        humanized as unknown as HumanizeService,
-        {
-          findPortfolioPositions: jest
-            .fn()
-            .mockRejectedValue(new Error('DB 끊김')),
-          findLatestFxRate: jest.fn(),
-        } as never,
-        listSchedulesUsecase(),
-      );
-
-      const out = await task.run(CTX);
-
+    it('자산 조회가 실패해도 본문을 보낸다', async () => {
+      const out = await runWith(new Error('DB 끊김'));
       expect(out.skip).toBe(false);
-      expect(out.detailText).not.toContain('내 자산');
-      expect(out.detailText?.length).toBeGreaterThan(0);
+      expect(out.summaryText).toContain('*오늘 할 일*');
+      expect(out.summaryText).not.toContain('• 자산:');
     });
-
-    // 이 목표가 겨냥한 것이 정확히 "아무 일 없는 날" 이다.
-    it('할 일이 없는 날에도 자산은 말해 준다', async () => {
-      const execute = jest.fn().mockRejectedValue(
-        new PmAgentException({
-          code: PmAgentErrorCode.EMPTY_TASKS_INPUT,
-          message: '수집된 할 일 없음',
-          status: DomainStatus.UNPROCESSABLE_ENTITY,
-        }),
-      );
-      const task = buildTask(
-        { execute } as never,
-        humanized as unknown as HumanizeService,
-        {
-          findPortfolioPositions: jest.fn().mockResolvedValue([holding]),
-          findLatestFxRate: jest.fn().mockResolvedValue(null),
-        } as never,
-        listSchedulesUsecase(),
-      );
-
-      const out = await task.run(CTX);
-
-      expect(out.detailText).toContain('자동 수집된 할 일이 없습니다');
-      expect(out.detailText).toContain('내 자산');
+    it('할 일이 없는 날에도 자산을 보낸다', async () => {
+      const empty = new PmAgentException({
+        code: PmAgentErrorCode.EMPTY_TASKS_INPUT,
+        message: '수집된 할 일 없음',
+        status: DomainStatus.UNPROCESSABLE_ENTITY,
+      });
+      const out = await runWith([holding], null, empty);
+      expect(out.summaryText).toContain('• 오늘 자동 수집된 할 일이 없어요');
+      expect(out.summaryText).toContain('• 자산:');
     });
-
-    // 환율을 실제로 읽어 쓰는 경로다. 파싱·전달·출력 연결이 여기서만 한 번에 확인된다.
-    it('최근 환율이 있으면 달러 보유를 환산해 자산 줄을 낸다', async () => {
-      const task = buildTask(
-        { execute: jest.fn().mockResolvedValue(planOutcome) } as never,
-        humanized as unknown as HumanizeService,
-        {
-          findPortfolioPositions: jest.fn().mockResolvedValue([
-            {
-              ...holding,
-              currency: 'USD',
-              quantity: new Prisma.Decimal('100'),
-              close: new Prisma.Decimal('10'),
-              avgPrice: new Prisma.Decimal('8'),
-              previousClose: new Prisma.Decimal('9'),
-            },
-          ]),
-          findLatestFxRate: jest
-            .fn()
-            .mockResolvedValue({ rate: '1400', rateDate: new Date() }),
-        } as never,
-        listSchedulesUsecase(),
+    it('최근 환율로 달러 보유를 환산한다', async () => {
+      const out = await runWith(
+        [
+          {
+            ...holding,
+            currency: 'USD',
+            quantity: new Prisma.Decimal('100'),
+            close: new Prisma.Decimal('10'),
+            avgPrice: new Prisma.Decimal('8'),
+            previousClose: new Prisma.Decimal('9'),
+          },
+        ],
+        { rate: '1400', rateDate: new Date() },
       );
-
-      const out = await task.run(CTX);
-
-      // 100주 x $10 x 1,400 = 1,400,000원. 환율이 실제로 곱해졌는지 값으로 확인한다
-      // (환율을 안 쓰면 1,000원이라 만원 단위 표기 자체가 나오지 않는다).
-      expect(out.detailText).toContain('140만원');
-      expect(out.detailText).toContain('매입가 대비');
+      expect(out.summaryText).toContain('• 자산: 140만원');
     });
-
-    // 동기화가 멈춘 채 며칠 지나면 수량 자체가 옛것이다. 평가액은 계산되지만 지금 자산이 아니다.
-    it('잔고가 오래됐으면 자산 줄을 내지 않는다', async () => {
-      const stale = new Date();
-      stale.setDate(stale.getDate() - 30);
-      const task = buildTask(
-        { execute: jest.fn().mockResolvedValue(planOutcome) } as never,
-        humanized as unknown as HumanizeService,
+    it('잔고가 오래됐으면 자산 줄을 생략한다', async () => {
+      const out = await runWith([
         {
-          findPortfolioPositions: jest
-            .fn()
-            .mockResolvedValue([{ ...holding, holdingDate: stale }]),
-          findLatestFxRate: jest.fn().mockResolvedValue(null),
-        } as never,
-        listSchedulesUsecase(),
-      );
-
-      const out = await task.run(CTX);
-
-      expect(out.detailText).not.toContain('내 자산');
+          ...holding,
+          holdingDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+        },
+      ]);
+      expect(out.summaryText).not.toContain('• 자산:');
     });
-
-    // 환율이 오래되면 환산이 자산 규모를 왜곡한다. 달러 보유가 있으면 줄을 통째로 뺀다.
-    it('환율이 오래됐으면 달러 보유가 있는 자산 줄을 내지 않는다', async () => {
-      const stale = new Date();
-      stale.setDate(stale.getDate() - 30);
-      const task = buildTask(
-        { execute: jest.fn().mockResolvedValue(planOutcome) } as never,
-        humanized as unknown as HumanizeService,
-        {
-          findPortfolioPositions: jest
-            .fn()
-            .mockResolvedValue([{ ...holding, currency: 'USD' }]),
-          findLatestFxRate: jest
-            .fn()
-            .mockResolvedValue({ rate: '1400', rateDate: stale }),
-        } as never,
-        listSchedulesUsecase(),
-      );
-
-      const out = await task.run(CTX);
-
-      expect(out.detailText).not.toContain('내 자산');
+    it('환율이 오래된 달러 보유는 자산 줄을 생략한다', async () => {
+      const out = await runWith([{ ...holding, currency: 'USD' }], {
+        rate: '1400',
+        rateDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+      });
+      expect(out.summaryText).not.toContain('• 자산:');
     });
   });
 
@@ -771,7 +775,7 @@ describe('MorningBriefingAutopilotTask', () => {
       id: 1,
       slackUserId: 'U1',
       title: '자동차세',
-      dueDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
+      dueDate: new Date('2026-06-17T00:00:00.000Z'),
       dueTime: null,
       linkUrl: null,
       memo: null,
@@ -791,8 +795,49 @@ describe('MorningBriefingAutopilotTask', () => {
 
       const out = await task.run(CTX);
 
-      expect(out.detailText).toContain('📌 *마감 1건*');
-      expect(out.detailText).toContain('자동차세');
+      expect(out.summaryText).toContain('*오늘 일정*\n• 자동차세 (오늘)');
+    });
+
+    it('7일 안의 열린 마감은 다가오는 마감에, 오늘과 지난 마감은 오늘 일정에 싣는다', async () => {
+      const task = buildTask(
+        { execute: jest.fn().mockResolvedValue(planOutcome) } as never,
+        humanized as unknown as HumanizeService,
+        emptyStockRepository(),
+        {
+          execute: jest.fn().mockResolvedValue([
+            dueSoon,
+            {
+              ...dueSoon,
+              id: 2,
+              title: '이력서 제출',
+              dueDate: new Date('2026-06-20T00:00:00.000Z'),
+            },
+            {
+              ...dueSoon,
+              id: 3,
+              title: '닫힌 마감',
+              dueDate: new Date('2026-06-20T00:00:00.000Z'),
+              status: ScheduleStatus.DONE,
+            },
+            {
+              ...dueSoon,
+              id: 4,
+              title: '공휴일',
+              dueDate: new Date('2026-06-20T00:00:00.000Z'),
+              isHoliday: true,
+            },
+          ]),
+        } as never,
+      );
+
+      const out = await task.run(CTX);
+
+      expect(out.summaryText).toContain('*오늘 일정*\n• 자동차세 (오늘)');
+      expect(out.summaryText).toContain(
+        '*다가오는 마감*\n• 6/20(토) 이력서 제출 (D-3)',
+      );
+      expect(out.summaryText).not.toContain('닫힌 마감');
+      expect(out.summaryText).not.toContain('공휴일');
     });
 
     // 기한이 지난 미완 마감. 조회 하한을 오늘로 두던 동안 이 값은 **조회 자체에서 빠져**
@@ -801,10 +846,10 @@ describe('MorningBriefingAutopilotTask', () => {
       ...dueSoon,
       id: 2,
       title: '지난 자동차세',
-      dueDate: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),
+      dueDate: new Date('2026-06-14T00:00:00.000Z'),
     };
 
-    it('기한이 지난 미완 마감도 브리핑에 D+n 으로 싣는다', async () => {
+    it('기한이 지난 미완 마감도 며칠 지났는지 싣는다', async () => {
       const task = buildTask(
         { execute: jest.fn().mockResolvedValue(planOutcome) } as never,
         humanized as unknown as HumanizeService,
@@ -814,8 +859,7 @@ describe('MorningBriefingAutopilotTask', () => {
 
       const out = await task.run(CTX);
 
-      expect(out.detailText).toContain('지난 자동차세');
-      expect(out.detailText).toMatch(/D\+\d+/);
+      expect(out.summaryText).toContain('• 지난 자동차세 (3일 지남)');
     });
 
     // 위 테스트는 포맷터에 값이 닿기만 하면 통과한다 — 목이 무엇을 내놓든 통과하므로
@@ -835,13 +879,7 @@ describe('MorningBriefingAutopilotTask', () => {
 
       const queried = execute.mock.calls[0][0] as ListSchedulesInput;
       expect(queried.from).toBeUndefined();
-      // 상한은 그대로 오늘로부터 7일 뒤여야 한다. 하한을 떼면서 상한까지 흔들리면
-      // 한 달 뒤 마감이 매일 아침 줄에 섞인다. 기준이 **KST 달력일의 UTC 자정** 이라
-      // 지금 시각과는 최대 9시간 어긋나므로 6~7일 폭으로 받는다.
-      const dayMs = 24 * 60 * 60 * 1000;
-      const aheadDays = Math.round((queried.to.getTime() - Date.now()) / dayMs);
-      expect(aheadDays).toBeGreaterThanOrEqual(6);
-      expect(aheadDays).toBeLessThanOrEqual(7);
+      expect(queried.to).toEqual(new Date('2026-06-24T00:00:00.000Z'));
     });
 
     // 이 태스크의 최대 함정 — catch(EMPTY_TASKS_INPUT) 경로에서 빠뜨리면
@@ -863,9 +901,8 @@ describe('MorningBriefingAutopilotTask', () => {
 
       const out = await task.run(CTX);
 
-      expect(out.detailText).toContain('자동 수집된 할 일이 없습니다');
-      expect(out.detailText).toContain('📌 *마감 1건*');
-      expect(out.detailText).toContain('자동차세');
+      expect(out.summaryText).toContain('• 오늘 자동 수집된 할 일이 없어요');
+      expect(out.summaryText).toContain('*오늘 일정*\n• 자동차세 (오늘)');
     });
 
     it('항목이 없으면 마감 줄을 넣지 않는다', async () => {
@@ -878,7 +915,7 @@ describe('MorningBriefingAutopilotTask', () => {
 
       const out = await task.run(CTX);
 
-      expect(out.detailText).not.toContain('📌 *마감 1건*');
+      expect(out.summaryText).not.toContain('*오늘 일정*');
     });
 
     // 장식 쿼리 하나가 본체를 죽이면 안 된다 — appendPortfolioValue 와 같은 원칙.
@@ -895,8 +932,8 @@ describe('MorningBriefingAutopilotTask', () => {
       const out = await task.run(CTX);
 
       expect(out.skip).toBe(false);
-      expect(out.detailText).not.toContain('📌 *마감 1건*');
-      expect(out.detailText?.length).toBeGreaterThan(0);
+      expect(out.summaryText).not.toContain('*오늘 일정*');
+      expect(out.summaryText).toContain('*오늘 할 일*');
     });
   });
 });
@@ -908,7 +945,7 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
         ...basePlan,
         topPriority: {
           ...mockTask,
-          title: 'PR #3668 비속어 필터 검증 근거 기록',
+          title: '비속어 필터 검증 근거 기록',
           url: 'https://github.com/o/r/pull/3668',
         },
       },
@@ -947,8 +984,9 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
     previewText: '*카드*',
   });
 
-  it('할 일을 맨 위에 종류별 개수와 함께, 나머지를 한 줄씩 싣는다', async () => {
+  it('할 일·장애·일정·그 밖에 순서로 한 통을 싣는다', async () => {
     const digestRepository = {
+      ...emptyDigestRepository(),
       findOpenIncidents: jest.fn().mockResolvedValue([
         {
           label: 'Autopilot task paper-recommend',
@@ -996,31 +1034,35 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
 
     expect(out.summaryText).toBe(
       [
-        '☀️ *6/17(수) 아침* — 🔴 장애: 모의투자 추천 실패 · ✋ 승인 3 · 공고 1',
+        '☀️ *6/17(수) 아침* · 🔴 장애: 모의투자 추천 실패 · ✋ 승인 3 · 공고 1',
         '',
-        '*할 일*',
-        '• *승인 대기 3장* — 블로그 후보 · 경력 반영 · GitHub 발행',
-        '• 🔴 *장애* — 모의투자 추천 실패 · 2일째',
-        '• *공고 1건* — 하마랩 (목록은 스레드)',
+        '*오늘 할 일*',
+        '• <https://github.com/o/r/pull/3668|비속어 필터 검증 근거 기록>',
         '',
-        '*어제 · 오늘*',
-        '• *투자* — 오늘 시가 매수 1 · 매도 3 예정',
-        '• *회사 1순위* — <https://github.com/o/r/pull/3668|PR #3668 비속어 필터 검증 근거 기록>',
-        '• *공부* — <https://notion.so/brief|Agent Middleware Hooks> · 15분',
-        '• *포트폴리오* — 어제 발행 · 새 프로젝트 1건 · 이력서 감사: 약함 2건',
+        '*어제 장애*',
+        '• 모의투자 추천 실패 (2일째)',
+        '',
+        '*그 밖에*',
+        '• 승인 대기 3장 (블로그 후보 · 경력 반영 · GitHub 발행)',
+        '• 투자: 오늘 시가 매수 1, 매도 3 예정',
+        '• 새 공고 1건 (하마랩), 목록은 댓글에',
+        '• 공부: <https://notion.so/brief|Agent Middleware Hooks> 15분',
+        '• 포트폴리오: 어제 발행 · 새 프로젝트 1건 · 이력서 감사: 약함 2건',
       ].join('\n'),
     );
-    // 계획 전문과 공고 목록은 스레드에 있다.
-    expect(out.detailText).toContain('*오늘의 최우선 과제*');
+    // 공고 목록만 스레드에 있다.
+    expect(out.detailText).not.toContain('*오늘의 최우선 과제*');
     expect(out.detailText).toContain('*새 백엔드 공고 1건*');
     expect(out.detailText).toContain('https://jumpit.example/hama');
+    expect(out.summaryText).not.toContain('내 자산');
+    expect(out.detailText).not.toContain('내 자산');
     expect(out.unfurlLinks).toBe(false);
     expect(digestRepository.findLatestConsoleText).toHaveBeenCalledWith(
       expect.objectContaining({ itemKind: 'portfolio-publish' }),
     );
   });
 
-  it('할 일이 없으면 첫 줄이 "손댈 것 없음" 이고 선점 후처리도 없다', async () => {
+  it('승인·공고가 없어도 오늘 할 일은 첫 칸에 있고 선점 후처리는 없다', async () => {
     const task = buildTask(
       generateDailyPlan(),
       humanize(),
@@ -1031,10 +1073,10 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
 
     const out = await task.run(CTX);
 
-    expect(out.summaryText?.split('\n')[0]).toBe(
-      '☀️ *6/17(수) 아침* — 손댈 것 없음',
+    expect(out.summaryText?.split('\n')[0]).toBe('☀️ *6/17(수) 아침*');
+    expect(out.summaryText).toContain(
+      '*오늘 할 일*\n• <https://github.com/o/r/pull/3668|비속어 필터 검증 근거 기록>',
     );
-    expect(out.summaryText).not.toContain('*할 일*');
     expect(out.onDelivered).toBeUndefined();
   });
 
@@ -1111,9 +1153,9 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
     const out = await task.run(CTX);
 
     // 첫 줄만 보고 판단하는 메시지라 수집 정지는 할 일(장애)로 세어 첫 줄에 드러난다.
-    expect(out.summaryText).toContain('아침* — 🔴 장애: 공고 수집 멈춤');
+    expect(out.summaryText).toContain('아침* · 🔴 장애: 공고 수집 멈춤');
     expect(out.summaryText).toContain(
-      '🔴 *장애* — 공고 수집 멈춤 — 마지막 수집',
+      '*어제 장애*\n• 공고 수집 멈춤, 마지막 수집',
     );
   });
 
@@ -1135,9 +1177,9 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
     const out = await task.run(CTX);
 
     expect(out.summaryText).toContain(
-      '🔴 *장애* — 공고 수집된 적 없음 — 수집 설정 확인',
+      '*어제 장애*\n• 공고 수집된 적 없음, 수집 설정 확인',
     );
-    expect(out.summaryText).not.toContain('손댈 것 없음');
+    expect(out.summaryText).toContain('*오늘 할 일*');
   });
 
   it('링크 없는 계획 제목·장애 라벨도 mrkdwn 으로 해석되지 않게 이스케이프한다', async () => {
@@ -1170,9 +1212,9 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
     const out = await task.run(CTX);
 
     expect(out.summaryText).toContain(
-      '*회사 1순위* — &lt;!channel&gt; 확인 &amp; 배포',
+      '*오늘 할 일*\n• &lt;!channel&gt; 확인 &amp; 배포',
     );
-    expect(out.summaryText).toContain('🔴 *장애* — task &lt;x&gt; · 1일째');
+    expect(out.summaryText).toContain('• task &lt;x&gt; (1일째)');
   });
 
   it('직전 아침 이후 닫힌 사건을 해결 줄로 싣는다 — 아침이 전날보다 늦게 돌아도 틈이 없다', async () => {
@@ -1227,7 +1269,7 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
 
     // 해결 줄에서는 "… 실패" 를 뗀다 — "해결 — 블로그 GitHub 발행 실패" 로 읽히지 않게.
     expect(out.summaryText).toContain(
-      '• ✅ *해결* — 블로그 GitHub 발행 · Study Brief Cron',
+      '• 블로그 GitHub 발행, 지금은 복구됨\n• Study Brief Cron, 지금은 복구됨',
     );
     const { since } = digestRepository.findResolvedIncidentLabels.mock
       .calls[0][0] as { since: Date };
@@ -1255,9 +1297,7 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
 
     const out = await task.run(CTX);
 
-    expect(out.summaryText).toContain(
-      '🔴 *장애* — brand-new-task 실패 · 1일째',
-    );
+    expect(out.summaryText).toContain('• brand-new-task 실패 (1일째)');
     expect(out.summaryText).not.toContain('Autopilot task');
   });
 
@@ -1287,7 +1327,7 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
     expect(out.summaryText).not.toContain('공고 수집 멈춤');
   });
 
-  it('공고명은 mrkdwn 으로 해석되지 않게 이스케이프하고, 계획 전문은 유일한 사본으로 표시한다', async () => {
+  it('공고명은 mrkdwn 으로 해석되지 않게 이스케이프한다', async () => {
     const task = buildTask(
       generateDailyPlan(),
       humanize(),
@@ -1303,13 +1343,20 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
 
     const out = await task.run(CTX);
 
-    expect(out.summaryText).toContain('A&amp;B&lt;랩&gt; (목록은 스레드)');
+    expect(out.summaryText).toContain(
+      '새 공고 1건 (A&amp;B&lt;랩&gt;), 목록은 댓글에',
+    );
+    expect(out.detailText).not.toContain('*오늘의 최우선 과제*');
     expect(out.detailIsOnlyCopy).toBe(true);
   });
 
-  it('PM 계획 생성이 실패해도 나머지 줄은 그대로 나가고 실패는 장애로 첫 줄에 오른다', async () => {
+  it('PM 계획 생성이 실패해도 나머지 줄은 나가고 실패는 할 일 칸에 나온다', async () => {
     const task = buildTask(
-      { execute: jest.fn().mockRejectedValue(new Error('codex quota')) },
+      {
+        execute: jest
+          .fn()
+          .mockRejectedValue(new Error('codex quota token=sk-live-secret')),
+      },
       humanize(),
       emptyStockRepository(),
       listSchedulesUsecase(),
@@ -1326,13 +1373,15 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
 
     expect(out.skip).toBe(false);
     expect(out.summaryText?.split('\n')[0]).toBe(
-      '☀️ *6/17(수) 아침* — 🔴 장애: 오늘 계획 생성 실패 — codex quota · ✋ 승인 1',
+      '☀️ *6/17(수) 아침* · 🔴 장애: 오늘 계획 생성 실패 · ✋ 승인 1',
     );
     expect(out.summaryText).toContain(
-      '🔴 *장애* — 오늘 계획 생성 실패 — codex quota',
+      '*오늘 할 일*\n• 오늘 계획을 만들지 못했어요 (사용량 한도에 걸렸어요)',
     );
-    expect(out.summaryText).not.toContain('• 회사');
-    expect(out.detailText).toContain('오늘 계획을 만들지 못했습니다');
+    expect(out.summaryText).toContain('• 승인 대기 1장 (경력 반영)');
+    expect(out.summaryText).not.toContain('*어제 장애*');
+    expect(out.summaryText).not.toContain('sk-live-secret');
+    expect(out.detailText).toBe('');
   });
 
   it('포트폴리오 발행이 통째로 실패한 보고(불릿 없음)도 장애로 올린다', async () => {
@@ -1354,9 +1403,59 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
     const out = await task.run(CTX);
 
     expect(out.summaryText).toContain(
-      '🔴 *장애* — 포트폴리오 사이트 발행 실패 — 사이트 401',
+      '*어제 장애*\n• 포트폴리오 사이트 발행 실패 (로그인이 만료된 것 같아요)',
     );
-    expect(out.summaryText).not.toContain('• *포트폴리오* — 어제');
+    expect(out.summaryText).not.toContain('• 포트폴리오: 어제');
+  });
+
+  it('포트폴리오 실패 사유를 구분자 상수로 읽는다', async () => {
+    const task = buildTask(
+      generateDailyPlan(),
+      humanize(),
+      emptyStockRepository(),
+      listSchedulesUsecase(),
+      {
+        digestRepository: {
+          ...emptyDigestRepository(),
+          findLatestConsoleText: jest
+            .fn()
+            .mockResolvedValue(
+              '⚠️ *포트폴리오 사이트 발행 실패*: 사이트 API 401',
+            ),
+        },
+      },
+    );
+
+    const out = await task.run(CTX);
+
+    expect(out.summaryText).toContain(
+      '• 포트폴리오 사이트 발행 실패 (로그인이 만료된 것 같아요)',
+    );
+    expect(out.summaryText).not.toContain('실패: :');
+  });
+
+  it('과거 원장의 줄표 구분자도 새 불릿 문구로 읽는다', async () => {
+    const task = buildTask(
+      generateDailyPlan(),
+      humanize(),
+      emptyStockRepository(),
+      listSchedulesUsecase(),
+      {
+        digestRepository: {
+          ...emptyDigestRepository(),
+          findLatestConsoleText: jest
+            .fn()
+            .mockResolvedValue(
+              '📁 *포트폴리오 사이트 발행*\n• 📋 이력서 감사 — 약함 2건',
+            ),
+        },
+      },
+    );
+
+    const out = await task.run(CTX);
+
+    expect(out.summaryText).toContain('이력서 감사: 약함 2건');
+    expect(out.summaryText).not.toContain('이력서 감사 —');
   });
 
   it('공부 브리프는 생산자(study-brief-cron)의 owner 키로 조회한다', async () => {
@@ -1400,7 +1499,9 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
     const out = await task.run(CTX);
 
     expect(out.skip).toBe(false);
-    expect(out.summaryText).toContain('손댈 것 없음');
-    expect(out.summaryText).toContain('• *회사 1순위*');
+    expect(out.summaryText).toContain('*오늘 할 일*');
+    expect(out.summaryText).toContain(
+      '• <https://github.com/o/r/pull/3668|비속어 필터 검증 근거 기록>',
+    );
   });
 });

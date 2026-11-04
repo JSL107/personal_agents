@@ -65,7 +65,7 @@ export class RunVerdictActionHandler implements SlackHandler {
           await respond({
             response_type: 'ephemeral',
             replace_original: false,
-            text: '판정을 저장하지 못했습니다 — 버튼 값을 읽지 못했습니다.',
+            text: '판정을 저장하지 못했습니다. 버튼 값을 읽지 못했습니다.',
           });
           return;
         }

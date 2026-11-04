@@ -15,7 +15,7 @@ import { formatDailyReview } from '../format/daily-review.formatter';
 import { formatImpactReport } from '../format/impact-report.formatter';
 import { formatEvaluationOutput } from '../format/po-evaluation.formatter';
 import { formatPoShadowReport } from '../format/po-shadow.formatter';
-import { formatPullRequestReview } from '../format/pull-request-review.formatter';
+import { formatPullRequestReviewResponse } from '../format/pull-request-review-response';
 import { formatVideoWatch } from '../format/video-watch.formatter';
 import { respondBlogPublishOutcome } from './blog-publish.handler';
 import {
@@ -106,12 +106,18 @@ export class RetryRunHandler implements SlackHandler {
         return;
       case 'CODE_REVIEWER': {
         const prRef = prepared.prRef;
+        let prTitle: string | undefined;
         await runAgentCommand({
           respond,
           logger: this.logger,
           commandLabel: '/retry-run(CODE_REVIEWER)',
-          execute: prepared.run,
-          format: (review) => formatPullRequestReview({ prRef, review }),
+          execute: async () => {
+            const outcome = await prepared.run();
+            prTitle = outcome.prTitle;
+            return outcome;
+          },
+          format: (review) =>
+            formatPullRequestReviewResponse({ prRef, prTitle, review }),
         });
         return;
       }
