@@ -6,80 +6,137 @@ export const WORK_COUNT_PATTERN =
   /(?:\d+\s*(?:개|건|차)?\s*(?:PRs?|pull requests?|커밋|commits?|저장소))|(?:(?:PRs?|pull requests?|커밋|commits?|저장소)\s*\d+\s*(?:개|건)?)/i;
 const TEST_WORD_PATTERN = /테스트|단위\s*테스트|\b(?:spec|suite|tests?)\b/i;
 const TEST_PASS_PATTERN = /통과|\bpass(?:ed|es)?\b/i;
+const HIGHLIGHT_MAX_LENGTH = 40;
+const HIGHLIGHT_MAX_COUNT = 3;
+const TITLE_KEEP_JACCARD = 0.8;
 
-export const extractNumberTokens = (text: string): string[] =>
-  (text.match(NUMBER_PATTERN) ?? []).map((token) => token.replace(/,/g, ''));
-
-export const hasUngroundedNumbers = (
-  text: string,
-  processLines: string[],
-): boolean => {
-  const sourceTokens = new Set(extractNumberTokens(processLines.join('\n')));
-  return extractNumberTokens(text).some((token) => !sourceTokens.has(token));
+export const extractNumberTokens = (text: string): string[] => {
+  const matches = text.match(NUMBER_PATTERN) ?? [];
+  const tokens = matches.map((token) => token.replace(/,/g, ''));
+  return tokens;
 };
 
-export const isTestPassCount = (text: string): boolean =>
-  TEST_WORD_PATTERN.test(text) &&
-  TEST_PASS_PATTERN.test(text) &&
-  extractNumberTokens(text).length > 0;
+export const hasUngroundedNumbers = ({
+  text,
+  processLines,
+}: {
+  text: string;
+  processLines: string[];
+}): boolean => {
+  const sourceTokens = new Set(extractNumberTokens(processLines.join('\n')));
+  const tokens = extractNumberTokens(text);
+  const hasUnknownToken = tokens.some((token) => !sourceTokens.has(token));
+  return hasUnknownToken;
+};
+
+export const isTestPassCount = (text: string): boolean => {
+  const mentionsTest = TEST_WORD_PATTERN.test(text);
+  const mentionsPass = TEST_PASS_PATTERN.test(text);
+  const hasNumber = extractNumberTokens(text).length > 0;
+  const isPassCount = mentionsTest && mentionsPass && hasNumber;
+  return isPassCount;
+};
 
 const isWorkCount = (text: string): boolean => WORK_COUNT_PATTERN.test(text);
 
-const validResultSentences = (text: string, processLines: string[]): string[] =>
-  text
+const validResultSentences = ({
+  text,
+  processLines,
+}: {
+  text: string;
+  processLines: string[];
+}): string[] => {
+  const sentences = text
     // 마침표를 문장 쪽에 남긴 채 나눈다. 다시 이을 때 구분자를 붙이면 「다..」가 된다.
     .split(/(?<=[.!?])\s+|\n+/)
     .map((sentence) => sentence.trim())
     .filter((sentence) => sentence.length > 0)
     .filter((sentence) => !isWorkCount(sentence))
-    .filter((sentence) => !hasUngroundedNumbers(sentence, processLines));
+    .filter(
+      (sentence) => !hasUngroundedNumbers({ text: sentence, processLines }),
+    );
+  return sentences;
+};
+
+const isPresentableHighlight = ({
+  highlight,
+  processLines,
+}: {
+  highlight: string;
+  processLines: string[];
+}): boolean => {
+  if (highlight.trim().length > HIGHLIGHT_MAX_LENGTH) {
+    return false;
+  }
+  if (extractNumberTokens(highlight).length === 0) {
+    return false;
+  }
+  if (hasUngroundedNumbers({ text: highlight, processLines })) {
+    return false;
+  }
+  if (isWorkCount(highlight) || isTestPassCount(highlight)) {
+    return false;
+  }
+  return true;
+};
 
 export interface ValidatedCover extends ProjectGroupNaming {
   removedHighlights: string[];
   retryHighlights: boolean;
 }
 
-export const validateCover = (
-  cover: ProjectGroupNaming,
-  processLines: string[],
-  previousResult: string,
-): ValidatedCover | null => {
+export const validateCover = ({
+  cover,
+  processLines,
+  previousResult,
+}: {
+  cover: ProjectGroupNaming;
+  processLines: string[];
+  previousResult: string;
+}): ValidatedCover | null => {
   if (!cover.title.trim() || !cover.summary.trim() || !cover.problem.trim()) {
     return null;
   }
   const highlights = cover.highlights
-    .filter((item) => item.trim().length <= 40)
-    .filter((item) => extractNumberTokens(item).length > 0)
-    .filter((item) => !hasUngroundedNumbers(item, processLines))
-    .filter((item) => !isWorkCount(item) && !isTestPassCount(item))
-    .slice(0, 3);
-  const resultSentences = validResultSentences(cover.result, processLines);
-  const previousSentences = validResultSentences(previousResult, processLines);
+    .filter((highlight) => isPresentableHighlight({ highlight, processLines }))
+    .slice(0, HIGHLIGHT_MAX_COUNT);
+  const resultSentences = validResultSentences({
+    text: cover.result,
+    processLines,
+  });
+  const previousSentences = validResultSentences({
+    text: previousResult,
+    processLines,
+  });
   const removedHighlights = cover.highlights.filter(
     (item) => !highlights.includes(item),
   );
+  const selectedSentences =
+    resultSentences.length > 0 ? resultSentences : previousSentences;
+  const result = selectedSentences.join(' ');
+  const processHasNumbers =
+    extractNumberTokens(processLines.join('\n')).length > 0;
+  const retryHighlights =
+    cover.highlights.length > 0 && highlights.length === 0 && processHasNumbers;
   return {
     ...cover,
     title: cover.title.trim(),
     summary: cover.summary.trim(),
     problem: cover.problem.trim(),
-    result: (resultSentences.length > 0
-      ? resultSentences
-      : previousSentences
-    ).join(' '),
+    result,
     highlights,
     removedHighlights,
-    retryHighlights:
-      cover.highlights.length > 0 &&
-      highlights.length === 0 &&
-      extractNumberTokens(processLines.join('\n')).length > 0,
+    retryHighlights,
   };
 };
 
-export const shouldKeepPreviousTitle = (
-  row: { coverOf: string | null; memberPrs: string[] } | null,
-  memberPrs: string[],
-): boolean => {
+export const shouldKeepPreviousTitle = ({
+  row,
+  memberPrs,
+}: {
+  row: { coverOf: string | null; memberPrs: string[] } | null;
+  memberPrs: string[];
+}): boolean => {
   if (!row || row.coverOf === null) {
     return false;
   }
@@ -90,5 +147,6 @@ export const shouldKeepPreviousTitle = (
     return false;
   }
   const intersection = [...previous].filter((item) => next.has(item)).length;
-  return intersection / union.size >= 0.8;
+  const jaccard = intersection / union.size;
+  return jaccard >= TITLE_KEEP_JACCARD;
 };

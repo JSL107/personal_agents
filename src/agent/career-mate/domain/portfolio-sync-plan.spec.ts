@@ -54,17 +54,26 @@ describe('portfolio sync 계획 함수', () => {
       { slug: 'first', topicIndex: 1, memberPrs: ['example/service#2'] },
     ];
     expect(
-      assignToCard(['example/service#1', 'example/service#2'], cards),
+      assignToCard({
+        accomplishmentPrs: ['example/service#1', 'example/service#2'],
+        cards,
+      }),
     ).toEqual({ card: cards[0], ambiguous: false });
-    expect(assignToCard(['example/service#2'], cards)).toEqual({
+    expect(
+      assignToCard({ accomplishmentPrs: ['example/service#2'], cards }),
+    ).toEqual({
       card: cards[1],
       ambiguous: true,
     });
-    expect(assignToCard(['unknown'], [cards[0]])).toEqual({
+    expect(
+      assignToCard({ accomplishmentPrs: ['unknown'], cards: [cards[0]] }),
+    ).toEqual({
       card: cards[0],
       ambiguous: false,
     });
-    expect(assignToCard(['unknown'], [])).toBeNull();
+    expect(
+      assignToCard({ accomplishmentPrs: ['unknown'], cards: [] }),
+    ).toBeNull();
   });
 
   it('모든 근거 저장소 PR을 소문자로 정렬하고 구성 해시만으로 재생성을 판정한다', () => {
@@ -80,8 +89,10 @@ describe('portfolio sync 계획 함수', () => {
         .update('example/service#1\nother/repo#2\ncover-v1')
         .digest('hex'),
     );
-    expect(shouldRegenerateCover({ coverOf: hash }, hash)).toBe(false);
-    expect(shouldRegenerateCover(null, hash)).toBe(true);
+    expect(
+      shouldRegenerateCover({ row: { coverOf: hash }, coverHash: hash }),
+    ).toBe(false);
+    expect(shouldRegenerateCover({ row: null, coverHash: hash })).toBe(true);
   });
 
   it('최신 머지와 PR 번호순으로 정렬하고 같은 제목은 한 줄만 남긴다', () => {
@@ -115,7 +126,7 @@ describe('portfolio sync 계획 함수', () => {
   it('채택은 slug 집합이 같을 때만 행을 만들고 기존 표지 해시는 비운다', () => {
     const cards = [{ slug: 'a', repo: 'Example/A' }];
     const sites = [{ id: '42', slug: 'a', title: '기존 표지' }];
-    expect(planAdoption(cards, sites)).toEqual({
+    expect(planAdoption({ cards, siteProjects: sites })).toEqual({
       rows: [
         {
           slug: 'a',
@@ -129,7 +140,10 @@ describe('portfolio sync 계획 함수', () => {
       table: [{ slug: 'a', siteProjectId: '42', title: '기존 표지' }],
     });
     expect(
-      planAdoption(cards, [{ id: '43', slug: 'b', title: '다름' }]).mismatch,
+      planAdoption({
+        cards,
+        siteProjects: [{ id: '43', slug: 'b', title: '다름' }],
+      }).mismatch,
     ).toEqual({ onlyInPlan: ['a'], onlyOnSite: ['b'] });
   });
 

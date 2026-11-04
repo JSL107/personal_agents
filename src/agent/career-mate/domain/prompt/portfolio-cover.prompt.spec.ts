@@ -26,7 +26,9 @@ describe('portfolio cover prompt', () => {
   });
 
   it('JSON 파손은 빈 목록으로 처리한다', () => {
-    expect(parsePortfolioCoverOutput('깨진 JSON', ['sample'])).toEqual([]);
+    expect(
+      parsePortfolioCoverOutput({ text: '깨진 JSON', allowedKeys: ['sample'] }),
+    ).toEqual([]);
   });
 
   it('입력 외 key와 중복 key는 버린다', () => {
@@ -45,6 +47,8 @@ describe('portfolio cover prompt', () => {
         { ...item, key: 'other' },
       ],
     });
-    expect(parsePortfolioCoverOutput(output, ['sample'])).toEqual([item]);
+    expect(
+      parsePortfolioCoverOutput({ text: output, allowedKeys: ['sample'] }),
+    ).toEqual([item]);
   });
 });

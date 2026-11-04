@@ -131,8 +131,13 @@ const TECH_CATEGORIES: Record<TechCategory, string[]> = {
   ],
 };
 
-const keyOf = (value: string): string =>
-  value.toLowerCase().replace(/[\s.-]/g, '');
+const TECH_STACK_MAX_COUNT = 12;
+
+const keyOf = (value: string): string => {
+  const lower = value.toLowerCase();
+  const key = lower.replace(/[\s.-]/g, '');
+  return key;
+};
 
 // 두 실측 참조의 표기 차이를 한 곳에서 접는다. 파일 형식과 작업 방식은 기술 스택이 아니다.
 const ALIASES: Record<string, string> = {
@@ -263,18 +268,19 @@ export const normalizeTechStack = (
       const rightCategory = CATEGORY_ORDER.indexOf(
         categoryByName.get(right) as TechCategory,
       );
-      return (
+      const categoryAndFrequencyOrder =
         leftCategory - rightCategory ||
         (frequency.get(right) ?? 0) - (frequency.get(left) ?? 0) ||
-        left.localeCompare(right, 'en')
-      );
+        left.localeCompare(right, 'en');
+      return categoryAndFrequencyOrder;
     })
-    .slice(0, 12);
+    .slice(0, TECH_STACK_MAX_COUNT);
 
+  const sortedUnknownTerms = [...unknownTerms].sort((left, right) =>
+    left.localeCompare(right, 'en'),
+  );
   return {
     techStack,
-    unknownTerms: [...unknownTerms].sort((left, right) =>
-      left.localeCompare(right, 'en'),
-    ),
+    unknownTerms: sortedUnknownTerms,
   };
 };

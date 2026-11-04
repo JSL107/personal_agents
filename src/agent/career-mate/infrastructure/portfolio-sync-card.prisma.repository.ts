@@ -31,6 +31,10 @@ export class PortfolioSyncCardPrismaRepository implements PortfolioSyncCardRepos
   }
 
   async upsertActive(input: PortfolioSyncCardWrite): Promise<void> {
+    const sortOrderUpdate =
+      input.lastSentSortOrder === undefined
+        ? {}
+        : { lastSentSortOrder: input.lastSentSortOrder };
     await this.prisma.portfolioSyncCard.upsert({
       where: { slug: input.slug },
       create: {
@@ -50,9 +54,7 @@ export class PortfolioSyncCardPrismaRepository implements PortfolioSyncCardRepos
         memberPrs: input.memberPrs,
         coverOf: input.coverOf,
         status: 'ACTIVE',
-        ...(input.lastSentSortOrder === undefined
-          ? {}
-          : { lastSentSortOrder: input.lastSentSortOrder }),
+        ...sortOrderUpdate,
       },
     });
   }

@@ -21,10 +21,12 @@ export interface PortfolioSyncPostCheckInput {
   planViolations: string[];
 }
 
-const stringArray = (value: unknown): string[] | null =>
-  Array.isArray(value) && value.every((item) => typeof item === 'string')
-    ? value
-    : null;
+const stringArray = (value: unknown): string[] | null => {
+  const isStringArray =
+    Array.isArray(value) && value.every((item) => typeof item === 'string');
+  const strings = isStringArray ? value : null;
+  return strings;
+};
 
 const stringValue = (value: unknown): string =>
   typeof value === 'string' ? value : '';
@@ -46,6 +48,9 @@ const PUBLIC_TEXT_FIELDS = [
 ];
 const LEAKED_REPO_PATTERN = /사내 저장소[\w.-]/;
 const GITHUB_REPOSITORY_PATTERN = /^https:\/\/github\.com\/[^/]+\/[^/]+$/;
+const PROCESS_MAX_COUNT = 10;
+const CARDS_PER_REPO_MAX_COUNT = 3;
+const TECH_STACK_MAX_COUNT = 12;
 
 // 재조회 결과만 검사한다. 사이트가 실제 저장한 값이 계획 본문과 다를 수 있기 때문이다.
 export const postCheckPortfolioSync = ({
@@ -82,12 +87,14 @@ export const postCheckPortfolioSync = ({
         : stringArray(data.keyContributions);
     const techStack = stringArray(data.techStack);
     const result = stringValue(data.result);
-    if (
+    const hasInvalidCoverNumbers =
       process === null ||
       highlights === null ||
-      hasUngroundedNumbers(result, process) ||
-      highlights.some((line) => hasUngroundedNumbers(line, process))
-    ) {
+      hasUngroundedNumbers({ text: result, processLines: process }) ||
+      highlights.some((line) =>
+        hasUngroundedNumbers({ text: line, processLines: process }),
+      );
+    if (hasInvalidCoverNumbers) {
       violations.push({
         slug: project.slug,
         rule: 1,
@@ -95,29 +102,33 @@ export const postCheckPortfolioSync = ({
       });
     }
     const repo = repoBySlug.get(project.slug) as string;
-    if (
+    const repoKey = repo.trim().toLowerCase();
+    const cardCount = repoCount.get(repoKey) ?? 0;
+    const exceedsProcessOrCardLimit =
       process === null ||
-      process.length > 10 ||
-      (repoCount.get(repo.trim().toLowerCase()) ?? 0) > 3
-    ) {
+      process.length > PROCESS_MAX_COUNT ||
+      cardCount > CARDS_PER_REPO_MAX_COUNT;
+    if (exceedsProcessOrCardLimit) {
       violations.push({
         slug: project.slug,
         rule: 2,
         detail: '과정 또는 저장소당 카드 수 상한을 넘었다',
       });
     }
-    if (
+    const hasInvalidTechStack =
       techStack === null ||
-      techStack.length > 12 ||
-      normalizeTechStack([techStack]).techStack.length !== techStack.length
-    ) {
+      techStack.length > TECH_STACK_MAX_COUNT ||
+      normalizeTechStack([techStack]).techStack.length !== techStack.length;
+    if (hasInvalidTechStack) {
       violations.push({
         slug: project.slug,
         rule: 3,
         detail: '기술 스택 상한·중복·금지어 또는 표준 표기가 어긋났다',
       });
     }
-    if (highlights === null || highlights.some(isTestPassCount)) {
+    const hasTestCountHighlight =
+      highlights === null || highlights.some(isTestPassCount);
+    if (hasTestCountHighlight) {
       violations.push({
         slug: project.slug,
         rule: 4,
@@ -126,14 +137,14 @@ export const postCheckPortfolioSync = ({
     }
     const card = cardBySlug.get(project.slug);
     const previous = beforeBySlug.get(project.slug);
-    if (card && previous && !COVER_FIELDS.some((field) => field in card.body)) {
-      if (
-        COVER_FIELDS.some(
-          (field) =>
-            JSON.stringify(data[field]) !==
-            JSON.stringify(previous.data[field]),
-        )
-      ) {
+    const coverWasNotSent =
+      card && previous && !COVER_FIELDS.some((field) => field in card.body);
+    if (coverWasNotSent) {
+      const coverChanged = COVER_FIELDS.some(
+        (field) =>
+          JSON.stringify(data[field]) !== JSON.stringify(previous.data[field]),
+      );
+      if (coverChanged) {
         violations.push({
           slug: project.slug,
           rule: 6,
@@ -146,11 +157,12 @@ export const postCheckPortfolioSync = ({
       links && typeof links === 'object' && !Array.isArray(links)
         ? (links as Record<string, unknown>).github
         : undefined;
-    if (
+    const invalidGithubLink =
       (card?.anonymized && github !== undefined) ||
       (github !== undefined &&
-        (typeof github !== 'string' || !GITHUB_REPOSITORY_PATTERN.test(github)))
-    ) {
+        (typeof github !== 'string' ||
+          !GITHUB_REPOSITORY_PATTERN.test(github)));
+    if (invalidGithubLink) {
       violations.push({
         slug: project.slug,
         rule: 7,
@@ -159,9 +171,15 @@ export const postCheckPortfolioSync = ({
     }
     const publicText = PUBLIC_TEXT_FIELDS.flatMap((field) => {
       const value = data[field];
-      return Array.isArray(value) ? value.map(String) : [String(value ?? '')];
+      const lines = Array.isArray(value)
+        ? value.map(String)
+        : [String(value ?? '')];
+      return lines;
     });
-    if (publicText.some((line) => LEAKED_REPO_PATTERN.test(line))) {
+    const hasLeakedRepoToken = publicText.some((line) =>
+      LEAKED_REPO_PATTERN.test(line),
+    );
+    if (hasLeakedRepoToken) {
       violations.push({
         slug: project.slug,
         rule: 8,

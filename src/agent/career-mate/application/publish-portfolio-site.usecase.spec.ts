@@ -224,7 +224,7 @@ describe('PublishPortfolioSiteUsecase 계획과 적용', () => {
     const plan = await fixture.usecase.plan({ slackUserId: 'U1' });
     expect(plan.adoption?.mismatch).toBeUndefined();
     expect(fixture.repository.createMany).not.toHaveBeenCalled();
-    await fixture.usecase.apply(plan);
+    await fixture.usecase.apply({ plan });
     expect(fixture.repository.createMany).toHaveBeenCalledTimes(1);
     expect(fixture.rows).toHaveLength(1);
   });
@@ -233,7 +233,7 @@ describe('PublishPortfolioSiteUsecase 계획과 적용', () => {
     const fixture = createFixture({ rows: [], sites: [] });
     const plan = await fixture.usecase.plan({ slackUserId: 'U1' });
     expect(plan.adoption?.mismatch?.onlyInPlan).toEqual([SLUG]);
-    const result = await fixture.usecase.apply(plan);
+    const result = await fixture.usecase.apply({ plan });
     expect(result.aborted).toBeTruthy();
     expect(fixture.repository.createMany).not.toHaveBeenCalled();
     expect(fixture.client.createProject).not.toHaveBeenCalled();
@@ -257,7 +257,7 @@ describe('PublishPortfolioSiteUsecase 계획과 적용', () => {
     const fixture = createFixture();
     const plan = await fixture.usecase.plan({ slackUserId: 'U1' });
     fixture.rows[0].coverOf = 'changed';
-    const result = await fixture.usecase.apply(plan);
+    const result = await fixture.usecase.apply({ plan });
     expect(result.aborted).toMatch(/싱크 상태가 바뀌었습니다/);
     expect(fixture.client.updateProject).not.toHaveBeenCalled();
     expect(fixture.repository.upsertActive).not.toHaveBeenCalled();
@@ -272,7 +272,7 @@ describe('PublishPortfolioSiteUsecase 계획과 적용', () => {
     const fixture = createFixture({ sites: [previous] });
     const plan = await fixture.usecase.plan({ slackUserId: 'U1' });
     fixture.sites[0].data.links = { github: 'https://github.com/human/edited' };
-    const result = await fixture.usecase.apply(plan);
+    const result = await fixture.usecase.apply({ plan });
     expect(result.aborted).toMatch(/사이트 카드가 바뀌었습니다/);
     expect(fixture.client.updateProject).not.toHaveBeenCalled();
   });
@@ -284,7 +284,7 @@ describe('PublishPortfolioSiteUsecase 계획과 적용', () => {
     const plan = await fixture.usecase.plan({ slackUserId: 'U1' });
     expect(plan.cards[0].body.sortOrder).toBe(1);
     fixture.sites[0].sortOrder = 9;
-    const result = await fixture.usecase.apply(plan);
+    const result = await fixture.usecase.apply({ plan });
     expect(result.aborted).toMatch(/사이트 카드가 바뀌었습니다/);
     expect(fixture.client.updateProject).not.toHaveBeenCalled();
   });
@@ -339,7 +339,7 @@ describe('PublishPortfolioSiteUsecase 계획과 적용', () => {
     const plan = await fixture.usecase.plan({ slackUserId: 'U1' });
     expect(plan.cards[0].coverPassed).toBe(false);
     expect(plan.cards[0].body).not.toHaveProperty('title');
-    await fixture.usecase.apply(plan);
+    await fixture.usecase.apply({ plan });
     expect(fixture.rows[0].coverOf).toBeNull();
   });
   it('모델 파손과 기존 숫자 위반 시 위반 필드만 비운다', async () => {

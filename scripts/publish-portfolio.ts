@@ -4,11 +4,16 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 
-import { PublishPortfolioSiteUsecase } from '../src/agent/career-mate/application/publish-portfolio-site.usecase';
+import {
+  PublishPortfolioSiteResult,
+  PublishPortfolioSiteUsecase,
+} from '../src/agent/career-mate/application/publish-portfolio-site.usecase';
 import { CareerMateModule } from '../src/agent/career-mate/career-mate.module';
 import { PortfolioSyncPlan } from '../src/agent/career-mate/domain/portfolio-sync-card.type';
+import { parsePortfolioSyncPlan } from '../src/agent/career-mate/domain/portfolio-sync-plan.parse';
 import { AgentRunModule } from '../src/agent-run/agent-run.module';
 import { CronIdempotencyModule } from '../src/common/queue/cron-idempotency.module';
+import { formatKstDateTime } from '../src/common/util/kst-date.util';
 import { PreviewGateModule } from '../src/preview-gate/preview-gate.module';
 import { PrismaModule } from '../src/prisma/prisma.module';
 
@@ -56,7 +61,13 @@ const readOption = (name: string): string | undefined => {
 
 const hasFlag = (name: string): boolean => process.argv.includes(`--${name}`);
 
-const formatList = (label: string, values: string[]): string | null => {
+const formatList = ({
+  label,
+  values,
+}: {
+  label: string;
+  values: string[];
+}): string | null => {
   if (values.length === 0) {
     return null;
   }
@@ -95,39 +106,48 @@ const printPlan = (plan: PortfolioSyncPlan): void => {
   console.log(lines.join('\n'));
 };
 
-const printResult = (
-  result: Awaited<ReturnType<PublishPortfolioSiteUsecase['execute']>>,
-): void => {
+const printResult = (result: PublishPortfolioSiteResult): void => {
+  const blankedFields = result.blankedFields.map(
+    (entry) => `${entry.slug}(${entry.fields.join(', ')})`,
+  );
+  const postCheckViolations = result.postCheckViolations.map(
+    (entry) => `${entry.slug}(기준 ${entry.rule}: ${entry.detail})`,
+  );
+  const failures = result.failures.map(
+    (failure) => `${failure.target}(${failure.reason})`,
+  );
   const lines = [
     `포트폴리오 사이트 발행 (run #${result.agentRunId})`,
-    formatList('신규', result.createdProjects),
-    formatList('갱신', result.updatedProjects),
-    formatList('새 스킬 그룹', result.createdSkillGroups),
-    formatList('건너뜀(근거 PR 없음)', result.skippedTitles),
-    formatList('⚠️ 이름을 받지 못해 빠진 저장소', result.unnamedKeys),
-    formatList('표지 새로 씀', result.regenerated),
-    formatList('⚠️ 공개 표지 덮음', result.overwrittenPublic),
-    formatList('⚠️ 표지 생성 실패', result.coverFailed),
-    formatList('⚠️ 계획에 없는 이대리 카드', result.notInPlan),
-    formatList('⚠️ 알 수 없는 기술', result.unknownTechTerms),
-    formatList('⚠️ 계획 위반', result.planViolations),
-    formatList(
-      '⚠️ 비워낸 표지 필드',
-      result.blankedFields.map(
-        (entry) => `${entry.slug}(${entry.fields.join(', ')})`,
-      ),
-    ),
-    formatList(
-      '⚠️ 사후 검사 위반',
-      result.postCheckViolations.map(
-        (entry) => `${entry.slug}(기준 ${entry.rule}: ${entry.detail})`,
-      ),
-    ),
-    formatList(
-      '⚠️ 실패',
-      result.failures.map((failure) => `${failure.target}(${failure.reason})`),
-    ),
-    formatList('⚠️ 재조회에 없음', result.missingAfterPublish),
+    formatList({ label: '신규', values: result.createdProjects }),
+    formatList({ label: '갱신', values: result.updatedProjects }),
+    formatList({ label: '새 스킬 그룹', values: result.createdSkillGroups }),
+    formatList({ label: '건너뜀(근거 PR 없음)', values: result.skippedTitles }),
+    formatList({
+      label: '⚠️ 이름을 받지 못해 빠진 저장소',
+      values: result.unnamedKeys,
+    }),
+    formatList({ label: '표지 새로 씀', values: result.regenerated }),
+    formatList({
+      label: '⚠️ 공개 표지 덮음',
+      values: result.overwrittenPublic,
+    }),
+    formatList({ label: '⚠️ 표지 생성 실패', values: result.coverFailed }),
+    formatList({
+      label: '⚠️ 계획에 없는 이대리 카드',
+      values: result.notInPlan,
+    }),
+    formatList({
+      label: '⚠️ 알 수 없는 기술',
+      values: result.unknownTechTerms,
+    }),
+    formatList({ label: '⚠️ 계획 위반', values: result.planViolations }),
+    formatList({ label: '⚠️ 비워낸 표지 필드', values: blankedFields }),
+    formatList({ label: '⚠️ 사후 검사 위반', values: postCheckViolations }),
+    formatList({ label: '⚠️ 실패', values: failures }),
+    formatList({
+      label: '⚠️ 재조회에 없음',
+      values: result.missingAfterPublish,
+    }),
     result.adoptionRequired
       ? '⚠️ 채택 전 — CLI --dry-run/--apply 로 첫 채택 필요'
       : null,
@@ -136,27 +156,29 @@ const printResult = (
   console.log(lines.join('\n'));
 };
 
-const hasFailure = (
-  result: Awaited<ReturnType<PublishPortfolioSiteUsecase['execute']>>,
-): boolean =>
-  result.failures.length > 0 ||
-  result.missingAfterPublish.length > 0 ||
-  result.unnamedKeys.length > 0 ||
-  result.coverFailed.length > 0 ||
-  result.blankedFields.length > 0 ||
-  result.postCheckViolations.length > 0 ||
-  result.notInPlan.length > 0 ||
-  result.planViolations.length > 0 ||
+const hasFailure = (result: PublishPortfolioSiteResult): boolean => {
+  const hasReportedFailure =
+    result.failures.length > 0 ||
+    result.missingAfterPublish.length > 0 ||
+    result.unnamedKeys.length > 0 ||
+    result.coverFailed.length > 0 ||
+    result.blankedFields.length > 0 ||
+    result.postCheckViolations.length > 0 ||
+    result.notInPlan.length > 0 ||
+    result.planViolations.length > 0;
   // 채택 전이면 아무것도 쓰지 않았다 — 성공 종료로 두면 자동화가 미발행을 정상으로 읽는다.
-  result.adoptionRequired ||
-  result.aborted !== null;
+  const isUnpublished = result.adoptionRequired || result.aborted !== null;
+  return hasReportedFailure || isUnpublished;
+};
 
 const main = async (): Promise<void> => {
   const dryRun = hasFlag('dry-run');
   const apply = hasFlag('apply');
   const outputPath = readOption('out');
   const planPath = readOption('apply');
-  if ((dryRun && apply) || (dryRun && !outputPath) || (apply && !planPath)) {
+  const invalidOptions =
+    (dryRun && apply) || (dryRun && !outputPath) || (apply && !planPath);
+  if (invalidOptions) {
     throw new Error(USAGE);
   }
   const owner =
@@ -185,20 +207,20 @@ const main = async (): Promise<void> => {
       return;
     }
     if (apply) {
-      const plan = JSON.parse(
-        await readFile(planPath!, 'utf8'),
-      ) as PortfolioSyncPlan;
-      const result = await usecase.apply(plan, {
-        snapshot: async (projects) => {
-          const timestamp = new Date()
-            .toISOString()
-            .replace(/[-:T.Z]/g, '')
-            .slice(0, 14);
-          await writeFile(
-            `${planPath}.snapshot-${timestamp}.json`,
-            `${JSON.stringify(projects, null, 2)}\n`,
-            'utf8',
-          );
+      const planText = await readFile(planPath!, 'utf8');
+      const rawPlan: unknown = JSON.parse(planText);
+      const plan = parsePortfolioSyncPlan(rawPlan);
+      const result = await usecase.apply({
+        plan,
+        options: {
+          snapshot: async (projects) => {
+            const timestamp = formatKstDateTime(new Date()).replace(/\D/g, '');
+            await writeFile(
+              `${planPath}.snapshot-${timestamp}.json`,
+              `${JSON.stringify(projects, null, 2)}\n`,
+              'utf8',
+            );
+          },
         },
       });
       printResult(result);

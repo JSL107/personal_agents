@@ -36,11 +36,12 @@ const toProject = (value: unknown): PortfolioSiteProject | null => {
   if (typeof id !== 'string' || typeof slug !== 'string') {
     return null;
   }
+  const projectSortOrder = typeof sortOrder === 'number' ? sortOrder : 0;
   return {
     id,
     slug,
     published: Boolean(published),
-    sortOrder: typeof sortOrder === 'number' ? sortOrder : 0,
+    sortOrder: projectSortOrder,
     data: isRecord(data) ? data : {},
   };
 };
@@ -77,13 +78,14 @@ export class PortfolioSiteApiClient implements PortfolioSiteClientPort {
     if (!Array.isArray(body?.projects)) {
       throw this.contractViolation('GET /me/projects', 'projects 배열', body);
     }
-    return body.projects.map((value: unknown) => {
+    const projects = body.projects.map((value: unknown) => {
       const project = toProject(value);
       if (!project) {
         throw this.contractViolation('GET /me/projects', 'id·slug', value);
       }
       return project;
     });
+    return projects;
   }
 
   async createProject(

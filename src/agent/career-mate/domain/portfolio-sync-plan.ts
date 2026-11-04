@@ -7,6 +7,7 @@ import { ProjectGroup } from './project-group';
 import { toPrNumber } from './reconcile-accomplishment-evidence';
 
 export const COVER_SPEC_VERSION = 'cover-v1';
+const PROCESS_MAX_COUNT = 10;
 
 export interface CardAssignmentCandidate {
   slug: string;
@@ -19,10 +20,13 @@ export interface CardAssignment {
   ambiguous: boolean;
 }
 
-export const assignToCard = (
-  accomplishmentPrs: string[],
-  cards: CardAssignmentCandidate[],
-): CardAssignment | null => {
+export const assignToCard = ({
+  accomplishmentPrs,
+  cards,
+}: {
+  accomplishmentPrs: string[];
+  cards: CardAssignmentCandidate[];
+}): CardAssignment | null => {
   if (cards.length === 0) {
     return null;
   }
@@ -35,22 +39,25 @@ export const assignToCard = (
       card,
       overlap: card.memberPrs.filter((member) => source.has(member)).length,
     }))
-    .sort(
-      (left, right) =>
+    .sort((left, right) => {
+      const order =
         right.overlap - left.overlap ||
         left.card.topicIndex - right.card.topicIndex ||
-        left.card.slug.localeCompare(right.card.slug),
-    );
+        left.card.slug.localeCompare(right.card.slug);
+      return order;
+    });
+  const card = ranked[0].card;
+  const ambiguous = ranked[0].overlap === ranked[1].overlap;
   return {
-    card: ranked[0].card,
-    ambiguous: ranked[0].overlap === ranked[1].overlap,
+    card,
+    ambiguous,
   };
 };
 
 export const buildMemberPrs = (
   accomplishments: ProfileAccomplishment[],
-): string[] =>
-  [
+): string[] => {
+  const memberPrs = [
     ...new Set(
       accomplishments.flatMap((accomplishment) =>
         accomplishment.evidence.map(
@@ -58,17 +65,27 @@ export const buildMemberPrs = (
         ),
       ),
     ),
-  ].sort();
+  ];
+  const sortedMemberPrs = memberPrs.sort();
+  return sortedMemberPrs;
+};
 
-export const computeCoverHash = (memberPrs: string[]): string =>
-  createHash('sha1')
-    .update(`${memberPrs.join('\n')}\n${COVER_SPEC_VERSION}`)
-    .digest('hex');
+export const computeCoverHash = (memberPrs: string[]): string => {
+  const content = `${memberPrs.join('\n')}\n${COVER_SPEC_VERSION}`;
+  const hash = createHash('sha1').update(content).digest('hex');
+  return hash;
+};
 
-export const shouldRegenerateCover = (
-  row: { coverOf: string | null } | null,
-  coverHash: string,
-): boolean => row === null || row.coverOf !== coverHash;
+export const shouldRegenerateCover = ({
+  row,
+  coverHash,
+}: {
+  row: { coverOf: string | null } | null;
+  coverHash: string;
+}): boolean => {
+  const shouldRegenerate = row === null || row.coverOf !== coverHash;
+  return shouldRegenerate;
+};
 
 export const buildProcessLines = (group: ProjectGroup): string[] => {
   const ranked = group.accomplishments
@@ -84,14 +101,15 @@ export const buildProcessLines = (group: ProjectGroup): string[] => {
         ...accomplishment.evidence.map((evidence) => toPrNumber(evidence.pr)),
       ),
     }))
-    .sort(
-      (left, right) =>
+    .sort((left, right) => {
+      const order =
         right.latestMergedAt - left.latestMergedAt ||
         right.greatestPr - left.greatestPr ||
         left.accomplishment.title
           .trim()
-          .localeCompare(right.accomplishment.title.trim()),
-    );
+          .localeCompare(right.accomplishment.title.trim());
+      return order;
+    });
   const titles = new Set<string>();
   const process: string[] = [];
   for (const { accomplishment } of ranked) {
@@ -107,7 +125,7 @@ export const buildProcessLines = (group: ProjectGroup): string[] => {
     process.push(
       group.anonymized ? maskRepoTokens(bullet, group.repo) : bullet,
     );
-    if (process.length === 10) {
+    if (process.length === PROCESS_MAX_COUNT) {
       break;
     }
   }
@@ -126,7 +144,8 @@ export const baseFingerprint = (rows: PortfolioSyncCardRow[]): string => {
       ),
     )
     .join('\n');
-  return createHash('sha1').update(serialized).digest('hex');
+  const fingerprint = createHash('sha1').update(serialized).digest('hex');
+  return fingerprint;
 };
 
 export interface SiteProjectForAdoption {
@@ -153,10 +172,13 @@ export interface AdoptionPlan {
   mismatch?: { onlyInPlan: string[]; onlyOnSite: string[] };
 }
 
-export const planAdoption = (
-  cards: CardForAdoption[],
-  siteProjects: SiteProjectForAdoption[],
-): AdoptionPlan => {
+export const planAdoption = ({
+  cards,
+  siteProjects,
+}: {
+  cards: CardForAdoption[];
+  siteProjects: SiteProjectForAdoption[];
+}): AdoptionPlan => {
   const siteBySlug = new Map(
     siteProjects.map((project) => [project.slug, project]),
   );
@@ -172,24 +194,23 @@ export const planAdoption = (
   if (onlyInPlan.length > 0 || onlyOnSite.length > 0) {
     return { rows: [], table: [], mismatch: { onlyInPlan, onlyOnSite } };
   }
-  return {
-    rows: cards.map((card) => ({
+  const rows = cards.map((card) => ({
+    slug: card.slug,
+    siteProjectId: (siteBySlug.get(card.slug) as SiteProjectForAdoption).id,
+    repo: card.repo.trim().toLowerCase(),
+    topicIndex: 1,
+    memberPrs: [],
+    coverOf: null,
+  }));
+  const table = cards.map((card) => {
+    const project = siteBySlug.get(card.slug) as SiteProjectForAdoption;
+    return {
       slug: card.slug,
-      siteProjectId: (siteBySlug.get(card.slug) as SiteProjectForAdoption).id,
-      repo: card.repo.trim().toLowerCase(),
-      topicIndex: 1,
-      memberPrs: [],
-      coverOf: null,
-    })),
-    table: cards.map((card) => {
-      const project = siteBySlug.get(card.slug) as SiteProjectForAdoption;
-      return {
-        slug: card.slug,
-        siteProjectId: project.id,
-        title: project.title,
-      };
-    }),
-  };
+      siteProjectId: project.id,
+      title: project.title,
+    };
+  });
+  return { rows, table };
 };
 
 export const mergeGithubLink = ({

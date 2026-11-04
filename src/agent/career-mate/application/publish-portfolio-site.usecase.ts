@@ -23,6 +23,7 @@ import {
 import {
   PORTFOLIO_SYNC_CARD_REPOSITORY_PORT,
   PortfolioSyncCardRepositoryPort,
+  PortfolioSyncCardRow,
 } from '../domain/port/portfolio-sync-card.repository.port';
 import {
   hasUngroundedNumbers,
@@ -49,7 +50,7 @@ import {
   shouldRegenerateCover,
 } from '../domain/portfolio-sync-plan';
 import { postCheckPortfolioSync } from '../domain/portfolio-sync-postcheck';
-import { ProjectGroupNaming } from '../domain/project-group';
+import { ProjectGroup, ProjectGroupNaming } from '../domain/project-group';
 import {
   buildPortfolioCoverPrompt,
   CoverPromptCard,
@@ -88,6 +89,20 @@ export interface PublishPortfolioSiteResult {
   aborted: string | null;
 }
 const LOCK = 'portfolio-publish:lock';
+const LOCK_TTL_SECONDS = 900;
+const LOCK_GUARD_MS = 12 * 60_000;
+const isNearLockExpiry = (startedAt: number): boolean =>
+  Date.now() - startedAt > LOCK_GUARD_MS;
+
+interface PlannedCardResult {
+  card: PortfolioSyncPlanCard;
+  prompt: CoverPromptCard | null;
+  unknownTerms: string[];
+  keptByHuman: boolean;
+}
+interface ApplyOptions {
+  snapshot?: (projects: PortfolioSiteProject[]) => Promise<void>;
+}
 const message = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
 const stringValue = (value: unknown): string =>
@@ -159,31 +174,35 @@ export class PublishPortfolioSiteUsecase {
   async plan(input: PublishPortfolioSiteInput): Promise<PortfolioSyncPlan> {
     return this.withLock(() => this.planInternal(input));
   }
-  async apply(
-    plan: PortfolioSyncPlan,
-    options: {
-      snapshot?: (projects: PortfolioSiteProject[]) => Promise<void>;
-    } = {},
-  ): Promise<PublishPortfolioSiteResult> {
+  async apply({
+    plan,
+    options = {},
+  }: {
+    plan: PortfolioSyncPlan;
+    options?: ApplyOptions;
+  }): Promise<PublishPortfolioSiteResult> {
     return this.withLock((startedAt) =>
-      this.applyInternal(plan, options, startedAt),
+      this.applyInternal({ plan, options, startedAt }),
     );
   }
   async execute(
     input: PublishPortfolioSiteInput,
   ): Promise<PublishPortfolioSiteResult> {
     return this.withLock(async (startedAt) => {
-      if ((await this.cards.findAll()).length === 0) {
+      const cards = await this.cards.findAll();
+      if (cards.length === 0) {
         return { ...emptyResult(), adoptionRequired: true };
       }
-      return this.applyInternal(await this.planInternal(input), {}, startedAt);
+      const plan = await this.planInternal(input);
+      return this.applyInternal({ plan, options: {}, startedAt });
     });
   }
   private async withLock<T>(
     operation: (startedAt: number) => Promise<T>,
   ): Promise<T> {
     const startedAt = Date.now();
-    if (!(await this.lock.acquireOnce(LOCK, 900))) {
+    const acquired = await this.lock.acquireOnce(LOCK, LOCK_TTL_SECONDS);
+    if (!acquired) {
       throw new CareerMateException({
         code: CareerMateErrorCode.INVALID_MODEL_OUTPUT,
         message: '포트폴리오 발행이 이미 실행 중입니다',
@@ -193,7 +212,9 @@ export class PublishPortfolioSiteUsecase {
       return await operation(startedAt);
     } finally {
       // TTL이 만료됐을 수 있으면 다른 실행이 잡은 잠금을 지우지 않는다.
-      if (Date.now() - startedAt < 12 * 60_000) {
+      const elapsed = Date.now() - startedAt;
+      const canReleaseLock = elapsed < LOCK_GUARD_MS;
+      if (canReleaseLock) {
         await this.lock.release(LOCK);
       }
     }
@@ -241,106 +262,22 @@ export class PublishPortfolioSiteUsecase {
       coverRetry: [],
       sortOrderKeptByHuman: [],
     };
-    const planned: PortfolioSyncPlanCard[] = [];
-    const prompts: CoverPromptCard[] = [];
-    for (const [index, group] of groups.entries()) {
-      const site = siteBySlug.get(group.key);
-      const row = rowBySlug.get(group.key) ?? null;
-      const memberPrs = buildMemberPrs(group.accomplishments);
-      const coverHash = computeCoverHash(memberPrs);
-      // 사이트에서 카드가 사라졌으면 구성이 같아도 표지를 다시 짓는다 — create 는 표지가 있어야 하고,
-      // 없으면 apply 가 그 카드를 매 회차 조용히 건너뛰어 영영 복구되지 않는다.
-      const regenerate = !site || shouldRegenerateCover(row, coverHash);
-      const processLines = buildProcessLines(group);
-      const normalized = normalizeTechStack(
-        group.accomplishments.map((item) => item.techTags),
-      );
-      report.unknownTechTerms.push(...normalized.unknownTerms);
-      let isPublic = false;
-      if (!group.anonymized) {
-        try {
-          isPublic = await this.github.isRepositoryPublic(group.repo);
-        } catch (error) {
-          // 모르면 비공개로 본다 — 비공개 저장소 주소를 공개 카드에 싣는 쪽이 더 나쁘다.
-          this.logger.warn(
-            `저장소 공개 여부 확인 실패 ${group.repo} — ${message(error)}`,
-          );
-          isPublic = false;
-        }
-      }
-      const links = linksOf(site?.data.links);
-      const mergedLinks = mergeGithubLink({
-        links,
-        repo: group.repo,
-        anonymized: group.anonymized,
-        isPublic,
-      });
-      const action = site ? 'update' : 'create';
-      const order = decideSortOrder({
-        action,
-        target: index + 1,
-        current: site?.sortOrder ?? 0,
-        lastSent: row?.lastSentSortOrder ?? null,
-      });
-      if (order.keptByHuman) {
-        report.sortOrderKeptByHuman.push(group.key);
-      }
-      const body: Record<string, unknown> = {
-        slug: group.key,
-        process: processLines,
-        techStack: normalized.techStack,
-        period: group.period,
-      };
-      if (!site || JSON.stringify(links) !== JSON.stringify(mergedLinks)) {
-        body.links = mergedLinks;
-      }
-      if (order.sortOrderSent !== null) {
-        body.sortOrder = order.sortOrderSent;
-      }
-      if (!site) {
-        body.published = false;
-        body.featured = false;
-      }
-      planned.push({
-        slug: group.key,
-        repo: group.repo.trim().toLowerCase(),
-        topicIndex: 1,
-        anonymized: group.anonymized,
-        siteProjectId: site?.id ?? null,
-        siteBaseline: site
-          ? {
-              id: site.id,
-              sortOrder: site.sortOrder,
-              links: site.data.links ?? null,
-            }
-          : null,
-        action,
-        memberPrs,
-        coverHash,
-        regenerate,
-        coverPassed: false,
-        coverWasPublic: site?.published ?? false,
-        sortOrderSent: order.sortOrderSent,
-        sortOrderOwned: order.sortOrderOwned,
-        body,
-      });
-      if (regenerate) {
-        prompts.push({
-          key: group.key,
-          repo: group.repo,
-          anonymized: group.anonymized,
-          period: group.period,
-          techStack: normalized.techStack,
-          processLines,
-          previousTitle: group.anonymized
-            ? maskRepoTokens(stringValue(site?.data.title), group.repo)
-            : stringValue(site?.data.title),
-          previousSummary: group.anonymized
-            ? maskRepoTokens(stringValue(site?.data.summary), group.repo)
-            : stringValue(site?.data.summary),
-        });
-      }
-    }
+    const cardResults = await Promise.all(
+      groups.map((group, index) => {
+        const order = index + 1;
+        const site = siteBySlug.get(group.key);
+        const row = rowBySlug.get(group.key) ?? null;
+        return this.planCard({ group, order, site, row });
+      }),
+    );
+    const planned = cardResults.map((item) => item.card);
+    const prompts = cardResults
+      .map((item) => item.prompt)
+      .filter((prompt): prompt is CoverPromptCard => prompt !== null);
+    report.unknownTechTerms = cardResults.flatMap((item) => item.unknownTerms);
+    report.sortOrderKeptByHuman = cardResults
+      .filter((item) => item.keptByHuman)
+      .map((item) => item.card.slug);
     const membership = new Map<string, number>();
     for (const card of planned) {
       for (const pr of card.memberPrs) {
@@ -360,39 +297,23 @@ export class PublishPortfolioSiteUsecase {
       )
       .map((row) => row.slug);
     if (prompts.length) {
-      let namings: ProjectGroupNaming[] = [];
-      try {
-        const completion = await this.modelRouter.route({
-          agentType: AgentType.CAREER_MATE,
-          request: {
-            prompt: buildPortfolioCoverPrompt(prompts),
-            systemPrompt: PORTFOLIO_COVER_SYSTEM_PROMPT,
-          },
-        });
-        namings = parsePortfolioCoverOutput(
-          completion.text,
-          prompts.map((prompt) => prompt.key),
-        );
-      } catch (error) {
-        // 표지 호출이 통째로 실패해도 과정·기술·링크 갱신은 계속한다. 대상 카드는 coverFailed 로 보고된다.
-        this.logger.warn(`포트폴리오 표지 생성 실패 — ${message(error)}`);
-        namings = [];
-      }
+      const namings = await this.generateCovers(prompts);
       const retries: CoverPromptCard[] = [];
-      for (const card of planned.filter((item) => item.regenerate)) {
+      const cardsToRegenerate = planned.filter((item) => item.regenerate);
+      for (const card of cardsToRegenerate) {
         const site = siteBySlug.get(card.slug);
         const naming = namings.find((item) => item.key === card.slug);
-        const validated =
-          naming &&
-          validateCover(
-            naming,
-            stringArray(card.body.process),
-            stringValue(site?.data.result),
-          );
+        const validated = naming
+          ? validateCover({
+              cover: naming,
+              processLines: stringArray(card.body.process),
+              previousResult: stringValue(site?.data.result),
+            })
+          : null;
         if (validated) {
           const row = rowBySlug.get(card.slug) ?? null;
           const title =
-            shouldKeepPreviousTitle(row, card.memberPrs) &&
+            shouldKeepPreviousTitle({ row, memberPrs: card.memberPrs }) &&
             stringValue(site?.data.title)
               ? stringValue(site?.data.title)
               : validated.title;
@@ -414,14 +335,19 @@ export class PublishPortfolioSiteUsecase {
         } else if (site) {
           const process = stringArray(card.body.process);
           if (
-            hasUngroundedNumbers(
-              stringArray(site.data.keyContributions).join('\n'),
-              process,
-            )
+            hasUngroundedNumbers({
+              text: stringArray(site.data.keyContributions).join('\n'),
+              processLines: process,
+            })
           ) {
             card.body.keyContributions = [];
           }
-          if (hasUngroundedNumbers(stringValue(site.data.result), process)) {
+          if (
+            hasUngroundedNumbers({
+              text: stringValue(site.data.result),
+              processLines: process,
+            })
+          ) {
             card.body.result = '';
           }
         } else {
@@ -437,20 +363,22 @@ export class PublishPortfolioSiteUsecase {
               systemPrompt: PORTFOLIO_COVER_SYSTEM_PROMPT,
             },
           });
-          const retried = parsePortfolioCoverOutput(
-            completion.text,
-            retries.map((item) => item.key),
-          );
-          for (const card of planned.filter((item) =>
+          const keys = retries.map((item) => item.key);
+          const retried = parsePortfolioCoverOutput({
+            text: completion.text,
+            allowedKeys: keys,
+          });
+          const cardsToRetry = planned.filter((item) =>
             report.coverRetry.includes(item.slug),
-          )) {
+          );
+          for (const card of cardsToRetry) {
             const naming = retried.find((item) => item.key === card.slug);
             if (naming) {
-              const validated = validateCover(
-                naming,
-                stringArray(card.body.process),
-                '',
-              );
+              const validated = validateCover({
+                cover: naming,
+                processLines: stringArray(card.body.process),
+                previousResult: '',
+              });
               if (validated) {
                 card.body.keyContributions = validated.highlights;
               }
@@ -466,14 +394,14 @@ export class PublishPortfolioSiteUsecase {
     }
     const adoption =
       rows.length === 0
-        ? planAdoption(
-            planned,
-            sites.map((site) => ({
+        ? planAdoption({
+            cards: planned,
+            siteProjects: sites.map((site) => ({
               id: site.id,
               slug: site.slug,
               title: stringValue(site.data.title),
             })),
-          )
+          })
         : null;
     const skillGroups = buildPortfolioSitePayload({
       profile,
@@ -481,25 +409,211 @@ export class PublishPortfolioSiteUsecase {
       namings: [],
       skippedTitles: [],
     }).skillGroups;
+    const createdAt = new Date().toISOString();
+    const fingerprint = baseFingerprint(rows);
+    const unknownTechTerms = [...new Set(report.unknownTechTerms)].sort();
     return {
       version: 1,
-      createdAt: new Date().toISOString(),
-      baseFingerprint: baseFingerprint(rows),
+      createdAt,
+      baseFingerprint: fingerprint,
       agentRunId: latest.agentRunId ?? 0,
       adoption,
       cards: planned,
       skillGroups,
       report: {
         ...report,
-        unknownTechTerms: [...new Set(report.unknownTechTerms)].sort(),
+        unknownTechTerms,
       },
     };
   }
-  private async applyInternal(
-    plan: PortfolioSyncPlan,
-    options: { snapshot?: (projects: PortfolioSiteProject[]) => Promise<void> },
-    startedAt: number,
-  ): Promise<PublishPortfolioSiteResult> {
+  private async generateCovers(
+    prompts: CoverPromptCard[],
+  ): Promise<ProjectGroupNaming[]> {
+    try {
+      const completion = await this.modelRouter.route({
+        agentType: AgentType.CAREER_MATE,
+        request: {
+          prompt: buildPortfolioCoverPrompt(prompts),
+          systemPrompt: PORTFOLIO_COVER_SYSTEM_PROMPT,
+        },
+      });
+      const keys = prompts.map((prompt) => prompt.key);
+      return parsePortfolioCoverOutput({
+        text: completion.text,
+        allowedKeys: keys,
+      });
+    } catch (error) {
+      // 표지 호출이 실패해도 과정·기술·링크 갱신은 계속한다.
+      this.logger.warn(`포트폴리오 표지 생성 실패 — ${message(error)}`);
+      return [];
+    }
+  }
+  private async planCard({
+    group,
+    order,
+    site,
+    row,
+  }: {
+    group: ProjectGroup;
+    order: number;
+    site: PortfolioSiteProject | undefined;
+    row: PortfolioSyncCardRow | null;
+  }): Promise<PlannedCardResult> {
+    const memberPrs = buildMemberPrs(group.accomplishments);
+    const coverHash = computeCoverHash(memberPrs);
+    // 사이트에서 카드가 사라졌으면 구성이 같아도 표지를 다시 짓는다 — create 는 표지가 있어야 하고,
+    // 없으면 apply 가 그 카드를 매 회차 조용히 건너뛰어 영영 복구되지 않는다.
+    const regenerate = !site || shouldRegenerateCover({ row, coverHash });
+    const processLines = buildProcessLines(group);
+    const normalized = normalizeTechStack(
+      group.accomplishments.map((item) => item.techTags),
+    );
+    const isPublic = group.anonymized
+      ? false
+      : await this.isPublicRepository(group.repo);
+    const links = linksOf(site?.data.links);
+    const mergedLinks = mergeGithubLink({
+      links,
+      repo: group.repo,
+      anonymized: group.anonymized,
+      isPublic,
+    });
+    const action = site ? 'update' : 'create';
+    const target = order;
+    const current = site?.sortOrder ?? 0;
+    const lastSent = row?.lastSentSortOrder ?? null;
+    const sortOrder = decideSortOrder({
+      action,
+      target,
+      current,
+      lastSent,
+    });
+    const body: Record<string, unknown> = {
+      slug: group.key,
+      process: processLines,
+      techStack: normalized.techStack,
+      period: group.period,
+    };
+    const linksChanged = JSON.stringify(links) !== JSON.stringify(mergedLinks);
+    if (!site || linksChanged) {
+      body.links = mergedLinks;
+    }
+    if (sortOrder.sortOrderSent !== null) {
+      body.sortOrder = sortOrder.sortOrderSent;
+    }
+    if (!site) {
+      body.published = false;
+      body.featured = false;
+    }
+    const card: PortfolioSyncPlanCard = {
+      slug: group.key,
+      repo: group.repo.trim().toLowerCase(),
+      topicIndex: 1,
+      anonymized: group.anonymized,
+      siteProjectId: site?.id ?? null,
+      siteBaseline: site
+        ? {
+            id: site.id,
+            sortOrder: site.sortOrder,
+            links: site.data.links ?? null,
+          }
+        : null,
+      action,
+      memberPrs,
+      coverHash,
+      regenerate,
+      coverPassed: false,
+      coverWasPublic: site?.published ?? false,
+      sortOrderSent: sortOrder.sortOrderSent,
+      sortOrderOwned: sortOrder.sortOrderOwned,
+      body,
+    };
+    const prompt: CoverPromptCard | null = regenerate
+      ? {
+          key: group.key,
+          repo: group.repo,
+          anonymized: group.anonymized,
+          period: group.period,
+          techStack: normalized.techStack,
+          processLines,
+          previousTitle: group.anonymized
+            ? maskRepoTokens(stringValue(site?.data.title), group.repo)
+            : stringValue(site?.data.title),
+          previousSummary: group.anonymized
+            ? maskRepoTokens(stringValue(site?.data.summary), group.repo)
+            : stringValue(site?.data.summary),
+        }
+      : null;
+    return {
+      card,
+      prompt,
+      unknownTerms: normalized.unknownTerms,
+      keptByHuman: sortOrder.keptByHuman,
+    };
+  }
+  private async isPublicRepository(repo: string): Promise<boolean> {
+    try {
+      return await this.github.isRepositoryPublic(repo);
+    } catch (error) {
+      // 모르면 비공개로 본다 — 비공개 저장소 주소를 공개 카드에 싣는 쪽이 더 나쁘다.
+      this.logger.warn(
+        `저장소 공개 여부 확인 실패 ${repo} — ${message(error)}`,
+      );
+      return false;
+    }
+  }
+  private hasSiteDrifted({
+    card,
+    site,
+  }: {
+    card: PortfolioSyncPlanCard;
+    site: PortfolioSiteProject | undefined;
+  }): boolean {
+    const baseline = card.siteBaseline;
+    if (!baseline) {
+      return Boolean(site);
+    }
+    if (!site || site.id !== baseline.id) {
+      return true;
+    }
+    if ('sortOrder' in card.body && site.sortOrder !== baseline.sortOrder) {
+      return true;
+    }
+    if ('links' in card.body) {
+      const currentLinks = JSON.stringify(site.data.links ?? null);
+      const baselineLinks = JSON.stringify(baseline.links);
+      return currentLinks !== baselineLinks;
+    }
+    return false;
+  }
+  private hasAdoptionDrifted({
+    plan,
+    before,
+    currentSites,
+  }: {
+    plan: PortfolioSyncPlan;
+    before: PortfolioSiteProject[];
+    currentSites: Map<string, PortfolioSiteProject>;
+  }): boolean {
+    if (!plan.adoption) {
+      return false;
+    }
+    if (before.length !== plan.adoption.table.length) {
+      return true;
+    }
+    return plan.adoption.table.some(
+      (entry) => currentSites.get(entry.slug)?.id !== entry.siteProjectId,
+    );
+  }
+  private async applyInternal({
+    plan,
+    options,
+    startedAt,
+  }: {
+    plan: PortfolioSyncPlan;
+    options: ApplyOptions;
+    startedAt: number;
+  }): Promise<PublishPortfolioSiteResult> {
     const result = emptyResult(plan.agentRunId);
     result.skippedTitles = plan.report.skippedTitles;
     result.unnamedKeys = plan.report.unnamedKeys;
@@ -510,7 +624,9 @@ export class PublishPortfolioSiteUsecase {
       .filter((card) => card.regenerate && !card.coverPassed)
       .map((card) => card.slug);
     const rows = await this.cards.findAll();
-    if (plan.version !== 1 || plan.baseFingerprint !== baseFingerprint(rows)) {
+    const isStalePlan =
+      plan.version !== 1 || plan.baseFingerprint !== baseFingerprint(rows);
+    if (isStalePlan) {
       result.aborted = '계획 이후 싱크 상태가 바뀌었습니다';
       return result;
     }
@@ -522,26 +638,13 @@ export class PublishPortfolioSiteUsecase {
     const currentSites = new Map(before.map((site) => [site.slug, site]));
     const changed = plan.cards.some((card) => {
       const site = currentSites.get(card.slug);
-      const baseline = card.siteBaseline;
-      if (!baseline) {
-        return Boolean(site);
-      }
-      return (
-        !site ||
-        site.id !== baseline.id ||
-        ('sortOrder' in card.body && site.sortOrder !== baseline.sortOrder) ||
-        ('links' in card.body &&
-          JSON.stringify(site.data.links ?? null) !==
-            JSON.stringify(baseline.links))
-      );
+      return this.hasSiteDrifted({ card, site });
     });
-    const adoptionChanged = Boolean(
-      plan.adoption &&
-      (before.length !== plan.adoption.table.length ||
-        plan.adoption.table.some(
-          (entry) => currentSites.get(entry.slug)?.id !== entry.siteProjectId,
-        )),
-    );
+    const adoptionChanged = this.hasAdoptionDrifted({
+      plan,
+      before,
+      currentSites,
+    });
     if (changed || adoptionChanged) {
       result.aborted = '계획 이후 사이트 카드가 바뀌었습니다';
       return result;
@@ -549,23 +652,25 @@ export class PublishPortfolioSiteUsecase {
     if (options.snapshot) {
       await options.snapshot(before);
     }
-    if (Date.now() - startedAt > 12 * 60_000) {
+    if (isNearLockExpiry(startedAt)) {
       result.aborted = '잠금 만료 전에 남은 쓰기를 중단했습니다';
       return result;
     }
     if (plan.adoption) {
-      if ((await this.cards.findAll()).length !== 0) {
+      const currentRows = await this.cards.findAll();
+      if (currentRows.length !== 0) {
         result.aborted = '채택 전 싱크 상태가 생겼습니다';
         return result;
       }
       await this.cards.createMany(plan.adoption.rows);
     }
     const rowBySlug = new Map(rows.map((row) => [row.slug, row]));
-    for (const card of [...plan.cards].sort(
+    const orderedCards = [...plan.cards].sort(
       (left, right) =>
         Number(left.action === 'update') - Number(right.action === 'update'),
-    )) {
-      if (Date.now() - startedAt > 12 * 60_000) {
+    );
+    for (const card of orderedCards) {
+      if (isNearLockExpiry(startedAt)) {
         result.aborted = '잠금 만료 전에 남은 쓰기를 중단했습니다';
         break;
       }
@@ -632,7 +737,7 @@ export class PublishPortfolioSiteUsecase {
     try {
       const skillGroups = await this.siteClient.listSkillGroups();
       for (const group of plan.skillGroups) {
-        if (Date.now() - startedAt > 12 * 60_000) {
+        if (isNearLockExpiry(startedAt)) {
           result.aborted = '잠금 만료 전에 남은 쓰기를 중단했습니다';
           break;
         }
@@ -674,7 +779,7 @@ export class PublishPortfolioSiteUsecase {
       const invalid = result.postCheckViolations
         .filter((item) => item.rule === 1)
         .map((item) => item.slug);
-      if (invalid.length && Date.now() - startedAt <= 12 * 60_000) {
+      if (invalid.length && !isNearLockExpiry(startedAt)) {
         await this.cards.clearCoverOf(invalid);
       } else if (invalid.length) {
         result.aborted = '잠금 만료 전에 남은 쓰기를 중단했습니다';

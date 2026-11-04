@@ -25,8 +25,13 @@ ${READER_WRITING_RULES}
 스키마:
 {"projects":[{"key":"입력 key","title":"제목","summary":"한 문장","problem":"문제","result":"결과","highlights":["성과 줄"]}]}`;
 
-const formatCard = (card: CoverPromptCard): string =>
-  [
+const PROCESS_MAX_COUNT = 10;
+
+const formatCard = (card: CoverPromptCard): string => {
+  const processLines = card.processLines
+    .slice(0, PROCESS_MAX_COUNT)
+    .map((line, index) => `${index + 1}. ${line}`);
+  const lines = [
     `key: ${card.key}`,
     card.anonymized
       ? 'anonymous: true (저장소 이름 비공개 — 이름을 쓰거나 추측하지 말 것)'
@@ -36,20 +41,24 @@ const formatCard = (card: CoverPromptCard): string =>
     `이전 제목: ${card.previousTitle || '없음'}`,
     `이전 요약: ${card.previousSummary || '없음'}`,
     '과정:',
-    ...card.processLines
-      .slice(0, 10)
-      .map((line, index) => `${index + 1}. ${line}`),
-  ].join('\n');
+    ...processLines,
+  ];
+  return lines.join('\n');
+};
 
-export const buildPortfolioCoverPrompt = (cards: CoverPromptCard[]): string =>
-  [
+export const buildPortfolioCoverPrompt = (cards: CoverPromptCard[]): string => {
+  const prompt = [
     '다음 카드의 표지를 현재 과정만 근거로 작성하라. 구성이 크게 바뀌지 않았으면 제목을 유지하라.',
     '',
     cards.map(formatCard).join('\n\n'),
   ].join('\n');
+  return prompt;
+};
 
-const isNonEmptyString = (value: unknown): value is string =>
-  typeof value === 'string' && value.trim().length > 0;
+const isNonEmptyString = (value: unknown): value is string => {
+  const isNonEmpty = typeof value === 'string' && value.trim().length > 0;
+  return isNonEmpty;
+};
 
 const toNaming = (value: unknown): ProjectGroupNaming | null => {
   if (typeof value !== 'object' || value === null) {
@@ -66,29 +75,44 @@ const toNaming = (value: unknown): ProjectGroupNaming | null => {
   ) {
     return null;
   }
+  const parsedHighlights = Array.isArray(highlights)
+    ? highlights.filter(isNonEmptyString).map((item) => item.trim())
+    : [];
+  const trimmedKey = key.trim();
+  const trimmedTitle = title.trim();
+  const trimmedSummary = summary.trim();
+  const trimmedProblem = problem.trim();
+  const trimmedResult = result.trim();
   return {
-    key: key.trim(),
-    title: title.trim(),
-    summary: summary.trim(),
-    problem: problem.trim(),
-    result: result.trim(),
-    highlights: Array.isArray(highlights)
-      ? highlights.filter(isNonEmptyString).map((item) => item.trim())
-      : [],
+    key: trimmedKey,
+    title: trimmedTitle,
+    summary: trimmedSummary,
+    problem: trimmedProblem,
+    result: trimmedResult,
+    highlights: parsedHighlights,
   };
 };
 
-// JSON 전체가 파손되어도 한 회차의 다른 카드 처리까지 끊지 않는다.
-export const parsePortfolioCoverOutput = (
-  text: string,
-  allowedKeys: string[],
-): ProjectGroupNaming[] => {
-  let parsed: unknown;
+const parseCoverJson = (text: string): unknown => {
   try {
-    parsed = JSON.parse(extractJsonObjectText(text));
-  } catch {
-    return [];
+    const jsonText = extractJsonObjectText(text);
+    const parsed: unknown = JSON.parse(jsonText);
+    return parsed;
+  } catch (error) {
+    void error;
+    return null;
   }
+};
+
+// JSON 전체가 파손되어도 한 회차의 다른 카드 처리까지 끊지 않는다.
+export const parsePortfolioCoverOutput = ({
+  text,
+  allowedKeys,
+}: {
+  text: string;
+  allowedKeys: string[];
+}): ProjectGroupNaming[] => {
+  const parsed = parseCoverJson(text);
   if (typeof parsed !== 'object' || parsed === null) {
     return [];
   }
