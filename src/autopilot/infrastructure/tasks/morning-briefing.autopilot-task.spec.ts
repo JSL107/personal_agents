@@ -401,7 +401,7 @@ describe('MorningBriefingAutopilotTask', () => {
     );
   });
 
-  it('오늘·남 기다림·시작 안 한 일 전체를 스레드에 싣는다', async () => {
+  it('본문 상한 이내의 오늘·대기 목록은 스레드에 반복하지 않고 시작 안 한 일은 싣는다', async () => {
     const todo = { title: '오늘 업무', url: null, dayCount: 2, detail: null };
     const waiting = {
       title: '리뷰 업무',
@@ -434,13 +434,78 @@ describe('MorningBriefingAutopilotTask', () => {
 
     const result = await task.run(CTX);
 
-    expect(result.detailText).toContain(
-      '*오늘 할 일 전체*\n• 오늘 업무 (2일째)',
-    );
-    expect(result.detailText).toContain(
-      '*남 기다리는 일 전체*\n• 리뷰 업무 (리뷰 대기)',
-    );
+    expect(result.detailText).not.toContain('*오늘 할 일 전체*');
+    expect(result.detailText).not.toContain('*남 기다리는 일 전체*');
     expect(result.detailText).toContain('*시작 안 한 일*\n• 시작 전 업무');
+  });
+
+  it('이미 발송된 아침이면 목록 작성에 전달 완료를 알린다', async () => {
+    const buildMorningTodos = {
+      execute: jest.fn().mockResolvedValue({
+        loadFailed: false,
+        today: [],
+        waiting: [],
+        unstarted: [],
+      }),
+    };
+    const deliveryRepository = {
+      findSince: jest.fn().mockResolvedValue([
+        {
+          kind: 'autopilot:morning',
+          itemKinds: ['morning-briefing'],
+          threadTs: null,
+          status: 'SENT',
+        },
+      ]),
+    };
+    const task = buildTask(
+      { execute: jest.fn().mockRejectedValue(new Error('계획 실패')) },
+      { humanize: jest.fn() },
+      emptyStockRepository(),
+      listSchedulesUsecase(),
+      { buildMorningTodos, deliveryRepository },
+    );
+
+    await task.run(CTX);
+
+    expect(deliveryRepository.findSince).toHaveBeenCalledWith(
+      new Date('2026-06-16T15:00:00.000Z'),
+      new Date('2026-06-17T15:00:00.000Z'),
+    );
+    expect(buildMorningTodos.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ alreadyDelivered: true }),
+    );
+  });
+
+  it('대기 업무가 본문 상한을 넘으면 전체 목록을 스레드에 싣는다', async () => {
+    const waiting = Array.from({ length: 4 }, (_, index) => ({
+      title: `대기 업무 ${index + 1}`,
+      url: null,
+      dayCount: 1,
+      detail: '리뷰 대기',
+    }));
+    const task = buildTask(
+      { execute: jest.fn().mockRejectedValue(new Error('계획 실패')) },
+      { humanize: jest.fn() },
+      emptyStockRepository(),
+      listSchedulesUsecase(),
+      {
+        buildMorningTodos: {
+          execute: jest.fn().mockResolvedValue({
+            loadFailed: false,
+            today: [],
+            waiting,
+            unstarted: [],
+          }),
+        },
+      },
+    );
+
+    const result = await task.run(CTX);
+
+    expect(result.summaryText).toContain('• 외 1개');
+    expect(result.detailText).toContain('*남 기다리는 일 전체*');
+    expect(result.detailText).toContain('• 대기 업무 4 (리뷰 대기)');
   });
 
   it('CONSOLE_OWNER가 없으면 저장소 실패만 알리고 PM 실패로 오해하지 않는다', async () => {

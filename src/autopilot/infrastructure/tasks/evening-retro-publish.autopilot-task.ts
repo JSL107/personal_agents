@@ -40,6 +40,7 @@ import { FindAllOpenPreviewsUsecase } from '../../../preview-gate/application/fi
 import { PREVIEW_KIND } from '../../../preview-gate/domain/preview-action.type';
 import { BuildEveningTodoSummaryUsecase } from '../../../schedule/application/build-evening-todo-summary.usecase';
 import { BuildMorningTodosUsecase } from '../../../schedule/application/build-morning-todos.usecase';
+import { normalizeGithubPullRequestUrl } from '../../../schedule/domain/github-source-url';
 import {
   SLACK_DELIVERY_REPOSITORY,
   SlackDeliveryRepositoryPort,
@@ -196,7 +197,14 @@ export class EveningRetroPublishTask implements AutopilotTask {
       ownerId,
       kstDate: firedAtKst,
       now,
-      mergedPrCount: mergedPrFetchFailed ? null : mergedPrs.length,
+      mergedPullRequestUrls: mergedPrFetchFailed
+        ? null
+        : mergedPrs.map((pullRequest) =>
+            normalizeGithubPullRequestUrl({
+              repo: pullRequest.repo,
+              number: pullRequest.number,
+            }),
+          ),
       morningDelivered,
     });
 

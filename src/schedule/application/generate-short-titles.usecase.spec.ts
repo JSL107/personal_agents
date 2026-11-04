@@ -130,6 +130,25 @@ describe('GenerateShortTitlesUsecase', () => {
       basis: '원래 제목 1',
     });
   });
+  it('실패한 배치 뒤의 항목을 다음 회차에 처리한다', async () => {
+    const { usecase, route } = setup(
+      Array.from({ length: SHORT_TITLE_BATCH_MAX + 1 }, (_, index) =>
+        item(index + 1),
+      ),
+    );
+    route.mockRejectedValueOnce(new Error('quota'));
+    await usecase.execute({ ownerId: 'U1' });
+    await usecase.execute({ ownerId: 'U1' });
+    expect(route.mock.calls[1][0].request.prompt).toContain('1. 원래 제목 21');
+  });
+
+  it('내부 용어가 포함된 생성 결과는 저장하지 않는다', async () => {
+    const { usecase, route, repository } = setup([item(1)]);
+    route.mockResolvedValue({ text: '1. CODE_REVIEWER', modelUsed: 'codex' });
+    await usecase.execute({ ownerId: 'U1' });
+    expect(repository.updateShortTitle).not.toHaveBeenCalled();
+  });
+
   it('대상이 없으면 모델을 호출하지 않는다', async () => {
     const { usecase, route } = setup([]);
     await usecase.execute({ ownerId: 'U1' });

@@ -6,6 +6,7 @@ describe('내 PR 신호 조회', () => {
   it('팀 slug와 사람의 최신 결정 리뷰를 수집한다', async () => {
     const get = jest.fn().mockResolvedValue({
       data: {
+        state: 'open',
         draft: false,
         mergeable_state: 'clean',
         requested_reviewers: [{ login: 'alice' }],
@@ -44,6 +45,7 @@ describe('내 PR 신호 조회', () => {
     ).toEqual([
       {
         ref: { repo: 'o/r', number: 1 },
+        open: true,
         draft: false,
         mergeableState: 'clean',
         isApproved: false,
@@ -52,6 +54,25 @@ describe('내 PR 신호 조회', () => {
         observed: true,
       },
     ]);
+  });
+  it('pulls.get state=closed를 닫힌 PR로 전달한다', async () => {
+    const get = jest.fn().mockResolvedValue({
+      data: {
+        state: 'closed',
+        draft: false,
+        mergeable_state: 'unknown',
+        requested_reviewers: [],
+        requested_teams: [],
+      },
+    });
+    const client = new OctokitGithubClient({
+      rest: { pulls: { get, listReviews: jest.fn() } },
+      paginate: jest.fn().mockResolvedValue([]),
+    } as unknown as Octokit);
+    const [result] = await client.fetchAuthorPullRequestSignals([
+      { repo: 'o/r', number: 1 },
+    ]);
+    expect(result.open).toBe(false);
   });
   it('실패 및 상한 초과는 입력 순서를 지키며 미관측 처리한다', async () => {
     const get = jest.fn().mockRejectedValue(new Error('failed'));

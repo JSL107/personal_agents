@@ -97,7 +97,7 @@ export class CloseFinishedIssuesUsecase {
               ? 'GitHub 이슈가 그만둔 일로 닫혔습니다.'
               : 'GitHub 이슈가 완료됐습니다.',
           },
-          dedupeKey: `issue-closed:${item.sourceKey}`,
+          dedupeKey: `issue-closed:${item.sourceKey}:${lifecycle.closedAt ?? 'unknown'}`,
           occurredAt: now,
         },
         slackUserId: ownerId,

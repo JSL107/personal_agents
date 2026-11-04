@@ -118,6 +118,25 @@ describe('formatEveningDigest', () => {
     expect(text).toContain('*한 일*\n• PR 4건 머지');
     expect(text).not.toContain('*숫자로 보면*');
   });
+  it('업무는 읽혔고 머지 PR 조회만 실패하면 빈 한 일에도 실패를 알린다', () => {
+    const text = formatEveningDigest(
+      base({
+        mergedPrCount: null,
+        todoSummary: {
+          loadFailed: false,
+          hasMorningList: false,
+          done: [],
+          extraMergedPrCount: 0,
+          notDone: [],
+          ratio: null,
+          waiting: null,
+          backlog: null,
+        },
+      }),
+    );
+
+    expect(text).toContain('*한 일*\n• 머지한 PR을 확인하지 못했어요');
+  });
   it('미관측 대기는 이상으로 쓰고 빈 항목은 숨긴다', () => {
     const text = formatEveningDigest({
       ...base(),

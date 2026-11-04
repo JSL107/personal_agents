@@ -806,6 +806,32 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
     return result;
   }
 
+  async findMergedPullRequestUrls(itemIds: number[]): Promise<Set<string>> {
+    if (itemIds.length === 0) {
+      return new Set();
+    }
+    const events = await this.prisma.scheduleEvent.findMany({
+      where: {
+        scheduleItemId: { in: itemIds },
+        kind: ScheduleEventKind.PR_MERGED,
+      },
+      select: { payload: true },
+    });
+    const urls = new Set<string>();
+    for (const event of events) {
+      const payload = event.payload;
+      if (
+        payload &&
+        typeof payload === 'object' &&
+        !Array.isArray(payload) &&
+        typeof payload.url === 'string'
+      ) {
+        urls.add(payload.url);
+      }
+    }
+    return urls;
+  }
+
   async addNote(input: AddNoteInput): Promise<ScheduleEventRecord | null> {
     const owner = await this.prisma.scheduleItem.findFirst({
       where: { id: input.scheduleItemId, slackUserId: input.slackUserId },

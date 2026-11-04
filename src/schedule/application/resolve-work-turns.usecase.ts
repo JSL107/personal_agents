@@ -120,6 +120,7 @@ export class ResolveWorkTurnsUsecase {
     );
     const waiting = signals.filter(
       (signal) =>
+        signal.open &&
         classifyAuthorPullRequestTurn(signal).turn === 'WAITING_OTHERS' &&
         refs.has(keyOf(signal.ref)),
     );
@@ -143,21 +144,30 @@ export class ResolveWorkTurnsUsecase {
       }
     }
     for (const [id, itemRefs] of refsByItem) {
-      const itemSignals = itemRefs.map((ref) => signalMap.get(keyOf(ref)));
-      if (itemSignals.some((signal) => !signal || !signal.observed)) {
-        result.set(id, unknown(false));
+      const openRefs = itemRefs.filter(
+        (ref) => signalMap.get(keyOf(ref))?.open !== false,
+      );
+      if (openRefs.length === 0) {
+        result.set(id, unknown(true));
         continue;
       }
-      const turns = itemSignals.map((signal) =>
-        classifyAuthorPullRequestTurn(signal!),
-      );
+      const itemSignals = openRefs.map((ref) => signalMap.get(keyOf(ref)));
+      const turns = itemSignals
+        .filter((signal): signal is AuthorPullRequestSignals =>
+          Boolean(signal?.observed),
+        )
+        .map(classifyAuthorPullRequestTurn);
       const mine = turns.find((turn) => turn.turn === 'MY_TURN');
       if (mine) {
         result.set(id, { ...mine, observed: true, wait: null });
         continue;
       }
+      if (itemSignals.some((signal) => !signal || !signal.observed)) {
+        result.set(id, unknown(false));
+        continue;
+      }
       if (turns.every((turn) => turn.turn === 'WAITING_OTHERS')) {
-        const descriptions = itemRefs.map(
+        const descriptions = openRefs.map(
           (ref) =>
             waitMap.get(keyOf(ref)) ?? { label: '리뷰 대기', days: null },
         );

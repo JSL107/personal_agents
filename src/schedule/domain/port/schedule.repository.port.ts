@@ -76,6 +76,7 @@ export interface ScheduleRepositoryPort {
   findOpenLinkedPullRequestUrls(
     itemIds: number[],
   ): Promise<Map<number, string[]>>;
+  findMergedPullRequestUrls(itemIds: number[]): Promise<Set<string>>;
   findCompletedBetween(
     input: FindCompletedBetweenInput,
   ): Promise<ScheduleItemRecord[]>;

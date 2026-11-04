@@ -1263,3 +1263,32 @@ describe('SchedulePrismaRepository.findOpenLinkedPullRequestUrls', () => {
     });
   });
 });
+
+describe('SchedulePrismaRepository.findMergedPullRequestUrls', () => {
+  it('완료 업무의 PR_MERGED 이벤트 URL만 읽는다', async () => {
+    const findMany = jest
+      .fn()
+      .mockResolvedValue([
+        { payload: { url: 'https://github.com/acme/app/pull/1' } },
+        { payload: { url: 'https://github.com/acme/app/pull/2' } },
+        { payload: { other: 'ignored' } },
+      ]);
+    const repository = new SchedulePrismaRepository({
+      scheduleEvent: { findMany },
+    } as unknown as PrismaService);
+
+    await expect(repository.findMergedPullRequestUrls([1, 2])).resolves.toEqual(
+      new Set([
+        'https://github.com/acme/app/pull/1',
+        'https://github.com/acme/app/pull/2',
+      ]),
+    );
+    expect(findMany).toHaveBeenCalledWith({
+      where: {
+        scheduleItemId: { in: [1, 2] },
+        kind: ScheduleEventKind.PR_MERGED,
+      },
+      select: { payload: true },
+    });
+  });
+});

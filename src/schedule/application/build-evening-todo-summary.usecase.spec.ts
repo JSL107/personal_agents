@@ -7,7 +7,7 @@ const input = {
   ownerId: 'U1',
   kstDate: '2026-11-05',
   now,
-  mergedPrCount: 0,
+  mergedPullRequestUrls: [],
   morningDelivered: true,
 };
 
@@ -23,6 +23,7 @@ const createDeps = () => {
     findCompletedBetween: jest.fn().mockResolvedValue([]),
     findById: jest.fn().mockResolvedValue(null),
     findUndated: jest.fn().mockResolvedValue([]),
+    findMergedPullRequestUrls: jest.fn().mockResolvedValue(new Set()),
   };
   const dailyTodoRepository = {
     findForDate: jest.fn().mockResolvedValue(null),
@@ -219,18 +220,111 @@ describe('BuildEveningTodoSummaryUsecase', () => {
     expect(result.ratio).toEqual({ done: 0, total: 1 });
   });
 
-  it('mergedPrCount 가 저장소 PR 완료 수보다 크면 extraMergedPrCount 에 차이', async () => {
+  it('오늘 완료한 PR과 linked PR 머지는 별도 머지 건수에서 중복하지 않는다', async () => {
     const { usecase, repository } = createDeps();
     repository.findCompletedBetween.mockResolvedValue([
       item(1, 'PR 완료', ScheduleStatus.DONE, {
         source: ScheduleSource.GITHUB_PR,
+        sourceKey: 'https://github.com/acme/app/pull/1',
+        completedAt: now,
+      }),
+      item(2, '연결된 이슈 완료', ScheduleStatus.DONE, {
+        source: ScheduleSource.GITHUB_ISSUE,
         completedAt: now,
       }),
     ]);
+    repository.findMergedPullRequestUrls.mockResolvedValue(
+      new Set(['https://github.com/acme/app/pull/2']),
+    );
 
-    const result = await usecase.execute({ ...input, mergedPrCount: 3 });
+    const result = await usecase.execute({
+      ...input,
+      mergedPullRequestUrls: [
+        'https://github.com/acme/app/pull/1',
+        'https://github.com/acme/app/pull/2',
+        'https://github.com/acme/app/pull/3',
+      ],
+    });
 
-    expect(result.extraMergedPrCount).toBe(2);
+    expect(result.extraMergedPrCount).toBe(1);
+    expect(repository.findMergedPullRequestUrls).toHaveBeenCalledWith([1, 2]);
+  });
+
+  it('남은 일 하나라도 미관측이면 대기 수를 이상으로 표시한다', async () => {
+    const { usecase, repository, dailyTodoRepository, resolve } = createDeps();
+    repository.findById.mockImplementation(async (id: number) =>
+      item(id, `업무 ${id}`, ScheduleStatus.IN_PROGRESS),
+    );
+    dailyTodoRepository.findForDate.mockResolvedValue({
+      status: 'LISTED',
+      entries: [1, 2].map((scheduleItemId, position) => ({
+        scheduleItemId,
+        turn: 'MY_TURN',
+        observed: true,
+        position,
+      })),
+    });
+    resolve.execute.mockResolvedValue(
+      new Map([
+        [
+          1,
+          { turn: 'WAITING_OTHERS', reason: null, observed: true, wait: null },
+        ],
+        [2, { turn: 'UNKNOWN', reason: null, observed: false, wait: null }],
+      ]),
+    );
+
+    const result = await usecase.execute(input);
+
+    expect(result.waiting).toEqual({ count: 1, atLeast: true, longest: null });
+  });
+
+  it('아침 목록이 없어도 기한 없는 진행 업무의 미관측을 대기 수에 반영한다', async () => {
+    const { usecase, repository, resolve } = createDeps();
+    repository.findUndated.mockResolvedValue([
+      item(1, '대기', ScheduleStatus.IN_PROGRESS),
+      item(2, '확인 실패', ScheduleStatus.IN_PROGRESS),
+    ]);
+    resolve.execute.mockResolvedValue(
+      new Map([
+        [
+          1,
+          { turn: 'WAITING_OTHERS', reason: null, observed: true, wait: null },
+        ],
+        [2, { turn: 'UNKNOWN', reason: null, observed: false, wait: null }],
+      ]),
+    );
+
+    const result = await usecase.execute({ ...input, morningDelivered: false });
+
+    expect(result.waiting).toEqual({ count: 1, atLeast: true, longest: null });
+  });
+
+  it('오늘 이전에 끝난 아침 항목은 비율 분모에서 제외한다', async () => {
+    const { usecase, repository, dailyTodoRepository } = createDeps();
+    repository.findById.mockImplementation(async (id: number) =>
+      item(
+        id,
+        `업무 ${id}`,
+        id === 1 ? ScheduleStatus.DONE : ScheduleStatus.IN_PROGRESS,
+        {
+          completedAt: id === 1 ? new Date('2026-11-04T10:00:00Z') : null,
+        },
+      ),
+    );
+    dailyTodoRepository.findForDate.mockResolvedValue({
+      status: 'LISTED',
+      entries: [1, 2].map((scheduleItemId, position) => ({
+        scheduleItemId,
+        turn: 'MY_TURN',
+        observed: true,
+        position,
+      })),
+    });
+
+    const result = await usecase.execute(input);
+
+    expect(result.ratio).toEqual({ done: 0, total: 1 });
   });
 
   it('저장소 조회 실패 시 loadFailed', async () => {

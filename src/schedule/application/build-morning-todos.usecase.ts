@@ -35,6 +35,7 @@ interface BuildInput {
   kstDate: string;
   now: Date;
   alreadyReconciled?: boolean;
+  alreadyDelivered?: boolean;
 }
 interface ReconcileBeforeListingInput {
   ownerId: string | null;
@@ -101,6 +102,7 @@ export class BuildMorningTodosUsecase {
     kstDate,
     now,
     alreadyReconciled = false,
+    alreadyDelivered = false,
   }: BuildInput): Promise<MorningTodoSections> {
     if (!ownerId) {
       this.logger.warn(
@@ -168,6 +170,15 @@ export class BuildMorningTodosUsecase {
       entries = [];
     }
     try {
+      if (alreadyDelivered) {
+        const found = await this.dailyTodoRepository.findForDate({
+          slackUserId: ownerId,
+          kstDate,
+        });
+        if (found) {
+          return sections;
+        }
+      }
       await this.dailyTodoRepository.replaceForDate({
         slackUserId: ownerId,
         kstDate,

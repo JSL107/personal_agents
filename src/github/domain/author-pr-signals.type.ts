@@ -15,6 +15,7 @@ export type AuthorTurnReason =
   | 'CI 실패';
 export interface AuthorPullRequestSignals {
   ref: PullRequestRef;
+  open: boolean;
   draft: boolean;
   mergeableState: MergeableState;
   isApproved: boolean;

@@ -5,6 +5,27 @@ import { OctokitGithubClient } from './octokit-github.client';
 const ref = { repo: 'owner/repo', number: 42 };
 
 describe('OctokitGithubClient.fetchReviewWaits', () => {
+  it('현재 대기 리뷰어 중 요청 이벤트가 없으면 complete=false', async () => {
+    const client = new OctokitGithubClient({
+      rest: { issues: { listEventsForTimeline: jest.fn() } },
+      paginate: jest.fn().mockResolvedValue([
+        {
+          event: 'review_requested',
+          created_at: '2026-11-02T00:00:00Z',
+          requested_reviewer: { login: 'alice' },
+        },
+      ]),
+    } as unknown as Octokit);
+    await expect(
+      client.fetchReviewWaits([{ ref, pendingReviewers: ['alice', 'bob'] }]),
+    ).resolves.toEqual([
+      {
+        ref,
+        complete: false,
+        waits: [{ reviewer: 'alice', requestedAt: '2026-11-02T00:00:00Z' }],
+      },
+    ]);
+  });
   it('대상 리뷰어의 마지막 review_requested 만 쓰고 팀 slug 도 맞춘다', async () => {
     const listEventsForTimeline = jest.fn();
     const paginate = jest.fn().mockResolvedValue([

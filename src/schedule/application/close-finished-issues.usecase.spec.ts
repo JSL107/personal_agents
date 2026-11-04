@@ -56,7 +56,8 @@ describe('CloseFinishedIssuesUsecase', () => {
         scheduleItemId: 1,
         kind: ScheduleEventKind.NOTE,
         payload: expect.any(Object),
-        dedupeKey: 'issue-closed:https://github.com/owner/repo/issues/1',
+        dedupeKey:
+          'issue-closed:https://github.com/owner/repo/issues/1:2026-11-03T09:00:00.000Z',
         occurredAt: now,
       },
       slackUserId: 'U1',
@@ -66,6 +67,26 @@ describe('CloseFinishedIssuesUsecase', () => {
       now,
       actor: ScheduleActor.COLLECTOR,
     });
+  });
+
+  it('다시 닫힌 이슈는 닫힌 시각마다 다른 중복 키를 쓴다', async () => {
+    const { usecase, repository, github } = createUsecase();
+    await usecase.execute({ ownerId: 'U1', now });
+    github.getItemLifecycle.mockResolvedValue({
+      state: 'closed',
+      closedAt: now.toISOString(),
+      stateReason: 'completed',
+      mergedAt: null,
+      isPullRequest: false,
+    });
+    await usecase.execute({ ownerId: 'U1', now });
+    const keys = repository.recordEventAndTransition.mock.calls.map(
+      ([input]) => input.event.dedupeKey,
+    );
+    expect(keys).toEqual([
+      'issue-closed:https://github.com/owner/repo/issues/1:2026-11-03T09:00:00.000Z',
+      `issue-closed:https://github.com/owner/repo/issues/1:${now.toISOString()}`,
+    ]);
   });
 
   it.each(['not_planned', 'duplicate'] as const)(

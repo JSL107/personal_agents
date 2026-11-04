@@ -11,6 +11,7 @@ const createDeps = () => {
   const repository = { findUndated: jest.fn().mockResolvedValue([]) };
   const dailyTodoRepository = {
     replaceForDate: jest.fn().mockResolvedValue(undefined),
+    findForDate: jest.fn().mockResolvedValue(null),
   };
   const usecase = new BuildMorningTodosUsecase(
     reconcile as never,
@@ -22,6 +23,24 @@ const createDeps = () => {
 };
 
 describe('BuildMorningTodosUsecase', () => {
+  it('이미 발송한 날의 목록이 있으면 재실행이 목록을 덮어쓰지 않는다', async () => {
+    const { usecase, dailyTodoRepository } = createDeps();
+    dailyTodoRepository.findForDate.mockResolvedValue({
+      status: 'LISTED',
+      entries: [
+        { scheduleItemId: 7, turn: 'MY_TURN', observed: true, position: 0 },
+      ],
+    });
+
+    await usecase.execute({ ...input, alreadyDelivered: true });
+
+    expect(dailyTodoRepository.findForDate).toHaveBeenCalledWith({
+      slackUserId: 'U1',
+      kstDate: '2026-11-09',
+    });
+    expect(dailyTodoRepository.replaceForDate).not.toHaveBeenCalled();
+  });
+
   it('reconciles merged PRs before listing', async () => {
     const { usecase, reconcile, repository } = createDeps();
     const merged = buildScheduleItemRecord({

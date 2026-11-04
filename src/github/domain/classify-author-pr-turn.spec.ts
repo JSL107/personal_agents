@@ -2,6 +2,7 @@ import { AuthorPullRequestSignals } from './author-pr-signals.type';
 import { classifyAuthorPullRequestTurn } from './classify-author-pr-turn';
 
 const base: AuthorPullRequestSignals = {
+  open: true,
   ref: { repo: 'owner/repo', number: 1 },
   draft: false,
   mergeableState: 'unknown',

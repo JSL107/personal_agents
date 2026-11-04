@@ -2,6 +2,7 @@ import {
   buildEveningBlogBodyPrompt,
   buildEveningRetroPrompt,
   EVENING_BLOG_BODY_SYSTEM_PROMPT,
+  EVENING_RETRO_SYSTEM_PROMPT,
   formatRetroContext,
   parseEveningRetroOutput,
 } from './evening-retro.prompt';
@@ -415,5 +416,15 @@ describe('EVENING_BLOG_BODY_SYSTEM_PROMPT', () => {
     ]) {
       expect(EVENING_BLOG_BODY_SYSTEM_PROMPT).toContain(rule);
     }
+  });
+});
+
+describe('회고 입력 지침', () => {
+  it('오늘 업무 입력을 설명하는 줄에 줄표가 없다', () => {
+    const line = EVENING_RETRO_SYSTEM_PROMPT.split('\n').find((value) =>
+      value.startsWith('carryOver 는 입력'),
+    );
+    expect(line).toBeDefined();
+    expect(line).not.toContain('—');
   });
 });

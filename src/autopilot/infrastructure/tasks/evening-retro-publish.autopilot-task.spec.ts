@@ -263,6 +263,20 @@ describe('EveningRetroPublishTask', () => {
     ).toBeLessThan(buildEveningSummary.execute.mock.invocationCallOrder[0]);
   });
 
+  it('저녁 집계에 정규화한 머지 PR URL을 넘긴다', async () => {
+    const { task, buildEveningSummary } = makeTask({ prs: [PR_ITEM] });
+
+    await task.run(CTX);
+
+    expect(buildEveningSummary.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mergedPullRequestUrls: [
+          'https://github.com/schoolbell-e/sbe-api-v5/pull/864',
+        ],
+      }),
+    );
+  });
+
   it('업무 사실만 있는 날에도 회고를 돌린다', async () => {
     const { task, modelRouter } = makeTask({ todoDone: true });
     await task.run(CTX);

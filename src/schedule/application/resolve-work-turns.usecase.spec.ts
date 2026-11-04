@@ -11,6 +11,7 @@ const signal = (
   overrides: Partial<AuthorPullRequestSignals> = {},
 ): AuthorPullRequestSignals => ({
   ref: { repo: 'a/b', number },
+  open: true,
   draft: false,
   mergeableState: 'clean',
   isApproved: false,
@@ -64,6 +65,57 @@ describe('ResolveWorkTurnsUsecase', () => {
     expect(result.get(1)).toEqual({
       turn: 'MY_TURN',
       reason: '드래프트',
+      observed: true,
+      wait: null,
+    });
+  });
+  it('연결 PR 하나가 미관측이어도 관측된 MY_TURN 이 우선한다', async () => {
+    repository.findOpenLinkedPullRequestUrls.mockResolvedValue(
+      new Map([[1, [url(1), url(2)]]]),
+    );
+    github.fetchAuthorPullRequestSignals.mockResolvedValue([
+      signal(1, { observed: false }),
+      signal(2, { draft: true }),
+    ]);
+    const result = await usecase.execute({
+      items: [buildScheduleItemRecord()],
+      now,
+    });
+    expect(result.get(1)).toEqual({
+      turn: 'MY_TURN',
+      reason: '드래프트',
+      observed: true,
+      wait: null,
+    });
+  });
+  it('닫힌 연결 PR은 빼고 열린 PR만 판정한다', async () => {
+    repository.findOpenLinkedPullRequestUrls.mockResolvedValue(
+      new Map([[1, [url(1), url(2)]]]),
+    );
+    github.fetchAuthorPullRequestSignals.mockResolvedValue([
+      signal(1, { draft: true, open: false }),
+      signal(2, { pendingReviewers: ['alice'] }),
+    ]);
+    const result = await usecase.execute({
+      items: [buildScheduleItemRecord()],
+      now,
+    });
+    expect(result.get(1)?.turn).toBe('WAITING_OTHERS');
+  });
+  it('연결 PR이 모두 닫혔으면 관측된 UNKNOWN이다', async () => {
+    repository.findOpenLinkedPullRequestUrls.mockResolvedValue(
+      new Map([[1, [url(1)]]]),
+    );
+    github.fetchAuthorPullRequestSignals.mockResolvedValue([
+      signal(1, { open: false }),
+    ]);
+    const result = await usecase.execute({
+      items: [buildScheduleItemRecord()],
+      now,
+    });
+    expect(result.get(1)).toEqual({
+      turn: 'UNKNOWN',
+      reason: null,
       observed: true,
       wait: null,
     });

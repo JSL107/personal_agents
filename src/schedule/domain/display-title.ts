@@ -1,4 +1,3 @@
-import { findInternalTerms } from '../../slack/format/internal-terms';
 import {
   FALLBACK_TITLE_MAX_LENGTH,
   SHORT_TITLE_MAX_LENGTH,
@@ -38,5 +37,4 @@ export const validateShortTitle = (text: string): boolean =>
   text.trim().length > 0 &&
   text.length <= SHORT_TITLE_MAX_LENGTH &&
   !/[—\r\n]/.test(text) &&
-  !/^\s*#\d+\s*$/.test(text) &&
-  findInternalTerms(text).length === 0;
+  !/^\s*#\d+\s*$/.test(text);

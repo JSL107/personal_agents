@@ -131,6 +131,9 @@ export const formatEveningDigest = (input: EveningDigestInput): string => {
           ...(summary.extraMergedPrCount > 0
             ? [`• 그 밖에 머지한 PR ${summary.extraMergedPrCount}건`]
             : []),
+          ...(input.mergedPrCount === null
+            ? ['• 머지한 PR을 확인하지 못했어요']
+            : []),
         ]
       : [
           input.mergedPrCount === null

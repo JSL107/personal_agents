@@ -37,6 +37,7 @@ import {
   StoredJobPosting,
 } from '../../../job-feed/domain/port/job-posting.repository.port';
 import { formatJobFeedDigest } from '../../../job-feed/infrastructure/job-feed.formatter';
+import { AgentType } from '../../../model-router/domain/model-router.type';
 import { toAutopilotTaskDisplayName } from '../../../notification/domain/autopilot-task-display-name';
 import { describeIncidentCause } from '../../../notification/domain/incident-message';
 import { FindAllOpenPreviewsUsecase } from '../../../preview-gate/application/find-all-open-previews.usecase';
@@ -46,6 +47,10 @@ import {
 } from '../../../preview-gate/domain/preview-action.type';
 import { BuildMorningTodosUsecase } from '../../../schedule/application/build-morning-todos.usecase';
 import { ListSchedulesUsecase } from '../../../schedule/application/list-schedules.usecase';
+import {
+  TODAY_TODO_BODY_MAX,
+  WAITING_BODY_MAX,
+} from '../../../schedule/domain/daily-todo.constant';
 import { ScheduleStatus } from '../../../schedule/domain/schedule.type';
 import {
   SLACK_DELIVERY_REPOSITORY,
@@ -365,11 +370,26 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
         : []),
       ...ledgerGapIncidents,
     ];
+    const dayStart = new Date(`${firedAtKst}T00:00:00.000+09:00`);
+    let alreadyDelivered = false;
+    try {
+      const deliveries = await this.deliveryRepository.findSince(
+        dayStart,
+        new Date(dayStart.getTime() + DAY_MS),
+      );
+      alreadyDelivered = isRunResultDelivered({
+        agentType: AgentType.PM,
+        deliveries,
+      });
+    } catch (error) {
+      this.logger.warn(`아침 발송 기록 조회 실패: ${String(error)}`);
+    }
     const todoSections = await this.buildMorningTodos.execute({
       ownerId,
       kstDate: firedAtKst,
       now,
       alreadyReconciled: true,
+      alreadyDelivered,
     });
     const digestInput: MorningDigestInput = {
       firedAtKst,
@@ -394,12 +414,12 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
       skip: false,
       summaryText: formatMorningDigest(digestInput),
       detailText: [
-        ...(todoSections.today.length > 0
+        ...(todoSections.today.length > TODAY_TODO_BODY_MAX
           ? [
               `*오늘 할 일 전체*\n${todoSections.today.map(formatMorningTodo).join('\n')}`,
             ]
           : []),
-        ...(todoSections.waiting.length > 0
+        ...(todoSections.waiting.length > WAITING_BODY_MAX
           ? [
               `*남 기다리는 일 전체*\n${todoSections.waiting.map(formatMorningWaitingTodo).join('\n')}`,
             ]

@@ -44,7 +44,7 @@ interface BuildEveningInput {
   ownerId: string | null;
   kstDate: string;
   now: Date;
-  mergedPrCount: number | null;
+  mergedPullRequestUrls: string[] | null;
   morningDelivered: boolean;
 }
 
@@ -127,7 +127,7 @@ export class BuildEveningTodoSummaryUsecase {
     ownerId,
     kstDate,
     now,
-    mergedPrCount,
+    mergedPullRequestUrls,
     morningDelivered,
   }: BuildEveningInput): Promise<EveningTodoSummary> {
     if (!ownerId) {
@@ -165,12 +165,27 @@ export class BuildEveningTodoSummaryUsecase {
       const done = completed.map((item) =>
         line(item, hasMorningList && !listedIds.has(item.id)),
       );
-      const extraMergedPrCount = Math.max(
-        0,
-        (mergedPrCount ?? 0) -
-          completed.filter((item) => item.source === ScheduleSource.GITHUB_PR)
-            .length,
+      const mergedForDoneItems =
+        await this.repository.findMergedPullRequestUrls(
+          completed.map((item) => item.id),
+        );
+      const completedPrKeys = new Set(
+        completed
+          .filter((item) => item.source === ScheduleSource.GITHUB_PR)
+          .map((item) => item.sourceKey)
+          .filter((key): key is string => key !== null),
       );
+      // 수집 경로가 URL 을 소문자로 비교하므로(reconcile-pull-requests) 여기서도 대소문자를 무시한다.
+      const countedUrls = new Set(
+        [...completedPrKeys, ...mergedForDoneItems].map((url) =>
+          url.toLowerCase(),
+        ),
+      );
+      const extraMergedPrCount = [
+        ...new Set(
+          (mergedPullRequestUrls ?? []).map((url) => url.toLowerCase()),
+        ),
+      ].filter((url) => !countedUrls.has(url)).length;
 
       if (hasMorningList) {
         return await this.fromMorningList({
@@ -220,12 +235,21 @@ export class BuildEveningTodoSummaryUsecase {
         records.set(item.id, item);
       }
     }
-    const ratioEntries = input.entries.filter(
-      (entry) =>
-        entry.turn !== 'WAITING_OTHERS' &&
-        records.has(entry.scheduleItemId) &&
-        records.get(entry.scheduleItemId)?.status !== ScheduleStatus.SKIPPED,
-    );
+    const ratioEntries = input.entries.filter((entry) => {
+      const item = records.get(entry.scheduleItemId);
+      if (
+        !item ||
+        entry.turn === 'WAITING_OTHERS' ||
+        item.status === ScheduleStatus.SKIPPED
+      ) {
+        return false;
+      }
+      return !(
+        item.status === ScheduleStatus.DONE &&
+        item.completedAt !== null &&
+        item.completedAt < input.from
+      );
+    });
     const ratio = ratioEntries.length
       ? {
           done: ratioEntries.filter((entry) => {
@@ -309,7 +333,7 @@ export class BuildEveningTodoSummaryUsecase {
       waiting: waiting.length
         ? {
             count: waiting.length,
-            atLeast: waiting.some(({ resolved }) => !resolved.observed),
+            atLeast: ranked.some(({ resolved }) => !resolved.observed),
             longest: longest?.label ?? null,
           }
         : null,

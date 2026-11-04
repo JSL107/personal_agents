@@ -1302,6 +1302,7 @@ export class OctokitGithubClient implements GithubClientPort {
       refs.map(async (ref, index) => {
         const neutral: AuthorPullRequestSignals = {
           ref,
+          open: true,
           draft: false,
           mergeableState: 'unknown',
           isApproved: false,
@@ -1353,6 +1354,7 @@ export class OctokitGithubClient implements GithubClientPort {
           const rawState = detail.data.mergeable_state ?? 'unknown';
           return {
             ref,
+            open: detail.data.state === 'open',
             draft: detail.data.draft ?? false,
             mergeableState: MERGEABLE_STATES.has(rawState)
               ? (rawState as MergeableState)
@@ -1415,7 +1417,11 @@ export class OctokitGithubClient implements GithubClientPort {
             const requestedAt = dates.at(-1);
             return requestedAt ? [{ reviewer, requestedAt }] : [];
           });
-          return { ref, waits, complete: true };
+          return {
+            ref,
+            waits,
+            complete: waits.length === pendingReviewers.length,
+          };
         } catch (error: unknown) {
           const message =
             error instanceof Error ? error.message : String(error);

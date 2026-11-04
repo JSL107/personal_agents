@@ -5,6 +5,7 @@ import { TriggerType } from '../../agent-run/domain/agent-run.type';
 import { wrapUntrustedInput } from '../../common/llm/untrusted-input.util';
 import { ModelRouterUsecase } from '../../model-router/application/model-router.usecase';
 import { AgentType } from '../../model-router/domain/model-router.type';
+import { findInternalTerms } from '../../slack/format/internal-terms';
 import { SHORT_TITLE_BATCH_MAX } from '../domain/daily-todo.constant';
 import { validateShortTitle } from '../domain/display-title';
 import {
@@ -21,6 +22,7 @@ interface GenerateShortTitlesInput {
 @Injectable()
 export class GenerateShortTitlesUsecase {
   private readonly logger = new Logger(GenerateShortTitlesUsecase.name);
+  private cursorId = 0;
 
   constructor(
     @Inject(SCHEDULE_REPOSITORY_PORT)
@@ -31,7 +33,7 @@ export class GenerateShortTitlesUsecase {
 
   async execute({ ownerId }: GenerateShortTitlesInput): Promise<void> {
     try {
-      const items = (await this.repository.findUndated(ownerId))
+      const candidates = (await this.repository.findUndated(ownerId))
         .filter(
           (item) =>
             item.dueDate === null &&
@@ -39,10 +41,15 @@ export class GenerateShortTitlesUsecase {
               item.status === ScheduleStatus.IN_PROGRESS) &&
             (!item.shortTitle || item.shortTitleBasis !== item.title),
         )
-        .slice(0, SHORT_TITLE_BATCH_MAX);
+        .sort((left, right) => left.id - right.id);
+      const items = [
+        ...candidates.filter((item) => item.id > this.cursorId),
+        ...candidates.filter((item) => item.id <= this.cursorId),
+      ].slice(0, SHORT_TITLE_BATCH_MAX);
       if (items.length === 0) {
         return;
       }
+      this.cursorId = items[items.length - 1].id;
       const titles = items
         .map(
           (item, index) =>
@@ -78,7 +85,12 @@ export class GenerateShortTitlesUsecase {
         const index = Number(match[1]) - 1;
         const item = items[index];
         const shortTitle = match[2].trim();
-        if (!item || seen.has(index) || !validateShortTitle(shortTitle)) {
+        if (
+          !item ||
+          seen.has(index) ||
+          !validateShortTitle(shortTitle) ||
+          findInternalTerms(shortTitle).length > 0
+        ) {
           continue;
         }
         seen.add(index);

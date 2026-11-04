@@ -47,12 +47,15 @@ describe('할 일 표시 이름', () => {
       }),
     ).toBe('원래 이름');
   });
-  it.each(['가'.repeat(31), '가 — 나', '가\n나', '#123', 'CODE_REVIEWER'])(
+  it.each(['가'.repeat(31), '가 — 나', '가\n나', '#123'])(
     '잘못된 짧은 이름을 거부한다: %s',
     (title) => {
       expect(validateShortTitle(title)).toBe(false);
     },
   );
+  it('도메인 검증은 내부 용어 정책에 의존하지 않는다', () => {
+    expect(validateShortTitle('CODE_REVIEWER')).toBe(true);
+  });
   it('유효한 짧은 이름은 허용한다', () => {
     expect(validateShortTitle('일정 수집 개선')).toBe(true);
   });
