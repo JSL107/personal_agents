@@ -6,6 +6,10 @@ hermes 의 web_search 도구는 Tavily 를 topic 지정 없이 부른다(plugins
 몇 달 지난 기사가 상위에 올라온다. 이 스크립트는 Tavily 를 news 토픽 + 기간 제한으로
 직접 호출해 그 두 문제를 API 차원에서 끊는다.
 
+개발 영역은 GeekNews(news.hada.io) 최신 글을 후보로 싣는다. 프론트·백엔드·인프라·언어 소식을 한국어 요약과 함께 주고,
+Tavily 영역 셋은 개발 기술 기사를 거의 물어오지 않는다(2026-11-04 확인: 한국 IT 3건이 전부 투자·사업 기사).
+GeekNews 에는 개발과 무관한 글도 섞이므로 고르는 일은 모델에게 맡긴다.
+
 AI 영역은 AIHOT(aihot.news)의 편집 선별 목록을 후보로 함께 싣는다. Tavily 검색어는 표현 하나로
 결과가 출렁이고 보도자료 배포처가 섞이는데(2026-10-06 실측: einnews.com/pr_news), AIHOT 은 지난 24시간
 소식을 사람이 고른 목록이라 그 문제가 없다. 근거·판단 기준은
@@ -26,7 +30,7 @@ docs/superpowers/plans/2026-10-06-morning-news-aihot.md.
 
 hermes 본체(`~/.hermes/hermes-agent`)는 업스트림 클론이라 개인 스크립트를 두지 않는다.
 
-뉴스 세 영역 뒤에 "오늘의 도구" 후보(AIHOT 제품·팁, GitHub 신규 저장소, Show HN, 요즘IT)를 따로 싣는다.
+뉴스 네 영역 뒤에 "오늘의 도구" 후보(AIHOT 제품·팁, GitHub 신규 저장소, Show HN, 요즘IT)를 따로 싣는다.
 모델이 그중 최대 3건을 골라 무엇인지·어떻게 써 보는지까지 풀어 쓴다. 지난 발송본에 나온 URL 은 후보에서 뺀다.
 GitHub 후보는 토픽 검색(claude-code·agent-skills·claude-skills·mcp)을 앞세우고 스타순 일반 검색으로 보충한다.
 크랙·미끼로 보이는 저장소 이름은 거른다. 후보에는 README 앞부분(설치·사용 절 먼저)을 붙여 "써 보려면"을 쓸 근거를 준다.
@@ -95,6 +99,9 @@ AIHOT_TIMEOUT_SEC = 15
 AIHOT_MAX_BYTES = 1_000_000
 # AI 영역에 싣는 AIHOT 후보 상한. 넘치면 Tavily 후보가 사실상 묻혀 영어권 검색 시각이 사라진다.
 AIHOT_MAX_CANDIDATES = 5
+GEEKNEWS_FEED = "https://news.hada.io/rss/news"
+# 피드는 최신 20건을 준다. 그중 절반쯤이 개발 소식이라 앞 8건이면 3건을 고를 여유가 있다.
+GEEKNEWS_MAX_CANDIDATES = 8
 
 # ── 오늘의 도구 코너 ──
 # hermes 는 스크립트를 120초에 끊고, 그러면 그날 브리핑이 통째로 사라진다(cron/scheduler.py `_DEFAULT_SCRIPT_TIMEOUT`).
@@ -157,6 +164,8 @@ _HTML_TAG_PATTERN = re.compile(r"<[^>]+>")
 _CJK_PATTERN = re.compile(r"[\u4e00-\u9fff]")
 
 KST = timezone(timedelta(hours=9))
+# 편집 목록·피드 소스는 상한을 두고 자른다(Tavily 는 쿼리당 건수로 이미 묶여 있다).
+SOURCE_CAPS = {"aihot": AIHOT_MAX_CANDIDATES, "geeknews": GEEKNEWS_MAX_CANDIDATES}
 
 # 영역마다 쿼리를 둘로 쪼갠다. 하나로 6건을 뽑으면 상위권이 한 사건에 쏠려
 # (2026-09-09 실측: 한국 영역 6건 중 3건이 같은 행사 기사) 고를 후보가 실질 3~4개로 준다.
@@ -171,6 +180,11 @@ SECTIONS = [
             # 코인 홍보·소규모 보도자료가 올라온다(2026-09-09 실측). 둘 다 뺀 형태.
             "OpenAI Anthropic Google AI model announcement",
         ],
+    },
+    {
+        "label": "개발 — 프론트·백엔드·인프라·언어",
+        "geeknews": True,
+        "queries": [],
     },
     {
         "label": "한국 IT·스타트업·테크",
@@ -436,6 +450,14 @@ def collect_section(
                 ledger.append(ledger_row(article, False, reason))
             collected.extend(kept)
 
+    if section.get("geeknews"):
+        try:
+            collected.extend(geeknews_items(fetch_bytes(GEEKNEWS_FEED)))
+        # AIHOT 과 같은 이유로 무엇으로 실패하든 이 영역 표기로만 끝낸다.
+        except Exception as error:  # noqa: BLE001
+            failures.append(f"GeekNews {type(error).__name__}")
+            print(f"section '{label}' GeekNews failed: {error!r}", file=sys.stderr)
+
     for query in section["queries"]:
         if not api_key:
             failures.append("TavilyKeyMissing")
@@ -510,6 +532,35 @@ def yozm_tools(raw: bytes) -> list[dict]:
         }
         for item in ElementTree.fromstring(raw).iter("item")
     ]
+
+
+def geeknews_items(raw: bytes, now: datetime | None = None) -> list[dict]:
+    """GeekNews Atom 피드를 최신순 그대로 바꾼다. 링크 대신 `id` 를 쓴다 — 링크에는 utm 꼬리가 붙는다.
+
+    job 프롬프트가 "발행일 기준 최근 RECENCY_DAYS 일 이내로 이미 걸러져 있다" 고 말하므로 Tavily(days=)와 같은 기준으로
+    거른다. 발행일을 읽지 못한 글은 그 약속을 지킬 수 없어 뺀다.
+    """
+    atom = "{http://www.w3.org/2005/Atom}"
+    cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=RECENCY_DAYS)
+    items: list[dict] = []
+    for entry in ElementTree.fromstring(raw).iter(f"{atom}entry"):
+        published = entry.findtext(f"{atom}published") or ""
+        try:
+            published_at = datetime.fromisoformat(published.strip().replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if published_at.tzinfo is None:
+            published_at = published_at.replace(tzinfo=timezone.utc)
+        if published_at < cutoff:
+            continue
+        items.append({
+            "source": "geeknews",
+            "title": entry.findtext(f"{atom}title") or "",
+            "url": (entry.findtext(f"{atom}id") or "").strip(),
+            "published_date": published,
+            "content": html.unescape(_HTML_TAG_PATTERN.sub(" ", entry.findtext(f"{atom}content") or "")),
+        })
+    return items
 
 
 def is_bait_repo(url: str) -> bool:
@@ -786,7 +837,7 @@ def main() -> int:
 
     scan = load_threat_scanner()
 
-    print(f"## 오늘 수집한 기사 후보 (Tavily news 최근 {RECENCY_DAYS}일 · AIHOT 최근 24시간)")
+    print(f"## 오늘 수집한 기사 후보 (Tavily news 최근 {RECENCY_DAYS}일 · AIHOT 최근 24시간 · GeekNews 최신)")
     if not api_key:
         print("(TAVILY_API_KEY 를 찾지 못해 Tavily 검색은 하지 못했습니다. 기사를 지어내지 마세요.)")
     if scan is None:
@@ -801,7 +852,7 @@ def main() -> int:
         articles, failures = collect_section(api_key, section, ledger)
 
         lines: list[str] = []
-        aihot_count = 0
+        source_counts: dict[str, int] = {}
         seen_urls: set[str] = set()
         seen_titles: set[str] = set()
         for article in articles:
@@ -811,10 +862,11 @@ def main() -> int:
                 ledger.append(ledger_row(article, False, "threat_pattern"))
                 print(f"section '{section['label']}' dropped by threat scan: {article.get('url')}", file=sys.stderr)
                 continue
-            if article.get("source") == "aihot":
-                if aihot_count >= AIHOT_MAX_CANDIDATES:
-                    ledger.append(ledger_row(article, False, "over_cap"))
-                    continue
+            source = article.get("source")
+            cap = SOURCE_CAPS.get(source)
+            if cap is not None and source_counts.get(source, 0) >= cap:
+                ledger.append(ledger_row(article, False, "over_cap"))
+                continue
             url = (article.get("url") or "").strip()
             # 두 쿼리(또는 AIHOT 과 Tavily)가 같은 기사를 물어오는 경우가 있다. 그대로 두면 후보 수만
             # 부풀고 모델이 같은 사건을 두 번 고를 수 있다. 선별·상한 뒤에 거르는 이유: 앞에서 거르면
@@ -833,8 +885,8 @@ def main() -> int:
                 news_urls.add(normalize_url(url))
             if len(key) >= TITLE_KEY_MIN_LENGTH:
                 seen_titles.add(key)
-            if article.get("source") == "aihot":
-                aihot_count += 1
+            if cap is not None:
+                source_counts[source] = source_counts.get(source, 0) + 1
             ledger.append(ledger_row(article, True, None))
             lines.append(text)
 
@@ -949,6 +1001,20 @@ def self_check() -> None:
     feed = ("<rss><channel><item><title>클로드 코드 팁</title><link>https://yozm.wishket.com/magazine/detail/3993</link>"
             "<description>요약</description></item></channel></rss>").encode("utf-8")
     assert yozm_tools(feed)[0]["url"] == "https://yozm.wishket.com/magazine/detail/3993"
+    # GeekNews: 2026-11-04 실측 피드 구조. url 은 utm 꼬리 없는 id, 본문 HTML 은 벗긴다.
+    atom = ("<feed xmlns='http://www.w3.org/2005/Atom'><entry><title><![CDATA[Safari 27.3 다크 모드]]></title>"
+            "<link rel='alternate' href='https://news.hada.io/topic?id=36549&amp;utm_source=geeknews' />"
+            "<id>https://news.hada.io/topic?id=36549</id><published>2026-11-04T08:32:30+09:00</published>"
+            "<content type='html'><![CDATA[<ul><li><strong>Safari</strong> &amp; 다크</li></ul>]]></content></entry></feed>").encode("utf-8")
+    now = datetime(2026, 11, 4, 9, 0, tzinfo=KST)
+    geek = geeknews_items(atom, now)
+    assert geek[0]["url"] == "https://news.hada.io/topic?id=36549" and geek[0]["title"] == "Safari 27.3 다크 모드", geek
+    assert geek[0]["content"].split() == ["Safari", "&", "다크"], geek[0]["content"]
+    assert normalize_published(geek[0]["published_date"]) == "2026-11-04 08:32"
+    # 최근 RECENCY_DAYS 일 밖이거나 발행일을 못 읽는 글은 뺀다(프롬프트의 "최근 3일 이내" 약속).
+    stale = atom.replace(b"2026-11-04T08:32:30", b"2026-10-30T08:32:30")
+    undated = atom.replace(b"<published>2026-11-04T08:32:30+09:00</published>", b"")
+    assert geeknews_items(stale, now) == [] and geeknews_items(undated, now) == []
 
     # 발송본 중복 제외는 모델이 쓴 부분(Response)만 본다 — 프롬프트에 실린 후보 URL 은 제외 대상이 아니다.
     briefing = "## Prompt\n2. 후보 https://not-chosen.example/x\n## Response\n- 고른 것 https://github.com/o/r/\n"
