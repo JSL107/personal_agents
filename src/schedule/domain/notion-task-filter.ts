@@ -15,7 +15,10 @@ export const filterMyNotionTask = (
   if (!assignees.includes(config.assigneeValue)) {
     return null;
   }
-  if (config.doneValues.includes(task.properties[config.statusProperty])) {
+  const isDone = config.statusProperties.some((property) =>
+    config.doneValues.includes(task.properties[property]),
+  );
+  if (isDone) {
     return null;
   }
   const dateText = config.dueProperty

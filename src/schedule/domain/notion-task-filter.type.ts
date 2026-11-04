@@ -3,7 +3,7 @@ import { PlainDate } from './schedule.type';
 export interface NotionTaskFilterConfig {
   assigneeProperty: string;
   assigneeValue: string;
-  statusProperty: string;
+  statusProperties: string[];
   doneValues: string[];
   dueProperty?: string;
 }

@@ -8,3 +8,8 @@ export interface NotionSourceEditInput {
   dueDate: Date | null;
   now: Date;
 }
+
+export interface ReadListInput {
+  key: string;
+  fallback: string[];
+}

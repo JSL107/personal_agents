@@ -6,7 +6,7 @@ describe('filterMyNotionTask', () => {
   const config: NotionTaskFilterConfig = {
     assigneeProperty: '담당자',
     assigneeValue: '김준석',
-    statusProperty: '상태',
+    statusProperties: ['상태'],
     doneValues: ['완료', 'Done'],
     dueProperty: '마감일',
   };
@@ -34,6 +34,25 @@ describe('filterMyNotionTask', () => {
     expect(
       filterMyNotionTask(task, { ...config, assigneeValue: '김준' }),
     ).toBeNull();
+  });
+
+  // DB 마다 완료 칸 이름이 다르다 — 작업 현황 DB 는 `상태` 가 분류용 select 이고 완료는 `진행단계` 에 있다.
+  it('나열한 상태 칸 중 하나라도 완료 값이면 제외한다', () => {
+    const integration: NotionTask = {
+      ...task,
+      properties: { 담당자: '김준석', 상태: '개발', 진행단계: '완료' },
+    };
+    const both = { ...config, statusProperties: ['상태', '진행단계'] };
+    expect(filterMyNotionTask(integration, both)).toBeNull();
+    expect(
+      filterMyNotionTask(
+        {
+          ...integration,
+          properties: { 담당자: '김준석', 상태: '개발', 진행단계: '진행중' },
+        },
+        both,
+      ),
+    ).not.toBeNull();
   });
 
   it('완료 상태는 제외한다', () => {

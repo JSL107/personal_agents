@@ -25,7 +25,10 @@ import {
   AutopilotTask,
   AutopilotTaskResult,
 } from '../../domain/autopilot-task.port';
-import { NotionSourceEditInput } from '../../domain/schedule-collect-notion.type';
+import {
+  NotionSourceEditInput,
+  ReadListInput,
+} from '../../domain/schedule-collect-notion.type';
 
 @Injectable()
 export class ScheduleCollectNotionAutopilotTask implements AutopilotTask {
@@ -61,16 +64,14 @@ export class ScheduleCollectNotionAutopilotTask implements AutopilotTask {
     const config: NotionTaskFilterConfig = {
       assigneeProperty,
       assigneeValue,
-      statusProperty:
-        this.configService
-          .get<string>('SCHEDULE_NOTION_STATUS_PROPERTY')
-          ?.trim() || '상태',
-      doneValues: (
-        this.configService.get<string>('SCHEDULE_NOTION_DONE_VALUES') ?? ''
-      )
-        .split(',')
-        .map((value) => value.trim())
-        .filter(Boolean),
+      statusProperties: this.readList({
+        key: 'SCHEDULE_NOTION_STATUS_PROPERTY',
+        fallback: ['상태'],
+      }),
+      doneValues: this.readList({
+        key: 'SCHEDULE_NOTION_DONE_VALUES',
+        fallback: [],
+      }),
       dueProperty: this.configService
         .get<string>('SCHEDULE_NOTION_DUE_PROPERTY')
         ?.trim(),
@@ -163,5 +164,14 @@ export class ScheduleCollectNotionAutopilotTask implements AutopilotTask {
       dedupeKey: `notion-edit:${hash}`,
       occurredAt: now,
     });
+  }
+
+  // 쉼표로 여러 값을 받는 env. 비었거나 공백뿐이면 fallback.
+  private readList({ key, fallback }: ReadListInput): string[] {
+    const values = (this.configService.get<string>(key) ?? '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean);
+    return values.length > 0 ? values : fallback;
   }
 }
