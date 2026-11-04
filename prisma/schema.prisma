@@ -1544,3 +1544,23 @@ model DailyTodoEntry {
   @@unique([listId, scheduleItemId])
   @@map("daily_todo_entry")
 }
+
+// 이대리가 발행한 포트폴리오 사이트 카드의 싱크 상태. 사이트 data 에는 싱크 표식을 싣지 않는다
+// (공개 API 가 data 를 통째로 내보내므로). 설계: docs/superpowers/plans/2026-11-04-portfolio-sync-upgrade.md §3.1
+model PortfolioSyncCard {
+  id                Int      @id @default(autoincrement())
+  slug              String   @unique
+  siteProjectId     String?  @map("site_project_id")
+  repo              String
+  topicIndex        Int      @map("topic_index")
+  memberPrs         String[] @map("member_prs")
+  coverOf           String?  @map("cover_of")
+  status            String
+  inheritPublished  Boolean  @default(false) @map("inherit_published")
+  // 봇이 마지막으로 보낸 sortOrder. 사이트 값이 이것과 다르면 사람이 편집기에서 순서를 바꾼 것으로 보고 덮지 않는다.
+  lastSentSortOrder Int?     @map("last_sent_sort_order")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@map("portfolio_sync_card")
+}

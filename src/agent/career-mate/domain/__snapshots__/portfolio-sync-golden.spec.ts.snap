@@ -1,0 +1,50 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`합성 프로필 계획 골든 익명 카드와 공개 카드를 10줄·정규 기술·저장소 루트 링크·정렬값으로 만든다 1`] = `
+[
+  {
+    "links": {},
+    "process": [
+      "사내 저장소 응답 개선 12",
+      "사내 저장소 응답 개선 11",
+      "사내 저장소 응답 개선 10",
+      "사내 저장소 응답 개선 9",
+      "사내 저장소 응답 개선 8",
+      "사내 저장소 응답 개선 7",
+      "사내 저장소 응답 개선 6",
+      "사내 저장소 응답 개선 5",
+      "사내 저장소 응답 개선 4",
+      "사내 저장소 응답 개선 3",
+    ],
+    "slug": "company-d63b2a",
+    "sortOrder": 1,
+    "techStack": [
+      "TypeScript",
+      "NestJS",
+      "PostgreSQL",
+      "Prisma",
+      "Redis",
+      "Cloud SQL",
+      "Docker",
+      "GitHub Actions",
+      "Jest",
+      "pnpm",
+    ],
+  },
+  {
+    "links": {
+      "docs": "https://example.org/docs",
+      "github": "https://github.com/Example/open-source",
+    },
+    "process": [
+      "공개 저장소 검색 개선",
+    ],
+    "slug": "example-open-source",
+    "sortOrder": 2,
+    "techStack": [
+      "Python",
+      "Express",
+    ],
+  },
+]
+`;

@@ -79,7 +79,7 @@ const MASKED_REPO_LABEL = '사내 저장소';
 // slug 와 링크를 접어도 문장에 저장소 이름이 남으면 같은 것이 그대로 드러난다. 사내 서비스명이나
 // 내부 용어까지 알 수는 없으니 완전한 정화는 아니다 — 저장소 이름에 한해, slug·링크와 같은
 // 수준을 문장에도 적용한다.
-const maskRepoTokens = (text: string, repo: string): string => {
+export const maskRepoTokens = (text: string, repo: string): string => {
   let masked = text;
   for (const token of repo.split('/')) {
     const trimmed = token.trim();
@@ -87,7 +87,7 @@ const maskRepoTokens = (text: string, repo: string): string => {
       continue;
     }
     masked = masked.replace(
-      new RegExp(escapeRegExp(trimmed), 'gi'),
+      new RegExp(`[\\w.-]*${escapeRegExp(trimmed)}[\\w.-]*`, 'gi'),
       MASKED_REPO_LABEL,
     );
   }
@@ -102,7 +102,7 @@ const maskRepoTokens = (text: string, repo: string): string => {
 // (publish-portfolio-site.usecase 의 resolveProfile) 생성 경로만 고쳐서는 소급되지 않는다.
 const EARLIEST_PLAUSIBLE_MERGED_AT = Date.UTC(2008, 0, 1);
 
-const sanitizeMergedAt = (mergedAt: string | null): string | null => {
+export const sanitizeMergedAt = (mergedAt: string | null): string | null => {
   if (!mergedAt) {
     return null;
   }

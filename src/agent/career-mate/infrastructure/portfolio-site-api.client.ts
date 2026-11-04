@@ -32,7 +32,7 @@ const toProject = (value: unknown): PortfolioSiteProject | null => {
   if (!isRecord(value)) {
     return null;
   }
-  const { id, slug, published, data } = value;
+  const { id, slug, published, sortOrder, data } = value;
   if (typeof id !== 'string' || typeof slug !== 'string') {
     return null;
   }
@@ -40,6 +40,7 @@ const toProject = (value: unknown): PortfolioSiteProject | null => {
     id,
     slug,
     published: Boolean(published),
+    sortOrder: typeof sortOrder === 'number' ? sortOrder : 0,
     data: isRecord(data) ? data : {},
   };
 };
@@ -76,9 +77,13 @@ export class PortfolioSiteApiClient implements PortfolioSiteClientPort {
     if (!Array.isArray(body?.projects)) {
       throw this.contractViolation('GET /me/projects', 'projects 배열', body);
     }
-    return body.projects
-      .map(toProject)
-      .filter((project): project is PortfolioSiteProject => project !== null);
+    return body.projects.map((value: unknown) => {
+      const project = toProject(value);
+      if (!project) {
+        throw this.contractViolation('GET /me/projects', 'id·slug', value);
+      }
+      return project;
+    });
   }
 
   async createProject(

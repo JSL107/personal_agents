@@ -6,6 +6,7 @@ export interface PortfolioSiteProject {
   id: string;
   slug: string;
   published: boolean;
+  sortOrder: number;
   data: Record<string, unknown>;
 }
 

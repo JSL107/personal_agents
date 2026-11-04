@@ -52,6 +52,7 @@ describe('PortfolioSiteApiClient', () => {
               id: 'p1',
               slug: 'repo-pr-1',
               published: true,
+              sortOrder: 3,
               data: { title: 'A' },
             },
           ],
@@ -62,7 +63,13 @@ describe('PortfolioSiteApiClient', () => {
     const projects = await createClient().listProjects();
 
     expect(projects).toEqual([
-      { id: 'p1', slug: 'repo-pr-1', published: true, data: { title: 'A' } },
+      {
+        id: 'p1',
+        slug: 'repo-pr-1',
+        published: true,
+        sortOrder: 3,
+        data: { title: 'A' },
+      },
     ]);
   });
 
@@ -83,7 +90,7 @@ describe('PortfolioSiteApiClient', () => {
     );
   });
 
-  it('목록 원소 중 형태가 어긋난 것은 버리고 나머지를 살린다', async () => {
+  it('목록 원소 하나라도 형태가 어긋나면 전체 목록 로드를 중단한다', async () => {
     mockFetch(
       jest.fn().mockResolvedValue(
         jsonResponse({
@@ -96,9 +103,9 @@ describe('PortfolioSiteApiClient', () => {
       ),
     );
 
-    const projects = await createClient().listProjects();
-
-    expect(projects.map((project) => project.slug)).toEqual(['ok-pr-1']);
+    await expect(createClient().listProjects()).rejects.toThrow(
+      /GET \/me\/projects 형식/,
+    );
   });
 
   it('생성 응답에 id·slug 가 없으면 성공으로 읽지 않는다', async () => {

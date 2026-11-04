@@ -128,6 +128,15 @@ export class PortfolioPublishAutopilotTask implements AutopilotTask {
         (finding) => finding.status === 'WEAK' || finding.status === 'MISSING',
       ).length ?? 0;
     const worthReporting =
+      result.regenerated.length > 0 ||
+      result.overwrittenPublic.length > 0 ||
+      result.coverFailed.length > 0 ||
+      result.blankedFields.length > 0 ||
+      result.postCheckViolations.length > 0 ||
+      result.notInPlan.length > 0 ||
+      result.planViolations.length > 0 ||
+      result.adoptionRequired ||
+      result.aborted !== null ||
       result.createdProjects.length > 0 ||
       result.createdSkillGroups.length > 0 ||
       result.failures.length > 0 ||
@@ -147,6 +156,41 @@ export class PortfolioPublishAutopilotTask implements AutopilotTask {
     }
 
     const summaryLines = ['📁 *포트폴리오 사이트 발행*'];
+    if (result.regenerated.length) {
+      summaryLines.push(
+        `• 표지 새로 씀 ${result.regenerated.length}건(공개 카드 ${result.overwrittenPublic.length}건 덮음)`,
+      );
+    }
+    if (result.postCheckViolations.length) {
+      summaryLines.push(
+        `• ⚠️ 사후 검사 위반 ${result.postCheckViolations.length}건`,
+      );
+    }
+    if (result.coverFailed.length) {
+      summaryLines.push(`• ⚠️ 표지 생성 실패 ${result.coverFailed.length}건`);
+    }
+    if (result.adoptionRequired) {
+      summaryLines.push('• ⚠️ 채택 전 — CLI --dry-run/--apply 로 첫 채택 필요');
+    }
+    if (result.notInPlan.length) {
+      summaryLines.push(
+        `• ⚠️ 계획에 없는 이대리 카드 ${result.notInPlan.length}건`,
+      );
+    }
+    if (result.planViolations.length) {
+      summaryLines.push(
+        `• ⚠️ 계획 검사 위반 ${result.planViolations.length}건`,
+      );
+    }
+    if (result.blankedFields.length) {
+      summaryLines.push(
+        `• ⚠️ 근거 없는 표지 필드 비움 ${result.blankedFields.length}건`,
+      );
+    }
+    if (result.aborted) {
+      summaryLines.push('• ⚠️ 발행 중단');
+    }
+
     if (result.createdProjects.length > 0) {
       summaryLines.push(
         `• 새 프로젝트 ${result.createdProjects.length}건 (비공개 초안, 편집기에서 게시하면 공개)`,
@@ -214,6 +258,28 @@ export class PortfolioPublishAutopilotTask implements AutopilotTask {
     auditNote: string | null,
   ): string {
     const lines: string[] = [];
+    if (result.regenerated.length) {
+      lines.push(`표지 새로 씀: ${result.regenerated.join(', ')}`);
+    }
+    if (result.overwrittenPublic.length) {
+      lines.push(`공개 카드: ${result.overwrittenPublic.join(', ')}`);
+    }
+    if (result.coverFailed.length) {
+      lines.push(`표지 실패: ${result.coverFailed.join(', ')}`);
+    }
+    if (result.notInPlan.length) {
+      lines.push(`계획에 없음: ${result.notInPlan.join(', ')}`);
+    }
+    if (result.postCheckViolations.length) {
+      lines.push(
+        `사후 검사 위반: ${result.postCheckViolations.map((item) => item.slug).join(', ')}`,
+      );
+    }
+    if (result.blankedFields.length) {
+      lines.push(
+        `필드 비움: ${result.blankedFields.map((item) => item.slug).join(', ')}`,
+      );
+    }
     if (result.createdProjects.length > 0) {
       lines.push(`신규: ${result.createdProjects.join(', ')}`);
     }
