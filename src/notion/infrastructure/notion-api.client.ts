@@ -47,6 +47,18 @@ const PAGE_ACCESS_ERROR_CODES = new Set([
 // codex review bcpccaqik P2 지적 대응.
 const APPEND_BLOCKS_CHUNK_SIZE = 100;
 
+interface QueryDbOrNullInput {
+  client: Client | null | undefined;
+  databaseId: string;
+  perDatabaseLimit: number;
+  lastEditedSinceIsoDateTime?: string;
+}
+
+interface RetrieveWorkPageStatusInput {
+  pageId: string;
+  personalError: unknown;
+}
+
 @Injectable()
 export class NotionApiClient implements NotionClientPort {
   private readonly logger = new Logger(NotionApiClient.name);
@@ -109,12 +121,14 @@ export class NotionApiClient implements NotionClientPort {
     const tasks: NotionTask[] = [];
     let failedDbCount = 0;
     for (const databaseId of targetDbs) {
-      const response = await this.queryDbOrNull(
-        this.isListed(databaseId, workDbIds) ? this.workClient : this.client,
+      const response = await this.queryDbOrNull({
+        client: this.isListed(databaseId, workDbIds)
+          ? this.workClient
+          : this.client,
         databaseId,
         perDatabaseLimit,
         lastEditedSinceIsoDateTime,
-      );
+      });
       if (!response) {
         failedDbCount += 1;
         continue;
@@ -176,7 +190,10 @@ export class NotionApiClient implements NotionClientPort {
       if (isPageAccessError(error)) {
         // 회사 DB 에서 수집한 업무 페이지는 개인 통합으로는 못 읽는다 — 회사 Client 로 한 번 더 본다.
         if (this.workClient) {
-          return await this.retrieveWorkPageStatus(pageId, error);
+          return await this.retrieveWorkPageStatus({
+            pageId,
+            personalError: error,
+          });
         }
         throw new NotionPageNotAccessibleError(pageId, error);
       }
@@ -184,10 +201,12 @@ export class NotionApiClient implements NotionClientPort {
     }
   }
 
-  private async retrieveWorkPageStatus(
-    pageId: string,
-    personalError: unknown,
-  ): Promise<Awaited<ReturnType<Client['pages']['retrieve']>>> {
+  private async retrieveWorkPageStatus({
+    pageId,
+    personalError,
+  }: RetrieveWorkPageStatusInput): Promise<
+    Awaited<ReturnType<Client['pages']['retrieve']>>
+  > {
     try {
       return await this.workClient!.pages.retrieve({ page_id: pageId });
     } catch (error: unknown) {
@@ -341,12 +360,14 @@ export class NotionApiClient implements NotionClientPort {
   // 한 DB 가 권한 미부여 / not_found 면 null 반환 — 다른 DB 는 계속 (listActiveTasks 안에서 skip).
   // try/catch + null 패턴을 별도 helper 로 추출해 caller 가 let 없이 const 로 받게 한다.
   // OPS-6: lastEditedSinceIsoDateTime 이 있으면 last_edited_time timestamp filter 추가 — long-tail 컷.
-  private async queryDbOrNull(
-    client: Client | null | undefined,
-    databaseId: string,
-    perDatabaseLimit: number,
-    lastEditedSinceIsoDateTime?: string,
-  ): Promise<Awaited<ReturnType<Client['databases']['query']>> | null> {
+  private async queryDbOrNull({
+    client,
+    databaseId,
+    perDatabaseLimit,
+    lastEditedSinceIsoDateTime,
+  }: QueryDbOrNullInput): Promise<Awaited<
+    ReturnType<Client['databases']['query']>
+  > | null> {
     if (!client) {
       this.logger.warn(
         `Notion DB ${databaseId} 조회 실패 (skip): NOTION_WORK_TASK_DB_IDS 에 있지만 NOTION_WORK_TOKEN 이 설정되지 않았습니다.`,
