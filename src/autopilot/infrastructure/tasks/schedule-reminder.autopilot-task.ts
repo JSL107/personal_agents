@@ -13,6 +13,7 @@ import {
   ScheduleStatus,
 } from '../../../schedule/domain/schedule.type';
 import { escapeSlackMrkdwn } from '../../../slack/format/mrkdwn.util';
+import { toKoreanDate } from '../../../slack/format/schedule.formatter';
 import {
   AutopilotTask,
   AutopilotTaskResult,
@@ -155,8 +156,17 @@ const sourceLink = (url: string | null | undefined): string => {
   return ` <${url}|원문 열기>`;
 };
 
+// 「알릴 때예요」는 연락할 일(📣)에만 쓴다 — 내 알림에 쓰면 남에게 연락하라는 말로 읽힌다.
 const formatReminder = (item: ScheduleItemRecord): string =>
-  `⏰ ${escapeSlackMrkdwn(item.title)} 알릴 때예요${sourceLink(item.sourceUrl)}`;
+  `⏰ 지금 챙길 일: ${escapeSlackMrkdwn(item.title)}${formatDueSuffix(item)}${sourceLink(item.sourceUrl)}`;
+
+const formatDueSuffix = ({ dueDate, dueTime }: ScheduleItemRecord): string => {
+  if (!dueDate) {
+    return '';
+  }
+  const time = dueTime ? ` ${dueTime}` : '';
+  return ` (${toKoreanDate(dueDate)}${time} 마감)`;
+};
 
 const formatFollowUp = ({
   item,

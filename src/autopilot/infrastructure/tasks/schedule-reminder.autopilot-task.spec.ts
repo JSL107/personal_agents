@@ -71,6 +71,25 @@ describe('ScheduleReminderAutopilotTask', () => {
     draftUsecase.execute.mockResolvedValue('완료했습니다. 확인 부탁드립니다.');
   });
 
+  // 「알릴 때예요」는 남에게 연락할 때의 말이라 내 알림에 쓰면 어색했다(제목에 '알림'이 들면 더).
+  it('내 알림은 지금 챙길 일과 마감 시각으로 쓴다', async () => {
+    repository.claimDueReminders.mockResolvedValue([
+      {
+        ...item,
+        title: '업무 트래킹 알림',
+        dueDate: new Date('2026-11-04T00:00:00Z'),
+        dueTime: '12:01',
+      },
+      { ...item, id: 8, title: '기한 없는 일', dueDate: null, dueTime: null },
+    ]);
+    const result = await makeTask().run();
+    expect(result.summaryText).toContain(
+      '⏰ 지금 챙길 일: 업무 트래킹 알림 (11월 4일 12:01 마감)',
+    );
+    expect(result.summaryText).toContain('⏰ 지금 챙길 일: 기한 없는 일');
+    expect(result.summaryText).not.toContain('기한 없는 일 (');
+  });
+
   it('선점 0건이어도 후보를 만료하고 발송을 건너뛴다', async () => {
     const result = await makeTask().run();
     expect(result).toEqual({ skip: true });

@@ -8,7 +8,7 @@ interface ScheduleRegisteredOptions {
   memo?: string;
 }
 
-const toKoreanDate = (date: Date): string => {
+export const toKoreanDate = (date: Date): string => {
   return `${date.getUTCMonth() + 1}월 ${date.getUTCDate()}일`;
 };
 
