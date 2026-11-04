@@ -11,6 +11,7 @@ import { ModelRouterModule } from '../model-router/model-router.module';
 import { NotionModule } from '../notion/notion.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AnswerScheduleQuestionUsecase } from './application/answer-schedule-question.usecase';
+import { BuildEveningTodoSummaryUsecase } from './application/build-evening-todo-summary.usecase';
 import { BuildMorningTodosUsecase } from './application/build-morning-todos.usecase';
 import { CloseFinishedIssuesUsecase } from './application/close-finished-issues.usecase';
 import { CloseFinishedNotionTasksUsecase } from './application/close-finished-notion-tasks.usecase';
@@ -71,6 +72,7 @@ import { ScheduleConsoleController } from './interface/schedule-console.controll
     ReconcilePullRequestsUsecase,
     ResolveWorkTurnsUsecase,
     BuildMorningTodosUsecase,
+    BuildEveningTodoSummaryUsecase,
     GenerateShortTitlesUsecase,
     JudgeMentionRequestUsecase,
     RegisterScheduleUsecase,
@@ -113,6 +115,7 @@ import { ScheduleConsoleController } from './interface/schedule-console.controll
     ReconcilePullRequestsUsecase,
     ResolveWorkTurnsUsecase,
     BuildMorningTodosUsecase,
+    BuildEveningTodoSummaryUsecase,
     DAILY_TODO_REPOSITORY_PORT,
     RegisterScheduleUsecase,
     ListSchedulesUsecase,

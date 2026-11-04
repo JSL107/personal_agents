@@ -46,6 +46,7 @@ const PR_ITEM = {
 };
 
 const makeTask = (opts: {
+  todoDone?: boolean;
   enabledVal?: string;
   authorVal?: string;
   personalRepositoriesVal?: string;
@@ -83,6 +84,9 @@ const makeTask = (opts: {
       }
       if (key === 'IMPACT_REPORT_GITHUB_AUTHOR') {
         return opts.authorVal ?? 'me';
+      }
+      if (key === 'CONSOLE_OWNER_SLACK_USER_ID') {
+        return 'U1';
       }
       if (key === 'PERSONAL_REPOS') {
         return opts.personalRepositoriesVal;
@@ -186,6 +190,31 @@ const makeTask = (opts: {
     findNextPaperOrders: jest.fn().mockResolvedValue(opts.paperNext ?? null),
   };
 
+  const buildMorningTodos = {
+    reconcileBeforeListing: jest.fn().mockResolvedValue(undefined),
+  };
+  const buildEveningSummary = {
+    execute: jest.fn().mockResolvedValue({
+      loadFailed: !opts.todoDone,
+      hasMorningList: true,
+      done: opts.todoDone
+        ? [
+            {
+              title: '작업 완료',
+              url: null,
+              detail: null,
+              outsideMorningList: false,
+            },
+          ]
+        : [],
+      extraMergedPrCount: 0,
+      notDone: [],
+      ratio: null,
+      waiting: null,
+      backlog: null,
+    }),
+  };
+
   const task = new EveningRetroPublishTask(
     agentRunService as never,
     githubClient as never,
@@ -195,6 +224,8 @@ const makeTask = (opts: {
     deliveryRepository as never,
     findAllOpenPreviews as never,
     digestRepository as never,
+    buildMorningTodos as never,
+    buildEveningSummary as never,
   );
 
   return {
@@ -204,6 +235,8 @@ const makeTask = (opts: {
     agentRunService,
     modelRouter,
     humanizeService,
+    buildMorningTodos,
+    buildEveningSummary,
   };
 };
 
@@ -215,6 +248,28 @@ describe('EveningRetroPublishTask', () => {
 
   afterEach(() => {
     jest.useRealTimers();
+  });
+
+  it('아침 발송 원장이 없으면 목록을 발송되지 않은 것으로 전달한다', async () => {
+    const { task, buildEveningSummary, buildMorningTodos } = makeTask({
+      deliveries: [],
+    });
+    await task.run(CTX);
+    expect(buildEveningSummary.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ ownerId: 'U1', morningDelivered: false }),
+    );
+    expect(
+      buildMorningTodos.reconcileBeforeListing.mock.invocationCallOrder[0],
+    ).toBeLessThan(buildEveningSummary.execute.mock.invocationCallOrder[0]);
+  });
+
+  it('업무 사실만 있는 날에도 회고를 돌린다', async () => {
+    const { task, modelRouter } = makeTask({ todoDone: true });
+    await task.run(CTX);
+    expect(modelRouter.route).toHaveBeenCalled();
+    expect(modelRouter.route.mock.calls[0][0].request.prompt).toContain(
+      '작업 완료',
+    );
   });
 
   it('(a) EVENING_RETRO_PUBLISH_ENABLED=false 이면 skip=true, route 미호출', async () => {

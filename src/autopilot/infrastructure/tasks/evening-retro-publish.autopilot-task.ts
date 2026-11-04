@@ -38,6 +38,8 @@ import { ModelRouterUsecase } from '../../../model-router/application/model-rout
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { FindAllOpenPreviewsUsecase } from '../../../preview-gate/application/find-all-open-previews.usecase';
 import { PREVIEW_KIND } from '../../../preview-gate/domain/preview-action.type';
+import { BuildEveningTodoSummaryUsecase } from '../../../schedule/application/build-evening-todo-summary.usecase';
+import { BuildMorningTodosUsecase } from '../../../schedule/application/build-morning-todos.usecase';
 import {
   SLACK_DELIVERY_REPOSITORY,
   SlackDeliveryRepositoryPort,
@@ -114,6 +116,8 @@ export class EveningRetroPublishTask implements AutopilotTask {
     private readonly findAllOpenPreviews: FindAllOpenPreviewsUsecase,
     @Inject(DAILY_DIGEST_REPOSITORY_PORT)
     private readonly digestRepository: DailyDigestRepositoryPort,
+    private readonly buildMorningTodos: BuildMorningTodosUsecase,
+    private readonly buildEveningSummary: BuildEveningTodoSummaryUsecase,
   ) {}
 
   async run({
@@ -124,6 +128,10 @@ export class EveningRetroPublishTask implements AutopilotTask {
       return { skip: true };
     }
 
+    const now = new Date();
+    const ownerId =
+      this.config.get<string>('CONSOLE_OWNER_SLACK_USER_ID')?.trim() || null;
+    await this.buildMorningTodos.reconcileBeforeListing({ ownerId, now });
     const author = this.config.get<string>('IMPACT_REPORT_GITHUB_AUTHOR');
     const authorLogin = author?.trim() ? author.trim() : undefined;
     // ⚠️ 이 값은 GitHub search 쿼리(`merged:>=<값>`)에 그대로 박힌다. `+09:00` 같은 offset
@@ -170,6 +178,28 @@ export class EveningRetroPublishTask implements AutopilotTask {
           })
       : [];
 
+    const dayStart = new Date(`${firedAtKst}T00:00:00.000+09:00`);
+    let morningDelivered = false;
+    try {
+      const deliveries = await this.deliveryRepository.findSince(
+        dayStart,
+        new Date(dayStart.getTime() + DAY_MS),
+      );
+      morningDelivered = isRunResultDelivered({
+        agentType: AgentType.PM,
+        deliveries,
+      });
+    } catch (error) {
+      this.logger.warn(`아침 발송 기록 조회 실패: ${String(error)}`);
+    }
+    const todoSummary = await this.buildEveningSummary.execute({
+      ownerId,
+      kstDate: firedAtKst,
+      now,
+      mergedPrCount: mergedPrFetchFailed ? null : mergedPrs.length,
+      morningDelivered,
+    });
+
     // carryOver("오늘 못 끝낸 것") 의 근거. 조회가 깨져도 회고는 계속 돈다 — 저녁 보고가
     // 부가 입력 하나 때문에 통째로 막히는 쪽이 더 나쁘다.
     //
@@ -213,6 +243,7 @@ export class EveningRetroPublishTask implements AutopilotTask {
     const buildDigest = (input: EveningRetroContext): string =>
       formatEveningDigest({
         firedAtKst,
+        todoSummary,
         mergedPrCount: mergedPrFetchFailed ? null : mergedPrs.length,
         ...carry,
         ...input,
@@ -227,7 +258,13 @@ export class EveningRetroPublishTask implements AutopilotTask {
           ));
 
     // 회고 재료가 하나도 없는 날도 하루를 닫는 신호(투자·넘어가는 것)는 낸다 — 회고만 건너뛴다.
-    if (mergedPrs.length === 0 && !worklogText && !dailyEvalText) {
+    if (
+      mergedPrs.length === 0 &&
+      !worklogText &&
+      !dailyEvalText &&
+      todoSummary.done.length === 0 &&
+      todoSummary.notDone.length === 0
+    ) {
       return {
         skip: false,
         summaryText: buildDigest({
@@ -271,6 +308,15 @@ export class EveningRetroPublishTask implements AutopilotTask {
                 openPrs,
                 worklogText,
                 dailyEvalText,
+                todoFacts: todoSummary.loadFailed
+                  ? null
+                  : JSON.stringify({
+                      done: todoSummary.done,
+                      notDone: todoSummary.notDone,
+                      ratio: todoSummary.ratio,
+                      waiting: todoSummary.waiting,
+                      backlog: todoSummary.backlog,
+                    }),
               }),
               systemPrompt: EVENING_RETRO_SYSTEM_PROMPT,
             },
