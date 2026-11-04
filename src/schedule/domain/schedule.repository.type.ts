@@ -150,6 +150,20 @@ export interface AddEventInput {
   occurredAt: Date;
 }
 
+export interface RecordEventAndTransitionInput {
+  event: AddEventInput;
+  slackUserId: string;
+  transitionFrom: ScheduleStatus[];
+  transitionTo: ScheduleStatus | null;
+  now: Date;
+  actor: ScheduleActor;
+}
+
+export interface RecordedEventTransition {
+  item: ScheduleItemRecord | null;
+  transitioned: boolean;
+}
+
 export interface ScheduleDetail {
   item: ScheduleItemRecord;
   followUps: ScheduleFollowUpRecord[];

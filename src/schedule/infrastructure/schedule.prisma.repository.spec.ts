@@ -345,6 +345,8 @@ describe('연락할 일 선점 시점 재검증', () => {
     } as unknown as PrismaService);
     await repository.claimDueFollowUps({ now, ownerId: 'U1' });
     const where = updateMany.mock.calls[0][0].where;
+    expect(findMany.mock.calls[0][0].where.sentAt).toBeNull();
+    expect(where.sentAt).toBeNull();
     expect(where.triggerAt).toEqual({ lte: now });
     expect(where.scheduleItem).toEqual({ slackUserId: 'U1' });
     expect(where.AND).toEqual(
@@ -773,9 +775,50 @@ describe('미발송 연락 일괄 집계', () => {
     expect(actual.get(1)).toBe(2);
     expect(groupBy).toHaveBeenCalledWith({
       by: ['scheduleItemId'],
-      where: { scheduleItemId: { in: [1, 2] }, notifiedAt: null },
+      where: {
+        scheduleItemId: { in: [1, 2] },
+        notifiedAt: null,
+        sentAt: null,
+      },
       _count: { _all: true },
     });
+  });
+});
+
+describe('보냄 표시가 된 연락', () => {
+  it('상세 조회에서 보냄 표시를 미발송 수에서 제외한다', async () => {
+    const followUp = {
+      id: 8,
+      scheduleItemId: 1,
+      recipient: 'PM',
+      topic: '배포',
+      trigger: 'AT_TIME',
+      triggerAt: new Date('2026-11-05T05:00:00Z'),
+      draft: null,
+      notifiedAt: null,
+      sentAt: new Date('2026-11-05T05:01:00Z'),
+      deliveryClaimedAt: null,
+    };
+    const findFirst = jest.fn().mockResolvedValue({
+      id: 1,
+      slackUserId: 'U1',
+      title: '배포',
+      dueDate: null,
+      dueTime: null,
+      linkUrl: null,
+      memo: null,
+      status: 'OPEN',
+      completedAt: null,
+      isHoliday: false,
+      followUps: [followUp, { ...followUp, id: 9, sentAt: null }],
+      events: [],
+    });
+    const repository = new SchedulePrismaRepository({
+      scheduleItem: { findFirst },
+    } as unknown as PrismaService);
+
+    const detail = await repository.findDetail({ id: 1, slackUserId: 'U1' });
+    expect(detail?.pendingFollowUpCount).toBe(1);
   });
 });
 
@@ -871,5 +914,112 @@ it('만료 전 Slack 후보를 마감일 유무와 관계없이 센다', async (
       source: 'SLACK_MENTION',
       candidateExpiresAt: { gt: now },
     },
+  });
+});
+
+describe('PR 이벤트와 상태 전이의 원자성', () => {
+  const now = new Date('2026-11-04T05:00:00Z');
+  const event = {
+    scheduleItemId: 1,
+    kind: 'PR_MERGED' as never,
+    payload: { url: 'https://github.com/o/r/pull/4' },
+    dedupeKey: 'https://github.com/o/r/pull/4',
+    occurredAt: now,
+  };
+  const input = {
+    event,
+    slackUserId: 'U1',
+    transitionFrom: [ScheduleStatus.IN_PROGRESS],
+    transitionTo: ScheduleStatus.DONE,
+    now,
+    actor: ScheduleActor.COLLECTOR,
+  };
+
+  it('전이 쓰기가 실패하면 앞선 PR 사건도 커밋하지 않고 오류를 전파한다', async () => {
+    const committedEvents: unknown[] = [];
+    const pendingEvents: unknown[] = [];
+    const error = new Error('transient transition failure');
+    const client = {
+      scheduleEvent: {
+        create: jest.fn().mockImplementation(async ({ data }) => {
+          pendingEvents.push(data);
+          return { id: 1, ...data };
+        }),
+      },
+      scheduleItem: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 1,
+          slackUserId: 'U1',
+          status: ScheduleStatus.IN_PROGRESS,
+        }),
+        updateMany: jest.fn().mockRejectedValue(error),
+      },
+    };
+    const transaction = jest.fn().mockImplementation(async (callback) => {
+      try {
+        const result = await callback(client);
+        committedEvents.push(...pendingEvents);
+        return result;
+      } catch (error) {
+        pendingEvents.length = 0;
+        throw error;
+      }
+    });
+    const repository = new SchedulePrismaRepository({
+      $transaction: transaction,
+    } as unknown as PrismaService);
+
+    await expect(repository.recordEventAndTransition(input)).rejects.toThrow(
+      error,
+    );
+    expect(client.scheduleEvent.create).toHaveBeenCalledTimes(1);
+    expect(client.scheduleItem.updateMany).toHaveBeenCalledTimes(1);
+    expect(committedEvents).toHaveLength(0);
+  });
+
+  it('사건 생성 P2002는 트랜잭션 밖에서 DUPLICATE로 처리한다', async () => {
+    const client = {
+      scheduleEvent: {
+        create: jest.fn().mockRejectedValue({ code: 'P2002' }),
+      },
+      scheduleItem: { findUnique: jest.fn(), updateMany: jest.fn() },
+    };
+    const transaction = jest
+      .fn()
+      .mockImplementation(async (callback) => callback(client));
+    const repository = new SchedulePrismaRepository({
+      $transaction: transaction,
+    } as unknown as PrismaService);
+
+    await expect(repository.recordEventAndTransition(input)).resolves.toBe(
+      'DUPLICATE',
+    );
+    expect(client.scheduleItem.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('전이 단계의 P2002는 중복 사건으로 오인하지 않고 전파한다', async () => {
+    const error = { code: 'P2002' };
+    const client = {
+      scheduleEvent: {
+        create: jest.fn().mockResolvedValue({ id: 1 }),
+      },
+      scheduleItem: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: 1,
+          slackUserId: 'U1',
+          status: ScheduleStatus.IN_PROGRESS,
+        }),
+        updateMany: jest.fn().mockRejectedValue(error),
+      },
+    };
+    const repository = new SchedulePrismaRepository({
+      $transaction: jest
+        .fn()
+        .mockImplementation(async (callback) => callback(client)),
+    } as unknown as PrismaService);
+
+    await expect(repository.recordEventAndTransition(input)).rejects.toBe(
+      error,
+    );
   });
 });

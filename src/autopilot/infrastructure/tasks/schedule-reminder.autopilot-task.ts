@@ -81,7 +81,14 @@ export class ScheduleReminderAutopilotTask implements AutopilotTask {
         id: followUp.scheduleItemId,
         slackUserId: ownerId,
       });
-      if (!detail || !canNotify({ followUp, item: detail.item })) {
+      const foundFollowUp = detail?.followUps.find(
+        (found) => found.id === followUp.id,
+      );
+      if (
+        !detail ||
+        !foundFollowUp ||
+        !canNotify({ followUp: foundFollowUp, item: detail.item })
+      ) {
         continue;
       }
       const draft =
@@ -101,13 +108,24 @@ export class ScheduleReminderAutopilotTask implements AutopilotTask {
           continue;
         }
       }
-      // 초안 생성 중 상태가 바뀐 업무는 보내지 않는다. 선점 때의 상태만 믿으면
-      // DONE 직후 되돌린 업무의 ON_DONE 연락이 늦게 발송된다.
-      const current = await this.repository.findById(followUp.scheduleItemId);
-      if (!current || !canNotify({ followUp, item: current })) {
+      // 초안 생성 중 업무 상태나 보냄 표시가 바뀌면 보내지 않는다.
+      const current = await this.repository.findDetail({
+        id: followUp.scheduleItemId,
+        slackUserId: ownerId,
+      });
+      const currentFollowUp = current?.followUps.find(
+        (found) => found.id === followUp.id,
+      );
+      if (
+        !current ||
+        !currentFollowUp ||
+        !canNotify({ followUp: currentFollowUp, item: current.item })
+      ) {
         continue;
       }
-      followUpLines.push(formatFollowUp({ item: current, followUp, draft }));
+      followUpLines.push(
+        formatFollowUp({ item: current.item, followUp, draft }),
+      );
       followUps.push({ followUp, draft });
     }
 
@@ -155,9 +173,10 @@ export class ScheduleReminderAutopilotTask implements AutopilotTask {
 }
 
 const canNotify = ({ followUp, item }: FollowUpItemPair): boolean =>
-  followUp.trigger === FollowUpTrigger.ON_DONE
+  followUp.sentAt === null &&
+  (followUp.trigger === FollowUpTrigger.ON_DONE
     ? item.status === ScheduleStatus.DONE
-    : item.status !== ScheduleStatus.SKIPPED;
+    : item.status !== ScheduleStatus.SKIPPED);
 
 const sourceLink = (url: string | null | undefined): string => {
   if (!url || !/^https?:\/\/[^<>|\s]+$/i.test(url)) {

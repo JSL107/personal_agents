@@ -6,7 +6,6 @@ import { GithubItemLifecycle } from '../../github/domain/port/github-client.port
 import {
   ScheduleEventKind,
   ScheduleItemRecord,
-  ScheduleStatus,
 } from '../../schedule/domain/schedule.type';
 
 export interface LifecycleObservation {
@@ -48,10 +47,5 @@ export interface OwnedScheduleInput {
 export interface SourceEditInput {
   item: ScheduleItemRecord;
   title: string;
-  now: Date;
-}
-
-export interface TransitionCollectedInput extends OwnedScheduleInput {
-  to: ScheduleStatus;
   now: Date;
 }

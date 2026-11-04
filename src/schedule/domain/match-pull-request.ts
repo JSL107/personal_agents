@@ -70,6 +70,10 @@ export const matchPullRequest = ({
     repo: pullRequest.repo,
     number: pullRequest.number,
   }).toLowerCase();
+  const urlPattern = new RegExp(
+    `${url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![0-9])`,
+    'i',
+  );
   const headRef = pullRequest.headRef?.trim();
   const branchPattern = headRef
     ? new RegExp(
@@ -79,9 +83,7 @@ export const matchPullRequest = ({
     : null;
   const matches = candidates.filter((item) => {
     const text = `${item.linkUrl ?? ''}\n${item.memo ?? ''}`;
-    return (
-      text.toLowerCase().includes(url) || (branchPattern?.test(text) ?? false)
-    );
+    return urlPattern.test(text) || (branchPattern?.test(text) ?? false);
   });
   return resultFor(matches);
 };

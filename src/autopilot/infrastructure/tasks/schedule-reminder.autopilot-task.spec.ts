@@ -33,6 +33,8 @@ const followUp = {
   trigger: FollowUpTrigger.AT_TIME,
   triggerAt: new Date('2026-11-04T04:00:00Z'),
   draft: null,
+  notifiedAt: null,
+  sentAt: null,
   deliveryClaimedAt: claimAt,
 } as ScheduleFollowUpRecord;
 
@@ -42,7 +44,6 @@ describe('ScheduleReminderAutopilotTask', () => {
     expireCandidates: jest.fn(),
     claimDueFollowUps: jest.fn(),
     findDetail: jest.fn(),
-    findById: jest.fn(),
     saveFollowUpDraft: jest.fn(),
     markReminded: jest.fn(),
     markFollowUpNotified: jest.fn(),
@@ -66,11 +67,10 @@ describe('ScheduleReminderAutopilotTask', () => {
     repository.claimDueFollowUps.mockResolvedValue([]);
     repository.findDetail.mockResolvedValue({
       item,
-      followUps: [],
+      followUps: [followUp],
       events: [],
       pendingFollowUpCount: 0,
     });
-    repository.findById.mockResolvedValue(item);
     repository.saveFollowUpDraft.mockResolvedValue(true);
     draftUsecase.execute.mockResolvedValue('완료했습니다. 확인 부탁드립니다.');
   });
@@ -175,12 +175,24 @@ describe('ScheduleReminderAutopilotTask', () => {
 
   it('초안 생성 후 업무가 SKIPPED로 바뀌면 발송하지 않는다', async () => {
     repository.claimDueFollowUps.mockResolvedValue([followUp]);
-    repository.findById.mockResolvedValue({
-      ...item,
-      status: ScheduleStatus.SKIPPED,
-    });
+    repository.findDetail
+      .mockResolvedValueOnce({
+        item,
+        followUps: [followUp],
+        events: [],
+        pendingFollowUpCount: 1,
+      })
+      .mockResolvedValueOnce({
+        item: { ...item, status: ScheduleStatus.SKIPPED },
+        followUps: [followUp],
+        events: [],
+        pendingFollowUpCount: 1,
+      });
     expect((await makeTask().run()).skip).toBe(true);
-    expect(repository.findById).toHaveBeenCalledWith(7);
+    expect(repository.findDetail).toHaveBeenCalledWith({
+      id: 7,
+      slackUserId: 'U1',
+    });
   });
 
   it('최근 사건 10개만 초안에 넣고 Slack 링크 제어 문자를 escape한다', async () => {
@@ -189,7 +201,7 @@ describe('ScheduleReminderAutopilotTask', () => {
     ]);
     repository.findDetail.mockResolvedValue({
       item: { ...item, title: '결제*API' },
-      followUps: [],
+      followUps: [followUp],
       events: Array.from({ length: 11 }, (_, index) => ({ id: index })),
     });
     const result = await makeTask().run();
@@ -202,11 +214,17 @@ describe('ScheduleReminderAutopilotTask', () => {
     repository.claimDueFollowUps.mockResolvedValue([
       { ...followUp, trigger: FollowUpTrigger.ON_DONE },
     ]);
+    repository.findDetail.mockResolvedValue({
+      item,
+      followUps: [{ ...followUp, trigger: FollowUpTrigger.ON_DONE }],
+      events: [],
+      pendingFollowUpCount: 1,
+    });
     expect((await makeTask().run()).skip).toBe(true);
     repository.claimDueFollowUps.mockResolvedValue([followUp]);
     repository.findDetail.mockResolvedValue({
       item: { ...item, status: ScheduleStatus.SKIPPED },
-      followUps: [],
+      followUps: [followUp],
       events: [],
     });
     expect((await makeTask().run()).skip).toBe(true);
@@ -216,6 +234,39 @@ describe('ScheduleReminderAutopilotTask', () => {
     configService.get.mockReturnValue(undefined);
     expect((await makeTask().run()).skip).toBe(true);
     expect(repository.claimDueReminders).not.toHaveBeenCalled();
+  });
+
+  it('선점 뒤 보냄 표시가 되면 초안을 생성하거나 DM에 넣지 않는다', async () => {
+    repository.claimDueFollowUps.mockResolvedValue([followUp]);
+    repository.findDetail.mockResolvedValue({
+      item,
+      followUps: [{ ...followUp, sentAt: new Date() }],
+      events: [],
+      pendingFollowUpCount: 0,
+    });
+
+    expect((await makeTask().run()).skip).toBe(true);
+    expect(draftUsecase.execute).not.toHaveBeenCalled();
+  });
+
+  it('초안 생성 중 보냄 표시가 되면 DM에 넣지 않는다', async () => {
+    repository.claimDueFollowUps.mockResolvedValue([followUp]);
+    repository.findDetail
+      .mockResolvedValueOnce({
+        item,
+        followUps: [followUp],
+        events: [],
+        pendingFollowUpCount: 1,
+      })
+      .mockResolvedValueOnce({
+        item,
+        followUps: [{ ...followUp, sentAt: new Date() }],
+        events: [],
+        pendingFollowUpCount: 0,
+      });
+
+    expect((await makeTask().run()).skip).toBe(true);
+    expect(repository.saveFollowUpDraft).toHaveBeenCalledTimes(1);
   });
 
   it('업무 소유자와 DM 소유자가 다르면 생성 시 한 번 경고한다', () => {

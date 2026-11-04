@@ -4,7 +4,11 @@ import { ListAssignedTasksUsecase } from '../../../github/application/list-assig
 import { GithubClientPort } from '../../../github/domain/port/github-client.port';
 import { ScheduleRepositoryPort } from '../../../schedule/domain/port/schedule.repository.port';
 import { ScheduleCollectionStateRepositoryPort } from '../../../schedule/domain/port/schedule-collection-state.repository.port';
-import { ScheduleActor } from '../../../schedule/domain/schedule.repository.type';
+import {
+  RecordEventAndTransitionInput,
+  ScheduleActor,
+  TransitionInput,
+} from '../../../schedule/domain/schedule.repository.type';
 import {
   ScheduleEventKind,
   ScheduleSource,
@@ -48,6 +52,7 @@ describe('ScheduleCollectGithubAutopilotTask', () => {
     findById: jest.fn(),
     findDetail: jest.fn(),
     addEvent: jest.fn(),
+    recordEventAndTransition: jest.fn(),
     transition: jest.fn(),
   };
   const stateRepository = { get: jest.fn(), markSucceeded: jest.fn() };
@@ -82,6 +87,10 @@ describe('ScheduleCollectGithubAutopilotTask', () => {
     repository.findById.mockResolvedValue(taskItem);
     repository.createCollected.mockResolvedValue(taskItem);
     repository.addEvent.mockResolvedValue({ id: 1 });
+    repository.recordEventAndTransition.mockResolvedValue({
+      item: taskItem,
+      transitioned: true,
+    });
     repository.transition.mockResolvedValue(taskItem);
   });
 
@@ -131,24 +140,84 @@ describe('ScheduleCollectGithubAutopilotTask', () => {
       { ...pullRequest, body: 'closes #12' },
     ]);
     await makeTask().run();
-    expect(repository.addEvent).toHaveBeenCalledWith(
+    expect(repository.recordEventAndTransition).toHaveBeenCalledWith(
       expect.objectContaining({
-        kind: ScheduleEventKind.PR_LINKED,
-        dedupeKey: pullRequest.url,
-      }),
-    );
-    expect(repository.transition).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: taskItem.id,
-        from: ScheduleStatus.OPEN,
-        to: ScheduleStatus.IN_PROGRESS,
+        event: expect.objectContaining({
+          kind: ScheduleEventKind.PR_LINKED,
+          dedupeKey: pullRequest.url,
+        }),
+        transitionFrom: [ScheduleStatus.OPEN, ScheduleStatus.CANDIDATE],
+        transitionTo: ScheduleStatus.IN_PROGRESS,
         actor: ScheduleActor.COLLECTOR,
       }),
     );
-    repository.transition.mockClear();
-    repository.addEvent.mockResolvedValue('DUPLICATE');
+    repository.recordEventAndTransition.mockClear();
+    repository.recordEventAndTransition.mockResolvedValue('DUPLICATE');
     await makeTask().run();
+    expect(repository.recordEventAndTransition).toHaveBeenCalledTimes(1);
     expect(repository.transition).not.toHaveBeenCalled();
+  });
+
+  it('머지 전이 실패 후 다음 회차가 사건을 재시도하고 DUPLICATE면 전이하지 않는다', async () => {
+    assigned.execute.mockResolvedValue({ issues: [], pullRequests: [] });
+    const inProgressItem = {
+      ...taskItem,
+      status: ScheduleStatus.IN_PROGRESS,
+    };
+    repository.findAllByOwner.mockResolvedValue([inProgressItem]);
+    repository.findById.mockResolvedValue(inProgressItem);
+    github.listAuthorMergedPullRequestsSince.mockResolvedValue([
+      { ...pullRequest, state: 'merged', body: 'closes #12' },
+    ]);
+    const error = new Error('transient transition failure');
+    const stored = {
+      status: ScheduleStatus.IN_PROGRESS,
+      committedEventCount: 0,
+      failNextTransition: true,
+    };
+    repository.addEvent.mockImplementation(async () => {
+      if (stored.committedEventCount > 0) {
+        return 'DUPLICATE';
+      }
+      stored.committedEventCount += 1;
+      return { id: 1 };
+    });
+    repository.transition.mockImplementation(async (input: TransitionInput) => {
+      if (stored.failNextTransition) {
+        stored.failNextTransition = false;
+        throw error;
+      }
+      stored.status = input.to;
+      return { ...inProgressItem, status: input.to };
+    });
+    repository.recordEventAndTransition.mockImplementation(
+      async (input: RecordEventAndTransitionInput) => {
+        if (stored.committedEventCount > 0) {
+          return 'DUPLICATE';
+        }
+        if (stored.failNextTransition) {
+          stored.failNextTransition = false;
+          throw error;
+        }
+        stored.committedEventCount += 1;
+        stored.status = input.transitionTo ?? stored.status;
+        return {
+          item: { ...inProgressItem, status: stored.status },
+          transitioned: true,
+        };
+      },
+    );
+
+    await makeTask().run();
+    expect(stateRepository.markSucceeded).not.toHaveBeenCalledWith(
+      ScheduleSource.GITHUB_PR,
+      expect.any(Date),
+    );
+    await makeTask().run();
+    await makeTask().run();
+
+    expect(stored.status).toBe(ScheduleStatus.DONE);
+    expect(stored.committedEventCount).toBe(1);
   });
 
   it('같은 회차의 PR_LINKED 다음 PR_MERGED는 최신 IN_PROGRESS에서 DONE으로 전이한다', async () => {
@@ -167,23 +236,17 @@ describe('ScheduleCollectGithubAutopilotTask', () => {
         mergedAt: '2026-11-04T05:00:00Z',
       },
     ]);
-    repository.findById.mockResolvedValueOnce(taskItem).mockResolvedValueOnce({
-      ...taskItem,
-      status: ScheduleStatus.IN_PROGRESS,
-    });
     await makeTask().run();
-    expect(repository.transition).toHaveBeenNthCalledWith(
+    expect(repository.recordEventAndTransition).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
-        from: ScheduleStatus.OPEN,
-        to: ScheduleStatus.IN_PROGRESS,
+        transitionTo: ScheduleStatus.IN_PROGRESS,
       }),
     );
-    expect(repository.transition).toHaveBeenNthCalledWith(
+    expect(repository.recordEventAndTransition).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
-        from: ScheduleStatus.IN_PROGRESS,
-        to: ScheduleStatus.DONE,
+        transitionTo: ScheduleStatus.DONE,
       }),
     );
   });
@@ -198,13 +261,10 @@ describe('ScheduleCollectGithubAutopilotTask', () => {
       status: ScheduleStatus.IN_PROGRESS,
     });
     await makeTask().run();
-    expect(repository.addEvent).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: ScheduleEventKind.PR_MERGED }),
-    );
-    expect(repository.transition).toHaveBeenCalledWith(
+    expect(repository.recordEventAndTransition).toHaveBeenCalledWith(
       expect.objectContaining({
-        from: ScheduleStatus.IN_PROGRESS,
-        to: ScheduleStatus.DONE,
+        event: expect.objectContaining({ kind: ScheduleEventKind.PR_MERGED }),
+        transitionTo: ScheduleStatus.DONE,
       }),
     );
   });
@@ -228,8 +288,8 @@ describe('ScheduleCollectGithubAutopilotTask', () => {
       repo: 'Acme/API',
       number: 4,
     });
-    expect(repository.transition).toHaveBeenCalledWith(
-      expect.objectContaining({ to: ScheduleStatus.SKIPPED }),
+    expect(repository.recordEventAndTransition).toHaveBeenCalledWith(
+      expect.objectContaining({ transitionTo: ScheduleStatus.SKIPPED }),
     );
   });
 
@@ -285,10 +345,12 @@ describe('ScheduleCollectGithubAutopilotTask', () => {
       { ...pullRequest, body: 'closes #12' },
     ]);
     await makeTask().run();
-    expect(repository.addEvent).toHaveBeenCalledWith(
+    expect(repository.recordEventAndTransition).toHaveBeenCalledWith(
       expect.objectContaining({
-        scheduleItemId: taskItem.id,
-        kind: ScheduleEventKind.PR_LINKED,
+        event: expect.objectContaining({
+          scheduleItemId: taskItem.id,
+          kind: ScheduleEventKind.PR_LINKED,
+        }),
       }),
     );
     expect(repository.createCollected).not.toHaveBeenCalled();
@@ -329,10 +391,10 @@ describe('ScheduleCollectGithubAutopilotTask', () => {
       ],
     });
     await makeTask().run();
-    expect(repository.transition).toHaveBeenCalledWith(
+    expect(repository.recordEventAndTransition).toHaveBeenCalledWith(
       expect.objectContaining({
-        from: ScheduleStatus.SKIPPED,
-        to: ScheduleStatus.IN_PROGRESS,
+        transitionFrom: [ScheduleStatus.SKIPPED],
+        transitionTo: ScheduleStatus.IN_PROGRESS,
       }),
     );
   });

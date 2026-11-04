@@ -57,6 +57,32 @@ describe('JudgeMentionRequestUsecase', () => {
     ]);
   });
 
+  it('며칠 뒤 수집한 금요일 멘션은 메시지 작성일을 상대 날짜 기준으로 전달한다', async () => {
+    const fridayMention = {
+      ...mention,
+      ts: `${Date.parse('2026-10-29T15:00:00Z') / 1000}.123456`,
+    };
+    await usecase.execute(fridayMention);
+    expect(route.mock.calls[0][0].request.prompt).toContain(
+      '메시지 작성일(KST): {"year":2026,"month":10,"day":30}',
+    );
+    expect(route.mock.calls[0][0].request.prompt).toContain(
+      '상대 날짜는 메시지 작성일을 기준으로 해석',
+    );
+  });
+
+  it('Slack ts를 해석할 수 없으면 오늘 KST 날짜를 기준으로 전달한다', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-11-04T01:00:00Z'));
+    try {
+      await usecase.execute({ ...mention, ts: 'invalid' });
+      expect(route.mock.calls[0][0].request.prompt).toContain(
+        '메시지 작성일(KST): {"year":2026,"month":11,"day":4}',
+      );
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('스키마를 통과해도 없는 날짜와 빈 제목이면 실패로 돌린다', async () => {
     route.mockResolvedValue({
       text: JSON.stringify({

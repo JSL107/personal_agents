@@ -81,6 +81,36 @@ describe('GitHub PR 업무 연결', () => {
     });
   });
 
+  it('PR 번호 뒤에 숫자가 이어지는 다른 PR URL은 연결하지 않는다', () => {
+    const unrelated = {
+      ...issue,
+      source: ScheduleSource.MANUAL,
+      sourceKey: null,
+      linkUrl: 'https://github.com/Acme/API/pull/42',
+      memo: 'https://github.com/Acme/API/pull/42 검토',
+    };
+    expect(matchPullRequest({ pullRequest, items: [unrelated] })).toEqual({
+      kind: 'NONE',
+    });
+  });
+
+  it.each(['', ' ', '/files', '#discussion', ')'])(
+    'PR 번호 뒤에 %s가 오면 같은 PR URL로 연결한다',
+    (suffix) => {
+      const linked = {
+        ...issue,
+        source: ScheduleSource.MANUAL,
+        sourceKey: null,
+        linkUrl: null,
+        memo: `참고: https://github.com/Acme/API/pull/4${suffix}`,
+      };
+      expect(matchPullRequest({ pullRequest, items: [linked] })).toEqual({
+        kind: 'ONE',
+        item: linked,
+      });
+    },
+  );
+
   it('짝이 둘 이상이면 AMBIGUOUS이고 PR 자체 업무는 후보가 아니다', () => {
     expect(
       matchPullRequest({ pullRequest, items: [issue, { ...issue, id: 2 }] }),

@@ -41,7 +41,6 @@ import {
   OwnedScheduleInput,
   RecordPrEventInput,
   SourceEditInput,
-  TransitionCollectedInput,
 } from '../../domain/schedule-collect-github.type';
 
 @Injectable()
@@ -263,21 +262,20 @@ export class ScheduleCollectGithubAutopilotTask implements AutopilotTask {
         found.status === ScheduleStatus.SKIPPED &&
         (await this.wasCollectorSkipped({ item: found, ownerId }))
       ) {
-        const recorded = await this.repository.addEvent({
-          scheduleItemId: found.id,
-          kind: ScheduleEventKind.NOTE,
-          payload: { text: 'PR이 다시 열렸습니다.' },
-          dedupeKey: `pr-reopened:${sourceKey}`,
-          occurredAt: now,
+        await this.repository.recordEventAndTransition({
+          event: {
+            scheduleItemId: found.id,
+            kind: ScheduleEventKind.NOTE,
+            payload: { text: 'PR이 다시 열렸습니다.' },
+            dedupeKey: `pr-reopened:${sourceKey}`,
+            occurredAt: now,
+          },
+          slackUserId: ownerId,
+          transitionFrom: [ScheduleStatus.SKIPPED],
+          transitionTo: ScheduleStatus.IN_PROGRESS,
+          now,
+          actor: ScheduleActor.COLLECTOR,
         });
-        if (recorded !== 'DUPLICATE') {
-          await this.transition({
-            item: found,
-            to: ScheduleStatus.IN_PROGRESS,
-            ownerId,
-            now,
-          });
-        }
       }
       return;
     }
@@ -330,20 +328,6 @@ export class ScheduleCollectGithubAutopilotTask implements AutopilotTask {
       repo: pullRequest.repo,
       number: pullRequest.number,
     });
-    const recorded = await this.repository.addEvent({
-      scheduleItemId: item.id,
-      kind,
-      payload: {
-        number: pullRequest.number,
-        url: sourceKey,
-        repo: pullRequest.repo,
-      },
-      dedupeKey: sourceKey,
-      occurredAt: now,
-    });
-    if (recorded === 'DUPLICATE') {
-      return;
-    }
     const to =
       kind === ScheduleEventKind.PR_LINKED
         ? ScheduleStatus.IN_PROGRESS
@@ -352,10 +336,24 @@ export class ScheduleCollectGithubAutopilotTask implements AutopilotTask {
       kind === ScheduleEventKind.PR_LINKED
         ? [ScheduleStatus.OPEN, ScheduleStatus.CANDIDATE]
         : [ScheduleStatus.OPEN, ScheduleStatus.IN_PROGRESS];
-    const current = await this.repository.findById(item.id);
-    if (current?.slackUserId === ownerId && allowed.includes(current.status)) {
-      await this.transition({ item: current, to, ownerId, now });
-    }
+    await this.repository.recordEventAndTransition({
+      event: {
+        scheduleItemId: item.id,
+        kind,
+        payload: {
+          number: pullRequest.number,
+          url: sourceKey,
+          repo: pullRequest.repo,
+        },
+        dedupeKey: sourceKey,
+        occurredAt: now,
+      },
+      slackUserId: ownerId,
+      transitionFrom: allowed,
+      transitionTo: to,
+      now,
+      actor: ScheduleActor.COLLECTOR,
+    });
   }
 
   private async applyLifecycle({
@@ -372,28 +370,36 @@ export class ScheduleCollectGithubAutopilotTask implements AutopilotTask {
       return;
     }
     if (lifecycle.mergedAt) {
-      const recorded = await this.repository.addEvent({
-        scheduleItemId: item.id,
-        kind: ScheduleEventKind.PR_MERGED,
-        payload: { url: item.sourceKey },
-        dedupeKey: item.sourceKey,
-        occurredAt: now,
+      await this.repository.recordEventAndTransition({
+        event: {
+          scheduleItemId: item.id,
+          kind: ScheduleEventKind.PR_MERGED,
+          payload: { url: item.sourceKey },
+          dedupeKey: item.sourceKey,
+          occurredAt: now,
+        },
+        slackUserId: ownerId,
+        transitionFrom: [ScheduleStatus.OPEN, ScheduleStatus.IN_PROGRESS],
+        transitionTo: ScheduleStatus.DONE,
+        now,
+        actor: ScheduleActor.COLLECTOR,
       });
-      if (recorded !== 'DUPLICATE') {
-        await this.transition({ item, to: ScheduleStatus.DONE, ownerId, now });
-      }
       return;
     }
-    const recorded = await this.repository.addEvent({
-      scheduleItemId: item.id,
-      kind: ScheduleEventKind.NOTE,
-      payload: { text: 'PR이 머지 없이 닫혔습니다.' },
-      dedupeKey: `pr-closed:${item.sourceKey}`,
-      occurredAt: now,
+    await this.repository.recordEventAndTransition({
+      event: {
+        scheduleItemId: item.id,
+        kind: ScheduleEventKind.NOTE,
+        payload: { text: 'PR이 머지 없이 닫혔습니다.' },
+        dedupeKey: `pr-closed:${item.sourceKey}`,
+        occurredAt: now,
+      },
+      slackUserId: ownerId,
+      transitionFrom: [ScheduleStatus.IN_PROGRESS],
+      transitionTo: ScheduleStatus.SKIPPED,
+      now,
+      actor: ScheduleActor.COLLECTOR,
     });
-    if (recorded !== 'DUPLICATE') {
-      await this.transition({ item, to: ScheduleStatus.SKIPPED, ownerId, now });
-    }
   }
 
   private async wasCollectorSkipped({
@@ -433,22 +439,6 @@ export class ScheduleCollectGithubAutopilotTask implements AutopilotTask {
       payload: { text: `원천 업무 변경: ${title}`.slice(0, 500) },
       dedupeKey: `source-edit:${hash}`,
       occurredAt: now,
-    });
-  }
-
-  private async transition({
-    item,
-    to,
-    ownerId,
-    now,
-  }: TransitionCollectedInput): Promise<void> {
-    await this.repository.transition({
-      id: item.id,
-      slackUserId: ownerId,
-      from: item.status,
-      to,
-      now,
-      actor: ScheduleActor.COLLECTOR,
     });
   }
 }

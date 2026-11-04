@@ -23,6 +23,8 @@ import {
   MarkFollowUpNotifiedInput,
   MarkRemindedInput,
   PersistScheduleFieldsInput,
+  RecordedEventTransition,
+  RecordEventAndTransitionInput,
   SaveFollowUpDraftInput,
   ScheduleActor,
   ScheduleDetail,
@@ -39,6 +41,7 @@ import {
   ScheduleSource,
   ScheduleStatus,
 } from '../domain/schedule.type';
+import { TransitionInTransactionInput } from './schedule.prisma.repository.type';
 
 interface ScheduleItemRow {
   id: number;
@@ -279,71 +282,75 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
   }
 
   async transition(input: TransitionInput): Promise<ScheduleItemRecord | null> {
-    return await this.prisma.$transaction(async (client) => {
-      const before = await client.scheduleItem.findUnique({
-        where: { id: input.id },
-      });
-      if (!before || before.slackUserId !== input.slackUserId) {
-        return null;
-      }
-      const data: Prisma.ScheduleItemUpdateManyMutationInput = {
-        status: input.to,
-        completedAt: input.to === ScheduleStatus.DONE ? input.now : null,
-        ...input.patch,
-      };
-      if (
-        input.patch?.remindAt !== undefined &&
-        input.patch.remindAt?.getTime() !== before.remindAt?.getTime()
-      ) {
-        data.remindedAt = null;
-        data.deliveryClaimedAt = null;
-      }
-      if (
-        input.to === ScheduleStatus.IN_PROGRESS &&
-        before.startedAt === null
-      ) {
-        data.startedAt = input.now;
-      }
-      const updated = await client.scheduleItem.updateMany({
-        where: {
-          id: input.id,
-          slackUserId: input.slackUserId,
-          status: input.from,
-          ...input.expected,
-        },
-        data,
-      });
-      if (updated.count === 0) {
-        return null;
-      }
-      if (
-        input.to === ScheduleStatus.DONE ||
-        input.from === ScheduleStatus.DONE
-      ) {
-        await client.scheduleFollowUp.updateMany({
-          where: {
-            scheduleItemId: input.id,
-            trigger: FollowUpTrigger.ON_DONE,
-            notifiedAt: null,
-          },
-          data: {
-            triggerAt: input.to === ScheduleStatus.DONE ? input.now : null,
-          },
-        });
-      }
-      await client.scheduleEvent.create({
-        data: {
-          scheduleItemId: input.id,
-          kind: ScheduleEventKind.STATUS_CHANGED,
-          payload: { from: input.from, to: input.to, actor: input.actor },
-          occurredAt: input.now,
-        },
-      });
-      const found = await client.scheduleItem.findUnique({
-        where: { id: input.id },
-      });
-      return found ? toRecord(found) : null;
+    return await this.prisma.$transaction(async (client) =>
+      this.transitionInTransaction({ client, input }),
+    );
+  }
+
+  private async transitionInTransaction({
+    client,
+    input,
+  }: TransitionInTransactionInput): Promise<ScheduleItemRecord | null> {
+    const before = await client.scheduleItem.findUnique({
+      where: { id: input.id },
     });
+    if (!before || before.slackUserId !== input.slackUserId) {
+      return null;
+    }
+    const data: Prisma.ScheduleItemUpdateManyMutationInput = {
+      status: input.to,
+      completedAt: input.to === ScheduleStatus.DONE ? input.now : null,
+      ...input.patch,
+    };
+    if (
+      input.patch?.remindAt !== undefined &&
+      input.patch.remindAt?.getTime() !== before.remindAt?.getTime()
+    ) {
+      data.remindedAt = null;
+      data.deliveryClaimedAt = null;
+    }
+    if (input.to === ScheduleStatus.IN_PROGRESS && before.startedAt === null) {
+      data.startedAt = input.now;
+    }
+    const updated = await client.scheduleItem.updateMany({
+      where: {
+        id: input.id,
+        slackUserId: input.slackUserId,
+        status: input.from,
+        ...input.expected,
+      },
+      data,
+    });
+    if (updated.count === 0) {
+      return null;
+    }
+    if (
+      input.to === ScheduleStatus.DONE ||
+      input.from === ScheduleStatus.DONE
+    ) {
+      await client.scheduleFollowUp.updateMany({
+        where: {
+          scheduleItemId: input.id,
+          trigger: FollowUpTrigger.ON_DONE,
+          notifiedAt: null,
+        },
+        data: {
+          triggerAt: input.to === ScheduleStatus.DONE ? input.now : null,
+        },
+      });
+    }
+    await client.scheduleEvent.create({
+      data: {
+        scheduleItemId: input.id,
+        kind: ScheduleEventKind.STATUS_CHANGED,
+        payload: { from: input.from, to: input.to, actor: input.actor },
+        occurredAt: input.now,
+      },
+    });
+    const found = await client.scheduleItem.findUnique({
+      where: { id: input.id },
+    });
+    return found ? toRecord(found) : null;
   }
 
   async createCollected(
@@ -474,6 +481,7 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
         scheduleItem: { slackUserId: input.ownerId },
         triggerAt: { lte: input.now },
         notifiedAt: null,
+        sentAt: null,
         OR: [
           {
             trigger: FollowUpTrigger.ON_DONE,
@@ -494,6 +502,7 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
         where: {
           id: row.id,
           notifiedAt: null,
+          sentAt: null,
           triggerAt: { lte: input.now },
           scheduleItem: { slackUserId: input.ownerId },
           AND: [
@@ -742,6 +751,59 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
     }
   }
 
+  async recordEventAndTransition(
+    input: RecordEventAndTransitionInput,
+  ): Promise<RecordedEventTransition | 'DUPLICATE'> {
+    let eventCreateUniqueViolation = false;
+    try {
+      return await this.prisma.$transaction(async (client) => {
+        try {
+          await client.scheduleEvent.create({
+            data: {
+              scheduleItemId: input.event.scheduleItemId,
+              kind: input.event.kind,
+              payload: input.event.payload as Prisma.InputJsonValue,
+              dedupeKey: input.event.dedupeKey ?? null,
+              occurredAt: input.event.occurredAt,
+            },
+          });
+        } catch (error) {
+          eventCreateUniqueViolation = isUniqueViolation(error);
+          throw error;
+        }
+        const before = await client.scheduleItem.findUnique({
+          where: { id: input.event.scheduleItemId },
+        });
+        if (!before || before.slackUserId !== input.slackUserId) {
+          return { item: null, transitioned: false };
+        }
+        if (
+          input.transitionTo === null ||
+          !input.transitionFrom.includes(before.status as ScheduleStatus)
+        ) {
+          return { item: toRecord(before), transitioned: false };
+        }
+        const item = await this.transitionInTransaction({
+          client,
+          input: {
+            id: input.event.scheduleItemId,
+            slackUserId: input.slackUserId,
+            from: before.status as ScheduleStatus,
+            to: input.transitionTo,
+            now: input.now,
+            actor: input.actor,
+          },
+        });
+        return { item, transitioned: item !== null };
+      });
+    } catch (error) {
+      if (eventCreateUniqueViolation && isUniqueViolation(error)) {
+        return 'DUPLICATE';
+      }
+      throw error;
+    }
+  }
+
   async countPendingFollowUps({
     scheduleItemIds,
   }: CountPendingFollowUpsInput): Promise<Map<number, number>> {
@@ -750,7 +812,11 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
     }
     const counts = await this.prisma.scheduleFollowUp.groupBy({
       by: ['scheduleItemId'],
-      where: { scheduleItemId: { in: scheduleItemIds }, notifiedAt: null },
+      where: {
+        scheduleItemId: { in: scheduleItemIds },
+        notifiedAt: null,
+        sentAt: null,
+      },
       _count: { _all: true },
     });
     return new Map(counts.map((row) => [row.scheduleItemId, row._count._all]));
@@ -775,7 +841,7 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
       followUps: found.followUps.map(toFollowUp),
       events: found.events.map(toEvent),
       pendingFollowUpCount: found.followUps.filter(
-        (followUp) => followUp.notifiedAt === null,
+        (followUp) => followUp.notifiedAt === null && followUp.sentAt === null,
       ).length,
     };
   }

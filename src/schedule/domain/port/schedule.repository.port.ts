@@ -13,6 +13,8 @@ import {
   MarkFollowUpNotifiedInput,
   MarkRemindedInput,
   PersistScheduleFieldsInput,
+  RecordedEventTransition,
+  RecordEventAndTransitionInput,
   SaveFollowUpDraftInput,
   ScheduleDetail,
   ScheduleEventRecord,
@@ -92,6 +94,9 @@ export interface ScheduleRepositoryPort {
   ): Promise<ScheduleFollowUpRecord | null>;
   addNote(input: AddNoteInput): Promise<ScheduleEventRecord | null>;
   addEvent(input: AddEventInput): Promise<ScheduleEventRecord | 'DUPLICATE'>;
+  recordEventAndTransition(
+    input: RecordEventAndTransitionInput,
+  ): Promise<RecordedEventTransition | 'DUPLICATE'>;
   findDetail(input: FindScheduleDetailInput): Promise<ScheduleDetail | null>;
   countPendingFollowUps(
     input: CountPendingFollowUpsInput,

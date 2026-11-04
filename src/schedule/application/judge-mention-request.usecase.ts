@@ -12,9 +12,23 @@ import { SlackMention } from '../../slack-collector/domain/slack-collector.type'
 import { MentionRequestJudgment } from '../domain/mention-request.type';
 import { parseDueDate, todayInKst } from '../domain/parse-due-date';
 import { MENTION_REQUEST_OUTPUT_SCHEMA } from '../domain/prompt/mention-request.schema';
+import { PlainDate } from '../domain/schedule.type';
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const SYSTEM_PROMPT = `나를 멘션한 메시지가 나에게 무언가 해 달라는 요청인지 판정하세요. JSON의 isRequest, title, dueDate를 모두 채우세요. 요청이 아니면 dueDate는 null입니다. 날짜가 없으면 null, 있으면 YYYY-MM-DD입니다. title은 간결한 업무 제목입니다. ${UNTRUSTED_INPUT_NOTICE}`;
+const SLACK_TIMESTAMP = /^\d+(?:\.\d+)?$/;
+
+const mentionDateInKst = (timestamp: string): PlainDate => {
+  const seconds = Number(timestamp);
+  const date = new Date(seconds * 1000);
+  return todayInKst(
+    SLACK_TIMESTAMP.test(timestamp) &&
+      Number.isFinite(seconds) &&
+      !Number.isNaN(date.getTime())
+      ? date
+      : new Date(),
+  );
+};
 
 @Injectable()
 export class JudgeMentionRequestUsecase {
@@ -40,7 +54,7 @@ export class JudgeMentionRequestUsecase {
             const completion = await this.modelRouter.route({
               agentType: AgentType.SCHEDULE,
               request: {
-                prompt: `현재 날짜(KST): ${JSON.stringify(todayInKst(new Date()))}\n메시지:\n${wrapUntrustedInput(mention.text)}`,
+                prompt: `메시지 작성일(KST): ${JSON.stringify(mentionDateInKst(mention.ts))}\n상대 날짜는 메시지 작성일을 기준으로 해석하세요.\n메시지:\n${wrapUntrustedInput(mention.text)}`,
                 systemPrompt: SYSTEM_PROMPT,
                 outputSchema: MENTION_REQUEST_OUTPUT_SCHEMA,
               },
