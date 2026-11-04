@@ -352,6 +352,9 @@ export class ScheduleCollectGithubAutopilotTask implements AutopilotTask {
       transitionFrom: allowed,
       transitionTo: to,
       now,
+      ...(kind === ScheduleEventKind.PR_MERGED && pullRequest.mergedAt
+        ? { completedAt: new Date(pullRequest.mergedAt) }
+        : {}),
       actor: ScheduleActor.COLLECTOR,
     });
   }
@@ -382,6 +385,7 @@ export class ScheduleCollectGithubAutopilotTask implements AutopilotTask {
         transitionFrom: [ScheduleStatus.OPEN, ScheduleStatus.IN_PROGRESS],
         transitionTo: ScheduleStatus.DONE,
         now,
+        completedAt: new Date(lifecycle.mergedAt),
         actor: ScheduleActor.COLLECTOR,
       });
       return;

@@ -269,6 +269,19 @@ describe('ScheduleCollectGithubAutopilotTask', () => {
     );
   });
 
+  it('머지 PR의 완료 시각은 수집 시각이 아닌 머지 시각이다', async () => {
+    assigned.execute.mockResolvedValue({ issues: [], pullRequests: [] });
+    github.listAuthorMergedPullRequestsSince.mockResolvedValue([
+      { ...pullRequest, state: 'merged', mergedAt: '2026-11-04T05:00:00Z' },
+    ]);
+    await makeTask().run();
+    expect(repository.recordEventAndTransition).toHaveBeenCalledWith(
+      expect.objectContaining({
+        completedAt: new Date('2026-11-04T05:00:00Z'),
+      }),
+    );
+  });
+
   it('열린 목록에서 사라진 PR은 lifecycle 직접 확인 뒤에만 SKIPPED로 닫는다', async () => {
     repository.findBySource.mockResolvedValue([
       {
@@ -290,6 +303,28 @@ describe('ScheduleCollectGithubAutopilotTask', () => {
     });
     expect(repository.recordEventAndTransition).toHaveBeenCalledWith(
       expect.objectContaining({ transitionTo: ScheduleStatus.SKIPPED }),
+    );
+  });
+
+  it('lifecycle에서 확인한 머지 시각도 완료 시각으로 기록한다', async () => {
+    repository.findBySource.mockResolvedValue([
+      {
+        ...taskItem,
+        source: ScheduleSource.GITHUB_PR,
+        sourceKey: pullRequest.url,
+        status: ScheduleStatus.IN_PROGRESS,
+      },
+    ]);
+    github.getItemLifecycle.mockResolvedValue({
+      state: 'closed',
+      mergedAt: '2026-11-04T05:00:00Z',
+      isPullRequest: true,
+    });
+    await makeTask().run();
+    expect(repository.recordEventAndTransition).toHaveBeenCalledWith(
+      expect.objectContaining({
+        completedAt: new Date('2026-11-04T05:00:00Z'),
+      }),
     );
   });
 
