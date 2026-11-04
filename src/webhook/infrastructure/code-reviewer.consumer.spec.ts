@@ -46,11 +46,14 @@ describe('WebhookCodeReviewerConsumer', () => {
     expect(postMessage.mock.calls[0][0]).toEqual(
       expect.objectContaining({
         target: 'U1',
-        text: expect.stringContaining('고칠 것 2개'),
+        text: expect.stringContaining('꼭 고칠 것 1개'),
       }),
     );
     expect(postMessage.mock.calls[0][0].text).toContain(
       '*로그인 버튼 고치기 리뷰*',
+    );
+    expect(postMessage.mock.calls[0][0].text).toContain(
+      '_실행 번호 `1` (다시 돌리기·의견 남기기에 써요)_',
     );
     expect(postMessage.mock.calls[0][0].text).not.toContain('secret=abc');
     expect(postMessage.mock.calls[1][0]).toEqual(
@@ -64,12 +67,47 @@ describe('WebhookCodeReviewerConsumer', () => {
     expect(postMessage.mock.calls[1][0].text).not.toContain('user:pass@');
   });
 
-  it('AI 스레드 전송 실패는 본문 발송 성공을 뒤집지 않는다', async () => {
+  it('AI 스레드 전송 실패는 최상위 메시지로 재전송한다', async () => {
     postMessage
       .mockResolvedValueOnce({ ts: '123.456' })
       .mockRejectedValueOnce(new Error('thread failed'));
 
     await expect(consumer.process(job)).resolves.toBeUndefined();
-    expect(postMessage).toHaveBeenCalledTimes(2);
+    expect(postMessage).toHaveBeenCalledTimes(3);
+    expect(postMessage.mock.calls[2][0]).toEqual(
+      expect.objectContaining({
+        target: 'U1',
+        text: expect.stringContaining('AI에 맡길 때'),
+      }),
+    );
+    expect(postMessage.mock.calls[2][0]).not.toHaveProperty('threadTs');
+  });
+
+  it('AI 블록의 두 전송이 모두 실패하면 error 로그를 남긴다', async () => {
+    const error = jest
+      .spyOn(
+        (
+          consumer as never as {
+            logger: { error: (...args: unknown[]) => void };
+          }
+        ).logger,
+        'error',
+      )
+      .mockImplementation();
+    postMessage
+      .mockResolvedValueOnce({ ts: '123.456' })
+      .mockRejectedValueOnce(new Error('thread failed'))
+      .mockRejectedValueOnce(new Error('fallback failed'));
+    await expect(consumer.process(job)).resolves.toBeUndefined();
+    expect(error).toHaveBeenCalledWith(
+      expect.stringContaining('AI 블록 전송 실패'),
+    );
+  });
+
+  it('본문 발송에 ts가 없어도 AI 블록을 최상위로 보낸다', async () => {
+    postMessage.mockResolvedValueOnce({ ts: undefined });
+    await consumer.process(job);
+    expect(postMessage.mock.calls[1][0]).not.toHaveProperty('threadTs');
+    expect(postMessage.mock.calls[1][0].text).toContain('AI에 맡길 때');
   });
 });

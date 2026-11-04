@@ -1,4 +1,5 @@
 import { redactPii } from '../../common/util/pii-redaction.util';
+import { escapeSlackMrkdwn } from '../../slack/format/mrkdwn.util';
 
 export const describeIncidentCause = (errorMessage: string): string | null => {
   if (/Not logged in|401|unauthorized|token.*expired/i.test(errorMessage)) {
@@ -20,15 +21,23 @@ export const formatIncidentOpen = ({
   label,
   cause,
   nextRunAt,
+  action,
+  expiredPrevious,
 }: {
   label: string;
   cause: string | null;
   nextRunAt: string | null;
+  action?: string | null;
+  expiredPrevious?: boolean;
 }): string =>
   [
-    `🔴 *${label}이 멈췄어요*`,
+    `🔴 *${label}* 작업이 멈췄어요`,
     `원인: ${cause ? `${cause} (추정)` : '확인 중'}`,
     `지금 상태: ${nextRunAt ? `${nextRunAt}에 다시 시도해요.` : '다시 시도할 시간을 확인하고 있어요.'}`,
+    ...(action ? [`조치: ${action}`] : []),
+    ...(expiredPrevious
+      ? ['이전 사건은 24시간 재발이 없어 닫았어요 (해결 확인은 아님)']
+      : []),
   ].join('\n');
 
 export const formatIncidentRemind = ({
@@ -43,7 +52,7 @@ export const formatIncidentRemind = ({
   cause: string | null;
 }): string =>
   [
-    `🔁 *${label}이 아직 멈춰 있어요*`,
+    `🔁 *${label}* 작업이 아직 멈춰 있어요`,
     `${dayCount}일째, ${occurrences}번 발생했어요.`,
     `원인: ${cause ? `${cause} (추정)` : '확인 중'}`,
   ].join('\n');
@@ -52,12 +61,24 @@ export const formatIncidentResolved = ({
   label,
   duration,
   occurrences,
+  causes,
 }: {
   label: string;
   duration: string;
   occurrences: number;
+  causes?: string[];
 }): string =>
-  `✅ *${label}이 복구됐어요*\n${duration} 동안 ${occurrences}번 발생했어요.`;
+  [
+    `✅ *${label}* 작업이 복구됐어요`,
+    ...(causes
+      ?.map(describeIncidentCause)
+      .filter((cause): cause is string => cause !== null).length
+      ? [
+          `원인: ${[...new Set(causes.map(describeIncidentCause).filter((cause): cause is string => cause !== null))].join(', ')}`,
+        ]
+      : []),
+    `${duration} 동안 ${occurrences}번 발생했어요.`,
+  ].join('\n');
 
 export const formatAiHandoff = ({
   feature,
@@ -72,9 +93,9 @@ export const formatAiHandoff = ({
 }): string => {
   const content = [
     `대상: ${feature}`,
-    `오류: ${errorMessage}`,
+    `오류: ${errorMessage.slice(0, 1500)}`,
     ...(files.length ? [`파일: ${files.join(', ')}`] : []),
     ...(checkCommand ? [`확인 명령: ${checkCommand}`] : []),
   ].join('\n');
-  return `AI에 맡길 때 아래 내용을 복사하세요.\n\`\`\`\n${redactPii(content).replace(/```/g, "'''")}\n\`\`\``;
+  return `AI에 맡길 때 아래 내용을 복사하세요.\n\`\`\`\n${escapeSlackMrkdwn(redactPii(content).replace(/```/g, "'''"))}\n\`\`\``;
 };

@@ -259,8 +259,23 @@ describe('BlogGithubPublishAutopilotTask', () => {
     );
     expect(result.preview?.requiresDetailDelivery).toBe(true);
     expect(result.preview?.slackText).toBe(
-      '🌐 *GitHub에 공개할까요?*\n제목: 안전한 글\n첫 문단: 본문',
+      '🌐 *GitHub에 공개할까요?*\n제목: 안전한 글\n첫 문단: 본문\n공개 저장소 src/content/posts/2026-08-18-safe-post.md 에 그대로 올라가요. 전문은 저녁 메시지 스레드의 첨부 파일에서 확인해 주세요.',
     );
+  });
+
+  it('GitHub 승인 카드의 외부 제목과 첫 문단에서 Slack 제어문자를 이스케이프한다', async () => {
+    const { task } = buildTask({
+      candidate: {
+        ...READY_CANDIDATE,
+        title: '<!here> 글',
+        content: '<!here> 본문',
+      } as BlogPublishCandidate,
+    });
+
+    const result = await task.run(CONTEXT);
+
+    expect(result.preview?.slackText).toContain('제목: &lt;!here&gt; 글');
+    expect(result.preview?.slackText).toContain('첫 문단: &lt;!here&gt; 본문');
   });
 
   it('기본 ON에서 준비된 후보를 orchestrator용 단수 preview로 반환한다', async () => {

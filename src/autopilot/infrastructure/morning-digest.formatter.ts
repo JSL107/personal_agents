@@ -43,6 +43,8 @@ export interface MorningDigestInput {
   todos: MorningTodo[] | null;
   planFailure: string | null;
   schedules: string[] | null;
+  upcomingSchedules: string[] | null;
+  asset: string | null;
   study: { topic: string; url: string | null } | null;
   // 어제 23시 포트폴리오 발행 보고를 한 줄로 접은 것. 보고가 없던 날은 null.
   portfolio: string | null;
@@ -80,8 +82,40 @@ const formatPostingNames = (postings: MorningPosting[]): string => {
   return rest > 0 ? `${names.join(' · ')} 외 ${rest}` : names.join(' · ');
 };
 
+export const formatMorningTodo = (todo: MorningTodo): string =>
+  `• ${link(todo.title, todo.url)}${todo.dayCount === null ? '' : ` (${todo.dayCount}일째)`}`;
+
 export const formatMorningDigest = (input: MorningDigestInput): string => {
-  const header = `☀️ *${formatTradeDay(input.firedAtKst)} 아침*${input.incidents.length ? ` 🔴 장애 ${input.incidents.length}` : ''}`;
+  const incidentLabels = [
+    ...(input.todos === null ? ['오늘 계획 생성 실패'] : []),
+    ...input.incidents.map((incident) => incident.label),
+  ];
+  const kinds: string[] = [];
+  if (incidentLabels.length) {
+    const count = incidentLabels.length;
+    const first = escapeSlackMrkdwn(incidentLabels[0]);
+    kinds.push(
+      count === 1
+        ? `🔴 장애: ${first}`
+        : `🔴 장애 ${count}: ${first} 외 ${count - 1}`,
+    );
+  }
+  if (input.approvalLabels.length) {
+    const count = input.approvalLabels.length;
+    kinds.push(
+      kinds.length === 0
+        ? `✋ 승인 ${count} (${escapeSlackMrkdwn(countByLabel(input.approvalLabels))})`
+        : `✋ 승인 ${count}`,
+    );
+  }
+  if (input.postings?.length) {
+    kinds.push(
+      kinds.length === 0
+        ? `공고 ${input.postings.length}: ${formatPostingNames(input.postings)}`
+        : `공고 ${input.postings.length}`,
+    );
+  }
+  const header = `☀️ *${formatTradeDay(input.firedAtKst)} 아침*${kinds.length ? ` · ${kinds.join(' · ')}` : ''}`;
   const todos =
     input.todos === null
       ? [
@@ -90,12 +124,7 @@ export const formatMorningDigest = (input: MorningDigestInput): string => {
       : input.todos.length === 0
         ? ['• 오늘 자동 수집된 할 일이 없어요']
         : [
-            ...input.todos
-              .slice(0, 5)
-              .map(
-                (todo) =>
-                  `• ${link(todo.title, todo.url)}${todo.dayCount === null ? '' : ` (${todo.dayCount}일째)`}`,
-              ),
+            ...input.todos.slice(0, 5).map(formatMorningTodo),
             ...(input.todos.length > 5
               ? [`• 외 ${input.todos.length - 5}개`]
               : []),
@@ -133,6 +162,9 @@ export const formatMorningDigest = (input: MorningDigestInput): string => {
   if (input.portfolio) {
     rest.push(`• 포트폴리오: 어제 ${escapeSlackMrkdwn(input.portfolio)}`);
   }
+  if (input.asset) {
+    rest.push(`• 자산: ${input.asset}`);
+  }
   return [
     header,
     '',
@@ -140,6 +172,9 @@ export const formatMorningDigest = (input: MorningDigestInput): string => {
     ...todos,
     ...(incidents.length ? ['', '*어제 장애*', ...incidents] : []),
     ...(input.schedules?.length ? ['', '*오늘 일정*', ...input.schedules] : []),
+    ...(input.upcomingSchedules?.length
+      ? ['', '*다가오는 마감*', ...input.upcomingSchedules]
+      : []),
     ...(rest.length ? ['', '*그 밖에*', ...rest] : []),
   ].join('\n');
 };

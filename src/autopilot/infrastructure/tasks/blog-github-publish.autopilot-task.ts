@@ -13,6 +13,7 @@ import { AgentRunService } from '../../../agent-run/application/agent-run.servic
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { PREVIEW_KIND } from '../../../preview-gate/domain/preview-action.type';
+import { escapeSlackMrkdwn } from '../../../slack/format/mrkdwn.util';
 import {
   AutopilotTask,
   AutopilotTaskContext,
@@ -161,11 +162,13 @@ export class BlogGithubPublishAutopilotTask implements AutopilotTask {
           title: candidate.title,
           path: candidate.path,
         }),
-        slackText: `🌐 *GitHub에 공개할까요?*\n제목: ${candidate.title}\n첫 문단: ${candidate.content
-          .replace(/^---\n[\s\S]*?\n---\s*/, '')
-          .trim()
-          .split(/\n\s*\n/)[0]
-          .slice(0, 120)}`,
+        slackText: `🌐 *GitHub에 공개할까요?*\n제목: ${escapeSlackMrkdwn(candidate.title)}\n첫 문단: ${escapeSlackMrkdwn(
+          candidate.content
+            .replace(/^---\n[\s\S]*?\n---\s*/, '')
+            .trim()
+            .split(/\n\s*\n/)[0]
+            .slice(0, 120),
+        )}\n공개 저장소 ${escapeSlackMrkdwn(candidate.path)} 에 그대로 올라가요. 전문은 저녁 메시지 스레드의 첨부 파일에서 확인해 주세요.`,
         // 전문 파일이 못 나간 회차에는 카드도 만들지 않는다. 카드 본문은 "첨부한 전문을 확인한 뒤"
         // 라고 적고 있는데, 그 전문이 유실되면 확인할 것이 없는 채로 승인 버튼만 남는다.
         // Notion 원본으로 대신 확인할 수도 없다 — 커밋되는 것은 익명화를 거친 글이라

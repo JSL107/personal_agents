@@ -7,10 +7,7 @@ import { escapeSlackMrkdwn } from './mrkdwn.util';
 const shortIssue = (value: string): string => {
   const firstLine = value.split('\n')[0].trim();
   const firstSentence = firstLine.split(/(?<=[.!?。])\s/)[0];
-  return redactPii(firstSentence)
-    .replace(/```/g, "'''")
-    .replace(/\b[A-Z][A-Z0-9_]{5,}\b/g, '내부 설정')
-    .slice(0, 80);
+  return redactPii(firstSentence).replace(/```/g, "'''").slice(0, 80);
 };
 
 // /review-pr 결과 — PullRequestReview 를 한국어 Slack 마크다운으로 렌더.
@@ -39,8 +36,34 @@ export const formatPullRequestReview = ({
     prRef;
   const lines: string[] = [
     `*${escapeSlackMrkdwn(title)} 리뷰*`,
-    `고칠 것 ${uniqueIssues.length + draftCount}개`,
-    ...uniqueIssues.map((issue) => `• ${escapeSlackMrkdwn(shortIssue(issue))}`),
+    `위험도: ${{ low: '낮음', medium: '보통', high: '높음', unknown: '확인 불가' }[review.riskLevel]}`,
+    `권고: ${{ approve: '승인', request_changes: '수정 요청', comment: '검토 필요', undetermined: '검토 필요' }[review.approvalRecommendation]}`,
+    ...(review.mustFix.length
+      ? [
+          `꼭 고칠 것 ${review.mustFix.length}개`,
+          ...review.mustFix.map(
+            (issue) => `• ${escapeSlackMrkdwn(shortIssue(issue))}`,
+          ),
+        ]
+      : []),
+    ...(review.niceToHave.length + review.missingTests.length
+      ? [
+          `고려할 것 ${review.niceToHave.length + review.missingTests.length}개`,
+          ...[...review.niceToHave, ...review.missingTests].map(
+            (issue) => `• ${escapeSlackMrkdwn(shortIssue(issue))}`,
+          ),
+        ]
+      : []),
+    ...uniqueIssues
+      .filter(
+        (issue) =>
+          ![
+            ...review.mustFix,
+            ...review.niceToHave,
+            ...review.missingTests,
+          ].includes(issue),
+      )
+      .map((issue) => `• ${escapeSlackMrkdwn(shortIssue(issue))}`),
     ...Array.from({ length: draftCount }, () => '• 추가 검토 의견이 있어요.'),
   ];
 

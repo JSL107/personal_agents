@@ -13,19 +13,7 @@ const readableText = (text: string): string =>
       .replace(/\b(?:codex|claude)(?:-cli)?\b/gi, '모델'),
   );
 
-// PO 통합 facade 답글 formatter — summary(메인 메시지) / detail(스레드 상세 = 근거) 로 분리 렌더.
-// summary(메인):
-//   *📊 PO 통합 평가 — {range}*
-//   _{summary}_
-//   *🏆 잘된 것* / *🚧 막힌 것*
-// detail(스레드 = 근거):
-//   *💼 이력서용 careerLog ({period}, schemaVersion=1)*
-//   *정량 성과* / *정성 성과* / *기술 스택* / _Impact_
-//   _합성 source: workReviewer=#X, poShadow=#Y, impactReporter=#Z (missing: ...)_
-// `quantitativeShownElsewhere` — 같은 메시지의 다른 스레드 댓글(저녁 업무 회고 「정량 근거」)이
-// 이미 숫자를 싣고 있을 때만 켠다. `isShown` 이 참인 항목만 「정량 성과」에서 빼고 몇 건을 뺐는지
-// 한 줄로 알린다 — 업무 회고에 없던 항목은 그대로 남는다. 화면 배치만 바꾼다(careerLog 원장·저장
-// 형태는 그대로). 미지정이면 종전 출력.
+// PO 평가 요약은 본문에, 승인 시 Notion에 저장할 이력서 기록은 상세에 둔다.
 export const formatEvaluationOutput = (
   output: EvaluationOutput,
 ): FormattedReport => {
@@ -50,8 +38,28 @@ export const formatEvaluationOutput = (
     }
   }
 
+  const careerLog = output.careerLog;
+  const detailLines = [
+    `*💼 이력서 기록 초안 (${readableText(careerLog.period)})*`,
+  ];
+  const sections = [
+    { label: '정량 성과', items: careerLog.achievements.quantitative },
+    { label: '정성 성과', items: careerLog.achievements.qualitative },
+    { label: '기술', items: careerLog.technologies },
+  ];
+  for (const section of sections) {
+    if (section.items.length === 0) {
+      continue;
+    }
+    detailLines.push('', `*${section.label}*`);
+    detailLines.push(...section.items.map((item) => `• ${readableText(item)}`));
+  }
+  if (careerLog.impact.trim().length > 0) {
+    detailLines.push('', '*영향*', readableText(careerLog.impact));
+  }
+
   return {
     summary: summaryLines.join('\n'),
-    detail: '',
+    detail: detailLines.join('\n'),
   };
 };

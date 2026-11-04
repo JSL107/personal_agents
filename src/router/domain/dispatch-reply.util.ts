@@ -10,12 +10,11 @@ export const collectDispatchRunIds = (result: DispatchResult): number[] =>
   ].filter((agentRunId) => agentRunId > 0);
 
 export const buildDispatchReplyText = (result: DispatchResult): string => {
-  const handoffs = result.handoffResults ?? [];
-  if (handoffs.length === 0) {
-    return result.formattedText;
-  }
-  return [
-    result.formattedText,
-    ...handoffs.map((handoff) => handoff.formattedText),
-  ].join('\n\n---\n\n');
+  return [result, ...(result.handoffResults ?? [])]
+    .map((entry) =>
+      entry.agentRunId > 0
+        ? `${entry.formattedText}\n_실행 번호 \`${entry.agentRunId}\` (다시 돌리기·의견 남기기에 써요)_`
+        : entry.formattedText,
+    )
+    .join('\n\n---\n\n');
 };

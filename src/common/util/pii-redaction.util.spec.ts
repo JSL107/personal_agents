@@ -1,6 +1,31 @@
 import { redactPii } from './pii-redaction.util';
 
 describe('redactPii', () => {
+  it('URL의 모든 scheme과 비밀번호 내부 @, /를 가리고 scheme은 보존한다', () => {
+    expect(redactPii('postgresql://user:p@ss/word@db:5434/app')).toBe(
+      'postgresql://***@db:5434/app',
+    );
+    expect(redactPii('redis://u:p@ss@host/0')).toBe('redis://***@host/0');
+  });
+
+  it('인용한 JSON 값과 일반 key-value의 모든 비밀 키를 가린다', () => {
+    expect(
+      redactPii(
+        '"password":"x y" password: "x y" token=abc secret: xyz api_key=q apikey=r access_token=s passwd=t pwd=u',
+      ),
+    ).toBe(
+      '"password":"***" password: "***" token=*** secret: *** api_key=*** apikey=*** access_token=*** passwd=*** pwd=***',
+    );
+  });
+
+  it('Authorization Bearer와 일반 Bearer 토큰을 가린다', () => {
+    expect(
+      redactPii('Authorization: Bearer opaque123; Bearer second-token'),
+    ).toBe('Authorization: Bearer ***; Bearer ***');
+    expect(redactPii('token=Bearer private-token')).not.toContain(
+      'private-token',
+    );
+  });
   it('URL 자격증명과 password를 마스킹한다', () => {
     const text = redactPii('https://u:p@h/x password=hunter2 pwd:abc');
     expect(text).not.toMatch(/u:p@|hunter2|pwd:abc/);

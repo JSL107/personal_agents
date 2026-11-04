@@ -7,6 +7,72 @@ import {
 } from './incident-message';
 
 describe('incident messages', () => {
+  it('AI 블록의 오류를 1500자로 자르고 Slack 제어 문자를 이스케이프한다', () => {
+    const text = formatAiHandoff({
+      feature: 'x',
+      errorMessage: `${'a'.repeat(1500)}<ignored>&`,
+      files: [],
+      checkCommand: null,
+    });
+    expect(text).toContain(`오류: ${'a'.repeat(1500)}`);
+    expect(text).not.toContain('ignored');
+    expect(
+      formatAiHandoff({
+        feature: 'x',
+        errorMessage: '<!here> & >',
+        files: [],
+        checkCommand: null,
+      }),
+    ).toContain('오류: &lt;!here&gt; &amp; &gt;');
+  });
+
+  it('사건 제목은 고정된 작업 조사로 쓰고 원인과 조치, 만료 안내를 보인다', () => {
+    expect(
+      formatIncidentOpen({
+        label: 'AI 로그인',
+        cause: null,
+        nextRunAt: null,
+        action: '다시 로그인해 주세요',
+        expiredPrevious: true,
+      }),
+    ).toContain('🔴 *AI 로그인* 작업이 멈췄어요');
+    expect(
+      formatIncidentOpen({
+        label: 'AI 로그인',
+        cause: null,
+        nextRunAt: null,
+        action: '다시 로그인해 주세요',
+        expiredPrevious: true,
+      }),
+    ).toContain('조치: 다시 로그인해 주세요');
+    expect(
+      formatIncidentOpen({
+        label: 'AI 로그인',
+        cause: null,
+        nextRunAt: null,
+        action: '다시 로그인해 주세요',
+        expiredPrevious: true,
+      }),
+    ).toContain('이전 사건은 24시간 재발이 없어 닫았어요 (해결 확인은 아님)');
+    expect(
+      formatIncidentRemind({
+        label: 'AI 로그인',
+        dayCount: 2,
+        occurrences: 2,
+        cause: null,
+      }),
+    ).toContain('🔁 *AI 로그인* 작업이 아직 멈춰 있어요');
+    expect(
+      formatIncidentResolved({
+        label: 'AI 로그인',
+        duration: '3시간',
+        occurrences: 2,
+        causes: ['401', 'unknown'],
+      }),
+    ).toContain(
+      '✅ *AI 로그인* 작업이 복구됐어요\n원인: 로그인이 만료된 것 같아요',
+    );
+  });
   it('본문은 짧은 설명만 싣고 원문을 싣지 않는다', () => {
     expect(
       formatIncidentOpen({
@@ -15,7 +81,7 @@ describe('incident messages', () => {
         nextRunAt: '내일 08:00',
       }),
     ).toBe(
-      '🔴 *포트폴리오 사이트 발행이 멈췄어요*\n원인: 로그인이 만료된 것 같아요 (추정)\n지금 상태: 내일 08:00에 다시 시도해요.',
+      '🔴 *포트폴리오 사이트 발행* 작업이 멈췄어요\n원인: 로그인이 만료된 것 같아요 (추정)\n지금 상태: 내일 08:00에 다시 시도해요.',
     );
     expect(
       formatIncidentOpen({ label: 'x', cause: null, nextRunAt: null }),

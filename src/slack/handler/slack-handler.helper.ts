@@ -61,8 +61,7 @@ export const runEphemeral = async <T>(args: {
   }
 };
 
-// /today, /worklog 등 AgentRunOutcome<T> 를 반환하는 모델 호출 명령용 — format 결과 끝에
-// `_model: codex-cli · run #N_` 푸터 자동 부착 (PRO-3).
+// /today, /worklog 등 AgentRunOutcome<T> 를 반환하는 명령에는 실행 번호를 붙인다.
 // format 은 string 또는 FormattedReport 를 반환 가능 — FormattedReport 는 summary+detail 합본으로 렌더.
 //
 // onOutcome — 실행 성공 후 부가 처리(재시도 계보 연결 등). 사용자 응답을 보낸 뒤 호출하며,
@@ -83,7 +82,9 @@ export const runAgentCommand = async <T>(args: {
     await respond({
       response_type: 'ephemeral',
       replace_original: true,
-      ...toReadableSlackArgs(toSlackText(await format(outcome.result))),
+      ...toReadableSlackArgs(
+        `${toSlackText(await format(outcome.result))}\n_실행 번호 \`${outcome.agentRunId}\` (다시 돌리기·의견 남기기에 써요)_`,
+      ),
     });
     if (onOutcome) {
       try {

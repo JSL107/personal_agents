@@ -241,7 +241,8 @@ describe('formatPullRequestReview', () => {
     });
 
     expect(output).toContain('*GitHub 커넥터 추가 리뷰*');
-    expect(output).toContain('고칠 것 5개');
+    expect(output).toContain('꼭 고칠 것 1개');
+    expect(output).toContain('고려할 것 2개');
     expect(output).toContain('• 에러 마스킹 필요');
     expect(output).toContain('• 주석 보강');
     expect(output).not.toContain('src/x.ts:10');
@@ -261,7 +262,7 @@ describe('formatPullRequestReview', () => {
       },
     });
 
-    expect(output).toContain('고칠 것 0개');
+    expect(output).not.toContain('고칠 것 0개');
     expect(output).toContain('*지적 사항 없음*');
   });
 
