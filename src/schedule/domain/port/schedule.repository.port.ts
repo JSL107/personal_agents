@@ -73,6 +73,9 @@ export interface ScheduleRepositoryPort {
     input: Required<FindByDateRangeInput>,
   ): Promise<ScheduleItemRecord[]>;
   findUndated(slackUserId: string): Promise<ScheduleItemRecord[]>;
+  findOpenLinkedPullRequestUrls(
+    itemIds: number[],
+  ): Promise<Map<number, string[]>>;
   findCompletedBetween(
     input: FindCompletedBetweenInput,
   ): Promise<ScheduleItemRecord[]>;

@@ -24,6 +24,7 @@ import { MarkScheduleAsHolidayUsecase } from './application/mark-schedule-as-hol
 import { ReconcilePullRequestsUsecase } from './application/reconcile-pull-requests.usecase';
 import { RegisterConsoleScheduleUsecase } from './application/register-console-schedule.usecase';
 import { RegisterScheduleUsecase } from './application/register-schedule.usecase';
+import { ResolveWorkTurnsUsecase } from './application/resolve-work-turns.usecase';
 import { ScheduleFollowUpUsecase } from './application/schedule-follow-up.usecase';
 import { UpdateScheduleUsecase } from './application/update-schedule.usecase';
 import { UpdateScheduleFieldsUsecase } from './application/update-schedule-fields.usecase';
@@ -67,6 +68,7 @@ import { ScheduleConsoleController } from './interface/schedule-console.controll
     CloseFinishedIssuesUsecase,
     CloseFinishedNotionTasksUsecase,
     ReconcilePullRequestsUsecase,
+    ResolveWorkTurnsUsecase,
     GenerateShortTitlesUsecase,
     JudgeMentionRequestUsecase,
     RegisterScheduleUsecase,
@@ -107,6 +109,7 @@ import { ScheduleConsoleController } from './interface/schedule-console.controll
     CloseFinishedIssuesUsecase,
     CloseFinishedNotionTasksUsecase,
     ReconcilePullRequestsUsecase,
+    ResolveWorkTurnsUsecase,
     DAILY_TODO_REPOSITORY_PORT,
     RegisterScheduleUsecase,
     ListSchedulesUsecase,

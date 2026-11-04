@@ -763,6 +763,49 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
     return toFollowUp(updated);
   }
 
+  async findOpenLinkedPullRequestUrls(
+    itemIds: number[],
+  ): Promise<Map<number, string[]>> {
+    if (itemIds.length === 0) {
+      return new Map();
+    }
+    const events = await this.prisma.scheduleEvent.findMany({
+      where: {
+        scheduleItemId: { in: itemIds },
+        kind: {
+          in: [ScheduleEventKind.PR_LINKED, ScheduleEventKind.PR_MERGED],
+        },
+      },
+      select: { scheduleItemId: true, kind: true, payload: true },
+    });
+    const linked = new Map<number, Set<string>>();
+    const merged = new Map<number, Set<string>>();
+    for (const event of events) {
+      const payload = event.payload;
+      if (
+        !payload ||
+        typeof payload !== 'object' ||
+        Array.isArray(payload) ||
+        typeof payload.url !== 'string'
+      ) {
+        continue;
+      }
+      const target =
+        event.kind === ScheduleEventKind.PR_LINKED ? linked : merged;
+      const urls = target.get(event.scheduleItemId) ?? new Set<string>();
+      urls.add(payload.url);
+      target.set(event.scheduleItemId, urls);
+    }
+    const result = new Map<number, string[]>();
+    for (const [id, urls] of linked) {
+      const open = [...urls].filter((url) => !merged.get(id)?.has(url));
+      if (open.length > 0) {
+        result.set(id, open);
+      }
+    }
+    return result;
+  }
+
   async addNote(input: AddNoteInput): Promise<ScheduleEventRecord | null> {
     const owner = await this.prisma.scheduleItem.findFirst({
       where: { id: input.scheduleItemId, slackUserId: input.slackUserId },

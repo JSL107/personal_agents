@@ -1230,3 +1230,36 @@ describe('PR 이벤트와 상태 전이의 원자성', () => {
     );
   });
 });
+
+describe('SchedulePrismaRepository.findOpenLinkedPullRequestUrls', () => {
+  it('같은 업무에서 머지된 PR 만 제외하고 중복 링크를 합친다', async () => {
+    const first = 'https://github.com/a/b/pull/1';
+    const second = 'https://github.com/a/b/pull/2';
+    const findMany = jest.fn().mockResolvedValue([
+      { scheduleItemId: 1, kind: 'PR_LINKED', payload: { url: first } },
+      { scheduleItemId: 1, kind: 'PR_LINKED', payload: { url: first } },
+      { scheduleItemId: 1, kind: 'PR_LINKED', payload: { url: second } },
+      { scheduleItemId: 1, kind: 'PR_MERGED', payload: { url: first } },
+      { scheduleItemId: 2, kind: 'PR_LINKED', payload: { url: first } },
+      { scheduleItemId: 2, kind: 'PR_LINKED', payload: {} },
+    ]);
+    const repository = new SchedulePrismaRepository({
+      scheduleEvent: { findMany },
+    } as unknown as PrismaService);
+    await expect(
+      repository.findOpenLinkedPullRequestUrls([1, 2]),
+    ).resolves.toEqual(
+      new Map([
+        [1, [second]],
+        [2, [first]],
+      ]),
+    );
+    expect(findMany).toHaveBeenCalledWith({
+      where: {
+        scheduleItemId: { in: [1, 2] },
+        kind: { in: ['PR_LINKED', 'PR_MERGED'] },
+      },
+      select: { scheduleItemId: true, kind: true, payload: true },
+    });
+  });
+});
