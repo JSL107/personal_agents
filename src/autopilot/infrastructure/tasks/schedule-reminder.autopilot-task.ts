@@ -163,6 +163,6 @@ const formatFollowUp = ({
   followUp,
   draft,
 }: FollowUpMessageInput): string => {
-  const heading = `📣 ${escapeSlackMrkdwn(item.title)} — ${escapeSlackMrkdwn(followUp.recipient)}에게 ${escapeSlackMrkdwn(followUp.topic)} 알릴 때예요${sourceLink(item.sourceUrl)}`;
+  const heading = `📣 ${escapeSlackMrkdwn(item.title)}: ${escapeSlackMrkdwn(followUp.recipient)}에게 ${escapeSlackMrkdwn(followUp.topic)} 알릴 때예요${sourceLink(item.sourceUrl)}`;
   return draft ? `${heading}\n초안: ${escapeSlackMrkdwn(draft)}` : heading;
 };
