@@ -4,12 +4,15 @@ import { createHash } from 'crypto';
 
 import { DraftFollowUpMessageUsecase } from '../../../schedule/application/draft-follow-up-message.usecase';
 import {
+  plainDateToUtcDate,
+  todayInKst,
+} from '../../../schedule/domain/parse-due-date';
+import {
   SCHEDULE_REPOSITORY_PORT,
   ScheduleRepositoryPort,
 } from '../../../schedule/domain/port/schedule.repository.port';
 import {
   FollowUpTrigger,
-  ScheduleItemRecord,
   ScheduleStatus,
 } from '../../../schedule/domain/schedule.type';
 import { escapeSlackMrkdwn } from '../../../slack/format/mrkdwn.util';
@@ -22,6 +25,9 @@ import {
   ClaimedFollowUp,
   FollowUpItemPair,
   FollowUpMessageInput,
+  ReminderDigestInput,
+  ReminderLineInput,
+  ReminderSectionInput,
 } from '../../domain/schedule-reminder.type';
 
 @Injectable()
@@ -63,7 +69,11 @@ export class ScheduleReminderAutopilotTask implements AutopilotTask {
       ownerId,
       limit: 3,
     });
-    const lines = reminders.map((item) => formatReminder(item));
+    const today = plainDateToUtcDate(todayInKst(now));
+    const reminderLines = reminders.map((item) =>
+      formatReminder({ item, today }),
+    );
+    const followUpLines: string[] = [];
     const followUps: ClaimedFollowUp[] = [];
 
     for (const followUp of claimed) {
@@ -97,11 +107,11 @@ export class ScheduleReminderAutopilotTask implements AutopilotTask {
       if (!current || !canNotify({ followUp, item: current })) {
         continue;
       }
-      lines.push(formatFollowUp({ item: current, followUp, draft }));
+      followUpLines.push(formatFollowUp({ item: current, followUp, draft }));
       followUps.push({ followUp, draft });
     }
 
-    if (lines.length === 0) {
+    if (reminderLines.length === 0 && followUpLines.length === 0) {
       return { skip: true };
     }
     const signatures = [
@@ -119,7 +129,7 @@ export class ScheduleReminderAutopilotTask implements AutopilotTask {
       .digest('hex');
     return {
       skip: false,
-      summaryText: lines.join('\n'),
+      summaryText: formatReminderDigest({ reminderLines, followUpLines }),
       guardKeySuffix,
       onDelivered: async () => {
         for (const item of reminders) {
@@ -156,16 +166,38 @@ const sourceLink = (url: string | null | undefined): string => {
   return ` <${url}|원문 열기>`;
 };
 
-// 「알릴 때예요」는 연락할 일(📣)에만 쓴다 — 내 알림에 쓰면 남에게 연락하라는 말로 읽힌다.
-const formatReminder = (item: ScheduleItemRecord): string =>
-  `⏰ 지금 챙길 일: ${escapeSlackMrkdwn(item.title)}${formatDueSuffix(item)}${sourceLink(item.sourceUrl)}`;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
-const formatDueSuffix = ({ dueDate, dueTime }: ScheduleItemRecord): string => {
-  if (!dueDate) {
+// 아침 브리핑처럼 칸 제목 + 한 건 한 줄. 한 줄에 종류·제목·마감을 몰아넣으면 읽히지 않았다.
+const formatReminderDigest = ({
+  reminderLines,
+  followUpLines,
+}: ReminderDigestInput): string =>
+  [
+    formatSection({ title: '지금 챙길 일', lines: reminderLines }),
+    formatSection({ title: '연락할 때', lines: followUpLines }),
+  ]
+    .filter((section) => section.length > 0)
+    .join('\n\n');
+
+const formatSection = ({ title, lines }: ReminderSectionInput): string =>
+  lines.length > 0 ? [`*${title}*`, ...lines].join('\n') : '';
+
+const formatReminder = ({ item, today }: ReminderLineInput): string =>
+  `• ${escapeSlackMrkdwn(item.title)}${formatDueLabel({ item, today })}${sourceLink(item.sourceUrl)}`;
+
+const formatDueLabel = ({ item, today }: ReminderLineInput): string => {
+  if (!item.dueDate) {
     return '';
   }
-  const time = dueTime ? ` ${dueTime}` : '';
-  return ` (${toKoreanDate(dueDate)}${time} 마감)`;
+  const days = Math.round((item.dueDate.getTime() - today.getTime()) / DAY_MS);
+  const time = item.dueTime ? ` ${item.dueTime}` : '';
+  if (days < 0) {
+    return ` · ${toKoreanDate(item.dueDate)} 마감 지남`;
+  }
+  const day =
+    days === 0 ? '오늘' : days === 1 ? '내일' : toKoreanDate(item.dueDate);
+  return ` · ${day}${time} 마감`;
 };
 
 const formatFollowUp = ({
@@ -173,6 +205,12 @@ const formatFollowUp = ({
   followUp,
   draft,
 }: FollowUpMessageInput): string => {
-  const heading = `📣 ${escapeSlackMrkdwn(item.title)}: ${escapeSlackMrkdwn(followUp.recipient)}에게 ${escapeSlackMrkdwn(followUp.topic)} 알릴 때예요${sourceLink(item.sourceUrl)}`;
-  return draft ? `${heading}\n초안: ${escapeSlackMrkdwn(draft)}` : heading;
+  const heading = `• ${escapeSlackMrkdwn(followUp.recipient)}에게 ${escapeSlackMrkdwn(followUp.topic)} (${escapeSlackMrkdwn(item.title)})${sourceLink(item.sourceUrl)}`;
+  if (!draft) {
+    return heading;
+  }
+  const quoted = escapeSlackMrkdwn(draft)
+    .split('\n')
+    .map((line) => `  > ${line}`);
+  return [heading, ...quoted].join('\n');
 };

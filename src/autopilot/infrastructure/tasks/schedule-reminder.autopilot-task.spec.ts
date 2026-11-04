@@ -2,6 +2,10 @@ import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { DraftFollowUpMessageUsecase } from '../../../schedule/application/draft-follow-up-message.usecase';
+import {
+  plainDateToUtcDate,
+  todayInKst,
+} from '../../../schedule/domain/parse-due-date';
 import { ScheduleRepositoryPort } from '../../../schedule/domain/port/schedule.repository.port';
 import { ScheduleFollowUpRecord } from '../../../schedule/domain/schedule.repository.type';
 import {
@@ -71,23 +75,33 @@ describe('ScheduleReminderAutopilotTask', () => {
     draftUsecase.execute.mockResolvedValue('완료했습니다. 확인 부탁드립니다.');
   });
 
-  // 「알릴 때예요」는 남에게 연락할 때의 말이라 내 알림에 쓰면 어색했다(제목에 '알림'이 들면 더).
-  it('내 알림은 지금 챙길 일과 마감 시각으로 쓴다', async () => {
+  // 한 줄에 종류·제목·마감을 몰아넣으면 읽히지 않았다(실서버 DM 확인). 아침 브리핑처럼 칸을 나눈다.
+  it('내 알림과 연락할 일을 칸으로 나누고 마감은 오늘·내일로 쓴다', async () => {
+    const today = plainDateToUtcDate(todayInKst(new Date()));
+    const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
     repository.claimDueReminders.mockResolvedValue([
-      {
-        ...item,
-        title: '업무 트래킹 알림',
-        dueDate: new Date('2026-11-04T00:00:00Z'),
-        dueTime: '12:01',
-      },
-      { ...item, id: 8, title: '기한 없는 일', dueDate: null, dueTime: null },
+      { ...item, title: '결제 API 배포', dueDate: today, dueTime: '12:01' },
+      { ...item, id: 8, title: '세금', dueDate: tomorrow, dueTime: null },
+      { ...item, id: 10, title: '로그 확인', dueDate: null, dueTime: null },
     ]);
-    const result = await makeTask().run();
-    expect(result.summaryText).toContain(
-      '⏰ 지금 챙길 일: 업무 트래킹 알림 (11월 4일 12:01 마감)',
+    repository.claimDueFollowUps.mockResolvedValue([followUp]);
+    draftUsecase.execute.mockResolvedValue(
+      '배포 끝났습니다.\n확인 부탁드려요.',
     );
-    expect(result.summaryText).toContain('⏰ 지금 챙길 일: 기한 없는 일');
-    expect(result.summaryText).not.toContain('기한 없는 일 (');
+    const result = await makeTask().run();
+    expect(result.summaryText).toBe(
+      [
+        '*지금 챙길 일*',
+        '• 결제 API 배포 · 오늘 12:01 마감',
+        '• 세금 · 내일 마감',
+        '• 로그 확인',
+        '',
+        '*연락할 때*',
+        '• PM에게 배포 (결제 API)',
+        '  > 배포 끝났습니다.',
+        '  > 확인 부탁드려요.',
+      ].join('\n'),
+    );
   });
 
   it('선점 0건이어도 후보를 만료하고 발송을 건너뛴다', async () => {
@@ -146,7 +160,7 @@ describe('ScheduleReminderAutopilotTask', () => {
     repository.claimDueFollowUps.mockResolvedValue([followUp]);
     draftUsecase.execute.mockResolvedValue(null);
     const result = await makeTask().run();
-    expect(result.summaryText).toContain('PM에게 배포 알릴 때예요');
+    expect(result.summaryText).toContain('• PM에게 배포 (결제 API)');
   });
 
   it('이미 저장된 초안을 재사용하고 모델을 다시 부르지 않는다', async () => {
