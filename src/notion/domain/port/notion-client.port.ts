@@ -6,6 +6,12 @@ export const NOTION_CLIENT_PORT = Symbol('NOTION_CLIENT_PORT');
 // `NotionApiClient` 의 생성자에서만 주입받아 테스트 시 mock 으로 교체 가능하게 한다.
 export const NOTION_CLIENT_INSTANCE = Symbol('NOTION_CLIENT_INSTANCE');
 
+// 회사 워크스페이스용 Client (NOTION_WORK_TOKEN). 통합은 자기 워크스페이스만 읽으므로
+// NOTION_WORK_TASK_DB_IDS 조회와 그 업무 페이지 상태 확인에만 쓴다. 쓰기 경로에는 넘기지 않는다.
+export const NOTION_WORK_CLIENT_INSTANCE = Symbol(
+  'NOTION_WORK_CLIENT_INSTANCE',
+);
+
 export interface ListActiveTasksOptions {
   // 미지정 시 NOTION_TASK_DB_IDS env 를 그대로 사용.
   databaseIds?: string[];

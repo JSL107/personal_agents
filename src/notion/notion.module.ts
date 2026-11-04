@@ -8,6 +8,7 @@ import { ListActiveTasksUsecase } from './application/list-active-tasks.usecase'
 import {
   NOTION_CLIENT_INSTANCE,
   NOTION_CLIENT_PORT,
+  NOTION_WORK_CLIENT_INSTANCE,
 } from './domain/port/notion-client.port';
 import { NotionApiClient } from './infrastructure/notion-api.client';
 
@@ -21,6 +22,17 @@ import { NotionApiClient } from './infrastructure/notion-api.client';
       provide: NOTION_CLIENT_INSTANCE,
       useFactory: (configService: ConfigService): Client | null => {
         const token = configService.get<string>('NOTION_TOKEN');
+        if (!token) {
+          return null;
+        }
+        return new Client({ auth: token });
+      },
+      inject: [ConfigService],
+    },
+    {
+      provide: NOTION_WORK_CLIENT_INSTANCE,
+      useFactory: (configService: ConfigService): Client | null => {
+        const token = configService.get<string>('NOTION_WORK_TOKEN');
         if (!token) {
           return null;
         }

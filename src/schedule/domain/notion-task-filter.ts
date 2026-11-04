@@ -35,7 +35,13 @@ export const filterMyNotionTask = (
   const assignees = (task.properties[config.assigneeProperty] ?? '')
     .split(',')
     .map((name) => name.trim());
-  if (!assignees.includes(config.assigneeValue)) {
+  // 개인·회사 워크스페이스에서 내 표시 이름이 다를 수 있어 쉼표로 여러 이름을 받는다.
+  // 빈 이름은 버린다 — 끝 쉼표 하나로 담당자 없는 업무('')가 전부 내 업무가 된다.
+  const myNames = config.assigneeValue
+    .split(',')
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0);
+  if (!assignees.some((name) => myNames.includes(name))) {
     return null;
   }
   if (readNotionStatus(task.properties, config) !== 'ACTIVE') {

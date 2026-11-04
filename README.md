@@ -369,6 +369,7 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 | `DATABASE_URL` · `REDIS_HOST` / `REDIS_PORT` | ✅ | PostgreSQL(5434) · Redis(6381) |
 | `SLACK_BOT_TOKEN` / `_APP_TOKEN` / `_SIGNING_SECRET` | ⭕ | 3개 모두 있어야 봇 활성 (Socket Mode) |
 | `GITHUB_TOKEN` · `NOTION_TOKEN` / `NOTION_TASK_DB_IDS` | ⭕ | 미설정 시 해당 연동 skip |
+| `NOTION_WORK_TOKEN` / `NOTION_WORK_TASK_DB_IDS` | ⭕ | 다른 워크스페이스(회사) task DB 를 그 워크스페이스 통합으로 읽는다. 조회·상태 확인 전용. 미설정 시 skip |
 | `GITHUB_REVIEW_BOT_TOKEN` / `_LOGIN` / `_REPOS` | ❌ | PR 리뷰 봇 전용 계정. `_REPOS` 에 적힌 레포에서만 PR 쓰기를 봇으로 한다. 미설정 시 `GITHUB_TOKEN` 계정 |
 | `WATCH_SCRIPT_PATH` | ⭕ | Video Watch의 `watch.py` 경로. 미설정 시 영상 분석 워커 비활성화 |
 | `*_WEBHOOK_SECRET` · `GITHUB_WEBHOOK_*` | ⭕ | webhook 검증 · 자동 발화 가드 |
@@ -394,7 +395,7 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 | `PORTFOLIO_SITE_URL` | ⭕ | 포트폴리오 사이트 주소. autopilot 이 08~23시 10분마다 `/backend/health` 를 불러 무료 플랜에서 잠든 API 를 깨운다. 비우면 워밍업 슬롯이 꺼진다 |
 | `AUTOPILOT_SCHEDULE_REMINDER_SCHEDULE` · `_TIMEZONE` | ⭕ | 업무 알림 발화 주기 override(기본 `*/5 * * * *`, Asia/Seoul) |
 | `AUTOPILOT_SCHEDULE_COLLECT_NOTION_SCHEDULE` · `_TIMEZONE` | ⭕ | 업무 자동 수집 주기 override(기본 `*/30 9-19 * * 1-5`, Asia/Seoul) |
-| `SCHEDULE_NOTION_ASSIGNEE_PROPERTY` · `SCHEDULE_NOTION_ASSIGNEE_VALUE` | ⭕ | Notion 자동 수집 대상 담당자 속성명·완전 일치 값. 둘 중 하나가 비면 수집 꺼짐 |
+| `SCHEDULE_NOTION_ASSIGNEE_PROPERTY` · `SCHEDULE_NOTION_ASSIGNEE_VALUE` | ⭕ | Notion 자동 수집 대상 담당자 속성명·완전 일치 값(쉼표로 여러 이름). 둘 중 하나가 비면 수집 꺼짐 |
 | `SCHEDULE_NOTION_STATUS_PROPERTY` · `SCHEDULE_NOTION_DONE_VALUES` · `SCHEDULE_NOTION_DROPPED_VALUES` · `SCHEDULE_NOTION_DUE_PROPERTY` | ⭕ | 상태 속성명 목록(쉼표 구분, 기본 `상태` — 하나라도 완료 값이면 제외)·완료·그만둔 상태값 목록(쉼표 구분)·마감일 속성명. 미설정 값은 필터링/기한 설정을 생략 |
 | `AUTOPILOT_PORTFOLIO_WARMUP_SCHEDULE` · `_TIMEZONE` | ⭕ | 워밍업 발화 시각 override(기본 `*/10 8-23 * * *`, Asia/Seoul). 24시간으로 넓히면 Render 무료 플랜 월 시간 한도를 넘는다 |
 | `PORTFOLIO_AUTOMATION_TOKEN` | ⭕ | 포트폴리오 사이트 발행용 자동화 토큰(사이트 쪽 `AUTOMATION_TOKEN` 과 같은 값). 비우면 발행 슬롯이 꺼진다 |
