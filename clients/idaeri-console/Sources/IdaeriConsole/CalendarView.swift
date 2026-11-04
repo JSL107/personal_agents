@@ -25,6 +25,10 @@ struct CalendarView: View {
     /// 열려 있는 등록 폼과 그 폼이 채워 둘 날짜. 등록 **실패** 사유는 여기 두지 않는다 —
     /// 시트가 자기 안에 들고 있어야 폼을 닫지 않고 그 자리에서 다시 누를 수 있다.
     @State private var compose: ScheduleComposeRequest?
+    @State private var undated: [ScheduleItem] = []
+    @State private var showingUndated = false
+    @State private var undatedFailure: String?
+    @State private var expandedId: Int?
 
     /// 오늘 날짜 키(`yyyy-MM-dd`). **`let` 이면 안 된다** — 이 앱은 켜 둔 채로 쓰는 상주형이라
     /// 자정을 넘기면 생성 시점 문자열이 어제로 굳고, 오늘 강조가 어제 칸에 남고 "오늘" 버튼도
@@ -198,7 +202,10 @@ struct CalendarView: View {
         guard loadFailure == nil else {
             return []
         }
-        return store.schedules.filter { $0.dueDay.hasPrefix(currentMonthKey) }
+        return store.schedules.filter { item in
+            guard let dueDay = item.dueDay else { return false }
+            return dueDay.hasPrefix(currentMonthKey) || item.startDay?.hasPrefix(currentMonthKey) == true
+        }
     }
 
     private func itemsOn(day: Int) -> [ScheduleItem] {
@@ -212,7 +219,7 @@ struct CalendarView: View {
     /// "남은 일정" 에 들어가면 추석이 있는 달은 영영 3건이 남아 있는 것처럼 보인다.
     /// 아침 브리핑의 「📌 마감」 줄이 공휴일을 빼는 것과 같은 규칙이다.
     private var openCount: Int {
-        visibleSchedules.filter { $0.status == .open && !$0.isHolidayDay }.count
+        visibleSchedules.filter { !$0.status.isClosed && !$0.isHolidayDay }.count
     }
 
     var body: some View {
@@ -248,7 +255,10 @@ struct CalendarView: View {
         }
         .frame(minHeight: Layout.contentMinHeight, alignment: .top)
         .background(CozyPalette.canvas)
-        .task { await reload() }
+        .task {
+            await reload()
+            await reloadUndated()
+        }
         // 자정을 넘기면 오늘이 바뀐다. 타이머로 재는 대신 시스템이 알려 주는 것을 받는다 —
         // 타이머는 절전·시간대 변경·시각 수동 조정에서 어긋난다.
         .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged)) { _ in
@@ -259,8 +269,9 @@ struct CalendarView: View {
                 // 키가 깨져 날짜를 못 읽으면 오늘로 연다. 폼을 안 여는 것보다 낫다 —
                 // 누른 사람은 자기가 누른 칸을 이미 알고 있고, 날짜는 폼에서 고칠 수 있다.
                 initialDate: scheduleDate(fromKey: request.dayKey) ?? Date(),
-                onSubmit: { title, dayKey, memo in
-                    await create(title: title, dayKey: dayKey, memo: memo)
+                onSubmit: { title, dayKey, memo, startDay, dueTime, remindAt in
+                    await create(title: title, dayKey: dayKey, memo: memo,
+                                 startDay: startDay, dueTime: dueTime, remindAt: remindAt)
                 }
             )
         }
@@ -309,6 +320,16 @@ struct CalendarView: View {
                     .foregroundStyle(CozyPalette.ink)
             }
             monthSummary
+            Button("기한 없음 \(undated.count)") {
+                showingUndated.toggle()
+                if showingUndated { Task { await reloadUndated() } }
+            }
+            .buttonStyle(.plain)
+            .font(Typography.captionEmphasis)
+            .foregroundStyle(CozyPalette.ink)
+            .padding(.horizontal, Spacing.md)
+            .padding(.vertical, Spacing.xs)
+            .background(CozyPalette.surface, in: Capsule())
             Spacer()
             monthStepper
             addButton
@@ -469,6 +490,7 @@ struct CalendarView: View {
         let isHoliday = items.contains { $0.isHolidayDay }
         return Button {
             selectedDay = day
+            showingUndated = false
         } label: {
             VStack(alignment: .leading, spacing: Spacing.tight) {
                 dayNumber(day, isToday: isToday, weekdayIndex: weekdayIndex, isHoliday: isHoliday)
@@ -476,7 +498,7 @@ struct CalendarView: View {
                 // 훑는 것만으로 이 달에 무엇이 걸려 있는지 읽힌다 — 상세를 열어야만
                 // 알 수 있던 것을 격자로 끌어올린 자리다.
                 ForEach(items.prefix(chipLimit)) { item in
-                    scheduleChip(item)
+                    scheduleChip(item, startsToday: item.startDay == key)
                 }
                 if items.count > chipLimit {
                     Text("+\(items.count - chipLimit)")
@@ -539,18 +561,21 @@ struct CalendarView: View {
     /// 칸 안의 일정 칩. 치운 항목도 싣고(상세 목록과 같은 규칙) 취소선·흐림으로 가른다 —
     /// 미완만 실으면 완료를 누르는 순간 그 일정이 달력에서 통째로 사라져, 무엇을 처리했는지
     /// 달력만 보고는 되짚을 수 없다.
-    private func scheduleChip(_ item: ScheduleItem) -> some View {
-        let isClosed = item.status != .open
+    private func scheduleChip(_ item: ScheduleItem, startsToday: Bool) -> some View {
+        let isClosed = item.status.isClosed
         // 공휴일 칩은 **바탕만** 빨강으로 세운다. 글자까지 빨강으로 칠했더니 다크 모드에서
         // 붉은 바탕 위 붉은 글자가 되어 대비가 무너졌다(실측 렌더). 종이 달력도 날짜만
         // 빨갛고 글자는 검정이다 — 구별은 바탕이 맡고 가독은 글자가 맡는다.
         let isHoliday = item.isHolidayDay
-        return Text(item.title)
+        return HStack(spacing: Spacing.xs) {
+            statusDot(item.status)
+            Text(startsToday ? "▶ \(item.title)" : item.title)
             .font(Typography.captionSmall)
             .lineLimit(1)
             .truncationMode(.tail)
             .strikethrough(isClosed)
             .foregroundStyle(isClosed ? Color.secondary : CozyPalette.ink)
+        }
             .padding(.horizontal, Spacing.xs + 1)
             .padding(.vertical, 1)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -558,6 +583,24 @@ struct CalendarView: View {
                 chipBackground(isClosed: isClosed, isHoliday: isHoliday),
                 in: RoundedRectangle(cornerRadius: Radius.badge, style: .continuous)
             )
+    }
+
+    @ViewBuilder
+    private func statusDot(_ status: ScheduleStatus) -> some View {
+        let color: Color = {
+            switch status {
+            case .open: return .gray
+            case .inProgress: return .blue
+            case .done: return .green
+            case .skipped: return .gray.opacity(0.35)
+            case .candidate: return .gray
+            }
+        }()
+        Circle()
+            .fill(status == .candidate ? Color.clear : color)
+            .frame(width: 6, height: 6)
+            .overlay(Circle().strokeBorder(color, style: StrokeStyle(lineWidth: 1, dash: status == .candidate ? [2, 1] : [])))
+            .accessibilityLabel(status.rawValue)
     }
 
     /// 칩 바탕. 고른 칸의 바탕도 살구색이라, 칩이 그 위에서 도드라지려면 더 진해야 한다
@@ -601,7 +644,11 @@ struct CalendarView: View {
 
     @ViewBuilder
     private var detailTitle: some View {
-        if let selectedDay {
+        if showingUndated {
+            Text("기한 없음")
+                .font(Typography.sectionTitle)
+                .foregroundStyle(CozyPalette.ink)
+        } else if let selectedDay {
             HStack(alignment: .firstTextBaseline, spacing: Spacing.sm) {
                 Text("\(month)월 \(selectedDay)일")
                     .font(Typography.sectionTitle)
@@ -624,7 +671,19 @@ struct CalendarView: View {
     /// 필터가 0건을 내놓는다 — 그대로 두면 "이 달은 일정이 없다"는 거짓말이 된다.
     @ViewBuilder
     private var detailBody: some View {
-        if let loadFailure {
+        if showingUndated {
+            if let undatedFailure {
+                loadFailureState(undatedFailure)
+                Button("다시 불러오기") { Task { await reloadUndated() } }
+            }
+            else if undated.isEmpty {
+                Text("기한 없는 업무가 없습니다").font(Typography.body).foregroundStyle(.secondary)
+            } else {
+                VStack(alignment: .leading, spacing: Spacing.sm) {
+                    ForEach(undated) { item in scheduleRow(item) }
+                }
+            }
+        } else if let loadFailure {
             loadFailureState(loadFailure)
         } else if isLoading, visibleSchedules.isEmpty {
             // 아직 아무것도 못 받은 회차. 빈 상태 안내(슬랙 등록법)를 여기 띄우면 등록이
@@ -668,15 +727,18 @@ struct CalendarView: View {
     /// 있으므로 제목과 버튼 둘을 한 줄에 세우면 제목이 먼저 잘린다. 넓은 창에서도 같은 배치를
     /// 쓰는 건 두 조판을 따로 관리하면 한쪽만 손보게 되기 때문이다.
     private func scheduleRow(_ item: ScheduleItem) -> some View {
-        let isClosed = item.status != .open
+        let isClosed = item.status.isClosed
         return VStack(alignment: .leading, spacing: Spacing.sm) {
             VStack(alignment: .leading, spacing: Spacing.xs) {
-                Text(item.title)
+                HStack(spacing: Spacing.xs) {
+                    statusDot(item.status)
+                    Text(item.title)
                     .font(Typography.bodyEmphasis)
                     .foregroundStyle(CozyPalette.ink)
                     .strikethrough(isClosed)
                     .opacity(isClosed ? Self.closedTitleOpacity : 1)
                     .fixedSize(horizontal: false, vertical: true)
+                }
                 if let memo = item.memo, !memo.isEmpty {
                     Text(memo)
                         .font(Typography.caption)
@@ -688,7 +750,7 @@ struct CalendarView: View {
                 // **`URL(string:)` 만으로 열지 않는다.** 그것은 `file:`·커스텀 앱 스킴도
                 // 통과시키고, 백엔드엔 스킴 검사가 없어 화면이 유일한 방어선이다
                 // (`safeScheduleLinkURL` 의 주석에 근거를 적었다).
-                if let url = safeScheduleLinkURL(item.linkUrl) {
+                if let url = safeScheduleLinkURL(item.linkUrl ?? item.sourceUrl) {
                     Link(destination: url) {
                         Label("링크 열기", systemImage: "arrow.up.right.square")
                             .font(Typography.caption)
@@ -718,6 +780,10 @@ struct CalendarView: View {
                     Button("되돌리기") {
                         Task { await update(id: item.id, status: .open) }
                     }
+                } else if item.status == .candidate {
+                    Button("올리기") { Task { await update(id: item.id, status: .open) } }
+                    Button("무시") { Task { await update(id: item.id, status: .skipped) } }
+                    Spacer()
                 } else {
                     // 주 행동은 살구색, 보조는 기본 버튼 — `AgentCardView` 의 "업무 맡기기 / 확인"
                     // 짝과 같은 처리다. 시스템 기본 `.borderedProminent` 는 파란색이라 크림·살구
@@ -729,11 +795,30 @@ struct CalendarView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(CozyPalette.apricot)
+                    if item.status == .open {
+                        Button("진행 중") { Task { await update(id: item.id, status: .inProgress) } }
+                    }
                     Button("건너뜀") {
                         Task { await update(id: item.id, status: .skipped) }
                     }
                     Spacer()
                 }
+            }
+            Button(expandedId == item.id ? "접기" : "자세히") {
+                expandedId = expandedId == item.id ? nil : item.id
+            }
+            .buttonStyle(.plain)
+            .font(Typography.caption)
+            if expandedId == item.id {
+                ScheduleDetailView(item: item, client: client, onChanged: {
+                    await reload()
+                    await reloadUndated()
+                }, onDueDateChanged: { dayKey in
+                    showingUndated = false
+                    moveTo(dayKey: dayKey)
+                    await reload()
+                    await reloadUndated()
+                })
             }
         }
         .padding(Spacing.md)
@@ -828,6 +913,7 @@ struct CalendarView: View {
         month = nextMonth
         year = nextYear
         selectedDay = nil
+        showingUndated = false
         Task { await reload() }
     }
 
@@ -846,6 +932,7 @@ struct CalendarView: View {
         year = parts[0]
         month = parts[1]
         selectedDay = parts[2]
+        showingUndated = false
         if !sameMonth {
             Task { await reload() }
         }
@@ -904,12 +991,32 @@ struct CalendarView: View {
         }
     }
 
+    private func reloadUndated() async {
+        do {
+            let items = try await client.fetchUndated()
+            await MainActor.run {
+                undated = items
+                undatedFailure = nil
+            }
+        } catch {
+            let reason: String
+            if case ConsoleClientError.badStatus(404) = error {
+                reason = "백엔드가 옛 버전인지 확인하세요."
+            } else {
+                reason = failureReason(error)
+            }
+            await MainActor.run { undatedFailure = reason }
+        }
+    }
+
     /// 등록. **실패 사유를 화면 상태에 넣지 않고 돌려준다** — 여기서 `updateFailure` 에
     /// 넣으면 그 문구는 시트 뒤 상세 패널에 뜨는데, 시트가 그것을 가려 등록을 눌러도 아무
     /// 일이 없는 것처럼 보인다. 시트가 받아 자기 안에 띄운다.
-    private func create(title: String, dayKey: String, memo: String?) async -> String? {
+    private func create(title: String, dayKey: String, memo: String?, startDay: String?,
+                        dueTime: String?, remindAt: String?) async -> String? {
         do {
-            try await client.createSchedule(title: title, dueDate: dayKey, memo: memo)
+            try await client.createSchedule(title: title, dueDate: dayKey, memo: memo,
+                                            startDate: startDay, dueTime: dueTime, remindAt: remindAt)
         } catch {
             return "등록 실패 — \(createFailureReason(error))"
         }
@@ -923,6 +1030,7 @@ struct CalendarView: View {
             updateFailure = nil
         }
         await reload()
+        await reloadUndated()
         return nil
     }
 
@@ -978,6 +1086,7 @@ struct CalendarView: View {
         // 실패해도 다시 읽는다. 실패의 상당수는 화면이 낡아 생긴 것(이미 처리된 항목을 누름)이라
         // 재동기화가 곧 정정이다 — `AppRootView.resolveApproval` 이 같은 이유로 그렇게 한다.
         await reload()
+        await reloadUndated()
     }
 
     /// 행동 이름. 실패 문구와 치운 줄의 상태 표시가 함께 쓴다 — **버튼 글자와 같아야**
@@ -990,6 +1099,10 @@ struct CalendarView: View {
             return "건너뜀"
         case .open:
             return "되돌리기"
+        case .inProgress:
+            return "진행 중"
+        case .candidate:
+            return "올리기"
         }
     }
 

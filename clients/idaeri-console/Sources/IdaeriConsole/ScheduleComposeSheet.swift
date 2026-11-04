@@ -11,13 +11,18 @@ struct ScheduleComposeSheet: View {
     /// 폼을 열 때 채워 둘 날짜. 날짜 칸에서 열면 그 날, 머리글의 + 로 열면 선택한 날(없으면 오늘).
     let initialDate: Date
     /// 등록을 수행하고 **실패 사유를 돌려준다**(성공은 nil). 시트는 그 값만 보고 닫을지 정한다.
-    let onSubmit: (String, String, String?) async -> String?
+    let onSubmit: (String, String, String?, String?, String?, String?) async -> String?
 
     @Environment(\.dismiss) private var dismiss
 
     @State private var title: String
     @State private var dueDate: Date
     @State private var memo: String
+    @State private var hasStartDate = false
+    @State private var startDate: Date
+    @State private var dueTime = ""
+    @State private var hasReminder = false
+    @State private var remindAt = Date()
     @State private var isSubmitting: Bool = false
     @State private var failure: String?
 
@@ -38,11 +43,12 @@ struct ScheduleComposeSheet: View {
         initialTitle: String = "",
         initialMemo: String = "",
         initialFailure: String? = nil,
-        onSubmit: @escaping (String, String, String?) async -> String?
+        onSubmit: @escaping (String, String, String?, String?, String?, String?) async -> String?
     ) {
         self.initialDate = initialDate
         self.onSubmit = onSubmit
         _dueDate = State(initialValue: initialDate)
+        _startDate = State(initialValue: initialDate)
         _title = State(initialValue: initialTitle)
         _memo = State(initialValue: initialMemo)
         _failure = State(initialValue: initialFailure)
@@ -67,6 +73,27 @@ struct ScheduleComposeSheet: View {
                     DatePicker("", selection: $dueDate, displayedComponents: .date)
                         .labelsHidden()
                         .datePickerStyle(.stepperField)
+                }
+                field("시작") {
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        Toggle("시작일 지정", isOn: $hasStartDate)
+                        if hasStartDate {
+                            DatePicker("", selection: $startDate, displayedComponents: .date)
+                                .labelsHidden().datePickerStyle(.stepperField)
+                        }
+                    }
+                }
+                field("시각") {
+                    TextField("선택 — HH:mm", text: $dueTime)
+                        .textFieldStyle(.roundedBorder)
+                }
+                field("알림") {
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        Toggle("알림 시각 지정", isOn: $hasReminder)
+                        if hasReminder {
+                            DatePicker("", selection: $remindAt).labelsHidden().datePickerStyle(.stepperField)
+                        }
+                    }
                 }
                 field("메모") {
                     VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -97,7 +124,7 @@ struct ScheduleComposeSheet: View {
                     // 먼저 막아 두면 "왜 안 되는지" 를 실패 문구가 아니라 버튼 모양과 칸 아래
                     // 안내로 알 수 있다 — 400 응답 본문은 클라이언트가 버리므로 서버까지
                     // 보내고 나면 **무엇이 길어서 막혔는지 알 방법이 없다**.
-                    .disabled(isSubmitting || !isSubmittableScheduleTitle(title) || hasOverflow)
+                    .disabled(isSubmitting || !isSubmittableScheduleTitle(title) || hasOverflow || !validTime)
             }
         }
         .padding(Spacing.xl)
@@ -112,6 +139,14 @@ struct ScheduleComposeSheet: View {
     private var hasOverflow: Bool {
         return scheduleFieldOverflow(title, limit: ScheduleFieldLimit.title) > 0
             || scheduleFieldOverflow(memo, limit: ScheduleFieldLimit.memo) > 0
+    }
+
+    private var validTime: Bool {
+        if dueTime.isEmpty { return true }
+        let pieces = dueTime.split(separator: ":", omittingEmptySubsequences: false)
+        guard pieces.count == 2, pieces[0].count == 2, pieces[1].count == 2,
+              let hour = Int(pieces[0]), let minute = Int(pieces[1]) else { return false }
+        return (0...23).contains(hour) && (0...59).contains(minute)
     }
 
     /// 넘친 칸 아래에 **얼마나 줄여야 하는지** 적는다. "너무 깁니다" 만으로는 어디까지
@@ -152,7 +187,10 @@ struct ScheduleComposeSheet: View {
             let reason = await onSubmit(
                 title.trimmingCharacters(in: .whitespacesAndNewlines),
                 scheduleDateKey(dueDate),
-                trimmedScheduleField(memo)
+                trimmedScheduleField(memo),
+                hasStartDate ? scheduleDateKey(startDate) : nil,
+                trimmedScheduleField(dueTime),
+                hasReminder ? Self.offsetDate(remindAt) : nil
             )
             await MainActor.run {
                 isSubmitting = false
@@ -163,6 +201,13 @@ struct ScheduleComposeSheet: View {
                 failure = reason
             }
         }
+    }
+
+    private static func offsetDate(_ date: Date) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        formatter.timeZone = .current
+        return formatter.string(from: date)
     }
 }
 
