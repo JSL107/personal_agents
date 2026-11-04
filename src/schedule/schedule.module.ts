@@ -6,9 +6,11 @@ import { AgentRunModule } from '../agent-run/agent-run.module';
 import { LoopbackOnlyGuard } from '../common/guard/loopback-only.guard';
 import { ConsoleReadGuard } from '../console/interface/console-read.guard';
 import { FactAnswerModule } from '../fact-answer/fact-answer.module';
+import { GithubModule } from '../github/github.module';
 import { ModelRouterModule } from '../model-router/model-router.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AnswerScheduleQuestionUsecase } from './application/answer-schedule-question.usecase';
+import { CloseFinishedIssuesUsecase } from './application/close-finished-issues.usecase';
 import { DeleteScheduleUsecase } from './application/delete-schedule.usecase';
 import { DraftFollowUpMessageUsecase } from './application/draft-follow-up-message.usecase';
 import { ExtractScheduleFromConversationUsecase } from './application/extract-schedule-from-conversation.usecase';
@@ -16,6 +18,7 @@ import { JudgeMentionRequestUsecase } from './application/judge-mention-request.
 import { ListSchedulesUsecase } from './application/list-schedules.usecase';
 import { ManageScheduleFromConversationUsecase } from './application/manage-schedule-from-conversation.usecase';
 import { MarkScheduleAsHolidayUsecase } from './application/mark-schedule-as-holiday.usecase';
+import { ReconcilePullRequestsUsecase } from './application/reconcile-pull-requests.usecase';
 import { RegisterConsoleScheduleUsecase } from './application/register-console-schedule.usecase';
 import { RegisterScheduleUsecase } from './application/register-schedule.usecase';
 import { ScheduleFollowUpUsecase } from './application/schedule-follow-up.usecase';
@@ -38,7 +41,13 @@ import {
 import { ScheduleConsoleController } from './interface/schedule-console.controller';
 
 @Module({
-  imports: [AgentRunModule, FactAnswerModule, PrismaModule, ModelRouterModule],
+  imports: [
+    AgentRunModule,
+    FactAnswerModule,
+    GithubModule,
+    PrismaModule,
+    ModelRouterModule,
+  ],
   controllers: [ScheduleConsoleController],
   providers: [
     {
@@ -51,6 +60,8 @@ import { ScheduleConsoleController } from './interface/schedule-console.controll
       useClass: ScheduleCollectionStatePrismaRepository,
     },
     ExtractScheduleFromConversationUsecase,
+    CloseFinishedIssuesUsecase,
+    ReconcilePullRequestsUsecase,
     JudgeMentionRequestUsecase,
     RegisterScheduleUsecase,
     RegisterConsoleScheduleUsecase,
@@ -86,6 +97,8 @@ import { ScheduleConsoleController } from './interface/schedule-console.controll
     },
   ],
   exports: [
+    CloseFinishedIssuesUsecase,
+    ReconcilePullRequestsUsecase,
     DAILY_TODO_REPOSITORY_PORT,
     RegisterScheduleUsecase,
     ListSchedulesUsecase,

@@ -10,6 +10,28 @@ import {
 } from './octokit-github.client';
 
 describe('OctokitGithubClient', () => {
+  it('getItemLifecycle reads issue closedAt and stateReason', async () => {
+    const get = jest.fn().mockResolvedValue({
+      data: {
+        state: 'closed',
+        closed_at: '2026-11-04T05:00:00Z',
+        state_reason: 'not_planned',
+      },
+    });
+    const client = new OctokitGithubClient({
+      rest: { issues: { get } },
+    } as unknown as Octokit);
+
+    await expect(
+      client.getItemLifecycle({ repo: 'Acme/API', number: 12 }),
+    ).resolves.toEqual({
+      state: 'closed',
+      mergedAt: null,
+      isPullRequest: false,
+      closedAt: '2026-11-04T05:00:00Z',
+      stateReason: 'not_planned',
+    });
+  });
   // listMyAssignedTasks 가 PR 별 listReviews 로 isApproved 를 채우므로,
   // 기본 mock 은 빈 reviews 배열을 돌려주는 paginate 도 함께 제공한다 (default isApproved=false).
   // listReviews 별 시나리오 검증이 필요한 테스트는 paginateOverride 로 reviewer 시퀀스를 주입한다.

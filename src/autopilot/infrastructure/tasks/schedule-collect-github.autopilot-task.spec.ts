@@ -2,6 +2,8 @@ import { ConfigService } from '@nestjs/config';
 
 import { ListAssignedTasksUsecase } from '../../../github/application/list-assigned-tasks.usecase';
 import { GithubClientPort } from '../../../github/domain/port/github-client.port';
+import { CloseFinishedIssuesUsecase } from '../../../schedule/application/close-finished-issues.usecase';
+import { ReconcilePullRequestsUsecase } from '../../../schedule/application/reconcile-pull-requests.usecase';
 import { ScheduleRepositoryPort } from '../../../schedule/domain/port/schedule.repository.port';
 import { ScheduleCollectionStateRepositoryPort } from '../../../schedule/domain/port/schedule-collection-state.repository.port';
 import {
@@ -63,17 +65,25 @@ describe('ScheduleCollectGithubAutopilotTask', () => {
     getItemLifecycle: jest.fn(),
   };
   const config = { get: jest.fn() };
+  const closeFinishedIssues = { execute: jest.fn() };
   const makeTask = () =>
     new ScheduleCollectGithubAutopilotTask(
       repository as unknown as ScheduleRepositoryPort,
       stateRepository as unknown as ScheduleCollectionStateRepositoryPort,
       assigned as unknown as ListAssignedTasksUsecase,
-      github as unknown as GithubClientPort,
+      new ReconcilePullRequestsUsecase(
+        repository as unknown as ScheduleRepositoryPort,
+        stateRepository as unknown as ScheduleCollectionStateRepositoryPort,
+        github as unknown as GithubClientPort,
+        config as unknown as ConfigService,
+      ),
       config as unknown as ConfigService,
+      closeFinishedIssues as unknown as CloseFinishedIssuesUsecase,
     );
 
   beforeEach(() => {
     jest.clearAllMocks();
+    closeFinishedIssues.execute.mockResolvedValue(undefined);
     config.get.mockImplementation((key: string) =>
       key === 'CONSOLE_OWNER_SLACK_USER_ID' ? 'U1' : 'JSL107',
     );
@@ -390,6 +400,36 @@ describe('ScheduleCollectGithubAutopilotTask', () => {
     );
     expect(repository.createCollected).not.toHaveBeenCalled();
     expect(repository.transition).not.toHaveBeenCalled();
+  });
+
+  it('같은 회차에 새로 모은 이슈에 PR을 연결한다', async () => {
+    let issueCreated = false;
+    repository.createCollected.mockImplementation(
+      async (input: { source: ScheduleSource }) => {
+        if (input.source === ScheduleSource.GITHUB_ISSUE) {
+          issueCreated = true;
+        }
+        return taskItem;
+      },
+    );
+    repository.findAllByOwner.mockImplementation(async () =>
+      issueCreated ? [taskItem] : [],
+    );
+    github.listAuthorOpenPullRequests.mockResolvedValue([
+      { ...pullRequest, body: 'closes #12' },
+    ]);
+
+    await makeTask().run();
+
+    expect(repository.recordEventAndTransition).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: expect.objectContaining({
+          scheduleItemId: taskItem.id,
+          kind: ScheduleEventKind.PR_LINKED,
+        }),
+      }),
+    );
+    expect(repository.createCollected).toHaveBeenCalledTimes(1);
   });
 
   it('이슈 참조가 둘 이상 업무에 맞으면 어느 쪽에도 연결하거나 생성하지 않는다', async () => {

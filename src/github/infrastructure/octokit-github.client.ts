@@ -296,6 +296,8 @@ export class OctokitGithubClient implements GithubClientPort {
       const pullRequest = response.data.pull_request;
       return {
         state: response.data.state === 'closed' ? 'closed' : 'open',
+        closedAt: response.data.closed_at ?? null,
+        stateReason: response.data.state_reason ?? null,
         mergedAt: pullRequest?.merged_at ?? null,
         isPullRequest: pullRequest !== undefined,
       };
