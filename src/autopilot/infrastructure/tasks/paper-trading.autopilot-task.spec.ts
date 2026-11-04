@@ -279,7 +279,14 @@ describe('PaperTradingAutopilotTask', () => {
 
   // 청산 있는 날만 보내던 시기(#778)에는 추이 그림이 생성조차 안 돼 성적을 추적할 수 없었다.
   it('청산 예약이 없는 날도 그림과 요약을 채널로 낸다', async () => {
-    const { task, exitBand, reportImage } = createFixture();
+    const png = Buffer.from('fake-png');
+    const { task, exitBand } = createFixture({
+      reportImage: {
+        png,
+        filename: 'paper-return-2026-08-11.png',
+        title: '모의투자 수익률 — 2026-08-11',
+      },
+    });
     exitBand.execute.mockResolvedValue({ accounts: [], createdCount: 0 });
 
     const result = await task.run(context);
@@ -287,7 +294,11 @@ describe('PaperTradingAutopilotTask', () => {
     expect(result.skip).toBe(false);
     expect(result.emptyReason).toBeUndefined();
     expect(result.summaryText).toContain('*[장기투자]*');
-    expect(reportImage.execute).toHaveBeenCalled();
+    expect(result.detailImage).toEqual({
+      png,
+      filename: 'paper-return-2026-08-11.png',
+      title: '모의투자 수익률: 2026-08-11',
+    });
   });
 
   it('재시도 회차처럼 생성은 0이어도 이미 예약된 청산 매도가 있으면 채널로 알린다', async () => {
