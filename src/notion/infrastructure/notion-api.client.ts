@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Client, isFullPage as isFullNotionPage } from '@notionhq/client';
 import { match } from 'ts-pattern';
@@ -17,6 +17,7 @@ import {
   FindOrCreateDailyPageOptions,
   ListActiveTasksOptions,
   NOTION_CLIENT_INSTANCE,
+  NOTION_WORK_CLIENT_INSTANCE,
   NotionClientPort,
   NotionDailyPlanPage,
   NotionDraftPage,
@@ -75,6 +76,9 @@ export class NotionApiClient implements NotionClientPort {
   constructor(
     @Inject(NOTION_CLIENT_INSTANCE) private readonly client: Client | null,
     private readonly configService: ConfigService,
+    @Optional()
+    @Inject(NOTION_WORK_CLIENT_INSTANCE)
+    private readonly workClient?: Client | null,
   ) {}
 
   async listActiveTasks({
@@ -92,7 +96,11 @@ export class NotionApiClient implements NotionClientPort {
       });
     }
 
-    const targetDbs = databaseIds ?? this.resolveDatabaseIdsFromEnv();
+    const workDbIds = this.readIdList('NOTION_WORK_TASK_DB_IDS');
+    const targetDbs = databaseIds ?? [
+      ...this.readIdList('NOTION_TASK_DB_IDS'),
+      ...workDbIds,
+    ];
     if (targetDbs.length === 0) {
       // 토큰은 있지만 DB ID 가 없으면 빈 결과 — graceful (PM 이 그냥 없는 입력으로 처리).
       return [];
@@ -102,6 +110,7 @@ export class NotionApiClient implements NotionClientPort {
     let failedDbCount = 0;
     for (const databaseId of targetDbs) {
       const response = await this.queryDbOrNull(
+        this.isListed(databaseId, workDbIds) ? this.workClient : this.client,
         databaseId,
         perDatabaseLimit,
         lastEditedSinceIsoDateTime,
@@ -165,7 +174,25 @@ export class NotionApiClient implements NotionClientPort {
       return await this.client!.pages.retrieve({ page_id: pageId });
     } catch (error: unknown) {
       if (isPageAccessError(error)) {
+        // 회사 DB 에서 수집한 업무 페이지는 개인 통합으로는 못 읽는다 — 회사 Client 로 한 번 더 본다.
+        if (this.workClient) {
+          return await this.retrieveWorkPageStatus(pageId, error);
+        }
         throw new NotionPageNotAccessibleError(pageId, error);
+      }
+      throw this.wrapRequestFailed(error, `Notion page ${pageId} 조회 실패`);
+    }
+  }
+
+  private async retrieveWorkPageStatus(
+    pageId: string,
+    personalError: unknown,
+  ): Promise<Awaited<ReturnType<Client['pages']['retrieve']>>> {
+    try {
+      return await this.workClient!.pages.retrieve({ page_id: pageId });
+    } catch (error: unknown) {
+      if (isPageAccessError(error)) {
+        throw new NotionPageNotAccessibleError(pageId, personalError);
       }
       throw this.wrapRequestFailed(error, `Notion page ${pageId} 조회 실패`);
     }
@@ -315,12 +342,19 @@ export class NotionApiClient implements NotionClientPort {
   // try/catch + null 패턴을 별도 helper 로 추출해 caller 가 let 없이 const 로 받게 한다.
   // OPS-6: lastEditedSinceIsoDateTime 이 있으면 last_edited_time timestamp filter 추가 — long-tail 컷.
   private async queryDbOrNull(
+    client: Client | null | undefined,
     databaseId: string,
     perDatabaseLimit: number,
     lastEditedSinceIsoDateTime?: string,
   ): Promise<Awaited<ReturnType<Client['databases']['query']>> | null> {
+    if (!client) {
+      this.logger.warn(
+        `Notion DB ${databaseId} 조회 실패 (skip): NOTION_WORK_TASK_DB_IDS 에 있지만 NOTION_WORK_TOKEN 이 설정되지 않았습니다.`,
+      );
+      return null;
+    }
     try {
-      return await this.client!.databases.query({
+      return await client.databases.query({
         database_id: databaseId,
         page_size: perDatabaseLimit,
         ...(lastEditedSinceIsoDateTime
@@ -810,8 +844,15 @@ export class NotionApiClient implements NotionClientPort {
     });
   }
 
-  private resolveDatabaseIdsFromEnv(): string[] {
-    const raw = this.configService.get<string>('NOTION_TASK_DB_IDS');
+  // Notion 은 ID 를 하이픈 있는/없는 형태로 섞어 쓴다 — 비교는 하이픈을 지운 소문자로.
+  private isListed(databaseId: string, ids: string[]): boolean {
+    const normalize = (id: string): string =>
+      id.replace(/-/g, '').toLowerCase();
+    return ids.some((id) => normalize(id) === normalize(databaseId));
+  }
+
+  private readIdList(key: string): string[] {
+    const raw = this.configService.get<string>(key);
     if (!raw) {
       return [];
     }

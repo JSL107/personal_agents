@@ -2,7 +2,7 @@
 
 # 환경변수 카탈로그
 
-SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 192개.
+SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 194개.
 설명은 각 변수 주석의 첫 문장 발췌 — 상세는 app.config.ts 주석 참조. `.env.example` 동기는 `pnpm check:env`.
 
 ## 인프라 (앱 부팅 필수)
@@ -31,6 +31,8 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 |---|---|---|
 | `NOTION_TOKEN` | ❌ | Notion integration token + 조회할 task DB ID 콤마 구분 리스트. |
 | `NOTION_TASK_DB_IDS` | ❌ | — |
+| `NOTION_WORK_TOKEN` | ❌ | 다른 워크스페이스(회사) task DB 용 통합 토큰 + DB ID 콤마 리스트. 통합은 자기 워크스페이스만 읽으므로 별도 토큰이 필요하다. 업무 조회·상태 확인에만 쓰고 쓰기에는 쓰지 않는다. 미설정 시 이 DB 들은 skip. |
+| `NOTION_WORK_TASK_DB_IDS` | ❌ | — |
 | `NOTION_DAILY_PLAN_DATABASE_ID` | ❌ | Daily Plan write back 용 별도 DB (선택). 미설정 시 NOTION_TASK_DB_IDS 첫 번째 DB 를 재사용. |
 
 ## Webhook
