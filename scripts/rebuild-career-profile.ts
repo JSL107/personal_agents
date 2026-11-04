@@ -30,6 +30,7 @@ import {
 import { AgentRunModule } from '../src/agent-run/agent-run.module';
 import { AgentRunService } from '../src/agent-run/application/agent-run.service';
 import { TriggerType } from '../src/agent-run/domain/agent-run.type';
+import { CronIdempotencyModule } from '../src/common/queue/cron-idempotency.module';
 import {
   GITHUB_CLIENT_PORT,
   GithubClientPort,
@@ -78,6 +79,7 @@ const USAGE = [
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
     AgentRunModule,
+    CronIdempotencyModule,
     // CareerMateModule 의 형제 usecase(AnalyzeJdGapUsecase)가 CreatePreviewUsecase 를 물고 있어
     // 게이트가 없으면 모듈 자체가 뜨지 않는다. 이 CLI 는 승인 카드를 만들지 않으므로 빈 게이트.
     PreviewGateModule.forRoot({ appliers: [] }),

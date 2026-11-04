@@ -609,8 +609,8 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
     },
     riskTier: 'T0_AUTO',
   },
-  // 포트폴리오 사이트 발행 — 경력 프로필을 비공개 초안으로 밀어 넣는다.
-  // 공개는 사이트 편집기에서 사람이 누르므로 자동 발행에 외부 공개 부작용이 없어 T0_AUTO.
+  // 포트폴리오 사이트 발행 — 신규 카드는 비공개이며 기존 공개 카드도 갱신할 수 있다.
+  // 공개 여부와 대표작 지정은 사람이 관리하고, 자동 갱신 결과는 사후 검사와 보고로 확인한다.
   {
     id: 'portfolio-publish',
     taskId: 'portfolio-publish',

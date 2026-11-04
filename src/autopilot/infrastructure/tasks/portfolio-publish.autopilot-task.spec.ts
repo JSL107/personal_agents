@@ -25,6 +25,16 @@ const RESULT: PublishPortfolioSiteResult = {
   failures: [],
   missingAfterPublish: [],
   agentRunId: 1,
+  regenerated: [],
+  overwrittenPublic: [],
+  coverFailed: [],
+  blankedFields: [],
+  postCheckViolations: [],
+  notInPlan: [],
+  unknownTechTerms: [],
+  planViolations: [],
+  adoptionRequired: false,
+  aborted: null,
 };
 
 const AUDIT_RESULT: ResumeAuditResult = {

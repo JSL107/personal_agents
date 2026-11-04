@@ -18,10 +18,12 @@ import { RenderResumeUsecase } from './application/render-resume.usecase';
 import { CAREER_PROFILE_REPOSITORY_PORT } from './domain/port/career-profile.repository.port';
 import { CAREER_TARGET_JD_REPOSITORY_PORT } from './domain/port/career-target-jd.repository.port';
 import { PORTFOLIO_SITE_CLIENT_PORT } from './domain/port/portfolio-site.client.port';
+import { PORTFOLIO_SYNC_CARD_REPOSITORY_PORT } from './domain/port/portfolio-sync-card.repository.port';
 import { CareerMateDispatcher } from './infrastructure/career-mate.dispatcher';
 import { CareerProfilePrismaRepository } from './infrastructure/career-profile.prisma.repository';
 import { CareerTargetJdPrismaRepository } from './infrastructure/career-target-jd.prisma.repository';
 import { PortfolioSiteApiClient } from './infrastructure/portfolio-site-api.client';
+import { PortfolioSyncCardPrismaRepository } from './infrastructure/portfolio-sync-card.prisma.repository';
 
 // PrismaModule(@Global) / ConfigModule(isGlobal) 은 별도 import 불필요.
 @Module({
@@ -34,6 +36,10 @@ import { PortfolioSiteApiClient } from './infrastructure/portfolio-site-api.clie
     HumanizeModule,
   ],
   providers: [
+    {
+      provide: PORTFOLIO_SYNC_CARD_REPOSITORY_PORT,
+      useClass: PortfolioSyncCardPrismaRepository,
+    },
     {
       provide: CAREER_PROFILE_REPOSITORY_PORT,
       useClass: CareerProfilePrismaRepository,

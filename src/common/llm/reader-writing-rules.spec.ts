@@ -6,11 +6,11 @@ import { CALIBRATION_SYSTEM_PROMPT } from '../../agent/career-mate/domain/prompt
 import { CAREER_MATE_INTENT_SYSTEM_PROMPT } from '../../agent/career-mate/domain/prompt/career-mate-intent.prompt';
 import { CAREER_PROFILE_SYNTH_SYSTEM_PROMPT } from '../../agent/career-mate/domain/prompt/career-profile-synth.prompt';
 import { JD_GAP_SYSTEM_PROMPT } from '../../agent/career-mate/domain/prompt/jd-gap.prompt';
+import { PORTFOLIO_COVER_SYSTEM_PROMPT } from '../../agent/career-mate/domain/prompt/portfolio-cover.prompt';
 import {
   MULTI_PR_RETRO_SYNTH_SYSTEM_PROMPT,
   PR_RETRO_SYNTH_SYSTEM_PROMPT,
 } from '../../agent/career-mate/domain/prompt/pr-retro-synth.prompt';
-import { PROJECT_GROUP_SYNTH_SYSTEM_PROMPT } from '../../agent/career-mate/domain/prompt/project-group-synth.prompt';
 import { RESUME_AUDIT_SYSTEM_PROMPT } from '../../agent/career-mate/domain/prompt/resume-audit.prompt';
 import { CODE_REVIEWER_SYSTEM_PROMPT } from '../../agent/code-reviewer/domain/prompt/code-reviewer-system.prompt';
 import { IMPACT_REPORTER_SYSTEM_PROMPT } from '../../agent/impact-reporter/domain/prompt/impact-reporter-system.prompt';
@@ -34,7 +34,7 @@ describe('READER_WRITING_RULES', () => {
     ['career JD gap', JD_GAP_SYSTEM_PROMPT],
     ['career PR retro', PR_RETRO_SYNTH_SYSTEM_PROMPT],
     ['career multi PR retro', MULTI_PR_RETRO_SYNTH_SYSTEM_PROMPT],
-    ['career project group', PROJECT_GROUP_SYNTH_SYSTEM_PROMPT],
+    ['career project group', PORTFOLIO_COVER_SYSTEM_PROMPT],
     ['career resume audit', RESUME_AUDIT_SYSTEM_PROMPT],
     [
       'paper recommendation',

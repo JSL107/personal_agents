@@ -1,0 +1,213 @@
+{
+  "profile": {
+    "summary": "합성 프로필",
+    "skills": [],
+    "meta": {
+      "githubLogin": "sample",
+      "windowStart": "2026-01-01",
+      "prCount": 13
+    },
+    "accomplishments": [
+      {
+        "title": "작업 1",
+        "bullet": "internal-api 지연 18% 감소",
+        "star": { "situation": "", "task": "", "action": "", "result": "" },
+        "techTags": ["TypeScript", "Jest", "JSON"],
+        "evidence": [
+          {
+            "repo": "SampleCo/internal-api",
+            "pr": 1,
+            "url": "https://github.com/SampleCo/internal-api/pull/1",
+            "mergedAt": "2026-01-01T00:00:00Z"
+          }
+        ]
+      },
+      {
+        "title": "작업 2",
+        "bullet": "internal-api 응답 개선 2",
+        "star": { "situation": "", "task": "", "action": "", "result": "" },
+        "techTags": ["NestJS 10", "TypeScript"],
+        "evidence": [
+          {
+            "repo": "SampleCo/internal-api",
+            "pr": 2,
+            "url": "https://github.com/SampleCo/internal-api/pull/2",
+            "mergedAt": "2026-01-02T00:00:00Z"
+          }
+        ]
+      },
+      {
+        "title": "작업 3",
+        "bullet": "internal-api 응답 개선 3",
+        "star": { "situation": "", "task": "", "action": "", "result": "" },
+        "techTags": ["Postgres", "pnpm"],
+        "evidence": [
+          {
+            "repo": "SampleCo/internal-api",
+            "pr": 3,
+            "url": "https://github.com/SampleCo/internal-api/pull/3",
+            "mergedAt": "2026-01-03T00:00:00Z"
+          }
+        ]
+      },
+      {
+        "title": "작업 4",
+        "bullet": "internal-api 응답 개선 4",
+        "star": { "situation": "", "task": "", "action": "", "result": "" },
+        "techTags": ["TypeScript", "Prisma"],
+        "evidence": [
+          {
+            "repo": "SampleCo/internal-api",
+            "pr": 4,
+            "url": "https://github.com/SampleCo/internal-api/pull/4",
+            "mergedAt": "2026-01-04T00:00:00Z"
+          }
+        ]
+      },
+      {
+        "title": "작업 5",
+        "bullet": "internal-api 응답 개선 5",
+        "star": { "situation": "", "task": "", "action": "", "result": "" },
+        "techTags": ["TypeScript", "Redis"],
+        "evidence": [
+          {
+            "repo": "SampleCo/internal-api",
+            "pr": 5,
+            "url": "https://github.com/SampleCo/internal-api/pull/5",
+            "mergedAt": "2026-01-05T00:00:00Z"
+          }
+        ]
+      },
+      {
+        "title": "작업 6",
+        "bullet": "internal-api 응답 개선 6",
+        "star": { "situation": "", "task": "", "action": "", "result": "" },
+        "techTags": ["TypeScript", "NestJS"],
+        "evidence": [
+          {
+            "repo": "SampleCo/internal-api",
+            "pr": 6,
+            "url": "https://github.com/SampleCo/internal-api/pull/6",
+            "mergedAt": "2026-01-06T00:00:00Z"
+          }
+        ]
+      },
+      {
+        "title": "작업 7",
+        "bullet": "internal-api 응답 개선 7",
+        "star": { "situation": "", "task": "", "action": "", "result": "" },
+        "techTags": ["TypeScript", "CloudSQL"],
+        "evidence": [
+          {
+            "repo": "SampleCo/internal-api",
+            "pr": 7,
+            "url": "https://github.com/SampleCo/internal-api/pull/7",
+            "mergedAt": "2026-01-07T00:00:00Z"
+          }
+        ]
+      },
+      {
+        "title": "작업 8",
+        "bullet": "internal-api 응답 개선 8",
+        "star": { "situation": "", "task": "", "action": "", "result": "" },
+        "techTags": ["TypeScript", "Docker"],
+        "evidence": [
+          {
+            "repo": "SampleCo/internal-api",
+            "pr": 8,
+            "url": "https://github.com/SampleCo/internal-api/pull/8",
+            "mergedAt": "2026-01-08T00:00:00Z"
+          }
+        ]
+      },
+      {
+        "title": "작업 9",
+        "bullet": "internal-api 응답 개선 9",
+        "star": { "situation": "", "task": "", "action": "", "result": "" },
+        "techTags": ["TypeScript", "GitHub Actions"],
+        "evidence": [
+          {
+            "repo": "SampleCo/internal-api",
+            "pr": 9,
+            "url": "https://github.com/SampleCo/internal-api/pull/9",
+            "mergedAt": "2026-01-09T00:00:00Z"
+          }
+        ]
+      },
+      {
+        "title": "작업 10",
+        "bullet": "internal-api 응답 개선 10",
+        "star": { "situation": "", "task": "", "action": "", "result": "" },
+        "techTags": ["TypeScript", "Jest"],
+        "evidence": [
+          {
+            "repo": "SampleCo/internal-api",
+            "pr": 10,
+            "url": "https://github.com/SampleCo/internal-api/pull/10",
+            "mergedAt": "2026-01-10T00:00:00Z"
+          }
+        ]
+      },
+      {
+        "title": "작업 11",
+        "bullet": "internal-api 응답 개선 11",
+        "star": { "situation": "", "task": "", "action": "", "result": "" },
+        "techTags": ["TypeScript", "Jest"],
+        "evidence": [
+          {
+            "repo": "SampleCo/internal-api",
+            "pr": 11,
+            "url": "https://github.com/SampleCo/internal-api/pull/11",
+            "mergedAt": "2026-01-11T00:00:00Z"
+          }
+        ]
+      },
+      {
+        "title": "작업 12",
+        "bullet": "internal-api 응답 개선 12",
+        "star": { "situation": "", "task": "", "action": "", "result": "" },
+        "techTags": ["TypeScript", "Jest"],
+        "evidence": [
+          {
+            "repo": "SampleCo/internal-api",
+            "pr": 12,
+            "url": "https://github.com/SampleCo/internal-api/pull/12",
+            "mergedAt": "2026-01-12T00:00:00Z"
+          }
+        ]
+      },
+      {
+        "title": "공개 작업",
+        "bullet": "공개 저장소 검색 개선",
+        "star": { "situation": "", "task": "", "action": "", "result": "" },
+        "techTags": ["Python 3.11", "Express.js"],
+        "evidence": [
+          {
+            "repo": "Example/open-source",
+            "pr": 13,
+            "url": "https://github.com/Example/open-source/pull/13",
+            "mergedAt": "2026-01-13T00:00:00Z"
+          },
+          {
+            "repo": "SampleCo/internal-api",
+            "pr": 14,
+            "url": "https://github.com/SampleCo/internal-api/pull/14",
+            "mergedAt": "2026-01-12T00:00:00Z"
+          },
+          {
+            "repo": "Example/open-source",
+            "pr": 15,
+            "url": "https://github.com/Example/open-source/pull/15",
+            "mergedAt": "2026-01-14T00:00:00Z"
+          }
+        ]
+      }
+    ]
+  },
+  "siteProjects": [
+    {
+      "slug": "example-open-source",
+      "data": { "links": { "docs": "https://example.org/docs" } }
+    }
+  ]
+}
