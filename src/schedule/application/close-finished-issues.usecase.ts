@@ -18,6 +18,7 @@ import {
   ScheduleSource,
   ScheduleStatus,
 } from '../domain/schedule.type';
+import { toSourceCompletedAt } from '../domain/source-completed-at';
 
 interface CloseFinishedIssuesInput {
   ownerId: string;
@@ -105,9 +106,7 @@ export class CloseFinishedIssuesUsecase {
         now,
         ...(!skipped
           ? {
-              completedAt: lifecycle.closedAt
-                ? new Date(lifecycle.closedAt)
-                : now,
+              completedAt: toSourceCompletedAt(lifecycle.closedAt, now),
             }
           : {}),
         actor: ScheduleActor.COLLECTOR,

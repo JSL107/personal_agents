@@ -20,6 +20,8 @@ import {
   NotionClientPort,
   NotionDailyPlanPage,
   NotionDraftPage,
+  NotionPageNotAccessibleError,
+  NotionPageStatus,
   NotionPlanBlock,
   NotionRichText,
   QueryDraftPagesOptions,
@@ -131,6 +133,31 @@ export class NotionApiClient implements NotionClientPort {
     }
 
     return tasks;
+  }
+
+  async getPageStatus(pageId: string): Promise<NotionPageStatus> {
+    this.assertClientConfigured('getPageStatus');
+    let page: Awaited<ReturnType<Client['pages']['retrieve']>>;
+    try {
+      page = await this.client!.pages.retrieve({ page_id: pageId });
+    } catch (error: unknown) {
+      if (isPageAccessError(error)) {
+        throw new NotionPageNotAccessibleError(pageId, error);
+      }
+      throw this.wrapRequestFailed(error, `Notion page ${pageId} 조회 실패`);
+    }
+    if (!isFullPage(page) || typeof page.last_edited_time !== 'string') {
+      throw new NotionException({
+        code: NotionErrorCode.REQUEST_FAILED,
+        message: `Notion page ${pageId} 조회 실패 — partial response.`,
+      });
+    }
+    return {
+      properties: toNotionProperties(page.properties),
+      archived: page.archived === true,
+      inTrash: page.in_trash === true,
+      lastEditedTime: page.last_edited_time,
+    };
   }
 
   async queryDraftPages({
@@ -789,20 +816,12 @@ export class NotionApiClient implements NotionClientPort {
     const titleText = titleEntry ? collectPlainText(titleEntry[1].title) : '';
     const title = titleText.length > 0 ? titleText : '(제목 없음)';
 
-    const propertiesEntries = entries
-      .filter(([, raw]) => raw.type !== 'title')
-      .map(([name, raw]) => [name, propertyToString(raw)] as const)
-      .filter(
-        (entry): entry is readonly [string, string] =>
-          entry[1] !== null && entry[1].length > 0,
-      );
-
     return {
       databaseId,
       pageId: page.id,
       url: page.url,
       title,
-      properties: Object.fromEntries(propertiesEntries),
+      properties: toNotionProperties(page.properties),
     };
   }
 }
@@ -929,7 +948,38 @@ type FullPage = {
   id: string;
   url: string;
   created_time?: string;
+  archived?: boolean;
+  in_trash?: boolean;
+  last_edited_time?: string;
   properties: Record<string, NotionProperty>;
+};
+
+const toNotionProperties = (
+  properties: Record<string, NotionProperty>,
+): Record<string, string> =>
+  Object.fromEntries(
+    Object.entries(properties)
+      .filter(([, raw]) => raw.type !== 'title')
+      .map(([name, raw]) => [name, propertyToString(raw)] as const)
+      .filter(
+        (entry): entry is readonly [string, string] =>
+          entry[1] !== null && entry[1].length > 0,
+      ),
+  );
+
+const isPageAccessError = (error: unknown): boolean => {
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+  const response = error as { status?: unknown; code?: unknown };
+  return (
+    response.status === 401 ||
+    response.status === 403 ||
+    response.status === 404 ||
+    response.code === 'unauthorized' ||
+    response.code === 'restricted_resource' ||
+    response.code === 'object_not_found'
+  );
 };
 
 interface DraftPropertyNames {

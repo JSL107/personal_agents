@@ -8,6 +8,7 @@ import { PublishStudyBriefInput } from '../domain/port/study-brief-publisher.por
 import { StudyBriefNotionPublisher } from './study-brief-notion.publisher';
 
 const buildNotionClient = (): jest.Mocked<NotionClientPort> => ({
+  getPageStatus: jest.fn(),
   listActiveTasks: jest.fn(),
   queryDraftPages: jest.fn(),
   getPageMarkdown: jest.fn(),

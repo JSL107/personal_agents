@@ -29,6 +29,7 @@ import {
   ScheduleSource,
   ScheduleStatus,
 } from '../domain/schedule.type';
+import { toSourceCompletedAt } from '../domain/source-completed-at';
 import { resolveCollectionLowerBound } from './collection-window';
 
 interface ReconcileInput {
@@ -367,7 +368,7 @@ export class ReconcilePullRequestsUsecase {
       transitionTo: to,
       now,
       ...(kind === ScheduleEventKind.PR_MERGED && pullRequest.mergedAt
-        ? { completedAt: new Date(pullRequest.mergedAt) }
+        ? { completedAt: toSourceCompletedAt(pullRequest.mergedAt, now) }
         : {}),
       actor: ScheduleActor.COLLECTOR,
     });
@@ -399,7 +400,7 @@ export class ReconcilePullRequestsUsecase {
         transitionFrom: [ScheduleStatus.OPEN, ScheduleStatus.IN_PROGRESS],
         transitionTo: ScheduleStatus.DONE,
         now,
-        completedAt: new Date(lifecycle.mergedAt),
+        completedAt: toSourceCompletedAt(lifecycle.mergedAt, now),
         actor: ScheduleActor.COLLECTOR,
       });
       return;

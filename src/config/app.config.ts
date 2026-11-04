@@ -414,6 +414,10 @@ export class EnvironmentVariables {
 
   @IsOptional()
   @IsString()
+  SCHEDULE_NOTION_DROPPED_VALUES?: string;
+
+  @IsOptional()
+  @IsString()
   SCHEDULE_NOTION_DUE_PROPERTY?: string;
 
   @IsOptional()

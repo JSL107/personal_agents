@@ -287,6 +287,52 @@ describe('NotionApiClient', () => {
     });
   });
 
+  it('페이지의 상태·보관·휴지통·수정 시각을 기존 목록과 같은 속성 값으로 읽는다', async () => {
+    const retrieve = jest.fn().mockResolvedValue({
+      object: 'page',
+      id: 'page-1',
+      url: 'https://notion.so/page-1',
+      archived: false,
+      in_trash: true,
+      last_edited_time: '2026-11-04T05:00:00.000Z',
+      properties: {
+        이름: { type: 'title', title: [{ plain_text: '업무' }] },
+        상태: { type: 'status', status: { name: '완료' } },
+        담당자: { type: 'people', people: [{ name: '김준석' }] },
+      },
+    });
+    const adapter = new NotionApiClient(
+      { pages: { retrieve } } as unknown as Client,
+      buildConfig({}),
+    );
+
+    await expect(adapter.getPageStatus('page-1')).resolves.toEqual({
+      properties: { 상태: '완료', 담당자: '김준석' },
+      archived: false,
+      inTrash: true,
+      lastEditedTime: '2026-11-04T05:00:00.000Z',
+    });
+    expect(retrieve).toHaveBeenCalledWith({ page_id: 'page-1' });
+  });
+
+  it.each([404, 403])(
+    '페이지 조회 %i는 접근 불가로 구분한다',
+    async (status) => {
+      const failure = Object.assign(new Error('Notion denied'), { status });
+      const adapter = new NotionApiClient(
+        {
+          pages: { retrieve: jest.fn().mockRejectedValue(failure) },
+        } as unknown as Client,
+        buildConfig({}),
+      );
+
+      await expect(adapter.getPageStatus('page-1')).rejects.toHaveProperty(
+        'name',
+        'NotionPageNotAccessibleError',
+      );
+    },
+  );
+
   it('한 DB 호출 실패해도 다른 DB 는 계속 처리 (graceful skip)', async () => {
     const query = jest.fn(({ database_id }) => {
       if (database_id === 'BAD') {

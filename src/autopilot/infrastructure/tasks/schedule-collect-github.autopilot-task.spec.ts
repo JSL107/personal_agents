@@ -243,7 +243,7 @@ describe('ScheduleCollectGithubAutopilotTask', () => {
         url: 'https://github.com/Acme/API/pull/8',
         body: 'closes #12',
         state: 'merged',
-        mergedAt: '2026-11-04T05:00:00Z',
+        mergedAt: '2026-11-01T05:00:00Z',
       },
     ]);
     await makeTask().run();
@@ -264,7 +264,7 @@ describe('ScheduleCollectGithubAutopilotTask', () => {
   it('머지 PR을 처음 발견하면 업무를 만든 뒤 DONE으로 전이하고 PR_MERGED 사건을 기록한다', async () => {
     assigned.execute.mockResolvedValue({ issues: [], pullRequests: [] });
     github.listAuthorMergedPullRequestsSince.mockResolvedValue([
-      { ...pullRequest, state: 'merged', mergedAt: '2026-11-04T05:00:00Z' },
+      { ...pullRequest, state: 'merged', mergedAt: '2026-11-01T05:00:00Z' },
     ]);
     repository.findById.mockResolvedValue({
       ...taskItem,
@@ -282,12 +282,12 @@ describe('ScheduleCollectGithubAutopilotTask', () => {
   it('머지 PR의 완료 시각은 수집 시각이 아닌 머지 시각이다', async () => {
     assigned.execute.mockResolvedValue({ issues: [], pullRequests: [] });
     github.listAuthorMergedPullRequestsSince.mockResolvedValue([
-      { ...pullRequest, state: 'merged', mergedAt: '2026-11-04T05:00:00Z' },
+      { ...pullRequest, state: 'merged', mergedAt: '2026-11-01T05:00:00Z' },
     ]);
     await makeTask().run();
     expect(repository.recordEventAndTransition).toHaveBeenCalledWith(
       expect.objectContaining({
-        completedAt: new Date('2026-11-04T05:00:00Z'),
+        completedAt: new Date('2026-11-01T05:00:00Z'),
       }),
     );
   });
@@ -327,13 +327,13 @@ describe('ScheduleCollectGithubAutopilotTask', () => {
     ]);
     github.getItemLifecycle.mockResolvedValue({
       state: 'closed',
-      mergedAt: '2026-11-04T05:00:00Z',
+      mergedAt: '2026-11-01T05:00:00Z',
       isPullRequest: true,
     });
     await makeTask().run();
     expect(repository.recordEventAndTransition).toHaveBeenCalledWith(
       expect.objectContaining({
-        completedAt: new Date('2026-11-04T05:00:00Z'),
+        completedAt: new Date('2026-11-01T05:00:00Z'),
       }),
     );
   });

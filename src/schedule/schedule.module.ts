@@ -8,9 +8,11 @@ import { ConsoleReadGuard } from '../console/interface/console-read.guard';
 import { FactAnswerModule } from '../fact-answer/fact-answer.module';
 import { GithubModule } from '../github/github.module';
 import { ModelRouterModule } from '../model-router/model-router.module';
+import { NotionModule } from '../notion/notion.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AnswerScheduleQuestionUsecase } from './application/answer-schedule-question.usecase';
 import { CloseFinishedIssuesUsecase } from './application/close-finished-issues.usecase';
+import { CloseFinishedNotionTasksUsecase } from './application/close-finished-notion-tasks.usecase';
 import { DeleteScheduleUsecase } from './application/delete-schedule.usecase';
 import { DraftFollowUpMessageUsecase } from './application/draft-follow-up-message.usecase';
 import { ExtractScheduleFromConversationUsecase } from './application/extract-schedule-from-conversation.usecase';
@@ -45,6 +47,7 @@ import { ScheduleConsoleController } from './interface/schedule-console.controll
     AgentRunModule,
     FactAnswerModule,
     GithubModule,
+    NotionModule,
     PrismaModule,
     ModelRouterModule,
   ],
@@ -61,6 +64,7 @@ import { ScheduleConsoleController } from './interface/schedule-console.controll
     },
     ExtractScheduleFromConversationUsecase,
     CloseFinishedIssuesUsecase,
+    CloseFinishedNotionTasksUsecase,
     ReconcilePullRequestsUsecase,
     JudgeMentionRequestUsecase,
     RegisterScheduleUsecase,
@@ -98,6 +102,7 @@ import { ScheduleConsoleController } from './interface/schedule-console.controll
   ],
   exports: [
     CloseFinishedIssuesUsecase,
+    CloseFinishedNotionTasksUsecase,
     ReconcilePullRequestsUsecase,
     DAILY_TODO_REPOSITORY_PORT,
     RegisterScheduleUsecase,
