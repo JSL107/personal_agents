@@ -1,3 +1,4 @@
+import { AuthorPullRequestSignals } from '../author-pr-signals.type';
 import {
   AssignedTasks,
   CreateReviewCommentInput,
@@ -9,6 +10,7 @@ import {
   TarballDownload,
 } from '../github.type';
 import { PullRequestEngagementSignals } from '../pr-engagement.type';
+import { ReviewWait, ReviewWaitInput } from '../review-wait';
 
 export const GITHUB_CLIENT_PORT = Symbol('GITHUB_CLIENT_PORT');
 
@@ -40,6 +42,8 @@ export interface PullRequestRef {
 // `issues.get` 은 이슈와 PR 을 모두 반환하고 PR 이면 `pull_request.merged_at` 까지 준다.
 export interface GithubItemLifecycle {
   state: 'open' | 'closed';
+  closedAt: string | null;
+  stateReason: 'completed' | 'not_planned' | 'duplicate' | 'reopened' | null;
   // 머지됐으면 ISO 8601, 아니면 null. PR 이 state='closed' 이고 mergedAt=null 이면 "머지 없이 닫힘"(포기).
   mergedAt: string | null;
   // 이슈와 PR 을 가른다. 이슈에는 머지 개념이 없어 종결 문구가 달라진다.
@@ -274,6 +278,10 @@ export interface SearchCodeInput {
 }
 
 export interface GithubClientPort {
+  fetchAuthorPullRequestSignals(
+    refs: PullRequestRef[],
+  ): Promise<AuthorPullRequestSignals[]>;
+  fetchReviewWaits(input: ReviewWaitInput[]): Promise<ReviewWait[]>;
   listMyAssignedTasks(
     options?: ListAssignedTasksOptions,
   ): Promise<AssignedTasks>;

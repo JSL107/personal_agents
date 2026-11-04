@@ -147,8 +147,26 @@ export interface NotionDailyPlanPage {
   url: string;
 }
 
+export interface NotionPageStatus {
+  properties: Record<string, string>;
+  archived: boolean;
+  inTrash: boolean;
+  lastEditedTime: string;
+}
+
+export class NotionPageNotAccessibleError extends Error {
+  readonly cause: unknown;
+
+  constructor(pageId: string, cause?: unknown) {
+    super(`Notion page ${pageId} 접근 불가`);
+    this.name = 'NotionPageNotAccessibleError';
+    this.cause = cause;
+  }
+}
+
 export interface NotionClientPort {
   listActiveTasks(options?: ListActiveTasksOptions): Promise<NotionTask[]>;
+  getPageStatus(pageId: string): Promise<NotionPageStatus>;
   queryDraftPages(options: QueryDraftPagesOptions): Promise<NotionDraftPage[]>;
   getPageMarkdown(pageId: string): Promise<string>;
   createDatabasePage(

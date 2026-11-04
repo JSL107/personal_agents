@@ -1,6 +1,7 @@
 import { retryPolicies, WebClient } from '@slack/web-api';
 
 import { ScheduleItemRecord, ScheduleStatus } from '../domain/schedule.type';
+import { buildScheduleItemRecord } from '../domain/schedule-item.fixture';
 import {
   SCHEDULE_SLACK_CLIENT_OPTIONS,
   ScheduleSlackNotifier,
@@ -11,6 +12,7 @@ import {
 // 새어 나가면 이미 저장된 일정에 대해 콘솔이 실패를 띄우고, 사용자는 같은 일정을 다시 넣는다.
 describe('ScheduleSlackNotifier', () => {
   const record: ScheduleItemRecord = {
+    ...buildScheduleItemRecord(),
     id: 7,
     slackUserId: 'U123',
     title: '자동차세 납부',

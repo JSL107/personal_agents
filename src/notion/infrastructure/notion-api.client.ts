@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Client } from '@notionhq/client';
+import { Client, isFullPage as isFullNotionPage } from '@notionhq/client';
 import { match } from 'ts-pattern';
 
 import { appendIntegrationHint } from '../../common/domain/integration-failure-hint';
@@ -20,6 +20,8 @@ import {
   NotionClientPort,
   NotionDailyPlanPage,
   NotionDraftPage,
+  NotionPageNotAccessibleError,
+  NotionPageStatus,
   NotionPlanBlock,
   NotionRichText,
   QueryDraftPagesOptions,
@@ -33,6 +35,12 @@ const DEFAULT_PER_DB_LIMIT = 50;
 const DEFAULT_DRAFT_PAGE_LIMIT = 20;
 const MARKDOWN_BLOCK_PAGE_LIMIT = 5;
 const MARKDOWN_BLOCK_PAGE_SIZE = 100;
+const PAGE_ACCESS_ERROR_STATUSES = new Set([401, 403, 404]);
+const PAGE_ACCESS_ERROR_CODES = new Set([
+  'unauthorized',
+  'restricted_resource',
+  'object_not_found',
+]);
 
 // Notion blocks.children.append API 한 요청당 최대 100 child block — 이 이상은 분할 append.
 // codex review bcpccaqik P2 지적 대응.
@@ -131,6 +139,36 @@ export class NotionApiClient implements NotionClientPort {
     }
 
     return tasks;
+  }
+
+  async getPageStatus(pageId: string): Promise<NotionPageStatus> {
+    this.assertClientConfigured('getPageStatus');
+    const page = await this.retrievePageStatus(pageId);
+    if (!isFullNotionPage(page)) {
+      throw new NotionException({
+        code: NotionErrorCode.REQUEST_FAILED,
+        message: `Notion page ${pageId} 조회 실패 — partial response.`,
+      });
+    }
+    return {
+      properties: toNotionProperties(page.properties),
+      archived: page.archived,
+      inTrash: page.in_trash,
+      lastEditedTime: page.last_edited_time,
+    };
+  }
+
+  private async retrievePageStatus(
+    pageId: string,
+  ): Promise<Awaited<ReturnType<Client['pages']['retrieve']>>> {
+    try {
+      return await this.client!.pages.retrieve({ page_id: pageId });
+    } catch (error: unknown) {
+      if (isPageAccessError(error)) {
+        throw new NotionPageNotAccessibleError(pageId, error);
+      }
+      throw this.wrapRequestFailed(error, `Notion page ${pageId} 조회 실패`);
+    }
   }
 
   async queryDraftPages({
@@ -789,20 +827,12 @@ export class NotionApiClient implements NotionClientPort {
     const titleText = titleEntry ? collectPlainText(titleEntry[1].title) : '';
     const title = titleText.length > 0 ? titleText : '(제목 없음)';
 
-    const propertiesEntries = entries
-      .filter(([, raw]) => raw.type !== 'title')
-      .map(([name, raw]) => [name, propertyToString(raw)] as const)
-      .filter(
-        (entry): entry is readonly [string, string] =>
-          entry[1] !== null && entry[1].length > 0,
-      );
-
     return {
       databaseId,
       pageId: page.id,
       url: page.url,
       title,
-      properties: Object.fromEntries(propertiesEntries),
+      properties: toNotionProperties(page.properties),
     };
   }
 }
@@ -929,7 +959,36 @@ type FullPage = {
   id: string;
   url: string;
   created_time?: string;
+  archived?: boolean;
+  in_trash?: boolean;
+  last_edited_time?: string;
   properties: Record<string, NotionProperty>;
+};
+
+const toNotionProperties = (
+  properties: Record<string, NotionProperty>,
+): Record<string, string> =>
+  Object.fromEntries(
+    Object.entries(properties)
+      .filter(([, raw]) => raw.type !== 'title')
+      .map(([name, raw]) => [name, propertyToString(raw)] as const)
+      .filter(
+        (entry): entry is readonly [string, string] =>
+          entry[1] !== null && entry[1].length > 0,
+      ),
+  );
+
+const isPageAccessError = (error: unknown): boolean => {
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+  const response = error as { status?: unknown; code?: unknown };
+  return (
+    (typeof response.status === 'number' &&
+      PAGE_ACCESS_ERROR_STATUSES.has(response.status)) ||
+    (typeof response.code === 'string' &&
+      PAGE_ACCESS_ERROR_CODES.has(response.code))
+  );
 };
 
 interface DraftPropertyNames {

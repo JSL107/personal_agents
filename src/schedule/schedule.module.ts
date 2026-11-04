@@ -6,25 +6,36 @@ import { AgentRunModule } from '../agent-run/agent-run.module';
 import { LoopbackOnlyGuard } from '../common/guard/loopback-only.guard';
 import { ConsoleReadGuard } from '../console/interface/console-read.guard';
 import { FactAnswerModule } from '../fact-answer/fact-answer.module';
+import { GithubModule } from '../github/github.module';
 import { ModelRouterModule } from '../model-router/model-router.module';
+import { NotionModule } from '../notion/notion.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { AnswerScheduleQuestionUsecase } from './application/answer-schedule-question.usecase';
+import { BuildEveningTodoSummaryUsecase } from './application/build-evening-todo-summary.usecase';
+import { BuildMorningTodosUsecase } from './application/build-morning-todos.usecase';
+import { CloseFinishedIssuesUsecase } from './application/close-finished-issues.usecase';
+import { CloseFinishedNotionTasksUsecase } from './application/close-finished-notion-tasks.usecase';
 import { DeleteScheduleUsecase } from './application/delete-schedule.usecase';
 import { DraftFollowUpMessageUsecase } from './application/draft-follow-up-message.usecase';
 import { ExtractScheduleFromConversationUsecase } from './application/extract-schedule-from-conversation.usecase';
+import { GenerateShortTitlesUsecase } from './application/generate-short-titles.usecase';
 import { JudgeMentionRequestUsecase } from './application/judge-mention-request.usecase';
 import { ListSchedulesUsecase } from './application/list-schedules.usecase';
 import { ManageScheduleFromConversationUsecase } from './application/manage-schedule-from-conversation.usecase';
 import { MarkScheduleAsHolidayUsecase } from './application/mark-schedule-as-holiday.usecase';
+import { ReconcilePullRequestsUsecase } from './application/reconcile-pull-requests.usecase';
 import { RegisterConsoleScheduleUsecase } from './application/register-console-schedule.usecase';
 import { RegisterScheduleUsecase } from './application/register-schedule.usecase';
+import { ResolveWorkTurnsUsecase } from './application/resolve-work-turns.usecase';
 import { ScheduleFollowUpUsecase } from './application/schedule-follow-up.usecase';
 import { UpdateScheduleUsecase } from './application/update-schedule.usecase';
 import { UpdateScheduleFieldsUsecase } from './application/update-schedule-fields.usecase';
 import { UpdateScheduleStatusUsecase } from './application/update-schedule-status.usecase';
+import { DAILY_TODO_REPOSITORY_PORT } from './domain/port/daily-todo.repository.port';
 import { SCHEDULE_REPOSITORY_PORT } from './domain/port/schedule.repository.port';
 import { SCHEDULE_COLLECTION_STATE_REPOSITORY_PORT } from './domain/port/schedule-collection-state.repository.port';
 import { SCHEDULE_NOTIFIER_PORT } from './domain/port/schedule-notifier.port';
+import { DailyTodoPrismaRepository } from './infrastructure/daily-todo.prisma.repository';
 import { ScheduleDispatcher } from './infrastructure/schedule.dispatcher';
 import { SchedulePrismaRepository } from './infrastructure/schedule.prisma.repository';
 import { ScheduleCollectionStatePrismaRepository } from './infrastructure/schedule-collection-state.prisma.repository';
@@ -36,15 +47,33 @@ import {
 import { ScheduleConsoleController } from './interface/schedule-console.controller';
 
 @Module({
-  imports: [AgentRunModule, FactAnswerModule, PrismaModule, ModelRouterModule],
+  imports: [
+    AgentRunModule,
+    FactAnswerModule,
+    GithubModule,
+    NotionModule,
+    PrismaModule,
+    ModelRouterModule,
+  ],
   controllers: [ScheduleConsoleController],
   providers: [
+    {
+      provide: DAILY_TODO_REPOSITORY_PORT,
+      useClass: DailyTodoPrismaRepository,
+    },
     { provide: SCHEDULE_REPOSITORY_PORT, useClass: SchedulePrismaRepository },
     {
       provide: SCHEDULE_COLLECTION_STATE_REPOSITORY_PORT,
       useClass: ScheduleCollectionStatePrismaRepository,
     },
     ExtractScheduleFromConversationUsecase,
+    CloseFinishedIssuesUsecase,
+    CloseFinishedNotionTasksUsecase,
+    ReconcilePullRequestsUsecase,
+    ResolveWorkTurnsUsecase,
+    BuildMorningTodosUsecase,
+    BuildEveningTodoSummaryUsecase,
+    GenerateShortTitlesUsecase,
     JudgeMentionRequestUsecase,
     RegisterScheduleUsecase,
     RegisterConsoleScheduleUsecase,
@@ -80,6 +109,14 @@ import { ScheduleConsoleController } from './interface/schedule-console.controll
     },
   ],
   exports: [
+    GenerateShortTitlesUsecase,
+    CloseFinishedIssuesUsecase,
+    CloseFinishedNotionTasksUsecase,
+    ReconcilePullRequestsUsecase,
+    ResolveWorkTurnsUsecase,
+    BuildMorningTodosUsecase,
+    BuildEveningTodoSummaryUsecase,
+    DAILY_TODO_REPOSITORY_PORT,
     RegisterScheduleUsecase,
     ListSchedulesUsecase,
     MarkScheduleAsHolidayUsecase,

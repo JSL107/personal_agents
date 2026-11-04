@@ -1,4 +1,5 @@
 import { ScheduleItemRecord, ScheduleStatus } from '../domain/schedule.type';
+import { buildScheduleItemRecord } from '../domain/schedule-item.fixture';
 import {
   projectForLegacy,
   projectItemForLegacy,
@@ -6,6 +7,7 @@ import {
 
 describe('옛 콘솔 앱 일정 투영', () => {
   const base: ScheduleItemRecord = {
+    ...buildScheduleItemRecord(),
     id: 1,
     slackUserId: 'U1',
     title: '업무',

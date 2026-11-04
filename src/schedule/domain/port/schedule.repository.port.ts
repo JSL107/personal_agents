@@ -8,6 +8,7 @@ import {
   DueClaimInput,
   FindBySourceInput,
   FindBySourceKeyInput,
+  FindCompletedBetweenInput,
   FindScheduleDetailInput,
   FindUnfinishedInput,
   MarkFollowUpNotifiedInput,
@@ -57,6 +58,12 @@ export interface UpdateStatusInput {
   completedAt: Date | null;
 }
 
+export interface UpdateShortTitleInput {
+  id: number;
+  shortTitle: string;
+  basis: string;
+}
+
 export interface ScheduleRepositoryPort {
   save(input: SaveScheduleInput): Promise<ScheduleItemRecord>;
   findByDateRange(
@@ -66,6 +73,13 @@ export interface ScheduleRepositoryPort {
     input: Required<FindByDateRangeInput>,
   ): Promise<ScheduleItemRecord[]>;
   findUndated(slackUserId: string): Promise<ScheduleItemRecord[]>;
+  findOpenLinkedPullRequestUrls(
+    itemIds: number[],
+  ): Promise<Map<number, string[]>>;
+  findMergedPullRequestUrls(itemIds: number[]): Promise<Set<string>>;
+  findCompletedBetween(
+    input: FindCompletedBetweenInput,
+  ): Promise<ScheduleItemRecord[]>;
   findUnfinished(input: FindUnfinishedInput): Promise<ScheduleItemRecord[]>;
   findAllByOwner(slackUserId: string): Promise<ScheduleItemRecord[]>;
   findBySource(input: FindBySourceInput): Promise<ScheduleItemRecord[]>;
@@ -74,6 +88,7 @@ export interface ScheduleRepositoryPort {
   ): Promise<ScheduleItemRecord | null>;
   findById(id: number): Promise<ScheduleItemRecord | null>;
   updateStatus(input: UpdateStatusInput): Promise<ScheduleItemRecord>;
+  updateShortTitle(input: UpdateShortTitleInput): Promise<boolean>;
   transition(input: TransitionInput): Promise<ScheduleItemRecord | null>;
   createCollected(
     input: CollectedScheduleInput,

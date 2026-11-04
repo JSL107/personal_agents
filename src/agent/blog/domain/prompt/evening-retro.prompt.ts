@@ -94,7 +94,7 @@ export const EVENING_RETRO_SYSTEM_PROMPT = [
   '{"retrospective":{"keep"?:string,"problem"?:string,"tryNext"?:string,"carryOver"?:string},"candidates":[{"title":string,"keywords":string[],"blogValueScore":0~100 정수,"reason":string,"sourceRefs":string[],"outline":string[]}],"prNotes":[{"ref":string,"note":string}]}',
   'retrospective 는 KPT 회고다. keep=오늘 방식 중 유지할 것, problem=아쉬웠던 것, tryNext=다음엔 이렇게(행동 교정), carryOver=오늘 못 끝낸 것과 그 이유.',
   '근거가 없는 칸은 키를 아예 빼라. 네 칸이 모두 빠져 retrospective 가 {} 가 되어도 된다. 입력에 없는 문제를 지어내지 말 것 — 없는 문제에서 나온 개선안이 다음 날 일정을 밀어낸다. "없음" "특이사항 없음" 같은 문자열로 칸을 채우지 말고 키 자체를 빼라.',
-  'carryOver 는 입력 "아직 열려 있는 내 PR" 과 worklog 에서 확인되는 미완만 쓴다. tryNext 는 오늘 입력에서 실제로 드러난 문제의 교정만 쓴다 — "테스트를 더 쓰자" 같은 일반론 금지.',
+  'carryOver 는 입력 "오늘 한 일과 못 한 일", "아직 열려 있는 내 PR" 과 worklog 에서 확인되는 미완만 쓴다. tryNext 는 오늘 입력에서 실제로 드러난 문제의 교정만 쓴다. "테스트를 더 쓰자" 같은 일반론 금지.',
   'retrospective 각 칸에서 PR·이슈를 번호만으로 가리키지 않는다. "#4436 답변 확인"이 아니라 "상벌점 기록 전환 PR(#4436) 담당자 답변 확인"처럼 무슨 일인지 말로 쓰고 번호는 괄호에 둔다 — 읽는 사람이 GitHub 를 열지 않고 Slack 에서 바로 판단해야 한다. 이름은 입력(계획 항목·PR 제목·worklog)에 적힌 것에서만 가져오고, 입력에 설명이 없는 번호는 지어내지 말고 번호 그대로 둔다.',
   'retrospective 각 칸의 문장은 60자 안에서 끝낸다. 이 값이 Slack 으로 발송되고 문장 단위로만 줄바꿈되므로, 한 문장이 길면 화면에서 통째로 벽이 된다(실측: 164자 한 문장이 나왔다). 쉼표로 계속 이어 붙이지 말고 마침표로 끊을 것. prNotes 는 Slack 에 실리지 않고 이력서·포트폴리오 재료로 쓰이므로 이 상한을 적용하지 않는다.',
   '각 candidate 는 근거가 된 PR 을 sourceRefs 에 정확히 명시한다(입력 PR 목록의 owner/repo#number 그대로). 지어내지 말 것.',
@@ -241,6 +241,7 @@ export const buildEveningRetroPrompt = (input: {
   openPrs: EveningPrInput[];
   worklogText: string | null;
   dailyEvalText: string | null;
+  todoFacts?: string | null;
 }): string => {
   // PR 제목·본문은 본인 PR 이라도 남이 쓴 문장이 섞인다 — 봇 리뷰 인용, 이슈 원문 붙여넣기,
   // 템플릿에 남은 남의 체크리스트. code-reviewer·impact-reporter 는 같은 성격의 PR 본문에
@@ -260,6 +261,9 @@ export const buildEveningRetroPrompt = (input: {
     openPrSection,
     '',
     // worklog·daily-eval 은 이대리 워커가 만든 우리 산출물이라 경계를 씌우지 않는다.
+    '## 오늘 한 일과 못 한 일',
+    input.todoFacts ? wrapUntrustedInput(input.todoFacts) : '(조회하지 못함)',
+    '',
     '## 오늘 worklog',
     input.worklogText ?? '(없음)',
     '',

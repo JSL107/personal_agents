@@ -1,6 +1,6 @@
 import { PrismaService } from '../../prisma/prisma.service';
 import { ScheduleActor } from '../domain/schedule.repository.type';
-import { ScheduleStatus } from '../domain/schedule.type';
+import { ScheduleEventKind, ScheduleStatus } from '../domain/schedule.type';
 import { SchedulePrismaRepository } from './schedule.prisma.repository';
 
 // 조회 범위를 만드는 자리. 아침 브리핑이 하한 없이 부르는 것을 태스크 쪽 테스트가 고정하지만,
@@ -74,6 +74,8 @@ describe('SchedulePrismaRepository 업무 트래킹', () => {
     id: 1,
     slackUserId: 'U1',
     title: '업무',
+    shortTitle: null,
+    shortTitleBasis: null,
     dueDate: date,
     dueTime: null,
     linkUrl: null,
@@ -91,6 +93,211 @@ describe('SchedulePrismaRepository 업무 트래킹', () => {
     candidateExpiresAt: null,
     deliveryClaimedAt: null,
   };
+
+  it('조회한 짧은 이름과 기준 제목을 레코드에 담는다', async () => {
+    const findUnique = jest.fn().mockResolvedValue({
+      ...row,
+      shortTitle: '짧은 업무',
+      shortTitleBasis: '업무',
+    });
+    const repository = new SchedulePrismaRepository({
+      scheduleItem: { findUnique },
+    } as unknown as PrismaService);
+
+    await expect(repository.findById(1)).resolves.toEqual(
+      expect.objectContaining({
+        shortTitle: '짧은 업무',
+        shortTitleBasis: '업무',
+      }),
+    );
+  });
+
+  it('현재 제목이 기준 제목일 때만 짧은 이름을 저장한다', async () => {
+    const updateMany = jest.fn().mockResolvedValueOnce({ count: 1 });
+    const repository = new SchedulePrismaRepository({
+      scheduleItem: { updateMany },
+    } as unknown as PrismaService);
+
+    await expect(
+      repository.updateShortTitle({
+        id: 1,
+        shortTitle: '짧은 업무',
+        basis: '업무',
+      }),
+    ).resolves.toBe(true);
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: 1, title: '업무' },
+      data: { shortTitle: '짧은 업무', shortTitleBasis: '업무' },
+    });
+  });
+
+  it('제목이 바뀌어 조건부 갱신이 실패하면 false를 돌려준다', async () => {
+    const updateMany = jest.fn().mockResolvedValue({ count: 0 });
+    const repository = new SchedulePrismaRepository({
+      scheduleItem: { updateMany },
+    } as unknown as PrismaService);
+
+    await expect(
+      repository.updateShortTitle({
+        id: 1,
+        shortTitle: '짧은 업무',
+        basis: '업무',
+      }),
+    ).resolves.toBe(false);
+  });
+
+  it('DONE 전이에 completedAt 을 주면 그 시각으로 기록한다', async () => {
+    const completedAt = new Date('2026-11-04T13:00:00Z');
+    const updateMany = jest.fn().mockResolvedValue({ count: 1 });
+    const prisma = {
+      scheduleItem: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValueOnce(row)
+          .mockResolvedValueOnce({ ...row, status: 'DONE', completedAt }),
+        updateMany,
+      },
+      scheduleFollowUp: { updateMany: jest.fn() },
+      scheduleEvent: { create: jest.fn() },
+      $transaction: async (callback: (client: unknown) => Promise<unknown>) =>
+        callback(prisma),
+    };
+    const repository = new SchedulePrismaRepository(
+      prisma as unknown as PrismaService,
+    );
+    const result = await repository.transition({
+      id: 1,
+      slackUserId: 'U1',
+      from: ScheduleStatus.OPEN,
+      to: ScheduleStatus.DONE,
+      now: date,
+      actor: ScheduleActor.USER,
+      completedAt,
+    });
+    expect(updateMany.mock.calls[0][0].data.completedAt).toEqual(completedAt);
+    expect(result?.completedAt).toEqual(completedAt);
+  });
+
+  it.each([
+    [
+      'DONE 이 아닌 전이',
+      ScheduleStatus.SKIPPED,
+      new Date('2026-11-04T13:00:00Z'),
+    ],
+    ['미래 completedAt', ScheduleStatus.DONE, new Date('2026-11-05T05:01:00Z')],
+  ])('%s 는 거부한다', async (_label, to, completedAt) => {
+    const repository = new SchedulePrismaRepository({} as PrismaService);
+    await expect(
+      repository.transition({
+        id: 1,
+        slackUserId: 'U1',
+        from: ScheduleStatus.OPEN,
+        to,
+        now: date,
+        actor: ScheduleActor.USER,
+        completedAt,
+      }),
+    ).rejects.toThrow('완료');
+  });
+
+  it('사건과 함께 전이할 때 원천 완료 시각을 전달한다', async () => {
+    const completedAt = new Date('2026-11-04T13:00:00Z');
+    const updateMany = jest.fn().mockResolvedValue({ count: 1 });
+    const prisma = {
+      scheduleItem: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValueOnce(row)
+          .mockResolvedValueOnce(row)
+          .mockResolvedValueOnce({ ...row, status: 'DONE', completedAt }),
+        updateMany,
+      },
+      scheduleFollowUp: { updateMany: jest.fn() },
+      scheduleEvent: { create: jest.fn() },
+      $transaction: async (callback: (client: unknown) => Promise<unknown>) =>
+        callback(prisma),
+    };
+    const repository = new SchedulePrismaRepository(
+      prisma as unknown as PrismaService,
+    );
+    const result = await repository.recordEventAndTransition({
+      event: {
+        scheduleItemId: 1,
+        kind: ScheduleEventKind.PR_MERGED,
+        payload: {},
+        occurredAt: date,
+      },
+      slackUserId: 'U1',
+      transitionFrom: [ScheduleStatus.OPEN],
+      transitionTo: ScheduleStatus.DONE,
+      now: date,
+      completedAt,
+      actor: ScheduleActor.COLLECTOR,
+    });
+    expect(result).toEqual(
+      expect.objectContaining({
+        transitioned: true,
+        item: expect.objectContaining({ completedAt }),
+      }),
+    );
+    expect(updateMany.mock.calls[0][0].data.completedAt).toEqual(completedAt);
+  });
+
+  it('사건과 함께 잘못된 완료 시각을 받으면 트랜잭션 전에 거부한다', async () => {
+    const transaction = jest.fn();
+    const repository = new SchedulePrismaRepository({
+      $transaction: transaction,
+    } as unknown as PrismaService);
+    await expect(
+      repository.recordEventAndTransition({
+        event: {
+          scheduleItemId: 1,
+          kind: ScheduleEventKind.NOTE,
+          payload: {},
+          occurredAt: date,
+        },
+        slackUserId: 'U1',
+        transitionFrom: [ScheduleStatus.OPEN],
+        transitionTo: ScheduleStatus.SKIPPED,
+        now: date,
+        completedAt: date,
+        actor: ScheduleActor.COLLECTOR,
+      }),
+    ).rejects.toThrow('완료');
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it('findCompletedBetween uses half-open KST range', async () => {
+    const from = new Date('2026-11-04T15:00:00Z');
+    const to = new Date('2026-11-05T15:00:00Z');
+    const rows = [
+      { ...row, status: 'DONE', completedAt: new Date(to.getTime() - 1) },
+      { ...row, id: 2, status: 'DONE', completedAt: to },
+    ];
+    const findMany = jest
+      .fn()
+      .mockImplementation(({ where }) =>
+        rows.filter(
+          (item) =>
+            item.completedAt >= where.completedAt.gte &&
+            item.completedAt < where.completedAt.lt,
+        ),
+      );
+    const repository = new SchedulePrismaRepository({
+      scheduleItem: { findMany },
+    } as unknown as PrismaService);
+    const found = await repository.findCompletedBetween({
+      slackUserId: 'U1',
+      from,
+      to,
+    });
+    expect(findMany.mock.calls[0][0].where).toEqual({
+      slackUserId: 'U1',
+      status: 'DONE',
+      completedAt: { gte: from, lt: to },
+    });
+    expect(found).toHaveLength(1);
+  });
 
   it('소유자의 미완 업무를 기한 제한 없이 읽는다', async () => {
     const findMany = jest.fn().mockResolvedValue([row]);
@@ -1021,5 +1228,67 @@ describe('PR 이벤트와 상태 전이의 원자성', () => {
     await expect(repository.recordEventAndTransition(input)).rejects.toBe(
       error,
     );
+  });
+});
+
+describe('SchedulePrismaRepository.findOpenLinkedPullRequestUrls', () => {
+  it('같은 업무에서 머지된 PR 만 제외하고 중복 링크를 합친다', async () => {
+    const first = 'https://github.com/a/b/pull/1';
+    const second = 'https://github.com/a/b/pull/2';
+    const findMany = jest.fn().mockResolvedValue([
+      { scheduleItemId: 1, kind: 'PR_LINKED', payload: { url: first } },
+      { scheduleItemId: 1, kind: 'PR_LINKED', payload: { url: first } },
+      { scheduleItemId: 1, kind: 'PR_LINKED', payload: { url: second } },
+      { scheduleItemId: 1, kind: 'PR_MERGED', payload: { url: first } },
+      { scheduleItemId: 2, kind: 'PR_LINKED', payload: { url: first } },
+      { scheduleItemId: 2, kind: 'PR_LINKED', payload: {} },
+    ]);
+    const repository = new SchedulePrismaRepository({
+      scheduleEvent: { findMany },
+    } as unknown as PrismaService);
+    await expect(
+      repository.findOpenLinkedPullRequestUrls([1, 2]),
+    ).resolves.toEqual(
+      new Map([
+        [1, [second]],
+        [2, [first]],
+      ]),
+    );
+    expect(findMany).toHaveBeenCalledWith({
+      where: {
+        scheduleItemId: { in: [1, 2] },
+        kind: { in: ['PR_LINKED', 'PR_MERGED'] },
+      },
+      select: { scheduleItemId: true, kind: true, payload: true },
+    });
+  });
+});
+
+describe('SchedulePrismaRepository.findMergedPullRequestUrls', () => {
+  it('완료 업무의 PR_MERGED 이벤트 URL만 읽는다', async () => {
+    const findMany = jest
+      .fn()
+      .mockResolvedValue([
+        { payload: { url: 'https://github.com/acme/app/pull/1' } },
+        { payload: { url: 'https://github.com/acme/app/pull/2' } },
+        { payload: { other: 'ignored' } },
+      ]);
+    const repository = new SchedulePrismaRepository({
+      scheduleEvent: { findMany },
+    } as unknown as PrismaService);
+
+    await expect(repository.findMergedPullRequestUrls([1, 2])).resolves.toEqual(
+      new Set([
+        'https://github.com/acme/app/pull/1',
+        'https://github.com/acme/app/pull/2',
+      ]),
+    );
+    expect(findMany).toHaveBeenCalledWith({
+      where: {
+        scheduleItemId: { in: [1, 2] },
+        kind: ScheduleEventKind.PR_MERGED,
+      },
+      select: { payload: true },
+    });
   });
 });

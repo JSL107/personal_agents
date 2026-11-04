@@ -5,6 +5,7 @@ import {
   ScheduleItemRecord,
   ScheduleStatus,
 } from '../../schedule/domain/schedule.type';
+import { buildScheduleItemRecord } from '../../schedule/domain/schedule-item.fixture';
 import { KoreanHoliday } from '../domain/holiday.type';
 import { KoreanHolidayClientPort } from '../domain/port/korean-holiday.client.port';
 import { SyncKoreanHolidaysUsecase } from './sync-korean-holidays.usecase';
@@ -24,6 +25,7 @@ const record = (
   isHoliday = true,
   id = 1,
 ): ScheduleItemRecord => ({
+  ...buildScheduleItemRecord(),
   id,
   slackUserId: OWNER,
   title,

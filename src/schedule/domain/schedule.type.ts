@@ -70,8 +70,11 @@ export interface PlainDate {
 
 export interface ScheduleItemRecord {
   id: number;
+  createdAt: Date;
   slackUserId: string;
   title: string;
+  shortTitle: string | null;
+  shortTitleBasis: string | null;
   dueDate: Date | null;
   startDate?: Date | null;
   startedAt?: Date | null;

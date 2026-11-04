@@ -6,8 +6,10 @@ import {
   FindByDateRangeInput,
   SaveScheduleInput,
   ScheduleRepositoryPort,
+  UpdateShortTitleInput,
   UpdateStatusInput,
 } from '../domain/port/schedule.repository.port';
+import { ScheduleException } from '../domain/schedule.exception';
 import {
   AddEventInput,
   AddFollowUpInput,
@@ -18,6 +20,7 @@ import {
   DueClaimInput,
   FindBySourceInput,
   FindBySourceKeyInput,
+  FindCompletedBetweenInput,
   FindScheduleDetailInput,
   FindUnfinishedInput,
   MarkFollowUpNotifiedInput,
@@ -41,12 +44,38 @@ import {
   ScheduleSource,
   ScheduleStatus,
 } from '../domain/schedule.type';
+import { ScheduleErrorCode } from '../domain/schedule-error-code.enum';
 import { TransitionInTransactionInput } from './schedule.prisma.repository.type';
+
+const validateCompletedAt = ({
+  to,
+  completedAt,
+  now,
+}: {
+  to: ScheduleStatus | null;
+  completedAt: Date | undefined;
+  now: Date;
+}): void => {
+  if (
+    completedAt !== undefined &&
+    (to !== ScheduleStatus.DONE ||
+      !Number.isFinite(completedAt.getTime()) ||
+      completedAt > now)
+  ) {
+    throw new ScheduleException({
+      code: ScheduleErrorCode.INVALID_COMPLETED_AT,
+      message: '유효하지 않은 완료 시각입니다.',
+    });
+  }
+};
 
 interface ScheduleItemRow {
   id: number;
+  createdAt: Date;
   slackUserId: string;
   title: string;
+  shortTitle: string | null;
+  shortTitleBasis: string | null;
   dueDate: Date | null;
   dueTime: string | null;
   linkUrl: string | null;
@@ -83,8 +112,11 @@ const buildDueDateFilter = (input: FindByDateRangeInput): DueDateFilter => {
 const toRecord = (row: ScheduleItemRow): ScheduleItemRecord => {
   return {
     id: row.id,
+    createdAt: row.createdAt,
     slackUserId: row.slackUserId,
     title: row.title,
+    shortTitle: row.shortTitle,
+    shortTitleBasis: row.shortTitleBasis,
     dueDate: row.dueDate,
     dueTime: row.dueTime,
     linkUrl: row.linkUrl,
@@ -215,6 +247,19 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
     return rows.map(toRecord);
   }
 
+  async findCompletedBetween(
+    input: FindCompletedBetweenInput,
+  ): Promise<ScheduleItemRecord[]> {
+    const rows = await this.prisma.scheduleItem.findMany({
+      where: {
+        slackUserId: input.slackUserId,
+        status: ScheduleStatus.DONE,
+        completedAt: { gte: input.from, lt: input.to },
+      },
+    });
+    return rows.map(toRecord);
+  }
+
   async findUnfinished(
     input: FindUnfinishedInput,
   ): Promise<ScheduleItemRecord[]> {
@@ -281,7 +326,20 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
     return toRecord(updated);
   }
 
+  async updateShortTitle(input: UpdateShortTitleInput): Promise<boolean> {
+    const updated = await this.prisma.scheduleItem.updateMany({
+      where: { id: input.id, title: input.basis },
+      data: { shortTitle: input.shortTitle, shortTitleBasis: input.basis },
+    });
+    return updated.count > 0;
+  }
+
   async transition(input: TransitionInput): Promise<ScheduleItemRecord | null> {
+    validateCompletedAt({
+      to: input.to,
+      completedAt: input.completedAt,
+      now: input.now,
+    });
     return await this.prisma.$transaction(async (client) =>
       this.transitionInTransaction({ client, input }),
     );
@@ -299,7 +357,10 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
     }
     const data: Prisma.ScheduleItemUpdateManyMutationInput = {
       status: input.to,
-      completedAt: input.to === ScheduleStatus.DONE ? input.now : null,
+      completedAt:
+        input.to === ScheduleStatus.DONE
+          ? (input.completedAt ?? input.now)
+          : null,
       ...input.patch,
     };
     if (
@@ -710,6 +771,75 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
     return toFollowUp(updated);
   }
 
+  async findOpenLinkedPullRequestUrls(
+    itemIds: number[],
+  ): Promise<Map<number, string[]>> {
+    if (itemIds.length === 0) {
+      return new Map();
+    }
+    const events = await this.prisma.scheduleEvent.findMany({
+      where: {
+        scheduleItemId: { in: itemIds },
+        kind: {
+          in: [ScheduleEventKind.PR_LINKED, ScheduleEventKind.PR_MERGED],
+        },
+      },
+      select: { scheduleItemId: true, kind: true, payload: true },
+    });
+    const linked = new Map<number, Set<string>>();
+    const merged = new Map<number, Set<string>>();
+    for (const event of events) {
+      const payload = event.payload;
+      if (
+        !payload ||
+        typeof payload !== 'object' ||
+        Array.isArray(payload) ||
+        typeof payload.url !== 'string'
+      ) {
+        continue;
+      }
+      const target =
+        event.kind === ScheduleEventKind.PR_LINKED ? linked : merged;
+      const urls = target.get(event.scheduleItemId) ?? new Set<string>();
+      urls.add(payload.url);
+      target.set(event.scheduleItemId, urls);
+    }
+    const result = new Map<number, string[]>();
+    for (const [id, urls] of linked) {
+      const open = [...urls].filter((url) => !merged.get(id)?.has(url));
+      if (open.length > 0) {
+        result.set(id, open);
+      }
+    }
+    return result;
+  }
+
+  async findMergedPullRequestUrls(itemIds: number[]): Promise<Set<string>> {
+    if (itemIds.length === 0) {
+      return new Set();
+    }
+    const events = await this.prisma.scheduleEvent.findMany({
+      where: {
+        scheduleItemId: { in: itemIds },
+        kind: ScheduleEventKind.PR_MERGED,
+      },
+      select: { payload: true },
+    });
+    const urls = new Set<string>();
+    for (const event of events) {
+      const payload = event.payload;
+      if (
+        payload &&
+        typeof payload === 'object' &&
+        !Array.isArray(payload) &&
+        typeof payload.url === 'string'
+      ) {
+        urls.add(payload.url);
+      }
+    }
+    return urls;
+  }
+
   async addNote(input: AddNoteInput): Promise<ScheduleEventRecord | null> {
     const owner = await this.prisma.scheduleItem.findFirst({
       where: { id: input.scheduleItemId, slackUserId: input.slackUserId },
@@ -754,6 +884,11 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
   async recordEventAndTransition(
     input: RecordEventAndTransitionInput,
   ): Promise<RecordedEventTransition | 'DUPLICATE'> {
+    validateCompletedAt({
+      to: input.transitionTo,
+      completedAt: input.completedAt,
+      now: input.now,
+    });
     let eventCreateUniqueViolation = false;
     try {
       return await this.prisma.$transaction(async (client) => {
@@ -791,6 +926,7 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
             from: before.status as ScheduleStatus,
             to: input.transitionTo,
             now: input.now,
+            completedAt: input.completedAt,
             actor: input.actor,
           },
         });

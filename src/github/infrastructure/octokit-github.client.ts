@@ -4,6 +4,10 @@ import { Octokit } from '@octokit/rest';
 import { appendIntegrationHint } from '../../common/domain/integration-failure-hint';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { isSecretFilePath } from '../../common/util/secret-file.util';
+import {
+  AUTHOR_PR_SIGNAL_MAX,
+  AuthorPullRequestSignals,
+} from '../domain/author-pr-signals.type';
 import { GithubException } from '../domain/github.exception';
 import {
   AssignedTasks,
@@ -56,6 +60,7 @@ import {
   MergeableState,
   PullRequestEngagementSignals,
 } from '../domain/pr-engagement.type';
+import { ReviewWait, ReviewWaitInput } from '../domain/review-wait';
 
 const DEFAULT_LIMIT = 30;
 const MAX_LIMIT = 100;
@@ -291,6 +296,8 @@ export class OctokitGithubClient implements GithubClientPort {
       const pullRequest = response.data.pull_request;
       return {
         state: response.data.state === 'closed' ? 'closed' : 'open',
+        closedAt: response.data.closed_at ?? null,
+        stateReason: response.data.state_reason ?? null,
         mergedAt: pullRequest?.merged_at ?? null,
         isPullRequest: pullRequest !== undefined,
       };
@@ -1285,6 +1292,147 @@ export class OctokitGithubClient implements GithubClientPort {
       return this.cachedLogin;
     } catch {
       return null;
+    }
+  }
+
+  async fetchAuthorPullRequestSignals(
+    refs: PullRequestRef[],
+  ): Promise<AuthorPullRequestSignals[]> {
+    return Promise.all(
+      refs.map((ref, index) =>
+        this.fetchAuthorPullRequestSignal({ ref, index }),
+      ),
+    );
+  }
+
+  private async fetchAuthorPullRequestSignal({
+    ref,
+    index,
+  }: {
+    ref: PullRequestRef;
+    index: number;
+  }): Promise<AuthorPullRequestSignals> {
+    const neutral: AuthorPullRequestSignals = {
+      ref,
+      open: true,
+      draft: false,
+      mergeableState: 'unknown',
+      isApproved: false,
+      pendingReviewers: [],
+      changesRequestedBy: [],
+      observed: false,
+    };
+    if (index >= AUTHOR_PR_SIGNAL_MAX) {
+      return neutral;
+    }
+    try {
+      this.assertOctokitConfigured();
+      const [owner, repo] = parseRepo(ref.repo);
+      const detail = await this.octokit!.rest.pulls.get({
+        owner,
+        repo,
+        pull_number: ref.number,
+      });
+      const reviews = await this.octokit!.paginate(
+        this.octokit!.rest.pulls.listReviews,
+        { owner, repo, pull_number: ref.number, per_page: 100 },
+      );
+      const humans = reviews.filter((review) => review.user?.type !== 'Bot');
+      const latest = new Map<string, PullsReview>();
+      for (const review of humans) {
+        const login = review.user?.login;
+        if (
+          !login ||
+          !review.submitted_at ||
+          !DECISIVE_REVIEW_STATES.has(review.state ?? '')
+        ) {
+          continue;
+        }
+        const previous = latest.get(login);
+        if (!previous || review.submitted_at > (previous.submitted_at ?? '')) {
+          latest.set(login, review);
+        }
+      }
+      const changesRequestedBy = [...latest.entries()]
+        .filter(([, review]) => review.state === 'CHANGES_REQUESTED')
+        .map(([reviewer]) => reviewer);
+      const rawState = detail.data.mergeable_state ?? 'unknown';
+      return {
+        ref,
+        open: detail.data.state === 'open',
+        draft: detail.data.draft ?? false,
+        mergeableState: MERGEABLE_STATES.has(rawState)
+          ? (rawState as MergeableState)
+          : 'unknown',
+        isApproved: computeIsApprovedFromReviews(humans),
+        pendingReviewers: [
+          ...(detail.data.requested_reviewers ?? []).map(
+            (reviewer) => reviewer.login,
+          ),
+          ...(detail.data.requested_teams ?? []).map((team) => team.slug),
+        ],
+        changesRequestedBy,
+        observed: true,
+      };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `PR ${ref.repo}#${ref.number} 차례 신호 조회 실패 — 미관측으로 둔다: ${message}`,
+      );
+      return neutral;
+    }
+  }
+
+  async fetchReviewWaits(input: ReviewWaitInput[]): Promise<ReviewWait[]> {
+    return Promise.all(
+      input.map(({ ref, pendingReviewers }) =>
+        this.fetchReviewWait({ ref, pendingReviewers }),
+      ),
+    );
+  }
+
+  private async fetchReviewWait({
+    ref,
+    pendingReviewers,
+  }: ReviewWaitInput): Promise<ReviewWait> {
+    try {
+      this.assertOctokitConfigured();
+      const [owner, repo] = parseRepo(ref.repo);
+      // Timeline 이벤트 중 리뷰 요청에 필요한 필드만 사용한다.
+      const events = (await this.octokit!.paginate(
+        this.octokit!.rest.issues.listEventsForTimeline,
+        { owner, repo, issue_number: ref.number, per_page: 100 },
+      )) as Array<{
+        event?: string;
+        created_at?: string;
+        requested_reviewer?: { login?: string } | null;
+        requested_team?: { slug?: string } | null;
+      }>;
+      const waits = pendingReviewers.flatMap((reviewer) => {
+        const dates = events
+          .filter(
+            (event) =>
+              event.event === 'review_requested' &&
+              (event.requested_reviewer?.login === reviewer ||
+                event.requested_team?.slug === reviewer),
+          )
+          .map((event) => event.created_at)
+          .filter((date): date is string => !!date)
+          .sort();
+        const requestedAt = dates.at(-1);
+        return requestedAt ? [{ reviewer, requestedAt }] : [];
+      });
+      return {
+        ref,
+        waits,
+        complete: waits.length === pendingReviewers.length,
+      };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `PR ${ref.repo}#${ref.number} 리뷰 요청 이력 조회 실패 — 기간을 쓰지 않는다: ${message}`,
+      );
+      return { ref, waits: [], complete: false };
     }
   }
 

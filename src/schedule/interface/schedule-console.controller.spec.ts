@@ -13,10 +13,12 @@ import {
   DatedScheduleItemRecord,
   ScheduleStatus,
 } from '../domain/schedule.type';
+import { buildScheduleItemRecord } from '../domain/schedule-item.fixture';
 import { ScheduleConsoleController } from './schedule-console.controller';
 
 describe('ScheduleConsoleController', () => {
   const record: DatedScheduleItemRecord = {
+    ...buildScheduleItemRecord(),
     id: 1,
     slackUserId: 'U123',
     title: '분기 보고서 제출',

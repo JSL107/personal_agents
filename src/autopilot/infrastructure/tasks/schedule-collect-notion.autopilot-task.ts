@@ -5,6 +5,7 @@ import { createHash } from 'crypto';
 import { plainDateToUtcDate } from '../../../agent/vacation/domain/plain-date';
 import { appendIntegrationHint } from '../../../common/domain/integration-failure-hint';
 import { ListActiveTasksUsecase } from '../../../notion/application/list-active-tasks.usecase';
+import { CloseFinishedNotionTasksUsecase } from '../../../schedule/application/close-finished-notion-tasks.usecase';
 import { resolveCollectionLowerBound } from '../../../schedule/application/collection-window';
 import { filterMyNotionTask } from '../../../schedule/domain/notion-task-filter';
 import { NotionTaskFilterConfig } from '../../../schedule/domain/notion-task-filter.type';
@@ -42,6 +43,7 @@ export class ScheduleCollectNotionAutopilotTask implements AutopilotTask {
     private readonly stateRepository: ScheduleCollectionStateRepositoryPort,
     private readonly listActiveTasks: ListActiveTasksUsecase,
     private readonly configService: ConfigService,
+    private readonly closeFinished: CloseFinishedNotionTasksUsecase,
   ) {}
 
   async run(): Promise<AutopilotTaskResult> {
@@ -70,6 +72,10 @@ export class ScheduleCollectNotionAutopilotTask implements AutopilotTask {
       }),
       doneValues: this.readList({
         key: 'SCHEDULE_NOTION_DONE_VALUES',
+        fallback: [],
+      }),
+      droppedValues: this.readList({
+        key: 'SCHEDULE_NOTION_DROPPED_VALUES',
         fallback: [],
       }),
       dueProperty: this.configService
@@ -132,6 +138,13 @@ export class ScheduleCollectNotionAutopilotTask implements AutopilotTask {
           `Notion 업무 수집 실패: ${error instanceof Error ? error.message : String(error)}`,
           error,
         ),
+      );
+    }
+    try {
+      await this.closeFinished.execute({ ownerId, now, config });
+    } catch (error) {
+      this.logger.warn(
+        `Notion 업무 완료 확인 실패: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
     return { skip: true };
