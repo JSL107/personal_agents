@@ -1104,6 +1104,8 @@ export class OctokitGithubClient implements GithubClientPort {
             additions: detail.data.additions,
             deletions: detail.data.deletions,
             changedFilesCount: detail.data.changed_files,
+            createdAt: detail.data.created_at,
+            headRef: detail.data.head?.ref,
           };
           return summary;
         } catch (error: unknown) {
@@ -1140,12 +1142,15 @@ export class OctokitGithubClient implements GithubClientPort {
     author,
     sinceIsoDate,
     limit,
+    throwOnDetailFailure,
+    includeDraft,
   }: ListAuthorMergedPullRequestsOptions): Promise<GithubPullRequestSummary[]> {
     this.assertOctokitConfigured();
     const perPage = Math.min(Math.max(1, limit), 100);
     const repoQualifier = repo ? `repo:${repo} ` : '';
     // draft:false — draft(미완성) PR 은 임팩트 종합 노이즈라 제외. updated:>= 로 stale open 컷.
-    const q = `${repoQualifier}is:pr is:open draft:false author:${author} updated:>=${sinceIsoDate}`;
+    const draftQualifier = includeDraft ? '' : 'draft:false ';
+    const q = `${repoQualifier}is:pr is:open ${draftQualifier}author:${author} updated:>=${sinceIsoDate}`;
     const scopeLabel = repo ?? `author=${author} (all repos)`;
     let searchResponse;
     try {
@@ -1164,6 +1169,7 @@ export class OctokitGithubClient implements GithubClientPort {
 
     const itemsToFetch = searchResponse.data.items.slice(0, perPage);
 
+    let detailFailureCount = 0;
     const details = await Promise.all(
       itemsToFetch.map(async (item) => {
         const itemRepo = repo ?? extractRepo(item.repository_url);
@@ -1191,9 +1197,12 @@ export class OctokitGithubClient implements GithubClientPort {
             additions: detail.data.additions,
             deletions: detail.data.deletions,
             changedFilesCount: detail.data.changed_files,
+            createdAt: detail.data.created_at,
+            headRef: detail.data.head?.ref,
           };
           return summary;
         } catch (error: unknown) {
+          detailFailureCount += 1;
           const message =
             error instanceof Error ? error.message : String(error);
           this.logger.warn(
@@ -1203,6 +1212,13 @@ export class OctokitGithubClient implements GithubClientPort {
         }
       }),
     );
+
+    if (throwOnDetailFailure && detailFailureCount > 0) {
+      throw this.wrapRequestFailed(
+        new Error('불완전한 상세 조회 결과'),
+        `GitHub ${scopeLabel} 열린 PR 상세 조회 ${detailFailureCount}/${itemsToFetch.length}건 실패`,
+      );
+    }
 
     return details
       .filter((d): d is NonNullable<typeof d> => d !== null)

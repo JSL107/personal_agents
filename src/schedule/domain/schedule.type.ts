@@ -11,6 +11,7 @@ export enum ScheduleSource {
   SLACK_MENTION = 'SLACK_MENTION',
   NOTION_TASK = 'NOTION_TASK',
   GITHUB_ISSUE = 'GITHUB_ISSUE',
+  GITHUB_PR = 'GITHUB_PR',
 }
 export enum FollowUpTrigger {
   ON_DONE = 'ON_DONE',

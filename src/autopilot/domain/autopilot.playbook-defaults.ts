@@ -219,6 +219,8 @@ export const DEFAULT_HUMANIZE_RESEARCH_TIMEZONE = 'Asia/Seoul';
 // 중간에 지정되기 때문이다 — 연 1회면 그 해의 임시공휴일이 다음 해까지 달력에 안 뜬다.
 export const DEFAULT_SCHEDULE_REMINDER_CRON = '*/5 * * * *';
 export const DEFAULT_SCHEDULE_REMINDER_TIMEZONE = 'Asia/Seoul';
+export const DEFAULT_SCHEDULE_COLLECT_CRON = '*/30 9-19 * * 1-5';
+export const DEFAULT_SCHEDULE_COLLECT_TIMEZONE = 'Asia/Seoul';
 
 export const DEFAULT_HOLIDAY_SYNC_CRON = '0 5 * * 1';
 export const DEFAULT_HOLIDAY_SYNC_TIMEZONE = 'Asia/Seoul';

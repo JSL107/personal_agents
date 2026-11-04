@@ -1499,6 +1499,62 @@ describe('OctokitGithubClient', () => {
       expect(queryArg).not.toContain('repo:');
     });
 
+    it('수집 옵션은 draft를 포함하고 생성 시각·브랜치명을 돌려준다', async () => {
+      const { octokit, search } = buildOpenOctokit({
+        searchItems: [
+          { number: 4, repository_url: 'https://api.github.com/repos/foo/bar' },
+        ],
+        prData: {
+          title: '작업',
+          body: '',
+          html_url: 'https://github.com/foo/bar/pull/4',
+          merged_at: null,
+          updated_at: '2026-11-04T00:00:00Z',
+          created_at: '2026-11-03T00:00:00Z',
+          head: { ref: 'feat/payment' },
+          additions: 1,
+          deletions: 0,
+          changed_files: 1,
+        },
+      });
+      const result = await new OctokitGithubClient(
+        octokit,
+      ).listAuthorOpenPullRequests({
+        repo: null,
+        author: 'JSL107',
+        sinceIsoDate: '2026-11-01',
+        limit: 100,
+        includeDraft: true,
+        throwOnDetailFailure: true,
+      });
+      expect(search.mock.calls[0][0].q).not.toContain('draft:false');
+      expect(result[0]).toMatchObject({
+        createdAt: '2026-11-03T00:00:00Z',
+        headRef: 'feat/payment',
+      });
+    });
+
+    it('수집 옵션에서 PR 상세 한 건이 실패하면 부분 목록 대신 예외를 던진다', async () => {
+      const { octokit, prGet } = buildOpenOctokit({
+        searchItems: [
+          { number: 4, repository_url: 'https://api.github.com/repos/foo/bar' },
+        ],
+        prData: {},
+      });
+      prGet.mockRejectedValue(new Error('rate limited'));
+      await expect(
+        new OctokitGithubClient(octokit).listAuthorOpenPullRequests({
+          repo: null,
+          author: 'JSL107',
+          sinceIsoDate: '2026-11-01',
+          limit: 100,
+          throwOnDetailFailure: true,
+        }),
+      ).rejects.toMatchObject({
+        githubErrorCode: GithubErrorCode.REQUEST_FAILED,
+      });
+    });
+
     it('search 실패 시 REQUEST_FAILED 예외', async () => {
       const search = jest.fn().mockRejectedValue(new Error('network error'));
       const octokit = {

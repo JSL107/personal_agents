@@ -62,7 +62,13 @@ export interface CollectedScheduleInput {
   sourceKey: string;
   sourceUrl: string | null;
   status: ScheduleStatus;
+  startedAt?: Date | null;
   candidateExpiresAt?: Date | null;
+}
+
+export interface FindBySourceInput {
+  slackUserId: string;
+  source: ScheduleSource;
 }
 
 export interface DueClaimInput {
@@ -167,4 +173,10 @@ export interface CountActiveCandidatesInput {
 
 export interface FindUnfinishedInput {
   slackUserId: string;
+}
+
+export interface FindBySourceKeyInput {
+  slackUserId: string;
+  source: ScheduleSource;
+  sourceKey: string;
 }

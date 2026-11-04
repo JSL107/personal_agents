@@ -6,6 +6,8 @@ import {
   CountActiveCandidatesInput,
   CountPendingFollowUpsInput,
   DueClaimInput,
+  FindBySourceInput,
+  FindBySourceKeyInput,
   FindScheduleDetailInput,
   FindUnfinishedInput,
   MarkFollowUpNotifiedInput,
@@ -63,6 +65,11 @@ export interface ScheduleRepositoryPort {
   ): Promise<ScheduleItemRecord[]>;
   findUndated(slackUserId: string): Promise<ScheduleItemRecord[]>;
   findUnfinished(input: FindUnfinishedInput): Promise<ScheduleItemRecord[]>;
+  findAllByOwner(slackUserId: string): Promise<ScheduleItemRecord[]>;
+  findBySource(input: FindBySourceInput): Promise<ScheduleItemRecord[]>;
+  findBySourceKey(
+    input: FindBySourceKeyInput,
+  ): Promise<ScheduleItemRecord | null>;
   findById(id: number): Promise<ScheduleItemRecord | null>;
   updateStatus(input: UpdateStatusInput): Promise<ScheduleItemRecord>;
   transition(input: TransitionInput): Promise<ScheduleItemRecord | null>;

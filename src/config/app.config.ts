@@ -390,6 +390,34 @@ export class EnvironmentVariables {
 
   @IsOptional()
   @IsString()
+  AUTOPILOT_SCHEDULE_COLLECT_NOTION_SCHEDULE?: string;
+
+  @IsOptional()
+  @IsString()
+  AUTOPILOT_SCHEDULE_COLLECT_NOTION_TIMEZONE?: string;
+
+  @IsOptional()
+  @IsString()
+  SCHEDULE_NOTION_ASSIGNEE_PROPERTY?: string;
+
+  @IsOptional()
+  @IsString()
+  SCHEDULE_NOTION_ASSIGNEE_VALUE?: string;
+
+  @IsOptional()
+  @IsString()
+  SCHEDULE_NOTION_STATUS_PROPERTY?: string;
+
+  @IsOptional()
+  @IsString()
+  SCHEDULE_NOTION_DONE_VALUES?: string;
+
+  @IsOptional()
+  @IsString()
+  SCHEDULE_NOTION_DUE_PROPERTY?: string;
+
+  @IsOptional()
+  @IsString()
   AUTOPILOT_SECRETARIAT_SCHEDULE?: string;
 
   @IsOptional()

@@ -37,6 +37,7 @@ import { MarketDataModule } from '../market-data/market-data.module';
 import { MemoryVacuumModule } from '../memory-vacuum/memory-vacuum.module';
 import { ModelRouterModule } from '../model-router/model-router.module';
 import { NotificationQueueModule } from '../notification/notification-queue.module';
+import { NotionModule } from '../notion/notion.module';
 import { OPS_SUPERVISOR_ADVISOR_PORT } from '../ops-supervisor/domain/port/ops-supervisor-advisor.port';
 import { PaperTradingModule } from '../paper-trading/paper-trading.module';
 import { PrReviewLoopModule } from '../pr-review-loop/pr-review-loop.module';
@@ -48,6 +49,7 @@ import { SLACK_NOTIFIER_PORT } from '../slack/domain/port/slack-notifier.port';
 import { SlackModule } from '../slack/slack.module';
 import { SlackService } from '../slack/slack.service';
 import { SlackDeliveryModule } from '../slack/slack-delivery.module';
+import { SlackCollectorModule } from '../slack-collector/slack-collector.module';
 import { StudyApplicabilityModule } from '../study-brief-cron/study-applicability.module';
 import { StudyDeepdiveModule } from '../study-brief-cron/study-deepdive.module';
 import { AutopilotOrchestrator } from './application/autopilot.orchestrator';
@@ -93,6 +95,9 @@ import { PreferenceLearningAutopilotTask } from './infrastructure/tasks/preferen
 import { PreviewSweeperAutopilotTask } from './infrastructure/tasks/preview-sweeper.autopilot-task';
 import { RunRetroAutopilotTask } from './infrastructure/tasks/run-retro.autopilot-task';
 import { RunSweeperAutopilotTask } from './infrastructure/tasks/run-sweeper.autopilot-task';
+import { ScheduleCollectGithubAutopilotTask } from './infrastructure/tasks/schedule-collect-github.autopilot-task';
+import { ScheduleCollectNotionAutopilotTask } from './infrastructure/tasks/schedule-collect-notion.autopilot-task';
+import { ScheduleCollectSlackAutopilotTask } from './infrastructure/tasks/schedule-collect-slack.autopilot-task';
 import { ScheduleReminderAutopilotTask } from './infrastructure/tasks/schedule-reminder.autopilot-task';
 import { ScreeningOutcomeScoringAutopilotTask } from './infrastructure/tasks/screening-outcome-scoring.autopilot-task';
 import { ScreeningScorecardAutopilotTask } from './infrastructure/tasks/screening-scorecard.autopilot-task';
@@ -149,6 +154,8 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     StudyApplicabilityModule,
     JobFeedModule,
     ScheduleModule,
+    SlackCollectorModule,
+    NotionModule,
     IdeaTriageModule,
   ],
   providers: [
@@ -198,6 +205,9 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     ScreeningScorecardAutopilotTask,
     PrReviewSweepAutopilotTask,
     ScheduleReminderAutopilotTask,
+    ScheduleCollectNotionAutopilotTask,
+    ScheduleCollectSlackAutopilotTask,
+    ScheduleCollectGithubAutopilotTask,
     PaperTradingAutopilotTask,
     UniverseSweepAutopilotTask,
     PaperRecommendAutopilotTask,
@@ -306,6 +316,9 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         screeningScorecard: ScreeningScorecardAutopilotTask,
         prReviewSweep: PrReviewSweepAutopilotTask,
         scheduleReminder: ScheduleReminderAutopilotTask,
+        scheduleCollectNotion: ScheduleCollectNotionAutopilotTask,
+        scheduleCollectSlack: ScheduleCollectSlackAutopilotTask,
+        scheduleCollectGithub: ScheduleCollectGithubAutopilotTask,
         paperTrading: PaperTradingAutopilotTask,
         universeSweep: UniverseSweepAutopilotTask,
         paperRecommend: PaperRecommendAutopilotTask,
@@ -351,6 +364,9 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         screeningScorecard,
         prReviewSweep,
         scheduleReminder,
+        scheduleCollectNotion,
+        scheduleCollectSlack,
+        scheduleCollectGithub,
         paperTrading,
         universeSweep,
         paperRecommend,
@@ -397,6 +413,9 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         ScreeningScorecardAutopilotTask,
         PrReviewSweepAutopilotTask,
         ScheduleReminderAutopilotTask,
+        ScheduleCollectNotionAutopilotTask,
+        ScheduleCollectSlackAutopilotTask,
+        ScheduleCollectGithubAutopilotTask,
         PaperTradingAutopilotTask,
         UniverseSweepAutopilotTask,
         PaperRecommendAutopilotTask,

@@ -12,6 +12,7 @@ import { AnswerScheduleQuestionUsecase } from './application/answer-schedule-que
 import { DeleteScheduleUsecase } from './application/delete-schedule.usecase';
 import { DraftFollowUpMessageUsecase } from './application/draft-follow-up-message.usecase';
 import { ExtractScheduleFromConversationUsecase } from './application/extract-schedule-from-conversation.usecase';
+import { JudgeMentionRequestUsecase } from './application/judge-mention-request.usecase';
 import { ListSchedulesUsecase } from './application/list-schedules.usecase';
 import { ManageScheduleFromConversationUsecase } from './application/manage-schedule-from-conversation.usecase';
 import { MarkScheduleAsHolidayUsecase } from './application/mark-schedule-as-holiday.usecase';
@@ -21,9 +22,11 @@ import { ScheduleFollowUpUsecase } from './application/schedule-follow-up.usecas
 import { UpdateScheduleFieldsUsecase } from './application/update-schedule-fields.usecase';
 import { UpdateScheduleStatusUsecase } from './application/update-schedule-status.usecase';
 import { SCHEDULE_REPOSITORY_PORT } from './domain/port/schedule.repository.port';
+import { SCHEDULE_COLLECTION_STATE_REPOSITORY_PORT } from './domain/port/schedule-collection-state.repository.port';
 import { SCHEDULE_NOTIFIER_PORT } from './domain/port/schedule-notifier.port';
 import { ScheduleDispatcher } from './infrastructure/schedule.dispatcher';
 import { SchedulePrismaRepository } from './infrastructure/schedule.prisma.repository';
+import { ScheduleCollectionStatePrismaRepository } from './infrastructure/schedule-collection-state.prisma.repository';
 import {
   SCHEDULE_SLACK_CLIENT_OPTIONS,
   SCHEDULE_SLACK_WEB_CLIENT,
@@ -36,7 +39,12 @@ import { ScheduleConsoleController } from './interface/schedule-console.controll
   controllers: [ScheduleConsoleController],
   providers: [
     { provide: SCHEDULE_REPOSITORY_PORT, useClass: SchedulePrismaRepository },
+    {
+      provide: SCHEDULE_COLLECTION_STATE_REPOSITORY_PORT,
+      useClass: ScheduleCollectionStatePrismaRepository,
+    },
     ExtractScheduleFromConversationUsecase,
+    JudgeMentionRequestUsecase,
     RegisterScheduleUsecase,
     RegisterConsoleScheduleUsecase,
     ListSchedulesUsecase,
@@ -48,6 +56,7 @@ import { ScheduleConsoleController } from './interface/schedule-console.controll
     ScheduleFollowUpUsecase,
     DeleteScheduleUsecase,
     DraftFollowUpMessageUsecase,
+    JudgeMentionRequestUsecase,
     ScheduleDispatcher,
     { provide: SCHEDULE_NOTIFIER_PORT, useClass: ScheduleSlackNotifier },
     ConsoleReadGuard,
@@ -79,6 +88,7 @@ import { ScheduleConsoleController } from './interface/schedule-console.controll
     DeleteScheduleUsecase,
     DraftFollowUpMessageUsecase,
     SCHEDULE_REPOSITORY_PORT,
+    SCHEDULE_COLLECTION_STATE_REPOSITORY_PORT,
     ScheduleDispatcher,
   ],
 })

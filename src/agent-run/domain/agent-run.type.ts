@@ -74,6 +74,7 @@ export enum TriggerType {
   // 일정 워커의 자연어 멘션 — 등록과 질문 답변이 함께 쓴다. 동작 구분은 inputSnapshot.action.
   SLACK_MENTION_SCHEDULE = 'SLACK_MENTION_SCHEDULE',
   AUTOPILOT_SCHEDULE_REMINDER_CRON = 'AUTOPILOT_SCHEDULE_REMINDER_CRON',
+  AUTOPILOT_SCHEDULE_COLLECT_CRON = 'AUTOPILOT_SCHEDULE_COLLECT_CRON',
   // 지연 보고("왜 늦어져?") — 결정론 워커라도 AgentRun 을 남긴다. 없으면 원장이 NEVER_RUN 으로 본다.
   SLACK_MENTION_DELAY_REPORT = 'SLACK_MENTION_DELAY_REPORT',
   // 라우터가 담당자를 고르지 못해 dispatch 이전에 끊긴 요청. 워커별 멘션 트리거와 나누는

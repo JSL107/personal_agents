@@ -2,6 +2,26 @@ import { AUTOPILOT_PLAYBOOK, validatePlaybook } from './autopilot.playbook';
 import { PlaybookEntry } from './playbook.type';
 
 describe('AUTOPILOT_PLAYBOOK', () => {
+  it('수집 그룹은 Notion을 선두로 두고 평일 30분 주기로 돈다', () => {
+    const entries = AUTOPILOT_PLAYBOOK.filter(
+      (entry) => entry.digestGroup === 'schedule-collect',
+    );
+    expect(entries.map((entry) => entry.taskId)).toEqual([
+      'schedule-collect-notion',
+      'schedule-collect-slack',
+      'schedule-collect-github',
+    ]);
+    for (const entry of entries) {
+      expect(entry.riskTier).toBe('T0_AUTO');
+      expect(entry.trigger).toEqual({
+        kind: 'CRON',
+        schedule: '*/30 9-19 * * 1-5',
+        timezone: 'Asia/Seoul',
+      });
+      expect(entry.line).toBeUndefined();
+    }
+  });
+
   it('SP1 플레이북은 daily-eval CRON 항목을 포함한다', () => {
     const dailyEval = AUTOPILOT_PLAYBOOK.find((e) => e.id === 'daily-eval');
     expect(dailyEval).toBeDefined();

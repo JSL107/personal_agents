@@ -2,7 +2,7 @@
 
 # 환경변수 카탈로그
 
-SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 184개.
+SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 191개.
 설명은 각 변수 주석의 첫 문장 발췌 — 상세는 app.config.ts 주석 참조. `.env.example` 동기는 `pnpm check:env`.
 
 ## 인프라 (앱 부팅 필수)
@@ -68,6 +68,8 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `AUTOPILOT_DAILY_EVAL_TIMEZONE` | ❌ | — |
 | `AUTOPILOT_SCHEDULE_REMINDER_SCHEDULE` | ❌ | morning 그룹(비서실 + 아침 브리핑) 스케줄. 스케줄러가 그룹 **첫 항목 id** 로 키를 만들므로 이 그룹의 대표 키는 secretariat 이다. |
 | `AUTOPILOT_SCHEDULE_REMINDER_TIMEZONE` | ❌ | — |
+| `AUTOPILOT_SCHEDULE_COLLECT_NOTION_SCHEDULE` | ❌ | — |
+| `AUTOPILOT_SCHEDULE_COLLECT_NOTION_TIMEZONE` | ❌ | — |
 | `AUTOPILOT_SECRETARIAT_SCHEDULE` | ❌ | — |
 | `AUTOPILOT_SECRETARIAT_TIMEZONE` | ❌ | — |
 | `AUTOPILOT_MORNING_BRIEFING_SCHEDULE` | ❌ | deprecated — morning 그룹 첫 항목이 secretariat 으로 바뀌면서 더 이상 읽히지 않는다. |
@@ -244,6 +246,11 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `AI_CLI_ENV_APPLY_TIMEZONE` | ❌ | 다른 PC snapshot 감지·승인 카드 timezone. 미설정 시 Asia/Seoul. |
 | `PAPER_TRADING_ENABLED` | ❌ | 모의투자 일일 평가. 명시적으로 'true' 일 때만 실행하며 기본값은 비활성이다. |
 | `SCREENER_ENABLED` | ❌ | KRX 유니버스 동기화·증분 시세 수집. 명시적으로 'true' 일 때만 실행한다. |
+| `SCHEDULE_NOTION_ASSIGNEE_PROPERTY` | ❌ | — |
+| `SCHEDULE_NOTION_ASSIGNEE_VALUE` | ❌ | — |
+| `SCHEDULE_NOTION_STATUS_PROPERTY` | ❌ | — |
+| `SCHEDULE_NOTION_DONE_VALUES` | ❌ | — |
+| `SCHEDULE_NOTION_DUE_PROPERTY` | ❌ | — |
 | `MEMORY_VACUUM_PROJECTS_ROOT` | ❌ | 세션 기억 색인 청소(memory-vacuum)가 훑을 프로젝트 루트. |
 | `HERMES_WATCHDOG_OWNER_SLACK_USER_ID` | ❌ | 점검 주체. |
 | `HERMES_WATCHDOG_CRON` | ❌ | BullMQ cron (default 매일 08:30 — `30 8 * * *`, 아침신문 08:00 직후). |

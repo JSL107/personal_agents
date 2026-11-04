@@ -109,6 +109,8 @@ export interface GithubPullRequestSummary {
   additions: number;
   deletions: number;
   changedFilesCount: number;
+  createdAt?: string;
+  headRef?: string;
 }
 
 // PR 리뷰 루프 — 인라인 리뷰 코멘트 1건 게시.

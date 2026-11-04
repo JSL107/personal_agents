@@ -16,6 +16,8 @@ import {
   CountActiveCandidatesInput,
   CountPendingFollowUpsInput,
   DueClaimInput,
+  FindBySourceInput,
+  FindBySourceKeyInput,
   FindScheduleDetailInput,
   FindUnfinishedInput,
   MarkFollowUpNotifiedInput,
@@ -229,12 +231,43 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
     return rows.map(toRecord);
   }
 
+  async findAllByOwner(slackUserId: string): Promise<ScheduleItemRecord[]> {
+    const rows = await this.prisma.scheduleItem.findMany({
+      where: { slackUserId },
+      orderBy: [{ id: 'asc' }],
+    });
+    return rows.map(toRecord);
+  }
+
+  async findBySource(input: FindBySourceInput): Promise<ScheduleItemRecord[]> {
+    const rows = await this.prisma.scheduleItem.findMany({
+      where: { slackUserId: input.slackUserId, source: input.source },
+      orderBy: [{ id: 'asc' }],
+    });
+    return rows.map(toRecord);
+  }
+
   async findById(id: number): Promise<ScheduleItemRecord | null> {
     const found = await this.prisma.scheduleItem.findUnique({ where: { id } });
     if (!found) {
       return null;
     }
     return toRecord(found);
+  }
+
+  async findBySourceKey(
+    input: FindBySourceKeyInput,
+  ): Promise<ScheduleItemRecord | null> {
+    const found = await this.prisma.scheduleItem.findUnique({
+      where: {
+        slackUserId_source_sourceKey: {
+          slackUserId: input.slackUserId,
+          source: input.source,
+          sourceKey: input.sourceKey,
+        },
+      },
+    });
+    return found ? toRecord(found) : null;
   }
 
   async updateStatus(input: UpdateStatusInput): Promise<ScheduleItemRecord> {
@@ -328,6 +361,9 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
           sourceKey: input.sourceKey,
           sourceUrl: input.sourceUrl,
           status: input.status,
+          startedAt:
+            input.startedAt ??
+            (input.status === ScheduleStatus.IN_PROGRESS ? new Date() : null),
           candidateExpiresAt: input.candidateExpiresAt ?? null,
           events: {
             create: {

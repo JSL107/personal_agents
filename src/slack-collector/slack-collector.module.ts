@@ -31,6 +31,6 @@ import { SlackWebApiCollector } from './infrastructure/slack-web-api.collector';
       useClass: SlackWebApiCollector,
     },
   ],
-  exports: [ListMyMentionsUsecase],
+  exports: [ListMyMentionsUsecase, SLACK_COLLECTOR_PORT],
 })
 export class SlackCollectorModule {}
