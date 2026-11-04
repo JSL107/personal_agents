@@ -918,6 +918,69 @@ describe('MorningBriefingAutopilotTask', () => {
       expect(out.summaryText).not.toContain('*오늘 일정*');
     });
 
+    it('기한 없는 진행 업무와 만료 전 후보 수를 브리핑에 싣는다', async () => {
+      const schedules = {
+        execute: jest.fn().mockResolvedValue([dueSoon]),
+        undated: jest.fn().mockResolvedValue([
+          {
+            ...dueSoon,
+            title: '기한 없는 진행',
+            dueDate: null,
+            status: ScheduleStatus.IN_PROGRESS,
+          },
+        ]),
+        countActiveCandidates: jest.fn().mockResolvedValue(2),
+      };
+      const task = buildTask(
+        { execute: jest.fn().mockResolvedValue(planOutcome) } as never,
+        humanized as unknown as HumanizeService,
+        emptyStockRepository(),
+        schedules as never,
+      );
+      const result = await task.run(CTX);
+      expect(result.summaryText).toContain('진행 중 1건');
+      expect(result.summaryText).toContain('기한 없는 진행');
+      expect(result.summaryText).toContain('새 후보 2건');
+    });
+
+    it('기한 없는 조회가 실패해도 후보 수는 보여준다', async () => {
+      const schedules = {
+        execute: jest.fn().mockResolvedValue([]),
+        undated: jest.fn().mockRejectedValue(new Error('조회 실패')),
+        countActiveCandidates: jest.fn().mockResolvedValue(2),
+      };
+      const task = buildTask(
+        { execute: jest.fn().mockResolvedValue(planOutcome) } as never,
+        humanized as unknown as HumanizeService,
+        emptyStockRepository(),
+        schedules as never,
+      );
+      expect((await task.run(CTX)).summaryText).toContain('새 후보 2건');
+    });
+    it('후보 집계가 실패해도 기한 없는 진행 업무는 보여준다', async () => {
+      const schedules = {
+        execute: jest.fn().mockResolvedValue([]),
+        undated: jest.fn().mockResolvedValue([
+          {
+            ...dueSoon,
+            title: '진행 업무',
+            dueDate: null,
+            status: ScheduleStatus.IN_PROGRESS,
+          },
+        ]),
+        countActiveCandidates: jest
+          .fn()
+          .mockRejectedValue(new Error('집계 실패')),
+      };
+      const task = buildTask(
+        { execute: jest.fn().mockResolvedValue(planOutcome) } as never,
+        humanized as unknown as HumanizeService,
+        emptyStockRepository(),
+        schedules as never,
+      );
+      expect((await task.run(CTX)).summaryText).toContain('진행 업무');
+    });
+
     // 장식 쿼리 하나가 본체를 죽이면 안 된다 — appendPortfolioValue 와 같은 원칙.
     it('마감 조회가 실패해도 브리핑 본문은 그대로 나간다', async () => {
       const task = buildTask(

@@ -5,7 +5,39 @@ import { AnswerScheduleQuestionUsecase } from '../application/answer-schedule-qu
 import { RegisterScheduleUsecase } from '../application/register-schedule.usecase';
 import { ScheduleStatus } from '../domain/schedule.type';
 import { ScheduleErrorCode } from '../domain/schedule-error-code.enum';
-import { ScheduleDispatcher } from './schedule.dispatcher';
+import { ScheduleDispatcher as ProductionScheduleDispatcher } from './schedule.dispatcher';
+
+class ScheduleDispatcher extends ProductionScheduleDispatcher {
+  constructor(
+    registerSchedule: ConstructorParameters<
+      typeof ProductionScheduleDispatcher
+    >[0],
+    answerQuestion: ConstructorParameters<
+      typeof ProductionScheduleDispatcher
+    >[1],
+    agentRunService: ConstructorParameters<
+      typeof ProductionScheduleDispatcher
+    >[2],
+    extractSchedule: ConstructorParameters<
+      typeof ProductionScheduleDispatcher
+    >[3],
+    manageSchedule: ConstructorParameters<
+      typeof ProductionScheduleDispatcher
+    >[4] = { execute: jest.fn() } as never,
+    repository: ConstructorParameters<
+      typeof ProductionScheduleDispatcher
+    >[5] = { findUnfinished: jest.fn().mockResolvedValue([]) } as never,
+  ) {
+    super(
+      registerSchedule,
+      answerQuestion,
+      agentRunService,
+      extractSchedule,
+      manageSchedule,
+      repository,
+    );
+  }
+}
 
 const createUsecase = (): RegisterScheduleUsecase => {
   return {
@@ -44,6 +76,141 @@ const createAgentRunService = () => ({
 });
 
 describe('ScheduleDispatcher', () => {
+  it.each([
+    '11월 10일 프로젝트 시작',
+    '9월 30일 자동차세 메모: 카드 결제',
+    '10월 5일 건강검진 3시에 알려줘',
+  ])('제목 일치가 없으면 기존 등록 경로를 탄다: %s', async (text) => {
+    const registerSchedule = createUsecase();
+    const manage = { execute: jest.fn() };
+    const repository = { findUnfinished: jest.fn().mockResolvedValue([]) };
+    const dispatcher = Reflect.construct(ScheduleDispatcher, [
+      registerSchedule,
+      createAnswer(),
+      createAgentRunService(),
+      { execute: jest.fn() },
+      manage,
+      repository,
+    ]) as ScheduleDispatcher;
+    await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text,
+    });
+    expect(registerSchedule.execute).toHaveBeenCalledTimes(1);
+    expect(manage.execute).not.toHaveBeenCalled();
+  });
+
+  it('제목이 일치하면 알림 발화는 관리 경로로 간다', async () => {
+    const item = {
+      id: 17,
+      slackUserId: 'U1',
+      title: '결제 API',
+      status: ScheduleStatus.OPEN,
+      dueDate: null,
+    };
+    const manage = {
+      execute: jest.fn().mockResolvedValue({
+        agentRunId: 1,
+        output: { action: 'REMIND' },
+        modelUsed: 'codex-cli',
+        formattedText: '알림을 걸었어요',
+      }),
+    };
+    const repository = { findUnfinished: jest.fn().mockResolvedValue([item]) };
+    const registerSchedule = createUsecase();
+    const dispatcher = Reflect.construct(ScheduleDispatcher, [
+      registerSchedule,
+      createAnswer(),
+      createAgentRunService(),
+      { execute: jest.fn() },
+      manage,
+      repository,
+    ]) as ScheduleDispatcher;
+    await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '결제 API 내일 3시에 알려줘',
+    });
+    expect(manage.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ candidates: [item] }),
+    );
+    expect(registerSchedule.execute).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['11월 10일 프로젝트 시작', '프로젝트'],
+    ['9월 30일 자동차세 메모: 카드 결제', '자동차세'],
+    ['10월 5일 건강검진 3시에 알려줘', '건강검진'],
+  ])('제목이 일치할 때만 관리 경로로 간다: %s', async (text, title) => {
+    const item = {
+      id: 18,
+      slackUserId: 'U1',
+      title,
+      status: ScheduleStatus.OPEN,
+      dueDate: null,
+    };
+    const manage = {
+      execute: jest.fn().mockResolvedValue({
+        agentRunId: 1,
+        output: {},
+        modelUsed: 'codex-cli',
+        formattedText: '관리했어요',
+      }),
+    };
+    const repository = { findUnfinished: jest.fn().mockResolvedValue([item]) };
+    const registerSchedule = createUsecase();
+    const dispatcher = Reflect.construct(ScheduleDispatcher, [
+      registerSchedule,
+      createAnswer(),
+      createAgentRunService(),
+      { execute: jest.fn() },
+      manage,
+      repository,
+    ]) as ScheduleDispatcher;
+    await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text,
+    });
+    expect(repository.findUnfinished).toHaveBeenCalledWith({
+      slackUserId: 'U1',
+    });
+    expect(manage.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ candidates: [item] }),
+    );
+    expect(registerSchedule.execute).not.toHaveBeenCalled();
+  });
+
+  it('제목이 겹쳐도 질문형이면 쓰지 않고 조회한다', async () => {
+    const manage = { execute: jest.fn() };
+    const answer = createAnswer();
+    const repository = {
+      findUnfinished: jest.fn().mockResolvedValue([
+        {
+          id: 19,
+          slackUserId: 'U1',
+          title: '결제 API',
+          status: ScheduleStatus.OPEN,
+        },
+      ]),
+    };
+    const dispatcher = Reflect.construct(ScheduleDispatcher, [
+      createUsecase(),
+      answer,
+      createAgentRunService(),
+      { execute: jest.fn() },
+      manage,
+      repository,
+    ]) as ScheduleDispatcher;
+    await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '결제 API 끝났어?',
+    });
+    expect(answer.execute).toHaveBeenCalled();
+    expect(manage.execute).not.toHaveBeenCalled();
+  });
   it('agentType 은 SCHEDULE 이다', () => {
     expect(
       new ScheduleDispatcher(

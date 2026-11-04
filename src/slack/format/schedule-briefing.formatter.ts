@@ -1,8 +1,11 @@
 import {
+  DatedScheduleItemRecord,
+  isUnfinished,
   ScheduleItemRecord,
   ScheduleStatus,
 } from '../../schedule/domain/schedule.type';
 import { escapeSlackMrkdwn } from './mrkdwn.util';
+import { TrackingLinesInput } from './schedule-briefing.type';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -46,7 +49,11 @@ export const formatUpcomingLine = (
   // `from` 을 넘기지 않는다) 거르지 않으면 해가 갈수록 `신정(D+265) · 설날(D+240) · …` 이
   // 끝없이 쌓인다. 달력에서는 그대로 보이고 완료·건너뜀도 된다 — 브리핑 한 줄에서만 뺀다.
   const open = items.filter(
-    (item) => item.status === ScheduleStatus.OPEN && !item.isHoliday,
+    (item) =>
+      (item.status === ScheduleStatus.OPEN ||
+        item.status === ScheduleStatus.IN_PROGRESS) &&
+      !item.isHoliday &&
+      item.dueDate !== null,
   );
   if (open.length === 0) {
     return '';
@@ -59,6 +66,9 @@ export const formatUpcomingLine = (
     upcoming: [],
   };
   for (const item of open) {
+    if (item.dueDate === null) {
+      continue;
+    }
     const label = toDayLabel(item.dueDate, today);
     // 제목은 사용자가 친 원문이다. `<`·`>`·`&` 를 막지 않으면 Slack 이 `<...>` 를 링크 태그로
     // 읽어 텍스트가 사라진다 — `schedule.formatter.ts` 와 같은 처리다.
@@ -81,20 +91,41 @@ export const formatUpcomingLine = (
   return `\n\n📌 *마감 ${open.length}건*\n${sections.join('\n')}`;
 };
 
-export const formatScheduleLines = (
-  items: ScheduleItemRecord[],
-  today: Date,
-): string[] => {
-  const dueItems = items.filter((item) => isOpenAndDueBy(item, today));
-  return dueItems.map((item) => formatScheduleLine(item, today));
+export const formatScheduleLines = ({
+  items,
+  today,
+}: {
+  items: ScheduleItemRecord[];
+  today: Date;
+}): string[] => {
+  const dueItems = items.filter((item): item is DatedScheduleItemRecord =>
+    isOpenAndDueBy({ item, today }),
+  );
+  return dueItems.map((item) => formatScheduleLine({ item, today }));
 };
 
-const isOpenAndDueBy = (item: ScheduleItemRecord, today: Date): boolean =>
-  item.status === ScheduleStatus.OPEN &&
-  !item.isHoliday &&
-  item.dueDate <= today;
+// 「📌 마감」 줄과 같은 미완 기준 — 진행 중도 싣고 후보·기한 없음은 뺀다.
+const isOpenAndDueBy = ({
+  item,
+  today,
+}: {
+  item: ScheduleItemRecord;
+  today: Date;
+}): boolean => {
+  const unfinished =
+    isUnfinished(item.status) && item.status !== ScheduleStatus.CANDIDATE;
+  const due = item.dueDate !== null && item.dueDate <= today;
+  const openAndDue = unfinished && !item.isHoliday && due;
+  return openAndDue;
+};
 
-const formatScheduleLine = (item: ScheduleItemRecord, today: Date): string => {
+const formatScheduleLine = ({
+  item,
+  today,
+}: {
+  item: DatedScheduleItemRecord;
+  today: Date;
+}): string => {
   const daysOverdue = Math.round(
     (today.getTime() - item.dueDate.getTime()) / DAY_MS,
   );
@@ -106,4 +137,25 @@ const formatScheduleLine = (item: ScheduleItemRecord, today: Date): string => {
     return `• ${item.dueTime} ${title}`;
   }
   return `• ${title} (오늘)`;
+};
+
+export const formatTrackingLines = ({
+  undatedInProgress,
+  candidateCount,
+}: TrackingLinesInput): string[] => {
+  const lines: string[] = [];
+  if (undatedInProgress.length > 0) {
+    const titles = undatedInProgress
+      .slice(0, 5)
+      .map((item) => escapeSlackMrkdwn(item.title))
+      .join(' · ');
+    const remaining = undatedInProgress.length - 5;
+    lines.push(
+      `진행 중 ${undatedInProgress.length}건: ${titles}${remaining > 0 ? ` 외 ${remaining}건` : ''}`,
+    );
+  }
+  if (candidateCount > 0) {
+    lines.push(`새 후보 ${candidateCount}건`);
+  }
+  return lines;
 };

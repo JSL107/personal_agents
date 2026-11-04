@@ -1393,7 +1393,7 @@ describe('PaperTradingPrismaRepository 기업행동·결제일', () => {
 
     // 소유자·상태로 거르지 않는다 — 공휴일 칩을 완료 처리했다고 장이 열리지는 않는다.
     expect(findHolidays).toHaveBeenCalledWith({
-      where: { isHoliday: true },
+      where: { isHoliday: true, dueDate: { not: null } },
       select: { dueDate: true },
     });
     expect(update).toHaveBeenCalledWith({

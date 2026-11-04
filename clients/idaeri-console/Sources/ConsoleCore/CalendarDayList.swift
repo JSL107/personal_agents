@@ -26,6 +26,8 @@ public func calendarDayKey(year: Int, month: Int, day: Int) -> String {
 /// 보장되지 않아 같은 상태끼리의 순서가 흐트러질 수 있다. 백엔드가 이미 마감일 오름차순으로
 /// 내려주므로(`schedule.prisma.repository.ts` 의 `orderBy`) 그 순서를 묶음 안에서 그대로 둔다.
 public func daySchedules(items: [ScheduleItem], dayKey: String) -> [ScheduleItem] {
-    let onDay = items.filter { $0.dueDay == dayKey }
-    return onDay.filter { $0.status == .open } + onDay.filter { $0.status != .open }
+    let onDay = items.filter {
+        $0.dueDay != nil && ($0.dueDay == dayKey || $0.startDay == dayKey)
+    }
+    return onDay.filter { !$0.status.isClosed } + onDay.filter { $0.status.isClosed }
 }

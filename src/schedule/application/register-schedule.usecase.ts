@@ -12,6 +12,9 @@ export interface RegisterScheduleInput {
   title: string;
   dueDate: PlainDate;
   memo?: string;
+  startDate?: PlainDate | null;
+  dueTime?: string;
+  remindAt?: Date | null;
   isHoliday?: boolean;
 }
 
@@ -28,6 +31,11 @@ export class RegisterScheduleUsecase {
       title: input.title,
       dueDate: plainDateToUtcDate(input.dueDate),
       memo: input.memo,
+      ...(input.startDate !== undefined && {
+        startDate: input.startDate ? plainDateToUtcDate(input.startDate) : null,
+      }),
+      ...(input.dueTime !== undefined && { dueTime: input.dueTime }),
+      ...(input.remindAt !== undefined && { remindAt: input.remindAt }),
       isHoliday: input.isHoliday,
     });
   }

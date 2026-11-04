@@ -16,12 +16,13 @@ describe('INTENT_CLASSIFIER_SYSTEM_PROMPT', () => {
   //           2026-10-16 ART_JOB_FEED 에서 공고를 빼거나 받는 방법 질문을 뺀다(eval h-thread-art-digest-1014 1/3).
   //           2026-10-30 SCHEDULE 이 직전 대화를 일정으로 옮기는 요청(날짜 없음)도 받는다(아침신문 DM 실사례, eval:classifier 46/46).
   //           2026-11-03 VIDEO_WATCH 가 인스타그램 릴스 링크도 받는다(Slack 릴스 분석 요청 실사례, eval:classifier 47/47).
+  //           2026-11-04 SCHEDULE 이 제목을 지목한 상태·알림·연락·메모 지시도 받는다(캘린더 업무 트래킹, eval:classifier 53/53).
   it('분류기 프롬프트 지문이 마지막으로 잰 값과 같다 — 바꾸면 분류 eval 을 다시 잰다', () => {
     expect(
       createHash('sha256')
         .update(INTENT_CLASSIFIER_SYSTEM_PROMPT)
         .digest('hex'),
-    ).toBe('9b5d24fc7728882f092ebc218a44ca7270c1e4d0a076125bfe37053bdedeb5ba');
+    ).toBe('ae0e58d7aaf9075cc60a1958984e8719a19d160990fdd024ce752e469d3ec0d8');
   });
 
   it('SCHEDULE 후보가 분류 표에 있다', () => {

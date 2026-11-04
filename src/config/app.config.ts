@@ -382,6 +382,42 @@ export class EnvironmentVariables {
   // 만들므로 이 그룹의 대표 키는 secretariat 이다.
   @IsOptional()
   @IsString()
+  AUTOPILOT_SCHEDULE_REMINDER_SCHEDULE?: string;
+
+  @IsOptional()
+  @IsString()
+  AUTOPILOT_SCHEDULE_REMINDER_TIMEZONE?: string;
+
+  @IsOptional()
+  @IsString()
+  AUTOPILOT_SCHEDULE_COLLECT_NOTION_SCHEDULE?: string;
+
+  @IsOptional()
+  @IsString()
+  AUTOPILOT_SCHEDULE_COLLECT_NOTION_TIMEZONE?: string;
+
+  @IsOptional()
+  @IsString()
+  SCHEDULE_NOTION_ASSIGNEE_PROPERTY?: string;
+
+  @IsOptional()
+  @IsString()
+  SCHEDULE_NOTION_ASSIGNEE_VALUE?: string;
+
+  @IsOptional()
+  @IsString()
+  SCHEDULE_NOTION_STATUS_PROPERTY?: string;
+
+  @IsOptional()
+  @IsString()
+  SCHEDULE_NOTION_DONE_VALUES?: string;
+
+  @IsOptional()
+  @IsString()
+  SCHEDULE_NOTION_DUE_PROPERTY?: string;
+
+  @IsOptional()
+  @IsString()
   AUTOPILOT_SECRETARIAT_SCHEDULE?: string;
 
   @IsOptional()

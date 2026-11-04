@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
@@ -23,13 +23,20 @@ import {
   ExtractedSchedule,
   ExtractScheduleFromConversationUsecase,
 } from '../application/extract-schedule-from-conversation.usecase';
+import { ManageScheduleFromConversationUsecase } from '../application/manage-schedule-from-conversation.usecase';
 import { RegisterScheduleUsecase } from '../application/register-schedule.usecase';
+import { findByTitle } from '../domain/find-by-title';
+import { hasManagementMarker } from '../domain/management-intent';
 import { parseDueDate, todayInKst } from '../domain/parse-due-date';
 import {
   mergeScheduleCommands,
   parseScheduleCommand,
   ScheduleCommand,
 } from '../domain/parse-schedule-command';
+import {
+  SCHEDULE_REPOSITORY_PORT,
+  ScheduleRepositoryPort,
+} from '../domain/port/schedule.repository.port';
 import { refersToPriorConversation } from '../domain/prior-conversation-reference';
 import { ScheduleException } from '../domain/schedule.exception';
 import { PlainDate } from '../domain/schedule.type';
@@ -60,6 +67,9 @@ export class ScheduleDispatcher implements AgentDispatcher {
     private readonly answerQuestion: AnswerScheduleQuestionUsecase,
     private readonly agentRunService: AgentRunService,
     private readonly extractSchedule: ExtractScheduleFromConversationUsecase,
+    private readonly manageSchedule: ManageScheduleFromConversationUsecase,
+    @Inject(SCHEDULE_REPOSITORY_PORT)
+    private readonly repository: ScheduleRepositoryPort,
   ) {}
 
   async dispatch(input: DispatchInput): Promise<DispatchOutcome> {
@@ -73,6 +83,20 @@ export class ScheduleDispatcher implements AgentDispatcher {
       });
     }
     const today = todayInKst(new Date());
+    if (hasManagementMarker(input.text)) {
+      const candidates = await this.repository.findUnfinished({
+        slackUserId: input.slackUserId,
+      });
+      if (
+        findByTitle({ items: candidates, query: input.text }).kind !== 'NONE'
+      ) {
+        const marker = findHypotheticalMarker(input.text);
+        if (marker !== null) {
+          return this.answer(input, today, { kind: 'LOOKUP' });
+        }
+        return this.manageSchedule.execute({ input, candidates });
+      }
+    }
     // 조회 문장은 등록 파서에 넣지 않는다 — 문장 전체가 제목으로 읽혀 날짜를 되묻거나("이번주 일정
     // 알려줘") 바로 등록된다("오늘 할 일"). 등록된 일정으로 답한다.
     if (isScheduleLookup(input.text ?? '')) {

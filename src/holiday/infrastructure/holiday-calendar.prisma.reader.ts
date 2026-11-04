@@ -25,10 +25,14 @@ export const readHolidayCalendar = async (
   client: HolidayCalendarClient,
 ): Promise<HolidayCalendar> => {
   const rows = await client.scheduleItem.findMany({
-    where: { isHoliday: true },
+    where: { isHoliday: true, dueDate: { not: null } },
     select: { dueDate: true },
   });
-  const dates = rows.map((row) => row.dueDate.toISOString().slice(0, 10));
+  const dates = rows
+    .filter(
+      (row): row is typeof row & { dueDate: Date } => row.dueDate !== null,
+    )
+    .map((row) => row.dueDate.toISOString().slice(0, 10));
   warnMissingYears(dates);
   return holidayCalendarOf(dates);
 };

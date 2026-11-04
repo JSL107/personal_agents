@@ -4,6 +4,7 @@ import {
 } from '../../schedule/domain/schedule.type';
 import {
   formatScheduleLines,
+  formatTrackingLines,
   formatUpcomingLine,
 } from './schedule-briefing.formatter';
 
@@ -146,11 +147,59 @@ describe('formatUpcomingLine', () => {
   });
 });
 
+describe('업무 추적 브리핑', () => {
+  it('마감에는 진행 중을 포함하고 후보와 기한 없는 업무는 제외한다', () => {
+    const result = formatUpcomingLine(
+      [
+        item('진행', '2026-09-18T00:00:00Z', ScheduleStatus.IN_PROGRESS),
+        item('후보', '2026-09-18T00:00:00Z', ScheduleStatus.CANDIDATE),
+        { ...item('기한 없음', '2026-09-18T00:00:00Z'), dueDate: null },
+      ],
+      TODAY,
+    );
+    expect(result).toContain('진행');
+    expect(result).not.toContain('후보');
+    expect(result).not.toContain('기한 없음');
+  });
+  it('기한 없는 진행 중 6건은 5건과 나머지 수를 보여준다', () => {
+    const items = Array.from({ length: 6 }, (_, index) => ({
+      ...item(
+        `업무${index}`,
+        '2026-09-18T00:00:00Z',
+        ScheduleStatus.IN_PROGRESS,
+      ),
+      dueDate: null,
+    }));
+    const lines = formatTrackingLines({
+      undatedInProgress: items,
+      candidateCount: 2,
+    }).join('\n');
+    expect(lines).toContain('진행 중 6건');
+    expect(lines).toContain('업무4');
+    expect(lines).not.toContain('업무5');
+    expect(lines).toContain('외 1건');
+    expect(lines).toContain('새 후보 2건');
+  });
+});
+
 describe('formatScheduleLines', () => {
+  it('진행 중도 미완으로 싣고 후보·기한 없음은 뺀다', () => {
+    expect(
+      formatScheduleLines({
+        items: [
+          item('진행', '2026-09-18T00:00:00.000Z', ScheduleStatus.IN_PROGRESS),
+          item('후보', '2026-09-18T00:00:00.000Z', ScheduleStatus.CANDIDATE),
+          { ...item('기한 없음', '2026-09-18T00:00:00.000Z'), dueDate: null },
+        ],
+        today: TODAY,
+      }),
+    ).toEqual(['• 진행 (오늘)']);
+  });
+
   it('오늘과 지난 미완 일정만 읽기 쉬운 줄로 낸다', () => {
     expect(
-      formatScheduleLines(
-        [
+      formatScheduleLines({
+        items: [
           { ...item('팀 회의', '2026-09-18T00:00:00.000Z'), dueTime: '14:00' },
           item('이력서 제출', '2026-09-18T00:00:00.000Z'),
           item('보고서 제출', '2026-09-15T00:00:00.000Z'),
@@ -158,8 +207,8 @@ describe('formatScheduleLines', () => {
           item('완료', '2026-09-18T00:00:00.000Z', ScheduleStatus.DONE),
           item('공휴일', '2026-09-18T00:00:00.000Z', ScheduleStatus.OPEN, true),
         ],
-        TODAY,
-      ),
+        today: TODAY,
+      }),
     ).toEqual([
       '• 14:00 팀 회의',
       '• 이력서 제출 (오늘)',

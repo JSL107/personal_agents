@@ -36,7 +36,7 @@ func renderScheduleComposePreview(
         initialFailure: failure
             ? "등록 실패 — 백엔드에 연결하지 못했습니다. 주소(http://127.0.0.1:3002)와 실행 여부를 확인하세요."
             : nil,
-        onSubmit: { _, _, _ in nil }
+        onSubmit: { _, _, _, _, _, _ in nil }
     )
         .environment(\.colorScheme, darkMode ? .dark : .light)
         .background(Color(nsColor: .windowBackgroundColor))

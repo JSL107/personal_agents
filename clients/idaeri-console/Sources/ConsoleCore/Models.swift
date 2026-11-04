@@ -425,11 +425,22 @@ public struct InjectRequestBody: Codable {
     }
 }
 
-/// 일정 항목의 상태 3종. rawValue 는 백엔드 enum 문자열과 1:1.
+/// 알 수 없는 서버 상태는 OPEN 으로 읽어 목록 전체의 디코딩 실패를 막는다.
 public enum ScheduleStatus: String, Codable, Sendable {
     case open = "OPEN"
+    case inProgress = "IN_PROGRESS"
     case done = "DONE"
     case skipped = "SKIPPED"
+    case candidate = "CANDIDATE"
+
+    public init(from decoder: Decoder) throws {
+        let value = try decoder.singleValueContainer().decode(String.self)
+        self = ScheduleStatus(rawValue: value) ?? .open
+    }
+
+    public var isClosed: Bool {
+        self == .done || self == .skipped
+    }
 }
 
 /// 일정("마감·신청·예약") 항목 한 건. 화면에 필요한 필드만 받는다 — Codable 은 없는 키를 무시한다.
@@ -438,7 +449,19 @@ public struct ScheduleItem: Codable, Identifiable, Sendable {
     public let title: String
     /// 백엔드는 `@db.Date` 를 ISO 문자열로 내보낸다. 날짜만 쓰므로 Date 로 바꾸지 않고
     /// 앞 10자(`yyyy-MM-dd`)만 떼어 쓴다 — 타임존이 끼면 하루가 밀린다.
-    public let dueDate: String
+    public let dueDate: String?
+    public let startDate: String?
+    public let dueTime: String?
+    public let remindAt: String?
+    public let startedAt: String?
+    public let remindedAt: String?
+    /// 출처는 서버에 새 종류가 추가되어도 디코딩할 수 있도록 문자열로 둔다.
+    public let source: String?
+    public let sourceKey: String?
+    public let sourceUrl: String?
+    public let candidateExpiresAt: String?
+    public let deliveryClaimedAt: String?
+    public let pendingFollowUpCount: Int?
     public let linkUrl: String?
     public let memo: String?
     public let status: ScheduleStatus
@@ -448,8 +471,12 @@ public struct ScheduleItem: Codable, Identifiable, Sendable {
     /// 아님" 으로 읽는 쪽이(`isHolidayDay`) 화면을 살린다.
     public let isHoliday: Bool?
 
-    public var dueDay: String {
-        String(dueDate.prefix(10))
+    public var dueDay: String? {
+        dueDate.map { String($0.prefix(10)) }
+    }
+
+    public var startDay: String? {
+        startDate.map { String($0.prefix(10)) }
     }
 
     /// 화면이 읽는 형태. 비어 있으면 공휴일이 아닌 것으로 본다.
@@ -460,12 +487,23 @@ public struct ScheduleItem: Codable, Identifiable, Sendable {
     public init(
         id: Int,
         title: String,
-        dueDate: String,
+        dueDate: String? = nil,
         linkUrl: String?,
         memo: String?,
         status: ScheduleStatus,
         // 기본값을 두어 기존 호출부(회귀 렌더 표본·테스트)가 그대로 컴파일된다.
-        isHoliday: Bool? = nil
+        isHoliday: Bool? = nil,
+        startDate: String? = nil,
+        dueTime: String? = nil,
+        remindAt: String? = nil,
+        startedAt: String? = nil,
+        remindedAt: String? = nil,
+        source: String? = nil,
+        sourceKey: String? = nil,
+        sourceUrl: String? = nil,
+        candidateExpiresAt: String? = nil,
+        deliveryClaimedAt: String? = nil,
+        pendingFollowUpCount: Int? = nil
     ) {
         self.id = id
         self.title = title
@@ -474,7 +512,63 @@ public struct ScheduleItem: Codable, Identifiable, Sendable {
         self.memo = memo
         self.status = status
         self.isHoliday = isHoliday
+        self.startDate = startDate
+        self.dueTime = dueTime
+        self.remindAt = remindAt
+        self.startedAt = startedAt
+        self.remindedAt = remindedAt
+        self.source = source
+        self.sourceKey = sourceKey
+        self.sourceUrl = sourceUrl
+        self.candidateExpiresAt = candidateExpiresAt
+        self.deliveryClaimedAt = deliveryClaimedAt
+        self.pendingFollowUpCount = pendingFollowUpCount
     }
+}
+
+public enum FollowUpTrigger: String, Codable, Sendable {
+    case onDone = "ON_DONE"
+    case atTime = "AT_TIME"
+}
+
+public struct ScheduleFollowUp: Codable, Identifiable, Sendable {
+    public let id: Int
+    public let scheduleItemId: Int
+    public let recipient: String
+    public let topic: String
+    public let trigger: FollowUpTrigger
+    public let triggerAt: String?
+    public let draft: String?
+    public let notifiedAt: String?
+    public let sentAt: String?
+    public let deliveryClaimedAt: String?
+}
+
+public struct ScheduleEventPayload: Codable, Sendable {
+    public let text: String?
+    public let from: String?
+    public let to: String?
+    public let source: String?
+    public let url: String?
+    public let title: String?
+    public let number: Int?
+}
+
+public struct ScheduleEvent: Codable, Identifiable, Sendable {
+    public let id: Int
+    public let scheduleItemId: Int
+    public let kind: String
+    public let payload: ScheduleEventPayload
+    public let dedupeKey: String?
+    public let occurredAt: String
+}
+
+public struct ScheduleDetail: Codable, Sendable {
+    public let item: ScheduleItem
+    public let followUps: [ScheduleFollowUp]
+    public let events: [ScheduleEvent]
+    public let linkedPullRequests: [ScheduleEvent]
+    public let pendingFollowUpCount: Int
 }
 
 /// 리모컨 명령의 낙관적 진행 단계.

@@ -1104,6 +1104,8 @@ export class OctokitGithubClient implements GithubClientPort {
             additions: detail.data.additions,
             deletions: detail.data.deletions,
             changedFilesCount: detail.data.changed_files,
+            createdAt: detail.data.created_at,
+            headRef: detail.data.head?.ref,
           };
           return summary;
         } catch (error: unknown) {
@@ -1140,12 +1142,15 @@ export class OctokitGithubClient implements GithubClientPort {
     author,
     sinceIsoDate,
     limit,
+    throwOnDetailFailure,
+    includeDraft,
   }: ListAuthorMergedPullRequestsOptions): Promise<GithubPullRequestSummary[]> {
     this.assertOctokitConfigured();
     const perPage = Math.min(Math.max(1, limit), 100);
     const repoQualifier = repo ? `repo:${repo} ` : '';
     // draft:false — draft(미완성) PR 은 임팩트 종합 노이즈라 제외. updated:>= 로 stale open 컷.
-    const q = `${repoQualifier}is:pr is:open draft:false author:${author} updated:>=${sinceIsoDate}`;
+    const draftQualifier = includeDraft ? '' : 'draft:false ';
+    const q = `${repoQualifier}is:pr is:open ${draftQualifier}author:${author} updated:>=${sinceIsoDate}`;
     const scopeLabel = repo ?? `author=${author} (all repos)`;
     let searchResponse;
     try {
@@ -1164,7 +1169,7 @@ export class OctokitGithubClient implements GithubClientPort {
 
     const itemsToFetch = searchResponse.data.items.slice(0, perPage);
 
-    const details = await Promise.all(
+    const results = await Promise.all(
       itemsToFetch.map(async (item) => {
         const itemRepo = repo ?? extractRepo(item.repository_url);
         const [owner, repoName] = parseRepo(itemRepo);
@@ -1177,7 +1182,7 @@ export class OctokitGithubClient implements GithubClientPort {
           // 검색-상세 race: is:open 검색 후 상세 조회 사이에 머지된 PR 은 merged 결과셋과
           // 중복되므로 skip (merged 메서드의 merged_at null-skip 과 대칭).
           if (detail.data.merged_at) {
-            return null;
+            return { summary: null, failed: false };
           }
           const summary: GithubPullRequestSummary = {
             number: item.number,
@@ -1191,22 +1196,34 @@ export class OctokitGithubClient implements GithubClientPort {
             additions: detail.data.additions,
             deletions: detail.data.deletions,
             changedFilesCount: detail.data.changed_files,
+            createdAt: detail.data.created_at,
+            headRef: detail.data.head?.ref,
           };
-          return summary;
+          return { summary, failed: false };
         } catch (error: unknown) {
           const message =
             error instanceof Error ? error.message : String(error);
           this.logger.warn(
             `GitHub open PR ${itemRepo}#${item.number} 상세 조회 실패 (skip): ${message}`,
           );
-          return null;
+          return { summary: null, failed: true };
         }
       }),
     );
+    const detailFailureCount = results.filter(({ failed }) => failed).length;
 
-    return details
+    if (throwOnDetailFailure && detailFailureCount > 0) {
+      throw this.wrapRequestFailed(
+        new Error('불완전한 상세 조회 결과'),
+        `GitHub ${scopeLabel} 열린 PR 상세 조회 ${detailFailureCount}/${itemsToFetch.length}건 실패`,
+      );
+    }
+
+    const details = results.map(({ summary }) => summary);
+    const sortedDetails = details
       .filter((d): d is NonNullable<typeof d> => d !== null)
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    return sortedDetails;
   }
 
   // 열린 PR 의 repo#number 만 조회한다 — PR 상세(pulls.get)를 치지 않고 검색 결과만 쓴다.

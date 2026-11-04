@@ -1,7 +1,11 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 
 import { ScheduleRepositoryPort } from '../domain/port/schedule.repository.port';
-import { ScheduleItemRecord, ScheduleStatus } from '../domain/schedule.type';
+import {
+  ScheduleItemRecord,
+  ScheduleSource,
+  ScheduleStatus,
+} from '../domain/schedule.type';
 import { DeleteScheduleUsecase } from './delete-schedule.usecase';
 
 const found: ScheduleItemRecord = {
@@ -19,14 +23,15 @@ const found: ScheduleItemRecord = {
 
 const createRepository = (
   record: ScheduleItemRecord | null,
-): ScheduleRepositoryPort => ({
-  save: jest.fn(),
-  findByDateRange: jest.fn(),
-  findById: jest.fn().mockResolvedValue(record),
-  updateStatus: jest.fn(),
-  markAsHoliday: jest.fn(),
-  deleteById: jest.fn().mockResolvedValue(undefined),
-});
+): ScheduleRepositoryPort =>
+  ({
+    save: jest.fn(),
+    findByDateRange: jest.fn(),
+    findById: jest.fn().mockResolvedValue(record),
+    updateStatus: jest.fn(),
+    markAsHoliday: jest.fn(),
+    deleteById: jest.fn().mockResolvedValue(undefined),
+  }) as unknown as ScheduleRepositoryPort;
 
 describe('DeleteScheduleUsecase', () => {
   it('있는 항목이면 지운다', async () => {
@@ -39,6 +44,27 @@ describe('DeleteScheduleUsecase', () => {
   });
 
   // 공휴일 행은 영업일 달력의 정본이다. 지우면 다음 주간 동기화까지 그 날이 거래일로 계산된다.
+  it('수집 업무 삭제는 삭제 대신 SKIPPED 전이로 남긴다', async () => {
+    const repository = createRepository({
+      ...found,
+      source: ScheduleSource.SLACK_MENTION,
+    });
+    repository.transition = jest
+      .fn()
+      .mockResolvedValue({ ...found, status: ScheduleStatus.SKIPPED });
+    await new DeleteScheduleUsecase(repository).execute({
+      id: 1,
+      slackUserId: 'U1',
+    });
+    expect(repository.deleteById).not.toHaveBeenCalled();
+    expect(repository.transition).toHaveBeenCalledWith(
+      expect.objectContaining({
+        from: ScheduleStatus.OPEN,
+        to: ScheduleStatus.SKIPPED,
+      }),
+    );
+  });
+
   it('공휴일 행은 지우지 않는다', async () => {
     const repository = createRepository({
       ...found,

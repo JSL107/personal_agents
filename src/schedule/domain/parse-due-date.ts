@@ -14,6 +14,12 @@ export const plainDateToUtcDate = (date: PlainDate): Date => {
   return new Date(Date.UTC(date.year, date.month - 1, date.day));
 };
 
+export const kstStartOfDay = (date: PlainDate): Date => {
+  const kstOffsetMs = 9 * 60 * 60 * 1000;
+  const utcMidnight = Date.UTC(date.year, date.month - 1, date.day);
+  return new Date(utcMidnight - kstOffsetMs);
+};
+
 const utcDateToPlain = (date: Date): PlainDate => {
   return {
     year: date.getUTCFullYear(),

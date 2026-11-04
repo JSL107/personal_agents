@@ -147,6 +147,7 @@ export interface ListAuthorMergedPullRequestsOptions {
   limit: number;
   // 상세 조회가 한 건이라도 실패하면 불완전한 결과 대신 예외를 던진다. 기본값은 기존 동작인 false.
   throwOnDetailFailure?: boolean;
+  includeDraft?: boolean;
 }
 
 // PR 리뷰 스윕처럼 열린 PR 의 식별자만 필요한 호출자용 조회 옵션.

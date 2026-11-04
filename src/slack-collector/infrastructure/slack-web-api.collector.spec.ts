@@ -155,6 +155,23 @@ describe('SlackWebApiCollector', () => {
     });
   });
 
+  it('strict 채널 조회에서는 history 실패를 전파해 수집 커서를 유지할 수 있게 한다', async () => {
+    const client = {
+      users: {
+        conversations: jest
+          .fn()
+          .mockResolvedValue({ channels: [{ id: 'C1' }] }),
+      },
+      conversations: {
+        history: jest.fn().mockRejectedValue(new Error('rate limit')),
+      },
+    } as unknown as WebClient;
+    const collector = new SlackWebApiCollector(client);
+    await expect(
+      collector.listMyMentions({ slackUserId: 'U', failOnChannelError: true }),
+    ).rejects.toBeInstanceOf(SlackCollectorException);
+  });
+
   it('users.conversations 호출 실패 시 REQUEST_FAILED 예외로 감싼다', async () => {
     const client = {
       users: {
@@ -187,5 +204,22 @@ describe('SlackWebApiCollector', () => {
     const oldestArg = Number(history.mock.calls[0][0].oldest);
     expect(oldestArg).toBeGreaterThanOrEqual(before - 3601);
     expect(oldestArg).toBeLessThanOrEqual(after - 3599);
+  });
+
+  it('후보 원문 permalink를 가져오고 실패하면 undefined를 돌린다', async () => {
+    const getPermalink = jest
+      .fn()
+      .mockResolvedValue({ permalink: 'https://slack.com/archives/C1/p1' });
+    const client = { chat: { getPermalink } } as unknown as WebClient;
+    const collector = new SlackWebApiCollector(client);
+    expect(await collector.getPermalink('C1', '1.0')).toBe(
+      'https://slack.com/archives/C1/p1',
+    );
+    expect(getPermalink).toHaveBeenCalledWith({
+      channel: 'C1',
+      message_ts: '1.0',
+    });
+    getPermalink.mockRejectedValue(new Error('unavailable'));
+    expect(await collector.getPermalink('C1', '1.0')).toBeUndefined();
   });
 });

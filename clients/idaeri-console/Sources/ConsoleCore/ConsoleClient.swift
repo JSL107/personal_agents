@@ -35,6 +35,92 @@ public func buildRunRetryRequest(baseURL: URL, runId: Int, token: String?) -> UR
     return request
 }
 
+public func buildScheduleListRequest(baseURL: URL, from: String, to: String) -> URLRequest? {
+    var components = URLComponents(
+        url: baseURL.appendingPathComponent("v1/console/schedules"),
+        resolvingAgainstBaseURL: false
+    )
+    components?.queryItems = [
+        URLQueryItem(name: "from", value: from),
+        URLQueryItem(name: "to", value: to),
+        URLQueryItem(name: "view", value: "tracking"),
+    ]
+    return components?.url.map { URLRequest(url: $0) }
+}
+
+public func buildScheduleUndatedRequest(baseURL: URL) -> URLRequest {
+    URLRequest(url: baseURL.appendingPathComponent("v1/console/schedules/undated"))
+}
+
+public func buildScheduleDetailRequest(baseURL: URL, id: Int) -> URLRequest {
+    URLRequest(url: baseURL.appendingPathComponent("v1/console/schedules/\(id)"))
+}
+
+public func buildScheduleCreateRequest(
+    baseURL: URL, title: String, dueDate: String, memo: String?,
+    startDate: String?, dueTime: String?, remindAt: String?
+) throws -> URLRequest {
+    let url = baseURL.appendingPathComponent("v1/console/schedules")
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    var body: [String: String] = ["title": title, "dueDate": dueDate]
+    if let memo, !memo.isEmpty { body["memo"] = memo }
+    if let startDate { body["startDate"] = startDate }
+    if let dueTime { body["dueTime"] = dueTime }
+    if let remindAt { body["remindAt"] = remindAt }
+    request.httpBody = try JSONEncoder().encode(body)
+    return request
+}
+
+public func buildSchedulePatchRequest(
+    baseURL: URL, id: Int, fields: [String: String?]
+) throws -> URLRequest? {
+    var components = URLComponents(
+        url: baseURL.appendingPathComponent("v1/console/schedules/\(id)"),
+        resolvingAgainstBaseURL: false
+    )
+    components?.queryItems = [URLQueryItem(name: "view", value: "tracking")]
+    guard let url = components?.url else { return nil }
+    var request = URLRequest(url: url)
+    request.httpMethod = "PATCH"
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.httpBody = try JSONSerialization.data(withJSONObject: fields.mapValues { $0 as Any? ?? NSNull() })
+    return request
+}
+
+public func buildFollowUpRequest(
+    baseURL: URL, scheduleId: Int, recipient: String, topic: String,
+    trigger: FollowUpTrigger, triggerAt: String?
+) throws -> URLRequest {
+    let url = baseURL.appendingPathComponent("v1/console/schedules/\(scheduleId)/follow-ups")
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    var body = ["recipient": recipient, "topic": topic, "trigger": trigger.rawValue]
+    if let triggerAt { body["triggerAt"] = triggerAt }
+    request.httpBody = try JSONEncoder().encode(body)
+    return request
+}
+
+public func buildScheduleNoteRequest(baseURL: URL, scheduleId: Int, text: String) throws -> URLRequest {
+    let url = baseURL.appendingPathComponent("v1/console/schedules/\(scheduleId)/notes")
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.httpBody = try JSONEncoder().encode(["text": text])
+    return request
+}
+
+public func buildFollowUpSentRequest(baseURL: URL, id: Int, sentAt: String) throws -> URLRequest {
+    let url = baseURL.appendingPathComponent("v1/console/follow-ups/\(id)")
+    var request = URLRequest(url: url)
+    request.httpMethod = "PATCH"
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.httpBody = try JSONEncoder().encode(["sentAt": sentAt])
+    return request
+}
+
 /// SSE 버퍼에서 완성된 이벤트를 잘라 디코딩하는 순수 파서.
 ///
 /// 백엔드 `@Sse('stream')` 는 각 이벤트를 `data: <json>\n\n` 로 흘려보낸다. 스트림은 임의
@@ -303,26 +389,22 @@ public actor ConsoleClient {
     /// `GET /v1/console/schedules`. 캘린더 탭이 열릴 때와 상태 변경 직후에만 부른다 —
     /// 일정은 초 단위로 변하지 않으므로 SSE 에 싣지 않는다.
     public func fetchSchedules(from: String, to: String) async throws -> [ScheduleItem] {
-        var components = URLComponents(
-            url: baseURL.appendingPathComponent("v1/console/schedules"),
-            resolvingAgainstBaseURL: false
-        )
-        components?.queryItems = [
-            URLQueryItem(name: "from", value: from),
-            URLQueryItem(name: "to", value: to),
-        ]
-        guard let url = components?.url else {
+        guard let request = buildScheduleListRequest(baseURL: baseURL, from: from, to: to) else {
             throw ConsoleClientError.notHTTP
         }
-        let (data, response) = try await session.data(for: authorized(URLRequest(url: url)))
-        guard let http = response as? HTTPURLResponse else {
-            throw ConsoleClientError.notHTTP
-        }
-        guard (200..<300).contains(http.statusCode) else {
-            throw ConsoleClientError.badStatus(http.statusCode)
-        }
-        let envelope = try JSONDecoder().decode(SchedulesEnvelope.self, from: data)
-        return envelope.data
+        return try await sendDecoding(authorized(request), as: SchedulesEnvelope.self).data
+    }
+
+    public func fetchUndated() async throws -> [ScheduleItem] {
+        return try await sendDecoding(
+            authorized(buildScheduleUndatedRequest(baseURL: baseURL)), as: SchedulesEnvelope.self
+        ).data
+    }
+
+    public func fetchDetail(id: Int) async throws -> ScheduleDetail {
+        return try await sendDecoding(
+            authorized(buildScheduleDetailRequest(baseURL: baseURL, id: id)), as: ScheduleDetailEnvelope.self
+        ).data
     }
 
     /// 콘솔로 전달된 보고서를 조회한다. 응답 본문은 공통 `data` 봉투다.
@@ -357,27 +439,50 @@ public actor ConsoleClient {
     ///
     /// 비어 있는 메모는 키째로 뺀다. 빈 문자열을 보내면 백엔드가 그것을 "메모를 지정했다" 로
     /// 받아 저장하고, 상세 패널에 아무것도 없는 메모 줄이 그려진다.
-    public func createSchedule(title: String, dueDate: String, memo: String?) async throws {
-        let url = baseURL.appendingPathComponent("v1/console/schedules")
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        var body: [String: String] = ["title": title, "dueDate": dueDate]
-        if let memo, !memo.isEmpty {
-            body["memo"] = memo
-        }
-        request.httpBody = try JSONEncoder().encode(body)
+    public func createSchedule(
+        title: String, dueDate: String, memo: String?,
+        startDate: String? = nil, dueTime: String? = nil, remindAt: String? = nil
+    ) async throws {
+        let request = try buildScheduleCreateRequest(
+            baseURL: baseURL, title: title, dueDate: dueDate, memo: memo,
+            startDate: startDate, dueTime: dueTime, remindAt: remindAt
+        )
         try await sendExpectingSuccess(authorized(request))
     }
 
     /// `PATCH /v1/console/schedules/:id`. 완료·건너뜀·되돌리기 공통 경로.
     public func updateSchedule(id: Int, status: ScheduleStatus) async throws {
-        let url = baseURL.appendingPathComponent("v1/console/schedules/\(id)")
-        var request = URLRequest(url: url)
-        request.httpMethod = "PATCH"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(["status": status.rawValue])
-        try await sendExpectingSuccess(authorized(request))
+        _ = try await patchSchedule(id: id, fields: ["status": status.rawValue])
+    }
+
+    public func patchSchedule(id: Int, fields: [String: String?]) async throws -> ScheduleItem {
+        guard let request = try buildSchedulePatchRequest(baseURL: baseURL, id: id, fields: fields) else {
+            throw ConsoleClientError.notHTTP
+        }
+        return try await sendDecoding(authorized(request), as: ScheduleItemEnvelope.self).data
+    }
+
+    public func addFollowUp(
+        scheduleId: Int, recipient: String, topic: String,
+        trigger: FollowUpTrigger, triggerAt: String? = nil
+    ) async throws -> ScheduleFollowUp {
+        let request = try buildFollowUpRequest(
+            baseURL: baseURL, scheduleId: scheduleId, recipient: recipient,
+            topic: topic, trigger: trigger, triggerAt: triggerAt
+        )
+        return try await sendDecoding(authorized(request), as: ScheduleFollowUpEnvelope.self).data
+    }
+
+    public func markFollowUpSent(id: Int) async throws -> ScheduleFollowUp {
+        let request = try buildFollowUpSentRequest(
+            baseURL: baseURL, id: id, sentAt: ISO8601DateFormatter().string(from: Date())
+        )
+        return try await sendDecoding(authorized(request), as: ScheduleFollowUpEnvelope.self).data
+    }
+
+    public func addNote(scheduleId: Int, text: String) async throws -> ScheduleEvent {
+        let request = try buildScheduleNoteRequest(baseURL: baseURL, scheduleId: scheduleId, text: text)
+        return try await sendDecoding(authorized(request), as: ScheduleEventEnvelope.self).data
     }
 
     /// `GET /v1/console/stream` SSE 구독. 라인 스트림을 버퍼에 누적하며 완성 이벤트를 방출한다.
@@ -511,6 +616,17 @@ public actor ConsoleClient {
             throw ConsoleClientError.badStatus(http.statusCode)
         }
     }
+
+    private func sendDecoding<T: Decodable>(_ request: URLRequest, as type: T.Type) async throws -> T {
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else {
+            throw ConsoleClientError.notHTTP
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            throw ConsoleClientError.badStatus(http.statusCode)
+        }
+        return try JSONDecoder().decode(type, from: data)
+    }
 }
 
 /// REST 응답 봉투. 실제 payload 는 `data` 에 담긴다.
@@ -530,9 +646,14 @@ private struct DeliveriesEnvelope: Decodable {
     let data: ListDeliveriesResult
 }
 
-private struct SchedulesEnvelope: Decodable {
+struct SchedulesEnvelope: Decodable {
     let data: [ScheduleItem]
 }
+
+private struct ScheduleItemEnvelope: Decodable { let data: ScheduleItem }
+struct ScheduleDetailEnvelope: Decodable { let data: ScheduleDetail }
+private struct ScheduleFollowUpEnvelope: Decodable { let data: ScheduleFollowUp }
+private struct ScheduleEventEnvelope: Decodable { let data: ScheduleEvent }
 
 /// HTTP 상태코드가 없는 실패(연결 불가·시간 초과)를 사용자가 다음 행동을 아는 문장으로 옮긴다.
 ///

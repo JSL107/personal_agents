@@ -78,8 +78,9 @@ describe('AutopilotScheduler', () => {
     //   + idea-triage(평일 아이디어 판정, 단독 그룹)
     //   + cuj-check(매일 핵심 여정 점검, 단독 그룹)
     //   + humanize-research(주간 윤문 규칙 dry-run, 단독 그룹)
-    //   + goal-checkin(월요일 owner DM 질문, 단독 그룹) = 39그룹.
-    expect(queue.add).toHaveBeenCalledTimes(39);
+    //   + goal-checkin + schedule-reminder + schedule-collect = 41그룹.
+    expect(queue.add).toHaveBeenCalledTimes(41);
+    expect(addCalls).toContain('schedule-collect');
     expect(addCalls).toContain('goal-checkin');
     expect(addCalls).toContain('idea-triage');
     expect(addCalls).toContain('memory-vacuum');

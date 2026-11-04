@@ -19,11 +19,25 @@ import { ConsoleReadGuard } from '../../console/interface/console-read.guard';
 import { DeleteScheduleUsecase } from '../application/delete-schedule.usecase';
 import { ListSchedulesUsecase } from '../application/list-schedules.usecase';
 import { RegisterConsoleScheduleUsecase } from '../application/register-console-schedule.usecase';
-import { UpdateScheduleStatusUsecase } from '../application/update-schedule-status.usecase';
-import { ScheduleItemRecord } from '../domain/schedule.type';
+import { ScheduleFollowUpUsecase } from '../application/schedule-follow-up.usecase';
+import { UpdateScheduleUsecase } from '../application/update-schedule.usecase';
+import { plainDateToUtcDate } from '../domain/parse-due-date';
+import {
+  ScheduleEventRecord,
+  ScheduleFollowUpRecord,
+} from '../domain/schedule.repository.type';
+import { FollowUpTrigger, ScheduleItemRecord } from '../domain/schedule.type';
+import { CreateFollowUpDto } from './dto/create-follow-up.dto';
+import { CreateNoteDto } from './dto/create-note.dto';
 import { CreateScheduleDto } from './dto/create-schedule.dto';
+import { UpdateFollowUpDto } from './dto/update-follow-up.dto';
 import { UpdateScheduleDto } from './dto/update-schedule.dto';
+import {
+  projectForLegacy,
+  projectItemForLegacy,
+} from './legacy-schedule.projection';
 import { parseDateParam, parsePlainDateParam } from './parse-date-param';
+import { ScheduleConsoleDetail } from './schedule-console.type';
 
 // 입구는 Slack 자연어와 이 POST 둘이다. 한때 Slack 하나로 두었던 것은 "등록이 실제로
 // 일어나는가" 를 한 곳에서만 재기 위해서였는데, 정작 달력을 보다가 일정을 떠올린 사람이
@@ -35,9 +49,10 @@ export class ScheduleConsoleController {
   constructor(
     private readonly listSchedules: ListSchedulesUsecase,
     private readonly registerSchedule: RegisterConsoleScheduleUsecase,
-    private readonly updateStatus: UpdateScheduleStatusUsecase,
     private readonly deleteSchedule: DeleteScheduleUsecase,
     private readonly configService: ConfigService,
+    private readonly updateSchedule: UpdateScheduleUsecase,
+    private readonly followUp: ScheduleFollowUpUsecase,
   ) {}
 
   // 이 env 는 `app.config.ts` 에서 optional 이라 미설정 상태로 요청이 들어올 수 있다.
@@ -60,12 +75,38 @@ export class ScheduleConsoleController {
   async list(
     @Query('from') from: string,
     @Query('to') to: string,
+    @Query('view') view?: string,
   ): Promise<ScheduleItemRecord[]> {
-    return await this.listSchedules.execute({
+    const query = {
       slackUserId: this.requireOwner(),
       from: parseDateParam(from, 'from'),
       to: parseDateParam(to, 'to'),
+    };
+    const items =
+      view === 'tracking'
+        ? await this.listSchedules.tracking(query)
+        : await this.listSchedules.execute(query);
+    const visible = view === 'tracking' ? items : projectForLegacy(items);
+    return await this.followUp.withPendingCounts(visible);
+  }
+
+  @Get('schedules/undated')
+  @UseGuards(ConsoleReadGuard)
+  async undated(): Promise<ScheduleItemRecord[]> {
+    const items = await this.listSchedules.undated(this.requireOwner());
+    return await this.followUp.withPendingCounts(items);
+  }
+
+  @Get('schedules/:id')
+  @UseGuards(ConsoleReadGuard)
+  async detail(
+    @Param('id', ParseIntPipe) id: number,
+  ): Promise<ScheduleConsoleDetail> {
+    const detail = await this.followUp.detail({
+      id,
+      slackUserId: this.requireOwner(),
     });
+    return detail;
   }
 
   @Post('schedules')
@@ -84,6 +125,13 @@ export class ScheduleConsoleController {
       slackUserId: this.requireOwner(),
       title,
       dueDate: parsePlainDateParam(dto.dueDate, 'dueDate'),
+      startDate: dto.startDate
+        ? parsePlainDateParam(dto.startDate, 'startDate')
+        : undefined,
+      dueTime: dto.dueTime,
+      remindAt: parseOptionalOffsetDate(
+        dto.remindAt === '' ? undefined : dto.remindAt,
+      ),
       // 공백만 남은 메모는 아예 없는 것으로 둔다 — 빈 문자열을 저장하면 상세 패널이
       // 메모 줄을 그리고 거기에 아무것도 없다.
       memo: memo ? memo : undefined,
@@ -95,11 +143,103 @@ export class ScheduleConsoleController {
   async update(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateScheduleDto,
+    @Query('view') view?: string,
   ): Promise<ScheduleItemRecord> {
-    return await this.updateStatus.execute({
+    if (Object.values(dto).every((value) => value === undefined)) {
+      throw new BadRequestException('수정할 내용을 입력하세요.');
+    }
+    const item = await this.updateSchedule.execute({
       id,
-      status: dto.status,
       slackUserId: this.requireOwner(),
+      status: dto.status,
+      patch: {
+        ...(dto.title !== undefined && { title: dto.title }),
+        ...(dto.dueDate !== undefined && {
+          dueDate: plainDateToUtcDate(
+            parsePlainDateParam(dto.dueDate, 'dueDate'),
+          ),
+        }),
+        ...(dto.startDate !== undefined && {
+          startDate:
+            dto.startDate === null
+              ? null
+              : plainDateToUtcDate(
+                  parsePlainDateParam(dto.startDate, 'startDate'),
+                ),
+        }),
+        ...(dto.dueTime !== undefined && { dueTime: dto.dueTime }),
+        ...(dto.remindAt !== undefined && {
+          remindAt: parseOptionalOffsetDate(dto.remindAt),
+        }),
+      },
+    });
+    return view === 'tracking' ? item : projectItemForLegacy(item);
+  }
+
+  @Post('schedules/:id/follow-ups')
+  @UseGuards(LoopbackOnlyGuard)
+  async addFollowUp(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: CreateFollowUpDto,
+  ): Promise<ScheduleFollowUpRecord> {
+    const recipient = dto.recipient.trim();
+    const topic = dto.topic.trim();
+    if (!recipient || !topic) {
+      throw new BadRequestException('받는 사람과 알릴 내용을 입력하세요.');
+    }
+    if (dto.trigger === FollowUpTrigger.AT_TIME && !dto.triggerAt) {
+      throw new BadRequestException('알릴 시각을 입력하세요.');
+    }
+    return await this.followUp.add({
+      scheduleItemId: id,
+      slackUserId: this.requireOwner(),
+      recipient,
+      topic,
+      trigger: dto.trigger,
+      triggerAt: dto.triggerAt ? parseOffsetDate(dto.triggerAt) : null,
+    });
+  }
+
+  @Patch('follow-ups/:id')
+  @UseGuards(LoopbackOnlyGuard)
+  async updateFollowUp(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateFollowUpDto,
+  ): Promise<ScheduleFollowUpRecord> {
+    if (Object.values(dto).every((value) => value === undefined)) {
+      throw new BadRequestException('수정할 내용을 입력하세요.');
+    }
+    if (
+      (dto.recipient !== undefined && !dto.recipient.trim()) ||
+      (dto.topic !== undefined && !dto.topic.trim())
+    ) {
+      throw new BadRequestException('받는 사람과 알릴 내용을 입력하세요.');
+    }
+    return await this.followUp.update({
+      id,
+      slackUserId: this.requireOwner(),
+      recipient: dto.recipient?.trim(),
+      topic: dto.topic?.trim(),
+      triggerAt: dto.triggerAt ? parseOffsetDate(dto.triggerAt) : undefined,
+      sentAt: dto.sentAt ? parseOffsetDate(dto.sentAt) : undefined,
+    });
+  }
+
+  @Post('schedules/:id/notes')
+  @UseGuards(LoopbackOnlyGuard)
+  async addNote(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: CreateNoteDto,
+  ): Promise<ScheduleEventRecord> {
+    const text = dto.text.trim();
+    if (!text) {
+      throw new BadRequestException('메모를 입력하세요.');
+    }
+    return await this.followUp.note({
+      scheduleItemId: id,
+      slackUserId: this.requireOwner(),
+      text,
+      now: new Date(),
     });
   }
 
@@ -112,3 +252,20 @@ export class ScheduleConsoleController {
     });
   }
 }
+
+const parseOffsetDate = (value: string): Date => {
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.getTime())) {
+    throw new BadRequestException('유효한 알림 시각을 입력하세요.');
+  }
+  return parsed;
+};
+
+const parseOptionalOffsetDate = (
+  value: string | null | undefined,
+): Date | null | undefined => {
+  if (value === null || value === undefined) {
+    return value;
+  }
+  return parseOffsetDate(value);
+};

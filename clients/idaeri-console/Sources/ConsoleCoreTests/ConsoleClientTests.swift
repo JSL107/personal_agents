@@ -7,6 +7,102 @@ func runConsoleClientTests(_ t: TestRunner) {
     t.suite("ConsoleClient")
 
     let base = URL(string: "http://127.0.0.1:3002")!
+    let listEnvelope = """
+    {"code":"SUCCESS","message":"ok","data":[{"id":1,"title":"업무","dueDate":null,"status":"WHATEVER"}]}
+    """.data(using: .utf8)!
+    let decodedList = try! JSONDecoder().decode(SchedulesEnvelope.self, from: listEnvelope)
+    t.expectEqual(decodedList.data.count, 1, "실제 목록 응답 data 봉투")
+    t.expectEqual(decodedList.data[0].status, .open, "봉투 안 모르는 상태 복구")
+    let detailEnvelope = """
+    {"code":"SUCCESS","message":"ok","data":{"item":{"id":1,"title":"업무","dueDate":null,"status":"OPEN"},"followUps":[],"events":[],"linkedPullRequests":[],"pendingFollowUpCount":0}}
+    """.data(using: .utf8)!
+    let decodedDetail = try! JSONDecoder().decode(ScheduleDetailEnvelope.self, from: detailEnvelope)
+    t.expectEqual(decodedDetail.data.item.id, 1, "실제 상세 응답 data 봉투")
+    let createRequest = try! buildScheduleCreateRequest(
+        baseURL: base, title: "배포", dueDate: "2026-11-07", memo: "",
+        startDate: "2026-11-04", dueTime: "15:30", remindAt: "2026-11-07T05:30:00Z"
+    )
+    t.expectEqual(createRequest.httpMethod, "POST", "업무 등록 method")
+    t.expectEqual(
+        createRequest.url?.absoluteString,
+        "http://127.0.0.1:3002/v1/console/schedules",
+        "업무 등록 경로"
+    )
+    let createBody = try! JSONSerialization.jsonObject(with: createRequest.httpBody!) as! [String: String]
+    t.expectEqual(createBody["startDate"], "2026-11-04", "업무 시작일 본문")
+    t.expectEqual(createBody["dueTime"], "15:30", "업무 마감 시각 본문")
+    t.expectEqual(createBody["remindAt"], "2026-11-07T05:30:00Z", "업무 알림 시각 본문")
+    t.expectNil(createBody["memo"], "빈 메모는 등록 본문에서 제외")
+
+    let scheduleList = buildScheduleListRequest(baseURL: base, from: "2026-11-01", to: "2026-11-30")!
+    t.expectEqual(scheduleList.httpMethod, "GET", "월 일정 조회 method")
+    let undatedRequest = buildScheduleUndatedRequest(baseURL: base)
+    t.expectEqual(undatedRequest.httpMethod, "GET", "기한 없음 조회 method")
+    t.expectEqual(
+        undatedRequest.url?.absoluteString,
+        "http://127.0.0.1:3002/v1/console/schedules/undated",
+        "기한 없음 조회 경로"
+    )
+    let detailRequest = buildScheduleDetailRequest(baseURL: base, id: 12)
+    t.expectEqual(detailRequest.httpMethod, "GET", "업무 상세 method")
+    t.expectEqual(
+        detailRequest.url?.absoluteString,
+        "http://127.0.0.1:3002/v1/console/schedules/12",
+        "업무 상세 경로"
+    )
+    t.expectEqual(
+        scheduleList.url?.absoluteString,
+        "http://127.0.0.1:3002/v1/console/schedules?from=2026-11-01&to=2026-11-30&view=tracking",
+        "월 일정 조회는 tracking 투영"
+    )
+    let schedulePatch = try! buildSchedulePatchRequest(
+        baseURL: base, id: 12,
+        fields: ["status": "IN_PROGRESS", "remindAt": nil]
+    )!
+    t.expectEqual(schedulePatch.httpMethod, "PATCH", "업무 편집 method")
+    t.expectEqual(
+        schedulePatch.url?.absoluteString,
+        "http://127.0.0.1:3002/v1/console/schedules/12?view=tracking",
+        "업무 편집 응답도 tracking 투영"
+    )
+    let patchBody = try! JSONSerialization.jsonObject(with: schedulePatch.httpBody!) as! [String: Any]
+    t.expectEqual(patchBody["status"] as? String, "IN_PROGRESS", "업무 상태 본문")
+    t.expectEqual(patchBody["remindAt"] is NSNull, true, "알림 해제는 JSON null")
+
+    let followUpRequest = try! buildFollowUpRequest(
+        baseURL: base, scheduleId: 12, recipient: "PM", topic: "배포 공유",
+        trigger: .onDone, triggerAt: nil
+    )
+    t.expectEqual(followUpRequest.httpMethod, "POST", "연락할 일 method")
+    t.expectEqual(
+        followUpRequest.url?.absoluteString,
+        "http://127.0.0.1:3002/v1/console/schedules/12/follow-ups",
+        "연락할 일 경로"
+    )
+    let followUpBody = try! JSONSerialization.jsonObject(with: followUpRequest.httpBody!) as! [String: String]
+    t.expectEqual(followUpBody["trigger"], "ON_DONE", "연락할 일 trigger")
+    t.expectEqual(followUpBody["topic"], "배포 공유", "연락할 일 topic")
+
+    let noteRequest = try! buildScheduleNoteRequest(baseURL: base, scheduleId: 12, text: "확인 끝")
+    t.expectEqual(noteRequest.httpMethod, "POST", "메모 method")
+    t.expectEqual(
+        noteRequest.url?.absoluteString,
+        "http://127.0.0.1:3002/v1/console/schedules/12/notes",
+        "메모 경로"
+    )
+    let noteBody = try! JSONSerialization.jsonObject(with: noteRequest.httpBody!) as! [String: String]
+    t.expectEqual(noteBody["text"], "확인 끝", "메모 본문")
+    let sentRequest = try! buildFollowUpSentRequest(
+        baseURL: base, id: 7, sentAt: "2026-11-04T12:00:00Z"
+    )
+    t.expectEqual(sentRequest.httpMethod, "PATCH", "보냄 표시 method")
+    t.expectEqual(
+        sentRequest.url?.absoluteString,
+        "http://127.0.0.1:3002/v1/console/follow-ups/7",
+        "보냄 표시 경로"
+    )
+    let sentBody = try! JSONSerialization.jsonObject(with: sentRequest.httpBody!) as! [String: String]
+    t.expectEqual(sentBody["sentAt"], "2026-11-04T12:00:00Z", "보냄 표시 본문")
 
     // command: POST + JSON body + 토큰 헤더
     let commandRequest = try! buildCommandRequest(

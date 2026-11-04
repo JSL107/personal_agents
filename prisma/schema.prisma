@@ -1308,15 +1308,26 @@ model RoutingNoRun {
 // 마감·신청·예약 항목. 등록 입구는 Slack 자연어 하나이고, 콘솔은 읽기와 상태 변경만 한다.
 // 2단계(자동 채움) 필드를 미리 둬서 스키마를 두 번 고치지 않는다 — 1단계에서는 전부 비어 있다.
 model ScheduleItem {
-  id          Int       @id @default(autoincrement())
-  slackUserId String    @map("slack_user_id")
-  title       String
-  dueDate     DateTime  @map("due_date") @db.Date
-  dueTime     String?   @map("due_time")
-  linkUrl     String?   @map("link_url")
-  memo        String?   @db.Text
-  status      String
-  completedAt DateTime? @map("completed_at")
+  id                 Int                @id @default(autoincrement())
+  slackUserId        String             @map("slack_user_id")
+  title              String
+  dueDate            DateTime?          @map("due_date") @db.Date
+  dueTime            String?            @map("due_time")
+  linkUrl            String?            @map("link_url")
+  memo               String?            @db.Text
+  status             String
+  completedAt        DateTime?          @map("completed_at")
+  startDate          DateTime?          @map("start_date") @db.Date
+  startedAt          DateTime?          @map("started_at")
+  remindAt           DateTime?          @map("remind_at")
+  remindedAt         DateTime?          @map("reminded_at")
+  source             String             @default("MANUAL")
+  sourceKey          String?            @map("source_key")
+  sourceUrl          String?            @map("source_url")
+  candidateExpiresAt DateTime?          @map("candidate_expires_at")
+  deliveryClaimedAt  DateTime?          @map("delivery_claimed_at")
+  followUps          ScheduleFollowUp[]
+  events             ScheduleEvent[]
 
   // 공휴일 동기화(`holiday-sync` autopilot task)가 넣은 행. 사용자가 직접 등록한 일정과
   // 갈라야 하는 자리가 셋이다 — 달력이 날짜를 빨갛게 칠할 때, 칩 색을 고를 때, 아침 브리핑이
@@ -1332,8 +1343,46 @@ model ScheduleItem {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  @@unique([slackUserId, source, sourceKey])
   @@index([slackUserId, dueDate])
   @@map("schedule_item")
+}
+
+model ScheduleFollowUp {
+  id                Int          @id @default(autoincrement())
+  scheduleItemId    Int          @map("schedule_item_id")
+  scheduleItem      ScheduleItem @relation(fields: [scheduleItemId], references: [id], onDelete: Cascade)
+  recipient         String
+  topic             String
+  trigger           String
+  triggerAt         DateTime?    @map("trigger_at")
+  draft             String?      @db.Text
+  notifiedAt        DateTime?    @map("notified_at")
+  sentAt            DateTime?    @map("sent_at")
+  deliveryClaimedAt DateTime?    @map("delivery_claimed_at")
+
+  @@map("schedule_follow_up")
+}
+
+model ScheduleEvent {
+  id             Int          @id @default(autoincrement())
+  scheduleItemId Int          @map("schedule_item_id")
+  scheduleItem   ScheduleItem @relation(fields: [scheduleItemId], references: [id], onDelete: Cascade)
+  kind           String
+  payload        Json
+  dedupeKey      String?      @map("dedupe_key")
+  occurredAt     DateTime     @map("occurred_at")
+
+  @@unique([scheduleItemId, kind, dedupeKey])
+  @@index([scheduleItemId, occurredAt])
+  @@map("schedule_event")
+}
+
+model ScheduleCollectionState {
+  source          String   @id
+  lastSucceededAt DateTime @map("last_succeeded_at")
+
+  @@map("schedule_collection_state")
 }
 
 // 채널 원글별 판정과 게시 상태. 고유 키로 중복 회차의 재게시를 막는다.

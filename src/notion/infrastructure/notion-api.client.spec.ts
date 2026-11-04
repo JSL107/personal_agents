@@ -317,6 +317,28 @@ describe('NotionApiClient', () => {
     expect(tasks[0].databaseId).toBe('GOOD');
   });
 
+  it('전체 DB 성공을 요구하면 일부 DB 실패도 예외로 알린다', async () => {
+    const query = jest.fn(({ database_id }) =>
+      database_id === 'BAD'
+        ? Promise.reject(new Error('object_not_found'))
+        : Promise.resolve({ results: [] }),
+    );
+    const adapter = new NotionApiClient(
+      { databases: { query } } as unknown as Client,
+      buildConfig({}),
+    );
+
+    await expect(
+      adapter.listActiveTasks({
+        databaseIds: ['GOOD', 'BAD'],
+        requireAllDatabases: true,
+      }),
+    ).rejects.toMatchObject({
+      notionErrorCode: NotionErrorCode.REQUEST_FAILED,
+    });
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+
   it('env 에서 콤마 구분 NOTION_TASK_DB_IDS 를 trim 해서 사용', async () => {
     const query = jest.fn((args: { database_id: string }) =>
       // args 는 검증 목적 — body 에서 무시해도 jest.Mock signature 에 등록되도록 받는다.

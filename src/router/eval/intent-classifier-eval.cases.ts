@@ -9,6 +9,7 @@ import { ConversationTurn } from '../domain/conversation-memory.type';
 // 같은 PR 링크에 동사만 바꾼 경계 — 에 원화 공고(ART_JOB_FEED)와 헷갈리는 문항 14개를 더했다.
 // 2026-10-16 기록: #852 수정 전 43/44, 수정 후 44/44 (각 2회).
 // 2026-10-30: 직전 대화를 일정으로 옮기는 요청 2문항(실사례·대조군)을 더했다 — SCHEDULE 정의 보강.
+// 2026-11-03: 제목을 지목한 업무 관리 지시 5문항과 진행 질문 대조군 1문항을 더했다 — 캘린더 업무 트래킹.
 // 새 워커를 넣으면 그 워커의 대표 문장과 함께 "그 기능을 어떻게 쓰는지 묻는 질문"을 대조군으로 넣는다 —
 // #852 는 방법 질문이 새 워커의 명령으로 끌려간 사례다.
 
@@ -312,5 +313,37 @@ export const INTENT_CLASSIFIER_EVAL_CASES: readonly IntentClassifierEvalCase[] =
         turn('user', '10월 20일 일정 등록해줘', AgentType.SCHEDULE),
         turn('assistant', '무엇을 등록할까요?', AgentType.SCHEDULE),
       ],
+    },
+    // ── 등록한 업무를 제목으로 지목해 관리하는 지시(2026-11-03 캘린더 업무 트래킹) ──
+    // 상태를 바꾸는 말은 SCHEDULE, 진행 상황을 묻는 말은 대조군으로 DELAY_REPORT 에 남아야 한다.
+    {
+      id: 'schedule-manage-status',
+      text: '결제 API 진행 중으로 바꿔줘',
+      accept: [AgentType.SCHEDULE],
+    },
+    {
+      id: 'schedule-manage-done',
+      text: '로그 확인 끝났어',
+      accept: [AgentType.SCHEDULE],
+    },
+    {
+      id: 'schedule-manage-remind',
+      text: '결제 API 내일 3시에 알려줘',
+      accept: [AgentType.SCHEDULE],
+    },
+    {
+      id: 'schedule-manage-follow-up',
+      text: '결제 API 끝나면 PM한테 공유해야 해',
+      accept: [AgentType.SCHEDULE],
+    },
+    {
+      id: 'schedule-manage-note',
+      text: "결제 API에 '롤백 테스트 끝' 남겨줘",
+      accept: [AgentType.SCHEDULE],
+    },
+    {
+      id: 'schedule-manage-progress-question',
+      text: '지금 뭐해?',
+      accept: [AgentType.DELAY_REPORT],
     },
   ];
