@@ -3,6 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
+import { match, P } from 'ts-pattern';
 
 import {
   PublishPortfolioSiteResult,
@@ -171,21 +172,57 @@ const hasFailure = (result: PublishPortfolioSiteResult): boolean => {
   return hasReportedFailure || isUnpublished;
 };
 
+type CliMode =
+  | { kind: 'dry-run'; owner: string; outputPath: string }
+  | { kind: 'apply'; planPath: string }
+  | { kind: 'execute'; owner: string };
+
+const usageError = (detail: string): never => {
+  throw new Error(`${detail}\n${USAGE}`);
+};
+
+// 플래그 조합 → 실행 모드. 잘못된 조합은 여기서 끊어, 실행부가 값의 존재를 다시 단언하지 않게 한다.
+const resolveCliMode = (): CliMode => {
+  const options = {
+    dryRun: hasFlag('dry-run'),
+    apply: hasFlag('apply'),
+    outputPath: readOption('out'),
+    planPath: readOption('apply'),
+    // 빈 문자열은 없는 값으로 본다 — P.string 은 '' 도 문자열로 받아 owner 없이 실행이 진행된다.
+    owner:
+      (
+        readOption('owner') ?? process.env.AUTOPILOT_OWNER_SLACK_USER_ID
+      )?.trim() || undefined,
+  };
+  const mode = match(options)
+    .returnType<CliMode>()
+    .with({ dryRun: true, apply: true }, () =>
+      usageError('--dry-run 과 --apply 는 함께 쓸 수 없습니다.'),
+    )
+    .with(
+      { dryRun: true, outputPath: P.string, owner: P.string },
+      ({ outputPath, owner }) => ({ kind: 'dry-run', owner, outputPath }),
+    )
+    .with({ dryRun: true, outputPath: P.string }, () =>
+      usageError('owner 를 알 수 없습니다.'),
+    )
+    .with({ dryRun: true }, () =>
+      usageError('--dry-run 에는 --out 이 필요합니다.'),
+    )
+    .with({ apply: true, planPath: P.string }, ({ planPath }) => ({
+      kind: 'apply',
+      planPath,
+    }))
+    .with({ apply: true }, () =>
+      usageError('--apply 에는 계획 파일 경로가 필요합니다.'),
+    )
+    .with({ owner: P.string }, ({ owner }) => ({ kind: 'execute', owner }))
+    .otherwise(() => usageError('owner 를 알 수 없습니다.'));
+  return mode;
+};
+
 const main = async (): Promise<void> => {
-  const dryRun = hasFlag('dry-run');
-  const apply = hasFlag('apply');
-  const outputPath = readOption('out');
-  const planPath = readOption('apply');
-  const invalidOptions =
-    (dryRun && apply) || (dryRun && !outputPath) || (apply && !planPath);
-  if (invalidOptions) {
-    throw new Error(USAGE);
-  }
-  const owner =
-    readOption('owner') ?? process.env.AUTOPILOT_OWNER_SLACK_USER_ID;
-  if (!owner && !apply) {
-    throw new Error(`owner 를 알 수 없습니다.\n${USAGE}`);
-  }
+  const mode = resolveCliMode();
 
   const app = await NestFactory.createApplicationContext(
     PublishPortfolioCliModule,
@@ -193,10 +230,10 @@ const main = async (): Promise<void> => {
   );
   try {
     const usecase = app.get(PublishPortfolioSiteUsecase);
-    if (dryRun) {
-      const plan = await usecase.plan({ slackUserId: owner! });
+    if (mode.kind === 'dry-run') {
+      const plan = await usecase.plan({ slackUserId: mode.owner });
       await writeFile(
-        outputPath!,
+        mode.outputPath,
         `${JSON.stringify(plan, null, 2)}\n`,
         'utf8',
       );
@@ -206,8 +243,9 @@ const main = async (): Promise<void> => {
       }
       return;
     }
-    if (apply) {
-      const planText = await readFile(planPath!, 'utf8');
+    if (mode.kind === 'apply') {
+      const { planPath } = mode;
+      const planText = await readFile(planPath, 'utf8');
       const rawPlan: unknown = JSON.parse(planText);
       const plan = parsePortfolioSyncPlan(rawPlan);
       const result = await usecase.apply({
@@ -229,7 +267,7 @@ const main = async (): Promise<void> => {
       }
       return;
     }
-    const result = await usecase.execute({ slackUserId: owner! });
+    const result = await usecase.execute({ slackUserId: mode.owner });
     printResult(result);
     if (hasFailure(result)) {
       process.exitCode = 1;

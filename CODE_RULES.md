@@ -10,7 +10,12 @@
 1. `return` 문에는 복잡한 연산(삼항 중첩, 메서드 체이닝 2단계 이상, 복합 조건식)을 넣지 않는다. 단순 참조나 단일 표현식은 허용한다.
 2. 기본은 `const` 기반 화살표 함수를 사용한다.
 3. 단, `function` 선언이 더 읽기 쉽거나(재귀, 호이스팅, 명확한 의도 표현) 구조상 유리하면 `function`을 사용한다.
-4. `if` 분기가 복잡해지면 `ts-pattern`의 `match`를 우선 검토한다.
+4. `if` 분기가 복잡해지면 `ts-pattern`의 `match`를 우선 검토한다. 기준은 분기의 **모양**이다 — 갈래 수나 줄 수가 아니다.
+   - **쓴다**: 여러 값의 조합에서 결과 하나를 고르는 판정표 모양(`match({ action, atTarget, movedByHuman })`), 유니온 타입을 빠짐없이 다뤄야 하는 분기(`.exhaustive()` 로 경우가 늘면 컴파일러가 잡는다), 패턴이 타입을 좁혀 non-null 단언(`!`)을 없애는 경우(`P.string`).
+   - **쓰지 않는다**: 조건을 차례로 걸러내는 가드 체인(`.when(fn)` 을 잇는 것은 if 사슬에 람다만 더한 꼴이다 — early return 이 낫다), 갈래마다 상태를 고치는 부수효과 분기(`match` 는 값을 돌려주는 식이다 — 결과 값을 먼저 받고 적용은 따로 한다), 두 갈래 분기.
+   - 효율은 판단 기준이 아니다. `match` 는 호출마다 패턴 객체·콜백을 만들어 if 보다 조금 비싸지만, 수만 번 도는 반복 안쪽이 아니면 측정되지 않는다. 그런 반복 안쪽에서는 if 를 쓴다.
+   - `match(...)` 체인을 `return` 에 바로 쓰지 않는다(1번 규칙). `const decision = match(...)...; return decision;`
+   - 예: `decideSortOrder`(`src/agent/career-mate/domain/portfolio-sync-plan.ts`, 판정표), `resolveCliMode`(`scripts/publish-portfolio.ts`, 타입 좁히기) / 쓰지 않은 예: `highlightRejectionReason`(`portfolio-cover.validate.ts`, 가드 체인)
 5. 함수/모듈은 고수준 로직에서 저수준 구현 순서로 작성한다(Top-Down).
 6. DDD + Layered Architecture를 사용하고 계층 간 책임을 명확히 분리한다.
 7. 계층 의존 방향은 항상 바깥(Interface) -> 안쪽(Domain)으로만 향한다.

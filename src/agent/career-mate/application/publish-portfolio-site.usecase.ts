@@ -299,6 +299,7 @@ export class PublishPortfolioSiteUsecase {
     if (prompts.length) {
       const namings = await this.generateCovers(prompts);
       const retries: CoverPromptCard[] = [];
+      const retryNotes: string[] = [];
       const cardsToRegenerate = planned.filter((item) => item.regenerate);
       for (const card of cardsToRegenerate) {
         const site = siteBySlug.get(card.slug);
@@ -312,11 +313,11 @@ export class PublishPortfolioSiteUsecase {
           : null;
         if (validated) {
           const row = rowBySlug.get(card.slug) ?? null;
-          const title =
+          const previousTitle = stringValue(site?.data.title);
+          const keepPreviousTitle =
             shouldKeepPreviousTitle({ row, memberPrs: card.memberPrs }) &&
-            stringValue(site?.data.title)
-              ? stringValue(site?.data.title)
-              : validated.title;
+            previousTitle.length > 0;
+          const title = keepPreviousTitle ? previousTitle : validated.title;
           Object.assign(card.body, {
             title,
             summary: validated.summary,
@@ -330,24 +331,29 @@ export class PublishPortfolioSiteUsecase {
             if (prompt) {
               retries.push(prompt);
               report.coverRetry.push(card.slug);
+              retryNotes.push(
+                ...validated.removedHighlights.map(
+                  ({ highlight, reason }) =>
+                    `- ${card.slug}: "${highlight}" — ${reason}`,
+                ),
+              );
             }
           }
         } else if (site) {
+          // 표지를 새로 못 지었어도 기존 표지의 숫자가 지금 과정에 없으면 그 필드만 비운다(A1).
           const process = stringArray(card.body.process);
-          if (
-            hasUngroundedNumbers({
-              text: stringArray(site.data.keyContributions).join('\n'),
-              processLines: process,
-            })
-          ) {
+          const highlightsUngrounded = hasUngroundedNumbers({
+            text: stringArray(site.data.keyContributions).join('\n'),
+            processLines: process,
+          });
+          const resultUngrounded = hasUngroundedNumbers({
+            text: stringValue(site.data.result),
+            processLines: process,
+          });
+          if (highlightsUngrounded) {
             card.body.keyContributions = [];
           }
-          if (
-            hasUngroundedNumbers({
-              text: stringValue(site.data.result),
-              processLines: process,
-            })
-          ) {
+          if (resultUngrounded) {
             card.body.result = '';
           }
         } else {
@@ -356,10 +362,17 @@ export class PublishPortfolioSiteUsecase {
       }
       if (retries.length) {
         try {
+          // 줄마다 실제 제외 사유를 실어 같은 이유로 다시 버려지지 않게 한다(설계 §3.5).
+          const retryPrompt = [
+            buildPortfolioCoverPrompt(retries),
+            '',
+            '아래 highlights 는 검증에서 제외됐다. 같은 이유로 다시 제외되지 않게 써라.',
+            ...retryNotes,
+          ].join('\n');
           const completion = await this.modelRouter.route({
             agentType: AgentType.CAREER_MATE,
             request: {
-              prompt: `${buildPortfolioCoverPrompt(retries)}\n이전 highlights 는 숫자 근거 또는 작업 건수 검증에서 제외됐다.`,
+              prompt: retryPrompt,
               systemPrompt: PORTFOLIO_COVER_SYSTEM_PROMPT,
             },
           });

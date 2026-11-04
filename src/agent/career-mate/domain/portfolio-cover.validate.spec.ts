@@ -92,7 +92,9 @@ describe('표지 검증', () => {
       previousResult: '',
     });
     expect(result?.retryHighlights).toBe(true);
-    expect(result?.removedHighlights).toEqual(['테스트 3개 통과']);
+    expect(result?.removedHighlights).toEqual([
+      { highlight: '테스트 3개 통과', reason: '테스트 통과 수' },
+    ]);
   });
 
   it('표지 필수 필드가 비면 카드를 버린다', () => {

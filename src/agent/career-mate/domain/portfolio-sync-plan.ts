@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 
+import { match } from 'ts-pattern';
+
 import { ProfileAccomplishment } from './career-mate.type';
 import { PortfolioSyncCardRow } from './port/portfolio-sync-card.repository.port';
 import { maskRepoTokens, sanitizeMergedAt } from './portfolio-site-payload';
@@ -252,20 +254,26 @@ export const decideSortOrder = ({
   current: number;
   lastSent: number | null;
 }): SortOrderDecision => {
-  if (action === 'create') {
-    return {
-      sortOrderSent: target,
-      sortOrderOwned: target,
-      keptByHuman: false,
-    };
-  }
-  // 사이트가 이미 목표값이면 충돌이 없다. 직전 회차에 사이트 쓰기는 됐는데 DB 기록이 실패한
-  // 경우도 여기서 회복된다 — 그대로 두면 그 차이를 사람의 편집으로 오인해 자동 정렬이 멈춘다.
-  if (current === target) {
-    return { sortOrderSent: null, sortOrderOwned: target, keptByHuman: false };
-  }
-  if (lastSent !== null && lastSent !== current) {
-    return { sortOrderSent: null, sortOrderOwned: null, keptByHuman: true };
-  }
-  return { sortOrderSent: target, sortOrderOwned: target, keptByHuman: false };
+  const send: SortOrderDecision = {
+    sortOrderSent: target,
+    sortOrderOwned: target,
+    keptByHuman: false,
+  };
+  const atTarget = current === target;
+  const movedByHuman = lastSent !== null && lastSent !== current;
+  // 위에서부터 먼저 맞는 줄이 이긴다. 판정표:
+  // - 새 카드는 항상 보낸다
+  // - 사이트가 이미 목표값이면 보내지 않고 기록만 한다 — 직전 회차에 사이트 쓰기는 됐는데 DB 기록이
+  //   실패한 경우도 여기서 회복된다(그 차이를 사람의 편집으로 오인하면 자동 정렬이 멈춘다)
+  // - 봇이 마지막으로 보낸 값과 다르면 사람이 바꾼 것이라 덮지 않는다
+  const decision = match({ action, atTarget, movedByHuman })
+    .with({ action: 'create' }, () => send)
+    .with({ atTarget: true }, () => ({ ...send, sortOrderSent: null }))
+    .with({ movedByHuman: true }, () => ({
+      sortOrderSent: null,
+      sortOrderOwned: null,
+      keptByHuman: true,
+    }))
+    .otherwise(() => send);
+  return decision;
 };

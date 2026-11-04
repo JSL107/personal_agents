@@ -319,6 +319,28 @@ describe('PublishPortfolioSiteUsecase 계획과 적용', () => {
       expect.objectContaining({ slug: SLUG, title: '새 제목' }),
     );
   });
+  it('성과 줄이 전부 빠지면 줄마다 제외 사유를 실어 한 번 더 요청한다', async () => {
+    const fixture = createFixture({
+      modelOutput: (keys) =>
+        JSON.stringify({
+          projects: keys.map((key) => ({
+            key,
+            title: '새 제목',
+            summary: '새 요약',
+            problem: '새 문제',
+            result: '실패 3회를 0회로 줄였다',
+            highlights: ['실패 30회 → 0회'],
+          })),
+        }),
+    });
+    const plan = await fixture.usecase.plan({ slackUserId: 'U1' });
+    const calls = (fixture.modelRouter.route as jest.Mock).mock.calls;
+    expect(calls).toHaveLength(2);
+    expect(calls[1][0].request.prompt).toContain(
+      `- ${SLUG}: "실패 30회 → 0회" — 과정 10줄에 없는 숫자`,
+    );
+    expect(plan.report.coverRetry).toEqual([SLUG]);
+  });
   it('update 본문에는 published·featured·싱크 메타가 없다', async () => {
     const plan = await createFixture().usecase.plan({ slackUserId: 'U1' });
     for (const key of [

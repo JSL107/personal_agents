@@ -58,30 +58,41 @@ const validResultSentences = ({
   return sentences;
 };
 
-const isPresentableHighlight = ({
+// 성과 줄을 버리는 사유. null 이면 싣는다. 사유는 재요청 프롬프트에 그대로 실려 모델이 같은 실수를 반복하지 않게 한다.
+// 조건을 차례로 걸러내는 가드라 ts-pattern 대신 early return 을 쓴다(CODE_RULES §1-4).
+export const highlightRejectionReason = ({
   highlight,
   processLines,
 }: {
   highlight: string;
   processLines: string[];
-}): boolean => {
+}): string | null => {
   if (highlight.trim().length > HIGHLIGHT_MAX_LENGTH) {
-    return false;
+    return `${HIGHLIGHT_MAX_LENGTH}자 초과`;
   }
   if (extractNumberTokens(highlight).length === 0) {
-    return false;
+    return '숫자 없음';
   }
-  if (hasUngroundedNumbers({ text: highlight, processLines })) {
-    return false;
+  const ungrounded = hasUngroundedNumbers({ text: highlight, processLines });
+  if (ungrounded) {
+    return '과정 10줄에 없는 숫자';
   }
-  if (isWorkCount(highlight) || isTestPassCount(highlight)) {
-    return false;
+  if (isWorkCount(highlight)) {
+    return 'PR·커밋·저장소 작업 건수';
   }
-  return true;
+  if (isTestPassCount(highlight)) {
+    return '테스트 통과 수';
+  }
+  return null;
 };
 
+export interface RemovedHighlight {
+  highlight: string;
+  reason: string;
+}
+
 export interface ValidatedCover extends ProjectGroupNaming {
-  removedHighlights: string[];
+  removedHighlights: RemovedHighlight[];
   retryHighlights: boolean;
 }
 
@@ -97,9 +108,17 @@ export const validateCover = ({
   if (!cover.title.trim() || !cover.summary.trim() || !cover.problem.trim()) {
     return null;
   }
-  const highlights = cover.highlights
-    .filter((highlight) => isPresentableHighlight({ highlight, processLines }))
+  const judged = cover.highlights.map((highlight) => ({
+    highlight,
+    reason: highlightRejectionReason({ highlight, processLines }),
+  }));
+  const highlights = judged
+    .filter(({ reason }) => reason === null)
+    .map(({ highlight }) => highlight)
     .slice(0, HIGHLIGHT_MAX_COUNT);
+  const removedHighlights = judged.filter(
+    (item): item is RemovedHighlight => item.reason !== null,
+  );
   const resultSentences = validResultSentences({
     text: cover.result,
     processLines,
@@ -108,9 +127,6 @@ export const validateCover = ({
     text: previousResult,
     processLines,
   });
-  const removedHighlights = cover.highlights.filter(
-    (item) => !highlights.includes(item),
-  );
   const selectedSentences =
     resultSentences.length > 0 ? resultSentences : previousSentences;
   const result = selectedSentences.join(' ');
