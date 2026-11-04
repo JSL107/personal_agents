@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import { GenerateDailyPlanUsecase } from '../../../agent/pm/application/generate-daily-plan.usecase';
@@ -65,6 +66,10 @@ interface DigestDeps {
   config?: Record<string, string>;
   verdictRepository?: { findRunsForVerdictDigest: jest.Mock };
   deliveryRepository?: { findSince: jest.Mock };
+  buildMorningTodos?: {
+    execute: jest.Mock;
+    reconcileBeforeListing?: jest.Mock;
+  };
 }
 
 const buildTask = (
@@ -90,7 +95,11 @@ const buildTask = (
       claimForNotification: jest.fn().mockResolvedValue(true),
     }) as never,
     (deps.digestRepository ?? emptyDigestRepository()) as never,
-    { get: (key: string) => deps.config?.[key] } as never,
+    {
+      get: (key: string) =>
+        deps.config?.[key] ??
+        (key === 'CONSOLE_OWNER_SLACK_USER_ID' ? 'U1' : undefined),
+    } as never,
     (deps.cujLedgerReader ?? {
       findLatestDeliveryBefore: jest.fn().mockResolvedValue(null),
     }) as never,
@@ -100,6 +109,16 @@ const buildTask = (
     (deps.deliveryRepository ?? {
       findSince: jest.fn().mockResolvedValue([]),
     }) as never,
+    {
+      reconcileBeforeListing: jest.fn().mockResolvedValue(undefined),
+      execute: jest.fn().mockResolvedValue({
+        loadFailed: false,
+        today: [],
+        waiting: [],
+        unstarted: [],
+      }),
+      ...deps.buildMorningTodos,
+    } as never,
   );
 
 const basePlan = {
@@ -261,7 +280,7 @@ describe('MorningBriefingAutopilotTask', () => {
 
       expect(text).not.toContain('CUJ 점검');
       expect(text).toContain('주간 실행 회고 기록 없음');
-      expect(text).toContain('• 오늘 계획을 만들지 못했어요\n');
+      expect(text).toContain('오늘 계획 생성 실패');
       expect(text).not.toContain('계획 장애');
     });
   });
@@ -275,6 +294,193 @@ describe('MorningBriefingAutopilotTask', () => {
       listSchedulesUsecase(),
     );
     expect(task.id).toBe('morning-briefing');
+  });
+
+  it('ctx owner와 CONSOLE_OWNER가 다르면 경고하고 저장소 owner로 목록을 만든다', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const buildMorningTodos = {
+      execute: jest.fn().mockResolvedValue({
+        loadFailed: false,
+        today: [],
+        waiting: [],
+        unstarted: [],
+      }),
+    };
+    const task = buildTask(
+      { execute: jest.fn().mockRejectedValue(new Error('계획 실패')) },
+      { humanize: jest.fn() },
+      emptyStockRepository(),
+      listSchedulesUsecase(),
+      { config: { CONSOLE_OWNER_SLACK_USER_ID: 'U2' }, buildMorningTodos },
+    );
+
+    await task.run(CTX);
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('U1'));
+    expect(buildMorningTodos.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ ownerId: 'U2', kstDate: CTX.firedAtKst }),
+    );
+    warn.mockRestore();
+  });
+
+  it('PM 목록 대신 저장소 목록을 내고 run 안에서 저장한다', async () => {
+    const buildMorningTodos = {
+      execute: jest.fn().mockResolvedValue({
+        loadFailed: false,
+        today: [{ title: '저장소 작업', url: null, dayCount: 2, detail: null }],
+        waiting: [],
+        unstarted: [],
+      }),
+    };
+    const task = buildTask(
+      {
+        execute: jest.fn().mockResolvedValue({
+          result: {
+            plan: basePlan,
+            sources: [],
+            waitingItems: [],
+            inputTruncation: NO_TRUNCATION,
+          },
+          agentRunId: 1,
+        }),
+      },
+      {
+        humanize: jest
+          .fn()
+          .mockResolvedValue({ reasoning: '계획', analysisReasoning: '' }),
+      },
+      emptyStockRepository(),
+      listSchedulesUsecase(),
+      { buildMorningTodos },
+    );
+
+    const result = await task.run(CTX);
+
+    expect(buildMorningTodos.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ ownerId: 'U1', kstDate: CTX.firedAtKst }),
+    );
+    expect(result.summaryText).toContain('• 저장소 작업 (2일째)');
+    expect(result.summaryText).not.toContain('• 작업1');
+  });
+
+  it('run 시작에 PR 정합을 먼저 실행하고 목록은 마지막에 만든다', async () => {
+    const buildMorningTodos = {
+      reconcileBeforeListing: jest.fn().mockResolvedValue(undefined),
+      execute: jest.fn().mockResolvedValue({
+        loadFailed: false,
+        today: [],
+        waiting: [],
+        unstarted: [],
+      }),
+    };
+    const plan = {
+      execute: jest.fn().mockRejectedValue(new Error('계획 실패')),
+    };
+    const task = buildTask(
+      plan,
+      { humanize: jest.fn() },
+      emptyStockRepository(),
+      listSchedulesUsecase(),
+      { buildMorningTodos },
+    );
+
+    await task.run(CTX);
+
+    expect(buildMorningTodos.reconcileBeforeListing).toHaveBeenCalledWith({
+      ownerId: 'U1',
+      now: expect.any(Date),
+    });
+    expect(buildMorningTodos.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ alreadyReconciled: true }),
+    );
+    expect(
+      buildMorningTodos.reconcileBeforeListing.mock.invocationCallOrder[0],
+    ).toBeLessThan(plan.execute.mock.invocationCallOrder[0]);
+    expect(plan.execute.mock.invocationCallOrder[0]).toBeLessThan(
+      buildMorningTodos.execute.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('오늘·남 기다림·시작 안 한 일 전체를 스레드에 싣는다', async () => {
+    const todo = { title: '오늘 업무', url: null, dayCount: 2, detail: null };
+    const waiting = {
+      title: '리뷰 업무',
+      url: null,
+      dayCount: 3,
+      detail: '리뷰 대기',
+    };
+    const unstarted = {
+      title: '시작 전 업무',
+      url: null,
+      dayCount: 1,
+      detail: null,
+    };
+    const task = buildTask(
+      { execute: jest.fn().mockRejectedValue(new Error('계획 실패')) },
+      { humanize: jest.fn() },
+      emptyStockRepository(),
+      listSchedulesUsecase(),
+      {
+        buildMorningTodos: {
+          execute: jest.fn().mockResolvedValue({
+            loadFailed: false,
+            today: [todo],
+            waiting: [waiting],
+            unstarted: [unstarted],
+          }),
+        },
+      },
+    );
+
+    const result = await task.run(CTX);
+
+    expect(result.detailText).toContain(
+      '*오늘 할 일 전체*\n• 오늘 업무 (2일째)',
+    );
+    expect(result.detailText).toContain(
+      '*남 기다리는 일 전체*\n• 리뷰 업무 (리뷰 대기)',
+    );
+    expect(result.detailText).toContain('*시작 안 한 일*\n• 시작 전 업무');
+  });
+
+  it('CONSOLE_OWNER가 없으면 저장소 실패만 알리고 PM 실패로 오해하지 않는다', async () => {
+    const buildMorningTodos = {
+      execute: jest.fn().mockResolvedValue({
+        loadFailed: true,
+        today: [],
+        waiting: [],
+        unstarted: [],
+      }),
+    };
+    const task = buildTask(
+      {
+        execute: jest.fn().mockResolvedValue({
+          result: {
+            plan: basePlan,
+            sources: [],
+            waitingItems: [],
+            inputTruncation: NO_TRUNCATION,
+          },
+          agentRunId: 1,
+        }),
+      },
+      {
+        humanize: jest
+          .fn()
+          .mockResolvedValue({ reasoning: '계획', analysisReasoning: '' }),
+      },
+      emptyStockRepository(),
+      listSchedulesUsecase(),
+      { config: { CONSOLE_OWNER_SLACK_USER_ID: '' }, buildMorningTodos },
+    );
+
+    const result = await task.run(CTX);
+
+    expect(buildMorningTodos.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ ownerId: null }),
+    );
+    expect(result.summaryText).toContain('• 오늘 할 일을 불러오지 못했어요');
+    expect(result.summaryText).not.toContain('오늘 계획 생성 실패');
   });
 
   it('PM 계획 성공 시 summaryText 반환(skip=false)', async () => {
@@ -307,7 +513,7 @@ describe('MorningBriefingAutopilotTask', () => {
     // 메인에는 할 일만 싣고 PM 계획 전문은 보내지 않는다.
     expect(out.summaryText).not.toContain('*판단 근거*');
     expect(out.summaryText).toContain('☀️ *6/17(수) 아침*');
-    expect(out.summaryText).toContain('*오늘 할 일*\n• 작업1');
+    expect(out.summaryText).toContain('*오늘 할 일*\n• 오늘 할 일이 없어요');
     expect(out.detailText).toBe('');
     expect(out.summaryText).not.toContain('codex-cli');
     expect(out.summaryText).not.toContain('run #');
@@ -316,7 +522,7 @@ describe('MorningBriefingAutopilotTask', () => {
     );
   });
 
-  it('plan 을 윤문한 할 일만 summaryText 에 싣는다', async () => {
+  it('plan 을 윤문해도 PM 할 일은 summaryText 에 싣지 않는다', async () => {
     const outcome = {
       result: {
         plan: basePlan,
@@ -345,29 +551,25 @@ describe('MorningBriefingAutopilotTask', () => {
       ownerSlackUserId: 'U1',
       firedAtKst: '2026-06-30',
     });
-    expect(result.summaryText).toContain('*오늘 할 일*\n• 작업1');
+    expect(result.summaryText).toContain('*오늘 할 일*\n• 오늘 할 일이 없어요');
+    expect(result.summaryText).not.toContain('• 작업1');
     expect(result.summaryText).not.toContain('*판단 근거*');
     expect(result.summaryText).not.toContain('머지만 남음');
     expect(result.detailText).toBe('');
   });
 
   it('할 일이 여섯 개면 전문을 공고 스레드보다 먼저 싣는다', async () => {
-    const tasks = Array.from({ length: 6 }, (_, index) => ({
-      ...mockTask,
-      id: `task-${index}`,
+    const todos = Array.from({ length: 6 }, (_, index) => ({
       title: `작업 ${index + 1}`,
+      url: null,
+      dayCount: 1,
+      detail: null,
     }));
-    const plan = {
-      ...basePlan,
-      topPriority: tasks[0],
-      morning: tasks.slice(1),
-      afternoon: [],
-    };
     const task = buildTask(
       {
         execute: jest.fn().mockResolvedValue({
           result: {
-            plan,
+            plan: basePlan,
             sources: [],
             waitingItems: [],
             inputTruncation: NO_TRUNCATION,
@@ -384,6 +586,14 @@ describe('MorningBriefingAutopilotTask', () => {
       listSchedulesUsecase(),
       {
         config: { JOB_FEED_ENABLED: 'true' },
+        buildMorningTodos: {
+          execute: jest.fn().mockResolvedValue({
+            loadFailed: false,
+            today: todos,
+            waiting: [],
+            unstarted: [],
+          }),
+        },
         listNotifiable: {
           execute: jest.fn().mockResolvedValue([
             {
@@ -645,7 +855,7 @@ describe('MorningBriefingAutopilotTask', () => {
     const out = await task.run(CTX);
 
     expect(out.skip).toBe(false);
-    expect(out.summaryText).toContain('• 오늘 자동 수집된 할 일이 없어요');
+    expect(out.summaryText).toContain('• 오늘 할 일이 없어요');
   });
 
   describe('자산 한 줄', () => {
@@ -719,7 +929,7 @@ describe('MorningBriefingAutopilotTask', () => {
         status: DomainStatus.UNPROCESSABLE_ENTITY,
       });
       const out = await runWith([holding], null, empty);
-      expect(out.summaryText).toContain('• 오늘 자동 수집된 할 일이 없어요');
+      expect(out.summaryText).toContain('• 오늘 할 일이 없어요');
       expect(out.summaryText).toContain('• 자산:');
     });
     it('최근 환율로 달러 보유를 환산한다', async () => {
@@ -903,7 +1113,7 @@ describe('MorningBriefingAutopilotTask', () => {
 
       const out = await task.run(CTX);
 
-      expect(out.summaryText).toContain('• 오늘 자동 수집된 할 일이 없어요');
+      expect(out.summaryText).toContain('• 오늘 할 일이 없어요');
       expect(out.summaryText).toContain('*오늘 일정*\n• 자동차세 (오늘)');
     });
 
@@ -920,7 +1130,7 @@ describe('MorningBriefingAutopilotTask', () => {
       expect(out.summaryText).not.toContain('*오늘 일정*');
     });
 
-    it('기한 없는 진행 업무와 만료 전 후보 수를 브리핑에 싣는다', async () => {
+    it('기한 없는 진행 줄 없이 만료 전 후보 수만 브리핑에 싣는다', async () => {
       const schedules = {
         execute: jest.fn().mockResolvedValue([dueSoon]),
         undated: jest.fn().mockResolvedValue([
@@ -940,12 +1150,13 @@ describe('MorningBriefingAutopilotTask', () => {
         schedules as never,
       );
       const result = await task.run(CTX);
-      expect(result.summaryText).toContain('진행 중 1건');
-      expect(result.summaryText).toContain('기한 없는 진행');
+      expect(result.summaryText).not.toContain('진행 중 1건');
+      expect(result.summaryText).not.toContain('기한 없는 진행');
       expect(result.summaryText).toContain('새 후보 2건');
+      expect(schedules.undated).not.toHaveBeenCalled();
     });
 
-    it('기한 없는 조회가 실패해도 후보 수는 보여준다', async () => {
+    it('기한 없는 조회를 하지 않고 후보 수는 보여준다', async () => {
       const schedules = {
         execute: jest.fn().mockResolvedValue([]),
         undated: jest.fn().mockRejectedValue(new Error('조회 실패')),
@@ -958,8 +1169,9 @@ describe('MorningBriefingAutopilotTask', () => {
         schedules as never,
       );
       expect((await task.run(CTX)).summaryText).toContain('새 후보 2건');
+      expect(schedules.undated).not.toHaveBeenCalled();
     });
-    it('후보 집계가 실패해도 기한 없는 진행 업무는 보여준다', async () => {
+    it('후보 집계가 실패해도 브리핑을 보낸다', async () => {
       const schedules = {
         execute: jest.fn().mockResolvedValue([]),
         undated: jest.fn().mockResolvedValue([
@@ -980,7 +1192,7 @@ describe('MorningBriefingAutopilotTask', () => {
         emptyStockRepository(),
         schedules as never,
       );
-      expect((await task.run(CTX)).summaryText).toContain('진행 업무');
+      expect((await task.run(CTX)).summaryText).toContain('*오늘 할 일*');
     });
 
     // 장식 쿼리 하나가 본체를 죽이면 안 된다 — appendPortfolioValue 와 같은 원칙.
@@ -1102,7 +1314,7 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
         '☀️ *6/17(수) 아침* · 🔴 장애: 모의투자 추천 실패 · ✋ 승인 3 · 공고 1',
         '',
         '*오늘 할 일*',
-        '• <https://github.com/o/r/pull/3668|비속어 필터 검증 근거 기록>',
+        '• 오늘 할 일이 없어요',
         '',
         '*어제 장애*',
         '• 모의투자 추천 실패 (2일째)',
@@ -1133,7 +1345,24 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
       humanize(),
       emptyStockRepository(),
       listSchedulesUsecase(),
-      { config: { JOB_FEED_ENABLED: 'true' } },
+      {
+        config: { JOB_FEED_ENABLED: 'true' },
+        buildMorningTodos: {
+          execute: jest.fn().mockResolvedValue({
+            loadFailed: false,
+            today: [
+              {
+                title: '비속어 필터 검증 근거 기록',
+                url: 'https://github.com/o/r/pull/3668',
+                dayCount: 1,
+                detail: null,
+              },
+            ],
+            waiting: [],
+            unstarted: [],
+          }),
+        },
+      },
     );
 
     const out = await task.run(CTX);
@@ -1247,7 +1476,7 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
     expect(out.summaryText).toContain('*오늘 할 일*');
   });
 
-  it('링크 없는 계획 제목·장애 라벨도 mrkdwn 으로 해석되지 않게 이스케이프한다', async () => {
+  it('링크 없는 저장소 제목·장애 라벨도 mrkdwn 으로 해석되지 않게 이스케이프한다', async () => {
     const generate = {
       execute: jest.fn().mockResolvedValue({
         ...planOutcome,
@@ -1271,7 +1500,24 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
       humanize(),
       emptyStockRepository(),
       listSchedulesUsecase(),
-      { digestRepository },
+      {
+        digestRepository,
+        buildMorningTodos: {
+          execute: jest.fn().mockResolvedValue({
+            loadFailed: false,
+            today: [
+              {
+                title: '<!channel> 확인 & 배포',
+                url: null,
+                dayCount: 1,
+                detail: null,
+              },
+            ],
+            waiting: [],
+            unstarted: [],
+          }),
+        },
+      },
     );
 
     const out = await task.run(CTX);
@@ -1415,7 +1661,7 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
     expect(out.detailIsOnlyCopy).toBe(true);
   });
 
-  it('PM 계획 생성이 실패해도 나머지 줄은 나가고 실패는 할 일 칸에 나온다', async () => {
+  it('PM 계획 생성이 실패해도 나머지 줄은 나가고 머리줄과 어제 장애에 실패를 알린다', async () => {
     const task = buildTask(
       {
         execute: jest
@@ -1440,11 +1686,9 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
     expect(out.summaryText?.split('\n')[0]).toBe(
       '☀️ *6/17(수) 아침* · 🔴 장애: 오늘 계획 생성 실패 · ✋ 승인 1',
     );
-    expect(out.summaryText).toContain(
-      '*오늘 할 일*\n• 오늘 계획을 만들지 못했어요 (사용량 한도에 걸렸어요)',
-    );
+    expect(out.summaryText).toContain('*오늘 할 일*\n• 오늘 할 일이 없어요');
     expect(out.summaryText).toContain('• 승인 대기 1장 (경력 반영)');
-    expect(out.summaryText).not.toContain('*어제 장애*');
+    expect(out.summaryText).toContain('*어제 장애*\n• 오늘 계획 생성 실패');
     expect(out.summaryText).not.toContain('sk-live-secret');
     expect(out.detailText).toBe('');
   });
@@ -1565,8 +1809,6 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
 
     expect(out.skip).toBe(false);
     expect(out.summaryText).toContain('*오늘 할 일*');
-    expect(out.summaryText).toContain(
-      '• <https://github.com/o/r/pull/3668|비속어 필터 검증 근거 기록>',
-    );
+    expect(out.summaryText).toContain('• 오늘 할 일이 없어요');
   });
 });

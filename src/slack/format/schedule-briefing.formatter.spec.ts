@@ -163,24 +163,12 @@ describe('업무 추적 브리핑', () => {
     expect(result).not.toContain('후보');
     expect(result).not.toContain('기한 없음');
   });
-  it('기한 없는 진행 중 6건은 5건과 나머지 수를 보여준다', () => {
-    const items = Array.from({ length: 6 }, (_, index) => ({
-      ...item(
-        `업무${index}`,
-        '2026-09-18T00:00:00Z',
-        ScheduleStatus.IN_PROGRESS,
-      ),
-      dueDate: null,
-    }));
+  it('새 후보만 표시하고 진행 중 줄은 그리지 않는다', () => {
     const lines = formatTrackingLines({
-      undatedInProgress: items,
       candidateCount: 2,
     }).join('\n');
-    expect(lines).toContain('진행 중 6건');
-    expect(lines).toContain('업무4');
-    expect(lines).not.toContain('업무5');
-    expect(lines).toContain('외 1건');
-    expect(lines).toContain('새 후보 2건');
+    expect(lines).toBe('새 후보 2건');
+    expect(lines).not.toContain('진행 중');
   });
 });
 
