@@ -6,6 +6,7 @@ import {
   FindByDateRangeInput,
   SaveScheduleInput,
   ScheduleRepositoryPort,
+  UpdateShortTitleInput,
   UpdateStatusInput,
 } from '../domain/port/schedule.repository.port';
 import { ScheduleException } from '../domain/schedule.exception';
@@ -69,6 +70,8 @@ interface ScheduleItemRow {
   createdAt: Date;
   slackUserId: string;
   title: string;
+  shortTitle: string | null;
+  shortTitleBasis: string | null;
   dueDate: Date | null;
   dueTime: string | null;
   linkUrl: string | null;
@@ -108,6 +111,8 @@ const toRecord = (row: ScheduleItemRow): ScheduleItemRecord => {
     createdAt: row.createdAt,
     slackUserId: row.slackUserId,
     title: row.title,
+    shortTitle: row.shortTitle,
+    shortTitleBasis: row.shortTitleBasis,
     dueDate: row.dueDate,
     dueTime: row.dueTime,
     linkUrl: row.linkUrl,
@@ -315,6 +320,14 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
       data: { status: input.status, completedAt: input.completedAt },
     });
     return toRecord(updated);
+  }
+
+  async updateShortTitle(input: UpdateShortTitleInput): Promise<boolean> {
+    const updated = await this.prisma.scheduleItem.updateMany({
+      where: { id: input.id, title: input.basis },
+      data: { shortTitle: input.shortTitle, shortTitleBasis: input.basis },
+    });
+    return updated.count > 0;
   }
 
   async transition(input: TransitionInput): Promise<ScheduleItemRecord | null> {

@@ -58,6 +58,12 @@ export interface UpdateStatusInput {
   completedAt: Date | null;
 }
 
+export interface UpdateShortTitleInput {
+  id: number;
+  shortTitle: string;
+  basis: string;
+}
+
 export interface ScheduleRepositoryPort {
   save(input: SaveScheduleInput): Promise<ScheduleItemRecord>;
   findByDateRange(
@@ -78,6 +84,7 @@ export interface ScheduleRepositoryPort {
   ): Promise<ScheduleItemRecord | null>;
   findById(id: number): Promise<ScheduleItemRecord | null>;
   updateStatus(input: UpdateStatusInput): Promise<ScheduleItemRecord>;
+  updateShortTitle(input: UpdateShortTitleInput): Promise<boolean>;
   transition(input: TransitionInput): Promise<ScheduleItemRecord | null>;
   createCollected(
     input: CollectedScheduleInput,

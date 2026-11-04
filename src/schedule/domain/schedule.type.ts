@@ -73,6 +73,8 @@ export interface ScheduleItemRecord {
   createdAt: Date;
   slackUserId: string;
   title: string;
+  shortTitle: string | null;
+  shortTitleBasis: string | null;
   dueDate: Date | null;
   startDate?: Date | null;
   startedAt?: Date | null;

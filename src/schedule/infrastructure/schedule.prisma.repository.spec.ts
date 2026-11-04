@@ -74,6 +74,8 @@ describe('SchedulePrismaRepository 업무 트래킹', () => {
     id: 1,
     slackUserId: 'U1',
     title: '업무',
+    shortTitle: null,
+    shortTitleBasis: null,
     dueDate: date,
     dueTime: null,
     linkUrl: null,
@@ -91,6 +93,58 @@ describe('SchedulePrismaRepository 업무 트래킹', () => {
     candidateExpiresAt: null,
     deliveryClaimedAt: null,
   };
+
+  it('조회한 짧은 이름과 기준 제목을 레코드에 담는다', async () => {
+    const findUnique = jest.fn().mockResolvedValue({
+      ...row,
+      shortTitle: '짧은 업무',
+      shortTitleBasis: '업무',
+    });
+    const repository = new SchedulePrismaRepository({
+      scheduleItem: { findUnique },
+    } as unknown as PrismaService);
+
+    await expect(repository.findById(1)).resolves.toEqual(
+      expect.objectContaining({
+        shortTitle: '짧은 업무',
+        shortTitleBasis: '업무',
+      }),
+    );
+  });
+
+  it('현재 제목이 기준 제목일 때만 짧은 이름을 저장한다', async () => {
+    const updateMany = jest.fn().mockResolvedValueOnce({ count: 1 });
+    const repository = new SchedulePrismaRepository({
+      scheduleItem: { updateMany },
+    } as unknown as PrismaService);
+
+    await expect(
+      repository.updateShortTitle({
+        id: 1,
+        shortTitle: '짧은 업무',
+        basis: '업무',
+      }),
+    ).resolves.toBe(true);
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { id: 1, title: '업무' },
+      data: { shortTitle: '짧은 업무', shortTitleBasis: '업무' },
+    });
+  });
+
+  it('제목이 바뀌어 조건부 갱신이 실패하면 false를 돌려준다', async () => {
+    const updateMany = jest.fn().mockResolvedValue({ count: 0 });
+    const repository = new SchedulePrismaRepository({
+      scheduleItem: { updateMany },
+    } as unknown as PrismaService);
+
+    await expect(
+      repository.updateShortTitle({
+        id: 1,
+        shortTitle: '짧은 업무',
+        basis: '업무',
+      }),
+    ).resolves.toBe(false);
+  });
 
   it('DONE 전이에 completedAt 을 주면 그 시각으로 기록한다', async () => {
     const completedAt = new Date('2026-11-04T13:00:00Z');

@@ -6,6 +6,7 @@ import { appendIntegrationHint } from '../../../common/domain/integration-failur
 import { ListAssignedTasksUsecase } from '../../../github/application/list-assigned-tasks.usecase';
 import { CloseFinishedIssuesUsecase } from '../../../schedule/application/close-finished-issues.usecase';
 import { resolveCollectionLowerBound } from '../../../schedule/application/collection-window';
+import { GenerateShortTitlesUsecase } from '../../../schedule/application/generate-short-titles.usecase';
 import { ReconcilePullRequestsUsecase } from '../../../schedule/application/reconcile-pull-requests.usecase';
 import { normalizeGithubIssueUrl } from '../../../schedule/domain/github-source-url';
 import {
@@ -44,6 +45,7 @@ export class ScheduleCollectGithubAutopilotTask implements AutopilotTask {
     private readonly reconcilePullRequests: ReconcilePullRequestsUsecase,
     private readonly config: ConfigService,
     private readonly closeFinishedIssues: CloseFinishedIssuesUsecase,
+    private readonly generateShortTitles: GenerateShortTitlesUsecase,
   ) {}
 
   async run(): Promise<AutopilotTaskResult> {
@@ -104,6 +106,13 @@ export class ScheduleCollectGithubAutopilotTask implements AutopilotTask {
             `GitHub 이슈 완료 확인 실패: ${error instanceof Error ? error.message : String(error)}`,
             error,
           ),
+        );
+      }
+      try {
+        await this.generateShortTitles.execute({ ownerId });
+      } catch (error) {
+        this.logger.warn(
+          `짧은 업무 이름 생성 실패: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     }

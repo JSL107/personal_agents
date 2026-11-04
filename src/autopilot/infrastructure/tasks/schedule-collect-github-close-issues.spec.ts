@@ -19,6 +19,9 @@ describe('GitHub 수집 후 이슈 완료 확인', () => {
     const closeIssues = {
       execute: jest.fn().mockRejectedValue(new Error('failed')),
     };
+    const generateShortTitles = {
+      execute: jest.fn().mockRejectedValue(new Error('failed')),
+    };
     const task = Reflect.construct(ScheduleCollectGithubAutopilotTask, [
       repository,
       stateRepository,
@@ -26,9 +29,11 @@ describe('GitHub 수집 후 이슈 완료 확인', () => {
       reconcile,
       config,
       closeIssues,
+      generateShortTitles,
     ]) as ScheduleCollectGithubAutopilotTask;
 
     await expect(task.run()).resolves.toEqual({ skip: true });
+    expect(generateShortTitles.execute).toHaveBeenCalledWith({ ownerId: 'U1' });
     expect(closeIssues.execute).toHaveBeenCalledWith({
       ownerId: 'U1',
       now: expect.any(Date),

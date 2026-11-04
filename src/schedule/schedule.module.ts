@@ -16,6 +16,7 @@ import { CloseFinishedNotionTasksUsecase } from './application/close-finished-no
 import { DeleteScheduleUsecase } from './application/delete-schedule.usecase';
 import { DraftFollowUpMessageUsecase } from './application/draft-follow-up-message.usecase';
 import { ExtractScheduleFromConversationUsecase } from './application/extract-schedule-from-conversation.usecase';
+import { GenerateShortTitlesUsecase } from './application/generate-short-titles.usecase';
 import { JudgeMentionRequestUsecase } from './application/judge-mention-request.usecase';
 import { ListSchedulesUsecase } from './application/list-schedules.usecase';
 import { ManageScheduleFromConversationUsecase } from './application/manage-schedule-from-conversation.usecase';
@@ -66,6 +67,7 @@ import { ScheduleConsoleController } from './interface/schedule-console.controll
     CloseFinishedIssuesUsecase,
     CloseFinishedNotionTasksUsecase,
     ReconcilePullRequestsUsecase,
+    GenerateShortTitlesUsecase,
     JudgeMentionRequestUsecase,
     RegisterScheduleUsecase,
     RegisterConsoleScheduleUsecase,
@@ -101,6 +103,7 @@ import { ScheduleConsoleController } from './interface/schedule-console.controll
     },
   ],
   exports: [
+    GenerateShortTitlesUsecase,
     CloseFinishedIssuesUsecase,
     CloseFinishedNotionTasksUsecase,
     ReconcilePullRequestsUsecase,

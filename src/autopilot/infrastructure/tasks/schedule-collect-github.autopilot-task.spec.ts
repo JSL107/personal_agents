@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { ListAssignedTasksUsecase } from '../../../github/application/list-assigned-tasks.usecase';
 import { GithubClientPort } from '../../../github/domain/port/github-client.port';
 import { CloseFinishedIssuesUsecase } from '../../../schedule/application/close-finished-issues.usecase';
+import { GenerateShortTitlesUsecase } from '../../../schedule/application/generate-short-titles.usecase';
 import { ReconcilePullRequestsUsecase } from '../../../schedule/application/reconcile-pull-requests.usecase';
 import { ScheduleRepositoryPort } from '../../../schedule/domain/port/schedule.repository.port';
 import { ScheduleCollectionStateRepositoryPort } from '../../../schedule/domain/port/schedule-collection-state.repository.port';
@@ -66,6 +67,7 @@ describe('ScheduleCollectGithubAutopilotTask', () => {
   };
   const config = { get: jest.fn() };
   const closeFinishedIssues = { execute: jest.fn() };
+  const generateShortTitles = { execute: jest.fn() };
   const makeTask = () =>
     new ScheduleCollectGithubAutopilotTask(
       repository as unknown as ScheduleRepositoryPort,
@@ -79,11 +81,13 @@ describe('ScheduleCollectGithubAutopilotTask', () => {
       ),
       config as unknown as ConfigService,
       closeFinishedIssues as unknown as CloseFinishedIssuesUsecase,
+      generateShortTitles as unknown as GenerateShortTitlesUsecase,
     );
 
   beforeEach(() => {
     jest.clearAllMocks();
     closeFinishedIssues.execute.mockResolvedValue(undefined);
+    generateShortTitles.execute.mockResolvedValue(undefined);
     config.get.mockImplementation((key: string) =>
       key === 'CONSOLE_OWNER_SLACK_USER_ID' ? 'U1' : 'JSL107',
     );

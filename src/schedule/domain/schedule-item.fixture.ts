@@ -7,6 +7,8 @@ export const buildScheduleItemRecord = (
   createdAt: new Date('2026-11-04T00:00:00Z'),
   slackUserId: 'U1',
   title: '업무',
+  shortTitle: null,
+  shortTitleBasis: null,
   dueDate: null,
   dueTime: null,
   linkUrl: null,
