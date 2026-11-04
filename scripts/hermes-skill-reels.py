@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import array
 import fcntl
+import ipaddress
 import itertools
 import json
 import math
@@ -34,8 +35,10 @@ import pwd
 import subprocess
 import sys
 import re
+import socket
 import tempfile
 import unicodedata
+import urllib.error
 import urllib.parse
 import urllib.request
 import wave
@@ -169,7 +172,7 @@ def fetch_candidates(since: str, day: str, field: str) -> list[dict]:
             "data_source_urls": [f"collection://{DATA_SOURCE_ID}"],
             "query": (f'SELECT url, "제목", "요약", "출처", "매체", "영상 상태", "date:수집일:start" '
                       f'FROM "collection://{DATA_SOURCE_ID}" '
-                      'WHERE "date:수집일:start" BETWEEN ? AND ? AND "분야" = ? AND "영상 상태" IN (\'후보\', \'선정\')'),
+                      'WHERE "date:수집일:start" BETWEEN ? AND ? AND "분야" = ? AND "영상 상태" = \'후보\''),
             "params": [since, day, field],
         }
     }
@@ -187,9 +190,9 @@ def fetch_candidates(since: str, day: str, field: str) -> list[dict]:
         raise RuntimeError(f"도구 오류: {result['error']}")
     rows = [row for row in result["rows"]
             if row.get("page_url") and row.get("title") and row.get("source", "").startswith("http")]
-    # 이미 고른 행이 있으면 그 행만 남겨 이어 만든다(앞선 실행이 선정 뒤에 실패한 경우).
-    chosen = [row for row in rows if row.get("status") == "선정"]
-    return chosen or rows
+    # 이어 만들기는 Notion 상태가 아니라 그날 폴더의 체크포인트(make_reel)로 판단한다. 상태로 판단하면 지난날 멈춘
+    # 「선정」 행이 새 영상에 다시 쓰이거나, 범위를 넓혀 고른 행을 다음 실행이 못 찾았다(PR #966 리뷰).
+    return rows
 
 
 class _ArticleParser(HTMLParser):
@@ -237,13 +240,38 @@ def article_text(html: str) -> str:
     return text[:ARTICLE_MAX_CHARS] if len(text) >= ARTICLE_MIN_CHARS else ""
 
 
+def is_public_url(url: str) -> bool:
+    """http(s) 이고 호스트가 가리키는 모든 주소가 공인 IP 일 때만 참. 원문 본문은 대본 프롬프트에 들어가므로
+    내부망·루프백 주소의 내용을 읽지 않는다(PR #966 리뷰)."""
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        return False
+    try:
+        infos = socket.getaddrinfo(parsed.hostname, parsed.port or (443 if parsed.scheme == "https" else 80))
+        return bool(infos) and all(ipaddress.ip_address(info[4][0]).is_global for info in infos)
+    except (OSError, ValueError):
+        return False
+
+
+class _PublicRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """리다이렉트 목적지도 공인 주소인지 다시 본다. 처음 주소만 보면 이동으로 우회된다."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001 — urllib 시그니처 그대로
+        if not is_public_url(newurl):
+            raise urllib.error.URLError(f"공인 주소가 아닌 곳으로 이동: {newurl}")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_ARTICLE_OPENER = urllib.request.build_opener(_PublicRedirectHandler)
+
+
 def fetch_article(url: str) -> str:
-    """출처 페이지 본문. 못 읽으면(로그인·스크립트 렌더 페이지 등) 빈 문자열."""
-    if urllib.parse.urlparse(url).scheme not in ("http", "https"):
+    """출처 페이지 본문. 못 읽으면(로그인·스크립트 렌더 페이지·공인 주소 아님 등) 빈 문자열."""
+    if not is_public_url(url):
         return ""
     request = urllib.request.Request(url, headers={"User-Agent": BROWSER_UA, "Accept-Language": "ko,en;q=0.8"})
     try:
-        with urllib.request.urlopen(request, timeout=ARTICLE_TIMEOUT_SEC) as response:
+        with _ARTICLE_OPENER.open(request, timeout=ARTICLE_TIMEOUT_SEC) as response:
             if "html" not in response.headers.get("Content-Type", ""):
                 return ""
             raw = response.read(3_000_000)
@@ -714,19 +742,41 @@ def choose_topic(day: str, field: str) -> tuple[dict, dict]:
 
 
 def make_reel(day: str, field: str, voice_dir: Path | None) -> dict:
-    """한 분야의 릴스 한 편. 실패하면 어느 단계에서 왜 실패했는지 담은 RuntimeError 를 던진다."""
+    """한 분야의 릴스 한 편. 실패하면 어느 단계에서 왜 실패했는지 담은 RuntimeError 를 던진다.
+
+    그날 폴더에 두 체크포인트를 남겨 다시 돌리면 이어 간다(PR #966 리뷰).
+    - choice.json: 고른 행과 한 문장. 있으면 고르기를 건너뛰고 그 행으로 다시 만든다(범위를 넓혀 고른 행도 포함).
+    - done.json: 「제작중」 기록까지 끝났다는 표시. reel.mp4 만 있고 이게 없으면 상태 기록만 다시 한다.
+    """
     out_dir = OUT_ROOT / day / FIELDS[field]
-    if (out_dir / "reel.mp4").exists():
+    checkpoint, done = out_dir / "choice.json", out_dir / "done.json"
+    if done.exists():
         return {"field": field, "skipped": True, "dir": str(out_dir)}
     stage = "후보 조회"
     try:
-        row, choice = choose_topic(day, field)
+        if (out_dir / "reel.mp4").exists() and (out_dir / "script.json").exists():
+            saved = json.loads((out_dir / "script.json").read_text(encoding="utf-8"))
+            stage = "제작중 표시"
+            set_status(saved["row"]["page_url"], "제작중", (out_dir / "reel.mp4").as_uri())
+            done.write_text("{}", encoding="utf-8")
+            return {"field": field, "title": saved["row"]["title"], "dir": str(out_dir), "duration": saved["duration"],
+                    "engine": saved["engine"] + " (상태 기록만 다시 함)"}
+        if checkpoint.exists():
+            saved = json.loads(checkpoint.read_text(encoding="utf-8"))
+            row, choice = saved["row"], saved["choice"]
+            stage = "원문 수집"
+            row["article"] = fetch_article(row["source"])
+            if not row["article"]:
+                raise RuntimeError("이어 만들 기사의 원문을 다시 읽지 못함")
+        else:
+            row, choice = choose_topic(day, field)
+            out_dir.mkdir(parents=True, exist_ok=True)
+            checkpoint.write_text(json.dumps({"row": {k: v for k, v in row.items() if k != "article"}, "choice": choice},
+                                             ensure_ascii=False, indent=2), encoding="utf-8")
         stage = "대본"
         script = write_script(field, row, choice["one_line"])
-        if row["status"] != "선정":
-            stage = "선정 표시"
-            set_status(row["page_url"], "선정")
-        out_dir.mkdir(parents=True, exist_ok=True)
+        stage = "선정 표시"
+        set_status(row["page_url"], "선정")
         with tempfile.TemporaryDirectory() as tmp:
             stage = "음성"
             timeline, voice = synthesize(script["lines"], Path(tmp), voice_dir)
@@ -741,6 +791,7 @@ def make_reel(day: str, field: str, voice_dir: Path | None) -> dict:
         (out_dir / "reel.partial.mp4").rename(out_dir / "reel.mp4")
         stage = "제작중 표시"
         set_status(row["page_url"], "제작중", (out_dir / "reel.mp4").as_uri())
+        done.write_text("{}", encoding="utf-8")
         return {"field": field, "title": row["title"], "dir": str(out_dir), "duration": timeline["duration"],
                 "engine": timeline["engine"]}
     except Exception as error:  # noqa: BLE001 — 단계 이름을 붙여 DM 한 줄로 알린다
@@ -886,6 +937,55 @@ def self_check() -> None:
     assert text.startswith("연구진이 여섯 모델을 비교했다") and "메뉴" not in text and "저작권" not in text and "nope" not in text
     assert article_text("<p>너무 짧은 본문입니다</p>") == ""
     assert fetch_article("file:///etc/passwd") == ""
+    for private in ("http://127.0.0.1/x", "http://10.0.0.5/", "http://192.168.0.1/", "http://169.254.169.254/latest",
+                    "http://[::1]/", "file:///etc/passwd", "http:///nohost"):
+        assert not is_public_url(private), private
+    assert is_public_url("http://8.8.8.8/")
+
+    # 이어 만들기(PR #966 리뷰): 렌더 실패 → 같은 행으로 재개, 「제작중」 기록 실패 → 상태 기록만 다시.
+    saved_root, saved = globals()["OUT_ROOT"], {name: globals()[name] for name in
+                                                ("choose_topic", "write_script", "set_status", "synthesize", "render", "fetch_article")}
+    calls = {"choose": 0, "status": []}
+    reel_row = {"page_url": "https://n/1", "title": "a", "summary": "s", "source": "https://x", "media": "X",
+                "status": "후보", "collected": "2026-11-04"}
+    fail = {"render": True, "status_done": True}
+
+    def fake_render(timeline, voice, row_, badge, headline, subject, workdir, out):
+        if fail["render"]:
+            raise RuntimeError("렌더 실패")
+        out.write_bytes(b"mp4")
+
+    def fake_status(page_url, status, link=None):
+        calls["status"].append(status)
+        if status == "제작중" and fail["status_done"]:
+            raise RuntimeError("Notion 오류")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        globals().update({
+            "OUT_ROOT": Path(tmp),
+            "choose_topic": lambda day, field: (calls.__setitem__("choose", calls["choose"] + 1)
+                                                or ({**reel_row, "article": "본문"}, {"one_line": "한 문장"})),
+            "write_script": lambda field, row_, one_line: script,
+            "set_status": fake_status,
+            "synthesize": lambda lines, workdir, voice_dir: ({"engine": "fake", "duration": 30.0}, workdir / "v.wav"),
+            "render": fake_render,
+            "fetch_article": lambda url: "본문",
+        })
+        try:
+            for expected in ("렌더 실패", "Notion 오류"):
+                try:
+                    make_reel("2026-11-04", "AI", None)
+                    raise AssertionError("실패해야 하는데 통과했다")
+                except RuntimeError as error:
+                    assert expected in str(error), error
+                fail["render"] = False
+            assert calls["choose"] == 1  # 두 번째 실행은 체크포인트로 같은 행을 이어 만들었다
+            fail["status_done"] = False
+            result = make_reel("2026-11-04", "AI", None)
+            assert "상태 기록만 다시 함" in result["engine"] and calls["status"][-1] == "제작중"
+            assert make_reel("2026-11-04", "AI", None)["skipped"] and calls["choose"] == 1
+        finally:
+            globals().update({"OUT_ROOT": saved_root, **saved})
 
     env = child_env({"PATH": "/bin", "SLACK_BOT_TOKEN": "x", "CLAUDE_CODE_OAUTH_TOKEN": "t", "HOME": "/elsewhere"})
     assert env == {"PATH": "/bin", "CLAUDE_CODE_OAUTH_TOKEN": "t", "HOME": str(REAL_HOME)}, env

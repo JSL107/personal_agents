@@ -24,9 +24,14 @@ const W = 1080;
 const H = 1920;
 const NAMES = ['body-idle', 'body-wave', 'body-point', 'body-think', 'body-surprise', 'body-thumbsup', 'talk-closed', 'talk-half', 'talk-open', 'blink', 'foot-left', 'foot-right'];
 
+// 자막·제목은 뉴스에서 온 텍스트로 만들어진다. </script> 가 섞여도 스크립트 태그를 닫지 못하게 < 와 줄 구분 문자를 이스케이프한다(PR #966 리뷰).
+function safeJson(value) {
+  return JSON.stringify(value).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+}
+
 function html(timeline) {
   return `<!doctype html><body style="margin:0"><canvas id="c" width="${W}" height="${H}"></canvas><script>
-  const W=${W}, H=${H}, T=${JSON.stringify(timeline)}, imgs={}, talking={};
+  const W=${W}, H=${H}, T=${safeJson(timeline)}, imgs={}, talking={};
   const FONT='"Apple SD Gothic Neo", sans-serif';
   const MOUTH={c:'talk-closed', h:'talk-half', o:'talk-open'};
 
