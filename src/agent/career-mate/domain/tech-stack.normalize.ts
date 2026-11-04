@@ -163,6 +163,16 @@ const ALIASES: Record<string, string> = {
   'notion rest api': 'Notion API',
   'google cloud pub/sub': 'Google Cloud Pub/Sub',
   'gke backendconfig': 'Kubernetes',
+  // 2026-11-04 실데이터 dry-run 에서 같은 카드에 함께 나온 표기
+  'cloud firestore': 'Firestore',
+  'firebase auth': 'Firebase Authentication',
+  'google cloud functions': 'Firebase Functions',
+  'cloud functions for firebase': 'Firebase Functions',
+  'google calendar api': 'Google Calendar',
+  'claude code cli': 'Claude Code',
+  'docker buildkit': 'Docker',
+  buildkit: 'Docker',
+  'hkdf-sha256': 'HKDF',
 };
 
 const BANNED_TERMS = new Set(
@@ -183,6 +193,23 @@ const BANNED_TERMS = new Set(
     'batch processing',
     'observability',
     'REST API',
+    // 프로토콜·기법·개념어 — 카드 앞자리를 차지하면 "주력 스택" 으로 읽힌다(2026-11-04 dry-run 실측)
+    'HTTP',
+    'Webhook',
+    'SSR',
+    'TSX',
+    'CLI',
+    'CORS',
+    'CSRF',
+    'Cron',
+    'DDD',
+    'DateTime',
+    'Environment Variables',
+    'Data Validation',
+    'Database Transactions',
+    'Backtesting',
+    'EUC-KR',
+    'AGENTS.md',
   ].map(keyOf),
 );
 

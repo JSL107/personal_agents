@@ -77,6 +77,15 @@ describe('normalizeTechStack', () => {
     expect(result.techStack.indexOf('Jest')).toBeGreaterThan(2);
   });
 
+  it('실데이터에서 한 카드에 함께 나온 표기를 접고 개념어를 뺀다', () => {
+    expect(
+      normalizeTechStack([
+        ['Cloud Firestore', 'HTTP', 'SSR'],
+        ['Firestore', 'Webhook', 'DateTime'],
+      ]).techStack,
+    ).toEqual(['Firestore']);
+  });
+
   it('같은 성과 안의 같은 기술 표기는 빈도를 한 번만 센다', () => {
     const result = normalizeTechStack([
       ['Postgres', 'PostgreSQL', 'MySQL'],
