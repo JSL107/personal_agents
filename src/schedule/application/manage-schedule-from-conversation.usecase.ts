@@ -14,10 +14,7 @@ import {
 } from '../../common/llm/untrusted-input.util';
 import { formatKstDateTime } from '../../common/util/kst-date.util';
 import { ModelRouterUsecase } from '../../model-router/application/model-router.usecase';
-import {
-  AgentType,
-  OutputJsonSchema,
-} from '../../model-router/domain/model-router.type';
+import { AgentType } from '../../model-router/domain/model-router.type';
 import { DispatchOutcome } from '../../router/domain/port/agent-dispatcher.port';
 import { escapeSlackMrkdwn } from '../../slack/format/mrkdwn.util';
 import { formatManagementReply } from '../../slack/format/schedule-management.formatter';
@@ -33,27 +30,10 @@ import {
   ManagementWriteResult,
   ManageScheduleInput,
 } from '../domain/management-intent.type';
-import { FollowUpTrigger } from '../domain/schedule.type';
+import { MANAGEMENT_INTENT_OUTPUT_SCHEMA } from '../domain/prompt/management-intent.schema';
 import { ScheduleFollowUpUsecase } from './schedule-follow-up.usecase';
 import { UpdateScheduleFieldsUsecase } from './update-schedule-fields.usecase';
 import { UpdateScheduleStatusUsecase } from './update-schedule-status.usecase';
-
-const OUTPUT_SCHEMA: OutputJsonSchema = {
-  type: 'object',
-  properties: {
-    action: { type: 'string', enum: Object.values(ManagementAction) },
-    titleQuery: { type: 'string' },
-    status: { type: 'string' },
-    remindAt: { type: 'string' },
-    recipient: { type: 'string' },
-    topic: { type: 'string' },
-    trigger: { type: 'string', enum: Object.values(FollowUpTrigger) },
-    triggerAt: { type: 'string' },
-    note: { type: 'string' },
-  },
-  required: ['action', 'titleQuery'],
-  additionalProperties: false,
-};
 
 @Injectable()
 export class ManageScheduleFromConversationUsecase {
@@ -89,8 +69,8 @@ export class ManageScheduleFromConversationUsecase {
             agentType: AgentType.SCHEDULE,
             request: {
               prompt: `현재 시각 (Asia/Seoul): ${formatKstDateTime(new Date())}\n미완 업무 제목:\n${wrapUntrustedInput(JSON.stringify(candidates.map((candidate) => candidate.title)))}\n사용자 요청:\n${wrapUntrustedInput(input.text ?? '')}`,
-              systemPrompt: `업무 관리 동작과 대상 제목을 JSON으로 추출하세요. titleQuery는 미완 업무 제목 목록에서 정확히 복사하세요. 사용하지 않는 필드는 생략하세요. 상대 날짜·시각은 Asia/Seoul 기준으로 해석하고, 결과는 UTC offset을 포함한 ISO 8601로 쓰세요. ${UNTRUSTED_INPUT_NOTICE}`,
-              outputSchema: OUTPUT_SCHEMA,
+              systemPrompt: `업무 관리 동작과 대상 제목을 JSON으로 추출하세요. titleQuery는 미완 업무 제목 목록에서 정확히 복사하세요. 동작에 쓰지 않는 필드는 null 로 두세요. 상대 날짜·시각은 Asia/Seoul 기준으로 해석하고, 결과는 UTC offset을 포함한 ISO 8601로 쓰세요. ${UNTRUSTED_INPUT_NOTICE}`,
+              outputSchema: MANAGEMENT_INTENT_OUTPUT_SCHEMA,
             },
             noContractPreamble: true,
           });
