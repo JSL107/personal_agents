@@ -97,6 +97,26 @@ describe('표지 검증', () => {
     ]);
   });
 
+  it('요약·문제에서 근거 없는 숫자 문장을 빼고 제목에 있으면 표지를 버린다', () => {
+    const result = validateCover({
+      cover: cover({
+        summary: '운영 상태를 본다. 장애 99회를 막았다.',
+        problem: '403 실패 18회가 났다. 장애를 찾기 어려웠다.',
+      }),
+      processLines: ['사망 3회 → 0회'],
+      previousResult: '',
+    });
+    expect(result?.summary).toBe('운영 상태를 본다.');
+    expect(result?.problem).toBe('장애를 찾기 어려웠다.');
+    expect(
+      validateCover({
+        cover: cover({ title: '장애 99회 차단' }),
+        processLines: ['사망 3회 → 0회'],
+        previousResult: '',
+      }),
+    ).toBeNull();
+  });
+
   it('표지 필수 필드가 비면 카드를 버린다', () => {
     expect(
       validateCover({

@@ -108,6 +108,16 @@ describe('portfolio sync 계획 함수', () => {
     expect(lines).toEqual(['최신', '다음', 'epoch', 'null']);
   });
 
+  it('최신 성과의 문장이 비어 있으면 같은 제목의 이전 유효 문장을 남긴다', () => {
+    const lines = buildProcessLines(
+      group([
+        accomplishment('A', '이전 유효', 1, '2026-01-01T00:00:00Z'),
+        accomplishment('A', '  ', 2, '2026-03-01T00:00:00Z'),
+      ]),
+    );
+    expect(lines).toEqual(['이전 유효']);
+  });
+
   it('과정은 10줄로 자르고 익명 문장의 복합 저장소 이름을 가린다', () => {
     const accomplishments = Array.from({ length: 12 }, (_, index) =>
       accomplishment(

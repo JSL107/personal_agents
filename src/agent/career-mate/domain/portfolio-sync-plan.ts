@@ -116,14 +116,12 @@ export const buildProcessLines = (group: ProjectGroup): string[] => {
   const process: string[] = [];
   for (const { accomplishment } of ranked) {
     const title = accomplishment.title.trim();
-    if (titles.has(title)) {
+    const bullet = accomplishment.bullet.trim();
+    // 빈 문장은 제목을 차지하지 않는다 — 먼저 차지하면 같은 제목의 이전 유효 문장까지 빠진다.
+    if (!bullet || titles.has(title)) {
       continue;
     }
     titles.add(title);
-    const bullet = accomplishment.bullet.trim();
-    if (!bullet) {
-      continue;
-    }
     process.push(
       group.anonymized ? maskRepoTokens(bullet, group.repo) : bullet,
     );

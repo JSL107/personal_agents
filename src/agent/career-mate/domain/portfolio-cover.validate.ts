@@ -105,7 +105,17 @@ export const validateCover = ({
   processLines: string[];
   previousResult: string;
 }): ValidatedCover | null => {
-  if (!cover.title.trim() || !cover.summary.trim() || !cover.problem.trim()) {
+  const title = cover.title.trim();
+  // 요약·문제도 공개 표지에 그대로 실린다 — 과정 10줄에 없는 숫자를 말하는 문장은 결과와 같은 기준으로 뺀다.
+  const summary = validResultSentences({ text: cover.summary, processLines })
+    .join(' ')
+    .trim();
+  const problem = validResultSentences({ text: cover.problem, processLines })
+    .join(' ')
+    .trim();
+  // 제목은 문장 단위로 덜어낼 수 없어, 근거 없는 숫자가 있으면 표지 전체를 실패로 본다(다음 회차 재시도).
+  const titleUngrounded = hasUngroundedNumbers({ text: title, processLines });
+  if (!title || !summary || !problem || titleUngrounded) {
     return null;
   }
   const judged = cover.highlights.map((highlight) => ({
@@ -136,9 +146,9 @@ export const validateCover = ({
     cover.highlights.length > 0 && highlights.length === 0 && processHasNumbers;
   return {
     ...cover,
-    title: cover.title.trim(),
-    summary: cover.summary.trim(),
-    problem: cover.problem.trim(),
+    title,
+    summary,
+    problem,
     result,
     highlights,
     removedHighlights,

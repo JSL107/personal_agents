@@ -84,6 +84,14 @@ describe('portfolio sync 사후 검사', () => {
     ).toContain(1);
   });
 
+  it('제목·요약·문제의 근거 없는 숫자도 규칙 1로 보고한다', () => {
+    expect(
+      check([project('a', { summary: '장애 99회를 막았다' })]).map(
+        (item) => item.rule,
+      ),
+    ).toContain(1);
+  });
+
   it('과정이 10줄을 넘거나 한 저장소의 카드가 3장을 넘으면 규칙 2로 보고한다', () => {
     const projects = ['a', 'b', 'c', 'd'].map((slug) => project(slug, {}));
     projects[0].data.process = Array(11).fill('승인율 3%에서 0%로 개선');

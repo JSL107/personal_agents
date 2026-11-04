@@ -86,11 +86,13 @@ export const postCheckPortfolioSync = ({
         ? []
         : stringArray(data.keyContributions);
     const techStack = stringArray(data.techStack);
-    const result = stringValue(data.result);
+    const coverText = ['title', 'summary', 'problem', 'result']
+      .map((field) => stringValue(data[field]))
+      .join('\n');
     const hasInvalidCoverNumbers =
       process === null ||
       highlights === null ||
-      hasUngroundedNumbers({ text: result, processLines: process }) ||
+      hasUngroundedNumbers({ text: coverText, processLines: process }) ||
       highlights.some((line) =>
         hasUngroundedNumbers({ text: line, processLines: process }),
       );
