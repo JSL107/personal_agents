@@ -54,9 +54,12 @@ CLAUDE_MODEL = "sonnet"
 # hermes 는 스크립트를 120초에 끊는다(cron/scheduler.py `_DEFAULT_SCRIPT_TIMEOUT`). 그 전에 스스로 끊어야 실패 사유를 DM 으로 남긴다.
 # 실측은 13~19초(규칙 페이지 읽기 포함).
 CLAUDE_TIMEOUT_SEC = 100
-# hermes 가 ~/.hermes/.env 를 환경에 올리면 OAuth 토큰이 ANTHROPIC_API_KEY 이름으로 들어온다. claude CLI 는 그것을
-# API 키로 써서 인증에 실패하므로 자식에게 넘기지 않는다(구독 인증은 CLAUDE_CODE_OAUTH_TOKEN 또는 keychain).
-DROPPED_ENV_KEYS = ("ANTHROPIC_API_KEY", "ANTHROPIC_TOKEN")
+# 자식 env 는 허용 목록으로만 만든다(src/model-router/infrastructure/cli-process.util.ts `SAFE_ENV_KEYS` 와 같은 기준).
+# hermes 가 ~/.hermes/.env 를 환경에 올리면 Slack·Tavily 토큰까지 들어 있으므로 부모 env 를 통째로 넘기지 않는다.
+# XDG_* 는 시크릿 디렉터리를 가리킬 수 있어 뺀다(AGENTS.md §5). ANTHROPIC_API_KEY 는 OAuth 토큰 별칭이라 claude 가
+# API 키로 오인하므로 넘기지 않고, 구독 인증은 CLAUDE_CODE_OAUTH_TOKEN(없으면 keychain)으로 한다.
+SAFE_ENV_KEYS = ("PATH", "USER", "LOGNAME", "LANG", "LC_ALL", "SHELL", "TERM", "TMPDIR")
+AUTH_ENV_KEYS = ("CLAUDE_CODE_OAUTH_TOKEN",)
 REAL_HOME = Path(pwd.getpwuid(os.getuid()).pw_dir)
 
 # 영역 헤더 → 분야. None 이면 싣지 않는 영역. 헤더는 모델이 이모지·굵게를 붙여 쓰므로 앞부분 일치로 본다.
@@ -290,6 +293,8 @@ def check_result(result: dict, urls: list[str]) -> str:
     created = [item.get("source_url", "") for item in result.get("created", [])]
     if any(url not in urls for url in created):
         return "입력에 없는 출처로 행을 만들었다고 보고함"
+    if set(existing) & set(created):
+        return "같은 출처를 이미 있다면서 생성했다고도 보고함"
     if any(not item.get("page_url") for item in result.get("created", [])):
         return "페이지 URL 없이 생성됐다고 보고함"
     if sorted(set(existing) | set(created)) != sorted(set(urls)) or len(created) != len(set(created)):
@@ -298,14 +303,19 @@ def check_result(result: dict, urls: list[str]) -> str:
     return ""
 
 
+def child_env(parent: dict) -> dict:
+    env = {key: parent[key] for key in (*SAFE_ENV_KEYS, *AUTH_ENV_KEYS) if key in parent}
+    # Notion 로그인은 실제 HOME 의 Claude Code 설정에 있다. hermes 가 HOME 을 바꿔도 따라가지 않게 고정한다.
+    env["HOME"] = str(REAL_HOME)
+    return env
+
+
 def run_claude(prompt: str) -> dict:
     # PATH 를 믿지 않는다. hermes gateway 의 PATH 에는 nvm 의 옛 npm 판(2.1.220)이 먼저 잡히는데, 그 판은 --mcp-config 의
     # Notion MCP 를 붙이지 않고 --tools "" 도 무시해 기본 도구를 연다(2026-11-04 실측). 네이티브 설치본을 먼저 쓴다.
     native = REAL_HOME / ".local" / "bin" / "claude"
     claude = str(native) if native.exists() else shutil.which("claude") or "claude"
-    env = {key: value for key, value in os.environ.items() if key not in DROPPED_ENV_KEYS}
-    # Notion 로그인은 실제 HOME 의 Claude Code 설정에 있다. hermes 가 HOME 을 바꿔도 따라가지 않게 고정한다.
-    env["HOME"] = str(REAL_HOME)
+    env = child_env(os.environ)
     tools = "mcp__notion__notion-fetch,mcp__notion__notion-query-data-sources,mcp__notion__notion-create-pages"
     with tempfile.TemporaryDirectory() as workdir:
         completed = subprocess.run(
@@ -409,6 +419,12 @@ def self_check() -> None:
     assert check_result({"existing": urls, "created": [{"source_url": "https://evil", "page_url": "x"}], "error": ""}, urls)
     assert check_result({"existing": [], "created": [], "error": "401"}, urls) == "도구 오류: 401"
     assert check_result({"existing": ["https://a"], "created": created * 2, "error": ""}, urls)
+    overlap = {"existing": urls, "created": created, "error": ""}  # 합집합은 맞지만 모순된 보고
+    assert check_result(overlap, urls) == "같은 출처를 이미 있다면서 생성했다고도 보고함", check_result(overlap, urls)
+
+    env = child_env({"PATH": "/bin", "SLACK_BOT_TOKEN": "x", "ANTHROPIC_API_KEY": "y", "XDG_CONFIG_HOME": "/s",
+                     "CLAUDE_CODE_OAUTH_TOKEN": "t", "HOME": "/elsewhere"})
+    assert env == {"PATH": "/bin", "CLAUDE_CODE_OAUTH_TOKEN": "t", "HOME": str(REAL_HOME)}, env
 
     prompt = build_prompt([notion_properties(row, "2026-11-04") for row in rows])
     assert prompt.count("string_is") == len(rows) and DATA_SOURCE_ID in prompt and "모두 4개" in prompt
