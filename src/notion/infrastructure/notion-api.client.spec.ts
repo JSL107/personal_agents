@@ -333,6 +333,90 @@ describe('NotionApiClient', () => {
     },
   );
 
+  // 통합은 자기 워크스페이스만 읽는다 — 회사 DB 는 회사 토큰 Client 로만 조회해야 한다.
+  it('NOTION_WORK_TASK_DB_IDS 의 DB 는 회사 Client 로, 나머지는 개인 Client 로 조회한다', async () => {
+    const personal = buildClient({ MINE: [] });
+    const work = buildClient({ 'work-db': [] });
+    const adapter = new NotionApiClient(
+      personal,
+      buildConfig({
+        NOTION_TASK_DB_IDS: 'MINE',
+        NOTION_WORK_TASK_DB_IDS: 'WORKDB',
+      }),
+      work,
+    );
+
+    await adapter.listActiveTasks({ databaseIds: ['MINE', 'work-db'] });
+    await adapter.listActiveTasks();
+
+    expect(
+      (personal.databases.query as jest.Mock).mock.calls.map(
+        ([options]) => options.database_id,
+      ),
+    ).toEqual(['MINE', 'MINE']);
+    expect(
+      (work.databases.query as jest.Mock).mock.calls.map(
+        ([options]) => options.database_id,
+      ),
+    ).toEqual(['work-db', 'WORKDB']);
+  });
+
+  it('회사 토큰 없이 회사 DB 만 있으면 그 DB 는 실패로 센다', async () => {
+    const warn = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    const adapter = new NotionApiClient(
+      buildClient({ MINE: [] }),
+      buildConfig({
+        NOTION_TASK_DB_IDS: 'MINE',
+        NOTION_WORK_TASK_DB_IDS: 'WORKDB',
+      }),
+    );
+
+    await expect(
+      adapter.listActiveTasks({ requireAllDatabases: true }),
+    ).rejects.toMatchObject({
+      notionErrorCode: NotionErrorCode.REQUEST_FAILED,
+    });
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('NOTION_WORK_TOKEN'),
+    );
+    warn.mockRestore();
+  });
+
+  // 회사 DB 에서 수집한 업무는 완료 판정 때 개인 Client 로는 404 — 회사 Client 로 다시 읽어야 닫힌다.
+  it('개인 Client 가 페이지를 못 읽으면 회사 Client 로 상태를 읽는다', async () => {
+    const denied = Object.assign(new Error('Could not find page'), {
+      status: 404,
+    });
+    const workRetrieve = jest.fn().mockResolvedValue({
+      object: 'page',
+      id: 'page-1',
+      url: 'https://notion.so/page-1',
+      archived: false,
+      in_trash: false,
+      last_edited_time: '2026-11-04T05:00:00.000Z',
+      properties: { 진행단계: { type: 'status', status: { name: '완료' } } },
+    });
+    const adapter = new NotionApiClient(
+      {
+        pages: { retrieve: jest.fn().mockRejectedValue(denied) },
+      } as unknown as Client,
+      buildConfig({}),
+      { pages: { retrieve: workRetrieve } } as unknown as Client,
+    );
+
+    await expect(adapter.getPageStatus('page-1')).resolves.toMatchObject({
+      properties: { 진행단계: '완료' },
+    });
+
+    workRetrieve.mockRejectedValue(denied);
+    await expect(adapter.getPageStatus('page-1')).rejects.toHaveProperty(
+      'name',
+      'NotionPageNotAccessibleError',
+    );
+  });
+
   it('한 DB 호출 실패해도 다른 DB 는 계속 처리 (graceful skip)', async () => {
     const query = jest.fn(({ database_id }) => {
       if (database_id === 'BAD') {

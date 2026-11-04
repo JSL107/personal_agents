@@ -31,6 +31,28 @@ describe('filterMyNotionTask', () => {
     });
   });
 
+  // 개인·회사 워크스페이스에서 내 표시 이름이 다르다 — 나열한 이름 중 하나만 맞으면 내 업무다.
+  it('담당자 값을 쉼표로 여러 개 주면 그중 하나만 일치해도 가져온다', () => {
+    const work: NotionTask = {
+      ...task,
+      properties: { ...task.properties, 담당자: '이준석' },
+    };
+    expect(
+      filterMyNotionTask(work, { ...config, assigneeValue: '김준석, 이준석' }),
+    ).not.toBeNull();
+    expect(filterMyNotionTask(work, config)).toBeNull();
+  });
+
+  it('담당자 값 끝 쉼표가 담당자 없는 업무를 통과시키지 않는다', () => {
+    const unassigned: NotionTask = {
+      ...task,
+      properties: { ...task.properties, 담당자: '' },
+    };
+    expect(
+      filterMyNotionTask(unassigned, { ...config, assigneeValue: '김준석,' }),
+    ).toBeNull();
+  });
+
   it('담당자 부분 일치는 제외한다', () => {
     expect(
       filterMyNotionTask(task, { ...config, assigneeValue: '김준' }),

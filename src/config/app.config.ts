@@ -107,6 +107,16 @@ export class EnvironmentVariables {
   @IsString()
   NOTION_TASK_DB_IDS?: string;
 
+  // 다른 워크스페이스(회사) task DB 용 통합 토큰 + DB ID 콤마 리스트. 통합은 자기 워크스페이스만 읽으므로
+  // 별도 토큰이 필요하다. 업무 조회·상태 확인에만 쓰고 쓰기에는 쓰지 않는다. 미설정 시 이 DB 들은 skip.
+  @IsOptional()
+  @IsString()
+  NOTION_WORK_TOKEN?: string;
+
+  @IsOptional()
+  @IsString()
+  NOTION_WORK_TASK_DB_IDS?: string;
+
   // Daily Plan write back 용 별도 DB (선택). 미설정 시 NOTION_TASK_DB_IDS 첫 번째 DB 를 재사용.
   @IsOptional()
   @IsString()
