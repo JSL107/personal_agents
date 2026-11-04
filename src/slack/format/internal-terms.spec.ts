@@ -2,6 +2,7 @@ import { STALE_RUN_SWEPT_ERROR } from '../../agent-run/domain/agent-run.type';
 import { formatDelayReport } from './delay-report.formatter';
 import { findInternalTerms } from './internal-terms';
 import type { InternalTermsGuard } from './internal-terms.jest-setup';
+import { pickTaskText } from './internal-terms.picker';
 import { toReadableSlackArgs } from './message-blocks.builder';
 
 describe('findInternalTerms', () => {
@@ -90,5 +91,15 @@ describe('internal-terms.jest-setup 배선', () => {
         ['FAILED'],
       ],
     ]);
+  });
+  it('승인 카드는 Slack 에 그려지는 slackText 까지 검사 대상에 넣는다', () => {
+    const texts = pickTaskText({
+      skip: false,
+      preview: { previewText: '전문', slackText: '짧은 카드' },
+      previews: [{ previewText: '전문 2', slackText: '짧은 카드 2' }],
+    });
+    expect(texts).toEqual(
+      expect.arrayContaining(['전문', '짧은 카드', '전문 2', '짧은 카드 2']),
+    );
   });
 });
