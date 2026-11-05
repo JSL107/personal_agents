@@ -69,9 +69,17 @@ const buildGithub = () =>
       | 'listReviewThreads'
       | 'listIssueComments'
       | 'getPullRequestHeadSha'
+      | 'getPullRequestCommitState'
       | 'getPullRequestDiff'
     >
   >;
+
+// 복구 경로가 받는 지금 커밋 상태. base 는 이 파일의 관심사가 아니라 고정한다.
+const commitStateAt = (headSha: string) => ({
+  headSha,
+  baseSha: 'base-sha',
+  mergedAt: null,
+});
 
 const buildRepository = () =>
   ({
@@ -209,7 +217,9 @@ describe('PublishFindingsService', () => {
     });
     github.listIssueComments.mockResolvedValue([]);
     // 카드와 같은 head — 줄 위치를 믿을 수 있어 인라인부터 시도한다.
-    github.getPullRequestHeadSha.mockResolvedValue('abc1234');
+    github.getPullRequestCommitState.mockResolvedValue(
+      commitStateAt('abc1234'),
+    );
     github.getPullRequestDiff.mockResolvedValue({
       diff: DIFF,
       bytes: DIFF.length,
@@ -222,6 +232,75 @@ describe('PublishFindingsService', () => {
     expect(repository.markPosted).toHaveBeenCalledWith(
       expect.objectContaining({ postMode: 'FILE', githubCommentId: '5' }),
     );
+  });
+
+  // 복구도 head 와 diff 를 따로 받는다. 병렬로 받으면 head 는 옛 커밋(카드와 같음), diff 는 새 커밋
+  // 기준으로 와서 줄 번호를 엉뚱한 diff 로 맞춰 볼 수 있다(#973 과 같은 창).
+  const arrangeRecoverableCard = () => {
+    const card = settledCard({
+      ...baseInput([]),
+      agentType: 'CODE_REVIEWER',
+      category: 'RELIABILITY',
+      severity: 'MUST_FIX',
+      filePath: 'src/foo.service.ts',
+      line: 12,
+      body: '문제',
+      fingerprint: 'fp',
+      postMode: 'NOT_POSTED',
+    });
+    repository.findUnpostedOpenCards.mockResolvedValue([card]);
+    github.listReviewThreads.mockResolvedValue({
+      threads: [],
+      pullRequestAuthorLogin: null,
+      pullRequestState: 'OPEN',
+      truncated: false,
+    });
+    github.listIssueComments.mockResolvedValue([]);
+  };
+
+  it('복구는 커밋 상태 → diff → 재조회를 차례로 받는다', async () => {
+    arrangeRecoverableCard();
+    const events: string[] = [];
+    github.getPullRequestCommitState.mockImplementation(async () => {
+      events.push('state');
+      return commitStateAt('abc1234');
+    });
+    github.getPullRequestDiff.mockImplementation(async () => {
+      events.push('diff:start');
+      await Promise.resolve();
+      events.push('diff:end');
+      return { diff: DIFF, bytes: DIFF.length, truncated: false };
+    });
+    github.createReviewComment.mockResolvedValue({
+      commentId: '5',
+      nodeId: 'thread',
+    });
+
+    await service.recoverUnposted(baseInput([]));
+
+    expect(events).toEqual(['state', 'diff:start', 'diff:end', 'state']);
+  });
+
+  it('복구 중 PR 이 갱신되면 이번 회차는 올리지 않고 카드를 남긴다', async () => {
+    arrangeRecoverableCard();
+    github.getPullRequestCommitState
+      .mockResolvedValueOnce(commitStateAt('abc1234'))
+      .mockResolvedValueOnce(commitStateAt('pushed-sha'));
+    github.getPullRequestDiff.mockResolvedValue({
+      diff: DIFF,
+      bytes: DIFF.length,
+      truncated: false,
+    });
+    // 게시 자체는 성공하게 둔다 — 그래야 0건이 "확인이 막았다" 는 뜻이 된다.
+    github.createReviewComment.mockResolvedValue({
+      commentId: '5',
+      nodeId: 'thread',
+    });
+
+    expect(await service.recoverUnposted(baseInput([]))).toBe(0);
+    expect(github.createReviewComment).not.toHaveBeenCalled();
+    expect(github.addIssueComment).not.toHaveBeenCalled();
+    expect(repository.markPosted).not.toHaveBeenCalled();
   });
 
   // 카드를 만든 뒤 push 가 있었으면 저장된 줄 번호가 지금 코드와 어긋난다. 스냅으로 엉뚱한 줄에 붙이지
@@ -246,7 +325,7 @@ describe('PublishFindingsService', () => {
       truncated: false,
     });
     github.listIssueComments.mockResolvedValue([]);
-    github.getPullRequestHeadSha.mockResolvedValue('new');
+    github.getPullRequestCommitState.mockResolvedValue(commitStateAt('new'));
     github.getPullRequestDiff.mockResolvedValue({
       diff: DIFF,
       bytes: DIFF.length,
@@ -299,7 +378,9 @@ describe('PublishFindingsService', () => {
     });
     github.listIssueComments.mockResolvedValue([]);
     // 아래 조회가 모두 성공하는 상황이어야 상태 확인이 빠졌을 때 실제로 게시까지 간다.
-    github.getPullRequestHeadSha.mockResolvedValue('abc1234');
+    github.getPullRequestCommitState.mockResolvedValue(
+      commitStateAt('abc1234'),
+    );
     github.getPullRequestDiff.mockResolvedValue({
       diff: DIFF,
       bytes: DIFF.length,
@@ -343,7 +424,9 @@ describe('PublishFindingsService', () => {
       truncated: false,
     });
     github.listIssueComments.mockResolvedValue([]);
-    github.getPullRequestHeadSha.mockResolvedValue('abc1234');
+    github.getPullRequestCommitState.mockResolvedValue(
+      commitStateAt('abc1234'),
+    );
     github.getPullRequestDiff.mockResolvedValue({
       diff: DIFF,
       bytes: DIFF.length,
@@ -393,7 +476,9 @@ describe('PublishFindingsService', () => {
       truncated: false,
     });
     github.listIssueComments.mockResolvedValue([]);
-    github.getPullRequestHeadSha.mockResolvedValue('abc1234');
+    github.getPullRequestCommitState.mockResolvedValue(
+      commitStateAt('abc1234'),
+    );
     github.getPullRequestDiff.mockResolvedValue({
       diff: DIFF,
       bytes: DIFF.length,
@@ -420,7 +505,9 @@ describe('PublishFindingsService', () => {
     truncated: false,
   });
   const mockFreshDiff = () => {
-    github.getPullRequestHeadSha.mockResolvedValue('abc1234');
+    github.getPullRequestCommitState.mockResolvedValue(
+      commitStateAt('abc1234'),
+    );
     github.getPullRequestDiff.mockResolvedValue({
       diff: DIFF,
       bytes: DIFF.length,
