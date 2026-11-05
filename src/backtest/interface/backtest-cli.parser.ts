@@ -1,3 +1,4 @@
+import { utcMidnightOf } from '../../common/util/kst-date.util';
 import { VolatilityEstimator } from '../../market-data/domain/stock-indicator';
 import { ExitBandThreshold } from '../../paper-trading/domain/exit-band';
 import {
@@ -114,7 +115,7 @@ const readDate = (argv: string[], key: string): string => {
   // 형식만 맞으면 2026-02-30 처럼 없는 날짜가 통과하고, new Date 가 3월로 조용히 넘긴다.
   // 출력에는 입력한 날짜가 남고 조회 구간만 밀려 의도하지 않은 기간의 성적이 나온다.
   // 실전 체결의 parseTradeDate 와 같은 방식으로 왕복 대조한다.
-  const parsed = new Date(`${value}T00:00:00.000Z`);
+  const parsed = utcMidnightOf(value);
   if (
     Number.isNaN(parsed.getTime()) ||
     parsed.toISOString().slice(0, 10) !== value

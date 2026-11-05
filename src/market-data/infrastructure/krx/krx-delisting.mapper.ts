@@ -1,3 +1,4 @@
+import { utcMidnightOf } from '../../../common/util/kst-date.util';
 export interface KrxDelisting {
   code: string;
   name: string;
@@ -22,7 +23,7 @@ const parseDate = (text: string): Date | null => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) {
     return null;
   }
-  const candidate = new Date(`${text}T00:00:00.000Z`);
+  const candidate = utcMidnightOf(text);
   // JS Date 는 2026-02-30 을 03-02 로 굴려 받는다. 문자열 왕복으로 되짚어야 걸러진다.
   if (
     Number.isNaN(candidate.getTime()) ||

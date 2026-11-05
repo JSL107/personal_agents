@@ -1,6 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 
-import { getTodayKstDate } from '../../common/util/kst-date.util';
+import {
+  getTodayKstDate,
+  utcMidnightOf,
+} from '../../common/util/kst-date.util';
 import { latestKrxTradingDayOnOrBefore } from '../../holiday/domain/business-calendar';
 import {
   HOLIDAY_CALENDAR_PORT,
@@ -148,7 +151,7 @@ export class ScoreRecommendationsUsecase {
     // 움직이지 않으므로 직전 거래일의 채점이 곧 "오늘의 성적" 이다.
     const calendar = await this.holidayCalendar.load();
     const today = latestKrxTradingDayOnOrBefore(
-      new Date(`${getTodayKstDate()}T00:00:00.000Z`),
+      utcMidnightOf(getTodayKstDate()),
       calendar,
     );
     const asOf = latestKrxTradingDayOnOrBefore(command.asOf ?? today, calendar);

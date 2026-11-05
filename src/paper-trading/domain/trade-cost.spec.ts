@@ -72,6 +72,19 @@ describe('calculateTradeCost', () => {
     expect(afterChange.tax).toBe('2000');
   });
 
+  it('개정 세율 경계는 KST 0시(2025-12-28T15:00Z)다', () => {
+    const taxAt = (tradeDate: Date): string =>
+      calculateTradeCost({
+        market: 'KOSPI',
+        side: 'SELL',
+        grossAmount: new Prisma.Decimal('1000000'),
+        tradeDate,
+      }).tax;
+
+    expect(taxAt(new Date('2025-12-28T14:59:59.999Z'))).toBe('1500');
+    expect(taxAt(new Date('2025-12-28T15:00:00.000Z'))).toBe('2000');
+  });
+
   it('비용을 원 단위 정수로 절사한다', () => {
     const cost = calculateTradeCost({
       market: 'KOSPI',

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { utcMidnightOf } from '../../common/util/kst-date.util';
 import { readHolidayCalendar } from '../../holiday/infrastructure/holiday-calendar.prisma.reader';
 import { MoneyValue } from '../../market-data/domain/market-data.type';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -409,7 +410,7 @@ const parseDateOnly = (value: unknown): Date | null => {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     return null;
   }
-  const date = new Date(`${value}T00:00:00.000Z`);
+  const date = utcMidnightOf(value);
   return Number.isNaN(date.getTime()) ||
     date.toISOString().slice(0, 10) !== value
     ? null

@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 
+import { utcMidnightOf } from '../../../common/util/kst-date.util';
 import type { BenchmarkBar } from '../../domain/port/market-indicator.port';
 
 interface RawMarketIndicatorCandle {
@@ -31,7 +32,7 @@ const mapCandle = (raw: unknown): BenchmarkBar | null => {
   // `new Date('2026-02-30T…')` 는 2026-03-02 로 조용히 보정되므로, 변환한 날짜를
   // 원문과 다시 대조해 존재하지 않는 거래일이 저장되는 것을 막는다.
   const tradeDateText = candle.timestamp.slice(0, 10);
-  const tradeDate = new Date(`${tradeDateText}T00:00:00.000Z`);
+  const tradeDate = utcMidnightOf(tradeDateText);
   if (
     Number.isNaN(tradeDate.getTime()) ||
     tradeDate.toISOString().slice(0, 10) !== tradeDateText
