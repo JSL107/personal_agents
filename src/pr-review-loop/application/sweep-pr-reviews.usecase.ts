@@ -90,6 +90,9 @@ const GITHUB_DIFF_MAX_LINES = 20_000;
 // 회차 상한을 쓴 것이 맞지만, 이쪽은 모델을 부른 적이 없으므로 호출부가 상한을 돌려줄 수
 // 있게 구분해 알린다.
 const ALREADY_MERGED = 'ALREADY_MERGED';
+// 상세·diff 조회 사이에 push 가 들어와 스냅샷이 섞인 경우. 모델을 부르기 전이라 ALREADY_MERGED 와
+// 같이 상한을 돌려주고, 원장에 남기지 않으므로 다음 스윕이 새 스냅샷으로 다시 리뷰한다.
+const SNAPSHOT_MOVED = 'SNAPSHOT_MOVED';
 
 // 판정 헬퍼의 반환값 — 조회 실패와 "레코드 없음"을 섞지 않기 위해 boolean/null 대신 명시적 열거.
 type SweepDecision = 'REVIEW' | 'SKIP';
@@ -203,10 +206,10 @@ export class SweepPrReviewsUsecase implements OnApplicationBootstrap {
           pullNumber: pullRequest.number,
           slackUserId,
         });
-        if (result === ALREADY_MERGED) {
-          // 검색 인덱스 지연으로 이미 머지된 PR 이 섞여 들어왔다. 리뷰를 한 적이 없으니
-          // 회차 상한을 돌려주고 다음 PR 로 간다 — 안 돌려주면 머지된 3건이 회차를 통째로
-          // 먹어 그 뒤의 정상 PR 이 다음 회차까지 밀린다.
+        if (result === ALREADY_MERGED || result === SNAPSHOT_MOVED) {
+          // 검색 인덱스 지연으로 이미 머지된 PR 이 섞여 들어왔거나 조회 중 push 가 들어왔다.
+          // 리뷰를 한 적이 없으니 회차 상한을 돌려주고 다음 PR 로 간다 — 안 돌려주면 그런
+          // 3건이 회차를 통째로 먹어 그 뒤의 정상 PR 이 다음 회차까지 밀린다.
           reviewed -= 1;
           continue;
         }
@@ -446,7 +449,12 @@ export class SweepPrReviewsUsecase implements OnApplicationBootstrap {
     repo: string;
     pullNumber: number;
     slackUserId: string;
-  }): Promise<SweepPullRequestResult | null | typeof ALREADY_MERGED> {
+  }): Promise<
+    | SweepPullRequestResult
+    | null
+    | typeof ALREADY_MERGED
+    | typeof SNAPSHOT_MOVED
+  > {
     const prRef = `${repo}#${pullNumber}`;
     const dryRun = this.isDryRun();
     // 어느 단계에서 실패했는지에 따라 원장 기록 주체가 갈린다. 리뷰 usecase 는 자기 AgentRun 을 열고 실패 시
@@ -455,10 +463,9 @@ export class SweepPrReviewsUsecase implements OnApplicationBootstrap {
     // 게시(PUBLISH) 실패는 성공 행을 덮을 실패 행이 있어야 다음 회차가 다시 리뷰하므로 이 usecase 가 기록한다.
     let stage: SweepStage = 'FETCH';
     try {
-      // 상세와 diff 는 병렬로 조회한다. 두 요청은 어차피 원자적이지 않아 그 사이 push 가
-      // 들어오면 "옛 headSha + 새 diff" 스냅샷이 만들어지는데, 순차로 바꾸면 그 창이
-      // 첫 요청의 왕복 시간만큼 넓어진다 — 창을 없앨 수는 없으므로 넓히지 않는 쪽을 택한다
-      // (완전 해소는 headSha 에 고정된 diff 를 받는 별도 설계, 2026-08-04 리뷰 지적).
+      // 상세와 diff 는 병렬로 조회한다. 두 요청은 원자적이지 않아 그 사이 push 가 들어오면
+      // "옛 headSha + 새 diff" 스냅샷이 만들어진다(2026-08-04 리뷰 지적). 창을 넓히지 않으려
+      // 병렬로 받고, 섞였는지는 diff 를 받은 뒤 상세를 한 번 더 조회해 SHA 로 가린다(아래).
       // diff 는 실패할 수 있어 allSettled 로 받고, 원인은 상세의 변경량으로 판별한다.
       const [detailResult, diffResult] = await Promise.allSettled([
         this.githubClient.getPullRequest({ repo, number: pullNumber }),
@@ -490,6 +497,27 @@ export class SweepPrReviewsUsecase implements OnApplicationBootstrap {
         throw diffResult.reason;
       }
       const diff = diffResult.value;
+      // diff 가 상세와 같은 커밋 기준인지 확인한다. 두 조회 뒤에도 head·base 가 그대로면 그
+      // 사이에 push 가 없었으므로 diff 도 같은 커밋이다. 바뀌었으면 섞인 스냅샷으로 리뷰하고
+      // 옛 headSha 에 인라인 앵커를 다는 대신 이번 회차를 넘긴다.
+      const after = await this.githubClient.getPullRequest({
+        repo,
+        number: pullNumber,
+      });
+      // 재조회 사이에 머지됐으면 SHA 는 그대로여도 위 머지 가드와 같은 이유로 끊는다.
+      if (after.mergedAt !== null) {
+        this.logger.log(`조회 중 머지된 PR — 리뷰 skip (${prRef})`);
+        return ALREADY_MERGED;
+      }
+      if (
+        after.headSha !== detail.headSha ||
+        after.baseSha !== detail.baseSha
+      ) {
+        this.logger.log(
+          `조회 중 PR 이 갱신됨 — 다음 스윕에서 리뷰 (${prRef} ${detail.headSha.slice(0, 7)} → ${after.headSha.slice(0, 7)})`,
+        );
+        return SNAPSHOT_MOVED;
+      }
       // 여기서 조회한 스냅샷을 리뷰에도 그대로 넘긴다 — 리뷰가 재조회하면 그 사이 push 된
       // 커밋 때문에 "지적은 새 diff 기준, 게시는 옛 headSha·옛 diff 기준"으로 갈려 인라인
       // 앵커가 어긋난다(2026-07-31 리뷰 지적).
