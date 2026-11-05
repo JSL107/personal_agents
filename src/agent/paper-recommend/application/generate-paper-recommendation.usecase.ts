@@ -2,7 +2,10 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
-import { formatKstDate } from '../../../common/util/kst-date.util';
+import {
+  formatKstDate,
+  utcMidnightOf,
+} from '../../../common/util/kst-date.util';
 import {
   HOLIDAY_CALENDAR_PORT,
   HolidayCalendarPort,
@@ -674,7 +677,7 @@ export class GeneratePaperRecommendationUsecase {
     if (screen.asOf === null) {
       return [];
     }
-    const dataAsOf = new Date(`${screen.asOf}T00:00:00.000Z`);
+    const dataAsOf = utcMidnightOf(screen.asOf);
     return [...constrained.sells, ...constrained.buys].map((order) => ({
       tickerId: order.tickerId,
       side: order.side,

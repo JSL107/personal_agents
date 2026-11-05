@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { utcMidnightOf } from '../../common/util/kst-date.util';
 import {
   DailyBar,
   MoneyValue,
@@ -213,7 +214,7 @@ const KST_OFFSET_MILLISECONDS = 9 * 60 * 60 * 1000;
 const formatKstTradeDate = (date: Date): string =>
   new Date(date.getTime() + KST_OFFSET_MILLISECONDS).toISOString().slice(0, 10);
 
-const toDateOnly = (value: string): Date => new Date(`${value}T00:00:00.000Z`);
+const toDateOnly = (value: string): Date => utcMidnightOf(value);
 
 const dateText = (value: Date): string => value.toISOString().slice(0, 10);
 

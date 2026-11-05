@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
+import { utcMidnightOf } from '../../common/util/kst-date.util';
 import { DailyBar } from '../../market-data/domain/market-data.type';
 import { MarketDataRateLimitError } from '../../market-data/domain/market-data-rate-limit.error';
 import { MarketDataSymbolNotFoundError } from '../../market-data/domain/market-data-symbol-not-found.error';
@@ -75,7 +76,7 @@ const toWriteRows = (
   }));
 
 const isDormant = (latestTradeDate: string, asOf: Date): boolean =>
-  asOf.getTime() - new Date(`${latestTradeDate}T00:00:00.000Z`).getTime() >
+  asOf.getTime() - utcMidnightOf(latestTradeDate).getTime() >
   DORMANT_AFTER_DAYS * DAY_MS;
 
 const hasStoredCloseChange = (

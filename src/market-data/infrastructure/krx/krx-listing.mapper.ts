@@ -1,3 +1,4 @@
+import { utcMidnightOf } from '../../../common/util/kst-date.util';
 export interface KrxListing {
   code: string;
   name: string;
@@ -41,7 +42,7 @@ export const parseKrxListingHtml = (
 
     let listedAt: Date | null = null;
     if (/^\d{4}-\d{2}-\d{2}$/.test(listedAtText)) {
-      const candidate = new Date(`${listedAtText}T00:00:00.000Z`);
+      const candidate = utcMidnightOf(listedAtText);
       if (
         !Number.isNaN(candidate.getTime()) &&
         candidate.toISOString().slice(0, 10) === listedAtText

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
+import { utcMidnightOf } from '../../common/util/kst-date.util';
 import {
   calculateIndicators,
   StockIndicators,
@@ -184,7 +185,7 @@ export class ScreenUniverseUsecase {
     // 의 모집단이고, 상한 밖 종목은 모델이 본 적이 없어 그 판정에 섞이면 안 된다.
     const recordOutcome = await this.historyRepository.saveScreeningRun({
       strategy: options.strategy,
-      asOf: new Date(`${asOf}T00:00:00.000Z`),
+      asOf: utcMidnightOf(asOf),
       ruleVersion: SCREENER_RULE_VERSION,
       agentRunId: options.record.agentRunId,
       universeCount: universe.length,

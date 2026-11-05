@@ -1,3 +1,4 @@
+import { utcMidnightOf } from '../../common/util/kst-date.util';
 import { MoneyValue } from '../../market-data/domain/market-data.type';
 
 export type TradeSide = 'BUY' | 'SELL';
@@ -63,7 +64,7 @@ export const parseTradeDate = (value: string): Date => {
   if (!/^\d{4}-\d{2}-\d{2}$/u.test(value)) {
     throw new Error(`체결일은 YYYY-MM-DD 형식이어야 합니다. 받은 값: ${value}`);
   }
-  const tradeDate = new Date(`${value}T00:00:00.000Z`);
+  const tradeDate = utcMidnightOf(value);
   if (
     Number.isNaN(tradeDate.getTime()) ||
     tradeDate.toISOString().slice(0, 10) !== value

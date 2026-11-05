@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 
+import { utcMidnightOf } from '../../common/util/kst-date.util';
 import {
   HOLIDAY_CALENDAR_PORT,
   HolidayCalendarPort,
@@ -120,9 +121,7 @@ export class ApplyExitBandUsecase {
         strategy: strategyOf(entry.accountName),
         decidedAt: command.executedAt,
         dataAsOf:
-          tradeDate === null
-            ? command.executedAt
-            : new Date(`${tradeDate}T00:00:00.000Z`),
+          tradeDate === null ? command.executedAt : utcMidnightOf(tradeDate),
         targetTradeDate,
         agentRunId: command.agentRunId ?? null,
         threshold,

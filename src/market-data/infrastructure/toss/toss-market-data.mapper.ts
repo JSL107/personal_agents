@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 
+import { utcMidnightOf } from '../../../common/util/kst-date.util';
 import { DailyBar } from '../../domain/market-data.type';
 
 interface RawCandle {
@@ -68,7 +69,7 @@ const mapCandle = (raw: unknown): DailyBar | null => {
   // 거부한다는 이 매퍼의 정책이 무너지고 잘못된 `tradeDate` 가 `daily_price` 에 적재된다.
   // 그래서 파싱 결과를 다시 문자열로 돌려 원본과 대조한다.
   const tradeDateText = timestamp.slice(0, 10);
-  const tradeDate = new Date(`${tradeDateText}T00:00:00.000Z`);
+  const tradeDate = utcMidnightOf(tradeDateText);
   if (
     Number.isNaN(tradeDate.getTime()) ||
     tradeDate.toISOString().slice(0, 10) !== tradeDateText
