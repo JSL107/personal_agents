@@ -8,4 +8,7 @@ export enum CodeReviewerErrorCode {
   // 작아지지 않는 한 몇 번을 돌려도 같은 자리에서 끊기는 **영구 실패**라, 스윕의 재시도
   // 판정(judgeLatestReview)이 이 코드를 보고 쿨다운 경로에서 제외한다.
   DIFF_TOO_LARGE = 'CODE_REVIEWER_DIFF_TOO_LARGE',
+  // 상세·diff 를 다시 받아도 그 사이 push 가 이어져 같은 커밋 기준 스냅샷을 못 만든 경우.
+  // 일시적이라 잠시 뒤 다시 실행하면 된다.
+  PR_SNAPSHOT_MOVING = 'CODE_REVIEWER_PR_SNAPSHOT_MOVING',
 }

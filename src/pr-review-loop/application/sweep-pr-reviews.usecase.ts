@@ -17,6 +17,7 @@ import {
   TriggerType,
 } from '../../agent-run/domain/agent-run.type';
 import { LatestSweepReview } from '../../agent-run/domain/port/agent-run.repository.port';
+import { checkSnapshotDrift } from '../../github/application/check-snapshot-drift';
 import {
   GITHUB_CLIENT_PORT,
   GithubClientPort,
@@ -503,26 +504,23 @@ export class SweepPrReviewsUsecase implements OnApplicationBootstrap {
         throw diffResult.reason;
       }
       const diff = diffResult.value;
-      // diff 가 상세와 같은 커밋 기준인지 확인한다. 두 조회 뒤에도 head·base 가 그대로면 그
-      // 사이에 push 가 없었으므로 diff 도 같은 커밋이다. 바뀌었으면 섞인 스냅샷으로 리뷰하고
-      // 옛 headSha 에 인라인 앵커를 다는 대신 이번 회차를 넘긴다.
-      const after = await this.githubClient.getPullRequest({
-        repo,
-        number: pullNumber,
-      });
+      // diff 가 상세와 같은 커밋 기준인지 확인한다. 섞인 스냅샷으로 리뷰해 옛 headSha 에
+      // 인라인 앵커를 다는 대신 이번 회차를 넘기고, 다음 스윕이 새 스냅샷으로 리뷰한다.
       // 재조회 사이에 머지됐으면 SHA 는 그대로여도 위 머지 가드와 같은 이유로 끊는다.
-      if (after.mergedAt !== null) {
-        this.logger.log(`조회 중 머지된 PR — 리뷰 skip (${prRef})`);
-        return ALREADY_MERGED;
-      }
-      if (
-        after.headSha !== detail.headSha ||
-        after.baseSha !== detail.baseSha
-      ) {
+      const drift = await checkSnapshotDrift(
+        this.githubClient,
+        { repo, number: pullNumber },
+        detail,
+      );
+      if (drift.kind === 'MOVED') {
         this.logger.log(
-          `조회 중 PR 이 갱신됨 — 다음 스윕에서 리뷰 (${prRef} ${detail.headSha.slice(0, 7)} → ${after.headSha.slice(0, 7)})`,
+          `조회 중 PR 이 갱신됨 — 다음 스윕에서 리뷰 (${prRef} ${detail.headSha.slice(0, 7)} → ${drift.currentHeadSha.slice(0, 7)})`,
         );
         return SNAPSHOT_MOVED;
+      }
+      if (drift.kind === 'MERGED') {
+        this.logger.log(`조회 중 머지된 PR — 리뷰 skip (${prRef})`);
+        return ALREADY_MERGED;
       }
       // 여기서 조회한 스냅샷을 리뷰에도 그대로 넘긴다 — 리뷰가 재조회하면 그 사이 push 된
       // 커밋 때문에 "지적은 새 diff 기준, 게시는 옛 headSha·옛 diff 기준"으로 갈려 인라인

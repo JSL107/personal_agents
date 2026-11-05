@@ -42,6 +42,13 @@ const DETAIL = {
   isDraft: false,
 };
 
+// 재조회 결과의 기본값 — DETAIL 과 같은 커밋(스냅샷이 섞이지 않음).
+const DETAIL_STATE = {
+  headSha: DETAIL.headSha,
+  baseSha: DETAIL.baseSha,
+  mergedAt: null,
+};
+
 const REVIEW_OUTCOME = {
   agentRunId: 7,
   modelUsed: 'gpt-5.4',
@@ -75,6 +82,7 @@ describe('SweepPrReviewsUsecase', () => {
       | 'listOpenPullRequestRefs'
       | 'getPullRequest'
       | 'getPullRequestDiff'
+      | 'getPullRequestCommitState'
       | 'addIssueComment'
     >
   >;
@@ -135,6 +143,15 @@ describe('SweepPrReviewsUsecase', () => {
       getPullRequestDiff: jest
         .fn()
         .mockResolvedValue({ diff: 'diff', truncated: false, bytes: 4 }),
+      // 기본은 "섞이지 않음" — 테스트가 상세 mock 을 바꿔도 따라가도록 직전 상세에서 값을 취한다.
+      getPullRequestCommitState: jest.fn().mockImplementation(async () => {
+        const detail = await github.getPullRequest.mock.results.at(-1)?.value;
+        return {
+          headSha: detail.headSha,
+          baseSha: detail.baseSha,
+          mergedAt: detail.mergedAt,
+        };
+      }),
       addIssueComment: jest.fn().mockResolvedValue(undefined),
     } as never;
     reviewUsecase = { execute: jest.fn().mockResolvedValue(REVIEW_OUTCOME) };
@@ -268,8 +285,9 @@ describe('SweepPrReviewsUsecase', () => {
     expect(reviewArg.snapshot?.detail.headSha).toBe('abc1234');
     expect(reviewArg.snapshot?.diff.diff).toBe('diff');
     expect(reviewArg.dryRun).toBe(true);
-    // 스냅샷 확인용 재조회 1회를 더한 2회 — 리뷰 usecase 는 상세를 다시 받지 않는다.
-    expect(github.getPullRequest).toHaveBeenCalledTimes(2);
+    // 재조회는 변경 파일 목록을 받지 않는 경량 조회로 하고, 리뷰 usecase 는 상세를 다시 받지 않는다.
+    expect(github.getPullRequest).toHaveBeenCalledTimes(1);
+    expect(github.getPullRequestCommitState).toHaveBeenCalledTimes(1);
     expect(reviewUsecase.execute).toHaveBeenCalledWith(
       expect.not.objectContaining({ publish: expect.anything() }),
     );
@@ -1030,9 +1048,10 @@ describe('SweepPrReviewsUsecase', () => {
   ])(
     '조회 중 %s SHA 가 바뀌면 이번 회차에는 리뷰하지 않는다',
     async (_label, moved) => {
-      github.getPullRequest
-        .mockResolvedValueOnce(DETAIL)
-        .mockResolvedValueOnce({ ...DETAIL, ...moved });
+      github.getPullRequestCommitState.mockResolvedValueOnce({
+        ...DETAIL_STATE,
+        ...moved,
+      });
 
       const { results } = await buildUsecase(ENABLED).execute();
 
@@ -1045,9 +1064,10 @@ describe('SweepPrReviewsUsecase', () => {
   );
 
   it('재조회 사이에 머지된 PR 은 SHA 가 같아도 리뷰하지 않는다', async () => {
-    github.getPullRequest
-      .mockResolvedValueOnce(DETAIL)
-      .mockResolvedValueOnce({ ...DETAIL, mergedAt: '2026-09-01T00:00:00Z' });
+    github.getPullRequestCommitState.mockResolvedValueOnce({
+      ...DETAIL_STATE,
+      mergedAt: '2026-09-01T00:00:00Z',
+    });
 
     await buildUsecase(ENABLED).execute();
 
@@ -1062,14 +1082,11 @@ describe('SweepPrReviewsUsecase', () => {
         number: 190 + index,
       })),
     );
-    const moved = { ...DETAIL, headSha: 'def5678' };
-    // 앞의 3건은 첫 조회와 재조회의 headSha 가 달라 넘어가고, 그 뒤부터는 기본 mock 이 쓰인다.
-    github.getPullRequest
-      .mockResolvedValueOnce(DETAIL)
+    const moved = { ...DETAIL_STATE, headSha: 'def5678' };
+    // 앞의 3건은 재조회의 headSha 가 달라 넘어가고, 그 뒤부터는 기본 mock 이 쓰인다.
+    github.getPullRequestCommitState
       .mockResolvedValueOnce(moved)
-      .mockResolvedValueOnce(DETAIL)
       .mockResolvedValueOnce(moved)
-      .mockResolvedValueOnce(DETAIL)
       .mockResolvedValueOnce(moved);
 
     await buildUsecase(ENABLED).execute();
@@ -1262,9 +1279,9 @@ describe('SweepPrReviewsUsecase', () => {
 
   // 스냅샷 확인용 재조회도 조회 단계라, 실패하면 리뷰하지 않고 첫 조회 실패와 같이 원장에 남긴다.
   it('스냅샷 확인용 재조회가 실패하면 리뷰하지 않고 원장에 남긴다', async () => {
-    github.getPullRequest
-      .mockResolvedValueOnce(DETAIL)
-      .mockRejectedValueOnce(new Error('PR #180 조회 실패: 502'));
+    github.getPullRequestCommitState.mockRejectedValueOnce(
+      new Error('GitHub JSL107/personal_agents#180 커밋 상태 조회 실패: 502'),
+    );
 
     await buildUsecase(ENABLED).execute();
 

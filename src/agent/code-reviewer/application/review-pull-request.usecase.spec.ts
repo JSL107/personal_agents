@@ -75,6 +75,16 @@ describe('ReviewPullRequestUsecase', () => {
       compareCommits: jest.fn(),
       addIssueComment: jest.fn(),
       getPullRequestHeadSha: jest.fn(),
+      // 기본은 "섞이지 않음" — 테스트가 상세 mock 을 바꿔도 따라가도록 직전 상세에서 값을 취한다.
+      getPullRequestCommitState: jest.fn().mockImplementation(async () => {
+        const detail =
+          await githubClient.getPullRequest.mock.results.at(-1)?.value;
+        return {
+          headSha: detail.headSha,
+          baseSha: detail.baseSha,
+          mergedAt: detail.mergedAt,
+        };
+      }),
       listIssueComments: jest.fn(),
       updateIssueComment: jest.fn(),
       createIssue: jest.fn(),
@@ -200,6 +210,74 @@ describe('ReviewPullRequestUsecase', () => {
       }),
     });
     expect(publishFindings).not.toHaveBeenCalled();
+  });
+
+  // 직접 조회한 상세·diff 사이에 push 가 들어오면 지적은 새 diff, 게시 앵커는 옛 headSha 기준으로
+  // 갈린다. 사람이 부른 리뷰라 넘기지 않고 한 번 다시 받는다.
+  it('조회 중 PR 이 갱신되면 상세·diff 를 다시 받아 같은 커밋 기준으로 리뷰한다', async () => {
+    githubClient.getPullRequestCommitState.mockResolvedValueOnce({
+      headSha: 'pushed-sha',
+      baseSha: 'base-sha-main',
+      mergedAt: null,
+    });
+
+    await usecase.execute({ prRef: 'foo/bar#34', slackUserId: 'U123' });
+
+    expect(githubClient.getPullRequest).toHaveBeenCalledTimes(2);
+    expect(githubClient.getPullRequestDiff).toHaveBeenCalledTimes(2);
+    expect(githubClient.getPullRequestCommitState).toHaveBeenCalledTimes(2);
+    expect(modelRouter.route).toHaveBeenCalledTimes(1);
+  });
+
+  it('다시 받아도 계속 갱신 중이면 모델을 부르지 않고 잠시 뒤 재실행을 안내한다', async () => {
+    githubClient.getPullRequestCommitState.mockResolvedValue({
+      headSha: 'pushed-sha',
+      baseSha: 'base-sha-main',
+      mergedAt: null,
+    });
+
+    await expect(
+      usecase.execute({ prRef: 'foo/bar#34', slackUserId: 'U123' }),
+    ).rejects.toMatchObject({
+      codeReviewerErrorCode: CodeReviewerErrorCode.PR_SNAPSHOT_MOVING,
+    });
+    expect(githubClient.getPullRequest).toHaveBeenCalledTimes(2);
+    expect(modelRouter.route).not.toHaveBeenCalled();
+  });
+
+  // 머지된 PR 을 일부러 다시 리뷰하는 요청도 있어 직접 요청한 리뷰는 머지로 막지 않는다.
+  it('조회 중 머지됐어도 커밋이 그대로면 그대로 리뷰한다', async () => {
+    githubClient.getPullRequestCommitState.mockResolvedValueOnce({
+      headSha: 'sha',
+      baseSha: 'base-sha-main',
+      mergedAt: '2026-09-01T00:00:00Z',
+    });
+
+    await usecase.execute({ prRef: 'foo/bar#34', slackUserId: 'U123' });
+
+    expect(githubClient.getPullRequest).toHaveBeenCalledTimes(1);
+    expect(modelRouter.route).toHaveBeenCalledTimes(1);
+  });
+
+  it('호출자가 넘긴 스냅샷은 다시 확인하지 않는다 (스윕이 이미 확인함)', async () => {
+    const detail = await githubClient.getPullRequest({
+      repo: 'foo/bar',
+      number: 34,
+    });
+    const diff = await githubClient.getPullRequestDiff({
+      repo: 'foo/bar',
+      number: 34,
+    });
+    githubClient.getPullRequest.mockClear();
+
+    await usecase.execute({
+      prRef: 'foo/bar#34',
+      slackUserId: 'U123',
+      snapshot: { detail, diff },
+    });
+
+    expect(githubClient.getPullRequest).not.toHaveBeenCalled();
+    expect(githubClient.getPullRequestCommitState).not.toHaveBeenCalled();
   });
 
   it('publish false면 게시하지 않고 기존 review outcome을 그대로 반환한다', async () => {
@@ -961,6 +1039,16 @@ describe('ReviewPullRequestUsecase — conversationContext', () => {
       compareCommits: jest.fn(),
       addIssueComment: jest.fn(),
       getPullRequestHeadSha: jest.fn(),
+      // 기본은 "섞이지 않음" — 테스트가 상세 mock 을 바꿔도 따라가도록 직전 상세에서 값을 취한다.
+      getPullRequestCommitState: jest.fn().mockImplementation(async () => {
+        const detail =
+          await githubClient.getPullRequest.mock.results.at(-1)?.value;
+        return {
+          headSha: detail.headSha,
+          baseSha: detail.baseSha,
+          mergedAt: detail.mergedAt,
+        };
+      }),
       listIssueComments: jest.fn(),
       updateIssueComment: jest.fn(),
       createIssue: jest.fn(),
@@ -1370,6 +1458,11 @@ describe('ReviewPullRequestUsecase × 학습 규약', () => {
         .mockResolvedValue({ diff: '+x', truncated: false, bytes: 2 }),
       addIssueComment: jest.fn(),
       getPullRequestHeadSha: jest.fn(),
+      getPullRequestCommitState: jest.fn().mockResolvedValue({
+        headSha: 'sha',
+        baseSha: 'base-sha-main',
+        mergedAt: null,
+      }),
       listIssueComments: jest.fn(),
       updateIssueComment: jest.fn(),
       listAuthorMergedPullRequestsSince: jest.fn(),
@@ -1561,6 +1654,12 @@ describe('ReviewPullRequestUsecase × 학습 규약', () => {
     // 학습 허용 목록(`LEARNING_REPOS`)은 기각 규약에만 적용된다. 손으로 적은 규약은
     // personal_agents 사정이라 회사 레포에 실리면 틀린 규약이 정탐을 지운다.
     const deps = makeDeps();
+    // 상세를 갈아끼웠으므로 재조회도 같은 커밋을 돌려줘야 스냅샷이 섞이지 않은 것으로 본다.
+    deps.githubClient.getPullRequestCommitState.mockResolvedValue({
+      headSha: 'sha',
+      baseSha: 'base-sha',
+      mergedAt: null,
+    });
     deps.githubClient.getPullRequest.mockResolvedValue({
       number: 1,
       title: 'feat: 벌점 집계',
@@ -1694,6 +1793,11 @@ describe('ReviewPullRequestUsecase × diff 밖 맥락', () => {
       provider: ModelProviderName.CHATGPT,
     });
     const githubClient = {
+      getPullRequestCommitState: jest.fn().mockResolvedValue({
+        headSha: 'head-sha',
+        baseSha: 'base',
+        mergedAt: null,
+      }),
       getPullRequest: jest.fn().mockResolvedValue({
         number: 707,
         title: 't',
@@ -1931,6 +2035,11 @@ describe('ReviewPullRequestUsecase × 기존 테스트 첨부', () => {
       provider: ModelProviderName.CHATGPT,
     });
     const githubClient = {
+      getPullRequestCommitState: jest.fn().mockResolvedValue({
+        headSha: 'head-sha',
+        baseSha: 'base',
+        mergedAt: null,
+      }),
       getPullRequest: jest.fn().mockResolvedValue({
         number: 412,
         title: 't',
@@ -2186,6 +2295,11 @@ describe('ReviewPullRequestUsecase × 기존 테스트 첨부 — 상한', () =>
     });
     const changed = sources(count);
     const githubClient = {
+      getPullRequestCommitState: jest.fn().mockResolvedValue({
+        headSha: 'head-sha',
+        baseSha: 'base',
+        mergedAt: null,
+      }),
       getPullRequest: jest.fn().mockResolvedValue({
         number: 1,
         title: 't',
