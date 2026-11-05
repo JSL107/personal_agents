@@ -5,7 +5,7 @@ export const AUTOPILOT_TASKS = Symbol('AUTOPILOT_TASKS');
 
 export interface AutopilotTaskContext {
   ownerSlackUserId: string;
-  firedAtKst: string; // 오케스트레이터가 getTodayKstDate() 로 1회 계산해 주입.
+  firedAtKst: string; // 회차의 예정 시각 기준 KST 날짜. 늦게 회수된 회차는 실행일과 다르다.
 }
 
 // T1_PREVIEW task 가 orchestrator 에 올리는 preview 생성 요청. orchestrator 가 CreatePreviewUsecase 로 변환.

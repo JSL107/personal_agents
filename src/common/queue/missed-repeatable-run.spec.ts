@@ -48,6 +48,8 @@ describe('enqueueMissedRuns', () => {
       { owner: 'U1' },
       expect.objectContaining({
         jobId: `catchup-daily-${missedAt}`,
+        // 소비자가 날짜를 실행 시각이 아니라 놓친 회차의 예정 시각으로 정하도록 싣는다.
+        prevMillis: missedAt,
         attempts: 2,
         backoff: { type: 'exponential', delay: 60_000 },
       }),

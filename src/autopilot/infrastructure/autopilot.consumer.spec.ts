@@ -8,6 +8,8 @@ const makeJob = (name: string) =>
     // 슬롯 식별자 — orchestrator 의 재진입 차단이 이 값으로 슬롯을 구분한다.
     id: `repeat:${name}:1`,
     data: { ownerSlackUserId: 'U1', target: 'C1' },
+    // 예정 시각 — orchestrator 가 날짜를 실행 시각이 아니라 이 값으로 정한다.
+    opts: { prevMillis: 1 },
   }) as never;
 
 // 평상시(절전 아님) 동작: waitUntilReady 는 즉시 통과, probe 는 준비됨.
@@ -116,6 +118,7 @@ describe('AutopilotConsumer', () => {
       'U1',
       'C1',
       'repeat:evening:1',
+      1,
     );
     const entries: Array<{ id: string }> = runGroup.mock.calls[0][1];
     expect(entries.map((entry) => entry.id)).toEqual([
@@ -138,6 +141,7 @@ describe('AutopilotConsumer', () => {
       'U1',
       'C1',
       'repeat:morning:1',
+      1,
     );
   });
 
