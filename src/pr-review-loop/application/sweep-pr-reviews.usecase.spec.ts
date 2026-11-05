@@ -268,7 +268,8 @@ describe('SweepPrReviewsUsecase', () => {
     expect(reviewArg.snapshot?.detail.headSha).toBe('abc1234');
     expect(reviewArg.snapshot?.diff.diff).toBe('diff');
     expect(reviewArg.dryRun).toBe(true);
-    expect(github.getPullRequest).toHaveBeenCalledTimes(1);
+    // 스냅샷 확인용 재조회 1회를 더한 2회 — 리뷰 usecase 는 상세를 다시 받지 않는다.
+    expect(github.getPullRequest).toHaveBeenCalledTimes(2);
     expect(reviewUsecase.execute).toHaveBeenCalledWith(
       expect.not.objectContaining({ publish: expect.anything() }),
     );
@@ -1021,6 +1022,68 @@ describe('SweepPrReviewsUsecase', () => {
     expect(agentRunService.execute).not.toHaveBeenCalled();
   });
 
+  // 상세·diff 조회 사이에 push 가 들어오면 diff 는 새 커밋, headSha 는 옛 커밋이라 인라인
+  // 앵커가 어긋난다. 재조회 SHA 가 다르면 리뷰하지 않고, 원장에도 남기지 않아 다음 스윕이 다시 본다.
+  it.each([
+    ['head', { headSha: 'def5678' }],
+    ['base', { baseSha: 'base-sha-moved' }],
+  ])(
+    '조회 중 %s SHA 가 바뀌면 이번 회차에는 리뷰하지 않는다',
+    async (_label, moved) => {
+      github.getPullRequest
+        .mockResolvedValueOnce(DETAIL)
+        .mockResolvedValueOnce({ ...DETAIL, ...moved });
+
+      const { results } = await buildUsecase(ENABLED).execute();
+
+      expect(reviewUsecase.execute).not.toHaveBeenCalled();
+      expect(publishService.upsertRiskMap).not.toHaveBeenCalled();
+      expect(publishService.publish).not.toHaveBeenCalled();
+      expect(results).toEqual([]);
+      expect(agentRunService.execute).not.toHaveBeenCalled();
+    },
+  );
+
+  it('재조회 사이에 머지된 PR 은 SHA 가 같아도 리뷰하지 않는다', async () => {
+    github.getPullRequest
+      .mockResolvedValueOnce(DETAIL)
+      .mockResolvedValueOnce({ ...DETAIL, mergedAt: '2026-09-01T00:00:00Z' });
+
+    await buildUsecase(ENABLED).execute();
+
+    expect(reviewUsecase.execute).not.toHaveBeenCalled();
+    expect(agentRunService.execute).not.toHaveBeenCalled();
+  });
+
+  it('조회 중 갱신된 PR 은 회차 상한을 소모하지 않고 뒤의 PR 을 리뷰한다', async () => {
+    github.listOpenPullRequestRefs.mockResolvedValue(
+      Array.from({ length: 6 }, (_, index) => ({
+        ...OPEN_PR,
+        number: 190 + index,
+      })),
+    );
+    const moved = { ...DETAIL, headSha: 'def5678' };
+    // 앞의 3건은 첫 조회와 재조회의 headSha 가 달라 넘어가고, 그 뒤부터는 기본 mock 이 쓰인다.
+    github.getPullRequest
+      .mockResolvedValueOnce(DETAIL)
+      .mockResolvedValueOnce(moved)
+      .mockResolvedValueOnce(DETAIL)
+      .mockResolvedValueOnce(moved)
+      .mockResolvedValueOnce(DETAIL)
+      .mockResolvedValueOnce(moved);
+
+    await buildUsecase(ENABLED).execute();
+
+    // 횟수만 보면 앞 3건을 그대로 리뷰한 경우와 구분되지 않는다 — 리뷰한 PR 번호까지 본다.
+    expect(
+      reviewUsecase.execute.mock.calls.map(([input]) => input.prRef),
+    ).toEqual([
+      'JSL107/personal_agents#193',
+      'JSL107/personal_agents#194',
+      'JSL107/personal_agents#195',
+    ]);
+  });
+
   // 머지 skip 이 회차 상한(3건)을 먹으면, 검색 인덱스에 남은 머지 결과 몇 건만으로 그 회차의
   // 정상 PR 이 통째로 밀린다 — 리뷰를 시작한 적이 없으므로 상한을 돌려줘야 한다.
   it('앞쪽 머지된 PR 은 회차 상한을 소모하지 않고 뒤의 열린 PR 을 리뷰한다', async () => {
@@ -1187,6 +1250,26 @@ describe('SweepPrReviewsUsecase', () => {
 
     // 판정 질의(findLatestSweepReview / countUnsuccessfulSweepReviews)가 inputSnapshot 의
     // prRef 로 조회하므로, 그 키가 없으면 기록이 쌓여도 판정은 여전히 못 찾는다.
+    expect(agentRunService.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        triggerType: 'PR_REVIEW_SWEEP',
+        inputSnapshot: expect.objectContaining({
+          prRef: 'JSL107/personal_agents#180',
+        }),
+      }),
+    );
+  });
+
+  // 스냅샷 확인용 재조회도 조회 단계라, 실패하면 리뷰하지 않고 첫 조회 실패와 같이 원장에 남긴다.
+  it('스냅샷 확인용 재조회가 실패하면 리뷰하지 않고 원장에 남긴다', async () => {
+    github.getPullRequest
+      .mockResolvedValueOnce(DETAIL)
+      .mockRejectedValueOnce(new Error('PR #180 조회 실패: 502'));
+
+    await buildUsecase(ENABLED).execute();
+
+    expect(reviewUsecase.execute).not.toHaveBeenCalled();
+    expect(publishService.publish).not.toHaveBeenCalled();
     expect(agentRunService.execute).toHaveBeenCalledWith(
       expect.objectContaining({
         triggerType: 'PR_REVIEW_SWEEP',
