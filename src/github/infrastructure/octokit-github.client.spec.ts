@@ -59,6 +59,16 @@ describe('OctokitGithubClient', () => {
     });
   });
 
+  // 진입 메서드가 확인을 따로 하지 않고, 처음 부르는 보조 조회(resolveLogin)의 requireOctokit 이
+  // try 밖에서 던진다 — 보조 조회의 실패 삼킴(graceful)에 묻히지 않아야 한다.
+  it('engagement 보강도 Octokit 이 null 이면 TOKEN_NOT_CONFIGURED 예외', async () => {
+    const client = new OctokitGithubClient(null);
+
+    await expect(client.fetchPullRequestEngagement([])).rejects.toMatchObject({
+      githubErrorCode: GithubErrorCode.TOKEN_NOT_CONFIGURED,
+    });
+  });
+
   // 힌트 사전이 실제로 이 경로를 지나는지 — 겨냥한 조건(Octokit RequestError)에서 확인한다.
   it('GitHub 이 404 를 주면 실패 문구에 다음 행동이 붙는다', async () => {
     const notFound = Object.assign(new Error('Not Found'), {
