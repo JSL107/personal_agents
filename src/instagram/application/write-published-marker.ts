@@ -4,6 +4,7 @@ import { lstat, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 
 import { Logger } from '@nestjs/common';
+import { isMatching, P } from 'ts-pattern';
 
 import {
   InstagramPost,
@@ -13,6 +14,12 @@ import { STORY_UNCONFIRMED_PREFIX } from './publish-story.usecase';
 
 const LOGGER = new Logger('WritePublishedMarker');
 const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const PUBLISHED_REEL_PATTERN = {
+  status: InstagramPostStatus.PUBLISHED,
+  mediaId: P.string.minLength(1),
+  permalink: P.string.minLength(1),
+  publishedAt: P.instanceOf(Date),
+};
 
 // published.json 에 그대로 적히는 값이다. hermes 가 이 파일을 읽는다.
 export enum StoryMarkerStatus {
@@ -51,31 +58,22 @@ export const writePublishedMarker = async ({
   reel: InstagramPost;
   story: InstagramPost | null;
 }): Promise<WritePublishedMarkerResult> => {
-  const directory = dirname(reel.videoPath);
-  const day = basename(dirname(directory));
-  if (
-    basename(directory) !== 'daily' ||
-    !DAY_PATTERN.test(day) ||
-    reel.reelKey !== `${day}/daily`
-  ) {
+  if (!dailyDayOf(reel)) {
     LOGGER.warn(`게시 표식 경로를 건너뜁니다: ${reel.videoPath}`);
     return {
       kind: MarkerWriteResult.SKIPPED,
       reason: 'daily 경로 또는 reelKey 불일치',
     };
   }
-  if (
-    reel.status !== InstagramPostStatus.PUBLISHED ||
-    !reel.mediaId ||
-    !reel.permalink ||
-    !reel.publishedAt
-  ) {
+  // 패턴이 맞으면 mediaId·permalink·publishedAt 이 값이 있는 타입으로 좁혀진다.
+  if (!isMatching(PUBLISHED_REEL_PATTERN, reel)) {
     return {
       kind: MarkerWriteResult.SKIPPED,
       reason: '릴스 게시 정보가 완전하지 않음',
     };
   }
 
+  const directory = dirname(reel.videoPath);
   const markerPath = join(directory, 'published.json');
   try {
     const marker: PublishedMarker = {
@@ -89,11 +87,15 @@ export const writePublishedMarker = async ({
       },
     };
     const contents = `${JSON.stringify(marker, null, 2)}\n`;
-    const directoryStat = await lstat(directory);
-    if (!directoryStat.isDirectory() || directoryStat.isSymbolicLink()) {
+    // 날짜 폴더나 daily 폴더가 링크면 다른 곳에 쓰게 된다. 둘 다 진짜 폴더일 때만 쓴다.
+    const [dayFolderIsReal, dailyFolderIsReal] = await Promise.all([
+      isRealDirectory(dirname(directory)),
+      isRealDirectory(directory),
+    ]);
+    if (!dayFolderIsReal || !dailyFolderIsReal) {
       return {
         kind: MarkerWriteResult.SKIPPED,
-        reason: 'daily 폴더가 일반 디렉터리가 아님',
+        reason: '날짜 폴더나 daily 폴더가 일반 디렉터리가 아님',
       };
     }
     const markerStat = await statIfExists(markerPath);
@@ -139,6 +141,27 @@ const replaceAtomically = async ({
     await unlink(temporaryPath).catch(() => undefined);
     throw error;
   }
+};
+
+// 영상이 <날짜>/daily 폴더에 있고 reelKey 의 날짜와 같을 때만 그 날짜를 돌려준다.
+const dailyDayOf = (reel: InstagramPost): string | null => {
+  const directory = dirname(reel.videoPath);
+  const day = basename(dirname(directory));
+  if (basename(directory) !== 'daily' || !DAY_PATTERN.test(day)) {
+    return null;
+  }
+  if (reel.reelKey !== `${day}/daily`) {
+    return null;
+  }
+  return day;
+};
+
+const isRealDirectory = async (path: string): Promise<boolean> => {
+  const found = await statIfExists(path);
+  if (!found || found.isSymbolicLink()) {
+    return false;
+  }
+  return found.isDirectory();
 };
 
 const storyStatus = (story: InstagramPost | null): StoryMarkerStatus => {

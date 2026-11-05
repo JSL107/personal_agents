@@ -541,12 +541,14 @@ def write_segment(field: str, row: dict, one_line: str, feedback: str = "") -> d
 
 STATUS_SCHEMA = {
     "type": "object",
-    "properties": {"status_after": {"type": "string"}, "error": {"type": "string"}},
-    "required": ["status_after", "error"],
+    "properties": {"status_after": {"type": "string"}, "link_after": {"type": "string"}, "error": {"type": "string"}},
+    "required": ["status_after", "link_after", "error"],
 }
 
 
-def set_status(page_url: str, status: str, video_link: str | None = None) -> None:
+def set_status(page_url: str, status: str, video_link: str | None = None, verify_link: bool = False) -> None:
+    """verify_link 면 '영상 링크'도 다시 읽어 같은지 본다. 게시완료는 링크가 인스타 주소로 바뀌어야 끝난 것이다
+    (안 바뀐 채 완료로 두면 30일 뒤 폴더가 정리돼 링크가 사라진 파일을 가리킨다, 2026-11-05 PR #984 리뷰)."""
     properties = {"영상 상태": status}
     if video_link:
         properties["영상 링크"] = video_link
@@ -559,12 +561,15 @@ def set_status(page_url: str, status: str, video_link: str | None = None) -> Non
 ```json
 {json.dumps(update_args, ensure_ascii=False)}
 ```
-2) notion-fetch 로 {page_url} 을 읽어 '영상 상태' 값을 status_after 에 적는다. 실패하면 error 에 메시지를, 아니면 빈 문자열."""
+2) notion-fetch 로 {page_url} 을 읽어 '영상 상태' 값을 status_after, '영상 링크' 값을 link_after(없으면 빈 문자열)에 그대로 적는다.
+   실패하면 error 에 메시지를, 아니면 빈 문자열."""
     result = run_claude(prompt, STATUS_SCHEMA, ("notion-fetch", "notion-update-page"))
     if result.get("error"):
         raise RuntimeError(f"도구 오류: {result['error']}")
     if result.get("status_after") != status:
         raise RuntimeError(f"상태가 {status} 로 바뀌지 않음(읽은 값: {result.get('status_after')!r})")
+    if verify_link and result.get("link_after") != video_link:
+        raise RuntimeError(f"영상 링크가 {video_link} 로 바뀌지 않음(읽은 값: {result.get('link_after')!r})")
 
 
 def say_to_wav(text: str, out: Path, rate: int) -> array.array:
@@ -932,7 +937,7 @@ def mark_published(out_root: Path, notion: bool) -> list[str]:
                     raise ValueError("Notion 행 주소가 없음")
                 pages.append(page_url)
             for page_url in pages:
-                set_status(page_url, "게시완료", permalink)
+                set_status(page_url, "게시완료", permalink, verify_link=True)
             write_json_atomic(daily / "notion-done.json", {"marked_at": datetime.now(KST).isoformat(), "pages": pages})
             lines.append(f"· 게시완료 표시 {day} ({len(pages)}행)")
         except Exception as error:  # noqa: BLE001 — 다음 날 재시도할 수 있도록 완료 파일을 남기지 않는다
@@ -1480,13 +1485,13 @@ def self_check() -> None:
             {"row": {"page_url": "https://n/ai"}}, {"row": {"page_url": "https://n/dev"}}]})
         status_calls = []
         original_status = globals()["set_status"]
-        globals()["set_status"] = lambda page_url, status, link=None: status_calls.append((page_url, status, link))
+        globals()["set_status"] = lambda page_url, status, link=None, verify_link=False: status_calls.append((page_url, status, link, verify_link))
         try:
             assert mark_published(root, notion=False) == []
             assert not status_calls and not (first / "notion-done.json").exists()
             assert mark_published(root, notion=True) == ["· 게시완료 표시 2026-10-06 (2행)"]
-            assert status_calls == [("https://n/ai", "게시완료", "https://instagram.test/reel/1"),
-                                    ("https://n/dev", "게시완료", "https://instagram.test/reel/1")]
+            assert status_calls == [("https://n/ai", "게시완료", "https://instagram.test/reel/1", True),
+                                    ("https://n/dev", "게시완료", "https://instagram.test/reel/1", True)]
             assert read_json(first / "notion-done.json")["pages"] == ["https://n/ai", "https://n/dev"]
             assert mark_published(root, notion=True) == [] and len(status_calls) == 2
             failed = root / "2026-10-05" / "daily"
@@ -1494,10 +1499,10 @@ def self_check() -> None:
             write_json_atomic(failed / "published.json", {"permalink": "https://instagram.test/reel/2"})
             write_json_atomic(failed / "script.json", {"segments": [
                 {"row": {"page_url": "https://n/ok"}}, {"row": {"page_url": "https://n/fail"}}]})
-            def fail_second(page_url, status, link=None):
+            def fail_second(page_url, status, link=None, verify_link=False):
                 if page_url.endswith("/fail"):
                     raise RuntimeError("Notion 오류")
-                status_calls.append((page_url, status, link))
+                status_calls.append((page_url, status, link, verify_link))
             globals()["set_status"] = fail_second
             assert "게시완료 표시 실패 2026-10-05" in mark_published(root, notion=True)[0]
             assert not (failed / "notion-done.json").exists()
@@ -1542,6 +1547,19 @@ def self_check() -> None:
             globals()["LOCK_PATH"] = original_lock
             globals()["make_daily"] = original_make
             globals()["trash_old_reels"] = original_trash
+
+    # 게시완료는 링크까지 바뀌어야 성공이다. 다른 상태 기록은 링크를 확인하지 않는다.
+    saved_claude = globals()["run_claude"]
+    globals()["run_claude"] = lambda prompt, schema, *rest: {"status_after": "게시완료", "link_after": "file:///old", "error": ""}
+    try:
+        try:
+            set_status("https://n/1", "게시완료", "https://instagram.test/reel/1", verify_link=True)
+            raise AssertionError("링크가 안 바뀌었는데 통과했다")
+        except RuntimeError as error:
+            assert "영상 링크" in str(error)
+        set_status("https://n/1", "게시완료", "https://instagram.test/reel/1")  # 확인을 켜지 않으면 상태만 본다
+    finally:
+        globals()["run_claude"] = saved_claude
 
     # 오늘 후보가 부적합하면 최근 LOOKBACK_DAYS 일로 넓혀 다시 고른다. 네트워크·claude 는 가짜로 바꿔 흐름만 본다.
     today_row = {**row, "page_url": "https://n/today", "source": "https://today", "collected": "2026-11-04"}
