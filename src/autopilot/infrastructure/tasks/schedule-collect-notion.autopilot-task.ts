@@ -38,8 +38,9 @@ import {
 // 이대리가 닫은 상태 — 되살림 대상 판정과 전환 허용 상태가 같은 목록이어야 한다.
 const REOPENABLE_STATUSES = [ScheduleStatus.DONE, ScheduleStatus.SKIPPED];
 
-// 에러리포트 DB 가 수백 건이라 넉넉히 둔다. 넘으면 클라이언트가 잘림 경고를 남긴다.
-const NOTION_COLLECT_PER_DB_LIMIT = 1000;
+// 에러리포트 DB 가 1,223건(2026-11-05)이라 1000 에서 가장 오래된 진행 중 업무가 잘렸다.
+// shortcut: 전수 조회 상한일 뿐이다 — 5000건에 가까워지면 Notion 쪽 담당자 필터(people contains)로 바꾼다.
+const NOTION_COLLECT_PER_DB_LIMIT = 5000;
 
 @Injectable()
 export class ScheduleCollectNotionAutopilotTask implements AutopilotTask {
