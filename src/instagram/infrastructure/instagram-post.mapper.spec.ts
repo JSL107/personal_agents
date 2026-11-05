@@ -33,6 +33,10 @@ describe('toDomain', () => {
     });
   });
 
+  it.each(['daily', 'story'])('하루 1편 분야 %s 를 읽는다', (field) => {
+    expect(toDomain({ ...row, field }).field).toBe(field);
+  });
+
   it('알 수 없는 분야가 저장되면 변환을 거절한다', () => {
     expect(() => toDomain({ ...row, field: 'other' })).toThrow(
       '알 수 없는 InstagramPost field: other',
