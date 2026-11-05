@@ -63,6 +63,12 @@ export interface PullRequestReview extends PullRequestReviewCore {
   findings: ReviewFinding[];
 }
 
+// 리뷰와 게시가 함께 보는 PR 스냅샷. 상세와 diff 는 같은 커밋 기준이어야 한다.
+export interface PullRequestReviewSnapshot {
+  detail: PullRequestDetail;
+  diff: PullRequestDiff;
+}
+
 export interface ReviewPullRequestInput {
   prRef: string; // URL 또는 "owner/repo#number"
   slackUserId: string;
@@ -75,10 +81,7 @@ export interface ReviewPullRequestInput {
   // PR 리뷰 스윕 전용 — 호출자가 이미 조회한 PR 스냅샷. 주입되면 usecase 는 재조회하지 않는다.
   // 스윕은 게시(인라인 앵커)에 detail.headSha 와 diff 를 쓰므로, 리뷰가 본 스냅샷과 게시가 쓰는
   // 스냅샷이 갈리면 앵커가 어긋난다 — 같은 조회 결과를 공유해 그 틈을 없앤다.
-  snapshot?: {
-    detail: PullRequestDetail;
-    diff: PullRequestDiff;
-  };
+  snapshot?: PullRequestReviewSnapshot;
   // 리뷰 재생 평가(`pnpm review:replay --holdout`) 전용 — 이 카드들의 기각 사유를 학습 규약에서 뺀다.
   // 재생 대상의 정답이 프롬프트에 섞이면 오탐 억제 성능이 부풀려진다. 운영 경로는 넘기지 않는다.
   excludeConventionFindingIds?: number[];

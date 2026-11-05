@@ -9,10 +9,12 @@ import {
   EvidenceInput,
   TriggerType,
 } from '../../../agent-run/domain/agent-run.type';
+import { DomainStatus } from '../../../common/exception/domain-status.enum';
 import {
   redactInjectionPhrases,
   wrapUntrustedInput,
 } from '../../../common/llm/untrusted-input.util';
+import { checkSnapshotDrift } from '../../../github/application/check-snapshot-drift';
 import {
   PullRequestDetail,
   PullRequestDiff,
@@ -40,13 +42,16 @@ import {
 import { PublishOutcome } from '../../../pr-review-loop/domain/publish-outcome.type';
 import { isRepoAllowed } from '../../../pr-review-loop/domain/publish-policy';
 import { ConversationContext } from '../../../router/domain/conversation-context.type';
+import { CodeReviewerException } from '../domain/code-reviewer.exception';
 import {
   PullRequestReview,
+  PullRequestReviewSnapshot,
   RepoReadFallbackReason,
   RepoReadStatus,
   RepoSnapshotAttempt,
   ReviewPullRequestInput,
 } from '../domain/code-reviewer.type';
+import { CodeReviewerErrorCode } from '../domain/code-reviewer-error-code.enum';
 import {
   assembleCompanionSpecs,
   AssembledCompanionSpecs,
@@ -63,7 +68,10 @@ import {
   formatHiddenUnicodeList,
   formatHiddenUnicodeWarning,
 } from '../domain/hidden-unicode';
-import { parsePrReference } from '../domain/pr-reference.parser';
+import {
+  ParsedPrReference,
+  parsePrReference,
+} from '../domain/pr-reference.parser';
 import {
   buildRepoConventions,
   buildRepoSnapshotSection,
@@ -89,6 +97,8 @@ import { extractRepoSnapshot } from '../infrastructure/repo-snapshot';
 import { classifyRepoReadFailure } from './repo-read-fallback';
 
 const DEFAULT_INLINE_MAX = 4;
+// 직접 조회한 스냅샷이 섞였을 때 다시 받는 횟수(첫 조회 포함). 그래도 섞이면 잠시 뒤 재실행을 안내한다.
+const SNAPSHOT_FETCH_ATTEMPTS = 2;
 // 레포 사본(tarball) 압축 기준 상한 — 넘는 레포는 사본 없이 종전대로 리뷰한다.
 // 이대리 레포가 압축 217MB(콘솔 PNG 에셋, 2026-10-28 실측)라 50MB 로는 측정 대상이 전부 빠졌다.
 export const REPO_SNAPSHOT_MAX_BYTES = 268_435_456;
@@ -219,13 +229,10 @@ export class ReviewPullRequestUsecase {
       }),
       run: async ({ updateInputSnapshot }) => {
         // 호출자가 이미 조회한 스냅샷이 있으면 그대로 쓴다 — 리뷰와 후속 게시가 같은
-        // headSha·diff 를 보게 하고, GitHub API 왕복도 줄인다.
-        const [detail, diff] = snapshot
-          ? [snapshot.detail, snapshot.diff]
-          : await Promise.all([
-              this.githubClient.getPullRequest(ref),
-              this.githubClient.getPullRequestDiff(ref),
-            ]);
+        // headSha·diff 를 보게 하고, GitHub API 왕복도 줄인다. 같은 커밋 기준인지는 호출자(스윕)가
+        // 이미 확인했다.
+        const { detail, diff } =
+          snapshot ?? (await this.fetchConsistentSnapshot(ref));
         reviewedDetail = detail;
         reviewedDiff = diff;
 
@@ -413,6 +420,36 @@ export class ReviewPullRequestUsecase {
     }
 
     return outcome;
+  }
+
+  // 상세와 diff 를 직접 받을 때 둘이 같은 커밋 기준인지 확인한다. 그 사이 push 가 들어오면 지적은
+  // 새 diff, 게시 앵커는 옛 headSha 기준으로 갈린다. 사람이 부른 리뷰라 스윕처럼 넘기지 않고 한 번
+  // 다시 받는다. 머지는 막지 않는다 — 머지된 PR 을 일부러 다시 리뷰하는 요청도 있다.
+  // 상세 → diff → 재조회를 차례로 받는다. 병렬로 받으면 diff 가 옛 커밋, 상세가 새 커밋 기준으로
+  // 와도 상세와 재조회가 같아 통과한다(#973 리뷰 지적). 차례로 받아야 diff 가 두 조회 사이에 놓인다.
+  private async fetchConsistentSnapshot(
+    ref: ParsedPrReference,
+  ): Promise<PullRequestReviewSnapshot> {
+    for (let attempt = 1; attempt <= SNAPSHOT_FETCH_ATTEMPTS; attempt += 1) {
+      const detail = await this.githubClient.getPullRequest(ref);
+      const diff = await this.githubClient.getPullRequestDiff(ref);
+      const drift = await checkSnapshotDrift({
+        githubClient: this.githubClient,
+        ref,
+        fetched: detail,
+      });
+      if (drift.kind !== 'MOVED') {
+        return { detail, diff };
+      }
+      this.logger.log(
+        `조회 중 PR 이 갱신됨 (${ref.repo}#${ref.number} ${detail.headSha.slice(0, 7)} → ${drift.currentHeadSha.slice(0, 7)}, ${attempt}/${SNAPSHOT_FETCH_ATTEMPTS})`,
+      );
+    }
+    throw new CodeReviewerException({
+      message: `${ref.repo}#${ref.number} 에 push 가 이어지고 있어 같은 커밋 기준으로 조회하지 못했습니다. 잠시 뒤 다시 실행해 주세요.`,
+      code: CodeReviewerErrorCode.PR_SNAPSHOT_MOVING,
+      status: DomainStatus.CONFLICT,
+    });
   }
 
   // 사본을 못 열면 리뷰를 멈추지 않고 사본 없이 진행한다 — 상태로 남겨 재생 비교가 그 회차를 뺀다.
