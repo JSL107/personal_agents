@@ -105,6 +105,15 @@ describe('CujCheckAutopilotTask', () => {
     );
   });
 
+  // targetTradeDate 는 @db.Date 다. KST 0시(전날 15:00Z)를 넘기면 PostgreSQL 이 전날로 잘라
+  // "어제 목표일" 주문이 빠진다 — 회차 날짜의 UTC 자정을 넘겨야 어제 목표일까지 센다.
+  it('미종결 주문은 회차 날짜의 UTC 자정 이전 목표일을 센다', async () => {
+    await task.run(context);
+    expect(reader.readPendingOrders).toHaveBeenCalledWith(
+      new Date('2026-10-14T00:00:00.000Z'),
+    );
+  });
+
   it('게시 미완 지적은 최근 10분을 빼고 센다', async () => {
     await task.run(context);
     expect(reader.countUnpostedFindings).toHaveBeenCalledWith(
