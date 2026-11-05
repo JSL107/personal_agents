@@ -395,6 +395,27 @@ describe('AgentRunPrismaRepository.findRecentSucceededRuns', () => {
     );
   });
 
+  // limit 이 경로 필터보다 먼저 걸리면 수동 실행이 한도를 채워 원하는 경로의 실행이 밀려난다.
+  it('triggerType 을 주면 조회 조건에 넣어 limit 전에 거른다', async () => {
+    const { repository, findMany } = buildRepository();
+
+    await repository.findRecentSucceededRuns({
+      agentType: 'PM' as never,
+      triggerType: 'MORNING_BRIEFING_CRON' as never,
+      sinceDays: 2,
+      limit: 20,
+    });
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          triggerType: 'MORNING_BRIEFING_CRON',
+        }),
+        take: 20,
+      }),
+    );
+  });
+
   it('sinceDays=7 이면 최근 7 KST 캘린더일의 시작으로 조회한다', async () => {
     const { repository, findMany } = buildRepository();
 

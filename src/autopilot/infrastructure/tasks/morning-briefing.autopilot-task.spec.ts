@@ -1879,6 +1879,28 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
     );
   });
 
+  // 늦게 회수된 회차가 실행일 기준으로 읽으면 다음 날 브리프를 그날 공부로 싣는다.
+  it('공부 브리프는 회차 날짜(firedAtKst) 하루 안에서 찾는다', async () => {
+    const digestRepository = emptyDigestRepository();
+    const task = buildTask(
+      generateDailyPlan(),
+      humanize(),
+      emptyStockRepository(),
+      listSchedulesUsecase(),
+      { digestRepository },
+    );
+
+    await task.run(CTX);
+
+    // CTX 06-17 KST 0시 == UTC 06-16 15:00, 끝은 그 24시간 뒤.
+    expect(digestRepository.findLatestStudyBrief).toHaveBeenCalledWith(
+      expect.objectContaining({
+        since: new Date('2026-06-16T15:00:00.000Z'),
+        until: new Date('2026-06-17T15:00:00.000Z'),
+      }),
+    );
+  });
+
   it('곁다리 조회가 실패해도 그 줄만 빠지고 메시지는 나간다', async () => {
     const failing = jest.fn().mockRejectedValue(new Error('db down'));
     const task = buildTask(
