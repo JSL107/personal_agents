@@ -184,8 +184,6 @@ export class OctokitGithubClient implements GithubClientPort {
     limit = DEFAULT_LIMIT,
     updatedSinceIsoDate,
   }: ListAssignedTasksOptions = {}): Promise<AssignedTasks> {
-    this.assertOctokitConfigured();
-
     const perPage = Math.min(limit, MAX_LIMIT);
 
     const response = await this.invokeSearch(perPage, updatedSinceIsoDate);
@@ -212,12 +210,15 @@ export class OctokitGithubClient implements GithubClientPort {
   }
 
   private async fetchIsApprovedSafely(pr: GithubPullRequest): Promise<boolean> {
+    const octokit = this.requireOctokit();
     try {
       const [owner, repoName] = parseRepo(pr.repo);
-      const reviews = await this.octokit!.paginate(
-        this.octokit!.rest.pulls.listReviews,
-        { owner, repo: repoName, pull_number: pr.number, per_page: 100 },
-      );
+      const reviews = await octokit.paginate(octokit.rest.pulls.listReviews, {
+        owner,
+        repo: repoName,
+        pull_number: pr.number,
+        per_page: 100,
+      });
       return computeIsApprovedFromReviews(reviews);
     } catch (error: unknown) {
       // graceful — 권한 부족(scope 미충족)/rate limit/네트워크 실패 모두 isApproved=false 로 떨어진다.
@@ -235,11 +236,11 @@ export class OctokitGithubClient implements GithubClientPort {
     repo,
     number,
   }: PullRequestRef): Promise<PullRequestDetail> {
-    this.assertOctokitConfigured();
+    const octokit = this.requireOctokit();
     const [owner, repoName] = parseRepo(repo);
 
     try {
-      const prResponse = await this.octokit!.rest.pulls.get({
+      const prResponse = await octokit.rest.pulls.get({
         owner,
         repo: repoName,
         pull_number: number,
@@ -286,10 +287,10 @@ export class OctokitGithubClient implements GithubClientPort {
     repo,
     number,
   }: PullRequestRef): Promise<GithubItemLifecycle> {
-    this.assertOctokitConfigured();
+    const octokit = this.requireOctokit();
     const [owner, repoName] = parseRepo(repo);
     try {
-      const response = await this.octokit!.rest.issues.get({
+      const response = await octokit.rest.issues.get({
         owner,
         repo: repoName,
         issue_number: number,
@@ -318,18 +319,16 @@ export class OctokitGithubClient implements GithubClientPort {
     repoName: string;
     pullNumber: number;
   }): Promise<ChangedFileList> {
+    const octokit = this.requireOctokit();
     const changedFiles: string[] = [];
     const changedLinesByFile: Record<string, number> = {};
     const changedFileStatsByFile: Record<string, ChangedFileStat> = {};
-    const iterator = this.octokit!.paginate.iterator(
-      this.octokit!.rest.pulls.listFiles,
-      {
-        owner,
-        repo: repoName,
-        pull_number: pullNumber,
-        per_page: CHANGED_FILES_PAGE_SIZE,
-      },
-    );
+    const iterator = octokit.paginate.iterator(octokit.rest.pulls.listFiles, {
+      owner,
+      repo: repoName,
+      pull_number: pullNumber,
+      per_page: CHANGED_FILES_PAGE_SIZE,
+    });
     for await (const page of iterator) {
       for (const file of page.data) {
         changedFiles.push(file.filename);
@@ -351,13 +350,13 @@ export class OctokitGithubClient implements GithubClientPort {
     number,
     maxBytes = DEFAULT_DIFF_MAX_BYTES,
   }: GetPullRequestDiffOptions): Promise<PullRequestDiff> {
-    this.assertOctokitConfigured();
+    const octokit = this.requireOctokit();
     const [owner, repoName] = parseRepo(repo);
 
     try {
       // mediaType: { format: 'diff' } 로 응답을 unified diff 텍스트로 직접 받는다.
       // octokit 타입은 JSON 으로 추론하지만 런타임은 string 이므로 cast 필요.
-      const response = await this.octokit!.rest.pulls.get({
+      const response = await octokit.rest.pulls.get({
         owner,
         repo: repoName,
         pull_number: number,
@@ -384,11 +383,11 @@ export class OctokitGithubClient implements GithubClientPort {
     maxBytes = DEFAULT_DIFF_MAX_BYTES,
     testFilesLast = false,
   }: CompareCommitsOptions): Promise<PullRequestDiff> {
-    this.assertOctokitConfigured();
+    const octokit = this.requireOctokit();
     const [owner, repoName] = parseRepo(repo);
 
     try {
-      const response = await this.octokit!.rest.repos.compareCommits({
+      const response = await octokit.rest.repos.compareCommits({
         owner,
         repo: repoName,
         base: baseSha,
@@ -408,7 +407,9 @@ export class OctokitGithubClient implements GithubClientPort {
     }
   }
 
-  private assertOctokitConfigured(): void {
+  // 토큰이 없으면 던지고, 있으면 그 인스턴스를 돌려준다. 돌려받은 값은 타입이 Octokit 이라
+  // `this.octokit!` 단언이 필요 없고, 받아야만 쓸 수 있으니 확인을 빼먹을 수도 없다.
+  private requireOctokit(): Octokit {
     if (!this.octokit) {
       throw new GithubException({
         code: GithubErrorCode.TOKEN_NOT_CONFIGURED,
@@ -417,6 +418,7 @@ export class OctokitGithubClient implements GithubClientPort {
         status: DomainStatus.PRECONDITION_FAILED,
       });
     }
+    return this.octokit;
   }
 
   // 모든 Octokit 호출 실패가 이 한 지점을 지난다 — GitHub 이 준 status 를 여기서 한 번
@@ -440,10 +442,10 @@ export class OctokitGithubClient implements GithubClientPort {
     number: number;
     body: string;
   }): Promise<void> {
-    this.assertOctokitConfigured();
+    const octokit = this.requireOctokit();
     const [owner, repoName] = parseRepo(repo);
     try {
-      await this.octokit!.rest.issues.createComment({
+      await octokit.rest.issues.createComment({
         owner,
         repo: repoName,
         issue_number: number,
@@ -461,10 +463,10 @@ export class OctokitGithubClient implements GithubClientPort {
     repo,
     number,
   }: PullRequestRef): Promise<string> {
-    this.assertOctokitConfigured();
+    const octokit = this.requireOctokit();
     const [owner, repoName] = parseRepo(repo);
     try {
-      const response = await this.octokit!.rest.pulls.get({
+      const response = await octokit.rest.pulls.get({
         owner,
         repo: repoName,
         pull_number: number,
@@ -482,10 +484,10 @@ export class OctokitGithubClient implements GithubClientPort {
     repo,
     number,
   }: PullRequestRef): Promise<PullRequestCommitState> {
-    this.assertOctokitConfigured();
+    const octokit = this.requireOctokit();
     const [owner, repoName] = parseRepo(repo);
     try {
-      const response = await this.octokit!.rest.pulls.get({
+      const response = await octokit.rest.pulls.get({
         owner,
         repo: repoName,
         pull_number: number,
@@ -507,11 +509,11 @@ export class OctokitGithubClient implements GithubClientPort {
     repo,
     number,
   }: ListIssueCommentsInput): Promise<IssueCommentSummary[]> {
-    this.assertOctokitConfigured();
+    const octokit = this.requireOctokit();
     const [owner, repoName] = parseRepo(repo);
     try {
-      const comments = await this.octokit!.paginate(
-        this.octokit!.rest.issues.listComments,
+      const comments = await octokit.paginate(
+        octokit.rest.issues.listComments,
         { owner, repo: repoName, issue_number: number, per_page: 100 },
       );
       return comments.map((comment) => ({
@@ -532,10 +534,10 @@ export class OctokitGithubClient implements GithubClientPort {
     commentId,
     body,
   }: UpdateIssueCommentInput): Promise<void> {
-    this.assertOctokitConfigured();
+    const octokit = this.requireOctokit();
     const [owner, repoName] = parseRepo(repo);
     try {
-      await this.octokit!.rest.issues.updateComment({
+      await octokit.rest.issues.updateComment({
         owner,
         repo: repoName,
         comment_id: commentId,
@@ -555,10 +557,10 @@ export class OctokitGithubClient implements GithubClientPort {
     body,
     assignees,
   }: CreateIssueInput): Promise<CreatedIssue> {
-    this.assertOctokitConfigured();
+    const octokit = this.requireOctokit();
     const [owner, repoName] = parseRepo(repo);
     try {
-      const { data } = await this.octokit!.rest.issues.create({
+      const { data } = await octokit.rest.issues.create({
         owner,
         repo: repoName,
         title,
@@ -580,12 +582,12 @@ export class OctokitGithubClient implements GithubClientPort {
     line,
     body,
   }: CreateReviewCommentInput): Promise<CreateReviewCommentResult> {
-    this.assertOctokitConfigured();
+    const octokit = this.requireOctokit();
     const [owner, repoName] = parseRepo(repo);
 
     try {
       // line 이 있으면 줄 단위(side=RIGHT: 변경 후 파일 기준), 없으면 파일 단위.
-      const response = await this.octokit!.rest.pulls.createReviewComment(
+      const response = await octokit.rest.pulls.createReviewComment(
         line === null
           ? {
               owner,
@@ -623,15 +625,14 @@ export class OctokitGithubClient implements GithubClientPort {
     repo,
     number,
   }: PullRequestRef): Promise<ListReviewThreadsResult> {
-    this.assertOctokitConfigured();
+    const octokit = this.requireOctokit();
     const [owner, repoName] = parseRepo(repo);
 
     try {
-      const response =
-        await this.octokit!.graphql<ListReviewThreadsGraphqlResponse>(
-          LIST_REVIEW_THREADS_QUERY,
-          { owner, name: repoName, number },
-        );
+      const response = await octokit.graphql<ListReviewThreadsGraphqlResponse>(
+        LIST_REVIEW_THREADS_QUERY,
+        { owner, name: repoName, number },
+      );
       const pullRequest = response.repository.pullRequest;
       if (pullRequest.reviewThreads.pageInfo.hasNextPage) {
         this.logger.warn(
@@ -665,10 +666,10 @@ export class OctokitGithubClient implements GithubClientPort {
   }
 
   async resolveReviewThread(threadId: string): Promise<void> {
-    this.assertOctokitConfigured();
+    const octokit = this.requireOctokit();
 
     try {
-      await this.octokit!.graphql(RESOLVE_REVIEW_THREAD_MUTATION, {
+      await octokit.graphql(RESOLVE_REVIEW_THREAD_MUTATION, {
         threadId,
       });
     } catch (error: unknown) {
@@ -721,11 +722,11 @@ export class OctokitGithubClient implements GithubClientPort {
   // issues.opened webhook 자동 라벨링 — repo 의 label vocab 회복 (paginated, 자동 합산).
   // 정책: 새 label 생성 X — LLM 이 본 vocab 안에서만 선택. 보통 ≤100, monorepo 라도 ≤500 수준.
   async listRepoLabels(repo: string): Promise<RepoLabel[]> {
-    this.assertOctokitConfigured();
+    const octokit = this.requireOctokit();
     const [owner, repoName] = parseRepo(repo);
     try {
-      const labels = await this.octokit!.paginate(
-        this.octokit!.rest.issues.listLabelsForRepo,
+      const labels = await octokit.paginate(
+        octokit.rest.issues.listLabelsForRepo,
         { owner, repo: repoName, per_page: 100 },
       );
       return labels.map((label) => ({
@@ -741,10 +742,10 @@ export class OctokitGithubClient implements GithubClientPort {
   }
 
   async isRepositoryPublic(repo: string): Promise<boolean> {
-    this.assertOctokitConfigured();
+    const octokit = this.requireOctokit();
     const [owner, repoName] = parseRepo(repo);
     try {
-      const { data } = await this.octokit!.rest.repos.get({
+      const { data } = await octokit.rest.repos.get({
         owner,
         repo: repoName,
       });
@@ -763,13 +764,13 @@ export class OctokitGithubClient implements GithubClientPort {
     issueNumber,
     labels,
   }: AddIssueLabelsInput): Promise<void> {
-    this.assertOctokitConfigured();
+    const octokit = this.requireOctokit();
     if (labels.length === 0) {
       return;
     }
     const [owner, repoName] = parseRepo(repo);
     try {
-      await this.octokit!.rest.issues.addLabels({
+      await octokit.rest.issues.addLabels({
         owner,
         repo: repoName,
         issue_number: issueNumber,
@@ -802,7 +803,7 @@ export class OctokitGithubClient implements GithubClientPort {
     prTitle,
     prBody,
   }: PushBranchAndOpenPrInput): Promise<PushBranchAndOpenPrResult> {
-    this.assertOctokitConfigured();
+    const octokit = this.requireOctokit();
     if (files.length === 0) {
       throw new GithubException({
         code: GithubErrorCode.REQUEST_FAILED,
@@ -815,7 +816,7 @@ export class OctokitGithubClient implements GithubClientPort {
 
     try {
       // 1) base branch HEAD commit SHA.
-      const baseRef = await this.octokit!.rest.git.getRef({
+      const baseRef = await octokit.rest.git.getRef({
         owner,
         repo: repoName,
         ref: `heads/${baseBranch}`,
@@ -823,7 +824,7 @@ export class OctokitGithubClient implements GithubClientPort {
       const baseCommitSha = baseRef.data.object.sha;
 
       // 2) base commit → tree SHA.
-      const baseCommit = await this.octokit!.rest.git.getCommit({
+      const baseCommit = await octokit.rest.git.getCommit({
         owner,
         repo: repoName,
         commit_sha: baseCommitSha,
@@ -833,7 +834,7 @@ export class OctokitGithubClient implements GithubClientPort {
       // 3) 각 파일 → blob.
       const treeEntries = await Promise.all(
         files.map(async (file) => {
-          const blob = await this.octokit!.rest.git.createBlob({
+          const blob = await octokit.rest.git.createBlob({
             owner,
             repo: repoName,
             content: file.content,
@@ -849,7 +850,7 @@ export class OctokitGithubClient implements GithubClientPort {
       );
 
       // 4) tree.
-      const newTree = await this.octokit!.rest.git.createTree({
+      const newTree = await octokit.rest.git.createTree({
         owner,
         repo: repoName,
         base_tree: baseTreeSha,
@@ -857,7 +858,7 @@ export class OctokitGithubClient implements GithubClientPort {
       });
 
       // 5) commit.
-      const newCommit = await this.octokit!.rest.git.createCommit({
+      const newCommit = await octokit.rest.git.createCommit({
         owner,
         repo: repoName,
         message: commitMessage,
@@ -867,7 +868,7 @@ export class OctokitGithubClient implements GithubClientPort {
 
       // 6) new branch ref. force=false — 동일 이름 branch 이미 존재 시 422 throw.
       const branchRef = `refs/heads/${branchName}`;
-      await this.octokit!.rest.git.createRef({
+      await octokit.rest.git.createRef({
         owner,
         repo: repoName,
         ref: branchRef,
@@ -875,7 +876,7 @@ export class OctokitGithubClient implements GithubClientPort {
       });
 
       // 7) PR open.
-      const pr = await this.octokit!.rest.pulls.create({
+      const pr = await octokit.rest.pulls.create({
         owner,
         repo: repoName,
         title: prTitle,
@@ -907,18 +908,17 @@ export class OctokitGithubClient implements GithubClientPort {
     content,
     commitMessage,
   }: CommitFileToBranchInput): Promise<CommitFileToBranchResult> {
-    this.assertOctokitConfigured();
+    const octokit = this.requireOctokit();
     const [owner, repoName] = parseRepo(repo);
     try {
-      const response =
-        await this.octokit!.rest.repos.createOrUpdateFileContents({
-          owner,
-          repo: repoName,
-          branch,
-          path,
-          message: commitMessage,
-          content: Buffer.from(content, 'utf-8').toString('base64'),
-        });
+      const response = await octokit.rest.repos.createOrUpdateFileContents({
+        owner,
+        repo: repoName,
+        branch,
+        path,
+        message: commitMessage,
+        content: Buffer.from(content, 'utf-8').toString('base64'),
+      });
       const commitSha = response.data.commit.sha;
       if (!commitSha) {
         throw new Error('GitHub commit SHA 가 응답에 없습니다.');
@@ -950,10 +950,10 @@ export class OctokitGithubClient implements GithubClientPort {
     branch,
     path,
   }: GetFileFromBranchInput): Promise<GetFileFromBranchResult> {
-    this.assertOctokitConfigured();
+    const octokit = this.requireOctokit();
     const [owner, repoName] = parseRepo(repo);
     try {
-      const response = await this.octokit!.rest.repos.getContent({
+      const response = await octokit.rest.repos.getContent({
         owner,
         repo: repoName,
         path,
@@ -982,10 +982,10 @@ export class OctokitGithubClient implements GithubClientPort {
   }
 
   async listTree({ repo, ref }: ListTreeInput): Promise<RepoTree> {
-    this.assertOctokitConfigured();
+    const octokit = this.requireOctokit();
     const [owner, repoName] = parseRepo(repo);
     try {
-      const response = await this.octokit!.rest.git.getTree({
+      const response = await octokit.rest.git.getTree({
         owner,
         repo: repoName,
         tree_sha: ref,
@@ -1013,12 +1013,12 @@ export class OctokitGithubClient implements GithubClientPort {
     ref,
     maxBytes,
   }: DownloadTarballInput): Promise<TarballDownload> {
-    this.assertOctokitConfigured();
+    const octokit = this.requireOctokit();
     const [owner, repoName] = parseRepo(repo);
     try {
       // ponytail: 크기는 받은 뒤에 잰다 — 상한 밖 레포도 메모리에 한 번 다 올라온다. 운영 스윕에는 압축 크기를
       // 실측해 상한 안인 레포만 PR_REVIEW_REPO_READ_REPOS 에 넣는다는 전제로 둔다. 넘는 레포를 켤 때 스트리밍으로.
-      const response = await this.octokit!.rest.repos.downloadTarballArchive({
+      const response = await octokit.rest.repos.downloadTarballArchive({
         owner,
         repo: repoName,
         ref,
@@ -1037,7 +1037,7 @@ export class OctokitGithubClient implements GithubClientPort {
   }
 
   async searchCode({ repo, query, limit }: SearchCodeInput): Promise<string[]> {
-    this.assertOctokitConfigured();
+    const octokit = this.requireOctokit();
     // 예산을 넘기면 기다리지 않고 거절한다 — 호출자(리뷰 맥락 보강)는 best-effort 라 맥락 없이
     // 진행하는 편이 리뷰를 1분 붙잡는 것보다 낫다. 403 을 맞으면 그 뒤 검색이 더 오래 막힌다.
     // ponytail: 프로세스 단위 창이다 — 같은 토큰을 쓰는 다른 프로세스 호출은 세지 못한다.
@@ -1056,7 +1056,7 @@ export class OctokitGithubClient implements GithubClientPort {
     }
     this.codeSearchCalledAt.push(now);
     try {
-      const response = await this.octokit!.rest.search.code({
+      const response = await octokit.rest.search.code({
         q: `${query} repo:${repo}`,
         per_page: Math.min(Math.max(1, limit), MAX_LIMIT),
       });
@@ -1081,7 +1081,7 @@ export class OctokitGithubClient implements GithubClientPort {
     limit,
     throwOnDetailFailure,
   }: ListAuthorMergedPullRequestsOptions): Promise<GithubPullRequestSummary[]> {
-    this.assertOctokitConfigured();
+    const octokit = this.requireOctokit();
     const perPage = Math.min(Math.max(1, limit), 100);
     // repo null/empty → author 의 모든 repo 머지 PR (본인 작성 PR 만). qualifier 없는 search 가
     // user repo + contributor repo (fork merge 등) 모두 포함. repo 지정 시 해당 repo 한정.
@@ -1093,7 +1093,7 @@ export class OctokitGithubClient implements GithubClientPort {
     const scopeLabel = repo ?? `author=${author} (all repos)`;
     let searchResponse;
     try {
-      searchResponse = await this.octokit!.rest.search.issuesAndPullRequests({
+      searchResponse = await octokit.rest.search.issuesAndPullRequests({
         q,
         per_page: perPage,
         sort: 'updated',
@@ -1117,7 +1117,7 @@ export class OctokitGithubClient implements GithubClientPort {
         const itemRepo = repo ?? extractRepo(item.repository_url);
         const [owner, repoName] = parseRepo(itemRepo);
         try {
-          const detail = await this.octokit!.rest.pulls.get({
+          const detail = await octokit.rest.pulls.get({
             owner,
             repo: repoName,
             pull_number: item.number,
@@ -1178,7 +1178,7 @@ export class OctokitGithubClient implements GithubClientPort {
     throwOnDetailFailure,
     includeDraft,
   }: ListAuthorMergedPullRequestsOptions): Promise<GithubPullRequestSummary[]> {
-    this.assertOctokitConfigured();
+    const octokit = this.requireOctokit();
     const perPage = Math.min(Math.max(1, limit), 100);
     const repoQualifier = repo ? `repo:${repo} ` : '';
     // draft:false — draft(미완성) PR 은 임팩트 종합 노이즈라 제외. updated:>= 로 stale open 컷.
@@ -1187,7 +1187,7 @@ export class OctokitGithubClient implements GithubClientPort {
     const scopeLabel = repo ?? `author=${author} (all repos)`;
     let searchResponse;
     try {
-      searchResponse = await this.octokit!.rest.search.issuesAndPullRequests({
+      searchResponse = await octokit.rest.search.issuesAndPullRequests({
         q,
         per_page: perPage,
         sort: 'updated',
@@ -1207,7 +1207,7 @@ export class OctokitGithubClient implements GithubClientPort {
         const itemRepo = repo ?? extractRepo(item.repository_url);
         const [owner, repoName] = parseRepo(itemRepo);
         try {
-          const detail = await this.octokit!.rest.pulls.get({
+          const detail = await octokit.rest.pulls.get({
             owner,
             repo: repoName,
             pull_number: item.number,
@@ -1268,7 +1268,7 @@ export class OctokitGithubClient implements GithubClientPort {
     sinceIsoDate,
     limit,
   }: ListOpenPullRequestRefsOptions): Promise<OpenPullRequestRef[]> {
-    this.assertOctokitConfigured();
+    const octokit = this.requireOctokit();
     if (repos.length === 0) {
       return [];
     }
@@ -1285,7 +1285,7 @@ export class OctokitGithubClient implements GithubClientPort {
     const searchQuery = `${repoQualifier} is:pr is:open${authorQualifier} updated:>=${sinceIsoDate}`;
     let searchResponse;
     try {
-      searchResponse = await this.octokit!.rest.search.issuesAndPullRequests({
+      searchResponse = await octokit.rest.search.issuesAndPullRequests({
         q: searchQuery,
         per_page: perPage,
         sort: 'updated',
@@ -1309,11 +1309,12 @@ export class OctokitGithubClient implements GithubClientPort {
   }
 
   private async resolveLogin(): Promise<string | null> {
+    const octokit = this.requireOctokit();
     if (this.cachedLogin) {
       return this.cachedLogin;
     }
     try {
-      const me = await this.octokit!.rest.users.getAuthenticated();
+      const me = await octokit.rest.users.getAuthenticated();
       this.cachedLogin = me.data.login;
       return this.cachedLogin;
     } catch {
@@ -1352,17 +1353,19 @@ export class OctokitGithubClient implements GithubClientPort {
       return neutral;
     }
     try {
-      this.assertOctokitConfigured();
+      const octokit = this.requireOctokit();
       const [owner, repo] = parseRepo(ref.repo);
-      const detail = await this.octokit!.rest.pulls.get({
+      const detail = await octokit.rest.pulls.get({
         owner,
         repo,
         pull_number: ref.number,
       });
-      const reviews = await this.octokit!.paginate(
-        this.octokit!.rest.pulls.listReviews,
-        { owner, repo, pull_number: ref.number, per_page: 100 },
-      );
+      const reviews = await octokit.paginate(octokit.rest.pulls.listReviews, {
+        owner,
+        repo,
+        pull_number: ref.number,
+        per_page: 100,
+      });
       const humans = reviews.filter((review) => review.user?.type !== 'Bot');
       const latest = new Map<string, PullsReview>();
       for (const review of humans) {
@@ -1422,11 +1425,11 @@ export class OctokitGithubClient implements GithubClientPort {
     pendingReviewers,
   }: ReviewWaitInput): Promise<ReviewWait> {
     try {
-      this.assertOctokitConfigured();
+      const octokit = this.requireOctokit();
       const [owner, repo] = parseRepo(ref.repo);
       // Timeline 이벤트 중 리뷰 요청에 필요한 필드만 사용한다.
-      const events = (await this.octokit!.paginate(
-        this.octokit!.rest.issues.listEventsForTimeline,
+      const events = (await octokit.paginate(
+        octokit.rest.issues.listEventsForTimeline,
         { owner, repo, issue_number: ref.number, per_page: 100 },
       )) as Array<{
         event?: string;
@@ -1465,7 +1468,6 @@ export class OctokitGithubClient implements GithubClientPort {
   async fetchPullRequestEngagement(
     pullRequests: GithubPullRequest[],
   ): Promise<PullRequestEngagementSignals[]> {
-    this.assertOctokitConfigured();
     const login = await this.resolveLogin();
     const cutoffMs = Date.now() - WAITING_LOOKBACK_HOURS * 60 * 60 * 1000;
 
@@ -1489,19 +1491,22 @@ export class OctokitGithubClient implements GithubClientPort {
     login: string | null,
     cutoffMs: number,
   ): Promise<PullRequestEngagementSignals> {
+    const octokit = this.requireOctokit();
     try {
       const [owner, repoName] = parseRepo(pr.repo);
-      const detail = await this.octokit!.rest.pulls.get({
+      const detail = await octokit.rest.pulls.get({
         owner,
         repo: repoName,
         pull_number: pr.number,
       });
-      const reviews = await this.octokit!.paginate(
-        this.octokit!.rest.pulls.listReviews,
-        { owner, repo: repoName, pull_number: pr.number, per_page: 100 },
-      );
-      const comments = await this.octokit!.paginate(
-        this.octokit!.rest.issues.listComments,
+      const reviews = await octokit.paginate(octokit.rest.pulls.listReviews, {
+        owner,
+        repo: repoName,
+        pull_number: pr.number,
+        per_page: 100,
+      });
+      const comments = await octokit.paginate(
+        octokit.rest.issues.listComments,
         { owner, repo: repoName, issue_number: pr.number, per_page: 100 },
       );
 
@@ -1554,6 +1559,7 @@ export class OctokitGithubClient implements GithubClientPort {
   }
 
   private async invokeSearch(perPage: number, updatedSinceIsoDate?: string) {
+    const octokit = this.requireOctokit();
     try {
       // assignee:@me 는 인증된 사용자에게 할당된 모든 open issue/PR 을 한 번에 조회한다.
       // PR 도 GitHub API 상 issue 의 일종이라 search/issues 엔드포인트로 함께 받는다.
@@ -1562,7 +1568,7 @@ export class OctokitGithubClient implements GithubClientPort {
       const q = updatedSinceIsoDate
         ? `${baseQuery} updated:>=${updatedSinceIsoDate}`
         : baseQuery;
-      return await this.octokit!.rest.search.issuesAndPullRequests({
+      return await octokit.rest.search.issuesAndPullRequests({
         q,
         per_page: perPage,
         sort: 'updated',
