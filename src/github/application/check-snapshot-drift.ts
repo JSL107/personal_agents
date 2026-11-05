@@ -6,6 +6,8 @@ import {
 
 // 상세를 받은 뒤 지금까지 무엇이 바뀌었는지. 상세와 diff 는 원자적으로 받을 수 없어서, diff 를
 // 받은 뒤 다시 조회해 head·base 가 그대로면 diff 도 상세와 같은 커밋 기준이라고 본다.
+// 전제: 호출자는 상세 → diff → 이 함수를 차례로 부른다. 상세와 diff 를 병렬로 받으면 diff 가
+// 두 조회 사이에 놓인다는 보장이 없어 이 확인이 섞인 스냅샷을 통과시킨다.
 export type SnapshotDrift =
   | { kind: 'NONE' }
   | { kind: 'MOVED'; currentHeadSha: string }

@@ -1217,45 +1217,37 @@ describe('SweepPrReviewsUsecase', () => {
     });
   });
 
-  it('상세와 diff 는 병렬로 조회한다 — 두 응답 사이의 push 창을 넓히지 않는다', async () => {
-    let detailSettled = false;
-    let diffStartedBeforeDetailSettled = false;
-    github.getPullRequest.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          setTimeout(() => {
-            detailSettled = true;
-            resolve({
-              number: 180,
-              title: 'feat: 무언가',
-              body: '',
-              repo: 'JSL107/personal_agents',
-              url: OPEN_PR_URL,
-              baseRef: 'main',
-              baseSha: 'base-sha-main',
-              headRef: 'feat/x',
-              headSha: 'abc1234',
-              authorLogin: 'JSL107',
-              mergedAt: null,
-              changedFiles: ['src/foo.service.ts'],
-              changedFilesTruncated: false,
-              changedFilesTotalCount: 1,
-              changedLinesByFile: {},
-              additions: 10,
-              deletions: 2,
-            } as never);
-          }, 5);
-        }),
-    );
-    github.getPullRequestDiff.mockImplementation(() => {
-      diffStartedBeforeDetailSettled = !detailSettled;
-      return Promise.resolve({ diff: 'diff', truncated: false, bytes: 4 });
+  // 병렬로 받으면 서버가 diff 를 먼저(옛 커밋), 상세를 나중에(새 커밋) 처리할 수 있어 상세와
+  // 재조회만 비교하는 확인이 섞인 스냅샷을 통과시킨다(#973 리뷰 지적). diff 는 상세가 끝난 뒤,
+  // 재조회는 diff 가 끝난 뒤에 시작해야 diff 가 두 조회 사이에 놓인다.
+  it('상세 → diff → 재조회를 차례로 받는다', async () => {
+    const events: string[] = [];
+    github.getPullRequest.mockImplementation(async () => {
+      events.push('detail:start');
+      await Promise.resolve();
+      events.push('detail:end');
+      return DETAIL;
+    });
+    github.getPullRequestDiff.mockImplementation(async () => {
+      events.push('diff:start');
+      await Promise.resolve();
+      events.push('diff:end');
+      return { diff: 'diff', truncated: false, bytes: 4 };
+    });
+    github.getPullRequestCommitState.mockImplementation(async () => {
+      events.push('state:start');
+      return DETAIL_STATE;
     });
 
     await buildUsecase(ENABLED).execute();
 
-    // 순차로 되돌아가면 diff 는 detail 이 끝난 뒤에 시작되어 이 값이 false 가 된다.
-    expect(diffStartedBeforeDetailSettled).toBe(true);
+    expect(events).toEqual([
+      'detail:start',
+      'detail:end',
+      'diff:start',
+      'diff:end',
+      'state:start',
+    ]);
   });
 
   it('조회 단계 실패도 AgentRun 원장에 남겨 재시도 판정이 볼 수 있게 한다', async () => {

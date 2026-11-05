@@ -425,14 +425,14 @@ export class ReviewPullRequestUsecase {
   // 상세와 diff 를 직접 받을 때 둘이 같은 커밋 기준인지 확인한다. 그 사이 push 가 들어오면 지적은
   // 새 diff, 게시 앵커는 옛 headSha 기준으로 갈린다. 사람이 부른 리뷰라 스윕처럼 넘기지 않고 한 번
   // 다시 받는다. 머지는 막지 않는다 — 머지된 PR 을 일부러 다시 리뷰하는 요청도 있다.
+  // 상세 → diff → 재조회를 차례로 받는다. 병렬로 받으면 diff 가 옛 커밋, 상세가 새 커밋 기준으로
+  // 와도 상세와 재조회가 같아 통과한다(#973 리뷰 지적). 차례로 받아야 diff 가 두 조회 사이에 놓인다.
   private async fetchConsistentSnapshot(
     ref: ParsedPrReference,
   ): Promise<PullRequestReviewSnapshot> {
     for (let attempt = 1; attempt <= SNAPSHOT_FETCH_ATTEMPTS; attempt += 1) {
-      const [detail, diff] = await Promise.all([
-        this.githubClient.getPullRequest(ref),
-        this.githubClient.getPullRequestDiff(ref),
-      ]);
+      const detail = await this.githubClient.getPullRequest(ref);
+      const diff = await this.githubClient.getPullRequestDiff(ref);
       const drift = await checkSnapshotDrift({
         githubClient: this.githubClient,
         ref,

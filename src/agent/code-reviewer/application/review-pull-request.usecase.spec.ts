@@ -229,6 +229,46 @@ describe('ReviewPullRequestUsecase', () => {
     expect(modelRouter.route).toHaveBeenCalledTimes(1);
   });
 
+  // 병렬로 받으면 diff 가 옛 커밋, 상세가 새 커밋 기준으로 와도 상세와 재조회가 같아 통과한다
+  // (#973 리뷰 지적). diff 는 상세가 끝난 뒤, 재조회는 diff 가 끝난 뒤에 시작해야 한다.
+  it('상세 → diff → 재조회를 차례로 받는다', async () => {
+    const events: string[] = [];
+    const detail = await githubClient.getPullRequest({
+      repo: 'foo/bar',
+      number: 34,
+    });
+    githubClient.getPullRequest.mockImplementation(async () => {
+      events.push('detail:start');
+      await Promise.resolve();
+      events.push('detail:end');
+      return detail;
+    });
+    githubClient.getPullRequestDiff.mockImplementation(async () => {
+      events.push('diff:start');
+      await Promise.resolve();
+      events.push('diff:end');
+      return { diff: 'diff', truncated: false, bytes: 4 };
+    });
+    githubClient.getPullRequestCommitState.mockImplementation(async () => {
+      events.push('state:start');
+      return {
+        headSha: detail.headSha,
+        baseSha: detail.baseSha,
+        mergedAt: null,
+      };
+    });
+
+    await usecase.execute({ prRef: 'foo/bar#34', slackUserId: 'U123' });
+
+    expect(events).toEqual([
+      'detail:start',
+      'detail:end',
+      'diff:start',
+      'diff:end',
+      'state:start',
+    ]);
+  });
+
   it('다시 받아도 계속 갱신 중이면 모델을 부르지 않고 잠시 뒤 재실행을 안내한다', async () => {
     githubClient.getPullRequestCommitState.mockResolvedValue({
       headSha: 'pushed-sha',
