@@ -1,3 +1,5 @@
+import { Prisma } from '@prisma/client';
+
 import { PrismaService } from '../../prisma/prisma.service';
 import { InstagramPostPrismaRepository } from './instagram-post.prisma.repository';
 
@@ -40,5 +42,28 @@ describe('InstagramPostPrismaRepository.claim', () => {
     expect(
       await repository.claim({ ...input, previewActionId: 'card-2' }),
     ).toEqual(row);
+  });
+  it('P2002 동시 생성 뒤 이미 선점된 행을 다시 읽어 거절한다', async () => {
+    const upsert = jest.fn().mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: '6.19.3',
+      }),
+    );
+    const findUnique = jest.fn().mockResolvedValue({
+      ...input,
+      id: 'post-1',
+      status: 'PENDING',
+    });
+    const repository = new InstagramPostPrismaRepository({
+      instagramPost: { upsert, findUnique },
+    } as unknown as PrismaService);
+
+    await expect(
+      repository.claim({ ...input, previewActionId: 'card-2' }),
+    ).rejects.toMatchObject({ errorCode: 'INSTAGRAM_REEL_CLAIMED' });
+    expect(findUnique).toHaveBeenCalledWith({
+      where: { reelKey: input.reelKey },
+    });
   });
 });

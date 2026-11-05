@@ -82,6 +82,53 @@ describe('MetaGraphClient', () => {
     expect(init.signal).toBeDefined();
   });
 
+  it('upload failure includes sanitized debug_info.message', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: false,
+        debug_info: {
+          message:
+            'upload failed secret-page-token at https://example.com/private',
+        },
+      }),
+    });
+    await expect(
+      client.uploadVideo('https://upload.example/media', Buffer.from('video')),
+    ).rejects.toMatchObject({
+      errorCode: InstagramErrorCode.GRAPH_REQUEST_FAILED,
+      message: expect.stringContaining('upload failed [REDACTED] at [URL]'),
+    });
+  });
+
+  it('sanitizes container status before returning it', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        status_code: 'ERROR',
+        status: 'secret-page-token at https://example.com/private',
+      }),
+    });
+    await expect(client.getContainerStatus('container')).resolves.toEqual({
+      statusCode: 'ERROR',
+      status: '[REDACTED] at [URL]',
+    });
+  });
+
+  it('sanitizes publish configIssue before returning it', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: 'media',
+        config_issue: 'secret-page-token at https://example.com/private',
+      }),
+    });
+    await expect(client.publish('container')).resolves.toEqual({
+      mediaId: 'media',
+      configIssue: '[REDACTED] at [URL]',
+    });
+  });
+
   it.each([
     [{ code: 190 }, InstagramErrorCode.TOKEN_INVALID],
     [{ code: 9, error_subcode: 2207042 }, InstagramErrorCode.QUOTA_EXCEEDED],

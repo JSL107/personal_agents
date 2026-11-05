@@ -71,7 +71,12 @@ describe('PreviewDecisionSignalSource', () => {
     // CAREER_JD_GAP_BLOG: 주제 선택 성공도 cancel 로 소비돼 CANCELLED 가 거절을 뜻하지 않음.
     // PRODUCT_GOAL: 사용자가 직접 선언한 목표를 되묻는 확인이라 승인이 선호 신호가 아님.
     expect(findMany.mock.calls[0][0].where.kind).toEqual({
-      notIn: ['PREFERENCE_PROFILE', 'CAREER_JD_GAP_BLOG', 'PRODUCT_GOAL'],
+      notIn: [
+        'PREFERENCE_PROFILE',
+        'CAREER_JD_GAP_BLOG',
+        'PRODUCT_GOAL',
+        'INSTAGRAM_REEL_PUBLISH',
+      ],
     });
   });
 

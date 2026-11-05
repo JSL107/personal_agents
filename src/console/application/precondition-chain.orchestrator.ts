@@ -13,6 +13,8 @@ import {
   FindAnswerablePreviewUsecase,
 } from '../../preview-gate/application/find-answerable-preview.usecase';
 import {
+  BUTTON_ONLY_APPROVAL_KINDS,
+  BUTTON_ONLY_APPROVAL_TEXT,
   PREVIEW_ANSWER_AMBIGUOUS_TEXT,
   PREVIEW_KIND,
   PreviewAction,
@@ -233,6 +235,11 @@ export class PreconditionChainOrchestrator {
     const pending: PreviewAction = answerable.preview;
     if (pending.kind === PREVIEW_KIND.CAREER_JD_GAP_BLOG && intent === 'yes') {
       return false;
+    }
+    if (BUTTON_ONLY_APPROVAL_KINDS.has(pending.kind) && intent === 'yes') {
+      await this.rememberPreviewTurn(input, input.text ?? '');
+      this.publishPreviewAnswer(input, BUTTON_ONLY_APPROVAL_TEXT);
+      return true;
     }
     try {
       if (intent === 'yes') {

@@ -97,7 +97,12 @@ export class MetaGraphClient implements MetaGraphPort {
       signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
     });
     if (body.success !== true) {
-      throw this.failure('Meta 영상 업로드가 실패했습니다.');
+      const debugInfo = body.debug_info as GraphResponse | undefined;
+      const detail =
+        typeof debugInfo?.message === 'string'
+          ? `: ${this.sanitize(debugInfo.message)}`
+          : '';
+      throw this.failure(`Meta 영상 업로드가 실패했습니다${detail}`);
     }
   }
 
@@ -115,7 +120,8 @@ export class MetaGraphClient implements MetaGraphPort {
     }
     return {
       statusCode,
-      status: typeof body.status === 'string' ? body.status : null,
+      status:
+        typeof body.status === 'string' ? this.sanitize(body.status) : null,
     };
   }
 
@@ -129,7 +135,9 @@ export class MetaGraphClient implements MetaGraphPort {
     return {
       mediaId: body.id,
       configIssue:
-        typeof body.config_issue === 'string' ? body.config_issue : null,
+        typeof body.config_issue === 'string'
+          ? this.sanitize(body.config_issue)
+          : null,
     };
   }
 

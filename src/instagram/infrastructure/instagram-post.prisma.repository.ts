@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { InstagramException } from '../domain/instagram.exception';
@@ -15,11 +16,27 @@ export class InstagramPostPrismaRepository implements InstagramPostRepositoryPor
   constructor(private readonly prisma: PrismaService) {}
 
   async claim(input: ClaimReelInput): Promise<InstagramPost> {
-    const row = await this.prisma.instagramPost.upsert({
-      where: { reelKey: input.reelKey },
-      create: { ...input, status: 'PENDING' },
-      update: {},
-    });
+    let row;
+    try {
+      row = await this.prisma.instagramPost.upsert({
+        where: { reelKey: input.reelKey },
+        create: { ...input, status: 'PENDING' },
+        update: {},
+      });
+    } catch (error) {
+      if (
+        !(error instanceof Prisma.PrismaClientKnownRequestError) ||
+        error.code !== 'P2002'
+      ) {
+        throw error;
+      }
+      row = await this.prisma.instagramPost.findUnique({
+        where: { reelKey: input.reelKey },
+      });
+      if (!row) {
+        throw error;
+      }
+    }
     if (
       row.previewActionId !== input.previewActionId &&
       row.status !== 'PUBLISHED'
