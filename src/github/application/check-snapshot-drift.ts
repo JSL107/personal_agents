@@ -11,18 +11,22 @@ export type SnapshotDrift =
   | { kind: 'MOVED'; currentHeadSha: string }
   | { kind: 'MERGED' };
 
+export interface CheckSnapshotDriftInput {
+  githubClient: GithubClientPort;
+  ref: PullRequestRef;
+  // 처음 받은 상세. PullRequestDetail 을 그대로 넘겨도 된다.
+  fetched: PullRequestCommitState;
+}
+
 // 커밋 이동을 머지보다 먼저 본다. 머지를 무시하는 호출자(직접 요청한 리뷰)도 섞인 스냅샷은
 // 걸러야 하기 때문이다.
-export const checkSnapshotDrift = async (
-  githubClient: GithubClientPort,
-  ref: PullRequestRef,
-  fetched: PullRequestCommitState,
-): Promise<SnapshotDrift> => {
+export const checkSnapshotDrift = async ({
+  githubClient,
+  ref,
+  fetched,
+}: CheckSnapshotDriftInput): Promise<SnapshotDrift> => {
   const current = await githubClient.getPullRequestCommitState(ref);
-  if (
-    current.headSha !== fetched.headSha ||
-    current.baseSha !== fetched.baseSha
-  ) {
+  if (!isSameCommit({ current, fetched })) {
     return { kind: 'MOVED', currentHeadSha: current.headSha };
   }
   if (current.mergedAt !== null) {
@@ -30,3 +34,13 @@ export const checkSnapshotDrift = async (
   }
   return { kind: 'NONE' };
 };
+
+// head 와 base 가 모두 같아야 diff 가 같다. base 만 바뀌어도(대상 브랜치 변경) diff 가 달라진다.
+const isSameCommit = ({
+  current,
+  fetched,
+}: {
+  current: PullRequestCommitState;
+  fetched: PullRequestCommitState;
+}): boolean =>
+  current.headSha === fetched.headSha && current.baseSha === fetched.baseSha;

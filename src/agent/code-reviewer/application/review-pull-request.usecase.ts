@@ -433,7 +433,11 @@ export class ReviewPullRequestUsecase {
         this.githubClient.getPullRequest(ref),
         this.githubClient.getPullRequestDiff(ref),
       ]);
-      const drift = await checkSnapshotDrift(this.githubClient, ref, detail);
+      const drift = await checkSnapshotDrift({
+        githubClient: this.githubClient,
+        ref,
+        fetched: detail,
+      });
       if (drift.kind !== 'MOVED') {
         return { detail, diff };
       }

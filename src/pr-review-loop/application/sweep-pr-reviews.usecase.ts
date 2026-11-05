@@ -507,11 +507,11 @@ export class SweepPrReviewsUsecase implements OnApplicationBootstrap {
       // diff 가 상세와 같은 커밋 기준인지 확인한다. 섞인 스냅샷으로 리뷰해 옛 headSha 에
       // 인라인 앵커를 다는 대신 이번 회차를 넘기고, 다음 스윕이 새 스냅샷으로 리뷰한다.
       // 재조회 사이에 머지됐으면 SHA 는 그대로여도 위 머지 가드와 같은 이유로 끊는다.
-      const drift = await checkSnapshotDrift(
-        this.githubClient,
-        { repo, number: pullNumber },
-        detail,
-      );
+      const drift = await checkSnapshotDrift({
+        githubClient: this.githubClient,
+        ref: { repo, number: pullNumber },
+        fetched: detail,
+      });
       if (drift.kind === 'MOVED') {
         this.logger.log(
           `조회 중 PR 이 갱신됨 — 다음 스윕에서 리뷰 (${prRef} ${detail.headSha.slice(0, 7)} → ${drift.currentHeadSha.slice(0, 7)})`,

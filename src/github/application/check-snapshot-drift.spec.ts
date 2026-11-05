@@ -20,7 +20,11 @@ describe('checkSnapshotDrift', () => {
     const client = clientReturning(FETCHED);
 
     await expect(
-      checkSnapshotDrift(client as never, REF, FETCHED),
+      checkSnapshotDrift({
+        githubClient: client as never,
+        ref: REF,
+        fetched: FETCHED,
+      }),
     ).resolves.toEqual({ kind: 'NONE' });
     expect(client.getPullRequestCommitState).toHaveBeenCalledWith(REF);
   });
@@ -32,7 +36,11 @@ describe('checkSnapshotDrift', () => {
     const current = { ...FETCHED, ...moved };
 
     await expect(
-      checkSnapshotDrift(clientReturning(current) as never, REF, FETCHED),
+      checkSnapshotDrift({
+        githubClient: clientReturning(current) as never,
+        ref: REF,
+        fetched: FETCHED,
+      }),
     ).resolves.toEqual({ kind: 'MOVED', currentHeadSha: current.headSha });
   });
 
@@ -40,7 +48,11 @@ describe('checkSnapshotDrift', () => {
     const current = { ...FETCHED, mergedAt: '2026-09-01T00:00:00Z' };
 
     await expect(
-      checkSnapshotDrift(clientReturning(current) as never, REF, FETCHED),
+      checkSnapshotDrift({
+        githubClient: clientReturning(current) as never,
+        ref: REF,
+        fetched: FETCHED,
+      }),
     ).resolves.toEqual({ kind: 'MERGED' });
   });
 
@@ -53,7 +65,11 @@ describe('checkSnapshotDrift', () => {
     };
 
     await expect(
-      checkSnapshotDrift(clientReturning(current) as never, REF, FETCHED),
+      checkSnapshotDrift({
+        githubClient: clientReturning(current) as never,
+        ref: REF,
+        fetched: FETCHED,
+      }),
     ).resolves.toEqual({ kind: 'MOVED', currentHeadSha: 'head-2' });
   });
 });
