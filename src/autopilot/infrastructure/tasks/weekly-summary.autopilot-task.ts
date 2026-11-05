@@ -14,6 +14,7 @@ import {
 } from '../../../agent/work-reviewer/domain/prompt/worklog-input.formatter';
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { kstDayStartOf } from '../../../common/util/kst-date.util';
 import { GithubPullRequestSummary } from '../../../github/domain/github.type';
 import {
   GITHUB_CLIENT_PORT,
@@ -110,7 +111,7 @@ export class WeeklySummaryAutopilotTask implements AutopilotTask {
           });
 
     // 재시도가 자정을 넘어도 회고 기간과 조회 경계가 바뀌지 않도록 job의 KST 날짜에 고정한다.
-    const periodEnd = new Date(`${firedAtKst}T00:00:00+09:00`);
+    const periodEnd = kstDayStartOf(firedAtKst);
     const since = new Date(
       periodEnd.getTime() - WEEKLY_LOOKBACK_DAYS_AGO * DAY_MS,
     );

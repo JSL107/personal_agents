@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import {
   formatKstDate,
+  kstDayStartOf,
   utcMidnightOf,
 } from '../../../common/util/kst-date.util';
 import {
@@ -58,7 +59,7 @@ export class CujCheckAutopilotTask implements AutopilotTask {
     const now = new Date();
     // 날짜 판정 창은 회차 날짜(firedAtKst)에서 잡는다. 지금 시각으로 잡으면 늦게 돈 회차나
     // 재실행이 판정 날짜와 다른 날의 원장을 읽어 거짓 경보를 낸다.
-    const todayStart = new Date(`${firedAtKst}T00:00:00+09:00`);
+    const todayStart = kstDayStartOf(firedAtKst);
     const tomorrowStart = new Date(todayStart.getTime() + DAY_MS);
     const yesterdayStart = new Date(todayStart.getTime() - DAY_MS);
     const yesterdayText = formatKstDate(yesterdayStart.toISOString()) ?? '';

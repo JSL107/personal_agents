@@ -1,3 +1,4 @@
+import { utcMidnightOf } from '../../common/util/kst-date.util';
 // 모의투자 카드가 숫자를 적는 법. 체결·장중 손절·추천 세 태스크가 같은 표기를 쓰므로 한 자리에
 // 둔다 — 표기가 갈리면 같은 금액이 카드마다 다르게 읽힌다.
 //
@@ -22,7 +23,7 @@ export const formatMoney = (amount: number): string => {
 const KST_WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
 export const formatTradeDay = (tradeDate: string): string => {
-  const day = new Date(`${tradeDate}T00:00:00.000Z`);
+  const day = utcMidnightOf(tradeDate);
   return (
     `${day.getUTCMonth() + 1}/${day.getUTCDate()}` +
     `(${KST_WEEKDAYS[day.getUTCDay()]})`

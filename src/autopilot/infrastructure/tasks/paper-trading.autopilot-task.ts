@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { utcMidnightOf } from '../../../common/util/kst-date.util';
 import { isKrxTradingDay } from '../../../holiday/domain/business-calendar';
 import {
   HOLIDAY_CALENDAR_PORT,
@@ -181,12 +182,7 @@ export class PaperTradingAutopilotTask implements AutopilotTask {
     // 전부 건너뛰고(2026-09-24·25 추석 실측) 밴드는 지난 종가로 판정하게 된다. 돌리면 빈
     // 장마감 평가 카드만 채널에 남는다. paper-intraday-stop 과 같은 판정이다.
     const calendar = await this.holidayCalendar.load();
-    if (
-      !isKrxTradingDay(
-        new Date(`${context.firedAtKst}T00:00:00.000Z`),
-        calendar,
-      )
-    ) {
+    if (!isKrxTradingDay(utcMidnightOf(context.firedAtKst), calendar)) {
       return { skip: true };
     }
 

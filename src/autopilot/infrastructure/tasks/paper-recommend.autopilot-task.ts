@@ -12,6 +12,7 @@ import {
   PaperRecommendationStrategy,
 } from '../../../agent/paper-recommend/domain/paper-recommendation.type';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { utcMidnightOf } from '../../../common/util/kst-date.util';
 import { isKrxTradingDay } from '../../../holiday/domain/business-calendar';
 import {
   HOLIDAY_CALENDAR_PORT,
@@ -254,12 +255,7 @@ export class PaperRecommendAutopilotTask implements AutopilotTask {
     // `emptyReason` 은 쓰지 않는다. 실행 전 조건의 skip 이라 계약에 어긋나고, orchestrator 가
     // 그것을 복구 신호로 읽어 직전 실패로 열린 장애를 휴장일에 닫아 버린다.
     const calendar = await this.holidayCalendar.load();
-    if (
-      !isKrxTradingDay(
-        new Date(`${context.firedAtKst}T00:00:00.000Z`),
-        calendar,
-      )
-    ) {
+    if (!isKrxTradingDay(utcMidnightOf(context.firedAtKst), calendar)) {
       await this.trace.record({
         taskId: this.id,
         firedAtKst: context.firedAtKst,

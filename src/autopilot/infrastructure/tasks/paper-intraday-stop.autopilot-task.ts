@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { utcMidnightOf } from '../../../common/util/kst-date.util';
 import { isKrxTradingDay } from '../../../holiday/domain/business-calendar';
 import {
   HOLIDAY_CALENDAR_PORT,
@@ -215,12 +216,7 @@ export class PaperIntradayStopAutopilotTask implements AutopilotTask {
     // 전 종목 시세 조회가 70회 헛돈다. 아래 `holidayLike` 는 지우지 않는다 — 달력에 없는
     // 임시 휴장·거래정지·공급자 무응답처럼 달력이 모르는 경우의 카드 억제용이다.
     const calendar = await this.holidayCalendar.load();
-    if (
-      !isKrxTradingDay(
-        new Date(`${context.firedAtKst}T00:00:00.000Z`),
-        calendar,
-      )
-    ) {
+    if (!isKrxTradingDay(utcMidnightOf(context.firedAtKst), calendar)) {
       return { skip: true };
     }
 
