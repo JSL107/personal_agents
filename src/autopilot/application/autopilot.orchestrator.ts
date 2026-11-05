@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
 import { CronIdempotencyService } from '../../common/queue/cron-idempotency.service';
 import { CRON_SENT_GUARD_TTL_SECONDS } from '../../common/queue/worker-options.constant';
-import { getKstDateOf, getTodayKstDate } from '../../common/util/kst-date.util';
+import { getKstDateOf } from '../../common/util/kst-date.util';
 import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
 import {
   AUTOPILOT_TASK_CRON_NAME_PREFIX,
@@ -142,10 +142,7 @@ export class AutopilotOrchestrator {
   ): Promise<void> {
     // 실행 시각이 아니라 예정 시각의 날짜다 — 2026-11-03 19:40 저녁이 재부팅으로 끊겼다가 11-04
     // 09:00 에 회수되자 「11/4 마감」으로 나가 11-04 날짜 가드를 차지했고, 그날 진짜 저녁이 막혔다.
-    const firedAtKst =
-      scheduledAt === undefined
-        ? getTodayKstDate()
-        : getKstDateOf(new Date(scheduledAt));
+    const firedAtKst = getKstDateOf(new Date(scheduledAt ?? Date.now()));
     const slotKey = slotId ? buildSlotKey(groupKey, slotId) : null;
     const targets = target
       .split(',')
