@@ -16,6 +16,10 @@ import {
 } from '../../../instagram/application/publish-story.usecase';
 import { scanReadyReels } from '../../../instagram/application/scan-ready-reels';
 import {
+  MarkerWriteResult,
+  writePublishedMarker,
+} from '../../../instagram/application/write-published-marker';
+import {
   InstagramPostField,
   InstagramPostStatus,
   ReelField,
@@ -107,11 +111,13 @@ export class ReelsPublishOfferAutopilotTask implements AutopilotTask {
     }));
     // 전날 것도 본다. 23:45 마지막 슬롯 뒤나 다음 날 승인한 카드는 릴스만 올라가고 그 날짜를 다시 보는
     // 슬롯이 없어 스토리가 영영 남는다(2026-11-05 codex review). 카드 TTL 이 24시간이라 하루 전까지면 충분하다.
+    const days = [previousKstDate(firedAtKst), firedAtKst];
     const stories = await Promise.all(
-      [previousKstDate(firedAtKst), firedAtKst].map((day) =>
-        this.continueStory(day),
-      ),
+      days.map((day) => this.continueStory(day)),
     );
+    for (const day of days) {
+      await this.writeMarker(day);
+    }
 
     const summaryLines: string[] = [];
     if (previews.length > 0) {
@@ -181,6 +187,23 @@ export class ReelsPublishOfferAutopilotTask implements AutopilotTask {
       const reason = error instanceof Error ? error.message : String(error);
       this.logger.warn(`${day} 스토리 확인 실패: ${reason}`);
       return none;
+    }
+  }
+
+  private async writeMarker(day: string): Promise<void> {
+    try {
+      const reel = await this.posts.findByReelKey(`${day}/daily`);
+      if (!reel || reel.status !== InstagramPostStatus.PUBLISHED) {
+        return;
+      }
+      const story = await this.posts.findByReelKey(`${day}/story`);
+      const result = await writePublishedMarker({ reel, story });
+      if (result.kind === MarkerWriteResult.SKIPPED) {
+        this.logger.warn(`${day} 게시 표식 실패: ${result.reason}`);
+      }
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`${day} 게시 표식 실패: ${reason}`);
     }
   }
 

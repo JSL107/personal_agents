@@ -492,6 +492,9 @@ node scripts/export-ai-cli-env.cjs ./ai-cli-env-export   # 기존 PC 에서 내�
 
 Hermes 가 매일 08:40 AI 꼭지와 개발 꼭지를 한 편(약 1분)으로 묶어 `~/Desktop/skill-jaengyi-reels/<날짜>/daily/` 에 `reel.mp4`·`caption.txt`·`script.json`·`story.mp4` 를 만든다. 한쪽 꼭지가 소재 없음이나 검사 탈락이면 남은 한 꼭지로 만들고, 그 밖의 실패는 그날 전체를 실패로 보고 DM 에 재실행 명령을 남긴다. 이대리는 `daily` 폴더만 보고 카드 한 장을 낸다. 카드의 ✅ 적용 한 번이 릴스와 「오늘의 한 줄」 스토리를 함께 승인하며, 스토리는 릴스 게시가 확인된 뒤 15분 안에 따로 올라간다. 스토리는 한 번 게시를 시도한 뒤에는 다시 올리지 않고, 그날 끝까지 확인되지 않으면 앱에서 확인하라는 알림을 보낸다. 시험 렌더는 `python3 scripts/hermes-skill-reels.py --worker --date <날짜> --out-root <임시 폴더> --no-notion --no-dm` 처럼 운영 폴더 밖에 만든다. 운영 폴더에 만든 `daily` 는 공개 게시 카드로 올라간다.
 
+게시가 확인되면 이대리가 `published.json` 을 남기고, 다음 제작 전에 Hermes 가 사용한 Notion 후보 행을 「게시완료」와 영상 링크로 갱신한다.
+표시를 마친 날짜 폴더는 30일이 지나면 휴지통으로 옮긴다. 예전 하루 2편 폴더는 대상이 아니다.
+
 ### 인스타 토큰 재동의
 
 인스타 토큰 재동의 경고가 오면 Meta 그래프 API 탐색기에서 새 사용자 토큰을 받고 장기 사용자 토큰으로 교환한다. 해당 장기 토큰으로 페이지 토큰을 다시 발급받아 `.env` 의 `META_PAGE_TOKEN` 을 교체하고 앱을 재시작한다. `instagram_content_publish` 권한과 `data_access_expires_at` 을 확인한다. 토큰은 로그나 채팅에 붙이지 않는다.
