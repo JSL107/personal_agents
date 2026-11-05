@@ -10,6 +10,7 @@ import { ExpirePreviewsUsecase } from './application/expire-previews.usecase';
 import { FindAllOpenPreviewsUsecase } from './application/find-all-open-previews.usecase';
 import { FindAnswerablePreviewUsecase } from './application/find-answerable-preview.usecase';
 import { FindLatestPendingPreviewUsecase } from './application/find-latest-pending-preview.usecase';
+import { FindPreviewByIdUsecase } from './application/find-preview-by-id.usecase';
 import { FindPreviewDayOutcomesUsecase } from './application/find-preview-day-outcomes.usecase';
 import { FindRecentAppliedPreviewsUsecase } from './application/find-recent-applied-previews.usecase';
 import { RecordPreviewThreadUsecase } from './application/record-preview-thread.usecase';
@@ -52,6 +53,7 @@ import {
     FindRecentAppliedPreviewsUsecase,
     FindPreviewDayOutcomesUsecase,
     CountPreviewsByPayloadUsecase,
+    FindPreviewByIdUsecase,
     UpdatePreviewPayloadUsecase,
     {
       provide: PREVIEW_ACTION_REPOSITORY_PORT,
@@ -103,6 +105,7 @@ import {
     FindRecentAppliedPreviewsUsecase,
     FindPreviewDayOutcomesUsecase,
     CountPreviewsByPayloadUsecase,
+    FindPreviewByIdUsecase,
     UpdatePreviewPayloadUsecase,
   ],
 })
