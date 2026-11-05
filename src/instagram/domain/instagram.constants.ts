@@ -1,0 +1,1 @@
+export const INSTAGRAM_CAPTION_MAX_CHARS = 2200;

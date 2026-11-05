@@ -57,6 +57,8 @@ export const AUTOPILOT_DELIVERY_ROUTE: Readonly<
   'docs-sync-audit': 'console',
   'preference-learning': 'slack',
   'pr-review-sweep': 'console',
+  'reels-publish-offer': 'slack',
+  'instagram-token-check': 'slack',
   'ai-cli-env-snapshot': 'console',
   'ai-cli-env-apply': 'slack',
   'portfolio-warmup': 'slack',

@@ -1564,3 +1564,27 @@ model PortfolioSyncCard {
 
   @@map("portfolio_sync_card")
 }
+
+model InstagramPost {
+  id                 String    @id @default(uuid())
+  reelKey            String    @unique @map("reel_key")
+  field              String
+  title              String
+  videoPath          String    @map("video_path")
+  videoSha256        String    @map("video_sha256")
+  caption            String    @db.Text
+  previewActionId    String    @map("preview_action_id")
+  containerId        String?   @map("container_id")
+  containerCreatedAt DateTime? @map("container_created_at")
+  uploadedAt         DateTime? @map("uploaded_at")
+  publishAttemptedAt DateTime? @map("publish_attempted_at")
+  mediaId            String?   @unique @map("media_id")
+  permalink          String?
+  status             String
+  lastError          String?   @map("last_error")
+  publishedAt        DateTime? @map("published_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  @@map("instagram_post")
+}

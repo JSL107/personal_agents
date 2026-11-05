@@ -2,7 +2,7 @@
 
 # 환경변수 카탈로그
 
-SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 194개.
+SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 200개.
 설명은 각 변수 주석의 첫 문장 발췌 — 상세는 app.config.ts 주석 참조. `.env.example` 동기는 `pnpm check:env`.
 
 ## 인프라 (앱 부팅 필수)
@@ -230,6 +230,12 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 
 | 키 | 필수 | 설명 |
 |---|---|---|
+| `INSTAGRAM_PUBLISH_ENABLED` | ❌ | 인스타 릴스 공개 게시 제안·토큰 점검. 명시적으로 true 일 때만 활성화한다. |
+| `META_APP_ID` | ✅ | 활성화 시 필수인 Meta 앱 ID. 토큰 재동의 점검에도 쓴다. |
+| `META_APP_SECRET` | ✅ | 활성화 시 필수인 Meta 앱 비밀값. 앱 토큰 구성에 쓴다. |
+| `META_PAGE_TOKEN` | ✅ | 활성화 시 필수인 페이지 토큰. Graph 게시·조회에 쓴다. |
+| `INSTAGRAM_USER_ID` | ✅ | 활성화 시 필수인 인스타 사용자 ID. |
+| `SKILL_REELS_OUT_ROOT` | ❌ | Hermes 릴스 출력 폴더. 비우면 ~/Desktop/skill-jaengyi-reels. |
 | `WATCH_SCRIPT_PATH` | ❌ | Video Watch 외부 분석 스크립트 경로. 미설정 또는 파일 없음이면 해당 워커만 비활성화된다. |
 | `PORTFOLIO_SITE_URL` | ❌ | — |
 | `PORTFOLIO_AUTOMATION_TOKEN` | ❌ | — |

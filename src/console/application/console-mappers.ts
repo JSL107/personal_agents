@@ -20,6 +20,7 @@ export const PREVIEW_KIND_TO_AGENT: Record<PreviewKind, AgentType | null> = {
   AI_CLI_ENV_APPLY: null,
   EVENING_BLOG_PUBLISH: AgentType.EVENING_RETRO,
   BLOG_GITHUB_PUBLISH: AgentType.BLOG_PUBLISH,
+  INSTAGRAM_REEL_PUBLISH: null,
   EVENING_CAREER_REFLECT: AgentType.EVENING_RETRO,
   // 제품 목표 선언·닫기 확인 — PO 대행이 받은 선언이다.
   PRODUCT_GOAL: AgentType.PO_SHADOW,

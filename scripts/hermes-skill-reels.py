@@ -2,8 +2,7 @@
 """스킬쟁이 인스타 릴스(1080x1920, 20~40초)를 하루 AI 1편 + 개발 1편 만들어 두는 job.
 
 Notion `개발·AI 트렌드` DB(아침신문노션 job 이 08:10 에 적재)의 당일 후보에서 분야별로 한 건을 골라
-대본 → 음성 → 화면 → mp4 까지 만들고, 결과 폴더와 캡션을 Slack DM 으로 알린다. 업로드는 사람이 앱에서 한다
-(앱에서 음악을 붙이기 위해서).
+대본 → 음성 → 화면 → mp4 까지 만들고, 결과 폴더와 캡션을 Slack DM 으로 알린다. 이대리 카드에서 게시를 승인한다.
 
 단계와 DB 상태:
 1. 후보 조회: `claude -p` + Notion MCP(조회 도구만). 같은 날 이미 「선정」된 행이 있으면 그 행으로 이어 만든다.
@@ -87,6 +86,12 @@ ARTICLE_TIMEOUT_SEC = 15
 BROWSER_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36"
 
 FIELDS = {"AI": "ai", "개발": "dev"}
+FIELD_TAGS = {"AI": "#AI뉴스", "개발": "#개발소식"}
+TOPIC_TAGS = (
+    "#인공지능", "#생성형AI", "#AI툴", "#AI활용", "#AI에이전트", "#AI트렌드", "#LLM", "#프롬프트", "#업무자동화",
+    "#챗GPT", "#클로드", "#제미나이", "#개발자", "#프로그래밍", "#코딩", "#오픈소스", "#깃허브", "#웹개발",
+    "#백엔드", "#프론트엔드", "#바이브코딩", "#코딩공부", "#IT뉴스", "#테크뉴스", "#신기술", "#개발자일상",
+)
 # 말하면서 하는 손짓 → (몸 이미지, 기울기). 렌더러가 이 몸 위에 입을 합성한다.
 GESTURES = {"idle": ("body-idle", 0), "point": ("body-point", 2), "wave": ("body-wave", -3), "think": ("body-think", -6)}
 # 말하기 직전의 짧은 반응 → (몸 이미지, 점프 세기, 기울기). 얼굴이 달라 입을 합성하지 않고 쉼 동안만 보인다.
@@ -332,9 +337,9 @@ SCRIPT_SCHEMA = {
             },
         },
         "caption": {"type": "string"},
-        "hashtags": {"type": "array", "items": {"type": "string"}},
+        "topic_tags": {"type": "array", "items": {"type": "string", "enum": list(TOPIC_TAGS)}},
     },
-    "required": ["headline", "subject", "lines", "caption", "hashtags"],
+    "required": ["headline", "subject", "lines", "caption", "topic_tags"],
 }
 
 
@@ -386,7 +391,7 @@ subject: 시청자가 알아보고 검색해 찾을 대상의 이름. 도구·�
   첫 두 줄 안의 subtitle 에 이 이름을 그대로 한 번 쓴다(speech 에는 한글 발음으로).
 headline: 화면 맨 위 제목({HEADLINE_MAX_CHARS}자 이하). 기능 이름보다 시청자가 겪는 변화로.
 caption: 원문에 근거한 3~5문장. 영상에서 뺀 세부와 주의점을 여기 정리해도 된다. 영어 고유명사·숫자는 원래 표기. 출처 줄과 해시태그는 붙이지 않는다.
-hashtags: #스킬쟁이 를 포함해 5~8개, 각각 #으로 시작, 띄어쓰기 없음.
+topic_tags: 아래 목록에서 영상 주제에 맞는 것 1~2개. {', '.join(TOPIC_TAGS)}
 모든 문자열에 줄표(—)와 이모지를 쓰지 않는다."""
 
 
@@ -404,7 +409,7 @@ def check_script(script: dict) -> str:
     headline = script.get("headline", "")
     if not headline or len(headline) > HEADLINE_MAX_CHARS:
         return f"제목 카드 길이가 맞지 않다: {headline!r}"
-    texts = [headline, script.get("caption", ""), *script.get("hashtags", [])]
+    texts = [headline, script.get("caption", ""), *script.get("topic_tags", [])]
     for line in lines:
         texts += [line.get("subtitle", ""), line.get("speech", ""), line.get("point", "")]
         if not line.get("subtitle") or not line.get("speech"):
@@ -427,9 +432,9 @@ def check_script(script: dict) -> str:
     speech_chars = sum(len(line["speech"]) for line in lines)
     if not SPEECH_CHARS[0] <= speech_chars <= SPEECH_CHARS[1]:
         return f"음성 분량 {speech_chars}자({SPEECH_CHARS[0]}~{SPEECH_CHARS[1]}자여야 함)"
-    hashtags = script.get("hashtags") or []
-    if not 3 <= len(hashtags) <= 10 or any(not tag.startswith("#") or " " in tag for tag in hashtags):
-        return "해시태그 형식이 맞지 않다"
+    topic_tags = script.get("topic_tags") or []
+    if not 1 <= len(topic_tags) <= 2 or any(tag not in TOPIC_TAGS for tag in topic_tags) or len(set(topic_tags)) != len(topic_tags):
+        return "주제 태그가 허용목록에 없거나 개수 또는 중복이 맞지 않다"
     subject = script.get("subject", "")
     if not subject or len(subject) > SUBJECT_MAX_CHARS:
         return f"대상 이름(subject)이 없거나 너무 길다: {subject!r}"
@@ -447,8 +452,6 @@ def check_script(script: dict) -> str:
         return "포인트 카드가 3장을 넘는다"
     if sum(line.get("react", "none") != "none" for line in lines) > 1:
         return "반응(surprise·thumbsup)은 한 번 이하여야 한다"
-    if "#스킬쟁이" not in hashtags:
-        return "#스킬쟁이 해시태그가 없다"
     return ""
 
 
@@ -713,8 +716,28 @@ def render(timeline: dict, voice: Path, row: dict, badge: str, headline: str, su
         raise RuntimeError(f"렌더 실패: {tail[0][:200]}")
 
 
-def caption_text(script: dict, row: dict) -> str:
-    return f"{script['caption'].strip()}\n\n출처: {row['media']} {row['source']}\n\n{' '.join(script['hashtags'])}\n"
+def subject_tag(subject: str) -> str:
+    cleaned = re.sub(r"[^0-9A-Za-z가-힣]", "", subject)
+    if not cleaned or len(cleaned) > 25:
+        return ""
+    return f"#{cleaned}"
+
+
+def tags_for(field: str, script: dict) -> list[str]:
+    tags = ["#스킬쟁이", FIELD_TAGS[field], subject_tag(script["subject"]), *script.get("topic_tags", [])]
+    result = []
+    seen = set()
+    for tag in tags:
+        normalized = tag.casefold()
+        if tag and normalized not in seen:
+            result.append(tag)
+            seen.add(normalized)
+    return result
+
+
+def caption_text(script: dict, row: dict, field: str) -> str:
+    tags = " ".join(tags_for(field, script))
+    return f"{script['caption'].strip()}\n\n출처: {row['media']} {row['source']}\n\n{tags}\n"
 
 
 def choose_topic(day: str, field: str) -> tuple[dict, dict]:
@@ -756,6 +779,8 @@ def make_reel(day: str, field: str, voice_dir: Path | None) -> dict:
     try:
         if (out_dir / "reel.mp4").exists() and (out_dir / "script.json").exists():
             saved = json.loads((out_dir / "script.json").read_text(encoding="utf-8"))
+            if not (out_dir / "caption.txt").exists():
+                (out_dir / "caption.txt").write_text(caption_text(saved["script"], saved["row"], field), encoding="utf-8")
             stage = "제작중 표시"
             set_status(saved["row"]["page_url"], "제작중", (out_dir / "reel.mp4").as_uri())
             done.write_text("{}", encoding="utf-8")
@@ -787,7 +812,7 @@ def make_reel(day: str, field: str, voice_dir: Path | None) -> dict:
                                                          "article_chars": len(row["article"]), "choice": choice, "script": script,
                                                          "engine": timeline["engine"], "duration": timeline["duration"]},
                                                         ensure_ascii=False, indent=2), encoding="utf-8")
-        (out_dir / "caption.txt").write_text(caption_text(script, row), encoding="utf-8")
+        (out_dir / "caption.txt").write_text(caption_text(script, row, field), encoding="utf-8")
         (out_dir / "reel.partial.mp4").rename(out_dir / "reel.mp4")
         stage = "제작중 표시"
         set_status(row["page_url"], "제작중", (out_dir / "reel.mp4").as_uri())
@@ -840,7 +865,7 @@ def report(day: str, results: list[dict], failures: list[str]) -> str:
             lines.append(f"· {result['field']}: {result['title']} ({result['duration']:.0f}초, {result['engine']})\n  {result['dir']}")
     lines += [f"· 실패 {failure}" for failure in failures]
     if results and not failures:
-        lines.append("폴더의 reel.mp4 를 앱에서 올리고 caption.txt 를 붙여 넣으면 됩니다.")
+        lines.append("이대리 카드의 ✅ 적용을 누르면 인스타에 게시됩니다.")
     return "\n".join(lines)
 
 
@@ -885,6 +910,13 @@ def spawn_worker() -> int:
 
 
 def self_check() -> None:
+    assert subject_tag("OpenAI") == "#OpenAI"
+    assert subject_tag("stack-diagram") == "#stackdiagram"
+    assert subject_tag("!!") == ""
+    assert subject_tag("a" * 26) == ""
+    assert subject_tag("a" * 25) == "#" + "a" * 25
+    assert tags_for("AI", {"subject": "클로드", "topic_tags": ["#클로드", "#AI툴"]}) == ["#스킬쟁이", "#AI뉴스", "#클로드", "#AI툴"]
+    assert tags_for("개발", {"subject": "llm", "topic_tags": ["#LLM"]}) == ["#스킬쟁이", "#개발소식", "#llm"]
     line = {"subtitle": "평가 땐 착하고 실전에선 다르다?", "speech": "가" * 40, "gesture": "idle", "react": "none",
             "point_kind": "none", "point": ""}
     lines = [{**line, "gesture": "wave", "react": "surprise"},
@@ -893,7 +925,7 @@ def self_check() -> None:
              {**line, "gesture": "think"}, line,
              {**line, "point_kind": "summary", "point": "평가 점수만 믿으면 안 돼요"}]
     lines[1] = {**lines[1], "subtitle": "OpenAI가 여섯 모델을 비교했어요"}
-    script = {"headline": "AI 안전 평가의 함정", "subject": "OpenAI", "lines": lines, "caption": "요약입니다.", "hashtags": ["#스킬쟁이", "#AI", "#에이전트"]}
+    script = {"headline": "AI 안전 평가의 함정", "subject": "OpenAI", "lines": lines, "caption": "요약입니다.", "topic_tags": ["#인공지능", "#AI툴"]}
     assert check_script(script) == "", check_script(script)
     assert check_script({**script, "caption": "A — B"}) == "줄표(—)가 들어갔다"
     assert "줄 수" in check_script({**script, "lines": lines[:5]})
@@ -901,7 +933,11 @@ def self_check() -> None:
     assert "한 줄 정리" in check_script({**script, "lines": lines[:-1] + [line]})
     assert "포인트 카드 지정" in check_script({**script, "lines": [{**line, "point_kind": "point"}] + lines[1:]})
     assert "모르는 동작" in check_script({**script, "lines": [{**line, "gesture": "dance"}] + lines[1:]})
-    assert check_script({**script, "hashtags": ["스킬쟁이"]}) == "해시태그 형식이 맞지 않다"
+    assert check_script({**script, "topic_tags": ["#없는태그"]}) != ""
+    assert check_script({**script, "topic_tags": ["#인공지능", "#AI툴", "#클로드"]}) != ""
+    assert check_script({**script, "topic_tags": ["#AI툴", "#AI툴"]}) != ""
+    assert check_script({**script, "topic_tags": ["#AI—툴"]}) == "줄표(—)가 들어갔다"
+    assert SCRIPT_SCHEMA["properties"]["topic_tags"]["items"]["enum"] == list(TOPIC_TAGS)
     assert "제목 카드" in check_script({**script, "headline": "가" * 30})
 
     timeline = build_timeline(lines, [2.0, 3.0, 3.0, 2.0, 2.0, 2.0])
@@ -981,7 +1017,11 @@ def self_check() -> None:
                 fail["render"] = False
             assert calls["choose"] == 1  # 두 번째 실행은 체크포인트로 같은 행을 이어 만들었다
             fail["status_done"] = False
+            reel_dir = Path(tmp) / "2026-11-04" / "ai"
+            (reel_dir / "caption.txt").unlink()
             result = make_reel("2026-11-04", "AI", None)
+            assert (reel_dir / "caption.txt").read_text(encoding="utf-8") == caption_text(script, reel_row, "AI")
+            assert (reel_dir / "done.json").exists()
             assert "상태 기록만 다시 함" in result["engine"] and calls["status"][-1] == "제작중"
             assert make_reel("2026-11-04", "AI", None)["skipped"] and calls["choose"] == 1
         finally:
@@ -992,8 +1032,9 @@ def self_check() -> None:
     row = {"page_url": "https://n/1", "title": "a", "summary": "s", "source": "https://x", "media": "X", "status": "후보",
            "article": "원문"}
     assert badge_text("2026-11-04", "AI") == "11월 4일 AI 소식"
+    assert "이대리 카드의 ✅ 적용을 누르면 인스타에 게시됩니다." in report("2026-11-04", [{"field": "AI", "skipped": True, "dir": "x"}], [])
     assert node_binary() == "node" or Path(node_binary()).is_file()
-    assert "#스킬쟁이 #AI" in caption_text(script, row) and "출처: X https://x" in caption_text(script, row)
+    assert "#스킬쟁이 #AI뉴스 #OpenAI #인공지능 #AI툴" in caption_text(script, row, "AI") and "출처: X https://x" in caption_text(script, row, "AI")
     assert "이전 대본의 문제" in build_script_prompt("AI", row, "한 문장", "수치가 틀림")
     assert "이전 대본" not in build_script_prompt("AI", row, "한 문장") and "한 문장(편집자가 정함): 한 문장" in build_script_prompt("AI", row, "한 문장")
     assert check_script({**script, "caption": "좋아요 \U0001F600"}) == "이모지나 금지 문자가 들어갔다"

@@ -169,6 +169,11 @@ export const DEFAULT_STOCK_MONITOR_US_TIMEZONE = 'America/New_York';
 export const DEFAULT_PR_REVIEW_SWEEP_CRON = '*/3 * * * *';
 export const DEFAULT_PR_REVIEW_SWEEP_TIMEZONE = 'Asia/Seoul';
 
+export const DEFAULT_REELS_PUBLISH_OFFER_CRON = '*/15 9-23 * * *';
+export const DEFAULT_REELS_PUBLISH_OFFER_TIMEZONE = 'Asia/Seoul';
+export const DEFAULT_INSTAGRAM_TOKEN_CHECK_CRON = '0 9 * * *';
+export const DEFAULT_INSTAGRAM_TOKEN_CHECK_TIMEZONE = 'Asia/Seoul';
+
 // 포트폴리오 사이트 발행 — 매일 23:00 KST.
 //
 // 저녁 회고(DEFAULT_DAILY_EVAL_CRON, 19:40)가 경력 프로필을 갱신하고 그 승인 카드가 눌릴

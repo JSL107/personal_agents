@@ -19,6 +19,8 @@ import {
 import { FindLatestPendingPreviewUsecase } from '../../preview-gate/application/find-latest-pending-preview.usecase';
 import { RecordPreviewThreadUsecase } from '../../preview-gate/application/record-preview-thread.usecase';
 import {
+  BUTTON_ONLY_APPROVAL_KINDS,
+  BUTTON_ONLY_APPROVAL_TEXT,
   PREVIEW_ANSWER_AMBIGUOUS_TEXT,
   PREVIEW_KIND,
   PreviewAction,
@@ -1067,6 +1069,10 @@ export class RouterMessageHandler implements SlackHandler {
     // 으로 흘려보낸다. "아니"/취소는 applier 불필요한 cancel 경로라 그대로 허용(포매터의 "취소하려면 아니" 유지).
     if (pending.kind === PREVIEW_KIND.CAREER_JD_GAP_BLOG && intent === 'yes') {
       return false;
+    }
+    if (BUTTON_ONLY_APPROVAL_KINDS.has(pending.kind) && intent === 'yes') {
+      await say({ thread_ts: threadTs, text: BUTTON_ONLY_APPROVAL_TEXT });
+      return true;
     }
     if (intent === 'yes') {
       await this.handlePreviewApply({

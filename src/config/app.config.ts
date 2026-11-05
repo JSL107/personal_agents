@@ -7,6 +7,7 @@ import {
 import {
   IsIn,
   IsInt,
+  IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
@@ -34,6 +35,52 @@ const normalizeOptionalNumberEnv = ({
 };
 
 export class EnvironmentVariables {
+  // 인스타 릴스 공개 게시 제안·토큰 점검. 명시적으로 true 일 때만 활성화한다.
+  @IsOptional()
+  @IsString()
+  INSTAGRAM_PUBLISH_ENABLED?: string;
+
+  // 활성화 시 필수인 Meta 앱 ID. 토큰 재동의 점검에도 쓴다.
+  @ValidateIf(
+    (environment: EnvironmentVariables) =>
+      environment.INSTAGRAM_PUBLISH_ENABLED === 'true',
+  )
+  @IsString()
+  @IsNotEmpty()
+  META_APP_ID?: string;
+
+  // 활성화 시 필수인 Meta 앱 비밀값. 앱 토큰 구성에 쓴다.
+  @ValidateIf(
+    (environment: EnvironmentVariables) =>
+      environment.INSTAGRAM_PUBLISH_ENABLED === 'true',
+  )
+  @IsString()
+  @IsNotEmpty()
+  META_APP_SECRET?: string;
+
+  // 활성화 시 필수인 페이지 토큰. Graph 게시·조회에 쓴다.
+  @ValidateIf(
+    (environment: EnvironmentVariables) =>
+      environment.INSTAGRAM_PUBLISH_ENABLED === 'true',
+  )
+  @IsString()
+  @IsNotEmpty()
+  META_PAGE_TOKEN?: string;
+
+  // 활성화 시 필수인 인스타 사용자 ID.
+  @ValidateIf(
+    (environment: EnvironmentVariables) =>
+      environment.INSTAGRAM_PUBLISH_ENABLED === 'true',
+  )
+  @IsString()
+  @IsNotEmpty()
+  INSTAGRAM_USER_ID?: string;
+
+  // Hermes 릴스 출력 폴더. 비우면 ~/Desktop/skill-jaengyi-reels.
+  @IsOptional()
+  @IsString()
+  SKILL_REELS_OUT_ROOT?: string;
+
   @IsNumber()
   @Min(1)
   @Max(65535)
