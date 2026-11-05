@@ -5,6 +5,7 @@ import { NotionTask } from '../../../notion/domain/notion.type';
 import { CloseFinishedNotionTasksUsecase } from '../../../schedule/application/close-finished-notion-tasks.usecase';
 import { ScheduleRepositoryPort } from '../../../schedule/domain/port/schedule.repository.port';
 import { ScheduleCollectionStateRepositoryPort } from '../../../schedule/domain/port/schedule-collection-state.repository.port';
+import { ScheduleActor } from '../../../schedule/domain/schedule.repository.type';
 import {
   ScheduleEventKind,
   ScheduleSource,
@@ -17,6 +18,8 @@ describe('ScheduleCollectNotionAutopilotTask', () => {
     findBySourceKey: jest.fn(),
     createCollected: jest.fn(),
     addEvent: jest.fn(),
+    findDetail: jest.fn(),
+    recordEventAndTransition: jest.fn(),
   };
   const stateRepository = { get: jest.fn(), markSucceeded: jest.fn() };
   const listActiveTasks = { execute: jest.fn() };
@@ -81,11 +84,13 @@ describe('ScheduleCollectNotionAutopilotTask', () => {
     expect(listActiveTasks.execute).not.toHaveBeenCalled();
   });
 
-  it('명시 하한·100건으로 조회하고 담당 업무를 OPEN으로 수집한다', async () => {
+  it('기간 하한 없이 전수 조회하고 담당 업무를 OPEN으로 수집한다', async () => {
+    // 직전 성공 시각이 있어도 하한으로 쓰지 않는다 — 오래된 진행 중 업무가 영영 빠졌다.
+    stateRepository.get.mockResolvedValue(new Date('2026-11-04T01:00:00Z'));
     await task.run();
     expect(listActiveTasks.execute).toHaveBeenCalledWith({
-      lastEditedSinceIsoDateTime: '2026-10-31T15:00:00.000Z',
-      perDatabaseLimit: 100,
+      skipStaleCutoff: true,
+      perDatabaseLimit: 1000,
       requireAllDatabases: true,
     });
     expect(repository.createCollected).toHaveBeenCalledWith(
@@ -146,5 +151,123 @@ describe('ScheduleCollectNotionAutopilotTask', () => {
     });
     await task.run();
     expect(repository.addEvent).not.toHaveBeenCalled();
+  });
+
+  const closedItem = {
+    id: 17,
+    title: '결제 업무',
+    dueDate: new Date('2026-11-10T00:00:00Z'),
+    status: ScheduleStatus.DONE,
+  };
+  const statusChangedBy = (actor: ScheduleActor) => ({
+    events: [
+      { id: 3, kind: ScheduleEventKind.NOTE, payload: { text: '메모' } },
+      {
+        id: 2,
+        kind: ScheduleEventKind.STATUS_CHANGED,
+        payload: { from: 'OPEN', to: 'DONE', actor },
+      },
+    ],
+  });
+
+  it('이대리가 닫은 업무가 Notion 에서 다시 진행 중이면 OPEN 으로 되살린다', async () => {
+    repository.findBySourceKey.mockResolvedValue(closedItem);
+    repository.findDetail.mockResolvedValue(
+      statusChangedBy(ScheduleActor.COLLECTOR),
+    );
+    await task.run();
+    expect(repository.recordEventAndTransition).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: expect.objectContaining({
+          scheduleItemId: 17,
+          kind: ScheduleEventKind.NOTE,
+          dedupeKey: 'notion-reopened:page:2026-11-04T02:00:00.000Z',
+        }),
+        slackUserId: 'UOWNER',
+        transitionFrom: [ScheduleStatus.DONE, ScheduleStatus.SKIPPED],
+        transitionTo: ScheduleStatus.OPEN,
+        actor: ScheduleActor.COLLECTOR,
+      }),
+    );
+    expect(repository.createCollected).not.toHaveBeenCalled();
+  });
+
+  it('사용자가 직접 끝낸 업무는 Notion 이 진행 중이어도 되살리지 않는다', async () => {
+    repository.findBySourceKey.mockResolvedValue(closedItem);
+    repository.findDetail.mockResolvedValue(
+      statusChangedBy(ScheduleActor.USER),
+    );
+    await task.run();
+    expect(repository.recordEventAndTransition).not.toHaveBeenCalled();
+  });
+
+  it('열려 있는 업무는 상태 이력을 조회하지 않는다', async () => {
+    repository.findBySourceKey.mockResolvedValue({
+      ...closedItem,
+      status: ScheduleStatus.OPEN,
+    });
+    await task.run();
+    expect(repository.findDetail).not.toHaveBeenCalled();
+    expect(repository.recordEventAndTransition).not.toHaveBeenCalled();
+  });
+
+  it('SKIPPED 로 닫힌 업무도 이대리가 닫았으면 되살린다', async () => {
+    repository.findBySourceKey.mockResolvedValue({
+      ...closedItem,
+      status: ScheduleStatus.SKIPPED,
+    });
+    repository.findDetail.mockResolvedValue(
+      statusChangedBy(ScheduleActor.COLLECTOR),
+    );
+    await task.run();
+    expect(repository.recordEventAndTransition).toHaveBeenCalledTimes(1);
+  });
+
+  it('마지막 상태 변경은 occurredAt 이 아니라 기록 순서로 고른다', async () => {
+    // 회차 시작 시각으로 찍힌 이대리의 닫힘(id 9)이 회차 중 사용자의 열기(id 8)보다 뒤에 기록된 경우.
+    repository.findBySourceKey.mockResolvedValue(closedItem);
+    repository.findDetail.mockResolvedValue({
+      events: [
+        {
+          id: 8,
+          kind: ScheduleEventKind.STATUS_CHANGED,
+          occurredAt: new Date('2026-11-04T02:00:05Z'),
+          payload: { from: 'DONE', to: 'OPEN', actor: ScheduleActor.USER },
+        },
+        {
+          id: 9,
+          kind: ScheduleEventKind.STATUS_CHANGED,
+          occurredAt: new Date('2026-11-04T02:00:00Z'),
+          payload: { from: 'OPEN', to: 'DONE', actor: ScheduleActor.COLLECTOR },
+        },
+      ],
+    });
+    await task.run();
+    expect(repository.recordEventAndTransition).toHaveBeenCalledTimes(1);
+  });
+
+  it('사용자가 나중에 직접 닫았으면 앞선 이대리 닫힘이 있어도 되살리지 않는다', async () => {
+    repository.findBySourceKey.mockResolvedValue(closedItem);
+    repository.findDetail.mockResolvedValue({
+      events: [
+        {
+          id: 12,
+          kind: ScheduleEventKind.STATUS_CHANGED,
+          payload: { from: 'OPEN', to: 'DONE', actor: ScheduleActor.USER },
+        },
+        {
+          id: 11,
+          kind: ScheduleEventKind.STATUS_CHANGED,
+          payload: { from: 'DONE', to: 'OPEN', actor: ScheduleActor.USER },
+        },
+        {
+          id: 10,
+          kind: ScheduleEventKind.STATUS_CHANGED,
+          payload: { from: 'OPEN', to: 'DONE', actor: ScheduleActor.COLLECTOR },
+        },
+      ],
+    });
+    await task.run();
+    expect(repository.recordEventAndTransition).not.toHaveBeenCalled();
   });
 });

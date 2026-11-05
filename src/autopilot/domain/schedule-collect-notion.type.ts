@@ -9,6 +9,13 @@ export interface NotionSourceEditInput {
   now: Date;
 }
 
+export interface NotionReopenInput {
+  found: ScheduleItemRecord;
+  notionTask: NotionTask;
+  ownerId: string;
+  now: Date;
+}
+
 export interface ReadListInput {
   key: string;
   fallback: string[];

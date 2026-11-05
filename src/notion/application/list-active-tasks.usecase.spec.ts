@@ -100,4 +100,15 @@ describe('ListActiveTasksUsecase', () => {
     expect(diffDays).toBeGreaterThan(6);
     expect(diffDays).toBeLessThan(8);
   });
+
+  it('skipStaleCutoff 면 기간 필터 없이 넘기고 플래그는 어댑터로 보내지 않는다', async () => {
+    const client = buildClientMock([]);
+    const usecase = new ListActiveTasksUsecase(client, buildConfig({}));
+
+    await usecase.execute({ skipStaleCutoff: true, perDatabaseLimit: 1000 });
+
+    expect(client.listActiveTasks).toHaveBeenCalledWith({
+      perDatabaseLimit: 1000,
+    });
+  });
 });
