@@ -1175,7 +1175,7 @@ describe('EveningRetroPublishTask', () => {
     // 늦게 회수된 「07-03 마감」이 다음 날 돌면 저장소 창에 07-04 아침 실행도 들어온다 — 최신순으로
     // 먼저 오는 그 실행이 아니라 회차 날짜에 끝난 실행에 판정을 묻는다.
     it('(s-5b) 다음 날 아침 PM 실행이 함께 조회돼도 회차 날짜의 실행만 판정한다', async () => {
-      const { task } = makeTask({
+      const { task, agentRunService } = makeTask({
         prs: [PR_ITEM],
         worklogRuns: [],
         dailyEvalRuns: [],
@@ -1205,6 +1205,13 @@ describe('EveningRetroPublishTask', () => {
           quote: '감사로그 요구사항 작성',
         },
       ]);
+      // 수동 /today 가 limit 을 먼저 채우지 않도록 아침 브리핑 실행만 조회 단계에서 고른다.
+      expect(agentRunService.findRecentSucceededRuns).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agentType: AgentType.PM,
+          triggerType: TriggerType.MORNING_BRIEFING_CRON,
+        }),
+      );
     });
 
     it('(s-6) 아침 브리핑 PM 이 없던 날(실패·수동만)은 계획 판정을 내지 않는다', async () => {

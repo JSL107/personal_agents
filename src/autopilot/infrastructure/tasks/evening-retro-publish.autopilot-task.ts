@@ -637,9 +637,10 @@ export class EveningRetroPublishTask implements AutopilotTask {
       const runs = await this.agentRunService.findRecentSucceededRuns({
         agentType: AgentType.PM,
         slackUserId,
+        // 아침 브리핑 실행만 조회 단계에서 고른다 — 수동 /today 가 limit 을 먼저 채워 회차 날짜의
+        // 아침 실행이 밀려나지 않게. 하루 한 번이 정상이지만 stalled 재실행으로 여러 번 성공할 수 있어 넉넉히 둔다.
+        triggerType: TriggerType.MORNING_BRIEFING_CRON,
         sinceDays,
-        // 수동 /today 가 같은 날 여러 번 돌아도 아침 cron 실행이 창 밖으로 밀리지 않게 넉넉히 읽는다.
-        // ponytail: 하루 20회를 넘기면 다시 놓친다 — 그때는 저장소 조회에 triggerType 조건을 넣는다.
         limit: 20,
       });
       const found = runs.find(
