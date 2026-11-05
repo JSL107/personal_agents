@@ -49,6 +49,7 @@ const DEFAULT_OUT_ROOT = join(homedir(), 'Desktop', 'skill-jaengyi-reels');
 const KST_OFFSET_MS = 9 * 60 * 60_000;
 // 이 task 의 마지막 슬롯(playbook `*/15 9-23`). 이때도 확정되지 않은 스토리 게시는 사람에게 넘긴다.
 const LAST_SLOT_MINUTES = 23 * 60 + 45;
+const MARKER_LOOKBACK_DAYS = 7;
 const FIELD_LABELS: Record<ReelField, string> = {
   [InstagramPostField.AI]: 'AI',
   [InstagramPostField.DEV]: '개발',
@@ -115,7 +116,11 @@ export class ReelsPublishOfferAutopilotTask implements AutopilotTask {
     const stories = await Promise.all(
       days.map((day) => this.continueStory(day)),
     );
-    for (const day of days) {
+    // 표식은 최근 일주일을 본다. 이대리가 며칠 꺼져 있었어도 켜지면 빠진 날의 표식을 채운다(2026-11-05 codex review).
+    for (const day of recentKstDates({
+      day: firedAtKst,
+      count: MARKER_LOOKBACK_DAYS,
+    })) {
       await this.writeMarker(day);
     }
 
@@ -244,6 +249,21 @@ const describeStory = ({
     )
     .exhaustive();
   return step;
+};
+
+// day 를 포함해 거꾸로 count 일. 오래된 날짜가 앞에 온다.
+const recentKstDates = ({
+  day,
+  count,
+}: {
+  day: string;
+  count: number;
+}): string[] => {
+  const dates = [day];
+  while (dates.length < count) {
+    dates.unshift(previousKstDate(dates[0]));
+  }
+  return dates;
 };
 
 const previousKstDate = (day: string): string => {

@@ -942,7 +942,8 @@ def mark_published(out_root: Path, notion: bool) -> list[str]:
 
 def trash_old_reels(out_root: Path, today: str, keep_days: int = 30,
                     trash_dir: Path = REAL_HOME / ".Trash") -> list[str]:
-    """게시완료 표시까지 끝난 오래된 daily 날짜 폴더를 휴지통으로 옮긴다."""
+    """게시완료 표시까지 끝난 오래된 daily 폴더를 휴지통으로 옮긴다. 같은 날짜의 예전 ai·dev 폴더는 건드리지 않고,
+    daily 를 옮긴 뒤 날짜 폴더가 비었을 때만 그 폴더를 지운다(2026-11-05 codex review)."""
     cutoff = datetime.strptime(today, "%Y-%m-%d").date() - timedelta(days=keep_days)
     lines = []
     for folder in sorted(out_root.iterdir()) if out_root.exists() else []:
@@ -957,12 +958,14 @@ def trash_old_reels(out_root: Path, today: str, keep_days: int = 30,
                     or not (daily / "published.json").is_file() or not (daily / "notion-done.json").is_file()):
                 continue
             trash_dir.mkdir(parents=True, exist_ok=True)
-            target = trash_dir / f"skill-jaengyi-reels-{folder.name}"
+            target = trash_dir / f"skill-jaengyi-reels-{folder.name}-daily"
             suffix = 1
             while target.exists() or target.is_symlink():
-                target = trash_dir / f"skill-jaengyi-reels-{folder.name}-{suffix}"
+                target = trash_dir / f"skill-jaengyi-reels-{folder.name}-daily-{suffix}"
                 suffix += 1
-            shutil.move(str(folder), str(target))
+            shutil.move(str(daily), str(target))
+            if not any(folder.iterdir()):
+                folder.rmdir()
             lines.append(f"· 휴지통으로 옮김 {folder.name}")
         except Exception as error:  # noqa: BLE001 — 다른 날짜의 정리를 계속한다
             lines.append(f"· 정리 실패 {folder.name}: {error}")
@@ -1179,7 +1182,8 @@ def worker(day: str, voice_dir: Path | None, out_root: Path = OUT_ROOT, notion: 
     except Exception as error:  # noqa: BLE001 — 정리 오류가 당일 제작을 막지 않는다
         housekeeping.append(f"· 게시완료 표시 실패: {error}")
     try:
-        housekeeping.extend(trash_old_reels(out_root, day))
+        # 기준일은 실제 오늘이다. --date 로 미래 날짜를 줘도 보존 기간이 줄지 않게 한다(2026-11-05 codex review).
+        housekeeping.extend(trash_old_reels(out_root, datetime.now(KST).strftime("%Y-%m-%d")))
     except Exception as error:  # noqa: BLE001 — 정리 오류가 당일 제작을 막지 않는다
         housekeeping.append(f"· 정리 실패: {error}")
     try:
@@ -1511,9 +1515,16 @@ def self_check() -> None:
         (root / "2026-10-03" / "dev").mkdir()
         (root / "2026-10-02").symlink_to(first.parent, target_is_directory=True)
         trash.mkdir()
-        (trash / "skill-jaengyi-reels-2026-10-06").mkdir()
-        assert trash_old_reels(root, "2026-11-05", trash_dir=trash) == ["· 휴지통으로 옮김 2026-10-06"]
-        assert (trash / "skill-jaengyi-reels-2026-10-06-1" / "daily" / "notion-done.json").exists()
+        (trash / "skill-jaengyi-reels-2026-10-06-daily").mkdir()
+        mixed = root / "2026-10-01"
+        (mixed / "daily").mkdir(parents=True)
+        write_json_atomic(mixed / "daily" / "published.json", {"permalink": "https://instagram.test/reel/5"})
+        write_json_atomic(mixed / "daily" / "notion-done.json", {"pages": []})
+        (mixed / "ai").mkdir()
+        assert trash_old_reels(root, "2026-11-05", trash_dir=trash) == ["· 휴지통으로 옮김 2026-10-01", "· 휴지통으로 옮김 2026-10-06"]
+        assert (trash / "skill-jaengyi-reels-2026-10-06-daily-1" / "notion-done.json").exists()
+        assert not (root / "2026-10-06").exists()  # daily 만 있던 날짜 폴더는 비어서 지운다
+        assert (mixed / "ai").exists() and not (mixed / "daily").exists()  # 같은 날의 예전 ai 폴더는 남긴다
         assert recent.exists() and only_marker.exists() and failed.exists() and (root / "2026-10-03" / "ai").exists()
         assert (root / "2026-10-02").is_symlink()
 
