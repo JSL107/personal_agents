@@ -428,6 +428,8 @@ describe('EveningRetroPublishTask', () => {
     expect(githubClient.listAuthorMergedPullRequestsSince).toHaveBeenCalledWith(
       expect.objectContaining({
         sinceIsoDate: '2026-07-02T15:00:00.000Z',
+        // 끝도 회차 날짜로 자른다 — 다음 날 머지분이 섞이거나 건수 한도를 먼저 채우지 않게.
+        untilIsoDate: '2026-07-03T15:00:00.000Z',
       }),
     );
   });
