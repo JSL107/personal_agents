@@ -49,6 +49,12 @@ export class InstagramReelPublishApplier implements PreviewApplier {
     preview: PreviewAction,
     progress?: ApplyProgress,
   ): Promise<ApplyResult> {
+    if (!this.graph.isConfigured()) {
+      throw this.failure(
+        InstagramErrorCode.PUBLISH_DISABLED,
+        '인스타 게시가 꺼져 있습니다(INSTAGRAM_PUBLISH_ENABLED)',
+      );
+    }
     let post: InstagramPost | undefined;
     try {
       const payload = parseReelPublishPayload(preview.payload);
@@ -101,7 +107,7 @@ export class InstagramReelPublishApplier implements PreviewApplier {
   ): Promise<ApplyResult> {
     let post = initial;
     if (post.mediaId) {
-      return this.finish(post, payload, progress);
+      return this.finishConfirmed(post, payload, progress);
     }
     if (post.publishAttemptedAt && !post.containerId) {
       throw this.failure(
@@ -218,11 +224,36 @@ export class InstagramReelPublishApplier implements PreviewApplier {
         throw settleError;
       }
     }
-    post = await this.repository.update(post.id, {
-      mediaId: published.mediaId,
+    try {
+      post = await this.repository.update(post.id, {
+        mediaId: published.mediaId,
+      });
+      await progress?.record('publish');
+      return await this.finish(post, payload, progress, published.configIssue);
+    } catch (error) {
+      throw this.confirmedFailure(error);
+    }
+  }
+
+  private async finishConfirmed(
+    post: InstagramPost,
+    payload: ReelPublishPayload,
+    progress?: ApplyProgress,
+  ): Promise<ApplyResult> {
+    try {
+      return await this.finish(post, payload, progress);
+    } catch (error) {
+      throw this.confirmedFailure(error);
+    }
+  }
+
+  private confirmedFailure(error: unknown): InstagramException {
+    return new InstagramException({
+      code: InstagramErrorCode.PUBLISH_UNCONFIRMED,
+      message:
+        '인스타에는 올라갔지만 기록을 마치지 못했습니다. 잠시 뒤 다시 누르면 올라간 게시물을 찾아 기록합니다',
+      cause: error,
     });
-    await progress?.record('publish');
-    return this.finish(post, payload, progress, published.configIssue);
   }
 
   private async checkQuota(): Promise<void> {
@@ -276,9 +307,12 @@ export class InstagramReelPublishApplier implements PreviewApplier {
     const media = await this.graph.listRecentMedia(this.recentMediaLimit);
     const matches = media.filter(
       (item) =>
-        item.caption?.trim() === payload.caption.trim() &&
+        item.caption !== null &&
+        this.normalizeCaption(item.caption) ===
+          this.normalizeCaption(payload.caption) &&
         post.containerCreatedAt !== null &&
-        new Date(item.timestamp).getTime() >= post.containerCreatedAt.getTime(),
+        new Date(item.timestamp).getTime() >=
+          Math.floor(post.containerCreatedAt.getTime() / 1000) * 1000,
     );
     if (matches.length > 1) {
       throw this.failure(
@@ -287,6 +321,16 @@ export class InstagramReelPublishApplier implements PreviewApplier {
       );
     }
     return matches[0] ?? null;
+  }
+
+  private normalizeCaption(caption: string): string {
+    const normalized = caption
+      .normalize('NFC')
+      .replace(/\r\n/g, '\n')
+      .replace(/[ \t]+$/gm, '')
+      .replace(/[ \t]+/g, ' ')
+      .trim();
+    return normalized;
   }
 
   private async finish(

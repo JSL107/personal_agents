@@ -80,7 +80,7 @@ describe('ReelsPublishOfferAutopilotTask', () => {
         videoSha256: expect.any(String),
       }),
     ]);
-    expect(result.guardKeySuffix).toBe(`${DAY}/ai,${DAY}/dev`);
+    expect(result.guardKeySuffix).toBe(`card:${DAY}/ai,card:${DAY}/dev`);
     expect(result.previews?.[1].previewText.split('\n')[0]).toBe(
       '📮 *인스타 공개 게시* · 「개발 소식」 · @skill.jaengyi 에 바로 올라갑니다',
     );
@@ -94,7 +94,7 @@ describe('ReelsPublishOfferAutopilotTask', () => {
     );
     const result = await makeTask().run(CONTEXT);
     expect(result.previews).toHaveLength(1);
-    expect(result.guardKeySuffix).toBe(`${DAY}/dev`);
+    expect(result.guardKeySuffix).toBe(`card:${DAY}/dev`);
   });
 
   it('원장 행이 있으면 제외하고 전부 제외되면 skip 한다', async () => {
@@ -110,6 +110,17 @@ describe('ReelsPublishOfferAutopilotTask', () => {
     expect(result.summaryText).toContain(
       `게시 불가: ${DAY}/ai 캡션 2201자(2,200자 초과)`,
     );
-    expect(result.guardKeySuffix).toBe(`${DAY}/ai`);
+    expect(result.guardKeySuffix).toBe(`long:${DAY}/ai`);
+  });
+
+  it('같은 릴스가 게시 불가에서 승인 가능으로 바뀌면 발송 키가 달라진다', async () => {
+    await addReel('ai', 'x'.repeat(2201));
+    const tooLongResult = await makeTask().run(CONTEXT);
+
+    await writeFile(join(root, DAY, 'ai', 'caption.txt'), '게시 가능 캡션');
+    const readyResult = await makeTask().run(CONTEXT);
+
+    expect(tooLongResult.guardKeySuffix).toBe(`long:${DAY}/ai`);
+    expect(readyResult.guardKeySuffix).toBe(`card:${DAY}/ai`);
   });
 });

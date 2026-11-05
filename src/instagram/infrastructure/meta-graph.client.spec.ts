@@ -67,7 +67,7 @@ describe('MetaGraphClient', () => {
       json: async () => ({ success: true }),
     });
     await client.uploadVideo(
-      'https://upload.example/media',
+      'https://rupload.facebook.com/media',
       Buffer.from('video'),
     );
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
@@ -82,6 +82,27 @@ describe('MetaGraphClient', () => {
     expect(init.signal).toBeDefined();
   });
 
+  it('업로드 주소가 Meta 호스트가 아니면 요청하지 않는다', async () => {
+    await expect(
+      client.uploadVideo('https://upload.example/media', Buffer.from('video')),
+    ).rejects.toMatchObject({
+      errorCode: InstagramErrorCode.GRAPH_REQUEST_FAILED,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('업로드 주소가 HTTP이면 요청하지 않는다', async () => {
+    await expect(
+      client.uploadVideo(
+        'http://rupload.facebook.com/media',
+        Buffer.from('video'),
+      ),
+    ).rejects.toMatchObject({
+      errorCode: InstagramErrorCode.GRAPH_REQUEST_FAILED,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('upload failure includes sanitized debug_info.message', async () => {
     fetchMock.mockResolvedValue({
       ok: true,
@@ -94,7 +115,10 @@ describe('MetaGraphClient', () => {
       }),
     });
     await expect(
-      client.uploadVideo('https://upload.example/media', Buffer.from('video')),
+      client.uploadVideo(
+        'https://rupload.facebook.com/media',
+        Buffer.from('video'),
+      ),
     ).rejects.toMatchObject({
       errorCode: InstagramErrorCode.GRAPH_REQUEST_FAILED,
       message: expect.stringContaining('upload failed [REDACTED] at [URL]'),
@@ -173,5 +197,31 @@ describe('MetaGraphClient', () => {
           : config[key as keyof typeof config],
     } as ConfigService);
     expect(disabled.isConfigured()).toBe(false);
+  });
+
+  it('무효 토큰 응답에 나머지 필드가 없어도 무효로 반환한다', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: { is_valid: false } }),
+    });
+    await expect(client.debugPageToken()).resolves.toEqual({
+      isValid: false,
+      expiresAt: 0,
+      dataAccessExpiresAt: 0,
+      scopes: [],
+    });
+  });
+
+  it('토큰 점검에서 Graph 오류 190이면 앱 자격 증명 오류로 안내한다', async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      json: async () => ({
+        error: { code: 190, message: 'Invalid app token' },
+      }),
+    });
+    await expect(client.debugPageToken()).rejects.toMatchObject({
+      errorCode: InstagramErrorCode.GRAPH_REQUEST_FAILED,
+      message: expect.stringContaining('META_APP_ID/META_APP_SECRET 확인'),
+    });
   });
 });

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { access, readFile } from 'node:fs/promises';
+import { lstat, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { Logger } from '@nestjs/common';
@@ -36,7 +36,17 @@ export const scanReadyReels = async ({
     const reelDir = join(outRoot, day, field);
 
     try {
-      await access(join(reelDir, 'done.json'));
+      for (const fileName of [
+        'done.json',
+        'reel.mp4',
+        'caption.txt',
+        'script.json',
+      ]) {
+        const fileStat = await lstat(join(reelDir, fileName));
+        if (fileStat.isSymbolicLink()) {
+          throw new Error(`${fileName} 심볼릭 링크는 허용하지 않습니다`);
+        }
+      }
       const [video, captionText, scriptText] = await Promise.all([
         readFile(join(reelDir, 'reel.mp4')),
         readFile(join(reelDir, 'caption.txt'), 'utf8'),

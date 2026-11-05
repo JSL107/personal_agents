@@ -85,6 +85,18 @@ export class MetaGraphClient implements MetaGraphPort {
   }
 
   async uploadVideo(uploadUri: string, video: Buffer): Promise<void> {
+    let uploadUrl: URL;
+    try {
+      uploadUrl = new URL(uploadUri);
+    } catch {
+      throw this.failure('Meta 영상 업로드 주소가 올바르지 않습니다.');
+    }
+    if (
+      uploadUrl.protocol !== 'https:' ||
+      uploadUrl.host !== 'rupload.facebook.com'
+    ) {
+      throw this.failure('Meta 영상 업로드 주소가 올바르지 않습니다.');
+    }
     const body = await this.request(uploadUri, {
       method: 'POST',
       headers: {
@@ -184,17 +196,38 @@ export class MetaGraphClient implements MetaGraphPort {
 
   async debugPageToken(): Promise<PageTokenDebug> {
     const appToken = `${this.configService.get<string>('META_APP_ID')}|${this.configService.get<string>('META_APP_SECRET')}`;
-    const body = await this.graphGet(
-      'debug_token',
-      { input_token: this.pageToken },
-      appToken,
-    );
+    let body: GraphResponse;
+    try {
+      body = await this.graphGet(
+        'debug_token',
+        { input_token: this.pageToken },
+        appToken,
+      );
+    } catch (error) {
+      if (
+        error instanceof InstagramException &&
+        error.instagramErrorCode === InstagramErrorCode.TOKEN_INVALID
+      ) {
+        throw this.failure(
+          `Meta 앱 토큰 오류: META_APP_ID/META_APP_SECRET 확인. ${error.message}`,
+        );
+      }
+      throw error;
+    }
     const data = body.data as {
       is_valid: boolean;
       expires_at: number;
       data_access_expires_at: number;
       scopes: string[];
     };
+    if (data?.is_valid === false) {
+      return {
+        isValid: false,
+        expiresAt: 0,
+        dataAccessExpiresAt: 0,
+        scopes: [],
+      };
+    }
     if (
       !data ||
       typeof data.is_valid !== 'boolean' ||

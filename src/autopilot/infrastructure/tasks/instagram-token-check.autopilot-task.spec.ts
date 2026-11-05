@@ -44,7 +44,12 @@ describe('InstagramTokenCheckAutopilotTask', () => {
 
   it('무효 토큰이면 게시 중단을 안내한다', async () => {
     const task = new InstagramTokenCheckAutopilotTask(
-      buildGraph({ isValid: false }),
+      buildGraph({
+        isValid: false,
+        expiresAt: 0,
+        dataAccessExpiresAt: 0,
+        scopes: [],
+      }),
     );
     await expect(task.run(context)).resolves.toMatchObject({
       skip: false,
@@ -84,6 +89,17 @@ describe('InstagramTokenCheckAutopilotTask', () => {
     const failure = new InstagramException({
       code: InstagramErrorCode.GRAPH_REQUEST_FAILED,
       message: 'Meta 요청 실패',
+    });
+    graph.debugPageToken = jest.fn().mockRejectedValue(failure);
+    const task = new InstagramTokenCheckAutopilotTask(graph);
+    await expect(task.run(context)).rejects.toBe(failure);
+  });
+
+  it('앱 토큰 오류는 페이지 토큰 재동의를 안내하지 않는다', async () => {
+    const graph = buildGraph();
+    const failure = new InstagramException({
+      code: InstagramErrorCode.GRAPH_REQUEST_FAILED,
+      message: 'META_APP_ID/META_APP_SECRET 확인',
     });
     graph.debugPageToken = jest.fn().mockRejectedValue(failure);
     const task = new InstagramTokenCheckAutopilotTask(graph);

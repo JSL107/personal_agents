@@ -1,7 +1,16 @@
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+
+import { Logger } from '@nestjs/common';
 
 import { scanReadyReels } from './scan-ready-reels';
 
@@ -92,4 +101,28 @@ describe('scanReadyReels', () => {
       { reelKey: `${day}/ai`, captionChars: 2201 },
     ]);
   });
+
+  it.each(['done.json', 'reel.mp4', 'caption.txt', 'script.json'])(
+    '%s 파일이 심볼릭 링크이면 해당 편을 건너뛰고 경고한다',
+    async (fileName) => {
+      await writeReel('ai');
+      const reelDir = join(outRoot, day, 'ai');
+      const filePath = join(reelDir, fileName);
+      const targetPath = join(reelDir, `${fileName}.target`);
+      await rename(filePath, targetPath);
+      await symlink(targetPath, filePath);
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+
+      try {
+        const result = await scanReadyReels({ outRoot, day });
+
+        expect(result).toEqual({ ready: [], tooLong: [] });
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining(`${day}/ai 릴스 파일을 건너뜁니다`),
+        );
+      } finally {
+        warn.mockRestore();
+      }
+    },
+  );
 });

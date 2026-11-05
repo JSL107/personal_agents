@@ -84,9 +84,9 @@ export class ReelsPublishOfferAutopilotTask implements AutopilotTask {
     }
     const keys = [
       ...previews.map(
-        (preview) => (preview.payload as ReelPublishPayload).reelKey,
+        (preview) => `card:${(preview.payload as ReelPublishPayload).reelKey}`,
       ),
-      ...scanned.tooLong.map((item) => item.reelKey),
+      ...scanned.tooLong.map((item) => `long:${item.reelKey}`),
     ];
     keys.sort();
     return {
