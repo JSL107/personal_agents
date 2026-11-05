@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { DomainStatus } from '../../../common/exception/domain-status.enum';
+import { utcMidnightOf } from '../../../common/util/kst-date.util';
 import { ApplyResult } from '../../../preview-gate/domain/apply-result.type';
 import { PreviewApplier } from '../../../preview-gate/domain/port/preview-applier.port';
 import {
@@ -77,10 +78,7 @@ export class ProductGoalApplier implements PreviewApplier {
         why: draft.why,
         successCriterion: draft.successCriterion,
         keywords: draft.keywords,
-        dueDate:
-          draft.dueDate === null
-            ? null
-            : new Date(`${draft.dueDate}T00:00:00Z`),
+        dueDate: draft.dueDate === null ? null : utcMidnightOf(draft.dueDate),
       },
       (activeGoals) => findGoalDeclarationProblem({ draft, activeGoals }),
     );

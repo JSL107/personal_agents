@@ -2,7 +2,10 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 
-import { getTodayKstDate } from '../src/common/util/kst-date.util';
+import {
+  getTodayKstDate,
+  utcMidnightOf,
+} from '../src/common/util/kst-date.util';
 import { PrismaModule } from '../src/prisma/prisma.module';
 import { BackfillInvestorFlowUsecase } from '../src/screener/application/backfill-investor-flow.usecase';
 import { BackfillUniversePricesUsecase } from '../src/screener/application/backfill-universe-prices.usecase';
@@ -103,7 +106,7 @@ const main = async (): Promise<void> => {
       const result = await application
         .get(BuildScreeningScorecardUsecase)
         // autopilot 경로가 firedAtKst 를 쓰는 것과 같은 달력 날짜를 쓴다.
-        .execute({ asOf: new Date(`${getTodayKstDate()}T00:00:00.000Z`) });
+        .execute({ asOf: utcMidnightOf(getTodayKstDate()) });
       console.log(formatScreeningScorecard(result));
       const detail = formatScreeningScorecardDetail(result);
       if (detail !== null) {

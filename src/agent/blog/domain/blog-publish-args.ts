@@ -11,6 +11,7 @@
  * 묻힌다"는 원래 판단은 자동 경로에서 그대로 유효하고, 사람이 콕 집는 발행에서만 연다.
  */
 import { DomainStatus } from '../../../common/exception/domain-status.enum';
+import { utcMidnightOf } from '../../../common/util/kst-date.util';
 import { BlogException } from './blog.exception';
 import { BlogErrorCode } from './blog-error-code.enum';
 
@@ -50,7 +51,7 @@ const toPublishedAt = (value: string): string => {
   if (!ISO_DATE_PATTERN.test(value)) {
     throw invalidDate(`발행 날짜는 YYYY-MM-DD 형식이어야 합니다: '${value}'`);
   }
-  const parsed = new Date(`${value}T00:00:00.000Z`);
+  const parsed = utcMidnightOf(value);
   if (Number.isNaN(parsed.getTime())) {
     throw invalidDate(`발행 날짜를 해석하지 못했습니다: '${value}'`);
   }

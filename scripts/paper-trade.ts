@@ -5,6 +5,7 @@ import { NestFactory } from '@nestjs/core';
 import { GeneratePaperRecommendationUsecase } from '../src/agent/paper-recommend/application/generate-paper-recommendation.usecase';
 import { PaperRecommendModule } from '../src/agent/paper-recommend/paper-recommend.module';
 import { TriggerType } from '../src/agent-run/domain/agent-run.type';
+import { utcMidnightOf } from '../src/common/util/kst-date.util';
 import { ApplyCorporateActionUsecase } from '../src/paper-trading/application/apply-corporate-action.usecase';
 import { ApplyExitBandUsecase } from '../src/paper-trading/application/apply-exit-band.usecase';
 import { EvaluatePaperAccountUsecase } from '../src/paper-trading/application/evaluate-paper-account.usecase';
@@ -181,7 +182,7 @@ const parseUtcDateBoundary = (value: string): Date => {
   if (!/^\d{4}-\d{2}-\d{2}$/u.test(value)) {
     throw new Error(`--at 날짜 형식이 올바르지 않습니다: ${value}`);
   }
-  const date = new Date(`${value}T00:00:00.000Z`);
+  const date = utcMidnightOf(value);
   if (date.toISOString().slice(0, 10) !== value) {
     throw new Error(`--at 날짜 형식이 올바르지 않습니다: ${value}`);
   }
