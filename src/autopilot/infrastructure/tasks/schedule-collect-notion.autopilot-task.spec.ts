@@ -90,7 +90,7 @@ describe('ScheduleCollectNotionAutopilotTask', () => {
     await task.run();
     expect(listActiveTasks.execute).toHaveBeenCalledWith({
       skipStaleCutoff: true,
-      perDatabaseLimit: 1000,
+      perDatabaseLimit: 5000,
       requireAllDatabases: true,
     });
     expect(repository.createCollected).toHaveBeenCalledWith(
