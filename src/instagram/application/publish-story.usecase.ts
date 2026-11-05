@@ -27,6 +27,8 @@ export const STORY_UNCONFIRMED_PREFIX = 'UNCONFIRMED:';
 
 export type StoryPublishOutcome =
   | { kind: 'locked' }
+  // 이전 실행에서 이미 게시 완료·확인 필요로 끝났다. 알림은 상태가 바뀐 실행에서 한 번만 낸다.
+  | { kind: 'done' }
   | { kind: 'pending'; reason: string }
   | { kind: 'published' }
   | { kind: 'unconfirmed' }
@@ -97,11 +99,11 @@ export class PublishStoryUsecase {
       caption: '',
       previewActionId: reelPreviewId,
     });
-    if (claimed.status === InstagramPostStatus.PUBLISHED) {
-      return { kind: 'published' };
-    }
-    if (claimed.lastError?.startsWith(STORY_UNCONFIRMED_PREFIX)) {
-      return { kind: 'unconfirmed' };
+    if (
+      claimed.status === InstagramPostStatus.PUBLISHED ||
+      claimed.lastError?.startsWith(STORY_UNCONFIRMED_PREFIX)
+    ) {
+      return { kind: 'done' };
     }
     if (claimed.publishAttemptedAt) {
       return await this.settleAttempt({ post: claimed, isLastSlot });
@@ -155,22 +157,32 @@ export class PublishStoryUsecase {
     post: InstagramPost;
     isLastSlot: boolean;
   }): Promise<StoryPublishOutcome> {
-    const state = await this.graph.getContainerStatus(requireContainer(post));
-    if (state.statusCode === ContainerStatusCode.PUBLISHED) {
+    let statusCode: string;
+    try {
+      statusCode = (await this.graph.getContainerStatus(requireContainer(post)))
+        .statusCode;
+    } catch (error) {
+      // 마지막 슬롯의 조회 실패도 사람에게 넘긴다. failed 로 끝나면 알림 없이 방치된다(2026-11-05 codex review).
+      if (!isLastSlot) {
+        throw error;
+      }
+      statusCode = `조회 실패(${error instanceof Error ? error.message : String(error)})`;
+    }
+    if (statusCode === ContainerStatusCode.PUBLISHED) {
       return await this.finish({ post, mediaId: post.mediaId });
     }
     if (isLastSlot) {
       await this.repository.update({
         id: post.id,
         patch: {
-          lastError: `${STORY_UNCONFIRMED_PREFIX} 게시를 시도했지만 컨테이너가 ${state.statusCode} 로 남음`,
+          lastError: `${STORY_UNCONFIRMED_PREFIX} 게시를 시도했지만 컨테이너가 ${statusCode} 로 남음`,
         },
       });
       return { kind: 'unconfirmed' };
     }
     return {
       kind: 'pending',
-      reason: `게시 확인 대기(컨테이너 ${state.statusCode})`,
+      reason: `게시 확인 대기(컨테이너 ${statusCode})`,
     };
   }
 

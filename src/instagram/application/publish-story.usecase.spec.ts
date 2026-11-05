@@ -191,10 +191,25 @@ describe('PublishStoryUsecase', () => {
     expect(row.lastError?.startsWith(STORY_UNCONFIRMED_PREFIX)).toBe(true);
 
     graph.getContainerStatus.mockClear();
-    await expect(usecase.execute(input)).resolves.toEqual({
-      kind: 'unconfirmed',
-    });
+    await expect(usecase.execute(input)).resolves.toEqual({ kind: 'done' });
     expect(graph.getContainerStatus).not.toHaveBeenCalled();
+    expect(graph.publish).not.toHaveBeenCalled();
+  });
+
+  it('마지막 슬롯에서 상태 조회가 실패해도 확인 필요로 종결한다', async () => {
+    row = {
+      ...post(),
+      containerId: 'container',
+      uploadedAt: new Date(),
+      publishAttemptedAt: new Date(),
+      status: InstagramPostStatus.PUBLISHING,
+    };
+    graph.getContainerStatus.mockRejectedValue(new Error('Graph timeout'));
+
+    await expect(
+      usecase.execute({ ...input, isLastSlot: true }),
+    ).resolves.toEqual({ kind: 'unconfirmed' });
+    expect(row.lastError).toContain('조회 실패(Graph timeout)');
     expect(graph.publish).not.toHaveBeenCalled();
   });
 
@@ -296,7 +311,7 @@ describe('PublishStoryUsecase', () => {
     row = { ...post(), status: InstagramPostStatus.PUBLISHED };
 
     await expect(usecase.execute(input)).resolves.toEqual({
-      kind: 'published',
+      kind: 'done',
     });
     expect(graph.getContainerStatus).not.toHaveBeenCalled();
   });
