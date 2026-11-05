@@ -1,8 +1,5 @@
 import { PullRequestCommitState } from '../domain/github.type';
-import {
-  GithubClientPort,
-  PullRequestRef,
-} from '../domain/port/github-client.port';
+import { PullRequestRef } from '../domain/port/github-client.port';
 
 // 상세를 받은 뒤 지금까지 무엇이 바뀌었는지. 상세와 diff 는 원자적으로 받을 수 없어서, diff 를
 // 받은 뒤 다시 조회해 head·base 가 그대로면 diff 도 상세와 같은 커밋 기준이라고 본다.
@@ -13,8 +10,15 @@ export type SnapshotDrift =
   | { kind: 'MOVED'; currentHeadSha: string }
   | { kind: 'MERGED' };
 
+// 이 확인이 쓰는 포트 메서드만 적는다(CODE_RULES §8). GithubClientPort 를 그대로 넘겨도 된다.
+export interface CommitStateReader {
+  getPullRequestCommitState(
+    ref: PullRequestRef,
+  ): Promise<PullRequestCommitState>;
+}
+
 export interface CheckSnapshotDriftInput {
-  githubClient: GithubClientPort;
+  githubClient: CommitStateReader;
   ref: PullRequestRef;
   // 처음 받은 상세. PullRequestDetail 을 그대로 넘겨도 된다.
   fetched: PullRequestCommitState;

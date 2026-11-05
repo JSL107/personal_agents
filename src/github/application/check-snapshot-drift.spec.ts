@@ -1,6 +1,5 @@
 import { PullRequestCommitState } from '../domain/github.type';
-import { GithubClientPort } from '../domain/port/github-client.port';
-import { checkSnapshotDrift } from './check-snapshot-drift';
+import { checkSnapshotDrift, CommitStateReader } from './check-snapshot-drift';
 
 const FETCHED: PullRequestCommitState = {
   headSha: 'head-1',
@@ -11,7 +10,7 @@ const REF = { repo: 'foo/bar', number: 34 };
 
 const clientReturning = (
   current: PullRequestCommitState,
-): jest.Mocked<Pick<GithubClientPort, 'getPullRequestCommitState'>> => ({
+): jest.Mocked<CommitStateReader> => ({
   getPullRequestCommitState: jest.fn().mockResolvedValue(current),
 });
 
@@ -21,7 +20,7 @@ describe('checkSnapshotDrift', () => {
 
     await expect(
       checkSnapshotDrift({
-        githubClient: client as never,
+        githubClient: client,
         ref: REF,
         fetched: FETCHED,
       }),
@@ -37,7 +36,7 @@ describe('checkSnapshotDrift', () => {
 
     await expect(
       checkSnapshotDrift({
-        githubClient: clientReturning(current) as never,
+        githubClient: clientReturning(current),
         ref: REF,
         fetched: FETCHED,
       }),
@@ -49,7 +48,7 @@ describe('checkSnapshotDrift', () => {
 
     await expect(
       checkSnapshotDrift({
-        githubClient: clientReturning(current) as never,
+        githubClient: clientReturning(current),
         ref: REF,
         fetched: FETCHED,
       }),
@@ -66,7 +65,7 @@ describe('checkSnapshotDrift', () => {
 
     await expect(
       checkSnapshotDrift({
-        githubClient: clientReturning(current) as never,
+        githubClient: clientReturning(current),
         ref: REF,
         fetched: FETCHED,
       }),
