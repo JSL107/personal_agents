@@ -239,6 +239,26 @@ describe('ReelsPublishOfferAutopilotTask', () => {
     }
   });
 
+  it('최근 7일 안이면 며칠 전 게시된 날의 표식도 채우고, 그보다 오래된 날은 보지 않는다', async () => {
+    const lookedUp: string[] = [];
+    await mkdir(join(root, '2026-10-31', 'daily'), { recursive: true });
+    repository.findByReelKey.mockImplementation(async (key) => {
+      lookedUp.push(key);
+      return key === '2026-10-31/daily' ? publishedReel('2026-10-31') : null;
+    });
+
+    await makeTask().run(CONTEXT);
+
+    const marker = JSON.parse(
+      await readFile(
+        join(root, '2026-10-31', 'daily', 'published.json'),
+        'utf8',
+      ),
+    );
+    expect(marker.reelKey).toBe('2026-10-31/daily');
+    expect(lookedUp).not.toContain('2026-10-30/daily');
+  });
+
   it('릴스가 미게시이면 daily 표식을 쓰지 않는다', async () => {
     await mkdir(join(root, DAY, 'daily'), { recursive: true });
     repository.findByReelKey.mockImplementation(async (key) =>
