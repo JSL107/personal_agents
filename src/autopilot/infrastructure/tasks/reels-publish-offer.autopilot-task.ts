@@ -16,6 +16,10 @@ import {
 } from '../../../instagram/application/publish-story.usecase';
 import { scanReadyReels } from '../../../instagram/application/scan-ready-reels';
 import {
+  MarkerWriteResult,
+  writePublishedMarker,
+} from '../../../instagram/application/write-published-marker';
+import {
   InstagramPostField,
   InstagramPostStatus,
   ReelField,
@@ -45,6 +49,7 @@ const DEFAULT_OUT_ROOT = join(homedir(), 'Desktop', 'skill-jaengyi-reels');
 const KST_OFFSET_MS = 9 * 60 * 60_000;
 // 이 task 의 마지막 슬롯(playbook `*/15 9-23`). 이때도 확정되지 않은 스토리 게시는 사람에게 넘긴다.
 const LAST_SLOT_MINUTES = 23 * 60 + 45;
+const MARKER_LOOKBACK_DAYS = 7;
 const FIELD_LABELS: Record<ReelField, string> = {
   [InstagramPostField.AI]: 'AI',
   [InstagramPostField.DEV]: '개발',
@@ -107,11 +112,17 @@ export class ReelsPublishOfferAutopilotTask implements AutopilotTask {
     }));
     // 전날 것도 본다. 23:45 마지막 슬롯 뒤나 다음 날 승인한 카드는 릴스만 올라가고 그 날짜를 다시 보는
     // 슬롯이 없어 스토리가 영영 남는다(2026-11-05 codex review). 카드 TTL 이 24시간이라 하루 전까지면 충분하다.
+    const days = [previousKstDate(firedAtKst), firedAtKst];
     const stories = await Promise.all(
-      [previousKstDate(firedAtKst), firedAtKst].map((day) =>
-        this.continueStory(day),
-      ),
+      days.map((day) => this.continueStory(day)),
     );
+    // 표식은 최근 일주일을 본다. 이대리가 며칠 꺼져 있었어도 켜지면 빠진 날의 표식을 채운다(2026-11-05 codex review).
+    for (const day of recentKstDates({
+      day: firedAtKst,
+      count: MARKER_LOOKBACK_DAYS,
+    })) {
+      await this.writeMarker(day);
+    }
 
     const summaryLines: string[] = [];
     if (previews.length > 0) {
@@ -184,6 +195,23 @@ export class ReelsPublishOfferAutopilotTask implements AutopilotTask {
     }
   }
 
+  private async writeMarker(day: string): Promise<void> {
+    try {
+      const reel = await this.posts.findByReelKey(`${day}/daily`);
+      if (!reel || reel.status !== InstagramPostStatus.PUBLISHED) {
+        return;
+      }
+      const story = await this.posts.findByReelKey(`${day}/story`);
+      const result = await writePublishedMarker({ reel, story });
+      if (result.kind === MarkerWriteResult.SKIPPED) {
+        this.logger.warn(`${day} 게시 표식 실패: ${result.reason}`);
+      }
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`${day} 게시 표식 실패: ${reason}`);
+    }
+  }
+
   private isLastSlot(): boolean {
     const kst = new Date(this.now().getTime() + KST_OFFSET_MS);
     const minutesOfDay = kst.getUTCHours() * 60 + kst.getUTCMinutes();
@@ -221,6 +249,21 @@ const describeStory = ({
     )
     .exhaustive();
   return step;
+};
+
+// day 를 포함해 거꾸로 count 일. 오래된 날짜가 앞에 온다.
+const recentKstDates = ({
+  day,
+  count,
+}: {
+  day: string;
+  count: number;
+}): string[] => {
+  const dates = [day];
+  while (dates.length < count) {
+    dates.unshift(previousKstDate(dates[0]));
+  }
+  return dates;
 };
 
 const previousKstDate = (day: string): string => {
