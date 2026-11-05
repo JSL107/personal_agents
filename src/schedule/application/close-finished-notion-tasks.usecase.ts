@@ -89,7 +89,8 @@ export class CloseFinishedNotionTasksUsecase {
                 ? 'Notion 업무가 완료됐습니다.'
                 : 'Notion 업무가 그만둔 일로 닫혔습니다.',
           },
-          dedupeKey: `notion-closed:${item.sourceKey}`,
+          // 되살린 뒤 다시 닫힐 수 있어 닫힌 시점의 편집 시각을 붙인다 — 고정 키면 두 번째 닫힘이 중복으로 막힌다.
+          dedupeKey: `notion-closed:${item.sourceKey}:${page.lastEditedTime}`,
           occurredAt: now,
         },
         slackUserId: ownerId,

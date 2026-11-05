@@ -680,6 +680,82 @@ describe('NotionApiClient', () => {
     expect(list).toHaveBeenCalledTimes(5);
   });
 
+  const buildPagedQuery = (pageCount: number): jest.Mock =>
+    jest.fn().mockImplementation(({ start_cursor }) => {
+      const pageNumber = start_cursor
+        ? Number(start_cursor.replace('cursor-', ''))
+        : 0;
+      const hasMore = pageNumber < pageCount - 1;
+      return Promise.resolve({
+        results: [
+          {
+            id: `p${pageNumber}`,
+            url: 'u',
+            properties: {
+              Title: {
+                type: 'title',
+                title: [{ plain_text: `t${pageNumber}` }],
+              },
+            },
+          },
+        ],
+        has_more: hasMore,
+        next_cursor: hasMore ? `cursor-${pageNumber + 1}` : null,
+      });
+    });
+
+  it('DB 조회는 next_cursor 를 따라 끝까지 읽는다', async () => {
+    const query = buildPagedQuery(3);
+    const adapter = new NotionApiClient(
+      { databases: { query } } as unknown as Client,
+      buildConfig({}),
+    );
+
+    const tasks = await adapter.listActiveTasks({
+      databaseIds: ['DB1'],
+      perDatabaseLimit: 1000,
+    });
+
+    expect(tasks.map((task) => task.pageId)).toEqual(['p0', 'p1', 'p2']);
+    expect(query.mock.calls.map(([input]) => input.start_cursor)).toEqual([
+      undefined,
+      'cursor-1',
+      'cursor-2',
+    ]);
+    expect(query.mock.calls[0][0].page_size).toBe(100);
+  });
+
+  it('DB 조회는 perDatabaseLimit 에서 멈추고 전수 호출자에게만 잘림을 경고한다', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const query = buildPagedQuery(10);
+    const adapter = new NotionApiClient(
+      { databases: { query } } as unknown as Client,
+      buildConfig({}),
+    );
+
+    const tasks = await adapter.listActiveTasks({
+      databaseIds: ['DB1'],
+      perDatabaseLimit: 2,
+      requireAllDatabases: true,
+    });
+
+    expect(tasks).toHaveLength(2);
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(query.mock.calls[1][0].page_size).toBe(1);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('한도에서 잘렸습니다'),
+    );
+    warn.mockClear();
+
+    // 상한이 의도인 일반 호출자는 경고하지 않는다.
+    await adapter.listActiveTasks({
+      databaseIds: ['DB1'],
+      perDatabaseLimit: 2,
+    });
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
   it('NotionException 는 Notion API 외 호출자 에러도 잘 형성 (sanity)', () => {
     const ex = new NotionException({
       code: NotionErrorCode.REQUEST_FAILED,
