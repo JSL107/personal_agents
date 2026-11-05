@@ -63,6 +63,8 @@ export class AutopilotConsumer extends ObservedWorkerHost {
     try {
       // job.id 를 슬롯 식별자로 넘긴다 — stalled 재큐는 같은 job 을 다시 처리하므로 id 가
       // 같고, 다음 스케줄 슬롯은 새 job = 새 id 라 재진입 차단이 슬롯 밖으로 번지지 않는다.
+      // prevMillis 는 이 회차의 예정 시각이다(정기 job 은 BullMQ 가, 보충 job 은 enqueueMissedRuns 가
+      // 채운다). 날짜를 실행 시각으로 잡으면 재부팅 뒤 다음 날 회수된 회차가 그날 몫을 차지한다.
       const runGroup = (): Promise<void> =>
         this.orchestrator.runGroup(
           groupKey,
@@ -70,6 +72,7 @@ export class AutopilotConsumer extends ObservedWorkerHost {
           ownerSlackUserId,
           target,
           job.id,
+          job.opts.prevMillis,
         );
       if (MUTUALLY_EXCLUSIVE_AUTOPILOT_GROUPS.includes(groupKey)) {
         await this.runExclusively(runGroup);

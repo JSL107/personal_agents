@@ -413,7 +413,8 @@ describe('EveningRetroPublishTask', () => {
     expect(result.previews?.[0].kind).toBe(PREVIEW_KIND.EVENING_BLOG_PUBLISH);
   });
 
-  it('(e) GitHub merged 조회는 오늘 KST 00:00 을 UTC(Z) 표기로 sinceIsoDate 에 넘긴다', async () => {
+  // 시스템 시각(07-08 KST)과 회차 날짜(CTX 07-03)가 다르다 — 늦게 회수된 회차도 제목 날짜의 PR 을 읽어야 한다.
+  it('(e) GitHub merged 조회는 회차 날짜(firedAtKst) KST 00:00 을 UTC(Z) 표기로 sinceIsoDate 에 넘긴다', async () => {
     const { task, githubClient } = makeTask({
       prs: [PR_ITEM],
       worklogRuns: [],
@@ -423,10 +424,12 @@ describe('EveningRetroPublishTask', () => {
 
     await task.run(CTX);
 
-    // KST 2026-07-08 00:00 == UTC 2026-07-07 15:00. 가리키는 순간은 같지만 표기가 다르다.
+    // KST 2026-07-03 00:00 == UTC 2026-07-02 15:00. 가리키는 순간은 같지만 표기가 다르다.
     expect(githubClient.listAuthorMergedPullRequestsSince).toHaveBeenCalledWith(
       expect.objectContaining({
-        sinceIsoDate: '2026-07-07T15:00:00.000Z',
+        sinceIsoDate: '2026-07-02T15:00:00.000Z',
+        // 끝도 회차 날짜로 자른다 — 다음 날 머지분이 섞이거나 건수 한도를 먼저 채우지 않게.
+        untilIsoDate: '2026-07-03T15:00:00.000Z',
       }),
     );
   });
