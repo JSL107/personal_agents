@@ -139,7 +139,8 @@ export class EveningRetroPublishTask implements AutopilotTask {
     // ⚠️ 이 값은 GitHub search 쿼리(`merged:>=<값>`)에 그대로 박힌다. `+09:00` 같은 offset
     // 표기를 쓰면 octokit 이 `+` 를 escape 하지 않아 GitHub 이 공백으로 읽고, 에러 대신
     // **조용히 0건**을 돌려준다("오늘 머지된 PR 없음"으로 위장됨). 항상 UTC(Z) 표기로 넘긴다.
-    const sinceIsoDate = getKstDayStartAsUtc().toISOString();
+    // 예정일 0시부터 — 늦게 회수된 회차가 실행일 기준으로 읽으면 제목 날짜의 PR 이 빠진다.
+    const sinceIsoDate = new Date(`${firedAtKst}T00:00:00+09:00`).toISOString();
     const personalRepositories = this.getPersonalRepositories();
     const toPrInput = (
       pullRequest: GithubPullRequestSummary,

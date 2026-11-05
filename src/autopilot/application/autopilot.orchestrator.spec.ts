@@ -1903,6 +1903,47 @@ describe('AutopilotOrchestrator', () => {
       );
     });
 
+    // 2026-11-03 19:40 저녁이 재부팅으로 끊겼다가 11-04 09:00 에 회수돼 11-04 가드를 차지했고,
+    // 그날 진짜 저녁이 「이미 발송됨」으로 막혔다. 날짜는 실행 시각이 아니라 예정 시각에서 나와야 한다.
+    it('예정 시각을 주면 실행 시각이 다음 날이어도 가드 키와 task 날짜가 예정일이다', async () => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2026-11-04T00:03:27.000Z')); // 11-04 09:03 KST
+      try {
+        const task = makeTask('weekly-summary', {
+          skip: false,
+          summaryText: '본문',
+        });
+        const postMessage = jest.fn().mockResolvedValue({ ts: undefined });
+        const acquireOnce = jest.fn().mockResolvedValue(true);
+        const orchestrator = new AutopilotOrchestrator(
+          [task] as never,
+          { postMessage } as never,
+          { acquireOnce, isDone: jest.fn().mockResolvedValue(false) } as never,
+          { execute: jest.fn() } as never,
+          { attachSlackMessage: jest.fn() } as never,
+        );
+
+        await orchestrator.runGroup(
+          'evening',
+          [T0_ENTRY],
+          'U1',
+          'C1',
+          'repeat:evening:1793702400000',
+          1793702400000, // 11-03 19:40 KST
+        );
+
+        expect(task.run).toHaveBeenCalledWith(
+          expect.objectContaining({ firedAtKst: '2026-11-03' }),
+        );
+        expect(acquireOnce).toHaveBeenCalledWith(
+          'autopilot:evening:2026-11-03',
+          expect.anything(),
+        );
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
     it('task 가 guardKeySuffix 를 주면 가드 키 끝에 붙는다', async () => {
       const task = makeTask('weekly-summary', {
         skip: false,

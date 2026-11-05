@@ -60,6 +60,9 @@ export const enqueueMissedRuns = async (
       jobId,
       attempts: pending.opts.attempts,
       backoff: pending.opts.backoff,
+      // 예정 시각을 정기 job 과 같은 자리에 싣는다 — 소비자가 날짜를 실행 시각이 아니라 이 값으로 정한다.
+      // repeat 옵션이 없는 job 이라 BullMQ 의 반복 등록 로직은 이 값을 읽지 않는다.
+      prevMillis: missedAt,
       removeOnComplete: 20,
       removeOnFail: 20,
     });
