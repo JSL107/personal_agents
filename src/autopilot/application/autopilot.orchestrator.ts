@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
 import { CronIdempotencyService } from '../../common/queue/cron-idempotency.service';
 import { CRON_SENT_GUARD_TTL_SECONDS } from '../../common/queue/worker-options.constant';
-import { getKstDateOf } from '../../common/util/kst-date.util';
+import { getKstDateOf, kstDayStartOf } from '../../common/util/kst-date.util';
 import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
 import {
   AUTOPILOT_TASK_CRON_NAME_PREFIX,
@@ -929,7 +929,7 @@ export class AutopilotOrchestrator {
       const found = await this.digestRepository.findFirstTopLevelMessageTs({
         kind: `autopilot:${parentGroupKey}`,
         target,
-        since: new Date(`${firedAtKst}T00:00:00+09:00`),
+        since: kstDayStartOf(firedAtKst),
       });
       return found ?? undefined;
     } catch (error: unknown) {

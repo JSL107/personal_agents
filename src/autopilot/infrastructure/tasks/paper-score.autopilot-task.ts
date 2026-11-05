@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { utcMidnightOf } from '../../../common/util/kst-date.util';
 import { ScoreRecommendationsUsecase } from '../../../paper-trading/application/score-recommendations.usecase';
 import { formatPaperScoreReport } from '../../../paper-trading/infrastructure/paper-score.formatter';
 import {
@@ -25,7 +26,7 @@ export class PaperScoreAutopilotTask implements AutopilotTask {
     }
 
     const result = await this.scoreRecommendations.execute({
-      asOf: new Date(`${context.firedAtKst}T00:00:00.000Z`),
+      asOf: utcMidnightOf(context.firedAtKst),
     });
     return {
       skip: false,

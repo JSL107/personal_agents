@@ -11,6 +11,7 @@ import { WorkReviewerException } from '../../../agent/work-reviewer/domain/work-
 import { WorkReviewerErrorCode } from '../../../agent/work-reviewer/domain/work-reviewer-error-code.enum';
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { kstDayStartOf } from '../../../common/util/kst-date.util';
 import { GithubPullRequestSummary } from '../../../github/domain/github.type';
 import {
   GITHUB_CLIENT_PORT,
@@ -68,7 +69,7 @@ export class WorkReviewerAutopilotTask implements AutopilotTask {
     const latestRun = runs[0] ?? null;
     const plan = latestRun ? coerceToDailyPlan(latestRun.output) : null;
     // 재시도가 자정을 넘어도 회고 기간과 조회 경계가 바뀌지 않도록 job의 KST 날짜에 고정한다.
-    const periodStart = new Date(`${firedAtKst}T00:00:00+09:00`);
+    const periodStart = kstDayStartOf(firedAtKst);
     const sinceIsoDate = periodStart.toISOString();
     const untilIsoDate = new Date(periodStart.getTime() + DAY_MS).toISOString();
     const evidence = await this.loadEvidence(sinceIsoDate, untilIsoDate);

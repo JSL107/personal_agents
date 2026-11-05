@@ -1,3 +1,4 @@
+import { kstDayStartOf } from '../../common/util/kst-date.util';
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -36,7 +37,7 @@ export const LEDGER_GAP_WATCHES: readonly LedgerGapWatch[] = [
 // 회차 날짜(firedAtKst)의 KST 0시. 지금 시각이 아니라 회차 날짜로 잡아야 늦게 돈 회차·재실행이
 // 다른 날을 판정하지 않는다(cuj-check.autopilot-task.ts 와 같은 이유).
 export const getLedgerWatchTodayStart = (firedAtKst: string): Date =>
-  new Date(`${firedAtKst}T00:00:00+09:00`);
+  kstDayStartOf(firedAtKst);
 
 // 그 시각이 속한 KST 달력일의 0시. KST 는 일광절약시간이 없어 고정 오프셋으로 충분하다.
 const getKstDayStart = (at: Date): Date =>

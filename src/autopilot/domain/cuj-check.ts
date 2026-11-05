@@ -1,5 +1,5 @@
 import { PaperRecommendationSkipReason } from '../../agent/paper-recommend/domain/paper-recommendation.type';
-import { formatKstDate } from '../../common/util/kst-date.util';
+import { formatKstDate, utcMidnightOf } from '../../common/util/kst-date.util';
 import {
   HolidayCalendar,
   isKrxTradingDay,
@@ -236,7 +236,7 @@ export const detectPaperInvestmentViolations = (
   calendar: HolidayCalendar,
 ): CujViolation[] => {
   const parts: string[] = [];
-  const tradeDate = new Date(`${yesterday}T00:00:00.000Z`);
+  const tradeDate = utcMidnightOf(yesterday);
   // 휴장일에도 추천이 도는 날이 있지만 그날의 낡은 시세·0건은 장애가 아니므로 거래일만 본다.
   if (isKrxTradingDay(tradeDate, calendar)) {
     const succeeded = runs.filter((row) => row.status === 'SUCCEEDED');

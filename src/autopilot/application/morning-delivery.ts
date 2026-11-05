@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 
+import { kstDayStartOf } from '../../common/util/kst-date.util';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { SlackDeliveryRepositoryPort } from '../../slack/domain/port/slack-delivery.repository.port';
 import { isRunResultDelivered } from '../domain/run-delivery';
@@ -16,7 +17,7 @@ export const findMorningDelivered = async ({
   deliveryRepository,
   firedAtKst,
 }: FindMorningDeliveredInput): Promise<boolean | null> => {
-  const dayStart = new Date(`${firedAtKst}T00:00:00.000+09:00`);
+  const dayStart = kstDayStartOf(firedAtKst);
   const dayEnd = new Date(dayStart.getTime() + DAY_MS);
   try {
     const deliveries = await deliveryRepository.findSince(dayStart, dayEnd);

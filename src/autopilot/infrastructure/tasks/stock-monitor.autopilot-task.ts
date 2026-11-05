@@ -38,6 +38,7 @@ import {
 } from '../../../agent/stock/infrastructure/stock-monitor.prisma.repository';
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { utcMidnightOf } from '../../../common/util/kst-date.util';
 import { DailyBar } from '../../../market-data/domain/market-data.type';
 import { MarketDataPort } from '../../../market-data/domain/port/market-data.port';
 import { AgentType } from '../../../model-router/domain/model-router.type';
@@ -347,9 +348,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
       this.logger.log(
         `주식 모니터링: 휴장(추정), 마지막 거래일 ${lastTradeDate}`,
       );
-      const rateDate = lastTradeDate
-        ? new Date(`${lastTradeDate}T00:00:00.000Z`)
-        : null;
+      const rateDate = lastTradeDate ? utcMidnightOf(lastTradeDate) : null;
       const usdKrwRate = rateDate
         ? await this.resolveUsdKrwRate(rateDate)
         : null;
@@ -403,9 +402,7 @@ export class StockMonitorAutopilotTask implements AutopilotTask {
       };
     }
 
-    const rateDate = lastTradeDate
-      ? new Date(`${lastTradeDate}T00:00:00.000Z`)
-      : null;
+    const rateDate = lastTradeDate ? utcMidnightOf(lastTradeDate) : null;
     const usdKrwRate = rateDate ? await this.resolveUsdKrwRate(rateDate) : null;
     const priceDisplays = this.createPriceDisplays(
       collectedHoldings,
