@@ -42,6 +42,18 @@ describe('InstagramTokenCheckAutopilotTask', () => {
     });
   });
 
+  it('토큰 자체 만료가 데이터 접근 만료보다 먼저면 그 날짜로 안내한다', async () => {
+    const graph = buildGraph({
+      expiresAt: Math.floor(now.getTime() / 1000) + 5 * 86400,
+    });
+    const task = new InstagramTokenCheckAutopilotTask(graph);
+    await expect(task.run(context)).resolves.toMatchObject({
+      skip: false,
+      summaryText:
+        '⏳ 인스타 토큰 재동의 D-5 (2026-11-10). README 「인스타 토큰 재동의」 절을 따라 갱신해 주세요.',
+    });
+  });
+
   it('무효 토큰이면 게시 중단을 안내한다', async () => {
     const task = new InstagramTokenCheckAutopilotTask(
       buildGraph({

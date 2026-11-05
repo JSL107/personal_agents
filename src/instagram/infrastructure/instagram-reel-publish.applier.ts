@@ -38,6 +38,9 @@ export class InstagramReelPublishApplier implements PreviewApplier {
   settleIntervalMs = 20_000;
   settleChecks = 3;
   recentMediaLimit = 25;
+  // 게시 결과가 불확실한 뒤 같은 컨테이너로 다시 게시하기까지 기다리는 시간. 재조회 60초만으로는
+  // Meta 쪽 PUBLISHED 반영·게시물 목록 반영 지연을 덮지 못해, 실제로 올라간 릴스를 한 번 더 올릴 수 있다.
+  republishAfterMs = 10 * 60_000;
 
   constructor(
     @Inject(INSTAGRAM_POST_REPOSITORY_PORT)
@@ -129,6 +132,13 @@ export class InstagramReelPublishApplier implements PreviewApplier {
           const matched = await this.reconcile(post, payload);
           if (matched) {
             return this.finishMatched(post, matched, progress);
+          }
+          const elapsedMs = Date.now() - post.publishAttemptedAt.getTime();
+          if (elapsedMs < this.republishAfterMs) {
+            throw this.failure(
+              InstagramErrorCode.PUBLISH_UNCONFIRMED,
+              '게시 여부를 아직 확인 중입니다. 10분쯤 뒤 다시 누르세요',
+            );
           }
         }
       }

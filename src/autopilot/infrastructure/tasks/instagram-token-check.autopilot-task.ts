@@ -53,7 +53,13 @@ export class InstagramTokenCheckAutopilotTask implements AutopilotTask {
       };
     }
 
-    const expiresAtMs = token.dataAccessExpiresAt * 1000;
+    // expires_at 0 은 "만료 없음" 이다. 0 이 아니면 데이터 접근 만료와 둘 중 먼저 오는 쪽이 게시를 멈춘다.
+    const expiresAtMs =
+      Math.min(
+        ...[token.expiresAt, token.dataAccessExpiresAt].filter(
+          (seconds) => seconds > 0,
+        ),
+      ) * 1000;
     const remainingMs = expiresAtMs - Date.now();
     if (remainingMs <= this.warnWithinMs) {
       const days = Math.ceil(remainingMs / DAY_MS);

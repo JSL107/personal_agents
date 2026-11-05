@@ -372,13 +372,39 @@ describe('InstagramReelPublishApplier', () => {
       ...row,
       status: 'PUBLISHING',
       containerId: 'container',
-      containerCreatedAt: new Date(),
-      uploadedAt: new Date(),
-      publishAttemptedAt: new Date(),
+      containerCreatedAt: new Date(Date.now() - 11 * 60_000),
+      uploadedAt: new Date(Date.now() - 11 * 60_000),
+      publishAttemptedAt: new Date(Date.now() - 11 * 60_000),
     };
     await applier.apply(preview);
     expect(graph.createReelContainer).not.toHaveBeenCalled();
     expect(graph.publish).toHaveBeenCalledTimes(1);
+  });
+  it('게시 결과가 불확실한 뒤 10분 안에 다시 누르면 재게시하지 않는다', async () => {
+    graph.publish.mockRejectedValueOnce(new Error('lost'));
+    await expect(applier.apply(preview)).rejects.toMatchObject({
+      errorCode: 'INSTAGRAM_PUBLISH_UNCONFIRMED',
+    });
+    expect(graph.publish).toHaveBeenCalledTimes(1);
+
+    await expect(applier.apply(preview)).rejects.toMatchObject({
+      errorCode: 'INSTAGRAM_PUBLISH_UNCONFIRMED',
+    });
+    expect(graph.publish).toHaveBeenCalledTimes(1);
+    expect(graph.createReelContainer).toHaveBeenCalledTimes(1);
+  });
+  it('게시 결과가 불확실한 뒤 10분이 지나면 같은 컨테이너로 한 번 재시도한다', async () => {
+    graph.publish.mockRejectedValueOnce(new Error('lost'));
+    await expect(applier.apply(preview)).rejects.toMatchObject({
+      errorCode: 'INSTAGRAM_PUBLISH_UNCONFIRMED',
+    });
+    row = { ...row, publishAttemptedAt: new Date(Date.now() - 11 * 60_000) };
+
+    await applier.apply(preview);
+    expect(graph.publish).toHaveBeenCalledTimes(2);
+    expect(graph.publish).toHaveBeenLastCalledWith('container');
+    expect(graph.createReelContainer).toHaveBeenCalledTimes(1);
+    expect(row.status).toBe('PUBLISHED');
   });
   it('publish attempt without a container fails closed', async () => {
     row = {
@@ -397,9 +423,9 @@ describe('InstagramReelPublishApplier', () => {
       ...row,
       status: 'PUBLISHING',
       containerId: 'container',
-      containerCreatedAt: new Date(),
+      containerCreatedAt: new Date(Date.now() - 11 * 60_000),
       uploadedAt: null,
-      publishAttemptedAt: new Date(),
+      publishAttemptedAt: new Date(Date.now() - 11 * 60_000),
     };
     await applier.apply(preview);
     expect(graph.createReelContainer).not.toHaveBeenCalled();
