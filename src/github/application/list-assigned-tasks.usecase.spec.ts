@@ -18,6 +18,7 @@ const buildClientMock = (
   compareCommits: jest.fn(),
   addIssueComment: jest.fn(),
   getPullRequestHeadSha: jest.fn(),
+  getPullRequestCommitState: jest.fn(),
   listIssueComments: jest.fn(),
   updateIssueComment: jest.fn(),
   createIssue: jest.fn(),

@@ -59,6 +59,7 @@ const buildGithub = () =>
     listReviewThreads: jest.fn(),
     listIssueComments: jest.fn(),
     getPullRequestHeadSha: jest.fn(),
+    getPullRequestCommitState: jest.fn(),
     getPullRequestDiff: jest.fn(),
   }) as unknown as jest.Mocked<
     Pick<

@@ -19,6 +19,7 @@ import {
   GithubIssue,
   GithubPullRequest,
   GithubPullRequestSummary,
+  PullRequestCommitState,
   PullRequestDetail,
   PullRequestDiff,
   TarballDownload,
@@ -473,6 +474,31 @@ export class OctokitGithubClient implements GithubClientPort {
       throw this.wrapRequestFailed(
         error,
         `GitHub ${repo}#${number} head 조회 실패`,
+      );
+    }
+  }
+
+  async getPullRequestCommitState({
+    repo,
+    number,
+  }: PullRequestRef): Promise<PullRequestCommitState> {
+    this.assertOctokitConfigured();
+    const [owner, repoName] = parseRepo(repo);
+    try {
+      const response = await this.octokit!.rest.pulls.get({
+        owner,
+        repo: repoName,
+        pull_number: number,
+      });
+      return {
+        headSha: response.data.head.sha,
+        baseSha: response.data.base.sha,
+        mergedAt: response.data.merged_at,
+      };
+    } catch (error: unknown) {
+      throw this.wrapRequestFailed(
+        error,
+        `GitHub ${repo}#${number} 커밋 상태 조회 실패`,
       );
     }
   }

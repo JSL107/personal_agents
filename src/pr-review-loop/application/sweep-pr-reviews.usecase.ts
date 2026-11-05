@@ -17,6 +17,7 @@ import {
   TriggerType,
 } from '../../agent-run/domain/agent-run.type';
 import { LatestSweepReview } from '../../agent-run/domain/port/agent-run.repository.port';
+import { checkSnapshotDrift } from '../../github/application/check-snapshot-drift';
 import {
   GITHUB_CLIENT_PORT,
   GithubClientPort,
@@ -469,18 +470,14 @@ export class SweepPrReviewsUsecase implements OnApplicationBootstrap {
     // 게시(PUBLISH) 실패는 성공 행을 덮을 실패 행이 있어야 다음 회차가 다시 리뷰하므로 이 usecase 가 기록한다.
     let stage: SweepStage = 'FETCH';
     try {
-      // 상세와 diff 는 병렬로 조회한다. 두 요청은 원자적이지 않아 그 사이 push 가 들어오면
-      // "옛 headSha + 새 diff" 스냅샷이 만들어진다(2026-08-04 리뷰 지적). 창을 넓히지 않으려
-      // 병렬로 받고, 섞였는지는 diff 를 받은 뒤 상세를 한 번 더 조회해 SHA 로 가린다(아래).
-      // diff 는 실패할 수 있어 allSettled 로 받고, 원인은 상세의 변경량으로 판별한다.
-      const [detailResult, diffResult] = await Promise.allSettled([
-        this.githubClient.getPullRequest({ repo, number: pullNumber }),
-        this.githubClient.getPullRequestDiff({ repo, number: pullNumber }),
-      ]);
-      if (detailResult.status === 'rejected') {
-        throw detailResult.reason;
-      }
-      const detail = detailResult.value;
+      // 상세 → diff → 재조회를 **차례로** 받는다. 두 요청은 원자적이지 않아 그 사이 push 가
+      // 들어오면 상세와 diff 가 다른 커밋 기준이 된다(2026-08-04 리뷰 지적). 병렬로 받으면 서버가
+      // diff 를 먼저(옛 커밋) 상세를 나중에(새 커밋) 처리할 수 있어, 상세와 재조회만 비교하는
+      // 아래 확인을 그대로 통과한다(#973 리뷰 지적). 차례로 받아야 diff 가 두 조회 사이에 놓인다.
+      const detail = await this.githubClient.getPullRequest({
+        repo,
+        number: pullNumber,
+      });
       // GitHub 검색 인덱스는 조금 늦어 `is:open` 결과에 방금 머지된 PR 이 남는다. 상세를
       // 함께 받던 조회가 merged_at 으로 걸러 주던 자리인데, 지금은 식별자만 받으므로 이미
       // 가져온 상세로 여기서 끊는다 — 머지된 PR 에 리뷰 코멘트가 달리는 것을 막는다.
@@ -489,6 +486,10 @@ export class SweepPrReviewsUsecase implements OnApplicationBootstrap {
         this.logger.log(`이미 머지된 PR — 리뷰 skip (${prRef})`);
         return ALREADY_MERGED;
       }
+      // diff 는 변경량이 크면 받지 못해 실패를 값으로 받고, 원인은 상세의 변경량으로 판별한다.
+      const [diffResult] = await Promise.allSettled([
+        this.githubClient.getPullRequestDiff({ repo, number: pullNumber }),
+      ]);
       if (diffResult.status === 'rejected') {
         const changedLines = detail.additions + detail.deletions;
         if (changedLines > GITHUB_DIFF_MAX_LINES) {
@@ -503,26 +504,23 @@ export class SweepPrReviewsUsecase implements OnApplicationBootstrap {
         throw diffResult.reason;
       }
       const diff = diffResult.value;
-      // diff 가 상세와 같은 커밋 기준인지 확인한다. 두 조회 뒤에도 head·base 가 그대로면 그
-      // 사이에 push 가 없었으므로 diff 도 같은 커밋이다. 바뀌었으면 섞인 스냅샷으로 리뷰하고
-      // 옛 headSha 에 인라인 앵커를 다는 대신 이번 회차를 넘긴다.
-      const after = await this.githubClient.getPullRequest({
-        repo,
-        number: pullNumber,
-      });
+      // diff 가 상세와 같은 커밋 기준인지 확인한다. 섞인 스냅샷으로 리뷰해 옛 headSha 에
+      // 인라인 앵커를 다는 대신 이번 회차를 넘기고, 다음 스윕이 새 스냅샷으로 리뷰한다.
       // 재조회 사이에 머지됐으면 SHA 는 그대로여도 위 머지 가드와 같은 이유로 끊는다.
-      if (after.mergedAt !== null) {
-        this.logger.log(`조회 중 머지된 PR — 리뷰 skip (${prRef})`);
-        return ALREADY_MERGED;
-      }
-      if (
-        after.headSha !== detail.headSha ||
-        after.baseSha !== detail.baseSha
-      ) {
+      const drift = await checkSnapshotDrift({
+        githubClient: this.githubClient,
+        ref: { repo, number: pullNumber },
+        fetched: detail,
+      });
+      if (drift.kind === 'MOVED') {
         this.logger.log(
-          `조회 중 PR 이 갱신됨 — 다음 스윕에서 리뷰 (${prRef} ${detail.headSha.slice(0, 7)} → ${after.headSha.slice(0, 7)})`,
+          `조회 중 PR 이 갱신됨 — 다음 스윕에서 리뷰 (${prRef} ${detail.headSha.slice(0, 7)} → ${drift.currentHeadSha.slice(0, 7)})`,
         );
         return SNAPSHOT_MOVED;
+      }
+      if (drift.kind === 'MERGED') {
+        this.logger.log(`조회 중 머지된 PR — 리뷰 skip (${prRef})`);
+        return ALREADY_MERGED;
       }
       // 여기서 조회한 스냅샷을 리뷰에도 그대로 넘긴다 — 리뷰가 재조회하면 그 사이 push 된
       // 커밋 때문에 "지적은 새 diff 기준, 게시는 옛 headSha·옛 diff 기준"으로 갈려 인라인

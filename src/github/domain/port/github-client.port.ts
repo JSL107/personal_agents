@@ -5,6 +5,7 @@ import {
   CreateReviewCommentResult,
   GithubPullRequest,
   GithubPullRequestSummary,
+  PullRequestCommitState,
   PullRequestDetail,
   PullRequestDiff,
   TarballDownload,
@@ -303,6 +304,11 @@ export interface GithubClientPort {
 
   // PR 의 현재 head 커밋. 오래된 스냅샷의 리뷰가 최신 위험 지도를 덮어쓰지 않게 쓰기 직전에 본다.
   getPullRequestHeadSha(ref: PullRequestRef): Promise<string>;
+  // 상세·diff 를 받은 뒤 그 사이 push·머지가 없었는지 확인하는 재조회. getPullRequest 와 달리
+  // 변경 파일 목록을 받지 않는다.
+  getPullRequestCommitState(
+    ref: PullRequestRef,
+  ): Promise<PullRequestCommitState>;
   // 위험 지도 코멘트를 PR 당 하나로 유지하려고 기존 코멘트를 찾아 고쳐 쓴다(publish-findings.service).
   listIssueComments(
     input: ListIssueCommentsInput,

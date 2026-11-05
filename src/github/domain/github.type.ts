@@ -79,6 +79,14 @@ export interface PullRequestDetail extends ChangedFileList {
   isDraft: boolean;
 }
 
+// 받아 둔 상세·diff 가 지금도 같은 커밋인지 가리는 데 필요한 값만. PullRequestDetail 과 같은
+// 이름이라 상세를 그대로 넘겨 비교할 수 있다. 변경 파일 목록은 받지 않는다(pulls.get 1회).
+export interface PullRequestCommitState {
+  headSha: string;
+  baseSha: string;
+  mergedAt: string | null;
+}
+
 export interface PullRequestDiff {
   diff: string; // unified diff
   truncated: boolean; // maxBytes 초과로 잘렸는지
