@@ -118,6 +118,13 @@ export class ScheduleCollectNotionAutopilotTask implements AutopilotTask {
           sourceKey: notionTask.pageId,
         });
         if (found) {
+          // 이 값이 생기기 전에 수집된 행을 채운다 — 상태 확인이 엉뚱한 통합부터 찔러 보지 않게.
+          if (found.sourceWorkspace !== notionTask.workspace) {
+            await this.repository.updateSourceWorkspace({
+              id: found.id,
+              sourceWorkspace: notionTask.workspace,
+            });
+          }
           await this.reopenIfCollectorClosed({
             found,
             notionTask,
@@ -141,6 +148,7 @@ export class ScheduleCollectNotionAutopilotTask implements AutopilotTask {
           source: ScheduleSource.NOTION_TASK,
           sourceKey: notionTask.pageId,
           sourceUrl: notionTask.url,
+          sourceWorkspace: notionTask.workspace,
           status: ScheduleStatus.OPEN,
         });
       }

@@ -1,3 +1,4 @@
+import { NotionWorkspace } from '../../notion/domain/notion.type';
 export enum ScheduleStatus {
   OPEN = 'OPEN',
   DONE = 'DONE',
@@ -83,6 +84,7 @@ export interface ScheduleItemRecord {
   source?: ScheduleSource;
   sourceKey?: string | null;
   sourceUrl?: string | null;
+  sourceWorkspace?: NotionWorkspace | null;
   candidateExpiresAt?: Date | null;
   deliveryClaimedAt?: Date | null;
   dueTime: string | null;

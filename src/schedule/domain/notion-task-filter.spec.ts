@@ -1,3 +1,4 @@
+import { NotionWorkspace } from '../../notion/domain/notion.type';
 import { NotionTask } from '../../notion/domain/notion.type';
 import { filterMyNotionTask, readNotionStatus } from './notion-task-filter';
 import { NotionTaskFilterConfig } from './notion-task-filter.type';
@@ -13,6 +14,7 @@ describe('filterMyNotionTask', () => {
   };
   const task: NotionTask = {
     databaseId: 'db',
+    workspace: NotionWorkspace.PERSONAL,
     pageId: 'page',
     url: 'https://notion.so/page',
     title: '업무',

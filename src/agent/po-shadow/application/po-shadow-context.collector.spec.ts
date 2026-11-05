@@ -10,6 +10,7 @@ import {
 import { GithubClientPort } from '../../../github/domain/port/github-client.port';
 import { WaitingItem } from '../../../github/domain/pr-engagement.type';
 import { ListActiveTasksUsecase } from '../../../notion/application/list-active-tasks.usecase';
+import { NotionWorkspace } from '../../../notion/domain/notion.type';
 import { NotionTask } from '../../../notion/domain/notion.type';
 import { ListMyMentionsUsecase } from '../../../slack-collector/application/list-my-mentions.usecase';
 import { SlackMention } from '../../../slack-collector/domain/slack-collector.type';
@@ -70,6 +71,7 @@ const mention: SlackMention = {
 
 const notionTask: NotionTask = {
   databaseId: 'database-1',
+  workspace: NotionWorkspace.PERSONAL,
   pageId: 'page-1',
   url: 'https://notion.so/page-1',
   title: '출시 체크리스트',

@@ -1,3 +1,4 @@
+import { NotionWorkspace } from '../../notion/domain/notion.type';
 import {
   NotionClientPort,
   NotionPageStatus,
@@ -114,9 +115,27 @@ describe('CloseFinishedNotionTasksUsecase', () => {
     );
     await usecase.execute({ ownerId: 'U1', now, config });
     expect(notion.getPageStatus).toHaveBeenCalledTimes(20);
-    expect(notion.getPageStatus).toHaveBeenNthCalledWith(1, 'page-1');
+    expect(notion.getPageStatus).toHaveBeenNthCalledWith(1, {
+      pageId: 'page-1',
+      workspace: undefined,
+    });
     await usecase.execute({ ownerId: 'U1', now, config });
-    expect(notion.getPageStatus).toHaveBeenNthCalledWith(21, 'page-21');
+    expect(notion.getPageStatus).toHaveBeenNthCalledWith(21, {
+      pageId: 'page-21',
+      workspace: undefined,
+    });
+  });
+
+  it('수집 때 기록한 워크스페이스로 상태를 묻는다', async () => {
+    const { usecase, repository, notion } = createUsecase();
+    repository.findBySource.mockResolvedValue([
+      { ...item, sourceWorkspace: NotionWorkspace.WORK },
+    ]);
+    await usecase.execute({ ownerId: 'U1', now, config });
+    expect(notion.getPageStatus).toHaveBeenCalledWith({
+      pageId: 'page',
+      workspace: NotionWorkspace.WORK,
+    });
   });
 
   it('접근 실패와 진행 중 상태는 변경하지 않는다', async () => {

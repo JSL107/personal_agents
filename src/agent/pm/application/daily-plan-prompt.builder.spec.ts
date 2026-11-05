@@ -1,4 +1,5 @@
 import { WorkSessionDigest } from '../../../local-sessions/domain/work-session-digest';
+import { NotionWorkspace } from '../../../notion/domain/notion.type';
 import { DailyReview } from '../../work-reviewer/domain/work-reviewer.type';
 import { DailyPlan, TaskItem } from '../domain/pm-agent.type';
 import { RecentPlanSummary } from '../domain/prompt/recent-plan-summary-formatter';
@@ -116,6 +117,7 @@ describe('DailyPlanPromptBuilder', () => {
   it('용량 초과 시 작업 세션을 notion 보다 먼저 버린다', () => {
     const notionTasks = Array.from({ length: 10 }, (_, index) => ({
       databaseId: 'db',
+      workspace: NotionWorkspace.PERSONAL,
       pageId: `pg${index}`,
       url: 'https://notion.so/pg',
       title: `항목${index} ${'나'.repeat(400)}`,
@@ -348,6 +350,7 @@ describe('DailyPlanPromptBuilder', () => {
     const moderate = '가'.repeat(200);
     const notionTasks = Array.from({ length: 10 }, (_, index) => ({
       databaseId: 'db',
+      workspace: NotionWorkspace.PERSONAL,
       pageId: `pg${index}`,
       url: 'https://notion.so/pg',
       title: `묵은항목${index} ` + '나'.repeat(400),
@@ -386,6 +389,7 @@ describe('DailyPlanPromptBuilder', () => {
   it('notion 이 유일한 task source 면 cap 을 넘겨도 drop 하지 않는다', () => {
     const notionTasks = Array.from({ length: 10 }, (_, index) => ({
       databaseId: 'db',
+      workspace: NotionWorkspace.PERSONAL,
       pageId: `pg${index}`,
       url: 'https://notion.so/pg',
       title: `유일항목${index} ` + '나'.repeat(400),
@@ -684,6 +688,7 @@ describe('DailyPlanPromptBuilder — 자르기와 경계', () => {
         notionTasks: [
           {
             databaseId: 'db',
+            workspace: NotionWorkspace.PERSONAL,
             pageId: 'pg',
             url: 'https://notion.so/pg',
             title: '배포 준비',

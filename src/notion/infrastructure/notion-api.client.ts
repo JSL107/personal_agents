@@ -1,12 +1,14 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Client, isFullPage as isFullNotionPage } from '@notionhq/client';
+// SDK 가 index 에서 내보내지 않는 응답 타입 — pages.retrieve 의 반환 타입과 같다.
+import type { GetPageResponse } from '@notionhq/client/build/src/api-endpoints';
 import { match } from 'ts-pattern';
 
 import { appendIntegrationHint } from '../../common/domain/integration-failure-hint';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { NotionException } from '../domain/notion.exception';
-import { NotionTask } from '../domain/notion.type';
+import { NotionTask, NotionWorkspace } from '../domain/notion.type';
 import { NotionErrorCode } from '../domain/notion-error-code.enum';
 import {
   AppendBlocksOptions,
@@ -15,6 +17,7 @@ import {
   CreatedDatabasePage,
   FindOrCreateChildPageOptions,
   FindOrCreateDailyPageOptions,
+  GetPageStatusOptions,
   ListActiveTasksOptions,
   NOTION_CLIENT_INSTANCE,
   NOTION_WORK_CLIENT_INSTANCE,
@@ -61,9 +64,21 @@ type QueriedDatabaseRow = Awaited<
   ReturnType<Client['databases']['query']>
 >['results'][number];
 
+interface ToNotionTaskInput {
+  page: FullPage;
+  databaseId: string;
+  workspace: NotionWorkspace;
+}
+
+interface RetrievePageStatusInput {
+  pageId: string;
+  fallbackToWork: boolean;
+}
+
 interface RetrieveWorkPageStatusInput {
   pageId: string;
-  personalError: unknown;
+  // 개인 Client 를 거치지 않고 바로 온 경우(회사 업무로 기록된 행)는 없다.
+  personalError?: unknown;
 }
 
 @Injectable()
@@ -128,10 +143,12 @@ export class NotionApiClient implements NotionClientPort {
     const tasks: NotionTask[] = [];
     let failedDbCount = 0;
     for (const databaseId of targetDbs) {
+      const workspace = this.isListed(databaseId, workDbIds)
+        ? NotionWorkspace.WORK
+        : NotionWorkspace.PERSONAL;
       const rows = await this.queryDbOrNull({
-        client: this.isListed(databaseId, workDbIds)
-          ? this.workClient
-          : this.client,
+        client:
+          workspace === NotionWorkspace.WORK ? this.workClient : this.client,
         databaseId,
         perDatabaseLimit,
         lastEditedSinceIsoDateTime,
@@ -145,7 +162,7 @@ export class NotionApiClient implements NotionClientPort {
         if (!isFullPage(page)) {
           continue;
         }
-        tasks.push(this.toNotionTask(page, databaseId));
+        tasks.push(this.toNotionTask({ page, databaseId, workspace }));
       }
     }
 
@@ -172,9 +189,11 @@ export class NotionApiClient implements NotionClientPort {
     return tasks;
   }
 
-  async getPageStatus(pageId: string): Promise<NotionPageStatus> {
-    this.assertClientConfigured('getPageStatus');
-    const page = await this.retrievePageStatus(pageId);
+  async getPageStatus({
+    pageId,
+    workspace,
+  }: GetPageStatusOptions): Promise<NotionPageStatus> {
+    const page = await this.retrievePageIn({ pageId, workspace });
     if (!isFullNotionPage(page)) {
       throw new NotionException({
         code: NotionErrorCode.REQUEST_FAILED,
@@ -189,15 +208,37 @@ export class NotionApiClient implements NotionClientPort {
     };
   }
 
-  private async retrievePageStatus(
-    pageId: string,
-  ): Promise<Awaited<ReturnType<Client['pages']['retrieve']>>> {
+  // 워크스페이스를 알면 그 통합으로만 묻는다 — 남의 통합으로 먼저 찔러 보면 SDK 가 매번
+  // object_not_found 경고를 찍어 진짜 접근 실패가 그 소음에 묻힌다.
+  private async retrievePageIn({
+    pageId,
+    workspace,
+  }: GetPageStatusOptions): Promise<GetPageResponse> {
+    if (workspace === NotionWorkspace.WORK) {
+      if (!this.workClient) {
+        throw new NotionException({
+          code: NotionErrorCode.TOKEN_NOT_CONFIGURED,
+          message: `Notion page ${pageId} 는 회사 워크스페이스 업무인데 NOTION_WORK_TOKEN 이 설정되지 않았습니다.`,
+          status: DomainStatus.PRECONDITION_FAILED,
+        });
+      }
+      return await this.retrieveWorkPageStatus({ pageId });
+    }
+    this.assertClientConfigured('getPageStatus');
+    // 워크스페이스를 모르는 행(이 값이 생기기 전에 수집된 업무)만 회사 Client 로 한 번 더 본다.
+    const fallbackToWork = workspace !== NotionWorkspace.PERSONAL;
+    return await this.retrievePageStatus({ pageId, fallbackToWork });
+  }
+
+  private async retrievePageStatus({
+    pageId,
+    fallbackToWork,
+  }: RetrievePageStatusInput): Promise<GetPageResponse> {
     try {
       return await this.client!.pages.retrieve({ page_id: pageId });
     } catch (error: unknown) {
       if (isPageAccessError(error)) {
-        // 회사 DB 에서 수집한 업무 페이지는 개인 통합으로는 못 읽는다 — 회사 Client 로 한 번 더 본다.
-        if (this.workClient) {
+        if (fallbackToWork && this.workClient) {
           return await this.retrieveWorkPageStatus({
             pageId,
             personalError: error,
@@ -212,14 +253,12 @@ export class NotionApiClient implements NotionClientPort {
   private async retrieveWorkPageStatus({
     pageId,
     personalError,
-  }: RetrieveWorkPageStatusInput): Promise<
-    Awaited<ReturnType<Client['pages']['retrieve']>>
-  > {
+  }: RetrieveWorkPageStatusInput): Promise<GetPageResponse> {
     try {
       return await this.workClient!.pages.retrieve({ page_id: pageId });
     } catch (error: unknown) {
       if (isPageAccessError(error)) {
-        throw new NotionPageNotAccessibleError(pageId, personalError);
+        throw new NotionPageNotAccessibleError(pageId, personalError ?? error);
       }
       throw this.wrapRequestFailed(error, `Notion page ${pageId} 조회 실패`);
     }
@@ -910,7 +949,11 @@ export class NotionApiClient implements NotionClientPort {
       .filter((token) => token.length > 0);
   }
 
-  private toNotionTask(page: FullPage, databaseId: string): NotionTask {
+  private toNotionTask({
+    page,
+    databaseId,
+    workspace,
+  }: ToNotionTaskInput): NotionTask {
     const entries = Object.entries(page.properties);
     const titleEntry = entries.find(([, raw]) => raw.type === 'title');
     const titleText = titleEntry ? collectPlainText(titleEntry[1].title) : '';
@@ -918,6 +961,7 @@ export class NotionApiClient implements NotionClientPort {
 
     return {
       databaseId,
+      workspace,
       pageId: page.id,
       url: page.url,
       title,
