@@ -9,6 +9,24 @@ const requiredEnv = {
   DATABASE_URL: 'postgresql://user:password@localhost:5434/database',
 };
 
+describe('validateEnv instagram', () => {
+  it('instagram enabled requires keys', () => {
+    expect(() =>
+      validateEnv({
+        ...requiredEnv,
+        INSTAGRAM_PUBLISH_ENABLED: 'true',
+        META_APP_ID: 'id',
+        META_APP_SECRET: 'secret',
+        INSTAGRAM_USER_ID: 'ig',
+      }),
+    ).toThrow();
+  });
+
+  it('instagram disabled allows missing keys', () => {
+    expect(() => validateEnv(requiredEnv)).not.toThrow();
+  });
+});
+
 describe('validateEnv AI_CLI_ENV_SYNC_REPO', () => {
   it('빈 문자열은 graceful OFF 설정으로 허용한다', () => {
     expect(() =>
