@@ -1,3 +1,4 @@
+import { NotionWorkspace } from '../../../../notion/domain/notion.type';
 import { NotionTask } from '../../../../notion/domain/notion.type';
 import { formatNotionTasksAsPromptSection } from './notion-task-formatter';
 
@@ -13,6 +14,7 @@ describe('formatNotionTasksAsPromptSection', () => {
     const tasks: NotionTask[] = [
       {
         databaseId: 'DB1',
+        workspace: NotionWorkspace.PERSONAL,
         pageId: 'p1',
         url: 'u1',
         title: '버그 수정',
@@ -24,6 +26,7 @@ describe('formatNotionTasksAsPromptSection', () => {
       },
       {
         databaseId: 'DB1',
+        workspace: NotionWorkspace.PERSONAL,
         pageId: 'p2',
         url: 'u2',
         title: '문서 정리',
@@ -44,6 +47,7 @@ describe('formatNotionTasksAsPromptSection', () => {
     const tasks: NotionTask[] = [
       {
         databaseId: 'DB1',
+        workspace: NotionWorkspace.PERSONAL,
         pageId: 'p1',
         url: 'u',
         title: '제목만 있음',
@@ -60,6 +64,7 @@ describe('formatNotionTasksAsPromptSection', () => {
     const tasks: NotionTask[] = [
       {
         databaseId: 'DB1',
+        workspace: NotionWorkspace.PERSONAL,
         pageId: 'p1',
         url: 'u',
         title: 't',
@@ -75,6 +80,7 @@ describe('formatNotionTasksAsPromptSection', () => {
   it('항목 수가 maxItems 초과 시 cap + "(+N건 생략)" 표기', () => {
     const tasks: NotionTask[] = Array.from({ length: 50 }, (_, index) => ({
       databaseId: 'DB1',
+      workspace: NotionWorkspace.PERSONAL,
       pageId: `p${index}`,
       url: 'u',
       title: `task ${index}`,
@@ -96,6 +102,7 @@ describe('formatNotionTasksAsPromptSection', () => {
   it('default maxItems = 30 적용, 30건 이하면 truncated 0', () => {
     const tasks: NotionTask[] = Array.from({ length: 30 }, (_, index) => ({
       databaseId: 'DB1',
+      workspace: NotionWorkspace.PERSONAL,
       pageId: `p${index}`,
       url: 'u',
       title: `t${index}`,
@@ -113,6 +120,7 @@ describe('formatNotionTasksAsPromptSection — 외부 입력 경계', () => {
     properties: Record<string, string> = {},
   ): NotionTask => ({
     databaseId: 'db',
+    workspace: NotionWorkspace.PERSONAL,
     pageId: 'pg',
     url: 'https://notion.so/pg',
     title,
@@ -154,6 +162,7 @@ describe('formatNotionTasksAsPromptSection — 생략 안내 위치', () => {
     const { content } = formatNotionTasksAsPromptSection(
       Array.from({ length: 3 }, (_, index) => ({
         databaseId: 'db',
+        workspace: NotionWorkspace.PERSONAL,
         pageId: `pg${index}`,
         url: 'https://notion.so/pg',
         title: `t${index}`,

@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 
 import { ListActiveTasksUsecase } from '../../../notion/application/list-active-tasks.usecase';
+import { NotionWorkspace } from '../../../notion/domain/notion.type';
 import { NotionTask } from '../../../notion/domain/notion.type';
 import { CloseFinishedNotionTasksUsecase } from '../../../schedule/application/close-finished-notion-tasks.usecase';
 import { ScheduleRepositoryPort } from '../../../schedule/domain/port/schedule.repository.port';
@@ -17,6 +18,7 @@ describe('ScheduleCollectNotionAutopilotTask', () => {
   const repository = {
     findBySourceKey: jest.fn(),
     createCollected: jest.fn(),
+    updateSourceWorkspace: jest.fn(),
     addEvent: jest.fn(),
     findDetail: jest.fn(),
     recordEventAndTransition: jest.fn(),
@@ -34,6 +36,7 @@ describe('ScheduleCollectNotionAutopilotTask', () => {
   );
   const notionTask: NotionTask = {
     databaseId: 'db',
+    workspace: NotionWorkspace.PERSONAL,
     pageId: 'page',
     url: 'https://notion.so/page',
     title: '결제 업무',
@@ -123,6 +126,37 @@ describe('ScheduleCollectNotionAutopilotTask', () => {
         kind: ScheduleEventKind.NOTE,
         dedupeKey: expect.stringMatching(/^notion-edit:/),
       }),
+    );
+  });
+
+  it('워크스페이스가 비어 있는 기존 업무는 수집한 워크스페이스로 채우고, 같으면 건드리지 않는다', async () => {
+    repository.findBySourceKey.mockResolvedValue({
+      id: 17,
+      title: '결제 업무',
+      dueDate: new Date('2026-11-10T00:00:00Z'),
+      sourceWorkspace: null,
+    });
+    await task.run();
+    expect(repository.updateSourceWorkspace).toHaveBeenCalledWith({
+      id: 17,
+      sourceWorkspace: NotionWorkspace.PERSONAL,
+    });
+
+    repository.updateSourceWorkspace.mockClear();
+    repository.findBySourceKey.mockResolvedValue({
+      id: 17,
+      title: '결제 업무',
+      dueDate: new Date('2026-11-10T00:00:00Z'),
+      sourceWorkspace: NotionWorkspace.PERSONAL,
+    });
+    await task.run();
+    expect(repository.updateSourceWorkspace).not.toHaveBeenCalled();
+  });
+
+  it('새 업무는 워크스페이스와 함께 만든다', async () => {
+    await task.run();
+    expect(repository.createCollected).toHaveBeenCalledWith(
+      expect.objectContaining({ sourceWorkspace: NotionWorkspace.PERSONAL }),
     );
   });
 

@@ -1326,6 +1326,8 @@ model ScheduleItem {
   source             String             @default("MANUAL")
   sourceKey          String?            @map("source_key")
   sourceUrl          String?            @map("source_url")
+  // 원본이 속한 워크스페이스(Notion 은 `PERSONAL` / `WORK`). 상태 확인 때 그 통합으로만 묻는다.
+  sourceWorkspace    String?            @map("source_workspace")
   candidateExpiresAt DateTime?          @map("candidate_expires_at")
   deliveryClaimedAt  DateTime?          @map("delivery_claimed_at")
   followUps          ScheduleFollowUp[]

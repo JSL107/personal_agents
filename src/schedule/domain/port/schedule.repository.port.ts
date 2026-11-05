@@ -22,6 +22,7 @@ import {
   ScheduleFollowUpRecord,
   TransitionInput,
   UpdateFollowUpInput,
+  UpdateSourceWorkspaceInput,
 } from '../schedule.repository.type';
 import {
   DatedScheduleItemRecord,
@@ -93,6 +94,7 @@ export interface ScheduleRepositoryPort {
   createCollected(
     input: CollectedScheduleInput,
   ): Promise<ScheduleItemRecord | 'DUPLICATE'>;
+  updateSourceWorkspace(input: UpdateSourceWorkspaceInput): Promise<void>;
   updateFields(
     input: PersistScheduleFieldsInput,
   ): Promise<ScheduleItemRecord | null>;

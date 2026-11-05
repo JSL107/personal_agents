@@ -1,3 +1,4 @@
+import { NotionWorkspace } from '../../notion/domain/notion.type';
 import {
   FollowUpTrigger,
   ScheduleEventKind,
@@ -62,9 +63,15 @@ export interface CollectedScheduleInput {
   source: ScheduleSource;
   sourceKey: string;
   sourceUrl: string | null;
+  sourceWorkspace?: NotionWorkspace | null;
   status: ScheduleStatus;
   startedAt?: Date | null;
   candidateExpiresAt?: Date | null;
+}
+
+export interface UpdateSourceWorkspaceInput {
+  id: number;
+  sourceWorkspace: NotionWorkspace;
 }
 
 export interface FindBySourceInput {

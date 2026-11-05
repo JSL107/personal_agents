@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { toNotionWorkspace } from '../../notion/domain/notion.type';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   FindByDateRangeInput,
@@ -35,6 +36,7 @@ import {
   ScheduleFollowUpRecord,
   TransitionInput,
   UpdateFollowUpInput,
+  UpdateSourceWorkspaceInput,
 } from '../domain/schedule.repository.type';
 import {
   DatedScheduleItemRecord,
@@ -90,6 +92,7 @@ interface ScheduleItemRow {
   source?: string;
   sourceKey?: string | null;
   sourceUrl?: string | null;
+  sourceWorkspace?: string | null;
   candidateExpiresAt?: Date | null;
   deliveryClaimedAt?: Date | null;
 }
@@ -131,6 +134,7 @@ const toRecord = (row: ScheduleItemRow): ScheduleItemRecord => {
     source: (row.source ?? ScheduleSource.MANUAL) as ScheduleSource,
     sourceKey: row.sourceKey ?? null,
     sourceUrl: row.sourceUrl ?? null,
+    sourceWorkspace: toNotionWorkspace(row.sourceWorkspace),
     candidateExpiresAt: row.candidateExpiresAt ?? null,
     deliveryClaimedAt: row.deliveryClaimedAt ?? null,
   };
@@ -414,6 +418,15 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
     return found ? toRecord(found) : null;
   }
 
+  async updateSourceWorkspace(
+    input: UpdateSourceWorkspaceInput,
+  ): Promise<void> {
+    await this.prisma.scheduleItem.update({
+      where: { id: input.id },
+      data: { sourceWorkspace: input.sourceWorkspace },
+    });
+  }
+
   async createCollected(
     input: CollectedScheduleInput,
   ): Promise<ScheduleItemRecord | 'DUPLICATE'> {
@@ -428,6 +441,7 @@ export class SchedulePrismaRepository implements ScheduleRepositoryPort {
           source: input.source,
           sourceKey: input.sourceKey,
           sourceUrl: input.sourceUrl,
+          sourceWorkspace: input.sourceWorkspace ?? null,
           status: input.status,
           startedAt:
             input.startedAt ??

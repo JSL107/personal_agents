@@ -1,4 +1,4 @@
-import { NotionTask } from '../notion.type';
+import { NotionTask, NotionWorkspace } from '../notion.type';
 
 export const NOTION_CLIENT_PORT = Symbol('NOTION_CLIENT_PORT');
 
@@ -153,6 +153,12 @@ export interface NotionDailyPlanPage {
   url: string;
 }
 
+export interface GetPageStatusOptions {
+  pageId: string;
+  // 모르면(이 값이 생기기 전에 수집된 행) 개인 → 회사 순으로 시도한다.
+  workspace?: NotionWorkspace | null;
+}
+
 export interface NotionPageStatus {
   properties: Record<string, string>;
   archived: boolean;
@@ -172,7 +178,7 @@ export class NotionPageNotAccessibleError extends Error {
 
 export interface NotionClientPort {
   listActiveTasks(options?: ListActiveTasksOptions): Promise<NotionTask[]>;
-  getPageStatus(pageId: string): Promise<NotionPageStatus>;
+  getPageStatus(options: GetPageStatusOptions): Promise<NotionPageStatus>;
   queryDraftPages(options: QueryDraftPagesOptions): Promise<NotionDraftPage[]>;
   getPageMarkdown(pageId: string): Promise<string>;
   createDatabasePage(

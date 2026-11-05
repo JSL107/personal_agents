@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 
+import { NotionWorkspace } from '../domain/notion.type';
 import { NotionClientPort } from '../domain/port/notion-client.port';
 import { ListActiveTasksUsecase } from './list-active-tasks.usecase';
 
@@ -36,6 +37,7 @@ describe('ListActiveTasksUsecase', () => {
     const fixture = [
       {
         databaseId: 'DB1',
+        workspace: NotionWorkspace.PERSONAL,
         pageId: 'p1',
         url: 'u',
         title: 't',
