@@ -1,11 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { isMatching, P } from 'ts-pattern';
 
 import { DomainStatus } from '../../common/exception/domain-status.enum';
-import { InstagramException } from '../domain/instagram.exception';
+import {
+  InstagramException,
+  toInstagramError,
+} from '../domain/instagram.exception';
 import { InstagramErrorCode } from '../domain/instagram-error-code.enum';
 import {
   ContainerStatus,
+  ContainerStatusCode,
   MediaDetail,
   MetaGraphPort,
   PageTokenDebug,
@@ -18,6 +23,16 @@ import {
 const GRAPH_ROOT = 'https://graph.facebook.com/v27.0';
 const GRAPH_TIMEOUT_MS = 30_000;
 const UPLOAD_TIMEOUT_MS = 120_000;
+// 컨테이너 응답의 uri 로 페이지 토큰을 보내므로, Meta 업로드 호스트가 아니면 보내지 않는다.
+const UPLOAD_HOST = 'rupload.facebook.com';
+const GRAPH_ERROR_RESPONSE_PATTERN = {
+  error: {
+    code: P.optional(P.number),
+    error_subcode: P.optional(P.number),
+    message: P.optional(P.string),
+    error_user_msg: P.optional(P.string),
+  },
+};
 
 interface GraphError {
   code?: number;
@@ -26,10 +41,36 @@ interface GraphError {
   error_user_msg?: string;
 }
 
-interface GraphResponse {
-  error?: GraphError;
-  [key: string]: unknown;
-}
+type GraphResponse = Record<string, unknown>;
+
+const PUBLISHING_LIMIT_PATTERN = {
+  data: { 0: { quota_usage: P.number, config: { quota_total: P.number } } },
+};
+const CONTAINER_STATUS_PATTERN = {
+  status_code: P.union(
+    ContainerStatusCode.IN_PROGRESS,
+    ContainerStatusCode.FINISHED,
+    ContainerStatusCode.ERROR,
+    ContainerStatusCode.EXPIRED,
+    ContainerStatusCode.PUBLISHED,
+  ),
+};
+const RECENT_MEDIA_PATTERN = {
+  data: P.array({
+    id: P.string,
+    caption: P.optional(P.union(P.string, null)),
+    permalink: P.string,
+    timestamp: P.string,
+  }),
+};
+const TOKEN_DEBUG_PATTERN = {
+  data: {
+    is_valid: P.boolean,
+    expires_at: P.number,
+    data_access_expires_at: P.number,
+    scopes: P.array(P.string),
+  },
+};
 
 @Injectable()
 export class MetaGraphClient implements MetaGraphPort {
@@ -53,174 +94,141 @@ export class MetaGraphClient implements MetaGraphPort {
   }
 
   async getPublishingLimit(): Promise<PublishingLimit> {
-    const body = await this.graphGet(
-      `${this.userId}/content_publishing_limit`,
-      { fields: 'quota_usage,config' },
-    );
-    const data = body.data as Array<{
-      quota_usage: number;
-      config: { quota_total: number };
-    }>;
-    if (
-      !data?.[0] ||
-      typeof data[0].quota_usage !== 'number' ||
-      typeof data[0].config?.quota_total !== 'number'
-    ) {
+    const body = await this.graphGet({
+      path: `${this.userId}/content_publishing_limit`,
+      params: { fields: 'quota_usage,config' },
+    });
+    if (!isMatching(PUBLISHING_LIMIT_PATTERN, body)) {
       throw this.failure('Meta 게시 한도 응답이 비어 있습니다.');
     }
-    return { usage: data[0].quota_usage, total: data[0].config.quota_total };
+    return {
+      usage: body.data[0].quota_usage,
+      total: body.data[0].config.quota_total,
+    };
   }
 
   async createReelContainer(caption: string): Promise<ReelContainer> {
-    const body = await this.graphPost(`${this.userId}/media`, {
-      media_type: 'REELS',
-      upload_type: 'resumable',
-      caption,
-      share_to_feed: 'true',
+    const body = await this.graphPost({
+      path: `${this.userId}/media`,
+      params: {
+        media_type: 'REELS',
+        upload_type: 'resumable',
+        caption,
+        share_to_feed: 'true',
+      },
     });
-    if (typeof body.id !== 'string' || typeof body.uri !== 'string') {
+    if (!isMatching({ id: P.string, uri: P.string }, body)) {
       throw this.failure('Meta 컨테이너 응답이 올바르지 않습니다.');
     }
     return { containerId: body.id, uploadUri: body.uri };
   }
 
-  async uploadVideo(uploadUri: string, video: Buffer): Promise<void> {
+  async uploadVideo({
+    uploadUri,
+    video,
+  }: {
+    uploadUri: string;
+    video: Buffer;
+  }): Promise<void> {
     let uploadUrl: URL;
     try {
       uploadUrl = new URL(uploadUri);
     } catch {
       throw this.failure('Meta 영상 업로드 주소가 올바르지 않습니다.');
     }
-    if (
-      uploadUrl.protocol !== 'https:' ||
-      uploadUrl.host !== 'rupload.facebook.com'
-    ) {
+    const trustedUploadUrl =
+      uploadUrl.protocol === 'https:' && uploadUrl.host === UPLOAD_HOST;
+    if (!trustedUploadUrl) {
       throw this.failure('Meta 영상 업로드 주소가 올바르지 않습니다.');
     }
-    const body = await this.request(uploadUri, {
-      method: 'POST',
-      headers: {
-        Authorization: `OAuth ${this.pageToken}`,
-        offset: '0',
-        file_size: String(video.byteLength),
-        'Content-Type': 'application/octet-stream',
+    const body = await this.request({
+      url: uploadUri,
+      init: {
+        method: 'POST',
+        headers: {
+          Authorization: `OAuth ${this.pageToken}`,
+          offset: '0',
+          file_size: String(video.byteLength),
+          'Content-Type': 'application/octet-stream',
+        },
+        body: new Uint8Array(video),
+        signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
       },
-      body: new Uint8Array(video),
-      signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS),
     });
     if (body.success !== true) {
-      const debugInfo = body.debug_info as GraphResponse | undefined;
-      const detail =
-        typeof debugInfo?.message === 'string'
-          ? `: ${this.sanitize(debugInfo.message)}`
-          : '';
+      const detail = isMatching({ debug_info: { message: P.string } }, body)
+        ? `: ${this.sanitize(body.debug_info.message)}`
+        : '';
       throw this.failure(`Meta 영상 업로드가 실패했습니다${detail}`);
     }
   }
 
   async getContainerStatus(containerId: string): Promise<ContainerStatus> {
-    const body = await this.graphGet(containerId, {
-      fields: 'status_code,status',
+    const body = await this.graphGet({
+      path: containerId,
+      params: { fields: 'status_code,status' },
     });
-    const statusCode = body.status_code as ContainerStatus['statusCode'];
-    if (
-      !['IN_PROGRESS', 'FINISHED', 'ERROR', 'EXPIRED', 'PUBLISHED'].includes(
-        statusCode,
-      )
-    ) {
+    if (!isMatching(CONTAINER_STATUS_PATTERN, body)) {
       throw this.failure('Meta 컨테이너 상태가 올바르지 않습니다.');
     }
     return {
-      statusCode,
-      status:
-        typeof body.status === 'string' ? this.sanitize(body.status) : null,
+      statusCode: body.status_code,
+      status: isMatching({ status: P.string }, body)
+        ? this.sanitize(body.status)
+        : null,
     };
   }
 
   async publish(containerId: string): Promise<PublishedMedia> {
-    const body = await this.graphPost(`${this.userId}/media_publish`, {
-      creation_id: containerId,
+    const body = await this.graphPost({
+      path: `${this.userId}/media_publish`,
+      params: { creation_id: containerId },
     });
-    if (typeof body.id !== 'string') {
+    if (!isMatching({ id: P.string }, body)) {
       throw this.failure('Meta 게시 응답에 id 가 없습니다.');
     }
     return {
       mediaId: body.id,
-      configIssue:
-        typeof body.config_issue === 'string'
-          ? this.sanitize(body.config_issue)
-          : null,
+      configIssue: isMatching({ config_issue: P.string }, body)
+        ? this.sanitize(body.config_issue)
+        : null,
     };
   }
 
   async getMedia(mediaId: string): Promise<MediaDetail> {
-    const body = await this.graphGet(mediaId, {
-      fields: 'permalink,timestamp',
+    const body = await this.graphGet({
+      path: mediaId,
+      params: { fields: 'permalink,timestamp' },
     });
-    if (
-      typeof body.permalink !== 'string' ||
-      typeof body.timestamp !== 'string'
-    ) {
+    if (!isMatching({ permalink: P.string, timestamp: P.string }, body)) {
       throw this.failure('Meta 게시물 응답이 올바르지 않습니다.');
     }
     return { permalink: body.permalink, timestamp: body.timestamp };
   }
 
   async listRecentMedia(limit: number): Promise<RecentMedia[]> {
-    const body = await this.graphGet(`${this.userId}/media`, {
-      fields: 'id,caption,permalink,timestamp',
-      limit: String(limit),
+    const body = await this.graphGet({
+      path: `${this.userId}/media`,
+      params: {
+        fields: 'id,caption,permalink,timestamp',
+        limit: String(limit),
+      },
     });
-    if (!Array.isArray(body.data)) {
+    if (!isMatching(RECENT_MEDIA_PATTERN, body)) {
       throw this.failure('Meta 최근 게시물 응답이 올바르지 않습니다.');
     }
-    const records = body.data as GraphResponse[];
-    if (
-      records.some(
-        (record) =>
-          typeof record.id !== 'string' ||
-          typeof record.permalink !== 'string' ||
-          typeof record.timestamp !== 'string' ||
-          (record.caption != null && typeof record.caption !== 'string'),
-      )
-    ) {
-      throw this.failure('Meta 최근 게시물 응답이 올바르지 않습니다.');
-    }
-    return records.map((record) => ({
-      id: record.id as string,
-      caption: typeof record.caption === 'string' ? record.caption : null,
-      permalink: record.permalink as string,
-      timestamp: record.timestamp as string,
+    return body.data.map((record) => ({
+      id: record.id,
+      caption: record.caption ?? null,
+      permalink: record.permalink,
+      timestamp: record.timestamp,
     }));
   }
 
   async debugPageToken(): Promise<PageTokenDebug> {
     const appToken = `${this.configService.get<string>('META_APP_ID')}|${this.configService.get<string>('META_APP_SECRET')}`;
-    let body: GraphResponse;
-    try {
-      body = await this.graphGet(
-        'debug_token',
-        { input_token: this.pageToken },
-        appToken,
-      );
-    } catch (error) {
-      if (
-        error instanceof InstagramException &&
-        error.instagramErrorCode === InstagramErrorCode.TOKEN_INVALID
-      ) {
-        throw this.failure(
-          `Meta 앱 토큰 오류: META_APP_ID/META_APP_SECRET 확인. ${error.message}`,
-        );
-      }
-      throw error;
-    }
-    const data = body.data as {
-      is_valid: boolean;
-      expires_at: number;
-      data_access_expires_at: number;
-      scopes: string[];
-    };
-    if (data?.is_valid === false) {
+    const body = await this.fetchTokenDebug(appToken);
+    if (isMatching({ data: { is_valid: false } }, body)) {
       return {
         isValid: false,
         expiresAt: 0,
@@ -228,22 +236,37 @@ export class MetaGraphClient implements MetaGraphPort {
         scopes: [],
       };
     }
-    if (
-      !data ||
-      typeof data.is_valid !== 'boolean' ||
-      typeof data.expires_at !== 'number' ||
-      typeof data.data_access_expires_at !== 'number' ||
-      !Array.isArray(data.scopes) ||
-      data.scopes.some((scope) => typeof scope !== 'string')
-    ) {
+    if (!isMatching(TOKEN_DEBUG_PATTERN, body)) {
       throw this.failure('Meta 토큰 점검 응답이 비어 있습니다.');
     }
     return {
-      isValid: data.is_valid,
-      expiresAt: data.expires_at,
-      dataAccessExpiresAt: data.data_access_expires_at,
-      scopes: data.scopes,
+      isValid: body.data.is_valid,
+      expiresAt: body.data.expires_at,
+      dataAccessExpiresAt: body.data.data_access_expires_at,
+      scopes: body.data.scopes,
     };
+  }
+
+  // debug_token 의 access_token 은 앱 토큰이라, 여기서 난 190 은 페이지 토큰이 아니라 앱 자격증명 문제다.
+  private async fetchTokenDebug(appToken: string): Promise<GraphResponse> {
+    try {
+      return await this.graphGet({
+        path: 'debug_token',
+        params: { input_token: this.pageToken },
+        token: appToken,
+      });
+    } catch (error) {
+      const appTokenError = toInstagramError({
+        error,
+        code: InstagramErrorCode.TOKEN_INVALID,
+      });
+      if (appTokenError) {
+        throw this.failure(
+          `Meta 앱 토큰 오류: META_APP_ID/META_APP_SECRET 확인. ${appTokenError.message}`,
+        );
+      }
+      throw error;
+    }
   }
 
   private get userId(): string {
@@ -254,41 +277,65 @@ export class MetaGraphClient implements MetaGraphPort {
     return this.configService.get<string>('META_PAGE_TOKEN') ?? '';
   }
 
-  private async graphGet(
-    path: string,
-    params: Record<string, string>,
-    token = this.pageToken,
-  ): Promise<GraphResponse> {
-    const query = new URLSearchParams({ ...params, access_token: token });
-    return await this.request(`${GRAPH_ROOT}/${path}?${query}`, {
-      signal: AbortSignal.timeout(GRAPH_TIMEOUT_MS),
+  private async graphGet({
+    path,
+    params,
+    token,
+  }: {
+    path: string;
+    params: Record<string, string>;
+    token?: string;
+  }): Promise<GraphResponse> {
+    const query = new URLSearchParams({
+      ...params,
+      access_token: token ?? this.pageToken,
+    });
+    return await this.request({
+      url: `${GRAPH_ROOT}/${path}?${query}`,
+      init: { signal: AbortSignal.timeout(GRAPH_TIMEOUT_MS) },
     });
   }
 
-  private async graphPost(
-    path: string,
-    params: Record<string, string>,
-  ): Promise<GraphResponse> {
+  private async graphPost({
+    path,
+    params,
+  }: {
+    path: string;
+    params: Record<string, string>;
+  }): Promise<GraphResponse> {
     const form = new URLSearchParams({
       ...params,
       access_token: this.pageToken,
     });
-    return await this.request(`${GRAPH_ROOT}/${path}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: form.toString(),
-      signal: AbortSignal.timeout(GRAPH_TIMEOUT_MS),
+    return await this.request({
+      url: `${GRAPH_ROOT}/${path}`,
+      init: {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: form.toString(),
+        signal: AbortSignal.timeout(GRAPH_TIMEOUT_MS),
+      },
     });
   }
 
-  private async request(
-    url: string,
-    init: RequestInit,
-  ): Promise<GraphResponse> {
+  private async request({
+    url,
+    init,
+  }: {
+    url: string;
+    init: RequestInit;
+  }): Promise<GraphResponse> {
     try {
       const response = await fetch(url, init);
-      const body = (await response.json()) as GraphResponse;
-      if (body.error) {
+      const value: unknown = await response.json();
+      if (!isMatching(P.record(P.string, P.unknown), value)) {
+        throw this.failure('Meta 요청 응답이 올바르지 않습니다.');
+      }
+      const body = value;
+      if (isMatching({ error: P.nonNullable }, body)) {
+        if (!isMatching(GRAPH_ERROR_RESPONSE_PATTERN, body)) {
+          throw this.failure('Meta 오류 응답이 올바르지 않습니다.');
+        }
         throw this.graphFailure(body.error);
       }
       if (!response.ok) {

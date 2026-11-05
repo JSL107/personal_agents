@@ -3,12 +3,17 @@ import { lstat, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { Logger } from '@nestjs/common';
+import { isMatching, P } from 'ts-pattern';
 
+import { INSTAGRAM_CAPTION_MAX_CHARS } from '../domain/instagram.constants';
 import { ReelPublishPayload } from '../domain/instagram-post.type';
 
 const LOGGER = new Logger('ScanReadyReels');
 const REEL_FIELDS = ['ai', 'dev'] as const;
-const MAX_CAPTION_CHARS = 2200;
+const REEL_SCRIPT_PATTERN = {
+  row: { title: P.string },
+  duration: P.number.finite(),
+};
 
 export interface ScanResult {
   ready: ReelPublishPayload[];
@@ -18,11 +23,6 @@ export interface ScanResult {
 interface ScanReadyReelsInput {
   outRoot: string;
   day: string;
-}
-
-interface ReelScript {
-  row: { title: string };
-  duration: number;
 }
 
 export const scanReadyReels = async ({
@@ -53,17 +53,13 @@ export const scanReadyReels = async ({
         readFile(join(reelDir, 'script.json'), 'utf8'),
       ]);
 
-      const script = JSON.parse(scriptText) as ReelScript;
-      if (
-        typeof script.row?.title !== 'string' ||
-        typeof script.duration !== 'number' ||
-        !Number.isFinite(script.duration)
-      ) {
+      const script: unknown = JSON.parse(scriptText);
+      if (!isMatching(REEL_SCRIPT_PATTERN, script)) {
         throw new Error('script.json 형식이 잘못되었습니다');
       }
 
       const caption = captionText.trim();
-      if (caption.length > MAX_CAPTION_CHARS) {
+      if (caption.length > INSTAGRAM_CAPTION_MAX_CHARS) {
         result.tooLong.push({ reelKey, captionChars: caption.length });
         continue;
       }

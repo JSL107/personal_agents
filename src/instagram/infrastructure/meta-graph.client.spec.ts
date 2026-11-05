@@ -27,7 +27,56 @@ describe('MetaGraphClient', () => {
     global.fetch = originalFetch;
   });
 
-  it('creates a resumable reel container with form body and returns uri', async () => {
+  it('게시 한도 응답에 사용량과 총량이 있으면 두 값을 반환한다', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [{ quota_usage: 2, config: { quota_total: 100 } }],
+      }),
+    });
+    await expect(client.getPublishingLimit()).resolves.toEqual({
+      usage: 2,
+      total: 100,
+    });
+  });
+
+  it('첫 한도 항목이 유효하면 뒤 항목과 관계없이 첫 값을 반환한다', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [{ quota_usage: 2, config: { quota_total: 100 } }, {}],
+      }),
+    });
+    await expect(client.getPublishingLimit()).resolves.toEqual({
+      usage: 2,
+      total: 100,
+    });
+  });
+
+  it('최근 게시물에 캡션이 없으면 null로 반환한다', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [
+          {
+            id: 'media',
+            permalink: 'https://example.com/reel',
+            timestamp: '2026-11-05T00:00:00Z',
+          },
+        ],
+      }),
+    });
+    await expect(client.listRecentMedia(1)).resolves.toEqual([
+      {
+        id: 'media',
+        caption: null,
+        permalink: 'https://example.com/reel',
+        timestamp: '2026-11-05T00:00:00Z',
+      },
+    ]);
+  });
+
+  it('릴스 컨테이너를 만들면 폼 본문으로 요청하고 업로드 주소를 반환한다', async () => {
     fetchMock.mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -61,15 +110,15 @@ describe('MetaGraphClient', () => {
     expect(init.signal).toBeDefined();
   });
 
-  it('uploads video with OAuth headers and timeout', async () => {
+  it('영상을 업로드하면 OAuth 헤더와 시간 제한을 설정한다', async () => {
     fetchMock.mockResolvedValue({
       ok: true,
       json: async () => ({ success: true }),
     });
-    await client.uploadVideo(
-      'https://rupload.facebook.com/media',
-      Buffer.from('video'),
-    );
+    await client.uploadVideo({
+      uploadUri: 'https://rupload.facebook.com/media',
+      video: Buffer.from('video'),
+    });
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(init.headers).toEqual(
       expect.objectContaining({
@@ -84,7 +133,10 @@ describe('MetaGraphClient', () => {
 
   it('업로드 주소가 Meta 호스트가 아니면 요청하지 않는다', async () => {
     await expect(
-      client.uploadVideo('https://upload.example/media', Buffer.from('video')),
+      client.uploadVideo({
+        uploadUri: 'https://upload.example/media',
+        video: Buffer.from('video'),
+      }),
     ).rejects.toMatchObject({
       errorCode: InstagramErrorCode.GRAPH_REQUEST_FAILED,
     });
@@ -93,17 +145,17 @@ describe('MetaGraphClient', () => {
 
   it('업로드 주소가 HTTP이면 요청하지 않는다', async () => {
     await expect(
-      client.uploadVideo(
-        'http://rupload.facebook.com/media',
-        Buffer.from('video'),
-      ),
+      client.uploadVideo({
+        uploadUri: 'http://rupload.facebook.com/media',
+        video: Buffer.from('video'),
+      }),
     ).rejects.toMatchObject({
       errorCode: InstagramErrorCode.GRAPH_REQUEST_FAILED,
     });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('upload failure includes sanitized debug_info.message', async () => {
+  it('업로드가 실패하면 정제한 debug_info.message를 오류에 넣는다', async () => {
     fetchMock.mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -115,17 +167,17 @@ describe('MetaGraphClient', () => {
       }),
     });
     await expect(
-      client.uploadVideo(
-        'https://rupload.facebook.com/media',
-        Buffer.from('video'),
-      ),
+      client.uploadVideo({
+        uploadUri: 'https://rupload.facebook.com/media',
+        video: Buffer.from('video'),
+      }),
     ).rejects.toMatchObject({
       errorCode: InstagramErrorCode.GRAPH_REQUEST_FAILED,
       message: expect.stringContaining('upload failed [REDACTED] at [URL]'),
     });
   });
 
-  it('sanitizes container status before returning it', async () => {
+  it('컨테이너 상태를 받으면 민감 정보를 정제해 반환한다', async () => {
     fetchMock.mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -139,7 +191,7 @@ describe('MetaGraphClient', () => {
     });
   });
 
-  it('sanitizes publish configIssue before returning it', async () => {
+  it('게시 설정 문제를 받으면 민감 정보를 정제해 반환한다', async () => {
     fetchMock.mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -156,14 +208,14 @@ describe('MetaGraphClient', () => {
   it.each([
     [{ code: 190 }, InstagramErrorCode.TOKEN_INVALID],
     [{ code: 9, error_subcode: 2207042 }, InstagramErrorCode.QUOTA_EXCEEDED],
-  ])('maps known graph error %j', async (error, code) => {
+  ])('알려진 Graph 오류 %j를 도메인 오류로 변환한다', async (error, code) => {
     fetchMock.mockResolvedValue({ ok: false, json: async () => ({ error }) });
     await expect(client.getPublishingLimit()).rejects.toMatchObject({
       errorCode: code,
     });
   });
 
-  it('wraps unknown graph error', async () => {
+  it('알 수 없는 Graph 오류를 받으면 일반 요청 오류로 감싼다', async () => {
     fetchMock.mockResolvedValue({
       ok: false,
       json: async () => ({
@@ -179,7 +231,7 @@ describe('MetaGraphClient', () => {
   it.each([
     new TypeError('secret-page-token'),
     Object.assign(new Error('secret-page-token'), { name: 'AbortError' }),
-  ])('wraps fetch failure without exposing token', async (error) => {
+  ])('fetch가 실패하면 토큰을 노출하지 않고 오류로 감싼다', async (error) => {
     fetchMock.mockRejectedValue(error);
     await expect(client.getPublishingLimit()).rejects.toMatchObject({
       errorCode: InstagramErrorCode.GRAPH_REQUEST_FAILED,
@@ -189,7 +241,7 @@ describe('MetaGraphClient', () => {
     );
   });
 
-  it('isConfigured is false when disabled', () => {
+  it('인스타 게시가 꺼져 있으면 설정되지 않은 것으로 판단한다', () => {
     const disabled = new MetaGraphClient({
       get: (key: string) =>
         key === 'INSTAGRAM_PUBLISH_ENABLED'

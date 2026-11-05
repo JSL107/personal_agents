@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 
-import { InstagramException } from '../../../instagram/domain/instagram.exception';
+import { toInstagramError } from '../../../instagram/domain/instagram.exception';
 import { InstagramErrorCode } from '../../../instagram/domain/instagram-error-code.enum';
 import {
   META_GRAPH_PORT,
@@ -8,7 +8,6 @@ import {
 } from '../../../instagram/domain/port/meta-graph.port';
 import {
   AutopilotTask,
-  AutopilotTaskContext,
   AutopilotTaskResult,
 } from '../../domain/autopilot-task.port';
 
@@ -23,8 +22,7 @@ export class InstagramTokenCheckAutopilotTask implements AutopilotTask {
 
   constructor(@Inject(META_GRAPH_PORT) private readonly graph: MetaGraphPort) {}
 
-  async run(context: AutopilotTaskContext): Promise<AutopilotTaskResult> {
-    void context;
+  async run(): Promise<AutopilotTaskResult> {
     if (!this.graph.isConfigured()) {
       return { skip: true };
     }
@@ -33,10 +31,7 @@ export class InstagramTokenCheckAutopilotTask implements AutopilotTask {
     try {
       token = await this.graph.debugPageToken();
     } catch (error) {
-      if (
-        error instanceof InstagramException &&
-        error.instagramErrorCode === InstagramErrorCode.TOKEN_INVALID
-      ) {
+      if (toInstagramError({ error, code: InstagramErrorCode.TOKEN_INVALID })) {
         return { skip: false, summaryText: TOKEN_INVALID_TEXT };
       }
       throw error;

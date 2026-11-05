@@ -6,7 +6,6 @@ import {
 } from '../../../instagram/domain/port/meta-graph.port';
 import { InstagramTokenCheckAutopilotTask } from './instagram-token-check.autopilot-task';
 
-const context = { ownerSlackUserId: 'U1', firedAtKst: '2026-11-05' };
 const now = new Date('2026-11-05T00:00:00Z');
 
 const buildGraph = (overrides: Partial<PageTokenDebug> = {}): MetaGraphPort =>
@@ -27,7 +26,7 @@ describe('InstagramTokenCheckAutopilotTask', () => {
 
   it('정상 토큰이 90일 남으면 skip 한다', async () => {
     const task = new InstagramTokenCheckAutopilotTask(buildGraph());
-    await expect(task.run(context)).resolves.toEqual({ skip: true });
+    await expect(task.run()).resolves.toEqual({ skip: true });
   });
 
   it('토큰 재동의가 13일 남으면 D-13을 안내한다', async () => {
@@ -35,7 +34,7 @@ describe('InstagramTokenCheckAutopilotTask', () => {
       dataAccessExpiresAt: Math.floor(now.getTime() / 1000) + 13 * 86400,
     });
     const task = new InstagramTokenCheckAutopilotTask(graph);
-    await expect(task.run(context)).resolves.toMatchObject({
+    await expect(task.run()).resolves.toMatchObject({
       skip: false,
       summaryText:
         '⏳ 인스타 토큰 재동의 D-13 (2026-11-18). README 「인스타 토큰 재동의」 절을 따라 갱신해 주세요.',
@@ -47,7 +46,7 @@ describe('InstagramTokenCheckAutopilotTask', () => {
       expiresAt: Math.floor(now.getTime() / 1000) + 5 * 86400,
     });
     const task = new InstagramTokenCheckAutopilotTask(graph);
-    await expect(task.run(context)).resolves.toMatchObject({
+    await expect(task.run()).resolves.toMatchObject({
       skip: false,
       summaryText:
         '⏳ 인스타 토큰 재동의 D-5 (2026-11-10). README 「인스타 토큰 재동의」 절을 따라 갱신해 주세요.',
@@ -63,7 +62,7 @@ describe('InstagramTokenCheckAutopilotTask', () => {
         scopes: [],
       }),
     );
-    await expect(task.run(context)).resolves.toMatchObject({
+    await expect(task.run()).resolves.toMatchObject({
       skip: false,
       summaryText:
         '⚠️ 인스타 토큰이 무효입니다. 릴스 게시가 멈춥니다. README 「인스타 토큰 재동의」 절을 따라 다시 발급해 주세요.',
@@ -79,7 +78,7 @@ describe('InstagramTokenCheckAutopilotTask', () => {
       }),
     );
     const task = new InstagramTokenCheckAutopilotTask(graph);
-    await expect(task.run(context)).resolves.toMatchObject({
+    await expect(task.run()).resolves.toMatchObject({
       skip: false,
       summaryText: expect.stringContaining('인스타 토큰이 무효입니다'),
     });
@@ -89,7 +88,7 @@ describe('InstagramTokenCheckAutopilotTask', () => {
     const task = new InstagramTokenCheckAutopilotTask(
       buildGraph({ scopes: [] }),
     );
-    await expect(task.run(context)).resolves.toMatchObject({
+    await expect(task.run()).resolves.toMatchObject({
       skip: false,
       summaryText:
         '⚠️ 인스타 게시 권한(instagram_content_publish)이 빠졌습니다.',
@@ -104,7 +103,7 @@ describe('InstagramTokenCheckAutopilotTask', () => {
     });
     graph.debugPageToken = jest.fn().mockRejectedValue(failure);
     const task = new InstagramTokenCheckAutopilotTask(graph);
-    await expect(task.run(context)).rejects.toBe(failure);
+    await expect(task.run()).rejects.toBe(failure);
   });
 
   it('앱 토큰 오류는 페이지 토큰 재동의를 안내하지 않는다', async () => {
@@ -115,14 +114,14 @@ describe('InstagramTokenCheckAutopilotTask', () => {
     });
     graph.debugPageToken = jest.fn().mockRejectedValue(failure);
     const task = new InstagramTokenCheckAutopilotTask(graph);
-    await expect(task.run(context)).rejects.toBe(failure);
+    await expect(task.run()).rejects.toBe(failure);
   });
 
   it('게시 설정이 없으면 조회 없이 skip 한다', async () => {
     const graph = buildGraph();
     graph.isConfigured = jest.fn().mockReturnValue(false);
     const task = new InstagramTokenCheckAutopilotTask(graph);
-    await expect(task.run(context)).resolves.toEqual({ skip: true });
+    await expect(task.run()).resolves.toEqual({ skip: true });
     expect(graph.debugPageToken).not.toHaveBeenCalled();
   });
 });

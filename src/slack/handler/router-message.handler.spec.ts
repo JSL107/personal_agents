@@ -2206,7 +2206,7 @@ describe('RouterMessageHandler — 자연어 Y/N preview 인터셉트', () => {
     channel: 'C_CHANNEL',
   };
 
-  it('instagram reel yes blocked', async () => {
+  it('인스타 게시 카드는 자연어 응으로 승인하지 않는다', async () => {
     const { app, getHandler } = buildAppMock();
     const dispatch = jest.fn();
     const pending = buildPendingPreview({

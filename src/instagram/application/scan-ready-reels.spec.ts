@@ -76,7 +76,7 @@ describe('scanReadyReels', () => {
     expect(result.tooLong).toEqual([]);
   });
 
-  it('partial day: done.json 없는 편을 건너뛴다', async () => {
+  it('done.json이 없는 편은 준비된 릴스에서 제외한다', async () => {
     await writeReel('ai');
     await writeReel('dev', '캡션', false);
 
@@ -100,6 +100,30 @@ describe('scanReadyReels', () => {
     expect(result.tooLong).toEqual([
       { reelKey: `${day}/ai`, captionChars: 2201 },
     ]);
+  });
+
+  it.each([
+    ['제목이 문자열이 아니면', { row: { title: 7 }, duration: 32.5 }],
+    ['길이가 숫자가 아니면', { row: { title: '제목' }, duration: '32.5' }],
+    ['길이가 null이면', { row: { title: '제목' }, duration: null }],
+  ])('대본의 %s 준비된 릴스에서 제외한다', async (_condition, script) => {
+    await writeReel('ai');
+    await writeFile(
+      join(outRoot, day, 'ai', 'script.json'),
+      JSON.stringify(script),
+    );
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+
+    try {
+      const result = await scanReadyReels({ outRoot, day });
+
+      expect(result).toEqual({ ready: [], tooLong: [] });
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('script.json 형식이 잘못되었습니다'),
+      );
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it.each(['done.json', 'reel.mp4', 'caption.txt', 'script.json'])(

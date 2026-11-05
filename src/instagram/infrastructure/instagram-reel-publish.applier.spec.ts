@@ -4,10 +4,19 @@ import { readFile } from 'fs/promises';
 import { PreviewAction } from '../../preview-gate/domain/preview-action.type';
 import { InstagramException } from '../domain/instagram.exception';
 import { InstagramErrorCode } from '../domain/instagram-error-code.enum';
-import { InstagramPost } from '../domain/instagram-post.type';
+import {
+  InstagramPost,
+  InstagramPostStatus,
+} from '../domain/instagram-post.type';
 import { InstagramPostRepositoryPort } from '../domain/port/instagram-post.repository.port';
-import { MetaGraphPort } from '../domain/port/meta-graph.port';
-import { InstagramReelPublishApplier } from './instagram-reel-publish.applier';
+import {
+  ContainerStatusCode,
+  MetaGraphPort,
+} from '../domain/port/meta-graph.port';
+import {
+  InstagramReelPublishApplier,
+  isSamePost,
+} from './instagram-reel-publish.applier';
 
 jest.mock('fs/promises', () => ({ readFile: jest.fn() }));
 
@@ -34,7 +43,7 @@ const post = (): InstagramPost => ({
   publishAttemptedAt: null,
   mediaId: null,
   permalink: null,
-  status: 'PENDING',
+  status: InstagramPostStatus.PENDING,
   lastError: null,
   publishedAt: null,
   createdAt: new Date(),
@@ -50,19 +59,11 @@ describe('InstagramReelPublishApplier', () => {
     jest.clearAllMocks();
     row = post();
     repository = {
-      claim: jest.fn(async (input) => {
-        if (
-          input.previewActionId !== row.previewActionId &&
-          row.status !== 'PUBLISHED'
-        ) {
-          throw new InstagramException({
-            code: InstagramErrorCode.REEL_CLAIMED,
-            message: 'claimed',
-          });
-        }
+      upsertByReelKey: jest.fn(async (input) => {
+        void input;
         return row;
       }),
-      update: jest.fn(async (_id, patch) => {
+      update: jest.fn(async ({ patch }) => {
         row = { ...row, ...patch } as InstagramPost;
         return row;
       }),
@@ -75,9 +76,10 @@ describe('InstagramReelPublishApplier', () => {
         .fn()
         .mockResolvedValue({ containerId: 'container', uploadUri: 'uri' }),
       uploadVideo: jest.fn().mockResolvedValue(undefined),
-      getContainerStatus: jest
-        .fn()
-        .mockResolvedValue({ statusCode: 'FINISHED', status: null }),
+      getContainerStatus: jest.fn().mockResolvedValue({
+        statusCode: ContainerStatusCode.FINISHED,
+        status: null,
+      }),
       publish: jest
         .fn()
         .mockResolvedValue({ mediaId: 'media', configIssue: null }),
@@ -101,12 +103,12 @@ describe('InstagramReelPublishApplier', () => {
       errorCode: 'INSTAGRAM_PUBLISH_DISABLED',
       message: '인스타 게시가 꺼져 있습니다(INSTAGRAM_PUBLISH_ENABLED)',
     });
-    expect(repository.claim).not.toHaveBeenCalled();
+    expect(repository.upsertByReelKey).not.toHaveBeenCalled();
     expect(graph.getPublishingLimit).not.toHaveBeenCalled();
   });
-  it('happy path', async () => {
+  it('정상 릴스를 게시하고 결과를 기록한다', async () => {
     graph.getContainerStatus.mockResolvedValueOnce({
-      statusCode: 'IN_PROGRESS',
+      statusCode: ContainerStatusCode.IN_PROGRESS,
       status: null,
     });
     const result = await applier.apply(preview);
@@ -115,12 +117,12 @@ describe('InstagramReelPublishApplier', () => {
     expect(
       repository.update.mock.invocationCallOrder.find(
         (_, index) =>
-          repository.update.mock.calls[index][1].publishAttemptedAt instanceof
-          Date,
+          repository.update.mock.calls[index][0].patch
+            .publishAttemptedAt instanceof Date,
       ),
     ).toBeLessThan(graph.publish.mock.invocationCallOrder[0]);
   });
-  it('concurrent two cards', async () => {
+  it('같은 릴스의 다른 카드 두 장을 동시에 승인하면 컨테이너는 하나만 만든다', async () => {
     const results = await Promise.allSettled([
       applier.apply(preview),
       applier.apply({ ...preview, id: 'other' }),
@@ -130,16 +132,16 @@ describe('InstagramReelPublishApplier', () => {
     ).toHaveLength(1);
     expect(graph.createReelContainer).toHaveBeenCalledTimes(1);
   });
-  it('settle before file check', async () => {
+  it('게시 시도 기록이 있으면 파일 검사보다 정산을 먼저 한다', async () => {
     row = {
       ...row,
-      status: 'PUBLISHING',
+      status: InstagramPostStatus.PUBLISHING,
       containerId: 'container',
       containerCreatedAt: new Date('2026-11-01'),
       publishAttemptedAt: new Date(),
     };
     graph.getContainerStatus.mockResolvedValue({
-      statusCode: 'PUBLISHED',
+      statusCode: ContainerStatusCode.PUBLISHED,
       status: null,
     });
     graph.listRecentMedia.mockResolvedValue([
@@ -155,7 +157,7 @@ describe('InstagramReelPublishApplier', () => {
     expect(row.status).toBe('PUBLISHED');
     expect(readFile).not.toHaveBeenCalled();
   });
-  it('publish lost and still finished', async () => {
+  it('게시 응답을 잃고 상태가 계속 FINISHED 면 재게시하지 않고 확인을 요청한다', async () => {
     graph.publish.mockRejectedValue(new Error('lost'));
     await expect(applier.apply(preview)).rejects.toMatchObject({
       errorCode: 'INSTAGRAM_PUBLISH_UNCONFIRMED',
@@ -163,7 +165,7 @@ describe('InstagramReelPublishApplier', () => {
     expect(graph.publish).toHaveBeenCalledTimes(1);
   });
   it('게시 후 원장 저장에 실패하면 기록 미완료를 알린다', async () => {
-    repository.update.mockImplementation(async (_id, patch) => {
+    repository.update.mockImplementation(async ({ patch }) => {
       if (patch.mediaId) {
         throw new Error('db failed');
       }
@@ -187,8 +189,8 @@ describe('InstagramReelPublishApplier', () => {
     });
   });
   it('게시 후 마감 기록에 실패하면 기록 미완료를 알린다', async () => {
-    repository.update.mockImplementation(async (_id, patch) => {
-      if (patch.status === 'PUBLISHED') {
+    repository.update.mockImplementation(async ({ patch }) => {
+      if (patch.status === InstagramPostStatus.PUBLISHED) {
         throw new Error('failed');
       }
       row = { ...row, ...patch } as InstagramPost;
@@ -200,7 +202,7 @@ describe('InstagramReelPublishApplier', () => {
         '인스타에는 올라갔지만 기록을 마치지 못했습니다. 잠시 뒤 다시 누르면 올라간 게시물을 찾아 기록합니다',
     });
   });
-  it('publish failure preserves graph error detail when unconfirmed', async () => {
+  it('게시가 미확정이면 Graph 오류 상세를 보존한다', async () => {
     graph.publish.mockRejectedValue(
       new InstagramException({
         code: InstagramErrorCode.GRAPH_REQUEST_FAILED,
@@ -217,7 +219,7 @@ describe('InstagramReelPublishApplier', () => {
       containerCreatedAt: new Date('2026-11-05T12:00:00.700Z'),
     };
     graph.getContainerStatus.mockResolvedValue({
-      statusCode: 'PUBLISHED',
+      statusCode: ContainerStatusCode.PUBLISHED,
       status: null,
     });
     graph.listRecentMedia.mockResolvedValue([
@@ -244,7 +246,7 @@ describe('InstagramReelPublishApplier', () => {
       containerCreatedAt: new Date('2026-11-01'),
     };
     graph.getContainerStatus.mockResolvedValue({
-      statusCode: 'PUBLISHED',
+      statusCode: ContainerStatusCode.PUBLISHED,
       status: null,
     });
     graph.listRecentMedia.mockResolvedValue([
@@ -262,7 +264,7 @@ describe('InstagramReelPublishApplier', () => {
       }),
     ).resolves.toMatchObject({ message: expect.stringContaining('link') });
   });
-  it('reconcile ambiguous', async () => {
+  it('같은 캡션 게시물이 두 건이면 자동으로 확정하지 않는다', async () => {
     row = {
       ...row,
       containerId: 'container',
@@ -270,7 +272,7 @@ describe('InstagramReelPublishApplier', () => {
       publishAttemptedAt: new Date(),
     };
     graph.getContainerStatus.mockResolvedValue({
-      statusCode: 'PUBLISHED',
+      statusCode: ContainerStatusCode.PUBLISHED,
       status: null,
     });
     graph.listRecentMedia.mockResolvedValue([
@@ -291,46 +293,46 @@ describe('InstagramReelPublishApplier', () => {
       errorCode: 'INSTAGRAM_PUBLISH_UNCONFIRMED',
     });
   });
-  it('already published', async () => {
-    row = { ...row, status: 'PUBLISHED', permalink: 'old' };
+  it('이미 게시된 릴스는 기존 링크를 반환한다', async () => {
+    row = { ...row, status: InstagramPostStatus.PUBLISHED, permalink: 'old' };
     expect((await applier.apply(preview)).message).toContain('old');
     expect(graph.getPublishingLimit).not.toHaveBeenCalled();
   });
-  it('claimed by other card', async () => {
+  it('다른 카드가 선점한 릴스는 게시하지 않는다', async () => {
     await expect(
       applier.apply({ ...preview, id: 'other' }),
     ).rejects.toMatchObject({ errorCode: 'INSTAGRAM_REEL_CLAIMED' });
     expect(graph.createReelContainer).not.toHaveBeenCalled();
   });
-  it('lastError persistence failure still throws InstagramException', async () => {
+  it('오류 기록이 실패해도 InstagramException을 던진다', async () => {
     jest.mocked(readFile).mockRejectedValue(new Error('missing') as never);
     repository.update.mockRejectedValue(new Error('db failed'));
     await expect(applier.apply(preview)).rejects.toBeInstanceOf(
       InstagramException,
     );
   });
-  it('file missing', async () => {
+  it('영상 파일이 없으면 실패한다', async () => {
     jest.mocked(readFile).mockRejectedValue(new Error('missing') as never);
     await expect(applier.apply(preview)).rejects.toMatchObject({
       errorCode: 'INSTAGRAM_VIDEO_MISSING',
     });
     expect(graph.getPublishingLimit).not.toHaveBeenCalled();
   });
-  it('video changed', async () => {
+  it('영상이 변경되면 실패한다', async () => {
     jest.mocked(readFile).mockResolvedValue(Buffer.from('changed') as never);
     await expect(applier.apply(preview)).rejects.toMatchObject({
       errorCode: 'INSTAGRAM_VIDEO_CHANGED',
     });
     expect(graph.getPublishingLimit).not.toHaveBeenCalled();
   });
-  it('quota', async () => {
+  it('게시 한도를 초과하면 실패한다', async () => {
     graph.getPublishingLimit.mockResolvedValue({ usage: 100, total: 100 });
     await expect(applier.apply(preview)).rejects.toMatchObject({
       errorCode: 'INSTAGRAM_QUOTA_EXCEEDED',
     });
     expect(graph.createReelContainer).not.toHaveBeenCalled();
   });
-  it('resume after upload', async () => {
+  it('업로드된 컨테이너로 게시를 재개한다', async () => {
     row = {
       ...row,
       containerId: 'container',
@@ -341,20 +343,26 @@ describe('InstagramReelPublishApplier', () => {
     expect(graph.createReelContainer).not.toHaveBeenCalled();
     expect(graph.publish).toHaveBeenCalledTimes(1);
   });
-  it('resume container expired before publish', async () => {
+  it('만료된 컨테이너는 새로 만들어 게시한다', async () => {
     row = { ...row, containerId: 'old', uploadedAt: new Date() };
     graph.getContainerStatus.mockResolvedValueOnce({
-      statusCode: 'EXPIRED',
+      statusCode: ContainerStatusCode.EXPIRED,
       status: null,
     });
     await applier.apply(preview);
     expect(graph.createReelContainer).toHaveBeenCalledTimes(1);
   });
-  it('publish lost then published', async () => {
+  it('게시 응답을 잃어도 게시 상태면 결과를 정산한다', async () => {
     graph.publish.mockRejectedValue(new Error('lost'));
     graph.getContainerStatus
-      .mockResolvedValueOnce({ statusCode: 'FINISHED', status: null })
-      .mockResolvedValue({ statusCode: 'PUBLISHED', status: null });
+      .mockResolvedValueOnce({
+        statusCode: ContainerStatusCode.FINISHED,
+        status: null,
+      })
+      .mockResolvedValue({
+        statusCode: ContainerStatusCode.PUBLISHED,
+        status: null,
+      });
     graph.listRecentMedia.mockImplementation(async () => [
       {
         id: 'media',
@@ -367,10 +375,10 @@ describe('InstagramReelPublishApplier', () => {
     expect(row.status).toBe('PUBLISHED');
     expect(graph.publish).toHaveBeenCalledTimes(1);
   });
-  it('retry after unconfirmed', async () => {
+  it('게시 결과가 미확정이면 재시도 시 확인을 요청한다', async () => {
     row = {
       ...row,
-      status: 'PUBLISHING',
+      status: InstagramPostStatus.PUBLISHING,
       containerId: 'container',
       containerCreatedAt: new Date(Date.now() - 11 * 60_000),
       uploadedAt: new Date(Date.now() - 11 * 60_000),
@@ -406,10 +414,10 @@ describe('InstagramReelPublishApplier', () => {
     expect(graph.createReelContainer).toHaveBeenCalledTimes(1);
     expect(row.status).toBe('PUBLISHED');
   });
-  it('publish attempt without a container fails closed', async () => {
+  it('게시 시도에 컨테이너가 없으면 중단한다', async () => {
     row = {
       ...row,
-      status: 'PUBLISHING',
+      status: InstagramPostStatus.PUBLISHING,
       containerId: null,
       publishAttemptedAt: new Date(),
     };
@@ -418,10 +426,10 @@ describe('InstagramReelPublishApplier', () => {
     });
     expect(graph.createReelContainer).not.toHaveBeenCalled();
   });
-  it('publish attempt never replaces a container without upload timestamp', async () => {
+  it('게시 시도 뒤에는 업로드 시각이 없어도 컨테이너를 교체하지 않는다', async () => {
     row = {
       ...row,
-      status: 'PUBLISHING',
+      status: InstagramPostStatus.PUBLISHING,
       containerId: 'container',
       containerCreatedAt: new Date(Date.now() - 11 * 60_000),
       uploadedAt: null,
@@ -431,9 +439,9 @@ describe('InstagramReelPublishApplier', () => {
     expect(graph.createReelContainer).not.toHaveBeenCalled();
     expect(graph.publish).toHaveBeenCalledWith('container');
   });
-  it('published during polling is reconciled without publishing again', async () => {
+  it('폴링 중 게시가 확인되면 재게시 없이 정산한다', async () => {
     graph.getContainerStatus.mockResolvedValue({
-      statusCode: 'PUBLISHED',
+      statusCode: ContainerStatusCode.PUBLISHED,
       status: null,
     });
     graph.listRecentMedia.mockImplementation(async () => [
@@ -448,9 +456,9 @@ describe('InstagramReelPublishApplier', () => {
     expect(row.status).toBe('PUBLISHED');
     expect(graph.publish).not.toHaveBeenCalled();
   });
-  it('processing timeout', async () => {
+  it('영상 처리 시간이 초과되면 실패한다', async () => {
     graph.getContainerStatus.mockResolvedValue({
-      statusCode: 'IN_PROGRESS',
+      statusCode: ContainerStatusCode.IN_PROGRESS,
       status: null,
     });
     await expect(applier.apply(preview)).rejects.toMatchObject({
@@ -459,9 +467,9 @@ describe('InstagramReelPublishApplier', () => {
     expect(graph.getContainerStatus).toHaveBeenCalledTimes(5);
     expect(row.containerId).toBe('container');
   });
-  it('container error', async () => {
+  it('컨테이너 오류가 발생하면 실패한다', async () => {
     graph.getContainerStatus.mockResolvedValue({
-      statusCode: 'ERROR',
+      statusCode: ContainerStatusCode.ERROR,
       status: 'subcode 42',
     });
     await expect(applier.apply(preview)).rejects.toMatchObject({
@@ -469,7 +477,7 @@ describe('InstagramReelPublishApplier', () => {
     });
     expect(row.lastError).toContain('subcode 42');
   });
-  it('token 190', async () => {
+  it('토큰 오류를 그대로 전달한다', async () => {
     graph.publish.mockRejectedValue(
       new InstagramException({
         code: InstagramErrorCode.TOKEN_INVALID,
@@ -481,11 +489,44 @@ describe('InstagramReelPublishApplier', () => {
     });
     expect(row.lastError).toContain('INSTAGRAM_TOKEN_INVALID');
   });
-  it('config_issue', async () => {
+  it('설정 문제가 있으면 결과에 주의를 표시한다', async () => {
     graph.publish.mockResolvedValue({
       mediaId: 'media',
       configIssue: 'warning',
     });
     expect((await applier.apply(preview)).message).toContain('주의: warning');
+  });
+});
+
+describe('isSamePost', () => {
+  it('캡션과 기준 시각이 일치하면 같은 게시물로 판정한다', () => {
+    const item = {
+      id: 'id',
+      permalink: 'link',
+      caption: '한글\r\n문장 ',
+      timestamp: '2026-11-05T00:00:00Z',
+    };
+    expect(
+      isSamePost({
+        item,
+        caption: '한글\n문장',
+        notBeforeMs: Date.parse(item.timestamp),
+      }),
+    ).toBe(true);
+  });
+  it('게시 시각이 기준보다 빠르면 다른 게시물로 판정한다', () => {
+    const item = {
+      id: 'id',
+      permalink: 'link',
+      caption: 'caption',
+      timestamp: '2026-11-05T00:00:00Z',
+    };
+    expect(
+      isSamePost({
+        item,
+        caption: 'caption',
+        notBeforeMs: Date.parse(item.timestamp) + 1,
+      }),
+    ).toBe(false);
   });
 });

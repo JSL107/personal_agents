@@ -1,13 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { InstagramPost as InstagramPostRow, Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
-import { InstagramException } from '../domain/instagram.exception';
-import { InstagramErrorCode } from '../domain/instagram-error-code.enum';
 import {
   ClaimReelInput,
   InstagramPost,
   InstagramPostPatch,
+  InstagramPostStatus,
 } from '../domain/instagram-post.type';
 import { InstagramPostRepositoryPort } from '../domain/port/instagram-post.repository.port';
 
@@ -15,12 +14,37 @@ import { InstagramPostRepositoryPort } from '../domain/port/instagram-post.repos
 export class InstagramPostPrismaRepository implements InstagramPostRepositoryPort {
   constructor(private readonly prisma: PrismaService) {}
 
-  async claim(input: ClaimReelInput): Promise<InstagramPost> {
-    let row;
+  async upsertByReelKey(input: ClaimReelInput): Promise<InstagramPost> {
+    const row = await this.upsertOrFind(input);
+    return toDomain(row);
+  }
+
+  async update({
+    id,
+    patch,
+  }: {
+    id: string;
+    patch: InstagramPostPatch;
+  }): Promise<InstagramPost> {
+    const row = await this.prisma.instagramPost.update({
+      where: { id },
+      data: patch,
+    });
+    return toDomain(row);
+  }
+
+  async findByReelKey(reelKey: string): Promise<InstagramPost | null> {
+    const row = await this.prisma.instagramPost.findUnique({
+      where: { reelKey },
+    });
+    return row ? toDomain(row) : null;
+  }
+
+  private async upsertOrFind(input: ClaimReelInput): Promise<InstagramPostRow> {
     try {
-      row = await this.prisma.instagramPost.upsert({
+      return await this.prisma.instagramPost.upsert({
         where: { reelKey: input.reelKey },
-        create: { ...input, status: 'PENDING' },
+        create: { ...input, status: InstagramPostStatus.PENDING },
         update: {},
       });
     } catch (error) {
@@ -30,43 +54,26 @@ export class InstagramPostPrismaRepository implements InstagramPostRepositoryPor
       ) {
         throw error;
       }
-      row = await this.prisma.instagramPost.findUnique({
+      const row = await this.prisma.instagramPost.findUnique({
         where: { reelKey: input.reelKey },
       });
       if (!row) {
         throw error;
       }
+      return row;
     }
-    if (
-      row.previewActionId !== input.previewActionId &&
-      row.status !== 'PUBLISHED'
-    ) {
-      throw new InstagramException({
-        code: InstagramErrorCode.REEL_CLAIMED,
-        message: '같은 릴스의 다른 카드가 맡고 있습니다',
-      });
-    }
-    return row as InstagramPost;
-  }
-
-  async update(id: string, patch: InstagramPostPatch): Promise<InstagramPost> {
-    if (patch.status === null) {
-      throw new InstagramException({
-        code: InstagramErrorCode.INVALID_PAYLOAD,
-        message: '게시 상태는 null일 수 없습니다',
-      });
-    }
-    const row = await this.prisma.instagramPost.update({
-      where: { id },
-      data: patch as InstagramPostPatch & { status?: string },
-    });
-    return row as InstagramPost;
-  }
-
-  async findByReelKey(reelKey: string): Promise<InstagramPost | null> {
-    const row = await this.prisma.instagramPost.findUnique({
-      where: { reelKey },
-    });
-    return row as InstagramPost | null;
   }
 }
+
+export const toDomain = (row: InstagramPostRow): InstagramPost => {
+  if (row.field !== 'ai' && row.field !== 'dev') {
+    throw new Error(`알 수 없는 InstagramPost field: ${row.field}`);
+  }
+  const status = Object.values(InstagramPostStatus).find(
+    (value) => value === row.status,
+  );
+  if (!status) {
+    throw new Error(`알 수 없는 InstagramPost status: ${row.status}`);
+  }
+  return { ...row, field: row.field, status };
+};

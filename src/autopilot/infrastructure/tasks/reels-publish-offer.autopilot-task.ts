@@ -49,7 +49,7 @@ export class ReelsPublishOfferAutopilotTask implements AutopilotTask {
       ? configuredRoot.replace(/^~(?=\/|$)/, homedir())
       : DEFAULT_OUT_ROOT;
     const scanned = await scanReadyReels({ outRoot, day: firedAtKst });
-    const previews: AutopilotPreviewRequest[] = [];
+    const cardPayloads: ReelPublishPayload[] = [];
     for (const reel of scanned.ready) {
       const [count, post] = await Promise.all([
         this.countPreviews.execute({
@@ -62,12 +62,13 @@ export class ReelsPublishOfferAutopilotTask implements AutopilotTask {
       if (count > 0 || post !== null) {
         continue;
       }
-      previews.push({
-        kind: PREVIEW_KIND.INSTAGRAM_REEL_PUBLISH,
-        payload: reel,
-        previewText: formatPreview(reel),
-      });
+      cardPayloads.push(reel);
     }
+    const previews: AutopilotPreviewRequest[] = cardPayloads.map((reel) => ({
+      kind: PREVIEW_KIND.INSTAGRAM_REEL_PUBLISH,
+      payload: reel,
+      previewText: formatPreview(reel),
+    }));
     if (previews.length === 0 && scanned.tooLong.length === 0) {
       return { skip: true };
     }
@@ -83,17 +84,17 @@ export class ReelsPublishOfferAutopilotTask implements AutopilotTask {
       );
     }
     const keys = [
-      ...previews.map(
-        (preview) => `card:${(preview.payload as ReelPublishPayload).reelKey}`,
-      ),
+      ...cardPayloads.map((payload) => `card:${payload.reelKey}`),
       ...scanned.tooLong.map((item) => `long:${item.reelKey}`),
     ];
     keys.sort();
+    const summaryText = summaryLines.join('\n');
+    const guardKeySuffix = keys.join(',');
     return {
       skip: false,
-      summaryText: summaryLines.join('\n'),
+      summaryText,
       previews,
-      guardKeySuffix: keys.join(','),
+      guardKeySuffix,
     };
   }
 }

@@ -1880,7 +1880,7 @@ describe('AutopilotOrchestrator', () => {
   // "이미 발송됨" 으로 막는 것을, 나중 회차에 새로 생긴 상태(예: 👎+수용 답글 모순 보류)
   // 까지 조용히 묻어 버리던 문제의 수정(카드 57 관련 봇 리뷰 대응).
   describe('AutopilotTaskResult.guardKeySuffix — 하루 1회 가드에 상태 변화를 반영한다', () => {
-    it('second slot', async () => {
+    it('같은 날 두 번째 슬롯에서도 새 편의 카드를 만든다', async () => {
       const previewTask = {
         id: 'reels-publish-offer',
         run: jest

@@ -1,4 +1,4 @@
-import { parseReelPublishPayload } from './instagram-post.type';
+import { parseReelPublishPayload } from './reel-publish-payload.parser';
 
 const payload = {
   reelKey: '2026-11-05/ai',

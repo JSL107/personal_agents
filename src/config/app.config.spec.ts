@@ -10,7 +10,7 @@ const requiredEnv = {
 };
 
 describe('validateEnv instagram', () => {
-  it('instagram enabled requires keys', () => {
+  it('인스타 게시를 켰는데 Meta 키가 없으면 검증에 실패한다', () => {
     expect(() =>
       validateEnv({
         ...requiredEnv,
@@ -22,7 +22,7 @@ describe('validateEnv instagram', () => {
     ).toThrow();
   });
 
-  it('instagram disabled allows missing keys', () => {
+  it('인스타 게시를 끄면 Meta 키가 없어도 검증에 성공한다', () => {
     expect(() => validateEnv(requiredEnv)).not.toThrow();
   });
 });
