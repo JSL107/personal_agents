@@ -160,6 +160,42 @@ describe('writePublishedMarker', () => {
     );
   });
 
+  it('날짜 폴더가 심볼릭 링크면 링크 너머에 쓰지 않는다', async () => {
+    const outside = await mkdtemp(join(tmpdir(), 'published-marker-outside-'));
+    try {
+      await mkdir(join(outside, 'daily'));
+      await rm(join(root, day), { recursive: true });
+      await symlink(outside, join(root, day));
+
+      const result = await writePublishedMarker({ reel: post(), story: null });
+
+      expect(result).toEqual(
+        expect.objectContaining({ kind: MarkerWriteResult.SKIPPED }),
+      );
+      await expect(
+        stat(join(outside, 'daily', 'published.json')),
+      ).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    ['게시 전 상태', { status: InstagramPostStatus.PUBLISHING }],
+    ['mediaId 없음', { mediaId: null }],
+    ['permalink 빈 문자열', { permalink: '' }],
+    ['게시 시각 없음', { publishedAt: null }],
+  ])('%s 이면 건너뛴다', async (_label, patch) => {
+    const result = await writePublishedMarker({
+      reel: post(patch),
+      story: null,
+    });
+
+    expect(result).toEqual(
+      expect.objectContaining({ kind: MarkerWriteResult.SKIPPED }),
+    );
+  });
+
   it('게시 시각이 유효하지 않으면 예외 없이 건너뛴다', async () => {
     const result = await writePublishedMarker({
       reel: post({ publishedAt: new Date('invalid') }),
