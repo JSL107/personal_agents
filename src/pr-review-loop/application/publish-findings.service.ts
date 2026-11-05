@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import { ReviewFinding } from '../../agent/code-reviewer/domain/code-reviewer.type';
 import { computeRiskMap } from '../../agent/code-reviewer/domain/risk-map';
+import { checkSnapshotDrift } from '../../github/application/check-snapshot-drift';
 import {
   CreateReviewCommentResult,
   PullRequestDetail,
@@ -376,10 +377,24 @@ export class PublishFindingsService {
     if (remaining.length === 0) {
       return 0;
     }
-    const [headSha, diff] = await Promise.all([
-      this.githubClient.getPullRequestHeadSha({ repo, number: pullNumber }),
-      this.githubClient.getPullRequestDiff({ repo, number: pullNumber }),
-    ]);
+    // 커밋 상태 → diff → 재조회를 차례로 받는다. 병렬로 받으면 head 는 옛 커밋(카드와 같음), diff 는
+    // 새 커밋 기준으로 와서 줄 번호를 엉뚱한 diff 로 맞춰 볼 수 있다(#973 과 같은 창). 섞였으면 이번
+    // 회차는 올리지 않는다 — 카드는 NOT_POSTED 로 남아 다음 스윕이 새 스냅샷으로 다시 올린다.
+    const ref = { repo, number: pullNumber };
+    const commitState = await this.githubClient.getPullRequestCommitState(ref);
+    const diff = await this.githubClient.getPullRequestDiff(ref);
+    const drift = await checkSnapshotDrift({
+      githubClient: this.githubClient,
+      ref,
+      fetched: commitState,
+    });
+    if (drift.kind === 'MOVED') {
+      this.logger.log(
+        `미게시 지적 복구 보류 (${repo}#${pullNumber}): 조회 중 PR 이 갱신됨 ${commitState.headSha.slice(0, 7)} → ${drift.currentHeadSha.slice(0, 7)}`,
+      );
+      return 0;
+    }
+    const headSha = commitState.headSha;
     const target: PostTarget = { repo, pullNumber, headSha };
     // publish() 와 같은 집계·폴백 그릇이다. 게시 결과를 세고, 줄·파일 게시에 실패한 카드를 PR 전체 의견으로 모은다.
     const outcome = emptyPublishOutcome();
