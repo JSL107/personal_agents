@@ -3,11 +3,20 @@ export enum InstagramPostStatus {
   PUBLISHING = 'PUBLISHING',
   PUBLISHED = 'PUBLISHED',
 }
-// 카드 payload 의 분야. 'ai'·'dev' 는 하루 2편 시절(2026-11-05 이전) 카드를 읽기 위해 남긴다.
-export type ReelField = 'ai' | 'dev' | 'daily';
-// 원장 행의 분야. 스토리도 같은 원장에 기록한다.
-export type InstagramPostField = ReelField | 'story';
-export type SegmentField = 'ai' | 'dev';
+// 원장 행의 분야. DB 에 이 문자열 그대로 저장된다. 스토리도 같은 원장에 기록한다.
+export enum InstagramPostField {
+  AI = 'ai',
+  DEV = 'dev',
+  DAILY = 'daily',
+  STORY = 'story',
+}
+// 카드 payload 의 분야. AI·DEV 는 하루 2편 시절(2026-11-05 이전) 카드를 읽기 위해 남긴다.
+export type ReelField =
+  | InstagramPostField.AI
+  | InstagramPostField.DEV
+  | InstagramPostField.DAILY;
+// 하루 1편 영상 안의 꼭지 분야.
+export type SegmentField = InstagramPostField.AI | InstagramPostField.DEV;
 export interface StoryVideo {
   videoPath: string;
   videoSha256: string;

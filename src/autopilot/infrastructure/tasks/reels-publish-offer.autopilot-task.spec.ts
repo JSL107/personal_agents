@@ -7,6 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import {
   PublishStoryUsecase,
   StoryPublishOutcome,
+  StoryPublishResult,
 } from '../../../instagram/application/publish-story.usecase';
 import {
   InstagramPost,
@@ -114,7 +115,9 @@ describe('ReelsPublishOfferAutopilotTask', () => {
       id: 'card',
       payload: approvedPayload,
     } as unknown as PreviewAction);
-    publishStory.execute.mockResolvedValue({ kind: 'published' });
+    publishStory.execute.mockResolvedValue({
+      kind: StoryPublishResult.PUBLISHED,
+    });
   });
 
   afterEach(async () => {
@@ -241,10 +244,25 @@ describe('ReelsPublishOfferAutopilotTask', () => {
     expect(publishStory.execute).not.toHaveBeenCalled();
   });
 
-  it('스토리가 대기·실패면 알리지 않고, 예외가 나도 task 는 throw 하지 않는다', async () => {
-    repository.findByReelKey.mockResolvedValue(publishedReel());
-    publishStory.execute.mockResolvedValue({ kind: 'failed', reason: 'x' });
+  it('스토리 대기는 알리지 않고, 실패는 하루 한 번 알리며, 예외가 나도 task 는 throw 하지 않는다', async () => {
+    repository.findByReelKey.mockImplementation(async (key) =>
+      key === `${DAY}/daily` ? publishedReel() : null,
+    );
+    publishStory.execute.mockResolvedValue({
+      kind: StoryPublishResult.PENDING,
+      reason: '처리 중',
+    });
     await expect(makeTask().run(CONTEXT)).resolves.toEqual({ skip: true });
+
+    publishStory.execute.mockResolvedValue({
+      kind: StoryPublishResult.FAILED,
+      reason: '스토리 영상이 변경되었습니다',
+    });
+    const failed = await makeTask().run(CONTEXT);
+    expect(failed.summaryText).toContain(
+      `${DAY} 스토리 게시 실패: 스토리 영상이 변경되었습니다`,
+    );
+    expect(failed.guardKeySuffix).toBe(`story:${DAY}:failed`);
 
     publishStory.execute.mockRejectedValue(new Error('boom'));
     await expect(makeTask().run(CONTEXT)).resolves.toEqual({ skip: true });
@@ -254,7 +272,9 @@ describe('ReelsPublishOfferAutopilotTask', () => {
     repository.findByReelKey.mockImplementation(async (key) =>
       key === `${DAY}/daily` ? publishedReel() : null,
     );
-    publishStory.execute.mockResolvedValue({ kind: 'unconfirmed' });
+    publishStory.execute.mockResolvedValue({
+      kind: StoryPublishResult.UNCONFIRMED,
+    });
 
     const result = await makeTask('2026-11-06T14:45:00Z').run(CONTEXT);
 

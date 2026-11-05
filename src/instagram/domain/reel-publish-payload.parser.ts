@@ -3,13 +3,17 @@ import { isMatching, P } from 'ts-pattern';
 import { INSTAGRAM_CAPTION_MAX_CHARS } from './instagram.constants';
 import { InstagramException } from './instagram.exception';
 import { InstagramErrorCode } from './instagram-error-code.enum';
-import { ReelPublishPayload } from './instagram-post.type';
+import { InstagramPostField, ReelPublishPayload } from './instagram-post.type';
 
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 
 const REEL_PUBLISH_PAYLOAD_PATTERN = {
   reelKey: P.string.regex(/^\d{4}-\d{2}-\d{2}\/(ai|dev|daily)$/),
-  field: P.union('ai', 'dev', 'daily'),
+  field: P.union(
+    InstagramPostField.AI,
+    InstagramPostField.DEV,
+    InstagramPostField.DAILY,
+  ),
   title: P.string,
   videoPath: P.string,
   videoSha256: P.string,
@@ -17,7 +21,9 @@ const REEL_PUBLISH_PAYLOAD_PATTERN = {
   caption: P.string.maxLength(INSTAGRAM_CAPTION_MAX_CHARS),
   durationSec: P.number.finite(),
   coverOffsetMs: P.optional(P.number.int().gte(0)),
-  segmentFields: P.optional(P.array(P.union('ai', 'dev'))),
+  segmentFields: P.optional(
+    P.array(P.union(InstagramPostField.AI, InstagramPostField.DEV)),
+  ),
   story: P.optional({
     videoPath: P.string,
     videoSha256: P.string.regex(SHA256_PATTERN),

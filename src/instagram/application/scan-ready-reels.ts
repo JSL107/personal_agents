@@ -6,17 +6,23 @@ import { Logger } from '@nestjs/common';
 import { isMatching, P } from 'ts-pattern';
 
 import { INSTAGRAM_CAPTION_MAX_CHARS } from '../domain/instagram.constants';
-import { ReelPublishPayload, StoryVideo } from '../domain/instagram-post.type';
+import {
+  InstagramPostField,
+  ReelPublishPayload,
+  StoryVideo,
+} from '../domain/instagram-post.type';
 
 const LOGGER = new Logger('ScanReadyReels');
 // 하루 1편(AI·개발 두 꼭지) 폴더만 본다. 예전 ai·dev 폴더까지 보면 전환일·되돌림 날에 같은 소식 카드가
 // 최대 3장 나가 하루 1편과 중복 방지가 깨진다(2026-11-05 교차 검토).
-const REEL_FOLDER = 'daily';
+const REEL_FOLDER = InstagramPostField.DAILY;
 const REEL_SCRIPT_PATTERN = {
   title: P.string,
   duration: P.number.finite(),
   cover_offset_ms: P.optional(P.number.int()),
-  segments: P.array({ field: P.union('ai', 'dev') }),
+  segments: P.array({
+    field: P.union(InstagramPostField.AI, InstagramPostField.DEV),
+  }),
 };
 
 export interface ScanResult {
@@ -70,7 +76,7 @@ export const scanReadyReels = async ({
     const story = await readStory({ reelDir, reelKey });
     result.ready.push({
       reelKey,
-      field: 'daily',
+      field: InstagramPostField.DAILY,
       title: script.title,
       videoPath: join(reelDir, 'reel.mp4'),
       videoSha256: sha256(video),
@@ -136,5 +142,7 @@ const exists = async (path: string): Promise<boolean> => {
   }
 };
 
-const sha256 = (data: Buffer): string =>
-  createHash('sha256').update(data).digest('hex');
+const sha256 = (data: Buffer): string => {
+  const digest = createHash('sha256').update(data).digest('hex');
+  return digest;
+};

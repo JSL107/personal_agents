@@ -66,15 +66,10 @@ export class InstagramPostPrismaRepository implements InstagramPostRepositoryPor
   }
 }
 
-const INSTAGRAM_POST_FIELDS: readonly InstagramPostField[] = [
-  'ai',
-  'dev',
-  'daily',
-  'story',
-];
-
 export const toDomain = (row: InstagramPostRow): InstagramPost => {
-  const field = INSTAGRAM_POST_FIELDS.find((value) => value === row.field);
+  const field = Object.values(InstagramPostField).find(
+    (value) => value === row.field,
+  );
   if (!field) {
     throw new Error(`알 수 없는 InstagramPost field: ${row.field}`);
   }

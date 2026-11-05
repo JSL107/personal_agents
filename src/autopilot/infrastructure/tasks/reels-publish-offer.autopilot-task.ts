@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { match } from 'ts-pattern';
 
 import {
   getKstDateOf,
@@ -11,10 +12,13 @@ import {
 import {
   PublishStoryUsecase,
   StoryPublishOutcome,
+  StoryPublishResult,
 } from '../../../instagram/application/publish-story.usecase';
 import { scanReadyReels } from '../../../instagram/application/scan-ready-reels';
 import {
+  InstagramPostField,
   InstagramPostStatus,
+  ReelField,
   ReelPublishPayload,
 } from '../../../instagram/domain/instagram-post.type';
 import {
@@ -41,7 +45,11 @@ const DEFAULT_OUT_ROOT = join(homedir(), 'Desktop', 'skill-jaengyi-reels');
 const KST_OFFSET_MS = 9 * 60 * 60_000;
 // 이 task 의 마지막 슬롯(playbook `*/15 9-23`). 이때도 확정되지 않은 스토리 게시는 사람에게 넘긴다.
 const LAST_SLOT_MINUTES = 23 * 60 + 45;
-const SEGMENT_LABELS = { ai: 'AI', dev: '개발' } as const;
+const FIELD_LABELS: Record<ReelField, string> = {
+  [InstagramPostField.AI]: 'AI',
+  [InstagramPostField.DEV]: '개발',
+  [InstagramPostField.DAILY]: 'AI·개발',
+};
 
 interface StoryStep {
   summaryLine: string | null;
@@ -135,11 +143,13 @@ export class ReelsPublishOfferAutopilotTask implements AutopilotTask {
       ...stories.flatMap((story) => (story.guardKey ? [story.guardKey] : [])),
     ];
     keys.sort();
+    const summaryText = summaryLines.join('\n');
+    const guardKeySuffix = keys.join(',');
     return {
       skip: false,
-      summaryText: summaryLines.join('\n'),
+      summaryText,
       previews,
-      guardKeySuffix: keys.join(','),
+      guardKeySuffix,
     };
   }
 
@@ -176,11 +186,13 @@ export class ReelsPublishOfferAutopilotTask implements AutopilotTask {
 
   private isLastSlot(): boolean {
     const kst = new Date(this.now().getTime() + KST_OFFSET_MS);
-    return kst.getUTCHours() * 60 + kst.getUTCMinutes() >= LAST_SLOT_MINUTES;
+    const minutesOfDay = kst.getUTCHours() * 60 + kst.getUTCMinutes();
+    return minutesOfDay >= LAST_SLOT_MINUTES;
   }
 }
 
-// 알림은 상태가 바뀔 때 한 번만 나가게 상태별 발송 키를 단다. 대기·실패는 다음 슬롯이 다시 하므로 알리지 않는다.
+// 알림은 상태가 바뀔 때 한 번만 나가게 상태별 발송 키를 단다(발송 가드는 같은 키를 하루 한 번만 보낸다).
+// 실패는 다음 슬롯이 다시 하지만, 파일이 바뀐 경우처럼 계속 실패하면 그날 스토리가 조용히 빠지므로 하루 한 번 알린다.
 const describeStory = ({
   day,
   outcome,
@@ -188,23 +200,33 @@ const describeStory = ({
   day: string;
   outcome: StoryPublishOutcome;
 }): StoryStep => {
-  if (outcome.kind === 'published') {
-    return {
+  const step = match<StoryPublishOutcome, StoryStep>(outcome)
+    .with({ kind: StoryPublishResult.PUBLISHED }, () => ({
       summaryLine: `${day} 「오늘의 한 줄」 스토리도 올라갔습니다.`,
       guardKey: `story:${day}:published`,
-    };
-  }
-  if (outcome.kind === 'unconfirmed') {
-    return {
+    }))
+    .with({ kind: StoryPublishResult.UNCONFIRMED }, () => ({
       summaryLine: `${day} 스토리 게시 여부 확인 필요: 인스타 앱에서 스토리를 확인해 주세요(자동으로 다시 올리지 않습니다).`,
       guardKey: `story:${day}:unconfirmed`,
-    };
-  }
-  return { summaryLine: null, guardKey: null };
+    }))
+    .with({ kind: StoryPublishResult.FAILED }, ({ reason }) => ({
+      summaryLine: `${day} 스토리 게시 실패: ${reason} (다음 조회에서 다시 시도합니다)`,
+      guardKey: `story:${day}:failed`,
+    }))
+    .with(
+      { kind: StoryPublishResult.LOCKED },
+      { kind: StoryPublishResult.DONE },
+      { kind: StoryPublishResult.PENDING },
+      () => ({ summaryLine: null, guardKey: null }),
+    )
+    .exhaustive();
+  return step;
 };
 
-const previousKstDate = (day: string): string =>
-  getKstDateOf(new Date(kstDayStartOf(day).getTime() - 12 * 60 * 60_000));
+const previousKstDate = (day: string): string => {
+  const noonBefore = kstDayStartOf(day).getTime() - 12 * 60 * 60_000;
+  return getKstDateOf(new Date(noonBefore));
+};
 
 const formatPreview = (reel: ReelPublishPayload): string => {
   const lines = [
@@ -229,9 +251,11 @@ const formatPreview = (reel: ReelPublishPayload): string => {
   return lines.join('\n');
 };
 
+// 하루 1편 카드는 실제로 들어간 꼭지만 적는다(한 꼭지만 나간 날은 그 분야만).
 const fieldLabel = (reel: ReelPublishPayload): string => {
-  if (reel.segmentFields && reel.segmentFields.length > 0) {
-    return reel.segmentFields.map((field) => SEGMENT_LABELS[field]).join('·');
+  if (!reel.segmentFields || reel.segmentFields.length === 0) {
+    return FIELD_LABELS[reel.field];
   }
-  return reel.field === 'dev' ? '개발' : 'AI';
+  const labels = reel.segmentFields.map((field) => FIELD_LABELS[field]);
+  return labels.join('·');
 };

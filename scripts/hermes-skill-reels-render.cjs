@@ -165,7 +165,7 @@ function html(timeline) {
   function drawCover(c){
     c.fillStyle='#FDF5E7'; c.fillRect(0,0,W,H);
     c.font='800 40px '+FONT; c.textAlign='center'; c.textBaseline='alphabetic';
-    c.fillStyle='#FB8826'; c.fillText('오늘의 AI·개발 소식',W/2,560);
+    c.fillStyle='#FB8826'; c.fillText(T.cover.label,W/2,560);  // 한 꼭지만 나간 날은 그 분야만
     c.font='900 84px '+FONT;
     T.cover.lines.forEach((line,i)=>{
       const rows=balanced(c,line,940).slice(0,2);
