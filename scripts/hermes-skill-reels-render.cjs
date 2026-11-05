@@ -199,7 +199,7 @@ function html(timeline) {
   const timeline = JSON.parse(fs.readFileSync(timelinePath, 'utf8'));
   const total = timeline.mouth.length;
   const ffmpeg = spawn('ffmpeg', ['-y', '-v', 'error', '-f', 'image2pipe', '-framerate', String(timeline.fps), '-c:v', 'png', '-i', '-',
-    '-i', timeline.audio, '-c:v', 'libx264', '-crf', '18', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '160k',
+    '-i', timeline.audio, '-c:v', 'libx264', '-crf', '18', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '128k',
     '-shortest', '-movflags', '+faststart', outFile], { stdio: ['pipe', 'inherit', 'inherit'] });
   const finished = new Promise((resolve, reject) => {
     ffmpeg.on('error', reject);
