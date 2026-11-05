@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { utcMidnightOf } from '../../../common/util/kst-date.util';
 import { BuildScreeningScorecardUsecase } from '../../../screener/application/build-screening-scorecard.usecase';
 import {
   formatScreeningScorecard,
@@ -34,7 +35,7 @@ export class ScreeningScorecardAutopilotTask implements AutopilotTask {
     }
 
     const result = await this.usecase.execute({
-      asOf: new Date(`${context.firedAtKst}T00:00:00.000Z`),
+      asOf: utcMidnightOf(context.firedAtKst),
     });
     // 어느 지평에도 표본이 없으면 보낼 사실이 없다. 지평별 "표본 없음" 은 다른 지평에
     // 표본이 있을 때 그 축이 비었다는 것을 알리는 용도이고, 전건이 비었으면 카드 자체가

@@ -21,6 +21,8 @@ import {
 import {
   countKstDaysBetween,
   getKstDateOf,
+  kstDayStartOf,
+  utcMidnightOf,
 } from '../../../common/util/kst-date.util';
 import { HumanizeService } from '../../../humanize/application/humanize.service';
 import { humanizeDailyPlan } from '../../../humanize/application/humanize-report.adapter';
@@ -134,7 +136,7 @@ const PORTFOLIO_TASK_ID = 'portfolio-publish';
 const APPROVAL_LABEL_MAX_LENGTH = 20;
 
 const isWeekendKst = (firedAtKst: string): boolean => {
-  const day = new Date(`${firedAtKst}T00:00:00.000Z`).getUTCDay();
+  const day = utcMidnightOf(firedAtKst).getUTCDay();
   return day === 0 || day === 6;
 };
 
@@ -154,7 +156,7 @@ const toVerdictCardMessages = (
 };
 
 const isMondayKst = (firedAtKst: string): boolean =>
-  new Date(`${firedAtKst}T00:00:00.000Z`).getUTCDay() === 1;
+  utcMidnightOf(firedAtKst).getUTCDay() === 1;
 
 const WEEK_MS = 7 * DAY_MS;
 
@@ -450,7 +452,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
       return [];
     }
     try {
-      const until = new Date(`${firedAtKst}T00:00:00.000+09:00`);
+      const until = kstDayStartOf(firedAtKst);
       const runs = await this.verdictRepository.findRunsForVerdictDigest({
         slackUserId: ownerSlackUserId,
         since: new Date(until.getTime() - WEEK_MS),
@@ -480,7 +482,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
     const days = [...new Set(runs.map((run) => getKstDateOf(run.startedAt)))];
     const rows = await Promise.all(
       days.map((day) => {
-        const dayStart = new Date(`${day}T00:00:00.000+09:00`);
+        const dayStart = kstDayStartOf(day);
         return this.deliveryRepository.findSince(
           dayStart,
           new Date(dayStart.getTime() + DAY_MS),
@@ -715,7 +717,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
     try {
       const counts = await this.digestRepository.countDuePaperOrders({
         // targetTradeDate 는 @db.Date 라 UTC 자정으로 맞춘다(체결기와 같은 표현).
-        tradeDate: new Date(`${firedAtKst}T00:00:00.000Z`),
+        tradeDate: utcMidnightOf(firedAtKst),
       });
       return counts.buyCount + counts.sellCount > 0 ? counts : null;
     } catch (error: unknown) {
@@ -734,7 +736,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
   }): Promise<MorningDigestInput['study']> {
     try {
       // 회차 날짜 하루 — 늦게 회수된 회차가 다음 날 브리프를 그날 공부로 싣지 않게 한다.
-      const dayStart = new Date(`${firedAtKst}T00:00:00+09:00`);
+      const dayStart = kstDayStartOf(firedAtKst);
       const brief = await this.digestRepository.findLatestStudyBrief({
         ownerUserId: ownerSlackUserId,
         since: dayStart,
@@ -802,7 +804,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
     ownerSlackUserId: string,
     firedAtKst: string,
   ): Promise<{ today: string[] | null; upcoming: string[] | null }> {
-    const today = new Date(`${firedAtKst}T00:00:00.000Z`);
+    const today = utcMidnightOf(firedAtKst);
     const windowEnd = new Date(today.getTime() + UPCOMING_WINDOW_DAYS * DAY_MS);
     try {
       const items = await this.listSchedules.execute({

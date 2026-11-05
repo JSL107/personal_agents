@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 
+import { utcMidnightOf } from '../../../common/util/kst-date.util';
 import { isKrxTradingDay } from '../../../holiday/domain/business-calendar';
 import {
   HOLIDAY_CALENDAR_PORT,
@@ -137,12 +138,7 @@ export class PaperOrderFillAutopilotTask implements AutopilotTask {
     // 체결되고(2026-09-24·25 추석 실측: 주문 127~129 가 09-28 에 체결), 돌리면 "체결 0건·처리
     // 못 함" 카드만 채널에 남는다. paper-intraday-stop 과 같은 판정이다.
     const calendar = await this.holidayCalendar.load();
-    if (
-      !isKrxTradingDay(
-        new Date(`${context.firedAtKst}T00:00:00.000Z`),
-        calendar,
-      )
-    ) {
+    if (!isKrxTradingDay(utcMidnightOf(context.firedAtKst), calendar)) {
       return { skip: true };
     }
     const result = await this.fillPendingOrders.execute();

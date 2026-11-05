@@ -21,6 +21,8 @@ import { formatPmPlanQuote } from '../../../agent-run/domain/run-verdict-digest'
 import {
   countKstDaysBetween,
   getKstDateOf,
+  kstDayStartOf,
+  utcMidnightOf,
 } from '../../../common/util/kst-date.util';
 import {
   classifyRepoSource,
@@ -140,7 +142,7 @@ export class EveningRetroPublishTask implements AutopilotTask {
     // **조용히 0건**을 돌려준다("오늘 머지된 PR 없음"으로 위장됨). 항상 UTC(Z) 표기로 넘긴다.
     // 예정일 하루로 자른다 — 늦게 회수된 회차가 실행일 기준으로 읽거나 끝을 열어 두면, 다음 날
     // 머지분이 섞이고 updated desc 정렬의 RETRO_PR_LIMIT 를 먼저 채워 제목 날짜의 PR 이 밀려난다.
-    const dayStart = new Date(`${firedAtKst}T00:00:00+09:00`);
+    const dayStart = kstDayStartOf(firedAtKst);
     const sinceIsoDate = dayStart.toISOString();
     const untilIsoDate = new Date(dayStart.getTime() + DAY_MS).toISOString();
     const personalRepositories = this.getPersonalRepositories();
@@ -515,7 +517,7 @@ export class EveningRetroPublishTask implements AutopilotTask {
   ): Promise<EveningCarryContext> {
     const now = new Date();
     // paper_* 의 거래일 컬럼은 @db.Date 라 UTC 자정으로 맞춘다.
-    const tradeDate = new Date(`${firedAtKst}T00:00:00.000Z`);
+    const tradeDate = utcMidnightOf(firedAtKst);
     const [invest, carriedApprovalCount, incidents] = await Promise.all([
       this.loadInvest(tradeDate),
       this.findAllOpenPreviews
@@ -632,8 +634,7 @@ export class EveningRetroPublishTask implements AutopilotTask {
     try {
       // 저장소는 "오늘부터 N일 전 0시 이후" 로만 자른다 — 늦게 회수된 회차는 창을 회차 날짜까지
       // 넓히고 아래에서 그날 끝난 실행만 고른다. 넓히지 않으면 다음 날 아침 계획에 판정을 묻는다.
-      const sinceDays =
-        countKstDaysBetween(new Date(`${firedAtKst}T00:00:00+09:00`), now) + 1;
+      const sinceDays = countKstDaysBetween(kstDayStartOf(firedAtKst), now) + 1;
       const runs = await this.agentRunService.findRecentSucceededRuns({
         agentType: AgentType.PM,
         slackUserId,
