@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Client } from '@notionhq/client';
 
 import { NotionException } from '../domain/notion.exception';
+import { NotionWorkspace } from '../domain/notion.type';
 import { NotionErrorCode } from '../domain/notion-error-code.enum';
 import { NotionApiClient } from './notion-api.client';
 
@@ -361,6 +362,30 @@ describe('NotionApiClient', () => {
     ).toEqual(['work-db', 'WORKDB']);
   });
 
+  it('조회한 업무에 어느 워크스페이스 DB 에서 왔는지 붙인다', async () => {
+    const row = (id: string): Record<string, unknown> => ({
+      object: 'page',
+      id,
+      url: `https://notion.so/${id}`,
+      properties: { 이름: { type: 'title', title: [{ plain_text: id }] } },
+    });
+    const adapter = new NotionApiClient(
+      buildClient({ MINE: [row('mine-page')] }),
+      buildConfig({
+        NOTION_TASK_DB_IDS: 'MINE',
+        NOTION_WORK_TASK_DB_IDS: 'WORKDB',
+      }),
+      buildClient({ WORKDB: [row('work-page')] }),
+    );
+
+    const tasks = await adapter.listActiveTasks();
+
+    expect(tasks.map(({ pageId, workspace }) => [pageId, workspace])).toEqual([
+      ['mine-page', NotionWorkspace.PERSONAL],
+      ['work-page', NotionWorkspace.WORK],
+    ]);
+  });
+
   it('회사 토큰 없이 회사 DB 만 있으면 그 DB 는 실패로 센다', async () => {
     const warn = jest
       .spyOn(Logger.prototype, 'warn')
@@ -415,6 +440,61 @@ describe('NotionApiClient', () => {
       'name',
       'NotionPageNotAccessibleError',
     );
+  });
+
+  // 워크스페이스를 알면 그 통합으로만 묻는다 — 남의 통합으로 먼저 찌르면 SDK 가 매번 object_not_found 경고를 찍는다.
+  it('회사 업무는 개인 Client 를 거치지 않고 회사 Client 로만 상태를 읽는다', async () => {
+    const personalRetrieve = jest.fn();
+    const workRetrieve = jest.fn().mockResolvedValue({
+      object: 'page',
+      id: 'page-1',
+      url: 'https://notion.so/page-1',
+      archived: false,
+      in_trash: false,
+      last_edited_time: '2026-11-04T05:00:00.000Z',
+      properties: { 진행단계: { type: 'status', status: { name: '완료' } } },
+    });
+    const adapter = new NotionApiClient(
+      { pages: { retrieve: personalRetrieve } } as unknown as Client,
+      buildConfig({}),
+      { pages: { retrieve: workRetrieve } } as unknown as Client,
+    );
+
+    await expect(
+      adapter.getPageStatus('page-1', NotionWorkspace.WORK),
+    ).resolves.toMatchObject({ properties: { 진행단계: '완료' } });
+    expect(personalRetrieve).not.toHaveBeenCalled();
+  });
+
+  it('개인 업무는 개인 Client 가 못 읽어도 회사 Client 로 넘어가지 않는다', async () => {
+    const denied = Object.assign(new Error('Could not find page'), {
+      status: 404,
+    });
+    const workRetrieve = jest.fn();
+    const adapter = new NotionApiClient(
+      {
+        pages: { retrieve: jest.fn().mockRejectedValue(denied) },
+      } as unknown as Client,
+      buildConfig({}),
+      { pages: { retrieve: workRetrieve } } as unknown as Client,
+    );
+
+    await expect(
+      adapter.getPageStatus('page-1', NotionWorkspace.PERSONAL),
+    ).rejects.toHaveProperty('name', 'NotionPageNotAccessibleError');
+    expect(workRetrieve).not.toHaveBeenCalled();
+  });
+
+  it('회사 업무인데 회사 토큰이 없으면 무엇이 빠졌는지 알린다', async () => {
+    const adapter = new NotionApiClient(
+      { pages: { retrieve: jest.fn() } } as unknown as Client,
+      buildConfig({}),
+      null,
+    );
+
+    await expect(
+      adapter.getPageStatus('page-1', NotionWorkspace.WORK),
+    ).rejects.toThrow('NOTION_WORK_TOKEN');
   });
 
   it('한 DB 호출 실패해도 다른 DB 는 계속 처리 (graceful skip)', async () => {

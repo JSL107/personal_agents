@@ -1,4 +1,4 @@
-import { NotionTask } from '../notion.type';
+import { NotionTask, NotionWorkspace } from '../notion.type';
 
 export const NOTION_CLIENT_PORT = Symbol('NOTION_CLIENT_PORT');
 
@@ -172,7 +172,11 @@ export class NotionPageNotAccessibleError extends Error {
 
 export interface NotionClientPort {
   listActiveTasks(options?: ListActiveTasksOptions): Promise<NotionTask[]>;
-  getPageStatus(pageId: string): Promise<NotionPageStatus>;
+  // workspace 를 모르면(수집 전 저장된 행) 개인 → 회사 순으로 시도한다.
+  getPageStatus(
+    pageId: string,
+    workspace?: NotionWorkspace | null,
+  ): Promise<NotionPageStatus>;
   queryDraftPages(options: QueryDraftPagesOptions): Promise<NotionDraftPage[]>;
   getPageMarkdown(pageId: string): Promise<string>;
   createDatabasePage(

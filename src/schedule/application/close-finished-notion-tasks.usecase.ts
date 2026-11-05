@@ -71,7 +71,10 @@ export class CloseFinishedNotionTasksUsecase {
       return;
     }
     try {
-      const page = await this.notion.getPageStatus(item.sourceKey);
+      const page = await this.notion.getPageStatus(
+        item.sourceKey,
+        item.sourceWorkspace,
+      );
       const status =
         page.archived || page.inTrash
           ? 'DROPPED'
