@@ -608,6 +608,7 @@ export class AgentRunService implements OnApplicationBootstrap {
     slackUserId?: string;
     /** `inputSnapshot` 의 한 경로로 조회 단계에서 거른다 — take 가 필터보다 먼저 걸리는 것을 막는다. */
     inputSnapshotEquals?: InputSnapshotEquals;
+    triggerType?: TriggerType;
     sinceDays: number;
     limit: number;
   }): Promise<SucceededAgentRunSnapshot[]> {

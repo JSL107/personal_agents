@@ -71,12 +71,14 @@ export class PrismaDailyDigestRepository implements DailyDigestRepositoryPort {
   async findLatestStudyBrief({
     ownerUserId,
     since,
+    until,
   }: {
     ownerUserId: string;
     since: Date;
+    until?: Date;
   }): Promise<{ topic: string; notionUrl: string | null } | null> {
     return this.prisma.studyBrief.findFirst({
-      where: { ownerUserId, createdAt: { gte: since } },
+      where: { ownerUserId, createdAt: { gte: since, lt: until } },
       select: { topic: true, notionUrl: true },
       orderBy: { createdAt: 'desc' },
     });

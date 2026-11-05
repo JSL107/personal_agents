@@ -343,6 +343,8 @@ export interface AgentRunRepositoryPort {
   findRecentSucceededRuns(input: {
     agentType: AgentType;
     slackUserId?: string;
+    // 조회 단계에서 거른다 — limit 이 경로 필터보다 먼저 걸려 원하는 경로의 실행이 밀려나지 않게.
+    triggerType?: TriggerType;
     sinceDays: number;
     limit: number;
   }): Promise<SucceededAgentRunSnapshot[]>;

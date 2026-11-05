@@ -20,7 +20,7 @@ import { RunVerdictFacet } from '../../../agent-run/domain/run-verdict';
 import { formatPmPlanQuote } from '../../../agent-run/domain/run-verdict-digest';
 import {
   countKstDaysBetween,
-  getKstDayStartAsUtc,
+  getKstDateOf,
 } from '../../../common/util/kst-date.util';
 import {
   classifyRepoSource,
@@ -62,7 +62,6 @@ import {
   DAILY_DIGEST_REPOSITORY_PORT,
   DailyDigestRepositoryPort,
 } from '../../domain/port/daily-digest.repository.port';
-import { isRunResultDelivered } from '../../domain/run-delivery';
 import {
   EveningCarryContext,
   EveningDigestInput,
@@ -244,7 +243,12 @@ export class EveningRetroPublishTask implements AutopilotTask {
 
     // 아침 계획 판정 — 계획이 맞았는지는 하루를 보낸 뒤에야 알 수 있어 저녁 스레드에서 묻는다
     // (사람 피드백 설계 §3-3). 마감 한 통은 회고 재료가 없는 날에도 나가므로 세 경로 모두에 싣는다.
-    const pmPlanVerdict = await this.findTodayPmPlanVerdict(ownerSlackUserId);
+    const pmPlanVerdict = await this.findPmPlanVerdict({
+      slackUserId: ownerSlackUserId,
+      firedAtKst,
+      morningDelivered,
+      now,
+    });
     const carry = await this.loadCarryContext(ownerSlackUserId, firedAtKst);
     const buildDigest = (input: EveningRetroContext): string =>
       formatEveningDigest({
@@ -612,37 +616,45 @@ export class EveningRetroPublishTask implements AutopilotTask {
     return openPrNotice;
   }
 
-  // 오늘(KST) 아침 브리핑이 낸 PM 실행. 수동 `/today` 는 아침 보고로 나간 계획이 아니라 제외한다.
+  // 회차 날짜(KST) 아침 브리핑이 낸 PM 실행. 수동 `/today` 는 아침 보고로 나간 계획이 아니라 제외한다.
   // 아침 PM 이 실패한 날은 판정할 대상이 없어 빈 배열이다. 조회 실패도 회고를 막지 않는다.
-  private async findTodayPmPlanVerdict(
-    slackUserId: string,
-  ): Promise<AutopilotRunVerdictRequest[]> {
+  private async findPmPlanVerdict({
+    slackUserId,
+    firedAtKst,
+    morningDelivered,
+    now,
+  }: {
+    slackUserId: string;
+    firedAtKst: string;
+    morningDelivered: boolean;
+    now: Date;
+  }): Promise<AutopilotRunVerdictRequest[]> {
     try {
-      // sinceDays: 1 = 오늘 KST 0시 이후에 끝난 실행(저장소 구현이 KST 날짜 경계로 자른다).
+      // 저장소는 "오늘부터 N일 전 0시 이후" 로만 자른다 — 늦게 회수된 회차는 창을 회차 날짜까지
+      // 넓히고 아래에서 그날 끝난 실행만 고른다. 넓히지 않으면 다음 날 아침 계획에 판정을 묻는다.
+      const sinceDays =
+        countKstDaysBetween(new Date(`${firedAtKst}T00:00:00+09:00`), now) + 1;
       const runs = await this.agentRunService.findRecentSucceededRuns({
         agentType: AgentType.PM,
         slackUserId,
-        sinceDays: 1,
-        // 수동 /today 가 같은 날 여러 번 돌아도 아침 cron 실행이 창 밖으로 밀리지 않게 넉넉히 읽는다.
-        // ponytail: 하루 20회를 넘기면 다시 놓친다 — 그때는 저장소 조회에 triggerType 조건을 넣는다.
+        // 아침 브리핑 실행만 조회 단계에서 고른다 — 수동 /today 가 limit 을 먼저 채워 회차 날짜의
+        // 아침 실행이 밀려나지 않게. 하루 한 번이 정상이지만 stalled 재실행으로 여러 번 성공할 수 있어 넉넉히 둔다.
+        triggerType: TriggerType.MORNING_BRIEFING_CRON,
+        sinceDays,
         limit: 20,
       });
       const found = runs.find(
-        (run) => run.triggerType === TriggerType.MORNING_BRIEFING_CRON,
+        (run) =>
+          run.triggerType === TriggerType.MORNING_BRIEFING_CRON &&
+          getKstDateOf(run.endedAt) === firedAtKst,
       );
       if (!found) {
         return [];
       }
       // 실행이 성공해도 아침 메시지가 나가지 않았으면 사람은 그 계획을 본 적이 없다 — 본 적 없는
-      // 계획에 받은 판정이 그 실행의 품질 신호로 쌓이지 않게, 오늘 아침 그룹 본문이 실제로
-      // 발송(SENT)된 날만 묻는다. 원장에 agentRunId 가 없어 그룹·task·날짜로 맞춘다.
-      const deliveries = await this.deliveryRepository.findSince(
-        getKstDayStartAsUtc(),
-      );
-      const morningDelivered = isRunResultDelivered({
-        agentType: AgentType.PM,
-        deliveries,
-      });
+      // 계획에 받은 판정이 그 실행의 품질 신호로 쌓이지 않게, 그날 아침 그룹 본문이 실제로
+      // 발송(SENT)된 날만 묻는다. 발송 여부는 run() 이 회차 날짜 하루로 이미 조회해 둔 값이다
+      // (findMorningDelivered — 조회 실패(null)도 여기서는 미발송으로 본다).
       if (!morningDelivered) {
         this.logger.log(
           `아침 브리핑 발송 기록 없음 — 계획 판정 생략 (agentRunId=${found.id})`,

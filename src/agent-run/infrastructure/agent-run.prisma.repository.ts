@@ -307,12 +307,14 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
     agentType,
     slackUserId,
     inputSnapshotEquals,
+    triggerType,
     sinceDays,
     limit,
   }: {
     agentType: AgentType;
     slackUserId?: string;
     inputSnapshotEquals?: InputSnapshotEquals;
+    triggerType?: TriggerType;
     sinceDays: number;
     limit: number;
   }): Promise<SucceededAgentRunSnapshot[]> {
@@ -322,6 +324,7 @@ export class AgentRunPrismaRepository implements AgentRunRepositoryPort {
       agentType,
       status: AgentRunStatus.SUCCEEDED,
       endedAt: { gte: cutoff },
+      triggerType,
     };
     if (slackUserId) {
       where.inputSnapshot = {
