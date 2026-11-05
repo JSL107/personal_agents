@@ -1,6 +1,6 @@
 import { AGENT_REGISTRY } from '../../agent-registry/agent-registry';
 import { LedgerRunRow } from '../../agent-run/domain/port/agent-run.repository.port';
-import { formatKstDate } from '../../common/util/kst-date.util';
+import { formatKstDate, utcMidnightOf } from '../../common/util/kst-date.util';
 import { classifyAutonomy, isAutonomousTrigger } from './agent-autonomy';
 import { ConsoleAgentLedger, ConsoleLedger, LedgerClock } from './ledger.type';
 import { isStalled } from './stall';
@@ -18,20 +18,20 @@ interface WeekBounds {
 }
 
 const addCalendarDays = (date: string, days: number): string => {
-  const timestamp = new Date(`${date}T00:00:00Z`).getTime();
+  const timestamp = utcMidnightOf(date).getTime();
   return new Date(timestamp + days * DAY_IN_MILLISECONDS)
     .toISOString()
     .slice(0, 10);
 };
 
 const differenceInCalendarDays = (later: string, earlier: string): number => {
-  const laterTimestamp = new Date(`${later}T00:00:00Z`).getTime();
-  const earlierTimestamp = new Date(`${earlier}T00:00:00Z`).getTime();
+  const laterTimestamp = utcMidnightOf(later).getTime();
+  const earlierTimestamp = utcMidnightOf(earlier).getTime();
   return (laterTimestamp - earlierTimestamp) / DAY_IN_MILLISECONDS;
 };
 
 const getWeekBounds = (today: string): WeekBounds => {
-  const weekday = new Date(`${today}T00:00:00Z`).getUTCDay();
+  const weekday = utcMidnightOf(today).getUTCDay();
   const daysSinceMonday = weekday === 0 ? 6 : weekday - 1;
   const thisWeekStart = addCalendarDays(today, -daysSinceMonday);
   const lastWeekStart = addCalendarDays(thisWeekStart, -7);

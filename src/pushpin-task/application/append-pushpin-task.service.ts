@@ -1,7 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-import { getTodayKstDate } from '../../common/util/kst-date.util';
+import {
+  getTodayKstDate,
+  kstDayStartOf,
+} from '../../common/util/kst-date.util';
 import {
   NOTION_CLIENT_PORT,
   NotionClientPort,
@@ -91,7 +94,7 @@ export class AppendPushpinTaskService {
 
 // "YYYY-MM-DD (요일)" 자식 페이지 title (PR careerLog 와 동일 포맷 — 같은 페이지 트리 공유 가능).
 export const buildDailyChildPageTitle = (todayKst: string): string => {
-  const date = new Date(`${todayKst}T00:00:00+09:00`);
+  const date = kstDayStartOf(todayKst);
   const weekday = new Intl.DateTimeFormat('ko-KR', {
     weekday: 'short',
     timeZone: 'Asia/Seoul',

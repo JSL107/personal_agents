@@ -5,7 +5,10 @@ import { Job } from 'bullmq';
 
 import { ObservedWorkerHost } from '../../common/queue/observed-worker-host';
 import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
-import { getTodayKstDate } from '../../common/util/kst-date.util';
+import {
+  getTodayKstDate,
+  kstDayStartOf,
+} from '../../common/util/kst-date.util';
 import { PullRequestDetail } from '../../github/domain/github.type';
 import {
   GITHUB_CLIENT_PORT,
@@ -136,7 +139,7 @@ export class WebhookPrCareerLogConsumer extends ObservedWorkerHost {
 // 예: "2026-06-01 (월)". 같은 날 여러 PR 머지는 같은 자식 페이지에 누적.
 export const buildDailyChildPageTitle = (todayKst: string): string => {
   // todayKst 가 'YYYY-MM-DD' 라 동일 날짜의 weekday 추출 — Intl 의 ko-KR weekday short 사용.
-  const date = new Date(`${todayKst}T00:00:00+09:00`);
+  const date = kstDayStartOf(todayKst);
   const weekday = new Intl.DateTimeFormat('ko-KR', {
     weekday: 'short',
     timeZone: 'Asia/Seoul',

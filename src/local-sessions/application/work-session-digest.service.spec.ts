@@ -2,7 +2,6 @@ import { ConfigService } from '@nestjs/config';
 
 import * as transcriptReader from '../infrastructure/work-session-transcript.reader';
 import {
-  kstStartOfDay,
   previousWeekdayMorningKst,
   WorkSessionDigestService,
 } from './work-session-digest.service';
@@ -16,15 +15,6 @@ describe('work session KST boundaries', () => {
   ])('previous weekday morning for %s', (now, expected) => {
     expect(previousWeekdayMorningKst(new Date(now)).getTime()).toBe(
       new Date(expected).getTime(),
-    );
-  });
-
-  it('KST midnight changes at 15:00 UTC', () => {
-    expect(kstStartOfDay(new Date('2026-10-14T14:59:59Z')).toISOString()).toBe(
-      '2026-10-13T15:00:00.000Z',
-    );
-    expect(kstStartOfDay(new Date('2026-10-14T15:00:00Z')).toISOString()).toBe(
-      '2026-10-14T15:00:00.000Z',
     );
   });
 });

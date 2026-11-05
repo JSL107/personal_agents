@@ -71,3 +71,13 @@ export const countKstDaysBetween = (from: Date, to: Date): number => {
     Math.floor((date.getTime() + KST_OFFSET_MS) / DAY_MS);
   return toKstDayIndex(to) - toKstDayIndex(from);
 };
+
+// 'YYYY-MM-DD' 문자열 → 그날 UTC 00:00. 지금 시각 기준이 아니다.
+// @db.Date 값·getUTCDay·날짜 차이처럼 "날짜만" 담을 때 쓴다. 검증하지 않는다 — 잘못된 입력은 Invalid Date.
+export const utcMidnightOf = (date: string): Date =>
+  new Date(`${date}T00:00:00.000Z`);
+
+// 'YYYY-MM-DD' 문자열 → 그날 KST 00:00 의 실제 시각(전날 15:00Z). 지금 시각 기준이 아니다.
+// 조회 범위 경계처럼 "그날 한국 시간 0시" 가 필요할 때 쓴다. 검증하지 않는다 — 잘못된 입력은 Invalid Date.
+export const kstDayStartOf = (date: string): Date =>
+  new Date(`${date}T00:00:00+09:00`);

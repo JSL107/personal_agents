@@ -1,3 +1,4 @@
+import { kstDayStartOf } from '../../common/util/kst-date.util';
 import { UnmatchedSkillTag } from '../application/collect-job-postings.usecase';
 import { JobSourceId, SourceFetchOutcome } from '../domain/job-feed.type';
 import { StoredJobPosting } from '../domain/port/job-posting.repository.port';
@@ -119,7 +120,7 @@ const CARD_DATE_FORMATTER = new Intl.DateTimeFormat('ko-KR', {
 const formatCardDate = (firedAtKst: string): string => {
   // 오프셋을 명시해 KST 자정으로 고정한다. "2026-08-31" 만 넘기면 UTC 자정으로 파싱돼
   // 서버 timezone 에 따라 하루 전으로 표시될 수 있다.
-  const parsed = new Date(`${firedAtKst}T00:00:00+09:00`);
+  const parsed = kstDayStartOf(firedAtKst);
   if (Number.isNaN(parsed.getTime())) {
     return firedAtKst;
   }

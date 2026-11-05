@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { getKstDayStartAsUtc } from '../../common/util/kst-date.util';
 import { WorkSessionDigest } from '../domain/work-session-digest';
 import { readWorkSessionDigests } from '../infrastructure/work-session-transcript.reader';
 
@@ -19,21 +20,9 @@ export const defaultWorkSessionDigestConfig = (): WorkSessionDigestConfig => ({
   codexSessionsDir: join(homedir(), '.codex', 'sessions'),
 });
 
-export const kstStartOfDay = (now: Date): Date => {
-  const koreanTime = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-  return new Date(
-    Date.UTC(
-      koreanTime.getUTCFullYear(),
-      koreanTime.getUTCMonth(),
-      koreanTime.getUTCDate(),
-    ) -
-      9 * 60 * 60 * 1000,
-  );
-};
-
 // ponytail: 공휴일은 계산하지 않는다. 필요해지면 HOLIDAY_CALENDAR_PORT로 평일 판정을 교체한다.
 export const previousWeekdayMorningKst = (now: Date): Date => {
-  const start = kstStartOfDay(now);
+  const start = getKstDayStartAsUtc(0, now.getTime());
   const day = new Date(start.getTime() + 9 * 60 * 60 * 1000).getUTCDay();
   const daysAgo = day === 1 ? 3 : day === 0 ? 2 : day === 6 ? 1 : 1;
   return new Date(

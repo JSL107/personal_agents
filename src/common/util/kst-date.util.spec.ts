@@ -3,6 +3,8 @@ import {
   formatKstDateTime,
   getKstDayStartAsUtc,
   getTodayKstDate,
+  kstDayStartOf,
+  utcMidnightOf,
 } from './kst-date.util';
 
 describe('formatKstDate', () => {
@@ -69,6 +71,21 @@ describe('getKstDayStartAsUtc', () => {
 
     expect(result.toISOString()).toBe('2026-07-01T15:00:00.000Z');
   });
+
+  it('KST midnight changes at 15:00 UTC', () => {
+    expect(
+      getKstDayStartAsUtc(
+        0,
+        new Date('2026-10-14T14:59:59Z').getTime(),
+      ).toISOString(),
+    ).toBe('2026-10-13T15:00:00.000Z');
+    expect(
+      getKstDayStartAsUtc(
+        0,
+        new Date('2026-10-14T15:00:00Z').getTime(),
+      ).toISOString(),
+    ).toBe('2026-10-14T15:00:00.000Z');
+  });
 });
 
 describe('formatKstDateTime', () => {
@@ -81,5 +98,62 @@ describe('formatKstDateTime', () => {
     expect(formatKstDateTime(new Date('2026-10-29T15:00:00Z'))).toBe(
       '2026-10-30 00:00',
     );
+  });
+});
+
+describe('utcMidnightOf / kstDayStartOf', () => {
+  const INPUTS = [
+    '2026-01-01',
+    '2025-12-31',
+    '2028-02-29',
+    '2023-02-29',
+    '2026-02-30',
+    '2026-13-01',
+    '0000-01-01',
+    '9999-12-31',
+    '+002026-01-01',
+    '2026',
+    '2026-01',
+    '2026-1-1',
+    ' 2026-01-01',
+    '',
+    'abc',
+  ];
+  it.each(INPUTS)('utcMidnightOf(%p) 는 원래 인라인 식과 같다', (input) => {
+    const actual = utcMidnightOf(input).getTime();
+    expect(
+      Object.is(actual, new Date(`${input}T00:00:00.000Z`).getTime()),
+    ).toBe(true);
+    expect(Object.is(actual, new Date(`${input}T00:00:00Z`).getTime())).toBe(
+      true,
+    );
+    expect(Object.is(actual, Date.parse(`${input}T00:00:00Z`))).toBe(true);
+  });
+  it.each(INPUTS)('kstDayStartOf(%p) 는 원래 인라인 식과 같다', (input) => {
+    const actual = kstDayStartOf(input).getTime();
+    expect(
+      Object.is(actual, new Date(`${input}T00:00:00+09:00`).getTime()),
+    ).toBe(true);
+    expect(
+      Object.is(actual, new Date(`${input}T00:00:00.000+09:00`).getTime()),
+    ).toBe(true);
+  });
+  it('UTC 자정과 KST 0시를 돌려준다', () => {
+    expect(utcMidnightOf('2026-01-01').toISOString()).toBe(
+      '2026-01-01T00:00:00.000Z',
+    );
+    expect(kstDayStartOf('2026-01-01').toISOString()).toBe(
+      '2025-12-31T15:00:00.000Z',
+    );
+    expect(
+      utcMidnightOf('2026-11-05').getTime() -
+        kstDayStartOf('2026-11-05').getTime(),
+    ).toBe(32_400_000);
+  });
+  it('잘못된 입력에서 던지지 않고 Invalid Date 를 돌려준다', () => {
+    expect(Number.isNaN(utcMidnightOf('abc').getTime())).toBe(true);
+    expect(Number.isNaN(kstDayStartOf('abc').getTime())).toBe(true);
+    expect(() => utcMidnightOf('abc').toISOString()).toThrow(RangeError);
+    expect(() => kstDayStartOf('abc').toISOString()).toThrow(RangeError);
   });
 });

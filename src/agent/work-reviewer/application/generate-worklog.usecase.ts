@@ -10,10 +10,8 @@ import {
 } from '../../../agent-run/domain/agent-run.type';
 import { DomainStatus } from '../../../common/exception/domain-status.enum';
 import { UNTRUSTED_INPUT_NOTICE } from '../../../common/llm/untrusted-input.util';
-import {
-  kstStartOfDay,
-  WorkSessionDigestService,
-} from '../../../local-sessions/application/work-session-digest.service';
+import { getKstDayStartAsUtc } from '../../../common/util/kst-date.util';
+import { WorkSessionDigestService } from '../../../local-sessions/application/work-session-digest.service';
 import {
   formatWorkSessionsSection,
   toWorkSessionEvidencePayload,
@@ -83,7 +81,7 @@ export class GenerateWorklogUsecase {
     }
 
     const reviewDate = getKstTodayAsUtcDate();
-    const since = kstStartOfDay(new Date());
+    const since = getKstDayStartAsUtc();
     let sessions: WorkSessionDigest[] = [];
     if (
       WORK_SESSION_TRIGGERS.has(

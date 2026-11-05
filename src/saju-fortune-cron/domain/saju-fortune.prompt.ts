@@ -1,3 +1,4 @@
+import { utcMidnightOf } from '../../common/util/kst-date.util';
 import { pillarToHangul } from './day-pillar';
 import { analyzeSajuDay, formatSajuFacts } from './saju-analysis';
 import { CARD_SCENE_LABEL, CARD_TITLE_LABEL } from './saju-fortune-card';
@@ -25,7 +26,7 @@ const MILLISECONDS_PER_DAY = 86_400_000;
 // todayKst: 'YYYY-MM-DD'. 날짜 형식은 dayPillarOf 가 먼저 검사한다.
 export const metaphorThemeOf = (todayKst: string): string => {
   const days = Math.floor(
-    Date.parse(`${todayKst}T00:00:00Z`) / MILLISECONDS_PER_DAY,
+    utcMidnightOf(todayKst).getTime() / MILLISECONDS_PER_DAY,
   );
   // 날마다 한 칸씩 돌고, 소재 수만큼 지나면 처음으로 돌아온다.
   const themeIndex = days % METAPHOR_THEMES.length;

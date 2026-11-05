@@ -2,7 +2,7 @@ import { PrismaClient } from '@prisma/client';
 
 import { AGENT_CONTRACTS } from '../src/agent-registry/agent-contract';
 import { evaluateContract } from '../src/agent-registry/contract-inspector';
-import { formatKstDate } from '../src/common/util/kst-date.util';
+import { formatKstDate, utcMidnightOf } from '../src/common/util/kst-date.util';
 import { AgentType } from '../src/model-router/domain/model-router.type';
 
 /**
@@ -50,7 +50,7 @@ const weekKey = (date: Date): string => {
     return '날짜없음';
   }
   // KST 캘린더일을 UTC 자정으로 다시 세워 요일 계산에 시간대가 끼어들지 않게 한다.
-  const base = new Date(`${kstDate}T00:00:00Z`);
+  const base = utcMidnightOf(kstDate);
   const weekday = (base.getUTCDay() + 6) % 7;
   base.setUTCDate(base.getUTCDate() - weekday);
   return base.toISOString().slice(0, 10);

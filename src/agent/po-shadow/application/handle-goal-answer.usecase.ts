@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { isMatching, P } from 'ts-pattern';
 
+import { utcMidnightOf } from '../../../common/util/kst-date.util';
 import { extractJsonObjectText } from '../../../common/util/llm-json-extract.util';
 import { detectYesNoIntent } from '../../../common/util/yes-no-intent.util';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
@@ -415,7 +416,7 @@ const isActualDate = (value: string): boolean => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     return false;
   }
-  const date = new Date(`${value}T00:00:00.000Z`);
+  const date = utcMidnightOf(value);
   return (
     !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value
   );

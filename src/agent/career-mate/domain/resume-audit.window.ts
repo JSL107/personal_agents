@@ -1,3 +1,4 @@
+import { utcMidnightOf } from '../../../common/util/kst-date.util';
 import { ProfileAccomplishment } from './career-mate.type';
 
 // 한 회차에 감사할 성과 개수 상한.
@@ -48,7 +49,7 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 // 'YYYY-MM-DD' 를 epoch 기준 일수로. 파싱 실패는 0 으로 떨어뜨려 창을 맨 앞에 고정한다 —
 // 회차를 통째로 잃느니 같은 구간을 반복해서라도 감사가 도는 쪽을 택한다.
 const toDayIndex = (todayKst: string): number => {
-  const parsed = Date.parse(`${todayKst}T00:00:00Z`);
+  const parsed = utcMidnightOf(todayKst).getTime();
   if (Number.isNaN(parsed)) {
     return 0;
   }
