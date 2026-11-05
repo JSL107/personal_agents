@@ -21,7 +21,6 @@ import {
 import {
   countKstDaysBetween,
   getKstDateOf,
-  getKstDayStartAsUtc,
 } from '../../../common/util/kst-date.util';
 import { HumanizeService } from '../../../humanize/application/humanize.service';
 import { humanizeDailyPlan } from '../../../humanize/application/humanize-report.adapter';
@@ -338,6 +337,7 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
       this.loadPostings(firedAtKst, now),
       this.loadInvest(firedAtKst),
       this.loadStudy(
+        firedAtKst,
         // 브리프는 별도 cron 이 자기 owner 로 저장한다(study-brief-cron.scheduler.ts). 두 owner 설정이
         // 갈라지면 autopilot owner 로는 브리프를 못 찾아 공부 줄이 조용히 빠지므로, 생산자의 키를 먼저 쓴다.
         this.configService
@@ -724,12 +724,16 @@ export class MorningBriefingAutopilotTask implements AutopilotTask {
   }
 
   private async loadStudy(
+    firedAtKst: string,
     ownerSlackUserId: string,
   ): Promise<MorningDigestInput['study']> {
     try {
+      // 회차 날짜 하루 — 늦게 회수된 회차가 다음 날 브리프를 그날 공부로 싣지 않게 한다.
+      const dayStart = new Date(`${firedAtKst}T00:00:00+09:00`);
       const brief = await this.digestRepository.findLatestStudyBrief({
         ownerUserId: ownerSlackUserId,
-        since: getKstDayStartAsUtc(),
+        since: dayStart,
+        until: new Date(dayStart.getTime() + DAY_MS),
       });
       return brief ? { topic: brief.topic, url: brief.notionUrl } : null;
     } catch (error: unknown) {

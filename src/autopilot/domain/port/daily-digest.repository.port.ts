@@ -36,10 +36,11 @@ export interface DailyDigestRepositoryPort {
     target: string;
     since: Date;
   }): Promise<string | null>;
-  // 그 시각 이후 만든 가장 최근 공부 브리프.
+  // 그 시각 이후(until 이 있으면 그 전까지) 만든 가장 최근 공부 브리프.
   findLatestStudyBrief(input: {
     ownerUserId: string;
     since: Date;
+    until?: Date;
   }): Promise<{ topic: string; notionUrl: string | null } | null>;
   // 콘솔 경로로 원장에만 남은 그 task 의 가장 최근 전문.
   findLatestConsoleText(input: {

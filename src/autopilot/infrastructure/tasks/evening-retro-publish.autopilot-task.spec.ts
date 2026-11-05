@@ -4,6 +4,8 @@ import { PREVIEW_KIND } from '../../../preview-gate/domain/preview-action.type';
 import { EveningRetroPublishTask } from './evening-retro-publish.autopilot-task';
 
 const CTX = { ownerSlackUserId: 'U1', firedAtKst: '2026-07-03' };
+// CTX 회차 날짜(07-03 KST)의 아침 09:00 — 아침 PM 실행은 회차 날짜에 끝난 것만 판정 대상이다.
+const CTX_MORNING_ENDED_AT = new Date('2026-07-03T00:00:00.000Z');
 
 const RETRO_RESPONSE = {
   text: JSON.stringify({
@@ -1151,7 +1153,7 @@ describe('EveningRetroPublishTask', () => {
           {
             id: 70,
             output: { topPriority: { title: '감사로그 요구사항 작성' } },
-            endedAt: new Date(),
+            endedAt: CTX_MORNING_ENDED_AT,
             triggerType: TriggerType.MORNING_BRIEFING_CRON,
           },
         ],
@@ -1160,6 +1162,41 @@ describe('EveningRetroPublishTask', () => {
       const result = await task.run(CTX);
 
       // 수동 /today(77)는 아침 보고로 나간 계획이 아니라 건너뛴다. 저녁에 판정하므로 계획 내용을 인용한다.
+      expect(result.runVerdicts).toEqual([
+        { agentRunId: 1, facets: ['overall'] },
+        {
+          agentRunId: 70,
+          facets: ['pm_plan'],
+          quote: '감사로그 요구사항 작성',
+        },
+      ]);
+    });
+
+    // 늦게 회수된 「07-03 마감」이 다음 날 돌면 저장소 창에 07-04 아침 실행도 들어온다 — 최신순으로
+    // 먼저 오는 그 실행이 아니라 회차 날짜에 끝난 실행에 판정을 묻는다.
+    it('(s-5b) 다음 날 아침 PM 실행이 함께 조회돼도 회차 날짜의 실행만 판정한다', async () => {
+      const { task } = makeTask({
+        prs: [PR_ITEM],
+        worklogRuns: [],
+        dailyEvalRuns: [],
+        pmRuns: [
+          {
+            id: 71,
+            output: { topPriority: { title: '다음 날 계획' } },
+            endedAt: new Date('2026-07-04T00:00:00.000Z'),
+            triggerType: TriggerType.MORNING_BRIEFING_CRON,
+          },
+          {
+            id: 70,
+            output: { topPriority: { title: '감사로그 요구사항 작성' } },
+            endedAt: CTX_MORNING_ENDED_AT,
+            triggerType: TriggerType.MORNING_BRIEFING_CRON,
+          },
+        ],
+      });
+
+      const result = await task.run(CTX);
+
       expect(result.runVerdicts).toEqual([
         { agentRunId: 1, facets: ['overall'] },
         {
@@ -1201,7 +1238,7 @@ describe('EveningRetroPublishTask', () => {
           {
             id: 70,
             output: {},
-            endedAt: new Date(),
+            endedAt: CTX_MORNING_ENDED_AT,
             triggerType: TriggerType.MORNING_BRIEFING_CRON,
           },
         ],
@@ -1262,7 +1299,7 @@ describe('EveningRetroPublishTask', () => {
             {
               id: 70,
               output: {},
-              endedAt: new Date(),
+              endedAt: CTX_MORNING_ENDED_AT,
               triggerType: TriggerType.MORNING_BRIEFING_CRON,
             },
           ],
