@@ -247,6 +247,7 @@ export class EveningRetroPublishTask implements AutopilotTask {
       slackUserId: ownerSlackUserId,
       firedAtKst,
       morningDelivered,
+      now,
     });
     const carry = await this.loadCarryContext(ownerSlackUserId, firedAtKst);
     const buildDigest = (input: EveningRetroContext): string =>
@@ -621,19 +622,18 @@ export class EveningRetroPublishTask implements AutopilotTask {
     slackUserId,
     firedAtKst,
     morningDelivered,
+    now,
   }: {
     slackUserId: string;
     firedAtKst: string;
     morningDelivered: boolean;
+    now: Date;
   }): Promise<AutopilotRunVerdictRequest[]> {
     try {
       // 저장소는 "오늘부터 N일 전 0시 이후" 로만 자른다 — 늦게 회수된 회차는 창을 회차 날짜까지
       // 넓히고 아래에서 그날 끝난 실행만 고른다. 넓히지 않으면 다음 날 아침 계획에 판정을 묻는다.
       const sinceDays =
-        countKstDaysBetween(
-          new Date(`${firedAtKst}T00:00:00+09:00`),
-          new Date(),
-        ) + 1;
+        countKstDaysBetween(new Date(`${firedAtKst}T00:00:00+09:00`), now) + 1;
       const runs = await this.agentRunService.findRecentSucceededRuns({
         agentType: AgentType.PM,
         slackUserId,
