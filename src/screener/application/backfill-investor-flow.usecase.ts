@@ -1,6 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 
-import { getTodayKstDate } from '../../common/util/kst-date.util';
+import {
+  getTodayKstDate,
+  utcMidnightOf,
+} from '../../common/util/kst-date.util';
 import { InvestorFlowRow } from '../../market-data/domain/investor-flow.type';
 import {
   InvestorFlowBackfillTicker,
@@ -66,7 +69,7 @@ export class BackfillInvestorFlowUsecase {
       options.years ?? DEFAULT_YEARS,
     );
     const priceTargets = await this.repository.findOldestPriceFlowTargets(
-      new Date(`${targetStartDate}T00:00:00.000Z`),
+      utcMidnightOf(targetStartDate),
     );
     const result: BackfillInvestorFlowResult = {
       targetCount: targets.length,

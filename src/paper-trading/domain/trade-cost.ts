@@ -1,3 +1,4 @@
+import { kstDayStartOf } from '../../common/util/kst-date.util';
 import { MoneyValue } from '../../market-data/domain/market-data.type';
 import { PaperMarket, TradeCost, TradeCostInput } from './paper-account.type';
 
@@ -42,9 +43,9 @@ const COST_SCHEDULES: CostSchedule[] = [
 const findCostSchedule = (tradeDate: Date): CostSchedule => {
   for (let index = COST_SCHEDULES.length - 1; index >= 0; index -= 1) {
     const schedule = COST_SCHEDULES[index];
-    const effectiveTime = new Date(
-      `${schedule.effectiveFrom}T00:00:00+09:00`,
-    ).getTime();
+    // 시행일 경계는 KST 0시(B)다. 호출부는 지금 UTC 자정 거래일을 넘겨 A 로 바꿔도 결과가 같지만,
+    // tradeDate 는 실제 시각도 받는 Date 라 KST 00~09시 체결이 들어오면 A 경계는 전날 요율을 매긴다.
+    const effectiveTime = kstDayStartOf(schedule.effectiveFrom).getTime();
     if (tradeDate.getTime() >= effectiveTime) {
       return schedule;
     }

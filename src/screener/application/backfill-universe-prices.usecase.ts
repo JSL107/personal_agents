@@ -1,6 +1,9 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
-import { getTodayKstDate } from '../../common/util/kst-date.util';
+import {
+  getTodayKstDate,
+  utcMidnightOf,
+} from '../../common/util/kst-date.util';
 import { DailyBar } from '../../market-data/domain/market-data.type';
 import { MarketDataRateLimitError } from '../../market-data/domain/market-data-rate-limit.error';
 import {
@@ -126,9 +129,7 @@ export class BackfillUniversePricesUsecase {
         let cursor =
           shouldRecheck || storedBarStat === undefined
             ? undefined
-            : buildBackfillCursor(
-                new Date(`${storedBarStat.oldestTradeDate}T00:00:00.000Z`),
-              );
+            : buildBackfillCursor(utcMidnightOf(storedBarStat.oldestTradeDate));
 
         let shouldContinue = true;
         while (shouldContinue) {

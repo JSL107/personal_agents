@@ -1,3 +1,4 @@
+import { utcMidnightOf } from '../../common/util/kst-date.util';
 import {
   RankingWeights,
   ScreenStrategy,
@@ -49,7 +50,7 @@ const readDate = (argv: string[], key: string): string => {
     );
   }
   // 형식만 맞으면 2026-02-30 이 통과하고 new Date 가 3월로 넘긴다.
-  const parsed = new Date(`${value}T00:00:00.000Z`);
+  const parsed = utcMidnightOf(value);
   if (
     Number.isNaN(parsed.getTime()) ||
     parsed.toISOString().slice(0, 10) !== value

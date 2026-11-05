@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
+import { utcMidnightOf } from '../../common/util/kst-date.util';
 import { fetchDailyBarsWithRateLimitRetry } from '../../market-data/domain/fetch-daily-bars-with-rate-limit-retry';
 import { DailyBar } from '../../market-data/domain/market-data.type';
 import {
@@ -166,7 +167,7 @@ export class ApplyIntradayStopUsecase {
     const accounts = await this.repository.findAllAccounts();
     const result = emptyResult('TRADING', command.executedAt);
     result.accountCount = accounts.length;
-    const tradeDay = new Date(`${tradeDate}T00:00:00.000Z`);
+    const tradeDay = utcMidnightOf(tradeDate);
     // 손절선은 종가 밴드와 같은 원장(`strategy_parameter`)에서 온다. 상수를 따로 읽으면
     // 원장에서 값을 바꿨을 때 종가 밴드만 따라가고 장중 손절은 옛 값에 남아, 같은 계좌가
     // 두 기준으로 청산된다. 전략당 한 번만 해소해 같은 회차가 같은 값을 쓰게 한다.

@@ -1,3 +1,4 @@
+import { utcMidnightOf } from '../../common/util/kst-date.util';
 export interface BuildBacktestCalendarInput {
   from: string;
   to: string;
@@ -23,7 +24,7 @@ const assertDateText = (value: string, label: string): void => {
 };
 
 const isWeekend = (dateText: string): boolean => {
-  const day = new Date(`${dateText}T00:00:00.000Z`).getUTCDay();
+  const day = utcMidnightOf(dateText).getUTCDay();
   return day === 0 || day === 6;
 };
 
@@ -41,8 +42,8 @@ export const buildBacktestCalendar = (
   }
 
   const recommendDates: string[] = [];
-  const cursor = new Date(`${input.from}T00:00:00.000Z`);
-  const last = new Date(`${input.to}T00:00:00.000Z`);
+  const cursor = utcMidnightOf(input.from);
+  const last = utcMidnightOf(input.to);
   while (cursor.getTime() <= last.getTime()) {
     const dateText = cursor.toISOString().slice(0, 10);
     if (!isWeekend(dateText)) {

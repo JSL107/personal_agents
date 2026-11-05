@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 
 import { constrainPaperRecommendation } from '../../agent/paper-recommend/domain/paper-recommendation.constraint';
 import { planPendingOrders } from '../../agent/paper-recommend/domain/pending-order-plan';
+import { utcMidnightOf } from '../../common/util/kst-date.util';
 import {
   calculateIndicators,
   VolatilityEstimator,
@@ -265,7 +266,7 @@ const summarizeMargins = (
 };
 
 const nextWeekdayText = (dateText: string): string => {
-  const cursor = new Date(`${dateText}T00:00:00.000Z`);
+  const cursor = utcMidnightOf(dateText);
   cursor.setUTCDate(cursor.getUTCDate() + 1);
   while (cursor.getUTCDay() === 0 || cursor.getUTCDay() === 6) {
     cursor.setUTCDate(cursor.getUTCDate() + 1);
@@ -296,15 +297,13 @@ export class ReplayBacktestUsecase {
     // 유니버스 기준일은 재생 시작일이다. 그 뒤에 폐지된 종목도 살아 있던 날까지는 후보다.
     const tickers =
       cache?.tickers ??
-      (await this.repository.findUniverse(
-        new Date(`${command.from}T00:00:00.000Z`),
-      ));
+      (await this.repository.findUniverse(utcMidnightOf(command.from)));
     const barsByTicker =
       cache?.barsByTicker ??
       (await this.repository.findBarsInRange(
         tickers.map((ticker) => ticker.tickerId),
         this.warmupFrom(command.from),
-        new Date(`${command.to}T00:00:00.000Z`),
+        utcMidnightOf(command.to),
       ));
     if (cache !== undefined) {
       cache.tickers = tickers;
@@ -423,8 +422,8 @@ export class ReplayBacktestUsecase {
     const benchmarkCloses =
       cache?.benchmarkCloses ??
       (await this.repository.findBenchmarkCloses(
-        new Date(`${command.from}T00:00:00.000Z`),
-        new Date(`${command.to}T00:00:00.000Z`),
+        utcMidnightOf(command.from),
+        utcMidnightOf(command.to),
       ));
     if (cache !== undefined) {
       cache.benchmarkCloses = benchmarkCloses;
@@ -444,7 +443,7 @@ export class ReplayBacktestUsecase {
   }
 
   private warmupFrom(from: string): Date {
-    const warmup = new Date(`${from}T00:00:00.000Z`);
+    const warmup = utcMidnightOf(from);
     warmup.setUTCDate(warmup.getUTCDate() - WARMUP_CALENDAR_DAYS);
     return warmup;
   }
@@ -862,7 +861,7 @@ export class ReplayBacktestUsecase {
           price: new Prisma.Decimal(latest.close.toString()),
           priceDate: latest.tradeDate,
         },
-        new Date(`${context.today}T00:00:00.000Z`),
+        utcMidnightOf(context.today),
       );
       candidates.push({
         tickerId: position.tickerId,
@@ -1181,8 +1180,8 @@ export class ReplayBacktestUsecase {
     }
     const evaluationDate =
       context.lastTradeDate === null
-        ? new Date(`${context.command.to}T00:00:00.000Z`)
-        : new Date(`${context.lastTradeDate}T00:00:00.000Z`);
+        ? utcMidnightOf(context.command.to)
+        : utcMidnightOf(context.lastTradeDate);
     const performance = calculateBenchmarkPerformance({
       cycles: context.matched.cycles,
       evaluationDate,

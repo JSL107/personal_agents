@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
+import { utcMidnightOf } from '../../../common/util/kst-date.util';
 import { InvestorFlowRow } from '../../domain/investor-flow.type';
 import {
   NaverInvestorFlowHttpError,
@@ -34,8 +35,8 @@ const parseTradeDate = (value: unknown): Date => {
   if (typeof value !== 'string' || !/^\d{8}$/u.test(value)) {
     throw new NaverInvestorFlowParseError('bizdate 형식이 올바르지 않습니다');
   }
-  const tradeDate = new Date(
-    `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}T00:00:00.000Z`,
+  const tradeDate = utcMidnightOf(
+    `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`,
   );
   if (
     Number.isNaN(tradeDate.getTime()) ||
@@ -83,7 +84,7 @@ export const parseNaverInvestorFlowRows = (
 // 오래된 날의 전날로 이어 받으므로), 일일 수집은 당일 행을 못 받는다. 둘 다 20봉 지표를
 // 통째로 null 로 만드므로 호출부가 아니라 여기서 한 번 하루를 민다.
 export const exclusiveBizdateOf = (throughDate: string): string => {
-  const next = new Date(`${throughDate}T00:00:00.000Z`);
+  const next = utcMidnightOf(throughDate);
   next.setUTCDate(next.getUTCDate() + 1);
   return next.toISOString().slice(0, 10).replaceAll('-', '');
 };

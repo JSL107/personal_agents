@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
+import { utcMidnightOf } from '../../common/util/kst-date.util';
 import { fetchDailyBarsWithRateLimitRetry } from '../../market-data/domain/fetch-daily-bars-with-rate-limit-retry';
 import { DailyBar } from '../../market-data/domain/market-data.type';
 import {
@@ -111,7 +112,7 @@ export class FillPendingOrdersUsecase {
   ): Promise<FillPendingOrdersResult> {
     const executedAt = input.executedAt ?? new Date();
     const { tradeDate, minutes } = getKstClock(executedAt);
-    const day = new Date(`${tradeDate}T00:00:00.000Z`);
+    const day = utcMidnightOf(tradeDate);
     const openMinutes = 9 * 60 + 30;
     const closeMinutes = 15 * 60 + 30;
     if (minutes < openMinutes) {

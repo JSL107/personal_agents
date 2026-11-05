@@ -1,3 +1,4 @@
+import { utcMidnightOf } from '../../common/util/kst-date.util';
 import {
   CurveLine,
   EquityCurveChart,
@@ -64,13 +65,14 @@ interface PlotGeometry {
 // 날(평가 cron 실패)이 없는 것처럼 압축돼, 이후 구간의 기울기가 실제보다 완만해진다.
 const buildGeometry = (chart: EquityCurveChart): PlotGeometry => {
   const plotWidth = CANVAS_WIDTH - PADDING.left - PADDING.right;
+  // 날짜가 null 일 수 있어 utcMidnightOf(string) 대신 원래 식을 둔다 — null 이면 지금처럼 NaN 이 된다.
   const firstTime = Date.parse(`${chart.firstTradeDate}T00:00:00.000Z`);
   const lastTime = Date.parse(`${chart.lastTradeDate}T00:00:00.000Z`);
   const timeSpan = Math.max(1, lastTime - firstTime);
   const valueSpan = Math.max(0.0001, chart.maxPercent - chart.minPercent);
   return {
     xOf: (tradeDate) => {
-      const time = Date.parse(`${tradeDate}T00:00:00.000Z`);
+      const time = utcMidnightOf(tradeDate).getTime();
       return PADDING.left + ((time - firstTime) / timeSpan) * plotWidth;
     },
     yOf: (valuePercent) =>
@@ -130,8 +132,8 @@ const xAxisDates = (
   if (chart.firstTradeDate === null || chart.lastTradeDate === null) {
     return [];
   }
-  const firstTime = Date.parse(`${chart.firstTradeDate}T00:00:00.000Z`);
-  const lastTime = Date.parse(`${chart.lastTradeDate}T00:00:00.000Z`);
+  const firstTime = utcMidnightOf(chart.firstTradeDate).getTime();
+  const lastTime = utcMidnightOf(chart.lastTradeDate).getTime();
   if (lastTime <= firstTime) {
     return [{ tradeDate: chart.firstTradeDate, anchor: 'start' }];
   }
