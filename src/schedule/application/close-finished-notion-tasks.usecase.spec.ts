@@ -67,6 +67,24 @@ describe('CloseFinishedNotionTasksUsecase', () => {
       actor: ScheduleActor.COLLECTOR,
     });
   });
+  it('되살린 뒤 다시 닫히면 편집 시각이 달라 첫 닫힘과 다른 dedupeKey 를 쓴다', async () => {
+    const { usecase, repository, notion } = createUsecase();
+    await usecase.execute({ ownerId: 'U1', now, config });
+    notion.getPageStatus.mockResolvedValueOnce({
+      properties: { 상태: '완료' },
+      archived: false,
+      inTrash: false,
+      lastEditedTime: '2026-11-04T09:00:00Z',
+    });
+    await usecase.execute({ ownerId: 'U1', now, config });
+    const keys = repository.recordEventAndTransition.mock.calls.map(
+      ([input]) => input.event.dedupeKey,
+    );
+    expect(keys).toEqual([
+      'notion-closed:page:2026-11-03T09:00:00Z',
+      'notion-closed:page:2026-11-04T09:00:00Z',
+    ]);
+  });
   it.each<Omit<NotionPageStatus, 'lastEditedTime'>>([
     { properties: { 상태: '중단' }, archived: false, inTrash: false },
     { properties: {}, archived: true, inTrash: false },

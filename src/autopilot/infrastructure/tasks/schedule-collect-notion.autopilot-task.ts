@@ -35,6 +35,9 @@ import {
   ReadListInput,
 } from '../../domain/schedule-collect-notion.type';
 
+// 이대리가 닫은 상태 — 되살림 대상 판정과 전환 허용 상태가 같은 목록이어야 한다.
+const REOPENABLE_STATUSES = [ScheduleStatus.DONE, ScheduleStatus.SKIPPED];
+
 // 에러리포트 DB 가 수백 건이라 넉넉히 둔다. 넘으면 클라이언트가 잘림 경고를 남긴다.
 const NOTION_COLLECT_PER_DB_LIMIT = 1000;
 
@@ -167,22 +170,14 @@ export class ScheduleCollectNotionAutopilotTask implements AutopilotTask {
     ownerId,
     now,
   }: NotionReopenInput): Promise<void> {
-    if (
-      found.status !== ScheduleStatus.DONE &&
-      found.status !== ScheduleStatus.SKIPPED
-    ) {
+    if (!REOPENABLE_STATUSES.includes(found.status)) {
       return;
     }
     const detail = await this.repository.findDetail({
       id: found.id,
       slackUserId: ownerId,
     });
-    // occurredAt 은 회차 시작 시각이라 회차 중 사용자 전환보다 앞설 수 있다 — 기록 순서(id)로 마지막을 고른다.
-    const lastChange = detail?.events
-      .filter((event) => event.kind === ScheduleEventKind.STATUS_CHANGED)
-      .reduce<
-        ScheduleEventRecord | undefined
-      >((latest, event) => (!latest || event.id > latest.id ? event : latest), undefined);
+    const lastChange = findLastStatusChange(detail?.events ?? []);
     if (!isChangedBy(lastChange?.payload, ScheduleActor.COLLECTOR)) {
       return;
     }
@@ -198,7 +193,7 @@ export class ScheduleCollectNotionAutopilotTask implements AutopilotTask {
         occurredAt: now,
       },
       slackUserId: ownerId,
-      transitionFrom: [ScheduleStatus.DONE, ScheduleStatus.SKIPPED],
+      transitionFrom: REOPENABLE_STATUSES,
       transitionTo: ScheduleStatus.OPEN,
       now,
       actor: ScheduleActor.COLLECTOR,
@@ -244,7 +239,16 @@ export class ScheduleCollectNotionAutopilotTask implements AutopilotTask {
   }
 }
 
+// occurredAt 은 회차 시작 시각이라 회차 중 사용자 전환보다 앞설 수 있다 — 기록 순서(id)로 고른다.
+const findLastStatusChange = (
+  events: ScheduleEventRecord[],
+): ScheduleEventRecord | undefined =>
+  events
+    .filter((event) => event.kind === ScheduleEventKind.STATUS_CHANGED)
+    .sort((left, right) => right.id - left.id)[0];
+
 const isChangedBy = (payload: unknown, actor: ScheduleActor): boolean =>
   typeof payload === 'object' &&
   payload !== null &&
-  (payload as Record<string, unknown>).actor === actor;
+  'actor' in payload &&
+  payload.actor === actor;
