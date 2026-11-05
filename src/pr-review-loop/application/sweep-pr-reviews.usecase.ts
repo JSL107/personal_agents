@@ -93,6 +93,17 @@ const ALREADY_MERGED = 'ALREADY_MERGED';
 // 상세·diff 조회 사이에 push 가 들어와 스냅샷이 섞인 경우. 모델을 부르기 전이라 ALREADY_MERGED 와
 // 같이 상한을 돌려주고, 원장에 남기지 않으므로 다음 스윕이 새 스냅샷으로 다시 리뷰한다.
 const SNAPSHOT_MOVED = 'SNAPSHOT_MOVED';
+// 위 둘처럼 모델을 부르기 전에 넘긴 경우. 새 경우를 더할 때 이 타입과 가드만 고친다.
+type SkippedBeforeReview = typeof ALREADY_MERGED | typeof SNAPSHOT_MOVED;
+const isSkippedBeforeReview = (
+  result: ReviewAndPublishResult,
+): result is SkippedBeforeReview =>
+  result === ALREADY_MERGED || result === SNAPSHOT_MOVED;
+// PR 1건 처리 결과. null 은 리뷰는 했지만 낼 카드가 없는 경우다.
+type ReviewAndPublishResult =
+  | SweepPullRequestResult
+  | null
+  | SkippedBeforeReview;
 
 // 판정 헬퍼의 반환값 — 조회 실패와 "레코드 없음"을 섞지 않기 위해 boolean/null 대신 명시적 열거.
 type SweepDecision = 'REVIEW' | 'SKIP';
@@ -206,7 +217,7 @@ export class SweepPrReviewsUsecase implements OnApplicationBootstrap {
           pullNumber: pullRequest.number,
           slackUserId,
         });
-        if (result === ALREADY_MERGED || result === SNAPSHOT_MOVED) {
+        if (isSkippedBeforeReview(result)) {
           // 검색 인덱스 지연으로 이미 머지된 PR 이 섞여 들어왔거나 조회 중 push 가 들어왔다.
           // 리뷰를 한 적이 없으니 회차 상한을 돌려주고 다음 PR 로 간다 — 안 돌려주면 그런
           // 3건이 회차를 통째로 먹어 그 뒤의 정상 PR 이 다음 회차까지 밀린다.
@@ -449,12 +460,7 @@ export class SweepPrReviewsUsecase implements OnApplicationBootstrap {
     repo: string;
     pullNumber: number;
     slackUserId: string;
-  }): Promise<
-    | SweepPullRequestResult
-    | null
-    | typeof ALREADY_MERGED
-    | typeof SNAPSHOT_MOVED
-  > {
+  }): Promise<ReviewAndPublishResult> {
     const prRef = `${repo}#${pullNumber}`;
     const dryRun = this.isDryRun();
     // 어느 단계에서 실패했는지에 따라 원장 기록 주체가 갈린다. 리뷰 usecase 는 자기 AgentRun 을 열고 실패 시
