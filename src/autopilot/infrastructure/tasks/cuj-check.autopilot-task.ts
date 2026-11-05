@@ -1,6 +1,9 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
-import { formatKstDate } from '../../../common/util/kst-date.util';
+import {
+  formatKstDate,
+  utcMidnightOf,
+} from '../../../common/util/kst-date.util';
 import {
   HOLIDAY_CALENDAR_PORT,
   HolidayCalendarPort,
@@ -93,7 +96,7 @@ export class CujCheckAutopilotTask implements AutopilotTask {
       // targetTradeDate 는 @db.Date 라 경계도 UTC 자정 날짜로 준다. KST 0시(전날 15:00Z)를 주면
       // PostgreSQL 이 전날 날짜로 잘라 비교해, 어제 목표일인 미체결 주문이 빠진다.
       const orders = await this.reader.readPendingOrders(
-        new Date(`${firedAtKst}T00:00:00.000Z`),
+        utcMidnightOf(firedAtKst),
       );
       return detectPaperInvestmentViolations(
         runs,
