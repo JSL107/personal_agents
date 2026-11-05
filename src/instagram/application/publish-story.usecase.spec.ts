@@ -6,6 +6,7 @@ import { join } from 'path';
 import { CronIdempotencyService } from '../../common/queue/cron-idempotency.service';
 import {
   InstagramPost,
+  InstagramPostField,
   InstagramPostStatus,
 } from '../domain/instagram-post.type';
 import { InstagramPostRepositoryPort } from '../domain/port/instagram-post.repository.port';
@@ -17,6 +18,7 @@ import {
   PublishStoryInput,
   PublishStoryUsecase,
   STORY_UNCONFIRMED_PREFIX,
+  StoryPublishResult,
 } from './publish-story.usecase';
 
 const video = Buffer.from('story');
@@ -36,7 +38,7 @@ const input: PublishStoryInput = {
 const post = (): InstagramPost => ({
   id: 'post',
   reelKey: '2026-11-06/story',
-  field: 'story',
+  field: InstagramPostField.STORY,
   title: '오늘의 한 줄 스토리',
   videoPath: story.videoPath,
   videoSha256: story.videoSha256,
@@ -124,7 +126,9 @@ describe('PublishStoryUsecase', () => {
   it('임대를 못 잡으면 Meta 를 부르지 않고 locked', async () => {
     lease.acquireOnce.mockResolvedValue(false);
 
-    await expect(usecase.execute(input)).resolves.toEqual({ kind: 'locked' });
+    await expect(usecase.execute(input)).resolves.toEqual({
+      kind: StoryPublishResult.LOCKED,
+    });
 
     expect(repository.upsertByReelKey).not.toHaveBeenCalled();
     expect(lease.acquireOnce).toHaveBeenCalledWith(
@@ -135,13 +139,13 @@ describe('PublishStoryUsecase', () => {
 
   it('컨테이너 생성 → 업로드 → FINISHED → 게시 → PUBLISHED 로 한 번 올린다', async () => {
     await expect(usecase.execute(input)).resolves.toEqual({
-      kind: 'published',
+      kind: StoryPublishResult.PUBLISHED,
     });
 
     expect(repository.upsertByReelKey).toHaveBeenCalledWith(
       expect.objectContaining({
         reelKey: '2026-11-06/story',
-        field: 'story',
+        field: InstagramPostField.STORY,
         caption: '',
         previewActionId: 'card',
       }),
@@ -168,8 +172,8 @@ describe('PublishStoryUsecase', () => {
     };
 
     await expect(usecase.execute(input)).resolves.toEqual({
-      kind: 'pending',
-      reason: '게시 확인 대기(컨테이너 FINISHED)',
+      kind: StoryPublishResult.PENDING,
+      reason: '게시를 시도했지만 컨테이너가 FINISHED 로 남음',
     });
 
     expect(graph.publish).not.toHaveBeenCalled();
@@ -187,11 +191,13 @@ describe('PublishStoryUsecase', () => {
 
     await expect(
       usecase.execute({ ...input, isLastSlot: true }),
-    ).resolves.toEqual({ kind: 'unconfirmed' });
+    ).resolves.toEqual({ kind: StoryPublishResult.UNCONFIRMED });
     expect(row.lastError?.startsWith(STORY_UNCONFIRMED_PREFIX)).toBe(true);
 
     graph.getContainerStatus.mockClear();
-    await expect(usecase.execute(input)).resolves.toEqual({ kind: 'done' });
+    await expect(usecase.execute(input)).resolves.toEqual({
+      kind: StoryPublishResult.DONE,
+    });
     expect(graph.getContainerStatus).not.toHaveBeenCalled();
     expect(graph.publish).not.toHaveBeenCalled();
   });
@@ -208,7 +214,7 @@ describe('PublishStoryUsecase', () => {
 
     await expect(
       usecase.execute({ ...input, isLastSlot: true }),
-    ).resolves.toEqual({ kind: 'unconfirmed' });
+    ).resolves.toEqual({ kind: StoryPublishResult.UNCONFIRMED });
     expect(row.lastError).toContain('조회 실패(Graph timeout)');
     expect(graph.publish).not.toHaveBeenCalled();
   });
@@ -226,7 +232,7 @@ describe('PublishStoryUsecase', () => {
     );
 
     await expect(usecase.execute(input)).resolves.toEqual({
-      kind: 'published',
+      kind: StoryPublishResult.PUBLISHED,
     });
     expect(row).toMatchObject({
       status: InstagramPostStatus.PUBLISHED,
@@ -240,7 +246,7 @@ describe('PublishStoryUsecase', () => {
     graph.publish.mockRejectedValue(new Error('timeout'));
 
     await expect(usecase.execute(input)).resolves.toEqual({
-      kind: 'pending',
+      kind: StoryPublishResult.PENDING,
       reason: '게시 응답 없음: timeout',
     });
     expect(row.publishAttemptedAt).toBeInstanceOf(Date);
@@ -254,7 +260,7 @@ describe('PublishStoryUsecase', () => {
 
     await expect(
       usecase.execute({ ...input, isLastSlot: true }),
-    ).resolves.toEqual({ kind: 'unconfirmed' });
+    ).resolves.toEqual({ kind: StoryPublishResult.UNCONFIRMED });
     expect(row.lastError?.startsWith(STORY_UNCONFIRMED_PREFIX)).toBe(true);
   });
 
@@ -262,7 +268,7 @@ describe('PublishStoryUsecase', () => {
     writeFileSync(storyPath, 'changed');
 
     await expect(usecase.execute(input)).resolves.toEqual({
-      kind: 'failed',
+      kind: StoryPublishResult.FAILED,
       reason: '스토리 영상이 변경되었습니다',
     });
     expect(graph.createStoryContainer).not.toHaveBeenCalled();
@@ -273,7 +279,7 @@ describe('PublishStoryUsecase', () => {
     graph.createStoryContainer.mockRejectedValue(new Error('Graph 500'));
 
     await expect(usecase.execute(input)).resolves.toEqual({
-      kind: 'failed',
+      kind: StoryPublishResult.FAILED,
       reason: 'Graph 500',
     });
     expect(lease.release).toHaveBeenCalledTimes(1);
@@ -286,7 +292,7 @@ describe('PublishStoryUsecase', () => {
       .mockResolvedValue(status(ContainerStatusCode.FINISHED));
 
     await expect(usecase.execute(input)).resolves.toEqual({
-      kind: 'published',
+      kind: StoryPublishResult.PUBLISHED,
     });
     expect(graph.createStoryContainer).toHaveBeenCalledTimes(1);
     expect(row.containerId).toBe('container');
@@ -298,7 +304,7 @@ describe('PublishStoryUsecase', () => {
     );
 
     await expect(usecase.execute(input)).resolves.toEqual({
-      kind: 'pending',
+      kind: StoryPublishResult.PENDING,
       reason: '인스타가 아직 스토리 영상을 처리 중',
     });
     await usecase.execute(input);
@@ -311,8 +317,27 @@ describe('PublishStoryUsecase', () => {
     row = { ...post(), status: InstagramPostStatus.PUBLISHED };
 
     await expect(usecase.execute(input)).resolves.toEqual({
-      kind: 'done',
+      kind: StoryPublishResult.DONE,
     });
     expect(graph.getContainerStatus).not.toHaveBeenCalled();
+    expect(lease.acquireOnce).not.toHaveBeenCalled();
+    expect(repository.upsertByReelKey).not.toHaveBeenCalled();
+  });
+
+  it('확인 필요로 종결된 사유는 이후 호출이 덮어쓰지 않는다', async () => {
+    const reason = `${STORY_UNCONFIRMED_PREFIX} 게시를 시도했지만 컨테이너가 FINISHED 로 남음`;
+    row = {
+      ...post(),
+      containerId: 'container',
+      publishAttemptedAt: new Date(),
+      status: InstagramPostStatus.PUBLISHING,
+      lastError: reason,
+    };
+
+    await expect(usecase.execute(input)).resolves.toEqual({
+      kind: StoryPublishResult.DONE,
+    });
+    expect(row.lastError).toBe(reason);
+    expect(repository.update).not.toHaveBeenCalled();
   });
 });

@@ -2,12 +2,15 @@ import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
 import { assertClaimable } from '../domain/instagram-post.policy';
-import { ClaimReelInput } from '../domain/instagram-post.type';
+import {
+  ClaimReelInput,
+  InstagramPostField,
+} from '../domain/instagram-post.type';
 import { InstagramPostPrismaRepository } from './instagram-post.prisma.repository';
 
 const input = {
   reelKey: '2026-11-05/ai',
-  field: 'ai' as const,
+  field: InstagramPostField.AI,
   title: 'title',
   videoPath: '/video',
   videoSha256: 'hash',

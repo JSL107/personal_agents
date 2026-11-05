@@ -665,7 +665,7 @@ def build_timeline(lines: list[dict], durations: list[float], sections: list[dic
         del section["index"]
     return {"fps": FPS, "duration": round(total, 3), "events": events, "subtitles": subtitles, "points": points,
             "speech_starts": speech, "blinks": blinks, "sections": timeline_sections,
-            "cover": {"start": round(cover_start, 3), "end": round(total, 3),
+            "cover": {"start": round(cover_start, 3), "end": round(total, 3), "label": f"오늘의 {'·'.join(fields)} 소식",
                       "lines": [section["headline"] for section in sections if section["field"] != "all"]}}
 
 
@@ -1208,6 +1208,9 @@ def self_check() -> None:
     assert timeline["cover"]["end"] == timeline["duration"]
     assert abs(timeline["cover"]["end"] - timeline["cover"]["start"] - COVER_SEC) < 1e-6
     assert timeline["cover"]["lines"] == ["이제 평가를 의심해요", "버그를 먼저 찾아 줘요"]
+    assert timeline["cover"]["label"] == "오늘의 AI·개발 소식"
+    one_timeline = build_timeline(one, [2.0] * len(one), one_sections, "2026-11-06")
+    assert one_timeline["cover"]["label"] == "오늘의 AI 소식" and one_timeline["cover"]["lines"] == ["이제 평가를 의심해요"]
     react, first_talk = timeline["events"][:2]
     assert react["body"] == "body-surprise" and react["start"] == LEAD_SEC and not react["talk"]
     assert first_talk["body"] == "body-wave" and first_talk["start"] == round(LEAD_SEC + REACT_SEC, 3) and first_talk["bounce"]

@@ -6,6 +6,7 @@ import { InstagramException } from '../domain/instagram.exception';
 import { InstagramErrorCode } from '../domain/instagram-error-code.enum';
 import {
   InstagramPost,
+  InstagramPostField,
   InstagramPostStatus,
 } from '../domain/instagram-post.type';
 import { InstagramPostRepositoryPort } from '../domain/port/instagram-post.repository.port';
@@ -23,7 +24,7 @@ jest.mock('fs/promises', () => ({ readFile: jest.fn() }));
 const video = Buffer.from('video');
 const payload = {
   reelKey: '2026-11-05/ai',
-  field: 'ai',
+  field: InstagramPostField.AI,
   title: 'title',
   videoPath: '/video',
   videoSha256: createHash('sha256').update(video).digest('hex'),
@@ -34,7 +35,7 @@ const payload = {
 const preview = { id: 'card', payload } as PreviewAction;
 const post = (): InstagramPost => ({
   ...payload,
-  field: 'ai',
+  field: InstagramPostField.AI,
   previewActionId: 'card',
   id: 'post',
   containerId: null,
