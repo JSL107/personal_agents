@@ -275,7 +275,10 @@ export class InstagramReelPublishApplier implements PreviewApplier {
         });
       }
       await this.checkQuota();
-      const container = await this.graph.createReelContainer(payload.caption);
+      const container = await this.graph.createReelContainer({
+        caption: payload.caption,
+        thumbOffsetMs: payload.coverOffsetMs,
+      });
       const containerPost = await this.repository.update({
         id: post.id,
         patch: {

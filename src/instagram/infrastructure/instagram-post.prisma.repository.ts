@@ -5,6 +5,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import {
   ClaimReelInput,
   InstagramPost,
+  InstagramPostField,
   InstagramPostPatch,
   InstagramPostStatus,
 } from '../domain/instagram-post.type';
@@ -65,8 +66,16 @@ export class InstagramPostPrismaRepository implements InstagramPostRepositoryPor
   }
 }
 
+const INSTAGRAM_POST_FIELDS: readonly InstagramPostField[] = [
+  'ai',
+  'dev',
+  'daily',
+  'story',
+];
+
 export const toDomain = (row: InstagramPostRow): InstagramPost => {
-  if (row.field !== 'ai' && row.field !== 'dev') {
+  const field = INSTAGRAM_POST_FIELDS.find((value) => value === row.field);
+  if (!field) {
     throw new Error(`알 수 없는 InstagramPost field: ${row.field}`);
   }
   const status = Object.values(InstagramPostStatus).find(
@@ -75,5 +84,5 @@ export const toDomain = (row: InstagramPostRow): InstagramPost => {
   if (!status) {
     throw new Error(`알 수 없는 InstagramPost status: ${row.status}`);
   }
-  return { ...row, field: row.field, status };
+  return { ...row, field, status };
 };

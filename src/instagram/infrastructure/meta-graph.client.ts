@@ -107,15 +107,39 @@ export class MetaGraphClient implements MetaGraphPort {
     };
   }
 
-  async createReelContainer(caption: string): Promise<ReelContainer> {
+  async createReelContainer({
+    caption,
+    thumbOffsetMs,
+  }: {
+    caption: string;
+    thumbOffsetMs?: number;
+  }): Promise<ReelContainer> {
+    return await this.createResumableContainer({
+      media_type: 'REELS',
+      upload_type: 'resumable',
+      caption,
+      share_to_feed: 'true',
+      // 표지는 영상 안의 프레임으로만 고른다. cover_url 은 공개 서버 이미지가 필요하다(2026-11-05 Meta 문서).
+      ...(thumbOffsetMs !== undefined
+        ? { thumb_offset: String(thumbOffsetMs) }
+        : {}),
+    });
+  }
+
+  // 스토리는 캡션을 받지 않는다. 이미지 스토리는 공개 URL 만 받아 영상으로만 올린다(2026-11-05 Meta 문서).
+  async createStoryContainer(): Promise<ReelContainer> {
+    return await this.createResumableContainer({
+      media_type: 'STORIES',
+      upload_type: 'resumable',
+    });
+  }
+
+  private async createResumableContainer(
+    params: Record<string, string>,
+  ): Promise<ReelContainer> {
     const body = await this.graphPost({
       path: `${this.userId}/media`,
-      params: {
-        media_type: 'REELS',
-        upload_type: 'resumable',
-        caption,
-        share_to_feed: 'true',
-      },
+      params,
     });
     if (!isMatching({ id: P.string, uri: P.string }, body)) {
       throw this.failure('Meta 컨테이너 응답이 올바르지 않습니다.');

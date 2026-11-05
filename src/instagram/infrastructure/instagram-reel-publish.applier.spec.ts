@@ -72,6 +72,7 @@ describe('InstagramReelPublishApplier', () => {
     graph = {
       isConfigured: jest.fn().mockReturnValue(true),
       getPublishingLimit: jest.fn().mockResolvedValue({ usage: 0, total: 100 }),
+      createStoryContainer: jest.fn(),
       createReelContainer: jest
         .fn()
         .mockResolvedValue({ containerId: 'container', uploadUri: 'uri' }),
@@ -131,6 +132,16 @@ describe('InstagramReelPublishApplier', () => {
       results.filter((result) => result.status === 'rejected'),
     ).toHaveLength(1);
     expect(graph.createReelContainer).toHaveBeenCalledTimes(1);
+  });
+  it('카드의 표지 지점을 컨테이너 생성에 넘긴다', async () => {
+    await applier.apply({
+      ...preview,
+      payload: { ...payload, coverOffsetMs: 9_750 },
+    });
+    expect(graph.createReelContainer).toHaveBeenCalledWith({
+      caption: 'caption',
+      thumbOffsetMs: 9_750,
+    });
   });
   it('게시 시도 기록이 있으면 파일 검사보다 정산을 먼저 한다', async () => {
     row = {
