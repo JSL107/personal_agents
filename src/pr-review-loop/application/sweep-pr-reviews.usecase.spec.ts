@@ -1260,6 +1260,26 @@ describe('SweepPrReviewsUsecase', () => {
     );
   });
 
+  // 스냅샷 확인용 재조회도 조회 단계라, 실패하면 리뷰하지 않고 첫 조회 실패와 같이 원장에 남긴다.
+  it('스냅샷 확인용 재조회가 실패하면 리뷰하지 않고 원장에 남긴다', async () => {
+    github.getPullRequest
+      .mockResolvedValueOnce(DETAIL)
+      .mockRejectedValueOnce(new Error('PR #180 조회 실패: 502'));
+
+    await buildUsecase(ENABLED).execute();
+
+    expect(reviewUsecase.execute).not.toHaveBeenCalled();
+    expect(publishService.publish).not.toHaveBeenCalled();
+    expect(agentRunService.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        triggerType: 'PR_REVIEW_SWEEP',
+        inputSnapshot: expect.objectContaining({
+          prRef: 'JSL107/personal_agents#180',
+        }),
+      }),
+    );
+  });
+
   it('변경량 초과 스킵도 원장에 남는다 (다음 스윕이 무한 반복하지 않도록)', async () => {
     github.getPullRequest.mockResolvedValue({
       number: 180,
