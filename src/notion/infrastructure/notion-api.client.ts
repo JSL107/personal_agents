@@ -1,6 +1,8 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Client, isFullPage as isFullNotionPage } from '@notionhq/client';
+// SDK 가 index 에서 내보내지 않는 응답 타입 — pages.retrieve 의 반환 타입과 같다.
+import type { GetPageResponse } from '@notionhq/client/build/src/api-endpoints';
 import { match } from 'ts-pattern';
 
 import { appendIntegrationHint } from '../../common/domain/integration-failure-hint';
@@ -15,6 +17,7 @@ import {
   CreatedDatabasePage,
   FindOrCreateChildPageOptions,
   FindOrCreateDailyPageOptions,
+  GetPageStatusOptions,
   ListActiveTasksOptions,
   NOTION_CLIENT_INSTANCE,
   NOTION_WORK_CLIENT_INSTANCE,
@@ -186,11 +189,11 @@ export class NotionApiClient implements NotionClientPort {
     return tasks;
   }
 
-  async getPageStatus(
-    pageId: string,
-    workspace?: NotionWorkspace | null,
-  ): Promise<NotionPageStatus> {
-    const page = await this.retrievePageIn(pageId, workspace);
+  async getPageStatus({
+    pageId,
+    workspace,
+  }: GetPageStatusOptions): Promise<NotionPageStatus> {
+    const page = await this.retrievePageIn({ pageId, workspace });
     if (!isFullNotionPage(page)) {
       throw new NotionException({
         code: NotionErrorCode.REQUEST_FAILED,
@@ -207,10 +210,10 @@ export class NotionApiClient implements NotionClientPort {
 
   // 워크스페이스를 알면 그 통합으로만 묻는다 — 남의 통합으로 먼저 찔러 보면 SDK 가 매번
   // object_not_found 경고를 찍어 진짜 접근 실패가 그 소음에 묻힌다.
-  private async retrievePageIn(
-    pageId: string,
-    workspace: NotionWorkspace | null | undefined,
-  ): Promise<Awaited<ReturnType<Client['pages']['retrieve']>>> {
+  private async retrievePageIn({
+    pageId,
+    workspace,
+  }: GetPageStatusOptions): Promise<GetPageResponse> {
     if (workspace === NotionWorkspace.WORK) {
       if (!this.workClient) {
         throw new NotionException({
@@ -222,23 +225,19 @@ export class NotionApiClient implements NotionClientPort {
       return await this.retrieveWorkPageStatus({ pageId });
     }
     this.assertClientConfigured('getPageStatus');
-    return await this.retrievePageStatus({
-      pageId,
-      fallbackToWork: workspace !== NotionWorkspace.PERSONAL,
-    });
+    // 워크스페이스를 모르는 행(이 값이 생기기 전에 수집된 업무)만 회사 Client 로 한 번 더 본다.
+    const fallbackToWork = workspace !== NotionWorkspace.PERSONAL;
+    return await this.retrievePageStatus({ pageId, fallbackToWork });
   }
 
   private async retrievePageStatus({
     pageId,
     fallbackToWork,
-  }: RetrievePageStatusInput): Promise<
-    Awaited<ReturnType<Client['pages']['retrieve']>>
-  > {
+  }: RetrievePageStatusInput): Promise<GetPageResponse> {
     try {
       return await this.client!.pages.retrieve({ page_id: pageId });
     } catch (error: unknown) {
       if (isPageAccessError(error)) {
-        // 워크스페이스를 모르는 행(이 값이 생기기 전에 수집된 업무)만 회사 Client 로 한 번 더 본다.
         if (fallbackToWork && this.workClient) {
           return await this.retrieveWorkPageStatus({
             pageId,
@@ -254,9 +253,7 @@ export class NotionApiClient implements NotionClientPort {
   private async retrieveWorkPageStatus({
     pageId,
     personalError,
-  }: RetrieveWorkPageStatusInput): Promise<
-    Awaited<ReturnType<Client['pages']['retrieve']>>
-  > {
+  }: RetrieveWorkPageStatusInput): Promise<GetPageResponse> {
     try {
       return await this.workClient!.pages.retrieve({ page_id: pageId });
     } catch (error: unknown) {

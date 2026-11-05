@@ -307,7 +307,7 @@ describe('NotionApiClient', () => {
       buildConfig({}),
     );
 
-    await expect(adapter.getPageStatus('page-1')).resolves.toEqual({
+    await expect(adapter.getPageStatus({ pageId: 'page-1' })).resolves.toEqual({
       properties: { 상태: '완료', 담당자: '김준석' },
       archived: false,
       inTrash: true,
@@ -327,10 +327,9 @@ describe('NotionApiClient', () => {
         buildConfig({}),
       );
 
-      await expect(adapter.getPageStatus('page-1')).rejects.toHaveProperty(
-        'name',
-        'NotionPageNotAccessibleError',
-      );
+      await expect(
+        adapter.getPageStatus({ pageId: 'page-1' }),
+      ).rejects.toHaveProperty('name', 'NotionPageNotAccessibleError');
     },
   );
 
@@ -431,15 +430,16 @@ describe('NotionApiClient', () => {
       { pages: { retrieve: workRetrieve } } as unknown as Client,
     );
 
-    await expect(adapter.getPageStatus('page-1')).resolves.toMatchObject({
+    await expect(
+      adapter.getPageStatus({ pageId: 'page-1' }),
+    ).resolves.toMatchObject({
       properties: { 진행단계: '완료' },
     });
 
     workRetrieve.mockRejectedValue(denied);
-    await expect(adapter.getPageStatus('page-1')).rejects.toHaveProperty(
-      'name',
-      'NotionPageNotAccessibleError',
-    );
+    await expect(
+      adapter.getPageStatus({ pageId: 'page-1' }),
+    ).rejects.toHaveProperty('name', 'NotionPageNotAccessibleError');
   });
 
   // 워크스페이스를 알면 그 통합으로만 묻는다 — 남의 통합으로 먼저 찌르면 SDK 가 매번 object_not_found 경고를 찍는다.
@@ -461,7 +461,10 @@ describe('NotionApiClient', () => {
     );
 
     await expect(
-      adapter.getPageStatus('page-1', NotionWorkspace.WORK),
+      adapter.getPageStatus({
+        pageId: 'page-1',
+        workspace: NotionWorkspace.WORK,
+      }),
     ).resolves.toMatchObject({ properties: { 진행단계: '완료' } });
     expect(personalRetrieve).not.toHaveBeenCalled();
   });
@@ -480,7 +483,10 @@ describe('NotionApiClient', () => {
     );
 
     await expect(
-      adapter.getPageStatus('page-1', NotionWorkspace.PERSONAL),
+      adapter.getPageStatus({
+        pageId: 'page-1',
+        workspace: NotionWorkspace.PERSONAL,
+      }),
     ).rejects.toHaveProperty('name', 'NotionPageNotAccessibleError');
     expect(workRetrieve).not.toHaveBeenCalled();
   });
@@ -493,7 +499,10 @@ describe('NotionApiClient', () => {
     );
 
     await expect(
-      adapter.getPageStatus('page-1', NotionWorkspace.WORK),
+      adapter.getPageStatus({
+        pageId: 'page-1',
+        workspace: NotionWorkspace.WORK,
+      }),
     ).rejects.toThrow('NOTION_WORK_TOKEN');
   });
 
