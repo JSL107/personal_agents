@@ -6,6 +6,7 @@ import { InstagramException } from '../domain/instagram.exception';
 import { InstagramErrorCode } from '../domain/instagram-error-code.enum';
 import {
   InstagramPost,
+  InstagramPostField,
   InstagramPostStatus,
 } from '../domain/instagram-post.type';
 import { InstagramPostRepositoryPort } from '../domain/port/instagram-post.repository.port';
@@ -23,7 +24,7 @@ jest.mock('fs/promises', () => ({ readFile: jest.fn() }));
 const video = Buffer.from('video');
 const payload = {
   reelKey: '2026-11-05/ai',
-  field: 'ai',
+  field: InstagramPostField.AI,
   title: 'title',
   videoPath: '/video',
   videoSha256: createHash('sha256').update(video).digest('hex'),
@@ -34,7 +35,7 @@ const payload = {
 const preview = { id: 'card', payload } as PreviewAction;
 const post = (): InstagramPost => ({
   ...payload,
-  field: 'ai',
+  field: InstagramPostField.AI,
   previewActionId: 'card',
   id: 'post',
   containerId: null,
@@ -72,6 +73,7 @@ describe('InstagramReelPublishApplier', () => {
     graph = {
       isConfigured: jest.fn().mockReturnValue(true),
       getPublishingLimit: jest.fn().mockResolvedValue({ usage: 0, total: 100 }),
+      createStoryContainer: jest.fn(),
       createReelContainer: jest
         .fn()
         .mockResolvedValue({ containerId: 'container', uploadUri: 'uri' }),
@@ -131,6 +133,16 @@ describe('InstagramReelPublishApplier', () => {
       results.filter((result) => result.status === 'rejected'),
     ).toHaveLength(1);
     expect(graph.createReelContainer).toHaveBeenCalledTimes(1);
+  });
+  it('카드의 표지 지점을 컨테이너 생성에 넘긴다', async () => {
+    await applier.apply({
+      ...preview,
+      payload: { ...payload, coverOffsetMs: 9_750 },
+    });
+    expect(graph.createReelContainer).toHaveBeenCalledWith({
+      caption: 'caption',
+      thumbOffsetMs: 9_750,
+    });
   });
   it('게시 시도 기록이 있으면 파일 검사보다 정산을 먼저 한다', async () => {
     row = {

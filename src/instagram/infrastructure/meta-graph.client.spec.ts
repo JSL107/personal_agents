@@ -84,7 +84,7 @@ describe('MetaGraphClient', () => {
         uri: 'https://upload.example/media',
       }),
     });
-    const result = await client.createReelContainer('한글 캡션');
+    const result = await client.createReelContainer({ caption: '한글 캡션' });
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(result).toEqual({
       containerId: 'container',
@@ -108,6 +108,41 @@ describe('MetaGraphClient', () => {
       }),
     );
     expect(init.signal).toBeDefined();
+  });
+
+  it('표지 지점이 있으면 thumb_offset 을 보낸다', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: 'container',
+        uri: 'https://upload.example/media',
+      }),
+    });
+    await client.createReelContainer({ caption: 'c', thumbOffsetMs: 58_250 });
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(new URLSearchParams(init.body as string).get('thumb_offset')).toBe(
+      '58250',
+    );
+  });
+
+  it('스토리 컨테이너는 STORIES 로 만들고 캡션을 보내지 않는다', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: 'story', uri: 'https://upload.example/story' }),
+    });
+    const result = await client.createStoryContainer();
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(result).toEqual({
+      containerId: 'story',
+      uploadUri: 'https://upload.example/story',
+    });
+    expect(new URLSearchParams(init.body as string)).toEqual(
+      new URLSearchParams({
+        media_type: 'STORIES',
+        upload_type: 'resumable',
+        access_token: 'secret-page-token',
+      }),
+    );
   });
 
   it('영상을 업로드하면 OAuth 헤더와 시간 제한을 설정한다', async () => {

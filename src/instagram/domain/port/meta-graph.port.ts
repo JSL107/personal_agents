@@ -48,7 +48,14 @@ export interface PageTokenDebug {
 export interface MetaGraphPort {
   isConfigured(): boolean;
   getPublishingLimit(): Promise<PublishingLimit>;
-  createReelContainer(caption: string): Promise<ReelContainer>;
+  createReelContainer({
+    caption,
+    thumbOffsetMs,
+  }: {
+    caption: string;
+    thumbOffsetMs?: number;
+  }): Promise<ReelContainer>;
+  createStoryContainer(): Promise<ReelContainer>;
   uploadVideo({
     uploadUri,
     video,

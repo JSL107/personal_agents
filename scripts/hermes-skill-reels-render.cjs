@@ -91,55 +91,98 @@ function html(timeline) {
   const ease=(u)=>1-Math.pow(1-Math.min(1,Math.max(0,u)),3);
   function shadow(c,on){ if(on){ c.shadowColor='rgba(138,74,16,0.12)'; c.shadowBlur=26; c.shadowOffsetY=6; } else { c.shadowColor='transparent'; } }
 
+  // 지금 시각의 화면 구간(꼭지·정리). 구간이 바뀌면 헤더가 0.25초 동안 옆에서 밀려 들어온다.
+  const sectionAt=(t)=>T.sections.filter(s=>s.start<=t).at(-1)||T.sections[0];
+
   // 상단 제목 카드 + 출처. 높이를 돌려줘 포인트 카드가 그 아래에서 시작하게 한다.
-  function drawHeader(c){
-    c.font='900 60px '+FONT; const lines=balanced(c,T.headline,920-96).slice(0,2);
-    const x=80, y=230, w=920, h=118+lines.length*72+58;   // 맨 아래 줄은 대상 이름(검색해서 찾을 수 있게 영상 내내 보인다)
-    c.save(); shadow(c,true); c.fillStyle='#FFFFFF'; roundRect(c,x,y,w,h,40); c.fill(); shadow(c,false);
-    c.font='800 34px '+FONT; const badgeW=c.measureText(T.badge).width+48;
+  // 위끝 y=280: 화면 위쪽 약 14%(269px)는 앱 UI 가 덮는다(2026-11-05 조사, 광고 안전 영역 기준).
+  function drawHeader(c,t){
+    const S=sectionAt(t), u=S.start>0?ease((t-S.start)/0.25):1, dx=(1-u)*80;
+    c.font='900 60px '+FONT; const lines=balanced(c,S.headline,920-96).slice(0,2);
+    const x=80+dx, y=280, w=920, chip=!!S.subject, h=118+lines.length*72+(chip?58:0);   // 맨 아래 줄은 대상 이름(검색해서 찾을 수 있게 꼭지 내내 보인다)
+    c.save(); c.globalAlpha=u; shadow(c,true); c.fillStyle='#FFFFFF'; roundRect(c,x,y,w,h,40); c.fill(); shadow(c,false);
+    c.font='800 34px '+FONT; const badgeW=c.measureText(S.badge).width+48;
     c.fillStyle='#FB8826'; roundRect(c,x+44,y+34,badgeW,56,28); c.fill();
-    c.fillStyle='#FFFFFF'; c.textBaseline='middle'; c.textAlign='left'; c.fillText(T.badge,x+68,y+63);
-    c.font='600 28px '+FONT; c.fillStyle='#9A6B45'; c.textAlign='right'; c.fillText('출처: '+T.source, x+w-44, y+63);
+    c.fillStyle='#FFFFFF'; c.textBaseline='middle'; c.textAlign='left'; c.fillText(S.badge,x+68,y+63);
+    if(S.source){ c.font='600 28px '+FONT; c.fillStyle='#9A6B45'; c.textAlign='right'; c.fillText('출처: '+S.source, x+w-44, y+63); }
     c.fillStyle='#3F2613'; c.font='900 60px '+FONT; c.textAlign='left'; c.textBaseline='alphabetic';
     lines.forEach((line,i)=>c.fillText(line,x+44,y+160+i*72));
     // 대상 이름은 위 날짜 배지와 같은 모양의 연한 배지로 카드 안에 둔다(맨 글자만 두면 카드 밖에 뜬 것처럼 보였다).
-    c.font='800 32px '+FONT; const chipW=c.measureText(T.subject).width+44, chipY=y+160+(lines.length-1)*72+22;
-    c.fillStyle='#FDE3C8'; roundRect(c,x+44,chipY,chipW,50,25); c.fill();
-    c.fillStyle='#B85A12'; c.textBaseline='middle'; c.fillText(T.subject, x+66, chipY+26); c.textBaseline='alphabetic';
+    if(chip){
+      c.font='800 32px '+FONT; const chipW=c.measureText(S.subject).width+44, chipY=y+160+(lines.length-1)*72+22;
+      c.fillStyle='#FDE3C8'; roundRect(c,x+44,chipY,chipW,50,25); c.fill();
+      c.fillStyle='#B85A12'; c.textBaseline='middle'; c.fillText(S.subject, x+66, chipY+26); c.textBaseline='alphabetic';
+    }
     c.restore();
     return y+h;
   }
 
-  // 포인트 카드: 가장 최근 한 장만 보인다. 지난 숫자 카드가 새 자막과 함께 남아 있으면 무엇의 숫자인지 헷갈렸다
-  // (2026-11-04 리뷰). number 는 숫자를 크게, summary 는 「한 줄 정리」로 강조.
-  function drawPoints(c,t,top){
-    const latest=T.points.filter(p=>p.start<=t).at(-1);
-    const list=latest?[latest]:[];
-    let y=top+36;
-    list.forEach((p)=>{
-      const u=ease((t-p.start)/0.25), dx=(1-u)*80;
-      const index=T.points.indexOf(p)+1;
-      c.save(); c.globalAlpha=u;
-      if(p.kind==='summary'){
-        c.font='900 54px '+FONT; const lines=balanced(c,p.text,920-96).slice(0,3);
-        const h=112+lines.length*68;
-        shadow(c,true); c.fillStyle='#FB8826'; roundRect(c,80+dx,y,920,h,36); c.fill(); shadow(c,false);
-        c.fillStyle='#FFF4E6'; c.font='800 32px '+FONT; c.textAlign='left'; c.textBaseline='alphabetic'; c.fillText('한 줄 정리',124+dx,y+62);
-        c.fillStyle='#FFFFFF'; c.font='900 54px '+FONT; lines.forEach((line,i)=>c.fillText(line,124+dx,y+136+i*68));
-        y+=h+20;
-      } else {
-        const big=p.kind==='number';
-        c.font=(big?'900 64px ':'800 44px ')+FONT; const lines=balanced(c,p.text,920-170).slice(0,2);
-        const lineH=big?76:56, h=56+lines.length*lineH;
-        shadow(c,true); c.fillStyle='#FFFFFF'; roundRect(c,80+dx,y,920,h,30); c.fill(); shadow(c,false);
-        c.fillStyle='#FDE3C8'; c.beginPath(); c.arc(80+dx+62,y+h/2,30,0,Math.PI*2); c.fill();
-        c.fillStyle='#E06E10'; c.font='900 34px '+FONT; c.textAlign='center'; c.textBaseline='middle'; c.fillText(String(index),80+dx+62,y+h/2+2);
-        c.fillStyle=big?'#E06E10':'#3F2613'; c.font=(big?'900 64px ':'800 44px ')+FONT; c.textAlign='left'; c.textBaseline='middle';
-        lines.forEach((line,i)=>c.fillText(line,80+dx+118,y+28+lineH/2+i*lineH));
-        y+=h+18;
-      }
-      c.restore();
+  // 「오늘의 한 줄」: 꼭지마다 분야 라벨 + 한 줄. 릴스 정리 구간과 스토리가 같은 카드를 쓴다.
+  function drawSummary(c,p,x,y){
+    c.font='900 52px '+FONT;
+    const rows=p.items.map(item=>({label:item.label, lines:balanced(c,item.text,920-210).slice(0,2)}));
+    const h=104+rows.reduce((sum,row)=>sum+row.lines.length*64+24,0);
+    shadow(c,true); c.fillStyle='#FB8826'; roundRect(c,x,y,920,h,36); c.fill(); shadow(c,false);
+    c.fillStyle='#FFF4E6'; c.font='800 32px '+FONT; c.textAlign='left'; c.textBaseline='alphabetic'; c.fillText('오늘의 한 줄',x+44,y+62);
+    let rowY=y+104;
+    rows.forEach((row)=>{
+      c.font='800 30px '+FONT; const labelW=c.measureText(row.label).width+36;
+      c.fillStyle='#FFFFFF'; roundRect(c,x+44,rowY,labelW,46,23); c.fill();
+      c.fillStyle='#E06E10'; c.textBaseline='middle'; c.fillText(row.label,x+62,rowY+24);
+      c.fillStyle='#FFFFFF'; c.font='900 52px '+FONT; c.textBaseline='alphabetic';
+      row.lines.forEach((line,i)=>c.fillText(line,x+44+labelW+24,rowY+40+i*64));
+      rowY+=row.lines.length*64+24;
     });
+    return h;
+  }
+
+  // 포인트 카드: 가장 최근 한 장만 보인다. 지난 숫자 카드가 새 자막과 함께 남아 있으면 무엇의 숫자인지 헷갈렸다
+  // (2026-11-04 리뷰). number 는 숫자를 크게, bridge 는 꼭지 전환 안내, summary2 는 「오늘의 한 줄」.
+  // 번호는 꼭지마다 1부터(p.number). 번호가 없는 카드는 번호 원을 그리지 않는다.
+  function drawPoints(c,t,top){
+    const p=T.points.filter(p=>p.start<=t).at(-1);
+    if(!p) return;
+    const u=ease((t-p.start)/0.25), dx=(1-u)*80, y=top+36;
+    c.save(); c.globalAlpha=u;
+    if(p.kind==='summary2'){
+      drawSummary(c,p,80+dx,y);
+    } else {
+      const big=p.kind==='number', numbered=p.number!=null, textX=80+dx+(numbered?118:44);
+      c.font=(big?'900 64px ':'800 44px ')+FONT; const lines=balanced(c,p.text,920-(numbered?170:96)).slice(0,2);
+      const lineH=big?76:56, h=56+lines.length*lineH;
+      shadow(c,true); c.fillStyle='#FFFFFF'; roundRect(c,80+dx,y,920,h,30); c.fill(); shadow(c,false);
+      if(numbered){
+        c.fillStyle='#FDE3C8'; c.beginPath(); c.arc(80+dx+62,y+h/2,30,0,Math.PI*2); c.fill();
+        c.fillStyle='#E06E10'; c.font='900 34px '+FONT; c.textAlign='center'; c.textBaseline='middle'; c.fillText(String(p.number),80+dx+62,y+h/2+2);
+      }
+      c.fillStyle=big?'#E06E10':'#3F2613'; c.font=(big?'900 64px ':'800 44px ')+FONT; c.textAlign='left'; c.textBaseline='middle';
+      lines.forEach((line,i)=>c.fillText(line,textX,y+28+lineH/2+i*lineH));
+    }
+    c.restore();
+  }
+
+  // 표지 구간: 두 꼭지 제목을 큰 글씨 두 줄로. 피드는 가운데 1:1(y 420~1500), 프로필 격자는 3:4 로 잘리므로 그 안에 둔다.
+  function drawCover(c){
+    c.fillStyle='#FDF5E7'; c.fillRect(0,0,W,H);
+    c.font='800 40px '+FONT; c.textAlign='center'; c.textBaseline='alphabetic';
+    c.fillStyle='#FB8826'; c.fillText(T.cover.label,W/2,560);  // 한 꼭지만 나간 날은 그 분야만
+    c.font='900 84px '+FONT;
+    T.cover.lines.forEach((line,i)=>{
+      const rows=balanced(c,line,940).slice(0,2);
+      rows.forEach((row,j)=>{ c.fillStyle=i===0?'#3F2613':'#E06E10'; c.fillText(row,W/2,700+i*190+j*96); });
+    });
+    const k=0.42; c.save(); c.translate(W/2,1500); c.scale(k,k); c.drawImage(imgs['body-idle'],-512,-905); c.restore();
+  }
+
+  // 스토리: 날짜 배지 + 「오늘의 한 줄」 + 릴스로 보내는 안내. 링크 스티커는 API 로 못 붙인다(2026-11-05 Meta 문서).
+  function drawStoryTop(c){
+    const S=T.sections[0];
+    c.font='800 40px '+FONT; const badgeW=c.measureText(S.badge).width+56;
+    c.fillStyle='#FB8826'; roundRect(c,(W-badgeW)/2,300,badgeW,66,33); c.fill();
+    c.fillStyle='#FFFFFF'; c.textAlign='center'; c.textBaseline='middle'; c.fillText(S.badge,W/2,334);
+    const h=drawSummary(c,T.points[0],80,420);
+    c.font='800 46px '+FONT; c.fillStyle='#3F2613'; c.textAlign='center'; c.textBaseline='alphabetic';
+    c.fillText('프로필에서 오늘 릴스 보기',W/2,420+h+110);
   }
 
   function drawSubtitle(c,t){
@@ -160,8 +203,9 @@ function html(timeline) {
   window.draw=(f)=>{
     const t=f/T.fps;
     const c=document.getElementById('c').getContext('2d');
+    if(T.cover && t>=T.cover.start){ drawCover(c); return; }
     c.fillStyle='#FDF5E7'; c.fillRect(0,0,W,H);
-    drawPoints(c,t,drawHeader(c));
+    if(T.mode==='story') drawStoryTop(c); else drawPoints(c,t,drawHeader(c,t));
 
     let cur=T.events[0]; for(const e of T.events){ if(e.start<=t) cur=e; }
     const dt=Math.max(0,t-cur.start);
