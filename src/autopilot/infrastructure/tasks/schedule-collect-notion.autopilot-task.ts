@@ -6,7 +6,6 @@ import { plainDateToUtcDate } from '../../../agent/vacation/domain/plain-date';
 import { appendIntegrationHint } from '../../../common/domain/integration-failure-hint';
 import { ListActiveTasksUsecase } from '../../../notion/application/list-active-tasks.usecase';
 import { CloseFinishedNotionTasksUsecase } from '../../../schedule/application/close-finished-notion-tasks.usecase';
-import { resolveCollectionLowerBound } from '../../../schedule/application/collection-window';
 import { filterMyNotionTask } from '../../../schedule/domain/notion-task-filter';
 import { NotionTaskFilterConfig } from '../../../schedule/domain/notion-task-filter.type';
 import {
@@ -18,6 +17,10 @@ import {
   ScheduleCollectionStateRepositoryPort,
 } from '../../../schedule/domain/port/schedule-collection-state.repository.port';
 import {
+  ScheduleActor,
+  ScheduleEventRecord,
+} from '../../../schedule/domain/schedule.repository.type';
+import {
   ScheduleEventKind,
   ScheduleSource,
   ScheduleStatus,
@@ -27,9 +30,13 @@ import {
   AutopilotTaskResult,
 } from '../../domain/autopilot-task.port';
 import {
+  NotionReopenInput,
   NotionSourceEditInput,
   ReadListInput,
 } from '../../domain/schedule-collect-notion.type';
+
+// 에러리포트 DB 가 수백 건이라 넉넉히 둔다. 넘으면 클라이언트가 잘림 경고를 남긴다.
+const NOTION_COLLECT_PER_DB_LIMIT = 1000;
 
 @Injectable()
 export class ScheduleCollectNotionAutopilotTask implements AutopilotTask {
@@ -83,15 +90,11 @@ export class ScheduleCollectNotionAutopilotTask implements AutopilotTask {
         ?.trim(),
     };
     try {
-      const lowerBound = resolveCollectionLowerBound({
-        lastSucceededAt: await this.stateRepository.get(
-          ScheduleSource.NOTION_TASK,
-        ),
-        now,
-      });
+      // Slack·GitHub 와 달리 기간으로 자르지 않는다 — 몇 달째 손대지 않은 진행 중 업무도
+      // 내 할 일이다. 매 회차 전수 조회하고 담당자·상태는 아래 필터가 거른다.
       const tasks = await this.listActiveTasks.execute({
-        lastEditedSinceIsoDateTime: lowerBound.toISOString(),
-        perDatabaseLimit: 100,
+        skipStaleCutoff: true,
+        perDatabaseLimit: NOTION_COLLECT_PER_DB_LIMIT,
         requireAllDatabases: true,
       });
       for (const notionTask of tasks) {
@@ -111,6 +114,12 @@ export class ScheduleCollectNotionAutopilotTask implements AutopilotTask {
           sourceKey: notionTask.pageId,
         });
         if (found) {
+          await this.reopenIfCollectorClosed({
+            found,
+            notionTask,
+            ownerId,
+            now,
+          });
           await this.noteSourceEdit({
             found,
             notionTask,
@@ -148,6 +157,52 @@ export class ScheduleCollectNotionAutopilotTask implements AutopilotTask {
       );
     }
     return { skip: true };
+  }
+
+  // Notion 에서 완료·아카이브됐다가 다시 진행 중이 된 업무를 되살린다.
+  // 이대리가 자동으로 닫은 것만 연다 — 사용자가 직접 끝낸 항목을 다시 열면 매 회차 결정을 뒤집는다.
+  private async reopenIfCollectorClosed({
+    found,
+    notionTask,
+    ownerId,
+    now,
+  }: NotionReopenInput): Promise<void> {
+    if (
+      found.status !== ScheduleStatus.DONE &&
+      found.status !== ScheduleStatus.SKIPPED
+    ) {
+      return;
+    }
+    const detail = await this.repository.findDetail({
+      id: found.id,
+      slackUserId: ownerId,
+    });
+    // occurredAt 은 회차 시작 시각이라 회차 중 사용자 전환보다 앞설 수 있다 — 기록 순서(id)로 마지막을 고른다.
+    const lastChange = detail?.events
+      .filter((event) => event.kind === ScheduleEventKind.STATUS_CHANGED)
+      .reduce<
+        ScheduleEventRecord | undefined
+      >((latest, event) => (!latest || event.id > latest.id ? event : latest), undefined);
+    if (!isChangedBy(lastChange?.payload, ScheduleActor.COLLECTOR)) {
+      return;
+    }
+    await this.repository.recordEventAndTransition({
+      event: {
+        scheduleItemId: found.id,
+        kind: ScheduleEventKind.NOTE,
+        payload: {
+          text: 'Notion 업무가 다시 진행 중이 되어 할 일로 되돌렸습니다.',
+          sourceUrl: notionTask.url,
+        },
+        dedupeKey: `notion-reopened:${notionTask.pageId}:${now.toISOString()}`,
+        occurredAt: now,
+      },
+      slackUserId: ownerId,
+      transitionFrom: [ScheduleStatus.DONE, ScheduleStatus.SKIPPED],
+      transitionTo: ScheduleStatus.OPEN,
+      now,
+      actor: ScheduleActor.COLLECTOR,
+    });
   }
 
   private async noteSourceEdit({
@@ -188,3 +243,8 @@ export class ScheduleCollectNotionAutopilotTask implements AutopilotTask {
     return values.length > 0 ? values : fallback;
   }
 }
+
+const isChangedBy = (payload: unknown, actor: ScheduleActor): boolean =>
+  typeof payload === 'object' &&
+  payload !== null &&
+  (payload as Record<string, unknown>).actor === actor;

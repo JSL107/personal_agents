@@ -56,7 +56,7 @@ describe('CloseFinishedNotionTasksUsecase', () => {
         scheduleItemId: 1,
         kind: ScheduleEventKind.NOTE,
         payload: expect.any(Object),
-        dedupeKey: 'notion-closed:page',
+        dedupeKey: 'notion-closed:page:2026-11-03T09:00:00Z',
         occurredAt: now,
       },
       slackUserId: 'U1',

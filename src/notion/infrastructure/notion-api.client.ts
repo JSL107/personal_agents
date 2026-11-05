@@ -36,6 +36,7 @@ const DEFAULT_PER_DB_LIMIT = 50;
 const DEFAULT_DRAFT_PAGE_LIMIT = 20;
 const MARKDOWN_BLOCK_PAGE_LIMIT = 5;
 const MARKDOWN_BLOCK_PAGE_SIZE = 100;
+const NOTION_QUERY_PAGE_SIZE = 100;
 const PAGE_ACCESS_ERROR_STATUSES = new Set([401, 403, 404]);
 const PAGE_ACCESS_ERROR_CODES = new Set([
   'unauthorized',
@@ -52,7 +53,13 @@ interface QueryDbOrNullInput {
   databaseId: string;
   perDatabaseLimit: number;
   lastEditedSinceIsoDateTime?: string;
+  // 전부 받아야 하는 호출자(수집기)만 잘림을 경고한다 — PM 등은 상한이 의도라 매번 찍히면 소음이다.
+  warnOnTruncation: boolean;
 }
+
+type QueriedDatabaseRow = Awaited<
+  ReturnType<Client['databases']['query']>
+>['results'][number];
 
 interface RetrieveWorkPageStatusInput {
   pageId: string;
@@ -121,19 +128,20 @@ export class NotionApiClient implements NotionClientPort {
     const tasks: NotionTask[] = [];
     let failedDbCount = 0;
     for (const databaseId of targetDbs) {
-      const response = await this.queryDbOrNull({
+      const rows = await this.queryDbOrNull({
         client: this.isListed(databaseId, workDbIds)
           ? this.workClient
           : this.client,
         databaseId,
         perDatabaseLimit,
         lastEditedSinceIsoDateTime,
+        warnOnTruncation: requireAllDatabases,
       });
-      if (!response) {
+      if (!rows) {
         failedDbCount += 1;
         continue;
       }
-      for (const page of response.results) {
+      for (const page of rows) {
         if (!isFullPage(page)) {
           continue;
         }
@@ -365,9 +373,8 @@ export class NotionApiClient implements NotionClientPort {
     databaseId,
     perDatabaseLimit,
     lastEditedSinceIsoDateTime,
-  }: QueryDbOrNullInput): Promise<Awaited<
-    ReturnType<Client['databases']['query']>
-  > | null> {
+    warnOnTruncation,
+  }: QueryDbOrNullInput): Promise<QueriedDatabaseRow[] | null> {
     if (!client) {
       this.logger.warn(
         `Notion DB ${databaseId} 조회 실패 (skip): NOTION_WORK_TASK_DB_IDS 에 있지만 NOTION_WORK_TOKEN 이 설정되지 않았습니다.`,
@@ -375,18 +382,38 @@ export class NotionApiClient implements NotionClientPort {
       return null;
     }
     try {
-      return await client.databases.query({
-        database_id: databaseId,
-        page_size: perDatabaseLimit,
-        ...(lastEditedSinceIsoDateTime
-          ? {
-              filter: {
-                timestamp: 'last_edited_time' as const,
-                last_edited_time: { on_or_after: lastEditedSinceIsoDateTime },
-              },
-            }
-          : {}),
-      });
+      // Notion 은 한 번에 최대 100건만 준다 — perDatabaseLimit 까지 next_cursor 를 따라간다.
+      const rows: QueriedDatabaseRow[] = [];
+      let cursor: string | undefined;
+      do {
+        const response = await client.databases.query({
+          database_id: databaseId,
+          page_size: Math.min(
+            perDatabaseLimit - rows.length,
+            NOTION_QUERY_PAGE_SIZE,
+          ),
+          ...(cursor ? { start_cursor: cursor } : {}),
+          ...(lastEditedSinceIsoDateTime
+            ? {
+                filter: {
+                  timestamp: 'last_edited_time' as const,
+                  last_edited_time: { on_or_after: lastEditedSinceIsoDateTime },
+                },
+              }
+            : {}),
+        });
+        rows.push(...response.results);
+        cursor =
+          response.has_more && response.next_cursor
+            ? response.next_cursor
+            : undefined;
+      } while (cursor && rows.length < perDatabaseLimit);
+      if (cursor && warnOnTruncation) {
+        this.logger.warn(
+          `Notion DB ${databaseId} 조회가 ${perDatabaseLimit}건 한도에서 잘렸습니다 — 뒤쪽 행은 이번 회차에 빠집니다.`,
+        );
+      }
+      return rows;
     } catch (error: unknown) {
       // 삼키고 null 을 돌려주는 경로 — 호출부에는 "할 일 0건" 으로만 보인다.
       // 로그가 유일한 단서라 여기에 행동 한 줄을 붙인다.
