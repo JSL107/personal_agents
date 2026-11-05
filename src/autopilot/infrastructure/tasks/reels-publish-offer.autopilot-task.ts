@@ -5,6 +5,10 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import {
+  getKstDateOf,
+  kstDayStartOf,
+} from '../../../common/util/kst-date.util';
+import {
   PublishStoryUsecase,
   StoryPublishOutcome,
 } from '../../../instagram/application/publish-story.usecase';
@@ -93,7 +97,13 @@ export class ReelsPublishOfferAutopilotTask implements AutopilotTask {
       payload: reel,
       previewText: formatPreview(reel),
     }));
-    const story = await this.continueStory(firedAtKst);
+    // 전날 것도 본다. 23:45 마지막 슬롯 뒤나 다음 날 승인한 카드는 릴스만 올라가고 그 날짜를 다시 보는
+    // 슬롯이 없어 스토리가 영영 남는다(2026-11-05 codex review). 카드 TTL 이 24시간이라 하루 전까지면 충분하다.
+    const stories = await Promise.all(
+      [previousKstDate(firedAtKst), firedAtKst].map((day) =>
+        this.continueStory(day),
+      ),
+    );
 
     const summaryLines: string[] = [];
     if (previews.length > 0) {
@@ -106,8 +116,10 @@ export class ReelsPublishOfferAutopilotTask implements AutopilotTask {
         `게시 불가: ${item.reelKey} 캡션 ${item.captionChars}자(2,200자 초과)`,
       );
     }
-    if (story.summaryLine) {
-      summaryLines.push(story.summaryLine);
+    for (const story of stories) {
+      if (story.summaryLine) {
+        summaryLines.push(story.summaryLine);
+      }
     }
     if (summaryLines.length === 0) {
       return { skip: true };
@@ -120,7 +132,7 @@ export class ReelsPublishOfferAutopilotTask implements AutopilotTask {
           `card:${payload.reelKey}:${payload.videoSha256.slice(0, 12)}`,
       ),
       ...scanned.tooLong.map((item) => `long:${item.reelKey}`),
-      ...(story.guardKey ? [story.guardKey] : []),
+      ...stories.flatMap((story) => (story.guardKey ? [story.guardKey] : [])),
     ];
     keys.sort();
     return {
@@ -178,19 +190,21 @@ const describeStory = ({
 }): StoryStep => {
   if (outcome.kind === 'published') {
     return {
-      summaryLine: '오늘의 한 줄 스토리도 올라갔습니다.',
+      summaryLine: `${day} 「오늘의 한 줄」 스토리도 올라갔습니다.`,
       guardKey: `story:${day}:published`,
     };
   }
   if (outcome.kind === 'unconfirmed') {
     return {
-      summaryLine:
-        '스토리 게시 여부 확인 필요: 인스타 앱에서 오늘 스토리를 확인해 주세요(자동으로 다시 올리지 않습니다).',
+      summaryLine: `${day} 스토리 게시 여부 확인 필요: 인스타 앱에서 스토리를 확인해 주세요(자동으로 다시 올리지 않습니다).`,
       guardKey: `story:${day}:unconfirmed`,
     };
   }
   return { summaryLine: null, guardKey: null };
 };
+
+const previousKstDate = (day: string): string =>
+  getKstDateOf(new Date(kstDayStartOf(day).getTime() - 12 * 60 * 60_000));
 
 const formatPreview = (reel: ReelPublishPayload): string => {
   const lines = [

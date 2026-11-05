@@ -197,8 +197,26 @@ describe('ReelsPublishOfferAutopilotTask', () => {
       story: STORY,
       isLastSlot: false,
     });
-    expect(result.summaryText).toBe('오늘의 한 줄 스토리도 올라갔습니다.');
+    expect(result.summaryText).toBe(
+      `${DAY} 「오늘의 한 줄」 스토리도 올라갔습니다.`,
+    );
     expect(result.guardKeySuffix).toBe(`story:${DAY}:published`);
+  });
+
+  it('전날 릴스가 다음 날 승인·게시됐어도 그 스토리를 이어 올린다', async () => {
+    repository.findByReelKey.mockImplementation(async (key) =>
+      key === '2026-11-05/daily'
+        ? { ...publishedReel(), reelKey: '2026-11-05/daily' }
+        : null,
+    );
+
+    const result = await makeTask().run(CONTEXT);
+
+    expect(publishStory.execute).toHaveBeenCalledTimes(1);
+    expect(publishStory.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ day: '2026-11-05' }),
+    );
+    expect(result.guardKeySuffix).toBe('story:2026-11-05:published');
   });
 
   it('릴스가 아직 게시되지 않았으면 스토리를 올리지 않는다', async () => {
@@ -233,7 +251,9 @@ describe('ReelsPublishOfferAutopilotTask', () => {
   });
 
   it('23:45 슬롯이면 마지막 슬롯으로 넘기고, 확인 필요는 따로 알린다', async () => {
-    repository.findByReelKey.mockResolvedValue(publishedReel());
+    repository.findByReelKey.mockImplementation(async (key) =>
+      key === `${DAY}/daily` ? publishedReel() : null,
+    );
     publishStory.execute.mockResolvedValue({ kind: 'unconfirmed' });
 
     const result = await makeTask('2026-11-06T14:45:00Z').run(CONTEXT);
