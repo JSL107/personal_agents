@@ -3,7 +3,7 @@ import {
   ActivityRunRow,
   LatestRunRow,
 } from '../../agent-run/domain/port/agent-run.repository.port';
-import { formatKstDate } from '../../common/util/kst-date.util';
+import { formatKstDate, utcMidnightOf } from '../../common/util/kst-date.util';
 import {
   ConsoleActivity,
   ConsoleActivityDay,
@@ -15,7 +15,7 @@ import { activityBubble } from './agent-activity-bubble';
 const DAY_IN_MILLISECONDS = 24 * 60 * 60 * 1000;
 
 const addCalendarDays = (date: string, days: number): string =>
-  new Date(new Date(`${date}T00:00:00Z`).getTime() + days * DAY_IN_MILLISECONDS)
+  new Date(utcMidnightOf(date).getTime() + days * DAY_IN_MILLISECONDS)
     .toISOString()
     .slice(0, 10);
 

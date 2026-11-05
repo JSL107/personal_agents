@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { plainDateToIso } from '../../agent/vacation/domain/plain-date';
+import { utcMidnightOf } from '../../common/util/kst-date.util';
 import { HolidayCalendar } from '../../holiday/domain/business-calendar';
 import {
   HOLIDAY_CALENDAR_PORT,
@@ -126,7 +127,7 @@ export class TriageIdeaChannelUsecase {
       }
     }
     let calendar: HolidayCalendar | null = null;
-    const today = new Date(`${firedAtKst}T00:00:00.000Z`);
+    const today = utcMidnightOf(firedAtKst);
     for (const message of selected) {
       try {
         const outcome = await this.judgeIdea.execute({
