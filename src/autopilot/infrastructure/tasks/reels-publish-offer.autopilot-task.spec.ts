@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -97,12 +97,16 @@ describe('ReelsPublishOfferAutopilotTask', () => {
     );
   };
 
-  const publishedReel = (): InstagramPost =>
+  const publishedReel = (day = DAY): InstagramPost =>
     ({
       id: 'post',
-      reelKey: `${DAY}/daily`,
+      reelKey: `${day}/daily`,
+      videoPath: join(root, day, 'daily', 'reel.mp4'),
       status: InstagramPostStatus.PUBLISHED,
       previewActionId: 'card',
+      mediaId: 'reel-media',
+      permalink: 'https://instagram.com/p/reel',
+      publishedAt: new Date('2026-11-06T00:00:00Z'),
     }) as InstagramPost;
 
   beforeEach(async () => {
@@ -200,6 +204,83 @@ describe('ReelsPublishOfferAutopilotTask', () => {
       story: STORY,
       isLastSlot: false,
     });
+    expect(result.summaryText).toBe(
+      `${DAY} 「오늘의 한 줄」 스토리도 올라갔습니다.`,
+    );
+    expect(result.guardKeySuffix).toBe(`story:${DAY}:published`);
+  });
+
+  it('전날과 오늘 릴스가 게시됐으면 각 daily 폴더에 표식을 쓴다', async () => {
+    const previousDay = '2026-11-05';
+    await mkdir(join(root, previousDay, 'daily'), { recursive: true });
+    await mkdir(join(root, DAY, 'daily'), { recursive: true });
+    repository.findByReelKey.mockImplementation(async (key) => {
+      if (key === `${previousDay}/daily`) {
+        return publishedReel(previousDay);
+      }
+      if (key === `${DAY}/daily`) {
+        return publishedReel();
+      }
+      if (key === `${DAY}/story`) {
+        return { ...publishedReel(), reelKey: key };
+      }
+      return null;
+    });
+
+    await makeTask().run(CONTEXT);
+
+    for (const day of [previousDay, DAY]) {
+      const marker = JSON.parse(
+        await readFile(join(root, day, 'daily', 'published.json'), 'utf8'),
+      );
+      expect(marker.reelKey).toBe(`${day}/daily`);
+      expect(marker.permalink).toBe('https://instagram.com/p/reel');
+      expect(marker.story.status).toBe(day === DAY ? 'PUBLISHED' : 'NONE');
+    }
+  });
+
+  it('최근 7일 안이면 며칠 전 게시된 날의 표식도 채우고, 그보다 오래된 날은 보지 않는다', async () => {
+    const lookedUp: string[] = [];
+    await mkdir(join(root, '2026-10-31', 'daily'), { recursive: true });
+    repository.findByReelKey.mockImplementation(async (key) => {
+      lookedUp.push(key);
+      return key === '2026-10-31/daily' ? publishedReel('2026-10-31') : null;
+    });
+
+    await makeTask().run(CONTEXT);
+
+    const marker = JSON.parse(
+      await readFile(
+        join(root, '2026-10-31', 'daily', 'published.json'),
+        'utf8',
+      ),
+    );
+    expect(marker.reelKey).toBe('2026-10-31/daily');
+    expect(lookedUp).not.toContain('2026-10-30/daily');
+  });
+
+  it('릴스가 미게시이면 daily 표식을 쓰지 않는다', async () => {
+    await mkdir(join(root, DAY, 'daily'), { recursive: true });
+    repository.findByReelKey.mockImplementation(async (key) =>
+      key === `${DAY}/daily`
+        ? { ...publishedReel(), status: InstagramPostStatus.PUBLISHING }
+        : null,
+    );
+
+    await makeTask().run(CONTEXT);
+
+    await expect(
+      readFile(join(root, DAY, 'daily', 'published.json'), 'utf8'),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('표식 기록이 실패해도 요약과 발송 키를 유지한다', async () => {
+    repository.findByReelKey.mockImplementation(async (key) =>
+      key === `${DAY}/daily` ? publishedReel() : null,
+    );
+
+    const result = await makeTask().run(CONTEXT);
+
     expect(result.summaryText).toBe(
       `${DAY} 「오늘의 한 줄」 스토리도 올라갔습니다.`,
     );

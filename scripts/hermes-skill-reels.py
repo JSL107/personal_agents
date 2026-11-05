@@ -32,6 +32,7 @@ import json
 import math
 import os
 import pwd
+import shutil
 import subprocess
 import sys
 import re
@@ -540,12 +541,14 @@ def write_segment(field: str, row: dict, one_line: str, feedback: str = "") -> d
 
 STATUS_SCHEMA = {
     "type": "object",
-    "properties": {"status_after": {"type": "string"}, "error": {"type": "string"}},
-    "required": ["status_after", "error"],
+    "properties": {"status_after": {"type": "string"}, "link_after": {"type": "string"}, "error": {"type": "string"}},
+    "required": ["status_after", "link_after", "error"],
 }
 
 
-def set_status(page_url: str, status: str, video_link: str | None = None) -> None:
+def set_status(page_url: str, status: str, video_link: str | None = None, verify_link: bool = False) -> None:
+    """verify_link 면 '영상 링크'도 다시 읽어 같은지 본다. 게시완료는 링크가 인스타 주소로 바뀌어야 끝난 것이다
+    (안 바뀐 채 완료로 두면 30일 뒤 폴더가 정리돼 링크가 사라진 파일을 가리킨다, 2026-11-05 PR #984 리뷰)."""
     properties = {"영상 상태": status}
     if video_link:
         properties["영상 링크"] = video_link
@@ -558,12 +561,15 @@ def set_status(page_url: str, status: str, video_link: str | None = None) -> Non
 ```json
 {json.dumps(update_args, ensure_ascii=False)}
 ```
-2) notion-fetch 로 {page_url} 을 읽어 '영상 상태' 값을 status_after 에 적는다. 실패하면 error 에 메시지를, 아니면 빈 문자열."""
+2) notion-fetch 로 {page_url} 을 읽어 '영상 상태' 값을 status_after, '영상 링크' 값을 link_after(없으면 빈 문자열)에 그대로 적는다.
+   실패하면 error 에 메시지를, 아니면 빈 문자열."""
     result = run_claude(prompt, STATUS_SCHEMA, ("notion-fetch", "notion-update-page"))
     if result.get("error"):
         raise RuntimeError(f"도구 오류: {result['error']}")
     if result.get("status_after") != status:
         raise RuntimeError(f"상태가 {status} 로 바뀌지 않음(읽은 값: {result.get('status_after')!r})")
+    if verify_link and result.get("link_after") != video_link:
+        raise RuntimeError(f"영상 링크가 {video_link} 로 바뀌지 않음(읽은 값: {result.get('link_after')!r})")
 
 
 def say_to_wav(text: str, out: Path, rate: int) -> array.array:
@@ -904,6 +910,73 @@ def read_json(path: Path) -> dict | None:
     return data if isinstance(data, dict) else None
 
 
+def mark_published(out_root: Path, notion: bool) -> list[str]:
+    """게시 표식이 생긴 daily 의 Notion 행을 갱신하고, 모두 성공한 경우만 완료 파일을 남긴다."""
+    if not notion:
+        return []
+    lines = []
+    for marker in sorted(out_root.glob("*/daily/published.json")):
+        daily = marker.parent
+        if (daily.is_symlink() or daily.parent.is_symlink() or marker.is_symlink()
+                or (daily / "script.json").is_symlink() or (daily / "notion-done.json").exists()):
+            continue
+        day = daily.parent.name
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+            continue
+        try:
+            published = read_json(marker)
+            script = read_json(daily / "script.json")
+            permalink = published.get("permalink") if published else None
+            segments = script.get("segments") if script else None
+            if not isinstance(permalink, str) or not permalink or not isinstance(segments, list) or not segments:
+                raise ValueError("게시 표식 또는 대본이 올바르지 않음")
+            pages = []
+            for segment in segments:
+                page_url = segment["row"]["page_url"]
+                if not isinstance(page_url, str) or not page_url:
+                    raise ValueError("Notion 행 주소가 없음")
+                pages.append(page_url)
+            for page_url in pages:
+                set_status(page_url, "게시완료", permalink, verify_link=True)
+            write_json_atomic(daily / "notion-done.json", {"marked_at": datetime.now(KST).isoformat(), "pages": pages})
+            lines.append(f"· 게시완료 표시 {day} ({len(pages)}행)")
+        except Exception as error:  # noqa: BLE001 — 다음 날 재시도할 수 있도록 완료 파일을 남기지 않는다
+            lines.append(f"· 게시완료 표시 실패 {day}: {error}")
+    return lines
+
+
+def trash_old_reels(out_root: Path, today: str, keep_days: int = 30,
+                    trash_dir: Path = REAL_HOME / ".Trash") -> list[str]:
+    """게시완료 표시까지 끝난 오래된 daily 폴더를 휴지통으로 옮긴다. 같은 날짜의 예전 ai·dev 폴더는 건드리지 않고,
+    daily 를 옮긴 뒤 날짜 폴더가 비었을 때만 그 폴더를 지운다(2026-11-05 codex review)."""
+    cutoff = datetime.strptime(today, "%Y-%m-%d").date() - timedelta(days=keep_days)
+    lines = []
+    for folder in sorted(out_root.iterdir()) if out_root.exists() else []:
+        if folder.is_symlink() or not folder.is_dir() or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", folder.name):
+            continue
+        try:
+            if datetime.strptime(folder.name, "%Y-%m-%d").date() > cutoff:
+                continue
+            daily = folder / "daily"
+            if (daily.is_symlink() or (daily / "published.json").is_symlink()
+                    or (daily / "notion-done.json").is_symlink()
+                    or not (daily / "published.json").is_file() or not (daily / "notion-done.json").is_file()):
+                continue
+            trash_dir.mkdir(parents=True, exist_ok=True)
+            target = trash_dir / f"skill-jaengyi-reels-{folder.name}-daily"
+            suffix = 1
+            while target.exists() or target.is_symlink():
+                target = trash_dir / f"skill-jaengyi-reels-{folder.name}-daily-{suffix}"
+                suffix += 1
+            shutil.move(str(daily), str(target))
+            if not any(folder.iterdir()):
+                folder.rmdir()
+            lines.append(f"· 휴지통으로 옮김 {folder.name}")
+        except Exception as error:  # noqa: BLE001 — 다른 날짜의 정리를 계속한다
+            lines.append(f"· 정리 실패 {folder.name}: {error}")
+    return lines
+
+
 def without_article(row: dict) -> dict:
     return {key: value for key, value in row.items() if key != "article"}
 
@@ -1081,7 +1154,7 @@ def send_dm(text: str) -> None:
         raise RuntimeError(f"chat.postMessage: {body.get('error')}")
 
 
-def report(day: str, result: dict | None, failure: str) -> str:
+def report(day: str, result: dict | None, failure: str, housekeeping: list[str]) -> str:
     lines = [f"스킬쟁이 릴스 {day}"]
     if result and result.get("skipped"):
         lines.append(f"· 이미 만들어 둠 ({result['dir']})")
@@ -1096,6 +1169,7 @@ def report(day: str, result: dict | None, failure: str) -> str:
         lines.append(f"  다시 만들기: python3 ~/.hermes/scripts/skill-reels.py --worker --date {day}")
     if result and not failure:
         lines.append("이대리 카드의 ✅ 적용을 누르면 인스타에 게시됩니다.")
+    lines.extend(housekeeping)
     return "\n".join(lines)
 
 
@@ -1107,12 +1181,21 @@ def worker(day: str, voice_dir: Path | None, out_root: Path = OUT_ROOT, notion: 
     except BlockingIOError:
         print("스킬쟁이 릴스: 다른 작업이 이미 돌고 있어 건너뜀")
         return 0
-    result, failure = None, ""
+    result, failure, housekeeping = None, "", []
+    try:
+        housekeeping.extend(mark_published(out_root, notion))
+    except Exception as error:  # noqa: BLE001 — 정리 오류가 당일 제작을 막지 않는다
+        housekeeping.append(f"· 게시완료 표시 실패: {error}")
+    try:
+        # 기준일은 실제 오늘이다. --date 로 미래 날짜를 줘도 보존 기간이 줄지 않게 한다(2026-11-05 codex review).
+        housekeeping.extend(trash_old_reels(out_root, datetime.now(KST).strftime("%Y-%m-%d")))
+    except Exception as error:  # noqa: BLE001 — 정리 오류가 당일 제작을 막지 않는다
+        housekeeping.append(f"· 정리 실패: {error}")
     try:
         result = make_daily(day, voice_dir, out_root, notion)
     except Exception as error:  # noqa: BLE001
         failure = str(error)
-    message = report(day, result, failure)
+    message = report(day, result, failure, housekeeping)
     print(message)
     if dm:
         try:
@@ -1314,6 +1397,7 @@ def self_check() -> None:
             assert script["title"] == "이제 평가를 의심해요 · 버그를 먼저 찾아 줘요" and "article" not in script["segments"][0]["row"]
             assert (daily / "caption.txt").read_text(encoding="utf-8").startswith("[AI] OpenAI가")
             assert ("https://n/dev", "제작중") in calls["status"]
+            # 시험 실행(--out-root)은 운영 폴더에 아무것도 만들지 않는다(읽기만 한다)
             assert not (OUT_ROOT / "2026-11-04" / "daily" / "script.json").exists() or OUT_ROOT == root
             assert make_daily("2026-11-04", None, root)["skipped"]
 
@@ -1384,11 +1468,98 @@ def self_check() -> None:
     assert badge_text("2026-11-04", "AI") == "11월 4일 AI 소식"
     ok = {"segments": ["AI"], "title": "t", "dir": "x", "duration": 30.0, "engine": "e", "story": False,
           "story_reason": "렌더 실패", "missing": {"개발": "없음"}}
-    message = report("2026-11-04", ok, "")
+    message = report("2026-11-04", ok, "", [])
     assert "이대리 카드의 ✅ 적용을 누르면 인스타에 게시됩니다." in message and "개발 꼭지 없음: 없음" in message
     assert "스토리 없음: 렌더 실패" in message
-    assert "--worker --date 2026-11-04" in report("2026-11-04", None, "음성: 실패")
+    assert "--worker --date 2026-11-04" in report("2026-11-04", None, "음성: 실패", [])
+    assert "· 정리 실패 2026-10-01: 검사" in report("2026-11-04", ok, "", ["· 정리 실패 2026-10-01: 검사"])
     assert node_binary() == "node" or Path(node_binary()).is_file()
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp) / "reels"
+        trash = Path(tmp) / "trash"
+        first = root / "2026-10-06" / "daily"
+        first.mkdir(parents=True)
+        write_json_atomic(first / "published.json", {"permalink": "https://instagram.test/reel/1"})
+        write_json_atomic(first / "script.json", {"segments": [
+            {"row": {"page_url": "https://n/ai"}}, {"row": {"page_url": "https://n/dev"}}]})
+        status_calls = []
+        original_status = globals()["set_status"]
+        globals()["set_status"] = lambda page_url, status, link=None, verify_link=False: status_calls.append((page_url, status, link, verify_link))
+        try:
+            assert mark_published(root, notion=False) == []
+            assert not status_calls and not (first / "notion-done.json").exists()
+            assert mark_published(root, notion=True) == ["· 게시완료 표시 2026-10-06 (2행)"]
+            assert status_calls == [("https://n/ai", "게시완료", "https://instagram.test/reel/1", True),
+                                    ("https://n/dev", "게시완료", "https://instagram.test/reel/1", True)]
+            assert read_json(first / "notion-done.json")["pages"] == ["https://n/ai", "https://n/dev"]
+            assert mark_published(root, notion=True) == [] and len(status_calls) == 2
+            failed = root / "2026-10-05" / "daily"
+            failed.mkdir(parents=True)
+            write_json_atomic(failed / "published.json", {"permalink": "https://instagram.test/reel/2"})
+            write_json_atomic(failed / "script.json", {"segments": [
+                {"row": {"page_url": "https://n/ok"}}, {"row": {"page_url": "https://n/fail"}}]})
+            def fail_second(page_url, status, link=None, verify_link=False):
+                if page_url.endswith("/fail"):
+                    raise RuntimeError("Notion 오류")
+                status_calls.append((page_url, status, link, verify_link))
+            globals()["set_status"] = fail_second
+            assert "게시완료 표시 실패 2026-10-05" in mark_published(root, notion=True)[0]
+            assert not (failed / "notion-done.json").exists()
+        finally:
+            globals()["set_status"] = original_status
+
+        recent = root / "2026-10-07" / "daily"
+        recent.mkdir(parents=True)
+        write_json_atomic(recent / "published.json", {"permalink": "https://instagram.test/reel/3"})
+        write_json_atomic(recent / "notion-done.json", {"pages": []})
+        only_marker = root / "2026-10-04" / "daily"
+        only_marker.mkdir(parents=True)
+        write_json_atomic(only_marker / "published.json", {"permalink": "https://instagram.test/reel/4"})
+        (root / "2026-10-03" / "ai").mkdir(parents=True)
+        (root / "2026-10-03" / "dev").mkdir()
+        (root / "2026-10-02").symlink_to(first.parent, target_is_directory=True)
+        trash.mkdir()
+        (trash / "skill-jaengyi-reels-2026-10-06-daily").mkdir()
+        mixed = root / "2026-10-01"
+        (mixed / "daily").mkdir(parents=True)
+        write_json_atomic(mixed / "daily" / "published.json", {"permalink": "https://instagram.test/reel/5"})
+        write_json_atomic(mixed / "daily" / "notion-done.json", {"pages": []})
+        (mixed / "ai").mkdir()
+        assert trash_old_reels(root, "2026-11-05", trash_dir=trash) == ["· 휴지통으로 옮김 2026-10-01", "· 휴지통으로 옮김 2026-10-06"]
+        assert (trash / "skill-jaengyi-reels-2026-10-06-daily-1" / "notion-done.json").exists()
+        assert not (root / "2026-10-06").exists()  # daily 만 있던 날짜 폴더는 비어서 지운다
+        assert (mixed / "ai").exists() and not (mixed / "daily").exists()  # 같은 날의 예전 ai 폴더는 남긴다
+        assert recent.exists() and only_marker.exists() and failed.exists() and (root / "2026-10-03" / "ai").exists()
+        assert (root / "2026-10-02").is_symlink()
+
+        original_lock = globals()["LOCK_PATH"]
+        original_make = globals()["make_daily"]
+        original_trash = globals()["trash_old_reels"]
+        made = []
+        globals()["LOCK_PATH"] = Path(tmp) / "lock"
+        globals()["make_daily"] = lambda day, voice_dir, out_root, notion: made.append(day) or {"skipped": True, "dir": str(root)}
+        globals()["trash_old_reels"] = lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("정리 오류"))
+        try:
+            assert worker("2026-11-05", None, root, notion=False, dm=False) == 0
+            assert made == ["2026-11-05"]
+        finally:
+            globals()["LOCK_PATH"] = original_lock
+            globals()["make_daily"] = original_make
+            globals()["trash_old_reels"] = original_trash
+
+    # 게시완료는 링크까지 바뀌어야 성공이다. 다른 상태 기록은 링크를 확인하지 않는다.
+    saved_claude = globals()["run_claude"]
+    globals()["run_claude"] = lambda prompt, schema, *rest: {"status_after": "게시완료", "link_after": "file:///old", "error": ""}
+    try:
+        try:
+            set_status("https://n/1", "게시완료", "https://instagram.test/reel/1", verify_link=True)
+            raise AssertionError("링크가 안 바뀌었는데 통과했다")
+        except RuntimeError as error:
+            assert "영상 링크" in str(error)
+        set_status("https://n/1", "게시완료", "https://instagram.test/reel/1")  # 확인을 켜지 않으면 상태만 본다
+    finally:
+        globals()["run_claude"] = saved_claude
 
     # 오늘 후보가 부적합하면 최근 LOOKBACK_DAYS 일로 넓혀 다시 고른다. 네트워크·claude 는 가짜로 바꿔 흐름만 본다.
     today_row = {**row, "page_url": "https://n/today", "source": "https://today", "collected": "2026-11-04"}
