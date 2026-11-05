@@ -28,6 +28,7 @@ import { GithubModule } from '../github/github.module';
 import { HolidayModule } from '../holiday/holiday.module';
 import { HumanizeModule } from '../humanize/humanize.module';
 import { IdeaTriageModule } from '../idea-triage/idea-triage.module';
+import { InstagramModule } from '../instagram/instagram.module';
 import { JobFeedModule } from '../job-feed/job-feed.module';
 import {
   MARKET_DATA_PORT,
@@ -75,6 +76,7 @@ import { HolidaySyncAutopilotTask } from './infrastructure/tasks/holiday-sync.au
 import { HumanizeResearchAutopilotTask } from './infrastructure/tasks/humanize-research.autopilot-task';
 import { IdeaTriageAutopilotTask } from './infrastructure/tasks/idea-triage.autopilot-task';
 import { ImpactReportAutopilotTask } from './infrastructure/tasks/impact-report.autopilot-task';
+import { InstagramTokenCheckAutopilotTask } from './infrastructure/tasks/instagram-token-check.autopilot-task';
 import { JobFeedAutopilotTask } from './infrastructure/tasks/job-feed.autopilot-task';
 import { JobFeedGapAutopilotTask } from './infrastructure/tasks/job-feed-gap.autopilot-task';
 import { KnowledgeLintAutopilotTask } from './infrastructure/tasks/knowledge-lint.autopilot-task';
@@ -93,6 +95,7 @@ import { PortfolioWarmupAutopilotTask } from './infrastructure/tasks/portfolio-w
 import { PrReviewSweepAutopilotTask } from './infrastructure/tasks/pr-review-sweep.autopilot-task';
 import { PreferenceLearningAutopilotTask } from './infrastructure/tasks/preference-learning.autopilot-task';
 import { PreviewSweeperAutopilotTask } from './infrastructure/tasks/preview-sweeper.autopilot-task';
+import { ReelsPublishOfferAutopilotTask } from './infrastructure/tasks/reels-publish-offer.autopilot-task';
 import { RunRetroAutopilotTask } from './infrastructure/tasks/run-retro.autopilot-task';
 import { RunSweeperAutopilotTask } from './infrastructure/tasks/run-sweeper.autopilot-task';
 import { ScheduleCollectGithubAutopilotTask } from './infrastructure/tasks/schedule-collect-github.autopilot-task';
@@ -157,6 +160,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     SlackCollectorModule,
     NotionModule,
     IdeaTriageModule,
+    InstagramModule,
   ],
   providers: [
     AutopilotScheduler,
@@ -204,6 +208,8 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     ScreeningOutcomeScoringAutopilotTask,
     ScreeningScorecardAutopilotTask,
     PrReviewSweepAutopilotTask,
+    ReelsPublishOfferAutopilotTask,
+    InstagramTokenCheckAutopilotTask,
     ScheduleReminderAutopilotTask,
     ScheduleCollectNotionAutopilotTask,
     ScheduleCollectSlackAutopilotTask,
@@ -315,6 +321,8 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         screeningOutcomeScoring: ScreeningOutcomeScoringAutopilotTask,
         screeningScorecard: ScreeningScorecardAutopilotTask,
         prReviewSweep: PrReviewSweepAutopilotTask,
+        reelsPublishOffer: ReelsPublishOfferAutopilotTask,
+        instagramTokenCheck: InstagramTokenCheckAutopilotTask,
         scheduleReminder: ScheduleReminderAutopilotTask,
         scheduleCollectNotion: ScheduleCollectNotionAutopilotTask,
         scheduleCollectSlack: ScheduleCollectSlackAutopilotTask,
@@ -363,6 +371,8 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         screeningOutcomeScoring,
         screeningScorecard,
         prReviewSweep,
+        reelsPublishOffer,
+        instagramTokenCheck,
         scheduleReminder,
         scheduleCollectNotion,
         scheduleCollectSlack,
@@ -412,6 +422,8 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         ScreeningOutcomeScoringAutopilotTask,
         ScreeningScorecardAutopilotTask,
         PrReviewSweepAutopilotTask,
+        ReelsPublishOfferAutopilotTask,
+        InstagramTokenCheckAutopilotTask,
         ScheduleReminderAutopilotTask,
         ScheduleCollectNotionAutopilotTask,
         ScheduleCollectSlackAutopilotTask,

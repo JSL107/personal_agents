@@ -28,6 +28,9 @@ export const PREVIEW_KIND = {
   // 노션 블로그 초안을 승인 후 GitHub main에 파일 1개로 발행.
   // payload = { pageId, path, content, title, notionUrl, tags, summary, slackUserId }.
   BLOG_GITHUB_PUBLISH: 'BLOG_GITHUB_PUBLISH',
+  // 스킬쟁이 릴스 게시 — 카드에 고정된 캡션·영상 해시를 승인 시 확인하고 Meta에 게시.
+  // payload = { reelKey, field, title, videoPath, videoSha256, videoBytes, caption, durationSec }.
+  INSTAGRAM_REEL_PUBLISH: 'INSTAGRAM_REEL_PUBLISH',
   // 저녁 회고 — 오늘 머지된 PR 을 저장소별로 나눠 묶음마다 회고해 이력서 프로필 편입 + 포트폴리오 Notion append.
   // payload = { prGroups:string[][], slackUserId } (EveningCareerReflectApplier 가 묶음마다 ReflectPrUsecase 위임).
   // prRefs:string[] 는 그룹 도입(2026-08-31) 이전 카드의 형태 — applier 가 1개 묶음으로 받아준다.
@@ -70,6 +73,15 @@ export const PREVIEW_ANSWER_WINDOW_MS = 30 * 60 * 1000;
 // 답할 수 있는 카드가 둘 이상일 때의 안내. 추측해 하나를 실행하지 않는다 — 외부에 쓰는 카드가 섞여 있다.
 export const PREVIEW_ANSWER_AMBIGUOUS_TEXT =
   '어느 카드에 대한 답인지 정할 수 없어 실행하지 않았어요. 카드의 버튼으로 골라 주세요.';
+
+// 자연어 "응" 으로는 승인하지 않는 kind. 되돌릴 수 없는 공개 게시라 카드 버튼만 받는다.
+// Slack 멘션(router-message)과 콘솔 채팅(precondition-chain) 두 경로가 이 집합을 함께 본다.
+export const BUTTON_ONLY_APPROVAL_KINDS: ReadonlySet<PreviewKind> = new Set([
+  PREVIEW_KIND.INSTAGRAM_REEL_PUBLISH,
+]);
+
+export const BUTTON_ONLY_APPROVAL_TEXT =
+  '이 카드는 ✅ 적용 버튼으로만 승인할 수 있어요.';
 
 // 반영이 진행 중이라는 흔적. `preview_action.apply_progress` 에 이 형태 그대로 담긴다.
 //

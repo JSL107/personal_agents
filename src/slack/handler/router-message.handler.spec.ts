@@ -9,6 +9,7 @@ import { FindAnswerablePreviewUsecase } from '../../preview-gate/application/fin
 import { FindLatestPendingPreviewUsecase } from '../../preview-gate/application/find-latest-pending-preview.usecase';
 import { RecordPreviewThreadUsecase } from '../../preview-gate/application/record-preview-thread.usecase';
 import {
+  BUTTON_ONLY_APPROVAL_TEXT,
   PREVIEW_ANSWER_AMBIGUOUS_TEXT,
   PREVIEW_KIND,
   PREVIEW_STATUS,
@@ -2204,6 +2205,80 @@ describe('RouterMessageHandler — 자연어 Y/N preview 인터셉트', () => {
     ts: '1730000000.000001',
     channel: 'C_CHANNEL',
   };
+
+  it('인스타 게시 카드는 자연어 응으로 승인하지 않는다', async () => {
+    const { app, getHandler } = buildAppMock();
+    const dispatch = jest.fn();
+    const pending = buildPendingPreview({
+      kind: PREVIEW_KIND.INSTAGRAM_REEL_PUBLISH,
+    });
+    const findAnswerablePreview = {
+      execute: jest.fn().mockResolvedValue({ status: 'ONE', preview: pending }),
+    };
+    const applyPreviewUsecase = { execute: jest.fn() };
+    buildHandler(
+      { dispatch },
+      {
+        findAnswerablePreview:
+          findAnswerablePreview as unknown as FindAnswerablePreviewUsecase,
+        applyPreviewUsecase:
+          applyPreviewUsecase as unknown as ApplyPreviewUsecase,
+      },
+    ).register(app);
+
+    const { say } = await invokeHandler(getHandler('app_mention'), {
+      ...baseEvent,
+      thread_ts: 'thread-Y',
+      text: '<@UBOT> 응',
+    });
+
+    expect(applyPreviewUsecase.execute).not.toHaveBeenCalled();
+    expect(say).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: BUTTON_ONLY_APPROVAL_TEXT,
+      }),
+    );
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it('인스타 릴스 카드에 아니라고 하면 취소한다', async () => {
+    const { app, getHandler } = buildAppMock();
+    const dispatch = jest.fn();
+    const pending = buildPendingPreview({
+      kind: PREVIEW_KIND.INSTAGRAM_REEL_PUBLISH,
+    });
+    const findAnswerablePreview = {
+      execute: jest.fn().mockResolvedValue({ status: 'ONE', preview: pending }),
+    };
+    const cancelPreviewUsecase = {
+      execute: jest.fn().mockResolvedValue(pending),
+    };
+    const applyPreviewUsecase = { execute: jest.fn() };
+    buildHandler(
+      { dispatch },
+      {
+        findAnswerablePreview:
+          findAnswerablePreview as unknown as FindAnswerablePreviewUsecase,
+        cancelPreviewUsecase:
+          cancelPreviewUsecase as unknown as CancelPreviewUsecase,
+        applyPreviewUsecase:
+          applyPreviewUsecase as unknown as ApplyPreviewUsecase,
+      },
+    ).register(app);
+
+    await invokeHandler(getHandler('app_mention'), {
+      ...baseEvent,
+      thread_ts: 'thread-Y',
+      text: '<@UBOT> 아니',
+    });
+
+    expect(cancelPreviewUsecase.execute).toHaveBeenCalledWith({
+      previewId: pending.id,
+      slackUserId: 'U_USER',
+    });
+    expect(applyPreviewUsecase.execute).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
+  });
 
   it('다른 스레드의 카드에는 응답하지 않고 일반 dispatch로 넘긴다', async () => {
     const { app, getHandler } = buildAppMock();

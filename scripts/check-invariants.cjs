@@ -10,6 +10,7 @@ const AUTO_FLAGS = [
   'PR_CAREERLOG_AUTO_ENABLED',
   'PR_REVIEW_HARVEST_ENABLED',
   'JOB_FEED_ENABLED',
+  'INSTAGRAM_PUBLISH_ENABLED',
 ];
 
 function checkNoTypeorm(files, pkgJson) {

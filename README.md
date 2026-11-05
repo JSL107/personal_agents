@@ -375,6 +375,9 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 | `*_WEBHOOK_SECRET` · `GITHUB_WEBHOOK_*` | ⭕ | webhook 검증 · 자동 발화 가드 |
 | `AUTOPILOT_OWNER_SLACK_USER_ID` · `AUTOPILOT_TARGET` | ⭕ | cron 전체 게이트 · 발송 대상(콤마 다중) |
 | `HERMES_CRON_OUTPUT_DIR` | ❌ | owner 대화 답변이 읽을 Hermes cron 출력 폴더의 절대경로. 미설정 시 조회 안 함 |
+| `INSTAGRAM_PUBLISH_ENABLED` | ❌ | `true` 일 때만 릴스 게시 제안과 토큰 점검. 기본 `false` |
+| `META_APP_ID` / `META_APP_SECRET` / `META_PAGE_TOKEN` / `INSTAGRAM_USER_ID` | 조건부 | 인스타 게시 활성화 시 4개 모두 필수. 페이지 토큰은 공개하지 않는다 |
+| `SKILL_REELS_OUT_ROOT` | ❌ | 릴스 출력 폴더. 비우면 `~/Desktop/skill-jaengyi-reels`; Hermes 출력 경로와 일치해야 한다 |
 | `HUMANIZE_RESEARCH_ENABLED` | ❌ | 윤문 규칙 연구 주간 dry-run. `true` 일 때만 자동 수집·제안을 실행하며 기본 OFF |
 | `HUMANIZE_RULES_REPO_PATH` | ❌ | 윤문 규칙 정본 저장소 경로. 기본 `~/.claude/skills/humanize-korean` |
 | `SUBCONSCIOUS_GATE_MODE` | ❌ | `legacy`(기존 LLM) · `shadow`(Jev 비교만) · `hybrid`(확신 높은 Jev 우선). 기본 `legacy` |
@@ -484,6 +487,11 @@ node scripts/export-ai-cli-env.cjs ./ai-cli-env-export   # 기존 PC 에서 내�
 ---
 
 ## 🔭 앞으로 만들 것
+
+### 인스타 토큰 재동의
+
+인스타 토큰 재동의 경고가 오면 Meta 그래프 API 탐색기에서 새 사용자 토큰을 받고 장기 사용자 토큰으로 교환한다. 해당 장기 토큰으로 페이지 토큰을 다시 발급받아 `.env` 의 `META_PAGE_TOKEN` 을 교체하고 앱을 재시작한다. `instagram_content_publish` 권한과 `data_access_expires_at` 을 확인한다. 토큰은 로그나 채팅에 붙이지 않는다.
+
 
 - [ ] **투자 라인 3단계** — ① 모의투자 고도화(모의와 실전의 격차를 줄이는 일이지 모의 성적을 올리는 일이 아니다) → ② 실거래(승인 카드를 누르면 주문이 나가는 형태, Preview Gate 그대로 재사용) → ③ 추천 서비스. 확정된 제약 둘: **토스는 주문 API 를 공개하지 않아** 실거래에는 별도 증권사가 필요하고, ③은 코드가 아니라 법적 요건(유사투자자문업)의 문제다. 자세한 것은 [tasks/goals-invest-line.md](./tasks/goals-invest-line.md)
 - [ ] **토론 모드** — 멀티 에이전트가 한 주제로 의견을 교환·반박하며 합의안을 도출 (현재 단일 워커 dispatch → 다자 debate 로 확장)

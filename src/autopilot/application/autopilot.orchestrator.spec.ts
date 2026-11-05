@@ -1880,6 +1880,80 @@ describe('AutopilotOrchestrator', () => {
   // "이미 발송됨" 으로 막는 것을, 나중 회차에 새로 생긴 상태(예: 👎+수용 답글 모순 보류)
   // 까지 조용히 묻어 버리던 문제의 수정(카드 57 관련 봇 리뷰 대응).
   describe('AutopilotTaskResult.guardKeySuffix — 하루 1회 가드에 상태 변화를 반영한다', () => {
+    it('같은 날 두 번째 슬롯에서도 새 편의 카드를 만든다', async () => {
+      const previewTask = {
+        id: 'reels-publish-offer',
+        run: jest
+          .fn()
+          .mockResolvedValueOnce({
+            skip: false,
+            summaryText: '첫 편',
+            guardKeySuffix: '2026-11-05/ai',
+            previews: [
+              {
+                kind: PREVIEW_KIND.INSTAGRAM_REEL_PUBLISH,
+                payload: { reelKey: '2026-11-05/ai' },
+                previewText: 'AI',
+              },
+            ],
+          })
+          .mockResolvedValueOnce({
+            skip: false,
+            summaryText: '둘째 편',
+            guardKeySuffix: '2026-11-05/dev',
+            previews: [
+              {
+                kind: PREVIEW_KIND.INSTAGRAM_REEL_PUBLISH,
+                payload: { reelKey: '2026-11-05/dev' },
+                previewText: '개발',
+              },
+            ],
+          }),
+      };
+      const seenKeys = new Set<string>();
+      const acquireOnce = jest.fn(async (key: string) => {
+        if (seenKeys.has(key)) {
+          return false;
+        }
+        seenKeys.add(key);
+        return true;
+      });
+      const createPreview = {
+        execute: jest.fn().mockResolvedValue({ id: 'PV1' }),
+      };
+      const slackNotifier = {
+        postMessage: jest.fn().mockResolvedValue({ ts: 'TS1' }),
+        postPreviewMessage: jest
+          .fn()
+          .mockResolvedValue({ channelId: 'C1', messageTs: 'TS2' }),
+      };
+      const orchestrator = new AutopilotOrchestrator(
+        [previewTask] as never,
+        slackNotifier as never,
+        { acquireOnce, isDone: jest.fn().mockResolvedValue(false) } as never,
+        createPreview as never,
+        { attachSlackMessage: jest.fn() } as never,
+      );
+      const entry: PlaybookEntry = {
+        id: 'reels-publish-offer',
+        taskId: 'reels-publish-offer',
+        riskTier: 'T1_PREVIEW',
+        trigger: {
+          kind: 'CRON',
+          schedule: '*/15 9-23 * * *',
+          timezone: 'Asia/Seoul',
+        },
+      };
+
+      await orchestrator.runGroup('reels-publish-offer', [entry], 'U1', 'C1');
+      await orchestrator.runGroup('reels-publish-offer', [entry], 'U1', 'C1');
+
+      expect(createPreview.execute).toHaveBeenCalledTimes(2);
+      expect(acquireOnce.mock.calls[0][0]).not.toBe(
+        acquireOnce.mock.calls[1][0],
+      );
+    });
+
     it('guardKeySuffix 를 주지 않는 task 만 있으면 가드 키가 종전과 완전히 같다', async () => {
       const task = makeTask('weekly-summary', {
         skip: false,

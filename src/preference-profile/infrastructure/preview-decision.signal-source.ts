@@ -24,6 +24,8 @@ const EXCLUDED_KINDS = [
   // 목표 확정은 사용자가 직접 선언한 내용을 되묻는 확인이다. 승인을 "제안을 받아들였다" 로
   // 학습하면 자기 말에 동의한 것을 선호로 배운다.
   PREVIEW_KIND.PRODUCT_GOAL,
+  // 정기 발송되는 릴스 카드 취소는 제안 선호에 대한 거절이 아니다.
+  PREVIEW_KIND.INSTAGRAM_REEL_PUBLISH,
 ];
 
 // 결정 시각 — status 에 따라 채워지는 컬럼이 다르다(포트 계약: transition 이 status 에 맞춰 채움).

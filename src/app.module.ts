@@ -41,6 +41,8 @@ import { HermesWatchdogModule } from './hermes-watchdog/hermes-watchdog.module';
 import { HumanizeModule } from './humanize/humanize.module';
 import { IdeaTriageModule } from './idea-triage/idea-triage.module';
 import { IdeaScheduleApplier } from './idea-triage/infrastructure/idea-schedule.applier';
+import { InstagramReelPublishApplier } from './instagram/infrastructure/instagram-reel-publish.applier';
+import { InstagramModule } from './instagram/instagram.module';
 import { JobApplicationNudgeCronModule } from './job-application-nudge-cron/job-application-nudge-cron.module';
 import { LocalSessionsModule } from './local-sessions/local-sessions.module';
 import { ModelRouterModule } from './model-router/model-router.module';
@@ -140,6 +142,7 @@ import { WebhookModule } from './webhook/webhook.module';
         EveningCareerReflectApplier,
         ProductGoalApplier,
         IdeaScheduleApplier,
+        InstagramReelPublishApplier,
       ],
       // 레버 3b: apply 후 결과 검증 — DOCS_AUDIT_PR 의 PR open 을 getPullRequest 로 재확인.
       verifiers: [GithubPrVerifier, GithubIssueVerifier, GithubFileVerifier],
@@ -160,6 +163,7 @@ import { WebhookModule } from './webhook/webhook.module';
         AgentRunModule,
         ProductGoalModule,
         IdeaTriageModule,
+        InstagramModule,
         ScheduleModule,
       ],
     }),

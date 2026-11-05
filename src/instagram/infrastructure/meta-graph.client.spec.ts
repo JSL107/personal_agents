@@ -1,0 +1,279 @@
+import { ConfigService } from '@nestjs/config';
+
+import { InstagramErrorCode } from '../domain/instagram-error-code.enum';
+import { MetaGraphClient } from './meta-graph.client';
+
+describe('MetaGraphClient', () => {
+  const originalFetch = global.fetch;
+  const config = {
+    INSTAGRAM_PUBLISH_ENABLED: 'true',
+    META_APP_ID: 'app-id',
+    META_APP_SECRET: 'app-secret',
+    META_PAGE_TOKEN: 'secret-page-token',
+    INSTAGRAM_USER_ID: 'ig-user',
+  };
+  let fetchMock: jest.Mock;
+  let client: MetaGraphClient;
+
+  beforeEach(() => {
+    fetchMock = jest.fn();
+    global.fetch = fetchMock as typeof fetch;
+    client = new MetaGraphClient({
+      get: (key: string) => config[key as keyof typeof config],
+    } as ConfigService);
+  });
+
+  afterAll(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('게시 한도 응답에 사용량과 총량이 있으면 두 값을 반환한다', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [{ quota_usage: 2, config: { quota_total: 100 } }],
+      }),
+    });
+    await expect(client.getPublishingLimit()).resolves.toEqual({
+      usage: 2,
+      total: 100,
+    });
+  });
+
+  it('첫 한도 항목이 유효하면 뒤 항목과 관계없이 첫 값을 반환한다', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [{ quota_usage: 2, config: { quota_total: 100 } }, {}],
+      }),
+    });
+    await expect(client.getPublishingLimit()).resolves.toEqual({
+      usage: 2,
+      total: 100,
+    });
+  });
+
+  it('최근 게시물에 캡션이 없으면 null로 반환한다', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: [
+          {
+            id: 'media',
+            permalink: 'https://example.com/reel',
+            timestamp: '2026-11-05T00:00:00Z',
+          },
+        ],
+      }),
+    });
+    await expect(client.listRecentMedia(1)).resolves.toEqual([
+      {
+        id: 'media',
+        caption: null,
+        permalink: 'https://example.com/reel',
+        timestamp: '2026-11-05T00:00:00Z',
+      },
+    ]);
+  });
+
+  it('릴스 컨테이너를 만들면 폼 본문으로 요청하고 업로드 주소를 반환한다', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: 'container',
+        uri: 'https://upload.example/media',
+      }),
+    });
+    const result = await client.createReelContainer('한글 캡션');
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(result).toEqual({
+      containerId: 'container',
+      uploadUri: 'https://upload.example/media',
+    });
+    expect(url).not.toContain('한글');
+    expect(url).not.toContain('secret-page-token');
+    expect(init.method).toBe('POST');
+    expect(init.headers).toEqual(
+      expect.objectContaining({
+        'Content-Type': 'application/x-www-form-urlencoded',
+      }),
+    );
+    expect(new URLSearchParams(init.body as string)).toEqual(
+      new URLSearchParams({
+        media_type: 'REELS',
+        upload_type: 'resumable',
+        caption: '한글 캡션',
+        share_to_feed: 'true',
+        access_token: 'secret-page-token',
+      }),
+    );
+    expect(init.signal).toBeDefined();
+  });
+
+  it('영상을 업로드하면 OAuth 헤더와 시간 제한을 설정한다', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true }),
+    });
+    await client.uploadVideo({
+      uploadUri: 'https://rupload.facebook.com/media',
+      video: Buffer.from('video'),
+    });
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.headers).toEqual(
+      expect.objectContaining({
+        Authorization: 'OAuth secret-page-token',
+        offset: '0',
+        file_size: '5',
+        'Content-Type': 'application/octet-stream',
+      }),
+    );
+    expect(init.signal).toBeDefined();
+  });
+
+  it('업로드 주소가 Meta 호스트가 아니면 요청하지 않는다', async () => {
+    await expect(
+      client.uploadVideo({
+        uploadUri: 'https://upload.example/media',
+        video: Buffer.from('video'),
+      }),
+    ).rejects.toMatchObject({
+      errorCode: InstagramErrorCode.GRAPH_REQUEST_FAILED,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('업로드 주소가 HTTP이면 요청하지 않는다', async () => {
+    await expect(
+      client.uploadVideo({
+        uploadUri: 'http://rupload.facebook.com/media',
+        video: Buffer.from('video'),
+      }),
+    ).rejects.toMatchObject({
+      errorCode: InstagramErrorCode.GRAPH_REQUEST_FAILED,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('업로드가 실패하면 정제한 debug_info.message를 오류에 넣는다', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: false,
+        debug_info: {
+          message:
+            'upload failed secret-page-token at https://example.com/private',
+        },
+      }),
+    });
+    await expect(
+      client.uploadVideo({
+        uploadUri: 'https://rupload.facebook.com/media',
+        video: Buffer.from('video'),
+      }),
+    ).rejects.toMatchObject({
+      errorCode: InstagramErrorCode.GRAPH_REQUEST_FAILED,
+      message: expect.stringContaining('upload failed [REDACTED] at [URL]'),
+    });
+  });
+
+  it('컨테이너 상태를 받으면 민감 정보를 정제해 반환한다', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        status_code: 'ERROR',
+        status: 'secret-page-token at https://example.com/private',
+      }),
+    });
+    await expect(client.getContainerStatus('container')).resolves.toEqual({
+      statusCode: 'ERROR',
+      status: '[REDACTED] at [URL]',
+    });
+  });
+
+  it('게시 설정 문제를 받으면 민감 정보를 정제해 반환한다', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: 'media',
+        config_issue: 'secret-page-token at https://example.com/private',
+      }),
+    });
+    await expect(client.publish('container')).resolves.toEqual({
+      mediaId: 'media',
+      configIssue: '[REDACTED] at [URL]',
+    });
+  });
+
+  it.each([
+    [{ code: 190 }, InstagramErrorCode.TOKEN_INVALID],
+    [{ code: 9, error_subcode: 2207042 }, InstagramErrorCode.QUOTA_EXCEEDED],
+  ])('알려진 Graph 오류 %j를 도메인 오류로 변환한다', async (error, code) => {
+    fetchMock.mockResolvedValue({ ok: false, json: async () => ({ error }) });
+    await expect(client.getPublishingLimit()).rejects.toMatchObject({
+      errorCode: code,
+    });
+  });
+
+  it('알 수 없는 Graph 오류를 받으면 일반 요청 오류로 감싼다', async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      json: async () => ({
+        error: { code: 25, error_subcode: 2207050, message: 'restricted' },
+      }),
+    });
+    await expect(client.getPublishingLimit()).rejects.toMatchObject({
+      errorCode: InstagramErrorCode.GRAPH_REQUEST_FAILED,
+      message: expect.stringContaining('2207050'),
+    });
+  });
+
+  it.each([
+    new TypeError('secret-page-token'),
+    Object.assign(new Error('secret-page-token'), { name: 'AbortError' }),
+  ])('fetch가 실패하면 토큰을 노출하지 않고 오류로 감싼다', async (error) => {
+    fetchMock.mockRejectedValue(error);
+    await expect(client.getPublishingLimit()).rejects.toMatchObject({
+      errorCode: InstagramErrorCode.GRAPH_REQUEST_FAILED,
+    });
+    await expect(client.getPublishingLimit()).rejects.not.toThrow(
+      'secret-page-token',
+    );
+  });
+
+  it('인스타 게시가 꺼져 있으면 설정되지 않은 것으로 판단한다', () => {
+    const disabled = new MetaGraphClient({
+      get: (key: string) =>
+        key === 'INSTAGRAM_PUBLISH_ENABLED'
+          ? 'false'
+          : config[key as keyof typeof config],
+    } as ConfigService);
+    expect(disabled.isConfigured()).toBe(false);
+  });
+
+  it('무효 토큰 응답에 나머지 필드가 없어도 무효로 반환한다', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: { is_valid: false } }),
+    });
+    await expect(client.debugPageToken()).resolves.toEqual({
+      isValid: false,
+      expiresAt: 0,
+      dataAccessExpiresAt: 0,
+      scopes: [],
+    });
+  });
+
+  it('토큰 점검에서 Graph 오류 190이면 앱 자격 증명 오류로 안내한다', async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      json: async () => ({
+        error: { code: 190, message: 'Invalid app token' },
+      }),
+    });
+    await expect(client.debugPageToken()).rejects.toMatchObject({
+      errorCode: InstagramErrorCode.GRAPH_REQUEST_FAILED,
+      message: expect.stringContaining('META_APP_ID/META_APP_SECRET 확인'),
+    });
+  });
+});

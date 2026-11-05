@@ -7,6 +7,7 @@ import { PoEvalErrorCode } from '../../agent/po-eval/domain/po-eval-error-code.e
 import { DomainException } from '../../common/exception/domain.exception';
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { AgentType } from '../../model-router/domain/model-router.type';
+import { BUTTON_ONLY_APPROVAL_TEXT } from '../../preview-gate/domain/preview-action.type';
 import { ConversationMemoryService } from '../../router/application/conversation-memory.service';
 import {
   ConversationalReplyFailedException,
@@ -541,6 +542,34 @@ describe('PreconditionChainOrchestrator', () => {
       type: 'command.answered',
       commandId: 'c1',
       message: '✅ 적용 완료 (CAREER_PROFILE)\n\n반영했습니다.',
+    });
+  });
+
+  it('콘솔의 응은 인스타 게시 카드를 승인하지 않고 버튼 안내만 답한다', async () => {
+    const {
+      orchestrator,
+      handleConversationTurn,
+      findAnswerablePreview,
+      applyPreview,
+      consoleEvents,
+    } = make();
+    findAnswerablePreview.execute.mockResolvedValue({
+      status: 'ONE',
+      preview: {
+        id: 'p1',
+        kind: 'INSTAGRAM_REEL_PUBLISH',
+        status: 'PENDING',
+      },
+    });
+
+    await orchestrator.run({ slackUserId: 'U1', text: '응', commandId: 'c1' });
+
+    expect(applyPreview.execute).not.toHaveBeenCalled();
+    expect(handleConversationTurn.execute).not.toHaveBeenCalled();
+    expect(consoleEvents.publish).toHaveBeenCalledWith({
+      type: 'command.answered',
+      commandId: 'c1',
+      message: BUTTON_ONLY_APPROVAL_TEXT,
     });
   });
 
