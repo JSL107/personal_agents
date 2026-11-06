@@ -44,9 +44,11 @@ export class PreviewActionHandler implements SlackHandler {
           ...toReadableSlackArgs(`✅ 적용 완료: ${resultText}`),
         });
       } catch (error: unknown) {
+        // 카드를 덮어쓰지 않는다. 실패하면 usecase 가 카드를 버튼 있는 APPLY_FAILED 로 되살려 두는데,
+        // 덮어쓰면 그 버튼이 사라져 다시 승인할 수 없다(2026-11-06 릴스 게시 실패).
         await respond({
           response_type: 'ephemeral',
-          replace_original: true,
+          replace_original: false,
           text: `적용 실패: ${toUserFacingErrorMessage(error)}`,
         });
       }
