@@ -1,6 +1,10 @@
 import { ConfigService } from '@nestjs/config';
 
 import { InstagramErrorCode } from '../domain/instagram-error-code.enum';
+import {
+  InsightKind,
+  MediaInsightsResultKind,
+} from '../domain/port/meta-graph.port';
 import { MetaGraphClient } from './meta-graph.client';
 
 describe('MetaGraphClient', () => {
@@ -309,6 +313,140 @@ describe('MetaGraphClient', () => {
     await expect(client.debugPageToken()).rejects.toMatchObject({
       errorCode: InstagramErrorCode.GRAPH_REQUEST_FAILED,
       message: expect.stringContaining('META_APP_ID/META_APP_SECRET 확인'),
+    });
+  });
+
+  describe('인사이트', () => {
+    const okJson = (body: unknown) => ({ ok: true, json: async () => body });
+    const requestedMetrics = () =>
+      new URL(fetchMock.mock.calls[0][0] as string).searchParams.get('metric');
+
+    it('릴스 지표를 고정 목록으로 요청하고 없는 지표는 null 로 돌려준다', async () => {
+      const data = [
+        { name: 'views', period: 'lifetime', values: [{ value: 84 }] },
+        { name: 'ig_reels_avg_watch_time', values: [{ value: 4432 }] },
+        { name: 'reels_skip_rate', values: [{ value: 69.7 }] },
+      ];
+      fetchMock.mockResolvedValue(okJson({ data }));
+
+      const result = await client.getMediaInsights({
+        mediaId: 'media-1',
+        kind: InsightKind.REELS,
+      });
+
+      expect(fetchMock.mock.calls[0][0]).toContain('/media-1/insights?');
+      expect(requestedMetrics()).toBe(
+        'views,reach,likes,comments,shares,saved,total_interactions,reposts,ig_reels_avg_watch_time,ig_reels_video_view_total_time,reels_skip_rate',
+      );
+      expect(result).toEqual({
+        kind: MediaInsightsResultKind.OK,
+        raw: data,
+        metrics: {
+          views: 84,
+          reach: null,
+          likes: null,
+          comments: null,
+          shares: null,
+          saved: null,
+          totalInteractions: null,
+          reposts: null,
+          replies: null,
+          avgWatchMs: 4432,
+          totalWatchMs: null,
+          skipRate: 69.7,
+        },
+      });
+    });
+
+    it('스토리 지표를 고정 목록으로 요청한다', async () => {
+      fetchMock.mockResolvedValue(okJson({ data: [] }));
+      await client.getMediaInsights({
+        mediaId: 'story-1',
+        kind: InsightKind.STORY,
+      });
+      expect(requestedMetrics()).toBe(
+        'views,reach,replies,shares,total_interactions,follows,profile_visits',
+      );
+    });
+
+    it('조회 5 미만(#10)은 오류가 아니라 결과로 돌려준다', async () => {
+      const body = {
+        error: {
+          code: 10,
+          message: '(#10) Not enough viewers for the media to show insights',
+        },
+      };
+      fetchMock.mockResolvedValue({
+        ok: false,
+        status: 400,
+        json: async () => body,
+      });
+      await expect(
+        client.getMediaInsights({
+          mediaId: 'story-1',
+          kind: InsightKind.STORY,
+        }),
+      ).resolves.toEqual({
+        kind: MediaInsightsResultKind.NOT_ENOUGH_VIEWERS,
+        raw: {
+          code: 10,
+          message: expect.stringContaining('Not enough viewers'),
+        },
+      });
+    });
+
+    it('같은 #10 이라도 권한 부족이면 조회 5 미만으로 보지 않고 던진다', async () => {
+      fetchMock.mockResolvedValue({
+        ok: false,
+        status: 400,
+        json: async () => ({
+          error: {
+            code: 10,
+            message:
+              '(#10) Application does not have permission for this action',
+          },
+        }),
+      });
+      await expect(
+        client.getMediaInsights({
+          mediaId: 'media-1',
+          kind: InsightKind.REELS,
+        }),
+      ).rejects.toMatchObject({
+        instagramErrorCode: InstagramErrorCode.GRAPH_REQUEST_FAILED,
+      });
+    });
+
+    it('토큰 오류(190)는 그대로 던진다', async () => {
+      fetchMock.mockResolvedValue({
+        ok: false,
+        status: 400,
+        json: async () => ({ error: { code: 190, message: 'expired' } }),
+      });
+      await expect(
+        client.getMediaInsights({
+          mediaId: 'media-1',
+          kind: InsightKind.REELS,
+        }),
+      ).rejects.toMatchObject({
+        instagramErrorCode: InstagramErrorCode.TOKEN_INVALID,
+      });
+    });
+
+    it('팔로워 수를 읽는다', async () => {
+      fetchMock.mockResolvedValue(
+        okJson({ followers_count: 2, id: 'ig-user' }),
+      );
+      await expect(client.getFollowersCount()).resolves.toBe(2);
+      expect(fetchMock.mock.calls[0][0]).toContain('/ig-user?');
+      expect(fetchMock.mock.calls[0][0]).toContain('fields=followers_count');
+    });
+
+    it('팔로워 수가 숫자가 아니면 요청 실패로 던진다', async () => {
+      fetchMock.mockResolvedValue(okJson({ id: 'ig-user' }));
+      await expect(client.getFollowersCount()).rejects.toMatchObject({
+        instagramErrorCode: InstagramErrorCode.GRAPH_REQUEST_FAILED,
+      });
     });
   });
 });

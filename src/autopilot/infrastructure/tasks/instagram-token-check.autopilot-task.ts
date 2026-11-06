@@ -15,6 +15,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const TOKEN_INVALID_TEXT =
   '⚠️ 인스타 토큰이 무효입니다. 릴스 게시가 멈춥니다. README 「인스타 토큰 재동의」 절을 따라 다시 발급해 주세요.';
 
+const INSIGHTS_SCOPE_MISSING_TEXT =
+  '⚠️ 인스타 인사이트 권한(instagram_manage_insights)이 빠졌습니다. 릴스 성과 수집이 멈춥니다. README 「인스타 토큰 재동의」 절을 따라 다시 발급해 주세요.';
+
 @Injectable()
 export class InstagramTokenCheckAutopilotTask implements AutopilotTask {
   readonly id = 'instagram-token-check';
@@ -46,6 +49,9 @@ export class InstagramTokenCheckAutopilotTask implements AutopilotTask {
         summaryText:
           '⚠️ 인스타 게시 권한(instagram_content_publish)이 빠졌습니다.',
       };
+    }
+    if (!token.scopes.includes('instagram_manage_insights')) {
+      return { skip: false, summaryText: INSIGHTS_SCOPE_MISSING_TEXT };
     }
 
     // expires_at 0 은 "만료 없음" 이다. 0 이 아니면 데이터 접근 만료와 둘 중 먼저 오는 쪽이 게시를 멈춘다.

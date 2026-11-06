@@ -1,3 +1,5 @@
+import { InsightMetrics } from '../instagram-insight.type';
+
 export const META_GRAPH_PORT = Symbol('META_GRAPH_PORT');
 
 export interface PublishingLimit {
@@ -45,6 +47,21 @@ export interface PageTokenDebug {
   scopes: string[];
 }
 
+export enum InsightKind {
+  REELS = 'REELS',
+  STORY = 'STORY',
+}
+
+export enum MediaInsightsResultKind {
+  OK = 'OK',
+  NOT_ENOUGH_VIEWERS = 'NOT_ENOUGH_VIEWERS',
+}
+
+// 스토리는 값이 5 미만이면 Meta 가 (#10) 오류를 준다. 다시 물어도 같으므로 실패가 아니라 결과로 돌려준다.
+export type MediaInsightsResult =
+  | { kind: MediaInsightsResultKind.OK; metrics: InsightMetrics; raw: unknown }
+  | { kind: MediaInsightsResultKind.NOT_ENOUGH_VIEWERS; raw: unknown };
+
 export interface MetaGraphPort {
   isConfigured(): boolean;
   getPublishingLimit(): Promise<PublishingLimit>;
@@ -68,4 +85,12 @@ export interface MetaGraphPort {
   getMedia(mediaId: string): Promise<MediaDetail>;
   listRecentMedia(limit: number): Promise<RecentMedia[]>;
   debugPageToken(): Promise<PageTokenDebug>;
+  getMediaInsights({
+    mediaId,
+    kind,
+  }: {
+    mediaId: string;
+    kind: InsightKind;
+  }): Promise<MediaInsightsResult>;
+  getFollowersCount(): Promise<number>;
 }

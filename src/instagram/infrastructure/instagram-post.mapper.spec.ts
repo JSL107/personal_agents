@@ -21,11 +21,20 @@ const row: InstagramPostRow = {
   status: 'PENDING',
   lastError: null,
   publishedAt: null,
+  features: null,
   createdAt: new Date('2026-11-05T00:00:00Z'),
   updatedAt: new Date('2026-11-05T00:00:00Z'),
 };
 
 describe('toDomain', () => {
+  it('version 1 특성은 그대로, 형식이 다른 특성은 null 로 읽는다', () => {
+    expect(toDomain({ ...row, features: { version: 1 } }).features).toEqual({
+      version: 1,
+    });
+    expect(toDomain({ ...row, features: { version: 2 } }).features).toBeNull();
+    expect(toDomain({ ...row, features: 'x' }).features).toBeNull();
+  });
+
   it('저장된 상태 문자열을 도메인 enum으로 변환한다', () => {
     expect(toDomain(row)).toEqual({
       ...row,
