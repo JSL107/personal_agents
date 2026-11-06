@@ -301,6 +301,47 @@ describe('MetaGraphClient', () => {
     });
   });
 
+  it('Graph 오류의 진단 필드와 사용자 문구를 정제해 남긴다', async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      json: async () => ({
+        error: {
+          code: 200,
+          message: 'API access blocked.',
+          error_user_title: '차단됨',
+          error_user_msg: 'secret-page-token 제한',
+          type: 'OAuthException',
+          is_transient: false,
+          fbtrace_id: 'AbC123',
+        },
+      }),
+    });
+    await expect(client.getPublishingLimit()).rejects.toMatchObject({
+      message:
+        'Meta 오류 200/unknown: 차단됨 — [REDACTED] 제한 / API access blocked. (type=OAuthException, transient=false, trace=AbC123)',
+    });
+  });
+
+  it('진단 필드가 null 이어도 오류 응답을 버리지 않고 190 을 토큰 오류로 분류한다', async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      json: async () => ({
+        error: {
+          code: 190,
+          message: 'expired',
+          type: null,
+          fbtrace_id: null,
+          error_user_title: null,
+          is_transient: null,
+        },
+      }),
+    });
+    await expect(client.getPublishingLimit()).rejects.toMatchObject({
+      errorCode: InstagramErrorCode.TOKEN_INVALID,
+      message: 'Meta 오류 190/unknown: expired',
+    });
+  });
+
   it.each([
     new TypeError('secret-page-token'),
     Object.assign(new Error('secret-page-token'), { name: 'AbortError' }),

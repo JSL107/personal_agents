@@ -41,7 +41,14 @@ const GRAPH_ERROR_RESPONSE_PATTERN = {
   },
 };
 
-interface GraphError {
+interface GraphDiagnostics {
+  error_user_title?: string;
+  type?: string;
+  fbtrace_id?: string;
+  is_transient?: boolean;
+}
+
+interface GraphError extends GraphDiagnostics {
   code?: number;
   error_subcode?: number;
   message?: string;
@@ -479,7 +486,10 @@ export class MetaGraphClient implements MetaGraphPort {
         if (!isMatching(GRAPH_ERROR_RESPONSE_PATTERN, body)) {
           throw this.failure('Meta 오류 응답이 올바르지 않습니다.');
         }
-        throw this.graphFailure(body.error);
+        throw this.graphFailure({
+          ...body.error,
+          ...graphDiagnosticsOf(body.error),
+        });
       }
       if (!response.ok) {
         // rupload 는 error 대신 debug_info 에 사유를 담아 실패를 돌려준다. 버리면 HTTP 상태만 남는다.
@@ -498,9 +508,11 @@ export class MetaGraphClient implements MetaGraphPort {
   }
 
   private graphFailure(error: GraphError): InstagramException {
-    const raw = error.error_user_msg ?? error.message ?? '알 수 없는 오류';
     const code = graphErrorCodeOf(error);
-    const safe = this.sanitize(raw);
+    // fbtrace_id 는 Meta 지원 문의에 쓰는 추적 번호이며 금방 만료된다. 오류가 난 그 자리에서 남긴다(2026-11-06 원인 미확정 사고).
+    const safe = this.sanitize(
+      `${graphErrorText(error)}${graphErrorDetail(error)}`,
+    );
     const message = `Meta 오류 ${error.code ?? 'unknown'}/${error.error_subcode ?? 'unknown'}: ${safe}`;
     return new InstagramException({
       code,
@@ -529,6 +541,49 @@ export class MetaGraphClient implements MetaGraphPort {
     return safe;
   }
 }
+
+// 진단 필드는 검사 패턴에 넣지 않는다. null 이나 다른 형식이 오면 응답 전체가 거부돼 190·한도 분류까지 잃는다.
+const graphDiagnosticsOf = (error: object): GraphDiagnostics => ({
+  error_user_title: isMatching({ error_user_title: P.string }, error)
+    ? error.error_user_title
+    : undefined,
+  type: isMatching({ type: P.string }, error) ? error.type : undefined,
+  fbtrace_id: isMatching({ fbtrace_id: P.string }, error)
+    ? error.fbtrace_id
+    : undefined,
+  is_transient: isMatching({ is_transient: P.boolean }, error)
+    ? error.is_transient
+    : undefined,
+});
+
+// 사용자용 문구(error_user_title·error_user_msg)와 개발자용 message 가 다르면 둘 다 남긴다.
+const graphErrorText = (error: GraphError): string => {
+  const userText = [error.error_user_title, error.error_user_msg]
+    .filter(Boolean)
+    .join(' — ');
+  const parts = [userText, error.message].filter((part): part is string =>
+    Boolean(part),
+  );
+  const unique = [...new Set(parts)];
+  if (unique.length === 0) {
+    return '알 수 없는 오류';
+  }
+  return unique.join(' / ');
+};
+
+// 허용한 진단 필드만 붙인다. 응답 본문을 통째로 싣지 않는다.
+const graphErrorDetail = (error: GraphError): string => {
+  const fields = [
+    error.type ? `type=${error.type}` : null,
+    error.is_transient === undefined ? null : `transient=${error.is_transient}`,
+    error.fbtrace_id ? `trace=${error.fbtrace_id}` : null,
+  ].filter((field): field is string => field !== null);
+  if (fields.length === 0) {
+    return '';
+  }
+  const detail = fields.join(', ');
+  return ` (${detail})`;
+};
 
 // (code, subcode, 메시지) 조합에서 도메인 오류 코드 하나를 고른다.
 // #10 은 권한 부족에도 쓰인다. 메시지까지 보지 않으면 그 창이 「조회 5 미만」 빈 행으로 영구히 닫힌다.
