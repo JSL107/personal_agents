@@ -71,7 +71,7 @@ LOOKBACK_DAYS = 7  # 오늘 후보에 맞는 소재가 없으면 이 기간의 �
 LOG_PATH = HERMES_HOME / "cron" / "skill-reels.log"
 # 작업 프로세스는 하나만 돈다. cron 재시도·수동 실행이 겹치면 같은 폴더와 Notion 행을 동시에 건드린다.
 LOCK_PATH = HERMES_HOME / "cron" / "skill-reels.lock"
-RIG_DIR = REAL_HOME / "Desktop" / "skill-jaengyi-character" / "video-set" / "rig2"
+RIG_DIR = REAL_HOME / "Desktop" / "skill-jaengyi-character" / "video-set" / "rig3"
 OUT_ROOT = REAL_HOME / "Desktop" / "skill-jaengyi-reels"
 # 레포에서는 hermes-skill-reels-render.cjs, ~/.hermes/scripts 복사본은 skill-reels-render.cjs 다.
 RENDERERS = (Path(__file__).with_name("skill-reels-render.cjs"), Path(__file__).with_name("hermes-skill-reels-render.cjs"))
@@ -95,7 +95,11 @@ TOPIC_TAGS = (
     "#백엔드", "#프론트엔드", "#바이브코딩", "#코딩공부", "#IT뉴스", "#테크뉴스", "#신기술", "#개발자일상",
 )
 # 말하면서 하는 손짓 → (몸 이미지, 기울기). 렌더러가 이 몸 위에 입을 합성한다.
-GESTURES = {"idle": ("body-idle", 0), "point": ("body-point", 2), "wave": ("body-wave", -3), "think": ("body-think", -6)}
+GESTURES = {"idle": ("body-idle", 0), "point": ("body-point", 2), "wave": ("body-wave", -3), "think": ("body-think", -6),
+            "point_up": ("body-point-up", 3), "explain": ("body-explain", 0),
+            "together": ("body-together", 0), "laptop": ("body-laptop", 0)}
+# rig3 의 body-shrug 는 explain 과 화면에서 구분되지 않아 쓰지 않는다(2026-11-06 시안 비교).
+COCK_GESTURES = ("think",)  # 이 손짓과 물음표 자막 줄에서는 고개를 갸웃한다
 # 말하기 직전의 짧은 반응 → (몸 이미지, 점프 세기, 기울기). 얼굴이 달라 입을 합성하지 않고 쉼 동안만 보인다.
 # 점프 세기·기울기는 rig-test-v3 에서 사용자가 확정한 값.
 REACTIONS = {"surprise": ("body-surprise", 1.4, 0), "thumbsup": ("body-thumbsup", 0.8, 3)}
@@ -109,6 +113,7 @@ SPEAKING_RATIO = 0.08  # 이보다 작은 소리(상위 5% 크기 대비)는 말
 SPEAKING_GAP_FRAMES = 4  # 말하는 중 이보다 짧은 무음(0.13초)은 입을 다물지 않는다
 MOUTH_LEAD_FRAMES = 1
 LEAD_SEC, GAP_SEC, REACT_SEC, TAIL_SEC = 0.2, 0.25, 0.9, 0.8
+WALK_SEC = 0.9  # 첫 장면에서 옆에서 걸어 들어오는 시간. 훅 자막(0.2초)은 기다리지 않고 걷는 동안 함께 뜬다
 SEC_RANGES = {1: (20.0, 40.0), 2: (44.0, 66.0)}  # 꼭지 수별 영상 길이(초). 2꼭지는 사용자가 정한 "약 1분"
 SEGMENT_SPEECH_CHARS = (130, 170)  # 꼭지 하나의 음성 합. 실측 말하기 속도 초당 약 7.65자(2026-11-05)
 TAKEAWAY_MAX_CHARS = 24
@@ -408,7 +413,10 @@ def build_segment_prompt(field: str, row: dict, one_line: str, feedback: str = "
   한글 발음 표기(깃허브, 오픈에이아이)는 speech 에만 쓴다.
 - speech: 음성 합성기가 읽을 문장. 영어 단어·약어·숫자를 한 글자도 쓰지 말고 한국어 발음대로 한글로 쓴다
   (예: OpenAI → 오픈에이아이, 37.4% → 삼십칠 점 사 퍼센트). speech 전체 합 {low + 10}~{high - 10}자.
-- gesture: 말하는 동안의 손짓. idle, point(화면 위 카드를 가리킴), wave(첫 줄에만), think. 같은 손짓이 세 줄 연속되지 않게.
+- gesture: 말하는 동안의 손짓. 같은 손짓이 세 줄 연속되지 않게.
+  wave(첫 줄 인사에만), point_up(카드가 뜨는 줄, 위 카드를 가리킴), point(대상을 소개하는 줄),
+  explain(무엇이 어떻게 되는지 설명, 아직 모르는 것·한계·베타 조건), think(질문·궁금증),
+  together(마지막 줄처럼 정리·결론), laptop(코드나 도구를 직접 쓰는 장면, 꼭지에서 한 번 이하), idle(그 밖).
 - react: 말하기 직전 반응. none, surprise, thumbsup. 꼭지 전체에서 0~1번.
 - point_kind / point: 화면 위쪽 카드. 한 번에 한 장만 보이므로 카드만 봐도 뜻이 통하게, 대상이 들어간 {POINT_MAX_CHARS}자 이하
   구로 쓴다. 숫자가 주인공이면 number. 카드(point·number)는 1~2장, 나머지 줄은 none 과 빈 문자열.
@@ -448,7 +456,9 @@ def check_segment(segment: dict) -> str:
             return "빈 자막이나 빈 음성 줄이 있다"
         if len(line["subtitle"]) > SUBTITLE_MAX_CHARS:
             return f"자막이 너무 길다({len(line['subtitle'])}자): {line['subtitle']}"
-        if line.get("gesture") not in GESTURES or line.get("react", "none") not in ("none", *REACTIONS):
+        # 모델 출력이 문자열이 아니면(목록 등) in 검사가 TypeError 로 죽으므로 먼저 거른다
+        if not isinstance(line.get("gesture"), str) or line["gesture"] not in GESTURES \
+                or line.get("react", "none") not in ("none", *REACTIONS):
             return f"모르는 동작: {line.get('gesture')}/{line.get('react')}"
         kind = line.get("point_kind", "none")
         if kind == "summary":
@@ -649,8 +659,9 @@ def build_timeline(lines: list[dict], durations: list[float], sections: list[dic
             t += REACT_SEC
             previous_body = body
         body, tilt = GESTURES[line["gesture"]]
+        cock = line["gesture"] in COCK_GESTURES or line["subtitle"].rstrip().endswith("?")
         events.append({"start": round(t, 3), "end": round(t + duration, 3), "body": body, "tilt": tilt, "talk": True,
-                       "bounce": body != previous_body, "power": 0})
+                       "bounce": body != previous_body, "power": 0, "cock": cock})
         previous_body = body
         speech.append(round(t, 3))
         kind = line["point_kind"]
@@ -670,7 +681,7 @@ def build_timeline(lines: list[dict], durations: list[float], sections: list[dic
     for section in timeline_sections:
         del section["index"]
     return {"fps": FPS, "duration": round(total, 3), "events": events, "subtitles": subtitles, "points": points,
-            "speech_starts": speech, "blinks": blinks, "sections": timeline_sections,
+            "speech_starts": speech, "walk_in": WALK_SEC, "blinks": blinks, "sections": timeline_sections,
             "cover": {"start": round(cover_start, 3), "end": round(total, 3), "label": f"오늘의 {'·'.join(fields)} 소식",
                       "lines": [section["headline"] for section in sections if section["field"] != "all"]}}
 
@@ -864,7 +875,7 @@ def assemble_lines(segments: list[tuple[str, dict, dict]]) -> tuple[list[dict], 
     sections.append({"field": "all", "headline": "오늘 소식 정리", "subject": "", "source": ""})
     for index, (field, segment, _) in enumerate(segments):
         lines.append({"subtitle": segment["takeaway"], "speech": segment["takeaway_speech"],
-                      "gesture": "point" if index else "idle", "react": "none", "point_kind": "summary2",
+                      "gesture": "point_up" if index else "together", "react": "none", "point_kind": "summary2",
                       "point": segment["takeaway"], "label": field, "section": closing})
     lines.append({**SHARE_LINE, "section": closing})
     return lines, sections
@@ -1257,6 +1268,10 @@ def self_check() -> None:
     assert "대상 이름 'Safari'" in check_segment({**seg, "subject": "Safari", "caption": "Safari 다."})
     assert "반응" in check_segment({**seg, "lines": four_lines[:1] + [{**four_lines[1], "react": "thumbsup"}] + four_lines[2:]})
     assert "모르는 동작" in check_segment({**seg, "lines": [{**line, "gesture": "dance"}] + four_lines[1:]})
+    assert "모르는 동작" in check_segment({**seg, "lines": [{**line, "gesture": ["point_up"]}] + four_lines[1:]})
+    for gesture in ("point_up", "explain", "together", "laptop"):
+        assert check_segment({**seg, "lines": four_lines[:2] + [{**line, "gesture": gesture}, line]}) == "", gesture
+    assert set(SEGMENT_SCHEMA["properties"]["lines"]["items"]["properties"]["gesture"]["enum"]) == set(GESTURES)
     assert "제목 카드" in check_segment({**seg, "headline": "가" * 30})
     assert SEGMENT_SCHEMA["properties"]["topic_tags"]["items"]["enum"] == list(TOPIC_TAGS)
 
@@ -1297,6 +1312,10 @@ def self_check() -> None:
     react, first_talk = timeline["events"][:2]
     assert react["body"] == "body-surprise" and react["start"] == LEAD_SEC and not react["talk"]
     assert first_talk["body"] == "body-wave" and first_talk["start"] == round(LEAD_SEC + REACT_SEC, 3) and first_talk["bounce"]
+    assert timeline["walk_in"] == WALK_SEC and "walk_in" not in story_timeline("2026-11-06", [])
+    talks = [event for event in timeline["events"] if event["talk"]]
+    assert talks[0]["cock"] and talks[2]["cock"] and not talks[1]["cock"]  # 물음표 자막, think 손짓
+    assert [item["gesture"] for item in lines[-3:-1]] == ["together", "point_up"]
     assert timeline["subtitles"][0]["start"] == LEAD_SEC  # 훅 자막은 반응과 함께 0.2초에 뜬다
     reacts = sum(item["react"] != "none" for item in lines)
     expected = LEAD_SEC + reacts * REACT_SEC + len(lines) * (2.0 + GAP_SEC) + HOLD_SEC + COVER_SEC
