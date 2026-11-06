@@ -101,6 +101,43 @@ describe('InstagramReelPublishApplier', () => {
     applier = new InstagramReelPublishApplier(repository, graph);
     applier.pollIntervalMs = 0;
     applier.settleIntervalMs = 0;
+    applier.uploadRetryMs = 0;
+  });
+  const uploadFailure = (
+    code = InstagramErrorCode.GRAPH_REQUEST_FAILED,
+  ): InstagramException =>
+    new InstagramException({
+      code,
+      message: 'Meta 요청 실패: HTTP 400: ProcessingFailedError',
+    });
+  it('업로드가 요청 실패면 새 컨테이너로 다시 올려 게시한다', async () => {
+    graph.createReelContainer
+      .mockResolvedValueOnce({ containerId: 'c1', uploadUri: 'u1' })
+      .mockResolvedValueOnce({ containerId: 'c2', uploadUri: 'u2' });
+    graph.uploadVideo.mockRejectedValueOnce(uploadFailure());
+    await applier.apply(preview);
+    expect(graph.uploadVideo).toHaveBeenLastCalledWith(
+      expect.objectContaining({ uploadUri: 'u2' }),
+    );
+    expect(graph.publish).toHaveBeenCalledWith('c2');
+    expect(row.status).toBe('PUBLISHED');
+  });
+  it('업로드가 계속 실패하면 정해진 횟수만 시도하고 실패를 던진다', async () => {
+    graph.uploadVideo.mockRejectedValue(uploadFailure());
+    await expect(applier.apply(preview)).rejects.toMatchObject({
+      message: expect.stringContaining('ProcessingFailedError'),
+    });
+    expect(graph.uploadVideo).toHaveBeenCalledTimes(3);
+    expect(graph.publish).not.toHaveBeenCalled();
+  });
+  it('업로드가 토큰 오류면 다시 시도하지 않는다', async () => {
+    graph.uploadVideo.mockRejectedValue(
+      uploadFailure(InstagramErrorCode.TOKEN_INVALID),
+    );
+    await expect(applier.apply(preview)).rejects.toBeInstanceOf(
+      InstagramException,
+    );
+    expect(graph.uploadVideo).toHaveBeenCalledTimes(1);
   });
   it('게시가 꺼져 있으면 파싱과 선점 전에 중단한다', async () => {
     graph.isConfigured.mockReturnValue(false);
