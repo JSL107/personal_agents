@@ -38,8 +38,6 @@ describe('AUTOPILOT_DELIVERY_ROUTE', () => {
     // 2026-10-14 주간 보고 — 원장에 전문을 남긴다. knowledge-lint 의 후처리는 기록 직후에 돈다.
     'knowledge-lint',
     'blog-revision-report',
-    // 릴스 인사이트 수집은 늘 skip 이다. 사람이 보는 건 주간 리포트(reels-insights-weekly, Slack)뿐이다.
-    'reels-insights-collect',
   ];
 
   it('모든 playbook taskId 에 경로가 있고 경로 키는 모두 playbook 에 있다', () => {

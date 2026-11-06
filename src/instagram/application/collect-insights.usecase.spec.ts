@@ -230,7 +230,7 @@ describe('CollectInsightsUsecase', () => {
     expect(summary).toMatchObject({ inserted: 1, failed: 1 });
   });
 
-  it('토큰이 무효면 남은 건을 멈추고 던지지 않는다', async () => {
+  it('토큰이 무효면 남은 건을 멈추고 실패 한 건으로 센다', async () => {
     posts.listPublishedSince.mockResolvedValue([
       post(),
       post({ id: 'post-2', mediaId: 'media-2' }),
@@ -241,7 +241,10 @@ describe('CollectInsightsUsecase', () => {
         message: 'expired',
       }),
     );
-    await expect(usecase.execute()).resolves.toMatchObject({ inserted: 0 });
+    await expect(usecase.execute()).resolves.toMatchObject({
+      inserted: 0,
+      failed: 1,
+    });
     expect(graph.getMediaInsights).toHaveBeenCalledTimes(1);
   });
 

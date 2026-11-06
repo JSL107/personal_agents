@@ -121,6 +121,7 @@ export class CollectInsightsUsecase {
       } catch (error) {
         if (error instanceof TokenInvalidStop) {
           this.logger.warn('인사이트 수집 중단: 인스타 토큰 무효');
+          summary.failed += 1;
           break;
         }
         summary.failed += 1;
