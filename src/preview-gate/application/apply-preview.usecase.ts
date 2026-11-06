@@ -189,6 +189,8 @@ export class ApplyPreviewUsecase {
       // 뒤다. 기록만 보고 둘을 가를 수 없으면 "실패 N 건" 이 부작용 없는 실패와 반영된 실패를
       // 뭉뚱그린다. 어디까지 갔는지를 남겨 사후 조회가 그 둘을 나눌 수 있게 한다.
       let sideEffectApplied = false;
+      // 진입 경로(Slack 버튼·콘솔·부팅 재개)와 관계없이 결과를 server.log 에 남긴다. Slack 경로는 따로 로그하지 않는다.
+      const startedAt = Date.now();
       try {
         await this.safeUpdateCard({ preview, state: 'APPLYING' });
         const applyResult = await applier.apply(preview, progress);
@@ -213,8 +215,14 @@ export class ApplyPreviewUsecase {
         // 성공했으니 흔적을 통째로 지운다. 카드가 APPLIED 로 끝나 다시 눌릴 일이 없으므로
         // `done` 을 남겨 둘 이유가 없다.
         await this.safeClearApplyProgress(previewId);
+        this.logger.log(
+          `승인 반영 완료 preview=${preview.id} kind=${preview.kind} (${Date.now() - startedAt}ms)`,
+        );
         return { preview: transitioned, resultText };
       } catch (applyError: unknown) {
+        this.logger.warn(
+          `승인 반영 실패 preview=${preview.id} kind=${preview.kind} sideEffectApplied=${sideEffectApplied} (${Date.now() - startedAt}ms): ${applyError instanceof Error ? applyError.message : String(applyError)}`,
+        );
         // applier / transition 실패 — DB 는 PENDING 유지(재시도 가능). 카드는 버튼을 되살린다.
         //
         // 실패를 행에 남기는 것이 먼저다. status 가 PENDING 그대로라 상태만으로는 실패를 셀 수
