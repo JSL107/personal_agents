@@ -1392,7 +1392,7 @@ describe('EveningRetroPublishTask', () => {
           '• 오늘 체결  매수 2 · 매도 1',
           '• 7/6(월) 시가  매수 1 · 매도 3 예정',
           '• 승인 대기 1장',
-          '• Autopilot task paper-recommend (2일째)',
+          '• 모의투자 추천 실패 (2일째)',
         ].join('\n'),
       );
       expect(result.detailText).toContain('오늘의 회고');

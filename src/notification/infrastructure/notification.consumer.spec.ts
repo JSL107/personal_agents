@@ -155,7 +155,7 @@ describe('NotificationConsumer', () => {
 
   it.each([
     ['Autopilot task blog-github-publish', '블로그 GitHub 발행'],
-    ['Autopilot task universe-sweep', 'universe-sweep'],
+    ['Autopilot task unnamed-task', 'unnamed-task'],
     ['Study Brief Cron', 'Study Brief Cron'],
   ])(
     'cron 이름 %s 는 서로 구분되는 이름표 %s 로 알린다',

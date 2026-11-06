@@ -1617,7 +1617,7 @@ describe('MorningBriefingAutopilotTask — 아침 한 통', () => {
     expect(out.summaryText).toContain(
       '*오늘 할 일*\n• &lt;!channel&gt; 확인 &amp; 배포',
     );
-    expect(out.summaryText).toContain('• task &lt;x&gt; (1일째)');
+    expect(out.summaryText).toContain('• task &lt;x&gt; 실패 (1일째)');
   });
 
   it('직전 아침 이후 닫힌 사건을 해결 줄로 싣는다 — 아침이 전날보다 늦게 돌아도 틈이 없다', async () => {

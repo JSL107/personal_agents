@@ -38,6 +38,7 @@ import { HumanizeService } from '../../../humanize/application/humanize.service'
 import { humanizeEveningRetro } from '../../../humanize/application/humanize-report.adapter';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
+import { toIncidentLabel } from '../../../notification/domain/autopilot-task-display-name';
 import { FindAllOpenPreviewsUsecase } from '../../../preview-gate/application/find-all-open-previews.usecase';
 import { PREVIEW_KIND } from '../../../preview-gate/domain/preview-action.type';
 import { BuildEveningTodoSummaryUsecase } from '../../../schedule/application/build-evening-todo-summary.usecase';
@@ -540,7 +541,7 @@ export class EveningRetroPublishTask implements AutopilotTask {
         })
         .then((rows): MorningIncident[] =>
           rows.map((row) => ({
-            label: row.label,
+            label: toIncidentLabel(row.label),
             dayCount: countKstDaysBetween(row.openedAt, now) + 1,
           })),
         )

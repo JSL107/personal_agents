@@ -38,7 +38,10 @@ import {
   StoredJobPosting,
 } from '../../../job-feed/domain/port/job-posting.repository.port';
 import { formatJobFeedDigest } from '../../../job-feed/infrastructure/job-feed.formatter';
-import { toAutopilotTaskDisplayName } from '../../../notification/domain/autopilot-task-display-name';
+import {
+  toIncidentLabel,
+  toResolvedLabel,
+} from '../../../notification/domain/autopilot-task-display-name';
 import { describeIncidentCause } from '../../../notification/domain/incident-message';
 import { FindAllOpenPreviewsUsecase } from '../../../preview-gate/application/find-all-open-previews.usecase';
 import {
@@ -185,8 +188,6 @@ const toApprovalLabel = (preview: PreviewAction): string => {
     : `${firstLine.slice(0, APPROVAL_LABEL_MAX_LENGTH)}…`;
 };
 
-// 예전 장애 원장 행은 오케스트레이터의 cronName(`Autopilot task <taskId>`)을 이름으로 갖고 있다.
-// 그대로 실으면 코드 이름이 보이므로 이름표로 바꾼다. 새 행은 알림 단계에서 이미 이름표다.
 // 오류 원문은 비밀값이 섞일 수 있어 본문에 싣지 않는다. 원인 사전에 있는 것만 쉬운 말로 붙이고,
 // 원문은 로그에만 남는다.
 const withPlainCause = (label: string, rawReason: string): string => {
@@ -196,18 +197,6 @@ const withPlainCause = (label: string, rawReason: string): string => {
   }
   return `${label} (${cause})`;
 };
-
-const toIncidentLabel = (label: string): string => {
-  const displayName = toAutopilotTaskDisplayName(label);
-  if (displayName === null) {
-    return label;
-  }
-  return `${displayName} 실패`;
-};
-
-// "해결 — 블로그 GitHub 발행 실패" 처럼 읽히지 않게 해결 줄에서는 " 실패" 를 뗀다.
-const toResolvedLabel = (label: string): string =>
-  toIncidentLabel(label).replace(/ 실패$/, '');
 
 const truncate = (text: string, maxLength: number): string =>
   text.length <= maxLength ? text : `${text.slice(0, maxLength)}…`;
