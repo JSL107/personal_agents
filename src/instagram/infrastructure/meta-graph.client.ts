@@ -181,11 +181,21 @@ export class MetaGraphClient implements MetaGraphPort {
       },
     });
     if (body.success !== true) {
-      const detail = isMatching({ debug_info: { message: P.string } }, body)
-        ? `: ${this.sanitize(body.debug_info.message)}`
-        : '';
-      throw this.failure(`Meta 영상 업로드가 실패했습니다${detail}`);
+      throw this.failure(
+        `Meta 영상 업로드가 실패했습니다${this.debugInfoDetail(body)}`,
+      );
     }
+  }
+
+  private debugInfoDetail(body: GraphResponse): string {
+    if (!isMatching({ debug_info: { message: P.string } }, body)) {
+      return '';
+    }
+    const { message } = body.debug_info;
+    const prefix = isMatching({ debug_info: { type: P.string } }, body)
+      ? `${body.debug_info.type} `
+      : '';
+    return `: ${this.sanitize(`${prefix}${message}`)}`;
   }
 
   async getContainerStatus(containerId: string): Promise<ContainerStatus> {
@@ -364,7 +374,10 @@ export class MetaGraphClient implements MetaGraphPort {
         throw this.graphFailure(body.error);
       }
       if (!response.ok) {
-        throw this.failure(`Meta 요청 실패: HTTP ${response.status}`);
+        // rupload 는 error 대신 debug_info 에 사유를 담아 실패를 돌려준다. 버리면 HTTP 상태만 남는다.
+        throw this.failure(
+          `Meta 요청 실패: HTTP ${response.status}${this.debugInfoDetail(body)}`,
+        );
       }
       return body;
     } catch (error) {
