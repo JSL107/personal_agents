@@ -27,8 +27,12 @@ export class ReelsInsightsCollectAutopilotTask implements AutopilotTask {
 
   async run(): Promise<AutopilotTaskResult> {
     const summary = await this.collect();
-    this.countFailure(summary);
-    if (this.consecutiveFailures < ALERT_AFTER_CONSECUTIVE_FAILURES) {
+    const failedNow = this.countFailure(summary);
+    // 이번 회차가 실패했을 때만 알린다. 대상이 만료돼 시도조차 없는 회차가 지난 실패로 매일 알리지 않게.
+    if (
+      !failedNow ||
+      this.consecutiveFailures < ALERT_AFTER_CONSECUTIVE_FAILURES
+    ) {
       return { skip: true };
     }
     return {
@@ -54,14 +58,15 @@ export class ReelsInsightsCollectAutopilotTask implements AutopilotTask {
     }
   }
 
-  // 찍을 창이 없던 회차는 아무것도 알려 주지 않으므로 세지도 끊지도 않는다.
-  private countFailure(summary: CollectInsightsSummary | null): void {
+  // 이번 회차가 실패였는지 돌려준다. 찍을 창이 없던 회차는 아무것도 알려 주지 않으므로 세지도 끊지도 않는다.
+  private countFailure(summary: CollectInsightsSummary | null): boolean {
     if (!summary || summary.failed > 0) {
       this.consecutiveFailures += 1;
-      return;
+      return true;
     }
     if (summary.inserted + summary.skipped > 0) {
       this.consecutiveFailures = 0;
     }
+    return false;
   }
 }

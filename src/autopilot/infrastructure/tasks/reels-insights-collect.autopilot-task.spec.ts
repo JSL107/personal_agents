@@ -84,6 +84,13 @@ describe('ReelsInsightsCollectAutopilotTask', () => {
     expect(result.skip).toBe(false);
   });
 
+  it('3회 연속 실패 뒤라도 찍을 것이 없던 회차는 알리지 않는다', async () => {
+    const task = taskWith([FAILURE, FAILURE, FAILURE, NOTHING_DUE]);
+
+    await runTimes({ task, times: 3 });
+    await expect(task.run()).resolves.toEqual({ skip: true });
+  });
+
   it('성공한 회차가 끼면 연속 실패를 처음부터 센다', async () => {
     const task = taskWith([FAILURE, FAILURE, SUCCESS, FAILURE, FAILURE]);
 
