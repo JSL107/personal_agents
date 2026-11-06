@@ -1,3 +1,4 @@
+import { ReelFeatures } from '../instagram-insight.type';
 import {
   ClaimReelInput,
   InstagramPost,
@@ -17,4 +18,13 @@ export interface InstagramPostRepositoryPort {
     patch: InstagramPostPatch;
   }): Promise<InstagramPost>;
   findByReelKey(reelKey: string): Promise<InstagramPost | null>;
+  // 게시 순(오래된 것 먼저).
+  listPublishedSince(since: Date): Promise<InstagramPost[]>;
+  setFeatures({
+    id,
+    features,
+  }: {
+    id: string;
+    features: ReelFeatures;
+  }): Promise<void>;
 }

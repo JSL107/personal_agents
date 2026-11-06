@@ -34,8 +34,14 @@ describe('InstagramPostPrismaRepository.upsertByReelKey', () => {
     const repository = new InstagramPostPrismaRepository({
       instagramPost: { upsert },
     } as unknown as PrismaService);
-    expect(await repository.upsertByReelKey(input)).toEqual(row);
-    expect(await repository.upsertByReelKey(input)).toEqual(row);
+    expect(await repository.upsertByReelKey(input)).toEqual({
+      ...row,
+      features: null,
+    });
+    expect(await repository.upsertByReelKey(input)).toEqual({
+      ...row,
+      features: null,
+    });
     expect(upsert).toHaveBeenCalledTimes(2);
   });
   it('다른 previewId가 미게시 행을 선점하면 정책이 거절한다', async () => {
@@ -55,7 +61,7 @@ describe('InstagramPostPrismaRepository.upsertByReelKey', () => {
     } as unknown as PrismaService);
     expect(
       await repository.upsertByReelKey({ ...input, previewActionId: 'card-2' }),
-    ).toEqual(row);
+    ).toEqual({ ...row, features: null });
   });
   it('P2002 동시 생성 뒤 다시 읽은 행을 정책이 거절한다', async () => {
     const upsert = jest.fn().mockRejectedValue(
@@ -78,6 +84,45 @@ describe('InstagramPostPrismaRepository.upsertByReelKey', () => {
     ).rejects.toMatchObject({ errorCode: 'INSTAGRAM_REEL_CLAIMED' });
     expect(findUnique).toHaveBeenCalledWith({
       where: { reelKey: input.reelKey },
+    });
+  });
+});
+
+describe('InstagramPostPrismaRepository.listPublishedSince', () => {
+  it('기준 시각 뒤에 게시된 행을 게시 순으로 읽는다', async () => {
+    const since = new Date('2026-10-28T00:00:00Z');
+    const findMany = jest
+      .fn()
+      .mockResolvedValue([
+        { ...input, id: 'post-1', status: 'PUBLISHED', features: null },
+      ]);
+    const repository = new InstagramPostPrismaRepository({
+      instagramPost: { findMany },
+    } as unknown as PrismaService);
+
+    const [post] = await repository.listPublishedSince(since);
+
+    expect(findMany).toHaveBeenCalledWith({
+      where: { status: 'PUBLISHED', publishedAt: { gte: since } },
+      orderBy: { publishedAt: 'asc' },
+    });
+    expect(post.features).toBeNull();
+  });
+});
+
+describe('InstagramPostPrismaRepository.setFeatures', () => {
+  it('특성을 그 행에 저장한다', async () => {
+    const update = jest.fn().mockResolvedValue({});
+    const repository = new InstagramPostPrismaRepository({
+      instagramPost: { update },
+    } as unknown as PrismaService);
+    const features = { version: 1 } as never;
+
+    await repository.setFeatures({ id: 'post-1', features });
+
+    expect(update).toHaveBeenCalledWith({
+      where: { id: 'post-1' },
+      data: { features },
     });
   });
 });

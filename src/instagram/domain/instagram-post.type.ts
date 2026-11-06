@@ -1,3 +1,5 @@
+import { ReelFeatures } from './instagram-insight.type';
+
 export enum InstagramPostStatus {
   PENDING = 'PENDING',
   PUBLISHING = 'PUBLISHING',
@@ -56,6 +58,7 @@ export interface InstagramPost extends ClaimReelInput {
   status: InstagramPostStatus;
   lastError: string | null;
   publishedAt: Date | null;
+  features: ReelFeatures | null;
   createdAt: Date;
   updatedAt: Date;
 }

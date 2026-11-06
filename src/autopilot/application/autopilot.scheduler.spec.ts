@@ -79,10 +79,13 @@ describe('AutopilotScheduler', () => {
     //   + cuj-check(매일 핵심 여정 점검, 단독 그룹)
     //   + humanize-research(주간 윤문 규칙 dry-run, 단독 그룹)
     //   + goal-checkin + schedule-reminder + schedule-collect
-    //   + reels-publish-offer + instagram-token-check = 43그룹.
-    expect(queue.add).toHaveBeenCalledTimes(43);
+    //   + reels-publish-offer + instagram-token-check
+    //   + reels-insights-collect + reels-insights-weekly = 45그룹.
+    expect(queue.add).toHaveBeenCalledTimes(45);
     expect(addCalls).toContain('reels-publish-offer');
     expect(addCalls).toContain('instagram-token-check');
+    expect(addCalls).toContain('reels-insights-collect');
+    expect(addCalls).toContain('reels-insights-weekly');
     expect(addCalls).toContain('schedule-collect');
     expect(addCalls).toContain('goal-checkin');
     expect(addCalls).toContain('idea-triage');

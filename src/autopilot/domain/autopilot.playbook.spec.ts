@@ -118,6 +118,30 @@ describe('AUTOPILOT_PLAYBOOK', () => {
     });
   });
 
+  it('릴스 인사이트 수집은 매시 20분, 주간 리포트는 월 09:30 KST 다', () => {
+    const byId = (id: string) =>
+      AUTOPILOT_PLAYBOOK.find((entry) => entry.id === id);
+
+    expect(byId('reels-insights-collect')).toMatchObject({
+      taskId: 'reels-insights-collect',
+      riskTier: 'T0_AUTO',
+      trigger: {
+        kind: 'CRON',
+        schedule: '20 * * * *',
+        timezone: 'Asia/Seoul',
+      },
+    });
+    expect(byId('reels-insights-weekly')).toMatchObject({
+      taskId: 'reels-insights-weekly',
+      riskTier: 'T0_AUTO',
+      trigger: {
+        kind: 'CRON',
+        schedule: '30 9 * * 1',
+        timezone: 'Asia/Seoul',
+      },
+    });
+  });
+
   it('goal-checkin 은 월요일 09:15 KST owner DM 독립 그룹이다', () => {
     const goalCheckin = AUTOPILOT_PLAYBOOK.find(
       (entry) => entry.id === 'goal-checkin',

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { isMatching, P } from 'ts-pattern';
+import { isMatching, match, P } from 'ts-pattern';
 
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import {
@@ -9,9 +9,16 @@ import {
 } from '../domain/instagram.exception';
 import { InstagramErrorCode } from '../domain/instagram-error-code.enum';
 import {
+  EMPTY_INSIGHT_METRICS,
+  InsightMetrics,
+} from '../domain/instagram-insight.type';
+import {
   ContainerStatus,
   ContainerStatusCode,
+  InsightKind,
   MediaDetail,
+  MediaInsightsResult,
+  MediaInsightsResultKind,
   MetaGraphPort,
   PageTokenDebug,
   PublishedMedia,
@@ -43,6 +50,12 @@ interface GraphError {
 
 type GraphResponse = Record<string, unknown>;
 
+// insights 응답 data 배열의 한 칸(INSIGHTS_PATTERN 과 같은 모양).
+interface InsightDatum {
+  name: string;
+  values: { value: unknown }[];
+}
+
 const PUBLISHING_LIMIT_PATTERN = {
   data: { 0: { quota_usage: P.number, config: { quota_total: P.number } } },
 };
@@ -71,6 +84,52 @@ const TOKEN_DEBUG_PATTERN = {
     scopes: P.array(P.string),
   },
 };
+
+// 한 요청에 그 상품이 지원하지 않는 지표가 하나라도 섞이면 요청 전체가 실패한다(2026-11-05 실측). 목록을 고정한다.
+const INSIGHT_METRICS: Record<InsightKind, string[]> = {
+  [InsightKind.REELS]: [
+    'views',
+    'reach',
+    'likes',
+    'comments',
+    'shares',
+    'saved',
+    'total_interactions',
+    'reposts',
+    'ig_reels_avg_watch_time',
+    'ig_reels_video_view_total_time',
+    'reels_skip_rate',
+  ],
+  [InsightKind.STORY]: [
+    'views',
+    'reach',
+    'replies',
+    'shares',
+    'total_interactions',
+    'follows',
+    'profile_visits',
+  ],
+};
+// follows·profile_visits 는 스냅숏 열이 없어 raw 에만 남는다.
+const METRIC_KEYS: Record<string, keyof InsightMetrics> = {
+  views: 'views',
+  reach: 'reach',
+  likes: 'likes',
+  comments: 'comments',
+  shares: 'shares',
+  saved: 'saved',
+  total_interactions: 'totalInteractions',
+  reposts: 'reposts',
+  replies: 'replies',
+  ig_reels_avg_watch_time: 'avgWatchMs',
+  ig_reels_video_view_total_time: 'totalWatchMs',
+  reels_skip_rate: 'skipRate',
+};
+const INSIGHTS_PATTERN = {
+  data: P.array({ name: P.string, values: P.array({ value: P.unknown }) }),
+};
+const NOT_ENOUGH_VIEWERS_CODE = 10;
+const NOT_ENOUGH_VIEWERS_MESSAGE = /not enough viewers/i;
 
 @Injectable()
 export class MetaGraphClient implements MetaGraphPort {
@@ -282,6 +341,55 @@ export class MetaGraphClient implements MetaGraphPort {
     };
   }
 
+  async getMediaInsights({
+    mediaId,
+    kind,
+  }: {
+    mediaId: string;
+    kind: InsightKind;
+  }): Promise<MediaInsightsResult> {
+    // catch 는 「조회 5 미만」만 결과로 바꾸고 나머지는 그대로 던진다. 검사·변환까지 try 안에 둬도 잡는 예외가 같다.
+    try {
+      const body = await this.graphGet({
+        path: `${mediaId}/insights`,
+        params: { metric: INSIGHT_METRICS[kind].join(',') },
+      });
+      if (!isMatching(INSIGHTS_PATTERN, body)) {
+        throw this.failure('Meta 인사이트 응답이 올바르지 않습니다.');
+      }
+      const result: MediaInsightsResult = {
+        kind: MediaInsightsResultKind.OK,
+        metrics: toMetrics(body.data),
+        raw: body.data,
+      };
+      return result;
+    } catch (error) {
+      const notEnough = toInstagramError({
+        error,
+        code: InstagramErrorCode.INSIGHTS_NOT_ENOUGH_VIEWERS,
+      });
+      if (!notEnough) {
+        throw error;
+      }
+      const result: MediaInsightsResult = {
+        kind: MediaInsightsResultKind.NOT_ENOUGH_VIEWERS,
+        raw: { code: NOT_ENOUGH_VIEWERS_CODE, message: notEnough.message },
+      };
+      return result;
+    }
+  }
+
+  async getFollowersCount(): Promise<number> {
+    const body = await this.graphGet({
+      path: this.userId,
+      params: { fields: 'followers_count' },
+    });
+    if (!isMatching({ followers_count: P.number }, body)) {
+      throw this.failure('Meta 팔로워 수 응답이 올바르지 않습니다.');
+    }
+    return body.followers_count;
+  }
+
   // debug_token 의 access_token 은 앱 토큰이라, 여기서 난 190 은 페이지 토큰이 아니라 앱 자격증명 문제다.
   private async fetchTokenDebug(appToken: string): Promise<GraphResponse> {
     try {
@@ -390,13 +498,8 @@ export class MetaGraphClient implements MetaGraphPort {
   }
 
   private graphFailure(error: GraphError): InstagramException {
-    const code =
-      error.code === 190
-        ? InstagramErrorCode.TOKEN_INVALID
-        : error.code === 9 && error.error_subcode === 2207042
-          ? InstagramErrorCode.QUOTA_EXCEEDED
-          : InstagramErrorCode.GRAPH_REQUEST_FAILED;
     const raw = error.error_user_msg ?? error.message ?? '알 수 없는 오류';
+    const code = graphErrorCodeOf(error);
     const safe = this.sanitize(raw);
     const message = `Meta 오류 ${error.code ?? 'unknown'}/${error.error_subcode ?? 'unknown'}: ${safe}`;
     return new InstagramException({
@@ -426,3 +529,38 @@ export class MetaGraphClient implements MetaGraphPort {
     return safe;
   }
 }
+
+// (code, subcode, 메시지) 조합에서 도메인 오류 코드 하나를 고른다.
+// #10 은 권한 부족에도 쓰인다. 메시지까지 보지 않으면 그 창이 「조회 5 미만」 빈 행으로 영구히 닫힌다.
+const graphErrorCodeOf = (error: GraphError): InstagramErrorCode => {
+  const message = `${error.message ?? ''} ${error.error_user_msg ?? ''}`;
+  const code = match({
+    code: error.code,
+    subcode: error.error_subcode,
+    notEnoughViewers: NOT_ENOUGH_VIEWERS_MESSAGE.test(message),
+  })
+    .with({ code: 190 }, () => InstagramErrorCode.TOKEN_INVALID)
+    .with(
+      { code: 9, subcode: 2207042 },
+      () => InstagramErrorCode.QUOTA_EXCEEDED,
+    )
+    .with(
+      { code: NOT_ENOUGH_VIEWERS_CODE, notEnoughViewers: true },
+      () => InstagramErrorCode.INSIGHTS_NOT_ENOUGH_VIEWERS,
+    )
+    .otherwise(() => InstagramErrorCode.GRAPH_REQUEST_FAILED);
+  return code;
+};
+
+// 응답에 없는 지표는 null 로 남긴다. Meta 는 값이 없으면 0 대신 빈 data 를 준다.
+const toMetrics = (data: InsightDatum[]): InsightMetrics => {
+  const metrics: InsightMetrics = { ...EMPTY_INSIGHT_METRICS };
+  for (const item of data) {
+    const key = METRIC_KEYS[item.name];
+    const value = item.values[0]?.value;
+    if (key && typeof value === 'number') {
+      metrics[key] = value;
+    }
+  }
+  return metrics;
+};

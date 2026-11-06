@@ -173,6 +173,12 @@ export const DEFAULT_REELS_PUBLISH_OFFER_CRON = '*/15 9-23 * * *';
 export const DEFAULT_REELS_PUBLISH_OFFER_TIMEZONE = 'Asia/Seoul';
 export const DEFAULT_INSTAGRAM_TOKEN_CHECK_CRON = '0 9 * * *';
 export const DEFAULT_INSTAGRAM_TOKEN_CHECK_TIMEZONE = 'Asia/Seoul';
+// 인사이트 수집은 하루 내내 매시 20분. 스토리 지표는 게시 24시간 뒤 사라져 20~24시간 구간이 새벽에 걸린다.
+// 20분은 게시 offer(*/15)·토큰 점검(09:00)과 겹치지 않게 고른 값이다.
+export const DEFAULT_REELS_INSIGHTS_COLLECT_CRON = '20 * * * *';
+export const DEFAULT_REELS_INSIGHTS_COLLECT_TIMEZONE = 'Asia/Seoul';
+export const DEFAULT_REELS_INSIGHTS_WEEKLY_CRON = '30 9 * * 1';
+export const DEFAULT_REELS_INSIGHTS_WEEKLY_TIMEZONE = 'Asia/Seoul';
 
 // 포트폴리오 사이트 발행 — 매일 23:00 KST.
 //

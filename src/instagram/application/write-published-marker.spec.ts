@@ -36,6 +36,7 @@ describe('writePublishedMarker', () => {
     status: InstagramPostStatus.PUBLISHED,
     lastError: null,
     publishedAt: new Date('2026-11-06T01:23:45.000Z'),
+    features: null,
     createdAt: new Date('2026-11-06T00:00:00.000Z'),
     updatedAt: new Date('2026-11-06T01:23:45.000Z'),
     ...patch,

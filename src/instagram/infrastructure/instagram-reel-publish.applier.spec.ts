@@ -47,6 +47,7 @@ const post = (): InstagramPost => ({
   status: InstagramPostStatus.PENDING,
   lastError: null,
   publishedAt: null,
+  features: null,
   createdAt: new Date(),
   updatedAt: new Date(),
 });
@@ -69,6 +70,8 @@ describe('InstagramReelPublishApplier', () => {
         return row;
       }),
       findByReelKey: jest.fn(),
+      listPublishedSince: jest.fn(),
+      setFeatures: jest.fn(),
     };
     graph = {
       isConfigured: jest.fn().mockReturnValue(true),
@@ -91,6 +94,8 @@ describe('InstagramReelPublishApplier', () => {
       }),
       listRecentMedia: jest.fn().mockResolvedValue([]),
       debugPageToken: jest.fn(),
+      getMediaInsights: jest.fn(),
+      getFollowersCount: jest.fn(),
     };
     jest.mocked(readFile).mockResolvedValue(video as never);
     applier = new InstagramReelPublishApplier(repository, graph);

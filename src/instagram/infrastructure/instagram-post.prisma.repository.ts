@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { InstagramPost as InstagramPostRow, Prisma } from '@prisma/client';
+import { isMatching } from 'ts-pattern';
 
 import { PrismaService } from '../../prisma/prisma.service';
+import { ReelFeatures } from '../domain/instagram-insight.type';
 import {
   ClaimReelInput,
   InstagramPost,
@@ -10,6 +12,7 @@ import {
   InstagramPostStatus,
 } from '../domain/instagram-post.type';
 import { InstagramPostRepositoryPort } from '../domain/port/instagram-post.repository.port';
+import { REEL_FEATURES_PATTERN } from '../domain/reel-features';
 
 @Injectable()
 export class InstagramPostPrismaRepository implements InstagramPostRepositoryPort {
@@ -39,6 +42,30 @@ export class InstagramPostPrismaRepository implements InstagramPostRepositoryPor
       where: { reelKey },
     });
     return row ? toDomain(row) : null;
+  }
+
+  async listPublishedSince(since: Date): Promise<InstagramPost[]> {
+    const rows = await this.prisma.instagramPost.findMany({
+      where: {
+        status: InstagramPostStatus.PUBLISHED,
+        publishedAt: { gte: since },
+      },
+      orderBy: { publishedAt: 'asc' },
+    });
+    return rows.map(toDomain);
+  }
+
+  async setFeatures({
+    id,
+    features,
+  }: {
+    id: string;
+    features: ReelFeatures;
+  }): Promise<void> {
+    await this.prisma.instagramPost.update({
+      where: { id },
+      data: { features },
+    });
   }
 
   private async upsertOrFind(input: ClaimReelInput): Promise<InstagramPostRow> {
@@ -79,5 +106,14 @@ export const toDomain = (row: InstagramPostRow): InstagramPost => {
   if (!status) {
     throw new Error(`알 수 없는 InstagramPost status: ${row.status}`);
   }
-  return { ...row, field, status };
+  return { ...row, field, status, features: toFeatures(row.features) };
+};
+
+// 분류 규칙이 다른 버전의 특성은 섞어 묶지 않는다. 지금 버전이 아니면 아직 없는 것으로 읽는다.
+const toFeatures = (value: Prisma.JsonValue): ReelFeatures | null => {
+  if (!isMatching(REEL_FEATURES_PATTERN, value)) {
+    return null;
+  }
+  const features: ReelFeatures = value;
+  return features;
 };
