@@ -1,3 +1,5 @@
+import { Logger } from '@nestjs/common';
+
 import { ConsoleEventBus } from '../../console/application/console-event-bus.service';
 import { VerifiableArtifact } from '../domain/apply-result.type';
 import { PreviewActionRepositoryPort } from '../domain/port/preview-action.repository.port';
@@ -821,6 +823,50 @@ describe('ApplyPreviewUsecase', () => {
       reason: '[apply] Notion down',
       at: fixedNow,
     });
+  });
+
+  // Slack 버튼 경로는 핸들러가 로그를 남기지 않는다 — 결과가 server.log 에 남는 곳은 여기뿐이다.
+  it('반영 성공과 실패를 진입 경로와 관계없이 로그로 남긴다', async () => {
+    const logSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation();
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const applier = buildApplier(PREVIEW_KIND.PM_WRITE_BACK);
+    const usecase = new ApplyPreviewUsecase(
+      buildRepo(buildPreview()),
+      [applier],
+      [],
+      [],
+      buildCard(),
+    );
+
+    await usecase.execute({
+      previewId: 'p-1',
+      slackUserId: 'U1',
+      now: fixedNow,
+    });
+    applier.apply.mockRejectedValue(new Error('Notion down'));
+    const failing = new ApplyPreviewUsecase(
+      buildRepo(buildPreview()),
+      [applier],
+      [],
+      [],
+      buildCard(),
+    );
+    await expect(
+      failing.execute({ previewId: 'p-1', slackUserId: 'U1', now: fixedNow }),
+    ).rejects.toThrow('Notion down');
+
+    expect(logSpy).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /^승인 반영 완료 preview=p-1 kind=PM_WRITE_BACK \(\d+ms\)$/,
+      ),
+    );
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /^승인 반영 실패 preview=p-1 kind=PM_WRITE_BACK sideEffectApplied=false \(\d+ms\): Notion down$/,
+      ),
+    );
+    logSpy.mockRestore();
+    warnSpy.mockRestore();
   });
 
   it('transition 실패는 부작용이 반영된 뒤이므로 사유에 단계를 구분해 남긴다', async () => {

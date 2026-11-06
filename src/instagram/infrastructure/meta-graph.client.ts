@@ -38,6 +38,10 @@ const GRAPH_ERROR_RESPONSE_PATTERN = {
     error_subcode: P.optional(P.number),
     message: P.optional(P.string),
     error_user_msg: P.optional(P.string),
+    error_user_title: P.optional(P.string),
+    type: P.optional(P.string),
+    fbtrace_id: P.optional(P.string),
+    is_transient: P.optional(P.boolean),
   },
 };
 
@@ -46,6 +50,10 @@ interface GraphError {
   error_subcode?: number;
   message?: string;
   error_user_msg?: string;
+  error_user_title?: string;
+  type?: string;
+  fbtrace_id?: string;
+  is_transient?: boolean;
 }
 
 type GraphResponse = Record<string, unknown>;
@@ -498,9 +506,11 @@ export class MetaGraphClient implements MetaGraphPort {
   }
 
   private graphFailure(error: GraphError): InstagramException {
-    const raw = error.error_user_msg ?? error.message ?? '알 수 없는 오류';
     const code = graphErrorCodeOf(error);
-    const safe = this.sanitize(raw);
+    // fbtrace_id 는 Meta 지원 문의에 쓰는 추적 번호이며 금방 만료된다. 오류가 난 그 자리에서 남긴다(2026-11-06 원인 미확정 사고).
+    const safe = this.sanitize(
+      `${graphErrorText(error)}${graphErrorDetail(error)}`,
+    );
     const message = `Meta 오류 ${error.code ?? 'unknown'}/${error.error_subcode ?? 'unknown'}: ${safe}`;
     return new InstagramException({
       code,
@@ -529,6 +539,28 @@ export class MetaGraphClient implements MetaGraphPort {
     return safe;
   }
 }
+
+// 사용자용 문구(error_user_title·error_user_msg)와 개발자용 message 가 다르면 둘 다 남긴다.
+const graphErrorText = (error: GraphError): string => {
+  const userText = [error.error_user_title, error.error_user_msg]
+    .filter(Boolean)
+    .join(' — ');
+  const parts = [userText, error.message].filter((part): part is string =>
+    Boolean(part),
+  );
+  const unique = [...new Set(parts)];
+  return unique.length > 0 ? unique.join(' / ') : '알 수 없는 오류';
+};
+
+// 허용한 진단 필드만 붙인다. 응답 본문을 통째로 싣지 않는다.
+const graphErrorDetail = (error: GraphError): string => {
+  const fields = [
+    error.type ? `type=${error.type}` : null,
+    error.is_transient === undefined ? null : `transient=${error.is_transient}`,
+    error.fbtrace_id ? `trace=${error.fbtrace_id}` : null,
+  ].filter((field): field is string => field !== null);
+  return fields.length > 0 ? ` (${fields.join(', ')})` : '';
+};
 
 // (code, subcode, 메시지) 조합에서 도메인 오류 코드 하나를 고른다.
 // #10 은 권한 부족에도 쓰인다. 메시지까지 보지 않으면 그 창이 「조회 5 미만」 빈 행으로 영구히 닫힌다.
