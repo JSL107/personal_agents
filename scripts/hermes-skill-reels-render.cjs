@@ -5,6 +5,8 @@
 // 말하는 동안에는 손짓 포즈(point·wave·think) 위에 talk-* 의 입 부분만 합성해 손짓하며 말하게 한다
 // (포즈 이미지들의 얼굴 위치가 같아 이음매가 보이지 않는다, 2026-11-04 확인).
 // 입 모양은 프레임별 문자열(c/h/o), 끄덕임은 프레임별 음성 크기(0~9)를 따른다.
+// 점프 위에 덧붙인 움직임(그림 없이 코드로): 첫 장면 걸어 들어오기, 꼭지 전환 때 한 바퀴 돌기,
+// 고개 갸웃(event.cock), 포인트 카드가 뜰 때 카드 쪽으로 늘어나며 기울기.
 // 프레임은 디스크에 쓰지 않고 PNG 를 ffmpeg stdin 으로 바로 흘린다.
 const fs = require('fs');
 const path = require('path');
@@ -22,7 +24,8 @@ const puppeteer = (() => {
 
 const W = 1080;
 const H = 1920;
-const NAMES = ['body-idle', 'body-wave', 'body-point', 'body-think', 'body-surprise', 'body-thumbsup', 'talk-closed', 'talk-half', 'talk-open', 'blink', 'foot-left', 'foot-right'];
+const GESTURE_BODIES = ['body-point', 'body-wave', 'body-think', 'body-point-up', 'body-explain', 'body-together', 'body-laptop'];
+const NAMES = ['body-idle', ...GESTURE_BODIES, 'body-surprise', 'body-thumbsup', 'talk-closed', 'talk-half', 'talk-open', 'blink', 'foot-left', 'foot-right'];
 
 // 자막·제목은 뉴스에서 온 텍스트로 만들어진다. </script> 가 섞여도 스크립트 태그를 닫지 못하게 < 와 줄 구분 문자를 이스케이프한다(PR #966 리뷰).
 function safeJson(value) {
@@ -31,7 +34,7 @@ function safeJson(value) {
 
 function html(timeline) {
   return `<!doctype html><body style="margin:0"><canvas id="c" width="${W}" height="${H}"></canvas><script>
-  const W=${W}, H=${H}, T=${safeJson(timeline)}, imgs={}, talking={};
+  const W=${W}, H=${H}, T=${safeJson(timeline)}, imgs={}, talking={}, GESTURE_BODIES=${JSON.stringify(GESTURE_BODIES)};
   const FONT='"Apple SD Gothic Neo", sans-serif';
   const MOUTH={c:'talk-closed', h:'talk-half', o:'talk-open'};
 
@@ -53,7 +56,7 @@ function html(timeline) {
     await Promise.all(Object.entries(d).map(([k,v])=>new Promise(r=>{const i=new Image(); i.onload=()=>{imgs[k]=i;r();}; i.src=v;})));
     for(const [mark,name] of Object.entries(MOUTH)){
       talking['body-idle'+mark]=imgs[name];
-      for(const body of ['body-point','body-wave','body-think']) talking[body+mark]=withMouth(imgs[body], imgs[name]);
+      for(const body of GESTURE_BODIES) talking[body+mark]=withMouth(imgs[body], imgs[name]);
     }
   };
 
@@ -198,6 +201,24 @@ function html(timeline) {
     });
   }
 
+  // 0 → 1 로 올라 hold 동안 머문 뒤 0 으로 돌아오는 곡선(갸웃·카드 쪽 기울기).
+  const envelope=(dt,rise,hold,fall)=>dt<0?0:dt<rise?ease(dt/rise):dt<rise+hold?1:1-ease((dt-rise-hold)/fall);
+  // 첫 장면: 화면 오른쪽 밖에서 걸어 들어온다. 걸음마다 한 발씩 들리고 몸이 살짝 튄다.
+  const STEPS=4;
+  // 스토리는 정지 화면이라 새 움직임을 모두 끈다(아래 셋은 지금 타임라인 구조로도 꺼지지만 명시한다).
+  const FX=T.mode!=='story';
+  function walk(t){
+    const WALK=FX?T.walk_in||0:0;
+    if(t>=WALK) return {x:0, bob:0, lean:0, lift:[0,0]};
+    const u=t/WALK, phase=u*STEPS, i=Math.floor(phase), s=Math.sin((phase-i)*Math.PI);
+    return {x:(1-ease(u))*W*0.7, bob:s*10, lean:-4*(1-u), lift:i%2?[0,s*22]:[s*22,0]};
+  }
+  // 꼭지가 바뀌는 순간 종이 인형처럼 한 바퀴 돈다(가로 폭이 1 → -1 → 1).
+  const TURN=0.5;
+  const spin=(t)=>{ const s=FX&&T.sections.find(s=>s.start>0 && t>=s.start && t<s.start+TURN); return s?Math.cos((t-s.start)/TURN*2*Math.PI):1; };
+  // 숫자·포인트 카드가 뜨면 1.5초 동안 카드 쪽(위)으로 늘어나며 기운다.
+  const cardLean=(t)=>{ const p=FX&&T.points.filter(p=>(p.kind==='point'||p.kind==='number') && p.start<=t).at(-1); return p?envelope(t-p.start,0.3,0.8,0.4):0; };
+
   const level=(f)=>{ let sum=0, n=0; for(let i=f-2;i<=f+2;i++){ if(T.energy[i]!==undefined){ sum+=+T.energy[i]; n++; } } return n?sum/n/9:0; };
 
   window.draw=(f)=>{
@@ -213,9 +234,12 @@ function html(timeline) {
     const m=react?motion(dt,cur.power):(cur.bounce?motion(dt,0):{jump:0,tuck:0,squash:0});
     const breath=Math.sin(t*2*Math.PI*0.9)*0.012;
     const nod=level(f)*0.022;                          // 말소리가 클수록 살짝 눌렸다 펴진다(끄덕임)
-    const sy=1+m.squash+breath-nod, sx=1-(m.squash+breath-nod)*0.6;
+    const lean=cardLean(t), wk=walk(t), turn=spin(t);
+    const stretch=m.squash+breath-nod+0.05*lean;
+    const sy=1+stretch, sx=(1-stretch*0.6)*turn;
     const sway=cur.talk?Math.sin(t*2*Math.PI*0.45)*1.4:0;
-    const tilt=((react||cur.talk?cur.tilt*Math.min(1,dt/0.25):0)+sway)*Math.PI/180;
+    const cock=FX&&cur.talk&&cur.cock?(Math.sign(cur.tilt)||-1)*8*envelope(dt,0.25,0.5,0.4):0;
+    const tilt=((react||cur.talk?cur.tilt*Math.min(1,dt/0.25):0)+sway+cock+4*lean+wk.lean)*Math.PI/180;
     const mark=T.mouth[f]||'c';
     let image;
     if(react) image=imgs[cur.body];
@@ -223,16 +247,16 @@ function html(timeline) {
     else image=talking['body-idle'+mark];
     if(!react && (!cur.talk || cur.body==='body-idle') && T.blinks.some(b=>t>=b && t<b+0.1)) image=imgs['blink'];
 
-    const k=0.68, cx=W/2, ground=1650;                 // 이미지 좌표 (512,905)=발바닥 중앙
+    const k=0.68, cx=W/2+wk.x, ground=1650;                 // 이미지 좌표 (512,905)=발바닥 중앙
     const HIP=848;                                      // 몸 변형 기준선(이미지 y)
     const lift=m.jump*k;
     const sh=1-m.jump/170;
     c.save(); c.globalAlpha=0.18*sh; c.fillStyle='#8a4a10'; c.beginPath();
     c.ellipse(cx,ground+6,170*k*sh,22*k*sh,0,0,Math.PI*2); c.fill(); c.restore();
-    const drawFoot=(name,dir)=>{ c.save();
-      c.translate(cx+dir*m.tuck*0.35*k, ground-lift-m.tuck*k); c.scale(k,k); c.drawImage(imgs[name],-512,-905); c.restore(); };
-    drawFoot('foot-left',1); drawFoot('foot-right',-1);
-    c.save(); c.translate(cx, ground-lift-(905-HIP)*k); c.rotate(tilt); c.scale(sx*k, sy*k);
+    const drawFoot=(name,dir,step)=>{ c.save();
+      c.translate(cx+dir*m.tuck*0.35*k, ground-lift-m.tuck*k-step*k); c.scale(k*turn,k); c.drawImage(imgs[name],-512,-905); c.restore(); };   // 돌 때 발도 같이 돈다
+    drawFoot('foot-left',1,wk.lift[0]); drawFoot('foot-right',-1,wk.lift[1]);
+    c.save(); c.translate(cx, ground-lift-wk.bob*k-(905-HIP)*k); c.rotate(tilt); c.scale(sx*k, sy*k);
     c.drawImage(image,-512,-HIP); c.restore();
     drawSubtitle(c,t);  // 점프한 새싹이 자막을 가리지 않게 맨 마지막에 그린다
   };</script>`;
