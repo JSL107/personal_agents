@@ -318,11 +318,29 @@ const describeGroups = (groups: Group[]): string =>
       if (group.size < MIN_GROUP_SIZE) {
         return `${group.label} n=${group.size} (표본 부족)`;
       }
-      const skip = median(group.skipRates);
-      const share = median(group.shareRatios);
-      return `${group.label} n=${group.size} 스킵 ${skip === null ? '-' : `${Math.round(skip)}%`} · 공유/도달 ${share === null ? '-' : `${share.toFixed(1)}%`}`;
+      const skip = describeMedian(
+        group.skipRates,
+        (value) => `${Math.round(value)}%`,
+      );
+      const share = describeMedian(
+        group.shareRatios,
+        (value) => `${value.toFixed(1)}%`,
+      );
+      return `${group.label} n=${group.size} 스킵 ${skip} · 공유/도달 ${share}`;
     })
     .join(' | ');
+
+// 편수가 충분해도 Meta 가 지표를 비워 준 영상은 중앙값에서 빠진다. 실제로 계산에 든 값 수로 다시 본다.
+const describeMedian = (
+  values: number[],
+  format: (value: number) => string,
+): string => {
+  const value = median(values);
+  if (value === null || values.length < MIN_GROUP_SIZE) {
+    return '(표본 부족)';
+  }
+  return format(value);
+};
 
 const lengthBucket = (seconds: number): string => {
   if (seconds < 45) {

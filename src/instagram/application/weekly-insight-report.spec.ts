@@ -193,6 +193,22 @@ describe('formatWeeklyInsightReport', () => {
     expect(text).toContain('첫 포즈  wave n=4');
   });
 
+  it('편수가 3이어도 지표 유효값이 3개 미만이면 그 지표만 표본 부족', () => {
+    const reels = [post(), post(), post()];
+    const text = formatWeeklyInsightReport({
+      ...week,
+      posts: reels,
+      snapshots: reels.map((target, index) =>
+        snapshot(target, {
+          metrics: metrics({ skipRate: index === 0 ? 70 : null }),
+        }),
+      ),
+    });
+    expect(text).toContain(
+      '첫 줄  질문형 n=3 스킵 (표본 부족) · 공유/도달 0.6%',
+    );
+  });
+
   it('판단 문장을 쓰지 않는다', () => {
     const reels = [post(), post(), post()];
     const text = formatWeeklyInsightReport({

@@ -1614,7 +1614,8 @@ model InstagramInsightSnapshot {
   reposts           Int?
   replies           Int?
   avgWatchMs        Int?          @map("avg_watch_ms")
-  totalWatchMs      Int?          @map("total_watch_ms")
+  // 누적 시청 ms 는 Int(약 596시간)를 넘을 수 있다. double 은 2^53 까지 정수가 정확하다.
+  totalWatchMs      Float?        @map("total_watch_ms")
   skipRate          Float?        @map("skip_rate")
   followersCount    Int?          @map("followers_count")
   error             String?
