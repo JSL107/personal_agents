@@ -1179,7 +1179,7 @@ def report(day: str, result: dict | None, failure: str, housekeeping: list[str])
         lines.append(f"· 실패 {failure}")
         lines.append(f"  다시 만들기: python3 ~/.hermes/scripts/skill-reels.py --worker --date {day}")
     if result and not failure:
-        lines.append("이대리 카드의 ✅ 적용을 누르면 인스타에 게시됩니다.")
+        lines.append("승인 카드는 이대리가 따로 올립니다(09~23시 15분마다 확인). 그 카드의 ✅ 적용을 누르면 인스타에 게시됩니다.")
     lines.extend(housekeeping)
     return "\n".join(lines)
 
@@ -1488,7 +1488,7 @@ def self_check() -> None:
     ok = {"segments": ["AI"], "title": "t", "dir": "x", "duration": 30.0, "engine": "e", "story": False,
           "story_reason": "렌더 실패", "missing": {"개발": "없음"}}
     message = report("2026-11-04", ok, "", [])
-    assert "이대리 카드의 ✅ 적용을 누르면 인스타에 게시됩니다." in message and "개발 꼭지 없음: 없음" in message
+    assert "승인 카드는 이대리가 따로 올립니다(09~23시 15분마다 확인). 그 카드의 ✅ 적용을 누르면 인스타에 게시됩니다." in message and "개발 꼭지 없음: 없음" in message
     assert "스토리 없음: 렌더 실패" in message
     assert "--worker --date 2026-11-04" in report("2026-11-04", None, "음성: 실패", [])
     assert "· 정리 실패 2026-10-01: 검사" in report("2026-11-04", ok, "", ["· 정리 실패 2026-10-01: 검사"])
