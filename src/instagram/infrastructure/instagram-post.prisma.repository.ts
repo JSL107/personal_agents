@@ -3,10 +3,7 @@ import { InstagramPost as InstagramPostRow, Prisma } from '@prisma/client';
 import { isMatching } from 'ts-pattern';
 
 import { PrismaService } from '../../prisma/prisma.service';
-import {
-  REEL_FEATURES_VERSION,
-  ReelFeatures,
-} from '../domain/instagram-insight.type';
+import { ReelFeatures } from '../domain/instagram-insight.type';
 import {
   ClaimReelInput,
   InstagramPost,
@@ -15,6 +12,7 @@ import {
   InstagramPostStatus,
 } from '../domain/instagram-post.type';
 import { InstagramPostRepositoryPort } from '../domain/port/instagram-post.repository.port';
+import { REEL_FEATURES_PATTERN } from '../domain/reel-features';
 
 @Injectable()
 export class InstagramPostPrismaRepository implements InstagramPostRepositoryPort {
@@ -66,7 +64,7 @@ export class InstagramPostPrismaRepository implements InstagramPostRepositoryPor
   }): Promise<void> {
     await this.prisma.instagramPost.update({
       where: { id },
-      data: { features: features as unknown as Prisma.InputJsonValue },
+      data: { features },
     });
   }
 
@@ -112,7 +110,10 @@ export const toDomain = (row: InstagramPostRow): InstagramPost => {
 };
 
 // 분류 규칙이 다른 버전의 특성은 섞어 묶지 않는다. 지금 버전이 아니면 아직 없는 것으로 읽는다.
-const toFeatures = (value: Prisma.JsonValue): ReelFeatures | null =>
-  isMatching({ version: REEL_FEATURES_VERSION }, value)
-    ? (value as unknown as ReelFeatures)
-    : null;
+const toFeatures = (value: Prisma.JsonValue): ReelFeatures | null => {
+  if (!isMatching(REEL_FEATURES_PATTERN, value)) {
+    return null;
+  }
+  const features: ReelFeatures = value;
+  return features;
+};

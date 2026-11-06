@@ -58,9 +58,21 @@ export enum MediaInsightsResultKind {
 }
 
 // 스토리는 값이 5 미만이면 Meta 가 (#10) 오류를 준다. 다시 물어도 같으므로 실패가 아니라 결과로 돌려준다.
+// kind 로 좁혀야 metrics 를 읽을 수 있다. 조회 5 미만인데 지표를 읽는 실수를 컴파일러가 막는다.
+export interface MediaInsightsOk {
+  kind: MediaInsightsResultKind.OK;
+  metrics: InsightMetrics;
+  raw: unknown;
+}
+
+export interface MediaInsightsNotEnoughViewers {
+  kind: MediaInsightsResultKind.NOT_ENOUGH_VIEWERS;
+  raw: unknown;
+}
+
 export type MediaInsightsResult =
-  | { kind: MediaInsightsResultKind.OK; metrics: InsightMetrics; raw: unknown }
-  | { kind: MediaInsightsResultKind.NOT_ENOUGH_VIEWERS; raw: unknown };
+  | MediaInsightsOk
+  | MediaInsightsNotEnoughViewers;
 
 export interface MetaGraphPort {
   isConfigured(): boolean;

@@ -1,9 +1,9 @@
 // 스냅숏 창. 릴스는 게시 뒤 24시간·3일·7일, 스토리는 24시간 뒤 지표가 사라지므로 만료 전에 한 번 찍는다.
 export enum SnapshotWindow {
-  H24 = 'H24',
-  D3 = 'D3',
-  D7 = 'D7',
-  STORY = 'STORY',
+  AFTER_24_HOURS = 'AFTER_24_HOURS',
+  AFTER_3_DAYS = 'AFTER_3_DAYS',
+  AFTER_7_DAYS = 'AFTER_7_DAYS',
+  STORY_BEFORE_EXPIRY = 'STORY_BEFORE_EXPIRY',
 }
 
 // 다시 시도해도 결과가 같은 실패. 이 값이 있는 행은 지표가 전부 null 이다.
@@ -26,6 +26,22 @@ export interface InsightMetrics {
   totalWatchMs: number | null;
   skipRate: number | null;
 }
+
+// 조회 5 미만처럼 숫자를 못 받은 경우와, 응답에서 채워 나갈 출발점.
+export const EMPTY_INSIGHT_METRICS: InsightMetrics = {
+  views: null,
+  reach: null,
+  likes: null,
+  comments: null,
+  shares: null,
+  saved: null,
+  totalInteractions: null,
+  reposts: null,
+  replies: null,
+  avgWatchMs: null,
+  totalWatchMs: null,
+  skipRate: null,
+};
 
 // 한 번 조회한 결과. 밀린 창이 여럿이면 같은 결과를 창마다 저장한다.
 export interface InsightCapture {
@@ -58,18 +74,19 @@ export enum TitleForm {
   STATEMENT = 'STATEMENT',
 }
 
-export interface ReelFirstLine {
+// Prisma Json 열에 그대로 넣으려고 interface 가 아니라 type 으로 둔다(interface 는 인덱스 시그니처 타입에 대입되지 않는다).
+export type ReelFirstLine = {
   subtitle: string;
   speech: string;
   gesture: string;
   react: string;
-}
+};
 
 // 분류 규칙을 바꾸면 version 을 올린다. 리포트는 같은 version 끼리만 묶는다.
 export const REEL_FEATURES_VERSION = 1;
 
-export interface ReelFeatures {
-  version: typeof REEL_FEATURES_VERSION;
+export type ReelFeatures = {
+  version: number;
   durationSec: number;
   segmentFields: string[];
   headlines: string[];
@@ -82,4 +99,4 @@ export interface ReelFeatures {
   reacts: string[];
   gestureCounts: Record<string, number>;
   engine: string | null;
-}
+};

@@ -142,7 +142,7 @@ describe('CollectInsightsUsecase', () => {
     expect(graph.getFollowersCount).toHaveBeenCalledTimes(1);
     expect(inserted()[0]).toMatchObject({
       postId: 'post-1',
-      snapshotWindow: SnapshotWindow.H24,
+      snapshotWindow: SnapshotWindow.AFTER_24_HOURS,
       capturedAt: NOW,
       ageMinutes: 1500,
       metrics,
@@ -154,7 +154,10 @@ describe('CollectInsightsUsecase', () => {
 
   it('이미 찍은 창은 다시 묻지 않는다', async () => {
     snapshots.listByPostIds.mockResolvedValue([
-      { postId: 'post-1', snapshotWindow: SnapshotWindow.H24 } as never,
+      {
+        postId: 'post-1',
+        snapshotWindow: SnapshotWindow.AFTER_24_HOURS,
+      } as never,
     ]);
     await usecase.execute();
     expect(graph.getMediaInsights).not.toHaveBeenCalled();
@@ -186,7 +189,9 @@ describe('CollectInsightsUsecase', () => {
       mediaId: 'media-1',
       kind: InsightKind.STORY,
     });
-    expect(inserted()[0].snapshotWindow).toBe(SnapshotWindow.STORY);
+    expect(inserted()[0].snapshotWindow).toBe(
+      SnapshotWindow.STORY_BEFORE_EXPIRY,
+    );
   });
 
   it('조회 5 미만이면 지표 없이 NOT_ENOUGH_VIEWERS 행을 남긴다', async () => {

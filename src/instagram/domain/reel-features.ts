@@ -7,6 +7,32 @@ import {
   TitleForm,
 } from './instagram-insight.type';
 
+// DB 의 features Json 을 읽을 때 쓰는 모양 검사. 다른 버전이거나 모양이 다르면 아직 없는 것으로 본다.
+export const REEL_FEATURES_PATTERN = {
+  version: REEL_FEATURES_VERSION,
+  durationSec: P.number,
+  segmentFields: P.array(P.string),
+  headlines: P.array(P.string),
+  titleForm: P.union(TitleForm.RESULT, TitleForm.QUESTION, TitleForm.STATEMENT),
+  firstLine: {
+    subtitle: P.string,
+    speech: P.string,
+    gesture: P.string,
+    react: P.string,
+  },
+  firstLineType: P.union(
+    FirstLineType.QUESTION,
+    FirstLineType.NUMBER,
+    FirstLineType.STATEMENT,
+  ),
+  lineCount: P.number,
+  speechChars: P.number,
+  pointCards: P.number,
+  reacts: P.array(P.string),
+  gestureCounts: P.record(P.string, P.number),
+  engine: P.union(P.string, null),
+};
+
 const LINE_PATTERN = {
   subtitle: P.string,
   speech: P.string,
@@ -29,11 +55,25 @@ const LEGACY_SCRIPT_PATTERN = {
   script: SEGMENT_PATTERN,
 };
 
-type ScriptLine = P.infer<typeof LINE_PATTERN>;
+// LINE_PATTERN 과 같은 모양. 어긋나면 toScript 의 isMatching 결과를 넣는 자리에서 컴파일 에러가 난다.
+interface ScriptLine {
+  subtitle: string;
+  speech: string;
+  gesture: string;
+  react: string;
+  point_kind: string;
+}
+
 interface ScriptSegment {
   field: string;
   headline: string;
   lines: ScriptLine[];
+}
+
+interface ParsedScript {
+  durationSec: number;
+  engine: string | null;
+  segments: ScriptSegment[];
 }
 
 const QUESTION_ENDING = /\?\s*$/;
@@ -48,52 +88,63 @@ export const extractReelFeatures = ({
   script: unknown;
   folderField: string;
 }): ReelFeatures | null => {
-  const segments = toSegments({ script, folderField });
-  if (!segments || segments.length === 0) {
+  const parsed = toScript({ script, folderField });
+  const firstSegment = parsed?.segments[0];
+  const firstLine = firstSegment?.lines[0];
+  if (!parsed || !firstSegment || !firstLine) {
     return null;
   }
-  const lines = segments.flatMap((segment) => segment.lines);
-  if (lines.length === 0 || segments[0].lines.length === 0) {
-    return null;
-  }
-  const [first] = segments[0].lines;
-  return {
+  const lines = parsed.segments.flatMap((segment) => segment.lines);
+  const speechChars = lines.reduce((sum, line) => sum + line.speech.length, 0);
+  const pointCardLines = lines.filter((line) => line.point_kind !== 'none');
+  const reacts = lines
+    .map((line) => line.react)
+    .filter((react) => react !== 'none');
+  const gestureCounts = countBy(lines.map((line) => line.gesture));
+  const features: ReelFeatures = {
     version: REEL_FEATURES_VERSION,
-    durationSec: (script as { duration: number }).duration,
-    segmentFields: segments.map((segment) => segment.field),
-    headlines: segments.map((segment) => segment.headline),
-    titleForm: titleFormOf(segments[0].headline),
+    durationSec: parsed.durationSec,
+    segmentFields: parsed.segments.map((segment) => segment.field),
+    headlines: parsed.segments.map((segment) => segment.headline),
+    titleForm: titleFormOf(firstSegment.headline),
     firstLine: {
-      subtitle: first.subtitle,
-      speech: first.speech,
-      gesture: first.gesture,
-      react: first.react,
+      subtitle: firstLine.subtitle,
+      speech: firstLine.speech,
+      gesture: firstLine.gesture,
+      react: firstLine.react,
     },
-    firstLineType: firstLineTypeOf(first.subtitle),
+    firstLineType: firstLineTypeOf(firstLine.subtitle),
     lineCount: lines.length,
-    speechChars: lines.reduce((sum, line) => sum + line.speech.length, 0),
-    pointCards: lines.filter((line) => line.point_kind !== 'none').length,
-    reacts: lines.map((line) => line.react).filter((react) => react !== 'none'),
-    gestureCounts: countBy(lines.map((line) => line.gesture)),
-    engine: isMatching({ engine: P.string }, script) ? script.engine : null,
+    speechChars,
+    pointCards: pointCardLines.length,
+    reacts,
+    gestureCounts,
+    engine: parsed.engine,
   };
+  return features;
 };
 
-const toSegments = ({
+const toScript = ({
   script,
   folderField,
 }: {
   script: unknown;
   folderField: string;
-}): ScriptSegment[] | null => {
+}): ParsedScript | null => {
+  const engine = isMatching({ engine: P.string }, script)
+    ? script.engine
+    : null;
   if (isMatching(DAILY_SCRIPT_PATTERN, script)) {
-    return script.segments.map(({ field, segment }) => ({
-      field,
-      ...segment,
-    }));
+    const segments: ScriptSegment[] = script.segments.map(
+      ({ field, segment }) => ({ field, ...segment }),
+    );
+    return { durationSec: script.duration, engine, segments };
   }
   if (isMatching(LEGACY_SCRIPT_PATTERN, script)) {
-    return [{ field: folderField, ...script.script }];
+    const segments: ScriptSegment[] = [
+      { field: folderField, ...script.script },
+    ];
+    return { durationSec: script.duration, engine, segments };
   }
   return null;
 };

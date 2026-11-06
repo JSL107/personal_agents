@@ -1,3 +1,5 @@
+import { match } from 'ts-pattern';
+
 import { getKstDateOf, kstDayStartOf } from '../../common/util/kst-date.util';
 import { escapeSlackMrkdwn } from '../../slack/format/mrkdwn.util';
 import {
@@ -31,15 +33,40 @@ interface Group {
   shareRatios: number[];
 }
 
-type ComparableReel = {
+interface ComparableReel {
   features: ReelFeatures;
   metrics: InsightMetrics;
-};
+}
+
+interface ComparisonAxis {
+  name: string;
+  keyOf: (reel: ComparableReel) => string;
+  order: string[];
+}
+
+enum StoryStatus {
+  COLLECTED = 'COLLECTED',
+  NOT_ENOUGH_VIEWERS = 'NOT_ENOUGH_VIEWERS',
+  MISSED = 'MISSED',
+  NO_MEDIA = 'NO_MEDIA',
+  WAITING = 'WAITING',
+}
 
 // 칸마다 이 수보다 적으면 숫자를 내지 않는다. 한두 편으로 묶은 중앙값은 우연에 가깝다.
 const MIN_GROUP_SIZE = 3;
 const STORY_EXPIRES_MINUTES = 1440;
-const WINDOW_ORDER = [SnapshotWindow.H24, SnapshotWindow.D3, SnapshotWindow.D7];
+const MINUTE_MS = 60_000;
+const REEL_WINDOW_ORDER = [
+  SnapshotWindow.AFTER_24_HOURS,
+  SnapshotWindow.AFTER_3_DAYS,
+  SnapshotWindow.AFTER_7_DAYS,
+];
+const WINDOW_LABELS: Record<SnapshotWindow, string> = {
+  [SnapshotWindow.AFTER_24_HOURS]: '24시간',
+  [SnapshotWindow.AFTER_3_DAYS]: '3일',
+  [SnapshotWindow.AFTER_7_DAYS]: '7일',
+  [SnapshotWindow.STORY_BEFORE_EXPIRY]: '스토리',
+};
 const FIRST_LINE_LABELS: Record<FirstLineType, string> = {
   [FirstLineType.QUESTION]: '질문형',
   [FirstLineType.NUMBER]: '숫자형',
@@ -51,15 +78,34 @@ const TITLE_LABELS: Record<TitleForm, string> = {
   [TitleForm.STATEMENT]: '서술형',
 };
 const LENGTH_BUCKETS = ['<45초', '45~55초', '>55초'];
+const COMPARISON_AXES: ComparisonAxis[] = [
+  {
+    name: '첫 줄',
+    keyOf: (reel) => FIRST_LINE_LABELS[reel.features.firstLineType],
+    order: Object.values(FIRST_LINE_LABELS),
+  },
+  {
+    name: '제목',
+    keyOf: (reel) => TITLE_LABELS[reel.features.titleForm],
+    order: Object.values(TITLE_LABELS),
+  },
+  {
+    name: '첫 포즈',
+    keyOf: (reel) => reel.features.firstLine.gesture,
+    order: [],
+  },
+  {
+    name: '길이',
+    keyOf: (reel) => lengthBucket(reel.features.durationSec),
+    order: LENGTH_BUCKETS,
+  },
+];
 
 // 숫자만 보여 준다. "어느 쪽이 낫다" 같은 판단은 사람이 한다(스펙 §4.2).
 export const formatWeeklyInsightReport = (
   input: WeeklyReportInput,
 ): string | null => {
-  const inWeek = input.posts.filter((post) => {
-    const day = post.publishedAt ? getKstDateOf(post.publishedAt) : null;
-    return day !== null && day >= input.weekStartKst && day <= input.weekEndKst;
-  });
+  const inWeek = input.posts.filter((post) => isInWeek({ post, input }));
   if (inWeek.length === 0) {
     return null;
   }
@@ -73,12 +119,14 @@ export const formatWeeklyInsightReport = (
 
   const lines = [headerLine(input), '', `[지난주 릴스 ${reels.length}편]`];
   for (const reel of reels) {
-    lines.push(...reelLines(reel, byPost.get(reel.id) ?? []));
+    lines.push(
+      ...reelLines({ post: reel, snapshots: byPost.get(reel.id) ?? [] }),
+    );
   }
   if (stories.length > 0) {
     lines.push(storyLine({ stories, byPost, now: input.now }));
   }
-  lines.push('', ...comparisonLines(input.posts, byPost));
+  lines.push('', ...comparisonLines({ posts: input.posts, byPost }));
   return lines.join('\n');
 };
 
@@ -88,9 +136,28 @@ export const median = (values: number[]): number | null => {
   }
   const sorted = [...values].sort((left, right) => left - right);
   const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 1
-    ? sorted[middle]
-    : (sorted[middle - 1] + sorted[middle]) / 2;
+  if (sorted.length % 2 === 1) {
+    return sorted[middle];
+  }
+  const average = (sorted[middle - 1] + sorted[middle]) / 2;
+  return average;
+};
+
+const isInWeek = ({
+  post,
+  input,
+}: {
+  post: InstagramPost;
+  input: WeeklyReportInput;
+}): boolean => {
+  if (!post.publishedAt) {
+    return false;
+  }
+  const day = getKstDateOf(post.publishedAt);
+  if (day < input.weekStartKst) {
+    return false;
+  }
+  return day <= input.weekEndKst;
 };
 
 const groupSnapshots = (
@@ -98,10 +165,8 @@ const groupSnapshots = (
 ): Map<string, InsightSnapshot[]> => {
   const byPost = new Map<string, InsightSnapshot[]>();
   for (const snapshot of snapshots) {
-    byPost.set(snapshot.postId, [
-      ...(byPost.get(snapshot.postId) ?? []),
-      snapshot,
-    ]);
+    const saved = byPost.get(snapshot.postId) ?? [];
+    byPost.set(snapshot.postId, [...saved, snapshot]);
   }
   return byPost;
 };
@@ -110,28 +175,41 @@ const groupSnapshots = (
 const headerLine = (input: WeeklyReportInput): string => {
   const range = `${shortDate(input.weekStartKst)}~${shortDate(input.weekEndKst)}`;
   const from = kstDayStartOf(input.weekStartKst).getTime();
-  const counts = input.snapshots
+  const counts: number[] = [];
+  const inRange = input.snapshots
     .filter(
       (snapshot) =>
-        snapshot.followersCount !== null &&
         snapshot.capturedAt.getTime() >= from &&
         snapshot.capturedAt.getTime() <= input.now.getTime(),
     )
     .sort(
       (left, right) => left.capturedAt.getTime() - right.capturedAt.getTime(),
-    )
-    .map((snapshot) => snapshot.followersCount as number);
-  const followers =
-    counts.length === 0
-      ? '팔로워 -'
-      : `팔로워 ${counts[0]} → ${counts[counts.length - 1]} (${signed(counts[counts.length - 1] - counts[0])})`;
+    );
+  for (const snapshot of inRange) {
+    if (snapshot.followersCount !== null) {
+      counts.push(snapshot.followersCount);
+    }
+  }
+  const followers = followersPhrase(counts);
   return `📊 스킬쟁이 주간 리포트 (${range}) · ${followers}`;
 };
 
-const reelLines = (
-  post: InstagramPost,
-  snapshots: InsightSnapshot[],
-): string[] => {
+const followersPhrase = (counts: number[]): string => {
+  if (counts.length === 0) {
+    return '팔로워 -';
+  }
+  const first = counts[0];
+  const last = counts[counts.length - 1];
+  return `팔로워 ${first} → ${last} (${signed(last - first)})`;
+};
+
+const reelLines = ({
+  post,
+  snapshots,
+}: {
+  post: InstagramPost;
+  snapshots: InsightSnapshot[];
+}): string[] => {
   const day = post.publishedAt
     ? shortDate(getKstDateOf(post.publishedAt))
     : '-';
@@ -143,36 +221,48 @@ const reelLines = (
   if (!latest) {
     return [head, '  아직 수집 전'];
   }
-  const missingD7 =
-    latest.snapshotWindow === SnapshotWindow.D7 ? '' : ' (D7 미수집)';
-  return [
-    head,
-    `  ${latest.snapshotWindow} ${describeMetrics(latest.metrics)}${missingD7}`,
-  ];
+  const missingSevenDay =
+    latest.snapshotWindow === SnapshotWindow.AFTER_7_DAYS
+      ? ''
+      : ' (7일 값 미수집)';
+  const metricsLine = `  ${WINDOW_LABELS[latest.snapshotWindow]} ${describeMetrics(latest.metrics)}${missingSevenDay}`;
+  return [head, metricsLine];
 };
 
-const describeFeatures = (features: ReelFeatures): string =>
-  [
+const describeFeatures = (features: ReelFeatures): string => {
+  const firstLineType = FIRST_LINE_LABELS[features.firstLineType];
+  const titleForm = TITLE_LABELS[features.titleForm];
+  const parts = [
     `${Math.round(features.durationSec)}초`,
     `${features.segmentFields.length}꼭지`,
-    `${FIRST_LINE_LABELS[features.firstLineType]}/${TITLE_LABELS[features.titleForm]}`,
+    `${firstLineType}/${titleForm}`,
     features.firstLine.gesture,
-  ].join(' ');
+  ];
+  return parts.join(' ');
+};
 
-const describeMetrics = (metrics: InsightMetrics): string =>
-  [
+const describeMetrics = (metrics: InsightMetrics): string => {
+  const skip =
+    metrics.skipRate === null ? '-' : `${Math.round(metrics.skipRate)}%`;
+  const averageWatch =
+    metrics.avgWatchMs === null
+      ? '-'
+      : `${(metrics.avgWatchMs / 1000).toFixed(1)}초`;
+  const parts = [
     `조회 ${orDash(metrics.views)}`,
     `도달 ${orDash(metrics.reach)}`,
-    `스킵 ${metrics.skipRate === null ? '-' : `${Math.round(metrics.skipRate)}%`}`,
-    `평균 ${metrics.avgWatchMs === null ? '-' : `${(metrics.avgWatchMs / 1000).toFixed(1)}초`}`,
+    `스킵 ${skip}`,
+    `평균 ${averageWatch}`,
     `공유 ${orDash(metrics.shares)}`,
     `저장 ${orDash(metrics.saved)}`,
-  ].join(' · ');
+  ];
+  return parts.join(' · ');
+};
 
 const latestReelSnapshot = (
   snapshots: InsightSnapshot[],
 ): InsightSnapshot | null => {
-  for (const window of [...WINDOW_ORDER].reverse()) {
+  for (const window of [...REEL_WINDOW_ORDER].reverse()) {
     const found = snapshots.find(
       (snapshot) => snapshot.snapshotWindow === window,
     );
@@ -192,93 +282,106 @@ const storyLine = ({
   byPost: Map<string, InsightSnapshot[]>;
   now: Date;
 }): string => {
-  const counts = {
-    collected: 0,
-    notEnough: 0,
-    missed: 0,
-    noMedia: 0,
-    waiting: 0,
+  const counts: Record<StoryStatus, number> = {
+    [StoryStatus.COLLECTED]: 0,
+    [StoryStatus.NOT_ENOUGH_VIEWERS]: 0,
+    [StoryStatus.MISSED]: 0,
+    [StoryStatus.NO_MEDIA]: 0,
+    [StoryStatus.WAITING]: 0,
   };
   for (const story of stories) {
-    const found = (byPost.get(story.id) ?? []).find(
-      (snapshot) => snapshot.snapshotWindow === SnapshotWindow.STORY,
+    const snapshot = (byPost.get(story.id) ?? []).find(
+      (saved) => saved.snapshotWindow === SnapshotWindow.STORY_BEFORE_EXPIRY,
     );
-    const ageMinutes = story.publishedAt
-      ? (now.getTime() - story.publishedAt.getTime()) / 60_000
-      : Infinity;
-    if (!story.mediaId) {
-      counts.noMedia += 1;
-    } else if (found?.error === SnapshotError.NOT_ENOUGH_VIEWERS) {
-      counts.notEnough += 1;
-    } else if (found) {
-      counts.collected += 1;
-    } else if (ageMinutes < STORY_EXPIRES_MINUTES) {
-      counts.waiting += 1;
-    } else {
-      counts.missed += 1;
-    }
+    const status = storyStatusOf({ story, snapshot, now });
+    counts[status] += 1;
   }
   const parts = [
-    `수집 ${counts.collected}`,
-    `조회 5 미만 ${counts.notEnough}`,
-    `놓침 ${counts.missed}`,
-    `mediaId 없음 ${counts.noMedia}`,
+    `수집 ${counts[StoryStatus.COLLECTED]}`,
+    `조회 5 미만 ${counts[StoryStatus.NOT_ENOUGH_VIEWERS]}`,
+    `놓침 ${counts[StoryStatus.MISSED]}`,
+    `mediaId 없음 ${counts[StoryStatus.NO_MEDIA]}`,
   ];
-  if (counts.waiting > 0) {
-    parts.push(`수집 대기 ${counts.waiting}`);
+  if (counts[StoryStatus.WAITING] > 0) {
+    parts.push(`수집 대기 ${counts[StoryStatus.WAITING]}`);
   }
   return `스토리 ${stories.length}건: ${parts.join(' · ')}`;
 };
 
-const comparisonLines = (
-  posts: InstagramPost[],
-  byPost: Map<string, InsightSnapshot[]>,
-): string[] => {
+// mediaId·스냅숏·오류·만료 여부의 조합으로 스토리 하나의 상태를 고른다(위에서부터 먼저 맞는 것).
+const storyStatusOf = ({
+  story,
+  snapshot,
+  now,
+}: {
+  story: InstagramPost;
+  snapshot: InsightSnapshot | undefined;
+  now: Date;
+}): StoryStatus => {
+  const ageMinutes = story.publishedAt
+    ? (now.getTime() - story.publishedAt.getTime()) / MINUTE_MS
+    : Infinity;
+  const status = match({
+    hasMedia: Boolean(story.mediaId),
+    hasSnapshot: Boolean(snapshot),
+    snapshotError: snapshot?.error ?? null,
+    expired: ageMinutes >= STORY_EXPIRES_MINUTES,
+  })
+    .with({ hasMedia: false }, () => StoryStatus.NO_MEDIA)
+    .with(
+      { snapshotError: SnapshotError.NOT_ENOUGH_VIEWERS },
+      () => StoryStatus.NOT_ENOUGH_VIEWERS,
+    )
+    .with({ hasSnapshot: true }, () => StoryStatus.COLLECTED)
+    .with({ expired: false }, () => StoryStatus.WAITING)
+    .otherwise(() => StoryStatus.MISSED);
+  return status;
+};
+
+const comparisonLines = ({
+  posts,
+  byPost,
+}: {
+  posts: InstagramPost[];
+  byPost: Map<string, InsightSnapshot[]>;
+}): string[] => {
   const comparable: ComparableReel[] = [];
   for (const post of posts) {
-    const d7 = (byPost.get(post.id) ?? []).find(
-      (snapshot) => snapshot.snapshotWindow === SnapshotWindow.D7,
+    const sevenDaySnapshot = (byPost.get(post.id) ?? []).find(
+      (snapshot) => snapshot.snapshotWindow === SnapshotWindow.AFTER_7_DAYS,
     );
     if (
       post.field !== InstagramPostField.STORY &&
       post.features?.version === REEL_FEATURES_VERSION &&
-      d7
+      sevenDaySnapshot
     ) {
-      comparable.push({ features: post.features, metrics: d7.metrics });
+      comparable.push({
+        features: post.features,
+        metrics: sevenDaySnapshot.metrics,
+      });
     }
   }
   if (comparable.length === 0) {
-    return ['[누적 비교] D7 까지 쌓인 영상이 아직 없습니다.'];
+    return ['[누적 비교] 7일 값까지 쌓인 영상이 아직 없습니다.'];
   }
-  const axes: [string, (reel: ComparableReel) => string, string[]][] = [
-    [
-      '첫 줄',
-      (reel) => FIRST_LINE_LABELS[reel.features.firstLineType],
-      Object.values(FIRST_LINE_LABELS),
-    ],
-    [
-      '제목',
-      (reel) => TITLE_LABELS[reel.features.titleForm],
-      Object.values(TITLE_LABELS),
-    ],
-    ['첫 포즈', (reel) => reel.features.firstLine.gesture, []],
-    ['길이', (reel) => lengthBucket(reel.features.durationSec), LENGTH_BUCKETS],
-  ];
-  return [
-    `[누적 비교 · D7 기준 · ${comparable.length}편]`,
-    ...axes.map(
-      ([name, keyOf, order]) =>
-        `${name}  ${describeGroups(groupBy(comparable, keyOf, order))}`,
-    ),
-  ];
+  const axisLines = COMPARISON_AXES.map(({ name, keyOf, order }) => {
+    const groups = groupBy({ reels: comparable, keyOf, order });
+    return `${name}  ${describeGroups(groups)}`;
+  });
+  const header = `[누적 비교 · 7일 값 기준 · ${comparable.length}편]`;
+  return [header, ...axisLines];
 };
 
 // order 에 있는 이름은 그 순서로, 없는 이름(포즈)은 편수 많은 순으로 뒤에 붙인다.
-const groupBy = (
-  reels: ComparableReel[],
-  keyOf: (reel: ComparableReel) => string,
-  order: string[],
-): Group[] => {
+const groupBy = ({
+  reels,
+  keyOf,
+  order,
+}: {
+  reels: ComparableReel[];
+  keyOf: (reel: ComparableReel) => string;
+  order: string[];
+}): Group[] => {
   const groups = new Map<string, Group>();
   for (const reel of reels) {
     const label = keyOf(reel);
@@ -289,52 +392,67 @@ const groupBy = (
       shareRatios: [],
     };
     group.size += 1;
-    group.skipRates.push(
-      ...(reel.metrics.skipRate === null ? [] : [reel.metrics.skipRate]),
-    );
-    const { shares, reach } = reel.metrics;
-    group.shareRatios.push(
-      ...(shares === null || !reach ? [] : [(shares / reach) * 100]),
-    );
+    const { skipRate, shares, reach } = reel.metrics;
+    if (skipRate !== null) {
+      group.skipRates.push(skipRate);
+    }
+    if (shares !== null && reach) {
+      group.shareRatios.push((shares / reach) * 100);
+    }
     groups.set(label, group);
   }
   const ranked = [...groups.values()].sort((left, right) => {
-    const leftIndex = order.indexOf(left.label);
-    const rightIndex = order.indexOf(right.label);
-    if (leftIndex !== -1 || rightIndex !== -1) {
-      return (
-        (leftIndex === -1 ? Infinity : leftIndex) -
-        (rightIndex === -1 ? Infinity : rightIndex)
-      );
+    const leftRank = rankIn({ order, label: left.label });
+    const rightRank = rankIn({ order, label: right.label });
+    if (leftRank === rightRank) {
+      return right.size - left.size;
     }
-    return right.size - left.size;
+    return leftRank - rightRank;
   });
   return ranked;
 };
 
-const describeGroups = (groups: Group[]): string =>
-  groups
-    .map((group) => {
-      if (group.size < MIN_GROUP_SIZE) {
-        return `${group.label} n=${group.size} (표본 부족)`;
-      }
-      const skip = describeMedian(
-        group.skipRates,
-        (value) => `${Math.round(value)}%`,
-      );
-      const share = describeMedian(
-        group.shareRatios,
-        (value) => `${value.toFixed(1)}%`,
-      );
-      return `${group.label} n=${group.size} 스킵 ${skip} · 공유/도달 ${share}`;
-    })
-    .join(' | ');
+// order 에 없는 이름은 맨 뒤(Infinity). 둘 다 없으면 같은 순위라 편수로 가른다.
+const rankIn = ({
+  order,
+  label,
+}: {
+  order: string[];
+  label: string;
+}): number => {
+  const index = order.indexOf(label);
+  if (index === -1) {
+    return Infinity;
+  }
+  return index;
+};
+
+const describeGroups = (groups: Group[]): string => {
+  const cells = groups.map((group) => {
+    if (group.size < MIN_GROUP_SIZE) {
+      return `${group.label} n=${group.size} (표본 부족)`;
+    }
+    const skip = describeMedian({
+      values: group.skipRates,
+      format: (value) => `${Math.round(value)}%`,
+    });
+    const share = describeMedian({
+      values: group.shareRatios,
+      format: (value) => `${value.toFixed(1)}%`,
+    });
+    return `${group.label} n=${group.size} 스킵 ${skip} · 공유/도달 ${share}`;
+  });
+  return cells.join(' | ');
+};
 
 // 편수가 충분해도 Meta 가 지표를 비워 준 영상은 중앙값에서 빠진다. 실제로 계산에 든 값 수로 다시 본다.
-const describeMedian = (
-  values: number[],
-  format: (value: number) => string,
-): string => {
+const describeMedian = ({
+  values,
+  format,
+}: {
+  values: number[];
+  format: (value: number) => string;
+}): string => {
   const value = median(values);
   if (value === null || values.length < MIN_GROUP_SIZE) {
     return '(표본 부족)';
@@ -346,7 +464,10 @@ const lengthBucket = (seconds: number): string => {
   if (seconds < 45) {
     return LENGTH_BUCKETS[0];
   }
-  return seconds <= 55 ? LENGTH_BUCKETS[1] : LENGTH_BUCKETS[2];
+  if (seconds <= 55) {
+    return LENGTH_BUCKETS[1];
+  }
+  return LENGTH_BUCKETS[2];
 };
 
 const shortDate = (day: string): string =>

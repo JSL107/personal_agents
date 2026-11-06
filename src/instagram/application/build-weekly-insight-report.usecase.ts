@@ -36,12 +36,16 @@ export class BuildWeeklyInsightReportUsecase {
     const snapshots = await this.snapshots.listByPostIds(
       posts.map((post) => post.id),
     );
-    return formatWeeklyInsightReport({
-      weekStartKst: weekStart.toISOString().slice(0, 10),
-      weekEndKst: weekEnd.toISOString().slice(0, 10),
+    // UTC 자정 Date 는 KST 로 같은 날 09:00 이라 getKstDateOf 가 그 날짜를 그대로 돌려준다.
+    const weekStartKst = getKstDateOf(weekStart);
+    const weekEndKst = getKstDateOf(weekEnd);
+    const report = formatWeeklyInsightReport({
+      weekStartKst,
+      weekEndKst,
       now,
       posts,
       snapshots,
     });
+    return report;
   }
 }

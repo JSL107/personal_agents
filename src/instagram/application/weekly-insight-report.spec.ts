@@ -67,7 +67,7 @@ const snapshot = (
 ): InsightSnapshot => ({
   id: `snap-${++sequence}`,
   postId: target.id,
-  snapshotWindow: SnapshotWindow.D7,
+  snapshotWindow: SnapshotWindow.AFTER_7_DAYS,
   capturedAt: new Date('2026-11-16T00:20:00Z'),
   ageMinutes: 10100,
   metrics: metrics(),
@@ -94,7 +94,7 @@ describe('formatWeeklyInsightReport', () => {
       posts: [reel],
       snapshots: [
         snapshot(reel, {
-          snapshotWindow: SnapshotWindow.H24,
+          snapshotWindow: SnapshotWindow.AFTER_24_HOURS,
           capturedAt: new Date('2026-11-10T01:20:00Z'),
           followersCount: 2,
         }),
@@ -117,19 +117,21 @@ describe('formatWeeklyInsightReport', () => {
       '11/09 「이제 비교할 수 있어요 · 버그를 먼저 찾아 줘요」 52초 2꼭지 질문형/결과형 wave',
     );
     expect(text).toContain(
-      '  D7 조회 210 · 도달 180 · 스킵 72% · 평균 4.4초 · 공유 - · 저장 0',
+      '  7일 조회 210 · 도달 180 · 스킵 72% · 평균 4.4초 · 공유 - · 저장 0',
     );
   });
 
-  it('D7 이 아직 없으면 그 창을 쓰고 미수집이라고 적는다', () => {
+  it('7일 값이 아직 없으면 그 창을 쓰고 미수집이라고 적는다', () => {
     const reel = post({ publishedAt: new Date('2026-11-15T01:00:00Z') });
     const text = formatWeeklyInsightReport({
       ...week,
       posts: [reel],
-      snapshots: [snapshot(reel, { snapshotWindow: SnapshotWindow.H24 })],
+      snapshots: [
+        snapshot(reel, { snapshotWindow: SnapshotWindow.AFTER_24_HOURS }),
+      ],
     });
-    expect(text).toContain('  H24 조회 210');
-    expect(text).toContain('(D7 미수집)');
+    expect(text).toContain('  24시간 조회 210');
+    expect(text).toContain('(7일 값 미수집)');
   });
 
   it('스토리 상태를 한 줄로 센다', () => {
@@ -147,9 +149,11 @@ describe('formatWeeklyInsightReport', () => {
       ...week,
       posts: [post(), ...stories],
       snapshots: [
-        snapshot(stories[0], { snapshotWindow: SnapshotWindow.STORY }),
+        snapshot(stories[0], {
+          snapshotWindow: SnapshotWindow.STORY_BEFORE_EXPIRY,
+        }),
         snapshot(stories[1], {
-          snapshotWindow: SnapshotWindow.STORY,
+          snapshotWindow: SnapshotWindow.STORY_BEFORE_EXPIRY,
           error: SnapshotError.NOT_ENOUGH_VIEWERS,
         }),
       ],
@@ -159,17 +163,17 @@ describe('formatWeeklyInsightReport', () => {
     );
   });
 
-  it('누적 비교는 D7 이 있는 version 1 릴스만 묶고 3편 미만은 표본 부족', () => {
+  it('누적 비교는 7일 값이 있는 version 1 릴스만 묶고 3편 미만은 표본 부족', () => {
     const question = [post(), post(), post()];
     const number = post({
       features: features({ firstLineType: FirstLineType.NUMBER }),
     });
-    const noD7 = post();
+    const withoutSevenDay = post();
     const oldVersion = post({ features: null });
     const skips = [60, 70, 90];
     const text = formatWeeklyInsightReport({
       ...week,
-      posts: [...question, number, noD7, oldVersion],
+      posts: [...question, number, withoutSevenDay, oldVersion],
       snapshots: [
         ...question.map((target, index) =>
           snapshot(target, {
@@ -181,11 +185,13 @@ describe('formatWeeklyInsightReport', () => {
           }),
         ),
         snapshot(number),
-        snapshot(noD7, { snapshotWindow: SnapshotWindow.H24 }),
+        snapshot(withoutSevenDay, {
+          snapshotWindow: SnapshotWindow.AFTER_24_HOURS,
+        }),
         snapshot(oldVersion),
       ],
     });
-    expect(text).toContain('[누적 비교 · D7 기준 · 4편]');
+    expect(text).toContain('[누적 비교 · 7일 값 기준 · 4편]');
     expect(text).toContain(
       '첫 줄  질문형 n=3 스킵 70% · 공유/도달 1.0% | 숫자형 n=1 (표본 부족)',
     );

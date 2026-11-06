@@ -5,9 +5,11 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { toInstagramError } from '../domain/instagram.exception';
 import { InstagramErrorCode } from '../domain/instagram-error-code.enum';
 import {
+  EMPTY_INSIGHT_METRICS,
   InsightCapture,
-  InsightMetrics,
+  InsightSnapshot,
   SnapshotError,
+  SnapshotWindow,
 } from '../domain/instagram-insight.type';
 import {
   InstagramPost,
@@ -35,26 +37,17 @@ import {
 import { readReelScript } from './read-reel-script';
 
 const MINUTE_MS = 60_000;
-const EMPTY_METRICS: InsightMetrics = {
-  views: null,
-  reach: null,
-  likes: null,
-  comments: null,
-  shares: null,
-  saved: null,
-  totalInteractions: null,
-  reposts: null,
-  replies: null,
-  avgWatchMs: null,
-  totalWatchMs: null,
-  skipRate: null,
-};
-
 export interface CollectInsightsSummary {
   inserted: number;
   skipped: number;
   failed: number;
   featuresFilled: number;
+}
+
+interface DueTarget {
+  post: InstagramPost;
+  ageMinutes: number;
+  windows: SnapshotWindow[];
 }
 
 class TokenInvalidStop extends Error {}
@@ -89,31 +82,24 @@ export class CollectInsightsUsecase {
       now.getTime() - INSIGHT_LOOKBACK_MINUTES * MINUTE_MS,
     );
     const published = await this.posts.listPublishedSince(since);
-    const existing = await this.snapshots.listByPostIds(
+    const savedSnapshots = await this.snapshots.listByPostIds(
       published.map((post) => post.id),
     );
-    let followersCount: number | null | undefined;
-
     for (const post of published) {
       if (await this.fillFeatures(post)) {
         summary.featuresFilled += 1;
       }
-      const ageMinutes = Math.floor(
-        (now.getTime() - (post.publishedAt ?? now).getTime()) / MINUTE_MS,
-      );
-      const windows = dueWindows({
-        post,
-        ageMinutes,
-        existing: existing
-          .filter((snapshot) => snapshot.postId === post.id)
-          .map((snapshot) => snapshot.snapshotWindow),
-      });
-      if (windows.length === 0) {
-        continue;
-      }
-      if (followersCount === undefined) {
-        followersCount = await this.readFollowers();
-      }
+    }
+    const targets = published
+      .map((post) => toDueTarget({ post, now, savedSnapshots }))
+      .filter((target) => target.windows.length > 0);
+    if (targets.length === 0) {
+      return summary;
+    }
+    // 찍을 창이 있는 회차에만 한 번 묻는다.
+    const followersCount = await this.readFollowers();
+
+    for (const { post, ageMinutes, windows } of targets) {
       try {
         const snapshot = await this.capture({
           post,
@@ -160,33 +146,32 @@ export class CollectInsightsUsecase {
       post.field === InstagramPostField.STORY
         ? InsightKind.STORY
         : InsightKind.REELS;
-    let result;
-    try {
-      result = await this.graph.getMediaInsights({
-        mediaId: post.mediaId ?? '',
-        kind,
-      });
-    } catch (error) {
-      if (toInstagramError({ error, code: InstagramErrorCode.TOKEN_INVALID })) {
-        throw new TokenInvalidStop();
-      }
-      throw error;
-    }
     const base = {
       postId: post.id,
       capturedAt: now,
       ageMinutes,
       followersCount,
     };
-    if (result.kind === MediaInsightsResultKind.NOT_ENOUGH_VIEWERS) {
-      return {
-        ...base,
-        metrics: EMPTY_METRICS,
-        error: SnapshotError.NOT_ENOUGH_VIEWERS,
-        raw: result.raw,
-      };
+    try {
+      const result = await this.graph.getMediaInsights({
+        mediaId: post.mediaId ?? '',
+        kind,
+      });
+      if (result.kind === MediaInsightsResultKind.NOT_ENOUGH_VIEWERS) {
+        return {
+          ...base,
+          metrics: EMPTY_INSIGHT_METRICS,
+          error: SnapshotError.NOT_ENOUGH_VIEWERS,
+          raw: result.raw,
+        };
+      }
+      return { ...base, metrics: result.metrics, error: null, raw: result.raw };
+    } catch (error) {
+      if (toInstagramError({ error, code: InstagramErrorCode.TOKEN_INVALID })) {
+        throw new TokenInvalidStop();
+      }
+      throw error;
     }
-    return { ...base, metrics: result.metrics, error: null, raw: result.raw };
   }
 
   // 날짜 폴더는 30일 뒤 정리되므로 특성은 처음 볼 때 DB 로 옮겨 둔다. 스토리는 비교할 특성이 없다.
@@ -222,3 +207,23 @@ export class CollectInsightsUsecase {
     }
   }
 }
+
+const toDueTarget = ({
+  post,
+  now,
+  savedSnapshots,
+}: {
+  post: InstagramPost;
+  now: Date;
+  savedSnapshots: InsightSnapshot[];
+}): DueTarget => {
+  const publishedAt = post.publishedAt ?? now;
+  const ageMinutes = Math.floor(
+    (now.getTime() - publishedAt.getTime()) / MINUTE_MS,
+  );
+  const capturedWindows = savedSnapshots
+    .filter((snapshot) => snapshot.postId === post.id)
+    .map((snapshot) => snapshot.snapshotWindow);
+  const windows = dueWindows({ post, ageMinutes, capturedWindows });
+  return { post, ageMinutes, windows };
+};

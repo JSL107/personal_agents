@@ -1,13 +1,13 @@
 import { SnapshotWindow } from './instagram-insight.type';
 import { InstagramPost, InstagramPostField } from './instagram-post.type';
 
-// D7 뒤 이틀 여유. 이보다 오래된 행은 더 찍지 않는다(이대리가 오래 꺼져 있던 경우).
+// 7일 창 뒤 이틀 여유. 이보다 오래된 행은 더 찍지 않는다(이대리가 오래 꺼져 있던 경우).
 export const INSIGHT_LOOKBACK_MINUTES = 12_960;
 
 const REEL_WINDOW_MINUTES: [SnapshotWindow, number][] = [
-  [SnapshotWindow.H24, 1440],
-  [SnapshotWindow.D3, 4320],
-  [SnapshotWindow.D7, 10080],
+  [SnapshotWindow.AFTER_24_HOURS, 1440],
+  [SnapshotWindow.AFTER_3_DAYS, 4320],
+  [SnapshotWindow.AFTER_7_DAYS, 10080],
 ];
 // 스토리 지표는 게시 24시간 뒤 사라진다. 시간당 한 번 도는 수집이 놓치지 않게 20시간부터 찍는다.
 const STORY_FROM_MINUTES = 1200;
@@ -17,23 +17,38 @@ const STORY_UNTIL_MINUTES = 1440;
 export const dueWindows = ({
   post,
   ageMinutes,
-  existing,
+  capturedWindows,
 }: {
   post: InstagramPost;
   ageMinutes: number;
-  existing: SnapshotWindow[];
+  capturedWindows: SnapshotWindow[];
 }): SnapshotWindow[] => {
   if (!post.mediaId || ageMinutes > INSIGHT_LOOKBACK_MINUTES) {
     return [];
   }
   if (post.field === InstagramPostField.STORY) {
-    const open =
-      ageMinutes >= STORY_FROM_MINUTES && ageMinutes < STORY_UNTIL_MINUTES;
-    return open && !existing.includes(SnapshotWindow.STORY)
-      ? [SnapshotWindow.STORY]
-      : [];
+    return dueStoryWindows({ ageMinutes, capturedWindows });
   }
-  return REEL_WINDOW_MINUTES.filter(
-    ([window, minutes]) => ageMinutes >= minutes && !existing.includes(window),
-  ).map(([window]) => window);
+  const reached = REEL_WINDOW_MINUTES.filter(
+    ([window, minutes]) =>
+      ageMinutes >= minutes && !capturedWindows.includes(window),
+  );
+  const windows = reached.map(([window]) => window);
+  return windows;
+};
+
+const dueStoryWindows = ({
+  ageMinutes,
+  capturedWindows,
+}: {
+  ageMinutes: number;
+  capturedWindows: SnapshotWindow[];
+}): SnapshotWindow[] => {
+  if (ageMinutes < STORY_FROM_MINUTES || ageMinutes >= STORY_UNTIL_MINUTES) {
+    return [];
+  }
+  if (capturedWindows.includes(SnapshotWindow.STORY_BEFORE_EXPIRY)) {
+    return [];
+  }
+  return [SnapshotWindow.STORY_BEFORE_EXPIRY];
 };

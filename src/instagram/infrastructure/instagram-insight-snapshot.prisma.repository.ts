@@ -27,10 +27,7 @@ export class InstagramInsightSnapshotPrismaRepository implements InstagramInsigh
       });
       return true;
     } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === UNIQUE_CONSTRAINT_VIOLATION
-      ) {
+      if (isUniqueViolation(error)) {
         return false;
       }
       throw error;
@@ -47,6 +44,14 @@ export class InstagramInsightSnapshotPrismaRepository implements InstagramInsigh
     return rows.map(toSnapshot);
   }
 }
+
+// 같은 (게시물, 창) 이 이미 있을 때 Prisma 가 내는 고유 제약 위반(P2002).
+const isUniqueViolation = (error: unknown): boolean => {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) {
+    return false;
+  }
+  return error.code === UNIQUE_CONSTRAINT_VIOLATION;
+};
 
 const toSnapshot = (row: InstagramInsightSnapshotRow): InsightSnapshot => {
   const snapshotWindow = Object.values(SnapshotWindow).find(

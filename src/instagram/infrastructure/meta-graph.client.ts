@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { isMatching, P } from 'ts-pattern';
+import { isMatching, match, P } from 'ts-pattern';
 
 import { DomainStatus } from '../../common/exception/domain-status.enum';
 import {
@@ -8,7 +8,10 @@ import {
   toInstagramError,
 } from '../domain/instagram.exception';
 import { InstagramErrorCode } from '../domain/instagram-error-code.enum';
-import { InsightMetrics } from '../domain/instagram-insight.type';
+import {
+  EMPTY_INSIGHT_METRICS,
+  InsightMetrics,
+} from '../domain/instagram-insight.type';
 import {
   ContainerStatus,
   ContainerStatusCode,
@@ -46,6 +49,12 @@ interface GraphError {
 }
 
 type GraphResponse = Record<string, unknown>;
+
+// insights 응답 data 배열의 한 칸(INSIGHTS_PATTERN 과 같은 모양).
+interface InsightDatum {
+  name: string;
+  values: { value: unknown }[];
+}
 
 const PUBLISHING_LIMIT_PATTERN = {
   data: { 0: { quota_usage: P.number, config: { quota_total: P.number } } },
@@ -329,33 +338,35 @@ export class MetaGraphClient implements MetaGraphPort {
     mediaId: string;
     kind: InsightKind;
   }): Promise<MediaInsightsResult> {
-    let body: GraphResponse;
+    // catch 는 「조회 5 미만」만 결과로 바꾸고 나머지는 그대로 던진다. 검사·변환까지 try 안에 둬도 잡는 예외가 같다.
     try {
-      body = await this.graphGet({
+      const body = await this.graphGet({
         path: `${mediaId}/insights`,
         params: { metric: INSIGHT_METRICS[kind].join(',') },
       });
+      if (!isMatching(INSIGHTS_PATTERN, body)) {
+        throw this.failure('Meta 인사이트 응답이 올바르지 않습니다.');
+      }
+      const result: MediaInsightsResult = {
+        kind: MediaInsightsResultKind.OK,
+        metrics: toMetrics(body.data),
+        raw: body.data,
+      };
+      return result;
     } catch (error) {
       const notEnough = toInstagramError({
         error,
         code: InstagramErrorCode.INSIGHTS_NOT_ENOUGH_VIEWERS,
       });
-      if (notEnough) {
-        return {
-          kind: MediaInsightsResultKind.NOT_ENOUGH_VIEWERS,
-          raw: { code: NOT_ENOUGH_VIEWERS_CODE, message: notEnough.message },
-        };
+      if (!notEnough) {
+        throw error;
       }
-      throw error;
+      const result: MediaInsightsResult = {
+        kind: MediaInsightsResultKind.NOT_ENOUGH_VIEWERS,
+        raw: { code: NOT_ENOUGH_VIEWERS_CODE, message: notEnough.message },
+      };
+      return result;
     }
-    if (!isMatching(INSIGHTS_PATTERN, body)) {
-      throw this.failure('Meta 인사이트 응답이 올바르지 않습니다.');
-    }
-    return {
-      kind: MediaInsightsResultKind.OK,
-      metrics: toMetrics(body.data),
-      raw: body.data,
-    };
   }
 
   async getFollowersCount(): Promise<number> {
@@ -475,20 +486,7 @@ export class MetaGraphClient implements MetaGraphPort {
 
   private graphFailure(error: GraphError): InstagramException {
     const raw = error.error_user_msg ?? error.message ?? '알 수 없는 오류';
-    // #10 은 권한 부족에도 쓰인다. 조회 5 미만으로 잘못 보면 그 창이 영구히 빈 값으로 닫힌다.
-    const notEnoughViewers =
-      error.code === NOT_ENOUGH_VIEWERS_CODE &&
-      NOT_ENOUGH_VIEWERS_MESSAGE.test(
-        `${error.message ?? ''} ${error.error_user_msg ?? ''}`,
-      );
-    const code =
-      error.code === 190
-        ? InstagramErrorCode.TOKEN_INVALID
-        : error.code === 9 && error.error_subcode === 2207042
-          ? InstagramErrorCode.QUOTA_EXCEEDED
-          : notEnoughViewers
-            ? InstagramErrorCode.INSIGHTS_NOT_ENOUGH_VIEWERS
-            : InstagramErrorCode.GRAPH_REQUEST_FAILED;
+    const code = graphErrorCodeOf(error);
     const safe = this.sanitize(raw);
     const message = `Meta 오류 ${error.code ?? 'unknown'}/${error.error_subcode ?? 'unknown'}: ${safe}`;
     return new InstagramException({
@@ -519,24 +517,31 @@ export class MetaGraphClient implements MetaGraphPort {
   }
 }
 
+// (code, subcode, 메시지) 조합에서 도메인 오류 코드 하나를 고른다.
+// #10 은 권한 부족에도 쓰인다. 메시지까지 보지 않으면 그 창이 「조회 5 미만」 빈 행으로 영구히 닫힌다.
+const graphErrorCodeOf = (error: GraphError): InstagramErrorCode => {
+  const message = `${error.message ?? ''} ${error.error_user_msg ?? ''}`;
+  const code = match({
+    code: error.code,
+    subcode: error.error_subcode,
+    notEnoughViewers: NOT_ENOUGH_VIEWERS_MESSAGE.test(message),
+  })
+    .with({ code: 190 }, () => InstagramErrorCode.TOKEN_INVALID)
+    .with(
+      { code: 9, subcode: 2207042 },
+      () => InstagramErrorCode.QUOTA_EXCEEDED,
+    )
+    .with(
+      { code: NOT_ENOUGH_VIEWERS_CODE, notEnoughViewers: true },
+      () => InstagramErrorCode.INSIGHTS_NOT_ENOUGH_VIEWERS,
+    )
+    .otherwise(() => InstagramErrorCode.GRAPH_REQUEST_FAILED);
+  return code;
+};
+
 // 응답에 없는 지표는 null 로 남긴다. Meta 는 값이 없으면 0 대신 빈 data 를 준다.
-const toMetrics = (
-  data: { name: string; values: { value: unknown }[] }[],
-): InsightMetrics => {
-  const metrics: InsightMetrics = {
-    views: null,
-    reach: null,
-    likes: null,
-    comments: null,
-    shares: null,
-    saved: null,
-    totalInteractions: null,
-    reposts: null,
-    replies: null,
-    avgWatchMs: null,
-    totalWatchMs: null,
-    skipRate: null,
-  };
+const toMetrics = (data: InsightDatum[]): InsightMetrics => {
+  const metrics: InsightMetrics = { ...EMPTY_INSIGHT_METRICS };
   for (const item of data) {
     const key = METRIC_KEYS[item.name];
     const value = item.values[0]?.value;

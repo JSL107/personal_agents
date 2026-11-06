@@ -9,7 +9,7 @@ import { InstagramInsightSnapshotPrismaRepository } from './instagram-insight-sn
 
 const snapshot: NewInsightSnapshot = {
   postId: 'post-1',
-  snapshotWindow: SnapshotWindow.H24,
+  snapshotWindow: SnapshotWindow.AFTER_24_HOURS,
   capturedAt: new Date('2026-11-06T05:40:00Z'),
   ageMinutes: 1450,
   metrics: {
@@ -51,7 +51,7 @@ describe('InstagramInsightSnapshotPrismaRepository.insertIfAbsent', () => {
     const { data } = create.mock.calls[0][0];
     expect(data).toMatchObject({
       postId: 'post-1',
-      snapshotWindow: 'H24',
+      snapshotWindow: 'AFTER_24_HOURS',
       ageMinutes: 1450,
       views: 84,
       shares: null,
@@ -90,7 +90,7 @@ describe('InstagramInsightSnapshotPrismaRepository.listByPostIds', () => {
       {
         id: 'snap-1',
         postId: 'post-1',
-        snapshotWindow: 'STORY',
+        snapshotWindow: 'STORY_BEFORE_EXPIRY',
         capturedAt: snapshot.capturedAt,
         ageMinutes: 1300,
         views: null,
@@ -119,7 +119,7 @@ describe('InstagramInsightSnapshotPrismaRepository.listByPostIds', () => {
     });
     expect(found).toMatchObject({
       id: 'snap-1',
-      snapshotWindow: SnapshotWindow.STORY,
+      snapshotWindow: SnapshotWindow.STORY_BEFORE_EXPIRY,
       error: 'NOT_ENOUGH_VIEWERS',
       metrics: { views: null, skipRate: null },
     });

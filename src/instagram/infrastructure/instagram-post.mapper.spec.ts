@@ -27,11 +27,32 @@ const row: InstagramPostRow = {
 };
 
 describe('toDomain', () => {
-  it('version 1 특성은 그대로, 형식이 다른 특성은 null 로 읽는다', () => {
-    expect(toDomain({ ...row, features: { version: 1 } }).features).toEqual({
+  it('version 1 모양을 다 갖춘 특성만 읽고, 버전·모양이 다르면 null 로 읽는다', () => {
+    const features = {
       version: 1,
-    });
-    expect(toDomain({ ...row, features: { version: 2 } }).features).toBeNull();
+      durationSec: 39.6,
+      segmentFields: ['ai'],
+      headlines: ['업데이트 안 하면 위험해요'],
+      titleForm: 'STATEMENT',
+      firstLine: {
+        subtitle: '?',
+        speech: '가',
+        gesture: 'wave',
+        react: 'none',
+      },
+      firstLineType: 'QUESTION',
+      lineCount: 8,
+      speechChars: 282,
+      pointCards: 4,
+      reacts: ['surprise'],
+      gestureCounts: { wave: 1 },
+      engine: null,
+    };
+    expect(toDomain({ ...row, features }).features).toEqual(features);
+    expect(
+      toDomain({ ...row, features: { ...features, version: 2 } }).features,
+    ).toBeNull();
+    expect(toDomain({ ...row, features: { version: 1 } }).features).toBeNull();
     expect(toDomain({ ...row, features: 'x' }).features).toBeNull();
   });
 
