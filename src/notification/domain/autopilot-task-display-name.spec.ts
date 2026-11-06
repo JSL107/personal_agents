@@ -17,12 +17,14 @@ describe('autopilot task 이름표', () => {
 
   it('id 만 남은 원장 label 도 이름표로 바꾼다', () => {
     expect(toIncidentLabel('instagram-token-check')).toBe(
-      '인스타그램 토큰 점검',
+      '인스타그램 토큰 점검 실패',
     );
   });
 
-  it('cron 이름 형태가 아니면 그대로 둔다', () => {
+  it('이름표 label 에도 실패를 붙이되 두 번 붙이지 않는다', () => {
+    expect(toIncidentLabel('Hermes 아침신문')).toBe('Hermes 아침신문 실패');
     expect(toIncidentLabel('모의투자 추천 실패')).toBe('모의투자 추천 실패');
+    expect(toResolvedLabel('Hermes 아침신문')).toBe('Hermes 아침신문');
   });
 
   // 표에 없는 task 는 영어 id 가 그대로 메시지에 나간다(2026-11-05 저녁 「preview-sweeper」).

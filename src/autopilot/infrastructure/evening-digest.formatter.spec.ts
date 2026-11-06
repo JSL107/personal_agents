@@ -104,7 +104,10 @@ describe('formatEveningDigest', () => {
       },
     });
     expect(text).not.toContain('업무 6');
-    expect(text).toContain('• 외 1개\n• 그 밖에 머지한 PR 2건');
+    expect(text).toContain(
+      '*한 일*\n• 할 일과 연결 안 된 머지 PR 2건\n• 업무 1',
+    );
+    expect(text).toContain('• 업무 5\n• 외 1개');
   });
   it('아침 목록 밖 일은 줄마다 꼬리 대신 소제목 한 줄 아래에 모은다', () => {
     const text = formatEveningDigest({

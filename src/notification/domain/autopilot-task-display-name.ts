@@ -11,16 +11,16 @@ export const toAutopilotTaskDisplayName = (cronName: string): string | null => {
   return AUTOPILOT_TASK_DISPLAY_NAME[taskId] ?? taskId;
 };
 
-// 장애 원장 label 을 아침·저녁 장애 줄 이름으로 바꾼다. 예전 행은 cronName(`Autopilot task <taskId>`)을
-// 그대로 갖고 있어 그대로 실으면 코드 이름이 보인다. 새 행은 알림 단계에서 이미 이름표다.
+// 장애 원장 label 을 아침·저녁 장애 줄 이름으로 바꾼다. label 은 작업 이름이다 — 예전 행은 cronName
+// (`Autopilot task <taskId>`), 이름표가 없던 task 는 id 만, 새 행은 이름표다. 사건이 열려 있는 동안
+// label 은 갱신되지 않는다(실측: `instagram-token-check`, 2026-11-06). 저녁 「그 밖에」처럼 장애 칸
+// 제목이 없는 자리에서도 장애로 읽히게 「실패」를 붙인다.
 export const toIncidentLabel = (label: string): string => {
-  const displayName = toAutopilotTaskDisplayName(label);
-  if (displayName !== null) {
-    return `${displayName} 실패`;
-  }
-  // 이름표가 없던 task 는 알림 단계에서 id 만 label 로 남았고, 사건이 열려 있는 동안 label 은
-  // 갱신되지 않는다(실측: `instagram-token-check`, 2026-11-06).
-  return AUTOPILOT_TASK_DISPLAY_NAME[label] ?? label;
+  const name =
+    toAutopilotTaskDisplayName(label) ??
+    AUTOPILOT_TASK_DISPLAY_NAME[label] ??
+    label;
+  return name.endsWith(' 실패') ? name : `${name} 실패`;
 };
 
 // "해결 — 블로그 GitHub 발행 실패" 처럼 읽히지 않게 해결 줄에서는 " 실패" 를 뗀다.

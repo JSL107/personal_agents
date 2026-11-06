@@ -143,14 +143,15 @@ export const formatEveningDigest = (input: EveningDigestInput): string => {
   const doneLines =
     summary && !summary.loadFailed
       ? [
-          // 조회 실패 안내는 맨 위에 둔다 — 끝에 두면 「아침 목록 밖」 소제목 아래 끝낸 일처럼 읽힌다.
+          // PR 집계 줄은 맨 위에 둔다 — 끝에 두면 「아침 목록 밖」 소제목 아래로 들어간다. 연결 안 된
+          // PR 은 아침 목록 소속을 따지지 않고 센 수라 그 소제목에 속하지 않는다.
           ...(input.mergedPrCount === null
             ? ['• 머지한 PR을 확인하지 못했어요']
             : []),
-          ...formatDoneLines(summary.done),
           ...(summary.extraMergedPrCount > 0
-            ? [`• 그 밖에 머지한 PR ${summary.extraMergedPrCount}건`]
+            ? [`• 할 일과 연결 안 된 머지 PR ${summary.extraMergedPrCount}건`]
             : []),
+          ...formatDoneLines(summary.done),
         ]
       : [
           input.mergedPrCount === null
