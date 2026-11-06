@@ -549,7 +549,10 @@ const graphErrorText = (error: GraphError): string => {
     Boolean(part),
   );
   const unique = [...new Set(parts)];
-  return unique.length > 0 ? unique.join(' / ') : '알 수 없는 오류';
+  if (unique.length === 0) {
+    return '알 수 없는 오류';
+  }
+  return unique.join(' / ');
 };
 
 // 허용한 진단 필드만 붙인다. 응답 본문을 통째로 싣지 않는다.
@@ -559,7 +562,11 @@ const graphErrorDetail = (error: GraphError): string => {
     error.is_transient === undefined ? null : `transient=${error.is_transient}`,
     error.fbtrace_id ? `trace=${error.fbtrace_id}` : null,
   ].filter((field): field is string => field !== null);
-  return fields.length > 0 ? ` (${fields.join(', ')})` : '';
+  if (fields.length === 0) {
+    return '';
+  }
+  const detail = fields.join(', ');
+  return ` (${detail})`;
 };
 
 // (code, subcode, 메시지) 조합에서 도메인 오류 코드 하나를 고른다.
