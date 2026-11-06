@@ -78,28 +78,91 @@ describe('formatEveningDigest', () => {
     );
     expect(text).not.toContain('• PR 4건 머지');
   });
-  it('한 일은 다섯 줄로 접고 목록 밖 표기와 남은 PR 수를 덧붙인다', () => {
+  const doneSummary = (
+    done: { title: string; outsideMorningList: boolean }[],
+  ): NonNullable<EveningDigestInput['todoSummary']> => ({
+    loadFailed: false,
+    hasMorningList: true,
+    done: done.map((line) => ({ ...line, url: null, detail: null })),
+    extraMergedPrCount: 0,
+    notDone: [],
+    ratio: null,
+    waiting: null,
+    backlog: null,
+  });
+  it('한 일은 다섯 줄로 접고 남은 PR 수를 덧붙인다', () => {
     const text = formatEveningDigest({
       ...base(),
       todoSummary: {
-        loadFailed: false,
-        hasMorningList: true,
-        done: Array.from({ length: 6 }, (_, index) => ({
-          title: `업무 ${index + 1}`,
-          url: null,
-          detail: null,
-          outsideMorningList: index === 0,
-        })),
+        ...doneSummary(
+          Array.from({ length: 6 }, (_, index) => ({
+            title: `업무 ${index + 1}`,
+            outsideMorningList: false,
+          })),
+        ),
         extraMergedPrCount: 2,
-        notDone: [],
-        ratio: null,
-        waiting: null,
-        backlog: null,
       },
     });
-    expect(text).toContain('• 업무 1 (아침 목록 밖)');
     expect(text).not.toContain('업무 6');
     expect(text).toContain('• 외 1개\n• 그 밖에 머지한 PR 2건');
+  });
+  it('아침 목록 밖 일은 줄마다 꼬리 대신 소제목 한 줄 아래에 모은다', () => {
+    const text = formatEveningDigest({
+      ...base(),
+      todoSummary: doneSummary([
+        { title: '밖 1', outsideMorningList: true },
+        { title: '안 1', outsideMorningList: false },
+        { title: '밖 2', outsideMorningList: true },
+      ]),
+    });
+    expect(text).toContain('*한 일*\n• 안 1\n_아침 목록 밖_\n• 밖 1\n• 밖 2');
+    expect(text).not.toContain('(아침 목록 밖)');
+  });
+  it('한 일이 전부 아침 목록 밖이면 소제목은 한 번만 나온다', () => {
+    const text = formatEveningDigest({
+      ...base(),
+      todoSummary: doneSummary(
+        Array.from({ length: 5 }, (_, index) => ({
+          title: `밖 ${index + 1}`,
+          outsideMorningList: true,
+        })),
+      ),
+    });
+    expect(text.split('아침 목록 밖')).toHaveLength(2);
+    expect(text).toContain('*한 일*\n_아침 목록 밖_\n• 밖 1');
+  });
+  it('넘친 줄과 PR 조회 실패가 있어도 소제목 아래에는 목록 밖 일만 온다', () => {
+    const text = formatEveningDigest({
+      ...base(),
+      mergedPrCount: null,
+      todoSummary: doneSummary([
+        ...Array.from({ length: 3 }, (_, index) => ({
+          title: `안 ${index + 1}`,
+          outsideMorningList: false,
+        })),
+        ...Array.from({ length: 4 }, (_, index) => ({
+          title: `밖 ${index + 1}`,
+          outsideMorningList: true,
+        })),
+      ]),
+    });
+    expect(text).toContain(
+      '*한 일*\n• 머지한 PR을 확인하지 못했어요\n• 안 1\n• 안 2\n• 안 3\n_아침 목록 밖_\n• 밖 1\n• 밖 2\n• 외 2개',
+    );
+  });
+  it('잘린 줄에만 목록 밖 일이 있으면 소제목을 내지 않는다', () => {
+    const text = formatEveningDigest({
+      ...base(),
+      todoSummary: doneSummary([
+        ...Array.from({ length: 5 }, (_, index) => ({
+          title: `안 ${index + 1}`,
+          outsideMorningList: false,
+        })),
+        { title: '밖 1', outsideMorningList: true },
+      ]),
+    });
+    expect(text).not.toContain('아침 목록 밖');
+    expect(text).toContain('• 안 5\n• 외 1개');
   });
   it('조회 실패면 기존 PR 줄을 복원하고 목록 숫자를 쓰지 않는다', () => {
     const text = formatEveningDigest({

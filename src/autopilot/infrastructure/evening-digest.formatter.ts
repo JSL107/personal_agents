@@ -85,8 +85,7 @@ const formatEveningLine = (line: EveningLine): string => {
     line.url && isSafeHttpUrl(line.url)
       ? `<${sanitizeForSlackLink(line.url)}|${sanitizeForSlackLink(line.title)}>`
       : escapeSlackMrkdwn(line.title);
-  const outside = line.outsideMorningList ? ' (아침 목록 밖)' : '';
-  return `• ${title}${line.detail ? ` (${escapeSlackMrkdwn(line.detail)})` : ''}${outside}`;
+  return `• ${title}${line.detail ? ` (${escapeSlackMrkdwn(line.detail)})` : ''}`;
 };
 
 const formatEveningLines = (lines: EveningLine[]): string[] => [
@@ -95,6 +94,23 @@ const formatEveningLines = (lines: EveningLine[]): string[] => [
     ? [`• 외 ${lines.length - EVENING_LIST_MAX}개`]
     : []),
 ];
+
+// 아침 목록 안 → 밖 순서로 세우고, 밖은 소제목 한 줄 아래에 모은다. 줄마다 꼬리를 달았더니
+// 목록 밖만 있던 날 모든 줄에 같은 말이 반복됐다(2026-11-05 피드백).
+const formatDoneLines = (lines: EveningLine[]): string[] => {
+  const ordered = [
+    ...lines.filter((line) => !line.outsideMorningList),
+    ...lines.filter((line) => line.outsideMorningList),
+  ];
+  const rendered = formatEveningLines(ordered);
+  const firstOutside = ordered
+    .slice(0, EVENING_LIST_MAX)
+    .findIndex((line) => line.outsideMorningList);
+  if (firstOutside >= 0) {
+    rendered.splice(firstOutside, 0, '_아침 목록 밖_');
+  }
+  return rendered;
+};
 
 // 투자 줄은 항목마다 한 줄 — 한 줄에 `·` 로 이어 붙였더니 수익률과 체결 건수가 섞여 읽혔다
 // (2026-10-28 피드백). 항목 이름을 앞에 두어 숫자만 훑어도 무엇인지 보이게 한다.
@@ -127,12 +143,13 @@ export const formatEveningDigest = (input: EveningDigestInput): string => {
   const doneLines =
     summary && !summary.loadFailed
       ? [
-          ...formatEveningLines(summary.done),
-          ...(summary.extraMergedPrCount > 0
-            ? [`• 그 밖에 머지한 PR ${summary.extraMergedPrCount}건`]
-            : []),
+          // 조회 실패 안내는 맨 위에 둔다 — 끝에 두면 「아침 목록 밖」 소제목 아래 끝낸 일처럼 읽힌다.
           ...(input.mergedPrCount === null
             ? ['• 머지한 PR을 확인하지 못했어요']
+            : []),
+          ...formatDoneLines(summary.done),
+          ...(summary.extraMergedPrCount > 0
+            ? [`• 그 밖에 머지한 PR ${summary.extraMergedPrCount}건`]
             : []),
         ]
       : [
