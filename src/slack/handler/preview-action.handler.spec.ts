@@ -6,14 +6,16 @@ import { PREVIEW_ACTION_IDS } from '../../preview-gate/domain/preview-action.typ
 import { PreviewActionHandler } from './preview-action.handler';
 
 describe('PreviewActionHandler', () => {
-  const register = () => {
+  const register = (
+    applyExecute = jest.fn().mockResolvedValue({ resultText: '동기화 완료' }),
+  ) => {
     const handlers = new Map<string, (args: never) => Promise<void>>();
     const app = {
       action: (id: string, handler: (args: never) => Promise<void>) =>
         handlers.set(id, handler),
     } as unknown as App;
     const applyPreview = {
-      execute: jest.fn().mockResolvedValue({ resultText: '동기화 완료' }),
+      execute: applyExecute,
     } as unknown as ApplyPreviewUsecase;
     const cancelPreview = {
       execute: jest.fn().mockResolvedValue(undefined),
@@ -35,6 +37,17 @@ describe('PreviewActionHandler', () => {
     expect(text).toContain('✅ 적용 완료: 동기화 완료');
     expect(text).not.toContain('Preview');
     expect(text).not.toContain('—');
+  });
+
+  it('적용이 실패하면 재시도 버튼이 남은 카드를 덮어쓰지 않는다', async () => {
+    const respond = jest.fn();
+    const handlers = register(
+      jest.fn().mockRejectedValue(new Error('HTTP 400')),
+    );
+    await handlers.get(PREVIEW_ACTION_IDS.APPLY)?.(args(respond) as never);
+    expect(respond).toHaveBeenCalledWith(
+      expect.objectContaining({ replace_original: false }),
+    );
   });
 
   it('취소 안내에 줄표를 싣지 않는다', async () => {

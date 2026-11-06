@@ -212,6 +212,40 @@ describe('MetaGraphClient', () => {
     });
   });
 
+  it('업로드가 HTTP 400 이면 정제한 debug_info 사유를 오류에 넣는다', async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        debug_info: {
+          type: 'ProcessingFailedError',
+          message: 'bad file secret-page-token https://example.com/x',
+        },
+      }),
+    });
+    await expect(
+      client.uploadVideo({
+        uploadUri: 'https://rupload.facebook.com/media',
+        video: Buffer.from('video'),
+      }),
+    ).rejects.toMatchObject({
+      errorCode: InstagramErrorCode.GRAPH_REQUEST_FAILED,
+      message:
+        'Meta 요청 실패: HTTP 400: ProcessingFailedError bad file [REDACTED] [URL]',
+    });
+  });
+
+  it('HTTP 오류에 debug_info 가 없으면 상태 코드만 남긴다', async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({}),
+    });
+    await expect(client.getContainerStatus('container')).rejects.toMatchObject({
+      message: 'Meta 요청 실패: HTTP 400',
+    });
+  });
+
   it('컨테이너 상태를 받으면 민감 정보를 정제해 반환한다', async () => {
     fetchMock.mockResolvedValue({
       ok: true,
