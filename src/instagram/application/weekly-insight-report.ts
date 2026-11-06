@@ -16,6 +16,7 @@ import {
   InstagramPost,
   InstagramPostField,
 } from '../domain/instagram-post.type';
+import { lateMinutesOf } from '../domain/snapshot-window.policy';
 
 export interface WeeklyReportInput {
   weekStartKst: string;
@@ -225,7 +226,7 @@ const reelLines = ({
     latest.snapshotWindow === SnapshotWindow.AFTER_7_DAYS
       ? ''
       : ' (7일 값 미수집)';
-  const metricsLine = `  ${WINDOW_LABELS[latest.snapshotWindow]} ${describeMetrics(latest.metrics)}${missingSevenDay}`;
+  const metricsLine = `  ${WINDOW_LABELS[latest.snapshotWindow]} ${describeMetrics(latest.metrics)}${latePhrase(latest)}${missingSevenDay}`;
   return [head, metricsLine];
 };
 
@@ -346,6 +347,7 @@ const comparisonLines = ({
   byPost: Map<string, InsightSnapshot[]>;
 }): string[] => {
   const comparable: ComparableReel[] = [];
+  let lateCount = 0;
   for (const post of posts) {
     const sevenDaySnapshot = (byPost.get(post.id) ?? []).find(
       (snapshot) => snapshot.snapshotWindow === SnapshotWindow.AFTER_7_DAYS,
@@ -359,6 +361,9 @@ const comparisonLines = ({
         features: post.features,
         metrics: sevenDaySnapshot.metrics,
       });
+      if (lateMinutesOf(sevenDaySnapshot) !== null) {
+        lateCount += 1;
+      }
     }
   }
   if (comparable.length === 0) {
@@ -368,7 +373,8 @@ const comparisonLines = ({
     const groups = groupBy({ reels: comparable, keyOf, order });
     return `${name}  ${describeGroups(groups)}`;
   });
-  const header = `[누적 비교 · 7일 값 기준 · ${comparable.length}편]`;
+  const late = lateCount > 0 ? ` · 늦게 수집 ${lateCount}편` : '';
+  const header = `[누적 비교 · 7일 값 기준 · ${comparable.length}편${late}]`;
   return [header, ...axisLines];
 };
 
@@ -472,6 +478,14 @@ const lengthBucket = (seconds: number): string => {
 
 const shortDate = (day: string): string =>
   `${day.slice(5, 7)}/${day.slice(8, 10)}`;
+
+const latePhrase = (snapshot: InsightSnapshot): string => {
+  const lateMinutes = lateMinutesOf(snapshot);
+  if (lateMinutes === null) {
+    return '';
+  }
+  return ` (${Math.round(lateMinutes / 60)}시간 늦게 수집)`;
+};
 
 const orDash = (value: number | null): string =>
   value === null ? '-' : String(value);

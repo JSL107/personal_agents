@@ -59,8 +59,8 @@ export const AUTOPILOT_DELIVERY_ROUTE: Readonly<
   'pr-review-sweep': 'console',
   'reels-publish-offer': 'slack',
   'instagram-token-check': 'slack',
-  // 수집은 늘 skip 이라 실제로 보낼 일이 없다. 사람이 보는 건 주간 리포트뿐이다.
-  'reels-insights-collect': 'console',
+  // 수집은 평소 skip 이다. 연속 실패 알림만 보낸다(하루 1회).
+  'reels-insights-collect': 'slack',
   'reels-insights-weekly': 'slack',
   'ai-cli-env-snapshot': 'console',
   'ai-cli-env-apply': 'slack',

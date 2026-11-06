@@ -127,11 +127,38 @@ describe('formatWeeklyInsightReport', () => {
       ...week,
       posts: [reel],
       snapshots: [
-        snapshot(reel, { snapshotWindow: SnapshotWindow.AFTER_24_HOURS }),
+        snapshot(reel, {
+          snapshotWindow: SnapshotWindow.AFTER_24_HOURS,
+          ageMinutes: 1480,
+        }),
       ],
     });
     expect(text).toContain('  24시간 조회 210');
     expect(text).toContain('(7일 값 미수집)');
+    expect(text).not.toContain('늦게 수집');
+  });
+
+  // 수집은 매시 20분에 돈다. 창이 열린 뒤 첫 회차까지는 1시간 안이라 그만큼은 늦음이 아니다.
+  it('창이 열린 지 2시간 넘어 찍힌 값은 몇 시간 늦었는지 적는다', () => {
+    const reel = post();
+    const text = formatWeeklyInsightReport({
+      ...week,
+      posts: [reel],
+      snapshots: [snapshot(reel, { ageMinutes: 10080 + 300 })],
+    });
+    expect(text).toContain('저장 0 (5시간 늦게 수집)');
+  });
+
+  it('누적 비교 머리줄에 늦게 찍힌 7일 값의 편수를 적는다', () => {
+    const reels = [post(), post(), post()];
+    const text = formatWeeklyInsightReport({
+      ...week,
+      posts: reels,
+      snapshots: reels.map((target, index) =>
+        snapshot(target, { ageMinutes: index === 0 ? 10080 + 600 : 10100 }),
+      ),
+    });
+    expect(text).toContain('[누적 비교 · 7일 값 기준 · 3편 · 늦게 수집 1편]');
   });
 
   it('스토리 상태를 한 줄로 센다', () => {
