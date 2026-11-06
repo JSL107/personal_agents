@@ -38,22 +38,21 @@ const GRAPH_ERROR_RESPONSE_PATTERN = {
     error_subcode: P.optional(P.number),
     message: P.optional(P.string),
     error_user_msg: P.optional(P.string),
-    error_user_title: P.optional(P.string),
-    type: P.optional(P.string),
-    fbtrace_id: P.optional(P.string),
-    is_transient: P.optional(P.boolean),
   },
 };
 
-interface GraphError {
-  code?: number;
-  error_subcode?: number;
-  message?: string;
-  error_user_msg?: string;
+interface GraphDiagnostics {
   error_user_title?: string;
   type?: string;
   fbtrace_id?: string;
   is_transient?: boolean;
+}
+
+interface GraphError extends GraphDiagnostics {
+  code?: number;
+  error_subcode?: number;
+  message?: string;
+  error_user_msg?: string;
 }
 
 type GraphResponse = Record<string, unknown>;
@@ -487,7 +486,10 @@ export class MetaGraphClient implements MetaGraphPort {
         if (!isMatching(GRAPH_ERROR_RESPONSE_PATTERN, body)) {
           throw this.failure('Meta 오류 응답이 올바르지 않습니다.');
         }
-        throw this.graphFailure(body.error);
+        throw this.graphFailure({
+          ...body.error,
+          ...graphDiagnosticsOf(body.error),
+        });
       }
       if (!response.ok) {
         // rupload 는 error 대신 debug_info 에 사유를 담아 실패를 돌려준다. 버리면 HTTP 상태만 남는다.
@@ -539,6 +541,20 @@ export class MetaGraphClient implements MetaGraphPort {
     return safe;
   }
 }
+
+// 진단 필드는 검사 패턴에 넣지 않는다. null 이나 다른 형식이 오면 응답 전체가 거부돼 190·한도 분류까지 잃는다.
+const graphDiagnosticsOf = (error: object): GraphDiagnostics => ({
+  error_user_title: isMatching({ error_user_title: P.string }, error)
+    ? error.error_user_title
+    : undefined,
+  type: isMatching({ type: P.string }, error) ? error.type : undefined,
+  fbtrace_id: isMatching({ fbtrace_id: P.string }, error)
+    ? error.fbtrace_id
+    : undefined,
+  is_transient: isMatching({ is_transient: P.boolean }, error)
+    ? error.is_transient
+    : undefined,
+});
 
 // 사용자용 문구(error_user_title·error_user_msg)와 개발자용 message 가 다르면 둘 다 남긴다.
 const graphErrorText = (error: GraphError): string => {

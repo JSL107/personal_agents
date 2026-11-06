@@ -322,6 +322,26 @@ describe('MetaGraphClient', () => {
     });
   });
 
+  it('진단 필드가 null 이어도 오류 응답을 버리지 않고 190 을 토큰 오류로 분류한다', async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      json: async () => ({
+        error: {
+          code: 190,
+          message: 'expired',
+          type: null,
+          fbtrace_id: null,
+          error_user_title: null,
+          is_transient: null,
+        },
+      }),
+    });
+    await expect(client.getPublishingLimit()).rejects.toMatchObject({
+      errorCode: InstagramErrorCode.TOKEN_INVALID,
+      message: 'Meta 오류 190/unknown: expired',
+    });
+  });
+
   it.each([
     new TypeError('secret-page-token'),
     Object.assign(new Error('secret-page-token'), { name: 'AbortError' }),

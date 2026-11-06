@@ -870,6 +870,7 @@ describe('ApplyPreviewUsecase', () => {
   });
 
   it('transition 실패는 부작용이 반영된 뒤이므로 사유에 단계를 구분해 남긴다', async () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
     const repo = buildRepo(buildPreview());
     repo.transition.mockRejectedValue(new Error('db write failed'));
     const applier = buildApplier(PREVIEW_KIND.PM_WRITE_BACK);
@@ -892,6 +893,10 @@ describe('ApplyPreviewUsecase', () => {
       reason: '[transition] db write failed',
       at: fixedNow,
     });
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('sideEffectApplied=true'),
+    );
+    warnSpy.mockRestore();
   });
 
   it('실패 기록 자체가 throw 해도 원래 실패 사유가 전파되고 카드 갱신도 진행된다', async () => {
