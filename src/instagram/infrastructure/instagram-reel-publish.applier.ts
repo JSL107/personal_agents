@@ -87,6 +87,8 @@ export class InstagramReelPublishApplier implements PreviewApplier {
   // 게시 결과가 불확실한 뒤 같은 컨테이너로 다시 게시하기까지 기다리는 시간. 재조회 60초만으로는
   // Meta 쪽 PUBLISHED 반영·게시물 목록 반영 지연을 덮지 못해, 실제로 올라간 릴스를 한 번 더 올릴 수 있다.
   republishAfterMs = 10 * 60_000;
+  uploadAttempts = 3;
+  uploadRetryMs = 5_000;
 
   constructor(
     @Inject(INSTAGRAM_POST_REPOSITORY_PORT)
@@ -275,6 +277,34 @@ export class InstagramReelPublishApplier implements PreviewApplier {
         });
       }
       await this.checkQuota();
+      const containerPost = await this.uploadToNewContainer({
+        post,
+        payload,
+        video,
+      });
+      const uploadedPost = await this.repository.update({
+        id: containerPost.id,
+        patch: { uploadedAt: new Date() },
+      });
+      await progress?.record('container');
+      return uploadedPost;
+    }
+    return post;
+  }
+
+  // Meta 업로드 서버는 같은 영상·같은 요청에도 ProcessingFailedError(400)를 불규칙하게 돌려준다
+  // (2026-11-06 실측: 같은 파일이 성공·실패를 오갔다). 게시 전 단계라 새 컨테이너로 다시 해도 중복
+  // 게시 위험이 없으니, 요청 실패만 몇 번 더 시도한다. 토큰 오류처럼 다시 해도 같은 실패는 바로 던진다.
+  private async uploadToNewContainer({
+    post,
+    payload,
+    video,
+  }: {
+    post: InstagramPost;
+    payload: ReelPublishPayload;
+    video: Buffer;
+  }): Promise<InstagramPost> {
+    for (let attempt = 1; ; attempt += 1) {
       const container = await this.graph.createReelContainer({
         caption: payload.caption,
         thumbOffsetMs: payload.coverOffsetMs,
@@ -288,15 +318,22 @@ export class InstagramReelPublishApplier implements PreviewApplier {
           publishAttemptedAt: null,
         },
       });
-      await this.graph.uploadVideo({ uploadUri: container.uploadUri, video });
-      const uploadedPost = await this.repository.update({
-        id: containerPost.id,
-        patch: { uploadedAt: new Date() },
-      });
-      await progress?.record('container');
-      return uploadedPost;
+      try {
+        await this.graph.uploadVideo({
+          uploadUri: container.uploadUri,
+          video,
+        });
+        return containerPost;
+      } catch (error) {
+        const retriable =
+          error instanceof InstagramException &&
+          error.errorCode === InstagramErrorCode.GRAPH_REQUEST_FAILED;
+        if (!retriable || attempt >= this.uploadAttempts) {
+          throw error;
+        }
+        await this.wait(this.uploadRetryMs);
+      }
     }
-    return post;
   }
 
   private async publishContainer({
