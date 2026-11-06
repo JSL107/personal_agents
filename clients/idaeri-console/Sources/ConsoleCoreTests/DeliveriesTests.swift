@@ -16,7 +16,7 @@ func runDeliveriesTests(_ t: TestRunner) {
         t.expectEqual(result.status, "SUPPRESSED")
         t.expectEqual(result.days, 14)
         t.expectEqual(result.items[0].channelId, nil)
-        t.expectEqual(result.items[0].title, "업무 회고 · 일일 평가")
+        t.expectEqual(result.items[0].title, "업무일지 · 하루 평가")
         t.expectEqual(result.items[1].title, "future-kind")
         t.expectEqual(result.items[0].bodyText, "전체\n내용")
         t.expectEqual(result.items[1].bodyText, "대체 본문")

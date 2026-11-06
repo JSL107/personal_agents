@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { AUTOPILOT_PLAYBOOK } from '../../autopilot/domain/autopilot.playbook';
 import {
   toAutopilotTaskDisplayName,
@@ -36,5 +39,34 @@ describe('autopilot task 이름표', () => {
         toAutopilotTaskDisplayName(`Autopilot task ${taskId}`) === taskId,
     );
     expect(missing).toEqual([]);
+  });
+
+  // 콘솔 앱(Swift)의 reportKindLabel 은 별도 표다. 한쪽만 고치면 같은 작업이 Slack 과 콘솔에서
+  // 다른 이름으로 보인다(2026-11-06). 서버 표에 없는 id(콘솔 전용)는 비교하지 않는다.
+  it('콘솔 이름표가 서버 이름표와 같다', () => {
+    const swift = readFileSync(
+      join(
+        __dirname,
+        '../../../clients/idaeri-console/Sources/ConsoleCore/Deliveries.swift',
+      ),
+      'utf8',
+    );
+    const table = swift.slice(
+      swift.indexOf('func reportKindLabel'),
+      swift.indexOf('return labels[id]'),
+    );
+    const entries = [...table.matchAll(/"([a-z-]+)": "([^"]+)"/g)];
+    expect(entries.length).toBeGreaterThan(0);
+    const mismatched = entries
+      .map(([, taskId, consoleName]) => ({
+        taskId,
+        consoleName,
+        serverName: toAutopilotTaskDisplayName(`Autopilot task ${taskId}`),
+      }))
+      .filter(
+        ({ taskId, consoleName, serverName }) =>
+          serverName !== taskId && serverName !== consoleName,
+      );
+    expect(mismatched).toEqual([]);
   });
 });

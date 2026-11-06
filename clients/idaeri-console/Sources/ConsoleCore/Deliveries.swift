@@ -120,16 +120,17 @@ public func groupDeliveries(_ rows: [SlackDeliveryListRow]) -> [DeliveryDayGroup
 
 /// Autopilot task id의 화면 이름. 미등록 id는 원문으로 남겨 새 작업도 식별 가능하게 한다.
 public func reportKindLabel(_ id: String) -> String {
+    // 서버 src/notification/domain/autopilot-task-display-name.ts 와 같은 이름을 쓴다 — Slack 장애 줄과 같은 작업이 다른 이름으로 보이지 않게.
     let labels: [String: String] = [
-        "work-reviewer": "업무 회고", "daily-eval": "일일 평가", "run-retro": "실행 회고",
+        "work-reviewer": "업무일지", "daily-eval": "하루 평가", "run-retro": "주간 실행 회고",
         "paper-recommend": "모의투자 추천", "paper-order-fill": "모의투자 체결",
-        "universe-sweep": "종목 수집", "screening-outcome-scoring": "종목 선별 성과 평가",
-        "secretariat": "비서실", "study-deepdive": "심층 학습", "job-feed": "채용공고 수집",
-        "stock-monitor-us": "미국 주식 모니터링", "docs-sync-audit": "문서 동기화 점검",
-        "memory-vacuum": "메모리 정리", "ai-cli-env-snapshot": "AI CLI 환경 스냅샷",
-        "preview-sweeper": "미리보기 정리", "run-sweeper": "실행 정리",
+        "universe-sweep": "종목 시세 수집", "screening-outcome-scoring": "종목 선별 채점",
+        "secretariat": "비서실", "study-deepdive": "공부 딥다이브", "job-feed": "공고 수집",
+        "stock-monitor-us": "미국 주식 모니터링", "docs-sync-audit": "문서·코드 맞춤 점검",
+        "memory-vacuum": "세션 기억 정리", "ai-cli-env-snapshot": "AI 도구 설정 백업",
+        "preview-sweeper": "만료 승인 카드 정리", "run-sweeper": "멈춘 실행 정리",
         "pr-review-sweep": "PR 리뷰 점검", "paper-trading": "모의투자 평가",
-        "job-feed-gap": "채용공고 역량 격차", "portfolio-publish": "포트폴리오 발행",
+        "job-feed-gap": "공고 갭 분석", "portfolio-publish": "포트폴리오 발행",
         "study-brief": "학습 브리핑",
     ]
     return labels[id] ?? id
