@@ -95,6 +95,8 @@ import { PortfolioWarmupAutopilotTask } from './infrastructure/tasks/portfolio-w
 import { PrReviewSweepAutopilotTask } from './infrastructure/tasks/pr-review-sweep.autopilot-task';
 import { PreferenceLearningAutopilotTask } from './infrastructure/tasks/preference-learning.autopilot-task';
 import { PreviewSweeperAutopilotTask } from './infrastructure/tasks/preview-sweeper.autopilot-task';
+import { ReelsInsightsCollectAutopilotTask } from './infrastructure/tasks/reels-insights-collect.autopilot-task';
+import { ReelsInsightsWeeklyAutopilotTask } from './infrastructure/tasks/reels-insights-weekly.autopilot-task';
 import { ReelsPublishOfferAutopilotTask } from './infrastructure/tasks/reels-publish-offer.autopilot-task';
 import { RunRetroAutopilotTask } from './infrastructure/tasks/run-retro.autopilot-task';
 import { RunSweeperAutopilotTask } from './infrastructure/tasks/run-sweeper.autopilot-task';
@@ -210,6 +212,8 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     PrReviewSweepAutopilotTask,
     ReelsPublishOfferAutopilotTask,
     InstagramTokenCheckAutopilotTask,
+    ReelsInsightsCollectAutopilotTask,
+    ReelsInsightsWeeklyAutopilotTask,
     ScheduleReminderAutopilotTask,
     ScheduleCollectNotionAutopilotTask,
     ScheduleCollectSlackAutopilotTask,
@@ -323,6 +327,8 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         prReviewSweep: PrReviewSweepAutopilotTask,
         reelsPublishOffer: ReelsPublishOfferAutopilotTask,
         instagramTokenCheck: InstagramTokenCheckAutopilotTask,
+        reelsInsightsCollect: ReelsInsightsCollectAutopilotTask,
+        reelsInsightsWeekly: ReelsInsightsWeeklyAutopilotTask,
         scheduleReminder: ScheduleReminderAutopilotTask,
         scheduleCollectNotion: ScheduleCollectNotionAutopilotTask,
         scheduleCollectSlack: ScheduleCollectSlackAutopilotTask,
@@ -373,6 +379,8 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         prReviewSweep,
         reelsPublishOffer,
         instagramTokenCheck,
+        reelsInsightsCollect,
+        reelsInsightsWeekly,
         scheduleReminder,
         scheduleCollectNotion,
         scheduleCollectSlack,
@@ -424,6 +432,8 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         PrReviewSweepAutopilotTask,
         ReelsPublishOfferAutopilotTask,
         InstagramTokenCheckAutopilotTask,
+        ReelsInsightsCollectAutopilotTask,
+        ReelsInsightsWeeklyAutopilotTask,
         ScheduleReminderAutopilotTask,
         ScheduleCollectNotionAutopilotTask,
         ScheduleCollectSlackAutopilotTask,

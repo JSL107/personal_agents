@@ -53,6 +53,7 @@ const post = (): InstagramPost => ({
   status: InstagramPostStatus.PENDING,
   lastError: null,
   publishedAt: null,
+  features: null,
   createdAt: new Date(),
   updatedAt: new Date(),
 });
@@ -89,6 +90,8 @@ describe('PublishStoryUsecase', () => {
         void reelKey;
         return row;
       }),
+      listPublishedSince: jest.fn(),
+      setFeatures: jest.fn(),
     };
     graph = {
       isConfigured: jest.fn().mockReturnValue(true),
@@ -110,6 +113,8 @@ describe('PublishStoryUsecase', () => {
       }),
       listRecentMedia: jest.fn(),
       debugPageToken: jest.fn(),
+      getMediaInsights: jest.fn(),
+      getFollowersCount: jest.fn(),
     };
     lease = {
       acquireOnce: jest.fn().mockResolvedValue(true),

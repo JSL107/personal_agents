@@ -1585,8 +1585,43 @@ model InstagramPost {
   status             String
   lastError          String?   @map("last_error")
   publishedAt        DateTime? @map("published_at")
+  // 인사이트 리포트가 묶는 영상 특성. 첫 수집 때 script.json 에서 복사한다(날짜 폴더는 30일 뒤 정리된다).
+  features           Json?
   createdAt          DateTime  @default(now()) @map("created_at")
   updatedAt          DateTime  @updatedAt @map("updated_at")
 
+  insightSnapshots InstagramInsightSnapshot[]
+
   @@map("instagram_post")
+}
+
+// 게시물 인사이트의 시점별 스냅숏. Meta 인사이트는 누적값(lifetime)만 주므로 시점마다 직접 찍어 둔다.
+// 응답에 없는 지표는 0 이 아니라 null 이다. 행이 있으면 그 창은 끝난 것이다(일시 실패는 행을 만들지 않는다).
+model InstagramInsightSnapshot {
+  id                String        @id @default(uuid())
+  postId            String        @map("post_id")
+  post              InstagramPost @relation(fields: [postId], references: [id])
+  snapshotWindow    String        @map("snapshot_window")
+  capturedAt        DateTime      @map("captured_at")
+  ageMinutes        Int           @map("age_minutes")
+  views             Int?
+  reach             Int?
+  likes             Int?
+  comments          Int?
+  shares            Int?
+  saved             Int?
+  totalInteractions Int?          @map("total_interactions")
+  reposts           Int?
+  replies           Int?
+  avgWatchMs        Int?          @map("avg_watch_ms")
+  // 누적 시청 ms 는 Int(약 596시간)를 넘을 수 있다. double 은 2^53 까지 정수가 정확하다.
+  totalWatchMs      Float?        @map("total_watch_ms")
+  skipRate          Float?        @map("skip_rate")
+  followersCount    Int?          @map("followers_count")
+  error             String?
+  raw               Json
+  createdAt         DateTime      @default(now()) @map("created_at")
+
+  @@unique([postId, snapshotWindow])
+  @@map("instagram_insight_snapshot")
 }
