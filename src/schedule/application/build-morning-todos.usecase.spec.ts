@@ -135,7 +135,15 @@ describe('BuildMorningTodosUsecase', () => {
     ]);
     resolve.execute.mockResolvedValue(
       new Map([
-        [4, { turn: 'UNKNOWN', reason: null, observed: false, wait: null }],
+        [
+          4,
+          {
+            turn: 'UNKNOWN',
+            reason: null,
+            observed: true,
+            wait: { label: '20일째 움직임 없음', days: 20 },
+          },
+        ],
         [3, { turn: 'MY_TURN', reason: '승인됨', observed: true, wait: null }],
         [
           2,
@@ -158,7 +166,7 @@ describe('BuildMorningTodosUsecase', () => {
       '충돌 있음',
       '승인됨',
       null,
-      null,
+      '20일째 움직임 없음',
     ]);
   });
 
