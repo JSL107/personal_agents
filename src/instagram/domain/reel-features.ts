@@ -3,9 +3,21 @@ import { isMatching, P } from 'ts-pattern';
 import {
   FirstLineType,
   REEL_FEATURES_VERSION,
+  ReelExperimentArm,
   ReelFeatures,
   TitleForm,
 } from './instagram-insight.type';
+
+const EXPERIMENT_PATTERN = {
+  policyVersion: P.number,
+  source: P.string,
+  experimentId: P.union(P.string, null),
+  knob: P.union(P.string, null),
+  arm: P.union(ReelExperimentArm.CHAMPION, ReelExperimentArm.CHALLENGER),
+  values: P.record(P.string, P.union(P.boolean, P.string, P.number)),
+  realized: P.boolean,
+  checks: P.record(P.string, P.union(P.number, null)),
+};
 
 // DB 의 features Json 을 읽을 때 쓰는 모양 검사. 다른 버전이거나 모양이 다르면 아직 없는 것으로 본다.
 export const REEL_FEATURES_PATTERN = {
@@ -31,6 +43,7 @@ export const REEL_FEATURES_PATTERN = {
   reacts: P.array(P.string),
   gestureCounts: P.record(P.string, P.number),
   engine: P.union(P.string, null),
+  experiment: P.optional(EXPERIMENT_PATTERN),
 };
 
 const LINE_PATTERN = {
@@ -121,6 +134,10 @@ export const extractReelFeatures = ({
     gestureCounts,
     engine: parsed.engine,
   };
+  // 모양이 어긋난 기록은 빼고 나머지 특성은 그대로 남긴다. 실험 집계에서는 기록 없는 영상이 빠질 뿐이다.
+  if (isMatching({ experiment: EXPERIMENT_PATTERN }, script)) {
+    features.experiment = script.experiment;
+  }
   return features;
 };
 

@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import array
 import fcntl
+import hashlib
 import ipaddress
 import itertools
 import json
@@ -44,7 +45,7 @@ import urllib.parse
 import urllib.request
 import wave
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -120,6 +121,14 @@ TAKEAWAY_MAX_CHARS = 24
 TAKEAWAY_SPEECH_CHARS = (15, 30)
 HOLD_SEC, COVER_SEC = 1.5, 0.5  # 정리 카드를 마지막 줄 뒤에 남기는 시간, 맨 끝 무음 표지 구간
 STORY_SEC = 8.0
+# 숏폼 통상 음량. 11/09 영상 실측 -20.4 LUFS 로 약 6dB 작았다(2026-11-09). 허용 오차를 넘으면 제작 실패로 끊는다.
+LOUDNESS_TARGET, LOUDNESS_TOLERANCE, TRUE_PEAK_MAX = -14.0, 1.0, -1.0
+# 형식 실험(2026-11-09 자가 개선 설계). 정책 파일은 이대리가 쓰고 여기서는 읽기만 한다. 손잡이와 허용 값은 코드가 정한다.
+POLICY_NAME = "format-policy.json"
+KNOBS = {"early_card": (False, True)}
+DEFAULT_VALUES = {"early_card": False}
+EARLY_CARD_SEC, EARLY_CARD_MAX_SEC = 1.2, 1.5  # 첫 요점 카드를 당겨 띄울 시각과, 당겨졌다고 볼 상한
+BLOCK_DAYS = 2
 FIELD_NAMES = {"ai": "AI", "dev": "개발"}
 BRIDGE_LINE = {"subtitle": "다음은 개발 소식", "speech": "다음은 개발 소식이에요", "gesture": "point", "react": "none",
                "point_kind": "bridge", "point": "다음은 개발 소식"}
@@ -633,7 +642,101 @@ def mouth_levels(audio: array.array, frames: int) -> tuple[str, str]:
     return "".join(marks), energy
 
 
-def build_timeline(lines: list[dict], durations: list[float], sections: list[dict], day: str) -> dict:
+def load_policy(out_root: Path) -> tuple[dict, str]:
+    """형식 정책과 읽은 경로(file·default)를 돌려준다. 없거나 깨졌거나 모르는 키·값이 있으면 내장 기본값으로 만든다.
+    정책이 깨졌다고 그날 영상을 못 만들면 안 되므로 예외를 던지지 않는다."""
+    default = {"version": 0, "frozen": False, "champion": dict(DEFAULT_VALUES), "experiment": None}
+    path = out_root / POLICY_NAME
+    try:
+        if path.is_symlink():
+            return default, "default:symlink"
+        policy = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return default, "default:missing"
+    except (OSError, ValueError):
+        return default, "default:broken"
+    reason = policy_problem(policy)
+    if reason:
+        return default, f"default:{reason}"
+    return policy, "file"
+
+
+def policy_problem(policy: object) -> str:
+    """정책 모양이 틀렸으면 이유, 맞으면 빈 문자열."""
+    if not isinstance(policy, dict) or set(policy) != {"version", "frozen", "champion", "experiment"}:
+        return "keys"
+    if not isinstance(policy["version"], int) or isinstance(policy["version"], bool) or not isinstance(policy["frozen"], bool):
+        return "types"
+    champion = policy["champion"]
+    if not isinstance(champion, dict) or set(champion) != set(KNOBS):
+        return "champion"
+    if any(champion[knob] not in values or type(champion[knob]) is not type(values[0]) for knob, values in KNOBS.items()):
+        return "champion"
+    experiment = policy["experiment"]
+    if experiment is None:
+        return ""
+    if not isinstance(experiment, dict) or set(experiment) != {"id", "knob", "challenger", "start"}:
+        return "experiment"
+    knob = experiment["knob"]
+    if not isinstance(knob, str) or knob not in KNOBS or experiment["challenger"] not in KNOBS[knob] or experiment["challenger"] == champion[knob]:
+        return "experiment"
+    if type(experiment["challenger"]) is not type(KNOBS[knob][0]) or not isinstance(experiment["id"], str) or not experiment["id"]:
+        return "experiment"
+    try:
+        date.fromisoformat(experiment["start"])
+    except (TypeError, ValueError):
+        return "experiment"
+    return ""
+
+
+def assign_arm(policy: dict, day: str) -> tuple[str, dict, bool]:
+    """그날의 군과 적용할 값. 실험 시작일부터 BLOCK_DAYS 일 묶음마다 챔피언·도전자를 한 번씩, 순서는 실험 id 와
+    묶음 번호의 해시로 정한다. 날짜만으로 정해지므로 재시도해도 같은 군이고, 게시가 안 된 날도 다시 뽑지 않는다.
+    세 번째 값은 그날이 실험 기간 안인지다(밖이면 챔피언 값이지만 실험 표본이 아니다)."""
+    values = dict(policy["champion"])
+    experiment = policy["experiment"]
+    if policy["frozen"] or experiment is None:
+        return "champion", values, False
+    offset = (date.fromisoformat(day) - date.fromisoformat(experiment["start"])).days
+    if offset < 0:
+        return "champion", values, False
+    block, position = divmod(offset, BLOCK_DAYS)
+    challenger_first = hashlib.sha256(f"{experiment['id']}:{block}".encode()).digest()[0] % 2 == 1
+    if (position == 0) != challenger_first:
+        return "champion", values, True
+    values[experiment["knob"]] = experiment["challenger"]
+    return "challenger", values, True
+
+
+def choose_assignment(out_dir: Path, out_root: Path, day: str) -> dict:
+    """그날의 배정. 처음 정한 배정을 폴더에 남겨, 중간 실패 뒤 다시 돌릴 때 정책이 바뀌었어도 같은 군으로 만든다."""
+    path = out_dir / "assignment.json"
+    try:
+        saved = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(saved, dict) and set(saved) == {"policyVersion", "source", "experimentId", "knob", "arm", "values"}:
+            return saved
+    except (OSError, ValueError):
+        pass
+    policy, source = load_policy(out_root)
+    arm, values, in_experiment = assign_arm(policy, day)
+    experiment = policy["experiment"] if in_experiment else None
+    assignment = {"policyVersion": policy["version"], "source": source,
+                  "experimentId": experiment["id"] if experiment else None,
+                  "knob": experiment["knob"] if experiment else None, "arm": arm, "values": values}
+    write_json_atomic(path, assignment)
+    return assignment
+
+
+def experiment_record(assignment: dict, timeline: dict) -> dict:
+    """script.json 에 남길 배정·실현 기록. 실현 검사는 배정한 값이 실제 타임라인에 나타났는지다."""
+    cards = [point["start"] for point in timeline["points"] if point["kind"] in ("point", "number")]
+    first_card = cards[0] if cards else None
+    early = first_card is not None and first_card <= EARLY_CARD_MAX_SEC
+    return {**assignment, "realized": early == assignment["values"]["early_card"], "checks": {"firstCardSec": first_card}}
+
+
+def build_timeline(lines: list[dict], durations: list[float], sections: list[dict], day: str,
+                   early_card: bool = False) -> dict:
     """줄마다 [반응 쉼] → 손짓하며 말하기 → 짧은 쉼. 자막·포인트 카드는 반응이 시작될 때 함께 뜬다(첫 줄 훅이 0.2초부터 보이게).
     말하기 시작 반동은 손짓이 바뀔 때만 준다. 줄마다 주면 같은 '쿵' 이 반복돼 기계적으로 보였다.
     구간(꼭지·정리)이 바뀌는 줄에서 헤더가 바뀐다. 포인트 카드 번호는 꼭지마다 1부터 센다.
@@ -675,6 +778,10 @@ def build_timeline(lines: list[dict], durations: list[float], sections: list[dic
         t += duration
         subtitles.append({"start": round(shown_at, 3), "end": round(t + GAP_SEC, 3), "text": line["subtitle"]})
         t += GAP_SEC
+    cards = [point for point in points if point["kind"] in ("point", "number")]
+    if early_card and cards:
+        # 첫 장면이 4초 넘게 그대로라 시청자가 그 전에 넘긴다(11/09 실측). 음성·자막은 두고 카드만 당긴다.
+        cards[0]["start"] = min(cards[0]["start"], EARLY_CARD_SEC)
     cover_start = t + HOLD_SEC
     total = cover_start + COVER_SEC
     blinks = [round(b, 2) for b in [1.3 + 3.4 * i for i in range(int(total / 3.4) + 1)] if b < cover_start - 0.2]
@@ -746,12 +853,42 @@ def write_wav(path: Path, audio: array.array) -> None:
         writer.writeframes(audio.tobytes() if sys.byteorder == "little" else _swapped(audio))
 
 
+def measure_loudness(path: Path, filters: str = "") -> dict:
+    """loudnorm 측정 결과(JSON)를 돌려준다. filters 가 있으면 그 필터를 거친 소리를 잰다."""
+    chain = f"{filters}," if filters else ""
+    completed = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-i", str(path), "-af",
+                                f"{chain}loudnorm=I={LOUDNESS_TARGET}:TP={TRUE_PEAK_MAX}:LRA=11:print_format=json",
+                                "-f", "null", "-"], capture_output=True, text=True, check=False)
+    found = re.search(r"\{[^{}]*\"input_i\"[^{}]*\}", completed.stderr)
+    if completed.returncode != 0 or not found:
+        raise RuntimeError(f"음량 측정 실패: {completed.stderr.strip()[-200:]}")
+    measured: dict = json.loads(found.group(0))
+    return measured
+
+
+def normalize_loudness(source: Path, out: Path) -> None:
+    """2-pass loudnorm 으로 LOUDNESS_TARGET 에 맞추고, 결과 파일을 다시 재서 범위 밖이면 실패시킨다.
+    linear=true 라 소리 모양(입 모양 계산의 근거)은 그대로고 전체 크기만 바뀐다. 길이·샘플레이트도 유지한다."""
+    first = measure_loudness(source)
+    if first["input_i"] in ("-inf", "inf"):
+        raise RuntimeError("음량 측정 실패: 무음")
+    filters = (f"loudnorm=I={LOUDNESS_TARGET}:TP={TRUE_PEAK_MAX}:LRA=11:linear=true:"
+               f"measured_I={first['input_i']}:measured_TP={first['input_tp']}:measured_LRA={first['input_lra']}:"
+               f"measured_thresh={first['input_thresh']}:offset={first['target_offset']}")
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(source), "-af", filters, "-ar", str(SAMPLE_RATE),
+                    "-ac", "1", "-c:a", "pcm_s16le", str(out)], check=True, timeout=120)
+    final = measure_loudness(out)
+    loudness, peak = float(final["input_i"]), float(final["input_tp"])
+    if abs(loudness - LOUDNESS_TARGET) > LOUDNESS_TOLERANCE or peak > TRUE_PEAK_MAX + 0.5:
+        raise RuntimeError(f"음량 보정 실패: {loudness:.1f} LUFS, true peak {peak:.1f} dBTP")
+
+
 def synthesize(lines: list[dict], sections: list[dict], day: str, workdir: Path, voice_dir: Path | None,
-               segment_count: int) -> tuple[dict, Path]:
+               segment_count: int, early_card: bool = False) -> tuple[dict, Path]:
     low, high = range_for(segment_count)
     clips, engine = speak(lines, workdir, voice_dir,
                           lambda durations: build_timeline(lines, durations, sections, day)["duration"], high)
-    timeline = build_timeline(lines, [len(clip) / SAMPLE_RATE for clip in clips], sections, day)
+    timeline = build_timeline(lines, [len(clip) / SAMPLE_RATE for clip in clips], sections, day, early_card)
     if not low <= timeline["duration"] <= high:
         raise DurationError(timeline["duration"], low, high)
     # 프레임 수와 오디오 길이를 표지 구간까지 포함한 길이로 맞춘다. 렌더러가 -shortest 라 짧으면 표지가 잘린다.
@@ -761,8 +898,10 @@ def synthesize(lines: list[dict], sections: list[dict], day: str, workdir: Path,
         offset = int(start * SAMPLE_RATE)
         audio[offset:offset + len(clip)] = clip
     del audio[int(frames / FPS * SAMPLE_RATE):]
+    raw_voice = workdir / "voice-raw.wav"
+    write_wav(raw_voice, audio)
     voice = workdir / "voice.wav"
-    write_wav(voice, audio)
+    normalize_loudness(raw_voice, voice)
     timeline["mouth"], timeline["energy"] = mouth_levels(audio, frames)
     timeline["engine"] = engine
     return timeline, voice
@@ -1019,13 +1158,14 @@ def prepare_segment(day: str, field: str, out_dir: Path) -> tuple[dict, dict, di
     return row, choice, segment
 
 
-def synthesize_daily(picked: list[list], day: str, workdir: Path, voice_dir: Path | None, out_dir: Path) -> tuple[dict, Path]:
+def synthesize_daily(picked: list[list], day: str, workdir: Path, voice_dir: Path | None, out_dir: Path,
+                     early_card: bool = False) -> tuple[dict, Path]:
     """합친 영상의 음성·타임라인. 길이가 범위를 벗어나면 더 긴(짧은) 꼭지만 한 번 다시 쓴다.
     같은 대본으로 재개하면 같은 길이 실패를 되풀이하므로 그 꼭지의 체크포인트도 새 대본으로 바꾼다."""
     for attempt in range(2):
         lines, sections = assemble_lines([(field, segment, row) for field, segment, row, _ in picked])
         try:
-            return synthesize(lines, sections, day, workdir, voice_dir, len(picked))
+            return synthesize(lines, sections, day, workdir, voice_dir, len(picked), early_card)
         except DurationError as error:
             if attempt:
                 raise
@@ -1082,6 +1222,8 @@ def make_daily(day: str, voice_dir: Path | None, out_root: Path = OUT_ROOT, noti
                     "duration": saved["duration"], "engine": saved["engine"] + " (상태 기록만 다시 함)",
                     "story": not story_reason, "story_reason": story_reason, "missing": {}}
         out_dir.mkdir(parents=True, exist_ok=True)
+        # 소재를 고르기 전에 군을 정한다. 소재나 게시 여부를 보고 군이 바뀌면 비교가 기울어진다.
+        assignment = choose_assignment(out_dir, out_root, day)
         picked, missing = [], {}
         for field in FIELDS:
             stage = f"{field} 꼭지"
@@ -1100,7 +1242,8 @@ def make_daily(day: str, voice_dir: Path | None, out_root: Path = OUT_ROOT, noti
         story_reason = ""
         with tempfile.TemporaryDirectory() as tmp:
             stage = "음성"
-            timeline, voice = synthesize_daily(picked, day, Path(tmp), voice_dir, out_dir)
+            timeline, voice = synthesize_daily(picked, day, Path(tmp), voice_dir, out_dir,
+                                             assignment["values"]["early_card"])
             stage = "렌더"
             render(timeline, voice, Path(tmp), out_dir / "reel.partial.mp4")
             segments = [(field, segment, row) for field, segment, row, _ in picked]
@@ -1110,7 +1253,8 @@ def make_daily(day: str, voice_dir: Path | None, out_root: Path = OUT_ROOT, noti
                 "cover_offset_ms": int(round((timeline["cover"]["start"] + COVER_SEC / 2) * 1000)),
                 "segments": [{"field": FIELDS[field], "row": without_article(row), "choice": choice, "segment": segment}
                              for field, segment, row, choice in picked],
-                "engine": timeline["engine"]})
+                "engine": timeline["engine"],
+                "experiment": experiment_record(assignment, timeline)})
             (out_dir / "caption.txt").write_text(caption_text(segments), encoding="utf-8")
             (out_dir / "reel.partial.mp4").rename(out_dir / "reel.mp4")
             stage = "스토리"
@@ -1309,6 +1453,50 @@ def self_check() -> None:
     assert timeline["cover"]["label"] == "오늘의 AI·개발 소식"
     one_timeline = build_timeline(one, [2.0] * len(one), one_sections, "2026-11-06")
     assert one_timeline["cover"]["label"] == "오늘의 AI 소식" and one_timeline["cover"]["lines"] == ["이제 평가를 의심해요"]
+    # 형식 실험: 카드만 당기고 자막·음성 시각은 그대로
+    early = build_timeline(lines, [2.0] * len(lines), sections, "2026-11-06", early_card=True)
+    early_cards = [p["start"] for p in early["points"] if p["kind"] in ("point", "number")]
+    plain_cards = [p["start"] for p in timeline["points"] if p["kind"] in ("point", "number")]
+    assert early_cards[0] == min(plain_cards[0], EARLY_CARD_SEC) and early_cards[1:] == plain_cards[1:]
+    assert early["subtitles"] == timeline["subtitles"] and early["speech_starts"] == timeline["speech_starts"]
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        assert load_policy(root)[1] == "default:missing"
+        (root / POLICY_NAME).write_text("{", encoding="utf-8")
+        assert load_policy(root)[1] == "default:broken"
+        good = {"version": 3, "frozen": False, "champion": {"early_card": False},
+                "experiment": {"id": "exp-1", "knob": "early_card", "challenger": True, "start": "2026-11-10"}}
+        for bad in ({**good, "extra": 1}, {**good, "champion": {"early_card": 1}},
+                    {**good, "experiment": {**good["experiment"], "challenger": False}},
+                    {**good, "experiment": {**good["experiment"], "start": "11/10"}}):
+            (root / POLICY_NAME).write_text(json.dumps(bad), encoding="utf-8")
+            assert load_policy(root)[1].startswith("default:"), bad
+        (root / POLICY_NAME).write_text(json.dumps(good), encoding="utf-8")
+        policy, source = load_policy(root)
+        assert source == "file" and policy == good
+    assert assign_arm(good, "2026-11-09") == ("champion", {"early_card": False}, False)  # 시작 전은 실험 밖
+    arms = [assign_arm(good, f"2026-11-{d}")[0] for d in range(10, 30)]
+    assert all(sorted(arms[i:i + 2]) == ["challenger", "champion"] for i in range(0, 20, 2))  # 묶음마다 한 번씩
+    assert arms == [assign_arm(good, f"2026-11-{d}")[0] for d in range(10, 30)]  # 다시 뽑아도 같다
+    assert assign_arm({**good, "frozen": True}, "2026-11-10")[0] == "champion"
+    for bad_knob in ([], {}, 1):
+        assert policy_problem({**good, "experiment": {**good["experiment"], "knob": bad_knob}}) == "experiment"
+    with tempfile.TemporaryDirectory() as tmp:
+        root, folder = Path(tmp), Path(tmp) / "2026-11-10" / "daily"
+        folder.mkdir(parents=True)
+        (root / POLICY_NAME).write_text(json.dumps(good), encoding="utf-8")
+        first = choose_assignment(folder, root, "2026-11-10")
+        assert first["experimentId"] == "exp-1" and first["arm"] == assign_arm(good, "2026-11-10")[0]
+        (root / POLICY_NAME).write_text(json.dumps({**good, "frozen": True}), encoding="utf-8")
+        assert choose_assignment(folder, root, "2026-11-10") == first  # 재개 때는 처음 배정 그대로
+        (root / "2026-11-09").mkdir()
+        before = choose_assignment(root / "2026-11-09", root, "2026-11-09")
+        assert before["experimentId"] is None and before["arm"] == "champion"
+    challenger = {"policyVersion": 3, "source": "file", "experimentId": "exp-1", "knob": "early_card",
+                  "arm": "challenger", "values": {"early_card": True}}
+    record = experiment_record(challenger, early)
+    assert record["realized"] and record["experimentId"] == "exp-1" and record["checks"]["firstCardSec"] <= EARLY_CARD_MAX_SEC
+    assert not experiment_record(challenger, timeline)["realized"]
     react, first_talk = timeline["events"][:2]
     assert react["body"] == "body-surprise" and react["start"] == LEAD_SEC and not react["talk"]
     assert first_talk["body"] == "body-wave" and first_talk["start"] == round(LEAD_SEC + REACT_SEC, 3) and first_talk["bounce"]
@@ -1376,11 +1564,11 @@ def self_check() -> None:
         if status == "제작중" and fail["status_done"]:
             raise RuntimeError("Notion 오류")
 
-    def fake_synth(lines_, sections_, day, workdir, voice_dir, count):
+    def fake_synth(lines_, sections_, day, workdir, voice_dir, count, early_card=False):
         calls["synth"] += 1
         if fail["durations"]:
             raise DurationError(fail["durations"].pop(0), *range_for(count))
-        return {"engine": "fake", "duration": 50.0, "cover": {"start": 49.5}}, workdir / "v.wav"
+        return {"engine": "fake", "duration": 50.0, "cover": {"start": 49.5}, "points": []}, workdir / "v.wav"
 
     def fake_render(timeline_, voice, workdir, out, mode="reel"):
         if fail["render"]:
@@ -1414,6 +1602,8 @@ def self_check() -> None:
             script = json.loads((daily / "script.json").read_text(encoding="utf-8"))
             assert [item["field"] for item in script["segments"]] == ["ai", "dev"] and script["cover_offset_ms"] == 49750
             assert script["title"] == "이제 평가를 의심해요 · 버그를 먼저 찾아 줘요" and "article" not in script["segments"][0]["row"]
+            assert script["experiment"]["source"] == "default:missing" and script["experiment"]["arm"] == "champion"
+            assert script["experiment"]["realized"] and script["experiment"]["values"] == DEFAULT_VALUES
             assert (daily / "caption.txt").read_text(encoding="utf-8").startswith("[AI] OpenAI가")
             assert ("https://n/dev", "제작중") in calls["status"]
             # 시험 실행(--out-root)은 운영 폴더에 아무것도 만들지 않는다(읽기만 한다)
