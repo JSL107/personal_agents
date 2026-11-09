@@ -11,6 +11,7 @@ import {
   BLOCK_REASON_PHRASES,
   classifyBlockReason,
 } from '../../../common/domain/block-reason';
+import { PreviewAction } from '../../../preview-gate/domain/preview-action.type';
 import {
   AXIS_ACTIVE_RUN,
   AXIS_APPROVAL,
@@ -29,6 +30,7 @@ const MINUTE_MS = 60 * 1000;
 // 놓친 채 단정하게 된다(승인 대기를 못 읽고 "진행 중이라 정상" 이라 답하는 식). 그래서 선택된
 // 원인보다 앞선 축이 확인 불가면 그 사실을 판정에 실어 문구에서 단정을 걷는다.
 const CAUSE_ORDER: DelayCause[] = [
+  'APPLY_FAILED',
   'APPROVAL_WAIT',
   'RUN_IN_PROGRESS',
   'UNRESOLVED_FAILURE',
@@ -134,6 +136,79 @@ const failureDetail = (failure: FailedRunDetail, kind: FailureKind): string => {
   }
 };
 
+// 반영이 실패해도 카드는 PENDING 으로 남는다(재승인으로 이어서 반영하려고). 그래서 status 만 보면
+// "승인 눌렀는데 Meta 가 거부한" 카드가 승인 대기로 섞여, 더 오래된 다른 카드가 원인으로 뽑혔다
+// (2026-11-08 run 11915: 인스타 반영 실패 스레드에서 묻자 822분 된 블로그 카드를 답했다).
+// 우선순위: 질문한 스레드의 카드 > 가장 최근 반영 실패 > 가장 오래된 승인 대기.
+const pickPreviewSubject = ({
+  previews,
+  askedThreadTs,
+}: {
+  previews: PreviewAction[];
+  askedThreadTs: string | null;
+}): PreviewAction | undefined => {
+  // askedThreadTs 가 null 이면 고르지 않는다 — 스레드 밖 카드(slackThreadTs=null)와 맞아떨어지면 안 된다.
+  const threadPreview = previews.find(
+    (preview) =>
+      askedThreadTs !== null && preview.slackThreadTs === askedThreadTs,
+  );
+  if (threadPreview !== undefined) {
+    return threadPreview;
+  }
+  const [latestFailed] = previews
+    .filter((preview) => preview.lastFailedAt !== null)
+    .sort(
+      (left, right) =>
+        (right.lastFailedAt?.getTime() ?? 0) -
+        (left.lastFailedAt?.getTime() ?? 0),
+    );
+  if (latestFailed !== undefined) {
+    return latestFailed;
+  }
+  const [oldest] = [...previews].sort(
+    (left, right) => left.createdAt.getTime() - right.createdAt.getTime(),
+  );
+  return oldest;
+};
+
+// 카드 본문은 릴스 캡션처럼 수십 줄일 수 있다 — 어느 카드인지는 첫 줄(제목 줄)이면 충분하다.
+const cardTitle = (preview: PreviewAction): string =>
+  preview.previewText.split('\n')[0];
+
+const applyFailedDetail = ({
+  preview,
+  now,
+}: {
+  preview: PreviewAction;
+  now: Date;
+}): string => {
+  // 사후 조회용 단계 표식(`[apply]` 등)은 벗긴다 — 콘솔 승인 뷰(toConsoleApproval)와 같은 처리.
+  const reason = (preview.lastFailureReason ?? '사유 미기록').replace(
+    /^\[[^\]]*\]\s*/,
+    '',
+  );
+  // lastFailedAt 은 실패 시각이 아니라 그 시도의 시작 시각이다(#991) — 문구도 "마지막 시도" 로 쓴다.
+  const failedAgo = preview.lastFailedAt
+    ? minutesSince(preview.lastFailedAt, now)
+    : 0;
+  // endedAt 이 없다고 지금 도는 것은 아니다 — 프로세스가 죽어도 이렇게 남는다(생존은 부팅 재개 훅이 pid 로
+  // 따로 본다). 그래서 진행 중이라 단정하지 않는다(#997 리뷰).
+  const retrying =
+    preview.applyProgress !== null &&
+    preview.applyProgress.endedAt === undefined
+      ? [
+          '마지막 시도가 끝났다는 기록이 없어요. 아직 반영 중이거나 중간에 멈췄을 수 있어요.',
+        ]
+      : [];
+  const lines = [
+    `승인은 됐지만 반영이 실패했어요(마지막 시도 ${failedAgo}분 전).`,
+    `카드: ${cardTitle(preview)}`,
+    `사유: ${reason}`,
+    ...retrying,
+  ];
+  return lines.join('\n');
+};
+
 export const attributeDelay = (input: DelayReportInput): DelayVerdict => {
   const validPreviews = input.openPreviews.filter(
     (preview) => preview.status === 'PENDING' && preview.expiresAt > input.now,
@@ -167,17 +242,32 @@ export const attributeDelay = (input: DelayReportInput): DelayVerdict => {
       : { retryRunId: failure.retryRunId, failureKind: failure.kind }),
   });
 
-  if (validPreviews.length > 0) {
-    const oldestPreview = [...validPreviews].sort(
-      (left, right) => left.createdAt.getTime() - right.createdAt.getTime(),
-    )[0];
-    const extraCount = validPreviews.length - 1;
-    if (extraCount > 0) {
-      secondaryNotes.push(`승인 대기 카드가 ${extraCount}개 더 있어요.`);
+  const subject = pickPreviewSubject({
+    previews: validPreviews,
+    askedThreadTs: input.askedThreadTs,
+  });
+  if (subject !== undefined) {
+    // 나머지도 반영 실패와 승인 대기를 나눠 센다 — 합치면 실패 카드를 승인 대기라고 말한다(#997 리뷰).
+    const others = validPreviews.filter((preview) => preview !== subject);
+    const failedCount = others.filter(
+      (preview) => preview.lastFailedAt !== null,
+    ).length;
+    const waitingCount = others.length - failedCount;
+    if (failedCount > 0) {
+      secondaryNotes.push(`반영이 실패한 카드가 ${failedCount}개 더 있어요.`);
+    }
+    if (waitingCount > 0) {
+      secondaryNotes.push(`승인 대기 카드가 ${waitingCount}개 더 있어요.`);
+    }
+    if (subject.lastFailedAt !== null) {
+      return withContext(
+        'APPLY_FAILED',
+        applyFailedDetail({ preview: subject, now: input.now }),
+      );
     }
     return withContext(
       'APPROVAL_WAIT',
-      `「${oldestPreview.previewText}」 카드가 ${minutesSince(oldestPreview.createdAt, input.now)}분째 대기 중이에요.`,
+      `승인을 ${minutesSince(subject.createdAt, input.now)}분째 기다리는 카드가 있어요.\n카드: ${cardTitle(subject)}`,
     );
   }
 

@@ -26,9 +26,12 @@ export interface DelayReportInput {
   integrations: DelayReportIntegrations;
   now: Date;
   unavailableAxes: string[];
+  // 질문이 달린 스레드. 그 스레드의 승인 카드가 열려 있으면 "이거 왜 안 돼" 의 "이거" 는 그 카드다.
+  askedThreadTs: string | null;
 }
 
 export type DelayCause =
+  | 'APPLY_FAILED'
   | 'APPROVAL_WAIT'
   | 'RUN_IN_PROGRESS'
   | 'UNRESOLVED_FAILURE'

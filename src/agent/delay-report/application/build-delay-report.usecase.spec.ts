@@ -19,6 +19,9 @@ describe('BuildDelayReportUsecase', () => {
         {
           slackUserId: 'U1',
           status: 'PENDING',
+          lastFailedAt: null,
+          applyProgress: null,
+          slackThreadTs: null,
           expiresAt: new Date('2026-09-05'),
           createdAt: new Date('2026-09-04T02:00:00Z'),
           previewText: '내 카드',
@@ -26,6 +29,9 @@ describe('BuildDelayReportUsecase', () => {
         {
           slackUserId: 'U2',
           status: 'PENDING',
+          lastFailedAt: null,
+          applyProgress: null,
+          slackThreadTs: null,
           expiresAt: new Date('2026-09-05'),
           createdAt: new Date('2026-09-04T01:00:00Z'),
           previewText: '남의 카드',
@@ -167,5 +173,45 @@ describe('BuildDelayReportUsecase', () => {
 
     expect(verdict.primaryCause).toBe(expected);
     expect(verdict.detail).not.toContain('DELAY_REPORT');
+  });
+
+  // 디스패처가 넘긴 스레드가 판정까지 닿아야 "이거" 가 그 스레드 카드가 된다(#997 리뷰).
+  it('질문한 스레드를 판정에 넘겨 그 스레드 카드를 답한다', async () => {
+    const agentRunService = {
+      findActiveRuns: jest.fn().mockResolvedValue([]),
+      findFailedRunsSince: jest.fn().mockResolvedValue([]),
+      findRecentlyFinishedRuns: jest.fn().mockResolvedValue([]),
+    } as unknown as AgentRunService;
+    const card = (previewText: string, createdAt: string, thread: string) => ({
+      slackUserId: 'U1',
+      status: 'PENDING',
+      lastFailedAt: null,
+      applyProgress: null,
+      slackThreadTs: thread,
+      expiresAt: new Date('2026-09-05'),
+      createdAt: new Date(createdAt),
+      previewText,
+    });
+    const findAllOpenPreviews = {
+      execute: jest
+        .fn()
+        .mockResolvedValue([
+          card('오래된 카드', '2026-09-04T01:00:00Z', '1.1'),
+          card('이 스레드 카드', '2026-09-04T02:00:00Z', '2.2'),
+        ]),
+    } as unknown as FindAllOpenPreviewsUsecase;
+    const usecase = new BuildDelayReportUsecase(
+      agentRunService,
+      findAllOpenPreviews,
+      { get: jest.fn() } as unknown as ConfigService,
+    );
+
+    const verdict = await usecase.execute({
+      slackUserId: 'U1',
+      now: new Date('2026-09-04T03:00:00Z'),
+      threadTs: '2.2',
+    });
+
+    expect(verdict.detail).toContain('카드: 이 스레드 카드');
   });
 });
