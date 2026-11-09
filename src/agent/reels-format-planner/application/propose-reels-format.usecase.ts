@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { isMatching, P } from 'ts-pattern';
 
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
@@ -58,24 +59,28 @@ export class ProposeReelsFormatUsecase implements ReelFormatPlannerPort {
 
 const parsePlannerProposal = (raw: string): PlannerProposal => {
   const value: unknown = JSON.parse(raw);
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+  if (!isMatching(P.record(P.string, P.unknown), value)) {
     throw new Error('릴스 형식 후보 제안의 JSON 형식이 올바르지 않습니다.');
   }
-  const fields = value as Record<string, unknown>;
   if (
-    typeof fields.hypothesis !== 'string' ||
-    typeof fields.interpretation !== 'string' ||
-    (fields.candidateId !== undefined && typeof fields.candidateId !== 'string')
+    !isMatching(
+      {
+        candidateId: P.optional(P.string),
+        hypothesis: P.string,
+        interpretation: P.string,
+      },
+      value,
+    )
   ) {
     throw new Error('릴스 형식 후보 제안의 필드 형식이 올바르지 않습니다.');
   }
   const proposal: PlannerProposal = {
-    hypothesis: fields.hypothesis,
-    interpretation: fields.interpretation,
+    hypothesis: value.hypothesis,
+    interpretation: value.interpretation,
     raw,
   };
-  if (typeof fields.candidateId === 'string') {
-    proposal.candidateId = fields.candidateId;
+  if (value.candidateId !== undefined) {
+    proposal.candidateId = value.candidateId;
   }
   return proposal;
 };

@@ -276,6 +276,16 @@ describe('candidate and mode policies', () => {
       true,
     );
     expect(listCandidates({ policy: POLICY, rows }).candidates).toEqual([]);
+    expect(
+      listCandidates({
+        policy: POLICY,
+        rows: [history({ challengerValue: null })],
+      }),
+    ).toEqual({
+      candidates: [],
+      reverseChallenge: false,
+      needsHumanReview: true,
+    });
   });
 });
 
@@ -474,13 +484,24 @@ describe('planRecovery', () => {
       createdAt: new Date('2026-11-02'),
     });
     expect(
-      planRecovery({ policy: null, missing: true, rows: [latest, older] }),
+      planRecovery({ state: { kind: 'missing' }, rows: [latest, older] }),
     ).toBe(latestPolicy);
     expect(
       planRecovery({
-        policy: latestPolicy,
-        missing: false,
+        state: { kind: 'ok', policy: latestPolicy },
         rows: [latest, older],
+      }),
+    ).toBeNull();
+    expect(
+      planRecovery({
+        state: { kind: 'missing' },
+        rows: [older, history({ ...latest, policyAfter: null })],
+      }),
+    ).toBeNull();
+    expect(
+      planRecovery({
+        state: { kind: 'missing' },
+        rows: [older, history({ ...latest, championValue: null })],
       }),
     ).toBeNull();
   });

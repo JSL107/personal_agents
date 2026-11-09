@@ -1,3 +1,7 @@
+import {
+  ReelFormatDecisionMode,
+  ReelFormatVerdict,
+} from '../domain/format-decision.policy';
 import { ReelFormatDecision } from '../domain/port/reel-format-decision.repository.port';
 import { formatReelFormatDecisionReport } from './format-decision-report';
 
@@ -22,8 +26,8 @@ const decision: ReelFormatDecision = {
     pending: 1,
     proposalDecisionNumber: 1,
   },
-  verdict: 'PROMOTE',
-  mode: 'PROPOSAL',
+  verdict: ReelFormatVerdict.PROMOTE,
+  mode: ReelFormatDecisionMode.PROPOSAL,
   reverseChallenge: false,
   reason: 'significant',
   policyVersionBefore: 1,
@@ -39,13 +43,35 @@ const decision: ReelFormatDecision = {
       start: '2026-11-26',
     },
   },
-  aiProposal: { interpretation: '<새 후보> 효과를 확인한다.' },
+  aiProposal: {
+    hypothesis: '효과를 확인한다',
+    interpretation: '<새 후보> 효과를 확인한다.',
+    raw: '{}',
+  },
   decidedAt: new Date('2026-11-25T00:00:00Z'),
   reportedAt: null,
   createdAt: new Date('2026-11-25T00:00:00Z'),
 };
 
 describe('formatReelFormatDecisionReport', () => {
+  it('복구 정책이 손상된 원장 행은 적용 보고를 만들지 않는다', () => {
+    const report = formatReelFormatDecisionReport({
+      ...decision,
+      policyAfter: null,
+    });
+
+    expect(report).toBeNull();
+  });
+
+  it('대결 값이 손상된 원장 행은 적용 보고를 만들지 않는다', () => {
+    const report = formatReelFormatDecisionReport({
+      ...decision,
+      challengerValue: null,
+    });
+
+    expect(report).toBeNull();
+  });
+
   it('원장 행만으로 판정과 적용 결과를 다시 그린다', () => {
     const report = formatReelFormatDecisionReport(decision);
 
@@ -62,8 +88,8 @@ describe('formatReelFormatDecisionReport', () => {
     const report = formatReelFormatDecisionReport({
       ...decision,
       experimentId: 'guard-early_card-2026-11-10',
-      verdict: 'ABORT',
-      mode: 'AUTO',
+      verdict: ReelFormatVerdict.ABORT,
+      mode: ReelFormatDecisionMode.AUTO,
       reason: 'worst_guard',
       statsJson: { ...decision.statsJson, interruptedExperimentId: 'next-1' },
       aiProposal: { error: 'timeout' },

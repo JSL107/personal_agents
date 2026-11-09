@@ -118,8 +118,7 @@ describe('Python 형식 정책 parity', () => {
       today: '2026-11-14',
     });
     const recovery = planRecovery({
-      policy: null,
-      missing: true,
+      state: { kind: 'missing' },
       rows: [
         {
           policyAfter: nextPolicy,

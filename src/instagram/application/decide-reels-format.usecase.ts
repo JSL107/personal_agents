@@ -8,17 +8,16 @@ import {
   decideMode,
   DecisionHistoryRow,
   FormatCandidate,
+  isAutoPromotion,
+  isGuardRow,
   judgeExperiment,
   listCandidates,
+  nextChampion,
   planRecovery,
   ReelFormatDecisionMode,
   ReelFormatVerdict,
 } from '../domain/format-decision.policy';
-import {
-  DEFAULT_FORMAT_VALUES,
-  FormatKnob,
-  FormatPolicy,
-} from '../domain/format-policy';
+import { DEFAULT_FORMAT_VALUES, FormatPolicy } from '../domain/format-policy';
 import {
   FORMAT_POLICY_STORE_PORT,
   FormatPolicyStorePort,
@@ -33,6 +32,7 @@ import {
 } from '../domain/port/instagram-post.repository.port';
 import {
   REEL_FORMAT_DECISION_REPOSITORY_PORT,
+  ReelFormatAiProposal,
   ReelFormatDecisionInput,
   ReelFormatDecisionRepositoryPort,
 } from '../domain/port/reel-format-decision.repository.port';
@@ -45,6 +45,33 @@ import { formatReelFormatDecisionReport } from './format-decision-report';
 export interface ReelsFormatReport {
   text: string;
   reportedIds: string[];
+}
+interface PolicyResolution {
+  policy: FormatPolicy;
+  initialized: boolean;
+}
+type AvailablePolicyRead =
+  | { kind: 'missing' }
+  | { kind: 'ok'; policy: FormatPolicy };
+interface ResolvePolicyParameters {
+  state: AvailablePolicyRead;
+  rows: DecisionHistoryRow[];
+  today: string;
+  lines: string[];
+}
+interface PersistDecisionParameters {
+  row: ReelFormatDecisionInput;
+  lines: string[];
+  reportedIds: string[];
+}
+interface ProposeParameters {
+  statsSummary: string;
+  candidates: FormatCandidate[];
+  reverseChallenge: boolean;
+}
+interface ProposalChoice {
+  candidate: FormatCandidate | null;
+  aiProposal: ReelFormatAiProposal;
 }
 @Injectable()
 export class DecideReelsFormatUsecase {
@@ -70,8 +97,12 @@ export class DecideReelsFormatUsecase {
     const now = this.now();
     const today = getKstDateOf(now);
     const rows = await this.decisions.listAll();
-    const unreported = rows.filter((row) => row.reportedAt === null);
-    const lines = unreported.map(formatReelFormatDecisionReport);
+    const unreported = rows.filter(
+      (row) => row.reportedAt === null && row.policyAfter !== null,
+    );
+    const lines = unreported
+      .map(formatReelFormatDecisionReport)
+      .filter((line): line is string => line !== null);
     const reportedIds = unreported.map((row) => row.id);
     const finish = (): ReelsFormatReport | null => {
       if (lines.length === 0) {
@@ -93,49 +124,24 @@ export class DecideReelsFormatUsecase {
         reportedIds: [],
       };
     }
-    const recovered = planRecovery({
-      policy: state.kind === 'ok' ? state.policy : null,
-      missing: state.kind === 'missing',
-      rows,
-    });
-    let policy: FormatPolicy;
-    if (recovered) {
-      await this.store.write(recovered);
-      policy = recovered;
-      lines.push(
-        `릴스 형식 정책을 원장에서 v${policy.version}으로 복구했습니다.`,
-      );
-    } else if (state.kind === 'missing') {
-      const base: FormatPolicy = {
-        version: 0,
-        frozen: false,
-        champion: { ...DEFAULT_FORMAT_VALUES },
-        experiment: null,
-      };
-      const candidates = listCandidates({ policy: base, rows });
-      policy = buildNextPolicy({
-        policy: base,
-        verdict: null,
-        mode: ReelFormatDecisionMode.PROPOSAL,
-        candidate: candidates.candidates[0] ?? null,
-        today,
-      });
-      await this.store.write(policy);
-      lines.push(`릴스 형식 정책 v${policy.version}을 초기화했습니다.`);
+    const malformed = rows.some(
+      (row) =>
+        row.policyAfter === null ||
+        row.championValue === null ||
+        row.challengerValue === null,
+    );
+    if (malformed) {
+      return null;
+    }
+    const resolution = await this.resolvePolicy({ state, rows, today, lines });
+    const policy = resolution.policy;
+    if (resolution.initialized) {
       return finish();
-    } else {
-      policy = state.policy;
     }
     if (policy.frozen) {
       return finish();
     }
-    const promoted = [...rows]
-      .reverse()
-      .find(
-        (row) =>
-          row.verdict === ReelFormatVerdict.PROMOTE &&
-          row.mode === ReelFormatDecisionMode.AUTO,
-      );
+    const promoted = [...rows].reverse().find(isAutoPromotion);
     const startDates = [
       policy.experiment?.start,
       promoted ? getKstDateOf(promoted.decidedAt) : undefined,
@@ -159,17 +165,17 @@ export class DecideReelsFormatUsecase {
     });
     if (guard?.shouldRevert) {
       const promoted = guard.promoted;
-      const knob = promoted.knob as FormatKnob;
+      const knob = promoted.knob;
       const restored: FormatPolicy = {
         ...policy,
         champion: { ...policy.champion, [knob]: promoted.championValue },
       };
       const candidateList = listCandidates({ policy: restored, rows });
-      const proposal = await this.propose(
-        JSON.stringify({ guard }),
-        candidateList.candidates,
-        candidateList.reverseChallenge,
-      );
+      const proposal = await this.propose({
+        statsSummary: JSON.stringify({ guard }),
+        candidates: candidateList.candidates,
+        reverseChallenge: candidateList.reverseChallenge,
+      });
       const after = buildNextPolicy({
         policy: restored,
         verdict: null,
@@ -202,7 +208,7 @@ export class DecideReelsFormatUsecase {
         aiProposal: proposal.aiProposal,
         decidedAt: now,
       };
-      await this.persist(row, lines, reportedIds);
+      await this.persist({ row, lines, reportedIds });
       return finish();
     }
     if (!policy.experiment) {
@@ -221,17 +227,13 @@ export class DecideReelsFormatUsecase {
       // 후보가 없으면 그 사유(사람 확인 필요 포함)는 실험을 끝낸 판정 보고에 이미 실렸다. 매일 다시 보내지 않는다.
       return finish();
     }
-    const relevant = published.filter(
-      (post) =>
-        post.publishedAt !== null &&
-        post.publishedAt >= kstDayStartOf(policy.experiment!.start),
-    );
     const samples = collectSamples({
       policy,
-      posts: relevant,
+      posts: published,
       snapshots,
       today,
       now,
+      publishedSince: kstDayStartOf(policy.experiment.start),
     });
     const judgment = judgeExperiment({ policy, samples, today });
     if (!judgment.verdict) {
@@ -241,13 +243,11 @@ export class DecideReelsFormatUsecase {
     const mode = decideMode(rows);
     const reverseChallenge =
       rows.at(-1)?.statsJson.nextReverseChallenge === true;
-    const futureChampion = { ...policy.champion };
-    if (
-      judgment.verdict === ReelFormatVerdict.PROMOTE &&
-      mode === ReelFormatDecisionMode.AUTO
-    ) {
-      futureChampion[experiment.knob] = experiment.challenger;
-    }
+    const futureChampion = nextChampion({
+      policy,
+      verdict: judgment.verdict,
+      mode,
+    });
     const history: DecisionHistoryRow = {
       experimentId: experiment.id,
       knob: experiment.knob,
@@ -265,11 +265,11 @@ export class DecideReelsFormatUsecase {
       policy: { ...policy, champion: futureChampion },
       rows: [...rows, history],
     });
-    const proposal = await this.propose(
-      JSON.stringify(judgment.stats),
-      candidates.candidates,
-      candidates.reverseChallenge,
-    );
+    const proposal = await this.propose({
+      statsSummary: JSON.stringify(judgment.stats),
+      candidates: candidates.candidates,
+      reverseChallenge: candidates.reverseChallenge,
+    });
     const after = buildNextPolicy({
       policy,
       verdict: judgment.verdict,
@@ -295,7 +295,7 @@ export class DecideReelsFormatUsecase {
           mode === ReelFormatDecisionMode.PROPOSAL
             ? rows.filter(
                 (item) =>
-                  !item.experimentId.startsWith('guard-') &&
+                  !isGuardRow(item) &&
                   ['PROMOTE', 'KEEP'].includes(item.verdict),
               ).length + 1
             : null,
@@ -311,15 +311,51 @@ export class DecideReelsFormatUsecase {
       aiProposal: proposal.aiProposal,
       decidedAt: now,
     };
-    await this.persist(row, lines, reportedIds);
+    await this.persist({ row, lines, reportedIds });
     return finish();
   }
 
-  private async persist(
-    row: ReelFormatDecisionInput,
-    lines: string[],
-    ids: string[],
-  ): Promise<void> {
+  private async resolvePolicy({
+    state,
+    rows,
+    today,
+    lines,
+  }: ResolvePolicyParameters): Promise<PolicyResolution> {
+    const recovered = planRecovery({ state, rows });
+    if (recovered) {
+      await this.store.write(recovered);
+      lines.push(
+        `릴스 형식 정책을 원장에서 v${recovered.version}으로 복구했습니다.`,
+      );
+      return { policy: recovered, initialized: false };
+    }
+    if (state.kind === 'missing') {
+      const base: FormatPolicy = {
+        version: 0,
+        frozen: false,
+        champion: { ...DEFAULT_FORMAT_VALUES },
+        experiment: null,
+      };
+      const candidates = listCandidates({ policy: base, rows });
+      const policy = buildNextPolicy({
+        policy: base,
+        verdict: null,
+        mode: ReelFormatDecisionMode.PROPOSAL,
+        candidate: candidates.candidates[0] ?? null,
+        today,
+      });
+      await this.store.write(policy);
+      lines.push(`릴스 형식 정책 v${policy.version}을 초기화했습니다.`);
+      return { policy, initialized: true };
+    }
+    return { policy: state.policy, initialized: false };
+  }
+
+  private async persist({
+    row,
+    lines,
+    reportedIds,
+  }: PersistDecisionParameters): Promise<void> {
     if (!(await this.decisions.insert(row))) {
       return;
     }
@@ -328,40 +364,45 @@ export class DecideReelsFormatUsecase {
       (item) => item.experimentId === row.experimentId,
     );
     if (saved) {
-      lines.push(formatReelFormatDecisionReport(saved));
-      ids.push(saved.id);
+      const report = formatReelFormatDecisionReport(saved);
+      if (report !== null) {
+        lines.push(report);
+        reportedIds.push(saved.id);
+      }
     }
   }
 
-  private async propose(
-    statsSummary: string,
-    candidates: FormatCandidate[],
-    reverse: boolean,
-  ): Promise<{ candidate: FormatCandidate | null; aiProposal: unknown }> {
+  private async propose({
+    statsSummary,
+    candidates,
+    reverseChallenge,
+  }: ProposeParameters): Promise<ProposalChoice> {
     const candidateIds = candidates.map((candidate) => candidate.id);
     try {
-      const result = await this.planner.propose({
+      const plannerProposal = await this.planner.propose({
         statsSummary,
         candidateIds,
-        reverseChallenge: reverse,
+        reverseChallenge,
       });
-      if (
-        (!reverse &&
-          candidateIds.length >= 2 &&
-          result.candidateId === undefined) ||
-        (result.candidateId !== undefined &&
-          !candidateIds.includes(result.candidateId))
-      ) {
+      const chosen = candidates.find(
+        (candidate) => candidate.id === plannerProposal.candidateId,
+      );
+      if (plannerProposal.candidateId !== undefined && !chosen) {
         throw new Error(
-          `후보 밖 제안: ${result.candidateId ?? ''}; raw=${result.raw}`,
+          `후보 밖 제안: ${plannerProposal.candidateId}; raw=${plannerProposal.raw}`,
         );
       }
-      const candidate = reverse
+      if (
+        !reverseChallenge &&
+        candidateIds.length >= 2 &&
+        plannerProposal.candidateId === undefined
+      ) {
+        throw new Error(`후보 밖 제안: ; raw=${plannerProposal.raw}`);
+      }
+      const candidate = reverseChallenge
         ? (candidates[0] ?? null)
-        : (candidates.find((item) => item.id === result.candidateId) ??
-          candidates[0] ??
-          null);
-      return { candidate, aiProposal: result };
+        : (chosen ?? candidates[0] ?? null);
+      return { candidate, aiProposal: plannerProposal };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return {

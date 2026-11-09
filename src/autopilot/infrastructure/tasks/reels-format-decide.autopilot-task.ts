@@ -17,12 +17,13 @@ export class ReelsFormatDecideAutopilotTask implements AutopilotTask {
     if (!report) {
       return { skip: true };
     }
+    const onDelivered = async () => {
+      await this.decideReelsFormat.markReported(report.reportedIds);
+    };
     return {
       skip: false,
       summaryText: report.text,
-      onDelivered: async () => {
-        await this.decideReelsFormat.markReported(report.reportedIds);
-      },
+      onDelivered,
     };
   }
 }

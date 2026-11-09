@@ -1,5 +1,8 @@
-import { FormatPolicy } from '../domain/format-policy';
-import { assignArm } from '../domain/format-policy';
+import {
+  ReelFormatDecisionMode,
+  ReelFormatVerdict,
+} from '../domain/format-decision.policy';
+import { assignArm, FormatPolicy } from '../domain/format-policy';
 import {
   EMPTY_INSIGHT_METRICS,
   InsightSnapshot,
@@ -43,8 +46,8 @@ const decisionRow = (
   nChallenger: 0,
   excluded: 0,
   statsJson: {},
-  verdict: 'ABORT',
-  mode: 'PROPOSAL',
+  verdict: ReelFormatVerdict.ABORT,
+  mode: ReelFormatDecisionMode.PROPOSAL,
   reverseChallenge: false,
   reason: 'timeout',
   policyVersionBefore: 1,
@@ -206,6 +209,48 @@ describe('DecideReelsFormatUsecase', () => {
     expect(report?.reportedIds).toEqual(['row-1']);
   });
 
+  it('최신 원장의 정책을 읽을 수 없고 파일이 이전 버전이면 판정과 보고를 중단한다', async () => {
+    const { usecase, store, decisions, planner } = setup();
+    decisions.listAll.mockResolvedValue([
+      decisionRow({ policyAfter: null, policyVersionAfter: 2 }),
+    ]);
+
+    expect(await usecase.execute()).toBeNull();
+    expect(store.write).not.toHaveBeenCalled();
+    expect(decisions.insert).not.toHaveBeenCalled();
+    expect(planner.propose).not.toHaveBeenCalled();
+  });
+
+  it('파일이 최신 버전이어도 원장 정책을 읽을 수 없으면 판정과 보고를 중단한다', async () => {
+    const { usecase, store, decisions } = setup();
+    decisions.listAll.mockResolvedValue([
+      decisionRow({ policyAfter: null, policyVersionAfter: 2 }),
+    ]);
+    store.read.mockResolvedValue({
+      kind: 'ok',
+      policy: { ...policy, version: 2, frozen: true },
+    });
+
+    expect(await usecase.execute()).toBeNull();
+    expect(store.write).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['챔피언', { championValue: null }],
+    ['도전자', { challengerValue: null }],
+  ])(
+    '원장의 %s 값이 잘못되면 보고와 새 판정을 모두 중단한다',
+    async (_label, overrides) => {
+      const { usecase, store, decisions, planner } = setup();
+      decisions.listAll.mockResolvedValue([decisionRow(overrides)]);
+
+      expect(await usecase.execute()).toBeNull();
+      expect(store.write).not.toHaveBeenCalled();
+      expect(decisions.insert).not.toHaveBeenCalled();
+      expect(planner.propose).not.toHaveBeenCalled();
+    },
+  );
+
   it('동결 정책이고 미보고 행이 없으면 아무것도 보고하지 않는다', async () => {
     const { usecase, store } = setup();
     store.read.mockResolvedValue({
@@ -292,6 +337,31 @@ describe('DecideReelsFormatUsecase', () => {
     );
   });
 
+  it('원장 삽입 뒤 정책 쓰기가 실패하면 다음 실행에서 이전 정책을 복구하고 판정을 보고한다', async () => {
+    const { usecase, store, decisions } = setup();
+    let saved: ReelFormatDecision | null = null;
+    decisions.insert.mockImplementation(async (row) => {
+      saved = decisionRow({ ...row, id: 'saved-after-write-failure' });
+      return true;
+    });
+    decisions.listAll.mockImplementation(async () => (saved ? [saved] : []));
+    store.write.mockRejectedValueOnce(new Error('policy write failed'));
+
+    await expect(usecase.execute()).rejects.toThrow('policy write failed');
+    expect(saved).not.toBeNull();
+    expect(store.write).toHaveBeenCalledTimes(1);
+
+    store.read.mockResolvedValue({ kind: 'ok', policy });
+    const report = await usecase.execute();
+
+    expect(store.write).toHaveBeenCalledWith(saved!.policyAfter);
+    expect(report?.text).toContain(
+      '릴스 형식 정책을 원장에서 v2으로 복구했습니다.',
+    );
+    expect(report?.text).toContain('릴스 형식 판정');
+    expect(report?.reportedIds).toContain('saved-after-write-failure');
+  });
+
   it('제안 모드의 PROMOTE는 챔피언을 바꾸지 않고 같은 대결을 다시 연다', async () => {
     const { usecase, store, decisions, posts, snapshots } = setup();
     const scored = scoredPosts();
@@ -314,6 +384,42 @@ describe('DecideReelsFormatUsecase', () => {
     expect(store.write).not.toHaveBeenCalled();
   });
 
+  it('이전 승격일부터 조회한 게시물도 현재 실험 시작 전에 게시됐으면 표본에서 제외한다', async () => {
+    const { usecase, store, decisions, posts, snapshots } = setup();
+    const scored = scoredPosts();
+    scored.posts[0].publishedAt = new Date('2026-09-29T16:00:00Z');
+    const firstArm = scored.posts[0].features!.experiment!.arm;
+    posts.listPublishedSince.mockResolvedValue(scored.posts);
+    snapshots.listByPostIds.mockResolvedValue(scored.snapshots);
+    store.read.mockResolvedValue({
+      kind: 'ok',
+      policy: { ...policy, version: 2 },
+    });
+    decisions.listAll.mockResolvedValue([
+      decisionRow({
+        experimentId: 'previous-promotion',
+        verdict: ReelFormatVerdict.PROMOTE,
+        mode: ReelFormatDecisionMode.AUTO,
+        decidedAt: new Date('2026-09-30T00:00:00Z'),
+      }),
+    ]);
+    decisions.insert.mockResolvedValue(false);
+
+    await usecase.execute();
+
+    expect(posts.listPublishedSince).toHaveBeenCalledWith(
+      new Date('2026-09-29T15:00:00Z'),
+    );
+    expect(decisions.insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        verdict: ReelFormatVerdict.ABORT,
+        reason: 'timeout',
+        nChampion: firstArm === 'champion' ? 5 : 6,
+        nChallenger: firstArm === 'challenger' ? 5 : 6,
+      }),
+    );
+  });
+
   it('제안 두 번 뒤 AUTO PROMOTE는 챔피언을 바꾸고 역도전을 연다', async () => {
     const { usecase, store, decisions, posts, snapshots } = setup();
     const scored = scoredPosts();
@@ -324,8 +430,14 @@ describe('DecideReelsFormatUsecase', () => {
     posts.listPublishedSince.mockResolvedValue(scored.posts);
     snapshots.listByPostIds.mockResolvedValue(scored.snapshots);
     decisions.listAll.mockResolvedValue([
-      decisionRow({ experimentId: 'proposal-1', verdict: 'PROMOTE' }),
-      decisionRow({ experimentId: 'proposal-2', verdict: 'KEEP' }),
+      decisionRow({
+        experimentId: 'proposal-1',
+        verdict: ReelFormatVerdict.PROMOTE,
+      }),
+      decisionRow({
+        experimentId: 'proposal-2',
+        verdict: ReelFormatVerdict.KEEP,
+      }),
     ]);
     decisions.insert.mockResolvedValue(false);
 
@@ -333,8 +445,8 @@ describe('DecideReelsFormatUsecase', () => {
 
     expect(decisions.insert).toHaveBeenCalledWith(
       expect.objectContaining({
-        verdict: 'PROMOTE',
-        mode: 'AUTO',
+        verdict: ReelFormatVerdict.PROMOTE,
+        mode: ReelFormatDecisionMode.AUTO,
         policyAfter: expect.objectContaining({
           champion: { early_card: true },
           experiment: expect.objectContaining({ challenger: false }),
@@ -381,8 +493,8 @@ describe('DecideReelsFormatUsecase', () => {
       snapshots.listByPostIds.mockResolvedValue(scored.snapshots);
       const promoted = decisionRow({
         experimentId: 'promoted-1',
-        verdict: 'PROMOTE',
-        mode: 'AUTO',
+        verdict: ReelFormatVerdict.PROMOTE,
+        mode: ReelFormatDecisionMode.AUTO,
         policyAfter: {
           ...policy,
           version: 2,
