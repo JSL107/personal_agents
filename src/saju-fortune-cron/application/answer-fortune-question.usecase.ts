@@ -11,6 +11,7 @@ import {
   HANJA_PATTERN,
 } from '../domain/saju-fortune-chat';
 import { parseSajuFortuneRecipients } from '../domain/saju-fortune-cron.type';
+import { yearMonthPillarsOf } from './year-month-pillar';
 
 export interface AnswerFortuneQuestionInput {
   slackUserId: string;
@@ -54,6 +55,7 @@ export class AnswerFortuneQuestionUsecase {
       recipient,
       fortuneDate,
       fortunePillar: dayPillarOf(fortuneDate),
+      yearMonthPillars: yearMonthPillarsOf(fortuneDate),
       originalFortune: fortuneMessageText,
       priorTurns,
       question,

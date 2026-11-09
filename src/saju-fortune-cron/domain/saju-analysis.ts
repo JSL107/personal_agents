@@ -1,6 +1,8 @@
 // 사주 해석의 뼈대(오행 분포·십성·지지 충합)는 표를 찾아보는 계산이라 코드로 확정한다.
 // LLM 에는 이 사실을 넘기고 쉬운 말로 풀어 쓰는 일만 맡긴다 — 일진을 코드로 정한 것과 같은 이유다.
 
+import { pillarToHangul } from './day-pillar';
+
 const ELEMENTS = ['나무', '불', '흙', '쇠', '물'] as const;
 export type FiveElement = (typeof ELEMENTS)[number];
 
@@ -67,12 +69,31 @@ export interface BranchRelation {
   natalBranch: string;
 }
 
+type StemWithTenGod = StemInfo & { tenGod: TenGod };
+
+// 그날의 년주·월주. 절기표가 필요해 application 의 yearMonthPillarsOf 가 계산해 넘긴다.
+export interface YearMonthPillars {
+  yearPillar: string;
+  monthPillar: string;
+}
+
+// 올해·이번 달의 간지가 받는 사람에게 어떤 기운인지 — 오늘 하루를 더 긴 흐름 안에 놓아 준다.
+export interface PeriodFlow {
+  // 예: '올해(병오년)'
+  title: string;
+  stem: StemWithTenGod;
+  branch: StemWithTenGod;
+}
+
 export interface SajuDayAnalysis {
   dayMaster: StemInfo;
   elementCounts: Record<FiveElement, number>;
-  todayStem: StemInfo & { tenGod: TenGod };
-  todayBranch: StemInfo & { tenGod: TenGod };
+  todayStem: StemWithTenGod;
+  todayBranch: StemWithTenGod;
+  // 오늘 천간 순번(甲=0). 날마다 한 칸씩 돌아 행운의 색 동률을 날마다 다르게 고르는 데 쓴다.
+  todayStemIndex: number;
   branchRelations: BranchRelation[];
+  periodFlows: PeriodFlow[];
 }
 
 const stemInfoOf = (stem: string): StemInfo => {
@@ -111,9 +132,11 @@ const branchRelationOf = (
 };
 
 // natalPillars: 년·월·일(·시) 순 — 파서가 60갑자 형식을 이미 검사했다.
+// period 를 빼면 올해·이번 달 흐름 사실이 빠진다 — 날짜 없이 기둥만 보는 단위 테스트용이다.
 export const analyzeSajuDay = (
   natalPillars: string[],
   todayPillar: string,
+  period?: YearMonthPillars,
 ): SajuDayAnalysis => {
   const dayMaster = stemInfoOf(natalPillars[2][0]);
 
@@ -134,12 +157,30 @@ export const analyzeSajuDay = (
       : [];
   });
 
+  const withTenGod = (info: StemInfo): StemWithTenGod => ({
+    ...info,
+    tenGod: tenGodOf(dayMaster, info),
+  });
+  const flowOf = (label: string, unit: string, pillar: string): PeriodFlow => ({
+    title: `${label}(${pillarToHangul(pillar)}${unit})`,
+    stem: withTenGod(stemInfoOf(pillar[0])),
+    branch: withTenGod(branchInfoOf(pillar[1])),
+  });
+  const periodFlows = period
+    ? [
+        flowOf('올해', '년', period.yearPillar),
+        flowOf('이번 달', '월', period.monthPillar),
+      ]
+    : [];
+
   return {
     dayMaster,
     elementCounts,
-    todayStem: { ...todayStem, tenGod: tenGodOf(dayMaster, todayStem) },
-    todayBranch: { ...todayBranch, tenGod: tenGodOf(dayMaster, todayBranch) },
+    todayStem: withTenGod(todayStem),
+    todayBranch: withTenGod(todayBranch),
+    todayStemIndex: HEAVENLY_STEMS.indexOf(todayPillar[0]),
     branchRelations,
+    periodFlows,
   };
 };
 
@@ -157,17 +198,26 @@ export const formatSajuFacts = (analysis: SajuDayAnalysis): string[] => {
   const abundant = ELEMENTS.filter(
     (element) => elementCounts[element] === maximum,
   );
-  // 동률이면 오행 순서상 앞의 것(엄격한 < 비교) — 같은 사주는 매일 같은 색이 나와야 한다.
-  const scarcest = ELEMENTS.reduce((least, element) =>
-    elementCounts[element] < elementCounts[least] ? element : least,
-  );
+  // 타고난 분포에 오늘 일진 두 글자를 더해 가장 적은 기운. 동률이면 오늘 천간 순번으로 돌려 고른다 —
+  // 오행 순서상 앞의 것을 고르던 때는 나무(초록)로 쏠려 수신자 둘 다 매일 초록이었다(2026-11-09 실측).
+  // 같은 날은 같은 일진이라 재시도해도 색이 안 바뀐다.
+  const withToday = { ...elementCounts };
+  withToday[todayStem.element]++;
+  withToday[todayBranch.element]++;
+  const least = Math.min(...Object.values(withToday));
+  const tied = ELEMENTS.filter((element) => withToday[element] === least);
+  const luckyElement = tied[analysis.todayStemIndex % tied.length];
 
   const facts = [
     `- 타고난 중심 기운(일간): ${dayMaster.element}(${yinYangOf(dayMaster)})`,
     `- 타고난 오행 분포: ${distribution} — 가장 많은 기운: ${abundant.join('·')}${missing.length > 0 ? `, 없는 기운: ${missing.join('·')}` : ''}`,
     `- 오늘 천간의 기운: ${todayStem.element}(${yinYangOf(todayStem)}) → 받는 사람에게 ${TEN_GOD_MEANINGS[todayStem.tenGod]}`,
     `- 오늘 지지의 기운: ${todayBranch.element}(${yinYangOf(todayBranch)}) → 받는 사람에게 ${TEN_GOD_MEANINGS[todayBranch.tenGod]}`,
-    `- 행운의 색: ${ELEMENT_COLORS[scarcest]} (타고나기를 가장 적은 ${scarcest} 기운의 색 — 부족한 기운을 채워 준다)`,
+    ...analysis.periodFlows.map(
+      ({ title, stem, branch }) =>
+        `- ${title}의 흐름: 천간 ${stem.element}(${yinYangOf(stem)}) → ${TEN_GOD_MEANINGS[stem.tenGod]} / 지지 ${branch.element}(${yinYangOf(branch)}) → ${TEN_GOD_MEANINGS[branch.tenGod]}`,
+    ),
+    `- 행운의 색: ${ELEMENT_COLORS[luckyElement]} (타고난 기운에 오늘 기운을 더해도 가장 적은 ${luckyElement} 기운의 색 — 부족한 기운을 채워 준다)`,
   ];
   for (const element of new Set([todayStem.element, todayBranch.element])) {
     if (elementCounts[element] === 0) {

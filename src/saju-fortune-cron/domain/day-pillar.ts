@@ -56,3 +56,8 @@ export const isValidPillar = (pillar: string): boolean => {
 export const pillarToHangul = (pillar: string): string =>
   HEAVENLY_STEMS_HANGUL[HEAVENLY_STEMS.indexOf(pillar[0])] +
   EARTHLY_BRANCHES_HANGUL[EARTHLY_BRANCHES.indexOf(pillar[1])];
+
+// '계', '해' → '癸亥'. manseryeok 이 한글 독음으로 돌려주는 기둥을 이 모듈의 한자 표기로 맞춘다.
+export const pillarFromHangul = (stem: string, branch: string): string =>
+  HEAVENLY_STEMS[HEAVENLY_STEMS_HANGUL.indexOf(stem)] +
+  EARTHLY_BRANCHES[EARTHLY_BRANCHES_HANGUL.indexOf(branch)];

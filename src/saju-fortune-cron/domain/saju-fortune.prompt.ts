@@ -1,6 +1,10 @@
 import { utcMidnightOf } from '../../common/util/kst-date.util';
 import { pillarToHangul } from './day-pillar';
-import { analyzeSajuDay, formatSajuFacts } from './saju-analysis';
+import {
+  analyzeSajuDay,
+  formatSajuFacts,
+  YearMonthPillars,
+} from './saju-analysis';
 import { CARD_SCENE_LABEL, CARD_TITLE_LABEL } from './saju-fortune-card';
 import { SajuFortuneRecipient } from './saju-fortune-cron.type';
 
@@ -37,6 +41,7 @@ export interface SajuFortunePromptInput {
   recipient: SajuFortuneRecipient;
   todayKst: string;
   todayPillar: string;
+  yearMonthPillars: YearMonthPillars;
 }
 
 // 일진과 해석 근거(오행 분포·십성·충합)는 코드가 계산해 넣는다 — 모델은 그 사실을 풀어 쓰기만 한다.
@@ -45,6 +50,7 @@ export const buildSajuFortunePrompt = ({
   recipient,
   todayKst,
   todayPillar,
+  yearMonthPillars,
 }: SajuFortunePromptInput): string => {
   const natal = recipient.natalPillars
     .map(
@@ -66,11 +72,15 @@ export const buildSajuFortunePrompt = ({
     `- 오늘의 비유 소재: ${metaphorThemeOf(todayKst)}`,
     '',
     '계산된 사실 (코드가 확정한 값이다. 다시 계산하지 말고 이것만 근거로 써라):',
-    ...formatSajuFacts(analyzeSajuDay(recipient.natalPillars, todayPillar)),
+    ...formatSajuFacts(
+      analyzeSajuDay(recipient.natalPillars, todayPillar, yearMonthPillars),
+    ),
     '',
     '작성 형식 (이 순서 그대로, 운세 본문은 12줄 이내):',
     '- 첫 줄: 오늘이 어떤 날인지 한 문장으로. 오늘의 비유 소재를 빌려 그린다.',
     '- 빈 줄 하나 뒤에 다섯 줄: "총운:", "일·공부:", "사람 관계:", "돈:", "컨디션:" 으로 시작하고 각 1~2문장. 항목마다 계산된 사실 하나를 근거로 "왜 그런지"를 쉬운 말로 덧붙이고, 오늘 해 볼 만한 구체적인 행동을 하나씩 권한다.',
+    // 흐름 사실을 항목마다 끌어 쓰면 매일 같은 문장이 된다 — 한 달 내내 같은 값이라서다.
+    '- 올해·이번 달의 흐름은 "총운:" 에서만 한 번 짧게 엮는다. 오늘 기운이 그 흐름과 어떻게 만나는지로 쓴다.',
     '- 빈 줄 하나 뒤에 "행운 포인트:" 한 줄(계산된 행운의 색 + 오늘 해 보면 좋은 작은 행동 하나), 이어서 "오늘의 한 마디:" 한 줄.',
     '- 빈 줄 하나 뒤에 카드 두 줄을 붙인다. 이 두 줄은 받는 사람에게 보이지 않고 운세 카드 그림을 그리는 데만 쓴다.',
     `  ${CARD_TITLE_LABEL} 오늘 운세를 상징하는 타로 카드 이름. 영어 대문자 2~4단어(예: THE STEADY RIVER).`,
