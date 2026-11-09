@@ -1,5 +1,9 @@
 import { pillarToHangul } from './day-pillar';
-import { analyzeSajuDay, formatSajuFacts } from './saju-analysis';
+import {
+  analyzeSajuDay,
+  formatSajuFacts,
+  YearMonthPillars,
+} from './saju-analysis';
 import { SajuFortuneRecipient } from './saju-fortune-cron.type';
 
 // 아침 운세 DM 의 첫 줄. 스레드 대화가 이 줄로 "운세 메시지에 단 답글" 을 알아보므로
@@ -31,6 +35,8 @@ export interface FortuneFollowUpPromptInput {
   recipient: SajuFortuneRecipient;
   fortuneDate: string;
   fortunePillar: string;
+  // 아침 운세와 같은 날짜로 계산한 값이어야 한다 — 다르면 답이 아침 운세와 다른 흐름을 근거로 삼는다.
+  yearMonthPillars: YearMonthPillars;
   // 아침에 보낸 운세 DM 원문(헤더 포함). 답이 아침 운세와 어긋나지 않게 근거로 준다.
   originalFortune: string;
   priorTurns: FortuneChatTurn[];
@@ -44,6 +50,7 @@ export const buildFortuneFollowUpPrompt = ({
   recipient,
   fortuneDate,
   fortunePillar,
+  yearMonthPillars,
   originalFortune,
   priorTurns,
   question,
@@ -61,7 +68,9 @@ export const buildFortuneFollowUpPrompt = ({
     `- 운세 날짜: ${fortuneDate}, 그날 일진: ${pillarToHangul(fortunePillar)}일 (확정값이다. 다시 계산하지 마라.)`,
     '',
     '계산된 사실 (코드가 확정한 값이다. 이것만 근거로 써라):',
-    ...formatSajuFacts(analyzeSajuDay(recipient.natalPillars, fortunePillar)),
+    ...formatSajuFacts(
+      analyzeSajuDay(recipient.natalPillars, fortunePillar, yearMonthPillars),
+    ),
     '',
     '아침에 보낸 운세:',
     originalFortune.trim(),

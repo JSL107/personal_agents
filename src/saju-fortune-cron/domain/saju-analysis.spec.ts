@@ -133,14 +133,44 @@ describe('formatSajuFacts', () => {
     );
   });
 
-  it('행운의 색은 가장 적은 기운의 색이고, 동률이면 오행 순서상 앞의 것이다', () => {
+  it('행운의 색은 타고난 기운에 오늘 기운을 더해 가장 적은 기운의 색이다', () => {
     expect(formatSajuFacts(analyzeSajuDay(SAMPLE_EARTH, '戊辰'))).toContain(
-      '- 행운의 색: 초록 (타고나기를 가장 적은 나무 기운의 색 — 부족한 기운을 채워 준다)',
+      '- 행운의 색: 초록 (타고난 기운에 오늘 기운을 더해도 가장 적은 나무 기운의 색 — 부족한 기운을 채워 준다)',
     );
-    // SAMPLE_METAL 은 나무·물이 1개씩 동률.
+    // 나무가 두 개 들어오는 날(甲寅)엔 타고난 물 1개가 가장 적어진다.
+    expect(
+      formatSajuFacts(analyzeSajuDay(SAMPLE_EARTH, '甲寅')),
+    ).toContainEqual(expect.stringContaining('행운의 색: 남색'));
+  });
+
+  it('동률이면 일진마다 돌아가며 고른다 — 오행 순서 앞의 나무로 쏠리지 않는다', () => {
+    // SAMPLE_METAL 은 나무·물이 1개씩 동률이고, 흙 일진은 동률을 깨지 않는다.
     expect(
       formatSajuFacts(analyzeSajuDay(SAMPLE_METAL, '戊辰')),
     ).toContainEqual(expect.stringContaining('행운의 색: 초록'));
+    expect(
+      formatSajuFacts(analyzeSajuDay(SAMPLE_METAL, '己丑')),
+    ).toContainEqual(expect.stringContaining('행운의 색: 남색'));
+  });
+
+  it('올해·이번 달 간지를 받으면 흐름 사실을 싣고, 없으면 싣지 않는다', () => {
+    // 일간 己(흙·음) 기준: 丙 정인, 午(丁) 편인, 己 비견, 亥(壬) 정재.
+    const facts = formatSajuFacts(
+      analyzeSajuDay(SAMPLE_EARTH, '戊辰', {
+        yearPillar: '丙午',
+        monthPillar: '己亥',
+      }),
+    );
+    expect(facts).toContain(
+      '- 올해(병오년)의 흐름: 천간 불(양) → 나를 따뜻하게 돕는 기운 — 배움, 도움, 안정 / 지지 불(음) → 나를 돕되 독특한 기운 — 직관, 아이디어, 혼자 생각',
+    );
+    expect(facts).toContain(
+      '- 이번 달(기해월)의 흐름: 천간 흙(음) → 나와 같은 기운 — 자기 주장, 동료, 경쟁 / 지지 물(양) → 내가 차곡차곡 다루는 기운 — 꾸준한 수입, 관리, 성실',
+    );
+    expect(facts.join('\n')).not.toMatch(/[一-鿿]/);
+    expect(
+      formatSajuFacts(analyzeSajuDay(SAMPLE_EARTH, '戊辰')).join('\n'),
+    ).not.toContain('흐름:');
   });
 
   it('가장 많은 기운이 오늘 또 들어오면 조절할 날이라고 적는다', () => {
