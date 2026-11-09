@@ -52,11 +52,11 @@ func runCozyAgentAppearanceTests(_ t: TestRunner) {
         )
     }
     t.expectEqual(
-        cozyDashboardCharacterVisualScale(assetIndex: 3, pose: "typing"), 1.025,
-        "dashboard typing silhouette receives height-only correction"
+        cozyDashboardCharacterVisualScale(assetIndex: 2, pose: "reading"), 1.005,
+        "dashboard reading silhouette receives height-only correction"
     )
     t.expectEqual(
-        cozyDashboardCharacterVisualScale(assetIndex: 23, pose: "typing"), 1.025,
+        cozyDashboardCharacterVisualScale(assetIndex: 22, pose: "reading"), 1.005,
         "dashboard optical correction wraps asset index"
     )
     t.expectEqual(

@@ -59,28 +59,6 @@ color, face, outfit, colors and accessories. Only the pose changes.
 
 공통 머리말 + 유지 문구 뒤에 아래 한 덩어리를 붙입니다.
 
-**`sit-table` — 테이블 앞 착석 (B안을 고를 때만)**
-
-```
-Pose: seated as if on a chair that is not drawn. Knees bent at about 90 degrees,
-both feet flat on the ground, back upright, upper body leaning very slightly
-forward. Both forearms rest on an invisible table surface at chest height, hands
-relaxed and slightly apart. Calm, attentive expression.
-
-Critical: no chair, no stool, no table, no desk. Nothing under or behind the
-character. The character must read as seated even with all furniture removed.
-```
-
-**`typing` — 책상 작업**
-
-```
-Pose: seated at a desk that is not drawn, both arms extended forward and slightly
-down, hands positioned as if resting on a keyboard, shoulders relaxed, eyes
-looking forward and slightly down. Focused, pleasant expression.
-
-Critical: no desk, no chair, no keyboard, no monitor. Only the character.
-```
-
 **`reading` — 책 읽기**
 
 ```
@@ -105,32 +83,6 @@ tilted, eyes softly closed or half closed. Relaxed, content expression. The mug
 is the only object allowed.
 ```
 
-**`tending` — 화분 물주기 (신규)**
-
-```
-Pose: standing, leaning slightly forward, holding a small watering can with both
-hands and tilting it forward as if watering a plant. Gentle, caring expression.
-The watering can is the only object allowed — do not draw the plant or the pot,
-the scene already has one.
-```
-
-**`carryingPapers` — 서류 나르기 (신규)**
-
-```
-Pose: standing mid-stride, hugging a tall stack of documents and folders against
-the chest with both arms, chin slightly raised to see over the stack. Busy but
-cheerful expression. The document stack is the only object allowed.
-```
-
-**`stowing` — 정리 (신규)**
-
-```
-Pose: standing, one arm reaching forward and upward as if sliding a file onto a
-shelf just above shoulder height, the other arm holding two folders at the waist.
-Body turned slightly to the side, eyes following the reaching hand.
-The files and folders are the only objects allowed — do not draw the shelf.
-```
-
 ## 3. 앱에 붙이기
 
 캐릭터 그림은 `Sources/IdaeriConsole/Resources/cozy/characters/agent-<번호>-<포즈>.png`에 둡니다.
@@ -138,7 +90,7 @@ The files and folders are the only objects allowed — do not draw the shelf.
 `Resources/cozy/rooms/<부서>-shell.png`, 카드 강조 그림은
 `Resources/cozy/props/<부서>-accent.png`를 사용합니다.
 
-새 포즈를 추가하면 `Sources/ConsoleCore/CozyPose.swift`의 포즈 이름·대체 순서·자세 계약과
+새 포즈를 추가하면 `Sources/ConsoleCore/CozyPose.swift`의 포즈 이름·대체 순서와
 `Sources/IdaeriConsole/CozyAssetCheck.swift`의 에셋 검사를 함께 갱신합니다.
 
 ```bash
