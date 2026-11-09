@@ -18,7 +18,7 @@
 - ORM은 Prisma만. 줄임말 변수명 금지(`error`/`found`/`repository`/`request`). `if`는 항상 중괄호. try-catch 안 `return await`.
 - 인라인 반환 타입 금지 — 별도 interface/type로 추출.
 - 커밋은 의미 단위 atomic, 한국어 OK, 형식 `<type>(<scope>): <subject>`. **사용자 명시 요청 전 push 금지**(로컬 커밋은 plan 단계별로 진행).
-- 작업 디렉터리: worktree `/Users/juneseok/Desktop/backend/기타/personal_agents/.claude/worktrees/feat+morning-briefing-enhancement` (모든 경로는 이 prefix 기준). 절대경로가 메인 레포 가리키지 않게 주의(memory `feedback_worktree_absolute_path`).
+- 작업 디렉터리: worktree `<repo>/.claude/worktrees/feat+morning-briefing-enhancement` (모든 경로는 이 prefix 기준). 절대경로가 메인 레포 가리키지 않게 주의(memory `feedback_worktree_absolute_path`).
 - 새 env 추가 시 5곳 동기: `.env.example`·`.env`·`src/config/app.config.ts`·`README.md`·`docs/env-catalog.md` + `pnpm docs:check`.
 
 ## File Structure

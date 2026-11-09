@@ -18,7 +18,7 @@
 | 항목 | 값 |
 |---|---|
 | 브랜치 | `feat/paper-trading-phase1` |
-| worktree | `/Users/juneseok/worktrees/idaeri-paper-trading` |
+| worktree | `~/worktrees/idaeri-paper-trading` |
 | PR | #273 (draft, 미머지) |
 | 커밋 | 7개 |
 | 게이트 | lint / test(318 suites, 2593 tests) / build / tsc / check:env / docs:check 전부 통과 |

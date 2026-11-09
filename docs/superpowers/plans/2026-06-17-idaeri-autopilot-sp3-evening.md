@@ -8,7 +8,7 @@
 
 **기준:** `docs/superpowers/specs/2026-06-17-idaeri-autopilot-skeleton-design.md` §8 SP3. SP1/SP2 코드(`src/autopilot/`)가 살아있는 템플릿.
 
-WORKTREE = /Users/juneseok/Desktop/backend/기타/personal_agents/.claude/worktrees/autopilot-sp3 (브랜치 feat/autopilot-sp3, off main #96).
+WORKTREE = <repo>/.claude/worktrees/autopilot-sp3 (브랜치 feat/autopilot-sp3, off main #96).
 
 ---
 

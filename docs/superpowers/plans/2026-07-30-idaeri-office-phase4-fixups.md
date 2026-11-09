@@ -14,7 +14,7 @@
 - 백엔드 검증: `pnpm lint:check` + `pnpm exec jest src/console src/preview-gate` + `pnpm build`. (전체 `pnpm test`는 공유 DB 의존·2단계 필터 이슈가 있어 관련 경로만 `pnpm exec jest`로 직접 — 전체 회귀는 CI가 담당.)
 - 클라이언트 검증: `swift build` + `swift run ConsoleCoreTests`(clients/idaeri-console). CLT 전용, Xcode·XCTest 없음.
 - git 커밋·스테이징 금지(worktree `.git`이 메인 안이라 sandbox가 index.lock 못 씀). 구현만 — 커밋은 사람이 메인에서 대행. 계획의 commit 스텝은 건너뛴다.
-- 작업 경로: 기존 worktree `/Users/juneseok/worktrees/idaeri-office-phase4`, 브랜치 `feat/macos-console-phase4`. 백엔드 pnpm 환경(`node_modules`·`prisma generate`)은 메인 셸에서 선처리됨(sandbox는 network 불가).
+- 작업 경로: 기존 worktree `~/worktrees/idaeri-office-phase4`, 브랜치 `feat/macos-console-phase4`. 백엔드 pnpm 환경(`node_modules`·`prisma generate`)은 메인 셸에서 선처리됨(sandbox는 network 불가).
 
 ---
 

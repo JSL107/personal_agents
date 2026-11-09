@@ -59,7 +59,7 @@ Run: `mkdir -p ~/.claude/auto-dev/{queue,running,done,logs,bin,launchd}`
   "dailyMax": 5,
   "slackWebhookUrl": "",
   "allowlist": [
-    { "repo": "/Users/juneseok/Desktop/backend/기타/personal_agents", "base": "main" }
+    { "repo": "<repo>", "base": "main" }
   ]
 }
 ```

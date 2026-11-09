@@ -17,7 +17,7 @@
 - **NestJS 생성자에 원시/객체 타입 default 주입 금지**(reflection이 `Number`/`Object` provider로 오인). 설정은 `@Inject(TOKEN)` 명시 주입.
 - 완료 기준(백엔드): `pnpm lint:check && pnpm test && pnpm build` 3중 exit 0.
 - 완료 기준(앱): `clients/idaeri-console/`에서 `swift build` + `swift run ConsoleCoreTests`(exit 0 = green).
-- 격리: **ASCII 경로 worktree**에서 작업(예: `/Users/juneseok/worktrees/idaeri-local-sessions`). 레포 본체 경로에 한글("기타")이 있어 codex 위임 시 ASCII 경로 필수. base 브랜치 = `main`.
+- 격리: **ASCII 경로 worktree**에서 작업(예: `~/worktrees/idaeri-local-sessions`). 레포 본체 경로에 한글("기타")이 있어 codex 위임 시 ASCII 경로 필수. base 브랜치 = `main`.
 - 커밋은 각 태스크 끝에서. 형식 `<type>(<scope>): <subject>`(한국어 subject 허용).
 
 ---
