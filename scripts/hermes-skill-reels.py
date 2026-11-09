@@ -877,10 +877,17 @@ def normalize_loudness(source: Path, out: Path) -> None:
                f"measured_thresh={first['input_thresh']}:offset={first['target_offset']}")
     subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(source), "-af", filters, "-ar", str(SAMPLE_RATE),
                     "-ac", "1", "-c:a", "pcm_s16le", str(out)], check=True, timeout=120)
-    final = measure_loudness(out)
-    loudness, peak = float(final["input_i"]), float(final["input_tp"])
+    check_loudness(out, "음량 보정 실패")
+
+
+def check_loudness(path: Path, label: str) -> None:
+    """목표 ±LOUDNESS_TOLERANCE, true peak 상한 +0.5 안인지 잰다. 영상이면 그 음성을 잰다."""
+    measured = measure_loudness(path)
+    if measured["input_i"] in ("-inf", "inf"):
+        raise RuntimeError(f"{label}: 무음")
+    loudness, peak = float(measured["input_i"]), float(measured["input_tp"])
     if abs(loudness - LOUDNESS_TARGET) > LOUDNESS_TOLERANCE or peak > TRUE_PEAK_MAX + 0.5:
-        raise RuntimeError(f"음량 보정 실패: {loudness:.1f} LUFS, true peak {peak:.1f} dBTP")
+        raise RuntimeError(f"{label}: {loudness:.1f} LUFS, true peak {peak:.1f} dBTP")
 
 
 def synthesize(lines: list[dict], sections: list[dict], day: str, workdir: Path, voice_dir: Path | None,
@@ -941,6 +948,9 @@ def render(timeline: dict, voice: Path, workdir: Path, out: Path, mode: str = "r
     if completed.returncode != 0 or not out.is_file():
         tail = (completed.stderr or completed.stdout).strip().splitlines()[-1:] or [""]
         raise RuntimeError(f"렌더 실패: {tail[0][:200]}")
+    if mode == "reel":
+        # 음성은 wav 단계에서 맞췄지만 렌더가 AAC 로 다시 압축한다. 올라갈 파일 그대로 한 번 더 잰다.
+        check_loudness(out, "최종 영상 음량 범위 밖")
 
 
 def story_timeline(day: str, items: list[dict]) -> dict:
