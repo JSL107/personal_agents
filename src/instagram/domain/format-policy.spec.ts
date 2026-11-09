@@ -42,18 +42,19 @@ describe('format-policy', () => {
   });
 
   it('시작 전과 frozen 정책에서는 champion이고 실험 중 두 날짜는 양 군으로 갈린다', () => {
-    expect(assignArm(policy, '2026-11-09')).toEqual({
+    expect(assignArm({ policy: policy, day: '2026-11-09' })).toEqual({
       arm: 'champion',
       values: { early_card: false },
       inExperiment: false,
     });
     const arms = [
-      assignArm(policy, '2026-11-10').arm,
-      assignArm(policy, '2026-11-11').arm,
+      assignArm({ policy: policy, day: '2026-11-10' }).arm,
+      assignArm({ policy: policy, day: '2026-11-11' }).arm,
     ];
     expect(arms.sort()).toEqual(['challenger', 'champion']);
     expect(
-      assignArm({ ...policy, frozen: true }, '2026-11-10').inExperiment,
+      assignArm({ policy: { ...policy, frozen: true }, day: '2026-11-10' })
+        .inExperiment,
     ).toBe(false);
   });
 

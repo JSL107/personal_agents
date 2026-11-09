@@ -8,5 +8,8 @@ export type FormatPolicyRead =
   | { kind: 'ok'; policy: FormatPolicy };
 export interface FormatPolicyStorePort {
   read(): Promise<FormatPolicyRead>;
-  write(policy: FormatPolicy): Promise<void>;
+  write(parameters: {
+    policy: FormatPolicy;
+    previous: FormatPolicy | null;
+  }): Promise<void>;
 }

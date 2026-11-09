@@ -1,6 +1,7 @@
 import {
   DecisionStatsRecord,
   ReelFormatDecisionMode,
+  ReelFormatDecisionReason,
   ReelFormatVerdict,
 } from '../format-decision.policy';
 import { FormatKnob, FormatKnobValue, FormatPolicy } from '../format-policy';
@@ -12,11 +13,11 @@ export const REEL_FORMAT_DECISION_REPOSITORY_PORT = Symbol(
   'REEL_FORMAT_DECISION_REPOSITORY_PORT',
 );
 
-interface ReelFormatDecisionFields<PolicyAfter, StoredValue> {
+export interface ReelFormatDecisionInput {
   experimentId: string;
   knob: FormatKnob;
-  championValue: StoredValue;
-  challengerValue: StoredValue;
+  championValue: FormatKnobValue;
+  challengerValue: FormatKnobValue;
   nChampion: number;
   nChallenger: number;
   excluded: number;
@@ -24,27 +25,20 @@ interface ReelFormatDecisionFields<PolicyAfter, StoredValue> {
   verdict: ReelFormatVerdict;
   mode: ReelFormatDecisionMode;
   reverseChallenge: boolean;
-  reason: string;
+  reason: ReelFormatDecisionReason;
   policyVersionBefore: number;
   policyVersionAfter: number;
-  policyAfter: PolicyAfter;
+  policyAfter: FormatPolicy;
   aiProposal: ReelFormatAiProposal;
   decidedAt: Date;
 }
-export type ReelFormatDecisionInput = ReelFormatDecisionFields<
-  FormatPolicy,
-  FormatKnobValue
->;
-export interface ReelFormatDecision extends ReelFormatDecisionFields<
-  FormatPolicy | null,
-  FormatKnobValue | null
-> {
+export interface ReelFormatDecision extends ReelFormatDecisionInput {
   id: string;
   reportedAt: Date | null;
   createdAt: Date;
 }
 export interface ReelFormatDecisionRepositoryPort {
   listAll(): Promise<ReelFormatDecision[]>;
-  insert(row: ReelFormatDecisionInput): Promise<boolean>;
+  insert(row: ReelFormatDecisionInput): Promise<ReelFormatDecision | null>;
   markReported(ids: string[]): Promise<void>;
 }

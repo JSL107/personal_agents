@@ -119,13 +119,10 @@ describe('Python 형식 정책 parity', () => {
     });
     const recovery = planRecovery({
       state: { kind: 'missing' },
-      rows: [
-        {
-          policyAfter: nextPolicy,
-          policyVersionAfter: nextPolicy.version,
-          createdAt: new Date('2026-11-15'),
-        } as DecisionHistoryRow,
-      ],
+      latest: {
+        policyAfter: nextPolicy,
+        policyVersionAfter: nextPolicy.version,
+      } as DecisionHistoryRow,
     });
     const policies: unknown[] = [
       basePolicy,
@@ -195,7 +192,7 @@ describe('Python 형식 정책 parity', () => {
     }
     const python = runPython([], assignments);
     const actual = assignments.map(
-      ({ policy, day }) => assignArm(policy, day).arm,
+      ({ policy, day }) => assignArm({ policy: policy, day: day }).arm,
     );
     expect(actual).toEqual(python.arms);
   });
@@ -212,7 +209,8 @@ describe('Python 형식 정책 parity', () => {
 
   it('Python 배정·실현 기록을 TS 릴스 feature로 옮긴다', () => {
     const day = ['2026-11-10', '2026-11-11'].find(
-      (candidate) => assignArm(basePolicy, candidate).arm === 'challenger',
+      (candidate) =>
+        assignArm({ policy: basePolicy, day: candidate }).arm === 'challenger',
     );
     expect(day).toBeDefined();
     const python = runPython([], [], {

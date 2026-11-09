@@ -38,10 +38,10 @@ export class ProposeReelsFormatUsecase implements ReelFormatPlannerPort {
           request: {
             prompt,
             systemPrompt: REELS_FORMAT_PLANNER_SYSTEM_PROMPT,
-            outputSchema: buildPlannerOutputSchema(
+            outputSchema: buildPlannerOutputSchema({
               candidateIds,
               reverseChallenge,
-            ),
+            }),
           },
           noContractPreamble: true,
         });
@@ -59,9 +59,6 @@ export class ProposeReelsFormatUsecase implements ReelFormatPlannerPort {
 
 const parsePlannerProposal = (raw: string): PlannerProposal => {
   const value: unknown = JSON.parse(raw);
-  if (!isMatching(P.record(P.string, P.unknown), value)) {
-    throw new Error('릴스 형식 후보 제안의 JSON 형식이 올바르지 않습니다.');
-  }
   if (
     !isMatching(
       {
@@ -72,7 +69,7 @@ const parsePlannerProposal = (raw: string): PlannerProposal => {
       value,
     )
   ) {
-    throw new Error('릴스 형식 후보 제안의 필드 형식이 올바르지 않습니다.');
+    throw new Error('릴스 형식 후보 제안의 JSON 형식이 올바르지 않습니다.');
   }
   const proposal: PlannerProposal = {
     hypothesis: value.hypothesis,

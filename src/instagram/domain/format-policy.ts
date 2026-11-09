@@ -2,8 +2,15 @@ import { createHash } from 'node:crypto';
 
 export const FORMAT_KNOBS = { early_card: [false, true] } as const;
 export const DEFAULT_FORMAT_VALUES = { early_card: false } as const;
+const ISO_DATE_LENGTH = 10;
+const DAY_MS = 86_400_000;
+const DAYS_PER_BLOCK = 2;
+const PARITY_MODULUS = 2;
 
 export type FormatKnob = keyof typeof FORMAT_KNOBS;
+export const FORMAT_KNOB_NAMES: readonly FormatKnob[] = ['early_card'];
+export const isFormatKnob = (value: string): value is FormatKnob =>
+  FORMAT_KNOB_NAMES.some((knob) => knob === value);
 export type FormatKnobValue = boolean | string | number;
 export type FormatValues = Record<FormatKnob, FormatKnobValue>;
 export type FormatExperiment = {
@@ -31,7 +38,7 @@ export const parseIsoDate = (text: string): Date | null => {
   const date = new Date(`${text}T00:00:00.000Z`);
   if (
     Number.isNaN(date.getTime()) ||
-    date.toISOString().slice(0, 10) !== text
+    date.toISOString().slice(0, ISO_DATE_LENGTH) !== text
   ) {
     return null;
   }
@@ -49,13 +56,27 @@ export const policyProblem = (value: unknown): string => {
   ) {
     return 'types';
   }
-  const knobNames = Object.keys(FORMAT_KNOBS);
-  if (!hasKeys(value.champion, knobNames)) {
+  const championError = championProblem(value.champion);
+  if (championError) {
+    return championError;
+  }
+  const experiment = value.experiment;
+  if (experiment === null) {
+    return '';
+  }
+  return experimentProblem({ experiment, champion: value.champion });
+};
+
+export const isFormatPolicy = (value: unknown): value is FormatPolicy =>
+  policyProblem(value) === '';
+
+const championProblem = (champion: unknown): string => {
+  if (!hasKeys(champion, FORMAT_KNOB_NAMES)) {
     return 'champion';
   }
-  for (const knob of knobNames) {
-    const allowed = FORMAT_KNOBS[knob as FormatKnob];
-    const found = value.champion[knob];
+  for (const knob of FORMAT_KNOB_NAMES) {
+    const allowed = FORMAT_KNOBS[knob];
+    const found = champion[knob];
     if (
       typeof found !== typeof allowed[0] ||
       !allowed.some((candidate) => candidate === found)
@@ -63,10 +84,16 @@ export const policyProblem = (value: unknown): string => {
       return 'champion';
     }
   }
-  const experiment = value.experiment;
-  if (experiment === null) {
-    return '';
-  }
+  return '';
+};
+
+const experimentProblem = ({
+  experiment,
+  champion,
+}: {
+  experiment: unknown;
+  champion: unknown;
+}): string => {
   if (!hasKeys(experiment, ['id', 'knob', 'challenger', 'start'])) {
     return 'experiment';
   }
@@ -77,15 +104,16 @@ export const policyProblem = (value: unknown): string => {
   ) {
     return 'experiment';
   }
-  if (!Object.prototype.hasOwnProperty.call(FORMAT_KNOBS, experiment.knob)) {
+  if (!isFormatKnob(experiment.knob)) {
     return 'experiment';
   }
-  const knob = experiment.knob as FormatKnob;
+  const knob = experiment.knob;
   const allowed = FORMAT_KNOBS[knob];
   if (
     typeof experiment.challenger !== typeof allowed[0] ||
     !allowed.some((candidate) => candidate === experiment.challenger) ||
-    experiment.challenger === value.champion[knob] ||
+    (hasKeys(champion, FORMAT_KNOB_NAMES) &&
+      experiment.challenger === champion[knob]) ||
     typeof experiment.start !== 'string' ||
     parseIsoDate(experiment.start) === null
   ) {
@@ -94,10 +122,13 @@ export const policyProblem = (value: unknown): string => {
   return '';
 };
 
-export const assignArm = (
-  policy: FormatPolicy,
-  day: string,
-): FormatAssignment => {
+export const assignArm = ({
+  policy,
+  day,
+}: {
+  policy: FormatPolicy;
+  day: string;
+}): FormatAssignment => {
   const values = { ...policy.champion };
   const experiment = policy.experiment;
   if (policy.frozen || experiment === null) {
@@ -108,18 +139,16 @@ export const assignArm = (
   if (dayDate === null || startDate === null) {
     throw new Error('실험 배정 날짜가 올바르지 않습니다');
   }
-  const offset = Math.round(
-    (dayDate.getTime() - startDate.getTime()) / 86_400_000,
-  );
+  const offset = Math.round((dayDate.getTime() - startDate.getTime()) / DAY_MS);
   if (offset < 0) {
     return { arm: 'champion', values, inExperiment: false };
   }
-  const block = Math.floor(offset / 2);
-  const position = offset % 2;
+  const block = Math.floor(offset / DAYS_PER_BLOCK);
+  const position = offset % DAYS_PER_BLOCK;
   const digest = createHash('sha256')
     .update(`${experiment.id}:${block}`)
     .digest();
-  const challengerFirst = digest[0] % 2 === 1;
+  const challengerFirst = digest[0] % PARITY_MODULUS === 1;
   if ((position === 0) !== challengerFirst) {
     return { arm: 'champion', values, inExperiment: true };
   }
@@ -129,10 +158,7 @@ export const assignArm = (
 
 export const serializePolicy = (policy: FormatPolicy): string => {
   const champion = Object.fromEntries(
-    Object.keys(FORMAT_KNOBS).map((knob) => [
-      knob,
-      policy.champion[knob as FormatKnob],
-    ]),
+    FORMAT_KNOB_NAMES.map((knob) => [knob, policy.champion[knob]]),
   );
   const experiment =
     policy.experiment === null
@@ -152,17 +178,18 @@ export const serializePolicy = (policy: FormatPolicy): string => {
   return `${serialized}\n`;
 };
 
+// 타입 가드는 이름 있는 매개변수만 좁힐 수 있어 구조 분해 대신 위치 인자를 쓴다(CODE_RULES §3-11 예외).
 const hasKeys = (
   value: unknown,
-  keys: string[],
+  keys: readonly string[],
 ): value is Record<string, unknown> => {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     return false;
   }
   const found = Object.keys(value).sort();
   const expected = [...keys].sort();
-  return (
+  const sameKeys =
     found.length === expected.length &&
-    found.every((key, index) => key === expected[index])
-  );
+    found.every((key, index) => key === expected[index]);
+  return sameKeys;
 };

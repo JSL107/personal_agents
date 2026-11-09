@@ -8,6 +8,7 @@ import { ConfigService } from '@nestjs/config';
 
 import {
   FormatPolicy,
+  isFormatPolicy,
   policyProblem,
   serializePolicy,
 } from '../domain/format-policy';
@@ -52,11 +53,10 @@ export class FormatPolicyFileStore implements FormatPolicyStorePort {
         return { kind: 'broken', reason: 'version은 정수 토큰이어야 합니다' };
       }
       const value: unknown = JSON.parse(raw);
-      const problem = policyProblem(value);
-      if (problem) {
-        return { kind: 'broken', reason: problem };
+      if (!isFormatPolicy(value)) {
+        return { kind: 'broken', reason: policyProblem(value) };
       }
-      return { kind: 'ok', policy: value as FormatPolicy };
+      return { kind: 'ok', policy: value };
     } catch (error) {
       if (isMissing(error)) {
         return { kind: 'missing' };
@@ -68,7 +68,13 @@ export class FormatPolicyFileStore implements FormatPolicyStorePort {
     }
   }
 
-  async write(policy: FormatPolicy): Promise<void> {
+  async write({
+    policy,
+    previous,
+  }: {
+    policy: FormatPolicy;
+    previous: FormatPolicy | null;
+  }): Promise<void> {
     const problem = policyProblem(policy);
     if (problem) {
       throw new Error(`유효하지 않은 정책: ${problem}`);
@@ -77,27 +83,16 @@ export class FormatPolicyFileStore implements FormatPolicyStorePort {
     if (!/^\{"version":-?\d+,/.test(serialized)) {
       throw new Error('정책 version은 정수 토큰이어야 합니다');
     }
-    const state = await this.read();
-    if (state.kind === 'no_directory' || state.kind === 'broken') {
-      throw new Error(`정책을 쓸 수 없습니다: ${state.kind}`);
+    const directory = await lstat(this.root);
+    if (!directory.isDirectory() || directory.isSymbolicLink()) {
+      throw new Error('정책 출력 폴더가 일반 디렉터리가 아닙니다');
     }
     const path = join(this.root, 'format-policy.json');
-    if (state.kind === 'ok') {
-      const backup = join(
-        this.root,
-        `format-policy.v${state.policy.version}.json`,
-      );
-      try {
-        const stat = await lstat(backup);
-        if (!stat.isFile() || stat.isSymbolicLink()) {
-          throw new Error('정책 백업 경로가 일반 파일이 아닙니다');
-        }
-      } catch (error) {
-        if (!isMissing(error)) {
-          throw error;
-        }
-      }
-      await writeFile(backup, await readFile(path), { flag: 'w' });
+    await assertRegularFileOrMissing(path);
+    if (previous !== null) {
+      const backup = join(this.root, `format-policy.v${previous.version}.json`);
+      await assertRegularFileOrMissing(backup);
+      await writeFile(backup, serializePolicy(previous), { flag: 'w' });
     }
     const temporary = join(
       this.root,
@@ -116,8 +111,24 @@ export class FormatPolicyFileStore implements FormatPolicyStorePort {
   }
 }
 
-const isMissing = (error: unknown): boolean =>
-  typeof error === 'object' &&
-  error !== null &&
-  'code' in error &&
-  error.code === 'ENOENT';
+// symlink 를 따라가 운영 폴더 밖에 쓰지 않도록, 있으면 일반 파일이어야 한다.
+const assertRegularFileOrMissing = async (path: string): Promise<void> => {
+  try {
+    const stat = await lstat(path);
+    if (!stat.isFile() || stat.isSymbolicLink()) {
+      throw new Error(`정책 경로가 일반 파일이 아닙니다: ${path}`);
+    }
+  } catch (error) {
+    if (!isMissing(error)) {
+      throw error;
+    }
+  }
+};
+
+const isMissing = (error: unknown): boolean => {
+  const code =
+    typeof error === 'object' && error !== null && 'code' in error
+      ? error.code
+      : null;
+  return code === 'ENOENT';
+};

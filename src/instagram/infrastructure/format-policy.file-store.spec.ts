@@ -32,7 +32,7 @@ describe('FormatPolicyFileStore', () => {
       get: () => join(root, 'absent'),
     } as unknown as ConfigService);
     expect(await missing.read()).toEqual({ kind: 'no_directory' });
-    await expect(missing.write(policy)).rejects.toThrow();
+    await expect(missing.write({ policy, previous: null })).rejects.toThrow();
   });
   it('파일이 없으면 missing을 반환한다', async () => {
     expect(await store.read()).toEqual({ kind: 'missing' });
@@ -50,19 +50,22 @@ describe('FormatPolicyFileStore', () => {
     await writeFile(join(root, 'target'), JSON.stringify(policy));
     await symlink(join(root, 'target'), join(root, 'format-policy.json'));
     expect((await store.read()).kind).toBe('broken');
-    await expect(store.write(policy)).rejects.toThrow();
+    await expect(store.write({ policy, previous: null })).rejects.toThrow();
   });
   it('유효하지 않은 새 정책은 저장하지 않는다', async () => {
-    await store.write(policy);
+    await store.write({ policy, previous: null });
     await expect(
-      store.write({ ...policy, champion: { early_card: 'invalid' } }),
+      store.write({
+        policy: { ...policy, champion: { early_card: 'invalid' } },
+        previous: policy,
+      }),
     ).rejects.toThrow();
     expect(await store.read()).toEqual({ kind: 'ok', policy });
   });
   it('기존 버전을 보관하고 새 정책을 저장한다', async () => {
-    await store.write(policy);
+    await store.write({ policy, previous: null });
     const next = { ...policy, version: 2 };
-    await store.write(next);
+    await store.write({ policy: next, previous: policy });
     expect(
       JSON.parse(await readFile(join(root, 'format-policy.v1.json'), 'utf8')),
     ).toEqual(policy);

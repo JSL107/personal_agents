@@ -1,8 +1,12 @@
 import { match } from 'ts-pattern';
 
+import { getKstDateOf } from '../../common/util/kst-date.util';
 import {
   assignArm,
+  FORMAT_KNOB_NAMES,
   FORMAT_KNOBS,
+  FormatAssignment,
+  FormatExperiment,
   FormatKnob,
   FormatKnobValue,
   FormatPolicy,
@@ -24,6 +28,8 @@ export const WORST_GUARD_POINTS = 12;
 export const PROPOSAL_DECISIONS = 2;
 export const EPSILON = 1e-9;
 const DAY_MS = 86_400_000;
+const MINUTE_MS = 60_000;
+const PUBLISH_RATE_LAG_DAYS = 4; // 3일 스냅숏 창과 게시 당일을 포함한다.
 const DAILY_KEY = /^(\d{4}-\d{2}-\d{2})\/daily$/;
 
 export enum ReelFormatVerdict {
@@ -36,24 +42,38 @@ export enum ReelFormatDecisionMode {
   PROPOSAL = 'PROPOSAL',
   AUTO = 'AUTO',
 }
+export enum ReelFormatDecisionReason {
+  PUBLISH_GAP = 'publish_gap',
+  WATCH_MISSING = 'watch_missing',
+  WATCH_GUARD = 'watch_guard',
+  STATISTICALLY_BETTER = 'statistically_better',
+  NOT_SIGNIFICANT = 'not_significant',
+  TIMEOUT = 'timeout',
+  TIMEOUT_PUBLISH_GAP = 'timeout_publish_gap',
+  WORST_GUARD = 'worst_guard',
+  NO_EXPERIMENT = 'no_experiment',
+  INSUFFICIENT_SAMPLES = 'insufficient_samples',
+  EARLIER_PENDING = 'earlier_pending',
+}
 
-export interface DecisionHistoryRow {
+export interface DecisionOutcome {
   experimentId: string;
   knob: FormatKnob;
-  championValue: FormatKnobValue | null;
-  challengerValue: FormatKnobValue | null;
+  championValue: FormatKnobValue;
+  challengerValue: FormatKnobValue;
   verdict: ReelFormatVerdict;
   mode: ReelFormatDecisionMode;
   reverseChallenge: boolean;
-  policyVersionAfter: number;
-  policyAfter: FormatPolicy | null;
-  statsJson: DecisionStatsRecord;
-  createdAt: Date;
 }
-export type ValidDecisionHistoryRow = DecisionHistoryRow & {
-  championValue: FormatKnobValue;
-  challengerValue: FormatKnobValue;
-};
+export interface DecisionHistoryRow extends DecisionOutcome {
+  policyVersionAfter: number;
+  policyAfter: FormatPolicy;
+  statsJson: DecisionStatsRecord;
+  decidedAt: Date;
+}
+export interface PromotionDecision extends DecisionHistoryRow {
+  statsJson: JudgmentDecisionStats;
+}
 export interface ScoredSample {
   day: string;
   reelKey: string;
@@ -104,33 +124,30 @@ export interface DecisionStats {
   publishRates: PublishRates;
   samples: ScoredSample[];
 }
-export interface DecisionStatsRecord {
-  nChampion?: number;
-  nChallenger?: number;
-  championMeanSkip?: number | null;
-  challengerMeanSkip?: number | null;
-  championMeanWatchMs?: number | null;
-  challengerMeanWatchMs?: number | null;
-  skipDifference?: number | null;
-  pValue?: number | null;
-  excluded?: Partial<Record<ExclusionReason, number>>;
-  pending?: number;
-  publishRates?: Partial<PublishRates>;
-  samples?: ScoredSample[];
-  nextReverseChallenge?: boolean;
-  proposalDecisionNumber?: number | null;
-  needsHumanReview?: boolean;
-  baselineSkip?: number;
-  interruptedExperimentId?: string | null;
+export type JudgmentDecisionStats = DecisionStats & {
+  kind: 'judgment';
+  nextReverseChallenge: boolean;
+  proposalDecisionNumber: number | null;
+  needsHumanReview: boolean;
+};
+export interface GuardDecisionStats {
+  kind: 'guard';
+  meanSkip: number;
+  baselineSkip: number;
+  samples: ScoredSample[];
+  interruptedExperimentId: string | null;
+  nextReverseChallenge: boolean;
+  needsHumanReview: boolean;
 }
+export type DecisionStatsRecord = JudgmentDecisionStats | GuardDecisionStats;
 export interface JudgeResult {
   verdict: ReelFormatVerdict | null;
-  reason: string;
+  reason: ReelFormatDecisionReason;
   stats: DecisionStats;
 }
 interface VerdictDecision {
   verdict: ReelFormatVerdict;
-  reason: string;
+  reason: ReelFormatDecisionReason;
 }
 export interface FormatCandidate {
   knob: FormatKnob;
@@ -143,7 +160,7 @@ export interface CandidateList {
   needsHumanReview: boolean;
 }
 export interface WorstGuardResult {
-  promoted: ValidDecisionHistoryRow;
+  promoted: PromotionDecision;
   samples: ScoredSample[];
   meanSkip: number;
   baselineSkip: number;
@@ -163,38 +180,25 @@ export const permutationPValue = ({
   const values = [...champion, ...challenger];
   const observed = mean(champion) - mean(challenger);
   const total = values.reduce((sum, value) => sum + value, 0);
-  const allocations = combinations(
-    Array.from({ length: values.length }, (_, index) => index),
-    MIN_SAMPLES,
-  );
-  const extreme = allocations.filter((indices) => {
-    const challengerTotal = indices.reduce(
-      (sum, index) => sum + values[index],
-      0,
-    );
-    const challengerMean = challengerTotal / MIN_SAMPLES;
+  // 12편 중 도전자 6편을 고르는 924가지 배정을 12비트 마스크로 센다(배열을 만들지 않는다).
+  const allocations = Array.from(
+    { length: 1 << values.length },
+    (_, mask) => mask,
+  ).filter((mask) => bitCount(mask) === MIN_SAMPLES);
+  const extreme = allocations.filter((mask) => {
+    const challengerMean =
+      values.reduce(
+        (sum, value, index) => ((mask >> index) & 1 ? sum + value : sum),
+        0,
+      ) / MIN_SAMPLES;
     const championMean = (total - challengerMean * MIN_SAMPLES) / MIN_SAMPLES;
     return championMean - challengerMean >= observed - EPSILON;
   }).length;
   return extreme / allocations.length;
 };
 
-const combinations = (indices: number[], size: number): number[][] => {
-  if (size === 0) {
-    return [[]];
-  }
-  if (indices.length < size) {
-    return [];
-  }
-  const [first, ...rest] = indices;
-  const withFirst = combinations(rest, size - 1).map((combination) => [
-    first,
-    ...combination,
-  ]);
-  const withoutFirst = combinations(rest, size);
-  const selections = [...withFirst, ...withoutFirst];
-  return selections;
-};
+const bitCount = (mask: number): number =>
+  mask.toString(2).replaceAll('0', '').length;
 
 export const collectSamples = ({
   policy,
@@ -202,14 +206,12 @@ export const collectSamples = ({
   snapshots,
   today,
   now,
-  publishedSince,
 }: {
   policy: FormatPolicy;
   posts: InstagramPost[];
   snapshots: InsightSnapshot[];
   today: string;
   now: Date;
-  publishedSince?: Date;
 }): SampleCollection => {
   const collection = emptyCollection();
   const experiment = policy.experiment;
@@ -223,22 +225,20 @@ export const collectSamples = ({
       )
       .map((snapshot) => [snapshot.postId, snapshot]),
   );
-  const eligible = posts.filter((post) => {
-    if (!isDailyPublished({ post, start: experiment.start, today })) {
-      return false;
-    }
-    if (publishedSince && post.publishedAt! < publishedSince) {
-      return false;
-    }
-    return true;
-  });
+  const eligible = posts.filter(
+    (post): post is PublishedDailyPost =>
+      isPublishedDailyPost(post) &&
+      reelDayOf(post) >= experiment.start &&
+      reelDayOf(post) < today,
+  );
   for (const post of eligible.sort((left, right) =>
     left.reelKey.localeCompare(right.reelKey),
   )) {
-    const day = post.reelKey.slice(0, 10);
+    const day = reelDayOf(post);
     const snapshot = byPost.get(post.id);
     if (!snapshot) {
-      const ageMinutes = (now.getTime() - post.publishedAt!.getTime()) / 60_000;
+      const ageMinutes =
+        (now.getTime() - post.publishedAt.getTime()) / MINUTE_MS;
       if (ageMinutes <= INSIGHT_LOOKBACK_MINUTES) {
         collection.pendingDays.push(day);
       } else {
@@ -246,24 +246,35 @@ export const collectSamples = ({
       }
       continue;
     }
-    const reason = exclusionReason({ post, snapshot, policy, day });
+    const score = scoreSnapshot({ snapshot, requireWatch: true });
+    if (typeof score !== 'object') {
+      collection.excluded[score] += 1;
+      continue;
+    }
+    const assignment = assignArm({ policy: policy, day: day });
+    const reason = exclusionReason({
+      post,
+      experiment,
+      assignment,
+    });
     if (reason) {
       collection.excluded[reason] += 1;
       continue;
     }
-    const arm = assignArm(policy, day).arm;
+    const arm = assignment.arm;
     collection[arm].push({
       day,
       reelKey: post.reelKey,
       snapshotId: snapshot.id,
       ageMinutes: snapshot.ageMinutes,
       arm,
-      skipRate: snapshot.metrics.skipRate!,
-      avgWatchMs: finiteOrNull(snapshot.metrics.avgWatchMs),
+      skipRate: score.skipRate,
+      avgWatchMs: score.avgWatchMs,
     });
   }
   collection.publishRates = countPublishRates({
     policy,
+    experiment,
     posts: eligible,
     today,
   });
@@ -308,31 +319,47 @@ export const judgeExperiment = ({
     samples: [...champion, ...challenger],
   };
   if (!policy.experiment) {
-    return { verdict: null, reason: 'no_experiment', stats };
+    return {
+      verdict: null,
+      reason: ReelFormatDecisionReason.NO_EXPERIMENT,
+      stats,
+    };
   }
   if (!complete) {
-    if (dayDifference(policy.experiment.start, today) > ABORT_DAYS) {
-      const suffix = publishGapExceeded(samples.publishRates)
-        ? ',publish_gap'
-        : '';
+    if (
+      dayDifference({ from: policy.experiment.start, to: today }) > ABORT_DAYS
+    ) {
+      const reason = publishGapExceeded(samples.publishRates)
+        ? ReelFormatDecisionReason.TIMEOUT_PUBLISH_GAP
+        : ReelFormatDecisionReason.TIMEOUT;
       return {
         verdict: ReelFormatVerdict.ABORT,
-        reason: `timeout${suffix}`,
+        reason,
         stats,
       };
     }
-    return { verdict: null, reason: 'insufficient_samples', stats };
+    return {
+      verdict: null,
+      reason: ReelFormatDecisionReason.INSUFFICIENT_SAMPLES,
+      stats,
+    };
   }
   const lastChampionDay = champion[MIN_SAMPLES - 1].day;
   const lastChallengerDay = challenger[MIN_SAMPLES - 1].day;
   const lastDay =
     lastChampionDay > lastChallengerDay ? lastChampionDay : lastChallengerDay;
   if (samples.pendingDays.some((day) => day < lastDay)) {
-    return { verdict: null, reason: 'earlier_pending', stats };
+    return {
+      verdict: null,
+      reason: ReelFormatDecisionReason.EARLIER_PENDING,
+      stats,
+    };
   }
   const publishGap = publishGapExceeded(samples.publishRates);
   if (!publishGap) {
-    stats.skipDifference = championMeanSkip! - challengerMeanSkip!;
+    if (championMeanSkip !== null && challengerMeanSkip !== null) {
+      stats.skipDifference = championMeanSkip - challengerMeanSkip;
+    }
     stats.pValue = permutationPValue({
       champion: champion.map((sample) => sample.skipRate),
       challenger: challenger.map((sample) => sample.skipRate),
@@ -341,9 +368,10 @@ export const judgeExperiment = ({
   const watchMissing =
     stats.championMeanWatchMs === null || stats.challengerMeanWatchMs === null;
   const watchGuardPassed =
-    !watchMissing &&
-    stats.challengerMeanWatchMs! >=
-      stats.championMeanWatchMs! - WATCH_GUARD_MS - EPSILON;
+    stats.championMeanWatchMs !== null &&
+    stats.challengerMeanWatchMs !== null &&
+    stats.challengerMeanWatchMs >=
+      stats.championMeanWatchMs - WATCH_GUARD_MS - EPSILON;
   const significant =
     stats.pValue !== null &&
     stats.skipDifference !== null &&
@@ -357,35 +385,32 @@ export const judgeExperiment = ({
   })
     .with({ publishGap: true }, () => ({
       verdict: ReelFormatVerdict.HOLD,
-      reason: 'publish_gap',
+      reason: ReelFormatDecisionReason.PUBLISH_GAP,
     }))
     .with({ watchMissing: true }, () => ({
       verdict: ReelFormatVerdict.KEEP,
-      reason: 'watch_missing',
+      reason: ReelFormatDecisionReason.WATCH_MISSING,
     }))
     .with({ watchGuardPassed: false }, () => ({
       verdict: ReelFormatVerdict.KEEP,
-      reason: 'watch_guard',
+      reason: ReelFormatDecisionReason.WATCH_GUARD,
     }))
     .with({ significant: true }, () => ({
       verdict: ReelFormatVerdict.PROMOTE,
-      reason: 'statistically_better',
+      reason: ReelFormatDecisionReason.STATISTICALLY_BETTER,
     }))
     .otherwise(() => ({
       verdict: ReelFormatVerdict.KEEP,
-      reason: 'not_significant',
+      reason: ReelFormatDecisionReason.NOT_SIGNIFICANT,
     }));
   return { ...decision, stats };
 };
 
-export const decideMode = (
-  rows: DecisionHistoryRow[],
-): ReelFormatDecisionMode => {
-  const count = rows.filter(
-    (row) =>
-      hasDecisionValues(row) && !isGuardRow(row) && isConclusive(row.verdict),
-  ).length;
-  if (count < PROPOSAL_DECISIONS) {
+export const countConclusiveDecisions = (rows: DecisionOutcome[]): number =>
+  rows.filter((row) => !isGuardRow(row) && isConclusive(row.verdict)).length;
+
+export const decideMode = (rows: DecisionOutcome[]): ReelFormatDecisionMode => {
+  if (countConclusiveDecisions(rows) < PROPOSAL_DECISIONS) {
     return ReelFormatDecisionMode.PROPOSAL;
   }
   return ReelFormatDecisionMode.AUTO;
@@ -396,95 +421,71 @@ export const listCandidates = ({
   rows,
 }: {
   policy: FormatPolicy;
-  rows: DecisionHistoryRow[];
+  rows: DecisionOutcome[];
 }): CandidateList => {
-  if (rows.some((row) => !hasDecisionValues(row))) {
-    return { candidates: [], reverseChallenge: false, needsHumanReview: true };
-  }
   const decisions = rows.filter((row) => !isGuardRow(row));
   const last = decisions.at(-1);
-  if (
-    last &&
-    hasDecisionValues(last) &&
-    isReverseChallengeDue({ last, policy, decisions })
-  ) {
+  if (last && isReverseChallengeDue({ last, policy, decisions })) {
     return {
-      candidates: [toCandidate(last.knob, last.championValue)],
+      candidates: [
+        toCandidate({ knob: last.knob, challenger: last.championValue }),
+      ],
       reverseChallenge: true,
       needsHumanReview: false,
     };
   }
-  const pairs = (Object.keys(FORMAT_KNOBS) as FormatKnob[]).flatMap((knob) =>
-    FORMAT_KNOBS[knob].map((value) => ({ knob, value })),
-  );
-  const available = pairs.filter(({ knob, value }) => {
-    if (value === policy.champion[knob]) {
-      return false;
-    }
-    const decided = autoDecided({
-      rows: decisions,
+  const pairs = FORMAT_KNOB_NAMES.flatMap((knob) =>
+    FORMAT_KNOBS[knob].map((value) => ({
       knob,
-      firstValue: policy.champion[knob],
-      secondValue: value,
-    });
-    return decided === 0;
-  });
-  const blocked = available.filter(({ knob, value }) => {
-    const pairRows = decisions.filter((row) =>
-      samePair({
-        row,
+      value,
+      key: pairKey({
         knob,
         firstValue: policy.champion[knob],
         secondValue: value,
       }),
+    })),
+  );
+  const available = pairs.filter(({ knob, value, key }) => {
+    if (value === policy.champion[knob]) {
+      return false;
+    }
+    return !decisions.some(
+      (row) =>
+        row.mode === ReelFormatDecisionMode.AUTO &&
+        isConclusive(row.verdict) &&
+        pairKeyOf(row) === key,
     );
+  });
+  const blocked = available.filter(({ key }) => {
+    const pairRows = decisions.filter((row) => pairKeyOf(row) === key);
     const recent = pairRows.slice(-2);
     const twiceInconclusive =
       recent.length === 2 && recent.every((row) => isInconclusive(row.verdict));
     return twiceInconclusive;
   });
-  const blockedKeys = new Set(
-    blocked.map(({ knob, value }) =>
-      pairKey({ knob, firstValue: policy.champion[knob], secondValue: value }),
-    ),
-  );
+  const blockedKeys = new Set(blocked.map(({ key }) => key));
   const candidates = available
-    .filter(
-      ({ knob, value }) =>
-        !blockedKeys.has(
-          pairKey({
-            knob,
-            firstValue: policy.champion[knob],
-            secondValue: value,
-          }),
-        ),
-    )
-    .map(({ knob, value }) => toCandidate(knob, value));
+    .filter(({ key }) => !blockedKeys.has(key))
+    .map(({ knob, value }) => toCandidate({ knob, challenger: value }));
   const needsHumanReview = blocked.length > 0;
   return { candidates, reverseChallenge: false, needsHumanReview };
 };
 
 export const checkWorstGuard = ({
-  policy,
-  rows,
+  promotion,
   posts,
   snapshots,
   today,
   now,
 }: {
-  policy: FormatPolicy;
-  rows: DecisionHistoryRow[];
+  promotion: PromotionDecision;
   posts: InstagramPost[];
   snapshots: InsightSnapshot[];
   today: string;
   now: Date;
 }): WorstGuardResult | null => {
-  const promoted = findActivePromotion({ policy, rows });
-  if (!promoted) {
-    return null;
-  }
-  const baselineSkip = promoted.statsJson.championMeanSkip;
-  if (typeof baselineSkip !== 'number' || !Number.isFinite(baselineSkip)) {
+  const baselineSkip = promotion.statsJson.championMeanSkip;
+  if (baselineSkip === null || !Number.isFinite(baselineSkip)) {
     return null;
   }
   const byPost = new Map(
@@ -496,16 +497,20 @@ export const checkWorstGuard = ({
   );
   const selected: ScoredSample[] = [];
   const pending: string[] = [];
+  const firstEligibleDay = getKstDateOf(promotion.decidedAt);
   for (const post of posts
-    .filter((item) =>
-      isDailyPublished({ post: item, start: '0000-01-01', today }),
+    .filter(
+      (item): item is PublishedDailyPost =>
+        isPublishedDailyPost(item) &&
+        reelDayOf(item) >= firstEligibleDay &&
+        reelDayOf(item) < today,
     )
     .sort((a, b) => a.reelKey.localeCompare(b.reelKey))) {
     const record = post.features?.experiment;
     if (
       !record ||
-      record.policyVersion < promoted.policyVersionAfter ||
-      record.values[promoted.knob] !== promoted.challengerValue ||
+      record.policyVersion < promotion.policyVersionAfter ||
+      record.values[promotion.knob] !== promotion.challengerValue ||
       !record.realized
     ) {
       continue;
@@ -513,30 +518,25 @@ export const checkWorstGuard = ({
     const snapshot = byPost.get(post.id);
     if (!snapshot) {
       if (
-        (now.getTime() - post.publishedAt!.getTime()) / 60_000 <=
+        (now.getTime() - post.publishedAt.getTime()) / MINUTE_MS <=
         INSIGHT_LOOKBACK_MINUTES
       ) {
-        pending.push(post.reelKey.slice(0, 10));
+        pending.push(reelDayOf(post));
       }
       continue;
     }
-    if (
-      snapshot.error ||
-      snapshot.metrics.skipRate === null ||
-      !Number.isFinite(snapshot.metrics.skipRate) ||
-      snapshot.metrics.views === null ||
-      snapshot.metrics.views < MIN_VIEWS
-    ) {
+    const score = scoreSnapshot({ snapshot, requireWatch: false });
+    if (typeof score !== 'object') {
       continue;
     }
     selected.push({
-      day: post.reelKey.slice(0, 10),
+      day: reelDayOf(post),
       reelKey: post.reelKey,
       snapshotId: snapshot.id,
       ageMinutes: snapshot.ageMinutes,
       arm: record.arm,
-      skipRate: snapshot.metrics.skipRate,
-      avgWatchMs: finiteOrNull(snapshot.metrics.avgWatchMs),
+      skipRate: score.skipRate,
+      avgWatchMs: score.avgWatchMs,
     });
   }
   if (selected.length < WORST_GUARD_SAMPLES) {
@@ -548,7 +548,7 @@ export const checkWorstGuard = ({
   }
   const meanSkip = mean(samples.map((sample) => sample.skipRate));
   return {
-    promoted,
+    promoted: promotion,
     samples,
     meanSkip,
     baselineSkip,
@@ -558,18 +558,12 @@ export const checkWorstGuard = ({
 
 export const planRecovery = ({
   state,
-  rows,
+  latest,
 }: {
   state: FormatPolicyRead;
-  rows: DecisionHistoryRow[];
+  latest: DecisionHistoryRow | null;
 }): FormatPolicy | null => {
-  const latest = [...rows]
-    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
-    .at(-1);
   if (!latest) {
-    return null;
-  }
-  if (!latest.policyAfter || !hasDecisionValues(latest)) {
     return null;
   }
   if (state.kind === 'missing') {
@@ -618,7 +612,7 @@ export const buildNextPolicy = ({
   today: string;
 }): FormatPolicy => {
   const champion = nextChampion({ policy, verdict, mode });
-  const start = addDays(today, 1);
+  const start = addDays({ day: today, days: 1 });
   const experiment = candidate
     ? {
         id: `${candidate.knob}-${start}`,
@@ -660,59 +654,59 @@ const emptyCollection = (): SampleCollection => ({
     gapPoints: null,
   },
 });
-const isDailyPublished = ({
-  post,
-  start,
-  today,
-}: {
-  post: InstagramPost;
-  start: string;
-  today: string;
-}): boolean => {
-  const match = DAILY_KEY.exec(post.reelKey);
+type PublishedDailyPost = InstagramPost & { publishedAt: Date };
+const reelDayOf = (post: { reelKey: string }): string =>
+  post.reelKey.slice(0, 10);
+const isPublishedDailyPost = (
+  post: InstagramPost,
+): post is PublishedDailyPost => {
   if (
-    !match ||
+    !DAILY_KEY.test(post.reelKey) ||
     post.status !== InstagramPostStatus.PUBLISHED ||
     !post.publishedAt
   ) {
     return false;
   }
-  const day = match[1];
-  const inWindow = day >= start && day < today;
-  return inWindow;
+  return true;
 };
-const exclusionReason = ({
-  post,
+interface SnapshotScore {
+  skipRate: number;
+  avgWatchMs: number | null;
+}
+const scoreSnapshot = ({
   snapshot,
-  policy,
-  day,
+  requireWatch,
 }: {
-  post: InstagramPost;
   snapshot: InsightSnapshot;
-  policy: FormatPolicy;
-  day: string;
-}): ExclusionReason | null => {
+  requireWatch: boolean;
+}): SnapshotScore | ExclusionReason => {
   if (snapshot.error) {
     return ExclusionReason.ERROR;
   }
-  if (
-    snapshot.metrics.skipRate === null ||
-    !Number.isFinite(snapshot.metrics.skipRate)
-  ) {
+  const { skipRate, avgWatchMs, views } = snapshot.metrics;
+  if (skipRate === null || !Number.isFinite(skipRate)) {
     return ExclusionReason.SKIP_NULL;
   }
-  // 시청 가드도 판정 표본 6편 전부로 본다. 값이 빈 영상을 남기면 1편만으로 가드를 통과할 수 있다.
-  if (
-    snapshot.metrics.avgWatchMs === null ||
-    !Number.isFinite(snapshot.metrics.avgWatchMs)
-  ) {
+  if (requireWatch && (avgWatchMs === null || !Number.isFinite(avgWatchMs))) {
     return ExclusionReason.WATCH_NULL;
   }
-  if (snapshot.metrics.views === null || snapshot.metrics.views < MIN_VIEWS) {
+  if (views === null || views < MIN_VIEWS) {
     return ExclusionReason.LOW_VIEWS;
   }
+  const safeWatch =
+    avgWatchMs !== null && Number.isFinite(avgWatchMs) ? avgWatchMs : null;
+  return { skipRate, avgWatchMs: safeWatch };
+};
+const exclusionReason = ({
+  post,
+  experiment,
+  assignment,
+}: {
+  post: PublishedDailyPost;
+  experiment: FormatExperiment;
+  assignment: FormatAssignment;
+}): ExclusionReason | null => {
   const record = post.features?.experiment;
-  const experiment = policy.experiment!;
   if (
     !record ||
     record.experimentId !== experiment.id ||
@@ -720,7 +714,6 @@ const exclusionReason = ({
   ) {
     return ExclusionReason.NO_RECORD;
   }
-  const assignment = assignArm(policy, day);
   if (record.arm !== assignment.arm) {
     return ExclusionReason.ARM_MISMATCH;
   }
@@ -734,41 +727,63 @@ const exclusionReason = ({
 };
 const countPublishRates = ({
   policy,
+  experiment,
   posts,
   today,
 }: {
   policy: FormatPolicy;
-  posts: InstagramPost[];
+  experiment: FormatExperiment;
+  posts: PublishedDailyPost[];
   today: string;
 }): PublishRates => {
-  const rates = emptyCollection().publishRates;
-  const published = new Set(posts.map((post) => post.reelKey.slice(0, 10)));
-  for (
-    let day = policy.experiment!.start;
-    day <= addDays(today, -4);
-    day = addDays(day, 1)
-  ) {
-    const arm = assignArm(policy, day).arm;
-    if (arm === 'champion') {
-      rates.championAssigned += 1;
-      if (published.has(day)) {
-        rates.championPublished += 1;
-      }
-    } else {
-      rates.challengerAssigned += 1;
-      if (published.has(day)) {
-        rates.challengerPublished += 1;
-      }
-    }
+  const published = new Set(posts.map(reelDayOf));
+  const lastAssignableDay = addDays({
+    day: today,
+    days: -PUBLISH_RATE_LAG_DAYS,
+  });
+  const assignableDays = Array.from(
+    {
+      length: Math.max(
+        0,
+        dayDifference({ from: experiment.start, to: lastAssignableDay }) + 1,
+      ),
+    },
+    (_, offset) => addDays({ day: experiment.start, days: offset }),
+  );
+  const arms = assignableDays.map((day) => ({
+    arm: assignArm({ policy: policy, day: day }).arm,
+    isPublished: published.has(day),
+  }));
+  const championDays = arms.filter(({ arm }) => arm === 'champion');
+  const challengerDays = arms.filter(({ arm }) => arm === 'challenger');
+  const championPublished = championDays.filter(
+    ({ isPublished }) => isPublished,
+  ).length;
+  const challengerPublished = challengerDays.filter(
+    ({ isPublished }) => isPublished,
+  ).length;
+  const counts = {
+    championAssigned: championDays.length,
+    challengerAssigned: challengerDays.length,
+    championPublished,
+    challengerPublished,
+  };
+  if (championDays.length === 0 || challengerDays.length === 0) {
+    return {
+      ...counts,
+      championRate: null,
+      challengerRate: null,
+      gapPoints: null,
+    };
   }
-  if (rates.championAssigned > 0 && rates.challengerAssigned > 0) {
-    rates.championRate =
-      (100 * rates.championPublished) / rates.championAssigned;
-    rates.challengerRate =
-      (100 * rates.challengerPublished) / rates.challengerAssigned;
-    rates.gapPoints = Math.abs(rates.championRate - rates.challengerRate);
-  }
-  return rates;
+  const championRate = (100 * championPublished) / championDays.length;
+  const challengerRate = (100 * challengerPublished) / challengerDays.length;
+  return {
+    ...counts,
+    championRate,
+    challengerRate,
+    gapPoints: Math.abs(championRate - challengerRate),
+  };
 };
 const publishGapExceeded = (rates: PublishRates): boolean =>
   rates.gapPoints !== null && rates.gapPoints > PUBLISH_GAP_POINTS;
@@ -783,33 +798,33 @@ const meanNullable = (values: (number | null)[]): number | null => {
   }
   return mean(finite);
 };
-const finiteOrNull = (value: number | null): number | null =>
-  value !== null && Number.isFinite(value) ? value : null;
-const dayDifference = (from: string, to: string): number =>
-  (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY_MS;
-const addDays = (day: string, days: number): string =>
-  new Date(Date.parse(`${day}T00:00:00Z`) + days * DAY_MS)
-    .toISOString()
-    .slice(0, 10);
-const isConclusive = (verdict: string): boolean =>
-  verdict === ReelFormatVerdict.PROMOTE || verdict === ReelFormatVerdict.KEEP;
-const isInconclusive = (verdict: string): boolean =>
-  verdict === ReelFormatVerdict.HOLD || verdict === ReelFormatVerdict.ABORT;
-export const isGuardRow = (row: DecisionHistoryRow): boolean => {
-  const guardRow = row.experimentId.startsWith('guard-');
-  return guardRow;
+const dayDifference = ({ from, to }: { from: string; to: string }): number => {
+  const difference =
+    Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`);
+  return difference / DAY_MS;
 };
-export const hasDecisionValues = (
-  row: DecisionHistoryRow,
-): row is ValidDecisionHistoryRow => {
-  const valid = row.championValue !== null && row.challengerValue !== null;
-  return valid;
+const addDays = ({ day, days }: { day: string; days: number }): string => {
+  const next = new Date(Date.parse(`${day}T00:00:00Z`) + days * DAY_MS);
+  const iso = next.toISOString();
+  return iso.slice(0, 10);
 };
+export const isConclusive = (verdict: ReelFormatVerdict): boolean => {
+  const conclusive =
+    verdict === ReelFormatVerdict.PROMOTE || verdict === ReelFormatVerdict.KEEP;
+  return conclusive;
+};
+const isInconclusive = (verdict: ReelFormatVerdict): boolean => {
+  const inconclusive =
+    verdict === ReelFormatVerdict.HOLD || verdict === ReelFormatVerdict.ABORT;
+  return inconclusive;
+};
+export const isGuardRow = (row: DecisionOutcome): boolean =>
+  row.experimentId.startsWith('guard-');
 export const isAutoPromotion = (
   row: DecisionHistoryRow,
-): row is ValidDecisionHistoryRow => {
+): row is PromotionDecision => {
   const autoPromotion =
-    hasDecisionValues(row) &&
+    row.statsJson.kind === 'judgment' &&
     row.verdict === ReelFormatVerdict.PROMOTE &&
     row.mode === ReelFormatDecisionMode.AUTO &&
     !isGuardRow(row);
@@ -820,15 +835,13 @@ const isReverseChallengeDue = ({
   policy,
   decisions,
 }: {
-  last: DecisionHistoryRow;
+  last: DecisionOutcome;
   policy: FormatPolicy;
-  decisions: DecisionHistoryRow[];
+  decisions: DecisionOutcome[];
 }): boolean => {
-  if (!hasDecisionValues(last)) {
-    return false;
-  }
   const undecidedReverse =
-    isAutoPromotion(last) &&
+    last.verdict === ReelFormatVerdict.PROMOTE &&
+    last.mode === ReelFormatDecisionMode.AUTO &&
     !last.reverseChallenge &&
     policy.champion[last.knob] === last.challengerValue &&
     autoDecided({
@@ -839,24 +852,25 @@ const isReverseChallengeDue = ({
     }) === 1;
   return undecidedReverse;
 };
-const findActivePromotion = ({
+export const findActivePromotion = ({
   policy,
   rows,
 }: {
   policy: FormatPolicy;
   rows: DecisionHistoryRow[];
-}): ValidDecisionHistoryRow | null => {
-  const promoted = [...rows].reverse().find(isAutoPromotion);
-  if (!promoted) {
+}): PromotionDecision | null => {
+  const promotedIndex = rows.map(isAutoPromotion).lastIndexOf(true);
+  const promoted = rows[promotedIndex];
+  if (!promoted || !isAutoPromotion(promoted)) {
     return null;
   }
   if (policy.champion[promoted.knob] !== promoted.challengerValue) {
     return null;
   }
-  const guardAlreadyRecorded = rows.some(
-    (row) => row.experimentId === `guard-${promoted.experimentId}`,
-  );
-  if (guardAlreadyRecorded) {
+  const settled = rows
+    .slice(promotedIndex + 1)
+    .some((row) => isGuardRow(row) || row.statsJson.kind === 'judgment');
+  if (settled) {
     return null;
   }
   return promoted;
@@ -871,47 +885,37 @@ const pairKey = ({ knob, firstValue, secondValue }: PairValues): string => {
     JSON.stringify(firstValue),
     JSON.stringify(secondValue),
   ].sort();
-  const key = JSON.stringify([knob, values]);
-  return key;
+  return JSON.stringify([knob, values]);
 };
-const samePair = ({
-  row,
-  knob,
-  firstValue,
-  secondValue,
-}: PairValues & { row: DecisionHistoryRow }): boolean => {
-  if (!hasDecisionValues(row)) {
-    return false;
-  }
-  const requestedKey = pairKey({ knob, firstValue, secondValue });
-  const rowKey = pairKey({
+const pairKeyOf = (row: DecisionOutcome): string =>
+  pairKey({
     knob: row.knob,
     firstValue: row.championValue,
     secondValue: row.challengerValue,
   });
-  const identical = requestedKey === rowKey;
-  return identical;
-};
 const autoDecided = ({
   rows,
   knob,
   firstValue,
   secondValue,
 }: {
-  rows: DecisionHistoryRow[];
+  rows: DecisionOutcome[];
 } & PairValues): number => {
-  const count = rows.filter(
+  const key = pairKey({ knob, firstValue, secondValue });
+  return rows.filter(
     (row) =>
       row.mode === ReelFormatDecisionMode.AUTO &&
       isConclusive(row.verdict) &&
-      samePair({ row, knob, firstValue, secondValue }),
+      pairKeyOf(row) === key,
   ).length;
-  return count;
 };
-const toCandidate = (
-  knob: FormatKnob,
-  challenger: FormatKnobValue,
-): FormatCandidate => ({
+const toCandidate = ({
+  knob,
+  challenger,
+}: {
+  knob: FormatKnob;
+  challenger: FormatKnobValue;
+}): FormatCandidate => ({
   knob,
   challenger,
   id: `${knob}=${JSON.stringify(challenger)}`,

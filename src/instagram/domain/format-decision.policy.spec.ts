@@ -4,6 +4,8 @@ import {
   collectSamples,
   decideMode,
   DecisionHistoryRow,
+  findActivePromotion,
+  isAutoPromotion,
   judgeExperiment,
   listCandidates,
   permutationPValue,
@@ -86,8 +88,19 @@ const history = (
   reverseChallenge: false,
   policyVersionAfter: 2,
   policyAfter: POLICY,
-  statsJson: { championMeanSkip: 70 },
-  createdAt: new Date('2026-11-01'),
+  statsJson: {
+    kind: 'judgment',
+    ...judgeExperiment({
+      policy: POLICY,
+      samples: collection(),
+      today: '2026-11-20',
+    }).stats,
+    championMeanSkip: 70,
+    nextReverseChallenge: false,
+    proposalDecisionNumber: null,
+    needsHumanReview: false,
+  },
+  decidedAt: new Date('2026-11-01'),
   ...patch,
 });
 const post = (day: string, patch: Partial<InstagramPost> = {}): InstagramPost =>
@@ -276,16 +289,6 @@ describe('candidate and mode policies', () => {
       true,
     );
     expect(listCandidates({ policy: POLICY, rows }).candidates).toEqual([]);
-    expect(
-      listCandidates({
-        policy: POLICY,
-        rows: [history({ challengerValue: null })],
-      }),
-    ).toEqual({
-      candidates: [],
-      reverseChallenge: false,
-      needsHumanReview: true,
-    });
   });
 });
 
@@ -380,11 +383,6 @@ describe('worst guard', () => {
       mode: ReelFormatDecisionMode.AUTO,
       policyVersionAfter: 2,
     });
-    const policy: FormatPolicy = {
-      ...POLICY,
-      champion: { early_card: true },
-      experiment: null,
-    };
     const posts = ['01', '02', '03', '04'].map((date) =>
       post(`2026-11-${date}`, {
         features: {
@@ -407,18 +405,32 @@ describe('worst guard', () => {
       } as InsightSnapshot),
     );
     const input = {
-      policy,
-      rows: [promoted],
+      promotion: promoted,
       posts,
       snapshots,
       today: '2026-11-10',
       now: new Date('2026-11-10'),
     };
-    expect(checkWorstGuard(input)?.shouldRevert).toBe(false);
+    if (!isAutoPromotion(promoted)) {
+      throw new Error('승격 fixture가 아닙니다.');
+    }
+    expect(
+      checkWorstGuard({ ...input, promotion: promoted })?.shouldRevert,
+    ).toBe(false);
     snapshots[0].metrics.skipRate = 82.04;
-    expect(checkWorstGuard(input)?.shouldRevert).toBe(true);
-    expect(checkWorstGuard({ ...input, posts: posts.slice(0, 3) })).toBeNull();
-    expect(checkWorstGuard({ ...input, policy: POLICY })).toBeNull();
+    expect(
+      checkWorstGuard({ ...input, promotion: promoted })?.shouldRevert,
+    ).toBe(true);
+    expect(
+      checkWorstGuard({
+        ...input,
+        promotion: promoted,
+        posts: posts.slice(0, 3),
+      }),
+    ).toBeNull();
+    expect(
+      findActivePromotion({ policy: POLICY, rows: [promoted] }),
+    ).toBeNull();
   });
   it('낡은 정책 버전 영상은 제외하고 앞선 미수집 영상이 있으면 기다린다', () => {
     const promoted = history({
@@ -426,11 +438,6 @@ describe('worst guard', () => {
       mode: ReelFormatDecisionMode.AUTO,
       policyVersionAfter: 3,
     });
-    const policy: FormatPolicy = {
-      ...POLICY,
-      champion: { early_card: true },
-      experiment: null,
-    };
     const posts = ['01', '02', '03', '04', '05'].map((date, index) =>
       post(`2026-11-${date}`, {
         features: {
@@ -453,25 +460,74 @@ describe('worst guard', () => {
       } as InsightSnapshot),
     );
     const input = {
-      policy,
-      rows: [promoted],
+      promotion: promoted,
       posts,
       snapshots,
       today: '2026-11-10',
       now: new Date('2026-11-07'),
     };
-    expect(checkWorstGuard(input)?.shouldRevert).toBe(true);
+    if (!isAutoPromotion(promoted)) {
+      throw new Error('승격 fixture가 아닙니다.');
+    }
+    expect(
+      checkWorstGuard({ ...input, promotion: promoted })?.shouldRevert,
+    ).toBe(true);
     posts[0].features!.experiment!.policyVersion = 3;
-    expect(checkWorstGuard(input)).toBeNull();
+    expect(checkWorstGuard({ ...input, promotion: promoted })).toBeNull();
+  });
+  it('역도전 판정 뒤에는 가드를 끝내고 가드 표본의 시청 null은 허용한다', () => {
+    const promoted = history({
+      verdict: ReelFormatVerdict.PROMOTE,
+      mode: ReelFormatDecisionMode.AUTO,
+    });
+    const policy: FormatPolicy = { ...POLICY, champion: { early_card: true } };
+    const reverse = history({
+      experimentId: 'reverse',
+      championValue: true,
+      challengerValue: false,
+      reverseChallenge: true,
+    });
+    expect(
+      findActivePromotion({ policy, rows: [promoted, reverse] }),
+    ).toBeNull();
+    if (!isAutoPromotion(promoted)) {
+      throw new Error('승격 fixture가 아닙니다.');
+    }
+    const posts = ['01', '02', '03', '04'].map((date) =>
+      post(`2026-11-${date}`, {
+        features: {
+          experiment: {
+            policyVersion: 2,
+            source: 'policy',
+            experimentId: null,
+            knob: null,
+            arm: 'champion',
+            values: { early_card: true },
+            realized: true,
+            checks: {},
+          },
+        } as unknown as InstagramPost['features'],
+      }),
+    );
+    const snapshots = posts.map((item) =>
+      snapshot(item.id, {
+        metrics: { views: 100, skipRate: 90, avgWatchMs: null },
+      } as InsightSnapshot),
+    );
+    expect(
+      checkWorstGuard({
+        promotion: promoted,
+        posts,
+        snapshots,
+        today: '2026-11-10',
+        now: new Date('2026-11-10'),
+      })?.shouldRevert,
+    ).toBe(true);
   });
 });
 
 describe('planRecovery', () => {
   it('파일이 없으면 최근 원장의 policyAfter를 그대로 복구한다', () => {
-    const older = history({
-      policyVersionAfter: 2,
-      createdAt: new Date('2026-11-01'),
-    });
     const latestPolicy: FormatPolicy = {
       ...POLICY,
       version: 3,
@@ -481,28 +537,19 @@ describe('planRecovery', () => {
       experimentId: 'latest',
       policyVersionAfter: 3,
       policyAfter: latestPolicy,
-      createdAt: new Date('2026-11-02'),
+      decidedAt: new Date('2026-11-02'),
     });
-    expect(
-      planRecovery({ state: { kind: 'missing' }, rows: [latest, older] }),
-    ).toBe(latestPolicy);
+    expect(planRecovery({ state: { kind: 'missing' }, latest })).toBe(
+      latestPolicy,
+    );
     expect(
       planRecovery({
         state: { kind: 'ok', policy: latestPolicy },
-        rows: [latest, older],
+        latest,
       }),
     ).toBeNull();
     expect(
-      planRecovery({
-        state: { kind: 'missing' },
-        rows: [older, history({ ...latest, policyAfter: null })],
-      }),
-    ).toBeNull();
-    expect(
-      planRecovery({
-        state: { kind: 'missing' },
-        rows: [older, history({ ...latest, championValue: null })],
-      }),
+      planRecovery({ state: { kind: 'missing' }, latest: null }),
     ).toBeNull();
   });
 });
