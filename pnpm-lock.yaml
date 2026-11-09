@@ -87,6 +87,9 @@ importers:
       ioredis:
         specifier: ^5.10.1
         version: 5.10.1
+      manseryeok:
+        specifier: 2.0.0
+        version: 2.0.0
       puppeteer:
         specifier: ^25.10.0
         version: 25.10.0(yauzl@2.10.0)
@@ -3206,6 +3209,10 @@ packages:
 
   makeerror@1.0.12:
     resolution: {integrity: sha512-JmqCvUhmt43madlpFzG4BQzG2Z3m6tvQDNKdClZnO3VbIudJYmxsT0FNJMeiB2+JTSlTQTSbU8QdesVmwJcmLg==}
+
+  manseryeok@2.0.0:
+    resolution: {integrity: sha512-h4YeuKP+vsAa01K72v/H+5MwxEZd1Sv7H2hC8YU7r05JjNaCDvVhGaIot0zxrktyZVU6SGN5Ed9d1coTWW8rpQ==}
+    engines: {node: '>=18'}
 
   matcher@4.0.0:
     resolution: {integrity: sha512-S6x5wmcDmsDRRU/c2dkccDwQPXoFczc5+HpQ2lON8pnvHlnvHAHj5WlLVvw6n6vNyHuVugYrFohYxbS+pvFpKQ==}
@@ -8043,6 +8050,8 @@ snapshots:
   makeerror@1.0.12:
     dependencies:
       tmpl: 1.0.5
+
+  manseryeok@2.0.0: {}
 
   matcher@4.0.0:
     dependencies:
