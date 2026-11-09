@@ -81,11 +81,12 @@ describe('AutopilotScheduler', () => {
     //   + goal-checkin + schedule-reminder + schedule-collect
     //   + reels-publish-offer + instagram-token-check
     //   + reels-insights-collect + reels-insights-weekly = 45그룹.
-    expect(queue.add).toHaveBeenCalledTimes(45);
+    expect(queue.add).toHaveBeenCalledTimes(46);
     expect(addCalls).toContain('reels-publish-offer');
     expect(addCalls).toContain('instagram-token-check');
     expect(addCalls).toContain('reels-insights-collect');
     expect(addCalls).toContain('reels-insights-weekly');
+    expect(addCalls).toContain('reels-format-decide');
     expect(addCalls).toContain('schedule-collect');
     expect(addCalls).toContain('goal-checkin');
     expect(addCalls).toContain('idea-triage');
