@@ -166,6 +166,7 @@
       "**/*.(t|j)s"
     ],
     "coverageDirectory": "../coverage",
+    "cacheDirectory": "<rootDir>/../node_modules/.cache/jest",
     "testEnvironment": "node",
     "setupFiles": [
       "<rootDir>/jest.polyfills.js"

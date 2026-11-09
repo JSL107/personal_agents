@@ -36,6 +36,17 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # jest 변환 캐시 — Test 단계 시간의 90% 가 테스트 본문이 아니라 파일마다 TS 를 변환·로드하는
+      # 비용이다. jest 는 파일 내용 해시로 캐시를 고르므로 바뀐 파일만 다시 변환한다. install 이
+      # node_modules 를 만든 뒤에 복원해야 install 이 덮어쓰지 않는다. 락파일이 바뀌면 새로 쌓는다.
+      - name: Restore jest cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules/.cache/jest
+          key: jest-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            jest-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
+
       # PrismaClient 타입 생성 — lint/test/build 가 @prisma/client 타입에 의존하므로 선행.
       # schema 파싱만 하면 되고 DB 연결은 불필요하다.
       - name: Generate Prisma client
