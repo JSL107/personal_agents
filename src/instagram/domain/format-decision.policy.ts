@@ -60,6 +60,7 @@ export type ExclusionReason =
   | 'lost'
   | 'error'
   | 'skip_null'
+  | 'watch_null'
   | 'low_views'
   | 'no_record'
   | 'arm_mismatch'
@@ -564,6 +565,7 @@ const emptyCollection = (): SampleCollection => ({
     lost: 0,
     error: 0,
     skip_null: 0,
+    watch_null: 0,
     low_views: 0,
     no_record: 0,
     arm_mismatch: 0,
@@ -619,6 +621,13 @@ const exclusionReason = ({
     !Number.isFinite(snapshot.metrics.skipRate)
   ) {
     return 'skip_null';
+  }
+  // 시청 가드도 판정 표본 6편 전부로 본다. 값이 빈 영상을 남기면 1편만으로 가드를 통과할 수 있다.
+  if (
+    snapshot.metrics.avgWatchMs === null ||
+    !Number.isFinite(snapshot.metrics.avgWatchMs)
+  ) {
+    return 'watch_null';
   }
   if (snapshot.metrics.views === null || snapshot.metrics.views < MIN_VIEWS) {
     return 'low_views';

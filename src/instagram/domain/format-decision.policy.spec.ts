@@ -57,6 +57,7 @@ const collection = (
     lost: 0,
     error: 0,
     skip_null: 0,
+    watch_null: 0,
     low_views: 0,
     no_record: 0,
     arm_mismatch: 0,
@@ -298,6 +299,25 @@ describe('collectSamples', () => {
     expect(result.champion.length + result.challenger.length).toBe(1);
     expect(result.excluded.lost).toBe(1);
     expect(result.excluded.no_record).toBe(1);
+  });
+  it('평균 시청이 비어 있는 영상은 watch_null 로 제외한다', () => {
+    const result = collectSamples({
+      policy: POLICY,
+      posts: [post('2026-11-01')],
+      snapshots: [
+        snapshot('2026-11-01', {
+          metrics: {
+            views: 100,
+            skipRate: 70,
+            avgWatchMs: null,
+          } as InsightSnapshot['metrics'],
+        }),
+      ],
+      today: '2026-11-10',
+      now: new Date('2026-11-20'),
+    });
+    expect(result.champion.length + result.challenger.length).toBe(0);
+    expect(result.excluded.watch_null).toBe(1);
   });
   it('arm과 실현값 불일치를 각각 제외한다', () => {
     const posts = [
