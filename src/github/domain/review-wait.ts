@@ -44,3 +44,31 @@ export const describeReviewWait = ({
 
   return { label: `리뷰 요청 후 ${days}일째 답 없음`, days };
 };
+
+interface DescribeQuietPullRequestInput {
+  updatedAts: (string | undefined)[];
+  minDays: number;
+  now: Date;
+}
+
+// 여러 PR 이 묶인 항목은 가장 최근 활동 기준이다. 하나라도 시각을 모르면 짚지 않는다.
+export const describeQuietPullRequest = ({
+  updatedAts,
+  minDays,
+  now,
+}: DescribeQuietPullRequestInput): ReviewWaitDescription | null => {
+  // 시각을 모르는 PR 은 NaN 으로 넣는다. Math.max 는 NaN 이 하나라도 있으면 NaN 이라 아래에서 걸러진다(깨진 날짜도 같다).
+  const latest = Math.max(
+    ...updatedAts.map((updatedAt) =>
+      updatedAt ? new Date(updatedAt).getTime() : Number.NaN,
+    ),
+  );
+  if (!Number.isFinite(latest)) {
+    return null;
+  }
+  const days = countKstDaysBetween(new Date(latest), now);
+  if (days < minDays) {
+    return null;
+  }
+  return { label: `${days}일째 움직임 없음`, days };
+};

@@ -1402,6 +1402,7 @@ export class OctokitGithubClient implements GithubClientPort {
         ],
         changesRequestedBy,
         observed: true,
+        updatedAt: detail.data.updated_at,
       };
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);

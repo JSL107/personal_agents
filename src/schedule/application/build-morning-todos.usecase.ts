@@ -67,7 +67,7 @@ const line = ({ item, resolved, dayCount }: RankedItem): MorningTodoLine => ({
       ? (resolved.wait?.label ?? '리뷰 대기')
       : resolved.turn === 'MY_TURN'
         ? resolved.reason
-        : null,
+        : (resolved.wait?.label ?? null),
 });
 
 @Injectable()

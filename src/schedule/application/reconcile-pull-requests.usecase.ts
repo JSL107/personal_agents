@@ -32,6 +32,9 @@ import {
 import { toSourceCompletedAt } from '../domain/source-completed-at';
 import { resolveCollectionLowerBound } from './collection-window';
 
+// 열린 PR 은 갱신일과 무관하게 전부 본다. 수집 시작 전에 이미 멈춘 PR 이 영영 빠지지 않게 한다.
+const ALL_OPEN_SINCE = '1970-01-01';
+
 interface ReconcileInput {
   ownerId: string;
   now: Date;
@@ -124,7 +127,7 @@ export class ReconcilePullRequestsUsecase {
         ? await this.github.listAuthorOpenPullRequests({
             repo: null,
             author,
-            sinceIsoDate: prLowerBound.toISOString(),
+            sinceIsoDate: ALL_OPEN_SINCE,
             limit: 100,
             throwOnDetailFailure: true,
             includeDraft: true,

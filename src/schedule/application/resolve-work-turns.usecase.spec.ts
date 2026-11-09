@@ -291,4 +291,46 @@ describe('ResolveWorkTurnsUsecase', () => {
       wait: { label: '리뷰 대기', days: null },
     });
   });
+  it('리뷰어 없는 PR 이 14일 이상 움직임이 없으면 UNKNOWN 에 일수 라벨을 붙인다', async () => {
+    github.fetchAuthorPullRequestSignals.mockResolvedValue([
+      signal(1, { updatedAt: '2026-10-21T03:00:00Z' }),
+    ]);
+    const result = await usecase.execute({
+      items: [
+        buildScheduleItemRecord({
+          source: ScheduleSource.GITHUB_PR,
+          sourceKey: url(1),
+        }),
+      ],
+      now,
+    });
+    expect(result.get(1)).toEqual({
+      turn: 'UNKNOWN',
+      reason: null,
+      observed: true,
+      wait: { label: '14일째 움직임 없음', days: 14 },
+    });
+  });
+  it('13일째이거나 활동 시각을 모르면 라벨을 붙이지 않는다', async () => {
+    repository.findOpenLinkedPullRequestUrls.mockResolvedValue(
+      new Map([[2, [url(2), url(3)]]]),
+    );
+    github.fetchAuthorPullRequestSignals.mockResolvedValue([
+      signal(1, { updatedAt: '2026-10-22T03:00:00Z' }),
+      signal(2, { updatedAt: '2026-09-01T03:00:00Z' }),
+      signal(3),
+    ]);
+    const result = await usecase.execute({
+      items: [
+        buildScheduleItemRecord({
+          source: ScheduleSource.GITHUB_PR,
+          sourceKey: url(1),
+        }),
+        buildScheduleItemRecord({ id: 2 }),
+      ],
+      now,
+    });
+    expect(result.get(1)?.wait).toBeNull();
+    expect(result.get(2)?.wait).toBeNull();
+  });
 });

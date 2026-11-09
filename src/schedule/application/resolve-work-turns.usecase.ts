@@ -11,9 +11,11 @@ import {
   PullRequestRef,
 } from '../../github/domain/port/github-client.port';
 import {
+  describeQuietPullRequest,
   describeReviewWait,
   ReviewWaitDescription,
 } from '../../github/domain/review-wait';
+import { QUIET_PR_DAYS } from '../domain/daily-todo.constant';
 import { WorkTurn } from '../domain/daily-todo.type';
 import { parsePullRequestUrl } from '../domain/github-source-url';
 import {
@@ -161,7 +163,12 @@ export class ResolveWorkTurnsUsecase {
           wait,
         });
       } else {
-        result.set(id, unknown(true));
+        const quiet = describeQuietPullRequest({
+          updatedAts: itemSignals.map((signal) => signal?.updatedAt),
+          minDays: QUIET_PR_DAYS,
+          now,
+        });
+        result.set(id, { ...unknown(true), wait: quiet });
       }
     }
     return result;
