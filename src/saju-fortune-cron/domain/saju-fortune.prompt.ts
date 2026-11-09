@@ -1,9 +1,12 @@
 import { utcMidnightOf } from '../../common/util/kst-date.util';
 import { pillarToHangul } from './day-pillar';
-import { analyzeSajuDay, formatSajuFacts } from './saju-analysis';
+import {
+  analyzeSajuDay,
+  formatSajuFacts,
+  YearMonthPillars,
+} from './saju-analysis';
 import { CARD_SCENE_LABEL, CARD_TITLE_LABEL } from './saju-fortune-card';
 import { SajuFortuneRecipient } from './saju-fortune-cron.type';
-import { yearMonthPillarsOf } from './year-month-pillar';
 
 const PILLAR_LABELS = ['년주', '월주', '일주', '시주'];
 // 날마다 돌아가는 비유 소재. 소재를 주지 않으면 모델이 매일 같은 자연 비유("단단한 쇠 기운",
@@ -38,6 +41,7 @@ export interface SajuFortunePromptInput {
   recipient: SajuFortuneRecipient;
   todayKst: string;
   todayPillar: string;
+  yearMonthPillars: YearMonthPillars;
 }
 
 // 일진과 해석 근거(오행 분포·십성·충합)는 코드가 계산해 넣는다 — 모델은 그 사실을 풀어 쓰기만 한다.
@@ -46,6 +50,7 @@ export const buildSajuFortunePrompt = ({
   recipient,
   todayKst,
   todayPillar,
+  yearMonthPillars,
 }: SajuFortunePromptInput): string => {
   const natal = recipient.natalPillars
     .map(
@@ -68,11 +73,7 @@ export const buildSajuFortunePrompt = ({
     '',
     '계산된 사실 (코드가 확정한 값이다. 다시 계산하지 말고 이것만 근거로 써라):',
     ...formatSajuFacts(
-      analyzeSajuDay(
-        recipient.natalPillars,
-        todayPillar,
-        yearMonthPillarsOf(todayKst),
-      ),
+      analyzeSajuDay(recipient.natalPillars, todayPillar, yearMonthPillars),
     ),
     '',
     '작성 형식 (이 순서 그대로, 운세 본문은 12줄 이내):',

@@ -2,7 +2,6 @@
 // LLM 에는 이 사실을 넘기고 쉬운 말로 풀어 쓰는 일만 맡긴다 — 일진을 코드로 정한 것과 같은 이유다.
 
 import { pillarToHangul } from './day-pillar';
-import type { YearMonthPillars } from './year-month-pillar';
 
 const ELEMENTS = ['나무', '불', '흙', '쇠', '물'] as const;
 export type FiveElement = (typeof ELEMENTS)[number];
@@ -71,6 +70,12 @@ export interface BranchRelation {
 }
 
 type StemWithTenGod = StemInfo & { tenGod: TenGod };
+
+// 그날의 년주·월주. 절기표가 필요해 application 의 yearMonthPillarsOf 가 계산해 넘긴다.
+export interface YearMonthPillars {
+  yearPillar: string;
+  monthPillar: string;
+}
 
 // 올해·이번 달의 간지가 받는 사람에게 어떤 기운인지 — 오늘 하루를 더 긴 흐름 안에 놓아 준다.
 export interface PeriodFlow {

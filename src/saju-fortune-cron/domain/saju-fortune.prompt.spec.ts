@@ -34,6 +34,8 @@ describe('buildSajuFortunePrompt', () => {
     recipient: RECIPIENT,
     todayKst: '2026-11-02',
     todayPillar: '庚辰',
+    // 2026-11-02 는 입동(11-07) 전이라 아직 무술월이다.
+    yearMonthPillars: { yearPillar: '丙午', monthPillar: '戊戌' },
   });
 
   it('오늘의 비유 소재와 카드 두 줄 형식을 싣는다', () => {
@@ -44,10 +46,10 @@ describe('buildSajuFortunePrompt', () => {
     expect(prompt).toContain('CARD_SCENE:');
   });
 
-  it('올해·이번 달 흐름을 그날 날짜로 계산해 싣는다', () => {
-    // 2026-11-02 는 입동(11-07) 전이라 아직 무술월이다.
+  it('넘겨받은 올해·이번 달 흐름을 싣고, 총운에서만 엮으라고 한다', () => {
     expect(prompt).toContain('- 올해(병오년)의 흐름:');
     expect(prompt).toContain('- 이번 달(무술월)의 흐름:');
+    expect(prompt).toContain('"총운:" 에서만 한 번 짧게 엮는다');
   });
 
   it('타고난 기운 소개로 시작하지 말라고 못박는다', () => {
