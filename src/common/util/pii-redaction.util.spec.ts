@@ -127,6 +127,13 @@ describe('redactPii', () => {
     expect(redactPii(`${prefix}https://u:p@host/x`)).toBe(
       `${prefix}https://***@host/x`,
     );
+    const digitTail = `a${'1'.repeat(32)}`;
+    expect(redactPii(`${digitTail}://user:hunter2@host/x`)).toBe(
+      `${digitTail}://***@host/x`,
+    );
+    expect(redactPii('x 12-+https://u:p@host/x')).toBe(
+      'x 12-+https://***@host/x',
+    );
   });
 
   // 공백 없는 긴 덩어리(base64·hex)에서 URL 패턴이 O(n²) 로 이벤트 루프를 몇 초씩 막았다.
