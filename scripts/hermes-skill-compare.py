@@ -78,7 +78,7 @@ EXCLUDED_SOURCES = {
 _EXCLUDED_TOKENS = [frozenset(re.split(r"[/_.-]+", source)) for source in EXCLUDED_SOURCES]
 # 저장소 이름이 달라도 본문에 원본을 밝힌 파생본(`metadata.derived-from: https://github.com/mattpocock/skills/...`,
 # `Source: mattpocock/skills ...`)이 있다(2026-11-09 pandoscope/skills/domain-modeling). 밝힌 원본이 제외 출처일 때만 뺀다.
-_DERIVED_FROM = re.compile(r"(?:derived[-_ ]from|source)\W{0,5}(?:https?://)?(?:github\.com/)?([\w.-]+/[\w-]+)", re.IGNORECASE)
+_DERIVED_FROM = re.compile(r"(?:derived[-_ ]from|source)\W{0,5}(?:https?://)?(?:github\.com/)?([\w.-]+/[\w.-]+)", re.IGNORECASE)
 
 # 입력 예산(25K 토큰 미만, RATIONALE.md): 스킬 1개 = 내 발췌 + 외부 발췌 2개 + 머리글.
 # 4 × (700 + 2 × 900 + 머리글·링크 약 900) + 도입부 약 400 = 14,000자 안팎(2026-10-30 실측 13.9K자) + 프롬프트 약 2,200자
@@ -377,7 +377,8 @@ def build_report(
                 except Exception as error:  # noqa: BLE001 — 시간 초과·403 은 다른 경로로도 같으니 그만둔다
                     log(skill, "failed", f"SKILL.md {candidate['id']}: {error!r}")
                 break
-            if any(found.lower() in EXCLUDED_SOURCES for found in _DERIVED_FROM.findall(raw)):
+            # 저장소 이름의 점(`skills.zh-cn`)까지 읽고, 클론 URL 의 `.git`·문장 끝 마침표만 떼어 비교한다.
+            if any(found.lower().removesuffix(".git").rstrip(".") in EXCLUDED_SOURCES for found in _DERIVED_FROM.findall(raw)):
                 log(skill, "derivative", f"{candidate['id']} declares an excluded source")
                 # shortcut: 순위를 정한 뒤 빼서 빈자리를 다음 후보로 채우지 않는다, 후보가 자주 하나로 줄면 본문을 먼저 받아 순위를 매긴다.
                 del lines[-2:]  # 위에서 적은 이름·링크 두 줄
@@ -605,7 +606,7 @@ def self_check() -> None:
             raise urllib.error.HTTPError(url, 404, "Not Found", None, None)
         if "evil" in url:
             return "---\nmetadata.derived-from: https://github.com/MattPocock/skills/blob/391a/skills/x\n---\nbody"
-        return "<!-- Source: someone/else skills/x -->\nbody"
+        return "<!-- Source: mattpocock/skills.zh-cn skills/x -->\nbody"  # 점이 든 다른 저장소를 제외 출처로 오인하지 않는다
 
     derived_ledger: list[dict] = []
     derived, _, _ = build_report([skills[0]], search, derived_fetch, lambda skill: "", None, invisible, derived_ledger)
