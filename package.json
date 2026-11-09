@@ -159,7 +159,7 @@
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
-      "^.+\\.ts$": "ts-jest"
+      "^.+\\.ts$": ["ts-jest", { "tsconfig": { "isolatedModules": true } }]
     },
     "collectCoverageFrom": [
       "**/*.(t|j)s"
