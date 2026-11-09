@@ -26,7 +26,7 @@
 
 > 새 세션에서 이 계획을 이어갈 때 여기부터 읽으세요.
 
-- **작업 위치**: worktree `/Users/juneseok/worktrees/idaeri-console`, 브랜치 `feat/macos-console-phase0-1` (main 에서 분기). node_modules 설치 + `prisma:generate` + `rebuild` 완료.
+- **작업 위치**: worktree `~/worktrees/idaeri-console`, 브랜치 `feat/macos-console-phase0-1` (main 에서 분기). node_modules 설치 + `prisma:generate` + `rebuild` 완료.
 - **완료 (PART A 백엔드 전체)**: B1 · A1 · A2 · A3 (이전 세션) + **A4(활성 런 read) · A5(스냅샷 조립 + preview `findAllOpen`) · A6(REST 4종 + SSE + 모듈 등록 + e2e) · A7(런·승인 라이프사이클 이벤트 emit)** (이번 세션). 백엔드 3중 green: `lint:check` 0 err / `test` 1711+40 pass / `build` OK.
 - **다음 (PART B macOS Swift 앱)**: B2(계약 Codable 모델 + 디코딩 테스트) → B3(ConsoleStore 이벤트 적용) → B4(ConsoleClient + SSE 라인 파서) → B5(대시보드 뷰 배선). `clients/idaeri-console/` 에 B1 스캐폴드(`swift build` green) 존재.
 - **이번 세션 설계 결정 (구현 시 확정한 사항)**:

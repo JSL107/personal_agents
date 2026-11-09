@@ -19,7 +19,7 @@
 3. **env**: `.env.example`는 `.env*` 권한 보호 → Edit 툴 불가, **Bash 로 편집**. `.env`는 건드리지 말고 최종 보고에 사용자 안내. **env 변경 후 `pnpm docs:sync` 필수**(env-catalog.md 드리프트로 CI docs:check 실패함 — SP1에서 겪음).
 4. **커밋**: `docs/`는 gitignore → docs 커밋은 `git add -f`. worktree라 `git add -A` 시 node_modules 심링크 주의(이 worktree .gitignore엔 `node_modules` 슬래시없는 패턴 있어 안전하나 명시 경로 권장). git은 `git -C "$WORKTREE"`.
 
-WORKTREE = /Users/juneseok/Desktop/backend/기타/personal_agents/.claude/worktrees/autopilot-sp2 (브랜치 feat/autopilot-sp2, off origin/main #95).
+WORKTREE = <repo>/.claude/worktrees/autopilot-sp2 (브랜치 feat/autopilot-sp2, off origin/main #95).
 
 ---
 
