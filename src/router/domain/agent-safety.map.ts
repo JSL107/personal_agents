@@ -55,6 +55,7 @@ export const AGENT_SAFETY_LEVEL: Record<AgentType, AgentSafetyLevel> = {
   [AgentType.PREFERENCE_LEARNING]: AgentSafetyLevel.UNAUDITED,
   [AgentType.EVENING_RETRO]: AgentSafetyLevel.UNAUDITED,
   [AgentType.OPS_SUPERVISOR]: AgentSafetyLevel.UNAUDITED,
+  [AgentType.REELS_FORMAT_PLANNER]: AgentSafetyLevel.UNAUDITED,
   [AgentType.INVEST]: AgentSafetyLevel.UNAUDITED,
   [AgentType.CTO_STUDY]: AgentSafetyLevel.UNAUDITED,
   [AgentType.IDEA_TRIAGE]: AgentSafetyLevel.READ_ONLY,

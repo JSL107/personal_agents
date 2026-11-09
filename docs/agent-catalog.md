@@ -2,7 +2,7 @@
 
 # 에이전트 카탈로그
 
-이대리의 에이전트 33종. SoT: `src/agent-registry/agent-registry.ts` + `AGENT_TO_PROVIDER`(`src/model-router/domain/agent-provider.map.ts`).
+이대리의 에이전트 34종. SoT: `src/agent-registry/agent-registry.ts` + `AGENT_TO_PROVIDER`(`src/model-router/domain/agent-provider.map.ts`).
 드리프트는 `pnpm docs:check` 가 차단하고, agentType 집합 정합성은 `agent-registry.spec.ts` 가 강제한다.
 
 | 닉네임 | 기술 이름 | AgentType | 슬래시 | 모델 | 진입 usecase | 설명 |
@@ -33,6 +33,7 @@
 | 최성과 | PO Eval | `PO_EVAL` | `/po-eval` | CHATGPT | `src/agent/po-eval/application/generate-po-evaluation.usecase.ts` | 단계 평가 합성 + careerLog |
 | 박보좌 | PO Shadow | `PO_SHADOW` | `/po-shadow` | CHATGPT | `src/agent/po-shadow/application/generate-po-shadow.usecase.ts` | PO 관점 그림자 검토 |
 | 최취향 | Preference Learning | `PREFERENCE_LEARNING` | — (webhook/자동) | CHATGPT | `src/preference-profile/application/preference-inference.adapter.ts` | 주간 선호 학습 — 신호 배치 → 선호 프로필 diff 추론 (슬래시 없음, 내부 전용) |
+| 형식이 | Reels Format Planner | `REELS_FORMAT_PLANNER` | — (webhook/자동) | CHATGPT | `src/agent/reels-format-planner/application/propose-reels-format.usecase.ts` | 릴스 형식 실험의 다음 후보와 판정 해석 제안 (내부 전용) |
 | 정판단 | Review Reply Judge | `REVIEW_REPLY_JUDGE` | — (webhook/자동) | CHATGPT | `src/agent/review-reply-judge/application/judge-review-reply.usecase.ts` | PR 리뷰 답변 수용 여부 판정 |
 | 길잡이 | Router | `ROUTER` | — (webhook/자동) | CHATGPT | `src/router/application/idaeri-router.usecase.ts` | 요청을 담당자에게 넘기는 설비 — 넘기지 못한 요청(분류 실패·미등록 담당자)만 기록한다 |
 | 오마감 | Schedule | `SCHEDULE` | — (webhook/자동) | CHATGPT | `src/schedule/application/register-schedule.usecase.ts` | 마감·신청·예약 등록과 업무 상태·알림·연락할 일·메모 관리 (자연어 멘션, 대화 추출에 LLM 사용) |

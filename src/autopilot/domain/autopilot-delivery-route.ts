@@ -62,6 +62,7 @@ export const AUTOPILOT_DELIVERY_ROUTE: Readonly<
   // 수집은 평소 skip 이다. 연속 실패 알림만 보낸다(하루 1회).
   'reels-insights-collect': 'slack',
   'reels-insights-weekly': 'slack',
+  'reels-format-decide': 'slack',
   'ai-cli-env-snapshot': 'console',
   'ai-cli-env-apply': 'slack',
   'portfolio-warmup': 'slack',

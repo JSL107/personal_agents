@@ -1,5 +1,4 @@
 import { homedir } from 'node:os';
-import { join } from 'node:path';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -19,6 +18,7 @@ import {
   MarkerWriteResult,
   writePublishedMarker,
 } from '../../../instagram/application/write-published-marker';
+import { DEFAULT_SKILL_REELS_OUT_ROOT } from '../../../instagram/domain/instagram.constants';
 import {
   InstagramPostField,
   InstagramPostStatus,
@@ -45,7 +45,6 @@ import {
   AutopilotTaskResult,
 } from '../../domain/autopilot-task.port';
 
-const DEFAULT_OUT_ROOT = join(homedir(), 'Desktop', 'skill-jaengyi-reels');
 const KST_OFFSET_MS = 9 * 60 * 60_000;
 // 이 task 의 마지막 슬롯(playbook `*/15 9-23`). 이때도 확정되지 않은 스토리 게시는 사람에게 넘긴다.
 const LAST_SLOT_MINUTES = 23 * 60 + 45;
@@ -86,7 +85,7 @@ export class ReelsPublishOfferAutopilotTask implements AutopilotTask {
     const configuredRoot = this.config.get<string>('SKILL_REELS_OUT_ROOT');
     const outRoot = configuredRoot
       ? configuredRoot.replace(/^~(?=\/|$)/, homedir())
-      : DEFAULT_OUT_ROOT;
+      : DEFAULT_SKILL_REELS_OUT_ROOT;
     const scanned = await scanReadyReels({ outRoot, day: firedAtKst });
     const cardPayloads: ReelPublishPayload[] = [];
     for (const reel of scanned.ready) {

@@ -405,6 +405,12 @@ export const AGENT_CONTRACTS: Record<AgentType, AgentContract> = {
     deliverableFields: ['advice'],
     requireEvidence: false,
   },
+  [AgentType.REELS_FORMAT_PLANNER]: {
+    department: Department.EVALUATION,
+    job: '릴스 형식 실험의 다음 후보와 판정 해석을 제안한다',
+    deliverableFields: ['interpretation'],
+    requireEvidence: false,
+  },
   [AgentType.EVENING_RETRO]: {
     department: Department.EVALUATION,
     job: '하루를 회고해 발행 초안을 만든다',

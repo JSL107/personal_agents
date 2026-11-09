@@ -1625,3 +1625,29 @@ model InstagramInsightSnapshot {
   @@unique([postId, snapshotWindow])
   @@map("instagram_insight_snapshot")
 }
+
+// 릴스 형식 실험 판정과 정책 복구를 위한 원장.
+model ReelFormatDecision {
+  id                  String    @id @default(uuid())
+  experimentId        String    @unique @map("experiment_id")
+  knob                String
+  championValue       Json      @map("champion_value")
+  challengerValue     Json      @map("challenger_value")
+  nChampion           Int       @map("n_champion")
+  nChallenger         Int       @map("n_challenger")
+  excluded            Int
+  statsJson           Json      @map("stats_json")
+  verdict             String
+  mode                String
+  reverseChallenge    Boolean   @map("reverse_challenge")
+  reason              String
+  policyVersionBefore Int       @map("policy_version_before")
+  policyVersionAfter  Int       @map("policy_version_after")
+  policyAfter         Json      @map("policy_after")
+  aiProposal          Json?     @map("ai_proposal")
+  decidedAt           DateTime  @map("decided_at")
+  reportedAt          DateTime? @map("reported_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
+
+  @@map("reel_format_decision")
+}

@@ -32,6 +32,15 @@ export class InstagramException extends DomainException {
   }
 }
 
+export class ReelFormatLedgerCorruptedException extends InstagramException {
+  constructor(readonly ids: string[]) {
+    super({
+      message: `릴스 형식 판정 원장 행이 손상됐습니다: ${ids.join(', ')}`,
+      code: InstagramErrorCode.REEL_FORMAT_LEDGER_CORRUPTED,
+    });
+  }
+}
+
 // 오류가 그 코드의 InstagramException 이면 좁혀진 예외를, 아니면 null 을 돌려준다.
 // boolean 이 아니라 예외를 돌려주는 이유: 호출부가 메시지·코드를 읽을 때 instanceof 를 한 번 더 쓰지 않게.
 export const toInstagramError = ({

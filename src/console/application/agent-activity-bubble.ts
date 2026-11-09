@@ -41,6 +41,7 @@ const ACTIVITY_BUBBLE_RULES: Record<string, ActivityBubbleRule> = {
   SLACK_COMMAND_BE_TEST: '테스트 짜는 중',
   SLACK_MENTION_JOB_APPLICATION: '지원 정리 중',
   'OPS_SUPERVISOR:SCHEDULED': '운영 점검 중',
+  'REELS_FORMAT_PLANNER:REELS_FORMAT_DECISION': '릴스 형식 판정 중',
   PR_REVIEW_SWEEP: createPullRequestReviewBubble,
   SLACK_COMMAND_REVIEW_PR: createPullRequestReviewBubble,
   SLACK_MENTION_CODE_REVIEWER: createPullRequestReviewBubble,

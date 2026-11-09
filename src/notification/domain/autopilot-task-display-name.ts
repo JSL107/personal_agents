@@ -68,6 +68,7 @@ const AUTOPILOT_TASK_DISPLAY_NAME: Partial<Record<string, string>> = {
   'preview-sweeper': '만료 승인 카드 정리',
   'reels-insights-collect': '릴스 인사이트 수집',
   'reels-insights-weekly': '릴스 주간 리포트',
+  'reels-format-decide': '릴스 형식 판정',
   'reels-publish-offer': '릴스 게시 제안',
   'run-retro': '주간 실행 회고',
   'run-sweeper': '멈춘 실행 정리',

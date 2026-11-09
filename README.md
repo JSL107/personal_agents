@@ -497,6 +497,8 @@ Hermes 가 매일 08:40 AI 꼭지와 개발 꼭지를 한 편(약 1분)으로 �
 
 게시된 릴스는 이대리가 게시 24시간·3일·7일 뒤에 조회·도달·첫 3초 스킵률·평균 시청 시간·공유·저장을 `instagram_insight_snapshot` 에 기록한다(`reels-insights-collect`, 매시 20분). 스토리는 지표가 24시간 뒤 사라져 만료 전에 한 번 찍고, 조회가 5 미만이면 Meta 가 숫자를 주지 않아 「조회 5 미만」으로 남긴다. 영상 특성(길이·꼭지 수·첫 줄 유형·제목 형태·첫 포즈)은 첫 수집 때 `script.json` 에서 `instagram_post.features` 로 옮겨 둔다. 매주 월요일 09:30 `reels-insights-weekly` 가 지난주 영상별 숫자와 특성별 누적 비교(7일 값, 중앙값, 3편 미만은 표본 부족)를 Slack 으로 보낸다. 어느 쪽이 나은지 결론은 적지 않는다.
 
+매일 07:00 KST `reels-format-decide` 가 형식 실험의 3일 지표를 판정하고 다음 실험을 정해 별도 Slack 메시지로 보고한다. 배포 전 `pnpm db:push` 가 필요하다(실행하지 않으면 07:00 task 가 매일 실패한다).
+
 ### 인스타 토큰 재동의
 
 인스타 토큰 재동의 경고가 오면 Meta 그래프 API 탐색기에서 새 사용자 토큰을 받고 장기 사용자 토큰으로 교환한다. 해당 장기 토큰으로 페이지 토큰을 다시 발급받아 `.env` 의 `META_PAGE_TOKEN` 을 교체하고 앱을 재시작한다. `instagram_content_publish`·`instagram_manage_insights`(인사이트 수집) 권한과 `data_access_expires_at` 을 확인한다. 토큰은 로그나 채팅에 붙이지 않는다.
