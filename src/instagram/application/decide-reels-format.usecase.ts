@@ -80,13 +80,18 @@ export class DecideReelsFormatUsecase {
       return { text: lines.join('\n\n'), reportedIds };
     };
     const state = await this.store.read();
+    // 파일을 못 읽는 동안에는 미보고 판정을 싣지 않는다. 파일에 반영됐는지 모르는 "적용" 보고가 완료 처리되면 다시 나가지 않는다.
     if (state.kind === 'no_directory') {
-      lines.push('릴스 출력 폴더가 없어 형식 정책을 확인하지 못했습니다.');
-      return finish();
+      return {
+        text: '릴스 출력 폴더가 없어 형식 정책을 확인하지 못했습니다.',
+        reportedIds: [],
+      };
     }
     if (state.kind === 'broken') {
-      lines.push(`릴스 형식 정책 오류: ${state.reason}`);
-      return finish();
+      return {
+        text: `릴스 형식 정책 오류: ${state.reason}`,
+        reportedIds: [],
+      };
     }
     const recovered = planRecovery({
       policy: state.kind === 'ok' ? state.policy : null,

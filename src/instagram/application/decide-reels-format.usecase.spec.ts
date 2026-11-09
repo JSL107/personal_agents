@@ -172,6 +172,15 @@ describe('DecideReelsFormatUsecase', () => {
     expect(decisions.insert).not.toHaveBeenCalled();
   });
 
+  it('정책을 못 읽는 동안에는 미보고 판정을 보고 완료로 넘기지 않는다', async () => {
+    const { usecase, store, decisions } = setup();
+    decisions.listAll.mockResolvedValue([decisionRow()]);
+    store.read.mockResolvedValue({ kind: 'broken', reason: 'version' });
+    const report = await usecase.execute();
+    expect(report?.reportedIds).toEqual([]);
+    expect(report?.text).not.toContain('릴스 형식 판정');
+  });
+
   it('원장이 비고 파일이 없으면 초기 정책을 쓴다', async () => {
     const { usecase, store } = setup();
     store.read.mockResolvedValue({ kind: 'missing' });
