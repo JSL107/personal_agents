@@ -57,6 +57,7 @@ export const describeQuietPullRequest = ({
   minDays,
   now,
 }: DescribeQuietPullRequestInput): ReviewWaitDescription | null => {
+  // 시각을 모르는 PR 은 NaN 으로 넣는다. Math.max 는 NaN 이 하나라도 있으면 NaN 이라 아래에서 걸러진다(깨진 날짜도 같다).
   const latest = Math.max(
     ...updatedAts.map((updatedAt) =>
       updatedAt ? new Date(updatedAt).getTime() : Number.NaN,

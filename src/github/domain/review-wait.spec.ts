@@ -1,4 +1,8 @@
-import { describeReviewWait, ReviewWait } from './review-wait';
+import {
+  describeQuietPullRequest,
+  describeReviewWait,
+  ReviewWait,
+} from './review-wait';
 
 const ref = { repo: 'owner/repo', number: 42 };
 
@@ -49,5 +53,27 @@ describe('describeReviewWait', () => {
       label: '리뷰 요청 후 2일째 답 없음',
       days: 2,
     });
+  });
+});
+
+describe('describeQuietPullRequest', () => {
+  const now = new Date('2026-11-09T03:00:00Z');
+  it('묶인 PR 중 가장 최근 활동으로 일수를 센다', () => {
+    expect(
+      describeQuietPullRequest({
+        updatedAts: ['2026-06-05T03:00:00Z', '2026-10-01T03:00:00Z'],
+        minDays: 14,
+        now,
+      }),
+    ).toEqual({ label: '39일째 움직임 없음', days: 39 });
+  });
+  it('하나라도 최근에 움직였으면 표시하지 않는다', () => {
+    expect(
+      describeQuietPullRequest({
+        updatedAts: ['2026-06-05T03:00:00Z', '2026-11-08T03:00:00Z'],
+        minDays: 14,
+        now,
+      }),
+    ).toBeNull();
   });
 });
