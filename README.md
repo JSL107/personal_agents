@@ -97,7 +97,7 @@ prisma/schema.prisma                 # DB 단일 소스 (상당수가 시세·�
 
 NestJS 11 + DDD/Hexagonal · Prisma 6 + PostgreSQL · Redis/BullMQ · Slack Bolt 4(Socket Mode).
 
-**Model Router** 는 모든 에이전트의 primary 요청을 `codex`(ChatGPT) CLI 로 보내고, 실패하면 허용된 요청에 한해 Claude CLI 로 한 번 재시도한다. `noFallback` 요청과 출력 스키마가 있는 요청은 fallback 없이 실패를 전파한다. 이미지가 있는 요청도 `fallbackWithoutAttachments`가 없으면 fallback 하지 않지만, 이를 지정하면 첨부를 떼고 Claude CLI 로 재시도할 수 있다. 프롬프트는 argv 가 아닌 stdin 으로 넘겨 `ps aux` 노출을 막는다.
+**Model Router** 는 기본 매핑의 primary 요청을 `codex`(ChatGPT) CLI 로 보내고, 실패하면 허용된 요청에 한해 Claude CLI 로 한 번 재시도한다. 호출자가 `provider`를 지정하면 해당 provider를 primary로 쓴다. `noFallback` 요청과 출력 스키마가 있는 요청은 fallback 없이 실패를 전파한다. 이미지가 있는 요청도 `fallbackWithoutAttachments`가 없으면 fallback 하지 않지만, 이를 지정하면 첨부를 떼고 Claude CLI 로 재시도할 수 있다. 프롬프트는 argv 가 아닌 stdin 으로 넘겨 `ps aux` 노출을 막는다.
 
 모든 실행은 **AgentRun** 에 기록되고 근거는 EvidenceRecord 로 따라붙는다. 외부 쓰기는 **Preview Gate** 하나가 공통으로 승인을 받는다.
 
