@@ -29,6 +29,7 @@ describe('DelayReportDispatcher', () => {
       source: 'SLACK_MESSAGE',
       slackUserId: 'U1',
       agentTypeHint: AgentType.DELAY_REPORT,
+      replyContext: { channel: 'C1', threadTs: '111.222' },
     };
 
     const outcome = await dispatcher.dispatch(input);
@@ -38,6 +39,10 @@ describe('DelayReportDispatcher', () => {
         agentType: AgentType.DELAY_REPORT,
         triggerType: 'SLACK_MENTION_DELAY_REPORT',
       }),
+    );
+    // 질문한 스레드를 넘겨야 그 스레드의 카드를 "이거" 로 답한다.
+    expect(buildDelayReport.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ threadTs: '111.222' }),
     );
     expect(outcome.agentRunId).toBe(7);
     expect(outcome.modelUsed).toBe('deterministic');

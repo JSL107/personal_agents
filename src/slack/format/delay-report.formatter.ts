@@ -39,6 +39,8 @@ const failureAction = (verdict: DelayVerdict): string => {
 
 const primaryAction = (verdict: DelayVerdict): string => {
   switch (verdict.primaryCause) {
+    case 'APPLY_FAILED':
+      return '같은 오류가 되풀이되면 사유를 보고 조치한 뒤 카드의 ✅ 를 다시 눌러주세요. 끝난 단계는 건너뛰고 이어서 반영합니다.';
     case 'APPROVAL_WAIT':
       return 'Slack 카드에서 승인/거절만 눌러주시면 바로 진행됩니다.';
     case 'RUN_IN_PROGRESS':
@@ -88,5 +90,7 @@ export const formatDelayReport = (verdict: DelayVerdict): string => {
   }
   // detail 에는 원장에 저장된 실패 사유·사용자 카드 제목이 그대로 실린다 — mrkdwn 제어문자를
   // 살려 두면 문장이 깨지므로 내보내기 직전에 escape 한다(secretariat.formatter 와 같은 처리).
-  return `${escapeSlackMrkdwn(verdict.detail)} ${primaryAction(verdict)}${caveat(verdict)}${noteBlock(verdict.secondaryNotes)}`;
+  // 무엇이 막혔나(detail)와 무엇을 하면 되나(조치)를 빈 줄로 나눈다 — 한 문단에 붙이면 카드 제목·
+  // 실패 사유·조치가 이어져 어디까지가 원인인지 읽히지 않았다(2026-11-08 run 11915).
+  return `${escapeSlackMrkdwn(verdict.detail)}\n\n${primaryAction(verdict)}${caveat(verdict)}${noteBlock(verdict.secondaryNotes)}`;
 };

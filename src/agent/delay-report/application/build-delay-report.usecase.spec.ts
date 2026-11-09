@@ -19,6 +19,9 @@ describe('BuildDelayReportUsecase', () => {
         {
           slackUserId: 'U1',
           status: 'PENDING',
+          lastFailedAt: null,
+          applyProgress: null,
+          slackThreadTs: null,
           expiresAt: new Date('2026-09-05'),
           createdAt: new Date('2026-09-04T02:00:00Z'),
           previewText: '내 카드',
@@ -26,6 +29,9 @@ describe('BuildDelayReportUsecase', () => {
         {
           slackUserId: 'U2',
           status: 'PENDING',
+          lastFailedAt: null,
+          applyProgress: null,
+          slackThreadTs: null,
           expiresAt: new Date('2026-09-05'),
           createdAt: new Date('2026-09-04T01:00:00Z'),
           previewText: '남의 카드',

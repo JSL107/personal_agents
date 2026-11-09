@@ -67,6 +67,7 @@ const input = (
   integrations: { githubConfigured: true, notionConfigured: true },
   now,
   unavailableAxes: [],
+  askedThreadTs: null,
   ...overrides,
 });
 
@@ -83,6 +84,64 @@ describe('attributeDelay', () => {
 
     expect(verdict.primaryCause).toBe('APPROVAL_WAIT');
     expect(verdict.detail).toContain('60분째');
+  });
+
+  // 2026-11-08 run 11915 재현: 인스타 반영이 Meta 400 으로 실패한 스레드에서 묻자 더 오래된 블로그 카드를 답했다.
+  it('반영 실패 카드는 승인 대기로 세지 않고 실패 사유를 먼저 답한다', () => {
+    const verdict = attributeDelay(
+      input({
+        openPreviews: [
+          preview({ id: 'blog', previewText: '블로그 후보' }),
+          preview({
+            id: 'reel',
+            previewText: '인스타 공개 게시\n영상: reel.mp4\n캡션 본문',
+            createdAt: new Date('2026-09-04T02:30:00.000Z'),
+            lastFailedAt: new Date('2026-09-04T02:50:00.000Z'),
+            lastFailureReason:
+              '[apply] Meta 요청 실패: HTTP 400: ProcessingFailedError',
+            applyProgress: {
+              pid: 1,
+              startedAt: '2026-09-04T02:59:00.000Z',
+              attempts: 2,
+              done: [],
+            },
+          }),
+        ],
+      }),
+    );
+
+    expect(verdict.primaryCause).toBe('APPLY_FAILED');
+    expect(verdict.detail).toBe(
+      [
+        '승인은 됐지만 반영이 실패했어요(마지막 시도 10분 전).',
+        '카드: 인스타 공개 게시',
+        '사유: Meta 요청 실패: HTTP 400: ProcessingFailedError',
+        '지금 다시 반영하는 중이에요.',
+      ].join('\n'),
+    );
+    expect(verdict.secondaryNotes).toContain('승인 대기 카드가 1개 더 있어요.');
+  });
+
+  it('질문한 스레드의 카드가 있으면 더 오래된 카드보다 그 카드를 답한다', () => {
+    const verdict = attributeDelay(
+      input({
+        askedThreadTs: '111.222',
+        openPreviews: [
+          preview({ id: 'old', previewText: '오래된 카드' }),
+          preview({
+            id: 'asked',
+            previewText: '이 스레드 카드',
+            createdAt: new Date('2026-09-04T02:50:00.000Z'),
+            slackThreadTs: '111.222',
+          }),
+        ],
+      }),
+    );
+
+    expect(verdict.primaryCause).toBe('APPROVAL_WAIT');
+    expect(verdict.detail).toBe(
+      '승인을 10분째 기다리는 카드가 있어요.\n카드: 이 스레드 카드',
+    );
   });
 
   it('29분 이내 run은 진행 중으로, 31분 run은 stale 보조 메모로만 처리한다', () => {
