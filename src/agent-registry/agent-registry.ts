@@ -273,6 +273,16 @@ export const AGENT_REGISTRY: readonly AgentRegistryEntry[] = [
       '월간 운영 품질 이상 신호 분석과 개선 제안 생성 (슬래시 없음, autopilot 전용)',
   },
   {
+    agentType: AgentType.REELS_FORMAT_PLANNER,
+    displayName: 'Reels Format Planner',
+    nickname: '형식이',
+    taskLabel: '릴스 형식 실험',
+    slashCommands: [],
+    usecasePath:
+      'src/agent/reels-format-planner/application/propose-reels-format.usecase.ts',
+    description: '릴스 형식 실험의 다음 후보와 판정 해석 제안 (내부 전용)',
+  },
+  {
     agentType: AgentType.INVEST,
     displayName: 'Invest Monitor',
     nickname: '주지킴',

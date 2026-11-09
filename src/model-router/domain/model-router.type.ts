@@ -64,6 +64,8 @@ export enum AgentType {
   EVENING_RETRO = 'EVENING_RETRO',
   // 월간 운영 품질 이상 신호의 개선 제안 생성. 슬래시 없음, autopilot 전용.
   OPS_SUPERVISOR = 'OPS_SUPERVISOR',
+  // 릴스 형식 실험의 다음 후보와 해석만 제안하는 내부 에이전트.
+  REELS_FORMAT_PLANNER = 'REELS_FORMAT_PLANNER',
   // 보유 종목 감시 — 장 마감 후 시세를 받아 전일 대비·평단 대비 이상을 판정. 판정은 순수 계산이라
   // LLM 을 쓰지 않는다(VACATION 선례, modelUsed='deterministic'). AgentType 을 두는 이유는 모델
   // 라우팅이 아니라 **원장 등록 자격** 이다 — 이 타입이 없던 동안 주식 cron 은 매일 실행되면서도

@@ -140,6 +140,16 @@ describe('AUTOPILOT_PLAYBOOK', () => {
         timezone: 'Asia/Seoul',
       },
     });
+    expect(byId('reels-format-decide')).toMatchObject({
+      taskId: 'reels-format-decide',
+      riskTier: 'T0_AUTO',
+      trigger: {
+        kind: 'CRON',
+        schedule: '0 7 * * *',
+        timezone: 'Asia/Seoul',
+      },
+    });
+    expect(byId('reels-format-decide')).not.toHaveProperty('digestGroup');
   });
 
   it('goal-checkin 은 월요일 09:15 KST owner DM 독립 그룹이다', () => {

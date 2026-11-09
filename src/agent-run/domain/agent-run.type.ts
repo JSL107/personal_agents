@@ -137,6 +137,8 @@ export enum TriggerType {
   // `_CRON` 을 붙이지 않는다: 문서 수정 후보가 있는 주에만 호출되는 파생 호출이라, 자율 워커로
   // 분류되면 후보 없는 주가 끼는 순간 원장 정지 판정(stall.ts)이 거짓 경고를 낸다.
   DOCS_AUDIT_LAYER2 = 'DOCS_AUDIT_LAYER2',
+  // 실험 판정 시에만 호출하는 내부 제안. 비호출 기간을 정지로 오인하지 않게 cron 접미사를 피한다.
+  REELS_FORMAT_DECISION = 'REELS_FORMAT_DECISION',
 }
 
 // worker 를 고른 경로. 셋을 구분하지 않으면 원장에서 분류기 성적을 낼 수 없다 —

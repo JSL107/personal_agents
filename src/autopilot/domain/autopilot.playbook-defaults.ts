@@ -179,6 +179,8 @@ export const DEFAULT_REELS_INSIGHTS_COLLECT_CRON = '20 * * * *';
 export const DEFAULT_REELS_INSIGHTS_COLLECT_TIMEZONE = 'Asia/Seoul';
 export const DEFAULT_REELS_INSIGHTS_WEEKLY_CRON = '30 9 * * 1';
 export const DEFAULT_REELS_INSIGHTS_WEEKLY_TIMEZONE = 'Asia/Seoul';
+export const DEFAULT_REELS_FORMAT_DECIDE_CRON = '0 7 * * *';
+export const DEFAULT_REELS_FORMAT_DECIDE_TIMEZONE = 'Asia/Seoul';
 
 // 포트폴리오 사이트 발행 — 매일 23:00 KST.
 //

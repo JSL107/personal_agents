@@ -344,6 +344,11 @@ export class ReplayFailedRunUsecase {
           ReplayRejectionCode.NOT_SUPPORTED,
           `AgentRun #${runId} (HUMANIZE_RESEARCH) 은 처리 id 가 성공 회차에서만 전진하므로 실패하면 다음 주 회차가 같은 재료를 다시 봅니다. 지금 제안을 확인하려면 \`pnpm humanize:research\` 를 실행해주세요.`,
         );
+      case 'REELS_FORMAT_PLANNER':
+        return reject(
+          ReplayRejectionCode.NOT_SUPPORTED,
+          `AgentRun #${runId} (REELS_FORMAT_PLANNER) 은 자동 판정 작업이 다음 날 07:00 에 다시 돕니다.`,
+        );
       case 'PAPER_RECOMMEND':
         return await this.preparePaperRecommend(runId, snapshot);
       case 'BLOG':
