@@ -49,6 +49,7 @@ describe('buildFortuneFollowUpPrompt', () => {
     recipient: RECIPIENT,
     fortuneDate: '2026-11-02',
     fortunePillar: '庚辰',
+    yearMonthPillars: { yearPillar: '丙午', monthPillar: '戊戌' },
     originalFortune: '🔮 오늘의 운세\n총운: 좋아',
     question: '저녁엔 뭐 하면 좋아?',
   };
@@ -58,7 +59,6 @@ describe('buildFortuneFollowUpPrompt', () => {
 
     expect(prompt).toContain('그날 일진: 경진일');
     expect(prompt).toContain('- 행운의 색:');
-    // 아침 운세와 같은 날짜 기준이라 같은 흐름 사실이 실린다.
     expect(prompt).toContain('- 이번 달(무술월)의 흐름:');
     expect(prompt).toContain('총운: 좋아');
     expect(prompt).toContain('길동의 질문: 저녁엔 뭐 하면 좋아?');

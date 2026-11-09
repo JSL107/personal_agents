@@ -1,15 +1,18 @@
 import { calculateFourPillars } from 'manseryeok';
 
-import { dayPillarOf, pillarFromHangul } from './day-pillar';
+import { dayPillarOf, pillarFromHangul } from '../domain/day-pillar';
 import { yearMonthPillarsOf } from './year-month-pillar';
 
 const MILLISECONDS_PER_DAY = 86_400_000;
 
 describe('yearMonthPillarsOf', () => {
-  // 2026 입춘은 02-04 05:02 KST, 입동은 11-07 — 정오 기준이라 입춘 당일은 새해 기둥이다.
+  // 정오 기준이라 절입이 정오 전이면 당일부터, 정오 뒤면 다음 날부터 새 기둥이다.
+  // 2026 입춘 02-04 05:02 KST(정오 전), 2024 입춘 02-04 17:27 KST(정오 뒤), 2026 입동 11-07.
   it.each([
     ['2026-02-03', '乙巳', '己丑'],
     ['2026-02-04', '丙午', '庚寅'],
+    ['2024-02-04', '癸卯', '乙丑'],
+    ['2024-02-05', '甲辰', '丙寅'],
     ['2026-11-06', '丙午', '戊戌'],
     ['2026-11-09', '丙午', '己亥'],
   ])('%s → %s년 %s월', (plainDate, yearPillar, monthPillar) => {

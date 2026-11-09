@@ -16,11 +16,13 @@ import {
   SlackNotifierPort,
 } from '../../slack/domain/port/slack-notifier.port';
 import { escapeSlackMrkdwn } from '../../slack/format/mrkdwn.util';
+import { yearMonthPillarsOf } from '../application/year-month-pillar';
 import { dayPillarOf } from '../domain/day-pillar';
 import {
   FORTUNE_CARD_IMAGE_PORT,
   FortuneCardImagePort,
 } from '../domain/port/fortune-card-image.port';
+import { YearMonthPillars } from '../domain/saju-analysis';
 import { buildSajuFortunePrompt } from '../domain/saju-fortune.prompt';
 import {
   buildFortuneCardImagePrompt,
@@ -49,6 +51,7 @@ interface DeliverFortuneInput {
   recipient: SajuFortuneRecipient;
   todayKst: string;
   todayPillar: string;
+  yearMonthPillars: YearMonthPillars;
 }
 
 interface UploadedCard {
@@ -82,6 +85,7 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
     // "오늘"은 한 번만 계산해 일진·헤더·발송 가드가 같은 날짜를 쓰게 한다.
     const todayKst = getTodayKstDate();
     const todayPillar = dayPillarOf(todayKst);
+    const yearMonthPillars = yearMonthPillarsOf(todayKst);
     // 이 잡이 맡은 시각의 사람만 보낸다. 사주는 env 에서 매 회차 다시 읽는다.
     const recipients = parseSajuFortuneRecipients(
       this.configService.get<string>('SAJU_FORTUNE_RECIPIENTS'),
@@ -92,7 +96,12 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
     const failedNames: string[] = [];
     for (const recipient of recipients) {
       try {
-        await this.deliverOnce({ recipient, todayKst, todayPillar });
+        await this.deliverOnce({
+          recipient,
+          todayKst,
+          todayPillar,
+          yearMonthPillars,
+        });
       } catch (error) {
         this.logger.error(
           `Saju Fortune 발송 실패 (${recipient.slackUserId})`,
@@ -119,6 +128,7 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
     recipient,
     todayKst,
     todayPillar,
+    yearMonthPillars,
   }: DeliverFortuneInput): Promise<void> {
     const guardKey = `cron:${SAJU_FORTUNE_CRON_QUEUE}:${recipient.slackUserId}:${todayKst}`;
     if (await this.cronIdempotency.isDone(guardKey)) {
@@ -132,6 +142,7 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
       recipient,
       todayKst,
       todayPillar,
+      yearMonthPillars,
     });
     // 업로드는 채널에 공유되지 않는 파일만 만든다 — 발송이 아니라서 가드 앞에 둔다.
     const card = fortune.card
