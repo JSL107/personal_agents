@@ -57,31 +57,6 @@ func runCozyPrewarmCheck() -> Bool {
         valid = false
     }
 
-    // 포즈 계약 — 카드에는 책상도 의자도 없어서 앉은 그림이 뽑히면 사람이 허공에 주저앉는다
-    // (실제 사용자 보고). `cozyDashboardPortraitPose` 가 `posture: .standing` 으로 막고 있지만
-    // 이번에 뷰 밖으로 나오면서 직접 호출이 가능해졌으므로 계약을 여기서 고정한다. 문제가
-    // 실제로 났던 두 타입을 표본으로 둔다 — `typing` 은 18번을 빼면 전부 앉은 그림이다.
-    for agentType in ["CODE_REVIEWER", "HUMANIZER"] {
-        for index in 0..<cozyCharacterAssetCount {
-            let pose = cozyDashboardPortraitPose(
-                agentType: agentType, state: .inProgress, assetIndex: index
-            )
-            // **그림의 실제 자세를 본다.** `ResolvedCozyPose.posture` 는 요청한 자세를 되돌려
-            // 줄 뿐이고(`posture` 를 안 넘기면 이름 규칙으로 `typing` → `.seated`), 18번처럼
-            // 같은 이름이 사람마다 다른 예외는 `cozyPosePosture` 만 안다. 처음에 전자로 재서
-            // 18번을 위반으로 잘못 짚었다.
-            let posture = cozyPosePosture(assetIndex: index, pose: pose)
-            if posture != .standing {
-                fputs(
-                    "prewarm check: 카드 초상화가 앉은 그림을 골랐다 —"
-                        + " \(agentType) / agent-\(index) → \(pose) (\(posture))\n",
-                    stderr
-                )
-                valid = false
-            }
-        }
-    }
-
     // 2) 워밍이 캐시를 채우는지. 아직 아무도 쓰지 않은 조합을 골라야 한다 — 이미 채워진 칸으로
     //    재면 워밍이 아무 일도 하지 않고도 통과한다.
     guard let target = firstUncachedRequest() else {

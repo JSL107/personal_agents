@@ -25,11 +25,7 @@ public func normalizedCozyAssetIndex(
 }
 
 /// Every required drawing for the dedicated mechanic character, including the idle base image.
-public let cozyMechanicPoses = [
-    "idle", "sit", "sitting", "sit-back", "sit-table", "typing", "writing", "reading",
-    "drinking", "carryingpapers", "stowing", "tending", "walk", "walk-side",
-    "walk-side-idle", "walk-up", "walk-up-idle",
-]
+public let cozyMechanicPoses = ["idle", "writing", "reading", "drinking"]
 
 /// Optical correction for dashboard portraits, whose square SwiftUI envelope is height-bound.
 ///
@@ -41,8 +37,6 @@ public func cozyDashboardCharacterVisualScale(assetIndex: Int, pose: String) -> 
         return 1.00
     }
     switch (normalizedIndex, pose) {
-    case (3, "typing"):
-        return 1.025
     case (2, "reading"):
         return 1.005
     case (17, "drinking"), (19, "reading"):

@@ -46,15 +46,7 @@ enum SpriteLoader {
         ) != nil
     }
 
-    /// 요청 포즈를 실재하는 에셋으로 옮긴다. 계약은 코어(`resolveCozyPose`)가 갖고 여기서는
-    /// "이 파일이 번들에 있는가" 만 대답한다 — 파일 목록을 두 곳에 두면 에셋을 갈 때 어긋난다.
-    static func resolvedCozyPose(assetIndex: Int, pose: String) -> ResolvedCozyPose {
-        resolveCozyPose(requested: pose, assetIndex: assetIndex) { candidate in
-            cozyCharacterHasDedicatedPose(assetIndex: assetIndex, pose: candidate)
-        }
-    }
-
-    /// 캐릭터 그림. `pose` 는 `resolvedCozyPose` 를 지난 이름이어야 한다.
+    /// 캐릭터 그림. `pose` 는 `resolveCozyPose` 를 지난 이름이어야 한다.
     ///
     /// **없는 포즈를 조용히 기본 그림으로 바꿔치는 것은 더 이상 정상 경로가 아니다.** 예전에는
     /// 도트 시절 이름(`down`·`side`·`-walk1`)이 매번 여기까지 내려와 폴백 로그를 수십 줄씩

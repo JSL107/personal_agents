@@ -91,7 +91,7 @@ func runCozyCropCheck() -> Bool {
     let assetSamples =
         CommandLine.arguments.contains("--all")
         ? bundledCozyCharacterNames()
-        : ["agent-0", "agent-3-typing", "agent-17-drinking", "agent-19-reading"]
+        : ["agent-0", "agent-3-writing", "agent-17-drinking", "agent-19-reading"]
     for name in assetSamples {
         guard let url = Bundle.module.url(
             forResource: name, withExtension: "png", subdirectory: "cozy/characters"
