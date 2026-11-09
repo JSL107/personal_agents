@@ -30,6 +30,7 @@ export class DelayReportDispatcher implements AgentDispatcher {
         const verdict = await this.buildDelayReport.execute({
           slackUserId: input.slackUserId,
           now: new Date(),
+          threadTs: input.replyContext?.threadTs,
         });
         return { result: verdict, modelUsed: 'deterministic', output: verdict };
       },

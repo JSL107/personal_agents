@@ -237,6 +237,7 @@ describe('formatDelayReport — 실제 귀속 결과', () => {
         integrations: { githubConfigured: true, notionConfigured: true },
         now: new Date('2026-09-04T03:00:00.000Z'),
         unavailableAxes: [],
+        askedThreadTs: null,
       }),
     );
 
@@ -244,5 +245,23 @@ describe('formatDelayReport — 실제 귀속 결과', () => {
       '코드 리뷰 실행이 실패했어요. 30분 넘게 끝나지 않아 자동으로 정리됨',
     );
     expect(text).toContain('코드 리뷰 실행이 45분째 멈췄을 가능성이 있어요');
+  });
+
+  it('반영 실패 카드는 실패 사유와 재승인 안내로 나간다', () => {
+    const text = formatDelayReport({
+      primaryCause: 'APPLY_FAILED',
+      detail:
+        '승인은 됐지만 반영이 실패했어요(마지막 시도 10분 전).\n카드: 인스타 공개 게시\n사유: Meta 요청 실패: HTTP 400',
+      secondaryNotes: [],
+      unavailableAxes: [],
+      unverifiedHigherPriority: [],
+      inconclusiveNotes: [],
+    });
+
+    expect(text).toContain(
+      '사유: Meta 요청 실패: HTTP 400\n\n사유를 보고 조치한 뒤',
+    );
+    expect(text).toContain('실제로 반영됐는지');
+    expect(text).not.toContain('승인/거절만 눌러주시면');
   });
 });

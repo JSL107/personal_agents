@@ -39,6 +39,10 @@ const failureAction = (verdict: DelayVerdict): string => {
 
 const primaryAction = (verdict: DelayVerdict): string => {
   switch (verdict.primaryCause) {
+    case 'APPLY_FAILED':
+      // 이어서 반영하는 카드는 일부뿐이고, 상태 기록 단계 실패면 외부 반영은 이미 끝났다 — 재승인을
+      // 무조건 권하면 중복 게시·중복 적재가 난다(#997 리뷰).
+      return '사유를 보고 조치한 뒤, 다시 승인하기 전에 실제로 반영됐는지(게시물·문서 등) 먼저 확인해주세요. 이미 반영됐는데 다시 누르면 중복될 수 있어요.';
     case 'APPROVAL_WAIT':
       return 'Slack 카드에서 승인/거절만 눌러주시면 바로 진행됩니다.';
     case 'RUN_IN_PROGRESS':
@@ -88,5 +92,7 @@ export const formatDelayReport = (verdict: DelayVerdict): string => {
   }
   // detail 에는 원장에 저장된 실패 사유·사용자 카드 제목이 그대로 실린다 — mrkdwn 제어문자를
   // 살려 두면 문장이 깨지므로 내보내기 직전에 escape 한다(secretariat.formatter 와 같은 처리).
-  return `${escapeSlackMrkdwn(verdict.detail)} ${primaryAction(verdict)}${caveat(verdict)}${noteBlock(verdict.secondaryNotes)}`;
+  // 무엇이 막혔나(detail)와 무엇을 하면 되나(조치)를 빈 줄로 나눈다 — 한 문단에 붙이면 카드 제목·
+  // 실패 사유·조치가 이어져 어디까지가 원인인지 읽히지 않았다(2026-11-08 run 11915).
+  return `${escapeSlackMrkdwn(verdict.detail)}\n\n${primaryAction(verdict)}${caveat(verdict)}${noteBlock(verdict.secondaryNotes)}`;
 };

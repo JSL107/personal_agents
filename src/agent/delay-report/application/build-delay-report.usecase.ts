@@ -24,6 +24,7 @@ import {
 export interface BuildDelayReportInput {
   slackUserId: string;
   now: Date;
+  threadTs?: string;
 }
 
 const WINDOW_MINUTES = 24 * 60;
@@ -65,6 +66,7 @@ export class BuildDelayReportUsecase {
   async execute({
     slackUserId,
     now,
+    threadTs,
   }: BuildDelayReportInput): Promise<DelayVerdict> {
     const [
       activeRunsResult,
@@ -119,6 +121,7 @@ export class BuildDelayReportUsecase {
       integrations: this.readIntegrations(),
       now,
       unavailableAxes,
+      askedThreadTs: threadTs ?? null,
     };
     return attributeDelay(input);
   }
