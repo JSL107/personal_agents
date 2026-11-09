@@ -258,8 +258,10 @@ describe('formatDelayReport — 실제 귀속 결과', () => {
       inconclusiveNotes: [],
     });
 
-    expect(text).toContain('사유: Meta 요청 실패: HTTP 400\n\n같은 오류가');
-    expect(text).toContain('카드의 ✅ 를 다시 눌러주세요');
+    expect(text).toContain(
+      '사유: Meta 요청 실패: HTTP 400\n\n사유를 보고 조치한 뒤',
+    );
+    expect(text).toContain('실제로 반영됐는지');
     expect(text).not.toContain('승인/거절만 눌러주시면');
   });
 });

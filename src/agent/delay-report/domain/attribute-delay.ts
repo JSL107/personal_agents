@@ -180,11 +180,14 @@ const applyFailedDetail = (preview: PreviewAction, now: Date): string => {
   const failedAgo = preview.lastFailedAt
     ? minutesSince(preview.lastFailedAt, now)
     : 0;
-  // endedAt 이 없는 진행 흔적 = 재승인으로 지금 다시 반영하는 중.
+  // endedAt 이 없다고 지금 도는 것은 아니다 — 프로세스가 죽어도 이렇게 남는다(생존은 부팅 재개 훅이 pid 로
+  // 따로 본다). 그래서 진행 중이라 단정하지 않는다(#997 리뷰).
   const retrying =
     preview.applyProgress !== null &&
     preview.applyProgress.endedAt === undefined
-      ? ['지금 다시 반영하는 중이에요.']
+      ? [
+          '마지막 시도가 끝났다는 기록이 없어요. 아직 반영 중이거나 중간에 멈췄을 수 있어요.',
+        ]
       : [];
   return [
     `승인은 됐지만 반영이 실패했어요(마지막 시도 ${failedAgo}분 전).`,
@@ -229,9 +232,17 @@ export const attributeDelay = (input: DelayReportInput): DelayVerdict => {
 
   const subject = pickPreviewSubject(validPreviews, input.askedThreadTs);
   if (subject !== undefined) {
-    const extraCount = validPreviews.length - 1;
-    if (extraCount > 0) {
-      secondaryNotes.push(`승인 대기 카드가 ${extraCount}개 더 있어요.`);
+    // 나머지도 반영 실패와 승인 대기를 나눠 센다 — 합치면 실패 카드를 승인 대기라고 말한다(#997 리뷰).
+    const others = validPreviews.filter((preview) => preview !== subject);
+    const failedCount = others.filter(
+      (preview) => preview.lastFailedAt !== null,
+    ).length;
+    const waitingCount = others.length - failedCount;
+    if (failedCount > 0) {
+      secondaryNotes.push(`반영이 실패한 카드가 ${failedCount}개 더 있어요.`);
+    }
+    if (waitingCount > 0) {
+      secondaryNotes.push(`승인 대기 카드가 ${waitingCount}개 더 있어요.`);
     }
     if (subject.lastFailedAt !== null) {
       return withContext('APPLY_FAILED', applyFailedDetail(subject, input.now));

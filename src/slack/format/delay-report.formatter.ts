@@ -40,7 +40,9 @@ const failureAction = (verdict: DelayVerdict): string => {
 const primaryAction = (verdict: DelayVerdict): string => {
   switch (verdict.primaryCause) {
     case 'APPLY_FAILED':
-      return '같은 오류가 되풀이되면 사유를 보고 조치한 뒤 카드의 ✅ 를 다시 눌러주세요. 끝난 단계는 건너뛰고 이어서 반영합니다.';
+      // 이어서 반영하는 카드는 일부뿐이고, 상태 기록 단계 실패면 외부 반영은 이미 끝났다 — 재승인을
+      // 무조건 권하면 중복 게시·중복 적재가 난다(#997 리뷰).
+      return '사유를 보고 조치한 뒤, 다시 승인하기 전에 실제로 반영됐는지(게시물·문서 등) 먼저 확인해주세요. 이미 반영됐는데 다시 누르면 중복될 수 있어요.';
     case 'APPROVAL_WAIT':
       return 'Slack 카드에서 승인/거절만 눌러주시면 바로 진행됩니다.';
     case 'RUN_IN_PROGRESS':

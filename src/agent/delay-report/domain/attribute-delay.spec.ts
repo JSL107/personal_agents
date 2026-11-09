@@ -116,10 +116,35 @@ describe('attributeDelay', () => {
         '승인은 됐지만 반영이 실패했어요(마지막 시도 10분 전).',
         '카드: 인스타 공개 게시',
         '사유: Meta 요청 실패: HTTP 400: ProcessingFailedError',
-        '지금 다시 반영하는 중이에요.',
+        '마지막 시도가 끝났다는 기록이 없어요. 아직 반영 중이거나 중간에 멈췄을 수 있어요.',
       ].join('\n'),
     );
     expect(verdict.secondaryNotes).toContain('승인 대기 카드가 1개 더 있어요.');
+  });
+
+  it('나머지 카드도 반영 실패와 승인 대기를 나눠 센다', () => {
+    const failed = (id: string, minute: string): PreviewAction =>
+      preview({
+        id,
+        lastFailedAt: new Date(`2026-09-04T02:${minute}:00.000Z`),
+        lastFailureReason: '[apply] 실패',
+      });
+    const verdict = attributeDelay(
+      input({
+        openPreviews: [
+          failed('a', '50'),
+          failed('b', '40'),
+          preview({ id: 'c' }),
+        ],
+      }),
+    );
+
+    expect(verdict.secondaryNotes).toEqual(
+      expect.arrayContaining([
+        '반영이 실패한 카드가 1개 더 있어요.',
+        '승인 대기 카드가 1개 더 있어요.',
+      ]),
+    );
   });
 
   it('질문한 스레드의 카드가 있으면 더 오래된 카드보다 그 카드를 답한다', () => {
