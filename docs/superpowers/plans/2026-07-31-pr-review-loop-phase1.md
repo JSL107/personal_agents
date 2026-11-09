@@ -32,8 +32,8 @@
 구현은 **격리 worktree**에서 한다. 경로는 ASCII만 사용한다 — 한글 경로(`기타`)는 codex 위임 시 websocket 실패를 유발한다.
 
 ```bash
-git worktree add /Users/juneseok/worktrees/idaeri-review-loop -b feat/pr-review-loop-phase1 main
-cd /Users/juneseok/worktrees/idaeri-review-loop
+git worktree add ~/worktrees/idaeri-review-loop -b feat/pr-review-loop-phase1 main
+cd ~/worktrees/idaeri-review-loop
 pnpm install
 pnpm prisma:generate   # @prisma 빌드 에러 예방
 pnpm rebuild           # tree-sitter TypeError 예방

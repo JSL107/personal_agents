@@ -18,7 +18,7 @@
 - **게이트(모든 태스크 끝에):** `swift build && swift run ConsoleCoreTests` · `pnpm lint:check && pnpm test && pnpm build`
 - **렌더 검증은 두 창 비율 모두** — 실사용 창 `960x1050` 과 최소 창 `960x563`. 최소 창은 글자 하한 때문에 배치가 다르다.
 - **사람이 나오는 렌더는 백엔드가 떠 있어야 한다.** 백엔드(포트 3099)가 꺼져 있으면 스냅샷이 빈 배열이라 방이 텅 빈 채로 그려지고, `--busy-demo` 는 `--busy-demo 는 사람이 있어야 한다 — 스냅샷이 비었다` 로 거부된다(2026-09-04 실측). 접속 주소는 `IDAERI_CONSOLE_URL` 이며 `PORT` 가 아니다. **빈 렌더로도 확인되는 것**(타일 규격·바닥·벽·문·색 수)과 **사람이 필요한 것**(이름표 겹침·말풍선·서류 더미·방 뷰의 좌석)을 구분해서, 후자는 백엔드를 띄운 뒤 한 번에 확인한다. 다만 검증용으로 Nest 전체를 부팅하면 실행 중 서비스의 반복 작업 등록을 건드릴 수 있으니, 이미 떠 있는 백엔드를 쓰고 없으면 사용자에게 요청한다.
-- **작업 위치:** worktree `/Users/juneseok/Desktop/backend/worktrees/office-pixel-refit`, 브랜치 `feat/office-pixel-refit`. 커밋은 이 worktree 안에서만 하고 `main` 직접 커밋·force push 는 금지.
+- **작업 위치:** worktree `~/Desktop/backend/worktrees/office-pixel-refit`, 브랜치 `feat/office-pixel-refit`. 커밋은 이 worktree 안에서만 하고 `main` 직접 커밋·force push 는 금지.
 - **`docs/` 는 `.gitignore` 대상이다**(`.gitignore:9,78`). 스펙·계획 문서를 커밋할 때는 `git add -f` 를 쓴다.
 - **에셋을 새로 뽑기 전에 코드로 그릴 수 있는지 본다.** 색·글자·빛은 코드가 싸다(`OfficeLightTexture` 선례).
 - 격자 규격은 고정값이다 — `zoneWidth=10 · zoneHeight=7 · bandHeight=5 · zoneStride=12 · officeFloorWallRows=1`, 2열 배치에서 **23×27칸**.
@@ -164,7 +164,7 @@ Step 2 의 실제 출력에서 값을 옮겨 적는다. 아래는 2026-09-04 측
 - [ ] **Step 4: 커밋**
 
 ```bash
-cd /Users/juneseok/Desktop/backend/worktrees/office-pixel-refit
+cd ~/Desktop/backend/worktrees/office-pixel-refit
 git add clients/idaeri-console/scripts/measure-palette.py
 git add -f clients/idaeri-console/scripts/PALETTE-BASELINE.md
 git commit -m "chore(console): 스프라이트 팔레트 측정 도구와 재정합 전 기준선"

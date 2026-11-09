@@ -15,7 +15,7 @@
 - 빌드·검증: `swift build`(clients/idaeri-console) + 실행형 러너 `swift run ConsoleCoreTests`. 이 환경은 CLT만, `xcodebuild`·XCTest 없음. SpriteKit·GameplayKit은 macOS SDK에 포함돼 SwiftPM 링크 가능.
 - 순수 계산(배치·diff·색 팔레트)은 `ConsoleCore`에 두어 테스트. SpriteKit 의존 코드(`OfficeScene`·`skColor`·`OfficeView`)는 실행 타깃 `IdaeriConsole`에 둔다.
 - Swift 네이밍: 축약 변수명 지양, 타입/함수 의미 있는 이름.
-- 작업 경로: worktree `/Users/juneseok/worktrees/idaeri-office-phase3`, 브랜치 `feat/macos-console-phase3`. 모든 경로는 `clients/idaeri-console/` 기준.
+- 작업 경로: worktree `~/worktrees/idaeri-office-phase3`, 브랜치 `feat/macos-console-phase3`. 모든 경로는 `clients/idaeri-console/` 기준.
 
 ## 태스크별 TDD 여부
 

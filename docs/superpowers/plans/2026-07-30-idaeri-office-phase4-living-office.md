@@ -17,7 +17,7 @@
 - Swift 네이밍: 축약 변수명 지양, 타입/함수 의미 있는 이름.
 - 좌표계는 SpriteKit 기본(원점 좌하단, y 위로 증가). 기존 `officeLayout` 규약 계승.
 - 말풍선 문구는 백엔드 `bubble` 그대로 표시만. 이동은 직선 보간(`SKAction.move`)만 — A*·충돌 회피 없음.
-- 작업 경로: worktree `/Users/juneseok/worktrees/idaeri-office-phase4`, 브랜치 `feat/macos-console-phase4`. 모든 경로는 `clients/idaeri-console/` 기준. (worktree 는 실행 시점에 superpowers:using-git-worktrees 로 생성. `docs/` 는 gitignore 라 커밋 시 `git add -f`.)
+- 작업 경로: worktree `~/worktrees/idaeri-office-phase4`, 브랜치 `feat/macos-console-phase4`. 모든 경로는 `clients/idaeri-console/` 기준. (worktree 는 실행 시점에 superpowers:using-git-worktrees 로 생성. `docs/` 는 gitignore 라 커밋 시 `git add -f`.)
 
 ## 태스크별 TDD 여부
 
