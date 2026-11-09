@@ -21,6 +21,7 @@
     "lint": "eslint \"{src,test,scripts}/**/*.ts\" --fix",
     "mutate": "stryker run --mutate",
     "lint:check": "eslint \"{src,test,scripts}/**/*.ts\"",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "check:env": "node scripts/check-env-sync.cjs",
     "check:invariants": "node scripts/check-invariants.cjs",
     "check:di": "node scripts/check-di.cjs",
