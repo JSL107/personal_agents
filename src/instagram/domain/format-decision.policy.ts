@@ -180,18 +180,18 @@ export const permutationPValue = ({
   const values = [...champion, ...challenger];
   const observed = mean(champion) - mean(challenger);
   const total = values.reduce((sum, value) => sum + value, 0);
-  // 12편 중 도전자 6편을 고르는 924가지 배정을 12비트 마스크로 센다(배열을 만들지 않는다).
+  // 12편 중 도전자 6편을 고르는 924가지 배정을 12비트 마스크 숫자로 센다(조합마다 배열을 만들지 않는다).
   const allocations = Array.from(
     { length: 1 << values.length },
     (_, mask) => mask,
   ).filter((mask) => bitCount(mask) === MIN_SAMPLES);
   const extreme = allocations.filter((mask) => {
-    const challengerMean =
-      values.reduce(
-        (sum, value, index) => ((mask >> index) & 1 ? sum + value : sum),
-        0,
-      ) / MIN_SAMPLES;
-    const championMean = (total - challengerMean * MIN_SAMPLES) / MIN_SAMPLES;
+    const challengerTotal = values.reduce(
+      (sum, value, index) => ((mask >> index) & 1 ? sum + value : sum),
+      0,
+    );
+    const championMean = (total - challengerTotal) / MIN_SAMPLES;
+    const challengerMean = challengerTotal / MIN_SAMPLES;
     return championMean - challengerMean >= observed - EPSILON;
   }).length;
   return extreme / allocations.length;
