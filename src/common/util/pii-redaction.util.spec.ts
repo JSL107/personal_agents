@@ -120,6 +120,23 @@ describe('redactPii', () => {
     expect(redacted).toContain('end');
   });
 
+  it('URL 앞에 기호·숫자·긴 접두어가 붙어도 자격증명을 가린다', () => {
+    expect(redactPii('-https://u:p@host/x')).toBe('-https://***@host/x');
+    expect(redactPii('1https://u:p@host/x')).toBe('1https://***@host/x');
+    const prefix = `foo${'b'.repeat(40)}`;
+    expect(redactPii(`${prefix}https://u:p@host/x`)).toBe(
+      `${prefix}https://***@host/x`,
+    );
+  });
+
+  // 공백 없는 긴 덩어리(base64·hex)에서 URL 패턴이 O(n²) 로 이벤트 루프를 몇 초씩 막았다.
+  // 상한은 수정 전(로컬 2.4초)과 후(수 ms) 사이에서 CI 러너의 느림까지 감안해 잡았다.
+  it('공백 없는 5만 자 입력도 1초 안에 끝난다', () => {
+    const startedAt = performance.now();
+    redactPii('a'.repeat(50_000));
+    expect(performance.now() - startedAt).toBeLessThan(1_000);
+  });
+
   it('빈 문자열은 그대로 빈 문자열 반환', () => {
     expect(redactPii('')).toBe('');
   });

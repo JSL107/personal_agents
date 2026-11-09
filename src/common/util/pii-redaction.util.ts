@@ -85,8 +85,10 @@ const SECRET_KEYS =
   'password|passwd|pwd|token|secret|api_key|apikey|access_token';
 const VALUE_REDACTIONS: { regex: RegExp; replacement: string }[] = [
   {
+    // scheme 길이 상한이 없으면 공백 없는 긴 영숫자 덩어리(base64·hex)에서 모든 위치가 끝까지 훑고
+    // 되돌아와 O(n²) 이 된다(5만 자 2.4초). 상한을 둬도 매칭 밖 앞부분은 원문 그대로라 출력은 같다.
     regex:
-      /([a-z][a-z0-9+.-]*:\/\/)[^\s:@/]+:[^\s]+@(?=[^\s/@]+(?::\d+)?(?:\/|[\s?#]|$))/gi,
+      /([a-z][a-z0-9+.-]{0,31}:\/\/)[^\s:@/]+:[^\s]+@(?=[^\s/@]+(?::\d+)?(?:\/|[\s?#]|$))/gi,
     replacement: '$1***@',
   },
   { regex: /\b(Bearer\s+)[^\s;,]+/gi, replacement: '$1***' },
