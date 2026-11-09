@@ -216,8 +216,11 @@ function html(timeline) {
   // 꼭지가 바뀌는 순간 종이 인형처럼 한 바퀴 돈다(가로 폭이 1 → -1 → 1).
   const TURN=0.5;
   const spin=(t)=>{ const s=FX&&T.sections.find(s=>s.start>0 && t>=s.start && t<s.start+TURN); return s?Math.cos((t-s.start)/TURN*2*Math.PI):1; };
-  // 숫자·포인트 카드가 뜨면 1.5초 동안 카드 쪽(위)으로 늘어나며 기운다.
-  const cardLean=(t)=>{ const p=FX&&T.points.filter(p=>(p.kind==='point'||p.kind==='number') && p.start<=t).at(-1); return p?envelope(t-p.start,0.3,0.8,0.4):0; };
+  // 숫자·포인트 카드가 뜨면 손짓이 바뀐 뒤(반응 줄은 반응이 끝난 뒤) 0.4초에 1.5초 동안 카드 쪽(위)으로 늘어나며 기운다.
+  // 포즈 전환과 같은 순간에 기울면 전환에 묻혀 안 보였다(11-07 실측). 카드가 겹치면 큰 쪽을 써서 끊기지 않게 한다.
+  // shortcut: 갸웃(cock) 줄에 카드가 뜨면 두 기울기가 더해진다(11-09 기준 카드 줄 13개 중 0개). 생기면 갸웃이 끝난 뒤로 미룬다.
+  const cardLean=(t)=>FX?Math.max(0,...T.points.filter(p=>p.kind==='point'||p.kind==='number').map(p=>{
+    const r=T.events.find(e=>!e.talk && e.start===p.start); return envelope(t-(r?r.end:p.start)-0.4,0.3,0.8,0.4); })):0;
 
   const level=(f)=>{ let sum=0, n=0; for(let i=f-2;i<=f+2;i++){ if(T.energy[i]!==undefined){ sum+=+T.energy[i]; n++; } } return n?sum/n/9:0; };
 
@@ -237,9 +240,9 @@ function html(timeline) {
     const lean=cardLean(t), wk=walk(t), turn=spin(t);
     const stretch=m.squash+breath-nod+0.05*lean;
     const sy=1+stretch, sx=(1-stretch*0.6)*turn;
-    const sway=cur.talk?Math.sin(t*2*Math.PI*0.45)*1.4:0;
+    const sway=cur.talk?Math.sin(t*2*Math.PI*0.45)*1.4*(1-lean):0;   // 기우는 동안은 흔들림이 기울기를 깎지 않게 죽인다
     const cock=FX&&cur.talk&&cur.cock?(Math.sign(cur.tilt)||-1)*8*envelope(dt,0.25,0.5,0.4):0;
-    const tilt=((react||cur.talk?cur.tilt*Math.min(1,dt/0.25):0)+sway+cock+4*lean+wk.lean)*Math.PI/180;
+    const tilt=((react||cur.talk?cur.tilt*Math.min(1,dt/0.25):0)+sway+cock+8*lean+wk.lean)*Math.PI/180;
     const mark=T.mouth[f]||'c';
     let image;
     if(react) image=imgs[cur.body];
