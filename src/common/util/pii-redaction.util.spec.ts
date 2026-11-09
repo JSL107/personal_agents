@@ -144,6 +144,12 @@ describe('redactPii', () => {
     expect(performance.now() - startedAt).toBeLessThan(1_000);
   });
 
+  it('@ 없이 a://u: 가 반복되는 19만 자 입력도 1초 안에 끝난다', () => {
+    const startedAt = performance.now();
+    redactPii('a://u:'.repeat(32_000));
+    expect(performance.now() - startedAt).toBeLessThan(1_000);
+  });
+
   it('빈 문자열은 그대로 빈 문자열 반환', () => {
     expect(redactPii('')).toBe('');
   });
