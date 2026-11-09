@@ -1,4 +1,8 @@
-import { FirstLineType, TitleForm } from './instagram-insight.type';
+import {
+  FirstLineType,
+  ReelExperimentArm,
+  TitleForm,
+} from './instagram-insight.type';
 import { extractReelFeatures } from './reel-features';
 
 const line = (patch: Record<string, string> = {}) => ({
@@ -97,6 +101,31 @@ describe('extractReelFeatures', () => {
       reacts: ['thumbsup'],
       gestureCounts: { idle: 5 },
     });
+  });
+
+  it('script.json 의 형식 실험 기록을 옮기고, 모양이 틀리면 빼고 나머지는 남긴다', () => {
+    const experiment = {
+      policyVersion: 3,
+      source: 'file',
+      experimentId: 'exp-1',
+      knob: 'early_card',
+      arm: ReelExperimentArm.CHALLENGER,
+      values: { early_card: true },
+      realized: true,
+      checks: { firstCardSec: 1.2 },
+    };
+    expect(
+      extractReelFeatures({
+        script: { ...dailyScript, experiment },
+        folderField: 'daily',
+      })?.experiment,
+    ).toEqual(experiment);
+    const broken = extractReelFeatures({
+      script: { ...dailyScript, experiment: { ...experiment, arm: 'x' } },
+      folderField: 'daily',
+    });
+    expect(broken).not.toBeNull();
+    expect(broken).not.toHaveProperty('experiment');
   });
 
   it.each([

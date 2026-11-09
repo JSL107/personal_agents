@@ -99,4 +99,23 @@ export type ReelFeatures = {
   reacts: string[];
   gestureCounts: Record<string, number>;
   engine: string | null;
+  // 형식 실험 배정·실현 기록(2026-11-09~). 그 전 영상에는 없다.
+  experiment?: ReelExperiment;
 };
+
+// hermes-skill-reels.py 의 experiment_record 가 script.json 에 쓰는 모양.
+export type ReelExperiment = {
+  policyVersion: number;
+  source: string;
+  experimentId: string | null;
+  knob: string | null;
+  arm: ReelExperimentArm;
+  values: Record<string, boolean | string | number>;
+  realized: boolean;
+  checks: Record<string, number | null>;
+};
+
+export enum ReelExperimentArm {
+  CHAMPION = 'champion',
+  CHALLENGER = 'challenger',
+}
