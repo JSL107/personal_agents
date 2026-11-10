@@ -4,6 +4,8 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 
 import { CronIdempotencyService } from '../../common/queue/cron-idempotency.service';
+import { InstagramException } from '../domain/instagram.exception';
+import { InstagramErrorCode } from '../domain/instagram-error-code.enum';
 import {
   InstagramPost,
   InstagramPostField,
@@ -126,6 +128,57 @@ describe('PublishStoryUsecase', () => {
       lease as unknown as CronIdempotencyService,
     );
     usecase.pollIntervalMs = 0;
+    usecase.uploadRetryDelaysMs = [0, 0];
+  });
+
+  const uploadFailure = (
+    code = InstagramErrorCode.GRAPH_REQUEST_FAILED,
+  ): InstagramException =>
+    new InstagramException({
+      code,
+      message: 'Meta 요청 실패: HTTP 400: ProcessingFailedError',
+    });
+
+  it('업로드가 요청 실패면 새 컨테이너로 다시 올려 게시한다', async () => {
+    graph.createStoryContainer
+      .mockResolvedValueOnce({ containerId: 'c1', uploadUri: 'u1' })
+      .mockResolvedValueOnce({ containerId: 'c2', uploadUri: 'u2' });
+    graph.uploadVideo.mockRejectedValueOnce(uploadFailure());
+
+    await expect(usecase.execute(input)).resolves.toEqual({
+      kind: StoryPublishResult.PUBLISHED,
+    });
+
+    expect(graph.uploadVideo).toHaveBeenLastCalledWith({
+      uploadUri: 'u2',
+      video,
+    });
+    expect(graph.publish).toHaveBeenCalledWith('c2');
+  });
+
+  it('업로드가 계속 실패하면 정해진 횟수만 시도하고 failed 로 다음 슬롯에 넘긴다', async () => {
+    graph.uploadVideo.mockRejectedValue(uploadFailure());
+
+    await expect(usecase.execute(input)).resolves.toMatchObject({
+      kind: StoryPublishResult.FAILED,
+      reason: expect.stringContaining('ProcessingFailedError'),
+    });
+
+    expect(graph.uploadVideo).toHaveBeenCalledTimes(3);
+    expect(graph.publish).not.toHaveBeenCalled();
+    expect(row.uploadedAt).toBeNull();
+  });
+
+  it('업로드가 토큰 오류면 다시 시도하지 않는다', async () => {
+    graph.uploadVideo.mockRejectedValue(
+      uploadFailure(InstagramErrorCode.TOKEN_INVALID),
+    );
+
+    await expect(usecase.execute(input)).resolves.toMatchObject({
+      kind: StoryPublishResult.FAILED,
+    });
+
+    expect(graph.uploadVideo).toHaveBeenCalledTimes(1);
   });
 
   it('임대를 못 잡으면 Meta 를 부르지 않고 locked', async () => {

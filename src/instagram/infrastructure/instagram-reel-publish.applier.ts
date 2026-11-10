@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { readFile } from 'fs/promises';
 
@@ -87,8 +87,13 @@ export class InstagramReelPublishApplier implements PreviewApplier {
   // 게시 결과가 불확실한 뒤 같은 컨테이너로 다시 게시하기까지 기다리는 시간. 재조회 60초만으로는
   // Meta 쪽 PUBLISHED 반영·게시물 목록 반영 지연을 덮지 못해, 실제로 올라간 릴스를 한 번 더 올릴 수 있다.
   republishAfterMs = 10 * 60_000;
-  uploadAttempts = 3;
-  uploadRetryMs = 5_000;
+  // 실패는 수십 분씩 몰려 난다(2026-11-08 09:17~09:46, 11-10 09:00~09:38 연속 실패 뒤 성공). 5초 간격 3회는
+  // 같은 구간 안에서 끝나 소용이 없어 간격을 벌린다. 대기 합계 25분 — 더 늘리면 Slack 승인 버튼의
+  // response_url(30분) 이 만료돼 결과 안내가 끊긴다. 카드 상태는 chat.update 라 영향 없다.
+  uploadRetryDelaysMs: readonly number[] = [
+    60_000, 120_000, 240_000, 480_000, 600_000,
+  ];
+  private readonly logger = new Logger(InstagramReelPublishApplier.name);
 
   constructor(
     @Inject(INSTAGRAM_POST_REPOSITORY_PORT)
@@ -328,10 +333,14 @@ export class InstagramReelPublishApplier implements PreviewApplier {
         const retriable =
           error instanceof InstagramException &&
           error.errorCode === InstagramErrorCode.GRAPH_REQUEST_FAILED;
-        if (!retriable || attempt >= this.uploadAttempts) {
+        const delayMs = this.uploadRetryDelaysMs[attempt - 1];
+        if (!retriable || delayMs === undefined) {
           throw error;
         }
-        await this.wait(this.uploadRetryMs);
+        this.logger.warn(
+          `릴스 업로드 실패 ${attempt}회 reel=${payload.reelKey} container=${container.containerId} — ${delayMs / 1000}초 뒤 새 컨테이너로 다시: ${error.message}`,
+        );
+        await this.wait(delayMs);
       }
     }
   }

@@ -101,7 +101,7 @@ describe('InstagramReelPublishApplier', () => {
     applier = new InstagramReelPublishApplier(repository, graph);
     applier.pollIntervalMs = 0;
     applier.settleIntervalMs = 0;
-    applier.uploadRetryMs = 0;
+    applier.uploadRetryDelaysMs = [0, 0];
   });
   const uploadFailure = (
     code = InstagramErrorCode.GRAPH_REQUEST_FAILED,
