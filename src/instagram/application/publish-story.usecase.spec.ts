@@ -4,6 +4,8 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 
 import { CronIdempotencyService } from '../../common/queue/cron-idempotency.service';
+import { InstagramException } from '../domain/instagram.exception';
+import { InstagramErrorCode } from '../domain/instagram-error-code.enum';
 import {
   InstagramPost,
   InstagramPostField,
@@ -126,6 +128,79 @@ describe('PublishStoryUsecase', () => {
       lease as unknown as CronIdempotencyService,
     );
     usecase.pollIntervalMs = 0;
+    usecase.uploadRetryDelaysMs = [0, 0];
+  });
+
+  const uploadFailure = (
+    code = InstagramErrorCode.GRAPH_REQUEST_FAILED,
+  ): InstagramException =>
+    new InstagramException({
+      code,
+      message: 'Meta 요청 실패: HTTP 400: ProcessingFailedError',
+    });
+
+  it('업로드가 요청 실패면 새 컨테이너로 다시 올려 게시한다', async () => {
+    graph.createStoryContainer
+      .mockResolvedValueOnce({ containerId: 'c1', uploadUri: 'u1' })
+      .mockResolvedValueOnce({ containerId: 'c2', uploadUri: 'u2' });
+    graph.uploadVideo.mockRejectedValueOnce(uploadFailure());
+
+    await expect(usecase.execute(input)).resolves.toEqual({
+      kind: StoryPublishResult.PUBLISHED,
+    });
+
+    expect(graph.uploadVideo).toHaveBeenLastCalledWith({
+      uploadUri: 'u2',
+      video,
+    });
+    expect(graph.publish).toHaveBeenCalledWith('c2');
+  });
+
+  it('업로드가 계속 실패하면 정해진 횟수만 시도하고 failed 로 다음 슬롯에 넘긴다', async () => {
+    graph.uploadVideo.mockRejectedValue(uploadFailure());
+
+    await expect(usecase.execute(input)).resolves.toMatchObject({
+      kind: StoryPublishResult.FAILED,
+      reason: expect.stringContaining('ProcessingFailedError'),
+    });
+
+    expect(graph.uploadVideo).toHaveBeenCalledTimes(3);
+    expect(graph.publish).not.toHaveBeenCalled();
+    expect(row.uploadedAt).toBeNull();
+  });
+
+  it('운영 설정은 30·60초 간격으로 최대 3번 올린다', async () => {
+    const production = new PublishStoryUsecase(
+      repository,
+      graph,
+      lease as unknown as CronIdempotencyService,
+    );
+    const wait = jest
+      .spyOn(
+        production as unknown as { wait: (ms: number) => Promise<void> },
+        'wait',
+      )
+      .mockResolvedValue(undefined);
+    graph.uploadVideo.mockRejectedValue(uploadFailure());
+
+    await expect(production.execute(input)).resolves.toMatchObject({
+      kind: StoryPublishResult.FAILED,
+    });
+
+    expect(graph.uploadVideo).toHaveBeenCalledTimes(3);
+    expect(wait.mock.calls.map(([ms]) => ms)).toEqual([30_000, 60_000]);
+  });
+
+  it('업로드가 토큰 오류면 다시 시도하지 않는다', async () => {
+    graph.uploadVideo.mockRejectedValue(
+      uploadFailure(InstagramErrorCode.TOKEN_INVALID),
+    );
+
+    await expect(usecase.execute(input)).resolves.toMatchObject({
+      kind: StoryPublishResult.FAILED,
+    });
+
+    expect(graph.uploadVideo).toHaveBeenCalledTimes(1);
   });
 
   it('임대를 못 잡으면 Meta 를 부르지 않고 locked', async () => {
@@ -138,7 +213,7 @@ describe('PublishStoryUsecase', () => {
     expect(repository.upsertByReelKey).not.toHaveBeenCalled();
     expect(lease.acquireOnce).toHaveBeenCalledWith(
       'instagram-story:2026-11-06',
-      900,
+      1200,
     );
   });
 
