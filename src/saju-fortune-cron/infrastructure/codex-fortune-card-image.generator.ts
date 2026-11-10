@@ -109,7 +109,7 @@ export class CodexFortuneCardImageGenerator implements FortuneCardImagePort {
       // thread.started 이벤트에서 thread id(= 그림 폴더 이름)를 읽는다.
       '--json',
     ];
-    return new Promise((resolve, reject) => {
+    const run = new Promise<CodexRunResult>((resolve, reject) => {
       const child = spawn('codex', args, {
         stdio: ['pipe', 'pipe', 'pipe'],
         cwd: workDir,
@@ -118,10 +118,13 @@ export class CodexFortuneCardImageGenerator implements FortuneCardImagePort {
       });
       const stdoutChunks: Buffer[] = [];
       const stderrChunks: Buffer[] = [];
-      const resultOf = (
-        exitCode: number | null,
-        timedOut: boolean,
-      ): CodexRunResult => ({
+      const resultOf = ({
+        exitCode,
+        timedOut,
+      }: {
+        exitCode: number | null;
+        timedOut: boolean;
+      }): CodexRunResult => ({
         exitCode,
         timedOut,
         stdout: Buffer.concat(stdoutChunks).toString(),
@@ -132,7 +135,7 @@ export class CodexFortuneCardImageGenerator implements FortuneCardImagePort {
       // 먼저 온 쪽만 반영된다 — 시간 초과 뒤의 'close' 는 Promise 가 무시한다.
       const timer = setTimeout(() => {
         killProcessTree(child.pid);
-        resolve(resultOf(null, true));
+        resolve(resultOf({ exitCode: null, timedOut: true }));
       }, IMAGE_TIMEOUT_MS);
       child.stdout?.on('data', (chunk: Buffer) => stdoutChunks.push(chunk));
       child.stderr?.on('data', (chunk: Buffer) => stderrChunks.push(chunk));
@@ -142,9 +145,10 @@ export class CodexFortuneCardImageGenerator implements FortuneCardImagePort {
       });
       child.on('close', (code) => {
         clearTimeout(timer);
-        resolve(resultOf(code, false));
+        resolve(resultOf({ exitCode: code, timedOut: false }));
       });
       writeStdinAndClose({ child, payload: prompt });
     });
+    return run;
   }
 }

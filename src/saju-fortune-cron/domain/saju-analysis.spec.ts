@@ -21,7 +21,10 @@ const tenGodsOfChart = (natalPillars: string[]): string[] => {
       const pillar = HEAVENLY_STEMS.includes(character)
         ? `${character}子`
         : `甲${character}`;
-      const { todayStem, todayBranch } = analyzeSajuDay(natalPillars, pillar);
+      const { todayStem, todayBranch } = analyzeSajuDay({
+        natalPillars,
+        todayPillar: pillar,
+      });
       return HEAVENLY_STEMS.includes(character)
         ? todayStem.tenGod
         : todayBranch.tenGod;
@@ -57,14 +60,20 @@ describe('analyzeSajuDay', () => {
 
   it('오행 분포는 천간 30 + 지지의 지장간 사령일수로 센다', () => {
     // 午 = 丙10 己9 丁11, 辰 = 乙9 癸3 戊18.
-    expect(analyzeSajuDay(SAMPLE_METAL, '癸亥').elementUnits).toEqual({
+    expect(
+      analyzeSajuDay({ natalPillars: SAMPLE_METAL, todayPillar: '癸亥' })
+        .elementUnits,
+    ).toEqual({
       나무: 48,
       불: 51,
       흙: 45,
       쇠: 60,
       물: 36,
     });
-    expect(analyzeSajuDay(SAMPLE_EARTH, '癸亥').elementUnits).toEqual({
+    expect(
+      analyzeSajuDay({ natalPillars: SAMPLE_EARTH, todayPillar: '癸亥' })
+        .elementUnits,
+    ).toEqual({
       나무: 0,
       불: 46,
       흙: 85,
@@ -75,21 +84,27 @@ describe('analyzeSajuDay', () => {
 
   it('오늘 지지와 타고난 지지의 충·합을 찾는다', () => {
     // 亥 ↔ 巳 충 (시주)
-    expect(analyzeSajuDay(SAMPLE_EARTH, '癸亥').branchRelations).toEqual([
-      { kind: '충', natalLabel: '시주', natalBranch: '巳' },
-    ]);
+    expect(
+      analyzeSajuDay({ natalPillars: SAMPLE_EARTH, todayPillar: '癸亥' })
+        .branchRelations,
+    ).toEqual([{ kind: '충', natalLabel: '시주', natalBranch: '巳' }]);
     // 申 ↔ 巳 합 (시주), 申 ↔ 子·丑·酉 은 관계 없음
-    expect(analyzeSajuDay(SAMPLE_EARTH, '甲申').branchRelations).toEqual([
-      { kind: '합', natalLabel: '시주', natalBranch: '巳' },
-    ]);
+    expect(
+      analyzeSajuDay({ natalPillars: SAMPLE_EARTH, todayPillar: '甲申' })
+        .branchRelations,
+    ).toEqual([{ kind: '합', natalLabel: '시주', natalBranch: '巳' }]);
     // 午 ↔ 子 충 (년주), 午 ↔ 午 는 같은 글자라 관계 아님
-    expect(analyzeSajuDay(SAMPLE_METAL, '甲午').branchRelations).toEqual([
-      { kind: '충', natalLabel: '년주', natalBranch: '子' },
-    ]);
+    expect(
+      analyzeSajuDay({ natalPillars: SAMPLE_METAL, todayPillar: '甲午' })
+        .branchRelations,
+    ).toEqual([{ kind: '충', natalLabel: '년주', natalBranch: '子' }]);
   });
 
   it('시주가 없는 3기둥도 계산한다', () => {
-    const analysis = analyzeSajuDay(SAMPLE_EARTH.slice(0, 3), '癸亥');
+    const analysis = analyzeSajuDay({
+      natalPillars: SAMPLE_EARTH.slice(0, 3),
+      todayPillar: '癸亥',
+    });
     expect(Object.values(analysis.elementUnits).reduce((a, b) => a + b)).toBe(
       6 * 30,
     );
@@ -120,7 +135,9 @@ describe('tenGodOf', () => {
 
 describe('formatSajuFacts', () => {
   it('없는 기운이 오늘 들어오면 채워 주는 날이라고 적고, 충을 적는다', () => {
-    const facts = formatSajuFacts(analyzeSajuDay(SAMPLE_EARTH, '甲寅'));
+    const facts = formatSajuFacts(
+      analyzeSajuDay({ natalPillars: SAMPLE_EARTH, todayPillar: '甲寅' }),
+    );
     expect(facts).toContainEqual(expect.stringContaining('없는 기운: 나무'));
     expect(facts).toContainEqual(
       expect.stringContaining('나무 기운은 타고나기를 없는 기운이다'),
@@ -132,25 +149,40 @@ describe('formatSajuFacts', () => {
 
   it('공망이어도 지지가 맞물리면(해공) 정리·마무리 권고를 싣지 않는다', () => {
     // 일주 己酉 의 공망은 寅·卯. 오늘 甲寅 은 공망이지만 년주 亥 와 맞물린다.
-    const analysis = analyzeSajuDay(['乙亥', '辛丑', '己酉'], '甲寅');
+    const analysis = analyzeSajuDay({
+      natalPillars: ['乙亥', '辛丑', '己酉'],
+      todayPillar: '甲寅',
+    });
     expect(analysis.isVoidDay).toBe(true);
     expect(analysis.hasBranchHarmony).toBe(true);
     expect(formatSajuFacts(analysis).join('\n')).not.toContain('정리·마무리');
   });
 
   it('충·합이 있으면 어느 기둥의 어떤 지지와인지 한글 뜻풀이로 적고, 용어는 싣지 않는다', () => {
-    const clash = formatSajuFacts(analyzeSajuDay(SAMPLE_EARTH, '癸亥'));
+    const clash = formatSajuFacts(
+      analyzeSajuDay({ natalPillars: SAMPLE_EARTH, todayPillar: '癸亥' }),
+    );
     expect(clash).toContain(
       '- 오늘 지지와 타고난 시주 지지(사, 앞날·계획의 자리): 부딪힘 — 변화, 이동, 마음이 흔들림',
     );
     // 2026-10-20 실제 발송분에서 "타고난 일상의 자리" 로 모호하게 나왔던 일주 충.
-    expect(formatSajuFacts(analyzeSajuDay(SAMPLE_EARTH, '丁卯'))).toContain(
+    expect(
+      formatSajuFacts(
+        analyzeSajuDay({ natalPillars: SAMPLE_EARTH, todayPillar: '丁卯' }),
+      ),
+    ).toContain(
       '- 오늘 지지와 타고난 일주 지지(유, 나 자신·가까운 관계의 자리): 부딪힘 — 변화, 이동, 마음이 흔들림',
     );
-    expect(formatSajuFacts(analyzeSajuDay(SAMPLE_METAL, '甲午'))).toContain(
+    expect(
+      formatSajuFacts(
+        analyzeSajuDay({ natalPillars: SAMPLE_METAL, todayPillar: '甲午' }),
+      ),
+    ).toContain(
       '- 오늘 지지와 타고난 년주 지지(자, 뿌리·집안의 자리): 부딪힘 — 변화, 이동, 마음이 흔들림',
     );
-    const harmony = formatSajuFacts(analyzeSajuDay(SAMPLE_EARTH, '甲子'));
+    const harmony = formatSajuFacts(
+      analyzeSajuDay({ natalPillars: SAMPLE_EARTH, todayPillar: '甲子' }),
+    );
     expect(harmony).toContain(
       '- 오늘 지지와 타고난 월주 지지(축, 일터·사회생활의 자리): 맞물림 — 끌림, 협력, 묶임',
     );
@@ -161,7 +193,9 @@ describe('formatSajuFacts', () => {
   });
 
   it('분포 사실은 1/30 을 소수 첫째 자리로 보이고 판정은 정수로 한다', () => {
-    const facts = formatSajuFacts(analyzeSajuDay(SAMPLE_EARTH, '戊辰'));
+    const facts = formatSajuFacts(
+      analyzeSajuDay({ natalPillars: SAMPLE_EARTH, todayPillar: '戊辰' }),
+    );
     expect(facts).toContainEqual(
       expect.stringContaining('나무 0.0 · 불 1.5 · 흙 2.8 · 쇠 2.3 · 물 1.3'),
     );
@@ -173,16 +207,25 @@ describe('formatSajuFacts', () => {
   it('정수로 같은 두 기운은 둘 다 가장 많은 기운이다', () => {
     // 甲 나무 30 ×3, 子(壬10 癸20) 물 30 ×3 — 나무 90 = 물 90.
     expect(
-      formatSajuFacts(analyzeSajuDay(['甲子', '甲子', '甲子'], '戊辰')),
+      formatSajuFacts(
+        analyzeSajuDay({
+          natalPillars: ['甲子', '甲子', '甲子'],
+          todayPillar: '戊辰',
+        }),
+      ),
     ).toContainEqual(expect.stringContaining('가장 많은 기운: 나무·물'));
   });
 
   it('올해·이번 달 간지를 받으면 흐름 사실을 싣고, 없으면 싣지 않는다', () => {
     // 일간 己(흙·음) 기준: 丙 정인, 午(丁) 편인, 己 비견, 亥(壬) 정재.
     const facts = formatSajuFacts(
-      analyzeSajuDay(SAMPLE_EARTH, '戊辰', {
-        yearPillar: '丙午',
-        monthPillar: '己亥',
+      analyzeSajuDay({
+        natalPillars: SAMPLE_EARTH,
+        todayPillar: '戊辰',
+        yearMonthPillars: {
+          yearPillar: '丙午',
+          monthPillar: '己亥',
+        },
       }),
     );
     expect(facts).toContain(
@@ -193,12 +236,16 @@ describe('formatSajuFacts', () => {
     );
     expect(facts.join('\n')).not.toMatch(/[一-鿿]/);
     expect(
-      formatSajuFacts(analyzeSajuDay(SAMPLE_EARTH, '戊辰')).join('\n'),
+      formatSajuFacts(
+        analyzeSajuDay({ natalPillars: SAMPLE_EARTH, todayPillar: '戊辰' }),
+      ).join('\n'),
     ).not.toContain('흐름:');
   });
 
   it('가장 많은 기운이 오늘 또 들어오면 조절할 날이라고 적는다', () => {
-    const facts = formatSajuFacts(analyzeSajuDay(SAMPLE_EARTH, '戊辰'));
+    const facts = formatSajuFacts(
+      analyzeSajuDay({ natalPillars: SAMPLE_EARTH, todayPillar: '戊辰' }),
+    );
     expect(facts).toContainEqual(
       expect.stringContaining('흙 기운은 이미 가장 많은 기운이다'),
     );
@@ -267,7 +314,10 @@ describe('stemRelationOf', () => {
 describe('analyzeSajuDay — 기세·공망·천간·무리', () => {
   it('일간 자리까지 천간 관계를 본다', () => {
     // SAMPLE_EARTH 일간 己 + 오늘 甲 → 일주와 끌림.
-    expect(analyzeSajuDay(SAMPLE_EARTH, '甲子').stemRelations).toContainEqual({
+    expect(
+      analyzeSajuDay({ natalPillars: SAMPLE_EARTH, todayPillar: '甲子' })
+        .stemRelations,
+    ).toContainEqual({
       kind: '합',
       natalLabel: '일주',
       natalStem: '己',
@@ -276,32 +326,47 @@ describe('analyzeSajuDay — 기세·공망·천간·무리', () => {
 
   it('오늘 일지가 타고난 지지와 삼합을 완성한다', () => {
     expect(
-      analyzeSajuDay(['甲申', '丙辰', '壬寅'], '甲子').harmonyGroup,
+      analyzeSajuDay({
+        natalPillars: ['甲申', '丙辰', '壬寅'],
+        todayPillar: '甲子',
+      }).harmonyGroup,
     ).toEqual({ kind: '삼합', element: '물', natalLabels: ['년주', '월주'] });
   });
 
   it('같은 글자는 무리 판정에서 빠진다', () => {
     // 오늘 申 = 원국 申 이라 빠지고, 남은 辰 과는 왕지가 없어 반합이 아니다.
     expect(
-      analyzeSajuDay(['甲申', '丙辰', '壬寅'], '庚申').harmonyGroup,
+      analyzeSajuDay({
+        natalPillars: ['甲申', '丙辰', '壬寅'],
+        todayPillar: '庚申',
+      }).harmonyGroup,
     ).toBeUndefined();
   });
 
   it('원국에 이미 완성된 무리는 오늘 새로 생기는 것이 없다', () => {
     expect(
-      analyzeSajuDay(['甲申', '甲子', '丙辰'], '庚子').harmonyGroup,
+      analyzeSajuDay({
+        natalPillars: ['甲申', '甲子', '丙辰'],
+        todayPillar: '庚子',
+      }).harmonyGroup,
     ).toBeUndefined();
   });
 
   it('왕지가 낀 두 글자는 반합이다', () => {
     expect(
-      analyzeSajuDay(['甲午', '丁丑', '乙酉'], '庚寅').harmonyGroup,
+      analyzeSajuDay({
+        natalPillars: ['甲午', '丁丑', '乙酉'],
+        todayPillar: '庚寅',
+      }).harmonyGroup,
     ).toEqual({ kind: '반합', element: '불', natalLabels: ['년주'] });
   });
 
   it('기세·공망·천간·무리 사실은 용어·한자 없이 싣는다', () => {
     // SAMPLE_EARTH 일주 己酉 → 甲辰순, 공망 寅卯. 오늘 甲寅: 공망, 일간 己와 끌림.
-    const analysis = analyzeSajuDay(SAMPLE_EARTH, '甲寅');
+    const analysis = analyzeSajuDay({
+      natalPillars: SAMPLE_EARTH,
+      todayPillar: '甲寅',
+    });
     expect(analysis.isVoidDay).toBe(true);
     const facts = formatSajuFacts(analysis);
     expect(facts).toContainEqual(expect.stringContaining('- 오늘의 기세:'));
@@ -310,7 +375,10 @@ describe('analyzeSajuDay — 기세·공망·천간·무리', () => {
       expect.stringContaining('- 오늘 천간과 타고난 일주 천간'),
     );
     const harmonyFacts = formatSajuFacts(
-      analyzeSajuDay(['甲申', '丙辰', '壬寅'], '甲子'),
+      analyzeSajuDay({
+        natalPillars: ['甲申', '丙辰', '壬寅'],
+        todayPillar: '甲子',
+      }),
     );
     expect(harmonyFacts).toContainEqual(expect.stringContaining('물 기운'));
     expect([...facts, ...harmonyFacts].join('\n')).not.toMatch(
@@ -392,7 +460,10 @@ describe('analyzeSajuDay — 별점', () => {
 
   it('지지 충은 글로만 조심시키고 별점은 깎지 않는다', () => {
     // 癸亥: 시주 巳 와 충이 있다.
-    const analysis = analyzeSajuDay(SAMPLE_EARTH, '癸亥');
+    const analysis = analyzeSajuDay({
+      natalPillars: SAMPLE_EARTH,
+      todayPillar: '癸亥',
+    });
     expect(analysis.branchRelations.map(({ kind }) => kind)).toContain('충');
     expect(analysis.scores).toEqual(
       scoreFortune({
@@ -407,7 +478,10 @@ describe('analyzeSajuDay — 별점', () => {
 
   it('별점은 지지·십성·기세만으로 정해진다 — 천간 끌림은 점수에 들지 않는다', () => {
     // 甲寅: 일간 己와 천간 끌림이 있다.
-    const analysis = analyzeSajuDay(SAMPLE_EARTH, '甲寅');
+    const analysis = analyzeSajuDay({
+      natalPillars: SAMPLE_EARTH,
+      todayPillar: '甲寅',
+    });
     expect(analysis.stemRelations.length).toBeGreaterThan(0);
     expect(analysis.scores).toEqual(
       scoreFortune({
@@ -421,7 +495,10 @@ describe('analyzeSajuDay — 별점', () => {
   });
 
   it('3기둥도 다섯 항목 점수와 세 갈래 결 사실을 낸다', () => {
-    const analysis = analyzeSajuDay(SAMPLE_EARTH.slice(0, 3), '癸亥');
+    const analysis = analyzeSajuDay({
+      natalPillars: SAMPLE_EARTH.slice(0, 3),
+      todayPillar: '癸亥',
+    });
     expect(Object.keys(analysis.scores)).toEqual([
       '총운',
       '일·공부',
@@ -452,9 +529,9 @@ describe('analyzeSajuDay — 오늘의 행운 기운', () => {
     ['甲子', '불'],
     ['丙寅', '물'],
   ])('일간 己 + 오늘 %s → %s', (todayPillar, element) => {
-    expect(analyzeSajuDay(SAMPLE_EARTH, todayPillar).lucky.element).toBe(
-      element,
-    );
+    expect(
+      analyzeSajuDay({ natalPillars: SAMPLE_EARTH, todayPillar }).lucky.element,
+    ).toBe(element);
   });
 
   it('나를 누르는 기운은 행운으로 뽑히지 않는다', () => {
@@ -463,7 +540,10 @@ describe('analyzeSajuDay — 오늘의 행운 기운', () => {
       for (let todayStem = 0; todayStem < 10; todayStem++) {
         const natal = ['甲子', '甲子', pillarOfStem(dayStem)];
         expect(
-          analyzeSajuDay(natal, pillarOfStem(todayStem)).lucky.element,
+          analyzeSajuDay({
+            natalPillars: natal,
+            todayPillar: pillarOfStem(todayStem),
+          }).lucky.element,
         ).not.toBe(pressing);
       }
     }
@@ -471,7 +551,9 @@ describe('analyzeSajuDay — 오늘의 행운 기운', () => {
 
   it('숫자·음식은 오늘 천간 순번으로 고르고 색·맛·방향은 기운을 따른다', () => {
     // 庚午: 천간 순번 6, 행운 불.
-    expect(analyzeSajuDay(SAMPLE_EARTH, '庚午').lucky).toEqual({
+    expect(
+      analyzeSajuDay({ natalPillars: SAMPLE_EARTH, todayPillar: '庚午' }).lucky,
+    ).toEqual({
       element: '불',
       reason: '빠진 힘을 채워 주는 기운',
       color: '빨강',
@@ -483,7 +565,9 @@ describe('analyzeSajuDay — 오늘의 행운 기운', () => {
   });
 
   it('사실에는 행운 기운과 이유만 싣고 숫자는 싣지 않는다', () => {
-    const facts = formatSajuFacts(analyzeSajuDay(SAMPLE_EARTH, '庚午'));
+    const facts = formatSajuFacts(
+      analyzeSajuDay({ natalPillars: SAMPLE_EARTH, todayPillar: '庚午' }),
+    );
     expect(facts).toContain(
       '- 오늘의 행운 기운: 불 — 빠진 힘을 채워 주는 기운',
     );

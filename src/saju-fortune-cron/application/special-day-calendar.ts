@@ -71,7 +71,12 @@ const toSpecialTerm = ({
   return term;
 };
 
-const kstDateAndTimeOf = (instant: Date): { date: string; timeKst: string } => {
+interface KstDateAndTime {
+  date: string;
+  timeKst: string;
+}
+
+const kstDateAndTimeOf = (instant: Date): KstDateAndTime => {
   const date = getKstDateOf(instant);
   const timeKst = formatKstDateTime(instant).slice(-'HH:MM'.length);
   return { date, timeKst };
@@ -88,14 +93,14 @@ const flowRightAfter = (termInstant: Date): YearMonthPillars => {
   const [, year, month, day, hour, minute] = matched.map(Number);
   const pillars = calculateFourPillars({ year, month, day, hour, minute });
   const flow: YearMonthPillars = {
-    yearPillar: pillarFromHangul(
-      pillars.year.heavenlyStem,
-      pillars.year.earthlyBranch,
-    ),
-    monthPillar: pillarFromHangul(
-      pillars.month.heavenlyStem,
-      pillars.month.earthlyBranch,
-    ),
+    yearPillar: pillarFromHangul({
+      stem: pillars.year.heavenlyStem,
+      branch: pillars.year.earthlyBranch,
+    }),
+    monthPillar: pillarFromHangul({
+      stem: pillars.month.heavenlyStem,
+      branch: pillars.month.earthlyBranch,
+    }),
   };
   return flow;
 };
@@ -114,4 +119,7 @@ const seollalDateOf = (year: number): string | undefined => {
   }
 };
 
-const pad = (value: number): string => String(value).padStart(2, '0');
+const pad = (value: number): string => {
+  const text = String(value);
+  return text.padStart(2, '0');
+};

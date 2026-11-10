@@ -30,7 +30,8 @@ import { yearMonthPillarsOf } from './year-month-pillar';
 // 아침 발송과 같은 기준 — 코드가 지울 수 없는 위반(한자·용어)만 본다.
 const hasHanjaOrTerm = (text: string): boolean => {
   const violations = findFortuneViolations(text);
-  return countUnremovableViolations(violations) > 0;
+  const hasUnremovableViolation = countUnremovableViolations(violations) > 0;
+  return hasUnremovableViolation;
 };
 
 export interface AnswerFortuneQuestionInput {
@@ -142,27 +143,23 @@ const followUpFactsOf = ({
     context,
   });
   const specialFacts = formatSpecialDayFacts({ days, recipient, context });
-  const weeklyFacts =
-    kind === FortuneMessageKind.WEEKLY
-      ? [
-          '- 이번 주(월~일) 항목별 좋은 날·조심할 날:',
-          ...formatWeeklyFacts(
-            weeklyScoresOf({
-              natalPillars: recipient.natalPillars,
-              mondayKst: fortuneDate,
-            }),
-          ),
-        ]
-      : [];
+  const weeklyFacts: string[] = [];
+  if (kind === FortuneMessageKind.WEEKLY) {
+    const weeklyScores = weeklyScoresOf({
+      natalPillars: recipient.natalPillars,
+      mondayKst: fortuneDate,
+    });
+    weeklyFacts.push(
+      '- 이번 주(월~일) 항목별 좋은 날·조심할 날:',
+      ...formatWeeklyFacts(weeklyScores),
+    );
+  }
   const hidesYearFlow =
     kind !== FortuneMessageKind.DAILY &&
     days.some(({ kind: dayKind }) => YEAR_TURNING_KINDS.includes(dayKind));
-  const facts: FollowUpFacts = {
-    ...(hidesYearFlow
-      ? {}
-      : { yearMonthPillars: yearMonthPillarsOf(fortuneDate) }),
-    specialFacts,
-    weeklyFacts,
-  };
+  const facts: FollowUpFacts = { specialFacts, weeklyFacts };
+  if (!hidesYearFlow) {
+    facts.yearMonthPillars = yearMonthPillarsOf(fortuneDate);
+  }
   return facts;
 };

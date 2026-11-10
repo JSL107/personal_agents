@@ -17,8 +17,32 @@ export interface ParsedFortune {
   card?: FortuneCard;
 }
 
-const valueAfter = (line: string, label: string): string =>
-  line.slice(line.indexOf(label) + label.length).trim();
+const valueAfter = ({
+  line,
+  label,
+}: {
+  line: string;
+  label: string;
+}): string => {
+  const valueStart = line.indexOf(label) + label.length;
+  const value = line.slice(valueStart).trim();
+  return value;
+};
+
+// 줄이 없으면(모델이 라벨을 빼먹음) 빈 문자열 — 뒤의 형식 검사가 카드 없음으로 처리한다.
+const valueOfLine = ({
+  line,
+  label,
+}: {
+  line: string | undefined;
+  label: string;
+}): string => {
+  if (line === undefined) {
+    return '';
+  }
+  const value = valueAfter({ line, label });
+  return value;
+};
 
 export const parseFortuneResponse = (text: string): ParsedFortune => {
   const lines = text.split('\n');
@@ -33,10 +57,11 @@ export const parseFortuneResponse = (text: string): ParsedFortune => {
     .join('\n')
     .trim();
 
-  const title = titleLine ? valueAfter(titleLine, CARD_TITLE_LABEL) : '';
-  const scene = sceneLine
-    ? valueAfter(sceneLine, CARD_SCENE_LABEL).slice(0, MAXIMUM_SCENE_LENGTH)
-    : '';
+  const title = valueOfLine({ line: titleLine, label: CARD_TITLE_LABEL });
+  const scene = valueOfLine({
+    line: sceneLine,
+    label: CARD_SCENE_LABEL,
+  }).slice(0, MAXIMUM_SCENE_LENGTH);
   if (!CARD_TITLE_PATTERN.test(title) || scene.length === 0) {
     return { body };
   }

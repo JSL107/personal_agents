@@ -123,10 +123,11 @@ export const mondayOf = (date: string): string => {
 
 // 'YYYY-MM-DD' 가 속한 달의 다음 달 1일. 12월이면 이듬해 1월 1일.
 export const nextMonthStartOf = (date: string): string => {
+  // Date.UTC 는 0~99년을 1900~1999년으로 바꾸므로 Date 없이 연·월만 올린다.
   const [year, month] = date.split('-').map(Number);
-  // Date.UTC 의 달은 0부터라 1부터 센 month 를 그대로 넣으면 다음 달이 된다.
-  const nextMonthStart = new Date(Date.UTC(year, month, 1))
-    .toISOString()
-    .slice(0, 10);
+  const isDecember = month === 12;
+  const nextYear = isDecember ? year + 1 : year;
+  const nextMonth = isDecember ? 1 : month + 1;
+  const nextMonthStart = `${String(nextYear).padStart(4, '0')}-${String(nextMonth).padStart(2, '0')}-01`;
   return nextMonthStart;
 };

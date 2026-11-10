@@ -151,10 +151,10 @@ const dayIndexOf = (fortuneDate: string): number =>
 // 가장 낮은 항목들. 네 항목이 모두 높으면 약한 곳이 없는 날이라 네 항목 전부.
 const weakestCategoriesOf = (scores: FortuneScores): FortuneCategory[] => {
   const lowest = Math.min(...MISSION_CATEGORIES.map((key) => scores[key]));
-  const weakest =
-    lowest >= STRONG_DAY_SCORE
-      ? [...MISSION_CATEGORIES]
-      : MISSION_CATEGORIES.filter((key) => scores[key] === lowest);
+  if (lowest >= STRONG_DAY_SCORE) {
+    return [...MISSION_CATEGORIES];
+  }
+  const weakest = MISSION_CATEGORIES.filter((key) => scores[key] === lowest);
   return weakest;
 };
 
@@ -166,9 +166,11 @@ const leastRecentOf = ({
   candidates: MissionCandidates;
   recent: RecentMission[];
 }): Mission => {
-  const lastSentOf = (mission: Mission): string =>
-    recent.find(({ missionKey }) => missionKey === mission.key)?.fortuneDate ??
-    '';
+  const lastSentOf = (mission: Mission): string => {
+    const found = recent.find(({ missionKey }) => missionKey === mission.key);
+    const fortuneDate = found?.fortuneDate ?? '';
+    return fortuneDate;
+  };
   const [first, second] = candidates;
   const chosen = lastSentOf(second) < lastSentOf(first) ? second : first;
   return chosen;

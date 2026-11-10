@@ -35,7 +35,11 @@ export const expectedSectionCount = ({
 }: {
   specialDays: SpecialDay[];
   week?: DailyScores[];
-}): number => specialDays.length + (week ? 1 : 0);
+}): number => {
+  const weekSectionCount = week ? 1 : 0;
+  const count = specialDays.length + weekSectionCount;
+  return count;
+};
 
 export const buildExtraFortunePrompt = ({
   recipient,
@@ -49,22 +53,25 @@ export const buildExtraFortunePrompt = ({
   const sectionCount = expectedSectionCount({ specialDays, week });
   // 흐름 사실(정오 대표값)은 싣지 않는다 — 1월 1일·입춘 전 설날엔 지난해 간지라서다. 흐름은 절 특집이 따로 준다.
   const todayFacts = formatSajuFacts(
-    analyzeSajuDay(recipient.natalPillars, todayPillar),
+    analyzeSajuDay({ natalPillars: recipient.natalPillars, todayPillar }),
   );
   const specialSections = specialDays.map((day, index) => [
     `구간 ${index + 1} — 특별한 날`,
     ...formatSpecialDayFacts({ days: [day], recipient, context }),
   ]);
-  const weeklySection = week
-    ? [
-        [
-          `구간 ${sectionCount} — 이번 주 운세(월~일)`,
-          '이번 주 항목별 좋은 날·조심할 날 (코드가 확정했다. 이것만 근거로 써라):',
-          ...formatWeeklyFacts(week),
-        ],
-      ]
-    : [];
-  const sections = [...specialSections, ...weeklySection];
+  const sections = [...specialSections];
+  if (week) {
+    sections.push([
+      `구간 ${sectionCount} — 이번 주 운세(월~일)`,
+      '이번 주 항목별 좋은 날·조심할 날 (코드가 확정했다. 이것만 근거로 써라):',
+      ...formatWeeklyFacts(week),
+    ]);
+  }
+
+  const sectionRuleLine =
+    sectionCount > 1
+      ? `- 구간 ${sectionCount}개를 위 순서대로 쓰고, 구간 사이에는 "${EXTRA_SECTION_SEPARATOR}" 한 줄만 둔다.`
+      : `- 구간 1개만 쓴다. "${EXTRA_SECTION_SEPARATOR}" 구분줄은 쓰지 않는다.`;
 
   const prompt = [
     '너는 사주를 전혀 모르는 친한 사람에게 일일 운세에 이어 한 통 더 보내 주는 역할이다.',
@@ -78,9 +85,7 @@ export const buildExtraFortunePrompt = ({
     '',
     ...sections.flatMap((section) => [...section, '']),
     '작성 형식:',
-    sectionCount > 1
-      ? `- 구간 ${sectionCount}개를 위 순서대로 쓰고, 구간 사이에는 "${EXTRA_SECTION_SEPARATOR}" 한 줄만 둔다.`
-      : `- 구간 1개만 쓴다. "${EXTRA_SECTION_SEPARATOR}" 구분줄은 쓰지 않는다.`,
+    sectionRuleLine,
     '- 구간 제목·특집 첫 줄(🎂 같은 줄)·요일별 별점 줄은 쓰지 않는다. 코드가 따로 붙인다.',
     '- 특별한 날 구간은 3~5줄: 축하나 그날의 의미 한 줄, 오늘 기운과 엮은 이야기, 그날에 어울리는 작은 행동 하나.',
     '- 이번 주 구간은 이번 주 흐름 2~3줄 뒤에 "총운:", "일·공부:", "사람 관계:", "돈:", "컨디션:" 으로 시작하는 줄을 하나씩 쓴다. 좋은 날·조심할 날이 사실에 있으면 그 요일 이름으로 쓰고, 없으면 요일을 쓰지 말고 "무난한 한 주" 처럼 쓴다. 조심할 날이 있는 항목에만 "그럴 땐 이렇게 해 봐" 식의 대처를 한 마디 붙인다.',
@@ -93,7 +98,8 @@ export const buildExtraFortunePrompt = ({
     '- 재미로 보는 운세 말투(반말, 다정하게)로 쓴다. 사고·질병·금전 손실을 단정하거나 겁주는 말은 쓰지 않는다.',
     '- 평문으로 쓴다. 제목·표·코드블록은 쓰지 않고, 이모지는 줄 머리에 하나까지만 쓴다.',
   ];
-  return prompt.join('\n');
+  const joinedPrompt = prompt.join('\n');
+  return joinedPrompt;
 };
 
 // 특별한 날 사실 — 추가 메시지 프롬프트와 스레드 답(answer-fortune-question)이 같은 문장을 쓴다.
@@ -156,10 +162,12 @@ const solarTermFacts = ({
     ];
   }
   const { yearPillar, monthPillar } = context.termFlow;
-  const flowFacts = [
+  const flowTone =
     name === SpecialSolarTerm.입춘
       ? '- 결: 사주의 새해 — 기운이 새로 바뀌는 날.'
-      : '- 결: 계절이 바뀌며 이번 달의 기운도 바뀌는 날.',
+      : '- 결: 계절이 바뀌며 이번 달의 기운도 바뀌는 날.';
+  const flowFacts = [
+    flowTone,
     `- ${termTime}부터 바뀌는 흐름: 올해 ${pillarToHangul(yearPillar)}년, 이번 달 ${pillarToHangul(monthPillar)}월.`,
     `- 지금 시각이 ${termTime}보다 이르면 "오늘 ${termTime}부터 바뀐다" 처럼 앞으로 올 일로, 지났으면 "오늘 ${termTime}부터 바뀌었다" 처럼 쓴다.`,
   ];
@@ -169,11 +177,13 @@ const solarTermFacts = ({
 // 'HH:MM' → '7시 30분'
 const spokenTime = (time: string): string => {
   const [hour, minute] = time.split(':').map(Number);
-  return `${hour}시 ${minute}분`;
+  const spoken = `${hour}시 ${minute}분`;
+  return spoken;
 };
 
 // 'YYYY-MM-DD' → '2월 4일'
 const spokenDate = (date: string): string => {
   const [, month, day] = date.split('-').map(Number);
-  return `${month}월 ${day}일`;
+  const spoken = `${month}월 ${day}일`;
+  return spoken;
 };

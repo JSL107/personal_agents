@@ -28,11 +28,11 @@ describe('weeklyScoresOf', () => {
       '2026-11-22',
     ]);
     week.forEach(({ date, scores }) => {
-      const daily = analyzeSajuDay(
+      const daily = analyzeSajuDay({
         natalPillars,
-        dayPillarOf(date),
-        yearMonthPillarsOf(date),
-      );
+        todayPillar: dayPillarOf(date),
+        yearMonthPillars: yearMonthPillarsOf(date),
+      });
       expect(scores).toEqual(daily.scores);
     });
   });

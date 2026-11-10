@@ -55,9 +55,8 @@ export class FortuneGenerator {
     const secondInspection = inspect(second);
     const prefersSecond =
       secondInspection.unremovable <= firstInspection.unremovable;
-    const [chosen, remaining] = prefersSecond
-      ? [second, secondInspection]
-      : [first, firstInspection];
+    const chosen = prefersSecond ? second : first;
+    const remaining = prefersSecond ? secondInspection : firstInspection;
     if (remaining.kinds.length > 0) {
       this.logger.warn(
         `Saju Fortune 위반 응답(${remaining.kinds.join(',')}) — 재생성 후에도 남아 그대로 발송 (${slackUserId})`,
