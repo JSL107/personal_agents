@@ -21,6 +21,8 @@ export interface SajuFortuneRecipient {
   natalPillars: string[];
   // 'HH:MM' KST. 없으면 SAJU_FORTUNE_CRON 을 따른다.
   sendTime?: string;
+  // 양력 'MM-DD'. LLM 에는 날짜로 싣지 않고 "오늘이 생일" 사실만 싣는다.
+  birthday?: string;
 }
 
 export interface ParsedSajuFortuneRecipients {
@@ -32,10 +34,29 @@ export interface ParsedSajuFortuneRecipients {
 const SLACK_USER_ID_PATTERN = /^[UW][A-Z0-9]+$/;
 const MINIMUM_PILLAR_COUNT = 3;
 const MAXIMUM_PILLAR_COUNT = 4;
+// 슬랙ID|이름|기둥 은 필수, 발송 시각·생일은 선택.
+const MINIMUM_FIELD_COUNT = 3;
+const MAXIMUM_FIELD_COUNT = 5;
 const SEND_TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
+const BIRTHDAY_PATTERN = /^(\d{2})-(\d{2})$/;
+// 02-29 를 받으려고 윤년 하나로 달력을 검사한다.
+const LEAP_YEAR = 2000;
 
-// 형식: `U123|길동|丙寅 辛卯 壬戌 庚子|07:30;U456|철수|...` — 항목은 `;`, 칸은 `|`, 기둥은 공백으로 나눈다.
-// 마지막 발송 시각 칸은 생략할 수 있다.
+// 'MM-DD' 이고 달력에 있는 날(02-29 포함)인가.
+export const isValidBirthday = (text: string): boolean => {
+  const matched = BIRTHDAY_PATTERN.exec(text);
+  if (!matched) {
+    return false;
+  }
+  const [, month, day] = matched.map(Number);
+  const date = new Date(Date.UTC(LEAP_YEAR, month - 1, day));
+  const isSameDate =
+    date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+  return isSameDate;
+};
+
+// 형식: `U123|길동|丙寅 辛卯 壬戌 庚子|07:30|05-17;U456|철수|...` — 항목은 `;`, 칸은 `|`, 기둥은 공백으로 나눈다.
+// 발송 시각·양력 생일 칸은 생략할 수 있다(생일만 넣으려면 `…|기둥||05-17`).
 // 생년월일 대신 기둥을 받는 것은 의도다: 매일 LLM 에 실려 가는 값에서 생년월일 자체를 빼기 위해서다.
 export const parseSajuFortuneRecipients = (
   raw: string | undefined,
@@ -60,26 +81,39 @@ export const parseSajuFortuneRecipients = (
 
 const parseEntry = (entry: string): SajuFortuneRecipient | null => {
   const fields = entry.split('|').map((field) => field.trim());
-  if (fields.length !== 3 && fields.length !== 4) {
+  const hasValidFieldCount =
+    fields.length >= MINIMUM_FIELD_COUNT &&
+    fields.length <= MAXIMUM_FIELD_COUNT;
+  if (!hasValidFieldCount) {
     return null;
   }
-  const [slackUserId, name, pillarText, sendTimeField] = fields;
+  const [slackUserId, name, pillarText, sendTimeField, birthdayField] = fields;
   // `…|癸亥|` 처럼 칸만 있고 비어 있으면 생략으로 본다.
-  const sendTime = sendTimeField ? sendTimeField : undefined;
+  const sendTime = sendTimeField || undefined;
+  const birthday = birthdayField || undefined;
   const natalPillars = pillarText.split(/\s+/).filter((p) => p.length > 0);
-  const isValid =
-    SLACK_USER_ID_PATTERN.test(slackUserId) &&
-    name.length > 0 &&
+  const hasValidPerson =
+    SLACK_USER_ID_PATTERN.test(slackUserId) && name.length > 0;
+  const hasValidPillars =
     natalPillars.length >= MINIMUM_PILLAR_COUNT &&
     natalPillars.length <= MAXIMUM_PILLAR_COUNT &&
-    natalPillars.every(isValidPillar) &&
-    (sendTime === undefined || SEND_TIME_PATTERN.test(sendTime));
+    natalPillars.every(isValidPillar);
+  const hasValidSendTime =
+    sendTime === undefined || SEND_TIME_PATTERN.test(sendTime);
+  const hasValidBirthday = birthday === undefined || isValidBirthday(birthday);
+  const isValid =
+    hasValidPerson && hasValidPillars && hasValidSendTime && hasValidBirthday;
   if (!isValid) {
     return null;
   }
-  return sendTime === undefined
-    ? { slackUserId, name, natalPillars }
-    : { slackUserId, name, natalPillars, sendTime };
+  const recipient: SajuFortuneRecipient = {
+    slackUserId,
+    name,
+    natalPillars,
+    ...(sendTime === undefined ? {} : { sendTime }),
+    ...(birthday === undefined ? {} : { birthday }),
+  };
+  return recipient;
 };
 
 // 'HH:MM' → 매일 그 시각 cron. 형식은 파서가 이미 검사했다.

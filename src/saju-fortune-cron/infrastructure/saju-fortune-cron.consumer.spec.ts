@@ -9,9 +9,15 @@ import { SlackNotifierPort } from '../../slack/domain/port/slack-notifier.port';
 import { FortuneCardImagePort } from '../domain/port/fortune-card-image.port';
 import { fortuneDateOf } from '../domain/saju-fortune-chat';
 import { SajuFortuneCronJobData } from '../domain/saju-fortune-cron.type';
+import * as renderModule from '../domain/saju-fortune-render';
 import { SajuFortuneCronConsumer } from './saju-fortune-cron.consumer';
 
 const RECIPIENTS = 'U111|길동|丙寅 辛卯 壬戌 庚子;U222|철수|戊辰 甲寅 癸亥';
+// 실행 날짜에 따라 주간·특집 메시지가 붙으므로 시각을 고정한다.
+// 2026-11-10 09:00 KST = 화요일, 특별한 날 아님.
+const ORDINARY_DAY = new Date('2026-11-10T00:00:00Z');
+// 2026-11-16 09:00 KST = 월요일(갑오일), 특별한 날 아님.
+const MONDAY = new Date('2026-11-16T00:00:00Z');
 const JOB = {
   data: { recipientSlackUserIds: ['U111', 'U222'] },
 } as Job<SajuFortuneCronJobData>;
@@ -26,8 +32,12 @@ describe('SajuFortuneCronConsumer', () => {
   let generateImage: jest.Mock;
   let uploadImageFile: jest.Mock;
   let consumer: SajuFortuneCronConsumer;
+  let recipients: string;
 
   beforeEach(() => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
+    jest.setSystemTime(ORDINARY_DAY);
+    recipients = RECIPIENTS;
     route = jest
       .fn()
       .mockResolvedValue({ text: '🌊 물이 물을 만난 날 <!channel>' });
@@ -39,7 +49,7 @@ describe('SajuFortuneCronConsumer', () => {
     generateImage = jest.fn().mockResolvedValue(Buffer.from('png'));
     uploadImageFile = jest.fn().mockResolvedValue({ fileId: 'F1' });
     consumer = new SajuFortuneCronConsumer(
-      { get: () => RECIPIENTS } as unknown as ConfigService,
+      { get: () => recipients } as unknown as ConfigService,
       { route } as unknown as ModelRouterUsecase,
       { postMessage, uploadImageFile } as unknown as SlackNotifierPort,
       { acquireOnce, release, isDone } as unknown as CronIdempotencyService,
@@ -49,6 +59,11 @@ describe('SajuFortuneCronConsumer', () => {
         publishRecovery: jest.fn(),
       } as unknown as NotificationPublisher,
     );
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.restoreAllMocks();
   });
 
   it('받는 사람마다 PM 을 빌려 머리말 없이 부르고, 각자에게 이스케이프된 DM 을 보낸다', async () => {
@@ -240,5 +255,157 @@ describe('SajuFortuneCronConsumer', () => {
 
     expect(route).not.toHaveBeenCalled();
     expect(postMessage).not.toHaveBeenCalled();
+  });
+
+  describe('월요일·특별한 날 추가 메시지', () => {
+    const textsFor = (target: string): string[] =>
+      postMessage.mock.calls
+        .filter(([input]) => input.target === target)
+        .map(([input]) => input.text);
+
+    it('월요일엔 모든 사람의 일일을 먼저 보내고 그다음 이번 주 운세를 보낸다', async () => {
+      jest.setSystemTime(MONDAY);
+
+      await consumer.process(JOB);
+
+      const sent = postMessage.mock.calls.map(([input]) => [
+        input.target,
+        input.text.split('\n')[0],
+      ]);
+      expect(sent).toEqual([
+        ['U111', '🔮 *오늘의 운세 — 2026-11-16 (갑오일)*'],
+        ['U222', '🔮 *오늘의 운세 — 2026-11-16 (갑오일)*'],
+        ['U111', '🔮 *이번 주 운세 — 2026-11-16 (갑오일)*'],
+        ['U222', '🔮 *이번 주 운세 — 2026-11-16 (갑오일)*'],
+      ]);
+      expect(textsFor('U111')[1]).toMatch(/월 [★☆]{5} · 화 [★☆]{5}/);
+      expect(acquireOnce.mock.calls[2][0]).toBe(
+        'cron:saju-fortune-cron:extra:U111:2026-11-16',
+      );
+    });
+
+    it('평범한 날엔 추가 메시지 LLM 도 가드도 없다', async () => {
+      await consumer.process(JOB);
+
+      expect(route).toHaveBeenCalledTimes(2);
+      expect(isDone.mock.calls.map(([key]) => key)).not.toContainEqual(
+        expect.stringContaining(':extra:'),
+      );
+    });
+
+    it('생일이면 특별한 날 메시지를 특집 줄과 함께 보낸다', async () => {
+      recipients = 'U111|길동|丙寅 辛卯 壬戌 庚子||11-10';
+
+      await consumer.process({
+        data: { recipientSlackUserIds: ['U111'] },
+      } as Job<SajuFortuneCronJobData>);
+
+      const [, extra] = textsFor('U111');
+      expect(extra.split('\n')[0]).toBe('🔮 *특별한 날 — 2026-11-10 (무자일)*');
+      expect(extra).toContain('🎂 생일 축하해, 길동!');
+      expect(extra).not.toContain('🍀 행운 아이템');
+    });
+
+    it('일일이 실패한 사람은 추가를 건너뛰고, 다른 사람은 둘 다 받는다', async () => {
+      jest.setSystemTime(MONDAY);
+      postMessage.mockRejectedValueOnce(new Error('slack 500'));
+
+      await expect(consumer.process(JOB)).rejects.toThrow(
+        '사주 운세 발송 실패 1/2명: 길동',
+      );
+
+      expect(textsFor('U111')).toHaveLength(1);
+      expect(textsFor('U222')).toHaveLength(2);
+    });
+
+    it('추가만 실패하면 추가 키만 풀고 문구 끝에 추가 실패를 붙인다', async () => {
+      jest.setSystemTime(MONDAY);
+      postMessage
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(new Error('slack 500'));
+
+      await expect(consumer.process(JOB)).rejects.toThrow(' / 추가 실패: 길동');
+
+      expect(release.mock.calls.map(([key]) => key)).toEqual([
+        'cron:saju-fortune-cron:extra:U111:2026-11-16',
+      ]);
+    });
+
+    it('재시도에서 일일은 이미 보냈으면 건너뛰고 추가만 보낸다', async () => {
+      jest.setSystemTime(MONDAY);
+      isDone.mockImplementation(
+        async (key: string) => !key.includes(':extra:'),
+      );
+
+      await consumer.process(JOB);
+
+      expect(
+        postMessage.mock.calls.map(([input]) => input.text.split('\n')[0]),
+      ).toEqual([
+        '🔮 *이번 주 운세 — 2026-11-16 (갑오일)*',
+        '🔮 *이번 주 운세 — 2026-11-16 (갑오일)*',
+      ]);
+    });
+
+    it('다른 실행이 일일을 보내는 중(raced)이면 그 사람 추가는 건너뛴다', async () => {
+      jest.setSystemTime(MONDAY);
+      acquireOnce.mockImplementation(
+        async (key: string) => !key.endsWith(':U111:2026-11-16'),
+      );
+
+      await consumer.process(JOB);
+
+      expect(textsFor('U111')).toEqual([]);
+      expect(textsFor('U222')).toHaveLength(2);
+    });
+
+    it('일일 본문 조립이 던지면 가드를 잡기 전이라 키가 남지 않는다', async () => {
+      jest.spyOn(renderModule, 'composeFortuneBody').mockImplementation(() => {
+        throw new Error('조립 실패');
+      });
+
+      await expect(consumer.process(JOB)).rejects.toThrow('2/2명');
+
+      expect(acquireOnce).not.toHaveBeenCalled();
+    });
+
+    it('구간 수가 어긋난 추가 응답은 한 번 다시 만든다', async () => {
+      jest.setSystemTime(MONDAY);
+      recipients = 'U111|길동|丙寅 辛卯 壬戌 庚子||11-16';
+      route
+        .mockResolvedValueOnce({ text: '좋은 날' })
+        .mockResolvedValueOnce({ text: '구간 하나뿐' })
+        .mockResolvedValueOnce({ text: '생일 이야기\n=====\n이번 주 이야기' });
+
+      await consumer.process({
+        data: { recipientSlackUserIds: ['U111'] },
+      } as Job<SajuFortuneCronJobData>);
+
+      expect(route).toHaveBeenCalledTimes(3);
+      const [, extra] = textsFor('U111');
+      expect(extra).toContain('🎂 생일 축하해, 길동!\n생일 이야기');
+      expect(extra).toMatch(/월 [★☆]{5}[^\n]*\n이번 주 이야기/);
+    });
+
+    it('두 번 다 구간 수가 어긋나면 구분줄을 지우고 코드 줄을 맨 앞에 모아 보낸다', async () => {
+      jest.setSystemTime(MONDAY);
+      recipients = 'U111|길동|丙寅 辛卯 壬戌 庚子||11-16';
+      route
+        .mockResolvedValueOnce({ text: '좋은 날' })
+        .mockResolvedValueOnce({ text: '구간 하나뿐' })
+        .mockResolvedValueOnce({ text: '하나\n=====\n둘\n=====\n셋' });
+
+      await consumer.process({
+        data: { recipientSlackUserIds: ['U111'] },
+      } as Job<SajuFortuneCronJobData>);
+
+      expect(route).toHaveBeenCalledTimes(3);
+      const [, extra] = textsFor('U111');
+      expect(extra).toMatch(
+        /🎂 생일 축하해, 길동!\n월 [★☆]{5}[^\n]*\n\n하나\n둘\n셋$/,
+      );
+      expect(extra).not.toContain('=====');
+    });
   });
 });

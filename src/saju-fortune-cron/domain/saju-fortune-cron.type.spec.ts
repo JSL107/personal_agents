@@ -1,5 +1,6 @@
 import {
   dailyCronOf,
+  isValidBirthday,
   parseSajuFortuneRecipients,
 } from './saju-fortune-cron.type';
 
@@ -51,6 +52,50 @@ describe('parseSajuFortuneRecipients', () => {
       expect.not.objectContaining({ sendTime: expect.anything() }),
     ]);
     expect(parsed.invalidEntryNumbers).toEqual([3, 4]);
+  });
+
+  it('다섯째 칸의 양력 생일(MM-DD)을 읽고, 발송 시각 없이 생일만 넣을 수 있다', () => {
+    const parsed = parseSajuFortuneRecipients(
+      [
+        'U111|길동|丙寅 辛卯 壬戌|07:30|05-17',
+        'U222|철수|戊辰 甲寅 癸亥||02-29',
+        'U333|빈생일|戊辰 甲寅 癸亥|07:30|',
+      ].join(';'),
+    );
+    expect(parsed.invalidEntryNumbers).toEqual([]);
+    expect(parsed.recipients).toEqual([
+      expect.objectContaining({ sendTime: '07:30', birthday: '05-17' }),
+      {
+        slackUserId: 'U222',
+        name: '철수',
+        natalPillars: ['戊辰', '甲寅', '癸亥'],
+        birthday: '02-29',
+      },
+      expect.not.objectContaining({ birthday: expect.anything() }),
+    ]);
+  });
+
+  it('달력에 없는 생일·형식이 틀린 생일·여섯째 칸은 항목째 뺀다', () => {
+    const parsed = parseSajuFortuneRecipients(
+      [
+        'U111|길동|丙寅 辛卯 壬戌|07:30|02-30',
+        'U222|길동|丙寅 辛卯 壬戌|07:30|13-01',
+        'U333|길동|丙寅 辛卯 壬戌|07:30|5-17',
+        'U444|길동|丙寅 辛卯 壬戌|07:30|05-17|x',
+      ].join(';'),
+    );
+    expect(parsed.recipients).toEqual([]);
+    expect(parsed.invalidEntryNumbers).toEqual([1, 2, 3, 4]);
+  });
+
+  it.each([
+    ['02-29', true],
+    ['12-31', true],
+    ['04-31', false],
+    ['00-10', false],
+    ['1-01', false],
+  ])('isValidBirthday(%s) = %s', (text, expected) => {
+    expect(isValidBirthday(text)).toBe(expected);
   });
 
   it('미설정이면 빈 목록', () => {

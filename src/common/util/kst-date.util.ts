@@ -81,3 +81,13 @@ export const utcMidnightOf = (date: string): Date =>
 // 조회 범위 경계처럼 "그날 한국 시간 0시" 가 필요할 때 쓴다. 검증하지 않는다 — 잘못된 입력은 Invalid Date.
 export const kstDayStartOf = (date: string): Date =>
   new Date(`${date}T00:00:00+09:00`);
+
+// 'YYYY-MM-DD' 의 요일(0=일 … 6=토). 서버 시간대와 무관하게 날짜만으로 본다.
+export const weekdayOf = (date: string): number =>
+  utcMidnightOf(date).getUTCDay();
+
+// 'YYYY-MM-DD' 에 days 일을 더한 'YYYY-MM-DD'. 월·연 경계를 넘겨도 달력대로 간다.
+export const addDaysTo = (date: string, days: number): string => {
+  const shifted = new Date(utcMidnightOf(date).getTime() + days * DAY_MS);
+  return shifted.toISOString().slice(0, 10);
+};

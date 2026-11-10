@@ -1,10 +1,12 @@
 import {
+  addDaysTo,
   formatKstDate,
   formatKstDateTime,
   getKstDayStartAsUtc,
   getTodayKstDate,
   kstDayStartOf,
   utcMidnightOf,
+  weekdayOf,
 } from './kst-date.util';
 
 describe('formatKstDate', () => {
@@ -155,5 +157,20 @@ describe('utcMidnightOf / kstDayStartOf', () => {
     expect(Number.isNaN(kstDayStartOf('abc').getTime())).toBe(true);
     expect(() => utcMidnightOf('abc').toISOString()).toThrow(RangeError);
     expect(() => kstDayStartOf('abc').toISOString()).toThrow(RangeError);
+  });
+});
+
+describe('weekdayOf', () => {
+  it.each([
+    ['2026-11-16', 1],
+    ['2026-11-22', 0],
+  ])('%s → %i', (date, expected) => {
+    expect(weekdayOf(date)).toBe(expected);
+  });
+});
+
+describe('addDaysTo', () => {
+  it('연말을 넘긴다', () => {
+    expect(addDaysTo('2026-12-28', 6)).toBe('2027-01-03');
   });
 });
