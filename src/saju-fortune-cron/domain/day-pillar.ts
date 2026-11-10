@@ -1,4 +1,4 @@
-import { isCalendarDate } from '../../common/util/kst-date.util';
+import { isCalendarDate, utcMidnightOf } from '../../common/util/kst-date.util';
 
 const HEAVENLY_STEMS = '甲乙丙丁戊己庚辛壬癸';
 const EARTHLY_BRANCHES = '子丑寅卯辰巳午未申酉戌亥';
@@ -11,7 +11,8 @@ const MILLISECONDS_PER_DAY = 86_400_000;
 // 1900-01-01 은 甲戌일(60갑자 10번째). 일진은 날짜가 하루 갈 때마다 60갑자를 한 칸씩 돌 뿐이라
 // 기준일 하나와 날짜 차이만으로 정확히 나온다 — 절기·윤달이 필요한 년주·월주와 다르다.
 // LLM 에 맡기면 50회 중 1회 틀렸다(2026-10-16 실측). 매일 바뀌는 값이라 코드로 확정한다.
-const REFERENCE_DATE_UTC = Date.UTC(1900, 0, 1);
+// Date.UTC 는 0~99년을 1900~1999년으로 바꾸므로 날짜는 utcMidnightOf 로 읽는다.
+const REFERENCE_DATE_UTC = utcMidnightOf('1900-01-01').getTime();
 const REFERENCE_CYCLE_INDEX = 10;
 
 const PLAIN_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
@@ -22,12 +23,11 @@ export const dayPillarOf = (plainDate: string): string => {
   if (!matched) {
     throw new Error(`일진 계산 날짜 형식 오류: ${plainDate}`);
   }
-  const [, year, month, day] = matched;
-  // Date.UTC 는 2026-02-30 을 03-02 로 조용히 넘긴다 — 달력 검증으로 다른 날의 일진을 내지 않게 막는다.
+  // Date 는 2026-02-30 을 03-02 로 조용히 넘긴다 — 달력 검증으로 다른 날의 일진을 내지 않게 막는다.
   if (!isCalendarDate(plainDate)) {
     throw new Error(`일진 계산 날짜 오류(달력에 없는 날): ${plainDate}`);
   }
-  const dateUtc = Date.UTC(Number(year), Number(month) - 1, Number(day));
+  const dateUtc = utcMidnightOf(plainDate).getTime();
   const daysFromReference = Math.round(
     (dateUtc - REFERENCE_DATE_UTC) / MILLISECONDS_PER_DAY,
   );

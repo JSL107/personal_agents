@@ -48,6 +48,16 @@ describe('fortuneDateOf', () => {
 });
 
 describe('fortuneMessageOf', () => {
+  // 머리말 날짜는 달력 검증만 하고, 두 자리 연도도 그 날짜 그대로 읽는다(#1020 이대리 리뷰).
+  it('두 자리 연도 머리말도 그 날짜로 읽는다', () => {
+    const header = formatFortuneHeader({
+      todayKst: '0099-11-02',
+      todayPillar: '甲子',
+    });
+
+    expect(fortuneMessageOf(header)?.date).toBe('0099-11-02');
+  });
+
   it.each([
     [
       formatFortuneHeader({ todayKst: '2026-11-16', todayPillar: '甲午' }),
