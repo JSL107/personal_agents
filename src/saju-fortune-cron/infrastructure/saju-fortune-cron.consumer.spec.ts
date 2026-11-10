@@ -7,6 +7,7 @@ import { AgentType } from '../../model-router/domain/model-router.type';
 import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
 import { SlackNotifierPort } from '../../slack/domain/port/slack-notifier.port';
 import { FortuneCardImagePort } from '../domain/port/fortune-card-image.port';
+import { fortuneDateOf } from '../domain/saju-fortune-chat';
 import { SajuFortuneCronJobData } from '../domain/saju-fortune-cron.type';
 import { SajuFortuneCronConsumer } from './saju-fortune-cron.consumer';
 
@@ -127,6 +128,51 @@ describe('SajuFortuneCronConsumer', () => {
 
     expect(route).toHaveBeenCalledTimes(4);
     expect(postMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it('두 번 다 위반이면 위반 종류가 적은 응답을 보낸다', async () => {
+    route
+      .mockResolvedValueOnce({ text: '癸水의 날' })
+      .mockResolvedValueOnce({ text: '편재가 들어온 壬水' })
+      .mockResolvedValueOnce({ text: '편재가 들어온 丙火' })
+      .mockResolvedValueOnce({ text: '癸水가 반짝여' });
+
+    await consumer.process(JOB);
+
+    // 길동: 첫 응답(한자 1종)이 두 번째(한자+용어 2종)보다 적다. 철수: 두 번째가 적다.
+    expect(postMessage.mock.calls[0][0].text).toContain('癸水의 날');
+    expect(postMessage.mock.calls[0][0].text).not.toContain('壬水');
+    expect(postMessage.mock.calls[1][0].text).toContain('癸水가 반짝여');
+  });
+
+  it('위반 종류 수가 같으면 코드가 지울 수 있는 별 위반 쪽을 보낸다', () => {
+    route
+      .mockResolvedValueOnce({ text: '맑은 날이야 ★★★' })
+      .mockResolvedValueOnce({ text: '癸水의 날' })
+      .mockResolvedValue({ text: '좋은 날' });
+
+    return consumer.process(JOB).then(() => {
+      const text: string = postMessage.mock.calls[0][0].text;
+      expect(text).toContain('맑은 날이야');
+      expect(text).not.toContain('癸水');
+    });
+  });
+
+  it('AI 가 쓴 별·행운 숫자는 지우고, 첫 줄 뒤 별점 줄과 끝의 행운 아이템 줄은 코드가 그린다', async () => {
+    route.mockResolvedValue({
+      text: '맑은 날이야\n\n총운 ★★★★★: 좋아\n행운의 숫자: 7',
+    });
+
+    await consumer.process(JOB);
+
+    const text: string = postMessage.mock.calls[0][0].text;
+    const bodyLines = text.split('\n\n').slice(1).join('\n\n').split('\n');
+    expect(bodyLines[0]).toBe('맑은 날이야');
+    expect(bodyLines[1]).toMatch(/^총운 [★☆]{5} · 일·공부 [★☆]{5}/);
+    expect(bodyLines[bodyLines.length - 1]).toMatch(/^🍀 행운 아이템: /);
+    expect(text).not.toContain('행운의 숫자');
+    expect(text).not.toContain('★★★★★: 좋아');
+    expect(fortuneDateOf(text)).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
   it('카드 두 줄은 본문에서 떼어 그림으로 그리고, 그림과 글을 한 메시지로 보낸다', async () => {

@@ -8,10 +8,15 @@ import {
   buildFortuneFollowUpPrompt,
   FortuneChatTurn,
   fortuneDateOf,
-  HANJA_PATTERN,
 } from '../domain/saju-fortune-chat';
 import { parseSajuFortuneRecipients } from '../domain/saju-fortune-cron.type';
+import { findFortuneViolations } from '../domain/saju-fortune-render';
 import { yearMonthPillarsOf } from './year-month-pillar';
+
+const hasHanjaOrTerm = (text: string): boolean =>
+  findFortuneViolations(text).some(
+    (violation) => violation === 'hanja' || violation === 'term',
+  );
 
 export interface AnswerFortuneQuestionInput {
   slackUserId: string;
@@ -60,15 +65,16 @@ export class AnswerFortuneQuestionUsecase {
       priorTurns,
       question,
     });
-    // 한자가 섞이면 한 번만 다시 만든다 — 아침 발송과 같은 기준.
+    // 한자·명리 용어가 섞이면 한 번만 다시 만든다. 별·행운 숫자는 보지 않는다 — 스레드는 아침 메시지의
+    // 별점·아이템을 인용해 답할 수 있어야 한다.
     const first = await this.complete(prompt);
-    if (!HANJA_PATTERN.test(first)) {
+    if (!hasHanjaOrTerm(first)) {
       return first;
     }
     const second = await this.complete(prompt);
-    if (HANJA_PATTERN.test(second)) {
+    if (hasHanjaOrTerm(second)) {
       this.logger.warn(
-        `운세 대화 한자 섞인 응답 — 재생성 후에도 남아 그대로 답함 (${slackUserId})`,
+        `운세 대화 한자·용어 섞인 응답 — 재생성 후에도 남아 그대로 답함 (${slackUserId})`,
       );
     }
     return second;

@@ -55,4 +55,20 @@ describe('AnswerFortuneQuestionUsecase', () => {
     await expect(ask()).resolves.toBe('쇠 기운의 날');
     expect(route).toHaveBeenCalledTimes(2);
   });
+
+  it('명리 용어가 섞여도 한 번 다시 만든다', async () => {
+    route
+      .mockResolvedValueOnce({ text: '편재가 들어온 날' })
+      .mockResolvedValueOnce({ text: '돈이 들어오는 날' });
+
+    await expect(ask()).resolves.toBe('돈이 들어오는 날');
+    expect(route).toHaveBeenCalledTimes(2);
+  });
+
+  it('아침 메시지의 별점을 인용하는 답은 다시 만들지 않는다', async () => {
+    route.mockResolvedValueOnce({ text: '총운 ★★★★☆ 였지' });
+
+    await expect(ask()).resolves.toBe('총운 ★★★★☆ 였지');
+    expect(route).toHaveBeenCalledTimes(1);
+  });
 });
