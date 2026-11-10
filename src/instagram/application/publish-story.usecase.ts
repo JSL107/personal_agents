@@ -64,10 +64,15 @@ export interface PublishStoryInput {
 @Injectable()
 export class PublishStoryUsecase {
   private readonly logger = new Logger(PublishStoryUsecase.name);
-  // 한 실행의 최대 길이(업로드 120초 + 폴링 5분 + Graph 호출 몇 번)보다 길고, 죽은 실행이 다음 슬롯을 막지 않게 15분.
-  leaseSeconds = 900;
+  // 임대가 실행보다 먼저 풀리면 다음 슬롯이 같은 스토리를 동시에 게시할 수 있다. 호출마다 제한 시간을 꽉 채우는
+  // 최악(한도 30 + (생성 30 + 업로드 120)×3 + 재시도 대기 90 + 상태 조회 30×5 + 폴링 대기 60×4 + 게시·마무리 ≈ 17분)
+  // 보다 길게 20분. 죽은 실행은 다음 슬롯 하나만 막는다.
+  leaseSeconds = 1200;
   pollIntervalMs = 60_000;
   maxPolls = 5;
+  // 릴스 applier 와 같은 이유(Meta 업로드 서버의 불규칙한 ProcessingFailedError)로 새 컨테이너로 다시 올린다.
+  // 몰린 장애는 다음 슬롯(15분 뒤)이 다시 시도하므로, 여기서는 임대 안에 끝나는 짧은 간격만 둔다.
+  uploadRetryDelaysMs: readonly number[] = [30_000, 60_000];
 
   constructor(
     @Inject(INSTAGRAM_POST_REPOSITORY_PORT)
@@ -222,6 +227,23 @@ export class PublishStoryUsecase {
     }
     const video = await readApprovedVideo(story);
     await this.checkQuota();
+    const created = await this.uploadToNewContainer({ post, video });
+    return await this.repository.update({
+      id: created.id,
+      patch: { uploadedAt: new Date() },
+    });
+  }
+
+  // 게시 전 단계라 새 컨테이너로 다시 해도 중복 게시 위험이 없다. 토큰 오류처럼 다시 해도 같은 실패는 바로 던진다.
+  private async uploadToNewContainer({
+    post,
+    video,
+    attempt = 1,
+  }: {
+    post: InstagramPost;
+    video: Buffer;
+    attempt?: number;
+  }): Promise<InstagramPost> {
     const container = await this.graph.createStoryContainer();
     const created = await this.repository.update({
       id: post.id,
@@ -232,11 +254,27 @@ export class PublishStoryUsecase {
         publishAttemptedAt: null,
       },
     });
-    await this.graph.uploadVideo({ uploadUri: container.uploadUri, video });
-    return await this.repository.update({
-      id: created.id,
-      patch: { uploadedAt: new Date() },
-    });
+    try {
+      await this.graph.uploadVideo({ uploadUri: container.uploadUri, video });
+      return created;
+    } catch (error) {
+      const retriable =
+        error instanceof InstagramException &&
+        error.errorCode === InstagramErrorCode.GRAPH_REQUEST_FAILED;
+      const delayMs = this.uploadRetryDelaysMs[attempt - 1];
+      if (!retriable || delayMs === undefined) {
+        throw error;
+      }
+      this.logger.warn(
+        `스토리 업로드 실패 ${attempt}회 container=${container.containerId} — ${delayMs / 1000}초 뒤 새 컨테이너로 다시: ${error.message}`,
+      );
+      await this.wait(delayMs);
+      return await this.uploadToNewContainer({
+        post,
+        video,
+        attempt: attempt + 1,
+      });
+    }
   }
 
   // 처리가 끝나면 FINISHED, 이미 게시됐으면 PUBLISHED, 횟수를 다 써도 처리 중이면 IN_PROGRESS.
