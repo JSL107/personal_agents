@@ -20,6 +20,9 @@ export const DEFAULT_WEEKLY_SUMMARY_TIMEZONE = 'Asia/Seoul';
 
 // Impact Report 기본 스케줄 — 기존 src/impact-report-cron/domain/impact-report-cron.type.ts 승계.
 // 매주 토요일 09:00 KST — Weekly Summary(금) / Daily Eval(매일) 과 겹치지 않는 시간대.
+export const DEFAULT_AI_TOOL_WEEKLY_CRON = '30 8 * * 1';
+export const DEFAULT_AI_TOOL_WEEKLY_TIMEZONE = 'Asia/Seoul';
+
 export const DEFAULT_IMPACT_REPORT_CRON = '0 9 * * 6';
 export const DEFAULT_IMPACT_REPORT_TIMEZONE = 'Asia/Seoul';
 

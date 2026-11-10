@@ -2,6 +2,7 @@ import {
   addDaysTo,
   formatKstDate,
   formatKstDateTime,
+  formatKstIsoDateTime,
   getKstDayStartAsUtc,
   getTodayKstDate,
   kstDayStartOf,
@@ -172,5 +173,13 @@ describe('weekdayOf', () => {
 describe('addDaysTo', () => {
   it('연말을 넘긴다', () => {
     expect(addDaysTo('2026-12-28', 6)).toBe('2027-01-03');
+  });
+});
+
+describe('formatKstIsoDateTime', () => {
+  it('UTC 시각을 KST 오프셋 ISO 로 바꾼다', () => {
+    expect(formatKstIsoDateTime(new Date('2026-11-08T15:00:00Z'))).toBe(
+      '2026-11-09T00:00:00+09:00',
+    );
   });
 });
