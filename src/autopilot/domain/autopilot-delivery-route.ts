@@ -28,6 +28,7 @@ export const AUTOPILOT_DELIVERY_ROUTE: Readonly<
   'po-shadow': 'slack',
   'goal-checkin': 'slack',
   'weekly-summary': 'slack',
+  'ai-tool-weekly': 'slack',
   'impact-report': 'slack',
   'run-retro': 'console',
   'cuj-check': 'slack',

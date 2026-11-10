@@ -2,7 +2,7 @@
 
 # 환경변수 카탈로그
 
-SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 200개.
+SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 201개.
 설명은 각 변수 주석의 첫 문장 발췌 — 상세는 app.config.ts 주석 참조. `.env.example` 동기는 `pnpm check:env`.
 
 ## 인프라 (앱 부팅 필수)
@@ -62,6 +62,7 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `AUTOPILOT_INVEST_TARGET` | ❌ | 투자 라인(플레이북 line: 'invest' 10개 항목) 전용 발송 대상. 미설정 시 AUTOPILOT_TARGET. 주식·모의투자 알림만 전용 채널로 뺄 때 쓴다. |
 | `AUTOPILOT_CAREER_TARGET` | ❌ | 커리어 라인(line: 'career' — job-feed, job-feed-gap) 전용 발송 대상. 미설정 시 AUTOPILOT_TARGET. 채용공고 카드만 전용 채널로 뺄 때 쓴다. |
 | `AUTOPILOT_REVIEW_TARGET` | ❌ | 리뷰 라인(line: 'review' — pr-review-sweep) 전용 발송 대상. 미설정 시 AUTOPILOT_TARGET. PR 리뷰 스윕 요약만 전용 채널로 뺄 때 쓴다. |
+| `AUTOPILOT_HARNESS_TARGET` | ❌ | 하네스 라인(line: 'harness' — ai-tool-weekly) 전용 발송 채널. 미설정 시 그 라인은 등록하지 않는다(공통 TARGET 으로 떨어지지 않음). |
 | `AUTOPILOT_PORTFOLIO_PUBLISH_SCHEDULE` | ❌ | 포트폴리오 사이트 발행 슬롯. 워밍업과 마찬가지로 단독 그룹이다. |
 | `AUTOPILOT_PORTFOLIO_PUBLISH_TIMEZONE` | ❌ | — |
 | `AUTOPILOT_PORTFOLIO_WARMUP_SCHEDULE` | ❌ | 포트폴리오 사이트 워밍업 슬롯. 단독 그룹이라 그룹 대표 키가 자기 id 그대로다. |

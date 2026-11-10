@@ -37,7 +37,10 @@ const LINE_TARGET_ENV_KEYS: Record<
   invest: 'AUTOPILOT_INVEST_TARGET',
   career: 'AUTOPILOT_CAREER_TARGET',
   review: 'AUTOPILOT_REVIEW_TARGET',
+  harness: 'AUTOPILOT_HARNESS_TARGET',
 };
+
+const NO_FALLBACK_LINES: ReadonlySet<PlaybookLine> = new Set(['harness']);
 
 const isFixedCronField = (field: string): boolean => {
   const hasSpecialSyntax = /[*\-/,]/.test(field);
@@ -122,6 +125,16 @@ export class AutopilotScheduler implements OnApplicationBootstrap {
         owner,
         target,
       });
+      if (groupTarget === null) {
+        const envKey =
+          LINE_TARGET_ENV_KEYS[
+            primary.line as Exclude<PlaybookLine, 'owner-dm'>
+          ];
+        this.logger.log(
+          `Autopilot 그룹 비활성: ${groupKey} (${envKey} 미설정)`,
+        );
+        continue;
+      }
       this.warnIgnoredScheduleOverrides(groupKey, entries);
       const payload: AutopilotJobData = {
         ownerSlackUserId: owner,
@@ -203,12 +216,23 @@ export class AutopilotScheduler implements OnApplicationBootstrap {
     line: PlaybookLine | undefined;
     owner: string;
     target: string;
-  }): string {
+  }): string | null {
     if (line === 'owner-dm') {
       return owner;
     }
     if (line === undefined) {
       return target;
+    }
+    if (NO_FALLBACK_LINES.has(line)) {
+      const raw = this.configService.get<string>(LINE_TARGET_ENV_KEYS[line]);
+      const targets = (raw ?? '')
+        .split(',')
+        .map((segment) => segment.trim())
+        .filter(Boolean);
+      if (targets.length === 0) {
+        return null;
+      }
+      return targets.join(',');
     }
     return this.readTarget(LINE_TARGET_ENV_KEYS[line], target);
   }

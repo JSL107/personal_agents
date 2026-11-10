@@ -66,7 +66,8 @@
     "subconscious:calibrate": "node --env-file-if-exists=.env -r ts-node/register/transpile-only scripts/subconscious-calibrate.ts",
     "kev:start": "bash scripts/kev.sh start",
     "kev:stop": "bash scripts/kev.sh stop",
-    "kev:status": "bash scripts/kev.sh status"
+    "kev:status": "bash scripts/kev.sh status",
+    "ai-weekly:dry-run": "ts-node scripts/ai-tool-weekly-dry-run.ts"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.3.1",

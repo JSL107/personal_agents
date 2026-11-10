@@ -2,6 +2,16 @@ import { AUTOPILOT_PLAYBOOK, validatePlaybook } from './autopilot.playbook';
 import { PlaybookEntry } from './playbook.type';
 
 describe('AUTOPILOT_PLAYBOOK', () => {
+  it('AI 도구 점검은 월요일 하네스 라인으로 등록한다', () => {
+    expect(
+      AUTOPILOT_PLAYBOOK.find((entry) => entry.id === 'ai-tool-weekly'),
+    ).toMatchObject({
+      taskId: 'ai-tool-weekly',
+      line: 'harness',
+      trigger: { kind: 'CRON', schedule: '30 8 * * 1', timezone: 'Asia/Seoul' },
+    });
+  });
+
   it('수집 그룹은 Notion을 선두로 두고 평일 30분 주기로 돈다', () => {
     const entries = AUTOPILOT_PLAYBOOK.filter(
       (entry) => entry.digestGroup === 'schedule-collect',

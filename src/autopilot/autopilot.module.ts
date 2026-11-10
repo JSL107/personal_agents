@@ -21,6 +21,7 @@ import { WorkReviewerModule } from '../agent/work-reviewer/work-reviewer.module'
 import { AgentRunModule } from '../agent-run/agent-run.module';
 import { AgentRunService } from '../agent-run/application/agent-run.service';
 import { AiCliEnvModule } from '../ai-cli-env/ai-cli-env.module';
+import { AiToolWeeklyModule } from '../ai-tool-weekly/ai-tool-weekly.module';
 import { SystemWakeGuard } from '../common/system/system-wake-guard.service';
 import { DocsAuditModule } from '../docs-audit/docs-audit.module';
 import { EpisodicMemoryModule } from '../episodic-memory/episodic-memory.module';
@@ -66,6 +67,7 @@ import { PrismaAutopilotTaskTraceRepository } from './infrastructure/prisma-auto
 import { PrismaDailyDigestRepository } from './infrastructure/prisma-daily-digest.repository';
 import { AiCliEnvApplyAutopilotTask } from './infrastructure/tasks/ai-cli-env-apply.autopilot-task';
 import { AiCliEnvSnapshotAutopilotTask } from './infrastructure/tasks/ai-cli-env-snapshot.autopilot-task';
+import { AiToolWeeklyAutopilotTask } from './infrastructure/tasks/ai-tool-weekly.autopilot-task';
 import { BlogGithubPublishAutopilotTask } from './infrastructure/tasks/blog-github-publish.autopilot-task';
 import { BlogRevisionReportAutopilotTask } from './infrastructure/tasks/blog-revision-report.autopilot-task';
 import { CujCheckAutopilotTask } from './infrastructure/tasks/cuj-check.autopilot-task';
@@ -126,6 +128,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
   imports: [
     BullModule.registerQueue({ name: AUTOPILOT_CRON_QUEUE }),
     GithubModule,
+    AiToolWeeklyModule,
     BlogModule,
     HumanizeResearchModule,
     CareerMateModule,
@@ -188,6 +191,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     WorkReviewerAutopilotTask,
     WeeklySummaryAutopilotTask,
     ImpactReportAutopilotTask,
+    AiToolWeeklyAutopilotTask,
     CujCheckAutopilotTask,
     CujLedgerPrismaReader,
     { provide: CUJ_LEDGER_READER_PORT, useExisting: CujLedgerPrismaReader },
@@ -304,6 +308,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         workReviewer: WorkReviewerAutopilotTask,
         weeklySummary: WeeklySummaryAutopilotTask,
         impactReport: ImpactReportAutopilotTask,
+        aiToolWeekly: AiToolWeeklyAutopilotTask,
         cujCheck: CujCheckAutopilotTask,
         runRetro: RunRetroAutopilotTask,
         runSweeper: RunSweeperAutopilotTask,
@@ -357,6 +362,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         workReviewer,
         weeklySummary,
         impactReport,
+        aiToolWeekly,
         cujCheck,
         runRetro,
         runSweeper,
@@ -411,6 +417,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         WorkReviewerAutopilotTask,
         WeeklySummaryAutopilotTask,
         ImpactReportAutopilotTask,
+        AiToolWeeklyAutopilotTask,
         CujCheckAutopilotTask,
         RunRetroAutopilotTask,
         RunSweeperAutopilotTask,
