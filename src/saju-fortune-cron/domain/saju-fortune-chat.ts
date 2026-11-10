@@ -1,3 +1,4 @@
+import { isCalendarDate } from '../../common/util/kst-date.util';
 import { pillarToHangul } from './day-pillar';
 import {
   analyzeSajuDay,
@@ -32,10 +33,13 @@ const headerOf = ({
 }): string =>
   `🔮 *${FORTUNE_TITLES[kind]} — ${todayKst} (${pillarToHangul(todayPillar)}일)*`;
 
-export const formatFortuneHeader = (
-  todayKst: string,
-  todayPillar: string,
-): string =>
+export const formatFortuneHeader = ({
+  todayKst,
+  todayPillar,
+}: {
+  todayKst: string;
+  todayPillar: string;
+}): string =>
   headerOf({ kind: FortuneMessageKind.DAILY, todayKst, todayPillar });
 
 // 일일 운세 뒤에 가는 추가 메시지(월요일 주간·특별한 날)의 첫 줄.
@@ -76,12 +80,8 @@ export const fortuneMessageOf = (
   const kind = Object.values(FortuneMessageKind).find(
     (candidate) => FORTUNE_TITLES[candidate] === title,
   );
-  const calendarDate = new Date(
-    Date.UTC(Number(year), Number(month) - 1, Number(day)),
-  );
   const date = `${year}-${month}-${day}`;
-  const isRealDate = calendarDate.toISOString().slice(0, 10) === date;
-  if (!kind || !isRealDate) {
+  if (!kind || !isCalendarDate(date)) {
     return undefined;
   }
   return { date, kind };
@@ -115,10 +115,12 @@ export interface FortuneFollowUpPromptInput {
 }
 
 // 미션은 아침 일일 운세에만 있다. 원문에 있으면 그것이 정답, 없으면(주간·특집) 지어내지 않고 일일 스레드로 안내한다.
-const missionRuleOf = (originalFortune: string): string =>
-  originalFortune.includes(MISSION_LABEL)
-    ? '- 오늘의 미션은 아침 메시지의 "오늘의 미션:" 줄이 정답이다. 새 미션을 지어내지 않는다.'
-    : '- 이 메시지에는 오늘의 미션이 없다. 미션을 물으면 아침 운세 메시지의 스레드에서 물어 달라고 짧게 답한다.';
+const missionRuleOf = (originalFortune: string): string => {
+  if (originalFortune.includes(MISSION_LABEL)) {
+    return '- 오늘의 미션은 아침 메시지의 "오늘의 미션:" 줄이 정답이다. 새 미션을 지어내지 않는다.';
+  }
+  return '- 이 메시지에는 오늘의 미션이 없다. 미션을 물으면 아침 운세 메시지의 스레드에서 물어 달라고 짧게 답한다.';
+};
 
 // 스레드 앞 대화는 최근 것만 싣는다 — 길어지면 아침 운세·사실이 프롬프트에서 묻힌다.
 const MAXIMUM_PRIOR_TURNS = 10;
@@ -135,13 +137,12 @@ export const buildFortuneFollowUpPrompt = ({
   priorTurns,
   question,
 }: FortuneFollowUpPromptInput): string => {
-  const turns = priorTurns
-    .slice(-MAXIMUM_PRIOR_TURNS)
-    .map(
-      ({ role, text }) =>
-        `${role === 'user' ? recipient.name : '너'}: ${text.trim()}`,
-    );
-  return [
+  const turns = priorTurns.slice(-MAXIMUM_PRIOR_TURNS).map(({ role, text }) => {
+    const speaker = role === 'user' ? recipient.name : '너';
+    const turnLine = `${speaker}: ${text.trim()}`;
+    return turnLine;
+  });
+  const prompt = [
     '너는 아침에 보낸 운세를 두고 친한 사람과 이어서 이야기하는 역할이다. 받는 사람은 사주를 전혀 모른다.',
     '',
     `- 받는 사람: ${recipient.name}`,
@@ -150,7 +151,11 @@ export const buildFortuneFollowUpPrompt = ({
     '',
     '계산된 사실 (코드가 확정한 값이다. 이것만 근거로 써라):',
     ...formatSajuFacts(
-      analyzeSajuDay(recipient.natalPillars, fortunePillar, yearMonthPillars),
+      analyzeSajuDay({
+        natalPillars: recipient.natalPillars,
+        todayPillar: fortunePillar,
+        yearMonthPillars,
+      }),
     ),
     ...specialFacts,
     ...weeklyFacts,
@@ -173,4 +178,5 @@ export const buildFortuneFollowUpPrompt = ({
     '- 반말로 다정하게 쓴다. 사고·질병·금전 손실을 단정하거나 겁주는 말은 쓰지 않는다. 건강이 걱정되는 질문이면 필요할 때 전문가에게 확인해 보라고 덧붙인다.',
     '- 평문으로 쓴다. 제목·표·코드블록은 쓰지 않는다.',
   ].join('\n');
+  return prompt;
 };

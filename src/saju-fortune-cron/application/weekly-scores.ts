@@ -13,11 +13,11 @@ export const weeklyScoresOf = ({
   mondayKst: string;
 }): DailyScores[] => {
   const week = weekDatesFrom(mondayKst).map((date, index) => {
-    const { scores } = analyzeSajuDay(
+    const { scores } = analyzeSajuDay({
       natalPillars,
-      dayPillarOf(date),
-      yearMonthPillarsOf(date),
-    );
+      todayPillar: dayPillarOf(date),
+      yearMonthPillars: yearMonthPillarsOf(date),
+    });
     const day: DailyScores = { date, weekday: WEEKDAYS[index], scores };
     return day;
   });

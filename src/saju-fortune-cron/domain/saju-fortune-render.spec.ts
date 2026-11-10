@@ -14,7 +14,10 @@ const MISSION = {
   key: 'work-earth-1',
   text: '책상 위 물건 세 개만 제자리에 두기',
 };
-const ANALYSIS = analyzeSajuDay(['丙子', '辛丑', '己酉', '己巳'], '庚午');
+const ANALYSIS = analyzeSajuDay({
+  natalPillars: ['丙子', '辛丑', '己酉', '己巳'],
+  todayPillar: '庚午',
+});
 
 describe('findFortuneViolations', () => {
   it('일상어와 오행 이름은 걸지 않는다', () => {

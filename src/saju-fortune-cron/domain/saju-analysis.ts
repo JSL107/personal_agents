@@ -408,10 +408,13 @@ const strengthOf = (stage: TwelveStage): FortuneStrength => {
   return WEAK_STAGES.has(stage) ? '약' : '보통';
 };
 
-const branchRelationOf = (
-  todayBranch: string,
-  natalBranch: string,
-): BranchRelationKind | null => {
+const branchRelationOf = ({
+  todayBranch,
+  natalBranch,
+}: {
+  todayBranch: string;
+  natalBranch: string;
+}): BranchRelationKind | null => {
   const today = EARTHLY_BRANCHES.indexOf(todayBranch);
   const natal = EARTHLY_BRANCHES.indexOf(natalBranch);
   if (Math.abs(today - natal) === CLASH_DISTANCE) {
@@ -424,13 +427,19 @@ const branchRelationOf = (
   return null;
 };
 
+export interface AnalyzeSajuDayInput {
+  natalPillars: string[];
+  todayPillar: string;
+  yearMonthPillars?: YearMonthPillars;
+}
+
 // natalPillars: 년·월·일(·시) 순 — 파서가 60갑자 형식을 이미 검사했다.
 // period 를 빼면 올해·이번 달 흐름 사실이 빠진다 — 날짜 없이 기둥만 보는 단위 테스트용이다.
-export const analyzeSajuDay = (
-  natalPillars: string[],
-  todayPillar: string,
-  period?: YearMonthPillars,
-): SajuDayAnalysis => {
+export const analyzeSajuDay = ({
+  natalPillars,
+  todayPillar,
+  yearMonthPillars: period,
+}: AnalyzeSajuDayInput): SajuDayAnalysis => {
   const dayMaster = stemInfoOf(natalPillars[2][0]);
 
   const elementUnits: Record<FiveElement, number> = {
@@ -450,7 +459,10 @@ export const analyzeSajuDay = (
   const todayStem = stemInfoOf(todayPillar[0]);
   const todayBranch = branchInfoOf(todayPillar[1]);
   const branchRelations = natalPillars.flatMap((pillar, index) => {
-    const kind = branchRelationOf(todayPillar[1], pillar[1]);
+    const kind = branchRelationOf({
+      todayBranch: todayPillar[1],
+      natalBranch: pillar[1],
+    });
     if (!kind) {
       return [];
     }
@@ -461,17 +473,26 @@ export const analyzeSajuDay = (
     ...info,
     tenGod: tenGodOf({ dayMaster, other: info }),
   });
-  const flowOf = (label: string, unit: string, pillar: string): PeriodFlow => ({
+  const flowOf = ({
+    label,
+    unit,
+    pillar,
+  }: {
+    label: string;
+    unit: string;
+    pillar: string;
+  }): PeriodFlow => ({
     title: `${label}(${pillarToHangul(pillar)}${unit})`,
     stem: withTenGod(stemInfoOf(pillar[0])),
     branch: withTenGod(branchInfoOf(pillar[1])),
   });
-  const periodFlows = period
-    ? [
-        flowOf('올해', '년', period.yearPillar),
-        flowOf('이번 달', '월', period.monthPillar),
-      ]
-    : [];
+  const periodFlows: PeriodFlow[] = [];
+  if (period) {
+    periodFlows.push(
+      flowOf({ label: '올해', unit: '년', pillar: period.yearPillar }),
+      flowOf({ label: '이번 달', unit: '월', pillar: period.monthPillar }),
+    );
+  }
 
   const stage = twelveStageOf({
     dayStem: natalPillars[2][0],
@@ -542,9 +563,11 @@ export const formatSajuFacts = (analysis: SajuDayAnalysis): string[] => {
     (element) => elementUnits[element] === maximum,
   );
 
+  const missingNote =
+    missing.length > 0 ? `, 없는 기운: ${missing.join('·')}` : '';
   const facts = [
     `- 타고난 중심 기운(일간): ${dayMaster.element}(${yinYangOf(dayMaster)})`,
-    `- 타고난 오행 분포: ${distribution} — 가장 많은 기운: ${abundant.join('·')}${missing.length > 0 ? `, 없는 기운: ${missing.join('·')}` : ''}`,
+    `- 타고난 오행 분포: ${distribution} — 가장 많은 기운: ${abundant.join('·')}${missingNote}`,
     `- 오늘 천간의 기운: ${todayStem.element}(${yinYangOf(todayStem)}) → 받는 사람에게 ${TEN_GOD_MEANINGS[todayStem.tenGod]}`,
     `- 오늘 지지의 기운: ${todayBranch.element}(${yinYangOf(todayBranch)}) → 받는 사람에게 ${TEN_GOD_MEANINGS[todayBranch.tenGod]}`,
     ...analysis.periodFlows.map(

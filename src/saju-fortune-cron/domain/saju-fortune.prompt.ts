@@ -63,7 +63,7 @@ export const buildSajuFortunePrompt = ({
       ? ' (태어난 시각을 몰라 시주는 없다. 시주를 추측하지 마라.)'
       : '';
 
-  return [
+  const prompt = [
     '너는 사주를 전혀 모르는 친한 사람에게 매일 아침 그날의 운세를 풀어서 보내 주는 역할이다.',
     '',
     `- 받는 사람: ${recipient.name}`,
@@ -73,7 +73,11 @@ export const buildSajuFortunePrompt = ({
     '',
     '계산된 사실 (코드가 확정한 값이다. 다시 계산하지 말고 이것만 근거로 써라):',
     ...formatSajuFacts(
-      analyzeSajuDay(recipient.natalPillars, todayPillar, yearMonthPillars),
+      analyzeSajuDay({
+        natalPillars: recipient.natalPillars,
+        todayPillar,
+        yearMonthPillars,
+      }),
     ),
     '',
     '작성 형식 (이 순서 그대로, 운세 본문은 12줄 이내):',
@@ -98,4 +102,5 @@ export const buildSajuFortunePrompt = ({
     '- 평문으로 쓴다. 제목·표·코드블록은 쓰지 않고, 이모지는 줄 머리에 하나까지만 쓴다. 🍀 이모지는 쓰지 않는다.',
     "- '미션'이라는 말과 🎯 이모지는 쓰지 않는다(코드가 따로 붙인다).",
   ].join('\n');
+  return prompt;
 };

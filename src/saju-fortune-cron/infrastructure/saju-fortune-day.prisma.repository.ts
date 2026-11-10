@@ -28,8 +28,11 @@ const fortuneDateIn = ({ from, until }: DatePeriod) => ({
   lt: utcMidnightOf(until),
 });
 
-const missionResultOf = (value: string | null): MissionResult | undefined =>
-  Object.values(MissionResult).find((result) => result === value);
+const missionResultOf = (value: string | null): MissionResult | undefined => {
+  const results = Object.values(MissionResult);
+  const found = results.find((result) => result === value);
+  return found;
+};
 
 @Injectable()
 export class SajuFortuneDayPrismaRepository implements SajuFortuneDayRepositoryPort {

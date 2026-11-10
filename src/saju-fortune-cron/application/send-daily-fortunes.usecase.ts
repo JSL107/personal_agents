@@ -28,9 +28,10 @@ const failureMessageOf = ({
   failedExtras,
   total,
 }: FailureCounts): string => {
+  const failedList = failedNames.join(', ');
   const dailyPart =
     failedNames.length > 0
-      ? `사주 운세 발송 실패 ${failedNames.length}/${total}명: ${failedNames.join(', ')}`
+      ? `사주 운세 발송 실패 ${failedNames.length}/${total}명: ${failedList}`
       : '사주 운세';
   const extraPart =
     failedExtras.length > 0 ? ` / 추가 실패: ${failedExtras.join(', ')}` : '';
