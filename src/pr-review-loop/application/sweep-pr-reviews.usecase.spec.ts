@@ -611,28 +611,10 @@ describe('SweepPrReviewsUsecase', () => {
     expect(results).toEqual([]);
   });
 
-  it('변경량 초과로 실패했어도 그 뒤 PR 이 갱신됐으면 한 번 더 리뷰한다 — 한도 아래로 줄었을 수 있다', async () => {
+  it('변경량 초과로 실패한 PR 은 그 뒤 갱신돼도 다시 리뷰하지 않는다', async () => {
+    // push 마다 한 번씩 열어 주면 거대 PR 하나가 같은 실패를 계속 쌓는다(실측 #52, 10건 이상).
     github.listOpenPullRequestRefs.mockResolvedValue([
       { ...OPEN_PR, updatedAt: minutesAgo(5).toISOString() },
-    ]);
-    agentRunService.findLatestSweepReview.mockResolvedValue({
-      status: 'FAILED',
-      startedAt: minutesAgo(15),
-      dryRun: false,
-      isDraft: false,
-      errorCode: 'CODE_REVIEWER_DIFF_TOO_LARGE',
-    });
-
-    const { results } = await buildUsecase(ENABLED).execute();
-
-    expect(reviewUsecase.execute).toHaveBeenCalledTimes(1);
-    expect(results).toHaveLength(1);
-  });
-
-  it('갱신 시각을 읽을 수 없으면 갱신되지 않은 것으로 보고 차단을 유지한다', async () => {
-    // 모를 때 재시도 쪽으로 열어두면 막으려던 무한 반복이 그대로 되돌아온다.
-    github.listOpenPullRequestRefs.mockResolvedValue([
-      { ...OPEN_PR, updatedAt: '' },
     ]);
     agentRunService.findLatestSweepReview.mockResolvedValue({
       status: 'FAILED',

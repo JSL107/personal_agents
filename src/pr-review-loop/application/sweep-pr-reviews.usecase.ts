@@ -203,7 +203,6 @@ export class SweepPrReviewsUsecase implements OnApplicationBootstrap {
       const decision = await this.decideSweepAction({
         prRef,
         isDraft: pullRequest.isDraft,
-        updatedAt: pullRequest.updatedAt,
       });
       if (decision === 'SKIP') {
         continue;
@@ -332,11 +331,9 @@ export class SweepPrReviewsUsecase implements OnApplicationBootstrap {
   private async decideSweepAction({
     prRef,
     isDraft,
-    updatedAt,
   }: {
     prRef: string;
     isDraft: boolean;
-    updatedAt: string;
   }): Promise<SweepDecision> {
     let latest: LatestSweepReview | null;
     try {
@@ -354,7 +351,6 @@ export class SweepPrReviewsUsecase implements OnApplicationBootstrap {
       latest,
       currentDryRun: this.isDryRun(),
       currentIsDraft: isDraft,
-      currentUpdatedAt: updatedAt,
     });
     if (
       decision === 'REVIEW' &&
@@ -370,14 +366,10 @@ export class SweepPrReviewsUsecase implements OnApplicationBootstrap {
     latest,
     currentDryRun,
     currentIsDraft,
-    currentUpdatedAt,
   }: {
     latest: LatestSweepReview | null;
     currentDryRun: boolean;
     currentIsDraft: boolean;
-    // 검색 결과에 실려 온 PR 갱신 시각(OpenPullRequestRef.updatedAt). 상세를 조회하기 전에
-    // 판정이 끝나야 하므로 isDraft 와 같은 자리에서 온 값을 쓴다.
-    currentUpdatedAt: string;
   }): SweepDecision {
     if (latest === null) {
       return 'REVIEW';
@@ -405,21 +397,11 @@ export class SweepPrReviewsUsecase implements OnApplicationBootstrap {
     // 윈도우가 롤링이라 오늘의 3건이 내일 3건의 허가증이 된다(실측 2026-09-17~23, PR 하나가
     // 매일 03시대에 3건씩 21회, 전부 같은 사유).
     //
-    // 단, 차단은 "입력이 그대로일 때" 로 한정한다. 실패 이후 PR 이 갱신됐다면 변경량이 한도
-    // 아래로 줄었을 수 있어 결과가 같다고 단정할 수 없다. 갱신 시각은 검색 결과에 이미 실려
-    // 오므로(OpenPullRequestRef.updatedAt) 이 확인에 추가 조회가 들지 않는다 — 여기서 PR
-    // 상세를 새로 조회하면 이 변경이 없애려던 회차당 호출이 그대로 되살아난다.
-    //
-    // 갱신 뒤에도 여전히 한도를 넘으면 그 실패가 최신 기록이 되어 다시 차단되므로, 반복은
-    // "PR 갱신당 1회" 로 수렴한다. 갱신 시각을 읽을 수 없으면(빈 값·깨진 형식) 갱신되지 않은
-    // 것으로 보고 차단한다 — 모를 때 재시도 쪽으로 열어두면 막으려던 무한 반복이 되돌아온다.
-    const updatedAtMs = new Date(currentUpdatedAt).getTime();
-    const updatedAfterFailure =
-      Number.isFinite(updatedAtMs) && updatedAtMs > latest.startedAt.getTime();
-    if (
-      latest.errorCode === CodeReviewerErrorCode.DIFF_TOO_LARGE &&
-      !updatedAfterFailure
-    ) {
+    // PR 이 갱신돼도 다시 열지 않는다. 한때 "갱신 뒤 한 번 더" 를 허용했지만, 한도를 몇 배
+    // 넘는 PR 이 갱신 사이에 한도 아래로 줄어드는 일은 없었고 push 마다 같은 실패만 쌓였다
+    // (실측 2026-11-04~10, sbe-api-v5-puppeteer#52 76012줄 — 10건 이상 전부 같은 사유).
+    // 차단은 SWEEP_REVIEW_LOOKBACK_DAYS 가 지나 실패 기록이 판정 창 밖으로 나가면 풀린다.
+    if (latest.errorCode === CodeReviewerErrorCode.DIFF_TOO_LARGE) {
       return 'SKIP';
     }
     const cooldownMs = SWEEP_RETRY_COOLDOWN_MINUTES * 60 * 1000;
