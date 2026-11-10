@@ -91,3 +91,39 @@ describe('composeExtraBody', () => {
     );
   });
 });
+
+describe('composeExtraBody — 주간 항목 라벨', () => {
+  it('주간 글의 항목 라벨을 굵게 한다', () => {
+    const body = composeExtraBody({
+      sections: [
+        '이번 주는 차분해.\n총운: 월요일이 좋아.\n돈 : 화요일엔 아껴 봐.',
+      ],
+      specialLines: [],
+      weeklyStarLine: '월 ★★★☆☆',
+      maximum: 1_500,
+    });
+
+    expect(body).toBe(
+      '월 ★★★☆☆\n이번 주는 차분해.\n*총운:* 월요일이 좋아.\n*돈:* 화요일엔 아껴 봐.',
+    );
+  });
+});
+
+describe('composeExtraBody — 라벨 굵게와 길이 상한', () => {
+  it('라벨이 많은 긴 주간 글도 굵게 표시를 더한 뒤 상한 안에 든다', () => {
+    const labels = ['총운', '일·공부', '사람 관계', '돈', '컨디션'];
+    const section = Array.from(
+      { length: 40 },
+      (_, index) => `${labels[index % labels.length]}: ${'가'.repeat(30)}`,
+    ).join('\n');
+    const body = composeExtraBody({
+      sections: [section],
+      specialLines: [],
+      weeklyStarLine: '월 ★★★☆☆',
+      maximum: 1_500,
+    });
+
+    expect(body.length).toBeLessThanOrEqual(1_500);
+    expect(body).toContain('*총운:* ');
+  });
+});
