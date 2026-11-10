@@ -22,6 +22,7 @@ COMPANY_REMOTE = re.compile(r'github\.com[^/:]*[:/]schoolbell-e/', re.I)
 NAME = re.compile(r'^[A-Za-z0-9:_.-]{1,80}$')
 MODEL = re.compile(r'^[A-Za-z0-9:_.\[\]-]{1,80}$')
 SCOPES = ('company', 'personal', 'unknown')
+GIT_LOCATION_ENV = ('GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_COMMON_DIR', 'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_PREFIX')
 
 class BadArgs(Exception):
     pass
@@ -43,6 +44,8 @@ def empty_scope():
     return {'tokens': {}, 'reverts': 0, 'verify': {'total': 0, 'piped': 0}, 'clarify': {'humanTurns': 0, 'matched': 0}}
 
 def invoke(command, timeout=10, env=None, raise_timeout=False):
+    # git 훅 안에서 돌면 GIT_DIR 등이 상속돼 -C 대상 대신 훅을 부른 레포를 읽고 쓴다.
+    env = {key: value for key, value in (os.environ if env is None else env).items() if key not in GIT_LOCATION_ENV}
     try:
         result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=timeout, env=env, check=True)
         return result.stdout.decode('utf-8', errors='replace')
