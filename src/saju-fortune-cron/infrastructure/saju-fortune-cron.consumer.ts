@@ -22,7 +22,7 @@ import {
   FORTUNE_CARD_IMAGE_PORT,
   FortuneCardImagePort,
 } from '../domain/port/fortune-card-image.port';
-import { YearMonthPillars } from '../domain/saju-analysis';
+import { analyzeSajuDay, YearMonthPillars } from '../domain/saju-analysis';
 import { buildSajuFortunePrompt } from '../domain/saju-fortune.prompt';
 import {
   buildFortuneCardImagePrompt,
@@ -30,20 +30,21 @@ import {
   ParsedFortune,
   parseFortuneResponse,
 } from '../domain/saju-fortune-card';
-import {
-  formatFortuneHeader,
-  HANJA_PATTERN,
-} from '../domain/saju-fortune-chat';
+import { formatFortuneHeader } from '../domain/saju-fortune-chat';
 import {
   parseSajuFortuneRecipients,
   SAJU_FORTUNE_CRON_QUEUE,
   SajuFortuneCronJobData,
   SajuFortuneRecipient,
 } from '../domain/saju-fortune-cron.type';
+import {
+  composeFortuneBody,
+  findFortuneViolations,
+} from '../domain/saju-fortune-render';
 
 // 발송 idempotency TTL — 25h. 다음 날 같은 시각 발사 전 만료되도록 하루보다 약간 길게.
 const SENT_GUARD_TTL_SECONDS = 90_000;
-// 12줄 지시를 어긴 장문이 DM 을 덮지 않게 자른다. 카드 두 줄을 뗀 본문 기준.
+// 12줄 지시를 어긴 장문이 DM 을 덮지 않게 자른다. 카드 두 줄을 떼고 별점·아이템 줄을 붙인 본문 기준.
 const MAXIMUM_FORTUNE_LENGTH = 1_500;
 const INCIDENT_KEY = cronIncidentKey('Saju Fortune Cron');
 
@@ -157,7 +158,13 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
     if (!firstRun) {
       return;
     }
-    const text = `${formatFortuneHeader(todayKst, todayPillar)}\n\n${escapeSlackMrkdwn(fortune.body)}`;
+    // 별점·행운 아이템은 프롬프트와 같은 입력으로 다시 계산해 코드가 그린다(같은 입력 → 같은 값).
+    const body = composeFortuneBody(
+      fortune.body,
+      analyzeSajuDay(recipient.natalPillars, todayPillar, yearMonthPillars),
+      MAXIMUM_FORTUNE_LENGTH,
+    );
+    const text = `${formatFortuneHeader(todayKst, todayPillar)}\n\n${escapeSlackMrkdwn(body)}`;
     try {
       await this.postFortune({ recipient, text, card });
     } catch (error) {
@@ -199,22 +206,29 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
     }
   }
 
-  // 한자 금지는 프롬프트 지시라 코드가 다시 본다. 섞였으면 한 번만 다시 만들고, 그래도 섞이면
-  // 경고만 남기고 그대로 보낸다 — 그날 운세가 아예 안 가는 것보다 한자 몇 자가 낫다.
+  // 한자·명리 용어·AI 가 쓴 별·행운 숫자는 프롬프트 지시라 코드가 다시 본다. 걸리면 한 번만 다시 만들고,
+  // 둘 다 걸리면 위반 종류가 적은 쪽(같으면 두 번째)을 보낸다 — 그날 운세가 아예 안 가는 것보다 낫다.
+  // 별·행운 숫자는 composeFortuneBody 가 마지막에 걷어 낸다. 본문과 카드는 같은 응답의 것을 함께 쓴다.
   private async generateFortune(
     input: DeliverFortuneInput,
   ): Promise<ParsedFortune> {
     const first = await this.requestFortune(input);
-    if (!HANJA_PATTERN.test(first.body)) {
+    const firstViolations = findFortuneViolations(first.body);
+    if (firstViolations.length === 0) {
       return first;
     }
     const second = await this.requestFortune(input);
-    if (HANJA_PATTERN.test(second.body)) {
+    const secondViolations = findFortuneViolations(second.body);
+    const [chosen, remaining] =
+      secondViolations.length <= firstViolations.length
+        ? [second, secondViolations]
+        : [first, firstViolations];
+    if (remaining.length > 0) {
       this.logger.warn(
-        `Saju Fortune 한자 섞인 응답 — 재생성 후에도 남아 그대로 발송 (${input.recipient.slackUserId})`,
+        `Saju Fortune 위반 응답(${remaining.join(',')}) — 재생성 후에도 남아 그대로 발송 (${input.recipient.slackUserId})`,
       );
     }
-    return second;
+    return chosen;
   }
 
   private async requestFortune(
@@ -225,12 +239,12 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
       request: { prompt: buildSajuFortunePrompt(input) },
       noContractPreamble: true,
     });
+    // 길이 자르기는 그린 줄 몫을 뺀 예산으로 composeFortuneBody 가 줄 단위로 한다.
     const parsed = parseFortuneResponse(completion.text);
-    const body = parsed.body.slice(0, MAXIMUM_FORTUNE_LENGTH);
-    if (body.length === 0) {
+    if (parsed.body.length === 0) {
       throw new Error('운세 응답이 비어 있음');
     }
-    return { ...parsed, body };
+    return parsed;
   }
 
   // 카드 그림은 덤이다 — 생성·업로드가 실패하면 경고만 남기고 글만 보낸다.

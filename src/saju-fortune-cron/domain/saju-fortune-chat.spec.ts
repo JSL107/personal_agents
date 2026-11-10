@@ -58,7 +58,11 @@ describe('buildFortuneFollowUpPrompt', () => {
     const prompt = buildFortuneFollowUpPrompt({ ...base, priorTurns: [] });
 
     expect(prompt).toContain('그날 일진: 경진일');
-    expect(prompt).toContain('- 행운의 색:');
+    expect(prompt).toContain('- 타고난 오행 분포:');
+    expect(prompt).toContain('- 오늘의 행운 기운:');
+    expect(prompt).toContain(
+      '아침 메시지에 없는 별점이나 숫자를 새로 지어내지 않는다',
+    );
     expect(prompt).toContain('- 이번 달(무술월)의 흐름:');
     expect(prompt).toContain('총운: 좋아');
     expect(prompt).toContain('길동의 질문: 저녁엔 뭐 하면 좋아?');
