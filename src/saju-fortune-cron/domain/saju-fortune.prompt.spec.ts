@@ -56,23 +56,28 @@ describe('buildSajuFortunePrompt', () => {
     expect(prompt).toContain('기운을 타고났어")로 시작하지 않는다');
   });
 
-  it('다섯 항목과 행운 포인트를 요구한다', () => {
+  it('다섯 항목과 오늘의 한 마디를 요구한다', () => {
     for (const label of [
       '"총운:"',
       '"일·공부:"',
       '"사람 관계:"',
       '"돈:"',
       '"컨디션:"',
-      '"행운 포인트:"',
+      '"오늘의 한 마디:"',
     ]) {
       expect(prompt).toContain(label);
     }
   });
 
-  it('행운 포인트는 오늘의 행운 기운을 살린 행동만 쓰게 한다', () => {
-    expect(prompt).toContain('(오늘의 행운 기운을 살린 작은 행동 하나)');
+  // 오늘의 미션(코드가 고르고 그린다)이 행운 포인트 자리를 대신한다 — 두 줄이 같은 권유를 겹쳐 하지 않게.
+  it('행운 포인트를 요구하지 않는다', () => {
+    expect(prompt).not.toContain('행운 포인트');
     expect(prompt).not.toContain('계산된 행운의 색');
     expect(prompt).toContain('- 오늘의 행운 기운:');
+  });
+
+  it("'미션' 이라는 말과 🎯 를 쓰지 말라고 한다", () => {
+    expect(prompt).toContain("'미션'이라는 말과 🎯 이모지는 쓰지 않는다");
   });
 
   it('조심할 날 항목엔 대처를, 별점·숫자·🍀 는 쓰지 않게 한다', () => {

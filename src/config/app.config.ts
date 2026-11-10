@@ -832,6 +832,12 @@ export class EnvironmentVariables {
   @IsString()
   SAJU_FORTUNE_CRON?: string;
 
+  // - SAJU_MISSION_CHECK_CRON: 저녁 미션 확인 DM 의 BullMQ cron (default 매일 21:00 — `0 21 * * *`, KST).
+  //   아침 운세의 "오늘의 미션"을 했는지 버튼으로 묻는다. `off` 면 저녁 확인을 끈다.
+  @IsOptional()
+  @IsString()
+  SAJU_MISSION_CHECK_CRON?: string;
+
   // ====== 게임잡 원화 공고 피드 — 하루 2회 채널 게시 ======
   // 2D 캐릭터 원화·컨셉 공고를 채점 없이 전부 보낸다. 남에게 가는 발송이라 기본은 꺼짐.
   // - ART_JOB_FEED_TARGET: 게시 채널(`C...`). 미설정 시 모듈 비활성.

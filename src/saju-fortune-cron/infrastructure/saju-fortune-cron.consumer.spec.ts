@@ -6,7 +6,14 @@ import { ModelRouterUsecase } from '../../model-router/application/model-router.
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
 import { SlackNotifierPort } from '../../slack/domain/port/slack-notifier.port';
+import { CheckMissionsUsecase } from '../application/check-missions.usecase';
+import { DeliverDailyFortuneUsecase } from '../application/deliver-daily-fortune.usecase';
+import { DeliverExtraFortuneUsecase } from '../application/deliver-extra-fortune.usecase';
+import { FortuneGenerator } from '../application/fortune-generator';
+import { SendDailyFortunesUsecase } from '../application/send-daily-fortunes.usecase';
+import { CardCollagePort } from '../domain/port/card-collage.port';
 import { FortuneCardImagePort } from '../domain/port/fortune-card-image.port';
+import { SajuFortuneDayRepositoryPort } from '../domain/port/saju-fortune-day.repository.port';
 import { fortuneDateOf } from '../domain/saju-fortune-chat';
 import { SajuFortuneCronJobData } from '../domain/saju-fortune-cron.type';
 import * as renderModule from '../domain/saju-fortune-render';
@@ -19,6 +26,7 @@ const ORDINARY_DAY = new Date('2026-11-10T00:00:00Z');
 // 2026-11-16 09:00 KST = 월요일(갑오일), 특별한 날 아님.
 const MONDAY = new Date('2026-11-16T00:00:00Z');
 const JOB = {
+  name: 'saju-fortune-cron',
   data: { recipientSlackUserIds: ['U111', 'U222'] },
 } as Job<SajuFortuneCronJobData>;
 
@@ -31,13 +39,19 @@ describe('SajuFortuneCronConsumer', () => {
   let publishCronFailure: jest.Mock;
   let generateImage: jest.Mock;
   let uploadImageFile: jest.Mock;
+  let recordSent: jest.Mock;
+  let findMissionKeys: jest.Mock;
+  let toThumbnail: jest.Mock;
+  let findMissionDay: jest.Mock;
   let consumer: SajuFortuneCronConsumer;
   let recipients: string;
+  let missionCheckCron: string | undefined;
 
   beforeEach(() => {
     jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
     jest.setSystemTime(ORDINARY_DAY);
     recipients = RECIPIENTS;
+    missionCheckCron = undefined;
     route = jest
       .fn()
       .mockResolvedValue({ text: '🌊 물이 물을 만난 날 <!channel>' });
@@ -48,12 +62,54 @@ describe('SajuFortuneCronConsumer', () => {
     publishCronFailure = jest.fn();
     generateImage = jest.fn().mockResolvedValue(Buffer.from('png'));
     uploadImageFile = jest.fn().mockResolvedValue({ fileId: 'F1' });
-    consumer = new SajuFortuneCronConsumer(
-      { get: () => recipients } as unknown as ConfigService,
-      { route } as unknown as ModelRouterUsecase,
-      { postMessage, uploadImageFile } as unknown as SlackNotifierPort,
-      { acquireOnce, release, isDone } as unknown as CronIdempotencyService,
+    recordSent = jest.fn().mockResolvedValue(undefined);
+    findMissionKeys = jest.fn().mockResolvedValue([]);
+    toThumbnail = jest.fn().mockResolvedValue(Buffer.from('jpg'));
+    findMissionDay = jest.fn().mockResolvedValue(undefined);
+    // 유스케이스는 실제 것을 쓰고 바깥 의존(설정·LLM·Slack·Redis·DB·그림)만 흉내 낸다 — 옮기기 전과 같은
+    // 행동을 consumer 입구에서 그대로 확인하는 회귀 테스트다.
+    const configService = {
+      get: (key: string) =>
+        key === 'SAJU_MISSION_CHECK_CRON' ? missionCheckCron : recipients,
+    } as unknown as ConfigService;
+    const slackNotifier = {
+      postMessage,
+      uploadImageFile,
+    } as unknown as SlackNotifierPort;
+    const cronIdempotency = {
+      acquireOnce,
+      release,
+      isDone,
+    } as unknown as CronIdempotencyService;
+    const fortuneDays = {
+      recordSent,
+      findMissionKeys,
+      findMissionDay,
+    } as unknown as SajuFortuneDayRepositoryPort;
+    const generator = new FortuneGenerator({
+      route,
+    } as unknown as ModelRouterUsecase);
+    const deliverDaily = new DeliverDailyFortuneUsecase(
+      generator,
+      slackNotifier,
+      cronIdempotency,
       { generate: generateImage } as FortuneCardImagePort,
+      fortuneDays,
+      { toThumbnail } as unknown as CardCollagePort,
+    );
+    const deliverExtra = new DeliverExtraFortuneUsecase(
+      generator,
+      slackNotifier,
+      cronIdempotency,
+    );
+    consumer = new SajuFortuneCronConsumer(
+      new SendDailyFortunesUsecase(configService, deliverDaily, deliverExtra),
+      new CheckMissionsUsecase(
+        configService,
+        fortuneDays,
+        slackNotifier,
+        cronIdempotency,
+      ),
       {
         publishCronFailure,
         publishRecovery: jest.fn(),
@@ -115,6 +171,7 @@ describe('SajuFortuneCronConsumer', () => {
 
   it('이 잡이 맡은 시각의 사람에게만 보낸다', async () => {
     await consumer.process({
+      name: 'saju-fortune-cron',
       data: { recipientSlackUserIds: ['U222'] },
     } as Job<SajuFortuneCronJobData>);
 
@@ -184,7 +241,8 @@ describe('SajuFortuneCronConsumer', () => {
     const bodyLines = text.split('\n\n').slice(1).join('\n\n').split('\n');
     expect(bodyLines[0]).toBe('맑은 날이야');
     expect(bodyLines[1]).toMatch(/^총운 [★☆]{5} · 일·공부 [★☆]{5}/);
-    expect(bodyLines[bodyLines.length - 1]).toMatch(/^🍀 행운 아이템: /);
+    expect(bodyLines.at(-2)).toMatch(/^🍀 행운 아이템: /);
+    expect(bodyLines.at(-1)).toMatch(/^🎯 오늘의 미션: /);
     expect(text).not.toContain('행운의 숫자');
     expect(text).not.toContain('★★★★★: 좋아');
     expect(fortuneDateOf(text)).toMatch(/^\d{4}-\d{2}-\d{2}$/);
@@ -248,6 +306,91 @@ describe('SajuFortuneCronConsumer', () => {
     expect(postMessage.mock.calls[0][0].image).toBeUndefined();
   });
 
+  describe('오늘의 미션과 하루 기록', () => {
+    const CARD_RESPONSE =
+      '좋은 날이야\nCARD_TITLE: THE QUIET SUN\nCARD_SCENE: A sun.';
+
+    it('발송 뒤 고른 미션·AI 본문·카드를 기록한다', async () => {
+      route.mockResolvedValue({ text: CARD_RESPONSE });
+
+      await consumer.process(JOB);
+
+      expect(recordSent).toHaveBeenCalledTimes(2);
+      const [day] = recordSent.mock.calls[0];
+      expect(day).toMatchObject({
+        slackUserId: 'U111',
+        fortuneDate: '2026-11-10',
+        aiBody: '좋은 날이야',
+        card: { title: 'THE QUIET SUN', thumbnail: Buffer.from('jpg') },
+      });
+      expect(toThumbnail).toHaveBeenCalledWith(Buffer.from('png'));
+      expect(postMessage.mock.calls[0][0].text).toContain(
+        `🎯 오늘의 미션: ${day.missionText}`,
+      );
+      expect(postMessage.mock.invocationCallOrder[0]).toBeLessThan(
+        recordSent.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('최근 미션은 오늘 이전 14일을 묻는다', async () => {
+      await consumer.process(JOB);
+
+      expect(findMissionKeys).toHaveBeenCalledWith({
+        slackUserId: 'U111',
+        period: { from: '2026-10-27', until: '2026-11-10' },
+      });
+    });
+
+    it('진 실행(다른 실행이 키를 잡음)은 기록하지 않는다', async () => {
+      acquireOnce.mockResolvedValue(false);
+
+      await consumer.process(JOB);
+
+      expect(postMessage).not.toHaveBeenCalled();
+      expect(recordSent).not.toHaveBeenCalled();
+    });
+
+    it('기록이 실패해도 잡은 성공하고 Redis 키를 풀지 않는다', async () => {
+      recordSent.mockRejectedValue(new Error('db down'));
+
+      await expect(consumer.process(JOB)).resolves.toBeUndefined();
+
+      expect(postMessage).toHaveBeenCalledTimes(2);
+      expect(release).not.toHaveBeenCalled();
+    });
+
+    it('그림 첨부가 실패해 글만 나가면 카드 없이 기록한다', async () => {
+      route.mockResolvedValue({ text: CARD_RESPONSE });
+      postMessage
+        .mockRejectedValueOnce(new Error('invalid_blocks'))
+        .mockResolvedValue(undefined);
+
+      await consumer.process(JOB);
+
+      expect(recordSent.mock.calls[0][0].card).toBeUndefined();
+      expect(recordSent.mock.calls[1][0].card).toBeDefined();
+    });
+
+    it('썸네일 변환이 실패하면 카드 없이 기록한다', async () => {
+      route.mockResolvedValue({ text: CARD_RESPONSE });
+      toThumbnail.mockRejectedValue(new Error('sharp'));
+
+      await consumer.process(JOB);
+
+      expect(recordSent).toHaveBeenCalledTimes(2);
+      expect(recordSent.mock.calls[0][0].card).toBeUndefined();
+    });
+
+    it('최근 미션 조회가 실패해도 미션 줄을 붙여 보낸다', async () => {
+      findMissionKeys.mockRejectedValue(new Error('db down'));
+
+      await consumer.process(JOB);
+
+      expect(postMessage).toHaveBeenCalledTimes(2);
+      expect(postMessage.mock.calls[0][0].text).toContain('🎯 오늘의 미션:');
+    });
+  });
+
   it('오늘 이미 보낸 사람은 LLM 도 부르지 않는다', async () => {
     isDone.mockResolvedValue(true);
 
@@ -297,6 +440,7 @@ describe('SajuFortuneCronConsumer', () => {
       recipients = 'U111|길동|丙寅 辛卯 壬戌 庚子||11-10';
 
       await consumer.process({
+        name: 'saju-fortune-cron',
         data: { recipientSlackUserIds: ['U111'] },
       } as Job<SajuFortuneCronJobData>);
 
@@ -379,6 +523,7 @@ describe('SajuFortuneCronConsumer', () => {
         .mockResolvedValueOnce({ text: '생일 이야기\n=====\n이번 주 이야기' });
 
       await consumer.process({
+        name: 'saju-fortune-cron',
         data: { recipientSlackUserIds: ['U111'] },
       } as Job<SajuFortuneCronJobData>);
 
@@ -397,6 +542,7 @@ describe('SajuFortuneCronConsumer', () => {
         .mockResolvedValueOnce({ text: '하나\n=====\n둘\n=====\n셋' });
 
       await consumer.process({
+        name: 'saju-fortune-cron',
         data: { recipientSlackUserIds: ['U111'] },
       } as Job<SajuFortuneCronJobData>);
 
@@ -406,6 +552,135 @@ describe('SajuFortuneCronConsumer', () => {
         /🎂 생일 축하해, 길동!\n월 [★☆]{5}[^\n]*\n\n하나\n둘\n셋$/,
       );
       expect(extra).not.toContain('=====');
+    });
+  });
+
+  describe('저녁 미션 확인', () => {
+    // 21:00 KST 회차. 아침 기록은 08:00 KST.
+    const SCHEDULED = new Date('2026-11-10T12:00:00Z');
+    const MORNING = new Date('2026-11-09T23:00:00Z');
+    const missionJob = (prevMillis: number) =>
+      ({
+        name: 'saju-mission-check',
+        data: {},
+        opts: { prevMillis },
+      }) as unknown as Job<SajuFortuneCronJobData>;
+    const dayOf = (overrides: Record<string, unknown> = {}) => ({
+      fortuneDate: '2026-11-10',
+      missionText: '물 한 컵 천천히 마시기',
+      createdAt: MORNING,
+      ...overrides,
+    });
+
+    beforeEach(() => {
+      jest.setSystemTime(SCHEDULED);
+    });
+
+    it('예정 시각의 날짜 행을 보고, 답이 없고 3시간 지난 사람에게 버튼 DM 을 보낸다', async () => {
+      findMissionDay.mockImplementation(({ slackUserId }) =>
+        Promise.resolve(slackUserId === 'U111' ? dayOf() : undefined),
+      );
+
+      await consumer.process(missionJob(SCHEDULED.getTime()));
+
+      expect(findMissionDay).toHaveBeenCalledWith({
+        slackUserId: 'U111',
+        fortuneDate: '2026-11-10',
+      });
+      expect(postMessage).toHaveBeenCalledTimes(1);
+      const [input] = postMessage.mock.calls[0];
+      expect(input.target).toBe('U111');
+      expect(input.blocks).toBeDefined();
+      expect(input.text).toContain('물 한 컵 천천히 마시기');
+      expect(acquireOnce.mock.calls[0][0]).toBe(
+        'cron:saju-fortune-cron:mission:U111:2026-11-10',
+      );
+      expect(route).not.toHaveBeenCalled();
+    });
+
+    it('자정을 넘겨 도는 보충 잡도 예정 시각 날짜(전날)를 쓴다', async () => {
+      // 22:00 KST 회차가 다음 날 00:30 KST 에 돈다(2.5시간 지연 — 창 안).
+      const scheduled = new Date('2026-11-10T13:00:00Z');
+      jest.setSystemTime(new Date('2026-11-10T15:30:00Z'));
+      findMissionDay.mockResolvedValue(dayOf());
+
+      await consumer.process(missionJob(scheduled.getTime()));
+
+      expect(findMissionDay.mock.calls[0][0].fortuneDate).toBe('2026-11-10');
+      expect(postMessage).toHaveBeenCalled();
+    });
+
+    it('예정 시각에서 3시간을 넘겨 돌면 아무에게도 보내지 않는다', async () => {
+      jest.setSystemTime(new Date('2026-11-10T15:30:00Z'));
+      findMissionDay.mockResolvedValue(dayOf());
+
+      await consumer.process(missionJob(SCHEDULED.getTime()));
+
+      expect(findMissionDay).not.toHaveBeenCalled();
+      expect(postMessage).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['이미 답한 사람', { missionResult: 'done' }],
+      [
+        '아침 기록 뒤 3시간이 안 된 사람',
+        { createdAt: new Date('2026-11-10T10:00:00Z') },
+      ],
+    ])('%s 은 건너뛴다', async (_, overrides) => {
+      findMissionDay.mockResolvedValue(dayOf(overrides));
+
+      await consumer.process(missionJob(SCHEDULED.getTime()));
+
+      expect(postMessage).not.toHaveBeenCalled();
+    });
+
+    it('env 에서 빠진 사람은 보지 않는다', async () => {
+      recipients = 'U222|철수|戊辰 甲寅 癸亥';
+      findMissionDay.mockResolvedValue(dayOf());
+
+      await consumer.process(missionJob(SCHEDULED.getTime()));
+
+      expect(findMissionDay.mock.calls.map(([key]) => key.slackUserId)).toEqual(
+        ['U222'],
+      );
+    });
+
+    it('이미 보낸 날(키가 있음)은 다시 보내지 않는다', async () => {
+      findMissionDay.mockResolvedValue(dayOf());
+      isDone.mockResolvedValue(true);
+
+      await consumer.process(missionJob(SCHEDULED.getTime()));
+
+      expect(postMessage).not.toHaveBeenCalled();
+    });
+
+    // 켜진 채 등록된 저녁 회차를 놓친 뒤 off 로 다시 켜면 부팅 보충이 그 회차를 넣는다(#1018 Codex 리뷰).
+    it('SAJU_MISSION_CHECK_CRON=off 면 보충 잡이 와도 보내지 않는다', async () => {
+      missionCheckCron = 'off';
+      findMissionDay.mockResolvedValue(dayOf());
+
+      await consumer.process(missionJob(SCHEDULED.getTime()));
+
+      expect(findMissionDay).not.toHaveBeenCalled();
+      expect(postMessage).not.toHaveBeenCalled();
+    });
+
+    it('발송이 실패하면 키를 풀고 저녁 사건 이름으로 알린다', async () => {
+      findMissionDay.mockImplementation(({ slackUserId }) =>
+        Promise.resolve(slackUserId === 'U111' ? dayOf() : undefined),
+      );
+      postMessage.mockRejectedValueOnce(new Error('slack 500'));
+
+      await expect(
+        consumer.process(missionJob(SCHEDULED.getTime())),
+      ).rejects.toThrow('사주 미션 확인 실패 1/2명: 길동');
+
+      expect(release).toHaveBeenCalledWith(
+        'cron:saju-fortune-cron:mission:U111:2026-11-10',
+      );
+      expect(publishCronFailure).toHaveBeenCalledWith(
+        expect.objectContaining({ cronName: 'Saju Mission Check' }),
+      );
     });
   });
 });

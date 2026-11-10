@@ -115,6 +115,27 @@ describe('buildFortuneFollowUpPrompt', () => {
     question: '저녁엔 뭐 하면 좋아?',
   };
 
+  it('원문에 미션 줄이 있으면 그 미션이 정답이고 새로 짓지 않는다고 한다', () => {
+    const prompt = buildFortuneFollowUpPrompt({
+      ...base,
+      // Slack 이 이모지를 단축 코드로 돌려줘도 미션 줄로 읽어야 한다.
+      originalFortune: `${base.originalFortune}\n:dart: 오늘의 미션: 물 한 컵 천천히 마시기`,
+      priorTurns: [],
+    });
+
+    expect(prompt).toContain(
+      '- 오늘의 미션은 아침 메시지의 "오늘의 미션:" 줄이 정답이다. 새 미션을 지어내지 않는다.',
+    );
+  });
+
+  it('원문에 미션 줄이 없으면(주간·특집) 미션은 아침 운세 스레드에서 물어 달라고 한다', () => {
+    const prompt = buildFortuneFollowUpPrompt({ ...base, priorTurns: [] });
+
+    expect(prompt).toContain(
+      '- 이 메시지에는 오늘의 미션이 없다. 미션을 물으면 아침 운세 메시지의 스레드에서 물어 달라고 짧게 답한다.',
+    );
+  });
+
   it('특별한 날·이번 주 사실을 계산된 사실 블록에 함께 싣고 원문이 우선이라고 한다', () => {
     const prompt = buildFortuneFollowUpPrompt({
       ...base,

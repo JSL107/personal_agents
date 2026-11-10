@@ -1651,3 +1651,29 @@ model ReelFormatDecision {
 
   @@map("reel_format_decision")
 }
+
+// 사주 운세 하루 기록 — 아침에 실제로 보낸 미션·카드·AI 본문과 저녁 미션 답. 사람·날짜(KST)마다 한 행.
+// 일일 운세 발송이 성공한 뒤에만 쓴다 — 행이 있으면 그날 운세가 나간 것이다.
+model SajuFortuneDay {
+  id          Int      @id @default(autoincrement())
+  slackUserId String   @map("slack_user_id")
+  fortuneDate DateTime @map("fortune_date") @db.Date
+
+  missionKey    String  @map("mission_key")
+  missionText   String  @map("mission_text")
+  // 가드·잘림을 거친 AI 본문(코드가 그린 별점·아이템·미션 줄 제외). 전날 유사도 비교용.
+  aiBody        String  @map("ai_body") @db.Text
+  // 그림이 실제로 붙어 나간 날만 있다. 둘은 함께 있거나 함께 없다.
+  cardTitle     String? @map("card_title")
+  cardThumbnail Bytes?  @map("card_thumbnail")
+
+  // 'done' | 'not_done' — TS enum MissionResult 로만 쓴다(스키마에 enum 을 쓰지 않는 레포 관례).
+  missionResult     String?   @map("mission_result")
+  missionAnsweredAt DateTime? @map("mission_answered_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([slackUserId, fortuneDate])
+  @@map("saju_fortune_day")
+}

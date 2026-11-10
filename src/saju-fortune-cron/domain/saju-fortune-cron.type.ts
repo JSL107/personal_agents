@@ -8,8 +8,29 @@ export interface SajuFortuneCronJobData {
   recipientSlackUserIds: string[];
 }
 
+// 발송 중복 방지 키 TTL — 25h. 다음 날 같은 시각 발사 전 만료되도록 하루보다 약간 길게.
+export const SENT_GUARD_TTL_SECONDS = 90_000;
+// 12줄 지시를 어긴 장문이 DM 을 덮지 않게 자른다. 카드 두 줄을 떼고 코드가 그린 줄을 붙인 본문 기준.
+export const MAXIMUM_FORTUNE_LENGTH = 1_500;
+
+// 같은 큐의 두 반복 잡. 아침 값은 바꾸지 않는다 — 이미 등록된 반복·보충 잡이 이 이름으로 남아 있다.
+export enum SajuFortuneJobName {
+  DAILY = 'saju-fortune-cron',
+  MISSION_CHECK = 'saju-mission-check',
+}
+
+// 저녁 미션 확인은 매 회차 env 수신자 전체를 다시 읽는다 — 보충 잡이 옛 data 를 복사해도 영향이 없게 비워 둔다.
+export type SajuMissionCheckJobData = Record<string, never>;
+
 // 매일 08:00 KST 기본.
 export const DEFAULT_SAJU_FORTUNE_CRON = '0 8 * * *';
+// 저녁 미션 확인 기본 21:00 KST.
+export const DEFAULT_SAJU_MISSION_CHECK_CRON = '0 21 * * *';
+// SAJU_MISSION_CHECK_CRON 이 이 값이면 저녁 잡을 달지 않는다(빈 값은 기본값 — readNonEmptyConfig 관례).
+export const MISSION_CHECK_DISABLED = 'off';
+// 예정 시각보다 이만큼 늦게 돌면 보내지 않는다 — 밤늦게·새벽에 "오늘 미션 어땠어?" 가 가지 않게.
+export const MISSION_CHECK_WINDOW_MS = 3 * 60 * 60 * 1000;
+
 // 시간대는 설정으로 열지 않는다 — consumer 의 "오늘"(일진·발송 가드)이 KST 고정이라,
 // cron 만 다른 시간대로 돌면 날짜 경계에서 엉뚱한 날의 일진이 나간다.
 export const SAJU_FORTUNE_TIMEZONE = 'Asia/Seoul';

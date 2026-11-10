@@ -8,7 +8,12 @@ import {
   stripInventedMarks,
   truncateByLines,
 } from './saju-fortune-render';
+import { renderMissionLine } from './saju-mission';
 
+const MISSION = {
+  key: 'work-earth-1',
+  text: '책상 위 물건 세 개만 제자리에 두기',
+};
 const ANALYSIS = analyzeSajuDay(['丙子', '辛丑', '己酉', '己巳'], '庚午');
 
 describe('findFortuneViolations', () => {
@@ -41,6 +46,18 @@ describe('stripInventedMarks', () => {
         '첫 줄\n총운 ★★★★★: 좋아\n행운의 숫자: 7\n🍀 행운 포인트: 산책',
       ),
     ).toBe('첫 줄\n총운: 좋아\n🍀 행운 포인트: 산책');
+  });
+
+  it("AI 가 쓴 '미션'·🎯 줄은 표기가 달라도 지운다", () => {
+    expect(
+      stripInventedMarks(
+        '첫 줄\n오늘 미션: 물 마시기\n🎯 할 일: 산책\n오늘의 미션: 정리\n끝 줄',
+      ),
+    ).toBe('첫 줄\n끝 줄');
+  });
+
+  it('미션 줄은 재생성 사유(위반)로 세지 않는다', () => {
+    expect(findFortuneViolations('오늘 미션: 물 마시기 🎯')).toEqual([]);
   });
 });
 
@@ -81,36 +98,40 @@ describe('그리는 줄', () => {
 });
 
 describe('composeFortuneBody', () => {
-  it('라벨 형식과 무관하게 첫 줄 뒤에 별점 줄, 끝에 아이템 줄을 둔다', () => {
-    const body = composeFortuneBody({
+  it('라벨 형식과 무관하게 첫 줄 뒤에 별점 줄, 끝에 아이템 줄과 미션 줄을 둔다', () => {
+    const { body } = composeFortuneBody({
       body: '오늘은 맑은 날이야.\n\n🌟 **총운:** 좋아\n일·공부: 무난해',
       analysis: ANALYSIS,
+      mission: MISSION,
       maximum: 1500,
     });
     const lines = body.split('\n');
     expect(lines[0]).toBe('오늘은 맑은 날이야.');
     expect(lines[1]).toBe(renderStarLine(ANALYSIS.scores));
-    expect(lines[lines.length - 1]).toBe(renderItemLine(ANALYSIS.lucky));
+    expect(lines.at(-2)).toBe(renderItemLine(ANALYSIS.lucky));
+    expect(lines.at(-1)).toBe(renderMissionLine(MISSION));
   });
 
   it('긴 응답도 전체가 예산 안이고 본문 줄은 중간에서 잘리지 않는다', () => {
     const line = '가'.repeat(99);
-    const body = composeFortuneBody({
+    const { body } = composeFortuneBody({
       body: Array.from({ length: 20 }, () => line).join('\n'),
       analysis: ANALYSIS,
+      mission: MISSION,
       maximum: 1500,
     });
     expect(body.length).toBeLessThanOrEqual(1500);
-    const bodyLines = body.split('\n').slice(2, -1);
+    const bodyLines = body.split('\n').slice(2, -2);
     for (const kept of bodyLines) {
       expect(kept).toBe(line);
     }
   });
 
   it('한 줄짜리 긴 응답도 본문이 비지 않는다', () => {
-    const body = composeFortuneBody({
+    const { body } = composeFortuneBody({
       body: '가'.repeat(2000),
       analysis: ANALYSIS,
+      mission: MISSION,
       maximum: 1500,
     });
     expect(body.split('\n')[0].length).toBeGreaterThan(0);
@@ -122,10 +143,26 @@ describe('composeFortuneBody', () => {
       composeFortuneBody({
         body: '맑은 날 & <좋은> 날\n총운: 좋아',
         analysis: ANALYSIS,
+        mission: MISSION,
         maximum: 1500,
-      }),
+      }).body,
     );
     expect(escaped).toContain(renderStarLine(ANALYSIS.scores));
     expect(escaped).toContain(renderItemLine(ANALYSIS.lucky));
+    expect(escaped).toContain(renderMissionLine(MISSION));
+  });
+
+  it('aiBody 는 코드가 그린 줄이 없는 AI 본문이고 발송 본문에 그대로 들어 있다', () => {
+    const { body, aiBody } = composeFortuneBody({
+      body: '오늘은 맑은 날이야.\n총운: 좋아\n🎯 오늘 미션: 물 마시기',
+      analysis: ANALYSIS,
+      mission: MISSION,
+      maximum: 1500,
+    });
+    expect(aiBody).toBe('오늘은 맑은 날이야.\n총운: 좋아');
+    expect(aiBody).not.toMatch(/[★☆]|🍀|🎯/);
+    for (const line of aiBody.split('\n')) {
+      expect(body).toContain(line);
+    }
   });
 });
