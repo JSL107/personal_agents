@@ -133,7 +133,7 @@ const extraFactsOf = ({
   });
   const specialFacts = formatSpecialDayFacts({ days, recipient, context });
   const weeklyFacts =
-    kind === 'weekly'
+    kind === FortuneMessageKind.WEEKLY
       ? [
           '- 이번 주(월~일) 항목별 좋은 날·조심할 날:',
           ...formatWeeklyFacts(

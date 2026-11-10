@@ -6,21 +6,19 @@ import {
 } from './saju-analysis';
 import { SajuFortuneRecipient } from './saju-fortune-cron.type';
 
-export type FortuneMessageKind = 'daily' | 'weekly' | 'special';
+export enum FortuneMessageKind {
+  DAILY = 'daily',
+  WEEKLY = 'weekly',
+  SPECIAL = 'special',
+}
 
 // 운세 DM 들의 첫 줄 제목. 스레드 대화가 이 줄로 "운세 메시지에 단 답글" 을 알아보므로
 // 발송(머리말 함수)과 판별(패턴)이 같은 표를 쓴다 — 한쪽만 바뀌면 판별이 조용히 끊긴다.
 const FORTUNE_TITLES: Record<FortuneMessageKind, string> = {
-  daily: '오늘의 운세',
-  weekly: '이번 주 운세',
-  special: '특별한 날',
+  [FortuneMessageKind.DAILY]: '오늘의 운세',
+  [FortuneMessageKind.WEEKLY]: '이번 주 운세',
+  [FortuneMessageKind.SPECIAL]: '특별한 날',
 };
-
-const FORTUNE_KINDS: readonly FortuneMessageKind[] = [
-  'daily',
-  'weekly',
-  'special',
-];
 
 const headerOf = ({
   kind,
@@ -36,7 +34,8 @@ const headerOf = ({
 export const formatFortuneHeader = (
   todayKst: string,
   todayPillar: string,
-): string => headerOf({ kind: 'daily', todayKst, todayPillar });
+): string =>
+  headerOf({ kind: FortuneMessageKind.DAILY, todayKst, todayPillar });
 
 // 일일 운세 뒤에 가는 추가 메시지(월요일 주간·특별한 날)의 첫 줄.
 export const formatExtraFortuneHeader = ({
@@ -44,7 +43,7 @@ export const formatExtraFortuneHeader = ({
   todayKst,
   todayPillar,
 }: {
-  kind: 'weekly' | 'special';
+  kind: FortuneMessageKind.WEEKLY | FortuneMessageKind.SPECIAL;
   todayKst: string;
   todayPillar: string;
 }): string => headerOf({ kind, todayKst, todayPillar });
@@ -73,7 +72,7 @@ export const fortuneMessageOf = (
     return undefined;
   }
   const [, title, year, month, day] = matched;
-  const kind = FORTUNE_KINDS.find(
+  const kind = Object.values(FortuneMessageKind).find(
     (candidate) => FORTUNE_TITLES[candidate] === title,
   );
   const calendarDate = new Date(

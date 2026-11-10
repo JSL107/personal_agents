@@ -7,6 +7,8 @@ import {
   SOLAR_TERM_MEANINGS,
   SpecialDay,
   SpecialDayContext,
+  SpecialDayKind,
+  SpecialSolarTerm,
 } from './special-day';
 import { DailyScores, formatWeeklyFacts } from './weekly-fortune';
 
@@ -113,18 +115,18 @@ const specialDayFacts = ({
   context: SpecialDayContext;
 }): string[] => {
   const ipchunFact = `- 사주의 새해는 입춘(${spokenDate(context.ipchun.date)})부터다. 오늘 사주의 해가 바뀐다고 쓰지 않는다.`;
-  if (kind === 'birthday') {
+  if (kind === SpecialDayKind.BIRTHDAY) {
     return [
       `- 오늘은 ${recipient.name}의 생일이다. 진심으로 축하하고, 한 살 더 먹는 앞으로의 1년에 어울리는 작은 다짐 하나를 권한다("새해"라고 부르지 않는다 — 달력의 새해가 아니다).`,
     ];
   }
-  if (kind === 'seollal') {
+  if (kind === SpecialDayKind.SEOLLAL) {
     return [
       '- 오늘은 설날(음력 새해 첫날)이다. 결: 가족과 함께하는 쉼, 마음 편한 하루.',
       ipchunFact,
     ];
   }
-  if (kind === 'newYear') {
+  if (kind === SpecialDayKind.NEW_YEAR) {
     return [
       '- 오늘은 달력의 새해 첫날이다. 결: 달력의 새 출발, 한 해의 계획.',
       ipchunFact,
@@ -146,7 +148,7 @@ const specialDayFacts = ({
   }
   const { yearPillar, monthPillar } = context.termFlow;
   const flowFacts = [
-    name === '입춘'
+    name === SpecialSolarTerm.입춘
       ? '- 결: 사주의 새해 — 기운이 새로 바뀌는 날.'
       : '- 결: 계절이 바뀌며 이번 달의 기운도 바뀌는 날.',
     `- ${termTime}부터 바뀌는 흐름: 올해 ${pillarToHangul(yearPillar)}년, 이번 달 ${pillarToHangul(monthPillar)}월.`,

@@ -42,6 +42,7 @@ import {
 import {
   formatExtraFortuneHeader,
   formatFortuneHeader,
+  FortuneMessageKind,
 } from '../domain/saju-fortune-chat';
 import {
   parseSajuFortuneRecipients,
@@ -75,7 +76,11 @@ interface DeliverFortuneInput {
 
 // sent: 이번에 보냄 · already: 시작할 때 이미 보낸 상태 · raced: 다른 실행이 지금 키를 잡고 보내는 중.
 // raced 면 추가 메시지를 건너뛴다 — 보내는 쪽 실행이 자기 2패스에서 추가를 보낸다(순서 역전 방지).
-type DailyDeliveryResult = 'sent' | 'already' | 'raced';
+enum DailyDeliveryResult {
+  SENT = 'sent',
+  ALREADY = 'already',
+  RACED = 'raced',
+}
 
 // 응답 하나의 위반 — 종류 목록과 코드가 못 지우는 위반 수.
 interface FortuneInspection {
@@ -140,7 +145,7 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
           todayPillar,
           yearMonthPillars,
         });
-        if (result !== 'raced') {
+        if (result !== DailyDeliveryResult.RACED) {
           dailyDone.push(recipient);
         }
       } catch (error) {
@@ -193,7 +198,7 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
       this.logger.warn(
         `Saju Fortune 중복 발송 차단 — ${recipient.slackUserId} ${todayKst} 이미 발송됨`,
       );
-      return 'already';
+      return DailyDeliveryResult.ALREADY;
     }
 
     const fortune = await this.generateFortune({
@@ -226,7 +231,7 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
       SENT_GUARD_TTL_SECONDS,
     );
     if (!firstRun) {
-      return 'raced';
+      return DailyDeliveryResult.RACED;
     }
     try {
       await this.postFortune({ recipient, text, card });
@@ -235,7 +240,7 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
       throw error;
     }
     this.logger.log(`Saju Fortune 발송 완료 — ${recipient.slackUserId}`);
-    return 'sent';
+    return DailyDeliveryResult.SENT;
   }
 
   // 월요일 주간·특별한 날 특집 — 일일 뒤 한 통. 보낼 것이 없는 날(대부분)은 LLM·키 없이 끝난다.
@@ -297,7 +302,7 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
       maximum: MAXIMUM_FORTUNE_LENGTH,
     });
     const header = formatExtraFortuneHeader({
-      kind: week ? 'weekly' : 'special',
+      kind: week ? FortuneMessageKind.WEEKLY : FortuneMessageKind.SPECIAL,
       todayKst,
       todayPillar,
     });

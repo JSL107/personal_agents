@@ -1,31 +1,32 @@
 import { YearMonthPillars } from './saju-analysis';
 
 // 특별한 날로 치는 절기 — 계절의 문턱 여덟 개(사용자 결정). 나머지 16절기는 특집을 내지 않는다.
-export const SPECIAL_SOLAR_TERMS = [
-  '입춘',
-  '춘분',
-  '입하',
-  '하지',
-  '입추',
-  '추분',
-  '입동',
-  '동지',
-] as const;
-export type SpecialSolarTerm = (typeof SPECIAL_SOLAR_TERMS)[number];
+export enum SpecialSolarTerm {
+  입춘 = '입춘',
+  춘분 = '춘분',
+  입하 = '입하',
+  하지 = '하지',
+  입추 = '입추',
+  추분 = '추분',
+  입동 = '입동',
+  동지 = '동지',
+}
 
 // 년·월주가 바뀌는 절(節). 춘분·하지·추분·동지 같은 중기는 간지를 바꾸지 않는다.
 const FLOW_CHANGING_TERMS: readonly SpecialSolarTerm[] = [
-  '입춘',
-  '입하',
-  '입추',
-  '입동',
+  SpecialSolarTerm.입춘,
+  SpecialSolarTerm.입하,
+  SpecialSolarTerm.입추,
+  SpecialSolarTerm.입동,
 ];
 
 // 특집 줄의 이모지와 뜻 — 줄은 코드가 그리고, 뜻은 프롬프트 사실에도 같은 말로 싣는다.
-export const SOLAR_TERM_MEANINGS: Record<
-  SpecialSolarTerm,
-  { emoji: string; meaning: string }
-> = {
+interface SolarTermMeaning {
+  emoji: string;
+  meaning: string;
+}
+
+export const SOLAR_TERM_MEANINGS: Record<SpecialSolarTerm, SolarTermMeaning> = {
   입춘: { emoji: '🌱', meaning: '봄이 시작되는 날' },
   춘분: { emoji: '🌸', meaning: '낮과 밤이 같아지는 날' },
   입하: { emoji: '🌿', meaning: '여름이 시작되는 날' },
@@ -53,7 +54,12 @@ export interface SpecialDayContext {
   termFlow?: YearMonthPillars;
 }
 
-export type SpecialDayKind = 'birthday' | 'seollal' | 'newYear' | 'solarTerm';
+export enum SpecialDayKind {
+  BIRTHDAY = 'birthday',
+  SEOLLAL = 'seollal',
+  NEW_YEAR = 'newYear',
+  SOLAR_TERM = 'solarTerm',
+}
 
 export interface SpecialDay {
   kind: SpecialDayKind;
@@ -79,9 +85,10 @@ export const isBirthdayOn = ({
     return false;
   }
   const year = Number(todayKst.slice(0, 4));
-  const celebratedOn =
-    birthday === LEAP_DAY && !isLeapYear(year) ? LEAP_DAY_FALLBACK : birthday;
-  return todayKst.endsWith(`-${celebratedOn}`);
+  if (birthday === LEAP_DAY && !isLeapYear(year)) {
+    return todayKst.endsWith(`-${LEAP_DAY_FALLBACK}`);
+  }
+  return todayKst.endsWith(`-${birthday}`);
 };
 
 export const changesFlow = (term: SpecialSolarTerm): boolean =>
@@ -100,16 +107,16 @@ export const specialDaysOf = ({
   const { seollalDate, solarTermToday } = context;
   const days: SpecialDay[] = [];
   if (isBirthdayOn({ birthday, todayKst })) {
-    days.push({ kind: 'birthday' });
+    days.push({ kind: SpecialDayKind.BIRTHDAY });
   }
   if (seollalDate === todayKst) {
-    days.push({ kind: 'seollal' });
+    days.push({ kind: SpecialDayKind.SEOLLAL });
   }
   if (todayKst.endsWith(NEW_YEAR_SUFFIX)) {
-    days.push({ kind: 'newYear' });
+    days.push({ kind: SpecialDayKind.NEW_YEAR });
   }
   if (solarTermToday) {
-    days.push({ kind: 'solarTerm', solarTerm: solarTermToday });
+    days.push({ kind: SpecialDayKind.SOLAR_TERM, solarTerm: solarTermToday });
   }
   return days;
 };
@@ -122,13 +129,13 @@ export const renderSpecialDayLine = ({
   day: SpecialDay;
   name: string;
 }): string => {
-  if (kind === 'birthday') {
+  if (kind === SpecialDayKind.BIRTHDAY) {
     return `🎂 생일 축하해, ${name}!`;
   }
-  if (kind === 'seollal') {
+  if (kind === SpecialDayKind.SEOLLAL) {
     return '🧧 설날이야 — 새 한 해가 열리는 날';
   }
-  if (kind === 'newYear') {
+  if (kind === SpecialDayKind.NEW_YEAR) {
     return '🎍 새해 첫날이야';
   }
   if (!solarTerm) {
