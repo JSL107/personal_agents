@@ -1,4 +1,8 @@
-import { kstDayStartOf } from '../../common/util/kst-date.util';
+import {
+  addDaysTo,
+  kstDayStartOf,
+  weekdayOf,
+} from '../../common/util/kst-date.util';
 
 export interface AiWeeklyPeriod {
   since: Date;
@@ -6,21 +10,12 @@ export interface AiWeeklyPeriod {
   prevSince: Date;
 }
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
-
+// firedAtKst('YYYY-MM-DD') 이하에서 가장 가까운 월요일 KST 0시를 until 로 잡는다. since 는 그 7일 전.
 export const resolveAiWeeklyPeriod = (firedAtKst: string): AiWeeklyPeriod => {
-  const dayStart = kstDayStartOf(firedAtKst);
-  const weekday = new Date(dayStart.getTime() + KST_OFFSET_MS).getUTCDay();
-  const daysSinceMonday = (weekday + 6) % 7;
-  const until = new Date(dayStart.getTime() - daysSinceMonday * DAY_MS);
-  const since = new Date(until.getTime() - 7 * DAY_MS);
-  const prevSince = new Date(since.getTime() - 7 * DAY_MS);
+  const daysSinceMonday = (weekdayOf(firedAtKst) + 6) % 7;
+  const untilDate = addDaysTo(firedAtKst, -daysSinceMonday);
+  const since = kstDayStartOf(addDaysTo(untilDate, -7));
+  const prevSince = kstDayStartOf(addDaysTo(untilDate, -14));
+  const until = kstDayStartOf(untilDate);
   return { since, until, prevSince };
-};
-
-export const toKstIso = (date: Date): string => {
-  const local = new Date(date.getTime() + KST_OFFSET_MS);
-  const value = local.toISOString().slice(0, 19);
-  return `${value}+09:00`;
 };

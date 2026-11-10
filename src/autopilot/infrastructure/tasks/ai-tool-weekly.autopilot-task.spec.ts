@@ -1,5 +1,8 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
-import { AiWeeklyError } from '../../../ai-tool-weekly/domain/ai-weekly-error';
+import {
+  AiWeeklyError,
+  AiWeeklyErrorCode,
+} from '../../../ai-tool-weekly/domain/ai-weekly-error';
 
 jest.mock('../../../ai-tool-weekly/domain/ai-weekly-metrics.parser');
 jest.mock('../../../slack/format/ai-tool-weekly.formatter');
@@ -104,7 +107,10 @@ describe('AiToolWeeklyAutopilotTask', () => {
   });
 
   it('runner와 parser 오류는 그대로 전달한다', async () => {
-    const error = new AiWeeklyError({ code: 'SHAPE', exitCode: null });
+    const error = new AiWeeklyError({
+      code: AiWeeklyErrorCode.SHAPE,
+      exitCode: null,
+    });
     runner.run.mockRejectedValueOnce(error);
     await expect(task.run(context)).rejects.toThrow('exit=none code=SHAPE');
     parse.mockImplementationOnce(() => {

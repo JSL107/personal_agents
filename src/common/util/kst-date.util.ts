@@ -91,3 +91,11 @@ export const addDaysTo = (date: string, days: number): string => {
   const shifted = new Date(utcMidnightOf(date).getTime() + days * DAY_MS);
   return shifted.toISOString().slice(0, 10);
 };
+
+// Date → KST 오프셋을 붙인 ISO 시각('2026-11-09T00:00:00+09:00'). 초 단위까지만 남긴다.
+// 외부 프로세스·API 에 KST 기준 경계를 그대로 넘길 때 쓴다.
+export const formatKstIsoDateTime = (date: Date): string => {
+  const kstClock = new Date(date.getTime() + KST_OFFSET_MS);
+  const dateTime = kstClock.toISOString().slice(0, 19);
+  return `${dateTime}+09:00`;
+};

@@ -1,103 +1,77 @@
-import { AiWeeklyError } from './ai-weekly-error';
+import { AiWeeklyError, AiWeeklyErrorCode } from './ai-weekly-error';
 import {
   AiWeeklyClarify,
   AiWeeklyCounts,
+  AiWeeklyHookCount,
+  AiWeeklyHooks,
+  AiWeeklyInventory,
   AiWeeklyInventoryItems,
   AiWeeklyMetrics,
+  AiWeeklyPeriodText,
+  AiWeeklyScope,
   AiWeeklyScopeMetrics,
+  AiWeeklyScopes,
+  AiWeeklySource,
+  AiWeeklySources,
   AiWeeklySourceStatus,
+  AiWeeklyTokens,
   ParsedAiWeeklyMetrics,
 } from './ai-weekly-metrics.type';
 
 const NAME = /^[A-Za-z0-9:_.-]{1,80}$/;
 const MODEL = new RegExp(String.raw`^[A-Za-z0-9:_.\[\]-]{1,80}$`);
-const SCOPES = ['company', 'personal', 'unknown'] as const;
-const SOURCES = ['claude', 'codex', 'git', 'inventory', 'hooks'] as const;
+
+// 이름 검증에서 떨어진 항목 수. 여러 목록을 읽는 동안 함께 센다.
+interface DroppedNames {
+  count: number;
+}
+
+interface NamedListInput {
+  value: unknown;
+  dropped: DroppedNames;
+}
 
 export const parseAiWeeklyMetrics = (raw: unknown): ParsedAiWeeklyMetrics => {
   const root = record(raw);
   if (root.version !== 1) {
     invalid();
   }
-  const periodRaw = record(root.period);
-  const period = {
-    since: string(periodRaw.since),
-    until: string(periodRaw.until),
-    prevSince: string(periodRaw.prevSince),
-  };
-  const sourcesRaw = record(root.sources);
-  const sources = {} as AiWeeklyMetrics['sources'];
-  for (const source of SOURCES) {
-    sources[source] = sourceStatus(sourcesRaw[source]);
-  }
-  const scopesRaw = record(root.scopes);
-  const scopes = {} as AiWeeklyMetrics['scopes'];
-  const dropped = { count: 0 };
-  for (const scope of SCOPES) {
-    scopes[scope] = scopeMetrics(scopesRaw[scope]);
-  }
-  const tokensRaw = record(root.tokens);
-  const claudeRaw = record(tokensRaw.claude);
-  const codexRaw = record(tokensRaw.codex);
-  const inventoryRaw = record(root.inventory);
-  const hooksRaw = record(root.hooks);
-  if (!Array.isArray(hooksRaw.hooks)) {
-    invalid();
-  }
-  const hooks = (hooksRaw.hooks as unknown[]).flatMap((item: unknown) => {
-    const hook = record(item);
-    const name = string(hook.name);
-    const fired = count(hook.fired);
-    const delivered = count(hook.delivered);
-    const blocked = count(hook.blocked);
-    if (!NAME.test(name)) {
-      dropped.count += 1;
-      return [];
-    }
-    return [{ name, fired, delivered, blocked }];
-  });
+  const dropped: DroppedNames = { count: 0 };
   const metrics: AiWeeklyMetrics = {
     version: 1,
-    period,
+    period: periodText(root.period),
     scope_rule: string(root.scope_rule),
-    sources,
-    scopes,
+    sources: sources(root.sources),
+    scopes: scopes(root.scopes),
     inferredSessions: count(root.inferredSessions),
-    tokens: {
-      claude: {
-        thisWeek: models(claudeRaw.thisWeek),
-        prevWeek: models(claudeRaw.prevWeek),
-      },
-      codex: {
-        thisWeek: count(codexRaw.thisWeek),
-        prevWeek: count(codexRaw.prevWeek),
-        zstSkipped: count(codexRaw.zstSkipped),
-      },
-    },
+    tokens: tokens(root.tokens),
     reverts: count(root.reverts),
     verify: counts(root.verify),
     clarify: clarify(root.clarify),
-    inventory: {
-      skills: inventoryItems(inventoryRaw.skills, dropped),
-      plugins: inventoryItems(inventoryRaw.plugins, dropped),
-      agents: inventoryItems(inventoryRaw.agents, dropped),
-      hooks: { total: count(record(inventoryRaw.hooks).total) },
-    },
-    hooks: { hooks },
+    inventory: inventory({ value: root.inventory, dropped }),
+    hooks: hooks({ value: root.hooks, dropped }),
     corrupt: count(root.corrupt),
   };
   return { metrics, droppedNameCount: dropped.count };
 };
 
 const invalid = (): never => {
-  throw new AiWeeklyError({ code: 'SHAPE', exitCode: null });
+  throw new AiWeeklyError({ code: AiWeeklyErrorCode.SHAPE, exitCode: null });
 };
 
 const record = (value: unknown): Record<string, unknown> => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return invalid();
   }
+  // typeof 검사는 object 까지만 좁힌다. 필드를 꺼내려면 이 단언이 필요하다.
   return value as Record<string, unknown>;
+};
+
+const array = (value: unknown): unknown[] => {
+  if (!Array.isArray(value)) {
+    return invalid();
+  }
+  return value;
 };
 
 const string = (value: unknown): string => {
@@ -114,17 +88,76 @@ const count = (value: unknown): number => {
   return value;
 };
 
-const sourceStatus = (value: unknown): AiWeeklySourceStatus => {
-  if (value !== 'ok' && value !== 'missing' && value !== 'error') {
-    return invalid();
-  }
-  return value;
+const periodText = (value: unknown): AiWeeklyPeriodText => {
+  const raw = record(value);
+  return {
+    since: string(raw.since),
+    until: string(raw.until),
+    prevSince: string(raw.prevSince),
+  };
 };
 
+const sources = (value: unknown): AiWeeklySources => {
+  const raw = record(value);
+  return {
+    [AiWeeklySource.CLAUDE]: sourceStatus(raw[AiWeeklySource.CLAUDE]),
+    [AiWeeklySource.CODEX]: sourceStatus(raw[AiWeeklySource.CODEX]),
+    [AiWeeklySource.GIT]: sourceStatus(raw[AiWeeklySource.GIT]),
+    [AiWeeklySource.INVENTORY]: sourceStatus(raw[AiWeeklySource.INVENTORY]),
+    [AiWeeklySource.HOOKS]: sourceStatus(raw[AiWeeklySource.HOOKS]),
+  };
+};
+
+const sourceStatus = (value: unknown): AiWeeklySourceStatus => {
+  const found = Object.values(AiWeeklySourceStatus).find(
+    (status) => status === value,
+  );
+  if (!found) {
+    return invalid();
+  }
+  return found;
+};
+
+const scopes = (value: unknown): AiWeeklyScopes => {
+  const raw = record(value);
+  return {
+    [AiWeeklyScope.COMPANY]: scopeMetrics(raw[AiWeeklyScope.COMPANY]),
+    [AiWeeklyScope.PERSONAL]: scopeMetrics(raw[AiWeeklyScope.PERSONAL]),
+    [AiWeeklyScope.UNKNOWN]: scopeMetrics(raw[AiWeeklyScope.UNKNOWN]),
+  };
+};
+
+const scopeMetrics = (value: unknown): AiWeeklyScopeMetrics => {
+  const raw = record(value);
+  return {
+    tokens: models(raw.tokens),
+    reverts: count(raw.reverts),
+    verify: counts(raw.verify),
+    clarify: clarify(raw.clarify),
+  };
+};
+
+const tokens = (value: unknown): AiWeeklyTokens => {
+  const raw = record(value);
+  const claude = record(raw.claude);
+  const codex = record(raw.codex);
+  return {
+    claude: {
+      thisWeek: models(claude.thisWeek),
+      prevWeek: models(claude.prevWeek),
+    },
+    codex: {
+      thisWeek: count(codex.thisWeek),
+      prevWeek: count(codex.prevWeek),
+      zstSkipped: count(codex.zstSkipped),
+    },
+  };
+};
+
+// 검증을 통과하지 못한 모델 이름은 버리지 않고 'other' 로 합쳐 토큰 합계를 지킨다.
 const models = (value: unknown): Record<string, number> => {
-  const values = record(value);
   const result: Record<string, number> = {};
-  for (const [name, rawCount] of Object.entries(values)) {
+  for (const [name, rawCount] of Object.entries(record(value))) {
     const tokenCount = count(rawCount);
     const safeName = MODEL.test(name) ? name : 'other';
     result[safeName] = (result[safeName] ?? 0) + tokenCount;
@@ -142,32 +175,47 @@ const clarify = (value: unknown): AiWeeklyClarify => {
   return { humanTurns: count(raw.humanTurns), matched: count(raw.matched) };
 };
 
-const scopeMetrics = (value: unknown): AiWeeklyScopeMetrics => {
+const inventory = ({ value, dropped }: NamedListInput): AiWeeklyInventory => {
   const raw = record(value);
   return {
-    tokens: models(raw.tokens),
-    reverts: count(raw.reverts),
-    verify: counts(raw.verify),
-    clarify: clarify(raw.clarify),
+    skills: inventoryItems({ value: raw.skills, dropped }),
+    plugins: inventoryItems({ value: raw.plugins, dropped }),
+    agents: inventoryItems({ value: raw.agents, dropped }),
+    hooks: { total: count(record(raw.hooks).total) },
   };
 };
 
-const inventoryItems = (
-  value: unknown,
-  dropped: { count: number },
-): AiWeeklyInventoryItems => {
+const inventoryItems = ({
+  value,
+  dropped,
+}: NamedListInput): AiWeeklyInventoryItems => {
   const raw = record(value);
-  if (!Array.isArray(raw.unused)) {
-    invalid();
+  const unused: string[] = [];
+  for (const name of array(raw.unused)) {
+    if (typeof name === 'string' && NAME.test(name)) {
+      unused.push(name);
+      continue;
+    }
+    dropped.count += 1;
   }
-  const unused = (raw.unused as unknown[]).filter(
-    (name: unknown): name is string => {
-      if (typeof name === 'string' && NAME.test(name)) {
-        return true;
-      }
-      dropped.count += 1;
-      return false;
-    },
-  );
   return { total: count(raw.total), added: count(raw.added), unused };
+};
+
+const hooks = ({ value, dropped }: NamedListInput): AiWeeklyHooks => {
+  const found: AiWeeklyHookCount[] = [];
+  for (const item of array(record(value).hooks)) {
+    const raw = record(item);
+    const hook: AiWeeklyHookCount = {
+      name: string(raw.name),
+      fired: count(raw.fired),
+      delivered: count(raw.delivered),
+      blocked: count(raw.blocked),
+    };
+    if (!NAME.test(hook.name)) {
+      dropped.count += 1;
+      continue;
+    }
+    found.push(hook);
+  }
+  return { hooks: found };
 };

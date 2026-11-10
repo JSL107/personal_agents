@@ -5,9 +5,9 @@ import { parseAiWeeklyMetrics } from '../../../ai-tool-weekly/domain/ai-weekly-m
 import {
   AiWeeklyPeriod,
   resolveAiWeeklyPeriod,
-  toKstIso,
 } from '../../../ai-tool-weekly/domain/ai-weekly-period';
 import { AiWeeklyMetricsRunner } from '../../../ai-tool-weekly/infrastructure/ai-weekly-metrics.runner';
+import { formatKstIsoDateTime } from '../../../common/util/kst-date.util';
 import {
   GITHUB_CLIENT_PORT,
   GithubClientPort,
@@ -66,8 +66,10 @@ export class AiToolWeeklyAutopilotTask implements AutopilotTask {
       const results = await this.github.listAuthorMergedPullRequestsSince({
         repo: null,
         author,
-        sinceIsoDate: toKstIso(period.since),
-        untilIsoDate: toKstIso(new Date(period.until.getTime() - 1000)),
+        sinceIsoDate: formatKstIsoDateTime(period.since),
+        untilIsoDate: formatKstIsoDateTime(
+          new Date(period.until.getTime() - 1000),
+        ),
         limit: 100,
         throwOnDetailFailure: true,
       });

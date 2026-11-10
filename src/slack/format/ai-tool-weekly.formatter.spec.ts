@@ -1,4 +1,7 @@
-import { AiWeeklyMetrics } from '../../ai-tool-weekly/domain/ai-weekly-metrics.type';
+import {
+  AiWeeklyMetrics,
+  AiWeeklySourceStatus,
+} from '../../ai-tool-weekly/domain/ai-weekly-metrics.type';
 import { resolveAiWeeklyPeriod } from '../../ai-tool-weekly/domain/ai-weekly-period';
 import {
   AiWeeklyPullRequests,
@@ -11,11 +14,11 @@ const metrics: AiWeeklyMetrics = {
   period: { since: '', until: '', prevSince: '' },
   scope_rule: 'origin remote',
   sources: {
-    claude: 'ok',
-    codex: 'ok',
-    git: 'ok',
-    inventory: 'ok',
-    hooks: 'ok',
+    claude: AiWeeklySourceStatus.OK,
+    codex: AiWeeklySourceStatus.OK,
+    git: AiWeeklySourceStatus.OK,
+    inventory: AiWeeklySourceStatus.OK,
+    hooks: AiWeeklySourceStatus.OK,
   },
   scopes: {
     company: {
@@ -132,21 +135,36 @@ describe('formatAiToolWeekly', () => {
   });
 
   it.each([
-    ['claude', 'ok', 'Claude 토큰 412M', '비용:'],
-    ['claude', 'missing', 'Claude 토큰 수집 실패', '신호:'],
-    ['claude', 'error', 'Claude 토큰 수집 실패', '이해: 수집 실패'],
-    ['codex', 'ok', 'Codex 38M', '비용:'],
-    ['codex', 'missing', 'Codex 수집 실패', '비용:'],
-    ['codex', 'error', 'Codex 수집 실패', '비용:'],
-    ['git', 'ok', 'revert 1', '결과:'],
-    ['git', 'missing', 'revert 수집 실패', '결과:'],
-    ['git', 'error', 'revert 수집 실패', '결과:'],
-    ['inventory', 'ok', '0회 사용 스킬 6', '정비 후보:'],
-    ['inventory', 'missing', '정비 후보: 수집 실패', '정비 후보:'],
-    ['inventory', 'error', '정비 후보: 수집 실패', '정비 후보:'],
-    ['hooks', 'ok', '훅 울림 1339', '신호:'],
-    ['hooks', 'missing', '훅 집계 스크립트 미설치', '신호:'],
-    ['hooks', 'error', '훅 집계 실패', '신호:'],
+    ['claude', AiWeeklySourceStatus.OK, 'Claude 토큰 412M', '비용:'],
+    ['claude', AiWeeklySourceStatus.MISSING, 'Claude 토큰 수집 실패', '신호:'],
+    [
+      'claude',
+      AiWeeklySourceStatus.ERROR,
+      'Claude 토큰 수집 실패',
+      '이해: 수집 실패',
+    ],
+    ['codex', AiWeeklySourceStatus.OK, 'Codex 38M', '비용:'],
+    ['codex', AiWeeklySourceStatus.MISSING, 'Codex 수집 실패', '비용:'],
+    ['codex', AiWeeklySourceStatus.ERROR, 'Codex 수집 실패', '비용:'],
+    ['git', AiWeeklySourceStatus.OK, 'revert 1', '결과:'],
+    ['git', AiWeeklySourceStatus.MISSING, 'revert 수집 실패', '결과:'],
+    ['git', AiWeeklySourceStatus.ERROR, 'revert 수집 실패', '결과:'],
+    ['inventory', AiWeeklySourceStatus.OK, '0회 사용 스킬 6', '정비 후보:'],
+    [
+      'inventory',
+      AiWeeklySourceStatus.MISSING,
+      '정비 후보: 수집 실패',
+      '정비 후보:',
+    ],
+    [
+      'inventory',
+      AiWeeklySourceStatus.ERROR,
+      '정비 후보: 수집 실패',
+      '정비 후보:',
+    ],
+    ['hooks', AiWeeklySourceStatus.OK, '훅 울림 1339', '신호:'],
+    ['hooks', AiWeeklySourceStatus.MISSING, '훅 집계 스크립트 미설치', '신호:'],
+    ['hooks', AiWeeklySourceStatus.ERROR, '훅 집계 실패', '신호:'],
   ] as const)(
     '%s 소스가 %s이면 해당 상태 문구를 표시한다',
     (name, status, expected, linePrefix) => {
@@ -158,7 +176,7 @@ describe('formatAiToolWeekly', () => {
         .find((item) => item.startsWith(linePrefix));
       expect(summary).toContain(expected);
       expect(line).toBeDefined();
-      if (status !== 'ok') {
+      if (status !== AiWeeklySourceStatus.OK) {
         const hiddenNumbers = {
           claude: 'Claude 토큰 412M',
           codex: 'Codex 38M',

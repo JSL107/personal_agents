@@ -1,17 +1,79 @@
-import { AiWeeklyMetrics } from '../../ai-tool-weekly/domain/ai-weekly-metrics.type';
+import { match } from 'ts-pattern';
+
+import {
+  AiWeeklyHookCount,
+  AiWeeklyMetrics,
+  AiWeeklyScope,
+  AiWeeklySourceStatus,
+} from '../../ai-tool-weekly/domain/ai-weekly-metrics.type';
 import { AiWeeklyPeriod } from '../../ai-tool-weekly/domain/ai-weekly-period';
+import {
+  addDaysTo,
+  getKstDateOf,
+  weekdayOf,
+} from '../../common/util/kst-date.util';
 import { FormattedReport } from './formatted-report.type';
 
-export type AiWeeklyPullRequests =
-  | { status: 'ok'; company: number; personal: number; truncated: boolean }
-  | { status: 'error' }
-  | { status: 'skipped' };
+export interface AiWeeklyPullRequestsFound {
+  status: 'ok';
+  company: number;
+  personal: number;
+  truncated: boolean;
+}
 
-type FormatInput = {
+export interface AiWeeklyPullRequestsFailed {
+  status: 'error';
+}
+
+// dry-run 처럼 GitHub 를 부르지 않은 경우.
+export interface AiWeeklyPullRequestsSkipped {
+  status: 'skipped';
+}
+
+export type AiWeeklyPullRequests =
+  | AiWeeklyPullRequestsFound
+  | AiWeeklyPullRequestsFailed
+  | AiWeeklyPullRequestsSkipped;
+
+interface FormatInput {
   period: AiWeeklyPeriod;
   metrics: AiWeeklyMetrics;
   pullRequests: AiWeeklyPullRequests;
-};
+}
+
+interface ResultInput {
+  metrics: AiWeeklyMetrics;
+  pullRequests: AiWeeklyPullRequests;
+}
+
+interface ScopeCellInput {
+  metrics: AiWeeklyMetrics;
+  scope: AiWeeklyScope;
+}
+
+interface ScopeRowInput {
+  label: string;
+  cell: (scope: AiWeeklyScope) => string;
+}
+
+interface PercentInput {
+  part: number;
+  total: number;
+  digits: number;
+}
+
+interface ChangeInput {
+  current: number;
+  previous: number;
+}
+
+interface NamedSumInput {
+  values: Record<string, number>;
+  name: string;
+}
+
+const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
+const OK = AiWeeklySourceStatus.OK;
 
 export const formatAiToolWeekly = ({
   period,
@@ -20,7 +82,7 @@ export const formatAiToolWeekly = ({
 }: FormatInput): FormattedReport => {
   const summary = [
     formatHeading(period),
-    formatResult(metrics, pullRequests),
+    formatResult({ metrics, pullRequests }),
     formatCost(metrics),
     formatSignal(metrics),
     formatClarify(metrics),
@@ -31,133 +93,163 @@ export const formatAiToolWeekly = ({
 };
 
 const formatHeading = (period: AiWeeklyPeriod): string => {
-  const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
-  const start = new Date(period.since.getTime() + 9 * 60 * 60 * 1000);
-  const end = new Date(
-    period.until.getTime() - 24 * 60 * 60 * 1000 + 9 * 60 * 60 * 1000,
-  );
-  const dateLabel = (date: Date): string => {
-    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(date.getUTCDate()).padStart(2, '0');
-    return `${month}/${day}(${weekdays[date.getUTCDay()]})`;
-  };
-  return `🧰 AI 도구 주간 점검 ${dateLabel(start)}~${dateLabel(end)}`;
+  const start = dateLabel(getKstDateOf(period.since));
+  const end = dateLabel(addDaysTo(getKstDateOf(period.until), -1));
+  return `🧰 AI 도구 주간 점검 ${start}~${end}`;
 };
 
-const formatResult = (
-  metrics: AiWeeklyMetrics,
-  pullRequests: AiWeeklyPullRequests,
-): string => {
-  let prText = '머지 PR (dry-run 생략)';
-  if (pullRequests.status === 'error') {
-    prText = '머지 PR 조회 실패';
-  }
-  if (pullRequests.status === 'ok') {
-    const total = pullRequests.company + pullRequests.personal;
-    const count = pullRequests.truncated ? '≥100' : String(total);
-    prText = `머지 PR ${count} (회사 ${pullRequests.company} · 개인 ${pullRequests.personal})`;
-  }
-  const revertText =
-    metrics.sources.git === 'ok'
-      ? `revert ${metrics.reverts}`
-      : 'revert 수집 실패';
-  let result = `결과: ${prText} · ${revertText}`;
+const dateLabel = (date: string): string => {
+  const [, month, day] = date.split('-');
+  const weekday = WEEKDAYS[weekdayOf(date)];
+  return `${month}/${day}(${weekday})`;
+};
+
+const formatResult = ({ metrics, pullRequests }: ResultInput): string => {
+  const parts = [describePullRequests(pullRequests), describeReverts(metrics)];
   if (pullRequests.status === 'ok' && pullRequests.company === 0) {
-    result += ' · 회사 PR 0건: 조회 권한 확인 필요';
+    parts.push('회사 PR 0건: 조회 권한 확인 필요');
   }
-  return result;
+  const joined = parts.join(' · ');
+  return `결과: ${joined}`;
+};
+
+const describePullRequests = (pullRequests: AiWeeklyPullRequests): string => {
+  const text = match(pullRequests)
+    .with({ status: 'ok' }, (found) => describeFoundPullRequests(found))
+    .with({ status: 'error' }, () => '머지 PR 조회 실패')
+    .with({ status: 'skipped' }, () => '머지 PR (dry-run 생략)')
+    .exhaustive();
+  return text;
+};
+
+const describeFoundPullRequests = ({
+  company,
+  personal,
+  truncated,
+}: AiWeeklyPullRequestsFound): string => {
+  const total = truncated ? '≥100' : String(company + personal);
+  return `머지 PR ${total} (회사 ${company} · 개인 ${personal})`;
+};
+
+const describeReverts = (metrics: AiWeeklyMetrics): string => {
+  if (metrics.sources.git !== OK) {
+    return 'revert 수집 실패';
+  }
+  return `revert ${metrics.reverts}`;
 };
 
 const formatCost = (metrics: AiWeeklyMetrics): string => {
-  const parts: string[] = [];
-  if (metrics.sources.claude === 'ok') {
-    const current = sumValues(metrics.tokens.claude.thisWeek);
-    const previous = sumValues(metrics.tokens.claude.prevWeek);
-    const change = formatChange(current, previous);
-    const opus = sumNamed(metrics.tokens.claude.thisWeek, 'opus');
-    const sonnet = sumNamed(metrics.tokens.claude.thisWeek, 'sonnet');
-    const comparison = previous === 0 ? change : `지난주 대비 ${change}`;
-    parts.push(
-      `Claude 토큰 ${formatMillions(current)} (${comparison}) · Opus ${percent(opus, current, 0)} · Sonnet ${percent(sonnet, current, 0)}`,
-    );
-  } else {
-    parts.push('Claude 토큰 수집 실패');
+  const claude = describeClaudeTokens(metrics);
+  const codex = describeCodexTokens(metrics);
+  return `비용: ${claude} · ${codex}`;
+};
+
+const describeClaudeTokens = (metrics: AiWeeklyMetrics): string => {
+  if (metrics.sources.claude !== OK) {
+    return 'Claude 토큰 수집 실패';
   }
-  if (metrics.sources.codex === 'ok') {
-    const { thisWeek, prevWeek, zstSkipped } = metrics.tokens.codex;
-    let codex = `Codex ${formatMillions(thisWeek)} (${formatChange(thisWeek, prevWeek)})`;
-    if (zstSkipped > 0) {
-      codex += ` · 압축 ${zstSkipped}건 제외`;
-    }
-    parts.push(codex);
-  } else {
-    parts.push('Codex 수집 실패');
+  const { thisWeek, prevWeek } = metrics.tokens.claude;
+  const current = sumValues(thisWeek);
+  const previous = sumValues(prevWeek);
+  const change = formatChange({ current, previous });
+  const comparison = previous === 0 ? change : `지난주 대비 ${change}`;
+  const opusTokens = sumNamed({ values: thisWeek, name: 'opus' });
+  const sonnetTokens = sumNamed({ values: thisWeek, name: 'sonnet' });
+  const opus = percent({ part: opusTokens, total: current, digits: 0 });
+  const sonnet = percent({ part: sonnetTokens, total: current, digits: 0 });
+  const tokens = formatMillions(current);
+  return `Claude 토큰 ${tokens} (${comparison}) · Opus ${opus} · Sonnet ${sonnet}`;
+};
+
+const describeCodexTokens = (metrics: AiWeeklyMetrics): string => {
+  if (metrics.sources.codex !== OK) {
+    return 'Codex 수집 실패';
   }
-  return `비용: ${parts.join(' · ')}`;
+  const { thisWeek, prevWeek, zstSkipped } = metrics.tokens.codex;
+  const tokens = formatMillions(thisWeek);
+  const change = formatChange({ current: thisWeek, previous: prevWeek });
+  const codex = `Codex ${tokens} (${change})`;
+  if (zstSkipped === 0) {
+    return codex;
+  }
+  return `${codex} · 압축 ${zstSkipped}건 제외`;
 };
 
 const formatSignal = (metrics: AiWeeklyMetrics): string => {
-  const verify =
-    metrics.sources.claude === 'ok'
-      ? `검증 명령 파이프 경유 ${percent(metrics.verify.piped, metrics.verify.total, 0)}`
-      : '파이프 경유 수집 실패';
-  let hooks = '훅 집계 실패';
-  if (metrics.sources.hooks === 'missing') {
-    hooks = '훅 집계 스크립트 미설치';
-  }
-  if (metrics.sources.hooks === 'ok') {
-    const totals = metrics.hooks.hooks.reduce(
-      (total, item) => ({
-        fired: total.fired + item.fired,
-        delivered: total.delivered + item.delivered,
-        blocked: total.blocked + item.blocked,
-      }),
-      { fired: 0, delivered: 0, blocked: 0 },
-    );
-    hooks = `훅 울림 ${totals.fired} / 전달 ${totals.delivered} / 차단 ${totals.blocked} (차단은 하한값)`;
-  }
+  const verify = describeVerify(metrics);
+  const hooks = describeHooks(metrics);
   return `신호: ${verify} · ${hooks}`;
 };
 
+const describeVerify = (metrics: AiWeeklyMetrics): string => {
+  if (metrics.sources.claude !== OK) {
+    return '파이프 경유 수집 실패';
+  }
+  const { piped, total } = metrics.verify;
+  const rate = percent({ part: piped, total, digits: 0 });
+  return `검증 명령 파이프 경유 ${rate}`;
+};
+
+const describeHooks = (metrics: AiWeeklyMetrics): string => {
+  const text = match(metrics.sources.hooks)
+    .with(AiWeeklySourceStatus.OK, () =>
+      describeHookTotals(metrics.hooks.hooks),
+    )
+    .with(AiWeeklySourceStatus.MISSING, () => '훅 집계 스크립트 미설치')
+    .with(AiWeeklySourceStatus.ERROR, () => '훅 집계 실패')
+    .exhaustive();
+  return text;
+};
+
+const describeHookTotals = (hooks: AiWeeklyHookCount[]): string => {
+  const fired = sumOf(hooks.map((hook) => hook.fired));
+  const delivered = sumOf(hooks.map((hook) => hook.delivered));
+  const blocked = sumOf(hooks.map((hook) => hook.blocked));
+  return `훅 울림 ${fired} / 전달 ${delivered} / 차단 ${blocked} (차단은 하한값)`;
+};
+
 const formatClarify = (metrics: AiWeeklyMetrics): string => {
-  if (metrics.sources.claude !== 'ok') {
+  if (metrics.sources.claude !== OK) {
     return '이해: 수집 실패';
   }
-  const rate = percent(metrics.clarify.matched, metrics.clarify.humanTurns, 1);
+  const { matched, humanTurns } = metrics.clarify;
+  const rate = percent({ part: matched, total: humanTurns, digits: 1 });
   return `이해: 설명 재요청 ${rate} (휴리스틱)`;
 };
 
 const formatInventory = (metrics: AiWeeklyMetrics): string => {
-  if (metrics.sources.inventory !== 'ok') {
+  if (metrics.sources.inventory !== OK) {
     return '정비 후보: 수집 실패';
   }
   const { skills, plugins, agents, hooks } = metrics.inventory;
   const added = skills.added + plugins.added + agents.added;
-  return `정비 후보: 0회 사용 스킬 ${skills.unused.length} · 플러그인 ${plugins.unused.length} · 이번 주 추가 ${added} (총 스킬 ${skills.total} · 플러그인 ${plugins.total} · 훅 ${hooks.total} · 에이전트 ${agents.total})`;
+  const unused = `0회 사용 스킬 ${skills.unused.length} · 플러그인 ${plugins.unused.length}`;
+  const totals = `총 스킬 ${skills.total} · 플러그인 ${plugins.total} · 훅 ${hooks.total} · 에이전트 ${agents.total}`;
+  return `정비 후보: ${unused} · 이번 주 추가 ${added} (${totals})`;
 };
 
 const formatDetail = (metrics: AiWeeklyMetrics): string => {
   const lines = [
-    '범위 | 회사 | 개인 | unknown',
-    `토큰 | ${scopeToken(metrics, 'company')} | ${scopeToken(metrics, 'personal')} | ${scopeToken(metrics, 'unknown')}`,
-    `revert | ${scopeRevert(metrics, 'company')} | ${scopeRevert(metrics, 'personal')} | ${scopeRevert(metrics, 'unknown')}`,
-    `검증 | ${scopeVerify(metrics, 'company')} | ${scopeVerify(metrics, 'personal')} | ${scopeVerify(metrics, 'unknown')}`,
-    `설명 재요청 | ${scopeClarify(metrics, 'company')} | ${scopeClarify(metrics, 'personal')} | ${scopeClarify(metrics, 'unknown')}`,
+    scopeRow({ label: '범위', cell: (scope) => SCOPE_LABELS[scope] }),
+    scopeRow({
+      label: '토큰',
+      cell: (scope) => scopeToken({ metrics, scope }),
+    }),
+    scopeRow({
+      label: 'revert',
+      cell: (scope) => scopeRevert({ metrics, scope }),
+    }),
+    scopeRow({
+      label: '검증',
+      cell: (scope) => scopeVerify({ metrics, scope }),
+    }),
+    scopeRow({
+      label: '설명 재요청',
+      cell: (scope) => scopeClarify({ metrics, scope }),
+    }),
     `경로로 추정 분류한 세션 ${metrics.inferredSessions}건`,
+    ...describeUnused(metrics),
   ];
-  if (metrics.sources.inventory === 'ok') {
-    lines.push(
-      `0회 사용 스킬: ${formatNames(metrics.inventory.skills.unused)}`,
-    );
-    lines.push(
-      `0회 사용 플러그인: ${formatNames(metrics.inventory.plugins.unused)}`,
-    );
-    lines.push(
-      `0회 사용 에이전트: ${formatNames(metrics.inventory.agents.unused)}`,
-    );
-  } else {
-    lines.push('0회 사용 목록: 수집 실패');
-  }
   const { sources } = metrics;
   lines.push(
     `수집 상태: claude ${sources.claude} · codex ${sources.codex} · git ${sources.git} · inventory ${sources.inventory} · hooks ${sources.hooks}`,
@@ -165,68 +257,88 @@ const formatDetail = (metrics: AiWeeklyMetrics): string => {
   return lines.join('\n');
 };
 
-const scopeToken = (
-  metrics: AiWeeklyMetrics,
-  scope: keyof AiWeeklyMetrics['scopes'],
-): string => {
-  if (metrics.sources.claude !== 'ok') {
+const SCOPE_LABELS: Record<AiWeeklyScope, string> = {
+  [AiWeeklyScope.COMPANY]: '회사',
+  [AiWeeklyScope.PERSONAL]: '개인',
+  [AiWeeklyScope.UNKNOWN]: 'unknown',
+};
+
+const scopeRow = ({ label, cell }: ScopeRowInput): string => {
+  const cells = Object.values(AiWeeklyScope).map(cell);
+  return [label, ...cells].join(' | ');
+};
+
+const describeUnused = (metrics: AiWeeklyMetrics): string[] => {
+  if (metrics.sources.inventory !== OK) {
+    return ['0회 사용 목록: 수집 실패'];
+  }
+  const { skills, plugins, agents } = metrics.inventory;
+  return [
+    `0회 사용 스킬: ${formatNames(skills.unused)}`,
+    `0회 사용 플러그인: ${formatNames(plugins.unused)}`,
+    `0회 사용 에이전트: ${formatNames(agents.unused)}`,
+  ];
+};
+
+const scopeToken = ({ metrics, scope }: ScopeCellInput): string => {
+  if (metrics.sources.claude !== OK) {
     return '수집 실패';
   }
   const count = sumValues(metrics.scopes[scope].tokens);
   return formatMillions(count);
 };
 
-const scopeRevert = (
-  metrics: AiWeeklyMetrics,
-  scope: keyof AiWeeklyMetrics['scopes'],
-): string => {
-  if (metrics.sources.git !== 'ok') {
+const scopeRevert = ({ metrics, scope }: ScopeCellInput): string => {
+  if (metrics.sources.git !== OK) {
     return '수집 실패';
   }
   return String(metrics.scopes[scope].reverts);
 };
 
-const scopeVerify = (
-  metrics: AiWeeklyMetrics,
-  scope: keyof AiWeeklyMetrics['scopes'],
-): string => {
-  if (metrics.sources.claude !== 'ok') {
+const scopeVerify = ({ metrics, scope }: ScopeCellInput): string => {
+  if (metrics.sources.claude !== OK) {
     return '수집 실패';
   }
-  const value = metrics.scopes[scope].verify;
-  return `${value.piped}/${value.total}`;
+  const { piped, total } = metrics.scopes[scope].verify;
+  return `${piped}/${total}`;
 };
 
-const scopeClarify = (
-  metrics: AiWeeklyMetrics,
-  scope: keyof AiWeeklyMetrics['scopes'],
-): string => {
-  if (metrics.sources.claude !== 'ok') {
+const scopeClarify = ({ metrics, scope }: ScopeCellInput): string => {
+  if (metrics.sources.claude !== OK) {
     return '수집 실패';
   }
-  const value = metrics.scopes[scope].clarify;
-  return `${value.matched}/${value.humanTurns}`;
+  const { matched, humanTurns } = metrics.scopes[scope].clarify;
+  return `${matched}/${humanTurns}`;
 };
 
 const sumValues = (values: Record<string, number>): number =>
-  Object.values(values).reduce((sum, value) => sum + value, 0);
+  sumOf(Object.values(values));
 
-const sumNamed = (values: Record<string, number>, name: string): number =>
-  Object.entries(values)
-    .filter(([model]) => model.toLowerCase().includes(name))
-    .reduce((sum, [, count]) => sum + count, 0);
-
-const percent = (part: number, total: number, digits: number): string => {
-  if (total === 0) {
-    return `${(0).toFixed(digits)}%`;
-  }
-  return `${((part / total) * 100).toFixed(digits)}%`;
+const sumNamed = ({ values, name }: NamedSumInput): number => {
+  const matched = Object.entries(values).filter(([model]) =>
+    model.toLowerCase().includes(name),
+  );
+  const counts = matched.map(([, count]) => count);
+  return sumOf(counts);
 };
 
-const formatMillions = (count: number): string =>
-  `${Math.round(count / 1_000_000)}M`;
+const sumOf = (numbers: number[]): number => {
+  const total = numbers.reduce((sum, value) => sum + value, 0);
+  return total;
+};
 
-const formatChange = (current: number, previous: number): string => {
+const percent = ({ part, total, digits }: PercentInput): string => {
+  const ratio = total === 0 ? 0 : (part / total) * 100;
+  const fixed = ratio.toFixed(digits);
+  return `${fixed}%`;
+};
+
+const formatMillions = (count: number): string => {
+  const millions = Math.round(count / 1_000_000);
+  return `${millions}M`;
+};
+
+const formatChange = ({ current, previous }: ChangeInput): string => {
   if (previous === 0) {
     return '지난주 데이터 없음';
   }
