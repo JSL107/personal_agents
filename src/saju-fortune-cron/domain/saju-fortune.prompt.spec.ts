@@ -68,4 +68,17 @@ describe('buildSajuFortunePrompt', () => {
       expect(prompt).toContain(label);
     }
   });
+
+  it('행운 포인트는 오늘의 행운 기운을 살린 행동만 쓰게 한다', () => {
+    expect(prompt).toContain('(오늘의 행운 기운을 살린 작은 행동 하나)');
+    expect(prompt).not.toContain('계산된 행운의 색');
+    expect(prompt).toContain('- 오늘의 행운 기운:');
+  });
+
+  it('조심할 날 항목엔 대처를, 별점·숫자·🍀 는 쓰지 않게 한다', () => {
+    expect(prompt).toContain('"조심할 날"인 항목에는');
+    expect(prompt).toContain('별점·숫자는 쓰지 않는다');
+    expect(prompt).toContain('🍀 이모지는 쓰지 않는다');
+    expect(prompt).toContain('- 별점 결(코드가 정함):');
+  });
 });
