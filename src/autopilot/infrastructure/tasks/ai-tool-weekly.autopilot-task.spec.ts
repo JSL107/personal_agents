@@ -59,8 +59,9 @@ describe('AiToolWeeklyAutopilotTask', () => {
     expect(github.listAuthorMergedPullRequestsSince).toHaveBeenCalledWith({
       repo: null,
       author: 'user',
-      sinceIsoDate: '2026-11-02T00:00:00+09:00',
-      untilIsoDate: '2026-11-08T23:59:59+09:00',
+      // Octokit 은 검색어의 '+' 를 인코딩하지 않아 '+09:00' 이 공백으로 읽히고 0건이 된다. UTC Z 로 넘긴다.
+      sinceIsoDate: '2026-11-01T15:00:00Z',
+      untilIsoDate: '2026-11-08T14:59:59Z',
       limit: 100,
       throwOnDetailFailure: true,
     });
