@@ -56,17 +56,16 @@ describe('buildExtraFortunePrompt', () => {
   });
 
   it('흐름이 바뀌는 절은 절입 시각·절입 직후 흐름·지금 시각을 싣는다', () => {
+    const solarTerm = { name: SpecialSolarTerm.입춘, timeKst: '16:31' };
     const context: SpecialDayContext = {
-      solarTermToday: { name: SpecialSolarTerm.입춘, timeKst: '16:31' },
+      solarTermToday: solarTerm,
       ipchun: { date: '2028-02-04', timeKst: '16:31' },
       termFlow: { yearPillar: '戊申', monthPillar: '甲寅' },
     };
     const prompt = promptOf({
       todayKst: '2028-02-04',
       context,
-      specialDays: [
-        { kind: SpecialDayKind.SOLAR_TERM, solarTerm: context.solarTermToday },
-      ],
+      specialDays: [{ kind: SpecialDayKind.SOLAR_TERM, solarTerm }],
     });
 
     expect(prompt).toContain('16시 31분');
@@ -76,16 +75,15 @@ describe('buildExtraFortunePrompt', () => {
   });
 
   it('중기(춘분)는 시각만 싣고 흐름이 바뀐다고 쓰지 말라고 한다', () => {
+    const solarTerm = { name: SpecialSolarTerm.춘분, timeKst: '05:25' };
     const context: SpecialDayContext = {
-      solarTermToday: { name: SpecialSolarTerm.춘분, timeKst: '05:25' },
+      solarTermToday: solarTerm,
       ipchun: { date: '2027-02-04', timeKst: '10:46' },
     };
     const prompt = promptOf({
       todayKst: '2027-03-21',
       context,
-      specialDays: [
-        { kind: SpecialDayKind.SOLAR_TERM, solarTerm: context.solarTermToday },
-      ],
+      specialDays: [{ kind: SpecialDayKind.SOLAR_TERM, solarTerm }],
     });
 
     expect(prompt).toContain('5시 25분');

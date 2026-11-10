@@ -1,3 +1,5 @@
+import { match } from 'ts-pattern';
+
 import { pillarToHangul } from './day-pillar';
 import { analyzeSajuDay, formatSajuFacts } from './saju-analysis';
 import { SajuFortuneRecipient } from './saju-fortune-cron.type';
@@ -5,6 +7,7 @@ import { EXTRA_SECTION_SEPARATOR } from './saju-fortune-render';
 import {
   changesFlow,
   SOLAR_TERM_MEANINGS,
+  SolarTermToday,
   SpecialDay,
   SpecialDayContext,
   SpecialDayKind,
@@ -105,8 +108,9 @@ export const formatSpecialDayFacts = ({
 }): string[] =>
   days.flatMap((day) => specialDayFacts({ day, recipient, context }));
 
+// 특별한 날 종류가 늘면 .exhaustive() 가 빌드에서 잡는다(CODE_RULES §4).
 const specialDayFacts = ({
-  day: { kind, solarTerm },
+  day,
   recipient,
   context,
 }: {
@@ -115,27 +119,32 @@ const specialDayFacts = ({
   context: SpecialDayContext;
 }): string[] => {
   const ipchunFact = `- 사주의 새해는 입춘(${spokenDate(context.ipchun.date)})부터다. 오늘 사주의 해가 바뀐다고 쓰지 않는다.`;
-  if (kind === SpecialDayKind.BIRTHDAY) {
-    return [
+  const facts = match(day)
+    .with({ kind: SpecialDayKind.BIRTHDAY }, () => [
       `- 오늘은 ${recipient.name}의 생일이다. 진심으로 축하하고, 한 살 더 먹는 앞으로의 1년에 어울리는 작은 다짐 하나를 권한다("새해"라고 부르지 않는다 — 달력의 새해가 아니다).`,
-    ];
-  }
-  if (kind === SpecialDayKind.SEOLLAL) {
-    return [
+    ])
+    .with({ kind: SpecialDayKind.SEOLLAL }, () => [
       '- 오늘은 설날(음력 새해 첫날)이다. 결: 가족과 함께하는 쉼, 마음 편한 하루.',
       ipchunFact,
-    ];
-  }
-  if (kind === SpecialDayKind.NEW_YEAR) {
-    return [
+    ])
+    .with({ kind: SpecialDayKind.NEW_YEAR }, () => [
       '- 오늘은 달력의 새해 첫날이다. 결: 달력의 새 출발, 한 해의 계획.',
       ipchunFact,
-    ];
-  }
-  if (!solarTerm) {
-    return [];
-  }
-  const { name, timeKst } = solarTerm;
+    ])
+    .with({ kind: SpecialDayKind.SOLAR_TERM }, ({ solarTerm }) =>
+      solarTermFacts({ solarTerm, context }),
+    )
+    .exhaustive();
+  return facts;
+};
+
+const solarTermFacts = ({
+  solarTerm: { name, timeKst },
+  context,
+}: {
+  solarTerm: SolarTermToday;
+  context: SpecialDayContext;
+}): string[] => {
   const termTime = spokenTime(timeKst);
   const termFacts = [
     `- 오늘은 ${name}(${SOLAR_TERM_MEANINGS[name].meaning})이다. 절기가 드는 시각: ${termTime}.`,

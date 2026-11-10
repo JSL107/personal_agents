@@ -1,3 +1,5 @@
+import { match } from 'ts-pattern';
+
 import { YearMonthPillars } from './saju-analysis';
 
 // 특별한 날로 치는 절기 — 계절의 문턱 여덟 개(사용자 결정). 나머지 16절기는 특집을 내지 않는다.
@@ -61,10 +63,20 @@ export enum SpecialDayKind {
   SOLAR_TERM = 'solarTerm',
 }
 
-export interface SpecialDay {
-  kind: SpecialDayKind;
-  solarTerm?: SolarTermToday;
+// 절기 특집만 절기 정보를 갖는다 — 판별 유니온이라 갈래마다 타입이 좁혀진다.
+interface CalendarSpecialDay {
+  kind:
+    | SpecialDayKind.BIRTHDAY
+    | SpecialDayKind.SEOLLAL
+    | SpecialDayKind.NEW_YEAR;
 }
+
+interface SolarTermSpecialDay {
+  kind: SpecialDayKind.SOLAR_TERM;
+  solarTerm: SolarTermToday;
+}
+
+export type SpecialDay = CalendarSpecialDay | SolarTermSpecialDay;
 
 const NEW_YEAR_SUFFIX = '-01-01';
 const LEAP_DAY = '02-29';
@@ -122,25 +134,29 @@ export const specialDaysOf = ({
 };
 
 // 특집 단락의 첫 줄 — 코드가 그린다.
+// 특별한 날 종류가 늘면 .exhaustive() 가 빌드에서 잡는다(CODE_RULES §4).
 export const renderSpecialDayLine = ({
-  day: { kind, solarTerm },
+  day,
   name,
 }: {
   day: SpecialDay;
   name: string;
 }): string => {
-  if (kind === SpecialDayKind.BIRTHDAY) {
-    return `🎂 생일 축하해, ${name}!`;
-  }
-  if (kind === SpecialDayKind.SEOLLAL) {
-    return '🧧 설날이야 — 새 한 해가 열리는 날';
-  }
-  if (kind === SpecialDayKind.NEW_YEAR) {
-    return '🎍 새해 첫날이야';
-  }
-  if (!solarTerm) {
-    throw new Error('절기 특집에 절기 정보가 없음');
-  }
-  const { emoji, meaning } = SOLAR_TERM_MEANINGS[solarTerm.name];
-  return `${emoji} 오늘은 ${solarTerm.name} — ${meaning}`;
+  const line = match(day)
+    .with({ kind: SpecialDayKind.BIRTHDAY }, () => `🎂 생일 축하해, ${name}!`)
+    .with(
+      { kind: SpecialDayKind.SEOLLAL },
+      () => '🧧 설날이야 — 새 한 해가 열리는 날',
+    )
+    .with({ kind: SpecialDayKind.NEW_YEAR }, () => '🎍 새해 첫날이야')
+    .with({ kind: SpecialDayKind.SOLAR_TERM }, ({ solarTerm }) =>
+      solarTermLineOf(solarTerm),
+    )
+    .exhaustive();
+  return line;
+};
+
+const solarTermLineOf = ({ name }: SolarTermToday): string => {
+  const { emoji, meaning } = SOLAR_TERM_MEANINGS[name];
+  return `${emoji} 오늘은 ${name} — ${meaning}`;
 };

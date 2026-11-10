@@ -1,6 +1,7 @@
 import {
   isBirthdayOn,
   renderSpecialDayLine,
+  SpecialDay,
   SpecialDayContext,
   SpecialDayKind,
   specialDaysOf,
@@ -45,7 +46,10 @@ describe('specialDaysOf', () => {
       'seollal',
       'solarTerm',
     ]);
-    expect(days[2].solarTerm).toEqual({ name: '입춘', timeKst: '08:00' });
+    expect(days[2]).toEqual({
+      kind: SpecialDayKind.SOLAR_TERM,
+      solarTerm: { name: '입춘', timeKst: '08:00' },
+    });
   });
 
   it('1월 1일은 새해다', () => {
@@ -66,7 +70,7 @@ describe('specialDaysOf', () => {
 });
 
 describe('renderSpecialDayLine', () => {
-  it.each([
+  const cases: [SpecialDay, string][] = [
     [{ kind: SpecialDayKind.BIRTHDAY }, '🎂 생일 축하해, 길동!'],
     [{ kind: SpecialDayKind.SEOLLAL }, '🧧 설날이야 — 새 한 해가 열리는 날'],
     [{ kind: SpecialDayKind.NEW_YEAR }, '🎍 새해 첫날이야'],
@@ -84,7 +88,9 @@ describe('renderSpecialDayLine', () => {
       },
       '🌙 오늘은 동지 — 밤이 가장 긴 날',
     ],
-  ])('%o', (day, expected) => {
+  ];
+
+  it.each(cases)('%o', (day, expected) => {
     expect(renderSpecialDayLine({ day, name: '길동' })).toBe(expected);
   });
 });
