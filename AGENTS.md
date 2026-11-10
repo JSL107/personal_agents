@@ -32,6 +32,7 @@
 | 단위 테스트 | `pnpm test` |
 | 빌드 (type 검증 포함) | `pnpm build` |
 | 모듈 DI 연결 검사 (build 후, DB 연결 없이 그래프만) | `node --env-file=.env scripts/check-di.cjs` (CI 는 `pnpm check:di`) |
+| 완료 조건 한 번에 (CI `verify` job 과 같은 순서, 종료 코드 하나) | `pnpm verify` — 출력이 길어도 파이프 없이 돌려 종료 코드로 판정한다 |
 | schema 변경 시 | `pnpm prisma format` |
 | 변이 검사 (수동, 파일 하나, 완료 조건 아님 — README 「변이 검사」) | `pnpm mutate src/<경로>/<파일>.ts` |
 
