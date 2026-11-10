@@ -175,6 +175,22 @@ describe('formatAiToolWeekly', () => {
     expect(render(changed).summary).toContain(expected);
   });
 
+  it('검증 명령 기록이 0건이면 비율 대신 기록 없음을 표시한다', () => {
+    const changed = structuredClone(metrics);
+    changed.verify = { total: 0, piped: 0 };
+    const { summary } = render(changed);
+    expect(summary).toContain('• 검증 명령 실행 기록 없음');
+    expect(summary).not.toContain('파이프 뒤에서 실행됨');
+  });
+
+  it('이번 주 새로 들인 것이 없으면 그 줄을 생략한다', () => {
+    const changed = structuredClone(metrics);
+    changed.inventory.plugins.added = 0;
+    const { summary } = render(changed);
+    expect(summary).toContain('• 한 주 동안 안 쓴 스킬 6개');
+    expect(summary).not.toContain('새로 들인 것');
+  });
+
   it('압축 파일을 건너뛰면 그 수를 표시한다', () => {
     const changed = structuredClone(metrics);
     changed.tokens.codex.zstSkipped = 2;
