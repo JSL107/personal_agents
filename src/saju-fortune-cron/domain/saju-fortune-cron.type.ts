@@ -81,25 +81,28 @@ export const parseSajuFortuneRecipients = (
 
 const parseEntry = (entry: string): SajuFortuneRecipient | null => {
   const fields = entry.split('|').map((field) => field.trim());
-  if (
-    fields.length < MINIMUM_FIELD_COUNT ||
-    fields.length > MAXIMUM_FIELD_COUNT
-  ) {
+  const hasValidFieldCount =
+    fields.length >= MINIMUM_FIELD_COUNT &&
+    fields.length <= MAXIMUM_FIELD_COUNT;
+  if (!hasValidFieldCount) {
     return null;
   }
   const [slackUserId, name, pillarText, sendTimeField, birthdayField] = fields;
   // `…|癸亥|` 처럼 칸만 있고 비어 있으면 생략으로 본다.
-  const sendTime = sendTimeField ? sendTimeField : undefined;
-  const birthday = birthdayField ? birthdayField : undefined;
+  const sendTime = sendTimeField || undefined;
+  const birthday = birthdayField || undefined;
   const natalPillars = pillarText.split(/\s+/).filter((p) => p.length > 0);
-  const isValid =
-    SLACK_USER_ID_PATTERN.test(slackUserId) &&
-    name.length > 0 &&
+  const hasValidPerson =
+    SLACK_USER_ID_PATTERN.test(slackUserId) && name.length > 0;
+  const hasValidPillars =
     natalPillars.length >= MINIMUM_PILLAR_COUNT &&
     natalPillars.length <= MAXIMUM_PILLAR_COUNT &&
-    natalPillars.every(isValidPillar) &&
-    (sendTime === undefined || SEND_TIME_PATTERN.test(sendTime)) &&
-    (birthday === undefined || isValidBirthday(birthday));
+    natalPillars.every(isValidPillar);
+  const hasValidSendTime =
+    sendTime === undefined || SEND_TIME_PATTERN.test(sendTime);
+  const hasValidBirthday = birthday === undefined || isValidBirthday(birthday);
+  const isValid =
+    hasValidPerson && hasValidPillars && hasValidSendTime && hasValidBirthday;
   if (!isValid) {
     return null;
   }

@@ -14,21 +14,20 @@ import { YearMonthPillars } from '../domain/saju-analysis';
 import {
   changesFlow,
   SolarTermToday,
-  SPECIAL_SOLAR_TERMS,
   SpecialDayContext,
+  SpecialSolarTerm,
 } from '../domain/special-day';
 
 // 특별한 날 판정에 필요한 날짜 값을 라이브러리로 구해 domain 에 값으로 넘긴다(year-month-pillar.ts 와 같은 경계).
 // SolarTerm.date 는 UTC 순간이다 — 날짜·시각은 반드시 KST 로 바꿔 본다. UTC 날짜로 보면 8절기의 약 38%가
 // 하루 앞당겨진다(2026 동지: KST 12-22 05:50 / UTC 12-21).
-const IPCHUN = '입춘';
 const MILLISECONDS_PER_MINUTE = 60_000;
 const DATE_TIME_PATTERN = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/;
 
 export const specialDayContextOf = (todayKst: string): SpecialDayContext => {
   const year = Number(todayKst.slice(0, 4));
   const terms = getSolarTermsOfYear(year);
-  const ipchun = terms.find(({ name }) => name === IPCHUN);
+  const ipchun = terms.find(({ name }) => name === SpecialSolarTerm.입춘);
   if (!ipchun) {
     throw new Error(`${year}년 입춘을 찾지 못함`);
   }
@@ -56,7 +55,9 @@ const toSpecialTerm = ({
   name,
   date,
 }: SolarTerm): SpecialTermOnDate | undefined => {
-  const specialName = SPECIAL_SOLAR_TERMS.find((special) => special === name);
+  const specialName = Object.values(SpecialSolarTerm).find(
+    (special) => special === name,
+  );
   if (!specialName) {
     return undefined;
   }

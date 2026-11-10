@@ -3,6 +3,7 @@ import {
   formatExtraFortuneHeader,
   formatFortuneHeader,
   fortuneDateOf,
+  FortuneMessageKind,
   fortuneMessageOf,
 } from './saju-fortune-chat';
 
@@ -51,7 +52,7 @@ describe('fortuneMessageOf', () => {
     [formatFortuneHeader('2026-11-16', '甲午'), 'daily'],
     [
       formatExtraFortuneHeader({
-        kind: 'weekly',
+        kind: FortuneMessageKind.WEEKLY,
         todayKst: '2026-11-16',
         todayPillar: '甲午',
       }),
@@ -59,7 +60,7 @@ describe('fortuneMessageOf', () => {
     ],
     [
       formatExtraFortuneHeader({
-        kind: 'special',
+        kind: FortuneMessageKind.SPECIAL,
         todayKst: '2026-11-16',
         todayPillar: '甲午',
       }),
@@ -75,7 +76,7 @@ describe('fortuneMessageOf', () => {
   it('머리말 모양은 일일과 같다 — 🔮 · 제목 · 날짜 · 일진', () => {
     expect(
       formatExtraFortuneHeader({
-        kind: 'weekly',
+        kind: FortuneMessageKind.WEEKLY,
         todayKst: '2026-11-16',
         todayPillar: '甲午',
       }),

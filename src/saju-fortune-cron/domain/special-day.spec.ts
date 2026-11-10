@@ -2,7 +2,9 @@ import {
   isBirthdayOn,
   renderSpecialDayLine,
   SpecialDayContext,
+  SpecialDayKind,
   specialDaysOf,
+  SpecialSolarTerm,
 } from './special-day';
 
 const EMPTY_CONTEXT: SpecialDayContext = {
@@ -33,7 +35,7 @@ describe('specialDaysOf', () => {
       birthday: '02-04',
       context: {
         seollalDate: '2038-02-04',
-        solarTermToday: { name: '입춘', timeKst: '08:00' },
+        solarTermToday: { name: SpecialSolarTerm.입춘, timeKst: '08:00' },
         ipchun: { date: '2038-02-04', timeKst: '08:00' },
       },
     });
@@ -65,20 +67,20 @@ describe('specialDaysOf', () => {
 
 describe('renderSpecialDayLine', () => {
   it.each([
-    [{ kind: 'birthday' as const }, '🎂 생일 축하해, 길동!'],
-    [{ kind: 'seollal' as const }, '🧧 설날이야 — 새 한 해가 열리는 날'],
-    [{ kind: 'newYear' as const }, '🎍 새해 첫날이야'],
+    [{ kind: SpecialDayKind.BIRTHDAY }, '🎂 생일 축하해, 길동!'],
+    [{ kind: SpecialDayKind.SEOLLAL }, '🧧 설날이야 — 새 한 해가 열리는 날'],
+    [{ kind: SpecialDayKind.NEW_YEAR }, '🎍 새해 첫날이야'],
     [
       {
-        kind: 'solarTerm' as const,
-        solarTerm: { name: '입춘' as const, timeKst: '10:46' },
+        kind: SpecialDayKind.SOLAR_TERM,
+        solarTerm: { name: SpecialSolarTerm.입춘, timeKst: '10:46' },
       },
       '🌱 오늘은 입춘 — 봄이 시작되는 날',
     ],
     [
       {
-        kind: 'solarTerm' as const,
-        solarTerm: { name: '동지' as const, timeKst: '05:50' },
+        kind: SpecialDayKind.SOLAR_TERM,
+        solarTerm: { name: SpecialSolarTerm.동지, timeKst: '05:50' },
       },
       '🌙 오늘은 동지 — 밤이 가장 긴 날',
     ],

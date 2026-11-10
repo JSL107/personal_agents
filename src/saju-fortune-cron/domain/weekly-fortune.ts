@@ -1,9 +1,19 @@
+import { addDaysTo, weekdayOf } from '../../common/util/kst-date.util';
 import { starsOf } from './saju-fortune-render';
 import { FORTUNE_SCORE_KEYS, FortuneScoreKey } from './saju-tables';
 
 // 월요일 주간 운세 — 7일 별점은 application(weekly-scores)이 날마다 계산해 넘기고, 여기서는 고르고 그리기만 한다.
-export const WEEKDAYS = ['월', '화', '수', '목', '금', '토', '일'] as const;
-export type Weekday = (typeof WEEKDAYS)[number];
+// 월요일부터의 순서 그대로 — 주간 7일과 짝지을 때 Object.values 순서를 쓴다.
+export enum Weekday {
+  월 = '월',
+  화 = '화',
+  수 = '수',
+  목 = '목',
+  금 = '금',
+  토 = '토',
+  일 = '일',
+}
+export const WEEKDAYS: readonly Weekday[] = Object.values(Weekday);
 
 export interface DailyScores {
   date: string;
@@ -19,22 +29,16 @@ export interface WeeklyHighlight {
 // 4·5점은 "좋은 날", 2점은 "조심할 날"(1단계 SCORE_TONES 와 같은 경계).
 const GOOD_SCORE = 4;
 const CAREFUL_SCORE = 2;
-const DAYS_IN_WEEK = 7;
-const MILLISECONDS_PER_DAY = 86_400_000;
-// Date.UTC 의 getUTCDay 기준 월요일.
+// weekdayOf 기준 월요일.
 const MONDAY = 1;
 
-// todayKst 'YYYY-MM-DD'. 서버 시간대와 무관하게 날짜만으로 요일을 본다.
 export const isMondayKst = (todayKst: string): boolean => {
-  const weekday = new Date(`${todayKst}T00:00:00Z`).getUTCDay();
-  return weekday === MONDAY;
+  const isMonday = weekdayOf(todayKst) === MONDAY;
+  return isMonday;
 };
 
 export const weekDatesFrom = (mondayKst: string): string[] => {
-  const start = new Date(`${mondayKst}T00:00:00Z`).getTime();
-  const dates = Array.from({ length: DAYS_IN_WEEK }, (_, offset) =>
-    new Date(start + offset * MILLISECONDS_PER_DAY).toISOString().slice(0, 10),
-  );
+  const dates = WEEKDAYS.map((_, offset) => addDaysTo(mondayKst, offset));
   return dates;
 };
 
@@ -43,19 +47,22 @@ export const pickWeeklyHighlights = (
   days: DailyScores[],
 ): Record<FortuneScoreKey, WeeklyHighlight> => {
   const highlights: Record<FortuneScoreKey, WeeklyHighlight> = {
-    총운: highlightOf(days, '총운'),
-    '일·공부': highlightOf(days, '일·공부'),
-    '사람 관계': highlightOf(days, '사람 관계'),
-    돈: highlightOf(days, '돈'),
-    컨디션: highlightOf(days, '컨디션'),
+    총운: highlightOf({ days, key: '총운' }),
+    '일·공부': highlightOf({ days, key: '일·공부' }),
+    '사람 관계': highlightOf({ days, key: '사람 관계' }),
+    돈: highlightOf({ days, key: '돈' }),
+    컨디션: highlightOf({ days, key: '컨디션' }),
   };
   return highlights;
 };
 
-const highlightOf = (
-  days: DailyScores[],
-  key: FortuneScoreKey,
-): WeeklyHighlight => {
+const highlightOf = ({
+  days,
+  key,
+}: {
+  days: DailyScores[];
+  key: FortuneScoreKey;
+}): WeeklyHighlight => {
   const best = Math.max(...days.map(({ scores }) => scores[key]));
   const goodDay =
     best >= GOOD_SCORE

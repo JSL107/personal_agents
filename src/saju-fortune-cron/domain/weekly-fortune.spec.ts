@@ -10,10 +10,13 @@ import {
 } from './weekly-fortune';
 
 // 항목마다 같은 점수를 깔고 총운만 바꿔 넣는다.
-const weekOf = (
-  overall: number[],
-  others: Partial<Record<FortuneScoreKey, number[]>> = {},
-): DailyScores[] =>
+const weekOf = ({
+  overall,
+  others = {},
+}: {
+  overall: number[];
+  others?: Partial<Record<FortuneScoreKey, number[]>>;
+}): DailyScores[] =>
   WEEKDAYS.map((weekday, index) => ({
     date: `2026-11-${16 + index}`,
     weekday,
@@ -52,19 +55,25 @@ describe('weekDatesFrom', () => {
 
 describe('pickWeeklyHighlights', () => {
   it('좋은 요일은 4점 이상 중 최고점, 동점이면 이른 요일', () => {
-    const highlights = pickWeeklyHighlights(weekOf([3, 5, 4, 5, 3, 3, 3]));
+    const highlights = pickWeeklyHighlights(
+      weekOf({ overall: [3, 5, 4, 5, 3, 3, 3] }),
+    );
 
     expect(highlights['총운']).toEqual({ good: '화' });
   });
 
   it('조심할 요일은 2점, 동점이면 이른 요일', () => {
-    const highlights = pickWeeklyHighlights(weekOf([3, 2, 3, 3, 3, 2, 4]));
+    const highlights = pickWeeklyHighlights(
+      weekOf({ overall: [3, 2, 3, 3, 3, 2, 4] }),
+    );
 
     expect(highlights['총운']).toEqual({ good: '일', careful: '화' });
   });
 
   it('전부 3점이면 좋은 요일도 조심할 요일도 없다', () => {
-    const highlights = pickWeeklyHighlights(weekOf([3, 3, 3, 3, 3, 3, 3]));
+    const highlights = pickWeeklyHighlights(
+      weekOf({ overall: [3, 3, 3, 3, 3, 3, 3] }),
+    );
 
     expect(highlights['총운']).toEqual({});
     expect(highlights['돈']).toEqual({});
@@ -73,7 +82,9 @@ describe('pickWeeklyHighlights', () => {
 
 describe('renderWeeklyStarLine', () => {
   it('요일별 총운을 한 줄로 그린다', () => {
-    expect(renderWeeklyStarLine(weekOf([3, 5, 4, 2, 3, 3, 4]))).toBe(
+    expect(
+      renderWeeklyStarLine(weekOf({ overall: [3, 5, 4, 2, 3, 3, 4] })),
+    ).toBe(
       '월 ★★★☆☆ · 화 ★★★★★ · 수 ★★★★☆ · 목 ★★☆☆☆ · 금 ★★★☆☆ · 토 ★★★☆☆ · 일 ★★★★☆',
     );
   });
@@ -82,7 +93,10 @@ describe('renderWeeklyStarLine', () => {
 describe('formatWeeklyFacts', () => {
   it('항목마다 한 줄, 요일이 없으면 요일을 쓰지 말라고 한다', () => {
     const facts = formatWeeklyFacts(
-      weekOf([3, 5, 3, 3, 3, 2, 3], { 돈: [2, 3, 3, 3, 3, 3, 3] }),
+      weekOf({
+        overall: [3, 5, 3, 3, 3, 2, 3],
+        others: { 돈: [2, 3, 3, 3, 3, 3, 3] },
+      }),
     );
 
     expect(facts).toEqual([
