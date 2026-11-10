@@ -92,7 +92,10 @@ export const renderStarLine = (
 export const renderItemLine = (lucky: LuckyInfo): string =>
   `🍀 행운 아이템: ${lucky.color} · ${lucky.number} · ${lucky.taste}(${lucky.food}) · ${lucky.direction}`;
 
-// escape 전 길이 기준(지금 발송 코드도 escape 전에 자른다). 그린 두 줄과 그 개행 둘은 예산에서 먼저 뺀다.
+// escape 전 길이 기준(지금 발송 코드도 escape 전에 자른다). 코드가 그리는 줄은 예산에서 먼저 뺀다 —
+// 항목별 배치가 더 길므로 그 몫을 떼면 별점 줄 폴백도 예산 안에 든다.
+// 다섯 항목 라벨을 모두 찾으면 항목마다 굵은 라벨과 별을 붙이고 빈 줄로 띄운다(가독성). 하나라도 못 찾으면
+// 첫 줄 뒤에 별점 줄 하나를 붙이는 예전 배치로 돌아간다 — 별점은 어느 경우에도 빠지지 않는다.
 export const composeFortuneBody = ({
   body,
   analysis,
@@ -102,15 +105,140 @@ export const composeFortuneBody = ({
   analysis: SajuDayAnalysis;
   maximum: number;
 }): string => {
-  const starLine = renderStarLine(analysis.scores);
   const itemLine = renderItemLine(analysis.lucky);
-  const budget = maximum - starLine.length - itemLine.length - 2;
   const truncated = truncateByLines({
     body: stripInventedMarks(body).trim(),
-    budget,
+    budget: maximum - itemLayoutOverhead(itemLine),
   });
   const [firstLine, ...rest] = truncated.split('\n');
-  return [firstLine, starLine, ...rest, itemLine].join('\n');
+  const items = findScoreItems(rest);
+  if (!items) {
+    const starLine = renderStarLine(analysis.scores);
+    const legacy = [firstLine, starLine, ...rest, itemLine].join('\n');
+    return legacy;
+  }
+  const blocks = FORTUNE_SCORE_KEYS.map(
+    (key) => `*${key}* ${starsOf(analysis.scores[key])}\n${items.texts[key]}`,
+  );
+  const beforeItems = items.others.before.map(boldTailLabel);
+  const afterItems = items.others.after.map(boldTailLabel);
+  const layout = [
+    firstLine,
+    ...beforeItems,
+    '',
+    blocks.join('\n\n'),
+    '',
+    itemLine,
+    ...afterItems,
+  ];
+  const composed = layout.join('\n');
+  return composed;
+};
+
+// 줄 머리 이모지·굵게 표식·콜론 앞 공백이 흔들려도 라벨을 찾는다. 라벨 뒤 글이 비면 못 찾은 것으로 본다.
+const scoreLabelPattern = (key: FortuneScoreKey): RegExp =>
+  new RegExp(
+    `^[^\\p{L}\\p{N}]*\\**\\s*${key}\\s*\\**\\s*[:：]\\s*\\**\\s*(.+)$`,
+    'u',
+  );
+
+interface FoundScoreItem {
+  key: FortuneScoreKey;
+  index: number;
+  text: string;
+}
+
+interface ScoreItems {
+  texts: Record<FortuneScoreKey, string>;
+  // 항목 줄이 아닌 나머지 — 빈 줄은 버리고, 항목 앞뒤로 나눠 자리를 지킨다.
+  others: { before: string[]; after: string[] };
+}
+
+const findScoreItems = (lines: string[]): ScoreItems | null => {
+  const found = FORTUNE_SCORE_KEYS.map((key) => findScoreItem({ lines, key }));
+  const hasAll = found.every(
+    ({ index, text }) => index >= 0 && text.length > 0,
+  );
+  if (!hasAll) {
+    return null;
+  }
+  const itemIndexes = new Set(found.map(({ index }) => index));
+  const firstItemIndex = Math.min(...itemIndexes);
+  const others = lines
+    .map((line, index) => ({ line, index }))
+    .filter(
+      ({ line, index }) => !itemIndexes.has(index) && line.trim().length > 0,
+    );
+  const texts: Record<FortuneScoreKey, string> = {
+    총운: textOf({ found, key: '총운' }),
+    '일·공부': textOf({ found, key: '일·공부' }),
+    '사람 관계': textOf({ found, key: '사람 관계' }),
+    돈: textOf({ found, key: '돈' }),
+    컨디션: textOf({ found, key: '컨디션' }),
+  };
+  const items: ScoreItems = {
+    texts,
+    others: {
+      before: others
+        .filter(({ index }) => index < firstItemIndex)
+        .map(({ line }) => line),
+      after: others
+        .filter(({ index }) => index > firstItemIndex)
+        .map(({ line }) => line),
+    },
+  };
+  return items;
+};
+
+const findScoreItem = ({
+  lines,
+  key,
+}: {
+  lines: string[];
+  key: FortuneScoreKey;
+}): FoundScoreItem => {
+  const pattern = scoreLabelPattern(key);
+  const index = lines.findIndex((line) => pattern.test(line));
+  const matched = index < 0 ? null : pattern.exec(lines[index]);
+  const text = matched ? matched[1].trim() : '';
+  const item: FoundScoreItem = { key, index, text };
+  return item;
+};
+
+const textOf = ({
+  found,
+  key,
+}: {
+  found: FoundScoreItem[];
+  key: FortuneScoreKey;
+}): string => {
+  const text = found.find((item) => item.key === key)?.text ?? '';
+  return text;
+};
+
+// 주간 글의 "총운:" 같은 항목 라벨을 굵게 — 일일 운세와 같은 무게로 훑어보게. 줄 머리에 있을 때만.
+const SCORE_LABEL_LINE_PATTERN = new RegExp(
+  `^\\s*(${FORTUNE_SCORE_KEYS.join('|')})\\s*[:：]\\s*`,
+);
+
+const boldScoreLabel = (line: string): string =>
+  line.replace(SCORE_LABEL_LINE_PATTERN, (_, label: string) => `*${label}:* `);
+
+// 행운 포인트·오늘의 한 마디 라벨만 굵게 — 별점 항목과 같은 무게로 훑어보게.
+const TAIL_LABEL_PATTERN = /^\s*(행운 포인트|오늘의 한 마디)\s*[:：]\s*/;
+
+const boldTailLabel = (line: string): string =>
+  line.replace(TAIL_LABEL_PATTERN, (_, label: string) => `*${label}:* `);
+
+// 항목별 배치가 더하는 글자 수 — 라벨·별 줄, 블록 사이 빈 줄, 행운 아이템 줄과 앞뒤 개행.
+const itemLayoutOverhead = (itemLine: string): number => {
+  const labelLines = FORTUNE_SCORE_KEYS.reduce(
+    (sum, key) => sum + `*${key}* ${starsOf(MAXIMUM_STARS)}\n`.length,
+    0,
+  );
+  const gaps = FORTUNE_SCORE_KEYS.length * 2 + 4;
+  const overhead = labelLines + gaps + itemLine.length;
+  return overhead;
 };
 
 // 추가 메시지(특집·주간)의 AI 응답 구간 구분줄. 프롬프트와 파서가 같은 상수를 쓴다.
@@ -167,7 +295,12 @@ export const composeExtraBody = ({
       : `${codeLines.join('\n')}\n\n${bodies.join('\n\n')}`;
   const overhead = assemble(cleaned.map(() => '')).length;
   const budget = Math.max(0, Math.floor((maximum - overhead) / cleaned.length));
-  const truncated = cleaned.map((body) => truncateByLines({ body, budget }));
+  const truncated = cleaned.map((body) =>
+    truncateByLines({ body, budget })
+      .split('\n')
+      .map(boldScoreLabel)
+      .join('\n'),
+  );
   const assembled = assemble(truncated);
   return assembled;
 };
