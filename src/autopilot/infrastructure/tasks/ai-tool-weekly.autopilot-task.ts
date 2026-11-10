@@ -7,7 +7,6 @@ import {
   resolveAiWeeklyPeriod,
 } from '../../../ai-tool-weekly/domain/ai-weekly-period';
 import { AiWeeklyMetricsRunner } from '../../../ai-tool-weekly/infrastructure/ai-weekly-metrics.runner';
-import { formatKstIsoDateTime } from '../../../common/util/kst-date.util';
 import {
   GITHUB_CLIENT_PORT,
   GithubClientPort,
@@ -66,10 +65,8 @@ export class AiToolWeeklyAutopilotTask implements AutopilotTask {
       const results = await this.github.listAuthorMergedPullRequestsSince({
         repo: null,
         author,
-        sinceIsoDate: formatKstIsoDateTime(period.since),
-        untilIsoDate: formatKstIsoDateTime(
-          new Date(period.until.getTime() - 1000),
-        ),
+        sinceIsoDate: toSearchDateTime(period.since),
+        untilIsoDate: toSearchDateTime(new Date(period.until.getTime() - 1000)),
         limit: 100,
         throwOnDetailFailure: true,
       });
@@ -91,3 +88,10 @@ export class AiToolWeeklyAutopilotTask implements AutopilotTask {
     }
   }
 }
+
+// GitHub 검색어에 넣는 시각. Octokit 은 검색어의 '+' 를 인코딩하지 않아 '+09:00' 이 공백으로 읽히고
+// 결과가 0건이 된다(2026-11-10 첫 발송). 그래서 오프셋 없이 UTC Z 형식으로 넘긴다.
+const toSearchDateTime = (date: Date): string => {
+  const iso = date.toISOString();
+  return `${iso.slice(0, 19)}Z`;
+};

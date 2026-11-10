@@ -4,6 +4,7 @@ import {
   AiWeeklyHookCount,
   AiWeeklyMetrics,
   AiWeeklyScope,
+  AiWeeklySource,
   AiWeeklySourceStatus,
 } from '../../ai-tool-weekly/domain/ai-weekly-metrics.type';
 import { AiWeeklyPeriod } from '../../ai-tool-weekly/domain/ai-weekly-period';
@@ -51,12 +52,12 @@ interface ScopeCellInput {
   scope: AiWeeklyScope;
 }
 
-interface ScopeRowInput {
+interface ScopeRow {
   label: string;
   cell: (scope: AiWeeklyScope) => string;
 }
 
-interface PercentInput {
+interface RatioInput {
   part: number;
   total: number;
   digits: number;
@@ -72,8 +73,31 @@ interface NamedSumInput {
   name: string;
 }
 
+interface PadInput {
+  text: string;
+  width: number;
+}
+
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 const OK = AiWeeklySourceStatus.OK;
+const HUNDRED_MILLION = 100_000_000;
+const TEN_THOUSAND = 10_000;
+const TABLE_LABEL_WIDTH = 14;
+const TABLE_CELL_WIDTH = 11;
+
+const SCOPE_LABELS: Record<AiWeeklyScope, string> = {
+  [AiWeeklyScope.COMPANY]: '회사',
+  [AiWeeklyScope.PERSONAL]: '개인',
+  [AiWeeklyScope.UNKNOWN]: '분류 못 함',
+};
+
+const SOURCE_LABELS: Record<AiWeeklySource, string> = {
+  [AiWeeklySource.CLAUDE]: 'Claude 세션',
+  [AiWeeklySource.CODEX]: 'Codex 세션',
+  [AiWeeklySource.GIT]: 'git',
+  [AiWeeklySource.INVENTORY]: '설치 목록',
+  [AiWeeklySource.HOOKS]: '훅 집계',
+};
 
 export const formatAiToolWeekly = ({
   period,
@@ -83,11 +107,10 @@ export const formatAiToolWeekly = ({
   const summary = [
     formatHeading(period),
     formatResult({ metrics, pullRequests }),
-    formatCost(metrics),
-    formatSignal(metrics),
-    formatClarify(metrics),
+    formatTokens(metrics),
+    formatHabits(metrics),
     formatInventory(metrics),
-  ].join('\n');
+  ].join('\n\n');
   const detail = formatDetail(metrics);
   return { summary, detail };
 };
@@ -95,29 +118,33 @@ export const formatAiToolWeekly = ({
 const formatHeading = (period: AiWeeklyPeriod): string => {
   const start = dateLabel(getKstDateOf(period.since));
   const end = dateLabel(addDaysTo(getKstDateOf(period.until), -1));
-  return `🧰 AI 도구 주간 점검 ${start}~${end}`;
+  return `🧰 *AI 도구 주간 점검* · ${start} ~ ${end}`;
 };
 
 const dateLabel = (date: string): string => {
   const [, month, day] = date.split('-');
   const weekday = WEEKDAYS[weekdayOf(date)];
-  return `${month}/${day}(${weekday})`;
+  return `${Number(month)}/${Number(day)}(${weekday})`;
+};
+
+const section = (title: string, lines: string[]): string => {
+  const bullets = lines.map((line) => `• ${line}`);
+  return [`*${title}*`, ...bullets].join('\n');
 };
 
 const formatResult = ({ metrics, pullRequests }: ResultInput): string => {
-  const parts = [describePullRequests(pullRequests), describeReverts(metrics)];
+  const lines = [describePullRequests(pullRequests), describeReverts(metrics)];
   if (pullRequests.status === 'ok' && pullRequests.company === 0) {
-    parts.push('회사 PR 0건: 조회 권한 확인 필요');
+    lines.push('⚠️ 회사 PR이 0건입니다. 조회 권한을 확인해 주세요');
   }
-  const joined = parts.join(' · ');
-  return `결과: ${joined}`;
+  return section('📦 이번 주 결과', lines);
 };
 
 const describePullRequests = (pullRequests: AiWeeklyPullRequests): string => {
   const text = match(pullRequests)
     .with({ status: 'ok' }, (found) => describeFoundPullRequests(found))
-    .with({ status: 'error' }, () => '머지 PR 조회 실패')
-    .with({ status: 'skipped' }, () => '머지 PR (dry-run 생략)')
+    .with({ status: 'error' }, () => '머지한 PR 조회 실패')
+    .with({ status: 'skipped' }, () => '머지한 PR (미리보기라 조회 안 함)')
     .exhaustive();
   return text;
 };
@@ -127,22 +154,22 @@ const describeFoundPullRequests = ({
   personal,
   truncated,
 }: AiWeeklyPullRequestsFound): string => {
-  const total = truncated ? '≥100' : String(company + personal);
-  return `머지 PR ${total} (회사 ${company} · 개인 ${personal})`;
+  const total = truncated ? '100건 이상' : `${company + personal}건`;
+  return `머지한 PR ${total} (회사 ${company} · 개인 ${personal})`;
 };
 
 const describeReverts = (metrics: AiWeeklyMetrics): string => {
   if (metrics.sources.git !== OK) {
-    return 'revert 수집 실패';
+    return '되돌린 커밋 수집 실패';
   }
-  return `revert ${metrics.reverts}`;
+  return `되돌린 커밋 ${metrics.reverts}건`;
 };
 
-const formatCost = (metrics: AiWeeklyMetrics): string => {
-  const claude = describeClaudeTokens(metrics);
-  const codex = describeCodexTokens(metrics);
-  return `비용: ${claude} · ${codex}`;
-};
+const formatTokens = (metrics: AiWeeklyMetrics): string =>
+  section('💰 토큰 사용량', [
+    describeClaudeTokens(metrics),
+    describeCodexTokens(metrics),
+  ]);
 
 const describeClaudeTokens = (metrics: AiWeeklyMetrics): string => {
   if (metrics.sources.claude !== OK) {
@@ -150,44 +177,46 @@ const describeClaudeTokens = (metrics: AiWeeklyMetrics): string => {
   }
   const { thisWeek, prevWeek } = metrics.tokens.claude;
   const current = sumValues(thisWeek);
-  const previous = sumValues(prevWeek);
-  const change = formatChange({ current, previous });
-  const comparison = previous === 0 ? change : `지난주 대비 ${change}`;
+  const change = describeChange({ current, previous: sumValues(prevWeek) });
   const opusTokens = sumNamed({ values: thisWeek, name: 'opus' });
   const sonnetTokens = sumNamed({ values: thisWeek, name: 'sonnet' });
-  const opus = percent({ part: opusTokens, total: current, digits: 0 });
-  const sonnet = percent({ part: sonnetTokens, total: current, digits: 0 });
-  const tokens = formatMillions(current);
-  return `Claude 토큰 ${tokens} (${comparison}) · Opus ${opus} · Sonnet ${sonnet}`;
+  const opus = ratio({ part: opusTokens, total: current, digits: 0 });
+  const sonnet = ratio({ part: sonnetTokens, total: current, digits: 0 });
+  const tokens = formatTokenCount(current);
+  return `Claude ${tokens} (${change}) · Opus ${opus} · Sonnet ${sonnet}`;
 };
 
 const describeCodexTokens = (metrics: AiWeeklyMetrics): string => {
   if (metrics.sources.codex !== OK) {
-    return 'Codex 수집 실패';
+    return 'Codex 토큰 수집 실패';
   }
   const { thisWeek, prevWeek, zstSkipped } = metrics.tokens.codex;
-  const tokens = formatMillions(thisWeek);
-  const change = formatChange({ current: thisWeek, previous: prevWeek });
+  const tokens = formatTokenCount(thisWeek);
+  const change = describeChange({ current: thisWeek, previous: prevWeek });
   const codex = `Codex ${tokens} (${change})`;
   if (zstSkipped === 0) {
     return codex;
   }
-  return `${codex} · 압축 ${zstSkipped}건 제외`;
+  return `${codex} · 압축 파일 ${zstSkipped}개 제외`;
 };
 
-const formatSignal = (metrics: AiWeeklyMetrics): string => {
-  const verify = describeVerify(metrics);
-  const hooks = describeHooks(metrics);
-  return `신호: ${verify} · ${hooks}`;
-};
+const formatHabits = (metrics: AiWeeklyMetrics): string =>
+  section('🚦 작업 습관', [
+    describeVerify(metrics),
+    describeHooks(metrics),
+    describeClarify(metrics),
+  ]);
 
 const describeVerify = (metrics: AiWeeklyMetrics): string => {
   if (metrics.sources.claude !== OK) {
-    return '파이프 경유 수집 실패';
+    return '검증 명령 기록 수집 실패';
   }
   const { piped, total } = metrics.verify;
-  const rate = percent({ part: piped, total, digits: 0 });
-  return `검증 명령 파이프 경유 ${rate}`;
+  if (total === 0) {
+    return '검증 명령 실행 기록 없음';
+  }
+  const rate = ratio({ part: piped, total, digits: 0 });
+  return `검증 명령의 ${rate}가 파이프 뒤에서 실행됨 (실패를 놓칠 수 있음)`;
 };
 
 const describeHooks = (metrics: AiWeeklyMetrics): string => {
@@ -195,89 +224,109 @@ const describeHooks = (metrics: AiWeeklyMetrics): string => {
     .with(AiWeeklySourceStatus.OK, () =>
       describeHookTotals(metrics.hooks.hooks),
     )
-    .with(AiWeeklySourceStatus.MISSING, () => '훅 집계 스크립트 미설치')
-    .with(AiWeeklySourceStatus.ERROR, () => '훅 집계 실패')
+    .with(AiWeeklySourceStatus.MISSING, () => '훅 집계 스크립트가 없어 생략')
+    .with(AiWeeklySourceStatus.ERROR, () => '훅 기록 수집 실패')
     .exhaustive();
   return text;
 };
 
 const describeHookTotals = (hooks: AiWeeklyHookCount[]): string => {
-  const fired = sumOf(hooks.map((hook) => hook.fired));
-  const delivered = sumOf(hooks.map((hook) => hook.delivered));
-  const blocked = sumOf(hooks.map((hook) => hook.blocked));
-  return `훅 울림 ${fired} / 전달 ${delivered} / 차단 ${blocked} (차단은 하한값)`;
+  const fired = formatCount(sumOf(hooks.map((hook) => hook.fired)));
+  const delivered = formatCount(sumOf(hooks.map((hook) => hook.delivered)));
+  const blocked = formatCount(sumOf(hooks.map((hook) => hook.blocked)));
+  return `훅 ${fired}번 울림 → ${delivered}번 전달 · 차단 ${blocked} (차단은 최소치)`;
 };
 
-const formatClarify = (metrics: AiWeeklyMetrics): string => {
+const describeClarify = (metrics: AiWeeklyMetrics): string => {
   if (metrics.sources.claude !== OK) {
-    return '이해: 수집 실패';
+    return '설명 재요청 비율 수집 실패';
   }
   const { matched, humanTurns } = metrics.clarify;
-  const rate = percent({ part: matched, total: humanTurns, digits: 1 });
-  return `이해: 설명 재요청 ${rate} (휴리스틱)`;
+  const rate = ratio({ part: matched, total: humanTurns, digits: 1 });
+  return `설명을 다시 요청한 비율 ${rate} (추정치)`;
 };
 
 const formatInventory = (metrics: AiWeeklyMetrics): string => {
   if (metrics.sources.inventory !== OK) {
-    return '정비 후보: 수집 실패';
+    return section('🧹 정리 후보', ['설치 목록 수집 실패']);
   }
-  const { skills, plugins, agents, hooks } = metrics.inventory;
+  const { skills, plugins, agents } = metrics.inventory;
+  const unused = `스킬 ${skills.unused.length}개 · 플러그인 ${plugins.unused.length}개 · 에이전트 ${agents.unused.length}개`;
+  const lines = [`한 주 동안 안 쓴 ${unused} (목록은 스레드)`];
   const added = skills.added + plugins.added + agents.added;
-  const unused = `0회 사용 스킬 ${skills.unused.length} · 플러그인 ${plugins.unused.length}`;
-  const totals = `총 스킬 ${skills.total} · 플러그인 ${plugins.total} · 훅 ${hooks.total} · 에이전트 ${agents.total}`;
-  return `정비 후보: ${unused} · 이번 주 추가 ${added} (${totals})`;
+  if (added > 0) {
+    lines.push(`이번 주 새로 들인 것 ${added}개`);
+  }
+  return section('🧹 정리 후보', lines);
 };
 
 const formatDetail = (metrics: AiWeeklyMetrics): string => {
-  const lines = [
-    scopeRow({ label: '범위', cell: (scope) => SCOPE_LABELS[scope] }),
-    scopeRow({
-      label: '토큰(Claude+Codex)',
-      cell: (scope) => scopeToken({ metrics, scope }),
-    }),
-    scopeRow({
-      label: 'revert',
-      cell: (scope) => scopeRevert({ metrics, scope }),
-    }),
-    scopeRow({
-      label: '검증',
-      cell: (scope) => scopeVerify({ metrics, scope }),
-    }),
-    scopeRow({
-      label: '설명 재요청',
-      cell: (scope) => scopeClarify({ metrics, scope }),
-    }),
-    `경로로 추정 분류한 세션 ${metrics.inferredSessions}건`,
-    ...describeUnused(metrics),
+  const parts = [
+    formatScopeTable(metrics),
+    formatUnused(metrics),
+    `_작업 경로로 추정해 분류한 세션 ${formatCount(metrics.inferredSessions)}건_`,
   ];
-  const { sources } = metrics;
-  lines.push(
-    `수집 상태: claude ${sources.claude} · codex ${sources.codex} · git ${sources.git} · inventory ${sources.inventory} · hooks ${sources.hooks}`,
-  );
-  return lines.join('\n');
+  const failures = describeSourceFailures(metrics);
+  if (failures) {
+    parts.push(failures);
+  }
+  return parts.join('\n\n');
 };
 
-const SCOPE_LABELS: Record<AiWeeklyScope, string> = {
-  [AiWeeklyScope.COMPANY]: '회사',
-  [AiWeeklyScope.PERSONAL]: '개인',
-  [AiWeeklyScope.UNKNOWN]: 'unknown',
+// Slack 기본 글꼴은 글자 폭이 달라 표가 틀어진다. 코드 블록(고정폭)에 넣고 한글은 두 칸으로 센다.
+const formatScopeTable = (metrics: AiWeeklyMetrics): string => {
+  const rows: ScopeRow[] = [
+    { label: '', cell: (scope) => SCOPE_LABELS[scope] },
+    { label: '토큰', cell: (scope) => scopeToken({ metrics, scope }) },
+    { label: '되돌린 커밋', cell: (scope) => scopeRevert({ metrics, scope }) },
+    { label: '파이프 경유', cell: (scope) => scopeVerify({ metrics, scope }) },
+    { label: '설명 재요청', cell: (scope) => scopeClarify({ metrics, scope }) },
+  ];
+  const lines = rows.map(({ label, cell }) => {
+    const head = padDisplay({ text: label, width: TABLE_LABEL_WIDTH });
+    const cells = Object.values(AiWeeklyScope).map((scope) =>
+      padDisplay({ text: cell(scope), width: TABLE_CELL_WIDTH }),
+    );
+    const line = [head, ...cells].join('');
+    return line.trimEnd();
+  });
+  const table = lines.join('\n');
+  return [
+    '*회사·개인 나눠 보기* (토큰은 Claude+Codex)',
+    '```',
+    table,
+    '```',
+  ].join('\n');
 };
 
-const scopeRow = ({ label, cell }: ScopeRowInput): string => {
-  const cells = Object.values(AiWeeklyScope).map(cell);
-  return [label, ...cells].join(' | ');
-};
-
-const describeUnused = (metrics: AiWeeklyMetrics): string[] => {
+const formatUnused = (metrics: AiWeeklyMetrics): string => {
   if (metrics.sources.inventory !== OK) {
-    return ['0회 사용 목록: 수집 실패'];
+    return '*한 주 동안 안 쓴 것*\n• 설치 목록 수집 실패';
   }
   const { skills, plugins, agents } = metrics.inventory;
-  return [
-    `0회 사용 스킬: ${formatNames(skills.unused)}`,
-    `0회 사용 플러그인: ${formatNames(plugins.unused)}`,
-    `0회 사용 에이전트: ${formatNames(agents.unused)}`,
-  ];
+  return section('한 주 동안 안 쓴 것', [
+    `스킬: ${formatNames(skills.unused)}`,
+    `플러그인: ${formatNames(plugins.unused)}`,
+    `에이전트: ${formatNames(agents.unused)}`,
+  ]);
+};
+
+// 모두 정상이면 아무것도 붙이지 않는다. 실패한 소스만 이름과 상태로 알린다.
+const describeSourceFailures = (metrics: AiWeeklyMetrics): string | null => {
+  const failed = Object.values(AiWeeklySource)
+    .filter((source) => metrics.sources[source] !== OK)
+    .map((source) => {
+      const status =
+        metrics.sources[source] === AiWeeklySourceStatus.MISSING
+          ? '없음'
+          : '실패';
+      return `${SOURCE_LABELS[source]} ${status}`;
+    });
+  if (failed.length === 0) {
+    return null;
+  }
+  const joined = failed.join(' · ');
+  return `⚠️ 일부 기록을 읽지 못함: ${joined}`;
 };
 
 // Claude·Codex 합계라 둘 중 하나라도 읽다 실패하면 합계를 보이지 않는다. Codex 미설치(missing)는 0 으로 본다.
@@ -287,7 +336,7 @@ const scopeToken = ({ metrics, scope }: ScopeCellInput): string => {
     return '수집 실패';
   }
   const count = sumValues(metrics.scopes[scope].tokens);
-  return formatMillions(count);
+  return formatTokenCount(count);
 };
 
 const scopeRevert = ({ metrics, scope }: ScopeCellInput): string => {
@@ -302,7 +351,7 @@ const scopeVerify = ({ metrics, scope }: ScopeCellInput): string => {
     return '수집 실패';
   }
   const { piped, total } = metrics.scopes[scope].verify;
-  return `${piped}/${total}`;
+  return scopeRatio({ part: piped, total, digits: 0 });
 };
 
 const scopeClarify = ({ metrics, scope }: ScopeCellInput): string => {
@@ -310,7 +359,14 @@ const scopeClarify = ({ metrics, scope }: ScopeCellInput): string => {
     return '수집 실패';
   }
   const { matched, humanTurns } = metrics.scopes[scope].clarify;
-  return `${matched}/${humanTurns}`;
+  return scopeRatio({ part: matched, total: humanTurns, digits: 1 });
+};
+
+const scopeRatio = ({ part, total, digits }: RatioInput): string => {
+  if (total === 0) {
+    return '-';
+  }
+  return ratio({ part, total, digits });
 };
 
 const sumValues = (values: Record<string, number>): number =>
@@ -329,24 +385,41 @@ const sumOf = (numbers: number[]): number => {
   return total;
 };
 
-const percent = ({ part, total, digits }: PercentInput): string => {
-  const ratio = total === 0 ? 0 : (part / total) * 100;
-  const fixed = ratio.toFixed(digits);
+const ratio = ({ part, total, digits }: RatioInput): string => {
+  const value = total === 0 ? 0 : (part / total) * 100;
+  const fixed = value.toFixed(digits);
   return `${fixed}%`;
 };
 
-const formatMillions = (count: number): string => {
-  const millions = Math.round(count / 1_000_000);
-  return `${millions}M`;
+const formatCount = (count: number): string => count.toLocaleString('ko-KR');
+
+// 억 이상은 소수 첫째 자리 억, 그 아래는 만 단위로 쓴다(4,925,000,000 → 49.3억, 38,000,000 → 3,800만).
+const formatTokenCount = (count: number): string => {
+  if (count >= HUNDRED_MILLION) {
+    const value = (count / HUNDRED_MILLION).toFixed(1).replace(/\.0$/, '');
+    return `${value}억`;
+  }
+  if (count >= TEN_THOUSAND) {
+    const value = formatCount(Math.round(count / TEN_THOUSAND));
+    return `${value}만`;
+  }
+  return formatCount(count);
 };
 
-const formatChange = ({ current, previous }: ChangeInput): string => {
+const describeChange = ({ current, previous }: ChangeInput): string => {
   if (previous === 0) {
-    return '지난주 데이터 없음';
+    return '지난주 기록 없음';
+  }
+  if (current >= previous * 2) {
+    const times = (current / previous).toFixed(1);
+    return `지난주보다 ${times}배`;
   }
   const rate = Math.round(((current - previous) / previous) * 100);
-  const sign = rate > 0 ? '+' : '';
-  return `${sign}${rate}%`;
+  if (rate === 0) {
+    return '지난주와 비슷함';
+  }
+  const direction = rate > 0 ? '늘어남' : '줄어듦';
+  return `지난주보다 ${Math.abs(rate)}% ${direction}`;
 };
 
 const formatNames = (names: string[]): string => {
@@ -354,4 +427,21 @@ const formatNames = (names: string[]): string => {
     return '없음';
   }
   return names.join(', ');
+};
+
+const padDisplay = ({ text, width }: PadInput): string => {
+  const gap = Math.max(1, width - displayWidth(text));
+  const padding = ' '.repeat(gap);
+  return `${text}${padding}`;
+};
+
+// 고정폭 글꼴에서 한글은 두 칸을 차지한다.
+const WIDE_CHARACTER = /[\u1100-\u11ff\u3130-\u318f\uac00-\ud7a3]/;
+
+const displayWidth = (text: string): number => {
+  const width = [...text].reduce(
+    (sum, character) => sum + (WIDE_CHARACTER.test(character) ? 2 : 1),
+    0,
+  );
+  return width;
 };
