@@ -31,6 +31,7 @@
     "humanize:research": "node --env-file=.env -r ts-node/register/transpile-only scripts/humanize-research.ts",
     "harness:replay": "ts-node scripts/harness-replay.ts",
     "eval:nl-answer": "ts-node scripts/nl-answer-eval.ts",
+    "saju:pillars": "ts-node scripts/saju-pillars.ts",
     "eval:classifier": "ts-node scripts/nl-answer-eval.ts --classifier",
     "eval:nl-candidates": "ts-node scripts/nl-answer-candidates.ts",
     "console:check": "bash scripts/console-check.sh",
