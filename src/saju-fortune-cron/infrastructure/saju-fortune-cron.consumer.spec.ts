@@ -40,11 +40,13 @@ describe('SajuFortuneCronConsumer', () => {
   let findMissionDay: jest.Mock;
   let consumer: SajuFortuneCronConsumer;
   let recipients: string;
+  let missionCheckCron: string | undefined;
 
   beforeEach(() => {
     jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
     jest.setSystemTime(ORDINARY_DAY);
     recipients = RECIPIENTS;
+    missionCheckCron = undefined;
     route = jest
       .fn()
       .mockResolvedValue({ text: '🌊 물이 물을 만난 날 <!channel>' });
@@ -60,7 +62,10 @@ describe('SajuFortuneCronConsumer', () => {
     toThumbnail = jest.fn().mockResolvedValue(Buffer.from('jpg'));
     findMissionDay = jest.fn().mockResolvedValue(undefined);
     consumer = new SajuFortuneCronConsumer(
-      { get: () => recipients } as unknown as ConfigService,
+      {
+        get: (key: string) =>
+          key === 'SAJU_MISSION_CHECK_CRON' ? missionCheckCron : recipients,
+      } as unknown as ConfigService,
       { route } as unknown as ModelRouterUsecase,
       { postMessage, uploadImageFile } as unknown as SlackNotifierPort,
       { acquireOnce, release, isDone } as unknown as CronIdempotencyService,
@@ -613,6 +618,17 @@ describe('SajuFortuneCronConsumer', () => {
 
       await consumer.process(missionJob(SCHEDULED.getTime()));
 
+      expect(postMessage).not.toHaveBeenCalled();
+    });
+
+    // 켜진 채 등록된 저녁 회차를 놓친 뒤 off 로 다시 켜면 부팅 보충이 그 회차를 넣는다(#1018 Codex 리뷰).
+    it('SAJU_MISSION_CHECK_CRON=off 면 보충 잡이 와도 보내지 않는다', async () => {
+      missionCheckCron = 'off';
+      findMissionDay.mockResolvedValue(dayOf());
+
+      await consumer.process(missionJob(SCHEDULED.getTime()));
+
+      expect(findMissionDay).not.toHaveBeenCalled();
       expect(postMessage).not.toHaveBeenCalled();
     });
 

@@ -5,6 +5,7 @@ import { Job } from 'bullmq';
 import { match } from 'ts-pattern';
 
 import { CronIdempotencyService } from '../../common/queue/cron-idempotency.service';
+import { readNonEmptyConfig } from '../../common/queue/missed-repeatable-run';
 import { ObservedWorkerHost } from '../../common/queue/observed-worker-host';
 import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
 import {
@@ -52,6 +53,8 @@ import {
   FortuneMessageKind,
 } from '../domain/saju-fortune-chat';
 import {
+  DEFAULT_SAJU_MISSION_CHECK_CRON,
+  MISSION_CHECK_DISABLED,
   MISSION_CHECK_MIN_GAP_MS,
   MISSION_CHECK_WINDOW_MS,
   parseSajuFortuneRecipients,
@@ -254,6 +257,17 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
   // 저녁 미션 확인. 날짜는 실행 시각이 아니라 예정 시각으로 정한다 — 자정을 넘겨 도는 보충 잡도
   // 전날을 본다(autopilot.consumer 와 같은 방식). 예정보다 너무 늦게 돌면 그날은 건너뛴다.
   private async checkMissions(prevMillis: number | undefined): Promise<void> {
+    // 끄기는 여기서 본다 — 부팅 보충·대기 중·수동 투입 잡이 모두 이 길을 지난다. 스케줄러만 보면
+    // 켜진 채 등록된 회차를 off 로 다시 켠 부팅의 보충 잡이 그대로 보낸다.
+    const cron = readNonEmptyConfig({
+      configService: this.configService,
+      key: 'SAJU_MISSION_CHECK_CRON',
+      fallback: DEFAULT_SAJU_MISSION_CHECK_CRON,
+    });
+    if (cron === MISSION_CHECK_DISABLED) {
+      this.logger.log('Saju Mission Check 꺼짐 — 잡을 건너뜀');
+      return;
+    }
     const nowMs = Date.now();
     const scheduledMs = prevMillis ?? nowMs;
     if (nowMs - scheduledMs > MISSION_CHECK_WINDOW_MS) {
