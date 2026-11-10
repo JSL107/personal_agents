@@ -39,6 +39,7 @@ import {
 } from '../domain/saju-fortune-cron.type';
 import {
   composeFortuneBody,
+  countUnremovableViolations,
   findFortuneViolations,
 } from '../domain/saju-fortune-render';
 
@@ -159,11 +160,15 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
       return;
     }
     // 별점·행운 아이템은 프롬프트와 같은 입력으로 다시 계산해 코드가 그린다(같은 입력 → 같은 값).
-    const body = composeFortuneBody(
-      fortune.body,
-      analyzeSajuDay(recipient.natalPillars, todayPillar, yearMonthPillars),
-      MAXIMUM_FORTUNE_LENGTH,
-    );
+    const body = composeFortuneBody({
+      body: fortune.body,
+      analysis: analyzeSajuDay(
+        recipient.natalPillars,
+        todayPillar,
+        yearMonthPillars,
+      ),
+      maximum: MAXIMUM_FORTUNE_LENGTH,
+    });
     const text = `${formatFortuneHeader(todayKst, todayPillar)}\n\n${escapeSlackMrkdwn(body)}`;
     try {
       await this.postFortune({ recipient, text, card });
@@ -207,7 +212,7 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
   }
 
   // 한자·명리 용어·AI 가 쓴 별·행운 숫자는 프롬프트 지시라 코드가 다시 본다. 걸리면 한 번만 다시 만들고,
-  // 둘 다 걸리면 위반 종류가 적은 쪽(같으면 두 번째)을 보낸다 — 그날 운세가 아예 안 가는 것보다 낫다.
+  // 둘 다 걸리면 코드가 못 지우는 위반(한자·용어)이 적은 쪽(같으면 두 번째)을 보낸다 — 그날 운세가 아예 안 가는 것보다 낫다.
   // 별·행운 숫자는 composeFortuneBody 가 마지막에 걷어 낸다. 본문과 카드는 같은 응답의 것을 함께 쓴다.
   private async generateFortune(
     input: DeliverFortuneInput,
@@ -219,10 +224,12 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
     }
     const second = await this.requestFortune(input);
     const secondViolations = findFortuneViolations(second.body);
-    const [chosen, remaining] =
-      secondViolations.length <= firstViolations.length
-        ? [second, secondViolations]
-        : [first, firstViolations];
+    const prefersSecond =
+      countUnremovableViolations(secondViolations) <=
+      countUnremovableViolations(firstViolations);
+    const [chosen, remaining] = prefersSecond
+      ? [second, secondViolations]
+      : [first, firstViolations];
     if (remaining.length > 0) {
       this.logger.warn(
         `Saju Fortune 위반 응답(${remaining.join(',')}) — 재생성 후에도 남아 그대로 발송 (${input.recipient.slackUserId})`,

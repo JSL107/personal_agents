@@ -145,6 +145,19 @@ describe('SajuFortuneCronConsumer', () => {
     expect(postMessage.mock.calls[1][0].text).toContain('癸水가 반짝여');
   });
 
+  it('위반 종류 수가 같으면 코드가 지울 수 있는 별 위반 쪽을 보낸다', () => {
+    route
+      .mockResolvedValueOnce({ text: '맑은 날이야 ★★★' })
+      .mockResolvedValueOnce({ text: '癸水의 날' })
+      .mockResolvedValue({ text: '좋은 날' });
+
+    return consumer.process(JOB).then(() => {
+      const text: string = postMessage.mock.calls[0][0].text;
+      expect(text).toContain('맑은 날이야');
+      expect(text).not.toContain('癸水');
+    });
+  });
+
   it('AI 가 쓴 별·행운 숫자는 지우고, 첫 줄 뒤 별점 줄과 끝의 행운 아이템 줄은 코드가 그린다', async () => {
     route.mockResolvedValue({
       text: '맑은 날이야\n\n총운 ★★★★★: 좋아\n행운의 숫자: 7',

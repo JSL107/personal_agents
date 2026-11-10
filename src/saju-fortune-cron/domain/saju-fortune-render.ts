@@ -8,7 +8,8 @@ import { FortuneScoreKey } from './saju-tables';
 // 일간은 기간을 뜻하는 "일주일간·3일간" 과 겹쳐 앞 글자가 숫자·주 이면 제외한다.
 export const FORBIDDEN_TERMS_PATTERN =
   /편재|정재|식신|편관|정관|비견|겁재|편인|십성|십이운성|12운성|장생|건록|제왕|공망|지장간|삼합|반합|천간합|용신|(?<![0-9주])일간/;
-const STAR_PATTERN = /[★☆]/;
+// 별 문자와 '총운 5점' 같은 숫자 별점 — 코드가 그린 별점 줄과 어긋날 수 있다.
+const STAR_PATTERN = /[★☆]|\d\s*점/;
 const LUCKY_PATTERN = /행운의 숫자|행운 숫자|행운 아이템/;
 
 export type FortuneViolation = 'hanja' | 'term' | 'stars' | 'lucky';
@@ -19,6 +20,17 @@ const VIOLATION_PATTERNS: ReadonlyArray<readonly [FortuneViolation, RegExp]> = [
   ['stars', STAR_PATTERN],
   ['lucky', LUCKY_PATTERN],
 ];
+
+// 별 문자·행운 숫자 줄은 composeFortuneBody 가 지우므로 응답을 고를 때 덜 나쁘다.
+const REMOVABLE_VIOLATIONS: ReadonlySet<FortuneViolation> = new Set([
+  'stars',
+  'lucky',
+]);
+
+export const countUnremovableViolations = (
+  violations: FortuneViolation[],
+): number =>
+  violations.filter((kind) => !REMOVABLE_VIOLATIONS.has(kind)).length;
 
 // 위반 종류 목록(종류마다 한 번). 길이가 "위반 수" 다.
 export const findFortuneViolations = (text: string): FortuneViolation[] =>
@@ -74,11 +86,15 @@ export const renderItemLine = (lucky: LuckyInfo): string =>
   `🍀 행운 아이템: ${lucky.color} · ${lucky.number} · ${lucky.taste}(${lucky.food}) · ${lucky.direction}`;
 
 // escape 전 길이 기준(지금 발송 코드도 escape 전에 자른다). 그린 두 줄과 그 개행 둘은 예산에서 먼저 뺀다.
-export const composeFortuneBody = (
-  body: string,
-  analysis: SajuDayAnalysis,
-  maximum: number,
-): string => {
+export const composeFortuneBody = ({
+  body,
+  analysis,
+  maximum,
+}: {
+  body: string;
+  analysis: SajuDayAnalysis;
+  maximum: number;
+}): string => {
   const starLine = renderStarLine(analysis.scores);
   const itemLine = renderItemLine(analysis.lucky);
   const budget = maximum - starLine.length - itemLine.length - 2;

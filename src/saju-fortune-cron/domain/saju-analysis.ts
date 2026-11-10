@@ -10,6 +10,7 @@ import {
   ELEMENT_TASTES,
   FortuneCategory,
   FortuneScoreKey,
+  FortuneStrength,
   HIDDEN_STEM_DAYS,
   LUCKY_GROUP_BY_TODAY_GROUP,
   LUCKY_REASONS,
@@ -146,7 +147,7 @@ export interface SajuDayAnalysis {
   todayStemIndex: number;
   branchRelations: BranchRelation[];
   periodFlows: PeriodFlow[];
-  twelveStage: { stage: TwelveStage; strength: '강' | '보통' | '약' };
+  twelveStage: { stage: TwelveStage; strength: FortuneStrength };
   // 오늘 일지가 타고난 일주의 공망 지지인가.
   isVoidDay: boolean;
   stemRelations: StemRelation[];
@@ -169,26 +170,32 @@ export interface LuckyInfo {
   direction: string;
 }
 
-const luckyOf = (
-  dayMaster: StemInfo,
-  todayStem: StemInfo,
-  todayStemIndex: number,
-): LuckyInfo => {
+const luckyOf = ({
+  dayMaster,
+  todayStem,
+  todayStemIndex,
+}: {
+  dayMaster: StemInfo;
+  todayStem: StemInfo;
+  todayStemIndex: number;
+}): LuckyInfo => {
   const todayGroup = tenGodGroupOf(dayMaster, todayStem);
-  const index =
-    (ELEMENTS.indexOf(dayMaster.element) +
-      LUCKY_GROUP_BY_TODAY_GROUP[todayGroup]) %
-    ELEMENTS.length;
+  // 오행은 나무→불→흙→쇠→물로 도는 고리다. 표의 값은 일간 자리에서 몇 칸 갈지(0 같은 기운·1 내가 생함…)다.
+  const dayMasterIndex = ELEMENTS.indexOf(dayMaster.element);
+  const steps = LUCKY_GROUP_BY_TODAY_GROUP[todayGroup];
+  const index = (dayMasterIndex + steps) % ELEMENTS.length;
   const element = ELEMENTS[index];
   const foods = ELEMENT_FOODS[index];
   // 숫자는 날마다, 음식은 이틀마다 바뀐다 — 같은 주기로 묶여 돌지 않게.
+  const number = ELEMENT_NUMBERS[index][todayStemIndex % 2];
+  const food = foods[Math.floor(todayStemIndex / 2) % foods.length];
   return {
     element,
     reason: LUCKY_REASONS[todayGroup],
     color: ELEMENT_COLORS[element],
-    number: ELEMENT_NUMBERS[index][todayStemIndex % 2],
+    number,
     taste: ELEMENT_TASTES[index],
-    food: foods[Math.floor(todayStemIndex / 2) % foods.length],
+    food,
     direction: ELEMENT_DIRECTIONS[index],
   };
 };
@@ -197,7 +204,7 @@ export interface ScoreInput {
   // 십성 갈래 0 비겁·1 식상·2 재성·3 관성·4 인성.
   todayStemGroup: number;
   todayBranchGroup: number;
-  strength: '강' | '보통' | '약';
+  strength: FortuneStrength;
   hasBranchHarmony: boolean;
   isVoidDay: boolean;
 }
@@ -226,9 +233,12 @@ const clampScore = (value: number): number =>
 export const scoreFortune = (
   input: ScoreInput,
 ): Record<FortuneScoreKey, number> => {
-  const raw = Object.fromEntries(
-    SCORE_CATEGORIES.map((category) => [category, BASE_SCORE]),
-  ) as Record<FortuneCategory, number>;
+  const raw: Record<FortuneCategory, number> = {
+    '일·공부': BASE_SCORE,
+    '사람 관계': BASE_SCORE,
+    돈: BASE_SCORE,
+    컨디션: BASE_SCORE,
+  };
   const apply = (
     adjustment: Partial<Record<FortuneCategory, number>>,
   ): void => {
@@ -238,11 +248,7 @@ export const scoreFortune = (
   };
   apply(SCORE_ADJUSTMENTS.tenGodGroups[input.todayStemGroup]);
   apply(SCORE_ADJUSTMENTS.tenGodGroups[input.todayBranchGroup]);
-  if (input.strength === '강') {
-    apply(SCORE_ADJUSTMENTS.strongStage);
-  } else if (input.strength === '약') {
-    apply(SCORE_ADJUSTMENTS.weakStage);
-  }
+  apply(SCORE_ADJUSTMENTS.stage[input.strength]);
   if (input.hasBranchHarmony) {
     apply(SCORE_ADJUSTMENTS.branchHarmony);
   }
@@ -256,19 +262,18 @@ export const scoreFortune = (
     0,
   );
   // 네 원점수 평균을 반올림(.5 는 올림)하고 기세를 더한다 — 기세가 하루 전체를 좌우한다는 판단.
-  const overall =
-    Math.floor(
-      (rawSum + SCORE_CATEGORIES.length / 2) / SCORE_CATEGORIES.length,
-    ) +
-    (input.strength === '보통'
-      ? 0
-      : SCORE_ADJUSTMENTS.overallStage[input.strength]);
-  return {
+  const average = Math.floor(
+    (rawSum + SCORE_CATEGORIES.length / 2) / SCORE_CATEGORIES.length,
+  );
+  const overall = average + SCORE_ADJUSTMENTS.overallStage[input.strength];
+  const scores: Record<FortuneScoreKey, number> = {
     총운: clampScore(overall),
-    ...(Object.fromEntries(
-      SCORE_CATEGORIES.map((category) => [category, clampScore(raw[category])]),
-    ) as Record<FortuneCategory, number>),
+    '일·공부': clampScore(raw['일·공부']),
+    '사람 관계': clampScore(raw['사람 관계']),
+    돈: clampScore(raw.돈),
+    컨디션: clampScore(raw.컨디션),
   };
+  return scores;
 };
 
 const stemInfoOf = (stem: string): StemInfo => {
@@ -317,10 +322,13 @@ export const voidBranchesOf = (dayPillar: string): [string, string] => {
   ];
 };
 
-export const stemRelationOf = (
-  todayStem: string,
-  natalStem: string,
-): StemRelationKind | null => {
+export const stemRelationOf = ({
+  todayStem,
+  natalStem,
+}: {
+  todayStem: string;
+  natalStem: string;
+}): StemRelationKind | null => {
   const distance = Math.abs(
     HEAVENLY_STEMS.indexOf(todayStem) - HEAVENLY_STEMS.indexOf(natalStem),
   );
@@ -334,10 +342,13 @@ export const stemRelationOf = (
 };
 
 // 오늘 일지가 타고난 지지와 무리를 이루는가. 같은 글자는 빼고, 원국에 이미 완성된 무리는 새로 생기는 게 없다.
-const harmonyGroupOf = (
-  natalPillars: string[],
-  todayBranch: string,
-): HarmonyGroup | undefined => {
+const harmonyGroupOf = ({
+  natalPillars,
+  todayBranch,
+}: {
+  natalPillars: string[];
+  todayBranch: string;
+}): HarmonyGroup | undefined => {
   const today = EARTHLY_BRANCHES.indexOf(todayBranch);
   const group = today % HARMONY_GROUP_COUNT;
   const members = natalPillars
@@ -353,27 +364,26 @@ const harmonyGroupOf = (
   }
   const element = HARMONY_GROUP_ELEMENTS[group];
   const others = members.filter(({ branch }) => branch !== today);
-  if (
-    !natalLetters.has(today) &&
-    new Set(others.map(({ branch }) => branch)).size === 2
-  ) {
-    return {
-      kind: '삼합',
-      element,
-      natalLabels: others.map(({ label }) => label),
-    };
+  const otherLetters = new Set(others.map(({ branch }) => branch));
+  // 오늘 일지가 원국에 없는 글자이고, 원국이 나머지 두 글자를 갖고 있으면 오늘 무리가 완성된다.
+  const completesGroup = !natalLetters.has(today) && otherLetters.size === 2;
+  if (completesGroup) {
+    const natalLabels = others.map(({ label }) => label);
+    return { kind: '삼합', element, natalLabels };
   }
   const isPeak = (branch: number): boolean =>
     PEAK_BRANCHES.includes(EARTHLY_BRANCHES[branch]);
   const partners = others.filter(
     ({ branch }) => isPeak(today) || isPeak(branch),
   );
-  return partners.length > 0
-    ? { kind: '반합', element, natalLabels: partners.map(({ label }) => label) }
-    : undefined;
+  if (partners.length === 0) {
+    return undefined;
+  }
+  const natalLabels = partners.map(({ label }) => label);
+  return { kind: '반합', element, natalLabels };
 };
 
-const strengthOf = (stage: TwelveStage): '강' | '보통' | '약' => {
+const strengthOf = (stage: TwelveStage): FortuneStrength => {
   if (STRONG_STAGES.has(stage)) {
     return '강';
   }
@@ -419,9 +429,10 @@ export const analyzeSajuDay = (
   const todayBranch = branchInfoOf(todayPillar[1]);
   const branchRelations = natalPillars.flatMap((pillar, index) => {
     const kind = branchRelationOf(todayPillar[1], pillar[1]);
-    return kind
-      ? [{ kind, natalLabel: PILLAR_LABELS[index], natalBranch: pillar[1] }]
-      : [];
+    if (!kind) {
+      return [];
+    }
+    return [{ kind, natalLabel: PILLAR_LABELS[index], natalBranch: pillar[1] }];
   });
 
   const withTenGod = (info: StemInfo): StemWithTenGod => ({
@@ -442,12 +453,19 @@ export const analyzeSajuDay = (
 
   const stage = twelveStageOf(natalPillars[2][0], todayPillar[1]);
   const stemRelations = natalPillars.flatMap((pillar, index) => {
-    const kind = stemRelationOf(todayPillar[0], pillar[0]);
-    return kind
-      ? [{ kind, natalLabel: PILLAR_LABELS[index], natalStem: pillar[0] }]
-      : [];
+    const kind = stemRelationOf({
+      todayStem: todayPillar[0],
+      natalStem: pillar[0],
+    });
+    if (!kind) {
+      return [];
+    }
+    return [{ kind, natalLabel: PILLAR_LABELS[index], natalStem: pillar[0] }];
   });
-  const harmonyGroup = harmonyGroupOf(natalPillars, todayPillar[1]);
+  const harmonyGroup = harmonyGroupOf({
+    natalPillars,
+    todayBranch: todayPillar[1],
+  });
   const hasBranchHarmony =
     harmonyGroup !== undefined ||
     branchRelations.some(({ kind }) => kind === '합');
@@ -474,11 +492,11 @@ export const analyzeSajuDay = (
       hasBranchHarmony,
       isVoidDay,
     }),
-    lucky: luckyOf(
+    lucky: luckyOf({
       dayMaster,
       todayStem,
-      HEAVENLY_STEMS.indexOf(todayPillar[0]),
-    ),
+      todayStemIndex: HEAVENLY_STEMS.indexOf(todayPillar[0]),
+    }),
   };
 };
 
@@ -528,7 +546,8 @@ export const formatSajuFacts = (analysis: SajuDayAnalysis): string[] => {
   facts.push(
     `- 오늘의 기세: ${TWELVE_STAGE_MEANINGS[analysis.twelveStage.stage]}`,
   );
-  if (analysis.isVoidDay) {
+  // 별점과 같은 해공 기준 — 지지가 맞물리면 공망이 풀려 권고하지 않는다.
+  if (analysis.isVoidDay && !analysis.hasBranchHarmony) {
     facts.push('- 오늘은 새로 벌이기보다 정리·마무리하기 좋은 날');
   }
   for (const relation of analysis.stemRelations) {

@@ -120,6 +120,14 @@ describe('formatSajuFacts', () => {
     expect(facts.join('\n')).not.toMatch(/[\u4E00-\u9FFF]/);
   });
 
+  it('공망이어도 지지가 맞물리면(해공) 정리·마무리 권고를 싣지 않는다', () => {
+    // 일주 己酉 의 공망은 寅·卯. 오늘 甲寅 은 공망이지만 년주 亥 와 맞물린다.
+    const analysis = analyzeSajuDay(['乙亥', '辛丑', '己酉'], '甲寅');
+    expect(analysis.isVoidDay).toBe(true);
+    expect(analysis.hasBranchHarmony).toBe(true);
+    expect(formatSajuFacts(analysis).join('\n')).not.toContain('정리·마무리');
+  });
+
   it('충·합이 있으면 어느 기둥의 어떤 지지와인지 한글 뜻풀이로 적고, 용어는 싣지 않는다', () => {
     const clash = formatSajuFacts(analyzeSajuDay(SAMPLE_EARTH, '癸亥'));
     expect(clash).toContain(
@@ -226,17 +234,23 @@ describe('voidBranchesOf', () => {
 
 describe('stemRelationOf', () => {
   it.each(['甲己', '乙庚', '丙辛', '丁壬', '戊癸'])('%s 는 합이다', (pair) => {
-    expect(stemRelationOf(pair[0], pair[1])).toBe('합');
-    expect(stemRelationOf(pair[1], pair[0])).toBe('합');
+    expect(stemRelationOf({ todayStem: pair[0], natalStem: pair[1] })).toBe(
+      '합',
+    );
+    expect(stemRelationOf({ todayStem: pair[1], natalStem: pair[0] })).toBe(
+      '합',
+    );
   });
 
   it.each(['甲庚', '乙辛', '丙壬', '丁癸'])('%s 는 충이다', (pair) => {
-    expect(stemRelationOf(pair[0], pair[1])).toBe('충');
+    expect(stemRelationOf({ todayStem: pair[0], natalStem: pair[1] })).toBe(
+      '충',
+    );
   });
 
   it('戊·己 끼리와 같은 글자는 관계가 없다', () => {
-    expect(stemRelationOf('戊', '己')).toBeNull();
-    expect(stemRelationOf('甲', '甲')).toBeNull();
+    expect(stemRelationOf({ todayStem: '戊', natalStem: '己' })).toBeNull();
+    expect(stemRelationOf({ todayStem: '甲', natalStem: '甲' })).toBeNull();
   });
 });
 
