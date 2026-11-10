@@ -2,6 +2,7 @@ import {
   BirthInfo,
   calculateFourPillars,
   DayBoundary,
+  DEFAULT_LONGITUDE,
   FourPillarsDetail,
   lunarToSolar,
   Pillar,
@@ -50,14 +51,10 @@ const HISTORICAL_CLOCK_ONLY: TrueSolarTimeOptions = {
   longitude: 135,
   applyEquationOfTime: false,
 };
-// 시각을 모를 때 쓰는 대표 시각. 일주는 자정 기준이라 영향이 없고, 년·월주는 절입일만 따로 경고한다.
+// 시각을 모를 때 쓰는 대표 시각. 하루 안에서 기둥이 갈리는 날은 따로 경고한다.
 const UNKNOWN_TIME: BirthTime = { hour: 12, minute: 0 };
-// 시진 경계 경고 폭 — 진태양시 보정(서울 약 −32분)을 켜고 끄는 차이를 덮는다.
-const HOUR_BOUNDARY_MARGIN_MINUTES = 30;
-const MILLISECONDS_PER_MINUTE = 60_000;
 
 export const natalPillarsOf = (input: NatalBirthInput): NatalPillarsResult => {
-  // 음력은 먼저 양력으로 바꾼다 — 경계 경고에서 분 단위로 시각을 밀 때 날짜 연산을 양력으로만 하기 위해서다.
   const solarDate = input.isLunar
     ? lunarToSolar(
         input.year,
@@ -66,18 +63,19 @@ export const natalPillarsOf = (input: NatalBirthInput): NatalPillarsResult => {
         input.isLeapMonth ?? false,
       )
     : { year: input.year, month: input.month, day: input.day };
-  const trueSolarTime =
-    input.solarTimeLongitude === undefined
-      ? HISTORICAL_CLOCK_ONLY
-      : { longitude: input.solarTimeLongitude };
+  const usesSolarTime = input.solarTimeLongitude !== undefined;
+  const trueSolarTime = usesSolarTime
+    ? { longitude: input.solarTimeLongitude }
+    : HISTORICAL_CLOCK_ONLY;
   const dayBoundary = input.dayBoundary ?? 'midnight';
   const pillarsAt = (
     wallClock: WallClock,
+    options: TrueSolarTimeOptions = trueSolarTime,
     boundary: DayBoundary = dayBoundary,
   ): FourPillarsDetail =>
     calculateFourPillars({
       ...wallClock,
-      trueSolarTime,
+      trueSolarTime: options,
       dayBoundary: boundary,
     } satisfies BirthInfo);
 
@@ -87,14 +85,17 @@ export const natalPillarsOf = (input: NatalBirthInput): NatalPillarsResult => {
   const warnings: string[] = [];
 
   if (!time) {
+    // 절입일이면 년·월주가, 서머타임 날(00시대가 전날 23시대로 보정)·진태양시면 일주가 하루 안에서 갈린다.
     const dayStart = pillarsAt({ ...solarDate, hour: 0, minute: 0 });
     const dayEnd = pillarsAt({ ...solarDate, hour: 23, minute: 59 });
-    if (
-      toHanja(dayStart.year) !== toHanja(dayEnd.year) ||
-      toHanja(dayStart.month) !== toHanja(dayEnd.month)
-    ) {
+    const changed = PILLAR_NAMES.slice(0, 3).filter(
+      (_, index) =>
+        toHanja(pillarFields(dayStart)[index]) !==
+        toHanja(pillarFields(dayEnd)[index]),
+    );
+    if (changed.length > 0) {
       warnings.push(
-        '절입일(입춘·절기 당일) 출생이라 시각에 따라 년주·월주가 바뀝니다. 시각을 알아야 정확합니다.',
+        `태어난 시각에 따라 ${changed.join('·')}가 바뀌는 날입니다. 시각을 알아야 정확합니다.`,
       );
     }
     return { pillars, warnings };
@@ -102,25 +103,26 @@ export const natalPillarsOf = (input: NatalBirthInput): NatalPillarsResult => {
 
   pillars.push(toHanja(found.hour));
   const birthClock: WallClock = { ...solarDate, ...time };
-  const shiftedHours = [-1, 1].map((sign) =>
-    toHanja(
-      pillarsAt(shiftMinutes(birthClock, sign * HOUR_BOUNDARY_MARGIN_MINUTES))
-        .hour,
-    ),
+  // 진태양시는 경도·계절(균시차)에 따라 −14~−46분 남짓 움직여 고정 폭으로는 못 덮는다 — 반대 설정으로 직접 다시 센다.
+  const alternative = pillarsAt(
+    birthClock,
+    usesSolarTime ? HISTORICAL_CLOCK_ONLY : { longitude: DEFAULT_LONGITUDE },
   );
-  if (shiftedHours.some((hourPillar) => hourPillar !== pillars[3])) {
+  const solarTimeChanges = differingPillars(found, alternative);
+  if (solarTimeChanges.length > 0) {
     warnings.push(
-      `시진 경계 ±${HOUR_BOUNDARY_MARGIN_MINUTES}분 안이라 진태양시 보정 여부에 따라 시주가 바뀔 수 있습니다.`,
+      usesSolarTime
+        ? `진태양시 보정을 끄면 ${solarTimeChanges}(으)로 바뀝니다.`
+        : `진태양시 보정(--solar-time, 경도 ${DEFAULT_LONGITUDE} 기준)을 켜면 ${solarTimeChanges}(으)로 바뀝니다.`,
     );
   }
   const allBoundaries: DayBoundary[] = ['midnight', 'jasi', 'splitJasi'];
   if (
-    allBoundaries.some((boundary) => {
-      const other = pillarsAt(birthClock, boundary);
-      return (
-        toHanja(other.day) !== pillars[2] || toHanja(other.hour) !== pillars[3]
-      );
-    })
+    allBoundaries.some(
+      (boundary) =>
+        differingPillars(found, pillarsAt(birthClock, trueSolarTime, boundary))
+          .length > 0,
+    )
   ) {
     warnings.push(
       '밤 11시대 출생이라 자시를 어느 날로 보느냐(--day-boundary)에 따라 일주·시주가 바뀝니다.',
@@ -129,21 +131,31 @@ export const natalPillarsOf = (input: NatalBirthInput): NatalPillarsResult => {
   return { pillars, warnings };
 };
 
+const PILLAR_NAMES = ['년주', '월주', '일주', '시주'];
+
+const pillarFields = (pillars: FourPillarsDetail): Pillar[] => [
+  pillars.year,
+  pillars.month,
+  pillars.day,
+  pillars.hour,
+];
+
 const toHanja = (pillar: Pillar): string =>
   pillarFromHangul(pillar.heavenlyStem, pillar.earthlyBranch);
 
-// 경계 경고 전용 — 날짜를 넘겨 밀어도 되도록 UTC 산술로 벽시계 값을 다시 만든다.
-const shiftMinutes = (wallClock: WallClock, minutes: number): WallClock => {
-  const { year, month, day, hour, minute } = wallClock;
-  const shifted = new Date(
-    Date.UTC(year, month - 1, day, hour, minute) +
-      minutes * MILLISECONDS_PER_MINUTE,
-  );
-  return {
-    year: shifted.getUTCFullYear(),
-    month: shifted.getUTCMonth() + 1,
-    day: shifted.getUTCDate(),
-    hour: shifted.getUTCHours(),
-    minute: shifted.getUTCMinutes(),
-  };
+// 다른 기둥만 "일주 辛丑·시주 戊子" 처럼 잇는다. 없으면 빈 문자열.
+const differingPillars = (
+  base: FourPillarsDetail,
+  other: FourPillarsDetail,
+): string => {
+  const otherFields = pillarFields(other);
+  return pillarFields(base)
+    .map((pillar, index) => ({
+      name: PILLAR_NAMES[index],
+      before: toHanja(pillar),
+      after: toHanja(otherFields[index]),
+    }))
+    .filter(({ before, after }) => before !== after)
+    .map(({ name, after }) => `${name} ${after}`)
+    .join('·');
 };

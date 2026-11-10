@@ -26,7 +26,13 @@ describe('natalPillarsOf', () => {
 
     expect(pillars).toHaveLength(3);
     expect(pillars[2]).toBe(dayPillarOf('2024-02-04'));
-    expect(warnings).toEqual([expect.stringContaining('절입일')]);
+    expect(warnings).toEqual([expect.stringContaining('년주·월주가')]);
+  });
+
+  it('시각을 모르는 서머타임 날은 00시대가 전날로 보정돼 일주가 갈린다고 경고한다', () => {
+    expect(natalPillarsOf({ year: 1987, month: 7, day: 15 }).warnings).toEqual([
+      expect.stringContaining('일주가'),
+    ]);
   });
 
   it('절입일이 아니면 시각 없이도 경고가 없다', () => {
@@ -75,6 +81,17 @@ describe('natalPillarsOf', () => {
     ).toBe('壬午');
   });
 
+  it('1954~61 년 표준시(UTC+8:30)는 30분 늦춰 지금 KST 로 본다 (1958-03-10 12:40 → 13:10)', () => {
+    expect(
+      natalPillarsOf({
+        year: 1958,
+        month: 3,
+        day: 10,
+        time: { hour: 12, minute: 40 },
+      }).pillars[3],
+    ).toBe('乙未');
+  });
+
   it('진태양시는 경도를 줄 때만 고친다', () => {
     const birth = {
       year: 1995,
@@ -88,8 +105,20 @@ describe('natalPillarsOf', () => {
       natalPillarsOf({ ...birth, solarTimeLongitude: 126.98 }).pillars[3],
     ).toBe('壬午');
     expect(natalPillarsOf(birth).warnings).toEqual([
-      expect.stringContaining('시진 경계'),
+      expect.stringContaining('시주 壬午'),
     ]);
+  });
+
+  // 2월은 균시차까지 더해져 보정이 약 −44분이다 — 고정 ±30분 폭으로는 못 잡던 경우.
+  it('진태양시를 켜면 시주가 바뀌는 경우를 보정량과 무관하게 경고한다', () => {
+    expect(
+      natalPillarsOf({
+        year: 1995,
+        month: 2,
+        day: 10,
+        time: { hour: 13, minute: 40 },
+      }).warnings,
+    ).toEqual([expect.stringContaining('시주 丙午')]);
   });
 
   it('시진 한가운데는 경고하지 않는다', () => {
@@ -114,6 +143,10 @@ describe('natalPillarsOf', () => {
     expect(natalPillarsOf(birth).pillars.slice(2)).toEqual(['庚子', '丙子']);
     const nextDay = natalPillarsOf({ ...birth, dayBoundary: 'jasi' });
     expect(nextDay.pillars.slice(2)).toEqual(['辛丑', '戊子']);
-    expect(nextDay.warnings).toEqual([expect.stringContaining('밤 11시대')]);
+    // 진태양시로는 22:58 이라 같은 날 亥시 — 두 경고가 함께 뜬다.
+    expect(nextDay.warnings).toEqual([
+      expect.stringContaining('일주 庚子·시주 丁亥'),
+      expect.stringContaining('밤 11시대'),
+    ]);
   });
 });
