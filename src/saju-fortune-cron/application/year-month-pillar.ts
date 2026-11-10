@@ -27,13 +27,13 @@ export const yearMonthPillarsOf = (plainDate: string): YearMonthPillars => {
     minute: 0,
   });
   return {
-    yearPillar: pillarFromHangul(
-      pillars.year.heavenlyStem,
-      pillars.year.earthlyBranch,
-    ),
-    monthPillar: pillarFromHangul(
-      pillars.month.heavenlyStem,
-      pillars.month.earthlyBranch,
-    ),
+    yearPillar: pillarFromHangul({
+      stem: pillars.year.heavenlyStem,
+      branch: pillars.year.earthlyBranch,
+    }),
+    monthPillar: pillarFromHangul({
+      stem: pillars.month.heavenlyStem,
+      branch: pillars.month.earthlyBranch,
+    }),
   };
 };

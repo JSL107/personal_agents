@@ -1,3 +1,4 @@
+import { isCalendarDate } from '../../common/util/kst-date.util';
 import { isValidPillar } from './day-pillar';
 
 export const SAJU_FORTUNE_CRON_QUEUE = 'saju-fortune-cron';
@@ -69,10 +70,8 @@ export const isValidBirthday = (text: string): boolean => {
   if (!matched) {
     return false;
   }
-  const [, month, day] = matched.map(Number);
-  const date = new Date(Date.UTC(LEAP_YEAR, month - 1, day));
-  const isSameDate =
-    date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+  const [, month, day] = matched;
+  const isSameDate = isCalendarDate(`${LEAP_YEAR}-${month}-${day}`);
   return isSameDate;
 };
 
@@ -140,5 +139,6 @@ const parseEntry = (entry: string): SajuFortuneRecipient | null => {
 // 'HH:MM' → 매일 그 시각 cron. 형식은 파서가 이미 검사했다.
 export const dailyCronOf = (sendTime: string): string => {
   const [hour, minute] = sendTime.split(':').map(Number);
-  return `${minute} ${hour} * * *`;
+  const cron = `${minute} ${hour} * * *`;
+  return cron;
 };

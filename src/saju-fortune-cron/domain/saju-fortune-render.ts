@@ -40,7 +40,8 @@ export const findFortuneViolations = (text: string): FortuneViolation[] => {
   const matched = VIOLATION_PATTERNS.filter(([, pattern]) =>
     pattern.test(text),
   );
-  return matched.map(([kind]) => kind);
+  const kinds = matched.map(([kind]) => kind);
+  return kinds;
 };
 
 // 두 번 다 위반한 응답도 실패 조건(AI 가 쓴 별·행운 숫자)을 뚫지 않게 하는 최종 방어.
@@ -50,7 +51,8 @@ export const stripInventedMarks = (body: string): string => {
     .split('\n')
     .filter((line) => !LUCKY_PATTERN.test(line) && !MISSION_PATTERN.test(line));
   const cleaned = kept.map((line) => line.replace(/\s*[★☆]+/g, ''));
-  return cleaned.join('\n');
+  const stripped = cleaned.join('\n');
+  return stripped;
 };
 
 // 예산 안의 마지막 완결 줄까지. 첫 줄만으로 넘치면 그 줄을 글자 단위로 자른다 — 본문이 비지 않게.
@@ -63,18 +65,20 @@ export const truncateByLines = ({
 }): string => {
   const lines = body.split('\n');
   if (lines[0].length > budget) {
-    return lines[0].slice(0, budget);
+    const clipped = lines[0].slice(0, budget);
+    return clipped;
   }
   const kept = [lines[0]];
-  let length = lines[0].length;
   for (const line of lines.slice(1)) {
-    length += 1 + line.length;
-    if (length > budget) {
+    // 줄을 하나 더 이으면(개행 포함) 예산을 넘는지 — 이어 붙인 글자 수 그대로 잰다.
+    const joinedLength = [...kept, line].join('\n').length;
+    if (joinedLength > budget) {
       break;
     }
     kept.push(line);
   }
-  return kept.join('\n');
+  const truncated = kept.join('\n');
+  return truncated;
 };
 
 const MAXIMUM_STARS = 5;
@@ -82,7 +86,8 @@ const MAXIMUM_STARS = 5;
 export const starsOf = (score: number): string => {
   const filled = '★'.repeat(score);
   const empty = '☆'.repeat(MAXIMUM_STARS - score);
-  return `${filled}${empty}`;
+  const starLine = `${filled}${empty}`;
+  return starLine;
 };
 
 export const renderStarLine = (
@@ -91,7 +96,8 @@ export const renderStarLine = (
   const parts = FORTUNE_SCORE_KEYS.map(
     (key) => `${key} ${starsOf(scores[key])}`,
   );
-  return parts.join(' · ');
+  const starLine = parts.join(' · ');
+  return starLine;
 };
 
 export const renderItemLine = (lucky: LuckyInfo): string =>
@@ -289,7 +295,11 @@ export const splitExtraSections = ({
       },
       [[]],
     )
-    .map((lines) => lines.join('\n').trim())
+    .map((lines) => {
+      const section = lines.join('\n');
+      const trimmed = section.trim();
+      return trimmed;
+    })
     .filter((section) => section.length > 0);
   const matches = sections.length === expected;
   return matches ? sections : null;
@@ -309,21 +319,30 @@ export const composeExtraBody = ({
   weeklyStarLine?: string;
   maximum: number;
 }): string => {
-  const codeLines = weeklyStarLine
-    ? [...specialLines, weeklyStarLine]
-    : specialLines;
+  const codeLines = [...specialLines];
+  if (weeklyStarLine) {
+    codeLines.push(weeklyStarLine);
+  }
   // 라벨 굵게는 자르기 전에 — 표식 두 글자도 예산에 들어가야 상한을 넘지 않는다.
-  const cleaned = sections.map((section) =>
-    stripInventedMarks(section)
+  const cleaned = sections.map((section) => {
+    const boldLines = stripInventedMarks(section)
       .trim()
       .split('\n')
-      .map(boldScoreLabel)
-      .join('\n'),
-  );
-  const assemble = (bodies: string[]): string =>
-    bodies.length === codeLines.length
-      ? codeLines.map((line, index) => `${line}\n${bodies[index]}`).join('\n\n')
-      : `${codeLines.join('\n')}\n\n${bodies.join('\n\n')}`;
+      .map(boldScoreLabel);
+    const bolded = boldLines.join('\n');
+    return bolded;
+  });
+  const assemble = (bodies: string[]): string => {
+    if (bodies.length === codeLines.length) {
+      const paired = codeLines.map(
+        (line, index) => `${line}\n${bodies[index]}`,
+      );
+      const joined = paired.join('\n\n');
+      return joined;
+    }
+    const assembled = `${codeLines.join('\n')}\n\n${bodies.join('\n\n')}`;
+    return assembled;
+  };
   const overhead = assemble(cleaned.map(() => '')).length;
   const budget = Math.max(0, Math.floor((maximum - overhead) / cleaned.length));
   const truncated = cleaned.map((body) => truncateByLines({ body, budget }));

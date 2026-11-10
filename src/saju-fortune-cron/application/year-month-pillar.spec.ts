@@ -45,7 +45,7 @@ describe('dayPillarOf 와 manseryeok 교차 대조', () => {
       });
       if (
         dayPillarOf(plainDate) !==
-        pillarFromHangul(day.heavenlyStem, day.earthlyBranch)
+        pillarFromHangul({ stem: day.heavenlyStem, branch: day.earthlyBranch })
       ) {
         mismatches.push(plainDate);
       }

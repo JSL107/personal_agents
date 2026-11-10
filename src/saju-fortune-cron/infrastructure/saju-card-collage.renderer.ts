@@ -22,8 +22,11 @@ const LABEL_COLOR = '#E8D9A8';
 const LABEL_FONT_SIZE = 24;
 
 // 'YYYY-MM-DD' → 'MM/DD'. 숫자와 / 만 그려 한글 글꼴에 기대지 않는다.
-const labelOf = (fortuneDate: string): string =>
-  fortuneDate.slice(5).replace('-', '/');
+const labelOf = (fortuneDate: string): string => {
+  const monthAndDay = fortuneDate.slice(5);
+  const label = monthAndDay.replace('-', '/');
+  return label;
+};
 
 // 카드 썸네일(하루 기록에 남김)과 월별 카드 모음 그림.
 @Injectable()

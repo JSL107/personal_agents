@@ -15,7 +15,7 @@ const RECIPIENT = {
 
 describe('fortuneDateOf', () => {
   it('발송 머리말에서 날짜를 다시 읽는다 — 발송과 판별이 같은 형식을 쓴다', () => {
-    const message = `${formatFortuneHeader('2026-11-02', '庚辰')}\n\n본문`;
+    const message = `${formatFortuneHeader({ todayKst: '2026-11-02', todayPillar: '庚辰' })}\n\n본문`;
 
     expect(fortuneDateOf(message)).toBe('2026-11-02');
   });
@@ -49,7 +49,10 @@ describe('fortuneDateOf', () => {
 
 describe('fortuneMessageOf', () => {
   it.each([
-    [formatFortuneHeader('2026-11-16', '甲午'), 'daily'],
+    [
+      formatFortuneHeader({ todayKst: '2026-11-16', todayPillar: '甲午' }),
+      'daily',
+    ],
     [
       formatExtraFortuneHeader({
         kind: FortuneMessageKind.WEEKLY,

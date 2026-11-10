@@ -134,11 +134,11 @@ export class DeliverDailyFortuneUsecase {
     }
 
     // 별점·행운 아이템·미션은 프롬프트와 같은 입력으로 계산해 코드가 그린다(같은 입력 → 같은 값).
-    const analysis = analyzeSajuDay(
-      recipient.natalPillars,
+    const analysis = analyzeSajuDay({
+      natalPillars: recipient.natalPillars,
       todayPillar,
       yearMonthPillars,
-    );
+    });
     const mission = pickMission({
       analysis,
       recent: await this.findRecentMissions({ recipient, todayKst }),
@@ -146,9 +146,7 @@ export class DeliverDailyFortuneUsecase {
     });
     const fortune = await this.generateFortune(input);
     // 업로드는 채널에 공유되지 않는 파일만 만든다 — 발송이 아니라서 가드 앞에 둔다.
-    const card = fortune.card
-      ? await this.prepareCard({ recipient, card: fortune.card })
-      : undefined;
+    const card = await this.prepareCard({ recipient, card: fortune.card });
 
     // 조립은 가드 앞에서 한다 — 키를 잡은 뒤 조립이 던지면 키만 남아 그날 일일이 빠진다.
     const composed = composeFortuneBody({
@@ -157,7 +155,7 @@ export class DeliverDailyFortuneUsecase {
       mission,
       maximum: MAXIMUM_FORTUNE_LENGTH,
     });
-    const text = `${formatFortuneHeader(todayKst, todayPillar)}\n\n${escapeSlackMrkdwn(composed.body)}`;
+    const text = `${formatFortuneHeader({ todayKst, todayPillar })}\n\n${escapeSlackMrkdwn(composed.body)}`;
 
     // stalled 재처리로 같은 사람이 동시에 두 번 처리되면 뒤쪽은 여기서 막힌다.
     const firstRun = await this.cronIdempotency.acquireOnce(
@@ -318,8 +316,11 @@ export class DeliverDailyFortuneUsecase {
     card,
   }: {
     recipient: SajuFortuneRecipient;
-    card: FortuneCard;
+    card?: FortuneCard;
   }): Promise<PreparedCard | undefined> {
+    if (!card) {
+      return undefined;
+    }
     try {
       const png = await this.cardImage.generate(
         buildFortuneCardImagePrompt(card),

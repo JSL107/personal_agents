@@ -1,3 +1,5 @@
+import { isCalendarDate } from '../../common/util/kst-date.util';
+
 const HEAVENLY_STEMS = '甲乙丙丁戊己庚辛壬癸';
 const EARTHLY_BRANCHES = '子丑寅卯辰巳午未申酉戌亥';
 // 위 두 줄과 같은 순서의 한글 독음.
@@ -21,11 +23,11 @@ export const dayPillarOf = (plainDate: string): string => {
     throw new Error(`일진 계산 날짜 형식 오류: ${plainDate}`);
   }
   const [, year, month, day] = matched;
-  const dateUtc = Date.UTC(Number(year), Number(month) - 1, Number(day));
-  // Date.UTC 는 2026-02-30 을 03-02 로 조용히 넘긴다 — 되돌려 비교해 다른 날의 일진을 내지 않게 막는다.
-  if (new Date(dateUtc).toISOString().slice(0, 10) !== plainDate) {
+  // Date.UTC 는 2026-02-30 을 03-02 로 조용히 넘긴다 — 달력 검증으로 다른 날의 일진을 내지 않게 막는다.
+  if (!isCalendarDate(plainDate)) {
     throw new Error(`일진 계산 날짜 오류(달력에 없는 날): ${plainDate}`);
   }
+  const dateUtc = Date.UTC(Number(year), Number(month) - 1, Number(day));
   const daysFromReference = Math.round(
     (dateUtc - REFERENCE_DATE_UTC) / MILLISECONDS_PER_DAY,
   );
@@ -33,10 +35,10 @@ export const dayPillarOf = (plainDate: string): string => {
     (((daysFromReference + REFERENCE_CYCLE_INDEX) % SEXAGENARY_CYCLE) +
       SEXAGENARY_CYCLE) %
     SEXAGENARY_CYCLE;
-  return (
+  const pillar =
     HEAVENLY_STEMS[cycleIndex % HEAVENLY_STEMS.length] +
-    EARTHLY_BRANCHES[cycleIndex % EARTHLY_BRANCHES.length]
-  );
+    EARTHLY_BRANCHES[cycleIndex % EARTHLY_BRANCHES.length];
+  return pillar;
 };
 
 // 60갑자에 실제로 있는 조합인가 — 천간과 지지의 음양(짝홀)이 같아야 한다(甲丑 같은 조합은 없다).
@@ -49,15 +51,28 @@ export const isValidPillar = (pillar: string): boolean => {
   if (stemIndex < 0 || branchIndex < 0) {
     return false;
   }
-  return stemIndex % 2 === branchIndex % 2;
+  const isSameParity = stemIndex % 2 === branchIndex % 2;
+  return isSameParity;
 };
 
 // '癸亥' → '계해'. 받는 사람에게 보이는 글에는 한자 대신 한글 독음을 쓴다.
-export const pillarToHangul = (pillar: string): string =>
-  HEAVENLY_STEMS_HANGUL[HEAVENLY_STEMS.indexOf(pillar[0])] +
-  EARTHLY_BRANCHES_HANGUL[EARTHLY_BRANCHES.indexOf(pillar[1])];
+export const pillarToHangul = (pillar: string): string => {
+  const stem = HEAVENLY_STEMS_HANGUL[HEAVENLY_STEMS.indexOf(pillar[0])];
+  const branch = EARTHLY_BRANCHES_HANGUL[EARTHLY_BRANCHES.indexOf(pillar[1])];
+  const hangul = stem + branch;
+  return hangul;
+};
 
 // '계', '해' → '癸亥'. manseryeok 이 한글 독음으로 돌려주는 기둥을 이 모듈의 한자 표기로 맞춘다.
-export const pillarFromHangul = (stem: string, branch: string): string =>
-  HEAVENLY_STEMS[HEAVENLY_STEMS_HANGUL.indexOf(stem)] +
-  EARTHLY_BRANCHES[EARTHLY_BRANCHES_HANGUL.indexOf(branch)];
+export const pillarFromHangul = ({
+  stem,
+  branch,
+}: {
+  stem: string;
+  branch: string;
+}): string => {
+  const hanjaStem = HEAVENLY_STEMS[HEAVENLY_STEMS_HANGUL.indexOf(stem)];
+  const hanjaBranch = EARTHLY_BRANCHES[EARTHLY_BRANCHES_HANGUL.indexOf(branch)];
+  const hanja = hanjaStem + hanjaBranch;
+  return hanja;
+};

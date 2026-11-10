@@ -77,10 +77,12 @@ const entryOf = (fields: (string | undefined)[]): string => {
 
 const natalPillarsOrFail = (input: NatalBirthInput): NatalPillarsResult => {
   try {
-    return natalPillarsOf(input);
+    const result = natalPillarsOf(input);
+    return result;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return fail(message);
+    const failure = fail(message);
+    return failure;
   }
 };
 

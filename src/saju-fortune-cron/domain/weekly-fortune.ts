@@ -64,10 +64,8 @@ const highlightOf = ({
   key: FortuneScoreKey;
 }): WeeklyHighlight => {
   const best = Math.max(...days.map(({ scores }) => scores[key]));
-  const goodDay =
-    best >= GOOD_SCORE
-      ? days.find(({ scores }) => scores[key] === best)
-      : undefined;
+  const bestDay = days.find(({ scores }) => scores[key] === best);
+  const goodDay = best >= GOOD_SCORE ? bestDay : undefined;
   const carefulDay = days.find(({ scores }) => scores[key] === CAREFUL_SCORE);
   const highlight: WeeklyHighlight = {
     ...(goodDay ? { good: goodDay.weekday } : {}),
@@ -81,7 +79,8 @@ export const renderWeeklyStarLine = (days: DailyScores[]): string => {
   const parts = days.map(
     ({ weekday, scores }) => `${weekday} ${starsOf(scores['총운'])}`,
   );
-  return parts.join(' · ');
+  const starLine = parts.join(' · ');
+  return starLine;
 };
 
 // AI 에 주는 주간 사실. 숫자·별은 싣지 않는다 — 별점 줄은 코드가 따로 그린다.
@@ -101,5 +100,6 @@ const describeHighlight = ({ good, careful }: WeeklyHighlight): string => {
   if (parts.length === 0) {
     return '이번 주는 특별히 좋은 날도 조심할 날도 없다(요일을 쓰지 마라)';
   }
-  return parts.join(', ');
+  const joined = parts.join(', ');
+  return joined;
 };

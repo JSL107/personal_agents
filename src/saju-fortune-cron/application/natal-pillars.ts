@@ -70,30 +70,40 @@ export const natalPillarsOf = ({
   const trueSolarTime = usesSolarTime
     ? { longitude: solarTimeLongitude }
     : HISTORICAL_CLOCK_ONLY;
-  const pillarsAt = (
-    wallClock: WallClock,
-    options: TrueSolarTimeOptions = trueSolarTime,
-    boundary: DayBoundary = dayBoundary,
-  ): FourPillarsDetail =>
+  const pillarsAt = ({
+    wallClock,
+    options = trueSolarTime,
+    boundary = dayBoundary,
+  }: {
+    wallClock: WallClock;
+    options?: TrueSolarTimeOptions;
+    boundary?: DayBoundary;
+  }): FourPillarsDetail =>
     calculateFourPillars({
       ...wallClock,
       trueSolarTime: options,
       dayBoundary: boundary,
     });
 
-  const found = pillarsAt({ ...solarDate, ...(time ?? UNKNOWN_TIME) });
+  const found = pillarsAt({
+    wallClock: { ...solarDate, ...(time ?? UNKNOWN_TIME) },
+  });
   const pillars = [found.year, found.month, found.day].map(toHanja);
   const warnings: string[] = [];
 
   if (!time) {
     // 절입일이면 년·월주가, 서머타임 날(00시대가 전날 23시대로 보정)·진태양시면 일주가 하루 안에서 갈린다.
-    const dayStart = pillarsAt({ ...solarDate, hour: 0, minute: 0 });
-    const dayEnd = pillarsAt({ ...solarDate, hour: 23, minute: 59 });
-    const changed = PILLAR_NAMES.slice(0, 3).filter(
-      (_, index) =>
-        toHanja(pillarFields(dayStart)[index]) !==
-        toHanja(pillarFields(dayEnd)[index]),
-    );
+    const dayStart = pillarsAt({
+      wallClock: { ...solarDate, hour: 0, minute: 0 },
+    });
+    const dayEnd = pillarsAt({
+      wallClock: { ...solarDate, hour: 23, minute: 59 },
+    });
+    const changed = PILLAR_NAMES.slice(0, 3).filter((_, index) => {
+      const startHanja = toHanja(pillarFields(dayStart)[index]);
+      const endHanja = toHanja(pillarFields(dayEnd)[index]);
+      return startHanja !== endHanja;
+    });
     if (changed.length > 0) {
       warnings.push(
         `태어난 시각에 따라 ${changed.join('·')}가 바뀌는 날입니다. 시각을 알아야 정확합니다.`,
@@ -105,22 +115,34 @@ export const natalPillarsOf = ({
   pillars.push(toHanja(found.hour));
   const birthClock: WallClock = { ...solarDate, ...time };
   // 진태양시는 경도·계절(균시차)에 따라 −14~−46분 남짓 움직여 고정 폭으로는 못 덮는다 — 반대 설정으로 직접 다시 센다.
-  const alternative = pillarsAt(
-    birthClock,
-    usesSolarTime ? HISTORICAL_CLOCK_ONLY : { longitude: DEFAULT_LONGITUDE },
-  );
-  const solarTimeChanges = differingPillars(found, alternative);
+  const alternative = pillarsAt({
+    wallClock: birthClock,
+    options: usesSolarTime
+      ? HISTORICAL_CLOCK_ONLY
+      : { longitude: DEFAULT_LONGITUDE },
+  });
+  const solarTimeChanges = differingPillars({
+    base: found,
+    other: alternative,
+  });
   if (solarTimeChanges.length > 0) {
-    warnings.push(
-      usesSolarTime
-        ? `진태양시 보정을 끄면 ${solarTimeChanges}(으)로 바뀝니다.`
-        : `진태양시 보정(--solar-time, 경도 ${DEFAULT_LONGITUDE} 기준)을 켜면 ${solarTimeChanges}(으)로 바뀝니다.`,
-    );
+    if (usesSolarTime) {
+      warnings.push(`진태양시 보정을 끄면 ${solarTimeChanges}(으)로 바뀝니다.`);
+    } else {
+      warnings.push(
+        `진태양시 보정(--solar-time, 경도 ${DEFAULT_LONGITUDE} 기준)을 켜면 ${solarTimeChanges}(으)로 바뀝니다.`,
+      );
+    }
   }
   const allBoundaries: DayBoundary[] = ['midnight', 'jasi', 'splitJasi'];
   const dependsOnDayBoundary = allBoundaries.some((boundary) => {
-    const other = pillarsAt(birthClock, trueSolarTime, boundary);
-    return differingPillars(found, other).length > 0;
+    const other = pillarsAt({
+      wallClock: birthClock,
+      options: trueSolarTime,
+      boundary,
+    });
+    const hasDifference = differingPillars({ base: found, other }).length > 0;
+    return hasDifference;
   });
   if (dependsOnDayBoundary) {
     warnings.push(
@@ -140,13 +162,16 @@ const pillarFields = ({
 }: FourPillarsDetail): Pillar[] => [year, month, day, hour];
 
 const toHanja = ({ heavenlyStem, earthlyBranch }: Pillar): string =>
-  pillarFromHangul(heavenlyStem, earthlyBranch);
+  pillarFromHangul({ stem: heavenlyStem, branch: earthlyBranch });
 
 // 다른 기둥만 "일주 辛丑·시주 戊子" 처럼 잇는다. 없으면 빈 문자열.
-const differingPillars = (
-  base: FourPillarsDetail,
-  other: FourPillarsDetail,
-): string => {
+const differingPillars = ({
+  base,
+  other,
+}: {
+  base: FourPillarsDetail;
+  other: FourPillarsDetail;
+}): string => {
   const otherFields = pillarFields(other);
   const changes = pillarFields(base)
     .map((pillar, index) => ({
@@ -156,5 +181,6 @@ const differingPillars = (
     }))
     .filter(({ before, after }) => before !== after)
     .map(({ name, after }) => `${name} ${after}`);
-  return changes.join('·');
+  const joined = changes.join('·');
+  return joined;
 };

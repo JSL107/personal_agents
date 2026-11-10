@@ -20,10 +20,12 @@ const recipient: SajuFortuneRecipient = {
   birthday: '05-17',
 };
 
-const promptOf = (
-  overrides: Partial<ExtraFortunePromptInput> & { todayKst: string },
-): string =>
-  buildExtraFortunePrompt({
+interface PromptOverrides extends Partial<ExtraFortunePromptInput> {
+  todayKst: string;
+}
+
+const promptOf = (overrides: PromptOverrides): string => {
+  const prompt = buildExtraFortunePrompt({
     recipient,
     todayPillar: dayPillarOf(overrides.todayKst),
     nowKst: '07:30',
@@ -31,6 +33,8 @@ const promptOf = (
     context: { ipchun: { date: '2027-02-04', timeKst: '10:46' } },
     ...overrides,
   });
+  return prompt;
+};
 
 const week: DailyScores[] = WEEKDAYS.map((weekday, index) => ({
   date: `2027-05-${17 + index}`,
