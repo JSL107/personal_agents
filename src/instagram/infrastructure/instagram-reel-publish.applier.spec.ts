@@ -130,6 +130,24 @@ describe('InstagramReelPublishApplier', () => {
     expect(graph.uploadVideo).toHaveBeenCalledTimes(3);
     expect(graph.publish).not.toHaveBeenCalled();
   });
+  it('운영 설정은 1·2·4·8·10분 간격으로 최대 6번 올린다', async () => {
+    const production = new InstagramReelPublishApplier(repository, graph);
+    const wait = jest
+      .spyOn(
+        production as unknown as { wait: (ms: number) => Promise<void> },
+        'wait',
+      )
+      .mockResolvedValue(undefined);
+    graph.uploadVideo.mockRejectedValue(uploadFailure());
+    await expect(production.apply(preview)).rejects.toBeInstanceOf(
+      InstagramException,
+    );
+    expect(graph.uploadVideo).toHaveBeenCalledTimes(6);
+    expect(graph.createReelContainer).toHaveBeenCalledTimes(6);
+    expect(wait.mock.calls.map(([ms]) => ms)).toEqual([
+      60_000, 120_000, 240_000, 480_000, 600_000,
+    ]);
+  });
   it('업로드가 토큰 오류면 다시 시도하지 않는다', async () => {
     graph.uploadVideo.mockRejectedValue(
       uploadFailure(InstagramErrorCode.TOKEN_INVALID),
