@@ -10,13 +10,17 @@ import {
   fortuneDateOf,
 } from '../domain/saju-fortune-chat';
 import { parseSajuFortuneRecipients } from '../domain/saju-fortune-cron.type';
-import { findFortuneViolations } from '../domain/saju-fortune-render';
+import {
+  countUnremovableViolations,
+  findFortuneViolations,
+} from '../domain/saju-fortune-render';
 import { yearMonthPillarsOf } from './year-month-pillar';
 
-const hasHanjaOrTerm = (text: string): boolean =>
-  findFortuneViolations(text).some(
-    (violation) => violation === 'hanja' || violation === 'term',
-  );
+// 아침 발송과 같은 기준 — 코드가 지울 수 없는 위반(한자·용어)만 본다.
+const hasHanjaOrTerm = (text: string): boolean => {
+  const violations = findFortuneViolations(text);
+  return countUnremovableViolations(violations) > 0;
+};
 
 export interface AnswerFortuneQuestionInput {
   slackUserId: string;

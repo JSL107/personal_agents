@@ -2,7 +2,7 @@
 // 코드가 따로 한 줄씩 그린다 — 라벨 형식(줄 머리 이모지·`**총운:**`)이 흔들려도 항상 나가게.
 import { LuckyInfo, SajuDayAnalysis } from './saju-analysis';
 import { HANJA_PATTERN } from './saju-fortune-chat';
-import { FortuneScoreKey } from './saju-tables';
+import { FORTUNE_SCORE_KEYS, FortuneScoreKey } from './saju-tables';
 
 // 일상어와 겹치는 상관·쇠·병·사·양·절·목욕·관대·정인(사람 이름)은 넣지 않는다 — 정상 문장이 걸려 매번 재생성된다.
 // 일간은 기간을 뜻하는 "일주일간·3일간" 과 겹쳐 앞 글자가 숫자·주 이면 제외한다.
@@ -33,22 +33,29 @@ export const countUnremovableViolations = (
   violations.filter((kind) => !REMOVABLE_VIOLATIONS.has(kind)).length;
 
 // 위반 종류 목록(종류마다 한 번). 길이가 "위반 수" 다.
-export const findFortuneViolations = (text: string): FortuneViolation[] =>
-  VIOLATION_PATTERNS.filter(([, pattern]) => pattern.test(text)).map(
-    ([kind]) => kind,
+export const findFortuneViolations = (text: string): FortuneViolation[] => {
+  const matched = VIOLATION_PATTERNS.filter(([, pattern]) =>
+    pattern.test(text),
   );
+  return matched.map(([kind]) => kind);
+};
 
 // 두 번 다 위반한 응답도 실패 조건(AI 가 쓴 별·행운 숫자)을 뚫지 않게 하는 최종 방어.
 // 🍀 로 시작하는 줄을 지우면 AI 의 "🍀 행운 포인트:" 까지 지워져 문구로 거른다.
-export const stripInventedMarks = (body: string): string =>
-  body
-    .split('\n')
-    .filter((line) => !LUCKY_PATTERN.test(line))
-    .map((line) => line.replace(/\s*[★☆]+/g, ''))
-    .join('\n');
+export const stripInventedMarks = (body: string): string => {
+  const kept = body.split('\n').filter((line) => !LUCKY_PATTERN.test(line));
+  const cleaned = kept.map((line) => line.replace(/\s*[★☆]+/g, ''));
+  return cleaned.join('\n');
+};
 
 // 예산 안의 마지막 완결 줄까지. 첫 줄만으로 넘치면 그 줄을 글자 단위로 자른다 — 본문이 비지 않게.
-export const truncateByLines = (body: string, budget: number): string => {
+export const truncateByLines = ({
+  body,
+  budget,
+}: {
+  body: string;
+  budget: number;
+}): string => {
   const lines = body.split('\n');
   if (lines[0].length > budget) {
     return lines[0].slice(0, budget);
@@ -66,21 +73,21 @@ export const truncateByLines = (body: string, budget: number): string => {
 };
 
 const MAXIMUM_STARS = 5;
-const SCORE_ORDER: readonly FortuneScoreKey[] = [
-  '총운',
-  '일·공부',
-  '사람 관계',
-  '돈',
-  '컨디션',
-];
+
+const starsOf = (score: number): string => {
+  const filled = '★'.repeat(score);
+  const empty = '☆'.repeat(MAXIMUM_STARS - score);
+  return `${filled}${empty}`;
+};
 
 export const renderStarLine = (
   scores: Record<FortuneScoreKey, number>,
-): string =>
-  SCORE_ORDER.map(
-    (key) =>
-      `${key} ${'★'.repeat(scores[key])}${'☆'.repeat(MAXIMUM_STARS - scores[key])}`,
-  ).join(' · ');
+): string => {
+  const parts = FORTUNE_SCORE_KEYS.map(
+    (key) => `${key} ${starsOf(scores[key])}`,
+  );
+  return parts.join(' · ');
+};
 
 export const renderItemLine = (lucky: LuckyInfo): string =>
   `🍀 행운 아이템: ${lucky.color} · ${lucky.number} · ${lucky.taste}(${lucky.food}) · ${lucky.direction}`;
@@ -98,9 +105,10 @@ export const composeFortuneBody = ({
   const starLine = renderStarLine(analysis.scores);
   const itemLine = renderItemLine(analysis.lucky);
   const budget = maximum - starLine.length - itemLine.length - 2;
-  const [firstLine, ...rest] = truncateByLines(
-    stripInventedMarks(body).trim(),
+  const truncated = truncateByLines({
+    body: stripInventedMarks(body).trim(),
     budget,
-  ).split('\n');
+  });
+  const [firstLine, ...rest] = truncated.split('\n');
   return [firstLine, starLine, ...rest, itemLine].join('\n');
 };
