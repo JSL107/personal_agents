@@ -21,6 +21,7 @@ import { PushpinTaskModule } from '../pushpin-task/pushpin-task.module';
 import { RouterModule } from '../router/router.module';
 import { RunReplayModule } from '../run-replay/run-replay.module';
 import { SajuFortuneChatModule } from '../saju-fortune-cron/saju-fortune-chat.module';
+import { SajuFortuneDayModule } from '../saju-fortune-cron/saju-fortune-day.module';
 import { SlackInboxModule } from '../slack-inbox/slack-inbox.module';
 import { SubconsciousModule } from '../subconscious/subconscious.module';
 import {
@@ -40,6 +41,7 @@ import { PreviewActionHandler } from './handler/preview-action.handler';
 import { RetryRunHandler } from './handler/retry-run.handler';
 import { RouterMessageHandler } from './handler/router-message.handler';
 import { RunVerdictActionHandler } from './handler/run-verdict-action.handler';
+import { SajuMissionActionHandler } from './handler/saju-mission-action.handler';
 import { SlackInboxReactionHandler } from './handler/slack-inbox-reaction.handler';
 import { SlackPushpinReactionHandler } from './handler/slack-pushpin-reaction.handler';
 import { SubconsciousProposalActionHandler } from './handler/subconscious-proposal-action.handler';
@@ -82,6 +84,7 @@ import { SlackDeliveryModule } from './slack-delivery.module';
     // 원화 공고 「관심 없음」 버튼 — ART_JOB_POSTING_REPOSITORY_PORT 의존.
     ArtJobFeedModule,
     SajuFortuneChatModule,
+    SajuFortuneDayModule,
     // V3 비전 봇 쪼개기 step 5 — 자연어 진입 (app_mention) 시 IdaeriRouterPort.dispatch 로 위임.
     RouterModule,
     // 휴가 잔여/등록/내역/취소 — 결정론 계산. /휴가 슬래시.
@@ -114,6 +117,7 @@ import { SlackDeliveryModule } from './slack-delivery.module';
     PreferenceReactionHandler,
     DeliveryReactionHandler,
     ArtJobExclusionActionHandler,
+    SajuMissionActionHandler,
     VacationHandler,
     SubconsciousProposalActionHandler,
     RunVerdictActionHandler,
@@ -136,6 +140,7 @@ import { SlackDeliveryModule } from './slack-delivery.module';
         PreferenceReactionHandler,
         DeliveryReactionHandler,
         ArtJobExclusionActionHandler,
+        SajuMissionActionHandler,
         VacationHandler,
         SubconsciousProposalActionHandler,
         RunVerdictActionHandler,

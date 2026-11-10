@@ -99,3 +99,34 @@ export const formatKstIsoDateTime = (date: Date): string => {
   const dateTime = kstClock.toISOString().slice(0, 19);
   return `${dateTime}+09:00`;
 };
+
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const DAYS_PER_WEEK = 7;
+
+// 'YYYY-MM-DD' 가 달력에 있는 날인지(2026-02-30·2027-02-29 는 아니다). 밖에서 들어온 날짜 문자열 검증용.
+export const isCalendarDate = (value: string): boolean => {
+  if (!DATE_PATTERN.test(value)) {
+    return false;
+  }
+  const date = utcMidnightOf(value);
+  const valid =
+    !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+  return valid;
+};
+
+// 'YYYY-MM-DD' 가 속한 주(월~일)의 월요일.
+export const mondayOf = (date: string): string => {
+  const daysSinceMonday = (weekdayOf(date) + DAYS_PER_WEEK - 1) % DAYS_PER_WEEK;
+  const monday = addDaysTo(date, -daysSinceMonday);
+  return monday;
+};
+
+// 'YYYY-MM-DD' 가 속한 달의 다음 달 1일. 12월이면 이듬해 1월 1일.
+export const nextMonthStartOf = (date: string): string => {
+  const [year, month] = date.split('-').map(Number);
+  // Date.UTC 의 달은 0부터라 1부터 센 month 를 그대로 넣으면 다음 달이 된다.
+  const nextMonthStart = new Date(Date.UTC(year, month, 1))
+    .toISOString()
+    .slice(0, 10);
+  return nextMonthStart;
+};

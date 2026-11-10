@@ -2,6 +2,7 @@
 // 코드가 따로 한 줄씩 그린다 — 라벨 형식(줄 머리 이모지·`**총운:**`)이 흔들려도 항상 나가게.
 import { LuckyInfo, SajuDayAnalysis } from './saju-analysis';
 import { HANJA_PATTERN } from './saju-fortune-chat';
+import { Mission, renderMissionLine } from './saju-mission';
 import { FORTUNE_SCORE_KEYS, FortuneScoreKey } from './saju-tables';
 
 // 일상어와 겹치는 상관·쇠·병·사·양·절·목욕·관대·정인(사람 이름)은 넣지 않는다 — 정상 문장이 걸려 매번 재생성된다.
@@ -11,6 +12,8 @@ export const FORBIDDEN_TERMS_PATTERN =
 // 별 문자와 '총운 5점' 같은 숫자 별점 — 코드가 그린 별점 줄과 어긋날 수 있다.
 const STAR_PATTERN = /[★☆]|\d\s*점/;
 const LUCKY_PATTERN = /행운의 숫자|행운 숫자|행운 아이템/;
+// AI 가 쓴 미션 줄 — 코드가 그린 미션 줄과 겹치지 않게 지우기만 한다. 재생성 사유는 아니다(지울 수 있고, 넣으면 LLM 호출만 는다).
+const MISSION_PATTERN = /미션|🎯/;
 
 export type FortuneViolation = 'hanja' | 'term' | 'stars' | 'lucky';
 
@@ -43,7 +46,9 @@ export const findFortuneViolations = (text: string): FortuneViolation[] => {
 // 두 번 다 위반한 응답도 실패 조건(AI 가 쓴 별·행운 숫자)을 뚫지 않게 하는 최종 방어.
 // 🍀 로 시작하는 줄을 지우면 AI 의 "🍀 행운 포인트:" 까지 지워져 문구로 거른다.
 export const stripInventedMarks = (body: string): string => {
-  const kept = body.split('\n').filter((line) => !LUCKY_PATTERN.test(line));
+  const kept = body
+    .split('\n')
+    .filter((line) => !LUCKY_PATTERN.test(line) && !MISSION_PATTERN.test(line));
   const cleaned = kept.map((line) => line.replace(/\s*[★☆]+/g, ''));
   return cleaned.join('\n');
 };
@@ -96,16 +101,29 @@ export const renderItemLine = (lucky: LuckyInfo): string =>
 // 항목별 배치가 더 길므로 그 몫을 떼면 별점 줄 폴백도 예산 안에 든다.
 // 다섯 항목 라벨을 모두 찾으면 항목마다 굵은 라벨과 별을 붙이고 빈 줄로 띄운다(가독성). 하나라도 못 찾으면
 // 첫 줄 뒤에 별점 줄 하나를 붙이는 예전 배치로 돌아간다 — 별점은 어느 경우에도 빠지지 않는다.
+// 미션 줄은 행운 아이템 줄 바로 뒤에 붙여 한 덩어리로 다룬다 — 두 배치와 예산 계산이 같은 값을 쓴다.
+export interface ComposedFortune {
+  // 코드가 그린 줄까지 붙인 발송 본문(escape 전).
+  body: string;
+  // 가드·잘림을 거친 AI 본문 — 코드가 그린 줄 없음. 하루 기록에 남겨 전날과 비교한다.
+  aiBody: string;
+}
+
 export const composeFortuneBody = ({
   body,
   analysis,
+  mission,
   maximum,
 }: {
   body: string;
   analysis: SajuDayAnalysis;
+  mission: Mission;
   maximum: number;
-}): string => {
-  const itemLine = renderItemLine(analysis.lucky);
+}): ComposedFortune => {
+  const itemLine = [
+    renderItemLine(analysis.lucky),
+    renderMissionLine(mission),
+  ].join('\n');
   const truncated = truncateByLines({
     body: stripInventedMarks(body).trim(),
     budget: maximum - itemLayoutOverhead(itemLine),
@@ -114,7 +132,10 @@ export const composeFortuneBody = ({
   const items = findScoreItems(rest);
   if (!items) {
     const starLine = renderStarLine(analysis.scores);
-    const legacy = [firstLine, starLine, ...rest, itemLine].join('\n');
+    const legacy: ComposedFortune = {
+      body: [firstLine, starLine, ...rest, itemLine].join('\n'),
+      aiBody: truncated,
+    };
     return legacy;
   }
   const blocks = FORTUNE_SCORE_KEYS.map(
@@ -131,7 +152,10 @@ export const composeFortuneBody = ({
     itemLine,
     ...afterItems,
   ];
-  const composed = layout.join('\n');
+  const composed: ComposedFortune = {
+    body: layout.join('\n'),
+    aiBody: truncated,
+  };
   return composed;
 };
 

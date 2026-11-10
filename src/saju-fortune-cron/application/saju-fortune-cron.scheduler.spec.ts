@@ -1,6 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import { Queue } from 'bullmq';
 
+import { SajuFortuneJobName } from '../domain/saju-fortune-cron.type';
 import { SajuFortuneCronScheduler } from './saju-fortune-cron.scheduler';
 
 const buildScheduler = (env: Record<string, string>) => {
@@ -29,10 +30,12 @@ describe('SajuFortuneCronScheduler', () => {
 
     await scheduler.onApplicationBootstrap();
 
-    const registered = add.mock.calls.map(([, payload, options]) => ({
-      cron: options.repeat.pattern,
-      ids: payload.recipientSlackUserIds,
-    }));
+    const registered = add.mock.calls
+      .filter(([name]) => name === SajuFortuneJobName.DAILY)
+      .map(([, payload, options]) => ({
+        cron: options.repeat.pattern,
+        ids: payload.recipientSlackUserIds,
+      }));
     expect(registered).toEqual([
       { cron: '30 7 * * *', ids: ['U111'] },
       { cron: '0 8 * * *', ids: ['U222', 'U333'] },
@@ -48,5 +51,59 @@ describe('SajuFortuneCronScheduler', () => {
     await scheduler.onApplicationBootstrap();
 
     expect(add).not.toHaveBeenCalled();
+  });
+
+  it('아침 잡 이름 값은 그대로 saju-fortune-cron 이다', () => {
+    // 이미 등록된 반복·보충 잡이 이 이름으로 남아 있다 — 바꾸면 아침 잡이 갈래를 못 찾는다.
+    expect(SajuFortuneJobName.DAILY).toBe('saju-fortune-cron');
+  });
+
+  it('저녁 미션 확인 잡을 빈 데이터·기본 0 21 * * * 로 단다', async () => {
+    const { add, scheduler } = buildScheduler({
+      SAJU_FORTUNE_RECIPIENTS: 'U222|철수|戊辰 甲寅 癸亥',
+    });
+
+    await scheduler.onApplicationBootstrap();
+
+    const evening = add.mock.calls.filter(
+      ([name]) => name === SajuFortuneJobName.MISSION_CHECK,
+    );
+    expect(evening).toHaveLength(1);
+    const [, payload, options] = evening[0];
+    expect(payload).toEqual({});
+    expect(options).toMatchObject({
+      repeat: { pattern: '0 21 * * *', tz: 'Asia/Seoul' },
+      jobId: 'saju-mission-check',
+      attempts: 2,
+    });
+  });
+
+  it('SAJU_MISSION_CHECK_CRON 으로 시각을 바꾼다', async () => {
+    const { add, scheduler } = buildScheduler({
+      SAJU_FORTUNE_RECIPIENTS: 'U222|철수|戊辰 甲寅 癸亥',
+      SAJU_MISSION_CHECK_CRON: '30 20 * * *',
+    });
+
+    await scheduler.onApplicationBootstrap();
+
+    const evening = add.mock.calls.find(
+      ([name]) => name === SajuFortuneJobName.MISSION_CHECK,
+    );
+    expect(evening?.[2].repeat.pattern).toBe('30 20 * * *');
+  });
+
+  it('SAJU_MISSION_CHECK_CRON=off 면 저녁 잡을 달지 않는다', async () => {
+    const { add, scheduler } = buildScheduler({
+      SAJU_FORTUNE_RECIPIENTS: 'U222|철수|戊辰 甲寅 癸亥',
+      SAJU_MISSION_CHECK_CRON: 'off',
+    });
+
+    await scheduler.onApplicationBootstrap();
+
+    expect(
+      add.mock.calls.some(
+        ([name]) => name === SajuFortuneJobName.MISSION_CHECK,
+      ),
+    ).toBe(false);
   });
 });

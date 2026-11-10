@@ -392,6 +392,7 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 | `AUTOPILOT_HARNESS_TARGET` | ⭕ | AI 도구 주간 점검 전용 채널. 미설정 시 등록하지 않음 |
 | `AUTOPILOT_REVIEW_TARGET` | ⭕ | 리뷰 라인(PR 리뷰 스윕 요약) 전용 발송 대상. 미설정 시 `AUTOPILOT_TARGET` |
 | `SAJU_FORTUNE_RECIPIENTS` · `SAJU_FORTUNE_CRON` | ❌ | 매일 사주 운세 DM(사람마다 발송 시각 지정 가능). 받는 사람은 `U123\|이름\|丙寅 辛卯 壬戌 庚子\|07:30\|05-17` 을 `;` 로 잇는다(끝의 양력 생일 칸은 선택 — 생일·설날·새해·8절기엔 특집, 월요일엔 주간 운세가 일일 운세 뒤 한 통으로 더 간다. 스크립트에 `--birthday` 를 주면 채워 준다. 기둥은 `pnpm saju:pillars --date 1990-05-17 --time 14:30 [--lunar] --slack U123 --name 이름` 로 생년월일시에서 뽑는다(인자 없이 실행하면 옵션 안내). 시각 모르면 3개 · 끝의 발송 시각(KST)을 생략하면 `SAJU_FORTUNE_CRON`, 기본 `0 8 * * *`). 실패 알림은 `CRON_FAILURE_ALERT_OWNER_SLACK_USER_ID` 로 간다 |
+| `SAJU_MISSION_CHECK_CRON` | ❌ | 아침 사주 운세에 붙는 「오늘의 미션」을 했는지 저녁에 버튼 DM 으로 묻는다(KST cron, 기본 `0 21 * * *`). 답한 메시지의 「N월 카드 모음」 버튼은 그달 받은 운세 카드를 한 장으로 모아 보여 준다. `off` 면 저녁 확인을 끈다 |
 | `IDEA_CHANNEL_ID` | ⭕ | 평일 09:00 KST 아이디어 판정 대상 Slack 채널 ID(`C...`/`G...`). 미설정 시 해당 task 건너뜀 |
 | `CONSOLE_OWNER_SLACK_USER_ID` | ❌ | 콘솔 지시·승인 주체 — 없으면 콘솔 쓰기 503 |
 | `KOREAN_HOLIDAY_API_KEY` | ❌ | 공공데이터포털 특일 정보 **디코딩** 서비스키 — 없으면 달력에 공휴일이 안 뜬다 |
