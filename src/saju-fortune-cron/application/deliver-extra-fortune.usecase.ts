@@ -65,7 +65,7 @@ const inspectExtra = ({
     return inspection;
   }
   const mismatched: FortuneInspection = {
-    kinds: [...kinds, FortuneViolation.SECTIONS],
+    kinds: [...kinds, FortuneViolation.구간수],
     unremovable: unremovable + 1,
   };
   return mismatched;

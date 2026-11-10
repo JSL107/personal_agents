@@ -15,26 +15,27 @@ const LUCKY_PATTERN = /행운의 숫자|행운 숫자|행운 아이템/;
 // AI 가 쓴 미션 줄 — 코드가 그린 미션 줄과 겹치지 않게 지우기만 한다. 재생성 사유는 아니다(지울 수 있고, 넣으면 LLM 호출만 는다).
 const MISSION_PATTERN = /미션|🎯/;
 
+// AI 응답의 위반 종류. 값은 재생성 뒤에도 남은 위반을 적는 경고 로그에 그대로 찍힌다.
 export enum FortuneViolation {
-  HANJA = 'hanja',
-  TERM = 'term',
-  STARS = 'stars',
-  LUCKY = 'lucky',
+  한자 = '한자',
+  명리용어 = '명리 용어',
+  별점 = '별점',
+  행운숫자 = '행운 숫자',
   // 추가 운세 메시지의 구획 수 불일치 — 본문 검사 규칙이 아니라 deliver-extra-fortune 가 더한다.
-  SECTIONS = 'sections',
+  구간수 = '구간 수',
 }
 
 const VIOLATION_PATTERNS: ReadonlyArray<readonly [FortuneViolation, RegExp]> = [
-  [FortuneViolation.HANJA, HANJA_PATTERN],
-  [FortuneViolation.TERM, FORBIDDEN_TERMS_PATTERN],
-  [FortuneViolation.STARS, STAR_PATTERN],
-  [FortuneViolation.LUCKY, LUCKY_PATTERN],
+  [FortuneViolation.한자, HANJA_PATTERN],
+  [FortuneViolation.명리용어, FORBIDDEN_TERMS_PATTERN],
+  [FortuneViolation.별점, STAR_PATTERN],
+  [FortuneViolation.행운숫자, LUCKY_PATTERN],
 ];
 
 // 별 문자·행운 숫자 줄은 composeFortuneBody 가 지우므로 응답을 고를 때 덜 나쁘다.
 const REMOVABLE_VIOLATIONS: ReadonlySet<FortuneViolation> = new Set([
-  FortuneViolation.STARS,
-  FortuneViolation.LUCKY,
+  FortuneViolation.별점,
+  FortuneViolation.행운숫자,
 ]);
 
 export const countUnremovableViolations = (

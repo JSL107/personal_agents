@@ -3,6 +3,7 @@ import { analyzeSajuDay } from './saju-analysis';
 import {
   composeFortuneBody,
   findFortuneViolations,
+  FortuneViolation,
   renderItemLine,
   renderStarLine,
   stripInventedMarks,
@@ -27,18 +28,28 @@ describe('findFortuneViolations', () => {
     );
     // "일간"(일주의 천간)은 기간을 뜻하는 일상어 "일주일간·3일간" 과 겹친다.
     expect(findFortuneViolations('일주일간 푹 쉬고 3일간 정리해')).toEqual([]);
-    expect(findFortuneViolations('오늘은 일간이 강해')).toEqual(['term']);
+    expect(findFortuneViolations('오늘은 일간이 강해')).toEqual([
+      FortuneViolation.명리용어,
+    ]);
   });
 
   it('숫자로 쓴 별점도 별점 위반으로 잡는다', () => {
-    expect(findFortuneViolations('총운 5점, 돈 2점이야')).toEqual(['stars']);
+    expect(findFortuneViolations('총운 5점, 돈 2점이야')).toEqual([
+      FortuneViolation.별점,
+    ]);
   });
 
   it('용어·한자·AI 가 쓴 별·행운 숫자를 종류별로 한 번씩 잡는다', () => {
-    expect(findFortuneViolations('편재가 들어와, 편재야')).toEqual(['term']);
-    expect(findFortuneViolations('己土는 오늘')).toEqual(['hanja']);
-    expect(findFortuneViolations('총운 ★★★')).toEqual(['stars']);
-    expect(findFortuneViolations('행운의 숫자 7')).toEqual(['lucky']);
+    expect(findFortuneViolations('편재가 들어와, 편재야')).toEqual([
+      FortuneViolation.명리용어,
+    ]);
+    expect(findFortuneViolations('己土는 오늘')).toEqual([
+      FortuneViolation.한자,
+    ]);
+    expect(findFortuneViolations('총운 ★★★')).toEqual([FortuneViolation.별점]);
+    expect(findFortuneViolations('행운의 숫자 7')).toEqual([
+      FortuneViolation.행운숫자,
+    ]);
   });
 });
 
