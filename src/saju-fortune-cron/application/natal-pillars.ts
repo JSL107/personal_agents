@@ -1,5 +1,4 @@
 import {
-  BirthInfo,
   calculateFourPillars,
   DayBoundary,
   DEFAULT_LONGITUDE,
@@ -54,20 +53,23 @@ const HISTORICAL_CLOCK_ONLY: TrueSolarTimeOptions = {
 // 시각을 모를 때 쓰는 대표 시각. 하루 안에서 기둥이 갈리는 날은 따로 경고한다.
 const UNKNOWN_TIME: BirthTime = { hour: 12, minute: 0 };
 
-export const natalPillarsOf = (input: NatalBirthInput): NatalPillarsResult => {
-  const solarDate = input.isLunar
-    ? lunarToSolar(
-        input.year,
-        input.month,
-        input.day,
-        input.isLeapMonth ?? false,
-      )
-    : { year: input.year, month: input.month, day: input.day };
-  const usesSolarTime = input.solarTimeLongitude !== undefined;
+export const natalPillarsOf = ({
+  year,
+  month,
+  day,
+  time,
+  isLunar = false,
+  isLeapMonth = false,
+  solarTimeLongitude,
+  dayBoundary = 'midnight',
+}: NatalBirthInput): NatalPillarsResult => {
+  const solarDate = isLunar
+    ? lunarToSolar(year, month, day, isLeapMonth)
+    : { year, month, day };
+  const usesSolarTime = solarTimeLongitude !== undefined;
   const trueSolarTime = usesSolarTime
-    ? { longitude: input.solarTimeLongitude }
+    ? { longitude: solarTimeLongitude }
     : HISTORICAL_CLOCK_ONLY;
-  const dayBoundary = input.dayBoundary ?? 'midnight';
   const pillarsAt = (
     wallClock: WallClock,
     options: TrueSolarTimeOptions = trueSolarTime,
@@ -77,9 +79,8 @@ export const natalPillarsOf = (input: NatalBirthInput): NatalPillarsResult => {
       ...wallClock,
       trueSolarTime: options,
       dayBoundary: boundary,
-    } satisfies BirthInfo);
+    });
 
-  const { time } = input;
   const found = pillarsAt({ ...solarDate, ...(time ?? UNKNOWN_TIME) });
   const pillars = [found.year, found.month, found.day].map(toHanja);
   const warnings: string[] = [];
@@ -117,13 +118,11 @@ export const natalPillarsOf = (input: NatalBirthInput): NatalPillarsResult => {
     );
   }
   const allBoundaries: DayBoundary[] = ['midnight', 'jasi', 'splitJasi'];
-  if (
-    allBoundaries.some(
-      (boundary) =>
-        differingPillars(found, pillarsAt(birthClock, trueSolarTime, boundary))
-          .length > 0,
-    )
-  ) {
+  const dependsOnDayBoundary = allBoundaries.some((boundary) => {
+    const other = pillarsAt(birthClock, trueSolarTime, boundary);
+    return differingPillars(found, other).length > 0;
+  });
+  if (dependsOnDayBoundary) {
     warnings.push(
       '밤 11시대 출생이라 자시를 어느 날로 보느냐(--day-boundary)에 따라 일주·시주가 바뀝니다.',
     );
@@ -133,15 +132,15 @@ export const natalPillarsOf = (input: NatalBirthInput): NatalPillarsResult => {
 
 const PILLAR_NAMES = ['년주', '월주', '일주', '시주'];
 
-const pillarFields = (pillars: FourPillarsDetail): Pillar[] => [
-  pillars.year,
-  pillars.month,
-  pillars.day,
-  pillars.hour,
-];
+const pillarFields = ({
+  year,
+  month,
+  day,
+  hour,
+}: FourPillarsDetail): Pillar[] => [year, month, day, hour];
 
-const toHanja = (pillar: Pillar): string =>
-  pillarFromHangul(pillar.heavenlyStem, pillar.earthlyBranch);
+const toHanja = ({ heavenlyStem, earthlyBranch }: Pillar): string =>
+  pillarFromHangul(heavenlyStem, earthlyBranch);
 
 // 다른 기둥만 "일주 辛丑·시주 戊子" 처럼 잇는다. 없으면 빈 문자열.
 const differingPillars = (
@@ -149,13 +148,13 @@ const differingPillars = (
   other: FourPillarsDetail,
 ): string => {
   const otherFields = pillarFields(other);
-  return pillarFields(base)
+  const changes = pillarFields(base)
     .map((pillar, index) => ({
       name: PILLAR_NAMES[index],
       before: toHanja(pillar),
       after: toHanja(otherFields[index]),
     }))
     .filter(({ before, after }) => before !== after)
-    .map(({ name, after }) => `${name} ${after}`)
-    .join('·');
+    .map(({ name, after }) => `${name} ${after}`);
+  return changes.join('·');
 };
