@@ -124,6 +124,19 @@ describe('formatAiToolWeekly', () => {
     expect(render(metrics, prs).summary).toContain(expected);
   });
 
+  it('범위별 토큰은 Claude·Codex 합계이고 Codex 수집이 실패하면 숨긴다', () => {
+    const changed = structuredClone(metrics);
+    changed.scopes.company.tokens = {
+      'claude-opus-4-6': 2_000_000,
+      codex: 3_000_000,
+    };
+    expect(render(changed).detail).toContain('토큰(Claude+Codex) | 5M |');
+    changed.sources.codex = AiWeeklySourceStatus.ERROR;
+    expect(render(changed).detail).toContain(
+      '토큰(Claude+Codex) | 수집 실패 | 수집 실패 | 수집 실패',
+    );
+  });
+
   it('지난주 토큰이 없거나 압축 파일을 건너뛰면 해당 사실을 표시한다', () => {
     const changed = structuredClone(metrics);
     changed.tokens.claude.prevWeek = {};

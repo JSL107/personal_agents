@@ -232,7 +232,7 @@ const formatDetail = (metrics: AiWeeklyMetrics): string => {
   const lines = [
     scopeRow({ label: '범위', cell: (scope) => SCOPE_LABELS[scope] }),
     scopeRow({
-      label: '토큰',
+      label: '토큰(Claude+Codex)',
       cell: (scope) => scopeToken({ metrics, scope }),
     }),
     scopeRow({
@@ -280,8 +280,10 @@ const describeUnused = (metrics: AiWeeklyMetrics): string[] => {
   ];
 };
 
+// Claude·Codex 합계라 둘 중 하나라도 읽다 실패하면 합계를 보이지 않는다. Codex 미설치(missing)는 0 으로 본다.
 const scopeToken = ({ metrics, scope }: ScopeCellInput): string => {
-  if (metrics.sources.claude !== OK) {
+  const { claude, codex } = metrics.sources;
+  if (claude !== OK || codex === AiWeeklySourceStatus.ERROR) {
     return '수집 실패';
   }
   const count = sumValues(metrics.scopes[scope].tokens);

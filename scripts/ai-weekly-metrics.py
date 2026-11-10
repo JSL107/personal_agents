@@ -200,7 +200,7 @@ def make_output(since, until):
     previous = since - dt.timedelta(days=7)
     return {'version': 1, 'period': {'since': since.isoformat(), 'until': until.isoformat(), 'prevSince': previous.isoformat()}, 'scope_rule': 'origin remote and path inference', 'sources': dict.fromkeys(('claude', 'codex', 'git', 'inventory', 'hooks'), 'missing'), 'scopes': {scope: empty_scope() for scope in SCOPES}, 'inferredSessions': 0, 'tokens': {'claude': {'thisWeek': {}, 'prevWeek': {}}, 'codex': {'thisWeek': 0, 'prevWeek': 0, 'zstSkipped': 0}}, 'reverts': 0, 'verify': {'total': 0, 'piped': 0}, 'clarify': {'humanTurns': 0, 'matched': 0}, 'inventory': {name: {'total': 0, 'added': 0, 'unused': []} for name in ('skills', 'plugins', 'agents')} | {'hooks': {'total': 0}}, 'hooks': {'hooks': []}, 'corrupt': 0}
 
-def collect_codex(root, since, until, output, no_zstd):
+def collect_codex(root, since, until, output, no_zstd, git):
     if not root.exists():
         return 'missing'
     try:
@@ -226,10 +226,15 @@ def collect_codex(root, since, until, output, no_zstd):
             else:
                 continue
             last_total = 0
+            scope, inferred = 'unknown', False
+            this_week = 0
             for line in lines:
                 try:
                     record = json.loads(line)
                     payload = record.get('payload', {})
+                    if record.get('type') == 'session_meta' and isinstance(payload.get('cwd'), str):
+                        scope, inferred = git.scope(payload['cwd'])
+                        continue
                     if record.get('type') != 'event_msg' or payload.get('type') != 'token_count':
                         continue
                     value = payload.get('info', {}).get('total_token_usage', {}).get('total_tokens')
@@ -240,11 +245,18 @@ def collect_codex(root, since, until, output, no_zstd):
                     last_total = value
                     moment = parse_date(record.get('timestamp'))
                     if since <= moment < until:
-                        output['tokens']['codex']['thisWeek'] += used
+                        this_week += used
                     elif previous <= moment < since:
                         output['tokens']['codex']['prevWeek'] += used
                 except (ValueError, AttributeError, TypeError, BadArgs):
                     output['corrupt'] += 1
+            if this_week == 0:
+                continue
+            output['tokens']['codex']['thisWeek'] += this_week
+            scope_tokens = output['scopes'][scope]['tokens']
+            scope_tokens['codex'] = scope_tokens.get('codex', 0) + this_week
+            if inferred:
+                output['inferredSessions'] += 1
         return 'ok'
     except (OSError, UnicodeError):
         return 'error'
@@ -348,7 +360,7 @@ def collect_reverts(cwds, git, since, until, output):
         ref = 'origin/HEAD' if git.run(cwd, 'rev-parse', '--verify', 'origin/HEAD') else 'HEAD'
         subjects = git.run(cwd, 'log', ref, '--since=' + since.isoformat(), '--until=' + until.isoformat(), '--no-merges', '--format=%s')
         if subjects is None:
-            git.failed = True
+            # 시간 초과는 git.run 이 이미 실패로 표시했다. 커밋 없는 레포·깨진 객체 같은 오류 종료는 건너뛴다.
             continue
         count = sum(bool(REVERT.search(line)) for line in subjects.splitlines())
         scope, _ = git.scope(cwd)
@@ -363,7 +375,7 @@ def collect(args):
     output = make_output(since, until)
     git = Git()
     output['sources']['claude'], used, cwd_set = collect_claude(Path(args.claude_dir), since, until, output, git)
-    output['sources']['codex'] = collect_codex(Path(args.codex_dir), since, until, output, args.no_zstd)
+    output['sources']['codex'] = collect_codex(Path(args.codex_dir), since, until, output, args.no_zstd, git)
     output['sources']['inventory'] = collect_inventory(Path(args.claude_dir), since, until, used, output)
     output['sources']['hooks'] = collect_hooks(Path(args.hook_audit), since, until, output)
     if output['sources']['claude'] == 'ok':
@@ -410,6 +422,12 @@ def self_check():
         (projects / 'unknown.jsonl').write_text(json.dumps({'type': 'assistant', 'timestamp': '2026-11-03T00:00:00+09:00', 'message': {}}), encoding='utf-8')
         (projects / 'gone.jsonl').write_text(json.dumps({'type': 'assistant', 'timestamp': '2026-11-03T00:00:00+09:00', 'cwd': str(root / 'sbe-gone'), 'message': {}}), encoding='utf-8')
         (projects / 'personal.jsonl').write_text(json.dumps({'type': 'user', 'timestamp': '2026-11-03T00:00:00+09:00', 'cwd': str(personal), 'message': {'content': 'hello'}}), encoding='utf-8')
+        # 커밋이 없는 새 레포: rev-parse 는 되지만 git log HEAD 가 실패한다. 건너뛰어야 한다.
+        unborn = root / 'unborn'
+        unborn.mkdir()
+        git_fixture('init', str(unborn))
+        git_fixture('-C', str(unborn), 'remote', 'add', 'origin', 'https://github.com/someone/z')
+        (projects / 'unborn.jsonl').write_text(json.dumps({'type': 'assistant', 'timestamp': '2026-11-03T00:00:00+09:00', 'cwd': str(unborn), 'message': {}}), encoding='utf-8')
         plain = root / 'plain-directory'
         plain.mkdir()
         (projects / 'plain.jsonl').write_text(json.dumps({'type': 'assistant', 'timestamp': '2026-11-03T00:00:00+09:00', 'cwd': str(plain), 'message': {}}), encoding='utf-8')
@@ -439,12 +457,14 @@ def self_check():
         codex.mkdir(parents=True)
         def token_line(timestamp, total):
             return json.dumps({'timestamp': timestamp, 'type': 'event_msg', 'payload': {'type': 'token_count', 'info': {'total_token_usage': {'total_tokens': total}}}})
-        (codex / 'rollout-test.jsonl').write_text(token_line('2026-11-03T03:00:00Z', 17), encoding='utf-8')
+        def meta_line(cwd):
+            return json.dumps({'timestamp': '2026-10-01T03:00:00Z', 'type': 'session_meta', 'payload': {'cwd': cwd}})
+        (codex / 'rollout-test.jsonl').write_text(meta_line(str(company)) + '\n' + token_line('2026-11-03T03:00:00Z', 17), encoding='utf-8')
         (codex / 'rollout-test.jsonl.zst').write_bytes(b'fixture')
         # 오래전에 시작해 지난주·이번 주·기간 뒤에 이어 쓴 세션: 누적값 차이를 사용 시각의 주로 나눈다.
         resumed = root / 'codex' / 'sessions' / '2026' / '10' / '01'
         resumed.mkdir(parents=True)
-        (resumed / 'rollout-old.jsonl').write_text('\n'.join(token_line(timestamp, total) for timestamp, total in (('2026-10-01T03:00:00Z', 100), ('2026-10-28T03:00:00Z', 120), ('2026-11-04T03:00:00Z', 170), ('2026-11-10T03:00:00Z', 200))), encoding='utf-8')
+        (resumed / 'rollout-old.jsonl').write_text('\n'.join([meta_line(str(personal))] + [token_line(timestamp, total) for timestamp, total in (('2026-10-01T03:00:00Z', 100), ('2026-10-28T03:00:00Z', 120), ('2026-11-04T03:00:00Z', 170), ('2026-11-10T03:00:00Z', 200))]), encoding='utf-8')
         skills = root / 'claude' / 'skills'
         (skills / 'a').mkdir(parents=True)
         (skills / 'b').mkdir()
@@ -471,6 +491,9 @@ def self_check():
         result = collect(args)
         assert result['tokens']['codex']['thisWeek'] == 17 + 50
         assert result['tokens']['codex']['prevWeek'] == 20
+        # 범위별 토큰 표는 이번 주 Codex 사용량도 session_meta 의 cwd 로 나눠 담는다.
+        assert result['scopes']['company']['tokens']['codex'] == 17
+        assert result['scopes']['personal']['tokens']['codex'] == 50
         assert result['tokens']['codex']['zstSkipped'] == 1
         assert result['inventory']['hooks']['total'] == 3
         assert result['inventory']['plugins']['added'] == 1
