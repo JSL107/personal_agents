@@ -127,6 +127,8 @@ export const WEAK_STAGES: ReadonlySet<TwelveStage> = new Set([
 
 export type FortuneCategory = '일·공부' | '사람 관계' | '돈' | '컨디션';
 export type FortuneScoreKey = '총운' | FortuneCategory;
+// 12운성으로 본 오늘의 기세.
+export type FortuneStrength = '강' | '보통' | '약';
 type ScoreAdjustment = Partial<Record<FortuneCategory, number>>;
 
 // 별점 가감표. 운영하며 값을 고칠 곳은 여기 하나다. 명리에 정해진 별점 공식은 없어 판단이 들어간 표다.
@@ -134,11 +136,10 @@ type ScoreAdjustment = Partial<Record<FortuneCategory, number>>;
 export const SCORE_ADJUSTMENTS: {
   // 오늘 천간·지지의 십성 갈래(0 비겁·1 식상·2 재성·3 관성·4 인성)마다 한 번씩 더한다.
   tenGodGroups: readonly ScoreAdjustment[];
-  strongStage: ScoreAdjustment;
-  weakStage: ScoreAdjustment;
+  stage: Record<FortuneStrength, ScoreAdjustment>;
   branchHarmony: ScoreAdjustment;
   voidDay: ScoreAdjustment;
-  overallStage: { 강: number; 약: number };
+  overallStage: Record<FortuneStrength, number>;
 } = {
   tenGodGroups: [
     { 돈: -1, 컨디션: 1 },
@@ -147,11 +148,10 @@ export const SCORE_ADJUSTMENTS: {
     { '일·공부': 1, '사람 관계': -1 },
     { '일·공부': 1, 컨디션: 1 },
   ],
-  strongStage: { 컨디션: 1 },
-  weakStage: { 컨디션: -1 },
+  stage: { 강: { 컨디션: 1 }, 보통: {}, 약: { 컨디션: -1 } },
   branchHarmony: { '사람 관계': 1 },
   voidDay: { '일·공부': -1 },
-  overallStage: { 강: 1, 약: -1 },
+  overallStage: { 강: 1, 보통: 0, 약: -1 },
 };
 
 // 오늘 천간 갈래 → 오늘 행운 기운 갈래(하루 단위 억부·통관). 관성은 행운으로 뽑지 않는다.

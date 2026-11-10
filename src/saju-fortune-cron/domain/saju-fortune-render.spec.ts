@@ -22,6 +22,10 @@ describe('findFortuneViolations', () => {
     expect(findFortuneViolations('오늘은 일간이 강해')).toEqual(['term']);
   });
 
+  it('숫자로 쓴 별점도 별점 위반으로 잡는다', () => {
+    expect(findFortuneViolations('총운 5점, 돈 2점이야')).toEqual(['stars']);
+  });
+
   it('용어·한자·AI 가 쓴 별·행운 숫자를 종류별로 한 번씩 잡는다', () => {
     expect(findFortuneViolations('편재가 들어와, 편재야')).toEqual(['term']);
     expect(findFortuneViolations('己土는 오늘')).toEqual(['hanja']);
@@ -74,11 +78,11 @@ describe('그리는 줄', () => {
 
 describe('composeFortuneBody', () => {
   it('라벨 형식과 무관하게 첫 줄 뒤에 별점 줄, 끝에 아이템 줄을 둔다', () => {
-    const body = composeFortuneBody(
-      '오늘은 맑은 날이야.\n\n🌟 **총운:** 좋아\n일·공부: 무난해',
-      ANALYSIS,
-      1500,
-    );
+    const body = composeFortuneBody({
+      body: '오늘은 맑은 날이야.\n\n🌟 **총운:** 좋아\n일·공부: 무난해',
+      analysis: ANALYSIS,
+      maximum: 1500,
+    });
     const lines = body.split('\n');
     expect(lines[0]).toBe('오늘은 맑은 날이야.');
     expect(lines[1]).toBe(renderStarLine(ANALYSIS.scores));
@@ -87,11 +91,11 @@ describe('composeFortuneBody', () => {
 
   it('긴 응답도 전체가 예산 안이고 본문 줄은 중간에서 잘리지 않는다', () => {
     const line = '가'.repeat(99);
-    const body = composeFortuneBody(
-      Array.from({ length: 20 }, () => line).join('\n'),
-      ANALYSIS,
-      1500,
-    );
+    const body = composeFortuneBody({
+      body: Array.from({ length: 20 }, () => line).join('\n'),
+      analysis: ANALYSIS,
+      maximum: 1500,
+    });
     expect(body.length).toBeLessThanOrEqual(1500);
     const bodyLines = body.split('\n').slice(2, -1);
     for (const kept of bodyLines) {
@@ -100,14 +104,22 @@ describe('composeFortuneBody', () => {
   });
 
   it('한 줄짜리 긴 응답도 본문이 비지 않는다', () => {
-    const body = composeFortuneBody('가'.repeat(2000), ANALYSIS, 1500);
+    const body = composeFortuneBody({
+      body: '가'.repeat(2000),
+      analysis: ANALYSIS,
+      maximum: 1500,
+    });
     expect(body.split('\n')[0].length).toBeGreaterThan(0);
     expect(body.length).toBeLessThanOrEqual(1500);
   });
 
   it('escape 뒤에도 그린 줄은 그대로다', () => {
     const escaped = escapeSlackMrkdwn(
-      composeFortuneBody('맑은 날 & <좋은> 날\n총운: 좋아', ANALYSIS, 1500),
+      composeFortuneBody({
+        body: '맑은 날 & <좋은> 날\n총운: 좋아',
+        analysis: ANALYSIS,
+        maximum: 1500,
+      }),
     );
     expect(escaped).toContain(renderStarLine(ANALYSIS.scores));
     expect(escaped).toContain(renderItemLine(ANALYSIS.lucky));
