@@ -288,19 +288,21 @@ export const composeExtraBody = ({
   const codeLines = weeklyStarLine
     ? [...specialLines, weeklyStarLine]
     : specialLines;
-  const cleaned = sections.map((section) => stripInventedMarks(section).trim());
+  // 라벨 굵게는 자르기 전에 — 표식 두 글자도 예산에 들어가야 상한을 넘지 않는다.
+  const cleaned = sections.map((section) =>
+    stripInventedMarks(section)
+      .trim()
+      .split('\n')
+      .map(boldScoreLabel)
+      .join('\n'),
+  );
   const assemble = (bodies: string[]): string =>
     bodies.length === codeLines.length
       ? codeLines.map((line, index) => `${line}\n${bodies[index]}`).join('\n\n')
       : `${codeLines.join('\n')}\n\n${bodies.join('\n\n')}`;
   const overhead = assemble(cleaned.map(() => '')).length;
   const budget = Math.max(0, Math.floor((maximum - overhead) / cleaned.length));
-  const truncated = cleaned.map((body) =>
-    truncateByLines({ body, budget })
-      .split('\n')
-      .map(boldScoreLabel)
-      .join('\n'),
-  );
+  const truncated = cleaned.map((body) => truncateByLines({ body, budget }));
   const assembled = assemble(truncated);
   return assembled;
 };
