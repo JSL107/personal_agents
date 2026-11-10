@@ -100,11 +100,21 @@ describe('analyzeSajuDay', () => {
 describe('tenGodOf', () => {
   it('오행 순환 다섯 갈래와 음양을 모두 가른다', () => {
     const wood = { element: '나무' as const, isYang: true };
-    expect(tenGodOf(wood, { element: '나무', isYang: false })).toBe('겁재');
-    expect(tenGodOf(wood, { element: '불', isYang: true })).toBe('식신');
-    expect(tenGodOf(wood, { element: '흙', isYang: false })).toBe('정재');
-    expect(tenGodOf(wood, { element: '쇠', isYang: true })).toBe('편관');
-    expect(tenGodOf(wood, { element: '물', isYang: false })).toBe('정인');
+    expect(
+      tenGodOf({ dayMaster: wood, other: { element: '나무', isYang: false } }),
+    ).toBe('겁재');
+    expect(
+      tenGodOf({ dayMaster: wood, other: { element: '불', isYang: true } }),
+    ).toBe('식신');
+    expect(
+      tenGodOf({ dayMaster: wood, other: { element: '흙', isYang: false } }),
+    ).toBe('정재');
+    expect(
+      tenGodOf({ dayMaster: wood, other: { element: '쇠', isYang: true } }),
+    ).toBe('편관');
+    expect(
+      tenGodOf({ dayMaster: wood, other: { element: '물', isYang: false } }),
+    ).toBe('정인');
   });
 });
 
@@ -208,12 +218,12 @@ describe('twelveStageOf', () => {
     ['壬', '亥'],
     ['癸', '子'],
   ])('%s 일간은 %s 에서 건록이다', (stem, branch) => {
-    expect(twelveStageOf(stem, branch)).toBe('건록');
+    expect(twelveStageOf({ dayStem: stem, branch })).toBe('건록');
   });
 
   it('음간은 거꾸로 돌고 戊는 丙을 따른다', () => {
-    expect(twelveStageOf('乙', '寅')).toBe('제왕');
-    expect(twelveStageOf('戊', '寅')).toBe('장생');
+    expect(twelveStageOf({ dayStem: '乙', branch: '寅' })).toBe('제왕');
+    expect(twelveStageOf({ dayStem: '戊', branch: '寅' })).toBe('장생');
   });
 });
 
