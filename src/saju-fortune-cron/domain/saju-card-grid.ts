@@ -10,6 +10,10 @@ export interface CardCellSize {
   gap: number;
 }
 
+export interface CardGridInput extends CardCellSize {
+  count: number;
+}
+
 export interface CardCellPosition {
   left: number;
   top: number;
@@ -29,20 +33,21 @@ export const cardGridLayoutOf = ({
   cellHeight,
   labelHeight,
   gap,
-}: CardCellSize & { count: number }): CardGridLayout => {
+}: CardGridInput): CardGridLayout => {
   const columns = Math.min(count, CARD_GRID_COLUMNS);
   const rows = Math.ceil(count / CARD_GRID_COLUMNS);
-  const stepX = cellWidth + gap;
-  const stepY = cellHeight + labelHeight + gap;
+  // 한 칸이 차지하는 가로·세로 — 카드와 그 아래 날짜, 다음 칸까지의 여백을 더한 값.
+  const columnSpan = cellWidth + gap;
+  const rowSpan = cellHeight + labelHeight + gap;
   const cells = Array.from({ length: count }, (_, index) => ({
-    left: gap + (index % CARD_GRID_COLUMNS) * stepX,
-    top: gap + Math.floor(index / CARD_GRID_COLUMNS) * stepY,
+    left: gap + (index % CARD_GRID_COLUMNS) * columnSpan,
+    top: gap + Math.floor(index / CARD_GRID_COLUMNS) * rowSpan,
   }));
   const layout: CardGridLayout = {
     columns,
     rows,
-    width: columns * stepX + gap,
-    height: rows * stepY + gap,
+    width: columns * columnSpan + gap,
+    height: rows * rowSpan + gap,
     cells,
   };
   return layout;

@@ -16,13 +16,27 @@ export interface Mission {
   text: string;
 }
 
-// 미션 고르기에 필요한 분석값만 — SajuDayAnalysis 를 그대로 넘겨도 맞는다.
-export interface MissionAnalysis {
-  scores: Record<FortuneScoreKey, number>;
-  lucky: { element: FiveElement };
+export type FortuneScores = Record<FortuneScoreKey, number>;
+
+export interface LuckyElement {
+  element: FiveElement;
 }
 
-export const MISSION_LOOKBACK_DAYS = 14;
+// 미션 고르기에 필요한 분석값만 — SajuDayAnalysis 를 그대로 넘겨도 맞는다.
+export interface MissionAnalysis {
+  scores: FortuneScores;
+  lucky: LuckyElement;
+}
+
+// 같은 항목·같은 행운 기운 안의 미션 후보 둘. 최근에 안 나간 쪽을 고른다.
+export type MissionCandidates = readonly [Mission, Mission];
+export type MissionsByElement = Record<FiveElement, MissionCandidates>;
+
+interface PickMissionInput {
+  analysis: MissionAnalysis;
+  recent: RecentMission[];
+  fortuneDate: string;
+}
 // 스레드 답변은 원문에서 이 라벨로 미션 줄을 찾는다 — Slack 이 🎯 를 :dart: 로 바꿔 돌려줄 수 있어 이모지로는 찾지 않는다.
 export const MISSION_LABEL = '오늘의 미션:';
 export const MISSION_LINE_PREFIX = `🎯 ${MISSION_LABEL}`;
@@ -36,10 +50,7 @@ const DAY_INDEX_EPOCH = utcMidnightOf('2000-01-01');
 // 5분 안에, 돈·장소·남의 협조 없이 혼자 할 수 있는 일. 항목 × 오늘의 행운 기운마다 둘.
 // 기운의 결: 나무 자라남·연결 / 불 밝음·표현 / 흙 느긋함·돌봄 / 쇠 매듭·또렷함 / 물 흐름·쉼.
 // 키는 문구를 바꿔도 유지한다 — 최근 미션 회피가 키로 센다.
-export const MISSION_CATALOG: Record<
-  FortuneCategory,
-  Record<FiveElement, readonly [Mission, Mission]>
-> = {
+export const MISSION_CATALOG: Record<FortuneCategory, MissionsByElement> = {
   '일·공부': {
     나무: [
       { key: 'work-wood-1', text: '궁금했던 것 하나 찾아보고 메모하기' },
@@ -138,9 +149,7 @@ const dayIndexOf = (fortuneDate: string): number =>
   countKstDaysBetween(DAY_INDEX_EPOCH, utcMidnightOf(fortuneDate));
 
 // 가장 낮은 항목들. 네 항목이 모두 높으면 약한 곳이 없는 날이라 네 항목 전부.
-const weakestCategoriesOf = (
-  scores: MissionAnalysis['scores'],
-): FortuneCategory[] => {
+const weakestCategoriesOf = (scores: FortuneScores): FortuneCategory[] => {
   const lowest = Math.min(...MISSION_CATEGORIES.map((key) => scores[key]));
   const weakest =
     lowest >= STRONG_DAY_SCORE
@@ -150,10 +159,13 @@ const weakestCategoriesOf = (
 };
 
 // 최근에 안 나간 후보를 앞에서부터, 둘 다 나갔으면 덜 최근 것(같으면 첫 번째).
-const leastRecentOf = (
-  candidates: readonly [Mission, Mission],
-  recent: RecentMission[],
-): Mission => {
+const leastRecentOf = ({
+  candidates,
+  recent,
+}: {
+  candidates: MissionCandidates;
+  recent: RecentMission[];
+}): Mission => {
   const lastSentOf = (mission: Mission): string =>
     recent.find(({ missionKey }) => missionKey === mission.key)?.fortuneDate ??
     '';
@@ -167,17 +179,13 @@ export const pickMission = ({
   analysis,
   recent,
   fortuneDate,
-}: {
-  analysis: MissionAnalysis;
-  recent: RecentMission[];
-  fortuneDate: string;
-}): Mission => {
+}: PickMissionInput): Mission => {
   const categories = weakestCategoriesOf(analysis.scores);
   const category = categories[dayIndexOf(fortuneDate) % categories.length];
-  const mission = leastRecentOf(
-    MISSION_CATALOG[category][analysis.lucky.element],
+  const mission = leastRecentOf({
+    candidates: MISSION_CATALOG[category][analysis.lucky.element],
     recent,
-  );
+  });
   return mission;
 };
 

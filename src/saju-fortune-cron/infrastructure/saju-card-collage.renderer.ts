@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import * as sharpModule from 'sharp';
 
-import { MonthCard } from '../domain/port/saju-fortune-day.repository.port';
+import { CardCollagePort } from '../domain/port/card-collage.port';
+import { CollectedCard } from '../domain/port/saju-fortune-day.repository.port';
 import { CardCellSize, cardGridLayoutOf } from '../domain/saju-card-grid';
 
 // sharp 는 CommonJS 함수 export 라 namespace import 를 함수로 쓴다(image.downloader.ts 와 같은 방식).
@@ -26,7 +27,7 @@ const labelOf = (fortuneDate: string): string =>
 
 // 카드 썸네일(하루 기록에 남김)과 월별 카드 모음 그림.
 @Injectable()
-export class SajuCardCollageRenderer {
+export class SajuCardCollageRenderer implements CardCollagePort {
   async toThumbnail(png: Buffer): Promise<Buffer> {
     const thumbnail = await sharp(png)
       .resize({
@@ -39,7 +40,7 @@ export class SajuCardCollageRenderer {
     return thumbnail;
   }
 
-  async renderMonth(cards: MonthCard[]): Promise<Buffer> {
+  async renderCards(cards: CollectedCard[]): Promise<Buffer> {
     const layout = cardGridLayoutOf({ count: cards.length, ...CARD_CELL });
     const labels = cards.map(({ fortuneDate }, index) => {
       const { left, top } = layout.cells[index];

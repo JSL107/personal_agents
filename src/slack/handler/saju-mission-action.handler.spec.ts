@@ -1,10 +1,12 @@
 import { App } from '@slack/bolt';
 
+import { AnswerMissionUsecase } from '../../saju-fortune-cron/application/answer-mission.usecase';
+import { BuildCardCollectionUsecase } from '../../saju-fortune-cron/application/build-card-collection.usecase';
+import { CardCollagePort } from '../../saju-fortune-cron/domain/port/card-collage.port';
 import {
   MissionResult,
   SajuFortuneDayRepositoryPort,
 } from '../../saju-fortune-cron/domain/port/saju-fortune-day.repository.port';
-import { SajuCardCollageRenderer } from '../../saju-fortune-cron/infrastructure/saju-card-collage.renderer';
 import {
   SAJU_CARD_COLLECTION_ACTION,
   SAJU_MISSION_DONE_ACTION,
@@ -53,18 +55,23 @@ const buildHarness = () => {
         createdAt: new Date('2026-11-09T23:00:00Z'),
       }),
     ),
-    countWeekDone: jest.fn().mockResolvedValue(2),
-    findMonthCards: jest.fn().mockResolvedValue([
+    countDone: jest.fn().mockResolvedValue(2),
+    findCards: jest.fn().mockResolvedValue([
       { fortuneDate: '2026-11-01', thumbnail: Buffer.from('a') },
       { fortuneDate: '2026-11-02', thumbnail: Buffer.from('b') },
     ]),
   };
   const renderer = {
-    renderMonth: jest.fn().mockResolvedValue(Buffer.from('collage')),
+    renderCards: jest.fn().mockResolvedValue(Buffer.from('collage')),
   };
+  // 유스케이스는 실제 것을 쓴다 — 저장소·렌더러만 흉내 내 핸들러와 유스케이스 흐름을 함께 본다.
+  const fortuneDays = repository as unknown as SajuFortuneDayRepositoryPort;
   new SajuMissionActionHandler(
-    repository as unknown as SajuFortuneDayRepositoryPort,
-    renderer as unknown as SajuCardCollageRenderer,
+    new AnswerMissionUsecase(fortuneDays),
+    new BuildCardCollectionUsecase(
+      fortuneDays,
+      renderer as unknown as CardCollagePort,
+    ),
   ).register(app);
   const ack = jest.fn().mockResolvedValue(undefined);
   const respond = jest.fn().mockResolvedValue(undefined);
@@ -89,9 +96,9 @@ describe('SajuMissionActionHandler', () => {
       fortuneDate: '2026-11-10',
       result: MissionResult.DONE,
     });
-    expect(repository.countWeekDone).toHaveBeenCalledWith({
+    expect(repository.countDone).toHaveBeenCalledWith({
       slackUserId: 'U111',
-      monday: '2026-11-09',
+      period: { from: '2026-11-09', until: '2026-11-16' },
     });
     expect(client.chat.update.mock.calls[0][0]).toMatchObject({
       channel: 'D1',
@@ -160,11 +167,11 @@ describe('SajuMissionActionHandler', () => {
       response_type: 'ephemeral',
       text: '모으는 중이야…',
     });
-    expect(repository.findMonthCards).toHaveBeenCalledWith({
+    expect(repository.findCards).toHaveBeenCalledWith({
       slackUserId: 'U111',
-      month: '2026-11',
+      period: { from: '2026-11-01', until: '2026-12-01' },
     });
-    expect(renderer.renderMonth).toHaveBeenCalledTimes(1);
+    expect(renderer.renderCards).toHaveBeenCalledTimes(1);
     expect(client.filesUploadV2.mock.calls[0][0]).toMatchObject({
       channel_id: 'D1',
       thread_ts: '111.222',
@@ -175,7 +182,7 @@ describe('SajuMissionActionHandler', () => {
 
   it('카드가 없으면 올리지 않고 안내한다', async () => {
     const { press, repository, respond, client } = buildHarness();
-    repository.findMonthCards.mockResolvedValue([]);
+    repository.findCards.mockResolvedValue([]);
 
     await press(SAJU_CARD_COLLECTION_ACTION);
 

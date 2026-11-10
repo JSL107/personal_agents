@@ -25,8 +25,7 @@ export const DEFAULT_SAJU_MISSION_CHECK_CRON = '0 21 * * *';
 export const MISSION_CHECK_DISABLED = 'off';
 // 예정 시각보다 이만큼 늦게 돌면 보내지 않는다 — 밤늦게·새벽에 "오늘 미션 어땠어?" 가 가지 않게.
 export const MISSION_CHECK_WINDOW_MS = 3 * 60 * 60 * 1000;
-// 아침 운세를 받은 지 이만큼 안 됐으면 보내지 않는다 — 아침을 늦게 받는 사람에게 곧바로 묻지 않게.
-export const MISSION_CHECK_MIN_GAP_MS = 3 * 60 * 60 * 1000;
+
 // 시간대는 설정으로 열지 않는다 — consumer 의 "오늘"(일진·발송 가드)이 KST 고정이라,
 // cron 만 다른 시간대로 돌면 날짜 경계에서 엉뚱한 날의 일진이 나간다.
 export const SAJU_FORTUNE_TIMEZONE = 'Asia/Seoul';

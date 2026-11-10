@@ -6,12 +6,12 @@ import { ModelRouterUsecase } from '../../model-router/application/model-router.
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
 import { SlackNotifierPort } from '../../slack/domain/port/slack-notifier.port';
+import { CardCollagePort } from '../domain/port/card-collage.port';
 import { FortuneCardImagePort } from '../domain/port/fortune-card-image.port';
 import { SajuFortuneDayRepositoryPort } from '../domain/port/saju-fortune-day.repository.port';
 import { fortuneDateOf } from '../domain/saju-fortune-chat';
 import { SajuFortuneCronJobData } from '../domain/saju-fortune-cron.type';
 import * as renderModule from '../domain/saju-fortune-render';
-import { SajuCardCollageRenderer } from './saju-card-collage.renderer';
 import { SajuFortuneCronConsumer } from './saju-fortune-cron.consumer';
 
 const RECIPIENTS = 'U111|길동|丙寅 辛卯 壬戌 庚子;U222|철수|戊辰 甲寅 癸亥';
@@ -35,7 +35,7 @@ describe('SajuFortuneCronConsumer', () => {
   let generateImage: jest.Mock;
   let uploadImageFile: jest.Mock;
   let recordSent: jest.Mock;
-  let findRecentMissionKeys: jest.Mock;
+  let findMissionKeys: jest.Mock;
   let toThumbnail: jest.Mock;
   let findMissionDay: jest.Mock;
   let consumer: SajuFortuneCronConsumer;
@@ -58,7 +58,7 @@ describe('SajuFortuneCronConsumer', () => {
     generateImage = jest.fn().mockResolvedValue(Buffer.from('png'));
     uploadImageFile = jest.fn().mockResolvedValue({ fileId: 'F1' });
     recordSent = jest.fn().mockResolvedValue(undefined);
-    findRecentMissionKeys = jest.fn().mockResolvedValue([]);
+    findMissionKeys = jest.fn().mockResolvedValue([]);
     toThumbnail = jest.fn().mockResolvedValue(Buffer.from('jpg'));
     findMissionDay = jest.fn().mockResolvedValue(undefined);
     consumer = new SajuFortuneCronConsumer(
@@ -72,10 +72,10 @@ describe('SajuFortuneCronConsumer', () => {
       { generate: generateImage } as FortuneCardImagePort,
       {
         recordSent,
-        findRecentMissionKeys,
+        findMissionKeys,
         findMissionDay,
       } as unknown as SajuFortuneDayRepositoryPort,
-      { toThumbnail } as unknown as SajuCardCollageRenderer,
+      { toThumbnail } as unknown as CardCollagePort,
       {
         publishCronFailure,
         publishRecovery: jest.fn(),
@@ -301,10 +301,9 @@ describe('SajuFortuneCronConsumer', () => {
     it('최근 미션은 오늘 이전 14일을 묻는다', async () => {
       await consumer.process(JOB);
 
-      expect(findRecentMissionKeys).toHaveBeenCalledWith({
+      expect(findMissionKeys).toHaveBeenCalledWith({
         slackUserId: 'U111',
-        before: '2026-11-10',
-        days: 14,
+        period: { from: '2026-10-27', until: '2026-11-10' },
       });
     });
 
@@ -349,7 +348,7 @@ describe('SajuFortuneCronConsumer', () => {
     });
 
     it('최근 미션 조회가 실패해도 미션 줄을 붙여 보낸다', async () => {
-      findRecentMissionKeys.mockRejectedValue(new Error('db down'));
+      findMissionKeys.mockRejectedValue(new Error('db down'));
 
       await consumer.process(JOB);
 

@@ -27,6 +27,10 @@ import { weeklyScoresOf } from '../application/weekly-scores';
 import { yearMonthPillarsOf } from '../application/year-month-pillar';
 import { dayPillarOf } from '../domain/day-pillar';
 import {
+  CARD_COLLAGE_PORT,
+  CardCollagePort,
+} from '../domain/port/card-collage.port';
+import {
   FORTUNE_CARD_IMAGE_PORT,
   FortuneCardImagePort,
 } from '../domain/port/fortune-card-image.port';
@@ -55,7 +59,6 @@ import {
 import {
   DEFAULT_SAJU_MISSION_CHECK_CRON,
   MISSION_CHECK_DISABLED,
-  MISSION_CHECK_MIN_GAP_MS,
   MISSION_CHECK_WINDOW_MS,
   parseSajuFortuneRecipients,
   SAJU_FORTUNE_CRON_QUEUE,
@@ -64,6 +67,7 @@ import {
   SajuFortuneRecipient,
   SajuMissionCheckJobData,
 } from '../domain/saju-fortune-cron.type';
+import { recentMissionPeriodOf } from '../domain/saju-fortune-period';
 import {
   ComposedFortune,
   composeExtraBody,
@@ -73,18 +77,16 @@ import {
   findFortuneViolations,
   splitExtraSections,
 } from '../domain/saju-fortune-render';
+import { Mission, pickMission } from '../domain/saju-mission';
 import {
-  Mission,
-  MISSION_LOOKBACK_DAYS,
-  pickMission,
-} from '../domain/saju-mission';
+  isMissionCheckDue,
+  MissionCheckView,
+} from '../domain/saju-mission-check';
 import { renderSpecialDayLine, specialDaysOf } from '../domain/special-day';
 import { isMondayKst, renderWeeklyStarLine } from '../domain/weekly-fortune';
-import { SajuCardCollageRenderer } from './saju-card-collage.renderer';
 import {
   buildMissionCheckBlocks,
   missionCheckFallbackText,
-  MissionCheckView,
 } from './saju-mission-check.formatter';
 
 // 발송 idempotency TTL — 25h. 다음 날 같은 시각 발사 전 만료되도록 하루보다 약간 길게.
@@ -162,7 +164,8 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
     private readonly cardImage: FortuneCardImagePort,
     @Inject(SAJU_FORTUNE_DAY_REPOSITORY_PORT)
     private readonly fortuneDays: SajuFortuneDayRepositoryPort,
-    private readonly cardCollage: SajuCardCollageRenderer,
+    @Inject(CARD_COLLAGE_PORT)
+    private readonly cardCollage: CardCollagePort,
     @Optional()
     private readonly notificationPublisher?: NotificationPublisher,
   ) {
@@ -322,11 +325,8 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
       slackUserId,
       fortuneDate,
     });
-    if (
-      !day ||
-      day.missionResult ||
-      nowMs - day.createdAt.getTime() < MISSION_CHECK_MIN_GAP_MS
-    ) {
+    // 행이 없으면 그날 운세가 나가지 않은 것이다.
+    if (!day || !isMissionCheckDue({ day, nowMs })) {
       return;
     }
     const guardKey = `cron:${SAJU_FORTUNE_CRON_QUEUE}:mission:${slackUserId}:${fortuneDate}`;
@@ -462,10 +462,9 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
     todayKst: string;
   }): Promise<RecentMission[]> {
     try {
-      return await this.fortuneDays.findRecentMissionKeys({
+      return await this.fortuneDays.findMissionKeys({
         slackUserId: recipient.slackUserId,
-        before: todayKst,
-        days: MISSION_LOOKBACK_DAYS,
+        period: recentMissionPeriodOf({ today: todayKst }),
       });
     } catch (error) {
       this.logger.warn(

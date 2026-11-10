@@ -1,7 +1,7 @@
 import { InjectQueue } from '@nestjs/bullmq';
 import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Queue } from 'bullmq';
+import { JobsOptions, Queue } from 'bullmq';
 
 import {
   cancelCatchUpsDueSoon,
@@ -22,13 +22,13 @@ import {
   SajuMissionCheckJobData,
 } from '../domain/saju-fortune-cron.type';
 
-// 아침·저녁 잡이 같은 재시도·보관 정책을 쓴다.
-const REPEAT_JOB_OPTIONS = {
+// 아침·저녁 잡이 같은 재시도·보관 정책을 쓴다. 숫자·중첩 객체(backoff)라 enum 이 아니라 BullMQ 옵션 타입으로 둔다.
+const REPEAT_JOB_OPTIONS: JobsOptions = {
   removeOnComplete: 20,
   removeOnFail: 20,
   attempts: 2,
   backoff: { type: 'exponential', delay: 60_000 },
-} as const;
+};
 
 // 매일 사주 운세 DM — JobApplicationNudgeCronScheduler 패턴 그대로.
 // 유효한 받는 사람이 한 명이라도 있으면 켜진다. 실패 알림은 공용 CRON_FAILURE_ALERT_OWNER_SLACK_USER_ID 로 간다.

@@ -31,14 +31,14 @@ describe('SajuCardCollageRenderer', () => {
     expect(metadata.width).toBe(240);
   });
 
-  it('renderMonth 는 5장이면 4열 2행 크기의 PNG', async () => {
+  it('renderCards 는 5장이면 4열 2행 크기의 PNG', async () => {
     const thumbnail = await renderer.toThumbnail(await solidPng());
     const cards = ['01', '02', '03', '04', '05'].map((day) => ({
       fortuneDate: `2026-11-${day}`,
       thumbnail,
     }));
 
-    const collage = await renderer.renderMonth(cards);
+    const collage = await renderer.renderCards(cards);
 
     const metadata = await sharp(collage).metadata();
     const layout = cardGridLayoutOf({ count: 5, ...CARD_CELL });

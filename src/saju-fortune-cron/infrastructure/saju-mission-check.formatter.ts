@@ -2,19 +2,12 @@ import { match } from 'ts-pattern';
 
 import { escapeSlackMrkdwn } from '../../slack/format/mrkdwn.util';
 import { MissionResult } from '../domain/port/saju-fortune-day.repository.port';
+import { MissionCheckView } from '../domain/saju-mission-check';
 
 // 저녁 미션 확인 메시지의 버튼 — SajuMissionActionHandler 가 같은 상수로 받는다. 값은 모두 그날 날짜(YYYY-MM-DD).
 export const SAJU_MISSION_DONE_ACTION = 'saju_mission_done';
 export const SAJU_MISSION_NOT_DONE_ACTION = 'saju_mission_not_done';
 export const SAJU_CARD_COLLECTION_ACTION = 'saju_card_collection';
-
-export interface MissionCheckView {
-  fortuneDate: string;
-  missionText: string;
-  result?: MissionResult;
-  // 그날이 속한 월~일의 완료 수.
-  weekDone: number;
-}
 
 type SlackBlock = Record<string, unknown>;
 

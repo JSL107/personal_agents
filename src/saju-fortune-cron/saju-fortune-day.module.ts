@@ -1,5 +1,8 @@
 import { Module } from '@nestjs/common';
 
+import { AnswerMissionUsecase } from './application/answer-mission.usecase';
+import { BuildCardCollectionUsecase } from './application/build-card-collection.usecase';
+import { CARD_COLLAGE_PORT } from './domain/port/card-collage.port';
 import { SAJU_FORTUNE_DAY_REPOSITORY_PORT } from './domain/port/saju-fortune-day.repository.port';
 import { SajuCardCollageRenderer } from './infrastructure/saju-card-collage.renderer';
 import { SajuFortuneDayPrismaRepository } from './infrastructure/saju-fortune-day.prisma.repository';
@@ -12,8 +15,15 @@ import { SajuFortuneDayPrismaRepository } from './infrastructure/saju-fortune-da
       provide: SAJU_FORTUNE_DAY_REPOSITORY_PORT,
       useClass: SajuFortuneDayPrismaRepository,
     },
-    SajuCardCollageRenderer,
+    { provide: CARD_COLLAGE_PORT, useClass: SajuCardCollageRenderer },
+    AnswerMissionUsecase,
+    BuildCardCollectionUsecase,
   ],
-  exports: [SAJU_FORTUNE_DAY_REPOSITORY_PORT, SajuCardCollageRenderer],
+  exports: [
+    SAJU_FORTUNE_DAY_REPOSITORY_PORT,
+    CARD_COLLAGE_PORT,
+    AnswerMissionUsecase,
+    BuildCardCollectionUsecase,
+  ],
 })
 export class SajuFortuneDayModule {}
