@@ -5,7 +5,12 @@ import {
   renderStarLine,
   starsOf,
 } from './saju-fortune-render';
+import { renderMissionLine } from './saju-mission';
 
+const MISSION = {
+  key: 'work-earth-1',
+  text: '책상 위 물건 세 개만 제자리에 두기',
+};
 const ANALYSIS = analyzeSajuDay(['丙子', '辛丑', '己酉', '己巳'], '庚午');
 const { scores } = ANALYSIS;
 
@@ -24,9 +29,10 @@ const AI_BODY = [
 
 describe('composeFortuneBody — 항목별 별점 배치', () => {
   it('다섯 항목을 찾으면 굵은 라벨과 별을 항목마다 붙이고 빈 줄로 띄운다', () => {
-    const body = composeFortuneBody({
+    const { body } = composeFortuneBody({
       body: AI_BODY,
       analysis: ANALYSIS,
+      mission: MISSION,
       maximum: 1_500,
     });
 
@@ -50,6 +56,7 @@ describe('composeFortuneBody — 항목별 별점 배치', () => {
         '잠깐씩 일어나 몸을 풀어 봐.',
         '',
         renderItemLine(ANALYSIS.lucky),
+        renderMissionLine(MISSION),
         '*행운 포인트:* 머릿속 이야기를 짧게 적어 봐.',
         '*오늘의 한 마디:* 좋은 이야기는 쉼표를 지나서도 이어져.',
       ].join('\n'),
@@ -57,9 +64,10 @@ describe('composeFortuneBody — 항목별 별점 배치', () => {
   });
 
   it('항목 하나라도 못 찾으면 지금처럼 첫 줄 뒤에 별점 줄을 붙인다', () => {
-    const body = composeFortuneBody({
+    const { body } = composeFortuneBody({
       body: AI_BODY.replace('컨디션: ', '몸 상태 — '),
       analysis: ANALYSIS,
+      mission: MISSION,
       maximum: 1_500,
     });
 
@@ -73,13 +81,28 @@ describe('composeFortuneBody — 항목별 별점 배치', () => {
         line.includes(':') ? `${line} ${'가'.repeat(300)}` : line,
       )
       .join('\n');
-    const body = composeFortuneBody({
+    const { body } = composeFortuneBody({
       body: longBody,
       analysis: ANALYSIS,
+      mission: MISSION,
       maximum: 1_500,
     });
 
     expect(body.length).toBeLessThanOrEqual(1_500);
     expect(body).toContain(renderItemLine(ANALYSIS.lucky));
+    expect(body).toContain(renderMissionLine(MISSION));
+  });
+
+  it('항목을 못 찾은 배치에서도 미션 줄은 아이템 줄 바로 뒤 맨 끝이다', () => {
+    const { body } = composeFortuneBody({
+      body: AI_BODY.replace('컨디션: ', '몸 상태 — '),
+      analysis: ANALYSIS,
+      mission: MISSION,
+      maximum: 1_500,
+    });
+    const lines = body.split('\n');
+
+    expect(lines.at(-2)).toBe(renderItemLine(ANALYSIS.lucky));
+    expect(lines.at(-1)).toBe(renderMissionLine(MISSION));
   });
 });

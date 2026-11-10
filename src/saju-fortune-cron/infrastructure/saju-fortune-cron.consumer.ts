@@ -2,12 +2,14 @@ import { Processor } from '@nestjs/bullmq';
 import { Inject, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Job } from 'bullmq';
+import { match } from 'ts-pattern';
 
 import { CronIdempotencyService } from '../../common/queue/cron-idempotency.service';
 import { ObservedWorkerHost } from '../../common/queue/observed-worker-host';
 import { LONG_RUNNING_WORKER_OPTIONS } from '../../common/queue/worker-options.constant';
 import {
   formatKstDateTime,
+  getKstDateOf,
   getTodayKstDate,
 } from '../../common/util/kst-date.util';
 import { ModelRouterUsecase } from '../../model-router/application/model-router.usecase';
@@ -27,6 +29,11 @@ import {
   FORTUNE_CARD_IMAGE_PORT,
   FortuneCardImagePort,
 } from '../domain/port/fortune-card-image.port';
+import {
+  RecentMission,
+  SAJU_FORTUNE_DAY_REPOSITORY_PORT,
+  SajuFortuneDayRepositoryPort,
+} from '../domain/port/saju-fortune-day.repository.port';
 import { analyzeSajuDay, YearMonthPillars } from '../domain/saju-analysis';
 import {
   buildExtraFortunePrompt,
@@ -45,12 +52,17 @@ import {
   FortuneMessageKind,
 } from '../domain/saju-fortune-chat';
 import {
+  MISSION_CHECK_MIN_GAP_MS,
+  MISSION_CHECK_WINDOW_MS,
   parseSajuFortuneRecipients,
   SAJU_FORTUNE_CRON_QUEUE,
   SajuFortuneCronJobData,
+  SajuFortuneJobName,
   SajuFortuneRecipient,
+  SajuMissionCheckJobData,
 } from '../domain/saju-fortune-cron.type';
 import {
+  ComposedFortune,
   composeExtraBody,
   composeFortuneBody,
   countUnremovableViolations,
@@ -58,14 +70,29 @@ import {
   findFortuneViolations,
   splitExtraSections,
 } from '../domain/saju-fortune-render';
+import {
+  Mission,
+  MISSION_LOOKBACK_DAYS,
+  pickMission,
+} from '../domain/saju-mission';
 import { renderSpecialDayLine, specialDaysOf } from '../domain/special-day';
 import { isMondayKst, renderWeeklyStarLine } from '../domain/weekly-fortune';
+import { SajuCardCollageRenderer } from './saju-card-collage.renderer';
+import {
+  buildMissionCheckBlocks,
+  missionCheckFallbackText,
+  MissionCheckView,
+} from './saju-mission-check.formatter';
 
 // 발송 idempotency TTL — 25h. 다음 날 같은 시각 발사 전 만료되도록 하루보다 약간 길게.
 const SENT_GUARD_TTL_SECONDS = 90_000;
 // 12줄 지시를 어긴 장문이 DM 을 덮지 않게 자른다. 카드 두 줄을 떼고 별점·아이템 줄을 붙인 본문 기준.
 const MAXIMUM_FORTUNE_LENGTH = 1_500;
-const INCIDENT_KEY = cronIncidentKey('Saju Fortune Cron');
+const DAILY_CRON_NAME = 'Saju Fortune Cron';
+const INCIDENT_KEY = cronIncidentKey(DAILY_CRON_NAME);
+// 저녁 미션 확인은 사건을 따로 연다 — 저녁 성공이 아침 실패 사건을 "복구"로 닫지 않게.
+const MISSION_CHECK_CRON_NAME = 'Saju Mission Check';
+const MISSION_CHECK_INCIDENT_KEY = cronIncidentKey(MISSION_CHECK_CRON_NAME);
 
 interface DeliverFortuneInput {
   recipient: SajuFortuneRecipient;
@@ -100,6 +127,21 @@ interface UploadedCard {
   altText: string;
 }
 
+// 업로드한 카드와 그 PNG — 썸네일을 같은 그림으로 만들려고 함께 들고 다닌다(다시 그리지 않는다).
+interface PreparedCard extends UploadedCard {
+  title: string;
+  png: Buffer;
+}
+
+interface RecordSentInput {
+  recipient: SajuFortuneRecipient;
+  todayKst: string;
+  mission: Mission;
+  composed: ComposedFortune;
+  // 그림이 실제로 붙어 나간 날만 있다.
+  sentCard: PreparedCard | undefined;
+}
+
 // 매일 사주 운세 DM — 받는 사람마다 LLM 1회 + DM 1회. 한 사람이 실패해도 나머지는 보낸다.
 // LLM 은 provider 선택만을 위해 PM 을 빌린다(fact-answer 와 같은 방식) — 새 AgentType 을 만들면
 // 슬래시·재실행·응답코드 체크리스트가 따라오는데 이 기능은 원장(agent_run)에 남길 일이 아니다.
@@ -115,14 +157,35 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
     private readonly cronIdempotency: CronIdempotencyService,
     @Inject(FORTUNE_CARD_IMAGE_PORT)
     private readonly cardImage: FortuneCardImagePort,
+    @Inject(SAJU_FORTUNE_DAY_REPOSITORY_PORT)
+    private readonly fortuneDays: SajuFortuneDayRepositoryPort,
+    private readonly cardCollage: SajuCardCollageRenderer,
     @Optional()
     private readonly notificationPublisher?: NotificationPublisher,
   ) {
     super();
   }
 
-  async process(job: Job<SajuFortuneCronJobData>): Promise<void> {
-    const { recipientSlackUserIds } = job.data;
+  // 같은 큐의 두 반복 잡 — 아침 운세와 저녁 미션 확인. 잡 이름은 문자열이라 모르는 이름은 경고만 남긴다.
+  async process(
+    job: Job<SajuFortuneCronJobData | SajuMissionCheckJobData>,
+  ): Promise<void> {
+    await match(job.name)
+      .with(SajuFortuneJobName.DAILY, () =>
+        this.processDaily(job.data as SajuFortuneCronJobData),
+      )
+      .with(SajuFortuneJobName.MISSION_CHECK, () =>
+        this.checkMissions(job.opts.prevMillis),
+      )
+      .otherwise((name) => {
+        this.logger.warn(`Saju Fortune 알 수 없는 잡 이름 — 건너뜀: ${name}`);
+        return Promise.resolve();
+      });
+  }
+
+  private async processDaily({
+    recipientSlackUserIds,
+  }: SajuFortuneCronJobData): Promise<void> {
     // "오늘"은 한 번만 계산해 일진·헤더·발송 가드가 같은 날짜를 쓰게 한다.
     const todayKst = getTodayKstDate();
     const todayPillar = dayPillarOf(todayKst);
@@ -178,10 +241,108 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
           total: recipients.length,
         }),
       );
-      this.notifyFailure(error);
+      this.notifyFailure({
+        cronName: DAILY_CRON_NAME,
+        incidentKey: INCIDENT_KEY,
+        error,
+      });
       throw error;
     }
     this.notificationPublisher?.publishRecovery(INCIDENT_KEY);
+  }
+
+  // 저녁 미션 확인. 날짜는 실행 시각이 아니라 예정 시각으로 정한다 — 자정을 넘겨 도는 보충 잡도
+  // 전날을 본다(autopilot.consumer 와 같은 방식). 예정보다 너무 늦게 돌면 그날은 건너뛴다.
+  private async checkMissions(prevMillis: number | undefined): Promise<void> {
+    const nowMs = Date.now();
+    const scheduledMs = prevMillis ?? nowMs;
+    if (nowMs - scheduledMs > MISSION_CHECK_WINDOW_MS) {
+      this.logger.log(
+        `Saju Mission Check 발송 창을 지나 건너뜀 — 예정 ${new Date(scheduledMs).toISOString()}`,
+      );
+      return;
+    }
+    const fortuneDate = getKstDateOf(new Date(scheduledMs));
+    const { recipients } = parseSajuFortuneRecipients(
+      this.configService.get<string>('SAJU_FORTUNE_RECIPIENTS'),
+    );
+    const failedNames: string[] = [];
+    for (const recipient of recipients) {
+      try {
+        await this.checkMissionOnce({ recipient, fortuneDate, nowMs });
+      } catch (error) {
+        this.logger.error(
+          `Saju Mission Check 실패 (${recipient.slackUserId})`,
+          error,
+        );
+        failedNames.push(recipient.name);
+      }
+    }
+    if (failedNames.length > 0) {
+      const error = new Error(
+        `사주 미션 확인 실패 ${failedNames.length}/${recipients.length}명: ${failedNames.join(', ')}`,
+      );
+      this.notifyFailure({
+        cronName: MISSION_CHECK_CRON_NAME,
+        incidentKey: MISSION_CHECK_INCIDENT_KEY,
+        error,
+      });
+      throw error;
+    }
+    this.notificationPublisher?.publishRecovery(MISSION_CHECK_INCIDENT_KEY);
+  }
+
+  // 그날 운세가 나갔고(행 있음), 아직 답하지 않았고, 아침에서 충분히 지난 사람에게만 묻는다.
+  // 키·발송·release 규칙은 일일과 같다.
+  private async checkMissionOnce({
+    recipient,
+    fortuneDate,
+    nowMs,
+  }: {
+    recipient: SajuFortuneRecipient;
+    fortuneDate: string;
+    nowMs: number;
+  }): Promise<void> {
+    const { slackUserId } = recipient;
+    const day = await this.fortuneDays.findMissionDay({
+      slackUserId,
+      fortuneDate,
+    });
+    if (
+      !day ||
+      day.missionResult ||
+      nowMs - day.createdAt.getTime() < MISSION_CHECK_MIN_GAP_MS
+    ) {
+      return;
+    }
+    const guardKey = `cron:${SAJU_FORTUNE_CRON_QUEUE}:mission:${slackUserId}:${fortuneDate}`;
+    if (await this.cronIdempotency.isDone(guardKey)) {
+      return;
+    }
+    const view: MissionCheckView = {
+      fortuneDate,
+      missionText: day.missionText,
+      weekDone: 0,
+    };
+    const firstRun = await this.cronIdempotency.acquireOnce(
+      guardKey,
+      SENT_GUARD_TTL_SECONDS,
+    );
+    if (!firstRun) {
+      return;
+    }
+    try {
+      await this.slackNotifier.postMessage({
+        kind: 'saju-fortune',
+        target: slackUserId,
+        text: missionCheckFallbackText(view),
+        blocks: buildMissionCheckBlocks(view),
+      });
+    } catch (error) {
+      await this.cronIdempotency.release(guardKey);
+      throw error;
+    }
+    this.logger.log(`Saju Mission Check 발송 완료 — ${slackUserId}`);
   }
 
   // 사람별 하루 1회 가드. 가드는 LLM 응답을 받은 뒤 발송 직전에 잡는다 — 먼저 잡으면 LLM 호출 중
@@ -201,6 +362,17 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
       return DailyDeliveryResult.ALREADY;
     }
 
+    // 별점·행운 아이템·미션은 프롬프트와 같은 입력으로 계산해 코드가 그린다(같은 입력 → 같은 값).
+    const analysis = analyzeSajuDay(
+      recipient.natalPillars,
+      todayPillar,
+      yearMonthPillars,
+    );
+    const mission = pickMission({
+      analysis,
+      recent: await this.findRecentMissions({ recipient, todayKst }),
+      fortuneDate: todayKst,
+    });
     const fortune = await this.generateFortune({
       recipient,
       todayKst,
@@ -212,18 +384,14 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
       ? await this.prepareCard(recipient, fortune.card)
       : undefined;
 
-    // 별점·행운 아이템은 프롬프트와 같은 입력으로 다시 계산해 코드가 그린다(같은 입력 → 같은 값).
     // 조립은 가드 앞에서 한다 — 키를 잡은 뒤 조립이 던지면 키만 남아 그날 일일이 빠진다.
-    const body = composeFortuneBody({
+    const composed = composeFortuneBody({
       body: fortune.body,
-      analysis: analyzeSajuDay(
-        recipient.natalPillars,
-        todayPillar,
-        yearMonthPillars,
-      ),
+      analysis,
+      mission,
       maximum: MAXIMUM_FORTUNE_LENGTH,
     });
-    const text = `${formatFortuneHeader(todayKst, todayPillar)}\n\n${escapeSlackMrkdwn(body)}`;
+    const text = `${formatFortuneHeader(todayKst, todayPillar)}\n\n${escapeSlackMrkdwn(composed.body)}`;
 
     // stalled 재처리로 같은 사람이 동시에 두 번 처리되면 뒤쪽은 여기서 막힌다.
     const firstRun = await this.cronIdempotency.acquireOnce(
@@ -233,14 +401,111 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
     if (!firstRun) {
       return DailyDeliveryResult.RACED;
     }
+    const { withCard } = await this.postOrRelease({
+      guardKey,
+      recipient,
+      text,
+      card,
+    });
+    this.logger.log(`Saju Fortune 발송 완료 — ${recipient.slackUserId}`);
+    // 기록은 발송이 끝난 뒤, 키를 푸는 경로 밖에서 — 기록 실패가 키를 풀면 같은 운세가 두 번 나간다.
+    await this.recordSentSafely({
+      recipient,
+      todayKst,
+      mission,
+      composed,
+      sentCard: withCard ? card : undefined,
+    });
+    return DailyDeliveryResult.SENT;
+  }
+
+  // 발송이 실패하면 가드를 풀어 BullMQ 재시도가 다시 보내게 한다.
+  private async postOrRelease({
+    guardKey,
+    recipient,
+    text,
+    card,
+  }: {
+    guardKey: string;
+    recipient: SajuFortuneRecipient;
+    text: string;
+    card: UploadedCard | undefined;
+  }): Promise<{ withCard: boolean }> {
     try {
-      await this.postFortune({ recipient, text, card });
+      return await this.postFortune({ recipient, text, card });
     } catch (error) {
       await this.cronIdempotency.release(guardKey);
       throw error;
     }
-    this.logger.log(`Saju Fortune 발송 완료 — ${recipient.slackUserId}`);
-    return DailyDeliveryResult.SENT;
+  }
+
+  // 최근 미션은 반복을 피하는 데만 쓴다 — 조회가 실패하면 반복 회피만 포기하고 보낸다.
+  private async findRecentMissions({
+    recipient,
+    todayKst,
+  }: {
+    recipient: SajuFortuneRecipient;
+    todayKst: string;
+  }): Promise<RecentMission[]> {
+    try {
+      return await this.fortuneDays.findRecentMissionKeys({
+        slackUserId: recipient.slackUserId,
+        before: todayKst,
+        days: MISSION_LOOKBACK_DAYS,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Saju Fortune 최근 미션 조회 실패 — 반복 회피 없이 고름 (${recipient.slackUserId}): ${messageOf(error)}`,
+      );
+      return [];
+    }
+  }
+
+  // 기록은 덤이다 — 저녁 확인·카드 모음이 그날을 놓칠 뿐 발송에는 영향이 없다.
+  private async recordSentSafely({
+    recipient,
+    todayKst,
+    mission,
+    composed,
+    sentCard,
+  }: RecordSentInput): Promise<void> {
+    try {
+      await this.fortuneDays.recordSent({
+        slackUserId: recipient.slackUserId,
+        fortuneDate: todayKst,
+        missionKey: mission.key,
+        missionText: mission.text,
+        aiBody: composed.aiBody,
+        card: await this.cardRecordOf({ recipient, sentCard }),
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Saju Fortune 하루 기록 실패 — 저녁 확인·카드 모음에서 빠짐 (${recipient.slackUserId}): ${messageOf(error)}`,
+      );
+    }
+  }
+
+  // 썸네일을 못 만들면 카드 없이 남긴다 — 제목만 남기면 모음 장수 기준이 둘이 된다.
+  private async cardRecordOf({
+    recipient,
+    sentCard,
+  }: {
+    recipient: SajuFortuneRecipient;
+    sentCard: PreparedCard | undefined;
+  }): Promise<{ title: string; thumbnail: Buffer } | undefined> {
+    if (!sentCard) {
+      return undefined;
+    }
+    try {
+      const thumbnail = await this.cardCollage.toThumbnail(sentCard.png);
+      const cardRecord = { title: sentCard.title, thumbnail };
+      return cardRecord;
+    } catch (error) {
+      this.logger.warn(
+        `Saju Fortune 카드 썸네일 실패 — 카드 없이 기록 (${recipient.slackUserId}): ${messageOf(error)}`,
+      );
+      return undefined;
+    }
   }
 
   // 월요일 주간·특별한 날 특집 — 일일 뒤 한 통. 보낼 것이 없는 날(대부분)은 LLM·키 없이 끝난다.
@@ -340,7 +605,7 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
     recipient: SajuFortuneRecipient;
     text: string;
     card: UploadedCard | undefined;
-  }): Promise<void> {
+  }): Promise<{ withCard: boolean }> {
     const message = {
       kind: 'saju-fortune' as const,
       target: recipient.slackUserId,
@@ -348,10 +613,14 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
     };
     if (!card) {
       await this.slackNotifier.postMessage(message);
-      return;
+      return { withCard: false };
     }
     try {
-      await this.slackNotifier.postMessage({ ...message, image: card });
+      await this.slackNotifier.postMessage({
+        ...message,
+        image: { fileId: card.fileId, altText: card.altText },
+      });
+      return { withCard: true };
     } catch (error) {
       this.logger.warn(
         `Saju Fortune 카드 첨부 발송 실패 — 글만 다시 보냄 (${recipient.slackUserId}): ${
@@ -359,6 +628,7 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
         }`,
       );
       await this.slackNotifier.postMessage(message);
+      return { withCard: false };
     }
   }
 
@@ -413,7 +683,7 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
   private async prepareCard(
     recipient: SajuFortuneRecipient,
     card: FortuneCard,
-  ): Promise<UploadedCard | undefined> {
+  ): Promise<PreparedCard | undefined> {
     try {
       const png = await this.cardImage.generate(
         buildFortuneCardImagePrompt(card),
@@ -424,7 +694,13 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
         filename: 'fortune-card.png',
         title: altText,
       });
-      return { fileId, altText };
+      const prepared: PreparedCard = {
+        fileId,
+        altText,
+        title: card.title,
+        png,
+      };
+      return prepared;
     } catch (error) {
       this.logger.warn(
         `Saju Fortune 카드 그림 실패 — 글만 발송 (${recipient.slackUserId}): ${
@@ -438,13 +714,21 @@ export class SajuFortuneCronConsumer extends ObservedWorkerHost {
   // fire-and-forget — NotificationQueue 의 사건 단위 Slack DM. 수신자는 payload 가 아니라
   // CRON_FAILURE_ALERT_OWNER_SLACK_USER_ID 로 정해진다(notification.consumer ownerId) — 받는 사람에겐 안 간다.
   // ownerSlackUserId 는 CronFailureJobData 의 필수 칸이지만 읽는 곳이 없어 비워 둔다.
-  private notifyFailure(error: Error): void {
+  private notifyFailure({
+    cronName,
+    incidentKey,
+    error,
+  }: {
+    cronName: string;
+    incidentKey: string;
+    error: Error;
+  }): void {
     if (!this.notificationPublisher) {
       return;
     }
     this.notificationPublisher.publishCronFailure({
-      cronName: 'Saju Fortune Cron',
-      incidentKey: INCIDENT_KEY,
+      cronName,
+      incidentKey,
       ownerSlackUserId: '',
       errorMessage: error.message,
     });
@@ -514,3 +798,6 @@ const failureMessageOf = ({
     failedExtras.length > 0 ? ` / 추가 실패: ${failedExtras.join(', ')}` : '';
   return `${dailyPart}${extraPart}`;
 };
+
+const messageOf = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);

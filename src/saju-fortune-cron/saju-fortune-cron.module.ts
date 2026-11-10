@@ -11,6 +11,7 @@ import { FORTUNE_CARD_IMAGE_PORT } from './domain/port/fortune-card-image.port';
 import { SAJU_FORTUNE_CRON_QUEUE } from './domain/saju-fortune-cron.type';
 import { CodexFortuneCardImageGenerator } from './infrastructure/codex-fortune-card-image.generator';
 import { SajuFortuneCronConsumer } from './infrastructure/saju-fortune-cron.consumer';
+import { SajuFortuneDayModule } from './saju-fortune-day.module';
 
 // 매일 사주 운세 DM — JobApplicationNudgeCron 모듈 패턴 차용.
 // CronIdempotencyService 는 @Global CronIdempotencyModule (app.module) 가 제공 — 별도 import 불필요.
@@ -20,6 +21,7 @@ import { SajuFortuneCronConsumer } from './infrastructure/saju-fortune-cron.cons
     ModelRouterModule,
     SlackModule,
     NotificationQueueModule,
+    SajuFortuneDayModule,
   ],
   providers: [
     SajuFortuneCronScheduler,

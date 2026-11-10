@@ -12,13 +12,23 @@ import {
 import {
   dailyCronOf,
   DEFAULT_SAJU_FORTUNE_CRON,
+  DEFAULT_SAJU_MISSION_CHECK_CRON,
+  MISSION_CHECK_DISABLED,
   parseSajuFortuneRecipients,
   SAJU_FORTUNE_CRON_QUEUE,
   SAJU_FORTUNE_TIMEZONE,
   SajuFortuneCronJobData,
+  SajuFortuneJobName,
+  SajuMissionCheckJobData,
 } from '../domain/saju-fortune-cron.type';
 
-const SAJU_FORTUNE_CRON_JOB_NAME = 'saju-fortune-cron';
+// 아침·저녁 잡이 같은 재시도·보관 정책을 쓴다.
+const REPEAT_JOB_OPTIONS = {
+  removeOnComplete: 20,
+  removeOnFail: 20,
+  attempts: 2,
+  backoff: { type: 'exponential', delay: 60_000 },
+} as const;
 
 // 매일 사주 운세 DM — JobApplicationNudgeCronScheduler 패턴 그대로.
 // 유효한 받는 사람이 한 명이라도 있으면 켜진다. 실패 알림은 공용 CRON_FAILURE_ALERT_OWNER_SLACK_USER_ID 로 간다.
@@ -73,18 +83,40 @@ export class SajuFortuneCronScheduler implements OnApplicationBootstrap {
 
     for (const [cron, recipientSlackUserIds] of slackUserIdsByCron) {
       const payload: SajuFortuneCronJobData = { recipientSlackUserIds };
-      await this.queue.add(SAJU_FORTUNE_CRON_JOB_NAME, payload, {
+      await this.queue.add(SajuFortuneJobName.DAILY, payload, {
         repeat: { pattern: cron, tz },
         jobId: `saju-fortune-cron:${cron}`,
-        removeOnComplete: 20,
-        removeOnFail: 20,
-        attempts: 2,
-        backoff: { type: 'exponential', delay: 60_000 },
+        ...REPEAT_JOB_OPTIONS,
       });
       this.logger.log(
         `Saju Fortune Cron 활성화 — 받는 사람 ${recipientSlackUserIds.length}명, cron="${cron}" (${tz})`,
       );
     }
+    await this.addMissionCheck();
     await cancelCatchUpsDueSoon(this.queue, catchUps, this.logger);
+  }
+
+  // 저녁 미션 확인 — 모든 받는 사람을 한 잡이 맡는다(아침 시각과 무관). 'off' 면 달지 않는다.
+  private async addMissionCheck(): Promise<void> {
+    const cron = readNonEmptyConfig({
+      configService: this.configService,
+      key: 'SAJU_MISSION_CHECK_CRON',
+      fallback: DEFAULT_SAJU_MISSION_CHECK_CRON,
+    });
+    if (cron === MISSION_CHECK_DISABLED) {
+      this.logger.log(
+        'Saju Mission Check 비활성 (SAJU_MISSION_CHECK_CRON=off).',
+      );
+      return;
+    }
+    const payload: SajuMissionCheckJobData = {};
+    await this.queue.add(SajuFortuneJobName.MISSION_CHECK, payload, {
+      repeat: { pattern: cron, tz: SAJU_FORTUNE_TIMEZONE },
+      jobId: SajuFortuneJobName.MISSION_CHECK,
+      ...REPEAT_JOB_OPTIONS,
+    });
+    this.logger.log(
+      `Saju Mission Check 활성화 — cron="${cron}" (${SAJU_FORTUNE_TIMEZONE})`,
+    );
   }
 }
