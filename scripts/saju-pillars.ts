@@ -4,7 +4,9 @@ import { DayBoundary } from 'manseryeok';
 
 import {
   BirthTime,
+  NatalBirthInput,
   natalPillarsOf,
+  NatalPillarsResult,
 } from '../src/saju-fortune-cron/application/natal-pillars';
 import { parseSajuFortuneRecipients } from '../src/saju-fortune-cron/domain/saju-fortune-cron.type';
 
@@ -38,7 +40,8 @@ const parseTime = (raw: string | undefined): BirthTime | undefined => {
     return undefined;
   }
   const matched = TIME_PATTERN.exec(raw) ?? fail(`--time 형식 오류: ${raw}`);
-  return { hour: Number(matched[1]), minute: Number(matched[2]) };
+  const [, hour, minute] = matched.map(Number);
+  return { hour, minute };
 };
 
 const parseLongitude = (raw: string | undefined): number | undefined => {
@@ -56,10 +59,20 @@ const parseDayBoundary = (raw: string | undefined): DayBoundary | undefined => {
   if (raw === undefined) {
     return undefined;
   }
-  return (
+  const dayBoundary =
     DAY_BOUNDARIES.find((boundary) => boundary === raw) ??
-    fail(`--day-boundary 는 ${DAY_BOUNDARIES.join('|')} 중 하나: ${raw}`)
-  );
+    fail(`--day-boundary 는 ${DAY_BOUNDARIES.join('|')} 중 하나: ${raw}`);
+  return dayBoundary;
+};
+
+// 달력에 없는 날·윤달은 manseryeok 이 RangeError 로 끊는다 — 스택 대신 사용법과 함께 알린다.
+const natalPillarsOrFail = (input: NatalBirthInput): NatalPillarsResult => {
+  try {
+    return natalPillarsOf(input);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return fail(message);
+  }
 };
 
 const main = (): void => {
@@ -79,30 +92,25 @@ const main = (): void => {
   const dateMatched =
     DATE_PATTERN.exec(values.date ?? '') ??
     fail('--date YYYY-MM-DD 가 필요합니다.');
+  const [, year, month, day] = dateMatched.map(Number);
   if (values.leap && !values.lunar) {
     fail('--leap 은 --lunar 와 함께 씁니다.');
   }
 
-  let result: ReturnType<typeof natalPillarsOf>;
-  try {
-    result = natalPillarsOf({
-      year: Number(dateMatched[1]),
-      month: Number(dateMatched[2]),
-      day: Number(dateMatched[3]),
-      time: parseTime(values.time),
-      isLunar: values.lunar,
-      isLeapMonth: values.leap,
-      solarTimeLongitude: parseLongitude(values['solar-time']),
-      dayBoundary: parseDayBoundary(values['day-boundary']),
-    });
-  } catch (error) {
-    // 달력에 없는 날·윤달은 manseryeok 이 RangeError 로 끊는다.
-    return fail(error instanceof Error ? error.message : String(error));
-  }
+  const { pillars, warnings } = natalPillarsOrFail({
+    year,
+    month,
+    day,
+    time: parseTime(values.time),
+    isLunar: values.lunar,
+    isLeapMonth: values.leap,
+    solarTimeLongitude: parseLongitude(values['solar-time']),
+    dayBoundary: parseDayBoundary(values['day-boundary']),
+  });
 
-  const pillarText = result.pillars.join(' ');
+  const pillarText = pillars.join(' ');
   console.log(`기둥: ${pillarText}`);
-  result.warnings.forEach((warning) => console.log(`⚠️  ${warning}`));
+  warnings.forEach((warning) => console.log(`⚠️  ${warning}`));
 
   if (!values.slack && !values.name) {
     return;
