@@ -169,6 +169,28 @@ describe('PublishStoryUsecase', () => {
     expect(row.uploadedAt).toBeNull();
   });
 
+  it('운영 설정은 30·60초 간격으로 최대 3번 올린다', async () => {
+    const production = new PublishStoryUsecase(
+      repository,
+      graph,
+      lease as unknown as CronIdempotencyService,
+    );
+    const wait = jest
+      .spyOn(
+        production as unknown as { wait: (ms: number) => Promise<void> },
+        'wait',
+      )
+      .mockResolvedValue(undefined);
+    graph.uploadVideo.mockRejectedValue(uploadFailure());
+
+    await expect(production.execute(input)).resolves.toMatchObject({
+      kind: StoryPublishResult.FAILED,
+    });
+
+    expect(graph.uploadVideo).toHaveBeenCalledTimes(3);
+    expect(wait.mock.calls.map(([ms]) => ms)).toEqual([30_000, 60_000]);
+  });
+
   it('업로드가 토큰 오류면 다시 시도하지 않는다', async () => {
     graph.uploadVideo.mockRejectedValue(
       uploadFailure(InstagramErrorCode.TOKEN_INVALID),
@@ -191,7 +213,7 @@ describe('PublishStoryUsecase', () => {
     expect(repository.upsertByReelKey).not.toHaveBeenCalled();
     expect(lease.acquireOnce).toHaveBeenCalledWith(
       'instagram-story:2026-11-06',
-      900,
+      1200,
     );
   });
 

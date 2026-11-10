@@ -304,44 +304,50 @@ export class InstagramReelPublishApplier implements PreviewApplier {
     post,
     payload,
     video,
+    attempt = 1,
   }: {
     post: InstagramPost;
     payload: ReelPublishPayload;
     video: Buffer;
+    attempt?: number;
   }): Promise<InstagramPost> {
-    for (let attempt = 1; ; attempt += 1) {
-      const container = await this.graph.createReelContainer({
-        caption: payload.caption,
-        thumbOffsetMs: payload.coverOffsetMs,
+    const container = await this.graph.createReelContainer({
+      caption: payload.caption,
+      thumbOffsetMs: payload.coverOffsetMs,
+    });
+    const containerPost = await this.repository.update({
+      id: post.id,
+      patch: {
+        containerId: container.containerId,
+        containerCreatedAt: new Date(),
+        uploadedAt: null,
+        publishAttemptedAt: null,
+      },
+    });
+    try {
+      await this.graph.uploadVideo({
+        uploadUri: container.uploadUri,
+        video,
       });
-      const containerPost = await this.repository.update({
-        id: post.id,
-        patch: {
-          containerId: container.containerId,
-          containerCreatedAt: new Date(),
-          uploadedAt: null,
-          publishAttemptedAt: null,
-        },
-      });
-      try {
-        await this.graph.uploadVideo({
-          uploadUri: container.uploadUri,
-          video,
-        });
-        return containerPost;
-      } catch (error) {
-        const retriable =
-          error instanceof InstagramException &&
-          error.errorCode === InstagramErrorCode.GRAPH_REQUEST_FAILED;
-        const delayMs = this.uploadRetryDelaysMs[attempt - 1];
-        if (!retriable || delayMs === undefined) {
-          throw error;
-        }
-        this.logger.warn(
-          `릴스 업로드 실패 ${attempt}회 reel=${payload.reelKey} container=${container.containerId} — ${delayMs / 1000}초 뒤 새 컨테이너로 다시: ${error.message}`,
-        );
-        await this.wait(delayMs);
+      return containerPost;
+    } catch (error) {
+      const retriable =
+        error instanceof InstagramException &&
+        error.errorCode === InstagramErrorCode.GRAPH_REQUEST_FAILED;
+      const delayMs = this.uploadRetryDelaysMs[attempt - 1];
+      if (!retriable || delayMs === undefined) {
+        throw error;
       }
+      this.logger.warn(
+        `릴스 업로드 실패 ${attempt}회 reel=${payload.reelKey} container=${container.containerId} — ${delayMs / 1000}초 뒤 새 컨테이너로 다시: ${error.message}`,
+      );
+      await this.wait(delayMs);
+      return await this.uploadToNewContainer({
+        post,
+        payload,
+        video,
+        attempt: attempt + 1,
+      });
     }
   }
 
