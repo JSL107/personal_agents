@@ -46,11 +46,15 @@ describe('stripInventedMarks', () => {
 
 describe('truncateByLines', () => {
   it('예산 안의 마지막 완결 줄까지 남긴다', () => {
-    expect(truncateByLines('가나다\n라마바\n사아자', 8)).toBe('가나다\n라마바');
+    expect(truncateByLines({ body: '가나다\n라마바\n사아자', budget: 8 })).toBe(
+      '가나다\n라마바',
+    );
   });
 
   it('첫 줄 하나가 예산보다 길면 그 줄을 글자 단위로 자른다', () => {
-    expect(truncateByLines('가'.repeat(20), 5)).toBe('가'.repeat(5));
+    expect(truncateByLines({ body: '가'.repeat(20), budget: 5 })).toBe(
+      '가'.repeat(5),
+    );
   });
 });
 

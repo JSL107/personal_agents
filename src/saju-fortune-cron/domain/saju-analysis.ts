@@ -8,6 +8,7 @@ import {
   ELEMENT_FOODS,
   ELEMENT_NUMBERS,
   ELEMENT_TASTES,
+  FORTUNE_SCORE_KEYS,
   FortuneCategory,
   FortuneScoreKey,
   FortuneStrength,
@@ -179,7 +180,7 @@ const luckyOf = ({
   todayStem: StemInfo;
   todayStemIndex: number;
 }): LuckyInfo => {
-  const todayGroup = tenGodGroupOf(dayMaster, todayStem);
+  const todayGroup = tenGodGroupOf({ dayMaster, other: todayStem });
   // 오행은 나무→불→흙→쇠→물로 도는 고리다. 표의 값은 일간 자리에서 몇 칸 갈지(0 같은 기운·1 내가 생함…)다.
   const dayMasterIndex = ELEMENTS.indexOf(dayMaster.element);
   const steps = LUCKY_GROUP_BY_TODAY_GROUP[todayGroup];
@@ -287,25 +288,44 @@ const branchInfoOf = (branch: string): StemInfo =>
 // 일간에서 본 상대 기운. 오행 순서상 몇 칸 떨어졌는지(같음·내가 생함·내가 극함·나를 극함·나를 생함)로
 // 갈래가 정해지고, 음양이 같으면 앞쪽(편)·다르면 뒤쪽(정)이다.
 // 그 갈래 번호(0 비겁·1 식상·2 재성·3 관성·4 인성)가 별점·행운 표의 행 번호다.
-const tenGodGroupOf = (dayMaster: StemInfo, other: StemInfo): number =>
-  (ELEMENTS.indexOf(other.element) -
-    ELEMENTS.indexOf(dayMaster.element) +
-    ELEMENTS.length) %
-  ELEMENTS.length;
+const tenGodGroupOf = ({
+  dayMaster,
+  other,
+}: {
+  dayMaster: StemInfo;
+  other: StemInfo;
+}): number => {
+  const steps =
+    ELEMENTS.indexOf(other.element) - ELEMENTS.indexOf(dayMaster.element);
+  const group = (steps + ELEMENTS.length) % ELEMENTS.length;
+  return group;
+};
 
-export const tenGodOf = (dayMaster: StemInfo, other: StemInfo): TenGod =>
-  TEN_GODS[tenGodGroupOf(dayMaster, other)][
-    dayMaster.isYang === other.isYang ? 0 : 1
-  ];
+export const tenGodOf = ({
+  dayMaster,
+  other,
+}: {
+  dayMaster: StemInfo;
+  other: StemInfo;
+}): TenGod => {
+  const group = tenGodGroupOf({ dayMaster, other });
+  const polarity = dayMaster.isYang === other.isYang ? 0 : 1;
+  return TEN_GODS[group][polarity];
+};
 
 // 일간이 그 지지에서 갖는 기세. 양간은 장생 지지부터 순행, 음간은 역행한다.
-export const twelveStageOf = (dayStem: string, branch: string): TwelveStage => {
+export const twelveStageOf = ({
+  dayStem,
+  branch,
+}: {
+  dayStem: string;
+  branch: string;
+}): TwelveStage => {
   const start = EARTHLY_BRANCHES.indexOf(TWELVE_STAGE_START[dayStem]);
   const target = EARTHLY_BRANCHES.indexOf(branch);
   const steps = stemInfoOf(dayStem).isYang ? target - start : start - target;
-  return TWELVE_STAGES[
-    (steps + EARTHLY_BRANCHES.length) % EARTHLY_BRANCHES.length
-  ];
+  const index = (steps + EARTHLY_BRANCHES.length) % EARTHLY_BRANCHES.length;
+  return TWELVE_STAGES[index];
 };
 
 // 일주가 속한 순(甲으로 시작하는 10일)에서 짝을 못 얻은 두 지지. 한 순 안에서는 천간·지지가 함께
@@ -316,10 +336,8 @@ export const voidBranchesOf = (dayPillar: string): [string, string] => {
       HEAVENLY_STEMS.indexOf(dayPillar[0]) +
       HEAVENLY_STEMS.length) %
     EARTHLY_BRANCHES.length;
-  return [
-    EARTHLY_BRANCHES[first],
-    EARTHLY_BRANCHES[(first + 1) % EARTHLY_BRANCHES.length],
-  ];
+  const second = (first + 1) % EARTHLY_BRANCHES.length;
+  return [EARTHLY_BRANCHES[first], EARTHLY_BRANCHES[second]];
 };
 
 export const stemRelationOf = ({
@@ -415,9 +433,13 @@ export const analyzeSajuDay = (
 ): SajuDayAnalysis => {
   const dayMaster = stemInfoOf(natalPillars[2][0]);
 
-  const elementUnits = Object.fromEntries(
-    ELEMENTS.map((element) => [element, 0]),
-  ) as Record<FiveElement, number>;
+  const elementUnits: Record<FiveElement, number> = {
+    나무: 0,
+    불: 0,
+    흙: 0,
+    쇠: 0,
+    물: 0,
+  };
   for (const pillar of natalPillars) {
     elementUnits[stemInfoOf(pillar[0]).element] += ELEMENT_UNIT;
     for (const [hiddenStem, days] of HIDDEN_STEM_DAYS[pillar[1]]) {
@@ -437,7 +459,7 @@ export const analyzeSajuDay = (
 
   const withTenGod = (info: StemInfo): StemWithTenGod => ({
     ...info,
-    tenGod: tenGodOf(dayMaster, info),
+    tenGod: tenGodOf({ dayMaster, other: info }),
   });
   const flowOf = (label: string, unit: string, pillar: string): PeriodFlow => ({
     title: `${label}(${pillarToHangul(pillar)}${unit})`,
@@ -451,7 +473,10 @@ export const analyzeSajuDay = (
       ]
     : [];
 
-  const stage = twelveStageOf(natalPillars[2][0], todayPillar[1]);
+  const stage = twelveStageOf({
+    dayStem: natalPillars[2][0],
+    branch: todayPillar[1],
+  });
   const stemRelations = natalPillars.flatMap((pillar, index) => {
     const kind = stemRelationOf({
       todayStem: todayPillar[0],
@@ -486,8 +511,8 @@ export const analyzeSajuDay = (
     ...(harmonyGroup ? { harmonyGroup } : {}),
     hasBranchHarmony,
     scores: scoreFortune({
-      todayStemGroup: tenGodGroupOf(dayMaster, todayStem),
-      todayBranchGroup: tenGodGroupOf(dayMaster, todayBranch),
+      todayStemGroup: tenGodGroupOf({ dayMaster, other: todayStem }),
+      todayBranchGroup: tenGodGroupOf({ dayMaster, other: todayBranch }),
       strength,
       hasBranchHarmony,
       isVoidDay,
@@ -559,9 +584,9 @@ export const formatSajuFacts = (analysis: SajuDayAnalysis): string[] => {
     const { kind, element } = analysis.harmonyGroup;
     facts.push(`- ${HARMONY_GROUP_MEANINGS[kind](element)}`);
   }
-  const tones = (Object.keys(analysis.scores) as FortuneScoreKey[])
-    .map((key) => `${key} ${SCORE_TONES[analysis.scores[key]]}`)
-    .join(' · ');
+  const tones = FORTUNE_SCORE_KEYS.map(
+    (key) => `${key} ${SCORE_TONES[analysis.scores[key]]}`,
+  ).join(' · ');
   facts.push(`- 별점 결(코드가 정함): ${tones}`);
   // 색·숫자는 싣지 않는다 — AI 가 옮겨 적으면 가드에 걸린다. 아이템 줄은 코드가 그린다.
   facts.push(

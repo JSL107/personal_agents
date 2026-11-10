@@ -127,6 +127,14 @@ export const WEAK_STAGES: ReadonlySet<TwelveStage> = new Set([
 
 export type FortuneCategory = '일·공부' | '사람 관계' | '돈' | '컨디션';
 export type FortuneScoreKey = '총운' | FortuneCategory;
+// 별점 줄과 AI 에 주는 "별점 결" 사실이 같은 순서로 항목을 늘어놓는다.
+export const FORTUNE_SCORE_KEYS: readonly FortuneScoreKey[] = [
+  '총운',
+  '일·공부',
+  '사람 관계',
+  '돈',
+  '컨디션',
+];
 // 12운성으로 본 오늘의 기세.
 export type FortuneStrength = '강' | '보통' | '약';
 type ScoreAdjustment = Partial<Record<FortuneCategory, number>>;
