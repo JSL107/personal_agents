@@ -6,25 +6,90 @@ import {
 } from './saju-analysis';
 import { SajuFortuneRecipient } from './saju-fortune-cron.type';
 
-// 아침 운세 DM 의 첫 줄. 스레드 대화가 이 줄로 "운세 메시지에 단 답글" 을 알아보므로
-// 발송과 판별이 같은 함수·패턴을 쓴다 — 한쪽만 바뀌면 판별이 조용히 끊긴다.
+export type FortuneMessageKind = 'daily' | 'weekly' | 'special';
+
+// 운세 DM 들의 첫 줄 제목. 스레드 대화가 이 줄로 "운세 메시지에 단 답글" 을 알아보므로
+// 발송(머리말 함수)과 판별(패턴)이 같은 표를 쓴다 — 한쪽만 바뀌면 판별이 조용히 끊긴다.
+const FORTUNE_TITLES: Record<FortuneMessageKind, string> = {
+  daily: '오늘의 운세',
+  weekly: '이번 주 운세',
+  special: '특별한 날',
+};
+
+const FORTUNE_KINDS: readonly FortuneMessageKind[] = [
+  'daily',
+  'weekly',
+  'special',
+];
+
+const headerOf = ({
+  kind,
+  todayKst,
+  todayPillar,
+}: {
+  kind: FortuneMessageKind;
+  todayKst: string;
+  todayPillar: string;
+}): string =>
+  `🔮 *${FORTUNE_TITLES[kind]} — ${todayKst} (${pillarToHangul(todayPillar)}일)*`;
+
 export const formatFortuneHeader = (
   todayKst: string,
   todayPillar: string,
-): string =>
-  `🔮 *오늘의 운세 — ${todayKst} (${pillarToHangul(todayPillar)}일)*`;
+): string => headerOf({ kind: 'daily', todayKst, todayPillar });
+
+// 일일 운세 뒤에 가는 추가 메시지(월요일 주간·특별한 날)의 첫 줄.
+export const formatExtraFortuneHeader = ({
+  kind,
+  todayKst,
+  todayPillar,
+}: {
+  kind: 'weekly' | 'special';
+  todayKst: string;
+  todayPillar: string;
+}): string => headerOf({ kind, todayKst, todayPillar });
 
 // CJK 통합 한자. 받는 사람이 읽지 못한 「己土는 오늘 癸水를…」 같은 응답을 거른다.
 export const HANJA_PATTERN = /[\u4E00-\u9FFF]/;
 
 // 첫 줄 맨 앞에 고정한다 — 일반 답변이 머리말을 인용한 스레드를 가로채지 않게. Slack 이 돌려주는 text 는
 // 이모지를 `:crystal_ball:` 단축 코드로, 굵게 표식을 다르게 바꿔 올 수 있어 그 두 군데만 느슨하게 본다.
-const FORTUNE_HEADER_PATTERN =
-  /^(?:🔮|:crystal_ball:)\s*\*?오늘의 운세 — (\d{4}-\d{2}-\d{2}) \(/;
+const FORTUNE_HEADER_PATTERN = new RegExp(
+  `^(?:🔮|:crystal_ball:)\\s*\\*?(${Object.values(FORTUNE_TITLES).join('|')}) — (\\d{4})-(\\d{2})-(\\d{2}) \\(`,
+);
+
+export interface FortuneMessage {
+  date: string;
+  kind: FortuneMessageKind;
+}
+
+// 운세 DM 이면 그날 날짜('YYYY-MM-DD')와 종류, 아니면 undefined. 첫 줄만 본다(\s 가 줄바꿈도 받으므로
+// 잘라서 검사한다). 달력에 없는 날짜는 운세로 보지 않는다 — 뒤의 일진 계산이 던지지 않게.
+export const fortuneMessageOf = (
+  messageText: string,
+): FortuneMessage | undefined => {
+  const matched = FORTUNE_HEADER_PATTERN.exec(messageText.split('\n')[0]);
+  if (!matched) {
+    return undefined;
+  }
+  const [, title, year, month, day] = matched;
+  const kind = FORTUNE_KINDS.find(
+    (candidate) => FORTUNE_TITLES[candidate] === title,
+  );
+  const calendarDate = new Date(
+    Date.UTC(Number(year), Number(month) - 1, Number(day)),
+  );
+  const date = `${year}-${month}-${day}`;
+  const isRealDate = calendarDate.toISOString().slice(0, 10) === date;
+  if (!kind || !isRealDate) {
+    return undefined;
+  }
+  return { date, kind };
+};
 
 // 운세 DM 이면 그날 날짜('YYYY-MM-DD'), 아니면 undefined.
 export const fortuneDateOf = (messageText: string): string | undefined =>
-  FORTUNE_HEADER_PATTERN.exec(messageText.split('\n')[0])?.[1];
+  fortuneMessageOf(messageText)?.date;
 
 export interface FortuneChatTurn {
   role: 'user' | 'assistant';
@@ -39,6 +104,9 @@ export interface FortuneFollowUpPromptInput {
   yearMonthPillars: YearMonthPillars;
   // 아침에 보낸 운세 DM 원문(헤더 포함). 답이 아침 운세와 어긋나지 않게 근거로 준다.
   originalFortune: string;
+  // 그날이 특별한 날이면 특집 사실, 주간 메시지에 단 답이면 이번 주 사실 — 원문만으로는 근거가 모자란다.
+  specialFacts?: string[];
+  weeklyFacts?: string[];
   priorTurns: FortuneChatTurn[];
   question: string;
 }
@@ -52,6 +120,8 @@ export const buildFortuneFollowUpPrompt = ({
   fortunePillar,
   yearMonthPillars,
   originalFortune,
+  specialFacts = [],
+  weeklyFacts = [],
   priorTurns,
   question,
 }: FortuneFollowUpPromptInput): string => {
@@ -71,6 +141,8 @@ export const buildFortuneFollowUpPrompt = ({
     ...formatSajuFacts(
       analyzeSajuDay(recipient.natalPillars, fortunePillar, yearMonthPillars),
     ),
+    ...specialFacts,
+    ...weeklyFacts,
     '',
     '아침에 보낸 운세:',
     originalFortune.trim(),
@@ -82,6 +154,7 @@ export const buildFortuneFollowUpPrompt = ({
     '- 질문에 바로 답한다. 길이는 질문에 맞게 2~6줄. 아침 운세를 다시 요약하지 않는다.',
     '- 답의 근거는 위 계산된 사실과 아침 운세다. 아침 운세와 반대되는 말을 하지 않고, 사실에 없는 관계를 지어내지 않는다.',
     '- 아침 메시지에 없는 별점이나 숫자를 새로 지어내지 않는다.',
+    '- 계산된 사실과 아침 메시지 원문이 어긋나면 원문이 우선이다(보낸 뒤 설정이 바뀌었을 수 있다).',
     '- 근거를 쉬운 말로 한 번 덧붙이고, 오늘 해 볼 수 있는 구체적인 행동을 하나 권한다.',
     '- 운세로 알 수 없는 것(시험 합격·투자 종목·특정 사람의 속마음 등)을 물으면 재미로 보는 운세라는 선을 지키며 오늘의 기운에 빗대어 가볍게 답한다. 단정하지 않는다.',
     '- 한자를 한 글자도 쓰지 않는다. 편재·식신·충·극·합 같은 명리 용어를 쓰지 않는다.',

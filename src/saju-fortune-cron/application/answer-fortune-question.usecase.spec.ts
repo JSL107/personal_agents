@@ -72,3 +72,50 @@ describe('AnswerFortuneQuestionUsecase', () => {
     expect(route).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('AnswerFortuneQuestionUsecase — 주간·특집 메시지 답글', () => {
+  // 2026-11-16 은 월요일(갑오일). 길동은 그날 생일.
+  const BIRTHDAY_RECIPIENTS = 'U111|길동|丙寅 辛卯 壬戌 庚子||11-16';
+
+  const promptFor = async (text: string): Promise<string> => {
+    const route = jest.fn().mockResolvedValue({ text: '산책해 봐' });
+    const usecase = new AnswerFortuneQuestionUsecase(
+      { get: () => BIRTHDAY_RECIPIENTS } as unknown as ConfigService,
+      { route } as unknown as ModelRouterUsecase,
+    );
+    await usecase.answer({
+      slackUserId: 'U111',
+      fortuneMessageText: text,
+      priorTurns: [],
+      question: '생일인데 뭐 하지?',
+    });
+    return route.mock.calls[0][0].request.prompt;
+  };
+
+  it('월요일 합본(이번 주 운세)에도 생일 사실과 주간 사실을 함께 싣는다', async () => {
+    const prompt = await promptFor(
+      '🔮 *이번 주 운세 — 2026-11-16 (갑오일)*\n\n🎂 생일 축하해, 길동!',
+    );
+
+    expect(prompt).toContain('오늘은 길동의 생일이다');
+    expect(prompt).toMatch(/- 총운: /);
+  });
+
+  it('특별한 날 메시지에는 주간 사실을 싣지 않는다', async () => {
+    const prompt = await promptFor(
+      '🔮 *특별한 날 — 2026-11-16 (갑오일)*\n\n🎂 생일 축하해, 길동!',
+    );
+
+    expect(prompt).toContain('오늘은 길동의 생일이다');
+    expect(prompt).not.toContain('이번 주(월~일)');
+  });
+
+  it('그날 일일 운세에 단 답에도 특별한 날 사실은 싣는다', async () => {
+    const prompt = await promptFor(
+      '🔮 *오늘의 운세 — 2026-11-16 (갑오일)*\n\n총운: 좋아',
+    );
+
+    expect(prompt).toContain('오늘은 길동의 생일이다');
+    expect(prompt).not.toContain('이번 주(월~일)');
+  });
+});

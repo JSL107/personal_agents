@@ -4,16 +4,25 @@ import { ConfigService } from '@nestjs/config';
 import { ModelRouterUsecase } from '../../model-router/application/model-router.usecase';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { dayPillarOf } from '../domain/day-pillar';
+import { formatSpecialDayFacts } from '../domain/saju-extra-fortune.prompt';
 import {
   buildFortuneFollowUpPrompt,
   FortuneChatTurn,
-  fortuneDateOf,
+  FortuneMessageKind,
+  fortuneMessageOf,
 } from '../domain/saju-fortune-chat';
-import { parseSajuFortuneRecipients } from '../domain/saju-fortune-cron.type';
+import {
+  parseSajuFortuneRecipients,
+  SajuFortuneRecipient,
+} from '../domain/saju-fortune-cron.type';
 import {
   countUnremovableViolations,
   findFortuneViolations,
 } from '../domain/saju-fortune-render';
+import { specialDaysOf } from '../domain/special-day';
+import { formatWeeklyFacts } from '../domain/weekly-fortune';
+import { specialDayContextOf } from './special-day-calendar';
+import { weeklyScoresOf } from './weekly-scores';
 import { yearMonthPillarsOf } from './year-month-pillar';
 
 // 아침 발송과 같은 기준 — 코드가 지울 수 없는 위반(한자·용어)만 본다.
@@ -49,10 +58,11 @@ export class AnswerFortuneQuestionUsecase {
     priorTurns,
     question,
   }: AnswerFortuneQuestionInput): Promise<string | null> {
-    const fortuneDate = fortuneDateOf(fortuneMessageText);
-    if (!fortuneDate) {
+    const fortuneMessage = fortuneMessageOf(fortuneMessageText);
+    if (!fortuneMessage) {
       return null;
     }
+    const { date: fortuneDate, kind } = fortuneMessage;
     const recipient = parseSajuFortuneRecipients(
       this.configService.get<string>('SAJU_FORTUNE_RECIPIENTS'),
     ).recipients.find((candidate) => candidate.slackUserId === slackUserId);
@@ -66,6 +76,7 @@ export class AnswerFortuneQuestionUsecase {
       fortunePillar: dayPillarOf(fortuneDate),
       yearMonthPillars: yearMonthPillarsOf(fortuneDate),
       originalFortune: fortuneMessageText,
+      ...extraFactsOf({ recipient, fortuneDate, kind }),
       priorTurns,
       question,
     });
@@ -97,3 +108,41 @@ export class AnswerFortuneQuestionUsecase {
     return text;
   }
 }
+
+interface ExtraFollowUpFacts {
+  specialFacts: string[];
+  weeklyFacts: string[];
+}
+
+// 특별한 날 사실은 메시지 종류와 무관하게 그날이면 싣는다 — 월요일+생일 합본은 머리말이 "이번 주 운세" 라도
+// 생일 이야기가 들어 있다. 이번 주 사실은 주간 메시지에 단 답일 때만.
+const extraFactsOf = ({
+  recipient,
+  fortuneDate,
+  kind,
+}: {
+  recipient: SajuFortuneRecipient;
+  fortuneDate: string;
+  kind: FortuneMessageKind;
+}): ExtraFollowUpFacts => {
+  const context = specialDayContextOf(fortuneDate);
+  const days = specialDaysOf({
+    todayKst: fortuneDate,
+    birthday: recipient.birthday,
+    context,
+  });
+  const specialFacts = formatSpecialDayFacts({ days, recipient, context });
+  const weeklyFacts =
+    kind === 'weekly'
+      ? [
+          '- 이번 주(월~일) 항목별 좋은 날·조심할 날:',
+          ...formatWeeklyFacts(
+            weeklyScoresOf({
+              natalPillars: recipient.natalPillars,
+              mondayKst: fortuneDate,
+            }),
+          ),
+        ]
+      : [];
+  return { specialFacts, weeklyFacts };
+};
