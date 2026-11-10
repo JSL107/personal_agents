@@ -207,12 +207,10 @@ def collect_codex(root, since, until, output, no_zstd):
         sessions = root / 'sessions'
         if not sessions.exists():
             return 'missing'
-        for path in sessions.rglob('rollout-*.jsonl*') if sessions.exists() else []:
-            try:
-                date = dt.date(*map(int, path.relative_to(sessions).parts[:3]))
-            except (ValueError, TypeError):
-                continue
-            if not (since.date() - dt.timedelta(days=7) <= date < until.date()):
+        previous = since - dt.timedelta(days=7)
+        # 날짜 폴더는 세션 생성일이라 이어 쓴 세션을 놓친다. 기간은 mtime 과 레코드 timestamp 로 가린다.
+        for path in sessions.rglob('rollout-*.jsonl*'):
+            if path.stat().st_mtime < previous.timestamp():
                 continue
             if path.name.endswith('.zst'):
                 if no_zstd:
@@ -224,23 +222,29 @@ def collect_codex(root, since, until, output, no_zstd):
                     continue
                 lines = text.splitlines()
             elif path.name.endswith('.jsonl'):
-                lines = path.read_text(encoding='utf-8').splitlines()
+                lines = path.read_text(encoding='utf-8', errors='replace').splitlines()
             else:
                 continue
-            total = None
+            last_total = 0
             for line in lines:
                 try:
                     record = json.loads(line)
                     payload = record.get('payload', {})
-                    if record.get('type') == 'event_msg' and payload.get('type') == 'token_count':
-                        value = payload.get('info', {}).get('total_token_usage', {}).get('total_tokens')
-                        if isinstance(value, int) and value >= 0:
-                            total = value
-                except (ValueError, AttributeError, TypeError):
+                    if record.get('type') != 'event_msg' or payload.get('type') != 'token_count':
+                        continue
+                    value = payload.get('info', {}).get('total_token_usage', {}).get('total_tokens')
+                    if not (isinstance(value, int) and value >= 0):
+                        continue
+                    # 누적값이라 직전 값과의 차이가 그 시각의 사용량이다. 값이 줄면 새로 센 것으로 본다.
+                    used = value - last_total if value >= last_total else value
+                    last_total = value
+                    moment = parse_date(record.get('timestamp'))
+                    if since <= moment < until:
+                        output['tokens']['codex']['thisWeek'] += used
+                    elif previous <= moment < since:
+                        output['tokens']['codex']['prevWeek'] += used
+                except (ValueError, AttributeError, TypeError, BadArgs):
                     output['corrupt'] += 1
-            if total is not None:
-                week = 'thisWeek' if date >= since.date() else 'prevWeek'
-                output['tokens']['codex'][week] += total
         return 'ok'
     except (OSError, UnicodeError):
         return 'error'
@@ -433,8 +437,14 @@ def self_check():
         assert marker not in json.dumps(result)
         codex = root / 'codex' / 'sessions' / '2026' / '11' / '03'
         codex.mkdir(parents=True)
-        (codex / 'rollout-test.jsonl').write_text(json.dumps({'type': 'event_msg', 'payload': {'type': 'token_count', 'info': {'total_token_usage': {'total_tokens': 17}}}}), encoding='utf-8')
+        def token_line(timestamp, total):
+            return json.dumps({'timestamp': timestamp, 'type': 'event_msg', 'payload': {'type': 'token_count', 'info': {'total_token_usage': {'total_tokens': total}}}})
+        (codex / 'rollout-test.jsonl').write_text(token_line('2026-11-03T03:00:00Z', 17), encoding='utf-8')
         (codex / 'rollout-test.jsonl.zst').write_bytes(b'fixture')
+        # 오래전에 시작해 지난주·이번 주·기간 뒤에 이어 쓴 세션: 누적값 차이를 사용 시각의 주로 나눈다.
+        resumed = root / 'codex' / 'sessions' / '2026' / '10' / '01'
+        resumed.mkdir(parents=True)
+        (resumed / 'rollout-old.jsonl').write_text('\n'.join(token_line(timestamp, total) for timestamp, total in (('2026-10-01T03:00:00Z', 100), ('2026-10-28T03:00:00Z', 120), ('2026-11-04T03:00:00Z', 170), ('2026-11-10T03:00:00Z', 200))), encoding='utf-8')
         skills = root / 'claude' / 'skills'
         (skills / 'a').mkdir(parents=True)
         (skills / 'b').mkdir()
@@ -459,7 +469,8 @@ def self_check():
         args.hook_audit = str(audit)
         args.no_zstd = True
         result = collect(args)
-        assert result['tokens']['codex']['thisWeek'] == 17
+        assert result['tokens']['codex']['thisWeek'] == 17 + 50
+        assert result['tokens']['codex']['prevWeek'] == 20
         assert result['tokens']['codex']['zstSkipped'] == 1
         assert result['inventory']['hooks']['total'] == 3
         assert result['inventory']['plugins']['added'] == 1
