@@ -8,6 +8,7 @@ import {
   ELEMENT_FOODS,
   ELEMENT_NUMBERS,
   ELEMENT_TASTES,
+  FiveElement,
   FORTUNE_SCORE_KEYS,
   FortuneCategory,
   FortuneScoreKey,
@@ -26,8 +27,10 @@ import {
 
 export const ELEMENT_UNIT = 30;
 
-const ELEMENTS = ['나무', '불', '흙', '쇠', '물'] as const;
-export type FiveElement = (typeof ELEMENTS)[number];
+// enum 정의는 saju-tables 에 있다 — 표가 모듈 로드 시점에 값을 써서 여기서 정의하면 순환 import 로 깨진다.
+export { FiveElement };
+// 오행 순번 연산(생극 고리)이 이 선언 순서에 의존한다.
+const ELEMENTS: readonly FiveElement[] = Object.values(FiveElement);
 
 const HEAVENLY_STEMS = '甲乙丙丁戊己庚辛壬癸';
 const EARTHLY_BRANCHES = '子丑寅卯辰巳午未申酉戌亥';
@@ -44,40 +47,58 @@ const PILLAR_MEANINGS: Record<string, string> = {
 };
 const CLASH_DISTANCE = 6;
 
-const TEN_GODS = [
-  ['비견', '겁재'],
-  ['식신', '상관'],
-  ['편재', '정재'],
-  ['편관', '정관'],
-  ['편인', '정인'],
-] as const;
-export type TenGod = (typeof TEN_GODS)[number][number];
+export enum TenGod {
+  비견 = '비견',
+  겁재 = '겁재',
+  식신 = '식신',
+  상관 = '상관',
+  편재 = '편재',
+  정재 = '정재',
+  편관 = '편관',
+  정관 = '정관',
+  편인 = '편인',
+  정인 = '정인',
+}
+// 행 번호가 십성 갈래(0 비겁·1 식상·2 재성·3 관성·4 인성), 열이 음양 같음·다름이다.
+const TEN_GODS: readonly (readonly [TenGod, TenGod])[] = [
+  [TenGod.비견, TenGod.겁재],
+  [TenGod.식신, TenGod.상관],
+  [TenGod.편재, TenGod.정재],
+  [TenGod.편관, TenGod.정관],
+  [TenGod.편인, TenGod.정인],
+];
 
 // 받는 사람에게는 용어 대신 이 뜻이 전해져야 한다(프롬프트가 용어 사용을 막는다).
 const TEN_GOD_MEANINGS: Record<TenGod, string> = {
-  비견: '나와 같은 기운 — 자기 주장, 동료, 경쟁',
-  겁재: '나와 같지만 결이 다른 기운 — 승부욕, 경쟁, 나눠 쓰기',
-  식신: '내가 내보내는 기운 — 재주, 표현, 여유',
-  상관: '내가 거침없이 내보내는 기운 — 말솜씨, 틀 깨기, 예민함',
-  편재: '내가 움직여 얻는 기운 — 기회, 활동, 씀씀이',
-  정재: '내가 차곡차곡 다루는 기운 — 꾸준한 수입, 관리, 성실',
-  편관: '나를 세게 누르는 기운 — 압박, 도전, 결단',
-  정관: '나를 바르게 잡아 주는 기운 — 규칙, 책임, 평판',
-  편인: '나를 돕되 독특한 기운 — 직관, 아이디어, 혼자 생각',
-  정인: '나를 따뜻하게 돕는 기운 — 배움, 도움, 안정',
+  [TenGod.비견]: '나와 같은 기운 — 자기 주장, 동료, 경쟁',
+  [TenGod.겁재]: '나와 같지만 결이 다른 기운 — 승부욕, 경쟁, 나눠 쓰기',
+  [TenGod.식신]: '내가 내보내는 기운 — 재주, 표현, 여유',
+  [TenGod.상관]: '내가 거침없이 내보내는 기운 — 말솜씨, 틀 깨기, 예민함',
+  [TenGod.편재]: '내가 움직여 얻는 기운 — 기회, 활동, 씀씀이',
+  [TenGod.정재]: '내가 차곡차곡 다루는 기운 — 꾸준한 수입, 관리, 성실',
+  [TenGod.편관]: '나를 세게 누르는 기운 — 압박, 도전, 결단',
+  [TenGod.정관]: '나를 바르게 잡아 주는 기운 — 규칙, 책임, 평판',
+  [TenGod.편인]: '나를 돕되 독특한 기운 — 직관, 아이디어, 혼자 생각',
+  [TenGod.정인]: '나를 따뜻하게 돕는 기운 — 배움, 도움, 안정',
 };
 
-const BRANCH_RELATION_MEANINGS = {
-  충: '부딪힘 — 변화, 이동, 마음이 흔들림',
-  합: '맞물림 — 끌림, 협력, 묶임',
-} as const;
-type BranchRelationKind = keyof typeof BRANCH_RELATION_MEANINGS;
+export enum BranchRelationKind {
+  충 = '충',
+  합 = '합',
+}
+const BRANCH_RELATION_MEANINGS: Record<BranchRelationKind, string> = {
+  [BranchRelationKind.충]: '부딪힘 — 변화, 이동, 마음이 흔들림',
+  [BranchRelationKind.합]: '맞물림 — 끌림, 협력, 묶임',
+};
 
-const STEM_RELATION_MEANINGS = {
-  합: '끌림 — 마음이 맞고 손잡기 좋음',
-  충: '부딪힘 — 생각이 엇갈리기 쉬움',
-} as const;
-type StemRelationKind = keyof typeof STEM_RELATION_MEANINGS;
+export enum StemRelationKind {
+  합 = '합',
+  충 = '충',
+}
+const STEM_RELATION_MEANINGS: Record<StemRelationKind, string> = {
+  [StemRelationKind.합]: '끌림 — 마음이 맞고 손잡기 좋음',
+  [StemRelationKind.충]: '부딪힘 — 생각이 엇갈리기 쉬움',
+};
 // 천간 순번 차 5(甲己·乙庚·丙辛·丁壬·戊癸)는 합, 6(甲庚·乙辛·丙壬·丁癸)은 충. 戊·己 는 충이 없다.
 const STEM_HARMONY_DISTANCE = 5;
 const STEM_CLASH_DISTANCE = 6;
@@ -85,19 +106,26 @@ const STEM_CLASH_DISTANCE = 6;
 // 삼합 무리는 지지 순번을 4로 나눈 나머지가 같다 — 0 申子辰 물, 1 巳酉丑 쇠, 2 寅午戌 불, 3 亥卯未 나무.
 const HARMONY_GROUP_COUNT = 4;
 const HARMONY_GROUP_ELEMENTS: readonly FiveElement[] = [
-  '물',
-  '쇠',
-  '불',
-  '나무',
+  FiveElement.물,
+  FiveElement.쇠,
+  FiveElement.불,
+  FiveElement.나무,
 ];
 // 무리마다 하나씩 있는 왕지. 반합은 두 글자 중 하나가 왕지일 때만 인정한다(보수적 기준).
 const PEAK_BRANCHES = '子卯午酉';
-const HARMONY_GROUP_MEANINGS = {
-  삼합: (element: FiveElement): string =>
+export enum HarmonyGroupKind {
+  삼합 = '삼합',
+  반합 = '반합',
+}
+const HARMONY_GROUP_MEANINGS: Record<
+  HarmonyGroupKind,
+  (element: FiveElement) => string
+> = {
+  [HarmonyGroupKind.삼합]: (element) =>
     `오늘 들어온 기운이 타고난 기운과 크게 모여 ${element} 기운을 이룬다 — 힘이 한쪽으로 쏠리는 날`,
-  반합: (element: FiveElement): string =>
+  [HarmonyGroupKind.반합]: (element) =>
     `오늘 들어온 기운이 타고난 기운과 모여 ${element} 기운이 살아난다 — 힘이 한쪽으로 모이기 시작하는 날`,
-} as const;
+};
 
 export interface StemRelation {
   kind: StemRelationKind;
@@ -106,7 +134,7 @@ export interface StemRelation {
 }
 
 export interface HarmonyGroup {
-  kind: keyof typeof HARMONY_GROUP_MEANINGS;
+  kind: HarmonyGroupKind;
   element: FiveElement;
   natalLabels: string[];
 }
@@ -214,10 +242,10 @@ const BASE_SCORE = 3;
 const MINIMUM_SCORE = 2;
 const MAXIMUM_SCORE = 5;
 const SCORE_CATEGORIES: readonly FortuneCategory[] = [
-  '일·공부',
-  '사람 관계',
-  '돈',
-  '컨디션',
+  FortuneScoreKey.일공부,
+  FortuneScoreKey.사람관계,
+  FortuneScoreKey.돈,
+  FortuneScoreKey.컨디션,
 ];
 // AI 에는 별 숫자 대신 이 결만 준다 — 숫자를 주면 본문에 옮겨 적는다.
 const SCORE_TONES: Record<number, string> = {
@@ -235,10 +263,10 @@ export const scoreFortune = (
   input: ScoreInput,
 ): Record<FortuneScoreKey, number> => {
   const raw: Record<FortuneCategory, number> = {
-    '일·공부': BASE_SCORE,
-    '사람 관계': BASE_SCORE,
-    돈: BASE_SCORE,
-    컨디션: BASE_SCORE,
+    [FortuneScoreKey.일공부]: BASE_SCORE,
+    [FortuneScoreKey.사람관계]: BASE_SCORE,
+    [FortuneScoreKey.돈]: BASE_SCORE,
+    [FortuneScoreKey.컨디션]: BASE_SCORE,
   };
   const apply = (
     adjustment: Partial<Record<FortuneCategory, number>>,
@@ -268,11 +296,11 @@ export const scoreFortune = (
   );
   const overall = average + SCORE_ADJUSTMENTS.overallStage[input.strength];
   const scores: Record<FortuneScoreKey, number> = {
-    총운: clampScore(overall),
-    '일·공부': clampScore(raw['일·공부']),
-    '사람 관계': clampScore(raw['사람 관계']),
-    돈: clampScore(raw.돈),
-    컨디션: clampScore(raw.컨디션),
+    [FortuneScoreKey.총운]: clampScore(overall),
+    [FortuneScoreKey.일공부]: clampScore(raw[FortuneScoreKey.일공부]),
+    [FortuneScoreKey.사람관계]: clampScore(raw[FortuneScoreKey.사람관계]),
+    [FortuneScoreKey.돈]: clampScore(raw[FortuneScoreKey.돈]),
+    [FortuneScoreKey.컨디션]: clampScore(raw[FortuneScoreKey.컨디션]),
   };
   return scores;
 };
@@ -351,10 +379,10 @@ export const stemRelationOf = ({
     HEAVENLY_STEMS.indexOf(todayStem) - HEAVENLY_STEMS.indexOf(natalStem),
   );
   if (distance === STEM_HARMONY_DISTANCE) {
-    return '합';
+    return StemRelationKind.합;
   }
   if (distance === STEM_CLASH_DISTANCE) {
-    return '충';
+    return StemRelationKind.충;
   }
   return null;
 };
@@ -387,7 +415,7 @@ const harmonyGroupOf = ({
   const completesGroup = !natalLetters.has(today) && otherLetters.size === 2;
   if (completesGroup) {
     const natalLabels = others.map(({ label }) => label);
-    return { kind: '삼합', element, natalLabels };
+    return { kind: HarmonyGroupKind.삼합, element, natalLabels };
   }
   const isPeak = (branch: number): boolean =>
     PEAK_BRANCHES.includes(EARTHLY_BRANCHES[branch]);
@@ -398,14 +426,14 @@ const harmonyGroupOf = ({
     return undefined;
   }
   const natalLabels = partners.map(({ label }) => label);
-  return { kind: '반합', element, natalLabels };
+  return { kind: HarmonyGroupKind.반합, element, natalLabels };
 };
 
 const strengthOf = (stage: TwelveStage): FortuneStrength => {
   if (STRONG_STAGES.has(stage)) {
-    return '강';
+    return FortuneStrength.강;
   }
-  return WEAK_STAGES.has(stage) ? '약' : '보통';
+  return WEAK_STAGES.has(stage) ? FortuneStrength.약 : FortuneStrength.보통;
 };
 
 const branchRelationOf = ({
@@ -418,11 +446,11 @@ const branchRelationOf = ({
   const today = EARTHLY_BRANCHES.indexOf(todayBranch);
   const natal = EARTHLY_BRANCHES.indexOf(natalBranch);
   if (Math.abs(today - natal) === CLASH_DISTANCE) {
-    return '충';
+    return BranchRelationKind.충;
   }
   // 육합(子丑·寅亥·卯戌·辰酉·巳申·午未)은 두 순번의 합이 12로 나눠 1 남는 짝이다.
   if ((today + natal) % EARTHLY_BRANCHES.length === 1) {
-    return '합';
+    return BranchRelationKind.합;
   }
   return null;
 };
@@ -443,11 +471,11 @@ export const analyzeSajuDay = ({
   const dayMaster = stemInfoOf(natalPillars[2][0]);
 
   const elementUnits: Record<FiveElement, number> = {
-    나무: 0,
-    불: 0,
-    흙: 0,
-    쇠: 0,
-    물: 0,
+    [FiveElement.나무]: 0,
+    [FiveElement.불]: 0,
+    [FiveElement.흙]: 0,
+    [FiveElement.쇠]: 0,
+    [FiveElement.물]: 0,
   };
   for (const pillar of natalPillars) {
     elementUnits[stemInfoOf(pillar[0]).element] += ELEMENT_UNIT;
@@ -514,7 +542,7 @@ export const analyzeSajuDay = ({
   });
   const hasBranchHarmony =
     harmonyGroup !== undefined ||
-    branchRelations.some(({ kind }) => kind === '합');
+    branchRelations.some(({ kind }) => kind === BranchRelationKind.합);
   const strength = strengthOf(stage);
   const isVoidDay = voidBranchesOf(natalPillars[2]).includes(todayPillar[1]);
 

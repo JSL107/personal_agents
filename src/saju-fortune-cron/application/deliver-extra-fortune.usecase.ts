@@ -24,6 +24,7 @@ import {
 import {
   composeExtraBody,
   EXTRA_SECTION_SEPARATOR,
+  FortuneViolation,
   splitExtraSections,
 } from '../domain/saju-fortune-render';
 import { renderSpecialDayLine, specialDaysOf } from '../domain/special-day';
@@ -64,7 +65,7 @@ const inspectExtra = ({
     return inspection;
   }
   const mismatched: FortuneInspection = {
-    kinds: [...kinds, 'sections'],
+    kinds: [...kinds, FortuneViolation.구간수],
     unremovable: unremovable + 1,
   };
   return mismatched;

@@ -1,3 +1,4 @@
+import { FiveElement } from './saju-analysis';
 import { HANJA_PATTERN } from './saju-fortune-chat';
 import { FORBIDDEN_TERMS_PATTERN } from './saju-fortune-render';
 import {
@@ -12,7 +13,7 @@ const analysisWith = ({
   people = 3,
   money = 3,
   condition = 3,
-  element = '불',
+  element = FiveElement.불,
 }: {
   work?: number;
   people?: number;
@@ -131,7 +132,7 @@ describe('pickMission', () => {
 
   it('같은 입력이면 같은 미션', () => {
     const input = {
-      analysis: analysisWith({ work: 2, money: 2, element: '물' }),
+      analysis: analysisWith({ work: 2, money: 2, element: FiveElement.물 }),
       recent: [],
       fortuneDate: '2026-11-10',
     };

@@ -1,6 +1,5 @@
 // 사주 해석에 쓰는 고정 표. 학파가 갈리는 곳은 국내 주류 쪽을 골랐다(설계: 2026-11-09 사주 1단계 spec).
 // 순번 규약: 천간 甲=0…癸=9, 지지 子=0…亥=11, 오행 나무·불·흙·쇠·물=0…4.
-import type { FiveElement } from './saju-analysis';
 
 // 지지 속 숨은 천간과 월률분야 사령일수(여기→중기→정기, 합 30). 정기가 지지의 본기다.
 export const HIDDEN_STEM_DAYS: Record<
@@ -66,21 +65,30 @@ export const HIDDEN_STEM_DAYS: Record<
   ],
 };
 
-export const TWELVE_STAGES = [
-  '장생',
-  '목욕',
-  '관대',
-  '건록',
-  '제왕',
-  '쇠',
-  '병',
-  '사',
-  '묘',
-  '절',
-  '태',
-  '양',
-] as const;
-export type TwelveStage = (typeof TWELVE_STAGES)[number];
+export enum FiveElement {
+  나무 = '나무',
+  불 = '불',
+  흙 = '흙',
+  쇠 = '쇠',
+  물 = '물',
+}
+
+export enum TwelveStage {
+  장생 = '장생',
+  목욕 = '목욕',
+  관대 = '관대',
+  건록 = '건록',
+  제왕 = '제왕',
+  쇠 = '쇠',
+  병 = '병',
+  사 = '사',
+  묘 = '묘',
+  절 = '절',
+  태 = '태',
+  양 = '양',
+}
+// 순번 연산(장생부터 순행)이 이 선언 순서에 의존한다.
+export const TWELVE_STAGES: readonly TwelveStage[] = Object.values(TwelveStage);
 
 // 일간마다 장생을 맞는 지지. 음간은 역행, 戊는 丙·己는 丁을 따른다(화토동법).
 export const TWELVE_STAGE_START: Record<string, string> = {
@@ -98,45 +106,55 @@ export const TWELVE_STAGE_START: Record<string, string> = {
 
 // 받는 사람에게는 단계 이름 대신 이 뜻이 전해진다(사실 문장은 용어를 싣지 않는다).
 export const TWELVE_STAGE_MEANINGS: Record<TwelveStage, string> = {
-  장생: '새싹이 돋듯 기운이 막 살아나는 때',
-  목욕: '기운이 들뜨고 마음이 여기저기 끌리는 때',
-  관대: '자신감이 붙어 앞으로 나서기 좋은 때',
-  건록: '제 힘으로 일을 꾸려 가기 좋은 때',
-  제왕: '기세가 가장 차오른 때',
-  쇠: '기세가 한풀 꺾여 차분해지는 때',
-  병: '기운이 처져 몸을 아껴야 하는 때',
-  사: '움직임이 멈추고 생각이 깊어지는 때',
-  묘: '기운을 안으로 갈무리하는 때',
-  절: '힘을 빼고 쉬어 가는 때',
-  태: '새 계획이 마음속에 싹트는 때',
-  양: '다음 걸음을 위해 힘을 기르는 때',
+  [TwelveStage.장생]: '새싹이 돋듯 기운이 막 살아나는 때',
+  [TwelveStage.목욕]: '기운이 들뜨고 마음이 여기저기 끌리는 때',
+  [TwelveStage.관대]: '자신감이 붙어 앞으로 나서기 좋은 때',
+  [TwelveStage.건록]: '제 힘으로 일을 꾸려 가기 좋은 때',
+  [TwelveStage.제왕]: '기세가 가장 차오른 때',
+  [TwelveStage.쇠]: '기세가 한풀 꺾여 차분해지는 때',
+  [TwelveStage.병]: '기운이 처져 몸을 아껴야 하는 때',
+  [TwelveStage.사]: '움직임이 멈추고 생각이 깊어지는 때',
+  [TwelveStage.묘]: '기운을 안으로 갈무리하는 때',
+  [TwelveStage.절]: '힘을 빼고 쉬어 가는 때',
+  [TwelveStage.태]: '새 계획이 마음속에 싹트는 때',
+  [TwelveStage.양]: '다음 걸음을 위해 힘을 기르는 때',
 };
 
 export const STRONG_STAGES: ReadonlySet<TwelveStage> = new Set([
-  '장생',
-  '관대',
-  '건록',
-  '제왕',
+  TwelveStage.장생,
+  TwelveStage.관대,
+  TwelveStage.건록,
+  TwelveStage.제왕,
 ]);
 export const WEAK_STAGES: ReadonlySet<TwelveStage> = new Set([
-  '병',
-  '사',
-  '묘',
-  '절',
+  TwelveStage.병,
+  TwelveStage.사,
+  TwelveStage.묘,
+  TwelveStage.절,
 ]);
 
-export type FortuneCategory = '일·공부' | '사람 관계' | '돈' | '컨디션';
-export type FortuneScoreKey = '총운' | FortuneCategory;
+export enum FortuneScoreKey {
+  총운 = '총운',
+  일공부 = '일·공부',
+  사람관계 = '사람 관계',
+  돈 = '돈',
+  컨디션 = '컨디션',
+}
+export type FortuneCategory = Exclude<FortuneScoreKey, FortuneScoreKey.총운>;
 // 별점 줄과 AI 에 주는 "별점 결" 사실이 같은 순서로 항목을 늘어놓는다.
 export const FORTUNE_SCORE_KEYS: readonly FortuneScoreKey[] = [
-  '총운',
-  '일·공부',
-  '사람 관계',
-  '돈',
-  '컨디션',
+  FortuneScoreKey.총운,
+  FortuneScoreKey.일공부,
+  FortuneScoreKey.사람관계,
+  FortuneScoreKey.돈,
+  FortuneScoreKey.컨디션,
 ];
 // 12운성으로 본 오늘의 기세.
-export type FortuneStrength = '강' | '보통' | '약';
+export enum FortuneStrength {
+  강 = '강',
+  보통 = '보통',
+  약 = '약',
+}
 type ScoreAdjustment = Partial<Record<FortuneCategory, number>>;
 
 // 별점 가감표. 운영하며 값을 고칠 곳은 여기 하나다. 명리에 정해진 별점 공식은 없어 판단이 들어간 표다.
@@ -150,16 +168,24 @@ export const SCORE_ADJUSTMENTS: {
   overallStage: Record<FortuneStrength, number>;
 } = {
   tenGodGroups: [
-    { 돈: -1, 컨디션: 1 },
-    { '사람 관계': 1, 컨디션: -1 },
-    { '일·공부': -1, 돈: 1 },
-    { '일·공부': 1, '사람 관계': -1 },
-    { '일·공부': 1, 컨디션: 1 },
+    { [FortuneScoreKey.돈]: -1, [FortuneScoreKey.컨디션]: 1 },
+    { [FortuneScoreKey.사람관계]: 1, [FortuneScoreKey.컨디션]: -1 },
+    { [FortuneScoreKey.일공부]: -1, [FortuneScoreKey.돈]: 1 },
+    { [FortuneScoreKey.일공부]: 1, [FortuneScoreKey.사람관계]: -1 },
+    { [FortuneScoreKey.일공부]: 1, [FortuneScoreKey.컨디션]: 1 },
   ],
-  stage: { 강: { 컨디션: 1 }, 보통: {}, 약: { 컨디션: -1 } },
-  branchHarmony: { '사람 관계': 1 },
-  voidDay: { '일·공부': -1 },
-  overallStage: { 강: 1, 보통: 0, 약: -1 },
+  stage: {
+    [FortuneStrength.강]: { [FortuneScoreKey.컨디션]: 1 },
+    [FortuneStrength.보통]: {},
+    [FortuneStrength.약]: { [FortuneScoreKey.컨디션]: -1 },
+  },
+  branchHarmony: { [FortuneScoreKey.사람관계]: 1 },
+  voidDay: { [FortuneScoreKey.일공부]: -1 },
+  overallStage: {
+    [FortuneStrength.강]: 1,
+    [FortuneStrength.보통]: 0,
+    [FortuneStrength.약]: -1,
+  },
 };
 
 // 오늘 천간 갈래 → 오늘 행운 기운 갈래(하루 단위 억부·통관). 관성은 행운으로 뽑지 않는다.
@@ -174,11 +200,11 @@ export const LUCKY_REASONS = [
 
 // 오행 대응표 — 색은 기존 표현(물=남색, 전통 정색은 흑), 숫자 하도, 맛 오미, 방향 오방.
 export const ELEMENT_COLORS: Record<FiveElement, string> = {
-  나무: '초록',
-  불: '빨강',
-  흙: '노랑',
-  쇠: '흰색',
-  물: '남색',
+  [FiveElement.나무]: '초록',
+  [FiveElement.불]: '빨강',
+  [FiveElement.흙]: '노랑',
+  [FiveElement.쇠]: '흰색',
+  [FiveElement.물]: '남색',
 };
 export const ELEMENT_NUMBERS = [
   [3, 8],
