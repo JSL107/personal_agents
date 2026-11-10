@@ -1,5 +1,6 @@
 import {
   analyzeSajuDay,
+  FiveElement,
   formatSajuFacts,
   scoreFortune,
   stemRelationOf,
@@ -7,6 +8,7 @@ import {
   twelveStageOf,
   voidBranchesOf,
 } from './saju-analysis';
+import { FortuneStrength } from './saju-tables';
 
 // 만세력 화면의 십성 칸과 대조한 표본 두 개(년·월·일·시주).
 const SAMPLE_METAL = ['丙子', '甲午', '庚辰', '庚辰'];
@@ -114,21 +116,36 @@ describe('analyzeSajuDay', () => {
 
 describe('tenGodOf', () => {
   it('오행 순환 다섯 갈래와 음양을 모두 가른다', () => {
-    const wood = { element: '나무' as const, isYang: true };
+    const wood = { element: FiveElement.나무, isYang: true };
     expect(
-      tenGodOf({ dayMaster: wood, other: { element: '나무', isYang: false } }),
+      tenGodOf({
+        dayMaster: wood,
+        other: { element: FiveElement.나무, isYang: false },
+      }),
     ).toBe('겁재');
     expect(
-      tenGodOf({ dayMaster: wood, other: { element: '불', isYang: true } }),
+      tenGodOf({
+        dayMaster: wood,
+        other: { element: FiveElement.불, isYang: true },
+      }),
     ).toBe('식신');
     expect(
-      tenGodOf({ dayMaster: wood, other: { element: '흙', isYang: false } }),
+      tenGodOf({
+        dayMaster: wood,
+        other: { element: FiveElement.흙, isYang: false },
+      }),
     ).toBe('정재');
     expect(
-      tenGodOf({ dayMaster: wood, other: { element: '쇠', isYang: true } }),
+      tenGodOf({
+        dayMaster: wood,
+        other: { element: FiveElement.쇠, isYang: true },
+      }),
     ).toBe('편관');
     expect(
-      tenGodOf({ dayMaster: wood, other: { element: '물', isYang: false } }),
+      tenGodOf({
+        dayMaster: wood,
+        other: { element: FiveElement.물, isYang: false },
+      }),
     ).toBe('정인');
   });
 });
@@ -391,7 +408,7 @@ describe('scoreFortune', () => {
   const base = {
     todayStemGroup: 2,
     todayBranchGroup: 2,
-    strength: '보통' as const,
+    strength: FortuneStrength.보통 as const,
     hasBranchHarmony: false,
     isVoidDay: false,
   };
@@ -411,8 +428,12 @@ describe('scoreFortune', () => {
     const mixed = { ...base, todayBranchGroup: 0 };
     expect(scoreFortune(mixed).총운).toBe(3);
     // 기세 강: 컨디션 5 → 합 13 → 3, 기세 +1 → 4.
-    expect(scoreFortune({ ...mixed, strength: '강' }).총운).toBe(4);
-    expect(scoreFortune({ ...mixed, strength: '강' }).컨디션).toBe(5);
+    expect(scoreFortune({ ...mixed, strength: FortuneStrength.강 }).총운).toBe(
+      4,
+    );
+    expect(
+      scoreFortune({ ...mixed, strength: FortuneStrength.강 }).컨디션,
+    ).toBe(5);
   });
 
   it('공망은 일·공부를 깎되 지지가 맞물리면 깎지 않는다(해공)', () => {
@@ -429,7 +450,7 @@ describe('scoreFortune', () => {
   it('모든 점수는 2~5 다', () => {
     for (let stem = 0; stem < 5; stem++) {
       for (let branch = 0; branch < 5; branch++) {
-        for (const strength of ['강', '보통', '약'] as const) {
+        for (const strength of Object.values(FortuneStrength)) {
           const scores = scoreFortune({
             ...base,
             todayStemGroup: stem,

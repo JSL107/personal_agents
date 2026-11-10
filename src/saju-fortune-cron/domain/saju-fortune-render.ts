@@ -15,19 +15,26 @@ const LUCKY_PATTERN = /행운의 숫자|행운 숫자|행운 아이템/;
 // AI 가 쓴 미션 줄 — 코드가 그린 미션 줄과 겹치지 않게 지우기만 한다. 재생성 사유는 아니다(지울 수 있고, 넣으면 LLM 호출만 는다).
 const MISSION_PATTERN = /미션|🎯/;
 
-export type FortuneViolation = 'hanja' | 'term' | 'stars' | 'lucky';
+export enum FortuneViolation {
+  HANJA = 'hanja',
+  TERM = 'term',
+  STARS = 'stars',
+  LUCKY = 'lucky',
+  // 추가 운세 메시지의 구획 수 불일치 — 본문 검사 규칙이 아니라 deliver-extra-fortune 가 더한다.
+  SECTIONS = 'sections',
+}
 
 const VIOLATION_PATTERNS: ReadonlyArray<readonly [FortuneViolation, RegExp]> = [
-  ['hanja', HANJA_PATTERN],
-  ['term', FORBIDDEN_TERMS_PATTERN],
-  ['stars', STAR_PATTERN],
-  ['lucky', LUCKY_PATTERN],
+  [FortuneViolation.HANJA, HANJA_PATTERN],
+  [FortuneViolation.TERM, FORBIDDEN_TERMS_PATTERN],
+  [FortuneViolation.STARS, STAR_PATTERN],
+  [FortuneViolation.LUCKY, LUCKY_PATTERN],
 ];
 
 // 별 문자·행운 숫자 줄은 composeFortuneBody 가 지우므로 응답을 고를 때 덜 나쁘다.
 const REMOVABLE_VIOLATIONS: ReadonlySet<FortuneViolation> = new Set([
-  'stars',
-  'lucky',
+  FortuneViolation.STARS,
+  FortuneViolation.LUCKY,
 ]);
 
 export const countUnremovableViolations = (
@@ -200,11 +207,14 @@ const findScoreItems = (lines: string[]): ScoreItems | null => {
       ({ line, index }) => !itemIndexes.has(index) && line.trim().length > 0,
     );
   const texts: Record<FortuneScoreKey, string> = {
-    총운: textOf({ found, key: '총운' }),
-    '일·공부': textOf({ found, key: '일·공부' }),
-    '사람 관계': textOf({ found, key: '사람 관계' }),
-    돈: textOf({ found, key: '돈' }),
-    컨디션: textOf({ found, key: '컨디션' }),
+    [FortuneScoreKey.총운]: textOf({ found, key: FortuneScoreKey.총운 }),
+    [FortuneScoreKey.일공부]: textOf({ found, key: FortuneScoreKey.일공부 }),
+    [FortuneScoreKey.사람관계]: textOf({
+      found,
+      key: FortuneScoreKey.사람관계,
+    }),
+    [FortuneScoreKey.돈]: textOf({ found, key: FortuneScoreKey.돈 }),
+    [FortuneScoreKey.컨디션]: textOf({ found, key: FortuneScoreKey.컨디션 }),
   };
   const items: ScoreItems = {
     texts,

@@ -47,11 +47,20 @@ export const pickWeeklyHighlights = (
   days: DailyScores[],
 ): Record<FortuneScoreKey, WeeklyHighlight> => {
   const highlights: Record<FortuneScoreKey, WeeklyHighlight> = {
-    총운: highlightOf({ days, key: '총운' }),
-    '일·공부': highlightOf({ days, key: '일·공부' }),
-    '사람 관계': highlightOf({ days, key: '사람 관계' }),
-    돈: highlightOf({ days, key: '돈' }),
-    컨디션: highlightOf({ days, key: '컨디션' }),
+    [FortuneScoreKey.총운]: highlightOf({ days, key: FortuneScoreKey.총운 }),
+    [FortuneScoreKey.일공부]: highlightOf({
+      days,
+      key: FortuneScoreKey.일공부,
+    }),
+    [FortuneScoreKey.사람관계]: highlightOf({
+      days,
+      key: FortuneScoreKey.사람관계,
+    }),
+    [FortuneScoreKey.돈]: highlightOf({ days, key: FortuneScoreKey.돈 }),
+    [FortuneScoreKey.컨디션]: highlightOf({
+      days,
+      key: FortuneScoreKey.컨디션,
+    }),
   };
   return highlights;
 };
@@ -77,7 +86,8 @@ const highlightOf = ({
 // '월 ★★★☆☆ · 화 ★★★★★ · …' — 요일별 총운. 코드가 그린다.
 export const renderWeeklyStarLine = (days: DailyScores[]): string => {
   const parts = days.map(
-    ({ weekday, scores }) => `${weekday} ${starsOf(scores['총운'])}`,
+    ({ weekday, scores }) =>
+      `${weekday} ${starsOf(scores[FortuneScoreKey.총운])}`,
   );
   const starLine = parts.join(' · ');
   return starLine;

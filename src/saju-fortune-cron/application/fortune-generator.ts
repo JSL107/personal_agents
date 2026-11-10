@@ -5,11 +5,12 @@ import { AgentType } from '../../model-router/domain/model-router.type';
 import {
   countUnremovableViolations,
   findFortuneViolations,
+  FortuneViolation,
 } from '../domain/saju-fortune-render';
 
 // 응답 하나의 위반 — 종류 목록과 코드가 못 지우는 위반 수.
 export interface FortuneInspection {
-  kinds: string[];
+  kinds: FortuneViolation[];
   unremovable: number;
 }
 
