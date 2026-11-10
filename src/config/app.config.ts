@@ -305,6 +305,8 @@ export class EnvironmentVariables {
   //   미설정 시 AUTOPILOT_TARGET. 주식·모의투자 알림만 전용 채널로 뺄 때 쓴다.
   // - AUTOPILOT_CAREER_TARGET: 커리어 라인(line: 'career' — job-feed, job-feed-gap) 전용
   //   발송 대상. 미설정 시 AUTOPILOT_TARGET. 채용공고 카드만 전용 채널로 뺄 때 쓴다.
+  // - AUTOPILOT_HARNESS_TARGET: 하네스 라인(line: 'harness' — ai-tool-weekly) 전용 발송 채널.
+  //   미설정 시 그 라인은 등록하지 않는다(공통 TARGET 으로 떨어지지 않음).
   // - AUTOPILOT_REVIEW_TARGET: 리뷰 라인(line: 'review' — pr-review-sweep) 전용 발송 대상.
   //   미설정 시 AUTOPILOT_TARGET. PR 리뷰 스윕 요약만 전용 채널로 뺄 때 쓴다.
   // 스케줄 override (각 항목): AUTOPILOT_<ID>_SCHEDULE / _TIMEZONE.
@@ -336,6 +338,17 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   AUTOPILOT_REVIEW_TARGET?: string;
+
+  @IsOptional()
+  @ValidateIf(
+    (_, value: unknown) => typeof value === 'string' && value.trim() !== '',
+  )
+  @IsString()
+  @Matches(/^[CG][A-Z0-9]+$/, {
+    message:
+      'AUTOPILOT_HARNESS_TARGET 는 C 또는 G 로 시작하는 Slack 채널 ID 하나여야 합니다.',
+  })
+  AUTOPILOT_HARNESS_TARGET?: string;
 
   @IsOptional()
   @ValidateIf((_, value: unknown) => value !== '')

@@ -48,6 +48,7 @@ const AUTOPILOT_TASK_DISPLAY_NAME: Partial<Record<string, string>> = {
   'study-applicability': '공부 적용 판정',
   'study-deepdive': '공부 딥다이브',
   'weekly-summary': '주간 요약',
+  'ai-tool-weekly': 'AI 도구 주간 점검',
   'impact-report': '임팩트 리포트',
   'cuj-check': 'CUJ 점검',
   'ai-cli-env-apply': 'AI 도구 설정 적용',

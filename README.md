@@ -311,6 +311,8 @@ pnpm dev              # watch 모드 기동
 
 > 주식·모의투자 알림은 플레이북에서 `line: 'invest'` 로 묶여 있어 `AUTOPILOT_INVEST_TARGET` 하나로 전용 채널에 보낼 수 있다. 미설정 시 `AUTOPILOT_TARGET`(없으면 owner DM)을 그대로 쓴다. 채널로 보내려면 봇이 그 채널에 초대돼 있어야 한다.
 >
+> AI 도구 주간 점검(`ai-tool-weekly`)은 `line: 'harness'` 이며 `AUTOPILOT_HARNESS_TARGET` 을 설정한 경우에만 등록한다(미설정 시 공통 대상으로 떨어지지 않는다).
+>
 > 채용공고 수집(`job-feed`)과 갭 분석(`job-feed-gap`)은 같은 방식으로 `line: 'career'` 이며 `AUTOPILOT_CAREER_TARGET` 을 쓴다. 다만 둘 다 콘솔 경로라 Slack 에는 나가지 않고, 새 공고는 아침 한 통(공통 대상)에 실린다. PR 리뷰 스윕 요약(`pr-review-sweep`)은 `line: 'review'` 로 `AUTOPILOT_REVIEW_TARGET` 을 쓴다.
 
 </details>
@@ -387,6 +389,7 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 | `SUBCONSCIOUS_DROP_SAMPLE_RATE` · `_DAILY_CAP` | ⭕ | legacy 가 버린 변경을 사람 판정 카드로 올릴 비율·하루 상한. 기본 `0.1`·`3`, `0` 이면 끔 |
 | `AUTOPILOT_INVEST_TARGET` | ⭕ | 투자 라인(주식·모의투자 10항목) 전용 발송 대상. 미설정 시 `AUTOPILOT_TARGET` |
 | `AUTOPILOT_CAREER_TARGET` | ⭕ | 커리어 라인(채용공고 수집·갭 분석) 전용 발송 대상. 미설정 시 `AUTOPILOT_TARGET` |
+| `AUTOPILOT_HARNESS_TARGET` | ⭕ | AI 도구 주간 점검 전용 채널. 미설정 시 등록하지 않음 |
 | `AUTOPILOT_REVIEW_TARGET` | ⭕ | 리뷰 라인(PR 리뷰 스윕 요약) 전용 발송 대상. 미설정 시 `AUTOPILOT_TARGET` |
 | `SAJU_FORTUNE_RECIPIENTS` · `SAJU_FORTUNE_CRON` | ❌ | 매일 사주 운세 DM(사람마다 발송 시각 지정 가능). 받는 사람은 `U123\|이름\|丙寅 辛卯 壬戌 庚子\|07:30\|05-17` 을 `;` 로 잇는다(끝의 양력 생일 칸은 선택 — 생일·설날·새해·8절기엔 특집, 월요일엔 주간 운세가 일일 운세 뒤 한 통으로 더 간다. 스크립트에 `--birthday` 를 주면 채워 준다. 기둥은 `pnpm saju:pillars --date 1990-05-17 --time 14:30 [--lunar] --slack U123 --name 이름` 로 생년월일시에서 뽑는다(인자 없이 실행하면 옵션 안내). 시각 모르면 3개 · 끝의 발송 시각(KST)을 생략하면 `SAJU_FORTUNE_CRON`, 기본 `0 8 * * *`). 실패 알림은 `CRON_FAILURE_ALERT_OWNER_SLACK_USER_ID` 로 간다 |
 | `IDEA_CHANNEL_ID` | ⭕ | 평일 09:00 KST 아이디어 판정 대상 Slack 채널 ID(`C...`/`G...`). 미설정 시 해당 task 건너뜀 |

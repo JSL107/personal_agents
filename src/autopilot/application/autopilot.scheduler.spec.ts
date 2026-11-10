@@ -126,6 +126,61 @@ describe('AutopilotScheduler', () => {
     expect(addCalls).toContain('job-feed-gap');
   });
 
+  it.each([undefined, '   '])(
+    '하네스 채널이 비면 공통 대상으로 등록하지 않는다: %s',
+    async (target) => {
+      const queue = makeQueue();
+      const config = {
+        get: jest.fn((key: string) => {
+          if (key === 'AUTOPILOT_OWNER_SLACK_USER_ID') {
+            return 'U1';
+          }
+          if (key === 'AUTOPILOT_HARNESS_TARGET') {
+            return target;
+          }
+          return undefined;
+        }),
+      };
+      const scheduler = new AutopilotScheduler(queue as never, config as never);
+      const warn = jest.spyOn(
+        (scheduler as never as { logger: { warn: (message: string) => void } })
+          .logger,
+        'warn',
+      );
+      await scheduler.onApplicationBootstrap();
+      expect(
+        queue.add.mock.calls.some(
+          (entry: unknown[]) => entry[0] === 'ai-tool-weekly',
+        ),
+      ).toBe(false);
+      expect(queue.add).toHaveBeenCalledTimes(46);
+      expect(warn).not.toHaveBeenCalled();
+    },
+  );
+
+  it('하네스 채널 설정 시 주간 그룹을 전용 대상으로 등록한다', async () => {
+    const queue = makeQueue();
+    const config = {
+      get: jest.fn((key: string) => {
+        if (key === 'AUTOPILOT_OWNER_SLACK_USER_ID') {
+          return 'U1';
+        }
+        if (key === 'AUTOPILOT_HARNESS_TARGET') {
+          return 'C0HARNESS';
+        }
+        return undefined;
+      }),
+    };
+    const scheduler = new AutopilotScheduler(queue as never, config as never);
+    await scheduler.onApplicationBootstrap();
+    const call = queue.add.mock.calls.find(
+      (entry: unknown[]) => entry[0] === 'ai-tool-weekly',
+    );
+    expect(call?.[1]).toEqual({ ownerSlackUserId: 'U1', target: 'C0HARNESS' });
+    expect(call?.[2]).toMatchObject({ attempts: 4 });
+    expect(queue.add).toHaveBeenCalledTimes(47);
+  });
+
   it('owner-dm 그룹은 AUTOPILOT_TARGET 을 무시하고 owner ID로 보낸다', async () => {
     const queue = makeQueue();
     const config = {

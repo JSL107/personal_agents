@@ -3,6 +3,8 @@ import {
   DEFAULT_AI_CLI_ENV_APPLY_TIMEZONE,
   DEFAULT_AI_CLI_ENV_SNAPSHOT_CRON,
   DEFAULT_AI_CLI_ENV_SNAPSHOT_TIMEZONE,
+  DEFAULT_AI_TOOL_WEEKLY_CRON,
+  DEFAULT_AI_TOOL_WEEKLY_TIMEZONE,
   DEFAULT_BLOG_REVISION_REPORT_CRON,
   DEFAULT_BLOG_REVISION_REPORT_TIMEZONE,
   DEFAULT_CUJ_CHECK_CRON,
@@ -228,6 +230,18 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       timezone: DEFAULT_WEEKLY_SUMMARY_TIMEZONE,
     },
     riskTier: 'T0_AUTO',
+  },
+  // AI 도구 사용 지표를 전용 채널에 주간 보고한다.
+  {
+    id: 'ai-tool-weekly',
+    taskId: 'ai-tool-weekly',
+    trigger: {
+      kind: 'CRON',
+      schedule: DEFAULT_AI_TOOL_WEEKLY_CRON,
+      timezone: DEFAULT_AI_TOOL_WEEKLY_TIMEZONE,
+    },
+    riskTier: 'T0_AUTO',
+    line: 'harness',
   },
   {
     id: 'impact-report',
