@@ -1,7 +1,9 @@
 import {
   buildFortuneFollowUpPrompt,
+  formatExtraFortuneHeader,
   formatFortuneHeader,
   fortuneDateOf,
+  fortuneMessageOf,
 } from './saju-fortune-chat';
 
 const RECIPIENT = {
@@ -44,6 +46,64 @@ describe('fortuneDateOf', () => {
   });
 });
 
+describe('fortuneMessageOf', () => {
+  it.each([
+    [formatFortuneHeader('2026-11-16', '甲午'), 'daily'],
+    [
+      formatExtraFortuneHeader({
+        kind: 'weekly',
+        todayKst: '2026-11-16',
+        todayPillar: '甲午',
+      }),
+      'weekly',
+    ],
+    [
+      formatExtraFortuneHeader({
+        kind: 'special',
+        todayKst: '2026-11-16',
+        todayPillar: '甲午',
+      }),
+      'special',
+    ],
+  ])('발송 머리말 %s → %s', (header, kind) => {
+    expect(fortuneMessageOf(`${header}\n\n본문`)).toEqual({
+      date: '2026-11-16',
+      kind,
+    });
+  });
+
+  it('머리말 모양은 일일과 같다 — 🔮 · 제목 · 날짜 · 일진', () => {
+    expect(
+      formatExtraFortuneHeader({
+        kind: 'weekly',
+        todayKst: '2026-11-16',
+        todayPillar: '甲午',
+      }),
+    ).toBe('🔮 *이번 주 운세 — 2026-11-16 (갑오일)*');
+  });
+
+  it('단축 코드·굵게 표식 없는 변형도 읽는다', () => {
+    expect(
+      fortuneMessageOf(':crystal_ball: 특별한 날 — 2027-02-04 (경진일)\n본문'),
+    ).toEqual({ date: '2027-02-04', kind: 'special' });
+  });
+
+  it('둘째 줄의 머리말·달력에 없는 날짜는 운세로 보지 않는다', () => {
+    expect(
+      fortuneMessageOf('안녕\n🔮 *이번 주 운세 — 2026-11-16 (갑오일)*'),
+    ).toBeUndefined();
+    expect(
+      fortuneMessageOf('🔮 *특별한 날 — 2026-02-30 (갑자일)*'),
+    ).toBeUndefined();
+  });
+
+  it('fortuneDateOf 는 세 머리말 모두에서 날짜를 준다', () => {
+    expect(fortuneDateOf('🔮 *이번 주 운세 — 2026-11-16 (갑오일)*')).toBe(
+      '2026-11-16',
+    );
+  });
+});
+
 describe('buildFortuneFollowUpPrompt', () => {
   const base = {
     recipient: RECIPIENT,
@@ -53,6 +113,23 @@ describe('buildFortuneFollowUpPrompt', () => {
     originalFortune: '🔮 오늘의 운세\n총운: 좋아',
     question: '저녁엔 뭐 하면 좋아?',
   };
+
+  it('특별한 날·이번 주 사실을 계산된 사실 블록에 함께 싣고 원문이 우선이라고 한다', () => {
+    const prompt = buildFortuneFollowUpPrompt({
+      ...base,
+      priorTurns: [],
+      specialFacts: ['- 오늘은 길동의 생일이다.'],
+      weeklyFacts: ['- 총운: 좋은 날 화요일'],
+    });
+    const factsBlock = prompt.slice(
+      prompt.indexOf('계산된 사실'),
+      prompt.indexOf('아침에 보낸 운세:'),
+    );
+
+    expect(factsBlock).toContain('- 오늘은 길동의 생일이다.');
+    expect(factsBlock).toContain('- 총운: 좋은 날 화요일');
+    expect(prompt).toContain('원문이 우선');
+  });
 
   it('그날 사실·아침 운세·질문을 싣는다', () => {
     const prompt = buildFortuneFollowUpPrompt({ ...base, priorTurns: [] });
