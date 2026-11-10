@@ -8,6 +8,11 @@ export interface SajuFortuneCronJobData {
   recipientSlackUserIds: string[];
 }
 
+// 발송 중복 방지 키 TTL — 25h. 다음 날 같은 시각 발사 전 만료되도록 하루보다 약간 길게.
+export const SENT_GUARD_TTL_SECONDS = 90_000;
+// 12줄 지시를 어긴 장문이 DM 을 덮지 않게 자른다. 카드 두 줄을 떼고 코드가 그린 줄을 붙인 본문 기준.
+export const MAXIMUM_FORTUNE_LENGTH = 1_500;
+
 // 같은 큐의 두 반복 잡. 아침 값은 바꾸지 않는다 — 이미 등록된 반복·보충 잡이 이 이름으로 남아 있다.
 export enum SajuFortuneJobName {
   DAILY = 'saju-fortune-cron',

@@ -6,6 +6,11 @@ import { ModelRouterUsecase } from '../../model-router/application/model-router.
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { NotificationPublisher } from '../../notification/application/notification-publisher.service';
 import { SlackNotifierPort } from '../../slack/domain/port/slack-notifier.port';
+import { CheckMissionsUsecase } from '../application/check-missions.usecase';
+import { DeliverDailyFortuneUsecase } from '../application/deliver-daily-fortune.usecase';
+import { DeliverExtraFortuneUsecase } from '../application/deliver-extra-fortune.usecase';
+import { FortuneGenerator } from '../application/fortune-generator';
+import { SendDailyFortunesUsecase } from '../application/send-daily-fortunes.usecase';
 import { CardCollagePort } from '../domain/port/card-collage.port';
 import { FortuneCardImagePort } from '../domain/port/fortune-card-image.port';
 import { SajuFortuneDayRepositoryPort } from '../domain/port/saju-fortune-day.repository.port';
@@ -61,21 +66,50 @@ describe('SajuFortuneCronConsumer', () => {
     findMissionKeys = jest.fn().mockResolvedValue([]);
     toThumbnail = jest.fn().mockResolvedValue(Buffer.from('jpg'));
     findMissionDay = jest.fn().mockResolvedValue(undefined);
-    consumer = new SajuFortuneCronConsumer(
-      {
-        get: (key: string) =>
-          key === 'SAJU_MISSION_CHECK_CRON' ? missionCheckCron : recipients,
-      } as unknown as ConfigService,
-      { route } as unknown as ModelRouterUsecase,
-      { postMessage, uploadImageFile } as unknown as SlackNotifierPort,
-      { acquireOnce, release, isDone } as unknown as CronIdempotencyService,
+    // 유스케이스는 실제 것을 쓰고 바깥 의존(설정·LLM·Slack·Redis·DB·그림)만 흉내 낸다 — 옮기기 전과 같은
+    // 행동을 consumer 입구에서 그대로 확인하는 회귀 테스트다.
+    const configService = {
+      get: (key: string) =>
+        key === 'SAJU_MISSION_CHECK_CRON' ? missionCheckCron : recipients,
+    } as unknown as ConfigService;
+    const slackNotifier = {
+      postMessage,
+      uploadImageFile,
+    } as unknown as SlackNotifierPort;
+    const cronIdempotency = {
+      acquireOnce,
+      release,
+      isDone,
+    } as unknown as CronIdempotencyService;
+    const fortuneDays = {
+      recordSent,
+      findMissionKeys,
+      findMissionDay,
+    } as unknown as SajuFortuneDayRepositoryPort;
+    const generator = new FortuneGenerator({
+      route,
+    } as unknown as ModelRouterUsecase);
+    const deliverDaily = new DeliverDailyFortuneUsecase(
+      generator,
+      slackNotifier,
+      cronIdempotency,
       { generate: generateImage } as FortuneCardImagePort,
-      {
-        recordSent,
-        findMissionKeys,
-        findMissionDay,
-      } as unknown as SajuFortuneDayRepositoryPort,
+      fortuneDays,
       { toThumbnail } as unknown as CardCollagePort,
+    );
+    const deliverExtra = new DeliverExtraFortuneUsecase(
+      generator,
+      slackNotifier,
+      cronIdempotency,
+    );
+    consumer = new SajuFortuneCronConsumer(
+      new SendDailyFortunesUsecase(configService, deliverDaily, deliverExtra),
+      new CheckMissionsUsecase(
+        configService,
+        fortuneDays,
+        slackNotifier,
+        cronIdempotency,
+      ),
       {
         publishCronFailure,
         publishRecovery: jest.fn(),

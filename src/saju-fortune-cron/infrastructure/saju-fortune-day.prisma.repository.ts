@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
-import { utcMidnightOf } from '../../common/util/kst-date.util';
+import { getKstDateOf, utcMidnightOf } from '../../common/util/kst-date.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   CollectedCard,
@@ -15,9 +15,7 @@ import {
 } from '../domain/port/saju-fortune-day.repository.port';
 import { DatePeriod } from '../domain/saju-fortune-period';
 
-// @db.Date 값은 그날 UTC 00:00 으로 온다 — 앞 10자리가 곧 날짜다.
-const dateStringOf = (date: Date): string => date.toISOString().slice(0, 10);
-
+// @db.Date 값은 그날 UTC 00:00 으로 온다 — KST 로 읽어도 같은 날짜다(getKstDateOf).
 const uniqueKeyOf = ({ slackUserId, fortuneDate }: SajuFortuneDayKey) => ({
   slackUserId_fortuneDate: {
     slackUserId,
@@ -79,7 +77,7 @@ export class SajuFortuneDayPrismaRepository implements SajuFortuneDayRepositoryP
     });
     const recent = rows.map(({ missionKey, fortuneDate }) => ({
       missionKey,
-      fortuneDate: dateStringOf(fortuneDate),
+      fortuneDate: getKstDateOf(fortuneDate),
     }));
     return recent;
   }
@@ -100,7 +98,7 @@ export class SajuFortuneDayPrismaRepository implements SajuFortuneDayRepositoryP
       return undefined;
     }
     const day: MissionDay = {
-      fortuneDate: dateStringOf(row.fortuneDate),
+      fortuneDate: getKstDateOf(row.fortuneDate),
       missionText: row.missionText,
       missionResult: missionResultOf(row.missionResult),
       createdAt: row.createdAt,
@@ -121,14 +119,15 @@ export class SajuFortuneDayPrismaRepository implements SajuFortuneDayRepositoryP
     return answered;
   }
 
-  countDone({ slackUserId, period }: PeriodQuery): Promise<number> {
-    return this.prisma.sajuFortuneDay.count({
+  async countDone({ slackUserId, period }: PeriodQuery): Promise<number> {
+    const done = await this.prisma.sajuFortuneDay.count({
       where: {
         slackUserId,
         missionResult: MissionResult.DONE,
         fortuneDate: fortuneDateIn(period),
       },
     });
+    return done;
   }
 
   async findCards({
@@ -144,16 +143,17 @@ export class SajuFortuneDayPrismaRepository implements SajuFortuneDayRepositoryP
       orderBy: { fortuneDate: 'asc' },
       select: { fortuneDate: true, cardThumbnail: true },
     });
-    const cards = rows.flatMap(({ fortuneDate, cardThumbnail }) =>
-      cardThumbnail
-        ? [
-            {
-              fortuneDate: dateStringOf(fortuneDate),
-              thumbnail: Buffer.from(cardThumbnail),
-            },
-          ]
-        : [],
-    );
+    // where 에서 null 을 걸렀지만 Prisma 타입은 여전히 nullable 이라 한 번 더 거른다.
+    const cards: CollectedCard[] = [];
+    for (const { fortuneDate, cardThumbnail } of rows) {
+      if (!cardThumbnail) {
+        continue;
+      }
+      cards.push({
+        fortuneDate: getKstDateOf(fortuneDate),
+        thumbnail: Buffer.from(cardThumbnail),
+      });
+    }
     return cards;
   }
 }

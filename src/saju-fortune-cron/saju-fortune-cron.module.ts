@@ -6,7 +6,12 @@ import { NotificationQueueModule } from '../notification/notification-queue.modu
 import { SLACK_NOTIFIER_PORT } from '../slack/domain/port/slack-notifier.port';
 import { SlackModule } from '../slack/slack.module';
 import { SlackService } from '../slack/slack.service';
+import { CheckMissionsUsecase } from './application/check-missions.usecase';
+import { DeliverDailyFortuneUsecase } from './application/deliver-daily-fortune.usecase';
+import { DeliverExtraFortuneUsecase } from './application/deliver-extra-fortune.usecase';
+import { FortuneGenerator } from './application/fortune-generator';
 import { SajuFortuneCronScheduler } from './application/saju-fortune-cron.scheduler';
+import { SendDailyFortunesUsecase } from './application/send-daily-fortunes.usecase';
 import { FORTUNE_CARD_IMAGE_PORT } from './domain/port/fortune-card-image.port';
 import { SAJU_FORTUNE_CRON_QUEUE } from './domain/saju-fortune-cron.type';
 import { CodexFortuneCardImageGenerator } from './infrastructure/codex-fortune-card-image.generator';
@@ -26,6 +31,11 @@ import { SajuFortuneDayModule } from './saju-fortune-day.module';
   providers: [
     SajuFortuneCronScheduler,
     SajuFortuneCronConsumer,
+    FortuneGenerator,
+    DeliverDailyFortuneUsecase,
+    DeliverExtraFortuneUsecase,
+    SendDailyFortunesUsecase,
+    CheckMissionsUsecase,
     { provide: SLACK_NOTIFIER_PORT, useExisting: SlackService },
     {
       provide: FORTUNE_CARD_IMAGE_PORT,

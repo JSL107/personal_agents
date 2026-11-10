@@ -2,16 +2,12 @@ import { App } from '@slack/bolt';
 
 import { AnswerMissionUsecase } from '../../saju-fortune-cron/application/answer-mission.usecase';
 import { BuildCardCollectionUsecase } from '../../saju-fortune-cron/application/build-card-collection.usecase';
+import { SajuMissionAction } from '../../saju-fortune-cron/application/saju-mission-check.formatter';
 import { CardCollagePort } from '../../saju-fortune-cron/domain/port/card-collage.port';
 import {
   MissionResult,
   SajuFortuneDayRepositoryPort,
 } from '../../saju-fortune-cron/domain/port/saju-fortune-day.repository.port';
-import {
-  SAJU_CARD_COLLECTION_ACTION,
-  SAJU_MISSION_DONE_ACTION,
-  SAJU_MISSION_NOT_DONE_ACTION,
-} from '../../saju-fortune-cron/infrastructure/saju-mission-check.formatter';
 import { SajuMissionActionHandler } from './saju-mission-action.handler';
 
 type ActionHandler = (args: {
@@ -30,8 +26,9 @@ const bodyOf = (value: string) => ({
   container: { channel_id: 'D1', message_ts: '111.222' },
 });
 
-const sectionTextOf = (update: jest.Mock, call = -1): string =>
-  update.mock.calls.at(call)[0].blocks[0].text.text;
+// 마지막으로 다시 그린 메시지의 본문.
+const lastSectionTextOf = ({ update }: { update: jest.Mock }): string =>
+  update.mock.calls.at(-1)[0].blocks[0].text.text;
 
 const buildHarness = () => {
   const handlers = new Map<string, ActionHandler>();
@@ -79,8 +76,13 @@ const buildHarness = () => {
     chat: { update: jest.fn().mockResolvedValue(undefined) },
     filesUploadV2: jest.fn().mockResolvedValue({ ok: true }),
   };
-  const press = (actionId: string, value = '2026-11-10') =>
-    handlers.get(actionId)!({ ack, body: bodyOf(value), respond, client });
+  const press = ({
+    action,
+    value = '2026-11-10',
+  }: {
+    action: SajuMissionAction;
+    value?: string;
+  }) => handlers.get(action)!({ ack, body: bodyOf(value), respond, client });
   return { press, repository, renderer, ack, respond, client };
 };
 
@@ -88,7 +90,7 @@ describe('SajuMissionActionHandler', () => {
   it('했어: 저장 뒤 DB 를 다시 읽은 값으로 그 메시지를 다시 그린다', async () => {
     const { press, repository, client, ack } = buildHarness();
 
-    await press(SAJU_MISSION_DONE_ACTION);
+    await press({ action: SajuMissionAction.DONE });
 
     expect(ack).toHaveBeenCalled();
     expect(repository.answerMission).toHaveBeenCalledWith({
@@ -104,7 +106,7 @@ describe('SajuMissionActionHandler', () => {
       channel: 'D1',
       ts: '111.222',
     });
-    expect(sectionTextOf(client.chat.update)).toContain(
+    expect(lastSectionTextOf({ update: client.chat.update })).toContain(
       '✅ 했어! 이번 주 2번 해냈어',
     );
   });
@@ -113,12 +115,12 @@ describe('SajuMissionActionHandler', () => {
     const { press, client } = buildHarness();
 
     await Promise.all([
-      press(SAJU_MISSION_DONE_ACTION),
-      press(SAJU_MISSION_NOT_DONE_ACTION),
+      press({ action: SajuMissionAction.DONE }),
+      press({ action: SajuMissionAction.NOT_DONE }),
     ]);
 
     expect(client.chat.update).toHaveBeenCalledTimes(2);
-    expect(sectionTextOf(client.chat.update)).toContain(
+    expect(lastSectionTextOf({ update: client.chat.update })).toContain(
       '🙂 괜찮아, 내일 또 있어',
     );
   });
@@ -128,7 +130,7 @@ describe('SajuMissionActionHandler', () => {
     async (value) => {
       const { press, repository, respond } = buildHarness();
 
-      await press(SAJU_MISSION_DONE_ACTION, value);
+      await press({ action: SajuMissionAction.DONE, value });
 
       expect(repository.answerMission).not.toHaveBeenCalled();
       expect(respond.mock.calls[0][0]).toMatchObject({
@@ -142,7 +144,7 @@ describe('SajuMissionActionHandler', () => {
     const { press, repository, respond, client } = buildHarness();
     repository.answerMission.mockResolvedValue(false);
 
-    await press(SAJU_MISSION_DONE_ACTION);
+    await press({ action: SajuMissionAction.DONE });
 
     expect(client.chat.update).not.toHaveBeenCalled();
     expect(respond.mock.calls[0][0].text).toBe('이 날 미션을 찾지 못했어');
@@ -152,7 +154,7 @@ describe('SajuMissionActionHandler', () => {
     const { press, repository, respond, client } = buildHarness();
     repository.answerMission.mockRejectedValue(new Error('db down'));
 
-    await press(SAJU_MISSION_DONE_ACTION);
+    await press({ action: SajuMissionAction.DONE });
 
     expect(client.chat.update).not.toHaveBeenCalled();
     expect(respond.mock.calls[0][0].text).toBe('저장하지 못했어, 다시 눌러 줘');
@@ -161,7 +163,7 @@ describe('SajuMissionActionHandler', () => {
   it('카드 모음: 모으는 중 안내 → 그달 카드로 격자 → 확인 메시지 스레드에 올린다', async () => {
     const { press, repository, renderer, respond, client } = buildHarness();
 
-    await press(SAJU_CARD_COLLECTION_ACTION);
+    await press({ action: SajuMissionAction.CARD_COLLECTION });
 
     expect(respond.mock.calls[0][0]).toMatchObject({
       response_type: 'ephemeral',
@@ -184,7 +186,7 @@ describe('SajuMissionActionHandler', () => {
     const { press, repository, respond, client } = buildHarness();
     repository.findCards.mockResolvedValue([]);
 
-    await press(SAJU_CARD_COLLECTION_ACTION);
+    await press({ action: SajuMissionAction.CARD_COLLECTION });
 
     expect(client.filesUploadV2).not.toHaveBeenCalled();
     expect(respond.mock.calls.at(-1)[0].text).toBe('아직 모은 카드가 없어');
@@ -194,7 +196,7 @@ describe('SajuMissionActionHandler', () => {
     const { press, respond, client } = buildHarness();
     client.filesUploadV2.mockRejectedValue(new Error('missing_scope'));
 
-    await press(SAJU_CARD_COLLECTION_ACTION);
+    await press({ action: SajuMissionAction.CARD_COLLECTION });
 
     expect(respond.mock.calls.at(-1)[0].text).toBe(
       '지금은 못 만들었어, 잠시 뒤 다시 눌러 줘',

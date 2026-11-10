@@ -5,7 +5,10 @@ import {
   formatKstIsoDateTime,
   getKstDayStartAsUtc,
   getTodayKstDate,
+  isCalendarDate,
   kstDayStartOf,
+  mondayOf,
+  nextMonthStartOf,
   utcMidnightOf,
   weekdayOf,
 } from './kst-date.util';
@@ -181,5 +184,39 @@ describe('formatKstIsoDateTime', () => {
     expect(formatKstIsoDateTime(new Date('2026-11-08T15:00:00Z'))).toBe(
       '2026-11-09T00:00:00+09:00',
     );
+  });
+});
+
+describe('mondayOf', () => {
+  it.each([
+    ['2026-11-09', '2026-11-09'], // 월
+    ['2026-11-10', '2026-11-09'], // 화
+    ['2026-11-15', '2026-11-09'], // 일
+    ['2027-01-01', '2026-12-28'], // 해를 넘긴다
+  ])('%s 가 속한 주의 월요일은 %s', (date, monday) => {
+    expect(mondayOf(date)).toBe(monday);
+  });
+});
+
+describe('nextMonthStartOf', () => {
+  it.each([
+    ['2026-11-10', '2026-12-01'],
+    ['2026-12-31', '2027-01-01'],
+    ['2028-02-29', '2028-03-01'],
+  ])('%s 의 다음 달 1일은 %s', (date, nextMonthStart) => {
+    expect(nextMonthStartOf(date)).toBe(nextMonthStart);
+  });
+});
+
+describe('isCalendarDate', () => {
+  it.each([
+    ['2026-11-10', true],
+    ['2028-02-29', true],
+    ['2027-02-29', false],
+    ['2026-02-30', false],
+    ['2026/11/10', false],
+    ['', false],
+  ])('%p → %p', (value, expected) => {
+    expect(isCalendarDate(value)).toBe(expected);
   });
 });

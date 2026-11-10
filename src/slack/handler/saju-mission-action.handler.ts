@@ -1,17 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { App, RespondFn } from '@slack/bolt';
 
-import { utcMidnightOf } from '../../common/util/kst-date.util';
+import { isCalendarDate } from '../../common/util/kst-date.util';
 import { AnswerMissionUsecase } from '../../saju-fortune-cron/application/answer-mission.usecase';
 import { BuildCardCollectionUsecase } from '../../saju-fortune-cron/application/build-card-collection.usecase';
-import { MissionResult } from '../../saju-fortune-cron/domain/port/saju-fortune-day.repository.port';
 import {
   buildMissionCheckBlocks,
   missionCheckFallbackText,
-  SAJU_CARD_COLLECTION_ACTION,
-  SAJU_MISSION_DONE_ACTION,
-  SAJU_MISSION_NOT_DONE_ACTION,
-} from '../../saju-fortune-cron/infrastructure/saju-mission-check.formatter';
+  SajuMissionAction,
+} from '../../saju-fortune-cron/application/saju-mission-check.formatter';
+import { MissionResult } from '../../saju-fortune-cron/domain/port/saju-fortune-day.repository.port';
 import {
   extractActionMessageRef,
   extractActionUserId,
@@ -19,11 +17,12 @@ import {
 } from '../bolt/action-body.parser';
 import { SlackHandler } from '../domain/port/slack-handler.port';
 
-const ANSWER_ACTIONS: ReadonlyArray<readonly [string, MissionResult]> = [
-  [SAJU_MISSION_DONE_ACTION, MissionResult.DONE],
-  [SAJU_MISSION_NOT_DONE_ACTION, MissionResult.NOT_DONE],
-];
-const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const ANSWER_ACTIONS = [SajuMissionAction.DONE, SajuMissionAction.NOT_DONE];
+
+const resultOf = (action: SajuMissionAction): MissionResult =>
+  action === SajuMissionAction.DONE
+    ? MissionResult.DONE
+    : MissionResult.NOT_DONE;
 
 interface ActionTarget {
   slackUserId: string;
@@ -42,21 +41,11 @@ interface AnswerContext extends ActionContext {
   result: MissionResult;
 }
 
-// 버튼 값은 우리가 보낸 날짜지만 오래된 메시지·형식 변경을 대비해 실제 달력 날짜인지 본다.
-const isCalendarDate = (value: string): boolean => {
-  if (!DATE_PATTERN.test(value)) {
-    return false;
-  }
-  const date = utcMidnightOf(value);
-  const valid =
-    !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
-  return valid;
-};
-
 const targetOf = (body: unknown): ActionTarget | null => {
   const slackUserId = extractActionUserId(body);
   const fortuneDate = extractActionValue(body) ?? '';
   const messageRef = extractActionMessageRef(body);
+  // 버튼 값은 우리가 보낸 날짜지만 오래된 메시지·형식 변경을 대비해 실제 달력 날짜인지 본다.
   if (!slackUserId || !messageRef || !isCalendarDate(fortuneDate)) {
     return null;
   }
@@ -90,23 +79,24 @@ export class SajuMissionActionHandler implements SlackHandler {
   ) {}
 
   register(app: App): void {
-    for (const [actionId, result] of ANSWER_ACTIONS) {
-      app.action(actionId, async ({ ack, body, respond, client }) => {
+    for (const action of ANSWER_ACTIONS) {
+      app.action(action, async ({ ack, body, respond, client }) => {
         await ack();
         const target = targetOf(body);
         if (!target) {
-          this.logger.warn(`사주 미션 버튼 해석 실패 (${actionId})`);
+          this.logger.warn(`사주 미션 버튼 해석 실패 (${action})`);
           await ephemeral({ respond, text: '이 버튼은 더는 쓸 수 없어' });
           return;
         }
         await this.serializeByMessage({
           messageTs: target.ts,
-          task: () => this.answer({ target, respond, client, result }),
+          task: () =>
+            this.answer({ target, respond, client, result: resultOf(action) }),
         });
       });
     }
     app.action(
-      SAJU_CARD_COLLECTION_ACTION,
+      SajuMissionAction.CARD_COLLECTION,
       async ({ ack, body, respond, client }) => {
         await ack();
         const target = targetOf(body);
@@ -139,7 +129,7 @@ export class SajuMissionActionHandler implements SlackHandler {
       }
     } catch (error) {
       this.logger.warn(
-        `사주 미션 답 저장 실패 (${slackUserId} ${fortuneDate}): ${messageOf(error)}`,
+        `사주 미션 답 저장 실패 (${slackUserId} ${fortuneDate}): ${error instanceof Error ? error.message : String(error)}`,
       );
       await ephemeral({ respond, text: '저장하지 못했어, 다시 눌러 줘' });
       return;
@@ -149,7 +139,7 @@ export class SajuMissionActionHandler implements SlackHandler {
       await this.redraw({ target, client });
     } catch (error) {
       this.logger.warn(
-        `사주 미션 메시지 갱신 실패 (저장은 완료) — ${slackUserId} ${fortuneDate}: ${messageOf(error)}`,
+        `사주 미션 메시지 갱신 실패 (저장은 완료) — ${slackUserId} ${fortuneDate}: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }
@@ -202,7 +192,7 @@ export class SajuMissionActionHandler implements SlackHandler {
       });
     } catch (error) {
       this.logger.warn(
-        `사주 카드 모음 실패 (${slackUserId} ${fortuneDate}): ${messageOf(error)}`,
+        `사주 카드 모음 실패 (${slackUserId} ${fortuneDate}): ${error instanceof Error ? error.message : String(error)}`,
       );
       await ephemeral({
         respond,
@@ -231,6 +221,3 @@ export class SajuMissionActionHandler implements SlackHandler {
     return current;
   }
 }
-
-const messageOf = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);

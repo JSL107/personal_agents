@@ -19,8 +19,9 @@ export class AnswerMissionUsecase {
   ) {}
 
   // 마지막 답이 이긴다. false = 그날 행이 없다.
-  answer(answer: MissionAnswer): Promise<boolean> {
-    return this.fortuneDays.answerMission(answer);
+  async answer(answer: MissionAnswer): Promise<boolean> {
+    const answered = await this.fortuneDays.answerMission(answer);
+    return answered;
   }
 
   async viewOf({

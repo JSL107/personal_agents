@@ -2,9 +2,7 @@ import { MissionResult } from '../domain/port/saju-fortune-day.repository.port';
 import {
   buildMissionCheckBlocks,
   missionCheckFallbackText,
-  SAJU_CARD_COLLECTION_ACTION,
-  SAJU_MISSION_DONE_ACTION,
-  SAJU_MISSION_NOT_DONE_ACTION,
+  SajuMissionAction,
 } from './saju-mission-check.formatter';
 
 interface Button {
@@ -34,9 +32,9 @@ describe('buildMissionCheckBlocks', () => {
     expect(sectionTextOf(blocks)).toContain(VIEW.missionText);
     const buttons = buttonsOf(blocks);
     expect(buttons.map(({ action_id }) => action_id)).toEqual([
-      SAJU_MISSION_DONE_ACTION,
-      SAJU_MISSION_NOT_DONE_ACTION,
-      SAJU_CARD_COLLECTION_ACTION,
+      SajuMissionAction.DONE,
+      SajuMissionAction.NOT_DONE,
+      SajuMissionAction.CARD_COLLECTION,
     ]);
     expect(new Set(buttons.map(({ value }) => value))).toEqual(
       new Set(['2026-11-10']),
@@ -52,8 +50,8 @@ describe('buildMissionCheckBlocks', () => {
 
     expect(sectionTextOf(blocks)).toContain('✅ 했어! 이번 주 3번 해냈어');
     expect(buttonsOf(blocks).map(({ action_id }) => action_id)).toEqual([
-      SAJU_MISSION_NOT_DONE_ACTION,
-      SAJU_CARD_COLLECTION_ACTION,
+      SajuMissionAction.NOT_DONE,
+      SajuMissionAction.CARD_COLLECTION,
     ]);
   });
 
@@ -66,8 +64,8 @@ describe('buildMissionCheckBlocks', () => {
     expect(sectionTextOf(blocks)).toContain('🙂 괜찮아, 내일 또 있어');
     expect(sectionTextOf(blocks)).not.toContain('번 해냈어');
     expect(buttonsOf(blocks).map(({ action_id }) => action_id)).toEqual([
-      SAJU_MISSION_DONE_ACTION,
-      SAJU_CARD_COLLECTION_ACTION,
+      SajuMissionAction.DONE,
+      SajuMissionAction.CARD_COLLECTION,
     ]);
   });
 
@@ -88,7 +86,7 @@ describe('buildMissionCheckBlocks', () => {
     });
 
     const collection = buttonsOf(blocks).find(
-      ({ action_id }) => action_id === SAJU_CARD_COLLECTION_ACTION,
+      ({ action_id }) => action_id === SajuMissionAction.CARD_COLLECTION,
     );
     expect(collection?.text.text).toBe('🃏 10월 카드 모음');
   });
