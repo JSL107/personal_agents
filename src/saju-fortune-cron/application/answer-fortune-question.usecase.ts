@@ -1,19 +1,30 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+import { formatKstDateTime } from '../../common/util/kst-date.util';
 import { ModelRouterUsecase } from '../../model-router/application/model-router.usecase';
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { dayPillarOf } from '../domain/day-pillar';
+import { YearMonthPillars } from '../domain/saju-analysis';
+import { formatSpecialDayFacts } from '../domain/saju-extra-fortune.prompt';
 import {
   buildFortuneFollowUpPrompt,
   FortuneChatTurn,
-  fortuneDateOf,
+  FortuneMessageKind,
+  fortuneMessageOf,
 } from '../domain/saju-fortune-chat';
-import { parseSajuFortuneRecipients } from '../domain/saju-fortune-cron.type';
+import {
+  parseSajuFortuneRecipients,
+  SajuFortuneRecipient,
+} from '../domain/saju-fortune-cron.type';
 import {
   countUnremovableViolations,
   findFortuneViolations,
 } from '../domain/saju-fortune-render';
+import { SpecialDayKind, specialDaysOf } from '../domain/special-day';
+import { formatWeeklyFacts } from '../domain/weekly-fortune';
+import { specialDayContextOf } from './special-day-calendar';
+import { weeklyScoresOf } from './weekly-scores';
 import { yearMonthPillarsOf } from './year-month-pillar';
 
 // 아침 발송과 같은 기준 — 코드가 지울 수 없는 위반(한자·용어)만 본다.
@@ -49,10 +60,11 @@ export class AnswerFortuneQuestionUsecase {
     priorTurns,
     question,
   }: AnswerFortuneQuestionInput): Promise<string | null> {
-    const fortuneDate = fortuneDateOf(fortuneMessageText);
-    if (!fortuneDate) {
+    const fortuneMessage = fortuneMessageOf(fortuneMessageText);
+    if (!fortuneMessage) {
       return null;
     }
+    const { date: fortuneDate, kind } = fortuneMessage;
     const recipient = parseSajuFortuneRecipients(
       this.configService.get<string>('SAJU_FORTUNE_RECIPIENTS'),
     ).recipients.find((candidate) => candidate.slackUserId === slackUserId);
@@ -64,8 +76,9 @@ export class AnswerFortuneQuestionUsecase {
       recipient,
       fortuneDate,
       fortunePillar: dayPillarOf(fortuneDate),
-      yearMonthPillars: yearMonthPillarsOf(fortuneDate),
       originalFortune: fortuneMessageText,
+      now: formatKstDateTime(new Date()),
+      ...followUpFactsOf({ recipient, fortuneDate, kind }),
       priorTurns,
       question,
     });
@@ -97,3 +110,59 @@ export class AnswerFortuneQuestionUsecase {
     return text;
   }
 }
+
+interface FollowUpFacts {
+  yearMonthPillars?: YearMonthPillars;
+  specialFacts: string[];
+  weeklyFacts: string[];
+}
+
+// 새해·설날의 정오 기준 년주는 입춘 전이라 지난해 간지다 — 특집 프롬프트처럼 흐름을 싣지 않는다.
+// 일일 운세 답글은 아침 운세가 이미 그 흐름을 말했으므로 그대로 싣는다.
+const YEAR_TURNING_KINDS: readonly SpecialDayKind[] = [
+  SpecialDayKind.NEW_YEAR,
+  SpecialDayKind.SEOLLAL,
+];
+
+// 특별한 날 사실은 메시지 종류와 무관하게 그날이면 싣는다 — 월요일+생일 합본은 머리말이 "이번 주 운세" 라도
+// 생일 이야기가 들어 있다. 이번 주 사실은 주간 메시지에 단 답일 때만.
+const followUpFactsOf = ({
+  recipient,
+  fortuneDate,
+  kind,
+}: {
+  recipient: SajuFortuneRecipient;
+  fortuneDate: string;
+  kind: FortuneMessageKind;
+}): FollowUpFacts => {
+  const context = specialDayContextOf(fortuneDate);
+  const days = specialDaysOf({
+    todayKst: fortuneDate,
+    birthday: recipient.birthday,
+    context,
+  });
+  const specialFacts = formatSpecialDayFacts({ days, recipient, context });
+  const weeklyFacts =
+    kind === FortuneMessageKind.WEEKLY
+      ? [
+          '- 이번 주(월~일) 항목별 좋은 날·조심할 날:',
+          ...formatWeeklyFacts(
+            weeklyScoresOf({
+              natalPillars: recipient.natalPillars,
+              mondayKst: fortuneDate,
+            }),
+          ),
+        ]
+      : [];
+  const hidesYearFlow =
+    kind !== FortuneMessageKind.DAILY &&
+    days.some(({ kind: dayKind }) => YEAR_TURNING_KINDS.includes(dayKind));
+  const facts: FollowUpFacts = {
+    ...(hidesYearFlow
+      ? {}
+      : { yearMonthPillars: yearMonthPillarsOf(fortuneDate) }),
+    specialFacts,
+    weeklyFacts,
+  };
+  return facts;
+};

@@ -74,7 +74,7 @@ export const truncateByLines = ({
 
 const MAXIMUM_STARS = 5;
 
-const starsOf = (score: number): string => {
+export const starsOf = (score: number): string => {
   const filled = '★'.repeat(score);
   const empty = '☆'.repeat(MAXIMUM_STARS - score);
   return `${filled}${empty}`;
@@ -111,4 +111,63 @@ export const composeFortuneBody = ({
   });
   const [firstLine, ...rest] = truncated.split('\n');
   return [firstLine, starLine, ...rest, itemLine].join('\n');
+};
+
+// 추가 메시지(특집·주간)의 AI 응답 구간 구분줄. 프롬프트와 파서가 같은 상수를 쓴다.
+export const EXTRA_SECTION_SEPARATOR = '=====';
+
+// 구간 수가 코드가 기대한 수와 같을 때만 나눈다 — 다르면 null(호출부가 재생성하거나 한 덩어리로 쓴다).
+export const splitExtraSections = ({
+  text,
+  expected,
+}: {
+  text: string;
+  expected: number;
+}): string[] | null => {
+  const sections = text
+    .split('\n')
+    .reduce<string[][]>(
+      (groups, line) => {
+        if (line.trim() === EXTRA_SECTION_SEPARATOR) {
+          groups.push([]);
+        } else {
+          groups[groups.length - 1].push(line);
+        }
+        return groups;
+      },
+      [[]],
+    )
+    .map((lines) => lines.join('\n').trim())
+    .filter((section) => section.length > 0);
+  const matches = sections.length === expected;
+  return matches ? sections : null;
+};
+
+// 추가 메시지 본문 — 코드 줄(특집 줄·주간 별점 줄)은 예산을 먼저 확보하고, 남은 예산을 구간마다 나눠 AI 글을
+// 줄 단위로 자른다(뒤 구간이 통째로 사라지지 않게). 별 제거는 코드 줄을 붙이기 전에 해서 주간 별점 줄이 지워지지 않게
+// 한다. 일일의 별점 줄·행운 아이템 줄은 넣지 않는다. escape 는 호출부가 마지막에 한 번.
+export const composeExtraBody = ({
+  sections,
+  specialLines,
+  weeklyStarLine,
+  maximum,
+}: {
+  sections: string[];
+  specialLines: string[];
+  weeklyStarLine?: string;
+  maximum: number;
+}): string => {
+  const codeLines = weeklyStarLine
+    ? [...specialLines, weeklyStarLine]
+    : specialLines;
+  const cleaned = sections.map((section) => stripInventedMarks(section).trim());
+  const assemble = (bodies: string[]): string =>
+    bodies.length === codeLines.length
+      ? codeLines.map((line, index) => `${line}\n${bodies[index]}`).join('\n\n')
+      : `${codeLines.join('\n')}\n\n${bodies.join('\n\n')}`;
+  const overhead = assemble(cleaned.map(() => '')).length;
+  const budget = Math.max(0, Math.floor((maximum - overhead) / cleaned.length));
+  const truncated = cleaned.map((body) => truncateByLines({ body, budget }));
+  const assembled = assemble(truncated);
+  return assembled;
 };
