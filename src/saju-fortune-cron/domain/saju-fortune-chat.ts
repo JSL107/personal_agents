@@ -100,7 +100,10 @@ export interface FortuneFollowUpPromptInput {
   fortuneDate: string;
   fortunePillar: string;
   // 아침 운세와 같은 날짜로 계산한 값이어야 한다 — 다르면 답이 아침 운세와 다른 흐름을 근거로 삼는다.
-  yearMonthPillars: YearMonthPillars;
+  // 빼면 올해·이번 달 흐름 사실이 빠진다(새해·설날 특집 답글 — 정오 기준 년주가 아직 지난해다).
+  yearMonthPillars?: YearMonthPillars;
+  // 지금 KST 'YYYY-MM-DD HH:MM'. 절기 사실의 "지금보다 이르면/지났으면" 을 고를 근거.
+  now?: string;
   // 아침에 보낸 운세 DM 원문(헤더 포함). 답이 아침 운세와 어긋나지 않게 근거로 준다.
   originalFortune: string;
   // 그날이 특별한 날이면 특집 사실, 주간 메시지에 단 답이면 이번 주 사실 — 원문만으로는 근거가 모자란다.
@@ -119,6 +122,7 @@ export const buildFortuneFollowUpPrompt = ({
   fortunePillar,
   yearMonthPillars,
   originalFortune,
+  now,
   specialFacts = [],
   weeklyFacts = [],
   priorTurns,
@@ -135,6 +139,7 @@ export const buildFortuneFollowUpPrompt = ({
     '',
     `- 받는 사람: ${recipient.name}`,
     `- 운세 날짜: ${fortuneDate}, 그날 일진: ${pillarToHangul(fortunePillar)}일 (확정값이다. 다시 계산하지 마라.)`,
+    ...(now ? [`- 지금: ${now}`] : []),
     '',
     '계산된 사실 (코드가 확정한 값이다. 이것만 근거로 써라):',
     ...formatSajuFacts(

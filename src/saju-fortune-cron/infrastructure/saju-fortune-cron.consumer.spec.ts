@@ -387,5 +387,25 @@ describe('SajuFortuneCronConsumer', () => {
       expect(extra).toContain('🎂 생일 축하해, 길동!\n생일 이야기');
       expect(extra).toMatch(/월 [★☆]{5}[^\n]*\n이번 주 이야기/);
     });
+
+    it('두 번 다 구간 수가 어긋나면 구분줄을 지우고 코드 줄을 맨 앞에 모아 보낸다', async () => {
+      jest.setSystemTime(MONDAY);
+      recipients = 'U111|길동|丙寅 辛卯 壬戌 庚子||11-16';
+      route
+        .mockResolvedValueOnce({ text: '좋은 날' })
+        .mockResolvedValueOnce({ text: '구간 하나뿐' })
+        .mockResolvedValueOnce({ text: '하나\n=====\n둘\n=====\n셋' });
+
+      await consumer.process({
+        data: { recipientSlackUserIds: ['U111'] },
+      } as Job<SajuFortuneCronJobData>);
+
+      expect(route).toHaveBeenCalledTimes(3);
+      const [, extra] = textsFor('U111');
+      expect(extra).toMatch(
+        /🎂 생일 축하해, 길동!\n월 [★☆]{5}[^\n]*\n\n하나\n둘\n셋$/,
+      );
+      expect(extra).not.toContain('=====');
+    });
   });
 });

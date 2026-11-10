@@ -119,3 +119,48 @@ describe('AnswerFortuneQuestionUsecase — 주간·특집 메시지 답글', () 
     expect(prompt).not.toContain('이번 주(월~일)');
   });
 });
+
+describe('AnswerFortuneQuestionUsecase — 새해 흐름·지금 시각', () => {
+  const promptFor = async (text: string): Promise<string> => {
+    const route = jest.fn().mockResolvedValue({ text: '산책해 봐' });
+    const usecase = new AnswerFortuneQuestionUsecase(
+      {
+        get: () => 'U111|길동|丙寅 辛卯 壬戌 庚子',
+      } as unknown as ConfigService,
+      { route } as unknown as ModelRouterUsecase,
+    );
+    await usecase.answer({
+      slackUserId: 'U111',
+      fortuneMessageText: text,
+      priorTurns: [],
+      question: '올해는 어때?',
+    });
+    return route.mock.calls[0][0].request.prompt;
+  };
+
+  // 2027-01-01 정오 대표 년주는 아직 병오(2026) — 특집 답글이 "올해 병오년" 을 말하지 않게.
+  it('새해 특집 답글에는 정오 기준(지난해) 흐름을 싣지 않는다', async () => {
+    const prompt = await promptFor(
+      '🔮 *특별한 날 — 2027-01-01 (병술일)*\n\n🎍 새해 첫날이야',
+    );
+
+    expect(prompt).not.toMatch(/병오/);
+    expect(prompt).toContain('사주의 새해는 입춘');
+  });
+
+  it('같은 날 일일 운세 답글은 아침 운세와 같은 흐름을 그대로 싣는다', async () => {
+    const prompt = await promptFor(
+      '🔮 *오늘의 운세 — 2027-01-01 (병술일)*\n\n총운: 좋아',
+    );
+
+    expect(prompt).toMatch(/올해\(병오년\)/);
+  });
+
+  it('지금 시각을 싣는다 — 절기 시제를 고를 근거', async () => {
+    const prompt = await promptFor(
+      '🔮 *특별한 날 — 2027-01-01 (병술일)*\n\n🎍 새해 첫날이야',
+    );
+
+    expect(prompt).toMatch(/- 지금: \d{4}-\d{2}-\d{2} \d{2}:\d{2}/);
+  });
+});
