@@ -420,6 +420,67 @@ describe('ScheduleDispatcher', () => {
     expect(outcome.formattedText).not.toContain('2건 등록했습니다');
   });
 
+  it('제목 되묻기에 목록으로 답하면 직전 턴의 날짜로 항목별 등록한다', async () => {
+    const usecase = createUsecase();
+    const dispatcher = new ScheduleDispatcher(
+      usecase,
+      createAnswer(),
+      createAgentRunService() as never,
+      { execute: jest.fn().mockResolvedValue(null) } as never,
+    );
+
+    await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '1. 자동차세\n2. 여권 신청',
+      priorTurns: [
+        {
+          role: 'user',
+          text: '9월 30일 일정 등록해줘',
+          agentType: AgentType.SCHEDULE,
+          agentRunId: null,
+          timestampMs: 1,
+        },
+      ],
+    });
+
+    expect(usecase.execute).toHaveBeenCalledTimes(2);
+    expect(usecase.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: '여권 신청',
+        dueDate: expect.objectContaining({ month: 9, day: 30 }),
+      }),
+    );
+  });
+
+  it('등록이 끝난 직전 턴의 날짜는 날짜 없는 새 목록에 붙이지 않고 묻는다', async () => {
+    const usecase = createUsecase();
+    const dispatcher = new ScheduleDispatcher(
+      usecase,
+      createAnswer(),
+      createAgentRunService() as never,
+      { execute: jest.fn().mockResolvedValue(null) } as never,
+    );
+
+    const outcome = await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '1. 자동차세\n2. 여권 신청',
+      priorTurns: [
+        {
+          role: 'user',
+          text: '9월 30일 건강검진',
+          agentType: AgentType.SCHEDULE,
+          agentRunId: null,
+          timestampMs: 1,
+        },
+      ],
+    });
+
+    expect(usecase.execute).not.toHaveBeenCalled();
+    expect(outcome.formattedText).toBe(formatNeedsDate('자동차세, 여권 신청'));
+  });
+
   it('날짜가 없으면 등록하지 않고 되묻는다', async () => {
     const usecase = createUsecase();
     const answer = createAnswer();
