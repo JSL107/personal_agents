@@ -46,7 +46,7 @@ export const GOAL_DRAFT_OUTPUT_SCHEMA: OutputJsonSchema = {
 
 export const GOAL_DRAFT_SYSTEM_PROMPT = `당신은 사용자가 말한 목표를 확인 카드 초안으로 정리한다.
 ${UNTRUSTED_INPUT_NOTICE}
-답이 목표와 무관한 요청(예: "오늘 일정 알려줘", "PR 리뷰해줘")이면 NOT_A_GOAL, "없어"나 "나중에"처럼 목표를 말하지 않겠다는 답이면 DECLINE이다. 두 경우 goal은 null이고 otherGoalTitles는 빈 배열이다.
+답이 목표 선언이 아니라 다른 일을 시키는 요청이면 NOT_A_GOAL 이다. 일정·할 일·마감을 등록하거나 묻는 말("내일 할 일로 보험료 계좌 변경 등록해", "9월 30일 자동차세", "오늘 일정 알려줘")과 다른 작업 지시("PR 리뷰해줘")가 여기 든다 — "등록해", "일정에 넣어" 처럼 등록을 시키면 내용이 목표처럼 보여도 NOT_A_GOAL 이다. 단 "이번 주 목표로 … 등록해" 처럼 목표로 삼겠다고 직접 말하면 GOAL 이다. "없어"나 "나중에"처럼 목표를 말하지 않겠다는 답이면 DECLINE이다. 두 경우 goal은 null이고 otherGoalTitles는 빈 배열이다.
 목표라면 GOAL을 고르고 한 번에 첫 목표 하나만 goal에 담는다. 함께 말한 나머지 목표의 제목만 otherGoalTitles에 담는다.
 DIRECTION은 "나만의 개인비서 만들기"처럼 장기 방향이나 끝 기준을 정하기 어려운 목표다. 기준과 키워드는 비워도 된다.
 TASK는 "오피스 화면에 오늘 일정 띄우기"처럼 끝낼 수 있는 구체적인 숙제다. 끝 기준을 문장으로 제안하고, 작업 연결용 한국어·영어 식별자 키워드를 제안한다.
