@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 
 import { plainDateToUtcDate } from '../domain/parse-due-date';
 import {
+  SaveScheduleInput,
   SCHEDULE_REPOSITORY_PORT,
   ScheduleRepositoryPort,
 } from '../domain/port/schedule.repository.port';
@@ -18,6 +19,19 @@ export interface RegisterScheduleInput {
   isHoliday?: boolean;
 }
 
+const toSaveInput = (input: RegisterScheduleInput): SaveScheduleInput => ({
+  slackUserId: input.slackUserId,
+  title: input.title,
+  dueDate: plainDateToUtcDate(input.dueDate),
+  memo: input.memo,
+  ...(input.startDate !== undefined && {
+    startDate: input.startDate ? plainDateToUtcDate(input.startDate) : null,
+  }),
+  ...(input.dueTime !== undefined && { dueTime: input.dueTime }),
+  ...(input.remindAt !== undefined && { remindAt: input.remindAt }),
+  isHoliday: input.isHoliday,
+});
+
 @Injectable()
 export class RegisterScheduleUsecase {
   constructor(
@@ -26,17 +40,12 @@ export class RegisterScheduleUsecase {
   ) {}
 
   async execute(input: RegisterScheduleInput): Promise<ScheduleItemRecord> {
-    return await this.repository.save({
-      slackUserId: input.slackUserId,
-      title: input.title,
-      dueDate: plainDateToUtcDate(input.dueDate),
-      memo: input.memo,
-      ...(input.startDate !== undefined && {
-        startDate: input.startDate ? plainDateToUtcDate(input.startDate) : null,
-      }),
-      ...(input.dueTime !== undefined && { dueTime: input.dueTime }),
-      ...(input.remindAt !== undefined && { remindAt: input.remindAt }),
-      isHoliday: input.isHoliday,
-    });
+    return await this.repository.save(toSaveInput(input));
+  }
+
+  async executeMany(
+    inputs: RegisterScheduleInput[],
+  ): Promise<ScheduleItemRecord[]> {
+    return await this.repository.saveMany(inputs.map(toSaveInput));
   }
 }

@@ -1,6 +1,7 @@
 import {
   mergeScheduleCommands,
   parseScheduleCommand,
+  parseScheduleList,
 } from './parse-schedule-command';
 
 const TODAY = { year: 2026, month: 9, day: 18 };
@@ -163,4 +164,68 @@ describe('mergeScheduleCommands', () => {
       dueDate: { year: 2026, month: 10, day: 5 },
     });
   });
+});
+
+describe('parseScheduleList', () => {
+  const TOMORROW = { year: 2026, month: 9, day: 19 };
+
+  it('번호 목록을 항목별로 읽고, 목록 밖 줄의 날짜를 날짜 없는 항목에 붙인다', () => {
+    const text =
+      '내일 스케줄에\n1. 보험료 납부 계좌 변환하기\n2. DDD 뒷풀이 정산 모두 됐는지 체크하기\n이렇게 두 건 할일로 등록해';
+    expect(parseScheduleList({ text, today: TODAY })).toEqual([
+      {
+        kind: 'REGISTER',
+        title: '보험료 납부 계좌 변환하기',
+        dueDate: TOMORROW,
+      },
+      {
+        kind: 'REGISTER',
+        title: 'DDD 뒷풀이 정산 모두 됐는지 체크하기',
+        dueDate: TOMORROW,
+      },
+    ]);
+  });
+
+  it('항목에 적은 날짜가 목록 밖 날짜보다 우선한다', () => {
+    expect(
+      parseScheduleList({
+        text: '내일까지\n• 자동차세\n• 9월 30일 여권 신청',
+        today: TODAY,
+      }),
+    ).toEqual([
+      { kind: 'REGISTER', title: '자동차세', dueDate: TOMORROW },
+      {
+        kind: 'REGISTER',
+        title: '여권 신청',
+        dueDate: { year: 2026, month: 9, day: 30 },
+      },
+    ]);
+  });
+
+  it('날짜가 어디에도 없으면 항목을 NEEDS_DATE 로 두고, 되묻기 날짜가 오면 붙인다', () => {
+    const text = '- 자동차세\n- 여권 신청\n등록해줘';
+    expect(parseScheduleList({ text, today: TODAY })).toEqual([
+      { kind: 'NEEDS_DATE', title: '자동차세' },
+      { kind: 'NEEDS_DATE', title: '여권 신청' },
+    ]);
+    expect(
+      parseScheduleList({ text, today: TODAY, fallbackDate: TOMORROW }),
+    ).toEqual([
+      { kind: 'REGISTER', title: '자동차세', dueDate: TOMORROW },
+      { kind: 'REGISTER', title: '여권 신청', dueDate: TOMORROW },
+    ]);
+  });
+
+  it('날짜만 적힌 줄뿐이면 등록할 제목이 없어 null 이다', () => {
+    expect(
+      parseScheduleList({ text: '1. 9월 30일\n2. 10월 1일', today: TODAY }),
+    ).toBeNull();
+  });
+
+  it.each(['9월 30일 자동차세', '내일\n1. 자동차세', '지분 1/2 정리 내일'])(
+    '목록 항목이 2건 미만이면 null 이다: %p',
+    (text) => {
+      expect(parseScheduleList({ text, today: TODAY })).toBeNull();
+    },
+  );
 });
