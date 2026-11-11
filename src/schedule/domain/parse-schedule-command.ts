@@ -87,11 +87,17 @@ const LIST_ITEM = /^\s*(?:\d{1,2}[.)]|[-•*])\s+(.+)$/;
  * 목록 밖 줄("내일 스케줄에", "이렇게 두 건 등록해")은 날짜만 준다 — 그 날짜가 날짜 없는 항목에 붙는다.
  * fallbackDate 는 되묻기 후속으로 받은 날짜다. 목록이 아니면(항목 2건 미만) null.
  */
-export const parseScheduleList = (
-  text: string,
-  today: PlainDate,
-  fallbackDate?: PlainDate,
-): ScheduleCommand[] | null => {
+export interface ParseScheduleListInput {
+  text: string;
+  today: PlainDate;
+  fallbackDate?: PlainDate;
+}
+
+export const parseScheduleList = ({
+  text,
+  today,
+  fallbackDate,
+}: ParseScheduleListInput): ScheduleCommand[] | null => {
   const itemTexts: string[] = [];
   const restLines: string[] = [];
   for (const line of text.split(/\r?\n/)) {
@@ -106,15 +112,16 @@ export const parseScheduleList = (
     return null;
   }
   const sharedDate = parseDueDate(restLines.join(' '), today) ?? fallbackDate;
-  return itemTexts
+  const withSharedDate = (command: ScheduleCommand): ScheduleCommand => {
+    if (command.kind !== 'NEEDS_DATE' || !sharedDate) {
+      return command;
+    }
+    return { kind: 'REGISTER', title: command.title, dueDate: sharedDate };
+  };
+  const commands = itemTexts
     .map((itemText) => parseScheduleCommand(itemText, today))
-    .filter((command) => command.kind !== 'NEEDS_TITLE')
-    .map(
-      (command): ScheduleCommand =>
-        command.kind === 'NEEDS_DATE' && sharedDate
-          ? { kind: 'REGISTER', title: command.title, dueDate: sharedDate }
-          : command,
-    );
+    .filter((command) => command.kind !== 'NEEDS_TITLE');
+  return commands.map(withSharedDate);
 };
 
 export const parseScheduleCommand = (
