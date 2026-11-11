@@ -152,6 +152,29 @@ describe('JevSubconsciousGate', () => {
     },
   );
 
+  // 카드 담당은 PR 리뷰뿐이다 — 확신이 높아도 PM·WORK_REVIEWER 는 승격하지 않고 LLM 게이트로 넘긴다.
+  it.each([AgentType.PM, AgentType.WORK_REVIEWER])(
+    '확신 높은 %s 선택도 confidentDecisions 에 넣지 않는다',
+    async (choice) => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          model: 'jev-1.13.0',
+          answers: {
+            promote_0: { type: 'noul', noul: 0.99 },
+            agent_0: { type: 'choice', choice, confidence: 0.99 },
+          },
+        }),
+      }) as typeof fetch;
+      const gate = makeGate({ TYPESAFE_API_KEY: 'test-key' });
+
+      const result = await gate.evaluate([makeChange('notion-1')]);
+
+      expect(result.confidentDecisions).toEqual([]);
+      expect(result.fallbackChanges).toEqual([makeChange('notion-1')]);
+    },
+  );
+
   it('요청한 모델과 다른 응답은 신뢰하지 않는다', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,

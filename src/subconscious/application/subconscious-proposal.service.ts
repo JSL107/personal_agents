@@ -24,7 +24,11 @@ import {
   SubconsciousProposalRecord,
   SubconsciousProposalRepository,
 } from '../domain/port/subconscious-proposal.repository.port';
-import { GateDecision, StateChange } from '../domain/subconscious.type';
+import {
+  GateDecision,
+  PROPOSABLE_AGENT_TYPES,
+  StateChange,
+} from '../domain/subconscious.type';
 import { SubconsciousErrorCode } from '../domain/subconscious-error-code.enum';
 
 // 카드 유효 시간. 1시간이었으나 실측(2026-09-10)에서 미응답 카드 22건이 만료로 죽었고, 그중
@@ -218,6 +222,13 @@ export class SubconsciousProposalService implements ProposalEmitter {
     if (agentType === undefined) {
       return false;
     }
+    // 게이트 파서는 아무 AgentType 이나 통과시키므로 여기서 카드 담당 목록으로 한 번 더 거른다.
+    if (!PROPOSABLE_AGENT_TYPES.has(agentType)) {
+      this.logger.log(
+        `changeKey="${decision.changeKey}" 의 담당 ${agentType} 는 제안 카드 대상이 아님 — 생략`,
+      );
+      return false;
+    }
 
     // 스윕(PR_REVIEW_SWEEP)이 이미 리뷰를 게시한 PR 은 카드를 만들지 않는다. 눌러도 같은
     // 리뷰를 한 번 더 돌릴 뿐이다. allowlist 가 아니라 "실제로 리뷰됐다"는 원장 기록을 근거로
@@ -319,6 +330,14 @@ export class SubconsciousProposalService implements ProposalEmitter {
     now: Date = new Date(),
   ): Promise<string> {
     const record = await this.assertReadyToResolve(proposalId, byUserId, now);
+    // 목록을 좁히기 전에 만들어진 카드(PM·WORK_REVIEWER)는 눌러도 실행하지 않는다 — 실행하면
+    // 오늘 Notion 체크인·회고가 써진다.
+    if (!PROPOSABLE_AGENT_TYPES.has(record.suggestedAgentType as AgentType)) {
+      throw new SubconsciousProposalException(
+        '더 이상 실행을 지원하지 않는 제안입니다. ❌무시로 닫아 주세요.',
+        DomainStatus.PRECONDITION_FAILED,
+      );
+    }
 
     const moved = await this.repository.transitionFromPending(
       proposalId,

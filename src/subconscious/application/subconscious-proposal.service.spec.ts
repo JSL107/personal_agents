@@ -244,21 +244,26 @@ describe('SubconsciousProposalService.shouldEmit', () => {
     expect(result).toBe(true);
   });
 
-  it('CODE_REVIEWER 가 아니면 스윕 원장을 조회하지 않는다', async () => {
-    const agentRunRepository = buildAgentRunRepository(SUCCEEDED_PUBLISHED);
-    const { service } = buildService({ agentRunRepository });
+  // 게이트 파서는 아무 AgentType 이나 통과시킨다 — 카드 담당 목록 밖이면 원장 조회 전에 끊는다.
+  it.each(['PM', 'WORK_REVIEWER'])(
+    '카드 대상이 아닌 워커(%s) 는 카드를 만들지 않는다',
+    async (agentType) => {
+      const agentRunRepository = buildAgentRunRepository(SUCCEEDED_PUBLISHED);
+      const { service, repository } = buildService({ agentRunRepository });
 
-    const result = await service.shouldEmit({
-      ownerUserId: OWNER,
-      decision: buildDecision({
-        suggestedAgentType: 'PM' as AgentType,
-        changeKey: 'notion:page:abc',
-      }),
-    });
+      const result = await service.shouldEmit({
+        ownerUserId: OWNER,
+        decision: buildDecision({
+          suggestedAgentType: agentType as AgentType,
+          changeKey: 'notion:page:abc',
+        }),
+      });
 
-    expect(result).toBe(true);
-    expect(agentRunRepository.findLatestSweepReview).not.toHaveBeenCalled();
-  });
+      expect(result).toBe(false);
+      expect(agentRunRepository.findLatestSweepReview).not.toHaveBeenCalled();
+      expect(repository.hasProposedSince).not.toHaveBeenCalled();
+    },
+  );
 
   it('같은 대상을 금지 기간 안에 이미 제안했으면 false (응답 여부와 무관)', async () => {
     const repository = buildRepository();
@@ -449,25 +454,26 @@ describe('SubconsciousProposalService.apply', () => {
     );
   });
 
-  it('PR 참조가 필요 없는 워커(PM) → dispatch text 는 사람용 요약(summary) 유지 + hint 미전파', async () => {
-    const repository = buildRepository(
-      buildRecord({ suggestedAgentType: 'PM' as AgentType }),
-      true,
-    );
-    const router = buildRouter();
-    const { service } = buildService({ repository, router });
+  // 목록을 좁히기 전에 만든 카드를 눌러도 Notion 체크인·회고가 써지지 않아야 한다.
+  it.each(['PM', 'WORK_REVIEWER'])(
+    '카드 대상이 아닌 워커(%s) 카드 → PRECONDITION_FAILED, 상태 전이·dispatch 없음',
+    async (agentType) => {
+      const repository = buildRepository(
+        buildRecord({ suggestedAgentType: agentType as AgentType }),
+        true,
+      );
+      const router = buildRouter();
+      const { service } = buildService({ repository, router });
 
-    await service.apply(1, OWNER, NOW);
+      await expect(service.apply(1, OWNER, NOW)).rejects.toMatchObject({
+        status: DomainStatus.PRECONDITION_FAILED,
+      });
+      expect(repository.transitionFromPending).not.toHaveBeenCalled();
+      expect(router.dispatch).not.toHaveBeenCalled();
+    },
+  );
 
-    expect(router.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ text: 'PR #1 opened' }),
-    );
-    expect(router.dispatch.mock.calls[0][0]).not.toHaveProperty(
-      'prReferenceHint',
-    );
-  });
-
-  it('BE + 비 github:pr key(notion) → hint 없이 요약만 전달', async () => {
+  it('CODE_REVIEWER + 비 github:pr key(notion) → PR 참조 대신 요약을 전달', async () => {
     const notionChange: StateChange = {
       sourceId: 'notion',
       kind: 'added',
@@ -479,7 +485,7 @@ describe('SubconsciousProposalService.apply', () => {
     };
     const repository = buildRepository(
       buildRecord({
-        suggestedAgentType: 'BE' as AgentType,
+        suggestedAgentType: AgentType.CODE_REVIEWER,
         changeKey: 'notion:page-abc',
         contextJson: { change: notionChange },
       }),

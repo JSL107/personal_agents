@@ -6,7 +6,11 @@ import { ModelRouterUsecase } from '../../model-router/application/model-router.
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { parseGateResponse } from '../application/parse-gate-response';
 import { SubconsciousGate } from '../domain/port/subconscious-gate.port';
-import { GateDecision, RedactedChange } from '../domain/subconscious.type';
+import {
+  GateDecision,
+  PROPOSABLE_AGENT_TYPES,
+  RedactedChange,
+} from '../domain/subconscious.type';
 
 /**
  * 게이트가 제안할 수 있는 워커. **문자열이 아니라 `AgentType` 을 참조한다** — 예전에는
@@ -14,17 +18,17 @@ import { GateDecision, RedactedChange } from '../domain/subconscious.type';
  * 없는 워커를 권했다. 파서가 걸러 조용히 버렸으므로 넷 중 하나가 무효인 채로 지나갔다.
  * enum 을 참조하면 워커가 사라질 때 컴파일이 깨져 여기도 함께 고치게 된다.
  */
-const SUGGESTABLE_AGENTS: readonly AgentType[] = [
-  AgentType.CODE_REVIEWER,
-  AgentType.PM,
-  AgentType.WORK_REVIEWER,
-];
+const SUGGESTABLE_AGENTS: readonly AgentType[] = [...PROPOSABLE_AGENT_TYPES];
 
 const SYSTEM_PROMPT = [
   '당신은 이대리의 proactive 게이트다. 감지된 상태 변화 목록을 받아,',
   'owner 에게 Slack 으로 "이거 할까요?" 제안을 보낼 가치가 있는 것만 promote 한다.',
   '대부분의 변화는 노이즈다 — 확실히 행동 가치가 있을 때만 promote=true.',
-  `suggestedAgentType 은 다음 중 하나: ${SUGGESTABLE_AGENTS.join(', ')}.`,
+  // 2026-11-11: 후보에 PM·WORK_REVIEWER 가 있을 때 Notion 버그 티켓이 대부분 거기로 배정돼,
+  // 실행하면 버그 조사가 아니라 오늘 회고가 써졌다. 후보를 PR 리뷰로 좁히고 나머지는 승격하지 않는다.
+  `suggestedAgentType 은 다음 중 하나: ${SUGGESTABLE_AGENTS.join(', ')} — GitHub PR 코드 리뷰만 한다.`,
+  'PR 이 아닌 변화(Notion 티켓의 원인 조사, 재현 조건·영향 범위 확인, 담당자 정리 등)는',
+  '맞는 워커가 없는 것이다 — promote=false 로 두고 suggestedAgentType 을 생략한다.',
   '출력은 JSON 배열만: [{changeKey, promote, reason, suggestedAgentType?, proposalText?}]',
 ].join('\n');
 
