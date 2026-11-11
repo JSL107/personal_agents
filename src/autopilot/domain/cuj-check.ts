@@ -173,6 +173,7 @@ const SKIP_REASON_LABELS: Record<PaperRecommendationSkipReason, string> = {
   BUY_LIMIT_REACHED: '매수 건수 상한',
   NOT_HELD: '보유하지 않은 종목 매도',
   PENDING_ORDER_EXISTS: '대기 주문 중복',
+  MARKET_REGIME_GATE: '시장 국면 보류',
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -214,6 +215,8 @@ const paperRunProblems = (output: unknown, yesterday: string): string[] => {
     reasons.delete('PENDING_ORDER_EXISTS');
     // 추천과 주문은 분리되어 있다. 현금 부족 미집행은 정상이며 별도 채점한다.
     reasons.delete('INSUFFICIENT_CASH');
+    // 하락장 게이트로 매수 0건은 의도된 동작이다. 보류 추천은 따로 채점한다.
+    reasons.delete('MARKET_REGIME_GATE');
     if (output.skipped.length === 0) {
       problems.push('제안이 모두 걸렸다는데 걸린 기록이 없음');
     } else if (reasons.size > 0) {

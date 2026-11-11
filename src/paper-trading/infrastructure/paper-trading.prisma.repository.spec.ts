@@ -362,6 +362,7 @@ describe('PaperTradingPrismaRepository pending orders', () => {
         tickerId: 71,
         code: '123456',
         recommendedOn: new Date('2026-08-10T00:00:00.000Z'),
+        reason: 'INSUFFICIENT_CASH',
       },
       {
         agentRunId: 1,
@@ -369,6 +370,7 @@ describe('PaperTradingPrismaRepository pending orders', () => {
         tickerId: null,
         code: '999999',
         recommendedOn: new Date('2026-08-10T00:00:00.000Z'),
+        reason: 'INSUFFICIENT_CASH',
       },
     ]);
     expect(prisma.dailyPrice.findMany).toHaveBeenCalledWith(
@@ -387,6 +389,85 @@ describe('PaperTradingPrismaRepository pending orders', () => {
         },
       }),
     );
+  });
+
+  // 두 사유를 한 평균에 섞으면 현금 부족(집행 실패)과 국면 보류(의도된 보류)를 둘 다 읽을 수 없다.
+  it('국면 보류 BUY 도 모으되 사유를 구분해 남긴다', async () => {
+    const repository = new PaperTradingPrismaRepository(
+      prisma as unknown as PrismaService,
+    );
+    const asOf = new Date('2026-08-13T00:00:00.000Z');
+    prisma.paperAccount.findMany.mockResolvedValue([
+      {
+        id: 8,
+        name: 'SWING',
+        seedAmount: new Prisma.Decimal('10000000'),
+        openedAt: new Date('2026-07-01T00:00:00.000Z'),
+      },
+    ]);
+    prisma.agentRun.findMany.mockResolvedValue([
+      {
+        id: 1,
+        startedAt: new Date('2026-08-10T10:00:00.000Z'),
+        output: {
+          strategy: 'SWING',
+          dataAsOf: '2026-08-10',
+          skipped: [
+            { side: 'BUY', reason: 'MARKET_REGIME_GATE', code: '111111' },
+            { side: 'BUY', reason: 'INSUFFICIENT_CASH', code: '222222' },
+            { side: 'SELL', reason: 'MARKET_REGIME_GATE', code: '333333' },
+            { side: 'BUY', reason: 'ALREADY_HELD', code: '444444' },
+          ],
+        },
+      },
+    ]);
+    prisma.ticker.findMany.mockResolvedValue([
+      { id: 11, code: '111111' },
+      { id: 22, code: '222222' },
+    ]);
+
+    const result = await repository.loadRecommendationScoreData({ asOf });
+
+    expect(result.unexecutedRecommendations).toEqual([
+      expect.objectContaining({
+        code: '111111',
+        tickerId: 11,
+        reason: 'MARKET_REGIME_GATE',
+      }),
+      expect.objectContaining({
+        code: '222222',
+        tickerId: 22,
+        reason: 'INSUFFICIENT_CASH',
+      }),
+    ]);
+    // 시세 조회 범위가 두 사유의 종목을 모두 덮어야 보류 추천이 시세 결손으로 빠지지 않는다.
+    expect(prisma.dailyPrice.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          tickerId: { in: expect.arrayContaining([11, 22]) },
+        }),
+      }),
+    );
+  });
+
+  it('벤치마크 종가는 기준일 이하를 최신 순으로 limit 개 읽는다', async () => {
+    const repository = new PaperTradingPrismaRepository(
+      prisma as unknown as PrismaService,
+    );
+    const asOf = new Date('2026-08-13T00:00:00.000Z');
+    prisma.benchmarkDailyClose.findMany.mockResolvedValue([]);
+
+    await repository.findBenchmarkClosesUntil({
+      asOf,
+      limit: 20,
+    });
+
+    expect(prisma.benchmarkDailyClose.findMany).toHaveBeenCalledWith({
+      where: { symbol: 'KOSPI', tradeDate: { lte: asOf } },
+      orderBy: { tradeDate: 'desc' },
+      take: 20,
+      select: { tradeDate: true, close: true },
+    });
   });
 
   it('실거래보다 이른 미집행 추천일과 두 종목 집합을 일봉 조회에 반영한다', async () => {
@@ -518,6 +599,7 @@ describe('PaperTradingPrismaRepository pending orders', () => {
         tickerId: 71,
         code: '123456',
         recommendedOn: new Date('2026-08-10T00:00:00.000Z'),
+        reason: 'INSUFFICIENT_CASH',
       },
     ]);
   });

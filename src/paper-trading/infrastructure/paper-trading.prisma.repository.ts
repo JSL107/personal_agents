@@ -35,7 +35,10 @@ import {
   RecommendationTradeInput,
 } from '../domain/recommendation-score';
 import { settlementDateOf } from '../domain/trade-calendar';
-import type { UnexecutedRecommendationInput } from '../domain/unexecuted-recommendation';
+import {
+  ShadowedRecommendationInput,
+  ShadowedRecommendationReason,
+} from '../domain/unexecuted-recommendation';
 
 // 전체 훑기(findAllAccounts)는 어느 계좌인지 밝혀야 하므로 이름을 함께 싣는다.
 export interface PaperAccountNamedRecord extends PaperAccountRecord {
@@ -394,7 +397,7 @@ export interface RecommendationScoreData {
   dailyPrices: RecommendationScoreDailyPriceRecord[];
   benchmarkCloses: Array<{ tradeDate: Date; close: MoneyValue }>;
   snapshots: RecommendationScoreSnapshotRecord[];
-  unexecutedRecommendations: UnexecutedRecommendationInput[];
+  unexecutedRecommendations: ShadowedRecommendationInput[];
 }
 
 // 채점(초과수익)과 리포트 곡선이 같은 지수를 읽어야 한다. 값이 갈리면 조회가 0건이 되고,
@@ -402,6 +405,11 @@ export interface RecommendationScoreData {
 // 적재하는 쪽은 `screener/application/collect-benchmark-closes.usecase.ts` 다 — 그쪽 심볼을
 // 바꾸면 여기도 함께 바꿔야 한다.
 const BENCHMARK_SYMBOL = 'KOSPI';
+
+export interface BenchmarkCloseRecord {
+  tradeDate: Date;
+  close: Prisma.Decimal;
+}
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -475,6 +483,7 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
       strategy: 'LONG_TERM' | 'SWING';
       code: string;
       recommendedOn: Date;
+      reason: ShadowedRecommendationReason;
     }> = [];
     for (const agentRun of agentRuns) {
       if (!isRecord(agentRun.output)) {
@@ -495,10 +504,18 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
         continue;
       }
       for (const item of skipped) {
+        if (!isRecord(item)) {
+          continue;
+        }
+        // 못 산 사유가 다르면 표본의 성격이 달라 사유별로 따로 채점한다 — 현금 부족은
+        // 집행 실패, 국면 보류는 의도된 보류라 한 평균에 섞으면 둘 다 해석할 수 없다.
+        // output 은 DB JSON 이라 사유가 unknown 이다. enum 값 중 일치하는 것을 찾아 타입을 좁힌다.
+        const reason = Object.values(ShadowedRecommendationReason).find(
+          (candidate) => candidate === item.reason,
+        );
         if (
-          isRecord(item) &&
           item.side === 'BUY' &&
-          item.reason === 'INSUFFICIENT_CASH' &&
+          reason !== undefined &&
           typeof item.code === 'string' &&
           item.code.length > 0
         ) {
@@ -507,6 +524,7 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
             strategy,
             code: item.code,
             recommendedOn,
+            reason,
           });
         }
       }
@@ -524,7 +542,7 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
     const tickerIdByCode = new Map(
       tickers.map((ticker) => [ticker.code, ticker.id]),
     );
-    const unexecutedRecommendations: UnexecutedRecommendationInput[] =
+    const unexecutedRecommendations: ShadowedRecommendationInput[] =
       unresolvedRecommendations.map((item) => ({
         ...item,
         tickerId: tickerIdByCode.get(item.code) ?? null,
@@ -1835,6 +1853,20 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
         totalValue: true,
         returnRate: true,
       },
+    });
+  }
+
+  // `asOf` 이하 KOSPI 종가를 최신 순으로 `limit` 개. 데이터가 없으면 빈 배열이고, DB 오류는 그대로
+  // 던진다. 지수 이름은 채점과 같은 BENCHMARK_SYMBOL 을 쓴다 — 따로 적으면 한쪽만 바뀌어 조회가 0건이 된다.
+  async findBenchmarkClosesUntil(input: {
+    asOf: Date;
+    limit: number;
+  }): Promise<BenchmarkCloseRecord[]> {
+    return await this.prisma.benchmarkDailyClose.findMany({
+      where: { symbol: BENCHMARK_SYMBOL, tradeDate: { lte: input.asOf } },
+      orderBy: { tradeDate: 'desc' },
+      take: input.limit,
+      select: { tradeDate: true, close: true },
     });
   }
 

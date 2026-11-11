@@ -131,6 +131,13 @@ export const formatPaperScoreReport = (
         ? '못 산 추천 없음'
         : `못 산 추천 ${unexecuted.scoredCount}건 채점 · 적중 ${formatUnsignedRate(unexecuted.hitRate)} · 평균 ${formatRate(unexecuted.meanReturnRate)} · 초과 ${formatRate(unexecuted.meanExcessReturnRate)} (${unexecutedDetails})`,
     );
+    // 국면 보류는 현금 부족과 의미가 달라 별도 줄이다. 보류한 추천이 없으면 줄을 생략한다.
+    const gated = account.regimeGated;
+    if (gated.recommendationCount > 0) {
+      lines.push(
+        `국면 보류 ${gated.scoredCount}건 채점 · 적중 ${formatUnsignedRate(gated.hitRate)} · 평균 ${formatRate(gated.meanReturnRate)} · 초과 ${formatRate(gated.meanExcessReturnRate)} (원 ${gated.recommendationCount} · 중복 ${gated.duplicateCount} · 대기 ${gated.notDueCount})`,
+      );
+    }
     if (score.closedCount < 5) {
       lines.push(
         `⚠️ 청산 표본 5건 미만(${score.closedCount}건): 수치를 단정적으로 해석하지 마세요.`,
