@@ -17,6 +17,7 @@ import {
   formatNeedsDate,
   formatNeedsTitle,
   formatScheduleRegistered,
+  formatSchedulesRegistered,
 } from '../../slack/format/schedule.formatter';
 import { AnswerScheduleQuestionUsecase } from '../application/answer-schedule-question.usecase';
 import {
@@ -31,6 +32,7 @@ import { parseDueDate, todayInKst } from '../domain/parse-due-date';
 import {
   mergeScheduleCommands,
   parseScheduleCommand,
+  parseScheduleList,
   ScheduleCommand,
 } from '../domain/parse-schedule-command';
 import {
@@ -39,7 +41,7 @@ import {
 } from '../domain/port/schedule.repository.port';
 import { refersToPriorConversation } from '../domain/prior-conversation-reference';
 import { ScheduleException } from '../domain/schedule.exception';
-import { PlainDate } from '../domain/schedule.type';
+import { PlainDate, ScheduleItemRecord } from '../domain/schedule.type';
 import { ScheduleErrorCode } from '../domain/schedule-error-code.enum';
 import {
   hasScheduleWriteIntent,
@@ -50,6 +52,20 @@ interface RegisterFromConversationInput {
   input: DispatchInput;
   extracted: ExtractedSchedule;
   today: PlainDate;
+}
+
+type RegisterCommand = Extract<ScheduleCommand, { kind: 'REGISTER' }>;
+
+interface ParseListInput {
+  input: DispatchInput;
+  command: ScheduleCommand;
+  mergedPriorText?: string;
+  today: PlainDate;
+}
+
+interface RegisterListInput {
+  input: DispatchInput;
+  list: ScheduleCommand[];
 }
 
 interface MergedScheduleCommand {
@@ -127,6 +143,12 @@ export class ScheduleDispatcher implements AgentDispatcher {
         { ...command, heldWrite: { action: 'REGISTER', marker } },
         formatHeldWrite('일정을 등록', '9월 30일 자동차세 등록해줘'),
       );
+    }
+
+    // 목록은 대화 참조("이렇게 두 건")보다 먼저 본다 — 등록할 내용이 메시지에 다 적혀 있다.
+    const list = this.parseList({ input, command, mergedPriorText, today });
+    if (list !== null) {
+      return this.registerList({ input, list });
     }
 
     const reference = refersToPriorConversation(input.text);
@@ -254,6 +276,86 @@ export class ScheduleDispatcher implements AgentDispatcher {
       output: outcome.result,
       modelUsed: outcome.modelUsed,
       formattedText,
+    };
+  }
+
+  // 이번 원문이 목록이면 그것을, 아니면 날짜 되묻기로 합친 직전 턴의 목록을 읽는다. 직전 턴 목록은
+  // 이번에 받은 날짜를 날짜 없는 항목에 붙인다 — 안 그러면 되묻기 뒤 목록이 다시 한 건으로 합쳐진다.
+  private parseList({
+    input,
+    command,
+    mergedPriorText,
+    today,
+  }: ParseListInput): ScheduleCommand[] | null {
+    const current = parseScheduleList(input.text ?? '', today);
+    if (current !== null || mergedPriorText === undefined) {
+      return current;
+    }
+    // 직전 목록은 그 목록이 날짜를 기다리고 있었고 이번 답이 날짜뿐일 때만 잇는다. 이미 등록한 목록
+    // 뒤에 온 "여권 등록해줘" 가 그 목록을 다시 등록하면 안 된다.
+    const prior = parseScheduleList(mergedPriorText, today);
+    const awaitingDate =
+      prior?.some((item) => item.kind === 'NEEDS_DATE') ?? false;
+    const dateOnly =
+      parseScheduleCommand(input.text ?? '', today).kind === 'NEEDS_TITLE';
+    if (!awaitingDate || !dateOnly || command.kind === 'NEEDS_DATE') {
+      return null;
+    }
+    return parseScheduleList(mergedPriorText, today, command.dueDate);
+  }
+
+  private async registerList({
+    input,
+    list,
+  }: RegisterListInput): Promise<DispatchOutcome> {
+    const items = list.filter(
+      (command): command is RegisterCommand => command.kind === 'REGISTER',
+    );
+    // 한 건이라도 날짜가 없으면 아무것도 등록하지 않고 묻는다. 일부만 등록하면 날짜 답이 온 뒤
+    // 이미 등록한 항목이 한 번 더 등록된다.
+    if (items.length < list.length) {
+      const titles = list.map((command) =>
+        command.kind === 'NEEDS_TITLE' ? '' : command.title,
+      );
+      return this.toOutcome(
+        { kind: 'NEEDS_DATE', titles },
+        formatNeedsDate(titles.join(', ')),
+      );
+    }
+    const outcome = await this.agentRunService.execute({
+      agentType: AgentType.SCHEDULE,
+      triggerType: TriggerType.SLACK_MENTION_SCHEDULE,
+      inputSnapshot: {
+        slackUserId: input.slackUserId,
+        action: 'REGISTER',
+        items: items.map(({ title, dueDate }) => ({ title, dueDate })),
+      },
+      run: async () => {
+        const records: ScheduleItemRecord[] = [];
+        for (const { title, dueDate } of items) {
+          records.push(
+            await this.registerSchedule.execute({
+              slackUserId: input.slackUserId,
+              title,
+              dueDate,
+            }),
+          );
+        }
+        return {
+          result: records,
+          modelUsed: 'deterministic',
+          output: {
+            scheduleIds: records.map((record) => record.id),
+            items: records.map(({ title, dueDate }) => ({ title, dueDate })),
+          },
+        };
+      },
+    });
+    return {
+      agentRunId: outcome.agentRunId,
+      output: outcome.result,
+      modelUsed: outcome.modelUsed,
+      formattedText: formatSchedulesRegistered(outcome.result),
     };
   }
 

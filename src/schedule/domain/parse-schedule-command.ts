@@ -77,6 +77,46 @@ export const mergeScheduleCommands = (
   return { kind: 'NEEDS_TITLE', dueDate };
 };
 
+// Slack 의 번호·글머리 목록은 text 에 "1. …" / "• …" 줄로 온다.
+const LIST_ITEM = /^\s*(?:\d{1,2}[.)]|[-•*])\s+(.+)$/;
+
+/**
+ * 한 메시지에 목록으로 적은 여러 건을 따로 읽는다. 통째로 parseScheduleCommand 에 넣으면 목록 전체가
+ * 제목 하나로 저장된다(2026-11-11 실행 #12336).
+ *
+ * 목록 밖 줄("내일 스케줄에", "이렇게 두 건 등록해")은 날짜만 준다 — 그 날짜가 날짜 없는 항목에 붙는다.
+ * fallbackDate 는 되묻기 후속으로 받은 날짜다. 목록이 아니면(항목 2건 미만) null.
+ */
+export const parseScheduleList = (
+  text: string,
+  today: PlainDate,
+  fallbackDate?: PlainDate,
+): ScheduleCommand[] | null => {
+  const itemTexts: string[] = [];
+  const restLines: string[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    const matched = LIST_ITEM.exec(line);
+    if (matched) {
+      itemTexts.push(matched[1]);
+    } else {
+      restLines.push(line);
+    }
+  }
+  if (itemTexts.length < 2) {
+    return null;
+  }
+  const sharedDate = parseDueDate(restLines.join(' '), today) ?? fallbackDate;
+  return itemTexts
+    .map((itemText) => parseScheduleCommand(itemText, today))
+    .filter((command) => command.kind !== 'NEEDS_TITLE')
+    .map(
+      (command): ScheduleCommand =>
+        command.kind === 'NEEDS_DATE' && sharedDate
+          ? { kind: 'REGISTER', title: command.title, dueDate: sharedDate }
+          : command,
+    );
+};
+
 export const parseScheduleCommand = (
   text: string,
   today: PlainDate,

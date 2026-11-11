@@ -32,6 +32,18 @@ export const formatScheduleRegistered = (
   return `*등록했습니다*: ${title} · ${dueLabel}${dateNotice}${memo}`;
 };
 
+export const formatSchedulesRegistered = (
+  records: ScheduleItemRecord[],
+): string => {
+  const lines = records.map((record) => {
+    const dueLabel = record.dueDate
+      ? toKoreanDate(record.dueDate)
+      : '기한 없음';
+    return `• ${escapeSlackMrkdwn(record.title)} · ${dueLabel}`;
+  });
+  return [`*${records.length}건 등록했습니다*`, ...lines].join('\n');
+};
+
 export const formatNeedsDate = (title: string): string => {
   return `${escapeSlackMrkdwn(title)}: *언제까지인가요?* (예: 9월 30일, 내일, 다음주 월요일)`;
 };

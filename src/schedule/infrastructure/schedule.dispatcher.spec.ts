@@ -305,6 +305,121 @@ describe('ScheduleDispatcher', () => {
     },
   );
 
+  it('목록으로 적은 여러 건을 따로 등록하고 한 AgentRun 에 남긴다', async () => {
+    const usecase = createUsecase();
+    const agentRunService = createAgentRunService();
+    const dispatcher = new ScheduleDispatcher(
+      usecase,
+      createAnswer(),
+      agentRunService as never,
+      { execute: jest.fn().mockResolvedValue(null) } as never,
+    );
+
+    // "이렇게" 는 대화 참조가 아니지만, 참조 표현이 섞여도 목록을 먼저 본다.
+    const outcome = await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '9월 30일까지\n1. 자동차세\n2. 여권 신청\n그럼 이렇게 두 건 등록해',
+      priorTurns: [
+        {
+          role: 'assistant',
+          text: '무엇을 등록할까요?',
+          agentType: AgentType.SCHEDULE,
+          agentRunId: null,
+          timestampMs: 1,
+        },
+      ],
+    });
+
+    expect(usecase.execute).toHaveBeenCalledTimes(2);
+    expect(usecase.execute).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        title: '자동차세',
+        // dispatcher 는 실제 오늘로 연도를 정한다 — 월·일만 본다.
+        dueDate: expect.objectContaining({ month: 9, day: 30 }),
+      }),
+    );
+    expect(usecase.execute).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ title: '여권 신청' }),
+    );
+    expect(agentRunService.execute).toHaveBeenCalledTimes(1);
+    expect(outcome.formattedText).toContain('2건 등록했습니다');
+  });
+
+  it('목록 항목에 날짜가 없으면 하나도 등록하지 않고 묻고, 날짜 답이 오면 항목별로 등록한다', async () => {
+    const usecase = createUsecase();
+    const dispatcher = new ScheduleDispatcher(
+      usecase,
+      createAnswer(),
+      createAgentRunService() as never,
+      { execute: jest.fn().mockResolvedValue(null) } as never,
+    );
+    const listText = '- 자동차세\n- 여권 신청\n등록해줘';
+
+    const asked = await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: listText,
+    });
+    expect(usecase.execute).not.toHaveBeenCalled();
+    expect(asked.formattedText).toBe(formatNeedsDate('자동차세, 여권 신청'));
+
+    await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '9월 30일',
+      priorTurns: [
+        {
+          role: 'user',
+          text: listText,
+          agentType: AgentType.SCHEDULE,
+          agentRunId: null,
+          timestampMs: 1,
+        },
+      ],
+    });
+    expect(usecase.execute).toHaveBeenCalledTimes(2);
+    expect(usecase.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: '여권 신청',
+        // dispatcher 는 실제 오늘로 연도를 정한다 — 월·일만 본다.
+        dueDate: expect.objectContaining({ month: 9, day: 30 }),
+      }),
+    );
+  });
+
+  it('이미 등록한 목록 뒤에 온 날짜 없는 새 요청은 그 목록을 다시 등록하지 않는다', async () => {
+    const usecase = createUsecase();
+    const dispatcher = new ScheduleDispatcher(
+      usecase,
+      createAnswer(),
+      createAgentRunService() as never,
+      { execute: jest.fn().mockResolvedValue(null) } as never,
+    );
+
+    const outcome = await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '건강검진 등록해줘',
+      priorTurns: [
+        {
+          role: 'user',
+          text: '9월 30일까지\n1. 자동차세\n2. 여권 신청',
+          agentType: AgentType.SCHEDULE,
+          agentRunId: null,
+          timestampMs: 1,
+        },
+      ],
+    });
+
+    expect(usecase.execute).not.toHaveBeenCalledWith(
+      expect.objectContaining({ title: '자동차세' }),
+    );
+    expect(outcome.formattedText).not.toContain('2건 등록했습니다');
+  });
+
   it('날짜가 없으면 등록하지 않고 되묻는다', async () => {
     const usecase = createUsecase();
     const answer = createAnswer();
