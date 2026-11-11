@@ -181,12 +181,17 @@ const isTargetFile = (file) =>
   !/^scripts\/__/.test(file);
 
 // `git diff -U0` 출력에서 파일별로 추가된 줄 번호를 모은다.
+// `+++ ` 는 `diff --git` 과 첫 `@@` 사이에서만 파일 헤더다 — 본문의 추가 줄 `++ x` 도 `+++ x` 로 찍힌다.
 const parseAddedLines = (diffText) => {
   const added = new Map();
   const hunkPattern = /^@@ -\S+ \+(\d+)(?:,(\d+))? @@/;
-  const state = { file: null };
+  const state = { file: null, inHeader: false };
   for (const line of diffText.split('\n')) {
-    if (line.startsWith('+++ ')) {
+    if (line.startsWith('diff --git ')) {
+      state.inHeader = true;
+      continue;
+    }
+    if (state.inHeader && line.startsWith('+++ ')) {
       state.file = line.startsWith('+++ b/')
         ? line.slice('+++ b/'.length)
         : null;
@@ -199,6 +204,7 @@ const parseAddedLines = (diffText) => {
     if (!hunk || !state.file) {
       continue;
     }
+    state.inHeader = false;
     const start = Number(hunk[1]);
     const count = hunk[2] === undefined ? 1 : Number(hunk[2]);
     Array.from({ length: count }, (_, offset) => start + offset).forEach(

@@ -41,6 +41,22 @@ describe('check-style-diff', () => {
     expect([...added.get('src/a.ts')]).toEqual([4, 5, 11]);
   });
 
+  it('본문의 추가 줄 `++ x` 는 `+++ x` 로 찍혀도 파일 헤더로 읽지 않는다', () => {
+    const diff = [
+      'diff --git a/src/a.ts b/src/a.ts',
+      '--- a/src/a.ts',
+      '+++ b/src/a.ts',
+      '@@ -1,0 +2 @@',
+      '+++ value;',
+      '@@ -5,0 +7 @@',
+      '+let x = 1;',
+    ].join('\n');
+
+    const added = style.parseAddedLines(diff);
+
+    expect([...added.get('src/a.ts')]).toEqual([2, 7]);
+  });
+
   it.each([
     ['positional-args', 'const f = (a: number, b: number): number => a + b;'],
     ['literal-union', "type Status = 'OPEN' | 'CLOSED';"],
