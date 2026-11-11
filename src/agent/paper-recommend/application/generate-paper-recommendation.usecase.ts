@@ -4,6 +4,7 @@ import { AgentRunService } from '../../../agent-run/application/agent-run.servic
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import {
   formatKstDate,
+  getKstDateOf,
   utcMidnightOf,
 } from '../../../common/util/kst-date.util';
 import {
@@ -35,6 +36,13 @@ import {
 } from '../../../screener/application/screen-universe.usecase';
 import { SelectionGapSummary } from '../../../screener/domain/screening-scorecard';
 import { ResolveStrategyParametersUsecase } from '../../../strategy-parameter/application/resolve-strategy-parameters.usecase';
+import {
+  holdBuysForMarketRegime,
+  judgeMarketRegime,
+  MARKET_REGIME_MA_WINDOW,
+  MarketRegimeJudgement,
+  MarketRegimeStatus,
+} from '../domain/market-regime';
 import { constrainPaperRecommendation } from '../domain/paper-recommendation.constraint';
 import { parsePaperRecommendation } from '../domain/paper-recommendation.parser';
 import {
@@ -334,6 +342,12 @@ export class GeneratePaperRecommendationUsecase {
         // output 에는 제약을 거친 주문만 남아 "원래 답" 과 재생 답을 비교할 수 없다.
         await recordModelResponse(completion.text);
         const recommendation = parsePaperRecommendation(completion.text);
+        // 모델·스크린 기록이 끝난 뒤에 판정한다 — 프롬프트와 스크린 회차는 게이트를 모르는
+        // 평소 기준 그대로여야 보류한 추천의 채점이 의미가 있다. 트랜잭션 밖에서 읽는다.
+        const marketRegime = await this.judgeMarketRegime({
+          strategy,
+          dataAsOf: screen.asOf,
+        });
         const result = await this.repository.saveRecommendationAtomically({
           accountId: account.id,
           strategy,
@@ -349,6 +363,7 @@ export class GeneratePaperRecommendationUsecase {
               recommendation,
               state,
               maximumWeightPercent: parameters.maximumWeightPercent,
+              marketRegime,
             });
             const orders = lockedRecommendation.orders;
             return {
@@ -402,11 +417,40 @@ export class GeneratePaperRecommendationUsecase {
         return {
           result,
           modelUsed: completion.modelUsed,
-          output: result,
+          // 게이트 판정 근거(기준일·종가·MA20)를 회차 결과에 남긴다 — 사후 재현용.
+          output: { ...result, marketRegime },
         };
       },
     });
     return outcome.result;
+  }
+
+  // SWING 만 판정한다. LONG_TERM 은 조회도 하지 않아 동작이 그대로다.
+  // 조회 실패(DB 예외)는 삼키지 않는다 — 데이터가 "없는" 것만 UNKNOWN(게이트 미적용)이다.
+  private async judgeMarketRegime({
+    strategy,
+    dataAsOf,
+  }: {
+    strategy: PaperRecommendationStrategy;
+    dataAsOf: string | null;
+  }): Promise<MarketRegimeJudgement | null> {
+    if (strategy !== 'SWING') {
+      return null;
+    }
+    if (dataAsOf === null) {
+      return judgeMarketRegime({ dataAsOf, closes: [] });
+    }
+    const dataAsOfDate = utcMidnightOf(dataAsOf);
+    const benchmarkCloses = await this.repository.findBenchmarkClosesUntil({
+      asOf: dataAsOfDate,
+      limit: MARKET_REGIME_MA_WINDOW,
+    });
+    // @db.Date 는 그날 UTC 00:00 이라 KST 달력일로 읽어도 같은 날짜다.
+    const closes = benchmarkCloses.map((benchmarkClose) => ({
+      tradeDate: getKstDateOf(benchmarkClose.tradeDate),
+      close: Number(benchmarkClose.close.toString()),
+    }));
+    return judgeMarketRegime({ dataAsOf, closes });
   }
 
   private async findPurchasableCash(
@@ -466,6 +510,7 @@ export class GeneratePaperRecommendationUsecase {
     recommendation,
     state,
     maximumWeightPercent,
+    marketRegime,
   }: {
     strategy: PaperRecommendationStrategy;
     decidedAt: Date;
@@ -476,6 +521,7 @@ export class GeneratePaperRecommendationUsecase {
     recommendation: ReturnType<typeof parsePaperRecommendation>;
     state: LockedPaperRecommendationState;
     maximumWeightPercent: number;
+    marketRegime: MarketRegimeJudgement | null;
   }): LockedRecommendationResult {
     const codesByTickerId = new Map([
       ...screen.stocks.map((stock): [number, string] => [
@@ -540,7 +586,7 @@ export class GeneratePaperRecommendationUsecase {
         });
         return false;
       });
-    const constrained = constrainPaperRecommendation({
+    const unguarded = constrainPaperRecommendation({
       recommendation: {
         sells: withoutPendingOrders(recommendation.sells, 'SELL'),
         buys: withoutPendingOrders(recommendation.buys, 'BUY'),
@@ -564,6 +610,10 @@ export class GeneratePaperRecommendationUsecase {
       ),
       maximumWeightPercent,
     });
+    const constrained =
+      marketRegime?.status === MarketRegimeStatus.CLOSED
+        ? holdBuysForMarketRegime(unguarded)
+        : unguarded;
     const orders = this.toPendingOrders({
       strategy,
       decidedAt,

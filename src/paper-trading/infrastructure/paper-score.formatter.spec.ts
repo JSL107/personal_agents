@@ -45,6 +45,19 @@ const RESULT: ScoreRecommendationsResult = {
         meanExcessReturnRate: '0.0234',
         benchmarkUnavailableCount: 0,
       },
+      regimeGated: {
+        recommendationCount: 0,
+        duplicateCount: 0,
+        unresolvedCount: 0,
+        scoredCount: 0,
+        notDueCount: 0,
+        unavailableCount: 0,
+        hitCount: 0,
+        hitRate: null,
+        meanReturnRate: null,
+        meanExcessReturnRate: null,
+        benchmarkUnavailableCount: 0,
+      },
       evaluationBenchmarkMissing: false,
       portfolio: {
         snapshotCount: 8,
@@ -92,6 +105,35 @@ describe('formatPaperScoreReport', () => {
       '못 산 추천 2건 채점 · 적중 50% · 평균 +12.34% · 초과 +2.34% (원 4 · 중복 1 · 대기 1)',
     );
     expect(text).toContain('*장기투자* · 규칙 v2');
+  });
+
+  it('국면 보류 채점은 못 산 추천과 별도 줄이고, 0건이면 줄을 생략한다', () => {
+    expect(formatPaperScoreReport(RESULT)).not.toContain('국면 보류');
+
+    const text = formatPaperScoreReport({
+      ...RESULT,
+      accounts: [
+        {
+          ...RESULT.accounts[0],
+          regimeGated: {
+            ...RESULT.accounts[0].unexecuted,
+            recommendationCount: 5,
+            scoredCount: 3,
+            hitRate: '0.3333',
+            meanReturnRate: '-0.061',
+            meanExcessReturnRate: '-0.02',
+            duplicateCount: 1,
+            notDueCount: 1,
+          },
+        },
+      ],
+    });
+
+    expect(text).toContain(
+      '국면 보류 3건 채점 · 적중 33.33% · 평균 -6.1% · 초과 -2% (원 5 · 중복 1 · 대기 1)',
+    );
+    // 기존 줄의 의미(현금 부족)는 그대로다.
+    expect(text).toContain('못 산 추천 2건 채점');
   });
 
   // 저장하지 않은 회차를 조용히 넘기면, 손으로 과거를 재채점한 숫자를 원장에 있는 성적으로

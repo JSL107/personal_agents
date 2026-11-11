@@ -69,7 +69,9 @@ export type PaperRecommendationSkipReason =
   | 'BUY_LIMIT_REACHED'
   | 'NOT_HELD'
   // 같은 종목의 미체결 매도 주문이 이미 있어 이번 회차에서 빠진 건.
-  | 'PENDING_ORDER_EXISTS';
+  | 'PENDING_ORDER_EXISTS'
+  // SWING 신규 매수 보류 — KOSPI 가 20일 이동평균 이하인 날 모델의 매수 제안 전부.
+  | 'MARKET_REGIME_GATE';
 
 export interface PaperRecommendationSkip {
   side: 'BUY' | 'SELL';

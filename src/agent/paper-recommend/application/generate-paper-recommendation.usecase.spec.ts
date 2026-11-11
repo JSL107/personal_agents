@@ -54,6 +54,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
     findLatestRecommendationScore: jest.fn(),
     findAccountWithCorporateActions: jest.fn(),
     saveRecommendationAtomically: jest.fn(),
+    findBenchmarkClosesUntil: jest.fn(),
   } as unknown as jest.Mocked<PaperTradingPrismaRepository>;
   const modelRouter = {
     route: jest.fn(),
@@ -115,6 +116,8 @@ describe('GeneratePaperRecommendationUsecase', () => {
       seedAmount: '10000000',
       cashBalance: '10000000',
     });
+    // 기본값은 지수 종가 없음 → 국면 UNKNOWN(게이트 미적용). 게이트를 다루는 회차만 따로 지정한다.
+    repository.findBenchmarkClosesUntil.mockResolvedValue([]);
     repository.findPositionsWithTicker.mockResolvedValue([]);
     repository.findLatestValuation.mockResolvedValue(null);
     repository.findLatestRecommendationScore.mockResolvedValue(null);
@@ -1626,5 +1629,265 @@ describe('GeneratePaperRecommendationUsecase', () => {
     expect(modelRouter.route.mock.calls[0][0].request.prompt).not.toContain(
       '추천 성적',
     );
+  });
+
+  describe('시장 국면 게이트 (SWING 전용)', () => {
+    // 기준일(2026-08-13)까지 하루씩 20개. 앞 19개는 100, 기준일 종가만 `last`.
+    // 저장소는 최신 순으로 돌려준다.
+    const kospiRows = (last: number, count = 20) =>
+      Array.from({ length: count }, (_, index) => ({
+        tradeDate: new Date(Date.UTC(2026, 7, 13 - index)),
+        close: new Prisma.Decimal(index === 0 ? last : 100),
+      }));
+    const heldPosition = {
+      id: 1,
+      accountId: 41,
+      tickerId: 81,
+      quantity: { toString: () => '3' } as never,
+      avgPrice: { toString: () => '50000' } as never,
+      ticker: { code: '005930', name: '삼성전자', tossSymbol: '005930' },
+    };
+    let outputs: Array<Record<string, unknown>>;
+
+    // 보유 종목(005930) 매도 + 후보(000660) 매수를 함께 내는 모델 응답.
+    const arrangeSellAndBuy = (): void => {
+      outputs = [];
+      repository.findPositionsWithTicker.mockResolvedValue([heldPosition]);
+      screenUniverse.execute.mockImplementation(async ({ strategy }) => ({
+        strategy,
+        ruleVersion: 2,
+        universeCount: 2,
+        evaluatedCount: 2,
+        staleCount: 0,
+        passedCount: 1,
+        highFallbackCount: 0,
+        asOf: '2026-08-13',
+        recordOutcome: null,
+        includedIndicators: [
+          {
+            tickerId: 81,
+            code: '005930',
+            name: '삼성전자',
+            sector: '전기전자',
+            indicators: { ...indicators, close: 70_000 },
+          },
+        ],
+        stocks: [
+          {
+            tickerId: 71,
+            code: '000660',
+            name: 'SK하이닉스',
+            krxMarket: 'KOSPI',
+            sector: '전기전자',
+            score: 98,
+            indicators,
+          },
+        ],
+      }));
+      modelRouter.route.mockResolvedValue({
+        text: JSON.stringify({
+          sells: [{ code: '005930', reason: '추세 훼손' }],
+          buys: [{ code: '000660', reason: '추세 우위' }],
+        }),
+        modelUsed: 'codex-cli',
+        provider: ModelProviderName.CHATGPT,
+      });
+      agentRunService.execute.mockImplementation(async (input) => {
+        const execution = await input.run({
+          agentRunId: 99,
+          updateInputSnapshot,
+          recordModelResponse,
+        });
+        outputs.push(execution.output as Record<string, unknown>);
+        return {
+          result: execution.result,
+          modelUsed: execution.modelUsed,
+          agentRunId: 99,
+        };
+      });
+      repository.saveRecommendationAtomically.mockImplementation(
+        async ({ decide }) =>
+          decide({
+            account: {
+              id: 41,
+              seedAmount: new Prisma.Decimal('10000000'),
+              cashBalance: new Prisma.Decimal('10000000'),
+            },
+            positions: [heldPosition],
+            latestValuation: null,
+            existingOrders: [],
+            corporateActions: [],
+          }).result,
+      );
+    };
+
+    beforeEach(arrangeSellAndBuy);
+
+    it('CLOSED 면 주문됐을 매수를 빼고 MARKET_REGIME_GATE 로 남기며 매도는 유지하고 회차는 성공한다', async () => {
+      // 종가 80 < MA20 99
+      repository.findBenchmarkClosesUntil.mockResolvedValue(kospiRows(80));
+
+      const result = await usecase.execute({
+        strategies: ['SWING'],
+        decidedAt,
+      });
+
+      expect(result.failed).toEqual([]);
+      const success = result.completed[0];
+      expect(success.orders.map((order) => [order.side, order.code])).toEqual([
+        ['SELL', '005930'],
+      ]);
+      expect(success.skipped).toEqual([
+        {
+          side: 'BUY',
+          code: '000660',
+          name: 'SK하이닉스',
+          reason: 'MARKET_REGIME_GATE',
+        },
+      ]);
+      // 회차 결과에 판정 근거가 남는다 — 사후 재현·채점용.
+      expect(outputs[0].marketRegime).toMatchObject({
+        status: 'CLOSED',
+        dataAsOf: '2026-08-13',
+        close: 80,
+        ma20: 99,
+        closeCount: 20,
+      });
+      expect(repository.findBenchmarkClosesUntil).toHaveBeenCalledWith({
+        asOf: new Date('2026-08-13T00:00:00.000Z'),
+        limit: 20,
+      });
+    });
+
+    it('CLOSED 여도 어차피 못 샀을 매수 제안은 원래 사유로 남아 보류 표본에 섞이지 않는다', async () => {
+      repository.findBenchmarkClosesUntil.mockResolvedValue(kospiRows(80));
+      // 보유 종목(005930) 매수와 후보 밖 종목(123456) 매수는 게이트와 무관하게 걸린다.
+      modelRouter.route.mockResolvedValue({
+        text: JSON.stringify({
+          sells: [],
+          buys: [
+            { code: '000660', reason: '추세 우위' },
+            { code: '005930', reason: '추가 매수' },
+            { code: '123456', reason: '후보 밖' },
+          ],
+        }),
+        modelUsed: 'codex-cli',
+        provider: ModelProviderName.CHATGPT,
+      });
+
+      const result = await usecase.execute({
+        strategies: ['SWING'],
+        decidedAt,
+      });
+
+      expect(result.failed).toEqual([]);
+      expect(result.completed[0].orders).toEqual([]);
+      expect(
+        result.completed[0].skipped.map((skip) => [skip.code, skip.reason]),
+      ).toEqual([
+        ['005930', 'ALREADY_HELD'],
+        ['123456', 'NOT_IN_CANDIDATES'],
+        ['000660', 'MARKET_REGIME_GATE'],
+      ]);
+    });
+
+    it('게이트는 모델 프롬프트를 바꾸지 않는다', async () => {
+      repository.findBenchmarkClosesUntil.mockResolvedValue(kospiRows(120));
+      await usecase.execute({ strategies: ['SWING'], decidedAt });
+      const openPrompt = modelRouter.route.mock.calls[0][0].request;
+
+      modelRouter.route.mockClear();
+      repository.findBenchmarkClosesUntil.mockResolvedValue(kospiRows(80));
+      await usecase.execute({ strategies: ['SWING'], decidedAt });
+
+      expect(modelRouter.route.mock.calls[0][0].request).toEqual(openPrompt);
+    });
+
+    it('OPEN 이면 기존대로 매수 주문을 만든다', async () => {
+      repository.findBenchmarkClosesUntil.mockResolvedValue(kospiRows(120));
+
+      const result = await usecase.execute({
+        strategies: ['SWING'],
+        decidedAt,
+      });
+
+      expect(
+        result.completed[0].orders.map((order) => [order.side, order.code]),
+      ).toEqual([
+        ['SELL', '005930'],
+        ['BUY', '000660'],
+      ]);
+      expect(outputs[0].marketRegime).toMatchObject({ status: 'OPEN' });
+    });
+
+    it('UNKNOWN(지수 종가 20개 미만·기준일 종가 없음)이면 게이트를 걸지 않는다', async () => {
+      repository.findBenchmarkClosesUntil.mockResolvedValue(kospiRows(80, 19));
+      const fewRows = await usecase.execute({
+        strategies: ['SWING'],
+        decidedAt,
+      });
+      // 기준일(08-13) 종가가 없는 낡은 지수: 08-12 까지만.
+      repository.findBenchmarkClosesUntil.mockResolvedValue(
+        kospiRows(80).map((row) => ({
+          ...row,
+          tradeDate: new Date(row.tradeDate.getTime() - 86_400_000),
+        })),
+      );
+      const stale = await usecase.execute({
+        strategies: ['SWING'],
+        decidedAt,
+      });
+
+      for (const result of [fewRows, stale]) {
+        expect(result.completed[0].orders.map((order) => order.code)).toContain(
+          '000660',
+        );
+        expect(result.completed[0].skipped).toEqual([]);
+      }
+      expect(outputs.map((output) => output.marketRegime)).toEqual([
+        expect.objectContaining({
+          status: 'UNKNOWN',
+          unknownReason: 'INSUFFICIENT_HISTORY',
+        }),
+        expect.objectContaining({
+          status: 'UNKNOWN',
+          unknownReason: 'NO_CLOSE_ON_DATA_AS_OF',
+        }),
+      ]);
+    });
+
+    it('LONG_TERM 은 지수를 조회하지 않고 하락장이어도 동작이 그대로다', async () => {
+      repository.findBenchmarkClosesUntil.mockResolvedValue(kospiRows(80));
+
+      const result = await usecase.execute({
+        strategies: ['LONG_TERM'],
+        decidedAt,
+      });
+
+      expect(repository.findBenchmarkClosesUntil).not.toHaveBeenCalled();
+      expect(
+        result.completed[0].orders.map((order) => [order.side, order.code]),
+      ).toEqual([
+        ['SELL', '005930'],
+        ['BUY', '000660'],
+      ]);
+      expect(result.completed[0].skipped).toEqual([]);
+      expect(outputs[0].marketRegime).toBeNull();
+    });
+
+    it('지수 조회가 DB 예외로 실패하면 삼키지 않고 그 회차를 실패로 던진다', async () => {
+      repository.findBenchmarkClosesUntil.mockRejectedValue(
+        new Error('db down'),
+      );
+
+      const result = await usecase.execute({
+        strategies: ['SWING'],
+        decidedAt,
+      });
+
+      expect(result.failed).toEqual([
+        { strategy: 'SWING', message: 'db down' },
+      ]);
+    });
   });
 });
