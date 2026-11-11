@@ -253,10 +253,14 @@ export class JevSubconsciousGate {
         type: 'choice',
         instructions: `Which agent should handle change ${index}?`,
         criteria: {
-          [AgentType.CODE_REVIEWER]: 'A pull request or code review task.',
-          [AgentType.PM]: 'A planning or daily-plan task.',
-          [AgentType.WORK_REVIEWER]: 'A work-log or progress-review task.',
-          NONE: 'No supported agent is appropriate.',
+          // 2026-11-11: 넓게 적어 두자 Notion 버그 티켓이 WORK_REVIEWER 로 갔다 — 워커가 실제로
+          // 하는 일만 적고, 조사·확인류는 NONE 으로 명시한다. NONE 은 LLM 게이트로 넘어간다.
+          [AgentType.CODE_REVIEWER]:
+            'Review the code of a GitHub pull request.',
+          [AgentType.PM]: "Re-plan the owner's tasks for today.",
+          [AgentType.WORK_REVIEWER]:
+            'Write a retrospective of what the owner did today.',
+          NONE: 'Anything else, e.g. investigating a bug or ticket, checking reproduction conditions or impact, or sorting out owners.',
         },
       };
     });

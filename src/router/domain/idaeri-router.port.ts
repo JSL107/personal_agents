@@ -45,6 +45,8 @@ export interface DispatchInput {
   // 봇이 스스로 만든 것이라 사람이 게시를 의도했다고 볼 수 없고, 대상이 남이 작성한 PR 일 수
   // 있어서다(팀과 협의되지 않은 자동 코멘트). 내가 작성한 PR 은 스윕이 이미 게시하므로
   // 카드 경로의 게시는 중복이기도 하다.
+  // PM·WORK_REVIEWER 는 같은 값으로 Notion 일일 페이지·daily_plan 기록을 건너뛴다 — 카드를 눌러
+  // 사용자 모르게 오늘 체크인·회고가 덮여 쓰이지 않게 한다.
   publish?: boolean;
   // handoff chain 안에서 parent.id 전달 — 신규 AgentRun 의 parentId 컬럼에 기록.
   contextRefs?: { agentRunId?: number };

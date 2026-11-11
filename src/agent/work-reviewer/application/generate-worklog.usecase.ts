@@ -69,6 +69,7 @@ export class GenerateWorklogUsecase {
     workText,
     slackUserId,
     triggerType,
+    persist = true,
   }: GenerateWorklogInput): Promise<AgentRunOutcome<DailyReview>> {
     const trimmed = workText.trim();
     if (trimmed.length === 0) {
@@ -139,14 +140,16 @@ export class GenerateWorklogUsecase {
 
         // Notion day-page 에 Check Out + KPT 섹션 append — graceful fire-and-forget.
         // 실패해도 review 응답은 사용자에게 정상 반환.
-        try {
-          await this.appendWorklogUsecase.execute({ review, reviewDate });
-        } catch (error: unknown) {
-          const message =
-            error instanceof Error ? error.message : String(error);
-          this.logger.warn(
-            `Notion worklog 기록 실패 (review 응답은 정상 반환): ${message}`,
-          );
+        if (persist) {
+          try {
+            await this.appendWorklogUsecase.execute({ review, reviewDate });
+          } catch (error: unknown) {
+            const message =
+              error instanceof Error ? error.message : String(error);
+            this.logger.warn(
+              `Notion worklog 기록 실패 (review 응답은 정상 반환): ${message}`,
+            );
+          }
         }
 
         return {

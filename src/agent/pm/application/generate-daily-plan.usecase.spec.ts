@@ -63,10 +63,14 @@ describe('GenerateDailyPlanUsecase', () => {
   let listAssignedTasksExecute: jest.Mock;
   let listMyMentionsExecute: jest.Mock;
   let listActiveTasksExecute: jest.Mock;
+  let inboxPeekPending: jest.Mock;
+  let inboxMarkConsumed: jest.Mock;
   let usecase: GenerateDailyPlanUsecase;
 
   beforeEach(() => {
     modelRouter = { route: jest.fn() };
+    inboxPeekPending = jest.fn().mockResolvedValue([]);
+    inboxMarkConsumed = jest.fn().mockResolvedValue(undefined);
     agentRunServiceExecute = jest.fn(async (input) => {
       const execution = await input.run({ agentRunId: 42 });
       return {
@@ -110,8 +114,8 @@ describe('GenerateDailyPlanUsecase', () => {
       { execute: listMyMentionsExecute } as unknown as ListMyMentionsUsecase,
       { execute: listActiveTasksExecute } as unknown as ListActiveTasksUsecase,
       {
-        peekPending: jest.fn().mockResolvedValue([]),
-        markConsumed: jest.fn().mockResolvedValue(undefined),
+        peekPending: inboxPeekPending,
+        markConsumed: inboxMarkConsumed,
       } as unknown as import('../../../slack-inbox/application/slack-inbox.service').SlackInboxService,
       {
         execute: jest
@@ -138,8 +142,8 @@ describe('GenerateDailyPlanUsecase', () => {
       promptBuilder,
       evidenceBuilder,
       {
-        peekPending: jest.fn().mockResolvedValue([]),
-        markConsumed: jest.fn().mockResolvedValue(undefined),
+        peekPending: inboxPeekPending,
+        markConsumed: inboxMarkConsumed,
       } as unknown as import('../../../slack-inbox/application/slack-inbox.service').SlackInboxService,
       {
         get: jest.fn().mockReturnValue(undefined),
@@ -384,6 +388,38 @@ describe('GenerateDailyPlanUsecase', () => {
       });
 
       expect(result.result.plan).toEqual(validPlan);
+    });
+
+    it('persist 미지정이면 인박스 항목을 소비 처리한다 (기존 동작)', async () => {
+      listAssignedTasksExecute.mockResolvedValue({
+        issues: [],
+        pullRequests: [],
+      });
+      inboxPeekPending.mockResolvedValue([{ id: 7, text: '인박스 항목' }]);
+
+      await usecase.execute({ tasksText: 'x', slackUserId: 'U' });
+
+      expect(inboxMarkConsumed).toHaveBeenCalledWith([7]);
+    });
+
+    // 잠재의식 제안 카드 경로 — 계획은 돌려주되 daily_plan·Notion·인박스 어디에도 흔적을 남기지 않는다.
+    it('persist=false 면 daily_plan·Notion 기록과 인박스 소비를 모두 건너뛴다', async () => {
+      listAssignedTasksExecute.mockResolvedValue({
+        issues: [],
+        pullRequests: [],
+      });
+      inboxPeekPending.mockResolvedValue([{ id: 7, text: '인박스 항목' }]);
+
+      const result = await usecase.execute({
+        tasksText: 'x',
+        slackUserId: 'U',
+        persist: false,
+      });
+
+      expect(result.result.plan).toEqual(validPlan);
+      expect(dailyPlanRecord).not.toHaveBeenCalled();
+      expect(appendDailyPlanExecute).not.toHaveBeenCalled();
+      expect(inboxMarkConsumed).not.toHaveBeenCalled();
     });
   });
 

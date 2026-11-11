@@ -34,4 +34,7 @@ export interface GenerateWorklogInput {
   workText: string;
   slackUserId: string;
   triggerType?: TriggerType;
+  // false 면 회고만 만들어 돌려주고 Notion 일일 페이지에 append 하지 않는다 — 잠재의식 제안
+  // 카드(DispatchInput.publish=false) 경로. 미지정이면 append 한다(기존 동작).
+  persist?: boolean;
 }

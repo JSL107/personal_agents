@@ -73,6 +73,9 @@ export interface GenerateDailyPlanInput {
   // 자연어 진입 시 router 가 전달하는 대화 맥락 — userInstruction(직전 대화 기반 사용자 지시)을
   // prompt [사용자 지시] 섹션으로 반영. 슬래시 /today 진입은 미주입 (기존 동작).
   conversationContext?: ConversationContext;
+  // false 면 계획만 만들어 돌려주고 daily_plan·Notion 체크인·인박스 소비를 하지 않는다 —
+  // 잠재의식 제안 카드(DispatchInput.publish=false) 경로. 미지정이면 기록한다(기존 동작).
+  persist?: boolean;
 }
 
 // /today 응답 맨 위에 노출할 "참조 소스" 엔트리 한 건. Slack 사용자가 plan 이

@@ -157,6 +157,31 @@ describe('GenerateWorklogUsecase', () => {
     });
   });
 
+  it.each([
+    { persist: undefined, appended: 1 },
+    { persist: true, appended: 1 },
+    // 잠재의식 제안 카드 경로 — 회고는 돌려주되 Notion 일일 페이지에는 쓰지 않는다.
+    { persist: false, appended: 0 },
+  ])(
+    'persist=$persist 이면 Notion append 를 $appended 번 호출한다',
+    async ({ persist, appended }) => {
+      modelRouter.route.mockResolvedValue({
+        text: JSON.stringify(validReview),
+        modelUsed: 'codex-cli',
+        provider: ModelProviderName.CHATGPT,
+      } satisfies CompletionResponse);
+
+      const result = await usecase.execute({
+        workText: '오늘 한 일',
+        slackUserId: 'U123',
+        ...(persist === undefined ? {} : { persist }),
+      });
+
+      expect(result.result).toEqual(validReview);
+      expect(appendWorklogExecute).toHaveBeenCalledTimes(appended);
+    },
+  );
+
   it('AgentRunService 에 WORK_REVIEWER / SLACK_COMMAND_WORKLOG / evidence 를 전달한다', async () => {
     modelRouter.route.mockResolvedValue({
       text: JSON.stringify(validReview),

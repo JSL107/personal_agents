@@ -92,6 +92,7 @@ export class GenerateDailyPlanUsecase {
     slackUserId,
     triggerType,
     conversationContext,
+    persist = true,
   }: GenerateDailyPlanInput): Promise<AgentRunOutcome<DailyPlanResult>> {
     const userText = tasksText.trim();
     // OPS-8: 호출자가 명시한 triggerType 사용 (Morning Briefing CRON 등). 미지정시 수동 /today.
@@ -174,12 +175,14 @@ export class GenerateDailyPlanUsecase {
         });
         const innerSources = extractSources(context);
 
-        await this.persistPlanGracefully({
-          plan: innerPlan,
-          sources: innerSources,
-          agentRunId,
-          planDate,
-        });
+        if (persist) {
+          await this.persistPlanGracefully({
+            plan: innerPlan,
+            sources: innerSources,
+            agentRunId,
+            planDate,
+          });
+        }
 
         return {
           result: innerPlan,
@@ -190,7 +193,8 @@ export class GenerateDailyPlanUsecase {
     });
 
     // Plan 성공 후에만 inbox 항목을 consumed 마킹 — 중간 단계 실패 시 reacted 메시지 손실 방지 (codex P2).
-    if (context.inboxItemIds.length > 0) {
+    // 기록하지 않는 실행(persist=false)은 인박스도 소비하지 않는다 — 진짜 계획에 다시 실려야 한다.
+    if (persist && context.inboxItemIds.length > 0) {
       try {
         await this.slackInboxService.markConsumed(context.inboxItemIds);
       } catch (error: unknown) {
