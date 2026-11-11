@@ -295,17 +295,17 @@ export class ScheduleDispatcher implements AgentDispatcher {
         : parseScheduleCommand(mergedPriorText, today);
     const awaitedTitleDate =
       priorCommand?.kind === 'NEEDS_TITLE' ? priorCommand.dueDate : undefined;
-    const current = parseScheduleList(
-      input.text ?? '',
+    const current = parseScheduleList({
+      text: input.text ?? '',
       today,
-      awaitedTitleDate,
-    );
+      fallbackDate: awaitedTitleDate,
+    });
     if (current !== null || mergedPriorText === undefined) {
       return current;
     }
     // 직전 목록은 그 목록이 날짜를 기다리고 있었고 이번 답이 날짜뿐일 때만 잇는다. 이미 등록한 목록
     // 뒤에 온 "여권 등록해줘" 가 그 목록을 다시 등록하면 안 된다.
-    const prior = parseScheduleList(mergedPriorText, today);
+    const prior = parseScheduleList({ text: mergedPriorText, today });
     const awaitingDate =
       prior?.some((item) => item.kind === 'NEEDS_DATE') ?? false;
     const dateOnly =
@@ -313,7 +313,11 @@ export class ScheduleDispatcher implements AgentDispatcher {
     if (!awaitingDate || !dateOnly || command.kind === 'NEEDS_DATE') {
       return null;
     }
-    return parseScheduleList(mergedPriorText, today, command.dueDate);
+    return parseScheduleList({
+      text: mergedPriorText,
+      today,
+      fallbackDate: command.dueDate,
+    });
   }
 
   private async registerList({
@@ -329,10 +333,8 @@ export class ScheduleDispatcher implements AgentDispatcher {
       const titles = list.map((command) =>
         command.kind === 'NEEDS_TITLE' ? '' : command.title,
       );
-      return this.toOutcome(
-        { kind: 'NEEDS_DATE', titles },
-        formatNeedsDate(titles.join(', ')),
-      );
+      const question = formatNeedsDate(titles.join(', '));
+      return this.toOutcome({ kind: 'NEEDS_DATE', titles }, question);
     }
     const outcome = await this.agentRunService.execute({
       agentType: AgentType.SCHEDULE,

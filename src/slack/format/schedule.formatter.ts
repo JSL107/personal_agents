@@ -41,7 +41,8 @@ export const formatSchedulesRegistered = (
       : '기한 없음';
     return `• ${escapeSlackMrkdwn(record.title)} · ${dueLabel}`;
   });
-  return [`*${records.length}건 등록했습니다*`, ...lines].join('\n');
+  const header = `*${records.length}건 등록했습니다*`;
+  return [header, ...lines].join('\n');
 };
 
 export const formatNeedsDate = (title: string): string => {
