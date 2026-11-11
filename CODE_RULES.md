@@ -62,7 +62,7 @@
 7. 반환 타입은 인라인 객체(`{ data: string }`) 대신 `type`/`interface`로 명시해 재사용 가능하게 관리한다.
 8. 운영 코드에서 `Pick`/`Omit` 은 쓰지 않는다(ESLint `no-restricted-syntax` 로 강제, `*.spec.ts` 제외). 그 밖의 중첩 유틸리티 타입 조합도 지양한다.
    - 함수 인자를 필요한 필드로 좁힐 때는 그 필드를 명시 타입으로 직접 적는다. 원본과 어긋나면 호출부에서 컴파일 에러가 난다.
-   - "A 에서 일부를 뺀 타입" 이 필요하면 방향을 뒤집는다. 작은 타입을 먼저 정의하고 큰 타입이 `extends`(또는 `&`) 한다.
+   - "A 에서 일부를 뺀 타입" 이 필요하면 방향을 뒤집는다. 작은 타입을 먼저 정의하고 큰 타입이 `extends` 한다. `&` 교차 타입으로 확장하지 않는다.
      필드를 손으로 복사하면 원본에 필드가 추가될 때 조용히 어긋나기 때문이다.
    - Prisma·Octokit 처럼 고칠 수 없는 외부 타입은 필요한 필드만 명시 타입으로 적고, 어떤 타입을 본뜬 것인지 주석으로 남긴다.
    - 테스트(`*.spec.ts`)에서는 허용한다. `jest.Mocked<Pick<Usecase, 'execute'>>` 처럼 mock 이 흉내 낼 메서드를 고르는 용도로,
@@ -86,9 +86,11 @@
     }
     ```
 
-11. 함수 파라미터는 읽기 쉽고 확장이 용이하도록 **객체 구조 분해 할당(`{}`) 방식**을 권장한다.
+11. 인자가 둘 이상인 함수 파라미터는 **객체 구조 분해 할당(`{}`) 방식으로 받는다(MUST)**. 이 절의 다른 항목과 달리 리뷰에서 반복 지적되는 필수 규칙이다.
 
-    단, `ExceptionFilter.catch(exception, host)`·`NestInterceptor.intercept(context, next)` 처럼 프레임워크 인터페이스가 인자 순서(Positional Arguments)를 강제하는 경우는 예외로 한다.
+    단, `ExceptionFilter.catch(exception, host)`·`NestInterceptor.intercept(context, next)` 처럼 프레임워크 인터페이스가 인자 순서(Positional Arguments)를 강제하는 경우와 `map`·`sort` 등에 넘기는 콜백은 예외로 한다.
+
+> **PR 전 스타일 검사**: `pnpm check:style`(`pnpm verify` 에 포함)이 이번 브랜치에서 추가된 줄만 대상으로 §1-1·§1-9·§3-7·§3-8·§3-11 의 모양을 찾는다. 오류 등급은 실패, 경고 등급은 출력만 한다. 규칙 목록은 `scripts/check-style-diff.cjs` 의 `STYLE_RULES` 가 정본이다.
 
 12. 함수/메서드가 값을 반환한다면 원칙적으로 반환 타입을 명시해 인터페이스(계약)를 명확히 한다.
     - **명시 대상**: `Promise<AgentRunOutcome<T>>`, `Promise<ApiResponse<T>>`, `Promise<DTO>` 등 **사용자 정의 복합 타입(Custom Type)** 반환.
