@@ -35,7 +35,7 @@ import {
   RecommendationTradeInput,
 } from '../domain/recommendation-score';
 import { settlementDateOf } from '../domain/trade-calendar';
-import type {
+import {
   ShadowedRecommendationInput,
   ShadowedRecommendationReason,
 } from '../domain/unexecuted-recommendation';
@@ -406,10 +406,10 @@ export interface RecommendationScoreData {
 // 바꾸면 여기도 함께 바꿔야 한다.
 const BENCHMARK_SYMBOL = 'KOSPI';
 
-const isShadowedReason = (
-  value: unknown,
-): value is ShadowedRecommendationReason =>
-  value === 'INSUFFICIENT_CASH' || value === 'MARKET_REGIME_GATE';
+export interface BenchmarkCloseRecord {
+  tradeDate: Date;
+  close: Prisma.Decimal;
+}
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -504,12 +504,18 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
         continue;
       }
       for (const item of skipped) {
+        if (!isRecord(item)) {
+          continue;
+        }
         // 못 산 사유가 다르면 표본의 성격이 달라 사유별로 따로 채점한다 — 현금 부족은
         // 집행 실패, 국면 보류는 의도된 보류라 한 평균에 섞으면 둘 다 해석할 수 없다.
+        // output 은 DB JSON 이라 사유가 unknown 이다. enum 값 중 일치하는 것을 찾아 타입을 좁힌다.
+        const reason = Object.values(ShadowedRecommendationReason).find(
+          (candidate) => candidate === item.reason,
+        );
         if (
-          isRecord(item) &&
           item.side === 'BUY' &&
-          isShadowedReason(item.reason) &&
+          reason !== undefined &&
           typeof item.code === 'string' &&
           item.code.length > 0
         ) {
@@ -518,7 +524,7 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
             strategy,
             code: item.code,
             recommendedOn,
-            reason: item.reason,
+            reason,
           });
         }
       }
@@ -1855,7 +1861,7 @@ export class PaperTradingPrismaRepository implements PaperOrderLedgerPort {
   async findBenchmarkClosesUntil(input: {
     asOf: Date;
     limit: number;
-  }): Promise<Array<{ tradeDate: Date; close: Prisma.Decimal }>> {
+  }): Promise<BenchmarkCloseRecord[]> {
     return await this.prisma.benchmarkDailyClose.findMany({
       where: { symbol: BENCHMARK_SYMBOL, tradeDate: { lte: input.asOf } },
       orderBy: { tradeDate: 'desc' },

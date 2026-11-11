@@ -4,6 +4,7 @@ import { AgentRunService } from '../../../agent-run/application/agent-run.servic
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import {
   formatKstDate,
+  getKstDateOf,
   utcMidnightOf,
 } from '../../../common/util/kst-date.util';
 import {
@@ -36,9 +37,11 @@ import {
 import { SelectionGapSummary } from '../../../screener/domain/screening-scorecard';
 import { ResolveStrategyParametersUsecase } from '../../../strategy-parameter/application/resolve-strategy-parameters.usecase';
 import {
+  holdBuysForMarketRegime,
   judgeMarketRegime,
   MARKET_REGIME_MA_WINDOW,
   MarketRegimeJudgement,
+  MarketRegimeStatus,
 } from '../domain/market-regime';
 import { constrainPaperRecommendation } from '../domain/paper-recommendation.constraint';
 import { parsePaperRecommendation } from '../domain/paper-recommendation.parser';
@@ -341,10 +344,10 @@ export class GeneratePaperRecommendationUsecase {
         const recommendation = parsePaperRecommendation(completion.text);
         // 모델·스크린 기록이 끝난 뒤에 판정한다 — 프롬프트와 스크린 회차는 게이트를 모르는
         // 평소 기준 그대로여야 보류한 추천의 채점이 의미가 있다. 트랜잭션 밖에서 읽는다.
-        const marketRegime = await this.judgeMarketRegime(
+        const marketRegime = await this.judgeMarketRegime({
           strategy,
-          screen.asOf,
-        );
+          dataAsOf: screen.asOf,
+        });
         const result = await this.repository.saveRecommendationAtomically({
           accountId: account.id,
           strategy,
@@ -424,27 +427,30 @@ export class GeneratePaperRecommendationUsecase {
 
   // SWING 만 판정한다. LONG_TERM 은 조회도 하지 않아 동작이 그대로다.
   // 조회 실패(DB 예외)는 삼키지 않는다 — 데이터가 "없는" 것만 UNKNOWN(게이트 미적용)이다.
-  private async judgeMarketRegime(
-    strategy: PaperRecommendationStrategy,
-    asOf: string | null,
-  ): Promise<MarketRegimeJudgement | null> {
+  private async judgeMarketRegime({
+    strategy,
+    dataAsOf,
+  }: {
+    strategy: PaperRecommendationStrategy;
+    dataAsOf: string | null;
+  }): Promise<MarketRegimeJudgement | null> {
     if (strategy !== 'SWING') {
       return null;
     }
-    const rows =
-      asOf === null
-        ? []
-        : await this.repository.findBenchmarkClosesUntil({
-            asOf: utcMidnightOf(asOf),
-            limit: MARKET_REGIME_MA_WINDOW,
-          });
-    return judgeMarketRegime({
-      asOf,
-      closes: rows.map((row) => ({
-        tradeDate: row.tradeDate.toISOString().slice(0, 10),
-        close: Number(row.close.toString()),
-      })),
+    if (dataAsOf === null) {
+      return judgeMarketRegime({ dataAsOf, closes: [] });
+    }
+    const dataAsOfDate = utcMidnightOf(dataAsOf);
+    const benchmarkCloses = await this.repository.findBenchmarkClosesUntil({
+      asOf: dataAsOfDate,
+      limit: MARKET_REGIME_MA_WINDOW,
     });
+    // @db.Date 는 그날 UTC 00:00 이라 KST 달력일로 읽어도 같은 날짜다.
+    const closes = benchmarkCloses.map((benchmarkClose) => ({
+      tradeDate: getKstDateOf(benchmarkClose.tradeDate),
+      close: Number(benchmarkClose.close.toString()),
+    }));
+    return judgeMarketRegime({ dataAsOf, closes });
   }
 
   private async findPurchasableCash(
@@ -604,19 +610,10 @@ export class GeneratePaperRecommendationUsecase {
       ),
       maximumWeightPercent,
     });
-    // 국면 보류는 제약을 평소대로 통과한 매수만 바꾼다. 앞에서 제안 전부를 빼면 어차피 못 샀을
-    // 제안(이미 보유·후보 밖·건수 상한·현금 부족)까지 보류 채점 표본에 섞여 "안 사길 잘했나" 가
-    // 흐려진다. 그 제안들은 원래 사유로 남는다. 매도·대기주문 처리는 그대로다.
-    const regimeSkips: PaperRecommendationSkip[] =
-      marketRegime?.status === 'CLOSED'
-        ? unguarded.buys.map((buy) => ({
-            side: 'BUY',
-            code: buy.code,
-            reason: 'MARKET_REGIME_GATE',
-          }))
-        : [];
-    const constrained: ConstrainedPaperRecommendation =
-      regimeSkips.length > 0 ? { ...unguarded, buys: [] } : unguarded;
+    const constrained =
+      marketRegime?.status === MarketRegimeStatus.CLOSED
+        ? holdBuysForMarketRegime(unguarded)
+        : unguarded;
     const orders = this.toPendingOrders({
       strategy,
       decidedAt,
@@ -629,7 +626,7 @@ export class GeneratePaperRecommendationUsecase {
     return {
       constrained: {
         ...constrained,
-        skipped: [...pendingSkips, ...constrained.skipped, ...regimeSkips],
+        skipped: [...pendingSkips, ...constrained.skipped],
       },
       orders,
     };

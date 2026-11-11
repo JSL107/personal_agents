@@ -18,9 +18,11 @@ export interface UnexecutedRecommendationInput {
 }
 
 // 못 산 추천이 걸린 사유. 사유별로 따로 채점한다(섞으면 해석이 안 된다).
-export type ShadowedRecommendationReason =
-  | 'INSUFFICIENT_CASH'
-  | 'MARKET_REGIME_GATE';
+// 값은 추천 회차 output.skipped 의 사유 문자열과 같다(저장된 기록을 그대로 읽는다).
+export enum ShadowedRecommendationReason {
+  INSUFFICIENT_CASH = 'INSUFFICIENT_CASH',
+  MARKET_REGIME_GATE = 'MARKET_REGIME_GATE',
+}
 
 export interface ShadowedRecommendationInput extends UnexecutedRecommendationInput {
   reason: ShadowedRecommendationReason;

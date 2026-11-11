@@ -206,8 +206,12 @@ export class ScoreRecommendationsUsecase {
           dailyPrices: validDailyPrices,
           benchmarkCloses: data.benchmarkCloses,
         });
-      const unexecuted = scoreShadowed('INSUFFICIENT_CASH');
-      const regimeGated = scoreShadowed('MARKET_REGIME_GATE');
+      const unexecuted = scoreShadowed(
+        ShadowedRecommendationReason.INSUFFICIENT_CASH,
+      );
+      const regimeGated = scoreShadowed(
+        ShadowedRecommendationReason.MARKET_REGIME_GATE,
+      );
       const benchmark = calculateBenchmarkPerformance({
         cycles: accountMatched.cycles,
         evaluationDate: asOf,

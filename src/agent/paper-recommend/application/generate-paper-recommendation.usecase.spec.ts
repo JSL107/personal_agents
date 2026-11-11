@@ -1748,7 +1748,7 @@ describe('GeneratePaperRecommendationUsecase', () => {
       // 회차 결과에 판정 근거가 남는다 — 사후 재현·채점용.
       expect(outputs[0].marketRegime).toMatchObject({
         status: 'CLOSED',
-        asOf: '2026-08-13',
+        dataAsOf: '2026-08-13',
         close: 80,
         ma20: 99,
         closeCount: 20,
@@ -1847,11 +1847,11 @@ describe('GeneratePaperRecommendationUsecase', () => {
       expect(outputs.map((output) => output.marketRegime)).toEqual([
         expect.objectContaining({
           status: 'UNKNOWN',
-          reason: 'INSUFFICIENT_HISTORY',
+          unknownReason: 'INSUFFICIENT_HISTORY',
         }),
         expect.objectContaining({
           status: 'UNKNOWN',
-          reason: 'NO_CLOSE_ON_AS_OF',
+          unknownReason: 'NO_CLOSE_ON_DATA_AS_OF',
         }),
       ]);
     });
