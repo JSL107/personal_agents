@@ -287,7 +287,19 @@ export class ScheduleDispatcher implements AgentDispatcher {
     mergedPriorText,
     today,
   }: ParseListInput): ScheduleCommand[] | null {
-    const current = parseScheduleList(input.text ?? '', today);
+    // 제목 되묻기("내일 일정 등록해줘")에 목록으로 답하면 직전 턴의 날짜를 잇는다(#1024 리뷰).
+    // 직전 턴이 제목을 기다리던 때만 — 등록이 끝난 턴의 날짜를 새 목록에 붙이지 않는다.
+    const priorCommand =
+      mergedPriorText === undefined
+        ? null
+        : parseScheduleCommand(mergedPriorText, today);
+    const awaitedTitleDate =
+      priorCommand?.kind === 'NEEDS_TITLE' ? priorCommand.dueDate : undefined;
+    const current = parseScheduleList(
+      input.text ?? '',
+      today,
+      awaitedTitleDate,
+    );
     if (current !== null || mergedPriorText === undefined) {
       return current;
     }
