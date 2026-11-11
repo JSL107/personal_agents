@@ -67,6 +67,8 @@ export interface UpdateShortTitleInput {
 
 export interface ScheduleRepositoryPort {
   save(input: SaveScheduleInput): Promise<ScheduleItemRecord>;
+  // 전부 저장하거나 하나도 저장하지 않는다.
+  saveMany(inputs: SaveScheduleInput[]): Promise<ScheduleItemRecord[]>;
   findByDateRange(
     input: FindByDateRangeInput,
   ): Promise<DatedScheduleItemRecord[]>;

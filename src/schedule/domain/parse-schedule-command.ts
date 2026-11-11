@@ -121,6 +121,10 @@ export const parseScheduleList = ({
   const commands = itemTexts
     .map((itemText) => parseScheduleCommand(itemText, today))
     .filter((command) => command.kind !== 'NEEDS_TITLE');
+  // 날짜만 적힌 줄뿐이면 등록할 제목이 없다 — 목록으로 보지 않고 기존 되묻기로 넘긴다(#1024 리뷰).
+  if (commands.length === 0) {
+    return null;
+  }
   return commands.map(withSharedDate);
 };
 

@@ -41,7 +41,7 @@ import {
 } from '../domain/port/schedule.repository.port';
 import { refersToPriorConversation } from '../domain/prior-conversation-reference';
 import { ScheduleException } from '../domain/schedule.exception';
-import { PlainDate, ScheduleItemRecord } from '../domain/schedule.type';
+import { PlainDate } from '../domain/schedule.type';
 import { ScheduleErrorCode } from '../domain/schedule-error-code.enum';
 import {
   hasScheduleWriteIntent,
@@ -345,16 +345,13 @@ export class ScheduleDispatcher implements AgentDispatcher {
         items: items.map(({ title, dueDate }) => ({ title, dueDate })),
       },
       run: async () => {
-        const records: ScheduleItemRecord[] = [];
-        for (const { title, dueDate } of items) {
-          records.push(
-            await this.registerSchedule.execute({
-              slackUserId: input.slackUserId,
-              title,
-              dueDate,
-            }),
-          );
-        }
+        const records = await this.registerSchedule.executeMany(
+          items.map(({ title, dueDate }) => ({
+            slackUserId: input.slackUserId,
+            title,
+            dueDate,
+          })),
+        );
         return {
           result: records,
           modelUsed: 'deterministic',
@@ -426,6 +423,11 @@ export class ScheduleDispatcher implements AgentDispatcher {
     // 거슬러 올라가면, 그 전의 미완료 등록("자동차세 등록해줘")이 이번 날짜와 합쳐져 등록된다(#753 리뷰).
     if (!prior || isScheduleLookup(prior.text)) {
       return { command };
+    }
+    // 직전 턴이 목록이면 제목 하나로 합치지 않는다 — 합치면 목록 전체가 한 건 제목이 된다(#1024 리뷰).
+    // 목록 이어 받기는 parseList 가 원문을 다시 읽어 판단한다.
+    if (parseScheduleList({ text: prior.text, today }) !== null) {
+      return { command, mergedPriorText: prior.text };
     }
     return {
       command: mergeScheduleCommands(

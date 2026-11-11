@@ -4,6 +4,7 @@ import { buildScheduleItemRecord } from '../../schedule/domain/schedule-item.fix
 import {
   formatNeedsDate,
   formatScheduleRegistered,
+  formatSchedulesRegistered,
 } from './schedule.formatter';
 
 const recordWithTitle = (title: string): ScheduleItemRecord => ({
@@ -35,5 +36,21 @@ describe('schedule.formatter', () => {
 
   it('되묻기 문구도 제목을 이스케이프한다', () => {
     expect(formatNeedsDate('<b> 처리')).toContain('&lt;b&gt; 처리');
+  });
+
+  it('여러 건 등록 안내는 건수와 항목별 제목·날짜를 싣고 제목을 이스케이프한다', () => {
+    const text = formatSchedulesRegistered([
+      recordWithTitle('자동차세'),
+      {
+        ...recordWithTitle('<b> 여권'),
+        dueDate: new Date('2026-10-05T00:00:00.000Z'),
+      },
+    ]);
+    const expected = [
+      '*2건 등록했습니다*',
+      '• 자동차세 · 9월 30일',
+      '• &lt;b&gt; 여권 · 10월 5일',
+    ].join('\n');
+    expect(text).toBe(expected);
   });
 });
