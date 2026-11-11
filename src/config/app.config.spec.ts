@@ -120,3 +120,23 @@ describe('validateEnv SUBCONSCIOUS_GATE_MODE', () => {
     },
   );
 });
+
+describe('validateEnv 반응 트리거 이모지 이름', () => {
+  it.each(['SLACK_INBOX_EMOJI', 'SLACK_PUSHPIN_REACTION_EMOJI'])(
+    '%s 에 Slack 이모지 이름이 아닌 값이 오면 부팅을 막는다',
+    (key) => {
+      for (const value of ['👀', '눈알', ':eyes:', 'Eyes', '']) {
+        expect(() => validateEnv({ ...requiredEnv, [key]: value })).toThrow();
+      }
+    },
+  );
+
+  it.each(['eyes', 'raised_hand', '+1', '-1', 'thumbsup::skin-tone-2'])(
+    '%s 같은 Slack 이모지 이름은 허용한다',
+    (value) => {
+      expect(() =>
+        validateEnv({ ...requiredEnv, SLACK_INBOX_EMOJI: value }),
+      ).not.toThrow();
+    },
+  );
+});

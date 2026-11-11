@@ -264,6 +264,10 @@ export class EnvironmentVariables {
   // 사용자가 다른 이모지로 바꾸고 싶으면 이 env 만 변경 (예: 'pushpin', 'eyes').
   @IsOptional()
   @IsString()
+  @Matches(/^[a-z0-9_+-]+(::skin-tone-[2-6])?$/, {
+    message:
+      'SLACK_INBOX_EMOJI 는 Slack 이모지 이름 (예: "eyes") 만 허용합니다 — 이모지 문자·한글·콜론은 reaction 이벤트와 영영 일치하지 않습니다.',
+  })
   SLACK_INBOX_EMOJI?: string;
 
   // 📌 reaction → Notion task 자동 적재.
@@ -273,6 +277,10 @@ export class EnvironmentVariables {
   //   같은 페이지 트리를 CAREER_LOG_NOTION_PAGE_ID 와 공유해도 OK — 일별 자식 페이지 (YYYY-MM-DD) 공통 key.
   @IsOptional()
   @IsString()
+  @Matches(/^[a-z0-9_+-]+(::skin-tone-[2-6])?$/, {
+    message:
+      'SLACK_PUSHPIN_REACTION_EMOJI 는 Slack 이모지 이름 (예: "eyes") 만 허용합니다 — 이모지 문자·한글·콜론은 reaction 이벤트와 영영 일치하지 않습니다.',
+  })
   SLACK_PUSHPIN_REACTION_EMOJI?: string;
 
   @IsOptional()
