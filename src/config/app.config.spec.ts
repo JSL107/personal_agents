@@ -131,12 +131,20 @@ describe('validateEnv 반응 트리거 이모지 이름', () => {
     },
   );
 
-  it.each(['eyes', 'raised_hand', '+1', '-1', 'thumbsup::skin-tone-2'])(
-    '%s 같은 Slack 이모지 이름은 허용한다',
-    (value) => {
-      expect(() =>
-        validateEnv({ ...requiredEnv, SLACK_INBOX_EMOJI: value }),
-      ).not.toThrow();
+  it.each(['SLACK_INBOX_EMOJI', 'SLACK_PUSHPIN_REACTION_EMOJI'])(
+    '%s 에 Slack 이모지 이름이 오면 허용한다',
+    (key) => {
+      for (const value of [
+        'eyes',
+        'raised_hand',
+        '+1',
+        '-1',
+        'thumbsup::skin-tone-2',
+      ]) {
+        expect(() =>
+          validateEnv({ ...requiredEnv, [key]: value }),
+        ).not.toThrow();
+      }
     },
   );
 });

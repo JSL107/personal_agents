@@ -266,7 +266,7 @@ export class EnvironmentVariables {
   @IsString()
   @Matches(/^[a-z0-9_+-]+(::skin-tone-[2-6])?$/, {
     message:
-      'SLACK_INBOX_EMOJI 는 Slack 이모지 이름 (예: "eyes") 만 허용합니다 — 이모지 문자·한글·콜론은 reaction 이벤트와 영영 일치하지 않습니다.',
+      'SLACK_INBOX_EMOJI 는 Slack 이모지 이름 (예: "eyes") 만 허용합니다 — 이모지 문자·한글·대문자·콜론으로 감싼 값(":eyes:")은 reaction 이벤트와 영영 일치하지 않습니다.',
   })
   SLACK_INBOX_EMOJI?: string;
 
@@ -279,7 +279,7 @@ export class EnvironmentVariables {
   @IsString()
   @Matches(/^[a-z0-9_+-]+(::skin-tone-[2-6])?$/, {
     message:
-      'SLACK_PUSHPIN_REACTION_EMOJI 는 Slack 이모지 이름 (예: "eyes") 만 허용합니다 — 이모지 문자·한글·콜론은 reaction 이벤트와 영영 일치하지 않습니다.',
+      'SLACK_PUSHPIN_REACTION_EMOJI 는 Slack 이모지 이름 (예: "eyes") 만 허용합니다 — 이모지 문자·한글·대문자·콜론으로 감싼 값(":eyes:")은 reaction 이벤트와 영영 일치하지 않습니다.',
   })
   SLACK_PUSHPIN_REACTION_EMOJI?: string;
 
