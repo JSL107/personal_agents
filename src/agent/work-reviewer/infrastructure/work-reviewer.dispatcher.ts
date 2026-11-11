@@ -20,8 +20,6 @@ export class WorkReviewerDispatcher implements AgentDispatcher {
     const outcome = await this.generateWorklog.execute({
       workText: input.text ?? '',
       slackUserId: input.slackUserId,
-      // 제안 카드(publish=false)로 실행하면 Notion 일일 페이지에 쓰지 않는다.
-      persist: input.publish ?? true,
     });
     const formatted = formatDailyReview(outcome.result);
     return {

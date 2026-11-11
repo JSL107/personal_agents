@@ -25,8 +25,6 @@ export class PmDispatcher implements AgentDispatcher {
     const outcome = await this.generateDailyPlan.execute({
       tasksText: input.text ?? '',
       slackUserId: input.slackUserId,
-      // 제안 카드(publish=false)로 실행하면 daily_plan·Notion 체크인을 남기지 않는다.
-      persist: input.publish ?? true,
       ...(input.conversationContext !== undefined
         ? { conversationContext: input.conversationContext }
         : {}),
