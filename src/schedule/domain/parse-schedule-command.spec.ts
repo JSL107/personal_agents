@@ -216,6 +216,12 @@ describe('parseScheduleList', () => {
     ]);
   });
 
+  it('날짜만 적힌 줄뿐이면 등록할 제목이 없어 null 이다', () => {
+    expect(
+      parseScheduleList({ text: '1. 9월 30일\n2. 10월 1일', today: TODAY }),
+    ).toBeNull();
+  });
+
   it.each(['9월 30일 자동차세', '내일\n1. 자동차세', '지분 1/2 정리 내일'])(
     '목록 항목이 2건 미만이면 null 이다: %p',
     (text) => {

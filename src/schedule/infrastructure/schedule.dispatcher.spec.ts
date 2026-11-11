@@ -40,19 +40,22 @@ class ScheduleDispatcher extends ProductionScheduleDispatcher {
 }
 
 const createUsecase = (): RegisterScheduleUsecase => {
-  return {
-    execute: jest.fn().mockResolvedValue({
-      id: 1,
-      slackUserId: 'U1',
-      title: '자동차세',
-      dueDate: new Date('2026-09-30T00:00:00.000Z'),
-      dueTime: null,
-      linkUrl: null,
-      memo: null,
-      status: ScheduleStatus.OPEN,
-      completedAt: null,
-    }),
-  } as unknown as RegisterScheduleUsecase;
+  const execute = jest.fn().mockResolvedValue({
+    id: 1,
+    slackUserId: 'U1',
+    title: '자동차세',
+    dueDate: new Date('2026-09-30T00:00:00.000Z'),
+    dueTime: null,
+    linkUrl: null,
+    memo: null,
+    status: ScheduleStatus.OPEN,
+    completedAt: null,
+  });
+  // 여러 건 등록도 항목마다 execute 를 거치게 해 항목별 인자를 같은 방식으로 확인한다.
+  const executeMany = jest.fn(async (inputs: unknown[]) =>
+    Promise.all(inputs.map((input) => execute(input))),
+  );
+  return { execute, executeMany } as unknown as RegisterScheduleUsecase;
 };
 
 const createAnswer = (): AnswerScheduleQuestionUsecase =>
@@ -344,6 +347,8 @@ describe('ScheduleDispatcher', () => {
       2,
       expect.objectContaining({ title: '여권 신청' }),
     );
+    // 한 트랜잭션으로 저장한다 — 중간 실패 시 앞 항목만 남지 않게.
+    expect(usecase.executeMany).toHaveBeenCalledTimes(1);
     expect(agentRunService.execute).toHaveBeenCalledTimes(1);
     expect(outcome.formattedText).toContain('2건 등록했습니다');
   });
@@ -479,6 +484,33 @@ describe('ScheduleDispatcher', () => {
 
     expect(usecase.execute).not.toHaveBeenCalled();
     expect(outcome.formattedText).toBe(formatNeedsDate('자동차세, 여권 신청'));
+  });
+
+  it('등록이 끝난 목록 뒤에 날짜만 오면 목록 전체를 제목 하나로 합쳐 등록하지 않는다', async () => {
+    const usecase = createUsecase();
+    const dispatcher = new ScheduleDispatcher(
+      usecase,
+      createAnswer(),
+      createAgentRunService() as never,
+      { execute: jest.fn().mockResolvedValue(null) } as never,
+    );
+
+    await dispatcher.dispatch({
+      source: 'SLACK_MESSAGE',
+      slackUserId: 'U1',
+      text: '10월 5일',
+      priorTurns: [
+        {
+          role: 'user',
+          text: '9월 30일까지\n1. 자동차세\n2. 여권 신청',
+          agentType: AgentType.SCHEDULE,
+          agentRunId: null,
+          timestampMs: 1,
+        },
+      ],
+    });
+
+    expect(usecase.execute).not.toHaveBeenCalled();
   });
 
   it('날짜가 없으면 등록하지 않고 되묻는다', async () => {

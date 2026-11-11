@@ -174,32 +174,46 @@ const isUniqueViolation = (error: unknown): boolean => {
   );
 };
 
+const toCreateData = (
+  input: SaveScheduleInput,
+): Prisma.ScheduleItemCreateInput => ({
+  slackUserId: input.slackUserId,
+  title: input.title,
+  dueDate: input.dueDate,
+  dueTime: input.dueTime ?? null,
+  startDate: input.startDate ?? null,
+  remindAt: input.remindAt ?? null,
+  memo: input.memo ?? null,
+  status: ScheduleStatus.OPEN,
+  isHoliday: input.isHoliday ?? false,
+  events: {
+    create: {
+      kind: ScheduleEventKind.CREATED,
+      payload: { source: ScheduleSource.MANUAL },
+      occurredAt: new Date(),
+    },
+  },
+});
+
 @Injectable()
 export class SchedulePrismaRepository implements ScheduleRepositoryPort {
   constructor(private readonly prisma: PrismaService) {}
 
   async save(input: SaveScheduleInput): Promise<ScheduleItemRecord> {
     const created = await this.prisma.scheduleItem.create({
-      data: {
-        slackUserId: input.slackUserId,
-        title: input.title,
-        dueDate: input.dueDate,
-        dueTime: input.dueTime ?? null,
-        startDate: input.startDate ?? null,
-        remindAt: input.remindAt ?? null,
-        memo: input.memo ?? null,
-        status: ScheduleStatus.OPEN,
-        isHoliday: input.isHoliday ?? false,
-        events: {
-          create: {
-            kind: ScheduleEventKind.CREATED,
-            payload: { source: ScheduleSource.MANUAL },
-            occurredAt: new Date(),
-          },
-        },
-      },
+      data: toCreateData(input),
     });
     return toRecord(created);
+  }
+
+  // 한 트랜잭션으로 저장한다 — 중간에 실패해 앞 항목만 남으면 같은 요청을 다시 보낼 때 중복된다.
+  async saveMany(inputs: SaveScheduleInput[]): Promise<ScheduleItemRecord[]> {
+    const created = await this.prisma.$transaction(
+      inputs.map((input) =>
+        this.prisma.scheduleItem.create({ data: toCreateData(input) }),
+      ),
+    );
+    return created.map(toRecord);
   }
 
   async findByDateRange(
