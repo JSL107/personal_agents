@@ -57,10 +57,26 @@ describe('check-style-diff', () => {
       'const f = ({ ok }: { ok: boolean }) => { return { s: ok ? 1 : 2 }; };',
     ],
     ['let', 'let count = 0;'],
+    ['return-ternary-call', 'const f = () => { return ok ? load() : null; };'],
+    [
+      'return-ternary-call',
+      'const f = () => { return ok ? `${a}-${b}` : null; };',
+    ],
+    [
+      'return-ternary-call',
+      'const f = () => { return ok ? null : list.map(String); };',
+    ],
   ])('%s 를 오류로 잡는다', async (rule, source) => {
     const ids = await lintRules({ source });
 
     expect(ids).toContain(rule);
+  });
+
+  it('return 삼항은 조건식에만 호출이 있고 갈래가 값 참조뿐이면 잡지 않는다 (CODE_RULES §1-1)', async () => {
+    const source =
+      'const f = () => { return isBlogCategoryId(normalized) ? normalized : undefined; };';
+
+    expect(await lintRules({ source })).toEqual([]);
   });
 
   it('콜백·생성자·프레임워크 메서드의 위치 인자와 instanceof 삼항은 잡지 않는다', async () => {

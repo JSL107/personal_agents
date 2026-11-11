@@ -72,8 +72,9 @@ const STYLE_RULES = [
   {
     id: 'return-ternary-call',
     severity: Severity.ERROR,
+    // 조건식의 호출은 허용한다(§1-1 은 갈래만 본다) — 갈래 자신이나 갈래 안쪽만 찾는다.
     selector:
-      'ReturnStatement > ConditionalExpression:has(CallExpression, TemplateLiteral)',
+      'ReturnStatement > ConditionalExpression > :matches(.consequent, .alternate):matches(CallExpression, TemplateLiteral), ReturnStatement > ConditionalExpression > :matches(.consequent, .alternate) :matches(CallExpression, TemplateLiteral)',
     message:
       'return 의 삼항 갈래에 호출·템플릿을 넣지 않는다 — const 로 받거나 early return (CODE_RULES §1-1)',
   },
