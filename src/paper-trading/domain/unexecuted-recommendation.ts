@@ -17,6 +17,15 @@ export interface UnexecutedRecommendationInput {
   recommendedOn: Date;
 }
 
+// 못 산 추천이 걸린 사유. 사유별로 따로 채점한다(섞으면 해석이 안 된다).
+export type ShadowedRecommendationReason =
+  | 'INSUFFICIENT_CASH'
+  | 'MARKET_REGIME_GATE';
+
+export interface ShadowedRecommendationInput extends UnexecutedRecommendationInput {
+  reason: ShadowedRecommendationReason;
+}
+
 export interface CalculateUnexecutedRecommendationsInput {
   strategy: RecommendationCycle['strategy'];
   recommendations: UnexecutedRecommendationInput[];

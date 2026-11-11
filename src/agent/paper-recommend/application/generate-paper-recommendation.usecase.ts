@@ -35,6 +35,11 @@ import {
 } from '../../../screener/application/screen-universe.usecase';
 import { SelectionGapSummary } from '../../../screener/domain/screening-scorecard';
 import { ResolveStrategyParametersUsecase } from '../../../strategy-parameter/application/resolve-strategy-parameters.usecase';
+import {
+  judgeMarketRegime,
+  MARKET_REGIME_MA_WINDOW,
+  MarketRegimeJudgement,
+} from '../domain/market-regime';
 import { constrainPaperRecommendation } from '../domain/paper-recommendation.constraint';
 import { parsePaperRecommendation } from '../domain/paper-recommendation.parser';
 import {
@@ -334,6 +339,12 @@ export class GeneratePaperRecommendationUsecase {
         // output 에는 제약을 거친 주문만 남아 "원래 답" 과 재생 답을 비교할 수 없다.
         await recordModelResponse(completion.text);
         const recommendation = parsePaperRecommendation(completion.text);
+        // 모델·스크린 기록이 끝난 뒤에 판정한다 — 프롬프트와 스크린 회차는 게이트를 모르는
+        // 평소 기준 그대로여야 보류한 추천의 채점이 의미가 있다. 트랜잭션 밖에서 읽는다.
+        const marketRegime = await this.judgeMarketRegime(
+          strategy,
+          screen.asOf,
+        );
         const result = await this.repository.saveRecommendationAtomically({
           accountId: account.id,
           strategy,
@@ -349,6 +360,7 @@ export class GeneratePaperRecommendationUsecase {
               recommendation,
               state,
               maximumWeightPercent: parameters.maximumWeightPercent,
+              marketRegime,
             });
             const orders = lockedRecommendation.orders;
             return {
@@ -402,11 +414,37 @@ export class GeneratePaperRecommendationUsecase {
         return {
           result,
           modelUsed: completion.modelUsed,
-          output: result,
+          // 게이트 판정 근거(기준일·종가·MA20)를 회차 결과에 남긴다 — 사후 재현용.
+          output: { ...result, marketRegime },
         };
       },
     });
     return outcome.result;
+  }
+
+  // SWING 만 판정한다. LONG_TERM 은 조회도 하지 않아 동작이 그대로다.
+  // 조회 실패(DB 예외)는 삼키지 않는다 — 데이터가 "없는" 것만 UNKNOWN(게이트 미적용)이다.
+  private async judgeMarketRegime(
+    strategy: PaperRecommendationStrategy,
+    asOf: string | null,
+  ): Promise<MarketRegimeJudgement | null> {
+    if (strategy !== 'SWING') {
+      return null;
+    }
+    const rows =
+      asOf === null
+        ? []
+        : await this.repository.findBenchmarkClosesUntil({
+            asOf: utcMidnightOf(asOf),
+            limit: MARKET_REGIME_MA_WINDOW,
+          });
+    return judgeMarketRegime({
+      asOf,
+      closes: rows.map((row) => ({
+        tradeDate: row.tradeDate.toISOString().slice(0, 10),
+        close: Number(row.close.toString()),
+      })),
+    });
   }
 
   private async findPurchasableCash(
@@ -466,6 +504,7 @@ export class GeneratePaperRecommendationUsecase {
     recommendation,
     state,
     maximumWeightPercent,
+    marketRegime,
   }: {
     strategy: PaperRecommendationStrategy;
     decidedAt: Date;
@@ -476,6 +515,7 @@ export class GeneratePaperRecommendationUsecase {
     recommendation: ReturnType<typeof parsePaperRecommendation>;
     state: LockedPaperRecommendationState;
     maximumWeightPercent: number;
+    marketRegime: MarketRegimeJudgement | null;
   }): LockedRecommendationResult {
     const codesByTickerId = new Map([
       ...screen.stocks.map((stock): [number, string] => [
@@ -540,7 +580,7 @@ export class GeneratePaperRecommendationUsecase {
         });
         return false;
       });
-    const constrained = constrainPaperRecommendation({
+    const unguarded = constrainPaperRecommendation({
       recommendation: {
         sells: withoutPendingOrders(recommendation.sells, 'SELL'),
         buys: withoutPendingOrders(recommendation.buys, 'BUY'),
@@ -564,6 +604,19 @@ export class GeneratePaperRecommendationUsecase {
       ),
       maximumWeightPercent,
     });
+    // 국면 보류는 제약을 평소대로 통과한 매수만 바꾼다. 앞에서 제안 전부를 빼면 어차피 못 샀을
+    // 제안(이미 보유·후보 밖·건수 상한·현금 부족)까지 보류 채점 표본에 섞여 "안 사길 잘했나" 가
+    // 흐려진다. 그 제안들은 원래 사유로 남는다. 매도·대기주문 처리는 그대로다.
+    const regimeSkips: PaperRecommendationSkip[] =
+      marketRegime?.status === 'CLOSED'
+        ? unguarded.buys.map((buy) => ({
+            side: 'BUY',
+            code: buy.code,
+            reason: 'MARKET_REGIME_GATE',
+          }))
+        : [];
+    const constrained: ConstrainedPaperRecommendation =
+      regimeSkips.length > 0 ? { ...unguarded, buys: [] } : unguarded;
     const orders = this.toPendingOrders({
       strategy,
       decidedAt,
@@ -576,7 +629,7 @@ export class GeneratePaperRecommendationUsecase {
     return {
       constrained: {
         ...constrained,
-        skipped: [...pendingSkips, ...constrained.skipped],
+        skipped: [...pendingSkips, ...constrained.skipped, ...regimeSkips],
       },
       orders,
     };

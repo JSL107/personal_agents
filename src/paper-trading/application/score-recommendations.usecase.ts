@@ -27,6 +27,7 @@ import {
 } from '../domain/shadow-performance';
 import {
   calculateUnexecutedRecommendations,
+  ShadowedRecommendationReason,
   UnexecutedRecommendationScore,
 } from '../domain/unexecuted-recommendation';
 import {
@@ -75,6 +76,8 @@ export interface AccountRecommendationScore {
   meanExcessReturnRate: string | null;
   meanShadowReturnRate: string | null;
   unexecuted: UnexecutedRecommendationScore;
+  // 시장 국면 게이트(MARKET_REGIME_GATE)로 보류한 추천의 채점. 현금 부족 채점과 따로 센다.
+  regimeGated: UnexecutedRecommendationScore;
   // 평가일 지수가 아직 안 들어와 초과수익 집계가 통째로 막힌 회차인가.
   evaluationBenchmarkMissing: boolean;
   portfolio: PortfolioPerformance;
@@ -192,12 +195,19 @@ export class ScoreRecommendationsUsecase {
         cycles: accountMatched.cycles,
         dailyPrices: validDailyPrices,
       });
-      const unexecuted = calculateUnexecutedRecommendations({
-        strategy,
-        recommendations: data.unexecutedRecommendations,
-        dailyPrices: validDailyPrices,
-        benchmarkCloses: data.benchmarkCloses,
-      });
+      const scoreShadowed = (
+        reason: ShadowedRecommendationReason,
+      ): UnexecutedRecommendationScore =>
+        calculateUnexecutedRecommendations({
+          strategy,
+          recommendations: data.unexecutedRecommendations.filter(
+            (recommendation) => recommendation.reason === reason,
+          ),
+          dailyPrices: validDailyPrices,
+          benchmarkCloses: data.benchmarkCloses,
+        });
+      const unexecuted = scoreShadowed('INSUFFICIENT_CASH');
+      const regimeGated = scoreShadowed('MARKET_REGIME_GATE');
       const benchmark = calculateBenchmarkPerformance({
         cycles: accountMatched.cycles,
         evaluationDate: asOf,
@@ -286,6 +296,7 @@ export class ScoreRecommendationsUsecase {
         meanExcessReturnRate: benchmark.meanExcessReturnRate,
         meanShadowReturnRate,
         unexecuted,
+        regimeGated,
         evaluationBenchmarkMissing: benchmark.evaluationBenchmarkMissing,
         portfolio,
         classifications,

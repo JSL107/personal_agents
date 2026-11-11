@@ -42,6 +42,7 @@ const SKIP_REASON_LABELS: Record<PaperRecommendationSkipReason, string> = {
   BUY_LIMIT_REACHED: '매수 상한 초과',
   NOT_HELD: '보유 없음',
   PENDING_ORDER_EXISTS: '주문 대기 중',
+  MARKET_REGIME_GATE: '시장 국면 보류',
 };
 
 const formatResult = (

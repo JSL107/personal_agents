@@ -34,6 +34,7 @@ describe('ScoreRecommendationsUsecase', () => {
           tickerId: 71,
           code: '005930',
           recommendedOn: new Date('2026-06-01T00:00:00.000Z'),
+          reason: 'INSUFFICIENT_CASH',
         },
       ],
       orders: [
@@ -395,6 +396,7 @@ describe('ScoreRecommendationsUsecase', () => {
           tickerId: null,
           code: 'UNKNOWN',
           recommendedOn: new Date('2026-08-01T00:00:00.000Z'),
+          reason: 'INSUFFICIENT_CASH',
         },
       ],
       orders: [
@@ -708,6 +710,7 @@ describe('ScoreRecommendationsUsecase', () => {
           tickerId: 200,
           code: '000200',
           recommendedOn: new Date('2026-08-06T00:00:00.000Z'),
+          reason: 'INSUFFICIENT_CASH',
         },
       ],
       cashEvents: [],
@@ -743,6 +746,62 @@ describe('ScoreRecommendationsUsecase', () => {
     expect(result.evaluationBenchmarkMissing).toBe(true);
     expect(result.persisted).toBe(false);
     expect(repository.saveRecommendationScores).not.toHaveBeenCalled();
+    jest.useRealTimers();
+  });
+
+  it('국면 보류 추천은 현금 부족 채점과 섞이지 않고 따로 채점한다', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-08-13T11:10:00.000Z'));
+    const asOf = new Date('2026-08-13T00:00:00.000Z');
+    const tradeDates = [
+      '2026-08-06',
+      '2026-08-07',
+      '2026-08-10',
+      '2026-08-11',
+      '2026-08-12',
+      '2026-08-13',
+    ];
+    repository.loadRecommendationScoreData.mockResolvedValue({
+      unexecutedRecommendations: [
+        {
+          agentRunId: 1,
+          strategy: 'SWING',
+          tickerId: 200,
+          code: '000200',
+          recommendedOn: new Date('2026-08-06T00:00:00.000Z'),
+          reason: 'MARKET_REGIME_GATE',
+        },
+      ],
+      cashEvents: [],
+      sellOrders: [],
+      accounts: [{ id: 8, name: 'SWING', seedAmount: decimal('1000') }],
+      orders: [],
+      recommendationTrades: [],
+      portfolioTrades: [],
+      dailyPrices: tradeDates.map((tradeDate, index) => ({
+        tickerId: 200,
+        tradeDate: new Date(`${tradeDate}T00:00:00.000Z`),
+        close: decimal(index === 5 ? '900' : '1000'),
+        market: 'KOSPI',
+      })),
+      benchmarkCloses: tradeDates.map((tradeDate) => ({
+        tradeDate: new Date(`${tradeDate}T00:00:00.000Z`),
+        close: decimal('2500'),
+      })),
+      snapshots: [],
+    });
+    const usecase = new ScoreRecommendationsUsecase(
+      repository as unknown as PaperTradingPrismaRepository,
+      NO_HOLIDAYS,
+    );
+
+    const result = await usecase.execute({ asOf });
+
+    expect(result.accounts[0].unexecuted.recommendationCount).toBe(0);
+    expect(result.accounts[0].regimeGated.recommendationCount).toBe(1);
+    expect(result.accounts[0].regimeGated.scoredCount).toBe(1);
+    expect(Number(result.accounts[0].regimeGated.meanReturnRate)).toBeLessThan(
+      0,
+    );
     jest.useRealTimers();
   });
 
