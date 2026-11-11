@@ -4,7 +4,11 @@ import { ConfigService } from '@nestjs/config';
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../agent-run/domain/agent-run.type';
 import { AgentType } from '../../model-router/domain/model-router.type';
-import { GateDecision, RedactedChange } from '../domain/subconscious.type';
+import {
+  GateDecision,
+  PROPOSABLE_AGENT_TYPES,
+  RedactedChange,
+} from '../domain/subconscious.type';
 
 const DEFAULT_MODEL = 'jev-1.13.0';
 const DEFAULT_TIMEOUT_MS = 2_000;
@@ -13,12 +17,6 @@ const DEFAULT_CONFIDENCE_THRESHOLD = 0.95;
 const DEFAULT_API_URL = 'https://api.typesafe.ai/v1/systemone';
 // 로컬 호환 서버(Kev 등)는 키 없이 받는다. 외부 주소에는 키 없이 보내지 않는다.
 const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
-
-const SUGGESTABLE_AGENTS = [
-  AgentType.CODE_REVIEWER,
-  AgentType.PM,
-  AgentType.WORK_REVIEWER,
-] as const;
 
 interface JevQuestion {
   readonly type: 'noul' | 'choice';
@@ -253,10 +251,11 @@ export class JevSubconsciousGate {
         type: 'choice',
         instructions: `Which agent should handle change ${index}?`,
         criteria: {
-          [AgentType.CODE_REVIEWER]: 'A pull request or code review task.',
-          [AgentType.PM]: 'A planning or daily-plan task.',
-          [AgentType.WORK_REVIEWER]: 'A work-log or progress-review task.',
-          NONE: 'No supported agent is appropriate.',
+          // 2026-11-11: 제안 후보를 PR 리뷰로 좁혔다(PROPOSABLE_AGENT_TYPES). 조사·확인류는 NONE 이고,
+          // NONE 은 LLM 게이트로 넘어간다.
+          [AgentType.CODE_REVIEWER]:
+            'Review the code of a GitHub pull request.',
+          NONE: 'Anything else, e.g. investigating a bug or ticket, checking reproduction conditions or impact, or sorting out owners.',
         },
       };
     });
@@ -301,7 +300,7 @@ export class JevSubconsciousGate {
   }
 
   private toAgentType(value: string | undefined): AgentType | undefined {
-    return (SUGGESTABLE_AGENTS as readonly string[]).includes(value ?? '')
+    return PROPOSABLE_AGENT_TYPES.has(value as AgentType)
       ? (value as AgentType)
       : undefined;
   }
