@@ -80,20 +80,17 @@ describe('MetaGraphClient', () => {
     ]);
   });
 
-  it('릴스 컨테이너를 만들면 폼 본문으로 요청하고 업로드 주소를 반환한다', async () => {
+  it('릴스 컨테이너를 만들면 video_url 을 폼 본문으로 보낸다', async () => {
     fetchMock.mockResolvedValue({
       ok: true,
-      json: async () => ({
-        id: 'container',
-        uri: 'https://upload.example/media',
-      }),
+      json: async () => ({ id: 'container' }),
     });
-    const result = await client.createReelContainer({ caption: '한글 캡션' });
+    const result = await client.createReelContainer({
+      caption: '한글 캡션',
+      videoUrl: 'https://host.example/v.mp4',
+    });
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(result).toEqual({
-      containerId: 'container',
-      uploadUri: 'https://upload.example/media',
-    });
+    expect(result).toEqual({ containerId: 'container' });
     expect(url).not.toContain('한글');
     expect(url).not.toContain('secret-page-token');
     expect(init.method).toBe('POST');
@@ -105,7 +102,7 @@ describe('MetaGraphClient', () => {
     expect(new URLSearchParams(init.body as string)).toEqual(
       new URLSearchParams({
         media_type: 'REELS',
-        upload_type: 'resumable',
+        video_url: 'https://host.example/v.mp4',
         caption: '한글 캡션',
         share_to_feed: 'true',
         access_token: 'secret-page-token',
@@ -122,7 +119,11 @@ describe('MetaGraphClient', () => {
         uri: 'https://upload.example/media',
       }),
     });
-    await client.createReelContainer({ caption: 'c', thumbOffsetMs: 58_250 });
+    await client.createReelContainer({
+      caption: 'c',
+      videoUrl: 'https://host.example/v.mp4',
+      thumbOffsetMs: 58_250,
+    });
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(new URLSearchParams(init.body as string).get('thumb_offset')).toBe(
       '58250',

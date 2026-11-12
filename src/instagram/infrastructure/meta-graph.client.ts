@@ -25,6 +25,7 @@ import {
   PublishingLimit,
   RecentMedia,
   ReelContainer,
+  VideoUrlContainer,
 } from '../domain/port/meta-graph.port';
 
 const GRAPH_ROOT = 'https://graph.facebook.com/v27.0';
@@ -173,16 +174,19 @@ export class MetaGraphClient implements MetaGraphPort {
     };
   }
 
+  // resumable 업로드는 처리 32초 제한에 걸려 릴스는 video_url 로 넘긴다(CloudflaredVideoHost 주석 참고).
   async createReelContainer({
     caption,
+    videoUrl,
     thumbOffsetMs,
   }: {
     caption: string;
+    videoUrl: string;
     thumbOffsetMs?: number;
-  }): Promise<ReelContainer> {
+  }): Promise<VideoUrlContainer> {
     const params: Record<string, string> = {
       media_type: 'REELS',
-      upload_type: 'resumable',
+      video_url: videoUrl,
       caption,
       share_to_feed: 'true',
     };
@@ -190,7 +194,14 @@ export class MetaGraphClient implements MetaGraphPort {
     if (thumbOffsetMs !== undefined) {
       params.thumb_offset = String(thumbOffsetMs);
     }
-    return await this.createResumableContainer(params);
+    const body = await this.graphPost({
+      path: `${this.userId}/media`,
+      params,
+    });
+    if (!isMatching({ id: P.string }, body)) {
+      throw this.failure('Meta 컨테이너 응답이 올바르지 않습니다.');
+    }
+    return { containerId: body.id };
   }
 
   // 스토리는 캡션을 받지 않는다. 이미지 스토리는 공개 URL 만 받아 영상으로만 올린다(2026-11-05 Meta 문서).

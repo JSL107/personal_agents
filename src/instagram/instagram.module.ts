@@ -11,8 +11,10 @@ import { FORMAT_POLICY_STORE_PORT } from './domain/port/format-policy-store.port
 import { INSTAGRAM_INSIGHT_SNAPSHOT_REPOSITORY_PORT } from './domain/port/instagram-insight-snapshot.repository.port';
 import { INSTAGRAM_POST_REPOSITORY_PORT } from './domain/port/instagram-post.repository.port';
 import { META_GRAPH_PORT } from './domain/port/meta-graph.port';
+import { PUBLIC_VIDEO_HOST_PORT } from './domain/port/public-video-host.port';
 import { REEL_FORMAT_DECISION_REPOSITORY_PORT } from './domain/port/reel-format-decision.repository.port';
 import { REEL_FORMAT_PLANNER_PORT } from './domain/port/reel-format-planner.port';
+import { CloudflaredVideoHost } from './infrastructure/cloudflared-video.host';
 import { FormatPolicyFileStore } from './infrastructure/format-policy.file-store';
 import { InstagramInsightSnapshotPrismaRepository } from './infrastructure/instagram-insight-snapshot.prisma.repository';
 import { InstagramPostPrismaRepository } from './infrastructure/instagram-post.prisma.repository';
@@ -42,6 +44,7 @@ import { ReelFormatDecisionPrismaRepository } from './infrastructure/reel-format
       useClass: InstagramInsightSnapshotPrismaRepository,
     },
     { provide: META_GRAPH_PORT, useClass: MetaGraphClient },
+    { provide: PUBLIC_VIDEO_HOST_PORT, useClass: CloudflaredVideoHost },
     PublishStoryUsecase,
     CollectInsightsUsecase,
     BuildWeeklyInsightReportUsecase,
@@ -50,6 +53,7 @@ import { ReelFormatDecisionPrismaRepository } from './infrastructure/reel-format
     DecideReelsFormatUsecase,
     INSTAGRAM_POST_REPOSITORY_PORT,
     META_GRAPH_PORT,
+    PUBLIC_VIDEO_HOST_PORT,
     PublishStoryUsecase,
     CollectInsightsUsecase,
     BuildWeeklyInsightReportUsecase,

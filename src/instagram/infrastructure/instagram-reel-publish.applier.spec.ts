@@ -14,6 +14,7 @@ import {
   ContainerStatusCode,
   MetaGraphPort,
 } from '../domain/port/meta-graph.port';
+import { PublicVideoHostPort } from '../domain/port/public-video-host.port';
 import {
   InstagramReelPublishApplier,
   isSamePost,
@@ -56,6 +57,8 @@ describe('InstagramReelPublishApplier', () => {
   let row: InstagramPost;
   let repository: jest.Mocked<InstagramPostRepositoryPort>;
   let graph: jest.Mocked<MetaGraphPort>;
+  let close: jest.Mock;
+  let videoHost: jest.Mocked<PublicVideoHostPort>;
   let applier: InstagramReelPublishApplier;
   beforeEach(() => {
     jest.clearAllMocks();
@@ -79,7 +82,7 @@ describe('InstagramReelPublishApplier', () => {
       createStoryContainer: jest.fn(),
       createReelContainer: jest
         .fn()
-        .mockResolvedValue({ containerId: 'container', uploadUri: 'uri' }),
+        .mockResolvedValue({ containerId: 'container' }),
       uploadVideo: jest.fn().mockResolvedValue(undefined),
       getContainerStatus: jest.fn().mockResolvedValue({
         statusCode: ContainerStatusCode.FINISHED,
@@ -98,64 +101,53 @@ describe('InstagramReelPublishApplier', () => {
       getFollowersCount: jest.fn(),
     };
     jest.mocked(readFile).mockResolvedValue(video as never);
-    applier = new InstagramReelPublishApplier(repository, graph);
+    close = jest.fn().mockResolvedValue(undefined);
+    videoHost = {
+      open: jest.fn().mockResolvedValue({ url: 'https://host/v.mp4', close }),
+    };
+    applier = new InstagramReelPublishApplier(repository, graph, videoHost);
     applier.pollIntervalMs = 0;
     applier.settleIntervalMs = 0;
-    applier.uploadRetryDelaysMs = [0, 0];
   });
-  const uploadFailure = (
-    code = InstagramErrorCode.GRAPH_REQUEST_FAILED,
-  ): InstagramException =>
-    new InstagramException({
-      code,
-      message: 'Meta 요청 실패: HTTP 400: ProcessingFailedError',
+  it('검증한 영상을 공개 주소로 열어 video_url 로 넘기고 처리가 끝난 뒤 닫는다', async () => {
+    graph.getContainerStatus.mockImplementationOnce(async () => {
+      expect(close).not.toHaveBeenCalled();
+      return { statusCode: ContainerStatusCode.FINISHED, status: null };
     });
-  it('업로드가 요청 실패면 새 컨테이너로 다시 올려 게시한다', async () => {
-    graph.createReelContainer
-      .mockResolvedValueOnce({ containerId: 'c1', uploadUri: 'u1' })
-      .mockResolvedValueOnce({ containerId: 'c2', uploadUri: 'u2' });
-    graph.uploadVideo.mockRejectedValueOnce(uploadFailure());
     await applier.apply(preview);
-    expect(graph.uploadVideo).toHaveBeenLastCalledWith(
-      expect.objectContaining({ uploadUri: 'u2' }),
+    expect(videoHost.open).toHaveBeenCalledWith(video);
+    expect(graph.createReelContainer).toHaveBeenCalledWith(
+      expect.objectContaining({ videoUrl: 'https://host/v.mp4' }),
     );
-    expect(graph.publish).toHaveBeenCalledWith('c2');
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(close.mock.invocationCallOrder[0]).toBeLessThan(
+      graph.publish.mock.invocationCallOrder[0],
+    );
+    expect(graph.uploadVideo).not.toHaveBeenCalled();
     expect(row.status).toBe('PUBLISHED');
   });
-  it('업로드가 계속 실패하면 정해진 횟수만 시도하고 실패를 던진다', async () => {
-    graph.uploadVideo.mockRejectedValue(uploadFailure());
-    await expect(applier.apply(preview)).rejects.toMatchObject({
-      message: expect.stringContaining('ProcessingFailedError'),
+  it('Meta 가 영상 처리에 실패해도 공개 주소를 닫고 게시하지 않는다', async () => {
+    graph.getContainerStatus.mockResolvedValue({
+      statusCode: ContainerStatusCode.ERROR,
+      status: 'Error: 2207076',
     });
-    expect(graph.uploadVideo).toHaveBeenCalledTimes(3);
+    await expect(applier.apply(preview)).rejects.toMatchObject({
+      errorCode: 'INSTAGRAM_CONTAINER_FAILED',
+    });
+    expect(close).toHaveBeenCalledTimes(1);
     expect(graph.publish).not.toHaveBeenCalled();
   });
-  it('운영 설정은 1·2·4·8·10분 간격으로 최대 6번 올린다', async () => {
-    const production = new InstagramReelPublishApplier(repository, graph);
-    const wait = jest
-      .spyOn(
-        production as unknown as { wait: (ms: number) => Promise<void> },
-        'wait',
-      )
-      .mockResolvedValue(undefined);
-    graph.uploadVideo.mockRejectedValue(uploadFailure());
-    await expect(production.apply(preview)).rejects.toBeInstanceOf(
-      InstagramException,
+  it('공개 주소를 열지 못하면 컨테이너를 만들지 않는다', async () => {
+    videoHost.open.mockRejectedValue(
+      new InstagramException({
+        code: InstagramErrorCode.VIDEO_HOST_FAILED,
+        message: 'tunnel',
+      }),
     );
-    expect(graph.uploadVideo).toHaveBeenCalledTimes(6);
-    expect(graph.createReelContainer).toHaveBeenCalledTimes(6);
-    expect(wait.mock.calls.map(([ms]) => ms)).toEqual([
-      60_000, 120_000, 240_000, 480_000, 600_000,
-    ]);
-  });
-  it('업로드가 토큰 오류면 다시 시도하지 않는다', async () => {
-    graph.uploadVideo.mockRejectedValue(
-      uploadFailure(InstagramErrorCode.TOKEN_INVALID),
-    );
-    await expect(applier.apply(preview)).rejects.toBeInstanceOf(
-      InstagramException,
-    );
-    expect(graph.uploadVideo).toHaveBeenCalledTimes(1);
+    await expect(applier.apply(preview)).rejects.toMatchObject({
+      errorCode: 'INSTAGRAM_VIDEO_HOST_FAILED',
+    });
+    expect(graph.createReelContainer).not.toHaveBeenCalled();
   });
   it('게시가 꺼져 있으면 파싱과 선점 전에 중단한다', async () => {
     graph.isConfigured.mockReturnValue(false);
@@ -201,6 +193,7 @@ describe('InstagramReelPublishApplier', () => {
     });
     expect(graph.createReelContainer).toHaveBeenCalledWith({
       caption: 'caption',
+      videoUrl: 'https://host/v.mp4',
       thumbOffsetMs: 9_750,
     });
   });
@@ -250,7 +243,8 @@ describe('InstagramReelPublishApplier', () => {
         '인스타에는 올라갔지만 기록을 마치지 못했습니다. 잠시 뒤 다시 누르면 올라간 게시물을 찾아 기록합니다',
     });
     expect(graph.listRecentMedia).not.toHaveBeenCalled();
-    expect(graph.getContainerStatus).toHaveBeenCalledTimes(1);
+    // 업로드 처리 대기 1회 + 게시 직전 확인 1회. 게시 뒤 정산 조회는 없어야 한다.
+    expect(graph.getContainerStatus).toHaveBeenCalledTimes(2);
   });
   it('게시 후 상세 조회에 실패하면 기록 미완료를 알린다', async () => {
     graph.getMedia.mockRejectedValue(new Error('failed'));
@@ -415,6 +409,33 @@ describe('InstagramReelPublishApplier', () => {
     expect(graph.createReelContainer).not.toHaveBeenCalled();
     expect(graph.publish).toHaveBeenCalledTimes(1);
   });
+  it('처리 대기가 끊긴 컨테이너가 이미 처리 완료면 새로 만들지 않고 게시한다', async () => {
+    row = {
+      ...row,
+      containerId: 'container',
+      containerCreatedAt: new Date(),
+      uploadedAt: null,
+    };
+    await applier.apply(preview);
+    expect(videoHost.open).not.toHaveBeenCalled();
+    expect(graph.createReelContainer).not.toHaveBeenCalled();
+    expect(graph.publish).toHaveBeenCalledWith('container');
+  });
+  it('처리 대기가 끊긴 컨테이너가 아직 처리 중이면 새로 올린다', async () => {
+    row = {
+      ...row,
+      containerId: 'old',
+      containerCreatedAt: new Date(),
+      uploadedAt: null,
+    };
+    graph.getContainerStatus.mockResolvedValueOnce({
+      statusCode: ContainerStatusCode.IN_PROGRESS,
+      status: null,
+    });
+    await applier.apply(preview);
+    expect(graph.createReelContainer).toHaveBeenCalledTimes(1);
+    expect(graph.publish).toHaveBeenCalledWith('container');
+  });
   it('만료된 컨테이너는 새로 만들어 게시한다', async () => {
     row = { ...row, containerId: 'old', uploadedAt: new Date() };
     graph.getContainerStatus.mockResolvedValueOnce({
@@ -426,11 +447,13 @@ describe('InstagramReelPublishApplier', () => {
   });
   it('게시 응답을 잃어도 게시 상태면 결과를 정산한다', async () => {
     graph.publish.mockRejectedValue(new Error('lost'));
+    const finished = {
+      statusCode: ContainerStatusCode.FINISHED,
+      status: null,
+    };
     graph.getContainerStatus
-      .mockResolvedValueOnce({
-        statusCode: ContainerStatusCode.FINISHED,
-        status: null,
-      })
+      .mockResolvedValueOnce(finished)
+      .mockResolvedValueOnce(finished)
       .mockResolvedValue({
         statusCode: ContainerStatusCode.PUBLISHED,
         status: null,
