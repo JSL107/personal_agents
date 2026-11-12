@@ -551,7 +551,7 @@ describe('InstagramReelPublishApplier', () => {
     expect(row.status).toBe('PUBLISHED');
     expect(graph.publish).not.toHaveBeenCalled();
   });
-  it('영상 처리 시간이 초과되면 실패한다', async () => {
+  it('영상 처리 시간이 초과되면 공개 주소를 닫고 실패한다', async () => {
     graph.getContainerStatus.mockResolvedValue({
       statusCode: ContainerStatusCode.IN_PROGRESS,
       status: null,
@@ -561,6 +561,8 @@ describe('InstagramReelPublishApplier', () => {
     });
     expect(graph.getContainerStatus).toHaveBeenCalledTimes(5);
     expect(row.containerId).toBe('container');
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(graph.publish).not.toHaveBeenCalled();
   });
   it('컨테이너 오류가 발생하면 실패한다', async () => {
     graph.getContainerStatus.mockResolvedValue({
