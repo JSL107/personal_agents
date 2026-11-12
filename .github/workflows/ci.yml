@@ -16,7 +16,9 @@ concurrency:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    # shortcut: ubuntu-26.04 러너에서 ai-weekly-metrics self-check 가 종료 코드 3으로 깨진다(2026-11-12, 원인 미확인).
+    # 원인을 찾아 고치면 ubuntu-latest 로 되돌린다.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
