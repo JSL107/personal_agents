@@ -12,6 +12,10 @@ export interface ReelContainer {
   uploadUri: string;
 }
 
+export interface VideoUrlContainer {
+  containerId: string;
+}
+
 export enum ContainerStatusCode {
   IN_PROGRESS = 'IN_PROGRESS',
   FINISHED = 'FINISHED',
@@ -79,11 +83,13 @@ export interface MetaGraphPort {
   getPublishingLimit(): Promise<PublishingLimit>;
   createReelContainer({
     caption,
+    videoUrl,
     thumbOffsetMs,
   }: {
     caption: string;
+    videoUrl: string;
     thumbOffsetMs?: number;
-  }): Promise<ReelContainer>;
+  }): Promise<VideoUrlContainer>;
   createStoryContainer(): Promise<ReelContainer>;
   uploadVideo({
     uploadUri,
