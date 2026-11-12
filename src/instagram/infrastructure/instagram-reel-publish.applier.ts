@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { readFile } from 'fs/promises';
 
@@ -37,6 +37,10 @@ import {
   PublishedMedia,
   RecentMedia,
 } from '../domain/port/meta-graph.port';
+import {
+  PUBLIC_VIDEO_HOST_PORT,
+  PublicVideoHostPort,
+} from '../domain/port/public-video-host.port';
 import { parseReelPublishPayload } from '../domain/reel-publish-payload.parser';
 
 const PUBLISH_UNCONFIRMED_MESSAGE =
@@ -87,18 +91,13 @@ export class InstagramReelPublishApplier implements PreviewApplier {
   // 게시 결과가 불확실한 뒤 같은 컨테이너로 다시 게시하기까지 기다리는 시간. 재조회 60초만으로는
   // Meta 쪽 PUBLISHED 반영·게시물 목록 반영 지연을 덮지 못해, 실제로 올라간 릴스를 한 번 더 올릴 수 있다.
   republishAfterMs = 10 * 60_000;
-  // 실패는 수십 분씩 몰려 난다(2026-11-08 09:17~09:46, 11-10 09:00~09:38 연속 실패 뒤 성공). 5초 간격 3회는
-  // 같은 구간 안에서 끝나 소용이 없어 간격을 벌린다. 대기 합계 25분 — 더 늘리면 Slack 승인 버튼의
-  // response_url(30분) 이 만료돼 결과 안내가 끊긴다. 카드 상태는 chat.update 라 영향 없다.
-  uploadRetryDelaysMs: readonly number[] = [
-    60_000, 120_000, 240_000, 480_000, 600_000,
-  ];
-  private readonly logger = new Logger(InstagramReelPublishApplier.name);
 
   constructor(
     @Inject(INSTAGRAM_POST_REPOSITORY_PORT)
     private readonly repository: InstagramPostRepositoryPort,
     @Inject(META_GRAPH_PORT) private readonly graph: MetaGraphPort,
+    @Inject(PUBLIC_VIDEO_HOST_PORT)
+    private readonly videoHost: PublicVideoHostPort,
   ) {}
 
   async apply(
@@ -254,6 +253,19 @@ export class InstagramReelPublishApplier implements PreviewApplier {
           message: PUBLISH_UNCONFIRMED_MESSAGE,
         });
       }
+      // 처리 대기가 끊겨 업로드 완료 기록만 빠진 컨테이너. Meta 가 이미 영상을 받았으니 새로 만들지 않고 이어 쓴다.
+      const finishedWithoutRecord =
+        !post.uploadedAt &&
+        !post.publishAttemptedAt &&
+        state.statusCode === ContainerStatusCode.FINISHED;
+      if (finishedWithoutRecord) {
+        return {
+          post: await this.repository.update({
+            id: post.id,
+            patch: { uploadedAt: new Date() },
+          }),
+        };
+      }
     }
     return { post };
   }
@@ -297,57 +309,37 @@ export class InstagramReelPublishApplier implements PreviewApplier {
     return post;
   }
 
-  // Meta 업로드 서버는 같은 영상·같은 요청에도 ProcessingFailedError(400)를 불규칙하게 돌려준다
-  // (2026-11-06 실측: 같은 파일이 성공·실패를 오갔다). 게시 전 단계라 새 컨테이너로 다시 해도 중복
-  // 게시 위험이 없으니, 요청 실패만 몇 번 더 시도한다. 토큰 오류처럼 다시 해도 같은 실패는 바로 던진다.
+  // 영상을 잠깐 공개 주소로 열고 Meta 가 video_url 로 가져가게 한다. 처리가 끝나기 전에 닫으면 Meta 가
+  // 영상을 다 받지 못하므로 FINISHED 까지 기다린 뒤 닫는다.
   private async uploadToNewContainer({
     post,
     payload,
     video,
-    attempt = 1,
   }: {
     post: InstagramPost;
     payload: ReelPublishPayload;
     video: Buffer;
-    attempt?: number;
   }): Promise<InstagramPost> {
-    const container = await this.graph.createReelContainer({
-      caption: payload.caption,
-      thumbOffsetMs: payload.coverOffsetMs,
-    });
-    const containerPost = await this.repository.update({
-      id: post.id,
-      patch: {
-        containerId: container.containerId,
-        containerCreatedAt: new Date(),
-        uploadedAt: null,
-        publishAttemptedAt: null,
-      },
-    });
+    const hosted = await this.videoHost.open(video);
     try {
-      await this.graph.uploadVideo({
-        uploadUri: container.uploadUri,
-        video,
+      const container = await this.graph.createReelContainer({
+        caption: payload.caption,
+        videoUrl: hosted.url,
+        thumbOffsetMs: payload.coverOffsetMs,
       });
+      const containerPost = await this.repository.update({
+        id: post.id,
+        patch: {
+          containerId: container.containerId,
+          containerCreatedAt: new Date(),
+          uploadedAt: null,
+          publishAttemptedAt: null,
+        },
+      });
+      await this.poll(container.containerId);
       return containerPost;
-    } catch (error) {
-      const retriable =
-        error instanceof InstagramException &&
-        error.errorCode === InstagramErrorCode.GRAPH_REQUEST_FAILED;
-      const delayMs = this.uploadRetryDelaysMs[attempt - 1];
-      if (!retriable || delayMs === undefined) {
-        throw error;
-      }
-      this.logger.warn(
-        `릴스 업로드 실패 ${attempt}회 reel=${payload.reelKey} container=${container.containerId} — ${delayMs / 1000}초 뒤 새 컨테이너로 다시: ${error.message}`,
-      );
-      await this.wait(delayMs);
-      return await this.uploadToNewContainer({
-        post,
-        payload,
-        video,
-        attempt: attempt + 1,
-      });
+    } finally {
+      await hosted.close();
     }
   }
 

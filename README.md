@@ -496,6 +496,8 @@ node scripts/export-ai-cli-env.cjs ./ai-cli-env-export   # 기존 PC 에서 내�
 
 Hermes 가 매일 08:40 AI 꼭지와 개발 꼭지를 한 편(약 1분)으로 묶어 `~/Desktop/skill-jaengyi-reels/<날짜>/daily/` 에 `reel.mp4`·`caption.txt`·`script.json`·`story.mp4` 를 만든다. 한쪽 꼭지가 소재 없음이나 검사 탈락이면 남은 한 꼭지로 만들고, 그 밖의 실패는 그날 전체를 실패로 보고 DM 에 재실행 명령을 남긴다. 이대리는 `daily` 폴더만 보고 카드 한 장을 낸다. 카드의 ✅ 적용 한 번이 릴스와 「오늘의 한 줄」 스토리를 함께 승인하며, 스토리는 릴스 게시가 확인된 뒤 15분 안에 따로 올라간다. 스토리는 한 번 게시를 시도한 뒤에는 다시 올리지 않고, 그날 끝까지 확인되지 않으면 앱에서 확인하라는 알림을 보낸다. 시험 렌더는 `python3 scripts/hermes-skill-reels.py --worker --date <날짜> --out-root <임시 폴더> --no-notion --no-dm` 처럼 운영 폴더 밖에 만든다. 운영 폴더에 만든 `daily` 는 공개 게시 카드로 올라간다.
 
+릴스 영상은 Meta 업로드 서버로 직접 보내지 않는다. 그 경로는 처리가 약 32초를 넘으면 `ProcessingFailedError` 로 끊겨 1분짜리 릴스가 자주 막힌다. 대신 이대리가 게시하는 동안만 `cloudflared` 임시 터널로 영상 하나를 추측할 수 없는 주소에 열고, Meta 가 `video_url` 로 가져가 처리를 마치면 바로 닫는다. 그래서 릴스 게시에는 `brew install cloudflared` 가 필요하다. 계정은 필요 없다. 스토리는 8초라 기존 업로드 방식을 그대로 쓴다.
+
 게시가 확인되면 이대리가 `published.json` 을 남기고, 다음 제작 전에 Hermes 가 사용한 Notion 후보 행을 「게시완료」와 영상 링크로 갱신한다.
 표시를 마친 날짜 폴더는 30일이 지나면 휴지통으로 옮긴다. 예전 하루 2편 폴더는 대상이 아니다.
 
