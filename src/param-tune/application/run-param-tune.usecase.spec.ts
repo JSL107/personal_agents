@@ -12,7 +12,9 @@ import {
 } from '../../backtest/domain/parameter-search';
 import { StrategyParameterPort } from '../../strategy-parameter/domain/port/strategy-parameter.port';
 import { StrategyParameterSnapshotError } from '../../strategy-parameter/domain/strategy-parameter.exception';
+import { ActivateNewVersionKind } from '../../strategy-parameter/domain/strategy-parameter.type';
 import { ParameterSnapshot } from '../domain/param-tune.type';
+import { RollbackDecisionKind } from '../domain/param-tune.type';
 import {
   OpenProbation,
   ParamTuneRunPort,
@@ -189,12 +191,12 @@ describe('RunParamTuneUsecase', () => {
     runPort.finish.mockResolvedValue(true);
     runPort.markFailed.mockResolvedValue(true);
     runPort.commitAdoption.mockResolvedValue({
-      kind: 'ACTIVATED',
+      kind: ActivateNewVersionKind.ACTIVATED,
       parameterId: 21,
       version: 2,
     });
     runPort.commitRollback.mockResolvedValue({
-      kind: 'ACTIVATED',
+      kind: ActivateNewVersionKind.ACTIVATED,
       parameterId: 22,
       version: 3,
     });
@@ -250,7 +252,9 @@ describe('RunParamTuneUsecase', () => {
         agentRunId: 99,
       },
       detail: expect.objectContaining({
-        decision: expect.objectContaining({ kind: 'ROLLBACK' }),
+        decision: expect.objectContaining({
+          kind: RollbackDecisionKind.ROLLBACK,
+        }),
       }),
     });
     // ROLLBACK 확정은 commitRollback 이 활성화와 함께 쓴다.
@@ -284,7 +288,7 @@ describe('RunParamTuneUsecase', () => {
     runPort.findOpenProbation.mockResolvedValue(probation);
     rollbackReplays();
     runPort.commitRollback.mockResolvedValue({
-      kind: 'CONFLICT',
+      kind: ActivateNewVersionKind.CONFLICT,
       actual: snapshot,
     });
     mockedEvaluate.mockReturnValue([]);
@@ -424,7 +428,7 @@ describe('RunParamTuneUsecase', () => {
     config.get.mockReturnValue('apply');
     adoptableSearch();
     runPort.commitAdoption.mockResolvedValue({
-      kind: 'CONFLICT',
+      kind: ActivateNewVersionKind.CONFLICT,
       actual: snapshot,
     });
 

@@ -7,6 +7,10 @@ import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { AgentType } from '../../../model-router/domain/model-router.type';
 import { TUNE_CHILD_TIMEOUT_MS } from '../../../param-tune/domain/param-tune.type';
 import {
+  ChildOutcomeKind,
+  ClaimKind,
+} from '../../../param-tune/domain/param-tune.type';
+import {
   PARAM_TUNE_RUN_PORT,
   ParamTuneRunPort,
 } from '../../../param-tune/domain/port/param-tune-run.port';
@@ -56,7 +60,7 @@ export class ParamTuneAutopilotTask implements AutopilotTask {
             axis,
             now: new Date(),
           });
-          if (claim.kind !== 'CLAIMED') {
+          if (claim.kind !== ClaimKind.CLAIMED) {
             continue;
           }
           const child = await this.launcher.run({
@@ -78,7 +82,7 @@ export class ParamTuneAutopilotTask implements AutopilotTask {
             timeoutMs: TUNE_CHILD_TIMEOUT_MS,
           });
 
-          if (child.kind === 'EXITED' && child.code === 0) {
+          if (child.kind === ChildOutcomeKind.EXITED && child.code === 0) {
             // 정상이면 자식이 행을 DONE 으로 닫았다. 아직 RUNNING 이면 다음 회차의 stale 회수가 맡는다.
             this.logger.log(
               `param-tune ${strategy}: 자식이 종료 코드 0 으로 끝났다 (run ${claim.runId}).`,
@@ -86,9 +90,9 @@ export class ParamTuneAutopilotTask implements AutopilotTask {
             continue;
           }
           const reason =
-            child.kind === 'EXITED'
+            child.kind === ChildOutcomeKind.EXITED
               ? `자식 프로세스 종료 코드 ${child.code}\n${child.tail}`
-              : child.kind === 'TIMEOUT'
+              : child.kind === ChildOutcomeKind.TIMEOUT
                 ? `자식 프로세스 시간 초과\n${child.tail}`
                 : `자식 프로세스 기동 실패: ${child.message}`;
           await this.runPort.markFailed({
@@ -96,7 +100,7 @@ export class ParamTuneAutopilotTask implements AutopilotTask {
             attemptToken: claim.attemptToken,
             reason,
           });
-          if (child.kind === 'SPAWN_FAILED') {
+          if (child.kind === ChildOutcomeKind.SPAWN_FAILED) {
             spawnFailures.push(`${strategy}: ${child.message}`);
           }
         }

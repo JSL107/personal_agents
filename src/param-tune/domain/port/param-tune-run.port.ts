@@ -10,6 +10,7 @@ import {
   TuneEvaluation,
   TuneRunStatus,
 } from '../param-tune.type';
+import { ClaimKind } from '../param-tune.type';
 
 export const PARAM_TUNE_RUN_PORT = Symbol('PARAM_TUNE_RUN_PORT');
 
@@ -57,9 +58,9 @@ export interface TuneRunPatch {
 }
 
 export type ClaimResult =
-  | { kind: 'CLAIMED'; runId: number; attemptToken: string }
-  | { kind: 'ALREADY_RUNNING'; runId: number }
-  | { kind: 'ALREADY_DONE'; runId: number };
+  | { kind: ClaimKind.CLAIMED; runId: number; attemptToken: string }
+  | { kind: ClaimKind.ALREADY_RUNNING; runId: number }
+  | { kind: ClaimKind.ALREADY_DONE; runId: number };
 
 export interface OpenProbation {
   runId: number;

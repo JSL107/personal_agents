@@ -3,6 +3,7 @@ import {
   TuneEvaluation,
   TuneRunStatus,
 } from '../domain/param-tune.type';
+import { RollbackDecisionKind } from '../domain/param-tune.type';
 import { TuneRunRow } from '../domain/port/param-tune-run.port';
 import { formatParamTuneReport } from './param-tune.formatter';
 
@@ -106,7 +107,11 @@ describe('formatParamTuneReport', () => {
         ...applied,
         evaluation: TuneEvaluation.INCONCLUSIVE,
         evaluationDetail: {
-          decision: { kind: 'INCONCLUSIVE', reason: '표본 부족', final: true },
+          decision: {
+            kind: RollbackDecisionKind.INCONCLUSIVE,
+            reason: '표본 부족',
+            final: true,
+          },
         },
       }),
       row({

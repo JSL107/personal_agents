@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { join } from 'node:path';
 
+import { ChildOutcomeKind } from '../domain/param-tune.type';
 import type * as LauncherModule from './param-tune-child.launcher';
 
 const mockSpawn = jest.fn();
@@ -97,7 +98,7 @@ describe('ParamTuneChildLauncher', () => {
     const promise = launcher.run(input);
     child.emit('exit', 0, null);
     await expect(promise).resolves.toEqual({
-      kind: 'EXITED',
+      kind: ChildOutcomeKind.EXITED,
       code: 0,
       tail: 'a\nb',
     });
@@ -114,14 +115,19 @@ describe('ParamTuneChildLauncher', () => {
     jest.advanceTimersByTime(10_000);
     expect(child.killed).toEqual(['SIGTERM', 'SIGKILL']);
     child.emit('exit', null, 'SIGKILL');
-    await expect(promise).resolves.toEqual({ kind: 'TIMEOUT', tail: 'a\nb' });
+    await expect(promise).resolves.toEqual({
+      kind: ChildOutcomeKind.TIMEOUT,
+      tail: 'a\nb',
+    });
   });
 
   it('SIGTERM 에 정상 종료하면 SIGKILL 을 보내지 않는다', async () => {
     const promise = launcher.run(input);
     jest.advanceTimersByTime(1000);
     child.emit('exit', null, 'SIGTERM');
-    await expect(promise).resolves.toMatchObject({ kind: 'TIMEOUT' });
+    await expect(promise).resolves.toMatchObject({
+      kind: ChildOutcomeKind.TIMEOUT,
+    });
     jest.advanceTimersByTime(20_000);
     expect(child.killed).toEqual(['SIGTERM']);
   });
@@ -130,7 +136,7 @@ describe('ParamTuneChildLauncher', () => {
     const promise = launcher.run(input);
     child.emit('error', new Error('spawn ENOENT'));
     await expect(promise).resolves.toEqual({
-      kind: 'SPAWN_FAILED',
+      kind: ChildOutcomeKind.SPAWN_FAILED,
       message: 'spawn ENOENT',
     });
   });
@@ -138,7 +144,7 @@ describe('ParamTuneChildLauncher', () => {
   it('레포 루트를 못 찾으면 spawn 없이 SPAWN_FAILED', async () => {
     mockFs.existsSync.mockReturnValue(false);
     const result = await launcher.run(input);
-    expect(result.kind).toBe('SPAWN_FAILED');
+    expect(result.kind).toBe(ChildOutcomeKind.SPAWN_FAILED);
     expect(mockSpawn).not.toHaveBeenCalled();
   });
 });
