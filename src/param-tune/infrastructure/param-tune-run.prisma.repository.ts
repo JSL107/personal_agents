@@ -150,9 +150,15 @@ export class ParamTuneRunPrismaRepository implements ParamTuneRunPort {
       return { kind: 'ALREADY_RUNNING', runId: found.id };
     }
 
-    // 옛 토큰을 조건으로 걸어, 먼저 재선점한 쪽이 이기고 나머지는 count 0 으로 물러난다.
+    // 읽은 상태를 통째로 조건으로 건다. 먼저 재선점한 쪽이 이기고, 그 사이 옛 프로세스가
+    // 같은 토큰으로 DONE 을 썼으면 그 행을 RUNNING 으로 되돌리지 않고 count 0 으로 물러난다.
     const reclaimed = await this.prisma.parameterTuneRun.updateMany({
-      where: { id: found.id, attemptToken: found.attemptToken },
+      where: {
+        id: found.id,
+        attemptToken: found.attemptToken,
+        status: found.status,
+        startedAt: found.startedAt,
+      },
       data: {
         status: 'RUNNING',
         attemptToken,
