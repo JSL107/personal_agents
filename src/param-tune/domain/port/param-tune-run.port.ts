@@ -125,4 +125,7 @@ export interface ParamTuneRunPort {
   findUnnotified(): Promise<TuneRunRow[]>;
 
   markNotified(ids: number[], at: Date): Promise<void>;
+
+  /** since 이후 반영됐거나 롤백된 행 수. 롤백은 새 행을 만들지 않으니 같은 행을 한 번만 센다. */
+  countAppliedSince(since: Date): Promise<number>;
 }

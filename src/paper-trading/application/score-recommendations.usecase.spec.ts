@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { holidayCalendarOf } from '../../holiday/domain/business-calendar';
+import { ParamTuneRunPort } from '../../param-tune/domain/port/param-tune-run.port';
 import { PaperTradingPrismaRepository } from '../infrastructure/paper-trading.prisma.repository';
 import { ScoreRecommendationsUsecase } from './score-recommendations.usecase';
 
@@ -14,8 +15,11 @@ describe('ScoreRecommendationsUsecase', () => {
     saveRecommendationScores: jest.fn(),
   };
 
+  const tuneRuns = { countAppliedSince: jest.fn() };
+
   beforeEach(() => {
     jest.resetAllMocks();
+    tuneRuns.countAppliedSince.mockResolvedValue(0);
   });
 
   it('계좌별 실제·그림자·벤치마크·포트폴리오 성적과 제외 사유를 집계한다', async () => {
@@ -124,6 +128,7 @@ describe('ScoreRecommendationsUsecase', () => {
     const usecase = new ScoreRecommendationsUsecase(
       repository as unknown as PaperTradingPrismaRepository,
       NO_HOLIDAYS,
+      tuneRuns as unknown as ParamTuneRunPort,
     );
 
     const result = await usecase.execute({ asOf });
@@ -282,6 +287,7 @@ describe('ScoreRecommendationsUsecase', () => {
     const usecase = new ScoreRecommendationsUsecase(
       repository as unknown as PaperTradingPrismaRepository,
       NO_HOLIDAYS,
+      tuneRuns as unknown as ParamTuneRunPort,
     );
 
     const result = await usecase.execute({
@@ -350,6 +356,7 @@ describe('ScoreRecommendationsUsecase', () => {
     const usecase = new ScoreRecommendationsUsecase(
       repository as unknown as PaperTradingPrismaRepository,
       NO_HOLIDAYS,
+      tuneRuns as unknown as ParamTuneRunPort,
     );
 
     const result = await usecase.execute({ asOf });
@@ -463,6 +470,7 @@ describe('ScoreRecommendationsUsecase', () => {
     const usecase = new ScoreRecommendationsUsecase(
       repository as unknown as PaperTradingPrismaRepository,
       NO_HOLIDAYS,
+      tuneRuns as unknown as ParamTuneRunPort,
     );
 
     const result = await usecase.execute({ asOf });
@@ -582,6 +590,7 @@ describe('ScoreRecommendationsUsecase', () => {
     const usecase = new ScoreRecommendationsUsecase(
       repository as unknown as PaperTradingPrismaRepository,
       NO_HOLIDAYS,
+      tuneRuns as unknown as ParamTuneRunPort,
     );
 
     const result = await usecase.execute({ asOf });
@@ -627,6 +636,7 @@ describe('ScoreRecommendationsUsecase', () => {
     const usecase = new ScoreRecommendationsUsecase(
       repository as unknown as PaperTradingPrismaRepository,
       NO_HOLIDAYS,
+      tuneRuns as unknown as ParamTuneRunPort,
     );
 
     await expect(usecase.execute({ asOf })).rejects.toThrow('원장 저장 실패');
@@ -679,6 +689,7 @@ describe('ScoreRecommendationsUsecase', () => {
     const usecase = new ScoreRecommendationsUsecase(
       repository as unknown as PaperTradingPrismaRepository,
       NO_HOLIDAYS,
+      tuneRuns as unknown as ParamTuneRunPort,
     );
 
     const result = await usecase.execute({ asOf });
@@ -737,6 +748,7 @@ describe('ScoreRecommendationsUsecase', () => {
     const usecase = new ScoreRecommendationsUsecase(
       repository as unknown as PaperTradingPrismaRepository,
       NO_HOLIDAYS,
+      tuneRuns as unknown as ParamTuneRunPort,
     );
 
     const result = await usecase.execute({ asOf });
@@ -792,6 +804,7 @@ describe('ScoreRecommendationsUsecase', () => {
     const usecase = new ScoreRecommendationsUsecase(
       repository as unknown as PaperTradingPrismaRepository,
       NO_HOLIDAYS,
+      tuneRuns as unknown as ParamTuneRunPort,
     );
 
     const result = await usecase.execute({ asOf });
@@ -863,6 +876,7 @@ describe('ScoreRecommendationsUsecase', () => {
         load: async () =>
           holidayCalendarOf(['2026-09-24', '2026-09-25', '2026-09-26']),
       },
+      tuneRuns as unknown as ParamTuneRunPort,
     );
     const lastTradingDay = new Date('2026-09-23T00:00:00.000Z');
 
@@ -956,6 +970,7 @@ describe('ScoreRecommendationsUsecase', () => {
     const usecase = new ScoreRecommendationsUsecase(
       repository as unknown as PaperTradingPrismaRepository,
       NO_HOLIDAYS,
+      tuneRuns as unknown as ParamTuneRunPort,
     );
 
     const result = await usecase.execute({ asOf });
@@ -986,6 +1001,7 @@ describe('ScoreRecommendationsUsecase', () => {
     const usecase = new ScoreRecommendationsUsecase(
       repository as unknown as PaperTradingPrismaRepository,
       NO_HOLIDAYS,
+      tuneRuns as unknown as ParamTuneRunPort,
     );
 
     const result = await usecase.execute({
@@ -1017,6 +1033,7 @@ describe('ScoreRecommendationsUsecase', () => {
     const usecase = new ScoreRecommendationsUsecase(
       repository as unknown as PaperTradingPrismaRepository,
       NO_HOLIDAYS,
+      tuneRuns as unknown as ParamTuneRunPort,
     );
 
     const result = await usecase.execute({
@@ -1047,6 +1064,7 @@ describe('ScoreRecommendationsUsecase', () => {
     const usecase = new ScoreRecommendationsUsecase(
       repository as unknown as PaperTradingPrismaRepository,
       NO_HOLIDAYS,
+      tuneRuns as unknown as ParamTuneRunPort,
     );
 
     const result = await usecase.execute({
@@ -1080,6 +1098,7 @@ describe('ScoreRecommendationsUsecase', () => {
     const usecase = new ScoreRecommendationsUsecase(
       repository as unknown as PaperTradingPrismaRepository,
       NO_HOLIDAYS,
+      tuneRuns as unknown as ParamTuneRunPort,
     );
 
     const result = await usecase.execute({});
@@ -1093,5 +1112,47 @@ describe('ScoreRecommendationsUsecase', () => {
     expect(result.accounts).toHaveLength(2);
     expect(result.accounts[0].score.closedCount).toBe(0);
     jest.useRealTimers();
+  });
+  describe('자동 반영 건수', () => {
+    const setUp = () => {
+      repository.loadRecommendationScoreData.mockResolvedValue({
+        cashEvents: [],
+        sellOrders: [],
+        accounts: [],
+        unexecutedRecommendations: [],
+        orders: [],
+        recommendationTrades: [],
+        portfolioTrades: [],
+        dailyPrices: [],
+        benchmarkCloses: [],
+        snapshots: [],
+      });
+      return new ScoreRecommendationsUsecase(
+        repository as unknown as PaperTradingPrismaRepository,
+        NO_HOLIDAYS,
+        tuneRuns as unknown as ParamTuneRunPort,
+      );
+    };
+
+    it('기준일 7일 전부터 센다', async () => {
+      const asOf = new Date('2026-08-13T00:00:00.000Z');
+      tuneRuns.countAppliedSince.mockResolvedValue(3);
+
+      const result = await setUp().execute({ asOf });
+
+      expect(result.autoTuneAppliedCount).toBe(3);
+      expect(tuneRuns.countAppliedSince).toHaveBeenCalledWith(
+        new Date('2026-08-06T00:00:00.000Z'),
+      );
+    });
+
+    it('구간 집계(from)면 from 부터 센다', async () => {
+      const asOf = new Date('2026-08-13T00:00:00.000Z');
+      const from = new Date('2026-07-01T00:00:00.000Z');
+
+      await setUp().execute({ asOf, from });
+
+      expect(tuneRuns.countAppliedSince).toHaveBeenCalledWith(from);
+    });
   });
 });

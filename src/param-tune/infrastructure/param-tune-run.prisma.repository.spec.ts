@@ -15,6 +15,7 @@ describe('ParamTuneRunPrismaRepository', () => {
     findMany: jest.fn(),
     create: jest.fn(),
     updateMany: jest.fn(),
+    count: jest.fn(),
   };
   const repository = new ParamTuneRunPrismaRepository({
     parameterTuneRun,
@@ -377,6 +378,23 @@ describe('ParamTuneRunPrismaRepository', () => {
       expect(parameterTuneRun.updateMany).toHaveBeenCalledWith({
         where: { id: { in: [1, 2] } },
         data: { notifiedAt: at },
+      });
+    });
+  });
+
+  describe('countAppliedSince', () => {
+    it('반영 시각이나 롤백 평가 시각이 구간 안인 행을 한 번씩 센다', async () => {
+      parameterTuneRun.count.mockResolvedValue(4);
+      const since = new Date('2026-11-09T00:00:00.000Z');
+
+      expect(await repository.countAppliedSince(since)).toBe(4);
+      expect(parameterTuneRun.count).toHaveBeenCalledWith({
+        where: {
+          OR: [
+            { appliedAt: { gte: since } },
+            { evaluation: 'ROLLBACK', evaluatedAt: { gte: since } },
+          ],
+        },
       });
     });
   });

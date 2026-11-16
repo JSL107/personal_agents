@@ -14,6 +14,7 @@ const SCORE_RESULT: ScoreRecommendationsResult = {
   from: null,
   persisted: true,
   evaluationBenchmarkMissing: false,
+  autoTuneAppliedCount: 0,
   accounts: [],
   classifications: { closed: 0, open: 0, expired: 0, anomaly: 0 },
   exclusions: {

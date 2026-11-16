@@ -288,4 +288,15 @@ export class ParamTuneRunPrismaRepository implements ParamTuneRunPort {
       data: { notifiedAt: at },
     });
   }
+
+  async countAppliedSince(since: Date): Promise<number> {
+    return this.prisma.parameterTuneRun.count({
+      where: {
+        OR: [
+          { appliedAt: { gte: since } },
+          { evaluation: 'ROLLBACK', evaluatedAt: { gte: since } },
+        ],
+      },
+    });
+  }
 }
