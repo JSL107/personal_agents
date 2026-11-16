@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { RunHumanizeResearchUsecase } from '../../../agent/humanize-research/application/run-humanize-research.usecase';
-import { BLOG_PROMPT_FILE } from '../../../agent/humanize-research/domain/blog-editable-surface';
 import {
   CollectedItem,
   GatedProposal,
@@ -16,6 +15,7 @@ import {
 import { HUMANIZE_RULE_LINKS } from '../../../humanize/domain/humanize-rule-links';
 import { PREVIEW_KIND } from '../../../preview-gate/domain/preview-action.type';
 import { formatHumanizeResearch } from '../../../slack/format/humanize-research.formatter';
+import { escapeSlackMrkdwn } from '../../../slack/format/mrkdwn.util';
 import {
   AutopilotPreviewRequest,
   AutopilotTask,
@@ -74,15 +74,10 @@ const buildHumanizeRulePreview = ({
     const labeledExcerpt = `[${id}] ${excerpt}`;
     return [labeledExcerpt];
   });
-  const link = HUMANIZE_RULE_LINKS.find((entry) => {
-    const contains = entry.local.text.includes(proposal.oldString);
-    const matches = entry.local.file === BLOG_PROMPT_FILE && contains;
-    return matches;
-  });
-  const ruleId = /\| ([A-Z]-\d+) \|/u.exec(proposal.oldString)?.[1];
   const linked = HUMANIZE_RULE_LINKS.filter((entry) => {
     const matches =
-      entry.upstream?.kind === 'quick-rule' && entry.upstream.ruleId === ruleId;
+      entry.upstream?.kind === 'quick-rule' &&
+      proposal.ruleIds.includes(entry.upstream.ruleId);
     return matches;
   });
   const linkedTexts = linked.map((entry) => entry.local.text);
@@ -92,24 +87,46 @@ const buildHumanizeRulePreview = ({
     ...proposal,
     repo: canon ? CANON_REPO : BLOG_REPO,
     baseBranch: 'main',
-    linkId: canon ? null : (link?.id ?? null),
     evidenceExcerpts,
     linkedBlogText,
   };
   const target = canon ? '정본' : '블로그';
+  const safeFile = escapeSlackMrkdwn(proposal.file);
+  const safeTargetMetric = escapeSlackMrkdwn(proposal.targetMetric);
+  const safeRationale = escapeSlackMrkdwn(proposal.rationale);
+  const safeOldString = escapeSlackMrkdwn(proposal.oldString);
+  const safeNewString = escapeSlackMrkdwn(proposal.newString);
   const replacement =
-    proposal.newString.length > 0 ? proposal.newString : '(규칙 행 삭제)';
-  const excerpts = evidenceExcerpts.join('\n');
-  const warning = linkedBlogText ? `\n블로그 쪽 미반영: ${linkedBlogText}` : '';
+    proposal.newString.length > 0 ? safeNewString : '(규칙 행 삭제)';
+  const safeEvidenceExcerpts = evidenceExcerpts.map(escapeSlackMrkdwn);
+  const excerpts = safeEvidenceExcerpts.join('\n');
+  const safeLinkedBlogText = escapeNullableSlackMrkdwn(linkedBlogText);
+  const warning = safeLinkedBlogText
+    ? `\n블로그 쪽 미반영: ${safeLinkedBlogText}`
+    : '';
+  const disclosure = canon
+    ? []
+    : [
+        '⚠️ 공개 저장소(JSL107/personal_agents) PR 입니다. 지표·근거 문구와 근거 id 가 공개됩니다(근거 발췌는 싣지 않음).',
+      ];
   const previewText = [
     `대상: ${target}`,
-    `파일: ${proposal.file}`,
-    `지표: ${proposal.targetMetric}`,
-    `근거: ${proposal.rationale}`,
-    `전 문구:\n${proposal.oldString}`,
+    `파일: ${safeFile}`,
+    `지표: ${safeTargetMetric}`,
+    `근거: ${safeRationale}`,
+    `전 문구:\n${safeOldString}`,
     `후 문구:\n${replacement}`,
     `근거 발췌:\n${excerpts}${warning}`,
+    ...disclosure,
     '✅ 적용 시 PR 이 열립니다(머지는 사람)',
   ].join('\n\n');
   return { kind: PREVIEW_KIND.HUMANIZE_RULE_PR, payload, previewText };
+};
+
+const escapeNullableSlackMrkdwn = (text: string | null): string | null => {
+  if (text === null) {
+    return null;
+  }
+  const escaped = escapeSlackMrkdwn(text);
+  return escaped;
 };

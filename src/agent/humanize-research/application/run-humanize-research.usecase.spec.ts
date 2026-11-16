@@ -56,7 +56,9 @@ describe('RunHumanizeResearchUsecase', () => {
   const arxiv = { collect: jest.fn() };
   const canon = { collect: jest.fn() };
   const canonCheck = {
-    check: jest.fn().mockResolvedValue({ reason: null, baseSha: 'abc' }),
+    check: jest
+      .fn()
+      .mockResolvedValue({ reason: null, baseSha: 'abc', ruleIds: ['A-8'] }),
   };
   const usecase = new RunHumanizeResearchUsecase(
     agentRun as unknown as AgentRunService,
@@ -81,6 +83,11 @@ describe('RunHumanizeResearchUsecase', () => {
     arxiv.collect.mockResolvedValue(empty(HumanizeResearchSource.ARXIV));
     canon.collect.mockResolvedValue(empty(HumanizeResearchSource.CANON_LOG));
     config.get.mockReturnValue(rulesRepository);
+    canonCheck.check.mockResolvedValue({
+      reason: null,
+      baseSha: 'abc',
+      ruleIds: ['A-8'],
+    });
     modelRouter.route.mockResolvedValue({
       text: '{"proposals":[],"injectionNotices":[]}',
       modelUsed: 'codex',
@@ -150,8 +157,7 @@ describe('RunHumanizeResearchUsecase', () => {
     const proposal = {
       target: ProposalTarget.CANON,
       file: 'references/quick-rules.md',
-      oldString:
-        '| A-9 | "~에 의해" 피동 | S2 | 행위자를 주어로("AI에 의해 생성" → "AI가 만든") |',
+      oldString: '행위자를 주어로("AI에 의해 생성" → "AI가 만든")',
       newString: 'changed',
       targetMetric: 'metric',
       rationale: 'reason',
@@ -182,6 +188,7 @@ describe('RunHumanizeResearchUsecase', () => {
       { ruleId: 'prompt.habit.comma-after-ending', evidence: ['canon:abc'] },
     ]);
     expect(result.output.proposals).toHaveLength(3);
+    expect(result.output.proposals[0].ruleIds).toEqual(['A-8']);
     expect(result.output.skipped.map((entry) => entry.reason)).toEqual([
       'FILE_NOT_ALLOWED',
       'OVER_LIMIT',
@@ -218,7 +225,11 @@ describe('RunHumanizeResearchUsecase', () => {
       modelUsed: 'codex',
     });
     canonCheck.check
-      .mockResolvedValueOnce({ reason: 'SELFCHECK_FAILED', baseSha: 'abc' })
+      .mockResolvedValueOnce({
+        reason: 'SELFCHECK_FAILED',
+        baseSha: 'abc',
+        ruleIds: [],
+      })
       .mockRejectedValueOnce(new Error('failed'));
     const result = await usecase.execute();
     expect(result.output.proposals).toEqual([]);
@@ -255,7 +266,10 @@ describe('RunHumanizeResearchUsecase', () => {
     });
     const result = await usecase.execute();
     expect(canonCheck.check).not.toHaveBeenCalled();
-    expect(result.output.proposals[0]).toMatchObject({ baseSha: null });
+    expect(result.output.proposals[0]).toMatchObject({
+      baseSha: null,
+      ruleIds: [],
+    });
     expect(result.included[0].id).toBe('blog:1');
   });
 });

@@ -6,6 +6,7 @@ import {
 } from '../../../preview-gate/domain/preview-action.type';
 import { BLOG_PROMPT_FILE } from '../domain/blog-editable-surface';
 import { ProposalTarget } from '../domain/humanize-research.type';
+import { CANON_RULES_FILE } from '../domain/proposal-gate';
 import { CanonCheckRunner } from './canon-check.runner';
 import { HumanizeRulePrApplier } from './humanize-rule-pr.applier';
 
@@ -27,16 +28,9 @@ const makePreview = (target: ProposalTarget): PreviewAction => ({
         : 'JSL107/personal_agents',
     baseBranch: 'main',
     baseSha: target === ProposalTarget.CANON ? 'base-sha' : null,
-    file:
-      target === ProposalTarget.CANON
-        ? 'references/quick-rules.md'
-        : BLOG_PROMPT_FILE,
+    file: target === ProposalTarget.CANON ? CANON_RULES_FILE : BLOG_PROMPT_FILE,
     oldString: target === ProposalTarget.CANON ? CANON_ROW : BLOG_TEXT,
     newString: '새 문구',
-    linkId:
-      target === ProposalTarget.CANON
-        ? null
-        : 'prompt.translationese.double-passive',
     rationale: '근거',
     targetMetric: '중복 피동 감소',
     evidence: ['canon:abc'],
@@ -72,7 +66,7 @@ describe('HumanizeRulePrApplier', () => {
     jest.clearAllMocks();
     getFileFromBranch.mockImplementation(async ({ path }) => ({
       fileUrl: path,
-      content: path === 'references/quick-rules.md' ? CANON_ROW : BLOG_TEXT,
+      content: path === CANON_RULES_FILE ? CANON_ROW : BLOG_TEXT,
     }));
     check.mockResolvedValue({ reason: null, baseSha: 'base-sha' });
     pushBranchAndOpenPr.mockResolvedValue({
@@ -99,6 +93,52 @@ describe('HumanizeRulePrApplier', () => {
     expect(pushBranchAndOpenPr).not.toHaveBeenCalled();
   });
 
+  it('canon 검사 SHA 의 본문과 main 본문이 다르면 PR 을 열지 않는다', async () => {
+    getFileFromBranch.mockImplementation(async ({ branch }) => {
+      const content =
+        branch === 'base-sha' ? CANON_ROW : `${CANON_ROW}\n추가 규칙`;
+      return { fileUrl: CANON_RULES_FILE, content };
+    });
+    await expect(
+      applier.apply(makePreview(ProposalTarget.CANON)),
+    ).rejects.toThrow(
+      `STALE_PROPOSAL: ${CANON_RULES_FILE} 가 검사 이후 main 에서 바뀌었습니다`,
+    );
+    expect(getFileFromBranch).toHaveBeenCalledWith({
+      repo: 'JSL107/humanize-korean',
+      branch: 'base-sha',
+      path: CANON_RULES_FILE,
+    });
+    expect(pushBranchAndOpenPr).not.toHaveBeenCalled();
+  });
+
+  it('canon 검사 SHA 와 main 본문이 같으면 그 본문으로 PR 을 연다', async () => {
+    check.mockResolvedValue({ reason: null, baseSha: 'checked-sha' });
+    await applier.apply(makePreview(ProposalTarget.CANON));
+    expect(getFileFromBranch).toHaveBeenCalledWith({
+      repo: 'JSL107/humanize-korean',
+      branch: 'checked-sha',
+      path: CANON_RULES_FILE,
+    });
+    expect(getFileFromBranch).toHaveBeenCalledWith({
+      repo: 'JSL107/humanize-korean',
+      branch: 'main',
+      path: CANON_RULES_FILE,
+    });
+    expect(pushBranchAndOpenPr).toHaveBeenCalledTimes(1);
+  });
+
+  it('canon 검사 SHA 본문이 없으면 PR 을 열지 않는다', async () => {
+    getFileFromBranch.mockImplementation(async ({ branch }) => ({
+      fileUrl: CANON_RULES_FILE,
+      content: branch === 'base-sha' ? undefined : CANON_ROW,
+    }));
+    await expect(
+      applier.apply(makePreview(ProposalTarget.CANON)),
+    ).rejects.toThrow('본문을 받지 못했습니다');
+    expect(pushBranchAndOpenPr).not.toHaveBeenCalled();
+  });
+
   it('canon 은 승인 시 CanonCheckRunner 를 다시 돌리고 실패하면 throw 한다', async () => {
     check.mockResolvedValue({
       reason: 'SELFCHECK_FAILED',
@@ -108,7 +148,17 @@ describe('HumanizeRulePrApplier', () => {
       applier.apply(makePreview(ProposalTarget.CANON)),
     ).rejects.toThrow('정본 검사 실패: SELFCHECK_FAILED');
     expect(check).toHaveBeenCalledTimes(1);
+    expect(getFileFromBranch).not.toHaveBeenCalled();
     expect(pushBranchAndOpenPr).not.toHaveBeenCalled();
+  });
+
+  it('canon 검사는 GitHub 파일 조회보다 먼저 끝난다', async () => {
+    await applier.apply(makePreview(ProposalTarget.CANON));
+    const checkOrder = check.mock.invocationCallOrder[0];
+    const fileOrder = getFileFromBranch.mock.invocationCallOrder[0];
+    const pushOrder = pushBranchAndOpenPr.mock.invocationCallOrder[0];
+    expect(checkOrder).toBeLessThan(fileOrder);
+    expect(fileOrder).toBeLessThan(pushOrder);
   });
 
   it('canon 재검사 자체가 실패하면 PR 을 열지 않는다', async () => {
@@ -116,6 +166,7 @@ describe('HumanizeRulePrApplier', () => {
     await expect(
       applier.apply(makePreview(ProposalTarget.CANON)),
     ).rejects.toThrow('fetch failed');
+    expect(getFileFromBranch).not.toHaveBeenCalled();
     expect(pushBranchAndOpenPr).not.toHaveBeenCalled();
   });
 
@@ -134,6 +185,31 @@ describe('HumanizeRulePrApplier', () => {
         ],
       }),
     );
+  });
+
+  it('공개 blog PR 본문에는 증거 ID 만 싣고 비공개 발췌는 빼며 canon 본문은 발췌를 싣는다', async () => {
+    const blogPreview = makePreview(ProposalTarget.BLOG);
+    const blogPayload = blogPreview.payload as Record<string, unknown>;
+    blogPayload.evidenceExcerpts = [
+      '비공개 근거 첫째: 실제 근거 발췌',
+      '비공개 근거 둘째: 원문은 외부 공개 금지',
+    ];
+    await applier.apply(blogPreview);
+    const blogBody = pushBranchAndOpenPr.mock.calls[0][0].prBody;
+    expect(blogBody).toContain('canon:abc');
+    expect(blogBody).toContain('공개 저장소');
+    for (const excerpt of blogPayload.evidenceExcerpts as string[]) {
+      expect(blogBody).not.toContain(excerpt);
+    }
+
+    const canonPreview = makePreview(ProposalTarget.CANON);
+    const canonPayload = canonPreview.payload as Record<string, unknown>;
+    canonPayload.evidenceExcerpts = blogPayload.evidenceExcerpts;
+    await applier.apply(canonPreview);
+    const canonBody = pushBranchAndOpenPr.mock.calls[1][0].prBody;
+    for (const excerpt of canonPayload.evidenceExcerpts as string[]) {
+      expect(canonBody).toContain(excerpt);
+    }
   });
 
   it('blog 문구에 위험 문자가 있으면 GitHub 호출 전에 거절한다', async () => {
