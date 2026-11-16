@@ -10,10 +10,12 @@ import { dirname, join, resolve as resolvePath } from 'node:path';
 
 import { Injectable, Logger } from '@nestjs/common';
 
+import { ChildOutcomeKind } from '../domain/param-tune.type';
+
 export type ChildOutcome =
-  | { kind: 'EXITED'; code: number; tail: string }
-  | { kind: 'TIMEOUT'; tail: string }
-  | { kind: 'SPAWN_FAILED'; message: string };
+  | { kind: ChildOutcomeKind.EXITED; code: number; tail: string }
+  | { kind: ChildOutcomeKind.TIMEOUT; tail: string }
+  | { kind: ChildOutcomeKind.SPAWN_FAILED; message: string };
 
 export interface ParamTuneChildRunInput {
   args: string[];
@@ -93,7 +95,7 @@ const openLog = (logPath: string): OpenedLog => {
     return { kind: 'OPENED', fd: openSync(logPath, 'a') };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    return { kind: 'SPAWN_FAILED', message };
+    return { kind: ChildOutcomeKind.SPAWN_FAILED, message };
   }
 };
 
@@ -103,7 +105,7 @@ export class ParamTuneChildLauncher {
     const root = findRepoRoot({ startDir: __dirname, exists: existsSync });
     if (root === null) {
       return {
-        kind: 'SPAWN_FAILED',
+        kind: ChildOutcomeKind.SPAWN_FAILED,
         message: `레포 루트를 찾지 못했습니다 (${ENTRY_SCRIPT} 없음, 시작 ${__dirname}).`,
       };
     }
@@ -141,14 +143,17 @@ export class ParamTuneChildLauncher {
       );
 
       child.on('error', (error) =>
-        finish(() => ({ kind: 'SPAWN_FAILED', message: error.message })),
+        finish(() => ({
+          kind: ChildOutcomeKind.SPAWN_FAILED,
+          message: error.message,
+        })),
       );
       child.on('exit', (code) =>
         finish(() =>
           state.timedOut
-            ? { kind: 'TIMEOUT', tail: readTail(logPath) }
+            ? { kind: ChildOutcomeKind.TIMEOUT, tail: readTail(logPath) }
             : {
-                kind: 'EXITED',
+                kind: ChildOutcomeKind.EXITED,
                 code: code ?? -1,
                 tail: readTail(logPath),
               },

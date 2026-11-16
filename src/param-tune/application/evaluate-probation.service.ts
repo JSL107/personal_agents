@@ -8,11 +8,13 @@ import { replayParameters } from '../../backtest/application/robust-parameter-se
 import { BACKTEST_DEFAULTS } from '../../backtest/interface/backtest-cli.parser';
 import { getKstDateOf, utcMidnightOf } from '../../common/util/kst-date.util';
 import { StrategyParameterStrategy } from '../../strategy-parameter/domain/strategy-parameter.type';
+import { ActivateNewVersionKind } from '../../strategy-parameter/domain/strategy-parameter.type';
 import {
   ParameterSnapshot,
   TUNE_SLIPPAGE_PERCENTS,
   TuneEvaluation,
 } from '../domain/param-tune.type';
+import { RollbackDecisionKind } from '../domain/param-tune.type';
 import {
   OpenProbation,
   PARAM_TUNE_RUN_PORT,
@@ -113,9 +115,9 @@ export class EvaluateProbationService {
     const { probation } = target;
     const { decision, detail } = await this.judge(target);
     switch (decision.kind) {
-      case 'WAIT':
+      case RollbackDecisionKind.WAIT:
         return { settled: false, rolledBack: false };
-      case 'INCONCLUSIVE': {
+      case RollbackDecisionKind.INCONCLUSIVE: {
         if (!decision.final) {
           return { settled: false, rolledBack: false };
         }
@@ -126,7 +128,7 @@ export class EvaluateProbationService {
         });
         return { settled, rolledBack: false };
       }
-      case 'KEEP': {
+      case RollbackDecisionKind.KEEP: {
         const settled = await this.settle({
           probation,
           evaluation: TuneEvaluation.KEEP,
@@ -134,7 +136,7 @@ export class EvaluateProbationService {
         });
         return { settled, rolledBack: false };
       }
-      case 'ROLLBACK': {
+      case RollbackDecisionKind.ROLLBACK: {
         const rolledBack = await this.rollback({ ...target, detail });
         if (!rolledBack) {
           await this.settle({
@@ -152,9 +154,9 @@ export class EvaluateProbationService {
     const { probation } = target;
     const { decision, detail } = await this.judge(target);
     switch (decision.kind) {
-      case 'WAIT':
+      case RollbackDecisionKind.WAIT:
         return;
-      case 'INCONCLUSIVE':
+      case RollbackDecisionKind.INCONCLUSIVE:
         if (decision.final) {
           await this.settle({
             probation,
@@ -163,14 +165,14 @@ export class EvaluateProbationService {
           });
         }
         return;
-      case 'KEEP':
+      case RollbackDecisionKind.KEEP:
         await this.settle({
           probation,
           evaluation: TuneEvaluation.WOULD_KEEP,
           detail,
         });
         return;
-      case 'ROLLBACK':
+      case RollbackDecisionKind.ROLLBACK:
         await this.settle({
           probation,
           evaluation: TuneEvaluation.WOULD_ROLLBACK,
@@ -212,7 +214,7 @@ export class EvaluateProbationService {
       },
       detail,
     });
-    return result.kind === 'ACTIVATED';
+    return result.kind === ActivateNewVersionKind.ACTIVATED;
   }
 
   private async settle({

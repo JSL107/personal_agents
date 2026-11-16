@@ -83,6 +83,15 @@ export interface ActivateNewVersionInput {
   agentRunId: number | null;
 }
 
+export enum ActivateNewVersionKind {
+  ACTIVATED = 'ACTIVATED',
+  CONFLICT = 'CONFLICT',
+}
+
 export type ActivateNewVersionResult =
-  | { kind: 'ACTIVATED'; parameterId: number; version: number }
-  | { kind: 'CONFLICT'; actual: ParameterSnapshot };
+  | {
+      kind: ActivateNewVersionKind.ACTIVATED;
+      parameterId: number;
+      version: number;
+    }
+  | { kind: ActivateNewVersionKind.CONFLICT; actual: ParameterSnapshot };

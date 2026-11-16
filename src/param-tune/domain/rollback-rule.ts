@@ -4,6 +4,7 @@ import {
   TUNE_PROBATION_MIN_CLOSED,
   TUNE_PROBATION_MIN_TRADE_DAYS,
 } from './param-tune.type';
+import { RollbackDecisionKind } from './param-tune.type';
 
 export interface ProbationReplay {
   slippagePercent: number;
@@ -26,15 +27,15 @@ export interface RollbackInput {
 }
 
 export type RollbackDecision =
-  | { kind: 'WAIT' }
+  | { kind: RollbackDecisionKind.WAIT }
   | {
-      kind: 'INCONCLUSIVE';
+      kind: RollbackDecisionKind.INCONCLUSIVE;
       reason: InconclusiveReason;
       /** true 일 때만 호출부가 시험을 확정한다. false 는 다음 주 재평가. */
       final: boolean;
     }
-  | { kind: 'KEEP' }
-  | { kind: 'ROLLBACK'; meanGapPercent: number };
+  | { kind: RollbackDecisionKind.KEEP }
+  | { kind: RollbackDecisionKind.ROLLBACK; meanGapPercent: number };
 
 interface InconclusiveInput {
   reason: InconclusiveReason;
@@ -45,7 +46,7 @@ const inconclusive = ({
   reason,
   final,
 }: InconclusiveInput): RollbackDecision => ({
-  kind: 'INCONCLUSIVE',
+  kind: RollbackDecisionKind.INCONCLUSIVE,
   reason,
   final,
 });
@@ -90,13 +91,13 @@ export const decideRollback = (input: RollbackInput): RollbackDecision => {
         final: true,
       });
     }
-    return { kind: 'WAIT' };
+    return { kind: RollbackDecisionKind.WAIT };
   }
 
   const meanGapPercent = gaps.reduce((sum, gap) => sum + gap, 0) / gaps.length;
   const worseEverywhere = gaps.every((gap) => gap < 0);
   if (worseEverywhere && meanGapPercent <= -TUNE_ADOPTION_MARGIN_PERCENT) {
-    return { kind: 'ROLLBACK', meanGapPercent };
+    return { kind: RollbackDecisionKind.ROLLBACK, meanGapPercent };
   }
-  return { kind: 'KEEP' };
+  return { kind: RollbackDecisionKind.KEEP };
 };

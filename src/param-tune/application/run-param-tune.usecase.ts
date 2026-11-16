@@ -24,6 +24,7 @@ import {
   StrategyParameterName,
   StrategyParameterStrategy,
 } from '../../strategy-parameter/domain/strategy-parameter.type';
+import { ActivateNewVersionKind } from '../../strategy-parameter/domain/strategy-parameter.type';
 import { decideAdoption } from '../domain/adoption-rule';
 import {
   DEFAULT_PARAM_TUNE_MODE,
@@ -36,6 +37,7 @@ import {
   TuneDecision,
   TuneRunStatus,
 } from '../domain/param-tune.type';
+import { AdoptionDecisionKind } from '../domain/param-tune.type';
 import {
   PARAM_TUNE_RUN_PORT,
   ParamTuneRunPort,
@@ -318,11 +320,11 @@ export class RunParamTuneUsecase {
       currentValue: currentEntry.value,
     });
     return await match(decision)
-      .with({ kind: 'NO_CHANGE' }, (noChange) => ({
+      .with({ kind: AdoptionDecisionKind.NO_CHANGE }, (noChange) => ({
         decision: TuneDecision.NO_CHANGE,
         decisionReason: noChange.reason,
       }))
-      .with({ kind: 'ADOPT' }, async (adopt) => {
+      .with({ kind: AdoptionDecisionKind.ADOPT }, async (adopt) => {
         const proposal = {
           previousValue: currentEntry.value,
           candidateValue: adopt.value,
@@ -374,7 +376,7 @@ export class RunParamTuneUsecase {
             previousParameterId: currentEntry.parameterId,
           },
         });
-        if (result.kind === 'CONFLICT') {
+        if (result.kind === ActivateNewVersionKind.CONFLICT) {
           return {
             decision: TuneDecision.NO_CHANGE,
             decisionReason: '활성값 변경 감지',

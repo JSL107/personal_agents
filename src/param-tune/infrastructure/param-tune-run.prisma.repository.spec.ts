@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
+import { ActivateNewVersionKind } from '../../strategy-parameter/domain/strategy-parameter.type';
 import {
   activateNewVersionWith,
   readParameterSnapshot,
@@ -11,6 +12,7 @@ import {
   TuneEvaluation,
   TuneRunStatus,
 } from '../domain/param-tune.type';
+import { ClaimKind } from '../domain/param-tune.type';
 import { ParamTuneRunPrismaRepository } from './param-tune-run.prisma.repository';
 
 jest.mock(
@@ -69,7 +71,7 @@ describe('ParamTuneRunPrismaRepository', () => {
       const result = await repository.claim(input);
 
       expect(result).toEqual({
-        kind: 'CLAIMED',
+        kind: ClaimKind.CLAIMED,
         runId: 7,
         attemptToken: expect.any(String),
       });
@@ -93,7 +95,7 @@ describe('ParamTuneRunPrismaRepository', () => {
       );
 
       expect(await repository.claim(input)).toEqual({
-        kind: 'ALREADY_RUNNING',
+        kind: ClaimKind.ALREADY_RUNNING,
         runId: 9,
       });
     });
@@ -107,7 +109,7 @@ describe('ParamTuneRunPrismaRepository', () => {
       });
 
       expect(await repository.claim(input)).toEqual({
-        kind: 'ALREADY_RUNNING',
+        kind: ClaimKind.ALREADY_RUNNING,
         runId: 3,
       });
       expect(parameterTuneRun.updateMany).not.toHaveBeenCalled();
@@ -124,7 +126,7 @@ describe('ParamTuneRunPrismaRepository', () => {
 
       const result = await repository.claim(input);
 
-      expect(result).toMatchObject({ kind: 'CLAIMED', runId: 3 });
+      expect(result).toMatchObject({ kind: ClaimKind.CLAIMED, runId: 3 });
       const call = parameterTuneRun.updateMany.mock.calls[0][0];
       expect(call.where).toEqual({
         id: 3,
@@ -151,7 +153,7 @@ describe('ParamTuneRunPrismaRepository', () => {
       parameterTuneRun.updateMany.mockResolvedValue({ count: 1 });
 
       expect(await repository.claim(input)).toMatchObject({
-        kind: 'CLAIMED',
+        kind: ClaimKind.CLAIMED,
         runId: 4,
       });
     });
@@ -183,7 +185,7 @@ describe('ParamTuneRunPrismaRepository', () => {
       parameterTuneRun.updateMany.mockResolvedValue({ count: 0 });
 
       expect(await repository.claim(input)).toEqual({
-        kind: 'ALREADY_RUNNING',
+        kind: ClaimKind.ALREADY_RUNNING,
         runId: 4,
       });
     });
@@ -200,7 +202,7 @@ describe('ParamTuneRunPrismaRepository', () => {
       parameterTuneRun.updateMany.mockResolvedValue({ count: 0 });
 
       expect(await repository.claim(input)).toEqual({
-        kind: 'ALREADY_RUNNING',
+        kind: ClaimKind.ALREADY_RUNNING,
         runId: 3,
       });
       expect(parameterTuneRun.updateMany.mock.calls[0][0].where).toMatchObject({
@@ -220,7 +222,7 @@ describe('ParamTuneRunPrismaRepository', () => {
         });
 
         expect(await repository.claim(input)).toEqual({
-          kind: 'ALREADY_DONE',
+          kind: ClaimKind.ALREADY_DONE,
           runId: 5,
         });
       },
@@ -282,7 +284,11 @@ describe('ParamTuneRunPrismaRepository', () => {
       reason: 'r',
       agentRunId: null,
     };
-    const activated = { kind: 'ACTIVATED', parameterId: 21, version: 2 };
+    const activated = {
+      kind: ActivateNewVersionKind.ACTIVATED,
+      parameterId: 21,
+      version: 2,
+    };
 
     it('commitAdoption 은 활성화와 회차 기록을 한 Serializable 트랜잭션에서 쓴다', async () => {
       mockedActivate.mockResolvedValue(activated);
@@ -338,7 +344,7 @@ describe('ParamTuneRunPrismaRepository', () => {
     });
 
     it('commitAdoption 은 CONFLICT 면 회차를 쓰지 않는다', async () => {
-      const conflict = { kind: 'CONFLICT', actual: [] };
+      const conflict = { kind: ActivateNewVersionKind.CONFLICT, actual: [] };
       mockedActivate.mockResolvedValue(conflict);
 
       expect(
@@ -367,7 +373,10 @@ describe('ParamTuneRunPrismaRepository', () => {
           activation,
           detail: {},
         }),
-      ).toEqual({ kind: 'CONFLICT', actual: [{ name: 'X' }] });
+      ).toEqual({
+        kind: ActivateNewVersionKind.CONFLICT,
+        actual: [{ name: 'X' }],
+      });
       expect(mockedReadSnapshot.mock.calls[0][0].strategy).toBe('SWING');
     });
 

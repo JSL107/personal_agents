@@ -10,6 +10,7 @@ import {
   StrategyParameterName,
   StrategyParameterStrategy,
 } from '../../strategy-parameter/domain/strategy-parameter.type';
+import { ActivateNewVersionKind } from '../../strategy-parameter/domain/strategy-parameter.type';
 import {
   activateNewVersionWith,
   isActivationConflict,
@@ -23,6 +24,7 @@ import {
   TuneEvaluation,
   TuneRunStatus,
 } from '../domain/param-tune.type';
+import { ClaimKind } from '../domain/param-tune.type';
 import {
   AppliedPeriod,
   CachedVerdict,
@@ -147,7 +149,7 @@ export class ParamTuneRunPrismaRepository implements ParamTuneRunPort {
             startedAt: input.now,
           },
         });
-        return { kind: 'CLAIMED', runId: created.id, attemptToken };
+        return { kind: ClaimKind.CLAIMED, runId: created.id, attemptToken };
       } catch (error) {
         if (
           error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -157,7 +159,7 @@ export class ParamTuneRunPrismaRepository implements ParamTuneRunPort {
             where,
           });
           if (concurrent !== null) {
-            return { kind: 'ALREADY_RUNNING', runId: concurrent.id };
+            return { kind: ClaimKind.ALREADY_RUNNING, runId: concurrent.id };
           }
         }
         throw error;
@@ -168,14 +170,14 @@ export class ParamTuneRunPrismaRepository implements ParamTuneRunPort {
       found.status === TuneRunStatus.DONE ||
       found.status === TuneRunStatus.SKIPPED_PROBATION
     ) {
-      return { kind: 'ALREADY_DONE', runId: found.id };
+      return { kind: ClaimKind.ALREADY_DONE, runId: found.id };
     }
 
     const stale =
       found.status === TuneRunStatus.FAILED ||
       found.startedAt.getTime() + TUNE_RUNNING_STALE_MS < input.now.getTime();
     if (!stale) {
-      return { kind: 'ALREADY_RUNNING', runId: found.id };
+      return { kind: ClaimKind.ALREADY_RUNNING, runId: found.id };
     }
 
     // 읽은 상태를 통째로 조건으로 건다. 먼저 재선점한 쪽이 이기고, 그 사이 옛 프로세스가
@@ -198,9 +200,9 @@ export class ParamTuneRunPrismaRepository implements ParamTuneRunPort {
       },
     });
     if (reclaimed.count === 0) {
-      return { kind: 'ALREADY_RUNNING', runId: found.id };
+      return { kind: ClaimKind.ALREADY_RUNNING, runId: found.id };
     }
-    return { kind: 'CLAIMED', runId: found.id, attemptToken };
+    return { kind: ClaimKind.CLAIMED, runId: found.id, attemptToken };
   }
 
   async finish(input: {
@@ -286,7 +288,7 @@ export class ParamTuneRunPrismaRepository implements ParamTuneRunPort {
           tx,
           input: input.activation,
         });
-        if (result.kind === 'CONFLICT') {
+        if (result.kind === ActivateNewVersionKind.CONFLICT) {
           return result;
         }
         const written = await tx.parameterTuneRun.updateMany({
@@ -322,7 +324,7 @@ export class ParamTuneRunPrismaRepository implements ParamTuneRunPort {
           tx,
           input: input.activation,
         });
-        if (result.kind === 'CONFLICT') {
+        if (result.kind === ActivateNewVersionKind.CONFLICT) {
           return result;
         }
         const written = await tx.parameterTuneRun.updateMany({
@@ -397,10 +399,7 @@ export class ParamTuneRunPrismaRepository implements ParamTuneRunPort {
     });
   }
 
-  async countAppliedBetween({
-    since,
-    until,
-  }: AppliedPeriod): Promise<number> {
+  async countAppliedBetween({ since, until }: AppliedPeriod): Promise<number> {
     const period = { gte: since, lt: until };
     return this.prisma.parameterTuneRun.count({
       where: {
@@ -423,7 +422,7 @@ export class ParamTuneRunPrismaRepository implements ParamTuneRunPort {
     } catch (error) {
       if (isActivationConflict(error)) {
         return {
-          kind: 'CONFLICT',
+          kind: ActivateNewVersionKind.CONFLICT,
           actual: await readParameterSnapshot({
             client: this.prisma,
             strategy: activation.strategy,

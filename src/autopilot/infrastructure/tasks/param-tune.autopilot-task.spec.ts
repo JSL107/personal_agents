@@ -1,5 +1,9 @@
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import {
+  ChildOutcomeKind,
+  ClaimKind,
+} from '../../../param-tune/domain/param-tune.type';
+import {
   ClaimResult,
   ParamTuneRunPort,
   TuneRunRow,
@@ -14,7 +18,7 @@ import { ParamTuneAutopilotTask } from './param-tune.autopilot-task';
 const context = { ownerSlackUserId: 'U1', firedAtKst: '2026-11-21' };
 
 const claimed = (runId: number): ClaimResult => ({
-  kind: 'CLAIMED',
+  kind: ClaimKind.CLAIMED,
   runId,
   attemptToken: `token-${runId}`,
 });
@@ -39,8 +43,8 @@ const createFixture = (input?: {
   const claims = [...(input?.claims ?? [claimed(1), claimed(2)])];
   const outcomes = [
     ...(input?.outcomes ?? [
-      { kind: 'EXITED', code: 0, tail: '' },
-      { kind: 'EXITED', code: 0, tail: '' },
+      { kind: ChildOutcomeKind.EXITED, code: 0, tail: '' },
+      { kind: ChildOutcomeKind.EXITED, code: 0, tail: '' },
     ]),
   ];
   const port = {
@@ -115,8 +119,8 @@ describe('ParamTuneAutopilotTask', () => {
   it('이미 진행 중이거나 끝난 회차는 자식을 띄우지 않는다', async () => {
     const { task, launcher } = createFixture({
       claims: [
-        { kind: 'ALREADY_RUNNING', runId: 1 },
-        { kind: 'ALREADY_DONE', runId: 2 },
+        { kind: ClaimKind.ALREADY_RUNNING, runId: 1 },
+        { kind: ClaimKind.ALREADY_DONE, runId: 2 },
       ],
     });
 
@@ -128,8 +132,8 @@ describe('ParamTuneAutopilotTask', () => {
   it('한 전략이 TIMEOUT 이면 그 행만 FAILED 로 적고 다음 전략을 돈다', async () => {
     const { task, port, launcher } = createFixture({
       outcomes: [
-        { kind: 'TIMEOUT', tail: 'last line' },
-        { kind: 'EXITED', code: 0, tail: '' },
+        { kind: ChildOutcomeKind.TIMEOUT, tail: 'last line' },
+        { kind: ChildOutcomeKind.EXITED, code: 0, tail: '' },
       ],
     });
 
@@ -147,8 +151,8 @@ describe('ParamTuneAutopilotTask', () => {
   it('종료 코드가 0 이 아니면 tail 을 사유에 실어 FAILED 로 적는다', async () => {
     const { task, port } = createFixture({
       outcomes: [
-        { kind: 'EXITED', code: 2, tail: 'boom' },
-        { kind: 'EXITED', code: 0, tail: '' },
+        { kind: ChildOutcomeKind.EXITED, code: 2, tail: 'boom' },
+        { kind: ChildOutcomeKind.EXITED, code: 0, tail: '' },
       ],
     });
 
@@ -165,8 +169,8 @@ describe('ParamTuneAutopilotTask', () => {
   it('SPAWN_FAILED 는 남은 전략도 마킹한 뒤 한 번 throw 한다', async () => {
     const { task, port, launcher } = createFixture({
       outcomes: [
-        { kind: 'SPAWN_FAILED', message: 'ENOENT' },
-        { kind: 'SPAWN_FAILED', message: 'ENOENT' },
+        { kind: ChildOutcomeKind.SPAWN_FAILED, message: 'ENOENT' },
+        { kind: ChildOutcomeKind.SPAWN_FAILED, message: 'ENOENT' },
       ],
     });
 

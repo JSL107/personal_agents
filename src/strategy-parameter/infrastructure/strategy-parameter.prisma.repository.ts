@@ -15,6 +15,7 @@ import {
   StrategyParameterSeedOutcome,
   StrategyParameterStrategy,
 } from '../domain/strategy-parameter.type';
+import { ActivateNewVersionKind } from '../domain/strategy-parameter.type';
 
 // PrismaService 와 트랜잭션 클라이언트가 함께 만족하는 최소 형태.
 interface StrategyParameterClient {
@@ -132,7 +133,7 @@ export class StrategyParameterPrismaRepository implements StrategyParameterPort 
     } catch (error) {
       if (isActivationConflict(error)) {
         return {
-          kind: 'CONFLICT',
+          kind: ActivateNewVersionKind.CONFLICT,
           actual: await this.findSnapshotStrict(input.strategy),
         };
       }
@@ -194,7 +195,7 @@ export const activateNewVersionWith = async ({
     strategy: input.strategy,
   });
   if (!isSameSnapshot({ actual, expected: input.expectedSnapshot })) {
-    return { kind: 'CONFLICT', actual };
+    return { kind: ActivateNewVersionKind.CONFLICT, actual };
   }
   const target = actual.find((entry) => entry.name === input.name);
   if (target === undefined) {
@@ -225,7 +226,7 @@ export const activateNewVersionWith = async ({
     select: { id: true, version: true },
   });
   return {
-    kind: 'ACTIVATED',
+    kind: ActivateNewVersionKind.ACTIVATED,
     parameterId: created.id,
     version: created.version,
   };

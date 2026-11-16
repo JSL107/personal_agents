@@ -4,6 +4,7 @@ import { ParameterSnapshot } from '../../param-tune/domain/param-tune.type';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StrategyParameterSnapshotError } from '../domain/strategy-parameter.exception';
 import { STRATEGY_PARAMETER_NAMES } from '../domain/strategy-parameter.type';
+import { ActivateNewVersionKind } from '../domain/strategy-parameter.type';
 import { StrategyParameterPrismaRepository } from './strategy-parameter.prisma.repository';
 
 const decimal = (value: number) => ({ toNumber: () => value });
@@ -245,7 +246,7 @@ describe('StrategyParameterPrismaRepository', () => {
       );
 
       expect(result).toEqual({
-        kind: 'ACTIVATED',
+        kind: ActivateNewVersionKind.ACTIVATED,
         parameterId: 99,
         version: 4,
       });
@@ -277,7 +278,7 @@ describe('StrategyParameterPrismaRepository', () => {
 
       const result = await repository.activateNewVersion(input(expected));
 
-      expect(result.kind).toBe('CONFLICT');
+      expect(result.kind).toBe(ActivateNewVersionKind.CONFLICT);
       expect(strategyParameter.update).not.toHaveBeenCalled();
       expect(strategyParameter.create).not.toHaveBeenCalled();
     });
@@ -291,7 +292,7 @@ describe('StrategyParameterPrismaRepository', () => {
 
       const result = await repository.activateNewVersion(input(expected));
 
-      expect(result.kind).toBe('CONFLICT');
+      expect(result.kind).toBe(ActivateNewVersionKind.CONFLICT);
       expect(strategyParameter.create).not.toHaveBeenCalled();
     });
 
@@ -311,7 +312,7 @@ describe('StrategyParameterPrismaRepository', () => {
           input(snapshotOf(rows)),
         );
 
-        expect(result.kind).toBe('CONFLICT');
+        expect(result.kind).toBe(ActivateNewVersionKind.CONFLICT);
       },
     );
 

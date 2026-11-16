@@ -4,6 +4,7 @@ import {
 } from '../../backtest/domain/parameter-search';
 import { StrategyParameterName } from '../../strategy-parameter/domain/strategy-parameter.type';
 import { TUNE_ADOPTION_MARGIN_PERCENT, TUNE_GRID } from './param-tune.type';
+import { AdoptionDecisionKind } from './param-tune.type';
 
 export interface AdoptionInput {
   axis: StrategyParameterName;
@@ -13,8 +14,8 @@ export interface AdoptionInput {
 }
 
 export type AdoptionDecision =
-  | { kind: 'ADOPT'; value: number; reason: string }
-  | { kind: 'NO_CHANGE'; reason: string };
+  | { kind: AdoptionDecisionKind.ADOPT; value: number; reason: string }
+  | { kind: AdoptionDecisionKind.NO_CHANGE; reason: string };
 
 const MINIMUM_DECIDABLE_WINDOWS = 6;
 const MINIMUM_SAME_CHOICE_WINDOWS = 4;
@@ -46,7 +47,7 @@ export const axisValueOf = ({
 };
 
 const noChange = (reason: string): AdoptionDecision => ({
-  kind: 'NO_CHANGE',
+  kind: AdoptionDecisionKind.NO_CHANGE,
   reason,
 });
 
@@ -130,11 +131,15 @@ export const decideAdoption = (input: AdoptionInput): AdoptionDecision => {
   const currentIndex = nearestGridIndex({ grid, value: input.currentValue });
   const summary = `승 ${wins}/${sameChoice.length} · 평균 개선 ${meanGap.toFixed(2)}%p`;
   if (Math.abs(candidateIndex - currentIndex) <= 1) {
-    return { kind: 'ADOPT', value: candidate, reason: summary };
+    return {
+      kind: AdoptionDecisionKind.ADOPT,
+      value: candidate,
+      reason: summary,
+    };
   }
   const clamped = grid[currentIndex + (candidateIndex > currentIndex ? 1 : -1)];
   return {
-    kind: 'ADOPT',
+    kind: AdoptionDecisionKind.ADOPT,
     value: clamped,
     reason: `${summary} · 후보 ${candidate} 는 한 칸 제한으로 ${clamped} 에 반영`,
   };

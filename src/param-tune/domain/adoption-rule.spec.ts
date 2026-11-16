@@ -3,6 +3,7 @@ import {
   RobustWalkForwardVerdict,
 } from '../../backtest/domain/parameter-search';
 import { axisValueOf, decideAdoption } from './adoption-rule';
+import { AdoptionDecisionKind } from './param-tune.type';
 
 const combinationOf = (stopLoss: number): ParameterCombination => ({
   takeProfitPercent: 10,
@@ -58,7 +59,7 @@ describe('decideAdoption', () => {
       verdictOf('A', null),
     ];
     expect(decide(verdicts)).toEqual({
-      kind: 'NO_CHANGE',
+      kind: AdoptionDecisionKind.NO_CHANGE,
       reason: '판정 가능 창 부족',
     });
   });
@@ -68,7 +69,7 @@ describe('decideAdoption', () => {
       ...repeat(6, () => verdictOf('A', true, [[2, 1]])),
       ...repeat(3, () => verdictOf('A', null)),
     ];
-    expect(decide(verdicts).kind).toBe('ADOPT');
+    expect(decide(verdicts).kind).toBe(AdoptionDecisionKind.ADOPT);
   });
 
   it('같은 선택이 3창이면 선택 불안정이다', () => {
@@ -85,7 +86,7 @@ describe('decideAdoption', () => {
       ...repeat(2, () => verdictOf('B', true)),
       ...repeat(4, () => verdictOf('A', true)),
     ];
-    expect(decide(verdicts).kind).toBe('ADOPT');
+    expect(decide(verdicts).kind).toBe(AdoptionDecisionKind.ADOPT);
   });
 
   it('6창 중 3승이면 승률 미달이다', () => {
@@ -101,7 +102,7 @@ describe('decideAdoption', () => {
       ...repeat(4, () => verdictOf('A', true)),
       ...repeat(2, () => verdictOf('A', false)),
     ];
-    expect(decide(verdicts).kind).toBe('ADOPT');
+    expect(decide(verdicts).kind).toBe(AdoptionDecisionKind.ADOPT);
   });
 
   it('평균 차 0.4 는 개선 폭 미달이다', () => {
@@ -111,7 +112,7 @@ describe('decideAdoption', () => {
 
   it('평균 차가 정확히 0.5 면 통과한다', () => {
     const verdicts = repeat(6, () => verdictOf('A', true, [[1.5, 1]]));
-    expect(decide(verdicts).kind).toBe('ADOPT');
+    expect(decide(verdicts).kind).toBe(AdoptionDecisionKind.ADOPT);
   });
 
   it('null 쪽이 있는 조건은 평균에서 빠지고, 전부 null 이면 개선 폭 미달이다', () => {
@@ -121,7 +122,7 @@ describe('decideAdoption', () => {
         [2, 1],
       ]),
     );
-    expect(decide(skipped).kind).toBe('ADOPT');
+    expect(decide(skipped).kind).toBe(AdoptionDecisionKind.ADOPT);
     const allNull = repeat(6, () => verdictOf('A', true, [[null, null]]));
     expect(decide(allNull).reason).toBe('개선 폭 미달');
   });
@@ -129,19 +130,28 @@ describe('decideAdoption', () => {
   it('손절 후보 -10, 현행 -5 는 한 칸(-7) 으로 제한된다', () => {
     const verdicts = repeat(6, () => verdictOf('A', true, [[1.6, 1]]));
     const decision = decide(verdicts);
-    expect(decision).toMatchObject({ kind: 'ADOPT', value: -7 });
+    expect(decision).toMatchObject({
+      kind: AdoptionDecisionKind.ADOPT,
+      value: -7,
+    });
     expect(decision.reason).toContain('-10');
   });
 
   it('후보 -3, 현행 -5 는 인접 칸이라 그대로 채택한다', () => {
     const verdicts = repeat(6, () => verdictOf('B', true, [[1.6, 1]]));
-    expect(decide(verdicts)).toMatchObject({ kind: 'ADOPT', value: -3 });
+    expect(decide(verdicts)).toMatchObject({
+      kind: AdoptionDecisionKind.ADOPT,
+      value: -3,
+    });
   });
 
   it('현행이 격자 밖이면 가장 가까운 칸을 기준으로 한 칸 제한한다', () => {
     // 현행 -4 → 격자 -3(인덱스 2)·-5(인덱스 3) 중 동률은 낮은 인덱스 -3. 후보 -10(인덱스 5) → -5
     const verdicts = repeat(6, () => verdictOf('A', true, [[1.6, 1]]));
-    expect(decide(verdicts, -4)).toMatchObject({ kind: 'ADOPT', value: -5 });
+    expect(decide(verdicts, -4)).toMatchObject({
+      kind: AdoptionDecisionKind.ADOPT,
+      value: -5,
+    });
   });
 
   it('후보가 현행과 같으면 현행 유지로 즉시 끝낸다', () => {
@@ -150,7 +160,7 @@ describe('decideAdoption', () => {
       verdictOf('BASE', false),
     ];
     expect(decide(verdicts)).toEqual({
-      kind: 'NO_CHANGE',
+      kind: AdoptionDecisionKind.NO_CHANGE,
       reason: '현행 유지',
     });
   });
