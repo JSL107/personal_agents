@@ -136,6 +136,7 @@ describe('ParamTuneRunPrismaRepository', () => {
         status: TuneRunStatus.RUNNING,
         startedAt: now,
         failureReason: null,
+        notifiedAt: null,
       });
       expect(call.data.attemptToken).not.toBe('old');
     });
@@ -153,6 +154,23 @@ describe('ParamTuneRunPrismaRepository', () => {
         kind: 'CLAIMED',
         runId: 4,
       });
+    });
+
+    it('발송된 FAILED 행을 재선점하면 notifiedAt 을 비운다', async () => {
+      parameterTuneRun.findUnique.mockResolvedValue({
+        id: 4,
+        status: TuneRunStatus.FAILED,
+        attemptToken: 'old',
+        startedAt: new Date(now.getTime() - MINUTE),
+        notifiedAt: new Date(now.getTime() - MINUTE),
+      });
+      parameterTuneRun.updateMany.mockResolvedValue({ count: 1 });
+
+      await repository.claim(input);
+
+      expect(
+        parameterTuneRun.updateMany.mock.calls[0][0].data.notifiedAt,
+      ).toBeNull();
     });
 
     it('재선점 update 가 count 0 이면 ALREADY_RUNNING', async () => {
@@ -584,19 +602,20 @@ describe('ParamTuneRunPrismaRepository', () => {
     });
   });
 
-  describe('countAppliedSince', () => {
+  describe('countAppliedBetween', () => {
     it('반영 시각이나 롤백 평가 시각이 구간 안인 행을 한 번씩 센다', async () => {
       parameterTuneRun.count.mockResolvedValue(4);
       const since = new Date('2026-11-09T00:00:00.000Z');
+      const until = new Date('2026-11-16T00:00:00.000Z');
 
-      expect(await repository.countAppliedSince(since)).toBe(4);
+      expect(await repository.countAppliedBetween({ since, until })).toBe(4);
       expect(parameterTuneRun.count).toHaveBeenCalledWith({
         where: {
           OR: [
-            { appliedAt: { gte: since } },
+            { appliedAt: { gte: since, lt: until } },
             {
               evaluation: TuneEvaluation.ROLLBACK,
-              evaluatedAt: { gte: since },
+              evaluatedAt: { gte: since, lt: until },
             },
           ],
         },
