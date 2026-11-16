@@ -73,6 +73,19 @@ describe('blog edit summary', () => {
     ).toBeLessThanOrEqual(4000);
   });
 
+  it('긴 줄의 뒤쪽을 고쳐도 예시에 실제 변경 지점이 남는다', () => {
+    const prefix = '나'.repeat(420);
+    const summary = summarizeBlogEdits({
+      removedLines: [`${prefix} 확인하고, 마무리했다`],
+      addedLines: [`${prefix} 확인하고 마무리했다`],
+    });
+
+    const rendered = renderBlogEditSummary({ path: '_posts/tail.md', summary });
+
+    expect(rendered).toContain('확인하고, 마무리했다');
+    expect(rendered).toContain('확인하고 마무리했다');
+  });
+
   it('같은 변경은 같은 해시이고 다른 변경은 다른 해시이다', () => {
     const changes = { removedLines: ['전'], addedLines: ['후'] };
 
