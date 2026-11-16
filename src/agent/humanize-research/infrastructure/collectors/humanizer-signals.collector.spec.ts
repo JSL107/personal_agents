@@ -6,10 +6,29 @@ const processed = {
   humanizerMaxRunId: '10',
   blogPostIds: [],
   upstreamHead: null,
+  canonHead: null,
   arxivIds: [],
 };
 
 describe('HumanizerSignalsCollector', () => {
+  it('personal-blog voice 만 조회한다', async () => {
+    const findRecentSucceededRuns = jest
+      .fn()
+      .mockResolvedValue([{ id: 11, output: {} }]);
+    const collector = new HumanizerSignalsCollector({
+      findRecentSucceededRuns,
+    } as unknown as AgentRunService);
+
+    const result = await collector.collect(processed);
+
+    expect(findRecentSucceededRuns).toHaveBeenCalledWith(
+      expect.objectContaining({
+        inputSnapshotEquals: { path: ['voice'], value: 'personal-blog' },
+      }),
+    );
+    expect(result.items[0].text.split('\n')[0]).toBe('블로그 윤문 회차 1건');
+  });
+
   it('직전 처리 id 이후의 원장 지표만 집계한다', async () => {
     const findRecentSucceededRuns = jest.fn().mockResolvedValue([
       { id: 9, output: { rolledBackKeys: ['old'] } },

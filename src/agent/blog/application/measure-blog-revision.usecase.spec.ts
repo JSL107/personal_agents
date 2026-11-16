@@ -26,7 +26,9 @@ const buildUsecase = ({
     }
     return { fileUrl: `https://example.test/${path}`, content: file[path] };
   });
-  const execute = jest.fn(async () => previews as PreviewAction[]);
+  const execute = jest.fn<Promise<PreviewAction[]>, [{ since: Date }]>(
+    async () => previews as PreviewAction[],
+  );
 
   const usecase = new MeasureBlogRevisionUsecase(
     { execute } as unknown as FindRecentAppliedPreviewsUsecase,
@@ -43,6 +45,52 @@ const applied = (path: string, content: string) => ({
 });
 
 describe('MeasureBlogRevisionUsecase', () => {
+  it('lookbackDays 56 이면 limit 80', async () => {
+    const { usecase, findPreviews } = buildUsecase();
+
+    await usecase.execute({ lookbackDays: 56 });
+
+    expect(findPreviews).toHaveBeenCalledWith(
+      expect.objectContaining({ limit: 80 }),
+    );
+  });
+
+  it('인자 없으면 limit 40', async () => {
+    const { usecase, findPreviews } = buildUsecase();
+
+    await usecase.execute();
+
+    expect(findPreviews).toHaveBeenCalledWith(
+      expect.objectContaining({ limit: 40 }),
+    );
+  });
+
+  it('인자 없이 실행하면 28일 창에서 승인된 발행 카드를 찾는다', async () => {
+    const { usecase, findPreviews } = buildUsecase();
+    const before = Date.now();
+
+    await usecase.execute();
+
+    const after = Date.now();
+    const since = findPreviews.mock.calls[0][0].since.getTime();
+    const lookback = 28 * 24 * 60 * 60 * 1000;
+    expect(since).toBeGreaterThanOrEqual(before - lookback);
+    expect(since).toBeLessThanOrEqual(after - lookback);
+  });
+
+  it('lookbackDays 를 지정하면 그 기간의 발행 카드를 찾는다', async () => {
+    const { usecase, findPreviews } = buildUsecase();
+    const before = Date.now();
+
+    await usecase.execute({ lookbackDays: 56 });
+
+    const after = Date.now();
+    const since = findPreviews.mock.calls[0][0].since.getTime();
+    const lookback = 56 * 24 * 60 * 60 * 1000;
+    expect(since).toBeGreaterThanOrEqual(before - lookback);
+    expect(since).toBeLessThanOrEqual(after - lookback);
+  });
+
   it('발행 설정이 없으면 집계 대상이 아니라고 답한다', () => {
     const { usecase } = buildUsecase({ config: {} });
 

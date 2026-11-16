@@ -97,6 +97,7 @@ export class HumanizerSignalsCollector {
         agentType: AgentType.HUMANIZER,
         sinceDays: INTERNAL_LOOKBACK_DAYS,
         limit: RUN_LIMIT,
+        inputSnapshotEquals: { path: ['voice'], value: 'personal-blog' },
       });
       const maxId = Number(processed.humanizerMaxRunId ?? 0);
       const fresh = runs.filter((run) => run.id > maxId);
@@ -130,7 +131,7 @@ export class HumanizerSignalsCollector {
       const styleGaps = countBy(outputs.flatMap(styleAxesOf));
       const ids = fresh.map((run) => run.id);
       const text = [
-        `윤문 회차 ${fresh.length}건`,
+        `블로그 윤문 회차 ${fresh.length}건`,
         `롤백 키 빈도: ${formatTally(rollbacks)}`,
         `과윤문 키 빈도: ${formatTally(overRewrites)}`,
         `번역투 축별 합계: ${formatTally(translationese)}`,
