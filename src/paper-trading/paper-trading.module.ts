@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 
 import { HolidayModule } from '../holiday/holiday.module';
 import { MarketDataModule } from '../market-data/market-data.module';
+import { ParamTuneLedgerModule } from '../param-tune/param-tune-ledger.module';
 import { PrismaModule } from '../prisma/prisma.module';
 import { StrategyParameterModule } from '../strategy-parameter/strategy-parameter.module';
 import { ApplyCorporateActionUsecase } from './application/apply-corporate-action.usecase';
@@ -25,6 +26,7 @@ import { PaperTradingPrismaRepository } from './infrastructure/paper-trading.pri
   imports: [
     HolidayModule,
     MarketDataModule,
+    ParamTuneLedgerModule,
     PrismaModule,
     StrategyParameterModule,
   ],

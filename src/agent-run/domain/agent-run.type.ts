@@ -133,6 +133,8 @@ export enum TriggerType {
   // 주간 knowledge-lint 의 L4 모순 판정 회차(CONTRADICTION_JUDGE). 판정 usecase 는 모듈 순환으로
   // AgentRunService 를 못 받아, autopilot task 가 회차 단위로 감싼다.
   AUTOPILOT_KNOWLEDGE_LINT_CRON = 'AUTOPILOT_KNOWLEDGE_LINT_CRON',
+  // 주간 투자 파라미터 자동 조정. 탐색은 자식 프로세스가 하고, 이 실행은 선점·기동·알림 묶음을 감싼다.
+  AUTOPILOT_PARAM_TUNE_CRON = 'AUTOPILOT_PARAM_TUNE_CRON',
   // 주간 docs-sync-audit 의 Layer 2 LLM 호출(DOCS_AUDIT_OPTIMIZER/EVALUATOR) — 호출마다 한 행.
   // `_CRON` 을 붙이지 않는다: 문서 수정 후보가 있는 주에만 호출되는 파생 호출이라, 자율 워커로
   // 분류되면 후보 없는 주가 끼는 순간 원장 정지 판정(stall.ts)이 거짓 경고를 낸다.

@@ -485,7 +485,7 @@ describe('AUTOPILOT_PLAYBOOK', () => {
     expect(() => validatePlaybook(matched)).not.toThrow();
   });
 
-  it('투자 라인 태그는 11개 항목에 빠짐없이 붙어 있다', () => {
+  it('투자 라인 태그는 12개 항목에 빠짐없이 붙어 있다', () => {
     const investIds = AUTOPILOT_PLAYBOOK.filter(
       (entry) => entry.line === 'invest',
     ).map((entry) => entry.id);
@@ -497,6 +497,7 @@ describe('AUTOPILOT_PLAYBOOK', () => {
       'paper-order-fill',
       'paper-intraday-stop',
       'paper-score',
+      'param-tune',
       'stock-alert-scoring',
       'screening-outcome-scoring',
       'screening-scorecard',

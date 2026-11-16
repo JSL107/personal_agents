@@ -134,6 +134,11 @@ export const MUTUALLY_EXCLUSIVE_AUTOPILOT_GROUPS: readonly string[] = [
 export const DEFAULT_PAPER_SCORE_CRON = '10 20 * * 5';
 export const DEFAULT_PAPER_SCORE_TIMEZONE = 'Asia/Seoul';
 
+// 투자 파라미터 주간 자동 조정 — 토요일 02:00 KST. 시세 수집·추천이 모두 끝난 금요일 밤 이후라
+// 재생 입력이 확정돼 있고, 탐색이 한 시간 가까이 걸려도 월요일 장 전에 끝난다.
+export const DEFAULT_PARAM_TUNE_CRON = '0 2 * * 6';
+export const DEFAULT_PARAM_TUNE_TIMEZONE = 'Asia/Seoul';
+
 // Preview Sweeper 기본 스케줄 — 10분마다. 만료 카드는 목록(findAllOpen)에서는 즉시 빠지지만
 // 콘솔이 구독하는 approval.resolved 는 이 스위퍼가 돌 때만 발행된다. 매시간이면 SESSION_INJECT
 // TTL(30분)이 지난 카드가 최대 1시간 동안 콘솔 화면에 남아, 눌러도 서버가 거절하는 유령 버튼이 됐다.

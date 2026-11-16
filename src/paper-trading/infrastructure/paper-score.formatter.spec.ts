@@ -6,6 +6,7 @@ const RESULT: ScoreRecommendationsResult = {
   from: null,
   persisted: true,
   evaluationBenchmarkMissing: false,
+  autoTuneAppliedCount: 0,
   accounts: [
     {
       accountId: 7,
@@ -145,6 +146,25 @@ describe('formatPaperScoreReport', () => {
     expect(kept).not.toContain('원장에 저장하지 않았습니다');
     expect(dropped).toContain('이 회차는 원장에 저장하지 않았습니다');
     expect(dropped).toContain('과거 기준일 재채점이거나 구간 집계');
+  });
+
+  // 파라미터 값이 바뀌어도 규칙 버전 번호는 안 움직인다. 이 줄이 없으면 구간 안의 자동 반영이
+  // 성적에 섞였는데도 같은 규칙의 성적으로 읽힌다.
+  it('구간 안에 자동 반영이 있었으면 건수를 적고, 0건이면 줄을 생략한다', () => {
+    const none = formatPaperScoreReport(RESULT);
+    const some = formatPaperScoreReport({ ...RESULT, autoTuneAppliedCount: 2 });
+
+    expect(none).not.toContain('자동 반영');
+    expect(some).toContain('이 구간에 자동 반영 2건');
+  });
+
+  it('건수를 못 구했으면 확인 실패로 적는다', () => {
+    const text = formatPaperScoreReport({
+      ...RESULT,
+      autoTuneAppliedCount: null,
+    });
+
+    expect(text).toContain('자동 반영 건수 확인 실패');
   });
 
   it('규칙 버전이 섞였거나 기록되지 않은 집계를 그대로 드러낸다', () => {

@@ -80,8 +80,8 @@ describe('AutopilotScheduler', () => {
     //   + humanize-research(주간 윤문 규칙 dry-run, 단독 그룹)
     //   + goal-checkin + schedule-reminder + schedule-collect
     //   + reels-publish-offer + instagram-token-check
-    //   + reels-insights-collect + reels-insights-weekly = 45그룹.
-    expect(queue.add).toHaveBeenCalledTimes(46);
+    //   + reels-insights-collect + reels-insights-weekly + param-tune = 46그룹.
+    expect(queue.add).toHaveBeenCalledTimes(47);
     expect(addCalls).toContain('reels-publish-offer');
     expect(addCalls).toContain('instagram-token-check');
     expect(addCalls).toContain('reels-insights-collect');
@@ -153,7 +153,7 @@ describe('AutopilotScheduler', () => {
           (entry: unknown[]) => entry[0] === 'ai-tool-weekly',
         ),
       ).toBe(false);
-      expect(queue.add).toHaveBeenCalledTimes(46);
+      expect(queue.add).toHaveBeenCalledTimes(47);
       expect(warn).not.toHaveBeenCalled();
     },
   );
@@ -178,7 +178,7 @@ describe('AutopilotScheduler', () => {
     );
     expect(call?.[1]).toEqual({ ownerSlackUserId: 'U1', target: 'C0HARNESS' });
     expect(call?.[2]).toMatchObject({ attempts: 4 });
-    expect(queue.add).toHaveBeenCalledTimes(47);
+    expect(queue.add).toHaveBeenCalledTimes(48);
   });
 
   it('owner-dm 그룹은 AUTOPILOT_TARGET 을 무시하고 owner ID로 보낸다', async () => {
@@ -412,7 +412,7 @@ describe('AutopilotScheduler', () => {
     const investGroups = AUTOPILOT_PLAYBOOK.filter(
       (entry) => entry.line === 'invest',
     ).map((entry) => entry.digestGroup ?? entry.id);
-    expect(investGroups).toHaveLength(11);
+    expect(investGroups).toHaveLength(12);
     for (const groupKey of investGroups) {
       const call = queue.add.mock.calls.find(
         (item: unknown[]) => item[0] === groupKey,

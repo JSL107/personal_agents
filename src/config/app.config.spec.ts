@@ -121,6 +121,20 @@ describe('validateEnv SUBCONSCIOUS_GATE_MODE', () => {
   );
 });
 
+describe('validateEnv PARAM_AUTO_TUNE_MODE', () => {
+  it.each(['off', 'observe', 'apply', undefined])('%p 는 허용한다', (mode) => {
+    expect(() =>
+      validateEnv({ ...requiredEnv, PARAM_AUTO_TUNE_MODE: mode }),
+    ).not.toThrow();
+  });
+
+  it('on 같은 오타는 부팅에서 거부한다', () => {
+    expect(() =>
+      validateEnv({ ...requiredEnv, PARAM_AUTO_TUNE_MODE: 'on' }),
+    ).toThrow();
+  });
+});
+
 describe('validateEnv 반응 트리거 이모지 이름', () => {
   it.each(['SLACK_INBOX_EMOJI', 'SLACK_PUSHPIN_REACTION_EMOJI'])(
     '%s 에 Slack 이모지 이름이 아닌 값이 오면 부팅을 막는다',

@@ -32,6 +32,8 @@ export const LEDGER_GAP_WATCHES: readonly LedgerGapWatch[] = [
   { taskId: 'knowledge-lint', label: '기억 무결성 점검' },
   // 매주 월 09:30 (콘솔)
   { taskId: 'blog-revision-report', label: '블로그 수정률' },
+  // 매주 토 02:00 — 알릴 행이 없는 주는 emptyReason('이번 주 알릴 자동 조정 없음')으로 SUPPRESSED/EMPTY 가 남는다.
+  { taskId: 'param-tune', label: '파라미터 자동 조정' },
 ];
 
 // 회차 날짜(firedAtKst)의 KST 0시. 지금 시각이 아니라 회차 날짜로 잡아야 늦게 돈 회차·재실행이
