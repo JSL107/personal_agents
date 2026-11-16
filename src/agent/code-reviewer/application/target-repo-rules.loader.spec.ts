@@ -1,7 +1,21 @@
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { GithubException } from '../../../github/domain/github.exception';
 import { GithubErrorCode } from '../../../github/domain/github-error-code.enum';
 import { GithubClientPort } from '../../../github/domain/port/github-client.port';
 import { TargetRepoRulesLoader } from './target-repo-rules.loader';
+
+let personalDir: string;
+
+beforeEach(async () => {
+  personalDir = await mkdtemp(join(tmpdir(), 'review-rules-'));
+});
+
+afterEach(async () => {
+  await rm(personalDir, { recursive: true, force: true });
+});
 
 const buildLoader = (
   files: Record<string, string>,
@@ -20,7 +34,10 @@ const buildLoader = (
     };
   });
   const githubClient = { getFileFromBranch } as unknown as GithubClientPort;
-  return { loader: new TargetRepoRulesLoader(githubClient), getFileFromBranch };
+  const loader = new TargetRepoRulesLoader(githubClient);
+  // 실제 홈의 개인 규칙을 읽지 않게 테스트 폴더로 돌린다.
+  Object.assign(loader, { personalRulesDir: personalDir });
+  return { loader, getFileFromBranch };
 };
 
 describe('TargetRepoRulesLoader', () => {
@@ -76,5 +93,27 @@ describe('TargetRepoRulesLoader', () => {
 
     const second = await loader.load({ repo: 'o/r', baseSha: 'b' });
     expect(second.used).toEqual(['AGENTS.md#Code Review Rules']);
+  });
+
+  it('개인 규칙 파일(<owner>/<repo>.md, 소문자)을 매번 읽어 싣는다', async () => {
+    const { loader } = buildLoader({});
+    await mkdir(join(personalDir, 'o'), { recursive: true });
+    await writeFile(join(personalDir, 'o', 'r.md'), '- 권한 검사를 꼭 본다');
+
+    const first = await loader.load({ repo: 'O/R', baseSha: 'b' });
+    expect(first.used).toEqual(['(개인 규칙)']);
+    expect(first.block).toContain('- 권한 검사를 꼭 본다');
+
+    await writeFile(join(personalDir, 'o', 'r.md'), '- 바뀐 규칙');
+    const second = await loader.load({ repo: 'o/r', baseSha: 'b' });
+    expect(second.block).toContain('- 바뀐 규칙');
+  });
+
+  it('owner/repo 형식이 아니면 개인 규칙 폴더 밖을 읽지 않는다', async () => {
+    const { loader } = buildLoader({});
+    await writeFile(join(personalDir, 'secret.md'), '- 비밀');
+
+    const rules = await loader.load({ repo: '../secret', baseSha: 'b' });
+    expect(rules.used).toEqual([]);
   });
 });
