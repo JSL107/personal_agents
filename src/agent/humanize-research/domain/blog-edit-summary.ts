@@ -24,6 +24,7 @@ const EDIT_KINDS = Object.values(BlogEditKind);
 const MAX_EXAMPLES = 3;
 const MAX_RENDER_LENGTH = 4000;
 const MAX_EXAMPLE_LINE_LENGTH = 300;
+const EXAMPLE_CONTEXT_BEFORE_CHANGE = 80;
 
 export const summarizeBlogEdits = (
   changes: RevisionLineChanges,
@@ -92,9 +93,10 @@ export const renderBlogEditSummary = ({
   for (const kind of EDIT_KINDS) {
     lines.push(`${kind}: ${summary.counts[kind]}건`);
     for (const example of summary.examples[kind]) {
+      const cropped = cropAroundChange(example);
       exampleStarts.push(lines.length);
-      lines.push(`- 전: ${example.before.slice(0, MAX_EXAMPLE_LINE_LENGTH)}`);
-      lines.push(`- 후: ${example.after.slice(0, MAX_EXAMPLE_LINE_LENGTH)}`);
+      lines.push(`- 전: ${cropped.before}`);
+      lines.push(`- 후: ${cropped.after}`);
     }
   }
   while (
@@ -108,6 +110,24 @@ export const renderBlogEditSummary = ({
   }
   const rendered = lines.join('\n');
   return rendered.slice(0, MAX_RENDER_LENGTH);
+};
+
+// 블로그는 문단 하나가 한 줄이라 앞에서 자르면 뒤쪽 수정이 사라진다. 처음 달라지는 지점 앞뒤를 남긴다.
+const cropAroundChange = ({
+  before,
+  after,
+}: BlogEditExample): BlogEditExample => {
+  const beforeCharacters = [...before];
+  const afterCharacters = [...after];
+  const firstDiff = beforeCharacters.findIndex(
+    (character, index) => character !== afterCharacters[index],
+  );
+  const changeAt = firstDiff < 0 ? beforeCharacters.length : firstDiff;
+  const start = Math.max(0, changeAt - EXAMPLE_CONTEXT_BEFORE_CHANGE);
+  const marker = start > 0 ? '…' : '';
+  const crop = (characters: string[]): string =>
+    `${marker}${characters.slice(start, start + MAX_EXAMPLE_LINE_LENGTH).join('')}`;
+  return { before: crop(beforeCharacters), after: crop(afterCharacters) };
 };
 
 export const hashBlogChanges = (changes: RevisionLineChanges): string => {
