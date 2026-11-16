@@ -1,8 +1,13 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 
+import { ParameterSnapshot } from '../../param-tune/domain/param-tune.type';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StrategyParameterPort } from '../domain/port/strategy-parameter.port';
+import { StrategyParameterSnapshotError } from '../domain/strategy-parameter.exception';
 import {
+  ActivateNewVersionInput,
+  ActivateNewVersionResult,
   ActiveStrategyParameter,
   STRATEGY_PARAMETER_NAMES,
   StrategyParameterName,
@@ -10,6 +15,13 @@ import {
   StrategyParameterSeedOutcome,
   StrategyParameterStrategy,
 } from '../domain/strategy-parameter.type';
+
+// PrismaService 와 트랜잭션 클라이언트가 함께 만족하는 최소 형태.
+interface StrategyParameterClient {
+  strategyParameter: Prisma.TransactionClient['strategyParameter'];
+}
+
+const CONFLICT_CODES = ['P2034', 'P2002'];
 
 const isKnownName = (name: string): name is StrategyParameterName =>
   (STRATEGY_PARAMETER_NAMES as readonly string[]).includes(name);
@@ -102,4 +114,110 @@ export class StrategyParameterPrismaRepository implements StrategyParameterPort 
     }
     return { inserted, skipped };
   }
+
+  async findSnapshotStrict(
+    strategy: StrategyParameterStrategy,
+  ): Promise<ParameterSnapshot> {
+    return await this.readSnapshot(this.prisma, strategy);
+  }
+
+  async activateNewVersion(
+    input: ActivateNewVersionInput,
+  ): Promise<ActivateNewVersionResult> {
+    try {
+      return await this.prisma.$transaction(
+        async (tx) => {
+          const actual = await this.readSnapshot(tx, input.strategy);
+          if (!isSameSnapshot(actual, input.expectedSnapshot)) {
+            return { kind: 'CONFLICT', actual };
+          }
+          const target = actual.find((entry) => entry.name === input.name);
+          if (target === undefined) {
+            throw new StrategyParameterSnapshotError(
+              `${input.strategy}.${input.name} 활성 행이 없다`,
+            );
+          }
+          const now = new Date();
+          // 부분 유니크 인덱스가 활성 행을 하나로 묶으므로 내리는 쪽이 만드는 쪽보다 먼저다.
+          await tx.strategyParameter.update({
+            where: { id: target.parameterId },
+            data: { supersededAt: now },
+          });
+          const latest = await tx.strategyParameter.aggregate({
+            where: { strategy: input.strategy, name: input.name },
+            _max: { version: true },
+          });
+          const created = await tx.strategyParameter.create({
+            data: {
+              strategy: input.strategy,
+              name: input.name,
+              value: input.value.toString(),
+              version: (latest._max.version ?? 0) + 1,
+              activatedAt: now,
+              reason: input.reason,
+              agentRunId: input.agentRunId,
+            },
+            select: { id: true, version: true },
+          });
+          return {
+            kind: 'ACTIVATED',
+            parameterId: created.id,
+            version: created.version,
+          };
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      );
+    } catch (error) {
+      // 직렬화 실패(P2034)와 동시 insert 의 unique 충돌(P2002)은 "남이 먼저 바꿨다" 이다.
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        CONFLICT_CODES.includes(error.code)
+      ) {
+        return {
+          kind: 'CONFLICT',
+          actual: await this.findSnapshotStrict(input.strategy),
+        };
+      }
+      throw error;
+    }
+  }
+
+  private async readSnapshot(
+    client: StrategyParameterClient,
+    strategy: StrategyParameterStrategy,
+  ): Promise<ParameterSnapshot> {
+    const rows = await client.strategyParameter.findMany({
+      where: { strategy, activatedAt: { not: null }, supersededAt: null },
+      orderBy: { version: 'desc' },
+      select: { id: true, name: true, value: true, version: true },
+    });
+    return STRATEGY_PARAMETER_NAMES.map((name) => {
+      const row = rows.find((candidate) => candidate.name === name);
+      if (row === undefined) {
+        throw new StrategyParameterSnapshotError(
+          `${strategy}.${name} 활성 행이 없다`,
+        );
+      }
+      return {
+        name,
+        parameterId: row.id,
+        version: row.version,
+        value: row.value.toNumber(),
+      };
+    });
+  }
 }
+
+const isSameSnapshot = (
+  actual: ParameterSnapshot,
+  expected: ParameterSnapshot,
+): boolean =>
+  actual.length === expected.length &&
+  actual.every((entry, index) => {
+    const other = expected[index];
+    return (
+      entry.name === other.name &&
+      entry.parameterId === other.parameterId &&
+      entry.version === other.version
+    );
+  });

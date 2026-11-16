@@ -1,0 +1,3 @@
+export enum StrategyParameterErrorCode {
+  SNAPSHOT_INCOMPLETE = 'STRATEGY_PARAMETER_SNAPSHOT_INCOMPLETE',
+}

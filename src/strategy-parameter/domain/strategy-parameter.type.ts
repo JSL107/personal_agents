@@ -4,6 +4,7 @@ import {
   DEFAULT_TAKE_PROFIT_PERCENT,
   ExitBandThreshold,
 } from '../../paper-trading/domain/exit-band';
+import { ParameterSnapshot } from '../../param-tune/domain/param-tune.type';
 import { MINIMUM_TURNOVER60 } from '../../screener/domain/screener-rule';
 
 export type StrategyParameterStrategy = 'LONG_TERM' | 'SWING';
@@ -71,3 +72,17 @@ export interface StrategyParameterSeedOutcome {
   inserted: string[];
   skipped: string[];
 }
+
+export interface ActivateNewVersionInput {
+  strategy: StrategyParameterStrategy;
+  name: StrategyParameterName;
+  // 읽은 시점의 네 축 활성 행. 쓰는 시점에 하나라도 다르면 쓰지 않는다.
+  expectedSnapshot: ParameterSnapshot;
+  value: number;
+  reason: string;
+  agentRunId: number | null;
+}
+
+export type ActivateNewVersionResult =
+  | { kind: 'ACTIVATED'; parameterId: number; version: number }
+  | { kind: 'CONFLICT'; actual: ParameterSnapshot };
