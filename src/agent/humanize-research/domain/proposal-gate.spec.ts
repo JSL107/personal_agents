@@ -143,3 +143,22 @@ it('newString 이 공백뿐이어도 표 행이 아니면 DELETE_NOT_ALLOWED', (
     ProposalSkipReason.DELETE_NOT_ALLOWED,
   );
 });
+
+it('블로그 리터럴에 위험 문자가 있으면 거절하고 실제 안전 문구는 통과한다', () => {
+  const oldString =
+    '  - 이중 피동 "~되어진다/~보여진다" → 단일 피동("판단된다") 또는 능동';
+  const blog = {
+    target: ProposalTarget.BLOG,
+    file: 'src/humanize/domain/humanize-system.prompt.ts',
+    evidence: ['blog:1'],
+    oldString,
+  };
+  const changes = { blogEditableTexts: [oldString] };
+  for (const newString of ['`', "'", '${value}', '\\', '\n', '\r']) {
+    expect(judge({ ...blog, newString }, changes)).toBe('UNSAFE_BLOG_LITERAL');
+    expect(judge({ ...blog, oldString: newString }, changes)).toBe(
+      'UNSAFE_BLOG_LITERAL',
+    );
+  }
+  expect(judge({ ...blog, newString: oldString }, changes)).toBeNull();
+});

@@ -306,7 +306,7 @@ export const AUTOPILOT_PLAYBOOK: PlaybookEntry[] = [
       schedule: DEFAULT_HUMANIZE_RESEARCH_CRON,
       timezone: DEFAULT_HUMANIZE_RESEARCH_TIMEZONE,
     },
-    riskTier: 'T0_AUTO',
+    riskTier: 'T1_PREVIEW',
   },
   {
     id: 'run-sweeper',

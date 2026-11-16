@@ -34,11 +34,16 @@ const SKIP_LABELS: Record<ProposalSkipReason, string> = {
   [ProposalSkipReason.OVER_LIMIT]: '제안 상한 초과',
   [ProposalSkipReason.EVIDENCE_SOURCE_MISMATCH]: '근거 출처 불일치',
   [ProposalSkipReason.FILE_NOT_ALLOWED]: '허용되지 않은 파일',
+  [ProposalSkipReason.UNSAFE_BLOG_LITERAL]: '안전하지 않은 블로그 문구',
   [ProposalSkipReason.MATCH_NOT_UNIQUE]: '일치 항목 유일하지 않음',
   [ProposalSkipReason.OUTSIDE_EDITABLE_SURFACE]: '편집 가능 범위 밖',
   [ProposalSkipReason.DELETE_NOT_ALLOWED]: '삭제 불가',
   [ProposalSkipReason.PROTECTED_ASSET]: '보호 자산',
   [ProposalSkipReason.RULEBOOK_TOO_LONG]: '규칙 줄 수 초과',
+  [ProposalSkipReason.SELFCHECK_FAILED]: '정본 자체 검사 실패',
+  [ProposalSkipReason.SEVERITY_SYNC_FAILED]: '심각도 동기화 검사 실패',
+  [ProposalSkipReason.GOLDEN_FAILED]: '골든 검사 실패',
+  [ProposalSkipReason.CANON_CHECK_ERROR]: '정본 검사 실행 오류',
 };
 
 const escapeField = (value: string): string =>

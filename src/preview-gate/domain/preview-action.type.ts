@@ -16,6 +16,8 @@ export const PREVIEW_KIND = {
   // payload = { files:[{path,content}], changedFiles, rationale, repoLabel, baseBranch } (DocsAuditPrPayload).
   // applier 가 githubClient.pushBranchAndOpenPr 로 새 branch+commit+PR. main 직접 push X.
   DOCS_AUDIT_PR: 'DOCS_AUDIT_PR',
+  // HumanizeRulePrApplier: 규칙 제안 payload(target, repo, baseSha, file, 전후 문구, 근거)를 재검증해 PR 생성. main 직접 push X.
+  HUMANIZE_RULE_PR: 'HUMANIZE_RULE_PR',
   // 선호 프로필 자가학습 — 주간 추론이 만든 프로필 diff 를 승인 시 적용.
   // payload = { proposalId } (PreferenceProfilePreviewApplier 가 applyService.apply 로 반영).
   PREFERENCE_PROFILE: 'PREFERENCE_PROFILE',

@@ -10,6 +10,8 @@ import { EveningCareerReflectApplier } from './agent/career-mate/infrastructure/
 import { CeoModule } from './agent/ceo/ceo.module';
 import { CodeReviewerModule } from './agent/code-reviewer/code-reviewer.module';
 import { CtoModule } from './agent/cto/cto.module';
+import { HumanizeResearchModule } from './agent/humanize-research/humanize-research.module';
+import { HumanizeRulePrApplier } from './agent/humanize-research/infrastructure/humanize-rule-pr.applier';
 import { ImpactReporterModule } from './agent/impact-reporter/impact-reporter.module';
 import { PaperRecommendModule } from './agent/paper-recommend/paper-recommend.module';
 import { PmWriteBackApplier } from './agent/pm/infrastructure/pm-write-back.applier';
@@ -134,6 +136,7 @@ import { WebhookModule } from './webhook/webhook.module';
         PmWriteBackApplier,
         PoEvalCareerlogApplier,
         DocsAuditPrApplier,
+        HumanizeRulePrApplier,
         PreferenceProfilePreviewApplier,
         AiCliEnvApplyPreviewApplier,
         EveningBlogPublishApplier,
@@ -150,6 +153,7 @@ import { WebhookModule } from './webhook/webhook.module';
       cancellers: [PreferenceProfileCanceller],
       imports: [
         GithubModule,
+        HumanizeResearchModule,
         NotionModule,
         PreferenceProfileModule,
         AiCliEnvModule,

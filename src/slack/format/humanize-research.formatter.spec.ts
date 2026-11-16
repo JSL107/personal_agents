@@ -45,6 +45,7 @@ describe('formatHumanizeResearch', () => {
     output.proposals = [
       {
         target: ProposalTarget.CANON,
+        baseSha: 'abc',
         file: 'references/<quick>.md',
         targetMetric: '*gap*',
         rationale: '첫 줄\n<@U123> & `fake`',
