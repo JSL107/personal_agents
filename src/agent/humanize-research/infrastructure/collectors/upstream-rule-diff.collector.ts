@@ -1,9 +1,11 @@
 import { spawn } from 'node:child_process';
+import { homedir } from 'node:os';
 
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { resolveHumanizeRulesRepoPath } from '../../../../humanize/domain/humanize-rules-repository';
+import { buildSafeChildEnv } from '../../../../model-router/infrastructure/cli-process.util';
 import {
   CollectionResult,
   CollectionStatus,
@@ -32,10 +34,14 @@ export const runGit = ({
 }: {
   directory: string;
   args: string[];
-}): Promise<GitResult> =>
-  new Promise((resolve, reject) => {
+}): Promise<GitResult> => {
+  // 부모 env(DB·Slack 토큰)를 git 에 넘기지 않는다. HOME 은 ~/.gitconfig 의 credential helper 로 https 원격을 인증하는 데 필요하다.
+  const realHome = homedir();
+  const env = buildSafeChildEnv({ cwd: directory, homeDir: realHome });
+  const result = new Promise<GitResult>((resolve, reject) => {
     const child = spawn('git', args, {
       cwd: directory,
+      env,
       shell: false,
       timeout: GIT_TIMEOUT_MS,
     });
@@ -54,6 +60,8 @@ export const runGit = ({
       }),
     );
   });
+  return result;
+};
 
 @Injectable()
 export class UpstreamRuleDiffCollector {

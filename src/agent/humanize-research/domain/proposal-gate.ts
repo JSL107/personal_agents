@@ -1,4 +1,4 @@
-import { BLOG_PROMPT_FILE } from './blog-editable-surface';
+import { BLOG_PROMPT_FILE, isSafeBlogLiteral } from './blog-editable-surface';
 import {
   CollectedItem,
   HumanizeResearchProposal,
@@ -16,6 +16,7 @@ export const PROTECTED_QUICK_RULE_MARKERS = [
   '## 등급 기준',
 ];
 export const QUICK_RULES_LINE_HEADROOM = 20;
+export const CANON_RULES_FILE = 'references/quick-rules.md';
 const QUICK_RULE_ROW = /^\| [A-Z]-\d+ \|[^\n]*\|$/u;
 export interface GateContext {
   included: readonly CollectedItem[];
@@ -46,9 +47,16 @@ export const gateProposal = ({
   if (!sourceMatches) {
     return ProposalSkipReason.EVIDENCE_SOURCE_MISMATCH;
   }
-  const allowedFile = canon ? 'references/quick-rules.md' : BLOG_PROMPT_FILE;
+  const allowedFile = canon ? CANON_RULES_FILE : BLOG_PROMPT_FILE;
   if (proposal.file !== allowedFile) {
     return ProposalSkipReason.FILE_NOT_ALLOWED;
+  }
+  if (!canon) {
+    const safeOldString = isSafeBlogLiteral(proposal.oldString);
+    const safeNewString = isSafeBlogLiteral(proposal.newString);
+    if (!safeOldString || !safeNewString) {
+      return ProposalSkipReason.UNSAFE_BLOG_LITERAL;
+    }
   }
   const surfaces = canon ? [context.quickRules] : context.blogEditableTexts;
   const matches = surfaces.reduce(
@@ -94,16 +102,49 @@ export const gateProposal = ({
   return null;
 };
 
-const countMatches = ({
+export const countMatches = ({
   text,
   search,
 }: {
   text: string;
   search: string;
 }): number => {
+  if (search.length === 0) {
+    return 0;
+  }
   const positions = Array.from({ length: text.length }, (_, index) => index);
   const matches = positions.filter((index) => text.startsWith(search, index));
   return matches.length;
+};
+
+export const findQuickRuleIds = ({
+  quickRules,
+  oldString,
+}: {
+  quickRules: string;
+  oldString: string;
+}): string[] => {
+  if (oldString.length === 0) {
+    return [];
+  }
+  const matchStart = quickRules.indexOf(oldString);
+  if (matchStart < 0) {
+    return [];
+  }
+  const matchEnd = matchStart + oldString.length - 1;
+  const startLine = quickRules.slice(0, matchStart).split('\n').length - 1;
+  const endLine = quickRules.slice(0, matchEnd).split('\n').length - 1;
+  const lines = quickRules.split('\n');
+  const touchedLines = lines.slice(startLine, endLine + 1);
+  const ids: string[] = [];
+  for (const line of touchedLines) {
+    const match = /^\| ([A-Z]-\d+) \|/u.exec(line);
+    const id = match?.[1];
+    if (id && !ids.includes(id)) {
+      ids.push(id);
+    }
+  }
+  return ids;
 };
 
 // 행 앞부분만 지우면 뒤 칸이 남으므로, quick-rules 의 한 줄 전체와 같은 규칙 행만 삭제로 인정한다.

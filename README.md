@@ -295,7 +295,7 @@ pnpm dev              # watch 모드 기동
 | 📅 월 09:00 | Run-Retro (주간 실행 통계 회고) |
 | 📅 월 09:15 | PO Shadow 주간 목표 점검 (owner DM) |
 | 📅 월 09:30 | 블로그 수정률 주간 보고 |
-| 📅 월 10:00 | 윤문 규칙 연구 dry-run (`HUMANIZE_RESEARCH_ENABLED`) |
+| 📅 월 10:00 | 윤문 규칙 연구 및 선택적 PR 승인 카드 (`HUMANIZE_RESEARCH_ENABLED`, `HUMANIZE_RULE_PR_ENABLED`) |
 | 📅 매월 1일 09:00 | Ops Supervisor (운영 점검) |
 | 🗂️ 매일 19:00 | AI CLI 환경 스냅샷 내보내기 (sync repo 설정 시) |
 | 🗂️ 매일 10:00 | 다른 PC의 AI CLI 환경 스냅샷 감지·승인 카드 생성 (sync repo 설정 시) |
@@ -382,7 +382,8 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 | `INSTAGRAM_PUBLISH_ENABLED` | ❌ | `true` 일 때만 릴스 게시 제안과 토큰 점검. 기본 `false` |
 | `META_APP_ID` / `META_APP_SECRET` / `META_PAGE_TOKEN` / `INSTAGRAM_USER_ID` | 조건부 | 인스타 게시 활성화 시 4개 모두 필수. 페이지 토큰은 공개하지 않는다 |
 | `SKILL_REELS_OUT_ROOT` | ❌ | 릴스 출력 폴더. 비우면 `~/Desktop/skill-jaengyi-reels`; Hermes 출력 경로와 일치해야 한다 |
-| `HUMANIZE_RESEARCH_ENABLED` | ❌ | 윤문 규칙 연구 주간 dry-run. `true` 일 때만 자동 수집·제안을 실행하며 기본 OFF |
+| `HUMANIZE_RESEARCH_ENABLED` | ❌ | 윤문 규칙 연구 주간 실행. `true` 일 때만 자동 수집·제안을 실행하며 기본 OFF |
+| `HUMANIZE_RULE_PR_ENABLED` | ❌ | `true` 일 때 윤문 규칙 제안의 PR 승인 카드를 생성하며 기본 OFF |
 | `HUMANIZE_RULES_REPO_PATH` | ❌ | 윤문 규칙 정본 저장소 경로. 기본 `~/.claude/skills/humanize-korean` |
 | `SUBCONSCIOUS_GATE_MODE` | ❌ | `legacy`(기존 LLM) · `shadow`(Jev 비교만) · `hybrid`(확신 높은 Jev 우선). 기본 `legacy` |
 | `ROUTER_MEMORY_SHORTCUT_MODE` | ❌ | 라우팅 기억 단축. `off`(기본) · `shadow`(판정만 원장에 기록) · `on`(과거 같은 요청이면 분류 LLM 생략) |

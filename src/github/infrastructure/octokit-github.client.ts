@@ -802,6 +802,7 @@ export class OctokitGithubClient implements GithubClientPort {
     files,
     prTitle,
     prBody,
+    assignees,
   }: PushBranchAndOpenPrInput): Promise<PushBranchAndOpenPrResult> {
     const octokit = this.requireOctokit();
     if (files.length === 0) {
@@ -884,6 +885,23 @@ export class OctokitGithubClient implements GithubClientPort {
         head: branchName,
         base: baseBranch,
       });
+
+      if (assignees && assignees.length > 0) {
+        try {
+          await octokit.rest.issues.addAssignees({
+            owner,
+            repo: repoName,
+            issue_number: pr.data.number,
+            assignees,
+          });
+        } catch (error: unknown) {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          this.logger.warn(
+            `PR #${pr.data.number} assignee 지정 실패: ${message}`,
+          );
+        }
+      }
 
       return {
         prUrl: pr.data.html_url,
