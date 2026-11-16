@@ -287,6 +287,27 @@ describe('ParamTuneRunPrismaRepository', () => {
       expect(await repository.findOpenProbation('SWING')).toBeNull();
     });
 
+    it('findOpenProbation 은 previousValue 가 null 이면 reject', async () => {
+      parameterTuneRun.findFirst.mockResolvedValue({
+        ...row,
+        previousValue: null,
+      });
+
+      await expect(repository.findOpenProbation('SWING')).rejects.toThrow(
+        /id=8.*previousValue/,
+      );
+    });
+
+    it('findWouldApplyUnevaluated 는 candidateValue 가 null 이면 reject', async () => {
+      parameterTuneRun.findMany.mockResolvedValue([
+        { ...row, candidateValue: null },
+      ]);
+
+      await expect(
+        repository.findWouldApplyUnevaluated('SWING'),
+      ).rejects.toThrow(/id=8.*candidateValue/);
+    });
+
     it('findWouldApplyUnevaluated 는 parameterId null, startedOn=createdAt', async () => {
       parameterTuneRun.findMany.mockResolvedValue([row]);
 
