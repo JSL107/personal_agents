@@ -186,15 +186,18 @@ export class ArtJobFeedCronConsumer extends ObservedWorkerHost {
 
     const stats = `수신 ${collected.received} · 파싱 ${collected.listings.length} · 대상 ${targets.length} · 신규 ${fresh.length} · 제외 ${unseen.length - fresh.length}`;
     this.logger.log(`${CRON_NAME} — ${stats} · 게시 ${toPost.length}`);
-    if (toPost.length === 0) {
-      await this.recordNoNew({ target, stats });
-      return { kind: 'NO_NEW' };
-    }
-
     const slotKey =
       trigger === 'MANUAL'
         ? `cron:${ART_JOB_FEED_CRON_QUEUE}:${target}:manual:${job.id}`
         : `cron:${ART_JOB_FEED_CRON_QUEUE}:${target}:${KST_SLOT_FORMAT.format(new Date())}`;
+    if (toPost.length === 0) {
+      // 이미 게시한 슬롯의 재처리는 방금 올린 공고가 장부에 있어 0건으로 보일 뿐 빈 회차가 아니다.
+      const alreadyPosted = await this.cronIdempotency.isDone(slotKey);
+      if (!alreadyPosted) {
+        await this.recordNoNew({ target, stats });
+      }
+      return { kind: 'NO_NEW' };
+    }
     const firstRun = await this.cronIdempotency.acquireOnce(
       slotKey,
       SLOT_GUARD_TTL_SECONDS,

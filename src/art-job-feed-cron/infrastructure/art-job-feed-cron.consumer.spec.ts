@@ -101,6 +101,7 @@ const makeConsumer = ({
     release: jest.fn(async (key: string) => {
       acquired.delete(key);
     }),
+    isDone: jest.fn(async (key: string) => acquired.has(key)),
   };
   const notificationPublisher = {
     publishCronFailure: jest.fn(),
@@ -467,6 +468,20 @@ describe('ArtJobFeedCronConsumer', () => {
     // 실패한 1회 + 재시도 본문 1통 + 스레드 이미지 1통
     expect(slackNotifier.postMessage).toHaveBeenCalledTimes(3);
     expect(repository.markNotified).toHaveBeenCalledTimes(1);
+  });
+
+  // 게시 뒤에는 장부에 올라 0건으로 보인다 — 같은 슬롯 재처리를 빈 회차로 적으면 방금 게시한 회차를 덮는다.
+  it('이미 게시한 슬롯의 재처리는 빈 회차로 기록하지 않는다', async () => {
+    const { consumer, slackNotifier, repository } = makeConsumer({
+      pages: [{ received: 1, listings: [CHARACTER('1')] }],
+    });
+    await consumer.process(JOB as never);
+    repository.findKnownSourceIds.mockResolvedValue(new Set(['1']));
+
+    await expect(consumer.process(JOB as never)).resolves.toEqual({
+      kind: 'NO_NEW',
+    });
+    expect(slackNotifier.recordSuppressedDelivery).not.toHaveBeenCalled();
   });
 
   it('같은 슬롯의 재처리는 발송하지 않는다', async () => {
