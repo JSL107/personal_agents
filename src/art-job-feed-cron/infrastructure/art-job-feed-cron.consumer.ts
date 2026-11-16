@@ -42,6 +42,7 @@ import {
   SLACK_NOTIFIER_PORT,
   SlackNotifierPort,
 } from '../../slack/domain/port/slack-notifier.port';
+import { SLACK_DELIVERY_SUPPRESS_REASON } from '../../slack/domain/slack-delivery.type';
 import {
   ART_JOB_FEED_CRON_QUEUE,
   ArtJobFeedCronJobData,
@@ -183,10 +184,10 @@ export class ArtJobFeedCronConsumer extends ObservedWorkerHost {
       await this.repository.markSeeded(fresh.slice(MAX_POSTINGS_PER_RUN));
     }
 
-    this.logger.log(
-      `${CRON_NAME} — 수신 ${collected.received} · 파싱 ${collected.listings.length} · 대상 ${targets.length} · 신규 ${fresh.length} · 제외 ${unseen.length - fresh.length} · 게시 ${toPost.length}`,
-    );
+    const stats = `수신 ${collected.received} · 파싱 ${collected.listings.length} · 대상 ${targets.length} · 신규 ${fresh.length} · 제외 ${unseen.length - fresh.length}`;
+    this.logger.log(`${CRON_NAME} — ${stats} · 게시 ${toPost.length}`);
     if (toPost.length === 0) {
+      await this.recordNoNew({ target, stats });
       return { kind: 'NO_NEW' };
     }
 
@@ -210,6 +211,29 @@ export class ArtJobFeedCronConsumer extends ObservedWorkerHost {
       // 이미 나간 공고는 장부(markNotified)가 막으므로, 가드를 풀어도 중복 게시는 생기지 않는다.
       await this.cronIdempotency.release(slotKey);
       throw error;
+    }
+  }
+
+  // 빈 회차를 원장에 남기지 않으면 "새 공고가 없었다" 와 "수집이 안 돌았다" 를 가를 수 없다(2026-11-16 —
+  // 11/14 09:00 이후 원장이 비어 이대리가 이유를 답하지 못했다). 기록 실패는 잃는 본문이 없어 회차를 실패로 돌리지 않는다.
+  private async recordNoNew({
+    target,
+    stats,
+  }: {
+    target: string;
+    stats: string;
+  }): Promise<void> {
+    try {
+      await this.slackNotifier.recordSuppressedDelivery({
+        kind: 'art-job-feed',
+        target,
+        text: `새 원화 공고 없음 — ${stats}`,
+        reason: SLACK_DELIVERY_SUPPRESS_REASON.EMPTY,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `${CRON_NAME} 빈 회차 원장 기록 실패: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 

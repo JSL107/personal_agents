@@ -88,12 +88,15 @@ export const summarizeDeliveries = (
 // 종류별 마지막 발송. 최신 N건 목록은 잦은 종류(PR 리뷰 스윕·콘솔 전환)가 한도를 채워 하루 두 번
 // 오는 원화 공고 같은 종류를 밀어낸다(2026-11-05 run 11600 — 24시간 41건 중 최신 10건에 공고 없음).
 // 본문만 세고(스레드 상세 댓글 제외) 묶음 발송은 itemKinds 로 나눈다 — summarizeDeliveries 와 같은 규칙.
+// 보낼 것 없이 끝난 회차(SUPPRESSED/EMPTY)도 마지막 시각을 둔다 — 없으면 "새 공고가 없었다" 와 "수집이
+// 안 돌았다" 를 가를 수 없다.
 export type LatestDeliveryByKind = {
   key: string;
   lastSentAt: Date | null;
   recentSent: number;
   lastConsoleRouteAt: Date | null;
   recentConsoleRoute: number;
+  lastEmptyAt: Date | null;
 };
 
 export const summarizeLatestDeliveries = ({
@@ -108,7 +111,9 @@ export const summarizeLatestDeliveries = ({
     const isSent = row.status === 'SENT';
     const isConsoleRoute =
       row.status === 'SUPPRESSED' && row.suppressReason === 'CONSOLE_ROUTE';
-    const isCounted = isSent || isConsoleRoute;
+    const isEmpty =
+      row.status === 'SUPPRESSED' && row.suppressReason === 'EMPTY';
+    const isCounted = isSent || isConsoleRoute || isEmpty;
     if (row.threadTs || !isCounted) {
       continue;
     }
@@ -121,6 +126,7 @@ export const summarizeLatestDeliveries = ({
         recentSent: 0,
         lastConsoleRouteAt: null,
         recentConsoleRoute: 0,
+        lastEmptyAt: null,
       };
       groups.set(key, group);
       if (isSent) {
@@ -129,6 +135,11 @@ export const summarizeLatestDeliveries = ({
           candidate: row.createdAt,
         });
         group.recentSent += isRecent ? 1 : 0;
+      } else if (isEmpty) {
+        group.lastEmptyAt = laterOf({
+          current: group.lastEmptyAt,
+          candidate: row.createdAt,
+        });
       } else {
         group.lastConsoleRouteAt = laterOf({
           current: group.lastConsoleRouteAt,
@@ -173,6 +184,7 @@ const lastActivityMs = (group: LatestDeliveryByKind): number =>
   Math.max(
     group.lastSentAt?.getTime() ?? 0,
     group.lastConsoleRouteAt?.getTime() ?? 0,
+    group.lastEmptyAt?.getTime() ?? 0,
   );
 
 const clampInteger = (

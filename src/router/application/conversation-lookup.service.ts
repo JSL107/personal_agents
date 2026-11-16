@@ -165,7 +165,10 @@ export class ConversationLookupService {
       const consoleRoute = group.lastConsoleRouteAt
         ? ` · 콘솔로 돌림 ${LATEST_DELIVERY_RECENT_DAYS}일 ${group.recentConsoleRoute}회(마지막 ${formatKstDateTime(group.lastConsoleRouteAt)} KST)`
         : '';
-      return `${group.key} · ${sent}${consoleRoute}`;
+      const empty = group.lastEmptyAt
+        ? ` · 보낼 것 없이 끝난 마지막 회차 ${formatKstDateTime(group.lastEmptyAt)} KST`
+        : '';
+      return `${group.key} · ${sent}${consoleRoute}${empty}`;
     });
     const text = lines.join('\n');
     return wrapUntrustedInput(text);
