@@ -286,22 +286,20 @@ describe('RunParamTuneUsecase', () => {
     expect(runPort.commitRollback).not.toHaveBeenCalled();
   });
 
-  it('롤백이 CONFLICT 면 ROLLBACK_SKIPPED 로 확정하고 탐색을 이어 간다', async () => {
+  it('롤백이 CONFLICT 면 확정하지 않고 시험을 연 채 SKIPPED_PROBATION 으로 끝낸다', async () => {
     runPort.findOpenProbation.mockResolvedValue(probation);
     rollbackReplays();
     runPort.commitRollback.mockResolvedValue({
       kind: ActivateNewVersionKind.CONFLICT,
       actual: snapshot,
     });
-    mockedEvaluate.mockReturnValue([]);
-    searchReturns(new Map([['BASE', current]]));
 
     await usecase.execute(input);
 
-    expect(runPort.settleEvaluation).toHaveBeenCalledWith(
-      expect.objectContaining({ runId: 3, evaluation: 'ROLLBACK_SKIPPED' }),
-    );
-    expect(mockedRunRobustSearch).toHaveBeenCalledTimes(1);
+    expect(runPort.commitRollback).toHaveBeenCalledTimes(1);
+    expect(runPort.settleEvaluation).not.toHaveBeenCalled();
+    expect(mockedRunRobustSearch).not.toHaveBeenCalled();
+    expect(finishedPatch()).toEqual({ status: 'SKIPPED_PROBATION' });
   });
 
   it('KEEP 판정이면 KEEP 으로 확정하고 이어서 탐색한다', async () => {

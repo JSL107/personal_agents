@@ -73,7 +73,7 @@ export const TUNE_RUNNING_STALE_MS = 5_400_000;
 /** env 미설정 시 모드. 값은 바꾸지 않고 원장만 쌓는 쪽이 안전한 기본이다. */
 export const DEFAULT_PARAM_TUNE_MODE = ParamTuneMode.OBSERVE;
 
-// 아래 네 enum 은 저장하지 않고 프로세스 안에서만 오가는 판정 결과의 갈래다.
+// 아래 다섯 enum 은 저장하지 않고 프로세스 안에서만 오가는 판정 결과의 갈래다.
 export enum AdoptionDecisionKind {
   ADOPT = 'ADOPT',
   NO_CHANGE = 'NO_CHANGE',
@@ -84,6 +84,13 @@ export enum RollbackDecisionKind {
   INCONCLUSIVE = 'INCONCLUSIVE',
   KEEP = 'KEEP',
   ROLLBACK = 'ROLLBACK',
+}
+
+/** 실제 시험 롤백 시도의 결과. RETRY 는 일시 충돌이라 시험을 연 채 다음 회차에 다시 본다. */
+export enum RollbackAttempt {
+  APPLIED = 'APPLIED',
+  TARGET_CHANGED = 'TARGET_CHANGED',
+  RETRY = 'RETRY',
 }
 
 export enum ClaimKind {
