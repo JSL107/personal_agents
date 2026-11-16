@@ -1,19 +1,34 @@
 import { StrategyParameterName } from '../../strategy-parameter/domain/strategy-parameter.type';
 
-/** off: 아무것도 안 함 · observe: 판정과 원장만(값 불변) · apply: 채택 시 값 반영. */
-export type ParamTuneMode = 'off' | 'observe' | 'apply';
+/** off: 아무것도 안 함 · observe: 판정과 원장만(값 불변) · apply: 채택 시 값 반영. 값은 env 문자열 그대로다. */
+export enum ParamTuneMode {
+  OFF = 'off',
+  OBSERVE = 'observe',
+  APPLY = 'apply',
+}
 
-export type TuneRunStatus = 'RUNNING' | 'DONE' | 'FAILED' | 'SKIPPED_PROBATION';
+// 아래 세 enum 의 값은 parameter_tune_run 에 문자열로 저장된다. 바꾸면 기존 행을 못 읽는다.
+export enum TuneRunStatus {
+  RUNNING = 'RUNNING',
+  DONE = 'DONE',
+  FAILED = 'FAILED',
+  SKIPPED_PROBATION = 'SKIPPED_PROBATION',
+}
 
-export type TuneDecision = 'APPLIED' | 'WOULD_APPLY' | 'NO_CHANGE';
+export enum TuneDecision {
+  APPLIED = 'APPLIED',
+  WOULD_APPLY = 'WOULD_APPLY',
+  NO_CHANGE = 'NO_CHANGE',
+}
 
-export type TuneEvaluation =
-  | 'KEEP'
-  | 'ROLLBACK'
-  | 'ROLLBACK_SKIPPED'
-  | 'INCONCLUSIVE'
-  | 'WOULD_KEEP'
-  | 'WOULD_ROLLBACK';
+export enum TuneEvaluation {
+  KEEP = 'KEEP',
+  ROLLBACK = 'ROLLBACK',
+  ROLLBACK_SKIPPED = 'ROLLBACK_SKIPPED',
+  INCONCLUSIVE = 'INCONCLUSIVE',
+  WOULD_KEEP = 'WOULD_KEEP',
+  WOULD_ROLLBACK = 'WOULD_ROLLBACK',
+}
 
 export interface ParameterSnapshotEntry {
   name: StrategyParameterName;
@@ -56,4 +71,4 @@ export const TUNE_CHILD_TIMEOUT_MS = 3_600_000;
 export const TUNE_RUNNING_STALE_MS = 5_400_000;
 
 /** env 미설정 시 모드. 값은 바꾸지 않고 원장만 쌓는 쪽이 안전한 기본이다. */
-export const DEFAULT_PARAM_TUNE_MODE: ParamTuneMode = 'observe';
+export const DEFAULT_PARAM_TUNE_MODE = ParamTuneMode.OBSERVE;

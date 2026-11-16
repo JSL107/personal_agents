@@ -22,6 +22,25 @@ export interface ParamTuneChildRunInput {
   timeoutMs: number;
 }
 
+export interface RepoRootSearch {
+  startDir: string;
+  exists: (path: string) => boolean;
+}
+
+interface UpwardSearch {
+  dir: string;
+  exists: (path: string) => boolean;
+  levelsLeft: number;
+}
+
+type OpenedLog = { kind: 'OPENED'; fd: number } | ChildOutcome;
+
+interface ChildState {
+  settled: boolean;
+  timedOut: boolean;
+  killTimer: NodeJS.Timeout | undefined;
+}
+
 const ENTRY_SCRIPT = join('scripts', 'parameter-tune.ts');
 const MAX_LEVELS_UP = 6;
 const KILL_GRACE_MS = 10_000;
@@ -31,25 +50,25 @@ const TAIL_LINES = 20;
  * 컴파일본은 `dist/src/...`, ts-node·jest 는 `src/...` 에서 돌아 `__dirname` 깊이가 다르다.
  * 깊이를 박지 않고 위로 걸어 올라가 진입 스크립트가 있는 첫 디렉터리를 레포 루트로 본다.
  */
-export const findRepoRoot = (
-  startDir: string,
-  exists: (path: string) => boolean,
-): string | null => {
-  let current = startDir;
-  for (let level = 0; level <= MAX_LEVELS_UP; level += 1) {
-    if (
-      exists(join(current, 'package.json')) &&
-      exists(join(current, ENTRY_SCRIPT))
-    ) {
-      return current;
-    }
-    const parent = dirname(current);
-    if (parent === current) {
-      return null;
-    }
-    current = parent;
+export const findRepoRoot = ({
+  startDir,
+  exists,
+}: RepoRootSearch): string | null =>
+  findUpward({ dir: startDir, exists, levelsLeft: MAX_LEVELS_UP });
+
+const findUpward = ({
+  dir,
+  exists,
+  levelsLeft,
+}: UpwardSearch): string | null => {
+  if (exists(join(dir, 'package.json')) && exists(join(dir, ENTRY_SCRIPT))) {
+    return dir;
   }
-  return null;
+  const parent = dirname(dir);
+  if (parent === dir || levelsLeft === 0) {
+    return null;
+  }
+  return findUpward({ dir: parent, exists, levelsLeft: levelsLeft - 1 });
 };
 
 const logger = new Logger('ParamTuneChildLauncher');
@@ -59,7 +78,8 @@ const readTail = (logPath: string): string => {
     const lines = readFileSync(logPath, 'utf-8')
       .split('\n')
       .filter((line) => line.trim() !== '');
-    return lines.slice(-TAIL_LINES).join('\n');
+    const tail = lines.slice(-TAIL_LINES);
+    return tail.join('\n');
   } catch (error) {
     // 로그가 아직 없거나 못 읽으면 꼬리 없이 실패 사유만 남긴다.
     logger.warn(`자식 로그 꼬리를 읽지 못했다 (${logPath}): ${String(error)}`);
@@ -67,10 +87,20 @@ const readTail = (logPath: string): string => {
   }
 };
 
+const openLog = (logPath: string): OpenedLog => {
+  try {
+    mkdirSync(dirname(logPath), { recursive: true });
+    return { kind: 'OPENED', fd: openSync(logPath, 'a') };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { kind: 'SPAWN_FAILED', message };
+  }
+};
+
 @Injectable()
 export class ParamTuneChildLauncher {
   async run(input: ParamTuneChildRunInput): Promise<ChildOutcome> {
-    const root = findRepoRoot(__dirname, existsSync);
+    const root = findRepoRoot({ startDir: __dirname, exists: existsSync });
     if (root === null) {
       return {
         kind: 'SPAWN_FAILED',
@@ -79,29 +109,27 @@ export class ParamTuneChildLauncher {
     }
 
     const logPath = resolvePath(root, input.logPath);
-    let fd: number;
-    try {
-      mkdirSync(dirname(logPath), { recursive: true });
-      fd = openSync(logPath, 'a');
-    } catch (error) {
-      return {
-        kind: 'SPAWN_FAILED',
-        message: error instanceof Error ? error.message : String(error),
-      };
+    const opened = openLog(logPath);
+    if (opened.kind !== 'OPENED') {
+      return opened;
     }
+    const { fd } = opened;
 
     return new Promise<ChildOutcome>((resolve) => {
-      let settled = false;
-      let timedOut = false;
-      let killTimer: NodeJS.Timeout | undefined;
+      // 콜백들이 함께 고치는 상태라 한 객체에 둔다.
+      const state: ChildState = {
+        settled: false,
+        timedOut: false,
+        killTimer: undefined,
+      };
 
       const finish = (build: () => ChildOutcome): void => {
-        if (settled) {
+        if (state.settled) {
           return;
         }
-        settled = true;
+        state.settled = true;
         clearTimeout(timeoutTimer);
-        clearTimeout(killTimer);
+        clearTimeout(state.killTimer);
         closeSync(fd);
         resolve(build());
       };
@@ -117,7 +145,7 @@ export class ParamTuneChildLauncher {
       );
       child.on('exit', (code) =>
         finish(() =>
-          timedOut
+          state.timedOut
             ? { kind: 'TIMEOUT', tail: readTail(logPath) }
             : {
                 kind: 'EXITED',
@@ -128,9 +156,9 @@ export class ParamTuneChildLauncher {
       );
 
       const timeoutTimer = setTimeout(() => {
-        timedOut = true;
+        state.timedOut = true;
         child.kill('SIGTERM');
-        killTimer = setTimeout(() => {
+        state.killTimer = setTimeout(() => {
           child.kill('SIGKILL');
         }, KILL_GRACE_MS);
       }, input.timeoutMs);

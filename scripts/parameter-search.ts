@@ -158,9 +158,10 @@ const main = async (): Promise<void> => {
     );
 
     const startedAt = Date.now();
-    let windowStartedAt = Date.now();
-    const outputs = await runRobustSearch(
-      {
+    // 창마다 다시 재는 시계 — 콜백이 갱신한다.
+    const windowClock = { startedAt: Date.now() };
+    const outputs = await runRobustSearch({
+      input: {
         windows,
         slippagePercents: options.slippagePercents,
         strategies: options.strategies.flatMap((strategy) => {
@@ -179,16 +180,16 @@ const main = async (): Promise<void> => {
         }),
       },
       replay,
-      (window) => {
+      onWindowDone: (window) => {
         console.error(
           `  창${window.index} ${window.from}~${window.to} 완료 ` +
-            `(${((Date.now() - windowStartedAt) / 1000).toFixed(1)}초 · ` +
+            `(${((Date.now() - windowClock.startedAt) / 1000).toFixed(1)}초 · ` +
             `누적 ${((Date.now() - startedAt) / 60000).toFixed(1)}분 · ` +
             `힙 ${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(0)}MB)`,
         );
-        windowStartedAt = Date.now();
+        windowClock.startedAt = Date.now();
       },
-    );
+    });
 
     const reports = plans.map((plan) => {
       const output = outputs.get(plan.strategy);

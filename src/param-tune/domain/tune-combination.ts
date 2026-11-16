@@ -6,10 +6,18 @@ import {
 import { StrategyParameterName } from '../../strategy-parameter/domain/strategy-parameter.type';
 import { ParameterSnapshot } from './param-tune.type';
 
-const valueOf = (
-  snapshot: ParameterSnapshot,
-  name: StrategyParameterName,
-): number => {
+interface SnapshotName {
+  snapshot: ParameterSnapshot;
+  name: StrategyParameterName;
+}
+
+export interface AxisValueChange {
+  combination: ParameterCombination;
+  axis: StrategyParameterName;
+  value: number;
+}
+
+const valueOf = ({ snapshot, name }: SnapshotName): number => {
   const found = snapshot.find((entry) => entry.name === name);
   if (found === undefined) {
     throw new Error(`스냅샷에 ${name} 이 없다`);
@@ -21,19 +29,19 @@ const valueOf = (
 export const combinationFromSnapshot = (
   snapshot: ParameterSnapshot,
 ): ParameterCombination => ({
-  takeProfitPercent: valueOf(snapshot, 'EXIT_TAKE_PROFIT_PERCENT'),
-  stopLossPercent: valueOf(snapshot, 'EXIT_STOP_LOSS_PERCENT'),
-  minimumTurnover60: valueOf(snapshot, 'MINIMUM_TURNOVER60'),
-  maximumWeightPercent: valueOf(snapshot, 'MAXIMUM_WEIGHT_PERCENT'),
+  takeProfitPercent: valueOf({ snapshot, name: 'EXIT_TAKE_PROFIT_PERCENT' }),
+  stopLossPercent: valueOf({ snapshot, name: 'EXIT_STOP_LOSS_PERCENT' }),
+  minimumTurnover60: valueOf({ snapshot, name: 'MINIMUM_TURNOVER60' }),
+  maximumWeightPercent: valueOf({ snapshot, name: 'MAXIMUM_WEIGHT_PERCENT' }),
   volumeSurgeMinimum: SWING_VOLUME_SURGE_MINIMUM,
   rankingWeights: DEFAULT_RANKING_WEIGHTS,
 });
 
-export const withAxisValue = (
-  combination: ParameterCombination,
-  axis: StrategyParameterName,
-  value: number,
-): ParameterCombination => {
+export const withAxisValue = ({
+  combination,
+  axis,
+  value,
+}: AxisValueChange): ParameterCombination => {
   switch (axis) {
     case 'EXIT_TAKE_PROFIT_PERCENT':
       return { ...combination, takeProfitPercent: value };

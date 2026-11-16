@@ -129,7 +129,8 @@ export class ParamTuneAutopilotTask implements AutopilotTask {
       skip: false,
       summaryText: formatParamTuneReport(rows),
       // 발송이 실패하면 호출되지 않아 다음 회차에 같은 행이 다시 후보가 된다.
-      onDelivered: async () => this.runPort.markNotified(ids, new Date()),
+      onDelivered: async () =>
+        this.runPort.markNotified({ ids, at: new Date() }),
     };
   }
 }

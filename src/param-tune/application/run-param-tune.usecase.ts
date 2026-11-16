@@ -33,6 +33,8 @@ import {
   TUNE_SEARCH_FROM,
   TUNE_SLIPPAGE_PERCENTS,
   TUNE_WINDOW_MONTHS,
+  TuneDecision,
+  TuneRunStatus,
 } from '../domain/param-tune.type';
 import {
   PARAM_TUNE_RUN_PORT,
@@ -59,13 +61,32 @@ export interface StoredVerdict {
   chosenLabel: string | null;
 }
 
+interface TuneTarget {
+  input: RunParamTuneInput;
+  snapshot: ParameterSnapshot;
+}
+
+interface AdoptionTarget extends TuneTarget {
+  mode: ParamTuneMode;
+  searched: SearchOutcome;
+  base: TuneRunPatch;
+}
+
+interface FinishTarget {
+  input: RunParamTuneInput;
+  patch: TuneRunPatch;
+}
+
+interface AxisCandidates {
+  axis: StrategyParameterName;
+  own: number;
+}
+
 interface SearchOutcome {
   verdictKey: string;
   verdict: StoredVerdict;
   excluded: number[];
 }
-
-const MODES: readonly ParamTuneMode[] = ['off', 'observe', 'apply'];
 
 const isStoredVerdict = (value: unknown): value is StoredVerdict =>
   typeof value === 'object' &&
@@ -123,32 +144,50 @@ export class RunParamTuneUsecase {
       agentRunId: input.agentRunId,
     });
     if (probation.rolledBack) {
-      await this.finish(input, {
-        status: 'DONE',
-        decisionReason: '롤백한 주라 탐색하지 않음',
+      await this.finish({
+        input,
+        patch: {
+          status: TuneRunStatus.DONE,
+          decisionReason: '롤백한 주라 탐색하지 않음',
+        },
       });
       return;
     }
     if (probation.realProbationOpen) {
-      await this.finish(input, { status: 'SKIPPED_PROBATION' });
+      await this.finish({
+        input,
+        patch: { status: TuneRunStatus.SKIPPED_PROBATION },
+      });
       return;
     }
-    if (mode === 'off') {
-      await this.finish(input, { status: 'DONE', decisionReason: 'off' });
+    if (mode === ParamTuneMode.OFF) {
+      await this.finish({
+        input,
+        patch: { status: TuneRunStatus.DONE, decisionReason: 'off' },
+      });
       return;
     }
 
-    const stored = await this.searchOrReuse(input, snapshot);
+    const stored = await this.searchOrReuse({ input, snapshot });
     const base: TuneRunPatch = {
-      status: 'DONE',
+      status: TuneRunStatus.DONE,
       parameterSnapshot: snapshot,
       verdictKey: stored.verdictKey,
       verdict: stored.verdict,
     };
-    const patch = await this.adopt(input, snapshot, mode, stored, base);
+    const patch = await this.adopt({
+      input,
+      snapshot,
+      mode,
+      searched: stored,
+      base,
+    });
     // null 이면 commitAdoption 이 값과 회차를 한 트랜잭션으로 이미 기록했다.
     if (patch !== null) {
-      await this.finish(input, { ...base, ...patch });
+      await this.finish({
+        input,
+        patch: { ...base, ...patch },
+      });
     }
   }
 
@@ -156,17 +195,19 @@ export class RunParamTuneUsecase {
     const raw =
       this.configService.get<string>('PARAM_AUTO_TUNE_MODE') ??
       DEFAULT_PARAM_TUNE_MODE;
-    const mode = MODES.find((candidate) => candidate === raw);
+    const mode = Object.values(ParamTuneMode).find(
+      (candidate) => candidate === raw,
+    );
     if (mode === undefined) {
       throw new Error(`알 수 없는 PARAM_AUTO_TUNE_MODE: ${raw}`);
     }
     return mode;
   }
 
-  private async searchOrReuse(
-    input: RunParamTuneInput,
-    snapshot: ParameterSnapshot,
-  ): Promise<SearchOutcome> {
+  private async searchOrReuse({
+    input,
+    snapshot,
+  }: TuneTarget): Promise<SearchOutcome> {
     const excluded = await this.runPort.findExcludedValues({
       strategy: input.strategy,
       axis: input.axis,
@@ -194,22 +235,25 @@ export class RunParamTuneUsecase {
     const candidates = TUNE_GRID[input.axis].filter(
       (value) => !excluded.includes(value),
     );
-    const only = (axis: StrategyParameterName, own: number): number[] =>
+    const only = ({ axis, own }: AxisCandidates): number[] =>
       axis === input.axis ? candidates : [own];
     const combinations = buildParameterGrid({
-      takeProfitPercents: only(
-        'EXIT_TAKE_PROFIT_PERCENT',
-        current.takeProfitPercent as number,
-      ),
-      stopLossPercents: only(
-        'EXIT_STOP_LOSS_PERCENT',
-        current.stopLossPercent as number,
-      ),
-      minimumTurnover60s: only('MINIMUM_TURNOVER60', current.minimumTurnover60),
-      maximumWeightPercents: only(
-        'MAXIMUM_WEIGHT_PERCENT',
-        current.maximumWeightPercent,
-      ),
+      takeProfitPercents: only({
+        axis: 'EXIT_TAKE_PROFIT_PERCENT',
+        own: current.takeProfitPercent as number,
+      }),
+      stopLossPercents: only({
+        axis: 'EXIT_STOP_LOSS_PERCENT',
+        own: current.stopLossPercent as number,
+      }),
+      minimumTurnover60s: only({
+        axis: 'MINIMUM_TURNOVER60',
+        own: current.minimumTurnover60,
+      }),
+      maximumWeightPercents: only({
+        axis: 'MAXIMUM_WEIGHT_PERCENT',
+        own: current.maximumWeightPercent,
+      }),
       volumeSurgeMinimums: [SWING_VOLUME_SURGE_MINIMUM],
       rankingWeights: [DEFAULT_RANKING_WEIGHTS],
       includeBandless: false,
@@ -222,16 +266,16 @@ export class RunParamTuneUsecase {
       stepMonths: TUNE_WINDOW_MONTHS,
     });
 
-    const searched = await runRobustSearch(
-      {
+    const searched = await runRobustSearch({
+      input: {
         windows,
         slippagePercents: [...TUNE_SLIPPAGE_PERCENTS],
         strategies: [
           { strategy: input.strategy, baseline: current, combinations },
         ],
       },
-      this.replay,
-    );
+      replay: this.replay,
+    });
     const output = searched.get(input.strategy);
     if (output === undefined) {
       throw new Error(`탐색 결과에 ${input.strategy} 가 없다`);
@@ -253,13 +297,13 @@ export class RunParamTuneUsecase {
     };
   }
 
-  private async adopt(
-    input: RunParamTuneInput,
-    snapshot: ParameterSnapshot,
-    mode: ParamTuneMode,
-    searched: SearchOutcome,
-    base: TuneRunPatch,
-  ): Promise<TuneRunPatch | null> {
+  private async adopt({
+    input,
+    snapshot,
+    mode,
+    searched,
+    base,
+  }: AdoptionTarget): Promise<TuneRunPatch | null> {
     const stored = searched.verdict;
     const currentEntry = snapshot.find((entry) => entry.name === input.axis);
     if (currentEntry === undefined) {
@@ -275,7 +319,7 @@ export class RunParamTuneUsecase {
     });
     return await match(decision)
       .with({ kind: 'NO_CHANGE' }, (noChange) => ({
-        decision: 'NO_CHANGE' as const,
+        decision: TuneDecision.NO_CHANGE,
         decisionReason: noChange.reason,
       }))
       .with({ kind: 'ADOPT' }, async (adopt) => {
@@ -286,11 +330,11 @@ export class RunParamTuneUsecase {
         // 한 칸 제한이 격자에서 뺀 값을 다시 고르면 제외 기간이 무력해진다.
         if (searched.excluded.includes(adopt.value)) {
           return {
-            decision: 'NO_CHANGE' as const,
+            decision: TuneDecision.NO_CHANGE,
             decisionReason: `제외된 값(${adopt.value})으로 한 칸 제한됨`,
           };
         }
-        if (mode !== 'apply') {
+        if (mode !== ParamTuneMode.APPLY) {
           // 판정이 반년 재사용되므로 같은 값의 가상 시험을 주마다 쌓지 않는다.
           const open = (
             await this.runPort.findWouldApplyUnevaluated(input.strategy)
@@ -300,12 +344,12 @@ export class RunParamTuneUsecase {
           );
           if (open !== undefined) {
             return {
-              decision: 'NO_CHANGE' as const,
+              decision: TuneDecision.NO_CHANGE,
               decisionReason: `같은 값 가상 시험 중 (run #${open.runId})`,
             };
           }
           return {
-            decision: 'WOULD_APPLY' as const,
+            decision: TuneDecision.WOULD_APPLY,
             decisionReason: adopt.reason,
             ...proposal,
           };
@@ -324,7 +368,7 @@ export class RunParamTuneUsecase {
           },
           patch: {
             ...base,
-            decision: 'APPLIED',
+            decision: TuneDecision.APPLIED,
             decisionReason: adopt.reason,
             ...proposal,
             previousParameterId: currentEntry.parameterId,
@@ -332,7 +376,7 @@ export class RunParamTuneUsecase {
         });
         if (result.kind === 'CONFLICT') {
           return {
-            decision: 'NO_CHANGE' as const,
+            decision: TuneDecision.NO_CHANGE,
             decisionReason: '활성값 변경 감지',
           };
         }
@@ -341,10 +385,7 @@ export class RunParamTuneUsecase {
       .exhaustive();
   }
 
-  private async finish(
-    input: RunParamTuneInput,
-    patch: TuneRunPatch,
-  ): Promise<void> {
+  private async finish({ input, patch }: FinishTarget): Promise<void> {
     const written = await this.runPort.finish({
       runId: input.runId,
       attemptToken: input.attemptToken,

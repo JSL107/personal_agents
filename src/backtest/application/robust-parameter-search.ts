@@ -1,4 +1,7 @@
-import { DEFAULT_MAXIMUM_DAILY_GAIN_PERCENT } from '../../screener/domain/screener-rule';
+import {
+  DEFAULT_MAXIMUM_DAILY_GAIN_PERCENT,
+  ScreenStrategy,
+} from '../../screener/domain/screener-rule';
 import {
   ConditionOutcomes,
   formatCombinationLabel,
@@ -18,10 +21,8 @@ import {
   ReplayWindowCache,
 } from './replay-backtest.usecase';
 
-type SearchStrategy = 'LONG_TERM' | 'SWING';
-
-export interface RobustSearchStrategyInput {
-  strategy: SearchStrategy;
+export interface RobustScreenStrategyInput {
+  strategy: ScreenStrategy;
   baseline: ParameterCombination;
   combinations: ParameterCombination[];
 }
@@ -29,7 +30,7 @@ export interface RobustSearchStrategyInput {
 export interface RobustSearchInput {
   windows: SearchWindow[];
   slippagePercents: number[];
-  strategies: RobustSearchStrategyInput[];
+  strategies: RobustScreenStrategyInput[];
 }
 
 export interface RobustSearchOutputForStrategy {
@@ -42,11 +43,23 @@ export interface RobustSearchOutputForStrategy {
 }
 
 export interface ReplayParametersInput {
-  strategy: SearchStrategy;
+  strategy: ScreenStrategy;
   from: string;
   to: string;
   combination: ParameterCombination;
   slippagePercent: number;
+}
+
+export interface ReplayParametersRequest {
+  input: ReplayParametersInput;
+  replay: ReplayBacktestUsecase;
+  cache?: ReplayWindowCache;
+}
+
+export interface RunRobustSearchRequest {
+  input: RobustSearchInput;
+  replay: ReplayBacktestUsecase;
+  onWindowDone?: (window: SearchWindow) => void;
 }
 
 export const slippageLabelOf = (value: number): string =>
@@ -74,11 +87,11 @@ const benchmarkReturnPercentOf = (
 /**
  * 파라미터 한 벌의 재생 1회. 고정 인자는 탐색 축이 아니라 운영 규칙이라 여기 한 곳에 둔다.
  */
-export const replayParameters = (
-  input: ReplayParametersInput,
-  replay: ReplayBacktestUsecase,
-  cache?: ReplayWindowCache,
-): Promise<ReplayBacktestResult> => {
+export const replayParameters = ({
+  input,
+  replay,
+  cache,
+}: ReplayParametersRequest): Promise<ReplayBacktestResult> => {
   const { strategy, combination } = input;
   return replay.execute(
     {
@@ -116,18 +129,20 @@ export const replayParameters = (
  * 전 전략을 전 창 × 전 슬리피지 × 전 조합으로 재생한다. 캐시는 창마다 하나, 그 창의 모든
  * 전략·조합·슬리피지가 나눠 쓰고 창이 끝나면 버린다(들고 있으면 메모리가 창 수만큼 쌓인다).
  */
-export const runRobustSearch = async (
-  input: RobustSearchInput,
-  replay: ReplayBacktestUsecase,
-  onWindowDone?: (window: SearchWindow) => void,
-): Promise<Map<SearchStrategy, RobustSearchOutputForStrategy>> => {
+export const runRobustSearch = async ({
+  input,
+  replay,
+  onWindowDone,
+}: RunRobustSearchRequest): Promise<
+  Map<ScreenStrategy, RobustSearchOutputForStrategy>
+> => {
   interface Accumulator {
     baselineLabel: string;
     combinationByLabel: Map<string, ParameterCombination>;
     outcomesBySlippage: Map<number, WindowOutcome[]>;
     windowSummaries: Map<number, SearchWindowSummary[]>;
   }
-  const accumulators = new Map<SearchStrategy, Accumulator>();
+  const accumulators = new Map<ScreenStrategy, Accumulator>();
   for (const entry of input.strategies) {
     const combinationByLabel = new Map<string, ParameterCombination>();
     for (const combination of entry.combinations) {
@@ -155,8 +170,8 @@ export const runRobustSearch = async (
       const accumulator = accumulators.get(strategy) as Accumulator;
       for (const slippagePercent of input.slippagePercents) {
         for (const [label, combination] of accumulator.combinationByLabel) {
-          const result = await replayParameters(
-            {
+          const result = await replayParameters({
+            input: {
               strategy,
               from: window.from,
               to: window.to,
@@ -165,7 +180,7 @@ export const runRobustSearch = async (
             },
             replay,
             cache,
-          );
+          });
           // 불변식이 깨진 회차는 규칙의 성적이 아니라 버그의 성적이다. 표에 섞으면
           // 그 조합이 순위를 왜곡하므로 즉시 멈춘다.
           if (result.invariantViolations.length > 0) {

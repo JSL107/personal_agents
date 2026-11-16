@@ -164,9 +164,17 @@ describe('decideAdoption', () => {
 describe('axisValueOf', () => {
   it('축별 값을 꺼낸다', () => {
     const combination = combinationOf(-3);
-    expect(axisValueOf(combination, 'EXIT_TAKE_PROFIT_PERCENT')).toBe(10);
-    expect(axisValueOf(combination, 'EXIT_STOP_LOSS_PERCENT')).toBe(-3);
-    expect(axisValueOf(combination, 'MINIMUM_TURNOVER60')).toBe(300_000_000);
-    expect(axisValueOf(combination, 'MAXIMUM_WEIGHT_PERCENT')).toBe(20);
+    expect(axisValueOf({ combination, axis: 'EXIT_TAKE_PROFIT_PERCENT' })).toBe(
+      10,
+    );
+    expect(axisValueOf({ combination, axis: 'EXIT_STOP_LOSS_PERCENT' })).toBe(
+      -3,
+    );
+    expect(axisValueOf({ combination, axis: 'MINIMUM_TURNOVER60' })).toBe(
+      300_000_000,
+    );
+    expect(axisValueOf({ combination, axis: 'MAXIMUM_WEIGHT_PERCENT' })).toBe(
+      20,
+    );
   });
 });

@@ -1,3 +1,8 @@
+import {
+  TuneDecision,
+  TuneEvaluation,
+  TuneRunStatus,
+} from '../domain/param-tune.type';
 import { TuneRunRow } from '../domain/port/param-tune-run.port';
 import { formatParamTuneReport } from './param-tune.formatter';
 
@@ -6,7 +11,7 @@ const row = (overrides: Partial<TuneRunRow>): TuneRunRow => ({
   weekStart: new Date('2026-11-16T00:00:00.000Z'),
   strategy: 'SWING',
   axis: 'EXIT_STOP_LOSS_PERCENT',
-  status: 'DONE',
+  status: TuneRunStatus.DONE,
   attemptToken: 't',
   startedAt: new Date('2026-11-21T17:00:00.000Z'),
   failureReason: null,
@@ -31,24 +36,28 @@ const row = (overrides: Partial<TuneRunRow>): TuneRunRow => ({
 describe('formatParamTuneReport', () => {
   it('적용·롤백·실패·변화 없음을 한 줄씩 낸다', () => {
     const text = formatParamTuneReport([
-      row({ decision: 'APPLIED', previousValue: -5, candidateValue: -7 }),
+      row({
+        decision: TuneDecision.APPLIED,
+        previousValue: -5,
+        candidateValue: -7,
+      }),
       row({
         id: 2,
         strategy: 'LONG_TERM',
         axis: 'MINIMUM_TURNOVER60',
-        evaluation: 'ROLLBACK',
+        evaluation: TuneEvaluation.ROLLBACK,
         previousValue: 300_000_000,
         candidateValue: 500_000_000,
       }),
       row({
         id: 3,
         strategy: 'LONG_TERM',
-        status: 'FAILED',
+        status: TuneRunStatus.FAILED,
         failureReason: 'a<b & c\n두번째 줄',
       }),
       row({
         id: 4,
-        decision: 'NO_CHANGE',
+        decision: TuneDecision.NO_CHANGE,
         decisionReason: '후보가 기준을 넘지 못함',
         axis: 'MAXIMUM_WEIGHT_PERCENT',
       }),
@@ -69,11 +78,11 @@ describe('formatParamTuneReport', () => {
     const text = formatParamTuneReport([
       row({
         weekStart: new Date('2026-11-09T00:00:00.000Z'),
-        evaluation: 'ROLLBACK_SKIPPED',
+        evaluation: TuneEvaluation.ROLLBACK_SKIPPED,
       }),
       row({
         id: 2,
-        decision: 'WOULD_APPLY',
+        decision: TuneDecision.WOULD_APPLY,
         previousValue: 5,
         candidateValue: 10,
       }),
@@ -87,30 +96,30 @@ describe('formatParamTuneReport', () => {
 
   it('평가가 있는 행은 결정이 아니라 평가를 보여준다', () => {
     const applied = {
-      decision: 'APPLIED' as const,
+      decision: TuneDecision.APPLIED,
       previousValue: -5,
       candidateValue: -7,
     };
     const lines = formatParamTuneReport([
-      row({ ...applied, evaluation: 'KEEP' }),
+      row({ ...applied, evaluation: TuneEvaluation.KEEP }),
       row({
         ...applied,
-        evaluation: 'INCONCLUSIVE',
+        evaluation: TuneEvaluation.INCONCLUSIVE,
         evaluationDetail: {
           decision: { kind: 'INCONCLUSIVE', reason: '표본 부족', final: true },
         },
       }),
       row({
-        decision: 'WOULD_APPLY',
+        decision: TuneDecision.WOULD_APPLY,
         previousValue: 5,
         candidateValue: 10,
-        evaluation: 'WOULD_KEEP',
+        evaluation: TuneEvaluation.WOULD_KEEP,
       }),
       row({
-        decision: 'WOULD_APPLY',
+        decision: TuneDecision.WOULD_APPLY,
         previousValue: 5,
         candidateValue: 10,
-        evaluation: 'WOULD_ROLLBACK',
+        evaluation: TuneEvaluation.WOULD_ROLLBACK,
       }),
     ]).split('\n');
 
@@ -125,10 +134,10 @@ describe('formatParamTuneReport', () => {
 
   it('시험 중 건너뜀과 탐색하지 않은 회차를 한국어로 쓴다', () => {
     const lines = formatParamTuneReport([
-      row({ status: 'SKIPPED_PROBATION' }),
+      row({ status: TuneRunStatus.SKIPPED_PROBATION }),
       row({ decisionReason: 'off' }),
       row({ decisionReason: '롤백한 주라 탐색하지 않음' }),
-      row({ evaluation: 'INCONCLUSIVE', evaluationDetail: null }),
+      row({ evaluation: TuneEvaluation.INCONCLUSIVE, evaluationDetail: null }),
     ]).split('\n');
 
     expect(lines.slice(1)).toEqual([

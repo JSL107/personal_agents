@@ -45,6 +45,27 @@ export interface EvaluateProbationOutcome {
   realProbationOpen: boolean;
 }
 
+interface ProbationTarget {
+  probation: OpenProbation;
+  input: EvaluateProbationInput;
+}
+
+interface RollbackTarget extends ProbationTarget {
+  detail: unknown;
+}
+
+interface Settlement {
+  probation: OpenProbation;
+  evaluation: TuneEvaluation;
+  detail: unknown;
+}
+
+interface RealProbationResult {
+  /** 실제 시험이 없거나 이번에 확정됐다. */
+  settled: boolean;
+  rolledBack: boolean;
+}
+
 interface Judgement {
   decision: RollbackDecision;
   detail: unknown;
@@ -64,73 +85,97 @@ export class EvaluateProbationService {
   async evaluate(
     input: EvaluateProbationInput,
   ): Promise<EvaluateProbationOutcome> {
-    const real = await this.runPort.findOpenProbation(input.strategy);
-    let rolledBack = false;
-    let realProbationOpen = false;
-    if (real !== null) {
-      const result = await this.evaluateReal(real, input);
-      rolledBack = result.rolledBack;
-      realProbationOpen = !result.settled;
-    }
+    const real = await this.evaluateOpenReal(input);
 
     // 가상 시험은 값을 바꾸지 않고 기록만 하며 회차를 막지 않는다.
     const virtuals = await this.runPort.findWouldApplyUnevaluated(
       input.strategy,
     );
     for (const virtual of virtuals) {
-      await this.evaluateVirtual(virtual, input);
+      await this.evaluateVirtual({ probation: virtual, input });
     }
-    return { rolledBack, realProbationOpen };
+    return { rolledBack: real.rolledBack, realProbationOpen: !real.settled };
+  }
+
+  private async evaluateOpenReal(
+    input: EvaluateProbationInput,
+  ): Promise<RealProbationResult> {
+    const probation = await this.runPort.findOpenProbation(input.strategy);
+    if (probation === null) {
+      return { settled: true, rolledBack: false };
+    }
+    return await this.evaluateReal({ probation, input });
   }
 
   private async evaluateReal(
-    probation: OpenProbation,
-    input: EvaluateProbationInput,
-  ): Promise<{ settled: boolean; rolledBack: boolean }> {
-    const { decision, detail } = await this.judge(probation, input);
+    target: ProbationTarget,
+  ): Promise<RealProbationResult> {
+    const { probation } = target;
+    const { decision, detail } = await this.judge(target);
     switch (decision.kind) {
       case 'WAIT':
         return { settled: false, rolledBack: false };
-      case 'INCONCLUSIVE':
-        return {
-          settled: decision.final
-            ? await this.settle(probation, 'INCONCLUSIVE', detail)
-            : false,
-          rolledBack: false,
-        };
-      case 'KEEP':
-        return {
-          settled: await this.settle(probation, 'KEEP', detail),
-          rolledBack: false,
-        };
+      case 'INCONCLUSIVE': {
+        if (!decision.final) {
+          return { settled: false, rolledBack: false };
+        }
+        const settled = await this.settle({
+          probation,
+          evaluation: TuneEvaluation.INCONCLUSIVE,
+          detail,
+        });
+        return { settled, rolledBack: false };
+      }
+      case 'KEEP': {
+        const settled = await this.settle({
+          probation,
+          evaluation: TuneEvaluation.KEEP,
+          detail,
+        });
+        return { settled, rolledBack: false };
+      }
       case 'ROLLBACK': {
-        const rolledBack = await this.rollback(probation, input, detail);
+        const rolledBack = await this.rollback({ ...target, detail });
         if (!rolledBack) {
-          await this.settle(probation, 'ROLLBACK_SKIPPED', detail);
+          await this.settle({
+            probation,
+            evaluation: TuneEvaluation.ROLLBACK_SKIPPED,
+            detail,
+          });
         }
         return { settled: true, rolledBack };
       }
     }
   }
 
-  private async evaluateVirtual(
-    probation: OpenProbation,
-    input: EvaluateProbationInput,
-  ): Promise<void> {
-    const { decision, detail } = await this.judge(probation, input);
+  private async evaluateVirtual(target: ProbationTarget): Promise<void> {
+    const { probation } = target;
+    const { decision, detail } = await this.judge(target);
     switch (decision.kind) {
       case 'WAIT':
         return;
       case 'INCONCLUSIVE':
         if (decision.final) {
-          await this.settle(probation, 'INCONCLUSIVE', detail);
+          await this.settle({
+            probation,
+            evaluation: TuneEvaluation.INCONCLUSIVE,
+            detail,
+          });
         }
         return;
       case 'KEEP':
-        await this.settle(probation, 'WOULD_KEEP', detail);
+        await this.settle({
+          probation,
+          evaluation: TuneEvaluation.WOULD_KEEP,
+          detail,
+        });
         return;
       case 'ROLLBACK':
-        await this.settle(probation, 'WOULD_ROLLBACK', detail);
+        await this.settle({
+          probation,
+          evaluation: TuneEvaluation.WOULD_ROLLBACK,
+          detail,
+        });
         return;
     }
   }
@@ -139,11 +184,11 @@ export class EvaluateProbationService {
    * 롤백을 적용했으면 true — 이때 ROLLBACK 확정도 같은 트랜잭션에서 끝났다.
    * 대상 값이 이미 다른 행으로 바뀌었거나 충돌이면 아무것도 쓰지 않고 false.
    */
-  private async rollback(
-    probation: OpenProbation,
-    input: EvaluateProbationInput,
-    detail: unknown,
-  ): Promise<boolean> {
+  private async rollback({
+    probation,
+    input,
+    detail,
+  }: RollbackTarget): Promise<boolean> {
     const current = input.snapshot.find(
       (entry) => entry.name === probation.axis,
     );
@@ -170,11 +215,11 @@ export class EvaluateProbationService {
     return result.kind === 'ACTIVATED';
   }
 
-  private async settle(
-    probation: OpenProbation,
-    evaluation: TuneEvaluation,
-    detail: unknown,
-  ): Promise<boolean> {
+  private async settle({
+    probation,
+    evaluation,
+    detail,
+  }: Settlement): Promise<boolean> {
     return await this.runPort.settleEvaluation({
       runId: probation.runId,
       evaluation,
@@ -182,10 +227,10 @@ export class EvaluateProbationService {
     });
   }
 
-  private async judge(
-    probation: OpenProbation,
-    input: EvaluateProbationInput,
-  ): Promise<Judgement> {
+  private async judge({
+    probation,
+    input,
+  }: ProbationTarget): Promise<Judgement> {
     const from = getKstDateOf(probation.startedOn);
     const to = input.today;
     const daysSinceApplied = Math.round(
@@ -193,16 +238,16 @@ export class EvaluateProbationService {
         MS_PER_DAY,
     );
     const current = combinationFromSnapshot(input.snapshot);
-    const previous = withAxisValue(
-      current,
-      probation.axis,
-      probation.previousValue,
-    );
-    const applied = withAxisValue(
-      current,
-      probation.axis,
-      probation.candidateValue,
-    );
+    const previous = withAxisValue({
+      combination: current,
+      axis: probation.axis,
+      value: probation.previousValue,
+    });
+    const applied = withAxisValue({
+      combination: current,
+      axis: probation.axis,
+      value: probation.candidateValue,
+    });
     const cache = createReplayWindowCache(
       from,
       to,
@@ -212,16 +257,16 @@ export class EvaluateProbationService {
     const replays: ProbationReplay[] = [];
     for (const slippagePercent of TUNE_SLIPPAGE_PERCENTS) {
       const common = { strategy: input.strategy, from, to, slippagePercent };
-      const appliedResult = await replayParameters(
-        { ...common, combination: applied },
-        this.replay,
+      const appliedResult = await replayParameters({
+        input: { ...common, combination: applied },
+        replay: this.replay,
         cache,
-      );
-      const previousResult = await replayParameters(
-        { ...common, combination: previous },
-        this.replay,
+      });
+      const previousResult = await replayParameters({
+        input: { ...common, combination: previous },
+        replay: this.replay,
         cache,
-      );
+      });
       const score = appliedResult.scores.find(
         (candidate) => candidate.strategy === input.strategy,
       );

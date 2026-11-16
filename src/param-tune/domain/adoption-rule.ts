@@ -19,10 +19,20 @@ export type AdoptionDecision =
 const MINIMUM_DECIDABLE_WINDOWS = 6;
 const MINIMUM_SAME_CHOICE_WINDOWS = 4;
 
-export const axisValueOf = (
-  combination: ParameterCombination,
-  axis: StrategyParameterName,
-): number | null => {
+export interface CombinationAxis {
+  combination: ParameterCombination;
+  axis: StrategyParameterName;
+}
+
+interface GridPosition {
+  grid: readonly number[];
+  value: number;
+}
+
+export const axisValueOf = ({
+  combination,
+  axis,
+}: CombinationAxis): number | null => {
   switch (axis) {
     case 'EXIT_TAKE_PROFIT_PERCENT':
       return combination.takeProfitPercent;
@@ -41,15 +51,12 @@ const noChange = (reason: string): AdoptionDecision => ({
 });
 
 /** 격자에서 값의 위치. 격자 밖이면 가장 가까운 값(동률은 낮은 인덱스). */
-const nearestGridIndex = (grid: readonly number[], value: number): number => {
-  let best = 0;
-  for (let index = 1; index < grid.length; index += 1) {
-    if (Math.abs(grid[index] - value) < Math.abs(grid[best] - value)) {
-      best = index;
-    }
-  }
-  return best;
-};
+const nearestGridIndex = ({ grid, value }: GridPosition): number =>
+  grid.reduce(
+    (best, entry, index) =>
+      Math.abs(entry - value) < Math.abs(grid[best] - value) ? index : best,
+    0,
+  );
 
 const meanExcessGap = (verdicts: RobustWalkForwardVerdict[]): number | null => {
   const gaps = verdicts
@@ -89,7 +96,7 @@ export const decideAdoption = (input: AdoptionInput): AdoptionDecision => {
   if (candidateLabel === undefined || combination === undefined) {
     throw new Error(`후보 조합을 찾지 못했다: ${String(candidateLabel)}`);
   }
-  const candidate = axisValueOf(combination, input.axis);
+  const candidate = axisValueOf({ combination, axis: input.axis });
   // 기준선을 고른 창은 판정 불가라 ② 에서 '선택 불안정' 으로 오보되기 전에 끊는다.
   if (candidate === input.currentValue) {
     return noChange('현행 유지');
@@ -119,8 +126,8 @@ export const decideAdoption = (input: AdoptionInput): AdoptionDecision => {
   }
 
   const grid = TUNE_GRID[input.axis];
-  const candidateIndex = nearestGridIndex(grid, candidate);
-  const currentIndex = nearestGridIndex(grid, input.currentValue);
+  const candidateIndex = nearestGridIndex({ grid, value: candidate });
+  const currentIndex = nearestGridIndex({ grid, value: input.currentValue });
   const summary = `승 ${wins}/${sameChoice.length} · 평균 개선 ${meanGap.toFixed(2)}%p`;
   if (Math.abs(candidateIndex - currentIndex) <= 1) {
     return { kind: 'ADOPT', value: candidate, reason: summary };

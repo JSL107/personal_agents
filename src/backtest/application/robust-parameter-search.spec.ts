@@ -59,9 +59,10 @@ const input = {
 describe('runRobustSearch', () => {
   it('창 × 조합 × 슬리피지만큼 재생하고 조건별 성적을 모은다', async () => {
     const execute = jest.fn().mockResolvedValue(resultOf());
-    const outputs = await runRobustSearch(input, {
-      execute,
-    } as unknown as ReplayBacktestUsecase);
+    const outputs = await runRobustSearch({
+      input,
+      replay: { execute } as unknown as ReplayBacktestUsecase,
+    });
 
     const output = outputs.get('SWING') as RobustSearchOutputForStrategy;
     expect(execute).toHaveBeenCalledTimes(12);
@@ -74,9 +75,10 @@ describe('runRobustSearch', () => {
 
   it('같은 창의 재생은 한 캐시를 나눠 쓴다', async () => {
     const execute = jest.fn().mockResolvedValue(resultOf());
-    await runRobustSearch(input, {
-      execute,
-    } as unknown as ReplayBacktestUsecase);
+    await runRobustSearch({
+      input,
+      replay: { execute } as unknown as ReplayBacktestUsecase,
+    });
 
     const caches = new Set(execute.mock.calls.map(([, cache]) => cache));
     expect(caches.size).toBe(2);
@@ -90,16 +92,17 @@ describe('runRobustSearch', () => {
       .mockResolvedValue(resultOf());
 
     await expect(
-      runRobustSearch(input, {
-        execute,
-      } as unknown as ReplayBacktestUsecase),
+      runRobustSearch({
+        input,
+        replay: { execute } as unknown as ReplayBacktestUsecase,
+      }),
     ).rejects.toThrow('불변식 위반');
   });
 
   it('두 전략이 한 창의 캐시를 함께 쓴다', async () => {
     const execute = jest.fn().mockResolvedValue(resultOf());
-    await runRobustSearch(
-      {
+    await runRobustSearch({
+      input: {
         ...input,
         strategies: [
           ...input.strategies,
@@ -110,8 +113,8 @@ describe('runRobustSearch', () => {
           },
         ],
       },
-      { execute } as unknown as ReplayBacktestUsecase,
-    );
+      replay: { execute } as unknown as ReplayBacktestUsecase,
+    });
 
     // 창 2 × 전략 2 × 조합 3 × 슬리피지 2
     expect(execute).toHaveBeenCalledTimes(24);

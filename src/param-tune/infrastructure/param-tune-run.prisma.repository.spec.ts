@@ -5,7 +5,12 @@ import {
   activateNewVersionWith,
   readParameterSnapshot,
 } from '../../strategy-parameter/infrastructure/strategy-parameter.prisma.repository';
-import { TUNE_EXCLUSION_DAYS } from '../domain/param-tune.type';
+import {
+  TUNE_EXCLUSION_DAYS,
+  TuneDecision,
+  TuneEvaluation,
+  TuneRunStatus,
+} from '../domain/param-tune.type';
 import { ParamTuneRunPrismaRepository } from './param-tune-run.prisma.repository';
 
 jest.mock(
@@ -70,7 +75,10 @@ describe('ParamTuneRunPrismaRepository', () => {
       });
       const data = parameterTuneRun.create.mock.calls[0][0].data;
       expect(data.weekStart).toEqual(new Date('2026-11-16T00:00:00.000Z'));
-      expect(data).toMatchObject({ status: 'RUNNING', startedAt: now });
+      expect(data).toMatchObject({
+        status: TuneRunStatus.RUNNING,
+        startedAt: now,
+      });
     });
 
     it('동시 create 의 P2002 는 재조회해 ALREADY_RUNNING', async () => {
@@ -93,7 +101,7 @@ describe('ParamTuneRunPrismaRepository', () => {
     it('RUNNING 30분 전이면 ALREADY_RUNNING', async () => {
       parameterTuneRun.findUnique.mockResolvedValue({
         id: 3,
-        status: 'RUNNING',
+        status: TuneRunStatus.RUNNING,
         attemptToken: 'old',
         startedAt: new Date(now.getTime() - 30 * MINUTE),
       });
@@ -108,7 +116,7 @@ describe('ParamTuneRunPrismaRepository', () => {
     it('RUNNING 100분 전이면 옛 토큰 조건으로 재선점', async () => {
       parameterTuneRun.findUnique.mockResolvedValue({
         id: 3,
-        status: 'RUNNING',
+        status: TuneRunStatus.RUNNING,
         attemptToken: 'old',
         startedAt: new Date(now.getTime() - 100 * MINUTE),
       });
@@ -121,11 +129,11 @@ describe('ParamTuneRunPrismaRepository', () => {
       expect(call.where).toEqual({
         id: 3,
         attemptToken: 'old',
-        status: 'RUNNING',
+        status: TuneRunStatus.RUNNING,
         startedAt: new Date(now.getTime() - 100 * MINUTE),
       });
       expect(call.data).toMatchObject({
-        status: 'RUNNING',
+        status: TuneRunStatus.RUNNING,
         startedAt: now,
         failureReason: null,
       });
@@ -135,7 +143,7 @@ describe('ParamTuneRunPrismaRepository', () => {
     it('FAILED 면 재선점', async () => {
       parameterTuneRun.findUnique.mockResolvedValue({
         id: 4,
-        status: 'FAILED',
+        status: TuneRunStatus.FAILED,
         attemptToken: 'old',
         startedAt: new Date(now.getTime() - MINUTE),
       });
@@ -150,7 +158,7 @@ describe('ParamTuneRunPrismaRepository', () => {
     it('재선점 update 가 count 0 이면 ALREADY_RUNNING', async () => {
       parameterTuneRun.findUnique.mockResolvedValue({
         id: 4,
-        status: 'FAILED',
+        status: TuneRunStatus.FAILED,
         attemptToken: 'old',
         startedAt: now,
       });
@@ -166,7 +174,7 @@ describe('ParamTuneRunPrismaRepository', () => {
       const startedAt = new Date(now.getTime() - 100 * MINUTE);
       parameterTuneRun.findUnique.mockResolvedValue({
         id: 3,
-        status: 'RUNNING',
+        status: TuneRunStatus.RUNNING,
         attemptToken: 'old',
         startedAt,
       });
@@ -178,7 +186,7 @@ describe('ParamTuneRunPrismaRepository', () => {
         runId: 3,
       });
       expect(parameterTuneRun.updateMany.mock.calls[0][0].where).toMatchObject({
-        status: 'RUNNING',
+        status: TuneRunStatus.RUNNING,
         startedAt,
       });
     });
@@ -208,13 +216,13 @@ describe('ParamTuneRunPrismaRepository', () => {
       const ok = await repository.finish({
         runId: 1,
         attemptToken: 't',
-        patch: { status: 'DONE', candidateValue: 5 },
+        patch: { status: TuneRunStatus.DONE, candidateValue: 5 },
       });
 
       expect(ok).toBe(true);
       expect(parameterTuneRun.updateMany).toHaveBeenCalledWith({
-        where: { id: 1, status: 'RUNNING', attemptToken: 't' },
-        data: { status: 'DONE', candidateValue: 5 },
+        where: { id: 1, status: TuneRunStatus.RUNNING, attemptToken: 't' },
+        data: { status: TuneRunStatus.DONE, candidateValue: 5 },
       });
     });
 
@@ -225,7 +233,7 @@ describe('ParamTuneRunPrismaRepository', () => {
         await repository.finish({
           runId: 1,
           attemptToken: 'stale',
-          patch: { status: 'DONE' },
+          patch: { status: TuneRunStatus.DONE },
         }),
       ).toBe(false);
     });
@@ -241,8 +249,8 @@ describe('ParamTuneRunPrismaRepository', () => {
         }),
       ).toBe(true);
       expect(parameterTuneRun.updateMany).toHaveBeenCalledWith({
-        where: { id: 1, status: 'RUNNING', attemptToken: 't' },
-        data: { status: 'FAILED', failureReason: 'boom' },
+        where: { id: 1, status: TuneRunStatus.RUNNING, attemptToken: 't' },
+        data: { status: TuneRunStatus.FAILED, failureReason: 'boom' },
       });
     });
   });
@@ -266,7 +274,11 @@ describe('ParamTuneRunPrismaRepository', () => {
         runId: 7,
         attemptToken: 't',
         activation,
-        patch: { status: 'DONE', decision: 'APPLIED', candidateValue: 15 },
+        patch: {
+          status: TuneRunStatus.DONE,
+          decision: TuneDecision.APPLIED,
+          candidateValue: 15,
+        },
       });
 
       expect(result).toEqual(activated);
@@ -280,12 +292,12 @@ describe('ParamTuneRunPrismaRepository', () => {
       const call = parameterTuneRun.updateMany.mock.calls[0][0];
       expect(call.where).toEqual({
         id: 7,
-        status: 'RUNNING',
+        status: TuneRunStatus.RUNNING,
         attemptToken: 't',
       });
       expect(call.data).toMatchObject({
-        status: 'DONE',
-        decision: 'APPLIED',
+        status: TuneRunStatus.DONE,
+        decision: TuneDecision.APPLIED,
         candidateValue: 15,
         appliedParameterId: 21,
       });
@@ -301,7 +313,7 @@ describe('ParamTuneRunPrismaRepository', () => {
           runId: 7,
           attemptToken: 'stale',
           activation,
-          patch: { status: 'DONE' },
+          patch: { status: TuneRunStatus.DONE },
         }),
       ).rejects.toThrow(/토큰을 잃어/);
       expect(mockedActivate).toHaveBeenCalledTimes(1);
@@ -316,7 +328,7 @@ describe('ParamTuneRunPrismaRepository', () => {
           runId: 7,
           attemptToken: 't',
           activation,
-          patch: { status: 'DONE' },
+          patch: { status: TuneRunStatus.DONE },
         }),
       ).toEqual(conflict);
       expect(parameterTuneRun.updateMany).not.toHaveBeenCalled();
@@ -356,7 +368,7 @@ describe('ParamTuneRunPrismaRepository', () => {
       const call = parameterTuneRun.updateMany.mock.calls[0][0];
       expect(call.where).toEqual({ id: 3, evaluatedAt: null });
       expect(call.data).toMatchObject({
-        evaluation: 'ROLLBACK',
+        evaluation: TuneEvaluation.ROLLBACK,
         evaluationDetail: { a: 1 },
         notifiedAt: null,
       });
@@ -379,7 +391,7 @@ describe('ParamTuneRunPrismaRepository', () => {
 
       const ok = await repository.settleEvaluation({
         runId: 2,
-        evaluation: 'ROLLBACK',
+        evaluation: TuneEvaluation.ROLLBACK,
         detail: { a: 1 },
       });
 
@@ -387,7 +399,7 @@ describe('ParamTuneRunPrismaRepository', () => {
       const call = parameterTuneRun.updateMany.mock.calls[0][0];
       expect(call.where).toEqual({ id: 2, evaluatedAt: null });
       expect(call.data).toMatchObject({
-        evaluation: 'ROLLBACK',
+        evaluation: TuneEvaluation.ROLLBACK,
         evaluationDetail: { a: 1 },
         notifiedAt: null,
       });
@@ -400,7 +412,7 @@ describe('ParamTuneRunPrismaRepository', () => {
       expect(
         await repository.settleEvaluation({
           runId: 2,
-          evaluation: 'KEEP',
+          evaluation: TuneEvaluation.KEEP,
           detail: {},
         }),
       ).toBe(false);
@@ -420,7 +432,7 @@ describe('ParamTuneRunPrismaRepository', () => {
       expect(parameterTuneRun.findMany.mock.calls[0][0].where).toEqual({
         strategy: 'SWING',
         axis: 'EXIT_TAKE_PROFIT_PERCENT',
-        evaluation: 'ROLLBACK',
+        evaluation: TuneEvaluation.ROLLBACK,
         evaluatedAt: {
           gte: new Date(now.getTime() - TUNE_EXCLUSION_DAYS * DAY),
         },
@@ -453,7 +465,11 @@ describe('ParamTuneRunPrismaRepository', () => {
         startedOn: row.appliedAt,
       });
       expect(parameterTuneRun.findFirst.mock.calls[0][0]).toMatchObject({
-        where: { strategy: 'SWING', decision: 'APPLIED', evaluation: null },
+        where: {
+          strategy: 'SWING',
+          decision: TuneDecision.APPLIED,
+          evaluation: null,
+        },
         orderBy: { id: 'desc' },
       });
     });
@@ -496,7 +512,7 @@ describe('ParamTuneRunPrismaRepository', () => {
       });
       expect(parameterTuneRun.findMany.mock.calls[0][0].where).toEqual({
         strategy: 'SWING',
-        decision: 'WOULD_APPLY',
+        decision: TuneDecision.WOULD_APPLY,
         evaluation: null,
       });
     });
@@ -522,7 +538,7 @@ describe('ParamTuneRunPrismaRepository', () => {
         where: {
           strategy: 'SWING',
           verdictKey: 'k',
-          status: 'DONE',
+          status: TuneRunStatus.DONE,
           verdict: { not: Prisma.DbNull },
         },
         orderBy: { id: 'desc' },
@@ -559,7 +575,7 @@ describe('ParamTuneRunPrismaRepository', () => {
       parameterTuneRun.updateMany.mockResolvedValue({ count: 2 });
       const at = new Date();
 
-      await repository.markNotified([1, 2], at);
+      await repository.markNotified({ ids: [1, 2], at });
 
       expect(parameterTuneRun.updateMany).toHaveBeenCalledWith({
         where: { id: { in: [1, 2] } },
@@ -578,7 +594,10 @@ describe('ParamTuneRunPrismaRepository', () => {
         where: {
           OR: [
             { appliedAt: { gte: since } },
-            { evaluation: 'ROLLBACK', evaluatedAt: { gte: since } },
+            {
+              evaluation: TuneEvaluation.ROLLBACK,
+              evaluatedAt: { gte: since },
+            },
           ],
         },
       });
