@@ -1,4 +1,6 @@
 import {
+  ActivateNewVersionInput,
+  ActivateNewVersionResult,
   StrategyParameterName,
   StrategyParameterStrategy,
 } from '../../../strategy-parameter/domain/strategy-parameter.type';
@@ -74,6 +76,21 @@ export interface CachedVerdict {
   verdict: unknown;
 }
 
+export interface CommitAdoptionInput {
+  runId: number;
+  attemptToken: string;
+  activation: ActivateNewVersionInput;
+  /** 회차를 끝내는 패치 전부. appliedParameterId·appliedAt 은 저장소가 채운다. */
+  patch: TuneRunPatch;
+}
+
+export interface CommitRollbackInput {
+  /** 롤백할 시험 행. */
+  runId: number;
+  activation: ActivateNewVersionInput;
+  detail: unknown;
+}
+
 export interface ParamTuneRunPort {
   /** weekStart 는 'YYYY-MM-DD'. 이 주·전략의 회차를 선점한다. */
   claim(input: {
@@ -112,6 +129,18 @@ export interface ParamTuneRunPort {
     evaluation: TuneEvaluation;
     detail: unknown;
   }): Promise<boolean>;
+
+  /**
+   * 값 활성화와 회차 기록을 한 트랜잭션에 묶는다. 활성화가 되면 같은 트랜잭션에서 RUNNING·토큰
+   * 조건으로 patch 를 쓰고, 토큰을 잃었으면 던져 활성화까지 되돌린다. CONFLICT 면 아무것도 쓰지 않는다.
+   */
+  commitAdoption(input: CommitAdoptionInput): Promise<ActivateNewVersionResult>;
+
+  /**
+   * 롤백 활성화와 시험 행의 ROLLBACK 확정을 한 트랜잭션에 묶는다. 이미 평가된 행이면 던져
+   * 활성화까지 되돌린다. CONFLICT 면 아무것도 쓰지 않는다.
+   */
+  commitRollback(input: CommitRollbackInput): Promise<ActivateNewVersionResult>;
 
   /** 최근 56일 안에 롤백된 후보 값. */
   findExcludedValues(input: {

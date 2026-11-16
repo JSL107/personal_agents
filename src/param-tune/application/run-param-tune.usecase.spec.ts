@@ -97,6 +97,8 @@ describe('RunParamTuneUsecase', () => {
     settleEvaluation: jest.fn(),
     findExcludedValues: jest.fn(),
     findVerdictByKey: jest.fn(),
+    commitAdoption: jest.fn(),
+    commitRollback: jest.fn(),
   };
   const parameterPort = {
     findSnapshotStrict: jest.fn(),
@@ -113,7 +115,6 @@ describe('RunParamTuneUsecase', () => {
     parameterPort as unknown as StrategyParameterPort,
     new EvaluateProbationService(
       runPort as unknown as ParamTuneRunPort,
-      parameterPort as unknown as StrategyParameterPort,
       replay,
     ),
     replay,
@@ -179,11 +180,21 @@ describe('RunParamTuneUsecase', () => {
     runPort.settleEvaluation.mockResolvedValue(true);
     runPort.finish.mockResolvedValue(true);
     runPort.markFailed.mockResolvedValue(true);
-    parameterPort.activateNewVersion.mockResolvedValue({
+    runPort.commitAdoption.mockResolvedValue({
       kind: 'ACTIVATED',
       parameterId: 21,
       version: 2,
     });
+    runPort.commitRollback.mockResolvedValue({
+      kind: 'ACTIVATED',
+      parameterId: 22,
+      version: 3,
+    });
+  });
+
+  afterEach(() => {
+    // 값은 원장 기록과 한 트랜잭션으로만 바뀐다.
+    expect(parameterPort.activateNewVersion).not.toHaveBeenCalled();
   });
 
   it('엄격 읽기 실패면 markFailed 만 부르고 탐색하지 않는다', async () => {
@@ -220,18 +231,22 @@ describe('RunParamTuneUsecase', () => {
 
     await usecase.execute(input);
 
-    expect(parameterPort.activateNewVersion).toHaveBeenCalledWith(
-      expect.objectContaining({
+    expect(runPort.commitRollback).toHaveBeenCalledWith({
+      runId: 3,
+      activation: {
+        strategy: 'SWING',
         name: 'EXIT_TAKE_PROFIT_PERCENT',
         value: 5,
         expectedSnapshot: snapshot,
         reason: '자동 조정 롤백 (run #7)',
         agentRunId: 99,
+      },
+      detail: expect.objectContaining({
+        decision: expect.objectContaining({ kind: 'ROLLBACK' }),
       }),
-    );
-    expect(runPort.settleEvaluation).toHaveBeenCalledWith(
-      expect.objectContaining({ runId: 3, evaluation: 'ROLLBACK' }),
-    );
+    });
+    // ROLLBACK 확정은 commitRollback 이 활성화와 함께 쓴다.
+    expect(runPort.settleEvaluation).not.toHaveBeenCalled();
     // R3: 값이 방금 바뀐 주에는 탐색하지 않는다.
     expect(mockedRunRobustSearch).not.toHaveBeenCalled();
     expect(finishedPatch()).toEqual({
@@ -254,7 +269,25 @@ describe('RunParamTuneUsecase', () => {
     expect(runPort.settleEvaluation).toHaveBeenCalledWith(
       expect.objectContaining({ evaluation: 'ROLLBACK_SKIPPED' }),
     );
-    expect(parameterPort.activateNewVersion).not.toHaveBeenCalled();
+    expect(runPort.commitRollback).not.toHaveBeenCalled();
+  });
+
+  it('롤백이 CONFLICT 면 ROLLBACK_SKIPPED 로 확정하고 탐색을 이어 간다', async () => {
+    runPort.findOpenProbation.mockResolvedValue(probation);
+    rollbackReplays();
+    runPort.commitRollback.mockResolvedValue({
+      kind: 'CONFLICT',
+      actual: snapshot,
+    });
+    mockedEvaluate.mockReturnValue([]);
+    searchReturns(new Map([['BASE', current]]));
+
+    await usecase.execute(input);
+
+    expect(runPort.settleEvaluation).toHaveBeenCalledWith(
+      expect.objectContaining({ runId: 3, evaluation: 'ROLLBACK_SKIPPED' }),
+    );
+    expect(mockedRunRobustSearch).toHaveBeenCalledTimes(1);
   });
 
   it('KEEP 판정이면 KEEP 으로 확정하고 이어서 탐색한다', async () => {
@@ -291,7 +324,7 @@ describe('RunParamTuneUsecase', () => {
     expect(runPort.settleEvaluation).toHaveBeenCalledWith(
       expect.objectContaining({ runId: 3, evaluation: 'WOULD_ROLLBACK' }),
     );
-    expect(parameterPort.activateNewVersion).not.toHaveBeenCalled();
+    expect(runPort.commitRollback).not.toHaveBeenCalled();
     expect(mockedRunRobustSearch).toHaveBeenCalledTimes(1);
   });
 
@@ -382,7 +415,7 @@ describe('RunParamTuneUsecase', () => {
   it('apply + ADOPT + 충돌이면 NO_CHANGE 와 사유를 남긴다', async () => {
     config.get.mockReturnValue('apply');
     adoptableSearch();
-    parameterPort.activateNewVersion.mockResolvedValue({
+    runPort.commitAdoption.mockResolvedValue({
       kind: 'CONFLICT',
       actual: snapshot,
     });
@@ -401,23 +434,44 @@ describe('RunParamTuneUsecase', () => {
 
     await usecase.execute(input);
 
-    expect(parameterPort.activateNewVersion).toHaveBeenCalledWith(
-      expect.objectContaining({
+    const call = runPort.commitAdoption.mock.calls[0][0];
+    expect(call).toMatchObject({
+      runId: 7,
+      attemptToken: 'token',
+      activation: {
+        strategy: 'SWING',
+        name: 'EXIT_TAKE_PROFIT_PERCENT',
         value: 15,
         expectedSnapshot: snapshot,
         agentRunId: 99,
-      }),
-    );
-    expect(finishedPatch()).toMatchObject({
-      status: 'DONE',
-      decision: 'APPLIED',
-      previousValue: 10,
-      candidateValue: 15,
-      previousParameterId: 11,
-      appliedParameterId: 21,
-      parameterSnapshot: snapshot,
+      },
+      patch: {
+        status: 'DONE',
+        decision: 'APPLIED',
+        previousValue: 10,
+        candidateValue: 15,
+        previousParameterId: 11,
+        parameterSnapshot: snapshot,
+      },
     });
-    expect(finishedPatch().appliedAt).toBeInstanceOf(Date);
+    expect(call.patch.verdictKey).toEqual(expect.any(String));
+    expect(call.patch.verdict).toBeDefined();
+    // 회차 기록은 commitAdoption 이 활성화와 함께 끝냈다.
+    expect(runPort.finish).not.toHaveBeenCalled();
+  });
+
+  it('apply 반영 중 토큰을 잃어 commitAdoption 이 던지면 markFailed 로 끝낸다', async () => {
+    config.get.mockReturnValue('apply');
+    adoptableSearch();
+    runPort.commitAdoption.mockRejectedValue(
+      new Error('parameter_tune_run id=7: 토큰을 잃어 반영을 되돌렸다'),
+    );
+    runPort.markFailed.mockResolvedValue(false);
+
+    await expect(usecase.execute(input)).resolves.toBeUndefined();
+
+    expect(runPort.markFailed).toHaveBeenCalledTimes(1);
+    expect(runPort.finish).not.toHaveBeenCalled();
   });
 
   it('observe + ADOPT 이면 WOULD_APPLY 이고 값을 바꾸지 않는다', async () => {
@@ -425,7 +479,7 @@ describe('RunParamTuneUsecase', () => {
 
     await usecase.execute(input);
 
-    expect(parameterPort.activateNewVersion).not.toHaveBeenCalled();
+    expect(runPort.commitAdoption).not.toHaveBeenCalled();
     expect(finishedPatch()).toMatchObject({
       decision: 'WOULD_APPLY',
       previousValue: 10,
@@ -450,7 +504,7 @@ describe('RunParamTuneUsecase', () => {
 
     await usecase.execute({ ...input, axis: 'EXIT_STOP_LOSS_PERCENT' });
 
-    expect(parameterPort.activateNewVersion).not.toHaveBeenCalled();
+    expect(runPort.commitAdoption).not.toHaveBeenCalled();
     expect(finishedPatch()).toMatchObject({
       decision: 'NO_CHANGE',
       decisionReason: '제외된 값(-7)으로 한 칸 제한됨',

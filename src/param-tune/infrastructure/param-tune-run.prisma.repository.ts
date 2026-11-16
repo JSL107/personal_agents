@@ -6,9 +6,15 @@ import { ParameterTuneRun, Prisma } from '@prisma/client';
 import { utcMidnightOf } from '../../common/util/kst-date.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
+  ActivateNewVersionResult,
   StrategyParameterName,
   StrategyParameterStrategy,
 } from '../../strategy-parameter/domain/strategy-parameter.type';
+import {
+  activateNewVersionWith,
+  isActivationConflict,
+  readParameterSnapshot,
+} from '../../strategy-parameter/infrastructure/strategy-parameter.prisma.repository';
 import {
   ParameterSnapshot,
   TUNE_EXCLUSION_DAYS,
@@ -20,6 +26,8 @@ import {
 import {
   CachedVerdict,
   ClaimResult,
+  CommitAdoptionInput,
+  CommitRollbackInput,
   OpenProbation,
   ParamTuneRunPort,
   TuneRunPatch,
@@ -92,6 +100,11 @@ const toUpdateData = (
   patch: TuneRunPatch,
 ): Prisma.ParameterTuneRunUpdateManyMutationInput =>
   patch as Prisma.ParameterTuneRunUpdateManyMutationInput;
+
+interface ActivationTransaction {
+  strategy: StrategyParameterStrategy;
+  work: (tx: Prisma.TransactionClient) => Promise<ActivateNewVersionResult>;
+}
 
 @Injectable()
 export class ParamTuneRunPrismaRepository implements ParamTuneRunPort {
@@ -246,6 +259,74 @@ export class ParamTuneRunPrismaRepository implements ParamTuneRunPort {
     return result.count === 1;
   }
 
+  async commitAdoption(
+    input: CommitAdoptionInput,
+  ): Promise<ActivateNewVersionResult> {
+    return await this.inActivation({
+      strategy: input.activation.strategy,
+      work: async (tx) => {
+        const result = await activateNewVersionWith({
+          tx,
+          input: input.activation,
+        });
+        if (result.kind === 'CONFLICT') {
+          return result;
+        }
+        const written = await tx.parameterTuneRun.updateMany({
+          where: {
+            id: input.runId,
+            status: 'RUNNING',
+            attemptToken: input.attemptToken,
+          },
+          data: toUpdateData({
+            ...input.patch,
+            appliedParameterId: result.parameterId,
+            appliedAt: new Date(),
+          }),
+        });
+        // 토큰을 잃은 실행은 값을 바꾸지 못한다 — 던져서 활성화까지 되돌린다.
+        if (written.count === 0) {
+          throw new Error(
+            `parameter_tune_run id=${input.runId}: 토큰을 잃어 반영을 되돌렸다`,
+          );
+        }
+        return result;
+      },
+    });
+  }
+
+  async commitRollback(
+    input: CommitRollbackInput,
+  ): Promise<ActivateNewVersionResult> {
+    return await this.inActivation({
+      strategy: input.activation.strategy,
+      work: async (tx) => {
+        const result = await activateNewVersionWith({
+          tx,
+          input: input.activation,
+        });
+        if (result.kind === 'CONFLICT') {
+          return result;
+        }
+        const written = await tx.parameterTuneRun.updateMany({
+          where: { id: input.runId, evaluatedAt: null },
+          data: {
+            evaluation: 'ROLLBACK',
+            evaluatedAt: new Date(),
+            evaluationDetail: input.detail as Prisma.InputJsonValue,
+            notifiedAt: null,
+          },
+        });
+        if (written.count === 0) {
+          throw new Error(
+            `parameter_tune_run id=${input.runId}: 이미 평가된 시험이라 롤백을 되돌렸다`,
+          );
+        }
+        return result;
+      },
+    });
+  }
+
   async findExcludedValues(input: {
     strategy: StrategyParameterStrategy;
     axis: StrategyParameterName;
@@ -308,5 +389,27 @@ export class ParamTuneRunPrismaRepository implements ParamTuneRunPort {
         ],
       },
     });
+  }
+
+  // 값 활성화가 들어간 트랜잭션. 충돌 코드는 activateNewVersion 과 같게 CONFLICT 로 바꾼다.
+  private async inActivation(
+    activation: ActivationTransaction,
+  ): Promise<ActivateNewVersionResult> {
+    try {
+      return await this.prisma.$transaction(activation.work, {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      });
+    } catch (error) {
+      if (isActivationConflict(error)) {
+        return {
+          kind: 'CONFLICT',
+          actual: await readParameterSnapshot({
+            client: this.prisma,
+            strategy: activation.strategy,
+          }),
+        };
+      }
+      throw error;
+    }
   }
 }
