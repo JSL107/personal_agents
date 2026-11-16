@@ -10,7 +10,7 @@ import {
 const PRIORITY: Record<HumanizeResearchSource, number> = {
   [HumanizeResearchSource.BLOG]: 0,
   [HumanizeResearchSource.HUMANIZER]: 1,
-  [HumanizeResearchSource.SAMPLE]: 2,
+  [HumanizeResearchSource.CANON_LOG]: 2,
   [HumanizeResearchSource.UPSTREAM]: 3,
   [HumanizeResearchSource.ARXIV]: 4,
 };
@@ -85,9 +85,26 @@ export const advanceProcessed = ({
   const upstreamHead = upstream
     ? upstream.id.slice('upstream:'.length)
     : previous.upstreamHead;
+  const canon = included.find(
+    (item) => item.source === HumanizeResearchSource.CANON_LOG,
+  );
+  const canonHead = resolveCanonHead({ canon, previous });
   const humanizerMaxRunId = maxId > 0 ? String(maxId) : null;
   const arxivIds = included
     .filter((item) => item.source === HumanizeResearchSource.ARXIV)
     .map((item) => item.id);
-  return { humanizerMaxRunId, blogPostIds, upstreamHead, arxivIds };
+  return { humanizerMaxRunId, blogPostIds, upstreamHead, canonHead, arxivIds };
+};
+
+const resolveCanonHead = ({
+  canon,
+  previous,
+}: {
+  canon: CollectedItem | undefined;
+  previous: Processed;
+}): string | null => {
+  if (!canon) {
+    return previous.canonHead;
+  }
+  return canon.id.slice('canon:'.length);
 };

@@ -3,8 +3,13 @@ import { Injectable } from '@nestjs/common';
 import { MeasureBlogRevisionUsecase } from '../../../blog/application/measure-blog-revision.usecase';
 import { hasRevisedLines } from '../../../blog/domain/has-revised-lines';
 import {
+  hashBlogChanges,
+  renderBlogEditSummary,
+  summarizeBlogEdits,
+} from '../../domain/blog-edit-summary';
+import {
+  BLOG_LOOKBACK_DAYS,
   DAY_MS,
-  INTERNAL_LOOKBACK_DAYS,
   statusOfItems,
 } from '../../domain/humanize-research.constant';
 import {
@@ -29,21 +34,27 @@ export class BlogRevisionCollector {
       };
     }
     try {
-      const report = await this.measureBlogRevision.execute();
-      const since = Date.now() - INTERNAL_LOOKBACK_DAYS * DAY_MS;
+      const report = await this.measureBlogRevision.execute({
+        lookbackDays: BLOG_LOOKBACK_DAYS,
+      });
+      const since = Date.now() - BLOG_LOOKBACK_DAYS * DAY_MS;
       const processedIds = new Set(processed.blogPostIds);
       const items = report.rows
         .filter((row) => row.publishedAt.getTime() >= since)
         .filter(hasRevisedLines)
+        .filter((row) => {
+          const legacyId = `blog:${row.path}:${row.publishedAt.toISOString()}`;
+          return !processedIds.has(legacyId);
+        })
         .map((row) => {
-          // path 단독이면 같은 경로의 재발행을 놓친다. 발행 시각은 APPLIED 카드의 안정 값이다.
-          const id = `blog:${row.path}:${row.publishedAt.toISOString()}`;
-          const removed = row.changes?.removedLines.join('\n') ?? '';
-          const added = row.changes?.addedLines.join('\n') ?? '';
+          const changes = row.changes ?? { removedLines: [], addedLines: [] };
+          const summary = summarizeBlogEdits(changes);
+          const hash = hashBlogChanges(changes);
+          const id = `blog:${row.path}:${row.publishedAt.toISOString()}:${hash}`;
           return {
             id,
             source: HumanizeResearchSource.BLOG,
-            text: `발행 경로: ${row.path}\n삭제된 줄:\n${removed}\n최종본에 추가된 줄:\n${added}`,
+            text: renderBlogEditSummary({ path: row.path, summary }),
           };
         })
         .filter((item) => !processedIds.has(item.id));

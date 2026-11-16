@@ -6,9 +6,9 @@ import { BlogModule } from '../blog/blog.module';
 import { RunHumanizeResearchUsecase } from './application/run-humanize-research.usecase';
 import { ArxivAbstractCollector } from './infrastructure/collectors/arxiv-abstract.collector';
 import { BlogRevisionCollector } from './infrastructure/collectors/blog-revision.collector';
+import { CanonLogCollector } from './infrastructure/collectors/canon-log.collector';
 import { HumanizerSignalsCollector } from './infrastructure/collectors/humanizer-signals.collector';
 import { UpstreamRuleDiffCollector } from './infrastructure/collectors/upstream-rule-diff.collector';
-import { ModelSampleCollector } from './infrastructure/model-sample.collector';
 
 @Module({
   imports: [AgentRunModule, BlogModule, ModelRouterModule],
@@ -18,7 +18,7 @@ import { ModelSampleCollector } from './infrastructure/model-sample.collector';
     BlogRevisionCollector,
     UpstreamRuleDiffCollector,
     ArxivAbstractCollector,
-    ModelSampleCollector,
+    CanonLogCollector,
   ],
   exports: [RunHumanizeResearchUsecase],
 })

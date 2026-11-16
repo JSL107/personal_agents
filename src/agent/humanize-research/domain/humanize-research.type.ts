@@ -3,7 +3,7 @@ export enum HumanizeResearchSource {
   BLOG = 'BLOG',
   UPSTREAM = 'UPSTREAM',
   ARXIV = 'ARXIV',
-  SAMPLE = 'SAMPLE',
+  CANON_LOG = 'CANON_LOG',
 }
 
 export enum CollectionStatus {
@@ -40,6 +40,7 @@ export interface Processed {
   humanizerMaxRunId: string | null;
   blogPostIds: string[];
   upstreamHead: string | null;
+  canonHead: string | null;
   arxivIds: string[];
 }
 
@@ -130,14 +131,4 @@ export interface GitResult {
   exitCode: number;
   stdout: string;
   stderr: string;
-}
-
-export interface SampleTopic {
-  key: string;
-  prompt: string;
-}
-
-export interface SampleOutcome {
-  item?: CollectedItem;
-  failure?: string;
 }

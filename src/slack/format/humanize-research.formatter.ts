@@ -13,7 +13,7 @@ const SOURCE_LABELS: Record<HumanizeResearchSource, string> = {
   [HumanizeResearchSource.BLOG]: '블로그 수정',
   [HumanizeResearchSource.UPSTREAM]: '상위 규칙 변경',
   [HumanizeResearchSource.ARXIV]: 'arXiv 초록',
-  [HumanizeResearchSource.SAMPLE]: '신규 모델 글',
+  [HumanizeResearchSource.CANON_LOG]: '정본 커밋',
 };
 
 const STATUS_LABELS: Record<CollectionStatus, string> = {
