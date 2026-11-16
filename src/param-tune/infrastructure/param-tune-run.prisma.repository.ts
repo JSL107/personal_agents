@@ -62,14 +62,26 @@ const toRow = (row: ParameterTuneRun): TuneRunRow => ({
   agentRunId: row.agentRunId,
 });
 
+// 값이 비면 반쯤 쓰인 행이다. 0 으로 메우면 롤백이 손절을 0% 로 되돌릴 수 있어 던진다.
+const requireValue = (
+  row: ParameterTuneRun,
+  field: 'previousValue' | 'candidateValue',
+): number => {
+  const value = toNumber(row[field]);
+  if (value === null) {
+    throw new Error(`parameter_tune_run id=${row.id} 의 ${field} 가 비어 있다`);
+  }
+  return value;
+};
+
 const toProbation = (
   row: ParameterTuneRun,
   startedOn: Date,
 ): OpenProbation => ({
   runId: row.id,
   axis: row.axis as StrategyParameterName,
-  previousValue: row.previousValue?.toNumber() ?? 0,
-  candidateValue: row.candidateValue?.toNumber() ?? 0,
+  previousValue: requireValue(row, 'previousValue'),
+  candidateValue: requireValue(row, 'candidateValue'),
   previousParameterId: row.previousParameterId,
   appliedParameterId: row.appliedParameterId,
   startedOn,
