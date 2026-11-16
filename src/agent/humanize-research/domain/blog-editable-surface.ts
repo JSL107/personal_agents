@@ -3,6 +3,12 @@ import { HumanizeRuleLink } from '../../../humanize/domain/humanize-rule-links.t
 
 export const BLOG_PROMPT_FILE = 'src/humanize/domain/humanize-system.prompt.ts';
 
+export const isSafeBlogLiteral = (text: string): boolean => {
+  const unsafe = /[`'\\\n\r]|\$\{/u.test(text);
+  const safe = !unsafe;
+  return safe;
+};
+
 export const blogEditableTexts = (
   links: readonly HumanizeRuleLink[],
 ): string[] => {

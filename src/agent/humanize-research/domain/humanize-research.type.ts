@@ -18,11 +18,16 @@ export enum ProposalSkipReason {
   OVER_LIMIT = 'OVER_LIMIT',
   EVIDENCE_SOURCE_MISMATCH = 'EVIDENCE_SOURCE_MISMATCH',
   FILE_NOT_ALLOWED = 'FILE_NOT_ALLOWED',
+  UNSAFE_BLOG_LITERAL = 'UNSAFE_BLOG_LITERAL',
   MATCH_NOT_UNIQUE = 'MATCH_NOT_UNIQUE',
   OUTSIDE_EDITABLE_SURFACE = 'OUTSIDE_EDITABLE_SURFACE',
   DELETE_NOT_ALLOWED = 'DELETE_NOT_ALLOWED',
   PROTECTED_ASSET = 'PROTECTED_ASSET',
   RULEBOOK_TOO_LONG = 'RULEBOOK_TOO_LONG',
+  SELFCHECK_FAILED = 'SELFCHECK_FAILED',
+  SEVERITY_SYNC_FAILED = 'SEVERITY_SYNC_FAILED',
+  GOLDEN_FAILED = 'GOLDEN_FAILED',
+  CANON_CHECK_ERROR = 'CANON_CHECK_ERROR',
 }
 
 export enum UpstreamRangeKind {
@@ -72,6 +77,10 @@ export interface HumanizeResearchProposal {
   evidence: string[];
 }
 
+export interface GatedProposal extends HumanizeResearchProposal {
+  baseSha: string | null;
+}
+
 export interface SkippedHumanizeResearchProposal {
   proposal: Record<string, unknown>;
   reason: ProposalSkipReason;
@@ -99,7 +108,7 @@ export interface HumanizeResearchOutput {
   enforcementGaps: EnforcementGap[];
   sources: SourceStatus[];
   droppedForBudget: string[];
-  proposals: HumanizeResearchProposal[];
+  proposals: GatedProposal[];
   skipped: SkippedHumanizeResearchProposal[];
   injectionNotices: string[];
   processed: Processed;
@@ -109,6 +118,7 @@ export interface HumanizeResearchRunResult {
   output: HumanizeResearchOutput;
   modelUsed: string;
   skippedForNoSources: boolean;
+  included: CollectedItem[];
 }
 
 export interface ResearchInputSelection {

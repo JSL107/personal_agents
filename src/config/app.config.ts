@@ -1069,6 +1069,11 @@ export class EnvironmentVariables {
   @IsString()
   HUMANIZE_RESEARCH_ENABLED?: string;
 
+  // 윤문 규칙 제안의 승인 카드 생성 게이트(기본 OFF).
+  @IsOptional()
+  @IsString()
+  HUMANIZE_RULE_PR_ENABLED?: string;
+
   // 정본 humanize-korean 저장소. 미설정 시 ~/.claude/skills/humanize-korean.
   @IsOptional()
   @IsString()

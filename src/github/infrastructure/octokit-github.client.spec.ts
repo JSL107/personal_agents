@@ -2325,4 +2325,68 @@ describe('OctokitGithubClient', () => {
       expect(result.content).toBeUndefined();
     });
   });
+  describe('pushBranchAndOpenPr assignee', () => {
+    const makeClient = (addAssignees: jest.Mock): OctokitGithubClient => {
+      const octokit = {
+        rest: {
+          git: {
+            getRef: jest
+              .fn()
+              .mockResolvedValue({ data: { object: { sha: 'base-sha' } } }),
+            getCommit: jest
+              .fn()
+              .mockResolvedValue({ data: { tree: { sha: 'base-tree' } } }),
+            createBlob: jest
+              .fn()
+              .mockResolvedValue({ data: { sha: 'blob-sha' } }),
+            createTree: jest
+              .fn()
+              .mockResolvedValue({ data: { sha: 'new-tree' } }),
+            createCommit: jest
+              .fn()
+              .mockResolvedValue({ data: { sha: 'new-commit' } }),
+            createRef: jest.fn().mockResolvedValue({ data: {} }),
+          },
+          pulls: {
+            create: jest.fn().mockResolvedValue({
+              data: { html_url: 'https://github.com/x/pull/7', number: 7 },
+            }),
+          },
+          issues: { addAssignees },
+        },
+      } as unknown as Octokit;
+      return new OctokitGithubClient(octokit);
+    };
+
+    const input = {
+      repo: 'JSL107/personal_agents',
+      baseBranch: 'main',
+      branchName: 'humanize-rule/1',
+      commitMessage: 'feat(humanize): 규칙',
+      files: [{ path: 'a.md', content: '내용' }],
+      prTitle: '규칙',
+      prBody: '근거',
+      assignees: ['JSL107'],
+    };
+
+    it('assignees 가 있으면 PR 생성 뒤 addAssignees 를 호출한다', async () => {
+      const addAssignees = jest.fn().mockResolvedValue({ data: {} });
+      const client = makeClient(addAssignees);
+      const result = await client.pushBranchAndOpenPr(input);
+      expect(addAssignees).toHaveBeenCalledWith({
+        owner: 'JSL107',
+        repo: 'personal_agents',
+        issue_number: 7,
+        assignees: ['JSL107'],
+      });
+      expect(result.prNumber).toBe(7);
+    });
+
+    it('addAssignees 실패해도 생성된 PR 결과를 돌려준다', async () => {
+      const addAssignees = jest.fn().mockRejectedValue(new Error('forbidden'));
+      const client = makeClient(addAssignees);
+      const result = await client.pushBranchAndOpenPr(input);
+      expect(result.prNumber).toBe(7);
+    });
+  });
 });

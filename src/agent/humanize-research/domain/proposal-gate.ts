@@ -1,4 +1,4 @@
-import { BLOG_PROMPT_FILE } from './blog-editable-surface';
+import { BLOG_PROMPT_FILE, isSafeBlogLiteral } from './blog-editable-surface';
 import {
   CollectedItem,
   HumanizeResearchProposal,
@@ -49,6 +49,13 @@ export const gateProposal = ({
   const allowedFile = canon ? 'references/quick-rules.md' : BLOG_PROMPT_FILE;
   if (proposal.file !== allowedFile) {
     return ProposalSkipReason.FILE_NOT_ALLOWED;
+  }
+  if (!canon) {
+    const safeOldString = isSafeBlogLiteral(proposal.oldString);
+    const safeNewString = isSafeBlogLiteral(proposal.newString);
+    if (!safeOldString || !safeNewString) {
+      return ProposalSkipReason.UNSAFE_BLOG_LITERAL;
+    }
   }
   const surfaces = canon ? [context.quickRules] : context.blogEditableTexts;
   const matches = surfaces.reduce(
