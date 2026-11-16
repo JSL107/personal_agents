@@ -14,7 +14,10 @@ import {
   TUNE_SLIPPAGE_PERCENTS,
   TuneEvaluation,
 } from '../domain/param-tune.type';
-import { RollbackDecisionKind } from '../domain/param-tune.type';
+import {
+  RollbackAttempt,
+  RollbackDecisionKind,
+} from '../domain/param-tune.type';
 import {
   OpenProbation,
   PARAM_TUNE_RUN_PORT,
@@ -137,15 +140,21 @@ export class EvaluateProbationUsecase {
         return { settled, rolledBack: false };
       }
       case RollbackDecisionKind.ROLLBACK: {
-        const rolledBack = await this.rollback({ ...target, detail });
-        if (!rolledBack) {
-          await this.settle({
-            probation,
-            evaluation: TuneEvaluation.ROLLBACK_SKIPPED,
-            detail,
-          });
+        const attempt = await this.rollback({ ...target, detail });
+        switch (attempt) {
+          case RollbackAttempt.APPLIED:
+            return { settled: true, rolledBack: true };
+          case RollbackAttempt.TARGET_CHANGED:
+            await this.settle({
+              probation,
+              evaluation: TuneEvaluation.ROLLBACK_SKIPPED,
+              detail,
+            });
+            return { settled: true, rolledBack: false };
+          case RollbackAttempt.RETRY:
+            // 다른 축 변경·직렬화 실패는 일시적이라 롤백 기회를 닫지 않는다.
+            return { settled: false, rolledBack: false };
         }
-        return { settled: true, rolledBack };
       }
     }
   }
@@ -183,20 +192,20 @@ export class EvaluateProbationUsecase {
   }
 
   /**
-   * 롤백을 적용했으면 true — 이때 ROLLBACK 확정도 같은 트랜잭션에서 끝났다.
-   * 대상 값이 이미 다른 행으로 바뀌었거나 충돌이면 아무것도 쓰지 않고 false.
+   * APPLIED 면 ROLLBACK 확정도 같은 트랜잭션에서 끝났다. 대상 값이 이미 다른 행으로 바뀌었으면
+   * TARGET_CHANGED, 활성화가 충돌이면 RETRY — 둘 다 아무것도 쓰지 않는다.
    */
   private async rollback({
     probation,
     input,
     detail,
-  }: RollbackTarget): Promise<boolean> {
+  }: RollbackTarget): Promise<RollbackAttempt> {
     const current = input.snapshot.find(
       (entry) => entry.name === probation.axis,
     );
     const stillApplied = current?.parameterId === probation.appliedParameterId;
     if (!stillApplied) {
-      return false;
+      return RollbackAttempt.TARGET_CHANGED;
     }
     // 활성화와 평가 확정이 따로 쓰이면 그 사이에 죽었을 때 다음 회차가 ROLLBACK_SKIPPED 로
     // 확정해 제외 목록이 비고, 같은 값이 다시 채택된다.
@@ -212,7 +221,9 @@ export class EvaluateProbationUsecase {
       },
       detail,
     });
-    return result.kind === ActivateNewVersionKind.ACTIVATED;
+    return result.kind === ActivateNewVersionKind.ACTIVATED
+      ? RollbackAttempt.APPLIED
+      : RollbackAttempt.RETRY;
   }
 
   private async settle({
