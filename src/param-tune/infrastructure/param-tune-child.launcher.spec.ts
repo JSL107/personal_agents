@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { join } from 'node:path';
 
 import {
   findRepoRoot,
@@ -66,6 +67,17 @@ describe('ParamTuneChildLauncher', () => {
     mockSpawn.mockReturnValue(child);
   });
   afterEach(() => jest.useRealTimers());
+
+  it('상대 logPath 는 레포 루트 기준으로 연다', async () => {
+    const promise = launcher.run({ ...input, logPath: 'logs/a.log' });
+    child.emit('exit', 0, null);
+    await promise;
+    // 이 spec 은 launcher 와 같은 디렉터리라 existsSync=true 에서 루트가 __dirname 이다.
+    expect(mockFs.openSync).toHaveBeenCalledWith(
+      join(__dirname, 'logs/a.log'),
+      'a',
+    );
+  });
 
   it('exit 0 이면 EXITED 와 로그 꼬리를 돌려준다', async () => {
     const promise = launcher.run(input);
