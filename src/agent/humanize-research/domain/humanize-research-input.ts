@@ -26,13 +26,15 @@ const renderItem = (item: CollectedItem): string => {
 export const selectResearchInput = ({
   items,
   quickRules,
+  blogSurface,
   systemPrompt,
 }: {
   items: readonly CollectedItem[];
   quickRules: string;
+  blogSurface: string;
   systemPrompt: string;
 }): ResearchInputSelection => {
-  const prefix = `정본 references/quick-rules.md:\n${quickRules}\n\n수집물:\n`;
+  const prefix = `정본 references/quick-rules.md:\n${quickRules}\n\n${blogSurface}\n\n수집물:\n`;
   const available =
     HUMANIZE_RESEARCH_INPUT_LIMIT - systemPrompt.length - prefix.length;
   if (available < 0) {
@@ -55,7 +57,7 @@ export const selectResearchInput = ({
     used += cost;
   }
   const prompt = prefix + included.map(renderItem).join('\n\n');
-  return { prompt, included, droppedForBudget };
+  return { prompt, included, droppedForBudget, quickRules };
 };
 
 export const advanceProcessed = ({

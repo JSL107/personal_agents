@@ -4,9 +4,11 @@ import { extractJsonObjectText } from '../../../common/util/llm-json-extract.uti
 import { HUMANIZE_RESEARCH_MAX_PROPOSALS } from './humanize-research.constant';
 import {
   ConstrainedProposals,
+  EnforcementGap,
   HumanizeResearchProposal,
   ParsedResearchOutput,
   ProposalSkipReason,
+  ProposalTarget,
 } from './humanize-research.type';
 import { HumanizeResearchErrorCode } from './humanize-research-error-code.enum';
 
@@ -15,6 +17,7 @@ const SNAPSHOT_TEXT_LIMIT = 2_000;
 const SNAPSHOT_EVIDENCE_LIMIT = 20;
 const SNAPSHOT_ID_LIMIT = 200;
 const SNAPSHOT_TEXT_KEYS = [
+  'target',
   'file',
   'oldString',
   'newString',
@@ -40,27 +43,108 @@ export const parseResearchOutput = (text: string): ParsedResearchOutput => {
   const injectionNotices = notices.filter(
     (notice): notice is string => typeof notice === 'string',
   );
-  return { proposals: parsed.proposals, injectionNotices };
+  const gaps = Array.isArray(parsed.enforcementGaps)
+    ? parsed.enforcementGaps
+    : [];
+  const enforcementGaps: EnforcementGap[] = gaps.flatMap((gap) => {
+    if (!isRecord(gap)) {
+      return [];
+    }
+    if (typeof gap.ruleId !== 'string' || !Array.isArray(gap.evidence)) {
+      return [];
+    }
+    const evidenceValid = gap.evidence.every(
+      (id: unknown) => typeof id === 'string',
+    );
+    if (!evidenceValid) {
+      return [];
+    }
+    const evidence: string[] = gap.evidence;
+    return [{ ruleId: gap.ruleId, evidence }];
+  });
+  return { proposals: parsed.proposals, injectionNotices, enforcementGaps };
+};
+
+export const constrainEnforcementGaps = ({
+  gaps,
+  includedIds,
+  knownRuleIds,
+}: {
+  gaps: EnforcementGap[];
+  includedIds: ReadonlySet<string>;
+  knownRuleIds: ReadonlySet<string>;
+}): EnforcementGap[] => {
+  const grounded = gaps.filter((gap) => {
+    const knownRule = knownRuleIds.has(gap.ruleId);
+    const hasEvidence = gap.evidence.length > 0;
+    const allIncluded = gap.evidence.every((id) => includedIds.has(id));
+    const valid = knownRule && hasEvidence && allIncluded;
+    return valid;
+  });
+  return grounded;
+};
+
+// quick-rules 표 행(`| A-1 | … |`)의 규칙 id 만 뽑는다. 본문 중간의 `| B-2 |` 는 행이 아니다.
+export const quickRuleIds = (quickRules: string): string[] => {
+  const matches = Array.from(quickRules.matchAll(/^\| ([A-Z]-\d+) \|/gmu));
+  const ids = matches.map((match) => match[1]);
+  return ids;
 };
 
 export const constrainResearchProposals = ({
   proposals,
   includedIds,
+  gate,
 }: {
+  gate?: (proposal: HumanizeResearchProposal) => ProposalSkipReason | null;
   proposals: unknown[];
   includedIds: ReadonlySet<string>;
 }): ConstrainedProposals => {
-  const judged = proposals.map((candidate, index) => ({
-    candidate,
-    reason: skipReasonOf({ candidate, index, includedIds }),
-  }));
-  const accepted = judged
-    .filter(({ reason }) => reason === null)
-    .map(({ candidate }) => candidate as HumanizeResearchProposal);
-  const skipped = judged.flatMap(({ candidate, reason }) =>
-    reason === null ? [] : [{ proposal: snapshotOf(candidate), reason }],
-  );
+  const accepted: HumanizeResearchProposal[] = [];
+  const skipped: ConstrainedProposals['skipped'] = [];
+  for (const candidate of proposals) {
+    const limitReached = accepted.length >= HUMANIZE_RESEARCH_MAX_PROPOSALS;
+    const reason = judgeProposal({
+      candidate,
+      includedIds,
+      gate,
+      limitReached,
+    });
+    if (reason !== null) {
+      skipped.push({ proposal: snapshotOf(candidate), reason });
+      continue;
+    }
+    if (isProposal(candidate)) {
+      accepted.push(candidate);
+    }
+  }
   return { proposals: accepted, skipped };
+};
+
+// 상한은 게이트를 통과한 제안만 센다 — 앞 제안이 게이트에서 걸리면 뒤 제안이 자리를 얻는다.
+const judgeProposal = ({
+  candidate,
+  includedIds,
+  gate,
+  limitReached,
+}: {
+  candidate: unknown;
+  includedIds: ReadonlySet<string>;
+  gate?: (proposal: HumanizeResearchProposal) => ProposalSkipReason | null;
+  limitReached: boolean;
+}): ProposalSkipReason | null => {
+  const validationReason = skipReasonOf({ candidate, includedIds });
+  if (validationReason !== null || !isProposal(candidate)) {
+    return validationReason ?? ProposalSkipReason.INVALID_SHAPE;
+  }
+  if (limitReached) {
+    return ProposalSkipReason.OVER_LIMIT;
+  }
+  const gateReason = gate?.(candidate) ?? null;
+  if (gateReason !== null) {
+    return gateReason;
+  }
+  return null;
 };
 
 const parseJsonObject = (text: string): Record<string, unknown> => {
@@ -85,16 +169,11 @@ const parseJson = (text: string): unknown => {
 
 const skipReasonOf = ({
   candidate,
-  index,
   includedIds,
 }: {
   candidate: unknown;
-  index: number;
   includedIds: ReadonlySet<string>;
 }): ProposalSkipReason | null => {
-  if (index >= HUMANIZE_RESEARCH_MAX_PROPOSALS) {
-    return ProposalSkipReason.OVER_LIMIT;
-  }
   if (!isProposal(candidate)) {
     return ProposalSkipReason.INVALID_SHAPE;
   }
@@ -133,7 +212,11 @@ const isProposal = (value: unknown): value is HumanizeResearchProposal => {
   const replacementValid = typeof value.newString === 'string';
   const evidenceValid = isEvidence(value.evidence);
   const changed = value.oldString !== value.newString;
-  const valid = textsValid && replacementValid && evidenceValid && changed;
+  const targetValid = Object.values(ProposalTarget).some(
+    (target) => target === value.target,
+  );
+  const valid =
+    textsValid && replacementValid && evidenceValid && changed && targetValid;
   return valid;
 };
 

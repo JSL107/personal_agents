@@ -3,6 +3,7 @@ import {
   HumanizeResearchOutput,
   HumanizeResearchSource,
   ProposalSkipReason,
+  ProposalTarget,
 } from '../../agent/humanize-research/domain/humanize-research.type';
 import { formatHumanizeResearch } from './humanize-research.formatter';
 
@@ -17,6 +18,7 @@ const baseOutput = (): HumanizeResearchOutput => ({
   ],
   droppedForBudget: [],
   proposals: [],
+  enforcementGaps: [],
   skipped: [],
   injectionNotices: [],
   processed: {
@@ -42,6 +44,7 @@ describe('formatHumanizeResearch', () => {
     const output = baseOutput();
     output.proposals = [
       {
+        target: ProposalTarget.CANON,
         file: 'references/<quick>.md',
         targetMetric: '*gap*',
         rationale: '첫 줄\n<@U123> & `fake`',
@@ -67,5 +70,20 @@ describe('formatHumanizeResearch', () => {
     expect(card).toContain('arxiv:&lt;id&gt;');
     expect(card).toContain(`${'a'.repeat(120)}… → _replacement_`);
     expect(card).not.toContain('a'.repeat(121));
+  });
+  it('enforcementGaps 가 있으면 절이 나온다', () => {
+    const output = baseOutput();
+    output.enforcementGaps = [{ ruleId: 'A-1', evidence: ['a', 'b'] }];
+    expect(formatHumanizeResearch(output)).toContain(
+      '집행 안 되는 규칙: A-1 (근거 2건)',
+    );
+  });
+  it('새 사유 코드 7종을 포함하여 모든 사유의 라벨이 있다', () => {
+    const output = baseOutput();
+    output.skipped = Object.values(ProposalSkipReason).map((reason) => ({
+      proposal: {},
+      reason,
+    }));
+    expect(formatHumanizeResearch(output)).not.toContain('undefined');
   });
 });
