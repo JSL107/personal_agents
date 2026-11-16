@@ -1,4 +1,4 @@
-import { utcMidnightOf } from '../../common/util/kst-date.util';
+import { isCalendarDate } from '../../common/util/kst-date.util';
 import {
   StrategyParameterName,
   StrategyParameterStrategy,
@@ -20,8 +20,6 @@ export interface ParamTuneCliOptions {
   today: string;
   agentRunId: number | null;
 }
-
-const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/u;
 
 const fail = (message: string): never => {
   throw new Error(`${message}\n${PARAM_TUNE_CLI_USAGE}`);
@@ -85,19 +83,16 @@ export const parseParamTuneCliArguments = (
 
   const today = readRequired({ argv, key: 'today' });
   // 형식만 맞으면 2026-02-30 이 통과하고 new Date 가 3월로 넘긴다.
-  if (
-    !DATE_PATTERN.test(today) ||
-    utcMidnightOf(today).toISOString().slice(0, 10) !== today
-  ) {
+  if (!isCalendarDate(today)) {
     return fail(
       `--today 는 실제 존재하는 YYYY-MM-DD 여야 합니다. 받은 값: ${today}`,
     );
   }
 
   const rawAgentRunId = readOption({ argv, key: 'agent-run-id' });
-  const agentRunId =
-    rawAgentRunId === undefined
-      ? null
-      : readInteger({ raw: rawAgentRunId, key: 'agent-run-id' });
+  let agentRunId: number | null = null;
+  if (rawAgentRunId !== undefined) {
+    agentRunId = readInteger({ raw: rawAgentRunId, key: 'agent-run-id' });
+  }
   return { runId, attemptToken, strategy, axis, today, agentRunId };
 };

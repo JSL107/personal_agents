@@ -60,17 +60,16 @@ export const decideRollback = (input: RollbackInput): RollbackDecision => {
   const expired = input.daysSinceApplied > TUNE_PROBATION_MAX_DAYS;
   const gaps: number[] = [];
   for (const replay of replays) {
-    if (
-      replay.invariantViolated ||
-      replay.previousExcessPercent === null ||
-      replay.appliedExcessPercent === null
-    ) {
+    const { previousExcessPercent, appliedExcessPercent } = replay;
+    const missingExcess =
+      previousExcessPercent === null || appliedExcessPercent === null;
+    if (replay.invariantViolated || missingExcess) {
       return inconclusive({
         reason: InconclusiveReason.UNJUDGEABLE,
         final: expired,
       });
     }
-    gaps.push(replay.appliedExcessPercent - replay.previousExcessPercent);
+    gaps.push(appliedExcessPercent - previousExcessPercent);
   }
   if (replays.length === 0) {
     return inconclusive({

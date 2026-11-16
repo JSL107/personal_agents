@@ -1,14 +1,15 @@
 import { join } from 'node:path';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { match } from 'ts-pattern';
 
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
 import { AgentType } from '../../../model-router/domain/model-router.type';
-import { TUNE_CHILD_TIMEOUT_MS } from '../../../param-tune/domain/param-tune.type';
 import {
   ChildOutcomeKind,
   ClaimKind,
+  TUNE_CHILD_TIMEOUT_MS,
 } from '../../../param-tune/domain/param-tune.type';
 import {
   PARAM_TUNE_RUN_PORT,
@@ -54,11 +55,14 @@ export class ParamTuneAutopilotTask implements AutopilotTask {
         const spawnFailures: string[] = [];
         // 두 전략은 같은 DB·시세 캐시를 쓰는 수십 분짜리 재생이라 병렬로 돌리지 않는다.
         for (const strategy of STRATEGIES) {
+          // 루프 밖에서 잡으면 두 번째 전략의 선점 시각이 첫 전략 실행 시간(최대 60분)만큼
+          // 과거가 되어 RUNNING 만료(90분) 판정이 일찍 걸리고 아직 도는 자식을 중복 실행할 수 있다.
+          const claimedAt = new Date();
           const claim = await this.runPort.claim({
             weekStart,
             strategy,
             axis,
-            now: new Date(),
+            now: claimedAt,
           });
           if (claim.kind !== ClaimKind.CLAIMED) {
             continue;
@@ -89,12 +93,21 @@ export class ParamTuneAutopilotTask implements AutopilotTask {
             );
             continue;
           }
-          const reason =
-            child.kind === ChildOutcomeKind.EXITED
-              ? `자식 프로세스 종료 코드 ${child.code}\n${child.tail}`
-              : child.kind === ChildOutcomeKind.TIMEOUT
-                ? `자식 프로세스 시간 초과\n${child.tail}`
-                : `자식 프로세스 기동 실패: ${child.message}`;
+          const reason = match(child)
+            .with(
+              { kind: ChildOutcomeKind.EXITED },
+              (exited) =>
+                `자식 프로세스 종료 코드 ${exited.code}\n${exited.tail}`,
+            )
+            .with(
+              { kind: ChildOutcomeKind.TIMEOUT },
+              (timedOut) => `자식 프로세스 시간 초과\n${timedOut.tail}`,
+            )
+            .with(
+              { kind: ChildOutcomeKind.SPAWN_FAILED },
+              (failed) => `자식 프로세스 기동 실패: ${failed.message}`,
+            )
+            .exhaustive();
           await this.runPort.markFailed({
             runId: claim.runId,
             attemptToken: claim.attemptToken,

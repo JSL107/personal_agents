@@ -45,7 +45,7 @@ import {
 } from '../domain/port/param-tune-run.port';
 import { combinationFromSnapshot } from '../domain/tune-combination';
 import { lastCompletedWindowEnd } from '../domain/tune-schedule';
-import { EvaluateProbationService } from './evaluate-probation.service';
+import { EvaluateProbationUsecase } from './evaluate-probation.usecase';
 
 export interface RunParamTuneInput {
   runId: number;
@@ -108,7 +108,7 @@ export class RunParamTuneUsecase {
     @Inject(PARAM_TUNE_RUN_PORT) private readonly runPort: ParamTuneRunPort,
     @Inject(STRATEGY_PARAMETER_PORT)
     private readonly parameterPort: StrategyParameterPort,
-    private readonly evaluateProbation: EvaluateProbationService,
+    private readonly evaluateProbation: EvaluateProbationUsecase,
     private readonly replay: ReplayBacktestUsecase,
     private readonly configService: ConfigService,
   ) {}
