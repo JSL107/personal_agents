@@ -21,21 +21,27 @@ export interface RollbackInput {
 
 export type RollbackDecision =
   | { kind: 'WAIT' }
-  | { kind: 'INCONCLUSIVE'; reason: '판정 불가' | '표본 부족' }
+  | {
+      kind: 'INCONCLUSIVE';
+      reason: '판정 불가' | '표본 부족';
+      /** true 일 때만 호출부가 시험을 확정한다. false 는 다음 주 재평가. */
+      final: boolean;
+    }
   | { kind: 'KEEP' }
   | { kind: 'ROLLBACK'; meanGapPercent: number };
 
-const inconclusive = (reason: '판정 불가' | '표본 부족'): RollbackDecision => ({
-  kind: 'INCONCLUSIVE',
-  reason,
-});
+const inconclusive = (
+  reason: '판정 불가' | '표본 부족',
+  final: boolean,
+): RollbackDecision => ({ kind: 'INCONCLUSIVE', reason, final });
 
 /**
- * 자동 반영된 파라미터를 시험 기간 뒤 되돌릴지 정한다. 판정 불가는 확정이 아니라
- * 다음 주 재평가 대상이다.
+ * 자동 반영된 파라미터를 시험 기간 뒤 되돌릴지 정한다. 판정 불가는 상한(84일) 전에는
+ * 다음 주 재평가 대상이고, 상한을 넘기면 final 로 끝낸다.
  */
 export const decideRollback = (input: RollbackInput): RollbackDecision => {
   const { replays } = input;
+  const expired = input.daysSinceApplied > TUNE_PROBATION_MAX_DAYS;
   const gaps: number[] = [];
   for (const replay of replays) {
     if (
@@ -43,12 +49,12 @@ export const decideRollback = (input: RollbackInput): RollbackDecision => {
       replay.previousExcessPercent === null ||
       replay.appliedExcessPercent === null
     ) {
-      return inconclusive('판정 불가');
+      return inconclusive('판정 불가', expired);
     }
     gaps.push(replay.appliedExcessPercent - replay.previousExcessPercent);
   }
   if (replays.length === 0) {
-    return inconclusive('판정 불가');
+    return inconclusive('판정 불가', expired);
   }
 
   const enoughSample =
@@ -57,9 +63,7 @@ export const decideRollback = (input: RollbackInput): RollbackDecision => {
     Math.min(...replays.map((replay) => replay.appliedClosedCount)) >=
       TUNE_PROBATION_MIN_CLOSED;
   if (!enoughSample) {
-    return input.daysSinceApplied > TUNE_PROBATION_MAX_DAYS
-      ? inconclusive('표본 부족')
-      : { kind: 'WAIT' };
+    return expired ? inconclusive('표본 부족', true) : { kind: 'WAIT' };
   }
 
   const meanGapPercent = gaps.reduce((sum, gap) => sum + gap, 0) / gaps.length;
