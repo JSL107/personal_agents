@@ -149,6 +149,8 @@ NestJS 11 + DDD/Hexagonal · Prisma 6 + PostgreSQL · Redis/BullMQ · Slack Bolt
 
 기각된 지적은 자기 저장소에 한해 그 기각 이유가 **규약**이 되어 다음 리뷰의 프롬프트에 실린다(유효기간이 지나면 저절로 빠진다). 예시로 덧붙이기만 하던 이전 방식은 같은 지적이 3연속 기각되고도 계속 나왔다 — 그래서 예시가 아니라 규약이다. 사례를 쌓던 episodic 경로는 읽는 곳이 사라져 걷어냈다.
 
+리뷰할 레포가 기본 브랜치에 적어 둔 규칙 문서(`AGENTS.md` 등의 `## Code Review Rules`·리뷰 절·컨벤션 절)도 함께 싣는다. 레포에 커밋하지 않고 나만 쓰는 기준은 `~/.idaeri/review-rules/<owner>/<repo>.md`(소문자)에 적는다 — 레포 문서보다 앞에 실리고, 파일을 고치면 다음 리뷰부터 바로 반영된다.
+
 </td></tr>
 </table>
 

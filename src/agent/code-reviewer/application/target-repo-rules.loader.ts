@@ -1,5 +1,11 @@
+import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
+import { DomainStatus } from '../../../common/exception/domain-status.enum';
 import { GithubException } from '../../../github/domain/github.exception';
 import {
   GITHUB_CLIENT_PORT,
@@ -7,8 +13,10 @@ import {
 } from '../../../github/domain/port/github-client.port';
 import {
   renderTargetRepoRules,
+  renderTargetRepoRuleSections,
   TARGET_REPO_RULE_FILES,
   TargetRepoRules,
+  TargetRepoRuleSection,
   TargetRepoRuleSource,
 } from '../domain/target-repo-rules';
 
@@ -17,20 +25,19 @@ import {
 const CACHE_TTL_MS = 30 * 60 * 1000;
 const CACHE_MAX_ENTRIES = 100;
 
-// 없는 파일은 GithubException 이 감싼 Octokit 오류의 status 404 로 온다.
-const isNotFound = (error: unknown): boolean => {
-  const cause = error instanceof GithubException ? error.cause : error;
-  return (
-    typeof cause === 'object' &&
-    cause !== null &&
-    'status' in cause &&
-    cause.status === 404
-  );
-};
+// GitHub 클라이언트가 없는 파일(404)을 NOT_FOUND 로 구분해 던진다.
+const isNotFound = (error: unknown): boolean =>
+  error instanceof GithubException && error.status === DomainStatus.NOT_FOUND;
+
+// owner/repo 형식만 파일 경로로 쓴다 — `..` 같은 값이 개인 규칙 폴더 밖을 가리키지 않게.
+const REPO_PATH_PATTERN = /^[\w.-]+\/[\w.-]+$/;
+const isSafeRepoPath = (repo: string): boolean =>
+  REPO_PATH_PATTERN.test(repo) &&
+  repo.split('/').every((part) => part !== '.' && part !== '..');
 
 interface CacheEntry {
   at: number;
-  rules: TargetRepoRules;
+  sections: TargetRepoRuleSection[];
 }
 
 export interface LoadTargetRepoRulesInput {
@@ -44,13 +51,19 @@ interface ReadRuleFileInput extends LoadTargetRepoRulesInput {
 
 interface CacheWriteInput {
   key: string;
-  rules: TargetRepoRules;
+  sections: TargetRepoRuleSection[];
 }
 
 @Injectable()
 export class TargetRepoRulesLoader {
   private readonly logger = new Logger(TargetRepoRulesLoader.name);
   private readonly cache = new Map<string, CacheEntry>();
+  // 개인 규칙 폴더. `<owner>/<repo>.md`(소문자)를 두면 그 레포 리뷰에 싣는다. 레포에 커밋하지 않는 나만의 기준이다.
+  private readonly personalRulesDir = join(
+    homedir(),
+    '.idaeri',
+    'review-rules',
+  );
 
   constructor(
     @Inject(GITHUB_CLIENT_PORT)
@@ -62,28 +75,64 @@ export class TargetRepoRulesLoader {
     repo,
     baseSha,
   }: LoadTargetRepoRulesInput): Promise<TargetRepoRules> {
-    const key = `${repo.toLowerCase()}@${baseSha}`;
-    const cached = this.cache.get(key);
-    if (cached !== undefined && Date.now() - cached.at < CACHE_TTL_MS) {
-      return cached.rules;
-    }
-    const reads = await Promise.all(
-      TARGET_REPO_RULE_FILES.map((path) =>
-        this.readFile({ repo, baseSha, path }),
-      ),
-    );
-    const rules = renderTargetRepoRules(reads.flatMap((read) => read ?? []));
-    // 일시 실패(429·5xx·네트워크)가 하나라도 있으면 담아 두지 않는다 — 다음 리뷰가 다시 받게.
-    const allRead = reads.every((read) => read !== null);
-    if (allRead) {
-      this.remember({ key, rules });
-    }
+    // 개인 규칙은 로컬 파일이라 매번 읽는다 — 고친 내용이 다음 리뷰에 바로 반영되게.
+    const [sections, personal] = await Promise.all([
+      this.loadRepoSections({ repo, baseSha }),
+      this.readPersonalRules(repo),
+    ]);
+    const rules = renderTargetRepoRules({ sections, personal });
     if (rules.used.length > 0) {
       this.logger.log(
         `대상 레포 규칙 첨부 (${repo}): ${rules.used.join(', ')}`,
       );
     }
     return rules;
+  }
+
+  // 문서 원문이 아니라 고른 절만 담아 둔다 — 원문은 수십 KB 라 100건이면 메모리가 커진다.
+  private async loadRepoSections({
+    repo,
+    baseSha,
+  }: LoadTargetRepoRulesInput): Promise<TargetRepoRuleSection[]> {
+    const key = `${repo.toLowerCase()}@${baseSha}`;
+    const cached = this.cache.get(key);
+    if (cached !== undefined && Date.now() - cached.at < CACHE_TTL_MS) {
+      return cached.sections;
+    }
+    const reads = await Promise.all(
+      TARGET_REPO_RULE_FILES.map((path) =>
+        this.readFile({ repo, baseSha, path }),
+      ),
+    );
+    const sections = renderTargetRepoRuleSections(
+      reads.flatMap((read) => read ?? []),
+    );
+    // 일시 실패(429·5xx·네트워크)가 하나라도 있으면 담아 두지 않는다 — 다음 리뷰가 다시 받게.
+    const allRead = reads.every((read) => read !== null);
+    if (allRead) {
+      this.remember({ key, sections });
+    }
+    return sections;
+  }
+
+  // 파일이 없으면 개인 규칙 없이 리뷰한다. 대부분의 레포는 없으므로 경고로 남기지 않는다.
+  // 있는데 못 읽은 경우(권한·폴더 등)만 경고한다.
+  private async readPersonalRules(repo: string): Promise<string | undefined> {
+    if (!isSafeRepoPath(repo)) {
+      return undefined;
+    }
+    const path = join(this.personalRulesDir, `${repo.toLowerCase()}.md`);
+    if (!existsSync(path)) {
+      return undefined;
+    }
+    try {
+      return await readFile(path, 'utf-8');
+    } catch (error: unknown) {
+      this.logger.warn(
+        `개인 리뷰 규칙 읽기 실패 (${path}): ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return undefined;
+    }
   }
 
   // 없는 파일(404)은 빈 배열이다. 레포마다 있는 문서가 달라 대부분 "없음" 이라 경고로 남기지 않는다.
@@ -114,13 +163,13 @@ export class TargetRepoRulesLoader {
     }
   }
 
-  private remember({ key, rules }: CacheWriteInput): void {
+  private remember({ key, sections }: CacheWriteInput): void {
     if (this.cache.size >= CACHE_MAX_ENTRIES) {
       const oldest = this.cache.keys().next().value;
       if (oldest !== undefined) {
         this.cache.delete(oldest);
       }
     }
-    this.cache.set(key, { at: Date.now(), rules });
+    this.cache.set(key, { at: Date.now(), sections });
   }
 }

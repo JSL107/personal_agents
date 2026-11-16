@@ -1,5 +1,6 @@
 import { Octokit } from '@octokit/rest';
 
+import { DomainStatus } from '../../common/exception/domain-status.enum';
 import { GithubException } from '../domain/github.exception';
 import { PullRequestDiff, TarballDownloadKind } from '../domain/github.type';
 import { GithubErrorCode } from '../domain/github-error-code.enum';
@@ -2299,6 +2300,28 @@ describe('OctokitGithubClient', () => {
       });
 
       expect(result.content).toBe('첫 줄이에요.\n둘째 줄이에요.');
+    });
+
+    it('getFileFromBranch — 없는 파일(404)은 NOT_FOUND, 그 밖의 실패는 BAD_GATEWAY 로 던진다', async () => {
+      const getContent = jest
+        .fn()
+        .mockRejectedValueOnce(
+          Object.assign(new Error('Not Found'), { status: 404 }),
+        )
+        .mockRejectedValueOnce(
+          Object.assign(new Error('Service Unavailable'), { status: 503 }),
+        );
+      const client = new OctokitGithubClient({
+        rest: { repos: { getContent } },
+      } as unknown as Octokit);
+      const input = { repo: 'owner/repo', branch: 'main', path: 'a.md' };
+
+      await expect(client.getFileFromBranch(input)).rejects.toMatchObject({
+        status: DomainStatus.NOT_FOUND,
+      });
+      await expect(client.getFileFromBranch(input)).rejects.toMatchObject({
+        status: DomainStatus.BAD_GATEWAY,
+      });
     });
 
     // GitHub 은 1MB 를 넘는 파일에 본문을 싣지 않고 encoding 을 'none' 으로 준다. 그때
