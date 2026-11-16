@@ -14,6 +14,7 @@ import {
 } from '../../slack/domain/port/slack-delivery.repository.port';
 import {
   describeDeliveryStatus,
+  LatestActivity,
   summarizeLatestDeliveries,
 } from '../../slack/domain/slack-delivery-summary';
 import { LocalRepoSnapshotService } from '../infrastructure/local-repo-snapshot.service';
@@ -159,13 +160,19 @@ export class ConversationLookupService {
       return undefined;
     }
     const lines = groups.map((group) => {
-      const sent = group.lastSentAt
-        ? `마지막 발송 ${formatKstDateTime(group.lastSentAt)} KST · ${LATEST_DELIVERY_RECENT_DAYS}일 ${group.recentSent}회`
+      const sentStat = group[LatestActivity.SENT];
+      const consoleRouteStat = group[LatestActivity.CONSOLE_ROUTE];
+      const emptyStat = group[LatestActivity.EMPTY];
+      const sent = sentStat.lastAt
+        ? `마지막 발송 ${formatKstDateTime(sentStat.lastAt)} KST · ${LATEST_DELIVERY_RECENT_DAYS}일 ${sentStat.recent}회`
         : `${LATEST_DELIVERY_LOOKBACK_DAYS}일 안 발송 없음`;
-      const consoleRoute = group.lastConsoleRouteAt
-        ? ` · 콘솔로 돌림 ${LATEST_DELIVERY_RECENT_DAYS}일 ${group.recentConsoleRoute}회(마지막 ${formatKstDateTime(group.lastConsoleRouteAt)} KST)`
+      const consoleRoute = consoleRouteStat.lastAt
+        ? ` · 콘솔로 돌림 ${LATEST_DELIVERY_RECENT_DAYS}일 ${consoleRouteStat.recent}회(마지막 ${formatKstDateTime(consoleRouteStat.lastAt)} KST)`
         : '';
-      return `${group.key} · ${sent}${consoleRoute}`;
+      const empty = emptyStat.lastAt
+        ? ` · 보낼 것 없이 끝난 마지막 회차 ${formatKstDateTime(emptyStat.lastAt)} KST`
+        : '';
+      return `${group.key} · ${sent}${consoleRoute}${empty}`;
     });
     const text = lines.join('\n');
     return wrapUntrustedInput(text);
