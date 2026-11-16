@@ -59,6 +59,12 @@ export interface StoredVerdict {
   chosenLabel: string | null;
 }
 
+interface SearchOutcome {
+  verdictKey: string;
+  verdict: StoredVerdict;
+  excluded: number[];
+}
+
 const MODES: readonly ParamTuneMode[] = ['off', 'observe', 'apply'];
 
 const isStoredVerdict = (value: unknown): value is StoredVerdict =>
@@ -133,7 +139,7 @@ export class RunParamTuneUsecase {
     }
 
     const stored = await this.searchOrReuse(input, snapshot);
-    const patch = await this.adopt(input, snapshot, mode, stored.verdict);
+    const patch = await this.adopt(input, snapshot, mode, stored);
     await this.finish(input, {
       status: 'DONE',
       parameterSnapshot: snapshot,
@@ -157,7 +163,7 @@ export class RunParamTuneUsecase {
   private async searchOrReuse(
     input: RunParamTuneInput,
     snapshot: ParameterSnapshot,
-  ): Promise<{ verdictKey: string; verdict: StoredVerdict }> {
+  ): Promise<SearchOutcome> {
     const excluded = await this.runPort.findExcludedValues({
       strategy: input.strategy,
       axis: input.axis,
@@ -173,7 +179,7 @@ export class RunParamTuneUsecase {
 
     const cached = await this.runPort.findVerdictByKey(verdictKey);
     if (cached !== null && isStoredVerdict(cached.verdict)) {
-      return { verdictKey, verdict: cached.verdict };
+      return { verdictKey, verdict: cached.verdict, excluded };
     }
 
     const current = combinationFromSnapshot(snapshot);
@@ -228,6 +234,7 @@ export class RunParamTuneUsecase {
     });
     return {
       verdictKey,
+      excluded,
       verdict: {
         verdicts,
         combinations: [...output.combinationByLabel].map(
@@ -242,8 +249,9 @@ export class RunParamTuneUsecase {
     input: RunParamTuneInput,
     snapshot: ParameterSnapshot,
     mode: ParamTuneMode,
-    stored: StoredVerdict,
+    searched: SearchOutcome,
   ): Promise<TuneRunPatch> {
+    const stored = searched.verdict;
     const currentEntry = snapshot.find((entry) => entry.name === input.axis);
     if (currentEntry === undefined) {
       throw new Error(`스냅샷에 ${input.axis} 이 없다`);
@@ -266,7 +274,27 @@ export class RunParamTuneUsecase {
           previousValue: currentEntry.value,
           candidateValue: adopt.value,
         };
+        // 한 칸 제한이 격자에서 뺀 값을 다시 고르면 제외 기간이 무력해진다.
+        if (searched.excluded.includes(adopt.value)) {
+          return {
+            decision: 'NO_CHANGE' as const,
+            decisionReason: `제외된 값(${adopt.value})으로 한 칸 제한됨`,
+          };
+        }
         if (mode !== 'apply') {
+          // 판정이 반년 재사용되므로 같은 값의 가상 시험을 주마다 쌓지 않는다.
+          const open = (
+            await this.runPort.findWouldApplyUnevaluated(input.strategy)
+          ).find(
+            (row) =>
+              row.axis === input.axis && row.candidateValue === adopt.value,
+          );
+          if (open !== undefined) {
+            return {
+              decision: 'NO_CHANGE' as const,
+              decisionReason: `같은 값 가상 시험 중 (run #${open.runId})`,
+            };
+          }
           return {
             decision: 'WOULD_APPLY' as const,
             decisionReason: adopt.reason,

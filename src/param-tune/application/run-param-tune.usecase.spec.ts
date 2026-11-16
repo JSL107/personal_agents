@@ -399,6 +399,46 @@ describe('RunParamTuneUsecase', () => {
     });
   });
 
+  it('한 칸 제한 결과가 제외 값이면 반영하지 않는다', async () => {
+    config.get.mockReturnValue('apply');
+    const stopLoss = (value: number) =>
+      withAxisValue(current, 'EXIT_STOP_LOSS_PERCENT', value);
+    runPort.findExcludedValues.mockResolvedValue([-7]);
+    searchReturns(
+      new Map([
+        ['BASE', current],
+        ['L10', stopLoss(-10)],
+      ]),
+    );
+    mockedEvaluate.mockReturnValue(
+      Array.from({ length: 6 }, () => verdictOf('L10')),
+    );
+
+    await usecase.execute({ ...input, axis: 'EXIT_STOP_LOSS_PERCENT' });
+
+    expect(parameterPort.activateNewVersion).not.toHaveBeenCalled();
+    expect(finishedPatch()).toMatchObject({
+      decision: 'NO_CHANGE',
+      decisionReason: '제외된 값(-7)으로 한 칸 제한됨',
+    });
+  });
+
+  it('같은 값의 가상 시험이 열려 있으면 WOULD_APPLY 를 또 만들지 않는다', async () => {
+    adoptableSearch();
+    runPort.findWouldApplyUnevaluated.mockResolvedValue([
+      { ...probation, runId: 5, candidateValue: 15 },
+    ]);
+    // 이 가상 시험은 표본 부족(WAIT)이라 그대로 열려 있다.
+    mockedReplayParameters.mockResolvedValue(replayResult('0.01', 3));
+
+    await usecase.execute(input);
+
+    expect(finishedPatch()).toMatchObject({
+      decision: 'NO_CHANGE',
+      decisionReason: '같은 값 가상 시험 중 (run #5)',
+    });
+  });
+
   it('판정이 NO_CHANGE 면 그 사유를 기록한다', async () => {
     searchReturns(new Map([['BASE', current]]));
     mockedEvaluate.mockReturnValue([]);
