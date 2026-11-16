@@ -16,6 +16,7 @@ export const PROTECTED_QUICK_RULE_MARKERS = [
   '## 등급 기준',
 ];
 export const QUICK_RULES_LINE_HEADROOM = 20;
+const QUICK_RULE_ROW = /^\| [A-Z]-\d+ \|[^\n]*\|$/u;
 export interface GateContext {
   included: readonly CollectedItem[];
   quickRules: string;
@@ -60,7 +61,10 @@ export const gateProposal = ({
   if (matches !== 1) {
     return ProposalSkipReason.MATCH_NOT_UNIQUE;
   }
-  const tableRow = /^\| [A-Z]-\d+ \|[^\n]*\|$/u.test(proposal.oldString.trim());
+  const tableRow = isWholeRuleRow({
+    quickRules: context.quickRules,
+    oldString: proposal.oldString,
+  });
   const replacement = proposal.newString.trim();
   const invalidDeletion = replacement === '' && (!canon || !tableRow);
   if (invalidDeletion) {
@@ -100,6 +104,23 @@ const countMatches = ({
   const positions = Array.from({ length: text.length }, (_, index) => index);
   const matches = positions.filter((index) => text.startsWith(search, index));
   return matches.length;
+};
+
+// 행 앞부분만 지우면 뒤 칸이 남으므로, quick-rules 의 한 줄 전체와 같은 규칙 행만 삭제로 인정한다.
+const isWholeRuleRow = ({
+  quickRules,
+  oldString,
+}: {
+  quickRules: string;
+  oldString: string;
+}): boolean => {
+  const target = oldString.trim();
+  const isRuleRow = QUICK_RULE_ROW.test(target);
+  const isWholeLine = quickRules
+    .split('\n')
+    .some((line) => line.trim() === target);
+  const whole = isRuleRow && isWholeLine;
+  return whole;
 };
 
 const overlapsProtectedLine = ({

@@ -39,6 +39,7 @@ import {
   constrainEnforcementGaps,
   constrainResearchProposals,
   parseResearchOutput,
+  quickRuleIds,
 } from '../domain/humanize-research-output';
 import {
   HUMANIZE_RESEARCH_OUTPUT_SCHEMA,
@@ -266,9 +267,15 @@ export class RunHumanizeResearchUsecase {
       previous,
       included: selection.included,
     });
+    // 집행 누락은 정본 규칙 id 나 연결표 id 를 가리켜야 한다 — 모델이 지어낸 id 는 버린다.
+    const knownRuleIds = new Set([
+      ...quickRuleIds(selection.quickRules),
+      ...HUMANIZE_RULE_LINKS.map((link) => link.id),
+    ]);
     const enforcementGaps = constrainEnforcementGaps({
       gaps: parsed.enforcementGaps,
       includedIds,
+      knownRuleIds,
     });
     return {
       sources: sourceStatus,
