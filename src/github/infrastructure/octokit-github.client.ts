@@ -974,10 +974,20 @@ export class OctokitGithubClient implements GithubClientPort {
             : undefined,
       };
     } catch (error: unknown) {
-      throw this.wrapRequestFailed(
+      const wrapped = this.wrapRequestFailed(
         error,
         `GitHub ${repo} 파일 재조회 실패 (${branch}:${path})`,
       );
+      // 없는 파일은 호출부가 "없음" 과 일시 실패를 가를 수 있게 NOT_FOUND 로 남긴다.
+      if (hasHttpStatus(error, 404)) {
+        throw new GithubException({
+          code: wrapped.githubErrorCode,
+          message: wrapped.message,
+          status: DomainStatus.NOT_FOUND,
+          cause: error,
+        });
+      }
+      throw wrapped;
     }
   }
 

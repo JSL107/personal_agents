@@ -1,8 +1,23 @@
 import {
   extractTargetRepoRuleSection,
+  PERSONAL_RULES_LABEL,
   renderTargetRepoRules,
+  renderTargetRepoRuleSections,
   TARGET_REPO_RULES_MAX_BYTES,
+  TargetRepoRules,
+  TargetRepoRuleSource,
 } from './target-repo-rules';
+
+interface RenderInput {
+  sources: TargetRepoRuleSource[];
+  personal?: string;
+}
+
+const render = ({ sources, personal }: RenderInput): TargetRepoRules =>
+  renderTargetRepoRules({
+    sections: renderTargetRepoRuleSections(sources),
+    personal,
+  });
 
 describe('extractTargetRepoRuleSection', () => {
   it('제목에 review 가 든 절을 다음 같은 수준 제목 전까지 고른다', () => {
@@ -70,15 +85,19 @@ describe('extractTargetRepoRuleSection', () => {
 describe('renderTargetRepoRules', () => {
   it('실을 것이 없으면 빈 블록이다', () => {
     expect(
-      renderTargetRepoRules([{ path: 'AGENTS.md', content: '# 안내\n없음' }]),
+      render({
+        sources: [{ path: 'AGENTS.md', content: '# 안내\n없음' }],
+      }),
     ).toEqual({ block: '', used: [] });
   });
 
   it('출처와 절 제목을 남기고, 본문은 신뢰 경계 안에 둔다', () => {
-    const rules = renderTargetRepoRules([
-      { path: 'AGENTS.md', content: '## Review Focus\n- 권한 검사' },
-      { path: 'CLAUDE.md', content: '## 컨벤션\n- DTO' },
-    ]);
+    const rules = render({
+      sources: [
+        { path: 'AGENTS.md', content: '## Review Focus\n- 권한 검사' },
+        { path: 'CLAUDE.md', content: '## 컨벤션\n- DTO' },
+      ],
+    });
     expect(rules.used).toEqual(['AGENTS.md#Review Focus', 'CLAUDE.md#컨벤션']);
     const inside = rules.block.slice(rules.block.indexOf('<untrusted-input>'));
     expect(inside).toContain('### AGENTS.md — Review Focus\n- 권한 검사');
@@ -87,12 +106,60 @@ describe('renderTargetRepoRules', () => {
 
   it('합계 상한을 넘는 절은 뺀다', () => {
     const huge = `## Review Focus\n${'가'.repeat(5_000)}`;
-    const rules = renderTargetRepoRules([
-      { path: 'A.md', content: huge },
-      { path: 'B.md', content: huge },
-      { path: 'C.md', content: huge },
-    ]);
+    const rules = render({
+      sources: [
+        { path: 'A.md', content: huge },
+        { path: 'B.md', content: huge },
+        { path: 'C.md', content: huge },
+      ],
+    });
     expect(rules.used.length).toBeLessThan(3);
+    expect(Buffer.byteLength(rules.block, 'utf-8')).toBeLessThan(
+      TARGET_REPO_RULES_MAX_BYTES + 2_000,
+    );
+  });
+
+  it('개인 규칙은 레포 문서보다 앞에, 신뢰 경계 밖에 싣는다', () => {
+    const rules = render({
+      sources: [{ path: 'AGENTS.md', content: '## Review Focus\n- 권한 검사' }],
+      personal: '- 마이그레이션 파일은 만들지 않는다\n',
+    });
+    expect(rules.used).toEqual([
+      PERSONAL_RULES_LABEL,
+      'AGENTS.md#Review Focus',
+    ]);
+    const personalAt = rules.block.indexOf(
+      '- 마이그레이션 파일은 만들지 않는다',
+    );
+    expect(personalAt).toBeGreaterThan(-1);
+    expect(personalAt).toBeLessThan(rules.block.indexOf('<untrusted-input>'));
+  });
+
+  it('레포 문서가 없어도 개인 규칙만으로 싣고, 비어 있으면 싣지 않는다', () => {
+    expect(render({ sources: [], personal: '- A' }).used).toEqual([
+      PERSONAL_RULES_LABEL,
+    ]);
+    expect(render({ sources: [], personal: '  \n' })).toEqual({
+      block: '',
+      used: [],
+    });
+  });
+
+  it('개인 규칙이 예산을 먼저 쓰고, 남은 예산을 넘는 레포 절은 뺀다', () => {
+    // 레포 절 하나는 혼자면 예산(12KB) 안이지만, 개인 규칙(약 6KB)을 뺀 나머지는 넘는다.
+    const docs = `## Review Focus\n${'가'.repeat(2_000)}`;
+    const small = '## Review Focus\n- 작은 절';
+    const alone = render({ sources: [{ path: 'A.md', content: docs }] });
+    expect(alone.used).toEqual(['A.md#Review Focus']);
+
+    const rules = render({
+      sources: [
+        { path: 'A.md', content: docs },
+        { path: 'B.md', content: small },
+      ],
+      personal: '나'.repeat(3_000),
+    });
+    expect(rules.used).toEqual([PERSONAL_RULES_LABEL, 'B.md#Review Focus']);
     expect(Buffer.byteLength(rules.block, 'utf-8')).toBeLessThan(
       TARGET_REPO_RULES_MAX_BYTES + 2_000,
     );
