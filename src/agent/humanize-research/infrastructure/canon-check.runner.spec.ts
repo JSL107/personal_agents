@@ -216,6 +216,29 @@ describe('CanonCheckRunner', () => {
     expect(spawnPython).not.toHaveBeenCalled();
   });
 
+  it('검사한 SHA 에서 행 경계가 달라 행 전체 삭제가 아니면 DELETE_NOT_ALLOWED 이고 검사를 돌리지 않는다', async () => {
+    readFile.mockResolvedValue(`${QUICK_RULE_ROW} 추가 |\n${NEXT_RULE_ROW}`);
+    const runner = new CanonCheckRunner(configService);
+
+    const result = await runner.check({ ...proposal, newString: '' });
+
+    expect(result.reason).toBe(ProposalSkipReason.DELETE_NOT_ALLOWED);
+    expect(writeFile).not.toHaveBeenCalled();
+    expect(spawnPython).not.toHaveBeenCalled();
+  });
+
+  it('검사한 SHA 의 줄 수 상한을 넘으면 RULEBOOK_TOO_LONG 이고 검사를 돌리지 않는다', async () => {
+    readFile.mockResolvedValue(`앞\n${QUICK_RULE_ROW}\n뒤`);
+    const runner = new CanonCheckRunner(configService);
+    const newString = `${QUICK_RULE_ROW}${'\n추가 줄'.repeat(21)}`;
+
+    const result = await runner.check({ ...proposal, newString });
+
+    expect(result.reason).toBe(ProposalSkipReason.RULEBOOK_TOO_LONG);
+    expect(writeFile).not.toHaveBeenCalled();
+    expect(spawnPython).not.toHaveBeenCalled();
+  });
+
   it('검사한 SHA의 두 규칙 행에 걸친 문구면 두 ID를 반환한다', async () => {
     const oldString = `${QUICK_RULE_ROW}\n${NEXT_RULE_ROW}`;
     readFile.mockResolvedValue(`앞\n${oldString}\n뒤`);
