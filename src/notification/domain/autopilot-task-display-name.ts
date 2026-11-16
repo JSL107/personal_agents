@@ -35,6 +35,7 @@ const AUTOPILOT_TASK_DISPLAY_NAME: Partial<Record<string, string>> = {
   'paper-recommend': '모의투자 추천',
   'paper-order-fill': '모의투자 체결',
   'paper-score': '모의투자 채점',
+  'param-tune': '파라미터 자동 조정',
   'evening-retro-publish': '저녁 마감',
   'morning-briefing': '아침 브리핑',
   'po-shadow': 'PO 검토',

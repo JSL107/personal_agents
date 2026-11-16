@@ -42,6 +42,9 @@ import { NotificationQueueModule } from '../notification/notification-queue.modu
 import { NotionModule } from '../notion/notion.module';
 import { OPS_SUPERVISOR_ADVISOR_PORT } from '../ops-supervisor/domain/port/ops-supervisor-advisor.port';
 import { PaperTradingModule } from '../paper-trading/paper-trading.module';
+import { PARAM_TUNE_RUN_PORT } from '../param-tune/domain/port/param-tune-run.port';
+import { ParamTuneChildLauncher } from '../param-tune/infrastructure/param-tune-child.launcher';
+import { ParamTuneRunPrismaRepository } from '../param-tune/infrastructure/param-tune-run.prisma.repository';
 import { PrReviewLoopModule } from '../pr-review-loop/pr-review-loop.module';
 import { PreferenceProfileModule } from '../preference-profile/preference-profile.module';
 import { PreviewGateModule } from '../preview-gate/preview-gate.module';
@@ -90,6 +93,7 @@ import { PaperOrderFillAutopilotTask } from './infrastructure/tasks/paper-order-
 import { PaperRecommendAutopilotTask } from './infrastructure/tasks/paper-recommend.autopilot-task';
 import { PaperScoreAutopilotTask } from './infrastructure/tasks/paper-score.autopilot-task';
 import { PaperTradingAutopilotTask } from './infrastructure/tasks/paper-trading.autopilot-task';
+import { ParamTuneAutopilotTask } from './infrastructure/tasks/param-tune.autopilot-task';
 import { PoEvalAutopilotTask } from './infrastructure/tasks/po-eval.autopilot-task';
 import { PoShadowAutopilotTask } from './infrastructure/tasks/po-shadow.autopilot-task';
 import { PortfolioPublishAutopilotTask } from './infrastructure/tasks/portfolio-publish.autopilot-task';
@@ -230,6 +234,10 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
     PaperOrderFillAutopilotTask,
     PaperIntradayStopAutopilotTask,
     PaperScoreAutopilotTask,
+    ParamTuneAutopilotTask,
+    ParamTuneChildLauncher,
+    ParamTuneRunPrismaRepository,
+    { provide: PARAM_TUNE_RUN_PORT, useExisting: ParamTuneRunPrismaRepository },
     AiCliEnvSnapshotAutopilotTask,
     AiCliEnvApplyAutopilotTask,
     StudyDeepdiveAutopilotTask,
@@ -347,6 +355,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         paperOrderFill: PaperOrderFillAutopilotTask,
         paperIntradayStop: PaperIntradayStopAutopilotTask,
         paperScore: PaperScoreAutopilotTask,
+        paramTune: ParamTuneAutopilotTask,
         aiCliEnvSnapshot: AiCliEnvSnapshotAutopilotTask,
         aiCliEnvApply: AiCliEnvApplyAutopilotTask,
         studyDeepdive: StudyDeepdiveAutopilotTask,
@@ -401,6 +410,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         paperOrderFill,
         paperIntradayStop,
         paperScore,
+        paramTune,
         aiCliEnvSnapshot,
         aiCliEnvApply,
         studyDeepdive,
@@ -456,6 +466,7 @@ const STOCK_MONITOR_US_TASK = Symbol('STOCK_MONITOR_US_TASK');
         PaperOrderFillAutopilotTask,
         PaperIntradayStopAutopilotTask,
         PaperScoreAutopilotTask,
+        ParamTuneAutopilotTask,
         AiCliEnvSnapshotAutopilotTask,
         AiCliEnvApplyAutopilotTask,
         StudyDeepdiveAutopilotTask,
