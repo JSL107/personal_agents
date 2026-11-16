@@ -60,6 +60,7 @@ model AgentRun {
   paperOrders        PaperOrder[]
   screeningRuns      ScreeningRun[]
   strategyParameters StrategyParameter[]
+  parameterTuneRuns  ParameterTuneRun[]
   jobPostings        JobPosting[]
 
   @@index([agentType, startedAt])
@@ -1183,6 +1184,57 @@ model StrategyParameter {
   @@unique([strategy, name, version])
   @@index([strategy, name, activatedAt])
   @@map("strategy_parameter")
+}
+
+// 투자 파라미터 주간 자동 조정의 원장. (주, 전략) 당 한 행이 그 주의 시도 전체를 담는다 —
+// 탐색 판정, 반영 결정, 반영 후 평가가 한 행 안에서 이어져야 "무엇이 왜 바뀌었고 결과가 어땠나" 를
+// 귀속할 수 있다. 값 자체의 이력은 StrategyParameter 가 갖고 여기는 그 행을 가리키기만 한다.
+//
+// 설계 근거: docs/superpowers/specs/2026-11-16-param-auto-tuning-design.md
+model ParameterTuneRun {
+  id Int @id @default(autoincrement())
+
+  weekStart DateTime @map("week_start") @db.Date
+  strategy  String
+  axis      String
+  status    String
+
+  // 같은 주 재시도가 서로의 결과를 덮지 않게 하는 시도 식별자.
+  attemptToken  String   @map("attempt_token")
+  startedAt     DateTime @default(now()) @map("started_at")
+  failureReason String?  @map("failure_reason") @db.Text
+
+  // 시도 시점의 4개 파라미터 활성 값 스냅샷.
+  parameterSnapshot Json?   @map("parameter_snapshot")
+  verdictKey        String? @map("verdict_key")
+  verdict           Json?
+
+  decision       String?
+  decisionReason String? @map("decision_reason")
+
+  // APPLIED·WOULD_APPLY 의 반영(예정) 값. observe 가상 시험과 롤백 제외 목록이 읽는다.
+  previousValue  Decimal? @map("previous_value") @db.Decimal(18, 4)
+  candidateValue Decimal? @map("candidate_value") @db.Decimal(18, 4)
+
+  previousParameterId Int?      @map("previous_parameter_id")
+  appliedParameterId  Int?      @map("applied_parameter_id")
+  appliedAt           DateTime? @map("applied_at")
+
+  evaluation       String?
+  evaluatedAt      DateTime? @map("evaluated_at")
+  evaluationDetail Json?     @map("evaluation_detail")
+  notifiedAt       DateTime? @map("notified_at")
+
+  agentRunId Int?      @map("agent_run_id")
+  agentRun   AgentRun? @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([weekStart, strategy])
+  @@index([strategy, appliedAt])
+  @@index([verdictKey])
+  @@map("parameter_tune_run")
 }
 
 model JobPosting {

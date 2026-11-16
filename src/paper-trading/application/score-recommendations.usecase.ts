@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import {
   getTodayKstDate,
@@ -9,6 +9,11 @@ import {
   HOLIDAY_CALENDAR_PORT,
   HolidayCalendarPort,
 } from '../../holiday/domain/port/holiday-calendar.port';
+import {
+  AppliedPeriod,
+  PARAM_TUNE_RUN_PORT,
+  ParamTuneRunPort,
+} from '../../param-tune/domain/port/param-tune-run.port';
 import { summarizeExitBandUsage } from '../domain/exit-band';
 import { TradeStrategy } from '../domain/paper-account.type';
 import {
@@ -101,10 +106,17 @@ export interface ScoreRecommendationsResult {
   // 평가일 지수가 아직 안 들어와 초과수익이 통째로 빠진 회차인가. 저장을 막는 조건이자
   // 카드에 "고장이 아니라 순서 문제" 임을 적기 위한 값이다.
   evaluationBenchmarkMissing: boolean;
+  // 이 구간 안에 파라미터 값이 자동으로 바뀐 횟수. 값이 바뀌어도 규칙 버전은 안 움직이므로
+  // 이 숫자가 있어야 성적을 잘못 귀속하지 않는다.
+  // 조회에 실패하면 null — 주석일 뿐이라 성적표를 막지 않는다.
+  autoTuneAppliedCount: number | null;
   accounts: AccountRecommendationScore[];
   classifications: RecommendationClassifications;
   exclusions: RecommendationScoreExclusions;
 }
+
+const DAY_MS = 86_400_000;
+const WEEK_MS = 7 * DAY_MS;
 
 const emptyScore = (
   strategy: Exclude<TradeStrategy, 'MANUAL'>,
@@ -139,10 +151,14 @@ const countClassifications = (
 
 @Injectable()
 export class ScoreRecommendationsUsecase {
+  private readonly logger = new Logger(ScoreRecommendationsUsecase.name);
+
   constructor(
     private readonly repository: PaperTradingPrismaRepository,
     @Inject(HOLIDAY_CALENDAR_PORT)
     private readonly holidayCalendar: HolidayCalendarPort,
+    @Inject(PARAM_TUNE_RUN_PORT)
+    private readonly tuneRuns: ParamTuneRunPort,
   ) {}
 
   async execute(
@@ -378,15 +394,37 @@ export class ScoreRecommendationsUsecase {
       );
     }
 
+    // 카드에 기간 시작 개념이 따로 없다. 구간 집계(from)면 from, 아니면 주간 카드 주기인 7일 전.
+    // 기준일 다음 날 0시 미만까지만 센다 — 과거 기준일 성적표에 이후 반영이 섞이지 않게.
+    const autoTuneAppliedCount = await this.countAutoTuneApplied({
+      since: command.from ?? new Date(asOf.getTime() - WEEK_MS),
+      until: new Date(asOf.getTime() + DAY_MS),
+    });
+
     return {
       asOf,
       from: command.from ?? null,
       persisted,
       evaluationBenchmarkMissing,
+      autoTuneAppliedCount,
       accounts,
       classifications,
       exclusions,
     };
+  }
+
+  // 표가 아직 없거나 조회가 흔들려도 금요일 성적표 전체를 잃지 않는다.
+  private async countAutoTuneApplied(
+    period: AppliedPeriod,
+  ): Promise<number | null> {
+    try {
+      return await this.tuneRuns.countAppliedBetween(period);
+    } catch (error) {
+      this.logger.warn(
+        `자동 반영 건수 조회 실패 (성적표는 계속): ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return null;
+    }
   }
 }
 

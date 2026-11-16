@@ -16,6 +16,7 @@ import { StrategyParameterPrismaRepository } from './infrastructure/strategy-par
     ResolveStrategyParametersUsecase,
   ],
   exports: [
+    STRATEGY_PARAMETER_PORT,
     ResolveStrategyParametersUsecase,
     StrategyParameterPrismaRepository,
   ],
