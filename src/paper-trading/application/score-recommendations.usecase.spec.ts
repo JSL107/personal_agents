@@ -1146,6 +1146,17 @@ describe('ScoreRecommendationsUsecase', () => {
       );
     });
 
+    it('건수 조회가 실패해도 성적표는 나온다', async () => {
+      tuneRuns.countAppliedSince.mockRejectedValue(new Error('no table'));
+
+      const result = await setUp().execute({
+        asOf: new Date('2026-08-13T00:00:00.000Z'),
+      });
+
+      expect(result.autoTuneAppliedCount).toBeNull();
+      expect(result.accounts).toEqual([]);
+    });
+
     it('구간 집계(from)면 from 부터 센다', async () => {
       const asOf = new Date('2026-08-13T00:00:00.000Z');
       const from = new Date('2026-07-01T00:00:00.000Z');

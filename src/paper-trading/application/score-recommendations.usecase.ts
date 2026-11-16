@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 
 import {
   getTodayKstDate,
@@ -107,7 +107,8 @@ export interface ScoreRecommendationsResult {
   evaluationBenchmarkMissing: boolean;
   // 이 구간 안에 파라미터 값이 자동으로 바뀐 횟수. 값이 바뀌어도 규칙 버전은 안 움직이므로
   // 이 숫자가 있어야 성적을 잘못 귀속하지 않는다.
-  autoTuneAppliedCount: number;
+  // 조회에 실패하면 null — 주석일 뿐이라 성적표를 막지 않는다.
+  autoTuneAppliedCount: number | null;
   accounts: AccountRecommendationScore[];
   classifications: RecommendationClassifications;
   exclusions: RecommendationScoreExclusions;
@@ -148,6 +149,8 @@ const countClassifications = (
 
 @Injectable()
 export class ScoreRecommendationsUsecase {
+  private readonly logger = new Logger(ScoreRecommendationsUsecase.name);
+
   constructor(
     private readonly repository: PaperTradingPrismaRepository,
     @Inject(HOLIDAY_CALENDAR_PORT)
@@ -390,7 +393,7 @@ export class ScoreRecommendationsUsecase {
     }
 
     // 카드에 기간 시작 개념이 따로 없다. 구간 집계(from)면 from, 아니면 주간 카드 주기인 7일 전.
-    const autoTuneAppliedCount = await this.tuneRuns.countAppliedSince(
+    const autoTuneAppliedCount = await this.countAutoTuneApplied(
       command.from ?? new Date(asOf.getTime() - WEEK_MS),
     );
 
@@ -404,6 +407,18 @@ export class ScoreRecommendationsUsecase {
       classifications,
       exclusions,
     };
+  }
+
+  // 표가 아직 없거나 조회가 흔들려도 금요일 성적표 전체를 잃지 않는다.
+  private async countAutoTuneApplied(since: Date): Promise<number | null> {
+    try {
+      return await this.tuneRuns.countAppliedSince(since);
+    } catch (error) {
+      this.logger.warn(
+        `자동 반영 건수 조회 실패 (성적표는 계속): ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return null;
+    }
   }
 }
 
