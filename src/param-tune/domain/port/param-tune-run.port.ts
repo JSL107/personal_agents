@@ -140,6 +140,13 @@ export interface FindVerdictByKeyInput {
   verdictKey: string;
 }
 
+/** windowEnd 는 'YYYY-MM-DD'. */
+export interface HasAppliedFromWindowInput {
+  strategy: StrategyParameterStrategy;
+  axis: StrategyParameterName;
+  windowEnd: string;
+}
+
 export interface ParamTuneRunPort {
   /** weekStart 는 'YYYY-MM-DD'. 이 주·전략의 회차를 선점한다. */
   claim(input: ClaimInput): Promise<ClaimResult>;
@@ -179,6 +186,9 @@ export interface ParamTuneRunPort {
 
   /** 같은 전략의 판정만 재사용한다. */
   findVerdictByKey(input: FindVerdictByKeyInput): Promise<CachedVerdict | null>;
+
+  /** 같은 축이 이 완결 창 근거로 이미 반영(APPLIED)된 적이 있으면 true. */
+  hasAppliedFromWindow(input: HasAppliedFromWindowInput): Promise<boolean>;
 
   findUnnotified(): Promise<TuneRunRow[]>;
 

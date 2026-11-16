@@ -99,6 +99,7 @@ describe('RunParamTuneUsecase', () => {
     settleEvaluation: jest.fn(),
     findExcludedValues: jest.fn(),
     findVerdictByKey: jest.fn(),
+    hasAppliedFromWindow: jest.fn(),
     commitAdoption: jest.fn(),
     commitRollback: jest.fn(),
   };
@@ -187,6 +188,7 @@ describe('RunParamTuneUsecase', () => {
     runPort.findWouldApplyUnevaluated.mockResolvedValue([]);
     runPort.findExcludedValues.mockResolvedValue([]);
     runPort.findVerdictByKey.mockResolvedValue(null);
+    runPort.hasAppliedFromWindow.mockResolvedValue(false);
     runPort.settleEvaluation.mockResolvedValue(true);
     runPort.finish.mockResolvedValue(true);
     runPort.markFailed.mockResolvedValue(true);
@@ -524,6 +526,37 @@ describe('RunParamTuneUsecase', () => {
     expect(finishedPatch()).toMatchObject({
       decision: 'NO_CHANGE',
       decisionReason: '제외된 값(-7)으로 한 칸 제한됨',
+    });
+  });
+
+  it('같은 창 근거로 이미 반영한 축이면 남은 한 칸을 또 반영하지 않는다', async () => {
+    config.get.mockReturnValue('apply');
+    adoptableSearch();
+    runPort.hasAppliedFromWindow.mockResolvedValue(true);
+
+    await usecase.execute(input);
+
+    expect(runPort.hasAppliedFromWindow).toHaveBeenCalledWith({
+      strategy: 'SWING',
+      axis: 'EXIT_TAKE_PROFIT_PERCENT',
+      windowEnd: lastCompletedWindowEnd(TODAY),
+    });
+    expect(runPort.commitAdoption).not.toHaveBeenCalled();
+    expect(finishedPatch()).toMatchObject({
+      decision: 'NO_CHANGE',
+      decisionReason: '같은 창 근거로 이미 반영함',
+    });
+  });
+
+  it('observe 에서도 같은 창 근거 반영 이력이 있으면 WOULD_APPLY 를 만들지 않는다', async () => {
+    adoptableSearch();
+    runPort.hasAppliedFromWindow.mockResolvedValue(true);
+
+    await usecase.execute(input);
+
+    expect(finishedPatch()).toMatchObject({
+      decision: 'NO_CHANGE',
+      decisionReason: '같은 창 근거로 이미 반영함',
     });
   });
 

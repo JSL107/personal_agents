@@ -86,6 +86,7 @@ interface AxisCandidates {
 
 interface SearchOutcome {
   verdictKey: string;
+  windowEnd: string;
   verdict: StoredVerdict;
   excluded: number[];
 }
@@ -230,7 +231,7 @@ export class RunParamTuneUsecase {
       verdictKey,
     });
     if (cached !== null && isStoredVerdict(cached.verdict)) {
-      return { verdictKey, verdict: cached.verdict, excluded };
+      return { verdictKey, windowEnd, verdict: cached.verdict, excluded };
     }
 
     const current = combinationFromSnapshot(snapshot);
@@ -288,6 +289,7 @@ export class RunParamTuneUsecase {
     });
     return {
       verdictKey,
+      windowEnd,
       excluded,
       verdict: {
         verdicts,
@@ -334,6 +336,18 @@ export class RunParamTuneUsecase {
           return {
             decision: TuneDecision.NO_CHANGE,
             decisionReason: `제외된 값(${adopt.value})으로 한 칸 제한됨`,
+          };
+        }
+        // 판정 키에 이 축의 버전이 들어가 반영 뒤 같은 창을 다시 탐색하므로, 한 창 근거로는 한 칸만 옮긴다.
+        const alreadyApplied = await this.runPort.hasAppliedFromWindow({
+          strategy: input.strategy,
+          axis: input.axis,
+          windowEnd: searched.windowEnd,
+        });
+        if (alreadyApplied) {
+          return {
+            decision: TuneDecision.NO_CHANGE,
+            decisionReason: '같은 창 근거로 이미 반영함',
           };
         }
         if (mode !== ParamTuneMode.APPLY) {

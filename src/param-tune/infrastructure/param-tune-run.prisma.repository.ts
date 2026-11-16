@@ -35,6 +35,7 @@ import {
   FindExcludedValuesInput,
   FindVerdictByKeyInput,
   FinishInput,
+  HasAppliedFromWindowInput,
   MarkFailedInput,
   MarkNotifiedInput,
   OpenProbation,
@@ -366,6 +367,24 @@ export class ParamTuneRunPrismaRepository implements ParamTuneRunPort {
       orderBy: { id: 'desc' },
     });
     return row === null ? null : { runId: row.id, verdict: row.verdict };
+  }
+
+  async hasAppliedFromWindow(
+    input: HasAppliedFromWindowInput,
+  ): Promise<boolean> {
+    // verdictKey 는 strategy|axis|windowEnd|버전들|제외값 — 버전이 바뀌어도 같은 창이면 걸린다.
+    const found = await this.prisma.parameterTuneRun.findFirst({
+      where: {
+        strategy: input.strategy,
+        axis: input.axis,
+        decision: TuneDecision.APPLIED,
+        verdictKey: {
+          startsWith: `${input.strategy}|${input.axis}|${input.windowEnd}|`,
+        },
+      },
+      select: { id: true },
+    });
+    return found !== null;
   }
 
   async findUnnotified(): Promise<TuneRunRow[]> {
