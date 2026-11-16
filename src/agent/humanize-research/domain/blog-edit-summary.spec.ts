@@ -37,6 +37,31 @@ describe('blog edit summary', () => {
     expect(summary.examples.PUNCTUATION_ONLY).toHaveLength(3);
   });
 
+  it('낱말 하나만 바뀐 긴 문장은 LEXICAL 로 센다', () => {
+    const summary = summarizeBlogEdits({
+      removedLines: [
+        '배포 전에 설정 파일을 다시 읽고 캐시를 비운 뒤 서버를 재시작했다',
+      ],
+      addedLines: [
+        '배포 전에 설정 파일을 다시 읽고 캐시를 지운 뒤 서버를 재시작했다',
+      ],
+    });
+
+    expect(summary.counts[BlogEditKind.LEXICAL]).toBe(1);
+    expect(summary.counts[BlogEditKind.REWRITE]).toBe(0);
+  });
+
+  it('절반쯤 겹치게 고쳐 쓴 문장은 REWRITE 로 센다', () => {
+    const summary = summarizeBlogEdits({
+      // bigram Dice 0.60 — 짝(≥0.5)이지만 LEXICAL(≥0.8)은 아니다
+      removedLines: ['설정 파일을 다시 읽고 캐시를 비운 뒤 서버를 재시작했다'],
+      addedLines: ['설정 파일을 다시 읽은 다음 서버를 곧바로 재시작했다'],
+    });
+
+    expect(summary.counts[BlogEditKind.REWRITE]).toBe(1);
+    expect(summary.counts[BlogEditKind.LEXICAL]).toBe(0);
+  });
+
   it('짝이 없으면 DELETED 와 ADDED 로 센다', () => {
     const summary = summarizeBlogEdits({
       removedLines: ['가나다라마바사'],
