@@ -46,7 +46,8 @@ const STREAM_TAIL_LIMIT = 2000;
 //   (codex 의 buildCodexPrompt 와 동일 정책). PM 경로는 학습된 planPreference 를 systemPrompt 에
 //   합치므로 정적 지침만 담긴다는 전제가 성립하지 않고, redactPii 가 업무·프로필 정보를 전부
 //   지우지도 못한다 (PR #523 codex 리뷰 지적).
-// - cwd 는 throwaway 임시 디렉토리로 격리해 prompt-injected agent 의 repo 접근을 차단.
+// - cwd 는 throwaway 임시 디렉토리로 둔다. cwd 만으로는 절대경로 읽기를 막지 못하므로, 실제 차단은
+//   buildClaudeArgs 의 CLAUDE_TOOL_LOCK_ARGS(도구·MCP·설정 끄기)가 맡는다.
 //   HOME 은 OAuth token 이 있으면 throwaway (경로 B 는 keychain 을 쓰지 않으므로 격리해도
 //   인증이 깨지지 않는다 — 임시 HOME + token 만으로 exit=0 응답을 확인했다). token 이 없을 때만
 //   real HOME 을 쓴다 — 경로 A 는 keychain access context 가 필요해 격리하면 침묵 exit=1 이 된다.
@@ -89,6 +90,19 @@ export const buildClaudePrompt = ({
   return `[System Instructions]\n${systemPrompt}\n\n[User]\n${prompt}`;
 };
 
+// 도구·MCP·사용자 설정을 전부 끈다. -p 모드에서도 Read 같은 읽기 도구는 기본으로 열려 있어서,
+// cwd 를 임시 폴더로 바꿔도 절대경로로는 디스크를 읽는다 — 프롬프트 주입된 PR 본문이 `.env` 를
+// 읽혀 리뷰 코멘트로 내보낼 수 있었다(2026-11-16 실측: 임시 폴더의 canary 파일을 그대로 출력).
+// 이 provider 는 텍스트 입력만 받는다(이미지·readableRoots 는 complete() 에서 거절) — 도구가 필요 없다.
+// `--setting-sources ''` 는 사용자 settings 의 hook·권한·플러그인이 자식에 섞이지 않게 한다.
+export const CLAUDE_TOOL_LOCK_ARGS: readonly string[] = [
+  '--tools',
+  '',
+  '--strict-mcp-config',
+  '--setting-sources',
+  '',
+];
+
 export const buildClaudeArgs = ({
   model = DEFAULT_CLAUDE_MODEL,
 }: {
@@ -100,6 +114,7 @@ export const buildClaudeArgs = ({
   '--no-session-persistence',
   '--model',
   model,
+  ...CLAUDE_TOOL_LOCK_ARGS,
 ];
 
 // claude CLI 가 exit=1 + 빈 stderr 로 침묵 실패하는 경우는 거의 항상 인증 만료 / 쿼터 소진 패턴이다
