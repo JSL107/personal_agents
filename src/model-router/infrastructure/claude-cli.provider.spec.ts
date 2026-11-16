@@ -52,6 +52,17 @@ describe('buildClaudeArgs', () => {
     expect(args).not.toContain('opus');
   });
 
+  it('도구·MCP·사용자 설정을 끈다 (프롬프트 주입으로 로컬 파일을 읽지 못하게)', () => {
+    const args = buildClaudeArgs({});
+    const valueAfter = (flag: string): string | undefined =>
+      args[args.indexOf(flag) + 1];
+    expect(args).toContain('--tools');
+    expect(valueAfter('--tools')).toBe('');
+    expect(args).toContain('--strict-mcp-config');
+    expect(args).toContain('--setting-sources');
+    expect(valueAfter('--setting-sources')).toBe('');
+  });
+
   it('--bare 는 포함하지 않는다 (keychain/OAuth 인증 유지)', () => {
     const args = buildClaudeArgs({});
     expect(args).not.toContain('--bare');
