@@ -209,7 +209,44 @@ describe('HandleConversationTurnUsecase', () => {
         priorTurns,
         unresolvedStreak,
         conversationKey: 'U1:CONSOLE',
+        slackUserId: 'U1',
       });
+    },
+  );
+
+  // 2026-11-05 run 11599~11601 — 콘솔은 조회를 열지 않아 "최근 발송기록 확인해봐" 에 "확인할 수 없어" 만 답했다.
+  it.each([
+    ['REMOTE_CONSOLE', { slackUserId: 'U1' }],
+    ['SLACK_MESSAGE', {}],
+  ] as const)(
+    '%s 대화 답변의 조회 열기(slackUserId 전달)는 콘솔에서만 한다',
+    async (source, expected) => {
+      const dependencies = buildDependencies();
+      dependencies.router.dispatch.mockRejectedValue(
+        new RouterException({
+          message: '분류 실패',
+          code: RouterErrorCode.INTENT_CLASSIFY_FAILED,
+        }),
+      );
+      dependencies.conversationalReply.reply.mockResolvedValue('답변');
+      const usecase = new HandleConversationTurnUsecase(
+        dependencies.router,
+        dependencies.conversationMemory,
+        dependencies.conversationalReply,
+      );
+
+      await usecase.execute({
+        slackUserId: 'U1',
+        conversationKey: 'U1:CONSOLE',
+        text: '최근 발송기록 확인해봐.',
+        source,
+        priorTurns: [],
+      });
+
+      const [input] = dependencies.conversationalReply.reply.mock.calls[0];
+      expect(input.slackUserId).toBe(
+        'slackUserId' in expected ? expected.slackUserId : undefined,
+      );
     },
   );
 
@@ -304,6 +341,7 @@ describe('HandleConversationTurnUsecase', () => {
       priorTurns,
       unresolvedStreak: 2,
       conversationKey: 'U1:CONSOLE',
+      slackUserId: 'U1',
     });
     expect(dependencies.conversationMemory.appendTurn).toHaveBeenCalledTimes(2);
     expect(dependencies.conversationMemory.appendTurn).toHaveBeenNthCalledWith(
