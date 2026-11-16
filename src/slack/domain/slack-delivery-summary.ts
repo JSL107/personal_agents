@@ -4,6 +4,10 @@ import {
   SlackDeliveryActivityRow,
   SlackDeliveryStatRow,
 } from './port/slack-delivery.repository.port';
+import {
+  SLACK_DELIVERY_STATUS,
+  SLACK_DELIVERY_SUPPRESS_REASON,
+} from './slack-delivery.type';
 
 const MIN_WINDOW_DAYS = 1;
 const MAX_WINDOW_DAYS = 90;
@@ -88,13 +92,26 @@ export const summarizeDeliveries = (
 // 종류별 마지막 발송. 최신 N건 목록은 잦은 종류(PR 리뷰 스윕·콘솔 전환)가 한도를 채워 하루 두 번
 // 오는 원화 공고 같은 종류를 밀어낸다(2026-11-05 run 11600 — 24시간 41건 중 최신 10건에 공고 없음).
 // 본문만 세고(스레드 상세 댓글 제외) 묶음 발송은 itemKinds 로 나눈다 — summarizeDeliveries 와 같은 규칙.
-export type LatestDeliveryByKind = {
+// 보낼 것 없이 끝난 회차(SUPPRESSED/EMPTY)도 마지막 시각을 둔다 — 없으면 "새 공고가 없었다" 와 "수집이
+// 안 돌았다" 를 가를 수 없다.
+// 활동 종류마다 같은 모양(마지막 시각·최근 횟수)이라 갈래 없이 한 줄로 갱신한다.
+export interface LatestActivityStat {
+  lastAt: Date | null;
+  recent: number;
+}
+
+export enum LatestActivity {
+  SENT = 'sent',
+  CONSOLE_ROUTE = 'consoleRoute',
+  EMPTY = 'empty',
+}
+
+export interface LatestDeliveryByKind {
   key: string;
-  lastSentAt: Date | null;
-  recentSent: number;
-  lastConsoleRouteAt: Date | null;
-  recentConsoleRoute: number;
-};
+  [LatestActivity.SENT]: LatestActivityStat;
+  [LatestActivity.CONSOLE_ROUTE]: LatestActivityStat;
+  [LatestActivity.EMPTY]: LatestActivityStat;
+}
 
 export const summarizeLatestDeliveries = ({
   rows,
@@ -105,37 +122,21 @@ export const summarizeLatestDeliveries = ({
 }): LatestDeliveryByKind[] => {
   const groups = new Map<string, LatestDeliveryByKind>();
   for (const row of rows) {
-    const isSent = row.status === 'SENT';
-    const isConsoleRoute =
-      row.status === 'SUPPRESSED' && row.suppressReason === 'CONSOLE_ROUTE';
-    const isCounted = isSent || isConsoleRoute;
-    if (row.threadTs || !isCounted) {
+    if (row.threadTs) {
+      continue;
+    }
+    const activity = classifyLatestActivity(row);
+    if (!activity) {
       continue;
     }
     const isRecent = row.createdAt >= recentSince;
     const itemKinds = row.itemKinds.length > 0 ? row.itemKinds : [row.kind];
     for (const key of itemKinds) {
-      const group = groups.get(key) ?? {
-        key,
-        lastSentAt: null,
-        recentSent: 0,
-        lastConsoleRouteAt: null,
-        recentConsoleRoute: 0,
-      };
+      const group = groups.get(key) ?? emptyLatestDelivery(key);
       groups.set(key, group);
-      if (isSent) {
-        group.lastSentAt = laterOf({
-          current: group.lastSentAt,
-          candidate: row.createdAt,
-        });
-        group.recentSent += isRecent ? 1 : 0;
-      } else {
-        group.lastConsoleRouteAt = laterOf({
-          current: group.lastConsoleRouteAt,
-          candidate: row.createdAt,
-        });
-        group.recentConsoleRoute += isRecent ? 1 : 0;
-      }
+      const stat = group[activity];
+      stat.lastAt = laterOf({ current: stat.lastAt, candidate: row.createdAt });
+      stat.recent += isRecent ? 1 : 0;
     }
   }
   return [...groups.values()].sort(
@@ -169,10 +170,44 @@ const laterOf = ({
   candidate: Date;
 }): Date => (current && current >= candidate ? current : candidate);
 
+// 세지 않는 행(실패·사유 없는 생략)은 null 이다.
+const classifyLatestActivity = ({
+  status,
+  suppressReason,
+}: SlackDeliveryActivityRow): LatestActivity | null => {
+  const activity = match({ status, suppressReason })
+    .returnType<LatestActivity | null>()
+    .with({ status: SLACK_DELIVERY_STATUS.SENT }, () => LatestActivity.SENT)
+    .with(
+      {
+        status: SLACK_DELIVERY_STATUS.SUPPRESSED,
+        suppressReason: SLACK_DELIVERY_SUPPRESS_REASON.CONSOLE_ROUTE,
+      },
+      () => LatestActivity.CONSOLE_ROUTE,
+    )
+    .with(
+      {
+        status: SLACK_DELIVERY_STATUS.SUPPRESSED,
+        suppressReason: SLACK_DELIVERY_SUPPRESS_REASON.EMPTY,
+      },
+      () => LatestActivity.EMPTY,
+    )
+    .otherwise(() => null);
+  return activity;
+};
+
+const emptyLatestDelivery = (key: string): LatestDeliveryByKind => ({
+  key,
+  [LatestActivity.SENT]: { lastAt: null, recent: 0 },
+  [LatestActivity.CONSOLE_ROUTE]: { lastAt: null, recent: 0 },
+  [LatestActivity.EMPTY]: { lastAt: null, recent: 0 },
+});
+
 const lastActivityMs = (group: LatestDeliveryByKind): number =>
   Math.max(
-    group.lastSentAt?.getTime() ?? 0,
-    group.lastConsoleRouteAt?.getTime() ?? 0,
+    group[LatestActivity.SENT].lastAt?.getTime() ?? 0,
+    group[LatestActivity.CONSOLE_ROUTE].lastAt?.getTime() ?? 0,
+    group[LatestActivity.EMPTY].lastAt?.getTime() ?? 0,
   );
 
 const clampInteger = (

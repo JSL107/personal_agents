@@ -86,6 +86,7 @@ const makeConsumer = ({
   const slackNotifier = {
     postMessage: jest.fn().mockResolvedValue({ ts: '1' }),
     uploadImageFile: jest.fn().mockResolvedValue({ fileId: 'F1' }),
+    recordSuppressedDelivery: jest.fn().mockResolvedValue(undefined),
   };
   // 실제 가드처럼 키를 기억한다 — 항상 true 면 키 구성의 결함을 못 잡는다.
   const acquired = new Set<string>();
@@ -100,6 +101,7 @@ const makeConsumer = ({
     release: jest.fn(async (key: string) => {
       acquired.delete(key);
     }),
+    isDone: jest.fn(async (key: string) => acquired.has(key)),
   };
   const notificationPublisher = {
     publishCronFailure: jest.fn(),
@@ -257,7 +259,8 @@ describe('ArtJobFeedCronConsumer', () => {
     expect(repository.markNotified).toHaveBeenCalledTimes(1);
   });
 
-  it('신규가 없으면 아무것도 보내지 않는다', async () => {
+  // 2026-11-16: 빈 회차가 원장에 없어 11/14 09:00 이후 "새 공고가 없었는지, 수집이 안 돌았는지" 를 가를 수 없었다.
+  it('신규가 없으면 보내지 않고 빈 회차를 원장에 남긴다', async () => {
     const { consumer, slackNotifier } = makeConsumer({
       pages: [{ received: 1, listings: [CHARACTER('1')] }],
       known: ['1'],
@@ -266,6 +269,26 @@ describe('ArtJobFeedCronConsumer', () => {
       kind: 'NO_NEW',
     });
     expect(slackNotifier.postMessage).not.toHaveBeenCalled();
+    expect(slackNotifier.recordSuppressedDelivery).toHaveBeenCalledWith({
+      kind: 'art-job-feed',
+      target: JOB.data.target,
+      text: '새 원화 공고 없음 — 수신 1 · 파싱 1 · 대상 1 · 신규 0 · 제외 0',
+      reason: 'EMPTY',
+    });
+  });
+
+  it('빈 회차 원장 기록이 실패해도 회차는 NO_NEW 로 끝난다', async () => {
+    const { consumer, slackNotifier, notificationPublisher } = makeConsumer({
+      pages: [{ received: 1, listings: [CHARACTER('1')] }],
+      known: ['1'],
+    });
+    slackNotifier.recordSuppressedDelivery.mockRejectedValue(
+      new Error('DB unavailable'),
+    );
+    await expect(consumer.process(JOB as never)).resolves.toEqual({
+      kind: 'NO_NEW',
+    });
+    expect(notificationPublisher.publishCronFailure).not.toHaveBeenCalled();
   });
 
   // 2026-10-16: 앞 2쪽만 읽어 기능 개시 전 공고 67건이 한 번도 안 나갔다.
@@ -445,6 +468,20 @@ describe('ArtJobFeedCronConsumer', () => {
     // 실패한 1회 + 재시도 본문 1통 + 스레드 이미지 1통
     expect(slackNotifier.postMessage).toHaveBeenCalledTimes(3);
     expect(repository.markNotified).toHaveBeenCalledTimes(1);
+  });
+
+  // 게시 뒤에는 장부에 올라 0건으로 보인다 — 같은 슬롯 재처리를 빈 회차로 적으면 방금 게시한 회차를 덮는다.
+  it('이미 게시한 슬롯의 재처리는 빈 회차로 기록하지 않는다', async () => {
+    const { consumer, slackNotifier, repository } = makeConsumer({
+      pages: [{ received: 1, listings: [CHARACTER('1')] }],
+    });
+    await consumer.process(JOB as never);
+    repository.findKnownSourceIds.mockResolvedValue(new Set(['1']));
+
+    await expect(consumer.process(JOB as never)).resolves.toEqual({
+      kind: 'NO_NEW',
+    });
+    expect(slackNotifier.recordSuppressedDelivery).not.toHaveBeenCalled();
   });
 
   it('같은 슬롯의 재처리는 발송하지 않는다', async () => {

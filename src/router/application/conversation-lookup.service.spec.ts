@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { ConfigService } from '@nestjs/config';
 
 import { AgentRunService } from '../../agent-run/application/agent-run.service';
+import { formatKstDateTime } from '../../common/util/kst-date.util';
 import { getRealHomeDir } from '../../model-router/infrastructure/cli-process.util';
 import { SlackDeliveryRepositoryPort } from '../../slack/domain/port/slack-delivery.repository.port';
 import { LocalRepoSnapshotService } from '../infrastructure/local-repo-snapshot.service';
@@ -180,6 +181,63 @@ describe('ConversationLookupService', () => {
     const since = findActivitySince.mock.calls[0][0] as Date;
     expect(collectedAt - since.getTime()).toBeGreaterThanOrEqual(
       30 * 24 * 60 * 60 * 1000,
+    );
+  });
+
+  // 2026-11-16 — 11/14 09:00 이후 원화 공고 원장이 비어 "새 공고가 없었는지, 수집이 안 돌았는지" 를 답하지 못했다.
+  it('보낼 것 없이 끝난 회차도 종류별 블록에 마지막 시각으로 싣는다', async () => {
+    const now = Date.now();
+    const hoursAgo = (hours: number): Date =>
+      new Date(now - hours * 60 * 60 * 1000);
+    const row = (
+      createdAt: Date,
+      status: string,
+      suppressReason: string | null,
+    ): Record<string, unknown> => ({
+      kind: 'art-job-feed',
+      itemKinds: [],
+      threadTs: null,
+      status,
+      suppressReason,
+      reactionCount: 0,
+      replyCount: 0,
+      createdAt,
+    });
+    findActivitySince.mockResolvedValue([
+      row(hoursAgo(50), 'SENT', null),
+      row(hoursAgo(2), 'SUPPRESSED', 'EMPTY'),
+      row(hoursAgo(14), 'SUPPRESSED', 'EMPTY'),
+    ]);
+
+    const result = await service.collect({ slackUserId: 'U_OWNER' });
+
+    const line = result.latestDeliveryText
+      ?.split('\n')
+      .find((text) => text.startsWith('art-job-feed'));
+    expect(line).toMatch(
+      /^art-job-feed · 마지막 발송 .+ KST · 7일 1회 · 보낼 것 없이 끝난 마지막 회차 .+ KST$/,
+    );
+    expect(line).toContain(formatKstDateTime(hoursAgo(2)));
+  });
+
+  it('빈 회차만 있는 종류도 종류별 블록에 싣는다', async () => {
+    findActivitySince.mockResolvedValue([
+      {
+        kind: 'autopilot:knowledge-lint',
+        itemKinds: [],
+        threadTs: null,
+        status: 'SUPPRESSED',
+        suppressReason: 'EMPTY',
+        reactionCount: 0,
+        replyCount: 0,
+        createdAt: new Date(Date.now() - 60 * 60 * 1000),
+      },
+    ]);
+
+    const result = await service.collect({ slackUserId: 'U_OWNER' });
+
+    expect(result.latestDeliveryText).toMatch(
+      /autopilot:knowledge-lint · 30일 안 발송 없음 · 보낼 것 없이 끝난 마지막 회차 .+ KST/,
     );
   });
 
