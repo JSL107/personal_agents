@@ -4,6 +4,7 @@ export const DAY_MS = 24 * 60 * 60 * 1000;
 
 // 내부 기록(윤문 원장·블로그 수정)은 블로그 수정률 보고와 같은 4주를 본다.
 export const INTERNAL_LOOKBACK_DAYS = 28;
+export const BLOG_LOOKBACK_DAYS = 56;
 // 외부 재료(arXiv·원작자 첫 회차)는 사용자 확정값 30일(2026-10-26).
 export const EXTERNAL_LOOKBACK_DAYS = 30;
 

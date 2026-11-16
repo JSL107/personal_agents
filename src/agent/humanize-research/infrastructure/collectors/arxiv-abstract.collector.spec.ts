@@ -28,6 +28,7 @@ describe('ArxivAbstractCollector', () => {
       humanizerMaxRunId: null,
       blogPostIds: [],
       upstreamHead: null,
+      canonHead: null,
       arxivIds: [],
     };
     const first = await collector.collect(previous);
