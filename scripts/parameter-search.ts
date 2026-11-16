@@ -4,34 +4,28 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 
+import { ReplayBacktestUsecase } from '../src/backtest/application/replay-backtest.usecase';
 import {
-  createReplayWindowCache,
-  ReplayBacktestUsecase,
-} from '../src/backtest/application/replay-backtest.usecase';
+  runRobustSearch,
+  slippageLabelOf,
+} from '../src/backtest/application/robust-parameter-search';
 import { BacktestModule } from '../src/backtest/backtest.module';
 import {
   buildParameterGrid,
   buildSearchWindows,
   formatCombinationLabel,
   ParameterCombination,
-  WindowOutcome,
 } from '../src/backtest/domain/parameter-search';
 import {
   formatParameterSearchReport,
   formatRobustnessReport,
-  SearchWindowSummary,
 } from '../src/backtest/infrastructure/parameter-search.formatter';
-import {
-  BACKTEST_DEFAULTS,
-  DEFAULT_HOLDING_TRADE_DAYS,
-} from '../src/backtest/interface/backtest-cli.parser';
 import {
   ParameterSearchCliOptions,
   parseParameterSearchCliArguments,
 } from '../src/backtest/interface/parameter-search-cli.parser';
 import { PrismaModule } from '../src/prisma/prisma.module';
 import {
-  DEFAULT_MAXIMUM_DAILY_GAIN_PERCENT,
   DEFAULT_RANKING_WEIGHTS,
   SWING_VOLUME_SURGE_MINIMUM,
 } from '../src/screener/domain/screener-rule';
@@ -56,12 +50,6 @@ import { StrategyParameterModule } from '../src/strategy-parameter/strategy-para
 })
 class ParameterSearchCliModule {}
 
-const slippageLabelOf = (value: number): string =>
-  value === 0 ? '슬리피지 0% (미반영)' : `슬리피지 ${value}%`;
-
-const ratioToPercent = (value: string | null): number | null =>
-  value === null ? null : Number(value) * 100;
-
 /**
  * 한 회차 = (전략 × 슬리피지) 한 쌍. 슬리피지는 격자 축이 아니라 회차를 가르는 조건이라
  * 순위·walk-forward 가 회차 안에서만 이뤄진다(파서 주석). 한 프로세스에서 값만 바꿔 도는
@@ -74,9 +62,6 @@ interface StrategyPlan {
   baselineLabel: string;
   combinations: ParameterCombination[];
 }
-
-const planKeyOf = (plan: StrategyPlan): string =>
-  `${plan.strategy}|${plan.slippagePercent}`;
 
 const buildStrategyPlans = async (
   options: ParameterSearchCliOptions,
@@ -140,22 +125,6 @@ const buildStrategyPlans = async (
   return plans;
 };
 
-const benchmarkReturnPercentOf = (
-  closes: Array<{ close: unknown }> | undefined,
-): number | null => {
-  const first = closes?.at(0);
-  const last = closes?.at(-1);
-  if (first === undefined || last === undefined) {
-    return null;
-  }
-  const start = Number(String(first.close));
-  const end = Number(String(last.close));
-  if (!Number.isFinite(start) || start === 0 || !Number.isFinite(end)) {
-    return null;
-  }
-  return (end / start - 1) * 100;
-};
-
 const main = async (): Promise<void> => {
   const options = parseParameterSearchCliArguments(process.argv.slice(2));
   const windows = buildSearchWindows({
@@ -188,104 +157,57 @@ const main = async (): Promise<void> => {
       `창 ${windows.length}개 · 재생 ${replayCount}회 시작 (${new Date().toISOString()})`,
     );
 
-    const outcomes = new Map<string, WindowOutcome[]>();
-    const windowSummaries = new Map<string, SearchWindowSummary[]>();
     const startedAt = Date.now();
-
-    for (const window of windows) {
-      const cache = createReplayWindowCache(
-        window.from,
-        window.to,
-        BACKTEST_DEFAULTS.volatilityEstimator,
-      );
-      const windowStartedAt = Date.now();
-      for (const plan of plans) {
-        for (const combination of plan.combinations) {
-          const result = await replay.execute(
-            {
-              strategy: plan.strategy,
-              from: window.from,
-              to: window.to,
-              seedAmount: BACKTEST_DEFAULTS.seedAmount,
-              minimumTurnover60: combination.minimumTurnover60,
-              maximumDailyGainPercent: DEFAULT_MAXIMUM_DAILY_GAIN_PERCENT,
-              volumeSurgeMinimum: combination.volumeSurgeMinimum,
-              rankingWeights: combination.rankingWeights,
-              flowSlot: null,
-              maximumPositions: BACKTEST_DEFAULTS.maximumPositions,
-              weightPercent: combination.maximumWeightPercent,
-              holdingTradeDays: DEFAULT_HOLDING_TRADE_DAYS[plan.strategy],
-              exitBand:
-                combination.takeProfitPercent === null ||
-                combination.stopLossPercent === null
-                  ? null
-                  : {
-                      takeProfitPercent: combination.takeProfitPercent,
-                      stopLossPercent: combination.stopLossPercent,
-                    },
-              delistingRecoveryRate: BACKTEST_DEFAULTS.delistingRecoveryRate,
-              // 변동성 추정량은 탐색 축이 아니다 — #443 이 재 보고 운영 규칙(종가→종가)을
-              // 유지하기로 했다. 캐시 정체성에 들어 있어 여기서 갈리면 예외로 끊긴다.
-              volatilityEstimator: BACKTEST_DEFAULTS.volatilityEstimator,
-              // 회차 전체에 같은 값이 걸린다 — 축이 아니다(파서 주석).
-              slippagePercent: plan.slippagePercent,
-            },
-            cache,
-          );
-          // 불변식이 깨진 회차는 규칙의 성적이 아니라 버그의 성적이다. 표에 섞으면
-          // 그 조합이 순위를 왜곡하므로 즉시 멈춘다.
-          if (result.invariantViolations.length > 0) {
-            throw new Error(
-              `불변식 위반 (${plan.strategy} 창${window.index} ${formatCombinationLabel(combination)}): ` +
-                result.invariantViolations.join(' / '),
-            );
-          }
-          const score = result.scores.find(
-            (candidate) => candidate.strategy === plan.strategy,
-          );
-          const bucket = outcomes.get(planKeyOf(plan)) ?? [];
-          bucket.push({
-            windowIndex: window.index,
-            label: formatCombinationLabel(combination),
-            excessReturnPercent: ratioToPercent(result.meanExcessReturnRate),
-            finalReturnPercent: ratioToPercent(result.finalReturnRate),
-            maximumLossPercent: ratioToPercent(score?.maximumLoss ?? null),
-            hitRatePercent: ratioToPercent(score?.hitRate ?? null),
-            closedCount: score?.closedCount ?? 0,
-            filledCount: result.filledCount,
-          });
-          outcomes.set(planKeyOf(plan), bucket);
-
-          if (formatCombinationLabel(combination) === plan.baselineLabel) {
-            const summaries = windowSummaries.get(planKeyOf(plan)) ?? [];
-            summaries.push({
-              window,
-              tradeDateCount: result.tradeDateCount,
-              benchmarkReturnPercent: benchmarkReturnPercentOf(
-                cache.benchmarkCloses,
-              ),
-              baselineFilledCount: result.filledCount,
-              baselineClosedCount: score?.closedCount ?? 0,
-            });
-            windowSummaries.set(planKeyOf(plan), summaries);
-          }
-        }
+    let windowStartedAt = Date.now();
+    // 전략마다 한 번 돈다. 창 캐시는 전략 안에서 전 조합·전 슬리피지가 나눠 쓴다.
+    const outputs = new Map<
+      string,
+      Awaited<ReturnType<typeof runRobustSearch>>
+    >();
+    for (const strategy of options.strategies) {
+      const plan = plans.find((candidate) => candidate.strategy === strategy);
+      if (plan === undefined) {
+        continue;
       }
-      console.error(
-        `  창${window.index} ${window.from}~${window.to} 완료 ` +
-          `(${((Date.now() - windowStartedAt) / 1000).toFixed(1)}초 · ` +
-          `누적 ${((Date.now() - startedAt) / 60000).toFixed(1)}분 · ` +
-          `힙 ${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(0)}MB)`,
+      windowStartedAt = Date.now();
+      outputs.set(
+        strategy,
+        await runRobustSearch(
+          {
+            strategy,
+            windows,
+            slippagePercents: options.slippagePercents,
+            baseline: plan.baseline,
+            combinations: plan.combinations,
+          },
+          replay,
+          (window) => {
+            console.error(
+              `  ${strategy} 창${window.index} ${window.from}~${window.to} 완료 ` +
+                `(${((Date.now() - windowStartedAt) / 1000).toFixed(1)}초 · ` +
+                `누적 ${((Date.now() - startedAt) / 60000).toFixed(1)}분 · ` +
+                `힙 ${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(0)}MB)`,
+            );
+            windowStartedAt = Date.now();
+          },
+        ),
       );
     }
 
-    const reports = plans.map((plan) => ({
-      strategy: plan.strategy,
-      conditionLabel: slippageLabelOf(plan.slippagePercent),
-      baselineLabel: plan.baselineLabel,
-      windows: windowSummaries.get(planKeyOf(plan)) ?? [],
-      outcomes: outcomes.get(planKeyOf(plan)) ?? [],
-    }));
+    const reports = plans.map((plan) => {
+      const output = outputs.get(plan.strategy);
+      const conditionLabel = slippageLabelOf(plan.slippagePercent);
+      return {
+        strategy: plan.strategy,
+        conditionLabel,
+        baselineLabel: plan.baselineLabel,
+        windows: output?.windowSummaries.get(plan.slippagePercent) ?? [],
+        outcomes:
+          output?.conditions.find(
+            (condition) => condition.conditionLabel === conditionLabel,
+          )?.outcomes ?? [],
+      };
+    });
     console.log(
       [
         `# 파라미터 탐색 — ${options.from} ~ ${options.to}`,
@@ -304,15 +226,8 @@ const main = async (): Promise<void> => {
           ? options.strategies.map((strategy) =>
               formatRobustnessReport({
                 strategy,
-                baselineLabel:
-                  plans.find((plan) => plan.strategy === strategy)
-                    ?.baselineLabel ?? '',
-                conditions: plans
-                  .filter((plan) => plan.strategy === strategy)
-                  .map((plan) => ({
-                    conditionLabel: slippageLabelOf(plan.slippagePercent),
-                    outcomes: outcomes.get(planKeyOf(plan)) ?? [],
-                  })),
+                baselineLabel: outputs.get(strategy)?.baselineLabel ?? '',
+                conditions: outputs.get(strategy)?.conditions ?? [],
               }),
             )
           : []),
