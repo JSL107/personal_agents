@@ -202,6 +202,7 @@ export interface PushBranchAndOpenPrInput {
   files: { path: string; content: string }[]; // path = repo root 상대경로
   prTitle: string;
   prBody: string;
+  assignees?: string[];
 }
 
 export interface PushBranchAndOpenPrResult {

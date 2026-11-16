@@ -2,8 +2,22 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { RunHumanizeResearchUsecase } from '../../../agent/humanize-research/application/run-humanize-research.usecase';
-import { formatHumanizeResearch } from '../../../slack/format/humanize-research.formatter';
 import {
+  CollectedItem,
+  GatedProposal,
+  ProposalTarget,
+} from '../../../agent/humanize-research/domain/humanize-research.type';
+import {
+  BLOG_REPO,
+  CANON_REPO,
+  HumanizeRulePrPayload,
+} from '../../../agent/humanize-research/domain/humanize-rule-pr.type';
+import { HUMANIZE_RULE_LINKS } from '../../../humanize/domain/humanize-rule-links';
+import { PREVIEW_KIND } from '../../../preview-gate/domain/preview-action.type';
+import { formatHumanizeResearch } from '../../../slack/format/humanize-research.formatter';
+import { escapeSlackMrkdwn } from '../../../slack/format/mrkdwn.util';
+import {
+  AutopilotPreviewRequest,
   AutopilotTask,
   AutopilotTaskResult,
 } from '../../domain/autopilot-task.port';
@@ -26,6 +40,93 @@ export class HumanizeResearchAutopilotTask implements AutopilotTask {
       return { skip: true };
     }
     const result = await this.research.execute();
-    return { skip: false, summaryText: formatHumanizeResearch(result.output) };
+    const summaryText = formatHumanizeResearch(result.output);
+    const prEnabled =
+      this.configService.get<string>('HUMANIZE_RULE_PR_ENABLED') === 'true';
+    if (!prEnabled) {
+      return { skip: false, summaryText };
+    }
+    const previews = result.output.proposals.map((proposal) => {
+      const preview = buildHumanizeRulePreview({
+        proposal,
+        included: result.included,
+      });
+      return preview;
+    });
+    return { skip: false, summaryText, previews };
   }
 }
+
+const buildHumanizeRulePreview = ({
+  proposal,
+  included,
+}: {
+  proposal: GatedProposal;
+  included: CollectedItem[];
+}): AutopilotPreviewRequest => {
+  const canon = proposal.target === ProposalTarget.CANON;
+  const evidenceExcerpts = proposal.evidence.flatMap((id) => {
+    const item = included.find((entry) => entry.id === id);
+    if (!item) {
+      return [];
+    }
+    const excerpt = item.text.slice(0, 600);
+    const labeledExcerpt = `[${id}] ${excerpt}`;
+    return [labeledExcerpt];
+  });
+  const linked = HUMANIZE_RULE_LINKS.filter((entry) => {
+    const matches =
+      entry.upstream?.kind === 'quick-rule' &&
+      proposal.ruleIds.includes(entry.upstream.ruleId);
+    return matches;
+  });
+  const linkedTexts = linked.map((entry) => entry.local.text);
+  const joinedTexts = linkedTexts.join('\n');
+  const linkedBlogText = canon && joinedTexts.length > 0 ? joinedTexts : null;
+  const payload: HumanizeRulePrPayload = {
+    ...proposal,
+    repo: canon ? CANON_REPO : BLOG_REPO,
+    baseBranch: 'main',
+    evidenceExcerpts,
+    linkedBlogText,
+  };
+  const target = canon ? '정본' : '블로그';
+  const safeFile = escapeSlackMrkdwn(proposal.file);
+  const safeTargetMetric = escapeSlackMrkdwn(proposal.targetMetric);
+  const safeRationale = escapeSlackMrkdwn(proposal.rationale);
+  const safeOldString = escapeSlackMrkdwn(proposal.oldString);
+  const safeNewString = escapeSlackMrkdwn(proposal.newString);
+  const replacement =
+    proposal.newString.length > 0 ? safeNewString : '(규칙 행 삭제)';
+  const safeEvidenceExcerpts = evidenceExcerpts.map(escapeSlackMrkdwn);
+  const excerpts = safeEvidenceExcerpts.join('\n');
+  const safeLinkedBlogText = escapeNullableSlackMrkdwn(linkedBlogText);
+  const warning = safeLinkedBlogText
+    ? `\n블로그 쪽 미반영: ${safeLinkedBlogText}`
+    : '';
+  const disclosure = canon
+    ? []
+    : [
+        '⚠️ 공개 저장소(JSL107/personal_agents) PR 입니다. 지표·근거 문구와 근거 id 가 공개됩니다(근거 발췌는 싣지 않음).',
+      ];
+  const previewText = [
+    `대상: ${target}`,
+    `파일: ${safeFile}`,
+    `지표: ${safeTargetMetric}`,
+    `근거: ${safeRationale}`,
+    `전 문구:\n${safeOldString}`,
+    `후 문구:\n${replacement}`,
+    `근거 발췌:\n${excerpts}${warning}`,
+    ...disclosure,
+    '✅ 적용 시 PR 이 열립니다(머지는 사람)',
+  ].join('\n\n');
+  return { kind: PREVIEW_KIND.HUMANIZE_RULE_PR, payload, previewText };
+};
+
+const escapeNullableSlackMrkdwn = (text: string | null): string | null => {
+  if (text === null) {
+    return null;
+  }
+  const escaped = escapeSlackMrkdwn(text);
+  return escaped;
+};

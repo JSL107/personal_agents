@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 import { buildContractPreamble } from '../../../agent-registry/agent-contract';
@@ -24,10 +24,13 @@ import {
   CollectedItem,
   CollectionResult,
   CollectionStatus,
+  GatedProposal,
   HumanizeResearchOutput,
   HumanizeResearchRunResult,
   HumanizeResearchSource,
   Processed,
+  ProposalSkipReason,
+  ProposalTarget,
   ResearchInputSelection,
   SourceStatus,
 } from '../domain/humanize-research.type';
@@ -46,6 +49,7 @@ import {
   HUMANIZE_RESEARCH_SYSTEM_PROMPT,
 } from '../domain/prompt/humanize-research.prompt';
 import { gateProposal } from '../domain/proposal-gate';
+import { CanonCheckRunner } from '../infrastructure/canon-check.runner';
 import { ArxivAbstractCollector } from '../infrastructure/collectors/arxiv-abstract.collector';
 import { BlogRevisionCollector } from '../infrastructure/collectors/blog-revision.collector';
 import { CanonLogCollector } from '../infrastructure/collectors/canon-log.collector';
@@ -109,6 +113,8 @@ const toSourceStatus = ({
 
 @Injectable()
 export class RunHumanizeResearchUsecase {
+  private readonly logger = new Logger(RunHumanizeResearchUsecase.name);
+
   constructor(
     private readonly agentRunService: AgentRunService,
     private readonly modelRouter: ModelRouterUsecase,
@@ -118,6 +124,7 @@ export class RunHumanizeResearchUsecase {
     private readonly upstream: UpstreamRuleDiffCollector,
     private readonly arxiv: ArxivAbstractCollector,
     private readonly canon: CanonLogCollector,
+    private readonly canonCheckRunner: CanonCheckRunner,
   ) {}
 
   async execute(): Promise<HumanizeResearchRunResult> {
@@ -156,7 +163,7 @@ export class RunHumanizeResearchUsecase {
             },
           });
           await context.recordModelResponse(completion.text);
-          const output = this.buildOutput({
+          const output = await this.buildOutput({
             completionText: completion.text,
             selection,
             sourceStatus,
@@ -166,6 +173,7 @@ export class RunHumanizeResearchUsecase {
             output,
             modelUsed: completion.modelUsed,
             skippedForNoSources: false,
+            included: selection.included,
           };
           return { result, output, modelUsed: completion.modelUsed };
         },
@@ -237,7 +245,7 @@ export class RunHumanizeResearchUsecase {
     });
   }
 
-  private buildOutput({
+  private async buildOutput({
     completionText,
     selection,
     sourceStatus,
@@ -247,7 +255,7 @@ export class RunHumanizeResearchUsecase {
     selection: ResearchInputSelection;
     sourceStatus: SourceStatus[];
     previous: Processed;
-  }): HumanizeResearchOutput {
+  }): Promise<HumanizeResearchOutput> {
     const parsed = parseResearchOutput(completionText);
     const includedIds = new Set(selection.included.map((item) => item.id));
     const constrained = constrainResearchProposals({
@@ -263,6 +271,35 @@ export class RunHumanizeResearchUsecase {
           },
         }),
     });
+    const proposals: GatedProposal[] = [];
+    for (const proposal of constrained.proposals) {
+      if (proposal.target === ProposalTarget.BLOG) {
+        proposals.push({ ...proposal, baseSha: null, ruleIds: [] });
+        continue;
+      }
+      try {
+        const check = await this.canonCheckRunner.check(proposal);
+        if (check.reason !== null) {
+          constrained.skipped.push({
+            proposal: { ...proposal },
+            reason: check.reason,
+          });
+          continue;
+        }
+        proposals.push({
+          ...proposal,
+          baseSha: check.baseSha,
+          ruleIds: check.ruleIds,
+        });
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        this.logger.warn(`정본 검사 실행 실패: ${detail}`);
+        constrained.skipped.push({
+          proposal: { ...proposal },
+          reason: ProposalSkipReason.CANON_CHECK_ERROR,
+        });
+      }
+    }
     const processed = advanceProcessed({
       previous,
       included: selection.included,
@@ -280,7 +317,8 @@ export class RunHumanizeResearchUsecase {
     return {
       sources: sourceStatus,
       droppedForBudget: selection.droppedForBudget,
-      ...constrained,
+      proposals,
+      skipped: constrained.skipped,
       injectionNotices: parsed.injectionNotices,
       enforcementGaps,
       processed,
@@ -305,7 +343,12 @@ export class RunHumanizeResearchUsecase {
       enforcementGaps: [],
       processed: advanceProcessed({ previous, included: [] }),
     };
-    return { output, modelUsed: 'none', skippedForNoSources: true };
+    return {
+      output,
+      modelUsed: 'none',
+      skippedForNoSources: true,
+      included: [],
+    };
   }
 
   private async collectSafely({
