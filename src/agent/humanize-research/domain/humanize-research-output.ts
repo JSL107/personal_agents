@@ -68,17 +68,27 @@ export const parseResearchOutput = (text: string): ParsedResearchOutput => {
 export const constrainEnforcementGaps = ({
   gaps,
   includedIds,
+  knownRuleIds,
 }: {
   gaps: EnforcementGap[];
   includedIds: ReadonlySet<string>;
+  knownRuleIds: ReadonlySet<string>;
 }): EnforcementGap[] => {
   const grounded = gaps.filter((gap) => {
+    const knownRule = knownRuleIds.has(gap.ruleId);
     const hasEvidence = gap.evidence.length > 0;
     const allIncluded = gap.evidence.every((id) => includedIds.has(id));
-    const valid = hasEvidence && allIncluded;
+    const valid = knownRule && hasEvidence && allIncluded;
     return valid;
   });
   return grounded;
+};
+
+// quick-rules 표 행(`| A-1 | … |`)의 규칙 id 만 뽑는다. 본문 중간의 `| B-2 |` 는 행이 아니다.
+export const quickRuleIds = (quickRules: string): string[] => {
+  const matches = Array.from(quickRules.matchAll(/^\| ([A-Z]-\d+) \|/gmu));
+  const ids = matches.map((match) => match[1]);
+  return ids;
 };
 
 export const constrainResearchProposals = ({

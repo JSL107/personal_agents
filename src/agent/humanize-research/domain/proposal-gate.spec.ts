@@ -40,6 +40,9 @@ it('대상과 근거 출처가 다르면 거절한다', () => {
     ProposalSkipReason.EVIDENCE_SOURCE_MISMATCH,
   );
 });
+it('정본 제안에 블로그 근거가 섞여도 허용 출처 근거가 있으면 통과한다', () => {
+  expect(judge({ evidence: ['blog:1', 'upstream:1'] })).toBeNull();
+});
 it('허용 파일이 아니면 거절한다', () => {
   expect(judge({ file: 'other' })).toBe(ProposalSkipReason.FILE_NOT_ALLOWED);
 });
@@ -65,6 +68,18 @@ it('표 행이 아닌 삭제를 거절하고 끝 개행이 있든 없든 표 행
   );
   expect(judge({ newString: '' })).toBeNull();
   expect(judge({ oldString: '| A-1 | 규칙 |\n', newString: '' })).toBeNull();
+});
+it('표 행의 앞부분만 지우는 삭제는 거절한다', () => {
+  const quickRules = '| A-1 | 정의 | S2 | 처방 |\n**근거 등급과 강도:**';
+  expect(
+    judge({ oldString: '| A-1 | 정의 |', newString: '' }, { quickRules }),
+  ).toBe(ProposalSkipReason.DELETE_NOT_ALLOWED);
+  expect(
+    judge(
+      { oldString: '| A-1 | 정의 | S2 | 처방 |', newString: '' },
+      { quickRules },
+    ),
+  ).toBeNull();
 });
 it('보호 마커를 거절한다', () => {
   expect(judge({ oldString: '**근거 등급과 강도:**' })).toBe(

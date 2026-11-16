@@ -4,6 +4,7 @@ import {
   constrainResearchProposals,
   InvalidHumanizeResearchResponseError,
   parseResearchOutput,
+  quickRuleIds,
 } from './humanize-research-output';
 
 const proposal = {
@@ -112,6 +113,26 @@ it('근거가 비거나 입력에 없는 id 를 가리키는 gap 은 버린다',
   const result = constrainEnforcementGaps({
     gaps,
     includedIds: new Set(['included']),
+    knownRuleIds: new Set(['A', 'B', 'C']),
   });
   expect(result).toEqual([{ ruleId: 'C', evidence: ['included'] }]);
+});
+
+it('정본·연결표에 없는 규칙 id 를 가리키는 gap 은 버린다', () => {
+  const result = constrainEnforcementGaps({
+    gaps: [
+      { ruleId: 'C-11', evidence: ['included'] },
+      { ruleId: 'Z-99', evidence: ['included'] },
+    ],
+    includedIds: new Set(['included']),
+    knownRuleIds: new Set(['C-11']),
+  });
+  expect(result).toEqual([{ ruleId: 'C-11', evidence: ['included'] }]);
+});
+
+it('quickRuleIds 는 표 행의 규칙 id 만 뽑는다', () => {
+  const ids = quickRuleIds(
+    '| A-1 | 규칙 | S2 |\n본문 | B-2 |\n| C-11 | 쉼표 | S2 |',
+  );
+  expect(ids).toEqual(['A-1', 'C-11']);
 });

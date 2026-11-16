@@ -158,7 +158,10 @@ describe('RunHumanizeResearchUsecase', () => {
           proposal,
         ],
         enforcementGaps: [
-          { ruleId: 'A', evidence: ['canon:abc'] },
+          {
+            ruleId: 'prompt.habit.comma-after-ending',
+            evidence: ['canon:abc'],
+          },
           { ruleId: 'B', evidence: [] },
           { ruleId: 'C', evidence: ['unknown'] },
         ],
@@ -167,7 +170,7 @@ describe('RunHumanizeResearchUsecase', () => {
     });
     const result = await usecase.execute();
     expect(result.output.enforcementGaps).toEqual([
-      { ruleId: 'A', evidence: ['canon:abc'] },
+      { ruleId: 'prompt.habit.comma-after-ending', evidence: ['canon:abc'] },
     ]);
     expect(result.output.proposals).toHaveLength(3);
     expect(result.output.skipped.map((entry) => entry.reason)).toEqual([
