@@ -11,8 +11,10 @@ import {
 } from '../../../github/domain/port/github-client.port';
 import {
   renderTargetRepoRules,
+  renderTargetRepoRuleSections,
   TARGET_REPO_RULE_FILES,
   TargetRepoRules,
+  TargetRepoRuleSection,
   TargetRepoRuleSource,
 } from '../domain/target-repo-rules';
 
@@ -46,7 +48,7 @@ const isMissingFile = (error: unknown): boolean =>
 
 interface CacheEntry {
   at: number;
-  sources: TargetRepoRuleSource[];
+  sections: TargetRepoRuleSection[];
 }
 
 export interface LoadTargetRepoRulesInput {
@@ -60,7 +62,7 @@ interface ReadRuleFileInput extends LoadTargetRepoRulesInput {
 
 interface CacheWriteInput {
   key: string;
-  sources: TargetRepoRuleSource[];
+  sections: TargetRepoRuleSection[];
 }
 
 @Injectable()
@@ -85,11 +87,11 @@ export class TargetRepoRulesLoader {
     baseSha,
   }: LoadTargetRepoRulesInput): Promise<TargetRepoRules> {
     // 개인 규칙은 로컬 파일이라 매번 읽는다 — 고친 내용이 다음 리뷰에 바로 반영되게.
-    const [sources, personal] = await Promise.all([
-      this.loadRepoSources({ repo, baseSha }),
+    const [sections, personal] = await Promise.all([
+      this.loadRepoSections({ repo, baseSha }),
       this.readPersonalRules(repo),
     ]);
-    const rules = renderTargetRepoRules({ sources, personal });
+    const rules = renderTargetRepoRules({ sections, personal });
     if (rules.used.length > 0) {
       this.logger.log(
         `대상 레포 규칙 첨부 (${repo}): ${rules.used.join(', ')}`,
@@ -98,27 +100,30 @@ export class TargetRepoRulesLoader {
     return rules;
   }
 
-  private async loadRepoSources({
+  // 문서 원문이 아니라 고른 절만 담아 둔다 — 원문은 수십 KB 라 100건이면 메모리가 커진다.
+  private async loadRepoSections({
     repo,
     baseSha,
-  }: LoadTargetRepoRulesInput): Promise<TargetRepoRuleSource[]> {
+  }: LoadTargetRepoRulesInput): Promise<TargetRepoRuleSection[]> {
     const key = `${repo.toLowerCase()}@${baseSha}`;
     const cached = this.cache.get(key);
     if (cached !== undefined && Date.now() - cached.at < CACHE_TTL_MS) {
-      return cached.sources;
+      return cached.sections;
     }
     const reads = await Promise.all(
       TARGET_REPO_RULE_FILES.map((path) =>
         this.readFile({ repo, baseSha, path }),
       ),
     );
-    const sources = reads.flatMap((read) => read ?? []);
+    const sections = renderTargetRepoRuleSections(
+      reads.flatMap((read) => read ?? []),
+    );
     // 일시 실패(429·5xx·네트워크)가 하나라도 있으면 담아 두지 않는다 — 다음 리뷰가 다시 받게.
     const allRead = reads.every((read) => read !== null);
     if (allRead) {
-      this.remember({ key, sources });
+      this.remember({ key, sections });
     }
-    return sources;
+    return sections;
   }
 
   // 파일이 없으면 개인 규칙 없이 리뷰한다. 대부분의 레포는 없으므로 경고로 남기지 않는다.
@@ -167,13 +172,13 @@ export class TargetRepoRulesLoader {
     }
   }
 
-  private remember({ key, sources }: CacheWriteInput): void {
+  private remember({ key, sections }: CacheWriteInput): void {
     if (this.cache.size >= CACHE_MAX_ENTRIES) {
       const oldest = this.cache.keys().next().value;
       if (oldest !== undefined) {
         this.cache.delete(oldest);
       }
     }
-    this.cache.set(key, { at: Date.now(), sources });
+    this.cache.set(key, { at: Date.now(), sections });
   }
 }

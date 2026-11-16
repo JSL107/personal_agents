@@ -131,13 +131,16 @@ const clip = ({
   return `${buffer.subarray(0, end).toString('utf-8')}\n…(이하 생략)`;
 };
 
-interface RenderedSection {
+// 문서에서 고른 절을 프롬프트 모양으로 만든 것. 절당 상한이 있어 캐시에 담아 두어도 크기가 묶인다.
+export interface TargetRepoRuleSection {
   section: string;
   label: string;
   bytes: number;
 }
 
-const renderSection = (source: TargetRepoRuleSource): RenderedSection[] => {
+const renderSection = (
+  source: TargetRepoRuleSource,
+): TargetRepoRuleSection[] => {
   const extracted = extractTargetRepoRuleSection(source.content);
   if (extracted === null) {
     return [];
@@ -152,14 +155,18 @@ const renderSection = (source: TargetRepoRuleSource): RenderedSection[] => {
   ];
 };
 
+export const renderTargetRepoRuleSections = (
+  sources: readonly TargetRepoRuleSource[],
+): TargetRepoRuleSection[] => sources.flatMap(renderSection);
+
 export interface RenderTargetRepoRulesInput {
-  sources: readonly TargetRepoRuleSource[];
+  sections: readonly TargetRepoRuleSection[];
   // 리뷰어가 자기 PC 에만 적어 둔 이 레포 규칙. 레포에 커밋하지 않고 나만 쓰는 기준이다.
   personal?: string;
 }
 
 interface FitWithinBudgetInput {
-  rendered: RenderedSection[];
+  rendered: readonly TargetRepoRuleSection[];
   maxBytes: number;
 }
 
@@ -167,8 +174,8 @@ interface FitWithinBudgetInput {
 const fitWithinBudget = ({
   rendered,
   maxBytes,
-}: FitWithinBudgetInput): RenderedSection[] =>
-  rendered.reduce<{ kept: RenderedSection[]; bytes: number }>(
+}: FitWithinBudgetInput): TargetRepoRuleSection[] =>
+  rendered.reduce<{ kept: TargetRepoRuleSection[]; bytes: number }>(
     (acc, item) =>
       acc.bytes + item.bytes > maxBytes
         ? acc
@@ -189,7 +196,7 @@ const renderPersonal = (personal: string | undefined): string => {
 ${clip({ text, maxBytes: SECTION_MAX_BYTES })}`;
 };
 
-const renderDocs = (kept: RenderedSection[]): string => {
+const renderDocs = (kept: TargetRepoRuleSection[]): string => {
   if (kept.length === 0) {
     return '';
   }
@@ -205,12 +212,12 @@ ${wrapUntrustedInput(kept.map((item) => item.section).join('\n\n'))}`;
 export const PERSONAL_RULES_LABEL = '(개인 규칙)';
 
 export const renderTargetRepoRules = ({
-  sources,
+  sections,
   personal,
 }: RenderTargetRepoRulesInput): TargetRepoRules => {
   const personalBlock = renderPersonal(personal);
   const kept = fitWithinBudget({
-    rendered: sources.flatMap(renderSection),
+    rendered: sections,
     maxBytes:
       TARGET_REPO_RULES_MAX_BYTES - Buffer.byteLength(personalBlock, 'utf-8'),
   });

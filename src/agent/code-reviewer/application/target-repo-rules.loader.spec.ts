@@ -116,4 +116,15 @@ describe('TargetRepoRulesLoader', () => {
     const rules = await loader.load({ repo: '../secret', baseSha: 'b' });
     expect(rules.used).toEqual([]);
   });
+
+  it('개인 규칙 파일을 읽지 못하면 경고만 남기고 레포 문서로 리뷰를 이어 간다', async () => {
+    const { loader } = buildLoader({
+      'AGENTS.md': '## Code Review Rules\n- A',
+    });
+    // 파일 자리에 폴더를 두면 ENOENT 가 아닌 EISDIR 로 실패한다.
+    await mkdir(join(personalDir, 'o', 'r.md'), { recursive: true });
+
+    const rules = await loader.load({ repo: 'o/r', baseSha: 'b' });
+    expect(rules.used).toEqual(['AGENTS.md#Code Review Rules']);
+  });
 });
