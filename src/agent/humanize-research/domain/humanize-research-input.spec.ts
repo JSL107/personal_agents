@@ -1,3 +1,4 @@
+import { renderBlogEditSummary, summarizeBlogEdits } from './blog-edit-summary';
 import { HUMANIZE_RESEARCH_INPUT_LIMIT } from './humanize-research.constant';
 import {
   CollectedItem,
@@ -19,6 +20,71 @@ const item = (
 });
 
 describe('humanize research input', () => {
+  it('CANON_LOG 항목이 포함되면 canonHead 가 그 해시로 전진한다', () => {
+    const previous = {
+      humanizerMaxRunId: null,
+      blogPostIds: [],
+      upstreamHead: null,
+      canonHead: null,
+      arxivIds: [],
+    };
+    const result = advanceProcessed({
+      previous,
+      included: [
+        item('CANON_LOG' as HumanizeResearchSource, 'canon:abc', 'log'),
+      ],
+    });
+    expect(result).toHaveProperty('canonHead', 'abc');
+  });
+
+  it('우선순위 BLOG → HUMANIZER → CANON_LOG → UPSTREAM → ARXIV', () => {
+    const sources = [
+      'ARXIV',
+      'UPSTREAM',
+      'CANON_LOG',
+      'HUMANIZER',
+      'BLOG',
+    ] as HumanizeResearchSource[];
+    const selection = selectResearchInput({
+      items: sources.map((source) => item(source, source, 'text')),
+      quickRules: '',
+      systemPrompt: '',
+    });
+    expect(selection.included.map((entry) => entry.source)).toEqual(
+      [...sources].reverse(),
+    );
+  });
+
+  it('블로그 14건 요약은 예산 절반 이하를 쓰고 탈락하지 않는다', () => {
+    const changes = {
+      removedLines: Array.from(
+        { length: 30 },
+        (_, index) => `문장 ${index}, 내용을 처리하고 저장한다`,
+      ),
+      addedLines: Array.from(
+        { length: 30 },
+        (_, index) => `문장 ${index} 내용을 처리하고 저장한다`,
+      ),
+    };
+    const summary = summarizeBlogEdits(changes);
+    const items = Array.from({ length: 14 }, (_, index) =>
+      item(
+        HumanizeResearchSource.BLOG,
+        `blog:${index}`,
+        renderBlogEditSummary({ path: `post-${index}`, summary }),
+      ),
+    );
+    const quickRules = '규'.repeat(13_182);
+    const systemPrompt = 'system';
+    const prefix = selectResearchInput({ items: [], quickRules, systemPrompt })
+      .prompt.length;
+    const selection = selectResearchInput({ items, quickRules, systemPrompt });
+    expect(selection.droppedForBudget).toEqual([]);
+    expect(selection.prompt.length - prefix).toBeLessThanOrEqual(
+      (HUMANIZE_RESEARCH_INPUT_LIMIT - prefix - systemPrompt.length) / 2,
+    );
+  });
+
   it('예산에서 블로그와 지표를 먼저 유지하고 arXiv를 덜어낸다', () => {
     const selection = selectResearchInput({
       items: [
@@ -45,6 +111,7 @@ describe('humanize research input', () => {
         humanizerMaxRunId: '2',
         blogPostIds: [],
         upstreamHead: null,
+        canonHead: null,
         arxivIds: [],
       },
       included: [item(HumanizeResearchSource.BLOG, 'blog:post', 'text')],
@@ -53,6 +120,7 @@ describe('humanize research input', () => {
       humanizerMaxRunId: '2',
       blogPostIds: ['blog:post'],
       upstreamHead: null,
+      canonHead: null,
       arxivIds: [],
     });
   });
@@ -62,6 +130,7 @@ describe('humanize research input', () => {
       humanizerMaxRunId: null,
       blogPostIds: [],
       upstreamHead: 'a1',
+      canonHead: null,
       arxivIds: [],
     };
 

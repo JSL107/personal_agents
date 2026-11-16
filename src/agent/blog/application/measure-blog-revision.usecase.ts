@@ -67,10 +67,12 @@ export class MeasureBlogRevisionUsecase {
     );
   }
 
-  async execute(): Promise<BlogRevisionReport> {
+  async execute({
+    lookbackDays = LOOKBACK_DAYS,
+  }: { lookbackDays?: number } = {}): Promise<BlogRevisionReport> {
     const repo = this.config.get<string>('BLOG_PUBLISH_REPO') ?? '';
     const branch = this.config.get<string>('BLOG_PUBLISH_BRANCH') ?? '';
-    const published = await this.findPublished();
+    const published = await this.findPublished(lookbackDays);
 
     const rows: BlogRevisionRow[] = [];
     let unmatchedCount = 0;
@@ -108,11 +110,15 @@ export class MeasureBlogRevisionUsecase {
    * 승인된 카드(`APPLIED`)는 그 셋을 한 번에 푼다 — 실제로 커밋된 것만 남고, `appliedAt` 이
    * 발행 시각이며, 카드 하나가 발행 하나다.
    */
-  private async findPublished(): Promise<PublishedSnapshot[]> {
+  private async findPublished(
+    lookbackDays: number,
+  ): Promise<PublishedSnapshot[]> {
+    // 조회 상한은 기본 창(28일) 기준 값이라 창 길이에 비례해 늘린다.
+    const fetchLimit = Math.ceil((FETCH_LIMIT * lookbackDays) / LOOKBACK_DAYS);
     const previews = await this.findRecentAppliedPreviews.execute({
       kind: PREVIEW_KIND.BLOG_GITHUB_PUBLISH,
-      since: new Date(Date.now() - LOOKBACK_DAYS * DAY_MS),
-      limit: FETCH_LIMIT,
+      since: new Date(Date.now() - lookbackDays * DAY_MS),
+      limit: fetchLimit,
     });
 
     const snapshots: PublishedSnapshot[] = [];

@@ -23,6 +23,7 @@ const baseOutput = (): HumanizeResearchOutput => ({
     humanizerMaxRunId: null,
     blogPostIds: [],
     upstreamHead: null,
+    canonHead: null,
     arxivIds: [],
   },
 });

@@ -40,9 +40,9 @@ import {
 } from '../domain/prompt/humanize-research.prompt';
 import { ArxivAbstractCollector } from '../infrastructure/collectors/arxiv-abstract.collector';
 import { BlogRevisionCollector } from '../infrastructure/collectors/blog-revision.collector';
+import { CanonLogCollector } from '../infrastructure/collectors/canon-log.collector';
 import { HumanizerSignalsCollector } from '../infrastructure/collectors/humanizer-signals.collector';
 import { UpstreamRuleDiffCollector } from '../infrastructure/collectors/upstream-rule-diff.collector';
-import { ModelSampleCollector } from '../infrastructure/model-sample.collector';
 
 // 직전 ARXIV_DEDUP_ROUNDS 회차를 찾는 기간. 회차가 몇 주 끊겨도 처리 기록을 잃지 않게 넉넉히 둔다.
 const HISTORY_LOOKBACK_DAYS = 180;
@@ -51,6 +51,7 @@ const EMPTY_PROCESSED: Processed = {
   humanizerMaxRunId: null,
   blogPostIds: [],
   upstreamHead: null,
+  canonHead: null,
   arxivIds: [],
 };
 
@@ -75,6 +76,7 @@ const readProcessed = (output: unknown): Processed | null => {
   const checks = [
     isStringOrNull(candidate.humanizerMaxRunId),
     isStringOrNull(candidate.upstreamHead),
+    isStringOrNull(candidate.canonHead ?? null),
     isStringArray(candidate.blogPostIds),
     isStringArray(candidate.arxivIds),
   ];
@@ -82,7 +84,7 @@ const readProcessed = (output: unknown): Processed | null => {
   if (!valid) {
     return null;
   }
-  return candidate as Processed;
+  return { ...candidate, canonHead: candidate.canonHead ?? null } as Processed;
 };
 
 const toSourceStatus = ({
@@ -107,7 +109,7 @@ export class RunHumanizeResearchUsecase {
     private readonly blog: BlogRevisionCollector,
     private readonly upstream: UpstreamRuleDiffCollector,
     private readonly arxiv: ArxivAbstractCollector,
-    private readonly samples: ModelSampleCollector,
+    private readonly canon: CanonLogCollector,
   ) {}
 
   async execute(): Promise<HumanizeResearchRunResult> {
@@ -205,8 +207,8 @@ export class RunHumanizeResearchUsecase {
           this.arxiv.collect({ ...previous, arxivIds: recentArxivIds }),
       }),
       this.collectSafely({
-        source: HumanizeResearchSource.SAMPLE,
-        collect: () => this.samples.collect(),
+        source: HumanizeResearchSource.CANON_LOG,
+        collect: () => this.canon.collect(previous),
       }),
     ]);
   }

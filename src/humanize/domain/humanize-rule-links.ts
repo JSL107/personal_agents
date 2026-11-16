@@ -47,7 +47,7 @@ export const HUMANIZE_RULE_LINKS: readonly HumanizeRuleLink[] = [
       text: '  - "가지고 있다" 류 직역 → 형용사·동사로 환원("강한 경쟁력을 가지고 있다" → "경쟁력이 강하다", "회의를 가지다" → "회의를 하다")',
     },
     upstream: { kind: 'quick-rule', ruleId: 'A-7' },
-    note: '원문 예시의 강도와 시제를 보존하도록 예문을 다시 썼다.',
+    note: '원문 예시의 강도와 시제를 보존하도록 예문을 다시 썼다. 정본은 2026-11-02 에 3회+ S2 로 내렸으나 블로그는 사람이 최종 검수하므로 횟수 조건 없이 유지한다.',
   },
   {
     id: 'prompt.translationese.inanimate-subject',
@@ -83,7 +83,7 @@ export const HUMANIZE_RULE_LINKS: readonly HumanizeRuleLink[] = [
       text: '  - 연결어미 뒤 쉼표("~하고,", "~지만,", "~어서,") → 쉼표를 빼라',
     },
     upstream: { kind: 'quick-rule', ruleId: 'C-11' },
-    note: '정본의 6회 이상 신호 기준 없이 만나면 쉼표를 뺀다.',
+    note: '정본의 6회 이상 신호 기준 없이 만나면 쉼표를 뺀다. 정본은 2026-10-30 에 기술 블로그를 비대상으로 뺐으나, 사용자가 기술 블로그에서도 쉼표를 지우므로(#939 후처리) 의도적으로 무조건 제거를 유지한다.',
   },
   {
     id: 'prompt.habit.hype',
