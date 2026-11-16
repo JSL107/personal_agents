@@ -1,3 +1,5 @@
+import { match } from 'ts-pattern';
+
 import {
   SlackDeliveryActivityRow,
   SlackDeliveryStatRow,
@@ -150,19 +152,13 @@ export const describeDeliveryStatus = ({
   status: string;
   suppressReason?: string | null;
 }): string => {
-  if (status === 'SENT') {
-    return 'Slack 발송';
-  }
-  if (status === 'FAILED') {
-    return '발송 실패';
-  }
-  if (suppressReason === 'CONSOLE_ROUTE') {
-    return '콘솔로 돌림';
-  }
-  if (suppressReason === 'EMPTY') {
-    return '보낼 내용 없어 생략';
-  }
-  return '보내지 않음';
+  const label = match({ status, suppressReason })
+    .with({ status: 'SENT' }, () => 'Slack 발송')
+    .with({ status: 'FAILED' }, () => '발송 실패')
+    .with({ suppressReason: 'CONSOLE_ROUTE' }, () => '콘솔로 돌림')
+    .with({ suppressReason: 'EMPTY' }, () => '보낼 내용 없어 생략')
+    .otherwise(() => '보내지 않음');
+  return label;
 };
 
 const laterOf = ({
