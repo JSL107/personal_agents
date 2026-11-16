@@ -102,6 +102,9 @@ export interface ReviewPullRequestInput {
   // 사본을 넘긴 호출이 실패하면 사본 없이 한 번 더 리뷰한다(FELL_BACK). 스윕만 켠다 — 재생은 사본 유무가
   // 비교 변수라 실패를 그대로 드러내야 하고, 읽기 잠금 실패 때 실행을 멈추는 계약도 지켜야 한다.
   repoReadFallback?: boolean;
+  // 리뷰 대상 레포의 규칙 문서(AGENTS.md 의 리뷰·컨벤션 절)를 싣는가. 미지정이면 싣는다.
+  // 리뷰 재생(`pnpm review:replay --no-target-rules`)이 싣기 전과 후를 비교할 때만 false 를 넘긴다.
+  targetRepoRules?: boolean;
 }
 
 // repoRead 를 켠 회차에서 사본이 실제로 열렸는가. USED 가 아닌 회차는 사본 없이 종전대로 돌았다 —
