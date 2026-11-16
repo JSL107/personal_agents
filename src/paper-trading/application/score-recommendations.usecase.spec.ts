@@ -15,11 +15,18 @@ describe('ScoreRecommendationsUsecase', () => {
     saveRecommendationScores: jest.fn(),
   };
 
-  const tuneRuns = { countAppliedSince: jest.fn() };
+  const tuneRuns = { countAppliedBetween: jest.fn() };
+
+  const createUsecase = (): ScoreRecommendationsUsecase =>
+    new ScoreRecommendationsUsecase(
+      repository as unknown as PaperTradingPrismaRepository,
+      NO_HOLIDAYS,
+      tuneRuns as unknown as ParamTuneRunPort,
+    );
 
   beforeEach(() => {
     jest.resetAllMocks();
-    tuneRuns.countAppliedSince.mockResolvedValue(0);
+    tuneRuns.countAppliedBetween.mockResolvedValue(0);
   });
 
   it('계좌별 실제·그림자·벤치마크·포트폴리오 성적과 제외 사유를 집계한다', async () => {
@@ -125,11 +132,7 @@ describe('ScoreRecommendationsUsecase', () => {
         },
       ],
     });
-    const usecase = new ScoreRecommendationsUsecase(
-      repository as unknown as PaperTradingPrismaRepository,
-      NO_HOLIDAYS,
-      tuneRuns as unknown as ParamTuneRunPort,
-    );
+    const usecase = createUsecase();
 
     const result = await usecase.execute({ asOf });
 
@@ -284,11 +287,7 @@ describe('ScoreRecommendationsUsecase', () => {
       benchmarkCloses: [],
       snapshots: [],
     });
-    const usecase = new ScoreRecommendationsUsecase(
-      repository as unknown as PaperTradingPrismaRepository,
-      NO_HOLIDAYS,
-      tuneRuns as unknown as ParamTuneRunPort,
-    );
+    const usecase = createUsecase();
 
     const result = await usecase.execute({
       asOf: new Date('2026-08-13T00:00:00.000Z'),
@@ -353,11 +352,7 @@ describe('ScoreRecommendationsUsecase', () => {
       benchmarkCloses: [],
       snapshots: [],
     });
-    const usecase = new ScoreRecommendationsUsecase(
-      repository as unknown as PaperTradingPrismaRepository,
-      NO_HOLIDAYS,
-      tuneRuns as unknown as ParamTuneRunPort,
-    );
+    const usecase = createUsecase();
 
     const result = await usecase.execute({ asOf });
 
@@ -467,11 +462,7 @@ describe('ScoreRecommendationsUsecase', () => {
         },
       ],
     });
-    const usecase = new ScoreRecommendationsUsecase(
-      repository as unknown as PaperTradingPrismaRepository,
-      NO_HOLIDAYS,
-      tuneRuns as unknown as ParamTuneRunPort,
-    );
+    const usecase = createUsecase();
 
     const result = await usecase.execute({ asOf });
 
@@ -587,11 +578,7 @@ describe('ScoreRecommendationsUsecase', () => {
         },
       ],
     });
-    const usecase = new ScoreRecommendationsUsecase(
-      repository as unknown as PaperTradingPrismaRepository,
-      NO_HOLIDAYS,
-      tuneRuns as unknown as ParamTuneRunPort,
-    );
+    const usecase = createUsecase();
 
     const result = await usecase.execute({ asOf });
 
@@ -633,11 +620,7 @@ describe('ScoreRecommendationsUsecase', () => {
     repository.saveRecommendationScores.mockRejectedValue(
       new Error('원장 저장 실패'),
     );
-    const usecase = new ScoreRecommendationsUsecase(
-      repository as unknown as PaperTradingPrismaRepository,
-      NO_HOLIDAYS,
-      tuneRuns as unknown as ParamTuneRunPort,
-    );
+    const usecase = createUsecase();
 
     await expect(usecase.execute({ asOf })).rejects.toThrow('원장 저장 실패');
     jest.useRealTimers();
@@ -686,11 +669,7 @@ describe('ScoreRecommendationsUsecase', () => {
       benchmarkCloses: [],
       snapshots: [],
     });
-    const usecase = new ScoreRecommendationsUsecase(
-      repository as unknown as PaperTradingPrismaRepository,
-      NO_HOLIDAYS,
-      tuneRuns as unknown as ParamTuneRunPort,
-    );
+    const usecase = createUsecase();
 
     const result = await usecase.execute({ asOf });
 
@@ -745,11 +724,7 @@ describe('ScoreRecommendationsUsecase', () => {
       ],
       snapshots: [],
     });
-    const usecase = new ScoreRecommendationsUsecase(
-      repository as unknown as PaperTradingPrismaRepository,
-      NO_HOLIDAYS,
-      tuneRuns as unknown as ParamTuneRunPort,
-    );
+    const usecase = createUsecase();
 
     const result = await usecase.execute({ asOf });
 
@@ -801,11 +776,7 @@ describe('ScoreRecommendationsUsecase', () => {
       })),
       snapshots: [],
     });
-    const usecase = new ScoreRecommendationsUsecase(
-      repository as unknown as PaperTradingPrismaRepository,
-      NO_HOLIDAYS,
-      tuneRuns as unknown as ParamTuneRunPort,
-    );
+    const usecase = createUsecase();
 
     const result = await usecase.execute({ asOf });
 
@@ -967,11 +938,7 @@ describe('ScoreRecommendationsUsecase', () => {
       ],
       snapshots: [],
     });
-    const usecase = new ScoreRecommendationsUsecase(
-      repository as unknown as PaperTradingPrismaRepository,
-      NO_HOLIDAYS,
-      tuneRuns as unknown as ParamTuneRunPort,
-    );
+    const usecase = createUsecase();
 
     const result = await usecase.execute({ asOf });
 
@@ -998,11 +965,7 @@ describe('ScoreRecommendationsUsecase', () => {
       benchmarkCloses: [],
       snapshots: [],
     });
-    const usecase = new ScoreRecommendationsUsecase(
-      repository as unknown as PaperTradingPrismaRepository,
-      NO_HOLIDAYS,
-      tuneRuns as unknown as ParamTuneRunPort,
-    );
+    const usecase = createUsecase();
 
     const result = await usecase.execute({
       asOf: new Date('2026-08-13T00:00:00.000Z'),
@@ -1030,11 +993,7 @@ describe('ScoreRecommendationsUsecase', () => {
       benchmarkCloses: [],
       snapshots: [],
     });
-    const usecase = new ScoreRecommendationsUsecase(
-      repository as unknown as PaperTradingPrismaRepository,
-      NO_HOLIDAYS,
-      tuneRuns as unknown as ParamTuneRunPort,
-    );
+    const usecase = createUsecase();
 
     const result = await usecase.execute({
       asOf: new Date('2026-08-13T00:00:00.000Z'),
@@ -1061,11 +1020,7 @@ describe('ScoreRecommendationsUsecase', () => {
       benchmarkCloses: [],
       snapshots: [],
     });
-    const usecase = new ScoreRecommendationsUsecase(
-      repository as unknown as PaperTradingPrismaRepository,
-      NO_HOLIDAYS,
-      tuneRuns as unknown as ParamTuneRunPort,
-    );
+    const usecase = createUsecase();
 
     const result = await usecase.execute({
       asOf: new Date('2026-08-13T00:00:00.000Z'),
@@ -1095,11 +1050,7 @@ describe('ScoreRecommendationsUsecase', () => {
       benchmarkCloses: [],
       snapshots: [],
     });
-    const usecase = new ScoreRecommendationsUsecase(
-      repository as unknown as PaperTradingPrismaRepository,
-      NO_HOLIDAYS,
-      tuneRuns as unknown as ParamTuneRunPort,
-    );
+    const usecase = createUsecase();
 
     const result = await usecase.execute({});
 
@@ -1127,27 +1078,24 @@ describe('ScoreRecommendationsUsecase', () => {
         benchmarkCloses: [],
         snapshots: [],
       });
-      return new ScoreRecommendationsUsecase(
-        repository as unknown as PaperTradingPrismaRepository,
-        NO_HOLIDAYS,
-        tuneRuns as unknown as ParamTuneRunPort,
-      );
+      return createUsecase();
     };
 
-    it('기준일 7일 전부터 센다', async () => {
+    it('기준일 7일 전부터 기준일 다음 날 0시 전까지 센다', async () => {
       const asOf = new Date('2026-08-13T00:00:00.000Z');
-      tuneRuns.countAppliedSince.mockResolvedValue(3);
+      tuneRuns.countAppliedBetween.mockResolvedValue(3);
 
       const result = await setUp().execute({ asOf });
 
       expect(result.autoTuneAppliedCount).toBe(3);
-      expect(tuneRuns.countAppliedSince).toHaveBeenCalledWith(
-        new Date('2026-08-06T00:00:00.000Z'),
-      );
+      expect(tuneRuns.countAppliedBetween).toHaveBeenCalledWith({
+        since: new Date('2026-08-06T00:00:00.000Z'),
+        until: new Date('2026-08-14T00:00:00.000Z'),
+      });
     });
 
     it('건수 조회가 실패해도 성적표는 나온다', async () => {
-      tuneRuns.countAppliedSince.mockRejectedValue(new Error('no table'));
+      tuneRuns.countAppliedBetween.mockRejectedValue(new Error('no table'));
 
       const result = await setUp().execute({
         asOf: new Date('2026-08-13T00:00:00.000Z'),
@@ -1163,7 +1111,10 @@ describe('ScoreRecommendationsUsecase', () => {
 
       await setUp().execute({ asOf, from });
 
-      expect(tuneRuns.countAppliedSince).toHaveBeenCalledWith(from);
+      expect(tuneRuns.countAppliedBetween).toHaveBeenCalledWith({
+        since: from,
+        until: new Date('2026-08-14T00:00:00.000Z'),
+      });
     });
   });
 });

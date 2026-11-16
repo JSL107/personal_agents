@@ -24,6 +24,7 @@ import {
   TuneRunStatus,
 } from '../domain/param-tune.type';
 import {
+  AppliedPeriod,
   CachedVerdict,
   ClaimResult,
   CommitAdoptionInput,
@@ -191,6 +192,8 @@ export class ParamTuneRunPrismaRepository implements ParamTuneRunPort {
         attemptToken,
         startedAt: input.now,
         failureReason: null,
+        // 발송된 FAILED 행을 재선점하면 새 결과를 다시 알려야 한다.
+        notifiedAt: null,
         axis: input.axis,
       },
     });
@@ -394,12 +397,16 @@ export class ParamTuneRunPrismaRepository implements ParamTuneRunPort {
     });
   }
 
-  async countAppliedSince(since: Date): Promise<number> {
+  async countAppliedBetween({
+    since,
+    until,
+  }: AppliedPeriod): Promise<number> {
+    const period = { gte: since, lt: until };
     return this.prisma.parameterTuneRun.count({
       where: {
         OR: [
-          { appliedAt: { gte: since } },
-          { evaluation: TuneEvaluation.ROLLBACK, evaluatedAt: { gte: since } },
+          { appliedAt: period },
+          { evaluation: TuneEvaluation.ROLLBACK, evaluatedAt: period },
         ],
       },
     });

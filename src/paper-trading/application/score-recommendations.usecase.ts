@@ -10,6 +10,7 @@ import {
   HolidayCalendarPort,
 } from '../../holiday/domain/port/holiday-calendar.port';
 import {
+  AppliedPeriod,
   PARAM_TUNE_RUN_PORT,
   ParamTuneRunPort,
 } from '../../param-tune/domain/port/param-tune-run.port';
@@ -114,7 +115,8 @@ export interface ScoreRecommendationsResult {
   exclusions: RecommendationScoreExclusions;
 }
 
-const WEEK_MS = 7 * 86_400_000;
+const DAY_MS = 86_400_000;
+const WEEK_MS = 7 * DAY_MS;
 
 const emptyScore = (
   strategy: Exclude<TradeStrategy, 'MANUAL'>,
@@ -393,9 +395,11 @@ export class ScoreRecommendationsUsecase {
     }
 
     // 카드에 기간 시작 개념이 따로 없다. 구간 집계(from)면 from, 아니면 주간 카드 주기인 7일 전.
-    const autoTuneAppliedCount = await this.countAutoTuneApplied(
-      command.from ?? new Date(asOf.getTime() - WEEK_MS),
-    );
+    // 기준일 다음 날 0시 미만까지만 센다 — 과거 기준일 성적표에 이후 반영이 섞이지 않게.
+    const autoTuneAppliedCount = await this.countAutoTuneApplied({
+      since: command.from ?? new Date(asOf.getTime() - WEEK_MS),
+      until: new Date(asOf.getTime() + DAY_MS),
+    });
 
     return {
       asOf,
@@ -410,9 +414,11 @@ export class ScoreRecommendationsUsecase {
   }
 
   // 표가 아직 없거나 조회가 흔들려도 금요일 성적표 전체를 잃지 않는다.
-  private async countAutoTuneApplied(since: Date): Promise<number | null> {
+  private async countAutoTuneApplied(
+    period: AppliedPeriod,
+  ): Promise<number | null> {
     try {
-      return await this.tuneRuns.countAppliedSince(since);
+      return await this.tuneRuns.countAppliedBetween(period);
     } catch (error) {
       this.logger.warn(
         `자동 반영 건수 조회 실패 (성적표는 계속): ${error instanceof Error ? error.message : String(error)}`,

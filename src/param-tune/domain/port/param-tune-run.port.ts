@@ -91,6 +91,12 @@ export interface CommitRollbackInput {
   detail: unknown;
 }
 
+/** until 은 미포함. */
+export interface AppliedPeriod {
+  since: Date;
+  until: Date;
+}
+
 export interface MarkNotifiedInput {
   ids: number[];
   at: Date;
@@ -164,6 +170,6 @@ export interface ParamTuneRunPort {
 
   markNotified(input: MarkNotifiedInput): Promise<void>;
 
-  /** since 이후 반영됐거나 롤백된 행 수. 롤백은 새 행을 만들지 않으니 같은 행을 한 번만 센다. */
-  countAppliedSince(since: Date): Promise<number>;
+  /** [since, until) 에 반영됐거나 롤백된 행 수. 롤백은 새 행을 만들지 않으니 같은 행을 한 번만 센다. */
+  countAppliedBetween(input: AppliedPeriod): Promise<number>;
 }
