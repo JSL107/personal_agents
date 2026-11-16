@@ -103,27 +103,51 @@ export interface MarkNotifiedInput {
   at: Date;
 }
 
+/** weekStart 는 'YYYY-MM-DD'. */
+export interface ClaimInput {
+  weekStart: string;
+  strategy: StrategyParameterStrategy;
+  axis: StrategyParameterName;
+  now: Date;
+}
+
+export interface FinishInput {
+  runId: number;
+  attemptToken: string;
+  patch: TuneRunPatch;
+}
+
+export interface MarkFailedInput {
+  runId: number;
+  attemptToken: string;
+  reason: string;
+}
+
+export interface SettleEvaluationInput {
+  runId: number;
+  evaluation: TuneEvaluation;
+  detail: unknown;
+}
+
+export interface FindExcludedValuesInput {
+  strategy: StrategyParameterStrategy;
+  axis: StrategyParameterName;
+  now: Date;
+}
+
+export interface FindVerdictByKeyInput {
+  strategy: StrategyParameterStrategy;
+  verdictKey: string;
+}
+
 export interface ParamTuneRunPort {
   /** weekStart 는 'YYYY-MM-DD'. 이 주·전략의 회차를 선점한다. */
-  claim(input: {
-    weekStart: string;
-    strategy: StrategyParameterStrategy;
-    axis: StrategyParameterName;
-    now: Date;
-  }): Promise<ClaimResult>;
+  claim(input: ClaimInput): Promise<ClaimResult>;
 
   /** RUNNING 이고 토큰이 같을 때만 쓴다. 늦게 끝난 자식 프로세스가 덮지 못하게 한다. */
-  finish(input: {
-    runId: number;
-    attemptToken: string;
-    patch: TuneRunPatch;
-  }): Promise<boolean>;
+  finish(input: FinishInput): Promise<boolean>;
 
-  markFailed(input: {
-    runId: number;
-    attemptToken: string;
-    reason: string;
-  }): Promise<boolean>;
+  markFailed(input: MarkFailedInput): Promise<boolean>;
 
   /** decision=APPLIED 이고 아직 평가 전인 최신 1건. startedOn = appliedAt. */
   findOpenProbation(
@@ -136,11 +160,7 @@ export interface ParamTuneRunPort {
   ): Promise<OpenProbation[]>;
 
   /** 평가가 아직 없을 때만 한 번 기록한다. 이미 있으면 false. */
-  settleEvaluation(input: {
-    runId: number;
-    evaluation: TuneEvaluation;
-    detail: unknown;
-  }): Promise<boolean>;
+  settleEvaluation(input: SettleEvaluationInput): Promise<boolean>;
 
   /**
    * 값 활성화와 회차 기록을 한 트랜잭션에 묶는다. 활성화가 되면 같은 트랜잭션에서 RUNNING·토큰
@@ -155,17 +175,10 @@ export interface ParamTuneRunPort {
   commitRollback(input: CommitRollbackInput): Promise<ActivateNewVersionResult>;
 
   /** 최근 56일 안에 롤백된 후보 값. */
-  findExcludedValues(input: {
-    strategy: StrategyParameterStrategy;
-    axis: StrategyParameterName;
-    now: Date;
-  }): Promise<number[]>;
+  findExcludedValues(input: FindExcludedValuesInput): Promise<number[]>;
 
   /** 같은 전략의 판정만 재사용한다. */
-  findVerdictByKey(input: {
-    strategy: StrategyParameterStrategy;
-    verdictKey: string;
-  }): Promise<CachedVerdict | null>;
+  findVerdictByKey(input: FindVerdictByKeyInput): Promise<CachedVerdict | null>;
 
   findUnnotified(): Promise<TuneRunRow[]>;
 

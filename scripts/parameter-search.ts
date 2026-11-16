@@ -194,15 +194,16 @@ const main = async (): Promise<void> => {
     const reports = plans.map((plan) => {
       const output = outputs.get(plan.strategy);
       const conditionLabel = slippageLabelOf(plan.slippagePercent);
+      const outcomes =
+        output?.conditions.find(
+          (condition) => condition.conditionLabel === conditionLabel,
+        )?.outcomes ?? [];
       return {
         strategy: plan.strategy,
         conditionLabel,
         baselineLabel: plan.baselineLabel,
         windows: output?.windowSummaries.get(plan.slippagePercent) ?? [],
-        outcomes:
-          output?.conditions.find(
-            (condition) => condition.conditionLabel === conditionLabel,
-          )?.outcomes ?? [],
+        outcomes,
       };
     });
     console.log(

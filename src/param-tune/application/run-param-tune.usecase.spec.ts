@@ -24,7 +24,7 @@ import {
   withAxisValue,
 } from '../domain/tune-combination';
 import { lastCompletedWindowEnd } from '../domain/tune-schedule';
-import { EvaluateProbationService } from './evaluate-probation.service';
+import { EvaluateProbationUsecase } from './evaluate-probation.usecase';
 import { RunParamTuneUsecase } from './run-param-tune.usecase';
 
 jest.mock('../../backtest/application/robust-parameter-search', () => ({
@@ -115,7 +115,7 @@ describe('RunParamTuneUsecase', () => {
   const usecase = new RunParamTuneUsecase(
     runPort as unknown as ParamTuneRunPort,
     parameterPort as unknown as StrategyParameterPort,
-    new EvaluateProbationService(
+    new EvaluateProbationUsecase(
       runPort as unknown as ParamTuneRunPort,
       replay,
     ),

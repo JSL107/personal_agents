@@ -90,12 +90,12 @@ export const decideAdoption = (input: AdoptionInput): AdoptionDecision => {
   }
 
   const candidateLabel = input.verdicts.at(-1)?.chosenLabel;
-  const combination =
-    candidateLabel === undefined
-      ? undefined
-      : input.combinationByLabel.get(candidateLabel);
-  if (candidateLabel === undefined || combination === undefined) {
+  if (candidateLabel === undefined) {
     throw new Error(`후보 조합을 찾지 못했다: ${String(candidateLabel)}`);
+  }
+  const combination = input.combinationByLabel.get(candidateLabel);
+  if (combination === undefined) {
+    throw new Error(`후보 조합을 찾지 못했다: ${candidateLabel}`);
   }
   const candidate = axisValueOf({ combination, axis: input.axis });
   // 기준선을 고른 창은 판정 불가라 ② 에서 '선택 불안정' 으로 오보되기 전에 끊는다.

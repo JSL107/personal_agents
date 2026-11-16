@@ -28,12 +28,18 @@ import { ClaimKind } from '../domain/param-tune.type';
 import {
   AppliedPeriod,
   CachedVerdict,
+  ClaimInput,
   ClaimResult,
   CommitAdoptionInput,
   CommitRollbackInput,
+  FindExcludedValuesInput,
+  FindVerdictByKeyInput,
+  FinishInput,
+  MarkFailedInput,
   MarkNotifiedInput,
   OpenProbation,
   ParamTuneRunPort,
+  SettleEvaluationInput,
   TuneRunPatch,
   TuneRunRow,
 } from '../domain/port/param-tune-run.port';
@@ -62,7 +68,7 @@ interface ProbationSource {
 }
 
 const toNumber = (value: Prisma.Decimal | null): number | null =>
-  value === null ? null : value.toNumber();
+  value?.toNumber() ?? null;
 
 const toRow = (row: ParameterTuneRun): TuneRunRow => ({
   id: row.id,
@@ -124,12 +130,7 @@ interface ActivationTransaction {
 export class ParamTuneRunPrismaRepository implements ParamTuneRunPort {
   constructor(private readonly prisma: PrismaService) {}
 
-  async claim(input: {
-    weekStart: string;
-    strategy: StrategyParameterStrategy;
-    axis: StrategyParameterName;
-    now: Date;
-  }): Promise<ClaimResult> {
+  async claim(input: ClaimInput): Promise<ClaimResult> {
     const weekStart = utcMidnightOf(input.weekStart);
     const where = {
       weekStart_strategy: { weekStart, strategy: input.strategy },
@@ -205,11 +206,7 @@ export class ParamTuneRunPrismaRepository implements ParamTuneRunPort {
     return { kind: ClaimKind.CLAIMED, runId: found.id, attemptToken };
   }
 
-  async finish(input: {
-    runId: number;
-    attemptToken: string;
-    patch: TuneRunPatch;
-  }): Promise<boolean> {
+  async finish(input: FinishInput): Promise<boolean> {
     const result = await this.prisma.parameterTuneRun.updateMany({
       where: {
         id: input.runId,
@@ -221,11 +218,7 @@ export class ParamTuneRunPrismaRepository implements ParamTuneRunPort {
     return result.count === 1;
   }
 
-  async markFailed(input: {
-    runId: number;
-    attemptToken: string;
-    reason: string;
-  }): Promise<boolean> {
+  async markFailed(input: MarkFailedInput): Promise<boolean> {
     return this.finish({
       runId: input.runId,
       attemptToken: input.attemptToken,
@@ -260,11 +253,7 @@ export class ParamTuneRunPrismaRepository implements ParamTuneRunPort {
     }));
   }
 
-  async settleEvaluation(input: {
-    runId: number;
-    evaluation: TuneEvaluation;
-    detail: unknown;
-  }): Promise<boolean> {
+  async settleEvaluation(input: SettleEvaluationInput): Promise<boolean> {
     const result = await this.prisma.parameterTuneRun.updateMany({
       where: { id: input.runId, evaluatedAt: null },
       data: {
@@ -346,11 +335,7 @@ export class ParamTuneRunPrismaRepository implements ParamTuneRunPort {
     });
   }
 
-  async findExcludedValues(input: {
-    strategy: StrategyParameterStrategy;
-    axis: StrategyParameterName;
-    now: Date;
-  }): Promise<number[]> {
+  async findExcludedValues(input: FindExcludedValuesInput): Promise<number[]> {
     const rows = await this.prisma.parameterTuneRun.findMany({
       where: {
         strategy: input.strategy,
@@ -368,10 +353,9 @@ export class ParamTuneRunPrismaRepository implements ParamTuneRunPort {
     });
   }
 
-  async findVerdictByKey(input: {
-    strategy: StrategyParameterStrategy;
-    verdictKey: string;
-  }): Promise<CachedVerdict | null> {
+  async findVerdictByKey(
+    input: FindVerdictByKeyInput,
+  ): Promise<CachedVerdict | null> {
     const row = await this.prisma.parameterTuneRun.findFirst({
       where: {
         strategy: input.strategy,

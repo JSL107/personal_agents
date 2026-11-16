@@ -1,3 +1,5 @@
+import { ExitBandThreshold } from '../../paper-trading/domain/exit-band';
+import { BenchmarkCloseInput } from '../../paper-trading/domain/shadow-performance';
 import {
   DEFAULT_MAXIMUM_DAILY_GAIN_PERCENT,
   ScreenStrategy,
@@ -16,6 +18,7 @@ import {
 } from '../interface/backtest-cli.parser';
 import {
   createReplayWindowCache,
+  ReplayBacktestCommand,
   ReplayBacktestResult,
   ReplayBacktestUsecase,
   ReplayWindowCache,
@@ -68,21 +71,34 @@ export const slippageLabelOf = (value: number): string =>
 const ratioToPercent = (value: string | null): number | null =>
   value === null ? null : Number(value) * 100;
 
+const isUsablePrice = (price: number): boolean =>
+  Number.isFinite(price) && price !== 0;
+
 const benchmarkReturnPercentOf = (
-  closes: Array<{ close: unknown }> | undefined,
+  closes: BenchmarkCloseInput[] | undefined,
 ): number | null => {
-  const first = closes?.at(0);
-  const last = closes?.at(-1);
-  if (first === undefined || last === undefined) {
+  const startClose = closes?.at(0);
+  const endClose = closes?.at(-1);
+  if (startClose === undefined || endClose === undefined) {
     return null;
   }
-  const start = Number(String(first.close));
-  const end = Number(String(last.close));
-  if (!Number.isFinite(start) || start === 0 || !Number.isFinite(end)) {
+  const startPrice = Number(String(startClose.close));
+  const endPrice = Number(String(endClose.close));
+  if (!isUsablePrice(startPrice) || !Number.isFinite(endPrice)) {
     return null;
   }
-  return (end / start - 1) * 100;
+  return (endPrice / startPrice - 1) * 100;
 };
+
+const exitBandOf = (
+  combination: ParameterCombination,
+): ExitBandThreshold | null =>
+  combination.takeProfitPercent === null || combination.stopLossPercent === null
+    ? null
+    : {
+        takeProfitPercent: combination.takeProfitPercent,
+        stopLossPercent: combination.stopLossPercent,
+      };
 
 /**
  * 파라미터 한 벌의 재생 1회. 고정 인자는 탐색 축이 아니라 운영 규칙이라 여기 한 곳에 둔다.
@@ -93,37 +109,40 @@ export const replayParameters = ({
   cache,
 }: ReplayParametersRequest): Promise<ReplayBacktestResult> => {
   const { strategy, combination } = input;
-  return replay.execute(
-    {
-      strategy,
-      from: input.from,
-      to: input.to,
-      seedAmount: BACKTEST_DEFAULTS.seedAmount,
-      minimumTurnover60: combination.minimumTurnover60,
-      maximumDailyGainPercent: DEFAULT_MAXIMUM_DAILY_GAIN_PERCENT,
-      volumeSurgeMinimum: combination.volumeSurgeMinimum,
-      rankingWeights: combination.rankingWeights,
-      flowSlot: null,
-      maximumPositions: BACKTEST_DEFAULTS.maximumPositions,
-      weightPercent: combination.maximumWeightPercent,
-      holdingTradeDays: DEFAULT_HOLDING_TRADE_DAYS[strategy],
-      exitBand:
-        combination.takeProfitPercent === null ||
-        combination.stopLossPercent === null
-          ? null
-          : {
-              takeProfitPercent: combination.takeProfitPercent,
-              stopLossPercent: combination.stopLossPercent,
-            },
-      delistingRecoveryRate: BACKTEST_DEFAULTS.delistingRecoveryRate,
-      // 변동성 추정량은 탐색 축이 아니다 — #443 이 재 보고 운영 규칙(종가→종가)을
-      // 유지하기로 했다. 캐시 정체성에 들어 있어 여기서 갈리면 예외로 끊긴다.
-      volatilityEstimator: BACKTEST_DEFAULTS.volatilityEstimator,
-      slippagePercent: input.slippagePercent,
-    },
-    cache,
-  );
+  const request: ReplayBacktestCommand = {
+    strategy,
+    from: input.from,
+    to: input.to,
+    seedAmount: BACKTEST_DEFAULTS.seedAmount,
+    minimumTurnover60: combination.minimumTurnover60,
+    maximumDailyGainPercent: DEFAULT_MAXIMUM_DAILY_GAIN_PERCENT,
+    volumeSurgeMinimum: combination.volumeSurgeMinimum,
+    rankingWeights: combination.rankingWeights,
+    flowSlot: null,
+    maximumPositions: BACKTEST_DEFAULTS.maximumPositions,
+    weightPercent: combination.maximumWeightPercent,
+    holdingTradeDays: DEFAULT_HOLDING_TRADE_DAYS[strategy],
+    exitBand: exitBandOf(combination),
+    delistingRecoveryRate: BACKTEST_DEFAULTS.delistingRecoveryRate,
+    // 변동성 추정량은 탐색 축이 아니다 — #443 이 재 보고 운영 규칙(종가→종가)을
+    // 유지하기로 했다. 캐시 정체성에 들어 있어 여기서 갈리면 예외로 끊긴다.
+    volatilityEstimator: BACKTEST_DEFAULTS.volatilityEstimator,
+    slippagePercent: input.slippagePercent,
+  };
+  return replay.execute(request, cache);
 };
+
+export type RobustSearchResult = ReadonlyMap<
+  ScreenStrategy,
+  RobustSearchOutputForStrategy
+>;
+
+interface Accumulator {
+  baselineLabel: string;
+  combinationByLabel: Map<string, ParameterCombination>;
+  outcomesBySlippage: Map<number, WindowOutcome[]>;
+  windowSummaries: Map<number, SearchWindowSummary[]>;
+}
 
 /**
  * 전 전략을 전 창 × 전 슬리피지 × 전 조합으로 재생한다. 캐시는 창마다 하나, 그 창의 모든
@@ -133,15 +152,7 @@ export const runRobustSearch = async ({
   input,
   replay,
   onWindowDone,
-}: RunRobustSearchRequest): Promise<
-  Map<ScreenStrategy, RobustSearchOutputForStrategy>
-> => {
-  interface Accumulator {
-    baselineLabel: string;
-    combinationByLabel: Map<string, ParameterCombination>;
-    outcomesBySlippage: Map<number, WindowOutcome[]>;
-    windowSummaries: Map<number, SearchWindowSummary[]>;
-  }
+}: RunRobustSearchRequest): Promise<RobustSearchResult> => {
   const accumulators = new Map<ScreenStrategy, Accumulator>();
   for (const entry of input.strategies) {
     const combinationByLabel = new Map<string, ParameterCombination>();

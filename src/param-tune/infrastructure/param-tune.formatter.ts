@@ -1,4 +1,5 @@
 import { formatTurnoverLabel } from '../../backtest/domain/parameter-search';
+import { getKstDateOf } from '../../common/util/kst-date.util';
 import {
   StrategyParameterName,
   StrategyParameterStrategy,
@@ -128,7 +129,8 @@ const describe = (row: TuneRunRow): string => {
   return describeEvaluation(row) ?? describeDecision(row);
 };
 
-const dateText = (date: Date): string => date.toISOString().slice(0, 10);
+// weekStart 는 @db.Date 라 UTC 자정이고, KST 로 바꿔도 같은 날이다.
+const dateText = (date: Date): string => getKstDateOf(date);
 
 export const formatParamTuneReport = (rows: TuneRunRow[]): string => {
   const latestWeek = rows

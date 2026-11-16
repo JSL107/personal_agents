@@ -78,7 +78,7 @@ const toPercent = (rate: string | null): number | null =>
 
 /** 자동 반영된 값의 시험 평가와 롤백. 모드와 무관하게 돈다. */
 @Injectable()
-export class EvaluateProbationService {
+export class EvaluateProbationUsecase {
   constructor(
     @Inject(PARAM_TUNE_RUN_PORT) private readonly runPort: ParamTuneRunPort,
     private readonly replay: ReplayBacktestUsecase,
@@ -194,10 +194,8 @@ export class EvaluateProbationService {
     const current = input.snapshot.find(
       (entry) => entry.name === probation.axis,
     );
-    if (
-      current === undefined ||
-      current.parameterId !== probation.appliedParameterId
-    ) {
+    const stillApplied = current?.parameterId === probation.appliedParameterId;
+    if (!stillApplied) {
       return false;
     }
     // 활성화와 평가 확정이 따로 쓰이면 그 사이에 죽었을 때 다음 회차가 ROLLBACK_SKIPPED 로

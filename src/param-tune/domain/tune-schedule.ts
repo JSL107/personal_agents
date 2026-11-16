@@ -1,4 +1,5 @@
 import { buildSearchWindows } from '../../backtest/domain/parameter-search';
+import { mondayOf } from '../../common/util/kst-date.util';
 import { StrategyParameterName } from '../../strategy-parameter/domain/strategy-parameter.type';
 import {
   TUNE_AXIS_ORDER,
@@ -14,15 +15,8 @@ const toUtcMs = (dateText: string): number => {
   return Date.UTC(year, month - 1, day);
 };
 
-const toDateText = (ms: number): string =>
-  new Date(ms).toISOString().slice(0, 10);
-
 /** 그 날짜가 속한 주의 월요일 (YYYY-MM-DD). */
-export const weekStartOf = (dateText: string): string => {
-  const ms = toUtcMs(dateText);
-  const daysSinceMonday = (new Date(ms).getUTCDay() + 6) % 7;
-  return toDateText(ms - daysSinceMonday * MS_PER_DAY);
-};
+export const weekStartOf = (dateText: string): string => mondayOf(dateText);
 
 /** 기준 주로부터 지난 주 수 mod 축 개수. 기준 이전 주도 음수 없이 돈다. */
 export const axisForWeek = (weekStart: string): StrategyParameterName => {
