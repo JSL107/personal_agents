@@ -1,5 +1,6 @@
 import { ProposalSkipReason, ProposalTarget } from './humanize-research.type';
 import {
+  constrainEnforcementGaps,
   constrainResearchProposals,
   InvalidHumanizeResearchResponseError,
   parseResearchOutput,
@@ -88,4 +89,29 @@ describe('새 제안 형식', () => {
   it('enforcementGaps 가 없으면 빈 배열', () => {
     expect(parseResearchOutput('{"proposals":[]}').enforcementGaps).toEqual([]);
   });
+});
+
+it('상한이 찬 뒤의 제안에는 게이트를 부르지 않는다', () => {
+  const gate = jest.fn(() => null);
+  const proposals = Array.from({ length: 20 }, () => proposal);
+  const result = constrainResearchProposals({
+    proposals,
+    includedIds: new Set(['blog:post']),
+    gate,
+  });
+  expect(gate).toHaveBeenCalledTimes(result.proposals.length);
+  expect(result.skipped[0].reason).toBe(ProposalSkipReason.OVER_LIMIT);
+});
+
+it('근거가 비거나 입력에 없는 id 를 가리키는 gap 은 버린다', () => {
+  const gaps = [
+    { ruleId: 'A', evidence: [] },
+    { ruleId: 'B', evidence: ['included', 'absent'] },
+    { ruleId: 'C', evidence: ['included'] },
+  ];
+  const result = constrainEnforcementGaps({
+    gaps,
+    includedIds: new Set(['included']),
+  });
+  expect(result).toEqual([{ ruleId: 'C', evidence: ['included'] }]);
 });

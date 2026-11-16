@@ -65,6 +65,22 @@ export const parseResearchOutput = (text: string): ParsedResearchOutput => {
   return { proposals: parsed.proposals, injectionNotices, enforcementGaps };
 };
 
+export const constrainEnforcementGaps = ({
+  gaps,
+  includedIds,
+}: {
+  gaps: EnforcementGap[];
+  includedIds: ReadonlySet<string>;
+}): EnforcementGap[] => {
+  const grounded = gaps.filter((gap) => {
+    const hasEvidence = gap.evidence.length > 0;
+    const allIncluded = gap.evidence.every((id) => includedIds.has(id));
+    const valid = hasEvidence && allIncluded;
+    return valid;
+  });
+  return grounded;
+};
+
 export const constrainResearchProposals = ({
   proposals,
   includedIds,
@@ -111,12 +127,12 @@ const judgeProposal = ({
   if (validationReason !== null || !isProposal(candidate)) {
     return validationReason ?? ProposalSkipReason.INVALID_SHAPE;
   }
+  if (limitReached) {
+    return ProposalSkipReason.OVER_LIMIT;
+  }
   const gateReason = gate?.(candidate) ?? null;
   if (gateReason !== null) {
     return gateReason;
-  }
-  if (limitReached) {
-    return ProposalSkipReason.OVER_LIMIT;
   }
   return null;
 };

@@ -61,7 +61,8 @@ export const gateProposal = ({
     return ProposalSkipReason.MATCH_NOT_UNIQUE;
   }
   const tableRow = /^\| [A-Z]-\d+ \|[^\n]*\|$/u.test(proposal.oldString.trim());
-  const invalidDeletion = proposal.newString === '' && (!canon || !tableRow);
+  const replacement = proposal.newString.trim();
+  const invalidDeletion = replacement === '' && (!canon || !tableRow);
   if (invalidDeletion) {
     return ProposalSkipReason.DELETE_NOT_ALLOWED;
   }
@@ -69,9 +70,10 @@ export const gateProposal = ({
   if (!canon) {
     return null;
   }
-  const protectedAsset = PROTECTED_QUICK_RULE_MARKERS.some((marker) =>
-    proposal.oldString.includes(marker),
-  );
+  const protectedAsset = overlapsProtectedLine({
+    quickRules: context.quickRules,
+    oldString: proposal.oldString,
+  });
   if (protectedAsset) {
     return ProposalSkipReason.PROTECTED_ASSET;
   }
@@ -98,4 +100,34 @@ const countMatches = ({
   const positions = Array.from({ length: text.length }, (_, index) => index);
   const matches = positions.filter((index) => text.startsWith(search, index));
   return matches.length;
+};
+
+const overlapsProtectedLine = ({
+  quickRules,
+  oldString,
+}: {
+  quickRules: string;
+  oldString: string;
+}): boolean => {
+  const start = quickRules.indexOf(oldString);
+  const end = start + oldString.length;
+  const startLine = quickRules.slice(0, start).split('\n').length - 1;
+  const endLine = quickRules.slice(0, end - 1).split('\n').length - 1;
+  const lines = quickRules.split('\n');
+  for (const [index, line] of lines.entries()) {
+    const precedingLines = lines.slice(0, index + 1).reverse();
+    const sectionHeading = precedingLines.find((text) =>
+      text.startsWith('## '),
+    );
+    const inGradeSection = sectionHeading?.startsWith('## 등급 기준') ?? false;
+    const hasMarker = PROTECTED_QUICK_RULE_MARKERS.some((marker) =>
+      line.includes(marker),
+    );
+    const overlaps = index >= startLine && index <= endLine;
+    const protectedLine = inGradeSection || hasMarker;
+    if (overlaps && protectedLine) {
+      return true;
+    }
+  }
+  return false;
 };
