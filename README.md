@@ -384,6 +384,7 @@ swift run ConsoleCoreTests    # CLT 환경이라 XCTest 가 아닌 실행형 러
 | `HUMANIZE_RULES_REPO_PATH` | ❌ | 윤문 규칙 정본 저장소 경로. 기본 `~/.claude/skills/humanize-korean` |
 | `SUBCONSCIOUS_GATE_MODE` | ❌ | `legacy`(기존 LLM) · `shadow`(Jev 비교만) · `hybrid`(확신 높은 Jev 우선). 기본 `legacy` |
 | `ROUTER_MEMORY_SHORTCUT_MODE` | ❌ | 라우팅 기억 단축. `off`(기본) · `shadow`(판정만 원장에 기록) · `on`(과거 같은 요청이면 분류 LLM 생략) |
+| `PARAM_AUTO_TUNE_MODE` | ❌ | 투자 파라미터 주간 자동 조정. `off`(기본) · `observe`(판정·원장만, 값 불변) · `apply`(채택 시 값 반영) |
 | `TYPESAFE_API_KEY` · `SUBCONSCIOUS_JEV_MODEL` | ⭕ | Jev 게이트를 켤 때 필요한 TypeSafe 인증키와 모델 버전 |
 | `SUBCONSCIOUS_JEV_API_URL` | ⭕ | Jev 호환 엔드포인트. 로컬 Kev(`pnpm kev:start`)로 shadow 비교할 때 지정, 로컬 주소면 키 불필요 |
 | `SUBCONSCIOUS_DROP_SAMPLE_RATE` · `_DAILY_CAP` | ⭕ | legacy 가 버린 변경을 사람 판정 카드로 올릴 비율·하루 상한. 기본 `0.1`·`3`, `0` 이면 끔 |

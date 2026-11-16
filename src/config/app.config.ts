@@ -974,6 +974,12 @@ export class EnvironmentVariables {
   @IsIn(['off', 'shadow', 'on'])
   ROUTER_MEMORY_SHORTCUT_MODE?: string;
 
+  // 투자 파라미터 주간 자동 조정. off(기본) · observe(판정과 원장만, 값은 안 바꿈) · apply(채택 시 값 반영).
+  // 오타가 "켠 줄 알았는데 꺼진" 상태로 숨지 않도록 부팅에서 막는다.
+  @IsOptional()
+  @IsIn(['off', 'observe', 'apply'])
+  PARAM_AUTO_TUNE_MODE?: string;
+
   // TypeSafe Jev API 인증키. 게이트 모드가 legacy이면 필요하지 않다.
   @IsOptional()
   @IsString()
