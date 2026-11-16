@@ -274,7 +274,7 @@ export class RunHumanizeResearchUsecase {
     const proposals: GatedProposal[] = [];
     for (const proposal of constrained.proposals) {
       if (proposal.target === ProposalTarget.BLOG) {
-        proposals.push({ ...proposal, baseSha: null });
+        proposals.push({ ...proposal, baseSha: null, ruleIds: [] });
         continue;
       }
       try {
@@ -286,7 +286,11 @@ export class RunHumanizeResearchUsecase {
           });
           continue;
         }
-        proposals.push({ ...proposal, baseSha: check.baseSha });
+        proposals.push({
+          ...proposal,
+          baseSha: check.baseSha,
+          ruleIds: check.ruleIds,
+        });
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
         this.logger.warn(`정본 검사 실행 실패: ${detail}`);

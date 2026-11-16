@@ -12,7 +12,6 @@ export interface HumanizeRulePrPayload {
   file: string;
   oldString: string;
   newString: string;
-  linkId: string | null;
   rationale: string;
   targetMetric: string;
   evidence: string[];
@@ -48,7 +47,6 @@ export const isHumanizeRulePrPayload = (
     typeof candidate.file === 'string' &&
     typeof candidate.oldString === 'string' &&
     typeof candidate.newString === 'string' &&
-    (candidate.linkId === null || typeof candidate.linkId === 'string') &&
     typeof candidate.rationale === 'string' &&
     typeof candidate.targetMetric === 'string' &&
     validEvidence &&

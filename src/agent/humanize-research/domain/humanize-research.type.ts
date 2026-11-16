@@ -79,6 +79,7 @@ export interface HumanizeResearchProposal {
 
 export interface GatedProposal extends HumanizeResearchProposal {
   baseSha: string | null;
+  ruleIds: string[];
 }
 
 export interface SkippedHumanizeResearchProposal {

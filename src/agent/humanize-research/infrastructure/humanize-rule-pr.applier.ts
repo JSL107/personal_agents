@@ -29,6 +29,7 @@ import {
   isHumanizeRulePrPayload,
   RULE_LINKS_FILE,
 } from '../domain/humanize-rule-pr.type';
+import { CANON_RULES_FILE, countMatches } from '../domain/proposal-gate';
 import { CanonCheckRunner } from './canon-check.runner';
 
 const PR_BODY_CAP = 4_000;
@@ -59,7 +60,7 @@ export class HumanizeRulePrApplier implements PreviewApplier {
     if (payload.repo !== repo || payload.baseBranch !== 'main') {
       throw new Error('제안 대상 저장소 또는 기준 브랜치가 맞지 않습니다.');
     }
-    const allowedFile = canon ? 'references/quick-rules.md' : BLOG_PROMPT_FILE;
+    const allowedFile = canon ? CANON_RULES_FILE : BLOG_PROMPT_FILE;
     if (payload.file !== allowedFile) {
       throw new Error('제안 대상 파일이 맞지 않습니다.');
     }
@@ -70,6 +71,9 @@ export class HumanizeRulePrApplier implements PreviewApplier {
         throw new Error('UNSAFE_BLOG_LITERAL');
       }
     }
+    const checkedContent = canon
+      ? await this.readCheckedCanonContent({ payload, repo })
+      : null;
     const paths = canon ? [payload.file] : [BLOG_PROMPT_FILE, RULE_LINKS_FILE];
     const files: { path: string; content: string }[] = [];
     for (const path of paths) {
@@ -81,8 +85,15 @@ export class HumanizeRulePrApplier implements PreviewApplier {
       if (file.content === undefined) {
         throw new Error(`${path} 본문을 받지 못했습니다.`);
       }
-      const matches = file.content.split(payload.oldString);
-      const count = matches.length - 1;
+      if (canon && file.content !== checkedContent) {
+        throw new Error(
+          `STALE_PROPOSAL: ${path} 가 검사 이후 main 에서 바뀌었습니다`,
+        );
+      }
+      const count = countMatches({
+        text: file.content,
+        search: payload.oldString,
+      });
       if (count !== 1) {
         throw new Error(
           `STALE_PROPOSAL: ${path} 에서 기존 문구가 ${count}회 나옵니다`,
@@ -93,21 +104,6 @@ export class HumanizeRulePrApplier implements PreviewApplier {
         () => payload.newString,
       );
       files.push({ path, content });
-    }
-    if (canon) {
-      const proposal: HumanizeResearchProposal = {
-        target: payload.target,
-        file: payload.file,
-        oldString: payload.oldString,
-        newString: payload.newString,
-        rationale: payload.rationale,
-        targetMetric: payload.targetMetric,
-        evidence: payload.evidence,
-      };
-      const check = await this.canonCheckRunner.check(proposal);
-      if (check.reason !== null) {
-        throw new Error(`정본 검사 실패: ${check.reason}`);
-      }
     }
     const branchName = `humanize-rule/${preview.id}`;
     const subjectPrefix = canon ? 'docs(quick-rules): ' : 'feat(humanize): ';
@@ -145,6 +141,37 @@ export class HumanizeRulePrApplier implements PreviewApplier {
       });
     }
   }
+
+  private async readCheckedCanonContent({
+    payload,
+    repo,
+  }: {
+    payload: HumanizeRulePrPayload;
+    repo: string;
+  }): Promise<string> {
+    const proposal: HumanizeResearchProposal = {
+      target: payload.target,
+      file: payload.file,
+      oldString: payload.oldString,
+      newString: payload.newString,
+      rationale: payload.rationale,
+      targetMetric: payload.targetMetric,
+      evidence: payload.evidence,
+    };
+    const check = await this.canonCheckRunner.check(proposal);
+    if (check.reason !== null) {
+      throw new Error(`정본 검사 실패: ${check.reason}`);
+    }
+    const checkedFile = await this.githubClient.getFileFromBranch({
+      repo,
+      branch: check.baseSha,
+      path: payload.file,
+    });
+    if (checkedFile.content === undefined) {
+      throw new Error(`${payload.file} 본문을 받지 못했습니다.`);
+    }
+    return checkedFile.content;
+  }
 }
 
 const buildPrBody = (payload: HumanizeRulePrPayload): string => {
@@ -153,18 +180,22 @@ const buildPrBody = (payload: HumanizeRulePrPayload): string => {
     const line = `- ${id}`;
     return line;
   });
-  const excerpts = payload.evidenceExcerpts.map((excerpt) => {
-    const line = `- ${excerpt}`;
-    return line;
-  });
   const lines = [
     `대상: ${target} (${payload.file})`,
     ...(payload.baseSha ? [`기준 SHA: ${payload.baseSha}`] : []),
     `목표 지표: ${payload.targetMetric}`,
     `근거: ${payload.rationale}`,
     ...evidence,
-    ...excerpts,
   ];
+  if (payload.target === ProposalTarget.CANON) {
+    const excerpts = payload.evidenceExcerpts.map((excerpt) => {
+      const line = `- ${excerpt}`;
+      return line;
+    });
+    lines.push(...excerpts);
+  } else {
+    lines.push('증거 발췌는 공개 저장소이므로 생략했습니다.');
+  }
   if (
     payload.target === ProposalTarget.CANON &&
     payload.linkedBlogText !== null

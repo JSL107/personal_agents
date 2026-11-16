@@ -33,6 +33,7 @@ it('PR 스위치가 켜지면 제안의 전문과 근거를 담은 카드를 만
             rationale: 'reason',
             evidence: ['blog:1'],
             baseSha: null,
+            ruleIds: [],
           },
         ],
         sources: [],
@@ -60,6 +61,9 @@ it('PR 스위치가 켜지면 제안의 전문과 근거를 담은 카드를 만
   expect(result.previews).toHaveLength(1);
   expect(result.previews?.[0].previewText).toContain(oldString);
   expect(result.previews?.[0].previewText).toContain('실제 근거');
+  expect(result.previews?.[0].previewText).toContain(
+    '⚠️ 공개 저장소(JSL107/personal_agents) PR 입니다. 지표·근거 문구와 근거 id 가 공개됩니다(근거 발췌는 싣지 않음).',
+  );
 });
 
 it('PR 스위치가 꺼지면 제안이 있어도 previews 를 만들지 않는다', async () => {
@@ -82,6 +86,7 @@ it('PR 스위치가 꺼지면 제안이 있어도 previews 를 만들지 않는�
             rationale: 'reason',
             evidence: ['canon:1'],
             baseSha: 'abc',
+            ruleIds: ['A-9'],
           },
         ],
         sources: [],
@@ -125,6 +130,7 @@ it('정본 카드에 연결된 블로그 문구와 600자로 제한한 근거를
             rationale: 'reason',
             evidence: ['canon:1'],
             baseSha: 'abc',
+            ruleIds: ['A-9'],
           },
         ],
         sources: [],
@@ -160,5 +166,118 @@ it('정본 카드에 연결된 블로그 문구와 600자로 제한한 근거를
   expect(preview?.previewText).toContain(excerpt);
   expect(preview?.payload).toEqual(
     expect.objectContaining({ evidenceExcerpts: [excerpt] }),
+  );
+});
+
+it('검사한 두 규칙 ID의 블로그 문구를 모두 경고한다', async () => {
+  const oldString = '행위자를 주어로("AI에 의해 생성" → "AI가 만든")';
+  const linkedBlogText =
+    '  - "~에 의해" 피동 → 행위자를 주어로("AI에 의해 생성된" → "AI가 만든")';
+  const config = { get: jest.fn().mockReturnValue('true') };
+  const research = {
+    execute: jest.fn().mockResolvedValue({
+      output: {
+        proposals: [
+          {
+            target: 'canon',
+            file: 'references/quick-rules.md',
+            oldString,
+            newString: '새 문구',
+            targetMetric: 'metric',
+            rationale: 'reason',
+            evidence: [],
+            baseSha: 'abc',
+            ruleIds: ['A-8', 'A-9'],
+          },
+        ],
+        sources: [],
+        skipped: [],
+        enforcementGaps: [],
+        injectionNotices: [],
+        droppedForBudget: [],
+        processed: {
+          humanizerMaxRunId: null,
+          blogPostIds: [],
+          upstreamHead: null,
+          canonHead: null,
+          arxivIds: [],
+        },
+      },
+      included: [],
+    }),
+  };
+  const task = new HumanizeResearchAutopilotTask(
+    config as unknown as ConfigService,
+    research as unknown as RunHumanizeResearchUsecase,
+  );
+  const result = await task.run();
+  const doublePassiveText =
+    '  - 이중 피동 "~되어진다/~보여진다" → 단일 피동("판단된다") 또는 능동';
+  expect(result.previews?.[0].previewText).toContain(doublePassiveText);
+  expect(result.previews?.[0].previewText).toContain(
+    `블로그 쪽 미반영: ${doublePassiveText}\n${linkedBlogText}`,
+  );
+  expect(result.previews?.[0].payload).toEqual(
+    expect.objectContaining({
+      linkedBlogText: `${doublePassiveText}\n${linkedBlogText}`,
+    }),
+  );
+  expect(result.previews?.[0].payload).not.toHaveProperty('linkId');
+});
+
+it('외부 근거와 모델 문구를 카드에서 이스케이프하고 payload 원문은 보존한다', async () => {
+  const excerpt = '<!channel> <https://evil|정본 PR>';
+  const config = { get: jest.fn().mockReturnValue('true') };
+  const research = {
+    execute: jest.fn().mockResolvedValue({
+      output: {
+        proposals: [
+          {
+            target: 'blog',
+            file: 'src/humanize/domain/humanize-system.prompt.ts',
+            oldString:
+              '  - "~에 의해" 피동 → 행위자를 주어로("AI에 의해 생성된" → "AI가 만든")',
+            newString: '<새 문구>',
+            targetMetric: '<metric>',
+            rationale: '<reason>',
+            evidence: ['blog:<1>'],
+            baseSha: null,
+            ruleIds: [],
+          },
+        ],
+        sources: [],
+        skipped: [],
+        enforcementGaps: [],
+        injectionNotices: [],
+        droppedForBudget: [],
+        processed: {
+          humanizerMaxRunId: null,
+          blogPostIds: [],
+          upstreamHead: null,
+          canonHead: null,
+          arxivIds: [],
+        },
+      },
+      included: [{ id: 'blog:<1>', source: 'BLOG', text: excerpt }],
+    }),
+  };
+  const task = new HumanizeResearchAutopilotTask(
+    config as unknown as ConfigService,
+    research as unknown as RunHumanizeResearchUsecase,
+  );
+  const result = await task.run();
+  const preview = result.previews?.[0];
+  expect(preview?.previewText).toContain(
+    '[blog:&lt;1&gt;] &lt;!channel&gt; &lt;https://evil|정본 PR&gt;',
+  );
+  expect(preview?.previewText).toContain('지표: &lt;metric&gt;');
+  expect(preview?.previewText).toContain('근거: &lt;reason&gt;');
+  expect(preview?.previewText).toContain('후 문구:\n&lt;새 문구&gt;');
+  expect(preview?.previewText).not.toContain(excerpt);
+  expect(preview?.payload).toEqual(
+    expect.objectContaining({
+      evidenceExcerpts: [`[blog:<1>] ${excerpt}`],
+      newString: '<새 문구>',
+    }),
   );
 });
