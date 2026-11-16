@@ -1,9 +1,11 @@
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
+import { DomainStatus } from '../../../common/exception/domain-status.enum';
 import { GithubException } from '../../../github/domain/github.exception';
 import {
   GITHUB_CLIENT_PORT,
@@ -23,28 +25,15 @@ import {
 const CACHE_TTL_MS = 30 * 60 * 1000;
 const CACHE_MAX_ENTRIES = 100;
 
-// 없는 파일은 GithubException 이 감싼 Octokit 오류의 status 404 로 온다.
-const isNotFound = (error: unknown): boolean => {
-  const cause = error instanceof GithubException ? error.cause : error;
-  return (
-    typeof cause === 'object' &&
-    cause !== null &&
-    'status' in cause &&
-    cause.status === 404
-  );
-};
+// GitHub 클라이언트가 없는 파일(404)을 NOT_FOUND 로 구분해 던진다.
+const isNotFound = (error: unknown): boolean =>
+  error instanceof GithubException && error.status === DomainStatus.NOT_FOUND;
 
 // owner/repo 형식만 파일 경로로 쓴다 — `..` 같은 값이 개인 규칙 폴더 밖을 가리키지 않게.
 const REPO_PATH_PATTERN = /^[\w.-]+\/[\w.-]+$/;
 const isSafeRepoPath = (repo: string): boolean =>
   REPO_PATH_PATTERN.test(repo) &&
   repo.split('/').every((part) => part !== '.' && part !== '..');
-
-const isMissingFile = (error: unknown): boolean =>
-  typeof error === 'object' &&
-  error !== null &&
-  'code' in error &&
-  error.code === 'ENOENT';
 
 interface CacheEntry {
   at: number;
@@ -127,19 +116,21 @@ export class TargetRepoRulesLoader {
   }
 
   // 파일이 없으면 개인 규칙 없이 리뷰한다. 대부분의 레포는 없으므로 경고로 남기지 않는다.
+  // 있는데 못 읽은 경우(권한·폴더 등)만 경고한다.
   private async readPersonalRules(repo: string): Promise<string | undefined> {
     if (!isSafeRepoPath(repo)) {
       return undefined;
     }
     const path = join(this.personalRulesDir, `${repo.toLowerCase()}.md`);
+    if (!existsSync(path)) {
+      return undefined;
+    }
     try {
       return await readFile(path, 'utf-8');
     } catch (error: unknown) {
-      if (!isMissingFile(error)) {
-        this.logger.warn(
-          `개인 리뷰 규칙 읽기 실패 (${path}): ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
+      this.logger.warn(
+        `개인 리뷰 규칙 읽기 실패 (${path}): ${error instanceof Error ? error.message : String(error)}`,
+      );
       return undefined;
     }
   }

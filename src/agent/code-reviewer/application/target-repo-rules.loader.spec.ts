@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { DomainStatus } from '../../../common/exception/domain-status.enum';
 import { GithubException } from '../../../github/domain/github.exception';
 import { GithubErrorCode } from '../../../github/domain/github-error-code.enum';
 import { GithubClientPort } from '../../../github/domain/port/github-client.port';
@@ -25,7 +26,7 @@ const buildLoader = (
       throw new GithubException({
         code: GithubErrorCode.REQUEST_FAILED,
         message: 'GitHub 요청 실패: Not Found',
-        cause: Object.assign(new Error('Not Found'), { status: 404 }),
+        status: DomainStatus.NOT_FOUND,
       });
     }
     return {
