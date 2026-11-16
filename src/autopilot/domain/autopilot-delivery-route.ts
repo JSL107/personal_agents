@@ -44,6 +44,7 @@ export const AUTOPILOT_DELIVERY_ROUTE: Readonly<
   'paper-order-fill': 'console',
   'paper-intraday-stop': 'slack',
   'paper-score': 'slack',
+  'param-tune': 'slack',
   'stock-alert-scoring': 'console',
   'screening-outcome-scoring': 'console',
   'screening-scorecard': 'console',

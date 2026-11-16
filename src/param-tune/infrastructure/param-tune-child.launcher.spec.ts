@@ -1,10 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { join } from 'node:path';
 
-import {
-  findRepoRoot,
-  ParamTuneChildLauncher,
-} from './param-tune-child.launcher';
+import type * as LauncherModule from './param-tune-child.launcher';
 
 const mockSpawn = jest.fn();
 const mockFs = {
@@ -25,6 +22,18 @@ jest.mock('node:fs', () => ({
   readFileSync: (...a: unknown[]) => mockFs.readFileSync(...a),
   existsSync: (...a: unknown[]) => mockFs.existsSync(...a),
 }));
+
+// jest setup(internal-terms)이 *.autopilot-task.ts 를 미리 require 하며 이 모듈을 실제 fs 로 캐시한다.
+// 위 mock 이 먹도록 새 레지스트리에서 다시 불러온다.
+let findRepoRoot: typeof LauncherModule.findRepoRoot;
+let ParamTuneChildLauncher: typeof LauncherModule.ParamTuneChildLauncher;
+jest.isolateModules(() => {
+  const loaded = jest.requireActual<typeof LauncherModule>(
+    './param-tune-child.launcher',
+  );
+  findRepoRoot = loaded.findRepoRoot;
+  ParamTuneChildLauncher = loaded.ParamTuneChildLauncher;
+});
 
 class FakeChild extends EventEmitter {
   killed: string[] = [];
