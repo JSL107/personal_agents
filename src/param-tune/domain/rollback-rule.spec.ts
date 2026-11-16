@@ -15,6 +15,7 @@ describe('decideRollback', () => {
     expect(decideRollback({ replays: [], daysSinceApplied: 30 })).toEqual({
       kind: 'INCONCLUSIVE',
       reason: '판정 불가',
+      final: false,
     });
   });
 
@@ -24,13 +25,31 @@ describe('decideRollback', () => {
         replays: [replay(), replay({ appliedExcessPercent: null })],
         daysSinceApplied: 30,
       }),
-    ).toEqual({ kind: 'INCONCLUSIVE', reason: '판정 불가' });
+    ).toEqual({ kind: 'INCONCLUSIVE', reason: '판정 불가', final: false });
     expect(
       decideRollback({
         replays: [replay({ previousExcessPercent: null })],
         daysSinceApplied: 30,
       }),
-    ).toEqual({ kind: 'INCONCLUSIVE', reason: '판정 불가' });
+    ).toEqual({ kind: 'INCONCLUSIVE', reason: '판정 불가', final: false });
+  });
+
+  it('null 이 84일째면 final=false', () => {
+    expect(
+      decideRollback({
+        replays: [replay({ appliedExcessPercent: null })],
+        daysSinceApplied: 84,
+      }),
+    ).toEqual({ kind: 'INCONCLUSIVE', reason: '판정 불가', final: false });
+  });
+
+  it('null 이 85일째에도 있으면 final 판정 불가', () => {
+    expect(
+      decideRollback({
+        replays: [replay({ appliedExcessPercent: null })],
+        daysSinceApplied: 85,
+      }),
+    ).toEqual({ kind: 'INCONCLUSIVE', reason: '판정 불가', final: true });
   });
 
   it('불변식 위반이 하나라도 있으면 판정 불가', () => {
@@ -39,7 +58,7 @@ describe('decideRollback', () => {
         replays: [replay({ invariantViolated: true })],
         daysSinceApplied: 30,
       }),
-    ).toEqual({ kind: 'INCONCLUSIVE', reason: '판정 불가' });
+    ).toEqual({ kind: 'INCONCLUSIVE', reason: '판정 불가', final: false });
   });
 
   it('거래일 19 면 WAIT', () => {
@@ -66,7 +85,7 @@ describe('decideRollback', () => {
         replays: [replay({ appliedClosedCount: 4 })],
         daysSinceApplied: 85,
       }),
-    ).toEqual({ kind: 'INCONCLUSIVE', reason: '표본 부족' });
+    ).toEqual({ kind: 'INCONCLUSIVE', reason: '표본 부족', final: true });
   });
 
   it('한 조건만 열세면 KEEP', () => {
