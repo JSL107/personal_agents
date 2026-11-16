@@ -170,14 +170,19 @@ export class RunParamTuneUsecase {
       now: new Date(),
     });
     const windowEnd = lastCompletedWindowEnd(input.today);
+    // 시드 직후엔 두 전략의 버전이 같아 전략을 빼면 남의 판정을 재사용한다.
     const verdictKey = [
+      input.strategy,
       input.axis,
       windowEnd,
       ...snapshot.map((entry) => entry.version),
       ...[...excluded].sort((left, right) => left - right),
     ].join('|');
 
-    const cached = await this.runPort.findVerdictByKey(verdictKey);
+    const cached = await this.runPort.findVerdictByKey({
+      strategy: input.strategy,
+      verdictKey,
+    });
     if (cached !== null && isStoredVerdict(cached.verdict)) {
       return { verdictKey, verdict: cached.verdict, excluded };
     }
