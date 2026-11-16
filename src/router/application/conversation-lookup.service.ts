@@ -58,10 +58,12 @@ export class ConversationLookupService {
       rootGuide: [],
       release: () => {},
     };
-    const owner = this.configService.get<string>(
-      'AUTOPILOT_OWNER_SLACK_USER_ID',
-    );
-    if (!owner || owner !== slackUserId) {
+    // 콘솔은 CONSOLE_OWNER 로 대화하므로 두 owner 값이 다르게 설정돼도 콘솔 조회가 닫히지 않게 둘 다 인정한다.
+    const owners = [
+      this.configService.get<string>('AUTOPILOT_OWNER_SLACK_USER_ID'),
+      this.configService.get<string>('CONSOLE_OWNER_SLACK_USER_ID'),
+    ];
+    if (!slackUserId || !owners.includes(slackUserId)) {
       return result;
     }
 

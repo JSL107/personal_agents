@@ -183,6 +183,47 @@ describe('ConversationLookupService', () => {
     );
   });
 
+  it('종류별 마지막 발송 조회가 실패해도 원장·최근 발송 기록은 돌려준다', async () => {
+    findActiveRuns.mockResolvedValue([
+      {
+        agentType: 'PM',
+        status: 'IN_PROGRESS',
+        startedAt: new Date('2026-10-30T00:00:00Z'),
+      },
+    ]);
+    findRecent.mockResolvedValue([
+      {
+        kind: 'morning',
+        status: 'SENT',
+        suppressReason: null,
+        textPreview: '발송',
+        createdAt: new Date('2026-10-30T00:02:00Z'),
+      },
+    ]);
+    findActivitySince.mockRejectedValue(new Error('DB unavailable'));
+
+    const result = await service.collect({ slackUserId: 'U_OWNER' });
+
+    expect(result.latestDeliveryText).toBeUndefined();
+    expect(result.ledgerText).toContain('PM · IN_PROGRESS');
+    expect(result.deliveryText).toContain('morning · Slack 발송 · 발송');
+  });
+
+  // 두 owner 는 별도 선택 설정이라 다르게 둘 수 있다. 콘솔은 CONSOLE_OWNER 로 대화하므로 그 값도 인정한다.
+  it('콘솔 owner 가 autopilot owner 와 달라도 콘솔 owner 의 조회를 연다', async () => {
+    get.mockImplementation((key: string) => {
+      if (key === 'AUTOPILOT_OWNER_SLACK_USER_ID') {
+        return 'U_OWNER';
+      }
+      return key === 'CONSOLE_OWNER_SLACK_USER_ID' ? 'U_CONSOLE' : undefined;
+    });
+
+    await service.collect({ slackUserId: 'U_CONSOLE' });
+
+    expect(findActiveRuns).toHaveBeenCalledTimes(1);
+    expect(findActivitySince).toHaveBeenCalledTimes(1);
+  });
+
   it('원장 조회가 실패해도 발송 기록과 레포 사본은 돌려준다', async () => {
     findActiveRuns.mockRejectedValue(new Error('DB unavailable'));
     findRecent.mockResolvedValue([
