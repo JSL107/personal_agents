@@ -1,3 +1,5 @@
+import { P } from 'ts-pattern';
+
 import { ProposalTarget } from './humanize-research.type';
 
 export const CANON_REPO = 'JSL107/humanize-korean';
@@ -19,39 +21,17 @@ export interface HumanizeRulePrPayload {
   linkedBlogText: string | null;
 }
 
-export const isHumanizeRulePrPayload = (
-  value: unknown,
-): value is HumanizeRulePrPayload => {
-  const arrayValue = Array.isArray(value);
-  if (typeof value !== 'object' || value === null || arrayValue) {
-    return false;
-  }
-  const candidate = value as Record<string, unknown>;
-  const validTarget =
-    candidate.target === ProposalTarget.CANON ||
-    candidate.target === ProposalTarget.BLOG;
-  const evidence = candidate.evidence;
-  const excerpts = candidate.evidenceExcerpts;
-  const evidenceArray = Array.isArray(evidence);
-  const excerptsArray = Array.isArray(excerpts);
-  if (!evidenceArray || !excerptsArray) {
-    return false;
-  }
-  const validEvidence = evidence.every((item) => typeof item === 'string');
-  const validExcerpts = excerpts.every((item) => typeof item === 'string');
-  const valid =
-    validTarget &&
-    typeof candidate.repo === 'string' &&
-    typeof candidate.baseBranch === 'string' &&
-    (candidate.baseSha === null || typeof candidate.baseSha === 'string') &&
-    typeof candidate.file === 'string' &&
-    typeof candidate.oldString === 'string' &&
-    typeof candidate.newString === 'string' &&
-    typeof candidate.rationale === 'string' &&
-    typeof candidate.targetMetric === 'string' &&
-    validEvidence &&
-    validExcerpts &&
-    (candidate.linkedBlogText === null ||
-      typeof candidate.linkedBlogText === 'string');
-  return valid;
+export const HUMANIZE_RULE_PR_PAYLOAD_PATTERN = {
+  target: P.union(ProposalTarget.CANON, ProposalTarget.BLOG),
+  repo: P.string,
+  baseBranch: P.string,
+  baseSha: P.union(P.string, null),
+  file: P.string,
+  oldString: P.string,
+  newString: P.string,
+  rationale: P.string,
+  targetMetric: P.string,
+  evidence: P.array(P.string),
+  evidenceExcerpts: P.array(P.string),
+  linkedBlogText: P.union(P.string, null),
 };

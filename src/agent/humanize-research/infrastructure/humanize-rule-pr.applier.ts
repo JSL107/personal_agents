@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { isMatching } from 'ts-pattern';
 
 import { DomainStatus } from '../../../common/exception/domain-status.enum';
 import {
@@ -25,8 +26,8 @@ import {
 import {
   BLOG_REPO,
   CANON_REPO,
+  HUMANIZE_RULE_PR_PAYLOAD_PATTERN,
   HumanizeRulePrPayload,
-  isHumanizeRulePrPayload,
   RULE_LINKS_FILE,
 } from '../domain/humanize-rule-pr.type';
 import { CANON_RULES_FILE, countMatches } from '../domain/proposal-gate';
@@ -47,7 +48,7 @@ export class HumanizeRulePrApplier implements PreviewApplier {
 
   async apply(preview: PreviewAction): Promise<ApplyResult> {
     const payload = preview.payload;
-    const validPayload = isHumanizeRulePrPayload(payload);
+    const validPayload = isMatching(HUMANIZE_RULE_PR_PAYLOAD_PATTERN, payload);
     if (!validPayload) {
       throw new PreviewActionException({
         code: PreviewActionErrorCode.NO_APPLIER_FOR_KIND,
