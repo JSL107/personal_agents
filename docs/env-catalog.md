@@ -2,7 +2,7 @@
 
 # 환경변수 카탈로그
 
-SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 202개.
+SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). 총 203개.
 설명은 각 변수 주석의 첫 문장 발췌 — 상세는 app.config.ts 주석 참조. `.env.example` 동기는 `pnpm check:env`.
 
 ## 인프라 (앱 부팅 필수)
@@ -279,6 +279,7 @@ SoT: `src/config/app.config.ts` 의 `EnvironmentVariables` (class-validator). �
 | `VACATION_HIRE_DATE` | ❌ | 휴가 계산기 — 본인 입사일 (YYYY-MM-DD). 미설정 시 /휴가 명령에서 친절한 에러. |
 | `VACATION_FIRST_YEAR_ADVANCE_DAYS` | ❌ | 휴가 계산기 — 1년차 연차를 입사 때 선지급받은 일수. 설정하면 1년차 부여를 이 값으로 고정한다. |
 | `ROUTER_MEMORY_SHORTCUT_MODE` | ❌ | 라우팅 기억 단축. off(기본) · shadow(판정만 원장에 기록, LLM 으로 라우팅) · on(확신하면 LLM 생략). |
+| `PARAM_AUTO_TUNE_MODE` | ❌ | 투자 파라미터 주간 자동 조정. off(기본) · observe(판정과 원장만, 값은 안 바꿈) · apply(채택 시 값 반영). |
 | `TYPESAFE_API_KEY` | ❌ | TypeSafe Jev API 인증키. 게이트 모드가 legacy이면 필요하지 않다. |
 | `BRIEFING_WAITING_SECTION_ENABLED` | ❌ | 'false' 면 아침 브리핑 완료/대기 PR 분류 섹션 OFF. 미설정 시 활성(기본 ON). |
 | `KOREAN_HOLIDAY_API_KEY` | ❌ | 공공데이터포털 「한국천문연구원 특일 정보」 서비스키(**디코딩 키**). |
