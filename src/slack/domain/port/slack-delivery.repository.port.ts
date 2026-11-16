@@ -36,6 +36,11 @@ export type SlackDeliveryStatRow = {
   replyCount: number;
 };
 
+// 종류별 마지막 발송을 셀 때 쓰는 가벼운 행 — 본문(fullText) 없이 시각만 더한다.
+export interface SlackDeliveryActivityRow extends SlackDeliveryStatRow {
+  createdAt: Date;
+}
+
 export type SlackDeliveryListInput = {
   status: SlackDeliveryStatus;
   // SUPPRESSED 는 콘솔 경로(CONSOLE_ROUTE)와 빈 결과(EMPTY)를 함께 담는다. 한쪽만 볼 때는
@@ -67,4 +72,5 @@ export interface SlackDeliveryRepositoryPort {
     since: Date;
     limit: number;
   }): Promise<SlackDeliveryListRow[]>;
+  findActivitySince(since: Date): Promise<SlackDeliveryActivityRow[]>;
 }

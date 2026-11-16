@@ -399,6 +399,7 @@ describe('ConversationalReply — buildPrompt (role-tagged turn lines)', () => {
       lookups: {
         ledgerText: '실행 한 건',
         deliveryText: '발송 한 건',
+        latestDeliveryText: 'art-job-feed · 마지막 발송',
         readableRoots: ['/tmp/repo'],
         rootGuide: ['레포: /tmp/repo'],
         release: jest.fn(),
@@ -408,6 +409,9 @@ describe('ConversationalReply — buildPrompt (role-tagged turn lines)', () => {
     });
     expect(prompt).toContain('[최근 실행 기록]');
     expect(prompt).toContain('[최근 발송 기록]');
+    expect(prompt).toContain(
+      '[종류별 마지막 발송 (최근 30일, 본문 기준)]\nart-job-feed · 마지막 발송',
+    );
     expect(prompt).toContain('[직접 열어 볼 수 있는 폴더]');
     expect(prompt).toContain('첨부된 사진 번호: 1');
     expect(prompt).toContain('사진 2장은 보지 못했다');

@@ -504,6 +504,13 @@ export const buildPrompt = ({
     ...(lookups?.deliveryText
       ? ['', '[최근 발송 기록]', lookups.deliveryText]
       : []),
+    ...(lookups?.latestDeliveryText
+      ? [
+          '',
+          '[종류별 마지막 발송 (최근 30일, 본문 기준)]',
+          lookups.latestDeliveryText,
+        ]
+      : []),
     ...(lookups?.rootGuide.length
       ? [
           '',

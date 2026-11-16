@@ -12,18 +12,23 @@ import {
   SLACK_DELIVERY_REPOSITORY,
   SlackDeliveryRepositoryPort,
 } from '../../slack/domain/port/slack-delivery.repository.port';
+import { summarizeLatestDeliveries } from '../../slack/domain/slack-delivery-summary';
 import { LocalRepoSnapshotService } from '../infrastructure/local-repo-snapshot.service';
 
 export interface ConversationLookups {
   ledgerText?: string;
   deliveryText?: string;
+  latestDeliveryText?: string;
   readableRoots: string[];
   rootGuide: string[];
   release: () => void;
 }
 
 const RECENT_LIMIT = 10;
-const LOOKBACK_MILLISECONDS = 24 * 60 * 60 * 1000;
+const DAY_MILLISECONDS = 24 * 60 * 60 * 1000;
+const LOOKBACK_MILLISECONDS = DAY_MILLISECONDS;
+const LATEST_DELIVERY_LOOKBACK_DAYS = 30;
+const LATEST_DELIVERY_RECENT_DAYS = 7;
 const FORBIDDEN_HERMES_FILES = new Set([
   'auth.json',
   'config.yaml',
@@ -106,6 +111,12 @@ export class ConversationLookupService {
       this.logger.warn(`최근 발송 기록 조회 실패: ${String(error)}`);
     }
 
+    try {
+      result.latestDeliveryText = await this.describeLatestDeliveries();
+    } catch (error: unknown) {
+      this.logger.warn(`종류별 마지막 발송 조회 실패: ${String(error)}`);
+    }
+
     const hermesRoot = await this.getHermesRoot();
     if (hermesRoot) {
       result.readableRoots.push(hermesRoot);
@@ -126,6 +137,32 @@ export class ConversationLookupService {
       this.logger.warn(`레포 사본 조회 실패: ${String(error)}`);
     }
     return result;
+  }
+
+  private async describeLatestDeliveries(): Promise<string | undefined> {
+    const now = Date.now();
+    const rows = await this.deliveryRepository.findActivitySince(
+      new Date(now - LATEST_DELIVERY_LOOKBACK_DAYS * DAY_MILLISECONDS),
+    );
+    const groups = summarizeLatestDeliveries({
+      rows,
+      recentSince: new Date(
+        now - LATEST_DELIVERY_RECENT_DAYS * DAY_MILLISECONDS,
+      ),
+    });
+    if (groups.length === 0) {
+      return undefined;
+    }
+    const lines = groups.map((group) => {
+      const sent = group.lastSentAt
+        ? `마지막 발송 ${formatKstDateTime(group.lastSentAt)} KST · ${LATEST_DELIVERY_RECENT_DAYS}일 ${group.recentSent}회`
+        : `${LATEST_DELIVERY_LOOKBACK_DAYS}일 안 발송 없음`;
+      const consoleRoute = group.lastConsoleRouteAt
+        ? ` · 콘솔로 돌림 ${LATEST_DELIVERY_RECENT_DAYS}일 ${group.recentConsoleRoute}회(마지막 ${formatKstDateTime(group.lastConsoleRouteAt)} KST)`
+        : '';
+      return `${group.key} · ${sent}${consoleRoute}`;
+    });
+    return wrapUntrustedInput(lines.join('\n'));
   }
 
   private async getHermesRoot(): Promise<string | null> {

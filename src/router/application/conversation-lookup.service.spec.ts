@@ -22,11 +22,12 @@ describe('ConversationLookupService', () => {
   const findActiveRuns = jest.fn();
   const findFinishedRunsSince = jest.fn();
   const findRecent = jest.fn();
+  const findActivitySince = jest.fn();
   const acquire = jest.fn();
   const service = new ConversationLookupService(
     { get } as unknown as ConfigService,
     { findActiveRuns, findFinishedRunsSince } as unknown as AgentRunService,
-    { findRecent } as unknown as SlackDeliveryRepositoryPort,
+    { findRecent, findActivitySince } as unknown as SlackDeliveryRepositoryPort,
     { acquire } as unknown as LocalRepoSnapshotService,
   );
 
@@ -39,6 +40,7 @@ describe('ConversationLookupService', () => {
     findActiveRuns.mockReset().mockResolvedValue([]);
     findFinishedRunsSince.mockReset().mockResolvedValue([]);
     findRecent.mockReset().mockResolvedValue([]);
+    findActivitySince.mockReset().mockResolvedValue([]);
     acquire.mockReset().mockResolvedValue(null);
   });
 
@@ -52,6 +54,7 @@ describe('ConversationLookupService', () => {
     });
     expect(findActiveRuns).not.toHaveBeenCalled();
     expect(findRecent).not.toHaveBeenCalled();
+    expect(findActivitySince).not.toHaveBeenCalled();
     expect(acquire).not.toHaveBeenCalled();
   });
 
@@ -109,6 +112,77 @@ describe('ConversationLookupService', () => {
   it('원장 조회가 실패해도 발송 기록과 레포 사본은 돌려준다', async () => {
     findActiveRuns.mockRejectedValue(new Error('DB unavailable'));
     findRecent.mockResolvedValue([
+  // 2026-11-05 run 11600 — 최신 10건이 잦은 종류로 차서 15시간 전 원화 공고 발송이 빠졌고, 이대리는
+  // "최근 발송 기록은 확인할 수 없어" 라고 답했다.
+  it('최신 10건에 밀린 종류도 종류별 마지막 발송 블록에 싣는다', async () => {
+    const now = Date.now();
+    const hoursAgo = (hours: number): Date =>
+      new Date(now - hours * 60 * 60 * 1000);
+    const activity = (
+      kind: string,
+      createdAt: Date,
+      extra: Partial<{
+        status: string;
+        suppressReason: string | null;
+        threadTs: string | null;
+        itemKinds: string[];
+      }> = {},
+    ): Record<string, unknown> => ({
+      kind,
+      itemKinds: [],
+      threadTs: null,
+      status: 'SENT',
+      suppressReason: null,
+      reactionCount: 0,
+      replyCount: 0,
+      createdAt,
+      ...extra,
+    });
+    findRecent.mockResolvedValue(
+      Array.from({ length: 10 }, (_, index) => ({
+        kind: 'autopilot:pr-review-sweep',
+        status: 'SUPPRESSED',
+        textPreview: '스윕',
+        createdAt: hoursAgo(index),
+      })),
+    );
+    findActivitySince.mockResolvedValue([
+      ...Array.from({ length: 10 }, (_, index) =>
+        activity('autopilot:pr-review-sweep', hoursAgo(index), {
+          status: 'SUPPRESSED',
+          suppressReason: 'CONSOLE_ROUTE',
+        }),
+      ),
+      activity('art-job-feed', hoursAgo(15)),
+      activity('art-job-feed', hoursAgo(15), { threadTs: '1.1' }),
+      activity('art-job-feed', hoursAgo(24 * 10)),
+      activity('autopilot:morning', hoursAgo(20), {
+        itemKinds: ['study-brief', 'saju-fortune'],
+      }),
+    ]);
+
+    const result = await service.collect({ slackUserId: 'U_OWNER' });
+    const collectedAt = Date.now();
+
+    expect(result.deliveryText).not.toContain('art-job-feed');
+    const lines = result.latestDeliveryText?.split('\n') ?? [];
+    const artJobLine = lines.find((line) => line.startsWith('art-job-feed'));
+    // 스레드 상세 댓글은 세지 않고, 7일 밖 발송은 횟수에서 빠진다.
+    expect(artJobLine).toMatch(/^art-job-feed · 마지막 발송 .+ KST · 7일 1회$/);
+    expect(lines.some((line) => line.startsWith('study-brief'))).toBe(true);
+    expect(lines.some((line) => line.startsWith('autopilot:morning'))).toBe(
+      false,
+    );
+    expect(
+      lines.find((line) => line.startsWith('autopilot:pr-review-sweep')),
+    ).toMatch(/30일 안 발송 없음 · 콘솔로 돌림 7일 10회/);
+    expect(result.latestDeliveryText).toContain('<untrusted-input>');
+    const since = findActivitySince.mock.calls[0][0] as Date;
+    expect(collectedAt - since.getTime()).toBeGreaterThanOrEqual(
+      30 * 24 * 60 * 60 * 1000,
+    );
+  });
+
       {
         kind: 'morning',
         status: 'SENT',
