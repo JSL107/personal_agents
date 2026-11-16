@@ -116,6 +116,11 @@ export class HandleConversationTurnUsecase {
             input.unresolvedStreak ?? calculateUnresolvedStreak(priorTurns),
           routingMissRunId: (error as RouterException).routingMissRunId,
           conversationKey: input.conversationKey,
+          // 콘솔은 owner 혼자 보는 화면이라 DM 처럼 원장·발송 기록 조회를 연다. 없으면 "최근 발송
+          // 기록 확인해봐" 에 근거 없이 "확인할 수 없어" 만 답한다(2026-11-05 run 11600).
+          ...(input.source === 'REMOTE_CONSOLE'
+            ? { slackUserId: input.slackUserId }
+            : {}),
           ...(input.persona ? { persona: input.persona } : {}),
         });
       } catch (replyError: unknown) {

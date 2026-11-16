@@ -2,6 +2,7 @@ import { SlackDeliveryStatRow } from './port/slack-delivery.repository.port';
 import {
   clampDeliveryListLimit,
   clampDeliveryWindowDays,
+  describeDeliveryStatus,
   summarizeDeliveries,
 } from './slack-delivery-summary';
 
@@ -158,4 +159,19 @@ describe('delivery query clamps', () => {
     expect(clampDeliveryListLimit(50.9)).toBe(50);
     expect(clampDeliveryListLimit(300)).toBe(200);
   });
+});
+
+describe('describeDeliveryStatus', () => {
+  it.each([
+    ['SENT', null, 'Slack 발송'],
+    ['FAILED', null, '발송 실패'],
+    ['SUPPRESSED', 'CONSOLE_ROUTE', '콘솔로 돌림'],
+    ['SUPPRESSED', 'EMPTY', '보낼 내용 없어 생략'],
+    ['SUPPRESSED', undefined, '보내지 않음'],
+  ])(
+    '상태 %s · 사유 %s 를 "%s" 로 옮긴다',
+    (status, suppressReason, expected) => {
+      expect(describeDeliveryStatus({ status, suppressReason })).toBe(expected);
+    },
+  );
 });

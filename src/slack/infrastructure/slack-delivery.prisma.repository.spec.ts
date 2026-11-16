@@ -88,6 +88,27 @@ describe('SlackDeliveryPrismaRepository', () => {
     });
   });
 
+  it('종류별 마지막 발송 조회는 본문 없이 시각만 더해 한도 없이 읽는다', async () => {
+    findMany.mockResolvedValue([]);
+    const since = new Date('2026-10-01T00:00:00Z');
+
+    await expect(repository.findActivitySince(since)).resolves.toEqual([]);
+
+    expect(findMany).toHaveBeenCalledWith({
+      where: { createdAt: { gte: since } },
+      select: {
+        kind: true,
+        itemKinds: true,
+        threadTs: true,
+        status: true,
+        suppressReason: true,
+        reactionCount: true,
+        replyCount: true,
+        createdAt: true,
+      },
+    });
+  });
+
   it('끝 경계가 주어지면 createdAt < until 로 닫는다', async () => {
     findMany.mockResolvedValue([]);
     const since = new Date('2026-10-01T00:00:00Z');

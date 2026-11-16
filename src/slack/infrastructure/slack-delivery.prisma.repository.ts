@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   RecordSlackDeliveryInput,
+  SlackDeliveryActivityRow,
   SlackDeliveryListInput,
   SlackDeliveryListRow,
   SlackDeliveryMessageRef,
@@ -91,6 +92,26 @@ export class SlackDeliveryPrismaRepository implements SlackDeliveryRepositoryPor
       },
       orderBy: { createdAt: 'desc' },
       take: limit,
+    });
+    return rows.map((row) => ({
+      ...row,
+      status: row.status as SlackDeliveryStatus,
+    }));
+  }
+
+  async findActivitySince(since: Date): Promise<SlackDeliveryActivityRow[]> {
+    const rows = await this.prisma.slackDelivery.findMany({
+      where: { createdAt: { gte: since } },
+      select: {
+        kind: true,
+        itemKinds: true,
+        threadTs: true,
+        status: true,
+        suppressReason: true,
+        reactionCount: true,
+        replyCount: true,
+        createdAt: true,
+      },
     });
     return rows.map((row) => ({
       ...row,
