@@ -14,6 +14,7 @@
  * --diff-max-bytes <N> 은 재생 diff 의 절단 상한을 바꾼다(기본은 운영과 같은 클라이언트 기본값). 상한을 정하는 실험용이다.
  * --full-file-list 는 변경 파일 목록을 잘리지 않은 diff 에서 센다(운영처럼). 기본은 잘린 diff 기준이라, 상한을 넘는
  * PR 에서는 잘린 뒤쪽 파일이 목록에서 빠진다. 켜면 이전 보고서와 입력이 달라지므로 같은 플래그끼리만 비교한다.
+ * --no-target-rules 는 리뷰 대상 레포의 규칙 문서(AGENTS.md 등의 리뷰·컨벤션 절)를 싣지 않는다. 싣기 전 기준선을 만들 때 쓴다.
  * --repo-read 는 리뷰 모델에 headSha 시점 레포 사본을 읽기 전용으로 연다(실험). 사본이 안 열린 회차는 skipped 로 빠지고,
  * 미탐 파일에 outsideDiff 표시가 있으면 표시된 미탐과 나머지를 나눠 센다. 끈 보고서를 --baseline 으로 붙여 비교한다.
  * --rescore <보고서> 는 모델을 부르지 않고, 그 보고서의 모델 출력(원장 agent_run.output)을 현재 판정 규칙으로
@@ -133,6 +134,8 @@ interface ReplayOptions {
   // 리뷰 모델에 headSha 시점 레포 사본을 읽기 전용으로 연다(실험). 사본이 열리지 않은 회차는 skipped 로 뺀다.
   // 끈 보고서를 --baseline 으로 붙여 비교하는 것이 이 플래그의 용도다.
   repoRead?: boolean;
+  // 리뷰 대상 레포의 규칙 문서를 싣지 않는다. 싣기 전 기준선용이다.
+  noTargetRules?: boolean;
 }
 
 interface ReplayGroup {
@@ -385,6 +388,9 @@ const replay = async (
               snapshot,
               noFallback: true,
               ...(options.repoRead === true ? { repoRead: true } : {}),
+              ...(options.noTargetRules === true
+                ? { targetRepoRules: false }
+                : {}),
               ...(holdoutIds === undefined
                 ? {}
                 : { excludeConventionFindingIds: holdoutIds }),
@@ -1164,6 +1170,7 @@ const readOptions = (): ReplayOptions => {
     diffMaxBytes: readOptionalInteger('diff-max-bytes', 1),
     fullFileList: process.argv.includes('--full-file-list'),
     repoRead: process.argv.includes('--repo-read'),
+    noTargetRules: process.argv.includes('--no-target-rules'),
   };
   if (ids !== undefined) {
     return { ids, ...common };

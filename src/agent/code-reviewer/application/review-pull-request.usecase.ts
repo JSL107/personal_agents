@@ -93,8 +93,10 @@ import {
   RELATED_CODE_MAX_BYTES,
   RelatedCodeSection,
 } from '../domain/related-code';
+import { TargetRepoRules } from '../domain/target-repo-rules';
 import { extractRepoSnapshot } from '../infrastructure/repo-snapshot';
 import { classifyRepoReadFailure } from './repo-read-fallback';
+import { TargetRepoRulesLoader } from './target-repo-rules.loader';
 
 const DEFAULT_INLINE_MAX = 4;
 // 직접 조회한 스냅샷이 섞였을 때 다시 받는 횟수(첫 조회 포함). 그래도 섞이면 잠시 뒤 재실행을 안내한다.
@@ -181,6 +183,11 @@ export class ReviewPullRequestUsecase {
     @Optional()
     @Inject(ReviewWriterResolver)
     private readonly writers?: ReviewWriterResolver,
+    // 옵셔널 — 미주입이면 대상 레포 규칙 없이 리뷰한다(종전 동작). 규칙 문서 조회가 GitHub 파일 조회를
+    // 늘리므로, 조회 횟수를 세는 기존 단위 테스트는 주입하지 않아 영향을 받지 않는다.
+    @Optional()
+    @Inject(TargetRepoRulesLoader)
+    private readonly targetRepoRulesLoader?: TargetRepoRulesLoader,
   ) {}
 
   async execute({
@@ -196,6 +203,7 @@ export class ReviewPullRequestUsecase {
     noFallback,
     repoRead,
     repoReadFallback,
+    targetRepoRules,
   }: ReviewPullRequestInput): Promise<ReviewPullRequestOutcome> {
     // INVALID_PR_REFERENCE 는 파싱 시점에 즉시 예외.
     const ref = parsePrReference(prRef);
@@ -237,13 +245,17 @@ export class ReviewPullRequestUsecase {
         reviewedDiff = diff;
 
         // 스냅샷 경로(스윕)도 여기를 지나므로 같은 맥락이 붙는다.
-        const [learnedConventions, { companionSpecs, relatedCode }] =
+        const [learnedConventions, { companionSpecs, relatedCode }, repoRules] =
           await Promise.all([
             this.buildLearnedConventions(
               detail.repo,
               excludeConventionFindingIds,
             ),
             this.buildDiffContext(detail, diff),
+            this.loadTargetRepoRules({
+              detail,
+              enabled: targetRepoRules !== false,
+            }),
           ]);
 
         const repoSnapshot =
@@ -274,6 +286,7 @@ export class ReviewPullRequestUsecase {
               companionSpecs,
             }) +
             (root === undefined ? '' : buildRepoSnapshotSection(root)) +
+            repoRules.block +
             buildRepoConventions(detail.repo) +
             learnedConventions;
 
@@ -450,6 +463,30 @@ export class ReviewPullRequestUsecase {
       code: CodeReviewerErrorCode.PR_SNAPSHOT_MOVING,
       status: DomainStatus.CONFLICT,
     });
+  }
+
+  // 대상 레포 규칙 문서. 꺼져 있거나 로더가 없거나 조회가 실패하면 빈 블록 — 리뷰를 멈추지 않는다.
+  private async loadTargetRepoRules({
+    detail,
+    enabled,
+  }: {
+    detail: PullRequestDetail;
+    enabled: boolean;
+  }): Promise<TargetRepoRules> {
+    if (!enabled || this.targetRepoRulesLoader === undefined) {
+      return { block: '', used: [] };
+    }
+    try {
+      return await this.targetRepoRulesLoader.load({
+        repo: detail.repo,
+        baseSha: detail.baseSha,
+      });
+    } catch (error: unknown) {
+      this.logger.warn(
+        `대상 레포 규칙 누락 (${detail.repo}#${detail.number}), 규칙 없이 진행: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return { block: '', used: [] };
+    }
   }
 
   // 사본을 못 열면 리뷰를 멈추지 않고 사본 없이 진행한다 — 상태로 남겨 재생 비교가 그 회차를 뺀다.
