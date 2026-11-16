@@ -1,4 +1,9 @@
+import { Prisma } from '@prisma/client';
+
+import { ParameterSnapshot } from '../../param-tune/domain/param-tune.type';
 import { PrismaService } from '../../prisma/prisma.service';
+import { StrategyParameterSnapshotError } from '../domain/strategy-parameter.exception';
+import { STRATEGY_PARAMETER_NAMES } from '../domain/strategy-parameter.type';
 import { StrategyParameterPrismaRepository } from './strategy-parameter.prisma.repository';
 
 const decimal = (value: number) => ({ toNumber: () => value });
@@ -8,14 +13,37 @@ describe('StrategyParameterPrismaRepository', () => {
     findMany: jest.fn(),
     findFirst: jest.fn(),
     create: jest.fn(),
+    update: jest.fn(),
+    aggregate: jest.fn(),
   };
+  const $transaction = jest.fn();
   const repository = new StrategyParameterPrismaRepository({
     strategyParameter,
+    $transaction,
   } as unknown as PrismaService);
 
   beforeEach(() => {
     jest.resetAllMocks();
+    $transaction.mockImplementation(async (callback) =>
+      callback({ strategyParameter }),
+    );
   });
+
+  const activeRows = (versions: number[] = [1, 1, 1, 1], idOffset = 10) =>
+    STRATEGY_PARAMETER_NAMES.map((name, index) => ({
+      id: idOffset + index,
+      name,
+      value: decimal(index + 1),
+      version: versions[index],
+    }));
+
+  const snapshotOf = (rows: ReturnType<typeof activeRows>): ParameterSnapshot =>
+    rows.map((row) => ({
+      name: row.name,
+      parameterId: row.id,
+      version: row.version,
+      value: row.value.toNumber(),
+    }));
 
   describe('findActiveParameters', () => {
     it('활성 행만 조회한다', async () => {
@@ -158,6 +186,140 @@ describe('StrategyParameterPrismaRepository', () => {
         expect.objectContaining({
           data: expect.objectContaining({ version: 1, value: '20' }),
         }),
+      );
+    });
+  });
+
+  describe('findSnapshotStrict', () => {
+    it('활성 행이 3개뿐이면 던진다', async () => {
+      strategyParameter.findMany.mockResolvedValue(activeRows().slice(0, 3));
+
+      await expect(repository.findSnapshotStrict('SWING')).rejects.toThrow(
+        StrategyParameterSnapshotError,
+      );
+    });
+
+    it('4개면 STRATEGY_PARAMETER_NAMES 순서로 돌려준다', async () => {
+      strategyParameter.findMany.mockResolvedValue([...activeRows()].reverse());
+
+      const snapshot = await repository.findSnapshotStrict('SWING');
+
+      expect(snapshot.map((entry) => entry.name)).toEqual([
+        ...STRATEGY_PARAMETER_NAMES,
+      ]);
+      expect(snapshot[0]).toEqual({
+        name: 'EXIT_TAKE_PROFIT_PERCENT',
+        parameterId: 10,
+        version: 1,
+        value: 1,
+      });
+    });
+
+    it('조회 예외는 그대로 전파한다', async () => {
+      strategyParameter.findMany.mockRejectedValue(new Error('db down'));
+
+      await expect(repository.findSnapshotStrict('SWING')).rejects.toThrow(
+        'db down',
+      );
+    });
+  });
+
+  describe('activateNewVersion', () => {
+    const input = (expectedSnapshot: ParameterSnapshot) => ({
+      strategy: 'SWING' as const,
+      name: 'EXIT_STOP_LOSS_PERCENT' as const,
+      expectedSnapshot,
+      value: -7,
+      reason: '근거',
+      agentRunId: 5,
+    });
+
+    it('스냅샷이 맞으면 내린 뒤 max+1 버전으로 만든다', async () => {
+      const rows = activeRows();
+      strategyParameter.findMany.mockResolvedValue(rows);
+      strategyParameter.aggregate.mockResolvedValue({ _max: { version: 3 } });
+      strategyParameter.create.mockResolvedValue({ id: 99, version: 4 });
+
+      const result = await repository.activateNewVersion(
+        input(snapshotOf(rows)),
+      );
+
+      expect(result).toEqual({
+        kind: 'ACTIVATED',
+        parameterId: 99,
+        version: 4,
+      });
+      expect(strategyParameter.update).toHaveBeenCalledWith({
+        where: { id: 11 },
+        data: { supersededAt: expect.any(Date) },
+      });
+      expect(strategyParameter.update.mock.invocationCallOrder[0]).toBeLessThan(
+        strategyParameter.create.mock.invocationCallOrder[0],
+      );
+      expect(strategyParameter.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            version: 4,
+            value: '-7',
+            agentRunId: 5,
+            reason: '근거',
+          }),
+        }),
+      );
+      expect($transaction).toHaveBeenCalledWith(expect.any(Function), {
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      });
+    });
+
+    it('다른 축의 version 이 다르면 쓰지 않고 CONFLICT', async () => {
+      const expected = snapshotOf(activeRows());
+      strategyParameter.findMany.mockResolvedValue(activeRows([1, 1, 2, 1]));
+
+      const result = await repository.activateNewVersion(input(expected));
+
+      expect(result.kind).toBe('CONFLICT');
+      expect(strategyParameter.update).not.toHaveBeenCalled();
+      expect(strategyParameter.create).not.toHaveBeenCalled();
+    });
+
+    // A→B→A: 값과 version 이 같아 보여도 행이 다르면 그사이 바뀐 것이다.
+    it('값이 같아도 parameterId 가 다르면 CONFLICT', async () => {
+      const expected = snapshotOf(activeRows());
+      strategyParameter.findMany.mockResolvedValue(
+        activeRows([1, 1, 1, 1], 20),
+      );
+
+      const result = await repository.activateNewVersion(input(expected));
+
+      expect(result.kind).toBe('CONFLICT');
+      expect(strategyParameter.create).not.toHaveBeenCalled();
+    });
+
+    it.each(['P2034', 'P2002'])(
+      '트랜잭션이 %s 로 실패하면 CONFLICT',
+      async (code) => {
+        const rows = activeRows();
+        strategyParameter.findMany.mockResolvedValue(rows);
+        $transaction.mockRejectedValue(
+          new Prisma.PrismaClientKnownRequestError('conflict', {
+            code,
+            clientVersion: 'test',
+          }),
+        );
+
+        const result = await repository.activateNewVersion(
+          input(snapshotOf(rows)),
+        );
+
+        expect(result.kind).toBe('CONFLICT');
+      },
+    );
+
+    it('다른 오류는 다시 던진다', async () => {
+      $transaction.mockRejectedValue(new Error('boom'));
+
+      await expect(repository.activateNewVersion(input([]))).rejects.toThrow(
+        'boom',
       );
     });
   });
