@@ -32,6 +32,7 @@ import {
   buildReviewPrompt,
   ReviewPullRequestUsecase,
 } from './review-pull-request.usecase';
+import { TargetRepoRulesLoader } from './target-repo-rules.loader';
 
 describe('ReviewPullRequestUsecase', () => {
   const validReview: PullRequestReview = {
@@ -487,6 +488,71 @@ describe('ReviewPullRequestUsecase', () => {
       expect.objectContaining({ allowlistRaw: 'foo/bar' }),
     );
     expect(result.publication?.kind).toBe('POSTED');
+  });
+
+  describe('대상 레포 규칙', () => {
+    const load = jest.fn();
+    const buildWithRules = (): ReviewPullRequestUsecase =>
+      new ReviewPullRequestUsecase(
+        modelRouter as unknown as ModelRouterUsecase,
+        { execute: agentRunServiceExecute } as unknown as AgentRunService,
+        githubClient,
+        undefined,
+        { get: configGet } as unknown as ConfigService,
+        undefined,
+        undefined,
+        { load } as unknown as TargetRepoRulesLoader,
+      );
+
+    beforeEach(() => {
+      load.mockReset();
+      load.mockResolvedValue({
+        block: '\n\n[대상 레포 규칙 블록]',
+        used: ['AGENTS.md#Review Focus'],
+      });
+    });
+
+    it('로더가 주입되면 PR 의 base 커밋으로 불러 프롬프트에 싣는다', async () => {
+      await buildWithRules().execute({
+        prRef: 'foo/bar#34',
+        slackUserId: 'U123',
+      });
+
+      expect(load).toHaveBeenCalledWith({
+        repo: 'foo/bar',
+        baseSha: 'base-sha-main',
+      });
+      expect(modelRouter.route.mock.calls[0][0].request.prompt).toContain(
+        '[대상 레포 규칙 블록]',
+      );
+    });
+
+    it('targetRepoRules: false 면 로더를 부르지 않고 싣지 않는다', async () => {
+      await buildWithRules().execute({
+        prRef: 'foo/bar#34',
+        slackUserId: 'U123',
+        targetRepoRules: false,
+      });
+
+      expect(load).not.toHaveBeenCalled();
+      expect(modelRouter.route.mock.calls[0][0].request.prompt).not.toContain(
+        '[대상 레포 규칙 블록]',
+      );
+    });
+
+    it('로더가 실패해도 규칙 없이 리뷰를 마친다', async () => {
+      load.mockRejectedValue(new Error('boom'));
+
+      const result = await buildWithRules().execute({
+        prRef: 'foo/bar#34',
+        slackUserId: 'U123',
+      });
+
+      expect(result.result).toEqual(validReview);
+      expect(modelRouter.route.mock.calls[0][0].request.prompt).not.toContain(
+        '[대상 레포 규칙 블록]',
+      );
+    });
   });
 
   it('publish 를 요청하지 않으면 게시 결과가 없다', async () => {

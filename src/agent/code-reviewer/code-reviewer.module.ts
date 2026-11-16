@@ -7,6 +7,7 @@ import { PrReviewPublishModule } from '../../pr-review-loop/pr-review-publish.mo
 import { PrismaModule } from '../../prisma/prisma.module';
 import { ReviewPullRequestUsecase } from './application/review-pull-request.usecase';
 import { SaveReviewOutcomeUsecase } from './application/save-review-outcome.usecase';
+import { TargetRepoRulesLoader } from './application/target-repo-rules.loader';
 import { PR_REVIEW_OUTCOME_REPOSITORY_PORT } from './domain/port/pr-review-outcome.repository.port';
 import { CodeReviewerDispatcher } from './infrastructure/code-reviewer.dispatcher';
 import { PrReviewOutcomePrismaRepository } from './infrastructure/pr-review-outcome.prisma.repository';
@@ -22,6 +23,7 @@ import { PrReviewOutcomePrismaRepository } from './infrastructure/pr-review-outc
   providers: [
     ReviewPullRequestUsecase,
     SaveReviewOutcomeUsecase,
+    TargetRepoRulesLoader,
     {
       provide: PR_REVIEW_OUTCOME_REPOSITORY_PORT,
       useClass: PrReviewOutcomePrismaRepository,
