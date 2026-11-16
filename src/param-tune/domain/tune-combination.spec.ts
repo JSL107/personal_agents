@@ -30,11 +30,13 @@ describe('tune-combination', () => {
     const base = combinationFromSnapshot(snapshot);
 
     for (const axis of TUNE_AXIS_ORDER) {
-      const changed = withAxisValue(base, axis, 7);
+      const changed = withAxisValue({ combination: base, axis, value: 7 });
 
-      expect(axisValueOf(changed, axis)).toBe(7);
+      expect(axisValueOf({ combination: changed, axis })).toBe(7);
       for (const other of TUNE_AXIS_ORDER.filter((name) => name !== axis)) {
-        expect(axisValueOf(changed, other)).toBe(axisValueOf(base, other));
+        expect(axisValueOf({ combination: changed, axis: other })).toBe(
+          axisValueOf({ combination: base, axis: other }),
+        );
       }
     }
     expect(base.takeProfitPercent).toBe(10);

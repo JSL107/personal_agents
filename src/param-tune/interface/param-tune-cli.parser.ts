@@ -27,7 +27,17 @@ const fail = (message: string): never => {
   throw new Error(`${message}\n${PARAM_TUNE_CLI_USAGE}`);
 };
 
-const readOption = (argv: string[], key: string): string | undefined => {
+interface OptionKey {
+  argv: string[];
+  key: string;
+}
+
+interface RawInteger {
+  raw: string;
+  key: string;
+}
+
+const readOption = ({ argv, key }: OptionKey): string | undefined => {
   const index = argv.indexOf(`--${key}`);
   if (index < 0) {
     return undefined;
@@ -39,10 +49,10 @@ const readOption = (argv: string[], key: string): string | undefined => {
   return value;
 };
 
-const readRequired = (argv: string[], key: string): string =>
-  readOption(argv, key) ?? fail(`--${key} 는 필수입니다.`);
+const readRequired = ({ argv, key }: OptionKey): string =>
+  readOption({ argv, key }) ?? fail(`--${key} 는 필수입니다.`);
 
-const readInteger = (raw: string, key: string): number => {
+const readInteger = ({ raw, key }: RawInteger): number => {
   const value = Number(raw);
   if (!Number.isInteger(value) || value <= 0) {
     return fail(`--${key} 는 1 이상의 정수여야 합니다. 받은 값: ${raw}`);
@@ -53,10 +63,13 @@ const readInteger = (raw: string, key: string): number => {
 export const parseParamTuneCliArguments = (
   argv: string[],
 ): ParamTuneCliOptions => {
-  const runId = readInteger(readRequired(argv, 'run-id'), 'run-id');
-  const attemptToken = readRequired(argv, 'attempt-token');
+  const runId = readInteger({
+    raw: readRequired({ argv, key: 'run-id' }),
+    key: 'run-id',
+  });
+  const attemptToken = readRequired({ argv, key: 'attempt-token' });
 
-  const strategy = readRequired(argv, 'strategy');
+  const strategy = readRequired({ argv, key: 'strategy' });
   if (strategy !== 'LONG_TERM' && strategy !== 'SWING') {
     return fail(
       `--strategy 는 LONG_TERM 또는 SWING 이어야 합니다. 받은 값: ${strategy}`,
@@ -64,13 +77,13 @@ export const parseParamTuneCliArguments = (
   }
 
   const axis = TUNE_AXIS_ORDER.find(
-    (candidate) => candidate === readRequired(argv, 'axis'),
+    (candidate) => candidate === readRequired({ argv, key: 'axis' }),
   );
   if (axis === undefined) {
     return fail(`--axis 는 ${TUNE_AXIS_ORDER.join(', ')} 중 하나여야 합니다.`);
   }
 
-  const today = readRequired(argv, 'today');
+  const today = readRequired({ argv, key: 'today' });
   // 형식만 맞으면 2026-02-30 이 통과하고 new Date 가 3월로 넘긴다.
   if (
     !DATE_PATTERN.test(today) ||
@@ -81,16 +94,10 @@ export const parseParamTuneCliArguments = (
     );
   }
 
-  const rawAgentRunId = readOption(argv, 'agent-run-id');
-  return {
-    runId,
-    attemptToken,
-    strategy,
-    axis,
-    today,
-    agentRunId:
-      rawAgentRunId === undefined
-        ? null
-        : readInteger(rawAgentRunId, 'agent-run-id'),
-  };
+  const rawAgentRunId = readOption({ argv, key: 'agent-run-id' });
+  const agentRunId =
+    rawAgentRunId === undefined
+      ? null
+      : readInteger({ raw: rawAgentRunId, key: 'agent-run-id' });
+  return { runId, attemptToken, strategy, axis, today, agentRunId };
 };

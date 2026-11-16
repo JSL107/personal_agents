@@ -198,6 +198,9 @@ describe('ParamTuneAutopilotTask', () => {
 
     await result.onDelivered?.();
 
-    expect(port.markNotified).toHaveBeenCalledWith([5, 6], expect.any(Date));
+    expect(port.markNotified).toHaveBeenCalledWith({
+      ids: [5, 6],
+      at: expect.any(Date),
+    });
   });
 });

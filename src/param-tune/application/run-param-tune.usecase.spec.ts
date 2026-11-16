@@ -122,7 +122,11 @@ describe('RunParamTuneUsecase', () => {
   );
 
   const current = combinationFromSnapshot(snapshot);
-  const candidate15 = withAxisValue(current, 'EXIT_TAKE_PROFIT_PERCENT', 15);
+  const candidate15 = withAxisValue({
+    combination: current,
+    axis: 'EXIT_TAKE_PROFIT_PERCENT',
+    value: 15,
+  });
 
   const searchReturns = (
     combinations: Map<string, ParameterCombination>,
@@ -156,14 +160,18 @@ describe('RunParamTuneUsecase', () => {
   // 롤백으로 판정되는 재생: 새 값이 이전 값보다 모든 슬리피지에서 -1%p.
   const rollbackReplays = (): void => {
     mockedReplayParameters.mockImplementation(
-      async (args: { combination: ParameterCombination }) =>
-        replayResult(args.combination.takeProfitPercent === 10 ? '-0.01' : '0'),
+      async (args: { input: { combination: ParameterCombination } }) =>
+        replayResult(
+          args.input.combination.takeProfitPercent === 10 ? '-0.01' : '0',
+        ),
     );
   };
   const keepReplays = (): void => {
     mockedReplayParameters.mockImplementation(
-      async (args: { combination: ParameterCombination }) =>
-        replayResult(args.combination.takeProfitPercent === 10 ? '0.01' : '0'),
+      async (args: { input: { combination: ParameterCombination } }) =>
+        replayResult(
+          args.input.combination.takeProfitPercent === 10 ? '0.01' : '0',
+        ),
     );
   };
 
@@ -400,7 +408,7 @@ describe('RunParamTuneUsecase', () => {
 
     await usecase.execute({ ...input, axis: 'EXIT_STOP_LOSS_PERCENT' });
 
-    const searchInput = mockedRunRobustSearch.mock.calls[0][0];
+    const searchInput = mockedRunRobustSearch.mock.calls[0][0].input;
     const stopLosses = searchInput.strategies[0].combinations.map(
       (combination: ParameterCombination) => combination.stopLossPercent,
     );
@@ -490,7 +498,11 @@ describe('RunParamTuneUsecase', () => {
   it('한 칸 제한 결과가 제외 값이면 반영하지 않는다', async () => {
     config.get.mockReturnValue('apply');
     const stopLoss = (value: number) =>
-      withAxisValue(current, 'EXIT_STOP_LOSS_PERCENT', value);
+      withAxisValue({
+        combination: current,
+        axis: 'EXIT_STOP_LOSS_PERCENT',
+        value,
+      });
     runPort.findExcludedValues.mockResolvedValue([-7]);
     searchReturns(
       new Map([

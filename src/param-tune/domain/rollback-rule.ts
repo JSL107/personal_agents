@@ -14,6 +14,12 @@ export interface ProbationReplay {
   invariantViolated: boolean;
 }
 
+/** 평가 상세(JSON)에 문자열로 남는다. */
+export enum InconclusiveReason {
+  UNJUDGEABLE = '판정 불가',
+  SMALL_SAMPLE = '표본 부족',
+}
+
 export interface RollbackInput {
   replays: ProbationReplay[];
   daysSinceApplied: number;
@@ -23,17 +29,26 @@ export type RollbackDecision =
   | { kind: 'WAIT' }
   | {
       kind: 'INCONCLUSIVE';
-      reason: '판정 불가' | '표본 부족';
+      reason: InconclusiveReason;
       /** true 일 때만 호출부가 시험을 확정한다. false 는 다음 주 재평가. */
       final: boolean;
     }
   | { kind: 'KEEP' }
   | { kind: 'ROLLBACK'; meanGapPercent: number };
 
-const inconclusive = (
-  reason: '판정 불가' | '표본 부족',
-  final: boolean,
-): RollbackDecision => ({ kind: 'INCONCLUSIVE', reason, final });
+interface InconclusiveInput {
+  reason: InconclusiveReason;
+  final: boolean;
+}
+
+const inconclusive = ({
+  reason,
+  final,
+}: InconclusiveInput): RollbackDecision => ({
+  kind: 'INCONCLUSIVE',
+  reason,
+  final,
+});
 
 /**
  * 자동 반영된 파라미터를 시험 기간 뒤 되돌릴지 정한다. 판정 불가는 상한(84일) 전에는
@@ -49,12 +64,18 @@ export const decideRollback = (input: RollbackInput): RollbackDecision => {
       replay.previousExcessPercent === null ||
       replay.appliedExcessPercent === null
     ) {
-      return inconclusive('판정 불가', expired);
+      return inconclusive({
+        reason: InconclusiveReason.UNJUDGEABLE,
+        final: expired,
+      });
     }
     gaps.push(replay.appliedExcessPercent - replay.previousExcessPercent);
   }
   if (replays.length === 0) {
-    return inconclusive('판정 불가', expired);
+    return inconclusive({
+      reason: InconclusiveReason.UNJUDGEABLE,
+      final: expired,
+    });
   }
 
   const enoughSample =
@@ -63,7 +84,13 @@ export const decideRollback = (input: RollbackInput): RollbackDecision => {
     Math.min(...replays.map((replay) => replay.appliedClosedCount)) >=
       TUNE_PROBATION_MIN_CLOSED;
   if (!enoughSample) {
-    return expired ? inconclusive('표본 부족', true) : { kind: 'WAIT' };
+    if (expired) {
+      return inconclusive({
+        reason: InconclusiveReason.SMALL_SAMPLE,
+        final: true,
+      });
+    }
+    return { kind: 'WAIT' };
   }
 
   const meanGapPercent = gaps.reduce((sum, gap) => sum + gap, 0) / gaps.length;

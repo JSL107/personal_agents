@@ -19,12 +19,19 @@ import { ParamTuneModule } from '../src/param-tune/param-tune.module';
 })
 class ParamTuneCliModule {}
 
-const main = async (): Promise<void> => {
-  let options: ParamTuneCliOptions;
+/** 인자 오류면 사용법을 찍고 null. */
+const parseOptions = (): ParamTuneCliOptions | null => {
   try {
-    options = parseParamTuneCliArguments(process.argv.slice(2));
+    return parseParamTuneCliArguments(process.argv.slice(2));
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
+    return null;
+  }
+};
+
+const main = async (): Promise<void> => {
+  const options = parseOptions();
+  if (options === null) {
     process.exitCode = 2;
     return;
   }

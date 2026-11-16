@@ -54,13 +54,18 @@ describe('findRepoRoot', () => {
   it('package.json 과 scripts/parameter-tune.ts 가 함께 있는 첫 상위 디렉터리를 찾는다', () => {
     const exists = (path: string): boolean =>
       path === '/r/package.json' || path === '/r/scripts/parameter-tune.ts';
-    expect(findRepoRoot('/r/dist/src/param-tune/infrastructure', exists)).toBe(
-      '/r',
-    );
+    expect(
+      findRepoRoot({
+        startDir: '/r/dist/src/param-tune/infrastructure',
+        exists,
+      }),
+    ).toBe('/r');
   });
 
   it('6단계 안에 없으면 null', () => {
-    expect(findRepoRoot('/a/b/c', () => false)).toBeNull();
+    expect(
+      findRepoRoot({ startDir: '/a/b/c', exists: () => false }),
+    ).toBeNull();
   });
 });
 

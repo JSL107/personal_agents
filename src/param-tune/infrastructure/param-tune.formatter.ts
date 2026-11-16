@@ -3,6 +3,11 @@ import {
   StrategyParameterName,
   StrategyParameterStrategy,
 } from '../../strategy-parameter/domain/strategy-parameter.type';
+import {
+  TuneDecision,
+  TuneEvaluation,
+  TuneRunStatus,
+} from '../domain/param-tune.type';
 import { TuneRunRow } from '../domain/port/param-tune-run.port';
 
 const STRATEGY_LABEL: Record<StrategyParameterStrategy, string> = {
@@ -77,17 +82,17 @@ const describeEvaluation = (row: TuneRunRow): string | null => {
     to: row.previousValue,
   });
   switch (row.evaluation) {
-    case 'ROLLBACK':
+    case TuneEvaluation.ROLLBACK:
       return `되돌림${reverted} ${ROLLBACK_BASIS}`;
-    case 'ROLLBACK_SKIPPED':
+    case TuneEvaluation.ROLLBACK_SKIPPED:
       return '되돌리려 했으나 값이 이미 바뀌어 건너뜀';
-    case 'KEEP':
+    case TuneEvaluation.KEEP:
       return `시험 통과, 유지${applied}`;
-    case 'INCONCLUSIVE':
+    case TuneEvaluation.INCONCLUSIVE:
       return `판정할 수 없어 유지${inconclusiveSuffix(row.evaluationDetail)}`;
-    case 'WOULD_KEEP':
+    case TuneEvaluation.WOULD_KEEP:
       return '[관찰] 가상 시험 결과: 유지했을 것';
-    case 'WOULD_ROLLBACK':
+    case TuneEvaluation.WOULD_ROLLBACK:
       return '[관찰] 가상 시험 결과: 되돌렸을 것';
     case null:
       return null;
@@ -101,11 +106,11 @@ const describeDecision = (row: TuneRunRow): string => {
     to: row.candidateValue,
   });
   switch (row.decision) {
-    case 'APPLIED':
+    case TuneDecision.APPLIED:
       return `반영${change}`;
-    case 'WOULD_APPLY':
+    case TuneDecision.WOULD_APPLY:
       return `[관찰] 반영했을 값${change}`;
-    case 'NO_CHANGE':
+    case TuneDecision.NO_CHANGE:
       return `변화 없음 (${firstLine(row.decisionReason)})`;
     case null:
       // off·롤백한 주처럼 탐색 자체를 건너뛴 회차.
@@ -114,10 +119,10 @@ const describeDecision = (row: TuneRunRow): string => {
 };
 
 const describe = (row: TuneRunRow): string => {
-  if (row.status === 'FAILED') {
+  if (row.status === TuneRunStatus.FAILED) {
     return `실패 (${firstLine(row.failureReason)})`;
   }
-  if (row.status === 'SKIPPED_PROBATION') {
+  if (row.status === TuneRunStatus.SKIPPED_PROBATION) {
     return '시험 중인 값이 있어 이번 주는 건너뜀';
   }
   return describeEvaluation(row) ?? describeDecision(row);

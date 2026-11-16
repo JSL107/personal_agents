@@ -28,6 +28,7 @@ import {
   ClaimResult,
   CommitAdoptionInput,
   CommitRollbackInput,
+  MarkNotifiedInput,
   OpenProbation,
   ParamTuneRunPort,
   TuneRunPatch,
@@ -36,10 +37,26 @@ import {
 
 const DAY_MS = 86_400_000;
 const NOTIFIABLE_STATUSES: TuneRunStatus[] = [
-  'DONE',
-  'FAILED',
-  'SKIPPED_PROBATION',
+  TuneRunStatus.DONE,
+  TuneRunStatus.FAILED,
+  TuneRunStatus.SKIPPED_PROBATION,
 ];
+
+/** 시험 대상 행에서 비어 있으면 안 되는 값 컬럼. */
+enum RequiredValueField {
+  PREVIOUS = 'previousValue',
+  CANDIDATE = 'candidateValue',
+}
+
+interface RequiredValue {
+  row: ParameterTuneRun;
+  field: RequiredValueField;
+}
+
+interface ProbationSource {
+  row: ParameterTuneRun;
+  startedOn: Date;
+}
 
 const toNumber = (value: Prisma.Decimal | null): number | null =>
   value === null ? null : value.toNumber();
@@ -71,10 +88,7 @@ const toRow = (row: ParameterTuneRun): TuneRunRow => ({
 });
 
 // 값이 비면 반쯤 쓰인 행이다. 0 으로 메우면 롤백이 손절을 0% 로 되돌릴 수 있어 던진다.
-const requireValue = (
-  row: ParameterTuneRun,
-  field: 'previousValue' | 'candidateValue',
-): number => {
+const requireValue = ({ row, field }: RequiredValue): number => {
   const value = toNumber(row[field]);
   if (value === null) {
     throw new Error(`parameter_tune_run id=${row.id} 의 ${field} 가 비어 있다`);
@@ -82,14 +96,11 @@ const requireValue = (
   return value;
 };
 
-const toProbation = (
-  row: ParameterTuneRun,
-  startedOn: Date,
-): OpenProbation => ({
+const toProbation = ({ row, startedOn }: ProbationSource): OpenProbation => ({
   runId: row.id,
   axis: row.axis as StrategyParameterName,
-  previousValue: requireValue(row, 'previousValue'),
-  candidateValue: requireValue(row, 'candidateValue'),
+  previousValue: requireValue({ row, field: RequiredValueField.PREVIOUS }),
+  candidateValue: requireValue({ row, field: RequiredValueField.CANDIDATE }),
   previousParameterId: row.previousParameterId,
   appliedParameterId: row.appliedParameterId,
   startedOn,
@@ -130,7 +141,7 @@ export class ParamTuneRunPrismaRepository implements ParamTuneRunPort {
             weekStart,
             strategy: input.strategy,
             axis: input.axis,
-            status: 'RUNNING',
+            status: TuneRunStatus.RUNNING,
             attemptToken,
             startedAt: input.now,
           },
@@ -152,12 +163,15 @@ export class ParamTuneRunPrismaRepository implements ParamTuneRunPort {
       }
     }
 
-    if (found.status === 'DONE' || found.status === 'SKIPPED_PROBATION') {
+    if (
+      found.status === TuneRunStatus.DONE ||
+      found.status === TuneRunStatus.SKIPPED_PROBATION
+    ) {
       return { kind: 'ALREADY_DONE', runId: found.id };
     }
 
     const stale =
-      found.status === 'FAILED' ||
+      found.status === TuneRunStatus.FAILED ||
       found.startedAt.getTime() + TUNE_RUNNING_STALE_MS < input.now.getTime();
     if (!stale) {
       return { kind: 'ALREADY_RUNNING', runId: found.id };
@@ -173,7 +187,7 @@ export class ParamTuneRunPrismaRepository implements ParamTuneRunPort {
         startedAt: found.startedAt,
       },
       data: {
-        status: 'RUNNING',
+        status: TuneRunStatus.RUNNING,
         attemptToken,
         startedAt: input.now,
         failureReason: null,
@@ -194,7 +208,7 @@ export class ParamTuneRunPrismaRepository implements ParamTuneRunPort {
     const result = await this.prisma.parameterTuneRun.updateMany({
       where: {
         id: input.runId,
-        status: 'RUNNING',
+        status: TuneRunStatus.RUNNING,
         attemptToken: input.attemptToken,
       },
       data: toUpdateData(input.patch),
@@ -210,7 +224,7 @@ export class ParamTuneRunPrismaRepository implements ParamTuneRunPort {
     return this.finish({
       runId: input.runId,
       attemptToken: input.attemptToken,
-      patch: { status: 'FAILED', failureReason: input.reason },
+      patch: { status: TuneRunStatus.FAILED, failureReason: input.reason },
     });
   }
 
@@ -218,24 +232,24 @@ export class ParamTuneRunPrismaRepository implements ParamTuneRunPort {
     strategy: StrategyParameterStrategy,
   ): Promise<OpenProbation | null> {
     const row = await this.prisma.parameterTuneRun.findFirst({
-      where: { strategy, decision: 'APPLIED', evaluation: null },
+      where: { strategy, decision: TuneDecision.APPLIED, evaluation: null },
       orderBy: { id: 'desc' },
     });
     if (row === null) {
       return null;
     }
-    return toProbation(row, row.appliedAt ?? row.createdAt);
+    return toProbation({ row, startedOn: row.appliedAt ?? row.createdAt });
   }
 
   async findWouldApplyUnevaluated(
     strategy: StrategyParameterStrategy,
   ): Promise<OpenProbation[]> {
     const rows = await this.prisma.parameterTuneRun.findMany({
-      where: { strategy, decision: 'WOULD_APPLY', evaluation: null },
+      where: { strategy, decision: TuneDecision.WOULD_APPLY, evaluation: null },
       orderBy: { id: 'asc' },
     });
     return rows.map((row) => ({
-      ...toProbation(row, row.createdAt),
+      ...toProbation({ row, startedOn: row.createdAt }),
       previousParameterId: null,
       appliedParameterId: null,
     }));
@@ -275,7 +289,7 @@ export class ParamTuneRunPrismaRepository implements ParamTuneRunPort {
         const written = await tx.parameterTuneRun.updateMany({
           where: {
             id: input.runId,
-            status: 'RUNNING',
+            status: TuneRunStatus.RUNNING,
             attemptToken: input.attemptToken,
           },
           data: toUpdateData({
@@ -311,7 +325,7 @@ export class ParamTuneRunPrismaRepository implements ParamTuneRunPort {
         const written = await tx.parameterTuneRun.updateMany({
           where: { id: input.runId, evaluatedAt: null },
           data: {
-            evaluation: 'ROLLBACK',
+            evaluation: TuneEvaluation.ROLLBACK,
             evaluatedAt: new Date(),
             evaluationDetail: input.detail as Prisma.InputJsonValue,
             notifiedAt: null,
@@ -336,7 +350,7 @@ export class ParamTuneRunPrismaRepository implements ParamTuneRunPort {
       where: {
         strategy: input.strategy,
         axis: input.axis,
-        evaluation: 'ROLLBACK',
+        evaluation: TuneEvaluation.ROLLBACK,
         evaluatedAt: {
           gte: new Date(input.now.getTime() - TUNE_EXCLUSION_DAYS * DAY_MS),
         },
@@ -357,7 +371,7 @@ export class ParamTuneRunPrismaRepository implements ParamTuneRunPort {
       where: {
         strategy: input.strategy,
         verdictKey: input.verdictKey,
-        status: 'DONE',
+        status: TuneRunStatus.DONE,
         verdict: { not: Prisma.DbNull },
       },
       orderBy: { id: 'desc' },
@@ -373,7 +387,7 @@ export class ParamTuneRunPrismaRepository implements ParamTuneRunPort {
     return rows.map(toRow);
   }
 
-  async markNotified(ids: number[], at: Date): Promise<void> {
+  async markNotified({ ids, at }: MarkNotifiedInput): Promise<void> {
     await this.prisma.parameterTuneRun.updateMany({
       where: { id: { in: ids } },
       data: { notifiedAt: at },
@@ -385,7 +399,7 @@ export class ParamTuneRunPrismaRepository implements ParamTuneRunPort {
       where: {
         OR: [
           { appliedAt: { gte: since } },
-          { evaluation: 'ROLLBACK', evaluatedAt: { gte: since } },
+          { evaluation: TuneEvaluation.ROLLBACK, evaluatedAt: { gte: since } },
         ],
       },
     });
