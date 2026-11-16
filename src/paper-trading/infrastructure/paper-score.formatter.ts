@@ -98,7 +98,9 @@ export const formatPaperScoreReport = (
     `*모의투자 추천 성적: ${result.asOf.toISOString().slice(0, 10)}*`,
   ];
   // 파라미터 값이 바뀌어도 규칙 버전은 그대로라, 구간 성적을 한 규칙의 것으로 읽지 않게 알린다.
-  if (result.autoTuneAppliedCount > 0) {
+  if (result.autoTuneAppliedCount === null) {
+    lines.push('자동 반영 건수 확인 실패');
+  } else if (result.autoTuneAppliedCount > 0) {
     lines.push(`이 구간에 자동 반영 ${result.autoTuneAppliedCount}건`);
   }
 

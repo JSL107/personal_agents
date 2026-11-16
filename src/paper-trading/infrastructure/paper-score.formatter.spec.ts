@@ -158,6 +158,15 @@ describe('formatPaperScoreReport', () => {
     expect(some).toContain('이 구간에 자동 반영 2건');
   });
 
+  it('건수를 못 구했으면 확인 실패로 적는다', () => {
+    const text = formatPaperScoreReport({
+      ...RESULT,
+      autoTuneAppliedCount: null,
+    });
+
+    expect(text).toContain('자동 반영 건수 확인 실패');
+  });
+
   it('규칙 버전이 섞였거나 기록되지 않은 집계를 그대로 드러낸다', () => {
     const render = (
       ruleVersions: number[],
