@@ -139,14 +139,17 @@ export class RunParamTuneUsecase {
     }
 
     const stored = await this.searchOrReuse(input, snapshot);
-    const patch = await this.adopt(input, snapshot, mode, stored);
-    await this.finish(input, {
+    const base: TuneRunPatch = {
       status: 'DONE',
       parameterSnapshot: snapshot,
       verdictKey: stored.verdictKey,
       verdict: stored.verdict,
-      ...patch,
-    });
+    };
+    const patch = await this.adopt(input, snapshot, mode, stored, base);
+    // null 이면 commitAdoption 이 값과 회차를 한 트랜잭션으로 이미 기록했다.
+    if (patch !== null) {
+      await this.finish(input, { ...base, ...patch });
+    }
   }
 
   private readMode(): ParamTuneMode {
@@ -255,7 +258,8 @@ export class RunParamTuneUsecase {
     snapshot: ParameterSnapshot,
     mode: ParamTuneMode,
     searched: SearchOutcome,
-  ): Promise<TuneRunPatch> {
+    base: TuneRunPatch,
+  ): Promise<TuneRunPatch | null> {
     const stored = searched.verdict;
     const currentEntry = snapshot.find((entry) => entry.name === input.axis);
     if (currentEntry === undefined) {
@@ -306,13 +310,25 @@ export class RunParamTuneUsecase {
             ...proposal,
           };
         }
-        const result = await this.parameterPort.activateNewVersion({
-          strategy: input.strategy,
-          name: input.axis,
-          expectedSnapshot: snapshot,
-          value: adopt.value,
-          reason: `자동 조정 (run #${input.runId}): ${adopt.reason}`,
-          agentRunId: input.agentRunId,
+        // 값과 APPLIED 기록이 따로 쓰이면 그 사이에 죽었을 때 시험·롤백이 사라진다.
+        const result = await this.runPort.commitAdoption({
+          runId: input.runId,
+          attemptToken: input.attemptToken,
+          activation: {
+            strategy: input.strategy,
+            name: input.axis,
+            expectedSnapshot: snapshot,
+            value: adopt.value,
+            reason: `자동 조정 (run #${input.runId}): ${adopt.reason}`,
+            agentRunId: input.agentRunId,
+          },
+          patch: {
+            ...base,
+            decision: 'APPLIED',
+            decisionReason: adopt.reason,
+            ...proposal,
+            previousParameterId: currentEntry.parameterId,
+          },
         });
         if (result.kind === 'CONFLICT') {
           return {
@@ -320,14 +336,7 @@ export class RunParamTuneUsecase {
             decisionReason: '활성값 변경 감지',
           };
         }
-        return {
-          decision: 'APPLIED' as const,
-          decisionReason: adopt.reason,
-          ...proposal,
-          previousParameterId: currentEntry.parameterId,
-          appliedParameterId: result.parameterId,
-          appliedAt: new Date(),
-        };
+        return null;
       })
       .exhaustive();
   }

@@ -118,7 +118,7 @@ export class StrategyParameterPrismaRepository implements StrategyParameterPort 
   async findSnapshotStrict(
     strategy: StrategyParameterStrategy,
   ): Promise<ParameterSnapshot> {
-    return await this.readSnapshot(this.prisma, strategy);
+    return await readParameterSnapshot({ client: this.prisma, strategy });
   }
 
   async activateNewVersion(
@@ -126,53 +126,11 @@ export class StrategyParameterPrismaRepository implements StrategyParameterPort 
   ): Promise<ActivateNewVersionResult> {
     try {
       return await this.prisma.$transaction(
-        async (tx) => {
-          const actual = await this.readSnapshot(tx, input.strategy);
-          if (!isSameSnapshot(actual, input.expectedSnapshot)) {
-            return { kind: 'CONFLICT', actual };
-          }
-          const target = actual.find((entry) => entry.name === input.name);
-          if (target === undefined) {
-            throw new StrategyParameterSnapshotError(
-              `${input.strategy}.${input.name} 활성 행이 없다`,
-            );
-          }
-          const now = new Date();
-          // 부분 유니크 인덱스가 활성 행을 하나로 묶으므로 내리는 쪽이 만드는 쪽보다 먼저다.
-          await tx.strategyParameter.update({
-            where: { id: target.parameterId },
-            data: { supersededAt: now },
-          });
-          const latest = await tx.strategyParameter.aggregate({
-            where: { strategy: input.strategy, name: input.name },
-            _max: { version: true },
-          });
-          const created = await tx.strategyParameter.create({
-            data: {
-              strategy: input.strategy,
-              name: input.name,
-              value: input.value.toString(),
-              version: (latest._max.version ?? 0) + 1,
-              activatedAt: now,
-              reason: input.reason,
-              agentRunId: input.agentRunId,
-            },
-            select: { id: true, version: true },
-          });
-          return {
-            kind: 'ACTIVATED',
-            parameterId: created.id,
-            version: created.version,
-          };
-        },
+        async (tx) => await activateNewVersionWith({ tx, input }),
         { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
       );
     } catch (error) {
-      // 직렬화 실패(P2034)와 동시 insert 의 unique 충돌(P2002)은 "남이 먼저 바꿨다" 이다.
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        CONFLICT_CODES.includes(error.code)
-      ) {
+      if (isActivationConflict(error)) {
         return {
           kind: 'CONFLICT',
           actual: await this.findSnapshotStrict(input.strategy),
@@ -181,37 +139,104 @@ export class StrategyParameterPrismaRepository implements StrategyParameterPort 
       throw error;
     }
   }
-
-  private async readSnapshot(
-    client: StrategyParameterClient,
-    strategy: StrategyParameterStrategy,
-  ): Promise<ParameterSnapshot> {
-    const rows = await client.strategyParameter.findMany({
-      where: { strategy, activatedAt: { not: null }, supersededAt: null },
-      orderBy: { version: 'desc' },
-      select: { id: true, name: true, value: true, version: true },
-    });
-    return STRATEGY_PARAMETER_NAMES.map((name) => {
-      const row = rows.find((candidate) => candidate.name === name);
-      if (row === undefined) {
-        throw new StrategyParameterSnapshotError(
-          `${strategy}.${name} 활성 행이 없다`,
-        );
-      }
-      return {
-        name,
-        parameterId: row.id,
-        version: row.version,
-        value: row.value.toNumber(),
-      };
-    });
-  }
 }
 
-const isSameSnapshot = (
-  actual: ParameterSnapshot,
-  expected: ParameterSnapshot,
-): boolean =>
+interface ReadSnapshotInput {
+  client: StrategyParameterClient;
+  strategy: StrategyParameterStrategy;
+}
+
+export const readParameterSnapshot = async ({
+  client,
+  strategy,
+}: ReadSnapshotInput): Promise<ParameterSnapshot> => {
+  const rows = await client.strategyParameter.findMany({
+    where: { strategy, activatedAt: { not: null }, supersededAt: null },
+    orderBy: { version: 'desc' },
+    select: { id: true, name: true, value: true, version: true },
+  });
+  return STRATEGY_PARAMETER_NAMES.map((name) => {
+    const row = rows.find((candidate) => candidate.name === name);
+    if (row === undefined) {
+      throw new StrategyParameterSnapshotError(
+        `${strategy}.${name} 활성 행이 없다`,
+      );
+    }
+    return {
+      name,
+      parameterId: row.id,
+      version: row.version,
+      value: row.value.toNumber(),
+    };
+  });
+};
+
+/** 직렬화 실패(P2034)와 동시 insert 의 unique 충돌(P2002)은 "남이 먼저 바꿨다" 이다. */
+export const isActivationConflict = (error: unknown): boolean =>
+  error instanceof Prisma.PrismaClientKnownRequestError &&
+  CONFLICT_CODES.includes(error.code);
+
+export interface ActivateNewVersionWithInput {
+  tx: Prisma.TransactionClient;
+  input: ActivateNewVersionInput;
+}
+
+/**
+ * `activateNewVersion` 의 본문. 호출부가 연 트랜잭션 안에서 돌아, 같은 트랜잭션에서 다른 행
+ * (원장 기록 등)을 함께 쓸 수 있게 한다. 트랜잭션은 Serializable 이어야 한다.
+ */
+export const activateNewVersionWith = async ({
+  tx,
+  input,
+}: ActivateNewVersionWithInput): Promise<ActivateNewVersionResult> => {
+  const actual = await readParameterSnapshot({
+    client: tx,
+    strategy: input.strategy,
+  });
+  if (!isSameSnapshot({ actual, expected: input.expectedSnapshot })) {
+    return { kind: 'CONFLICT', actual };
+  }
+  const target = actual.find((entry) => entry.name === input.name);
+  if (target === undefined) {
+    throw new StrategyParameterSnapshotError(
+      `${input.strategy}.${input.name} 활성 행이 없다`,
+    );
+  }
+  const now = new Date();
+  // 부분 유니크 인덱스가 활성 행을 하나로 묶으므로 내리는 쪽이 만드는 쪽보다 먼저다.
+  await tx.strategyParameter.update({
+    where: { id: target.parameterId },
+    data: { supersededAt: now },
+  });
+  const latest = await tx.strategyParameter.aggregate({
+    where: { strategy: input.strategy, name: input.name },
+    _max: { version: true },
+  });
+  const created = await tx.strategyParameter.create({
+    data: {
+      strategy: input.strategy,
+      name: input.name,
+      value: input.value.toString(),
+      version: (latest._max.version ?? 0) + 1,
+      activatedAt: now,
+      reason: input.reason,
+      agentRunId: input.agentRunId,
+    },
+    select: { id: true, version: true },
+  });
+  return {
+    kind: 'ACTIVATED',
+    parameterId: created.id,
+    version: created.version,
+  };
+};
+
+interface SnapshotPair {
+  actual: ParameterSnapshot;
+  expected: ParameterSnapshot;
+}
+
+const isSameSnapshot = ({ actual, expected }: SnapshotPair): boolean =>
   actual.length === expected.length &&
   actual.every((entry, index) => {
     const other = expected[index];

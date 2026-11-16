@@ -7,10 +7,6 @@ import {
 import { replayParameters } from '../../backtest/application/robust-parameter-search';
 import { BACKTEST_DEFAULTS } from '../../backtest/interface/backtest-cli.parser';
 import { getKstDateOf, utcMidnightOf } from '../../common/util/kst-date.util';
-import {
-  STRATEGY_PARAMETER_PORT,
-  StrategyParameterPort,
-} from '../../strategy-parameter/domain/port/strategy-parameter.port';
 import { StrategyParameterStrategy } from '../../strategy-parameter/domain/strategy-parameter.type';
 import {
   ParameterSnapshot,
@@ -62,8 +58,6 @@ const toPercent = (rate: string | null): number | null =>
 export class EvaluateProbationService {
   constructor(
     @Inject(PARAM_TUNE_RUN_PORT) private readonly runPort: ParamTuneRunPort,
-    @Inject(STRATEGY_PARAMETER_PORT)
-    private readonly parameterPort: StrategyParameterPort,
     private readonly replay: ReplayBacktestUsecase,
   ) {}
 
@@ -110,12 +104,10 @@ export class EvaluateProbationService {
           rolledBack: false,
         };
       case 'ROLLBACK': {
-        const rolledBack = await this.rollback(probation, input);
-        await this.settle(
-          probation,
-          rolledBack ? 'ROLLBACK' : 'ROLLBACK_SKIPPED',
-          detail,
-        );
+        const rolledBack = await this.rollback(probation, input, detail);
+        if (!rolledBack) {
+          await this.settle(probation, 'ROLLBACK_SKIPPED', detail);
+        }
         return { settled: true, rolledBack };
       }
     }
@@ -143,10 +135,14 @@ export class EvaluateProbationService {
     }
   }
 
-  /** 롤백을 적용했으면 true. 대상 값이 이미 다른 행으로 바뀌었거나 충돌이면 건너뛴다. */
+  /**
+   * 롤백을 적용했으면 true — 이때 ROLLBACK 확정도 같은 트랜잭션에서 끝났다.
+   * 대상 값이 이미 다른 행으로 바뀌었거나 충돌이면 아무것도 쓰지 않고 false.
+   */
   private async rollback(
     probation: OpenProbation,
     input: EvaluateProbationInput,
+    detail: unknown,
   ): Promise<boolean> {
     const current = input.snapshot.find(
       (entry) => entry.name === probation.axis,
@@ -157,13 +153,19 @@ export class EvaluateProbationService {
     ) {
       return false;
     }
-    const result = await this.parameterPort.activateNewVersion({
-      strategy: input.strategy,
-      name: probation.axis,
-      expectedSnapshot: input.snapshot,
-      value: probation.previousValue,
-      reason: `자동 조정 롤백 (run #${input.runId})`,
-      agentRunId: input.agentRunId,
+    // 활성화와 평가 확정이 따로 쓰이면 그 사이에 죽었을 때 다음 회차가 ROLLBACK_SKIPPED 로
+    // 확정해 제외 목록이 비고, 같은 값이 다시 채택된다.
+    const result = await this.runPort.commitRollback({
+      runId: probation.runId,
+      activation: {
+        strategy: input.strategy,
+        name: probation.axis,
+        expectedSnapshot: input.snapshot,
+        value: probation.previousValue,
+        reason: `자동 조정 롤백 (run #${input.runId})`,
+        agentRunId: input.agentRunId,
+      },
+      detail,
     });
     return result.kind === 'ACTIVATED';
   }

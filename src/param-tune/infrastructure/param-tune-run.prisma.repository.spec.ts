@@ -1,8 +1,23 @@
 import { Prisma } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  activateNewVersionWith,
+  readParameterSnapshot,
+} from '../../strategy-parameter/infrastructure/strategy-parameter.prisma.repository';
 import { TUNE_EXCLUSION_DAYS } from '../domain/param-tune.type';
 import { ParamTuneRunPrismaRepository } from './param-tune-run.prisma.repository';
+
+jest.mock(
+  '../../strategy-parameter/infrastructure/strategy-parameter.prisma.repository',
+  () => ({
+    ...jest.requireActual(
+      '../../strategy-parameter/infrastructure/strategy-parameter.prisma.repository',
+    ),
+    activateNewVersionWith: jest.fn(),
+    readParameterSnapshot: jest.fn(),
+  }),
+);
 
 const MINUTE = 60_000;
 const DAY = 86_400_000;
@@ -17,9 +32,13 @@ describe('ParamTuneRunPrismaRepository', () => {
     updateMany: jest.fn(),
     count: jest.fn(),
   };
+  const $transaction = jest.fn();
   const repository = new ParamTuneRunPrismaRepository({
     parameterTuneRun,
+    $transaction,
   } as unknown as PrismaService);
+  const mockedActivate = activateNewVersionWith as jest.Mock;
+  const mockedReadSnapshot = readParameterSnapshot as jest.Mock;
 
   const now = new Date('2026-11-16T00:00:00.000Z');
   const input = {
@@ -31,6 +50,10 @@ describe('ParamTuneRunPrismaRepository', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
+    // 트랜잭션 클라이언트 tx 를 넘겨 콜백을 돌리고, 콜백이 던지면 그대로 reject 한다(=롤백).
+    $transaction.mockImplementation(async (callback) =>
+      callback({ parameterTuneRun, tx: true }),
+    );
   });
 
   describe('claim', () => {
@@ -221,6 +244,132 @@ describe('ParamTuneRunPrismaRepository', () => {
         where: { id: 1, status: 'RUNNING', attemptToken: 't' },
         data: { status: 'FAILED', failureReason: 'boom' },
       });
+    });
+  });
+
+  describe('commitAdoption / commitRollback', () => {
+    const activation = {
+      strategy: 'SWING' as const,
+      name: 'EXIT_TAKE_PROFIT_PERCENT' as const,
+      expectedSnapshot: [],
+      value: 15,
+      reason: 'r',
+      agentRunId: null,
+    };
+    const activated = { kind: 'ACTIVATED', parameterId: 21, version: 2 };
+
+    it('commitAdoption 은 활성화와 회차 기록을 한 Serializable 트랜잭션에서 쓴다', async () => {
+      mockedActivate.mockResolvedValue(activated);
+      parameterTuneRun.updateMany.mockResolvedValue({ count: 1 });
+
+      const result = await repository.commitAdoption({
+        runId: 7,
+        attemptToken: 't',
+        activation,
+        patch: { status: 'DONE', decision: 'APPLIED', candidateValue: 15 },
+      });
+
+      expect(result).toEqual(activated);
+      expect($transaction).toHaveBeenCalledTimes(1);
+      expect($transaction.mock.calls[0][1]).toEqual({
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      });
+      const tx = mockedActivate.mock.calls[0][0].tx;
+      expect(tx).toMatchObject({ tx: true });
+      expect(mockedActivate.mock.calls[0][0].input).toBe(activation);
+      const call = parameterTuneRun.updateMany.mock.calls[0][0];
+      expect(call.where).toEqual({
+        id: 7,
+        status: 'RUNNING',
+        attemptToken: 't',
+      });
+      expect(call.data).toMatchObject({
+        status: 'DONE',
+        decision: 'APPLIED',
+        candidateValue: 15,
+        appliedParameterId: 21,
+      });
+      expect(call.data.appliedAt).toBeInstanceOf(Date);
+    });
+
+    it('commitAdoption 은 토큰을 잃었으면 트랜잭션 콜백이 던져 활성화까지 되돌린다', async () => {
+      mockedActivate.mockResolvedValue(activated);
+      parameterTuneRun.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        repository.commitAdoption({
+          runId: 7,
+          attemptToken: 'stale',
+          activation,
+          patch: { status: 'DONE' },
+        }),
+      ).rejects.toThrow(/토큰을 잃어/);
+      expect(mockedActivate).toHaveBeenCalledTimes(1);
+    });
+
+    it('commitAdoption 은 CONFLICT 면 회차를 쓰지 않는다', async () => {
+      const conflict = { kind: 'CONFLICT', actual: [] };
+      mockedActivate.mockResolvedValue(conflict);
+
+      expect(
+        await repository.commitAdoption({
+          runId: 7,
+          attemptToken: 't',
+          activation,
+          patch: { status: 'DONE' },
+        }),
+      ).toEqual(conflict);
+      expect(parameterTuneRun.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('직렬화 실패(P2034)는 CONFLICT 와 최신 스냅샷으로 바꾼다', async () => {
+      $transaction.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('serialize', {
+          code: 'P2034',
+          clientVersion: 'x',
+        }),
+      );
+      mockedReadSnapshot.mockResolvedValue([{ name: 'X' }]);
+
+      expect(
+        await repository.commitRollback({
+          runId: 3,
+          activation,
+          detail: {},
+        }),
+      ).toEqual({ kind: 'CONFLICT', actual: [{ name: 'X' }] });
+      expect(mockedReadSnapshot.mock.calls[0][0].strategy).toBe('SWING');
+    });
+
+    it('commitRollback 은 활성화와 ROLLBACK 확정을 한 트랜잭션에서 쓴다', async () => {
+      mockedActivate.mockResolvedValue(activated);
+      parameterTuneRun.updateMany.mockResolvedValue({ count: 1 });
+
+      await repository.commitRollback({
+        runId: 3,
+        activation,
+        detail: { a: 1 },
+      });
+
+      expect($transaction).toHaveBeenCalledTimes(1);
+      expect(mockedActivate.mock.calls[0][0].tx).toMatchObject({ tx: true });
+      const call = parameterTuneRun.updateMany.mock.calls[0][0];
+      expect(call.where).toEqual({ id: 3, evaluatedAt: null });
+      expect(call.data).toMatchObject({
+        evaluation: 'ROLLBACK',
+        evaluationDetail: { a: 1 },
+        notifiedAt: null,
+      });
+      expect(call.data.evaluatedAt).toBeInstanceOf(Date);
+    });
+
+    it('commitRollback 은 이미 평가된 행이면 던져 활성화까지 되돌린다', async () => {
+      mockedActivate.mockResolvedValue(activated);
+      parameterTuneRun.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        repository.commitRollback({ runId: 3, activation, detail: {} }),
+      ).rejects.toThrow(/이미 평가된/);
     });
   });
 
