@@ -54,3 +54,6 @@ export const TUNE_PROBATION_MIN_CLOSED = 5;
 
 export const TUNE_CHILD_TIMEOUT_MS = 3_600_000;
 export const TUNE_RUNNING_STALE_MS = 5_400_000;
+
+/** env 미설정 시 모드. 값은 바꾸지 않고 원장만 쌓는 쪽이 안전한 기본이다. */
+export const DEFAULT_PARAM_TUNE_MODE: ParamTuneMode = 'observe';
