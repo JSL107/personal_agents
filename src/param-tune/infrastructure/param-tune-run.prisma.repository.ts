@@ -331,6 +331,20 @@ export class ParamTuneRunPrismaRepository implements ParamTuneRunPort {
             `parameter_tune_run id=${input.runId}: 이미 평가된 시험이라 롤백을 되돌렸다`,
           );
         }
+        // 선점을 잃은 늦은 자식이 값을 되돌리지 못하게 이번 회차 토큰을 같은 트랜잭션에서 확인한다.
+        const owned = await tx.parameterTuneRun.updateMany({
+          where: {
+            id: input.currentRunId,
+            status: TuneRunStatus.RUNNING,
+            attemptToken: input.attemptToken,
+          },
+          data: { updatedAt: new Date() },
+        });
+        if (owned.count === 0) {
+          throw new Error(
+            `parameter_tune_run id=${input.currentRunId}: 토큰을 잃어 롤백을 되돌렸다`,
+          );
+        }
         return result;
       },
     });

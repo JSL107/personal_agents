@@ -144,6 +144,7 @@ export class RunParamTuneUsecase {
       snapshot,
       today: input.today,
       runId: input.runId,
+      attemptToken: input.attemptToken,
       agentRunId: input.agentRunId,
     });
     if (probation.rolledBack) {
