@@ -102,7 +102,7 @@ export class ConversationLookupService {
           deliveries
             .map(
               (delivery) =>
-                `${delivery.kind} · ${delivery.status} · ${delivery.textPreview} · ${formatKstDateTime(delivery.createdAt)} KST`,
+                `${delivery.kind} · ${describeDeliveryStatus(delivery)} · ${delivery.textPreview} · ${formatKstDateTime(delivery.createdAt)} KST`,
             )
             .join('\n'),
         );
@@ -197,3 +197,27 @@ export class ConversationLookupService {
     }
   }
 }
+
+// 원장 상태값을 그대로 실으면 답에 `SUPPRESSED` 가 노출되고, 콘솔로 돌린 발송을 "발송된 게 아니야" 로
+// 잘못 전한다(2026-11-16 run 12931). 종류별 마지막 발송 블록과 같은 말로 옮긴다.
+const describeDeliveryStatus = ({
+  status,
+  suppressReason,
+}: {
+  status: string;
+  suppressReason: string | null;
+}): string => {
+  if (status === 'SENT') {
+    return 'Slack 발송';
+  }
+  if (status === 'FAILED') {
+    return '발송 실패';
+  }
+  if (suppressReason === 'CONSOLE_ROUTE') {
+    return '콘솔로 돌림';
+  }
+  if (suppressReason === 'EMPTY') {
+    return '보낼 내용 없어 생략';
+  }
+  return '보내지 않음';
+};

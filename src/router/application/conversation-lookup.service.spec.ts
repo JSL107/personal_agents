@@ -87,6 +87,7 @@ describe('ConversationLookupService', () => {
       {
         kind: 'morning',
         status: 'SUPPRESSED',
+        suppressReason: 'CONSOLE_ROUTE',
         textPreview: '미리보기',
         createdAt: new Date('2026-10-30T00:02:00Z'),
       },
@@ -96,7 +97,9 @@ describe('ConversationLookupService', () => {
 
     expect(result.ledgerText).toContain('PM · IN_PROGRESS');
     expect(result.ledgerText).toContain('BLOG · FAILED · 실패 사유');
-    expect(result.deliveryText).toContain('morning · SUPPRESSED · 미리보기');
+    // 상태값 원문(SUPPRESSED)이 답에 새지 않게 말로 옮긴다(2026-11-16 run 12931).
+    expect(result.deliveryText).toContain('morning · 콘솔로 돌림 · 미리보기');
+    expect(result.deliveryText).not.toContain('SUPPRESSED');
     expect(result.ledgerText).toContain('<untrusted-input>');
     expect(result.deliveryText).toContain('<untrusted-input>');
     expect(findFinishedRunsSince).toHaveBeenCalledWith({
@@ -109,9 +112,6 @@ describe('ConversationLookupService', () => {
     });
   });
 
-  it('원장 조회가 실패해도 발송 기록과 레포 사본은 돌려준다', async () => {
-    findActiveRuns.mockRejectedValue(new Error('DB unavailable'));
-    findRecent.mockResolvedValue([
   // 2026-11-05 run 11600 — 최신 10건이 잦은 종류로 차서 15시간 전 원화 공고 발송이 빠졌고, 이대리는
   // "최근 발송 기록은 확인할 수 없어" 라고 답했다.
   it('최신 10건에 밀린 종류도 종류별 마지막 발송 블록에 싣는다', async () => {
@@ -183,9 +183,13 @@ describe('ConversationLookupService', () => {
     );
   });
 
+  it('원장 조회가 실패해도 발송 기록과 레포 사본은 돌려준다', async () => {
+    findActiveRuns.mockRejectedValue(new Error('DB unavailable'));
+    findRecent.mockResolvedValue([
       {
         kind: 'morning',
         status: 'SENT',
+        suppressReason: null,
         textPreview: '발송',
         createdAt: new Date('2026-10-30T00:02:00Z'),
       },
