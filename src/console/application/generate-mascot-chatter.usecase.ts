@@ -35,6 +35,7 @@ const NOTEWORTHY_RUN_LIMIT = 6;
 const PROGRESS_MIN_RUN_MS = 2 * 60_000;
 const SINCE_MAX_AGE_MS = 24 * 60 * 60_000;
 const MEMORY_TURN_LIMIT = 4;
+const TODO_TARGET_LIMIT = 3;
 const CHATTER_CONFIRM_TTL_MS = 5 * 60 * 1000;
 const TIME_FORMATTER = new Intl.DateTimeFormat('ko-KR', {
   timeZone: 'Asia/Seoul',
@@ -424,12 +425,15 @@ export class GenerateMascotChatterUsecase {
 
 // 상세(며칠째)와 대상(repo #번호)까지 싣는다 — 'PR #3668 리뷰 회수' 만으로는 어느 레포의 무슨 지적인지
 // 우사기도, 나중에 그 말을 되짚는 대화 답변도 설명하지 못한다.
+// 대상은 전건이 오므로 몇 개만 싣는다. 다 실으면 기억 문장이 이전 발화 상한(1,500자)에 잘려 뒤쪽 할 일 근거가 사라진다.
 const formatTodoLine = (todo: ConsoleTodo): string => {
   const detail = todo.detail ? ` (${todo.detail})` : '';
-  const targets =
-    todo.targets.length > 0
-      ? ` — ${todo.targets.map((target) => target.label).join(', ')}`
-      : '';
+  const shown = todo.targets
+    .slice(0, TODO_TARGET_LIMIT)
+    .map((target) => target.label);
+  const hidden = todo.targets.length - shown.length;
+  const more = hidden > 0 ? ` 외 ${hidden}건` : '';
+  const targets = shown.length > 0 ? ` — ${shown.join(', ')}${more}` : '';
   return `${todo.kind}: ${todo.label}${detail}${targets}`;
 };
 

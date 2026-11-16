@@ -193,6 +193,39 @@ describe('GenerateMascotChatterUsecase', () => {
     );
   });
 
+  // 리뷰 할 일 대상은 전건이 오는데, 다 실으면 기억 문장이 이전 발화 상한(1,500자)에 잘려 근거가 사라진다.
+  it('할 일 대상은 3건까지만 싣고 나머지는 건수로 줄인다', async () => {
+    briefing.execute.mockResolvedValue({
+      todos: [
+        {
+          kind: ConsoleTodoKind.PR_REVIEW,
+          label: 'PR 리뷰 회수 5건',
+          detail: '오늘',
+          targets: [1, 2, 3, 4, 5].map((pullNumber) => ({
+            label: `acme/workspace #${pullNumber} · 지적 1건`,
+            pullNumber,
+            url: `https://github.com/acme/workspace/pull/${pullNumber}`,
+          })),
+        },
+      ],
+    });
+
+    const result = await usecase.execute({
+      declinedAgentTypes: [],
+      trigger: 'IDLE',
+    });
+    await usecase.confirmShown(result.chatterId!);
+
+    expect(memory.appendTurn).toHaveBeenCalledWith(
+      MEMORY_KEY,
+      expect.objectContaining({
+        text: expect.stringContaining(
+          '— acme/workspace #1 · 지적 1건, acme/workspace #2 · 지적 1건, acme/workspace #3 · 지적 1건 외 2건]',
+        ),
+      }),
+    );
+  });
+
   it('할 일이 없을 때 만든 한 마디는 문장만 기억한다', async () => {
     briefing.execute.mockResolvedValue({ todos: [] });
 
