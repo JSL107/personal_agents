@@ -57,10 +57,10 @@ describe('formatParamTuneReport', () => {
     expect(text).toBe(
       [
         '*투자 파라미터 자동 조정* (2026-11-16 주)',
-        '• 스윙 · 손절 % · APPLIED -5→-7',
-        '• 장기 · 최소 거래대금 · ROLLBACK 5억→3억 (재생 모형 비교 기준)',
-        '• 장기 · 손절 % · 실패(a&lt;b &amp; c)',
-        '• 스윙 · 최대 비중 % · NO_CHANGE(후보가 기준을 넘지 못함)',
+        '• 스윙 · 손절 % · 반영 -5→-7',
+        '• 장기 · 최소 거래대금 · 되돌림 5억→3억 (재생 모형 비교 기준)',
+        '• 장기 · 손절 % · 실패 (a&lt;b &amp; c)',
+        '• 스윙 · 최대 비중 % · 변화 없음 (후보가 기준을 넘지 못함)',
       ].join('\n'),
     );
   });
@@ -80,8 +80,62 @@ describe('formatParamTuneReport', () => {
     ]);
 
     expect(text).toContain(
-      '• [2026-11-09 주] 스윙 · 손절 % · ROLLBACK_SKIPPED (재생 모형 비교 기준)',
+      '• [2026-11-09 주] 스윙 · 손절 % · 되돌리려 했으나 값이 이미 바뀌어 건너뜀',
     );
-    expect(text).toContain('• 스윙 · 손절 % · WOULD_APPLY 5→10');
+    expect(text).toContain('• 스윙 · 손절 % · [관찰] 반영했을 값 5→10');
+  });
+
+  it('평가가 있는 행은 결정이 아니라 평가를 보여준다', () => {
+    const applied = {
+      decision: 'APPLIED' as const,
+      previousValue: -5,
+      candidateValue: -7,
+    };
+    const lines = formatParamTuneReport([
+      row({ ...applied, evaluation: 'KEEP' }),
+      row({
+        ...applied,
+        evaluation: 'INCONCLUSIVE',
+        evaluationDetail: {
+          decision: { kind: 'INCONCLUSIVE', reason: '표본 부족', final: true },
+        },
+      }),
+      row({
+        decision: 'WOULD_APPLY',
+        previousValue: 5,
+        candidateValue: 10,
+        evaluation: 'WOULD_KEEP',
+      }),
+      row({
+        decision: 'WOULD_APPLY',
+        previousValue: 5,
+        candidateValue: 10,
+        evaluation: 'WOULD_ROLLBACK',
+      }),
+    ]).split('\n');
+
+    expect(lines.slice(1)).toEqual([
+      '• 스윙 · 손절 % · 시험 통과, 유지 -5→-7',
+      '• 스윙 · 손절 % · 판정할 수 없어 유지 (표본 부족)',
+      '• 스윙 · 손절 % · [관찰] 가상 시험 결과: 유지했을 것',
+      '• 스윙 · 손절 % · [관찰] 가상 시험 결과: 되돌렸을 것',
+    ]);
+    expect(lines.join('\n')).not.toContain('반영 -5→-7');
+  });
+
+  it('시험 중 건너뜀과 탐색하지 않은 회차를 한국어로 쓴다', () => {
+    const lines = formatParamTuneReport([
+      row({ status: 'SKIPPED_PROBATION' }),
+      row({ decisionReason: 'off' }),
+      row({ decisionReason: '롤백한 주라 탐색하지 않음' }),
+      row({ evaluation: 'INCONCLUSIVE', evaluationDetail: null }),
+    ]).split('\n');
+
+    expect(lines.slice(1)).toEqual([
+      '• 스윙 · 손절 % · 시험 중인 값이 있어 이번 주는 건너뜀',
+      '• 스윙 · 손절 % · 탐색 안 함 (off)',
+      '• 스윙 · 손절 % · 탐색 안 함 (롤백한 주라 탐색하지 않음)',
+      '• 스윙 · 손절 % · 판정할 수 없어 유지',
+    ]);
   });
 });
