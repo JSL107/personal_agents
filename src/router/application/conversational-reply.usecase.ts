@@ -43,7 +43,7 @@ interface ConversationReplyInput {
   priorTurns: ConversationTurn[];
   // Redis 기억. 작업 상태는 이것으로 계산한다 — Redis 는 5턴·30분이라 오래된 작업을 "직전 작업" 으로 잡지 않는다.
   memoryTurns?: ConversationTurn[];
-  // owner 일 때만 원장·발송 기록·폴더 조회를 연다. 없으면(eval·콘솔) 조회하지 않는다.
+  // owner 일 때만 원장·발송 기록·폴더 조회를 연다. 없으면(eval·채널 스레드) 조회하지 않는다.
   slackUserId?: string;
   images?: readonly ConversationImage[];
   unseenImageCount?: number;
@@ -503,6 +503,13 @@ export const buildPrompt = ({
       : []),
     ...(lookups?.deliveryText
       ? ['', '[최근 발송 기록]', lookups.deliveryText]
+      : []),
+    ...(lookups?.latestDeliveryText
+      ? [
+          '',
+          '[종류별 마지막 발송 (최근 30일, 본문 기준)]',
+          lookups.latestDeliveryText,
+        ]
       : []),
     ...(lookups?.rootGuide.length
       ? [

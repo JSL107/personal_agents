@@ -12,18 +12,26 @@ import {
   SLACK_DELIVERY_REPOSITORY,
   SlackDeliveryRepositoryPort,
 } from '../../slack/domain/port/slack-delivery.repository.port';
+import {
+  describeDeliveryStatus,
+  summarizeLatestDeliveries,
+} from '../../slack/domain/slack-delivery-summary';
 import { LocalRepoSnapshotService } from '../infrastructure/local-repo-snapshot.service';
 
 export interface ConversationLookups {
   ledgerText?: string;
   deliveryText?: string;
+  latestDeliveryText?: string;
   readableRoots: string[];
   rootGuide: string[];
   release: () => void;
 }
 
 const RECENT_LIMIT = 10;
-const LOOKBACK_MILLISECONDS = 24 * 60 * 60 * 1000;
+const DAY_MILLISECONDS = 24 * 60 * 60 * 1000;
+const LOOKBACK_MILLISECONDS = DAY_MILLISECONDS;
+const LATEST_DELIVERY_LOOKBACK_DAYS = 30;
+const LATEST_DELIVERY_RECENT_DAYS = 7;
 const FORBIDDEN_HERMES_FILES = new Set([
   'auth.json',
   'config.yaml',
@@ -53,10 +61,12 @@ export class ConversationLookupService {
       rootGuide: [],
       release: () => {},
     };
-    const owner = this.configService.get<string>(
-      'AUTOPILOT_OWNER_SLACK_USER_ID',
-    );
-    if (!owner || owner !== slackUserId) {
+    // 콘솔은 CONSOLE_OWNER 로 대화하므로 두 owner 값이 다르게 설정돼도 콘솔 조회가 닫히지 않게 둘 다 인정한다.
+    const owners = [
+      this.configService.get<string>('AUTOPILOT_OWNER_SLACK_USER_ID'),
+      this.configService.get<string>('CONSOLE_OWNER_SLACK_USER_ID'),
+    ];
+    if (!slackUserId || !owners.includes(slackUserId)) {
       return result;
     }
 
@@ -97,13 +107,19 @@ export class ConversationLookupService {
           deliveries
             .map(
               (delivery) =>
-                `${delivery.kind} · ${delivery.status} · ${delivery.textPreview} · ${formatKstDateTime(delivery.createdAt)} KST`,
+                `${delivery.kind} · ${describeDeliveryStatus(delivery)} · ${delivery.textPreview} · ${formatKstDateTime(delivery.createdAt)} KST`,
             )
             .join('\n'),
         );
       }
     } catch (error: unknown) {
       this.logger.warn(`최근 발송 기록 조회 실패: ${String(error)}`);
+    }
+
+    try {
+      result.latestDeliveryText = await this.describeLatestDeliveries();
+    } catch (error: unknown) {
+      this.logger.warn(`종류별 마지막 발송 조회 실패: ${String(error)}`);
     }
 
     const hermesRoot = await this.getHermesRoot();
@@ -126,6 +142,33 @@ export class ConversationLookupService {
       this.logger.warn(`레포 사본 조회 실패: ${String(error)}`);
     }
     return result;
+  }
+
+  private async describeLatestDeliveries(): Promise<string | undefined> {
+    const now = Date.now();
+    const rows = await this.deliveryRepository.findActivitySince(
+      new Date(now - LATEST_DELIVERY_LOOKBACK_DAYS * DAY_MILLISECONDS),
+    );
+    const groups = summarizeLatestDeliveries({
+      rows,
+      recentSince: new Date(
+        now - LATEST_DELIVERY_RECENT_DAYS * DAY_MILLISECONDS,
+      ),
+    });
+    if (groups.length === 0) {
+      return undefined;
+    }
+    const lines = groups.map((group) => {
+      const sent = group.lastSentAt
+        ? `마지막 발송 ${formatKstDateTime(group.lastSentAt)} KST · ${LATEST_DELIVERY_RECENT_DAYS}일 ${group.recentSent}회`
+        : `${LATEST_DELIVERY_LOOKBACK_DAYS}일 안 발송 없음`;
+      const consoleRoute = group.lastConsoleRouteAt
+        ? ` · 콘솔로 돌림 ${LATEST_DELIVERY_RECENT_DAYS}일 ${group.recentConsoleRoute}회(마지막 ${formatKstDateTime(group.lastConsoleRouteAt)} KST)`
+        : '';
+      return `${group.key} · ${sent}${consoleRoute}`;
+    });
+    const text = lines.join('\n');
+    return wrapUntrustedInput(text);
   }
 
   private async getHermesRoot(): Promise<string | null> {

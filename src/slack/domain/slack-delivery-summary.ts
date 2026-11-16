@@ -1,4 +1,9 @@
-import { SlackDeliveryStatRow } from './port/slack-delivery.repository.port';
+import { match } from 'ts-pattern';
+
+import {
+  SlackDeliveryActivityRow,
+  SlackDeliveryStatRow,
+} from './port/slack-delivery.repository.port';
 
 const MIN_WINDOW_DAYS = 1;
 const MAX_WINDOW_DAYS = 90;
@@ -79,6 +84,96 @@ export const summarizeDeliveries = (
     byItemKind: toGroups(byItemKind, days),
   };
 };
+
+// 종류별 마지막 발송. 최신 N건 목록은 잦은 종류(PR 리뷰 스윕·콘솔 전환)가 한도를 채워 하루 두 번
+// 오는 원화 공고 같은 종류를 밀어낸다(2026-11-05 run 11600 — 24시간 41건 중 최신 10건에 공고 없음).
+// 본문만 세고(스레드 상세 댓글 제외) 묶음 발송은 itemKinds 로 나눈다 — summarizeDeliveries 와 같은 규칙.
+export type LatestDeliveryByKind = {
+  key: string;
+  lastSentAt: Date | null;
+  recentSent: number;
+  lastConsoleRouteAt: Date | null;
+  recentConsoleRoute: number;
+};
+
+export const summarizeLatestDeliveries = ({
+  rows,
+  recentSince,
+}: {
+  rows: readonly SlackDeliveryActivityRow[];
+  recentSince: Date;
+}): LatestDeliveryByKind[] => {
+  const groups = new Map<string, LatestDeliveryByKind>();
+  for (const row of rows) {
+    const isSent = row.status === 'SENT';
+    const isConsoleRoute =
+      row.status === 'SUPPRESSED' && row.suppressReason === 'CONSOLE_ROUTE';
+    const isCounted = isSent || isConsoleRoute;
+    if (row.threadTs || !isCounted) {
+      continue;
+    }
+    const isRecent = row.createdAt >= recentSince;
+    const itemKinds = row.itemKinds.length > 0 ? row.itemKinds : [row.kind];
+    for (const key of itemKinds) {
+      const group = groups.get(key) ?? {
+        key,
+        lastSentAt: null,
+        recentSent: 0,
+        lastConsoleRouteAt: null,
+        recentConsoleRoute: 0,
+      };
+      groups.set(key, group);
+      if (isSent) {
+        group.lastSentAt = laterOf({
+          current: group.lastSentAt,
+          candidate: row.createdAt,
+        });
+        group.recentSent += isRecent ? 1 : 0;
+      } else {
+        group.lastConsoleRouteAt = laterOf({
+          current: group.lastConsoleRouteAt,
+          candidate: row.createdAt,
+        });
+        group.recentConsoleRoute += isRecent ? 1 : 0;
+      }
+    }
+  }
+  return [...groups.values()].sort(
+    (left, right) => lastActivityMs(right) - lastActivityMs(left),
+  );
+};
+
+// 원장 상태값을 그대로 실으면 답에 `SUPPRESSED` 가 노출되고, 콘솔로 돌린 발송을 "발송된 게 아니야" 로
+// 잘못 전한다(2026-11-16 run 12931). 종류별 마지막 발송 블록과 같은 말로 옮긴다.
+export const describeDeliveryStatus = ({
+  status,
+  suppressReason,
+}: {
+  status: string;
+  suppressReason?: string | null;
+}): string => {
+  const label = match({ status, suppressReason })
+    .with({ status: 'SENT' }, () => 'Slack 발송')
+    .with({ status: 'FAILED' }, () => '발송 실패')
+    .with({ suppressReason: 'CONSOLE_ROUTE' }, () => '콘솔로 돌림')
+    .with({ suppressReason: 'EMPTY' }, () => '보낼 내용 없어 생략')
+    .otherwise(() => '보내지 않음');
+  return label;
+};
+
+const laterOf = ({
+  current,
+  candidate,
+}: {
+  current: Date | null;
+  candidate: Date;
+}): Date => (current && current >= candidate ? current : candidate);
+
+const lastActivityMs = (group: LatestDeliveryByKind): number =>
+  Math.max(
+    group.lastSentAt?.getTime() ?? 0,
+    group.lastConsoleRouteAt?.getTime() ?? 0,
+  );
 
 const clampInteger = (
   value: number,
