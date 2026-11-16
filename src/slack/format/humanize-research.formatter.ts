@@ -3,6 +3,7 @@ import {
   HumanizeResearchOutput,
   HumanizeResearchSource,
   ProposalSkipReason,
+  ProposalTarget,
 } from '../../agent/humanize-research/domain/humanize-research.type';
 import { escapeSlackMrkdwn } from './mrkdwn.util';
 
@@ -16,6 +17,11 @@ const SOURCE_LABELS: Record<HumanizeResearchSource, string> = {
   [HumanizeResearchSource.CANON_LOG]: '정본 커밋',
 };
 
+const TARGET_LABELS: Record<ProposalTarget, string> = {
+  [ProposalTarget.CANON]: '정본',
+  [ProposalTarget.BLOG]: '블로그',
+};
+
 const STATUS_LABELS: Record<CollectionStatus, string> = {
   [CollectionStatus.OK]: '수집 완료',
   [CollectionStatus.EMPTY]: '새 항목 없음',
@@ -26,6 +32,13 @@ const SKIP_LABELS: Record<ProposalSkipReason, string> = {
   [ProposalSkipReason.INVALID_SHAPE]: '형태 오류',
   [ProposalSkipReason.NO_EVIDENCE]: '근거 불일치',
   [ProposalSkipReason.OVER_LIMIT]: '제안 상한 초과',
+  [ProposalSkipReason.EVIDENCE_SOURCE_MISMATCH]: '근거 출처 불일치',
+  [ProposalSkipReason.FILE_NOT_ALLOWED]: '허용되지 않은 파일',
+  [ProposalSkipReason.MATCH_NOT_UNIQUE]: '일치 항목 유일하지 않음',
+  [ProposalSkipReason.OUTSIDE_EDITABLE_SURFACE]: '편집 가능 범위 밖',
+  [ProposalSkipReason.DELETE_NOT_ALLOWED]: '삭제 불가',
+  [ProposalSkipReason.PROTECTED_ASSET]: '보호 자산',
+  [ProposalSkipReason.RULEBOOK_TOO_LONG]: '규칙 줄 수 초과',
 };
 
 const escapeField = (value: string): string =>
@@ -48,7 +61,7 @@ export const formatHumanizeResearch = (
     lines.push('', `*편집 제안 ${output.proposals.length}건*`);
     for (const [index, proposal] of output.proposals.entries()) {
       lines.push(
-        `${index + 1}. ${escapeField(proposal.file)} · ${escapeField(proposal.targetMetric)}`,
+        `${index + 1}. [${TARGET_LABELS[proposal.target]}] ${escapeField(proposal.file)} · ${escapeField(proposal.targetMetric)}`,
         `   ${escapeField(proposal.rationale)}`,
         `   근거: ${proposal.evidence.map(escapeField).join(', ')}`,
         `   ${preview(proposal.oldString)} → ${preview(proposal.newString)}`,
@@ -81,6 +94,12 @@ export const formatHumanizeResearch = (
       `제외된 제안: ${[...counts.entries()]
         .map(([reason, count]) => `${SKIP_LABELS[reason]} ${count}건`)
         .join(' · ')}`,
+    );
+  }
+
+  for (const gap of output.enforcementGaps) {
+    lines.push(
+      `집행 안 되는 규칙: ${escapeField(gap.ruleId)} (근거 ${gap.evidence.length}건)`,
     );
   }
 

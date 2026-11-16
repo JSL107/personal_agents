@@ -16,6 +16,13 @@ export enum ProposalSkipReason {
   INVALID_SHAPE = 'INVALID_SHAPE',
   NO_EVIDENCE = 'NO_EVIDENCE',
   OVER_LIMIT = 'OVER_LIMIT',
+  EVIDENCE_SOURCE_MISMATCH = 'EVIDENCE_SOURCE_MISMATCH',
+  FILE_NOT_ALLOWED = 'FILE_NOT_ALLOWED',
+  MATCH_NOT_UNIQUE = 'MATCH_NOT_UNIQUE',
+  OUTSIDE_EDITABLE_SURFACE = 'OUTSIDE_EDITABLE_SURFACE',
+  DELETE_NOT_ALLOWED = 'DELETE_NOT_ALLOWED',
+  PROTECTED_ASSET = 'PROTECTED_ASSET',
+  RULEBOOK_TOO_LONG = 'RULEBOOK_TOO_LONG',
 }
 
 export enum UpstreamRangeKind {
@@ -44,7 +51,19 @@ export interface Processed {
   arxivIds: string[];
 }
 
+// 값은 모델 출력 JSON 의 target 문자열과 같다.
+export enum ProposalTarget {
+  CANON = 'canon',
+  BLOG = 'blog',
+}
+
+export interface EnforcementGap {
+  ruleId: string;
+  evidence: string[];
+}
+
 export interface HumanizeResearchProposal {
+  target: ProposalTarget;
   file: string;
   oldString: string;
   newString: string;
@@ -64,6 +83,7 @@ export interface ConstrainedProposals {
 }
 
 export interface ParsedResearchOutput {
+  enforcementGaps: EnforcementGap[];
   proposals: unknown[];
   injectionNotices: string[];
 }
@@ -76,6 +96,7 @@ export interface SourceStatus {
 }
 
 export interface HumanizeResearchOutput {
+  enforcementGaps: EnforcementGap[];
   sources: SourceStatus[];
   droppedForBudget: string[];
   proposals: HumanizeResearchProposal[];
@@ -91,6 +112,7 @@ export interface HumanizeResearchRunResult {
 }
 
 export interface ResearchInputSelection {
+  quickRules: string;
   prompt: string;
   included: CollectedItem[];
   droppedForBudget: string[];
