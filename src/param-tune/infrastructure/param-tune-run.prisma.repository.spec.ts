@@ -95,7 +95,12 @@ describe('ParamTuneRunPrismaRepository', () => {
 
       expect(result).toMatchObject({ kind: 'CLAIMED', runId: 3 });
       const call = parameterTuneRun.updateMany.mock.calls[0][0];
-      expect(call.where).toEqual({ id: 3, attemptToken: 'old' });
+      expect(call.where).toEqual({
+        id: 3,
+        attemptToken: 'old',
+        status: 'RUNNING',
+        startedAt: new Date(now.getTime() - 100 * MINUTE),
+      });
       expect(call.data).toMatchObject({
         status: 'RUNNING',
         startedAt: now,
@@ -131,6 +136,27 @@ describe('ParamTuneRunPrismaRepository', () => {
       expect(await repository.claim(input)).toEqual({
         kind: 'ALREADY_RUNNING',
         runId: 4,
+      });
+    });
+
+    it('읽은 뒤 옛 프로세스가 같은 토큰으로 끝냈으면 재선점하지 않는다', async () => {
+      const startedAt = new Date(now.getTime() - 100 * MINUTE);
+      parameterTuneRun.findUnique.mockResolvedValue({
+        id: 3,
+        status: 'RUNNING',
+        attemptToken: 'old',
+        startedAt,
+      });
+      // 조건의 status: RUNNING 이 이미 DONE 이 된 행과 맞지 않아 count 0.
+      parameterTuneRun.updateMany.mockResolvedValue({ count: 0 });
+
+      expect(await repository.claim(input)).toEqual({
+        kind: 'ALREADY_RUNNING',
+        runId: 3,
+      });
+      expect(parameterTuneRun.updateMany.mock.calls[0][0].where).toMatchObject({
+        status: 'RUNNING',
+        startedAt,
       });
     });
 
