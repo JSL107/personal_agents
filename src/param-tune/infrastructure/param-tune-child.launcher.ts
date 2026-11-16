@@ -6,7 +6,7 @@ import {
   openSync,
   readFileSync,
 } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve as resolvePath } from 'node:path';
 
 import { Injectable } from '@nestjs/common';
 
@@ -17,6 +17,7 @@ export type ChildOutcome =
 
 export interface ParamTuneChildRunInput {
   args: string[];
+  // 상대 경로는 레포 루트 기준이다 — 호출자가 cwd 에 기대지 않게 한다.
   logPath: string;
   timeoutMs: number;
 }
@@ -74,10 +75,11 @@ export class ParamTuneChildLauncher {
       };
     }
 
+    const logPath = resolvePath(root, input.logPath);
     let fd: number;
     try {
-      mkdirSync(dirname(input.logPath), { recursive: true });
-      fd = openSync(input.logPath, 'a');
+      mkdirSync(dirname(logPath), { recursive: true });
+      fd = openSync(logPath, 'a');
     } catch (error) {
       return {
         kind: 'SPAWN_FAILED',
@@ -113,11 +115,11 @@ export class ParamTuneChildLauncher {
       child.on('exit', (code) =>
         finish(() =>
           timedOut
-            ? { kind: 'TIMEOUT', tail: readTail(input.logPath) }
+            ? { kind: 'TIMEOUT', tail: readTail(logPath) }
             : {
                 kind: 'EXITED',
                 code: code ?? -1,
-                tail: readTail(input.logPath),
+                tail: readTail(logPath),
               },
         ),
       );
