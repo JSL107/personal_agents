@@ -36,6 +36,7 @@ import {
   selectResearchInput,
 } from '../domain/humanize-research-input';
 import {
+  constrainEnforcementGaps,
   constrainResearchProposals,
   parseResearchOutput,
 } from '../domain/humanize-research-output';
@@ -265,12 +266,16 @@ export class RunHumanizeResearchUsecase {
       previous,
       included: selection.included,
     });
+    const enforcementGaps = constrainEnforcementGaps({
+      gaps: parsed.enforcementGaps,
+      includedIds,
+    });
     return {
       sources: sourceStatus,
       droppedForBudget: selection.droppedForBudget,
       ...constrained,
       injectionNotices: parsed.injectionNotices,
-      enforcementGaps: parsed.enforcementGaps,
+      enforcementGaps,
       processed,
     };
   }

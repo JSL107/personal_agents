@@ -104,3 +104,27 @@ it('겹치는 일치도 둘이면 정본과 블로그 모두 거절한다', () =
     ),
   ).toBe(ProposalSkipReason.MATCH_NOT_UNIQUE);
 });
+
+it('보호 단락의 본문 일부만 바꿔도 PROTECTED_ASSET', () => {
+  const quickRules = '**보존 신호 (지우지 말 것):** 고유한 본문';
+  expect(judge({ oldString: '고유한 본문' }, { quickRules })).toBe(
+    ProposalSkipReason.PROTECTED_ASSET,
+  );
+});
+it('등급 기준 절 안의 줄을 바꿔도 PROTECTED_ASSET', () => {
+  // 실제 정본 헤딩은 뒤에 설명이 붙는다(quick-rules.md `## 등급 기준 (자가 채점)`).
+  const quickRules =
+    '## 등급 기준 (자가 채점)\n고유한 등급 본문\n## 다음 절\n일반 규칙';
+  expect(judge({ oldString: '고유한 등급 본문' }, { quickRules })).toBe(
+    ProposalSkipReason.PROTECTED_ASSET,
+  );
+});
+it('보호 줄 밖 규칙 행은 통과', () => {
+  const quickRules = '## 등급 기준\n등급 본문\n## 다음 절\n| A-1 | 규칙 |';
+  expect(judge({}, { quickRules })).toBeNull();
+});
+it('newString 이 공백뿐이어도 표 행이 아니면 DELETE_NOT_ALLOWED', () => {
+  expect(judge({ oldString: '규칙', newString: ' \n\t' })).toBe(
+    ProposalSkipReason.DELETE_NOT_ALLOWED,
+  );
+});
