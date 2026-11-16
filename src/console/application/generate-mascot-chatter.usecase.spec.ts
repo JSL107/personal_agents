@@ -141,11 +141,71 @@ describe('GenerateMascotChatterUsecase', () => {
     expect(await usecase.confirmShown(result.chatterId!)).toBe(true);
     expect(memory.appendTurn).toHaveBeenCalledWith(MEMORY_KEY, {
       role: 'assistant',
-      text: '오늘 할 일을 살펴볼까?',
+      text: '오늘 할 일을 살펴볼까?\n[이 한 마디를 만들 때 본 할 일: APPROVAL: 승인 1건]',
       agentType: null,
       agentRunId: null,
       timestampMs: expect.any(Number),
     });
+  });
+
+  // 2026-11-06 run 11773 — "PR #3668 할 일 있어" 를 두 번 말한 뒤 "지금 무슨말이야?" 에 출처를 몰라 사과만 했다.
+  it('할 일을 보고 만든 한 마디는 그 할 일의 상세·대상까지 함께 기억한다', async () => {
+    briefing.execute.mockResolvedValue({
+      todos: [
+        {
+          kind: ConsoleTodoKind.PR_REVIEW,
+          label: 'PR #3668 리뷰 회수',
+          detail: '2일째',
+          targets: [
+            {
+              label: 'acme/workspace #3668 · 지적 2건',
+              pullNumber: 3668,
+              url: 'https://github.com/acme/workspace/pull/3668',
+            },
+          ],
+        },
+      ],
+    });
+    modelRouter.route.mockResolvedValue(
+      completion(
+        '{"line":"PR #3668 할 일 있어","suggestionIndex":null,"asks":false}',
+      ),
+    );
+
+    const result = await usecase.execute({
+      declinedAgentTypes: [],
+      trigger: 'IDLE',
+    });
+    await usecase.confirmShown(result.chatterId!);
+
+    const sourceLine =
+      'PR_REVIEW: PR #3668 리뷰 회수 (2일째) — acme/workspace #3668 · 지적 2건';
+    const [call] = modelRouter.route.mock.calls[0] as [
+      { request: { prompt: string } },
+    ];
+    expect(call.request.prompt).toContain(sourceLine);
+    expect(memory.appendTurn).toHaveBeenCalledWith(
+      MEMORY_KEY,
+      expect.objectContaining({
+        role: 'assistant',
+        text: `PR #3668 할 일 있어\n[이 한 마디를 만들 때 본 할 일: ${sourceLine}]`,
+      }),
+    );
+  });
+
+  it('할 일이 없을 때 만든 한 마디는 문장만 기억한다', async () => {
+    briefing.execute.mockResolvedValue({ todos: [] });
+
+    const result = await usecase.execute({
+      declinedAgentTypes: [],
+      trigger: 'IDLE',
+    });
+    await usecase.confirmShown(result.chatterId!);
+
+    expect(memory.appendTurn).toHaveBeenCalledWith(
+      MEMORY_KEY,
+      expect.objectContaining({ text: '오늘 할 일을 살펴볼까?' }),
+    );
   });
 
   it('코드펜스와 앞뒤 설명이 섞인 JSON도 추출한다', async () => {

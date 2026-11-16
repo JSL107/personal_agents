@@ -14,6 +14,7 @@ import { ModelRouterUsecase } from '../../model-router/application/model-router.
 import { AgentType } from '../../model-router/domain/model-router.type';
 import { ConversationMemoryService } from '../../router/application/conversation-memory.service';
 import { ConversationTurn } from '../../router/domain/conversation-memory.type';
+import { ConsoleTodo } from '../domain/briefing.type';
 import { CONSOLE_CHANNEL_ID } from '../domain/console-conversation.constant';
 import {
   MascotChatterResult,
@@ -71,6 +72,7 @@ interface RunContext {
 interface PendingChatter {
   chatterId: string;
   line: string;
+  todoLines: string[];
   conversationKey: string | null;
   createdAtMs: number;
 }
@@ -144,7 +146,10 @@ export class GenerateMascotChatterUsecase {
     try {
       await this.conversationMemory.appendTurn(pending.conversationKey, {
         role: 'assistant',
-        text: pending.line,
+        text: withTodoSource({
+          line: pending.line,
+          todoLines: pending.todoLines,
+        }),
         agentType: null,
         agentRunId: null,
         timestampMs: Date.now(),
@@ -259,6 +264,7 @@ export class GenerateMascotChatterUsecase {
     this.pendingChatter = {
       chatterId,
       line,
+      todoLines: context.todoLines,
       conversationKey: context.conversationKey,
       createdAtMs: Date.now(),
     };
@@ -376,9 +382,7 @@ export class GenerateMascotChatterUsecase {
     let candidates: readonly WorkSuggestion[] = [];
     try {
       const briefing = await this.buildBriefing.execute();
-      todoLines = briefing.todos
-        .slice(0, 3)
-        .map((todo) => `${todo.kind}: ${todo.label}`);
+      todoLines = briefing.todos.slice(0, 3).map(formatTodoLine);
     } catch (error) {
       this.logger.warn(`우사기 브리핑 조회 실패: ${String(error)}`);
     }
@@ -417,3 +421,28 @@ export class GenerateMascotChatterUsecase {
     };
   }
 }
+
+// 상세(며칠째)와 대상(repo #번호)까지 싣는다 — 'PR #3668 리뷰 회수' 만으로는 어느 레포의 무슨 지적인지
+// 우사기도, 나중에 그 말을 되짚는 대화 답변도 설명하지 못한다.
+const formatTodoLine = (todo: ConsoleTodo): string => {
+  const detail = todo.detail ? ` (${todo.detail})` : '';
+  const targets =
+    todo.targets.length > 0
+      ? ` — ${todo.targets.map((target) => target.label).join(', ')}`
+      : '';
+  return `${todo.kind}: ${todo.label}${detail}${targets}`;
+};
+
+// 우사기 한 마디는 할 일을 보고 만든 문장인데 문장만 기억하면, 사용자가 "지금 무슨 말이야?" 라고 되물을 때
+// 대화 답변이 그 출처를 몰라 "설명 없이 반복했어" 로 사과만 한다(2026-11-06 run 11773). 실제로 고른 근거라는
+// 보장은 없으므로 "본 할 일" 로만 적는다. 기억은 화면에 다시 보이지 않고 프롬프트에만 쓰인다.
+const withTodoSource = ({
+  line,
+  todoLines,
+}: {
+  line: string;
+  todoLines: readonly string[];
+}): string =>
+  todoLines.length > 0
+    ? `${line}\n[이 한 마디를 만들 때 본 할 일: ${todoLines.join(' / ')}]`
+    : line;
