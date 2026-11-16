@@ -583,6 +583,40 @@ describe('ParamTuneRunPrismaRepository', () => {
     });
   });
 
+  describe('hasAppliedFromWindow', () => {
+    it('같은 축·APPLIED·창 접두사로 찾고 있으면 true', async () => {
+      parameterTuneRun.findFirst.mockResolvedValue({ id: 4 });
+
+      expect(
+        await repository.hasAppliedFromWindow({
+          strategy: 'SWING',
+          axis: 'EXIT_STOP_LOSS_PERCENT',
+          windowEnd: '2026-09-30',
+        }),
+      ).toBe(true);
+      expect(parameterTuneRun.findFirst.mock.calls[0][0].where).toEqual({
+        strategy: 'SWING',
+        axis: 'EXIT_STOP_LOSS_PERCENT',
+        decision: TuneDecision.APPLIED,
+        verdictKey: {
+          startsWith: 'SWING|EXIT_STOP_LOSS_PERCENT|2026-09-30|',
+        },
+      });
+    });
+
+    it('없으면 false', async () => {
+      parameterTuneRun.findFirst.mockResolvedValue(null);
+
+      expect(
+        await repository.hasAppliedFromWindow({
+          strategy: 'SWING',
+          axis: 'EXIT_STOP_LOSS_PERCENT',
+          windowEnd: '2026-09-30',
+        }),
+      ).toBe(false);
+    });
+  });
+
   describe('알림', () => {
     it('findUnnotified 는 미알림 + 종결 상태, id 순', async () => {
       parameterTuneRun.findMany.mockResolvedValue([]);
