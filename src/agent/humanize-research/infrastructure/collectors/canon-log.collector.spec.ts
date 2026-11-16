@@ -86,6 +86,82 @@ describe('CanonLogCollector', () => {
     }
   });
 
+  it('8,000자를 넘으면 오래된 커밋부터 담고 id 는 마지막으로 담은 커밋', async () => {
+    const hashes = ['1', '2', '3'].map((value) => value.repeat(40));
+    const records = hashes
+      .map((hash) => `${hash}\x1f${'가'.repeat(3_900)}\x1f\x1e\n`)
+      .join('');
+    git.mockImplementation(async ({ args }) =>
+      gitResult(args[0] === 'log' ? records : head),
+    );
+    const collector = new CanonLogCollector(configService);
+
+    const result = await collector.collect(processed);
+
+    expect(git).toHaveBeenCalledWith(
+      expect.objectContaining({ args: expect.arrayContaining(['--reverse']) }),
+    );
+    expect(result.items[0].id).toBe(`canon:${hashes[1]}`);
+    expect(result.items[0].text).toContain(hashes[0]);
+    expect(result.items[0].text).toContain(hashes[1]);
+    expect(result.items[0].text).not.toContain(hashes[2]);
+  });
+
+  it('다음 회차는 그 커밋 이후부터 조회한다', async () => {
+    const hashes = ['1', '2', '3'].map((value) => value.repeat(40));
+    const records = hashes
+      .map((hash) => `${hash}\x1f${'가'.repeat(3_900)}\x1f\x1e\n`)
+      .join('');
+    git.mockImplementation(async ({ args }) =>
+      gitResult(args[0] === 'log' ? records : head),
+    );
+    const collector = new CanonLogCollector(configService);
+
+    const first = await collector.collect(processed);
+    await collector.collect({
+      ...processed,
+      canonHead: first.items[0].id.slice('canon:'.length),
+    });
+
+    expect(git).toHaveBeenCalledWith(
+      expect.objectContaining({
+        args: expect.arrayContaining([`${hashes[1]}..HEAD`]),
+      }),
+    );
+  });
+
+  it('merge-base 가 128 이면 30일 조회로 복구한다', async () => {
+    git.mockImplementation(async ({ args }) => {
+      if (args[0] === 'merge-base') {
+        return gitResult('', 128);
+      }
+      return gitResult(args[0] === 'log' ? `${head}\x1f제목\x1f\x1e` : head);
+    });
+    const collector = new CanonLogCollector(configService);
+
+    const result = await collector.collect(processed);
+
+    expect(result.status).toBe(CollectionStatus.OK);
+    expect(git).toHaveBeenCalledWith(
+      expect.objectContaining({
+        args: expect.arrayContaining(['--since=30.days']),
+      }),
+    );
+  });
+
+  it('첫 커밋 하나가 8,000자를 넘으면 그 커밋만 잘라 담는다', async () => {
+    const record = `${head}\x1f${'가'.repeat(8_100)}\x1f\x1e`;
+    git.mockImplementation(async ({ args }) =>
+      gitResult(args[0] === 'log' ? record : head),
+    );
+    const collector = new CanonLogCollector(configService);
+
+    const result = await collector.collect(processed);
+
+    expect(result.items[0].id).toBe(`canon:${head}`);
+    expect(result.items[0].text).toHaveLength(8_000);
+  });
+
   it('커밋이 없으면 EMPTY를 반환한다', async () => {
     git.mockImplementation(async ({ args }) =>
       gitResult(args[0] === 'rev-parse' ? head : ''),

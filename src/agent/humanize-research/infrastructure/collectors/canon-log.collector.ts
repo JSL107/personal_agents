@@ -36,16 +36,19 @@ export class CanonLogCollector {
       const directory = resolveHumanizeRulesRepoPath(
         this.configService.get<string>('HUMANIZE_RULES_REPO_PATH'),
       );
-      const head = (
-        await this.checked({ directory, args: ['rev-parse', 'HEAD'] })
-      ).trim();
       const range = await this.range({
         directory,
         canonHead: processed.canonHead,
       });
       const output = await this.checked({
         directory,
-        args: ['log', '--format=%H%x1f%s%x1f%b%x1e', '--name-only', ...range],
+        args: [
+          'log',
+          '--reverse',
+          '--format=%H%x1f%s%x1f%b%x1e',
+          '--name-only',
+          ...range,
+        ],
       });
       const commits = this.parseCommits(output);
       if (commits.length === 0) {
@@ -56,16 +59,26 @@ export class CanonLogCollector {
         };
       }
 
-      const text = commits
-        .map((commit) => this.renderCommit(commit))
-        .join('\n\n')
-        .slice(0, ITEM_TEXT_LIMIT);
+      const included: string[] = [];
+      for (const commit of commits) {
+        const rendered = this.renderCommit(commit);
+        const next = [...included, rendered].join('\n\n');
+        if (next.length > ITEM_TEXT_LIMIT) {
+          if (included.length === 0) {
+            included.push(rendered.slice(0, ITEM_TEXT_LIMIT));
+          }
+          break;
+        }
+        included.push(rendered);
+      }
+      const text = included.join('\n\n');
+      const lastHash = commits[included.length - 1].hash;
       return {
         source: HumanizeResearchSource.CANON_LOG,
         status: CollectionStatus.OK,
         items: [
           {
-            id: `canon:${head}`,
+            id: `canon:${lastHash}`,
             source: HumanizeResearchSource.CANON_LOG,
             text,
           },
@@ -100,12 +113,7 @@ export class CanonLogCollector {
     if (result.exitCode === 0) {
       return [`${canonHead}..HEAD`];
     }
-    if (result.exitCode === 1) {
-      return ['--since=30.days'];
-    }
-    throw new Error(
-      `git merge-base 실패: ${result.stderr.slice(0, GIT_ERROR_PREVIEW)}`,
-    );
+    return ['--since=30.days'];
   }
 
   private parseCommits(output: string): CanonCommit[] {
