@@ -88,6 +88,9 @@ export interface CommitAdoptionInput {
 export interface CommitRollbackInput {
   /** 롤백할 시험 행. */
   runId: number;
+  /** 롤백을 수행하는 이번 회차 행과 그 선점 토큰. 선점을 잃었으면 롤백하지 않는다. */
+  currentRunId: number;
+  attemptToken: string;
   activation: ActivateNewVersionInput;
   detail: unknown;
 }
@@ -176,8 +179,8 @@ export interface ParamTuneRunPort {
   commitAdoption(input: CommitAdoptionInput): Promise<ActivateNewVersionResult>;
 
   /**
-   * 롤백 활성화와 시험 행의 ROLLBACK 확정을 한 트랜잭션에 묶는다. 이미 평가된 행이면 던져
-   * 활성화까지 되돌린다. CONFLICT 면 아무것도 쓰지 않는다.
+   * 롤백 활성화와 시험 행의 ROLLBACK 확정을 한 트랜잭션에 묶는다. 이미 평가된 행이거나
+   * 이번 회차가 RUNNING·토큰을 잃었으면 던져 활성화까지 되돌린다. CONFLICT 면 아무것도 쓰지 않는다.
    */
   commitRollback(input: CommitRollbackInput): Promise<ActivateNewVersionResult>;
 

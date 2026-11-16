@@ -40,6 +40,7 @@ export interface EvaluateProbationInput {
   snapshot: ParameterSnapshot;
   today: string;
   runId: number;
+  attemptToken: string;
   agentRunId: number | null;
 }
 
@@ -211,6 +212,8 @@ export class EvaluateProbationUsecase {
     // 확정해 제외 목록이 비고, 같은 값이 다시 채택된다.
     const result = await this.runPort.commitRollback({
       runId: probation.runId,
+      currentRunId: input.runId,
+      attemptToken: input.attemptToken,
       activation: {
         strategy: input.strategy,
         name: probation.axis,

@@ -370,6 +370,8 @@ describe('ParamTuneRunPrismaRepository', () => {
       expect(
         await repository.commitRollback({
           runId: 3,
+          currentRunId: 7,
+          attemptToken: 't',
           activation,
           detail: {},
         }),
@@ -386,6 +388,8 @@ describe('ParamTuneRunPrismaRepository', () => {
 
       await repository.commitRollback({
         runId: 3,
+        currentRunId: 7,
+        attemptToken: 't',
         activation,
         detail: { a: 1 },
       });
@@ -400,6 +404,30 @@ describe('ParamTuneRunPrismaRepository', () => {
         notifiedAt: null,
       });
       expect(call.data.evaluatedAt).toBeInstanceOf(Date);
+      expect(parameterTuneRun.updateMany.mock.calls[1][0].where).toEqual({
+        id: 7,
+        status: TuneRunStatus.RUNNING,
+        attemptToken: 't',
+      });
+    });
+
+    it('commitRollback 은 이번 회차 토큰을 잃었으면 던져 활성화와 평가까지 되돌린다', async () => {
+      mockedActivate.mockResolvedValue(activated);
+      parameterTuneRun.updateMany
+        .mockResolvedValueOnce({ count: 1 })
+        .mockResolvedValueOnce({ count: 0 });
+
+      await expect(
+        repository.commitRollback({
+          runId: 3,
+          currentRunId: 7,
+          attemptToken: 'stale',
+          activation,
+          detail: {},
+        }),
+      ).rejects.toThrow(/토큰을 잃어 롤백/);
+      // 콜백이 던지면 $transaction 이 reject 해 활성화·평가 기록이 함께 롤백된다.
+      expect($transaction).toHaveBeenCalledTimes(1);
     });
 
     it('commitRollback 은 이미 평가된 행이면 던져 활성화까지 되돌린다', async () => {
@@ -407,7 +435,13 @@ describe('ParamTuneRunPrismaRepository', () => {
       parameterTuneRun.updateMany.mockResolvedValue({ count: 0 });
 
       await expect(
-        repository.commitRollback({ runId: 3, activation, detail: {} }),
+        repository.commitRollback({
+          runId: 3,
+          currentRunId: 7,
+          attemptToken: 't',
+          activation,
+          detail: {},
+        }),
       ).rejects.toThrow(/이미 평가된/);
     });
   });

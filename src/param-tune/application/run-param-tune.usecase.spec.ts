@@ -245,6 +245,8 @@ describe('RunParamTuneUsecase', () => {
 
     expect(runPort.commitRollback).toHaveBeenCalledWith({
       runId: 3,
+      currentRunId: 7,
+      attemptToken: 'token',
       activation: {
         strategy: 'SWING',
         name: 'EXIT_TAKE_PROFIT_PERCENT',
