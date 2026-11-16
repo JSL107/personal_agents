@@ -58,6 +58,14 @@ const readInteger = ({ raw, key }: RawInteger): number => {
   return value;
 };
 
+const readOptionalInteger = ({ argv, key }: OptionKey): number | null => {
+  const raw = readOption({ argv, key });
+  if (raw === undefined) {
+    return null;
+  }
+  return readInteger({ raw, key });
+};
+
 export const parseParamTuneCliArguments = (
   argv: string[],
 ): ParamTuneCliOptions => {
@@ -89,10 +97,6 @@ export const parseParamTuneCliArguments = (
     );
   }
 
-  const rawAgentRunId = readOption({ argv, key: 'agent-run-id' });
-  let agentRunId: number | null = null;
-  if (rawAgentRunId !== undefined) {
-    agentRunId = readInteger({ raw: rawAgentRunId, key: 'agent-run-id' });
-  }
+  const agentRunId = readOptionalInteger({ argv, key: 'agent-run-id' });
   return { runId, attemptToken, strategy, axis, today, agentRunId };
 };
