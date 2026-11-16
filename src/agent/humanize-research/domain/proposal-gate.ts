@@ -58,44 +58,67 @@ export const gateProposal = ({
       return ProposalSkipReason.UNSAFE_BLOG_LITERAL;
     }
   }
-  const surfaces = canon ? [context.quickRules] : context.blogEditableTexts;
-  const matches = surfaces.reduce(
+  if (canon) {
+    const canonReason = gateCanonText({
+      proposal,
+      quickRules: context.quickRules,
+    });
+    return canonReason;
+  }
+  const matches = context.blogEditableTexts.reduce(
     (count, text) => count + countMatches({ text, search: proposal.oldString }),
     0,
   );
-  if (!canon && matches === 0) {
+  if (matches === 0) {
     return ProposalSkipReason.OUTSIDE_EDITABLE_SURFACE;
   }
   if (matches !== 1) {
     return ProposalSkipReason.MATCH_NOT_UNIQUE;
   }
+  const replacement = proposal.newString.trim();
+  if (replacement === '') {
+    return ProposalSkipReason.DELETE_NOT_ALLOWED;
+  }
+  return null;
+};
+
+// 정본 quick-rules 텍스트만으로 판정하는 게이트 3~6. 회차의 로컬 판정과 정본 검사(검사한 SHA 의 파일)가
+// 같은 규칙을 쓰게 한다 — 로컬이 원격보다 뒤처지면 로컬 판정만으로는 보호 구역 이동을 못 본다.
+export const gateCanonText = ({
+  proposal,
+  quickRules,
+}: {
+  proposal: HumanizeResearchProposal;
+  quickRules: string;
+}): ProposalSkipReason | null => {
+  const matches = countMatches({
+    text: quickRules,
+    search: proposal.oldString,
+  });
+  if (matches !== 1) {
+    return ProposalSkipReason.MATCH_NOT_UNIQUE;
+  }
   const tableRow = isWholeRuleRow({
-    quickRules: context.quickRules,
+    quickRules,
     oldString: proposal.oldString,
   });
   const replacement = proposal.newString.trim();
-  const invalidDeletion = replacement === '' && (!canon || !tableRow);
-  if (invalidDeletion) {
+  if (replacement === '' && !tableRow) {
     return ProposalSkipReason.DELETE_NOT_ALLOWED;
   }
-  // 보호 자산·줄 수 상한은 정본 quick-rules 에만 있는 제약이다.
-  if (!canon) {
-    return null;
-  }
   const protectedAsset = overlapsProtectedLine({
-    quickRules: context.quickRules,
+    quickRules,
     oldString: proposal.oldString,
   });
   if (protectedAsset) {
     return ProposalSkipReason.PROTECTED_ASSET;
   }
-  const changed = context.quickRules.replace(
+  const changed = quickRules.replace(
     proposal.oldString,
     () => proposal.newString,
   );
   const lineCount = changed.split('\n').length;
-  const maxLines =
-    context.quickRules.split('\n').length + QUICK_RULES_LINE_HEADROOM;
+  const maxLines = quickRules.split('\n').length + QUICK_RULES_LINE_HEADROOM;
   if (lineCount > maxLines) {
     return ProposalSkipReason.RULEBOOK_TOO_LONG;
   }

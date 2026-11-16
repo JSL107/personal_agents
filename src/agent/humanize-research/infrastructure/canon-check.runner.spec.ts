@@ -205,6 +205,17 @@ describe('CanonCheckRunner', () => {
     expect(writeFile).not.toHaveBeenCalled();
   });
 
+  it('검사한 SHA 에서 문구가 보호 구역으로 옮겨졌으면 PROTECTED_ASSET 이고 검사를 돌리지 않는다', async () => {
+    readFile.mockResolvedValue(`## 등급 기준 (자가 채점)\n${QUICK_RULE_ROW}`);
+    const runner = new CanonCheckRunner(configService);
+
+    const result = await runner.check(proposal);
+
+    expect(result.reason).toBe(ProposalSkipReason.PROTECTED_ASSET);
+    expect(writeFile).not.toHaveBeenCalled();
+    expect(spawnPython).not.toHaveBeenCalled();
+  });
+
   it('검사한 SHA의 두 규칙 행에 걸친 문구면 두 ID를 반환한다', async () => {
     const oldString = `${QUICK_RULE_ROW}\n${NEXT_RULE_ROW}`;
     readFile.mockResolvedValue(`앞\n${oldString}\n뒤`);
