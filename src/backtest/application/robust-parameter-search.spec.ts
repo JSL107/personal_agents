@@ -4,7 +4,10 @@ import {
   ReplayBacktestResult,
   ReplayBacktestUsecase,
 } from './replay-backtest.usecase';
-import { runRobustSearch } from './robust-parameter-search';
+import {
+  RobustSearchOutputForStrategy,
+  runRobustSearch,
+} from './robust-parameter-search';
 
 const WEIGHTS = DEFAULT_RANKING_WEIGHTS;
 
@@ -42,20 +45,25 @@ const resultOf = (violations: string[] = []): ReplayBacktestResult =>
   }) as unknown as ReplayBacktestResult;
 
 const input = {
-  strategy: 'SWING' as const,
   windows: WINDOWS,
   slippagePercents: [0, 0.5],
-  baseline: BASELINE,
-  combinations: COMBINATIONS,
+  strategies: [
+    {
+      strategy: 'SWING' as const,
+      baseline: BASELINE,
+      combinations: COMBINATIONS,
+    },
+  ],
 };
 
 describe('runRobustSearch', () => {
   it('창 × 조합 × 슬리피지만큼 재생하고 조건별 성적을 모은다', async () => {
     const execute = jest.fn().mockResolvedValue(resultOf());
-    const output = await runRobustSearch(input, {
+    const outputs = await runRobustSearch(input, {
       execute,
     } as unknown as ReplayBacktestUsecase);
 
+    const output = outputs.get('SWING') as RobustSearchOutputForStrategy;
     expect(execute).toHaveBeenCalledTimes(12);
     expect(output.conditions).toHaveLength(2);
     expect(output.conditions[0].outcomes).toHaveLength(6);
@@ -86,5 +94,39 @@ describe('runRobustSearch', () => {
         execute,
       } as unknown as ReplayBacktestUsecase),
     ).rejects.toThrow('불변식 위반');
+  });
+
+  it('두 전략이 한 창의 캐시를 함께 쓴다', async () => {
+    const execute = jest.fn().mockResolvedValue(resultOf());
+    await runRobustSearch(
+      {
+        ...input,
+        strategies: [
+          ...input.strategies,
+          {
+            strategy: 'LONG_TERM' as const,
+            baseline: BASELINE,
+            combinations: COMBINATIONS,
+          },
+        ],
+      },
+      { execute } as unknown as ReplayBacktestUsecase,
+    );
+
+    // 창 2 × 전략 2 × 조합 3 × 슬리피지 2
+    expect(execute).toHaveBeenCalledTimes(24);
+    const cacheOf = (strategy: string, window: string): Set<unknown> =>
+      new Set(
+        execute.mock.calls
+          .filter(
+            ([command]) =>
+              command.strategy === strategy && command.from === window,
+          )
+          .map(([, cache]) => cache),
+      );
+    const swingFirst = cacheOf('SWING', '2025-04-01');
+    expect(swingFirst.size).toBe(1);
+    expect(cacheOf('LONG_TERM', '2025-04-01')).toEqual(swingFirst);
+    expect(cacheOf('SWING', '2025-10-01')).not.toEqual(swingFirst);
   });
 });

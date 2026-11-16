@@ -159,40 +159,36 @@ const main = async (): Promise<void> => {
 
     const startedAt = Date.now();
     let windowStartedAt = Date.now();
-    // 전략마다 한 번 돈다. 창 캐시는 전략 안에서 전 조합·전 슬리피지가 나눠 쓴다.
-    const outputs = new Map<
-      string,
-      Awaited<ReturnType<typeof runRobustSearch>>
-    >();
-    for (const strategy of options.strategies) {
-      const plan = plans.find((candidate) => candidate.strategy === strategy);
-      if (plan === undefined) {
-        continue;
-      }
-      windowStartedAt = Date.now();
-      outputs.set(
-        strategy,
-        await runRobustSearch(
-          {
-            strategy,
-            windows,
-            slippagePercents: options.slippagePercents,
-            baseline: plan.baseline,
-            combinations: plan.combinations,
-          },
-          replay,
-          (window) => {
-            console.error(
-              `  ${strategy} 창${window.index} ${window.from}~${window.to} 완료 ` +
-                `(${((Date.now() - windowStartedAt) / 1000).toFixed(1)}초 · ` +
-                `누적 ${((Date.now() - startedAt) / 60000).toFixed(1)}분 · ` +
-                `힙 ${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(0)}MB)`,
-            );
-            windowStartedAt = Date.now();
-          },
-        ),
-      );
-    }
+    const outputs = await runRobustSearch(
+      {
+        windows,
+        slippagePercents: options.slippagePercents,
+        strategies: options.strategies.flatMap((strategy) => {
+          const plan = plans.find(
+            (candidate) => candidate.strategy === strategy,
+          );
+          return plan === undefined
+            ? []
+            : [
+                {
+                  strategy,
+                  baseline: plan.baseline,
+                  combinations: plan.combinations,
+                },
+              ];
+        }),
+      },
+      replay,
+      (window) => {
+        console.error(
+          `  창${window.index} ${window.from}~${window.to} 완료 ` +
+            `(${((Date.now() - windowStartedAt) / 1000).toFixed(1)}초 · ` +
+            `누적 ${((Date.now() - startedAt) / 60000).toFixed(1)}분 · ` +
+            `힙 ${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(0)}MB)`,
+        );
+        windowStartedAt = Date.now();
+      },
+    );
 
     const reports = plans.map((plan) => {
       const output = outputs.get(plan.strategy);
