@@ -27,11 +27,16 @@ export const TARGET_REPO_RULE_FILES: readonly string[] = [
 export const TARGET_REPO_RULES_MAX_BYTES = 12_000;
 const SECTION_MAX_BYTES = 6_000;
 
-// 제목에 review·리뷰가 들어간 절(`## Code Review Rules`, `## Review Focus`, `## 리뷰 규칙` 등).
-const REVIEW_HEADING = /^(#{1,3})[^\S\n]*([^\n]*(?:review|리뷰)[^\n]*)$/im;
-// 리뷰 절이 없을 때 쓰는 컨벤션 절(`## 컨벤션`, `## Conventions`, `## 코딩 규칙` 등).
-const CONVENTION_HEADING =
-  /^(#{1,3})[^\S\n]*([^\n]*(?:convention|컨벤션|코딩\s*규칙|코드\s*규칙)[^\n]*)$/im;
+// 앞에서부터 차례로 찾는다. "제목에 review·리뷰가 들어가면" 으로 넓게 잡으면 이 레포 AGENTS.md 의
+// `## 7. commit / 리뷰 워크플로우`(커밋 정책·봇 응답 규약)가 `## Code Review Rules` 보다 먼저 잡혔다(2026-11-16 실측).
+// 1) 리뷰 기준임이 분명한 제목 — Code Review Rules, Review Focus, Review Guidelines, 리뷰 규칙·기준·지침 등.
+// 2) 제목이 review·리뷰로 시작하는 절(앞 번호 허용).
+// 3) 컨벤션 절 — 리뷰 절이 없을 때만(`## 컨벤션`, `## Conventions`, `## 코딩 규칙` 등).
+const HEADING_PRIORITY: readonly RegExp[] = [
+  /^(#{1,3})[^\S\n]*([^\n]*(?:review[^\S\n]*(?:rules?|focus|guidelines?|checklist|criteria)|리뷰[^\S\n]*(?:규칙|규약|지침|기준|가이드|체크리스트|포인트))[^\n]*)$/im,
+  /^(#{1,3})[^\S\n]*((?:\d+[.)][^\S\n]*)?(?:code[^\S\n]*)?(?:review|리뷰)[^\n]*)$/im,
+  /^(#{1,3})[^\S\n]*([^\n]*(?:convention|컨벤션|코딩[^\S\n]*규칙|코드[^\S\n]*규칙)[^\n]*)$/im,
+];
 
 export interface TargetRepoRuleSource {
   path: string;
@@ -81,8 +86,10 @@ const extractSection = ({
 export const extractTargetRepoRuleSection = (
   markdown: string,
 ): ExtractedSection | null =>
-  extractSection({ markdown, heading: REVIEW_HEADING }) ??
-  extractSection({ markdown, heading: CONVENTION_HEADING });
+  HEADING_PRIORITY.reduce<ExtractedSection | null>(
+    (found, heading) => found ?? extractSection({ markdown, heading }),
+    null,
+  );
 
 // 멀티바이트 문자 중간이면 문자 경계까지 물린다. UTF-8 연속 바이트는 최대 3개라 재귀가 깊지 않다.
 const charBoundary = ({

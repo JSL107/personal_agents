@@ -30,6 +30,22 @@ describe('extractTargetRepoRuleSection', () => {
     );
   });
 
+  it('제목에 리뷰가 들어갔을 뿐인 절보다 리뷰 기준 절이 이긴다 (이 레포 AGENTS.md 실측)', () => {
+    const markdown =
+      '## 7. commit / 리뷰 워크플로우\n1. commit 은 요청 후에만\n## 8. 함정\nx\n## Code Review Rules\n### 리뷰 방식\n- 한국어로';
+    expect(extractTargetRepoRuleSection(markdown)).toEqual({
+      heading: 'Code Review Rules',
+      body: '### 리뷰 방식\n- 한국어로',
+    });
+  });
+
+  it('리뷰 기준 절이 없으면 제목이 리뷰로 시작하는 절을 고른다', () => {
+    const markdown = '## 커밋·리뷰 절차\nA\n## 2. 리뷰할 때\nB';
+    expect(extractTargetRepoRuleSection(markdown)?.heading).toBe(
+      '2. 리뷰할 때',
+    );
+  });
+
   it('둘 다 없거나 본문이 비면 null — 레포 안내뿐인 문서를 통째로 싣지 않는다', () => {
     expect(
       extractTargetRepoRuleSection(
