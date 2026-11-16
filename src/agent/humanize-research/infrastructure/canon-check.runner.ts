@@ -13,8 +13,8 @@ import {
 } from '../domain/humanize-research.type';
 import {
   CANON_RULES_FILE,
-  countMatches,
   findQuickRuleIds,
+  gateCanonText,
 } from '../domain/proposal-gate';
 import { runGit } from './collectors/upstream-rule-diff.collector';
 
@@ -76,16 +76,10 @@ export class CanonCheckRunner {
         quickRules,
         oldString: proposal.oldString,
       });
-      const matchCount = countMatches({
-        text: quickRules,
-        search: proposal.oldString,
-      });
-      if (matchCount !== 1) {
-        return {
-          reason: ProposalSkipReason.MATCH_NOT_UNIQUE,
-          baseSha,
-          ruleIds: [],
-        };
+      // 게이트 3~6 을 로컬 작업 폴더가 아니라 검사할 SHA 의 파일로 다시 판정한다.
+      const textReason = gateCanonText({ proposal, quickRules });
+      if (textReason !== null) {
+        return { reason: textReason, baseSha, ruleIds: [] };
       }
       const updatedQuickRules = quickRules.replace(
         proposal.oldString,
