@@ -118,21 +118,35 @@ export class CanonLogCollector {
 
   private parseCommits(output: string): CanonCommit[] {
     const headers = Array.from(output.matchAll(COMMIT_HEADER));
-    return headers.map((header, index) => {
-      const end = (header.index ?? 0) + header[0].length;
-      const next = headers[index + 1];
-      const fileText = output.slice(end, next?.index ?? output.length);
-      const files = fileText
-        .split('\n')
-        .map((file) => file.trim())
-        .filter(Boolean);
-      return {
-        hash: header[1],
-        subject: header[2],
-        body: header[3].trim(),
-        files,
-      };
-    });
+    const commits = headers.map((header, index) =>
+      this.toCommit({ output, header, next: headers[index + 1] }),
+    );
+    return commits;
+  }
+
+  // 커밋의 변경 파일 목록은 이 헤더 끝부터 다음 헤더 시작(없으면 출력 끝)까지다.
+  private toCommit({
+    output,
+    header,
+    next,
+  }: {
+    output: string;
+    header: RegExpExecArray;
+    next: RegExpExecArray | undefined;
+  }): CanonCommit {
+    const end = (header.index ?? 0) + header[0].length;
+    const fileText = output.slice(end, next?.index ?? output.length);
+    const files = fileText
+      .split('\n')
+      .map((file) => file.trim())
+      .filter(Boolean);
+    const commit = {
+      hash: header[1],
+      subject: header[2],
+      body: header[3].trim(),
+      files,
+    };
+    return commit;
   }
 
   private renderCommit(commit: CanonCommit): string {

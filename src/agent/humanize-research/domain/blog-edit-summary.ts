@@ -88,28 +88,53 @@ export const renderBlogEditSummary = ({
   path: string;
   summary: BlogEditSummary;
 }): string => {
-  const lines = [`발행 경로: ${path}`];
-  const exampleStarts: number[] = [];
-  for (const kind of EDIT_KINDS) {
-    lines.push(`${kind}: ${summary.counts[kind]}건`);
-    for (const example of summary.examples[kind]) {
-      const cropped = cropAroundChange(example);
-      exampleStarts.push(lines.length);
-      lines.push(`- 전: ${cropped.before}`);
-      lines.push(`- 후: ${cropped.after}`);
-    }
-  }
-  while (
-    lines.join('\n').length > MAX_RENDER_LENGTH &&
-    exampleStarts.length > 0
-  ) {
-    const start = exampleStarts.pop();
-    if (start !== undefined) {
-      lines.splice(start, 2);
-    }
-  }
-  const rendered = lines.join('\n');
+  const title = `발행 경로: ${path}`;
+  const countLines = EDIT_KINDS.map(
+    (kind) => `${kind}: ${summary.counts[kind]}건`,
+  );
+  const blocks = EDIT_KINDS.flatMap((kind) =>
+    summary.examples[kind].map((example) => ({
+      kind,
+      text: renderExample(example),
+    })),
+  );
+  const fixedLength = [title, ...countLines].join('\n').length;
+  // 상한을 넘으면 뒤쪽 예시부터 버린다 — 앞에서부터 들어가는 만큼만 남기는 것과 같다.
+  const keptCount = countFittingBlocks({
+    lengths: blocks.map((block) => block.text.length),
+    budget: MAX_RENDER_LENGTH - fixedLength,
+  });
+  const kept = blocks.slice(0, keptCount);
+  const kindSections = EDIT_KINDS.flatMap((kind, index) => [
+    countLines[index],
+    ...kept.filter((block) => block.kind === kind).map((block) => block.text),
+  ]);
+  const rendered = [title, ...kindSections].join('\n');
   return rendered.slice(0, MAX_RENDER_LENGTH);
+};
+
+const renderExample = (example: BlogEditExample): string => {
+  const cropped = cropAroundChange(example);
+  const text = `- 전: ${cropped.before}\n- 후: ${cropped.after}`;
+  return text;
+};
+
+// 줄바꿈 하나씩을 더해 누적하면서, 예산 안에 처음부터 연속으로 들어가는 블록 수를 센다.
+const countFittingBlocks = ({
+  lengths,
+  budget,
+}: {
+  lengths: number[];
+  budget: number;
+}): number => {
+  const cumulative = lengths.reduce<number[]>((totals, length) => {
+    const previous = totals.at(-1) ?? 0;
+    totals.push(previous + length + 1);
+    return totals;
+  }, []);
+  const firstOver = cumulative.findIndex((total) => total > budget);
+  const count = firstOver < 0 ? lengths.length : firstOver;
+  return count;
 };
 
 // 블로그는 문단 하나가 한 줄이라 앞에서 자르면 뒤쪽 수정이 사라진다. 처음 달라지는 지점 앞뒤를 남긴다.
@@ -136,15 +161,22 @@ export const hashBlogChanges = (changes: RevisionLineChanges): string => {
   return digest.slice(0, 8);
 };
 
-const emptySummary = (): BlogEditSummary => {
-  const counts = {} as Record<BlogEditKind, number>;
-  const examples = {} as Record<BlogEditKind, BlogEditExample[]>;
-  for (const kind of EDIT_KINDS) {
-    counts[kind] = 0;
-    examples[kind] = [];
-  }
-  return { counts, examples };
-};
+const emptySummary = (): BlogEditSummary => ({
+  counts: {
+    [BlogEditKind.PUNCTUATION_ONLY]: 0,
+    [BlogEditKind.LEXICAL]: 0,
+    [BlogEditKind.REWRITE]: 0,
+    [BlogEditKind.DELETED]: 0,
+    [BlogEditKind.ADDED]: 0,
+  },
+  examples: {
+    [BlogEditKind.PUNCTUATION_ONLY]: [],
+    [BlogEditKind.LEXICAL]: [],
+    [BlogEditKind.REWRITE]: [],
+    [BlogEditKind.DELETED]: [],
+    [BlogEditKind.ADDED]: [],
+  },
+});
 
 const addExample = ({
   summary,
@@ -218,5 +250,6 @@ const diceCoefficient = ({
     }
     return count;
   }, 0);
-  return (2 * matches) / (left.length + right.length - 2);
+  const coefficient = (2 * matches) / (left.length + right.length - 2);
+  return coefficient;
 };

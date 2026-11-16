@@ -113,10 +113,12 @@ export class MeasureBlogRevisionUsecase {
   private async findPublished(
     lookbackDays: number,
   ): Promise<PublishedSnapshot[]> {
+    // 조회 상한은 기본 창(28일) 기준 값이라 창 길이에 비례해 늘린다.
+    const fetchLimit = Math.ceil((FETCH_LIMIT * lookbackDays) / LOOKBACK_DAYS);
     const previews = await this.findRecentAppliedPreviews.execute({
       kind: PREVIEW_KIND.BLOG_GITHUB_PUBLISH,
       since: new Date(Date.now() - lookbackDays * DAY_MS),
-      limit: Math.ceil((FETCH_LIMIT * lookbackDays) / LOOKBACK_DAYS),
+      limit: fetchLimit,
     });
 
     const snapshots: PublishedSnapshot[] = [];
