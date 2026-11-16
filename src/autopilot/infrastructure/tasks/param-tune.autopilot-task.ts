@@ -80,7 +80,7 @@ export class ParamTuneAutopilotTask implements AutopilotTask {
 
           if (child.kind === 'EXITED' && child.code === 0) {
             // 정상이면 자식이 행을 DONE 으로 닫았다. 아직 RUNNING 이면 다음 회차의 stale 회수가 맡는다.
-            this.logger.warn(
+            this.logger.log(
               `param-tune ${strategy}: 자식이 종료 코드 0 으로 끝났다 (run ${claim.runId}).`,
             );
             continue;

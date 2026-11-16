@@ -8,7 +8,7 @@ import {
 } from 'node:fs';
 import { dirname, join, resolve as resolvePath } from 'node:path';
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 
 export type ChildOutcome =
   | { kind: 'EXITED'; code: number; tail: string }
@@ -52,14 +52,17 @@ export const findRepoRoot = (
   return null;
 };
 
+const logger = new Logger('ParamTuneChildLauncher');
+
 const readTail = (logPath: string): string => {
   try {
-    return readFileSync(logPath, 'utf-8')
+    const lines = readFileSync(logPath, 'utf-8')
       .split('\n')
-      .filter((line) => line.trim() !== '')
-      .slice(-TAIL_LINES)
-      .join('\n');
-  } catch {
+      .filter((line) => line.trim() !== '');
+    return lines.slice(-TAIL_LINES).join('\n');
+  } catch (error) {
+    // 로그가 아직 없거나 못 읽으면 꼬리 없이 실패 사유만 남긴다.
+    logger.warn(`자식 로그 꼬리를 읽지 못했다 (${logPath}): ${String(error)}`);
     return '';
   }
 };
