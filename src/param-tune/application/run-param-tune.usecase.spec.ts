@@ -311,8 +311,10 @@ describe('RunParamTuneUsecase', () => {
     await usecase.execute(input);
 
     expect(mockedRunRobustSearch).not.toHaveBeenCalled();
-    expect(runPort.findVerdictByKey).toHaveBeenCalledWith(
-      [
+    expect(runPort.findVerdictByKey).toHaveBeenCalledWith({
+      strategy: 'SWING',
+      verdictKey: [
+        'SWING',
         'EXIT_TAKE_PROFIT_PERCENT',
         lastCompletedWindowEnd(TODAY),
         1,
@@ -320,12 +322,42 @@ describe('RunParamTuneUsecase', () => {
         1,
         1,
       ].join('|'),
-    );
+    });
     expect(finishedPatch()).toMatchObject({
       status: 'DONE',
       decision: 'WOULD_APPLY',
       candidateValue: 15,
     });
+  });
+
+  it('버전이 같아도 다른 전략의 판정 키는 겹치지 않는다', async () => {
+    mockedEvaluate.mockReturnValue([]);
+    searchReturns(new Map([['BASE', current]]));
+    mockedRunRobustSearch.mockResolvedValueOnce(
+      new Map([
+        [
+          'LONG_TERM',
+          {
+            conditions: [],
+            baselineLabel: 'BASE',
+            combinationByLabel: new Map([['BASE', current]]),
+            windowSummaries: new Map(),
+          },
+        ],
+      ]),
+    );
+
+    await usecase.execute({ ...input, strategy: 'LONG_TERM' });
+    await usecase.execute(input);
+
+    const [longTerm, swing] = runPort.findVerdictByKey.mock.calls.map(
+      ([call]) => call,
+    );
+    expect(longTerm.strategy).toBe('LONG_TERM');
+    expect(swing.strategy).toBe('SWING');
+    expect(longTerm.verdictKey).not.toBe(swing.verdictKey);
+    // 남의 판정을 못 찾았으니 두 전략 모두 직접 탐색한다.
+    expect(mockedRunRobustSearch).toHaveBeenCalledTimes(2);
   });
 
   it('excluded 값은 탐색 격자에서 빠지고 verdictKey 에 정렬되어 들어간다', async () => {
@@ -342,7 +374,9 @@ describe('RunParamTuneUsecase', () => {
     expect(stopLosses).not.toContain(-7);
     expect(stopLosses).not.toContain(-3);
     expect(stopLosses).toContain(-5); // 현행값은 기준선으로 남는다
-    expect(runPort.findVerdictByKey.mock.calls[0][0]).toMatch(/\|-7\|-3$/);
+    expect(runPort.findVerdictByKey.mock.calls[0][0].verdictKey).toMatch(
+      /\|-7\|-3$/,
+    );
   });
 
   it('apply + ADOPT + 충돌이면 NO_CHANGE 와 사유를 남긴다', async () => {

@@ -262,10 +262,14 @@ export class ParamTuneRunPrismaRepository implements ParamTuneRunPort {
     });
   }
 
-  async findVerdictByKey(verdictKey: string): Promise<CachedVerdict | null> {
+  async findVerdictByKey(input: {
+    strategy: StrategyParameterStrategy;
+    verdictKey: string;
+  }): Promise<CachedVerdict | null> {
     const row = await this.prisma.parameterTuneRun.findFirst({
       where: {
-        verdictKey,
+        strategy: input.strategy,
+        verdictKey: input.verdictKey,
         status: 'DONE',
         verdict: { not: Prisma.DbNull },
       },

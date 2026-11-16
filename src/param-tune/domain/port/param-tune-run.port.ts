@@ -120,7 +120,11 @@ export interface ParamTuneRunPort {
     now: Date;
   }): Promise<number[]>;
 
-  findVerdictByKey(verdictKey: string): Promise<CachedVerdict | null>;
+  /** 같은 전략의 판정만 재사용한다. */
+  findVerdictByKey(input: {
+    strategy: StrategyParameterStrategy;
+    verdictKey: string;
+  }): Promise<CachedVerdict | null>;
 
   findUnnotified(): Promise<TuneRunRow[]>;
 

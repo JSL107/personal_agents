@@ -334,12 +334,18 @@ describe('ParamTuneRunPrismaRepository', () => {
         verdict: { v: 1 },
       });
 
-      expect(await repository.findVerdictByKey('k')).toEqual({
+      expect(
+        await repository.findVerdictByKey({
+          strategy: 'SWING',
+          verdictKey: 'k',
+        }),
+      ).toEqual({
         runId: 6,
         verdict: { v: 1 },
       });
       expect(parameterTuneRun.findFirst.mock.calls[0][0]).toMatchObject({
         where: {
+          strategy: 'SWING',
           verdictKey: 'k',
           status: 'DONE',
           verdict: { not: Prisma.DbNull },
@@ -350,7 +356,12 @@ describe('ParamTuneRunPrismaRepository', () => {
 
     it('없으면 null', async () => {
       parameterTuneRun.findFirst.mockResolvedValue(null);
-      expect(await repository.findVerdictByKey('k')).toBeNull();
+      expect(
+        await repository.findVerdictByKey({
+          strategy: 'LONG_TERM',
+          verdictKey: 'k',
+        }),
+      ).toBeNull();
     });
   });
 
