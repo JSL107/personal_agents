@@ -1,3 +1,5 @@
+import { GithubException } from '../../../github/domain/github.exception';
+import { GithubErrorCode } from '../../../github/domain/github-error-code.enum';
 import { GithubClientPort } from '../../../github/domain/port/github-client.port';
 import { TargetRepoRulesLoader } from './target-repo-rules.loader';
 
@@ -6,7 +8,11 @@ const buildLoader = (
 ): { loader: TargetRepoRulesLoader; getFileFromBranch: jest.Mock } => {
   const getFileFromBranch = jest.fn(async ({ path }: { path: string }) => {
     if (!(path in files)) {
-      throw new Error('GitHub 요청 실패: Not Found (404)');
+      throw new GithubException({
+        code: GithubErrorCode.REQUEST_FAILED,
+        message: 'GitHub 요청 실패: Not Found',
+        cause: Object.assign(new Error('Not Found'), { status: 404 }),
+      });
     }
     return {
       fileUrl: `https://github.com/o/r/blob/x/${path}`,
@@ -55,5 +61,20 @@ describe('TargetRepoRulesLoader', () => {
       block: '',
       used: [],
     });
+  });
+
+  it('404 가 아닌 조회 실패가 있으면 담아 두지 않고 다음 리뷰가 다시 받는다', async () => {
+    const { loader, getFileFromBranch } = buildLoader({
+      'AGENTS.md': '## Code Review Rules\n- A',
+    });
+    getFileFromBranch.mockRejectedValueOnce(
+      Object.assign(new Error('Service Unavailable'), { status: 503 }),
+    );
+
+    const first = await loader.load({ repo: 'o/r', baseSha: 'b' });
+    expect(first.used).toEqual([]);
+
+    const second = await loader.load({ repo: 'o/r', baseSha: 'b' });
+    expect(second.used).toEqual(['AGENTS.md#Code Review Rules']);
   });
 });

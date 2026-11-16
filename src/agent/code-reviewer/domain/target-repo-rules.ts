@@ -33,9 +33,9 @@ const SECTION_MAX_BYTES = 6_000;
 // 2) 제목이 review·리뷰로 시작하는 절(앞 번호 허용).
 // 3) 컨벤션 절 — 리뷰 절이 없을 때만(`## 컨벤션`, `## Conventions`, `## 코딩 규칙` 등).
 const HEADING_PRIORITY: readonly RegExp[] = [
-  /^(#{1,3})[^\S\n]*([^\n]*(?:review[^\S\n]*(?:rules?|focus|guidelines?|checklist|criteria)|리뷰[^\S\n]*(?:규칙|규약|지침|기준|가이드|체크리스트|포인트))[^\n]*)$/im,
-  /^(#{1,3})[^\S\n]*((?:\d+[.)][^\S\n]*)?(?:code[^\S\n]*)?(?:review|리뷰)[^\n]*)$/im,
-  /^(#{1,3})[^\S\n]*([^\n]*(?:convention|컨벤션|코딩[^\S\n]*규칙|코드[^\S\n]*규칙)[^\n]*)$/im,
+  /^(#{1,3})[^\S\n]*([^\n]*(?:review[^\S\n]*(?:rules?|focus|guidelines?|checklist|criteria)|리뷰[^\S\n]*(?:규칙|규약|지침|기준|가이드|체크리스트|포인트))[^\n]*)$/gim,
+  /^(#{1,3})[^\S\n]*((?:\d+[.)][^\S\n]*)?(?:code[^\S\n]*)?(?:review|리뷰)[^\n]*)$/gim,
+  /^(#{1,3})[^\S\n]*([^\n]*(?:convention|컨벤션|코딩[^\S\n]*규칙|코드[^\S\n]*규칙)[^\n]*)$/gim,
 ];
 
 export interface TargetRepoRuleSource {
@@ -60,19 +60,20 @@ interface ExtractSectionInput {
   heading: RegExp;
 }
 
+interface SectionAtInput {
+  markdown: string;
+  match: RegExpMatchArray;
+}
+
 // 제목 다음부터 같은 수준 이상의 다음 제목 전까지가 그 절이다.
 const sectionEnd = ({ rest, level }: { rest: string; level: number }): number =>
   new RegExp(`^#{1,${level}}\\s`, 'm').exec(rest)?.index ?? rest.length;
 
-const extractSection = ({
+const sectionAt = ({
   markdown,
-  heading,
-}: ExtractSectionInput): ExtractedSection | null => {
-  const match = heading.exec(markdown);
-  if (match === null) {
-    return null;
-  }
-  const rest = markdown.slice(match.index + match[0].length);
+  match,
+}: SectionAtInput): ExtractedSection | null => {
+  const rest = markdown.slice((match.index ?? 0) + match[0].length);
   const body = rest
     .slice(0, sectionEnd({ rest, level: match[1].length }))
     .trim();
@@ -81,6 +82,16 @@ const extractSection = ({
   }
   return { heading: match[2].trim(), body };
 };
+
+// 같은 우선순위의 제목을 모두 훑는다 — 앞의 제목이 비어 있어도 뒤의 유효한 절을 놓치지 않게.
+const extractSection = ({
+  markdown,
+  heading,
+}: ExtractSectionInput): ExtractedSection | null =>
+  [...markdown.matchAll(heading)].reduce<ExtractedSection | null>(
+    (found, match) => found ?? sectionAt({ markdown, match }),
+    null,
+  );
 
 // 리뷰 절이 우선이고, 없으면 컨벤션 절이다. 둘 다 없으면 null.
 export const extractTargetRepoRuleSection = (

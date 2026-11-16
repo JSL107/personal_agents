@@ -46,6 +46,15 @@ describe('extractTargetRepoRuleSection', () => {
     );
   });
 
+  it('먼저 나온 같은 우선순위 제목이 비어 있으면 뒤의 제목을 고른다', () => {
+    const markdown =
+      '## Review Focus\n\n## 백엔드 리뷰 기준\n- 권한 검사\n## 기타\nx';
+    expect(extractTargetRepoRuleSection(markdown)).toEqual({
+      heading: '백엔드 리뷰 기준',
+      body: '- 권한 검사',
+    });
+  });
+
   it('둘 다 없거나 본문이 비면 null — 레포 안내뿐인 문서를 통째로 싣지 않는다', () => {
     expect(
       extractTargetRepoRuleSection(

@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 
+import { GithubException } from '../../../github/domain/github.exception';
 import {
   GITHUB_CLIENT_PORT,
   GithubClientPort,
@@ -15,6 +16,17 @@ import {
 // 대개 같은 base 를 본다. 커밋 SHA 로 묶으므로 문서가 바뀌면(base 가 움직이면) 저절로 새로 받는다.
 const CACHE_TTL_MS = 30 * 60 * 1000;
 const CACHE_MAX_ENTRIES = 100;
+
+// 없는 파일은 GithubException 이 감싼 Octokit 오류의 status 404 로 온다.
+const isNotFound = (error: unknown): boolean => {
+  const cause = error instanceof GithubException ? error.cause : error;
+  return (
+    typeof cause === 'object' &&
+    cause !== null &&
+    'status' in cause &&
+    cause.status === 404
+  );
+};
 
 interface CacheEntry {
   at: number;
@@ -55,13 +67,17 @@ export class TargetRepoRulesLoader {
     if (cached !== undefined && Date.now() - cached.at < CACHE_TTL_MS) {
       return cached.rules;
     }
-    const sources = await Promise.all(
+    const reads = await Promise.all(
       TARGET_REPO_RULE_FILES.map((path) =>
         this.readFile({ repo, baseSha, path }),
       ),
     );
-    const rules = renderTargetRepoRules(sources.flat());
-    this.remember({ key, rules });
+    const rules = renderTargetRepoRules(reads.flatMap((read) => read ?? []));
+    // 일시 실패(429·5xx·네트워크)가 하나라도 있으면 담아 두지 않는다 — 다음 리뷰가 다시 받게.
+    const allRead = reads.every((read) => read !== null);
+    if (allRead) {
+      this.remember({ key, rules });
+    }
     if (rules.used.length > 0) {
       this.logger.log(
         `대상 레포 규칙 첨부 (${repo}): ${rules.used.join(', ')}`,
@@ -70,13 +86,13 @@ export class TargetRepoRulesLoader {
     return rules;
   }
 
-  // 없는 파일도 예외로 온다(404). 레포마다 있는 문서가 달라 대부분 "없음" 이라 경고로 남기지 않는다.
-  // 없으면 빈 배열 — 호출부가 flat 으로 펼친다.
+  // 없는 파일(404)은 빈 배열이다. 레포마다 있는 문서가 달라 대부분 "없음" 이라 경고로 남기지 않는다.
+  // 그 밖의 실패는 null — 이번 리뷰는 그 문서 없이 진행하되, 결과를 담아 두지 않는 신호로 쓴다.
   private async readFile({
     repo,
     baseSha,
     path,
-  }: ReadRuleFileInput): Promise<TargetRepoRuleSource[]> {
+  }: ReadRuleFileInput): Promise<TargetRepoRuleSource[] | null> {
     try {
       const found = await this.githubClient.getFileFromBranch({
         repo,
@@ -87,8 +103,14 @@ export class TargetRepoRulesLoader {
         return [];
       }
       return [{ path, content: found.content }];
-    } catch {
-      return [];
+    } catch (error: unknown) {
+      if (isNotFound(error)) {
+        return [];
+      }
+      this.logger.warn(
+        `대상 레포 규칙 조회 실패 (${repo} ${path}): ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return null;
     }
   }
 
