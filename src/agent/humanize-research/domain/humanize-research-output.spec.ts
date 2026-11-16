@@ -1,4 +1,4 @@
-import { ProposalSkipReason } from './humanize-research.type';
+import { ProposalSkipReason, ProposalTarget } from './humanize-research.type';
 import {
   constrainResearchProposals,
   InvalidHumanizeResearchResponseError,
@@ -6,6 +6,7 @@ import {
 } from './humanize-research-output';
 
 const proposal = {
+  target: ProposalTarget.CANON,
   file: 'references/quick-rules.md',
   oldString: 'old',
   newString: 'new',
@@ -20,6 +21,7 @@ describe('humanize research model output', () => {
       parseResearchOutput('{"proposals":[],"injectionNotices":[]}'),
     ).toEqual({
       proposals: [],
+      enforcementGaps: [],
       injectionNotices: [],
     });
     expect(() => parseResearchOutput('[]')).toThrow(
@@ -40,11 +42,10 @@ describe('humanize research model output', () => {
       ],
       includedIds: new Set(['blog:post']),
     });
-    expect(result.proposals).toEqual([proposal]);
+    expect(result.proposals).toEqual([proposal, proposal]);
     expect(result.skipped.map((entry) => entry.reason)).toEqual([
       ProposalSkipReason.INVALID_SHAPE,
       ProposalSkipReason.NO_EVIDENCE,
-      ProposalSkipReason.OVER_LIMIT,
     ]);
   });
 
@@ -58,5 +59,33 @@ describe('humanize research model output', () => {
     expect(result.skipped.map((entry) => entry.reason)).toEqual([
       ProposalSkipReason.INVALID_SHAPE,
     ]);
+  });
+});
+
+describe('새 제안 형식', () => {
+  it('target 없는 제안은 INVALID_SHAPE', () => {
+    const result = constrainResearchProposals({
+      proposals: [{ ...proposal, target: undefined }],
+      includedIds: new Set(['blog:post']),
+    });
+    expect(result.skipped[0].reason).toBe(ProposalSkipReason.INVALID_SHAPE);
+  });
+  it('enforcementGaps 는 문자열 ruleId·근거 배열만 통과', () => {
+    const parsed = parseResearchOutput(
+      JSON.stringify({
+        proposals: [],
+        enforcementGaps: [
+          { ruleId: 'A-1', evidence: ['a'] },
+          { ruleId: 1, evidence: [] },
+          { ruleId: 'B', evidence: [1] },
+        ],
+      }),
+    );
+    expect(parsed.enforcementGaps).toEqual([
+      { ruleId: 'A-1', evidence: ['a'] },
+    ]);
+  });
+  it('enforcementGaps 가 없으면 빈 배열', () => {
+    expect(parseResearchOutput('{"proposals":[]}').enforcementGaps).toEqual([]);
   });
 });

@@ -7,9 +7,14 @@ import { ConfigService } from '@nestjs/config';
 import { buildContractPreamble } from '../../../agent-registry/agent-contract';
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
+import { HUMANIZE_RULE_LINKS } from '../../../humanize/domain/humanize-rule-links';
 import { resolveHumanizeRulesRepoPath } from '../../../humanize/domain/humanize-rules-repository';
 import { ModelRouterUsecase } from '../../../model-router/application/model-router.usecase';
 import { AgentType } from '../../../model-router/domain/model-router.type';
+import {
+  blogEditableTexts,
+  renderBlogEditableSurface,
+} from '../domain/blog-editable-surface';
 import {
   ARXIV_DEDUP_ROUNDS,
   HUMANIZE_RESEARCH_INPUT_LIMIT,
@@ -38,6 +43,7 @@ import {
   HUMANIZE_RESEARCH_OUTPUT_SCHEMA,
   HUMANIZE_RESEARCH_SYSTEM_PROMPT,
 } from '../domain/prompt/humanize-research.prompt';
+import { gateProposal } from '../domain/proposal-gate';
 import { ArxivAbstractCollector } from '../infrastructure/collectors/arxiv-abstract.collector';
 import { BlogRevisionCollector } from '../infrastructure/collectors/blog-revision.collector';
 import { CanonLogCollector } from '../infrastructure/collectors/canon-log.collector';
@@ -218,9 +224,13 @@ export class RunHumanizeResearchUsecase {
     items: CollectedItem[],
   ): Promise<ResearchInputSelection> {
     const preamble = buildContractPreamble(AgentType.HUMANIZE_RESEARCH) ?? '';
+    const quickRules = await this.readQuickRules();
+    const texts = blogEditableTexts(HUMANIZE_RULE_LINKS);
+    const blogSurface = renderBlogEditableSurface(texts);
     return selectResearchInput({
       items,
-      quickRules: await this.readQuickRules(),
+      quickRules,
+      blogSurface,
       systemPrompt: `${HUMANIZE_RESEARCH_SYSTEM_PROMPT}${preamble}\n\n`,
     });
   }
@@ -241,6 +251,15 @@ export class RunHumanizeResearchUsecase {
     const constrained = constrainResearchProposals({
       proposals: parsed.proposals,
       includedIds,
+      gate: (proposal) =>
+        gateProposal({
+          proposal,
+          context: {
+            included: selection.included,
+            quickRules: selection.quickRules,
+            blogEditableTexts: blogEditableTexts(HUMANIZE_RULE_LINKS),
+          },
+        }),
     });
     const processed = advanceProcessed({
       previous,
@@ -251,6 +270,7 @@ export class RunHumanizeResearchUsecase {
       droppedForBudget: selection.droppedForBudget,
       ...constrained,
       injectionNotices: parsed.injectionNotices,
+      enforcementGaps: parsed.enforcementGaps,
       processed,
     };
   }
@@ -270,6 +290,7 @@ export class RunHumanizeResearchUsecase {
       proposals: [],
       skipped: [],
       injectionNotices: [],
+      enforcementGaps: [],
       processed: advanceProcessed({ previous, included: [] }),
     };
     return { output, modelUsed: 'none', skippedForNoSources: true };

@@ -9,6 +9,7 @@ import { ModelRouterUsecase } from '../../../model-router/application/model-rout
 import {
   CollectionStatus,
   HumanizeResearchSource,
+  ProposalTarget,
 } from '../domain/humanize-research.type';
 import { ArxivAbstractCollector } from '../infrastructure/collectors/arxiv-abstract.collector';
 import { BlogRevisionCollector } from '../infrastructure/collectors/blog-revision.collector';
@@ -125,5 +126,46 @@ describe('RunHumanizeResearchUsecase', () => {
     });
     expect(modelRouter.route).toHaveBeenCalledTimes(1);
     expect(result.output.proposals).toEqual([]);
+  });
+  it('게이트 실패 제안은 skipped 에 사유와 함께 남기고 상한은 통과분으로 센다', async () => {
+    canon.collect.mockResolvedValue({
+      source: HumanizeResearchSource.CANON_LOG,
+      status: CollectionStatus.OK,
+      items: [
+        {
+          id: 'canon:abc',
+          source: HumanizeResearchSource.CANON_LOG,
+          text: 'commit',
+        },
+      ],
+    });
+    const proposal = {
+      target: ProposalTarget.CANON,
+      file: 'references/quick-rules.md',
+      oldString: 'quick rules',
+      newString: 'changed',
+      targetMetric: 'metric',
+      rationale: 'reason',
+      evidence: ['canon:abc'],
+    };
+    modelRouter.route.mockResolvedValue({
+      text: JSON.stringify({
+        proposals: [
+          { ...proposal, file: 'bad' },
+          proposal,
+          proposal,
+          proposal,
+          proposal,
+        ],
+        enforcementGaps: [],
+      }),
+      modelUsed: 'codex',
+    });
+    const result = await usecase.execute();
+    expect(result.output.proposals).toHaveLength(3);
+    expect(result.output.skipped.map((entry) => entry.reason)).toEqual([
+      'FILE_NOT_ALLOWED',
+      'OVER_LIMIT',
+    ]);
   });
 });

@@ -47,6 +47,7 @@ describe('humanize research input', () => {
     ] as HumanizeResearchSource[];
     const selection = selectResearchInput({
       items: sources.map((source) => item(source, source, 'text')),
+      blogSurface: '',
       quickRules: '',
       systemPrompt: '',
     });
@@ -76,9 +77,18 @@ describe('humanize research input', () => {
     );
     const quickRules = '규'.repeat(13_182);
     const systemPrompt = 'system';
-    const prefix = selectResearchInput({ items: [], quickRules, systemPrompt })
-      .prompt.length;
-    const selection = selectResearchInput({ items, quickRules, systemPrompt });
+    const prefix = selectResearchInput({
+      items: [],
+      quickRules,
+      systemPrompt,
+      blogSurface: '',
+    }).prompt.length;
+    const selection = selectResearchInput({
+      items,
+      quickRules,
+      systemPrompt,
+      blogSurface: '',
+    });
     expect(selection.droppedForBudget).toEqual([]);
     expect(selection.prompt.length - prefix).toBeLessThanOrEqual(
       (HUMANIZE_RESEARCH_INPUT_LIMIT - prefix - systemPrompt.length) / 2,
@@ -92,6 +102,7 @@ describe('humanize research input', () => {
         item(HumanizeResearchSource.HUMANIZER, 'humanizer:1-2', 'signal'),
         item(HumanizeResearchSource.BLOG, 'blog:post', 'b'.repeat(30_000)),
       ],
+      blogSurface: '',
       quickRules: 'rules',
       systemPrompt: 'system',
     });
@@ -143,4 +154,14 @@ describe('humanize research input', () => {
     expect(advanced.upstreamHead).toBe('b2');
     expect(notIncluded.upstreamHead).toBe('a1');
   });
+});
+
+it('prefix 에 블로그 편집 가능 문구가 들어간다', () => {
+  const result = selectResearchInput({
+    items: [],
+    quickRules: '',
+    systemPrompt: '',
+    blogSurface: '블로그 편집 가능 문구:\n- 문구',
+  });
+  expect(result.prompt).toContain('블로그 편집 가능 문구:\n- 문구');
 });
