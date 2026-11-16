@@ -220,6 +220,27 @@ describe('ConversationLookupService', () => {
     expect(line).toContain(formatKstDateTime(hoursAgo(2)));
   });
 
+  it('빈 회차만 있는 종류도 종류별 블록에 싣는다', async () => {
+    findActivitySince.mockResolvedValue([
+      {
+        kind: 'autopilot:knowledge-lint',
+        itemKinds: [],
+        threadTs: null,
+        status: 'SUPPRESSED',
+        suppressReason: 'EMPTY',
+        reactionCount: 0,
+        replyCount: 0,
+        createdAt: new Date(Date.now() - 60 * 60 * 1000),
+      },
+    ]);
+
+    const result = await service.collect({ slackUserId: 'U_OWNER' });
+
+    expect(result.latestDeliveryText).toMatch(
+      /autopilot:knowledge-lint · 30일 안 발송 없음 · 보낼 것 없이 끝난 마지막 회차 .+ KST/,
+    );
+  });
+
   it('종류별 마지막 발송 조회가 실패해도 원장·최근 발송 기록은 돌려준다', async () => {
     findActiveRuns.mockResolvedValue([
       {
