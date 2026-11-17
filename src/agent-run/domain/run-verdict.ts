@@ -20,8 +20,6 @@ export const RUN_VERDICT_FACETS = {
   },
   overall: {
     heading: '🌙 저녁 회고 판정',
-    // 주간 카드에서 아쉬운 점이 이미 판정되고 회고 전체만 남았을 때 회고 내용을 인용한다.
-    quoteLabel: '회고 내용',
     question: '이 회고, 하루를 돌아보는 데 쓸모 있었나요?',
     verdicts: {
       GOOD: '👍 쓸모 있음',
