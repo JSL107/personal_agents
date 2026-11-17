@@ -475,16 +475,19 @@ const withChatterSource = ({
     );
     sources.push(`[${CANDIDATE_SOURCE_LABEL}: ${candidateLines.join(' / ')}]`);
   }
-  return sources.join('\n');
+  const memoryText = sources.join('\n');
+  return memoryText;
 };
 
 // 출처 꼬리표는 대화 답변이 "무슨 말이야?" 에 답하라고 남긴 것이다. 우사기 자신의 [최근 대화]에 다시 실으면
 // 후보를 비워도 지난 꼬리표에서 같은 제안을 다시 꺼낸다.
-const stripChatterSource = (text: string): string =>
-  text
+const stripChatterSource = (text: string): string => {
+  const spokenLines = text
     .split('\n')
-    .filter((textLine) => !textLine.startsWith(CHATTER_SOURCE_PREFIX))
-    .join('\n');
+    .filter((textLine) => !textLine.startsWith(CHATTER_SOURCE_PREFIX));
+  const spokenText = spokenLines.join('\n');
+  return spokenText;
+};
 
 // 사용자가 답하기 전에 우사기가 제안 후보를 본 한 마디를 이미 했으면 이번엔 후보를 싣지 않는다. 직전 발화가
 // [최근 대화]로 들어가 "~얘기는 했으니 ~도 볼까?" 로 제안을 하나씩 이어 붙였다(2026-11-17 콘솔).
@@ -495,9 +498,14 @@ const hasSuggestionSinceLastUserTurn = (
 ): boolean => {
   const lastUserIndex = turns.map((turn) => turn.role).lastIndexOf('user');
   const sinceUser = turns.slice(lastUserIndex + 1);
-  return sinceUser.some(
-    (turn) =>
-      turn.role === 'assistant' &&
-      turn.text.includes(`[${CANDIDATE_SOURCE_LABEL}:`),
-  );
+  const suggested = sinceUser.some(isCandidateSourceTurn);
+  return suggested;
+};
+
+const isCandidateSourceTurn = (turn: ConversationTurn): boolean => {
+  if (turn.role !== 'assistant') {
+    return false;
+  }
+  const hasCandidateSource = turn.text.includes(`[${CANDIDATE_SOURCE_LABEL}:`);
+  return hasCandidateSource;
 };
