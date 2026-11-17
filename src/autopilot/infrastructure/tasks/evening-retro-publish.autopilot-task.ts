@@ -14,9 +14,9 @@ import {
   REFLECTION_COLUMNS,
 } from '../../../agent/blog/domain/prompt/evening-retro.prompt';
 import { groupPrRefsByRepo } from '../../../agent/career-mate/domain/group-pr-refs';
+import { formatPmPlanQuote } from '../../../agent/pm/domain/pm-plan-quote';
 import { AgentRunService } from '../../../agent-run/application/agent-run.service';
 import { TriggerType } from '../../../agent-run/domain/agent-run.type';
-import { formatPmPlanQuote } from '../../../agent-run/domain/pm-plan-quote';
 import { RunVerdictFacet } from '../../../agent-run/domain/run-verdict';
 import {
   countKstDaysBetween,
