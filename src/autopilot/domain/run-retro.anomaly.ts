@@ -143,8 +143,8 @@ export const detectRunAnomalies = (
 // 축에도 걸리지 않는다. 그래서 별도 축이 필요하다.
 //
 // `contract_score` 는 필수 필드가 있는지만 본다. 품질 점수로 읽히지 않도록 문구를 "형식 준수율"로
-// 두고, 품질은 사람 판정(agent_run_verdict)으로만 옆에 적는다 — 사람 판정이 없는 곳에 품질 숫자를
-// 쓰지 않는다(설계 §6). `verdicts` 가 null 이면 판정 조회가 실패한 것이다.
+// 두고, 품질은 사람 판정(agent_run_verdict)으로만 옆에 적는다 — 판정이 기준 건수 미만이면 품질 숫자 대신
+// 「표본 부족」 을 적는다(설계 §6). `verdicts` 가 null 이면 판정 조회가 실패한 것이다.
 export const detectContractScoreAnomalies = (
   rows: AgentContractScoreRow[],
   verdicts: AgentVerdictCountRow[] | null,
@@ -181,11 +181,9 @@ const describeHumanVerdicts = (
     return '품질: 판정 조회 실패';
   }
   const found = verdicts.find((row) => row.agentType === agentType);
-  if (!found || found.total === 0) {
-    return '품질: 판정 없음';
-  }
-  if (found.total < thresholds.minVerdictsForQuality) {
-    return `품질: 판정 ${found.total}건 (${thresholds.minVerdictsForQuality}건 미만이라 좋음/나쁨 생략)`;
+  // 0건도 표본 부족이다 — 판정 버튼이 있어도 눌리지 않으면(PO 대행 2주 1/6, 2026-11-17) 점수를 낼 수 없다.
+  if (!found || found.total < thresholds.minVerdictsForQuality) {
+    return `품질: 표본 부족 (판정 ${found?.total ?? 0}건, ${thresholds.minVerdictsForQuality}건부터 좋음/나쁨 표시)`;
   }
   return `품질: 좋음 ${found.good} · 나쁨 ${found.bad} (판정 ${found.total}건)`;
 };
