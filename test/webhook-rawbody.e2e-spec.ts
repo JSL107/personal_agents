@@ -56,7 +56,8 @@ describe('Webhook rawBody (e2e)', () => {
     );
     app.useGlobalFilters(new AllExceptionsFilter());
     app.useGlobalInterceptors(new ResponseInterceptor());
-    await app.init();
+    // 127.0.0.1 에 직접 띄운다 — supertest 가 `::` 에 띄우면 VS Code 등이 127.0.0.1 로 먼저 잡은 같은 포트로 요청이 새어 404·401·503 이 났다.
+    await app.listen(0, '127.0.0.1');
   });
 
   afterEach(async () => {
@@ -70,7 +71,7 @@ describe('Webhook rawBody (e2e)', () => {
       data: {},
     });
 
-    await request(app.getHttpAdapter().getInstance())
+    await request(app.getHttpServer())
       .post('/v1/agent/trigger')
       .set('Content-Type', 'application/json')
       .set('x-webhook-signature', sign(body))
@@ -84,7 +85,7 @@ describe('Webhook rawBody (e2e)', () => {
     const signed = JSON.stringify({ event: 'ping', repo: 'a', data: {} });
     const sent = JSON.stringify({ event: 'ping', repo: 'b', data: {} });
 
-    await request(app.getHttpAdapter().getInstance())
+    await request(app.getHttpServer())
       .post('/v1/agent/trigger')
       .set('Content-Type', 'application/json')
       .set('x-webhook-signature', sign(signed))
